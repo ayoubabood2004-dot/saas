@@ -2,10 +2,12 @@
 // usable before a backend exists. Each method is async and isolated so a Supabase
 // implementation can be dropped in here without touching the UI.
 import { loadDB, saveDB } from "./demoStore";
+import { supabase } from "./supabase";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, AppointmentStatus, TreatmentEntry, Admission, Reminder } from "@/types";
 import { uid } from "./utils";
 
-export const repo = {
+const demoRepo = {
   async listPets(ownerId: string): Promise<Pet[]> {
     return loadDB().pets.filter((p) => p.owner_id === ownerId);
   },
@@ -289,3 +291,165 @@ export const repo = {
     saveDB(db);
   },
 };
+
+/* ============================================================================
+ * Live Supabase implementation — used automatically when VITE_SUPABASE_* are
+ * set. The TS types already use snake_case, so DB rows map 1:1 (cast directly).
+ * ==========================================================================*/
+function sbc(): SupabaseClient {
+  if (!supabase) throw new Error("[supabase] client is not configured");
+  return supabase;
+}
+function listOf<T>(res: { data: unknown; error: { message: string } | null }): T[] {
+  if (res.error) { console.error("[supabase]", res.error.message); return []; }
+  return (res.data ?? []) as T[];
+}
+function maybe<T>(res: { data: unknown; error: { message: string } | null }): T | undefined {
+  if (res.error) { console.error("[supabase]", res.error.message); return undefined; }
+  return (res.data ?? undefined) as T | undefined;
+}
+function need<T>(res: { data: unknown; error: { message: string } | null }): T {
+  if (res.error || res.data == null) throw new Error(`[supabase] ${res.error?.message ?? "no data returned"}`);
+  return res.data as T;
+}
+
+const supabaseRepo: typeof demoRepo = {
+  async listPets(ownerId) {
+    return listOf<Pet>(await sbc().from("pets").select("*").eq("owner_id", ownerId));
+  },
+  async listAllPets() {
+    return listOf<Pet>(await sbc().from("pets").select("*").order("created_at", { ascending: false }));
+  },
+  async updateOwnerContact(ownerId, patch) {
+    await sbc().from("pets").update(patch).eq("owner_id", ownerId);
+  },
+  async getPet(petId) {
+    return maybe<Pet>(await sbc().from("pets").select("*").eq("id", petId).maybeSingle());
+  },
+  async getPetByToken(token) {
+    return maybe<Pet>(await sbc().from("pets").select("*").eq("passport_token", token.trim().toUpperCase()).maybeSingle());
+  },
+  async getPetBySerial(serial) {
+    return maybe<Pet>(await sbc().from("pets").select("*").eq("serial", serial.trim()).maybeSingle());
+  },
+  async claimPet(serial, owner) {
+    const patch: Partial<Pet> = { owner_id: owner.owner_id };
+    if (owner.owner_name) patch.owner_name = owner.owner_name;
+    if (owner.owner_phone) patch.owner_phone = owner.owner_phone;
+    if (owner.owner_email) patch.owner_email = owner.owner_email;
+    return maybe<Pet>(await sbc().from("pets").update(patch).eq("serial", serial.trim()).select().maybeSingle());
+  },
+  async getPetsByOwnerEmail(email) {
+    const e = email.trim();
+    if (!e) return [];
+    return listOf<Pet>(await sbc().from("pets").select("*").ilike("owner_email", e).eq("shared_with_clinic", true));
+  },
+  async getSharedPetsByOwnerId(ownerId) {
+    return listOf<Pet>(await sbc().from("pets").select("*").eq("owner_id", ownerId).eq("shared_with_clinic", true));
+  },
+  async createPet(input) {
+    const serial = String(Math.floor(10000 + Math.random() * 90000));
+    return need<Pet>(await sbc().from("pets").insert({ ...input, serial }).select().single());
+  },
+  async updatePet(petId, patch) {
+    return maybe<Pet>(await sbc().from("pets").update(patch).eq("id", petId).select().maybeSingle());
+  },
+  async listWeights(petId) {
+    return listOf<WeightLog>(await sbc().from("weight_logs").select("*").eq("pet_id", petId).order("measured_at", { ascending: true }));
+  },
+  async addWeight(petId, weight_kg, measured_at) {
+    const log = need<WeightLog>(
+      await sbc().from("weight_logs").insert({ pet_id: petId, weight_kg, measured_at: measured_at ?? new Date().toISOString().slice(0, 10) }).select().single(),
+    );
+    await sbc().from("pets").update({ current_weight_kg: weight_kg }).eq("id", petId);
+    return log;
+  },
+  async listVaccinations(petId) {
+    return listOf<Vaccination>(await sbc().from("vaccinations").select("*").eq("pet_id", petId));
+  },
+  async addVaccination(input) {
+    return need<Vaccination>(await sbc().from("vaccinations").insert(input).select().single());
+  },
+  async listVisits(petId) {
+    return listOf<MedicalVisit>(await sbc().from("medical_visits").select("*").eq("pet_id", petId).order("visit_date", { ascending: false }));
+  },
+  async addVisit(input) {
+    return need<MedicalVisit>(await sbc().from("medical_visits").insert(input).select().single());
+  },
+  async listMedia(petId) {
+    return listOf<MediaItem>(await sbc().from("media_items").select("*").eq("pet_id", petId).order("created_at", { ascending: false }));
+  },
+  async addMedia(input) {
+    return need<MediaItem>(await sbc().from("media_items").insert(input).select().single());
+  },
+  async listAppointmentsForOwner(ownerId) {
+    return listOf<Appointment>(await sbc().from("appointments").select("*").eq("owner_id", ownerId).neq("status", "cancelled").order("scheduled_at", { ascending: true }));
+  },
+  async listAppointmentsForPet(petId) {
+    return listOf<Appointment>(await sbc().from("appointments").select("*").eq("pet_id", petId).neq("status", "cancelled").order("scheduled_at", { ascending: true }));
+  },
+  async listAppointmentsForDay(dayISO) {
+    const day = dayISO.slice(0, 10);
+    return listOf<Appointment>(
+      await sbc().from("appointments").select("*").gte("scheduled_at", `${day}T00:00:00`).lte("scheduled_at", `${day}T23:59:59.999`).neq("status", "cancelled").order("scheduled_at", { ascending: true }),
+    );
+  },
+  async listWaiting(doctorId) {
+    return listOf<Appointment>(await sbc().from("appointments").select("*").eq("doctor_id", doctorId).in("status", ["checked_in", "in_room"]).order("triage_score", { ascending: true }));
+  },
+  async slotTaken(doctorId, scheduledAt) {
+    return listOf<{ id: string }>(await sbc().from("appointments").select("id").eq("doctor_id", doctorId).eq("scheduled_at", scheduledAt).neq("status", "cancelled")).length > 0;
+  },
+  async createAppointment(input) {
+    return need<Appointment>(await sbc().from("appointments").insert(input).select().single());
+  },
+  async updateAppointment(id, patch) {
+    return maybe<Appointment>(await sbc().from("appointments").update(patch).eq("id", id).select().maybeSingle());
+  },
+  async setAppointmentStatus(id, status) {
+    await sbc().from("appointments").update({ status }).eq("id", id);
+  },
+  async listTreatments(petId) {
+    return listOf<TreatmentEntry>(await sbc().from("treatment_entries").select("*").eq("pet_id", petId).order("day", { ascending: true }).order("time", { ascending: true }));
+  },
+  async addTreatment(input) {
+    return need<TreatmentEntry>(await sbc().from("treatment_entries").insert(input).select().single());
+  },
+  async deleteTreatment(id) {
+    await sbc().from("treatment_entries").delete().eq("id", id);
+  },
+  async setTreatmentGiven(id, given, by) {
+    await sbc().from("treatment_entries").update({ administered_at: given ? new Date().toISOString() : null, administered_by: given ? by : null }).eq("id", id);
+  },
+  async listAdmissions() {
+    return listOf<Admission>(await sbc().from("admissions").select("*").order("admitted_on", { ascending: false }));
+  },
+  async listAdmissionsForPet(petId) {
+    return listOf<Admission>(await sbc().from("admissions").select("*").eq("pet_id", petId).order("admitted_on", { ascending: false }));
+  },
+  async addAdmission(input) {
+    return need<Admission>(await sbc().from("admissions").insert(input).select().single());
+  },
+  async updateAdmission(id, patch) {
+    await sbc().from("admissions").update(patch).eq("id", id);
+  },
+  async listReminders(filter) {
+    let q = sbc().from("reminders").select("*");
+    if (filter && "ownerId" in filter) {
+      q = filter.ownerId == null ? q.is("owner_id", null) : q.eq("owner_id", filter.ownerId);
+    }
+    return listOf<Reminder>(await q.order("date", { ascending: true }));
+  },
+  async addReminder(input) {
+    return need<Reminder>(await sbc().from("reminders").insert(input).select().single());
+  },
+  async updateReminder(id, patch) {
+    await sbc().from("reminders").update(patch).eq("id", id);
+  },
+  async removeReminder(id) {
+    await sbc().from("reminders").delete().eq("id", id);
+  },
+};
+
+/** Live when Supabase is configured, otherwise the local demo store. */
+export const repo = supabase ? supabaseRepo : demoRepo;

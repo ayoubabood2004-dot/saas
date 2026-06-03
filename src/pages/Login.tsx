@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import {
@@ -22,10 +22,140 @@ import { registerOwner, authenticateOwner, getOwnerByEmail, setOwnerPassword } f
 import { Button, Input, Label, Segmented, Card, ThemeToggle, SuccessDialog } from "@/components/ui";
 import { staggerContainer, staggerItem } from "@/lib/motion";
 import { HERO_PHOTO } from "@/lib/petPhotos";
+import { isSupabaseConfigured } from "@/lib/supabase";
+import type { Role } from "@/types";
 
 type Portal = "owner" | "clinic";
 
+/** Live Supabase email/password auth — shown when VITE_SUPABASE_* are configured. */
+function SupabaseAuthCard() {
+  const { t, i18n } = useTranslation();
+  const { signUpEmail, signInEmail } = useAuth();
+  const navigate = useNavigate();
+  const [mode, setMode] = useState<"signin" | "signup">("signin");
+  const [role, setRole] = useState<Role>("owner");
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setInfo(null);
+    setBusy(true);
+    playTap();
+    try {
+      if (mode === "signup") {
+        if (!name.trim()) { setError(t("auth.nameRequired", "Please enter your name.")); return; }
+        const res = await signUpEmail(email, password, name, role);
+        if (res.error) { setError(res.error); return; }
+        if (res.needsConfirm) {
+          setInfo(t("auth.checkEmail", "Account created — confirm via the email we sent, then sign in."));
+          setMode("signin");
+          return;
+        }
+        playSuccess();
+        navigate("/");
+      } else {
+        const res = await signInEmail(email, password);
+        if (res.error) { setError(res.error); return; }
+        playSuccess();
+        navigate("/");
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="relative grid min-h-screen place-items-center bg-surface px-4 py-10">
+      <div className="absolute end-4 top-4 flex items-center gap-2">
+        <button onClick={() => setLang((i18n.language === "ar" ? "en" : "ar") as Lang)} className="btn-ghost px-2.5 py-1.5 text-sm" aria-label="Language">
+          <Languages size={16} /> {i18n.language === "ar" ? "EN" : "ع"}
+        </button>
+        <ThemeToggle />
+      </div>
+
+      <motion.div variants={staggerContainer} initial="initial" animate="animate" className="w-full max-w-md">
+        <motion.div variants={staggerItem} className="mb-6 text-center">
+          <span className="mx-auto mb-3 grid h-14 w-14 place-items-center rounded-2xl bg-brand-grad text-white shadow-soft"><PawPrint size={28} /></span>
+          <h1 className="font-display text-2xl font-extrabold tracking-tighter2 text-ink">VetPassport</h1>
+          <p className="mt-0.5 text-sm text-ink-muted">
+            {mode === "signin" ? t("auth.signInSub", "Sign in to your account") : t("auth.signUpSub", "Create your account")}
+          </p>
+        </motion.div>
+
+        <motion.div variants={staggerItem}>
+          <Card padded>
+            <div className="mb-4 grid grid-cols-2 gap-1 rounded-2xl bg-surface-2 p-1">
+              {(["signin", "signup"] as const).map((m) => (
+                <button
+                  key={m}
+                  onClick={() => { playTap(); setMode(m); setError(null); setInfo(null); }}
+                  className={`rounded-xl py-2 text-sm font-semibold transition ${mode === m ? "bg-surface-1 text-brand-700 shadow-card dark:text-brand-300" : "text-ink-muted hover:text-ink"}`}
+                >
+                  {m === "signin" ? t("auth.signIn", "Sign in") : t("auth.signUp", "Sign up")}
+                </button>
+              ))}
+            </div>
+
+            <form onSubmit={submit} className="space-y-3">
+              {mode === "signup" && (
+                <>
+                  <div>
+                    <label className="label">{t("auth.accountType", "Account type")}</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      {([["owner", User, t("auth.petOwner", "Pet owner")], ["admin", Building2, t("auth.clinic", "Clinic")]] as const).map(([r, Icon, lbl]) => (
+                        <button
+                          type="button"
+                          key={r}
+                          onClick={() => setRole(r as Role)}
+                          className={`flex items-center justify-center gap-2 rounded-xl border py-2.5 text-sm font-semibold transition ${role === r ? "border-brand-400 bg-brand-50 text-brand-700 dark:bg-brand-500/15 dark:text-brand-300" : "border-line text-ink-muted hover:bg-surface-2"}`}
+                        >
+                          <Icon size={16} /> {lbl}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <label className="label">{t("auth.fullName", "Full name")}</label>
+                    <input className="input" value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" />
+                  </div>
+                </>
+              )}
+
+              <div>
+                <label className="label">{t("phone.email", "Email")}</label>
+                <input className="input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" required />
+              </div>
+              <div>
+                <label className="label">{t("auth.password", "Password")}</label>
+                <input className="input" type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete={mode === "signin" ? "current-password" : "new-password"} required minLength={6} />
+              </div>
+
+              {error && <p className="flex items-center gap-1.5 text-sm font-medium text-danger-600"><AlertCircle size={15} /> {error}</p>}
+              {info && <p className="rounded-xl bg-success-50 px-3 py-2 text-sm text-success-700 dark:bg-success-500/10 dark:text-success-300">{info}</p>}
+
+              <Button type="submit" className="w-full" disabled={busy}>
+                {busy ? t("common.loading") : mode === "signin" ? t("auth.signIn", "Sign in") : t("auth.signUp", "Create account")}
+              </Button>
+            </form>
+          </Card>
+          <p className="mt-4 text-center text-xs text-ink-subtle">{t("auth.connectedSupabase", "Connected to Supabase")}</p>
+        </motion.div>
+      </motion.div>
+    </div>
+  );
+}
+
 export function Login() {
+  return isSupabaseConfigured ? <SupabaseAuthCard /> : <DemoLogin />;
+}
+
+function DemoLogin() {
   const { t, i18n } = useTranslation();
   const { signInDemo, signInClinic, signInOwner } = useAuth();
   const navigate = useNavigate();

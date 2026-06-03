@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import type { Profile, Role } from "@/types";
-import { isSupabaseConfigured } from "@/lib/supabase";
+import { isSupabaseConfigured, supabase } from "@/lib/supabase";
 import { setActiveClinicId, clearActiveClinic, type ClinicAccount } from "@/lib/clinics";
 import type { OwnerAccount } from "@/lib/owners";
 
@@ -11,6 +11,9 @@ interface AuthState {
   signInDemo: (role: Role, name?: string) => void;
   signInClinic: (clinic: ClinicAccount) => void;
   signInOwner: (owner: OwnerAccount) => void;
+  /** Live Supabase email/password auth (used when env vars are configured). */
+  signUpEmail: (email: string, password: string, fullName: string, role: Role) => Promise<{ error: string | null; needsConfirm?: boolean }>;
+  signInEmail: (email: string, password: string) => Promise<{ error: string | null }>;
   signOut: () => void;
 }
 
@@ -32,11 +35,45 @@ const DEMO_VET: Profile = {
   clinic_id: "clinic-happy-paws",
 };
 
+/** Fetch the app profile row (1:1 with auth.users) for a signed-in Supabase user. */
+async function loadProfile(userId: string): Promise<Profile | null> {
+  if (!supabase) return null;
+  const { data, error } = await supabase.from("profiles").select("*").eq("id", userId).maybeSingle();
+  if (error || !data) return null;
+  return {
+    id: data.id,
+    full_name: data.full_name,
+    email: data.email,
+    role: data.role as Role,
+    phone: data.phone ?? undefined,
+    clinic_id: data.clinic_id ?? null,
+  };
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // Live mode: hydrate from the Supabase session + subscribe to auth changes.
+    if (isSupabaseConfigured && supabase) {
+      const sb = supabase;
+      let active = true;
+      void sb.auth.getSession().then(async ({ data }) => {
+        if (!active) return;
+        setUser(data.session?.user ? await loadProfile(data.session.user.id) : null);
+        setLoading(false);
+      });
+      const { data: sub } = sb.auth.onAuthStateChange(async (_event, session) => {
+        setUser(session?.user ? await loadProfile(session.user.id) : null);
+      });
+      return () => {
+        active = false;
+        sub.subscription.unsubscribe();
+      };
+    }
+
+    // Demo mode: restore the local session.
     try {
       const raw = localStorage.getItem(KEY);
       if (raw) {
@@ -48,6 +85,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       /* ignore */
     }
     setLoading(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const persist = (profile: Profile) => {
@@ -84,7 +122,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     persist({ id: owner.id, full_name: owner.name, email: owner.email, role: "owner", phone: owner.phone });
   };
 
+  // --- Live Supabase auth -----------------------------------------------------
+  const signUpEmail = async (email: string, password: string, fullName: string, role: Role) => {
+    if (!supabase) return { error: "Supabase is not configured." };
+    const { data, error } = await supabase.auth.signUp({
+      email: email.trim(),
+      password,
+      // The DB trigger handle_new_user() reads these to create the profile row.
+      options: { data: { full_name: fullName.trim(), role } },
+    });
+    if (error) return { error: error.message };
+    // If email confirmation is ON there is no session yet — the user must confirm.
+    return { error: null, needsConfirm: !data.session };
+  };
+
+  const signInEmail = async (email: string, password: string) => {
+    if (!supabase) return { error: "Supabase is not configured." };
+    const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
+    return { error: error?.message ?? null };
+  };
+
   const signOut = () => {
+    if (isSupabaseConfigured && supabase) {
+      void supabase.auth.signOut();
+      setUser(null);
+      clearActiveClinic();
+      return;
+    }
     setUser(null);
     clearActiveClinic();
     try {
@@ -95,7 +159,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const value = useMemo<AuthState>(
-    () => ({ user, loading, demo: !isSupabaseConfigured, signInDemo, signInClinic, signInOwner, signOut }),
+    () => ({ user, loading, demo: !isSupabaseConfigured, signInDemo, signInClinic, signInOwner, signUpEmail, signInEmail, signOut }),
     [user, loading],
   );
 
