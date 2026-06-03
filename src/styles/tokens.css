@@ -1,0 +1,47 @@
+/**
+ * Design tokens — single source of truth for theme-aware color.
+ * Values are space-separated RGB triplets so Tailwind's `rgb(var(--x) / <alpha>)`
+ * can apply opacity. Light is the default; `.dark` on <html> flips the theme.
+ */
+:root {
+  /* Surfaces — calm, clinical, blue-tinted whites */
+  --surface: 243 248 253; /* page canvas */
+  --surface-1: 255 255 255; /* cards / sheets */
+  --surface-2: 238 245 252; /* subtle raised / hover */
+  --surface-3: 226 238 250; /* deeper fill */
+
+  /* Ink — near-navy text on light */
+  --ink: 15 30 53;
+  --ink-muted: 86 102 126;
+  --ink-subtle: 138 152 172;
+
+  /* Lines */
+  --line: 224 233 244;
+  --line-strong: 202 216 232;
+
+  /* Focus ring + shadow tint (brand blue) */
+  --ring: 18 102 216;
+  --shadow: 18 64 128;
+
+  color-scheme: light;
+}
+
+.dark {
+  /* Deep, desaturated navy — soothing for overnight ER shifts */
+  --surface: 8 13 23;
+  --surface-1: 16 24 39;
+  --surface-2: 23 33 51;
+  --surface-3: 31 43 65;
+
+  --ink: 231 238 247;
+  --ink-muted: 158 172 192;
+  --ink-subtle: 110 126 148;
+
+  --line: 34 47 68;
+  --line-strong: 50 66 92;
+
+  --ring: 110 173 252;
+  --shadow: 0 0 0;
+
+  color-scheme: dark;
+}

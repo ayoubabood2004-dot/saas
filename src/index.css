@@ -1,0 +1,129 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@500;600;700;800&family=Tajawal:wght@400;500;700&display=swap");
+@import "./styles/tokens.css";
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: rgb(var(--surface));
+  color: rgb(var(--ink));
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+:where(h1, h2, h3, h4, .font-display) {
+  font-family: "Plus Jakarta Sans", Inter, Tajawal, system-ui, sans-serif;
+  letter-spacing: -0.02em;
+}
+
+/* Arabic gets Tajawal as the primary face */
+[dir="rtl"] :where(h1, h2, h3, h4, .font-display) {
+  font-family: Tajawal, "Plus Jakarta Sans", sans-serif;
+}
+
+/* Larger tap targets for gloved hands / tablet use */
+button,
+[role="button"] {
+  touch-action: manipulation;
+}
+
+/* Themed, rounded scrollbars */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(var(--line-strong)) transparent;
+}
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-thumb {
+  background: rgb(var(--line-strong));
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgb(var(--ring) / 0.4);
+  border-radius: 0.5rem;
+}
+
+@layer components {
+  .card {
+    @apply rounded-3xl bg-surface-1 border border-line shadow-card;
+  }
+  .card-glass {
+    @apply rounded-3xl border border-white/40 bg-white/70 backdrop-blur-xl shadow-soft dark:border-white/10 dark:bg-surface-1/70;
+  }
+
+  /* Pill buttons — friendly, consumer-grade, never sharp */
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-full px-5 py-3 text-base font-semibold font-display tracking-tightish transition-all duration-200 active:scale-[0.97] disabled:opacity-50 disabled:pointer-events-none focus-visible:shadow-glow;
+  }
+  .btn-primary {
+    @apply btn bg-brand-600 text-white hover:bg-brand-700 shadow-soft hover:shadow-raised;
+  }
+  .btn-secondary {
+    @apply btn bg-brand-50 text-brand-700 hover:bg-brand-100 dark:bg-surface-2 dark:text-brand-300 dark:hover:bg-surface-3;
+  }
+  .btn-ghost {
+    @apply btn bg-transparent text-ink-muted hover:bg-surface-2 hover:text-ink;
+  }
+  .btn-accent {
+    @apply btn bg-accent-500 text-white hover:bg-accent-600 shadow-soft;
+  }
+
+  .input {
+    @apply w-full rounded-2xl border border-line bg-surface-1 px-4 py-3 text-base text-ink outline-none transition placeholder:text-ink-subtle focus:border-brand-400 focus:ring-4 focus:ring-brand-500/15;
+  }
+  .label {
+    @apply block text-sm font-medium text-ink-muted mb-1.5;
+  }
+  .chip {
+    @apply inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-sm font-medium;
+  }
+
+  /* Skeleton shimmer */
+  .skeleton {
+    @apply relative overflow-hidden rounded-xl bg-surface-2;
+  }
+  .skeleton::after {
+    @apply absolute inset-0 -translate-x-full bg-sheen animate-shimmer;
+    content: "";
+  }
+}
+
+/* Print: only the medical chart should print */
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  body {
+    background: white;
+  }
+  .print-area {
+    box-shadow: none !important;
+    border: none !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

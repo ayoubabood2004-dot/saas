@@ -1,0 +1,124 @@
+// Comprehensive veterinary vaccine catalogue, grouped by species, using scientific/generic
+// names. Clinics may add their own (brand) vaccines at runtime, each mapped to a scientific
+// name — clients only ever see the scientific name.
+import { getActiveClinicId } from "./clinics";
+
+export interface VaccineCategory {
+  group: string;
+  items: string[];
+}
+
+export const VACCINE_CATALOG: VaccineCategory[] = [
+  {
+    group: "Dogs",
+    items: [
+      "Rabies",
+      "DHPP (Distemper, Adenovirus, Parvovirus, Parainfluenza)",
+      "DHLPP (DHPP + Leptospirosis)",
+      "Leptospirosis",
+      "Bordetella bronchiseptica",
+      "Canine Parainfluenza",
+      "Canine Influenza (H3N8/H3N2)",
+      "Lyme disease (Borrelia burgdorferi)",
+      "Canine Coronavirus",
+      "Deworming (antiparasitic)",
+    ],
+  },
+  {
+    group: "Cats",
+    items: [
+      "Rabies",
+      "FVRCP (Rhinotracheitis, Calicivirus, Panleukopenia)",
+      "Feline Leukemia Virus (FeLV)",
+      "Feline Immunodeficiency Virus (FIV)",
+      "Chlamydophila felis",
+      "Bordetella bronchiseptica",
+      "Deworming (antiparasitic)",
+    ],
+  },
+  {
+    group: "Horses",
+    items: [
+      "Tetanus toxoid",
+      "Eastern/Western Equine Encephalomyelitis",
+      "West Nile Virus",
+      "Equine Influenza",
+      "Equine Herpesvirus (Rhinopneumonitis)",
+      "Rabies",
+      "Strangles (Streptococcus equi)",
+    ],
+  },
+  {
+    group: "Cattle",
+    items: [
+      "Bovine Viral Diarrhea (BVD)",
+      "Infectious Bovine Rhinotracheitis (IBR)",
+      "Parainfluenza-3 (PI3)",
+      "Bovine Respiratory Syncytial Virus (BRSV)",
+      "Clostridial (Blackleg, 7-way)",
+      "Brucellosis",
+      "Foot-and-Mouth Disease",
+    ],
+  },
+  {
+    group: "Rabbits & small mammals",
+    items: ["Myxomatosis", "Rabbit Hemorrhagic Disease (RHDV)"],
+  },
+];
+
+export const BUILTIN_VACCINES: string[] = Array.from(new Set(VACCINE_CATALOG.flatMap((c) => c.items)));
+const BUILTIN_SET = new Set(BUILTIN_VACCINES.map((v) => v.toLowerCase()));
+
+export interface ClinicVaccine {
+  name: string; // clinic / brand name
+  scientific: string; // scientific name shown to clients
+}
+
+const keyName = () => `vp_clinic_vaccines_${getActiveClinicId()}`;
+
+export function getClinicVaccines(): ClinicVaccine[] {
+  try {
+    const raw = localStorage.getItem(keyName());
+    if (raw) return JSON.parse(raw) as ClinicVaccine[];
+  } catch {
+    /* ignore */
+  }
+  return [];
+}
+
+function save(list: ClinicVaccine[]) {
+  try {
+    localStorage.setItem(keyName(), JSON.stringify(list));
+  } catch {
+    /* ignore */
+  }
+}
+
+export function vaccineExists(name: string): boolean {
+  const n = name.trim().toLowerCase();
+  if (!n) return true;
+  return BUILTIN_SET.has(n) || getClinicVaccines().some((v) => v.name.toLowerCase() === n);
+}
+
+export function addClinicVaccine(name: string, scientific: string): boolean {
+  const clean = name.trim();
+  if (!clean || vaccineExists(clean)) return false;
+  const list = getClinicVaccines();
+  list.push({ name: clean, scientific: scientific.trim() || clean });
+  save(list);
+  return true;
+}
+
+export function removeClinicVaccine(name: string) {
+  save(getClinicVaccines().filter((v) => v.name.toLowerCase() !== name.trim().toLowerCase()));
+}
+
+export function allVaccineNames(): string[] {
+  return Array.from(new Set([...BUILTIN_VACCINES, ...getClinicVaccines().map((v) => v.name)]));
+}
+
+/** Scientific name shown to clients. Catalogue names are already scientific. */
+export function vaccineScientific(name: string): string {
+  const custom = getClinicVaccines().find((v) => v.name.toLowerCase() === name.trim().toLowerCase());
+  return custom ? custom.scientific : name;
+}

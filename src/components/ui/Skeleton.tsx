@@ -1,0 +1,22 @@
+import { type HTMLAttributes } from "react";
+import { cn } from "@/lib/utils";
+
+export function Skeleton({ className, ...rest }: HTMLAttributes<HTMLDivElement>) {
+  return <div className={cn("skeleton", className)} {...rest} />;
+}
+
+export function Spinner({ className, size = 20 }: { className?: string; size?: number }) {
+  return (
+    <svg
+      className={cn("animate-spin text-brand-600", className)}
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      aria-label="Loading"
+    >
+      <circle cx="12" cy="12" r="9" stroke="currentColor" strokeOpacity="0.2" strokeWidth="3" />
+      <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+    </svg>
+  );
+}
