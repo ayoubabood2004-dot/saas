@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
 import { useNavigate } from "react-router-dom";
 import {
   PawPrint,
@@ -12,6 +13,11 @@ import {
   QrCode,
   HeartPulse,
   Sparkles,
+  Eye,
+  EyeOff,
+  Mail,
+  ArrowLeft,
+  CheckCircle2,
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { useAuth } from "@/contexts/AuthContext";
@@ -23,39 +29,90 @@ import { Button, Input, Label, Segmented, Card, ThemeToggle, SuccessDialog } fro
 import { staggerContainer, staggerItem } from "@/lib/motion";
 import { HERO_PHOTO } from "@/lib/petPhotos";
 import { isSupabaseConfigured } from "@/lib/supabase";
+import { PhoneInput } from "@/components/PhoneInput";
 import type { Role } from "@/types";
 
 type Portal = "owner" | "clinic";
 
-/** Live Supabase email/password auth — shown when VITE_SUPABASE_* are configured. */
+function pwScore(pw: string): { score: number; bar: string; text: string; key: string; def: string } {
+  let n = 0;
+  if (pw.length >= 6) n++;
+  if (pw.length >= 10) n++;
+  if (/[A-Z]/.test(pw) && /\d/.test(pw)) n++;
+  if (/[^A-Za-z0-9]/.test(pw)) n++;
+  if (n <= 1) return { score: 1, bar: "bg-danger-500", text: "text-danger-600", key: "auth.pwWeak", def: "Weak" };
+  if (n === 2) return { score: 2, bar: "bg-warn-500", text: "text-warn-600", key: "auth.pwFair", def: "Fair" };
+  if (n === 3) return { score: 3, bar: "bg-sky-500", text: "text-sky-600", key: "auth.pwGood", def: "Good" };
+  return { score: 4, bar: "bg-success-500", text: "text-success-600", key: "auth.pwStrong", def: "Strong" };
+}
+
+function PasswordField({ label, value, onChange, show, setShow, autoComplete, withStrength, t }: {
+  label: string; value: string; onChange: (v: string) => void; show: boolean; setShow: (v: boolean) => void;
+  autoComplete?: string; withStrength?: boolean; t: TFunction;
+}) {
+  const s = pwScore(value);
+  return (
+    <div>
+      <label className="label">{label}</label>
+      <div className="relative">
+        <input className="input pe-10" type={show ? "text" : "password"} value={value} onChange={(e) => onChange(e.target.value)} autoComplete={autoComplete} required minLength={6} />
+        <button type="button" onClick={() => setShow(!show)} aria-label="Show password" className="absolute end-3 top-1/2 -translate-y-1/2 text-ink-subtle transition hover:text-ink">
+          {show ? <EyeOff size={16} /> : <Eye size={16} />}
+        </button>
+      </div>
+      {withStrength && value.length > 0 && (
+        <div className="mt-1.5 flex items-center gap-2">
+          <div className="flex h-1.5 flex-1 gap-1">
+            {[0, 1, 2, 3].map((i) => <span key={i} className={`h-full flex-1 rounded-full ${i < s.score ? s.bar : "bg-line"}`} />)}
+          </div>
+          <span className={`text-xs font-medium ${s.text}`}>{t(s.key, s.def)}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Live Supabase auth — sign in / sign up (+ phone, clinic city), email-code verification,
+ *  and forgot/reset password. Shown when VITE_SUPABASE_* are configured. */
 function SupabaseAuthCard() {
   const { t, i18n } = useTranslation();
-  const { signUpEmail, signInEmail } = useAuth();
+  const { signUpEmail, signInEmail, verifyEmailCode, resendSignupCode, resetPassword, updatePassword, recovery } = useAuth();
   const navigate = useNavigate();
+
   const [mode, setMode] = useState<"signin" | "signup">("signin");
   const [portal, setPortal] = useState<Portal>("owner");
+  const [view, setView] = useState<"auth" | "verify" | "forgot">("auth");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
+  const [city, setCity] = useState("");
   const [password, setPassword] = useState("");
+  const [code, setCode] = useState("");
+  const [newPw, setNewPw] = useState("");
+  const [showPw, setShowPw] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const submit = async (e: FormEvent) => {
+  const clear = () => { setError(null); setInfo(null); };
+  const emailOk = (v: string) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v.trim());
+
+  const submitAuth = async (e: FormEvent) => {
     e.preventDefault();
-    setError(null);
-    setInfo(null);
-    setBusy(true);
+    clear();
+    if (!emailOk(email)) { setError(t("auth.invalidEmail", "Enter a valid email address.")); return; }
+    if (password.length < 6) { setError(t("auth.pwTooShort", "Password must be at least 6 characters.")); return; }
     playTap();
+    setBusy(true);
     try {
       if (mode === "signup") {
         if (!name.trim()) { setError(t("auth.nameRequired", "Please enter your name.")); return; }
         const role: Role = portal === "clinic" ? "admin" : "owner";
-        const res = await signUpEmail(email, password, name, role);
+        const res = await signUpEmail(email, password, name, role, { phone, city });
         if (res.error) { setError(res.error); return; }
         if (res.needsConfirm) {
-          setInfo(t("auth.checkEmail", "Account created — confirm via the email we sent, then sign in."));
-          setMode("signin");
+          setView("verify");
+          setInfo(t("auth.codeSent", { email: email.trim(), defaultValue: "We emailed a verification code to {{email}}." }));
           return;
         }
         playSuccess();
@@ -70,6 +127,67 @@ function SupabaseAuthCard() {
       setBusy(false);
     }
   };
+
+  const submitVerify = async (e: FormEvent) => {
+    e.preventDefault();
+    clear();
+    playTap();
+    setBusy(true);
+    try {
+      const res = await verifyEmailCode(email, code);
+      if (res.error) { setError(res.error); return; }
+      playSuccess();
+      navigate("/");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const resend = async () => {
+    clear();
+    playTap();
+    const res = await resendSignupCode(email);
+    if (res.error) setError(res.error);
+    else setInfo(t("auth.codeResent", "A new code is on the way."));
+  };
+
+  const submitForgot = async (e: FormEvent) => {
+    e.preventDefault();
+    clear();
+    if (!emailOk(email)) { setError(t("auth.invalidEmail", "Enter a valid email address.")); return; }
+    playTap();
+    setBusy(true);
+    try {
+      const res = await resetPassword(email);
+      if (res.error) { setError(res.error); return; }
+      setInfo(t("auth.resetSent", "Check your email for a password-reset link."));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const submitReset = async (e: FormEvent) => {
+    e.preventDefault();
+    clear();
+    if (newPw.length < 6) { setError(t("auth.pwTooShort", "Password must be at least 6 characters.")); return; }
+    playTap();
+    setBusy(true);
+    try {
+      const res = await updatePassword(newPw);
+      if (res.error) { setError(res.error); return; }
+      playSuccess();
+      navigate("/");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const msg = (
+    <>
+      {error && <p className="flex items-center gap-1.5 text-sm font-medium text-danger-600"><AlertCircle size={15} /> {error}</p>}
+      {info && <p className="flex items-start gap-1.5 rounded-xl bg-success-50 px-3 py-2 text-sm text-success-700 dark:bg-success-500/10 dark:text-success-300"><CheckCircle2 size={15} className="mt-0.5 shrink-0" /> {info}</p>}
+    </>
+  );
 
   const features = [
     { icon: QrCode, title: t("login.f1Title", "One universal passport"), body: t("login.f1Body", "A single QR your pet carries to any clinic, anywhere.") },
@@ -137,59 +255,110 @@ function SupabaseAuthCard() {
             <p className="mt-1 text-ink-muted">{t("app.tagline")}</p>
           </div>
 
-          <motion.div variants={staggerContainer} initial="initial" animate="animate" className="w-full max-w-sm">
-            <motion.div variants={staggerItem}>
-              <Segmented
-                className="mb-5 w-full [&>button]:flex-1"
-                layoutId="portal"
-                value={portal}
-                onChange={(p) => { setPortal(p as Portal); setError(null); setInfo(null); }}
-                options={[
-                  { value: "owner", label: t("auth.iAmOwner"), icon: <User size={16} /> },
-                  { value: "clinic", label: t("auth.iAmClinic"), icon: <Building2 size={16} /> },
-                ]}
-              />
-            </motion.div>
-
-            <motion.div variants={staggerItem}>
-              <h2 className="font-display text-xl font-extrabold text-ink">
-                {mode === "signin" ? t("auth.welcomeBack", "Welcome back") : t("auth.createAccount", "Create your account")}
-              </h2>
-              <p className="mb-4 text-sm text-ink-muted">
-                {portal === "owner" ? t("auth.ownerSub", "Manage your pets' health in one place.") : t("auth.clinicSub", "Run your clinic — records, reception and treatments.")}
-              </p>
-            </motion.div>
-
-            <motion.form variants={staggerItem} onSubmit={submit} className="space-y-3">
-              {mode === "signup" && (
+          <motion.div key={recovery ? "reset" : view + mode} variants={staggerContainer} initial="initial" animate="animate" className="w-full max-w-sm">
+            {recovery ? (
+              /* Set a new password (arrived via recovery link) */
+              <form onSubmit={submitReset} className="space-y-3">
+                <h2 className="font-display text-xl font-extrabold text-ink">{t("auth.setNewPassword", "Set a new password")}</h2>
+                <p className="text-sm text-ink-muted">{t("auth.setNewPasswordSub", "Choose a new password for your account.")}</p>
+                <PasswordField label={t("auth.newPassword", "New password")} value={newPw} onChange={setNewPw} show={showPw} setShow={setShowPw} autoComplete="new-password" withStrength t={t} />
+                {msg}
+                <Button type="submit" size="lg" className="w-full" disabled={busy}>{busy ? t("common.loading") : t("auth.updatePassword", "Update password")}</Button>
+              </form>
+            ) : view === "forgot" ? (
+              /* Forgot password — send a reset email */
+              <form onSubmit={submitForgot} className="space-y-3">
+                <button type="button" onClick={() => { setView("auth"); clear(); }} className="mb-1 inline-flex items-center gap-1 text-sm text-ink-muted transition hover:text-ink"><ArrowLeft size={15} /> {t("auth.backToSignin", "Back to sign in")}</button>
+                <h2 className="font-display text-xl font-extrabold text-ink">{t("auth.forgotTitle", "Reset your password")}</h2>
+                <p className="text-sm text-ink-muted">{t("auth.forgotSub", "Enter your email and we'll send a reset link.")}</p>
                 <div>
-                  <label className="label">{portal === "clinic" ? t("auth.clinicName", "Clinic name") : t("auth.fullName", "Full name")}</label>
-                  <input className="input" value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" />
+                  <label className="label">{t("phone.email", "Email")}</label>
+                  <input className="input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" required />
                 </div>
-              )}
-              <div>
-                <label className="label">{t("phone.email", "Email")}</label>
-                <input className="input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" required />
-              </div>
-              <div>
-                <label className="label">{t("auth.password", "Password")}</label>
-                <input className="input" type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete={mode === "signin" ? "current-password" : "new-password"} required minLength={6} />
-              </div>
+                {msg}
+                <Button type="submit" size="lg" className="w-full" disabled={busy}>{busy ? t("common.loading") : t("auth.sendReset", "Send reset link")}</Button>
+              </form>
+            ) : view === "verify" ? (
+              /* Email verification code */
+              <form onSubmit={submitVerify} className="space-y-3">
+                <button type="button" onClick={() => { setView("auth"); clear(); }} className="mb-1 inline-flex items-center gap-1 text-sm text-ink-muted transition hover:text-ink"><ArrowLeft size={15} /> {t("common.back")}</button>
+                <span className="grid h-12 w-12 place-items-center rounded-2xl bg-brand-50 text-brand-600 dark:bg-brand-500/15 dark:text-brand-300"><Mail size={22} /></span>
+                <h2 className="font-display text-xl font-extrabold text-ink">{t("auth.verifyTitle", "Verify your email")}</h2>
+                <p className="text-sm text-ink-muted">{t("auth.verifySub", "Enter the code we emailed you to finish creating your account.")}</p>
+                <div>
+                  <label className="label">{t("auth.code", "Verification code")}</label>
+                  <input className="input text-center text-lg font-bold tracking-[0.4em]" value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))} inputMode="numeric" placeholder="••••••" autoFocus />
+                </div>
+                {msg}
+                <Button type="submit" size="lg" className="w-full" disabled={busy || code.length < 4}>{busy ? t("common.loading") : t("auth.verify", "Verify & continue")}</Button>
+                <button type="button" onClick={resend} className="w-full text-center text-sm font-medium text-brand-600 hover:underline">{t("auth.resend", "Resend code")}</button>
+              </form>
+            ) : (
+              /* Sign in / Sign up */
+              <>
+                <motion.div variants={staggerItem}>
+                  <Segmented
+                    className="mb-5 w-full [&>button]:flex-1"
+                    layoutId="portal"
+                    value={portal}
+                    onChange={(p) => { setPortal(p as Portal); clear(); }}
+                    options={[
+                      { value: "owner", label: t("auth.iAmOwner"), icon: <User size={16} /> },
+                      { value: "clinic", label: t("auth.iAmClinic"), icon: <Building2 size={16} /> },
+                    ]}
+                  />
+                </motion.div>
 
-              {error && <p className="flex items-center gap-1.5 text-sm font-medium text-danger-600"><AlertCircle size={15} /> {error}</p>}
-              {info && <p className="rounded-xl bg-success-50 px-3 py-2 text-sm text-success-700 dark:bg-success-500/10 dark:text-success-300">{info}</p>}
+                <motion.div variants={staggerItem}>
+                  <h2 className="font-display text-xl font-extrabold text-ink">
+                    {mode === "signin" ? t("auth.welcomeBack", "Welcome back") : t("auth.createAccount", "Create your account")}
+                  </h2>
+                  <p className="mb-4 text-sm text-ink-muted">
+                    {portal === "owner" ? t("auth.ownerSub", "Manage your pets' health in one place.") : t("auth.clinicSub", "Run your clinic — records, reception and treatments.")}
+                  </p>
+                </motion.div>
 
-              <Button type="submit" size="lg" className="w-full" disabled={busy}>
-                {busy ? t("common.loading") : mode === "signin" ? t("auth.signIn", "Sign in") : t("auth.signUp", "Create account")}
-              </Button>
-            </motion.form>
+                <motion.form variants={staggerItem} onSubmit={submitAuth} className="space-y-3">
+                  {mode === "signup" && (
+                    <>
+                      <div>
+                        <label className="label">{portal === "clinic" ? t("auth.clinicName", "Clinic name") : t("auth.fullName", "Full name")}</label>
+                        <input className="input" value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" />
+                      </div>
+                      <div>
+                        <label className="label">{t("auth.phone", "Phone")}</label>
+                        <PhoneInput value={phone} onChange={setPhone} />
+                      </div>
+                      {portal === "clinic" && (
+                        <div>
+                          <label className="label">{t("auth.city", "City")}</label>
+                          <input className="input" value={city} onChange={(e) => setCity(e.target.value)} />
+                        </div>
+                      )}
+                    </>
+                  )}
+                  <div>
+                    <label className="label">{t("phone.email", "Email")}</label>
+                    <input className="input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" required />
+                  </div>
+                  <PasswordField label={t("auth.password", "Password")} value={password} onChange={setPassword} show={showPw} setShow={setShowPw} autoComplete={mode === "signin" ? "current-password" : "new-password"} withStrength={mode === "signup"} t={t} />
+                  {mode === "signin" && (
+                    <button type="button" onClick={() => { setView("forgot"); clear(); }} className="block w-full text-end text-sm font-medium text-brand-600 hover:underline">{t("auth.forgotLink", "Forgot password?")}</button>
+                  )}
+                  {msg}
+                  <Button type="submit" size="lg" className="w-full" disabled={busy}>
+                    {busy ? t("common.loading") : mode === "signin" ? t("auth.signIn", "Sign in") : t("auth.signUp", "Create account")}
+                  </Button>
+                </motion.form>
 
-            <motion.p variants={staggerItem} className="mt-5 text-center text-sm text-ink-muted">
-              {mode === "signin" ? t("auth.noAccount", "New here?") : t("auth.haveAccount", "Already have an account?")}{" "}
-              <button onClick={() => { playTap(); setMode(mode === "signin" ? "signup" : "signin"); setError(null); setInfo(null); }} className="font-semibold text-brand-600 hover:underline">
-                {mode === "signin" ? t("auth.signUp", "Create one") : t("auth.signIn", "Sign in")}
-              </button>
-            </motion.p>
+                <motion.p variants={staggerItem} className="mt-5 text-center text-sm text-ink-muted">
+                  {mode === "signin" ? t("auth.noAccount", "New here?") : t("auth.haveAccount", "Already have an account?")}{" "}
+                  <button onClick={() => { playTap(); setMode(mode === "signin" ? "signup" : "signin"); clear(); }} className="font-semibold text-brand-600 hover:underline">
+                    {mode === "signin" ? t("auth.signUp", "Create one") : t("auth.signIn", "Sign in")}
+                  </button>
+                </motion.p>
+              </>
+            )}
           </motion.div>
         </div>
       </div>
