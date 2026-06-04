@@ -33,7 +33,7 @@ function SupabaseAuthCard() {
   const { signUpEmail, signInEmail } = useAuth();
   const navigate = useNavigate();
   const [mode, setMode] = useState<"signin" | "signup">("signin");
-  const [role, setRole] = useState<Role>("owner");
+  const [portal, setPortal] = useState<Portal>("owner");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -50,6 +50,7 @@ function SupabaseAuthCard() {
     try {
       if (mode === "signup") {
         if (!name.trim()) { setError(t("auth.nameRequired", "Please enter your name.")); return; }
+        const role: Role = portal === "clinic" ? "admin" : "owner";
         const res = await signUpEmail(email, password, name, role);
         if (res.error) { setError(res.error); return; }
         if (res.needsConfirm) {
@@ -70,63 +71,102 @@ function SupabaseAuthCard() {
     }
   };
 
-  return (
-    <div className="relative grid min-h-screen place-items-center bg-surface px-4 py-10">
-      <div className="absolute end-4 top-4 flex items-center gap-2">
-        <button onClick={() => setLang((i18n.language === "ar" ? "en" : "ar") as Lang)} className="btn-ghost px-2.5 py-1.5 text-sm" aria-label="Language">
-          <Languages size={16} /> {i18n.language === "ar" ? "EN" : "ع"}
-        </button>
-        <ThemeToggle />
-      </div>
+  const features = [
+    { icon: QrCode, title: t("login.f1Title", "One universal passport"), body: t("login.f1Body", "A single QR your pet carries to any clinic, anywhere.") },
+    { icon: HeartPulse, title: t("login.f2Title", "Complete medical record"), body: t("login.f2Body", "Vitals, vaccines, treatments and history — always in sync.") },
+    { icon: ShieldCheck, title: t("login.f3Title", "Private & secure"), body: t("login.f3Body", "You decide what each clinic can see. Always.") },
+  ];
 
-      <motion.div variants={staggerContainer} initial="initial" animate="animate" className="w-full max-w-md">
-        <motion.div variants={staggerItem} className="mb-6 text-center">
-          <span className="mx-auto mb-3 grid h-14 w-14 place-items-center rounded-2xl bg-brand-grad text-white shadow-soft"><PawPrint size={28} /></span>
-          <h1 className="font-display text-2xl font-extrabold tracking-tighter2 text-ink">VetPassport</h1>
-          <p className="mt-0.5 text-sm text-ink-muted">
-            {mode === "signin" ? t("auth.signInSub", "Sign in to your account") : t("auth.signUpSub", "Create your account")}
-          </p>
+  return (
+    <div className="grid min-h-screen lg:grid-cols-2">
+      {/* ── Brand hero (desktop) ── */}
+      <div className="relative hidden overflow-hidden bg-brand-grad p-12 lg:flex lg:flex-col lg:justify-between">
+        <img src={HERO_PHOTO} alt="" className="pointer-events-none absolute inset-0 h-full w-full object-cover opacity-35 mix-blend-luminosity" />
+        <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-brand-700/70 via-brand-600/45 to-brand-500/55" />
+        <div className="pointer-events-none absolute -right-24 -top-24 h-96 w-96 rounded-full bg-white/10 blur-3xl" />
+        <div className="pointer-events-none absolute -bottom-32 -left-16 h-96 w-96 rounded-full bg-sky-300/20 blur-3xl" />
+        <motion.div className="pointer-events-none absolute right-16 top-1/3 text-white/10" animate={{ y: [0, -18, 0], rotate: [0, 6, 0] }} transition={{ duration: 7, repeat: Infinity, ease: "easeInOut" }}>
+          <PawPrint size={180} />
         </motion.div>
 
-        <motion.div variants={staggerItem}>
-          <Card padded>
-            <div className="mb-4 grid grid-cols-2 gap-1 rounded-2xl bg-surface-2 p-1">
-              {(["signin", "signup"] as const).map((m) => (
-                <button
-                  key={m}
-                  onClick={() => { playTap(); setMode(m); setError(null); setInfo(null); }}
-                  className={`rounded-xl py-2 text-sm font-semibold transition ${mode === m ? "bg-surface-1 text-brand-700 shadow-card dark:text-brand-300" : "text-ink-muted hover:text-ink"}`}
-                >
-                  {m === "signin" ? t("auth.signIn", "Sign in") : t("auth.signUp", "Sign up")}
-                </button>
-              ))}
-            </div>
+        <div className="relative flex items-center gap-3 text-white">
+          <span className="grid h-12 w-12 place-items-center rounded-2xl bg-white/15 backdrop-blur"><PawPrint size={26} /></span>
+          <span className="font-display text-2xl font-extrabold tracking-tighter2">{t("app.name")}</span>
+        </div>
 
-            <form onSubmit={submit} className="space-y-3">
+        <motion.div variants={staggerContainer} initial="initial" animate="animate" className="relative max-w-md text-white">
+          <motion.h2 variants={staggerItem} className="font-display text-4xl font-extrabold leading-tight tracking-tighter2">
+            {t("login.heroTitle", "Every pet deserves a record that travels with them.")}
+          </motion.h2>
+          <motion.p variants={staggerItem} className="mt-4 text-lg text-white/80">{t("app.tagline")}</motion.p>
+          <div className="mt-10 space-y-5">
+            {features.map((f) => {
+              const Icon = f.icon;
+              return (
+                <motion.div key={f.title} variants={staggerItem} className="flex items-start gap-4">
+                  <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-white/15 backdrop-blur"><Icon size={22} /></span>
+                  <div>
+                    <p className="font-display font-bold">{f.title}</p>
+                    <p className="text-sm text-white/75">{f.body}</p>
+                  </div>
+                </motion.div>
+              );
+            })}
+          </div>
+        </motion.div>
+
+        <div className="relative flex items-center gap-2 text-sm text-white/70">
+          <Sparkles size={16} /> {t("login.trust", "Trusted by veterinarians, loved by pet owners.")}
+        </div>
+      </div>
+
+      {/* ── Auth panel ── */}
+      <div className="relative flex flex-col bg-surface">
+        <div className="flex items-center justify-end gap-1 p-4">
+          <button onClick={() => setLang((i18n.language === "ar" ? "en" : "ar") as Lang)} className="inline-flex items-center gap-2 rounded-full px-3 py-2 text-sm font-medium text-ink-muted transition hover:bg-surface-2 hover:text-ink">
+            <Languages size={18} /> {i18n.language === "ar" ? "English" : "العربية"}
+          </button>
+          <ThemeToggle />
+        </div>
+
+        <div className="flex flex-1 flex-col items-center justify-center px-6 pb-12">
+          {/* Mobile brand mark */}
+          <div className="mb-6 flex flex-col items-center lg:hidden">
+            <div className="mb-3 grid h-16 w-16 place-items-center rounded-3xl bg-brand-grad text-white shadow-soft"><PawPrint size={32} /></div>
+            <h1 className="font-display text-2xl font-extrabold tracking-tighter2 text-ink">{t("app.name")}</h1>
+            <p className="mt-1 text-ink-muted">{t("app.tagline")}</p>
+          </div>
+
+          <motion.div variants={staggerContainer} initial="initial" animate="animate" className="w-full max-w-sm">
+            <motion.div variants={staggerItem}>
+              <Segmented
+                className="mb-5 w-full [&>button]:flex-1"
+                layoutId="portal"
+                value={portal}
+                onChange={(p) => { setPortal(p as Portal); setError(null); setInfo(null); }}
+                options={[
+                  { value: "owner", label: t("auth.iAmOwner"), icon: <User size={16} /> },
+                  { value: "clinic", label: t("auth.iAmClinic"), icon: <Building2 size={16} /> },
+                ]}
+              />
+            </motion.div>
+
+            <motion.div variants={staggerItem}>
+              <h2 className="font-display text-xl font-extrabold text-ink">
+                {mode === "signin" ? t("auth.welcomeBack", "Welcome back") : t("auth.createAccount", "Create your account")}
+              </h2>
+              <p className="mb-4 text-sm text-ink-muted">
+                {portal === "owner" ? t("auth.ownerSub", "Manage your pets' health in one place.") : t("auth.clinicSub", "Run your clinic — records, reception and treatments.")}
+              </p>
+            </motion.div>
+
+            <motion.form variants={staggerItem} onSubmit={submit} className="space-y-3">
               {mode === "signup" && (
-                <>
-                  <div>
-                    <label className="label">{t("auth.accountType", "Account type")}</label>
-                    <div className="grid grid-cols-2 gap-2">
-                      {([["owner", User, t("auth.petOwner", "Pet owner")], ["admin", Building2, t("auth.clinic", "Clinic")]] as const).map(([r, Icon, lbl]) => (
-                        <button
-                          type="button"
-                          key={r}
-                          onClick={() => setRole(r as Role)}
-                          className={`flex items-center justify-center gap-2 rounded-xl border py-2.5 text-sm font-semibold transition ${role === r ? "border-brand-400 bg-brand-50 text-brand-700 dark:bg-brand-500/15 dark:text-brand-300" : "border-line text-ink-muted hover:bg-surface-2"}`}
-                        >
-                          <Icon size={16} /> {lbl}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                  <div>
-                    <label className="label">{t("auth.fullName", "Full name")}</label>
-                    <input className="input" value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" />
-                  </div>
-                </>
+                <div>
+                  <label className="label">{portal === "clinic" ? t("auth.clinicName", "Clinic name") : t("auth.fullName", "Full name")}</label>
+                  <input className="input" value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" />
+                </div>
               )}
-
               <div>
                 <label className="label">{t("phone.email", "Email")}</label>
                 <input className="input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" required />
@@ -139,14 +179,20 @@ function SupabaseAuthCard() {
               {error && <p className="flex items-center gap-1.5 text-sm font-medium text-danger-600"><AlertCircle size={15} /> {error}</p>}
               {info && <p className="rounded-xl bg-success-50 px-3 py-2 text-sm text-success-700 dark:bg-success-500/10 dark:text-success-300">{info}</p>}
 
-              <Button type="submit" className="w-full" disabled={busy}>
+              <Button type="submit" size="lg" className="w-full" disabled={busy}>
                 {busy ? t("common.loading") : mode === "signin" ? t("auth.signIn", "Sign in") : t("auth.signUp", "Create account")}
               </Button>
-            </form>
-          </Card>
-          <p className="mt-4 text-center text-xs text-ink-subtle">{t("auth.connectedSupabase", "Connected to Supabase")}</p>
-        </motion.div>
-      </motion.div>
+            </motion.form>
+
+            <motion.p variants={staggerItem} className="mt-5 text-center text-sm text-ink-muted">
+              {mode === "signin" ? t("auth.noAccount", "New here?") : t("auth.haveAccount", "Already have an account?")}{" "}
+              <button onClick={() => { playTap(); setMode(mode === "signin" ? "signup" : "signin"); setError(null); setInfo(null); }} className="font-semibold text-brand-600 hover:underline">
+                {mode === "signin" ? t("auth.signUp", "Create one") : t("auth.signIn", "Sign in")}
+              </button>
+            </motion.p>
+          </motion.div>
+        </div>
+      </div>
     </div>
   );
 }
