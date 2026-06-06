@@ -7,7 +7,6 @@ import {
   VolumeX,
   LogOut,
   ScanLine,
-  PawPrint,
   CalendarDays,
   Settings as SettingsIcon,
   ClipboardList,
@@ -20,6 +19,7 @@ import { setLang, type Lang } from "@/i18n";
 import { useAuth } from "@/contexts/AuthContext";
 import { isSoundEnabled, setSoundEnabled, playTap } from "@/lib/sounds";
 import { Tooltip, ThemeToggle } from "@/components/ui";
+import { Logo } from "@/components/Logo";
 import { useCommandPalette } from "@/components/CommandPaletteProvider";
 import { cn } from "@/lib/utils";
 
@@ -62,9 +62,7 @@ export function TopBar({ mobileOnly = false }: { mobileOnly?: boolean }) {
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-2 px-4">
           {/* Brand */}
           <Link to="/" className="flex items-center gap-2.5 font-display font-extrabold tracking-tighter2 text-ink">
-            <span className="grid h-10 w-10 place-items-center rounded-2xl bg-brand-grad text-white shadow-soft">
-              <PawPrint size={20} />
-            </span>
+            <Logo size={40} />
             <span className="hidden text-lg sm:block">{t("app.name")}</span>
           </Link>
 

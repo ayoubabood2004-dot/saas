@@ -16,6 +16,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { setLang, type Lang } from "@/i18n";
 import { playTap } from "@/lib/sounds";
 import { ThemeToggle, Tooltip } from "@/components/ui";
+import { Logo } from "@/components/Logo";
 import { useCommandPalette } from "./CommandPaletteProvider";
 import { cn } from "@/lib/utils";
 
@@ -53,9 +54,7 @@ export function Sidebar() {
     <aside className="fixed inset-y-0 start-0 z-40 hidden w-64 flex-col border-e border-line bg-surface-1 p-4 no-print lg:flex">
       {/* Brand */}
       <Link to="/" className="mb-5 flex items-center gap-2.5 px-2 font-display font-extrabold tracking-tighter2 text-ink">
-        <span className="grid h-10 w-10 place-items-center rounded-2xl bg-brand-grad text-white shadow-soft">
-          <PawPrint size={20} />
-        </span>
+        <Logo size={40} />
         <span className="text-lg">{t("app.name")}</span>
       </Link>
 

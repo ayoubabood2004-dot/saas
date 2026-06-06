@@ -30,6 +30,7 @@ import { staggerContainer, staggerItem } from "@/lib/motion";
 import { HERO_PHOTO } from "@/lib/petPhotos";
 import { isSupabaseConfigured } from "@/lib/supabase";
 import { PhoneInput } from "@/components/PhoneInput";
+import { LogoMark } from "@/components/Logo";
 import type { Role } from "@/types";
 
 type Portal = "owner" | "clinic";
@@ -208,7 +209,7 @@ function SupabaseAuthCard() {
         </motion.div>
 
         <div className="relative flex items-center gap-3 text-white">
-          <span className="grid h-12 w-12 place-items-center rounded-2xl bg-white/15 backdrop-blur"><PawPrint size={26} /></span>
+          <span className="grid h-12 w-12 place-items-center rounded-2xl bg-white/15 backdrop-blur"><LogoMark size={26} /></span>
           <span className="font-display text-2xl font-extrabold tracking-tighter2">{t("app.name")}</span>
         </div>
 
@@ -250,7 +251,7 @@ function SupabaseAuthCard() {
         <div className="flex flex-1 flex-col items-center justify-center px-6 pb-12">
           {/* Mobile brand mark */}
           <div className="mb-6 flex flex-col items-center lg:hidden">
-            <div className="mb-3 grid h-16 w-16 place-items-center rounded-3xl bg-brand-grad text-white shadow-soft"><PawPrint size={32} /></div>
+            <div className="mb-3 grid h-16 w-16 place-items-center rounded-3xl bg-brand-grad text-white shadow-soft"><LogoMark size={32} /></div>
             <h1 className="font-display text-2xl font-extrabold tracking-tighter2 text-ink">{t("app.name")}</h1>
             <p className="mt-1 text-ink-muted">{t("app.tagline")}</p>
           </div>
@@ -489,7 +490,7 @@ function DemoLogin() {
 
         <div className="relative flex items-center gap-3 text-white">
           <span className="grid h-12 w-12 place-items-center rounded-2xl bg-white/15 backdrop-blur">
-            <PawPrint size={26} />
+            <LogoMark size={26} />
           </span>
           <span className="font-display text-2xl font-extrabold tracking-tighter2">{t("app.name")}</span>
         </div>
@@ -538,7 +539,7 @@ function DemoLogin() {
           {/* Mobile brand mark */}
           <div className="mb-6 flex flex-col items-center lg:hidden">
             <div className="mb-3 grid h-16 w-16 place-items-center rounded-3xl bg-brand-grad text-white shadow-soft">
-              <PawPrint size={32} />
+              <LogoMark size={32} />
             </div>
             <h1 className="font-display text-2xl font-extrabold tracking-tighter2 text-ink">{t("app.name")}</h1>
             <p className="mt-1 text-ink-muted">{t("app.tagline")}</p>
