@@ -8,6 +8,7 @@ import { PhoneInput } from "@/components/PhoneInput";
 import { PetAvatar } from "@/components/PetAvatar";
 import { ReadingsFields } from "@/components/ReadingsFields";
 import { SpeciesPicker, SexPicker, AgeInput, WeightInput, ColorPicker, BreedPicker } from "@/components/PetFields";
+import { useToast } from "@/components/ui";
 import { useAuth } from "@/contexts/AuthContext";
 import { formatReadings, type ReadingKey } from "@/lib/vitals";
 import { uid } from "@/lib/utils";
@@ -54,6 +55,7 @@ interface Outcome {
 export function NewCase() {
   const { t, i18n } = useTranslation();
   const { user } = useAuth();
+  const toast = useToast();
   const navigate = useNavigate();
   const today = new Date().toISOString().slice(0, 10);
 
@@ -76,48 +78,57 @@ export function NewCase() {
   const valid = animals.filter((a) => a.name.trim());
 
   const finish = async () => {
-    const ownerId = uid("owner");
+    // In live (Supabase) mode the pet's owner_id must reference a real account
+    // (FK + row-level security). Clinic walk-ins have no owner account, so we
+    // attribute the record to the signed-in staff member. Demo mode accepts any id.
+    const ownerId = user?.id ?? uid("owner");
     const results: Outcome[] = [];
-    for (const a of valid) {
-      const pet = await repo.createPet({
-        owner_id: ownerId,
-        owner_name: ownerName.trim() || "—",
-        owner_phone: phone || undefined,
-        owner_email: email.trim() || undefined,
-        name: a.name.trim(),
-        species: a.species,
-        breed: a.breed.trim() || undefined,
-        sex: a.sex,
-        dob: a.dob || null,
-        microchip_id: a.microchip.trim() || undefined,
-        color: a.color.trim() || undefined,
-        photo_url: a.photo,
-        current_weight_kg: a.weight ? Number(a.weight) : null,
-        allergies: a.allergies.split(",").map((s) => s.trim()).filter(Boolean),
-      });
-      const reason = a.notes.trim() || undefined;
-      if (a.disp === "log") {
-        await repo.addAdmission({ pet_id: pet.id, kind: "treatment" as AdmissionKind, status: "active", admitted_on: today, reason });
-      } else if (a.disp === "boarding") {
-        await repo.addAdmission({ pet_id: pet.id, kind: "boarding" as AdmissionKind, status: "active", admitted_on: today, cage: a.cage.trim() || undefined, reason });
-      } else {
-        await repo.addAdmission({ pet_id: pet.id, kind: "treatment" as AdmissionKind, status: "discharged", admitted_on: today, discharged_on: today, reason });
-      }
-
-      // Readings recorded at registration become a dated entry in the patient's history.
-      const objective = formatReadings(a.readings, a.species, pet.id, (k) => t(`reading.${k}`));
-      if (objective) {
-        await repo.addVisit({
-          pet_id: pet.id,
-          clinic_name: "Happy Paws Veterinary Clinic",
-          doctor_name: user?.full_name ?? "Doctor",
-          visit_date: today,
-          objective,
-          assessment: t("newCase.admissionReadings"),
+    try {
+      for (const a of valid) {
+        const pet = await repo.createPet({
+          owner_id: ownerId,
+          owner_name: ownerName.trim() || "—",
+          owner_phone: phone || undefined,
+          owner_email: email.trim() || undefined,
+          name: a.name.trim(),
+          species: a.species,
+          breed: a.breed.trim() || undefined,
+          sex: a.sex,
+          dob: a.dob || null,
+          microchip_id: a.microchip.trim() || undefined,
+          color: a.color.trim() || undefined,
+          photo_url: a.photo,
+          current_weight_kg: a.weight ? Number(a.weight) : null,
+          allergies: a.allergies.split(",").map((s) => s.trim()).filter(Boolean),
         });
-      }
+        const reason = a.notes.trim() || undefined;
+        if (a.disp === "log") {
+          await repo.addAdmission({ pet_id: pet.id, kind: "treatment" as AdmissionKind, status: "active", admitted_on: today, reason });
+        } else if (a.disp === "boarding") {
+          await repo.addAdmission({ pet_id: pet.id, kind: "boarding" as AdmissionKind, status: "active", admitted_on: today, cage: a.cage.trim() || undefined, reason });
+        } else {
+          await repo.addAdmission({ pet_id: pet.id, kind: "treatment" as AdmissionKind, status: "discharged", admitted_on: today, discharged_on: today, reason });
+        }
 
-      results.push({ petId: pet.id, name: pet.name, species: a.species, disp: a.disp, addMeds: a.addMeds });
+        // Readings recorded at registration become a dated entry in the patient's history.
+        const objective = formatReadings(a.readings, a.species, pet.id, (k) => t(`reading.${k}`));
+        if (objective) {
+          await repo.addVisit({
+            pet_id: pet.id,
+            clinic_name: "Happy Paws Veterinary Clinic",
+            doctor_name: user?.full_name ?? "Doctor",
+            visit_date: today,
+            objective,
+            assessment: t("newCase.admissionReadings"),
+          });
+        }
+
+        results.push({ petId: pet.id, name: pet.name, species: a.species, disp: a.disp, addMeds: a.addMeds });
+      }
+    } catch (e) {
+      playWarning();
+      toast.error(t("newCase.saveError", "Couldn't save the registration. Please try again."), e instanceof Error ? e.message : undefined);
+      return;
     }
     playSuccess();
     setOutcomes(results);
@@ -341,6 +352,7 @@ function DispMini({ active, icon: Icon, label, onClick }: { active: boolean; ico
 /** Admit an EXISTING animal to the clinic by its serial — no new registration. */
 function SerialAdmit({ today, doctorName, onAdmitted }: { today: string; doctorName: string; onAdmitted: (o: Outcome) => void }) {
   const { t } = useTranslation();
+  const toast = useToast();
   const [serial, setSerial] = useState("");
   const [pet, setPet] = useState<Pet | null>(null);
   const [notFound, setNotFound] = useState(false);
@@ -360,12 +372,18 @@ function SerialAdmit({ today, doctorName, onAdmitted }: { today: string; doctorN
 
   const admit = async () => {
     if (!pet) return;
-    if (disp === "log") await repo.addAdmission({ pet_id: pet.id, kind: "treatment" as AdmissionKind, status: "active", admitted_on: today });
-    else if (disp === "boarding") await repo.addAdmission({ pet_id: pet.id, kind: "boarding" as AdmissionKind, status: "active", admitted_on: today, cage: cage.trim() || undefined });
-    else await repo.addAdmission({ pet_id: pet.id, kind: "treatment" as AdmissionKind, status: "discharged", admitted_on: today, discharged_on: today });
-    const objective = formatReadings(readings, pet.species, pet.id, (k) => t(`reading.${k}`));
-    if (objective) {
-      await repo.addVisit({ pet_id: pet.id, clinic_name: "Happy Paws Veterinary Clinic", doctor_name: doctorName, visit_date: today, objective, assessment: t("newCase.admissionReadings") });
+    try {
+      if (disp === "log") await repo.addAdmission({ pet_id: pet.id, kind: "treatment" as AdmissionKind, status: "active", admitted_on: today });
+      else if (disp === "boarding") await repo.addAdmission({ pet_id: pet.id, kind: "boarding" as AdmissionKind, status: "active", admitted_on: today, cage: cage.trim() || undefined });
+      else await repo.addAdmission({ pet_id: pet.id, kind: "treatment" as AdmissionKind, status: "discharged", admitted_on: today, discharged_on: today });
+      const objective = formatReadings(readings, pet.species, pet.id, (k) => t(`reading.${k}`));
+      if (objective) {
+        await repo.addVisit({ pet_id: pet.id, clinic_name: "Happy Paws Veterinary Clinic", doctor_name: doctorName, visit_date: today, objective, assessment: t("newCase.admissionReadings") });
+      }
+    } catch (e) {
+      playWarning();
+      toast.error(t("newCase.saveError", "Couldn't save the registration. Please try again."), e instanceof Error ? e.message : undefined);
+      return;
     }
     playSuccess();
     onAdmitted({ petId: pet.id, name: pet.name, species: pet.species, disp, addMeds: disp !== "release" && addMeds });

@@ -581,6 +581,7 @@
     "cage": "Cage / kennel",
     "finish": "Complete registration",
     "created": "Case registered",
+    "saveError": "Couldn't save the registration. Please try again.",
     "createdLog": "Added to the daily treatment log.",
     "createdBoarding": "Animal admitted for boarding.",
     "createdRelease": "Visit logged and animal released.",
