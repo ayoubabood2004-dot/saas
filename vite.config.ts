@@ -13,8 +13,8 @@ export default defineConfig({
         name: "VetPassport — Veterinary Care System",
         short_name: "VetPassport",
         description: "Universal pet digital passport and clinic management.",
-        theme_color: "#16a34a",
-        background_color: "#f8fafc",
+        theme_color: "#1266d8",
+        background_color: "#eef6ff",
         display: "standalone",
         orientation: "portrait",
         icons: [
