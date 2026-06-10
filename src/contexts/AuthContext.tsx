@@ -37,16 +37,22 @@ const DEMO_VET: Profile = { id: "demo-vet", full_name: "Dr. Sarah Mansour", emai
 /** Fetch the app profile row (1:1 with auth.users) for a signed-in Supabase user. */
 async function loadProfile(userId: string): Promise<Profile | null> {
   if (!supabase) return null;
-  const { data, error } = await supabase.from("profiles").select("*").eq("id", userId).maybeSingle();
-  if (error || !data) return null;
-  return {
-    id: data.id,
-    full_name: data.full_name,
-    email: data.email,
-    role: data.role as Role,
-    phone: data.phone ?? undefined,
-    clinic_id: data.clinic_id ?? null,
-  };
+  try {
+    const { data, error } = await supabase.from("profiles").select("*").eq("id", userId).maybeSingle();
+    if (error || !data) return null;
+    return {
+      id: data.id,
+      full_name: data.full_name,
+      email: data.email,
+      role: data.role as Role,
+      phone: data.phone ?? undefined,
+      clinic_id: data.clinic_id ?? null,
+    };
+  } catch {
+    // Network/backend error (e.g. the project is paused) — treat as "no profile"
+    // rather than letting the rejection bubble up and freeze app boot.
+    return null;
+  }
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -58,17 +64,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (isSupabaseConfigured && supabase) {
       const sb = supabase;
       let active = true;
-      void sb.auth.getSession().then(async ({ data }) => {
-        if (!active) return;
-        setUser(data.session?.user ? await loadProfile(data.session.user.id) : null);
-        setLoading(false);
-      });
+      // Failsafe: a slow or unreachable backend (e.g. a paused Supabase project)
+      // must NEVER trap the app on a blank spinner. Reveal the UI after a few
+      // seconds no matter what — the login screen is a safe place to land.
+      const failsafe = setTimeout(() => { if (active) setLoading(false); }, 7000);
+      const finish = () => { if (active) { clearTimeout(failsafe); setLoading(false); } };
+
+      void (async () => {
+        try {
+          const { data } = await sb.auth.getSession();
+          if (!active) return;
+          const profile = data.session?.user ? await loadProfile(data.session.user.id) : null;
+          if (active) setUser(profile);
+        } catch {
+          /* network/backend error — fall through and show the login screen */
+        } finally {
+          finish();
+        }
+      })();
+
       const { data: sub } = sb.auth.onAuthStateChange(async (event, session) => {
         if (event === "PASSWORD_RECOVERY") setRecovery(true);
-        setUser(session?.user ? await loadProfile(session.user.id) : null);
+        try {
+          const profile = session?.user ? await loadProfile(session.user.id) : null;
+          if (active) setUser(profile);
+        } catch {
+          if (active) setUser(null);
+        } finally {
+          finish();
+        }
       });
       return () => {
         active = false;
+        clearTimeout(failsafe);
         sub.subscription.unsubscribe();
       };
     }
