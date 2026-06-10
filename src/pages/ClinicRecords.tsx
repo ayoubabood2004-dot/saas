@@ -17,8 +17,9 @@ import { Button, Badge, useToast, Skeleton } from "@/components/ui";
 import { formatDate, cn } from "@/lib/utils";
 import { staggerContainer, staggerItem } from "@/lib/motion";
 import { playTap, playSuccess } from "@/lib/sounds";
-import { phoneMatches } from "@/lib/phone";
+import { phoneMatches, nationalNumber } from "@/lib/phone";
 import { getDialCode } from "@/lib/settings";
+import { useAuth } from "@/contexts/AuthContext";
 
 type Tab = "log" | "cases" | "boarding" | "movement";
 
@@ -171,6 +172,7 @@ export function ClinicRecords() {
 /* ---------------- Patient log / registry ---------------- */
 function PatientLog({ pets, admissions, onChanged, loading }: { pets: Pet[]; admissions: Admission[]; onChanged: () => void; loading: boolean }) {
   const { t, i18n } = useTranslation();
+  const { user } = useAuth();
   const navigate = useNavigate();
   const toast = useToast();
   const searchRef = useRef<HTMLInputElement>(null);
@@ -184,9 +186,14 @@ function PatientLog({ pets, admissions, onChanged, loading }: { pets: Pet[]; adm
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [visibleCount, setVisibleCount] = useState(20);
   const sentinelRef = useRef<HTMLDivElement>(null);
-  const [editing, setEditing] = useState<{ id: string; name: string; phone: string; email: string } | null>(null);
+  const [editing, setEditing] = useState<{ id: string; name: string; phone: string; email: string; petIds: string[] } | null>(null);
+  const [editName, setEditName] = useState("");
   const [editPhone, setEditPhone] = useState("");
   const [editEmail, setEditEmail] = useState("");
+  // Reassign / "move pet to a specific owner" flow.
+  const [reassign, setReassign] = useState<Pet | null>(null);
+  const [rq, setRq] = useState("");
+  const [rNew, setRNew] = useState({ name: "", phone: "", email: "" });
 
   // Press "/" anywhere to jump to search.
   useEffect(() => {
@@ -210,21 +217,28 @@ function PatientLog({ pets, admissions, onChanged, loading }: { pets: Pet[]; adm
 
   const saveAnimal = async () => {
     if (!addOwner || !an.name.trim()) return;
-    await repo.createPet({
-      owner_id: addOwner.id,
-      owner_name: addOwner.name,
-      owner_phone: addOwner.phone || undefined,
-      owner_email: addOwner.email || undefined,
-      name: an.name.trim(),
-      species: an.species,
-      breed: an.breed.trim() || undefined,
-      sex: an.sex,
-      dob: an.dob || null,
-      current_weight_kg: an.weight ? Number(an.weight) : null,
-      color: an.color.trim() || undefined,
-      photo_url: an.photo,
-      allergies: an.allergies.split(",").map((s) => s.trim()).filter(Boolean),
-    });
+    try {
+      await repo.createPet({
+        // The owner card is identified by phone, not by this id — stamp the signed-in
+        // staff member's id so the row satisfies the database's ownership rule.
+        owner_id: user?.id ?? addOwner.id,
+        owner_name: addOwner.name === "—" ? undefined : addOwner.name,
+        owner_phone: addOwner.phone || undefined,
+        owner_email: addOwner.email || undefined,
+        name: an.name.trim(),
+        species: an.species,
+        breed: an.breed.trim() || undefined,
+        sex: an.sex,
+        dob: an.dob || null,
+        current_weight_kg: an.weight ? Number(an.weight) : null,
+        color: an.color.trim() || undefined,
+        photo_url: an.photo,
+        allergies: an.allergies.split(",").map((s) => s.trim()).filter(Boolean),
+      });
+    } catch (e) {
+      toast.error(t("records.saveError", "Couldn't save the animal. Please try again."), e instanceof Error ? e.message : undefined);
+      return;
+    }
     playSuccess();
     setAddOwner(null);
     resetAnimal();
@@ -249,26 +263,67 @@ function PatientLog({ pets, admissions, onChanged, loading }: { pets: Pet[]; adm
   };
 
   const owners = useMemo(() => {
+    const dialCode = getDialCode();
     const map = new Map<string, { id: string; name: string; phone: string; email: string; pets: Pet[] }>();
     for (const p of pets) {
-      const key = p.owner_id;
-      const g = map.get(key) ?? { id: key, name: p.owner_name ?? "—", phone: p.owner_phone ?? "", email: p.owner_email ?? "", pets: [] };
+      // Owner identity = phone number. The same number always lands on the same owner
+      // card; a matching name alone never merges two owners. A pet with no number stands
+      // on its own card until it is assigned to an owner.
+      const nat = nationalNumber(p.owner_phone ?? "", dialCode);
+      const key = nat ? `ph:${nat}` : `solo:${p.id}`;
+      const g = map.get(key) ?? { id: key, name: "—", phone: "", email: "", pets: [] };
       g.pets.push(p);
       map.set(key, g);
     }
     const list = Array.from(map.values());
-    for (const o of list) o.pets.sort((a, b) => petActivity(b) - petActivity(a));
+    for (const o of list) {
+      o.pets.sort((a, b) => petActivity(b) - petActivity(a));
+      // Representative contact = the most recently active pet that actually carries each field.
+      o.name = o.pets.find((p) => p.owner_name?.trim())?.owner_name?.trim() || "—";
+      o.phone = o.pets.find((p) => p.owner_phone?.trim())?.owner_phone?.trim() || "";
+      o.email = o.pets.find((p) => p.owner_email?.trim())?.owner_email?.trim() || "";
+    }
     list.sort((a, b) => Math.max(...b.pets.map(petActivity)) - Math.max(...a.pets.map(petActivity)));
     return list;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pets, admByPet]);
 
-  const openEdit = (o: { id: string; name: string; phone: string; email: string }) => { setEditing(o); setEditPhone(o.phone); setEditEmail(o.email); };
+  const openEdit = (o: { id: string; name: string; phone: string; email: string; pets: Pet[] }) => {
+    setEditing({ id: o.id, name: o.name, phone: o.phone, email: o.email, petIds: o.pets.map((p) => p.id) });
+    setEditName(o.name === "—" ? "" : o.name);
+    setEditPhone(o.phone);
+    setEditEmail(o.email);
+  };
   const saveEdit = async () => {
     if (!editing) return;
-    await repo.updateOwnerContact(editing.id, { owner_phone: editPhone, owner_email: editEmail.trim() });
+    const patch = { owner_name: editName.trim(), owner_phone: editPhone, owner_email: editEmail.trim() };
+    // An owner card is derived from its pets, so write the contact change to every pet in it.
+    await Promise.all(editing.petIds.map((id) => repo.updatePet(id, patch)));
     playSuccess();
     setEditing(null);
+    onChanged();
+  };
+
+  // Move a single animal onto a specific owner's record (existing or brand-new).
+  const moveToOwner = async (target: { name?: string; phone?: string; email?: string }) => {
+    if (!reassign) return;
+    const patch = {
+      owner_name: (target.name ?? "").trim() || undefined,
+      owner_phone: (target.phone ?? "").trim() || undefined,
+      owner_email: (target.email ?? "").trim() || undefined,
+    };
+    try {
+      await repo.updatePet(reassign.id, patch);
+    } catch (e) {
+      toast.error(t("records.moveError", "Couldn't move the animal. Please try again."), e instanceof Error ? e.message : undefined);
+      return;
+    }
+    playSuccess();
+    const movedName = reassign.name;
+    setReassign(null);
+    setRq("");
+    setRNew({ name: "", phone: "", email: "" });
+    toast.success(t("records.moved", { pet: movedName, owner: patch.owner_name ?? t("records.thisOwner", "this owner"), defaultValue: "{{pet}} moved to {{owner}}" }));
     onChanged();
   };
 
@@ -489,6 +544,7 @@ function PatientLog({ pets, admissions, onChanged, loading }: { pets: Pet[]; adm
                           {st === "recent" && !dense && <Badge tone="success" dot className="hidden sm:inline-flex">{t("records.stRecent", "Seen")}</Badge>}
                           {!selecting && (
                             <div className="flex shrink-0 items-center gap-0.5">
+                              <button title={t("records.moveOwner", "Move to owner")} onClick={() => { playTap(); setReassign(p); setRq(""); setRNew({ name: "", phone: "", email: "" }); }} className="grid h-8 w-8 place-items-center rounded-full text-ink-subtle transition hover:bg-brand-50 hover:text-brand-600 dark:hover:bg-brand-500/15"><ArrowRightLeft size={15} /></button>
                               <button title={t("treatment.title")} onClick={() => { playTap(); navigate(`/pet/${p.id}?tab=treatment`); }} className="grid h-8 w-8 place-items-center rounded-full text-ink-subtle transition hover:bg-brand-50 hover:text-brand-600 dark:hover:bg-brand-500/15"><Pill size={15} /></button>
                               <button title={t("passport.tabs.qr")} onClick={() => { playTap(); navigate(`/pet/${p.id}?tab=qr`); }} className="hidden h-8 w-8 place-items-center rounded-full text-ink-subtle transition hover:bg-brand-50 hover:text-brand-600 dark:hover:bg-brand-500/15 sm:grid"><IdCard size={15} /></button>
                               <ChevronLeft size={16} className="text-ink-subtle ltr:rotate-180" />
@@ -526,11 +582,81 @@ function PatientLog({ pets, admissions, onChanged, loading }: { pets: Pet[]; adm
       </AnimatePresence>
 
       <Modal open={!!editing} onClose={() => setEditing(null)} title={t("records.editPhoneTitle", { owner: editing?.name ?? "" })}>
-        <label className="label">{t("phone.number")}</label>
+        <label className="label">{t("records.ownerName", "Owner name")}</label>
+        <input className="input" value={editName} onChange={(e) => setEditName(e.target.value)} placeholder={t("records.ownerName", "Owner name")} />
+        <label className="label mt-4">{t("phone.number")}</label>
         <PhoneInput value={editPhone} onChange={setEditPhone} />
         <label className="label mt-4">{t("phone.email")}</label>
         <input type="email" className="input" value={editEmail} onChange={(e) => setEditEmail(e.target.value)} placeholder="owner@email.com" />
+        {editing && editing.petIds.length > 1 && (
+          <p className="mt-3 rounded-xl bg-surface-2 px-3 py-2 text-xs text-ink-muted">{t("records.editAllPets", { n: editing.petIds.length, defaultValue: "Applies to all {{n}} animals on this owner." })}</p>
+        )}
         <Button className="mt-4 w-full" onClick={saveEdit}>{t("common.save")}</Button>
+      </Modal>
+
+      {/* Move / reassign a single animal onto a specific owner. */}
+      <Modal open={!!reassign} onClose={() => setReassign(null)} title={t("records.moveTitle", { pet: reassign?.name ?? "", defaultValue: "Move {{pet}} to an owner" })}>
+        {reassign && (() => {
+          const cur = reassign;
+          if (!cur) return null;
+          const rql = rq.trim().toLowerCase();
+          const curNat = nationalNumber(cur.owner_phone ?? "", dial);
+          const matches = owners
+            .filter((o) => {
+              const oNat = nationalNumber(o.phone, dial);
+              if (!oNat) return false;                      // only numbered owners are reliable merge targets
+              if (curNat && oNat === curNat) return false;  // already this pet's owner
+              if (!rql) return true;
+              return o.name.toLowerCase().includes(rql) || phoneMatches(o.phone, rq, dial);
+            })
+            .slice(0, 8);
+          const canCreate = Boolean(rNew.name.trim() || rNew.phone.trim());
+          return (
+            <div className="space-y-4">
+              <div className="flex items-center gap-3 rounded-2xl border border-line bg-surface-2 p-3">
+                <PetAvatar pet={cur} size={38} photoFallback />
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold text-ink">{cur.name}</p>
+                  <p className="truncate text-xs text-ink-muted">
+                    {cur.owner_name ? t("records.currentlyWith", { owner: cur.owner_name, defaultValue: "Currently: {{owner}}" }) : t("records.noOwnerYet", "No owner assigned yet")}
+                  </p>
+                </div>
+              </div>
+
+              <div>
+                <label className="label">{t("records.pickOwner", "Assign to an existing owner")}</label>
+                <div className="relative">
+                  <Search size={15} className="pointer-events-none absolute top-1/2 -translate-y-1/2 text-ink-subtle ltr:left-3 rtl:right-3" />
+                  <input className="input ltr:pl-9 rtl:pr-9" value={rq} onChange={(e) => setRq(e.target.value)} placeholder={t("records.searchOwners", "Search by name or number")} autoFocus />
+                </div>
+                <div className="mt-2 max-h-56 space-y-1.5 overflow-auto">
+                  {matches.length === 0 ? (
+                    <p className="px-1 py-3 text-center text-sm text-ink-subtle">{t("records.noOwnerMatch", "No matching owner — add a new one below.")}</p>
+                  ) : matches.map((o) => (
+                    <button key={o.id} onClick={() => moveToOwner({ name: o.name, phone: o.phone, email: o.email })} className="flex w-full items-center gap-3 rounded-2xl border border-line bg-surface-1 p-2.5 text-start transition hover:border-brand-300 hover:bg-brand-50 dark:hover:border-brand-500/40 dark:hover:bg-brand-500/10">
+                      <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-brand-grad text-2xs font-bold text-white">{ownerInitials(o.name)}</span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-semibold text-ink">{o.name}</span>
+                        <span className="block truncate text-xs text-ink-muted">{o.phone || t("records.noPhone", "no number")} · {o.pets.length} {t("records.pets")}</span>
+                      </span>
+                      <ArrowRightLeft size={15} className="shrink-0 text-ink-subtle" />
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <details className="rounded-2xl border border-line bg-surface-1 p-3">
+                <summary className="cursor-pointer select-none text-sm font-semibold text-ink">{t("records.newOwner", "Or enter a new owner")}</summary>
+                <div className="mt-3 space-y-3">
+                  <input className="input" value={rNew.name} onChange={(e) => setRNew((s) => ({ ...s, name: e.target.value }))} placeholder={t("records.ownerName", "Owner name")} />
+                  <PhoneInput value={rNew.phone} onChange={(v) => setRNew((s) => ({ ...s, phone: v }))} />
+                  <input type="email" className="input" value={rNew.email} onChange={(e) => setRNew((s) => ({ ...s, email: e.target.value }))} placeholder="owner@email.com" />
+                  <Button className="w-full" disabled={!canCreate} onClick={() => moveToOwner(rNew)}>{t("records.createAssign", "Save & assign")}</Button>
+                </div>
+              </details>
+            </div>
+          );
+        })()}
       </Modal>
 
       <Modal open={!!addOwner} onClose={() => setAddOwner(null)} title={t("records.addAnimalTitle", { owner: addOwner?.name ?? "" })}>
