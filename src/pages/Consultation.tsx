@@ -15,7 +15,7 @@ import { AnatomyMarker } from "@/components/AnatomyMarker";
 import { VITAL_KEYS, CBC_KEYS, rangeForPet, isOutOfRangePet, type ReadingKey } from "@/lib/vitals";
 import { searchDiagnoses, type DiagnosisCode } from "@/lib/icdvet";
 import { playSuccess, playWarning, playTap } from "@/lib/sounds";
-import { Button, SuccessDialog, Card, Badge } from "@/components/ui";
+import { Button, SuccessDialog, Card, Badge, useToast } from "@/components/ui";
 import { cn } from "@/lib/utils";
 
 type SoapKey = "S" | "O" | "A" | "P";
@@ -38,9 +38,12 @@ export function Consultation() {
   const navigate = useNavigate();
   const { t, i18n } = useTranslation();
   const { user } = useAuth();
+  const toast = useToast();
   const [params] = useSearchParams();
   const apptId = params.get("appt");
 
+  const [loadError, setLoadError] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [pet, setPet] = useState<Pet | null>(null);
   const [visits, setVisits] = useState<MedicalVisit[]>([]);
   const [media, setMedia] = useState<MediaItem[]>([]);
@@ -59,16 +62,40 @@ export function Consultation() {
 
   useEffect(() => {
     if (!petId) return;
-    void Promise.all([repo.getPet(petId), repo.listVisits(petId), repo.listMedia(petId)]).then(([p, v, m]) => {
-      setPet(p ?? null);
-      setVisits(v);
-      setMedia(m);
-    });
+    let active = true;
+    setLoadError(false);
+    void (async () => {
+      try {
+        const [p, v, m] = await Promise.all([repo.getPet(petId), repo.listVisits(petId), repo.listMedia(petId)]);
+        if (!active) return;
+        setPet(p ?? null);
+        setVisits(v);
+        setMedia(m);
+        if (!p) setLoadError(true);
+      } catch {
+        if (active) setLoadError(true);
+      }
+    })();
+    return () => { active = false; };
   }, [petId]);
 
   const suggestions: DiagnosisCode[] = useMemo(() => searchDiagnoses(assessment), [assessment]);
 
-  if (!pet) return <div className="mx-auto max-w-3xl px-4 py-10 text-ink-subtle">{t("common.loading")}</div>;
+  if (!pet) {
+    return (
+      <div className="mx-auto max-w-3xl px-4 py-10 text-center">
+        {loadError ? (
+          <div className="card mx-auto max-w-md p-8">
+            <p className="font-semibold text-ink">{t("records.loadFailed", "Couldn't load this record")}</p>
+            <p className="mt-1 text-sm text-ink-muted">{t("errors.tryAgain", "Please try again.")}</p>
+            <Button className="mt-4" variant="secondary" onClick={() => navigate(-1)}>{t("common.back", "Back")}</Button>
+          </div>
+        ) : (
+          <span className="text-ink-subtle">{t("common.loading")}</span>
+        )}
+      </div>
+    );
+  }
 
   const setVital = (key: ReadingKey, value: string) => {
     setVitals((prev) => ({ ...prev, [key]: value }));
@@ -79,30 +106,37 @@ export function Consultation() {
   };
 
   const save = async () => {
-    if (!assessment.trim()) return;
+    if (!assessment.trim() || saving) return;
     const fmt = (keys: ReadingKey[]) =>
       keys.filter((k) => vitals[k]).map((k) => `${t(`reading.${k}`)} ${vitals[k]}${rangeForPet(pet.species, k, pet.id).unit}`).join(" · ");
     const vitalsStr = fmt(VITAL_KEYS);
     const cbcStr = fmt(CBC_KEYS);
     const objective = [vitalsStr, cbcStr && `CBC — ${cbcStr}`].filter(Boolean).join("\n");
-    const visit = await repo.addVisit({
-      pet_id: pet.id,
-      clinic_name: "Happy Paws Veterinary Clinic",
-      doctor_name: user?.full_name ?? "Doctor",
-      visit_date: new Date().toISOString().slice(0, 10),
-      subjective: subjective.trim() || undefined,
-      objective: objective || undefined,
-      assessment: assessment.trim(),
-      plan: plan.trim() || undefined,
-      treatments: treatments.split(",").map((s) => s.trim()).filter(Boolean),
-      notes: marking ? "See anatomical marking." : undefined,
-    });
-    if (marking) {
-      await repo.addMedia({ pet_id: pet.id, kind: "document", url: marking, caption: `Anatomical marking — ${visit.visit_date}` });
+    setSaving(true);
+    try {
+      const visit = await repo.addVisit({
+        pet_id: pet.id,
+        clinic_name: "Happy Paws Veterinary Clinic",
+        doctor_name: user?.full_name ?? "Doctor",
+        visit_date: new Date().toISOString().slice(0, 10),
+        subjective: subjective.trim() || undefined,
+        objective: objective || undefined,
+        assessment: assessment.trim(),
+        plan: plan.trim() || undefined,
+        treatments: treatments.split(",").map((s) => s.trim()).filter(Boolean),
+        notes: marking ? "See anatomical marking." : undefined,
+      });
+      if (marking) {
+        await repo.addMedia({ pet_id: pet.id, kind: "document", url: marking, caption: `Anatomical marking — ${visit.visit_date}` });
+      }
+      if (apptId) await repo.setAppointmentStatus(apptId, "done");
+      playSuccess();
+      setSaved(true);
+    } catch (e) {
+      toast.error(t("records.saveError", "Couldn't save. Please try again."), e instanceof Error ? e.message : undefined);
+    } finally {
+      setSaving(false);
     }
-    if (apptId) await repo.setAppointmentStatus(apptId, "done");
-    playSuccess();
-    setSaved(true);
   };
 
   const recent = visits.slice(0, 3);
@@ -347,7 +381,7 @@ export function Consultation() {
           </div>
           <span className="hidden text-sm text-ink-muted sm:inline">{t("consult.progress", { done: doneCount, total: 4, defaultValue: "{{done}}/{{total}} sections" })}</span>
         </div>
-        <Button size="lg" onClick={save} disabled={!assessment.trim()}>{t("consult.save")}</Button>
+        <Button size="lg" onClick={save} loading={saving} disabled={!assessment.trim() || saving}>{t("consult.save")}</Button>
       </div>
 
       <SuccessDialog

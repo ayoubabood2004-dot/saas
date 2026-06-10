@@ -145,11 +145,17 @@ function SupabaseAuthCard() {
   };
 
   const resend = async () => {
+    if (busy) return;
     clear();
     playTap();
-    const res = await resendSignupCode(email);
-    if (res.error) setError(res.error);
-    else setInfo(t("auth.codeResent", "A new code is on the way."));
+    setBusy(true);
+    try {
+      const res = await resendSignupCode(email);
+      if (res.error) setError(res.error);
+      else setInfo(t("auth.codeResent", "A new code is on the way."));
+    } finally {
+      setBusy(false);
+    }
   };
 
   const submitForgot = async (e: FormEvent) => {
@@ -292,7 +298,7 @@ function SupabaseAuthCard() {
                 </div>
                 {msg}
                 <Button type="submit" size="lg" className="w-full" disabled={busy || code.length < 4}>{busy ? t("common.loading") : t("auth.verify", "Verify & continue")}</Button>
-                <button type="button" onClick={resend} className="w-full text-center text-sm font-medium text-brand-600 hover:underline">{t("auth.resend", "Resend code")}</button>
+                <button type="button" onClick={resend} disabled={busy} className="w-full text-center text-sm font-medium text-brand-600 hover:underline disabled:opacity-50 disabled:no-underline">{t("auth.resend", "Resend code")}</button>
               </form>
             ) : (
               /* Sign in / Sign up */

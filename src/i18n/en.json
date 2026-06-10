@@ -30,6 +30,15 @@
     "none": "None",
     "demoMode": "Demo mode — data is stored only in this browser"
   },
+  "errors": {
+    "title": "Something went wrong",
+    "body": "An unexpected error interrupted this screen. Your data is safe — try reloading.",
+    "reload": "Reload",
+    "home": "Go to start",
+    "details": "Technical details",
+    "async": "Something went wrong",
+    "tryAgain": "Please try again."
+  },
   "nav": {
     "dashboard": "Dashboard",
     "scan": "Scan passport",
@@ -639,6 +648,7 @@
     "ownerName": "Owner name",
     "editAllPets": "Applies to all {{n}} animals on this owner.",
     "saveError": "Couldn't save the animal. Please try again.",
+    "loadFailed": "Couldn't load this record",
     "moveOwner": "Move to owner",
     "moveTitle": "Move {{pet}} to an owner",
     "moveError": "Couldn't move the animal. Please try again.",

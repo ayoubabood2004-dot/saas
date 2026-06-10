@@ -5,6 +5,7 @@ import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { TopBar } from "@/components/TopBar";
 import { Sidebar } from "@/components/Sidebar";
 import { CommandPaletteProvider } from "@/components/CommandPaletteProvider";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { Spinner } from "@/components/ui";
 import { pageVariants } from "@/lib/motion";
 
@@ -63,23 +64,27 @@ function Shell() {
   const staff = !!user && (user.role === "admin" || user.role === "doctor" || user.role === "reception");
 
   const routes = (
-    <Suspense fallback={<FullScreenLoader />}>
-      <AnimatePresence mode="wait">
-        <Routes location={location} key={location.pathname}>
-          <Route path="/login" element={<Login />} />
-          <Route path="/" element={<Protected><Home /></Protected>} />
-          <Route path="/pet/:petId" element={<Protected><PetPassport /></Protected>} />
-          <Route path="/book" element={<Protected><BookingWizard /></Protected>} />
-          <Route path="/scan" element={<Protected><ScanChart /></Protected>} />
-          <Route path="/reception" element={<Protected><Reception /></Protected>} />
-          <Route path="/consult/:petId" element={<Protected><Consultation /></Protected>} />
-          <Route path="/records" element={<Protected><ClinicRecords /></Protected>} />
-          <Route path="/new-case" element={<Protected><NewCase /></Protected>} />
-          <Route path="/settings" element={<Protected><Settings /></Protected>} />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-      </AnimatePresence>
-    </Suspense>
+    // Keyed by path so navigating to another page clears a page-level crash —
+    // one broken screen can never trap the user.
+    <ErrorBoundary key={location.pathname} scope="route">
+      <Suspense fallback={<FullScreenLoader />}>
+        <AnimatePresence mode="wait">
+          <Routes location={location} key={location.pathname}>
+            <Route path="/login" element={<Login />} />
+            <Route path="/" element={<Protected><Home /></Protected>} />
+            <Route path="/pet/:petId" element={<Protected><PetPassport /></Protected>} />
+            <Route path="/book" element={<Protected><BookingWizard /></Protected>} />
+            <Route path="/scan" element={<Protected><ScanChart /></Protected>} />
+            <Route path="/reception" element={<Protected><Reception /></Protected>} />
+            <Route path="/consult/:petId" element={<Protected><Consultation /></Protected>} />
+            <Route path="/records" element={<Protected><ClinicRecords /></Protected>} />
+            <Route path="/new-case" element={<Protected><NewCase /></Protected>} />
+            <Route path="/settings" element={<Protected><Settings /></Protected>} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </AnimatePresence>
+      </Suspense>
+    </ErrorBoundary>
   );
 
   // Staff get a desktop sidebar rail (mobile keeps the top bar); owners/login keep the top bar only.
@@ -107,10 +112,12 @@ function Shell() {
 
 export default function App() {
   return (
-    <AuthProvider>
-      <BrowserRouter>
-        <Shell />
-      </BrowserRouter>
-    </AuthProvider>
+    <ErrorBoundary scope="app">
+      <AuthProvider>
+        <BrowserRouter>
+          <Shell />
+        </BrowserRouter>
+      </AuthProvider>
+    </ErrorBoundary>
   );
 }

@@ -1,8 +1,9 @@
-import { createContext, useCallback, useContext, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { CheckCircle2, AlertTriangle, Info, XCircle, X } from "lucide-react";
 import { spring } from "@/lib/motion";
+import { onGlobalToast } from "@/lib/globalToast";
 
 type ToastTone = "success" | "error" | "warn" | "info";
 type Toast = { id: string; tone: ToastTone; title: string; description?: string };
@@ -37,6 +38,9 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     },
     [remove],
   );
+
+  // Let non-React code (global error handlers) raise toasts through this provider.
+  useEffect(() => onGlobalToast((t) => toast(t)), [toast]);
 
   const value: ToastCtx = {
     toast,

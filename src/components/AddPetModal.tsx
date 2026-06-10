@@ -6,12 +6,14 @@ import type { Species, Sex } from "@/types";
 import { Modal } from "./Modal";
 import { PhoneInput } from "./PhoneInput";
 import { SpeciesPicker, SexPicker, AgeInput, WeightInput, ColorPicker, BreedPicker } from "./PetFields";
+import { useToast } from "@/components/ui";
 import { playSuccess, playWarning } from "@/lib/sounds";
 import { getOwner } from "@/lib/owners";
 
 export function AddPetModal({ open, onClose, onCreated }: { open: boolean; onClose: () => void; onCreated: () => void }) {
   const { t } = useTranslation();
   const { user } = useAuth();
+  const toast = useToast();
   const [tab, setTab] = useState<"new" | "serial">("new");
   const [serial, setSerial] = useState("");
   const [claimMsg, setClaimMsg] = useState<{ ok: boolean; text: string } | null>(null);
@@ -32,42 +34,55 @@ export function AddPetModal({ open, onClose, onCreated }: { open: boolean; onClo
   };
 
   const claim = async () => {
-    if (!user || !serial.trim()) return;
+    if (!user || !serial.trim() || saving) return;
     const acc = getOwner(user.id);
-    const pet = await repo.claimPet(serial, {
-      owner_id: user.id,
-      owner_name: user.full_name,
-      owner_phone: acc?.phone,
-      owner_email: acc?.email,
-    });
-    if (!pet) { playWarning(); setClaimMsg({ ok: false, text: t("claim.notFound") }); return; }
-    playSuccess();
-    setClaimMsg({ ok: true, text: t("claim.added", { name: pet.name }) });
-    setSerial("");
-    onCreated();
+    setSaving(true);
+    try {
+      const pet = await repo.claimPet(serial, {
+        owner_id: user.id,
+        owner_name: user.full_name,
+        owner_phone: acc?.phone,
+        owner_email: acc?.email,
+      });
+      if (!pet) { playWarning(); setClaimMsg({ ok: false, text: t("claim.notFound") }); return; }
+      playSuccess();
+      setClaimMsg({ ok: true, text: t("claim.added", { name: pet.name }) });
+      setSerial("");
+      onCreated();
+    } catch (e) {
+      playWarning();
+      setClaimMsg({ ok: false, text: e instanceof Error ? e.message : t("records.saveError", "Couldn't save. Please try again.") });
+    } finally {
+      setSaving(false);
+    }
   };
 
   const submit = async () => {
-    if (!user || !name.trim()) return;
+    if (!user || !name.trim() || saving) return;
     setSaving(true);
-    await repo.createPet({
-      owner_id: user.id,
-      owner_name: user.full_name,
-      owner_phone: phone || undefined,
-      owner_email: email.trim() || undefined,
-      name: name.trim(),
-      species,
-      breed: breed.trim() || undefined,
-      sex,
-      dob: dob || null,
-      current_weight_kg: weight ? Number(weight) : null,
-      color: color.trim() || undefined,
-      allergies: [],
-    });
-    playSuccess();
-    setSaving(false);
-    reset();
-    onCreated();
+    try {
+      await repo.createPet({
+        owner_id: user.id,
+        owner_name: user.full_name,
+        owner_phone: phone || undefined,
+        owner_email: email.trim() || undefined,
+        name: name.trim(),
+        species,
+        breed: breed.trim() || undefined,
+        sex,
+        dob: dob || null,
+        current_weight_kg: weight ? Number(weight) : null,
+        color: color.trim() || undefined,
+        allergies: [],
+      });
+      playSuccess();
+      reset();
+      onCreated();
+    } catch (e) {
+      toast.error(t("records.saveError", "Couldn't save. Please try again."), e instanceof Error ? e.message : undefined);
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -87,7 +102,7 @@ export function AddPetModal({ open, onClose, onCreated }: { open: boolean; onClo
           {claimMsg && <p className={`text-sm ${claimMsg.ok ? "text-brand-700" : "text-red-600"}`}>{claimMsg.text}</p>}
           <div className="flex gap-3 pt-1">
             <button className="btn-ghost flex-1" onClick={onClose}>{t("common.close")}</button>
-            <button className="btn-primary flex-1" onClick={claim} disabled={!serial.trim()}>{t("claim.add")}</button>
+            <button className="btn-primary flex-1" onClick={claim} disabled={!serial.trim() || saving}>{t("claim.add")}</button>
           </div>
         </div>
       ) : (

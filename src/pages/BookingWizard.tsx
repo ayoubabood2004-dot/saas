@@ -10,7 +10,7 @@ import { PetAvatar } from "@/components/PetAvatar";
 import { doctorsForService, SERVICES, SLOT_MINUTES, CLINIC_OPEN_HOUR, CLINIC_CLOSE_HOUR } from "@/lib/clinic";
 import { generateSlots, formatTime } from "@/lib/utils";
 import { playTap, playWarning } from "@/lib/sounds";
-import { Button, Card, SuccessDialog } from "@/components/ui";
+import { Button, Card, SuccessDialog, useToast } from "@/components/ui";
 import { cn } from "@/lib/utils";
 import { fadeUp, staggerContainer, staggerItem } from "@/lib/motion";
 
@@ -29,9 +29,11 @@ function initials(name: string) {
 export function BookingWizard() {
   const { t, i18n } = useTranslation();
   const { user } = useAuth();
+  const toast = useToast();
   const navigate = useNavigate();
   const [params] = useSearchParams();
 
+  const [booking, setBooking] = useState(false);
   const [step, setStep] = useState(1);
   const [pets, setPets] = useState<Pet[]>([]);
   const [petId, setPetId] = useState<string | null>(params.get("pet"));
@@ -48,7 +50,7 @@ export function BookingWizard() {
   const Prev = i18n.dir() === "rtl" ? ArrowRight : ArrowLeft;
 
   useEffect(() => {
-    if (user) void repo.listPets(user.id).then(setPets);
+    if (user) repo.listPets(user.id).then(setPets).catch(() => setPets([]));
   }, [user]);
 
   useEffect(() => {
@@ -65,32 +67,39 @@ export function BookingWizard() {
   useEffect(() => {
     if (!doctor) return;
     const slots = generateSlots(dayISO, CLINIC_OPEN_HOUR, CLINIC_CLOSE_HOUR, SLOT_MINUTES);
-    void Promise.all(slots.map((s) => repo.slotTaken(doctor.id, s))).then((res) => {
-      setTakenSlots(new Set(slots.filter((_, i) => res[i])));
-    });
+    Promise.all(slots.map((s) => repo.slotTaken(doctor.id, s)))
+      .then((res) => setTakenSlots(new Set(slots.filter((_, i) => res[i]))))
+      .catch(() => setTakenSlots(new Set())); // booking re-checks the slot before confirming
   }, [doctor, dayISO]);
 
   const pet = pets.find((p) => p.id === petId);
 
   const book = async () => {
-    if (!user || !pet || !service || !doctor || !slot) return;
-    if (await repo.slotTaken(doctor.id, slot)) {
-      playWarning();
-      setSlot(null);
-      return;
+    if (!user || !pet || !service || !doctor || !slot || booking) return;
+    setBooking(true);
+    try {
+      if (await repo.slotTaken(doctor.id, slot)) {
+        playWarning();
+        setSlot(null);
+        return;
+      }
+      await repo.createAppointment({
+        pet_id: pet.id,
+        owner_id: user.id,
+        doctor_id: doctor.id,
+        doctor_name: doctor.name,
+        service,
+        status: "requested",
+        scheduled_at: slot,
+        duration_min: SLOT_MINUTES,
+        symptoms: symptoms.trim() || undefined,
+      });
+      setDone(true);
+    } catch (e) {
+      toast.error(t("records.saveError", "Couldn't save. Please try again."), e instanceof Error ? e.message : undefined);
+    } finally {
+      setBooking(false);
     }
-    await repo.createAppointment({
-      pet_id: pet.id,
-      owner_id: user.id,
-      doctor_id: doctor.id,
-      doctor_name: doctor.name,
-      service,
-      status: "requested",
-      scheduled_at: slot,
-      duration_min: SLOT_MINUTES,
-      symptoms: symptoms.trim() || undefined,
-    });
-    setDone(true);
   };
 
   const slots = doctor ? generateSlots(dayISO, CLINIC_OPEN_HOUR, CLINIC_CLOSE_HOUR, SLOT_MINUTES) : [];
@@ -297,7 +306,7 @@ export function BookingWizard() {
                 <label className="label">{t("booking.symptoms")}</label>
                 <textarea className="input min-h-24" value={symptoms} onChange={(e) => setSymptoms(e.target.value)} placeholder={t("booking.symptomsPlaceholder")} />
               </div>
-              <Button className="w-full" size="lg" onClick={book}>{t("booking.confirm")}</Button>
+              <Button className="w-full" size="lg" onClick={book} loading={booking}>{t("booking.confirm")}</Button>
             </motion.div>
           )}
         </motion.div>

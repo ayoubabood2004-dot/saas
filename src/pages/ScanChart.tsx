@@ -27,48 +27,66 @@ export function ScanChart() {
 
   const openPet = async (pet: Pet) => {
     playScan();
-    const [vaccines, visits, weights] = await Promise.all([
-      repo.listVaccinations(pet.id),
-      repo.listVisits(pet.id),
-      repo.listWeights(pet.id),
-    ]);
-    setChart({ pet, vaccines, visits, weights });
+    try {
+      const [vaccines, visits, weights] = await Promise.all([
+        repo.listVaccinations(pet.id),
+        repo.listVisits(pet.id),
+        repo.listWeights(pet.id),
+      ]);
+      setChart({ pet, vaccines, visits, weights });
+    } catch {
+      playWarning();
+      setError(true);
+      setChart(null);
+    }
   };
 
   const open = async () => {
     setError(false);
-    // An owner's personal QR (OWNER-…) opens their shared pets; otherwise treat as a pet passport.
-    const owner = getOwnerByToken(code);
-    if (owner) {
-      const pets = await repo.getSharedPetsByOwnerId(owner.id);
-      if (pets.length === 0) { playWarning(); setError(true); setChart(null); return; }
-      if (pets.length === 1) { await openPet(pets[0]); return; }
-      playScan();
-      setEmailResults(pets);
-      return;
-    }
-    const pet = await repo.getPetByToken(code);
-    if (!pet) {
+    try {
+      // An owner's personal QR (OWNER-…) opens their shared pets; otherwise treat as a pet passport.
+      const owner = getOwnerByToken(code);
+      if (owner) {
+        const pets = await repo.getSharedPetsByOwnerId(owner.id);
+        if (pets.length === 0) { playWarning(); setError(true); setChart(null); return; }
+        if (pets.length === 1) { await openPet(pets[0]); return; }
+        playScan();
+        setEmailResults(pets);
+        return;
+      }
+      const pet = await repo.getPetByToken(code);
+      if (!pet) {
+        playWarning();
+        setError(true);
+        setChart(null);
+        return;
+      }
+      await openPet(pet);
+    } catch {
       playWarning();
       setError(true);
       setChart(null);
-      return;
     }
-    await openPet(pet);
   };
 
   const lookupEmail = async () => {
     setEmailError(false);
-    const pets = await repo.getPetsByOwnerEmail(email);
-    if (pets.length === 0) {
+    try {
+      const pets = await repo.getPetsByOwnerEmail(email);
+      if (pets.length === 0) {
+        playWarning();
+        setEmailError(true);
+        setEmailResults(null);
+        return;
+      }
+      if (pets.length === 1) { await openPet(pets[0]); return; }
+      playScan();
+      setEmailResults(pets);
+    } catch {
       playWarning();
       setEmailError(true);
       setEmailResults(null);
-      return;
     }
-    if (pets.length === 1) { await openPet(pets[0]); return; }
-    playScan();
-    setEmailResults(pets);
   };
 
   return (

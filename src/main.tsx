@@ -3,8 +3,29 @@ import ReactDOM from "react-dom/client";
 import App from "./App";
 import { ThemeProvider } from "./lib/theme";
 import { ToastProvider } from "./components/ui";
+import i18next from "i18next";
 import "./i18n";
 import "./index.css";
+import { emitGlobalToast } from "./lib/globalToast";
+
+// Safety net: surface otherwise-silent async failures (e.g. a database write that
+// hit a backend error and wasn't caught at the call site) as a toast instead of
+// failing invisibly. Throttled so a burst of rejections shows a single message,
+// and benign cancellations are ignored.
+let lastNetToast = 0;
+window.addEventListener("unhandledrejection", (e) => {
+  const reason = e?.reason as { message?: string; name?: string } | undefined;
+  const msg = reason?.message || String(reason ?? "");
+  if (/abort|cancel/i.test(msg) || reason?.name === "AbortError") return;
+  const now = Date.now();
+  if (now - lastNetToast < 3000) return;
+  lastNetToast = now;
+  emitGlobalToast({
+    tone: "error",
+    title: i18next.t("errors.async", { defaultValue: "Something went wrong" }) as string,
+    description: i18next.t("errors.tryAgain", { defaultValue: "Please try again." }) as string,
+  });
+});
 
 // After a new deploy, a tab that was opened on the previous build may still
 // reference old hashed chunk URLs that no longer exist on the server. Vite fires
