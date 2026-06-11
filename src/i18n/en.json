@@ -37,7 +37,13 @@
     "home": "Go to start",
     "details": "Technical details",
     "async": "Something went wrong",
-    "tryAgain": "Please try again."
+    "tryAgain": "Please try again.",
+    "timeout": "The request timed out — check your connection and try again.",
+    "duplicate": "This conflicts with an existing record — a cage or number may already be in use.",
+    "linkMissing": "A linked record is missing. Refresh and try again.",
+    "invalidValue": "Some values are invalid. Please review and try again.",
+    "unauthorized": "Your session may have expired. Sign in again and retry.",
+    "database": "Database error. Please try again."
   },
   "nav": {
     "dashboard": "Dashboard",

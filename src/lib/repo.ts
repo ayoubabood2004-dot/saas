@@ -308,8 +308,17 @@ function maybe<T>(res: { data: unknown; error: { message: string } | null }): T 
   if (res.error) { console.error("[supabase]", res.error.message); return undefined; }
   return (res.data ?? undefined) as T | undefined;
 }
-function need<T>(res: { data: unknown; error: { message: string } | null }): T {
-  if (res.error || res.data == null) throw new Error(`[supabase] ${res.error?.message ?? "no data returned"}`);
+function need<T>(res: { data: unknown; error: { message: string; code?: string; details?: string; hint?: string } | null }): T {
+  if (res.error || res.data == null) {
+    const src = res.error;
+    // Preserve the Postgres error code/details so callers can show a specific,
+    // friendly message (e.g. a unique-constraint conflict) instead of a generic one.
+    const err = new Error(src?.message ?? "No data returned") as Error & { code?: string; details?: string; hint?: string };
+    if (src?.code) err.code = src.code;
+    if (src?.details) err.details = src.details;
+    if (src?.hint) err.hint = src.hint;
+    throw err;
+  }
   return res.data as T;
 }
 

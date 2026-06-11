@@ -11,6 +11,7 @@ import { SpeciesPicker, SexPicker, AgeInput, WeightInput, ColorPicker, BreedPick
 import { useToast } from "@/components/ui";
 import { useAuth } from "@/contexts/AuthContext";
 import { formatReadings, type ReadingKey } from "@/lib/vitals";
+import { withTimeout, describeDbError, isTimeoutError } from "@/lib/errors";
 import { uid } from "@/lib/utils";
 import { playSuccess, playTap, playWarning } from "@/lib/sounds";
 
@@ -95,7 +96,9 @@ export function NewCase() {
     const results: Outcome[] = [];
     try {
       for (const a of valid) {
-        const pet = await repo.createPet({
+        // Each network call is bounded by an 8s timeout so a dropped connection
+        // surfaces an error instead of spinning forever (see the catch/finally below).
+        const pet = await withTimeout(repo.createPet({
           owner_id: ownerId,
           owner_name: ownerName.trim() || "—",
           owner_phone: phone || undefined,
@@ -110,34 +113,36 @@ export function NewCase() {
           photo_url: a.photo,
           current_weight_kg: a.weight ? Number(a.weight) : null,
           allergies: a.allergies.split(",").map((s) => s.trim()).filter(Boolean),
-        });
+        }), 8000);
         const reason = a.notes.trim() || undefined;
         if (a.disp === "log") {
-          await repo.addAdmission({ pet_id: pet.id, kind: "treatment" as AdmissionKind, status: "active", admitted_on: today, reason });
+          await withTimeout(repo.addAdmission({ pet_id: pet.id, kind: "treatment" as AdmissionKind, status: "active", admitted_on: today, reason }), 8000);
         } else if (a.disp === "boarding") {
-          await repo.addAdmission({ pet_id: pet.id, kind: "boarding" as AdmissionKind, status: "active", admitted_on: today, cage: a.cage.trim() || undefined, reason });
+          await withTimeout(repo.addAdmission({ pet_id: pet.id, kind: "boarding" as AdmissionKind, status: "active", admitted_on: today, cage: a.cage.trim() || undefined, reason }), 8000);
         } else {
-          await repo.addAdmission({ pet_id: pet.id, kind: "treatment" as AdmissionKind, status: "discharged", admitted_on: today, discharged_on: today, reason });
+          await withTimeout(repo.addAdmission({ pet_id: pet.id, kind: "treatment" as AdmissionKind, status: "discharged", admitted_on: today, discharged_on: today, reason }), 8000);
         }
 
         // Readings recorded at registration become a dated entry in the patient's history.
         const objective = formatReadings(a.readings, a.species, pet.id, (k) => t(`reading.${k}`));
         if (objective) {
-          await repo.addVisit({
+          await withTimeout(repo.addVisit({
             pet_id: pet.id,
             clinic_name: "Happy Paws Veterinary Clinic",
             doctor_name: user?.full_name ?? "Doctor",
             visit_date: today,
             objective,
             assessment: t("newCase.admissionReadings"),
-          });
+          }), 8000);
         }
 
         results.push({ petId: pet.id, name: pet.name, species: a.species, disp: a.disp, addMeds: a.addMeds });
       }
     } catch (e) {
       playWarning();
-      toast.error(t("newCase.saveError", "Couldn't save the registration. Please try again."), e instanceof Error ? e.message : undefined);
+      // Friendly, specific message (timeout, duplicate cage/phone, RLS, …); raw detail
+      // shown underneath unless it's a timeout (the title already says it).
+      toast.error(describeDbError(e, t), !isTimeoutError(e) && e instanceof Error ? e.message : undefined);
       return;
     } finally {
       // Always re-enable, whether the save succeeded or failed.
@@ -396,16 +401,16 @@ function SerialAdmit({ today, doctorName, onAdmitted }: { today: string; doctorN
     admittingRef.current = true;
     setAdmitting(true);
     try {
-      if (disp === "log") await repo.addAdmission({ pet_id: pet.id, kind: "treatment" as AdmissionKind, status: "active", admitted_on: today });
-      else if (disp === "boarding") await repo.addAdmission({ pet_id: pet.id, kind: "boarding" as AdmissionKind, status: "active", admitted_on: today, cage: cage.trim() || undefined });
-      else await repo.addAdmission({ pet_id: pet.id, kind: "treatment" as AdmissionKind, status: "discharged", admitted_on: today, discharged_on: today });
+      if (disp === "log") await withTimeout(repo.addAdmission({ pet_id: pet.id, kind: "treatment" as AdmissionKind, status: "active", admitted_on: today }), 8000);
+      else if (disp === "boarding") await withTimeout(repo.addAdmission({ pet_id: pet.id, kind: "boarding" as AdmissionKind, status: "active", admitted_on: today, cage: cage.trim() || undefined }), 8000);
+      else await withTimeout(repo.addAdmission({ pet_id: pet.id, kind: "treatment" as AdmissionKind, status: "discharged", admitted_on: today, discharged_on: today }), 8000);
       const objective = formatReadings(readings, pet.species, pet.id, (k) => t(`reading.${k}`));
       if (objective) {
-        await repo.addVisit({ pet_id: pet.id, clinic_name: "Happy Paws Veterinary Clinic", doctor_name: doctorName, visit_date: today, objective, assessment: t("newCase.admissionReadings") });
+        await withTimeout(repo.addVisit({ pet_id: pet.id, clinic_name: "Happy Paws Veterinary Clinic", doctor_name: doctorName, visit_date: today, objective, assessment: t("newCase.admissionReadings") }), 8000);
       }
     } catch (e) {
       playWarning();
-      toast.error(t("newCase.saveError", "Couldn't save the registration. Please try again."), e instanceof Error ? e.message : undefined);
+      toast.error(describeDbError(e, t), !isTimeoutError(e) && e instanceof Error ? e.message : undefined);
       return;
     } finally {
       admittingRef.current = false;
