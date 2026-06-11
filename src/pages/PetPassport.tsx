@@ -1509,7 +1509,9 @@ function MediaTab({ pet, media, onChanged, canEdit }: { pet: Pet; media: MediaIt
     setUploadingKind(kind);
     try {
       // 1) Compress on the client so the upload stays small and the app fast.
-      const prepared = await prepareUpload(file);
+      //    Clinical images (X-ray/ultrasound/lab) keep more resolution so vets can
+      //    zoom into fine detail in the viewer; everyday photos stay lighter.
+      const prepared = await prepareUpload(file, { maxDim: kind === "photo" ? 1600 : 2400 });
       // 2) Upload to storage + permanently link it to this pet (FK pet_id). The
       //    20s timeout means a dropped network fails fast instead of spinning.
       await withTimeout(repo.uploadMedia(pet.id, prepared, kind, file.name), 20000);
