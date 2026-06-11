@@ -7,7 +7,7 @@ import {
   Plus, Check, Clock, AlertCircle, ChevronDown, Printer, ShieldAlert, Pill, Trash2, BedDouble, Camera,
   Share2, Copy, Globe, PawPrint, Repeat, Columns2, X, Calendar,
   Utensils, Fingerprint, Cake, Heart, Scissors, Users, UserPlus, Phone, Mail, Pencil,
-  Scale, Sparkles,
+  Scale, Sparkles, Loader2,
 } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, TreatmentEntry, Admission, FoodType, DietPlan, Appointment, Reminder } from "@/types";
@@ -21,7 +21,9 @@ import { HealthCurve, type CurvePoint, Button, useToast, ProgressRing } from "@/
 import { QrCode } from "@/components/QrCode";
 import { Modal } from "@/components/Modal";
 import { ageFromDOB, daysUntil, uid, formatDate, formatTime, formatHM, cn } from "@/lib/utils";
-import { playSuccess, playScan, playTap } from "@/lib/sounds";
+import { prepareUpload } from "@/lib/image";
+import { withTimeout, describeUploadError } from "@/lib/errors";
+import { playSuccess, playScan, playTap, playWarning } from "@/lib/sounds";
 import { ImageLightbox } from "@/components/ImageLightbox";
 import { DOCTORS } from "@/lib/clinic";
 import { allMedicationNames, addClinicMed, medicationDisplay } from "@/lib/meds";
@@ -353,7 +355,7 @@ export function PetPassport() {
                 {media.slice(0, 6).map((m) => (
                   <button key={m.id} onClick={() => { playTap(); setTab("media"); }} className="aspect-square overflow-hidden rounded-lg bg-surface-2">
                     {/(photo|xray|ultrasound)/.test(m.kind) ? (
-                      <img src={m.url} alt={m.caption || ""} className="h-full w-full object-cover" />
+                      <img src={m.url} alt={m.caption || ""} loading="lazy" decoding="async" className="h-full w-full object-cover" />
                     ) : (
                       <span className="grid h-full w-full place-items-center text-ink-subtle"><FileText size={18} /></span>
                     )}
@@ -1481,24 +1483,35 @@ const isPdfItem = (m: MediaItem) => m.url.startsWith("data:application/pdf") || 
 
 function MediaTab({ pet, media, onChanged, canEdit }: { pet: Pet; media: MediaItem[]; onChanged: () => void; canEdit: boolean }) {
   const { t, i18n } = useTranslation();
+  const toast = useToast();
   const [zoom, setZoom] = useState<MediaItem | null>(null);
   const [filter, setFilter] = useState<"all" | MediaItem["kind"]>("all");
   const [compareMode, setCompareMode] = useState(false);
   const [selected, setSelected] = useState<string[]>([]);
   const [comparing, setComparing] = useState(false);
+  const [uploadingKind, setUploadingKind] = useState<MediaItem["kind"] | null>(null);
 
-  const onUpload = (e: React.ChangeEvent<HTMLInputElement>, kind: MediaItem["kind"]) => {
+  const onUpload = async (e: React.ChangeEvent<HTMLInputElement>, kind: MediaItem["kind"]) => {
     const file = e.target.files?.[0];
-    if (!file) return;
-    const input = e.target;
-    const reader = new FileReader();
-    reader.onload = async () => {
-      await repo.addMedia({ pet_id: pet.id, kind, url: reader.result as string, caption: file.name });
+    e.target.value = ""; // allow re-picking the same file after an error
+    if (!file || uploadingKind) return;
+    setUploadingKind(kind);
+    try {
+      // 1) Compress on the client so the upload stays small and the app fast.
+      const prepared = await prepareUpload(file);
+      // 2) Upload to storage + permanently link it to this pet (FK pet_id). The
+      //    20s timeout means a dropped network fails fast instead of spinning.
+      await withTimeout(repo.uploadMedia(pet.id, prepared, kind, file.name), 20000);
       playSuccess();
+      toast.success(t("media.uploaded", "Image added to the vault"));
       onChanged();
-      input.value = "";
-    };
-    reader.readAsDataURL(file);
+    } catch (err) {
+      playWarning();
+      const detail = err instanceof Error && err.name !== "FileTooLargeError" && err.name !== "TimeoutError" ? err.message : undefined;
+      toast.error(describeUploadError(err, t), detail);
+    } finally {
+      setUploadingKind(null);
+    }
   };
 
   const kinds: MediaItem["kind"][] = canEdit ? ["photo", "xray", "ultrasound", "lab"] : ["photo"];
@@ -1523,15 +1536,19 @@ function MediaTab({ pet, media, onChanged, canEdit }: { pet: Pet; media: MediaIt
 
       {compareMode && <p className="text-xs text-ink-subtle">{t("media.compareHint", "Select photos to compare side by side over time.")}</p>}
 
-      {/* Upload buttons */}
+      {/* Upload buttons — the active kind shows a spinner; all lock during an upload. */}
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-        {kinds.map((k) => (
-          <label key={k} className="btn-secondary flex-col cursor-pointer py-3 text-xs">
-            <Plus size={18} />
-            {t(`media.kind.${k}`)}
-            <input type="file" accept={k === "lab" ? "image/*,application/pdf" : "image/*"} className="hidden" onChange={(e) => onUpload(e, k)} />
-          </label>
-        ))}
+        {kinds.map((k) => {
+          const busy = uploadingKind === k;
+          const disabled = uploadingKind !== null;
+          return (
+            <label key={k} className={cn("btn-secondary flex-col py-3 text-xs", disabled ? "cursor-not-allowed opacity-60" : "cursor-pointer")}>
+              {busy ? <Loader2 size={18} className="animate-spin" /> : <Plus size={18} />}
+              {busy ? t("media.uploading", "Uploading…") : t(`media.kind.${k}`)}
+              <input type="file" accept={k === "lab" ? "image/*,application/pdf" : "image/*"} className="hidden" disabled={disabled} onChange={(e) => onUpload(e, k)} />
+            </label>
+          );
+        })}
       </div>
 
       {/* Kind filter */}
@@ -1573,7 +1590,7 @@ function MediaTab({ pet, media, onChanged, canEdit }: { pet: Pet; media: MediaIt
                       onClick={() => { playTap(); selectable ? toggleSel(m.id) : setZoom(m); }}
                       aria-label={m.caption}
                     >
-                      <img src={m.url} alt={m.caption} className="aspect-square w-full object-cover transition hover:opacity-90" />
+                      <img src={m.url} alt={m.caption} loading="lazy" decoding="async" className="aspect-square w-full object-cover transition hover:opacity-90" />
                     </button>
                   )}
                   {selectable && (

@@ -43,7 +43,9 @@
     "linkMissing": "A linked record is missing. Refresh and try again.",
     "invalidValue": "Some values are invalid. Please review and try again.",
     "unauthorized": "Your session may have expired. Sign in again and retry.",
-    "database": "Database error. Please try again."
+    "database": "Database error. Please try again.",
+    "fileTooLarge": "File is too large (max {{mb}} MB). Try a smaller image.",
+    "uploadFailed": "Upload failed — check your connection and try again."
   },
   "nav": {
     "dashboard": "Dashboard",
@@ -337,6 +339,8 @@
   "media": {
     "kind": { "photo": "Photo", "xray": "X-ray", "ultrasound": "Ultrasound", "lab": "Lab / CBC", "document": "Document" },
     "all": "All",
+    "uploading": "Uploading…",
+    "uploaded": "Image added to the vault",
     "compare": "Compare",
     "compareDone": "Done",
     "compareHint": "Select photos to compare side by side over time.",

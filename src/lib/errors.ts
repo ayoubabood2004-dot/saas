@@ -47,3 +47,18 @@ export function describeDbError(e: unknown, t: TFunction): string {
   if (typeof err.message === "string" && err.message.trim()) return err.message;
   return t("errors.database", "Database error. Please try again.");
 }
+
+/** Friendly message for a media-upload failure (file too large, network, storage, …). */
+export function describeUploadError(e: unknown, t: TFunction): string {
+  const err = (e && typeof e === "object" ? e : {}) as { name?: string; maxMb?: number; message?: string };
+  if (err.name === "FileTooLargeError") {
+    return t("errors.fileTooLarge", "File is too large (max {{mb}} MB). Try a smaller image.", { mb: err.maxMb ?? 25 });
+  }
+  if (err.name === TIMEOUT_NAME) {
+    return t("errors.timeout", "The request timed out — check your connection and try again.");
+  }
+  if (typeof err.message === "string" && /fetch|network|storage|bucket|object|cors|load failed|not found/i.test(err.message)) {
+    return t("errors.uploadFailed", "Upload failed — check your connection and try again.");
+  }
+  return describeDbError(e, t);
+}

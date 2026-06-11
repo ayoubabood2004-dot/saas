@@ -5,7 +5,8 @@ import { loadDB, saveDB } from "./demoStore";
 import { supabase } from "./supabase";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, AppointmentStatus, TreatmentEntry, Admission, Reminder } from "@/types";
-import { uid } from "./utils";
+import { uid, uuid } from "./utils";
+import type { PreparedUpload } from "./image";
 
 const demoRepo = {
   async listPets(ownerId: string): Promise<Pet[]> {
@@ -144,6 +145,14 @@ const demoRepo = {
     db.media.push(m);
     saveDB(db);
     return m;
+  },
+
+  /**
+   * Upload a prepared (already client-side compressed) file and link it to a pet.
+   * Demo mode has no object storage, so the compressed image is kept inline.
+   */
+  async uploadMedia(petId: string, upload: PreparedUpload, kind: MediaItem["kind"], caption?: string): Promise<MediaItem> {
+    return demoRepo.addMedia({ pet_id: petId, kind, url: upload.dataUrl, caption });
   },
 
   async listAppointmentsForOwner(ownerId: string): Promise<Appointment[]> {
@@ -390,6 +399,26 @@ const supabaseRepo: typeof demoRepo = {
   },
   async addMedia(input) {
     return need<MediaItem>(await sbc().from("media_items").insert(input).select().single());
+  },
+  async uploadMedia(petId, upload, kind, caption) {
+    const sb = sbc();
+    // UUID object name keeps uploads collision-free; foldered by pet for tidiness.
+    const path = `${petId}/${uuid()}.${upload.ext}`;
+    const up = await sb.storage.from("medical-media").upload(path, upload.blob, {
+      contentType: upload.contentType,
+      cacheControl: "3600",
+      upsert: false,
+    });
+    if (up.error) {
+      const e = new Error(up.error.message) as Error & { name: string };
+      e.name = "StorageError";
+      throw e;
+    }
+    const { data: pub } = sb.storage.from("medical-media").getPublicUrl(path);
+    // Link the stored file to the pet's record (FK pet_id) so it lives in the vault.
+    return need<MediaItem>(
+      await sb.from("media_items").insert({ pet_id: petId, kind, url: pub.publicUrl, caption }).select().single(),
+    );
   },
   async listAppointmentsForOwner(ownerId) {
     return listOf<Appointment>(await sbc().from("appointments").select("*").eq("owner_id", ownerId).neq("status", "cancelled").order("scheduled_at", { ascending: true }));
