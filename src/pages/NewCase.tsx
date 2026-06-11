@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, ArrowRight, Camera, Stethoscope, BedDouble, LogOut as ReleaseIcon, CheckCircle2, Pill, Plus, Trash2, Activity, ChevronDown, Search } from "lucide-react";
+import { ArrowLeft, ArrowRight, Camera, Stethoscope, BedDouble, LogOut as ReleaseIcon, CheckCircle2, Pill, Plus, Trash2, Activity, ChevronDown, Search, Loader2 } from "lucide-react";
 import type { Species, Sex, AdmissionKind, Pet } from "@/types";
 import { repo } from "@/lib/repo";
 import { PhoneInput } from "@/components/PhoneInput";
@@ -66,6 +66,10 @@ export function NewCase() {
   const [email, setEmail] = useState("");
   const [animals, setAnimals] = useState<AnimalDraft[]>([newAnimal()]);
   const [outcomes, setOutcomes] = useState<Outcome[] | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  // Synchronous re-entrancy guard: blocks a second click that fires before React
+  // has re-rendered the disabled button (a state boolean alone can be raced).
+  const submittingRef = useRef(false);
 
   const Next = i18n.dir() === "rtl" ? ArrowLeft : ArrowRight;
   const Prev = i18n.dir() === "rtl" ? ArrowRight : ArrowLeft;
@@ -78,6 +82,12 @@ export function NewCase() {
   const valid = animals.filter((a) => a.name.trim());
 
   const finish = async () => {
+    // Guard against double-submit: ignore repeat clicks while a registration is in
+    // flight. The ref check is synchronous so it also blocks a rapid second click
+    // that arrives before the disabled state has rendered — no duplicate records.
+    if (submittingRef.current || valid.length === 0) return;
+    submittingRef.current = true;
+    setIsSubmitting(true);
     // In live (Supabase) mode the pet's owner_id must reference a real account
     // (FK + row-level security). Clinic walk-ins have no owner account, so we
     // attribute the record to the signed-in staff member. Demo mode accepts any id.
@@ -129,6 +139,10 @@ export function NewCase() {
       playWarning();
       toast.error(t("newCase.saveError", "Couldn't save the registration. Please try again."), e instanceof Error ? e.message : undefined);
       return;
+    } finally {
+      // Always re-enable, whether the save succeeded or failed.
+      submittingRef.current = false;
+      setIsSubmitting(false);
     }
     playSuccess();
     setOutcomes(results);
@@ -333,7 +347,11 @@ export function NewCase() {
             </div>
           ))}
 
-          <button className="btn-primary w-full py-4" onClick={finish}>{t("newCase.finish")}</button>
+          <button className="btn-primary w-full py-4 disabled:opacity-60 disabled:cursor-not-allowed" onClick={finish} disabled={isSubmitting}>
+            {isSubmitting ? (
+              <span className="inline-flex items-center justify-center gap-2"><Loader2 size={18} className="animate-spin" /> {t("newCase.finishing", "Registering…")}</span>
+            ) : t("newCase.finish")}
+          </button>
         </div>
       )}
     </div>
@@ -361,6 +379,8 @@ function SerialAdmit({ today, doctorName, onAdmitted }: { today: string; doctorN
   const [addMeds, setAddMeds] = useState(true);
   const [readingsOpen, setReadingsOpen] = useState(false);
   const [readings, setReadings] = useState<Partial<Record<ReadingKey, string>>>({});
+  const [admitting, setAdmitting] = useState(false);
+  const admittingRef = useRef(false);
 
   const lookup = async () => {
     setNotFound(false);
@@ -371,7 +391,10 @@ function SerialAdmit({ today, doctorName, onAdmitted }: { today: string; doctorN
   };
 
   const admit = async () => {
-    if (!pet) return;
+    // Same double-submit guard as the new-registration flow (synchronous ref + state).
+    if (!pet || admittingRef.current) return;
+    admittingRef.current = true;
+    setAdmitting(true);
     try {
       if (disp === "log") await repo.addAdmission({ pet_id: pet.id, kind: "treatment" as AdmissionKind, status: "active", admitted_on: today });
       else if (disp === "boarding") await repo.addAdmission({ pet_id: pet.id, kind: "boarding" as AdmissionKind, status: "active", admitted_on: today, cage: cage.trim() || undefined });
@@ -384,6 +407,9 @@ function SerialAdmit({ today, doctorName, onAdmitted }: { today: string; doctorN
       playWarning();
       toast.error(t("newCase.saveError", "Couldn't save the registration. Please try again."), e instanceof Error ? e.message : undefined);
       return;
+    } finally {
+      admittingRef.current = false;
+      setAdmitting(false);
     }
     playSuccess();
     onAdmitted({ petId: pet.id, name: pet.name, species: pet.species, disp, addMeds: disp !== "release" && addMeds });
@@ -437,7 +463,11 @@ function SerialAdmit({ today, doctorName, onAdmitted }: { today: string; doctorN
               </div>
             )}
           </div>
-          <button className="btn-primary w-full py-3" onClick={admit}>{t("newCase.admitExisting")}</button>
+          <button className="btn-primary w-full py-3 disabled:opacity-60 disabled:cursor-not-allowed" onClick={admit} disabled={admitting}>
+            {admitting ? (
+              <span className="inline-flex items-center justify-center gap-2"><Loader2 size={18} className="animate-spin" /> {t("newCase.finishing", "Registering…")}</span>
+            ) : t("newCase.admitExisting")}
+          </button>
         </div>
       )}
     </div>
