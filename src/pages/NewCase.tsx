@@ -11,7 +11,8 @@ import { SpeciesPicker, SexPicker, AgeInput, WeightInput, ColorPicker, BreedPick
 import { useToast } from "@/components/ui";
 import { useAuth } from "@/contexts/AuthContext";
 import { formatReadings, type ReadingKey } from "@/lib/vitals";
-import { withTimeout, describeDbError, isTimeoutError } from "@/lib/errors";
+import { withTimeout, describeDbError, isTimeoutError, describeUploadError } from "@/lib/errors";
+import { prepareUpload } from "@/lib/image";
 import { uid } from "@/lib/utils";
 import { playSuccess, playTap, playWarning } from "@/lib/sounds";
 
@@ -242,9 +243,11 @@ export function NewCase() {
                   ) : (
                     <span className="w-20 h-20 rounded-2xl bg-brand-50 text-brand-500 grid place-items-center"><Camera size={26} /></span>
                   )}
-                  <input type="file" accept="image/*" className="hidden" onChange={(e) => {
-                    const f = e.target.files?.[0]; if (!f) return;
-                    const r = new FileReader(); r.onload = () => setAnimal(a.key, { photo: r.result as string }); r.readAsDataURL(f);
+                  <input type="file" accept="image/*" className="hidden" onChange={async (e) => {
+                    const f = e.target.files?.[0]; e.target.value = "";
+                    if (!f) return;
+                    try { const p = await prepareUpload(f, { maxDim: 1024 }); setAnimal(a.key, { photo: p.dataUrl }); }
+                    catch (err) { toast.error(describeUploadError(err, t)); }
                   }} />
                 </label>
                 <div className="flex-1">

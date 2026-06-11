@@ -163,6 +163,7 @@ export function PetPassport() {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [reminders, setReminders] = useState<Reminder[]>([]);
   const { user } = useAuth();
+  const toast = useToast();
   // Owners may view their pet's health record but not modify clinical data.
   const canEditClinical = user?.role !== "owner";
   const isOwner = user?.role === "owner";
@@ -170,11 +171,21 @@ export function PetPassport() {
   const Back = i18n.dir() === "rtl" ? ArrowRight : ArrowLeft;
 
   const onPhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (typeof window === "undefined") return; // browser-only (defensive)
     const f = e.target.files?.[0];
+    e.target.value = ""; // allow re-picking the same file
     if (!f || !petId) return;
-    const r = new FileReader();
-    r.onload = async () => { await repo.updatePet(petId, { photo_url: r.result as string }); void reload(); };
-    r.readAsDataURL(f);
+    try {
+      // Compress the avatar (small thumbnail) via the same robust pipeline as the
+      // media vault — no raw FileReader, so it can't crash on limited webviews.
+      const prepared = await prepareUpload(f, { maxDim: 512, quality: 0.8 });
+      await repo.updatePet(petId, { photo_url: prepared.dataUrl });
+      void reload();
+    } catch (err) {
+      playWarning();
+      const detail = err instanceof Error && err.name !== "FileTooLargeError" ? err.message : undefined;
+      toast.error(describeUploadError(err, t), detail);
+    }
   };
 
   const reload = async () => {

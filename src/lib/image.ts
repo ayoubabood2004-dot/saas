@@ -39,13 +39,30 @@ function canvasToBlob(canvas: HTMLCanvasElement, type: string, quality: number):
   });
 }
 
-function blobToDataUrl(blob: Blob): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const r = new FileReader();
-    r.onload = () => resolve(r.result as string);
-    r.onerror = () => reject(new Error("The file could not be encoded"));
-    r.readAsDataURL(blob);
-  });
+async function blobToDataUrl(blob: Blob): Promise<string> {
+  // Preferred path: FileReader. Some restricted mobile webviews don't expose it
+  // ("Can't find variable: FileReader"), so fall back to ArrayBuffer + base64,
+  // which avoids the FileReader global entirely.
+  if (typeof FileReader !== "undefined") {
+    try {
+      return await new Promise<string>((resolve, reject) => {
+        const r = new FileReader();
+        r.onload = () => resolve(r.result as string);
+        r.onerror = () => reject(r.error ?? new Error("The file could not be encoded"));
+        r.readAsDataURL(blob);
+      });
+    } catch {
+      /* fall through to the manual encoder */
+    }
+  }
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  let binary = "";
+  const CHUNK = 0x8000; // chunk to avoid call-stack limits on large buffers
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
+  }
+  if (typeof btoa === "undefined") throw new Error("This browser cannot encode files");
+  return `data:${blob.type || "application/octet-stream"};base64,${btoa(binary)}`;
 }
 
 /**
@@ -58,6 +75,10 @@ export async function prepareUpload(
   file: File,
   opts: { maxDim?: number; quality?: number } = {},
 ): Promise<PreparedUpload> {
+  // Guard against any non-browser context (defensive — this is a client-only SPA).
+  if (typeof window === "undefined" || typeof document === "undefined") {
+    throw new Error("Image processing is only available in the browser");
+  }
   if (file.size > MAX_INPUT_BYTES) throw new FileTooLargeError(MAX_INPUT_MB);
 
   // Non-images (PDF lab reports, etc.) are uploaded as-is.

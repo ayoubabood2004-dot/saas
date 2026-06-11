@@ -20,6 +20,8 @@ import { playTap, playSuccess } from "@/lib/sounds";
 import { phoneMatches, nationalNumber } from "@/lib/phone";
 import { getDialCode } from "@/lib/settings";
 import { useAuth } from "@/contexts/AuthContext";
+import { prepareUpload } from "@/lib/image";
+import { describeUploadError } from "@/lib/errors";
 
 type Tab = "log" | "cases" | "boarding" | "movement";
 
@@ -668,7 +670,7 @@ function PatientLog({ pets, admissions, onChanged, loading }: { pets: Pet[]; adm
               ) : (
                 <span className="grid h-16 w-16 place-items-center rounded-2xl bg-brand-50 text-brand-500 dark:bg-brand-500/15"><Camera size={22} /></span>
               )}
-              <input type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (!f) return; const r = new FileReader(); r.onload = () => setA({ photo: r.result as string }); r.readAsDataURL(f); }} />
+              <input type="file" accept="image/*" className="hidden" onChange={async (e) => { const f = e.target.files?.[0]; e.target.value = ""; if (!f) return; try { const p = await prepareUpload(f, { maxDim: 1024 }); setA({ photo: p.dataUrl }); } catch (err) { toast.error(describeUploadError(err, t)); } }} />
             </label>
             <div className="flex-1">
               <label className="label">{t("pet.name")}</label>
