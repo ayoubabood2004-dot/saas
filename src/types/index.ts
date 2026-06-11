@@ -1,5 +1,8 @@
 export type Role = "owner" | "doctor" | "reception" | "admin";
 
+/** Top-level account type a single user can hold (one account, possibly both). */
+export type AccountRole = "owner" | "clinic";
+
 export type Species = "dog" | "cat" | "horse" | "cow" | "bird" | "rabbit" | "other";
 export type Sex = "male" | "female" | "unknown";
 
@@ -7,7 +10,10 @@ export interface Profile {
   id: string;
   full_name: string;
   email: string;
+  /** Effective role for the active session (clinic → admin/doctor/reception, or owner). */
   role: Role;
+  /** Account types this user holds — a single user can be both a clinic and an owner. */
+  roles: AccountRole[];
   phone?: string;
   clinic_id?: string | null;
 }

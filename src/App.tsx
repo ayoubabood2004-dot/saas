@@ -6,6 +6,7 @@ import { TopBar } from "@/components/TopBar";
 import { Sidebar } from "@/components/Sidebar";
 import { CommandPaletteProvider } from "@/components/CommandPaletteProvider";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { RoleSelect } from "@/components/RoleSelect";
 import { Spinner } from "@/components/ui";
 import { pageVariants } from "@/lib/motion";
 
@@ -59,7 +60,11 @@ function Home() {
 
 function Shell() {
   const location = useLocation();
-  const { user } = useAuth();
+  const { user, needsRoleChoice } = useAuth();
+
+  // A multi-role account must pick a workspace before anything else renders.
+  if (user && needsRoleChoice) return <RoleSelect />;
+
   const showChrome = !!user && location.pathname !== "/login";
   const staff = !!user && (user.role === "admin" || user.role === "doctor" || user.role === "reception");
 

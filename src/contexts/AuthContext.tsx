@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
-import type { Profile, Role } from "@/types";
+import type { Profile, Role, AccountRole } from "@/types";
 import { isSupabaseConfigured, supabase } from "@/lib/supabase";
 import { setActiveClinicId, clearActiveClinic, type ClinicAccount } from "@/lib/clinics";
 import type { OwnerAccount } from "@/lib/owners";
@@ -9,17 +9,38 @@ interface SignupExtra {
   city?: string;
 }
 
+/** Raw record loaded from the backend before an active role is resolved. */
+interface RawProfile {
+  id: string;
+  full_name: string;
+  email: string;
+  rawRole: Role; // the stored staff sub-role (admin/doctor/reception) or 'owner'
+  roles: AccountRole[]; // account types the user holds
+  phone?: string;
+  clinic_id?: string | null;
+}
+
 interface AuthState {
   user: Profile | null;
   loading: boolean;
   demo: boolean;
   /** True when the user arrived via a password-recovery link and must set a new password. */
   recovery: boolean;
+  /** Account types the signed-in user holds. */
+  roles: AccountRole[];
+  /** Active account type for this session (null while a both-role choice is pending). */
+  activeRole: AccountRole | null;
+  /** True when the user holds BOTH account roles and hasn't picked one for this session. */
+  needsRoleChoice: boolean;
+  chooseRole: (r: AccountRole) => void;
+  switchRole: () => void;
+  /** Append an account role to the *currently signed-in* user (secure: server uses auth.uid()). */
+  addRole: (r: AccountRole) => Promise<{ error: string | null }>;
   signInDemo: (role: Role, name?: string) => void;
   signInClinic: (clinic: ClinicAccount) => void;
   signInOwner: (owner: OwnerAccount) => void;
   // Live Supabase email/password auth (used when env vars are configured).
-  signUpEmail: (email: string, password: string, fullName: string, role: Role, extra?: SignupExtra) => Promise<{ error: string | null; needsConfirm?: boolean }>;
+  signUpEmail: (email: string, password: string, fullName: string, role: Role, extra?: SignupExtra) => Promise<{ error: string | null; needsConfirm?: boolean; alreadyExists?: boolean }>;
   signInEmail: (email: string, password: string) => Promise<{ error: string | null }>;
   verifyEmailCode: (email: string, token: string) => Promise<{ error: string | null }>;
   resendSignupCode: (email: string) => Promise<{ error: string | null }>;
@@ -30,43 +51,57 @@ interface AuthState {
 
 const AuthContext = createContext<AuthState | undefined>(undefined);
 const KEY = "vp_session";
+const ACTIVE_KEY = "vp_active_role";
 
-const DEMO_OWNER: Profile = { id: "demo-owner", full_name: "Maya Khalil", email: "owner@demo.vet", role: "owner" };
-const DEMO_VET: Profile = { id: "demo-vet", full_name: "Dr. Sarah Mansour", email: "vet@demo.vet", role: "doctor", clinic_id: "clinic-happy-paws" };
+const isAccountRole = (r: unknown): r is AccountRole => r === "owner" || r === "clinic";
+/** Map an effective role to its account type. */
+const accountOf = (role: Role): AccountRole => (role === "owner" ? "owner" : "clinic");
+
+function readStoredActive(): AccountRole | null {
+  try { const v = localStorage.getItem(ACTIVE_KEY); return isAccountRole(v) ? v : null; } catch { return null; }
+}
+function storeActive(r: AccountRole | null) {
+  try { if (r) localStorage.setItem(ACTIVE_KEY, r); else localStorage.removeItem(ACTIVE_KEY); } catch { /* ignore */ }
+}
+
+/** Effective app role given the active account type. Clinic keeps the staff sub-role. */
+function effectiveRole(active: AccountRole, raw: RawProfile): Role {
+  if (active === "owner") return "owner";
+  return raw.rawRole !== "owner" ? raw.rawRole : "admin";
+}
+
+const DEMO_OWNER = { id: "demo-owner", full_name: "Maya Khalil", email: "owner@demo.vet" };
+const DEMO_VET = { id: "demo-vet", full_name: "Dr. Sarah Mansour", email: "vet@demo.vet", clinic_id: "clinic-happy-paws" };
 
 /** Fetch the app profile row (1:1 with auth.users) for a signed-in Supabase user. */
-async function loadProfile(userId: string): Promise<Profile | null> {
+async function loadRawProfile(userId: string): Promise<RawProfile | null> {
   if (!supabase) return null;
   try {
     const { data, error } = await supabase.from("profiles").select("*").eq("id", userId).maybeSingle();
     if (error || !data) return null;
-    return {
-      id: data.id,
-      full_name: data.full_name,
-      email: data.email,
-      role: data.role as Role,
-      phone: data.phone ?? undefined,
-      clinic_id: data.clinic_id ?? null,
-    };
+    const rawRole = ((data.role as Role) ?? "owner");
+    // `roles` column may not exist yet (before migration 0005) — derive from `role`.
+    const fromArr = Array.isArray(data.roles) ? (data.roles as unknown[]).filter(isAccountRole) : [];
+    const roles = fromArr.length ? fromArr : [accountOf(rawRole)];
+    return { id: data.id, full_name: data.full_name, email: data.email, rawRole, roles, phone: data.phone ?? undefined, clinic_id: data.clinic_id ?? null };
   } catch {
-    // Network/backend error (e.g. the project is paused) — treat as "no profile"
-    // rather than letting the rejection bubble up and freeze app boot.
+    // Network/backend error (e.g. project paused) — treat as "no profile" so boot never hangs.
     return null;
   }
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<Profile | null>(null);
+  const [raw, setRaw] = useState<RawProfile | null>(null);
+  const [activeRole, setActiveRole] = useState<AccountRole | null>(readStoredActive());
   const [loading, setLoading] = useState(true);
   const [recovery, setRecovery] = useState(false);
 
+  // ---- Mount: restore session (Supabase live, or demo localStorage) -------
   useEffect(() => {
     if (isSupabaseConfigured && supabase) {
       const sb = supabase;
       let active = true;
-      // Failsafe: a slow or unreachable backend (e.g. a paused Supabase project)
-      // must NEVER trap the app on a blank spinner. Reveal the UI after a few
-      // seconds no matter what — the login screen is a safe place to land.
+      // Failsafe: a slow/unreachable backend must never trap the app on a blank spinner.
       const failsafe = setTimeout(() => { if (active) setLoading(false); }, 7000);
       const finish = () => { if (active) { clearTimeout(failsafe); setLoading(false); } };
 
@@ -74,8 +109,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         try {
           const { data } = await sb.auth.getSession();
           if (!active) return;
-          const profile = data.session?.user ? await loadProfile(data.session.user.id) : null;
-          if (active) setUser(profile);
+          const rp = data.session?.user ? await loadRawProfile(data.session.user.id) : null;
+          if (active) setRaw(rp);
         } catch {
           /* network/backend error — fall through and show the login screen */
         } finally {
@@ -86,27 +121,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const { data: sub } = sb.auth.onAuthStateChange(async (event, session) => {
         if (event === "PASSWORD_RECOVERY") setRecovery(true);
         try {
-          const profile = session?.user ? await loadProfile(session.user.id) : null;
-          if (active) setUser(profile);
+          const rp = session?.user ? await loadRawProfile(session.user.id) : null;
+          if (active) setRaw(rp);
         } catch {
-          if (active) setUser(null);
+          if (active) setRaw(null);
         } finally {
           finish();
         }
       });
-      return () => {
-        active = false;
-        clearTimeout(failsafe);
-        sub.subscription.unsubscribe();
-      };
+      return () => { active = false; clearTimeout(failsafe); sub.subscription.unsubscribe(); };
     }
 
+    // Demo mode
     try {
-      const raw = localStorage.getItem(KEY);
-      if (raw) {
-        const profile = JSON.parse(raw) as Profile;
-        setUser(profile);
-        if (profile.clinic_id) setActiveClinicId(profile.clinic_id);
+      const stored = localStorage.getItem(KEY);
+      if (stored) {
+        const parsed = JSON.parse(stored) as { raw?: RawProfile; active?: AccountRole } | Profile;
+        if (parsed && "raw" in parsed && parsed.raw) {
+          setRaw(parsed.raw);
+          if (isAccountRole(parsed.active)) setActiveRole(parsed.active);
+        } else if (parsed && "role" in parsed) {
+          // Legacy single-role session.
+          const p = parsed as Profile;
+          setRaw({ id: p.id, full_name: p.full_name, email: p.email, rawRole: p.role, roles: [accountOf(p.role)], phone: p.phone, clinic_id: p.clinic_id ?? null });
+          setActiveRole(accountOf(p.role));
+        }
       }
     } catch {
       /* ignore */
@@ -115,44 +154,93 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const persist = (profile: Profile) => {
-    setUser(profile);
-    try {
-      localStorage.setItem(KEY, JSON.stringify(profile));
-    } catch {
-      /* ignore */
-    }
+  // ---- Derive active role + the exposed Profile ---------------------------
+  const resolvedActive: AccountRole | null = !raw
+    ? null
+    : raw.roles.length <= 1
+      ? (raw.roles[0] ?? accountOf(raw.rawRole))
+      : (activeRole && raw.roles.includes(activeRole)) ? activeRole : null;
+  const needsRoleChoice = !!raw && resolvedActive === null;
+
+  const user = useMemo<Profile | null>(() => {
+    if (!raw) return null;
+    const act = resolvedActive ?? raw.roles[0] ?? accountOf(raw.rawRole);
+    return {
+      id: raw.id, full_name: raw.full_name, email: raw.email,
+      role: effectiveRole(act, raw), roles: raw.roles,
+      phone: raw.phone, clinic_id: raw.clinic_id ?? null,
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [raw, resolvedActive]);
+
+  // Keep the active clinic id in sync with the active role.
+  useEffect(() => {
+    if (resolvedActive === "clinic" && raw?.clinic_id) setActiveClinicId(raw.clinic_id);
+    else if (resolvedActive === "owner") clearActiveClinic();
+  }, [resolvedActive, raw]);
+
+  // ---- Demo persistence ---------------------------------------------------
+  const persistRaw = (rp: RawProfile, active: AccountRole) => {
+    setRaw(rp);
+    setActiveRole(active);
+    storeActive(active);
+    try { localStorage.setItem(KEY, JSON.stringify({ raw: rp, active })); } catch { /* ignore */ }
   };
 
   const signInDemo = (role: Role, name?: string) => {
     const base = role === "owner" ? DEMO_OWNER : DEMO_VET;
-    const profile: Profile = { ...base, full_name: name || base.full_name, role };
-    if (profile.clinic_id) setActiveClinicId(profile.clinic_id);
-    else clearActiveClinic();
-    persist(profile);
+    persistRaw({ id: base.id, full_name: name || base.full_name, email: base.email, rawRole: role, roles: [accountOf(role)], clinic_id: (base as { clinic_id?: string }).clinic_id ?? null }, accountOf(role));
   };
-
   const signInClinic = (clinic: ClinicAccount) => {
-    const profile: Profile = { id: clinic.id, full_name: clinic.name, email: clinic.email, role: "admin", clinic_id: clinic.id };
-    setActiveClinicId(clinic.id);
-    persist(profile);
+    persistRaw({ id: clinic.id, full_name: clinic.name, email: clinic.email, rawRole: "admin", roles: ["clinic"], clinic_id: clinic.id }, "clinic");
   };
-
   const signInOwner = (owner: OwnerAccount) => {
-    clearActiveClinic();
-    persist({ id: owner.id, full_name: owner.name, email: owner.email, role: "owner", phone: owner.phone });
+    persistRaw({ id: owner.id, full_name: owner.name, email: owner.email, rawRole: "owner", roles: ["owner"], phone: owner.phone, clinic_id: null }, "owner");
   };
 
-  // --- Live Supabase auth ---------------------------------------------------
+  // ---- Role management ----------------------------------------------------
+  const chooseRole = (r: AccountRole) => {
+    if (!raw || !raw.roles.includes(r)) return;
+    storeActive(r);
+    setActiveRole(r);
+    if (!isSupabaseConfigured) { try { localStorage.setItem(KEY, JSON.stringify({ raw, active: r })); } catch { /* ignore */ } }
+  };
+  const switchRole = () => {
+    if (!raw || raw.roles.length < 2 || !resolvedActive) return;
+    const other = raw.roles.find((x) => x !== resolvedActive);
+    if (other) chooseRole(other);
+  };
+  const addRole = async (r: AccountRole): Promise<{ error: string | null }> => {
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const { data, error } = await supabase.rpc("add_my_role", { p_role: r });
+        if (error) return { error: error.message };
+        const next = Array.isArray(data) ? (data as unknown[]).filter(isAccountRole) : null;
+        setRaw((prev) => (prev ? { ...prev, roles: next && next.length ? next : Array.from(new Set([...prev.roles, r])) } : prev));
+        storeActive(r);
+        setActiveRole(r);
+        return { error: null };
+      } catch (e) {
+        return { error: e instanceof Error ? e.message : "Failed to add role" };
+      }
+    }
+    if (raw) persistRaw({ ...raw, roles: Array.from(new Set([...raw.roles, r])) }, r);
+    return { error: null };
+  };
+
+  // ---- Live Supabase auth -------------------------------------------------
   const signUpEmail = async (email: string, password: string, fullName: string, role: Role, extra?: SignupExtra) => {
     if (!supabase) return { error: "Supabase is not configured." };
     const { data, error } = await supabase.auth.signUp({
       email: email.trim(),
       password,
-      // handle_new_user() (DB trigger) reads these to populate the profile row.
       options: { data: { full_name: fullName.trim(), role, phone: extra?.phone || null, city: extra?.city || null } },
     });
     if (error) return { error: error.message };
+    // Enumeration protection: an existing confirmed email returns a user with no
+    // identities and sends no code. Surface that so the UI can route to "sign in
+    // and add this role" instead of failing with a duplicate-email error.
+    if (data.user && (data.user.identities?.length ?? 0) === 0) return { error: null, alreadyExists: true };
     return { error: null, needsConfirm: !data.session };
   };
 
@@ -189,29 +277,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signOut = () => {
-    if (isSupabaseConfigured && supabase) {
-      void supabase.auth.signOut();
-      setUser(null);
-      setRecovery(false);
-      clearActiveClinic();
-      return;
-    }
-    setUser(null);
+    if (isSupabaseConfigured && supabase) void supabase.auth.signOut();
+    setRaw(null);
+    setActiveRole(null);
+    setRecovery(false);
+    storeActive(null);
     clearActiveClinic();
-    try {
-      localStorage.removeItem(KEY);
-    } catch {
-      /* ignore */
-    }
+    try { localStorage.removeItem(KEY); } catch { /* ignore */ }
   };
 
   const value = useMemo<AuthState>(
     () => ({
       user, loading, recovery, demo: !isSupabaseConfigured,
+      roles: raw?.roles ?? [], activeRole: resolvedActive, needsRoleChoice,
+      chooseRole, switchRole, addRole,
       signInDemo, signInClinic, signInOwner,
       signUpEmail, signInEmail, verifyEmailCode, resendSignupCode, resetPassword, updatePassword, signOut,
     }),
-    [user, loading, recovery],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [user, loading, recovery, raw, resolvedActive, needsRoleChoice],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -58,7 +58,19 @@
   "role": {
     "admin": "Clinic",
     "doctor": "Veterinarian",
-    "reception": "Reception"
+    "reception": "Reception",
+    "owner": "Pet Owner",
+    "clinic": "Clinic",
+    "switchTo": "Switch to {{role}}",
+    "select": {
+      "title": "Choose how to continue",
+      "sub": "This account has access to both workspaces.",
+      "greeting": "Welcome back, {{name}} — this account has both workspaces.",
+      "clinic": "Continue as Clinic",
+      "clinicSub": "Manage patients, boarding & treatments",
+      "owner": "Continue as Pet Owner",
+      "ownerSub": "Your pets, records & appointments"
+    }
   },
   "settings": {
     "title": "Doctor settings",
@@ -132,6 +144,12 @@
     "resetDone": "Password updated. You can sign in now.",
     "noAccountEmail": "No account found with this email.",
     "codeWrong": "Incorrect verification code.",
+    "emailExists": "This email already has an account. Sign in to add {{role}} access.",
+    "roleAdded": "{{role}} access added to your account.",
+    "roleAddFailed": "Signed in, but couldn't add the new role.",
+    "codeInvalid": "Invalid or expired code — request a new one.",
+    "verified": "Verified — welcome!",
+    "signOut": "Sign out",
     "pwMismatch": "Passwords don't match (min 4 characters).",
     "backToSignin": "Back to sign in"
   },

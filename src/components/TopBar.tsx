@@ -13,6 +13,7 @@ import {
   Search,
   Menu,
   X,
+  ArrowLeftRight,
 } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { setLang, type Lang } from "@/i18n";
@@ -25,12 +26,13 @@ import { cn } from "@/lib/utils";
 
 export function TopBar({ mobileOnly = false }: { mobileOnly?: boolean }) {
   const { t, i18n } = useTranslation();
-  const { user, signOut } = useAuth();
+  const { user, signOut, roles, activeRole, switchRole } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const palette = useCommandPalette();
   const [sound, setSound] = useState(isSoundEnabled());
   const [menuOpen, setMenuOpen] = useState(false);
+  const otherRole = activeRole === "clinic" ? "owner" : "clinic";
 
   const staff = user?.role === "doctor" || user?.role === "reception" || user?.role === "admin";
 
@@ -133,6 +135,17 @@ export function TopBar({ mobileOnly = false }: { mobileOnly?: boolean }) {
               </Tooltip>
             )}
 
+            {roles.length > 1 && (
+              <Tooltip label={t("role.switchTo", { role: t(`role.${otherRole}`), defaultValue: "Switch to {{role}}" })}>
+                <button
+                  onClick={() => { switchRole(); navigate("/"); }}
+                  className="grid h-11 w-11 place-items-center rounded-full text-ink-muted transition hover:bg-brand-50 hover:text-brand-600"
+                >
+                  <ArrowLeftRight size={19} />
+                </button>
+              </Tooltip>
+            )}
+
             {user && (
               <Tooltip label={t("nav.logout")}>
                 <button
@@ -194,6 +207,14 @@ export function TopBar({ mobileOnly = false }: { mobileOnly?: boolean }) {
                 <Link to="/settings" className="flex items-center gap-3 rounded-2xl px-3 py-3 text-ink hover:bg-surface-2">
                   <SettingsIcon size={18} /> {t("nav.settings")}
                 </Link>
+                {roles.length > 1 && (
+                  <button
+                    onClick={() => { setMenuOpen(false); switchRole(); navigate("/"); }}
+                    className="flex items-center gap-3 rounded-2xl px-3 py-3 text-ink hover:bg-surface-2"
+                  >
+                    <ArrowLeftRight size={18} /> {t("role.switchTo", { role: t(`role.${otherRole}`), defaultValue: "Switch to {{role}}" })}
+                  </button>
+                )}
                 <button
                   onClick={() => {
                     signOut();

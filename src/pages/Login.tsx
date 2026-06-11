@@ -25,7 +25,7 @@ import { setLang, type Lang } from "@/i18n";
 import { playScan, playTap, playSuccess } from "@/lib/sounds";
 import { registerClinic, authenticateClinic, getClinicByEmail, setClinicPassword } from "@/lib/clinics";
 import { registerOwner, authenticateOwner, getOwnerByEmail, setOwnerPassword } from "@/lib/owners";
-import { Button, Input, Label, Segmented, Card, ThemeToggle, SuccessDialog } from "@/components/ui";
+import { Button, Input, Label, Segmented, Card, ThemeToggle, SuccessDialog, useToast } from "@/components/ui";
 import { staggerContainer, staggerItem } from "@/lib/motion";
 import { HERO_PHOTO } from "@/lib/petPhotos";
 import { isSupabaseConfigured } from "@/lib/supabase";
@@ -77,11 +77,15 @@ function PasswordField({ label, value, onChange, show, setShow, autoComplete, wi
  *  and forgot/reset password. Shown when VITE_SUPABASE_* are configured. */
 function SupabaseAuthCard() {
   const { t, i18n } = useTranslation();
-  const { signUpEmail, signInEmail, verifyEmailCode, resendSignupCode, resetPassword, updatePassword, recovery } = useAuth();
+  const { signUpEmail, signInEmail, verifyEmailCode, resendSignupCode, resetPassword, updatePassword, addRole, recovery } = useAuth();
   const navigate = useNavigate();
+  const toast = useToast();
 
   const [mode, setMode] = useState<"signin" | "signup">("signin");
   const [portal, setPortal] = useState<Portal>("owner");
+  // When an existing email tries to sign up for a second role, we route them to
+  // sign in and append this role to their account afterwards.
+  const [pendingRole, setPendingRole] = useState<Portal | null>(null);
   const [view, setView] = useState<"auth" | "verify" | "forgot">("auth");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -111,6 +115,15 @@ function SupabaseAuthCard() {
         const role: Role = portal === "clinic" ? "admin" : "owner";
         const res = await signUpEmail(email, password, name, role, { phone, city });
         if (res.error) { setError(res.error); return; }
+        if (res.alreadyExists) {
+          // Existing account → switch to sign-in and append this role after login
+          // (no duplicate auth.users row).
+          setPendingRole(portal);
+          setMode("signin");
+          setName("");
+          setInfo(t("auth.emailExists", { role: t(`role.${portal}`), defaultValue: "This email already has an account. Sign in to add {{role}} access." }));
+          return;
+        }
         if (res.needsConfirm) {
           setView("verify");
           setInfo(t("auth.codeSent", { email: email.trim(), defaultValue: "We emailed a verification code to {{email}}." }));
@@ -121,6 +134,12 @@ function SupabaseAuthCard() {
       } else {
         const res = await signInEmail(email, password);
         if (res.error) { setError(res.error); return; }
+        if (pendingRole) {
+          const add = await addRole(pendingRole);
+          setPendingRole(null);
+          if (add.error) toast.error(t("auth.roleAddFailed", "Signed in, but couldn't add the new role."), add.error);
+          else toast.success(t("auth.roleAdded", { role: t(`role.${pendingRole}`), defaultValue: "{{role}} access added to your account." }));
+        }
         playSuccess();
         navigate("/");
       }
@@ -136,8 +155,15 @@ function SupabaseAuthCard() {
     setBusy(true);
     try {
       const res = await verifyEmailCode(email, code);
-      if (res.error) { setError(res.error); return; }
+      if (res.error) {
+        const msg = /expired|invalid|token/i.test(res.error) ? t("auth.codeInvalid", "Invalid or expired code — request a new one.") : res.error;
+        setError(msg);
+        toast.error(msg);
+        return;
+      }
+      // verifyOtp established the session → onAuthStateChange logs the user in.
       playSuccess();
+      toast.success(t("auth.verified", "Verified — welcome!"));
       navigate("/");
     } finally {
       setBusy(false);

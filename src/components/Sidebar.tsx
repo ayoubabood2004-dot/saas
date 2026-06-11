@@ -11,6 +11,7 @@ import {
   Search,
   LogOut,
   Languages,
+  ArrowLeftRight,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { setLang, type Lang } from "@/i18n";
@@ -23,10 +24,11 @@ import { cn } from "@/lib/utils";
 /** Desktop navigation rail with profile card (ref img 1). Hidden below lg. */
 export function Sidebar() {
   const { t, i18n } = useTranslation();
-  const { user, signOut } = useAuth();
+  const { user, signOut, roles, activeRole, switchRole } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const palette = useCommandPalette();
+  const otherRole = activeRole === "clinic" ? "owner" : "clinic";
 
   const items = [
     { to: "/", icon: LayoutDashboard, label: t("nav.dashboard", "Dashboard"), exact: true },
@@ -120,6 +122,16 @@ export function Sidebar() {
             </button>
           </Tooltip>
           <ThemeToggle />
+          {roles.length > 1 && (
+            <Tooltip label={t("role.switchTo", { role: t(`role.${otherRole}`), defaultValue: "Switch to {{role}}" })}>
+              <button
+                onClick={() => { switchRole(); navigate("/"); }}
+                className="grid h-10 w-10 place-items-center rounded-full text-ink-muted transition hover:bg-brand-50 hover:text-brand-600"
+              >
+                <ArrowLeftRight size={18} />
+              </button>
+            </Tooltip>
+          )}
           <div className="flex-1" />
           <Tooltip label={t("nav.logout")}>
             <button
