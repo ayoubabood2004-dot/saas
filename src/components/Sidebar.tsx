@@ -12,6 +12,7 @@ import {
   LogOut,
   Languages,
   ArrowLeftRight,
+  Barcode,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { setLang, type Lang } from "@/i18n";
@@ -34,6 +35,7 @@ export function Sidebar() {
     { to: "/", icon: LayoutDashboard, label: t("nav.dashboard", "Dashboard"), exact: true },
     { to: "/reception", icon: CalendarDays, label: t("reception.title") },
     { to: "/records", icon: ClipboardList, label: t("records.title") },
+    { to: "/inventory", icon: Barcode, label: t("nav.inventory", "Inventory & POS") },
     { to: "/scan", icon: ScanLine, label: t("nav.scan") },
     { to: "/settings", icon: SettingsIcon, label: t("nav.settings") },
   ];

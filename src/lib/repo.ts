@@ -4,7 +4,7 @@
 import { loadDB, saveDB } from "./demoStore";
 import { supabase } from "./supabase";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, AppointmentStatus, TreatmentEntry, Admission, Reminder } from "@/types";
+import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, AppointmentStatus, TreatmentEntry, Admission, Reminder, Product, Invoice, CheckoutItem } from "@/types";
 import { uid, uuid } from "./utils";
 import type { PreparedUpload } from "./image";
 
@@ -299,6 +299,59 @@ const demoRepo = {
     db.reminders = (db.reminders ?? []).filter((x) => x.id !== id);
     saveDB(db);
   },
+
+  /* ---------------- Inventory & POS ---------------- */
+  async listProducts(_clinicId?: string): Promise<Product[]> {
+    return (loadDB().products ?? []).slice().sort((a, b) => a.name.localeCompare(b.name));
+  },
+  async getProductByBarcode(barcode: string, _clinicId?: string): Promise<Product | undefined> {
+    const code = barcode.trim();
+    return (loadDB().products ?? []).find((p) => (p.barcode ?? "") === code);
+  },
+  async createProduct(input: Omit<Product, "id" | "created_at">): Promise<Product> {
+    const db = loadDB();
+    if (!db.products) db.products = [];
+    const p: Product = { ...input, id: uid("prod"), created_at: new Date().toISOString() };
+    db.products.push(p);
+    saveDB(db);
+    return p;
+  },
+  async updateProduct(id: string, patch: Partial<Product>): Promise<Product | undefined> {
+    const db = loadDB();
+    const p = (db.products ?? []).find((x) => x.id === id);
+    if (!p) return undefined;
+    Object.assign(p, patch);
+    saveDB(db);
+    return p;
+  },
+  async deleteProduct(id: string): Promise<void> {
+    const db = loadDB();
+    db.products = (db.products ?? []).filter((x) => x.id !== id);
+    saveDB(db);
+  },
+  async listInvoices(_clinicId?: string): Promise<Invoice[]> {
+    return (loadDB().invoices ?? []).slice().sort((a, b) => b.created_at.localeCompare(a.created_at));
+  },
+  async checkout(items: CheckoutItem[]): Promise<Invoice> {
+    const db = loadDB();
+    if (!db.products) db.products = [];
+    if (!db.invoices) db.invoices = [];
+    if (!db.invoiceItems) db.invoiceItems = [];
+    const total = items.reduce((s, i) => s + i.qty * i.unit_price, 0);
+    const cost = items.reduce((s, i) => s + i.qty * i.unit_cost, 0);
+    const count = items.reduce((s, i) => s + i.qty, 0);
+    const invoice: Invoice = { id: uid("inv"), total, cost_total: cost, profit: total - cost, item_count: count, created_at: new Date().toISOString() };
+    db.invoices.push(invoice);
+    for (const i of items) {
+      db.invoiceItems.push({ id: uid("ii"), invoice_id: invoice.id, product_id: i.product_id ?? null, name: i.name, barcode: i.barcode ?? null, qty: i.qty, unit_price: i.unit_price, unit_cost: i.unit_cost, line_total: i.qty * i.unit_price });
+      if (i.product_id) {
+        const p = db.products.find((x) => x.id === i.product_id);
+        if (p) p.stock = Math.max(0, p.stock - i.qty);
+      }
+    }
+    saveDB(db);
+    return invoice;
+  },
 };
 
 /* ============================================================================
@@ -490,6 +543,36 @@ const supabaseRepo: typeof demoRepo = {
   },
   async removeReminder(id) {
     await sbc().from("reminders").delete().eq("id", id);
+  },
+
+  /* ---------------- Inventory & POS ---------------- */
+  async listProducts(clinicId) {
+    let q = sbc().from("products").select("*").order("name", { ascending: true });
+    if (clinicId) q = q.eq("clinic_id", clinicId);
+    return listOf<Product>(await q);
+  },
+  async getProductByBarcode(barcode, clinicId) {
+    let q = sbc().from("products").select("*").eq("barcode", barcode.trim());
+    if (clinicId) q = q.eq("clinic_id", clinicId);
+    return maybe<Product>(await q.maybeSingle());
+  },
+  async createProduct(input) {
+    return need<Product>(await sbc().from("products").insert(input).select().single());
+  },
+  async updateProduct(id, patch) {
+    return maybe<Product>(await sbc().from("products").update(patch).eq("id", id).select().maybeSingle());
+  },
+  async deleteProduct(id) {
+    await sbc().from("products").delete().eq("id", id);
+  },
+  async listInvoices(clinicId) {
+    let q = sbc().from("invoices").select("*").order("created_at", { ascending: false });
+    if (clinicId) q = q.eq("clinic_id", clinicId);
+    return listOf<Invoice>(await q);
+  },
+  async checkout(items) {
+    // Atomic on the server (creates invoice + items, decrements stock, computes profit).
+    return need<Invoice>(await sbc().rpc("pos_checkout", { p_items: items }));
   },
 };
 

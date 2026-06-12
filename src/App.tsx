@@ -22,6 +22,7 @@ const Consultation = lazy(() => import("@/pages/Consultation").then((m) => ({ de
 const Settings = lazy(() => import("@/pages/Settings").then((m) => ({ default: m.Settings })));
 const ClinicRecords = lazy(() => import("@/pages/ClinicRecords").then((m) => ({ default: m.ClinicRecords })));
 const NewCase = lazy(() => import("@/pages/NewCase").then((m) => ({ default: m.NewCase })));
+const Inventory = lazy(() => import("@/pages/Inventory").then((m) => ({ default: m.Inventory })));
 
 function FullScreenLoader() {
   return (
@@ -40,6 +41,14 @@ function Protected({ children }: { children: ReactNode }) {
       {children}
     </motion.main>
   );
+}
+
+/** Clinic-staff-only route — pet owners are bounced to their dashboard. */
+function ClinicOnly({ children }: { children: ReactNode }) {
+  const { user } = useAuth();
+  const staff = !!user && (user.role === "admin" || user.role === "doctor" || user.role === "reception");
+  if (!staff) return <Navigate to="/" replace />;
+  return <>{children}</>;
 }
 
 function DemoBanner() {
@@ -84,6 +93,7 @@ function Shell() {
             <Route path="/consult/:petId" element={<Protected><Consultation /></Protected>} />
             <Route path="/records" element={<Protected><ClinicRecords /></Protected>} />
             <Route path="/new-case" element={<Protected><NewCase /></Protected>} />
+            <Route path="/inventory" element={<Protected><ClinicOnly><Inventory /></ClinicOnly></Protected>} />
             <Route path="/settings" element={<Protected><Settings /></Protected>} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

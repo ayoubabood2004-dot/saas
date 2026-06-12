@@ -240,6 +240,60 @@ export interface Reminder {
   created_at: string;
 }
 
+/* ---------------- Inventory & POS ---------------- */
+export interface Product {
+  id: string;
+  /** Owning clinic (tenant isolation). */
+  clinic_id?: string | null;
+  barcode?: string | null;
+  name: string;
+  purchase_price: number;
+  sell_price: number;
+  stock: number;
+  expiry_date?: string | null; // ISO date
+  created_at: string;
+}
+
+/** A completed point-of-sale transaction. */
+export interface Invoice {
+  id: string;
+  clinic_id?: string | null;
+  total: number; // revenue (sum of sell prices)
+  cost_total: number; // sum of purchase prices
+  profit: number; // total - cost_total
+  item_count: number; // number of units sold
+  created_at: string;
+}
+
+export interface InvoiceItem {
+  id: string;
+  invoice_id: string;
+  clinic_id?: string | null;
+  product_id?: string | null;
+  name: string; // snapshot of the product name at sale time
+  barcode?: string | null;
+  qty: number;
+  unit_price: number; // sell price at sale time
+  unit_cost: number; // purchase price at sale time
+  line_total: number; // qty * unit_price
+}
+
+/** A line in the POS cart before checkout. */
+export interface CartLine {
+  product: Product;
+  qty: number;
+}
+
+/** Normalized item sent to the checkout (snapshot of price/cost at sale time). */
+export interface CheckoutItem {
+  product_id?: string | null;
+  name: string;
+  barcode?: string | null;
+  qty: number;
+  unit_price: number;
+  unit_cost: number;
+}
+
 export interface DemoDB {
   pets: Pet[];
   weightLogs: WeightLog[];
@@ -250,4 +304,7 @@ export interface DemoDB {
   treatments: TreatmentEntry[];
   admissions: Admission[];
   reminders: Reminder[];
+  products: Product[];
+  invoices: Invoice[];
+  invoiceItems: InvoiceItem[];
 }

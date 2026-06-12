@@ -1,7 +1,7 @@
-import type { DemoDB, Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, TreatmentEntry, Admission, Reminder } from "@/types";
+import type { DemoDB, Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, TreatmentEntry, Admission, Reminder, Product } from "@/types";
 import { uid } from "./utils";
 
-const KEY = "vp_demo_db_v10";
+const KEY = "vp_demo_db_v11";
 
 function iso(daysFromNow: number): string {
   const d = new Date();
@@ -283,9 +283,20 @@ function seed(): DemoDB {
     { id: uid("rem"), owner_id: ownerId, category: "recheck", title: "Bobby — annual wellness check", pet_id: bobby.id, pet_name: bobby.name, date: iso(9).slice(0, 10), time: "11:00", recurring: "none", enabled: true, created_at: new Date().toISOString() },
   ];
 
+  // Inventory & POS — sample clinic stock.
+  const products: Product[] = [
+    { id: uid("prod"), barcode: "6221031492015", name: "Royal Canin Maxi Adult 4kg", purchase_price: 22, sell_price: 32, stock: 14, expiry_date: iso(420), created_at: new Date().toISOString() },
+    { id: uid("prod"), barcode: "6224000110017", name: "Frontline Plus (Dog, single pipette)", purchase_price: 6.5, sell_price: 12, stock: 40, expiry_date: iso(210), created_at: new Date().toISOString() },
+    { id: uid("prod"), barcode: "5391520947018", name: "Drontal Plus Dewormer (tablet)", purchase_price: 1.8, sell_price: 4, stock: 8, expiry_date: iso(30), created_at: new Date().toISOString() },
+    { id: uid("prod"), barcode: "6291100630019", name: "Hill's i/d Digestive Care 360g can", purchase_price: 2.4, sell_price: 4.5, stock: 26, expiry_date: iso(180), created_at: new Date().toISOString() },
+    { id: uid("prod"), barcode: "4002448210010", name: "Cat scratching post — medium", purchase_price: 9, sell_price: 18, stock: 5, expiry_date: null, created_at: new Date().toISOString() },
+    { id: uid("prod"), barcode: "8901030710011", name: "Disposable syringe 5ml (box of 100)", purchase_price: 7, sell_price: 14, stock: 3, expiry_date: iso(-10), created_at: new Date().toISOString() },
+  ];
+
   return {
     pets: [bobby, luna, francisco, rocky, bella, coco, max],
     weightLogs, vaccinations, visits, media, appointments, treatments, admissions, reminders,
+    products, invoices: [], invoiceItems: [],
   };
 }
 
