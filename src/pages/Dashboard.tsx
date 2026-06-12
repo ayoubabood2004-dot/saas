@@ -62,8 +62,8 @@ export function Dashboard() {
       return d;
     });
     const [allPets, adm, rem, ...dayLists] = await Promise.all([
-      repo.listAllPets(),
-      repo.listAdmissions(),
+      repo.listAllPets(user?.id),
+      repo.listAdmissions(user?.id),
       repo.listReminders({ ownerId: null }),
       ...days.map((d) => repo.listAppointmentsForDay(d.toISOString())),
     ]);

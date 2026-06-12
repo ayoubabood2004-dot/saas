@@ -60,6 +60,8 @@ export interface DietPlan {
 export interface Pet {
   id: string;
   owner_id: string;
+  /** Owning clinic for tenant isolation (= the clinic's auth.users id). Null for owner-created pets. */
+  clinic_id?: string | null;
   owner_name?: string;
   owner_phone?: string;
   owner_email?: string;

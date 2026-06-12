@@ -71,6 +71,7 @@ function petStatusOf(petId: string, admByPet: Map<string, Admission[]>): PetStat
 
 export function ClinicRecords() {
   const { t } = useTranslation();
+  const { user } = useAuth();
   const navigate = useNavigate();
   const [tab, setTab] = useState<Tab>("log");
   const [pets, setPets] = useState<Pet[]>([]);
@@ -79,7 +80,9 @@ export function ClinicRecords() {
   const [loading, setLoading] = useState(true);
 
   const load = async () => {
-    const [allPets, a] = await Promise.all([repo.listAllPets(), repo.listAdmissions()]);
+    // Tenant isolation: only this clinic's own patients & records (RLS enforces
+    // it server-side; this filter keeps the dashboard query explicit too).
+    const [allPets, a] = await Promise.all([repo.listAllPets(user?.id), repo.listAdmissions(user?.id)]);
     const p = allPets.filter((pet) => pet.shared_with_clinic !== false);
     setPets(p);
     setAdmissions(a);
@@ -224,6 +227,8 @@ function PatientLog({ pets, admissions, onChanged, loading }: { pets: Pet[]; adm
         // The owner card is identified by phone, not by this id — stamp the signed-in
         // staff member's id so the row satisfies the database's ownership rule.
         owner_id: user?.id ?? addOwner.id,
+        clinic_id: user?.id ?? null, // tenant: this clinic owns the record
+
         owner_name: addOwner.name === "—" ? undefined : addOwner.name,
         owner_phone: addOwner.phone || undefined,
         owner_email: addOwner.email || undefined,

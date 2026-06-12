@@ -13,8 +13,8 @@ const demoRepo = {
     return loadDB().pets.filter((p) => p.owner_id === ownerId);
   },
 
-  /** All pets known to the clinic (used by the clinic log / records). */
-  async listAllPets(): Promise<Pet[]> {
+  /** All pets for a clinic (used by the clinic log / records). Demo is single-tenant. */
+  async listAllPets(_clinicId?: string): Promise<Pet[]> {
     return loadDB().pets;
   },
 
@@ -240,7 +240,7 @@ const demoRepo = {
     saveDB(db);
   },
 
-  async listAdmissions(): Promise<Admission[]> {
+  async listAdmissions(_clinicId?: string): Promise<Admission[]> {
     return loadDB()
       .admissions.slice()
       .sort((a, b) => b.admitted_on.localeCompare(a.admitted_on));
@@ -335,8 +335,10 @@ const supabaseRepo: typeof demoRepo = {
   async listPets(ownerId) {
     return listOf<Pet>(await sbc().from("pets").select("*").eq("owner_id", ownerId));
   },
-  async listAllPets() {
-    return listOf<Pet>(await sbc().from("pets").select("*").order("created_at", { ascending: false }));
+  async listAllPets(clinicId) {
+    let q = sbc().from("pets").select("*").order("created_at", { ascending: false });
+    if (clinicId) q = q.eq("clinic_id", clinicId);
+    return listOf<Pet>(await q);
   },
   async updateOwnerContact(ownerId, patch) {
     await sbc().from("pets").update(patch).eq("owner_id", ownerId);
@@ -459,8 +461,10 @@ const supabaseRepo: typeof demoRepo = {
   async setTreatmentGiven(id, given, by) {
     await sbc().from("treatment_entries").update({ administered_at: given ? new Date().toISOString() : null, administered_by: given ? by : null }).eq("id", id);
   },
-  async listAdmissions() {
-    return listOf<Admission>(await sbc().from("admissions").select("*").order("admitted_on", { ascending: false }));
+  async listAdmissions(clinicId) {
+    let q = sbc().from("admissions").select("*").order("admitted_on", { ascending: false });
+    if (clinicId) q = q.eq("clinic_id", clinicId);
+    return listOf<Admission>(await q);
   },
   async listAdmissionsForPet(petId) {
     return listOf<Admission>(await sbc().from("admissions").select("*").eq("pet_id", petId).order("admitted_on", { ascending: false }));

@@ -63,6 +63,7 @@ export function AddPetModal({ open, onClose, onCreated }: { open: boolean; onClo
     try {
       await repo.createPet({
         owner_id: user.id,
+        clinic_id: null, // owner-created pet — not owned by any clinic (stays portable)
         owner_name: user.full_name,
         owner_phone: phone || undefined,
         owner_email: email.trim() || undefined,
