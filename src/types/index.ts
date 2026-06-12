@@ -241,15 +241,20 @@ export interface Reminder {
 }
 
 /* ---------------- Inventory & POS ---------------- */
+export type ProductCategory = "medicine" | "food" | "accessories" | "consumables" | "other";
+
 export interface Product {
   id: string;
   /** Owning clinic (tenant isolation). */
   clinic_id?: string | null;
   barcode?: string | null;
   name: string;
+  category?: ProductCategory | null;
   purchase_price: number;
   sell_price: number;
   stock: number;
+  /** Reorder level — stock at or below this triggers a low-stock warning. */
+  min_stock?: number | null;
   expiry_date?: string | null; // ISO date
   created_at: string;
 }

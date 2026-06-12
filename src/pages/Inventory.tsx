@@ -5,7 +5,7 @@ import {
   Barcode, Package, ShoppingCart, Plus, Minus, Trash2, Search, Receipt,
   TrendingUp, AlertTriangle, CalendarClock, Pencil, PackagePlus, Boxes, ScanLine,
 } from "lucide-react";
-import type { Product, Invoice, CartLine, CheckoutItem } from "@/types";
+import type { Product, Invoice, CartLine, CheckoutItem, ProductCategory } from "@/types";
 import { repo } from "@/lib/repo";
 import { useAuth } from "@/contexts/AuthContext";
 import { useBarcodeScanner } from "@/hooks/useBarcodeScanner";
@@ -21,6 +21,8 @@ const LOW_STOCK = 5;
 
 const money = (n: number) => n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const daysUntil = (iso?: string | null) => (iso ? Math.floor((new Date(iso).getTime() - Date.now()) / 86400000) : null);
+/** A product's reorder level — its own min_stock if set, else the default. */
+const lowThreshold = (p: Product) => (p.min_stock && p.min_stock > 0 ? p.min_stock : LOW_STOCK);
 
 export function Inventory() {
   const { t } = useTranslation();
@@ -38,7 +40,7 @@ export function Inventory() {
   };
   useEffect(() => { void load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
 
-  const lowStock = products.filter((p) => p.stock <= LOW_STOCK).length;
+  const lowStock = products.filter((p) => p.stock <= lowThreshold(p)).length;
   const todayProfit = invoices
     .filter((i) => i.created_at.slice(0, 10) === new Date().toISOString().slice(0, 10))
     .reduce((s, i) => s + i.profit, 0);
@@ -292,7 +294,10 @@ function InventoryTab({ products, clinicId, onChanged }: { products: Product[]; 
               <motion.div key={p.id} variants={staggerItem} className="card flex items-center gap-3 p-3">
                 <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-surface-2 text-ink-subtle"><Package size={20} /></span>
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-semibold text-ink">{p.name}</p>
+                  <p className="flex items-center gap-2 truncate text-sm font-semibold text-ink">
+                    {p.name}
+                    {p.category && <span className="chip shrink-0 bg-surface-2 text-2xs font-medium text-ink-muted">{t(`pos.cat.${p.category}`)}</span>}
+                  </p>
                   <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-ink-subtle">
                     {p.barcode && <span className="flex items-center gap-1 font-mono"><Barcode size={11} /> {p.barcode}</span>}
                     <span>{t("pos.buy", "Buy")} {money(p.purchase_price)}</span>
@@ -305,7 +310,7 @@ function InventoryTab({ products, clinicId, onChanged }: { products: Product[]; 
                     )}
                   </div>
                 </div>
-                <Badge tone={p.stock === 0 ? "danger" : p.stock <= LOW_STOCK ? "warn" : "neutral"}>
+                <Badge tone={p.stock === 0 ? "danger" : p.stock <= lowThreshold(p) ? "warn" : "neutral"}>
                   {t("pos.qtyStock", { n: p.stock, defaultValue: "{{n}} in stock" })}
                 </Badge>
                 <button onClick={() => { playTap(); setEditing(p); }} aria-label={t("common.edit", "Edit")} className="grid h-9 w-9 place-items-center rounded-full text-ink-subtle transition hover:bg-brand-50 hover:text-brand-600"><Pencil size={16} /></button>
@@ -324,18 +329,20 @@ function InventoryTab({ products, clinicId, onChanged }: { products: Product[]; 
 function ProductModal({ open, product, clinicId, onClose, onSaved }: { open: boolean; product: Product | null; clinicId?: string; onClose: () => void; onSaved: () => void }) {
   const { t } = useTranslation();
   const toast = useToast();
-  const blank = { barcode: "", name: "", purchase_price: "", sell_price: "", stock: "", expiry_date: "" };
+  const blank = { barcode: "", name: "", category: "", purchase_price: "", sell_price: "", stock: "", min_stock: "", expiry_date: "" };
   const [f, setF] = useState(blank);
   const [busy, setBusy] = useState(false);
   const barcodeRef = useRef<HTMLInputElement>(null);
+  const nameRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!open) return;
     if (product) {
       setF({
-        barcode: product.barcode ?? "", name: product.name,
+        barcode: product.barcode ?? "", name: product.name, category: product.category ?? "",
         purchase_price: String(product.purchase_price), sell_price: String(product.sell_price),
-        stock: String(product.stock), expiry_date: product.expiry_date ?? "",
+        stock: String(product.stock), min_stock: product.min_stock ? String(product.min_stock) : "",
+        expiry_date: product.expiry_date ?? "",
       });
     } else {
       setF(blank);
@@ -345,7 +352,18 @@ function ProductModal({ open, product, clinicId, onClose, onSaved }: { open: boo
   }, [open, product]);
 
   const set = (patch: Partial<typeof f>) => setF((s) => ({ ...s, ...patch }));
-  const margin = (Number(f.sell_price) || 0) - (Number(f.purchase_price) || 0);
+  const sell = Number(f.sell_price) || 0;
+  const profit = sell - (Number(f.purchase_price) || 0);
+  const marginPct = sell > 0 ? Math.round((profit / sell) * 100) : 0;
+  const hasPrices = f.purchase_price !== "" || f.sell_price !== "";
+
+  const CATEGORIES: { value: ProductCategory; label: string }[] = [
+    { value: "medicine", label: t("pos.cat.medicine", "Medicine") },
+    { value: "food", label: t("pos.cat.food", "Food") },
+    { value: "accessories", label: t("pos.cat.accessories", "Accessories") },
+    { value: "consumables", label: t("pos.cat.consumables", "Consumables") },
+    { value: "other", label: t("pos.cat.other", "Other") },
+  ];
 
   const save = async () => {
     if (!f.name.trim() || busy) return;
@@ -354,9 +372,11 @@ function ProductModal({ open, product, clinicId, onClose, onSaved }: { open: boo
       const payload = {
         barcode: f.barcode.trim() || null,
         name: f.name.trim(),
+        category: (f.category || null) as ProductCategory | null,
         purchase_price: Number(f.purchase_price) || 0,
         sell_price: Number(f.sell_price) || 0,
         stock: Math.max(0, Math.round(Number(f.stock) || 0)),
+        min_stock: Math.max(0, Math.round(Number(f.min_stock) || 0)),
         expiry_date: f.expiry_date || null,
       };
       if (product) await repo.updateProduct(product.id, payload);
@@ -378,12 +398,26 @@ function ProductModal({ open, product, clinicId, onClose, onSaved }: { open: boo
           <label className="label">{t("pos.barcode", "Barcode")}</label>
           <div className="relative">
             <Barcode size={16} className="pointer-events-none absolute top-1/2 -translate-y-1/2 text-ink-subtle ltr:left-3 rtl:right-3" />
-            <input ref={barcodeRef} className="input font-mono ltr:pl-9 rtl:pr-9" value={f.barcode} onChange={(e) => set({ barcode: e.target.value.replace(/\s/g, "") })} onKeyDown={(e) => e.key === "Enter" && e.preventDefault()} placeholder={t("pos.scanOrType", "Scan or type…")} />
+            <input
+              ref={barcodeRef}
+              className="input font-mono ltr:pl-9 rtl:pr-9"
+              value={f.barcode}
+              onChange={(e) => set({ barcode: e.target.value.replace(/\s/g, "") })}
+              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); nameRef.current?.focus(); } }}
+              placeholder={t("pos.scanOrType", "Scan or type…")}
+            />
           </div>
         </div>
         <div>
           <label className="label">{t("pos.name", "Product name")}</label>
-          <input className="input" value={f.name} onChange={(e) => set({ name: e.target.value })} placeholder={t("pos.namePh", "e.g. Royal Canin Maxi Adult 4kg")} />
+          <input ref={nameRef} className="input" value={f.name} onChange={(e) => set({ name: e.target.value })} placeholder={t("pos.namePh", "e.g. Royal Canin Maxi Adult 4kg")} />
+        </div>
+        <div>
+          <label className="label">{t("pos.category", "Category")}</label>
+          <select className="input" value={f.category} onChange={(e) => set({ category: e.target.value })}>
+            <option value="">{t("pos.categoryPick", "Select a category…")}</option>
+            {CATEGORIES.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+          </select>
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div>
@@ -395,8 +429,21 @@ function ProductModal({ open, product, clinicId, onClose, onSaved }: { open: boo
             <input type="number" inputMode="decimal" min="0" step="0.01" className="input" value={f.sell_price} onChange={(e) => set({ sell_price: e.target.value })} placeholder="0.00" />
           </div>
         </div>
-        {(f.purchase_price || f.sell_price) && (
-          <p className={cn("text-xs", margin >= 0 ? "text-success-600" : "text-danger-600")}>{t("pos.margin", "Margin")}: {money(margin)}</p>
+        {hasPrices && (
+          <div className={cn(
+            "flex items-center justify-between rounded-xl px-3 py-2",
+            profit > 0 ? "bg-success-50 text-success-700 dark:bg-success-500/15 dark:text-success-200"
+              : profit < 0 ? "bg-danger-50 text-danger-700 dark:bg-danger-500/15 dark:text-danger-200"
+                : "bg-surface-2 text-ink-muted",
+          )}>
+            <span className="flex items-center gap-1.5 text-sm font-medium">
+              <TrendingUp size={15} className={profit < 0 ? "rotate-180" : ""} />
+              {profit < 0 ? t("pos.lossPerUnit", "Loss per unit") : t("pos.profitPerUnit", "Profit per unit")}
+            </span>
+            <span className="text-sm font-bold tabular-nums">
+              {money(profit)}{sell > 0 ? ` · ${marginPct}%` : ""}
+            </span>
+          </div>
         )}
         <div className="grid grid-cols-2 gap-3">
           <div>
@@ -404,9 +451,13 @@ function ProductModal({ open, product, clinicId, onClose, onSaved }: { open: boo
             <input type="number" inputMode="numeric" min="0" step="1" className="input" value={f.stock} onChange={(e) => set({ stock: e.target.value })} placeholder="0" />
           </div>
           <div>
-            <label className="label">{t("pos.expiry", "Expiry date")}</label>
-            <input type="date" className="input" value={f.expiry_date} onChange={(e) => set({ expiry_date: e.target.value })} />
+            <label className="label flex items-center gap-1"><AlertTriangle size={12} /> {t("pos.minStock", "Min. stock alert")}</label>
+            <input type="number" inputMode="numeric" min="0" step="1" className="input" value={f.min_stock} onChange={(e) => set({ min_stock: e.target.value })} placeholder="0" />
           </div>
+        </div>
+        <div>
+          <label className="label">{t("pos.expiry", "Expiry date")}</label>
+          <input type="date" className="input" value={f.expiry_date} onChange={(e) => set({ expiry_date: e.target.value })} />
         </div>
         <Button className="mt-1 w-full" disabled={!f.name.trim()} loading={busy} onClick={save}>{t("common.save", "Save")}</Button>
       </div>
