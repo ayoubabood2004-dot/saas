@@ -204,6 +204,11 @@
     "codeInvalid": "Invalid or expired code — request a new one.",
     "verified": "Verified — welcome!",
     "signOut": "Sign out",
+    "invalidCreds": "Invalid email or password.",
+    "notConfirmed": "Please verify your email before signing in.",
+    "networkError": "Network error — check your connection and try again.",
+    "rateLimited": "Too many attempts. Please wait a moment and try again.",
+    "genericError": "Couldn't sign in. Please try again.",
     "pwMismatch": "Passwords don't match (min 4 characters).",
     "backToSignin": "Back to sign in"
   },

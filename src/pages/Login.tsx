@@ -23,6 +23,7 @@ import { motion } from "framer-motion";
 import { useAuth } from "@/contexts/AuthContext";
 import { setLang, type Lang } from "@/i18n";
 import { playScan, playTap, playSuccess } from "@/lib/sounds";
+import { describeAuthError } from "@/lib/errors";
 import { registerClinic, authenticateClinic, getClinicByEmail, setClinicPassword } from "@/lib/clinics";
 import { registerOwner, authenticateOwner, getOwnerByEmail, setOwnerPassword } from "@/lib/owners";
 import { Button, Input, Label, Segmented, Card, ThemeToggle, SuccessDialog, useToast } from "@/components/ui";
@@ -133,7 +134,7 @@ function SupabaseAuthCard() {
         navigate("/");
       } else {
         const res = await signInEmail(email, password);
-        if (res.error) { setError(res.error); return; }
+        if (res.error) { const msg = describeAuthError(res.error, t); setError(msg); toast.error(msg); return; }
         if (pendingRole) {
           const add = await addRole(pendingRole);
           setPendingRole(null);
@@ -143,8 +144,13 @@ function SupabaseAuthCard() {
         playSuccess();
         navigate("/");
       }
+    } catch (err) {
+      // Any unexpected failure — surface it and (critically) reset the button below.
+      const msg = describeAuthError(err instanceof Error ? err.message : null, t);
+      setError(msg);
+      toast.error(msg);
     } finally {
-      setBusy(false);
+      setBusy(false); // the button NEVER stays stuck on "Loading…"
     }
   };
 

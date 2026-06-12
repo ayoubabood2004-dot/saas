@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import type { Profile, Role, AccountRole } from "@/types";
 import { isSupabaseConfigured, supabase } from "@/lib/supabase";
+import { withTimeout } from "@/lib/errors";
 import { setActiveClinicId, clearActiveClinic, type ClinicAccount } from "@/lib/clinics";
 import type { OwnerAccount } from "@/lib/owners";
 
@@ -120,11 +121,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       const { data: sub } = sb.auth.onAuthStateChange(async (event, session) => {
         if (event === "PASSWORD_RECOVERY") setRecovery(true);
+        // Only an explicit sign-out (or a dead refresh token) clears the user.
+        if (event === "SIGNED_OUT") { if (active) setRaw(null); finish(); return; }
+        // No valid session and NOT an explicit sign-out → a transient blip; never
+        // log the user out over it.
+        if (!session?.user) { finish(); return; }
+        // SIGNED_IN / TOKEN_REFRESHED / USER_UPDATED / INITIAL_SESSION: the session is
+        // valid. Refresh the profile, but if that read fails transiently KEEP the
+        // current user instead of throwing them out mid-session.
         try {
-          const rp = session?.user ? await loadRawProfile(session.user.id) : null;
-          if (active) setRaw(rp);
+          const rp = await loadRawProfile(session.user.id);
+          if (active) setRaw((prev) => rp ?? prev);
         } catch {
-          if (active) setRaw(null);
+          /* keep the current user */
         } finally {
           finish();
         }
@@ -246,8 +255,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signInEmail = async (email: string, password: string) => {
     if (!supabase) return { error: "Supabase is not configured." };
-    const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
-    return { error: error?.message ?? null };
+    const sb = supabase;
+    try {
+      // Clear any stale/expired session + auth locks BEFORE authenticating, so a
+      // corrupt token can't make the new sign-in hang or conflict. scope:"local"
+      // just clears storage (no network round-trip that could itself hang).
+      try { await withTimeout(sb.auth.signOut({ scope: "local" }), 4000); } catch { /* ignore */ }
+      // Bound the sign-in so a hung request can NEVER leave the button on "Loading…".
+      const { error } = await withTimeout(sb.auth.signInWithPassword({ email: email.trim(), password }), 12000);
+      return { error: error?.message ?? null };
+    } catch (e) {
+      return { error: e instanceof Error ? e.message : "Sign-in failed." };
+    }
   };
 
   const verifyEmailCode = async (email: string, token: string) => {

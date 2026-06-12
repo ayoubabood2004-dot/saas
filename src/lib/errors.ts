@@ -62,3 +62,15 @@ export function describeUploadError(e: unknown, t: TFunction): string {
   }
   return describeDbError(e, t);
 }
+
+/** Friendly message for a sign-in failure (invalid credentials, timeout, network…). */
+export function describeAuthError(raw: string | null | undefined, t: TFunction): string {
+  const s = (raw ?? "").toLowerCase();
+  if (!raw) return t("auth.genericError", "Couldn't sign in. Please try again.");
+  if (/timed?\s*out|timeout/.test(s)) return t("errors.timeout", "The request timed out — check your connection and try again.");
+  if (/invalid login|invalid credentials|invalid email or password/.test(s)) return t("auth.invalidCreds", "Invalid email or password.");
+  if (/email not confirmed|not confirmed/.test(s)) return t("auth.notConfirmed", "Please verify your email before signing in.");
+  if (/failed to fetch|networkerror|network error|fetch/.test(s)) return t("auth.networkError", "Network error — check your connection.");
+  if (/rate|too many/.test(s)) return t("auth.rateLimited", "Too many attempts. Please wait a moment and try again.");
+  return raw;
+}
