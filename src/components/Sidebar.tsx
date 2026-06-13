@@ -13,6 +13,7 @@ import {
   Languages,
   ArrowLeftRight,
   Barcode,
+  Store,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { setLang, type Lang } from "@/i18n";
@@ -36,6 +37,7 @@ export function Sidebar() {
     { to: "/reception", icon: CalendarDays, label: t("reception.title") },
     { to: "/records", icon: ClipboardList, label: t("records.title") },
     { to: "/inventory", icon: Barcode, label: t("nav.inventory", "Inventory & POS") },
+    { to: "/retail", icon: Store, label: t("nav.retail", "Retail & Sales") },
     { to: "/scan", icon: ScanLine, label: t("nav.scan") },
     { to: "/settings", icon: SettingsIcon, label: t("nav.settings") },
   ];

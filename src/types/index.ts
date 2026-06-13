@@ -259,15 +259,46 @@ export interface Product {
   created_at: string;
 }
 
-/** A completed point-of-sale transaction. */
+export type PaymentMethod = "cash" | "card" | "transfer";
+export type DiscountType = "percent" | "fixed";
+export type InvoiceStatus = "paid" | "refunded";
+
+/** A completed point-of-sale / retail transaction. */
 export interface Invoice {
   id: string;
   clinic_id?: string | null;
-  total: number; // revenue (sum of sell prices)
-  cost_total: number; // sum of purchase prices
+  /** Walk-in customer captured at sale time (retail module; optional). */
+  customer_name?: string | null;
+  customer_phone?: string | null;
+  subtotal?: number; // revenue before discount
+  discount?: number; // resolved discount amount applied
+  discount_type?: DiscountType | null;
+  payment_method?: PaymentMethod | null;
+  total: number; // revenue after discount
+  cost_total: number; // sum of purchase prices (cost of goods)
   profit: number; // total - cost_total
   item_count: number; // number of units sold
+  print_count?: number; // times this invoice has been printed
+  status?: InvoiceStatus; // 'paid' | 'refunded'
+  refunded_at?: string | null;
   created_at: string;
+}
+
+/** Sale-level metadata captured by the retail builder and sent to checkout. */
+export interface SaleMeta {
+  customer_name?: string | null;
+  customer_phone?: string | null;
+  discount_type?: DiscountType | null;
+  discount_value?: number; // raw input: a percent (0–100) or a fixed amount
+  payment_method?: PaymentMethod | null;
+}
+
+/** A distinct retail customer, derived from past invoices for quick re-selection. */
+export interface Customer {
+  name: string;
+  phone: string;
+  last_seen: string; // ISO of most recent purchase
+  visits: number;
 }
 
 export interface InvoiceItem {

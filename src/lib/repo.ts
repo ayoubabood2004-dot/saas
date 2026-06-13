@@ -4,9 +4,69 @@
 import { loadDB, saveDB } from "./demoStore";
 import { supabase } from "./supabase";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, AppointmentStatus, TreatmentEntry, Admission, Reminder, Product, Invoice, CheckoutItem } from "@/types";
+import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, AppointmentStatus, TreatmentEntry, Admission, Reminder, Product, Invoice, InvoiceItem, CheckoutItem, SaleMeta, Customer, DiscountType } from "@/types";
 import { uid, uuid } from "./utils";
+
+/** Resolve a discount input (percent 0–100 or a fixed amount) to an amount, clamped to [0, subtotal]. */
+export function resolveDiscount(subtotal: number, type: DiscountType | null | undefined, value: number): number {
+  if (!type || !value || value <= 0) return 0;
+  if (type === "percent") return Math.round(subtotal * Math.min(value, 100)) / 100;
+  return Math.min(value, subtotal);
+}
+
+/** Demo-store sale core: create the invoice + its items and decrement stock. Shared by
+ *  the quick POS checkout and the retail checkout (which adds customer/discount/payment). */
+function createInvoiceLocal(items: CheckoutItem[], meta?: SaleMeta): Invoice {
+  const db = loadDB();
+  if (!db.products) db.products = [];
+  if (!db.invoices) db.invoices = [];
+  if (!db.invoiceItems) db.invoiceItems = [];
+  const subtotal = items.reduce((s, i) => s + i.qty * i.unit_price, 0);
+  const cost = items.reduce((s, i) => s + i.qty * i.unit_cost, 0);
+  const count = items.reduce((s, i) => s + i.qty, 0);
+  const dtype = meta?.discount_type ?? null;
+  const discount = resolveDiscount(subtotal, dtype, meta?.discount_value ?? 0);
+  const total = Math.max(0, subtotal - discount);
+  const invoice: Invoice = {
+    id: uid("inv"),
+    customer_name: meta?.customer_name?.trim() || null,
+    customer_phone: meta?.customer_phone?.trim() || null,
+    subtotal, discount, discount_type: discount > 0 ? dtype : null,
+    payment_method: meta?.payment_method ?? null,
+    total, cost_total: cost, profit: total - cost, item_count: count,
+    print_count: 0, status: "paid", refunded_at: null,
+    created_at: new Date().toISOString(),
+  };
+  db.invoices.push(invoice);
+  for (const i of items) {
+    db.invoiceItems.push({ id: uid("ii"), invoice_id: invoice.id, product_id: i.product_id ?? null, name: i.name, barcode: i.barcode ?? null, qty: i.qty, unit_price: i.unit_price, unit_cost: i.unit_cost, line_total: i.qty * i.unit_price });
+    if (i.product_id) {
+      const p = db.products.find((x) => x.id === i.product_id);
+      if (p) p.stock = Math.max(0, p.stock - i.qty);
+    }
+  }
+  saveDB(db);
+  return invoice;
+}
 import type { PreparedUpload } from "./image";
+
+/** Collapse invoice rows into distinct customers (keyed by phone, else name), most-recent first. */
+function dedupeCustomers(rows: { customer_name?: string | null; customer_phone?: string | null; created_at: string }[], query: string): Customer[] {
+  const q = query.trim().toLowerCase();
+  const map = new Map<string, Customer>();
+  for (const inv of rows) {
+    const name = (inv.customer_name ?? "").trim();
+    const phone = (inv.customer_phone ?? "").trim();
+    if (!name && !phone) continue;
+    const key = (phone || name).toLowerCase();
+    const prev = map.get(key);
+    if (prev) { prev.visits += 1; if (inv.created_at > prev.last_seen) prev.last_seen = inv.created_at; }
+    else map.set(key, { name, phone, last_seen: inv.created_at, visits: 1 });
+  }
+  let list = Array.from(map.values());
+  if (q) list = list.filter((c) => c.name.toLowerCase().includes(q) || c.phone.toLowerCase().includes(q));
+  return list.sort((a, b) => b.last_seen.localeCompare(a.last_seen)).slice(0, 8);
+}
 
 const demoRepo = {
   async listPets(ownerId: string): Promise<Pet[]> {
@@ -342,24 +402,63 @@ const demoRepo = {
     return (loadDB().invoices ?? []).slice().sort((a, b) => b.created_at.localeCompare(a.created_at));
   },
   async checkout(items: CheckoutItem[]): Promise<Invoice> {
+    return createInvoiceLocal(items);
+  },
+
+  /* ---------------- Retail & advanced invoicing ---------------- */
+  async retailCheckout(items: CheckoutItem[], meta: SaleMeta): Promise<Invoice> {
+    return createInvoiceLocal(items, meta);
+  },
+  async listInvoiceItems(invoiceId: string): Promise<InvoiceItem[]> {
+    return (loadDB().invoiceItems ?? []).filter((x) => x.invoice_id === invoiceId);
+  },
+  async listAllInvoiceItems(_clinicId?: string): Promise<InvoiceItem[]> {
+    return (loadDB().invoiceItems ?? []).slice();
+  },
+  async refundInvoice(invoiceId: string): Promise<Invoice | undefined> {
     const db = loadDB();
-    if (!db.products) db.products = [];
-    if (!db.invoices) db.invoices = [];
-    if (!db.invoiceItems) db.invoiceItems = [];
-    const total = items.reduce((s, i) => s + i.qty * i.unit_price, 0);
-    const cost = items.reduce((s, i) => s + i.qty * i.unit_cost, 0);
-    const count = items.reduce((s, i) => s + i.qty, 0);
-    const invoice: Invoice = { id: uid("inv"), total, cost_total: cost, profit: total - cost, item_count: count, created_at: new Date().toISOString() };
-    db.invoices.push(invoice);
-    for (const i of items) {
-      db.invoiceItems.push({ id: uid("ii"), invoice_id: invoice.id, product_id: i.product_id ?? null, name: i.name, barcode: i.barcode ?? null, qty: i.qty, unit_price: i.unit_price, unit_cost: i.unit_cost, line_total: i.qty * i.unit_price });
-      if (i.product_id) {
-        const p = db.products.find((x) => x.id === i.product_id);
-        if (p) p.stock = Math.max(0, p.stock - i.qty);
+    const inv = (db.invoices ?? []).find((x) => x.id === invoiceId);
+    if (!inv) return undefined;
+    if (inv.status !== "refunded") {
+      for (const it of (db.invoiceItems ?? []).filter((x) => x.invoice_id === invoiceId)) {
+        if (it.product_id) {
+          const p = (db.products ?? []).find((x) => x.id === it.product_id);
+          if (p) p.stock += it.qty; // return units to stock
+        }
+      }
+      inv.status = "refunded";
+      inv.refunded_at = new Date().toISOString();
+      saveDB(db);
+    }
+    return inv;
+  },
+  async deleteInvoice(invoiceId: string): Promise<void> {
+    const db = loadDB();
+    const inv = (db.invoices ?? []).find((x) => x.id === invoiceId);
+    // Restock unless it was already refunded (which already restocked).
+    if (inv && inv.status !== "refunded") {
+      for (const it of (db.invoiceItems ?? []).filter((x) => x.invoice_id === invoiceId)) {
+        if (it.product_id) {
+          const p = (db.products ?? []).find((x) => x.id === it.product_id);
+          if (p) p.stock += it.qty;
+        }
       }
     }
+    db.invoices = (db.invoices ?? []).filter((x) => x.id !== invoiceId);
+    db.invoiceItems = (db.invoiceItems ?? []).filter((x) => x.invoice_id !== invoiceId);
     saveDB(db);
-    return invoice;
+  },
+  async bumpInvoicePrints(invoiceId: string): Promise<number> {
+    const db = loadDB();
+    const inv = (db.invoices ?? []).find((x) => x.id === invoiceId);
+    if (!inv) return 0;
+    inv.print_count = (inv.print_count ?? 0) + 1;
+    saveDB(db);
+    return inv.print_count;
+  },
+  /** Distinct walk-in customers seen on past invoices, most-recent first. */
+  async searchCustomers(query: string, _clinicId?: string): Promise<Customer[]> {
+    return dedupeCustomers(loadDB().invoices ?? [], query);
   },
 };
 
@@ -587,6 +686,38 @@ const supabaseRepo: typeof demoRepo = {
   async checkout(items) {
     // Atomic on the server (creates invoice + items, decrements stock, computes profit).
     return need<Invoice>(await sbc().rpc("pos_checkout", { p_items: items }));
+  },
+
+  /* ---------------- Retail & advanced invoicing ---------------- */
+  async retailCheckout(items, meta) {
+    // Atomic on the server: invoice (+ customer/discount/payment) + items + stock.
+    return need<Invoice>(await sbc().rpc("retail_checkout", { p_items: items, p_meta: meta }));
+  },
+  async listInvoiceItems(invoiceId) {
+    return listOf<InvoiceItem>(await sbc().from("invoice_items").select("*").eq("invoice_id", invoiceId));
+  },
+  async listAllInvoiceItems(clinicId) {
+    let q = sbc().from("invoice_items").select("*");
+    if (clinicId) q = q.eq("clinic_id", clinicId);
+    return listOf<InvoiceItem>(await q);
+  },
+  async refundInvoice(invoiceId) {
+    // Server marks refunded + returns units to stock (idempotent).
+    return need<Invoice>(await sbc().rpc("refund_invoice", { p_invoice: invoiceId }));
+  },
+  async deleteInvoice(invoiceId) {
+    await sbc().rpc("delete_invoice", { p_invoice: invoiceId });
+  },
+  async bumpInvoicePrints(invoiceId) {
+    const res = await sbc().rpc("bump_invoice_prints", { p_invoice: invoiceId });
+    if (res.error) { console.error("[supabase]", res.error.message); return 0; }
+    return (res.data as number) ?? 0;
+  },
+  async searchCustomers(query, clinicId) {
+    let q = sbc().from("invoices").select("customer_name,customer_phone,created_at").order("created_at", { ascending: false }).limit(300);
+    if (clinicId) q = q.eq("clinic_id", clinicId);
+    const rows = listOf<{ customer_name: string | null; customer_phone: string | null; created_at: string }>(await q);
+    return dedupeCustomers(rows, query);
   },
 };
 
