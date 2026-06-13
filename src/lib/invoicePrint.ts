@@ -5,6 +5,8 @@ export type PrintFormat = "a4" | "thermal";
 export interface InvoicePrintOptions {
   clinicName: string;
   clinicPhone?: string | null;
+  /** Platform brand shown as an eyebrow above the clinic name (default "doctorVet"). */
+  brand?: string;
   format: PrintFormat;
   lang: string; // 'ar' | 'en' | ...
   currency?: string; // optional label, e.g. "IQD"
@@ -52,6 +54,7 @@ function strings(lang: string) {
 /** Build a fully self-contained printable HTML document for an invoice. */
 export function buildInvoiceHTML(invoice: Invoice, items: InvoiceItem[], opts: InvoicePrintOptions): string {
   const s = strings(opts.lang);
+  const brand = esc(opts.brand || "doctorVet");
   const cur = opts.currency ? ` ${esc(opts.currency)}` : "";
   const money = (n: number) => `${fmt(n)}${cur}`;
   const created = new Date(invoice.created_at);
@@ -84,6 +87,7 @@ export function buildInvoiceHTML(invoice: Invoice, items: InvoiceItem[], opts: I
     html, body { margin: 0; padding: 0; }
     body { width: 80mm; font-family: 'Menlo','Consolas',ui-monospace,monospace; font-size: 11px; color: #000; padding: 6px 7px 14px; }
     .head { text-align: center; }
+    .brand { font-size: 9px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; }
     .clinic { font-size: 14px; font-weight: 700; letter-spacing: .3px; }
     .muted { color: #333; font-size: 10px; }
     .doc { font-weight: 700; margin-top: 4px; font-size: 12px; }
@@ -108,6 +112,7 @@ export function buildInvoiceHTML(invoice: Invoice, items: InvoiceItem[], opts: I
     body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; color: #0f172a; font-size: 13px; line-height: 1.5; }
     .sheet { max-width: 720px; margin: 0 auto; }
     .top { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #1266d8; padding-bottom: 16px; }
+    .brand { font-size: 11px; font-weight: 800; letter-spacing: 2px; text-transform: uppercase; color: #1266d8; margin-bottom: 2px; }
     .clinic { font-size: 22px; font-weight: 800; color: #0b1220; letter-spacing: -.3px; }
     .muted { color: #64748b; font-size: 12px; }
     .doc-title { font-size: 26px; font-weight: 800; color: #1266d8; letter-spacing: 1px; }
@@ -134,6 +139,7 @@ export function buildInvoiceHTML(invoice: Invoice, items: InvoiceItem[], opts: I
   const body = thermal
     ? `
     <div class="head">
+      <div class="brand">${brand}</div>
       <div class="clinic">${esc(opts.clinicName)}</div>
       ${opts.clinicPhone ? `<div class="muted">${esc(opts.clinicPhone)}</div>` : ""}
       <div class="doc">${s.receipt}</div>
@@ -161,6 +167,7 @@ export function buildInvoiceHTML(invoice: Invoice, items: InvoiceItem[], opts: I
     <div class="sheet">
       <div class="top">
         <div>
+          <div class="brand">${brand}</div>
           <div class="clinic">${esc(opts.clinicName)}</div>
           ${opts.clinicPhone ? `<div class="muted">${esc(opts.clinicPhone)}</div>` : ""}
         </div>

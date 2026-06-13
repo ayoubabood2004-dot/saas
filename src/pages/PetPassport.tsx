@@ -1715,7 +1715,7 @@ function QrTab({ pet }: { pet: Pet }) {
   const share = async () => {
     const data = {
       title: `${pet.name} · ${t("app.name")}`,
-      text: t("qr.shareText", { name: pet.name, code: pet.passport_token, defaultValue: "{{name}}'s VetPassport — scan to view the full medical record at any clinic. Code: {{code}}" }),
+      text: t("qr.shareText", { name: pet.name, code: pet.passport_token, defaultValue: "{{name}}'s doctorVet passport — scan to view the full medical record at any clinic. Code: {{code}}" }),
     };
     if (navigator.share) {
       try { await navigator.share(data); } catch { /* dismissed */ }

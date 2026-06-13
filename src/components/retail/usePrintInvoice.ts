@@ -28,8 +28,9 @@ export function useInvoicePrinter() {
     try { printNo = await repo.bumpInvoicePrints(invoice.id); } catch { /* keep optimistic count */ }
 
     const ok = openInvoicePrint({ ...invoice, print_count: printNo }, items ?? [], {
-      clinicName: user?.full_name || "VetPassport",
+      clinicName: user?.full_name || "doctorVet",
       clinicPhone: user?.phone ?? null,
+      brand: "doctorVet",
       format,
       lang: i18n.language,
       printNo,

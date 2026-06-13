@@ -363,7 +363,7 @@ function SupabaseAuthCard() {
                     {mode === "signin" ? t("auth.welcomeBack", "Welcome back") : t("auth.createAccount", "Create your account")}
                   </h2>
                   <p className="mb-4 text-sm text-ink-muted">
-                    {portal === "owner" ? t("auth.ownerSub", "Manage your pets' health in one place.") : t("auth.clinicSub", "Run your clinic — records, reception and treatments.")}
+                    {portal === "owner" ? t("auth.ownerSub", "Manage your pets with doctorVet — all in one place.") : t("auth.clinicSub", "Run your clinic with doctorVet — records, reception and treatments.")}
                   </p>
                 </motion.div>
 

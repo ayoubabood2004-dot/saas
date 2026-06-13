@@ -10,8 +10,8 @@ export default defineConfig({
       registerType: "autoUpdate",
       includeAssets: ["favicon.svg"],
       manifest: {
-        name: "VetPassport — Veterinary Care System",
-        short_name: "VetPassport",
+        name: "doctorVet — Veterinary Care System",
+        short_name: "doctorVet",
         description: "Universal pet digital passport and clinic management.",
         theme_color: "#1266d8",
         background_color: "#eef6ff",

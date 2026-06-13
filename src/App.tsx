@@ -68,7 +68,7 @@ function DemoBanner() {
   if (!demo) return null;
   return (
     <div className="fixed bottom-0 inset-x-0 z-30 border-t border-warn-200 bg-warn-50/90 py-1.5 text-center text-xs font-medium text-warn-700 backdrop-blur no-print dark:bg-warn-500/10 dark:text-warn-200">
-      VetPassport · Demo mode
+      doctorVet · Demo mode
     </div>
   );
 }

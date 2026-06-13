@@ -1,7 +1,7 @@
 import { cn } from "@/lib/utils";
 
 /**
- * VetPassport brand mark — a "vital paw": a paw print (the pet) crossed by a
+ * doctorVet brand mark — a "vital paw": a paw print (the pet) crossed by a
  * heartbeat pulse (veterinary health record). The paw uses `currentColor` so it
  * adapts to any context; the pulse is a warm accent for a pop of life.
  */

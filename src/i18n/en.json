@@ -1,5 +1,5 @@
 {
-  "app": { "name": "VetPassport", "tagline": "One passport. Every clinic." },
+  "app": { "name": "doctorVet", "tagline": "One passport. Every clinic." },
   "login": {
     "heroTitle": "Every pet deserves a record that travels with them.",
     "trust": "Trusted by veterinarians, loved by pet owners.",
@@ -476,7 +476,7 @@
     "copy": "Copy code",
     "copied": "Passport code copied",
     "copyFail": "Couldn't copy",
-    "shareText": "{{name}}'s VetPassport — scan to view the full medical record at any clinic. Code: {{code}}",
+    "shareText": "{{name}}'s doctorVet passport — scan to view the full medical record at any clinic. Code: {{code}}",
     "scanTitle": "Scan a pet passport",
     "scanHint": "Enter the passport code from the owner's QR to open the medical chart.",
     "open": "Open chart",
