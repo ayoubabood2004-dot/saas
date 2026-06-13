@@ -14,6 +14,8 @@ import {
   ArrowRight,
   Activity,
   Lightbulb,
+  RotateCw,
+  WifiOff,
 } from "lucide-react";
 import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
 import type { Appointment, Pet, Admission, Species, Reminder } from "@/types";
@@ -55,6 +57,7 @@ export function Dashboard() {
   const [admissions, setAdmissions] = useState<Admission[]>([]);
   const [reminders, setReminders] = useState<Reminder[]>([]);
   const [activity, setActivity] = useState<CurvePoint[]>([]);
+  const [error, setError] = useState(false);
 
   const mounted = useRef(true);
   const load = async () => {
@@ -63,26 +66,29 @@ export function Dashboard() {
       d.setDate(d.getDate() - (6 - i));
       return d;
     });
+    if (mounted.current) { setLoading(true); setError(false); }
     try {
-      const [allPets, adm, rem, ...dayLists] = await withTimeout(Promise.all([
+      // 4 queries instead of 10 — one range query covers the whole week.
+      const [allPets, adm, rem, weekAppts] = await withTimeout(Promise.all([
         repo.listAllPets(user?.id),
         repo.listAdmissions(user?.id),
         repo.listReminders({ ownerId: null }),
-        ...days.map((d) => repo.listAppointmentsForDay(d.toISOString())),
-      ]), 15000);
+        repo.listAppointmentsInRange(days[0].toISOString(), days[6].toISOString()),
+      ]), 12000);
       if (!mounted.current) return; // unmounted mid-flight → drop the result
+      const apptsOn = (d: Date) => weekAppts.filter((a) => a.scheduled_at.slice(0, 10) === d.toISOString().slice(0, 10));
       setPets(allPets);
       setAdmissions(adm);
       setReminders(rem);
-      setAppts(dayLists[6]); // today is the last day
+      setAppts(apptsOn(days[6])); // today is the last day
       setActivity(
-        days.map((d, i) => ({
+        days.map((d) => ({
           label: d.toLocaleDateString(i18n.language === "ar" ? "ar-EG" : "en-US", { weekday: "short" }),
-          value: dayLists[i].length,
+          value: apptsOn(d).length,
         })),
       );
     } catch {
-      /* hung/failed query — the finally still clears the skeleton */
+      if (mounted.current) setError(true); // surface a retry instead of endless skeletons
     } finally {
       if (mounted.current) setLoading(false);
     }
@@ -143,6 +149,18 @@ export function Dashboard() {
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-6 sm:py-8">
+      {/* Connection / load failure — offer a retry instead of endless skeletons */}
+      {error && (
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-200">
+          <span className="flex items-center gap-2">
+            <WifiOff size={16} className="shrink-0" />
+            {t("dash.loadError", "Couldn't reach the server — it may be paused or your connection dropped.")}
+          </span>
+          <Button variant="outline" size="sm" leftIcon={<RotateCw size={15} />} onClick={() => void load()}>
+            {t("common.retry", "Retry")}
+          </Button>
+        </div>
+      )}
       {/* Greeting hero */}
       <motion.div variants={fadeUp} initial="initial" animate="animate" className="relative overflow-hidden rounded-3xl bg-brand-grad p-6 text-white shadow-soft sm:p-8">
         <div className="pointer-events-none absolute -right-10 -top-10 h-48 w-48 rounded-full bg-white/10 blur-2xl" />

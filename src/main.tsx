@@ -7,6 +7,12 @@ import i18next from "i18next";
 import "./i18n";
 import "./index.css";
 import { emitGlobalToast } from "./lib/globalToast";
+import { pruneStaleStorage } from "./lib/demoStore";
+
+// Reclaim localStorage on every boot: old-version demo databases (with embedded
+// base64 media) pile up and can exhaust the ~5 MB quota, after which writes throw
+// and the UI appears to hang. Clearing them keeps storage bounded across upgrades.
+pruneStaleStorage();
 
 // Safety net: surface otherwise-silent async failures (e.g. a database write that
 // hit a backend error and wasn't caught at the call site) as a toast instead of

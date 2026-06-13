@@ -176,6 +176,15 @@ const demoRepo = {
       .sort((a, b) => a.scheduled_at.localeCompare(b.scheduled_at));
   },
 
+  /** Appointments across a date range in ONE query (used by the dashboard week view). */
+  async listAppointmentsInRange(startISO: string, endISO: string): Promise<Appointment[]> {
+    const start = startISO.slice(0, 10);
+    const end = endISO.slice(0, 10);
+    return loadDB()
+      .appointments.filter((a) => { const d = a.scheduled_at.slice(0, 10); return d >= start && d <= end && a.status !== "cancelled"; })
+      .sort((a, b) => a.scheduled_at.localeCompare(b.scheduled_at));
+  },
+
   /** Patients checked in and waiting for / in a given doctor's room. */
   async listWaiting(doctorId: string): Promise<Appointment[]> {
     return loadDB()
@@ -485,6 +494,11 @@ const supabaseRepo: typeof demoRepo = {
     const day = dayISO.slice(0, 10);
     return listOf<Appointment>(
       await sbc().from("appointments").select("*").gte("scheduled_at", `${day}T00:00:00`).lte("scheduled_at", `${day}T23:59:59.999`).neq("status", "cancelled").order("scheduled_at", { ascending: true }),
+    );
+  },
+  async listAppointmentsInRange(startISO, endISO) {
+    return listOf<Appointment>(
+      await sbc().from("appointments").select("*").gte("scheduled_at", `${startISO.slice(0, 10)}T00:00:00`).lte("scheduled_at", `${endISO.slice(0, 10)}T23:59:59.999`).neq("status", "cancelled").order("scheduled_at", { ascending: true }),
     );
   },
   async listWaiting(doctorId) {

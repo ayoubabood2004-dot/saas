@@ -325,3 +325,24 @@ export function resetDB(): DemoDB {
   saveDB(fresh);
   return fresh;
 }
+
+/**
+ * Drop demo databases left behind by OLDER app versions (vp_demo_db_v1..v11).
+ * Each old DB can hold compressed base64 media and silently eats the ~5 MB
+ * localStorage quota — once full, writes throw and the app appears to "freeze".
+ * Safe + idempotent: only removes vp_demo_db_v* keys that aren't the current one.
+ * Returns the number of stale keys removed.
+ */
+export function pruneStaleStorage(): number {
+  try {
+    const stale: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith("vp_demo_db_v") && k !== KEY) stale.push(k);
+    }
+    for (const k of stale) localStorage.removeItem(k);
+    return stale.length;
+  } catch {
+    return 0;
+  }
+}
