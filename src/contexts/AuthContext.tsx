@@ -138,24 +138,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       })();
 
-      const { data: sub } = sb.auth.onAuthStateChange(async (event, session) => {
+      // NOTE: this callback MUST stay synchronous and must NOT await any Supabase
+      // call. supabase-js fires it while holding its internal auth Web Lock; calling
+      // loadRawProfile() (a .from() query that re-reads the session for its auth
+      // header) here would try to re-acquire that held lock and DEADLOCK — which
+      // hangs every later getSession()/signInWithPassword() until the tab is closed.
+      // That is the "works once per browser, then every login times out" bug.
+      // Fix: defer the profile read with setTimeout(0) so the lock is released first.
+      const { data: sub } = sb.auth.onAuthStateChange((event, session) => {
         if (event === "PASSWORD_RECOVERY") setRecovery(true);
         // Only an explicit sign-out (or a dead refresh token) clears the user.
         if (event === "SIGNED_OUT") { if (active) setRaw(null); finish(); return; }
         // No valid session and NOT an explicit sign-out → a transient blip; never
         // log the user out over it.
         if (!session?.user) { finish(); return; }
+        const uid = session.user.id;
         // SIGNED_IN / TOKEN_REFRESHED / USER_UPDATED / INITIAL_SESSION: the session is
-        // valid. Refresh the profile, but if that read fails transiently KEEP the
-        // current user instead of throwing them out mid-session.
-        try {
-          const rp = await loadRawProfile(session.user.id);
-          if (active) setRaw((prev) => rp ?? prev);
-        } catch {
-          /* keep the current user */
-        } finally {
-          finish();
-        }
+        // valid. Refresh the profile OUTSIDE the lock; if that read fails transiently
+        // KEEP the current user instead of throwing them out mid-session.
+        setTimeout(() => {
+          void (async () => {
+            try {
+              const rp = await loadRawProfile(uid);
+              if (active) setRaw((prev) => rp ?? prev);
+            } catch {
+              /* keep the current user */
+            } finally {
+              finish();
+            }
+          })();
+        }, 0);
       });
       return () => { active = false; clearTimeout(failsafe); sub.subscription.unsubscribe(); };
     }
