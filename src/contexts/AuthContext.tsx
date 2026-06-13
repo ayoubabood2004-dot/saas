@@ -91,6 +91,31 @@ async function loadRawProfile(userId: string): Promise<RawProfile | null> {
   }
 }
 
+type SbUserLike = { id: string; email?: string | null; user_metadata?: Record<string, unknown> | null };
+
+/**
+ * Build the app RawProfile for a freshly-authenticated Supabase user: the real
+ * profiles row if reachable, else a minimal profile derived from the session
+ * token. Always resolves to a profile so a valid login is NEVER left as "no user".
+ * Used by boot, sign-in and OTP-verify so the user is set synchronously — callers
+ * can then navigate to a Protected route without racing the async auth listener.
+ */
+async function hydrateSession(u: SbUserLike): Promise<RawProfile> {
+  const meta = (u.user_metadata ?? {}) as { full_name?: string; role?: Role; phone?: string };
+  const metaRole: Role = (meta.role as Role) || "owner";
+  const fallback: RawProfile = {
+    id: u.id,
+    full_name: meta.full_name || (u.email ? u.email.split("@")[0] : "") || "User",
+    email: u.email ?? "",
+    rawRole: metaRole,
+    roles: [accountOf(metaRole)],
+    phone: meta.phone,
+    clinic_id: null,
+  };
+  const rp = await loadRawProfile(u.id).catch(() => null);
+  return rp ?? fallback;
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [raw, setRaw] = useState<RawProfile | null>(null);
   const [activeRole, setActiveRole] = useState<AccountRole | null>(readStoredActive());
@@ -112,22 +137,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           if (!active) return;
           const session = data.session;
           if (session?.user) {
-            // A valid persisted session exists (e.g. after F5). Build a minimal
-            // profile from the session token so that a transient profiles-read
+            // A valid persisted session exists (e.g. after F5). hydrateSession
+            // falls back to a token-derived profile so a transient profiles-read
             // failure can NEVER log the user out on refresh.
-            const meta = (session.user.user_metadata ?? {}) as { full_name?: string; role?: Role; phone?: string };
-            const metaRole: Role = (meta.role as Role) || "owner";
-            const fallback: RawProfile = {
-              id: session.user.id,
-              full_name: meta.full_name || session.user.email?.split("@")[0] || "User",
-              email: session.user.email ?? "",
-              rawRole: metaRole,
-              roles: [accountOf(metaRole)],
-              phone: meta.phone,
-              clinic_id: null,
-            };
-            const rp = await loadRawProfile(session.user.id).catch(() => null);
-            if (active) setRaw(rp ?? fallback);
+            const rp = await hydrateSession(session.user);
+            if (active) setRaw(rp);
           } else if (active) {
             setRaw(null);
           }
@@ -281,6 +295,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // identities and sends no code. Surface that so the UI can route to "sign in
     // and add this role" instead of failing with a duplicate-email error.
     if (data.user && (data.user.identities?.length ?? 0) === 0) return { error: null, alreadyExists: true };
+    // If the project has email-confirmation disabled, signUp returns a live
+    // session — set the user now so navigate("/") goes straight to the app.
+    if (data.session && data.user) setRaw(await hydrateSession(data.user));
     return { error: null, needsConfirm: !data.session };
   };
 
@@ -293,8 +310,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // just clears storage (no network round-trip that could itself hang).
       try { await withTimeout(sb.auth.signOut({ scope: "local" }), 4000); } catch { /* ignore */ }
       // Bound the sign-in so a hung request can NEVER leave the button on "Loading…".
-      const { error } = await withTimeout(sb.auth.signInWithPassword({ email: email.trim(), password }), 12000);
-      return { error: error?.message ?? null };
+      const { data, error } = await withTimeout(sb.auth.signInWithPassword({ email: email.trim(), password }), 12000);
+      if (error) return { error: error.message };
+      // Set the user NOW rather than waiting for the async onAuthStateChange
+      // listener — otherwise the caller's navigate("/") races ahead of the user
+      // being set and the Protected route bounces it back to /login.
+      if (data.user) setRaw(await hydrateSession(data.user));
+      return { error: null };
     } catch (e) {
       return { error: e instanceof Error ? e.message : "Sign-in failed." };
     }
@@ -302,8 +324,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const verifyEmailCode = async (email: string, token: string) => {
     if (!supabase) return { error: "Supabase is not configured." };
-    const { error } = await supabase.auth.verifyOtp({ email: email.trim(), token: token.trim(), type: "signup" });
-    return { error: error?.message ?? null };
+    const { data, error } = await supabase.auth.verifyOtp({ email: email.trim(), token: token.trim(), type: "signup" });
+    if (error) return { error: error.message };
+    // verifyOtp establishes the session — set the user now so the verify screen's
+    // navigate("/") lands on the dashboard instead of racing back to /login.
+    if (data.user) setRaw(await hydrateSession(data.user));
+    return { error: null };
   };
 
   const resendSignupCode = async (email: string) => {

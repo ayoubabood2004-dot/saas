@@ -43,6 +43,17 @@ function Protected({ children }: { children: ReactNode }) {
   );
 }
 
+/** /login is for logged-OUT users only. If a session is already active — e.g. the
+ *  profile loaded a beat after sign-in, an OTP verify just succeeded, or the user
+ *  opened /login with a live session — send them home instead of stranding them on
+ *  the form (which would otherwise re-mount on its default tab and look "stuck"). */
+function LoginRoute() {
+  const { user, loading } = useAuth();
+  if (loading) return <FullScreenLoader />;
+  if (user) return <Navigate to="/" replace />;
+  return <Login />;
+}
+
 /** Clinic-staff-only route — pet owners are bounced to their dashboard. */
 function ClinicOnly({ children }: { children: ReactNode }) {
   const { user } = useAuth();
@@ -84,7 +95,7 @@ function Shell() {
       <Suspense fallback={<FullScreenLoader />}>
         <AnimatePresence mode="wait">
           <Routes location={location} key={location.pathname}>
-            <Route path="/login" element={<Login />} />
+            <Route path="/login" element={<LoginRoute />} />
             <Route path="/" element={<Protected><Home /></Protected>} />
             <Route path="/pet/:petId" element={<Protected><PetPassport /></Protected>} />
             <Route path="/book" element={<Protected><BookingWizard /></Protected>} />
