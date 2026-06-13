@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { AnimatePresence, motion } from "framer-motion";
 import { Store, ShoppingCart, ReceiptText, BarChart3 } from "lucide-react";
@@ -9,7 +10,7 @@ import { Skeleton } from "@/components/ui";
 import { cn } from "@/lib/utils";
 import { withTimeout } from "@/lib/errors";
 import { playTap } from "@/lib/sounds";
-import { SaleBuilder } from "@/components/retail/SaleBuilder";
+import { SaleBuilder, type RetailPrefill } from "@/components/retail/SaleBuilder";
 import { InvoicesPanel } from "@/components/retail/InvoicesPanel";
 import { ReportsPanel } from "@/components/retail/ReportsPanel";
 
@@ -23,6 +24,23 @@ export function RetailSales() {
   const [products, setProducts] = useState<Product[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // The "bridge": an animal record handed us a customer + pet via the URL. Capture it
+  // into state (so it survives the URL cleanup + the initial data load), jump to the
+  // sell tab, then strip the query string so a refresh/tab-switch won't re-apply it.
+  const [params, setParams] = useSearchParams();
+  const [prefill, setPrefill] = useState<RetailPrefill | null>(null);
+  useEffect(() => {
+    const customer = params.get("customer") ?? "";
+    const phone = params.get("phone") ?? "";
+    const pet = params.get("pet") ?? "";
+    if (customer || phone || pet) {
+      setPrefill({ name: customer, phone, pet });
+      setTab("sell");
+      setParams({}, { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params]);
 
   const mounted = useRef(true);
   const load = async () => {
@@ -78,7 +96,7 @@ export function RetailSales() {
               <Skeleton className="h-80 rounded-2xl" />
             </div>
           ) : tab === "sell" ? (
-            <SaleBuilder products={products} clinicId={clinicId} onSold={load} />
+            <SaleBuilder products={products} clinicId={clinicId} onSold={load} prefill={prefill} />
           ) : tab === "invoices" ? (
             <InvoicesPanel invoices={invoices} clinicId={clinicId} onChanged={load} />
           ) : (

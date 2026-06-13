@@ -1,9 +1,9 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Search, Barcode, Plus, Minus, Trash2, ShoppingCart, User, Phone, Tag, Percent,
-  Banknote, CreditCard, ArrowLeftRight, CheckCircle2, Printer, Sparkles, TrendingUp, Package,
+  Banknote, CreditCard, ArrowLeftRight, CheckCircle2, Printer, Sparkles, TrendingUp, Package, PawPrint, X,
 } from "lucide-react";
 import type { Product, Invoice, InvoiceItem, CartLine, CheckoutItem, SaleMeta, PaymentMethod, DiscountType, Customer } from "@/types";
 import { repo, resolveDiscount } from "@/lib/repo";
@@ -23,7 +23,10 @@ const PAY_METHODS: { value: PaymentMethod; icon: typeof Banknote; key: string; d
   { value: "transfer", icon: ArrowLeftRight, key: "retail.transfer", def: "Transfer" },
 ];
 
-export function SaleBuilder({ products, clinicId, onSold }: { products: Product[]; clinicId?: string; onSold: () => void }) {
+/** Customer/pet handed over from an animal record to pre-fill the sale (the "bridge"). */
+export interface RetailPrefill { name: string; phone: string; pet: string }
+
+export function SaleBuilder({ products, clinicId, onSold, prefill }: { products: Product[]; clinicId?: string; onSold: () => void; prefill?: RetailPrefill | null }) {
   const { t } = useTranslation();
   const toast = useToast();
   const print = useInvoicePrinter();
@@ -32,6 +35,8 @@ export function SaleBuilder({ products, clinicId, onSold }: { products: Product[
   const [query, setQuery] = useState("");
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
+  const [petContext, setPetContext] = useState<string | null>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
   const [custMatches, setCustMatches] = useState<Customer[]>([]);
   const [custOpen, setCustOpen] = useState(false);
   const [discountType, setDiscountType] = useState<DiscountType>("percent");
@@ -58,7 +63,24 @@ export function SaleBuilder({ products, clinicId, onSold }: { products: Product[
     if (!product) { playWarning(); toast.error(t("pos.notFound", "No product matches that barcode"), code); return; }
     playSuccess();
     addProduct(product);
+    setQuery(""); // clear any scanned digits that landed in the focused search box
   });
+
+  // The bridge: a doctor clicked "Sell items" inside an animal record. Auto-fill the
+  // customer, surface the pet context, and focus the scan field for a zero-click flow.
+  // The effect only re-runs when `prefill` (a stable state ref in the parent) actually
+  // changes, so re-applying on a fresh hand-off is exactly what we want; the setState
+  // calls are idempotent under StrictMode's double-invoke.
+  useEffect(() => {
+    if (!prefill) return;
+    if (prefill.name) setName(prefill.name);
+    if (prefill.phone) setPhone(prefill.phone);
+    setPetContext(prefill.pet || null);
+    setDone(null);
+    // Scan-ready: focus the product/scan field once it's in the DOM.
+    const id = window.setTimeout(() => searchRef.current?.focus(), 160);
+    return () => window.clearTimeout(id);
+  }, [prefill]);
 
   const setQty = (id: string, qty: number) =>
     setCart((c) => (qty <= 0 ? c.filter((l) => l.product.id !== id) : c.map((l) => (l.product.id === id ? { ...l, qty } : l))));
@@ -92,6 +114,7 @@ export function SaleBuilder({ products, clinicId, onSold }: { products: Product[
   const reset = () => {
     setCart([]); setQuery(""); setName(""); setPhone(""); setDiscountValue("");
     setDiscountType("percent"); setPayment("cash"); setDone(null); setLastPrints(0);
+    setPetContext(null);
   };
 
   const checkout = async () => {
@@ -171,6 +194,15 @@ export function SaleBuilder({ products, clinicId, onSold }: { products: Product[
     <div className="grid gap-4 lg:grid-cols-[1fr,380px]">
       {/* LEFT — customer + products */}
       <div className="space-y-4">
+        {/* Bridge context — which animal this sale is for (from the medical record) */}
+        {petContext && (
+          <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}
+            className="flex items-center gap-2.5 rounded-2xl border border-brand-200 bg-brand-50 px-3.5 py-2.5 text-sm dark:border-brand-500/30 dark:bg-brand-500/10">
+            <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-brand-600 text-white"><PawPrint size={15} /></span>
+            <span className="flex-1 font-medium text-brand-800 dark:text-brand-200">{t("retail.saleForPet", { pet: petContext, defaultValue: "Sale for {{pet}}" })}</span>
+            <button onClick={() => setPetContext(null)} aria-label={t("common.dismiss", "Dismiss")} className="grid h-6 w-6 place-items-center rounded-full text-brand-700/70 transition hover:bg-brand-100 dark:text-brand-300 dark:hover:bg-brand-500/20"><X size={14} /></button>
+          </motion.div>
+        )}
         {/* Customer */}
         <div className="card p-4">
           <div className="mb-3 flex items-center gap-2 text-sm font-bold text-ink"><User size={16} /> {t("retail.customer", "Customer")} <span className="text-xs font-normal text-ink-subtle">· {t("retail.optional", "optional")}</span></div>
@@ -213,7 +245,7 @@ export function SaleBuilder({ products, clinicId, onSold }: { products: Product[
         {/* Product search + scan */}
         <div className="relative">
           <Search size={16} className="pointer-events-none absolute top-1/2 -translate-y-1/2 text-ink-subtle ltr:left-3 rtl:right-3" />
-          <input className="input ltr:pl-9 rtl:pr-9" value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("retail.searchProducts", "Search or scan a product…")} />
+          <input ref={searchRef} className="input ltr:pl-9 rtl:pr-9" value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("retail.searchProducts", "Search or scan a product…")} />
           <span className="pointer-events-none absolute top-1/2 flex -translate-y-1/2 items-center gap-1 text-2xs text-ink-subtle ltr:right-3 rtl:left-3"><Barcode size={13} /> {t("retail.scanReady", "scan ready")}</span>
         </div>
 

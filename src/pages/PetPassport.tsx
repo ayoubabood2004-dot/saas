@@ -29,7 +29,7 @@ import { DOCTORS } from "@/lib/clinic";
 import { allMedicationNames, addClinicMed, medicationDisplay } from "@/lib/meds";
 import { allVaccineNames, vaccineScientific } from "@/lib/vaccines";
 import { useAuth } from "@/contexts/AuthContext";
-import { Stethoscope, SlidersHorizontal } from "lucide-react";
+import { Stethoscope, SlidersHorizontal, ShoppingCart } from "lucide-react";
 import { RangesEditor } from "@/components/RangesEditor";
 
 type Tab = "diet" | "vaccines" | "history" | "treatment" | "media" | "qr";
@@ -253,9 +253,28 @@ export function PetPassport() {
         <div className="absolute bottom-0 start-1/3 h-72 w-72 rounded-full bg-accent-400/10 blur-3xl dark:bg-accent-500/10" />
       </div>
 
-      <button className="btn-ghost px-2 py-1 mb-4 text-sm no-print" onClick={() => navigate(-1)}>
-        <Back size={18} /> {t("common.back")}
-      </button>
+      <div className="mb-4 flex items-center justify-between gap-3 no-print">
+        <button className="btn-ghost px-2 py-1 text-sm" onClick={() => navigate(-1)}>
+          <Back size={18} /> {t("common.back")}
+        </button>
+        {/* Bridge to the POS: pre-fills this client + pet, lands scan-ready. Staff only. */}
+        {!isOwner && (
+          <Button
+            size="sm"
+            leftIcon={<ShoppingCart size={16} />}
+            onClick={() => {
+              playTap();
+              const q = new URLSearchParams();
+              if (pet.owner_name) q.set("customer", pet.owner_name);
+              if (pet.owner_phone) q.set("phone", pet.owner_phone);
+              if (pet.name) q.set("pet", pet.name);
+              navigate(`/retail?${q.toString()}`);
+            }}
+          >
+            {t("retail.sellItems", "Sell items")}
+          </Button>
+        )}
+      </div>
 
       {/* Mobile/tablet header + snapshot (on desktop these live inside the rails) */}
       <div className="mb-5 lg:hidden">

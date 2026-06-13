@@ -14,7 +14,7 @@ import {
   Menu,
   X,
   ArrowLeftRight,
-  Barcode,
+  Boxes,
   Store,
 } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
@@ -55,7 +55,7 @@ export function TopBar({ mobileOnly = false }: { mobileOnly?: boolean }) {
     ? [
         { to: "/reception", icon: CalendarDays, label: t("reception.title") },
         { to: "/records", icon: ClipboardList, label: t("records.title") },
-        { to: "/inventory", icon: Barcode, label: t("nav.inventory", "Inventory & POS") },
+        { to: "/inventory", icon: Boxes, label: t("nav.inventory", "Inventory") },
         { to: "/retail", icon: Store, label: t("nav.retail", "Retail & Sales") },
         { to: "/scan", icon: ScanLine, label: t("nav.scan") },
       ]

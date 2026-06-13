@@ -54,12 +54,14 @@
     "sound": "Sound",
     "settings": "Settings",
     "search": "Search",
-    "inventory": "Inventory & POS",
+    "inventory": "Inventory",
     "retail": "Retail & Sales"
   },
   "retail": {
     "title": "Retail & Sales",
     "subtitle": "Walk-in sales, invoicing & receipts — for this clinic only.",
+    "sellItems": "Sell items",
+    "saleForPet": "Sale for {{pet}}",
     "newSaleTab": "New sale",
     "invoicesTab": "Invoices",
     "reportsTab": "Reports",
@@ -130,8 +132,9 @@
     "popupBlockedHint": "Your browser blocked the print window — enable pop-ups for this site."
   },
   "pos": {
-    "title": "Inventory & POS",
-    "subtitle": "Stock, barcode checkout & sales — for this clinic only.",
+    "title": "Inventory",
+    "subtitle": "Stock, products & low-stock alerts — for this clinic only.",
+    "expiringSoon": "Expiring ≤30d",
     "tab": "Point of Sale",
     "inventory": "Inventory",
     "sales": "Sales",
