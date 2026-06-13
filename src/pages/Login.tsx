@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import { useNavigate } from "react-router-dom";
@@ -29,7 +29,7 @@ import { registerOwner, authenticateOwner, getOwnerByEmail, setOwnerPassword } f
 import { Button, Input, Label, Segmented, Card, ThemeToggle, SuccessDialog, useToast } from "@/components/ui";
 import { staggerContainer, staggerItem } from "@/lib/motion";
 import { HERO_PHOTO } from "@/lib/petPhotos";
-import { isSupabaseConfigured } from "@/lib/supabase";
+import { isSupabaseConfigured, supabase } from "@/lib/supabase";
 import { PhoneInput } from "@/components/PhoneInput";
 import { LogoMark } from "@/components/Logo";
 import type { Role } from "@/types";
@@ -78,9 +78,19 @@ function PasswordField({ label, value, onChange, show, setShow, autoComplete, wi
  *  and forgot/reset password. Shown when VITE_SUPABASE_* are configured. */
 function SupabaseAuthCard() {
   const { t, i18n } = useTranslation();
-  const { signUpEmail, signInEmail, verifyEmailCode, resendSignupCode, resetPassword, updatePassword, addRole, recovery } = useAuth();
+  const { signUpEmail, signInEmail, verifyEmailCode, resendSignupCode, resetPassword, updatePassword, addRole, recovery, user, loading } = useAuth();
   const navigate = useNavigate();
   const toast = useToast();
+  const clearedStale = useRef(false);
+
+  // On mount, if the login screen is shown to a genuinely logged-out user, purge any
+  // stale/corrupt local session so the next sign-in can't hang on a poisoned token.
+  // Guarded by !user so an authenticated visitor to /login is never logged out.
+  useEffect(() => {
+    if (clearedStale.current || loading || user) return;
+    clearedStale.current = true;
+    if (isSupabaseConfigured && supabase) void supabase.auth.signOut({ scope: "local" }).catch(() => {});
+  }, [loading, user]);
 
   const [mode, setMode] = useState<"signin" | "signup">("signin");
   const [portal, setPortal] = useState<Portal>("owner");

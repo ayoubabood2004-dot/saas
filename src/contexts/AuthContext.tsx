@@ -108,12 +108,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       void (async () => {
         try {
-          const { data } = await sb.auth.getSession();
+          const { data } = await withTimeout(sb.auth.getSession(), 8000);
           if (!active) return;
-          const rp = data.session?.user ? await loadRawProfile(data.session.user.id) : null;
-          if (active) setRaw(rp);
+          const session = data.session;
+          if (session?.user) {
+            // A valid persisted session exists (e.g. after F5). Build a minimal
+            // profile from the session token so that a transient profiles-read
+            // failure can NEVER log the user out on refresh.
+            const meta = (session.user.user_metadata ?? {}) as { full_name?: string; role?: Role; phone?: string };
+            const metaRole: Role = (meta.role as Role) || "owner";
+            const fallback: RawProfile = {
+              id: session.user.id,
+              full_name: meta.full_name || session.user.email?.split("@")[0] || "User",
+              email: session.user.email ?? "",
+              rawRole: metaRole,
+              roles: [accountOf(metaRole)],
+              phone: meta.phone,
+              clinic_id: null,
+            };
+            const rp = await loadRawProfile(session.user.id).catch(() => null);
+            if (active) setRaw(rp ?? fallback);
+          } else if (active) {
+            setRaw(null);
+          }
         } catch {
-          /* network/backend error — fall through and show the login screen */
+          /* getSession timed out / errored — show login (the failsafe also covers it) */
         } finally {
           finish();
         }

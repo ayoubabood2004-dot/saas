@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
+import { withTimeout } from "@/lib/errors";
 import { motion } from "framer-motion";
 import { CalendarDays, Clock, UserCheck, DoorOpen, Stethoscope, Plus, Siren, CheckCircle2, ArrowRight } from "lucide-react";
 import type { Appointment, Pet } from "@/types";
@@ -32,17 +33,25 @@ export function Reception() {
 
   const today = new Date().toISOString();
 
+  const mounted = useRef(true);
   const load = async () => {
-    const list = await repo.listAppointmentsForDay(today);
-    setAppts(list);
-    const ids = Array.from(new Set(list.map((a) => a.pet_id)));
-    const map: Record<string, Pet> = {};
-    await Promise.all(ids.map(async (id) => { const p = await repo.getPet(id); if (p) map[id] = p; }));
-    setPets(map);
+    try {
+      const list = await withTimeout(repo.listAppointmentsForDay(today), 15000);
+      if (!mounted.current) return;
+      setAppts(list);
+      const ids = Array.from(new Set(list.map((a) => a.pet_id)));
+      const map: Record<string, Pet> = {};
+      await withTimeout(Promise.all(ids.map(async (id) => { const p = await repo.getPet(id); if (p) map[id] = p; })), 15000);
+      if (mounted.current) setPets(map);
+    } catch {
+      /* hung/failed query — leave previous state, don't crash */
+    }
   };
 
   useEffect(() => {
+    mounted.current = true;
     void load();
+    return () => { mounted.current = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

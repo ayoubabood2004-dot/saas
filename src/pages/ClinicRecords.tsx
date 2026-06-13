@@ -21,7 +21,7 @@ import { phoneMatches, nationalNumber } from "@/lib/phone";
 import { getDialCode } from "@/lib/settings";
 import { useAuth } from "@/contexts/AuthContext";
 import { prepareUpload } from "@/lib/image";
-import { describeUploadError } from "@/lib/errors";
+import { describeUploadError, withTimeout } from "@/lib/errors";
 
 type Tab = "log" | "cases" | "boarding" | "movement";
 
@@ -79,19 +79,31 @@ export function ClinicRecords() {
   const [treatments, setTreatments] = useState<TreatmentEntry[]>([]);
   const [loading, setLoading] = useState(true);
 
+  const mounted = useRef(true);
   const load = async () => {
-    // Tenant isolation: only this clinic's own patients & records (RLS enforces
-    // it server-side; this filter keeps the dashboard query explicit too).
-    const [allPets, a] = await Promise.all([repo.listAllPets(user?.id), repo.listAdmissions(user?.id)]);
-    const p = allPets.filter((pet) => pet.shared_with_clinic !== false);
-    setPets(p);
-    setAdmissions(a);
-    const tx = (await Promise.all(p.map((pet) => repo.listTreatments(pet.id)))).flat();
-    setTreatments(tx);
-    setLoading(false);
+    try {
+      // Tenant isolation: only this clinic's own patients & records (RLS enforces
+      // it server-side; this filter keeps the dashboard query explicit too).
+      const [allPets, a] = await withTimeout(Promise.all([repo.listAllPets(user?.id), repo.listAdmissions(user?.id)]), 15000);
+      if (!mounted.current) return;
+      const p = allPets.filter((pet) => pet.shared_with_clinic !== false);
+      setPets(p);
+      setAdmissions(a);
+      const tx = (await withTimeout(Promise.all(p.map((pet) => repo.listTreatments(pet.id))), 15000)).flat();
+      if (mounted.current) setTreatments(tx);
+    } catch {
+      /* hung/failed query — finally still clears the skeleton */
+    } finally {
+      if (mounted.current) setLoading(false);
+    }
   };
 
-  useEffect(() => { void load(); }, []);
+  useEffect(() => {
+    mounted.current = true;
+    void load();
+    return () => { mounted.current = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const activeCases = admissions.filter((a) => a.kind === "treatment" && a.status === "active").length;
   const activeBoarding = admissions.filter((a) => a.kind === "boarding" && a.status === "active").length;

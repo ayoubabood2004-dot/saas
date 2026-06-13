@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { withTimeout } from "@/lib/errors";
 import { useTranslation } from "react-i18next";
 import { motion } from "framer-motion";
 import {
@@ -55,33 +56,42 @@ export function Dashboard() {
   const [reminders, setReminders] = useState<Reminder[]>([]);
   const [activity, setActivity] = useState<CurvePoint[]>([]);
 
+  const mounted = useRef(true);
   const load = async () => {
     const days = Array.from({ length: 7 }, (_, i) => {
       const d = new Date();
       d.setDate(d.getDate() - (6 - i));
       return d;
     });
-    const [allPets, adm, rem, ...dayLists] = await Promise.all([
-      repo.listAllPets(user?.id),
-      repo.listAdmissions(user?.id),
-      repo.listReminders({ ownerId: null }),
-      ...days.map((d) => repo.listAppointmentsForDay(d.toISOString())),
-    ]);
-    setPets(allPets);
-    setAdmissions(adm);
-    setReminders(rem);
-    setAppts(dayLists[6]); // today is the last day
-    setActivity(
-      days.map((d, i) => ({
-        label: d.toLocaleDateString(i18n.language === "ar" ? "ar-EG" : "en-US", { weekday: "short" }),
-        value: dayLists[i].length,
-      })),
-    );
-    setLoading(false);
+    try {
+      const [allPets, adm, rem, ...dayLists] = await withTimeout(Promise.all([
+        repo.listAllPets(user?.id),
+        repo.listAdmissions(user?.id),
+        repo.listReminders({ ownerId: null }),
+        ...days.map((d) => repo.listAppointmentsForDay(d.toISOString())),
+      ]), 15000);
+      if (!mounted.current) return; // unmounted mid-flight → drop the result
+      setPets(allPets);
+      setAdmissions(adm);
+      setReminders(rem);
+      setAppts(dayLists[6]); // today is the last day
+      setActivity(
+        days.map((d, i) => ({
+          label: d.toLocaleDateString(i18n.language === "ar" ? "ar-EG" : "en-US", { weekday: "short" }),
+          value: dayLists[i].length,
+        })),
+      );
+    } catch {
+      /* hung/failed query — the finally still clears the skeleton */
+    } finally {
+      if (mounted.current) setLoading(false);
+    }
   };
 
   useEffect(() => {
+    mounted.current = true;
     void load();
+    return () => { mounted.current = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

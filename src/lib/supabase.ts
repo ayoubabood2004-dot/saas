@@ -55,6 +55,13 @@ if (url && !anonKey) {
  */
 export const supabase: SupabaseClient | null = isSupabaseConfigured
   ? createClient(url, anonKey, {
-      auth: { persistSession: true, autoRefreshToken: true },
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: true,
+        // Persist the session explicitly in localStorage so a hard refresh (F5)
+        // restores it instead of logging the user out.
+        storage: typeof window !== "undefined" ? window.localStorage : undefined,
+      },
     })
   : null;

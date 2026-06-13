@@ -32,13 +32,25 @@ export function Inventory() {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(true);
 
+  const mounted = useRef(true);
   const load = async () => {
-    const [p, inv] = await Promise.all([repo.listProducts(user?.id), repo.listInvoices(user?.id)]);
-    setProducts(p);
-    setInvoices(inv);
-    setLoading(false);
+    try {
+      const [p, inv] = await withTimeout(Promise.all([repo.listProducts(user?.id), repo.listInvoices(user?.id)]), 15000);
+      if (!mounted.current) return;
+      setProducts(p);
+      setInvoices(inv);
+    } catch {
+      /* hung/failed query — finally still clears the skeleton */
+    } finally {
+      if (mounted.current) setLoading(false);
+    }
   };
-  useEffect(() => { void load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
+  useEffect(() => {
+    mounted.current = true;
+    void load();
+    return () => { mounted.current = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const lowStock = products.filter((p) => p.stock <= lowThreshold(p)).length;
   const todayProfit = invoices
