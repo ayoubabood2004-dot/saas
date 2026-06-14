@@ -15,7 +15,7 @@ import {
   Sparkles,
   Eye,
   EyeOff,
-  Mail,
+  MailCheck,
   ArrowLeft,
   CheckCircle2,
 } from "lucide-react";
@@ -78,7 +78,7 @@ function PasswordField({ label, value, onChange, show, setShow, autoComplete, wi
  *  and forgot/reset password. Shown when VITE_SUPABASE_* are configured. */
 function SupabaseAuthCard() {
   const { t, i18n } = useTranslation();
-  const { signUpEmail, signInEmail, verifyEmailCode, resendSignupCode, resetPassword, updatePassword, addRole, recovery, user, loading } = useAuth();
+  const { signUpEmail, signInEmail, resendConfirmation, resetPassword, updatePassword, addRole, recovery, user, loading } = useAuth();
   const navigate = useNavigate();
   const toast = useToast();
   const clearedStale = useRef(false);
@@ -97,13 +97,12 @@ function SupabaseAuthCard() {
   // When an existing email tries to sign up for a second role, we route them to
   // sign in and append this role to their account afterwards.
   const [pendingRole, setPendingRole] = useState<Portal | null>(null);
-  const [view, setView] = useState<"auth" | "verify" | "forgot">("auth");
+  const [view, setView] = useState<"auth" | "sent" | "forgot">("auth");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [city, setCity] = useState("");
   const [password, setPassword] = useState("");
-  const [code, setCode] = useState("");
   const [newPw, setNewPw] = useState("");
   const [showPw, setShowPw] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -136,8 +135,10 @@ function SupabaseAuthCard() {
           return;
         }
         if (res.needsConfirm) {
-          setView("verify");
-          setInfo(t("auth.codeSent", { email: email.trim(), defaultValue: "We emailed a verification code to {{email}}." }));
+          // Link-based confirmation: show the "check your inbox" state. Clicking the
+          // link signs them in automatically (onAuthStateChange → LoginRoute redirect).
+          playSuccess();
+          setView("sent");
           return;
         }
         playSuccess();
@@ -164,37 +165,15 @@ function SupabaseAuthCard() {
     }
   };
 
-  const submitVerify = async (e: FormEvent) => {
-    e.preventDefault();
-    clear();
-    playTap();
-    setBusy(true);
-    try {
-      const res = await verifyEmailCode(email, code);
-      if (res.error) {
-        const msg = /expired|invalid|token/i.test(res.error) ? t("auth.codeInvalid", "Invalid or expired code — request a new one.") : res.error;
-        setError(msg);
-        toast.error(msg);
-        return;
-      }
-      // verifyOtp established the session → onAuthStateChange logs the user in.
-      playSuccess();
-      toast.success(t("auth.verified", "Verified — welcome!"));
-      navigate("/");
-    } finally {
-      setBusy(false);
-    }
-  };
-
   const resend = async () => {
     if (busy) return;
     clear();
     playTap();
     setBusy(true);
     try {
-      const res = await resendSignupCode(email);
+      const res = await resendConfirmation(email);
       if (res.error) setError(res.error);
-      else setInfo(t("auth.codeResent", "A new code is on the way."));
+      else setInfo(t("auth.linkResent", "Sent — check your inbox again."));
     } finally {
       setBusy(false);
     }
@@ -327,21 +306,29 @@ function SupabaseAuthCard() {
                 {msg}
                 <Button type="submit" size="lg" className="w-full" disabled={busy}>{busy ? t("common.loading") : t("auth.sendReset", "Send reset link")}</Button>
               </form>
-            ) : view === "verify" ? (
-              /* Email verification code */
-              <form onSubmit={submitVerify} className="space-y-3">
-                <button type="button" onClick={() => { setView("auth"); clear(); }} className="mb-1 inline-flex items-center gap-1 text-sm text-ink-muted transition hover:text-ink"><ArrowLeft size={15} /> {t("common.back")}</button>
-                <span className="grid h-12 w-12 place-items-center rounded-2xl bg-brand-50 text-brand-600 dark:bg-brand-500/15 dark:text-brand-300"><Mail size={22} /></span>
-                <h2 className="font-display text-xl font-extrabold text-ink">{t("auth.verifyTitle", "Verify your email")}</h2>
-                <p className="text-sm text-ink-muted">{t("auth.verifySub", "Enter the code we emailed you to finish creating your account.")}</p>
+            ) : view === "sent" ? (
+              /* Email confirmation LINK sent — no numeric code. Clicking the link in
+                 the inbox signs the user in automatically (onAuthStateChange → redirect). */
+              <motion.div variants={staggerItem} className="space-y-5 text-center">
+                <motion.span
+                  initial={{ scale: 0, rotate: -12 }} animate={{ scale: 1, rotate: 0 }} transition={{ type: "spring", stiffness: 260, damping: 16 }}
+                  className="mx-auto grid h-16 w-16 place-items-center rounded-3xl bg-brand-grad text-white shadow-soft"
+                >
+                  <MailCheck size={30} />
+                </motion.span>
                 <div>
-                  <label className="label">{t("auth.code", "Verification code")}</label>
-                  <input className="input text-center text-lg font-bold tracking-[0.4em]" value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))} inputMode="numeric" placeholder="••••••" autoFocus />
+                  <h2 className="font-display text-2xl font-extrabold text-ink">{t("auth.checkEmailTitle", "Verify your email")}</h2>
+                  <p className="mt-2 text-sm text-ink-muted">{t("auth.checkEmailBody", "We've sent a confirmation link to")}</p>
+                  <p className="mt-1 break-all font-semibold text-ink">{email}</p>
+                  <p className="mt-3 text-sm text-ink-muted">{t("auth.checkEmailHint", "Open it to activate your account — you'll be signed in automatically.")}</p>
                 </div>
                 {msg}
-                <Button type="submit" size="lg" className="w-full" disabled={busy || code.length < 4}>{busy ? t("common.loading") : t("auth.verify", "Verify & continue")}</Button>
-                <button type="button" onClick={resend} disabled={busy} className="w-full text-center text-sm font-medium text-brand-600 hover:underline disabled:opacity-50 disabled:no-underline">{t("auth.resend", "Resend code")}</button>
-              </form>
+                <div className="rounded-2xl border border-line bg-surface-2 px-4 py-3 text-xs text-ink-subtle">{t("auth.checkSpam", "Can't find it? Check your spam or promotions folder.")}</div>
+                <div className="space-y-2.5 pt-1">
+                  <button type="button" onClick={resend} disabled={busy} className="text-sm font-semibold text-brand-600 transition hover:underline disabled:opacity-50">{busy ? t("common.loading") : t("auth.resendLink", "Resend confirmation email")}</button>
+                  <button type="button" onClick={() => { setView("auth"); setMode("signin"); clear(); }} className="flex w-full items-center justify-center gap-1 text-sm text-ink-muted transition hover:text-ink"><ArrowLeft size={15} /> {t("auth.backToSignin", "Back to sign in")}</button>
+                </div>
+              </motion.div>
             ) : (
               /* Sign in / Sign up */
               <>

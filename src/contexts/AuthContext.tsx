@@ -43,8 +43,8 @@ interface AuthState {
   // Live Supabase email/password auth (used when env vars are configured).
   signUpEmail: (email: string, password: string, fullName: string, role: Role, extra?: SignupExtra) => Promise<{ error: string | null; needsConfirm?: boolean; alreadyExists?: boolean }>;
   signInEmail: (email: string, password: string) => Promise<{ error: string | null }>;
-  verifyEmailCode: (email: string, token: string) => Promise<{ error: string | null }>;
-  resendSignupCode: (email: string) => Promise<{ error: string | null }>;
+  /** Re-send the email-confirmation LINK (link-based signup; no numeric code). */
+  resendConfirmation: (email: string) => Promise<{ error: string | null }>;
   resetPassword: (email: string) => Promise<{ error: string | null }>;
   updatePassword: (newPassword: string) => Promise<{ error: string | null }>;
   signOut: () => void;
@@ -285,10 +285,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // ---- Live Supabase auth -------------------------------------------------
   const signUpEmail = async (email: string, password: string, fullName: string, role: Role, extra?: SignupExtra) => {
     if (!supabase) return { error: "Supabase is not configured." };
+    // Link-based confirmation: the email contains a confirmation LINK that returns
+    // here. detectSessionInUrl (see supabase.ts) then parses the token and fires
+    // SIGNED_IN, so the user lands logged-in — no numeric code to type.
+    const emailRedirectTo = typeof window !== "undefined" ? `${window.location.origin}/` : undefined;
     const { data, error } = await supabase.auth.signUp({
       email: email.trim(),
       password,
-      options: { data: { full_name: fullName.trim(), role, phone: extra?.phone || null, city: extra?.city || null } },
+      options: { data: { full_name: fullName.trim(), role, phone: extra?.phone || null, city: extra?.city || null }, emailRedirectTo },
     });
     if (error) return { error: error.message };
     // Enumeration protection: an existing confirmed email returns a user with no
@@ -322,19 +326,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const verifyEmailCode = async (email: string, token: string) => {
+  const resendConfirmation = async (email: string) => {
     if (!supabase) return { error: "Supabase is not configured." };
-    const { data, error } = await supabase.auth.verifyOtp({ email: email.trim(), token: token.trim(), type: "signup" });
-    if (error) return { error: error.message };
-    // verifyOtp establishes the session — set the user now so the verify screen's
-    // navigate("/") lands on the dashboard instead of racing back to /login.
-    if (data.user) setRaw(await hydrateSession(data.user));
-    return { error: null };
-  };
-
-  const resendSignupCode = async (email: string) => {
-    if (!supabase) return { error: "Supabase is not configured." };
-    const { error } = await supabase.auth.resend({ type: "signup", email: email.trim() });
+    const emailRedirectTo = typeof window !== "undefined" ? `${window.location.origin}/` : undefined;
+    const { error } = await supabase.auth.resend({ type: "signup", email: email.trim(), options: { emailRedirectTo } });
     return { error: error?.message ?? null };
   };
 
@@ -368,7 +363,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       roles: raw?.roles ?? [], activeRole: resolvedActive, needsRoleChoice,
       chooseRole, switchRole, addRole,
       signInDemo, signInClinic, signInOwner,
-      signUpEmail, signInEmail, verifyEmailCode, resendSignupCode, resetPassword, updatePassword, signOut,
+      signUpEmail, signInEmail, resendConfirmation, resetPassword, updatePassword, signOut,
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [user, loading, recovery, raw, resolvedActive, needsRoleChoice],
