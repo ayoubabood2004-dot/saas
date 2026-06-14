@@ -25,6 +25,7 @@ import { prepareUpload } from "@/lib/image";
 import { withTimeout, describeUploadError } from "@/lib/errors";
 import { playSuccess, playScan, playTap, playWarning } from "@/lib/sounds";
 import { ImageLightbox } from "@/components/ImageLightbox";
+import { MedicalEntry, type MedicalDraft } from "@/components/MedicalEntry";
 import { DOCTORS } from "@/lib/clinic";
 import { allMedicationNames, addClinicMed, medicationDisplay } from "@/lib/meds";
 import { allVaccineNames, vaccineScientific } from "@/lib/vaccines";
@@ -167,6 +168,7 @@ export function PetPassport() {
   // Owners may view their pet's health record but not modify clinical data.
   const canEditClinical = user?.role !== "owner";
   const isOwner = user?.role === "owner";
+  const [medOpen, setMedOpen] = useState(false);
 
   const Back = i18n.dir() === "rtl" ? ArrowRight : ArrowLeft;
 
@@ -210,6 +212,35 @@ export function PetPassport() {
     setAdmissions(adm);
     setAppointments(apt);
     setReminders(rem.filter((r) => r.pet_id === petId));
+  };
+
+  // Persist a batch from the unified Medical Entry: vaccinations → vaccination
+  // record, medications → treatment sheet. Rejects so the component keeps the
+  // draft if anything fails. Then refreshes the record.
+  const commitMedical = async (entries: MedicalDraft[]) => {
+    if (!petId) return;
+    const ROUTE_LABEL: Record<string, string> = { injection: "Injection", tablet: "Tablet", liquid: "Syrup" };
+    const now = new Date();
+    const nowISO = now.toISOString();
+    const today = nowISO.slice(0, 10);
+    const hhmm = now.toTimeString().slice(0, 5);
+    for (const e of entries) {
+      if (e.kind === "vaccination") {
+        await repo.addVaccination({
+          pet_id: petId, name: e.name, status: "administered",
+          administered_at: nowISO, due_date: e.nextDue ?? null,
+          lot_number: e.lot, administered_by: user?.full_name,
+        });
+      } else {
+        await repo.addTreatment({
+          pet_id: petId, day: today, medication: e.name, time: hhmm, amount: e.dosage,
+          administered_at: nowISO, administered_by: user?.full_name, doctor: user?.full_name,
+          observations: `${ROUTE_LABEL[e.route]} · ${e.family}`,
+        });
+      }
+    }
+    await reload();
+    setMedOpen(false);
   };
 
   useEffect(() => {
@@ -257,24 +288,39 @@ export function PetPassport() {
         <button className="btn-ghost px-2 py-1 text-sm" onClick={() => navigate(-1)}>
           <Back size={18} /> {t("common.back")}
         </button>
-        {/* Bridge to the POS: pre-fills this client + pet, lands scan-ready. Staff only. */}
+        {/* Staff actions: unified medical entry + the POS bridge (pre-fills this client). */}
         {!isOwner && (
-          <Button
-            size="sm"
-            leftIcon={<ShoppingCart size={16} />}
-            onClick={() => {
-              playTap();
-              const q = new URLSearchParams();
-              if (pet.owner_name) q.set("customer", pet.owner_name);
-              if (pet.owner_phone) q.set("phone", pet.owner_phone);
-              if (pet.name) q.set("pet", pet.name);
-              navigate(`/retail?${q.toString()}`);
-            }}
-          >
-            {t("retail.sellItems", "Sell items")}
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="secondary"
+              leftIcon={<Syringe size={16} />}
+              onClick={() => { playTap(); setMedOpen(true); }}
+            >
+              {t("passport.medicalEntry", "Medical entry")}
+            </Button>
+            <Button
+              size="sm"
+              leftIcon={<ShoppingCart size={16} />}
+              onClick={() => {
+                playTap();
+                const q = new URLSearchParams();
+                if (pet.owner_name) q.set("customer", pet.owner_name);
+                if (pet.owner_phone) q.set("phone", pet.owner_phone);
+                if (pet.name) q.set("pet", pet.name);
+                navigate(`/retail?${q.toString()}`);
+              }}
+            >
+              {t("retail.sellItems", "Sell items")}
+            </Button>
+          </div>
         )}
       </div>
+
+      {/* Unified Medication + Vaccination entry, scoped to this patient's species */}
+      <Modal open={medOpen} onClose={() => setMedOpen(false)} title={t("passport.medicalEntryTitle", "Medical entry — {{name}}", { name: pet.name })}>
+        <MedicalEntry species={pet.species} onCommit={commitMedical} />
+      </Modal>
 
       {/* Mobile/tablet header + snapshot (on desktop these live inside the rails) */}
       <div className="mb-5 lg:hidden">

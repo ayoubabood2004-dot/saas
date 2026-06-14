@@ -423,6 +423,8 @@
   },
   "passport": {
     "title": "جواز الحيوان الرقمي",
+    "medicalEntry": "إدخال طبي",
+    "medicalEntryTitle": "إدخال طبي — {{name}}",
     "tabs": { "identity": "الهوية", "diet": "الغذاء", "vaccines": "التطعيمات", "history": "السجل الطبي", "treatment": "العلاج", "media": "الوسائط", "qr": "رمز الجواز" },
     "weightChart": "الوزن والنمو",
     "addWeight": "تسجيل الوزن",
