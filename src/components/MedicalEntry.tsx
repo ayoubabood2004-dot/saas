@@ -60,6 +60,8 @@ export function MedicalEntry({
   onCommit,
   committing,
   className,
+  initialMode,
+  lockMode,
 }: {
   /** Patient species — filters the vaccine list. If omitted, a species picker is shown. */
   species?: Species;
@@ -67,9 +69,13 @@ export function MedicalEntry({
   onCommit?: (entries: MedicalDraft[]) => void | Promise<void>;
   committing?: boolean;
   className?: string;
+  /** Which workflow to open on. Defaults to "medication". */
+  initialMode?: "medication" | "vaccination";
+  /** Hide the Medication/Vaccination toggle (when launched from a context-specific tab). */
+  lockMode?: boolean;
 }) {
   const toast = useToast();
-  const [mode, setMode] = useState<"medication" | "vaccination">("medication");
+  const [mode, setMode] = useState<"medication" | "vaccination">(initialMode ?? "medication");
   const [draftSpecies, setDraftSpecies] = useState<Species>(species ?? "dog");
   const activeSpecies = species ?? draftSpecies;
   const [sheet, setSheet] = useState<MedicalDraft[]>([]);
@@ -95,24 +101,27 @@ export function MedicalEntry({
 
   return (
     <div className={cn("flex flex-col gap-5", className)}>
-      {/* Mode toggle (plain — no layoutId, which would deadlock the host modal's exit) */}
-      <div className="inline-flex w-full items-center gap-1 rounded-full border border-line bg-surface-2 p-1">
-        {([
-          { v: "medication", label: "Medication", icon: <Pill size={16} /> },
-          { v: "vaccination", label: "Vaccination", icon: <Syringe size={16} /> },
-        ] as const).map((o) => (
-          <button
-            key={o.v}
-            onClick={() => { playTap(); setMode(o.v); }}
-            className={cn(
-              "flex flex-1 items-center justify-center gap-1.5 rounded-full px-4 py-2 text-sm font-semibold transition",
-              mode === o.v ? "bg-brand-600 text-white shadow-soft" : "text-ink-muted hover:text-ink",
-            )}
-          >
-            {o.icon}{o.label}
-          </button>
-        ))}
-      </div>
+      {/* Mode toggle (plain — no layoutId, which would deadlock the host modal's exit).
+          Hidden when launched from a context-specific tab (lockMode). */}
+      {!lockMode && (
+        <div className="inline-flex w-full items-center gap-1 rounded-full border border-line bg-surface-2 p-1">
+          {([
+            { v: "medication", label: "Medication", icon: <Pill size={16} /> },
+            { v: "vaccination", label: "Vaccination", icon: <Syringe size={16} /> },
+          ] as const).map((o) => (
+            <button
+              key={o.v}
+              onClick={() => { playTap(); setMode(o.v); }}
+              className={cn(
+                "flex flex-1 items-center justify-center gap-1.5 rounded-full px-4 py-2 text-sm font-semibold transition",
+                mode === o.v ? "bg-brand-600 text-white shadow-soft" : "text-ink-muted hover:text-ink",
+              )}
+            >
+              {o.icon}{o.label}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Keyed swap (not AnimatePresence mode="wait" — the panels contain nested
           AnimatePresence reveals, which would deadlock the wait-for-exit). */}

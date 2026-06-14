@@ -26,9 +26,8 @@ import { withTimeout, describeUploadError } from "@/lib/errors";
 import { playSuccess, playScan, playTap, playWarning } from "@/lib/sounds";
 import { ImageLightbox } from "@/components/ImageLightbox";
 import { MedicalEntry, type MedicalDraft } from "@/components/MedicalEntry";
-import { DOCTORS } from "@/lib/clinic";
-import { allMedicationNames, addClinicMed, medicationDisplay } from "@/lib/meds";
-import { allVaccineNames, vaccineScientific } from "@/lib/vaccines";
+import { addClinicMed, medicationDisplay } from "@/lib/meds";
+import { vaccineScientific } from "@/lib/vaccines";
 import { useAuth } from "@/contexts/AuthContext";
 import { Stethoscope, SlidersHorizontal, ShoppingCart } from "lucide-react";
 import { RangesEditor } from "@/components/RangesEditor";
@@ -147,6 +146,33 @@ function WellnessCard({ vaccines, admissions }: { vaccines: Vaccination[]; admis
   );
 }
 
+/** Persist a batch from the unified Medical Entry workflow: vaccinations → vaccination
+ *  record (administered + booster due), medications → today's treatment-sheet rows.
+ *  Throws on failure so the caller keeps the draft. Shared by the record header button
+ *  and the Treatment/Vaccinations tab "Add" actions. */
+async function persistMedicalDrafts(petId: string, doctorName: string | undefined, entries: MedicalDraft[]) {
+  const ROUTE_LABEL: Record<string, string> = { injection: "Injection", tablet: "Tablet", liquid: "Syrup" };
+  const now = new Date();
+  const nowISO = now.toISOString();
+  const today = nowISO.slice(0, 10);
+  const hhmm = now.toTimeString().slice(0, 5);
+  for (const e of entries) {
+    if (e.kind === "vaccination") {
+      await repo.addVaccination({
+        pet_id: petId, name: e.name, status: "administered",
+        administered_at: nowISO, due_date: e.nextDue ?? null,
+        lot_number: e.lot, administered_by: doctorName,
+      });
+    } else {
+      await repo.addTreatment({
+        pet_id: petId, day: today, medication: e.name, time: hhmm, amount: e.dosage,
+        administered_at: nowISO, administered_by: doctorName, doctor: doctorName,
+        observations: `${ROUTE_LABEL[e.route]} · ${e.family}`,
+      });
+    }
+  }
+}
+
 export function PetPassport() {
   const { petId } = useParams();
   const navigate = useNavigate();
@@ -219,26 +245,7 @@ export function PetPassport() {
   // draft if anything fails. Then refreshes the record.
   const commitMedical = async (entries: MedicalDraft[]) => {
     if (!petId) return;
-    const ROUTE_LABEL: Record<string, string> = { injection: "Injection", tablet: "Tablet", liquid: "Syrup" };
-    const now = new Date();
-    const nowISO = now.toISOString();
-    const today = nowISO.slice(0, 10);
-    const hhmm = now.toTimeString().slice(0, 5);
-    for (const e of entries) {
-      if (e.kind === "vaccination") {
-        await repo.addVaccination({
-          pet_id: petId, name: e.name, status: "administered",
-          administered_at: nowISO, due_date: e.nextDue ?? null,
-          lot_number: e.lot, administered_by: user?.full_name,
-        });
-      } else {
-        await repo.addTreatment({
-          pet_id: petId, day: today, medication: e.name, time: hhmm, amount: e.dosage,
-          administered_at: nowISO, administered_by: user?.full_name, doctor: user?.full_name,
-          observations: `${ROUTE_LABEL[e.route]} · ${e.family}`,
-        });
-      }
-    }
+    await persistMedicalDrafts(petId, user?.full_name, entries);
     await reload();
     setMedOpen(false);
   };
@@ -1027,9 +1034,8 @@ function MealModal({ open, onClose, onAdd }: { open: boolean; onClose: () => voi
 /* ---------------- Vaccinations ---------------- */
 function VaccinesTab({ pet, vaccines, onChanged, canEdit, isOwner }: { pet: Pet; vaccines: Vaccination[]; onChanged: () => void; canEdit: boolean; isOwner: boolean }) {
   const { t } = useTranslation();
+  const { user } = useAuth();
   const [open, setOpen] = useState(false);
-  const [name, setName] = useState("");
-  const [dueDate, setDueDate] = useState("");
 
   const sorted = [...vaccines].sort((a, b) => {
     const ad = a.administered_at || a.due_date || "";
@@ -1037,19 +1043,12 @@ function VaccinesTab({ pet, vaccines, onChanged, canEdit, isOwner }: { pet: Pet;
     return bd.localeCompare(ad);
   });
 
-  const save = async () => {
-    if (!name.trim()) return;
-    await repo.addVaccination({
-      pet_id: pet.id,
-      name: name.trim(),
-      status: "scheduled",
-      due_date: dueDate || null,
-      dose_number: 1,
-      doses_total: 1,
-    });
-    playSuccess();
-    setName(""); setDueDate(""); setOpen(false);
+  // The new species-aware vaccination workflow (booster scheduler) commits here,
+  // then refreshes the timeline immediately via onChanged().
+  const commit = async (entries: MedicalDraft[]) => {
+    await persistMedicalDrafts(pet.id, user?.full_name, entries);
     onChanged();
+    setOpen(false);
   };
 
   return (
@@ -1100,20 +1099,7 @@ function VaccinesTab({ pet, vaccines, onChanged, canEdit, isOwner }: { pet: Pet;
       )}
 
       <Modal open={open} onClose={() => setOpen(false)} title={t("passport.addVaccine")}>
-        <div className="space-y-3">
-          <div>
-            <label className="label">{t("pet.name")}</label>
-            <input list="vax-options" className="input" value={name} onChange={(e) => setName(e.target.value)} autoFocus placeholder="Rabies / DHPP / Deworming" />
-            <datalist id="vax-options">
-              {allVaccineNames().map((vn) => <option key={vn} value={vn} />)}
-            </datalist>
-          </div>
-          <div>
-            <label className="label">{t("passport.dueDate")}</label>
-            <input type="date" className="input" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
-          </div>
-          <button className="btn-primary w-full" onClick={save}>{t("common.save")}</button>
-        </div>
+        <MedicalEntry species={pet.species} initialMode="vaccination" lockMode onCommit={commit} />
       </Modal>
     </div>
   );
@@ -1233,20 +1219,8 @@ function Field({ label, value }: { label: string; value: string }) {
 }
 
 /* ---------------- Treatment sheet (multi-day) ---------------- */
-interface MedRow {
-  key: string;
-  medication: string;
-  time: string;
-  amount: string;
-  note: string;
-}
-
 function nowHM(): string {
   return new Date().toTimeString().slice(0, 5);
-}
-
-function newMedRow(time = nowHM()): MedRow {
-  return { key: uid("row"), medication: "", time, amount: "", note: "" };
 }
 
 function TreatmentTab({ pet, treatments, admissions, onChanged, canEdit, isOwner }: { pet: Pet; treatments: TreatmentEntry[]; admissions: Admission[]; onChanged: () => void; canEdit: boolean; isOwner: boolean }) {
@@ -1265,46 +1239,14 @@ function TreatmentTab({ pet, treatments, admissions, onChanged, canEdit, isOwner
     playSuccess();
     onChanged();
   };
-  const [day, setDay] = useState(today);
-  const [doctor, setDoctor] = useState(user?.role === "doctor" ? user.full_name : "");
-  const [rows, setRows] = useState<MedRow[]>([newMedRow()]);
-
   const days = Array.from(new Set(treatments.map((tx) => tx.day))).sort((a, b) => b.localeCompare(a));
-  const doctorOptions = Array.from(new Set([...(user?.role === "doctor" ? [user.full_name] : []), ...DOCTORS.map((d) => d.name)]));
 
-  const resetForm = () => {
-    setDay(today);
-    setDoctor(user?.role === "doctor" ? user.full_name : "");
-    setRows([newMedRow()]);
-  };
-
-  const setRow = (key: string, patch: Partial<MedRow>) => setRows((rs) => rs.map((r) => (r.key === key ? { ...r, ...patch } : r)));
-  const addRow = () => setRows((rs) => [...rs, newMedRow()]);
-  const removeRow = (key: string) => setRows((rs) => (rs.length === 1 ? rs : rs.filter((r) => r.key !== key)));
-
-  // A row is saveable as soon as a medication is chosen; amount is optional.
-  const validRows = rows.filter((r) => r.medication.trim());
-
-  const save = async () => {
-    if (validRows.length === 0) return;
-    for (const r of validRows) {
-      const med = r.medication.trim();
-      // Doctor control: a medication not yet in the clinic list is added automatically.
-      addClinicMed(med);
-      await repo.addTreatment({
-        pet_id: pet.id,
-        day,
-        doctor: doctor.trim() || undefined,
-        medication: med,
-        time: r.time,
-        amount: r.amount.trim(),
-        observations: r.note.trim() || undefined,
-      });
-    }
-    playSuccess();
-    resetForm();
-    setOpen(false);
+  // The new cascading medication workflow (family → drug → route → dosage) commits
+  // here as today's administered doses, then refreshes the flowsheet via onChanged().
+  const commit = async (entries: MedicalDraft[]) => {
+    await persistMedicalDrafts(pet.id, user?.full_name, entries);
     onChanged();
+    setOpen(false);
   };
 
   const remove = async (id: string) => {
@@ -1351,7 +1293,7 @@ function TreatmentTab({ pet, treatments, admissions, onChanged, canEdit, isOwner
           <h3 className="font-bold text-ink">{t("treatment.title")}</h3>
           <p className="text-xs text-ink-subtle">{t("treatment.subtitle")}</p>
         </div>
-        {!locked && (
+        {canEdit && (
           <button className="btn-secondary py-1.5 px-3 text-sm" onClick={() => setOpen(true)}>
             <Plus size={16} /> {t("treatment.add")}
           </button>
@@ -1489,59 +1431,8 @@ function TreatmentTab({ pet, treatments, admissions, onChanged, canEdit, isOwner
         </div>
       )}
 
-      <datalist id="med-options">
-        {allMedicationNames().map((m) => <option key={m} value={m} />)}
-      </datalist>
-      <datalist id="doctor-options">
-        {doctorOptions.map((d) => <option key={d} value={d} />)}
-      </datalist>
-
-      <Modal open={open} onClose={() => { resetForm(); setOpen(false); }} title={t("treatment.addTitle")}>
-        <div className="space-y-4">
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="label">{t("treatment.day")}</label>
-              <input type="date" className="input" value={day} onChange={(e) => setDay(e.target.value)} />
-            </div>
-            <div>
-              <label className="label">{t("treatment.doctor")}</label>
-              <input list="doctor-options" className="input" value={doctor} onChange={(e) => setDoctor(e.target.value)} placeholder={t("treatment.doctorPlaceholder")} />
-            </div>
-          </div>
-
-          <div>
-            <label className="label">{t("treatment.medications")}</label>
-            <div className="space-y-3">
-              {rows.map((r, i) => (
-                <div key={r.key} className="rounded-xl border border-line p-3 space-y-2 relative">
-                  {rows.length > 1 && (
-                    <button className="absolute top-2 end-2 text-ink-subtle hover:text-danger-500" onClick={() => removeRow(r.key)} aria-label={t("treatment.delete")}>
-                      <Trash2 size={15} />
-                    </button>
-                  )}
-                  <input
-                    list="med-options"
-                    className="input py-2"
-                    value={r.medication}
-                    onChange={(e) => setRow(r.key, { medication: e.target.value })}
-                    placeholder={t("treatment.medicationPlaceholder")}
-                    autoFocus={i === 0}
-                  />
-                  <div className="grid grid-cols-2 gap-2">
-                    <input type="time" className="input py-2" value={r.time} onChange={(e) => setRow(r.key, { time: e.target.value })} />
-                    <input className="input py-2" value={r.amount} onChange={(e) => setRow(r.key, { amount: e.target.value })} placeholder={t("treatment.amountPlaceholder")} />
-                  </div>
-                  <input className="input py-2" value={r.note} onChange={(e) => setRow(r.key, { note: e.target.value })} placeholder={t("treatment.observationsPlaceholder")} />
-                </div>
-              ))}
-            </div>
-            <button className="btn-ghost text-sm mt-2 text-brand-700" onClick={addRow}>
-              <Plus size={16} /> {t("treatment.addMedication")}
-            </button>
-          </div>
-
-          <button className="btn-primary w-full" onClick={save} disabled={validRows.length === 0}>{t("common.save")}</button>
-        </div>
+      <Modal open={open} onClose={() => setOpen(false)} title={t("treatment.addTitle")}>
+        <MedicalEntry species={pet.species} initialMode="medication" lockMode onCommit={commit} />
       </Modal>
     </div>
   );
