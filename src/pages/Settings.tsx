@@ -1,7 +1,9 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Settings as SettingsIcon, RotateCcw, Check, Volume2, VolumeX, Plus, Trash2, Pill, PawPrint } from "lucide-react";
-import type { Species } from "@/types";
+import { Settings as SettingsIcon, RotateCcw, Check, Volume2, VolumeX, Plus, Trash2, Pill, PawPrint, Stethoscope, Tag, FolderPlus } from "lucide-react";
+import type { Species, Service, ServiceCategory, ServiceCatalog } from "@/types";
+import { useAuth } from "@/contexts/AuthContext";
+import { getServiceCatalog, addServiceCategory, removeServiceCategory, addService, updateService, removeService } from "@/lib/services";
 import { DEFAULT_RANGES, VITAL_KEYS, CBC_KEYS, rangeFor, type VitalKey } from "@/lib/vitals";
 
 const ALL_KEYS: VitalKey[] = [...VITAL_KEYS, ...CBC_KEYS];
@@ -15,6 +17,8 @@ import { Button } from "@/components/ui";
 
 export function Settings() {
   const { t } = useTranslation();
+  const { user } = useAuth();
+  const isStaff = user?.role !== "owner";
   const [species, setSpecies] = useState<Species>("dog");
   // version bumps force re-read of effective ranges after save/reset
   const [version, setVersion] = useState(0);
@@ -128,6 +132,7 @@ export function Settings() {
         )}
       </div>
 
+      {isStaff && <ServiceSettings />}
       <ClinicMedications />
       <ClinicVaccinations />
       <ClinicBreeds />
@@ -287,6 +292,112 @@ function ClinicBreeds() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/* ---------------- Services & non-barcode items ---------------- */
+function ServiceSettings() {
+  const { t } = useTranslation();
+  const [catalog, setCatalog] = useState<ServiceCatalog>(() => getServiceCatalog());
+  const [catName, setCatName] = useState("");
+  const refresh = () => setCatalog(getServiceCatalog());
+
+  const addCat = () => {
+    if (!catName.trim()) return;
+    const ok = addServiceCategory(catName);
+    if (ok) { playSuccess(); setCatName(""); refresh(); } else { playTap(); }
+  };
+
+  return (
+    <div className="card p-5 mb-4">
+      <div className="mb-1 flex items-center gap-2">
+        <Stethoscope size={18} className="text-brand-600" />
+        <h2 className="font-bold text-ink">{t("services.title", "Services & non-barcode items")}</h2>
+        <span className="chip bg-surface-2 text-ink-muted text-xs ms-auto">{t("services.count", { n: catalog.services.length, defaultValue: "{{n}} services" })}</span>
+      </div>
+      <p className="mb-4 text-xs text-ink-subtle">{t("services.subtitle", "CBC tests, X-rays, consultations, grooming… these appear in the POS for one-tap billing.")}</p>
+
+      {/* Add category */}
+      <div className="mb-4 flex items-end gap-2">
+        <div className="flex-1">
+          <label className="label">{t("services.newCategory", "New category")}</label>
+          <input className="input py-2" value={catName} onChange={(e) => setCatName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addCat()} placeholder={t("services.categoryPh", "e.g. Laboratory, Imaging, Dentistry")} />
+        </div>
+        <button className="btn-primary py-2.5" onClick={addCat}><FolderPlus size={16} /> {t("services.addCategory", "Add category")}</button>
+      </div>
+
+      {catalog.categories.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-line p-6 text-center text-sm text-ink-subtle">{t("services.empty", "No categories yet. Create one to start adding services.")}</div>
+      ) : (
+        <div className="space-y-3">
+          {catalog.categories.map((cat) => (
+            <CategoryBlock key={cat.id} cat={cat} services={catalog.services.filter((s) => s.category_id === cat.id)} onChanged={refresh} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CategoryBlock({ cat, services, onChanged }: { cat: ServiceCategory; services: Service[]; onChanged: () => void }) {
+  const { t } = useTranslation();
+  const [name, setName] = useState("");
+  const [price, setPrice] = useState("");
+
+  const add = () => {
+    if (!name.trim()) return;
+    addService(cat.id, name, Number(price) || 0);
+    playSuccess();
+    setName(""); setPrice("");
+    onChanged();
+  };
+
+  const delCategory = () => {
+    if (!window.confirm(t("services.confirmDelCat", { name: cat.name, defaultValue: `Delete "${cat.name}" and its ${services.length} service(s)?` }))) return;
+    removeServiceCategory(cat.id);
+    playTap();
+    onChanged();
+  };
+
+  return (
+    <div className="rounded-2xl border border-line bg-surface-1 p-3">
+      <div className="mb-2 flex items-center justify-between">
+        <span className="flex items-center gap-1.5 text-sm font-bold text-ink"><Tag size={14} className="text-brand-600" /> {cat.name}</span>
+        <button onClick={delCategory} aria-label={t("common.delete", "Delete")} className="grid h-7 w-7 place-items-center rounded-full text-ink-subtle transition hover:bg-danger-50 hover:text-danger-600"><Trash2 size={14} /></button>
+      </div>
+
+      {services.length > 0 && (
+        <div className="mb-2 space-y-1.5">
+          {services.map((s) => (
+            <div key={s.id} className="flex items-center gap-2 rounded-xl bg-surface-2 px-2.5 py-1.5">
+              <span className="min-w-0 flex-1 truncate text-sm text-ink">{s.name}</span>
+              <div className="flex items-center gap-1 text-sm text-ink-muted">
+                <span className="text-xs">$</span>
+                <input
+                  type="number" min="0" step="0.01" inputMode="decimal"
+                  defaultValue={s.price}
+                  onBlur={(e) => { const v = Number(e.target.value); if (!Number.isNaN(v)) { updateService(s.id, { price: v }); onChanged(); } }}
+                  onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+                  className="w-20 rounded-lg border border-line bg-surface-1 px-2 py-1 text-end text-sm font-semibold tabular-nums text-ink outline-none focus:border-brand-400"
+                />
+              </div>
+              <button onClick={() => { removeService(s.id); playTap(); onChanged(); }} aria-label={t("common.delete", "Delete")} className="grid h-7 w-7 place-items-center rounded-full text-ink-subtle transition hover:bg-danger-50 hover:text-danger-600"><Trash2 size={13} /></button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Add service to this category */}
+      <div className="flex items-end gap-2">
+        <div className="flex-1">
+          <input className="input py-2" value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && add()} placeholder={t("services.servicePh", "Service name (e.g. CBC Test)")} />
+        </div>
+        <div className="w-24">
+          <input type="number" min="0" step="0.01" inputMode="decimal" className="input py-2 text-end" value={price} onChange={(e) => setPrice(e.target.value)} onKeyDown={(e) => e.key === "Enter" && add()} placeholder={t("services.price", "Price")} />
+        </div>
+        <button className="btn-secondary py-2.5" onClick={add}><Plus size={16} /></button>
+      </div>
     </div>
   );
 }

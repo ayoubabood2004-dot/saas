@@ -62,6 +62,11 @@
     "subtitle": "Walk-in sales, invoicing & receipts — for this clinic only.",
     "sellItems": "Sell items",
     "saleForPet": "Sale for {{pet}}",
+    "products": "Products",
+    "services": "Services",
+    "service": "Service",
+    "noServices": "No services yet — add them in Settings → Services.",
+    "editPrice": "Edit price",
     "newSaleTab": "New sale",
     "invoicesTab": "Invoices",
     "reportsTab": "Reports",
@@ -130,6 +135,18 @@
     "unitsSold": "{{n}} sold",
     "popupBlocked": "Allow pop-ups to print",
     "popupBlockedHint": "Your browser blocked the print window — enable pop-ups for this site."
+  },
+  "services": {
+    "title": "Services & non-barcode items",
+    "subtitle": "CBC tests, X-rays, consultations, grooming… these appear in the POS for one-tap billing.",
+    "count": "{{n}} services",
+    "newCategory": "New category",
+    "categoryPh": "e.g. Laboratory, Imaging, Dentistry",
+    "addCategory": "Add category",
+    "empty": "No categories yet. Create one to start adding services.",
+    "servicePh": "Service name (e.g. CBC Test)",
+    "price": "Price",
+    "confirmDelCat": "Delete \"{{name}}\" and its services?"
   },
   "pos": {
     "title": "Inventory",

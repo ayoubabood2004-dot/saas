@@ -4,11 +4,14 @@ import { AnimatePresence, motion } from "framer-motion";
 import {
   Search, Barcode, Plus, Minus, Trash2, ShoppingCart, User, Phone, Tag, Percent,
   Banknote, CreditCard, ArrowLeftRight, CheckCircle2, Printer, Sparkles, TrendingUp, Package, PawPrint, X,
+  Stethoscope, Pencil,
 } from "lucide-react";
-import type { Product, Invoice, InvoiceItem, CartLine, CheckoutItem, SaleMeta, PaymentMethod, DiscountType, Customer } from "@/types";
+import type { Product, Invoice, InvoiceItem, CheckoutItem, SaleMeta, PaymentMethod, DiscountType, Customer, Service, ServiceCatalog } from "@/types";
 import { repo, resolveDiscount } from "@/lib/repo";
+import { getServiceCatalog } from "@/lib/services";
 import { useBarcodeScanner } from "@/hooks/useBarcodeScanner";
 import { Button, useToast } from "@/components/ui";
+import { ServiceQuickSelect } from "./ServiceQuickSelect";
 import { useInvoicePrinter } from "./usePrintInvoice";
 import { invoiceNo } from "@/lib/invoicePrint";
 import { cn } from "@/lib/utils";
@@ -16,6 +19,21 @@ import { withTimeout, describeDbError } from "@/lib/errors";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
 
 const money = (n: number) => n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+/** A unified cart line — a physical product OR a non-barcode service. The price is an
+ *  editable override; services carry product_id=null + zero cost so they flow through
+ *  the normal checkout/invoice/analytics pipeline alongside products. */
+interface Line {
+  id: string; // "p:<productId>" | "s:<serviceId>"
+  kind: "product" | "service";
+  name: string;
+  barcode: string | null;
+  unit_price: number; // editable
+  unit_cost: number; // product purchase price; 0 for services
+  qty: number;
+  stock: number | null; // product stock cap; null = unlimited (service)
+  product_id: string | null;
+}
 
 const PAY_METHODS: { value: PaymentMethod; icon: typeof Banknote; key: string; def: string }[] = [
   { value: "cash", icon: Banknote, key: "retail.cash", def: "Cash" },
@@ -31,7 +49,9 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
   const toast = useToast();
   const print = useInvoicePrinter();
 
-  const [cart, setCart] = useState<CartLine[]>([]);
+  const [cart, setCart] = useState<Line[]>([]);
+  const [browseTab, setBrowseTab] = useState<"products" | "services">("products");
+  const [catalog] = useState<ServiceCatalog>(() => getServiceCatalog());
   const [query, setQuery] = useState("");
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
@@ -47,15 +67,34 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
   const [done, setDone] = useState<{ invoice: Invoice; items: InvoiceItem[] } | null>(null);
   const [lastPrints, setLastPrints] = useState(0);
 
-  const addProduct = (p: Product) => {
+  const flashLine = (id: string) => { setFlash(id); setTimeout(() => setFlash((f) => (f === id ? null : f)), 600); };
+
+  // Add (or increment) a line; products are capped at their stock.
+  const bump = (id: string, factory: () => Line) => {
     setCart((c) => {
-      const found = c.find((l) => l.product.id === p.id);
-      if (found) return c.map((l) => (l.product.id === p.id ? { ...l, qty: l.qty + 1 } : l));
-      return [...c, { product: p, qty: 1 }];
+      const found = c.find((l) => l.id === id);
+      if (found) {
+        const cap = found.stock != null ? found.stock : Infinity;
+        return c.map((l) => (l.id === id ? { ...l, qty: Math.min(l.qty + 1, cap) } : l));
+      }
+      return [...c, factory()];
     });
-    setFlash(p.id);
-    setTimeout(() => setFlash((f) => (f === p.id ? null : f)), 600);
+    flashLine(id);
   };
+
+  const addProduct = (p: Product) =>
+    bump(`p:${p.id}`, () => ({ id: `p:${p.id}`, kind: "product", name: p.name, barcode: p.barcode ?? null, unit_price: p.sell_price, unit_cost: p.purchase_price, qty: 1, stock: p.stock, product_id: p.id }));
+
+  const addService = (s: Service) =>
+    bump(`s:${s.id}`, () => ({ id: `s:${s.id}`, kind: "service", name: s.name, barcode: null, unit_price: s.price, unit_cost: 0, qty: 1, stock: null, product_id: null }));
+
+  const setQty = (id: string, qty: number) =>
+    setCart((c) => (qty <= 0 ? c.filter((l) => l.id !== id) : c.map((l) => (l.id === id ? { ...l, qty: l.stock != null ? Math.min(qty, l.stock) : qty } : l))));
+
+  const setPrice = (id: string, price: number) =>
+    setCart((c) => c.map((l) => (l.id === id ? { ...l, unit_price: Math.max(0, Math.round(price * 100) / 100) } : l)));
+
+  const removeLine = (id: string) => setCart((c) => c.filter((l) => l.id !== id));
 
   useBarcodeScanner(async (code) => {
     if (done) return;
@@ -68,25 +107,18 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
 
   // The bridge: a doctor clicked "Sell items" inside an animal record. Auto-fill the
   // customer, surface the pet context, and focus the scan field for a zero-click flow.
-  // The effect only re-runs when `prefill` (a stable state ref in the parent) actually
-  // changes, so re-applying on a fresh hand-off is exactly what we want; the setState
-  // calls are idempotent under StrictMode's double-invoke.
   useEffect(() => {
     if (!prefill) return;
     if (prefill.name) setName(prefill.name);
     if (prefill.phone) setPhone(prefill.phone);
     setPetContext(prefill.pet || null);
     setDone(null);
-    // Scan-ready: focus the product/scan field once it's in the DOM.
     const id = window.setTimeout(() => searchRef.current?.focus(), 160);
     return () => window.clearTimeout(id);
   }, [prefill]);
 
-  const setQty = (id: string, qty: number) =>
-    setCart((c) => (qty <= 0 ? c.filter((l) => l.product.id !== id) : c.map((l) => (l.product.id === id ? { ...l, qty } : l))));
-
-  const subtotal = cart.reduce((s, l) => s + l.qty * l.product.sell_price, 0);
-  const cost = cart.reduce((s, l) => s + l.qty * l.product.purchase_price, 0);
+  const subtotal = cart.reduce((s, l) => s + l.qty * l.unit_price, 0);
+  const cost = cart.reduce((s, l) => s + l.qty * l.unit_cost, 0);
   const units = cart.reduce((s, l) => s + l.qty, 0);
   const discountAmt = resolveDiscount(subtotal, discountType, Number(discountValue) || 0);
   const total = Math.max(0, subtotal - discountAmt);
@@ -114,7 +146,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
   const reset = () => {
     setCart([]); setQuery(""); setName(""); setPhone(""); setDiscountValue("");
     setDiscountType("percent"); setPayment("cash"); setDone(null); setLastPrints(0);
-    setPetContext(null);
+    setPetContext(null); setBrowseTab("products");
   };
 
   const checkout = async () => {
@@ -122,8 +154,8 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
     setBusy(true);
     try {
       const items: CheckoutItem[] = cart.map((l) => ({
-        product_id: l.product.id, name: l.product.name, barcode: l.product.barcode ?? null,
-        qty: l.qty, unit_price: l.product.sell_price, unit_cost: l.product.purchase_price,
+        product_id: l.product_id, name: l.name, barcode: l.barcode,
+        qty: l.qty, unit_price: l.unit_price, unit_cost: l.unit_cost,
       }));
       const meta: SaleMeta = {
         customer_name: name.trim() || null,
@@ -133,12 +165,11 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
         payment_method: payment,
       };
       const invoice = await withTimeout(repo.retailCheckout(items, meta), 12000);
-      // Build line snapshots for instant printing (no extra round-trip).
+      // Snapshot the lines for instant printing (services + products, with overrides).
       const invItems: InvoiceItem[] = cart.map((l) => ({
-        id: `tmp-${l.product.id}`, invoice_id: invoice.id, clinic_id: clinicId ?? null,
-        product_id: l.product.id, name: l.product.name, barcode: l.product.barcode ?? null,
-        qty: l.qty, unit_price: l.product.sell_price, unit_cost: l.product.purchase_price,
-        line_total: l.qty * l.product.sell_price,
+        id: `tmp-${l.id}`, invoice_id: invoice.id, clinic_id: clinicId ?? null,
+        product_id: l.product_id, name: l.name, barcode: l.barcode,
+        qty: l.qty, unit_price: l.unit_price, unit_cost: l.unit_cost, line_total: l.qty * l.unit_price,
       }));
       playSuccess();
       setDone({ invoice, items: invItems });
@@ -192,7 +223,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
   // ---- Builder --------------------------------------------------------------
   return (
     <div className="grid gap-4 lg:grid-cols-[1fr,380px]">
-      {/* LEFT — customer + products */}
+      {/* LEFT — customer + products/services */}
       <div className="space-y-4">
         {/* Bridge context — which animal this sale is for (from the medical record) */}
         {petContext && (
@@ -242,43 +273,66 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
           </div>
         </div>
 
-        {/* Product search + scan */}
-        <div className="relative">
-          <Search size={16} className="pointer-events-none absolute top-1/2 -translate-y-1/2 text-ink-subtle ltr:left-3 rtl:right-3" />
-          <input ref={searchRef} className="input ltr:pl-9 rtl:pr-9" value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("retail.searchProducts", "Search or scan a product…")} />
-          <span className="pointer-events-none absolute top-1/2 flex -translate-y-1/2 items-center gap-1 text-2xs text-ink-subtle ltr:right-3 rtl:left-3"><Barcode size={13} /> {t("retail.scanReady", "scan ready")}</span>
+        {/* Products | Services toggle */}
+        <div className="inline-flex w-full items-center gap-1 rounded-full border border-line bg-surface-2 p-1">
+          {([
+            { v: "products", label: t("retail.products", "Products"), icon: <Package size={15} /> },
+            { v: "services", label: t("retail.services", "Services"), icon: <Stethoscope size={15} /> },
+          ] as const).map((o) => (
+            <button
+              key={o.v}
+              onClick={() => { playTap(); setBrowseTab(o.v); }}
+              className={cn("flex flex-1 items-center justify-center gap-1.5 rounded-full px-4 py-2 text-sm font-semibold transition",
+                browseTab === o.v ? "bg-brand-600 text-white shadow-soft" : "text-ink-muted hover:text-ink")}
+            >
+              {o.icon}{o.label}
+            </button>
+          ))}
         </div>
 
-        {/* Product grid */}
-        {shown.length === 0 ? (
-          <div className="card grid place-items-center p-10 text-center text-sm text-ink-subtle">
-            <Package size={28} className="mb-2 opacity-40" />
-            {ql ? t("retail.noMatch", "No products match.") : t("retail.noProducts", "No products in inventory yet.")}
-          </div>
+        {browseTab === "products" ? (
+          <>
+            {/* Product search + scan */}
+            <div className="relative">
+              <Search size={16} className="pointer-events-none absolute top-1/2 -translate-y-1/2 text-ink-subtle ltr:left-3 rtl:right-3" />
+              <input ref={searchRef} className="input ltr:pl-9 rtl:pr-9" value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("retail.searchProducts", "Search or scan a product…")} />
+              <span className="pointer-events-none absolute top-1/2 flex -translate-y-1/2 items-center gap-1 text-2xs text-ink-subtle ltr:right-3 rtl:left-3"><Barcode size={13} /> {t("retail.scanReady", "scan ready")}</span>
+            </div>
+
+            {/* Product grid */}
+            {shown.length === 0 ? (
+              <div className="card grid place-items-center p-10 text-center text-sm text-ink-subtle">
+                <Package size={28} className="mb-2 opacity-40" />
+                {ql ? t("retail.noMatch", "No products match.") : t("retail.noProducts", "No products in inventory yet.")}
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                {shown.map((p) => {
+                  const out = p.stock <= 0;
+                  return (
+                    <button
+                      key={p.id} disabled={out} onClick={() => { playTap(); addProduct(p); }}
+                      className={cn(
+                        "group relative flex flex-col rounded-2xl border p-3 text-start transition",
+                        out ? "cursor-not-allowed border-line bg-surface-2 opacity-50"
+                          : flash === `p:${p.id}` ? "border-brand-400 bg-brand-50 dark:bg-brand-500/15"
+                            : "border-line bg-surface-1 hover:border-brand-300 hover:bg-brand-50 dark:hover:bg-brand-500/10",
+                      )}
+                    >
+                      <span className="grid h-9 w-9 place-items-center rounded-xl bg-surface-2 text-ink-subtle group-hover:bg-white/60 dark:group-hover:bg-surface-1"><Package size={17} /></span>
+                      <span className="mt-2 line-clamp-2 min-h-[2.2rem] text-xs font-semibold leading-tight text-ink">{p.name}</span>
+                      <span className="mt-1 flex items-center justify-between">
+                        <span className="text-sm font-bold text-ink tabular-nums">{money(p.sell_price)}</span>
+                        <span className={cn("text-2xs", out ? "text-danger-600" : "text-ink-subtle")}>{out ? t("retail.out", "out") : t("retail.nLeft", { n: p.stock, defaultValue: "{{n}} left" })}</span>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </>
         ) : (
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-            {shown.map((p) => {
-              const out = p.stock <= 0;
-              return (
-                <button
-                  key={p.id} disabled={out} onClick={() => { playTap(); addProduct(p); }}
-                  className={cn(
-                    "group relative flex flex-col rounded-2xl border p-3 text-start transition",
-                    out ? "cursor-not-allowed border-line bg-surface-2 opacity-50"
-                      : flash === p.id ? "border-brand-400 bg-brand-50 dark:bg-brand-500/15"
-                        : "border-line bg-surface-1 hover:border-brand-300 hover:bg-brand-50 dark:hover:bg-brand-500/10",
-                  )}
-                >
-                  <span className="grid h-9 w-9 place-items-center rounded-xl bg-surface-2 text-ink-subtle group-hover:bg-white/60 dark:group-hover:bg-surface-1"><Package size={17} /></span>
-                  <span className="mt-2 line-clamp-2 min-h-[2.2rem] text-xs font-semibold leading-tight text-ink">{p.name}</span>
-                  <span className="mt-1 flex items-center justify-between">
-                    <span className="text-sm font-bold text-ink tabular-nums">{money(p.sell_price)}</span>
-                    <span className={cn("text-2xs", out ? "text-danger-600" : "text-ink-subtle")}>{out ? t("retail.out", "out") : t("retail.nLeft", { n: p.stock, defaultValue: "{{n}} left" })}</span>
-                  </span>
-                </button>
-              );
-            })}
-          </div>
+          <ServiceQuickSelect catalog={catalog} onPick={addService} flashId={flash} />
         )}
       </div>
 
@@ -296,19 +350,25 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
             <div className="space-y-1.5">
               <AnimatePresence initial={false}>
                 {cart.map((l) => (
-                  <motion.div key={l.product.id} layout initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }}
-                    className={cn("flex items-center gap-2 rounded-2xl border p-2.5", flash === l.product.id ? "border-brand-400 bg-brand-50 dark:bg-brand-500/15" : "border-line bg-surface-1")}>
+                  <motion.div key={l.id} layout initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }}
+                    className={cn("flex items-center gap-2 rounded-2xl border p-2.5", flash === l.id ? "border-brand-400 bg-brand-50 dark:bg-brand-500/15" : "border-line bg-surface-1")}>
                     <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-semibold text-ink">{l.product.name}</p>
-                      <p className="text-xs text-ink-subtle">{money(l.product.sell_price)} {t("pos.each", "each")}</p>
+                      <p className="flex items-center gap-1.5 truncate text-sm font-semibold text-ink">
+                        {l.name}
+                        {l.kind === "service" && <span className="chip shrink-0 bg-brand-50 text-2xs font-medium text-brand-700 dark:bg-brand-500/15 dark:text-brand-300">{t("retail.service", "Service")}</span>}
+                      </p>
+                      <div className="mt-0.5 flex items-center gap-1 text-xs text-ink-subtle">
+                        <PriceEdit value={l.unit_price} onChange={(v) => setPrice(l.id, v)} />
+                        <span>{t("pos.each", "each")}</span>
+                      </div>
                     </div>
                     <div className="flex items-center gap-1">
-                      <button onClick={() => { playTap(); setQty(l.product.id, l.qty - 1); }} className="grid h-7 w-7 place-items-center rounded-lg bg-surface-2 text-ink-muted transition hover:bg-surface-3"><Minus size={14} /></button>
-                      <span className="w-7 text-center text-sm font-bold tabular-nums text-ink">{l.qty}</span>
-                      <button onClick={() => { playTap(); if (l.qty < l.product.stock) setQty(l.product.id, l.qty + 1); else { playWarning(); toast.error(t("retail.maxStock", "No more in stock")); } }} className="grid h-7 w-7 place-items-center rounded-lg bg-surface-2 text-ink-muted transition hover:bg-surface-3"><Plus size={14} /></button>
+                      <button onClick={() => { playTap(); setQty(l.id, l.qty - 1); }} className="grid h-7 w-7 place-items-center rounded-lg bg-surface-2 text-ink-muted transition hover:bg-surface-3"><Minus size={14} /></button>
+                      <span className="w-6 text-center text-sm font-bold tabular-nums text-ink">{l.qty}</span>
+                      <button onClick={() => { playTap(); if (l.stock == null || l.qty < l.stock) setQty(l.id, l.qty + 1); else { playWarning(); toast.error(t("retail.maxStock", "No more in stock")); } }} className="grid h-7 w-7 place-items-center rounded-lg bg-surface-2 text-ink-muted transition hover:bg-surface-3"><Plus size={14} /></button>
                     </div>
-                    <span className="w-16 text-end text-sm font-bold tabular-nums text-ink">{money(l.qty * l.product.sell_price)}</span>
-                    <button onClick={() => setQty(l.product.id, 0)} aria-label={t("common.delete", "Remove")} className="grid h-7 w-7 place-items-center rounded-lg text-ink-subtle transition hover:bg-danger-50 hover:text-danger-600"><Trash2 size={14} /></button>
+                    <span className="w-16 text-end text-sm font-bold tabular-nums text-ink">{money(l.qty * l.unit_price)}</span>
+                    <button onClick={() => removeLine(l.id)} aria-label={t("common.delete", "Remove")} className="grid h-7 w-7 place-items-center rounded-lg text-ink-subtle transition hover:bg-danger-50 hover:text-danger-600"><Trash2 size={14} /></button>
                   </motion.div>
                 ))}
               </AnimatePresence>
@@ -355,5 +415,41 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
         </div>
       </div>
     </div>
+  );
+}
+
+/** Inline click-to-edit price — the crux of the per-sale override. Edits only this
+ *  cart line's price; the service's default in Settings is never touched. */
+function PriceEdit({ value, onChange }: { value: number; onChange: (v: number) => void }) {
+  const { t } = useTranslation();
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+
+  const commit = () => {
+    const n = Number(draft);
+    if (!Number.isNaN(n) && n >= 0) onChange(n);
+    setEditing(false);
+  };
+
+  if (editing) {
+    return (
+      <input
+        autoFocus type="number" min="0" step="0.01" inputMode="decimal" value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => { if (e.key === "Enter") commit(); if (e.key === "Escape") setEditing(false); }}
+        className="w-16 rounded-md border border-brand-400 bg-surface-1 px-1.5 py-0.5 text-xs font-bold tabular-nums text-ink outline-none"
+      />
+    );
+  }
+  return (
+    <button
+      type="button"
+      onClick={() => { setDraft(value.toFixed(2)); setEditing(true); }}
+      title={t("retail.editPrice", "Edit price")}
+      className="inline-flex items-center gap-1 rounded-md px-1 font-bold tabular-nums text-brand-700 underline decoration-dotted underline-offset-2 transition hover:bg-brand-50 dark:text-brand-300 dark:hover:bg-brand-500/15"
+    >
+      {money(value)} <Pencil size={10} className="opacity-60" />
+    </button>
   );
 }

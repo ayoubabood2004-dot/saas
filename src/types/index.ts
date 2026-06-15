@@ -330,6 +330,13 @@ export interface CheckoutItem {
   unit_cost: number;
 }
 
+/* ---------------- Services & non-barcode items ---------------- */
+/** A clinic-defined service category (e.g. Laboratory, Imaging, Consultation). */
+export interface ServiceCategory { id: string; name: string }
+/** A billable non-barcode service with a default price (overridable per sale). */
+export interface Service { id: string; category_id: string; name: string; price: number }
+export interface ServiceCatalog { categories: ServiceCategory[]; services: Service[] }
+
 export interface DemoDB {
   pets: Pet[];
   weightLogs: WeightLog[];
