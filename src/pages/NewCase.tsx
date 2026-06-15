@@ -1,9 +1,13 @@
 import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, ArrowRight, Camera, Stethoscope, BedDouble, LogOut as ReleaseIcon, CheckCircle2, Pill, Plus, Trash2, Activity, ChevronDown, Search, Loader2 } from "lucide-react";
+import { AnimatePresence, motion } from "framer-motion";
+import { ArrowLeft, ArrowRight, Camera, Stethoscope, BedDouble, LogOut as ReleaseIcon, CheckCircle2, Pill, Plus, Trash2, Activity, ChevronDown, Search, Loader2, ShieldCheck } from "lucide-react";
 import type { Species, Sex, AdmissionKind, Pet } from "@/types";
 import { repo } from "@/lib/repo";
+import { Combobox } from "@/components/Combobox";
+import { COMMON_DISEASES } from "@/lib/diseases";
+import { cn } from "@/lib/utils";
 import { PhoneInput } from "@/components/PhoneInput";
 import { PetAvatar } from "@/components/PetAvatar";
 import { ReadingsFields } from "@/components/ReadingsFields";
@@ -18,6 +22,8 @@ import { playSuccess, playTap, playWarning } from "@/lib/sounds";
 
 type Disposition = "log" | "boarding" | "release";
 
+type Health = "healthy" | "sick";
+
 interface AnimalDraft {
   key: string;
   photo: string | null;
@@ -31,6 +37,8 @@ interface AnimalDraft {
   microchip: string;
   allergies: string;
   notes: string;
+  health: Health;
+  diagnosis: string;
   disp: Disposition;
   cage: string;
   addMeds: boolean;
@@ -42,6 +50,7 @@ function newAnimal(): AnimalDraft {
   return {
     key: uid("a"), photo: null, name: "", species: "dog", breed: "", sex: "unknown",
     dob: "", weight: "", color: "", microchip: "", allergies: "", notes: "",
+    health: "healthy", diagnosis: "",
     disp: "log", cage: "", addMeds: true, readings: {}, readingsOpen: false,
   };
 }
@@ -116,7 +125,9 @@ export function NewCase() {
           current_weight_kg: a.weight ? Number(a.weight) : null,
           allergies: a.allergies.split(",").map((s) => s.trim()).filter(Boolean),
         }), 8000);
-        const reason = a.notes.trim() || undefined;
+        const diagnosis = a.health === "sick" ? a.diagnosis.trim() : "";
+        // The admission reason leads with the diagnosis (if any), then the free note.
+        const reason = [diagnosis, a.notes.trim()].filter(Boolean).join(" — ") || undefined;
         if (a.disp === "log") {
           await withTimeout(repo.addAdmission({ pet_id: pet.id, kind: "treatment" as AdmissionKind, status: "active", admitted_on: today, reason }), 8000);
         } else if (a.disp === "boarding") {
@@ -125,16 +136,17 @@ export function NewCase() {
           await withTimeout(repo.addAdmission({ pet_id: pet.id, kind: "treatment" as AdmissionKind, status: "discharged", admitted_on: today, discharged_on: today, reason }), 8000);
         }
 
-        // Readings recorded at registration become a dated entry in the patient's history.
+        // A diagnosis and/or registration readings become a dated consultation record
+        // in the patient's history — the diagnosis is the visit's assessment (title).
         const objective = formatReadings(a.readings, a.species, pet.id, (k) => t(`reading.${k}`));
-        if (objective) {
+        if (diagnosis || objective) {
           await withTimeout(repo.addVisit({
             pet_id: pet.id,
             clinic_name: "Happy Paws Veterinary Clinic",
             doctor_name: user?.full_name ?? "Doctor",
             visit_date: today,
-            objective,
-            assessment: t("newCase.admissionReadings"),
+            objective: objective || undefined,
+            assessment: diagnosis || t("newCase.admissionReadings"),
           }), 8000);
         }
 
@@ -292,6 +304,14 @@ export function NewCase() {
                 <textarea className="input min-h-16" value={a.notes} onChange={(e) => setAnimal(a.key, { notes: e.target.value })} placeholder={t("newCase.notesPlaceholder")} />
               </div>
 
+              {/* Health status + smart diagnosis combobox */}
+              <HealthStatusField
+                health={a.health}
+                diagnosis={a.diagnosis}
+                onHealth={(h) => setAnimal(a.key, h === "healthy" ? { health: h, diagnosis: "" } : { health: h })}
+                onDiagnosis={(d) => setAnimal(a.key, { diagnosis: d })}
+              />
+
               {/* Optional medical readings (vitals + CBC), recorded into history */}
               <div className="border-t border-line pt-3">
                 <button
@@ -367,6 +387,55 @@ export function NewCase() {
   );
 }
 
+/** Health-status toggle (Healthy / Sick) + a conditional, animated disease combobox.
+ *  The diagnosis combobox is searchable AND free-text — any custom disease is kept. */
+function HealthStatusField({ health, diagnosis, onHealth, onDiagnosis }: {
+  health: Health; diagnosis: string; onHealth: (h: Health) => void; onDiagnosis: (d: string) => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <div>
+      <label className="label">{t("newCase.healthStatus", "Health status")}</label>
+      <div className="grid grid-cols-2 gap-2">
+        <button
+          type="button"
+          onClick={() => { playTap(); onHealth("healthy"); }}
+          className={cn("flex items-center justify-center gap-2 rounded-xl border px-3 py-2.5 text-sm font-semibold transition",
+            health === "healthy" ? "border-success-500 bg-success-500 text-white shadow-soft" : "border-line bg-surface-1 text-ink-muted hover:border-success-200 hover:bg-success-50 dark:hover:bg-success-500/10")}
+        >
+          <ShieldCheck size={16} /> {t("newCase.healthy", "Healthy")}
+        </button>
+        <button
+          type="button"
+          onClick={() => { playTap(); onHealth("sick"); }}
+          className={cn("flex items-center justify-center gap-2 rounded-xl border px-3 py-2.5 text-sm font-semibold transition",
+            health === "sick" ? "border-warn-500 bg-warn-500 text-white shadow-soft" : "border-line bg-surface-1 text-ink-muted hover:border-warn-200 hover:bg-warn-50 dark:hover:bg-warn-500/10")}
+        >
+          <Activity size={16} /> {t("newCase.sick", "Sick / Diagnosed")}
+        </button>
+      </div>
+      <AnimatePresence initial={false}>
+        {health === "sick" && (
+          <motion.div key="dx" initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.22, ease: "easeOut" }} className="overflow-visible">
+            <div className="pt-3">
+              <label className="label">{t("newCase.diagnosis", "Diagnosis")}</label>
+              <Combobox
+                value={diagnosis}
+                onChange={onDiagnosis}
+                options={COMMON_DISEASES}
+                icon={<Stethoscope size={16} />}
+                placeholder={t("newCase.diagnosisPlaceholder", "Search or type a disease…")}
+                createLabel={(q) => t("newCase.createDiagnosis", { q, defaultValue: 'Add "{{q}}"' })}
+              />
+              <p className="mt-1.5 text-2xs text-ink-subtle">{t("newCase.diagnosisHint", "Pick a suggestion, or type any diagnosis and press Enter.")}</p>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
 function DispMini({ active, icon: Icon, label, onClick }: { active: boolean; icon: typeof Stethoscope; label: string; onClick: () => void }) {
   return (
     <button onClick={onClick} className={`flex flex-col items-center gap-1 py-3 rounded-xl text-xs font-semibold transition border ${active ? "bg-brand-600 text-white border-brand-600" : "bg-white text-ink-muted border-line"}`}>
@@ -386,6 +455,8 @@ function SerialAdmit({ today, doctorName, onAdmitted }: { today: string; doctorN
   const [disp, setDisp] = useState<Disposition>("log");
   const [cage, setCage] = useState("");
   const [addMeds, setAddMeds] = useState(true);
+  const [health, setHealth] = useState<Health>("healthy");
+  const [diagnosis, setDiagnosis] = useState("");
   const [readingsOpen, setReadingsOpen] = useState(false);
   const [readings, setReadings] = useState<Partial<Record<ReadingKey, string>>>({});
   const [admitting, setAdmitting] = useState(false);
@@ -405,12 +476,14 @@ function SerialAdmit({ today, doctorName, onAdmitted }: { today: string; doctorN
     admittingRef.current = true;
     setAdmitting(true);
     try {
-      if (disp === "log") await withTimeout(repo.addAdmission({ pet_id: pet.id, kind: "treatment" as AdmissionKind, status: "active", admitted_on: today }), 8000);
-      else if (disp === "boarding") await withTimeout(repo.addAdmission({ pet_id: pet.id, kind: "boarding" as AdmissionKind, status: "active", admitted_on: today, cage: cage.trim() || undefined }), 8000);
-      else await withTimeout(repo.addAdmission({ pet_id: pet.id, kind: "treatment" as AdmissionKind, status: "discharged", admitted_on: today, discharged_on: today }), 8000);
+      const dx = health === "sick" ? diagnosis.trim() : "";
+      const reason = dx || undefined;
+      if (disp === "log") await withTimeout(repo.addAdmission({ pet_id: pet.id, kind: "treatment" as AdmissionKind, status: "active", admitted_on: today, reason }), 8000);
+      else if (disp === "boarding") await withTimeout(repo.addAdmission({ pet_id: pet.id, kind: "boarding" as AdmissionKind, status: "active", admitted_on: today, cage: cage.trim() || undefined, reason }), 8000);
+      else await withTimeout(repo.addAdmission({ pet_id: pet.id, kind: "treatment" as AdmissionKind, status: "discharged", admitted_on: today, discharged_on: today, reason }), 8000);
       const objective = formatReadings(readings, pet.species, pet.id, (k) => t(`reading.${k}`));
-      if (objective) {
-        await withTimeout(repo.addVisit({ pet_id: pet.id, clinic_name: "Happy Paws Veterinary Clinic", doctor_name: doctorName, visit_date: today, objective, assessment: t("newCase.admissionReadings") }), 8000);
+      if (dx || objective) {
+        await withTimeout(repo.addVisit({ pet_id: pet.id, clinic_name: "Happy Paws Veterinary Clinic", doctor_name: doctorName, visit_date: today, objective: objective || undefined, assessment: dx || t("newCase.admissionReadings") }), 8000);
       }
     } catch (e) {
       playWarning();
@@ -462,6 +535,14 @@ function SerialAdmit({ today, doctorName, onAdmitted }: { today: string; doctorN
               <input type="checkbox" className="w-5 h-5 accent-brand-600" checked={addMeds} onChange={(e) => setAddMeds(e.target.checked)} />
             </label>
           )}
+
+          <HealthStatusField
+            health={health}
+            diagnosis={diagnosis}
+            onHealth={(h) => { setHealth(h); if (h === "healthy") setDiagnosis(""); }}
+            onDiagnosis={setDiagnosis}
+          />
+
           <div className="border-t border-line pt-3">
             <button type="button" className="flex items-center gap-2 text-sm font-semibold text-brand-700" onClick={() => setReadingsOpen(!readingsOpen)}>
               <Activity size={16} /> {t("newCase.recordReadings")} <ChevronDown size={16} className={`transition ${readingsOpen ? "rotate-180" : ""}`} />
