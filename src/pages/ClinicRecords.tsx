@@ -226,8 +226,9 @@ interface DirRow {
   activityMs: number; // recency (visit | admission | registration)
 }
 
-type GroupBy = "alpha" | "species" | "date";
-interface DirGroup { key: string; title: string; rows: DirRow[] }
+type GroupBy = "owner" | "alpha" | "species" | "date";
+/** A collapsible accordion section. Owner sections carry header extras (phone + a named flag). */
+interface DirGroup { key: string; title: string; rows: DirRow[]; subtitle?: string; ownerHeader?: boolean; ownerNamed?: boolean }
 
 function PatientLog({ pets, admissions, visits, onChanged, loading }: { pets: Pet[]; admissions: Admission[]; visits: MedicalVisit[]; onChanged: () => void; loading: boolean }) {
   const { t, i18n } = useTranslation();
@@ -241,7 +242,7 @@ function PatientLog({ pets, admissions, visits, onChanged, loading }: { pets: Pe
   const [species, setSpecies] = useState<"all" | Species>("all");
   const [health, setHealth] = useState<"all" | PatientCondition>("all");
   const [dateRange, setDateRange] = useState<"all" | "week" | "month">("all");
-  const [groupBy, setGroupBy] = useState<GroupBy>("alpha");
+  const [groupBy, setGroupBy] = useState<GroupBy>("owner");
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [reassign, setReassign] = useState<Pet | null>(null);
   const [rq, setRq] = useState("");
@@ -315,6 +316,36 @@ function PatientLog({ pets, admissions, visits, onChanged, loading }: { pets: Pe
   // Build the accordion groups for the active grouping.
   const groups: DirGroup[] = useMemo(() => {
     const byName = (a: DirRow, b: DirRow) => a.ownerName.localeCompare(b.ownerName, lang) || a.pet.name.localeCompare(b.pet.name, lang);
+    if (groupBy === "owner") {
+      // Owner-centric hierarchy: one accordion per unique client (keyed by phone,
+      // falling back to a per-pet key for pets with no number). Each section's
+      // pet rows nest inside; the header carries the owner's name + phone + count.
+      const m = new Map<string, DirRow[]>();
+      for (const r of filtered) {
+        const nat = nationalNumber(r.ownerPhone, dial);
+        const key = nat ? `ph:${nat}` : `solo:${r.pet.id}`;
+        const a = m.get(key) ?? []; a.push(r); m.set(key, a);
+      }
+      return [...m.entries()]
+        .map(([key, rs]): DirGroup => {
+          const sorted = rs.sort((a, b) => a.pet.name.localeCompare(b.pet.name, lang));
+          // Title = the most common owner name in the group, so one mistyped record
+          // can't override the majority; falls back to the unassigned label.
+          const nameCounts = new Map<string, number>();
+          for (const r of sorted) if (r.ownerName !== "—") nameCounts.set(r.ownerName, (nameCounts.get(r.ownerName) ?? 0) + 1);
+          const named = [...nameCounts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
+          return {
+            key,
+            title: named ?? t("records.noOwnerYet", "No owner assigned yet"),
+            subtitle: sorted.find((r) => r.ownerPhone)?.ownerPhone ?? "",
+            ownerHeader: true,
+            ownerNamed: Boolean(named),
+            rows: sorted,
+          };
+        })
+        // Named clients first (alphabetical); the "no owner" bucket sinks to the end.
+        .sort((a, b) => Number(b.ownerNamed) - Number(a.ownerNamed) || a.title.localeCompare(b.title, lang));
+    }
     if (groupBy === "species") {
       const m = new Map<Species, DirRow[]>();
       for (const r of filtered) { const a = m.get(r.pet.species) ?? []; a.push(r); m.set(r.pet.species, a); }
@@ -347,10 +378,10 @@ function PatientLog({ pets, admissions, visits, onChanged, loading }: { pets: Pe
     return [...m.keys()]
       .sort((a, b) => (a === "#" ? 1 : b === "#" ? -1 : a.localeCompare(b, lang)))
       .map((k) => ({ key: k, title: k, rows: m.get(k)!.sort(byName) }));
-  }, [filtered, groupBy, t, lang]);
+  }, [filtered, groupBy, t, lang, dial]);
 
   // Reset collapse state on a grouping change (everything expanded by default).
-  useEffect(() => { setCollapsed(new Set()); }, [groupBy]);
+  useEffect(() => { setCollapsed(new Set()); }, [groupBy, dial]);
   const isOpen = (key: string) => (ql ? true : !collapsed.has(key)); // search forces all open
   const toggle = (key: string) => setCollapsed((s) => { const n = new Set(s); n.has(key) ? n.delete(key) : n.add(key); playTap(); return n; });
   const expandAll = () => { playTap(); setCollapsed(new Set()); };
@@ -397,6 +428,7 @@ function PatientLog({ pets, admissions, visits, onChanged, loading }: { pets: Pe
   const ownerInitials = (name: string) => name.split(" ").map((w) => w[0]).slice(0, 2).join("").toUpperCase();
 
   const GROUPS: { id: GroupBy; label: string; icon: typeof ArrowDownAZ }[] = [
+    { id: "owner", label: t("records.grpOwner", "By owner"), icon: Users },
     { id: "alpha", label: t("records.grpAlpha", "Alphabet"), icon: ArrowDownAZ },
     { id: "species", label: t("records.grpSpecies", "Species"), icon: PawPrint },
     { id: "date", label: t("records.grpDate", "Last visit"), icon: CalendarClock },
@@ -484,19 +516,37 @@ function PatientLog({ pets, admissions, visits, onChanged, loading }: { pets: Pe
             return (
               <div key={g.key} className="overflow-hidden rounded-3xl border border-line bg-surface-1 shadow-card">
                 <button onClick={() => toggle(g.key)} aria-expanded={open} className="flex w-full items-center gap-3 px-4 py-3.5 text-start transition hover:bg-surface-2">
-                  <span className="font-display text-base font-extrabold tracking-tighter2 text-ink">{g.title}</span>
-                  <span className="chip bg-brand-50 text-2xs font-bold text-brand-700 dark:bg-brand-500/15 dark:text-brand-300">{g.rows.length}</span>
+                  {g.ownerHeader ? (
+                    <>
+                      <span className={cn("grid h-10 w-10 shrink-0 place-items-center rounded-xl text-2xs font-bold", g.ownerNamed ? "bg-brand-grad text-white" : "bg-surface-2 text-ink-subtle")}>
+                        {g.ownerNamed ? ownerInitials(g.title) : <Users size={18} />}
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate font-display text-base font-extrabold tracking-tighter2 text-ink">{g.title}</span>
+                        <span className="flex items-center gap-1 truncate text-xs text-ink-muted">
+                          {g.subtitle ? <><Phone size={11} className="shrink-0" /> {g.subtitle}</> : t("records.noPhone", "no number")}
+                        </span>
+                      </span>
+                      <span className="chip shrink-0 bg-brand-50 text-2xs font-bold text-brand-700 dark:bg-brand-500/15 dark:text-brand-300">{g.rows.length} {t("records.pets")}</span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="font-display text-base font-extrabold tracking-tighter2 text-ink">{g.title}</span>
+                      <span className="chip bg-brand-50 text-2xs font-bold text-brand-700 dark:bg-brand-500/15 dark:text-brand-300">{g.rows.length}</span>
+                    </>
+                  )}
                   <ChevronDown size={18} className={cn("ms-auto shrink-0 text-ink-subtle transition-transform duration-200", open && "rotate-180")} />
                 </button>
                 <AnimatePresence initial={false}>
                   {open && (
                     <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.22, ease: "easeOut" }} className="overflow-hidden">
-                      <div className="divide-y divide-line border-t border-line">
+                      <div className={cn("divide-y divide-line border-t border-line", g.ownerHeader && "bg-surface-2/40")}>
                         {g.rows.map((r) => (
                           <DirectoryRow
                             key={r.pet.id}
                             row={r}
                             lang={lang}
+                            hideOwner={g.ownerHeader}
                             onView={() => { playTap(); navigate(`/pet/${r.pet.id}?tab=history`); }}
                             onTreatment={() => { playTap(); navigate(`/pet/${r.pet.id}?tab=treatment`); }}
                             onMove={() => { playTap(); setReassign(r.pet); setRq(""); setRNew({ name: "", phone: "", email: "" }); }}
@@ -591,7 +641,7 @@ function FilterPill({ active, onClick, children }: { active: boolean; onClick: (
   );
 }
 
-function DirectoryRow({ row, lang, onView, onTreatment, onMove }: { row: DirRow; lang: string; onView: () => void; onTreatment: () => void; onMove: () => void }) {
+function DirectoryRow({ row, lang, hideOwner, onView, onTreatment, onMove }: { row: DirRow; lang: string; hideOwner?: boolean; onView: () => void; onTreatment: () => void; onMove: () => void }) {
   const { t } = useTranslation();
   const { pet, ownerName, ownerPhone, lastVisit, health, status } = row;
   const hasAllergy = pet.allergies && pet.allergies.length > 0;
@@ -605,10 +655,17 @@ function DirectoryRow({ row, lang, onView, onTreatment, onMove }: { row: DirRow;
             <span className="truncate font-normal text-ink-subtle">· {pet.breed || t(`pet.species.${pet.species}`)}</span>
             {hasAllergy && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-danger-500" title={pet.allergies?.join(", ")} />}
           </p>
-          <p className="flex items-center gap-1 truncate text-xs text-ink-muted">
-            <Users size={11} className="shrink-0" /> {ownerName}
-            {ownerPhone && <span className="hidden items-center gap-1 sm:inline-flex">· <Phone size={10} /> {ownerPhone}</span>}
-          </p>
+          {hideOwner ? (
+            // Owner is already on the section header — show the last visit instead.
+            <p className="flex items-center gap-1 truncate text-xs text-ink-muted">
+              <Clock size={11} className="shrink-0" /> {lastVisit ? `${t("records.lastVisit", "Last visit")} · ${formatDate(lastVisit, lang)}` : t("records.noVisitYet", "No visit yet")}
+            </p>
+          ) : (
+            <p className="flex items-center gap-1 truncate text-xs text-ink-muted">
+              <Users size={11} className="shrink-0" /> {ownerName}
+              {ownerPhone && <span className="hidden items-center gap-1 sm:inline-flex">· <Phone size={10} /> {ownerPhone}</span>}
+            </p>
+          )}
         </div>
       </button>
 
