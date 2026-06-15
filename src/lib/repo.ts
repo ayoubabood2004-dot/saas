@@ -185,6 +185,14 @@ const demoRepo = {
       .sort((a, b) => b.visit_date.localeCompare(a.visit_date));
   },
 
+  /** Visits for a set of pets (the clinic's directory), newest first — one pass. */
+  async listAllVisits(petIds: string[]): Promise<MedicalVisit[]> {
+    const ids = new Set(petIds);
+    return (loadDB().visits ?? [])
+      .filter((v) => ids.has(v.pet_id))
+      .sort((a, b) => b.visit_date.localeCompare(a.visit_date));
+  },
+
   async addVisit(input: Omit<MedicalVisit, "id">): Promise<MedicalVisit> {
     const db = loadDB();
     const v: MedicalVisit = { ...input, id: uid("vis") };
@@ -553,6 +561,10 @@ const supabaseRepo: typeof demoRepo = {
   },
   async listVisits(petId) {
     return listOf<MedicalVisit>(await sbc().from("medical_visits").select("*").eq("pet_id", petId).order("visit_date", { ascending: false }));
+  },
+  async listAllVisits(petIds) {
+    if (petIds.length === 0) return [];
+    return listOf<MedicalVisit>(await sbc().from("medical_visits").select("*").in("pet_id", petIds).order("visit_date", { ascending: false }));
   },
   async addVisit(input) {
     return need<MedicalVisit>(await sbc().from("medical_visits").insert(input).select().single());
