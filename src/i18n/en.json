@@ -136,6 +136,19 @@
     "popupBlocked": "Allow pop-ups to print",
     "popupBlockedHint": "Your browser blocked the print window — enable pop-ups for this site."
   },
+  "medentry": {
+    "condition": "Patient condition",
+    "excellent": "Excellent",
+    "good": "Good",
+    "critical": "Critical",
+    "clinicalNotes": "Clinical notes",
+    "notesPlaceholder": "Observations, findings, owner instructions… saved to the patient's file.",
+    "optional": "optional",
+    "saveN": "Save {{n}} to record",
+    "saveAssessment": "Save assessment",
+    "savedToast": "Saved to the patient's record",
+    "saveError": "Couldn't save — please try again."
+  },
   "services": {
     "title": "Services & non-barcode items",
     "subtitle": "CBC tests, X-rays, consultations, grooming… these appear in the POS for one-tap billing.",

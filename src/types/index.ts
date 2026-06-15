@@ -126,6 +126,15 @@ export interface MediaItem {
   created_at: string;
 }
 
+/** Doctor's triage of the patient's overall state at a visit. */
+export type PatientCondition = "excellent" | "good" | "critical";
+
+/** Per-visit clinical assessment captured in the Medical Entry workflow. */
+export interface MedicalAssessment {
+  condition: PatientCondition | null;
+  notes: string;
+}
+
 export interface MedicalVisit {
   id: string;
   pet_id: string;
@@ -139,6 +148,8 @@ export interface MedicalVisit {
   plan?: string; // prescription / home advice
   treatments?: string[];
   notes?: string;
+  /** Patient-condition triage (excellent / good / critical) for this visit. */
+  condition?: PatientCondition | null;
 }
 
 export type ServiceType = "consultation" | "vaccination" | "surgery" | "telehealth" | "home";

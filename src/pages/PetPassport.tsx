@@ -10,7 +10,7 @@ import {
   Scale, Sparkles, Loader2,
 } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
-import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, TreatmentEntry, Admission, FoodType, DietPlan, Appointment, Reminder } from "@/types";
+import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, TreatmentEntry, Admission, FoodType, DietPlan, Appointment, Reminder, MedicalAssessment, PatientCondition } from "@/types";
 import { repo } from "@/lib/repo";
 import { PetAvatar } from "@/components/PetAvatar";
 import { UpcomingEvents } from "@/components/UpcomingEvents";
@@ -150,7 +150,7 @@ function WellnessCard({ vaccines, admissions }: { vaccines: Vaccination[]; admis
  *  record (administered + booster due), medications → today's treatment-sheet rows.
  *  Throws on failure so the caller keeps the draft. Shared by the record header button
  *  and the Treatment/Vaccinations tab "Add" actions. */
-async function persistMedicalDrafts(petId: string, doctorName: string | undefined, entries: MedicalDraft[]) {
+async function persistMedicalDrafts(petId: string, doctorName: string | undefined, entries: MedicalDraft[], assessment?: MedicalAssessment) {
   const ROUTE_LABEL: Record<string, string> = { injection: "Injection", tablet: "Tablet", liquid: "Syrup" };
   const now = new Date();
   const nowISO = now.toISOString();
@@ -170,6 +170,21 @@ async function persistMedicalDrafts(petId: string, doctorName: string | undefine
         observations: `${ROUTE_LABEL[e.route]} · ${e.family}`,
       });
     }
+  }
+  // The doctor's condition triage + clinical notes become a permanent consultation
+  // record in the patient's file (shown in the History tab).
+  if (assessment && (assessment.condition || assessment.notes.trim())) {
+    const names = entries.map((e) => e.name);
+    await repo.addVisit({
+      pet_id: petId,
+      clinic_name: "",
+      doctor_name: doctorName ?? "",
+      visit_date: today,
+      assessment: names.length ? names.join(" · ") : "Clinical assessment",
+      notes: assessment.notes.trim() || undefined,
+      condition: assessment.condition ?? null,
+      treatments: names.length ? names : undefined,
+    });
   }
 }
 
@@ -243,9 +258,9 @@ export function PetPassport() {
   // Persist a batch from the unified Medical Entry: vaccinations → vaccination
   // record, medications → treatment sheet. Rejects so the component keeps the
   // draft if anything fails. Then refreshes the record.
-  const commitMedical = async (entries: MedicalDraft[]) => {
+  const commitMedical = async (entries: MedicalDraft[], assessment: MedicalAssessment) => {
     if (!petId) return;
-    await persistMedicalDrafts(petId, user?.full_name, entries);
+    await persistMedicalDrafts(petId, user?.full_name, entries, assessment);
     await reload();
     setMedOpen(false);
   };
@@ -1045,8 +1060,8 @@ function VaccinesTab({ pet, vaccines, onChanged, canEdit, isOwner }: { pet: Pet;
 
   // The new species-aware vaccination workflow (booster scheduler) commits here,
   // then refreshes the timeline immediately via onChanged().
-  const commit = async (entries: MedicalDraft[]) => {
-    await persistMedicalDrafts(pet.id, user?.full_name, entries);
+  const commit = async (entries: MedicalDraft[], assessment: MedicalAssessment) => {
+    await persistMedicalDrafts(pet.id, user?.full_name, entries, assessment);
     onChanged();
     setOpen(false);
   };
@@ -1106,6 +1121,17 @@ function VaccinesTab({ pet, vaccines, onChanged, canEdit, isOwner }: { pet: Pet;
 }
 
 /* ---------------- Complete medical history ---------------- */
+const CONDITION_BADGE: Record<PatientCondition, { key: string; def: string; cls: string }> = {
+  excellent: { key: "medentry.excellent", def: "Excellent", cls: "bg-green-50 text-green-700 dark:bg-green-500/20 dark:text-green-200" },
+  good: { key: "medentry.good", def: "Good", cls: "bg-blue-50 text-blue-700 dark:bg-blue-500/20 dark:text-blue-200" },
+  critical: { key: "medentry.critical", def: "Critical", cls: "bg-red-50 text-red-700 dark:bg-red-500/20 dark:text-red-200" },
+};
+function ConditionBadge({ condition }: { condition: PatientCondition }) {
+  const { t } = useTranslation();
+  const c = CONDITION_BADGE[condition];
+  return <span className={cn("chip shrink-0 text-2xs font-semibold", c.cls)}>{t(c.key, c.def)}</span>;
+}
+
 function HistoryTab({ visits, admissions, treatments, isOwner }: { visits: MedicalVisit[]; admissions: Admission[]; treatments: TreatmentEntry[]; isOwner: boolean }) {
   const { t, i18n } = useTranslation();
   const [openId, setOpenId] = useState<string | null>(null);
@@ -1152,9 +1178,12 @@ function HistoryTab({ visits, admissions, treatments, isOwner }: { visits: Medic
               return (
                 <div key={v.id} className="card overflow-hidden">
                   <button className="w-full flex items-center justify-between p-4 text-start" onClick={() => setOpenId(expanded ? null : v.id)}>
-                    <div>
-                      <p className="font-semibold text-ink">{v.assessment}</p>
-                      <p className="text-xs text-ink-muted">{v.visit_date} · {v.clinic_name} · {v.doctor_name}</p>
+                    <div className="min-w-0">
+                      <p className="flex items-center gap-2 font-semibold text-ink">
+                        <span className="truncate">{v.assessment}</span>
+                        {v.condition && <ConditionBadge condition={v.condition} />}
+                      </p>
+                      <p className="text-xs text-ink-muted">{[v.visit_date, v.clinic_name, v.doctor_name].filter(Boolean).join(" · ")}</p>
                     </div>
                     <ChevronDown size={20} className={`text-ink-subtle transition ${expanded ? "rotate-180" : ""}`} />
                   </button>
@@ -1243,8 +1272,8 @@ function TreatmentTab({ pet, treatments, admissions, onChanged, canEdit, isOwner
 
   // The new cascading medication workflow (family → drug → route → dosage) commits
   // here as today's administered doses, then refreshes the flowsheet via onChanged().
-  const commit = async (entries: MedicalDraft[]) => {
-    await persistMedicalDrafts(pet.id, user?.full_name, entries);
+  const commit = async (entries: MedicalDraft[], assessment: MedicalAssessment) => {
+    await persistMedicalDrafts(pet.id, user?.full_name, entries, assessment);
     onChanged();
     setOpen(false);
   };

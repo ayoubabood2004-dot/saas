@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Pill, Syringe, Droplet, Plus, Search, ChevronDown, Trash2, Check,
   ShieldCheck, Stethoscope, CalendarClock, Layers, ClipboardList,
+  HeartPulse, Activity, AlertTriangle, NotebookPen,
 } from "lucide-react";
-import type { Species } from "@/types";
+import type { Species, PatientCondition, MedicalAssessment } from "@/types";
 import { MED_CATALOG } from "@/lib/meds";
 import { VACCINE_CATALOG, BUILTIN_VACCINES } from "@/lib/vaccines";
 import { Button, useToast } from "@/components/ui";
@@ -37,6 +39,26 @@ const BOOSTERS: Booster[] = [
   { label: "1 Year", years: 1 },
 ];
 
+/** Patient-condition triage chips — neutral by default, vibrant on hover/active.
+ *  Green = Excellent, Blue = Good, Red = Critical (per the requested palette). */
+const CONDITIONS: { id: PatientCondition; key: string; def: string; icon: typeof Syringe; idle: string; active: string }[] = [
+  {
+    id: "excellent", key: "medentry.excellent", def: "Excellent", icon: HeartPulse,
+    idle: "border-line bg-surface-2 text-ink-muted hover:border-transparent hover:bg-green-500 hover:text-white",
+    active: "border-transparent bg-green-500 text-white shadow-soft ring-2 ring-green-500 ring-offset-2 ring-offset-surface-1",
+  },
+  {
+    id: "good", key: "medentry.good", def: "Good", icon: Activity,
+    idle: "border-line bg-surface-2 text-ink-muted hover:border-transparent hover:bg-blue-500 hover:text-white",
+    active: "border-transparent bg-blue-500 text-white shadow-soft ring-2 ring-blue-500 ring-offset-2 ring-offset-surface-1",
+  },
+  {
+    id: "critical", key: "medentry.critical", def: "Critical", icon: AlertTriangle,
+    idle: "border-line bg-surface-2 text-ink-muted hover:border-transparent hover:bg-red-500 hover:text-white",
+    active: "border-transparent bg-red-500 text-white shadow-soft ring-2 ring-red-500 ring-offset-2 ring-offset-surface-1",
+  },
+];
+
 /** Map a patient species to its vaccine group in the catalogue. */
 const SPECIES_GROUP: Record<Species, string | null> = {
   dog: "Dogs", cat: "Cats", horse: "Horses", cow: "Cattle", rabbit: "Rabbits & small mammals", bird: null, other: null,
@@ -65,8 +87,8 @@ export function MedicalEntry({
 }: {
   /** Patient species — filters the vaccine list. If omitted, a species picker is shown. */
   species?: Species;
-  /** Persist the built record. If omitted, the sheet is local-only (preview). */
-  onCommit?: (entries: MedicalDraft[]) => void | Promise<void>;
+  /** Persist the built record + the per-visit assessment. If omitted, local-only. */
+  onCommit?: (entries: MedicalDraft[], assessment: MedicalAssessment) => void | Promise<void>;
   committing?: boolean;
   className?: string;
   /** Which workflow to open on. Defaults to "medication". */
@@ -74,26 +96,32 @@ export function MedicalEntry({
   /** Hide the Medication/Vaccination toggle (when launched from a context-specific tab). */
   lockMode?: boolean;
 }) {
+  const { t } = useTranslation();
   const toast = useToast();
   const [mode, setMode] = useState<"medication" | "vaccination">(initialMode ?? "medication");
   const [draftSpecies, setDraftSpecies] = useState<Species>(species ?? "dog");
   const activeSpecies = species ?? draftSpecies;
   const [sheet, setSheet] = useState<MedicalDraft[]>([]);
+  // Per-visit clinical assessment — attached to the patient's medical record on save.
+  const [condition, setCondition] = useState<PatientCondition | null>(null);
+  const [notes, setNotes] = useState("");
 
   const add = (entry: MedicalDraft) => { setSheet((s) => [entry, ...s]); playSuccess(); };
   const remove = (id: string) => setSheet((s) => s.filter((e) => e.id !== id));
 
   const [busy, setBusy] = useState(false);
+  // Saveable when there's at least one entry OR a clinical assessment to record.
+  const canSave = sheet.length > 0 || !!condition || notes.trim().length > 0;
   const commit = async () => {
-    if (!sheet.length || busy) return;
+    if (!canSave || busy) return;
     setBusy(true);
     try {
-      await onCommit?.(sheet.slice().reverse()); // commit in the order they were added
-      toast.success(`${sheet.length} ${sheet.length === 1 ? "entry" : "entries"} saved to the record`);
-      setSheet([]);
+      await onCommit?.(sheet.slice().reverse(), { condition, notes: notes.trim() }); // committed in add-order
+      toast.success(t("medentry.savedToast", "Saved to the patient's record"));
+      setSheet([]); setCondition(null); setNotes("");
     } catch {
       // Host signalled a failure — keep the draft so nothing is lost.
-      toast.error("Couldn't save — please try again.");
+      toast.error(t("medentry.saveError", "Couldn't save — please try again."));
     } finally {
       setBusy(false);
     }
@@ -139,16 +167,61 @@ export function MedicalEntry({
       {/* Unified treatment record */}
       <TreatmentSheet entries={sheet} onRemove={remove} />
 
+      {/* ── Patient assessment — saved to the animal's overarching medical record ── */}
+      <div className="space-y-4 border-t border-line pt-4">
+        {/* Patient Condition (حالة الحيوان) */}
+        <div>
+          <div className="mb-2 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-ink-muted">
+            <HeartPulse size={14} className="text-brand-600" /> {t("medentry.condition", "Patient condition")}
+            <span className="text-2xs font-normal normal-case text-ink-subtle">· {t("medentry.optional", "optional")}</span>
+          </div>
+          <div className="grid grid-cols-3 gap-2">
+            {CONDITIONS.map((c) => {
+              const active = condition === c.id;
+              const Icon = c.icon;
+              return (
+                <button
+                  key={c.id}
+                  type="button"
+                  aria-pressed={active}
+                  onClick={() => { playTap(); setCondition(active ? null : c.id); }}
+                  className={cn("flex flex-col items-center gap-1 rounded-2xl border px-3 py-3 text-sm font-bold transition-all", active ? c.active : c.idle)}
+                >
+                  <Icon size={18} /> {t(c.key, c.def)}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Clinical Notes (ملاحظات طبية) */}
+        <div>
+          <div className="mb-2 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-ink-muted">
+            <NotebookPen size={14} className="text-brand-600" /> {t("medentry.clinicalNotes", "Clinical notes")}
+            <span className="text-2xs font-normal normal-case text-ink-subtle">· {t("medentry.optional", "optional")}</span>
+          </div>
+          <textarea
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            rows={3}
+            placeholder={t("medentry.notesPlaceholder", "Observations, findings, owner instructions… saved to the patient's file.")}
+            className="input min-h-[88px] resize-y leading-relaxed"
+          />
+        </div>
+      </div>
+
       {onCommit && (
         <Button
           size="lg"
           className="w-full"
-          disabled={sheet.length === 0}
+          disabled={!canSave}
           loading={busy || committing}
           leftIcon={<Check size={18} />}
           onClick={commit}
         >
-          {sheet.length ? `Save ${sheet.length} to record` : "Add entries to save"}
+          {sheet.length
+            ? t("medentry.saveN", { n: sheet.length, defaultValue: "Save {{n}} to record" })
+            : t("medentry.saveAssessment", "Save assessment")}
         </Button>
       )}
     </div>
