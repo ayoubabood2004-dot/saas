@@ -70,9 +70,12 @@ export function generateSlots(dayISO: string, openHour: number, closeHour: numbe
   return slots;
 }
 
-/** Percentage of completed (administered) vaccinations out of all scheduled. */
+/** Percentage of administered vaccinations out of those that are due now or already
+ *  given. Future "scheduled" boosters are plans, not gaps, so they don't drag the
+ *  score down — but "overdue" (missed) doses still count against coverage. */
 export function vaccinationCompletion(vaccinations: { status: string }[]): number {
-  if (!vaccinations.length) return 0;
-  const done = vaccinations.filter((v) => v.status === "administered").length;
-  return Math.round((done / vaccinations.length) * 100);
+  const counted = vaccinations.filter((v) => v.status !== "scheduled");
+  if (!counted.length) return 0;
+  const done = counted.filter((v) => v.status === "administered").length;
+  return Math.round((done / counted.length) * 100);
 }

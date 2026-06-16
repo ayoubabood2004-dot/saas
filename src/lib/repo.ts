@@ -179,6 +179,15 @@ const demoRepo = {
     return v;
   },
 
+  /** Patch a vaccination in place — e.g. administering a scheduled booster. */
+  async updateVaccination(id: string, patch: Partial<Omit<Vaccination, "id" | "pet_id">>): Promise<void> {
+    const db = loadDB();
+    const v = db.vaccinations.find((x) => x.id === id);
+    if (!v) return;
+    Object.assign(v, patch);
+    saveDB(db);
+  },
+
   async listVisits(petId: string): Promise<MedicalVisit[]> {
     return loadDB()
       .visits.filter((v) => v.pet_id === petId)
@@ -558,6 +567,9 @@ const supabaseRepo: typeof demoRepo = {
   },
   async addVaccination(input) {
     return need<Vaccination>(await sbc().from("vaccinations").insert(input).select().single());
+  },
+  async updateVaccination(id, patch) {
+    await sbc().from("vaccinations").update(patch).eq("id", id);
   },
   async listVisits(petId) {
     return listOf<MedicalVisit>(await sbc().from("medical_visits").select("*").eq("pet_id", petId).order("visit_date", { ascending: false }));

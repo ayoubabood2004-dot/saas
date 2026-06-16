@@ -7,7 +7,7 @@ import {
   Plus, Check, Clock, AlertCircle, ChevronDown, Printer, ShieldAlert, Pill, Trash2, BedDouble, Camera,
   Share2, Copy, Globe, PawPrint, Repeat, Columns2, X, Calendar,
   Utensils, Fingerprint, Cake, Heart, Scissors, Users, UserPlus, Phone, Mail, Pencil,
-  Scale, Sparkles, Loader2,
+  Scale, Sparkles, Loader2, NotebookPen, CalendarClock,
 } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, TreatmentEntry, Admission, FoodType, DietPlan, Appointment, Reminder, MedicalAssessment, PatientCondition } from "@/types";
@@ -25,7 +25,7 @@ import { prepareUpload } from "@/lib/image";
 import { withTimeout, describeUploadError } from "@/lib/errors";
 import { playSuccess, playScan, playTap, playWarning } from "@/lib/sounds";
 import { ImageLightbox } from "@/components/ImageLightbox";
-import { MedicalEntry, type MedicalDraft } from "@/components/MedicalEntry";
+import { MedicalEntry, DoctorSelect, DOCTOR_NAMES, type MedicalDraft } from "@/components/MedicalEntry";
 import { addClinicMed, medicationDisplay } from "@/lib/meds";
 import { vaccineScientific } from "@/lib/vaccines";
 import { useAuth } from "@/contexts/AuthContext";
@@ -112,8 +112,10 @@ const WELLNESS_COLOR: Record<"excellent" | "good" | "fair" | "attention", string
 /** A synthesized at-a-glance health score from vaccination coverage, overdue items and treatment status. */
 function WellnessCard({ vaccines, admissions }: { vaccines: Vaccination[]; admissions: Admission[] }) {
   const { t } = useTranslation();
-  const total = vaccines.length;
-  const done = vaccines.filter((v) => v.status === "administered").length;
+  // Future "scheduled" boosters are plans, not gaps — exclude them from coverage.
+  const counted = vaccines.filter((v) => v.status !== "scheduled");
+  const total = counted.length;
+  const done = counted.filter((v) => v.status === "administered").length;
   const vaccPct = total ? Math.round((done / total) * 100) : 100;
   const overdue = vaccines.filter((v) => v.status === "overdue").length;
   const activeTx = admissions.some((a) => a.kind === "treatment" && a.status === "active");
@@ -158,16 +160,25 @@ async function persistMedicalDrafts(petId: string, doctorName: string | undefine
   const hhmm = now.toTimeString().slice(0, 5);
   for (const e of entries) {
     if (e.kind === "vaccination") {
+      // The dose given today.
       await repo.addVaccination({
         pet_id: petId, name: e.name, status: "administered",
-        administered_at: nowISO, due_date: e.nextDue ?? null,
+        administered_at: nowISO, due_date: null,
         lot_number: e.lot, administered_by: doctorName,
       });
+      // A scheduled booster becomes its own pending item — actioned later via "Administer booster".
+      if (e.nextDue) {
+        await repo.addVaccination({
+          pet_id: petId, name: e.name, status: "scheduled",
+          administered_at: null, due_date: e.nextDue,
+        });
+      }
     } else {
       await repo.addTreatment({
         pet_id: petId, day: today, medication: e.name, time: hhmm, amount: e.dosage,
         administered_at: nowISO, administered_by: doctorName, doctor: doctorName,
-        observations: `${ROUTE_LABEL[e.route]} · ${e.family}`,
+        // The doctor's note for this drug shows on the treatment card; falls back to route · family.
+        observations: e.note?.trim() || `${ROUTE_LABEL[e.route]} · ${e.family}`,
       });
     }
   }
@@ -258,9 +269,9 @@ export function PetPassport() {
   // Persist a batch from the unified Medical Entry: vaccinations → vaccination
   // record, medications → treatment sheet. Rejects so the component keeps the
   // draft if anything fails. Then refreshes the record.
-  const commitMedical = async (entries: MedicalDraft[], assessment: MedicalAssessment) => {
+  const commitMedical = async (entries: MedicalDraft[], assessment: MedicalAssessment, attendingDoctor?: string) => {
     if (!petId) return;
-    await persistMedicalDrafts(petId, user?.full_name, entries, assessment);
+    await persistMedicalDrafts(petId, attendingDoctor ?? user?.full_name, entries, assessment);
     await reload();
     setMedOpen(false);
   };
@@ -341,7 +352,7 @@ export function PetPassport() {
 
       {/* Unified Medication + Vaccination entry, scoped to this patient's species */}
       <Modal open={medOpen} onClose={() => setMedOpen(false)} title={t("passport.medicalEntryTitle", "Medical entry — {{name}}", { name: pet.name })}>
-        <MedicalEntry species={pet.species} onCommit={commitMedical} />
+        <MedicalEntry species={pet.species} onCommit={commitMedical} defaultDoctor={user?.full_name} />
       </Modal>
 
       {/* Mobile/tablet header + snapshot (on desktop these live inside the rails) */}
@@ -1048,9 +1059,10 @@ function MealModal({ open, onClose, onAdd }: { open: boolean; onClose: () => voi
 
 /* ---------------- Vaccinations ---------------- */
 function VaccinesTab({ pet, vaccines, onChanged, canEdit, isOwner }: { pet: Pet; vaccines: Vaccination[]; onChanged: () => void; canEdit: boolean; isOwner: boolean }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { user } = useAuth();
   const [open, setOpen] = useState(false);
+  const [administer, setAdminister] = useState<Vaccination | null>(null);
 
   const sorted = [...vaccines].sort((a, b) => {
     const ad = a.administered_at || a.due_date || "";
@@ -1060,8 +1072,8 @@ function VaccinesTab({ pet, vaccines, onChanged, canEdit, isOwner }: { pet: Pet;
 
   // The new species-aware vaccination workflow (booster scheduler) commits here,
   // then refreshes the timeline immediately via onChanged().
-  const commit = async (entries: MedicalDraft[], assessment: MedicalAssessment) => {
-    await persistMedicalDrafts(pet.id, user?.full_name, entries, assessment);
+  const commit = async (entries: MedicalDraft[], assessment: MedicalAssessment, attendingDoctor?: string) => {
+    await persistMedicalDrafts(pet.id, attendingDoctor ?? user?.full_name, entries, assessment);
     onChanged();
     setOpen(false);
   };
@@ -1084,28 +1096,41 @@ function VaccinesTab({ pet, vaccines, onChanged, canEdit, isOwner }: { pet: Pet;
           {sorted.map((v) => {
             const done = v.status === "administered";
             const overdue = v.status === "overdue";
+            const pending = !done; // scheduled or overdue — an actionable future/late booster
             const days = v.due_date ? daysUntil(v.due_date) : null;
             const Icon = done ? Check : overdue ? AlertCircle : Clock;
-            const color = done ? "bg-success-500" : overdue ? "bg-danger-500" : "bg-ink-subtle";
+            const color = done ? "bg-success-500" : overdue ? "bg-danger-500" : "bg-warn-500";
             return (
               <li key={v.id} className="ms-6">
                 <span className={`absolute -start-[11px] grid place-items-center w-5 h-5 rounded-full text-white ${color}`}>
                   <Icon size={12} strokeWidth={3} />
                 </span>
-                <div className="card p-4">
-                  <div className="flex items-center justify-between">
+                <div className={cn("card p-4", pending && "border-dashed", overdue && "border-danger-300 dark:border-danger-500/40")}>
+                  <div className="flex items-center justify-between gap-2">
                     <p className="font-semibold text-ink">{isOwner ? vaccineScientific(v.name) : v.name}</p>
                     <span
-                      className={`chip text-xs ${done ? "bg-success-50 text-success-700 dark:bg-success-500/15 dark:text-success-200" : overdue ? "bg-danger-50 text-danger-700 dark:bg-danger-500/15 dark:text-danger-200" : "bg-surface-2 text-ink-muted"}`}
+                      className={`chip text-xs ${done ? "bg-success-50 text-success-700 dark:bg-success-500/15 dark:text-success-200" : overdue ? "bg-danger-50 text-danger-700 dark:bg-danger-500/15 dark:text-danger-200" : "bg-warn-50 text-warn-700 dark:bg-warn-500/15 dark:text-warn-200"}`}
                     >
-                      {done ? t("passport.administered") : overdue ? t("passport.overdue") : days !== null ? t("passport.dueIn", { days: Math.max(days, 0) }) : t("passport.scheduled")}
+                      {done ? t("passport.administered") : overdue ? t("passport.overdue") : t("passport.pending", "Pending")}
                     </span>
                   </div>
                   <p className="text-xs text-ink-muted mt-1">
-                    {done && v.administered_at ? v.administered_at : v.due_date}
+                    {done
+                      ? (v.administered_at ? t("passport.givenOn", { date: formatDate(v.administered_at.slice(0, 10), i18n.language), defaultValue: "Given {{date}}" }) : "")
+                      : (v.due_date ? `${t("passport.dueOn", { date: formatDate(v.due_date, i18n.language), defaultValue: "Due {{date}}" })}${days !== null && days >= 0 ? ` · ${t("passport.dueIn", { days })}` : ""}` : "")}
                     {v.doses_total ? ` · ${t("passport.dose", { n: v.dose_number, total: v.doses_total })}` : ""}
                     {v.administered_by ? ` · ${t("passport.by", { who: v.administered_by })}` : ""}
                   </p>
+                  {v.notes && (
+                    <p className="mt-1.5 flex items-start gap-1.5 text-xs text-ink-muted">
+                      <NotebookPen size={12} className="mt-0.5 shrink-0 text-brand-600" /> {v.notes}
+                    </p>
+                  )}
+                  {pending && canEdit && (
+                    <button onClick={() => setAdminister(v)} className="btn-primary mt-3 w-full py-1.5 text-sm">
+                      <Syringe size={15} /> {t("passport.administerBooster", "Administer booster")}
+                    </button>
+                  )}
                 </div>
               </li>
             );
@@ -1114,9 +1139,102 @@ function VaccinesTab({ pet, vaccines, onChanged, canEdit, isOwner }: { pet: Pet;
       )}
 
       <Modal open={open} onClose={() => setOpen(false)} title={t("passport.addVaccine")}>
-        <MedicalEntry species={pet.species} initialMode="vaccination" lockMode onCommit={commit} />
+        <MedicalEntry species={pet.species} initialMode="vaccination" lockMode onCommit={commit} defaultDoctor={user?.full_name} />
       </Modal>
+
+      <AdministerBoosterModal vaccine={administer} defaultDoctor={user?.full_name} onClose={() => setAdminister(null)} onDone={() => { setAdminister(null); onChanged(); }} />
     </div>
+  );
+}
+
+/** datetime-local default value (local wall-clock, minute precision). */
+function nowLocalDT(): string {
+  const d = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/** Confirm Administration — converts a pending booster into a completed dose,
+ *  capturing the attending doctor, a visit-specific clinical note and the date/time.
+ *  Nothing is auto-completed: status only changes to "administered" on Confirm. */
+function AdministerBoosterModal({ vaccine, defaultDoctor, onClose, onDone }: { vaccine: Vaccination | null; defaultDoctor?: string; onClose: () => void; onDone: () => void }) {
+  const { t, i18n } = useTranslation();
+  const toast = useToast();
+  const [doctor, setDoctor] = useState("");
+  const [notes, setNotes] = useState("");
+  const [when, setWhen] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  // Fresh form each time a booster opens: default doctor = signed-in vet, time = now.
+  useEffect(() => {
+    if (!vaccine) return;
+    setDoctor(defaultDoctor && DOCTOR_NAMES.includes(defaultDoctor) ? defaultDoctor : DOCTOR_NAMES[0] ?? "");
+    setNotes("");
+    setWhen(nowLocalDT());
+  }, [vaccine, defaultDoctor]);
+
+  const confirm = async () => {
+    // Guard against re-administering a dose that's already been recorded (e.g. a
+    // stale modal in a concurrent session).
+    if (!vaccine || busy || vaccine.status === "administered") return;
+    setBusy(true);
+    try {
+      const administeredISO = when ? new Date(when).toISOString() : new Date().toISOString();
+      await repo.updateVaccination(vaccine.id, {
+        status: "administered",
+        administered_at: administeredISO,
+        administered_by: doctor || undefined,
+        notes: notes.trim() || undefined,
+        due_date: null,
+      });
+      playSuccess();
+      toast.success(t("passport.boosterGiven", "Booster recorded"));
+      onDone();
+    } catch (e) {
+      toast.error(t("passport.boosterError", "Couldn't save — please try again."), e instanceof Error ? e.message : undefined);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal open={!!vaccine} onClose={onClose} title={t("passport.confirmAdminTitle", "Confirm administration")}>
+      {vaccine && (
+        <div className="space-y-4">
+          <div className="flex items-center gap-3 rounded-2xl border border-line bg-surface-2 p-3">
+            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-success-50 text-success-600 dark:bg-success-500/15 dark:text-success-300"><Syringe size={19} /></span>
+            <div className="min-w-0">
+              <p className="truncate text-sm font-semibold text-ink">{vaccine.name}</p>
+              {vaccine.due_date && (
+                <p className="truncate text-xs text-ink-muted">{t("passport.scheduledFor", { date: formatDate(vaccine.due_date, i18n.language), defaultValue: "Scheduled for {{date}}" })}</p>
+              )}
+            </div>
+          </div>
+
+          {/* Attending doctor */}
+          <div>
+            <label className="label flex items-center gap-1.5"><Stethoscope size={14} className="text-brand-600" /> {t("medentry.attendingDoctor", "Attending doctor")}</label>
+            <DoctorSelect value={doctor} onChange={setDoctor} />
+          </div>
+
+          {/* Date & time */}
+          <div>
+            <label className="label flex items-center gap-1.5"><CalendarClock size={14} className="text-brand-600" /> {t("passport.dateTime", "Date & time")}</label>
+            <input type="datetime-local" className="input" value={when} onChange={(e) => setWhen(e.target.value)} />
+          </div>
+
+          {/* Clinical notes for this booster visit */}
+          <div>
+            <label className="label flex items-center gap-1.5"><NotebookPen size={14} className="text-brand-600" /> {t("medentry.clinicalNotes", "Clinical notes")}</label>
+            <textarea rows={3} className="input min-h-[80px] resize-y leading-relaxed" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder={t("passport.boosterNotesPlaceholder", "Observations during this booster visit…")} />
+          </div>
+
+          <Button size="lg" className="w-full" loading={busy} leftIcon={<Check size={18} />} onClick={confirm}>
+            {t("passport.confirmSave", "Confirm & save")}
+          </Button>
+        </div>
+      )}
+    </Modal>
   );
 }
 
@@ -1272,8 +1390,8 @@ function TreatmentTab({ pet, treatments, admissions, onChanged, canEdit, isOwner
 
   // The new cascading medication workflow (family → drug → route → dosage) commits
   // here as today's administered doses, then refreshes the flowsheet via onChanged().
-  const commit = async (entries: MedicalDraft[], assessment: MedicalAssessment) => {
-    await persistMedicalDrafts(pet.id, user?.full_name, entries, assessment);
+  const commit = async (entries: MedicalDraft[], assessment: MedicalAssessment, attendingDoctor?: string) => {
+    await persistMedicalDrafts(pet.id, attendingDoctor ?? user?.full_name, entries, assessment);
     onChanged();
     setOpen(false);
   };
@@ -1461,7 +1579,7 @@ function TreatmentTab({ pet, treatments, admissions, onChanged, canEdit, isOwner
       )}
 
       <Modal open={open} onClose={() => setOpen(false)} title={t("treatment.addTitle")}>
-        <MedicalEntry species={pet.species} initialMode="medication" lockMode onCommit={commit} />
+        <MedicalEntry species={pet.species} initialMode="medication" lockMode onCommit={commit} defaultDoctor={user?.full_name} />
       </Modal>
     </div>
   );

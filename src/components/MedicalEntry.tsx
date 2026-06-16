@@ -9,6 +9,7 @@ import {
 import type { Species, PatientCondition, MedicalAssessment } from "@/types";
 import { MED_CATALOG } from "@/lib/meds";
 import { VACCINE_CATALOG, BUILTIN_VACCINES } from "@/lib/vaccines";
+import { DOCTORS } from "@/lib/clinic";
 import { Button, useToast } from "@/components/ui";
 import { cn, uid } from "@/lib/utils";
 import { playTap, playSuccess } from "@/lib/sounds";
@@ -34,6 +35,7 @@ const ROUTES: RouteDef[] = [
 interface Booster { label: string; days?: number; months?: number; years?: number }
 const BOOSTERS: Booster[] = [
   { label: "2 Weeks", days: 14 },
+  { label: "3 Weeks", days: 21 },
   { label: "1 Month", months: 1 },
   { label: "3 Months", months: 3 },
   { label: "1 Year", years: 1 },
@@ -64,6 +66,9 @@ const SPECIES_GROUP: Record<Species, string | null> = {
   dog: "Dogs", cat: "Cats", horse: "Horses", cow: "Cattle", rabbit: "Rabbits & small mammals", bird: null, other: null,
 };
 
+/** Attending-doctor roster (same source as the calendar / reception). */
+export const DOCTOR_NAMES = DOCTORS.map((d) => d.name);
+
 function addToToday(b: Booster): string {
   const d = new Date(); d.setHours(0, 0, 0, 0);
   if (b.days) d.setDate(d.getDate() + b.days);
@@ -73,7 +78,7 @@ function addToToday(b: Booster): string {
 }
 const prettyDate = (iso: string) => new Date(iso + "T00:00:00").toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
 
-export interface MedicationDraft { id: string; kind: "medication"; family: string; name: string; route: RouteId; dosage: string }
+export interface MedicationDraft { id: string; kind: "medication"; family: string; name: string; route: RouteId; dosage: string; note?: string }
 export interface VaccinationDraft { id: string; kind: "vaccination"; name: string; nextDue: string | null; lot?: string }
 export type MedicalDraft = MedicationDraft | VaccinationDraft;
 
@@ -84,17 +89,20 @@ export function MedicalEntry({
   className,
   initialMode,
   lockMode,
+  defaultDoctor,
 }: {
   /** Patient species — filters the vaccine list. If omitted, a species picker is shown. */
   species?: Species;
-  /** Persist the built record + the per-visit assessment. If omitted, local-only. */
-  onCommit?: (entries: MedicalDraft[], assessment: MedicalAssessment) => void | Promise<void>;
+  /** Persist the built record + the per-visit assessment + the attending doctor. If omitted, local-only. */
+  onCommit?: (entries: MedicalDraft[], assessment: MedicalAssessment, attendingDoctor?: string) => void | Promise<void>;
   committing?: boolean;
   className?: string;
   /** Which workflow to open on. Defaults to "medication". */
   initialMode?: "medication" | "vaccination";
   /** Hide the Medication/Vaccination toggle (when launched from a context-specific tab). */
   lockMode?: boolean;
+  /** Pre-selects the attending doctor (e.g. the signed-in vet). */
+  defaultDoctor?: string;
 }) {
   const { t } = useTranslation();
   const toast = useToast();
@@ -105,6 +113,10 @@ export function MedicalEntry({
   // Per-visit clinical assessment — attached to the patient's medical record on save.
   const [condition, setCondition] = useState<PatientCondition | null>(null);
   const [notes, setNotes] = useState("");
+  // Who administered this entry. Defaults to the signed-in vet when they're in the roster.
+  const [doctor, setDoctor] = useState<string>(() => defaultDoctor && DOCTOR_NAMES.includes(defaultDoctor) ? defaultDoctor : DOCTOR_NAMES[0] ?? "");
+  // Keep in sync if the signed-in vet resolves after mount (async auth).
+  useEffect(() => { if (defaultDoctor && DOCTOR_NAMES.includes(defaultDoctor)) setDoctor(defaultDoctor); }, [defaultDoctor]);
 
   const add = (entry: MedicalDraft) => { setSheet((s) => [entry, ...s]); playSuccess(); };
   const remove = (id: string) => setSheet((s) => s.filter((e) => e.id !== id));
@@ -116,7 +128,7 @@ export function MedicalEntry({
     if (!canSave || busy) return;
     setBusy(true);
     try {
-      await onCommit?.(sheet.slice().reverse(), { condition, notes: notes.trim() }); // committed in add-order
+      await onCommit?.(sheet.slice().reverse(), { condition, notes: notes.trim() }, doctor || undefined); // committed in add-order
       toast.success(t("medentry.savedToast", "Saved to the patient's record"));
       setSheet([]); setCondition(null); setNotes("");
     } catch {
@@ -169,6 +181,14 @@ export function MedicalEntry({
 
       {/* ── Patient assessment — saved to the animal's overarching medical record ── */}
       <div className="space-y-4 border-t border-line pt-4">
+        {/* Attending doctor (الطبيب المعالج) — who administered this entry */}
+        <div>
+          <div className="mb-2 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-ink-muted">
+            <Stethoscope size={14} className="text-brand-600" /> {t("medentry.attendingDoctor", "Attending doctor")}
+          </div>
+          <DoctorSelect value={doctor} onChange={setDoctor} />
+        </div>
+
         {/* Patient Condition (حالة الحيوان) */}
         <div>
           <div className="mb-2 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-ink-muted">
@@ -235,12 +255,13 @@ function MedicationForm({ onAdd }: { onAdd: (e: MedicalDraft) => void }) {
   const [drug, setDrug] = useState<string>("");
   const [route, setRoute] = useState<RouteId | null>(null);
   const [dosage, setDosage] = useState<string>("");
+  const [note, setNote] = useState<string>("");
 
   const drugs = useMemo(() => families.find((f) => f.type === family)?.items ?? [], [families, family]);
   const routeDef = ROUTES.find((r) => r.id === route);
   const ready = !!drug && !!route && !!dosage.trim();
 
-  const reset = () => { setFamily(""); setDrug(""); setRoute(null); setDosage(""); };
+  const reset = () => { setFamily(""); setDrug(""); setRoute(null); setDosage(""); setNote(""); };
 
   return (
     <div className="space-y-5">
@@ -345,6 +366,22 @@ function MedicationForm({ onAdd }: { onAdd: (e: MedicalDraft) => void }) {
         )}
       </AnimatePresence>
 
+      {/* Tier 5 — clinical note for this medication (shows on the treatment card) */}
+      <AnimatePresence>
+        {route && (
+          <Reveal key="t5">
+            <Tier n={5} label="Note" icon={<NotebookPen size={14} />} optional>
+              <input
+                className="input"
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                placeholder="e.g. given with food, mild reaction observed…"
+              />
+            </Tier>
+          </Reveal>
+        )}
+      </AnimatePresence>
+
       <Button
         className="w-full"
         variant="secondary"
@@ -352,7 +389,7 @@ function MedicationForm({ onAdd }: { onAdd: (e: MedicalDraft) => void }) {
         leftIcon={<Plus size={16} />}
         onClick={() => {
           if (!ready || !route) return;
-          onAdd({ id: uid("med"), kind: "medication", family, name: drug, route, dosage: dosage.trim() });
+          onAdd({ id: uid("med"), kind: "medication", family, name: drug, route, dosage: dosage.trim(), note: note.trim() || undefined });
           reset();
         }}
       >
@@ -525,6 +562,11 @@ function TreatmentSheet({ entries, onRemove }: { entries: MedicalDraft[]; onRemo
                       ? `${routeLabel(e.route)} · ${e.dosage}`
                       : e.nextDue ? `Next due ${prettyDate(e.nextDue)}${e.lot ? ` · Lot ${e.lot}` : ""}` : `Administered today${e.lot ? ` · Lot ${e.lot}` : ""}`}
                   </p>
+                  {e.kind === "medication" && e.note && (
+                    <p className="mt-0.5 flex items-center gap-1 truncate text-xs text-ink-muted">
+                      <NotebookPen size={11} className="shrink-0 text-brand-600" /> {e.note}
+                    </p>
+                  )}
                 </div>
                 <button onClick={() => onRemove(e.id)} aria-label="Remove" className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-ink-subtle transition hover:bg-danger-50 hover:text-danger-600">
                   <Trash2 size={15} />
@@ -547,6 +589,16 @@ function RouteGlyph({ entry }: { entry: MedicalDraft }) {
   );
 }
 const routeLabel = (id: RouteId) => ROUTES.find((r) => r.id === id)?.label ?? id;
+
+/** Sleek attending-doctor picker — reused by the entry form and the booster modal. */
+export function DoctorSelect({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder?: string }) {
+  const { t } = useTranslation();
+  const options = DOCTOR_NAMES.map((n) => {
+    const doc = DOCTORS.find((d) => d.name === n);
+    return { value: n, label: n, hint: doc?.specialty };
+  });
+  return <FancySelect value={value} options={options} onChange={onChange} placeholder={placeholder ?? t("medentry.selectDoctor", "Select attending doctor…")} searchable />;
+}
 
 /* ---------------- Primitives ---------------- */
 function Tier({ n, label, icon, optional, children }: { n: number; label: string; icon?: React.ReactNode; optional?: boolean; children: React.ReactNode }) {

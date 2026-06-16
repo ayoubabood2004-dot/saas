@@ -27,8 +27,10 @@ export function HealthSnapshot({
   const { t } = useTranslation();
 
   const vacc = useMemo(() => {
-    const total = vaccines.length;
-    const done = vaccines.filter((v) => v.status === "administered").length;
+    // Future "scheduled" boosters are plans, not gaps — exclude them from the ring.
+    const counted = vaccines.filter((v) => v.status !== "scheduled");
+    const total = counted.length;
+    const done = counted.filter((v) => v.status === "administered").length;
     return { total, done, pct: total ? Math.round((done / total) * 100) : 0 };
   }, [vaccines]);
 
