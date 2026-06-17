@@ -5,6 +5,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { ArrowLeft, ArrowRight, Camera, Stethoscope, BedDouble, LogOut as ReleaseIcon, CheckCircle2, Pill, Plus, Trash2, Activity, ChevronDown, Search, Loader2, ShieldCheck } from "lucide-react";
 import type { Species, Sex, AdmissionKind, Pet } from "@/types";
 import { repo } from "@/lib/repo";
+import { breedLabel } from "@/lib/breeds";
 import { Combobox } from "@/components/Combobox";
 import { GovernorateAreaPicker } from "@/components/GovernorateAreaPicker";
 import { COMMON_DISEASES } from "@/lib/diseases";
@@ -457,7 +458,7 @@ function DispMini({ active, icon: Icon, label, onClick }: { active: boolean; ico
 
 /** Admit an EXISTING animal to the clinic by its serial — no new registration. */
 function SerialAdmit({ today, doctorName, onAdmitted }: { today: string; doctorName: string; onAdmitted: (o: Outcome) => void }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const toast = useToast();
   const [serial, setSerial] = useState("");
   const [pet, setPet] = useState<Pet | null>(null);
@@ -525,7 +526,7 @@ function SerialAdmit({ today, doctorName, onAdmitted }: { today: string; doctorN
             <PetAvatar pet={pet} size={48} />
             <div>
               <p className="font-bold text-ink">{pet.name} <span className="text-xs text-ink-subtle font-mono">#{pet.serial}</span></p>
-              <p className="text-xs text-ink-muted">{t(`pet.species.${pet.species}`)}{pet.breed ? ` · ${pet.breed}` : ""} · {pet.owner_name}</p>
+              <p className="text-xs text-ink-muted">{t(`pet.species.${pet.species}`)}{pet.breed ? ` · ${breedLabel(pet.breed, i18n.language)}` : ""} · {pet.owner_name}</p>
             </div>
           </div>
           <div className="grid grid-cols-3 gap-2">

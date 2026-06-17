@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { Plus, AlertTriangle, ChevronLeft, ChevronRight, UserCog, Check } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { repo } from "@/lib/repo";
+import { breedLabel } from "@/lib/breeds";
 import type { Pet, Vaccination, Reminder } from "@/types";
 import { PetAvatar } from "@/components/PetAvatar";
 import { VaccinationRing } from "@/components/VaccinationRing";
@@ -195,7 +196,7 @@ export function OwnerDashboard() {
                   <p className="truncate font-display font-bold text-ink">{pet.name}</p>
                   <p className="truncate text-sm text-ink-muted">
                     {t(`pet.species.${pet.species}`)}
-                    {pet.breed ? ` · ${pet.breed}` : ""}
+                    {pet.breed ? ` · ${breedLabel(pet.breed, i18n.language)}` : ""}
                   </p>
                   <p className="mt-0.5 text-xs text-ink-subtle">
                     {pct}% {t("dashboard.vaccinationComplete")}

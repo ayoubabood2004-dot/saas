@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import type { Pet, Admission, TreatmentEntry, Species, MedicalVisit, PatientCondition } from "@/types";
 import { repo } from "@/lib/repo";
+import { breedLabel } from "@/lib/breeds";
 import { PetAvatar } from "@/components/PetAvatar";
 import { Modal } from "@/components/Modal";
 import { PhoneInput } from "@/components/PhoneInput";
@@ -642,7 +643,7 @@ function FilterPill({ active, onClick, children }: { active: boolean; onClick: (
 }
 
 function DirectoryRow({ row, lang, hideOwner, onView, onTreatment, onMove }: { row: DirRow; lang: string; hideOwner?: boolean; onView: () => void; onTreatment: () => void; onMove: () => void }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { pet, ownerName, ownerPhone, lastVisit, health, status } = row;
   const hasAllergy = pet.allergies && pet.allergies.length > 0;
   return (
@@ -652,7 +653,7 @@ function DirectoryRow({ row, lang, hideOwner, onView, onTreatment, onMove }: { r
         <div className="min-w-0">
           <p className="flex items-center gap-1.5 truncate text-sm font-semibold text-ink">
             {pet.name}
-            <span className="truncate font-normal text-ink-subtle">· {pet.breed || t(`pet.species.${pet.species}`)}</span>
+            <span className="truncate font-normal text-ink-subtle">· {pet.breed ? breedLabel(pet.breed, i18n.language) : t(`pet.species.${pet.species}`)}</span>
             {hasAllergy && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-danger-500" title={pet.allergies?.join(", ")} />}
           </p>
           {hideOwner ? (

@@ -4,7 +4,7 @@ import { Minus, Plus } from "lucide-react";
 import type { Species, Sex } from "@/types";
 import { ageFromDOB, cn } from "@/lib/utils";
 import { playTap } from "@/lib/sounds";
-import { allBreeds } from "@/lib/breeds";
+import { allBreeds, breedLabel } from "@/lib/breeds";
 
 const SPECIES_EMOJI: Record<Species, string> = {
   dog: "🐶", cat: "🐱", horse: "🐴", cow: "🐄", bird: "🦜", rabbit: "🐰", other: "🐾",
@@ -212,7 +212,7 @@ export function ColorPicker({ value, onChange }: { value: string; onChange: (v: 
 
 /** Breed as popular-breed cards for the species (built-in + clinic-custom) + free text. */
 export function BreedPicker({ species, value, onChange }: { species: Species; value: string; onChange: (v: string) => void }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const breeds = allBreeds(species);
   const known = breeds.some((b) => b.toLowerCase() === value.trim().toLowerCase());
   return (
@@ -231,7 +231,7 @@ export function BreedPicker({ species, value, onChange }: { species: Species; va
                   active ? "border-brand-400 bg-brand-50 text-brand-700 dark:bg-brand-500/15 dark:text-brand-300" : "border-line bg-surface-1 text-ink-muted hover:border-brand-200 hover:bg-surface-2",
                 )}
               >
-                <span className="text-base leading-none">{SPECIES_EMOJI[species]}</span> {b}
+                <span className="text-base leading-none">{SPECIES_EMOJI[species]}</span> {breedLabel(b, i18n.language)}
               </button>
             );
           })}

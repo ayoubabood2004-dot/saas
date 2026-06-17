@@ -28,6 +28,7 @@ import { playSuccess, playScan, playTap, playWarning } from "@/lib/sounds";
 import { ImageLightbox } from "@/components/ImageLightbox";
 import { MedicalEntry, DoctorSelect, DOCTOR_NAMES, type MedicalDraft } from "@/components/MedicalEntry";
 import { addClinicMed, medicationDisplay } from "@/lib/meds";
+import { breedLabel } from "@/lib/breeds";
 import { vaccineScientific } from "@/lib/vaccines";
 import { useAuth } from "@/contexts/AuthContext";
 import { Stethoscope, SlidersHorizontal, ShoppingCart } from "lucide-react";
@@ -53,7 +54,7 @@ function Chip({ icon, children }: { icon?: React.ReactNode; children: React.Reac
 
 /** Pet photo + name + breed + allergy — horizontal (mobile header) or premium gradient hero card (desktop rail). */
 function ProfileHead({ pet, onPhoto, variant }: { pet: Pet; onPhoto: (e: React.ChangeEvent<HTMLInputElement>) => void; variant: "row" | "card" }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const age = ageFromDOB(pet.dob);
   const photo = (size: number, ring?: boolean) => (
     <label className={cn("relative cursor-pointer shrink-0 no-print", ring && "rounded-full ring-4 ring-surface-1")} title={t("passport.changePhoto")}>
@@ -64,7 +65,7 @@ function ProfileHead({ pet, onPhoto, variant }: { pet: Pet; onPhoto: (e: React.C
       <input type="file" accept="image/*" className="hidden" onChange={onPhoto} />
     </label>
   );
-  const speciesBreed = `${t(`pet.species.${pet.species}`)}${pet.breed ? ` · ${pet.breed}` : ""}`;
+  const speciesBreed = `${t(`pet.species.${pet.species}`)}${pet.breed ? ` · ${breedLabel(pet.breed, i18n.language)}` : ""}`;
   const allergy = pet.allergies && pet.allergies.length > 0 ? (
     <span className="chip animate-pulse-ring bg-danger-50 text-danger-700 dark:bg-danger-500/15 dark:text-danger-200">
       <ShieldAlert size={14} /> {t("pet.allergies")}: {pet.allergies.join(", ")}
@@ -1785,7 +1786,7 @@ function PhotoCompare({ items, lang, title, onClose }: { items: MediaItem[]; lan
 
 /* ---------------- QR passport ---------------- */
 function QrTab({ pet }: { pet: Pet }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const toast = useToast();
   useEffect(() => {
     playScan();
@@ -1840,7 +1841,7 @@ function QrTab({ pet }: { pet: Pet }) {
           <div className="min-w-0 flex-1">
             <p className="truncate font-display text-lg font-bold tracking-tighter2 text-ink">{pet.name}</p>
             <p className="truncate text-xs text-ink-muted">
-              {t(`pet.species.${pet.species}`)}{pet.breed ? ` · ${pet.breed}` : ""}
+              {t(`pet.species.${pet.species}`)}{pet.breed ? ` · ${breedLabel(pet.breed, i18n.language)}` : ""}
             </p>
           </div>
           <div className="text-end">

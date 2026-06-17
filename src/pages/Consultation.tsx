@@ -9,6 +9,7 @@ import {
 import { AnimatePresence, motion } from "framer-motion";
 import type { Pet, MedicalVisit, MediaItem } from "@/types";
 import { repo } from "@/lib/repo";
+import { breedLabel } from "@/lib/breeds";
 import { useAuth } from "@/contexts/AuthContext";
 import { PetAvatar } from "@/components/PetAvatar";
 import { AnatomyMarker } from "@/components/AnatomyMarker";
@@ -183,7 +184,7 @@ export function Consultation() {
           <div className="min-w-0 flex-1">
             <h1 className="font-display text-xl font-extrabold tracking-tighter2 text-ink">{pet.name}</h1>
             <p className="text-sm text-ink-muted">
-              {t(`pet.species.${pet.species}`)}{pet.breed ? ` · ${pet.breed}` : ""}
+              {t(`pet.species.${pet.species}`)}{pet.breed ? ` · ${breedLabel(pet.breed, i18n.language)}` : ""}
             </p>
           </div>
           <Badge tone="neutral" icon={<Weight size={13} />}>{pet.current_weight_kg ?? "—"} {t("common.kg")}</Badge>
