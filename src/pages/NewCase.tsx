@@ -6,6 +6,7 @@ import { ArrowLeft, ArrowRight, Camera, Stethoscope, BedDouble, LogOut as Releas
 import type { Species, Sex, AdmissionKind, Pet } from "@/types";
 import { repo } from "@/lib/repo";
 import { Combobox } from "@/components/Combobox";
+import { GovernorateAreaPicker } from "@/components/GovernorateAreaPicker";
 import { COMMON_DISEASES } from "@/lib/diseases";
 import { cn } from "@/lib/utils";
 import { PhoneInput } from "@/components/PhoneInput";
@@ -75,6 +76,8 @@ export function NewCase() {
   const [ownerName, setOwnerName] = useState("");
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
+  const [governorate, setGovernorate] = useState("");
+  const [area, setArea] = useState("");
   const [animals, setAnimals] = useState<AnimalDraft[]>([newAnimal()]);
   const [outcomes, setOutcomes] = useState<Outcome[] | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -114,6 +117,8 @@ export function NewCase() {
           owner_name: ownerName.trim() || "—",
           owner_phone: phone || undefined,
           owner_email: email.trim() || undefined,
+          owner_governorate: governorate.trim() || undefined,
+          owner_area: area.trim() || undefined,
           name: a.name.trim(),
           species: a.species,
           breed: a.breed.trim() || undefined,
@@ -231,6 +236,11 @@ export function NewCase() {
               <label className="label">{t("phone.ownerEmail")}</label>
               <input type="email" className="input" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="owner@email.com" />
             </div>
+            <GovernorateAreaPicker
+              governorate={governorate}
+              area={area}
+              onChange={(g, a) => { setGovernorate(g); setArea(a); }}
+            />
           </div>
 
           {/* Animals (one or more) */}

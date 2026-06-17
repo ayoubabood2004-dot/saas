@@ -15,9 +15,11 @@ import { playTap } from "@/lib/sounds";
 export function Combobox({
   value,
   onChange,
+  onCommit,
   options,
   placeholder,
   allowCustom = true,
+  disabled = false,
   icon,
   createLabel,
   emptyLabel,
@@ -25,10 +27,18 @@ export function Combobox({
 }: {
   value: string;
   onChange: (v: string) => void;
+  /**
+   * Fired only on a *deliberate* selection: clicking a suggestion, clicking the
+   * "Create …" row, or pressing Enter — never on plain typing. Use this to
+   * persist a newly created entry (onChange fires on every keystroke).
+   */
+  onCommit?: (v: string) => void;
   options: string[];
   placeholder?: string;
   /** Allow committing a value that isn't in `options` (default true). */
   allowCustom?: boolean;
+  /** Disable the control (e.g. a dependent field whose parent isn't set yet). */
+  disabled?: boolean;
   icon?: ReactNode;
   /** Label for the "create new" row, given the current query. */
   createLabel?: (q: string) => string;
@@ -79,6 +89,7 @@ export function Combobox({
 
   const commit = (val: string) => {
     onChange(val);
+    onCommit?.(val);
     setQuery(val);
     setOpen(false);
     playTap();
@@ -109,10 +120,11 @@ export function Combobox({
   return (
     <div ref={wrapRef} className="relative">
       <div className="relative">
-        {icon && <span className="pointer-events-none absolute top-1/2 -translate-y-1/2 text-ink-subtle ltr:left-3 rtl:right-3">{icon}</span>}
+        {icon && <span className={cn("pointer-events-none absolute top-1/2 -translate-y-1/2 text-ink-subtle ltr:left-3 rtl:right-3", disabled && "opacity-50")}>{icon}</span>}
         <input
-          className={cn("input pe-9", icon && "ltr:pl-9 rtl:pr-9")}
+          className={cn("input pe-9", icon && "ltr:pl-9 rtl:pr-9", disabled && "cursor-not-allowed opacity-60")}
           value={query}
+          disabled={disabled}
           autoFocus={autoFocus}
           placeholder={placeholder}
           role="combobox"
@@ -125,16 +137,17 @@ export function Combobox({
         <button
           type="button"
           tabIndex={-1}
+          disabled={disabled}
           onClick={() => { setHighlight(0); setOpen((o) => !o); }}
           aria-label="Toggle suggestions"
-          className="absolute top-1/2 grid h-6 w-6 -translate-y-1/2 place-items-center rounded text-ink-subtle transition hover:text-ink ltr:right-2 rtl:left-2"
+          className="absolute top-1/2 grid h-6 w-6 -translate-y-1/2 place-items-center rounded text-ink-subtle transition hover:text-ink disabled:cursor-not-allowed disabled:opacity-40 ltr:right-2 rtl:left-2"
         >
           <ChevronDown size={16} className={cn("transition-transform", open && "rotate-180")} />
         </button>
       </div>
 
       <AnimatePresence>
-        {open && (filtered.length > 0 || showCreate || (!allowCustom && emptyLabel)) && (
+        {open && !disabled && (filtered.length > 0 || showCreate || (!allowCustom && emptyLabel)) && (
           <motion.div
             initial={{ opacity: 0, y: -6, scale: 0.98 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
