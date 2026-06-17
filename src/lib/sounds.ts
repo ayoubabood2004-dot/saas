@@ -80,6 +80,23 @@ export function playScan() {
   osc.stop(ac.currentTime + 0.32);
 }
 
+/** Crisp confirmation for copy-to-clipboard. Plays the bundled asset via the native
+ *  HTML5 Audio API, falling back to the synth success chime if the file is missing,
+ *  not yet loaded, or autoplay is blocked — so there's always audible feedback. */
+export function playCopySuccess() {
+  if (!isSoundEnabled()) return;
+  if (typeof Audio === "undefined") { playSuccess(); return; }
+  try {
+    const audio = new Audio("/sounds/copy-success.mp3");
+    audio.volume = 0.5;
+    // play() returns a promise that rejects on a 404 / blocked autoplay — catch it
+    // so it never surfaces as an unhandled rejection, and fall back to the chime.
+    audio.play().catch(() => playSuccess());
+  } catch {
+    playSuccess();
+  }
+}
+
 /** Light tap for general interactions. */
 export function playTap() {
   if (!isSoundEnabled()) return;

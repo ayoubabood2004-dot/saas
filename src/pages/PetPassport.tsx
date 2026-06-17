@@ -13,6 +13,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, TreatmentEntry, Admission, FoodType, DietPlan, Appointment, Reminder, MedicalAssessment, PatientCondition } from "@/types";
 import { repo } from "@/lib/repo";
 import { PetAvatar } from "@/components/PetAvatar";
+import { OwnerCard } from "@/components/OwnerCard";
 import { UpcomingEvents } from "@/components/UpcomingEvents";
 import { buildUpcomingEvents } from "@/lib/events";
 import { WeightChart } from "@/components/WeightChart";
@@ -529,6 +530,9 @@ function IdentityTab({ pet, weights, onChanged, canEdit, isOwner }: { pet: Pet; 
 
   return (
     <div className="space-y-4 animate-fade-in">
+      {/* Owner details — prominent for clinic staff working the case (copy-to-clipboard). */}
+      {!isOwner && <OwnerCard pet={pet} />}
+
       {/* Appearance & distinctive markings */}
       <div className="card p-5">
         <div className="mb-2 flex items-center justify-between">

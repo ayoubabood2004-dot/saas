@@ -575,6 +575,17 @@
     "saved": "Ranges saved"
   },
   "phone": { "country": "Country code", "number": "Phone number", "ownerPhone": "Owner phone", "ownerEmail": "Owner email", "email": "Email" },
+  "owner": {
+    "title": "Owner details",
+    "name": "Owner",
+    "phone": "Phone",
+    "email": "Email",
+    "address": "Address",
+    "noInfo": "No owner information on file.",
+    "copy": "Copy owner details",
+    "copied": "Copied!",
+    "copyFail": "Couldn't copy"
+  },
   "claim": {
     "newPet": "New pet",
     "bySerial": "I have a serial",
