@@ -9,6 +9,7 @@ import type { Product, ProductCategory } from "@/types";
 import { repo } from "@/lib/repo";
 import { useAuth } from "@/contexts/AuthContext";
 import { Modal } from "@/components/Modal";
+import { ExpiryInput } from "@/components/ExpiryInput";
 import { Button, Badge, useToast, Skeleton } from "@/components/ui";
 import { cn, formatDate } from "@/lib/utils";
 import { withTimeout, describeDbError } from "@/lib/errors";
@@ -177,6 +178,7 @@ function ProductModal({ open, product, clinicId, onClose, onSaved }: { open: boo
   const [busy, setBusy] = useState(false);
   const barcodeRef = useRef<HTMLInputElement>(null);
   const nameRef = useRef<HTMLInputElement>(null);
+  const saveRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -299,10 +301,16 @@ function ProductModal({ open, product, clinicId, onClose, onSaved }: { open: boo
           </div>
         </div>
         <div>
-          <label className="label">{t("pos.expiry", "Expiry date")}</label>
-          <input type="date" className="input" value={f.expiry_date} onChange={(e) => set({ expiry_date: e.target.value })} />
+          <label className="label">{t("pos.expiry", "Expiry date")} <span className="font-normal text-ink-subtle">{t("pos.expiryHint", "(MM/YY)")}</span></label>
+          <ExpiryInput
+            id="product-expiry"
+            value={f.expiry_date}
+            onChange={(iso) => set({ expiry_date: iso })}
+            onComplete={() => saveRef.current?.focus()}
+            invalidLabel={t("pos.expiryInvalid", "Enter a valid month (01–12)")}
+          />
         </div>
-        <Button className="mt-1 w-full" disabled={!f.name.trim()} loading={busy} onClick={save}>{t("common.save", "Save")}</Button>
+        <Button ref={saveRef} className="mt-1 w-full" disabled={!f.name.trim()} loading={busy} onClick={save}>{t("common.save", "Save")}</Button>
       </div>
     </Modal>
   );
