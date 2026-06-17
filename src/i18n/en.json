@@ -582,7 +582,8 @@
     "email": "Email",
     "address": "Address",
     "noInfo": "No owner information on file.",
-    "copy": "Copy owner details",
+    "copy": "Copy all details",
+    "copyOne": "Copy",
     "copied": "Copied!",
     "copyFail": "Couldn't copy"
   },
