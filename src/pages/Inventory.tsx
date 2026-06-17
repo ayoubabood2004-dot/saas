@@ -301,13 +301,13 @@ function ProductModal({ open, product, clinicId, onClose, onSaved }: { open: boo
           </div>
         </div>
         <div>
-          <label className="label">{t("pos.expiry", "Expiry date")} <span className="font-normal text-ink-subtle">{t("pos.expiryHint", "(MM/YY)")}</span></label>
+          <label className="label">{t("pos.expiry", "Expiry date")} <span className="font-normal text-ink-subtle">{t("pos.expiryHint", "(DD/MM/YYYY)")}</span></label>
           <ExpiryInput
             id="product-expiry"
             value={f.expiry_date}
             onChange={(iso) => set({ expiry_date: iso })}
             onComplete={() => saveRef.current?.focus()}
-            invalidLabel={t("pos.expiryInvalid", "Enter a valid month (01–12)")}
+            invalidLabel={t("pos.expiryInvalid", "Enter a valid date")}
           />
         </div>
         <Button ref={saveRef} className="mt-1 w-full" disabled={!f.name.trim()} loading={busy} onClick={save}>{t("common.save", "Save")}</Button>

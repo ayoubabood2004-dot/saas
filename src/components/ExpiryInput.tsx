@@ -2,70 +2,78 @@ import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 
 /**
- * Credit-card-expiry-style input for a product's expiry date. The user types digits
- * only and they auto-format as MM/YY; the slash is inserted automatically after the
- * month and removed gracefully on backspace. The month is validated (01–12) with a
- * subtle inline error state. On a complete, valid MM/YY the focus auto-advances
- * (onComplete) so data entry stays fast.
+ * Credit-card-style masked input for a product's expiry date, formatted as
+ * DD/MM/YYYY. The user types digits only — slashes are inserted automatically
+ * after the 2-digit day and after the 2-digit month, and removed gracefully on
+ * backspace. Arabic-Indic numerals (٠١٢٣…) are converted to English digits on the
+ * fly so the value never reaches the database in a non-parseable form. Once a full,
+ * valid 10-character date is entered, focus auto-advances (onComplete).
  *
- * The DB column is a full `date`, so a complete MM/YY is stored as the LAST day of
- * that month (a product is good through the end of its expiry month). Editing an
- * existing record shows MM/YY; an untouched record keeps its exact stored day.
+ * The DB column is a full `date`, so the exact day is preserved as an ISO string.
  */
 
-const pad = (n: number) => String(n).padStart(2, "0");
+/**
+ * Convert Arabic-Indic (U+0660–0669) and Extended/Persian (U+06F0–06F9) numerals
+ * to standard English digits. Anything else is left untouched.
+ */
+function toEnglishDigits(input: string): string {
+  return input
+    .replace(/[٠-٩]/g, (d) => String(d.charCodeAt(0) - 0x0660))
+    .replace(/[۰-۹]/g, (d) => String(d.charCodeAt(0) - 0x06f0));
+}
 
-/** "YYYY-MM-DD" → "MM/YY" (empty string if not a parseable ISO date). */
+/** "YYYY-MM-DD" → "DD/MM/YYYY" (empty string if not a parseable ISO date). */
 function isoToMask(iso?: string | null): string {
   if (!iso) return "";
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso);
   if (!m) return "";
-  return `${m[2]}/${m[1].slice(2)}`;
+  return `${m[3]}/${m[2]}/${m[1]}`;
 }
 
-/** Complete "MM/YY" → "YYYY-MM-DD" (last day of the month), else null. */
+/** Complete "DD/MM/YYYY" → "YYYY-MM-DD", or null if it isn't a real calendar date. */
 function maskToISO(text: string): string | null {
-  const m = /^(\d{2})\/(\d{2})$/.exec(text);
+  const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(text);
   if (!m) return null;
-  const month = Number(m[1]);
-  if (month < 1 || month > 12) return null;
-  const year = 2000 + Number(m[2]);
-  const lastDay = new Date(year, month, 0).getDate(); // day 0 of next month = last of this
-  return `${year}-${pad(month)}-${pad(lastDay)}`;
+  const day = Number(m[1]);
+  const month = Number(m[2]);
+  const year = Number(m[3]);
+  // Round-trip through Date to reject impossible dates (e.g. 31/02/2025, 00/…).
+  const d = new Date(year, month - 1, day);
+  if (d.getFullYear() !== year || d.getMonth() !== month - 1 || d.getDate() !== day) return null;
+  return `${m[3]}-${m[2]}-${m[1]}`;
 }
 
 export function ExpiryInput({
   value,
   onChange,
   onComplete,
-  placeholder = "MM/YY",
+  placeholder = "DD/MM/YYYY",
   invalidLabel,
   id,
 }: {
   /** Stored value as an ISO date ("YYYY-MM-DD") or "". */
   value: string;
-  /** Emits an ISO date when MM/YY is complete & valid, or "" while incomplete/empty. */
+  /** Emits an ISO date when the date is complete & valid, or "" while incomplete. */
   onChange: (iso: string) => void;
-  /** Called once a complete, valid MM/YY is entered — use it to focus the next field. */
+  /** Called once a full, valid date is entered — use it to focus the next field. */
   onComplete?: () => void;
   placeholder?: string;
-  /** Small inline message shown when the month is invalid. */
+  /** Small inline message shown when the typed date is invalid. */
   invalidLabel?: string;
   id?: string;
 }) {
   // The masked text is the source of truth for what's shown; seed it from the ISO
-  // value once (and re-seed only on genuine external changes — see below).
+  // value once and re-seed only on genuine external changes (see the effect below).
   const [text, setText] = useState(() => isoToMask(value));
   const [error, setError] = useState(false);
-  // Last ISO we emitted, so we can tell our own updates apart from external resets.
+  // Last ISO we emitted, to tell our own updates apart from external resets.
   const lastEmitted = useRef<string | undefined>(undefined);
-  // Previous masked text, to detect "the user just deleted the slash" on backspace.
+  // Previous masked text, to detect "the user just deleted a slash" on backspace.
   const prevText = useRef<string>(text);
 
-  // Re-seed the mask when the value changes for a reason other than our own emission
-  // (e.g. the modal opened on a different product). Because every keystroke emits and
-  // records lastEmitted, an in-progress entry never matches an "external" change, so
-  // mid-typing is never wiped.
+  // Re-seed the mask when `value` changes for a reason other than our own emission
+  // (e.g. the modal opened on a different product). Every keystroke emits and records
+  // lastEmitted, so an in-progress entry never looks "external" and is never wiped.
   useEffect(() => {
     if (value === lastEmitted.current) return;
     lastEmitted.current = value;
@@ -81,45 +89,76 @@ export function ExpiryInput({
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const raw = e.target.value;
-    let digits = raw.replace(/\D/g, "");
+    // 1) Normalise Arabic-Indic numerals to English immediately.
+    const raw = toEnglishDigits(e.target.value);
 
-    // Backspace that removed the auto-inserted slash should also drop the last digit,
-    // so "12/" → "1" feels natural instead of immediately re-adding the slash.
+    // 2) Reduce to digits. A backspace that removed an auto-inserted slash should also
+    //    drop the digit before it, so "12/" → "1" feels natural (not re-slashed).
+    let digits = raw.replace(/\D/g, "");
     if (raw.length < prevText.current.length && prevText.current.endsWith("/") && !raw.endsWith("/")) {
       digits = digits.slice(0, -1);
     }
+    digits = digits.slice(0, 8); // DDMMYYYY
 
-    digits = digits.slice(0, 4);
-    let month = digits.slice(0, 2);
-    let year = digits.slice(2, 4);
+    // 3) Consume the digit stream into day → month → year, auto-prefixing a leading 0
+    //    where a single digit can't be a tens digit, and rejecting out-of-range parts.
+    let i = 0;
+    let day = "";
+    let month = "";
+    let year = "";
     let err = false;
 
-    if (month.length === 1) {
-      // 2–9 can only be a single-digit month → prefix 0 and let the slash follow.
-      if (month >= "2") month = `0${month}`;
-    }
-    if (month.length === 2) {
-      const mn = Number(month);
-      if (mn === 0) {
-        err = true; // "00" is not a month
-      } else if (mn > 12) {
-        // 13–19: reject the offending second digit, flag the error, drop any year.
-        month = month[0];
-        year = "";
-        err = true;
+    if (i < digits.length) {
+      const d0 = digits[i];
+      if (d0 >= "4") {
+        day = `0${d0}`; // 4–9 → 04–09, day complete
+        i += 1;
+      } else {
+        day = d0;
+        i += 1;
+        if (i < digits.length) {
+          const dn = Number(d0 + digits[i]);
+          if (dn === 0 || dn > 31) err = true; // 00 / 32–39: reject 2nd digit
+          else { day = d0 + digits[i]; i += 1; }
+        }
       }
     }
 
-    const next = month.length === 2 ? `${month}/${year}` : month;
+    if (day.length === 2 && !err && i < digits.length) {
+      const m0 = digits[i];
+      if (m0 >= "2") {
+        month = `0${m0}`; // 2–9 → 02–09, month complete
+        i += 1;
+      } else {
+        month = m0;
+        i += 1;
+        if (i < digits.length) {
+          const mn = Number(m0 + digits[i]);
+          if (mn === 0 || mn > 12) err = true; // 00 / 13–19: reject 2nd digit
+          else { month = m0 + digits[i]; i += 1; }
+        }
+      }
+    }
+
+    if (month.length === 2 && !err && i < digits.length) {
+      year = digits.slice(i, i + 4);
+    }
+
+    // 4) Re-assemble with auto-slashes after a full day and a full month.
+    let next = day;
+    if (day.length === 2) next += `/${month}`;
+    if (day.length === 2 && month.length === 2) next += `/${year}`;
+
+    // 5) On a complete 10-char date, confirm it's a real calendar date.
+    const iso = next.length === 10 ? maskToISO(next) : null;
+    if (next.length === 10 && !iso) err = true;
+
     prevText.current = next;
     setText(next);
     setError(err);
-
-    const iso = maskToISO(next);
     emit(iso ?? "");
 
-    // Seamless flow: a complete, valid MM/YY hands off focus to the next field.
+    // 6) Seamless flow: a complete, valid date hands focus to the next field.
     if (iso) onComplete?.();
   };
 
@@ -131,7 +170,7 @@ export function ExpiryInput({
         inputMode="numeric"
         autoComplete="off"
         dir="ltr"
-        maxLength={5}
+        maxLength={10}
         className={cn(
           "input font-mono tracking-wider",
           error && "border-danger-400 focus:border-danger-400 focus:ring-danger-500/20",
