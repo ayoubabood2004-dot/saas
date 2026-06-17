@@ -65,6 +65,9 @@ export interface Pet {
   owner_name?: string;
   owner_phone?: string;
   owner_email?: string;
+  /** Hierarchical local address: governorate (المحافظة) → area (المنطقة). */
+  owner_governorate?: string;
+  owner_area?: string;
   name: string;
   species: Species;
   breed?: string;
