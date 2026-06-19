@@ -264,6 +264,8 @@ export interface Product {
   barcode?: string | null;
   name: string;
   category?: ProductCategory | null;
+  /** Free-text subcategory (e.g. "معلبات", "رمل", "دراي فود") — used by Mix & Match promotions. */
+  subcategory?: string | null;
   purchase_price: number;
   sell_price: number;
   stock: number;

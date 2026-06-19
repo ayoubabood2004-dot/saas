@@ -9,6 +9,7 @@ import {
 import type { Product, Invoice, InvoiceItem, CheckoutItem, SaleMeta, PaymentMethod, DiscountType, Customer, Service, ServiceCatalog } from "@/types";
 import { repo, resolveDiscount } from "@/lib/repo";
 import { getServiceCatalog } from "@/lib/services";
+import { computePromotions, getPromoRules } from "@/lib/promotions";
 import { useBarcodeScanner } from "@/hooks/useBarcodeScanner";
 import { Button, useToast } from "@/components/ui";
 import { ServiceQuickSelect } from "./ServiceQuickSelect";
@@ -18,7 +19,8 @@ import { cn } from "@/lib/utils";
 import { withTimeout, describeDbError } from "@/lib/errors";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
 
-const money = (n: number) => n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+// Always Western numerals (0-9), regardless of the UI/browser locale.
+const money = (n: number) => n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 /** A unified cart line — a physical product OR a non-barcode service. The price is an
  *  editable override; services carry product_id=null + zero cost so they flow through
@@ -33,6 +35,7 @@ interface Line {
   qty: number;
   stock: number | null; // product stock cap; null = unlimited (service)
   product_id: string | null;
+  subcategory: string | null; // product subcategory, for Mix & Match promotions
 }
 
 const PAY_METHODS: { value: PaymentMethod; icon: typeof Banknote; key: string; def: string }[] = [
@@ -52,6 +55,8 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
   const [cart, setCart] = useState<Line[]>([]);
   const [browseTab, setBrowseTab] = useState<"products" | "services">("products");
   const [catalog] = useState<ServiceCatalog>(() => getServiceCatalog());
+  // Doctor-defined Mix & Match offers (clinic-scoped). Loaded once per sale session.
+  const [promoRules] = useState(() => getPromoRules());
   const [query, setQuery] = useState("");
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
@@ -83,10 +88,10 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
   };
 
   const addProduct = (p: Product) =>
-    bump(`p:${p.id}`, () => ({ id: `p:${p.id}`, kind: "product", name: p.name, barcode: p.barcode ?? null, unit_price: p.sell_price, unit_cost: p.purchase_price, qty: 1, stock: p.stock, product_id: p.id }));
+    bump(`p:${p.id}`, () => ({ id: `p:${p.id}`, kind: "product", name: p.name, barcode: p.barcode ?? null, unit_price: p.sell_price, unit_cost: p.purchase_price, qty: 1, stock: p.stock, product_id: p.id, subcategory: p.subcategory ?? null }));
 
   const addService = (s: Service) =>
-    bump(`s:${s.id}`, () => ({ id: `s:${s.id}`, kind: "service", name: s.name, barcode: null, unit_price: s.price, unit_cost: 0, qty: 1, stock: null, product_id: null }));
+    bump(`s:${s.id}`, () => ({ id: `s:${s.id}`, kind: "service", name: s.name, barcode: null, unit_price: s.price, unit_cost: 0, qty: 1, stock: null, product_id: null, subcategory: null }));
 
   const setQty = (id: string, qty: number) =>
     setCart((c) => (qty <= 0 ? c.filter((l) => l.id !== id) : c.map((l) => (l.id === id ? { ...l, qty: l.stock != null ? Math.min(qty, l.stock) : qty } : l))));
@@ -120,7 +125,12 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
   const subtotal = cart.reduce((s, l) => s + l.qty * l.unit_price, 0);
   const cost = cart.reduce((s, l) => s + l.qty * l.unit_cost, 0);
   const units = cart.reduce((s, l) => s + l.qty, 0);
-  const discountAmt = resolveDiscount(subtotal, discountType, Number(discountValue) || 0);
+  // Dynamic Mix & Match offers, evaluated against the live cart.
+  const { applied: promos, totalDiscount: promoDiscount } = useMemo(() => computePromotions(cart, promoRules), [cart, promoRules]);
+  // Manual (percent/fixed) discount entered at the till, on top of any promotions.
+  const manualDiscountAmt = resolveDiscount(subtotal, discountType, Number(discountValue) || 0);
+  // Combined deduction, never more than the subtotal.
+  const discountAmt = Math.min(subtotal, promoDiscount + manualDiscountAmt);
   const total = Math.max(0, subtotal - discountAmt);
   const profit = total - cost;
 
@@ -160,8 +170,10 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
       const meta: SaleMeta = {
         customer_name: name.trim() || null,
         customer_phone: phone.trim() || null,
-        discount_type: discountAmt > 0 ? discountType : null,
-        discount_value: discountAmt > 0 ? Number(discountValue) || 0 : 0,
+        // Promotions + manual discount are folded into one server-side fixed amount so
+        // the recorded total/profit exactly match the till (the server clamps to subtotal).
+        discount_type: discountAmt > 0 ? "fixed" : null,
+        discount_value: discountAmt > 0 ? discountAmt : 0,
         payment_method: payment,
       };
       const invoice = await withTimeout(repo.retailCheckout(items, meta), 12000);
@@ -404,7 +416,14 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
           {/* Totals */}
           <div className="space-y-1 border-t border-line pt-3 text-sm">
             <div className="flex items-center justify-between text-ink-muted"><span>{t("retail.subtotal", "Subtotal")}</span><span className="tabular-nums">{money(subtotal)}</span></div>
-            {discountAmt > 0 && <div className="flex items-center justify-between text-success-600"><span>{t("retail.discount", "Discount")}</span><span className="tabular-nums">-{money(discountAmt)}</span></div>}
+            {/* One distinct row per triggered Mix & Match offer, by the doctor's custom name. */}
+            {promos.map((p) => (
+              <div key={p.ruleId} className="flex items-center justify-between text-success-600">
+                <span className="flex items-center gap-1.5 truncate"><Sparkles size={13} className="shrink-0" />{t("retail.promoLabel", { name: p.name, defaultValue: "Offer: {{name}}" })}</span>
+                <span className="shrink-0 tabular-nums">-{money(p.discount)}</span>
+              </div>
+            ))}
+            {manualDiscountAmt > 0 && <div className="flex items-center justify-between text-success-600"><span>{t("retail.discount", "Discount")}</span><span className="tabular-nums">-{money(manualDiscountAmt)}</span></div>}
             <div className="flex items-center justify-between"><span className="font-display font-bold text-ink">{t("retail.total", "Total")}</span><span className="font-display text-xl font-extrabold text-ink tabular-nums">{money(total)}</span></div>
             <div className="flex items-center justify-end gap-1 text-2xs text-success-600"><TrendingUp size={11} /> {t("retail.profit", "Profit")} {money(profit)}</div>
           </div>

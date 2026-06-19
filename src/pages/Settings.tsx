@@ -1,8 +1,12 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Settings as SettingsIcon, RotateCcw, Check, Volume2, VolumeX, Plus, Trash2, Pill, PawPrint, Stethoscope, Tag, FolderPlus } from "lucide-react";
-import type { Species, Service, ServiceCategory, ServiceCatalog } from "@/types";
+import { Settings as SettingsIcon, RotateCcw, Check, Volume2, VolumeX, Plus, Trash2, Pill, PawPrint, Stethoscope, Tag, FolderPlus, BadgePercent } from "lucide-react";
+import type { Species, Service, ServiceCategory, ServiceCatalog, Product } from "@/types";
 import { useAuth } from "@/contexts/AuthContext";
+import { repo } from "@/lib/repo";
+import { Combobox } from "@/components/Combobox";
+import { cn } from "@/lib/utils";
+import { getPromoRules, addPromoRule, togglePromoRule, removePromoRule, subcategoriesOf, type PromoRule } from "@/lib/promotions";
 import { getServiceCatalog, addServiceCategory, removeServiceCategory, addService, updateService, removeService } from "@/lib/services";
 import { DEFAULT_RANGES, VITAL_KEYS, CBC_KEYS, rangeFor, type VitalKey } from "@/lib/vitals";
 
@@ -133,6 +137,7 @@ export function Settings() {
       </div>
 
       {isStaff && <ServiceSettings />}
+      {isStaff && <PromotionsManager clinicId={user?.id} />}
       <ClinicMedications />
       <ClinicVaccinations />
       <ClinicBreeds />
@@ -292,6 +297,100 @@ function ClinicBreeds() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/* ---------------- Mix & Match promotions ---------------- */
+function PromotionsManager({ clinicId }: { clinicId?: string }) {
+  const { t } = useTranslation();
+  const [rules, setRules] = useState<PromoRule[]>(() => getPromoRules());
+  const [subcats, setSubcats] = useState<string[]>([]);
+  const [name, setName] = useState("");
+  const [subcategory, setSubcategory] = useState("");
+  const [qty, setQty] = useState("");
+  const [bundlePrice, setBundlePrice] = useState("");
+  const [flash, setFlash] = useState<{ ok: boolean; msg: string } | null>(null);
+
+  // Suggest the subcategories that actually exist on the clinic's products.
+  useEffect(() => {
+    let on = true;
+    repo.listProducts(clinicId).then((p: Product[]) => { if (on) setSubcats(subcategoriesOf(p)); }).catch(() => { /* ignore */ });
+    return () => { on = false; };
+  }, [clinicId]);
+
+  const refresh = () => setRules(getPromoRules());
+  const add = () => {
+    const rule = addPromoRule({ name, subcategory, qty: Number(qty) || 0, bundlePrice: Number(bundlePrice) || 0 });
+    if (rule) {
+      playSuccess();
+      setName(""); setSubcategory(""); setQty(""); setBundlePrice("");
+      setFlash({ ok: true, msg: t("promos.added") });
+      refresh();
+    } else {
+      playTap();
+      setFlash({ ok: false, msg: t("promos.invalid") });
+    }
+  };
+  const toggle = (id: string) => { togglePromoRule(id); playTap(); refresh(); };
+  const remove = (id: string) => { removePromoRule(id); playTap(); refresh(); };
+
+  return (
+    <div className="card p-5 mb-4">
+      <div className="mb-1 flex items-center gap-2">
+        <BadgePercent size={18} className="text-brand-600" />
+        <h2 className="font-bold text-ink">{t("promos.title")}</h2>
+      </div>
+      <p className="mb-4 text-xs text-ink-subtle">{t("promos.subtitle")}</p>
+
+      <div className="space-y-2">
+        <div>
+          <label className="label">{t("promos.name")}</label>
+          <input className="input py-2" value={name} onChange={(e) => setName(e.target.value)} placeholder={t("promos.namePh", "e.g. Canned 3 for 5,000")} />
+        </div>
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+          <div className="sm:col-span-1">
+            <label className="label">{t("promos.subcategory")}</label>
+            <Combobox value={subcategory} onChange={setSubcategory} options={subcats} placeholder={t("promos.subcategoryPh", "e.g. canned")} createLabel={(q) => t("promos.subcategoryCreate", { value: q, defaultValue: `Use “${q}”` })} />
+          </div>
+          <div>
+            <label className="label">{t("promos.qty")}</label>
+            <input type="number" inputMode="numeric" min="1" step="1" className="input py-2" value={qty} onChange={(e) => setQty(e.target.value)} placeholder="3" />
+          </div>
+          <div>
+            <label className="label">{t("promos.bundlePrice")}</label>
+            <input type="number" inputMode="decimal" min="0" step="0.01" className="input py-2" value={bundlePrice} onChange={(e) => setBundlePrice(e.target.value)} placeholder="5000" />
+          </div>
+        </div>
+        <button className="btn-primary w-full py-2.5" onClick={add}><Plus size={16} /> {t("promos.add")}</button>
+      </div>
+
+      {flash && (
+        <p className={`mt-2 flex items-center gap-1.5 text-sm ${flash.ok ? "text-brand-700" : "text-warn-600"}`}>
+          <Check size={15} /> {flash.msg}
+        </p>
+      )}
+
+      <div className="mt-4 space-y-2">
+        {rules.length === 0 ? (
+          <p className="text-sm text-ink-subtle">{t("promos.empty")}</p>
+        ) : (
+          rules.map((r) => (
+            <div key={r.id} className={cn("flex items-center gap-3 rounded-2xl border p-3", r.active ? "border-line bg-surface-1" : "border-line bg-surface-2 opacity-70")}>
+              <div className="min-w-0 flex-1">
+                <p className="truncate font-semibold text-ink">{r.name}</p>
+                <p className="text-xs text-ink-muted">{t("promos.ruleSummary", { qty: r.qty, price: r.bundlePrice.toLocaleString("en-US"), sub: r.subcategory, defaultValue: "{{qty}} for {{price}} · {{sub}}" })}</p>
+              </div>
+              <button onClick={() => toggle(r.id)} className={cn("chip text-xs", r.active ? "bg-success-50 text-success-700 dark:bg-success-500/15 dark:text-success-300" : "bg-surface-2 text-ink-muted")}>
+                {r.active ? t("promos.active") : t("promos.inactive")}
+              </button>
+              <button onClick={() => remove(r.id)} aria-label={t("promos.delete")} className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-ink-subtle transition hover:bg-danger-50 hover:text-danger-600 dark:hover:bg-danger-500/15">
+                <Trash2 size={15} />
+              </button>
+            </div>
+          ))
+        )}
+      </div>
     </div>
   );
 }

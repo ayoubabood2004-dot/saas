@@ -10,6 +10,8 @@ import { repo } from "@/lib/repo";
 import { useAuth } from "@/contexts/AuthContext";
 import { Modal } from "@/components/Modal";
 import { ExpiryInput } from "@/components/ExpiryInput";
+import { Combobox } from "@/components/Combobox";
+import { subcategoriesOf } from "@/lib/promotions";
 import { Button, Badge, useToast, Skeleton } from "@/components/ui";
 import { cn, formatDate } from "@/lib/utils";
 import { withTimeout, describeDbError } from "@/lib/errors";
@@ -165,15 +167,15 @@ function InventoryTab({ products, clinicId, onChanged }: { products: Product[]; 
         </motion.div>
       )}
 
-      <ProductModal open={adding || !!editing} product={editing} clinicId={clinicId} onClose={() => { setAdding(false); setEditing(null); }} onSaved={() => { setAdding(false); setEditing(null); onChanged(); }} />
+      <ProductModal open={adding || !!editing} product={editing} clinicId={clinicId} subcategories={subcategoriesOf(products)} onClose={() => { setAdding(false); setEditing(null); }} onSaved={() => { setAdding(false); setEditing(null); onChanged(); }} />
     </div>
   );
 }
 
-function ProductModal({ open, product, clinicId, onClose, onSaved }: { open: boolean; product: Product | null; clinicId?: string; onClose: () => void; onSaved: () => void }) {
+function ProductModal({ open, product, clinicId, subcategories, onClose, onSaved }: { open: boolean; product: Product | null; clinicId?: string; subcategories: string[]; onClose: () => void; onSaved: () => void }) {
   const { t } = useTranslation();
   const toast = useToast();
-  const blank = { barcode: "", name: "", category: "", purchase_price: "", sell_price: "", stock: "", min_stock: "", expiry_date: "" };
+  const blank = { barcode: "", name: "", category: "", subcategory: "", purchase_price: "", sell_price: "", stock: "", min_stock: "", expiry_date: "" };
   const [f, setF] = useState(blank);
   const [busy, setBusy] = useState(false);
   const barcodeRef = useRef<HTMLInputElement>(null);
@@ -185,6 +187,7 @@ function ProductModal({ open, product, clinicId, onClose, onSaved }: { open: boo
     if (product) {
       setF({
         barcode: product.barcode ?? "", name: product.name, category: product.category ?? "",
+        subcategory: product.subcategory ?? "",
         purchase_price: String(product.purchase_price), sell_price: String(product.sell_price),
         stock: String(product.stock), min_stock: product.min_stock ? String(product.min_stock) : "",
         expiry_date: product.expiry_date ?? "",
@@ -218,6 +221,7 @@ function ProductModal({ open, product, clinicId, onClose, onSaved }: { open: boo
         barcode: f.barcode.trim() || null,
         name: f.name.trim(),
         category: (f.category || null) as ProductCategory | null,
+        subcategory: f.subcategory.trim() || null,
         purchase_price: Number(f.purchase_price) || 0,
         sell_price: Number(f.sell_price) || 0,
         stock: Math.max(0, Math.round(Number(f.stock) || 0)),
@@ -263,6 +267,16 @@ function ProductModal({ open, product, clinicId, onClose, onSaved }: { open: boo
             <option value="">{t("pos.categoryPick", "Select a category…")}</option>
             {CATEGORIES.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
           </select>
+        </div>
+        <div>
+          <label className="label">{t("pos.subcategory", "Subcategory")} <span className="font-normal text-ink-subtle">{t("pos.subcategoryHint", "(for offers — e.g. canned, litter)")}</span></label>
+          <Combobox
+            value={f.subcategory}
+            onChange={(v) => set({ subcategory: v })}
+            options={subcategories}
+            placeholder={t("pos.subcategoryPh", "e.g. معلبات, رمل, دراي فود")}
+            createLabel={(q) => t("pos.subcategoryCreate", { value: q, defaultValue: `Use “${q}”` })}
+          />
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div>
