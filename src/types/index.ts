@@ -144,6 +144,8 @@ export interface MedicalVisit {
   clinic_name: string;
   doctor_name: string;
   visit_date: string; // ISO date
+  /** Patient's age in whole months at the time of the visit (historical snapshot). */
+  patient_age_months?: number | null;
   // SOAP
   subjective?: string;
   objective?: string;

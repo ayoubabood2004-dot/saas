@@ -406,7 +406,9 @@
     "monthMany": "أشهر",
     "yShort": "س",
     "mShort": "ش",
-    "newborn": "حديث الولادة"
+    "newborn": "حديث الولادة",
+    "modeAge": "بالعمر",
+    "modeDate": "تاريخ محدّد"
   },
   "wellness": {
     "title": "مؤشّر العافية",
@@ -708,7 +710,17 @@
     "population": "توزيع المرضى",
     "patients": "مريض",
     "noPatients": "لا يوجد مرضى بعد.",
-    "quickActions": "إجراءات سريعة"
+    "quickActions": "إجراءات سريعة",
+    "birthdays": {
+      "title": "أعياد الميلاد القادمة",
+      "empty": "لا أعياد ميلاد هذا الأسبوع.",
+      "turning": "يكمل {{n}} سنة",
+      "today": "اليوم",
+      "tomorrow": "غدًا",
+      "inDays": "خلال {{n}} أيام",
+      "whatsapp": "تهنئة عبر واتساب",
+      "greeting": "مرحباً! عيادة doctorVet تتمنى لـ {{name}} عيد ميلاد سعيد! 🐾🎉"
+    }
   },
   "snapshot": {
     "vaccinated": "التطعيم",

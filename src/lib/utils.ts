@@ -33,6 +33,13 @@ export function ageFromDOB(dob?: string | null): { years: number; months: number
   return { years: Math.floor(months / 12), months: months % 12 };
 }
 
+/** Total age in whole months from a DOB (null if missing/invalid). Used to snapshot a
+ *  patient's age onto a visit record so history shows their age at that moment. */
+export function ageMonths(dob?: string | null): number | null {
+  const a = ageFromDOB(dob);
+  return a ? a.years * 12 + a.months : null;
+}
+
 export function daysUntil(date: string): number {
   const target = new Date(date);
   const now = new Date();

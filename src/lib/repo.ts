@@ -5,7 +5,7 @@ import { loadDB, saveDB } from "./demoStore";
 import { supabase } from "./supabase";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, AppointmentStatus, TreatmentEntry, Admission, Reminder, Product, Invoice, InvoiceItem, CheckoutItem, SaleMeta, Customer, DiscountType } from "@/types";
-import { uid, uuid } from "./utils";
+import { uid, uuid, ageMonths } from "./utils";
 
 /** Resolve a discount input (percent 0–100 or a fixed amount) to an amount, clamped to [0, subtotal]. */
 export function resolveDiscount(subtotal: number, type: DiscountType | null | undefined, value: number): number {
@@ -204,7 +204,9 @@ const demoRepo = {
 
   async addVisit(input: Omit<MedicalVisit, "id">): Promise<MedicalVisit> {
     const db = loadDB();
-    const v: MedicalVisit = { ...input, id: uid("vis") };
+    // Snapshot the patient's age at visit time (unless the caller already provided it).
+    const patient_age_months = input.patient_age_months ?? ageMonths(db.pets.find((p) => p.id === input.pet_id)?.dob);
+    const v: MedicalVisit = { ...input, patient_age_months, id: uid("vis") };
     db.visits.push(v);
     saveDB(db);
     return v;
@@ -579,7 +581,14 @@ const supabaseRepo: typeof demoRepo = {
     return listOf<MedicalVisit>(await sbc().from("medical_visits").select("*").in("pet_id", petIds).order("visit_date", { ascending: false }));
   },
   async addVisit(input) {
-    return need<MedicalVisit>(await sbc().from("medical_visits").insert(input).select().single());
+    // Snapshot the patient's age at visit time. Look up the pet's DOB when the caller
+    // didn't supply the age, so every saved visit carries a historical age.
+    let patient_age_months = input.patient_age_months ?? null;
+    if (patient_age_months == null) {
+      const { data } = await sbc().from("pets").select("dob").eq("id", input.pet_id).maybeSingle();
+      patient_age_months = ageMonths((data as { dob?: string | null } | null)?.dob);
+    }
+    return need<MedicalVisit>(await sbc().from("medical_visits").insert({ ...input, patient_age_months }).select().single());
   },
   async listMedia(petId) {
     return listOf<MediaItem>(await sbc().from("media_items").select("*").eq("pet_id", petId).order("created_at", { ascending: false }));

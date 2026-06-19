@@ -398,7 +398,9 @@
     "monthMany": "months",
     "yShort": "y",
     "mShort": "m",
-    "newborn": "Newborn"
+    "newborn": "Newborn",
+    "modeAge": "By age",
+    "modeDate": "Exact date"
   },
   "wellness": {
     "title": "Wellness index",
@@ -703,7 +705,17 @@
     "population": "Patient population",
     "patients": "patients",
     "noPatients": "No patients yet.",
-    "quickActions": "Quick actions"
+    "quickActions": "Quick actions",
+    "birthdays": {
+      "title": "Upcoming birthdays",
+      "empty": "No birthdays this week.",
+      "turning": "turning {{n}}",
+      "today": "Today",
+      "tomorrow": "Tomorrow",
+      "inDays": "in {{n}} days",
+      "whatsapp": "Send WhatsApp greeting",
+      "greeting": "Hello! doctorVet clinic wishes {{name}} a very happy birthday! 🐾🎉"
+    }
   },
   "snapshot": {
     "vaccinated": "Vaccinated",

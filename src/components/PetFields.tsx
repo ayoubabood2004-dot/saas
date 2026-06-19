@@ -105,16 +105,19 @@ function Stepper({ label, value, onSet, max = 40 }: { label: string; value: numb
  */
 export function AgeInput({ dob, onChange }: { dob: string; onChange: (dob: string) => void }) {
   const { t } = useTranslation();
-  // The steppers are the source of truth; init once from any incoming dob.
+  // The steppers are the source of truth in "age" mode; init once from any incoming dob.
   const initial = ageFromDOB(dob);
+  const [mode, setMode] = useState<"age" | "date">("age");
   const [years, setYears] = useState(initial?.years ?? 0);
   const [months, setMonths] = useState(initial?.months ?? 0);
+  const today = new Date().toISOString().slice(0, 10);
 
   // Only react to an EXTERNAL clear (e.g. form reset) — not to the dob we emit ourselves.
   useEffect(() => {
     if (!dob) { setYears(0); setMonths(0); }
   }, [dob]);
 
+  // Quick age → approximate DOB (Current Date − the entered years/months).
   const emit = (y: number, m: number) => {
     const d = new Date();
     d.setDate(1); // day=1 so ageFromDOB never drops a partial month
@@ -125,10 +128,24 @@ export function AgeInput({ dob, onChange }: { dob: string; onChange: (dob: strin
   const setY = (n: number) => { const y = Math.max(0, Math.min(40, n)); setYears(y); emit(y, months); };
   const setM = (n: number) => { const m = Math.max(0, Math.min(11, n)); setMonths(m); emit(years, m); };
 
+  // Switching back to age mode re-derives the steppers from whatever DOB is set.
+  const toAge = () => { const a = ageFromDOB(dob); setYears(a?.years ?? 0); setMonths(a?.months ?? 0); setMode("age"); playTap(); };
+  const toDate = () => { setMode("date"); playTap(); };
+
   return (
-    <div className="grid grid-cols-2 gap-3">
-      <Stepper label={t("pet.years", "Years")} value={years} onSet={setY} max={40} />
-      <Stepper label={t("pet.months", "Months")} value={months} onSet={setM} max={11} />
+    <div className="space-y-2">
+      <div className="inline-flex w-full rounded-xl border border-line bg-surface-2 p-1 text-xs font-semibold">
+        <button type="button" onClick={toAge} className={cn("flex-1 rounded-lg py-1.5 transition", mode === "age" ? "bg-white text-brand-700 shadow-card dark:bg-surface-1 dark:text-brand-300" : "text-ink-muted")}>{t("pet.modeAge", "By age")}</button>
+        <button type="button" onClick={toDate} className={cn("flex-1 rounded-lg py-1.5 transition", mode === "date" ? "bg-white text-brand-700 shadow-card dark:bg-surface-1 dark:text-brand-300" : "text-ink-muted")}>{t("pet.modeDate", "Exact date")}</button>
+      </div>
+      {mode === "age" ? (
+        <div className="grid grid-cols-2 gap-3">
+          <Stepper label={t("pet.years", "Years")} value={years} onSet={setY} max={40} />
+          <Stepper label={t("pet.months", "Months")} value={months} onSet={setM} max={11} />
+        </div>
+      ) : (
+        <input type="date" dir="ltr" max={today} className="input" value={dob || ""} onChange={(e) => onChange(e.target.value)} />
+      )}
     </div>
   );
 }

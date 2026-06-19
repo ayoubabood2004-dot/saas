@@ -25,6 +25,7 @@ import { formatTime } from "@/lib/utils";
 import { playTap } from "@/lib/sounds";
 import { PetAvatar } from "@/components/PetAvatar";
 import { UpcomingEvents } from "@/components/UpcomingEvents";
+import { BirthdaysWidget } from "@/components/BirthdaysWidget";
 import { buildUpcomingEvents } from "@/lib/events";
 import { Card, CardTitle, Button, Badge, RingStat, Skeleton, EmptyState, HealthCurve, ProgressRing, type CurvePoint } from "@/components/ui";
 import { staggerContainer, fadeUp } from "@/lib/motion";
@@ -276,6 +277,9 @@ export function Dashboard() {
             onChanged={load}
             onEventClick={(e) => e.petId && navigate(`/pet/${e.petId}`)}
           />
+
+          {/* Upcoming pet birthdays (CRM / retention) */}
+          <BirthdaysWidget pets={pets} />
 
           {/* Advice / tip of the day */}
           <Card padded className="relative overflow-hidden bg-gradient-to-br from-brand-50 to-sky-50 dark:from-brand-500/10 dark:to-sky-500/5">

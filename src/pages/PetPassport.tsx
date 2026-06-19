@@ -707,6 +707,11 @@ function ageLabel(age: { years: number; months: number }, t: (k: string, o?: Rec
   if (age.months > 0) parts.push(`${age.months} ${t(age.months === 1 ? "pet.monthOne" : "pet.monthMany")}`);
   return parts.join(" ");
 }
+/** Format a stored age-in-months snapshot for a visit (null when none recorded). */
+function ageMonthsLabel(total: number | null | undefined, t: (k: string, o?: Record<string, unknown>) => string): string | null {
+  if (total == null) return null;
+  return ageLabel({ years: Math.floor(total / 12), months: total % 12 }, t);
+}
 
 const NEUTER_OPTIONS: Array<Pet["neuter_status"]> = ["intact", "neutered", "unknown"];
 
@@ -1319,7 +1324,7 @@ function HistoryTab({ visits, admissions, treatments, isOwner }: { visits: Medic
                         <span className="truncate">{v.assessment}</span>
                         {v.condition && <ConditionBadge condition={v.condition} />}
                       </p>
-                      <p className="text-xs text-ink-muted">{[v.visit_date, v.clinic_name, v.doctor_name].filter(Boolean).join(" · ")}</p>
+                      <p className="text-xs text-ink-muted">{[v.visit_date, ageMonthsLabel(v.patient_age_months, t), v.clinic_name, v.doctor_name].filter(Boolean).join(" · ")}</p>
                     </div>
                     <ChevronDown size={20} className={`text-ink-subtle transition ${expanded ? "rotate-180" : ""}`} />
                   </button>
