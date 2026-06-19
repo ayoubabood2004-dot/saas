@@ -2,7 +2,7 @@ import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
-import { ArrowLeft, ArrowRight, Camera, Stethoscope, BedDouble, LogOut as ReleaseIcon, CheckCircle2, Pill, Plus, Trash2, Activity, ChevronDown, Search, Loader2, ShieldCheck } from "lucide-react";
+import { ArrowLeft, ArrowRight, Camera, Stethoscope, BedDouble, LogOut as ReleaseIcon, CheckCircle2, Pill, Plus, Trash2, Activity, ChevronDown, Search, Loader2, ShieldCheck, FolderPlus } from "lucide-react";
 import type { Species, Sex, AdmissionKind, Pet } from "@/types";
 import { repo } from "@/lib/repo";
 import { breedLabel } from "@/lib/breeds";
@@ -22,7 +22,7 @@ import { prepareUpload } from "@/lib/image";
 import { uid } from "@/lib/utils";
 import { playSuccess, playTap, playWarning } from "@/lib/sounds";
 
-type Disposition = "log" | "boarding" | "release";
+type Disposition = "log" | "boarding" | "release" | "record";
 
 type Health = "healthy" | "sick";
 
@@ -134,7 +134,11 @@ export function NewCase() {
         const diagnosis = a.health === "sick" ? a.diagnosis.trim() : "";
         // The admission reason leads with the diagnosis (if any), then the free note.
         const reason = [diagnosis, a.notes.trim()].filter(Boolean).join(" — ") || undefined;
-        if (a.disp === "log") {
+        if (a.disp === "record") {
+          // Open Record Only: the pet + owner are now fully registered above, so they
+          // appear in Clinic Records and are searchable. Deliberately create NO
+          // admission (skips today's queue / daily log) and NO visit.
+        } else if (a.disp === "log") {
           await withTimeout(repo.addAdmission({ pet_id: pet.id, kind: "treatment" as AdmissionKind, status: "active", admitted_on: today, reason }), 8000);
         } else if (a.disp === "boarding") {
           await withTimeout(repo.addAdmission({ pet_id: pet.id, kind: "boarding" as AdmissionKind, status: "active", admitted_on: today, cage: a.cage.trim() || undefined, reason }), 8000);
@@ -144,8 +148,9 @@ export function NewCase() {
 
         // A diagnosis and/or registration readings become a dated consultation record
         // in the patient's history — the diagnosis is the visit's assessment (title).
+        // Skipped for "record only": no clinical visit is logged on registration.
         const objective = formatReadings(a.readings, a.species, pet.id, (k) => t(`reading.${k}`));
-        if (diagnosis || objective) {
+        if (a.disp !== "record" && (diagnosis || objective)) {
           await withTimeout(repo.addVisit({
             pet_id: pet.id,
             clinic_name: "Happy Paws Veterinary Clinic",
@@ -170,6 +175,13 @@ export function NewCase() {
       setIsSubmitting(false);
     }
     playSuccess();
+    // Open Record Only with a single new patient: jump straight to the new file so
+    // the doctor can verify it was opened (it's already in Clinic Records too).
+    if (results.length === 1 && results[0].disp === "record") {
+      toast.success(t("newCase.recordOpened", "Record opened"));
+      navigate(`/pet/${results[0].petId}`);
+      return;
+    }
     setOutcomes(results);
   };
 
@@ -185,14 +197,18 @@ export function NewCase() {
               <div className="flex-1 min-w-0">
                 <p className="font-semibold text-ink text-sm">{o.name}</p>
                 <span className="chip bg-brand-50 text-brand-700 text-[11px]">
-                  {o.disp === "log" ? t("newCase.toLog") : o.disp === "boarding" ? t("newCase.toBoarding") : t("newCase.toRelease")}
+                  {o.disp === "log" ? t("newCase.toLog") : o.disp === "boarding" ? t("newCase.toBoarding") : o.disp === "record" ? t("newCase.toRecord") : t("newCase.toRelease")}
                 </span>
               </div>
-              {o.disp !== "release" && o.addMeds && (
+              {o.disp === "record" ? (
+                <button className="btn-secondary py-1.5 px-3 text-xs" onClick={() => navigate(`/pet/${o.petId}`)}>
+                  <FolderPlus size={14} /> {t("newCase.openRecord")}
+                </button>
+              ) : o.disp !== "release" && o.addMeds ? (
                 <button className="btn-secondary py-1.5 px-3 text-xs" onClick={() => navigate(`/pet/${o.petId}?tab=treatment`)}>
                   <Pill size={14} /> {t("treatment.openSheet")}
                 </button>
-              )}
+              ) : null}
             </div>
           ))}
         </div>
@@ -364,18 +380,22 @@ export function NewCase() {
                 <PetAvatar pet={{ species: a.species, photo_url: a.photo, name: a.name }} size={36} />
                 <span className="font-bold text-ink">{a.name}</span>
               </div>
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-2 gap-2">
                 <DispMini active={a.disp === "log"} icon={Stethoscope} label={t("newCase.toLog")} onClick={() => { playTap(); setAnimal(a.key, { disp: "log", addMeds: true }); }} />
                 <DispMini active={a.disp === "boarding"} icon={BedDouble} label={t("newCase.toBoarding")} onClick={() => { playTap(); setAnimal(a.key, { disp: "boarding", addMeds: false }); }} />
                 <DispMini active={a.disp === "release"} icon={ReleaseIcon} label={t("newCase.toRelease")} onClick={() => { playTap(); setAnimal(a.key, { disp: "release" }); }} />
+                <DispMini active={a.disp === "record"} icon={FolderPlus} label={t("newCase.toRecord")} onClick={() => { playTap(); setAnimal(a.key, { disp: "record", addMeds: false }); }} />
               </div>
+              {a.disp === "record" && (
+                <p className="rounded-xl bg-surface-2 px-3 py-2 text-xs text-ink-muted">{t("newCase.toRecordDesc")}</p>
+              )}
               {a.disp === "boarding" && (
                 <div>
                   <label className="label">{t("newCase.cage")}</label>
                   <input className="input py-2" value={a.cage} onChange={(e) => setAnimal(a.key, { cage: e.target.value })} placeholder="B-2" />
                 </div>
               )}
-              {a.disp !== "release" && (
+              {a.disp !== "release" && a.disp !== "record" && (
                 <label className="flex items-center justify-between cursor-pointer text-sm">
                   <span className="flex items-center gap-2 text-ink">
                     <Pill size={16} className="text-brand-600" /> {t("newCase.addMeds")}
