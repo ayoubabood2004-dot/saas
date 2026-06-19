@@ -185,10 +185,28 @@ function strings(opts: ConsentOptions): Strings {
   };
 }
 
-/** Isolate a purely numeric/symbolic value (phone, ID) so the "+" and digit groups
- *  always render left-to-right, even inside an RTL (Arabic) document. */
+/** U+200E LEFT-TO-RIGHT MARK — a strong-LTR character. Baked into the text it forces
+ *  the trailing neutral/weak chars (the "+", digits) to lay out LTR even when a renderer
+ *  ignores CSS / dir. Built from a code point so the source stays ASCII (no invisibles). */
+const LRM = String.fromCharCode(0x200e);
+
+/** Sanitize a phone string: strip stray bidi control marks, normalize spacing, and
+ *  collapse an accidentally duplicated leading country code ("+964 +964 770" /
+ *  "964964770" -> "+964 770"). Conservative — only a repeat of the leading group. */
+function cleanPhone(raw?: string | null): string {
+  const stripBidi = new RegExp("[\\u200E\\u200F\\u202A-\\u202E\\u2066-\\u2069]", "g");
+  const s = String(raw ?? "").replace(stripBidi, "").replace(/\s+/g, " ").trim();
+  if (!s) return "";
+  const plus = s.startsWith("+");
+  const body = (plus ? s.slice(1) : s).trim().replace(/^(\d{1,4})[\s+]*\1\b/, "$1").trim();
+  return (plus ? "+" : "") + body;
+}
+
+/** Force a numeric/symbolic value (phone, ID) to render strictly left-to-right inside an
+ *  RTL (Arabic) document — belt and suspenders so the "+" never flips: an explicit LTR
+ *  span with `unicode-bidi: isolate`, PLUS a leading LRM baked into the text itself. */
 function ltrValue(value: string): string {
-  return `<bdi dir="ltr" style="display:inline-block">${esc(value)}</bdi>`;
+  return `<span dir="ltr" style="direction:ltr;unicode-bidi:isolate;display:inline-block;white-space:nowrap">${LRM}${esc(value)}</span>`;
 }
 
 function row(label: string, value: string, ltr = false): string {
@@ -210,7 +228,7 @@ export function buildConsentHTML(opts: ConsentOptions): string {
 
   const ownerRows = [
     row(s.fName, opts.owner.name?.trim() || BLANK),
-    row(s.fPhone, opts.owner.phone?.trim() || BLANK, true),
+    row(s.fPhone, cleanPhone(opts.owner.phone) || BLANK, true),
     row(s.fAddress, opts.owner.address?.trim() || BLANK),
   ].join("");
 
@@ -227,7 +245,7 @@ export function buildConsentHTML(opts: ConsentOptions): string {
   const bodyParas = s.body.map((p) => `<p>${esc(p)}</p>`).join("");
   const contact = [
     opts.clinic.city ? esc(opts.clinic.city) : "",
-    opts.clinic.phone ? ltrValue(opts.clinic.phone) : "",
+    opts.clinic.phone ? ltrValue(cleanPhone(opts.clinic.phone)) : "",
     opts.clinic.license ? `${ar ? "ترخيص" : "Lic."} ${esc(opts.clinic.license)}` : "",
   ].filter(Boolean).join(" &nbsp;·&nbsp; ");
 
