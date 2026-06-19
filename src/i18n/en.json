@@ -156,6 +156,15 @@
     "ruleSummary": "{{qty}} for {{price}} · {{sub}}",
     "delete": "Delete"
   },
+  "consent": {
+    "title": "Consent forms",
+    "print": "Print",
+    "estimate": "Estimated cost",
+    "estimatePlaceholder": "e.g. 150,000 IQD",
+    "previewTitle": "Form preview",
+    "popupBlocked": "Allow pop-ups to print",
+    "popupBlockedHint": "Your browser blocked the print window — enable pop-ups for this site."
+  },
   "medentry": {
     "condition": "Patient condition",
     "excellent": "Excellent",

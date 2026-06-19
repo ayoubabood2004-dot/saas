@@ -156,6 +156,15 @@
     "ruleSummary": "{{qty}} بـ {{price}} · {{sub}}",
     "delete": "حذف"
   },
+  "consent": {
+    "title": "نماذج الإقرارات",
+    "print": "طباعة",
+    "estimate": "التكلفة التقديرية",
+    "estimatePlaceholder": "مثال: 150,000 د.ع",
+    "previewTitle": "معاينة النموذج",
+    "popupBlocked": "اسمح بالنوافذ المنبثقة للطباعة",
+    "popupBlockedHint": "حظر متصفحك نافذة الطباعة — فعّل النوافذ المنبثقة لهذا الموقع."
+  },
   "medentry": {
     "condition": "حالة الحيوان",
     "excellent": "ممتاز",

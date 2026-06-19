@@ -7,7 +7,7 @@ import {
   Plus, Check, Clock, AlertCircle, ChevronDown, Printer, ShieldAlert, Pill, Trash2, BedDouble, Camera,
   Share2, Copy, Globe, PawPrint, Repeat, Columns2, X, Calendar,
   Utensils, Fingerprint, Cake, Heart, Scissors, Users, UserPlus, Phone, Mail, Pencil,
-  Scale, Sparkles, Loader2, NotebookPen, CalendarClock,
+  Scale, Sparkles, Loader2, NotebookPen, CalendarClock, FileSignature,
 } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, TreatmentEntry, Admission, FoodType, DietPlan, Appointment, Reminder, MedicalAssessment, PatientCondition } from "@/types";
@@ -27,6 +27,7 @@ import { withTimeout, describeUploadError } from "@/lib/errors";
 import { playSuccess, playScan, playTap, playWarning } from "@/lib/sounds";
 import { ImageLightbox } from "@/components/ImageLightbox";
 import { MedicalEntry, DoctorSelect, DOCTOR_NAMES, type MedicalDraft } from "@/components/MedicalEntry";
+import { ConsentForms } from "@/components/ConsentForms";
 import { addClinicMed, medicationDisplay } from "@/lib/meds";
 import { breedLabel } from "@/lib/breeds";
 import { vaccineScientific } from "@/lib/vaccines";
@@ -223,6 +224,7 @@ export function PetPassport() {
   const canEditClinical = user?.role !== "owner";
   const isOwner = user?.role === "owner";
   const [medOpen, setMedOpen] = useState(false);
+  const [consentOpen, setConsentOpen] = useState(false);
 
   const Back = i18n.dir() === "rtl" ? ArrowRight : ArrowLeft;
 
@@ -336,6 +338,14 @@ export function PetPassport() {
             </Button>
             <Button
               size="sm"
+              variant="ghost"
+              leftIcon={<FileSignature size={16} />}
+              onClick={() => { playTap(); setConsentOpen(true); }}
+            >
+              {t("consent.title", "Consent forms")}
+            </Button>
+            <Button
+              size="sm"
               leftIcon={<ShoppingCart size={16} />}
               onClick={() => {
                 playTap();
@@ -356,6 +366,9 @@ export function PetPassport() {
       <Modal open={medOpen} onClose={() => setMedOpen(false)} title={t("passport.medicalEntryTitle", "Medical entry — {{name}}", { name: pet.name })}>
         <MedicalEntry species={pet.species} onCommit={commitMedical} defaultDoctor={user?.full_name} />
       </Modal>
+
+      {/* Legal consent forms (operation / anesthesia / treatment) — bilingual, printable */}
+      <ConsentForms open={consentOpen} onClose={() => setConsentOpen(false)} pet={pet} />
 
       {/* Mobile/tablet header + snapshot (on desktop these live inside the rails) */}
       <div className="mb-5 lg:hidden">
