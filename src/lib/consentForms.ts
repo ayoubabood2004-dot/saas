@@ -185,8 +185,15 @@ function strings(opts: ConsentOptions): Strings {
   };
 }
 
-function row(label: string, value: string): string {
-  return `<tr><td class="k">${esc(label)}</td><td class="c">:</td><td class="v">${esc(value)}</td></tr>`;
+/** Isolate a purely numeric/symbolic value (phone, ID) so the "+" and digit groups
+ *  always render left-to-right, even inside an RTL (Arabic) document. */
+function ltrValue(value: string): string {
+  return `<bdi dir="ltr" style="display:inline-block">${esc(value)}</bdi>`;
+}
+
+function row(label: string, value: string, ltr = false): string {
+  const v = ltr && value !== BLANK ? ltrValue(value) : esc(value);
+  return `<tr><td class="k">${esc(label)}</td><td class="c">:</td><td class="v">${v}</td></tr>`;
 }
 
 /** Build a fully self-contained, printable consent-form HTML document. */
@@ -203,13 +210,13 @@ export function buildConsentHTML(opts: ConsentOptions): string {
 
   const ownerRows = [
     row(s.fName, opts.owner.name?.trim() || BLANK),
-    row(s.fPhone, opts.owner.phone?.trim() || BLANK),
+    row(s.fPhone, opts.owner.phone?.trim() || BLANK, true),
     row(s.fAddress, opts.owner.address?.trim() || BLANK),
   ].join("");
 
   const patientRows = [
     row(s.fName, opts.patient.name?.trim() || BLANK),
-    row(s.fNo, opts.patient.serial?.trim() || BLANK),
+    row(s.fNo, opts.patient.serial?.trim() || BLANK, true),
     row(s.fSpecies, sp),
     row(s.fBreed, opts.patient.breed?.trim() || BLANK),
     row(s.fSex, sex),
@@ -218,8 +225,11 @@ export function buildConsentHTML(opts: ConsentOptions): string {
   ].join("");
 
   const bodyParas = s.body.map((p) => `<p>${esc(p)}</p>`).join("");
-  const contact = [opts.clinic.city, opts.clinic.phone, opts.clinic.license ? `${ar ? "ترخيص" : "Lic."} ${opts.clinic.license}` : ""]
-    .filter(Boolean).map(esc).join(" &nbsp;·&nbsp; ");
+  const contact = [
+    opts.clinic.city ? esc(opts.clinic.city) : "",
+    opts.clinic.phone ? ltrValue(opts.clinic.phone) : "",
+    opts.clinic.license ? `${ar ? "ترخيص" : "Lic."} ${esc(opts.clinic.license)}` : "",
+  ].filter(Boolean).join(" &nbsp;·&nbsp; ");
 
   const estimateBlock = opts.form === "treatment"
     ? `<div class="estimate"><span class="el">${esc(s.estimate)}</span><span class="eline">${opts.estimate ? esc(opts.estimate) : ""}</span></div>`
