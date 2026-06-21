@@ -56,7 +56,8 @@
     "search": "بحث",
     "inventory": "المخزون",
     "retail": "المبيعات",
-    "campaigns": "حملات الواتساب"
+    "campaigns": "حملات الواتساب",
+    "staff": "إدارة الكادر"
   },
   "campaigns": {
     "title": "حملات الواتساب",

@@ -17,6 +17,7 @@ import {
   Boxes,
   Store,
   MessageCircle,
+  Briefcase,
 } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { setLang, type Lang } from "@/i18n";
@@ -25,6 +26,7 @@ import { isSoundEnabled, setSoundEnabled, playTap } from "@/lib/sounds";
 import { Tooltip, ThemeToggle } from "@/components/ui";
 import { Logo } from "@/components/Logo";
 import { useCommandPalette } from "@/components/CommandPaletteProvider";
+import { usePermissions } from "@/hooks/usePermissions";
 import { cn } from "@/lib/utils";
 
 export function TopBar({ mobileOnly = false }: { mobileOnly?: boolean }) {
@@ -33,6 +35,7 @@ export function TopBar({ mobileOnly = false }: { mobileOnly?: boolean }) {
   const navigate = useNavigate();
   const location = useLocation();
   const palette = useCommandPalette();
+  const { can } = usePermissions();
   const [sound, setSound] = useState(isSoundEnabled());
   const [menuOpen, setMenuOpen] = useState(false);
   const otherRole = activeRole === "clinic" ? "owner" : "clinic";
@@ -56,11 +59,12 @@ export function TopBar({ mobileOnly = false }: { mobileOnly?: boolean }) {
     ? [
         { to: "/reception", icon: CalendarDays, label: t("reception.title") },
         { to: "/records", icon: ClipboardList, label: t("records.title") },
-        { to: "/inventory", icon: Boxes, label: t("nav.inventory", "Inventory") },
-        { to: "/retail", icon: Store, label: t("nav.retail", "Retail & Sales") },
+        { to: "/inventory", icon: Boxes, label: t("nav.inventory", "Inventory"), show: can("manageInventory") },
+        { to: "/retail", icon: Store, label: t("nav.retail", "Retail & Sales"), show: can("processSales") },
         { to: "/campaigns", icon: MessageCircle, label: t("nav.campaigns", "WhatsApp Campaigns") },
+        { to: "/staff", icon: Briefcase, label: t("nav.staff", "Staff Management"), show: can("manageStaff") },
         { to: "/scan", icon: ScanLine, label: t("nav.scan") },
-      ]
+      ].filter((it) => it.show !== false)
     : [];
 
   const isActive = (to: string) => location.pathname === to || location.pathname.startsWith(to + "/");

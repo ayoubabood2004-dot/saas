@@ -25,6 +25,7 @@ const NewCase = lazy(() => import("@/pages/NewCase").then((m) => ({ default: m.N
 const Inventory = lazy(() => import("@/pages/Inventory").then((m) => ({ default: m.Inventory })));
 const RetailSales = lazy(() => import("@/pages/RetailSales").then((m) => ({ default: m.RetailSales })));
 const WhatsAppCampaigns = lazy(() => import("@/pages/WhatsAppCampaigns").then((m) => ({ default: m.WhatsAppCampaigns })));
+const StaffManagement = lazy(() => import("@/pages/StaffManagement").then((m) => ({ default: m.StaffManagement })));
 
 function FullScreenLoader() {
   return (
@@ -109,6 +110,7 @@ function Shell() {
             <Route path="/inventory" element={<Protected><ClinicOnly><Inventory /></ClinicOnly></Protected>} />
             <Route path="/retail" element={<Protected><ClinicOnly><RetailSales /></ClinicOnly></Protected>} />
             <Route path="/campaigns" element={<Protected><ClinicOnly><WhatsAppCampaigns /></ClinicOnly></Protected>} />
+            <Route path="/staff" element={<Protected><ClinicOnly><StaffManagement /></ClinicOnly></Protected>} />
             <Route path="/settings" element={<Protected><Settings /></Protected>} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

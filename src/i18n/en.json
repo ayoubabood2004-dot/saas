@@ -56,7 +56,8 @@
     "search": "Search",
     "inventory": "Inventory",
     "retail": "Retail & Sales",
-    "campaigns": "WhatsApp Campaigns"
+    "campaigns": "WhatsApp Campaigns",
+    "staff": "Staff Management"
   },
   "campaigns": {
     "title": "WhatsApp Campaigns",

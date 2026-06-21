@@ -15,8 +15,10 @@ import {
   Boxes,
   Store,
   MessageCircle,
+  Briefcase,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
+import { usePermissions } from "@/hooks/usePermissions";
 import { setLang, type Lang } from "@/i18n";
 import { playTap } from "@/lib/sounds";
 import { ThemeToggle, Tooltip } from "@/components/ui";
@@ -31,18 +33,21 @@ export function Sidebar() {
   const navigate = useNavigate();
   const location = useLocation();
   const palette = useCommandPalette();
+  const { can } = usePermissions();
   const otherRole = activeRole === "clinic" ? "owner" : "clinic";
 
+  // RBAC-aware navigation — items requiring a capability the role lacks are hidden.
   const items = [
     { to: "/", icon: LayoutDashboard, label: t("nav.dashboard", "Dashboard"), exact: true },
     { to: "/reception", icon: CalendarDays, label: t("reception.title") },
     { to: "/records", icon: ClipboardList, label: t("records.title") },
-    { to: "/inventory", icon: Boxes, label: t("nav.inventory", "Inventory") },
-    { to: "/retail", icon: Store, label: t("nav.retail", "Retail & Sales") },
+    { to: "/inventory", icon: Boxes, label: t("nav.inventory", "Inventory"), show: can("manageInventory") },
+    { to: "/retail", icon: Store, label: t("nav.retail", "Retail & Sales"), show: can("processSales") },
     { to: "/campaigns", icon: MessageCircle, label: t("nav.campaigns", "WhatsApp Campaigns") },
+    { to: "/staff", icon: Briefcase, label: t("nav.staff", "Staff Management"), show: can("manageStaff") },
     { to: "/scan", icon: ScanLine, label: t("nav.scan") },
-    { to: "/settings", icon: SettingsIcon, label: t("nav.settings") },
-  ];
+    { to: "/settings", icon: SettingsIcon, label: t("nav.settings"), show: can("manageSettings") },
+  ].filter((it) => it.show !== false);
 
   const isActive = (to: string, exact?: boolean) =>
     exact ? location.pathname === "/" : location.pathname === to || location.pathname.startsWith(to + "/");
