@@ -5,15 +5,16 @@ import { AnimatePresence, motion } from "framer-motion";
 import {
   ClipboardList, Search, Phone, Stethoscope, BedDouble, Pill, CalendarDays,
   LogOut as DischargeIcon, Plus, Check, PawPrint, ArrowRightLeft, LogIn, LogOut, Users, X,
-  Clock, ChevronDown, ChevronRight, ListChecks, ArrowDownAZ, CalendarClock,
+  Clock, ChevronDown, ChevronRight, ListChecks, ArrowDownAZ, CalendarClock, Pencil, Trash2, AlertTriangle,
 } from "lucide-react";
-import type { Pet, Admission, TreatmentEntry, Species, MedicalVisit, PatientCondition } from "@/types";
+import type { Pet, Admission, TreatmentEntry, Species, Sex, MedicalVisit, PatientCondition } from "@/types";
 import { repo } from "@/lib/repo";
 import { breedLabel } from "@/lib/breeds";
 import { PetAvatar } from "@/components/PetAvatar";
 import { Modal } from "@/components/Modal";
 import { PhoneInput } from "@/components/PhoneInput";
-import { Button, Badge, useToast, Skeleton } from "@/components/ui";
+import { SpeciesPicker, SexPicker, AgeInput, WeightInput, ColorPicker, BreedPicker } from "@/components/PetFields";
+import { Button, Badge, Dialog, useToast, Skeleton } from "@/components/ui";
 import { formatDate, cn } from "@/lib/utils";
 import { staggerContainer, staggerItem } from "@/lib/motion";
 import { playTap, playSuccess } from "@/lib/sounds";
@@ -248,6 +249,31 @@ function PatientLog({ pets, admissions, visits, onChanged, loading }: { pets: Pe
   const [reassign, setReassign] = useState<Pet | null>(null);
   const [rq, setRq] = useState("");
   const [rNew, setRNew] = useState({ name: "", phone: "", email: "" });
+  const [editing, setEditing] = useState<Pet | null>(null);
+  const [deleting, setDeleting] = useState<Pet | null>(null);
+  const [delBusy, setDelBusy] = useState(false);
+  // Optimistically hidden pets (removed from the list before the server confirms).
+  const [deletedIds, setDeletedIds] = useState<Set<string>>(new Set());
+
+  const confirmDelete = async () => {
+    if (!deleting || delBusy) return;
+    const pet = deleting;
+    setDelBusy(true);
+    setDeletedIds((s) => new Set(s).add(pet.id)); // optimistic removal
+    try {
+      await repo.deletePet(pet.id);
+      playSuccess();
+      toast.success(t("records.petDeleted", { name: pet.name, defaultValue: "{{name}} deleted" }));
+      setDeleting(null);
+      onChanged(); // re-sync from the source of truth
+    } catch (e) {
+      // Roll back the optimistic removal and surface the error.
+      setDeletedIds((s) => { const n = new Set(s); n.delete(pet.id); return n; });
+      toast.error(t("records.saveError", "Couldn't save. Please try again."), e instanceof Error ? e.message : undefined);
+    } finally {
+      setDelBusy(false);
+    }
+  };
 
   // Press "/" anywhere to jump to search.
   useEffect(() => {
@@ -283,7 +309,7 @@ function PatientLog({ pets, admissions, visits, onChanged, loading }: { pets: Pe
     return Math.max(admMs, visMs, new Date(p.created_at ?? 0).getTime());
   };
 
-  const rows: DirRow[] = useMemo(() => pets.map((p) => ({
+  const rows: DirRow[] = useMemo(() => pets.filter((p) => !deletedIds.has(p.id)).map((p) => ({
     pet: p,
     ownerName: p.owner_name?.trim() || "—",
     ownerPhone: p.owner_phone?.trim() || "",
@@ -291,7 +317,7 @@ function PatientLog({ pets, admissions, visits, onChanged, loading }: { pets: Pe
     health: healthByPet.get(p.id) ?? null,
     status: petStatusOf(p.id, admByPet),
     activityMs: activityMs(p),
-  })), [pets, lastVisitByPet, healthByPet, admByPet]); // eslint-disable-line react-hooks/exhaustive-deps
+  })), [pets, deletedIds, lastVisitByPet, healthByPet, admByPet]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const speciesPresent = useMemo(() => Array.from(new Set(pets.map((p) => p.species))), [pets]);
   const healthCounts = useMemo(() => {
@@ -551,6 +577,8 @@ function PatientLog({ pets, admissions, visits, onChanged, loading }: { pets: Pe
                             onView={() => { playTap(); navigate(`/pet/${r.pet.id}?tab=history`); }}
                             onTreatment={() => { playTap(); navigate(`/pet/${r.pet.id}?tab=treatment`); }}
                             onMove={() => { playTap(); setReassign(r.pet); setRq(""); setRNew({ name: "", phone: "", email: "" }); }}
+                            onEdit={() => { playTap(); setEditing(r.pet); }}
+                            onDelete={() => { playTap(); setDeleting(r.pet); }}
                           />
                         ))}
                       </div>
@@ -624,7 +652,119 @@ function PatientLog({ pets, admissions, visits, onChanged, loading }: { pets: Pe
           );
         })()}
       </Modal>
+
+      {/* Edit an existing pet's details. */}
+      <EditPetModal pet={editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); onChanged(); }} />
+
+      {/* Delete confirmation — destructive, irreversible. */}
+      <Dialog
+        open={!!deleting}
+        onClose={() => { if (!delBusy) setDeleting(null); }}
+        title={t("records.deletePet", "Delete pet")}
+        size="sm"
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setDeleting(null)} disabled={delBusy}>{t("common.cancel", "Cancel")}</Button>
+            <Button variant="danger" onClick={confirmDelete} loading={delBusy} leftIcon={<Trash2 size={16} />}>{t("common.delete", "Delete")}</Button>
+          </>
+        }
+      >
+        <div className="flex items-start gap-3">
+          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-danger-50 text-danger-600 dark:bg-danger-500/15 dark:text-danger-300"><AlertTriangle size={20} /></span>
+          <p className="text-sm leading-relaxed text-ink-muted">{t("records.deleteConfirm", "Are you sure you want to delete this pet? This action cannot be undone.")}</p>
+        </div>
+      </Dialog>
     </div>
+  );
+}
+
+/** Edit an existing pet's core details (name, species, breed, age/DOB, sex, weight, colour). */
+function EditPetModal({ pet, onClose, onSaved }: { pet: Pet | null; onClose: () => void; onSaved: () => void }) {
+  const { t } = useTranslation();
+  const toast = useToast();
+  const [name, setName] = useState("");
+  const [species, setSpecies] = useState<Species>("dog");
+  const [breed, setBreed] = useState("");
+  const [sex, setSex] = useState<Sex>("unknown");
+  const [dob, setDob] = useState("");
+  const [weight, setWeight] = useState("");
+  const [color, setColor] = useState("");
+  const [saving, setSaving] = useState(false);
+  const submittingRef = useRef(false);
+
+  // Pre-fill from the pet whenever the modal opens on a new record.
+  useEffect(() => {
+    if (!pet) return;
+    setName(pet.name);
+    setSpecies(pet.species);
+    setBreed(pet.breed ?? "");
+    setSex(pet.sex);
+    setDob(pet.dob ?? "");
+    setWeight(pet.current_weight_kg != null ? String(pet.current_weight_kg) : "");
+    setColor(pet.color ?? "");
+  }, [pet]);
+
+  const save = async () => {
+    if (!pet || !name.trim() || submittingRef.current) return;
+    submittingRef.current = true;
+    setSaving(true);
+    try {
+      await repo.updatePet(pet.id, {
+        name: name.trim(),
+        species,
+        breed: breed.trim() || undefined,
+        sex,
+        dob: dob || null,
+        current_weight_kg: weight ? Number(weight) : null,
+        color: color.trim() || undefined,
+      });
+      playSuccess();
+      toast.success(t("records.petUpdated", "Pet updated"));
+      onSaved();
+    } catch (e) {
+      toast.error(t("records.saveError", "Couldn't save. Please try again."), e instanceof Error ? e.message : undefined);
+    } finally {
+      submittingRef.current = false;
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Modal open={!!pet} onClose={onClose} title={t("records.editPetTitle", { name: pet?.name ?? "", defaultValue: "Edit {{name}}" })}>
+      <div className="space-y-4">
+        <div>
+          <label className="label">{t("pet.name")}</label>
+          <input className="input" value={name} onChange={(e) => setName(e.target.value)} autoFocus />
+        </div>
+        <div>
+          <label className="label">{t("pet.speciesLabel")}</label>
+          <SpeciesPicker value={species} onChange={setSpecies} />
+        </div>
+        <div>
+          <label className="label">{t("pet.breed")}</label>
+          <BreedPicker species={species} value={breed} onChange={setBreed} />
+        </div>
+        <div>
+          <label className="label">{t("pet.sexLabel")}</label>
+          <SexPicker value={sex} onChange={setSex} />
+        </div>
+        <div>
+          <label className="label">{t("pet.ageLabel", "Age")}</label>
+          <AgeInput dob={dob} onChange={setDob} />
+        </div>
+        <div>
+          <WeightInput value={weight} onChange={setWeight} />
+        </div>
+        <div>
+          <label className="label">{t("pet.color")}</label>
+          <ColorPicker value={color} onChange={setColor} />
+        </div>
+        <div className="flex gap-3 pt-2">
+          <button className="btn-ghost flex-1" onClick={onClose}>{t("common.cancel")}</button>
+          <Button className="flex-1" onClick={save} loading={saving} disabled={!name.trim()}>{t("common.save")}</Button>
+        </div>
+      </div>
+    </Modal>
   );
 }
 
@@ -642,7 +782,7 @@ function FilterPill({ active, onClick, children }: { active: boolean; onClick: (
   );
 }
 
-function DirectoryRow({ row, lang, hideOwner, onView, onTreatment, onMove }: { row: DirRow; lang: string; hideOwner?: boolean; onView: () => void; onTreatment: () => void; onMove: () => void }) {
+function DirectoryRow({ row, lang, hideOwner, onView, onTreatment, onMove, onEdit, onDelete }: { row: DirRow; lang: string; hideOwner?: boolean; onView: () => void; onTreatment: () => void; onMove: () => void; onEdit: () => void; onDelete: () => void }) {
   const { t, i18n } = useTranslation();
   const { pet, ownerName, ownerPhone, lastVisit, health, status } = row;
   const hasAllergy = pet.allergies && pet.allergies.length > 0;
@@ -692,6 +832,8 @@ function DirectoryRow({ row, lang, hideOwner, onView, onTreatment, onMove }: { r
       {status === "boarding" && <Badge tone="sky" icon={<BedDouble size={11} />} className="hidden shrink-0 md:inline-flex">{t("records.stBoarding", "Boarding")}</Badge>}
 
       <div className="flex shrink-0 items-center gap-0.5">
+        <button title={t("records.editPet", "Edit pet")} onClick={onEdit} className="grid h-8 w-8 place-items-center rounded-full text-ink-subtle transition hover:bg-brand-50 hover:text-brand-600 dark:hover:bg-brand-500/15"><Pencil size={15} /></button>
+        <button title={t("records.deletePet", "Delete pet")} onClick={onDelete} className="grid h-8 w-8 place-items-center rounded-full text-ink-subtle transition hover:bg-danger-50 hover:text-danger-600 dark:hover:bg-danger-500/15"><Trash2 size={15} /></button>
         <button title={t("records.moveOwner", "Move to owner")} onClick={onMove} className="hidden h-8 w-8 place-items-center rounded-full text-ink-subtle transition hover:bg-brand-50 hover:text-brand-600 dark:hover:bg-brand-500/15 sm:grid"><ArrowRightLeft size={15} /></button>
         <button title={t("treatment.title")} onClick={onTreatment} className="hidden h-8 w-8 place-items-center rounded-full text-ink-subtle transition hover:bg-brand-50 hover:text-brand-600 dark:hover:bg-brand-500/15 sm:grid"><Pill size={15} /></button>
         <Button size="sm" variant="secondary" rightIcon={<ChevronRight size={15} />} onClick={onView}>

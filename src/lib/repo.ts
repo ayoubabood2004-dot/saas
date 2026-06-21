@@ -151,6 +151,21 @@ const demoRepo = {
     return pet;
   },
 
+  async deletePet(petId: string): Promise<void> {
+    const db = loadDB();
+    db.pets = db.pets.filter((p) => p.id !== petId);
+    // Cascade the pet's dependent records so nothing is left dangling (mirrors the
+    // `on delete cascade` foreign keys used in the Supabase schema).
+    db.weightLogs = db.weightLogs.filter((w) => w.pet_id !== petId);
+    db.vaccinations = db.vaccinations.filter((v) => v.pet_id !== petId);
+    db.visits = db.visits.filter((v) => v.pet_id !== petId);
+    db.media = db.media.filter((m) => m.pet_id !== petId);
+    db.treatments = db.treatments.filter((tr) => tr.pet_id !== petId);
+    db.admissions = db.admissions.filter((a) => a.pet_id !== petId);
+    if (db.appointments) db.appointments = db.appointments.filter((a) => a.pet_id !== petId);
+    saveDB(db);
+  },
+
   async listWeights(petId: string): Promise<WeightLog[]> {
     return loadDB()
       .weightLogs.filter((w) => w.pet_id === petId)
@@ -553,6 +568,11 @@ const supabaseRepo: typeof demoRepo = {
   },
   async updatePet(petId, patch) {
     return maybe<Pet>(await sbc().from("pets").update(patch).eq("id", petId).select().maybeSingle());
+  },
+  async deletePet(petId) {
+    // Dependent rows (visits, vaccinations, treatments, media, weights, admissions)
+    // are removed by the schema's `on delete cascade` foreign keys.
+    await sbc().from("pets").delete().eq("id", petId);
   },
   async listWeights(petId) {
     return listOf<WeightLog>(await sbc().from("weight_logs").select("*").eq("pet_id", petId).order("measured_at", { ascending: true }));

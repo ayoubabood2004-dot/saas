@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useAuth } from "@/contexts/AuthContext";
 import { repo } from "@/lib/repo";
@@ -6,7 +6,7 @@ import type { Species, Sex } from "@/types";
 import { Modal } from "./Modal";
 import { PhoneInput } from "./PhoneInput";
 import { SpeciesPicker, SexPicker, AgeInput, WeightInput, ColorPicker, BreedPicker } from "./PetFields";
-import { useToast } from "@/components/ui";
+import { Button, useToast } from "@/components/ui";
 import { playSuccess, playWarning } from "@/lib/sounds";
 import { getOwner } from "@/lib/owners";
 
@@ -27,6 +27,10 @@ export function AddPetModal({ open, onClose, onCreated }: { open: boolean; onClo
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
   const [saving, setSaving] = useState(false);
+  // Synchronous re-entrancy guard: blocks a second click that fires before React has
+  // re-rendered the disabled button — a state boolean alone can be raced into a
+  // duplicate Supabase insert.
+  const submittingRef = useRef(false);
 
   const reset = () => {
     setName(""); setSpecies("dog"); setBreed(""); setSex("unknown"); setDob(""); setWeight(""); setColor(""); setPhone(""); setEmail("");
@@ -34,7 +38,8 @@ export function AddPetModal({ open, onClose, onCreated }: { open: boolean; onClo
   };
 
   const claim = async () => {
-    if (!user || !serial.trim() || saving) return;
+    if (!user || !serial.trim() || submittingRef.current) return;
+    submittingRef.current = true;
     const acc = getOwner(user.id);
     setSaving(true);
     try {
@@ -53,12 +58,14 @@ export function AddPetModal({ open, onClose, onCreated }: { open: boolean; onClo
       playWarning();
       setClaimMsg({ ok: false, text: e instanceof Error ? e.message : t("records.saveError", "Couldn't save. Please try again.") });
     } finally {
+      submittingRef.current = false;
       setSaving(false);
     }
   };
 
   const submit = async () => {
-    if (!user || !name.trim() || saving) return;
+    if (!user || !name.trim() || submittingRef.current) return;
+    submittingRef.current = true;
     setSaving(true);
     try {
       await repo.createPet({
@@ -82,6 +89,7 @@ export function AddPetModal({ open, onClose, onCreated }: { open: boolean; onClo
     } catch (e) {
       toast.error(t("records.saveError", "Couldn't save. Please try again."), e instanceof Error ? e.message : undefined);
     } finally {
+      submittingRef.current = false;
       setSaving(false);
     }
   };
@@ -103,7 +111,7 @@ export function AddPetModal({ open, onClose, onCreated }: { open: boolean; onClo
           {claimMsg && <p className={`text-sm ${claimMsg.ok ? "text-brand-700" : "text-red-600"}`}>{claimMsg.text}</p>}
           <div className="flex gap-3 pt-1">
             <button className="btn-ghost flex-1" onClick={onClose}>{t("common.close")}</button>
-            <button className="btn-primary flex-1" onClick={claim} disabled={!serial.trim() || saving}>{t("claim.add")}</button>
+            <Button className="flex-1" onClick={claim} loading={saving} disabled={!serial.trim()}>{t("claim.add")}</Button>
           </div>
         </div>
       ) : (
@@ -154,7 +162,7 @@ export function AddPetModal({ open, onClose, onCreated }: { open: boolean; onClo
 
         <div className="flex gap-3 pt-2">
           <button className="btn-ghost flex-1" onClick={onClose}>{t("common.cancel")}</button>
-          <button className="btn-primary flex-1" onClick={submit} disabled={saving || !name.trim()}>{t("common.save")}</button>
+          <Button className="flex-1" onClick={submit} loading={saving} disabled={!name.trim()}>{t("common.save")}</Button>
         </div>
       </div>
       )}
