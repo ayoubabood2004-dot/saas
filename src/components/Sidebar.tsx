@@ -14,6 +14,7 @@ import {
   ArrowLeftRight,
   Boxes,
   Store,
+  MessageCircle,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { setLang, type Lang } from "@/i18n";
@@ -38,6 +39,7 @@ export function Sidebar() {
     { to: "/records", icon: ClipboardList, label: t("records.title") },
     { to: "/inventory", icon: Boxes, label: t("nav.inventory", "Inventory") },
     { to: "/retail", icon: Store, label: t("nav.retail", "Retail & Sales") },
+    { to: "/campaigns", icon: MessageCircle, label: t("nav.campaigns", "WhatsApp Campaigns") },
     { to: "/scan", icon: ScanLine, label: t("nav.scan") },
     { to: "/settings", icon: SettingsIcon, label: t("nav.settings") },
   ];

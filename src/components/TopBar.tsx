@@ -16,6 +16,7 @@ import {
   ArrowLeftRight,
   Boxes,
   Store,
+  MessageCircle,
 } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { setLang, type Lang } from "@/i18n";
@@ -57,6 +58,7 @@ export function TopBar({ mobileOnly = false }: { mobileOnly?: boolean }) {
         { to: "/records", icon: ClipboardList, label: t("records.title") },
         { to: "/inventory", icon: Boxes, label: t("nav.inventory", "Inventory") },
         { to: "/retail", icon: Store, label: t("nav.retail", "Retail & Sales") },
+        { to: "/campaigns", icon: MessageCircle, label: t("nav.campaigns", "WhatsApp Campaigns") },
         { to: "/scan", icon: ScanLine, label: t("nav.scan") },
       ]
     : [];
