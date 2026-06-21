@@ -1,37 +1,24 @@
 -- ============================================================================
--- doctorVet — 0014: RLS audit, unification & leak closure.
+-- doctorVet — 0014: RLS audit, unification & leak closure — NON-DESTRUCTIVE.
 --
--- GOALS
---   1) Single source of truth for tenancy: auth_clinic(). Every clinic-scoped
---      table now uses the SAME rule —  clinic_id = auth_clinic()  — instead of
---      a mix of inlined auth.uid() and blanket is_clinic_staff() checks.
---   2) Close the two remaining cross-tenant LEAKS flagged in 0002/0006:
---        • appointments.appt_staff  → was: is_clinic_staff()  (any clinic, all rows)
---        • reminders.rem_staff      → was: is_clinic_staff()  (any clinic, all rows)
---      Both are now isolated by clinic_id like every other table.
---   3) Provide a safe, RLS-respecting one-call data export per clinic.
---
--- New columns added since 0006 (pets.owner_governorate/owner_area · 0011,
--- products.subcategory · 0012, medical_visits.patient_age_months · 0013) need
--- NO new policy: column data is already protected by their table's clinic
--- policy below. NOTE: "promotions" live in the browser (localStorage), not in
--- Postgres, so there is no promos table to secure here.
+-- This version removes NOTHING: no DROP COLUMN, no DROP TABLE, no DELETE.
+-- It only: creates a helper function, enables RLS, replaces security policies,
+-- drops the OLD foreign-key constraint on two never-populated columns (a
+-- constraint is not data), sets defaults, fills empty values, and adds indexes.
+-- Client data (pets, owners, invoices, visits…) is never touched.
 --
 -- Idempotent. Apply AFTER 0001–0013 (Supabase → SQL Editor → Run).
 -- ============================================================================
 
--- 0) TENANCY HELPER -----------------------------------------------------------
--- The clinic id for the current request. Today a clinic IS its own auth.users
--- row, so this is auth.uid(). When real staff sub-accounts arrive, change ONLY
--- this function (e.g. `select clinic_id from profiles where id = auth.uid()`)
--- and every policy below inherits the new rule automatically.
+-- 0) TENANCY HELPER — single source of truth for "which clinic am I?".
 create or replace function auth_clinic() returns uuid
 language sql stable security definer set search_path = public as $$
   select auth.uid();
 $$;
 grant execute on function auth_clinic() to authenticated, anon;
 
--- 1) UNIFY EVERY CLINIC-SCOPED TABLE TO  clinic_id = auth_clinic() ------------
+-- 1) UNIFY EVERY CLINIC-SCOPED TABLE TO  clinic_id = auth_clinic().
+--    (Only replaces policies — no data is removed.)
 do $$
 declare tbl text;
 begin
@@ -48,19 +35,31 @@ begin
          with check (clinic_id = auth_clinic())', tbl);
   end loop;
 end $$;
--- (The owner-side policies — pets_owner, <child>_owner, adm_owner_read,
---  pets_shared_read — are unchanged: an owner still reaches their OWN pet's
---  records, and the universal-passport scan only exposes owner-shared pets.)
 
--- 2) APPOINTMENTS — close the leak ------------------------------------------
--- Old clinic_id referenced the unused clinics() table and was never populated.
--- Repoint it at auth.users and isolate by clinic.
-alter table appointments drop column if exists clinic_id;
-alter table appointments add column clinic_id uuid references auth.users(id) default auth.uid();
-update appointments a
-  set clinic_id = (select p.clinic_id from pets p where p.id = a.pet_id)
-  where a.clinic_id is null;
-create index if not exists appt_clinic_idx on appointments(clinic_id);
+-- 2) APPOINTMENTS & REMINDERS — close the cross-clinic leak WITHOUT dropping
+--    the column. We only remove the old foreign-key (it pointed at the unused
+--    `clinics` table) so the column can hold the clinic's auth id, then repoint
+--    the default and fill any empty values from the pet's clinic.
+do $$
+declare t text; c text;
+begin
+  foreach t in array array['appointments','reminders']
+  loop
+    for c in
+      select con.conname
+      from pg_constraint con
+      join pg_attribute a on a.attrelid = con.conrelid and a.attnum = any(con.conkey)
+      where con.conrelid = t::regclass and con.contype = 'f' and a.attname = 'clinic_id'
+    loop
+      execute format('alter table %I drop constraint %I', t, c);
+    end loop;
+    execute format('alter table %I alter column clinic_id set default auth.uid()', t);
+    execute format(
+      'update %1$s x set clinic_id = (select p.clinic_id from pets p where p.id = x.pet_id)
+         where x.clinic_id is null and x.pet_id is not null', t);
+    execute format('create index if not exists %1$s_clinic_idx on %1$s(clinic_id)', t);
+  end loop;
+end $$;
 
 drop policy if exists appt_staff on appointments;
 drop policy if exists appt_clinic_all on appointments;
@@ -69,15 +68,6 @@ create policy appt_clinic_all on appointments for all
   with check (clinic_id = auth_clinic());
 -- appt_owner (owner manages their own pet's appointments) from 0002 stays.
 
--- 3) REMINDERS — close the leak ---------------------------------------------
-alter table reminders drop column if exists clinic_id;
-alter table reminders add column clinic_id uuid references auth.users(id) default auth.uid();
--- Backfill clinic-scoped reminders (owner_id is null) from their pet's clinic.
-update reminders r
-  set clinic_id = (select p.clinic_id from pets p where p.id = r.pet_id)
-  where r.clinic_id is null and r.owner_id is null and r.pet_id is not null;
-create index if not exists rem_clinic_idx on reminders(clinic_id);
-
 drop policy if exists rem_staff on reminders;
 drop policy if exists rem_clinic_all on reminders;
 create policy rem_clinic_all on reminders for all
@@ -85,12 +75,7 @@ create policy rem_clinic_all on reminders for all
   with check (owner_id is null and clinic_id = auth_clinic());
 -- rem_owner (owner manages their own reminders) from 0002 stays.
 
--- 4) SAFE PER-CLINIC EXPORT --------------------------------------------------
--- One call returns ALL of the caller's clinic data as a single JSON document,
--- strictly scoped to auth_clinic() — a clinic can extract its own database
--- easily, and can NEVER read another clinic's rows.
---   SQL:  select export_clinic_data();
---   JS :  const { data } = await supabase.rpc('export_clinic_data');
+-- 3) SAFE PER-CLINIC EXPORT — returns ONLY the caller's clinic data as JSON.
 create or replace function export_clinic_data() returns jsonb
 language sql stable security definer set search_path = public as $$
   select jsonb_build_object(
@@ -113,21 +98,8 @@ $$;
 grant execute on function export_clinic_data() to authenticated;
 
 -- ============================================================================
--- 5) VERIFICATION — run these AFTER applying; each must return ZERO rows.
--- ----------------------------------------------------------------------------
--- (a) Any clinic-scoped table still missing RLS?
---   select relname from pg_class
---   where relname in ('pets','weight_logs','vaccinations','media_items',
---     'medical_visits','treatment_entries','admissions','products','invoices',
---     'invoice_items','appointments','reminders') and relrowsecurity = false;
---
--- (b) Any surviving blanket is_clinic_staff() policy (potential leak)?
---   select schemaname, tablename, policyname
---   from pg_policies
+-- VERIFICATION (run after; each must return ZERO rows):
+--   select tablename, policyname from pg_policies
 --   where (qual ilike '%is_clinic_staff%' or with_check ilike '%is_clinic_staff%')
 --     and tablename in ('appointments','reminders');
---
--- (c) Orphan rows with no clinic owner (invisible / un-isolated)?
---   select 'pets' t, count(*) from pets where clinic_id is null and owner_id is null
---   union all select 'invoices', count(*) from invoices where clinic_id is null;
 -- ============================================================================
