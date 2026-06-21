@@ -1,10 +1,17 @@
-// Staff management + Role-Based Access Control (RBAC). A clinic's team is a mini-HR
-// record (a "CV" per member) persisted per-clinic in localStorage — the same pattern
-// as services/breeds/promotions. The permission matrix below is the single source of
-// truth for what each role may do; the usePermissions hook reads it for the live user.
+// Staff management + Role-Based Access Control (RBAC).
+//
+// Persistence is now Supabase-first: when a real backend is configured the team
+// lives in the `staff` table (clinic-isolated by the unified  clinic_id =
+// auth_clinic()  policy). Without a backend it transparently falls back to
+// localStorage (demo / offline). The first Supabase load auto-migrates any
+// staff a clinic had created locally, so nothing is lost in the transition.
+//
+// The permission matrix below is pure/client-side and is the single source of
+// truth for what each role may do (read by the usePermissions hook).
 import { getActiveClinicId } from "./clinics";
-import { uid } from "./utils";
+import { uuid } from "./utils";
 import { DOCTORS } from "./clinic";
+import { supabase } from "./supabase";
 import type { Role } from "@/types";
 
 export type StaffRole = "manager" | "veterinarian" | "receptionist" | "groomer";
@@ -16,13 +23,10 @@ export interface StaffMember {
   email: string;
   phone: string;
   role: StaffRole;
-  /** Degree / specialty, e.g. "جراحة عامة". */
   specialty: string;
   joinDate: string; // ISO date (YYYY-MM-DD)
   status: StaffStatus;
-  /** Short free-text bio shown on the profile. */
   bio: string;
-  /** Optional avatar data URL. */
   avatar?: string | null;
 }
 
@@ -31,18 +35,10 @@ export const STAFF_ROLES: StaffRole[] = ["manager", "veterinarian", "receptionis
 /* ----------------------------- Permissions ----------------------------- */
 
 export type Capability =
-  | "manageStaff"
-  | "manageSettings"
-  | "viewReports"
-  | "viewProfits"
-  | "deleteInvoices"
-  | "processSales"
-  | "manageInventory"
-  | "editMedical"
-  | "addPets"
-  | "viewCalendar";
+  | "manageStaff" | "manageSettings" | "viewReports" | "viewProfits"
+  | "deleteInvoices" | "processSales" | "manageInventory" | "editMedical"
+  | "addPets" | "viewCalendar";
 
-/** Ordered capability catalogue with Arabic labels — drives the read-only checklist. */
 export const CAPABILITIES: { id: Capability; label: string }[] = [
   { id: "viewCalendar", label: "عرض التقويم والمواعيد" },
   { id: "addPets", label: "إضافة المرضى وفتح الملفات" },
@@ -56,9 +52,8 @@ export const CAPABILITIES: { id: Capability; label: string }[] = [
   { id: "manageStaff", label: "إدارة الكادر والصلاحيات" },
 ];
 
-/** What each role may do. The manager holds every capability. */
 export const PERMISSIONS: Record<StaffRole, Capability[]> = {
-  manager: CAPABILITIES.map((c) => c.id), // full access
+  manager: CAPABILITIES.map((c) => c.id),
   veterinarian: ["viewCalendar", "addPets", "editMedical", "processSales", "manageInventory"],
   receptionist: ["viewCalendar", "addPets", "processSales"],
   groomer: ["viewCalendar", "addPets"],
@@ -75,8 +70,6 @@ export function roleCan(role: StaffRole, cap: Capability): boolean {
   return PERMISSIONS[role]?.includes(cap) ?? false;
 }
 
-/** Map the app's auth Role to a staff role for permission checks. Defaults to the
- *  fully-privileged manager so a clinic owner is never locked out of their own app. */
 export function appRoleToStaffRole(role?: Role | null): StaffRole {
   switch (role) {
     case "doctor": return "veterinarian";
@@ -86,73 +79,114 @@ export function appRoleToStaffRole(role?: Role | null): StaffRole {
   }
 }
 
-/* ----------------------------- Persistence ----------------------------- */
+export function blankStaff(): StaffMember {
+  // A real UUID so the row drops straight into the Supabase `staff` table.
+  return { id: uuid(), name: "", email: "", phone: "", role: "receptionist", specialty: "", joinDate: new Date().toISOString().slice(0, 10), status: "active", bio: "", avatar: null };
+}
+
+/* ----------------------------- localStorage (demo / migration source) ---- */
 
 const keyName = () => `vp_staff_${getActiveClinicId()}`;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function seed(): StaffMember[] {
   const roles: StaffRole[] = ["manager", "veterinarian", "veterinarian"];
   const specialties = ["جراحة عامة", "الطب الباطني", "التطعيم والوقاية"];
-  const base = DOCTORS.map((d, i) => ({
-    id: d.id,
-    name: d.name,
-    email: `${d.id}@happypaws.vet`,
-    phone: `+964 770 000 100${i}`,
-    role: roles[i] ?? "veterinarian",
-    specialty: specialties[i] ?? "طب بيطري عام",
-    joinDate: ["2021-03-01", "2022-07-15", "2023-01-10"][i] ?? "2023-01-01",
-    status: "active" as StaffStatus,
-    bio: "عضو في فريق عيادة doctorVet.",
-    avatar: null,
+  const dates = ["2021-03-01", "2022-07-15", "2023-01-10"];
+  const base: StaffMember[] = DOCTORS.map((d, i) => ({
+    id: uuid(), name: d.name, email: `${d.id}@happypaws.vet`, phone: `+964 770 000 100${i}`,
+    role: roles[i] ?? "veterinarian", specialty: specialties[i] ?? "طب بيطري عام",
+    joinDate: dates[i] ?? "2023-01-01", status: "active", bio: "عضو في فريق عيادة doctorVet.", avatar: null,
   }));
   base.push(
-    { id: uid("staff"), name: "نور قاسم", email: "noor@happypaws.vet", phone: "+964 771 222 3344", role: "receptionist", specialty: "إدارة مكتب الاستقبال", joinDate: "2023-09-05", status: "active", bio: "مسؤولة استقبال العملاء وجدولة المواعيد.", avatar: null },
-    { id: uid("staff"), name: "حسن علي", email: "hasan@happypaws.vet", phone: "+964 772 555 6677", role: "groomer", specialty: "العناية والتجميل", joinDate: "2024-02-20", status: "active", bio: "أخصائي حلاقة وعناية بالحيوانات.", avatar: null },
+    { id: uuid(), name: "نور قاسم", email: "noor@happypaws.vet", phone: "+964 771 222 3344", role: "receptionist", specialty: "إدارة مكتب الاستقبال", joinDate: "2023-09-05", status: "active", bio: "مسؤولة استقبال العملاء وجدولة المواعيد.", avatar: null },
+    { id: uuid(), name: "حسن علي", email: "hasan@happypaws.vet", phone: "+964 772 555 6677", role: "groomer", specialty: "العناية والتجميل", joinDate: "2024-02-20", status: "active", bio: "أخصائي حلاقة وعناية بالحيوانات.", avatar: null },
   );
   return base;
 }
 
-export function getStaff(): StaffMember[] {
+function loadLocal(): StaffMember[] {
   try {
     const raw = localStorage.getItem(keyName());
-    if (raw) {
-      const parsed = JSON.parse(raw) as StaffMember[];
-      if (Array.isArray(parsed)) return parsed;
-    }
-  } catch {
-    /* ignore */
-  }
+    if (raw) { const p = JSON.parse(raw) as StaffMember[]; if (Array.isArray(p)) return p; }
+  } catch { /* ignore */ }
   const fresh = seed();
-  save(fresh);
+  saveLocal(fresh);
   return fresh;
 }
 
-function save(list: StaffMember[]) {
+function saveLocal(list: StaffMember[]) {
   try { localStorage.setItem(keyName(), JSON.stringify(list)); } catch { /* ignore */ }
 }
 
-export function upsertStaff(member: StaffMember): StaffMember[] {
-  const list = getStaff();
-  const idx = list.findIndex((m) => m.id === member.id);
-  if (idx >= 0) list[idx] = member; else list.push(member);
-  save(list);
-  return list;
+/* ----------------------------- Supabase mapping -------------------------- */
+
+interface StaffRow {
+  id: string; name: string; email: string | null; phone: string | null;
+  role: string; specialty: string | null; join_date: string | null;
+  status: string; bio: string | null; avatar: string | null;
 }
 
-export function removeStaff(id: string): StaffMember[] {
-  const list = getStaff().filter((m) => m.id !== id);
-  save(list);
-  return list;
+const rowToMember = (r: StaffRow): StaffMember => ({
+  id: r.id, name: r.name, email: r.email ?? "", phone: r.phone ?? "",
+  role: (r.role as StaffRole) ?? "receptionist", specialty: r.specialty ?? "",
+  joinDate: r.join_date ?? "", status: (r.status as StaffStatus) ?? "active",
+  bio: r.bio ?? "", avatar: r.avatar ?? null,
+});
+
+// clinic_id is intentionally omitted — the DB default (auth.uid()) + RLS stamp it.
+const memberToRow = (m: StaffMember) => ({
+  id: UUID_RE.test(m.id) ? m.id : uuid(),
+  name: m.name, email: m.email || null, phone: m.phone || null,
+  role: m.role, specialty: m.specialty || null, join_date: m.joinDate || null,
+  status: m.status, bio: m.bio || null, avatar: m.avatar ?? null,
+});
+
+/* ----------------------------- Public async API -------------------------- */
+
+/** Load the clinic's team. Supabase when configured (RLS-isolated), else local.
+ *  On the first Supabase load for a clinic, seeds/migrates any local team. */
+export async function listStaff(): Promise<StaffMember[]> {
+  if (!supabase) return loadLocal();
+  const { data, error } = await supabase.from("staff").select("*").order("created_at", { ascending: true });
+  if (error) throw new Error(error.message);
+  const rows = (data ?? []) as StaffRow[];
+  if (rows.length > 0) return rows.map(rowToMember);
+
+  // Empty table → one-time seed + migrate whatever exists locally.
+  const local = loadLocal();
+  const prepared = (local.length ? local : seed()).map((m) => ({ ...m, id: UUID_RE.test(m.id) ? m.id : uuid() }));
+  const { error: insErr } = await supabase.from("staff").insert(prepared.map(memberToRow));
+  if (insErr) return prepared; // don't block the UI if the seed insert fails
+  return prepared;
 }
 
-export function toggleStaffStatus(id: string): StaffMember[] {
-  const list = getStaff();
-  const m = list.find((x) => x.id === id);
-  if (m) m.status = m.status === "active" ? "suspended" : "active";
-  save(list);
-  return list;
+export async function saveStaff(m: StaffMember): Promise<void> {
+  if (!supabase) {
+    const list = loadLocal();
+    const i = list.findIndex((x) => x.id === m.id);
+    if (i >= 0) list[i] = m; else list.push(m);
+    saveLocal(list);
+    return;
+  }
+  const { error } = await supabase.from("staff").upsert(memberToRow(m));
+  if (error) throw new Error(error.message);
 }
 
-export function blankStaff(): StaffMember {
-  return { id: uid("staff"), name: "", email: "", phone: "", role: "receptionist", specialty: "", joinDate: new Date().toISOString().slice(0, 10), status: "active", bio: "", avatar: null };
+export async function deleteStaff(id: string): Promise<void> {
+  if (!supabase) { saveLocal(loadLocal().filter((x) => x.id !== id)); return; }
+  const { error } = await supabase.from("staff").delete().eq("id", id);
+  if (error) throw new Error(error.message);
+}
+
+export async function setStaffStatus(id: string, status: StaffStatus): Promise<void> {
+  if (!supabase) {
+    const list = loadLocal();
+    const m = list.find((x) => x.id === id);
+    if (m) m.status = status;
+    saveLocal(list);
+    return;
+  }
+  const { error } = await supabase.from("staff").update({ status }).eq("id", id);
+  if (error) throw new Error(error.message);
 }

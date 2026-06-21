@@ -6,11 +6,11 @@ import {
   Users, UserPlus, Pencil, Trash2, Check, X, ShieldCheck, ShieldX, Briefcase,
   Mail, Phone as PhoneIcon, Calendar, Camera, PauseCircle, PlayCircle, BadgeCheck, Lock,
 } from "lucide-react";
-import { Button, Dialog, useToast } from "@/components/ui";
+import { Button, Dialog, useToast, Skeleton } from "@/components/ui";
 import { PhoneInput } from "@/components/PhoneInput";
 import { usePermissions } from "@/hooks/usePermissions";
 import {
-  getStaff, upsertStaff, removeStaff, toggleStaffStatus, blankStaff,
+  listStaff, saveStaff, deleteStaff, setStaffStatus, blankStaff,
   STAFF_ROLES, ROLE_LABEL, CAPABILITIES, PERMISSIONS,
   type StaffMember, type StaffRole,
 } from "@/lib/staff";
@@ -39,10 +39,12 @@ export function StaffManagement() {
   const toast = useToast();
   const { can } = usePermissions();
   const [staff, setStaff] = useState<StaffMember[]>([]);
+  const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<StaffMember | null>(null);
   const [deleting, setDeleting] = useState<StaffMember | null>(null);
 
-  useEffect(() => { setStaff(getStaff()); }, []);
+  const reload = () => listStaff().then(setStaff).catch(() => toast.error("تعذّر تحميل الكادر"));
+  useEffect(() => { void listStaff().then(setStaff).catch(() => toast.error("تعذّر تحميل الكادر")).finally(() => setLoading(false)); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // RBAC gate — only managers (clinic admins) reach this module.
   if (!can("manageStaff")) {
@@ -57,14 +59,29 @@ export function StaffManagement() {
 
   const active = staff.filter((s) => s.status === "active").length;
 
+  // Optimistic delete: drop from the UI instantly, persist in the background.
   const onDelete = () => {
     if (!deleting) return;
-    setStaff(removeStaff(deleting.id));
-    playTap();
-    toast.success("تم حذف الموظف");
+    const id = deleting.id;
+    setStaff((s) => s.filter((m) => m.id !== id));
     setDeleting(null);
+    playTap();
+    deleteStaff(id).then(() => toast.success("تم حذف الموظف")).catch(() => { toast.error("تعذّر الحذف"); reload(); });
   };
-  const onToggle = (m: StaffMember) => { setStaff(toggleStaffStatus(m.id)); playTap(); };
+  // Optimistic suspend/activate.
+  const onToggle = (m: StaffMember) => {
+    const next: StaffMember["status"] = m.status === "active" ? "suspended" : "active";
+    setStaff((s) => s.map((x) => (x.id === m.id ? { ...x, status: next } : x)));
+    playTap();
+    setStaffStatus(m.id, next).catch(() => { toast.error("تعذّر التحديث"); reload(); });
+  };
+  // Optimistic add/edit: reflect immediately, persist in the background.
+  const onSaved = (m: StaffMember) => {
+    setStaff((s) => (s.some((x) => x.id === m.id) ? s.map((x) => (x.id === m.id ? m : x)) : [...s, m]));
+    setEditing(null);
+    playSuccess();
+    saveStaff(m).then(() => toast.success("تم حفظ الملف الوظيفي")).catch(() => { toast.error("تعذّر الحفظ"); reload(); });
+  };
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-6">
@@ -87,6 +104,15 @@ export function StaffManagement() {
       </div>
 
       {/* Cards grid */}
+      {loading ? (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-48 rounded-2xl" />)}
+        </div>
+      ) : staff.length === 0 ? (
+        <div className="card grid place-items-center p-12 text-center text-sm text-ink-subtle">
+          <Users size={28} className="mb-2 opacity-40" /> لا يوجد موظفون بعد. أضِف أول عضو في الفريق.
+        </div>
+      ) : (
       <motion.div layout className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <AnimatePresence initial={false}>
           {staff.map((m) => (
@@ -135,13 +161,14 @@ export function StaffManagement() {
           ))}
         </AnimatePresence>
       </motion.div>
+      )}
 
       {/* Profile drawer */}
       <StaffDrawer
         member={editing}
         dir={i18n.dir()}
         onClose={() => setEditing(null)}
-        onSaved={(m) => { setStaff(upsertStaff(m)); playSuccess(); toast.success("تم حفظ الملف الوظيفي"); setEditing(null); }}
+        onSaved={onSaved}
         onUploadError={() => toast.error("تعذّر رفع الصورة")}
       />
 
