@@ -12,12 +12,11 @@ import { Modal } from "@/components/Modal";
 import { Button, Badge, useToast, Skeleton } from "@/components/ui";
 import { useInvoicePrinter } from "./usePrintInvoice";
 import { invoiceNo } from "@/lib/invoicePrint";
-import { cn, formatDate } from "@/lib/utils";
+import { cn, formatDate, money } from "@/lib/utils";
 import { describeDbError } from "@/lib/errors";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
 import { staggerContainer, staggerItem } from "@/lib/motion";
 
-const money = (n: number) => n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const PAY_ICON: Record<PaymentMethod, typeof Banknote> = { cash: Banknote, card: CreditCard, transfer: ArrowLeftRight };
 
 type StatusFilter = "all" | "paid" | "refunded";
@@ -84,7 +83,7 @@ export function InvoicesPanel({ invoices, onChanged }: { invoices: Invoice[]; cl
                     <span className="font-mono text-2xs font-normal text-ink-subtle">{invoiceNo(inv.id)}</span>
                   </p>
                   <div className="flex flex-wrap items-center gap-x-2 text-xs text-ink-subtle">
-                    <span>{formatDate(inv.created_at, i18n.language)} · {new Date(inv.created_at).toLocaleTimeString(i18n.language === "ar" ? "ar-EG" : undefined, { hour: "2-digit", minute: "2-digit" })}</span>
+                    <span>{formatDate(inv.created_at, i18n.language)} · {new Date(inv.created_at).toLocaleTimeString(i18n.language === "ar" ? "ar-EG-u-nu-latn" : "en-GB", { hour: "2-digit", minute: "2-digit" })}</span>
                     <span>· {t("retail.itemsN", { n: inv.item_count, defaultValue: "{{n}} items" })}</span>
                     {PayIcon && <span className="flex items-center gap-0.5"><PayIcon size={11} /></span>}
                     {(inv.print_count ?? 0) > 0 && <span className="flex items-center gap-0.5"><Printer size={11} /> {inv.print_count}</span>}
@@ -181,7 +180,7 @@ function InvoiceDetail({ invoice, onClose, onChanged, setOpen }: {
             </p>
             {invoice.customer_phone && <p className="text-sm text-ink-subtle">{invoice.customer_phone}</p>}
             <p className="mt-0.5 text-xs text-ink-subtle">
-              {formatDate(invoice.created_at, i18n.language)} · {new Date(invoice.created_at).toLocaleTimeString(i18n.language === "ar" ? "ar-EG" : undefined, { hour: "2-digit", minute: "2-digit" })}
+              {formatDate(invoice.created_at, i18n.language)} · {new Date(invoice.created_at).toLocaleTimeString(i18n.language === "ar" ? "ar-EG-u-nu-latn" : "en-GB", { hour: "2-digit", minute: "2-digit" })}
             </p>
           </div>
           {refunded

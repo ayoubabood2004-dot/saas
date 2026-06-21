@@ -15,12 +15,9 @@ import { Button, useToast } from "@/components/ui";
 import { ServiceQuickSelect } from "./ServiceQuickSelect";
 import { useInvoicePrinter } from "./usePrintInvoice";
 import { invoiceNo } from "@/lib/invoicePrint";
-import { cn } from "@/lib/utils";
+import { cn, money, IQD } from "@/lib/utils";
 import { withTimeout, describeDbError } from "@/lib/errors";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
-
-// Always Western numerals (0-9), regardless of the UI/browser locale.
-const money = (n: number) => n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 /** A unified cart line — a physical product OR a non-barcode service. The price is an
  *  editable override; services carry product_id=null + zero cost so they flow through
@@ -396,9 +393,9 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
             <div className="ms-auto flex items-center gap-1.5">
               <div className="flex overflow-hidden rounded-lg border border-line">
                 <button onClick={() => setDiscountType("percent")} className={cn("grid h-8 w-8 place-items-center text-xs", discountType === "percent" ? "bg-brand-600 text-white" : "bg-surface-1 text-ink-muted hover:bg-surface-2")} aria-label="Percent"><Percent size={14} /></button>
-                <button onClick={() => setDiscountType("fixed")} className={cn("grid h-8 px-2 place-items-center text-xs font-bold", discountType === "fixed" ? "bg-brand-600 text-white" : "bg-surface-1 text-ink-muted hover:bg-surface-2")} aria-label="Fixed">$</button>
+                <button onClick={() => setDiscountType("fixed")} className={cn("grid h-8 px-2 place-items-center text-2xs font-bold", discountType === "fixed" ? "bg-brand-600 text-white" : "bg-surface-1 text-ink-muted hover:bg-surface-2")} aria-label="Fixed">{IQD}</button>
               </div>
-              <input type="number" min="0" step="0.01" inputMode="decimal" value={discountValue} onChange={(e) => setDiscountValue(e.target.value)} placeholder="0" className="input h-8 w-20 px-2 py-0 text-end text-sm" />
+              <input type="number" min="0" step="1" inputMode="numeric" value={discountValue} onChange={(e) => setDiscountValue(e.target.value)} placeholder="0" className="input h-8 w-24 px-2 py-0 text-end text-sm" />
             </div>
           </div>
 
@@ -453,7 +450,7 @@ function PriceEdit({ value, onChange }: { value: number; onChange: (v: number) =
   if (editing) {
     return (
       <input
-        autoFocus type="number" min="0" step="0.01" inputMode="decimal" value={draft}
+        autoFocus type="number" min="0" step="1" inputMode="numeric" value={draft}
         onChange={(e) => setDraft(e.target.value)}
         onBlur={commit}
         onKeyDown={(e) => { if (e.key === "Enter") commit(); if (e.key === "Escape") setEditing(false); }}
@@ -464,7 +461,7 @@ function PriceEdit({ value, onChange }: { value: number; onChange: (v: number) =
   return (
     <button
       type="button"
-      onClick={() => { setDraft(value.toFixed(2)); setEditing(true); }}
+      onClick={() => { setDraft(String(Math.round(value))); setEditing(true); }}
       title={t("retail.editPrice", "Edit price")}
       className="inline-flex items-center gap-1 rounded-md px-1 font-bold tabular-nums text-brand-700 underline decoration-dotted underline-offset-2 transition hover:bg-brand-50 dark:text-brand-300 dark:hover:bg-brand-500/15"
     >

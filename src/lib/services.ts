@@ -14,24 +14,25 @@ function seedCatalog(): ServiceCatalog {
   const lab = "scat_lab", img = "scat_img", con = "scat_con", grm = "scat_grm";
   return {
     categories: [
-      { id: lab, name: "Laboratory" },
-      { id: img, name: "Imaging" },
-      { id: con, name: "Consultation" },
-      { id: grm, name: "Grooming" },
+      { id: lab, name: "المختبر" },
+      { id: img, name: "الأشعة" },
+      { id: con, name: "الاستشاريات" },
+      { id: grm, name: "حلاقة وعناية" },
     ],
+    // Prices are realistic Iraqi Dinar amounts (whole numbers, no decimals).
     services: [
-      { id: uid("svc"), category_id: lab, name: "CBC (Complete Blood Count)", price: 50 },
-      { id: uid("svc"), category_id: lab, name: "Biochemistry panel", price: 65 },
-      { id: uid("svc"), category_id: lab, name: "Urinalysis", price: 25 },
-      { id: uid("svc"), category_id: lab, name: "Fecal exam", price: 20 },
-      { id: uid("svc"), category_id: img, name: "X-Ray — single view", price: 40 },
-      { id: uid("svc"), category_id: img, name: "X-Ray — two views", price: 70 },
-      { id: uid("svc"), category_id: img, name: "Ultrasound — abdominal", price: 80 },
-      { id: uid("svc"), category_id: con, name: "General consultation", price: 30 },
-      { id: uid("svc"), category_id: con, name: "Follow-up visit", price: 20 },
-      { id: uid("svc"), category_id: con, name: "Emergency consultation", price: 60 },
-      { id: uid("svc"), category_id: grm, name: "Full grooming", price: 35 },
-      { id: uid("svc"), category_id: grm, name: "Nail trim", price: 10 },
+      { id: uid("svc"), category_id: lab, name: "تحليل دم شامل (CBC)", price: 25000 },
+      { id: uid("svc"), category_id: lab, name: "تحاليل كيمياء الدم", price: 35000 },
+      { id: uid("svc"), category_id: lab, name: "تحليل بول", price: 15000 },
+      { id: uid("svc"), category_id: lab, name: "فحص براز", price: 10000 },
+      { id: uid("svc"), category_id: img, name: "أشعة — لقطة واحدة", price: 30000 },
+      { id: uid("svc"), category_id: img, name: "أشعة — لقطتان", price: 50000 },
+      { id: uid("svc"), category_id: img, name: "سونار — بطني", price: 60000 },
+      { id: uid("svc"), category_id: con, name: "فحص عام", price: 15000 },
+      { id: uid("svc"), category_id: con, name: "مراجعة", price: 10000 },
+      { id: uid("svc"), category_id: con, name: "استشارة طارئة", price: 40000 },
+      { id: uid("svc"), category_id: grm, name: "حلاقة كاملة", price: 25000 },
+      { id: uid("svc"), category_id: grm, name: "قص أظافر", price: 5000 },
     ],
   };
 }

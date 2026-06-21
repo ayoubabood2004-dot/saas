@@ -1,10 +1,8 @@
 import { useTranslation } from "react-i18next";
 import { Plus, Stethoscope, Tag } from "lucide-react";
 import type { ServiceCatalog, Service } from "@/types";
-import { cn } from "@/lib/utils";
+import { cn, money } from "@/lib/utils";
 import { playTap } from "@/lib/sounds";
-
-const money = (n: number) => n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 /**
  * POS quick-select grid for non-barcode services, grouped by the categories the

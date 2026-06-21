@@ -224,7 +224,7 @@ export function buildConsentHTML(opts: ConsentOptions): string {
   const sp = opts.patient.species ? SPECIES_LABEL[langKey][opts.patient.species] : BLANK;
   const sex = opts.patient.sex ? SEX_LABEL[langKey][opts.patient.sex] : BLANK;
   const age = ageLabel(opts.patient.dob, ar);
-  const todayStr = new Date().toLocaleDateString(ar ? "ar-EG" : "en-GB", { year: "numeric", month: "long", day: "numeric" });
+  const todayStr = new Date().toLocaleDateString(ar ? "ar-EG-u-nu-latn" : "en-GB", { year: "numeric", month: "long", day: "numeric" });
 
   const ownerRows = [
     row(s.fName, opts.owner.name?.trim() || BLANK),

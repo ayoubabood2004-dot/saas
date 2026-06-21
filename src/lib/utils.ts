@@ -5,6 +5,23 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+/** Iraqi Dinar currency symbol. */
+export const IQD = "د.ع";
+
+// 'en-US' is intentional: it guarantees Western numerals (0-9) with thousands
+// separators regardless of the browser locale, and never Eastern Arabic digits.
+const numFmt = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
+
+/** Group a number with thousands separators, no decimals — e.g. 1500000 → "1,500,000". */
+export function formatNum(n: number): string {
+  return numFmt.format(Number.isFinite(n) ? n : 0);
+}
+
+/** Format an amount as Iraqi Dinar — e.g. 25000 → "25,000 د.ع". */
+export function money(n: number): string {
+  return `${formatNum(n)} ${IQD}`;
+}
+
 export function uid(prefix = "id"): string {
   return `${prefix}_${Math.random().toString(36).slice(2, 10)}${Date.now().toString(36)}`;
 }
@@ -46,8 +63,12 @@ export function daysUntil(date: string): number {
   return Math.ceil((target.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
 }
 
+// Arabic locale variant that keeps Arabic names but forces Western (Latin) numerals
+// via the Unicode `nu=latn` extension — so dates/times never show Eastern-Arabic digits.
+const dateLocale = (lang: string) => (lang === "ar" ? "ar-EG-u-nu-latn" : "en-US");
+
 export function formatTime(iso: string, lang: string): string {
-  return new Date(iso).toLocaleTimeString(lang === "ar" ? "ar-EG" : "en-US", { hour: "numeric", minute: "2-digit" });
+  return new Date(iso).toLocaleTimeString(dateLocale(lang), { hour: "numeric", minute: "2-digit" });
 }
 
 /** Format a bare "HH:MM" (24h) clock string into a locale-aware 12-hour time (e.g. "2:57 PM"). */
@@ -56,11 +77,11 @@ export function formatHM(hm: string, lang: string): string {
   if (Number.isNaN(h)) return hm;
   const d = new Date();
   d.setHours(h, Number.isNaN(m) ? 0 : m, 0, 0);
-  return d.toLocaleTimeString(lang === "ar" ? "ar-EG" : "en-US", { hour: "numeric", minute: "2-digit" });
+  return d.toLocaleTimeString(dateLocale(lang), { hour: "numeric", minute: "2-digit" });
 }
 
 export function formatDate(iso: string, lang: string): string {
-  return new Date(iso).toLocaleDateString(lang === "ar" ? "ar-EG" : "en-US", { weekday: "short", day: "numeric", month: "short" });
+  return new Date(iso).toLocaleDateString(dateLocale(lang), { weekday: "short", day: "numeric", month: "short" });
 }
 
 /** Generate slot start datetimes (ISO) for a day between open/close hours. */

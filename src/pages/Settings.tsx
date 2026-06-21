@@ -5,7 +5,7 @@ import type { Species, Service, ServiceCategory, ServiceCatalog, Product } from 
 import { useAuth } from "@/contexts/AuthContext";
 import { repo } from "@/lib/repo";
 import { Combobox } from "@/components/Combobox";
-import { cn } from "@/lib/utils";
+import { cn, IQD } from "@/lib/utils";
 import { getPromoRules, addPromoRule, togglePromoRule, removePromoRule, subcategoriesOf, type PromoRule } from "@/lib/promotions";
 import { getServiceCatalog, addServiceCategory, removeServiceCategory, addService, updateService, removeService } from "@/lib/services";
 import { DEFAULT_RANGES, VITAL_KEYS, CBC_KEYS, rangeFor, type VitalKey } from "@/lib/vitals";
@@ -359,7 +359,7 @@ function PromotionsManager({ clinicId }: { clinicId?: string }) {
           </div>
           <div>
             <label className="label">{t("promos.bundlePrice")}</label>
-            <input type="number" inputMode="decimal" min="0" step="0.01" className="input py-2" value={bundlePrice} onChange={(e) => setBundlePrice(e.target.value)} placeholder="5000" />
+            <input type="number" inputMode="numeric" min="0" step="1" className="input py-2" value={bundlePrice} onChange={(e) => setBundlePrice(e.target.value)} placeholder="5000" />
           </div>
         </div>
         <button className="btn-primary w-full py-2.5" onClick={add}><Plus size={16} /> {t("promos.add")}</button>
@@ -472,14 +472,14 @@ function CategoryBlock({ cat, services, onChanged }: { cat: ServiceCategory; ser
             <div key={s.id} className="flex items-center gap-2 rounded-xl bg-surface-2 px-2.5 py-1.5">
               <span className="min-w-0 flex-1 truncate text-sm text-ink">{s.name}</span>
               <div className="flex items-center gap-1 text-sm text-ink-muted">
-                <span className="text-xs">$</span>
                 <input
-                  type="number" min="0" step="0.01" inputMode="decimal"
+                  type="number" min="0" step="1" inputMode="numeric"
                   defaultValue={s.price}
                   onBlur={(e) => { const v = Number(e.target.value); if (!Number.isNaN(v)) { updateService(s.id, { price: v }); onChanged(); } }}
                   onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
-                  className="w-20 rounded-lg border border-line bg-surface-1 px-2 py-1 text-end text-sm font-semibold tabular-nums text-ink outline-none focus:border-brand-400"
+                  className="w-24 rounded-lg border border-line bg-surface-1 px-2 py-1 text-end text-sm font-semibold tabular-nums text-ink outline-none focus:border-brand-400"
                 />
+                <span className="text-2xs text-ink-subtle">{IQD}</span>
               </div>
               <button onClick={() => { removeService(s.id); playTap(); onChanged(); }} aria-label={t("common.delete", "Delete")} className="grid h-7 w-7 place-items-center rounded-full text-ink-subtle transition hover:bg-danger-50 hover:text-danger-600"><Trash2 size={13} /></button>
             </div>
@@ -493,7 +493,7 @@ function CategoryBlock({ cat, services, onChanged }: { cat: ServiceCategory; ser
           <input className="input py-2" value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && add()} placeholder={t("services.servicePh", "Service name (e.g. CBC Test)")} />
         </div>
         <div className="w-24">
-          <input type="number" min="0" step="0.01" inputMode="decimal" className="input py-2 text-end" value={price} onChange={(e) => setPrice(e.target.value)} onKeyDown={(e) => e.key === "Enter" && add()} placeholder={t("services.price", "Price")} />
+          <input type="number" min="0" step="1" inputMode="numeric" className="input py-2 text-end" value={price} onChange={(e) => setPrice(e.target.value)} onKeyDown={(e) => e.key === "Enter" && add()} placeholder={t("services.price", "Price")} />
         </div>
         <button className="btn-secondary py-2.5" onClick={add}><Plus size={16} /></button>
       </div>

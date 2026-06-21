@@ -84,7 +84,7 @@ export function Dashboard() {
       setAppts(apptsOn(days[6])); // today is the last day
       setActivity(
         days.map((d) => ({
-          label: d.toLocaleDateString(i18n.language === "ar" ? "ar-EG" : "en-US", { weekday: "short" }),
+          label: d.toLocaleDateString(i18n.language === "ar" ? "ar-EG-u-nu-latn" : "en-US", { weekday: "short" }),
           value: apptsOn(d).length,
         })),
       );
@@ -143,7 +143,7 @@ export function Dashboard() {
   const today = new Date();
   const hour = today.getHours();
   const greeting = hour < 12 ? t("dash.morning", "Good morning") : hour < 18 ? t("dash.afternoon", "Good afternoon") : t("dash.evening", "Good evening");
-  const dateLabel = today.toLocaleDateString(i18n.language === "ar" ? "ar-EG" : "en-US", { weekday: "long", day: "numeric", month: "long" });
+  const dateLabel = today.toLocaleDateString(i18n.language === "ar" ? "ar-EG-u-nu-latn" : "en-US", { weekday: "long", day: "numeric", month: "long" });
   const firstName = (user?.full_name || "").replace(/^Dr\.?\s*/i, "").split(" ")[0];
   const tip = TIPS[today.getDate() % TIPS.length];
   const progressPct = appts.length ? Math.round((done.length / appts.length) * 100) : 0;

@@ -17,7 +17,8 @@ export interface InvoicePrintOptions {
 const esc = (s: unknown) =>
   String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!));
 
-const fmt = (n: number) => n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+// IQD: whole numbers with thousands separators, always Western numerals.
+const fmt = (n: number) => n.toLocaleString("en-US", { maximumFractionDigits: 0 });
 
 /** Short, human invoice number from the row id (last 6 chars, upper). */
 export function invoiceNo(id: string): string {
@@ -55,10 +56,12 @@ function strings(lang: string) {
 export function buildInvoiceHTML(invoice: Invoice, items: InvoiceItem[], opts: InvoicePrintOptions): string {
   const s = strings(opts.lang);
   const brand = esc(opts.brand || "doctorVet");
-  const cur = opts.currency ? ` ${esc(opts.currency)}` : "";
+  // Default to Iraqi Dinar; caller may override with another label.
+  const cur = ` ${esc(opts.currency ?? "د.ع")}`;
   const money = (n: number) => `${fmt(n)}${cur}`;
   const created = new Date(invoice.created_at);
-  const dateStr = created.toLocaleString(opts.lang.startsWith("ar") ? "ar-EG" : "en-GB", {
+  // Always en-GB so the printed date uses Western numerals (per the strict rule).
+  const dateStr = created.toLocaleString("en-GB", {
     year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
   });
   const subtotal = invoice.subtotal ?? invoice.total;

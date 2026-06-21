@@ -698,7 +698,7 @@ function petInitials(name: string): string {
   return name.trim().split(/\s+/).map((p) => p[0]).slice(0, 2).join("").toUpperCase();
 }
 function fullDate(iso: string, lang: string): string {
-  return new Date(iso).toLocaleDateString(lang === "ar" ? "ar-EG" : "en-US", { day: "numeric", month: "long", year: "numeric" });
+  return new Date(iso).toLocaleDateString(lang === "ar" ? "ar-EG-u-nu-latn" : "en-US", { day: "numeric", month: "long", year: "numeric" });
 }
 function ageLabel(age: { years: number; months: number }, t: (k: string, o?: Record<string, unknown>) => string): string {
   if (age.years <= 0 && age.months <= 0) return t("pet.newborn", { defaultValue: "Newborn" });

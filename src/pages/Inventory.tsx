@@ -13,14 +13,12 @@ import { ExpiryInput } from "@/components/ExpiryInput";
 import { Combobox } from "@/components/Combobox";
 import { subcategoriesOf } from "@/lib/promotions";
 import { Button, Badge, useToast, Skeleton } from "@/components/ui";
-import { cn, formatDate } from "@/lib/utils";
+import { cn, formatDate, money } from "@/lib/utils";
 import { withTimeout, describeDbError } from "@/lib/errors";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
 import { staggerContainer, staggerItem } from "@/lib/motion";
 
 const LOW_STOCK = 5;
-
-const money = (n: number) => n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const daysUntil = (iso?: string | null) => (iso ? Math.floor((new Date(iso).getTime() - Date.now()) / 86400000) : null);
 /** A product's reorder level — its own min_stock if set, else the default. */
 const lowThreshold = (p: Product) => (p.min_stock && p.min_stock > 0 ? p.min_stock : LOW_STOCK);
@@ -281,11 +279,11 @@ function ProductModal({ open, product, clinicId, subcategories, onClose, onSaved
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="label">{t("pos.purchasePrice", "Purchase price")}</label>
-            <input type="number" inputMode="decimal" min="0" step="0.01" className="input" value={f.purchase_price} onChange={(e) => set({ purchase_price: e.target.value })} placeholder="0.00" />
+            <input type="number" inputMode="numeric" min="0" step="1" className="input" value={f.purchase_price} onChange={(e) => set({ purchase_price: e.target.value })} placeholder="0" />
           </div>
           <div>
             <label className="label">{t("pos.sellPrice", "Sell price")}</label>
-            <input type="number" inputMode="decimal" min="0" step="0.01" className="input" value={f.sell_price} onChange={(e) => set({ sell_price: e.target.value })} placeholder="0.00" />
+            <input type="number" inputMode="numeric" min="0" step="1" className="input" value={f.sell_price} onChange={(e) => set({ sell_price: e.target.value })} placeholder="0" />
           </div>
         </div>
         {hasPrices && (

@@ -45,7 +45,7 @@ export function BookingWizard() {
   const [symptoms, setSymptoms] = useState("");
   const [done, setDone] = useState(false);
 
-  const lang = i18n.language === "ar" ? "ar-EG" : "en-US";
+  const lang = i18n.language === "ar" ? "ar-EG-u-nu-latn" : "en-US";
   const Next = i18n.dir() === "rtl" ? ArrowLeft : ArrowRight;
   const Prev = i18n.dir() === "rtl" ? ArrowRight : ArrowLeft;
 
