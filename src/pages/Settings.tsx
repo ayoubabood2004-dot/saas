@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Settings as SettingsIcon, RotateCcw, Check, Volume2, VolumeX, Plus, Trash2, Pill, PawPrint, Stethoscope, Tag, FolderPlus, BadgePercent } from "lucide-react";
+import { Settings as SettingsIcon, RotateCcw, Check, Volume2, VolumeX, Plus, Trash2, Pill, PawPrint, Stethoscope, Tag, FolderPlus, BadgePercent, IdCard, Mail, UserCog } from "lucide-react";
 import type { Species, Service, ServiceCategory, ServiceCatalog, Product } from "@/types";
 import { useAuth } from "@/contexts/AuthContext";
 import { repo } from "@/lib/repo";
@@ -17,6 +17,7 @@ import { getClinicMeds, addClinicMed, removeClinicMed, allMedTypes, allMedicatio
 import { getClinicVaccines, addClinicVaccine, removeClinicVaccine, BUILTIN_VACCINES, type ClinicVaccine } from "@/lib/vaccines";
 import { getClinicBreeds, addClinicBreed, removeClinicBreed } from "@/lib/breeds";
 import { SpeciesPicker } from "@/components/PetFields";
+import { PhoneInput } from "@/components/PhoneInput";
 import { Button } from "@/components/ui";
 
 export function Settings() {
@@ -81,6 +82,8 @@ export function Settings() {
         <h1 className="font-display text-xl font-extrabold tracking-tighter2 text-ink">{t("settings.title")}</h1>
       </div>
       <p className="mb-6 text-sm text-ink-muted">{t("settings.subtitle")}</p>
+
+      <AccountInfo />
 
       <div className="card p-5 mb-4">
         <h2 className="font-bold text-ink mb-3">{t("settings.readingRanges")}</h2>
@@ -163,6 +166,76 @@ export function Settings() {
           <p className="text-xs text-ink-subtle mt-1.5">{t("settings.dialCodeHint")}</p>
         </div>
       </div>
+    </div>
+  );
+}
+
+/* ---------------- Logged-in account info (editable name + phone) --------- */
+function AccountInfo() {
+  const { t } = useTranslation();
+  const { user, activeRole, updateProfile } = useAuth();
+  const [name, setName] = useState(user?.full_name ?? "");
+  const [phone, setPhone] = useState(user?.phone ?? "");
+  const [busy, setBusy] = useState(false);
+  const [flash, setFlash] = useState<{ ok: boolean; msg: string } | null>(null);
+
+  if (!user) return null;
+  const dirty = name.trim() !== (user.full_name ?? "").trim() || phone.trim() !== (user.phone ?? "").trim();
+
+  const save = async () => {
+    if (!name.trim() || busy) return;
+    setBusy(true); setFlash(null);
+    const { error } = await updateProfile({ full_name: name, phone });
+    setBusy(false);
+    if (error) { playTap(); setFlash({ ok: false, msg: t("account.saveFail") }); }
+    else { playSuccess(); setFlash({ ok: true, msg: t("account.saved") }); }
+  };
+
+  return (
+    <div className="card p-5 mb-4">
+      <div className="mb-1 flex items-center gap-2">
+        <IdCard size={18} className="text-brand-600" />
+        <h2 className="font-bold text-ink">{t("account.infoTitle")}</h2>
+      </div>
+      <p className="mb-4 text-xs text-ink-subtle">{t("account.infoSubtitle")}</p>
+
+      {/* Identity at a glance */}
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <span className="chip bg-brand-50 text-xs font-semibold text-brand-700 dark:bg-brand-500/15 dark:text-brand-300">
+          <UserCog size={13} /> {t(`role.${user.role}`)}
+        </span>
+        <span className="chip bg-surface-2 text-xs text-ink-muted">
+          {activeRole === "owner" ? t("account.typeOwner") : t("account.typeClinic")}
+        </span>
+      </div>
+
+      <div className="space-y-3">
+        <div>
+          <label className="label">{t("account.name")}</label>
+          <input className="input py-2" value={name} onChange={(e) => { setName(e.target.value); setFlash(null); }} />
+        </div>
+        <div>
+          <label className="label">{t("account.email")}</label>
+          <div className="flex items-center gap-2 rounded-2xl border border-line bg-surface-2 px-3 py-2.5 text-sm text-ink-muted">
+            <Mail size={15} className="shrink-0 text-ink-subtle" />
+            <span className="min-w-0 flex-1 truncate" dir="ltr">{user.email || "—"}</span>
+          </div>
+          <p className="mt-1 text-2xs text-ink-subtle">{t("account.emailLocked")}</p>
+        </div>
+        <div>
+          <label className="label">{t("account.phone")}</label>
+          <PhoneInput value={phone} onChange={(v) => { setPhone(v); setFlash(null); }} />
+        </div>
+      </div>
+
+      <div className="mt-4 flex items-center gap-3">
+        <Button className="flex-1" onClick={save} loading={busy} disabled={!dirty || !name.trim()}>{t("account.save")}</Button>
+      </div>
+      {flash && (
+        <p className={`mt-3 flex items-center gap-1.5 text-sm font-medium ${flash.ok ? "text-brand-700" : "text-warn-600"}`}>
+          <Check size={15} /> {flash.msg}
+        </p>
+      )}
     </div>
   );
 }

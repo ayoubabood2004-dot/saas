@@ -49,6 +49,8 @@ interface AuthState {
   resendConfirmation: (email: string) => Promise<{ error: string | null }>;
   resetPassword: (email: string) => Promise<{ error: string | null }>;
   updatePassword: (newPassword: string) => Promise<{ error: string | null }>;
+  /** Update the signed-in user's own name/phone (profiles table; reflects immediately). */
+  updateProfile: (patch: { full_name?: string; phone?: string }) => Promise<{ error: string | null }>;
   signOut: () => void;
 }
 
@@ -389,6 +391,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { error: error?.message ?? null };
   };
 
+  const updateProfile = async (patch: { full_name?: string; phone?: string }): Promise<{ error: string | null }> => {
+    if (!raw) return { error: "No active session." };
+    const clean: { full_name?: string; phone?: string } = {};
+    if (patch.full_name !== undefined) clean.full_name = patch.full_name.trim();
+    if (patch.phone !== undefined) clean.phone = patch.phone.trim();
+    if (isSupabaseConfigured && supabase) {
+      const { error } = await supabase.from("profiles").update(clean).eq("id", raw.id);
+      if (error) return { error: error.message };
+    }
+    setRaw((prev) => {
+      if (!prev) return prev;
+      const next = { ...prev, full_name: clean.full_name ?? prev.full_name, phone: clean.phone ?? prev.phone };
+      if (!isSupabaseConfigured) { try { localStorage.setItem(KEY, JSON.stringify({ raw: next, active: resolvedActive })); } catch { /* ignore */ } }
+      return next;
+    });
+    return { error: null };
+  };
+
   const signOut = () => {
     if (isSupabaseConfigured && supabase) void supabase.auth.signOut();
     setRaw(null);
@@ -405,7 +425,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       roles: effRoles, activeRole: resolvedActive, needsRoleChoice,
       chooseRole, switchRole, addRole,
       signInDemo, signInClinic, signInOwner,
-      signUpEmail, signInEmail, resendConfirmation, resetPassword, updatePassword, signOut,
+      signUpEmail, signInEmail, resendConfirmation, resetPassword, updatePassword, updateProfile, signOut,
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [user, loading, recovery, raw, resolvedActive, needsRoleChoice],
