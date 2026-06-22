@@ -47,12 +47,12 @@ export function WhatsAppCampaigns() {
 
   useEffect(() => {
     let alive = true;
-    repo.listAllPets(user?.id)
+    repo.listAllPets(user?.clinic_id ?? user?.id)
       .then((p) => { if (alive) setPets(p); })
       .catch(() => { /* surface nothing — empty state covers it */ })
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
-  }, [user?.id]);
+  }, [user?.clinic_id, user?.id]);
 
   // Default, ready-to-use Arabic templates.
   const templates = useMemo(() => [

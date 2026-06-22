@@ -114,7 +114,7 @@ export function NewCase() {
         // surfaces an error instead of spinning forever (see the catch/finally below).
         const pet = await withTimeout(repo.createPet({
           owner_id: ownerId,
-          clinic_id: user?.id ?? null, // tenant: this clinic owns the record
+          clinic_id: user?.clinic_id ?? user?.id ?? null, // shared workspace owns the record (manager's id for staff)
           owner_name: ownerName.trim() || "—",
           owner_phone: phone || undefined,
           owner_email: email.trim() || undefined,

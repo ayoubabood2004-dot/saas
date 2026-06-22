@@ -92,7 +92,7 @@ export function ClinicRecords() {
     try {
       // Tenant isolation: only this clinic's own patients & records (RLS enforces
       // it server-side; this filter keeps the dashboard query explicit too).
-      const [allPets, a] = await withTimeout(Promise.all([repo.listAllPets(user?.id), repo.listAdmissions(user?.id)]), 15000);
+      const [allPets, a] = await withTimeout(Promise.all([repo.listAllPets(user?.clinic_id ?? user?.id), repo.listAdmissions(user?.clinic_id ?? user?.id)]), 15000);
       if (!mounted.current) return;
       const p = allPets.filter((pet) => pet.shared_with_clinic !== false);
       setPets(p);

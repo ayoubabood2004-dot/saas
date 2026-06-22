@@ -261,7 +261,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const act = resolvedActive ?? effRoles[0] ?? accountOf(raw.rawRole);
     // Staff membership wins for the clinic workspace (role + which clinic's data).
     const role = raw.staff && act === "clinic" ? raw.staff.role : effectiveRole(act, raw);
-    const clinicId = raw.staff && act === "clinic" ? raw.staff.clinicId : (raw.clinic_id ?? null);
+    // The SHARED workspace id: the clinic you joined as staff, else (for a clinic
+    // account) your own id — every clinic row is stamped with that id, so this is
+    // what all reads/writes must scope by. Owners stay null.
+    const clinicId = act === "clinic"
+      ? (raw.staff ? raw.staff.clinicId : (raw.clinic_id ?? raw.id))
+      : (raw.clinic_id ?? null);
     return {
       id: raw.id, full_name: raw.full_name, email: raw.email,
       role, roles: effRoles,

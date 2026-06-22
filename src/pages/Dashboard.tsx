@@ -71,8 +71,8 @@ export function Dashboard() {
     try {
       // 4 queries instead of 10 — one range query covers the whole week.
       const [allPets, adm, rem, weekAppts] = await withTimeout(Promise.all([
-        repo.listAllPets(user?.id),
-        repo.listAdmissions(user?.id),
+        repo.listAllPets(user?.clinic_id ?? user?.id),
+        repo.listAdmissions(user?.clinic_id ?? user?.id),
         repo.listReminders({ ownerId: null }),
         repo.listAppointmentsInRange(days[0].toISOString(), days[6].toISOString()),
       ]), 12000);

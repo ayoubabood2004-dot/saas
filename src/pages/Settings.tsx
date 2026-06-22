@@ -140,7 +140,7 @@ export function Settings() {
       </div>
 
       {isStaff && <ServiceSettings />}
-      {isStaff && <PromotionsManager clinicId={user?.id} />}
+      {isStaff && <PromotionsManager clinicId={user?.clinic_id ?? user?.id} />}
       <ClinicMedications />
       <ClinicVaccinations />
       <ClinicBreeds />

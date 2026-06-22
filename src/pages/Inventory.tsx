@@ -30,13 +30,14 @@ const lowThreshold = (p: Product) => (p.min_stock && p.min_stock > 0 ? p.min_sto
 export function Inventory() {
   const { t } = useTranslation();
   const { user } = useAuth();
+  const clinicId = user?.clinic_id ?? user?.id; // shared workspace id (manager's id for staff)
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
 
   const mounted = useRef(true);
   const load = async () => {
     try {
-      const p = await withTimeout(repo.listProducts(user?.id), 15000);
+      const p = await withTimeout(repo.listProducts(clinicId), 15000);
       if (!mounted.current) return;
       setProducts(p);
     } catch {
@@ -75,7 +76,7 @@ export function Inventory() {
       {loading ? (
         <div className="space-y-3">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-20 rounded-2xl" />)}</div>
       ) : (
-        <InventoryTab products={products} clinicId={user?.id} onChanged={load} />
+        <InventoryTab products={products} clinicId={clinicId} onChanged={load} />
       )}
     </div>
   );

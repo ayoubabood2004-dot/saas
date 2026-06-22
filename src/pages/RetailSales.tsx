@@ -19,7 +19,7 @@ type Tab = "sell" | "invoices" | "reports";
 export function RetailSales() {
   const { t } = useTranslation();
   const { user } = useAuth();
-  const clinicId = user?.id;
+  const clinicId = user?.clinic_id ?? user?.id; // shared workspace id (manager's id for staff)
   const [tab, setTab] = useState<Tab>("sell");
   const [products, setProducts] = useState<Product[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
