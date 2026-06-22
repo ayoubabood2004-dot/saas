@@ -7,7 +7,7 @@
 // vital-range and dial-code preferences (see lib/settings.ts).
 
 import { getActiveClinicId } from "./clinics";
-import { sb, cloudWrite, registerHydrator } from "./clinicSync";
+import { sb, cloudWrite, registerHydrator, registerReset } from "./clinicSync";
 
 /** The 19 governorates of Iraq (transliterated). Suggestions, not a closed set. */
 export const IRAQI_GOVERNORATES: string[] = [
@@ -99,6 +99,7 @@ export async function hydrateAreas(): Promise<void> {
   }
 }
 registerHydrator(hydrateAreas);
+registerReset(() => { cache = null; });
 
 /** Case-insensitive de-dupe that preserves the first-seen spelling/order. */
 function dedupe(list: string[]): string[] {

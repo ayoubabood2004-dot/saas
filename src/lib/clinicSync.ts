@@ -58,9 +58,25 @@ export function registerHydrator(fn: () => Promise<void>): void {
   hydrators.push(fn);
 }
 
+// Each module also registers how to clear its in-memory cache, so that switching
+// workspace (a user who belongs to several clinics) can never serve clinic A's
+// catalog while clinic B is active — the cache is dropped and re-hydrated, and
+// the synchronous getters fall back to the clinic-namespaced localStorage mirror
+// in the meantime.
+const resetters: Array<() => void> = [];
+
+export function registerReset(fn: () => void): void {
+  resetters.push(fn);
+}
+
+export function resetClinicConfigCaches(): void {
+  for (const r of resetters) r();
+}
+
 let lastHydrated = "";
 /** Hydrate every registered config cache for the active clinic. */
 export async function hydrateClinicConfig(clinicKey: string): Promise<void> {
+  if (clinicKey !== lastHydrated) resetClinicConfigCaches(); // dropped stale clinic data
   lastHydrated = clinicKey;
   await Promise.allSettled(hydrators.map((h) => h()));
 }

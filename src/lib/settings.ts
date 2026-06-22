@@ -1,7 +1,7 @@
 import type { Species } from "@/types";
 import type { VitalKey } from "./vitals";
 import { getActiveClinicId } from "./clinics";
-import { sb, cloudWrite, registerHydrator } from "./clinicSync";
+import { sb, cloudWrite, registerHydrator, registerReset } from "./clinicSync";
 
 // Doctor-customizable overrides for the medical reading (vital) normal ranges.
 // Persisted locally; merged over the built-in defaults by vitals.rangeFor().
@@ -68,6 +68,7 @@ export async function hydrateVitalOverrides(): Promise<void> {
   }
 }
 registerHydrator(hydrateVitalOverrides);
+registerReset(() => { cache = null; });
 
 export function getVitalOverride(species: Species, key: VitalKey): MinMax | undefined {
   return load()[species]?.[key];
@@ -161,6 +162,7 @@ export async function hydrateDialCode(): Promise<void> {
   }
 }
 registerHydrator(hydrateDialCode);
+registerReset(() => { dialCache = null; });
 
 export function getDialCode(): string {
   return dialCache ?? readDialLocal();

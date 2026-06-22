@@ -114,6 +114,7 @@ begin
   ] loop
     execute format('create index if not exists %1$s_clinic_idx on %1$s(clinic_id)', t);
     execute format('alter table %I enable row level security', t);
+    execute format('alter table %I force row level security', t);
     execute format('drop policy if exists %1$s_clinic_all on %1$s', t);
     execute format(
       'create policy %1$s_clinic_all on %1$s for all

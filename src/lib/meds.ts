@@ -1,7 +1,7 @@
 // Comprehensive veterinary medication catalogue, grouped by therapeutic type.
 // Doctors can extend the clinic's list at runtime (persisted) — see clinic-meds helpers.
 import { getActiveClinicId } from "./clinics";
-import { sb, cloudWrite, registerHydrator } from "./clinicSync";
+import { sb, cloudWrite, registerHydrator, registerReset } from "./clinicSync";
 
 export interface MedCategory {
   type: string;
@@ -129,6 +129,7 @@ export async function hydrateMeds(): Promise<void> {
   }
 }
 registerHydrator(hydrateMeds);
+registerReset(() => { cache = null; });
 
 export function getClinicMeds(): ClinicMed[] {
   return cache ?? readLocal();

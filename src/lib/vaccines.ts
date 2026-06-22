@@ -2,7 +2,7 @@
 // names. Clinics may add their own (brand) vaccines at runtime, each mapped to a scientific
 // name — clients only ever see the scientific name.
 import { getActiveClinicId } from "./clinics";
-import { sb, cloudWrite, registerHydrator } from "./clinicSync";
+import { sb, cloudWrite, registerHydrator, registerReset } from "./clinicSync";
 
 export interface VaccineCategory {
   group: string;
@@ -110,6 +110,7 @@ export async function hydrateVaccines(): Promise<void> {
   }
 }
 registerHydrator(hydrateVaccines);
+registerReset(() => { cache = null; });
 
 export function getClinicVaccines(): ClinicVaccine[] {
   return cache ?? readLocal();

@@ -4,7 +4,7 @@
 // clinic_id = auth_clinic()) with an in-memory cache + localStorage mirror.
 import { getActiveClinicId } from "./clinics";
 import { uuid } from "./utils";
-import { sb, cloudWrite, registerHydrator } from "./clinicSync";
+import { sb, cloudWrite, registerHydrator, registerReset } from "./clinicSync";
 
 export interface PromoRule {
   id: string;
@@ -58,6 +58,7 @@ export async function hydratePromos(): Promise<void> {
   }
 }
 registerHydrator(hydratePromos);
+registerReset(() => { cache = null; });
 
 export function getPromoRules(): PromoRule[] {
   return cache ?? readLocal();

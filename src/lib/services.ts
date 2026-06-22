@@ -6,7 +6,7 @@
 // through the normal invoice pipeline (a service is a line item, no product_id).
 import { getActiveClinicId } from "./clinics";
 import { uuid } from "./utils";
-import { sb, cloudWrite, registerHydrator } from "./clinicSync";
+import { sb, cloudWrite, registerHydrator, registerReset } from "./clinicSync";
 import type { ServiceCategory, Service, ServiceCatalog } from "@/types";
 
 const keyName = () => `vp_services_${getActiveClinicId()}`;
@@ -91,6 +91,7 @@ export async function hydrateServices(): Promise<void> {
   }
 }
 registerHydrator(hydrateServices);
+registerReset(() => { cache = null; });
 
 export function getServiceCatalog(): ServiceCatalog {
   return cache ?? readLocal();
