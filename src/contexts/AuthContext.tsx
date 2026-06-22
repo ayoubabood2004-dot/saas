@@ -2,7 +2,8 @@ import { createContext, useContext, useEffect, useMemo, useState, type ReactNode
 import type { Profile, Role, AccountRole } from "@/types";
 import { isSupabaseConfigured, supabase } from "@/lib/supabase";
 import { withTimeout } from "@/lib/errors";
-import { setActiveClinicId, clearActiveClinic, type ClinicAccount } from "@/lib/clinics";
+import { setActiveClinicId, clearActiveClinic, getActiveClinicId, type ClinicAccount } from "@/lib/clinics";
+import { hydrateClinicConfig, hydratedFor } from "@/lib/clinicConfig";
 import type { OwnerAccount } from "@/lib/owners";
 
 interface SignupExtra {
@@ -275,11 +276,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [raw, resolvedActive]);
 
-  // Keep the active clinic id in sync with the active role.
+  // Keep the active clinic id in sync with the active role, then pull the clinic's
+  // shared config (services, breeds, meds, …) from Supabase into the local caches.
   useEffect(() => {
     const clinicId = raw?.staff ? raw.staff.clinicId : raw?.clinic_id;
     if (resolvedActive === "clinic" && clinicId) setActiveClinicId(clinicId);
     else if (resolvedActive === "owner") clearActiveClinic();
+    if (resolvedActive === "clinic") {
+      const key = getActiveClinicId();
+      if (key !== hydratedFor()) void hydrateClinicConfig(key);
+    }
   }, [resolvedActive, raw]);
 
   // ---- Demo persistence ---------------------------------------------------

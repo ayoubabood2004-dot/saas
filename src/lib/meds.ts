@@ -1,6 +1,7 @@
 // Comprehensive veterinary medication catalogue, grouped by therapeutic type.
 // Doctors can extend the clinic's list at runtime (persisted) — see clinic-meds helpers.
 import { getActiveClinicId } from "./clinics";
+import { sb, cloudWrite, registerHydrator } from "./clinicSync";
 
 export interface MedCategory {
   type: string;
@@ -95,22 +96,42 @@ export interface ClinicMed {
 
 const keyName = () => `vp_clinic_meds_${getActiveClinicId()}`;
 
-export function getClinicMeds(): ClinicMed[] {
+let cache: ClinicMed[] | null = null;
+
+function readLocal(): ClinicMed[] {
   try {
     const raw = localStorage.getItem(keyName());
     if (raw) return JSON.parse(raw) as ClinicMed[];
-  } catch {
-    /* ignore */
-  }
+  } catch { /* ignore */ }
   return [];
 }
 
 function saveClinicMeds(list: ClinicMed[]) {
+  cache = list;
+  try { localStorage.setItem(keyName(), JSON.stringify(list)); } catch { /* ignore */ }
+}
+
+export async function hydrateMeds(): Promise<void> {
+  const client = sb();
+  if (!client) { cache = readLocal(); return; }
   try {
-    localStorage.setItem(keyName(), JSON.stringify(list));
+    const { data, error } = await client.from("clinic_meds").select("name,type").order("created_at");
+    if (error) throw error;
+    let next = (data ?? []).map((r) => ({ name: r.name as string, type: r.type as string }));
+    if (next.length === 0) {
+      const local = readLocal();
+      if (local.length) { await client.from("clinic_meds").insert(local); next = local; }
+    }
+    cache = next;
+    try { localStorage.setItem(keyName(), JSON.stringify(next)); } catch { /* ignore */ }
   } catch {
-    /* ignore */
+    cache = readLocal();
   }
+}
+registerHydrator(hydrateMeds);
+
+export function getClinicMeds(): ClinicMed[] {
+  return cache ?? readLocal();
 }
 
 /** Returns true if the medication is already known (built-in or clinic-added). */
@@ -125,14 +146,15 @@ export function medicationExists(name: string): boolean {
 export function addClinicMed(name: string, type = "Other"): boolean {
   const clean = name.trim();
   if (!clean || medicationExists(clean)) return false;
-  const list = getClinicMeds();
-  list.push({ name: clean, type });
-  saveClinicMeds(list);
+  saveClinicMeds([...getClinicMeds(), { name: clean, type }]);
+  cloudWrite(() => sb()!.from("clinic_meds").insert({ name: clean, type }), "med-add");
   return true;
 }
 
 export function removeClinicMed(name: string) {
-  saveClinicMeds(getClinicMeds().filter((m) => m.name.toLowerCase() !== name.trim().toLowerCase()));
+  const clean = name.trim();
+  saveClinicMeds(getClinicMeds().filter((m) => m.name.toLowerCase() !== clean.toLowerCase()));
+  cloudWrite(() => sb()!.from("clinic_meds").delete().ilike("name", clean), "med-del");
 }
 
 /** All medication names (built-in + clinic), de-duplicated, for autocomplete. */

@@ -7,6 +7,7 @@
 // vital-range and dial-code preferences (see lib/settings.ts).
 
 import { getActiveClinicId } from "./clinics";
+import { sb, cloudWrite, registerHydrator } from "./clinicSync";
 
 /** The 19 governorates of Iraq (transliterated). Suggestions, not a closed set. */
 export const IRAQI_GOVERNORATES: string[] = [
@@ -49,23 +50,55 @@ type AreaMap = Record<string, string[]>;
 
 const customKey = () => `vp_locations_${getActiveClinicId()}`;
 
-function loadCustom(): AreaMap {
+let cache: AreaMap | null = null;
+
+function readLocal(): AreaMap {
   try {
     const raw = localStorage.getItem(customKey());
     if (raw) return JSON.parse(raw) as AreaMap;
-  } catch {
-    /* ignore */
-  }
+  } catch { /* ignore */ }
   return {};
 }
 
+function loadCustom(): AreaMap {
+  return cache ?? readLocal();
+}
+
 function saveCustom(map: AreaMap) {
+  cache = map;
+  try { localStorage.setItem(customKey(), JSON.stringify(map)); } catch { /* ignore */ }
+}
+
+export async function hydrateAreas(): Promise<void> {
+  const client = sb();
+  if (!client) { cache = readLocal(); return; }
   try {
-    localStorage.setItem(customKey(), JSON.stringify(map));
+    const { data, error } = await client.from("clinic_areas").select("governorate,area").order("created_at");
+    if (error) throw error;
+    const map: AreaMap = {};
+    for (const r of (data ?? []) as { governorate: string; area: string | null }[]) {
+      const key = Object.keys(map).find((k) => k.toLowerCase() === r.governorate.toLowerCase()) ?? r.governorate;
+      map[key] = map[key] ?? [];
+      if (r.area) map[key].push(r.area);
+    }
+    // First run on a live backend → migrate any locally-remembered areas up.
+    if ((data ?? []).length === 0) {
+      const local = readLocal();
+      const rows: { governorate: string; area: string | null }[] = [];
+      for (const [g, areas] of Object.entries(local)) {
+        map[g] = areas.slice();
+        if (areas.length === 0) rows.push({ governorate: g, area: null });
+        else for (const a of areas) rows.push({ governorate: g, area: a });
+      }
+      if (rows.length) await client.from("clinic_areas").insert(rows);
+    }
+    cache = map;
+    try { localStorage.setItem(customKey(), JSON.stringify(map)); } catch { /* ignore */ }
   } catch {
-    /* ignore */
+    cache = readLocal();
   }
 }
+registerHydrator(hydrateAreas);
 
 /** Case-insensitive de-dupe that preserves the first-seen spelling/order. */
 function dedupe(list: string[]): string[] {
@@ -105,8 +138,8 @@ export function addGovernorate(governorate: string) {
   const map = loadCustom();
   const existing = Object.keys(map).find((k) => k.toLowerCase() === g.toLowerCase());
   if (!existing) {
-    map[g] = map[g] ?? [];
-    saveCustom(map);
+    saveCustom({ ...map, [g]: [] });
+    cloudWrite(() => sb()!.from("clinic_areas").insert({ governorate: g, area: null }), "area-add");
   }
 }
 
@@ -123,6 +156,6 @@ export function addArea(governorate: string, area: string) {
   }
   const map = loadCustom();
   const key = Object.keys(map).find((k) => k.toLowerCase() === g.toLowerCase()) ?? g;
-  map[key] = dedupe([...(map[key] ?? []), a]);
-  saveCustom(map);
+  saveCustom({ ...map, [key]: dedupe([...(map[key] ?? []), a]) });
+  cloudWrite(() => sb()!.from("clinic_areas").insert({ governorate: key, area: a }), "area-add");
 }

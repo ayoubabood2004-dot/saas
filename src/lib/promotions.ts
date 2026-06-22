@@ -1,9 +1,10 @@
 // Dynamic, doctor-configurable "Mix & Match" promotions. Each clinic defines its own
 // PromoRules (target subcategory, bundle quantity, bundle price); the POS cart engine
-// applies them at sale time. Clinic-scoped + persisted in localStorage — the same
-// pattern as the service / medication / breed catalogues. No hardcoded offers.
+// applies them at sale time. Persisted to Supabase (table clinic_promos, isolated by
+// clinic_id = auth_clinic()) with an in-memory cache + localStorage mirror.
 import { getActiveClinicId } from "./clinics";
-import { uid } from "./utils";
+import { uuid } from "./utils";
+import { sb, cloudWrite, registerHydrator } from "./clinicSync";
 
 export interface PromoRule {
   id: string;
@@ -21,22 +22,48 @@ export interface PromoRule {
 
 const keyName = () => `vp_promos_${getActiveClinicId()}`;
 
-export function getPromoRules(): PromoRule[] {
+let cache: PromoRule[] | null = null;
+
+interface PromoRow { id: string; name: string; subcategory: string; qty: number; bundle_price: number; active: boolean }
+const rowToRule = (r: PromoRow): PromoRule => ({ id: r.id, name: r.name, subcategory: r.subcategory, qty: r.qty, bundlePrice: Number(r.bundle_price), active: r.active });
+const ruleToRow = (r: PromoRule): PromoRow => ({ id: r.id, name: r.name, subcategory: r.subcategory, qty: r.qty, bundle_price: r.bundlePrice, active: r.active });
+
+function readLocal(): PromoRule[] {
   try {
     const raw = localStorage.getItem(keyName());
-    if (raw) {
-      const parsed = JSON.parse(raw) as PromoRule[];
-      if (Array.isArray(parsed)) return parsed;
-    }
-  } catch {
-    /* ignore */
-  }
+    if (raw) { const p = JSON.parse(raw) as PromoRule[]; if (Array.isArray(p)) return p; }
+  } catch { /* ignore */ }
   return [];
 }
 
-function save(list: PromoRule[]) {
+function saveLocal(list: PromoRule[]) {
   try { localStorage.setItem(keyName(), JSON.stringify(list)); } catch { /* ignore */ }
 }
+
+export async function hydratePromos(): Promise<void> {
+  const client = sb();
+  if (!client) { cache = readLocal(); return; }
+  try {
+    const { data, error } = await client.from("clinic_promos").select("*").order("created_at");
+    if (error) throw error;
+    let next = (data ?? []).map((r) => rowToRule(r as PromoRow));
+    if (next.length === 0) {
+      const local = readLocal();
+      if (local.length) { await client.from("clinic_promos").insert(local.map(ruleToRow)); next = local; }
+    }
+    cache = next;
+    saveLocal(next);
+  } catch {
+    cache = readLocal();
+  }
+}
+registerHydrator(hydratePromos);
+
+export function getPromoRules(): PromoRule[] {
+  return cache ?? readLocal();
+}
+
+function commit(list: PromoRule[]) { cache = list; saveLocal(list); }
 
 /** Add a rule. Returns the new rule, or null if the inputs are invalid. */
 export function addPromoRule(input: { name: string; subcategory: string; qty: number; bundlePrice: number }): PromoRule | null {
@@ -45,10 +72,9 @@ export function addPromoRule(input: { name: string; subcategory: string; qty: nu
   const qty = Math.floor(input.qty);
   const bundlePrice = Math.max(0, input.bundlePrice);
   if (!name || !subcategory || !Number.isFinite(qty) || qty < 1) return null;
-  const rule: PromoRule = { id: uid("promo"), name, subcategory, qty, bundlePrice, active: true };
-  const list = getPromoRules();
-  list.push(rule);
-  save(list);
+  const rule: PromoRule = { id: uuid(), name, subcategory, qty, bundlePrice, active: true };
+  commit([...getPromoRules(), rule]);
+  cloudWrite(() => sb()!.from("clinic_promos").insert(ruleToRow(rule)), "promo-add");
   return rule;
 }
 
@@ -56,20 +82,21 @@ export function updatePromoRule(id: string, patch: Partial<Omit<PromoRule, "id">
   const list = getPromoRules();
   const r = list.find((x) => x.id === id);
   if (!r) return;
-  Object.assign(r, patch);
-  save(list);
+  const next = { ...r, ...patch };
+  commit(list.map((x) => (x.id === id ? next : x)));
+  const row = ruleToRow(next);
+  cloudWrite(() => sb()!.from("clinic_promos").update({ name: row.name, subcategory: row.subcategory, qty: row.qty, bundle_price: row.bundle_price, active: row.active }).eq("id", id), "promo-update");
 }
 
 export function togglePromoRule(id: string) {
-  const list = getPromoRules();
-  const r = list.find((x) => x.id === id);
+  const r = getPromoRules().find((x) => x.id === id);
   if (!r) return;
-  r.active = !r.active;
-  save(list);
+  updatePromoRule(id, { active: !r.active });
 }
 
 export function removePromoRule(id: string) {
-  save(getPromoRules().filter((x) => x.id !== id));
+  commit(getPromoRules().filter((x) => x.id !== id));
+  cloudWrite(() => sb()!.from("clinic_promos").delete().eq("id", id), "promo-del");
 }
 
 /* ----------------------------- Cart engine ----------------------------- */

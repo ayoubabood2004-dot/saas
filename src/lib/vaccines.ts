@@ -2,6 +2,7 @@
 // names. Clinics may add their own (brand) vaccines at runtime, each mapped to a scientific
 // name — clients only ever see the scientific name.
 import { getActiveClinicId } from "./clinics";
+import { sb, cloudWrite, registerHydrator } from "./clinicSync";
 
 export interface VaccineCategory {
   group: string;
@@ -76,22 +77,42 @@ export interface ClinicVaccine {
 
 const keyName = () => `vp_clinic_vaccines_${getActiveClinicId()}`;
 
-export function getClinicVaccines(): ClinicVaccine[] {
+let cache: ClinicVaccine[] | null = null;
+
+function readLocal(): ClinicVaccine[] {
   try {
     const raw = localStorage.getItem(keyName());
     if (raw) return JSON.parse(raw) as ClinicVaccine[];
-  } catch {
-    /* ignore */
-  }
+  } catch { /* ignore */ }
   return [];
 }
 
 function save(list: ClinicVaccine[]) {
+  cache = list;
+  try { localStorage.setItem(keyName(), JSON.stringify(list)); } catch { /* ignore */ }
+}
+
+export async function hydrateVaccines(): Promise<void> {
+  const client = sb();
+  if (!client) { cache = readLocal(); return; }
   try {
-    localStorage.setItem(keyName(), JSON.stringify(list));
+    const { data, error } = await client.from("clinic_vaccines").select("name,scientific").order("created_at");
+    if (error) throw error;
+    let next = (data ?? []).map((r) => ({ name: r.name as string, scientific: (r.scientific as string) ?? "" }));
+    if (next.length === 0) {
+      const local = readLocal();
+      if (local.length) { await client.from("clinic_vaccines").insert(local); next = local; }
+    }
+    cache = next;
+    try { localStorage.setItem(keyName(), JSON.stringify(next)); } catch { /* ignore */ }
   } catch {
-    /* ignore */
+    cache = readLocal();
   }
+}
+registerHydrator(hydrateVaccines);
+
+export function getClinicVaccines(): ClinicVaccine[] {
+  return cache ?? readLocal();
 }
 
 export function vaccineExists(name: string): boolean {
@@ -103,14 +124,16 @@ export function vaccineExists(name: string): boolean {
 export function addClinicVaccine(name: string, scientific: string): boolean {
   const clean = name.trim();
   if (!clean || vaccineExists(clean)) return false;
-  const list = getClinicVaccines();
-  list.push({ name: clean, scientific: scientific.trim() || clean });
-  save(list);
+  const row = { name: clean, scientific: scientific.trim() || clean };
+  save([...getClinicVaccines(), row]);
+  cloudWrite(() => sb()!.from("clinic_vaccines").insert(row), "vaccine-add");
   return true;
 }
 
 export function removeClinicVaccine(name: string) {
-  save(getClinicVaccines().filter((v) => v.name.toLowerCase() !== name.trim().toLowerCase()));
+  const clean = name.trim();
+  save(getClinicVaccines().filter((v) => v.name.toLowerCase() !== clean.toLowerCase()));
+  cloudWrite(() => sb()!.from("clinic_vaccines").delete().ilike("name", clean), "vaccine-del");
 }
 
 export function allVaccineNames(): string[] {
