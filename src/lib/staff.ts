@@ -144,21 +144,14 @@ const memberToRow = (m: StaffMember) => ({
 
 /* ----------------------------- Public async API -------------------------- */
 
-/** Load the clinic's team. Supabase when configured (RLS-isolated), else local.
- *  On the first Supabase load for a clinic, seeds/migrates any local team. */
+/** Load the clinic's team. Supabase when configured (RLS-isolated), else local
+ *  demo seed. A real (Supabase) clinic starts EMPTY — the manager adds their own
+ *  team; we never seed fake sample staff into a live clinic. */
 export async function listStaff(): Promise<StaffMember[]> {
   if (!supabase) return loadLocal();
   const { data, error } = await supabase.from("staff").select("*").order("created_at", { ascending: true });
   if (error) throw new Error(error.message);
-  const rows = (data ?? []) as StaffRow[];
-  if (rows.length > 0) return rows.map(rowToMember);
-
-  // Empty table → one-time seed + migrate whatever exists locally.
-  const local = loadLocal();
-  const prepared = (local.length ? local : seed()).map((m) => ({ ...m, id: UUID_RE.test(m.id) ? m.id : uuid() }));
-  const { error: insErr } = await supabase.from("staff").insert(prepared.map(memberToRow));
-  if (insErr) return prepared; // don't block the UI if the seed insert fails
-  return prepared;
+  return ((data ?? []) as StaffRow[]).map(rowToMember);
 }
 
 export async function saveStaff(m: StaffMember): Promise<void> {

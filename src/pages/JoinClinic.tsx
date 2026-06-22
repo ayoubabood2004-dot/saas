@@ -39,7 +39,7 @@ export function JoinClinic() {
       setDone({ clinicName: r.clinicName, role: r.role });
     } else {
       playWarning();
-      setError(r.error === "invalid_or_used" ? "رمز الدعوة غير صحيح أو مُستخدَم." : r.error === "not_authenticated" ? "سجّل الدخول أولاً." : "تعذّر الانضمام — حاول مرة أخرى.");
+      setError(r.error === "invalid_or_used" ? "رمز الدعوة غير صحيح أو مُستخدَم." : r.error === "not_authenticated" ? "سجّل الدخول أولاً." : `تعذّر الانضمام: ${r.error ?? "خطأ غير معروف"}`);
     }
   };
 
