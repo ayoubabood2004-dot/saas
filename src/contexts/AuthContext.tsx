@@ -19,6 +19,8 @@ interface RawProfile {
   roles: AccountRole[]; // account types the user holds
   phone?: string;
   clinic_id?: string | null;
+  /** Set when the user is staff of another clinic (accepted an invite). */
+  staff?: { clinicId: string; role: Role } | null;
 }
 
 interface AuthState {
@@ -71,6 +73,35 @@ function effectiveRole(active: AccountRole, raw: RawProfile): Role {
   return raw.rawRole !== "owner" ? raw.rawRole : "admin";
 }
 
+/** Map a staff membership role → the app's clinic sub-role (least-privilege fallback). */
+const STAFF_TO_APP_ROLE: Record<string, Role> = {
+  manager: "admin", veterinarian: "doctor", receptionist: "reception", groomer: "reception",
+};
+
+/**
+ * Detect whether the signed-in user is STAFF of another clinic (i.e. accepted an
+ * invite). We deliberately ignore a self-membership (clinic_id === own user id),
+ * which every legacy clinic account has from the 0016 backfill — so this NEVER
+ * changes behaviour for existing clinics/owners. Returns null if not staff, or if
+ * the memberships table doesn't exist yet (pre-0016) → safe no-op.
+ */
+async function loadMembership(userId: string): Promise<{ clinicId: string; role: Role } | null> {
+  if (!supabase) return null;
+  try {
+    const { data, error } = await supabase
+      .from("memberships")
+      .select("clinic_id, role, status")
+      .eq("user_id", userId)
+      .eq("status", "active");
+    if (error || !data) return null;
+    const staff = (data as { clinic_id: string; role: string }[]).find((m) => m.clinic_id !== userId);
+    if (!staff) return null;
+    return { clinicId: staff.clinic_id, role: STAFF_TO_APP_ROLE[staff.role] ?? "reception" };
+  } catch {
+    return null;
+  }
+}
+
 const DEMO_OWNER = { id: "demo-owner", full_name: "Maya Khalil", email: "owner@demo.vet" };
 const DEMO_VET = { id: "demo-vet", full_name: "Dr. Sarah Mansour", email: "vet@demo.vet", clinic_id: "clinic-happy-paws" };
 
@@ -84,7 +115,8 @@ async function loadRawProfile(userId: string): Promise<RawProfile | null> {
     // `roles` column may not exist yet (before migration 0005) — derive from `role`.
     const fromArr = Array.isArray(data.roles) ? (data.roles as unknown[]).filter(isAccountRole) : [];
     const roles = fromArr.length ? fromArr : [accountOf(rawRole)];
-    return { id: data.id, full_name: data.full_name, email: data.email, rawRole, roles, phone: data.phone ?? undefined, clinic_id: data.clinic_id ?? null };
+    const staff = await loadMembership(userId);
+    return { id: data.id, full_name: data.full_name, email: data.email, rawRole, roles, phone: data.phone ?? undefined, clinic_id: data.clinic_id ?? null, staff };
   } catch {
     // Network/backend error (e.g. project paused) — treat as "no profile" so boot never hangs.
     return null;
@@ -113,7 +145,11 @@ async function hydrateSession(u: SbUserLike): Promise<RawProfile> {
     clinic_id: null,
   };
   const rp = await loadRawProfile(u.id).catch(() => null);
-  return rp ?? fallback;
+  if (rp) return rp;
+  // Profile unreachable (transient) — still detect a staff membership so an
+  // invited employee isn't mis-routed to the owner view.
+  fallback.staff = await loadMembership(u.id).catch(() => null);
+  return fallback;
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -209,27 +245,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   // ---- Derive active role + the exposed Profile ---------------------------
+  // A staff member (accepted a clinic invite) is treated purely as clinic staff.
+  const effRoles: AccountRole[] = !raw ? [] : raw.staff ? ["clinic"] : raw.roles;
   const resolvedActive: AccountRole | null = !raw
     ? null
-    : raw.roles.length <= 1
-      ? (raw.roles[0] ?? accountOf(raw.rawRole))
-      : (activeRole && raw.roles.includes(activeRole)) ? activeRole : null;
+    : effRoles.length <= 1
+      ? (effRoles[0] ?? accountOf(raw.rawRole))
+      : (activeRole && effRoles.includes(activeRole)) ? activeRole : null;
   const needsRoleChoice = !!raw && resolvedActive === null;
 
   const user = useMemo<Profile | null>(() => {
     if (!raw) return null;
-    const act = resolvedActive ?? raw.roles[0] ?? accountOf(raw.rawRole);
+    const act = resolvedActive ?? effRoles[0] ?? accountOf(raw.rawRole);
+    // Staff membership wins for the clinic workspace (role + which clinic's data).
+    const role = raw.staff && act === "clinic" ? raw.staff.role : effectiveRole(act, raw);
+    const clinicId = raw.staff && act === "clinic" ? raw.staff.clinicId : (raw.clinic_id ?? null);
     return {
       id: raw.id, full_name: raw.full_name, email: raw.email,
-      role: effectiveRole(act, raw), roles: raw.roles,
-      phone: raw.phone, clinic_id: raw.clinic_id ?? null,
+      role, roles: effRoles,
+      phone: raw.phone, clinic_id: clinicId,
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [raw, resolvedActive]);
 
   // Keep the active clinic id in sync with the active role.
   useEffect(() => {
-    if (resolvedActive === "clinic" && raw?.clinic_id) setActiveClinicId(raw.clinic_id);
+    const clinicId = raw?.staff ? raw.staff.clinicId : raw?.clinic_id;
+    if (resolvedActive === "clinic" && clinicId) setActiveClinicId(clinicId);
     else if (resolvedActive === "owner") clearActiveClinic();
   }, [resolvedActive, raw]);
 
@@ -360,7 +402,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const value = useMemo<AuthState>(
     () => ({
       user, loading, recovery, demo: !isSupabaseConfigured,
-      roles: raw?.roles ?? [], activeRole: resolvedActive, needsRoleChoice,
+      roles: effRoles, activeRole: resolvedActive, needsRoleChoice,
       chooseRole, switchRole, addRole,
       signInDemo, signInClinic, signInOwner,
       signUpEmail, signInEmail, resendConfirmation, resetPassword, updatePassword, signOut,
