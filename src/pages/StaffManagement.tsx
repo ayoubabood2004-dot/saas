@@ -5,6 +5,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import {
   Users, UserPlus, Pencil, Trash2, Check, X, ShieldCheck, ShieldX, Briefcase,
   Mail, Phone as PhoneIcon, Calendar, Camera, PauseCircle, PlayCircle, BadgeCheck, Lock,
+  Send, Copy, Ticket,
 } from "lucide-react";
 import { Button, Dialog, useToast, Skeleton } from "@/components/ui";
 import { PhoneInput } from "@/components/PhoneInput";
@@ -15,6 +16,7 @@ import {
   type StaffMember, type StaffRole,
 } from "@/lib/staff";
 import { prepareUpload } from "@/lib/image";
+import { createInvite, listInvites, revokeInvite, joinLink, type Invite } from "@/lib/invites";
 import { cn } from "@/lib/utils";
 import { playTap, playSuccess } from "@/lib/sounds";
 
@@ -42,6 +44,7 @@ export function StaffManagement() {
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<StaffMember | null>(null);
   const [deleting, setDeleting] = useState<StaffMember | null>(null);
+  const [invitesOpen, setInvitesOpen] = useState(false);
 
   const reload = () => listStaff().then(setStaff).catch(() => toast.error("تعذّر تحميل الكادر"));
   useEffect(() => { void listStaff().then(setStaff).catch(() => toast.error("تعذّر تحميل الكادر")).finally(() => setLoading(false)); }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -91,9 +94,14 @@ export function StaffManagement() {
           <h1 className="font-display text-2xl font-extrabold text-ink">إدارة الكادر</h1>
           <p className="text-sm text-ink-subtle">فريق العيادة وملفّاتهم الوظيفية وصلاحياتهم.</p>
         </div>
-        <Button className="ms-auto" leftIcon={<UserPlus size={18} />} onClick={() => { playTap(); setEditing(blankStaff()); }}>
-          إضافة موظف
-        </Button>
+        <div className="ms-auto flex items-center gap-2">
+          <Button variant="secondary" leftIcon={<Send size={17} />} onClick={() => { playTap(); setInvitesOpen(true); }}>
+            دعوة موظف
+          </Button>
+          <Button leftIcon={<UserPlus size={18} />} onClick={() => { playTap(); setEditing(blankStaff()); }}>
+            إضافة موظف
+          </Button>
+        </div>
       </div>
 
       {/* KPIs */}
@@ -171,6 +179,9 @@ export function StaffManagement() {
         onSaved={onSaved}
         onUploadError={() => toast.error("تعذّر رفع الصورة")}
       />
+
+      {/* Invite teammates (email or code) */}
+      <InviteDialog open={invitesOpen} onClose={() => setInvitesOpen(false)} />
 
       {/* Delete confirm */}
       <Dialog
@@ -376,5 +387,105 @@ function Section({ title, step, children }: { title: string; step: string; child
       </div>
       {children}
     </section>
+  );
+}
+
+/* ---------------- Invite teammates (email or code) ---------------- */
+function InviteDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const toast = useToast();
+  const [list, setList] = useState<Invite[]>([]);
+  const [method, setMethod] = useState<"email" | "code">("email");
+  const [email, setEmail] = useState("");
+  const [role, setRole] = useState<StaffRole>("receptionist");
+  const [busy, setBusy] = useState(false);
+  const [created, setCreated] = useState<Invite | null>(null);
+  const [copied, setCopied] = useState<string | null>(null);
+
+  const reload = () => { listInvites().then(setList).catch(() => { /* ignore */ }); };
+  useEffect(() => { if (open) { setCreated(null); setEmail(""); reload(); } }, [open]);
+
+  const create = async () => {
+    if (method === "email" && !email.trim()) { toast.error("أدخل البريد الإلكتروني"); return; }
+    setBusy(true);
+    try {
+      const inv = await createInvite(role, method === "email" ? email : undefined);
+      setCreated(inv); setEmail(""); playSuccess(); reload();
+    } catch { toast.error("تعذّر إنشاء الدعوة"); }
+    finally { setBusy(false); }
+  };
+  const copy = (text: string, key: string) => {
+    navigator.clipboard.writeText(text).then(() => { setCopied(key); window.setTimeout(() => setCopied((c) => (c === key ? null : c)), 2000); }).catch(() => { /* ignore */ });
+  };
+  const revoke = (id: string) => { revokeInvite(id).then(reload).catch(() => toast.error("تعذّر الإلغاء")); };
+
+  return (
+    <Dialog open={open} onClose={onClose} title="دعوة موظف" description="أرسل دعوة بالبريد أو شارك رمزاً — الموظف ينضمّ بحسابه ودوره." size="md">
+      {/* Create */}
+      <div className="space-y-3">
+        <div className="inline-flex w-full rounded-xl border border-line bg-surface-2 p-1 text-sm font-semibold">
+          <button type="button" onClick={() => setMethod("email")} className={cn("flex flex-1 items-center justify-center gap-1.5 rounded-lg py-1.5 transition", method === "email" ? "bg-white text-brand-700 shadow-card dark:bg-surface-1 dark:text-brand-300" : "text-ink-muted")}><Mail size={15} /> بالبريد</button>
+          <button type="button" onClick={() => setMethod("code")} className={cn("flex flex-1 items-center justify-center gap-1.5 rounded-lg py-1.5 transition", method === "code" ? "bg-white text-brand-700 shadow-card dark:bg-surface-1 dark:text-brand-300" : "text-ink-muted")}><Ticket size={15} /> برمز</button>
+        </div>
+
+        {method === "email" && (
+          <div>
+            <label className="label">بريد الموظف</label>
+            <input type="email" dir="ltr" className="input" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="name@email.com" />
+          </div>
+        )}
+        <div>
+          <label className="label">الدور</label>
+          <select className="input" value={role} onChange={(e) => setRole(e.target.value as StaffRole)}>
+            {STAFF_ROLES.map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
+          </select>
+        </div>
+        <Button className="w-full" loading={busy} leftIcon={<Send size={16} />} onClick={create}>إنشاء الدعوة</Button>
+      </div>
+
+      {/* Created invite — code + shareable link */}
+      {created && (
+        <div className="mt-4 space-y-2 rounded-2xl border border-success-300 bg-success-50 p-3 dark:border-success-500/40 dark:bg-success-500/10">
+          <p className="flex items-center gap-1.5 text-sm font-bold text-success-700 dark:text-success-300"><Check size={15} /> تم إنشاء الدعوة — شاركها مع الموظف</p>
+          <CopyRow label="الرمز" value={created.code} copied={copied === "code"} onCopy={() => copy(created.code, "code")} />
+          <CopyRow label="رابط الانضمام" value={joinLink(created.code)} copied={copied === "link"} onCopy={() => copy(joinLink(created.code), "link")} mono={false} />
+        </div>
+      )}
+
+      {/* Pending invites */}
+      <div className="mt-5">
+        <p className="mb-2 text-xs font-bold text-ink-muted">الدعوات المعلّقة ({list.length})</p>
+        {list.length === 0 ? (
+          <p className="text-sm text-ink-subtle">لا توجد دعوات معلّقة.</p>
+        ) : (
+          <ul className="space-y-1.5">
+            {list.map((inv) => (
+              <li key={inv.id} className="flex items-center gap-2 rounded-xl border border-line bg-surface-1 p-2.5">
+                <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-surface-2 text-ink-subtle">{inv.email ? <Mail size={15} /> : <Ticket size={15} />}</span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-semibold text-ink">{inv.email || inv.code}</p>
+                  <p className="text-2xs text-ink-muted">{ROLE_LABEL[inv.role]} · <span className="font-mono" dir="ltr">{inv.code}</span></p>
+                </div>
+                <button onClick={() => copy(joinLink(inv.code), `l-${inv.id}`)} title="نسخ الرابط" className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-ink-subtle transition hover:bg-brand-50 hover:text-brand-600 dark:hover:bg-brand-500/15">{copied === `l-${inv.id}` ? <Check size={15} className="text-success-600" /> : <Copy size={15} />}</button>
+                <button onClick={() => revoke(inv.id)} title="إلغاء" className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-ink-subtle transition hover:bg-danger-50 hover:text-danger-600 dark:hover:bg-danger-500/15"><Trash2 size={15} /></button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </Dialog>
+  );
+}
+
+function CopyRow({ label, value, copied, onCopy, mono = true }: { label: string; value: string; copied: boolean; onCopy: () => void; mono?: boolean }) {
+  return (
+    <div className="flex items-center gap-2 rounded-xl bg-surface-1 p-2">
+      <div className="min-w-0 flex-1">
+        <p className="text-2xs text-ink-subtle">{label}</p>
+        <p className={cn("truncate text-sm text-ink", mono && "font-mono")} dir="ltr">{value}</p>
+      </div>
+      <button onClick={onCopy} className={cn("inline-flex shrink-0 items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition", copied ? "bg-success-100 text-success-700 dark:bg-success-500/20 dark:text-success-300" : "bg-surface-2 text-ink-muted hover:text-brand-600")}>
+        {copied ? <Check size={14} /> : <Copy size={14} />}{copied ? "تم النسخ" : "نسخ"}
+      </button>
+    </div>
   );
 }

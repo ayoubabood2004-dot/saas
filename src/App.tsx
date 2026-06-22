@@ -26,6 +26,7 @@ const Inventory = lazy(() => import("@/pages/Inventory").then((m) => ({ default:
 const RetailSales = lazy(() => import("@/pages/RetailSales").then((m) => ({ default: m.RetailSales })));
 const WhatsAppCampaigns = lazy(() => import("@/pages/WhatsAppCampaigns").then((m) => ({ default: m.WhatsAppCampaigns })));
 const StaffManagement = lazy(() => import("@/pages/StaffManagement").then((m) => ({ default: m.StaffManagement })));
+const JoinClinic = lazy(() => import("@/pages/JoinClinic").then((m) => ({ default: m.JoinClinic })));
 
 function FullScreenLoader() {
   return (
@@ -99,6 +100,7 @@ function Shell() {
         <AnimatePresence mode="wait">
           <Routes location={location} key={location.pathname}>
             <Route path="/login" element={<LoginRoute />} />
+            <Route path="/join" element={<JoinClinic />} />
             <Route path="/" element={<Protected><Home /></Protected>} />
             <Route path="/pet/:petId" element={<Protected><PetPassport /></Protected>} />
             <Route path="/book" element={<Protected><BookingWizard /></Protected>} />
