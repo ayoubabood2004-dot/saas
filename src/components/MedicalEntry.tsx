@@ -131,9 +131,12 @@ export function MedicalEntry({
       await onCommit?.(sheet.slice().reverse(), { condition, notes: notes.trim() }, doctor || undefined); // committed in add-order
       toast.success(t("medentry.savedToast", "Saved to the patient's record"));
       setSheet([]); setCondition(null); setNotes("");
-    } catch {
-      // Host signalled a failure — keep the draft so nothing is lost.
-      toast.error(t("medentry.saveError", "Couldn't save — please try again."));
+    } catch (error) {
+      // Surface the exact backend error to the console for diagnosis, then keep
+      // the draft so nothing the doctor typed is lost.
+      console.error("Supabase Insert Error: ", error);
+      const detail = error instanceof Error ? error.message : undefined;
+      toast.error(t("medentry.saveError", "Couldn't save — please try again."), detail);
     } finally {
       setBusy(false);
     }
