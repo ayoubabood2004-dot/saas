@@ -532,6 +532,17 @@ function need<T>(res: { data: unknown; error: { message: string; code?: string; 
   }
   return res.data as T;
 }
+/** For write ops (update/delete/rpc) that return no row: throw on error so a
+ *  failed mutation surfaces to the caller instead of failing silently. */
+function ok(res: { error: { message: string; code?: string; details?: string; hint?: string } | null }): void {
+  if (res.error) {
+    const err = new Error(res.error.message) as Error & { code?: string; details?: string; hint?: string };
+    if (res.error.code) err.code = res.error.code;
+    if (res.error.details) err.details = res.error.details;
+    if (res.error.hint) err.hint = res.error.hint;
+    throw err;
+  }
+}
 
 const supabaseRepo: typeof demoRepo = {
   async listPets(ownerId) {
@@ -543,7 +554,7 @@ const supabaseRepo: typeof demoRepo = {
     return listOf<Pet>(await q);
   },
   async updateOwnerContact(ownerId, patch) {
-    await sbc().from("pets").update(patch).eq("owner_id", ownerId);
+    ok(await sbc().from("pets").update(patch).eq("owner_id", ownerId));
   },
   async getPet(petId) {
     return maybe<Pet>(await sbc().from("pets").select("*").eq("id", petId).maybeSingle());
@@ -579,7 +590,7 @@ const supabaseRepo: typeof demoRepo = {
   async deletePet(petId) {
     // Dependent rows (visits, vaccinations, treatments, media, weights, admissions)
     // are removed by the schema's `on delete cascade` foreign keys.
-    await sbc().from("pets").delete().eq("id", petId);
+    ok(await sbc().from("pets").delete().eq("id", petId));
   },
   async listWeights(petId) {
     return listOf<WeightLog>(await sbc().from("weight_logs").select("*").eq("pet_id", petId).order("measured_at", { ascending: true }));
@@ -602,7 +613,7 @@ const supabaseRepo: typeof demoRepo = {
     return need<Vaccination>(await sbc().from("vaccinations").insert(input).select().single());
   },
   async updateVaccination(id, patch) {
-    await sbc().from("vaccinations").update(patch).eq("id", id);
+    ok(await sbc().from("vaccinations").update(patch).eq("id", id));
   },
   async listVisits(petId) {
     return listOf<MedicalVisit>(await sbc().from("medical_visits").select("*").eq("pet_id", petId).order("visit_date", { ascending: false }));
@@ -677,7 +688,7 @@ const supabaseRepo: typeof demoRepo = {
     return maybe<Appointment>(await sbc().from("appointments").update(patch).eq("id", id).select().maybeSingle());
   },
   async setAppointmentStatus(id, status) {
-    await sbc().from("appointments").update({ status }).eq("id", id);
+    ok(await sbc().from("appointments").update({ status }).eq("id", id));
   },
   async listTreatments(petId) {
     return listOf<TreatmentEntry>(await sbc().from("treatment_entries").select("*").eq("pet_id", petId).order("day", { ascending: true }).order("time", { ascending: true }));
@@ -686,10 +697,10 @@ const supabaseRepo: typeof demoRepo = {
     return need<TreatmentEntry>(await sbc().from("treatment_entries").insert(input).select().single());
   },
   async deleteTreatment(id) {
-    await sbc().from("treatment_entries").delete().eq("id", id);
+    ok(await sbc().from("treatment_entries").delete().eq("id", id));
   },
   async setTreatmentGiven(id, given, by) {
-    await sbc().from("treatment_entries").update({ administered_at: given ? new Date().toISOString() : null, administered_by: given ? by : null }).eq("id", id);
+    ok(await sbc().from("treatment_entries").update({ administered_at: given ? new Date().toISOString() : null, administered_by: given ? by : null }).eq("id", id));
   },
   async listAdmissions(clinicId) {
     let q = sbc().from("admissions").select("*").order("admitted_on", { ascending: false });
@@ -703,7 +714,7 @@ const supabaseRepo: typeof demoRepo = {
     return need<Admission>(await sbc().from("admissions").insert(input).select().single());
   },
   async updateAdmission(id, patch) {
-    await sbc().from("admissions").update(patch).eq("id", id);
+    ok(await sbc().from("admissions").update(patch).eq("id", id));
   },
   async listReminders(filter) {
     let q = sbc().from("reminders").select("*");
@@ -716,10 +727,10 @@ const supabaseRepo: typeof demoRepo = {
     return need<Reminder>(await sbc().from("reminders").insert(input).select().single());
   },
   async updateReminder(id, patch) {
-    await sbc().from("reminders").update(patch).eq("id", id);
+    ok(await sbc().from("reminders").update(patch).eq("id", id));
   },
   async removeReminder(id) {
-    await sbc().from("reminders").delete().eq("id", id);
+    ok(await sbc().from("reminders").delete().eq("id", id));
   },
 
   /* ---------------- Inventory & POS ---------------- */
@@ -740,7 +751,7 @@ const supabaseRepo: typeof demoRepo = {
     return maybe<Product>(await sbc().from("products").update(patch).eq("id", id).select().maybeSingle());
   },
   async deleteProduct(id) {
-    await sbc().from("products").delete().eq("id", id);
+    ok(await sbc().from("products").delete().eq("id", id));
   },
   async listInvoices(clinicId) {
     let q = sbc().from("invoices").select("*").order("created_at", { ascending: false });
@@ -770,7 +781,7 @@ const supabaseRepo: typeof demoRepo = {
     return need<Invoice>(await sbc().rpc("refund_invoice", { p_invoice: invoiceId }));
   },
   async deleteInvoice(invoiceId) {
-    await sbc().rpc("delete_invoice", { p_invoice: invoiceId });
+    ok(await sbc().rpc("delete_invoice", { p_invoice: invoiceId }));
   },
   async bumpInvoicePrints(invoiceId) {
     const res = await sbc().rpc("bump_invoice_prints", { p_invoice: invoiceId });
