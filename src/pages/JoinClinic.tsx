@@ -5,7 +5,7 @@ import { Briefcase, LogIn, PartyPopper, ShieldCheck, Loader2, AlertCircle } from
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui";
 import { Logo } from "@/components/Logo";
-import { acceptInvite } from "@/lib/invites";
+import { acceptInvite, leaveClinic } from "@/lib/invites";
 import { ROLE_LABEL, type StaffRole } from "@/lib/staff";
 import { playSuccess, playWarning } from "@/lib/sounds";
 
@@ -28,6 +28,16 @@ export function JoinClinic() {
     else { const saved = sessionStorage.getItem(JOIN_CODE_KEY); if (saved) setCode(saved); }
   }, [params]);
 
+  // Recovery: this user is operating inside another clinic (joined as staff).
+  const inAnotherClinic = !!user?.clinic_id && user.clinic_id !== user.id;
+  const leave = async () => {
+    setBusy(true); setError(null);
+    const r = await leaveClinic();
+    setBusy(false);
+    if (r.ok) { playSuccess(); window.location.href = "/"; }
+    else { playWarning(); setError(`تعذّرت المغادرة: ${r.error ?? "خطأ غير معروف"}`); }
+  };
+
   const accept = async () => {
     if (!code.trim()) { setError("أدخل رمز الدعوة"); return; }
     setBusy(true); setError(null);
@@ -39,7 +49,12 @@ export function JoinClinic() {
       setDone({ clinicName: r.clinicName, role: r.role });
     } else {
       playWarning();
-      setError(r.error === "invalid_or_used" ? "رمز الدعوة غير صحيح أو مُستخدَم." : r.error === "not_authenticated" ? "سجّل الدخول أولاً." : `تعذّر الانضمام: ${r.error ?? "خطأ غير معروف"}`);
+      setError(
+        r.error === "invalid_or_used" ? "رمز الدعوة غير صحيح أو مُستخدَم."
+          : r.error === "not_authenticated" ? "سجّل الدخول أولاً."
+            : r.error === "already_clinic_owner" ? "لا يمكنك الانضمام لعيادة أخرى لأنك تملك عيادة خاصة بك. بياناتك آمنة ولم تتأثر — استخدم حساباً منفصلاً للعمل كموظف في عيادة أخرى."
+              : `تعذّر الانضمام: ${r.error ?? "خطأ غير معروف"}`,
+      );
     }
   };
 
@@ -103,6 +118,15 @@ export function JoinClinic() {
       {error && <p className="mt-2 flex items-center justify-center gap-1.5 text-sm text-danger-600"><AlertCircle size={15} /> {error}</p>}
       <Button className="mt-4 w-full" size="lg" loading={busy} onClick={accept}>انضمام</Button>
       <button onClick={() => navigate("/")} className="mt-3 text-xs text-ink-subtle hover:text-ink">تخطّي والعودة للرئيسية</button>
+
+      {/* Recovery: you joined another clinic by mistake → leave & restore your own */}
+      {inAnotherClinic && (
+        <div className="mt-5 rounded-2xl border border-warn-200 bg-warn-50/60 p-3 text-start dark:border-warn-500/30 dark:bg-warn-500/10">
+          <p className="text-xs font-semibold text-warn-700 dark:text-warn-300">أنت تعمل حالياً ضمن عيادة انضممت إليها.</p>
+          <p className="mt-0.5 text-2xs text-ink-muted">إذا حدث هذا بالخطأ، غادر العيادة لتستعيد عيادتك وبياناتك (لم تُحذف، فقط مخفية مؤقتاً).</p>
+          <Button variant="outline" className="mt-2 w-full" loading={busy} onClick={leave}>مغادرة هذه العيادة واستعادة عيادتي</Button>
+        </div>
+      )}
     </Shell>
   );
 }

@@ -71,3 +71,13 @@ export async function acceptInvite(code: string): Promise<{ ok: boolean; error?:
   const r = (data ?? {}) as { ok: boolean; error?: string; clinic_name?: string; role?: StaffRole };
   return { ok: r.ok, error: r.error, clinicName: r.clinic_name, role: r.role };
 }
+
+/** Leave a clinic you joined as staff — restores your own clinic as the active
+ *  workspace (your data was only hidden, never deleted). No-op in demo mode. */
+export async function leaveClinic(clinicId?: string): Promise<{ ok: boolean; error?: string }> {
+  if (!supabase) return { ok: true };
+  const { data, error } = await supabase.rpc("leave_clinic", { p_clinic: clinicId ?? null });
+  if (error) return { ok: false, error: error.message };
+  const r = (data ?? {}) as { ok: boolean; error?: string };
+  return { ok: r.ok, error: r.error };
+}
