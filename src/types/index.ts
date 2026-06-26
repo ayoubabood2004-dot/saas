@@ -355,6 +355,17 @@ export interface ServiceCategory { id: string; name: string }
 export interface Service { id: string; category_id: string; name: string; price: number }
 export interface ServiceCatalog { categories: ServiceCategory[]; services: Service[] }
 
+/** A logged WhatsApp message (campaign send history / "last contacted"). */
+export interface WhatsAppMessage {
+  id: string;
+  clinic_id?: string | null;
+  pet_id?: string | null;
+  owner_name?: string | null;
+  owner_phone?: string | null;
+  reminder_type?: string | null;
+  sent_at: string;
+}
+
 export interface DemoDB {
   pets: Pet[];
   weightLogs: WeightLog[];
@@ -368,4 +379,5 @@ export interface DemoDB {
   products: Product[];
   invoices: Invoice[];
   invoiceItems: InvoiceItem[];
+  waMessages?: WhatsAppMessage[];
 }

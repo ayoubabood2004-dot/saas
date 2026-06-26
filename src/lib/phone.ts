@@ -33,3 +33,12 @@ export function withDialCode(nationalInput: string, dialCode: string): string {
   if (!nat) return "";
   return `${dialCode} ${nat}`.trim();
 }
+
+/**
+ * Build the international wa.me number (digits only): dial code + national number,
+ * with the leading zero / duplicated dial code stripped. Shared by every "open
+ * WhatsApp" action so birthday greetings and campaigns format numbers identically.
+ */
+export function waNumber(phone: string, dialCode: string): string {
+  return `${phoneDigits(dialCode)}${nationalNumber(phone, dialCode)}`;
+}

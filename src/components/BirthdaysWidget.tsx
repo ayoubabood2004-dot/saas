@@ -5,6 +5,8 @@ import type { Pet } from "@/types";
 import { PetAvatar } from "@/components/PetAvatar";
 import { cn } from "@/lib/utils";
 import { playTap } from "@/lib/sounds";
+import { getDialCode } from "@/lib/settings";
+import { waNumber } from "@/lib/phone";
 
 interface BirthdayEntry { pet: Pet; inDays: number; turningAge: number }
 
@@ -39,13 +41,16 @@ export function BirthdaysWidget({ pets }: { pets: Pet[] }) {
       : inDays === 1 ? t("dash.birthdays.tomorrow", "Tomorrow")
         : t("dash.birthdays.inDays", { n: inDays, defaultValue: "in {{n}} days" });
 
-  // Open WhatsApp with a pre-filled Arabic greeting; phone digits only (wa.me format).
+  // Open WhatsApp with a pre-filled Arabic greeting. Build the international
+  // number via the clinic dial code (same helper as Campaigns) so a nationally
+  // stored number like 07xx… becomes a valid 9647xx… link.
   const greet = (pet: Pet) => {
     playTap();
-    const digits = (pet.owner_phone ?? "").replace(/\D/g, "");
-    if (!digits) return;
+    if (!(pet.owner_phone ?? "").trim()) return;
+    const num = waNumber(pet.owner_phone ?? "", getDialCode());
+    if (!num) return;
     const msg = t("dash.birthdays.greeting", { name: pet.name, defaultValue: "Happy birthday {{name}}! 🐾🎉" });
-    window.open(`https://wa.me/${digits}?text=${encodeURIComponent(msg)}`, "_blank", "noopener,noreferrer");
+    window.open(`https://wa.me/${num}?text=${encodeURIComponent(msg)}`, "_blank", "noopener,noreferrer");
   };
 
   return (

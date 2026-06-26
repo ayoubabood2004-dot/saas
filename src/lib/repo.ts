@@ -4,7 +4,7 @@
 import { loadDB, saveDB } from "./demoStore";
 import { supabase } from "./supabase";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, AppointmentStatus, TreatmentEntry, Admission, Reminder, Product, Invoice, InvoiceItem, CheckoutItem, SaleMeta, Customer, DiscountType } from "@/types";
+import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, AppointmentStatus, TreatmentEntry, Admission, Reminder, Product, Invoice, InvoiceItem, CheckoutItem, SaleMeta, Customer, DiscountType, WhatsAppMessage } from "@/types";
 import { uid, uuid, ageMonths } from "./utils";
 
 /** Resolve a discount input (percent 0–100 or a fixed amount) to an amount, clamped to [0, subtotal]. */
@@ -501,6 +501,18 @@ const demoRepo = {
   async searchCustomers(query: string, _clinicId?: string): Promise<Customer[]> {
     return dedupeCustomers(loadDB().invoices ?? [], query);
   },
+
+  /** Log a WhatsApp message send (campaign history / "last contacted"). */
+  async logWhatsApp(input: { pet_id?: string | null; owner_name?: string | null; owner_phone?: string | null; reminder_type?: string | null }): Promise<void> {
+    const db = loadDB();
+    if (!db.waMessages) db.waMessages = [];
+    db.waMessages.push({ ...input, id: uid("wa"), sent_at: new Date().toISOString() });
+    saveDB(db);
+  },
+  /** The clinic's WhatsApp send history, newest first. */
+  async listWhatsAppLog(): Promise<WhatsAppMessage[]> {
+    return (loadDB().waMessages ?? []).slice().sort((a, b) => b.sent_at.localeCompare(a.sent_at));
+  },
 };
 
 /* ============================================================================
@@ -793,6 +805,12 @@ const supabaseRepo: typeof demoRepo = {
     if (clinicId) q = q.eq("clinic_id", clinicId);
     const rows = listOf<{ customer_name: string | null; customer_phone: string | null; created_at: string }>(await q);
     return dedupeCustomers(rows, query);
+  },
+  async logWhatsApp(input) {
+    ok(await sbc().from("wa_messages").insert(input));
+  },
+  async listWhatsAppLog() {
+    return listOf<WhatsAppMessage>(await sbc().from("wa_messages").select("*").order("sent_at", { ascending: false }).limit(1000));
   },
 };
 
