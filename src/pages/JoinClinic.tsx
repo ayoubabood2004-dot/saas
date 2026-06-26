@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Briefcase, LogIn, PartyPopper, ShieldCheck, Loader2, AlertCircle } from "lucide-react";
+import { Briefcase, LogIn, PartyPopper, ShieldCheck, Loader2, AlertCircle, AlertTriangle } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
-import { Button } from "@/components/ui";
+import { Button, Dialog } from "@/components/ui";
 import { Logo } from "@/components/Logo";
 import { acceptInvite, leaveClinic } from "@/lib/invites";
 import { ROLE_LABEL, type StaffRole } from "@/lib/staff";
@@ -20,6 +20,8 @@ export function JoinClinic() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<{ clinicName?: string; role?: StaffRole } | null>(null);
+  // Set when the signed-in user already owns a clinic and must confirm the switch.
+  const [confirmOwner, setConfirmOwner] = useState<{ clinicName?: string } | null>(null);
 
   // Remember the code across a login round-trip.
   useEffect(() => {
@@ -38,15 +40,20 @@ export function JoinClinic() {
     else { playWarning(); setError(`تعذّرت المغادرة: ${r.error ?? "خطأ غير معروف"}`); }
   };
 
-  const accept = async () => {
+  const accept = async (confirm = false) => {
     if (!code.trim()) { setError("أدخل رمز الدعوة"); return; }
     setBusy(true); setError(null);
-    const r = await acceptInvite(code.trim());
+    const r = await acceptInvite(code.trim(), confirm);
     setBusy(false);
     if (r.ok) {
       playSuccess();
+      setConfirmOwner(null);
       sessionStorage.removeItem(JOIN_CODE_KEY);
       setDone({ clinicName: r.clinicName, role: r.role });
+    } else if (r.error === "confirm_owner_join") {
+      // You own a clinic — warn strongly before switching workspace.
+      playWarning();
+      setConfirmOwner({ clinicName: r.clinicName });
     } else {
       playWarning();
       setError(
@@ -116,8 +123,30 @@ export function JoinClinic() {
         <input dir="ltr" className="input text-center font-mono tracking-widest" value={code} onChange={(e) => setCode(e.target.value)} placeholder="VET-XXXXXX" />
       </div>
       {error && <p className="mt-2 flex items-center justify-center gap-1.5 text-sm text-danger-600"><AlertCircle size={15} /> {error}</p>}
-      <Button className="mt-4 w-full" size="lg" loading={busy} onClick={accept}>انضمام</Button>
+      <Button className="mt-4 w-full" size="lg" loading={busy} onClick={() => accept()}>انضمام</Button>
       <button onClick={() => navigate("/")} className="mt-3 text-xs text-ink-subtle hover:text-ink">تخطّي والعودة للرئيسية</button>
+
+      {/* Strong warning — you own a clinic and are switching into another workspace */}
+      <Dialog
+        open={!!confirmOwner}
+        onClose={() => { if (!busy) setConfirmOwner(null); }}
+        title="تحذير: أنت تملك عيادة"
+        footer={
+          <div className="flex items-center gap-3">
+            <Button variant="ghost" className="flex-1" onClick={() => setConfirmOwner(null)}>إلغاء (البقاء في عيادتي)</Button>
+            <Button className="flex-1" loading={busy} onClick={() => accept(true)}>متابعة الانضمام</Button>
+          </div>
+        }
+      >
+        <div className="flex items-start gap-3">
+          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-warn-50 text-warn-600 dark:bg-warn-500/15 dark:text-warn-300"><AlertTriangle size={20} /></span>
+          <div className="text-sm text-ink-muted">
+            <p className="font-semibold text-ink">الانضمام إلى «{confirmOwner?.clinicName ?? "العيادة"}» سينقلك إلى مساحة عملها.</p>
+            <p className="mt-1">ستُخفى بيانات عيادتك مؤقتاً أثناء عملك هناك — <span className="font-semibold text-ink">لن تُحذف أي معلومة</span>. تقدر تستعيد عيادتك وكل بياناتها في أي وقت عبر زر «مغادرة هذه العيادة».</p>
+            <p className="mt-1 text-2xs text-ink-subtle">إذا فتحت الرابط بالخطأ، اضغط «إلغاء».</p>
+          </div>
+        </div>
+      </Dialog>
 
       {/* Recovery: you joined another clinic by mistake → leave & restore your own */}
       {inAnotherClinic && (

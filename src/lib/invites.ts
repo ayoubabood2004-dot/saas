@@ -63,10 +63,11 @@ export async function revokeInvite(id: string): Promise<void> {
   if (error) throw new Error(error.message);
 }
 
-/** Redeem an invite for the signed-in user (creates their membership). */
-export async function acceptInvite(code: string): Promise<{ ok: boolean; error?: string; clinicName?: string; role?: StaffRole }> {
+/** Redeem an invite for the signed-in user (creates their membership). Pass
+ *  confirm=true to proceed past the owner workspace-switch warning. */
+export async function acceptInvite(code: string, confirm = false): Promise<{ ok: boolean; error?: string; clinicName?: string; role?: StaffRole }> {
   if (!supabase) return { ok: true, clinicName: "عيادة تجريبية", role: "receptionist" };
-  const { data, error } = await supabase.rpc("accept_invite", { p_code: code });
+  const { data, error } = await supabase.rpc("accept_invite", { p_code: code, p_confirm: confirm });
   if (error) return { ok: false, error: error.message };
   const r = (data ?? {}) as { ok: boolean; error?: string; clinic_name?: string; role?: StaffRole };
   return { ok: r.ok, error: r.error, clinicName: r.clinic_name, role: r.role };
