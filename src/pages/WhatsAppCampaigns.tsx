@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import {
-  MessageCircle, Send, Check, Search, Users, Gift, Syringe, Tag, CheckCircle2,
+  MessageCircle, Send, Check, Search, Users, Gift, Syringe, Tag, CheckCircle2, Bug,
 } from "lucide-react";
 import type { Pet, Species } from "@/types";
+import type { CampaignPrefill, ReminderType } from "@/lib/reminders";
 import { repo } from "@/lib/repo";
 import { useAuth } from "@/contexts/AuthContext";
 import { PetAvatar } from "@/components/PetAvatar";
@@ -34,8 +36,11 @@ export function WhatsAppCampaigns() {
   const { t } = useTranslation();
   const { user } = useAuth();
   const toast = useToast();
+  const location = useLocation();
+  const navigate = useNavigate();
   const dial = getDialCode();
   const taRef = useRef<HTMLTextAreaElement>(null);
+  const prefillApplied = useRef(false);
 
   const [pets, setPets] = useState<Pet[]>([]);
   const [loading, setLoading] = useState(true);
@@ -58,8 +63,28 @@ export function WhatsAppCampaigns() {
   const templates = useMemo(() => [
     { id: "birthday", icon: Gift, label: t("campaigns.tplBirthday", "Birthday greeting"), text: t("campaigns.msgBirthday", `Hello ${VAR_OWNER}! 🎉`) },
     { id: "vaccine", icon: Syringe, label: t("campaigns.tplVaccine", "Vaccination reminder"), text: t("campaigns.msgVaccine", `Hello ${VAR_OWNER}`) },
+    { id: "deworming", icon: Bug, label: t("campaigns.tplDeworming", "Deworming reminder"), text: t("campaigns.msgDeworming", `Hello ${VAR_OWNER}`) },
     { id: "offer", icon: Tag, label: t("campaigns.tplOffer", "General offer"), text: t("campaigns.msgOffer", `Hello ${VAR_OWNER}`) },
   ], [t]);
+
+  // Map a reminder type (from the dashboard Reminders widget) to its draft template.
+  const TEMPLATE_FOR: Record<ReminderType, string> = { birthday: "birthday", vaccine: "vaccine", deworming: "deworming" };
+
+  // Incoming "تجهيز الإرسال" from the Reminders widget: pre-select the client and
+  // draft the message, so the doctor can review/edit and send from the queue.
+  useEffect(() => {
+    const prefill = location.state as CampaignPrefill | null;
+    if (!prefill?.targetPetId || prefillApplied.current) return;
+    prefillApplied.current = true;
+    setSelected(new Set([prefill.targetPetId]));
+    const tpl = templates.find((x) => x.id === TEMPLATE_FOR[prefill.reminderType]);
+    if (tpl) setMessage(tpl.text);
+    // Surface this client in the audience list, then drop the router state so a
+    // refresh or back-navigation doesn't silently re-apply it.
+    if (prefill.targetPetName) setQuery(prefill.targetPetName);
+    navigate(location.pathname, { replace: true, state: null });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.key]);
 
   // One row per pet (so {{اسم_الحيوان}} is meaningful); filtered by species + search.
   const rows = useMemo(() => {

@@ -26,6 +26,7 @@ import { playTap } from "@/lib/sounds";
 import { PetAvatar } from "@/components/PetAvatar";
 import { UpcomingEvents } from "@/components/UpcomingEvents";
 import { BirthdaysWidget } from "@/components/BirthdaysWidget";
+import { RemindersWidget } from "@/components/RemindersWidget";
 import { buildUpcomingEvents } from "@/lib/events";
 import { Card, CardTitle, Button, Badge, RingStat, Skeleton, EmptyState, HealthCurve, ProgressRing, type CurvePoint } from "@/components/ui";
 import { staggerContainer, fadeUp } from "@/lib/motion";
@@ -277,6 +278,9 @@ export function Dashboard() {
             onChanged={load}
             onEventClick={(e) => e.petId && navigate(`/pet/${e.petId}`)}
           />
+
+          {/* Actionable reminders → WhatsApp Campaigns (birthdays, vaccines, deworming) */}
+          <RemindersWidget pets={pets} />
 
           {/* Upcoming pet birthdays (CRM / retention) */}
           <BirthdaysWidget pets={pets} />

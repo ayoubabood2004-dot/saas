@@ -186,6 +186,13 @@ const demoRepo = {
     return loadDB().vaccinations.filter((v) => v.pet_id === petId);
   },
 
+  /** Vaccinations across a set of pets (the clinic directory) — for the
+   *  dashboard reminders feed (vaccines + deworming due soon). */
+  async listAllVaccinations(petIds: string[]): Promise<Vaccination[]> {
+    const ids = new Set(petIds);
+    return (loadDB().vaccinations ?? []).filter((v) => ids.has(v.pet_id));
+  },
+
   async addVaccination(input: Omit<Vaccination, "id">): Promise<Vaccination> {
     const db = loadDB();
     const v: Vaccination = { ...input, id: uid("v") };
@@ -586,6 +593,10 @@ const supabaseRepo: typeof demoRepo = {
   },
   async listVaccinations(petId) {
     return listOf<Vaccination>(await sbc().from("vaccinations").select("*").eq("pet_id", petId));
+  },
+  async listAllVaccinations(petIds) {
+    if (petIds.length === 0) return [];
+    return listOf<Vaccination>(await sbc().from("vaccinations").select("*").in("pet_id", petIds));
   },
   async addVaccination(input) {
     return need<Vaccination>(await sbc().from("vaccinations").insert(input).select().single());

@@ -69,9 +69,11 @@
     "messagePh": "Write your WhatsApp message…",
     "tplBirthday": "Birthday greeting",
     "tplVaccine": "Vaccination reminder",
+    "tplDeworming": "Deworming reminder",
     "tplOffer": "General offer",
     "msgBirthday": "Hello {{اسم_المالك}}! 🎉 doctorVet clinic wishes {{اسم_الحيوان}} a very happy birthday! 🐾",
     "msgVaccine": "Hello {{اسم_المالك}}, a reminder from doctorVet clinic: {{اسم_الحيوان}}'s vaccination is due. Please contact us to book a visit. 🐾",
+    "msgDeworming": "Hello {{اسم_المالك}}, a friendly reminder from doctorVet clinic: {{اسم_الحيوان}}'s deworming dose is due. Please contact us to arrange it. 🐛",
     "msgOffer": "Hello {{اسم_المالك}}! 🎁 doctorVet clinic has a special offer for you and {{اسم_الحيوان}}. Contact us for details.",
     "audience": "Audience",
     "all": "All",
@@ -89,6 +91,19 @@
     "sent": "Sent",
     "allSent": "All messages sent 🎉",
     "noTemplate": "Write the message first."
+  },
+  "remind": {
+    "title": "Upcoming reminders",
+    "empty": "No reminders due soon.",
+    "prepare": "Prepare message",
+    "birthday": "Birthday",
+    "vaccine": "Vaccine",
+    "deworming": "Deworming",
+    "today": "Today",
+    "tomorrow": "Tomorrow",
+    "inDays": "in",
+    "overdue": "overdue",
+    "day": "days"
   },
   "retail": {
     "title": "Retail & Sales",
