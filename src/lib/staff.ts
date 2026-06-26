@@ -17,6 +17,10 @@ import type { Role } from "@/types";
 export type StaffRole = "manager" | "veterinarian" | "receptionist" | "groomer";
 export type StaffStatus = "active" | "suspended";
 
+/** Per-staff custom overrides: a capability → allowed boolean. Absent keys fall
+ *  back to the base-role preset. An empty map means "use the role preset". */
+export type PermissionMap = Partial<Record<Capability, boolean>>;
+
 export interface StaffMember {
   id: string;
   name: string;
@@ -28,6 +32,8 @@ export interface StaffMember {
   status: StaffStatus;
   bio: string;
   avatar?: string | null;
+  /** Granular overrides on top of the role preset (see effectiveCan). */
+  permissions?: PermissionMap;
 }
 
 export const STAFF_ROLES: StaffRole[] = ["manager", "veterinarian", "receptionist", "groomer"];
@@ -59,6 +65,26 @@ export const PERMISSIONS: Record<StaffRole, Capability[]> = {
   groomer: ["viewCalendar", "addPets"],
 };
 
+/** High-risk capabilities that trigger a confirmation when granted to non-managers. */
+export const SENSITIVE_CAPS: ReadonlySet<Capability> = new Set<Capability>([
+  "viewProfits", "deleteInvoices", "manageStaff", "manageSettings",
+]);
+
+/** The base-role preset as a full capability → boolean map. */
+export function presetMap(role: StaffRole): Record<Capability, boolean> {
+  return Object.fromEntries(CAPABILITIES.map((c) => [c.id, roleCan(role, c.id)])) as Record<Capability, boolean>;
+}
+
+/**
+ * The effective verdict for a capability: a per-staff override wins when present,
+ * otherwise the base-role preset. Managers always have everything.
+ */
+export function effectiveCan(role: StaffRole, cap: Capability, overrides?: PermissionMap | null): boolean {
+  if (role === "manager") return true;
+  if (overrides && cap in overrides) return !!overrides[cap];
+  return roleCan(role, cap);
+}
+
 export const ROLE_LABEL: Record<StaffRole, string> = {
   manager: "مدير العيادة",
   veterinarian: "طبيب بيطري",
@@ -81,7 +107,7 @@ export function appRoleToStaffRole(role?: Role | null): StaffRole {
 
 export function blankStaff(): StaffMember {
   // A real UUID so the row drops straight into the Supabase `staff` table.
-  return { id: uuid(), name: "", email: "", phone: "", role: "receptionist", specialty: "", joinDate: new Date().toISOString().slice(0, 10), status: "active", bio: "", avatar: null };
+  return { id: uuid(), name: "", email: "", phone: "", role: "receptionist", specialty: "", joinDate: new Date().toISOString().slice(0, 10), status: "active", bio: "", avatar: null, permissions: {} };
 }
 
 /* ----------------------------- localStorage (demo / migration source) ---- */
@@ -125,6 +151,7 @@ interface StaffRow {
   id: string; name: string; email: string | null; phone: string | null;
   role: string; specialty: string | null; join_date: string | null;
   status: string; bio: string | null; avatar: string | null;
+  permissions: PermissionMap | null;
 }
 
 const rowToMember = (r: StaffRow): StaffMember => ({
@@ -132,6 +159,7 @@ const rowToMember = (r: StaffRow): StaffMember => ({
   role: (r.role as StaffRole) ?? "receptionist", specialty: r.specialty ?? "",
   joinDate: r.join_date ?? "", status: (r.status as StaffStatus) ?? "active",
   bio: r.bio ?? "", avatar: r.avatar ?? null,
+  permissions: (r.permissions && typeof r.permissions === "object") ? r.permissions : {},
 });
 
 // clinic_id is intentionally omitted — the DB default (auth.uid()) + RLS stamp it.
@@ -140,6 +168,7 @@ const memberToRow = (m: StaffMember) => ({
   name: m.name, email: m.email || null, phone: m.phone || null,
   role: m.role, specialty: m.specialty || null, join_date: m.joinDate || null,
   status: m.status, bio: m.bio || null, avatar: m.avatar ?? null,
+  permissions: m.permissions ?? {},
 });
 
 /* ----------------------------- Public async API -------------------------- */
@@ -182,4 +211,37 @@ export async function setStaffStatus(id: string, status: StaffStatus): Promise<v
   }
   const { error } = await supabase.from("staff").update({ status }).eq("id", id);
   if (error) throw new Error(error.message);
+}
+
+/* -------- Current user's granular permission overrides (for usePermissions) ----
+ * The logged-in staff member is matched to their staff row by email (the staff
+ * directory isn't joined to auth by id). Cached per-email so repeated mounts
+ * don't refetch. Managers never need this (they have everything). */
+let permsCache: { email: string; perms: PermissionMap } | null = null;
+
+const normEmail = (e?: string | null) => (e ?? "").trim().toLowerCase();
+
+/** Synchronously read cached overrides for an email (null if not yet hydrated). */
+export function peekMyPermissions(email?: string | null): PermissionMap | null {
+  const e = normEmail(email);
+  return permsCache && permsCache.email === e ? permsCache.perms : null;
+}
+
+/** Fetch (and cache) the staff-row overrides for the given email. */
+export async function hydrateMyPermissions(email?: string | null): Promise<PermissionMap> {
+  const e = normEmail(email);
+  if (!e) return {};
+  if (permsCache && permsCache.email === e) return permsCache.perms;
+  let perms: PermissionMap = {};
+  try {
+    if (!supabase) {
+      perms = loadLocal().find((m) => normEmail(m.email) === e)?.permissions ?? {};
+    } else {
+      const { data } = await supabase.from("staff").select("permissions").ilike("email", e).limit(1).maybeSingle();
+      const p = (data as { permissions?: PermissionMap } | null)?.permissions;
+      perms = (p && typeof p === "object") ? p : {};
+    }
+  } catch { perms = {}; }
+  permsCache = { email: e, perms };
+  return perms;
 }

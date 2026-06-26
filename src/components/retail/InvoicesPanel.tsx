@@ -7,7 +7,7 @@ import {
 } from "lucide-react";
 import type { Invoice, InvoiceItem, PaymentMethod } from "@/types";
 import { repo } from "@/lib/repo";
-import { useAuth } from "@/contexts/AuthContext";
+import { usePermissions } from "@/hooks/usePermissions";
 import { Modal } from "@/components/Modal";
 import { Button, Badge, useToast, Skeleton } from "@/components/ui";
 import { useInvoicePrinter } from "./usePrintInvoice";
@@ -23,6 +23,8 @@ type StatusFilter = "all" | "paid" | "refunded";
 
 export function InvoicesPanel({ invoices, onChanged }: { invoices: Invoice[]; clinicId?: string; onChanged: () => void }) {
   const { t, i18n } = useTranslation();
+  const { can } = usePermissions();
+  const showProfit = can("viewProfits");
   const [q, setQ] = useState("");
   const [status, setStatus] = useState<StatusFilter>("all");
   const [open, setOpen] = useState<Invoice | null>(null);
@@ -92,7 +94,7 @@ export function InvoicesPanel({ invoices, onChanged }: { invoices: Invoice[]; cl
                 {refunded && <Badge tone="danger">{t("retail.refunded", "Refunded")}</Badge>}
                 <div className="text-end">
                   <p className={cn("font-display font-bold tabular-nums", refunded ? "text-ink-subtle line-through" : "text-ink")}>{money(inv.total)}</p>
-                  {!refunded && <p className="flex items-center justify-end gap-1 text-2xs text-success-600"><TrendingUp size={10} /> {money(inv.profit)}</p>}
+                  {!refunded && showProfit && <p className="flex items-center justify-end gap-1 text-2xs text-success-600"><TrendingUp size={10} /> {money(inv.profit)}</p>}
                 </div>
               </motion.button>
             );
@@ -110,12 +112,12 @@ function InvoiceDetail({ invoice, onClose, onChanged, setOpen }: {
 }) {
   const { t, i18n } = useTranslation();
   const toast = useToast();
-  const { user } = useAuth();
+  const { can } = usePermissions();
+  const canDelete = can("deleteInvoices");
   const print = useInvoicePrinter();
   const [items, setItems] = useState<InvoiceItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState<"refund" | "delete" | null>(null);
-  const isAdmin = user?.role === "admin";
 
   useEffect(() => {
     if (!invoice) return;
@@ -238,13 +240,13 @@ function InvoiceDetail({ invoice, onClose, onChanged, setOpen }: {
           {!refunded && (
             <Button variant="outline" className="flex-1" loading={busy === "refund"} leftIcon={<RotateCcw size={16} />} onClick={refund}>{t("retail.refund", "Refund")}</Button>
           )}
-          {isAdmin && (
+          {canDelete && (
             <Button variant="ghost" className={cn("text-danger-600 hover:bg-danger-50", refunded && "flex-1")} loading={busy === "delete"} leftIcon={<Trash2 size={16} />} onClick={remove}>
               {t("retail.delete", "Delete")}
             </Button>
           )}
         </div>
-        {!isAdmin && !refunded && (
+        {!canDelete && !refunded && (
           <p className="flex items-center gap-1.5 text-2xs text-ink-subtle"><AlertTriangle size={12} /> {t("retail.deleteAdminOnly", "Only clinic admins can permanently delete invoices.")}</p>
         )}
       </div>

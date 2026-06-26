@@ -5,15 +5,15 @@ import { AnimatePresence, motion } from "framer-motion";
 import {
   Users, UserPlus, Pencil, Trash2, Check, X, ShieldCheck, ShieldX, Briefcase,
   Mail, Phone as PhoneIcon, Calendar, Camera, PauseCircle, PlayCircle, BadgeCheck, Lock,
-  Send, Copy, Ticket,
+  Send, Copy, Ticket, AlertTriangle,
 } from "lucide-react";
 import { Button, Dialog, useToast, Skeleton } from "@/components/ui";
 import { PhoneInput } from "@/components/PhoneInput";
 import { usePermissions } from "@/hooks/usePermissions";
 import {
   listStaff, saveStaff, deleteStaff, setStaffStatus, blankStaff,
-  STAFF_ROLES, ROLE_LABEL, CAPABILITIES, PERMISSIONS,
-  type StaffMember, type StaffRole,
+  STAFF_ROLES, ROLE_LABEL, CAPABILITIES, SENSITIVE_CAPS, presetMap,
+  type StaffMember, type StaffRole, type Capability,
 } from "@/lib/staff";
 import { prepareUpload } from "@/lib/image";
 import { createInvite, listInvites, revokeInvite, joinLink, type Invite } from "@/lib/invites";
@@ -250,6 +250,24 @@ function StaffDrawer({ member, dir, onClose, onSaved, onUploadError }: {
   const set = (patch: Partial<StaffMember>) => setDraft((d) => (d ? { ...d, ...patch } : d));
   const valid = !!draft?.name.trim();
 
+  // Granular permissions: effective map = role preset overlaid with custom overrides.
+  const [pendingSensitive, setPendingSensitive] = useState<Capability | null>(null);
+  const isManager = draft?.role === "manager";
+  const effPerms: Record<Capability, boolean> = draft
+    ? { ...presetMap(draft.role), ...(draft.permissions ?? {}) }
+    : ({} as Record<Capability, boolean>);
+  // Selecting a role auto-fills the toggles with that role's default preset.
+  const changeRole = (role: StaffRole) => set({ role, permissions: presetMap(role) });
+  const applyToggle = (cap: Capability, val: boolean) => set({ permissions: { ...effPerms, [cap]: val } });
+  const toggleCap = (cap: Capability) => {
+    if (isManager) return; // manager always has everything
+    playTap();
+    const next = !effPerms[cap];
+    // Granting a sensitive capability to a non-manager → confirm first.
+    if (next && SENSITIVE_CAPS.has(cap)) { setPendingSensitive(cap); return; }
+    applyToggle(cap, next);
+  };
+
   const pickAvatar = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0]; e.target.value = "";
     if (!f || !draft) return;
@@ -325,27 +343,35 @@ function StaffDrawer({ member, dir, onClose, onSaved, onUploadError }: {
               <Section title="الصلاحيات والدور" step="C">
                 <div>
                   <label className="label">الدور الأساسي</label>
-                  <select className="input" value={draft.role} onChange={(e) => set({ role: e.target.value as StaffRole })}>
+                  <select className="input" value={draft.role} onChange={(e) => changeRole(e.target.value as StaffRole)}>
                     {STAFF_ROLES.map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
                   </select>
+                  <p className="mt-1 text-2xs text-ink-subtle">اختيار الدور يضبط الصلاحيات تلقائياً، وتقدر تعدّل كل صلاحية بالأسفل.</p>
                 </div>
 
-                {/* Read-only capability checklist for the selected role */}
+                {/* Interactive granular permission toggles */}
                 <div className="rounded-2xl border border-line bg-surface-2/50 p-3">
-                  <p className="mb-2 text-xs font-bold text-ink-muted">ما الذي يستطيع «{ROLE_LABEL[draft.role]}» فعله؟</p>
-                  <ul className="space-y-1.5">
+                  <p className="mb-2 flex items-center gap-1.5 text-xs font-bold text-ink-muted"><Lock size={13} className="text-brand-600" /> الصلاحيات المخصّصة</p>
+                  <ul className="divide-y divide-line/60">
                     {CAPABILITIES.map((cap) => {
-                      const allowed = PERMISSIONS[draft.role].includes(cap.id);
+                      const on = isManager || !!effPerms[cap.id];
+                      const sensitive = SENSITIVE_CAPS.has(cap.id);
                       return (
-                        <li key={cap.id} className="flex items-center gap-2 text-sm">
-                          <span className={cn("grid h-5 w-5 shrink-0 place-items-center rounded-full", allowed ? "bg-success-100 text-success-700 dark:bg-success-500/20 dark:text-success-300" : "bg-surface-2 text-ink-subtle")}>
-                            {allowed ? <Check size={13} /> : <X size={13} />}
+                        <li key={cap.id} className="flex items-center justify-between gap-3 py-2">
+                          <span className="flex min-w-0 items-center gap-2 text-sm text-ink">
+                            <span className="truncate">{cap.label}</span>
+                            {sensitive && (
+                              <span title="صلاحية حسّاسة" className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-warn-50 px-1.5 py-0.5 text-2xs font-semibold text-warn-700 dark:bg-warn-500/15 dark:text-warn-300">
+                                <AlertTriangle size={10} /> حسّاسة
+                              </span>
+                            )}
                           </span>
-                          <span className={cn(allowed ? "text-ink" : "text-ink-subtle line-through decoration-ink-subtle/40")}>{cap.label}</span>
+                          <PermToggle on={on} disabled={isManager} sensitive={sensitive} dir={dir} onClick={() => toggleCap(cap.id)} />
                         </li>
                       );
                     })}
                   </ul>
+                  {isManager && <p className="mt-2 text-2xs text-ink-subtle">مدير العيادة يملك جميع الصلاحيات تلقائياً.</p>}
                 </div>
 
                 {/* Status */}
@@ -371,6 +397,28 @@ function StaffDrawer({ member, dir, onClose, onSaved, onUploadError }: {
               <Button className="flex-1" disabled={!valid} onClick={() => draft && onSaved({ ...draft, name: draft.name.trim() })}>حفظ الملف</Button>
             </div>
           </motion.div>
+
+          {/* Smart warning — granting a sensitive permission to a non-manager */}
+          <Dialog
+            open={!!pendingSensitive}
+            onClose={() => setPendingSensitive(null)}
+            title="تحذير: صلاحية حسّاسة"
+            footer={
+              <div className="flex items-center gap-3">
+                <Button variant="ghost" className="flex-1" onClick={() => setPendingSensitive(null)}>إلغاء</Button>
+                <Button className="flex-1" onClick={() => { if (pendingSensitive) applyToggle(pendingSensitive, true); setPendingSensitive(null); playSuccess(); }}>نعم، امنح الصلاحية</Button>
+              </div>
+            }
+          >
+            <div className="flex items-start gap-3">
+              <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-warn-50 text-warn-600 dark:bg-warn-500/15 dark:text-warn-300"><AlertTriangle size={20} /></span>
+              <div className="text-sm text-ink-muted">
+                <p className="font-semibold text-ink">أنت تمنح صلاحية حسّاسة لهذا الموظف. هل أنت متأكد؟</p>
+                {pendingSensitive && <p className="mt-1">الصلاحية: <span className="font-semibold text-ink">«{CAPABILITIES.find((c) => c.id === pendingSensitive)?.label}»</span></p>}
+                <p className="mt-1 text-2xs text-ink-subtle">يمكنك التراجع في أي وقت من نفس القائمة.</p>
+              </div>
+            </div>
+          </Dialog>
         </div>
       )}
     </AnimatePresence>,
@@ -487,5 +535,36 @@ function CopyRow({ label, value, copied, onCopy, mono = true }: { label: string;
         {copied ? <Check size={14} /> : <Copy size={14} />}{copied ? "تم النسخ" : "نسخ"}
       </button>
     </div>
+  );
+}
+
+/** Premium animated permission switch (green = on, grey = off). RTL-aware knob. */
+function PermToggle({ on, disabled, sensitive, dir, onClick }: { on: boolean; disabled?: boolean; sensitive?: boolean; dir: string; onClick: () => void }) {
+  const rtl = dir === "rtl";
+  // Knob rests near the leading edge when off, slides to the trailing edge when on.
+  const offX = rtl ? "-2px" : "2px";
+  const onX = rtl ? "-22px" : "22px";
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={on}
+      disabled={disabled}
+      onClick={onClick}
+      className={cn(
+        "relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400/60",
+        on ? (sensitive ? "bg-warn-500" : "bg-success-500") : "bg-surface-2 border border-line",
+        disabled ? "cursor-not-allowed opacity-60" : "cursor-pointer",
+      )}
+    >
+      <motion.span
+        layout
+        className="absolute grid h-5 w-5 place-items-center rounded-full bg-white shadow-soft"
+        animate={{ x: on ? onX : offX }}
+        transition={{ type: "spring", stiffness: 500, damping: 32 }}
+      >
+        {on ? <Check size={12} className={sensitive ? "text-warn-600" : "text-success-600"} /> : <X size={12} className="text-ink-subtle" />}
+      </motion.span>
+    </button>
   );
 }
