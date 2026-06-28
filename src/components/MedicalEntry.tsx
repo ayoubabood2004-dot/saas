@@ -69,14 +69,27 @@ const SPECIES_GROUP: Record<Species, string | null> = {
 /** Attending-doctor roster (same source as the calendar / reception). */
 export const DOCTOR_NAMES = DOCTORS.map((d) => d.name);
 
+/** Local YYYY-MM-DD (NOT toISOString, which shifts to UTC and is off-by-one in
+ *  positive-offset zones like Iraq UTC+3 — that made presets never match the
+ *  native date input's local value). */
+function localISO(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
 function addToToday(b: Booster): string {
   const d = new Date(); d.setHours(0, 0, 0, 0);
   if (b.days) d.setDate(d.getDate() + b.days);
   if (b.months) d.setMonth(d.getMonth() + b.months);
   if (b.years) d.setFullYear(d.getFullYear() + b.years);
-  return d.toISOString().slice(0, 10);
+  return localISO(d);
 }
-const prettyDate = (iso: string) => new Date(iso + "T00:00:00").toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+/** Format a YYYY-MM-DD safely — never throws / never renders "Invalid Date". */
+const prettyDate = (iso: string) => {
+  const d = new Date(iso + "T00:00:00");
+  return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+};
 
 export interface MedicationDraft { id: string; kind: "medication"; family: string; name: string; route: RouteId; dosage: string; note?: string }
 export interface VaccinationDraft { id: string; kind: "vaccination"; name: string; nextDue: string | null; lot?: string }
@@ -406,6 +419,7 @@ function MedicationForm({ onAdd }: { onAdd: (e: MedicalDraft) => void }) {
 function VaccinationForm({ species, hasSpeciesProp, draftSpecies, setDraftSpecies, onAdd }: {
   species: Species; hasSpeciesProp: boolean; draftSpecies: Species; setDraftSpecies: (s: Species) => void; onAdd: (e: MedicalDraft) => void;
 }) {
+  const toast = useToast();
   const [vaccine, setVaccine] = useState("");
   const [nextDue, setNextDue] = useState<string | null>(null);
   const [lot, setLot] = useState("");
@@ -482,10 +496,18 @@ function VaccinationForm({ species, hasSpeciesProp, draftSpecies, setDraftSpecie
                     </button>
                   );
                 })}
-                <label className={cn("flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm font-semibold transition cursor-pointer", nextDue && !BOOSTERS.some((b) => addToToday(b) === nextDue) ? "border-brand-500 bg-brand-600 text-white" : "border-line bg-surface-1 text-ink-muted hover:bg-surface-2")}>
+                {/* Custom date — a VISIBLE native date field (an sr-only input made
+                    the picker unreliable: selecting a custom date then clicking
+                    "Add" did nothing on several browsers). */}
+                <label className={cn("flex items-center gap-1.5 rounded-full border ps-3 pe-2 py-1 text-sm font-semibold transition cursor-pointer", nextDue && !BOOSTERS.some((b) => addToToday(b) === nextDue) ? "border-brand-500 bg-brand-50 text-brand-700 dark:bg-brand-500/15 dark:text-brand-200" : "border-line bg-surface-1 text-ink-muted hover:bg-surface-2")}>
                   <CalendarClock size={14} />
-                  <span>Custom</span>
-                  <input type="date" className="sr-only" value={nextDue ?? ""} onChange={(e) => setNextDue(e.target.value || null)} />
+                  <input
+                    type="date"
+                    aria-label="تاريخ مخصص للجرعة التالية"
+                    className="bg-transparent text-sm font-semibold text-current outline-none [color-scheme:light] dark:[color-scheme:dark]"
+                    value={nextDue ?? ""}
+                    onChange={(e) => setNextDue(e.target.value || null)}
+                  />
                 </label>
               </div>
               {nextDue && (
@@ -516,8 +538,16 @@ function VaccinationForm({ species, hasSpeciesProp, draftSpecies, setDraftSpecie
         leftIcon={<Plus size={16} />}
         onClick={() => {
           if (!vaccine) return;
-          onAdd({ id: uid("vac"), kind: "vaccination", name: vaccine, nextDue, lot: lot.trim() || undefined });
-          setVaccine(""); setNextDue(null); setLot("");
+          try {
+            // A custom date arrives as YYYY-MM-DD; normalize & reject anything unparseable
+            // so a bad value can never silently break the add.
+            const due = nextDue && !Number.isNaN(new Date(nextDue + "T00:00:00").getTime()) ? nextDue : null;
+            onAdd({ id: uid("vac"), kind: "vaccination", name: vaccine, nextDue: due, lot: lot.trim() || undefined });
+            setVaccine(""); setNextDue(null); setLot("");
+          } catch (err) {
+            console.error("Add vaccination failed:", err);
+            toast.error("تعذّرت إضافة اللقاح", err instanceof Error ? err.message : "تحقّق من التاريخ المُختار.");
+          }
         }}
       >
         Add vaccination
