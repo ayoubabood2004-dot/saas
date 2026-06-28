@@ -16,6 +16,7 @@ import {
   Store,
   MessageCircle,
   Briefcase,
+  BarChart3,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { usePermissions } from "@/hooks/usePermissions";
@@ -43,6 +44,7 @@ export function Sidebar() {
     { to: "/records", icon: ClipboardList, label: t("records.title") },
     { to: "/inventory", icon: Boxes, label: t("nav.inventory", "Inventory"), show: can("manageInventory") },
     { to: "/retail", icon: Store, label: t("nav.retail", "Retail & Sales"), show: can("processSales") },
+    { to: "/reports", icon: BarChart3, label: t("nav.reports", "التقارير"), show: can("viewReports") },
     { to: "/campaigns", icon: MessageCircle, label: t("nav.campaigns", "WhatsApp Campaigns") },
     { to: "/staff", icon: Briefcase, label: t("nav.staff", "Staff Management"), show: can("manageStaff") },
     { to: "/scan", icon: ScanLine, label: t("nav.scan") },
