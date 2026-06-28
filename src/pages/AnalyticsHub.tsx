@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, PieChart, Pie,
+  AreaChart, Area, Line, ComposedChart, CartesianGrid, Legend,
 } from "recharts";
 import {
   BarChart3, Wallet, Banknote, CreditCard, ArrowLeftRight, Receipt, TrendingUp,
@@ -29,6 +30,7 @@ const PAY_ICON: Record<PaymentMethod, typeof Banknote> = { cash: Banknote, card:
 
 const startOfDay = (d: Date) => { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; };
 const endOfDay = (d: Date) => { const x = new Date(d); x.setHours(23, 59, 59, 999); return x; };
+const localISO = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
 function rangeBounds(key: RangeKey, from: string, to: string): { lo: number; hi: number } {
   const now = new Date();
@@ -107,6 +109,35 @@ export function AnalyticsHub() {
   }, [paid, invInRange]);
 
   const receivables = useMemo(() => paid.filter((i) => !i.payment_method), [paid]);
+
+  // Time series: hourly when the range is a single day, otherwise daily — gross + net.
+  const series = useMemo(() => {
+    const hourly = (hi - lo) <= 86400000 * 1.5;
+    const buckets = new Map<string, { label: string; gross: number; net: number; order: number }>();
+    if (hourly) {
+      for (let h = 0; h < 24; h += 2) buckets.set(String(h), { label: `${h}:00`, gross: 0, net: 0, order: h });
+    } else {
+      const d = startOfDay(new Date(lo));
+      for (let i = 0; d.getTime() <= hi && i < 92; i++) {
+        buckets.set(localISO(d), { label: `${d.getMonth() + 1}/${d.getDate()}`, gross: 0, net: 0, order: d.getTime() });
+        d.setDate(d.getDate() + 1);
+      }
+    }
+    for (const inv of paid) {
+      const dt = new Date(inv.created_at);
+      const key = hourly ? String(Math.floor(dt.getHours() / 2) * 2) : localISO(startOfDay(dt));
+      const b = buckets.get(key);
+      if (b) { b.gross += inv.total; b.net += inv.profit ?? 0; }
+    }
+    return Array.from(buckets.values()).sort((a, b) => a.order - b.order)
+      .map((b) => ({ label: b.label, gross: Math.round(b.gross), net: Math.round(b.net) }));
+  }, [paid, lo, hi]);
+
+  const paymentPie = useMemo(() => {
+    const m = { cash: 0, card: 0, transfer: 0 } as Record<PaymentMethod, number>;
+    for (const i of paid) if (i.payment_method && m[i.payment_method] !== undefined) m[i.payment_method] += i.total;
+    return (["cash", "card", "transfer"] as PaymentMethod[]).map((k) => ({ name: PAY_AR[k], value: Math.round(m[k]) })).filter((d) => d.value > 0);
+  }, [paid]);
 
   // ---- Module 2: Revenue & Profits ----
   const revenue = useMemo(() => {
@@ -253,8 +284,8 @@ export function AnalyticsHub() {
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-32 rounded-2xl" />)}</div>
       ) : (
         <>
-          {tab === "ops" && <OpsTab z={zReport} receivables={receivables} />}
-          {tab === "revenue" && <RevenueTab revenue={revenue} categoryData={categoryData} staff={staffPerf} canProfit={canProfit} />}
+          {tab === "ops" && <OpsTab z={zReport} receivables={receivables} series={series} paymentPie={paymentPie} />}
+          {tab === "revenue" && <RevenueTab revenue={revenue} categoryData={categoryData} staff={staffPerf} canProfit={canProfit} series={series} />}
           {tab === "sales" && <SalesTab movers={movers} species={speciesActivity} />}
         </>
       )}
@@ -264,9 +295,32 @@ export function AnalyticsHub() {
 
 /* ----------------------------- Module 1 ----------------------------- */
 interface ZReport { byMethod: Record<PaymentMethod, { total: number; count: number }>; gross: number; pending: number; txCount: number; refundCount: number; refundTotal: number }
-function OpsTab({ z, receivables }: { z: ZReport; receivables: Invoice[] }) {
+type Series = { label: string; gross: number; net: number }[];
+function OpsTab({ z, receivables, series, paymentPie }: { z: ZReport; receivables: Invoice[]; series: Series; paymentPie: { name: string; value: number }[] }) {
   const methods: PaymentMethod[] = ["cash", "card", "transfer"];
   return (
+    <div className="space-y-5">
+    {/* Sales trend over the period */}
+    <Panel title="حركة المبيعات خلال الفترة" icon={BarChart3}>
+      {series.length === 0 ? <Empty text="لا توجد بيانات في هذه الفترة." /> : (
+        <ResponsiveContainer width="100%" height={240}>
+          <AreaChart data={series} margin={{ top: 8, right: 8, left: -8, bottom: 0 }}>
+            <defs>
+              <linearGradient id="gGross" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#2563eb" stopOpacity={0.35} />
+                <stop offset="100%" stopColor="#2563eb" stopOpacity={0} />
+              </linearGradient>
+            </defs>
+            <CartesianGrid strokeDasharray="3 3" className="stroke-line" vertical={false} />
+            <XAxis dataKey="label" tick={{ fontSize: 11 }} stroke="currentColor" className="text-ink-subtle" />
+            <YAxis tick={{ fontSize: 11 }} width={56} stroke="currentColor" className="text-ink-subtle" tickFormatter={(v: number) => formatNum(v)} />
+            <Tooltip formatter={(v: number) => money(v)} labelStyle={{ color: "#64748b" }} />
+            <Area type="monotone" dataKey="gross" name="المبيعات" stroke="#2563eb" strokeWidth={2} fill="url(#gGross)" />
+          </AreaChart>
+        </ResponsiveContainer>
+      )}
+    </Panel>
+
     <div className="grid gap-5 lg:grid-cols-2">
       {/* Z-Report */}
       <Panel title="إغلاق الصندوق (Z-Report)" icon={Wallet}>
@@ -275,6 +329,19 @@ function OpsTab({ z, receivables }: { z: ZReport; receivables: Invoice[] }) {
           <p className="font-display text-3xl font-extrabold tabular-nums">{money(z.gross)}</p>
           <p className="mt-1 text-xs opacity-90">{formatNum(z.txCount)} عملية بيع</p>
         </div>
+        {paymentPie.length > 0 && (
+          <div className="mb-3">
+            <ResponsiveContainer width="100%" height={150}>
+              <PieChart>
+                <Pie data={paymentPie} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={40} outerRadius={62} paddingAngle={2}>
+                  {paymentPie.map((_, i) => <Cell key={i} fill={PIE[i % PIE.length]} />)}
+                </Pie>
+                <Tooltip formatter={(v: number) => money(v)} />
+                <Legend iconType="circle" wrapperStyle={{ fontSize: 12 }} />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+        )}
         <div className="space-y-2">
           {methods.map((m) => {
             const Icon = PAY_ICON[m]; const row = z.byMethod[m];
@@ -320,15 +387,17 @@ function OpsTab({ z, receivables }: { z: ZReport; receivables: Invoice[] }) {
         )}
       </Panel>
     </div>
+    </div>
   );
 }
 
 /* ----------------------------- Module 2 ----------------------------- */
-function RevenueTab({ revenue, categoryData, staff, canProfit }: {
+function RevenueTab({ revenue, categoryData, staff, canProfit, series }: {
   revenue: { gross: number; cogs: number; net: number; margin: number; services: number; products: number };
   categoryData: { name: string; value: number }[];
   staff: { doctor: string; count: number }[];
   canProfit: boolean;
+  series: Series;
 }) {
   return (
     <div className="space-y-5">
@@ -345,6 +414,23 @@ function RevenueTab({ revenue, categoryData, staff, canProfit }: {
           </div>
         )}
       </div>
+
+      {/* Revenue vs net profit over the period */}
+      <Panel title={canProfit ? "الإيرادات مقابل صافي الربح" : "الإيرادات خلال الفترة"} icon={TrendingUp}>
+        {series.length === 0 ? <Empty text="لا توجد بيانات في هذه الفترة." /> : (
+          <ResponsiveContainer width="100%" height={260}>
+            <ComposedChart data={series} margin={{ top: 8, right: 8, left: -8, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" className="stroke-line" vertical={false} />
+              <XAxis dataKey="label" tick={{ fontSize: 11 }} stroke="currentColor" className="text-ink-subtle" />
+              <YAxis tick={{ fontSize: 11 }} width={56} stroke="currentColor" className="text-ink-subtle" tickFormatter={(v: number) => formatNum(v)} />
+              <Tooltip formatter={(v: number) => money(v)} />
+              <Legend iconType="circle" wrapperStyle={{ fontSize: 12 }} />
+              <Bar dataKey="gross" name="الإيرادات" fill="#2563eb" radius={[5, 5, 0, 0]} maxBarSize={36} />
+              {canProfit && <Line type="monotone" dataKey="net" name="صافي الربح" stroke="#16a34a" strokeWidth={2.5} dot={false} />}
+            </ComposedChart>
+          </ResponsiveContainer>
+        )}
+      </Panel>
 
       <div className="grid gap-5 lg:grid-cols-2">
         <Panel title="الإيرادات حسب الفئة" icon={BarChart3}>
