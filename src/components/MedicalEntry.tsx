@@ -7,8 +7,8 @@ import {
   HeartPulse, Activity, AlertTriangle, NotebookPen,
 } from "lucide-react";
 import type { Species, PatientCondition, MedicalAssessment } from "@/types";
-import { MED_CATALOG } from "@/lib/meds";
-import { VACCINE_CATALOG, BUILTIN_VACCINES } from "@/lib/vaccines";
+import { MED_CATALOG, getClinicMeds, hydrateMeds } from "@/lib/meds";
+import { VACCINE_CATALOG, BUILTIN_VACCINES, getClinicVaccines, hydrateVaccines } from "@/lib/vaccines";
 import { DOCTORS } from "@/lib/clinic";
 import { Button, useToast } from "@/components/ui";
 import { cn, uid } from "@/lib/utils";
@@ -120,6 +120,14 @@ export function MedicalEntry({
   const { t } = useTranslation();
   const toast = useToast();
   const [mode, setMode] = useState<"medication" | "vaccination">(initialMode ?? "medication");
+  // Bumped after the clinic catalog (meds + vaccines) is re-pulled on open, so the
+  // dropdowns always reflect items just added in Settings — even from another device.
+  const [catalogVersion, setCatalogVersion] = useState(0);
+  useEffect(() => {
+    let alive = true;
+    void Promise.allSettled([hydrateMeds(), hydrateVaccines()]).then(() => { if (alive) setCatalogVersion((v) => v + 1); });
+    return () => { alive = false; };
+  }, []);
   const [draftSpecies, setDraftSpecies] = useState<Species>(species ?? "dog");
   const activeSpecies = species ?? draftSpecies;
   const [sheet, setSheet] = useState<MedicalDraft[]>([]);
@@ -188,8 +196,8 @@ export function MedicalEntry({
         transition={{ duration: 0.2, ease: "easeOut" }}
       >
         {mode === "medication"
-          ? <MedicationForm onAdd={add} />
-          : <VaccinationForm species={activeSpecies} hasSpeciesProp={!!species} draftSpecies={draftSpecies} setDraftSpecies={setDraftSpecies} onAdd={add} />}
+          ? <MedicationForm onAdd={add} version={catalogVersion} />
+          : <VaccinationForm species={activeSpecies} hasSpeciesProp={!!species} draftSpecies={draftSpecies} setDraftSpecies={setDraftSpecies} onAdd={add} version={catalogVersion} />}
       </motion.div>
 
       {/* Unified treatment record */}
@@ -265,8 +273,21 @@ export function MedicalEntry({
 }
 
 /* ---------------- Medication (cascading) ---------------- */
-function MedicationForm({ onAdd }: { onAdd: (e: MedicalDraft) => void }) {
-  const families = useMemo(() => MED_CATALOG.filter((c) => c.type !== "Vaccines"), []);
+function MedicationForm({ onAdd, version }: { onAdd: (e: MedicalDraft) => void; version: number }) {
+  // Built-in catalogue MERGED with the clinic's custom medications (added in
+  // Settings) — grouped under their therapeutic type. `version` forces a refresh
+  // after the catalog re-hydrates so newly-added meds appear instantly.
+  const families = useMemo(() => {
+    const map = new Map<string, string[]>();
+    for (const c of MED_CATALOG) if (c.type !== "Vaccines") map.set(c.type, [...c.items]);
+    for (const m of getClinicMeds()) {
+      const arr = map.get(m.type) ?? [];
+      if (!arr.some((x) => x.toLowerCase() === m.name.toLowerCase())) arr.push(m.name);
+      map.set(m.type, arr);
+    }
+    return Array.from(map, ([type, items]) => ({ type, items }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [version]);
   const [family, setFamily] = useState<string>("");
   const [drug, setDrug] = useState<string>("");
   const [route, setRoute] = useState<RouteId | null>(null);
@@ -416,8 +437,8 @@ function MedicationForm({ onAdd }: { onAdd: (e: MedicalDraft) => void }) {
 }
 
 /* ---------------- Vaccination (species-aware) ---------------- */
-function VaccinationForm({ species, hasSpeciesProp, draftSpecies, setDraftSpecies, onAdd }: {
-  species: Species; hasSpeciesProp: boolean; draftSpecies: Species; setDraftSpecies: (s: Species) => void; onAdd: (e: MedicalDraft) => void;
+function VaccinationForm({ species, hasSpeciesProp, draftSpecies, setDraftSpecies, onAdd, version }: {
+  species: Species; hasSpeciesProp: boolean; draftSpecies: Species; setDraftSpecies: (s: Species) => void; onAdd: (e: MedicalDraft) => void; version: number;
 }) {
   const toast = useToast();
   const [vaccine, setVaccine] = useState("");
@@ -426,9 +447,12 @@ function VaccinationForm({ species, hasSpeciesProp, draftSpecies, setDraftSpecie
 
   const group = SPECIES_GROUP[species];
   const vaccines = useMemo(() => {
-    const list = group ? VACCINE_CATALOG.find((g) => g.group === group)?.items ?? [] : BUILTIN_VACCINES;
-    return Array.from(new Set(list));
-  }, [group]);
+    const builtin = group ? VACCINE_CATALOG.find((g) => g.group === group)?.items ?? [] : BUILTIN_VACCINES;
+    // Clinic-custom vaccines (added in Settings) aren't species-tagged → always offered.
+    const custom = getClinicVaccines().map((v) => v.name);
+    return Array.from(new Set([...builtin, ...custom]));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [group, version]);
 
   // Reset the chosen vaccine when the species filter changes it out of the list.
   useEffect(() => { if (vaccine && !vaccines.includes(vaccine)) setVaccine(""); }, [vaccines, vaccine]);
