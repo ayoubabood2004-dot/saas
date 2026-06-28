@@ -18,6 +18,7 @@ import { UpcomingEvents } from "@/components/UpcomingEvents";
 import { buildUpcomingEvents } from "@/lib/events";
 import { WeightChart } from "@/components/WeightChart";
 import { HealthSnapshot } from "@/components/HealthSnapshot";
+import { PetSalesWidget } from "@/components/PetSalesWidget";
 import { HealthCurve, type CurvePoint, Button, useToast, ProgressRing } from "@/components/ui";
 import { QrCode } from "@/components/QrCode";
 import { Modal } from "@/components/Modal";
@@ -468,6 +469,9 @@ export function PetPassport() {
             onChanged={reload}
             onEventClick={(e) => { const tgt = EVENT_TAB[e.category]; if (tgt) { setTab(tgt); playTap(); } }}
           />
+
+          {/* Mini sales history (clinic staff only — financial overview for this pet's owner) */}
+          {!isOwner && <PetSalesWidget pet={pet} />}
 
           {media.length > 0 && (
             <div className="card p-4 no-print">
