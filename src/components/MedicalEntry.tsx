@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { AnimatePresence, motion } from "framer-motion";
 import {
-  Pill, Syringe, Droplet, Plus, Search, ChevronDown, Trash2, Check,
+  Pill, Syringe, Droplet, Plus, Search, ChevronDown, Trash2, Check, X,
   ShieldCheck, Stethoscope, CalendarClock, Layers, ClipboardList,
   HeartPulse, Activity, AlertTriangle, NotebookPen,
 } from "lucide-react";
@@ -434,6 +434,8 @@ function VaccinationForm({ species, hasSpeciesProp, draftSpecies, setDraftSpecie
   useEffect(() => { if (vaccine && !vaccines.includes(vaccine)) setVaccine(""); }, [vaccines, vaccine]);
 
   const SPECIES_OPTS: Species[] = ["dog", "cat", "horse", "cow", "rabbit", "bird", "other"];
+  // A date that isn't one of the preset boosters → the custom field is the active choice.
+  const isCustom = !!nextDue && !BOOSTERS.some((b) => addToToday(b) === nextDue);
 
   return (
     <div className="space-y-5">
@@ -496,25 +498,44 @@ function VaccinationForm({ species, hasSpeciesProp, draftSpecies, setDraftSpecie
                     </button>
                   );
                 })}
-                {/* Custom date — a VISIBLE native date field (an sr-only input made
-                    the picker unreliable: selecting a custom date then clicking
-                    "Add" did nothing on several browsers). */}
-                <label className={cn("flex items-center gap-1.5 rounded-full border ps-3 pe-2 py-1 text-sm font-semibold transition cursor-pointer", nextDue && !BOOSTERS.some((b) => addToToday(b) === nextDue) ? "border-brand-500 bg-brand-50 text-brand-700 dark:bg-brand-500/15 dark:text-brand-200" : "border-line bg-surface-1 text-ink-muted hover:bg-surface-2")}>
-                  <CalendarClock size={14} />
-                  <input
-                    type="date"
-                    aria-label="تاريخ مخصص للجرعة التالية"
-                    className="bg-transparent text-sm font-semibold text-current outline-none [color-scheme:light] dark:[color-scheme:dark]"
-                    value={nextDue ?? ""}
-                    onChange={(e) => setNextDue(e.target.value || null)}
-                  />
-                </label>
               </div>
-              {nextDue && (
-                <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="mt-2 flex items-center gap-1.5 text-xs text-ink-muted">
-                  <CalendarClock size={13} className="text-brand-600" /> Booster scheduled for <span className="font-semibold text-ink">{prettyDate(nextDue)}</span>
-                </motion.p>
-              )}
+
+              {/* Custom date — a polished, reliable native date field. (A previous
+                  sr-only input made the picker flaky, so "Add" appeared dead.) */}
+              <label className={cn(
+                "group mt-2 flex cursor-pointer items-center gap-3 rounded-2xl border px-3 py-2.5 transition focus-within:ring-2 focus-within:ring-brand-400/40",
+                isCustom ? "border-brand-400 bg-brand-50 dark:border-brand-500/50 dark:bg-brand-500/10" : "border-line bg-surface-1 hover:border-brand-300 hover:bg-surface-2",
+              )}>
+                <span className={cn("grid h-9 w-9 shrink-0 place-items-center rounded-xl transition", isCustom ? "bg-brand-600 text-white shadow-soft" : "bg-surface-2 text-ink-subtle group-hover:text-brand-600")}>
+                  <CalendarClock size={17} />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-bold text-ink">Custom date</p>
+                  <p className="text-2xs text-ink-subtle">Pick a specific day</p>
+                </div>
+                <input
+                  type="date"
+                  aria-label="Custom next-dose date"
+                  className="shrink-0 rounded-lg bg-surface-2 px-2.5 py-1.5 text-sm font-bold text-ink outline-none ring-1 ring-line transition focus:ring-brand-400 [color-scheme:light] dark:[color-scheme:dark]"
+                  value={nextDue ?? ""}
+                  onChange={(e) => setNextDue(e.target.value || null)}
+                />
+              </label>
+
+              <AnimatePresence>
+                {nextDue && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, height: 0 }}
+                    className="mt-2 flex items-center gap-2 rounded-xl bg-success-50 px-3 py-2 text-xs font-medium text-success-700 dark:bg-success-500/10 dark:text-success-300"
+                  >
+                    <CalendarClock size={14} className="shrink-0" />
+                    <span className="flex-1">Next dose scheduled for <span className="font-bold">{prettyDate(nextDue)}</span></span>
+                    <button type="button" onClick={() => { playTap(); setNextDue(null); }} aria-label="Clear date" className="shrink-0 rounded-full p-1 transition hover:bg-success-100 dark:hover:bg-success-500/20">
+                      <X size={13} />
+                    </button>
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </Tier>
           </Reveal>
         )}
