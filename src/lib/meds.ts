@@ -118,9 +118,14 @@ export async function hydrateMeds(): Promise<void> {
     const { data, error } = await client.from("clinic_meds").select("name,type").order("created_at");
     if (error) throw error;
     let next = (data ?? []).map((r) => ({ name: r.name as string, type: r.type as string }));
+    const local = readLocal();
     if (next.length === 0) {
-      const local = readLocal();
       if (local.length) { await client.from("clinic_meds").insert(local); next = local; }
+    } else if (local.length) {
+      // Keep any local-only items (added optimistically; their cloud insert may be
+      // pending or failed) so hydration never DROPS a just-added medication.
+      const names = new Set(next.map((m) => m.name.toLowerCase()));
+      for (const l of local) if (!names.has(l.name.toLowerCase())) next.push(l);
     }
     cache = next;
     try { localStorage.setItem(keyName(), JSON.stringify(next)); } catch { /* ignore */ }
