@@ -446,11 +446,13 @@ function VaccinationForm({ species, hasSpeciesProp, draftSpecies, setDraftSpecie
   const [lot, setLot] = useState("");
 
   const group = SPECIES_GROUP[species];
+  // Clinic-custom vaccines (added in Settings) aren't species-tagged → always offered.
+  const customNames = useMemo(() => getClinicVaccines().map((v) => v.name), [version]);
+  const customSet = useMemo(() => new Set(customNames.map((n) => n.toLowerCase())), [customNames]);
   const vaccines = useMemo(() => {
     const builtin = group ? VACCINE_CATALOG.find((g) => g.group === group)?.items ?? [] : BUILTIN_VACCINES;
-    // Clinic-custom vaccines (added in Settings) aren't species-tagged → always offered.
-    const custom = getClinicVaccines().map((v) => v.name);
-    return Array.from(new Set([...builtin, ...custom]));
+    // Custom vaccines FIRST so a just-added one is immediately visible (no scrolling).
+    return Array.from(new Set([...customNames, ...builtin]));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [group, version]);
 
@@ -495,7 +497,7 @@ function VaccinationForm({ species, hasSpeciesProp, draftSpecies, setDraftSpecie
           value={vaccine}
           placeholder="Select a vaccine for this species…"
           searchable
-          options={vaccines.map((v) => ({ value: v, label: v }))}
+          options={vaccines.map((v) => ({ value: v, label: v, hint: customSet.has(v.toLowerCase()) ? "خاص بالعيادة" : undefined }))}
           onChange={setVaccine}
         />
       </Tier>
