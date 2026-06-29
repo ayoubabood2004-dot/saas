@@ -1,4 +1,4 @@
-import { lazy, Suspense, type ReactNode } from "react";
+import { lazy, Suspense, useState, type ReactNode } from "react";
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
@@ -77,6 +77,26 @@ function DemoBanner() {
   );
 }
 
+/** Shown when the signed-in user is working inside ANOTHER clinic they joined —
+ *  gives a one-tap way back to their own workspace (their data is only hidden). */
+function OtherClinicBanner() {
+  const { inAnotherClinic, leaveClinic } = useAuth();
+  const [busy, setBusy] = useState(false);
+  if (!inAnotherClinic) return null;
+  return (
+    <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1.5 border-b border-warn-200 bg-warn-50 px-4 py-2 text-center text-sm font-medium text-warn-800 no-print dark:border-warn-500/30 dark:bg-warn-500/10 dark:text-warn-200">
+      <span>أنت تعمل حالياً ضمن عيادة انضممت إليها — بيانات عيادتك محفوظة ومخفية مؤقتاً.</span>
+      <button
+        onClick={async () => { setBusy(true); const r = await leaveClinic(); if (r.error) setBusy(false); }}
+        disabled={busy}
+        className="inline-flex items-center gap-1.5 rounded-full bg-warn-600 px-3.5 py-1 text-xs font-bold text-white shadow-soft transition hover:bg-warn-700 disabled:opacity-60"
+      >
+        {busy ? "…جارٍ المغادرة" : "مغادرة العيادة والعودة إلى عيادتي"}
+      </button>
+    </div>
+  );
+}
+
 function Home() {
   const { user } = useAuth();
   if (user?.role === "owner") return <OwnerDashboard />;
@@ -130,7 +150,7 @@ function Shell() {
         <CommandPaletteProvider>
           <Sidebar />
           <TopBar mobileOnly />
-          <div className="lg:ps-64">{routes}</div>
+          <div className="lg:ps-64"><OtherClinicBanner />{routes}</div>
         </CommandPaletteProvider>
         <DemoBanner />
       </div>
@@ -140,6 +160,7 @@ function Shell() {
   return (
     <div className="min-h-screen bg-surface">
       {showChrome && <TopBar />}
+      {showChrome && <OtherClinicBanner />}
       {routes}
       {showChrome && <DemoBanner />}
     </div>

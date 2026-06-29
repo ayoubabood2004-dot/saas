@@ -4,6 +4,7 @@ import { isSupabaseConfigured, supabase } from "@/lib/supabase";
 import { withTimeout } from "@/lib/errors";
 import { setActiveClinicId, clearActiveClinic, getActiveClinicId, type ClinicAccount } from "@/lib/clinics";
 import { hydrateClinicConfig, hydratedFor } from "@/lib/clinicConfig";
+import { leaveClinic as apiLeaveClinic } from "@/lib/invites";
 import type { OwnerAccount } from "@/lib/owners";
 
 interface SignupExtra {
@@ -53,6 +54,10 @@ interface AuthState {
   /** Update the signed-in user's own name/phone (profiles table; reflects immediately). */
   updateProfile: (patch: { full_name?: string; phone?: string }) => Promise<{ error: string | null }>;
   signOut: () => void;
+  /** True when the signed-in user is operating inside ANOTHER clinic they joined. */
+  inAnotherClinic: boolean;
+  /** Leave the joined clinic and return to your own workspace (data was only hidden). */
+  leaveClinic: () => Promise<{ error: string | null }>;
 }
 
 const AuthContext = createContext<AuthState | undefined>(undefined);
@@ -430,6 +435,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try { localStorage.removeItem(KEY); } catch { /* ignore */ }
   };
 
+  // Leaving a joined clinic only removes the membership row (never any data); a
+  // full reload re-resolves auth_clinic() back to the user's own clinic.
+  const leaveClinic = async () => {
+    const r = await apiLeaveClinic();
+    if (!r.error) { storeActive("clinic"); window.location.href = "/"; }
+    return { error: r.error ?? null };
+  };
+
   const value = useMemo<AuthState>(
     () => ({
       user, loading, recovery, demo: !isSupabaseConfigured,
@@ -437,6 +450,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       chooseRole, switchRole, addRole,
       signInDemo, signInClinic, signInOwner,
       signUpEmail, signInEmail, resendConfirmation, resetPassword, updatePassword, updateProfile, signOut,
+      inAnotherClinic: !!raw?.staff, leaveClinic,
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [user, loading, recovery, raw, resolvedActive, needsRoleChoice],
