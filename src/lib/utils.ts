@@ -63,6 +63,16 @@ export function daysUntil(date: string): number {
   return Math.ceil((target.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
 }
 
+/** Local calendar date as YYYY-MM-DD. Uses local getters (NOT toISOString, which is
+ *  UTC and lands on the wrong day late-evening/early-morning in positive-offset zones
+ *  like Iraq UTC+3). The single source of truth for "today" across the app. */
+export function localISO(d: Date = new Date()): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
 // Arabic locale variant that keeps Arabic names but forces Western (Latin) numerals
 // via the Unicode `nu=latn` extension — so dates/times never show Eastern-Arabic digits.
 const dateLocale = (lang: string) => (lang === "ar" ? "ar-EG-u-nu-latn" : "en-US");

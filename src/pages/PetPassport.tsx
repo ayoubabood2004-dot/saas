@@ -12,6 +12,7 @@ import {
 import { AnimatePresence, motion } from "framer-motion";
 import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, TreatmentEntry, Admission, FoodType, DietPlan, Appointment, Reminder, MedicalAssessment, PatientCondition } from "@/types";
 import { repo } from "@/lib/repo";
+import { persistMedicalEntries } from "@/lib/medSync";
 import { PetAvatar } from "@/components/PetAvatar";
 import { OwnerCard } from "@/components/OwnerCard";
 import { UpcomingEvents } from "@/components/UpcomingEvents";
@@ -22,7 +23,7 @@ import { PetSalesWidget } from "@/components/PetSalesWidget";
 import { HealthCurve, type CurvePoint, Button, useToast, ProgressRing } from "@/components/ui";
 import { QrCode } from "@/components/QrCode";
 import { Modal } from "@/components/Modal";
-import { ageFromDOB, daysUntil, uid, formatDate, formatTime, formatHM, cn } from "@/lib/utils";
+import { ageFromDOB, daysUntil, uid, formatDate, formatTime, formatHM, cn, localISO } from "@/lib/utils";
 import { prepareUpload } from "@/lib/image";
 import { withTimeout, describeUploadError } from "@/lib/errors";
 import { playSuccess, playScan, playTap, playWarning } from "@/lib/sounds";
@@ -157,35 +158,9 @@ function WellnessCard({ vaccines, admissions }: { vaccines: Vaccination[]; admis
  *  Throws on failure so the caller keeps the draft. Shared by the record header button
  *  and the Treatment/Vaccinations tab "Add" actions. */
 async function persistMedicalDrafts(petId: string, doctorName: string | undefined, entries: MedicalDraft[], assessment?: MedicalAssessment) {
-  const ROUTE_LABEL: Record<string, string> = { injection: "Injection", tablet: "Tablet", liquid: "Syrup" };
-  const now = new Date();
-  const nowISO = now.toISOString();
-  const today = nowISO.slice(0, 10);
-  const hhmm = now.toTimeString().slice(0, 5);
-  for (const e of entries) {
-    if (e.kind === "vaccination") {
-      // The dose given today.
-      await repo.addVaccination({
-        pet_id: petId, name: e.name, status: "administered",
-        administered_at: nowISO, due_date: null,
-        lot_number: e.lot, administered_by: doctorName,
-      });
-      // A scheduled booster becomes its own pending item — actioned later via "Administer booster".
-      if (e.nextDue) {
-        await repo.addVaccination({
-          pet_id: petId, name: e.name, status: "scheduled",
-          administered_at: null, due_date: e.nextDue,
-        });
-      }
-    } else {
-      await repo.addTreatment({
-        pet_id: petId, day: today, medication: e.name, time: hhmm, amount: e.dosage,
-        administered_at: nowISO, administered_by: doctorName, doctor: doctorName,
-        // The doctor's note for this drug shows on the treatment card; falls back to route · family.
-        observations: e.note?.trim() || `${ROUTE_LABEL[e.route]} · ${e.family}`,
-      });
-    }
-  }
+  const today = localISO(); // LOCAL date (not UTC) for the consultation record
+  // Vaccination/medication rows — shared with the retail "الأدوية" sale sync.
+  await persistMedicalEntries(petId, doctorName, entries);
   // The doctor's condition triage + clinical notes become a permanent consultation
   // record in the patient's file (shown in the History tab).
   if (assessment && (assessment.condition || assessment.notes.trim())) {
@@ -354,6 +329,9 @@ export function PetPassport() {
                 if (pet.owner_name) q.set("customer", pet.owner_name);
                 if (pet.owner_phone) q.set("phone", pet.owner_phone);
                 if (pet.name) q.set("pet", pet.name);
+                // Carry the patient identity so a sold medication/vaccine syncs into the record.
+                q.set("petId", pet.id);
+                if (pet.species) q.set("species", pet.species);
                 navigate(`/retail?${q.toString()}`);
               }}
             >

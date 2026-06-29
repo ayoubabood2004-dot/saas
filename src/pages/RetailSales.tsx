@@ -3,7 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { AnimatePresence, motion } from "framer-motion";
 import { Store, ShoppingCart, ReceiptText, BarChart3 } from "lucide-react";
-import type { Product, Invoice } from "@/types";
+import type { Product, Invoice, Species } from "@/types";
 import { repo } from "@/lib/repo";
 import { useAuth } from "@/contexts/AuthContext";
 import { Skeleton } from "@/components/ui";
@@ -15,6 +15,9 @@ import { InvoicesPanel } from "@/components/retail/InvoicesPanel";
 import { ReportsPanel } from "@/components/retail/ReportsPanel";
 
 type Tab = "sell" | "invoices" | "reports";
+
+/** Valid Species values — guards the `species` bridge param against tampered URLs. */
+const SPECIES_SET = new Set<string>(["dog", "cat", "horse", "cow", "bird", "rabbit", "other"]);
 
 export function RetailSales() {
   const { t } = useTranslation();
@@ -34,8 +37,12 @@ export function RetailSales() {
     const customer = params.get("customer") ?? "";
     const phone = params.get("phone") ?? "";
     const pet = params.get("pet") ?? "";
+    const petId = params.get("petId") ?? "";
+    // Validate against the known set — never blind-cast a tampered/stale query string.
+    const rawSpecies = params.get("species");
+    const species = rawSpecies && SPECIES_SET.has(rawSpecies) ? (rawSpecies as Species) : undefined;
     if (customer || phone || pet) {
-      setPrefill({ name: customer, phone, pet });
+      setPrefill({ name: customer, phone, pet, petId: petId || undefined, species });
       setTab("sell");
       setParams({}, { replace: true });
     }

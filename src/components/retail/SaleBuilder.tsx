@@ -4,17 +4,21 @@ import { AnimatePresence, motion } from "framer-motion";
 import {
   Search, Barcode, Plus, Minus, Trash2, ShoppingCart, User, Phone, Tag, Percent,
   Banknote, CreditCard, ArrowLeftRight, CheckCircle2, Printer, Sparkles, TrendingUp, Package, PawPrint, X,
-  Stethoscope, Pencil,
+  Stethoscope, Pencil, Pill, Syringe, CalendarClock,
 } from "lucide-react";
-import type { Product, Invoice, InvoiceItem, CheckoutItem, SaleMeta, PaymentMethod, DiscountType, Customer, Service, ServiceCatalog } from "@/types";
+import type { Product, Invoice, InvoiceItem, CheckoutItem, SaleMeta, PaymentMethod, DiscountType, Customer, Service, ServiceCatalog, Species } from "@/types";
 import { repo, resolveDiscount } from "@/lib/repo";
 import { getServiceCatalog } from "@/lib/services";
 import { computePromotions, getPromoRules } from "@/lib/promotions";
 import { useBarcodeScanner } from "@/hooks/useBarcodeScanner";
+import { useAuth } from "@/contexts/AuthContext";
 import { Button, useToast } from "@/components/ui";
 import { ServiceQuickSelect } from "./ServiceQuickSelect";
+import { MedSaleForm } from "./MedSaleForm";
 import { useInvoicePrinter } from "./usePrintInvoice";
 import { invoiceNo } from "@/lib/invoicePrint";
+import { persistMedicalEntries } from "@/lib/medSync";
+import type { MedicalDraft } from "@/components/MedicalEntry";
 import { cn, money, IQD } from "@/lib/utils";
 import { withTimeout, describeDbError } from "@/lib/errors";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
@@ -23,16 +27,18 @@ import { playTap, playSuccess, playWarning } from "@/lib/sounds";
  *  editable override; services carry product_id=null + zero cost so they flow through
  *  the normal checkout/invoice/analytics pipeline alongside products. */
 interface Line {
-  id: string; // "p:<productId>" | "s:<serviceId>"
-  kind: "product" | "service";
+  id: string; // "p:<productId>" | "s:<serviceId>" | "m:<draftId>"
+  kind: "product" | "service" | "med";
   name: string;
   barcode: string | null;
   unit_price: number; // editable
   unit_cost: number; // product purchase price; 0 for services
   qty: number;
-  stock: number | null; // product stock cap; null = unlimited (service)
+  stock: number | null; // product stock cap; null = unlimited (service / med)
   product_id: string | null;
   subcategory: string | null; // product subcategory, for Mix & Match promotions
+  /** Medical draft for a "med" line — synced into the patient's record on checkout. */
+  med?: MedicalDraft;
 }
 
 const PAY_METHODS: { value: PaymentMethod; icon: typeof Banknote; key: string; def: string }[] = [
@@ -41,16 +47,24 @@ const PAY_METHODS: { value: PaymentMethod; icon: typeof Banknote; key: string; d
   { value: "transfer", icon: ArrowLeftRight, key: "retail.transfer", def: "Transfer" },
 ];
 
-/** Customer/pet handed over from an animal record to pre-fill the sale (the "bridge"). */
-export interface RetailPrefill { name: string; phone: string; pet: string }
+/** A YYYY-MM-DD → short date with Western numerals; never throws / never "Invalid Date". */
+const prettyShort = (iso: string) => {
+  const d = new Date(iso + "T00:00:00");
+  return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+};
+
+/** Customer/pet handed over from an animal record to pre-fill the sale (the "bridge").
+ *  petId + species are carried so a sold medication/vaccine can sync into the record. */
+export interface RetailPrefill { name: string; phone: string; pet: string; petId?: string; species?: Species }
 
 export function SaleBuilder({ products, clinicId, onSold, prefill }: { products: Product[]; clinicId?: string; onSold: () => void; prefill?: RetailPrefill | null }) {
   const { t } = useTranslation();
   const toast = useToast();
   const print = useInvoicePrinter();
+  const { user } = useAuth();
 
   const [cart, setCart] = useState<Line[]>([]);
-  const [browseTab, setBrowseTab] = useState<"products" | "services">("products");
+  const [browseTab, setBrowseTab] = useState<"products" | "services" | "meds">("products");
   const [catalog] = useState<ServiceCatalog>(() => getServiceCatalog());
   // Doctor-defined Mix & Match offers (clinic-scoped). Loaded once per sale session.
   const [promoRules] = useState(() => getPromoRules());
@@ -58,6 +72,9 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [petContext, setPetContext] = useState<string | null>(null);
+  // Patient identity for the medical-record sync (only when the sale is for a known pet).
+  const [petId, setPetId] = useState<string | null>(null);
+  const [petSpecies, setPetSpecies] = useState<Species | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const [custMatches, setCustMatches] = useState<Customer[]>([]);
   const [custOpen, setCustOpen] = useState(false);
@@ -90,6 +107,16 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
   const addService = (s: Service) =>
     bump(`s:${s.id}`, () => ({ id: `s:${s.id}`, kind: "service", name: s.name, barcode: null, unit_price: s.price, unit_cost: 0, qty: 1, stock: null, product_id: null, subcategory: null }));
 
+  // A medication/vaccine from the "الأدوية" tab — a priced cart line carrying the full
+  // medical draft (dose/route/booster/lot) so it can be written into the pet's record.
+  const addMedLine = (draft: MedicalDraft, price: number, qty: number) => {
+    const id = `m:${draft.id}`; // each draft has a unique uid → always a fresh line
+    const unit_price = Math.max(0, Math.round(price * 100) / 100); // same rounding as setPrice
+    setCart((c) => [...c, { id, kind: "med", name: draft.name, barcode: null, unit_price, unit_cost: 0, qty: Math.max(1, qty), stock: null, product_id: null, subcategory: null, med: draft }]);
+    playSuccess();
+    flashLine(id);
+  };
+
   const setQty = (id: string, qty: number) =>
     setCart((c) => (qty <= 0 ? c.filter((l) => l.id !== id) : c.map((l) => (l.id === id ? { ...l, qty: l.stock != null ? Math.min(qty, l.stock) : qty } : l))));
 
@@ -114,6 +141,8 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
     if (prefill.name) setName(prefill.name);
     if (prefill.phone) setPhone(prefill.phone);
     setPetContext(prefill.pet || null);
+    setPetId(prefill.petId || null);
+    setPetSpecies(prefill.species || null);
     setDone(null);
     const id = window.setTimeout(() => searchRef.current?.focus(), 160);
     return () => window.clearTimeout(id);
@@ -151,9 +180,17 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
   const pickCustomer = (c: Customer) => { setName(c.name); setPhone(c.phone); setCustOpen(false); setCustMatches([]); playTap(); };
 
   const reset = () => {
-    setCart([]); setQuery(""); setName(""); setPhone(""); setDiscountValue("");
+    setCart([]); setQuery(""); setDiscountValue("");
     setDiscountType("percent"); setPayment("cash"); setDone(null); setLastPrints(0);
-    setPetContext(null); setBrowseTab("products");
+    setBrowseTab("products");
+    // Preserve the patient/customer bridge across "New sale" so repeated per-patient
+    // sales keep syncing into the same animal's record; clear it for a plain walk-in.
+    if (prefill) {
+      setName(prefill.name || ""); setPhone(prefill.phone || "");
+      setPetContext(prefill.pet || null); setPetId(prefill.petId || null); setPetSpecies(prefill.species || null);
+    } else {
+      setName(""); setPhone(""); setPetContext(null); setPetId(null); setPetSpecies(null);
+    }
   };
 
   const checkout = async () => {
@@ -175,6 +212,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
         payment_method: payment,
       };
       const invoice = await withTimeout(repo.retailCheckout(items, meta), 12000);
+      const medDrafts = cart.filter((l) => l.kind === "med" && l.med).map((l) => l.med!);
       // Snapshot the lines for instant printing (services + products, with overrides).
       const invItems: InvoiceItem[] = cart.map((l) => ({
         id: `tmp-${l.id}`, invoice_id: invoice.id, clinic_id: clinicId ?? null,
@@ -182,8 +220,18 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
         qty: l.qty, unit_price: l.unit_price, unit_cost: l.unit_cost, line_total: l.qty * l.unit_price,
       }));
       playSuccess();
+      // Show the completion screen immediately — the sale is final. The medical-record
+      // sync runs AFTER, time-bounded and non-fatal, so its latency can never freeze
+      // the receipt/print UI even if Supabase stalls mid-flow.
       setDone({ invoice, items: invItems });
       onSold();
+      // When the sale is for a known patient, mirror any medication/vaccine lines into
+      // the animal's record — administered dose, scheduled booster (→ reminders),
+      // treatment-sheet rows — exactly as if entered from the record.
+      if (petId && medDrafts.length) {
+        try { await withTimeout(persistMedicalEntries(petId, user?.full_name, medDrafts), 12000); }
+        catch (e) { toast.error(t("retail.medSyncFailed", "تم تسجيل البيع، لكن تعذّر تحديث السجل الطبي للحيوان"), e instanceof Error ? e.message : undefined); }
+      }
     } catch (e) {
       playWarning();
       toast.error(describeDbError(e, t), e instanceof Error ? e.message : undefined);
@@ -241,7 +289,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
             className="flex items-center gap-2.5 rounded-2xl border border-brand-200 bg-brand-50 px-3.5 py-2.5 text-sm dark:border-brand-500/30 dark:bg-brand-500/10">
             <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-brand-600 text-white"><PawPrint size={15} /></span>
             <span className="flex-1 font-medium text-brand-800 dark:text-brand-200">{t("retail.saleForPet", { pet: petContext, defaultValue: "Sale for {{pet}}" })}</span>
-            <button onClick={() => setPetContext(null)} aria-label={t("common.dismiss", "Dismiss")} className="grid h-6 w-6 place-items-center rounded-full text-brand-700/70 transition hover:bg-brand-100 dark:text-brand-300 dark:hover:bg-brand-500/20"><X size={14} /></button>
+            <button onClick={() => { setPetContext(null); setPetId(null); setPetSpecies(null); }} aria-label={t("common.dismiss", "Dismiss")} className="grid h-6 w-6 place-items-center rounded-full text-brand-700/70 transition hover:bg-brand-100 dark:text-brand-300 dark:hover:bg-brand-500/20"><X size={14} /></button>
           </motion.div>
         )}
         {/* Customer */}
@@ -283,11 +331,12 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
           </div>
         </div>
 
-        {/* Products | Services toggle */}
+        {/* Products | Services | Medications toggle */}
         <div className="inline-flex w-full items-center gap-1 rounded-full border border-line bg-surface-2 p-1">
           {([
             { v: "products", label: t("retail.products", "Products"), icon: <Package size={15} /> },
             { v: "services", label: t("retail.services", "Services"), icon: <Stethoscope size={15} /> },
+            { v: "meds", label: t("retail.meds", "الأدوية"), icon: <Pill size={15} /> },
           ] as const).map((o) => (
             <button
               key={o.v}
@@ -341,8 +390,10 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
               </div>
             )}
           </>
-        ) : (
+        ) : browseTab === "services" ? (
           <ServiceQuickSelect catalog={catalog} onPick={addService} flashId={flash} />
+        ) : (
+          <MedSaleForm species={petSpecies ?? undefined} onAddLine={addMedLine} />
         )}
       </div>
 
@@ -366,7 +417,21 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
                       <p className="flex items-center gap-1.5 truncate text-sm font-semibold text-ink">
                         {l.name}
                         {l.kind === "service" && <span className="chip shrink-0 bg-brand-50 text-2xs font-medium text-brand-700 dark:bg-brand-500/15 dark:text-brand-300">{t("retail.service", "Service")}</span>}
+                        {l.kind === "med" && (
+                          l.med?.kind === "vaccination"
+                            ? <span className="chip shrink-0 bg-success-50 text-2xs font-medium text-success-700 dark:bg-success-500/15 dark:text-success-200"><Syringe size={10} className="me-0.5 inline" />{t("retail.vaccine", "لقاح")}</span>
+                            : <span className="chip shrink-0 bg-brand-50 text-2xs font-medium text-brand-700 dark:bg-brand-500/15 dark:text-brand-300"><Pill size={10} className="me-0.5 inline" />{t("retail.medication", "دواء")}</span>
+                        )}
                       </p>
+                      {l.kind === "med" && l.med && (
+                        <p className="mt-0.5 flex items-center gap-1 truncate text-2xs text-ink-subtle">
+                          {l.med.kind === "vaccination"
+                            ? (l.med.nextDue
+                                ? <><CalendarClock size={11} className="shrink-0 text-success-600" /> {t("retail.nextDose", "الجرعة القادمة")}: {prettyShort(l.med.nextDue)}{l.med.lot ? ` · Lot ${l.med.lot}` : ""}</>
+                                : <>{t("retail.givenToday", "تُعطى اليوم")}{l.med.lot ? ` · Lot ${l.med.lot}` : ""}</>)
+                            : <>{l.med.family} · {l.med.dosage}</>}
+                        </p>
+                      )}
                       <div className="mt-0.5 flex items-center gap-1 text-xs text-ink-subtle">
                         <PriceEdit value={l.unit_price} onChange={(v) => setPrice(l.id, v)} />
                         <span>{t("pos.each", "each")}</span>

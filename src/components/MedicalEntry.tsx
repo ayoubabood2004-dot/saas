@@ -273,7 +273,7 @@ export function MedicalEntry({
 }
 
 /* ---------------- Medication (cascading) ---------------- */
-function MedicationForm({ onAdd, version }: { onAdd: (e: MedicalDraft) => void; version: number }) {
+export function MedicationForm({ onAdd, version, addLabel }: { onAdd: (e: MedicalDraft) => void; version: number; addLabel?: string }) {
   // Built-in catalogue MERGED with the clinic's custom medications (added in
   // Settings) — grouped under their therapeutic type. `version` forces a refresh
   // after the catalog re-hydrates so newly-added meds appear instantly.
@@ -430,15 +430,15 @@ function MedicationForm({ onAdd, version }: { onAdd: (e: MedicalDraft) => void; 
           reset();
         }}
       >
-        Add medication
+        {addLabel ?? "Add medication"}
       </Button>
     </div>
   );
 }
 
 /* ---------------- Vaccination (species-aware) ---------------- */
-function VaccinationForm({ species, hasSpeciesProp, draftSpecies, setDraftSpecies, onAdd, version }: {
-  species: Species; hasSpeciesProp: boolean; draftSpecies: Species; setDraftSpecies: (s: Species) => void; onAdd: (e: MedicalDraft) => void; version: number;
+export function VaccinationForm({ species, hasSpeciesProp, draftSpecies, setDraftSpecies, onAdd, version, addLabel }: {
+  species: Species; hasSpeciesProp: boolean; draftSpecies: Species; setDraftSpecies: (s: Species) => void; onAdd: (e: MedicalDraft) => void; version: number; addLabel?: string;
 }) {
   const toast = useToast();
   const [vaccine, setVaccine] = useState("");
@@ -597,7 +597,7 @@ function VaccinationForm({ species, hasSpeciesProp, draftSpecies, setDraftSpecie
           }
         }}
       >
-        Add vaccination
+        {addLabel ?? "Add vaccination"}
       </Button>
     </div>
   );
