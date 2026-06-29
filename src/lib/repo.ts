@@ -31,6 +31,7 @@ function createInvoiceLocal(items: CheckoutItem[], meta?: SaleMeta): Invoice {
     id: uid("inv"),
     customer_name: meta?.customer_name?.trim() || null,
     customer_phone: meta?.customer_phone?.trim() || null,
+    pet_name: meta?.pet_name?.trim() || null,
     subtotal, discount, discount_type: discount > 0 ? dtype : null,
     payment_method: meta?.payment_method ?? null,
     total, cost_total: cost, profit: total - cost, item_count: count,

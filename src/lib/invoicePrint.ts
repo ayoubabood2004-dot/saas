@@ -12,6 +12,11 @@ export interface InvoicePrintOptions {
   currency?: string; // optional label, e.g. "IQD"
   /** Sequence number to show as "Print #N" (already incremented). */
   printNo?: number;
+  /** Clinic logo (data-URL) — shown centered at the top + as a faint watermark. */
+  logoUrl?: string | null;
+  /** Social handles printed in the footer. */
+  facebook?: string | null;
+  instagram?: string | null;
 }
 
 const esc = (s: unknown) =>
@@ -36,6 +41,7 @@ function strings(lang: string) {
     billedTo: ar ? "العميل" : "Billed to",
     walkIn: ar ? "عميل نقدي" : "Walk-in customer",
     phone: ar ? "الهاتف" : "Phone",
+    pet: ar ? "الحيوان" : "Patient",
     item: ar ? "الصنف" : "Item",
     qty: ar ? "الكمية" : "Qty",
     price: ar ? "السعر" : "Price",
@@ -68,6 +74,14 @@ export function buildInvoiceHTML(invoice: Invoice, items: InvoiceItem[], opts: I
   const discount = invoice.discount ?? 0;
   const refunded = invoice.status === "refunded";
   const payLabel = invoice.payment_method ? s.pay[invoice.payment_method] ?? invoice.payment_method : "";
+  // Phone numbers must read LTR (+964 …) even inside an RTL document.
+  const phoneHTML = (p: string) => `<span dir="ltr" style="unicode-bidi:isolate; direction:ltr">${esc(p)}</span>`;
+  const logo = opts.logoUrl ? String(opts.logoUrl) : "";
+  const fb = (opts.facebook || "").trim();
+  const ig = (opts.instagram || "").trim();
+  const socialHTML = (fb || ig)
+    ? `<div class="social">${fb ? `<span>f&nbsp; ${esc(fb)}</span>` : ""}${fb && ig ? `<span class="dot">·</span>` : ""}${ig ? `<span>◎&nbsp; ${esc(ig)}</span>` : ""}</div>`
+    : "";
 
   const rows = items
     .map(
@@ -81,7 +95,9 @@ export function buildInvoiceHTML(invoice: Invoice, items: InvoiceItem[], opts: I
     .join("");
 
   const thermal = opts.format === "thermal";
-  const page = thermal ? "@page { size: 80mm auto; margin: 0; }" : "@page { size: A4; margin: 14mm; }";
+  // margin:0 makes Chrome/Edge DROP the browser's own header/footer (date, the
+  // "about:blank" URL, page numbers); the page padding is restored on .sheet/body.
+  const page = thermal ? "@page { size: 80mm auto; margin: 0; }" : "@page { size: A4; margin: 0; }";
 
   // Two visual themes share the same markup; CSS differs by format.
   const css = thermal
@@ -107,13 +123,21 @@ export function buildInvoiceHTML(invoice: Invoice, items: InvoiceItem[], opts: I
     .totals .row { display: flex; justify-content: space-between; padding: 1px 0; }
     .totals .grand { font-weight: 700; font-size: 13px; border-top: 1px solid #000; margin-top: 3px; padding-top: 3px; }
     .thanks { text-align: center; margin-top: 8px; font-size: 10px; }
+    .social { text-align: center; font-size: 9px; color: #333; margin-top: 3px; display: flex; gap: 8px; justify-content: center; }
     .badge { text-align: center; font-weight: 700; border: 1px solid #000; padding: 2px; margin: 4px 0; letter-spacing: 1px; }
     `
     : `
     * { box-sizing: border-box; }
     html, body { margin: 0; padding: 0; }
-    body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; color: #0f172a; font-size: 13px; line-height: 1.5; }
-    .sheet { max-width: 720px; margin: 0 auto; }
+    body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; color: #0f172a; font-size: 13px; line-height: 1.5; padding: 16mm 14mm; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .sheet { max-width: 720px; margin: 0 auto; position: relative; z-index: 1; }
+    /* Faint, decolorised logo watermark centered on the page. */
+    .watermark { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; z-index: 0; pointer-events: none; }
+    .watermark img { width: 72%; max-width: 460px; filter: grayscale(100%); opacity: 0.06; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .logo-top { text-align: center; margin-bottom: 14px; }
+    .logo-top img { max-height: 72px; max-width: 240px; object-fit: contain; }
+    .social { margin-top: 8px; font-size: 11px; color: #94a3b8; display: flex; gap: 10px; justify-content: center; align-items: center; }
+    .social .dot { color: #cbd5e1; }
     .top { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #1266d8; padding-bottom: 16px; }
     .brand { font-size: 11px; font-weight: 800; letter-spacing: 2px; text-transform: uppercase; color: #1266d8; margin-bottom: 2px; }
     .clinic { font-size: 22px; font-weight: 800; color: #0b1220; letter-spacing: -.3px; }
@@ -142,16 +166,19 @@ export function buildInvoiceHTML(invoice: Invoice, items: InvoiceItem[], opts: I
   const body = thermal
     ? `
     <div class="head">
+      ${logo ? `<img src="${logo}" alt="logo" style="max-height:48px;max-width:70%;object-fit:contain;filter:grayscale(100%);margin:0 auto 4px;display:block;"/>` : ""}
       <div class="brand">${brand}</div>
       <div class="clinic">${esc(opts.clinicName)}</div>
-      ${opts.clinicPhone ? `<div class="muted">${esc(opts.clinicPhone)}</div>` : ""}
+      ${opts.clinicPhone ? `<div class="muted">${phoneHTML(opts.clinicPhone)}</div>` : ""}
       <div class="doc">${s.receipt}</div>
     </div>
     <hr/>
     <div class="meta">
       <div><b>${esc(invoiceNo(invoice.id))}</b></div>
       <div>${s.date}: ${esc(dateStr)}</div>
-      ${invoice.customer_name || invoice.customer_phone ? `<div>${s.billedTo}: ${esc(invoice.customer_name || s.walkIn)}${invoice.customer_phone ? ` · ${esc(invoice.customer_phone)}` : ""}</div>` : ""}
+      ${invoice.customer_name || invoice.customer_phone ? `<div>${s.billedTo}: ${esc(invoice.customer_name || s.walkIn)}</div>` : ""}
+      ${invoice.pet_name ? `<div>${s.pet}: ${esc(invoice.pet_name)}</div>` : ""}
+      ${invoice.customer_phone ? `<div>${s.phone}: ${phoneHTML(invoice.customer_phone)}</div>` : ""}
     </div>
     ${refunded ? `<div class="badge">${s.refunded}</div>` : ""}
     <table>
@@ -164,15 +191,18 @@ export function buildInvoiceHTML(invoice: Invoice, items: InvoiceItem[], opts: I
       ${payLabel ? `<div class="row"><span>${s.payment}</span><span>${esc(payLabel)}</span></div>` : ""}
     </div>
     <div class="thanks">${s.thanks}</div>
+    ${socialHTML}
     ${opts.printNo && opts.printNo > 1 ? `<div class="thanks">${s.printNo} #${opts.printNo}</div>` : ""}
     `
     : `
+    ${logo ? `<div class="watermark"><img src="${logo}" alt=""/></div>` : ""}
     <div class="sheet">
+      ${logo ? `<div class="logo-top"><img src="${logo}" alt="logo"/></div>` : ""}
       <div class="top">
         <div>
           <div class="brand">${brand}</div>
           <div class="clinic">${esc(opts.clinicName)}</div>
-          ${opts.clinicPhone ? `<div class="muted">${esc(opts.clinicPhone)}</div>` : ""}
+          ${opts.clinicPhone ? `<div class="muted">${s.phone}: ${phoneHTML(opts.clinicPhone)}</div>` : ""}
         </div>
         <div style="text-align:end">
           <div class="doc-title">${s.invoice}</div>
@@ -185,7 +215,8 @@ export function buildInvoiceHTML(invoice: Invoice, items: InvoiceItem[], opts: I
         <div>
           <h4>${s.billedTo}</h4>
           <div class="v">${esc(invoice.customer_name || s.walkIn)}</div>
-          ${invoice.customer_phone ? `<div class="muted">${s.phone}: ${esc(invoice.customer_phone)}</div>` : ""}
+          ${invoice.pet_name ? `<div class="muted">${s.pet}: ${esc(invoice.pet_name)}</div>` : ""}
+          ${invoice.customer_phone ? `<div class="muted">${s.phone}: ${phoneHTML(invoice.customer_phone)}</div>` : ""}
         </div>
         <div style="text-align:end">
           <h4>${s.date}</h4>
@@ -205,7 +236,7 @@ export function buildInvoiceHTML(invoice: Invoice, items: InvoiceItem[], opts: I
         <div class="row grand"><span>${s.total}</span><span>${money(invoice.total)}</span></div>
       </div>
 
-      <div class="foot">${s.thanks}</div>
+      <div class="foot">${s.thanks}${socialHTML}</div>
     </div>
     `;
 

@@ -3,6 +3,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/components/ui";
 import { repo } from "@/lib/repo";
 import { openInvoicePrint, type PrintFormat } from "@/lib/invoicePrint";
+import { getClinicLogo, getClinicSocials } from "@/lib/settings";
 import type { Invoice, InvoiceItem } from "@/types";
 
 /**
@@ -27,6 +28,7 @@ export function useInvoicePrinter() {
     let printNo = (invoice.print_count ?? 0) + 1;
     try { printNo = await repo.bumpInvoicePrints(invoice.id); } catch { /* keep optimistic count */ }
 
+    const socials = getClinicSocials();
     const ok = openInvoicePrint({ ...invoice, print_count: printNo }, items ?? [], {
       clinicName: user?.full_name || "doctorVet",
       clinicPhone: user?.phone ?? null,
@@ -34,6 +36,9 @@ export function useInvoicePrinter() {
       format,
       lang: i18n.language,
       printNo,
+      logoUrl: getClinicLogo(),
+      facebook: socials.facebook || null,
+      instagram: socials.instagram || null,
     });
     if (!ok) toast.error(t("retail.popupBlocked", "Allow pop-ups to print"), t("retail.popupBlockedHint", "Your browser blocked the print window — enable pop-ups for this site."));
     opts?.onCounted?.(printNo);

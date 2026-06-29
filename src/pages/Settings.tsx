@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Settings as SettingsIcon, RotateCcw, Check, Volume2, VolumeX, Plus, Trash2, Pill, PawPrint, Stethoscope, Tag, FolderPlus, BadgePercent, IdCard, Mail, UserCog } from "lucide-react";
+import { Settings as SettingsIcon, RotateCcw, Check, Volume2, VolumeX, Plus, Trash2, Pill, PawPrint, Stethoscope, Tag, FolderPlus, BadgePercent, IdCard, Mail, UserCog, Image as ImageIcon, Upload, Facebook, Instagram } from "lucide-react";
 import type { Species, Service, ServiceCategory, ServiceCatalog, Product } from "@/types";
 import { useAuth } from "@/contexts/AuthContext";
 import { repo } from "@/lib/repo";
@@ -11,14 +11,15 @@ import { getServiceCatalog, addServiceCategory, removeServiceCategory, addServic
 import { DEFAULT_RANGES, VITAL_KEYS, CBC_KEYS, rangeFor, type VitalKey } from "@/lib/vitals";
 
 const ALL_KEYS: VitalKey[] = [...VITAL_KEYS, ...CBC_KEYS];
-import { setVitalOverride, clearVitalOverrides, getDialCode, setDialCode } from "@/lib/settings";
+import { setVitalOverride, clearVitalOverrides, getDialCode, setDialCode, getClinicLogo, setClinicLogo, getClinicSocials, setClinicSocials } from "@/lib/settings";
+import { prepareUpload } from "@/lib/image";
 import { isSoundEnabled, setSoundEnabled, playSuccess, playTap } from "@/lib/sounds";
 import { getClinicMeds, addClinicMed, removeClinicMed, allMedTypes, allMedicationNames, BUILTIN_MEDICATIONS, type ClinicMed } from "@/lib/meds";
 import { getClinicVaccines, addClinicVaccine, removeClinicVaccine, BUILTIN_VACCINES, type ClinicVaccine } from "@/lib/vaccines";
 import { getClinicBreeds, addClinicBreed, removeClinicBreed } from "@/lib/breeds";
 import { SpeciesPicker } from "@/components/PetFields";
 import { PhoneInput } from "@/components/PhoneInput";
-import { Button } from "@/components/ui";
+import { Button, useToast } from "@/components/ui";
 
 export function Settings() {
   const { t } = useTranslation();
@@ -139,6 +140,7 @@ export function Settings() {
         )}
       </div>
 
+      {isStaff && <ClinicIdentity />}
       {isStaff && <ServiceSettings />}
       {isStaff && <PromotionsManager clinicId={user?.clinic_id ?? user?.id} />}
       <ClinicMedications />
@@ -236,6 +238,69 @@ function AccountInfo() {
           <Check size={15} /> {flash.msg}
         </p>
       )}
+    </div>
+  );
+}
+
+/* ---------------- Clinic identity: logo + social handles ---------------- */
+function ClinicIdentity() {
+  const { t } = useTranslation();
+  const toast = useToast();
+  const [logo, setLogo] = useState<string | null>(getClinicLogo());
+  const [busy, setBusy] = useState(false);
+  const initial = getClinicSocials();
+  const [facebook, setFacebook] = useState(initial.facebook);
+  const [instagram, setInstagram] = useState(initial.instagram);
+
+  const onPick = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    e.target.value = "";
+    if (!f) return;
+    setBusy(true);
+    try {
+      // Compress to a small square-ish logo; store the data-URL (same as avatars).
+      const prepared = await prepareUpload(f, { maxDim: 400, quality: 0.9 });
+      setClinicLogo(prepared.dataUrl);
+      setLogo(prepared.dataUrl);
+      playSuccess();
+    } catch {
+      toast.error("تعذّر رفع الشعار", "اختر صورة صالحة (PNG/JPG).");
+    } finally { setBusy(false); }
+  };
+
+  const removeLogo = () => { setClinicLogo(null); setLogo(null); playTap(); };
+  const saveSocials = () => { setClinicSocials({ facebook, instagram }); playTap(); };
+
+  return (
+    <div className="card p-5">
+      <h2 className="font-bold text-ink mb-1 flex items-center gap-2"><ImageIcon size={18} className="text-brand-600" /> {t("settings.identity", "هوية العيادة")}</h2>
+      <p className="text-xs text-ink-subtle mb-4">{t("settings.identityHint", "شعار يظهر في أعلى الفاتورة وكعلامة مائية، وحسابات التواصل تظهر في أسفلها.")}</p>
+
+      {/* Logo */}
+      <div className="flex items-center gap-4">
+        <div className="grid h-20 w-20 shrink-0 place-items-center overflow-hidden rounded-2xl border border-line bg-surface-2">
+          {logo ? <img src={logo} alt="logo" className="h-full w-full object-contain" /> : <ImageIcon size={26} className="text-ink-subtle/50" />}
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <label className="btn-secondary cursor-pointer text-sm">
+            <Upload size={15} /> {logo ? t("settings.changeLogo", "تغيير الشعار") : t("settings.uploadLogo", "رفع شعار")}
+            <input type="file" accept="image/*" className="hidden" onChange={onPick} disabled={busy} />
+          </label>
+          {logo && <button onClick={removeLogo} className="chip bg-surface-2 text-xs font-semibold text-danger-600 hover:bg-danger-50"><Trash2 size={14} /> {t("common.remove", "إزالة")}</button>}
+        </div>
+      </div>
+
+      {/* Social handles */}
+      <div className="mt-5 space-y-3 border-t border-line pt-4">
+        <div>
+          <label className="label flex items-center gap-1.5"><Facebook size={14} className="text-[#1877f2]" /> {t("settings.facebook", "فيسبوك")}</label>
+          <input className="input" dir="ltr" value={facebook} onChange={(e) => setFacebook(e.target.value)} onBlur={saveSocials} placeholder="@MyClinic" />
+        </div>
+        <div>
+          <label className="label flex items-center gap-1.5"><Instagram size={14} className="text-[#e1306c]" /> {t("settings.instagram", "إنستغرام")}</label>
+          <input className="input" dir="ltr" value={instagram} onChange={(e) => setInstagram(e.target.value)} onBlur={saveSocials} placeholder="@myclinic" />
+        </div>
+      </div>
     </div>
   );
 }

@@ -167,6 +167,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
       const meta: SaleMeta = {
         customer_name: name.trim() || null,
         customer_phone: phone.trim() || null,
+        pet_name: petContext?.trim() || null,
         // Promotions + manual discount are folded into one server-side fixed amount so
         // the recorded total/profit exactly match the till (the server clamps to subtotal).
         discount_type: discountAmt > 0 ? "fixed" : null,

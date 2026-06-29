@@ -133,45 +133,98 @@ export function clearPetRanges(petId: string) {
   savePet(o);
 }
 
-/* ---------------- Default international dialing code (per clinic) ---------------- */
-const dialKey = () => `vp_dial_code_${getActiveClinicId()}`;
+/* ---------------- Clinic preferences (dial code + branding), per clinic --------------
+ * One clinic_prefs row holds the default dial code, the clinic logo (a compressed
+ * data-URL), and social handles. Same dual-adapter pattern: in-memory cache hydrated
+ * at login, localStorage mirror, optimistic write-through to Supabase. */
 export const DEFAULT_DIAL_CODE = "+964"; // Iraq
 
-let dialCache: string | null = null;
+export interface ClinicSocials { facebook: string; instagram: string }
+interface ClinicPrefs { dial_code: string; logo_url: string | null; social_facebook: string; social_instagram: string }
+const DEFAULT_PREFS: ClinicPrefs = { dial_code: DEFAULT_DIAL_CODE, logo_url: null, social_facebook: "", social_instagram: "" };
 
-function readDialLocal(): string {
-  try { return localStorage.getItem(dialKey()) || DEFAULT_DIAL_CODE; } catch { return DEFAULT_DIAL_CODE; }
+const prefsKey = () => `vp_clinic_prefs_${getActiveClinicId()}`;
+const legacyDialKey = () => `vp_dial_code_${getActiveClinicId()}`;
+
+let prefsCache: ClinicPrefs | null = null;
+
+function readPrefsLocal(): ClinicPrefs {
+  try {
+    const raw = localStorage.getItem(prefsKey());
+    if (raw) return { ...DEFAULT_PREFS, ...(JSON.parse(raw) as Partial<ClinicPrefs>) };
+  } catch { /* ignore */ }
+  // Fall back to the legacy dial-only key so existing dial codes aren't lost.
+  try { const d = localStorage.getItem(legacyDialKey()); if (d) return { ...DEFAULT_PREFS, dial_code: d }; } catch { /* ignore */ }
+  return { ...DEFAULT_PREFS };
 }
 
-export async function hydrateDialCode(): Promise<void> {
+function savePrefsLocal(p: ClinicPrefs) {
+  prefsCache = p;
+  try { localStorage.setItem(prefsKey(), JSON.stringify(p)); } catch { /* ignore */ }
+}
+
+function prefs(): ClinicPrefs {
+  return prefsCache ?? readPrefsLocal();
+}
+
+export async function hydrateClinicPrefs(): Promise<void> {
   const client = sb();
-  if (!client) { dialCache = readDialLocal(); return; }
+  if (!client) { prefsCache = readPrefsLocal(); return; }
   try {
-    const { data, error } = await client.from("clinic_prefs").select("dial_code").maybeSingle();
+    const { data, error } = await client.from("clinic_prefs").select("dial_code,logo_url,social_facebook,social_instagram").maybeSingle();
     if (error) throw error;
-    if (data?.dial_code) {
-      dialCache = data.dial_code as string;
+    if (data) {
+      prefsCache = {
+        dial_code: (data.dial_code as string) || DEFAULT_DIAL_CODE,
+        logo_url: (data.logo_url as string) ?? null,
+        social_facebook: (data.social_facebook as string) ?? "",
+        social_instagram: (data.social_instagram as string) ?? "",
+      };
     } else {
-      // No prefs row yet → migrate the local value up (or write the default).
-      dialCache = readDialLocal();
-      await client.from("clinic_prefs").upsert({ dial_code: dialCache }, { onConflict: "clinic_id" });
+      // No row yet → migrate any local prefs up (or seed the default dial code).
+      const local = readPrefsLocal();
+      prefsCache = local;
+      await client.from("clinic_prefs").upsert(
+        { dial_code: local.dial_code, logo_url: local.logo_url, social_facebook: local.social_facebook, social_instagram: local.social_instagram },
+        { onConflict: "clinic_id" },
+      );
     }
-    try { localStorage.setItem(dialKey(), dialCache); } catch { /* ignore */ }
+    savePrefsLocal(prefsCache);
   } catch {
-    dialCache = readDialLocal();
+    prefsCache = readPrefsLocal();
   }
 }
-registerHydrator(hydrateDialCode);
-registerReset(() => { dialCache = null; });
+registerHydrator(hydrateClinicPrefs);
+registerReset(() => { prefsCache = null; });
+
+/** Write one or more pref fields: optimistic cache+local update, then cloud upsert. */
+function patchPrefs(patch: Partial<ClinicPrefs>, ctx: string) {
+  savePrefsLocal({ ...prefs(), ...patch });
+  cloudWrite(() => sb()!.from("clinic_prefs").upsert(patch, { onConflict: "clinic_id" }), ctx);
+}
 
 export function getDialCode(): string {
-  return dialCache ?? readDialLocal();
+  return prefs().dial_code || DEFAULT_DIAL_CODE;
 }
 
 export function setDialCode(code: string) {
   const clean = code.trim() || DEFAULT_DIAL_CODE;
   const normalized = clean.startsWith("+") ? clean : `+${clean.replace(/\D/g, "")}`;
-  dialCache = normalized;
-  try { localStorage.setItem(dialKey(), normalized); } catch { /* ignore */ }
-  cloudWrite(() => sb()!.from("clinic_prefs").upsert({ dial_code: normalized }, { onConflict: "clinic_id" }), "dial-code-set");
+  patchPrefs({ dial_code: normalized }, "dial-code-set");
+}
+
+/** Clinic logo as a data-URL (null when none). Shown on printed invoices. */
+export function getClinicLogo(): string | null {
+  return prefs().logo_url;
+}
+export function setClinicLogo(dataUrl: string | null) {
+  patchPrefs({ logo_url: dataUrl }, "clinic-logo-set");
+}
+
+export function getClinicSocials(): ClinicSocials {
+  const p = prefs();
+  return { facebook: p.social_facebook, instagram: p.social_instagram };
+}
+export function setClinicSocials(s: ClinicSocials) {
+  patchPrefs({ social_facebook: s.facebook.trim(), social_instagram: s.instagram.trim() }, "clinic-socials-set");
 }

@@ -288,6 +288,8 @@ export interface Invoice {
   /** Walk-in customer captured at sale time (retail module; optional). */
   customer_name?: string | null;
   customer_phone?: string | null;
+  /** Patient name when the sale was raised for a specific animal (optional). */
+  pet_name?: string | null;
   subtotal?: number; // revenue before discount
   discount?: number; // resolved discount amount applied
   discount_type?: DiscountType | null;
@@ -306,6 +308,8 @@ export interface Invoice {
 export interface SaleMeta {
   customer_name?: string | null;
   customer_phone?: string | null;
+  /** Patient name when the sale is raised for a specific animal (prints on the invoice). */
+  pet_name?: string | null;
   discount_type?: DiscountType | null;
   discount_value?: number; // raw input: a percent (0–100) or a fixed amount
   payment_method?: PaymentMethod | null;
