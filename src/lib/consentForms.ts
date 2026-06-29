@@ -230,7 +230,11 @@ export function buildConsentHTML(opts: ConsentOptions): string {
   const sp = opts.patient.species ? SPECIES_LABEL[langKey][opts.patient.species] : BLANK;
   const sex = opts.patient.sex ? SEX_LABEL[langKey][opts.patient.sex] : BLANK;
   const age = ageLabel(opts.patient.dob, ar);
-  const todayStr = new Date().toLocaleDateString(ar ? "ar-EG-u-nu-latn" : "en-GB", { year: "numeric", month: "long", day: "numeric" });
+  const now = new Date();
+  const locale = ar ? "ar-EG-u-nu-latn" : "en-GB";
+  const dateStr = now.toLocaleDateString(locale, { year: "numeric", month: "long", day: "numeric" });
+  const timeStr = now.toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit", hour12: true });
+  const todayStr = `${dateStr} — ${timeStr}`;
 
   const ownerRows = [
     row(s.fName, opts.owner.name?.trim() || BLANK),
@@ -291,7 +295,7 @@ export function buildConsentHTML(opts: ConsentOptions): string {
     .watermark img { width: 70%; max-width: 420px; filter: grayscale(100%); opacity: 0.06; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     .sheet { position: relative; z-index: 1; max-width: 780px; margin: 0 auto; }
     .head { display: flex; align-items: center; justify-content: center; gap: 16px; text-align: center; border-bottom: 2.5px solid #111; padding-bottom: 12px; margin-bottom: 6px; }
-    .head img.logo { height: 76px; max-width: 130px; object-fit: contain; flex-shrink: 0; }
+    .head img.logo { height: 152px; max-width: 260px; object-fit: contain; flex-shrink: 0; }
     .head .head-txt { min-width: 0; }
     .clinic { font-family: ${headFont}; font-size: 26px; font-weight: 700; letter-spacing: .2px; line-height: 1.2; }
     .contact { font-size: 12px; color: #444; margin-top: 4px; }
