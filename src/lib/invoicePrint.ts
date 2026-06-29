@@ -150,8 +150,9 @@ export function buildInvoiceHTML(invoice: Invoice, items: InvoiceItem[], opts: I
     .socials { margin-top: 7px; display: flex; flex-direction: column; gap: 3px; font-size: 11px; color: #475569; }
     .socials .s { display: inline-flex; align-items: center; gap: 6px; }
     .socials svg { flex: 0 0 auto; }
-    /* Website pinned to the bottom-left of the page. */
+    /* Page footers pinned to the very bottom: website (left) + page number (right). */
     .page-footer { position: absolute; bottom: 8mm; left: 14mm; font-size: 11px; letter-spacing: .5px; color: #64748b; direction: ltr; z-index: 1; }
+    .page-num { position: absolute; bottom: 8mm; right: 14mm; font-size: 11px; letter-spacing: .5px; color: #64748b; direction: ltr; z-index: 1; }
     .top { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 16px; border-bottom: 3px solid #1266d8; padding-bottom: 16px; }
     .party { min-width: 0; }
     .party.end { text-align: end; }
@@ -214,6 +215,7 @@ export function buildInvoiceHTML(invoice: Invoice, items: InvoiceItem[], opts: I
     : `
     ${logo ? `<div class="watermark"><img src="${logo}" alt=""/></div>` : ""}
     <div class="page-footer">${WEBSITE}</div>
+    <div class="page-num" data-page-num>1 / 1</div>
     <div class="sheet">
       <div class="top">
         <div class="party">
