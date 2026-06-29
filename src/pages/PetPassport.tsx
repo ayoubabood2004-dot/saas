@@ -10,7 +10,8 @@ import {
   Scale, Sparkles, Loader2, NotebookPen, CalendarClock, FileSignature,
 } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
-import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, TreatmentEntry, Admission, FoodType, DietPlan, Appointment, Reminder, MedicalAssessment, PatientCondition } from "@/types";
+import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, TreatmentEntry, Admission, FoodType, DietPlan, Appointment, Reminder, MedicalAssessment, PatientCondition, Species, Sex } from "@/types";
+import { SpeciesPicker, SexPicker, AgeInput, BreedPicker, ColorPicker } from "@/components/PetFields";
 import { repo } from "@/lib/repo";
 import { persistMedicalEntries } from "@/lib/medSync";
 import { PetAvatar } from "@/components/PetAvatar";
@@ -550,6 +551,14 @@ function IdentityTab({ pet, weights, onChanged, canEdit, isOwner }: { pet: Pet; 
 
       {/* Basic identity facts */}
       <div className="card p-5">
+        <div className="mb-2 flex items-center justify-between">
+          <h3 className="flex items-center gap-2 font-bold text-ink"><Fingerprint size={18} className="text-brand-600" /> {t("pet.identity", "بيانات الحيوان")}</h3>
+          {canEditProfile && (
+            <button onClick={() => { playTap(); setProfileOpen(true); }} aria-label={t("common.edit")} className="grid h-8 w-8 place-items-center rounded-full text-ink-subtle transition hover:bg-surface-2 hover:text-brand-600">
+              <Pencil size={15} />
+            </button>
+          )}
+        </div>
         <dl className="divide-y divide-line">
           {rows.map(([k, v]) => (
             <div key={k} className="flex justify-between gap-4 py-2.5">
@@ -699,58 +708,133 @@ const NEUTER_OPTIONS: Array<Pet["neuter_status"]> = ["intact", "neutered", "unkn
 
 function ProfileEditModal({ open, pet, onClose, onSaved }: { open: boolean; pet: Pet; onClose: () => void; onSaved: () => void }) {
   const { t } = useTranslation();
+  // Core identity
+  const [name, setName] = useState(pet.name);
+  const [species, setSpecies] = useState<Species>(pet.species);
+  const [breed, setBreed] = useState(pet.breed ?? "");
+  const [sex, setSex] = useState<Sex>(pet.sex);
+  const [dob, setDob] = useState(pet.dob ?? "");
+  const [color, setColor] = useState(pet.color ?? "");
+  const [microchip, setMicrochip] = useState(pet.microchip_id ?? "");
+  // Appearance & dates
   const [markings, setMarkings] = useState(pet.distinctive_markings ?? "");
   const [adopted, setAdopted] = useState(pet.adopted_on ?? "");
   const [neuter, setNeuter] = useState<Pet["neuter_status"]>(pet.neuter_status ?? "unknown");
+  const [busy, setBusy] = useState(false);
 
+  // Re-seed every field from the pet each time the modal opens.
   useEffect(() => {
-    if (open) {
-      setMarkings(pet.distinctive_markings ?? "");
-      setAdopted(pet.adopted_on ?? "");
-      setNeuter(pet.neuter_status ?? "unknown");
-    }
+    if (!open) return;
+    setName(pet.name);
+    setSpecies(pet.species);
+    setBreed(pet.breed ?? "");
+    setSex(pet.sex);
+    setDob(pet.dob ?? "");
+    setColor(pet.color ?? "");
+    setMicrochip(pet.microchip_id ?? "");
+    setMarkings(pet.distinctive_markings ?? "");
+    setAdopted(pet.adopted_on ?? "");
+    setNeuter(pet.neuter_status ?? "unknown");
   }, [open, pet]);
 
+  const canSave = name.trim().length > 0 && !busy;
+
   const save = async () => {
-    await repo.updatePet(pet.id, {
-      distinctive_markings: markings.trim() || undefined,
-      adopted_on: adopted || null,
-      neuter_status: neuter,
-    });
-    playSuccess();
-    onClose();
-    onSaved();
+    if (!canSave) return;
+    setBusy(true);
+    try {
+      await repo.updatePet(pet.id, {
+        name: name.trim(),
+        // Changing species clears a now-mismatched breed so the record stays consistent.
+        species,
+        breed: breed.trim() || undefined,
+        sex,
+        dob: dob || null,
+        color: color.trim() || undefined,
+        microchip_id: microchip.trim() || undefined,
+        distinctive_markings: markings.trim() || undefined,
+        adopted_on: adopted || null,
+        neuter_status: neuter,
+      });
+      playSuccess();
+      onClose();
+      onSaved();
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
-    <Modal open={open} onClose={onClose} title={t("pet.editProfile")}>
+    <Modal open={open} onClose={onClose} title={t("pet.editProfile", "تعديل بيانات الحيوان")}>
       <div className="space-y-4">
+        {/* Name */}
         <div>
-          <label className="label">{t("pet.markings")}</label>
-          <textarea className="input min-h-[88px]" value={markings} onChange={(e) => setMarkings(e.target.value)} placeholder={t("pet.markingsPlaceholder")} autoFocus />
+          <label className="label">{t("pet.name", "الاسم")}</label>
+          <input className="input" value={name} onChange={(e) => setName(e.target.value)} autoFocus />
         </div>
+        {/* Species */}
         <div>
-          <label className="label">{t("dates.adopted")}</label>
-          <input type="date" className="input" value={adopted} onChange={(e) => setAdopted(e.target.value)} />
+          <label className="label">{t("pet.speciesLabel", "النوع")}</label>
+          <SpeciesPicker value={species} onChange={(s) => { setSpecies(s); setBreed(""); }} />
         </div>
+        {/* Breed (species-aware) */}
         <div>
-          <label className="label">{t("dates.neuter")}</label>
-          <div className="flex gap-2">
-            {NEUTER_OPTIONS.map((n) => (
-              <button
-                key={n}
-                onClick={() => setNeuter(n)}
-                className={cn(
-                  "flex-1 rounded-xl border py-2 text-sm font-semibold transition",
-                  neuter === n ? "border-brand-400 bg-brand-50 text-brand-700 dark:bg-brand-500/15 dark:text-brand-300" : "border-line text-ink-muted hover:bg-surface-2",
-                )}
-              >
-                {t(`dates.neuterValues.${n}`)}
-              </button>
-            ))}
+          <label className="label">{t("pet.breed", "السلالة")}</label>
+          <BreedPicker species={species} value={breed} onChange={setBreed} />
+        </div>
+        {/* Sex */}
+        <div>
+          <label className="label">{t("pet.sexLabel", "الجنس")}</label>
+          <SexPicker value={sex} onChange={setSex} />
+        </div>
+        {/* Age / DOB */}
+        <div>
+          <label className="label">{t("dates.birthday", "تاريخ الميلاد")}</label>
+          <AgeInput dob={dob} onChange={setDob} />
+        </div>
+        {/* Colour */}
+        <div>
+          <label className="label">{t("pet.color", "اللون")}</label>
+          <ColorPicker value={color} onChange={setColor} />
+        </div>
+        {/* Microchip */}
+        <div>
+          <label className="label">{t("pet.microchip", "رقم الرقاقة")}</label>
+          <input className="input font-mono" dir="ltr" value={microchip} onChange={(e) => setMicrochip(e.target.value)} placeholder="—" />
+        </div>
+
+        <div className="border-t border-line pt-4 space-y-4">
+          {/* Distinctive markings */}
+          <div>
+            <label className="label">{t("pet.markings")}</label>
+            <textarea className="input min-h-[80px]" value={markings} onChange={(e) => setMarkings(e.target.value)} placeholder={t("pet.markingsPlaceholder")} />
+          </div>
+          {/* Adopted on */}
+          <div>
+            <label className="label">{t("dates.adopted")}</label>
+            <input type="date" className="input" value={adopted} onChange={(e) => setAdopted(e.target.value)} />
+          </div>
+          {/* Neuter status */}
+          <div>
+            <label className="label">{t("dates.neuter")}</label>
+            <div className="flex gap-2">
+              {NEUTER_OPTIONS.map((n) => (
+                <button
+                  key={n}
+                  onClick={() => setNeuter(n)}
+                  className={cn(
+                    "flex-1 rounded-xl border py-2 text-sm font-semibold transition",
+                    neuter === n ? "border-brand-400 bg-brand-50 text-brand-700 dark:bg-brand-500/15 dark:text-brand-300" : "border-line text-ink-muted hover:bg-surface-2",
+                  )}
+                >
+                  {t(`dates.neuterValues.${n}`)}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
-        <Button className="w-full" onClick={save}>{t("common.save")}</Button>
+
+        <Button className="w-full" onClick={save} disabled={!canSave} loading={busy}>{t("common.save")}</Button>
       </div>
     </Modal>
   );
