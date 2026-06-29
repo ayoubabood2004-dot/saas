@@ -146,7 +146,7 @@ export function buildInvoiceHTML(invoice: Invoice, items: InvoiceItem[], opts: I
     .watermark img { width: 92%; max-width: 660px; filter: grayscale(100%); opacity: 0.09; transform: scale(1.85); -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     /* Logo sits in the MIDDLE of the header row (clinic info → its right, invoice → its left). */
     .logo-mid { text-align: center; }
-    .logo-mid img { max-height: 86px; max-width: 190px; object-fit: contain; }
+    .logo-mid img { max-height: 120px; max-width: 240px; object-fit: contain; }
     .socials { margin-top: 7px; display: flex; flex-direction: column; gap: 3px; font-size: 11px; color: #475569; }
     .socials .s { display: inline-flex; align-items: center; gap: 6px; }
     .socials svg { flex: 0 0 auto; }
