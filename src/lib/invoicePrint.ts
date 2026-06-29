@@ -136,14 +136,23 @@ export function buildInvoiceHTML(invoice: Invoice, items: InvoiceItem[], opts: I
     `
     : `
     * { box-sizing: border-box; }
-    html, body { margin: 0; padding: 0; }
+    html, body { margin: 0; padding: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; color-adjust: exact; }
     body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; color: #0f172a; font-size: 13px; line-height: 1.5; padding: 16mm 14mm; position: relative; min-height: 255mm; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     .sheet { max-width: 720px; margin: 0 auto; position: relative; z-index: 1; }
     /* Faint, decolorised logo watermark centered on the page. position:absolute
        (anchored to the page-filling body) prints reliably across browsers — unlike
-       position:fixed, which Chrome/Firefox/Safari render inconsistently in print. */
-    .watermark { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; z-index: 0; pointer-events: none; overflow: hidden; }
-    .watermark img { width: 92%; max-width: 660px; filter: grayscale(100%); opacity: 0.09; transform: scale(1.85); -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+       position:fixed, which Chrome/Firefox/Safari render inconsistently in print.
+       color-adjust:exact on every ancestor + the img is what forces it to survive
+       printing with the browser's "Background graphics" option turned off. */
+    .watermark { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; z-index: 0; pointer-events: none; overflow: hidden; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .watermark img { width: 92%; max-width: 660px; filter: grayscale(100%); opacity: 0.14; transform: scale(1.85); -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    /* Reassert the watermark in the print path — some browsers drop low-opacity
+       decorative images unless the print rules explicitly opt back in. */
+    @media print {
+      html, body { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+      .watermark { display: flex !important; }
+      .watermark img { opacity: 0.14 !important; filter: grayscale(100%) !important; }
+    }
     /* Logo sits in the MIDDLE of the header row (clinic info → its right, invoice → its left). */
     .logo-mid { text-align: center; }
     .logo-mid img { max-height: 120px; max-width: 240px; object-fit: contain; }

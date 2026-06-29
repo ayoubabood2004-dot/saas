@@ -283,7 +283,7 @@ export function buildConsentHTML(opts: ConsentOptions): string {
 
   const css = `
     * { box-sizing: border-box; }
-    html, body { margin: 0; padding: 0; }
+    html, body { margin: 0; padding: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; color-adjust: exact; }
     body {
       font-family: ${bodyFont};
       color: #111; font-size: 15px; line-height: 1.85;
@@ -291,8 +291,13 @@ export function buildConsentHTML(opts: ConsentOptions): string {
       -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
       text-rendering: optimizeLegibility; -webkit-print-color-adjust: exact; print-color-adjust: exact;
     }
-    .watermark { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; z-index: 0; overflow: hidden; pointer-events: none; }
-    .watermark img { width: 70%; max-width: 420px; filter: grayscale(100%); opacity: 0.06; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .watermark { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; z-index: 0; overflow: hidden; pointer-events: none; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .watermark img { width: 70%; max-width: 420px; filter: grayscale(100%); opacity: 0.11; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    @media print {
+      html, body { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+      .watermark { display: flex !important; }
+      .watermark img { opacity: 0.11 !important; filter: grayscale(100%) !important; }
+    }
     .sheet { position: relative; z-index: 1; max-width: 780px; margin: 0 auto; }
     .head { display: flex; align-items: center; justify-content: center; gap: 16px; text-align: center; border-bottom: 2.5px solid #111; padding-bottom: 12px; margin-bottom: 6px; }
     .head img.logo { height: 152px; max-width: 260px; object-fit: contain; flex-shrink: 0; }
