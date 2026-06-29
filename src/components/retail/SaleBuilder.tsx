@@ -80,6 +80,11 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
   const [custOpen, setCustOpen] = useState(false);
   const [discountType, setDiscountType] = useState<DiscountType>("percent");
   const [discountValue, setDiscountValue] = useState("");
+  // Doctor-set FINAL price: the total to charge outright. The gap from the subtotal
+  // becomes an automatic (approximate) discount. Null = compute the total normally.
+  const [finalOverride, setFinalOverride] = useState<number | null>(null);
+  const [editingTotal, setEditingTotal] = useState(false);
+  const [totalDraft, setTotalDraft] = useState("");
   const [payment, setPayment] = useState<PaymentMethod>("cash");
   const [busy, setBusy] = useState(false);
   const [flash, setFlash] = useState<string | null>(null);
@@ -155,10 +160,22 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
   const { applied: promos, totalDiscount: promoDiscount } = useMemo(() => computePromotions(cart, promoRules), [cart, promoRules]);
   // Manual (percent/fixed) discount entered at the till, on top of any promotions.
   const manualDiscountAmt = resolveDiscount(subtotal, discountType, Number(discountValue) || 0);
-  // Combined deduction, never more than the subtotal.
-  const discountAmt = Math.min(subtotal, promoDiscount + manualDiscountAmt);
-  const total = Math.max(0, subtotal - discountAmt);
+  // Auto total = subtotal minus promotions + manual discount (clamped to the subtotal).
+  const autoTotal = Math.max(0, subtotal - Math.min(subtotal, promoDiscount + manualDiscountAmt));
+  // When the doctor pins a final price, that IS the total (clamped so it only ever
+  // discounts, never surcharges); the implied discount is the gap from the subtotal.
+  const total = finalOverride != null ? Math.max(0, Math.min(finalOverride, subtotal)) : autoTotal;
+  const discountAmt = subtotal - total;
   const profit = total - cost;
+
+  // ---- Final-price override (acts as an approximate discount) ----------------
+  const beginEditTotal = () => { setTotalDraft(String(Math.round(total))); setEditingTotal(true); };
+  const commitTotal = () => {
+    const v = Number(totalDraft);
+    if (!Number.isNaN(v) && v >= 0) { setFinalOverride(Math.max(0, Math.round(v))); setDiscountValue(""); }
+    setEditingTotal(false);
+  };
+  const clearFinalOverride = () => { playTap(); setFinalOverride(null); };
 
   const ql = query.trim().toLowerCase();
   const shown = useMemo(() => {
@@ -180,7 +197,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
   const pickCustomer = (c: Customer) => { setName(c.name); setPhone(c.phone); setCustOpen(false); setCustMatches([]); playTap(); };
 
   const reset = () => {
-    setCart([]); setQuery(""); setDiscountValue("");
+    setCart([]); setQuery(""); setDiscountValue(""); setFinalOverride(null); setEditingTotal(false);
     setDiscountType("percent"); setPayment("cash"); setDone(null); setLastPrints(0);
     setBrowseTab("products");
     // Preserve the patient/customer bridge across "New sale" so repeated per-patient
@@ -461,7 +478,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
                 <button onClick={() => setDiscountType("percent")} className={cn("grid h-8 w-8 place-items-center text-xs", discountType === "percent" ? "bg-brand-600 text-white" : "bg-surface-1 text-ink-muted hover:bg-surface-2")} aria-label="Percent"><Percent size={14} /></button>
                 <button onClick={() => setDiscountType("fixed")} className={cn("grid h-8 px-2 place-items-center text-2xs font-bold", discountType === "fixed" ? "bg-brand-600 text-white" : "bg-surface-1 text-ink-muted hover:bg-surface-2")} aria-label="Fixed">{IQD}</button>
               </div>
-              <input type="number" min="0" step="1" inputMode="numeric" value={discountValue} onChange={(e) => setDiscountValue(e.target.value)} placeholder="0" className="input h-8 w-24 px-2 py-0 text-end text-sm" />
+              <input type="number" min="0" step="1" inputMode="numeric" value={discountValue} onChange={(e) => { setDiscountValue(e.target.value); setFinalOverride(null); }} placeholder="0" className="input h-8 w-24 px-2 py-0 text-end text-sm" />
             </div>
           </div>
 
@@ -479,15 +496,54 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
           {/* Totals */}
           <div className="space-y-1 border-t border-line pt-3 text-sm">
             <div className="flex items-center justify-between text-ink-muted"><span>{t("retail.subtotal", "Subtotal")}</span><span className="tabular-nums">{money(subtotal)}</span></div>
-            {/* One distinct row per triggered Mix & Match offer, by the doctor's custom name. */}
-            {promos.map((p) => (
-              <div key={p.ruleId} className="flex items-center justify-between text-success-600">
-                <span className="flex items-center gap-1.5 truncate"><Sparkles size={13} className="shrink-0" />{t("retail.promoLabel", { name: p.name, defaultValue: "Offer: {{name}}" })}</span>
-                <span className="shrink-0 tabular-nums">-{money(p.discount)}</span>
+            {finalOverride != null ? (
+              /* Manual final price → one derived discount line (promotions/discount folded in). */
+              discountAmt > 0 && (
+                <div className="flex items-center justify-between text-success-600">
+                  <span className="flex items-center gap-1.5"><Tag size={13} className="shrink-0" />{t("retail.finalPriceDiscount", "خصم (سعر نهائي)")}</span>
+                  <span className="shrink-0 tabular-nums">-{money(discountAmt)}</span>
+                </div>
+              )
+            ) : (
+              <>
+                {/* One distinct row per triggered Mix & Match offer, by the doctor's custom name. */}
+                {promos.map((p) => (
+                  <div key={p.ruleId} className="flex items-center justify-between text-success-600">
+                    <span className="flex items-center gap-1.5 truncate"><Sparkles size={13} className="shrink-0" />{t("retail.promoLabel", { name: p.name, defaultValue: "Offer: {{name}}" })}</span>
+                    <span className="shrink-0 tabular-nums">-{money(p.discount)}</span>
+                  </div>
+                ))}
+                {manualDiscountAmt > 0 && <div className="flex items-center justify-between text-success-600"><span>{t("retail.discount", "Discount")}</span><span className="tabular-nums">-{money(manualDiscountAmt)}</span></div>}
+              </>
+            )}
+            <div className="flex items-center justify-between">
+              <span className="font-display font-bold text-ink">{t("retail.total", "Total")}</span>
+              {editingTotal ? (
+                <div className="flex items-center gap-1">
+                  <span className="text-2xs font-bold text-ink-subtle">{IQD}</span>
+                  <input
+                    autoFocus type="number" min="0" step="1" inputMode="numeric" value={totalDraft}
+                    onChange={(e) => setTotalDraft(e.target.value)}
+                    onBlur={commitTotal}
+                    onKeyDown={(e) => { if (e.key === "Enter") commitTotal(); if (e.key === "Escape") setEditingTotal(false); }}
+                    className="w-28 rounded-lg border border-brand-400 bg-surface-1 px-2 py-1 text-end font-display text-lg font-extrabold tabular-nums text-ink outline-none"
+                  />
+                </div>
+              ) : (
+                <button
+                  type="button" onClick={beginEditTotal} title={t("retail.editTotal", "تعديل السعر النهائي")}
+                  className="inline-flex items-center gap-1.5 rounded-lg px-1.5 font-display text-xl font-extrabold tabular-nums text-ink underline decoration-dotted decoration-brand-400 underline-offset-4 transition hover:bg-brand-50 dark:hover:bg-brand-500/15"
+                >
+                  {money(total)} <Pencil size={13} className="text-ink-subtle" />
+                </button>
+              )}
+            </div>
+            {finalOverride != null && (
+              <div className="flex items-center justify-end gap-1.5 text-2xs text-brand-600">
+                <span>{t("retail.finalPriceManual", "سعر نهائي محدّد يدوياً")}</span>
+                <button onClick={clearFinalOverride} className="rounded-full px-1.5 font-semibold underline decoration-dotted underline-offset-2 hover:text-brand-700">{t("retail.resetAuto", "إلغاء")}</button>
               </div>
-            ))}
-            {manualDiscountAmt > 0 && <div className="flex items-center justify-between text-success-600"><span>{t("retail.discount", "Discount")}</span><span className="tabular-nums">-{money(manualDiscountAmt)}</span></div>}
-            <div className="flex items-center justify-between"><span className="font-display font-bold text-ink">{t("retail.total", "Total")}</span><span className="font-display text-xl font-extrabold text-ink tabular-nums">{money(total)}</span></div>
+            )}
             <div className="flex items-center justify-end gap-1 text-2xs text-success-600"><TrendingUp size={11} /> {t("retail.profit", "Profit")} {money(profit)}</div>
           </div>
 
