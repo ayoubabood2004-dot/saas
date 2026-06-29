@@ -142,15 +142,19 @@ export function buildInvoiceHTML(invoice: Invoice, items: InvoiceItem[], opts: I
     /* Faint, decolorised logo watermark centered on the page. position:absolute
        (anchored to the page-filling body) prints reliably across browsers — unlike
        position:fixed, which Chrome/Firefox/Safari render inconsistently in print. */
-    .watermark { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; z-index: 0; pointer-events: none; }
-    .watermark img { width: 92%; max-width: 660px; filter: grayscale(100%); opacity: 0.09; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-    .logo-top { text-align: center; margin: 6px 0 18px; }
-    .logo-top img { max-height: 96px; max-width: 280px; object-fit: contain; }
+    .watermark { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; z-index: 0; pointer-events: none; overflow: hidden; }
+    .watermark img { width: 92%; max-width: 660px; filter: grayscale(100%); opacity: 0.09; transform: scale(1.85); -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    /* Logo sits in the MIDDLE of the header row (clinic info → its right, invoice → its left). */
+    .logo-mid { text-align: center; }
+    .logo-mid img { max-height: 86px; max-width: 190px; object-fit: contain; }
     .socials { margin-top: 7px; display: flex; flex-direction: column; gap: 3px; font-size: 11px; color: #475569; }
     .socials .s { display: inline-flex; align-items: center; gap: 6px; }
     .socials svg { flex: 0 0 auto; }
-    .site { margin-top: 8px; font-size: 10px; letter-spacing: .5px; color: #94a3b8; }
-    .top { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #1266d8; padding-bottom: 16px; }
+    /* Website pinned to the bottom-left of the page. */
+    .page-footer { position: absolute; bottom: 8mm; left: 14mm; font-size: 11px; letter-spacing: .5px; color: #64748b; direction: ltr; z-index: 1; }
+    .top { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 16px; border-bottom: 3px solid #1266d8; padding-bottom: 16px; }
+    .party { min-width: 0; }
+    .party.end { text-align: end; }
     .brand { font-size: 11px; font-weight: 800; letter-spacing: 2px; text-transform: uppercase; color: #1266d8; margin-bottom: 2px; }
     .clinic { font-size: 22px; font-weight: 800; color: #0b1220; letter-spacing: -.3px; }
     .muted { color: #64748b; font-size: 12px; }
@@ -209,16 +213,17 @@ export function buildInvoiceHTML(invoice: Invoice, items: InvoiceItem[], opts: I
     `
     : `
     ${logo ? `<div class="watermark"><img src="${logo}" alt=""/></div>` : ""}
+    <div class="page-footer">${WEBSITE}</div>
     <div class="sheet">
-      ${logo ? `<div class="logo-top"><img src="${logo}" alt="logo"/></div>` : ""}
       <div class="top">
-        <div>
+        <div class="party">
           <div class="brand">${brand}</div>
           <div class="clinic">${esc(opts.clinicName)}</div>
           ${opts.clinicPhone ? `<div class="muted">${s.phone}: ${phoneHTML(opts.clinicPhone)}</div>` : ""}
           ${socialIcons}
         </div>
-        <div style="text-align:end">
+        ${logo ? `<div class="logo-mid"><img src="${logo}" alt="logo"/></div>` : `<div></div>`}
+        <div class="party end">
           <div class="doc-title">${s.invoice}</div>
           <div class="doc-no">${esc(invoiceNo(invoice.id))}</div>
           ${opts.printNo && opts.printNo > 1 ? `<div class="doc-no">${s.printNo} #${opts.printNo}</div>` : ""}
@@ -250,7 +255,7 @@ export function buildInvoiceHTML(invoice: Invoice, items: InvoiceItem[], opts: I
         <div class="row grand"><span>${s.total}</span><span>${money(invoice.total)}</span></div>
       </div>
 
-      <div class="foot">${s.thanks}<div class="site">${WEBSITE}</div></div>
+      <div class="foot">${s.thanks}</div>
     </div>
     `;
 
