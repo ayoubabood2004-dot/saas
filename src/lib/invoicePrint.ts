@@ -129,10 +129,12 @@ export function buildInvoiceHTML(invoice: Invoice, items: InvoiceItem[], opts: I
     : `
     * { box-sizing: border-box; }
     html, body { margin: 0; padding: 0; }
-    body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; color: #0f172a; font-size: 13px; line-height: 1.5; padding: 16mm 14mm; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; color: #0f172a; font-size: 13px; line-height: 1.5; padding: 16mm 14mm; position: relative; min-height: 255mm; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     .sheet { max-width: 720px; margin: 0 auto; position: relative; z-index: 1; }
-    /* Faint, decolorised logo watermark centered on the page. */
-    .watermark { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; z-index: 0; pointer-events: none; }
+    /* Faint, decolorised logo watermark centered on the page. position:absolute
+       (anchored to the page-filling body) prints reliably across browsers — unlike
+       position:fixed, which Chrome/Firefox/Safari render inconsistently in print. */
+    .watermark { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; z-index: 0; pointer-events: none; }
     .watermark img { width: 72%; max-width: 460px; filter: grayscale(100%); opacity: 0.06; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     .logo-top { text-align: center; margin-bottom: 14px; }
     .logo-top img { max-height: 72px; max-width: 240px; object-fit: contain; }
