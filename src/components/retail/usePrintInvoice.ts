@@ -3,7 +3,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/components/ui";
 import { repo } from "@/lib/repo";
 import { openInvoicePrint, type PrintFormat } from "@/lib/invoicePrint";
-import { getClinicLogo, getClinicSocials } from "@/lib/settings";
+import { getClinicLogo, getClinicSocials, getClinicName } from "@/lib/settings";
 import type { Invoice, InvoiceItem } from "@/types";
 
 /**
@@ -30,7 +30,7 @@ export function useInvoicePrinter() {
 
     const socials = getClinicSocials();
     const ok = openInvoicePrint({ ...invoice, print_count: printNo }, items ?? [], {
-      clinicName: user?.full_name || "doctorVet",
+      clinicName: getClinicName() || user?.full_name || "doctorVet",
       clinicPhone: user?.phone ?? null,
       brand: "doctorVet",
       format,

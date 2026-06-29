@@ -11,7 +11,7 @@ import { getServiceCatalog, addServiceCategory, removeServiceCategory, addServic
 import { DEFAULT_RANGES, VITAL_KEYS, CBC_KEYS, rangeFor, type VitalKey } from "@/lib/vitals";
 
 const ALL_KEYS: VitalKey[] = [...VITAL_KEYS, ...CBC_KEYS];
-import { setVitalOverride, clearVitalOverrides, getDialCode, setDialCode, getClinicLogo, setClinicLogo, getClinicSocials, setClinicSocials } from "@/lib/settings";
+import { setVitalOverride, clearVitalOverrides, getDialCode, setDialCode, getClinicLogo, setClinicLogo, getClinicSocials, setClinicSocials, getClinicName, setClinicName } from "@/lib/settings";
 import { prepareUpload } from "@/lib/image";
 import { isSoundEnabled, setSoundEnabled, playSuccess, playTap } from "@/lib/sounds";
 import { getClinicMeds, addClinicMed, removeClinicMed, allMedTypes, allMedicationNames, BUILTIN_MEDICATIONS, type ClinicMed } from "@/lib/meds";
@@ -251,6 +251,7 @@ function ClinicIdentity() {
   const initial = getClinicSocials();
   const [facebook, setFacebook] = useState(initial.facebook);
   const [instagram, setInstagram] = useState(initial.instagram);
+  const [name, setName] = useState(getClinicName());
 
   const onPick = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
@@ -270,11 +271,25 @@ function ClinicIdentity() {
 
   const removeLogo = () => { setClinicLogo(null); setLogo(null); playTap(); };
   const saveSocials = () => { setClinicSocials({ facebook, instagram }); playTap(); };
+  const saveName = () => { setClinicName(name); playTap(); };
 
   return (
     <div className="card p-5">
       <h2 className="font-bold text-ink mb-1 flex items-center gap-2"><ImageIcon size={18} className="text-brand-600" /> {t("settings.identity", "هوية العيادة")}</h2>
-      <p className="text-xs text-ink-subtle mb-4">{t("settings.identityHint", "شعار يظهر في أعلى الفاتورة وكعلامة مائية، وحسابات التواصل تظهر في أسفلها.")}</p>
+      <p className="text-xs text-ink-subtle mb-4">{t("settings.identityHint", "اسم العيادة وشعارها يظهران في أعلى الفاتورة ونماذج الإقرار وكعلامة مائية، وحسابات التواصل تظهر في الأسفل.")}</p>
+
+      {/* Clinic name */}
+      <div className="mb-5">
+        <label className="label">{t("settings.clinicName", "اسم العيادة")}</label>
+        <input
+          className="input"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          onBlur={saveName}
+          placeholder={t("settings.clinicNamePlaceholder", "مثال: عيادة الرحمة البيطرية")}
+        />
+        <p className="text-xs text-ink-subtle mt-1">{t("settings.clinicNameHint", "يظهر في ترويسة الفاتورة ونماذج الإقرار بدل اسم الموقع.")}</p>
+      </div>
 
       {/* Logo */}
       <div className="flex items-center gap-4">

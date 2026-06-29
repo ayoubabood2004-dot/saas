@@ -10,6 +10,7 @@ import { playTap } from "@/lib/sounds";
 import { overlayVariants, dialogVariants } from "@/lib/motion";
 import { useAuth } from "@/contexts/AuthContext";
 import { getClinic, getActiveClinicId } from "@/lib/clinics";
+import { getClinicName, getClinicLogo } from "@/lib/settings";
 import { buildConsentHTML, openConsentPrint, consentFormLabel, type ConsentFormType, type ConsentOptions } from "@/lib/consentForms";
 
 /**
@@ -41,22 +42,27 @@ export function ConsentForms({ open, onClose, pet }: { open: boolean; onClose: (
 
   const opts: ConsentOptions = useMemo(() => {
     const clinic = getClinic(user?.clinic_id ?? getActiveClinicId());
+    // Owner location mirrors the animal record: area (المنطقة) → governorate (المحافظة).
+    const ownerAddress = [pet.owner_area?.trim(), pet.owner_governorate?.trim()].filter(Boolean).join("، ") || null;
     return {
       form,
       lang,
       clinic: {
-        name: clinic?.name || "doctorVet Clinic",
-        phone: clinic?.phone ?? null,
+        // The clinic's configured name (Settings → هوية العيادة); falls back to the
+        // demo clinic record, never the website/brand text.
+        name: getClinicName() || clinic?.name || user?.full_name || "",
+        phone: clinic?.phone ?? user?.phone ?? null,
         city: clinic?.city ?? null,
         license: clinic?.license ?? null,
       },
       vetName: user?.full_name ?? null,
-      owner: { name: pet.owner_name, phone: pet.owner_phone, address: null },
+      owner: { name: pet.owner_name, phone: pet.owner_phone, address: ownerAddress },
       patient: {
         name: pet.name, serial: pet.serial, species: pet.species,
         breed: pet.breed, sex: pet.sex, dob: pet.dob, color: pet.color,
       },
       estimate: estimate.trim() || null,
+      logoUrl: getClinicLogo(),
     };
   }, [form, lang, estimate, pet, user]);
 

@@ -140,8 +140,8 @@ export function clearPetRanges(petId: string) {
 export const DEFAULT_DIAL_CODE = "+964"; // Iraq
 
 export interface ClinicSocials { facebook: string; instagram: string }
-interface ClinicPrefs { dial_code: string; logo_url: string | null; social_facebook: string; social_instagram: string }
-const DEFAULT_PREFS: ClinicPrefs = { dial_code: DEFAULT_DIAL_CODE, logo_url: null, social_facebook: "", social_instagram: "" };
+interface ClinicPrefs { dial_code: string; logo_url: string | null; social_facebook: string; social_instagram: string; clinic_name: string }
+const DEFAULT_PREFS: ClinicPrefs = { dial_code: DEFAULT_DIAL_CODE, logo_url: null, social_facebook: "", social_instagram: "", clinic_name: "" };
 
 const prefsKey = () => `vp_clinic_prefs_${getActiveClinicId()}`;
 const legacyDialKey = () => `vp_dial_code_${getActiveClinicId()}`;
@@ -171,7 +171,7 @@ export async function hydrateClinicPrefs(): Promise<void> {
   const client = sb();
   if (!client) { prefsCache = readPrefsLocal(); return; }
   try {
-    const { data, error } = await client.from("clinic_prefs").select("dial_code,logo_url,social_facebook,social_instagram").maybeSingle();
+    const { data, error } = await client.from("clinic_prefs").select("dial_code,logo_url,social_facebook,social_instagram,clinic_name").maybeSingle();
     if (error) throw error;
     if (data) {
       prefsCache = {
@@ -179,13 +179,14 @@ export async function hydrateClinicPrefs(): Promise<void> {
         logo_url: (data.logo_url as string) ?? null,
         social_facebook: (data.social_facebook as string) ?? "",
         social_instagram: (data.social_instagram as string) ?? "",
+        clinic_name: (data.clinic_name as string) ?? "",
       };
     } else {
       // No row yet → migrate any local prefs up (or seed the default dial code).
       const local = readPrefsLocal();
       prefsCache = local;
       await client.from("clinic_prefs").upsert(
-        { dial_code: local.dial_code, logo_url: local.logo_url, social_facebook: local.social_facebook, social_instagram: local.social_instagram },
+        { dial_code: local.dial_code, logo_url: local.logo_url, social_facebook: local.social_facebook, social_instagram: local.social_instagram, clinic_name: local.clinic_name },
         { onConflict: "clinic_id" },
       );
     }
@@ -227,4 +228,13 @@ export function getClinicSocials(): ClinicSocials {
 }
 export function setClinicSocials(s: ClinicSocials) {
   patchPrefs({ social_facebook: s.facebook.trim(), social_instagram: s.instagram.trim() }, "clinic-socials-set");
+}
+
+/** The clinic's own display name, shown on printed invoices and legal consent forms.
+ *  Empty string when unset — callers fall back to the staff full_name / brand text. */
+export function getClinicName(): string {
+  return prefs().clinic_name.trim();
+}
+export function setClinicName(name: string) {
+  patchPrefs({ clinic_name: name.trim() }, "clinic-name-set");
 }

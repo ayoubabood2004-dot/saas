@@ -32,7 +32,13 @@ export interface ConsentOptions {
   patient: ConsentPatient;
   /** Optional estimated cost shown on the treatment form (e.g. "150,000 IQD"). */
   estimate?: string | null;
+  /** Clinic logo as a data-URL — shown in the letterhead and as a faint watermark. */
+  logoUrl?: string | null;
+  /** Website shown in the page footer (replaces the browser's about:blank line). */
+  website?: string | null;
 }
+
+const WEBSITE = "doctorvet.doctor";
 
 const esc = (s: unknown) =>
   String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!));
@@ -95,7 +101,7 @@ interface Strings {
 
 function strings(opts: ConsentOptions): Strings {
   const ar = opts.lang.startsWith("ar");
-  const clinic = opts.clinic.name;
+  const clinic = opts.clinic.name?.trim() || (ar ? "العيادة البيطرية" : "the clinic");
   const patient = opts.patient.name?.trim() || (ar ? "الحيوان المذكور" : "the patient");
   const vet = opts.vetName?.trim() || (ar ? "الطبيب البيطري المعالج" : "the attending veterinarian");
 
@@ -253,45 +259,76 @@ export function buildConsentHTML(opts: ConsentOptions): string {
     ? `<div class="estimate"><span class="el">${esc(s.estimate)}</span><span class="eline">${opts.estimate ? esc(opts.estimate) : ""}</span></div>`
     : "";
 
+  const logo = opts.logoUrl?.trim() || "";
+  const website = opts.website?.trim() || WEBSITE;
+  const clinicName = opts.clinic.name?.trim() || (ar ? "العيادة البيطرية" : "Veterinary Clinic");
+
+  // Web fonts greatly improve Arabic print legibility: 'Amiri' is a refined Naskh
+  // typeface well-suited to formal/legal documents, 'Cairo' a clean modern sans for
+  // headings. Loaded from Google Fonts (the print window has network); robust system
+  // fallbacks keep the document readable if the fonts can't be fetched.
+  const fontLink = ar
+    ? `<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&family=Cairo:wght@600;700&display=swap" rel="stylesheet">`
+    : `<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=EB+Garamond:wght@400;600;700&display=swap" rel="stylesheet">`;
+  const bodyFont = ar
+    ? "'Amiri','Sakkal Majalla','Traditional Arabic','Times New Roman',serif"
+    : "'EB Garamond','Times New Roman',Georgia,serif";
+  const headFont = ar
+    ? "'Cairo','Amiri','Sakkal Majalla',sans-serif"
+    : "'EB Garamond','Times New Roman',serif";
+
   const css = `
     * { box-sizing: border-box; }
     html, body { margin: 0; padding: 0; }
-    body { font-family: ${ar ? "'Sakkal Majalla','Traditional Arabic','Times New Roman',serif" : "'Times New Roman', Georgia, serif"}; color: #111; font-size: 13.5px; line-height: 1.65; }
-    .sheet { max-width: 760px; margin: 0 auto; padding: 4px; }
-    .head { text-align: center; border-bottom: 2px solid #111; padding-bottom: 10px; margin-bottom: 6px; }
-    .brand { font-size: 10px; font-weight: 700; letter-spacing: 3px; text-transform: uppercase; color: #1266d8; }
-    .clinic { font-size: 22px; font-weight: 700; letter-spacing: .2px; margin-top: 2px; }
-    .contact { font-size: 11px; color: #444; margin-top: 3px; }
-    .title { text-align: center; font-size: 18px; font-weight: 700; letter-spacing: 1px; margin: 18px 0 16px; text-decoration: underline; text-underline-offset: 6px; }
+    body {
+      font-family: ${bodyFont};
+      color: #111; font-size: 15px; line-height: 1.85;
+      padding: 16mm 16mm 14mm; position: relative; min-height: 297mm;
+      -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
+      text-rendering: optimizeLegibility; -webkit-print-color-adjust: exact; print-color-adjust: exact;
+    }
+    .watermark { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; z-index: 0; overflow: hidden; pointer-events: none; }
+    .watermark img { width: 70%; max-width: 420px; filter: grayscale(100%); opacity: 0.06; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .sheet { position: relative; z-index: 1; max-width: 780px; margin: 0 auto; }
+    .head { display: flex; align-items: center; justify-content: center; gap: 16px; text-align: center; border-bottom: 2.5px solid #111; padding-bottom: 12px; margin-bottom: 6px; }
+    .head img.logo { height: 76px; max-width: 130px; object-fit: contain; flex-shrink: 0; }
+    .head .head-txt { min-width: 0; }
+    .clinic { font-family: ${headFont}; font-size: 26px; font-weight: 700; letter-spacing: .2px; line-height: 1.2; }
+    .contact { font-size: 12px; color: #444; margin-top: 4px; }
+    .title { font-family: ${headFont}; text-align: center; font-size: 19px; font-weight: 700; letter-spacing: .5px; margin: 18px 0 16px; text-decoration: underline; text-underline-offset: 7px; }
     .cols { display: flex; gap: 26px; margin-bottom: 16px; }
     .col { flex: 1; min-width: 0; }
-    .col h4 { margin: 0 0 4px; font-size: 13px; font-weight: 700; border-bottom: 1px solid #bbb; padding-bottom: 3px; }
+    .col h4 { font-family: ${headFont}; margin: 0 0 4px; font-size: 14px; font-weight: 700; border-bottom: 1px solid #bbb; padding-bottom: 3px; }
     table.data { width: 100%; border-collapse: collapse; }
-    table.data td { padding: 2px 0; vertical-align: top; font-size: 13px; }
+    table.data td { padding: 2.5px 0; vertical-align: top; font-size: 14px; }
     table.data td.k { width: 92px; color: #333; white-space: nowrap; }
     table.data td.c { width: 10px; color: #333; }
     table.data td.v { font-weight: 700; padding-inline-start: 8px; word-break: break-word; }
     .body { margin: 6px 0 14px; text-align: justify; }
-    .body p { margin: 0 0 9px; }
-    .vet { margin: 10px 0 4px; font-weight: 700; }
-    .estimate { display: flex; align-items: flex-end; gap: 10px; margin: 14px 0; }
+    .body p { margin: 0 0 11px; }
+    .vet { margin: 12px 0 4px; font-weight: 700; }
+    .estimate { display: flex; align-items: flex-end; gap: 10px; margin: 16px 0; }
     .estimate .el { font-weight: 700; white-space: nowrap; }
-    .estimate .eline { flex: 1; border-bottom: 1px dotted #555; min-height: 20px; font-weight: 700; }
-    .sign { display: flex; justify-content: space-between; gap: 30px; margin-top: 46px; }
+    .estimate .eline { flex: 1; border-bottom: 1px dotted #555; min-height: 22px; font-weight: 700; }
+    .sign { display: flex; justify-content: space-between; gap: 30px; margin-top: 48px; }
     .sign .box { flex: 1; }
-    .sign .lbl { font-weight: 700; font-size: 12.5px; margin-bottom: 30px; }
-    .sign .line { border-top: 1px solid #111; padding-top: 4px; font-size: 12px; color: #333; }
+    .sign .lbl { font-weight: 700; font-size: 13px; margin-bottom: 32px; }
+    .sign .line { border-top: 1px solid #111; padding-top: 4px; font-size: 12.5px; color: #333; }
     .sign .name { font-weight: 700; color: #111; }
-    @page { size: A4; margin: 16mm 16mm 14mm; }
+    .page-footer { position: absolute; bottom: 8mm; left: 16mm; font-family: ${headFont}; font-size: 11px; font-weight: 700; letter-spacing: .4px; color: #1266d8; z-index: 1; }
+    @page { size: A4; margin: 0; }
     @media print { .sheet { max-width: none; } }
   `;
 
   const body = `
+    ${logo ? `<div class="watermark"><img src="${esc(logo)}" alt=""/></div>` : ""}
     <div class="sheet">
       <div class="head">
-        <div class="brand">doctorVet</div>
-        <div class="clinic">${esc(opts.clinic.name)}</div>
-        ${contact ? `<div class="contact">${contact}</div>` : ""}
+        ${logo ? `<img class="logo" src="${esc(logo)}" alt=""/>` : ""}
+        <div class="head-txt">
+          <div class="clinic">${esc(clinicName)}</div>
+          ${contact ? `<div class="contact">${contact}</div>` : ""}
+        </div>
       </div>
 
       <div class="title">${esc(s.title)}</div>
@@ -324,10 +361,12 @@ export function buildConsentHTML(opts: ConsentOptions): string {
         </div>
       </div>
     </div>
+    <div class="page-footer">${esc(website)}</div>
   `;
 
   return `<!doctype html><html lang="${esc(opts.lang)}" dir="${dir}"><head><meta charset="utf-8"/>
     <title>${esc(s.title)}</title>
+    ${fontLink}
     <style>${css}</style></head>
     <body>${body}</body></html>`;
 }
