@@ -34,6 +34,7 @@ function createInvoiceLocal(items: CheckoutItem[], meta?: SaleMeta): Invoice {
     pet_name: meta?.pet_name?.trim() || null,
     subtotal, discount, discount_type: discount > 0 ? dtype : null,
     payment_method: meta?.payment_method ?? null,
+    payment_details: meta?.payment_details && meta.payment_details.length ? meta.payment_details : null,
     total, cost_total: cost, profit: total - cost, item_count: count,
     print_count: 0, status: "paid", refunded_at: null,
     staff_id: meta?.staff_id?.trim() || null,

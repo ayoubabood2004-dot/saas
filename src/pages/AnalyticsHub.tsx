@@ -32,6 +32,15 @@ const PIE = ["#2563eb", "#16a34a", "#f59e0b", "#db2777", "#0891b2", "#7c3aed", "
 const SPECIES_AR: Record<string, string> = { dog: "كلاب", cat: "قطط", horse: "خيول", cow: "أبقار", bird: "طيور", rabbit: "أرانب", other: "أخرى" };
 const PAY_AR: Record<PaymentMethod, string> = { cash: "نقداً", card: "بطاقة", transfer: "تحويل" };
 const PAY_ICON: Record<PaymentMethod, typeof Banknote> = { cash: Banknote, card: CreditCard, transfer: ArrowLeftRight };
+/** A sale's payment legs — the recorded split when present, else one leg for the whole
+ *  total at the (legacy) single method. Empty when the sale is still unpaid (a receivable). */
+const paymentsOf = (inv: Invoice): { method: PaymentMethod; amount: number }[] => {
+  const d = inv.payment_details;
+  if (Array.isArray(d) && d.length) {
+    return d.filter((p): p is { method: PaymentMethod; amount: number } => !!p && !!p.method && Number(p.amount) > 0);
+  }
+  return inv.payment_method ? [{ method: inv.payment_method, amount: inv.total }] : [];
+};
 
 const startOfDay = (d: Date) => { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; };
 const endOfDay = (d: Date) => { const x = new Date(d); x.setHours(23, 59, 59, 999); return x; };
@@ -156,7 +165,8 @@ export function AnalyticsHub() {
     let gross = 0; let pending = 0;
     for (const i of paid) {
       gross += i.total;
-      if (i.payment_method && byMethod[i.payment_method]) { byMethod[i.payment_method].total += i.total; byMethod[i.payment_method].count += 1; }
+      const legs = paymentsOf(i);
+      if (legs.length) for (const p of legs) { if (byMethod[p.method]) { byMethod[p.method].total += p.amount; byMethod[p.method].count += 1; } }
       else pending += i.total;
     }
     const refunds = invInRange.filter((i) => (i.status ?? "paid") === "refunded");
@@ -164,7 +174,7 @@ export function AnalyticsHub() {
     return { byMethod, gross, pending, txCount: paid.length, refundCount: refunds.length, refundTotal };
   }, [paid, invInRange]);
 
-  const receivables = useMemo(() => paid.filter((i) => !i.payment_method), [paid]);
+  const receivables = useMemo(() => paid.filter((i) => paymentsOf(i).length === 0), [paid]);
 
   // Time series: hourly when the range is a single day, otherwise daily — gross + net.
   const series = useMemo(() => {
@@ -191,7 +201,7 @@ export function AnalyticsHub() {
 
   const paymentPie = useMemo(() => {
     const m = { cash: 0, card: 0, transfer: 0 } as Record<PaymentMethod, number>;
-    for (const i of paid) if (i.payment_method && m[i.payment_method] !== undefined) m[i.payment_method] += i.total;
+    for (const i of paid) for (const p of paymentsOf(i)) if (m[p.method] !== undefined) m[p.method] += p.amount;
     return (["cash", "card", "transfer"] as PaymentMethod[]).map((k) => ({ name: PAY_AR[k], value: Math.round(m[k]) })).filter((d) => d.value > 0);
   }, [paid]);
 

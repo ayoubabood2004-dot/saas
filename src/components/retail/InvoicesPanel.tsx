@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { motion } from "framer-motion";
 import {
   Search, Receipt, User, Printer, RotateCcw, Trash2, TrendingUp, Banknote, CreditCard,
-  ArrowLeftRight, Package, AlertTriangle, CheckCircle2,
+  ArrowLeftRight, Package, AlertTriangle, CheckCircle2, Wallet,
 } from "lucide-react";
 import type { Invoice, InvoiceItem, PaymentMethod } from "@/types";
 import { repo } from "@/lib/repo";
@@ -18,6 +18,7 @@ import { playTap, playSuccess, playWarning } from "@/lib/sounds";
 import { staggerContainer, staggerItem } from "@/lib/motion";
 
 const PAY_ICON: Record<PaymentMethod, typeof Banknote> = { cash: Banknote, card: CreditCard, transfer: ArrowLeftRight };
+const PAY_AR: Record<PaymentMethod, string> = { cash: "نقدي", card: "بطاقة ائتمان", transfer: "حوالة بنكية" };
 
 type StatusFilter = "all" | "paid" | "refunded";
 
@@ -136,6 +137,9 @@ function InvoiceDetail({ invoice, onClose, onChanged, setOpen }: {
   const subtotal = invoice.subtotal ?? invoice.total;
   const discount = invoice.discount ?? 0;
   const PayIcon = invoice.payment_method ? PAY_ICON[invoice.payment_method] : null;
+  // Split payment: show each leg when more than one method settled the bill.
+  const payLegs = (invoice.payment_details ?? []).filter((p) => p && p.method && Number(p.amount) > 0);
+  const isSplit = payLegs.length > 1;
 
   const refund = async () => {
     if (busy) return;
@@ -225,10 +229,25 @@ function InvoiceDetail({ invoice, onClose, onChanged, setOpen }: {
           </div>
           <div className="flex items-center justify-between text-xs text-ink-subtle">
             <span className="flex items-center gap-1.5">
-              {PayIcon && <PayIcon size={13} />} {invoice.payment_method ? t(`retail.${invoice.payment_method}`, invoice.payment_method) : t("retail.unpaidMethod", "—")}
+              {isSplit
+                ? <><Wallet size={13} /> {t("retail.split", "دفع مجزأ")}</>
+                : <>{PayIcon && <PayIcon size={13} />} {invoice.payment_method ? PAY_AR[invoice.payment_method] : t("retail.unpaidMethod", "—")}</>}
             </span>
             <span className="flex items-center gap-1"><Printer size={12} /> {t("retail.printsN", { n: invoice.print_count ?? 0, defaultValue: "prints: {{n}}" })}</span>
           </div>
+          {isSplit && (
+            <div className="space-y-0.5 rounded-lg bg-surface-2 px-2.5 py-1.5 text-2xs text-ink-muted">
+              {payLegs.map((p, i) => {
+                const Icon = PAY_ICON[p.method] ?? Banknote;
+                return (
+                  <div key={i} className="flex items-center justify-between">
+                    <span className="flex items-center gap-1.5"><Icon size={11} /> {PAY_AR[p.method] ?? p.method}</span>
+                    <span className="tabular-nums">{money(p.amount)}</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         {/* Actions */}

@@ -74,6 +74,19 @@ export function buildInvoiceHTML(invoice: Invoice, items: InvoiceItem[], opts: I
   const discount = invoice.discount ?? 0;
   const refunded = invoice.status === "refunded";
   const payLabel = invoice.payment_method ? s.pay[invoice.payment_method] ?? invoice.payment_method : "";
+  // Split payment: each leg printed under a "دفع مجزأ" header. Single legs print as before.
+  const payLegs = (invoice.payment_details ?? []).filter((p) => p && p.method && Number(p.amount) > 0);
+  const isSplitPay = payLegs.length > 1;
+  const splitLabel = opts.lang === "ar" ? "دفع مجزأ" : "Split payment";
+  const legLabel = (m: string) => s.pay[m] ?? m;
+  const payRowsA4 = isSplitPay
+    ? `<div class="row"><span>${s.payment}</span><span>${esc(splitLabel)}</span></div>`
+      + payLegs.map((p) => `<div class="row" style="font-size:.9em;opacity:.85"><span>${esc(legLabel(p.method))}</span><span>${money(p.amount)}</span></div>`).join("")
+    : (payLabel ? `<div class="row"><span>${s.payment}</span><span>${esc(payLabel)}</span></div>` : "");
+  const payRowsThermal = isSplitPay
+    ? `<div class="muted">${s.payment}: ${esc(splitLabel)}</div>`
+      + payLegs.map((p) => `<div class="muted">· ${esc(legLabel(p.method))}: ${money(p.amount)}</div>`).join("")
+    : (payLabel ? `<div class="muted">${s.payment}: ${esc(payLabel)}</div>` : "");
   // Phone numbers must read LTR (+964 …) even inside an RTL document.
   const phoneHTML = (p: string) => `<span dir="ltr" style="unicode-bidi:isolate; direction:ltr">${esc(p)}</span>`;
   const logo = opts.logoUrl ? String(opts.logoUrl) : "";
@@ -214,7 +227,7 @@ export function buildInvoiceHTML(invoice: Invoice, items: InvoiceItem[], opts: I
     <div class="totals">
       ${discount > 0 ? `<div class="row"><span>${s.subtotal}</span><span>${money(subtotal)}</span></div><div class="row"><span>${s.discount}</span><span>-${money(discount)}</span></div>` : ""}
       <div class="row grand"><span>${s.total}</span><span>${money(invoice.total)}</span></div>
-      ${payLabel ? `<div class="row"><span>${s.payment}</span><span>${esc(payLabel)}</span></div>` : ""}
+      ${payRowsA4}
     </div>
     <div class="thanks">${s.thanks}</div>
     ${socialText ? `<div class="social">${socialText}</div>` : ""}
@@ -251,7 +264,7 @@ export function buildInvoiceHTML(invoice: Invoice, items: InvoiceItem[], opts: I
         <div style="text-align:end">
           <h4>${s.date}</h4>
           <div class="v">${esc(dateStr)}</div>
-          ${payLabel ? `<div class="muted">${s.payment}: ${esc(payLabel)}</div>` : ""}
+          ${payRowsThermal}
           ${refunded ? `<div style="margin-top:8px"><span class="badge">${s.refunded}</span></div>` : ""}
         </div>
       </div>

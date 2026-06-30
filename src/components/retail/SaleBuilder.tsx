@@ -4,9 +4,9 @@ import { AnimatePresence, motion } from "framer-motion";
 import {
   Search, Barcode, Plus, Minus, Trash2, ShoppingCart, User, Phone, Tag, Percent,
   Banknote, CreditCard, ArrowLeftRight, CheckCircle2, Printer, Sparkles, TrendingUp, Package, PawPrint, X,
-  Stethoscope, Pencil, Pill, Syringe, CalendarClock,
+  Stethoscope, Pencil, Pill, Syringe, CalendarClock, Wallet,
 } from "lucide-react";
-import type { Product, Invoice, InvoiceItem, CheckoutItem, SaleMeta, PaymentMethod, DiscountType, Customer, Service, ServiceCatalog, Species } from "@/types";
+import type { Product, Invoice, InvoiceItem, CheckoutItem, SaleMeta, PaymentMethod, PaymentSplit, DiscountType, Customer, Service, ServiceCatalog, Species } from "@/types";
 import { repo, resolveDiscount } from "@/lib/repo";
 import { getServiceCatalog } from "@/lib/services";
 import { computePromotions, getPromoRules } from "@/lib/promotions";
@@ -58,11 +58,14 @@ const unitCap = (l: Line): number => {
   return Math.floor(l.stock);
 };
 
-const PAY_METHODS: { value: PaymentMethod; icon: typeof Banknote; key: string; def: string }[] = [
-  { value: "cash", icon: Banknote, key: "retail.cash", def: "Cash" },
-  { value: "card", icon: CreditCard, key: "retail.card", def: "Card" },
-  { value: "transfer", icon: ArrowLeftRight, key: "retail.transfer", def: "Transfer" },
+const PAY_OPTIONS: { value: PaymentMethod; icon: typeof Banknote; key: string; def: string }[] = [
+  { value: "cash", icon: Banknote, key: "retail.payCash", def: "نقدي" },
+  { value: "card", icon: CreditCard, key: "retail.payCard", def: "بطاقة ائتمان" },
+  { value: "transfer", icon: ArrowLeftRight, key: "retail.payTransfer", def: "حوالة بنكية" },
 ];
+const PAY_SEQUENCE: PaymentMethod[] = ["cash", "card", "transfer"];
+/** Round to 2 dp, absorbing binary-float drift (0.1 + 0.2 → 0.3, not 0.30000000000000004). */
+const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
 
 /** A YYYY-MM-DD → short date with Western numerals; never throws / never "Invalid Date". */
 const prettyShort = (iso: string) => {
@@ -102,7 +105,8 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
   const [finalOverride, setFinalOverride] = useState<number | null>(null);
   const [editingTotal, setEditingTotal] = useState(false);
   const [totalDraft, setTotalDraft] = useState("");
-  const [payment, setPayment] = useState<PaymentMethod>("cash");
+  // Payment allocation — one leg by default (full total), expandable into a split.
+  const [payments, setPayments] = useState<PaymentSplit[]>([{ method: "cash", amount: 0 }]);
   // Optional cashier / sales rep (staff id) — attached to the invoice for reports.
   const [cashierId, setCashierId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -216,6 +220,40 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
   const discountAmt = subtotal - total;
   const profit = total - cost;
 
+  // ---- Split payment ---------------------------------------------------------
+  const isSplit = payments.length > 1;
+  const totalPaid = round2(payments.reduce((s, p) => s + (Number.isFinite(p.amount) ? p.amount : 0), 0));
+  // A single leg always covers the whole bill; only a real split can be unbalanced.
+  const remaining = isSplit ? round2(total - totalPaid) : 0;
+  const balanced = Math.abs(remaining) < 0.01; // tolerance absorbs float drift
+
+  // Keep a single (un-split) payment leg pinned to the live total as the cart changes.
+  useEffect(() => {
+    setPayments((ps) => (ps.length === 1 && ps[0].amount !== total ? [{ ...ps[0], amount: total }] : ps));
+  }, [total]);
+
+  const addPayment = () => {
+    playTap();
+    setPayments((ps) => {
+      const used = new Set(ps.map((p) => p.method));
+      const next = PAY_SEQUENCE.find((m) => !used.has(m)) ?? "cash";
+      const sum = round2(ps.reduce((s, p) => s + p.amount, 0));
+      const due = Math.max(0, round2(total - sum)); // pre-fill the outstanding balance
+      return [...ps, { method: next, amount: due }];
+    });
+  };
+  const removePayment = (idx: number) => {
+    playTap();
+    setPayments((ps) => {
+      const next = ps.filter((_, i) => i !== idx);
+      return next.length === 1 ? [{ ...next[0], amount: total }] : next;
+    });
+  };
+  const setPaymentMethod = (idx: number, method: PaymentMethod) =>
+    setPayments((ps) => ps.map((p, i) => (i === idx ? { ...p, method } : p)));
+  const setPaymentAmount = (idx: number, amount: number) =>
+    setPayments((ps) => ps.map((p, i) => (i === idx ? { ...p, amount: Number.isFinite(amount) && amount >= 0 ? amount : 0 } : p)));
+
   // ---- Final-price override (acts as an approximate discount) ----------------
   const beginEditTotal = () => { setTotalDraft(String(Math.round(total))); setEditingTotal(true); };
   const commitTotal = () => {
@@ -246,7 +284,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
 
   const reset = () => {
     setCart([]); setQuery(""); setDiscountValue(""); setFinalOverride(null); setEditingTotal(false);
-    setDiscountType("percent"); setPayment("cash"); setDone(null); setLastPrints(0);
+    setDiscountType("percent"); setPayments([{ method: "cash", amount: 0 }]); setDone(null); setLastPrints(0);
     setCashierId(null); setBrowseTab("products");
     // Preserve the patient/customer bridge across "New sale" so repeated per-patient
     // sales keep syncing into the same animal's record; clear it for a plain walk-in.
@@ -259,7 +297,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
   };
 
   const checkout = async () => {
-    if (cart.length === 0 || busy) return;
+    if (cart.length === 0 || busy || !balanced) return;
     setBusy(true);
     try {
       const items: CheckoutItem[] = cart.map((l) => {
@@ -278,6 +316,12 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
           stock_qty, unit_label,
         };
       });
+      // Payment legs: drop empty ones; a single full leg covers the whole bill. The
+      // dominant (largest) leg is stored as payment_method for legacy reads/filters.
+      const legs: PaymentSplit[] = (isSplit ? payments.filter((p) => p.amount > 0) : [{ method: payments[0].method, amount: total }])
+        .map((p) => ({ method: p.method, amount: round2(p.amount) }));
+      const details = legs.length ? legs : [{ method: payments[0].method, amount: total }];
+      const primary = details.reduce((best, p) => (p.amount > best.amount ? p : best), details[0]).method;
       const meta: SaleMeta = {
         customer_name: name.trim() || null,
         customer_phone: phone.trim() || null,
@@ -286,7 +330,8 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
         // the recorded total/profit exactly match the till (the server clamps to subtotal).
         discount_type: discountAmt > 0 ? "fixed" : null,
         discount_value: discountAmt > 0 ? discountAmt : 0,
-        payment_method: payment,
+        payment_method: primary,
+        payment_details: details,
         staff_id: cashierId,
       };
       const invoice = await withTimeout(repo.retailCheckout(items, meta), 12000);
@@ -582,15 +627,60 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
             </div>
           </div>
 
-          {/* Payment */}
-          <div className="grid grid-cols-3 gap-1.5">
-            {PAY_METHODS.map(({ value, icon: Icon, key, def }) => (
-              <button key={value} onClick={() => { playTap(); setPayment(value); }}
-                className={cn("flex flex-col items-center gap-1 rounded-xl border py-2 text-2xs font-semibold transition",
-                  payment === value ? "border-brand-400 bg-brand-50 text-brand-700 dark:bg-brand-500/15 dark:text-brand-300" : "border-line bg-surface-1 text-ink-muted hover:bg-surface-2")}>
-                <Icon size={16} /> {t(key, def)}
-              </button>
+          {/* Payment — one method by default, or split across several */}
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <span className="flex items-center gap-1.5 text-xs font-semibold text-ink-muted">
+                <Wallet size={13} /> {t("retail.payment", "الدفع")}
+                {isSplit && <span className="chip bg-brand-50 text-2xs font-medium text-brand-700 dark:bg-brand-500/15 dark:text-brand-300">{t("retail.split", "دفع مجزأ")}</span>}
+              </span>
+              {payments.length < PAY_SEQUENCE.length && (
+                <button onClick={addPayment} className="inline-flex items-center gap-1 text-2xs font-semibold text-brand-600 transition hover:text-brand-700">
+                  <Plus size={12} /> {t("retail.addPayment", "إضافة طريقة دفع أخرى")}
+                </button>
+              )}
+            </div>
+
+            {payments.map((p, i) => (
+              <div key={i} className="flex items-center gap-1.5">
+                <div className="relative flex-1">
+                  <select
+                    value={p.method}
+                    onChange={(e) => { playTap(); setPaymentMethod(i, e.target.value as PaymentMethod); }}
+                    className="input h-9 w-full appearance-none py-0 ps-8 pe-2 text-sm font-semibold"
+                  >
+                    {PAY_OPTIONS.map((o) => <option key={o.value} value={o.value}>{t(o.key, o.def)}</option>)}
+                  </select>
+                  {(() => { const Icon = PAY_OPTIONS.find((o) => o.value === p.method)?.icon ?? Banknote; return <Icon size={15} className="pointer-events-none absolute top-1/2 -translate-y-1/2 text-ink-subtle ltr:left-2.5 rtl:right-2.5" />; })()}
+                </div>
+                {isSplit ? (
+                  <input
+                    type="number" min="0" step="1" inputMode="decimal"
+                    value={p.amount === 0 ? "" : String(p.amount)}
+                    onChange={(e) => setPaymentAmount(i, e.target.value === "" ? 0 : Number(e.target.value))}
+                    placeholder="0"
+                    className="input h-9 w-24 px-2 py-0 text-end text-sm font-bold tabular-nums"
+                  />
+                ) : (
+                  <span className="flex h-9 w-24 items-center justify-end rounded-lg border border-line bg-surface-2 px-2 text-sm font-bold tabular-nums text-ink">{money(total)}</span>
+                )}
+                {isSplit && (
+                  <button onClick={() => removePayment(i)} aria-label={t("common.delete", "إزالة")} className="grid h-9 w-7 shrink-0 place-items-center rounded-lg text-ink-subtle transition hover:bg-danger-50 hover:text-danger-600"><X size={14} /></button>
+                )}
+              </div>
             ))}
+
+            {/* Live allocation calculator — submit is gated on Remaining = 0 */}
+            {isSplit && (
+              <div className="space-y-0.5 rounded-xl bg-surface-2 px-3 py-2 text-xs">
+                <div className="flex items-center justify-between text-ink-muted"><span>{t("retail.grandTotal", "إجمالي الفاتورة")}</span><span className="tabular-nums">{money(total)}</span></div>
+                <div className="flex items-center justify-between text-ink-muted"><span>{t("retail.totalPaid", "إجمالي المدفوع")}</span><span className="tabular-nums">{money(totalPaid)}</span></div>
+                <div className={cn("flex items-center justify-between font-bold", balanced ? "text-success-600" : remaining > 0 ? "text-warn-600" : "text-danger-600")}>
+                  <span>{remaining < 0 ? t("retail.overpaid", "الزائد") : t("retail.remaining", "المتبقي")}</span>
+                  <span className="tabular-nums">{money(Math.abs(remaining))}</span>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Totals */}
@@ -647,8 +737,8 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
             <div className="flex items-center justify-end gap-1 text-2xs text-success-600"><TrendingUp size={11} /> {t("retail.profit", "Profit")} {money(profit)}</div>
           </div>
 
-          <Button className="w-full" size="lg" disabled={cart.length === 0} loading={busy} onClick={checkout} leftIcon={<CheckCircle2 size={18} />}>
-            {t("retail.complete", "Complete sale")} · {money(total)}
+          <Button className="w-full" size="lg" disabled={cart.length === 0 || !balanced} loading={busy} onClick={checkout} leftIcon={<CheckCircle2 size={18} />}>
+            {!balanced ? t("retail.balanceFirst", "وزّع كامل المبلغ أولاً") : `${t("retail.complete", "إصدار الفاتورة")} · ${money(total)}`}
           </Button>
         </div>
       </div>

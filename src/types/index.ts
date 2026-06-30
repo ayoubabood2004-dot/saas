@@ -286,6 +286,8 @@ export interface Product {
 }
 
 export type PaymentMethod = "cash" | "card" | "transfer";
+/** One leg of a (possibly split) payment — a method and the amount paid through it. */
+export interface PaymentSplit { method: PaymentMethod; amount: number }
 export type DiscountType = "percent" | "fixed";
 export type InvoiceStatus = "paid" | "refunded";
 
@@ -301,7 +303,10 @@ export interface Invoice {
   subtotal?: number; // revenue before discount
   discount?: number; // resolved discount amount applied
   discount_type?: DiscountType | null;
+  /** Primary/dominant method (largest leg) — kept for legacy reads & quick filters. */
   payment_method?: PaymentMethod | null;
+  /** Split payment: every method+amount leg of this sale. Single-method sales hold one leg. */
+  payment_details?: PaymentSplit[] | null;
   total: number; // revenue after discount
   cost_total: number; // sum of purchase prices (cost of goods)
   profit: number; // total - cost_total
@@ -323,6 +328,8 @@ export interface SaleMeta {
   discount_type?: DiscountType | null;
   discount_value?: number; // raw input: a percent (0–100) or a fixed amount
   payment_method?: PaymentMethod | null;
+  /** Split payment legs (method + amount). When present, their sum equals the total. */
+  payment_details?: PaymentSplit[] | null;
   /** Cashier / sales rep (staff id) who made the sale — for staff performance reports. */
   staff_id?: string | null;
 }
