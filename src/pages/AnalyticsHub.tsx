@@ -6,9 +6,11 @@ import {
 import {
   BarChart3, Wallet, Banknote, CreditCard, ArrowLeftRight, Receipt, TrendingUp,
   Stethoscope, Package, Trophy, Snail, PawPrint, Lock, Download, FileText, CalendarRange,
+  Crown, Star, ShieldAlert, Trash2, LogIn, FlaskConical, Pill, Users,
 } from "lucide-react";
-import type { Pet, Invoice, InvoiceItem, Product, MedicalVisit, PaymentMethod, Species } from "@/types";
+import type { Pet, Invoice, InvoiceItem, Product, MedicalVisit, PaymentMethod, Species, MediaItem, TreatmentEntry, AuditEntry, LoginEvent } from "@/types";
 import { repo } from "@/lib/repo";
+import { listStaff, type StaffMember } from "@/lib/staff";
 import { useAuth } from "@/contexts/AuthContext";
 import { usePermissions } from "@/hooks/usePermissions";
 import { useToast, Skeleton } from "@/components/ui";
@@ -21,7 +23,10 @@ import { money, formatNum, cn } from "@/lib/utils";
  * ==========================================================================*/
 
 type RangeKey = "today" | "week" | "month" | "custom";
-type TabKey = "ops" | "revenue" | "sales";
+type TabKey = "ops" | "revenue" | "sales" | "top" | "audit" | "clinical";
+
+/** Lab/imaging media kinds counted in the "الأشعة والتحاليل" report. */
+const CLINICAL_MEDIA: Record<string, string> = { lab: "تحاليل مخبرية", xray: "أشعة سينية", ultrasound: "سونار / تصوير" };
 
 const PIE = ["#2563eb", "#16a34a", "#f59e0b", "#db2777", "#0891b2", "#7c3aed", "#64748b"];
 const SPECIES_AR: Record<string, string> = { dog: "كلاب", cat: "قطط", horse: "خيول", cow: "أبقار", bird: "طيور", rabbit: "أرانب", other: "أخرى" };
@@ -57,6 +62,11 @@ export function AnalyticsHub() {
   const [items, setItems] = useState<InvoiceItem[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [visits, setVisits] = useState<MedicalVisit[]>([]);
+  const [staff, setStaff] = useState<StaffMember[]>([]);
+  const [media, setMedia] = useState<MediaItem[]>([]);
+  const [treatments, setTreatments] = useState<TreatmentEntry[]>([]);
+  const [audit, setAudit] = useState<AuditEntry[]>([]);
+  const [logins, setLogins] = useState<LoginEvent[]>([]);
 
   const [range, setRange] = useState<RangeKey>("month");
   const [from, setFrom] = useState("");
@@ -76,8 +86,18 @@ export function AnalyticsHub() {
         ]);
         if (!alive) return;
         setPets(pp); setInvoices(inv); setItems(it); setProducts(pr);
-        const vis = await repo.listAllVisits(pp.map((p) => p.id));
-        if (alive) setVisits(vis);
+        const petIds = pp.map((p) => p.id);
+        // Second wave: clinical + audit datasets for the expanded reports (each guarded).
+        const [vis, med, tx, st, au, lg] = await Promise.all([
+          repo.listAllVisits(petIds),
+          repo.listAllMedia(petIds).catch(() => [] as MediaItem[]),
+          repo.listAllTreatments(petIds).catch(() => [] as TreatmentEntry[]),
+          listStaff().catch(() => [] as StaffMember[]),
+          repo.listAuditLog(clinicId).catch(() => [] as AuditEntry[]),
+          repo.listLoginEvents(clinicId).catch(() => [] as LoginEvent[]),
+        ]);
+        if (!alive) return;
+        setVisits(vis); setMedia(med); setTreatments(tx); setStaff(st); setAudit(au); setLogins(lg);
       } catch { /* empty states cover it */ }
       finally { if (alive) setLoading(false); }
     })();
@@ -196,6 +216,90 @@ export function AnalyticsHub() {
     return Array.from(m, ([s, count]) => ({ name: SPECIES_AR[s] ?? s, count })).sort((a, b) => b.count - a.count);
   }, [visits, pets, lo, hi]);
 
+  // ---- Module 4: VIP & performance (أفضل 10) ----
+  const topClients = useMemo(() => {
+    const m = new Map<string, { name: string; phone: string; total: number; visits: number }>();
+    for (const i of paid) {
+      const phone = (i.customer_phone ?? "").trim();
+      const name = (i.customer_name ?? "").trim();
+      if (!phone && !name) continue; // skip anonymous walk-ins
+      const key = (phone || name).toLowerCase();
+      const cur = m.get(key) ?? { name: name || "عميل", phone, total: 0, visits: 0 };
+      cur.total += i.total; cur.visits += 1;
+      if (!cur.name && name) cur.name = name;
+      m.set(key, cur);
+    }
+    return Array.from(m.values()).sort((a, b) => b.total - a.total).slice(0, 10);
+  }, [paid]);
+
+  const topServices = useMemo(() => {
+    const m = new Map<string, { name: string; count: number; revenue: number }>();
+    for (const it of itemsInRange) {
+      if (it.product_id) continue; // services/meds are non-product lines
+      const key = it.name.trim().toLowerCase();
+      const cur = m.get(key) ?? { name: it.name, count: 0, revenue: 0 };
+      cur.count += it.qty; cur.revenue += it.line_total; m.set(key, cur);
+    }
+    return Array.from(m.values()).sort((a, b) => b.count - a.count).slice(0, 10);
+  }, [itemsInRange]);
+
+  // ---- Module 5: Audit & security ----
+  const staffByUser = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const s of staff) if (s.userId) m.set(s.userId, s.name);
+    return m;
+  }, [staff]);
+
+  const deletedInvoices = useMemo(() => {
+    return audit
+      .filter((a) => a.entity === "invoices" && a.action === "DELETE")
+      .filter((a) => { const t = new Date(a.created_at).getTime(); return t >= lo && t <= hi; })
+      .map((a) => {
+        const d = (a.details ?? {}) as { id?: string; total?: number; customer_name?: string | null; created_at?: string };
+        return {
+          id: String(a.id),
+          invoiceId: d.id ?? a.entity_id ?? "—",
+          total: typeof d.total === "number" ? d.total : null,
+          customer: (d.customer_name ?? "").trim() || "عميل غير مسجّل",
+          by: (a.actor && staffByUser.get(a.actor)) || "—",
+          when: a.created_at,
+        };
+      });
+  }, [audit, lo, hi, staffByUser]);
+
+  const loginsInRange = useMemo(() => {
+    return logins
+      .filter((l) => { const t = new Date(l.created_at).getTime(); return t >= lo && t <= hi; })
+      .map((l) => ({ id: String(l.id), who: (l.name ?? "").trim() || (l.email ?? "").trim() || "مستخدم", email: (l.email ?? "").trim(), when: l.created_at }))
+      .slice(0, 100);
+  }, [logins, lo, hi]);
+
+  // ---- Module 6: Clinical & medical ----
+  const labXray = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const md of media) {
+      if (!(md.kind in CLINICAL_MEDIA)) continue;
+      const t = new Date(md.created_at).getTime();
+      if (Number.isNaN(t) || t < lo || t > hi) continue;
+      m.set(md.kind, (m.get(md.kind) ?? 0) + 1);
+    }
+    const rows = Object.keys(CLINICAL_MEDIA).map((k) => ({ name: CLINICAL_MEDIA[k], count: m.get(k) ?? 0 }));
+    const total = rows.reduce((s, r) => s + r.count, 0);
+    return { rows, total };
+  }, [media, lo, hi]);
+
+  const dispensedMeds = useMemo(() => {
+    const m = new Map<string, { name: string; count: number; given: number }>();
+    for (const t of treatments) {
+      const ts = new Date((t.day || "") + "T00:00:00").getTime();
+      if (Number.isNaN(ts) || ts < lo || ts > hi) continue;
+      const key = t.medication.trim().toLowerCase();
+      const cur = m.get(key) ?? { name: t.medication, count: 0, given: 0 };
+      cur.count += 1; if (t.administered_at) cur.given += 1; m.set(key, cur);
+    }
+    return Array.from(m.values()).sort((a, b) => b.count - a.count).slice(0, 20);
+  }, [treatments, lo, hi]);
+
   // ---- Export ----
   const exportCSV = () => {
     const rows: string[][] = [
@@ -224,6 +328,9 @@ export function AnalyticsHub() {
     { id: "ops", label: "التشغيل اليومي", icon: Wallet },
     { id: "revenue", label: "الإيرادات والأرباح", icon: TrendingUp },
     { id: "sales", label: "المبيعات والمخزون", icon: Package },
+    { id: "top", label: "الأفضل أداءً", icon: Crown },
+    { id: "clinical", label: "التقارير الطبية", icon: Stethoscope },
+    { id: "audit", label: "المراقبة والنشاط", icon: ShieldAlert },
   ];
   const RANGES: { id: RangeKey; label: string }[] = [
     { id: "today", label: "اليوم" }, { id: "week", label: "هذا الأسبوع" },
@@ -287,6 +394,9 @@ export function AnalyticsHub() {
           {tab === "ops" && <OpsTab z={zReport} receivables={receivables} series={series} paymentPie={paymentPie} />}
           {tab === "revenue" && <RevenueTab revenue={revenue} categoryData={categoryData} staff={staffPerf} canProfit={canProfit} series={series} />}
           {tab === "sales" && <SalesTab movers={movers} species={speciesActivity} />}
+          {tab === "top" && <TopTab clients={topClients} services={topServices} />}
+          {tab === "clinical" && <ClinicalTab labXray={labXray} meds={dispensedMeds} />}
+          {tab === "audit" && <AuditTab deleted={deletedInvoices} logins={loginsInRange} />}
         </>
       )}
     </div>
@@ -532,6 +642,160 @@ function SalesTab({ movers, species }: {
     </div>
   );
 }
+
+/* ----------------------------- Module 4: VIP & Performance (أفضل 10) ----------------------------- */
+function TopTab({ clients, services }: {
+  clients: { name: string; phone: string; total: number; visits: number }[];
+  services: { name: string; count: number; revenue: number }[];
+}) {
+  const maxSvc = services[0]?.count || 1;
+  return (
+    <div className="grid gap-5 lg:grid-cols-2">
+      <Panel title="أفضل 10 زبائن (الأعلى إنفاقاً)" icon={Crown}>
+        {clients.length === 0 ? <Empty text="لا توجد مبيعات لعملاء مسجّلين في هذه الفترة." /> : (
+          <table className="w-full text-sm">
+            <thead><tr className="text-2xs text-ink-subtle">
+              <th className="pb-2 text-start font-semibold">#</th>
+              <th className="pb-2 text-start font-semibold">الزبون</th>
+              <th className="pb-2 text-center font-semibold">الزيارات</th>
+              <th className="pb-2 text-end font-semibold">إجمالي الإنفاق</th>
+            </tr></thead>
+            <tbody className="divide-y divide-line">
+              {clients.map((c, i) => (
+                <tr key={c.phone + c.name + i}>
+                  <td className="py-2"><Rank i={i} /></td>
+                  <td className="py-2"><p className="font-semibold text-ink">{c.name}</p>{c.phone && <p className="text-2xs text-ink-subtle" dir="ltr">{c.phone}</p>}</td>
+                  <td className="py-2 text-center tabular-nums text-ink-muted">{formatNum(c.visits)}</td>
+                  <td className="py-2 text-end font-bold tabular-nums text-ink">{money(c.total)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </Panel>
+
+      <Panel title="أفضل 10 خدمات (الأكثر طلباً)" icon={Star}>
+        {services.length === 0 ? <Empty text="لا توجد خدمات مفوترة في هذه الفترة." /> : (
+          <ul className="space-y-2.5">
+            {services.map((s, i) => (
+              <li key={s.name + i} className="space-y-1">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="flex items-center gap-2 text-ink"><Rank i={i} />{s.name}</span>
+                  <span className="text-ink-muted">{formatNum(s.count)} · <span className="font-bold tabular-nums text-ink">{money(s.revenue)}</span></span>
+                </div>
+                <div className="h-1.5 overflow-hidden rounded-full bg-surface-2"><div className="h-full rounded-full bg-brand-500" style={{ width: `${pct(s.count, maxSvc)}%` }} /></div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Panel>
+    </div>
+  );
+}
+
+/* ----------------------------- Module 5: Clinical & Medical (التقارير الطبية) ----------------------------- */
+function ClinicalTab({ labXray, meds }: {
+  labXray: { rows: { name: string; count: number }[]; total: number };
+  meds: { name: string; count: number; given: number }[];
+}) {
+  return (
+    <div className="space-y-5">
+      <Panel title="تقرير الأشعة والتحاليل" icon={FlaskConical}>
+        <div className="grid gap-3 sm:grid-cols-3">
+          {labXray.rows.map((r) => (
+            <div key={r.name} className="rounded-2xl border border-line bg-surface-1 p-4 text-center">
+              <p className="font-display text-3xl font-extrabold tabular-nums text-ink">{formatNum(r.count)}</p>
+              <p className="mt-1 text-xs text-ink-muted">{r.name}</p>
+            </div>
+          ))}
+        </div>
+        <p className="mt-3 text-center text-sm text-ink-subtle">الإجمالي خلال الفترة: <span className="font-bold tabular-nums text-ink">{formatNum(labXray.total)}</span> طلب</p>
+      </Panel>
+
+      <Panel title="تقرير الأدوية المصروفة" icon={Pill}>
+        <p className="mb-2 text-2xs text-ink-subtle">عدد مرات صرف كل دواء خلال الفترة، وكم منها أُعطي فعلاً (مقابل المُخطّط).</p>
+        {meds.length === 0 ? <Empty text="لا توجد أدوية مصروفة في هذه الفترة." /> : (
+          <table className="w-full text-sm">
+            <thead><tr className="text-2xs text-ink-subtle">
+              <th className="pb-2 text-start font-semibold">الدواء</th>
+              <th className="pb-2 text-center font-semibold">عدد مرات الصرف</th>
+              <th className="pb-2 text-end font-semibold">منها أُعطيت فعلاً</th>
+            </tr></thead>
+            <tbody className="divide-y divide-line">
+              {meds.map((m, i) => (
+                <tr key={m.name + i}>
+                  <td className="py-2 text-ink">{m.name}</td>
+                  <td className="py-2 text-center font-bold tabular-nums text-ink">{formatNum(m.count)}</td>
+                  <td className="py-2 text-end tabular-nums text-success-600">{formatNum(m.given)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </Panel>
+    </div>
+  );
+}
+
+/* ----------------------------- Module 6: Audit & Security (المراقبة والنشاط) ----------------------------- */
+function AuditTab({ deleted, logins }: {
+  deleted: { id: string; invoiceId: string; total: number | null; customer: string; by: string; when: string }[];
+  logins: { id: string; who: string; email: string; when: string }[];
+}) {
+  return (
+    <div className="grid gap-5 lg:grid-cols-2">
+      <Panel title="الفواتير المحذوفة" icon={Trash2}>
+        <p className="mb-2 text-2xs text-ink-subtle">سجلّ أمني بالفواتير التي حُذفت نهائياً ومَن قام بذلك.</p>
+        {deleted.length === 0 ? <Empty text="لا توجد فواتير محذوفة في هذه الفترة." /> : (
+          <ul className="space-y-1.5">
+            {deleted.map((d) => (
+              <li key={d.id} className="flex items-center justify-between gap-2 rounded-xl border border-danger-200 bg-danger-50/40 p-3 dark:border-danger-500/30 dark:bg-danger-500/10">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold text-ink">{d.customer}{d.total != null ? ` · ${money(d.total)}` : ""}</p>
+                  <p className="text-2xs text-ink-subtle">بواسطة {d.by} · <span dir="ltr">{dt(d.when)}</span></p>
+                </div>
+                <Trash2 size={15} className="shrink-0 text-danger-500" />
+              </li>
+            ))}
+          </ul>
+        )}
+      </Panel>
+
+      <Panel title="سجلّ دخول المستخدمين" icon={LogIn}>
+        <p className="mb-2 text-2xs text-ink-subtle">آخر عمليات تسجيل الدخول إلى النظام.</p>
+        {logins.length === 0 ? <Empty text="لا توجد عمليات دخول مسجّلة في هذه الفترة." /> : (
+          <ul className="divide-y divide-line">
+            {logins.map((l) => (
+              <li key={l.id} className="flex items-center gap-3 py-2.5">
+                <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-brand-50 text-brand-600 dark:bg-brand-500/15 dark:text-brand-300"><Users size={15} /></span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-semibold text-ink">{l.who}</p>
+                  {l.email && <p className="truncate text-2xs text-ink-subtle" dir="ltr">{l.email}</p>}
+                </div>
+                <span className="shrink-0 text-2xs text-ink-subtle" dir="ltr">{dt(l.when)}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Panel>
+    </div>
+  );
+}
+
+/** Ranked badge — gold/silver/bronze for the top three, neutral after. */
+function Rank({ i }: { i: number }) {
+  const tone = i === 0 ? "bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300"
+    : i === 1 ? "bg-slate-200 text-slate-600 dark:bg-slate-500/25 dark:text-slate-200"
+      : i === 2 ? "bg-orange-100 text-orange-700 dark:bg-orange-500/20 dark:text-orange-300"
+        : "bg-surface-2 text-ink-muted";
+  return <span className={cn("inline-grid h-5 w-5 place-items-center rounded-full text-2xs font-bold tabular-nums", tone)}>{formatNum(i + 1)}</span>;
+}
+
+/** Date-time with Western numerals (en-GB) — used by the audit/login logs. */
+const dt = (iso: string) => {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? "—" : d.toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+};
 
 /* ----------------------------- Primitives ----------------------------- */
 function Panel({ title, icon: Icon, children }: { title: string; icon: typeof BarChart3; children: React.ReactNode }) {

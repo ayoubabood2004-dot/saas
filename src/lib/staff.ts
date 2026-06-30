@@ -37,6 +37,8 @@ export interface StaffMember {
   permissions?: PermissionMap;
   /** Links a roster row to the invite that created it (for onboarding activation). */
   inviteCode?: string | null;
+  /** The auth user this staff row belongs to (set on join) — used to attribute audit events. */
+  userId?: string | null;
 }
 
 export const STAFF_ROLES: StaffRole[] = ["manager", "veterinarian", "receptionist", "groomer"];
@@ -154,7 +156,7 @@ interface StaffRow {
   id: string; name: string; email: string | null; phone: string | null;
   role: string; specialty: string | null; join_date: string | null;
   status: string; bio: string | null; avatar: string | null;
-  permissions: PermissionMap | null; invite_code?: string | null;
+  permissions: PermissionMap | null; invite_code?: string | null; user_id?: string | null;
 }
 
 const rowToMember = (r: StaffRow): StaffMember => ({
@@ -164,6 +166,7 @@ const rowToMember = (r: StaffRow): StaffMember => ({
   bio: r.bio ?? "", avatar: r.avatar ?? null,
   permissions: (r.permissions && typeof r.permissions === "object") ? r.permissions : {},
   inviteCode: r.invite_code ?? null,
+  userId: r.user_id ?? null,
 });
 
 // clinic_id is intentionally omitted — the DB default (auth.uid()) + RLS stamp it.

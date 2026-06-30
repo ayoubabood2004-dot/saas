@@ -363,6 +363,29 @@ export interface ServiceCategory { id: string; name: string }
 export interface Service { id: string; category_id: string; name: string; price: number }
 export interface ServiceCatalog { categories: ServiceCategory[]; services: Service[] }
 
+/** An audit-trail row (who did what, when) — from the audit_log table (migration 0018).
+ *  Used by the Reports module's security log (e.g. deleted invoices + who deleted them). */
+export interface AuditEntry {
+  id: number | string;
+  clinic_id?: string | null;
+  actor?: string | null;   // auth.uid() of who performed the action
+  action: string;          // INSERT | UPDATE | DELETE
+  entity: string;          // affected table name
+  entity_id?: string | null;
+  details?: Record<string, unknown> | null; // snapshot of the affected row
+  created_at: string;
+}
+
+/** A staff login event — for the Reports module's user-login audit trail. */
+export interface LoginEvent {
+  id: number | string;
+  clinic_id?: string | null;
+  user_id?: string | null;
+  email?: string | null;
+  name?: string | null;
+  created_at: string;
+}
+
 /** A logged WhatsApp message (campaign send history / "last contacted"). */
 export interface WhatsAppMessage {
   id: string;

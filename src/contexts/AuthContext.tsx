@@ -5,6 +5,7 @@ import { withTimeout } from "@/lib/errors";
 import { setActiveClinicId, clearActiveClinic, getActiveClinicId, type ClinicAccount } from "@/lib/clinics";
 import { hydrateClinicConfig, hydratedFor } from "@/lib/clinicConfig";
 import { leaveClinic as apiLeaveClinic } from "@/lib/invites";
+import { repo } from "@/lib/repo";
 import type { OwnerAccount } from "@/lib/owners";
 
 interface SignupExtra {
@@ -304,6 +305,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signInDemo = (role: Role, name?: string) => {
     const base = role === "owner" ? DEMO_OWNER : DEMO_VET;
     persistRaw({ id: base.id, full_name: name || base.full_name, email: base.email, rawRole: role, roles: [accountOf(role)], clinic_id: (base as { clinic_id?: string }).clinic_id ?? null }, accountOf(role));
+    void repo.logLogin({ email: base.email, name: name || base.full_name }).catch(() => { /* non-blocking */ });
   };
   const signInClinic = (clinic: ClinicAccount) => {
     persistRaw({ id: clinic.id, full_name: clinic.name, email: clinic.email, rawRole: "admin", roles: ["clinic"], clinic_id: clinic.id }, "clinic");
@@ -379,7 +381,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Set the user NOW rather than waiting for the async onAuthStateChange
       // listener — otherwise the caller's navigate("/") races ahead of the user
       // being set and the Protected route bounces it back to /login.
-      if (data.user) setRaw(await hydrateSession(data.user));
+      if (data.user) {
+        const prof = await hydrateSession(data.user);
+        setRaw(prof);
+        // Record the sign-in for the Reports user-login audit trail (non-blocking).
+        void repo.logLogin({ email: prof.email, name: prof.full_name }).catch(() => { /* never block login */ });
+      }
       return { error: null };
     } catch (e) {
       return { error: e instanceof Error ? e.message : "Sign-in failed." };

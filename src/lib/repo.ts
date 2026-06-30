@@ -4,7 +4,7 @@
 import { loadDB, saveDB } from "./demoStore";
 import { supabase } from "./supabase";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, AppointmentStatus, TreatmentEntry, Admission, Reminder, Product, Invoice, InvoiceItem, CheckoutItem, SaleMeta, Customer, DiscountType, WhatsAppMessage } from "@/types";
+import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, AppointmentStatus, TreatmentEntry, Admission, Reminder, Product, Invoice, InvoiceItem, CheckoutItem, SaleMeta, Customer, DiscountType, WhatsAppMessage, AuditEntry, LoginEvent } from "@/types";
 import { uid, uuid, ageMonths } from "./utils";
 
 /** Resolve a discount input (percent 0–100 or a fixed amount) to an amount, clamped to [0, subtotal]. */
@@ -69,6 +69,25 @@ function dedupeCustomers(rows: { customer_name?: string | null; customer_phone?:
   if (q) list = list.filter((c) => c.name.toLowerCase().includes(q) || c.phone.toLowerCase().includes(q));
   return list.sort((a, b) => b.last_seen.localeCompare(a.last_seen)).slice(0, 8);
 }
+
+/* Demo-only audit + login trails (localStorage). On Supabase these live in the
+ * audit_log / login_events tables; in demo we keep small local mirrors so the
+ * Reports security-log views are populated and testable offline. */
+const DEMO_AUDIT_KEY = "vp_demo_audit";
+const DEMO_LOGIN_KEY = "vp_demo_login";
+function demoAuditLoad(): AuditEntry[] {
+  try { const r = localStorage.getItem(DEMO_AUDIT_KEY); if (r) return JSON.parse(r) as AuditEntry[]; } catch { /* ignore */ }
+  return [];
+}
+function demoAuditPush(e: Omit<AuditEntry, "id" | "created_at" | "actor">) {
+  const entry: AuditEntry = { ...e, id: uid("au"), actor: null, created_at: new Date().toISOString() };
+  try { localStorage.setItem(DEMO_AUDIT_KEY, JSON.stringify([entry, ...demoAuditLoad()].slice(0, 200))); } catch { /* ignore */ }
+}
+function demoLoginLoad(): LoginEvent[] {
+  try { const r = localStorage.getItem(DEMO_LOGIN_KEY); if (r) return JSON.parse(r) as LoginEvent[]; } catch { /* ignore */ }
+  return [];
+}
+function demoLoginSave(list: LoginEvent[]) { try { localStorage.setItem(DEMO_LOGIN_KEY, JSON.stringify(list)); } catch { /* ignore */ } }
 
 const demoRepo = {
   async listPets(ownerId: string): Promise<Pet[]> {
@@ -242,6 +261,12 @@ const demoRepo = {
       .sort((a, b) => b.created_at.localeCompare(a.created_at));
   },
 
+  /** Media across a set of pets (clinic-wide) — for the Lab & X-Ray report. */
+  async listAllMedia(petIds: string[]): Promise<MediaItem[]> {
+    const ids = new Set(petIds);
+    return (loadDB().media ?? []).filter((m) => ids.has(m.pet_id));
+  },
+
   async addMedia(input: Omit<MediaItem, "id" | "created_at">): Promise<MediaItem> {
     const db = loadDB();
     const m: MediaItem = { ...input, id: uid("m"), created_at: new Date().toISOString() };
@@ -326,6 +351,12 @@ const demoRepo = {
     return loadDB()
       .treatments.filter((t) => t.pet_id === petId)
       .sort((a, b) => (a.day === b.day ? a.time.localeCompare(b.time) : a.day.localeCompare(b.day)));
+  },
+
+  /** Treatments across a set of pets (clinic-wide) — for the Dispensed Medications report. */
+  async listAllTreatments(petIds: string[]): Promise<TreatmentEntry[]> {
+    const ids = new Set(petIds);
+    return (loadDB().treatments ?? []).filter((t) => ids.has(t.pet_id));
   },
 
   async addTreatment(input: Omit<TreatmentEntry, "id" | "created_at">): Promise<TreatmentEntry> {
@@ -490,6 +521,8 @@ const demoRepo = {
     db.invoices = (db.invoices ?? []).filter((x) => x.id !== invoiceId);
     db.invoiceItems = (db.invoiceItems ?? []).filter((x) => x.invoice_id !== invoiceId);
     saveDB(db);
+    // Mirror the server audit trigger so the demo's security log shows deletions.
+    if (inv) demoAuditPush({ action: "DELETE", entity: "invoices", entity_id: invoiceId, details: inv as unknown as Record<string, unknown> });
   },
   async bumpInvoicePrints(invoiceId: string): Promise<number> {
     const db = loadDB();
@@ -514,6 +547,16 @@ const demoRepo = {
   /** The clinic's WhatsApp send history, newest first. */
   async listWhatsAppLog(): Promise<WhatsAppMessage[]> {
     return (loadDB().waMessages ?? []).slice().sort((a, b) => b.sent_at.localeCompare(a.sent_at));
+  },
+  async listAuditLog(_clinicId?: string, limit = 200): Promise<AuditEntry[]> {
+    return demoAuditLoad().slice(0, limit);
+  },
+  async listLoginEvents(_clinicId?: string, limit = 100): Promise<LoginEvent[]> {
+    return demoLoginLoad().slice(0, limit);
+  },
+  async logLogin(input: { email?: string | null; name?: string | null }): Promise<void> {
+    const e: LoginEvent = { id: uid("lg"), clinic_id: null, user_id: null, email: input.email ?? null, name: input.name ?? null, created_at: new Date().toISOString() };
+    demoLoginSave([e, ...demoLoginLoad()].slice(0, 100));
   },
 };
 
@@ -649,6 +692,10 @@ const supabaseRepo: typeof demoRepo = {
   async listMedia(petId) {
     return listOf<MediaItem>(await sbc().from("media_items").select("*").eq("pet_id", petId).order("created_at", { ascending: false }));
   },
+  async listAllMedia(petIds) {
+    if (petIds.length === 0) return [];
+    return listOf<MediaItem>(await sbc().from("media_items").select("*").in("pet_id", petIds));
+  },
   async addMedia(input) {
     return need<MediaItem>(await sbc().from("media_items").insert(input).select().single());
   },
@@ -706,6 +753,10 @@ const supabaseRepo: typeof demoRepo = {
   },
   async listTreatments(petId) {
     return listOf<TreatmentEntry>(await sbc().from("treatment_entries").select("*").eq("pet_id", petId).order("day", { ascending: true }).order("time", { ascending: true }));
+  },
+  async listAllTreatments(petIds) {
+    if (petIds.length === 0) return [];
+    return listOf<TreatmentEntry>(await sbc().from("treatment_entries").select("*").in("pet_id", petIds));
   },
   async addTreatment(input) {
     return need<TreatmentEntry>(await sbc().from("treatment_entries").insert(input).select().single());
@@ -813,6 +864,17 @@ const supabaseRepo: typeof demoRepo = {
   },
   async listWhatsAppLog() {
     return listOf<WhatsAppMessage>(await sbc().from("wa_messages").select("*").order("sent_at", { ascending: false }).limit(1000));
+  },
+  async listAuditLog(_clinicId, limit = 200) {
+    // RLS already scopes to the manager's clinic; just order + cap.
+    return listOf<AuditEntry>(await sbc().from("audit_log").select("*").order("created_at", { ascending: false }).limit(limit));
+  },
+  async listLoginEvents(_clinicId, limit = 100) {
+    return listOf<LoginEvent>(await sbc().from("login_events").select("*").order("created_at", { ascending: false }).limit(limit));
+  },
+  async logLogin(input) {
+    // clinic_id/user_id are stamped by the column defaults (auth_clinic()/auth.uid()).
+    ok(await sbc().from("login_events").insert({ email: input.email ?? null, name: input.name ?? null }));
   },
 };
 
