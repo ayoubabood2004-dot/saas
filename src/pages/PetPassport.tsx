@@ -29,7 +29,7 @@ import { prepareUpload } from "@/lib/image";
 import { withTimeout, describeUploadError } from "@/lib/errors";
 import { playSuccess, playScan, playTap, playWarning } from "@/lib/sounds";
 import { ImageLightbox } from "@/components/ImageLightbox";
-import { MedicalEntry, DoctorSelect, DOCTOR_NAMES, type MedicalDraft } from "@/components/MedicalEntry";
+import { MedicalEntry, DoctorSelect, type MedicalDraft } from "@/components/MedicalEntry";
 import { ConsentForms } from "@/components/ConsentForms";
 import { addClinicMed, medicationDisplay } from "@/lib/meds";
 import { breedLabel } from "@/lib/breeds";
@@ -1257,7 +1257,7 @@ function AdministerBoosterModal({ vaccine, defaultDoctor, onClose, onDone }: { v
   // Fresh form each time a booster opens: default doctor = signed-in vet, time = now.
   useEffect(() => {
     if (!vaccine) return;
-    setDoctor(defaultDoctor && DOCTOR_NAMES.includes(defaultDoctor) ? defaultDoctor : DOCTOR_NAMES[0] ?? "");
+    setDoctor(defaultDoctor ?? "");
     setNotes("");
     setWhen(nowLocalDT());
   }, [vaccine, defaultDoctor]);

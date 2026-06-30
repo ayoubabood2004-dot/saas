@@ -6,6 +6,7 @@ import { supabase } from "./supabase";
 import { getActiveClinicId } from "./clinics";
 import { uuid } from "./utils";
 import type { StaffRole } from "./staff";
+import { addPendingStaffLocal, removePendingStaffLocal, activateStaffByInviteLocal } from "./staff";
 
 export interface Invite {
   id: string;
@@ -33,6 +34,7 @@ export async function createInvite(role: StaffRole, email?: string): Promise<Inv
   if (!supabase) {
     const inv: Invite = { id: uuid(), email: email?.trim() || null, role, code: genCode(), status: "pending", created_at: new Date().toISOString() };
     demoSave([inv, ...demoLoad()]);
+    addPendingStaffLocal(inv.email, role, inv.code); // mirror the server trigger
     return inv;
   }
   const { data, error } = await supabase
@@ -58,7 +60,12 @@ export async function listInvites(): Promise<Invite[]> {
 
 /** Revoke (cancel) a pending invite. */
 export async function revokeInvite(id: string): Promise<void> {
-  if (!supabase) { demoSave(demoLoad().filter((i) => i.id !== id)); return; }
+  if (!supabase) {
+    const inv = demoLoad().find((i) => i.id === id);
+    if (inv) removePendingStaffLocal(inv.code);
+    demoSave(demoLoad().filter((i) => i.id !== id));
+    return;
+  }
   const { error } = await supabase.from("invites").update({ status: "revoked" }).eq("id", id);
   if (error) throw new Error(error.message);
 }
@@ -66,7 +73,7 @@ export async function revokeInvite(id: string): Promise<void> {
 /** Redeem an invite for the signed-in user (creates their membership). Pass
  *  confirm=true to proceed past the owner workspace-switch warning. */
 export async function acceptInvite(code: string, confirm = false): Promise<{ ok: boolean; error?: string; clinicName?: string; role?: StaffRole }> {
-  if (!supabase) return { ok: true, clinicName: "عيادة تجريبية", role: "receptionist" };
+  if (!supabase) { activateStaffByInviteLocal(code.trim()); return { ok: true, clinicName: "عيادة تجريبية", role: "receptionist" }; }
   const { data, error } = await supabase.rpc("accept_invite", { p_code: code, p_confirm: confirm });
   if (error) return { ok: false, error: error.message };
   const r = (data ?? {}) as { ok: boolean; error?: string; clinic_name?: string; role?: StaffRole };

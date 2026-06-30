@@ -61,6 +61,7 @@ export function StaffManagement() {
   }
 
   const active = staff.filter((s) => s.status === "active").length;
+  const pending = staff.filter((s) => s.status === "pending").length;
 
   // Optimistic delete: drop from the UI instantly, persist in the background.
   const onDelete = () => {
@@ -108,7 +109,7 @@ export function StaffManagement() {
       <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-3">
         <Kpi icon={Users} label="إجمالي الكادر" value={String(staff.length)} />
         <Kpi icon={BadgeCheck} label="نشط" value={String(active)} tone="success" />
-        <Kpi icon={PauseCircle} label="موقوف" value={String(staff.length - active)} tone="warn" />
+        <Kpi icon={PauseCircle} label="بانتظار الانضمام" value={String(pending)} tone="warn" />
       </div>
 
       {/* Cards grid */}
@@ -143,16 +144,20 @@ export function StaffManagement() {
 
               <div className="mt-3 flex flex-wrap items-center gap-2">
                 <span className={cn("chip text-2xs font-bold", ROLE_TONE[m.role])}>{ROLE_LABEL[m.role]}</span>
-                <span className={cn("chip text-2xs font-semibold", m.status === "active" ? "bg-success-50 text-success-700 dark:bg-success-500/15 dark:text-success-300" : "bg-surface-2 text-ink-muted")}>
-                  <span className={cn("h-1.5 w-1.5 rounded-full", m.status === "active" ? "bg-success-500" : "bg-ink-subtle")} />
-                  {m.status === "active" ? "نشط" : "موقوف"}
+                <span className={cn("chip text-2xs font-semibold",
+                  m.status === "active" ? "bg-success-50 text-success-700 dark:bg-success-500/15 dark:text-success-300"
+                    : m.status === "pending" ? "bg-warn-50 text-warn-700 dark:bg-warn-500/15 dark:text-warn-300"
+                      : "bg-surface-2 text-ink-muted")}>
+                  <span className={cn("h-1.5 w-1.5 rounded-full",
+                    m.status === "active" ? "bg-success-500" : m.status === "pending" ? "bg-warn-500" : "bg-ink-subtle")} />
+                  {m.status === "active" ? "نشط" : m.status === "pending" ? "بانتظار الانضمام" : "موقوف"}
                 </span>
               </div>
 
               <dl className="mt-3 space-y-1.5 text-xs text-ink-muted">
                 {m.email && <div className="flex items-center gap-2 truncate"><Mail size={13} className="shrink-0 text-ink-subtle" /> <span dir="ltr" className="truncate">{m.email}</span></div>}
                 {m.phone && <div className="flex items-center gap-2"><PhoneIcon size={13} className="shrink-0 text-ink-subtle" /> <span dir="ltr">{m.phone}</span></div>}
-                <div className="flex items-center gap-2"><Calendar size={13} className="shrink-0 text-ink-subtle" /> انضمّ في {fmtDate(m.joinDate)}</div>
+                <div className="flex items-center gap-2"><Calendar size={13} className="shrink-0 text-ink-subtle" /> {m.status === "pending" ? "مدعو · لم ينضمّ بعد" : `انضمّ في ${fmtDate(m.joinDate)}`}</div>
               </dl>
 
               {/* Quick actions */}
@@ -181,7 +186,7 @@ export function StaffManagement() {
       />
 
       {/* Invite teammates (email or code) */}
-      <InviteDialog open={invitesOpen} onClose={() => setInvitesOpen(false)} />
+      <InviteDialog open={invitesOpen} onClose={() => setInvitesOpen(false)} onChanged={reload} />
 
       {/* Delete confirm */}
       <Dialog
@@ -439,7 +444,7 @@ function Section({ title, step, children }: { title: string; step: string; child
 }
 
 /* ---------------- Invite teammates (email or code) ---------------- */
-function InviteDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+function InviteDialog({ open, onClose, onChanged }: { open: boolean; onClose: () => void; onChanged?: () => void }) {
   const toast = useToast();
   const [list, setList] = useState<Invite[]>([]);
   const [method, setMethod] = useState<"email" | "code">("email");
@@ -458,13 +463,14 @@ function InviteDialog({ open, onClose }: { open: boolean; onClose: () => void })
     try {
       const inv = await createInvite(role, method === "email" ? email : undefined);
       setCreated(inv); setEmail(""); playSuccess(); reload();
+      onChanged?.(); // refresh the roster so the new PENDING member shows immediately
     } catch { toast.error("تعذّر إنشاء الدعوة"); }
     finally { setBusy(false); }
   };
   const copy = (text: string, key: string) => {
     navigator.clipboard.writeText(text).then(() => { setCopied(key); window.setTimeout(() => setCopied((c) => (c === key ? null : c)), 2000); }).catch(() => { /* ignore */ });
   };
-  const revoke = (id: string) => { revokeInvite(id).then(reload).catch(() => toast.error("تعذّر الإلغاء")); };
+  const revoke = (id: string) => { revokeInvite(id).then(() => { reload(); onChanged?.(); }).catch(() => toast.error("تعذّر الإلغاء")); };
 
   return (
     <Dialog open={open} onClose={onClose} title="دعوة موظف" description="أرسل دعوة بالبريد أو شارك رمزاً — الموظف ينضمّ بحسابه ودوره." size="md">

@@ -36,6 +36,7 @@ function createInvoiceLocal(items: CheckoutItem[], meta?: SaleMeta): Invoice {
     payment_method: meta?.payment_method ?? null,
     total, cost_total: cost, profit: total - cost, item_count: count,
     print_count: 0, status: "paid", refunded_at: null,
+    staff_id: meta?.staff_id?.trim() || null,
     created_at: new Date().toISOString(),
   };
   db.invoices.push(invoice);

@@ -15,6 +15,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Button, useToast } from "@/components/ui";
 import { ServiceQuickSelect } from "./ServiceQuickSelect";
 import { MedSaleForm } from "./MedSaleForm";
+import { CashierSelect } from "@/components/MedicalEntry";
 import { useInvoicePrinter } from "./usePrintInvoice";
 import { invoiceNo } from "@/lib/invoicePrint";
 import { persistMedicalEntries } from "@/lib/medSync";
@@ -86,6 +87,8 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
   const [editingTotal, setEditingTotal] = useState(false);
   const [totalDraft, setTotalDraft] = useState("");
   const [payment, setPayment] = useState<PaymentMethod>("cash");
+  // Optional cashier / sales rep (staff id) — attached to the invoice for reports.
+  const [cashierId, setCashierId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [flash, setFlash] = useState<string | null>(null);
   const [done, setDone] = useState<{ invoice: Invoice; items: InvoiceItem[] } | null>(null);
@@ -199,7 +202,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
   const reset = () => {
     setCart([]); setQuery(""); setDiscountValue(""); setFinalOverride(null); setEditingTotal(false);
     setDiscountType("percent"); setPayment("cash"); setDone(null); setLastPrints(0);
-    setBrowseTab("products");
+    setCashierId(null); setBrowseTab("products");
     // Preserve the patient/customer bridge across "New sale" so repeated per-patient
     // sales keep syncing into the same animal's record; clear it for a plain walk-in.
     if (prefill) {
@@ -227,6 +230,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
         discount_type: discountAmt > 0 ? "fixed" : null,
         discount_value: discountAmt > 0 ? discountAmt : 0,
         payment_method: payment,
+        staff_id: cashierId,
       };
       const invoice = await withTimeout(repo.retailCheckout(items, meta), 12000);
       const medDrafts = cart.filter((l) => l.kind === "med" && l.med).map((l) => l.med!);
@@ -345,6 +349,15 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
                 ))}
               </div>
             )}
+          </div>
+
+          {/* Cashier / sales rep — optional; recorded on the invoice for staff reports */}
+          <div className="mt-3 border-t border-line pt-3">
+            <label className="mb-1.5 flex items-center gap-1.5 text-xs font-bold text-ink-muted">
+              <Stethoscope size={14} className="text-brand-600" /> {t("retail.cashier", "موظف المبيعات / الكاشير")}
+              <span className="text-2xs font-normal text-ink-subtle">· {t("retail.optional", "optional")}</span>
+            </label>
+            <CashierSelect value={cashierId} onChange={setCashierId} />
           </div>
         </div>
 

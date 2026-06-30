@@ -9,7 +9,7 @@ import {
 import type { Species, PatientCondition, MedicalAssessment } from "@/types";
 import { MED_CATALOG, getClinicMeds, hydrateMeds } from "@/lib/meds";
 import { VACCINE_CATALOG, BUILTIN_VACCINES, getClinicVaccines, hydrateVaccines } from "@/lib/vaccines";
-import { DOCTORS } from "@/lib/clinic";
+import { listStaff, ROLE_LABEL, type StaffMember } from "@/lib/staff";
 import { Button, useToast } from "@/components/ui";
 import { cn, uid } from "@/lib/utils";
 import { playTap, playSuccess } from "@/lib/sounds";
@@ -66,8 +66,21 @@ const SPECIES_GROUP: Record<Species, string | null> = {
   dog: "Dogs", cat: "Cats", horse: "Horses", cow: "Cattle", rabbit: "Rabbits & small mammals", bird: null, other: null,
 };
 
-/** Attending-doctor roster (same source as the calendar / reception). */
-export const DOCTOR_NAMES = DOCTORS.map((d) => d.name);
+/** Shared loader for the clinic's active team (real staff, not hardcoded names).
+ *  Self-contained fetch per the project's no-TanStack-Query architecture. */
+function useActiveStaff(roleFilter?: StaffMember["role"]): { staff: StaffMember[]; loading: boolean } {
+  const [staff, setStaff] = useState<StaffMember[]>([]);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    let alive = true;
+    listStaff()
+      .then((list) => { if (alive) setStaff(list.filter((s) => s.status === "active" && (!roleFilter || s.role === roleFilter))); })
+      .catch(() => { /* graceful: dropdown just shows the current value / empty state */ })
+      .finally(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
+  }, [roleFilter]);
+  return { staff, loading };
+}
 
 /** Local YYYY-MM-DD (NOT toISOString, which shifts to UTC and is off-by-one in
  *  positive-offset zones like Iraq UTC+3 — that made presets never match the
@@ -160,10 +173,11 @@ export function MedicalEntry({
   // Per-visit clinical assessment — attached to the patient's medical record on save.
   const [condition, setCondition] = useState<PatientCondition | null>(null);
   const [notes, setNotes] = useState("");
-  // Who administered this entry. Defaults to the signed-in vet when they're in the roster.
-  const [doctor, setDoctor] = useState<string>(() => defaultDoctor && DOCTOR_NAMES.includes(defaultDoctor) ? defaultDoctor : DOCTOR_NAMES[0] ?? "");
+  // Who administered this entry. Defaults to the signed-in vet; DoctorSelect fills the
+  // option list from the clinic's real staff and always keeps this value selectable.
+  const [doctor, setDoctor] = useState<string>(defaultDoctor ?? "");
   // Keep in sync if the signed-in vet resolves after mount (async auth).
-  useEffect(() => { if (defaultDoctor && DOCTOR_NAMES.includes(defaultDoctor)) setDoctor(defaultDoctor); }, [defaultDoctor]);
+  useEffect(() => { if (defaultDoctor) setDoctor(defaultDoctor); }, [defaultDoctor]);
 
   const add = (entry: MedicalDraft) => { setSheet((s) => [entry, ...s]); playSuccess(); };
   const remove = (id: string) => setSheet((s) => s.filter((e) => e.id !== id));
@@ -736,14 +750,42 @@ function StatusChip({ given }: { given: boolean }) {
   );
 }
 
-/** Sleek attending-doctor picker — reused by the entry form and the booster modal. */
+/** Sleek attending-doctor picker — now bound to the clinic's REAL active veterinarians
+ *  (no hardcoded names). The current value (e.g. the signed-in doctor) is always kept
+ *  selectable even if they aren't tagged as a vet. Reused by the entry form + booster modal. */
 export function DoctorSelect({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder?: string }) {
   const { t } = useTranslation();
-  const options = DOCTOR_NAMES.map((n) => {
-    const doc = DOCTORS.find((d) => d.name === n);
-    return { value: n, label: n, hint: doc?.specialty };
-  });
-  return <FancySelect value={value} options={options} onChange={onChange} placeholder={placeholder ?? t("medentry.selectDoctor", "Select attending doctor…")} searchable />;
+  const { staff } = useActiveStaff("veterinarian");
+  const options = useMemo(() => {
+    const opts = staff.map((s) => ({ value: s.name, label: s.name, hint: s.specialty || undefined }));
+    if (value && !opts.some((o) => o.value === value)) opts.unshift({ value, label: value, hint: undefined });
+    return opts;
+  }, [staff, value]);
+  return (
+    <FancySelect
+      value={value} options={options} onChange={onChange} searchable
+      placeholder={placeholder ?? t("medentry.selectDoctor", "اختر الطبيب المعالج…")}
+      emptyText={t("medentry.noDoctors", "لا يوجد أطباء مضافين")}
+    />
+  );
+}
+
+/** Optional cashier / sales-rep picker for the POS — lists all active clinic staff.
+ *  Value is the staff member's ID (saved on the invoice for performance reports). */
+export function CashierSelect({ value, onChange }: { value: string | null; onChange: (id: string | null) => void }) {
+  const { t } = useTranslation();
+  const { staff } = useActiveStaff();
+  const options = useMemo(() => ([
+    { value: "", label: t("retail.noCashier", "بدون تحديد"), hint: undefined as string | undefined },
+    ...staff.map((s) => ({ value: s.id, label: s.name, hint: ROLE_LABEL[s.role] })),
+  ]), [staff, t]);
+  return (
+    <FancySelect
+      value={value ?? ""} options={options} onChange={(v) => onChange(v || null)} searchable
+      placeholder={t("retail.selectCashier", "اختر الموظف…")}
+      emptyText={t("retail.noStaff", "لا يوجد موظفون مضافون")}
+    />
+  );
 }
 
 /* ---------------- Primitives ---------------- */
@@ -775,12 +817,13 @@ function Reveal({ children }: { children: React.ReactNode }) {
 }
 
 /** Smooth, searchable select with an animated popover — Radix/Shadcn feel, zero deps. */
-function FancySelect({ value, options, onChange, placeholder, searchable }: {
+function FancySelect({ value, options, onChange, placeholder, searchable, emptyText }: {
   value: string;
   options: { value: string; label: string; hint?: string }[];
   onChange: (v: string) => void;
   placeholder?: string;
   searchable?: boolean;
+  emptyText?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
@@ -840,7 +883,7 @@ function FancySelect({ value, options, onChange, placeholder, searchable }: {
             )}
             <div className="max-h-60 overflow-y-auto p-1 [scrollbar-width:thin]">
               {filtered.length === 0 ? (
-                <p className="px-3 py-6 text-center text-sm text-ink-subtle">No matches</p>
+                <p className="px-3 py-6 text-center text-sm text-ink-subtle">{emptyText ?? "No matches"}</p>
               ) : (
                 filtered.map((o) => {
                   const isSel = o.value === value;

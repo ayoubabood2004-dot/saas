@@ -301,6 +301,8 @@ export interface Invoice {
   print_count?: number; // times this invoice has been printed
   status?: InvoiceStatus; // 'paid' | 'refunded'
   refunded_at?: string | null;
+  /** Cashier / sales rep (staff id) who made the sale — for staff performance reports. */
+  staff_id?: string | null;
   created_at: string;
 }
 
@@ -313,6 +315,8 @@ export interface SaleMeta {
   discount_type?: DiscountType | null;
   discount_value?: number; // raw input: a percent (0–100) or a fixed amount
   payment_method?: PaymentMethod | null;
+  /** Cashier / sales rep (staff id) who made the sale — for staff performance reports. */
+  staff_id?: string | null;
 }
 
 /** A distinct retail customer, derived from past invoices for quick re-selection. */

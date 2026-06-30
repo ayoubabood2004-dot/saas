@@ -15,7 +15,8 @@ import { supabase } from "./supabase";
 import type { Role } from "@/types";
 
 export type StaffRole = "manager" | "veterinarian" | "receptionist" | "groomer";
-export type StaffStatus = "active" | "suspended";
+// "pending" = invited but hasn't joined via their link yet; "active" = joined.
+export type StaffStatus = "pending" | "active" | "suspended";
 
 /** Per-staff custom overrides: a capability → allowed boolean. Absent keys fall
  *  back to the base-role preset. An empty map means "use the role preset". */
@@ -34,6 +35,8 @@ export interface StaffMember {
   avatar?: string | null;
   /** Granular overrides on top of the role preset (see effectiveCan). */
   permissions?: PermissionMap;
+  /** Links a roster row to the invite that created it (for onboarding activation). */
+  inviteCode?: string | null;
 }
 
 export const STAFF_ROLES: StaffRole[] = ["manager", "veterinarian", "receptionist", "groomer"];
@@ -151,7 +154,7 @@ interface StaffRow {
   id: string; name: string; email: string | null; phone: string | null;
   role: string; specialty: string | null; join_date: string | null;
   status: string; bio: string | null; avatar: string | null;
-  permissions: PermissionMap | null;
+  permissions: PermissionMap | null; invite_code?: string | null;
 }
 
 const rowToMember = (r: StaffRow): StaffMember => ({
@@ -160,6 +163,7 @@ const rowToMember = (r: StaffRow): StaffMember => ({
   joinDate: r.join_date ?? "", status: (r.status as StaffStatus) ?? "active",
   bio: r.bio ?? "", avatar: r.avatar ?? null,
   permissions: (r.permissions && typeof r.permissions === "object") ? r.permissions : {},
+  inviteCode: r.invite_code ?? null,
 });
 
 // clinic_id is intentionally omitted — the DB default (auth.uid()) + RLS stamp it.
@@ -211,6 +215,37 @@ export async function setStaffStatus(id: string, status: StaffStatus): Promise<v
   }
   const { error } = await supabase.from("staff").update({ status }).eq("id", id);
   if (error) throw new Error(error.message);
+}
+
+/* ---- Demo-mode onboarding (mirrors the server triggers in migration 0029) ----
+ * On Supabase the DB does this automatically; in demo mode the invite flow calls
+ * these so invited staff still appear (pending) and activate on join. */
+
+/** Mirror an invite into a PENDING roster row (demo only; no-op on Supabase). */
+export function addPendingStaffLocal(email: string | null, role: StaffRole, code: string) {
+  if (supabase) return;
+  const list = loadLocal();
+  if (list.some((s) => s.inviteCode === code)) return;
+  list.push({
+    id: uuid(), name: email || `دعوة ${code}`, email: email || "", phone: "",
+    role, specialty: "", joinDate: "", status: "pending", bio: "", avatar: null,
+    permissions: {}, inviteCode: code,
+  });
+  saveLocal(list);
+}
+
+/** Remove a still-pending roster row when its invite is revoked (demo only). */
+export function removePendingStaffLocal(code: string) {
+  if (supabase) return;
+  saveLocal(loadLocal().filter((s) => !(s.inviteCode === code && s.status === "pending")));
+}
+
+/** Flip a pending roster row to active when its invite is accepted (demo only). */
+export function activateStaffByInviteLocal(code: string) {
+  if (supabase) return;
+  const list = loadLocal();
+  const m = list.find((s) => s.inviteCode === code);
+  if (m) { m.status = "active"; m.joinDate = m.joinDate || new Date().toISOString().slice(0, 10); saveLocal(list); }
 }
 
 /* -------- Current user's granular permission overrides (for usePermissions) ----
