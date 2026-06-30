@@ -91,9 +91,35 @@ const prettyDate = (iso: string) => {
   return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
 };
 
-export interface MedicationDraft { id: string; kind: "medication"; family: string; name: string; route: RouteId; dosage: string; note?: string }
-export interface VaccinationDraft { id: string; kind: "vaccination"; name: string; nextDue: string | null; lot?: string }
+export interface MedicationDraft { id: string; kind: "medication"; family: string; name: string; route: RouteId; dosage: string; note?: string; administered: boolean }
+export interface VaccinationDraft { id: string; kind: "vaccination"; name: string; nextDue: string | null; lot?: string; administered: boolean }
 export type MedicalDraft = MedicationDraft | VaccinationDraft;
+
+/** Given-today vs planned/prescription toggle, shared by both entry forms. A planned
+ *  item is saved un-administered (administered_at = null) so it shows in the record as
+ *  "مُخطط / Planned" until the doctor marks it given. */
+function GivenToggle({ given, onChange }: { given: boolean; onChange: (g: boolean) => void }) {
+  const { t } = useTranslation();
+  const opts = [
+    { v: true, label: t("medentry.givenToday", "تم الإعطاء اليوم"), icon: <Check size={15} /> },
+    { v: false, label: t("medentry.planned", "مُخطّط (وصفة)"), icon: <CalendarClock size={15} /> },
+  ] as const;
+  return (
+    <div className="inline-flex w-full items-center gap-1 rounded-2xl border border-line bg-surface-2 p-1">
+      {opts.map((o) => (
+        <button
+          key={String(o.v)} type="button" onClick={() => { playTap(); onChange(o.v); }}
+          className={cn(
+            "flex flex-1 items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-sm font-semibold transition",
+            given === o.v ? (o.v ? "bg-success-600 text-white shadow-soft" : "bg-ink-subtle text-white shadow-soft") : "text-ink-muted hover:text-ink",
+          )}
+        >
+          {o.icon}{o.label}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 export function MedicalEntry({
   species,
@@ -293,12 +319,13 @@ export function MedicationForm({ onAdd, version, addLabel }: { onAdd: (e: Medica
   const [route, setRoute] = useState<RouteId | null>(null);
   const [dosage, setDosage] = useState<string>("");
   const [note, setNote] = useState<string>("");
+  const [given, setGiven] = useState(true);
 
   const drugs = useMemo(() => families.find((f) => f.type === family)?.items ?? [], [families, family]);
   const routeDef = ROUTES.find((r) => r.id === route);
   const ready = !!drug && !!route && !!dosage.trim();
 
-  const reset = () => { setFamily(""); setDrug(""); setRoute(null); setDosage(""); setNote(""); };
+  const reset = () => { setFamily(""); setDrug(""); setRoute(null); setDosage(""); setNote(""); setGiven(true); };
 
   return (
     <div className="space-y-5">
@@ -419,6 +446,17 @@ export function MedicationForm({ onAdd, version, addLabel }: { onAdd: (e: Medica
         )}
       </AnimatePresence>
 
+      {/* Tier 6 — given today vs planned/prescription */}
+      <AnimatePresence>
+        {route && (
+          <Reveal key="t6">
+            <Tier n={6} label="Status" icon={<Check size={14} />}>
+              <GivenToggle given={given} onChange={setGiven} />
+            </Tier>
+          </Reveal>
+        )}
+      </AnimatePresence>
+
       <Button
         className="w-full"
         variant="secondary"
@@ -426,7 +464,7 @@ export function MedicationForm({ onAdd, version, addLabel }: { onAdd: (e: Medica
         leftIcon={<Plus size={16} />}
         onClick={() => {
           if (!ready || !route) return;
-          onAdd({ id: uid("med"), kind: "medication", family, name: drug, route, dosage: dosage.trim(), note: note.trim() || undefined });
+          onAdd({ id: uid("med"), kind: "medication", family, name: drug, route, dosage: dosage.trim(), note: note.trim() || undefined, administered: given });
           reset();
         }}
       >
@@ -444,6 +482,7 @@ export function VaccinationForm({ species, hasSpeciesProp, draftSpecies, setDraf
   const [vaccine, setVaccine] = useState("");
   const [nextDue, setNextDue] = useState<string | null>(null);
   const [lot, setLot] = useState("");
+  const [given, setGiven] = useState(true);
 
   const group = SPECIES_GROUP[species];
   // Clinic-custom vaccines (added in Settings) aren't species-tagged → always offered.
@@ -578,6 +617,17 @@ export function VaccinationForm({ species, hasSpeciesProp, draftSpecies, setDraf
         )}
       </AnimatePresence>
 
+      {/* Given today vs planned (only a scheduled dose is recorded when planned) */}
+      <AnimatePresence>
+        {vaccine && (
+          <Reveal key="vstatus">
+            <Tier n={5} label="Status" icon={<Check size={14} />}>
+              <GivenToggle given={given} onChange={setGiven} />
+            </Tier>
+          </Reveal>
+        )}
+      </AnimatePresence>
+
       <Button
         className="w-full"
         variant="secondary"
@@ -589,8 +639,8 @@ export function VaccinationForm({ species, hasSpeciesProp, draftSpecies, setDraf
             // A custom date arrives as YYYY-MM-DD; normalize & reject anything unparseable
             // so a bad value can never silently break the add.
             const due = nextDue && !Number.isNaN(new Date(nextDue + "T00:00:00").getTime()) ? nextDue : null;
-            onAdd({ id: uid("vac"), kind: "vaccination", name: vaccine, nextDue: due, lot: lot.trim() || undefined });
-            setVaccine(""); setNextDue(null); setLot("");
+            onAdd({ id: uid("vac"), kind: "vaccination", name: vaccine, nextDue: due, lot: lot.trim() || undefined, administered: given });
+            setVaccine(""); setNextDue(null); setLot(""); setGiven(true);
           } catch (err) {
             console.error("Add vaccination failed:", err);
             toast.error("تعذّرت إضافة اللقاح", err instanceof Error ? err.message : "تحقّق من التاريخ المُختار.");
@@ -636,11 +686,12 @@ function TreatmentSheet({ entries, onRemove }: { entries: MedicalDraft[]; onRemo
                     <span className={cn("chip shrink-0 text-2xs font-medium", e.kind === "vaccination" ? "bg-success-50 text-success-700 dark:bg-success-500/15 dark:text-success-200" : "bg-surface-2 text-ink-muted")}>
                       {e.kind === "vaccination" ? "Vaccine" : e.family}
                     </span>
+                    <StatusChip given={e.administered} />
                   </p>
                   <p className="truncate text-xs text-ink-subtle">
                     {e.kind === "medication"
                       ? `${routeLabel(e.route)} · ${e.dosage}`
-                      : e.nextDue ? `Next due ${prettyDate(e.nextDue)}${e.lot ? ` · Lot ${e.lot}` : ""}` : `Administered today${e.lot ? ` · Lot ${e.lot}` : ""}`}
+                      : e.nextDue ? `${e.administered ? "Given today · next due" : "Planned for"} ${prettyDate(e.nextDue)}${e.lot ? ` · Lot ${e.lot}` : ""}` : `${e.administered ? "Administered today" : "Planned"}${e.lot ? ` · Lot ${e.lot}` : ""}`}
                   </p>
                   {e.kind === "medication" && e.note && (
                     <p className="mt-0.5 flex items-center gap-1 truncate text-xs text-ink-muted">
@@ -669,6 +720,21 @@ function RouteGlyph({ entry }: { entry: MedicalDraft }) {
   );
 }
 const routeLabel = (id: RouteId) => ROUTES.find((r) => r.id === id)?.label ?? id;
+
+/** Given (green) vs Planned/prescription (gray) status pill — mirrors the badge the
+ *  flowsheet & vaccines record show, so the doctor sees the same distinction at add-time. */
+function StatusChip({ given }: { given: boolean }) {
+  const { t } = useTranslation();
+  return given ? (
+    <span className="chip shrink-0 bg-success-50 text-2xs font-medium text-success-700 dark:bg-success-500/15 dark:text-success-200">
+      <Check size={10} className="me-0.5 inline" />{t("medentry.givenTag", "تم الإعطاء")}
+    </span>
+  ) : (
+    <span className="chip shrink-0 bg-surface-2 text-2xs font-medium text-ink-muted">
+      <CalendarClock size={10} className="me-0.5 inline" />{t("medentry.plannedTag", "مُخطّط")}
+    </span>
+  );
+}
 
 /** Sleek attending-doctor picker — reused by the entry form and the booster modal. */
 export function DoctorSelect({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder?: string }) {

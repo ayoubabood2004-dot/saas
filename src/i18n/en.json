@@ -234,7 +234,11 @@
     "saveN": "Save {{n}} to record",
     "saveAssessment": "Save assessment",
     "savedToast": "Saved to the patient's record",
-    "saveError": "Couldn't save — please try again."
+    "saveError": "Couldn't save — please try again.",
+    "givenToday": "Given today",
+    "planned": "Planned (Rx)",
+    "givenTag": "Given",
+    "plannedTag": "Planned"
   },
   "services": {
     "title": "Services & non-barcode items",
@@ -857,6 +861,8 @@
     "overdue": "Overdue",
     "missed": "Not given",
     "due": "Due",
+    "given": "Given",
+    "planned": "Planned",
     "markGiven": "Give",
     "undo": "Undo",
     "repeat": "Repeat",

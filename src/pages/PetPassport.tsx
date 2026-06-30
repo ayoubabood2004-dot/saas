@@ -1463,7 +1463,9 @@ function TreatmentTab({ pet, treatments, admissions, onChanged, canEdit, isOwner
   const { t, i18n } = useTranslation();
   const { user } = useAuth();
   const [open, setOpen] = useState(false);
-  const today = new Date().toISOString().slice(0, 10);
+  // LOCAL date — must match how persistMedicalEntries writes tx.day (localISO), or
+  // statusOf would compare two different calendars and mislabel doses near midnight.
+  const today = localISO();
 
   const activeTreatment = admissions.find((a) => a.kind === "treatment" && a.status === "active");
   const activeBoarding = admissions.find((a) => a.kind === "boarding" && a.status === "active");
@@ -1499,7 +1501,9 @@ function TreatmentTab({ pet, treatments, admissions, onChanged, canEdit, isOwner
     if (tx.administered_at) return "given";
     if (tx.day < today) return "missed";
     if (tx.day > today) return "scheduled";
-    return tx.time <= currentHM ? "overdue" : "due";
+    // Strict `<` so a dose just planned for the current minute reads as "due", not
+    // already "overdue"; it only becomes overdue once its time is genuinely in the past.
+    return tx.time < currentHM ? "overdue" : "due";
   };
   const markGiven = async (id: string, given: boolean) => {
     await repo.setTreatmentGiven(id, given, user?.full_name);
@@ -1614,7 +1618,15 @@ function TreatmentTab({ pet, treatments, admissions, onChanged, canEdit, isOwner
                             <p className="mt-1 flex flex-wrap items-center gap-2 text-xs">
                               <span className="chip bg-sky-50 text-[11px] text-sky-700 dark:bg-sky-500/15 dark:text-sky-300"><Clock size={11} /> {formatHM(tx.time, i18n.language)}</span>
                               {tx.amount && <span className="chip bg-surface-2 text-[11px] text-ink-muted">{tx.amount}</span>}
-                              {status === "overdue" && (
+                              {given && (
+                                <span className="chip bg-success-50 text-[11px] text-success-700 dark:bg-success-500/15 dark:text-success-200"><Check size={11} /> {t("treatment.given", "تم الإعطاء")}</span>
+                              )}
+                              {/* Any pending dose reads as "Planned"; overdue is a secondary
+                                  flag that only matters during an active daily treatment. */}
+                              {!given && status !== "missed" && (
+                                <span className="chip bg-surface-2 text-[11px] text-ink-muted"><Clock size={11} /> {t("treatment.planned", "مُخطّط")}</span>
+                              )}
+                              {status === "overdue" && !locked && (
                                 <span className="chip bg-warn-50 text-[11px] text-warn-700 dark:bg-warn-500/15 dark:text-warn-200"><AlertCircle size={11} /> {t("treatment.overdue", "Overdue")}</span>
                               )}
                               {status === "missed" && (
