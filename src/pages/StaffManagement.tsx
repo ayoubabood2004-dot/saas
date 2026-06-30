@@ -485,6 +485,7 @@ function InviteDialog({ open, onClose, onChanged }: { open: boolean; onClose: ()
           <div>
             <label className="label">بريد الموظف</label>
             <input type="email" dir="ltr" className="input" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="name@email.com" />
+            <p className="mt-1 text-2xs text-ink-subtle">الدعوة تُقفل على هذا البريد — لن يقبلها إلا من يسجّل الدخول به، ولمرّة واحدة فقط.</p>
           </div>
         )}
         <div>
