@@ -6,7 +6,7 @@ import {
 import {
   BarChart3, Wallet, Banknote, CreditCard, ArrowLeftRight, Receipt, TrendingUp,
   Stethoscope, Package, Trophy, Snail, PawPrint, Lock, Download, FileText, CalendarRange,
-  Crown, Star, ShieldAlert, Trash2, LogIn, FlaskConical, Pill, Users,
+  Crown, Star, ShieldAlert, Trash2, LogIn, FlaskConical, Pill, Users, Clock,
 } from "lucide-react";
 import type { Pet, Invoice, InvoiceItem, Product, MedicalVisit, PaymentMethod, Species, MediaItem, TreatmentEntry, AuditEntry, LoginEvent } from "@/types";
 import { repo } from "@/lib/repo";
@@ -36,6 +36,23 @@ const PAY_ICON: Record<PaymentMethod, typeof Banknote> = { cash: Banknote, card:
 const startOfDay = (d: Date) => { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; };
 const endOfDay = (d: Date) => { const x = new Date(d); x.setHours(23, 59, 59, 999); return x; };
 const localISO = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+/** Parse "HH:mm" → minutes-of-day (0–1439), or null when blank/invalid. */
+const parseHM = (hm: string): number | null => {
+  const m = /^(\d{1,2}):(\d{2})$/.exec((hm || "").trim());
+  if (!m) return null;
+  const h = +m[1]; const mi = +m[2];
+  if (h > 23 || mi > 59) return null;
+  return h * 60 + mi;
+};
+/** minutes-of-day → "h:mm ص/م" (12-hour, Western numerals) — for shift labels. */
+const fmtMins = (mins: number) => {
+  const h = Math.floor(mins / 60) % 24; const mi = mins % 60;
+  const period = h < 12 ? "ص" : "م"; const h12 = h % 12 || 12;
+  return `${h12}:${String(mi).padStart(2, "0")} ${period}`;
+};
+/** Whole-hour 12-hour label for chart axes (e.g. "8 ص", "2 م"). */
+const hourLabel = (h: number) => `${h % 12 || 12} ${h < 12 ? "ص" : "م"}`;
 
 function rangeBounds(key: RangeKey, from: string, to: string): { lo: number; hi: number } {
   const now = new Date();
@@ -71,6 +88,11 @@ export function AnalyticsHub() {
   const [range, setRange] = useState<RangeKey>("month");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
+  // Shift-based reporting: an optional time-of-day window (HH:mm) applied on top of
+  // the date range. Blank = inactive. Local wall-clock is used consistently so the
+  // window means the same thing regardless of the stored timestamp's UTC offset.
+  const [startTime, setStartTime] = useState("");
+  const [endTime, setEndTime] = useState("");
   const [tab, setTab] = useState<TabKey>("ops");
 
   useEffect(() => {
@@ -106,8 +128,22 @@ export function AnalyticsHub() {
 
   const { lo, hi } = useMemo(() => rangeBounds(range, from, to), [range, from, to]);
 
-  // Invoices in range (and the paid subset used for revenue/profit math).
-  const invInRange = useMemo(() => invoices.filter((i) => { const t = new Date(i.created_at).getTime(); return t >= lo && t <= hi; }), [invoices, lo, hi]);
+  // Shift window (minutes-of-day). Blank → null; window inactive when both null.
+  const startMin = useMemo(() => parseHM(startTime), [startTime]);
+  const endMin = useMemo(() => parseHM(endTime), [endTime]);
+  const timeActive = startMin !== null || endMin !== null;
+  // Predicate over a minutes-of-day value. End blank → end of day; an end earlier
+  // than the start is treated as an overnight shift (e.g. 22:00 → 04:00) that wraps.
+  const inWindow = useMemo(() => {
+    if (startMin === null && endMin === null) return (_m: number) => true;
+    const loM = startMin ?? 0; const hiM = endMin ?? 1439;
+    return loM <= hiM ? (m: number) => m >= loM && m <= hiM : (m: number) => m >= loM || m <= hiM;
+  }, [startMin, endMin]);
+  // Convenience: test an ISO timestamp's LOCAL wall-clock time against the window.
+  const tsOk = useMemo(() => (iso: string) => { const d = new Date(iso); return inWindow(d.getHours() * 60 + d.getMinutes()); }, [inWindow]);
+
+  // Invoices in range (date) AND within the optional shift window.
+  const invInRange = useMemo(() => invoices.filter((i) => { const t = new Date(i.created_at).getTime(); return t >= lo && t <= hi && tsOk(i.created_at); }), [invoices, lo, hi, tsOk]);
   const paid = useMemo(() => invInRange.filter((i) => (i.status ?? "paid") !== "refunded"), [invInRange]);
   const inRangeInvoiceIds = useMemo(() => new Set(paid.map((i) => i.id)), [paid]);
   const itemsInRange = useMemo(() => items.filter((it) => inRangeInvoiceIds.has(it.invoice_id)), [items, inRangeInvoiceIds]);
@@ -135,7 +171,7 @@ export function AnalyticsHub() {
     const hourly = (hi - lo) <= 86400000 * 1.5;
     const buckets = new Map<string, { label: string; gross: number; net: number; order: number }>();
     if (hourly) {
-      for (let h = 0; h < 24; h += 2) buckets.set(String(h), { label: `${h}:00`, gross: 0, net: 0, order: h });
+      for (let h = 0; h < 24; h += 2) buckets.set(String(h), { label: hourLabel(h), gross: 0, net: 0, order: h });
     } else {
       const d = startOfDay(new Date(lo));
       for (let i = 0; d.getTime() <= hi && i < 92; i++) {
@@ -253,7 +289,7 @@ export function AnalyticsHub() {
   const deletedInvoices = useMemo(() => {
     return audit
       .filter((a) => a.entity === "invoices" && a.action === "DELETE")
-      .filter((a) => { const t = new Date(a.created_at).getTime(); return t >= lo && t <= hi; })
+      .filter((a) => { const t = new Date(a.created_at).getTime(); return t >= lo && t <= hi && tsOk(a.created_at); })
       .map((a) => {
         const d = (a.details ?? {}) as { id?: string; total?: number; customer_name?: string | null; created_at?: string };
         return {
@@ -265,14 +301,14 @@ export function AnalyticsHub() {
           when: a.created_at,
         };
       });
-  }, [audit, lo, hi, staffByUser]);
+  }, [audit, lo, hi, staffByUser, tsOk]);
 
   const loginsInRange = useMemo(() => {
     return logins
-      .filter((l) => { const t = new Date(l.created_at).getTime(); return t >= lo && t <= hi; })
+      .filter((l) => { const t = new Date(l.created_at).getTime(); return t >= lo && t <= hi && tsOk(l.created_at); })
       .map((l) => ({ id: String(l.id), who: (l.name ?? "").trim() || (l.email ?? "").trim() || "مستخدم", email: (l.email ?? "").trim(), when: l.created_at }))
       .slice(0, 100);
-  }, [logins, lo, hi]);
+  }, [logins, lo, hi, tsOk]);
 
   // ---- Module 6: Clinical & medical ----
   const labXray = useMemo(() => {
@@ -280,25 +316,27 @@ export function AnalyticsHub() {
     for (const md of media) {
       if (!(md.kind in CLINICAL_MEDIA)) continue;
       const t = new Date(md.created_at).getTime();
-      if (Number.isNaN(t) || t < lo || t > hi) continue;
+      if (Number.isNaN(t) || t < lo || t > hi || !tsOk(md.created_at)) continue;
       m.set(md.kind, (m.get(md.kind) ?? 0) + 1);
     }
     const rows = Object.keys(CLINICAL_MEDIA).map((k) => ({ name: CLINICAL_MEDIA[k], count: m.get(k) ?? 0 }));
     const total = rows.reduce((s, r) => s + r.count, 0);
     return { rows, total };
-  }, [media, lo, hi]);
+  }, [media, lo, hi, tsOk]);
 
   const dispensedMeds = useMemo(() => {
     const m = new Map<string, { name: string; count: number; given: number }>();
     for (const t of treatments) {
       const ts = new Date((t.day || "") + "T00:00:00").getTime();
       if (Number.isNaN(ts) || ts < lo || ts > hi) continue;
+      // Treatments carry their own HH:mm administration time — honor the shift window.
+      if (timeActive) { const tm = parseHM(t.time); if (tm === null || !inWindow(tm)) continue; }
       const key = t.medication.trim().toLowerCase();
       const cur = m.get(key) ?? { name: t.medication, count: 0, given: 0 };
       cur.count += 1; if (t.administered_at) cur.given += 1; m.set(key, cur);
     }
     return Array.from(m.values()).sort((a, b) => b.count - a.count).slice(0, 20);
-  }, [treatments, lo, hi]);
+  }, [treatments, lo, hi, timeActive, inWindow]);
 
   // ---- Export ----
   const exportCSV = () => {
@@ -372,6 +410,29 @@ export function AnalyticsHub() {
             <span className="text-ink-subtle">—</span>
             <input type="date" dir="ltr" value={to} onChange={(e) => setTo(e.target.value)} className="input h-9 py-0 [color-scheme:light] dark:[color-scheme:dark]" />
           </div>
+        )}
+      </div>
+
+      {/* Shift window — optional time-of-day drill-down (compact, single line). */}
+      <div className="mb-5 flex flex-wrap items-center gap-2 rounded-2xl border border-line bg-surface-1 px-3 py-2">
+        <span className="flex items-center gap-1.5 text-xs font-bold text-ink-muted"><Clock size={15} className="text-brand-600" /> تصفية حسب نوبة العمل</span>
+        <label className="flex items-center gap-1.5 text-xs text-ink-subtle">
+          وقت البدء
+          <input type="time" dir="ltr" value={startTime} onChange={(e) => setStartTime(e.target.value)} className="input h-8 w-28 py-0 text-sm [color-scheme:light] dark:[color-scheme:dark]" />
+        </label>
+        <label className="flex items-center gap-1.5 text-xs text-ink-subtle">
+          وقت الانتهاء
+          <input type="time" dir="ltr" value={endTime} onChange={(e) => setEndTime(e.target.value)} className="input h-8 w-28 py-0 text-sm [color-scheme:light] dark:[color-scheme:dark]" />
+        </label>
+        {timeActive ? (
+          <>
+            <span className="chip bg-brand-50 text-2xs font-semibold text-brand-700 dark:bg-brand-500/15 dark:text-brand-300">
+              النافذة: {fmtMins(startMin ?? 0)} — {fmtMins(endMin ?? 1439)}
+            </span>
+            <button onClick={() => { setStartTime(""); setEndTime(""); }} className="chip bg-surface-2 text-2xs font-semibold text-ink-muted transition hover:text-danger-600">✕ مسح الوقت</button>
+          </>
+        ) : (
+          <span className="text-2xs text-ink-subtle">اتركه فارغاً لعرض اليوم كاملاً.</span>
         )}
       </div>
 
@@ -791,10 +852,11 @@ function Rank({ i }: { i: number }) {
   return <span className={cn("inline-grid h-5 w-5 place-items-center rounded-full text-2xs font-bold tabular-nums", tone)}>{formatNum(i + 1)}</span>;
 }
 
-/** Date-time with Western numerals (en-GB) — used by the audit/login logs. */
+/** Date-time in 12-hour ص/م with Western numerals — used by the audit/login logs. */
 const dt = (iso: string) => {
   const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? "—" : d.toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+  return Number.isNaN(d.getTime()) ? "—"
+    : d.toLocaleString("ar-EG-u-nu-latn", { day: "2-digit", month: "short", year: "numeric", hour: "numeric", minute: "2-digit", hour12: true });
 };
 
 /* ----------------------------- Primitives ----------------------------- */
