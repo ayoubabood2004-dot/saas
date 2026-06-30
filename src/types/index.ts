@@ -274,6 +274,14 @@ export interface Product {
   /** Reorder level — stock at or below this triggers a low-stock warning. */
   min_stock?: number | null;
   expiry_date?: string | null; // ISO date
+  /** Fractional sales: the box can be broken into smaller units (e.g. a pill from a strip). */
+  has_sub_unit?: boolean;
+  /** Name of one sub-unit shown at the till, e.g. "حبة" / "شريط" / "مل". */
+  sub_unit_name?: string | null;
+  /** How many sub-units fill one box (e.g. 20 pills per box). */
+  units_per_box?: number | null;
+  /** Price of a single sub-unit (used when selling by the sub-unit). */
+  sub_unit_price?: number | null;
   created_at: string;
 }
 
@@ -338,6 +346,10 @@ export interface InvoiceItem {
   unit_price: number; // sell price at sale time
   unit_cost: number; // purchase price at sale time
   line_total: number; // qty * unit_price
+  /** Box-equivalent removed from stock (0.25 for 5 of 20 pills). Null on box sales → equals qty. */
+  stock_qty?: number | null;
+  /** Unit the customer bought, snapshotted for the receipt (e.g. "علبة" / "حبة"). */
+  unit_label?: string | null;
 }
 
 /** A line in the POS cart before checkout. */
@@ -354,6 +366,10 @@ export interface CheckoutItem {
   qty: number;
   unit_price: number;
   unit_cost: number;
+  /** Box-equivalent to deduct from stock (qty / units_per_box for sub-unit sales). Defaults to qty. */
+  stock_qty?: number;
+  /** Sale unit label persisted for the receipt (e.g. "علبة" / "حبة"). */
+  unit_label?: string | null;
 }
 
 /* ---------------- Services & non-barcode items ---------------- */

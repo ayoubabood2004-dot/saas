@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { motion } from "framer-motion";
 import {
   Barcode, Package, Trash2, Search,
-  TrendingUp, AlertTriangle, CalendarClock, Pencil, PackagePlus, Boxes,
+  TrendingUp, AlertTriangle, CalendarClock, Pencil, PackagePlus, Boxes, Layers,
 } from "lucide-react";
 import type { Product, ProductCategory } from "@/types";
 import { repo } from "@/lib/repo";
@@ -174,7 +174,7 @@ function InventoryTab({ products, clinicId, onChanged }: { products: Product[]; 
 function ProductModal({ open, product, clinicId, subcategories, onClose, onSaved }: { open: boolean; product: Product | null; clinicId?: string; subcategories: string[]; onClose: () => void; onSaved: () => void }) {
   const { t } = useTranslation();
   const toast = useToast();
-  const blank = { barcode: "", name: "", category: "", subcategory: "", purchase_price: "", sell_price: "", stock: "", min_stock: "", expiry_date: "" };
+  const blank = { barcode: "", name: "", category: "", subcategory: "", purchase_price: "", sell_price: "", stock: "", min_stock: "", expiry_date: "", has_sub_unit: false, sub_unit_name: "", units_per_box: "", sub_unit_price: "" };
   const [f, setF] = useState(blank);
   const [busy, setBusy] = useState(false);
   const barcodeRef = useRef<HTMLInputElement>(null);
@@ -190,6 +190,10 @@ function ProductModal({ open, product, clinicId, subcategories, onClose, onSaved
         purchase_price: String(product.purchase_price), sell_price: String(product.sell_price),
         stock: String(product.stock), min_stock: product.min_stock ? String(product.min_stock) : "",
         expiry_date: product.expiry_date ?? "",
+        has_sub_unit: !!product.has_sub_unit,
+        sub_unit_name: product.sub_unit_name ?? "",
+        units_per_box: product.units_per_box ? String(product.units_per_box) : "",
+        sub_unit_price: product.sub_unit_price != null ? String(product.sub_unit_price) : "",
       });
     } else {
       setF(blank);
@@ -214,6 +218,13 @@ function ProductModal({ open, product, clinicId, subcategories, onClose, onSaved
 
   const save = async () => {
     if (!f.name.trim() || busy) return;
+    // A sub-unit needs a positive units-per-box to be meaningful; otherwise it's off.
+    const unitsPerBox = Math.max(0, Number(f.units_per_box) || 0);
+    const subUnitOn = f.has_sub_unit && unitsPerBox > 0;
+    if (f.has_sub_unit && unitsPerBox <= 0) {
+      toast.error(t("pos.subUnitNeedsCount", "أدخل عدد الوحدات في العلبة (أكبر من صفر)"));
+      return;
+    }
     setBusy(true);
     try {
       const payload = {
@@ -223,9 +234,13 @@ function ProductModal({ open, product, clinicId, subcategories, onClose, onSaved
         subcategory: f.subcategory.trim() || null,
         purchase_price: Number(f.purchase_price) || 0,
         sell_price: Number(f.sell_price) || 0,
-        stock: Math.max(0, Math.round(Number(f.stock) || 0)),
+        stock: Math.max(0, Math.round((Number(f.stock) || 0) * 1000) / 1000),
         min_stock: Math.max(0, Math.round(Number(f.min_stock) || 0)),
         expiry_date: f.expiry_date || null,
+        has_sub_unit: subUnitOn,
+        sub_unit_name: subUnitOn ? (f.sub_unit_name.trim() || "وحدة") : null,
+        units_per_box: subUnitOn ? unitsPerBox : null,
+        sub_unit_price: subUnitOn ? (Number(f.sub_unit_price) || 0) : null,
       };
       if (product) await repo.updateProduct(product.id, payload);
       else await repo.createProduct({ ...payload, clinic_id: clinicId ?? null });
@@ -313,6 +328,51 @@ function ProductModal({ open, product, clinicId, subcategories, onClose, onSaved
             <input type="number" inputMode="numeric" min="0" step="1" className="input" value={f.min_stock} onChange={(e) => set({ min_stock: e.target.value })} placeholder="0" />
           </div>
         </div>
+
+        {/* Sub-unit (fractional) sales — sell the whole box or break it into singles */}
+        <div className="rounded-xl border border-line bg-surface-2/40 p-3">
+          <div className="flex items-center justify-between gap-3">
+            <span className="flex items-center gap-2 text-sm font-semibold text-ink">
+              <Layers size={16} className="text-brand-600" /> {t("pos.subUnitToggle", "يحتوي على وحدات فرعية (مفرد)")}
+            </span>
+            <button
+              type="button" role="switch" aria-checked={f.has_sub_unit}
+              onClick={() => { playTap(); set({ has_sub_unit: !f.has_sub_unit }); }}
+              className={cn("relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition", f.has_sub_unit ? "bg-brand-600" : "bg-surface-3")}
+            >
+              <span className={cn("inline-block h-5 w-5 transform rounded-full bg-white shadow transition", f.has_sub_unit ? "ltr:translate-x-5 rtl:-translate-x-5" : "ltr:translate-x-0.5 rtl:-translate-x-0.5")} />
+            </button>
+          </div>
+          <p className="mt-1 text-2xs text-ink-subtle">{t("pos.subUnitHint", "بِع العلبة كاملة أو جزّئها (حبة، شريط، مل…) من نفس المخزون.")}</p>
+          {f.has_sub_unit && (
+            <div className="mt-3 space-y-3">
+              <div>
+                <label className="label">{t("pos.subUnitName", "اسم الوحدة الفرعية")}</label>
+                <input className="input" value={f.sub_unit_name} onChange={(e) => set({ sub_unit_name: e.target.value })} placeholder={t("pos.subUnitNamePh", "مثال: حبة، شريط، مل")} />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="label">{t("pos.unitsPerBox", "عدد الوحدات في العلبة")}</label>
+                  <input type="number" inputMode="numeric" min="0" step="1" className="input" value={f.units_per_box} onChange={(e) => set({ units_per_box: e.target.value })} placeholder="مثال: 20" />
+                </div>
+                <div>
+                  <label className="label">{t("pos.subUnitPrice", "سعر الوحدة الواحدة")}</label>
+                  <input type="number" inputMode="numeric" min="0" step="1" className="input" value={f.sub_unit_price} onChange={(e) => set({ sub_unit_price: e.target.value })} placeholder="0" />
+                </div>
+              </div>
+              {Number(f.units_per_box) > 0 && Number(f.sell_price) > 0 && (
+                <p className="rounded-lg bg-surface-2 px-2.5 py-1.5 text-2xs text-ink-muted">
+                  {t("pos.subUnitDerived", {
+                    box: money(Number(f.sell_price)), n: Number(f.units_per_box),
+                    each: money(Math.round((Number(f.sell_price) / Number(f.units_per_box)) * 100) / 100),
+                    defaultValue: "سعر العلبة {{box}} ÷ {{n}} ≈ {{each}} للوحدة الواحدة",
+                  })}
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+
         <div>
           <label className="label">{t("pos.expiry", "Expiry date")} <span className="font-normal text-ink-subtle">{t("pos.expiryHint", "(DD/MM/YYYY)")}</span></label>
           <ExpiryInput

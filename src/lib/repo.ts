@@ -41,10 +41,13 @@ function createInvoiceLocal(items: CheckoutItem[], meta?: SaleMeta): Invoice {
   };
   db.invoices.push(invoice);
   for (const i of items) {
-    db.invoiceItems.push({ id: uid("ii"), invoice_id: invoice.id, product_id: i.product_id ?? null, name: i.name, barcode: i.barcode ?? null, qty: i.qty, unit_price: i.unit_price, unit_cost: i.unit_cost, line_total: i.qty * i.unit_price });
+    // Box-equivalent removed from stock: the fraction for sub-unit sales, else the qty.
+    const stockQty = i.stock_qty != null ? i.stock_qty : i.qty;
+    db.invoiceItems.push({ id: uid("ii"), invoice_id: invoice.id, product_id: i.product_id ?? null, name: i.name, barcode: i.barcode ?? null, qty: i.qty, unit_price: i.unit_price, unit_cost: i.unit_cost, line_total: i.qty * i.unit_price, stock_qty: stockQty, unit_label: i.unit_label ?? null });
     if (i.product_id) {
       const p = db.products.find((x) => x.id === i.product_id);
-      if (p) p.stock = Math.max(0, p.stock - i.qty);
+      // Round to 3 decimals to keep stock free of binary-float drift (e.g. 0.1+0.2).
+      if (p) p.stock = Math.max(0, Math.round((p.stock - stockQty) * 1000) / 1000);
     }
   }
   saveDB(db);
@@ -497,7 +500,7 @@ const demoRepo = {
       for (const it of (db.invoiceItems ?? []).filter((x) => x.invoice_id === invoiceId)) {
         if (it.product_id) {
           const p = (db.products ?? []).find((x) => x.id === it.product_id);
-          if (p) p.stock += it.qty; // return units to stock
+          if (p) p.stock = Math.round((p.stock + (it.stock_qty != null ? it.stock_qty : it.qty)) * 1000) / 1000; // return the box-equivalent to stock
         }
       }
       inv.status = "refunded";
@@ -514,7 +517,7 @@ const demoRepo = {
       for (const it of (db.invoiceItems ?? []).filter((x) => x.invoice_id === invoiceId)) {
         if (it.product_id) {
           const p = (db.products ?? []).find((x) => x.id === it.product_id);
-          if (p) p.stock += it.qty;
+          if (p) p.stock = Math.round((p.stock + (it.stock_qty != null ? it.stock_qty : it.qty)) * 1000) / 1000;
         }
       }
     }

@@ -35,12 +35,28 @@ interface Line {
   unit_price: number; // editable
   unit_cost: number; // product purchase price; 0 for services
   qty: number;
-  stock: number | null; // product stock cap; null = unlimited (service / med)
+  stock: number | null; // product stock IN BOXES (fractional ok); null = unlimited (service / med)
   product_id: string | null;
   subcategory: string | null; // product subcategory, for Mix & Match promotions
   /** Medical draft for a "med" line — synced into the patient's record on checkout. */
   med?: MedicalDraft;
+  /** Fractional sales — this product can be sold whole (box) or by a smaller sub-unit. */
+  hasSubUnit?: boolean;
+  subUnitName?: string | null;   // e.g. "حبة" / "شريط" / "مل"
+  unitsPerBox?: number | null;   // sub-units that fill one box
+  boxPrice?: number;             // price of one whole box
+  subPrice?: number | null;      // price of one sub-unit
+  boxCost?: number;              // purchase price of one whole box
+  saleUnit?: "box" | "sub";      // which unit this line is currently sold as
 }
+
+/** A cart line's max quantity in its current sale unit, derived from the product's box
+ *  stock. Sub-unit sales can go up to (boxes × units-per-box) singles. */
+const unitCap = (l: Line): number => {
+  if (l.stock == null) return Infinity; // service / medication — uncapped
+  if (l.saleUnit === "sub" && l.unitsPerBox && l.unitsPerBox > 0) return Math.floor(l.stock * l.unitsPerBox);
+  return Math.floor(l.stock);
+};
 
 const PAY_METHODS: { value: PaymentMethod; icon: typeof Banknote; key: string; def: string }[] = [
   { value: "cash", icon: Banknote, key: "retail.cash", def: "Cash" },
@@ -101,7 +117,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
     setCart((c) => {
       const found = c.find((l) => l.id === id);
       if (found) {
-        const cap = found.stock != null ? found.stock : Infinity;
+        const cap = unitCap(found);
         return c.map((l) => (l.id === id ? { ...l, qty: Math.min(l.qty + 1, cap) } : l));
       }
       return [...c, factory()];
@@ -110,7 +126,36 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
   };
 
   const addProduct = (p: Product) =>
-    bump(`p:${p.id}`, () => ({ id: `p:${p.id}`, kind: "product", name: p.name, barcode: p.barcode ?? null, unit_price: p.sell_price, unit_cost: p.purchase_price, qty: 1, stock: p.stock, product_id: p.id, subcategory: p.subcategory ?? null }));
+    bump(`p:${p.id}`, () => {
+      const hasSub = !!p.has_sub_unit && !!p.units_per_box && p.units_per_box > 0;
+      const unitsPerBox = p.units_per_box ?? null;
+      // No whole box left but singles remain → start the line on the sub-unit.
+      const startSub = hasSub && Math.floor(p.stock) < 1;
+      const subCost = hasSub && unitsPerBox ? Math.round((p.purchase_price / unitsPerBox) * 100) / 100 : 0;
+      return {
+        id: `p:${p.id}`, kind: "product", name: p.name, barcode: p.barcode ?? null,
+        unit_price: startSub ? (p.sub_unit_price ?? 0) : p.sell_price,
+        unit_cost: startSub ? subCost : p.purchase_price,
+        qty: 1, stock: p.stock, product_id: p.id, subcategory: p.subcategory ?? null,
+        hasSubUnit: hasSub, subUnitName: p.sub_unit_name ?? null, unitsPerBox,
+        boxPrice: p.sell_price, subPrice: p.sub_unit_price ?? null, boxCost: p.purchase_price,
+        saleUnit: startSub ? "sub" : "box",
+      };
+    });
+
+  // Switch a product line between selling a whole box and a single sub-unit. The price
+  // and cost follow the unit (sub-cost = box cost ÷ units-per-box); qty re-clamps to the
+  // new unit's stock cap. Only ever called for units that have at least one available.
+  const setSaleUnit = (id: string, unit: "box" | "sub") =>
+    setCart((c) => c.map((l) => {
+      if (l.id !== id || l.kind !== "product") return l;
+      const toSub = unit === "sub" && !!l.unitsPerBox && l.unitsPerBox > 0;
+      const unit_price = toSub ? (l.subPrice ?? 0) : (l.boxPrice ?? l.unit_price);
+      const unit_cost = toSub && l.unitsPerBox ? Math.round(((l.boxCost ?? 0) / l.unitsPerBox) * 100) / 100 : (l.boxCost ?? l.unit_cost);
+      const next: Line = { ...l, saleUnit: toSub ? "sub" : "box", unit_price, unit_cost };
+      const cap = unitCap(next);
+      return { ...next, qty: Math.min(Math.max(1, l.qty), Math.max(1, cap)) };
+    }));
 
   const addService = (s: Service) =>
     bump(`s:${s.id}`, () => ({ id: `s:${s.id}`, kind: "service", name: s.name, barcode: null, unit_price: s.price, unit_cost: 0, qty: 1, stock: null, product_id: null, subcategory: null }));
@@ -126,7 +171,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
   };
 
   const setQty = (id: string, qty: number) =>
-    setCart((c) => (qty <= 0 ? c.filter((l) => l.id !== id) : c.map((l) => (l.id === id ? { ...l, qty: l.stock != null ? Math.min(qty, l.stock) : qty } : l))));
+    setCart((c) => (qty <= 0 ? c.filter((l) => l.id !== id) : c.map((l) => (l.id === id ? { ...l, qty: Math.min(qty, unitCap(l)) } : l))));
 
   const setPrice = (id: string, price: number) =>
     setCart((c) => c.map((l) => (l.id === id ? { ...l, unit_price: Math.max(0, Math.round(price * 100) / 100) } : l)));
@@ -217,10 +262,22 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
     if (cart.length === 0 || busy) return;
     setBusy(true);
     try {
-      const items: CheckoutItem[] = cart.map((l) => ({
-        product_id: l.product_id, name: l.name, barcode: l.barcode,
-        qty: l.qty, unit_price: l.unit_price, unit_cost: l.unit_cost,
-      }));
+      const items: CheckoutItem[] = cart.map((l) => {
+        // Sub-unit sale → deduct the precise box fraction (e.g. 5 of 20 pills = 0.25 box);
+        // rounded to 3 decimals to keep stock free of binary-float drift.
+        const isSub = l.kind === "product" && l.saleUnit === "sub" && !!l.unitsPerBox && l.unitsPerBox > 0;
+        const stock_qty = l.product_id == null ? 0
+          : isSub ? Math.round((l.qty / (l.unitsPerBox as number)) * 1000) / 1000
+          : l.qty;
+        const unit_label = l.kind === "product" && l.hasSubUnit
+          ? (isSub ? (l.subUnitName || "مفرد") : "علبة")
+          : null;
+        return {
+          product_id: l.product_id, name: l.name, barcode: l.barcode,
+          qty: l.qty, unit_price: l.unit_price, unit_cost: l.unit_cost,
+          stock_qty, unit_label,
+        };
+      });
       const meta: SaleMeta = {
         customer_name: name.trim() || null,
         customer_phone: phone.trim() || null,
@@ -239,6 +296,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
         id: `tmp-${l.id}`, invoice_id: invoice.id, clinic_id: clinicId ?? null,
         product_id: l.product_id, name: l.name, barcode: l.barcode,
         qty: l.qty, unit_price: l.unit_price, unit_cost: l.unit_cost, line_total: l.qty * l.unit_price,
+        unit_label: l.kind === "product" && l.hasSubUnit ? (l.saleUnit === "sub" ? (l.subUnitName || "مفرد") : "علبة") : null,
       }));
       playSuccess();
       // Show the completion screen immediately — the sale is final. The medical-record
@@ -397,7 +455,9 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
             ) : (
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                 {shown.map((p) => {
-                  const out = p.stock <= 0;
+                  // A sub-unit product is only "out" when not even one single can be sold.
+                  const subAvail = !!p.has_sub_unit && !!p.units_per_box && p.units_per_box > 0;
+                  const out = subAvail ? p.stock * (p.units_per_box as number) < 1 : p.stock <= 0;
                   return (
                     <button
                       key={p.id} disabled={out} onClick={() => { playTap(); addProduct(p); }}
@@ -464,13 +524,40 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
                       )}
                       <div className="mt-0.5 flex items-center gap-1 text-xs text-ink-subtle">
                         <PriceEdit value={l.unit_price} onChange={(v) => setPrice(l.id, v)} />
-                        <span>{t("pos.each", "each")}</span>
+                        <span>
+                          {l.kind === "product" && l.hasSubUnit
+                            ? `/ ${l.saleUnit === "sub" ? (l.subUnitName || t("retail.unitSingle", "مفرد")) : t("retail.unitBox", "علبة")}`
+                            : t("pos.each", "each")}
+                        </span>
                       </div>
+                      {/* Sale unit — sell the whole box or a single sub-unit (fractional stock) */}
+                      {l.kind === "product" && l.hasSubUnit && (
+                        <div className="mt-1 inline-flex items-center gap-0.5 rounded-lg border border-line p-0.5">
+                          {([
+                            { u: "box", label: t("retail.unitBox", "علبة") },
+                            { u: "sub", label: l.subUnitName || t("retail.unitSingle", "مفرد") },
+                          ] as const).map(({ u, label }) => {
+                            const disabled = unitCap({ ...l, saleUnit: u }) < 1;
+                            return (
+                              <button
+                                key={u} type="button" disabled={disabled}
+                                onClick={() => { playTap(); setSaleUnit(l.id, u); }}
+                                className={cn("rounded-md px-2 py-0.5 text-2xs font-bold transition",
+                                  l.saleUnit === u ? "bg-brand-600 text-white"
+                                    : disabled ? "cursor-not-allowed text-ink-subtle/40"
+                                      : "text-ink-muted hover:bg-surface-2")}
+                              >
+                                {label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
                     <div className="flex items-center gap-1">
                       <button onClick={() => { playTap(); setQty(l.id, l.qty - 1); }} className="grid h-7 w-7 place-items-center rounded-lg bg-surface-2 text-ink-muted transition hover:bg-surface-3"><Minus size={14} /></button>
                       <span className="w-6 text-center text-sm font-bold tabular-nums text-ink">{l.qty}</span>
-                      <button onClick={() => { playTap(); if (l.stock == null || l.qty < l.stock) setQty(l.id, l.qty + 1); else { playWarning(); toast.error(t("retail.maxStock", "No more in stock")); } }} className="grid h-7 w-7 place-items-center rounded-lg bg-surface-2 text-ink-muted transition hover:bg-surface-3"><Plus size={14} /></button>
+                      <button onClick={() => { playTap(); if (l.qty < unitCap(l)) setQty(l.id, l.qty + 1); else { playWarning(); toast.error(t("retail.maxStock", "No more in stock")); } }} className="grid h-7 w-7 place-items-center rounded-lg bg-surface-2 text-ink-muted transition hover:bg-surface-3"><Plus size={14} /></button>
                     </div>
                     <span className="w-16 text-end text-sm font-bold tabular-nums text-ink">{money(l.qty * l.unit_price)}</span>
                     <button onClick={() => removeLine(l.id)} aria-label={t("common.delete", "Remove")} className="grid h-7 w-7 place-items-center rounded-lg text-ink-subtle transition hover:bg-danger-50 hover:text-danger-600"><Trash2 size={14} /></button>
