@@ -46,7 +46,11 @@ interface Props<T> {
   title: string;
   clinicName?: string;
   dateRangeLabel?: string;
+  /** Granular columns — drive the print document, Excel export, and sorting. */
   columns: ReportColumn<T>[];
+  /** Optional composite columns for the on-screen table only (data stacking for tablets).
+   *  Falls back to `columns`. Print & Excel always use the granular `columns`. */
+  screenColumns?: ReportColumn<T>[];
   data: T[];
   rowKey: (row: T) => string;
   summaryMetrics?: SummaryMetric[];
@@ -66,7 +70,7 @@ interface Props<T> {
 const alignClass = (a?: ReportAlign) => (a === "end" ? "text-end" : a === "center" ? "text-center" : "text-start");
 
 export function UniversalReportTable<T>({
-  title, clinicName, dateRangeLabel, columns, data, rowKey,
+  title, clinicName, dateRangeLabel, columns, screenColumns, data, rowKey,
   summaryMetrics = [], chart, toolbar, emptyText = "لا توجد بيانات لعرضها.",
   pageSize = 25, sort, onSort, isRowMuted, exportFileName,
 }: Props<T>) {
@@ -74,6 +78,8 @@ export function UniversalReportTable<T>({
   const [page, setPage] = useState(0);
   const [printing, setPrinting] = useState(false);
   const [exporting, setExporting] = useState(false);
+  // The on-screen table may use fewer, composite columns; print/Excel stay granular.
+  const screenCols = screenColumns ?? columns;
 
   // Styled .xlsx export — real numbers stay summable; xlsx-js-style loads on demand.
   const handleExport = async () => {
@@ -167,7 +173,7 @@ export function UniversalReportTable<T>({
             <table className="w-full border-collapse text-sm">
               <thead className="sticky top-0 z-10 bg-surface-2/95 backdrop-blur">
                 <tr>
-                  {columns.map((c) => (
+                  {screenCols.map((c) => (
                     <th key={c.key} className={cn("whitespace-nowrap border-b border-line px-3 py-2.5 text-2xs font-bold text-ink-muted", alignClass(c.align))}>
                       {c.sortKey && onSort ? (
                         <button onClick={() => onSort(c.sortKey!)} className="inline-flex items-center gap-1 transition hover:text-brand-600">
@@ -180,9 +186,9 @@ export function UniversalReportTable<T>({
               </thead>
               <tbody>
                 {pageRows.map((row) => (
-                  <tr key={rowKey(row)} className={cn("border-b border-line/60 transition hover:bg-surface-2/60", isRowMuted?.(row) && "opacity-60")}>
-                    {columns.map((c) => (
-                      <td key={c.key} className={cn("whitespace-nowrap px-3 py-2.5", alignClass(c.align))}>{c.cell(row)}</td>
+                  <tr key={rowKey(row)} className={cn("border-b border-line/60 align-top transition hover:bg-surface-2/60", isRowMuted?.(row) && "opacity-60")}>
+                    {screenCols.map((c) => (
+                      <td key={c.key} className={cn("px-3 py-2.5", alignClass(c.align))}>{c.cell(row)}</td>
                     ))}
                   </tr>
                 ))}

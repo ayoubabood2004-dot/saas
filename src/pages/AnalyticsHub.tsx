@@ -1027,6 +1027,53 @@ function LedgerTab({ rows, canProfit }: { rows: LedgerRow[]; canProfit: boolean 
   ];
   if (canProfit) columns.push({ key: "profit", header: "صافي الربح", sortKey: "profit", align: "end", numeric: true, numFmt: "#,##0", excelValue: (r) => r.profit, cell: (r) => <span className={cn("font-semibold tabular-nums", r.profit >= 0 ? "text-success-600" : "text-danger-600")}>{money(r.profit)}</span>, printCell: (r) => money(r.profit) });
 
+  // Composite (stacked) columns for the ON-SCREEN table — ~5 columns so it fits a tablet
+  // with no horizontal scroll. Print + Excel keep the granular columns above.
+  const screenColumns: ReportColumn<LedgerRow>[] = [
+    {
+      key: "when", header: "التاريخ والوقت", sortKey: "when", cell: (r) => {
+        const d = new Date(r.when);
+        return (
+          <div className="whitespace-nowrap leading-tight">
+            <div className="text-ink-muted">{Number.isNaN(d.getTime()) ? "—" : d.toLocaleDateString("ar-EG-u-nu-latn", { day: "2-digit", month: "short", year: "numeric" })}</div>
+            {!Number.isNaN(d.getTime()) && <div className="text-2xs text-ink-subtle">{d.toLocaleTimeString("ar-EG-u-nu-latn", { hour: "numeric", minute: "2-digit", hour12: true })}</div>}
+          </div>
+        );
+      },
+    },
+    {
+      key: "who", header: "الزبون / الفاتورة", sortKey: "client", cell: (r) => (
+        <div className="min-w-0">
+          <p className="truncate font-semibold text-ink">{r.client}</p>
+          <p className="truncate font-mono text-2xs text-ink-subtle">{r.ref}</p>
+        </div>
+      ),
+    },
+    {
+      key: "staffpay", header: "الموظف / الدفع", sortKey: "staff", cell: (r) => (
+        <div className="min-w-0">
+          <p className="truncate text-ink-muted">{r.staff}</p>
+          <span className="mt-1 inline-block rounded-full bg-surface-2 px-2 py-0.5 text-2xs font-medium text-ink-muted">{r.method}</span>
+        </div>
+      ),
+    },
+    { key: "items", header: "تفاصيل الحركة", cell: (r) => <span className="block max-w-[180px] truncate text-ink-muted" title={r.items}>{r.items}</span> },
+    {
+      key: "fin", header: "المالية", align: "end", sortKey: canProfit ? "profit" : "total", cell: (r) => (
+        <div className="text-end tabular-nums">
+          {canProfit
+            ? <p className={cn("font-bold", r.profit >= 0 ? "text-success-600" : "text-danger-600")}>{money(r.profit)}</p>
+            : <p className="font-bold text-ink">{money(r.total)}</p>}
+          <p className="mt-0.5 text-2xs text-ink-subtle">
+            {canProfit
+              ? <>الإجمالي: {money(r.total)}{r.discount > 0 ? ` · الخصم: ${money(r.discount)}` : ""}</>
+              : (r.discount > 0 ? <>الخصم: {money(r.discount)}</> : "—")}
+          </p>
+        </div>
+      ),
+    },
+  ];
+
   const summaryMetrics: SummaryMetric[] = [
     { label: "عدد الحركات", value: formatNum(totals.count) },
     { label: "إجمالي المبيعات", value: money(totals.gross) },
@@ -1091,6 +1138,7 @@ function LedgerTab({ rows, canProfit }: { rows: LedgerRow[]; canProfit: boolean 
         clinicName={getClinicName()}
         dateRangeLabel={`${shortDate(loMs)} — ${shortDate(hiMs)}`}
         columns={columns}
+        screenColumns={screenColumns}
         data={sorted}
         rowKey={(r) => r.id}
         isRowMuted={(r) => r.refunded}
