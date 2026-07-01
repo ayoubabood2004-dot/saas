@@ -118,6 +118,75 @@ button,
   }
 }
 
+/* ============================================================================
+ * Universal Report Engine — the on-paper "Clean White-Label" document.
+ * The print root is portalled to <body> (outside #root); on screen it is
+ * hidden, and in print we hide the whole app and reveal only this document so
+ * long tables paginate naturally. Crisp white, light-gray borders, black text.
+ * ==========================================================================*/
+[data-report-print] { display: none; }
+
+@media print {
+  #root { display: none !important; }
+  [data-report-print] { display: block !important; }
+
+  @page { margin: 14mm; }
+  html, body { background: #fff !important; }
+
+  [data-report-print] {
+    color: #000;
+    direction: rtl;
+    font-family: "Cairo", "Tajawal", ui-sans-serif, system-ui, sans-serif;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .rp-doc { padding: 0; }
+
+  /* Letterhead */
+  .rp-head { border-bottom: 2px solid #111827; padding-bottom: 12px; margin-bottom: 18px; }
+  .rp-clinic { font-size: 22px; font-weight: 800; letter-spacing: -0.01em; color: #0f172a; }
+  .rp-title { font-size: 14px; font-weight: 600; color: #334155; margin-top: 2px; }
+  .rp-range { font-size: 11px; color: #475569; margin-top: 6px; }
+  .rp-meta { font-size: 10px; color: #94a3b8; margin-top: 2px; }
+
+  /* Data grid — breathable, no heavy row fills */
+  .rp-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+  .rp-table thead { display: table-header-group; } /* repeat header on each page */
+  .rp-table th {
+    padding: 8px 10px;
+    border-bottom: 1.5px solid #111827;
+    font-weight: 700;
+    color: #0f172a;
+    white-space: nowrap;
+  }
+  .rp-table td {
+    padding: 8px 10px;
+    border-bottom: 1px solid #e5e7eb;
+    color: #000;
+    vertical-align: top;
+  }
+  .rp-table tbody tr { break-inside: avoid; }
+  .rp-table tbody tr:nth-child(even) td { background: #fafafa; } /* whisper zebra, not heavy */
+
+  /* Elegant boxed summary metrics */
+  .rp-summary {
+    display: flex;
+    gap: 12px;
+    margin-top: 22px;
+    break-inside: avoid;
+  }
+  .rp-metric {
+    flex: 1;
+    border: 1px solid #d1d5db;
+    border-radius: 12px;
+    padding: 12px 16px;
+  }
+  .rp-metric-label { font-size: 10px; font-weight: 600; color: #64748b; }
+  .rp-metric-value { font-size: 18px; font-weight: 800; color: #0f172a; margin-top: 4px; font-variant-numeric: tabular-nums; }
+
+  .rp-foot { margin-top: 20px; text-align: center; font-size: 10px; color: #94a3b8; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

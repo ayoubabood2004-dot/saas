@@ -7,7 +7,7 @@ import {
   BarChart3, Wallet, Banknote, CreditCard, ArrowLeftRight, Receipt, TrendingUp,
   Stethoscope, Package, Trophy, Snail, PawPrint, Lock, Download, FileText, CalendarRange,
   Crown, Star, ShieldAlert, Trash2, LogIn, FlaskConical, Pill, Users, Clock,
-  ScrollText, Search, ArrowUpDown, ChevronLeft, ChevronRight,
+  ScrollText, Search,
 } from "lucide-react";
 import type { Pet, Invoice, InvoiceItem, Product, MedicalVisit, PaymentMethod, Species, MediaItem, TreatmentEntry, AuditEntry, LoginEvent } from "@/types";
 import { repo } from "@/lib/repo";
@@ -18,6 +18,8 @@ import { useToast, Skeleton } from "@/components/ui";
 import { money, formatNum, cn } from "@/lib/utils";
 import { dueOf, isDebt, paidOf } from "@/lib/debt";
 import { invoiceNo } from "@/lib/invoicePrint";
+import { getClinicName } from "@/lib/settings";
+import { UniversalReportTable, type ReportColumn, type SummaryMetric } from "@/components/reports/UniversalReportTable";
 
 /* ============================================================================
  * Reports & Analytics hub (التقارير والإحصائيات) — admin-only, clinic-scoped.
@@ -930,8 +932,6 @@ function LedgerTab({ rows, canProfit }: { rows: LedgerRow[]; canProfit: boolean 
   const [q, setQ] = useState("");
   const [sortKey, setSortKey] = useState<LedgerSortKey>("when");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
-  const [page, setPage] = useState(0);
-  const PAGE = 25;
 
   // Resolve the active window [loMs, hiMs] from the preset (or the custom From–To).
   const { loMs, hiMs } = useMemo(() => {
@@ -944,9 +944,6 @@ function LedgerTab({ rows, canProfit }: { rows: LedgerRow[]; canProfit: boolean 
     const hi = to ? endOfDay(new Date(to + "T00:00:00")).getTime() : Infinity;
     return { loMs: lo, hiMs: hi };
   }, [preset, from, to]);
-
-  // Reset to the first page whenever the window changes.
-  useEffect(() => { setPage(0); }, [loMs, hiMs]);
 
   const pickPreset = (p: LedgerPreset) => {
     if (p === "custom" && !from && !to) {
@@ -1003,10 +1000,6 @@ function LedgerTab({ rows, canProfit }: { rows: LedgerRow[]; canProfit: boolean 
     return arr;
   }, [filtered, sortKey, sortDir]);
 
-  const pageCount = Math.max(1, Math.ceil(sorted.length / PAGE));
-  const safePage = Math.min(page, pageCount - 1);
-  const pageRows = sorted.slice(safePage * PAGE, safePage * PAGE + PAGE);
-
   const totals = useMemo(() => ({
     count: filtered.length,
     gross: filtered.reduce((s, r) => s + r.total, 0),
@@ -1014,10 +1007,9 @@ function LedgerTab({ rows, canProfit }: { rows: LedgerRow[]; canProfit: boolean 
     profit: filtered.reduce((s, r) => s + r.profit, 0),
   }), [filtered]);
 
-  const setSort = (k: LedgerSortKey) => {
+  const setSort = (k: string) => {
     if (k === sortKey) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
-    else { setSortKey(k); setSortDir(k === "when" ? "desc" : "asc"); }
-    setPage(0);
+    else { setSortKey(k as LedgerSortKey); setSortDir(k === "when" ? "desc" : "asc"); }
   };
 
   const exportCSV = () => {
@@ -1036,15 +1028,25 @@ function LedgerTab({ rows, canProfit }: { rows: LedgerRow[]; canProfit: boolean 
     toast.success("تم تصدير سجل الحركات", "CSV");
   };
 
-  const Th = ({ k, label, end }: { k?: LedgerSortKey; label: string; end?: boolean }) => (
-    <th className={cn("whitespace-nowrap px-3 py-2 text-2xs font-bold text-ink-muted", end ? "text-end" : "text-start")}>
-      {k ? (
-        <button onClick={() => setSort(k)} className="inline-flex items-center gap-1 transition hover:text-brand-600">
-          {label}<ArrowUpDown size={11} className={sortKey === k ? "text-brand-600" : "opacity-40"} />
-        </button>
-      ) : label}
-    </th>
-  );
+  // Column set drives BOTH the screen table and the clean print document.
+  const columns: ReportColumn<LedgerRow>[] = [
+    { key: "when", header: "التاريخ والوقت", sortKey: "when", cell: (r) => <span className="text-ink-muted">{dt(r.when)}</span>, printCell: (r) => dt(r.when) },
+    { key: "ref", header: "رقم الفاتورة", cell: (r) => <span className="font-mono text-2xs text-ink-subtle">{r.ref}</span>, printCell: (r) => r.ref },
+    { key: "client", header: "الزبون", sortKey: "client", cell: (r) => <span className="font-semibold text-ink">{r.client}</span>, printCell: (r) => r.client },
+    { key: "staff", header: "الموظف/الكاشير", sortKey: "staff", cell: (r) => <span className="text-ink-muted">{r.staff}</span>, printCell: (r) => r.staff },
+    { key: "items", header: "تفاصيل الحركة", cell: (r) => <span className="text-ink-muted">{r.items}</span>, printCell: (r) => r.items },
+    { key: "method", header: "طريقة الدفع", cell: (r) => <span className="chip bg-surface-2 text-2xs text-ink-muted">{r.method}</span>, printCell: (r) => r.method },
+    { key: "total", header: "الإجمالي", sortKey: "total", align: "end", cell: (r) => <span className="font-bold tabular-nums text-ink">{money(r.total)}</span>, printCell: (r) => money(r.total) },
+    { key: "discount", header: "الخصم", sortKey: "discount", align: "end", cell: (r) => <span className="tabular-nums text-warn-600">{r.discount > 0 ? `-${money(r.discount)}` : "—"}</span>, printCell: (r) => (r.discount > 0 ? `-${money(r.discount)}` : "—") },
+  ];
+  if (canProfit) columns.push({ key: "profit", header: "صافي الربح", sortKey: "profit", align: "end", cell: (r) => <span className={cn("font-semibold tabular-nums", r.profit >= 0 ? "text-success-600" : "text-danger-600")}>{money(r.profit)}</span>, printCell: (r) => money(r.profit) });
+
+  const summaryMetrics: SummaryMetric[] = [
+    { label: "عدد الحركات", value: formatNum(totals.count) },
+    { label: "إجمالي المبيعات", value: money(totals.gross) },
+    { label: "إجمالي الخصومات", value: money(totals.discount) },
+    ...(canProfit ? [{ label: "صافي الربح", value: money(totals.profit) }] : []),
+  ];
 
   const PRESETS: { id: LedgerPreset; label: string }[] = [
     { id: "today", label: "اليوم" }, { id: "7d", label: "آخر 7 أيام" },
@@ -1090,90 +1092,47 @@ function LedgerTab({ rows, canProfit }: { rows: LedgerRow[]; canProfit: boolean 
         )}
       </div>
 
-      {/* KPIs for the current filter */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Kpi icon={Receipt} tone="brand" label="عدد الحركات" value={formatNum(totals.count)} />
-        <Kpi icon={Wallet} tone="brand" label="إجمالي المبيعات" value={money(totals.gross)} />
-        <Kpi icon={ArrowLeftRight} tone="warn" label="إجمالي الخصومات" value={money(totals.discount)} />
-        {canProfit && <Kpi icon={TrendingUp} tone="success" label="صافي الربح" value={money(totals.profit)} />}
-      </div>
-
-      {/* Chronological revenue vs profit — dual axis */}
-      <Panel title="المخطط الزمني للإيرادات والأرباح" icon={TrendingUp}>
-        {series.length === 0 ? <Empty text="لا توجد بيانات في هذه الفترة." /> : (
-          <ResponsiveContainer width="100%" height={260}>
-            <ComposedChart data={series} margin={{ top: 8, right: 8, left: -8, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" className="stroke-line" vertical={false} />
-              <XAxis dataKey="label" tick={{ fontSize: 11 }} stroke="currentColor" className="text-ink-subtle" />
-              <YAxis yAxisId="left" tick={{ fontSize: 11 }} width={52} stroke="currentColor" className="text-ink-subtle" tickFormatter={(v: number) => formatNum(v)} />
-              <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11 }} width={52} stroke="currentColor" className="text-ink-subtle" tickFormatter={(v: number) => formatNum(v)} />
-              <Tooltip formatter={(v: number) => money(v)} labelStyle={{ color: "#64748b" }} />
-              <Legend iconType="circle" wrapperStyle={{ fontSize: 12 }} />
-              <Bar yAxisId="left" dataKey="gross" name="الإيرادات" fill="#2563eb" radius={[4, 4, 0, 0]} maxBarSize={34} />
-              {canProfit && <Line yAxisId="right" type="monotone" dataKey="net" name="صافي الربح" stroke="#16a34a" strokeWidth={2.5} dot={false} />}
-            </ComposedChart>
-          </ResponsiveContainer>
-        )}
-      </Panel>
-
-      {/* Search + export */}
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="relative min-w-[220px] flex-1">
-          <Search size={16} className="pointer-events-none absolute top-1/2 -translate-y-1/2 text-ink-subtle ltr:left-3 rtl:right-3" />
-          <input className="input ltr:pl-9 rtl:pr-9" value={q} onChange={(e) => { setQ(e.target.value); setPage(0); }} placeholder="ابحث برقم الفاتورة أو اسم الزبون…" />
-        </div>
-        <button onClick={exportCSV} className="inline-flex items-center gap-1.5 rounded-xl bg-success-600 px-3.5 py-2.5 text-sm font-semibold text-white shadow-soft transition hover:bg-success-700"><Download size={15} /> تصدير إلى Excel</button>
-      </div>
-
-      {/* The accountant's table */}
-      {sorted.length === 0 ? (
-        <div className="card grid place-items-center p-12 text-center text-ink-subtle"><ScrollText size={30} className="mb-2 opacity-40" /> {rows.length === 0 ? "لا توجد حركات مالية في هذه الفترة." : "لا توجد حركات مطابقة لبحثك."}</div>
-      ) : (
-        <div className="card overflow-hidden p-0">
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-sm">
-              <thead className="border-b border-line bg-surface-2">
-                <tr>
-                  <Th k="when" label="التاريخ والوقت" />
-                  <Th label="رقم الفاتورة" />
-                  <Th k="client" label="الزبون" />
-                  <Th k="staff" label="الموظف/الكاشير" />
-                  <Th label="تفاصيل الحركة" />
-                  <Th label="طريقة الدفع" />
-                  <Th k="total" label="الإجمالي" end />
-                  <Th k="discount" label="الخصم" end />
-                  {canProfit && <Th k="profit" label="صافي الربح" end />}
-                </tr>
-              </thead>
-              <tbody>
-                {pageRows.map((r) => (
-                  <tr key={r.id} className={cn("border-b border-line/60 transition hover:bg-surface-2/50", r.refunded && "opacity-60")}>
-                    <td className="whitespace-nowrap px-3 py-2.5 text-ink-muted">{dt(r.when)}</td>
-                    <td className="whitespace-nowrap px-3 py-2.5 font-mono text-2xs text-ink-subtle">{r.ref}</td>
-                    <td className="px-3 py-2.5 font-semibold text-ink">{r.client}</td>
-                    <td className="whitespace-nowrap px-3 py-2.5 text-ink-muted">{r.staff}</td>
-                    <td className="max-w-[220px] truncate px-3 py-2.5 text-ink-muted" title={r.items}>{r.items}</td>
-                    <td className="whitespace-nowrap px-3 py-2.5"><span className="chip bg-surface-2 text-2xs text-ink-muted">{r.method}</span></td>
-                    <td className="whitespace-nowrap px-3 py-2.5 text-end font-bold tabular-nums text-ink">{money(r.total)}</td>
-                    <td className="whitespace-nowrap px-3 py-2.5 text-end tabular-nums text-warn-600">{r.discount > 0 ? `-${money(r.discount)}` : "—"}</td>
-                    {canProfit && <td className={cn("whitespace-nowrap px-3 py-2.5 text-end font-semibold tabular-nums", r.profit >= 0 ? "text-success-600" : "text-danger-600")}>{money(r.profit)}</td>}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          {pageCount > 1 && (
-            <div className="flex items-center justify-between border-t border-line px-3 py-2 text-xs text-ink-subtle">
-              <span>عرض {formatNum(safePage * PAGE + 1)}–{formatNum(Math.min(sorted.length, (safePage + 1) * PAGE))} من {formatNum(sorted.length)}</span>
-              <div className="flex items-center gap-1">
-                <button disabled={safePage === 0} onClick={() => setPage(safePage - 1)} className="grid h-8 w-8 place-items-center rounded-lg border border-line bg-surface-1 text-ink-muted transition hover:bg-surface-2 disabled:opacity-40"><ChevronRight size={16} /></button>
-                <span className="px-2 font-semibold text-ink">{formatNum(safePage + 1)} / {formatNum(pageCount)}</span>
-                <button disabled={safePage >= pageCount - 1} onClick={() => setPage(safePage + 1)} className="grid h-8 w-8 place-items-center rounded-lg border border-line bg-surface-1 text-ink-muted transition hover:bg-surface-2 disabled:opacity-40"><ChevronLeft size={16} /></button>
-              </div>
+      {/* The whole log — screen table + clean print document — via the reusable engine */}
+      <UniversalReportTable<LedgerRow>
+        title="تقرير المبيعات الشامل — سجل الحركات"
+        clinicName={getClinicName()}
+        dateRangeLabel={`${shortDate(loMs)} — ${shortDate(hiMs)}`}
+        columns={columns}
+        data={sorted}
+        rowKey={(r) => r.id}
+        isRowMuted={(r) => r.refunded}
+        summaryMetrics={summaryMetrics}
+        sort={{ key: sortKey, dir: sortDir }}
+        onSort={setSort}
+        emptyText={rows.length === 0 ? "لا توجد حركات مالية في هذه الفترة." : "لا توجد حركات مطابقة لبحثك."}
+        chart={
+          <Panel title="المخطط الزمني للإيرادات والأرباح" icon={TrendingUp}>
+            {series.length === 0 ? <Empty text="لا توجد بيانات في هذه الفترة." /> : (
+              <ResponsiveContainer width="100%" height={260}>
+                <ComposedChart data={series} margin={{ top: 8, right: 8, left: -8, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" className="stroke-line" vertical={false} />
+                  <XAxis dataKey="label" tick={{ fontSize: 11 }} stroke="currentColor" className="text-ink-subtle" />
+                  <YAxis yAxisId="left" tick={{ fontSize: 11 }} width={52} stroke="currentColor" className="text-ink-subtle" tickFormatter={(v: number) => formatNum(v)} />
+                  <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11 }} width={52} stroke="currentColor" className="text-ink-subtle" tickFormatter={(v: number) => formatNum(v)} />
+                  <Tooltip formatter={(v: number) => money(v)} labelStyle={{ color: "#64748b" }} />
+                  <Legend iconType="circle" wrapperStyle={{ fontSize: 12 }} />
+                  <Bar yAxisId="left" dataKey="gross" name="الإيرادات" fill="#2563eb" radius={[4, 4, 0, 0]} maxBarSize={34} />
+                  {canProfit && <Line yAxisId="right" type="monotone" dataKey="net" name="صافي الربح" stroke="#16a34a" strokeWidth={2.5} dot={false} />}
+                </ComposedChart>
+              </ResponsiveContainer>
+            )}
+          </Panel>
+        }
+        toolbar={
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="relative min-w-[220px] flex-1">
+              <Search size={16} className="pointer-events-none absolute top-1/2 -translate-y-1/2 text-ink-subtle ltr:left-3 rtl:right-3" />
+              <input className="input ltr:pl-9 rtl:pr-9" value={q} onChange={(e) => setQ(e.target.value)} placeholder="ابحث برقم الفاتورة أو اسم الزبون…" />
             </div>
-          )}
-        </div>
-      )}
+            <button onClick={exportCSV} className="inline-flex items-center gap-1.5 rounded-xl bg-success-600 px-3.5 py-2.5 text-sm font-semibold text-white shadow-soft transition hover:bg-success-700"><Download size={15} /> تصدير إلى Excel</button>
+          </div>
+        }
+      />
     </div>
   );
 }
