@@ -218,18 +218,19 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
   const manualDiscountAmt = resolveDiscount(subtotal, discountType, Number(discountValue) || 0);
   // Auto total = subtotal minus promotions + manual discount (clamped to the subtotal).
   const autoTotal = Math.max(0, subtotal - Math.min(subtotal, promoDiscount + manualDiscountAmt));
-  // When the doctor pins a final price, that IS the total (clamped so it only ever
-  // discounts, never surcharges); the implied discount is the gap from the subtotal.
-  const total = finalOverride != null ? Math.max(0, Math.min(finalOverride, subtotal)) : autoTotal;
-  const discountAmt = subtotal - total;
+  // A cashier-pinned final price IS the total — it may sit BELOW the subtotal (a discount)
+  // or ABOVE it (a markup / rounding-up / service fee). The gap shows as a discount or surcharge.
+  const total = finalOverride != null ? Math.max(0, finalOverride) : autoTotal;
+  const discountAmt = Math.max(0, subtotal - total);
+  const surchargeAmt = Math.max(0, total - subtotal);
   const profit = total - cost;
 
-  // ---- Payment: full, split, or partial (credit / دفع آجل) -------------------
+  // ---- Payment: full, split, partial (credit), or over-tendered (change due) ----
   const isSplit = payments.length > 1;
   const totalPaid = round2(payments.reduce((s, p) => s + (Number.isFinite(p.amount) ? p.amount : 0), 0));
-  const remaining = round2(total - totalPaid); // > 0 → owed later (credit); < 0 → overpaid
+  const remaining = round2(total - totalPaid); // > 0 → owed later (credit); < 0 → change due
   const isCredit = remaining > 0.01;            // the client still owes a balance
-  const overpaid = remaining < -0.005;          // paid more than the bill (blocked; keeps legs ≤ total)
+  const change = remaining < -0.005 ? round2(-remaining) : 0; // cash to hand back to the client
 
   // Until the cashier edits the paid amount, a single leg tracks the live total (paid in full).
   useEffect(() => {
@@ -314,7 +315,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
   };
 
   const checkout = async () => {
-    if (cart.length === 0 || busy || overpaid) return;
+    if (cart.length === 0 || busy) return;
     setBusy(true);
     try {
       const items: CheckoutItem[] = cart.map((l) => {
@@ -333,19 +334,29 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
           stock_qty, unit_label,
         };
       });
-      // Payment legs actually received today (empty = pure credit, nothing paid). amount_paid
-      // is their sum clamped to the total; the dominant leg is stored as payment_method.
-      const legs: PaymentSplit[] = payments.filter((p) => p.amount > 0).map((p) => ({ method: p.method, amount: round2(p.amount) }));
-      const paidToday = Math.min(total, round2(legs.reduce((s, p) => s + p.amount, 0)));
+      // Payment legs received today. Anything tendered ABOVE the total is change handed
+      // back, so the recorded legs are trimmed to sum to the total (largest leg first) —
+      // revenue-by-method stays accurate and amount_paid never exceeds the bill.
+      let legs: PaymentSplit[] = payments.filter((p) => p.amount > 0).map((p) => ({ method: p.method, amount: round2(p.amount) }));
+      let over = round2(legs.reduce((s, p) => s + p.amount, 0) - total);
+      if (over > 0.005) {
+        legs = legs.slice().sort((a, b) => b.amount - a.amount);
+        for (let i = 0; i < legs.length && over > 0.005; i++) {
+          const cut = Math.min(legs[i].amount, over);
+          legs[i] = { ...legs[i], amount: round2(legs[i].amount - cut) };
+          over = round2(over - cut);
+        }
+        legs = legs.filter((p) => p.amount > 0);
+      }
+      const paidToday = round2(legs.reduce((s, p) => s + p.amount, 0)); // = min(total, tendered)
       const primary: PaymentMethod | null = legs.length ? legs.reduce((best, p) => (p.amount > best.amount ? p : best), legs[0]).method : null;
       const meta: SaleMeta = {
         customer_name: name.trim() || null,
         customer_phone: phone.trim() || null,
         pet_name: petContext?.trim() || null,
-        // Promotions + manual discount are folded into one server-side fixed amount so
-        // the recorded total/profit exactly match the till (the server clamps to subtotal).
-        discount_type: discountAmt > 0 ? "fixed" : null,
-        discount_value: discountAmt > 0 ? discountAmt : 0,
+        // The client computes the authoritative final price (promotions + manual discount
+        // + any manual final-price override, which may be a markup); the server records it.
+        final_total: total,
         payment_method: primary,
         payment_details: legs.length ? legs : null,
         amount_paid: paidToday,
@@ -698,14 +709,14 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
               </div>
             ))}
 
-            {/* Live allocation calculator — shown for splits, credit sales, or overpayment */}
-            {(isSplit || isCredit || overpaid) && (
+            {/* Live allocation calculator — shown for splits, credit sales, or over-tendered cash */}
+            {(isSplit || isCredit || change > 0) && (
               <div className="space-y-0.5 rounded-xl bg-surface-2 px-3 py-2 text-xs">
                 <div className="flex items-center justify-between text-ink-muted"><span>{t("retail.grandTotal", "إجمالي الفاتورة")}</span><span className="tabular-nums">{money(total)}</span></div>
-                <div className="flex items-center justify-between text-ink-muted"><span>{t("retail.paidToday", "المدفوع اليوم")}</span><span className="tabular-nums">{money(totalPaid)}</span></div>
-                <div className={cn("flex items-center justify-between font-bold", overpaid ? "text-danger-600" : isCredit ? "text-warn-600" : "text-success-600")}>
-                  <span>{overpaid ? t("retail.overpaid", "الزائد") : isCredit ? t("retail.creditRemaining", "المتبقي على العميل") : t("retail.remaining", "المتبقي")}</span>
-                  <span className="tabular-nums">{money(Math.abs(remaining))}</span>
+                <div className="flex items-center justify-between text-ink-muted"><span>{t("retail.amountReceived", "المبلغ المستلم")}</span><span className="tabular-nums">{money(totalPaid)}</span></div>
+                <div className={cn("flex items-center justify-between font-bold", isCredit ? "text-warn-600" : "text-success-600")}>
+                  <span>{change > 0 ? t("retail.changeDue", "الباقي") : isCredit ? t("retail.creditRemaining", "المتبقي على العميل") : t("retail.remaining", "المتبقي")}</span>
+                  <span className="tabular-nums">{money(change > 0 ? change : Math.abs(remaining))}</span>
                 </div>
               </div>
             )}
@@ -715,13 +726,21 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
           <div className="space-y-1 border-t border-line pt-3 text-sm">
             <div className="flex items-center justify-between text-ink-muted"><span>{t("retail.subtotal", "Subtotal")}</span><span className="tabular-nums">{money(subtotal)}</span></div>
             {finalOverride != null ? (
-              /* Manual final price → one derived discount line (promotions/discount folded in). */
-              discountAmt > 0 && (
-                <div className="flex items-center justify-between text-success-600">
-                  <span className="flex items-center gap-1.5"><Tag size={13} className="shrink-0" />{t("retail.finalPriceDiscount", "خصم (سعر نهائي)")}</span>
-                  <span className="shrink-0 tabular-nums">-{money(discountAmt)}</span>
-                </div>
-              )
+              /* Manual final price → a derived discount OR a surcharge (markup) line. */
+              <>
+                {discountAmt > 0 && (
+                  <div className="flex items-center justify-between text-success-600">
+                    <span className="flex items-center gap-1.5"><Tag size={13} className="shrink-0" />{t("retail.finalPriceDiscount", "خصم (سعر نهائي)")}</span>
+                    <span className="shrink-0 tabular-nums">-{money(discountAmt)}</span>
+                  </div>
+                )}
+                {surchargeAmt > 0 && (
+                  <div className="flex items-center justify-between text-warn-600">
+                    <span className="flex items-center gap-1.5"><Tag size={13} className="shrink-0" />{t("retail.finalPriceSurcharge", "زيادة (سعر نهائي)")}</span>
+                    <span className="shrink-0 tabular-nums">+{money(surchargeAmt)}</span>
+                  </div>
+                )}
+              </>
             ) : (
               <>
                 {/* One distinct row per triggered Mix & Match offer, by the doctor's custom name. */}
@@ -765,11 +784,11 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
             <div className="flex items-center justify-end gap-1 text-2xs text-success-600"><TrendingUp size={11} /> {t("retail.profit", "Profit")} {money(profit)}</div>
           </div>
 
-          <Button className="w-full" size="lg" disabled={cart.length === 0 || overpaid} loading={busy} onClick={checkout} leftIcon={<CheckCircle2 size={18} />}>
-            {overpaid
-              ? t("retail.overpaidBlock", "المبلغ المدفوع أكبر من الإجمالي")
-              : isCredit
-                ? `${t("retail.saveCredit", "حفظ (دفع آجل)")} · ${t("retail.remainingDue", "المتبقي")} ${money(remaining)}`
+          <Button className="w-full" size="lg" disabled={cart.length === 0} loading={busy} onClick={checkout} leftIcon={<CheckCircle2 size={18} />}>
+            {isCredit
+              ? `${t("retail.saveCredit", "حفظ (دفع آجل)")} · ${t("retail.remainingDue", "المتبقي")} ${money(remaining)}`
+              : change > 0
+                ? `${t("retail.complete", "إصدار الفاتورة")} · ${t("retail.changeDue", "الباقي")} ${money(change)}`
                 : `${t("retail.complete", "إصدار الفاتورة")} · ${money(total)}`}
           </Button>
         </div>

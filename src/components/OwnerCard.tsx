@@ -1,9 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { User, Phone, Mail, MapPin, Copy, Check } from "lucide-react";
+import { User, Phone, Mail, MapPin, Copy, Check, Pencil } from "lucide-react";
 import type { Pet } from "@/types";
+import { repo } from "@/lib/repo";
 import { cn } from "@/lib/utils";
-import { useToast } from "@/components/ui";
+import { Modal } from "@/components/Modal";
+import { Button, useToast } from "@/components/ui";
+import { PhoneInput } from "@/components/PhoneInput";
+import { GovernorateAreaPicker } from "@/components/GovernorateAreaPicker";
 
 /** Strict audio feedback for a successful copy — native HTML5 Audio, as specified. */
 const playSuccessSound = () => {
@@ -37,11 +41,12 @@ function CopyButton({ copied, onClick, label }: { copied: boolean; onClick: () =
  * Each field has its own subtle copy button with independent ✓ feedback, plus a
  * "Copy all details" button. Every successful copy plays a short sound.
  */
-export function OwnerCard({ pet }: { pet: Pet }) {
+export function OwnerCard({ pet, canEdit = false, onUpdated }: { pet: Pet; canEdit?: boolean; onUpdated?: () => void }) {
   const { t } = useTranslation();
   const toast = useToast();
   // The single field/button currently flashing its "Copied!" state, or null.
   const [copiedKey, setCopiedKey] = useState<CopyKey | null>(null);
+  const [editing, setEditing] = useState(false);
   const resetTimer = useRef<number | undefined>(undefined);
 
   // Clear the pending reset if the card unmounts mid-window.
@@ -85,6 +90,14 @@ export function OwnerCard({ pet }: { pet: Pet }) {
     <div className="card p-5">
       <h3 className="mb-3 flex items-center gap-2 font-bold text-ink">
         <User size={18} className="text-brand-600" /> {t("owner.title")}
+        {canEdit && (
+          <button
+            type="button" onClick={() => setEditing(true)} title={t("owner.edit", "تعديل")}
+            className="ms-auto inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-semibold text-brand-600 transition hover:bg-brand-50 dark:hover:bg-brand-500/15"
+          >
+            <Pencil size={14} /> {t("owner.edit", "تعديل")}
+          </button>
+        )}
       </h3>
 
       {hasAny ? (
@@ -150,6 +163,75 @@ export function OwnerCard({ pet }: { pet: Pet }) {
       ) : (
         <p className="text-sm text-ink-subtle">{t("owner.noInfo")}</p>
       )}
+
+      {canEdit && (
+        <EditOwnerModal
+          pet={pet} open={editing}
+          onClose={() => setEditing(false)}
+          onSaved={() => { setEditing(false); onUpdated?.(); }}
+        />
+      )}
     </div>
+  );
+}
+
+/** "تعديل بيانات المالك" — prefilled from the pet, persists via repo.updatePet, then the
+ *  parent reloads so the card reflects the change instantly (no hard refresh). */
+function EditOwnerModal({ pet, open, onClose, onSaved }: { pet: Pet; open: boolean; onClose: () => void; onSaved: () => void }) {
+  const { t } = useTranslation();
+  const toast = useToast();
+  const [name, setName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [email, setEmail] = useState("");
+  const [gov, setGov] = useState("");
+  const [area, setArea] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  // Re-seed the form from the current owner each time the modal opens.
+  useEffect(() => {
+    if (!open) return;
+    setName(pet.owner_name ?? ""); setPhone(pet.owner_phone ?? ""); setEmail(pet.owner_email ?? "");
+    setGov(pet.owner_governorate ?? ""); setArea(pet.owner_area ?? "");
+  }, [open, pet]);
+
+  const save = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await repo.updatePet(pet.id, {
+        owner_name: name.trim(),
+        owner_phone: phone.trim(),
+        owner_email: email.trim(),
+        owner_governorate: gov.trim(),
+        owner_area: area.trim(),
+      });
+      toast.success(t("owner.saved", "تم تحديث بيانات المالك"));
+      onSaved();
+    } catch (e) {
+      toast.error(t("owner.saveFail", "تعذّر حفظ التعديلات"), e instanceof Error ? e.message : undefined);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal open={open} onClose={onClose} title={t("owner.editTitle", "تعديل بيانات المالك")}>
+      <div className="space-y-3">
+        <div>
+          <label className="label">{t("owner.name", "المالك")}</label>
+          <input className="input" value={name} onChange={(e) => setName(e.target.value)} autoFocus />
+        </div>
+        <div>
+          <label className="label">{t("owner.phone", "الهاتف")}</label>
+          <PhoneInput value={phone} onChange={setPhone} />
+        </div>
+        <div>
+          <label className="label">{t("owner.email", "البريد")}</label>
+          <input type="email" dir="ltr" className="input" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="owner@email.com" />
+        </div>
+        <GovernorateAreaPicker governorate={gov} area={area} onChange={(g, a) => { setGov(g); setArea(a); }} />
+        <Button className="mt-1 w-full" loading={busy} onClick={save}>{t("common.save", "حفظ")}</Button>
+      </div>
+    </Modal>
   );
 }

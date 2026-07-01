@@ -25,17 +25,25 @@ function createInvoiceLocal(items: CheckoutItem[], meta?: SaleMeta): Invoice {
   const cost = items.reduce((s, i) => s + i.qty * i.unit_cost, 0);
   const count = items.reduce((s, i) => s + i.qty, 0);
   const dtype = meta?.discount_type ?? null;
-  const discount = resolveDiscount(subtotal, dtype, meta?.discount_value ?? 0);
-  const total = Math.max(0, subtotal - discount);
+  // A cashier-set final price wins outright — it may be a markup ABOVE the subtotal or a
+  // discount below it. Otherwise fall back to the percent/fixed discount computation.
+  let total: number; let discount: number;
+  if (meta?.final_total != null) {
+    total = Math.max(0, Math.round(meta.final_total));
+    discount = Math.max(0, subtotal - total);
+  } else {
+    discount = resolveDiscount(subtotal, dtype, meta?.discount_value ?? 0);
+    total = Math.max(0, subtotal - discount);
+  }
   // Amount received today. Absent → paid in full; otherwise clamp into [0, total] (a
-  // shortfall becomes a credit/debt sale, an overpayment can never exceed the total).
+  // shortfall becomes a credit/debt sale; any overpayment is change and never exceeds the total).
   const amountPaid = meta?.amount_paid != null ? Math.max(0, Math.min(total, Math.round(meta.amount_paid * 100) / 100)) : total;
   const invoice: Invoice = {
     id: uid("inv"),
     customer_name: meta?.customer_name?.trim() || null,
     customer_phone: meta?.customer_phone?.trim() || null,
     pet_name: meta?.pet_name?.trim() || null,
-    subtotal, discount, discount_type: discount > 0 ? dtype : null,
+    subtotal, discount, discount_type: discount > 0 ? (dtype ?? "fixed") : null,
     payment_method: meta?.payment_method ?? null,
     payment_details: meta?.payment_details && meta.payment_details.length ? meta.payment_details : null,
     total, amount_paid: amountPaid, cost_total: cost, profit: total - cost, item_count: count,

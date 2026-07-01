@@ -336,6 +336,9 @@ export interface SaleMeta {
   payment_details?: PaymentSplit[] | null;
   /** Amount received today at checkout. When < total the sale is saved on credit (دفع آجل). */
   amount_paid?: number;
+  /** Cashier-set final price to charge outright. May be ABOVE the cart subtotal (a markup)
+   *  or below it (a discount). When present it IS the invoice total (clamped ≥ 0). */
+  final_total?: number;
   /** Cashier / sales rep (staff id) who made the sale — for staff performance reports. */
   staff_id?: string | null;
 }

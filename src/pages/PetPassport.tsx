@@ -528,7 +528,7 @@ function IdentityTab({ pet, weights, onChanged, canEdit, isOwner }: { pet: Pet; 
   return (
     <div className="space-y-4 animate-fade-in">
       {/* Owner details — prominent for clinic staff working the case (copy-to-clipboard). */}
-      {!isOwner && <OwnerCard pet={pet} />}
+      {!isOwner && <OwnerCard pet={pet} canEdit={canEdit} onUpdated={onChanged} />}
 
       {/* Appearance & distinctive markings */}
       <div className="card p-5">
