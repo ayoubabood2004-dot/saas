@@ -13,10 +13,21 @@
 -- installments automatically. Additive & idempotent. Apply AFTER 0034.
 -- ============================================================================
 
-alter table invoices add column if not exists amount_paid numeric(14,2) not null default 0;
-
--- Backfill: every pre-existing sale was settled in full under the old (paid-only) flow.
-update invoices set amount_paid = total where amount_paid = 0 and total > 0;
+-- Add the column and backfill ONLY on first creation. Guarding the backfill this way
+-- makes the migration truly idempotent: re-applying it must never touch amount_paid on
+-- existing rows, otherwise a live pure-credit sale (amount_paid = 0) would be silently
+-- collapsed to "paid in full" and its debt erased.
+do $$
+begin
+  if not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'invoices' and column_name = 'amount_paid'
+  ) then
+    alter table invoices add column amount_paid numeric(14,2) not null default 0;
+    -- One-time: every pre-existing sale was settled in full under the old (paid-only) flow.
+    update invoices set amount_paid = total where total > 0;
+  end if;
+end $$;
 
 create or replace function retail_checkout(p_items jsonb, p_meta jsonb default '{}'::jsonb)
 returns invoices language plpgsql security definer set search_path = public as $$
@@ -103,9 +114,10 @@ end $$;
 create or replace function settle_invoice(p_invoice uuid, p_amount numeric, p_method text default 'cash')
 returns invoices language plpgsql security definer set search_path = public as $$
 declare
-  v_clinic uuid := auth_clinic();
-  v_inv    invoices;
-  v_add    numeric(14,2);
+  v_clinic  uuid := auth_clinic();
+  v_inv     invoices;
+  v_add     numeric(14,2);
+  v_details jsonb;
 begin
   if v_clinic is null then raise exception 'not authenticated'; end if;
   select * into v_inv from invoices where id = p_invoice and clinic_id = v_clinic;
@@ -114,10 +126,14 @@ begin
 
   v_add := least(greatest(coalesce(p_amount, 0), 0), v_inv.total - v_inv.amount_paid);
   if v_add > 0 then
+    v_details := coalesce(v_inv.payment_details, '[]'::jsonb)
+                 || jsonb_build_object('method', coalesce(nullif(p_method, ''), 'cash'), 'amount', v_add);
     update invoices
       set amount_paid     = v_inv.amount_paid + v_add,
-          payment_details = coalesce(v_inv.payment_details, '[]'::jsonb)
-                            || jsonb_build_object('method', coalesce(nullif(p_method, ''), 'cash'), 'amount', v_add)
+          payment_details = v_details,
+          -- Keep payment_method as the dominant (largest) leg — matches the demo adapter.
+          payment_method  = (select e->>'method' from jsonb_array_elements(v_details) e
+                             order by (e->>'amount')::numeric desc limit 1)
     where id = p_invoice and clinic_id = v_clinic
     returning * into v_inv;
   end if;

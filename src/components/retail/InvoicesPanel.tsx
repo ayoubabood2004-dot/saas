@@ -13,7 +13,7 @@ import { Button, Badge, useToast, Skeleton } from "@/components/ui";
 import { useInvoicePrinter } from "./usePrintInvoice";
 import { invoiceNo } from "@/lib/invoicePrint";
 import { cn, formatDate, money } from "@/lib/utils";
-import { dueOf, paidOf, isDebt } from "@/lib/debt";
+import { dueOf, paidOf, isDebt, paymentStatusOf } from "@/lib/debt";
 import { describeDbError } from "@/lib/errors";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
 import { staggerContainer, staggerItem } from "@/lib/motion";
@@ -193,9 +193,15 @@ function InvoiceDetail({ invoice, onClose, onChanged, setOpen }: {
               {formatDate(invoice.created_at, i18n.language)} · {new Date(invoice.created_at).toLocaleTimeString(i18n.language === "ar" ? "ar-EG-u-nu-latn" : "en-GB", { hour: "2-digit", minute: "2-digit" })}
             </p>
           </div>
-          {refunded
-            ? <Badge tone="danger">{t("retail.refunded", "Refunded")}</Badge>
-            : <Badge tone="success"><CheckCircle2 size={12} /> {t("retail.paid", "Paid")}</Badge>}
+          {refunded ? (
+            <Badge tone="danger">{t("retail.refunded", "Refunded")}</Badge>
+          ) : paymentStatusOf(invoice) === "paid" ? (
+            <Badge tone="success"><CheckCircle2 size={12} /> {t("retail.statusPaid", "مدفوعة بالكامل")}</Badge>
+          ) : paymentStatusOf(invoice) === "partial" ? (
+            <Badge tone="warn">{t("retail.statusPartial", "دفع جزئي")}</Badge>
+          ) : (
+            <Badge tone="danger">{t("retail.statusUnpaid", "آجل بالكامل")}</Badge>
+          )}
         </div>
 
         {/* Items */}

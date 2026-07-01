@@ -536,7 +536,9 @@ const demoRepo = {
   async settleInvoice(invoiceId: string, amount: number, method: PaymentMethod = "cash"): Promise<Invoice | undefined> {
     const db = loadDB();
     const inv = (db.invoices ?? []).find((x) => x.id === invoiceId);
-    if (!inv || inv.status === "refunded") return inv;
+    // Match the server RPC's contract so demo and production behave identically.
+    if (!inv) throw new Error("invoice not found");
+    if (inv.status === "refunded") throw new Error("invoice refunded");
     const paid = inv.amount_paid != null ? inv.amount_paid : inv.total;
     const add = Math.max(0, Math.min(Math.round((Number(amount) || 0) * 100) / 100, Math.round((inv.total - paid) * 100) / 100));
     if (add > 0) {

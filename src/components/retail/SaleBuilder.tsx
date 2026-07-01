@@ -229,7 +229,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
   const totalPaid = round2(payments.reduce((s, p) => s + (Number.isFinite(p.amount) ? p.amount : 0), 0));
   const remaining = round2(total - totalPaid); // > 0 → owed later (credit); < 0 → overpaid
   const isCredit = remaining > 0.01;            // the client still owes a balance
-  const overpaid = remaining < -0.01;           // paid more than the bill (blocked)
+  const overpaid = remaining < -0.005;          // paid more than the bill (blocked; keeps legs ≤ total)
 
   // Until the cashier edits the paid amount, a single leg tracks the live total (paid in full).
   useEffect(() => {
@@ -249,8 +249,11 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
   };
   const removePayment = (idx: number) => {
     playTap();
-    setPaidEdited(true);
-    setPayments((ps) => ps.filter((_, i) => i !== idx));
+    const next = payments.filter((_, i) => i !== idx);
+    setPayments(next);
+    // If the split collapsed back to a single leg that already covers the bill, resume
+    // auto-tracking the total (so a later cart change can't leave a stale credit balance).
+    setPaidEdited(!(next.length === 1 && Math.abs(next[0].amount - total) < 0.01));
   };
   const setPaymentMethod = (idx: number, method: PaymentMethod) =>
     setPayments((ps) => ps.map((p, i) => (i === idx ? { ...p, method } : p)));
