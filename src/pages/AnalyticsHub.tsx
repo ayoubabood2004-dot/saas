@@ -7,6 +7,7 @@ import {
   BarChart3, Wallet, Banknote, CreditCard, ArrowLeftRight, Receipt, TrendingUp,
   Stethoscope, Package, Trophy, Snail, PawPrint, Lock, Download, FileText, CalendarRange,
   Crown, Star, ShieldAlert, Trash2, LogIn, FlaskConical, Pill, Users, Clock,
+  ScrollText, Search, ArrowUpDown, ChevronLeft, ChevronRight,
 } from "lucide-react";
 import type { Pet, Invoice, InvoiceItem, Product, MedicalVisit, PaymentMethod, Species, MediaItem, TreatmentEntry, AuditEntry, LoginEvent } from "@/types";
 import { repo } from "@/lib/repo";
@@ -16,6 +17,7 @@ import { usePermissions } from "@/hooks/usePermissions";
 import { useToast, Skeleton } from "@/components/ui";
 import { money, formatNum, cn } from "@/lib/utils";
 import { dueOf, isDebt, paidOf } from "@/lib/debt";
+import { invoiceNo } from "@/lib/invoicePrint";
 
 /* ============================================================================
  * Reports & Analytics hub (التقارير والإحصائيات) — admin-only, clinic-scoped.
@@ -24,7 +26,7 @@ import { dueOf, isDebt, paidOf } from "@/lib/debt";
  * ==========================================================================*/
 
 type RangeKey = "today" | "week" | "month" | "custom";
-type TabKey = "ops" | "revenue" | "sales" | "top" | "audit" | "clinical";
+type TabKey = "ops" | "revenue" | "sales" | "ledger" | "top" | "audit" | "clinical";
 
 /** Lab/imaging media kinds counted in the "الأشعة والتحاليل" report. */
 const CLINICAL_MEDIA: Record<string, string> = { lab: "تحاليل مخبرية", xray: "أشعة سينية", ultrasound: "سونار / تصوير" };
@@ -157,6 +159,30 @@ export function AnalyticsHub() {
   const paid = useMemo(() => invInRange.filter((i) => (i.status ?? "paid") !== "refunded"), [invInRange]);
   const inRangeInvoiceIds = useMemo(() => new Set(paid.map((i) => i.id)), [paid]);
   const itemsInRange = useMemo(() => items.filter((it) => inRangeInvoiceIds.has(it.invoice_id)), [items, inRangeInvoiceIds]);
+
+  // ---- Transaction log (سجل الحركات): one enriched row per invoice in range ----
+  const staffById = useMemo(() => { const m = new Map<string, string>(); for (const s of staff) m.set(s.id, s.name); return m; }, [staff]);
+  const itemsByInvoice = useMemo(() => {
+    const m = new Map<string, InvoiceItem[]>();
+    for (const it of items) { const a = m.get(it.invoice_id) ?? []; a.push(it); m.set(it.invoice_id, a); }
+    return m;
+  }, [items]);
+  const ledger = useMemo<LedgerRow[]>(() => invInRange.map((inv) => {
+    const its = itemsByInvoice.get(inv.id) ?? [];
+    const summary = its.length
+      ? its.slice(0, 3).map((it) => (it.qty && it.qty > 1 ? `${it.name}×${formatNum(it.qty)}` : it.name)).join("، ") + (its.length > 3 ? ` +${formatNum(its.length - 3)}` : "")
+      : "—";
+    const refunded = (inv.status ?? "paid") === "refunded";
+    const legs = paymentsOf(inv);
+    const method = refunded ? "مُرجعة" : legs.length > 1 ? "دفع مجزأ" : legs.length === 1 ? PAY_AR[legs[0].method] : "آجل";
+    return {
+      id: inv.id, ref: invoiceNo(inv.id), when: inv.created_at,
+      client: (inv.customer_name ?? "").trim() || "عميل نقدي",
+      staff: (inv.staff_id && staffById.get(inv.staff_id)) || "—",
+      items: summary, method,
+      total: inv.total, discount: inv.discount ?? 0, profit: inv.profit ?? 0, refunded,
+    };
+  }).sort((a, b) => b.when.localeCompare(a.when)), [invInRange, itemsByInvoice, staffById]);
 
   // ---- Module 1: Daily Operations ----
   const zReport = useMemo(() => {
@@ -378,6 +404,7 @@ export function AnalyticsHub() {
     { id: "ops", label: "التشغيل اليومي", icon: Wallet },
     { id: "revenue", label: "الإيرادات والأرباح", icon: TrendingUp },
     { id: "sales", label: "المبيعات والمخزون", icon: Package },
+    { id: "ledger", label: "سجل الحركات", icon: ScrollText },
     { id: "top", label: "الأفضل أداءً", icon: Crown },
     { id: "clinical", label: "التقارير الطبية", icon: Stethoscope },
     { id: "audit", label: "المراقبة والنشاط", icon: ShieldAlert },
@@ -467,6 +494,7 @@ export function AnalyticsHub() {
           {tab === "ops" && <OpsTab z={zReport} receivables={receivables} series={series} paymentPie={paymentPie} />}
           {tab === "revenue" && <RevenueTab revenue={revenue} categoryData={categoryData} staff={staffPerf} canProfit={canProfit} series={series} />}
           {tab === "sales" && <SalesTab movers={movers} species={speciesActivity} />}
+          {tab === "ledger" && <LedgerTab rows={ledger} series={series} canProfit={canProfit} />}
           {tab === "top" && <TopTab clients={topClients} services={topServices} />}
           {tab === "clinical" && <ClinicalTab labXray={labXray} meds={dispensedMeds} />}
           {tab === "audit" && <AuditTab deleted={deletedInvoices} logins={loginsInRange} />}
@@ -876,6 +904,173 @@ const dt = (iso: string) => {
   return Number.isNaN(d.getTime()) ? "—"
     : d.toLocaleString("ar-EG-u-nu-latn", { day: "2-digit", month: "short", year: "numeric", hour: "numeric", minute: "2-digit", hour12: true });
 };
+
+/* ----------------------------- Transaction log (سجل الحركات) ----------------------------- */
+interface LedgerRow {
+  id: string; ref: string; when: string; client: string; staff: string;
+  items: string; method: string; total: number; discount: number; profit: number; refunded: boolean;
+}
+type LedgerSortKey = "when" | "client" | "staff" | "total" | "discount" | "profit";
+
+/** The accountant's ledger: a chronological revenue/profit chart over a searchable,
+ *  sortable, paginated, CSV-exportable table of every finalized transaction. */
+function LedgerTab({ rows, series, canProfit }: { rows: LedgerRow[]; series: Series; canProfit: boolean }) {
+  const toast = useToast();
+  const [q, setQ] = useState("");
+  const [sortKey, setSortKey] = useState<LedgerSortKey>("when");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  const [page, setPage] = useState(0);
+  const PAGE = 25;
+
+  const filtered = useMemo(() => {
+    const ql = q.trim().toLowerCase();
+    if (!ql) return rows;
+    return rows.filter((r) => r.ref.toLowerCase().includes(ql) || r.client.toLowerCase().includes(ql));
+  }, [rows, q]);
+
+  const sorted = useMemo(() => {
+    const arr = filtered.slice();
+    const dir = sortDir === "asc" ? 1 : -1;
+    arr.sort((a, b) => {
+      const av = a[sortKey]; const bv = b[sortKey];
+      if (typeof av === "number" && typeof bv === "number") return (av - bv) * dir;
+      return String(av).localeCompare(String(bv), "ar") * dir;
+    });
+    return arr;
+  }, [filtered, sortKey, sortDir]);
+
+  const pageCount = Math.max(1, Math.ceil(sorted.length / PAGE));
+  const safePage = Math.min(page, pageCount - 1);
+  const pageRows = sorted.slice(safePage * PAGE, safePage * PAGE + PAGE);
+
+  const totals = useMemo(() => ({
+    count: filtered.length,
+    gross: filtered.reduce((s, r) => s + r.total, 0),
+    discount: filtered.reduce((s, r) => s + r.discount, 0),
+    profit: filtered.reduce((s, r) => s + r.profit, 0),
+  }), [filtered]);
+
+  const setSort = (k: LedgerSortKey) => {
+    if (k === sortKey) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    else { setSortKey(k); setSortDir(k === "when" ? "desc" : "asc"); }
+    setPage(0);
+  };
+
+  const exportCSV = () => {
+    const header = ["التاريخ والوقت", "رقم الفاتورة", "الزبون", "الموظف/الكاشير", "تفاصيل الحركة", "طريقة الدفع", "الإجمالي", "الخصم"];
+    if (canProfit) header.push("صافي الربح");
+    const body = sorted.map((r) => {
+      const row = [dt(r.when), r.ref, r.client, r.staff, r.items, r.method, String(Math.round(r.total)), String(Math.round(r.discount))];
+      if (canProfit) row.push(String(Math.round(r.profit)));
+      return row;
+    });
+    const csv = "﻿" + [header, ...body].map((r) => r.map((c) => `"${(c ?? "").replace(/"/g, '""')}"`).join(",")).join("\n");
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8;" }));
+    const a = document.createElement("a");
+    a.href = url; a.download = `doctorvet-ledger-${new Date().toISOString().slice(0, 10)}.csv`; a.click();
+    URL.revokeObjectURL(url);
+    toast.success("تم تصدير سجل الحركات", "CSV");
+  };
+
+  const Th = ({ k, label, end }: { k?: LedgerSortKey; label: string; end?: boolean }) => (
+    <th className={cn("whitespace-nowrap px-3 py-2 text-2xs font-bold text-ink-muted", end ? "text-end" : "text-start")}>
+      {k ? (
+        <button onClick={() => setSort(k)} className="inline-flex items-center gap-1 transition hover:text-brand-600">
+          {label}<ArrowUpDown size={11} className={sortKey === k ? "text-brand-600" : "opacity-40"} />
+        </button>
+      ) : label}
+    </th>
+  );
+
+  return (
+    <div className="space-y-5">
+      {/* KPIs for the current filter */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <Kpi icon={Receipt} tone="brand" label="عدد الحركات" value={formatNum(totals.count)} />
+        <Kpi icon={Wallet} tone="brand" label="إجمالي المبيعات" value={money(totals.gross)} />
+        <Kpi icon={ArrowLeftRight} tone="warn" label="إجمالي الخصومات" value={money(totals.discount)} />
+        {canProfit && <Kpi icon={TrendingUp} tone="success" label="صافي الربح" value={money(totals.profit)} />}
+      </div>
+
+      {/* Chronological revenue vs profit — dual axis */}
+      <Panel title="المخطط الزمني للإيرادات والأرباح" icon={TrendingUp}>
+        {series.length === 0 ? <Empty text="لا توجد بيانات في هذه الفترة." /> : (
+          <ResponsiveContainer width="100%" height={260}>
+            <ComposedChart data={series} margin={{ top: 8, right: 8, left: -8, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" className="stroke-line" vertical={false} />
+              <XAxis dataKey="label" tick={{ fontSize: 11 }} stroke="currentColor" className="text-ink-subtle" />
+              <YAxis yAxisId="left" tick={{ fontSize: 11 }} width={52} stroke="currentColor" className="text-ink-subtle" tickFormatter={(v: number) => formatNum(v)} />
+              <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11 }} width={52} stroke="currentColor" className="text-ink-subtle" tickFormatter={(v: number) => formatNum(v)} />
+              <Tooltip formatter={(v: number) => money(v)} labelStyle={{ color: "#64748b" }} />
+              <Legend iconType="circle" wrapperStyle={{ fontSize: 12 }} />
+              <Bar yAxisId="left" dataKey="gross" name="الإيرادات" fill="#2563eb" radius={[4, 4, 0, 0]} maxBarSize={34} />
+              {canProfit && <Line yAxisId="right" type="monotone" dataKey="net" name="صافي الربح" stroke="#16a34a" strokeWidth={2.5} dot={false} />}
+            </ComposedChart>
+          </ResponsiveContainer>
+        )}
+      </Panel>
+
+      {/* Search + export */}
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative min-w-[220px] flex-1">
+          <Search size={16} className="pointer-events-none absolute top-1/2 -translate-y-1/2 text-ink-subtle ltr:left-3 rtl:right-3" />
+          <input className="input ltr:pl-9 rtl:pr-9" value={q} onChange={(e) => { setQ(e.target.value); setPage(0); }} placeholder="ابحث برقم الفاتورة أو اسم الزبون…" />
+        </div>
+        <button onClick={exportCSV} className="inline-flex items-center gap-1.5 rounded-xl bg-success-600 px-3.5 py-2.5 text-sm font-semibold text-white shadow-soft transition hover:bg-success-700"><Download size={15} /> تصدير إلى Excel</button>
+      </div>
+
+      {/* The accountant's table */}
+      {sorted.length === 0 ? (
+        <div className="card grid place-items-center p-12 text-center text-ink-subtle"><ScrollText size={30} className="mb-2 opacity-40" /> {rows.length === 0 ? "لا توجد حركات مالية في هذه الفترة." : "لا توجد حركات مطابقة لبحثك."}</div>
+      ) : (
+        <div className="card overflow-hidden p-0">
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse text-sm">
+              <thead className="border-b border-line bg-surface-2">
+                <tr>
+                  <Th k="when" label="التاريخ والوقت" />
+                  <Th label="رقم الفاتورة" />
+                  <Th k="client" label="الزبون" />
+                  <Th k="staff" label="الموظف/الكاشير" />
+                  <Th label="تفاصيل الحركة" />
+                  <Th label="طريقة الدفع" />
+                  <Th k="total" label="الإجمالي" end />
+                  <Th k="discount" label="الخصم" end />
+                  {canProfit && <Th k="profit" label="صافي الربح" end />}
+                </tr>
+              </thead>
+              <tbody>
+                {pageRows.map((r) => (
+                  <tr key={r.id} className={cn("border-b border-line/60 transition hover:bg-surface-2/50", r.refunded && "opacity-60")}>
+                    <td className="whitespace-nowrap px-3 py-2.5 text-ink-muted">{dt(r.when)}</td>
+                    <td className="whitespace-nowrap px-3 py-2.5 font-mono text-2xs text-ink-subtle">{r.ref}</td>
+                    <td className="px-3 py-2.5 font-semibold text-ink">{r.client}</td>
+                    <td className="whitespace-nowrap px-3 py-2.5 text-ink-muted">{r.staff}</td>
+                    <td className="max-w-[220px] truncate px-3 py-2.5 text-ink-muted" title={r.items}>{r.items}</td>
+                    <td className="whitespace-nowrap px-3 py-2.5"><span className="chip bg-surface-2 text-2xs text-ink-muted">{r.method}</span></td>
+                    <td className="whitespace-nowrap px-3 py-2.5 text-end font-bold tabular-nums text-ink">{money(r.total)}</td>
+                    <td className="whitespace-nowrap px-3 py-2.5 text-end tabular-nums text-warn-600">{r.discount > 0 ? `-${money(r.discount)}` : "—"}</td>
+                    {canProfit && <td className={cn("whitespace-nowrap px-3 py-2.5 text-end font-semibold tabular-nums", r.profit >= 0 ? "text-success-600" : "text-danger-600")}>{money(r.profit)}</td>}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {pageCount > 1 && (
+            <div className="flex items-center justify-between border-t border-line px-3 py-2 text-xs text-ink-subtle">
+              <span>عرض {formatNum(safePage * PAGE + 1)}–{formatNum(Math.min(sorted.length, (safePage + 1) * PAGE))} من {formatNum(sorted.length)}</span>
+              <div className="flex items-center gap-1">
+                <button disabled={safePage === 0} onClick={() => setPage(safePage - 1)} className="grid h-8 w-8 place-items-center rounded-lg border border-line bg-surface-1 text-ink-muted transition hover:bg-surface-2 disabled:opacity-40"><ChevronRight size={16} /></button>
+                <span className="px-2 font-semibold text-ink">{formatNum(safePage + 1)} / {formatNum(pageCount)}</span>
+                <button disabled={safePage >= pageCount - 1} onClick={() => setPage(safePage + 1)} className="grid h-8 w-8 place-items-center rounded-lg border border-line bg-surface-1 text-ink-muted transition hover:bg-surface-2 disabled:opacity-40"><ChevronLeft size={16} /></button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 /* ----------------------------- Primitives ----------------------------- */
 function Panel({ title, icon: Icon, children }: { title: string; icon: typeof BarChart3; children: React.ReactNode }) {
