@@ -22,7 +22,8 @@
     "react-i18next": "^15.0.2",
     "react-router-dom": "^6.26.2",
     "recharts": "^2.12.7",
-    "tailwind-merge": "^2.5.2"
+    "tailwind-merge": "^2.5.2",
+    "xlsx-js-style": "^1.2.0"
   },
   "devDependencies": {
     "@types/qrcode": "^1.5.5",

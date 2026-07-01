@@ -925,7 +925,6 @@ const shortDate = (ms: number) => (Number.isFinite(ms)
 /** The accountant's ledger: its own historical date-range picker drives a chronological
  *  revenue/profit chart over a searchable, sortable, paginated, CSV-exportable table. */
 function LedgerTab({ rows, canProfit }: { rows: LedgerRow[]; canProfit: boolean }) {
-  const toast = useToast();
   // The two native date inputs ARE the source of truth (always visible). Presets simply
   // fill them; editing an input flips the mode to "custom". Default = last 30 days.
   const [from, setFrom] = useState(() => { const s = startOfDay(new Date()); s.setDate(s.getDate() - 29); return localISO(s); });
@@ -1015,23 +1014,7 @@ function LedgerTab({ rows, canProfit }: { rows: LedgerRow[]; canProfit: boolean 
     else { setSortKey(k as LedgerSortKey); setSortDir(k === "when" ? "desc" : "asc"); }
   };
 
-  const exportCSV = () => {
-    const header = ["التاريخ والوقت", "رقم الفاتورة", "الزبون", "الموظف/الكاشير", "تفاصيل الحركة", "طريقة الدفع", "الإجمالي", "الخصم"];
-    if (canProfit) header.push("صافي الربح");
-    const body = sorted.map((r) => {
-      const row = [dt(r.when), r.ref, r.client, r.staff, r.items, r.method, String(Math.round(r.total)), String(Math.round(r.discount))];
-      if (canProfit) row.push(String(Math.round(r.profit)));
-      return row;
-    });
-    const csv = "﻿" + [header, ...body].map((r) => r.map((c) => `"${(c ?? "").replace(/"/g, '""')}"`).join(",")).join("\n");
-    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8;" }));
-    const a = document.createElement("a");
-    a.href = url; a.download = `doctorvet-ledger-${new Date().toISOString().slice(0, 10)}.csv`; a.click();
-    URL.revokeObjectURL(url);
-    toast.success("تم تصدير سجل الحركات", "CSV");
-  };
-
-  // Column set drives BOTH the screen table and the clean print document.
+  // Column set drives the screen table, the clean print document, AND the Excel export.
   const columns: ReportColumn<LedgerRow>[] = [
     { key: "when", header: "التاريخ والوقت", sortKey: "when", cell: (r) => <span className="text-ink-muted">{dt(r.when)}</span>, printCell: (r) => dt(r.when) },
     { key: "ref", header: "رقم الفاتورة", cell: (r) => <span className="font-mono text-2xs text-ink-subtle">{r.ref}</span>, printCell: (r) => r.ref },
@@ -1039,10 +1022,10 @@ function LedgerTab({ rows, canProfit }: { rows: LedgerRow[]; canProfit: boolean 
     { key: "staff", header: "الموظف/الكاشير", sortKey: "staff", cell: (r) => <span className="text-ink-muted">{r.staff}</span>, printCell: (r) => r.staff },
     { key: "items", header: "تفاصيل الحركة", cell: (r) => <span className="text-ink-muted">{r.items}</span>, printCell: (r) => r.items },
     { key: "method", header: "طريقة الدفع", cell: (r) => <span className="chip bg-surface-2 text-2xs text-ink-muted">{r.method}</span>, printCell: (r) => r.method },
-    { key: "total", header: "الإجمالي", sortKey: "total", align: "end", cell: (r) => <span className="font-bold tabular-nums text-ink">{money(r.total)}</span>, printCell: (r) => money(r.total) },
-    { key: "discount", header: "الخصم", sortKey: "discount", align: "end", cell: (r) => <span className="tabular-nums text-warn-600">{r.discount > 0 ? `-${money(r.discount)}` : "—"}</span>, printCell: (r) => (r.discount > 0 ? `-${money(r.discount)}` : "—") },
+    { key: "total", header: "الإجمالي", sortKey: "total", align: "end", numeric: true, numFmt: "#,##0", excelValue: (r) => r.total, cell: (r) => <span className="font-bold tabular-nums text-ink">{money(r.total)}</span>, printCell: (r) => money(r.total) },
+    { key: "discount", header: "الخصم", sortKey: "discount", align: "end", numeric: true, numFmt: "#,##0", excelValue: (r) => r.discount, cell: (r) => <span className="tabular-nums text-warn-600">{r.discount > 0 ? `-${money(r.discount)}` : "—"}</span>, printCell: (r) => (r.discount > 0 ? `-${money(r.discount)}` : "—") },
   ];
-  if (canProfit) columns.push({ key: "profit", header: "صافي الربح", sortKey: "profit", align: "end", cell: (r) => <span className={cn("font-semibold tabular-nums", r.profit >= 0 ? "text-success-600" : "text-danger-600")}>{money(r.profit)}</span>, printCell: (r) => money(r.profit) });
+  if (canProfit) columns.push({ key: "profit", header: "صافي الربح", sortKey: "profit", align: "end", numeric: true, numFmt: "#,##0", excelValue: (r) => r.profit, cell: (r) => <span className={cn("font-semibold tabular-nums", r.profit >= 0 ? "text-success-600" : "text-danger-600")}>{money(r.profit)}</span>, printCell: (r) => money(r.profit) });
 
   const summaryMetrics: SummaryMetric[] = [
     { label: "عدد الحركات", value: formatNum(totals.count) },
@@ -1115,6 +1098,7 @@ function LedgerTab({ rows, canProfit }: { rows: LedgerRow[]; canProfit: boolean 
         sort={{ key: sortKey, dir: sortDir }}
         onSort={setSort}
         emptyText={rows.length === 0 ? "لا توجد حركات مالية في هذه الفترة." : "لا توجد حركات مطابقة لبحثك."}
+        exportFileName="doctorvet-ledger"
         chart={
           <Panel title="المخطط الزمني للإيرادات والأرباح" icon={TrendingUp}>
             {series.length === 0 ? <Empty text="لا توجد بيانات في هذه الفترة." /> : (
@@ -1134,12 +1118,9 @@ function LedgerTab({ rows, canProfit }: { rows: LedgerRow[]; canProfit: boolean 
           </Panel>
         }
         toolbar={
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="relative min-w-[220px] flex-1">
-              <Search size={16} className="pointer-events-none absolute top-1/2 -translate-y-1/2 text-ink-subtle ltr:left-3 rtl:right-3" />
-              <input className="input ltr:pl-9 rtl:pr-9" value={q} onChange={(e) => setQ(e.target.value)} placeholder="ابحث برقم الفاتورة أو اسم الزبون…" />
-            </div>
-            <button onClick={exportCSV} className="inline-flex items-center gap-1.5 rounded-xl bg-success-600 px-3.5 py-2.5 text-sm font-semibold text-white shadow-soft transition hover:bg-success-700"><Download size={15} /> تصدير إلى Excel</button>
+          <div className="relative">
+            <Search size={16} className="pointer-events-none absolute top-1/2 -translate-y-1/2 text-ink-subtle ltr:left-3 rtl:right-3" />
+            <input className="input ltr:pl-9 rtl:pr-9" value={q} onChange={(e) => setQ(e.target.value)} placeholder="ابحث برقم الفاتورة أو اسم الزبون…" />
           </div>
         }
       />

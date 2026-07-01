@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { Printer, ArrowUpDown, ChevronLeft, ChevronRight } from "lucide-react";
+import { Printer, ArrowUpDown, ChevronLeft, ChevronRight, FileSpreadsheet } from "lucide-react";
 import { cn, formatNum } from "@/lib/utils";
+import { useToast } from "@/components/ui";
+import { exportReportXlsx } from "@/lib/excelExport";
 
 /* ============================================================================
  * UniversalReportTable — the clinic's "Enterprise Report Engine".
@@ -31,6 +33,11 @@ export interface ReportColumn<T> {
   align?: ReportAlign;
   /** When set, the header becomes a sort toggle for this key. */
   sortKey?: string;
+  /** Raw value for the Excel export (numbers stay summable). Falls back to printCell/cell. */
+  excelValue?: (row: T) => string | number;
+  /** Export this column as a real Excel number with `numFmt` (default "#,##0"). */
+  numeric?: boolean;
+  numFmt?: string;
 }
 
 export interface SummaryMetric { label: string; value: string }
@@ -52,6 +59,8 @@ interface Props<T> {
   sort?: { key: string; dir: "asc" | "desc" };
   onSort?: (key: string) => void;
   isRowMuted?: (row: T) => boolean;
+  /** Base file name for the Excel export (".xlsx" appended). */
+  exportFileName?: string;
 }
 
 const alignClass = (a?: ReportAlign) => (a === "end" ? "text-end" : a === "center" ? "text-center" : "text-start");
@@ -59,10 +68,37 @@ const alignClass = (a?: ReportAlign) => (a === "end" ? "text-end" : a === "cente
 export function UniversalReportTable<T>({
   title, clinicName, dateRangeLabel, columns, data, rowKey,
   summaryMetrics = [], chart, toolbar, emptyText = "لا توجد بيانات لعرضها.",
-  pageSize = 25, sort, onSort, isRowMuted,
+  pageSize = 25, sort, onSort, isRowMuted, exportFileName,
 }: Props<T>) {
+  const toast = useToast();
   const [page, setPage] = useState(0);
   const [printing, setPrinting] = useState(false);
+  const [exporting, setExporting] = useState(false);
+
+  // Styled .xlsx export — real numbers stay summable; xlsx-js-style loads on demand.
+  const handleExport = async () => {
+    if (exporting || data.length === 0) return;
+    setExporting(true);
+    try {
+      const xlCols = columns.map((c) => ({ header: c.header, numeric: !!c.numeric, numFmt: c.numFmt }));
+      const xlRows = data.map((row) => columns.map((c) => {
+        if (c.excelValue) return c.excelValue(row);
+        const v = (c.printCell ?? c.cell)(row);
+        return typeof v === "number" || typeof v === "string" ? v : String(v ?? "");
+      }));
+      await exportReportXlsx({
+        fileName: (exportFileName || title || "report").replace(/[\\/:*?"<>|]/g, "-"),
+        title, clinicName, dateRange: dateRangeLabel,
+        columns: xlCols, rows: xlRows,
+        summary: summaryMetrics.map((m) => ({ label: m.label, value: m.value })),
+      });
+      toast.success("تم تصدير التقرير إلى Excel", "XLSX");
+    } catch (e) {
+      toast.error("تعذّر تصدير الملف", e instanceof Error ? e.message : undefined);
+    } finally {
+      setExporting(false);
+    }
+  };
 
   // A new data reference (filter/sort/date change) resets to the first page.
   useEffect(() => { setPage(0); }, [data]);
@@ -92,6 +128,13 @@ export function UniversalReportTable<T>({
           <h3 className="font-display text-lg font-extrabold text-ink">{title}</h3>
           {dateRangeLabel && <p className="text-2xs text-ink-subtle">الفترة: {dateRangeLabel}</p>}
         </div>
+        <button
+          onClick={handleExport}
+          disabled={exporting || data.length === 0}
+          className="inline-flex items-center gap-1.5 rounded-xl bg-success-600 px-3.5 py-2.5 text-sm font-semibold text-white shadow-soft transition hover:bg-success-700 disabled:opacity-50"
+        >
+          <FileSpreadsheet size={16} /> {exporting ? "جارٍ التصدير…" : "تصدير إلى Excel"}
+        </button>
         <button
           onClick={() => setPrinting(true)}
           className="inline-flex items-center gap-1.5 rounded-xl bg-brand-600 px-3.5 py-2.5 text-sm font-semibold text-white shadow-soft transition hover:bg-brand-700"
