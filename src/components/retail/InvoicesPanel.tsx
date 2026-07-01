@@ -13,6 +13,7 @@ import { Button, Badge, useToast, Skeleton } from "@/components/ui";
 import { useInvoicePrinter } from "./usePrintInvoice";
 import { invoiceNo } from "@/lib/invoicePrint";
 import { cn, formatDate, money } from "@/lib/utils";
+import { dueOf, paidOf, isDebt } from "@/lib/debt";
 import { describeDbError } from "@/lib/errors";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
 import { staggerContainer, staggerItem } from "@/lib/motion";
@@ -93,9 +94,12 @@ export function InvoicesPanel({ invoices, onChanged }: { invoices: Invoice[]; cl
                   </div>
                 </div>
                 {refunded && <Badge tone="danger">{t("retail.refunded", "Refunded")}</Badge>}
+                {!refunded && isDebt(inv) && <Badge tone="warn">{t("retail.debtBadge", "دين")}</Badge>}
                 <div className="text-end">
                   <p className={cn("font-display font-bold tabular-nums", refunded ? "text-ink-subtle line-through" : "text-ink")}>{money(inv.total)}</p>
-                  {!refunded && showProfit && <p className="flex items-center justify-end gap-1 text-2xs text-success-600"><TrendingUp size={10} /> {money(inv.profit)}</p>}
+                  {!refunded && isDebt(inv)
+                    ? <p className="flex items-center justify-end gap-1 text-2xs text-warn-600">{t("retail.remainingDue", "المبلغ المتبقي")} {money(dueOf(inv))}</p>
+                    : !refunded && showProfit && <p className="flex items-center justify-end gap-1 text-2xs text-success-600"><TrendingUp size={10} /> {money(inv.profit)}</p>}
                 </div>
               </motion.button>
             );
@@ -227,6 +231,12 @@ function InvoiceDetail({ invoice, onClose, onChanged, setOpen }: {
             <span className="font-display font-bold text-ink">{t("retail.total", "Total")}</span>
             <span className="font-display text-xl font-extrabold text-ink tabular-nums">{money(invoice.total)}</span>
           </div>
+          {isDebt(invoice) && (
+            <div className="space-y-0.5 rounded-lg bg-warn-50 px-2.5 py-1.5 text-xs dark:bg-warn-500/10">
+              <div className="flex items-center justify-between text-ink-muted"><span>{t("retail.paidSoFar", "المدفوع")}</span><span className="tabular-nums text-success-600">{money(paidOf(invoice))}</span></div>
+              <div className="flex items-center justify-between font-bold text-warn-700 dark:text-warn-300"><span>{t("retail.remainingDue", "المبلغ المتبقي")}</span><span className="tabular-nums">{money(dueOf(invoice))}</span></div>
+            </div>
+          )}
           <div className="flex items-center justify-between text-xs text-ink-subtle">
             <span className="flex items-center gap-1.5">
               {isSplit

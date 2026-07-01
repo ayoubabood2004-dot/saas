@@ -21,6 +21,7 @@ import { invoiceNo } from "@/lib/invoicePrint";
 import { persistMedicalEntries } from "@/lib/medSync";
 import type { MedicalDraft } from "@/components/MedicalEntry";
 import { cn, money, IQD } from "@/lib/utils";
+import { dueOf, paidOf } from "@/lib/debt";
 import { withTimeout, describeDbError } from "@/lib/errors";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
 
@@ -105,8 +106,11 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
   const [finalOverride, setFinalOverride] = useState<number | null>(null);
   const [editingTotal, setEditingTotal] = useState(false);
   const [totalDraft, setTotalDraft] = useState("");
-  // Payment allocation — one leg by default (full total), expandable into a split.
+  // Payment allocation — one leg by default (full total), expandable into a split, or
+  // reduced below the total to save the sale on credit (دفع آجل).
   const [payments, setPayments] = useState<PaymentSplit[]>([{ method: "cash", amount: 0 }]);
+  // Whether the cashier has manually touched the paid amount (stops the auto-pin to total).
+  const [paidEdited, setPaidEdited] = useState(false);
   // Optional cashier / sales rep (staff id) — attached to the invoice for reports.
   const [cashierId, setCashierId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -220,20 +224,21 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
   const discountAmt = subtotal - total;
   const profit = total - cost;
 
-  // ---- Split payment ---------------------------------------------------------
+  // ---- Payment: full, split, or partial (credit / دفع آجل) -------------------
   const isSplit = payments.length > 1;
   const totalPaid = round2(payments.reduce((s, p) => s + (Number.isFinite(p.amount) ? p.amount : 0), 0));
-  // A single leg always covers the whole bill; only a real split can be unbalanced.
-  const remaining = isSplit ? round2(total - totalPaid) : 0;
-  const balanced = Math.abs(remaining) < 0.01; // tolerance absorbs float drift
+  const remaining = round2(total - totalPaid); // > 0 → owed later (credit); < 0 → overpaid
+  const isCredit = remaining > 0.01;            // the client still owes a balance
+  const overpaid = remaining < -0.01;           // paid more than the bill (blocked)
 
-  // Keep a single (un-split) payment leg pinned to the live total as the cart changes.
+  // Until the cashier edits the paid amount, a single leg tracks the live total (paid in full).
   useEffect(() => {
-    setPayments((ps) => (ps.length === 1 && ps[0].amount !== total ? [{ ...ps[0], amount: total }] : ps));
-  }, [total]);
+    setPayments((ps) => (!paidEdited && ps.length === 1 && ps[0].amount !== total ? [{ ...ps[0], amount: total }] : ps));
+  }, [total, paidEdited]);
 
   const addPayment = () => {
     playTap();
+    setPaidEdited(true);
     setPayments((ps) => {
       const used = new Set(ps.map((p) => p.method));
       const next = PAY_SEQUENCE.find((m) => !used.has(m)) ?? "cash";
@@ -244,15 +249,24 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
   };
   const removePayment = (idx: number) => {
     playTap();
-    setPayments((ps) => {
-      const next = ps.filter((_, i) => i !== idx);
-      return next.length === 1 ? [{ ...next[0], amount: total }] : next;
-    });
+    setPaidEdited(true);
+    setPayments((ps) => ps.filter((_, i) => i !== idx));
   };
   const setPaymentMethod = (idx: number, method: PaymentMethod) =>
     setPayments((ps) => ps.map((p, i) => (i === idx ? { ...p, method } : p)));
-  const setPaymentAmount = (idx: number, amount: number) =>
+  const setPaymentAmount = (idx: number, amount: number) => {
+    setPaidEdited(true);
     setPayments((ps) => ps.map((p, i) => (i === idx ? { ...p, amount: Number.isFinite(amount) && amount >= 0 ? amount : 0 } : p)));
+  };
+  // Top the first leg up so the paid total exactly covers the bill (clears any credit balance).
+  const collectFull = () => {
+    playTap();
+    setPaidEdited(true);
+    setPayments((ps) => {
+      const others = round2(ps.slice(1).reduce((s, p) => s + p.amount, 0));
+      return ps.map((p, i) => (i === 0 ? { ...p, amount: Math.max(0, round2(total - others)) } : p));
+    });
+  };
 
   // ---- Final-price override (acts as an approximate discount) ----------------
   const beginEditTotal = () => { setTotalDraft(String(Math.round(total))); setEditingTotal(true); };
@@ -284,7 +298,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
 
   const reset = () => {
     setCart([]); setQuery(""); setDiscountValue(""); setFinalOverride(null); setEditingTotal(false);
-    setDiscountType("percent"); setPayments([{ method: "cash", amount: 0 }]); setDone(null); setLastPrints(0);
+    setDiscountType("percent"); setPayments([{ method: "cash", amount: 0 }]); setPaidEdited(false); setDone(null); setLastPrints(0);
     setCashierId(null); setBrowseTab("products");
     // Preserve the patient/customer bridge across "New sale" so repeated per-patient
     // sales keep syncing into the same animal's record; clear it for a plain walk-in.
@@ -297,7 +311,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
   };
 
   const checkout = async () => {
-    if (cart.length === 0 || busy || !balanced) return;
+    if (cart.length === 0 || busy || overpaid) return;
     setBusy(true);
     try {
       const items: CheckoutItem[] = cart.map((l) => {
@@ -316,12 +330,11 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
           stock_qty, unit_label,
         };
       });
-      // Payment legs: drop empty ones; a single full leg covers the whole bill. The
-      // dominant (largest) leg is stored as payment_method for legacy reads/filters.
-      const legs: PaymentSplit[] = (isSplit ? payments.filter((p) => p.amount > 0) : [{ method: payments[0].method, amount: total }])
-        .map((p) => ({ method: p.method, amount: round2(p.amount) }));
-      const details = legs.length ? legs : [{ method: payments[0].method, amount: total }];
-      const primary = details.reduce((best, p) => (p.amount > best.amount ? p : best), details[0]).method;
+      // Payment legs actually received today (empty = pure credit, nothing paid). amount_paid
+      // is their sum clamped to the total; the dominant leg is stored as payment_method.
+      const legs: PaymentSplit[] = payments.filter((p) => p.amount > 0).map((p) => ({ method: p.method, amount: round2(p.amount) }));
+      const paidToday = Math.min(total, round2(legs.reduce((s, p) => s + p.amount, 0)));
+      const primary: PaymentMethod | null = legs.length ? legs.reduce((best, p) => (p.amount > best.amount ? p : best), legs[0]).method : null;
       const meta: SaleMeta = {
         customer_name: name.trim() || null,
         customer_phone: phone.trim() || null,
@@ -331,7 +344,8 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
         discount_type: discountAmt > 0 ? "fixed" : null,
         discount_value: discountAmt > 0 ? discountAmt : 0,
         payment_method: primary,
-        payment_details: details,
+        payment_details: legs.length ? legs : null,
+        amount_paid: paidToday,
         staff_id: cashierId,
       };
       const invoice = await withTimeout(repo.retailCheckout(items, meta), 12000);
@@ -384,6 +398,15 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
               <span className="flex items-center gap-1 text-success-600"><TrendingUp size={14} /> {t("retail.profit", "Profit")} {money(done.invoice.profit)}</span>
               {done.invoice.customer_name && <span className="flex items-center gap-1"><User size={14} /> {done.invoice.customer_name}</span>}
             </div>
+            {dueOf(done.invoice) > 0.01 && (
+              <div className="rounded-xl border border-warn-200 bg-warn-50 px-3 py-2 text-sm dark:border-warn-500/30 dark:bg-warn-500/10">
+                <div className="flex items-center justify-between text-warn-700 dark:text-warn-300">
+                  <span className="font-semibold">{t("retail.creditSaleSaved", "بيع آجل — دين على العميل")}</span>
+                  <span className="font-bold tabular-nums">{money(dueOf(done.invoice))}</span>
+                </div>
+                <p className="mt-0.5 text-2xs text-ink-subtle">{t("retail.paidOfTotal", { paid: money(paidOf(done.invoice)), total: money(done.invoice.total), defaultValue: "مدفوع {{paid}} من {{total}} · يظهر في سجل الديون" })}</p>
+              </div>
+            )}
             {lastPrints > 0 && <p className="text-xs text-ink-subtle">{t("retail.printedTimes", { n: lastPrints, defaultValue: "Printed {{n}}×" })}</p>}
             <div className="grid grid-cols-2 gap-2">
               <Button variant="secondary" leftIcon={<Printer size={16} />} onClick={() => print(done.invoice, "a4", { items: done.items, onCounted: setLastPrints })}>
@@ -627,18 +650,24 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
             </div>
           </div>
 
-          {/* Payment — one method by default, or split across several */}
+          {/* Payment — full, split across methods, or partial (credit / دفع آجل) */}
           <div className="space-y-1.5">
             <div className="flex items-center justify-between">
               <span className="flex items-center gap-1.5 text-xs font-semibold text-ink-muted">
                 <Wallet size={13} /> {t("retail.payment", "الدفع")}
                 {isSplit && <span className="chip bg-brand-50 text-2xs font-medium text-brand-700 dark:bg-brand-500/15 dark:text-brand-300">{t("retail.split", "دفع مجزأ")}</span>}
+                {isCredit && <span className="chip bg-warn-50 text-2xs font-medium text-warn-700 dark:bg-warn-500/15 dark:text-warn-300">{t("retail.creditSale", "دفع آجل")}</span>}
               </span>
-              {payments.length < PAY_SEQUENCE.length && (
-                <button onClick={addPayment} className="inline-flex items-center gap-1 text-2xs font-semibold text-brand-600 transition hover:text-brand-700">
-                  <Plus size={12} /> {t("retail.addPayment", "إضافة طريقة دفع أخرى")}
-                </button>
-              )}
+              <div className="flex items-center gap-2">
+                {isCredit && (
+                  <button onClick={collectFull} className="text-2xs font-semibold text-success-600 transition hover:text-success-700">{t("retail.collectFull", "تحصيل كامل المبلغ")}</button>
+                )}
+                {payments.length < PAY_SEQUENCE.length && (
+                  <button onClick={addPayment} className="inline-flex items-center gap-1 text-2xs font-semibold text-brand-600 transition hover:text-brand-700">
+                    <Plus size={12} /> {t("retail.addPayment", "إضافة طريقة دفع أخرى")}
+                  </button>
+                )}
+              </div>
             </div>
 
             {payments.map((p, i) => (
@@ -653,30 +682,26 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
                   </select>
                   {(() => { const Icon = PAY_OPTIONS.find((o) => o.value === p.method)?.icon ?? Banknote; return <Icon size={15} className="pointer-events-none absolute top-1/2 -translate-y-1/2 text-ink-subtle ltr:left-2.5 rtl:right-2.5" />; })()}
                 </div>
-                {isSplit ? (
-                  <input
-                    type="number" min="0" step="1" inputMode="decimal"
-                    value={p.amount === 0 ? "" : String(p.amount)}
-                    onChange={(e) => setPaymentAmount(i, e.target.value === "" ? 0 : Number(e.target.value))}
-                    placeholder="0"
-                    className="input h-9 w-24 px-2 py-0 text-end text-sm font-bold tabular-nums"
-                  />
-                ) : (
-                  <span className="flex h-9 w-24 items-center justify-end rounded-lg border border-line bg-surface-2 px-2 text-sm font-bold tabular-nums text-ink">{money(total)}</span>
-                )}
+                <input
+                  type="number" min="0" step="1" inputMode="decimal"
+                  value={p.amount === 0 ? "" : String(p.amount)}
+                  onChange={(e) => setPaymentAmount(i, e.target.value === "" ? 0 : Number(e.target.value))}
+                  placeholder="0"
+                  className="input h-9 w-24 px-2 py-0 text-end text-sm font-bold tabular-nums"
+                />
                 {isSplit && (
                   <button onClick={() => removePayment(i)} aria-label={t("common.delete", "إزالة")} className="grid h-9 w-7 shrink-0 place-items-center rounded-lg text-ink-subtle transition hover:bg-danger-50 hover:text-danger-600"><X size={14} /></button>
                 )}
               </div>
             ))}
 
-            {/* Live allocation calculator — submit is gated on Remaining = 0 */}
-            {isSplit && (
+            {/* Live allocation calculator — shown for splits, credit sales, or overpayment */}
+            {(isSplit || isCredit || overpaid) && (
               <div className="space-y-0.5 rounded-xl bg-surface-2 px-3 py-2 text-xs">
                 <div className="flex items-center justify-between text-ink-muted"><span>{t("retail.grandTotal", "إجمالي الفاتورة")}</span><span className="tabular-nums">{money(total)}</span></div>
-                <div className="flex items-center justify-between text-ink-muted"><span>{t("retail.totalPaid", "إجمالي المدفوع")}</span><span className="tabular-nums">{money(totalPaid)}</span></div>
-                <div className={cn("flex items-center justify-between font-bold", balanced ? "text-success-600" : remaining > 0 ? "text-warn-600" : "text-danger-600")}>
-                  <span>{remaining < 0 ? t("retail.overpaid", "الزائد") : t("retail.remaining", "المتبقي")}</span>
+                <div className="flex items-center justify-between text-ink-muted"><span>{t("retail.paidToday", "المدفوع اليوم")}</span><span className="tabular-nums">{money(totalPaid)}</span></div>
+                <div className={cn("flex items-center justify-between font-bold", overpaid ? "text-danger-600" : isCredit ? "text-warn-600" : "text-success-600")}>
+                  <span>{overpaid ? t("retail.overpaid", "الزائد") : isCredit ? t("retail.creditRemaining", "المتبقي على العميل") : t("retail.remaining", "المتبقي")}</span>
                   <span className="tabular-nums">{money(Math.abs(remaining))}</span>
                 </div>
               </div>
@@ -737,8 +762,12 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
             <div className="flex items-center justify-end gap-1 text-2xs text-success-600"><TrendingUp size={11} /> {t("retail.profit", "Profit")} {money(profit)}</div>
           </div>
 
-          <Button className="w-full" size="lg" disabled={cart.length === 0 || !balanced} loading={busy} onClick={checkout} leftIcon={<CheckCircle2 size={18} />}>
-            {!balanced ? t("retail.balanceFirst", "وزّع كامل المبلغ أولاً") : `${t("retail.complete", "إصدار الفاتورة")} · ${money(total)}`}
+          <Button className="w-full" size="lg" disabled={cart.length === 0 || overpaid} loading={busy} onClick={checkout} leftIcon={<CheckCircle2 size={18} />}>
+            {overpaid
+              ? t("retail.overpaidBlock", "المبلغ المدفوع أكبر من الإجمالي")
+              : isCredit
+                ? `${t("retail.saveCredit", "حفظ (دفع آجل)")} · ${t("retail.remainingDue", "المتبقي")} ${money(remaining)}`
+                : `${t("retail.complete", "إصدار الفاتورة")} · ${money(total)}`}
           </Button>
         </div>
       </div>

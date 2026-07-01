@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { AnimatePresence, motion } from "framer-motion";
-import { Store, ShoppingCart, ReceiptText, BarChart3 } from "lucide-react";
+import { Store, ShoppingCart, ReceiptText, BarChart3, HandCoins } from "lucide-react";
 import type { Product, Invoice, Species } from "@/types";
 import { repo } from "@/lib/repo";
 import { useAuth } from "@/contexts/AuthContext";
@@ -12,9 +12,10 @@ import { withTimeout } from "@/lib/errors";
 import { playTap } from "@/lib/sounds";
 import { SaleBuilder, type RetailPrefill } from "@/components/retail/SaleBuilder";
 import { InvoicesPanel } from "@/components/retail/InvoicesPanel";
+import { DebtsPanel } from "@/components/retail/DebtsPanel";
 import { ReportsPanel } from "@/components/retail/ReportsPanel";
 
-type Tab = "sell" | "invoices" | "reports";
+type Tab = "sell" | "invoices" | "debts" | "reports";
 
 /** Valid Species values — guards the `species` bridge param against tampered URLs. */
 const SPECIES_SET = new Set<string>(["dog", "cat", "horse", "cow", "bird", "rabbit", "other"]);
@@ -72,6 +73,7 @@ export function RetailSales() {
   const TABS: { id: Tab; label: string; icon: typeof Store }[] = [
     { id: "sell", label: t("retail.newSaleTab", "New sale"), icon: ShoppingCart },
     { id: "invoices", label: t("retail.invoicesTab", "Invoices"), icon: ReceiptText },
+    { id: "debts", label: t("retail.debtsTab", "سجل الديون"), icon: HandCoins },
     { id: "reports", label: t("retail.reportsTab", "Reports"), icon: BarChart3 },
   ];
 
@@ -106,6 +108,8 @@ export function RetailSales() {
             <SaleBuilder products={products} clinicId={clinicId} onSold={load} prefill={prefill} />
           ) : tab === "invoices" ? (
             <InvoicesPanel invoices={invoices} clinicId={clinicId} onChanged={load} />
+          ) : tab === "debts" ? (
+            <DebtsPanel invoices={invoices} clinicId={clinicId} onChanged={load} />
           ) : (
             <ReportsPanel invoices={invoices} clinicId={clinicId} />
           )}

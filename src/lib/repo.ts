@@ -4,7 +4,7 @@
 import { loadDB, saveDB } from "./demoStore";
 import { supabase } from "./supabase";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, AppointmentStatus, TreatmentEntry, Admission, Reminder, Product, Invoice, InvoiceItem, CheckoutItem, SaleMeta, Customer, DiscountType, WhatsAppMessage, AuditEntry, LoginEvent } from "@/types";
+import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, AppointmentStatus, TreatmentEntry, Admission, Reminder, Product, Invoice, InvoiceItem, CheckoutItem, SaleMeta, Customer, DiscountType, PaymentMethod, WhatsAppMessage, AuditEntry, LoginEvent } from "@/types";
 import { uid, uuid, ageMonths } from "./utils";
 
 /** Resolve a discount input (percent 0–100 or a fixed amount) to an amount, clamped to [0, subtotal]. */
@@ -27,6 +27,9 @@ function createInvoiceLocal(items: CheckoutItem[], meta?: SaleMeta): Invoice {
   const dtype = meta?.discount_type ?? null;
   const discount = resolveDiscount(subtotal, dtype, meta?.discount_value ?? 0);
   const total = Math.max(0, subtotal - discount);
+  // Amount received today. Absent → paid in full; otherwise clamp into [0, total] (a
+  // shortfall becomes a credit/debt sale, an overpayment can never exceed the total).
+  const amountPaid = meta?.amount_paid != null ? Math.max(0, Math.min(total, Math.round(meta.amount_paid * 100) / 100)) : total;
   const invoice: Invoice = {
     id: uid("inv"),
     customer_name: meta?.customer_name?.trim() || null,
@@ -35,7 +38,7 @@ function createInvoiceLocal(items: CheckoutItem[], meta?: SaleMeta): Invoice {
     subtotal, discount, discount_type: discount > 0 ? dtype : null,
     payment_method: meta?.payment_method ?? null,
     payment_details: meta?.payment_details && meta.payment_details.length ? meta.payment_details : null,
-    total, cost_total: cost, profit: total - cost, item_count: count,
+    total, amount_paid: amountPaid, cost_total: cost, profit: total - cost, item_count: count,
     print_count: 0, status: "paid", refunded_at: null,
     staff_id: meta?.staff_id?.trim() || null,
     created_at: new Date().toISOString(),
@@ -528,6 +531,23 @@ const demoRepo = {
     // Mirror the server audit trigger so the demo's security log shows deletions.
     if (inv) demoAuditPush({ action: "DELETE", entity: "invoices", entity_id: invoiceId, details: inv as unknown as Record<string, unknown> });
   },
+  /** Record a debt installment: add `amount` to what's been paid (never above the total),
+   *  appending a payment leg. Once amount_paid reaches the total the sale is fully settled. */
+  async settleInvoice(invoiceId: string, amount: number, method: PaymentMethod = "cash"): Promise<Invoice | undefined> {
+    const db = loadDB();
+    const inv = (db.invoices ?? []).find((x) => x.id === invoiceId);
+    if (!inv || inv.status === "refunded") return inv;
+    const paid = inv.amount_paid != null ? inv.amount_paid : inv.total;
+    const add = Math.max(0, Math.min(Math.round((Number(amount) || 0) * 100) / 100, Math.round((inv.total - paid) * 100) / 100));
+    if (add > 0) {
+      inv.amount_paid = Math.round((paid + add) * 100) / 100;
+      const legs = [...(inv.payment_details ?? []), { method, amount: add }];
+      inv.payment_details = legs;
+      inv.payment_method = legs.reduce((b, p) => (p.amount > b.amount ? p : b), legs[0]).method;
+      saveDB(db);
+    }
+    return inv;
+  },
   async bumpInvoicePrints(invoiceId: string): Promise<number> {
     const db = loadDB();
     const inv = (db.invoices ?? []).find((x) => x.id === invoiceId);
@@ -851,6 +871,10 @@ const supabaseRepo: typeof demoRepo = {
   },
   async deleteInvoice(invoiceId) {
     ok(await sbc().rpc("delete_invoice", { p_invoice: invoiceId }));
+  },
+  async settleInvoice(invoiceId, amount, method = "cash") {
+    // Atomic on the server: clamps to the outstanding balance, appends a payment leg.
+    return need<Invoice>(await sbc().rpc("settle_invoice", { p_invoice: invoiceId, p_amount: amount, p_method: method }));
   },
   async bumpInvoicePrints(invoiceId) {
     const res = await sbc().rpc("bump_invoice_prints", { p_invoice: invoiceId });

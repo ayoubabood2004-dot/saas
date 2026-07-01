@@ -50,6 +50,8 @@ function strings(lang: string) {
     discount: ar ? "الخصم" : "Discount",
     total: ar ? "الإجمالي" : "Total",
     payment: ar ? "طريقة الدفع" : "Payment",
+    paid: ar ? "المدفوع" : "Paid",
+    due: ar ? "المتبقّي (آجل)" : "Balance due",
     pay: { cash: ar ? "نقداً" : "Cash", card: ar ? "بطاقة" : "Card", transfer: ar ? "تحويل" : "Transfer" } as Record<string, string>,
     items: ar ? "الأصناف" : "Items",
     thanks: ar ? "شكراً لزيارتكم! 🐾" : "Thank you for your visit! 🐾",
@@ -87,6 +89,16 @@ export function buildInvoiceHTML(invoice: Invoice, items: InvoiceItem[], opts: I
     ? `<div class="muted">${s.payment}: ${esc(splitLabel)}</div>`
       + payLegs.map((p) => `<div class="muted">· ${esc(legLabel(p.method))}: ${money(p.amount)}</div>`).join("")
     : (payLabel ? `<div class="muted">${s.payment}: ${esc(payLabel)}</div>` : "");
+  // Credit / pay-later: show what was paid and the balance still owed.
+  const amountPaid = invoice.amount_paid != null ? invoice.amount_paid : invoice.total;
+  const dueAmt = Math.max(0, Math.round((invoice.total - amountPaid) * 100) / 100);
+  const isCreditInv = dueAmt > 0.01 && !refunded;
+  const dueRowsA4 = isCreditInv
+    ? `<div class="row"><span>${s.paid}</span><span>${money(amountPaid)}</span></div><div class="row" style="font-weight:700"><span>${s.due}</span><span>${money(dueAmt)}</span></div>`
+    : "";
+  const dueRowsThermal = isCreditInv
+    ? `<div class="muted">${s.paid}: ${money(amountPaid)}</div><div class="muted" style="font-weight:700">${s.due}: ${money(dueAmt)}</div>`
+    : "";
   // Phone numbers must read LTR (+964 …) even inside an RTL document.
   const phoneHTML = (p: string) => `<span dir="ltr" style="unicode-bidi:isolate; direction:ltr">${esc(p)}</span>`;
   const logo = opts.logoUrl ? String(opts.logoUrl) : "";
@@ -228,6 +240,7 @@ export function buildInvoiceHTML(invoice: Invoice, items: InvoiceItem[], opts: I
       ${discount > 0 ? `<div class="row"><span>${s.subtotal}</span><span>${money(subtotal)}</span></div><div class="row"><span>${s.discount}</span><span>-${money(discount)}</span></div>` : ""}
       <div class="row grand"><span>${s.total}</span><span>${money(invoice.total)}</span></div>
       ${payRowsA4}
+      ${dueRowsA4}
     </div>
     <div class="thanks">${s.thanks}</div>
     ${socialText ? `<div class="social">${socialText}</div>` : ""}
@@ -265,6 +278,7 @@ export function buildInvoiceHTML(invoice: Invoice, items: InvoiceItem[], opts: I
           <h4>${s.date}</h4>
           <div class="v">${esc(dateStr)}</div>
           ${payRowsThermal}
+          ${dueRowsThermal}
           ${refunded ? `<div style="margin-top:8px"><span class="badge">${s.refunded}</span></div>` : ""}
         </div>
       </div>

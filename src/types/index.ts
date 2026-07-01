@@ -288,6 +288,8 @@ export interface Product {
 export type PaymentMethod = "cash" | "card" | "transfer";
 /** One leg of a (possibly split) payment — a method and the amount paid through it. */
 export interface PaymentSplit { method: PaymentMethod; amount: number }
+/** Settlement state of a sale relative to its total. Derived from amount_paid vs total. */
+export type PaymentStatus = "paid" | "partial" | "unpaid";
 export type DiscountType = "percent" | "fixed";
 export type InvoiceStatus = "paid" | "refunded";
 
@@ -308,6 +310,8 @@ export interface Invoice {
   /** Split payment: every method+amount leg of this sale. Single-method sales hold one leg. */
   payment_details?: PaymentSplit[] | null;
   total: number; // revenue after discount
+  /** Cumulative amount received so far (incl. later installments). Absent on legacy rows = fully paid. */
+  amount_paid?: number;
   cost_total: number; // sum of purchase prices (cost of goods)
   profit: number; // total - cost_total
   item_count: number; // number of units sold
@@ -328,8 +332,10 @@ export interface SaleMeta {
   discount_type?: DiscountType | null;
   discount_value?: number; // raw input: a percent (0–100) or a fixed amount
   payment_method?: PaymentMethod | null;
-  /** Split payment legs (method + amount). When present, their sum equals the total. */
+  /** Split payment legs (method + amount). When present, their sum equals amount_paid. */
   payment_details?: PaymentSplit[] | null;
+  /** Amount received today at checkout. When < total the sale is saved on credit (دفع آجل). */
+  amount_paid?: number;
   /** Cashier / sales rep (staff id) who made the sale — for staff performance reports. */
   staff_id?: string | null;
 }

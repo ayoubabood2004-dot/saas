@@ -15,6 +15,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { usePermissions } from "@/hooks/usePermissions";
 import { useToast, Skeleton } from "@/components/ui";
 import { money, formatNum, cn } from "@/lib/utils";
+import { dueOf, isDebt, paidOf } from "@/lib/debt";
 
 /* ============================================================================
  * Reports & Analytics hub (التقارير والإحصائيات) — admin-only, clinic-scoped.
@@ -174,7 +175,8 @@ export function AnalyticsHub() {
     return { byMethod, gross, pending, txCount: paid.length, refundCount: refunds.length, refundTotal };
   }, [paid, invInRange]);
 
-  const receivables = useMemo(() => paid.filter((i) => paymentsOf(i).length === 0), [paid]);
+  // Outstanding balances (credit / آجل): any non-refunded sale still owing — partial or unpaid.
+  const receivables = useMemo(() => paid.filter(isDebt), [paid]);
 
   // Time series: hourly when the range is a single day, otherwise daily — gross + net.
   const series = useMemo(() => {
@@ -546,25 +548,31 @@ function OpsTab({ z, receivables, series, paymentPie }: { z: ZReport; receivable
         </div>
       </Panel>
 
-      {/* Receivables */}
-      <Panel title="الذمم / الفواتير المعلّقة" icon={Receipt}>
+      {/* Receivables — outstanding credit / debts (سجل الديون) */}
+      <Panel title="الذمم / الديون الآجلة" icon={Receipt}>
         {receivables.length === 0 ? (
           <div className="grid place-items-center py-10 text-center">
             <Receipt size={28} className="mb-2 text-ink-subtle/40" />
-            <p className="text-sm text-ink-subtle">لا توجد فواتير معلّقة — كل المبيعات مدفوعة عند البيع.</p>
+            <p className="text-sm text-ink-subtle">لا توجد ديون معلّقة — كل المبيعات مسدّدة بالكامل.</p>
           </div>
         ) : (
-          <ul className="space-y-1.5">
-            {receivables.map((i) => (
-              <li key={i.id} className="flex items-center justify-between gap-2 rounded-xl border border-line bg-surface-1 p-3">
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-semibold text-ink">{i.customer_name || "عميل غير مسجّل"}</p>
-                  <p className="text-2xs text-ink-subtle" dir="ltr">{new Date(i.created_at).toLocaleDateString("en-GB")}</p>
-                </div>
-                <span className="font-display font-bold tabular-nums text-warn-600">{money(i.total)}</span>
-              </li>
-            ))}
-          </ul>
+          <>
+            <div className="mb-3 flex items-center justify-between rounded-xl bg-warn-50 px-3 py-2 text-sm dark:bg-warn-500/10">
+              <span className="font-semibold text-warn-700 dark:text-warn-300">إجمالي المتبقّي على العملاء</span>
+              <span className="font-display font-bold tabular-nums text-warn-700 dark:text-warn-300">{money(receivables.reduce((s, i) => s + dueOf(i), 0))}</span>
+            </div>
+            <ul className="space-y-1.5">
+              {receivables.map((i) => (
+                <li key={i.id} className="flex items-center justify-between gap-2 rounded-xl border border-line bg-surface-1 p-3">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold text-ink">{i.customer_name || "عميل غير مسجّل"}</p>
+                    <p className="text-2xs text-ink-subtle">مدفوع {money(paidOf(i))} من {money(i.total)}</p>
+                  </div>
+                  <span className="font-display font-bold tabular-nums text-warn-600">{money(dueOf(i))}</span>
+                </li>
+              ))}
+            </ul>
+          </>
         )}
       </Panel>
     </div>
