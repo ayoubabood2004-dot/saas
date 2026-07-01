@@ -167,7 +167,9 @@ export function AnalyticsHub() {
     for (const it of items) { const a = m.get(it.invoice_id) ?? []; a.push(it); m.set(it.invoice_id, a); }
     return m;
   }, [items]);
-  const ledger = useMemo<LedgerRow[]>(() => invInRange.map((inv) => {
+  // The ledger spans ALL invoices (not the global range) — it carries its own historical
+  // date-range picker, so it must have the full set to filter locally.
+  const ledger = useMemo<LedgerRow[]>(() => invoices.map((inv) => {
     const its = itemsByInvoice.get(inv.id) ?? [];
     const summary = its.length
       ? its.slice(0, 3).map((it) => (it.qty && it.qty > 1 ? `${it.name}×${formatNum(it.qty)}` : it.name)).join("، ") + (its.length > 3 ? ` +${formatNum(its.length - 3)}` : "")
@@ -176,13 +178,13 @@ export function AnalyticsHub() {
     const legs = paymentsOf(inv);
     const method = refunded ? "مُرجعة" : legs.length > 1 ? "دفع مجزأ" : legs.length === 1 ? PAY_AR[legs[0].method] : "آجل";
     return {
-      id: inv.id, ref: invoiceNo(inv.id), when: inv.created_at,
+      id: inv.id, ref: invoiceNo(inv.id), when: inv.created_at, whenMs: new Date(inv.created_at).getTime(),
       client: (inv.customer_name ?? "").trim() || "عميل نقدي",
       staff: (inv.staff_id && staffById.get(inv.staff_id)) || "—",
       items: summary, method,
       total: inv.total, discount: inv.discount ?? 0, profit: inv.profit ?? 0, refunded,
     };
-  }).sort((a, b) => b.when.localeCompare(a.when)), [invInRange, itemsByInvoice, staffById]);
+  }).sort((a, b) => b.whenMs - a.whenMs), [invoices, itemsByInvoice, staffById]);
 
   // ---- Module 1: Daily Operations ----
   const zReport = useMemo(() => {
@@ -494,7 +496,7 @@ export function AnalyticsHub() {
           {tab === "ops" && <OpsTab z={zReport} receivables={receivables} series={series} paymentPie={paymentPie} />}
           {tab === "revenue" && <RevenueTab revenue={revenue} categoryData={categoryData} staff={staffPerf} canProfit={canProfit} series={series} />}
           {tab === "sales" && <SalesTab movers={movers} species={speciesActivity} />}
-          {tab === "ledger" && <LedgerTab rows={ledger} series={series} canProfit={canProfit} />}
+          {tab === "ledger" && <LedgerTab rows={ledger} canProfit={canProfit} />}
           {tab === "top" && <TopTab clients={topClients} services={topServices} />}
           {tab === "clinical" && <ClinicalTab labXray={labXray} meds={dispensedMeds} />}
           {tab === "audit" && <AuditTab deleted={deletedInvoices} logins={loginsInRange} />}
@@ -907,26 +909,88 @@ const dt = (iso: string) => {
 
 /* ----------------------------- Transaction log (سجل الحركات) ----------------------------- */
 interface LedgerRow {
-  id: string; ref: string; when: string; client: string; staff: string;
+  id: string; ref: string; when: string; whenMs: number; client: string; staff: string;
   items: string; method: string; total: number; discount: number; profit: number; refunded: boolean;
 }
 type LedgerSortKey = "when" | "client" | "staff" | "total" | "discount" | "profit";
+type LedgerPreset = "today" | "7d" | "30d" | "custom";
 
-/** The accountant's ledger: a chronological revenue/profit chart over a searchable,
- *  sortable, paginated, CSV-exportable table of every finalized transaction. */
-function LedgerTab({ rows, series, canProfit }: { rows: LedgerRow[]; series: Series; canProfit: boolean }) {
+/** Short date with Western numerals — for the active-window chip. */
+const shortDate = (ms: number) => (Number.isFinite(ms)
+  ? new Date(ms).toLocaleDateString("ar-EG-u-nu-latn", { day: "2-digit", month: "short", year: "numeric" })
+  : "…");
+
+/** The accountant's ledger: its own historical date-range picker drives a chronological
+ *  revenue/profit chart over a searchable, sortable, paginated, CSV-exportable table. */
+function LedgerTab({ rows, canProfit }: { rows: LedgerRow[]; canProfit: boolean }) {
   const toast = useToast();
+  const [preset, setPreset] = useState<LedgerPreset>("30d");
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
   const [q, setQ] = useState("");
   const [sortKey, setSortKey] = useState<LedgerSortKey>("when");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [page, setPage] = useState(0);
   const PAGE = 25;
 
+  // Resolve the active window [loMs, hiMs] from the preset (or the custom From–To).
+  const { loMs, hiMs } = useMemo(() => {
+    const now = new Date();
+    if (preset === "today") return { loMs: startOfDay(now).getTime(), hiMs: endOfDay(now).getTime() };
+    if (preset === "7d") { const s = startOfDay(now); s.setDate(s.getDate() - 6); return { loMs: s.getTime(), hiMs: endOfDay(now).getTime() }; }
+    if (preset === "30d") { const s = startOfDay(now); s.setDate(s.getDate() - 29); return { loMs: s.getTime(), hiMs: endOfDay(now).getTime() }; }
+    // custom — 00:00:00 of From to 23:59:59.999 of To; open-ended if a side is blank.
+    const lo = from ? startOfDay(new Date(from + "T00:00:00")).getTime() : -Infinity;
+    const hi = to ? endOfDay(new Date(to + "T00:00:00")).getTime() : Infinity;
+    return { loMs: lo, hiMs: hi };
+  }, [preset, from, to]);
+
+  // Reset to the first page whenever the window changes.
+  useEffect(() => { setPage(0); }, [loMs, hiMs]);
+
+  const pickPreset = (p: LedgerPreset) => {
+    if (p === "custom" && !from && !to) {
+      // Seed the custom inputs with the last-30-days window so it's never empty.
+      const now = new Date(); const s = startOfDay(now); s.setDate(s.getDate() - 29);
+      setFrom(localISO(s)); setTo(localISO(now));
+    }
+    setPreset(p);
+  };
+
+  // Date-range filter first (drives both the chart and the table).
+  const dateFiltered = useMemo(() => rows.filter((r) => r.whenMs >= loMs && r.whenMs <= hiMs), [rows, loMs, hiMs]);
+
   const filtered = useMemo(() => {
     const ql = q.trim().toLowerCase();
-    if (!ql) return rows;
-    return rows.filter((r) => r.ref.toLowerCase().includes(ql) || r.client.toLowerCase().includes(ql));
-  }, [rows, q]);
+    if (!ql) return dateFiltered;
+    return dateFiltered.filter((r) => r.ref.toLowerCase().includes(ql) || r.client.toLowerCase().includes(ql));
+  }, [dateFiltered, q]);
+
+  // Chronological revenue/profit series, rebuilt from the date-filtered rows (excl. refunds):
+  // hourly for a single day, otherwise daily. Reacts instantly to the picker.
+  const series = useMemo<Series>(() => {
+    const spanLo = Number.isFinite(loMs) ? loMs : (dateFiltered.reduce((m, r) => Math.min(m, r.whenMs), Date.now()));
+    const spanHi = Number.isFinite(hiMs) ? hiMs : (dateFiltered.reduce((m, r) => Math.max(m, r.whenMs), Date.now()));
+    const hourly = (spanHi - spanLo) <= 86400000 * 1.5;
+    const buckets = new Map<string, { label: string; gross: number; net: number; order: number }>();
+    if (hourly) {
+      for (let h = 0; h < 24; h += 2) buckets.set(String(h), { label: hourLabel(h), gross: 0, net: 0, order: h });
+    } else {
+      const d = startOfDay(new Date(spanLo));
+      for (let i = 0; d.getTime() <= spanHi && i < 400; i++) {
+        buckets.set(localISO(d), { label: `${d.getMonth() + 1}/${d.getDate()}`, gross: 0, net: 0, order: d.getTime() });
+        d.setDate(d.getDate() + 1);
+      }
+    }
+    for (const r of dateFiltered) {
+      if (r.refunded) continue;
+      const dd = new Date(r.whenMs);
+      const key = hourly ? String(Math.floor(dd.getHours() / 2) * 2) : localISO(startOfDay(dd));
+      const b = buckets.get(key);
+      if (b) { b.gross += r.total; b.net += r.profit; }
+    }
+    return Array.from(buckets.values()).sort((a, b) => a.order - b.order).map((b) => ({ label: b.label, gross: Math.round(b.gross), net: Math.round(b.net) }));
+  }, [dateFiltered, loMs, hiMs]);
 
   const sorted = useMemo(() => {
     const arr = filtered.slice();
@@ -982,8 +1046,50 @@ function LedgerTab({ rows, series, canProfit }: { rows: LedgerRow[]; series: Ser
     </th>
   );
 
+  const PRESETS: { id: LedgerPreset; label: string }[] = [
+    { id: "today", label: "اليوم" }, { id: "7d", label: "آخر 7 أيام" },
+    { id: "30d", label: "آخر 30 يوم" }, { id: "custom", label: "تاريخ مخصص" },
+  ];
+
   return (
     <div className="space-y-5">
+      {/* Advanced date-range picker — governs this log independently of the global range */}
+      <div className="rounded-2xl border border-line bg-surface-1 p-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="flex items-center gap-1.5 text-xs font-bold text-ink-muted"><CalendarRange size={15} className="text-brand-600" /> الفترة الزمنية للسجل</span>
+          <div className="flex flex-wrap gap-1.5">
+            {PRESETS.map((p) => (
+              <button key={p.id} onClick={() => pickPreset(p.id)}
+                className={cn("rounded-full px-3.5 py-1.5 text-sm font-semibold transition", preset === p.id ? "bg-brand-600 text-white shadow-soft" : "bg-surface-2 text-ink-muted hover:text-ink")}>
+                {p.label}
+              </button>
+            ))}
+          </div>
+          {preset !== "custom" && (
+            <span className="chip ms-auto bg-brand-50 text-2xs font-semibold text-brand-700 dark:bg-brand-500/15 dark:text-brand-300">
+              {shortDate(loMs)} — {shortDate(hiMs)}
+            </span>
+          )}
+        </div>
+        {preset === "custom" && (
+          <div className="mt-2.5 flex flex-wrap items-center gap-2">
+            <label className="flex items-center gap-1.5 text-xs text-ink-subtle">
+              من التاريخ
+              <input type="date" dir="ltr" value={from} max={to || undefined} onChange={(e) => setFrom(e.target.value)} className="input h-9 py-0 [color-scheme:light] dark:[color-scheme:dark]" />
+            </label>
+            <label className="flex items-center gap-1.5 text-xs text-ink-subtle">
+              إلى التاريخ
+              <input type="date" dir="ltr" value={to} min={from || undefined} onChange={(e) => setTo(e.target.value)} className="input h-9 py-0 [color-scheme:light] dark:[color-scheme:dark]" />
+            </label>
+            {(from || to) && (
+              <span className="chip bg-brand-50 text-2xs font-semibold text-brand-700 dark:bg-brand-500/15 dark:text-brand-300">
+                {shortDate(loMs)} — {shortDate(hiMs)}
+              </span>
+            )}
+          </div>
+        )}
+      </div>
+
       {/* KPIs for the current filter */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <Kpi icon={Receipt} tone="brand" label="عدد الحركات" value={formatNum(totals.count)} />
