@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, PieChart, Pie,
   AreaChart, Area, Line, ComposedChart, CartesianGrid, Legend,
@@ -915,7 +915,7 @@ interface LedgerRow {
   items: string; method: string; total: number; discount: number; profit: number; refunded: boolean;
 }
 type LedgerSortKey = "when" | "client" | "staff" | "total" | "discount" | "profit";
-type LedgerPreset = "today" | "7d" | "30d" | "custom";
+type LedgerPreset = "today" | "yesterday" | "7d" | "30d" | "custom";
 
 /** Short date with Western numerals — for the active-window chip. */
 const shortDate = (ms: number) => (Number.isFinite(ms)
@@ -926,33 +926,36 @@ const shortDate = (ms: number) => (Number.isFinite(ms)
  *  revenue/profit chart over a searchable, sortable, paginated, CSV-exportable table. */
 function LedgerTab({ rows, canProfit }: { rows: LedgerRow[]; canProfit: boolean }) {
   const toast = useToast();
-  const [preset, setPreset] = useState<LedgerPreset>("30d");
-  const [from, setFrom] = useState("");
-  const [to, setTo] = useState("");
+  // The two native date inputs ARE the source of truth (always visible). Presets simply
+  // fill them; editing an input flips the mode to "custom". Default = last 30 days.
+  const [from, setFrom] = useState(() => { const s = startOfDay(new Date()); s.setDate(s.getDate() - 29); return localISO(s); });
+  const [to, setTo] = useState(() => localISO(new Date()));
+  const [activePreset, setActivePreset] = useState<LedgerPreset>("30d");
   const [q, setQ] = useState("");
   const [sortKey, setSortKey] = useState<LedgerSortKey>("when");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  const fromRef = useRef<HTMLInputElement>(null);
 
-  // Resolve the active window [loMs, hiMs] from the preset (or the custom From–To).
-  const { loMs, hiMs } = useMemo(() => {
+  // The active window: 00:00:00 of From → 23:59:59.999 of To (single day when From = To).
+  const { loMs, hiMs } = useMemo(() => ({
+    loMs: from ? startOfDay(new Date(from + "T00:00:00")).getTime() : -Infinity,
+    hiMs: to ? endOfDay(new Date(to + "T00:00:00")).getTime() : Infinity,
+  }), [from, to]);
+
+  // Quick presets fill the date inputs; "custom" just opens the native calendar.
+  const applyPreset = (p: LedgerPreset) => {
     const now = new Date();
-    if (preset === "today") return { loMs: startOfDay(now).getTime(), hiMs: endOfDay(now).getTime() };
-    if (preset === "7d") { const s = startOfDay(now); s.setDate(s.getDate() - 6); return { loMs: s.getTime(), hiMs: endOfDay(now).getTime() }; }
-    if (preset === "30d") { const s = startOfDay(now); s.setDate(s.getDate() - 29); return { loMs: s.getTime(), hiMs: endOfDay(now).getTime() }; }
-    // custom — 00:00:00 of From to 23:59:59.999 of To; open-ended if a side is blank.
-    const lo = from ? startOfDay(new Date(from + "T00:00:00")).getTime() : -Infinity;
-    const hi = to ? endOfDay(new Date(to + "T00:00:00")).getTime() : Infinity;
-    return { loMs: lo, hiMs: hi };
-  }, [preset, from, to]);
-
-  const pickPreset = (p: LedgerPreset) => {
-    if (p === "custom" && !from && !to) {
-      // Seed the custom inputs with the last-30-days window so it's never empty.
-      const now = new Date(); const s = startOfDay(now); s.setDate(s.getDate() - 29);
-      setFrom(localISO(s)); setTo(localISO(now));
-    }
-    setPreset(p);
+    const back = (n: number) => { const d = new Date(now); d.setDate(d.getDate() - n); return localISO(d); };
+    if (p === "today") { setFrom(localISO(now)); setTo(localISO(now)); }
+    else if (p === "yesterday") { setFrom(back(1)); setTo(back(1)); }
+    else if (p === "7d") { setFrom(back(6)); setTo(localISO(now)); }
+    else if (p === "30d") { setFrom(back(29)); setTo(localISO(now)); }
+    setActivePreset(p);
+    // Inputs are always mounted, so this runs within the click gesture → the browser
+    // calendar opens immediately (where supported), no NotAllowedError.
+    if (p === "custom") { try { fromRef.current?.showPicker?.(); } catch { /* unsupported → click the field */ } }
   };
+  const openNativePicker = (el: HTMLInputElement) => { try { el.showPicker?.(); } catch { /* ignore */ } };
 
   // Date-range filter first (drives both the chart and the table).
   const dateFiltered = useMemo(() => rows.filter((r) => r.whenMs >= loMs && r.whenMs <= hiMs), [rows, loMs, hiMs]);
@@ -1049,47 +1052,54 @@ function LedgerTab({ rows, canProfit }: { rows: LedgerRow[]; canProfit: boolean 
   ];
 
   const PRESETS: { id: LedgerPreset; label: string }[] = [
-    { id: "today", label: "اليوم" }, { id: "7d", label: "آخر 7 أيام" },
-    { id: "30d", label: "آخر 30 يوم" }, { id: "custom", label: "تاريخ مخصص" },
+    { id: "today", label: "اليوم" }, { id: "yesterday", label: "أمس" },
+    { id: "7d", label: "آخر 7 أيام" }, { id: "30d", label: "آخر 30 يوم" },
+    { id: "custom", label: "تاريخ مخصص" },
   ];
 
   return (
     <div className="space-y-5">
-      {/* Advanced date-range picker — governs this log independently of the global range */}
-      <div className="rounded-2xl border border-line bg-surface-1 p-3">
+      {/* Interactive date-range picker — presets fill the native inputs; editing = custom */}
+      <div className="space-y-2.5 rounded-2xl border border-line bg-surface-1 p-3">
         <div className="flex flex-wrap items-center gap-2">
           <span className="flex items-center gap-1.5 text-xs font-bold text-ink-muted"><CalendarRange size={15} className="text-brand-600" /> الفترة الزمنية للسجل</span>
           <div className="flex flex-wrap gap-1.5">
             {PRESETS.map((p) => (
-              <button key={p.id} onClick={() => pickPreset(p.id)}
-                className={cn("rounded-full px-3.5 py-1.5 text-sm font-semibold transition", preset === p.id ? "bg-brand-600 text-white shadow-soft" : "bg-surface-2 text-ink-muted hover:text-ink")}>
+              <button key={p.id} onClick={() => applyPreset(p.id)}
+                className={cn("rounded-full px-3.5 py-1.5 text-sm font-semibold transition", activePreset === p.id ? "bg-brand-600 text-white shadow-soft" : "bg-surface-2 text-ink-muted hover:text-ink")}>
                 {p.label}
               </button>
             ))}
           </div>
-          {preset !== "custom" && (
-            <span className="chip ms-auto bg-brand-50 text-2xs font-semibold text-brand-700 dark:bg-brand-500/15 dark:text-brand-300">
-              {shortDate(loMs)} — {shortDate(hiMs)}
-            </span>
-          )}
         </div>
-        {preset === "custom" && (
-          <div className="mt-2.5 flex flex-wrap items-center gap-2">
-            <label className="flex items-center gap-1.5 text-xs text-ink-subtle">
-              من التاريخ
-              <input type="date" dir="ltr" value={from} max={to || undefined} onChange={(e) => setFrom(e.target.value)} className="input h-9 py-0 [color-scheme:light] dark:[color-scheme:dark]" />
-            </label>
-            <label className="flex items-center gap-1.5 text-xs text-ink-subtle">
-              إلى التاريخ
-              <input type="date" dir="ltr" value={to} min={from || undefined} onChange={(e) => setTo(e.target.value)} className="input h-9 py-0 [color-scheme:light] dark:[color-scheme:dark]" />
-            </label>
-            {(from || to) && (
-              <span className="chip bg-brand-50 text-2xs font-semibold text-brand-700 dark:bg-brand-500/15 dark:text-brand-300">
-                {shortDate(loMs)} — {shortDate(hiMs)}
-              </span>
-            )}
-          </div>
-        )}
+        <div className="flex flex-wrap items-center gap-2">
+          <label className="flex items-center gap-1.5 text-xs text-ink-subtle">
+            من التاريخ
+            <input
+              ref={fromRef} type="date" dir="ltr" value={from} max={to || undefined}
+              onChange={(e) => { setFrom(e.target.value); setActivePreset("custom"); }}
+              onClick={(e) => openNativePicker(e.currentTarget)}
+              className="input h-9 cursor-pointer py-0 [color-scheme:light] dark:[color-scheme:dark]"
+            />
+          </label>
+          <label className="flex items-center gap-1.5 text-xs text-ink-subtle">
+            إلى التاريخ
+            <input
+              type="date" dir="ltr" value={to} min={from || undefined}
+              onChange={(e) => { setTo(e.target.value); setActivePreset("custom"); }}
+              onClick={(e) => openNativePicker(e.currentTarget)}
+              className="input h-9 cursor-pointer py-0 [color-scheme:light] dark:[color-scheme:dark]"
+            />
+          </label>
+          {/* Arabic-formatted range (Western numerals); click to open the start calendar */}
+          <button
+            type="button" onClick={() => { setActivePreset("custom"); openNativePicker(fromRef.current!); }}
+            className="chip ms-auto bg-brand-50 text-2xs font-semibold text-brand-700 transition hover:bg-brand-100 dark:bg-brand-500/15 dark:text-brand-300 dark:hover:bg-brand-500/25"
+            title="اختر تاريخاً"
+          >
+            {shortDate(loMs)} — {shortDate(hiMs)}
+          </button>
+        </div>
       </div>
 
       {/* The whole log — screen table + clean print document — via the reusable engine */}
