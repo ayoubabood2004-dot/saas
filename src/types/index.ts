@@ -104,6 +104,19 @@ export interface WeightLog {
   measured_at: string; // ISO date
 }
 
+/** A free-text clinical / progress note on the patient record (سجل الملاحظات السريرية). */
+export interface PetNote {
+  id: string;
+  pet_id: string;
+  clinic_id?: string | null;
+  /** The acting user who wrote the note (accountability). */
+  author_id?: string | null;
+  /** Denormalized author display name, snapshotted at write time. */
+  author_name?: string | null;
+  note_text: string;
+  created_at: string; // ISO timestamp
+}
+
 export type VaccinationStatus = "administered" | "scheduled" | "overdue";
 
 export interface Vaccination {

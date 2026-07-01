@@ -6,11 +6,11 @@ import {
   IdCard, Syringe, FileText, Images, QrCode as QrIcon, ArrowLeft, ArrowRight,
   Plus, Check, Clock, AlertCircle, ChevronDown, Printer, ShieldAlert, Pill, Trash2, BedDouble, Camera,
   Share2, Copy, Globe, PawPrint, Repeat, Columns2, X, Calendar,
-  Utensils, Fingerprint, Cake, Heart, Scissors, Users, UserPlus, Phone, Mail, Pencil,
+  Utensils, Fingerprint, Cake, Heart, Scissors, Users, UserPlus, User, Phone, Mail, Pencil,
   Scale, Sparkles, Loader2, NotebookPen, CalendarClock, FileSignature,
 } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
-import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, TreatmentEntry, Admission, FoodType, DietPlan, Appointment, Reminder, MedicalAssessment, PatientCondition, Species, Sex } from "@/types";
+import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, TreatmentEntry, Admission, FoodType, DietPlan, Appointment, Reminder, MedicalAssessment, PatientCondition, Species, Sex, PetNote } from "@/types";
 import { SpeciesPicker, SexPicker, AgeInput, BreedPicker, ColorPicker } from "@/components/PetFields";
 import { repo } from "@/lib/repo";
 import { persistMedicalEntries } from "@/lib/medSync";
@@ -38,13 +38,14 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Stethoscope, SlidersHorizontal, ShoppingCart } from "lucide-react";
 import { RangesEditor } from "@/components/RangesEditor";
 
-type Tab = "diet" | "vaccines" | "history" | "treatment" | "media" | "qr";
+type Tab = "diet" | "vaccines" | "history" | "treatment" | "notes" | "media" | "qr";
 /** Each section carries its own colour identity (matched to the events-feed category colours). */
 const TABS: { id: Tab; icon: typeof IdCard; fill: string; text: string }[] = [
   { id: "diet", icon: Utensils, fill: "bg-success-100 dark:bg-success-500/20", text: "text-success-700 dark:text-success-200" },
   { id: "vaccines", icon: Syringe, fill: "bg-violet-100 dark:bg-violet-500/20", text: "text-violet-700 dark:text-violet-200" },
   { id: "history", icon: FileText, fill: "bg-sky-100 dark:bg-sky-500/20", text: "text-sky-700 dark:text-sky-200" },
   { id: "treatment", icon: Pill, fill: "bg-danger-100 dark:bg-danger-500/20", text: "text-danger-700 dark:text-danger-200" },
+  { id: "notes", icon: NotebookPen, fill: "bg-amber-100 dark:bg-amber-500/20", text: "text-amber-700 dark:text-amber-200" },
   { id: "media", icon: Images, fill: "bg-accent-100 dark:bg-accent-500/20", text: "text-accent-700 dark:text-accent-200" },
   { id: "qr", icon: QrIcon, fill: "bg-brand-100 dark:bg-brand-500/20", text: "text-brand-700 dark:text-brand-200" },
 ];
@@ -189,6 +190,7 @@ export function PetPassport() {
   const [tab, setTab] = useState<Tab>(TABS.some((x) => x.id === initialTab) ? initialTab : "diet");
   const [weights, setWeights] = useState<WeightLog[]>([]);
   const [vaccines, setVaccines] = useState<Vaccination[]>([]);
+  const [notes, setNotes] = useState<PetNote[]>([]);
   const [visits, setVisits] = useState<MedicalVisit[]>([]);
   const [media, setMedia] = useState<MediaItem[]>([]);
   const [treatments, setTreatments] = useState<TreatmentEntry[]>([]);
@@ -225,7 +227,7 @@ export function PetPassport() {
 
   const reload = async () => {
     if (!petId) return;
-    const [p, w, v, h, m, tx, adm, apt, rem] = await Promise.all([
+    const [p, w, v, h, m, tx, adm, apt, rem, nt] = await Promise.all([
       repo.getPet(petId),
       repo.listWeights(petId),
       repo.listVaccinations(petId),
@@ -235,6 +237,7 @@ export function PetPassport() {
       repo.listAdmissionsForPet(petId),
       repo.listAppointmentsForPet(petId),
       repo.listReminders(),
+      repo.listPetNotes(petId).catch(() => [] as PetNote[]),
     ]);
     setPet(p ?? null);
     setWeights(w);
@@ -245,6 +248,7 @@ export function PetPassport() {
     setAdmissions(adm);
     setAppointments(apt);
     setReminders(rem.filter((r) => r.pet_id === petId));
+    setNotes(nt);
   };
 
   // Persist a batch from the unified Medical Entry: vaccinations → vaccination
@@ -286,6 +290,7 @@ export function PetPassport() {
     qr: {},
     vaccines: { dot: vaccineOverdue },
     treatment: { dot: treatmentDue },
+    notes: { count: notes.length || undefined },
     media: { count: media.length || undefined },
   };
 
@@ -428,6 +433,7 @@ export function PetPassport() {
               {tab === "vaccines" && <VaccinesTab pet={pet} vaccines={vaccines} onChanged={reload} canEdit={canEditClinical} isOwner={isOwner} />}
               {tab === "history" && <HistoryTab visits={visits} admissions={admissions} treatments={treatments} isOwner={isOwner} />}
               {tab === "treatment" && <TreatmentTab pet={pet} treatments={treatments} admissions={admissions} onChanged={reload} canEdit={canEditClinical} isOwner={isOwner} />}
+              {tab === "notes" && <NotesTab pet={pet} notes={notes} canEdit={canEditClinical} onChanged={reload} />}
               {tab === "media" && <MediaTab pet={pet} media={media} onChanged={reload} canEdit={canEditClinical} />}
               {tab === "qr" && <QrTab pet={pet} />}
             </motion.div>
@@ -1877,6 +1883,87 @@ function PhotoCompare({ items, lang, title, onClose }: { items: MediaItem[]; lan
       </div>
     </div>,
     document.body,
+  );
+}
+
+/* ---------------- Clinical / progress notes ---------------- */
+/** Exact date+time in flawless Arabic with Western numerals, e.g. "01 يوليو 2026، 09:30 م". */
+const fmtNoteDate = (iso: string) => {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? "—"
+    : d.toLocaleString("ar-EG-u-nu-latn", { day: "2-digit", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: true });
+};
+
+function NotesTab({ pet, notes, canEdit, onChanged }: { pet: Pet; notes: PetNote[]; canEdit: boolean; onChanged: () => void }) {
+  const { t } = useTranslation();
+  const { user } = useAuth();
+  const toast = useToast();
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
+  // Optimistic local feed: seeded from the loaded notes, prepended instantly on add.
+  const [items, setItems] = useState<PetNote[]>(notes);
+  useEffect(() => { setItems(notes); }, [notes]);
+
+  const add = async () => {
+    const body = text.trim();
+    if (!body || busy) return;
+    setBusy(true);
+    try {
+      const note = await repo.addPetNote({ pet_id: pet.id, note_text: body, author_id: user?.id ?? null, author_name: user?.full_name ?? null });
+      setItems((prev) => [note, ...prev.filter((n) => n.id !== note.id)]); // instant append to top
+      setText("");
+      playSuccess();
+      onChanged(); // reconcile the parent's cache
+    } catch (e) {
+      playWarning();
+      toast.error(t("notes.saveFail", "تعذّر حفظ الملاحظة"), e instanceof Error ? e.message : undefined);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* Input area */}
+      {canEdit && (
+        <div className="card p-4">
+          <label className="mb-2 flex items-center gap-2 text-sm font-bold text-ink">
+            <NotebookPen size={16} className="text-amber-600" /> {t("notes.title", "الملاحظات السريرية")}
+          </label>
+          <textarea
+            rows={3} value={text} onChange={(e) => setText(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); void add(); } }}
+            placeholder={t("notes.placeholder", "اكتب ملاحظة سريرية عن الحالة…")}
+            className="input min-h-[88px] resize-y leading-relaxed"
+          />
+          <div className="mt-2 flex justify-end">
+            <Button leftIcon={<Plus size={16} />} disabled={!text.trim()} loading={busy} onClick={add}>
+              {t("notes.add", "إضافة ملاحظة")}
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Timeline feed */}
+      {items.length === 0 ? (
+        <div className="card grid place-items-center p-10 text-center text-ink-subtle">
+          <NotebookPen size={28} className="mb-2 opacity-40" />
+          {t("notes.empty", "لا توجد ملاحظات سابقة لهذا الحيوان.")}
+        </div>
+      ) : (
+        <ol className="space-y-3">
+          {items.map((n) => (
+            <li key={n.id} className="card p-4">
+              <div className="mb-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-2xs text-ink-subtle">
+                <span className="flex items-center gap-1 font-semibold text-ink-muted"><User size={12} /> {n.author_name?.trim() || t("notes.unknownAuthor", "غير محدّد")}</span>
+                <span className="flex items-center gap-1"><Clock size={12} /> {fmtNoteDate(n.created_at)}</span>
+              </div>
+              <p className="whitespace-pre-wrap leading-relaxed text-ink">{n.note_text}</p>
+            </li>
+          ))}
+        </ol>
+      )}
+    </div>
   );
 }
 

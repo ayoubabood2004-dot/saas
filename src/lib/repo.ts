@@ -4,7 +4,7 @@
 import { loadDB, saveDB } from "./demoStore";
 import { supabase } from "./supabase";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, AppointmentStatus, TreatmentEntry, Admission, Reminder, Product, Invoice, InvoiceItem, CheckoutItem, SaleMeta, Customer, DiscountType, PaymentMethod, WhatsAppMessage, AuditEntry, LoginEvent } from "@/types";
+import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, AppointmentStatus, TreatmentEntry, Admission, Reminder, Product, Invoice, InvoiceItem, CheckoutItem, SaleMeta, Customer, DiscountType, PaymentMethod, WhatsAppMessage, AuditEntry, LoginEvent, PetNote } from "@/types";
 import { uid, uuid, ageMonths } from "./utils";
 
 /** Resolve a discount input (percent 0–100 or a fixed amount) to an amount, clamped to [0, subtotal]. */
@@ -90,6 +90,12 @@ function dedupeCustomers(rows: { customer_name?: string | null; customer_phone?:
  * Reports security-log views are populated and testable offline. */
 const DEMO_AUDIT_KEY = "vp_demo_audit";
 const DEMO_LOGIN_KEY = "vp_demo_login";
+const DEMO_NOTES_KEY = "vp_demo_pet_notes";
+function demoNotesLoad(): PetNote[] {
+  try { const r = localStorage.getItem(DEMO_NOTES_KEY); if (r) return JSON.parse(r) as PetNote[]; } catch { /* ignore */ }
+  return [];
+}
+function demoNotesSave(list: PetNote[]) { try { localStorage.setItem(DEMO_NOTES_KEY, JSON.stringify(list)); } catch { /* ignore */ } }
 function demoAuditLoad(): AuditEntry[] {
   try { const r = localStorage.getItem(DEMO_AUDIT_KEY); if (r) return JSON.parse(r) as AuditEntry[]; } catch { /* ignore */ }
   return [];
@@ -268,6 +274,20 @@ const demoRepo = {
     db.visits.push(v);
     saveDB(db);
     return v;
+  },
+
+  /* ---------------- Clinical / progress notes ---------------- */
+  async listPetNotes(petId: string): Promise<PetNote[]> {
+    return demoNotesLoad().filter((n) => n.pet_id === petId).sort((a, b) => b.created_at.localeCompare(a.created_at));
+  },
+  async addPetNote(input: { pet_id: string; note_text: string; author_id?: string | null; author_name?: string | null }): Promise<PetNote> {
+    const note: PetNote = {
+      id: uid("note"), pet_id: input.pet_id, clinic_id: null,
+      author_id: input.author_id ?? null, author_name: input.author_name ?? null,
+      note_text: input.note_text, created_at: new Date().toISOString(),
+    };
+    demoNotesSave([note, ...demoNotesLoad()]);
+    return note;
   },
 
   async listMedia(petId: string): Promise<MediaItem[]> {
@@ -722,6 +742,16 @@ const supabaseRepo: typeof demoRepo = {
       patient_age_months = ageMonths((data as { dob?: string | null } | null)?.dob);
     }
     return need<MedicalVisit>(await sbc().from("medical_visits").insert({ ...input, patient_age_months }).select().single());
+  },
+  async listPetNotes(petId) {
+    return listOf<PetNote>(await sbc().from("pet_notes").select("*").eq("pet_id", petId).order("created_at", { ascending: false }));
+  },
+  async addPetNote(input) {
+    // clinic_id + author_id are stamped by the column defaults (auth_clinic() / auth.uid()).
+    return need<PetNote>(await sbc().from("pet_notes").insert({
+      pet_id: input.pet_id, note_text: input.note_text,
+      author_id: input.author_id ?? undefined, author_name: input.author_name ?? null,
+    }).select().single());
   },
   async listMedia(petId) {
     return listOf<MediaItem>(await sbc().from("media_items").select("*").eq("pet_id", petId).order("created_at", { ascending: false }));

@@ -593,7 +593,7 @@
     "title": "Digital Pet Passport",
     "medicalEntry": "Medical entry",
     "medicalEntryTitle": "Medical entry — {{name}}",
-    "tabs": { "identity": "Identity", "diet": "Diet", "vaccines": "Vaccinations", "history": "Medical history", "treatment": "Treatment", "media": "Media", "qr": "QR chart" },
+    "tabs": { "identity": "Identity", "diet": "Diet", "vaccines": "Vaccinations", "history": "Medical history", "treatment": "Treatment", "notes": "Notes", "media": "Media", "qr": "QR chart" },
     "weightChart": "Weight & growth",
     "addWeight": "Record weight",
     "noWeights": "No weight records yet.",
@@ -725,6 +725,14 @@
     "saved": "Ranges saved"
   },
   "phone": { "country": "Country code", "number": "Phone number", "ownerPhone": "Owner phone", "ownerEmail": "Owner email", "email": "Email" },
+  "notes": {
+    "title": "Clinical notes",
+    "add": "Add note",
+    "placeholder": "Write a clinical note about this case…",
+    "empty": "No notes yet for this patient.",
+    "saveFail": "Couldn't save the note",
+    "unknownAuthor": "Unknown"
+  },
   "owner": {
     "title": "Owner details",
     "edit": "Edit",
