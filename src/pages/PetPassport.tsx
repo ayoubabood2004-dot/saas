@@ -60,7 +60,7 @@ function Chip({ icon, children }: { icon?: React.ReactNode; children: React.Reac
 }
 
 /** Pet photo + name + breed + allergy — horizontal (mobile header) or premium gradient hero card (desktop rail). */
-function ProfileHead({ pet, onPhoto, variant }: { pet: Pet; onPhoto: (e: React.ChangeEvent<HTMLInputElement>) => void; variant: "row" | "card" }) {
+function ProfileHead({ pet, onPhoto, variant }: { pet: Pet; onPhoto: (e: React.ChangeEvent<HTMLInputElement>) => void; variant: "row" | "card" | "banner" }) {
   const { t, i18n } = useTranslation();
   const age = ageFromDOB(pet.dob);
   const photo = (size: number, ring?: boolean) => (
@@ -95,6 +95,25 @@ function ProfileHead({ pet, onPhoto, variant }: { pet: Pet; onPhoto: (e: React.C
             <Chip><span className={cn("text-sm font-bold leading-none", sexColor)}>{sexSym}</span> {t(`pet.sex.${pet.sex}`)}</Chip>
           </div>
           {allergy && <div className="mt-3">{allergy}</div>}
+        </div>
+      </div>
+    );
+  }
+  if (variant === "banner") {
+    const sexSym = pet.sex === "male" ? "♂" : pet.sex === "female" ? "♀" : "•";
+    const sexColor = pet.sex === "male" ? "text-brand-600" : pet.sex === "female" ? "text-accent-600" : "text-ink-subtle";
+    return (
+      <div className="card flex items-center gap-5 p-5">
+        {photo(92)}
+        <div className="min-w-0 flex-1">
+          <h1 className="truncate font-display text-2xl font-extrabold tracking-tighter2 text-ink">{pet.name}</h1>
+          <p className="truncate text-sm text-ink-muted">{speciesBreed}</p>
+          <div className="mt-2.5 flex flex-wrap gap-1.5">
+            {age && <Chip icon={<Cake size={12} className="text-brand-500" />}>{age.years > 0 ? `${age.years}${t("pet.yShort", "y")} ` : ""}{age.months}{t("pet.mShort", "m")}</Chip>}
+            {pet.current_weight_kg != null && <Chip icon={<Scale size={12} className="text-brand-500" />}>{pet.current_weight_kg} {t("common.kg")}</Chip>}
+            <Chip><span className={cn("text-sm font-bold leading-none", sexColor)}>{sexSym}</span> {t(`pet.sex.${pet.sex}`)}</Chip>
+          </div>
+          {allergy && <div className="mt-2.5">{allergy}</div>}
         </div>
       </div>
     );
@@ -298,7 +317,7 @@ export function PetPassport() {
   };
 
   return (
-    <div className="relative isolate mx-auto max-w-7xl px-4 py-6">
+    <div className="relative isolate mx-auto max-w-[1700px] px-4 py-6 sm:px-6">
       {/* Ambient aurora canvas — soft brand-tinted glow behind the floating panels */}
       <div aria-hidden className="pointer-events-none absolute inset-0 -z-10 overflow-hidden no-print">
         <div className="absolute -start-24 -top-12 h-72 w-72 rounded-full bg-brand-400/20 blur-3xl dark:bg-brand-500/10" />
@@ -358,98 +377,96 @@ export function PetPassport() {
       {/* Legal consent forms (operation / anesthesia / treatment) — bilingual, printable */}
       <ConsentForms open={consentOpen} onClose={() => setConsentOpen(false)} pet={pet} />
 
-      {/* Mobile/tablet header + snapshot (on desktop these live inside the rails) */}
-      <div className="mb-5 lg:hidden">
-        <ProfileHead pet={pet} onPhoto={onPhoto} variant="row" />
-      </div>
-      <div className="mb-6 lg:hidden">
-        <HealthSnapshot pet={pet} vaccines={vaccines} weights={weights} admissions={admissions} />
-      </div>
-
       {isOwner && (
         <div className="mb-6 rounded-2xl bg-sky-50 px-4 py-2.5 text-sm text-sky-700 dark:bg-sky-500/10 dark:text-sky-300">{t("passport.ownerViewOnly")}</div>
       )}
 
-      {/* 3-column pet workspace: identity rail · tabbed detail · activity rail */}
-      <div className="grid gap-6 lg:grid-cols-12 lg:items-start">
-        {/* Left rail — profile + identity (the reference's "Pet Profile" column) */}
-        <aside className="order-2 space-y-4 lg:order-1 lg:col-span-3 lg:sticky lg:top-6 lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto lg:pe-1 lg:[scrollbar-width:thin]">
-          <div className="hidden lg:block"><ProfileHead pet={pet} onPhoto={onPhoto} variant="card" /></div>
-          <IdentityTab pet={pet} weights={weights} onChanged={reload} canEdit={canEditClinical} isOwner={isOwner} />
-        </aside>
+      {/* FULL-WIDTH VERTICAL FLOW — zero sidebars:
+          ① Profile banner  →  ② 100%-width الطبلة canvas  →  ③ bottom widgets grid */}
 
-        {/* Center — tabbed clinical detail. The الطبلة workspace claims the activity
-            rail's width (lg:col-span-9) so the chart/feed uses the full screen cleanly. */}
-        <main className={cn("order-1 min-w-0 lg:order-2", tab === "timeline" ? "lg:col-span-9" : "lg:col-span-6")}>
-          <div className="relative mb-5 flex gap-1 overflow-x-auto rounded-2xl bg-surface-2 p-1.5 no-print [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-            {TABS.map(({ id, icon: Icon, fill, text }) => {
-              const active = tab === id;
-              const badge = tabBadge[id];
-              return (
-                <button
-                  key={id}
-                  onClick={() => { setTab(id); playTap(); }}
-                  aria-current={active ? "page" : undefined}
-                  className={cn(
-                    "relative flex min-w-[64px] flex-1 flex-col items-center gap-1.5 rounded-xl py-2.5 text-[11px] font-semibold transition-colors",
-                    active ? text : "text-ink-muted hover:text-ink",
-                  )}
-                >
-                  {active && (
-                    <motion.span
-                      layoutId="passport-tab"
-                      className={cn("absolute inset-0 rounded-xl shadow-card", fill)}
-                      transition={{ type: "spring", stiffness: 380, damping: 30 }}
-                    />
-                  )}
-                  <span className="relative z-10 flex flex-col items-center gap-1">
-                    <motion.span animate={{ scale: active ? 1.14 : 1, y: active ? -1 : 0 }} transition={{ type: "spring", stiffness: 420, damping: 22 }}>
-                      <Icon size={20} strokeWidth={active ? 2.4 : 1.8} />
-                    </motion.span>
-                    <span className="text-center leading-tight">{t(`passport.tabs.${id}`)}</span>
+      {/* ① Profile banner — pet + core info · owner details · caregivers (horizontal). */}
+      <section className={cn("grid gap-4", isOwner ? "md:grid-cols-2" : "lg:grid-cols-3")}>
+        <ProfileHead pet={pet} onPhoto={onPhoto} variant="banner" />
+        {!isOwner && <OwnerCard pet={pet} canEdit={canEditClinical} onUpdated={reload} />}
+        <ContactsCard pet={pet} canEdit={canEditClinical || isOwner} onChanged={reload} />
+      </section>
+
+      {/* ② Maximized clinical canvas — the tab bar + content span the FULL width. */}
+      <section className="mt-6">
+        <div className="relative mb-5 flex gap-1 overflow-x-auto rounded-2xl bg-surface-2 p-1.5 no-print [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          {TABS.map(({ id, icon: Icon, fill, text }) => {
+            const active = tab === id;
+            const badge = tabBadge[id];
+            return (
+              <button
+                key={id}
+                onClick={() => { setTab(id); playTap(); }}
+                aria-current={active ? "page" : undefined}
+                className={cn(
+                  "relative flex min-w-[64px] flex-1 flex-col items-center gap-1.5 rounded-xl py-2.5 text-[11px] font-semibold transition-colors",
+                  active ? text : "text-ink-muted hover:text-ink",
+                )}
+              >
+                {active && (
+                  <motion.span
+                    layoutId="passport-tab"
+                    className={cn("absolute inset-0 rounded-xl shadow-card", fill)}
+                    transition={{ type: "spring", stiffness: 380, damping: 30 }}
+                  />
+                )}
+                <span className="relative z-10 flex flex-col items-center gap-1">
+                  <motion.span animate={{ scale: active ? 1.14 : 1, y: active ? -1 : 0 }} transition={{ type: "spring", stiffness: 420, damping: 22 }}>
+                    <Icon size={20} strokeWidth={active ? 2.4 : 1.8} />
+                  </motion.span>
+                  <span className="text-center leading-tight">{t(`passport.tabs.${id}`)}</span>
+                </span>
+                {(badge.dot || badge.count != null) && (
+                  <span className="absolute end-2 top-1.5 z-20">
+                    {badge.count != null ? (
+                      <span className="grid h-[15px] min-w-[15px] place-items-center rounded-full bg-ink px-1 text-[9px] font-bold leading-none text-surface-1">{badge.count}</span>
+                    ) : (
+                      <span className="relative flex h-2.5 w-2.5">
+                        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-danger-500 opacity-60" />
+                        <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-danger-500 ring-2 ring-surface-2" />
+                      </span>
+                    )}
                   </span>
-                  {(badge.dot || badge.count != null) && (
-                    <span className="absolute end-2 top-1.5 z-20">
-                      {badge.count != null ? (
-                        <span className="grid h-[15px] min-w-[15px] place-items-center rounded-full bg-ink px-1 text-[9px] font-bold leading-none text-surface-1">{badge.count}</span>
-                      ) : (
-                        <span className="relative flex h-2.5 w-2.5">
-                          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-danger-500 opacity-60" />
-                          <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-danger-500 ring-2 ring-surface-2" />
-                        </span>
-                      )}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-          </div>
+                )}
+              </button>
+            );
+          })}
+        </div>
 
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={tab}
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -8 }}
-              transition={{ duration: 0.2 }}
-            >
-              {tab === "diet" && <DietTab pet={pet} onChanged={reload} canEdit={canEditClinical || isOwner} />}
-              {tab === "vaccines" && <VaccinesTab pet={pet} vaccines={vaccines} onChanged={reload} canEdit={canEditClinical} isOwner={isOwner} />}
-              {tab === "history" && <HistoryTab visits={visits} admissions={admissions} treatments={treatments} isOwner={isOwner} />}
-              {tab === "treatment" && <TreatmentTab pet={pet} treatments={treatments} admissions={admissions} onChanged={reload} canEdit={canEditClinical} isOwner={isOwner} />}
-              {tab === "notes" && <NotesTab pet={pet} notes={notes} canEdit={canEditClinical} onChanged={reload} />}
-              {tab === "timeline" && <TimelineWorkspace pet={pet} treatments={treatments} vaccinations={vaccines} notes={notes} admissions={admissions} isOwner={isOwner} canEdit={canEditClinical} onChanged={reload} />}
-              {tab === "media" && <MediaTab pet={pet} media={media} onChanged={reload} canEdit={canEditClinical} />}
-              {tab === "qr" && <QrTab pet={pet} />}
-            </motion.div>
-          </AnimatePresence>
-        </main>
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={tab}
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.2 }}
+          >
+            {tab === "diet" && <DietTab pet={pet} onChanged={reload} canEdit={canEditClinical || isOwner} />}
+            {tab === "vaccines" && <VaccinesTab pet={pet} vaccines={vaccines} onChanged={reload} canEdit={canEditClinical} isOwner={isOwner} />}
+            {tab === "history" && <HistoryTab visits={visits} admissions={admissions} treatments={treatments} isOwner={isOwner} />}
+            {tab === "treatment" && <TreatmentTab pet={pet} treatments={treatments} admissions={admissions} onChanged={reload} canEdit={canEditClinical} isOwner={isOwner} />}
+            {tab === "notes" && <NotesTab pet={pet} notes={notes} canEdit={canEditClinical} onChanged={reload} />}
+            {tab === "timeline" && <TimelineWorkspace pet={pet} treatments={treatments} vaccinations={vaccines} notes={notes} admissions={admissions} isOwner={isOwner} canEdit={canEditClinical} onChanged={reload} />}
+            {tab === "media" && <MediaTab pet={pet} media={media} onChanged={reload} canEdit={canEditClinical} />}
+            {tab === "qr" && <QrTab pet={pet} />}
+          </motion.div>
+        </AnimatePresence>
+      </section>
 
-        {/* Right rail — stats + activity (reference's right column). Hidden on the الطبلة
-            tab (desktop) to free its width for the full record; still stacks on mobile. */}
-        <aside className={cn("order-3 space-y-4 lg:col-span-3 lg:sticky lg:top-6 lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto lg:pe-1 lg:[scrollbar-width:thin]", tab === "timeline" && "lg:hidden")}>
+      {/* ③ Bottom widgets — every secondary widget lives BELOW the timeline (no rails). */}
+      <section className="mt-8 space-y-6 no-print">
+        {/* At-a-glance metrics strip: wellness index + vaccination / weight / care status. */}
+        <div className="grid items-stretch gap-4 md:grid-cols-4">
           <WellnessCard vaccines={vaccines} admissions={admissions} />
-          <div className="hidden lg:block"><HealthSnapshot pet={pet} vaccines={vaccines} weights={weights} admissions={admissions} stack /></div>
+          <HealthSnapshot pet={pet} vaccines={vaccines} weights={weights} admissions={admissions} className="md:col-span-3" />
+        </div>
+
+        {/* Secondary widgets — responsive grid, natural heights (no awkward stretch). */}
+        <div className="grid grid-cols-1 items-start gap-6 md:grid-cols-2 lg:grid-cols-4">
           <UpcomingEvents
             events={petEvents}
             reminders={reminders}
@@ -460,52 +477,104 @@ export function PetPassport() {
             onChanged={reload}
             onEventClick={(e) => { const tgt = EVENT_TAB[e.category]; if (tgt) { setTab(tgt); playTap(); } }}
           />
-
-          {/* Mini sales history (clinic staff only — financial overview for this pet's owner) */}
+          <ImportantDatesCard pet={pet} />
+          <WeightCard pet={pet} weights={weights} canEdit={canEditClinical} onChanged={reload} />
+          {canEditClinical && <RangesCard pet={pet} />}
           {!isOwner && <PetSalesWidget pet={pet} />}
-
-          {media.length > 0 && (
-            <div className="card p-4 no-print">
-              <div className="mb-2.5 flex items-center justify-between">
-                <h3 className="flex items-center gap-2 text-sm font-bold text-ink"><Images size={16} className="text-brand-600" /> {t("passport.tabs.media")}</h3>
-                <button className="text-xs font-semibold text-brand-600 hover:underline" onClick={() => { playTap(); setTab("media"); }}>{t("media.all", "All")}</button>
-              </div>
-              <div className="grid grid-cols-3 gap-1.5">
-                {media.slice(0, 6).map((m) => (
-                  <button key={m.id} onClick={() => { playTap(); setTab("media"); }} className="aspect-square overflow-hidden rounded-lg bg-surface-2">
-                    {/(photo|xray|ultrasound)/.test(m.kind) ? (
-                      <img src={m.url} alt={m.caption || ""} loading="lazy" decoding="async" className="h-full w-full object-cover" />
-                    ) : (
-                      <span className="grid h-full w-full place-items-center text-ink-subtle"><FileText size={18} /></span>
-                    )}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-        </aside>
-      </div>
+          <IdentityFactsCard pet={pet} canEdit={canEditClinical || isOwner} onChanged={reload} />
+          <MarkingsCard pet={pet} canEdit={canEditClinical || isOwner} onChanged={reload} />
+          {isOwner && <SharedToggleCard pet={pet} onChanged={reload} />}
+        </div>
+      </section>
     </div>
   );
 }
 
-/* ---------------- Identity ---------------- */
-function IdentityTab({ pet, weights, onChanged, canEdit, isOwner }: { pet: Pet; weights: WeightLog[]; onChanged: () => void; canEdit: boolean; isOwner: boolean }) {
-  const { t, i18n } = useTranslation();
-  const [open, setOpen] = useState(false);
-  const [rangesOpen, setRangesOpen] = useState(false);
-  const [profileOpen, setProfileOpen] = useState(false);
-  const [contactOpen, setContactOpen] = useState(false);
-  const [weight, setWeight] = useState("");
+/* ---------------- Identity cards (decomposed from the old identity rail) ----------------
+ * Each is a self-contained card owning its own modal state, so they can be freely placed
+ * in the full-width banner or the bottom widgets grid — no sidebar required. */
 
-  const canEditProfile = canEdit || isOwner;
-  const shared = pet.shared_with_clinic !== false;
-  const toggleShared = async () => {
-    await repo.updatePet(pet.id, { shared_with_clinic: !shared });
-    playSuccess();
+/** Owner-authorized caretakers / contacts — list + add + remove. */
+function ContactsCard({ pet, canEdit, onChanged }: { pet: Pet; canEdit: boolean; onChanged: () => void }) {
+  const { t } = useTranslation();
+  const [contactOpen, setContactOpen] = useState(false);
+  const contacts = pet.contacts ?? [];
+  const removeContact = async (id: string) => {
+    await repo.updatePet(pet.id, { contacts: contacts.filter((c) => c.id !== id) });
+    playTap();
     onChanged();
   };
+  return (
+    <div className="card p-5">
+      <div className="mb-3 flex items-center justify-between">
+        <h3 className="flex items-center gap-2 font-bold text-ink"><Users size={18} className="text-brand-600" /> {t("contacts.title")}</h3>
+        {canEdit && (
+          <button className="btn-secondary py-1.5 px-3 text-sm" onClick={() => { playTap(); setContactOpen(true); }}>
+            <UserPlus size={15} /> {t("contacts.add")}
+          </button>
+        )}
+      </div>
+      {contacts.length === 0 ? (
+        <p className="text-sm text-ink-subtle">{t("contacts.empty")}</p>
+      ) : (
+        <ul className="space-y-3">
+          {contacts.map((c) => (
+            <li key={c.id} className="flex items-center gap-3">
+              <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-brand-grad font-display text-sm font-bold text-white">{petInitials(c.name)}</span>
+              <div className="min-w-0 flex-1">
+                <p className="flex flex-wrap items-center gap-2 font-medium text-ink">
+                  {c.name}
+                  {c.role && <span className="rounded-full bg-surface-2 px-2 py-0.5 text-[11px] font-medium text-ink-muted">{c.role}</span>}
+                </p>
+                <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-ink-muted">
+                  {c.phone && <a href={`tel:${c.phone}`} className="flex items-center gap-1 hover:text-brand-600"><Phone size={11} /> {c.phone}</a>}
+                  {c.email && <a href={`mailto:${c.email}`} className="flex items-center gap-1 hover:text-brand-600"><Mail size={11} /> {c.email}</a>}
+                </div>
+              </div>
+              {canEdit && (
+                <button onClick={() => removeContact(c.id)} aria-label={t("common.delete")} className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-ink-subtle transition hover:bg-danger-50 hover:text-danger-600 dark:hover:bg-danger-500/15">
+                  <X size={15} />
+                </button>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+      <ContactModal open={contactOpen} pet={pet} onClose={() => setContactOpen(false)} onSaved={onChanged} />
+    </div>
+  );
+}
 
+/** Appearance & distinctive markings — display + edit (opens the profile modal). */
+function MarkingsCard({ pet, canEdit, onChanged }: { pet: Pet; canEdit: boolean; onChanged: () => void }) {
+  const { t } = useTranslation();
+  const [profileOpen, setProfileOpen] = useState(false);
+  return (
+    <div className="card p-5">
+      <div className="mb-2 flex items-center justify-between">
+        <h3 className="flex items-center gap-2 font-bold text-ink"><Fingerprint size={18} className="text-brand-600" /> {t("pet.markings")}</h3>
+        {canEdit && (
+          <button onClick={() => { playTap(); setProfileOpen(true); }} aria-label={t("common.edit")} className="grid h-8 w-8 place-items-center rounded-full text-ink-subtle transition hover:bg-surface-2 hover:text-brand-600">
+            <Pencil size={15} />
+          </button>
+        )}
+      </div>
+      {pet.distinctive_markings ? (
+        <p className="text-sm leading-relaxed text-ink-muted">{pet.distinctive_markings}</p>
+      ) : (
+        <button onClick={() => canEdit && setProfileOpen(true)} disabled={!canEdit} className="text-sm text-ink-subtle enabled:hover:text-brand-600">
+          {canEdit ? t("pet.addMarkings") : "—"}
+        </button>
+      )}
+      <ProfileEditModal open={profileOpen} pet={pet} onClose={() => setProfileOpen(false)} onSaved={onChanged} />
+    </div>
+  );
+}
+
+/** Basic identity facts (serial, chip, sex, colour, weight) — display + edit. */
+function IdentityFactsCard({ pet, canEdit, onChanged }: { pet: Pet; canEdit: boolean; onChanged: () => void }) {
+  const { t } = useTranslation();
+  const [profileOpen, setProfileOpen] = useState(false);
   const rows: [string, string][] = [
     [t("pet.serial"), pet.serial],
     [t("pet.microchip"), pet.microchip_id || "—"],
@@ -513,7 +582,32 @@ function IdentityTab({ pet, weights, onChanged, canEdit, isOwner }: { pet: Pet; 
     [t("pet.color"), pet.color || "—"],
     [t("pet.weight"), pet.current_weight_kg ? `${pet.current_weight_kg} ${t("common.kg")}` : "—"],
   ];
+  return (
+    <div className="card p-5">
+      <div className="mb-2 flex items-center justify-between">
+        <h3 className="flex items-center gap-2 font-bold text-ink"><Fingerprint size={18} className="text-brand-600" /> {t("pet.identity", "بيانات الحيوان")}</h3>
+        {canEdit && (
+          <button onClick={() => { playTap(); setProfileOpen(true); }} aria-label={t("common.edit")} className="grid h-8 w-8 place-items-center rounded-full text-ink-subtle transition hover:bg-surface-2 hover:text-brand-600">
+            <Pencil size={15} />
+          </button>
+        )}
+      </div>
+      <dl className="divide-y divide-line">
+        {rows.map(([k, v]) => (
+          <div key={k} className="flex justify-between gap-4 py-2.5">
+            <dt className="text-ink-muted">{k}</dt>
+            <dd className="font-medium text-ink text-end">{v}</dd>
+          </div>
+        ))}
+      </dl>
+      <ProfileEditModal open={profileOpen} pet={pet} onClose={() => setProfileOpen(false)} onSaved={onChanged} />
+    </div>
+  );
+}
 
+/** Important dates — birthday, adopted, neuter status. Display only. */
+function ImportantDatesCard({ pet }: { pet: Pet }) {
+  const { t, i18n } = useTranslation();
   const age = ageFromDOB(pet.dob);
   const neuter = pet.neuter_status ?? "unknown";
   const importantDates = [
@@ -521,13 +615,32 @@ function IdentityTab({ pet, weights, onChanged, canEdit, isOwner }: { pet: Pet; 
     { key: "ad", icon: <Heart size={16} className="text-accent-500" />, label: t("dates.adopted"), value: pet.adopted_on ? fullDate(pet.adopted_on, i18n.language) : "—", sub: undefined as string | undefined },
     { key: "nt", icon: <Scissors size={16} className="text-sky-500" />, label: t("dates.neuter"), value: t(`dates.neuterValues.${neuter}`), sub: undefined as string | undefined },
   ];
-  const contacts = pet.contacts ?? [];
-  const removeContact = async (id: string) => {
-    await repo.updatePet(pet.id, { contacts: contacts.filter((c) => c.id !== id) });
-    playTap();
-    onChanged();
-  };
+  return (
+    <div className="card p-5">
+      <h3 className="mb-3 flex items-center gap-2 font-bold text-ink"><Calendar size={18} className="text-brand-600" /> {t("dates.title")}</h3>
+      <div className="space-y-2">
+        {importantDates.map((d) => (
+          <div key={d.key} className="flex items-center gap-3">
+            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-surface-2">{d.icon}</span>
+            <div className="min-w-0 flex-1">
+              <p className="text-xs text-ink-subtle">{d.label}</p>
+              <p className="font-medium text-ink">
+                {d.value}
+                {d.sub && <span className="ms-2 text-xs font-normal text-ink-muted">{d.sub}</span>}
+              </p>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
+/** Weight & growth chart — add-weight modal owned here. */
+function WeightCard({ pet, weights, canEdit, onChanged }: { pet: Pet; weights: WeightLog[]; canEdit: boolean; onChanged: () => void }) {
+  const { t, i18n } = useTranslation();
+  const [open, setOpen] = useState(false);
+  const [weight, setWeight] = useState("");
   const save = async () => {
     if (!weight) return;
     await repo.addWeight(pet.id, Number(weight));
@@ -536,162 +649,69 @@ function IdentityTab({ pet, weights, onChanged, canEdit, isOwner }: { pet: Pet; 
     setOpen(false);
     onChanged();
   };
-
   return (
-    <div className="space-y-4 animate-fade-in">
-      {/* Owner details — prominent for clinic staff working the case (copy-to-clipboard). */}
-      {!isOwner && <OwnerCard pet={pet} canEdit={canEdit} onUpdated={onChanged} />}
-
-      {/* Appearance & distinctive markings */}
-      <div className="card p-5">
-        <div className="mb-2 flex items-center justify-between">
-          <h3 className="flex items-center gap-2 font-bold text-ink"><Fingerprint size={18} className="text-brand-600" /> {t("pet.markings")}</h3>
-          {canEditProfile && (
-            <button onClick={() => { playTap(); setProfileOpen(true); }} aria-label={t("common.edit")} className="grid h-8 w-8 place-items-center rounded-full text-ink-subtle transition hover:bg-surface-2 hover:text-brand-600">
-              <Pencil size={15} />
-            </button>
-          )}
-        </div>
-        {pet.distinctive_markings ? (
-          <p className="text-sm leading-relaxed text-ink-muted">{pet.distinctive_markings}</p>
-        ) : (
-          <button onClick={() => canEditProfile && setProfileOpen(true)} disabled={!canEditProfile} className="text-sm text-ink-subtle enabled:hover:text-brand-600">
-            {canEditProfile ? t("pet.addMarkings") : "—"}
+    <div className="card p-5">
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="font-bold text-ink">{t("passport.weightChart")}</h3>
+        {canEdit && (
+          <button className="btn-secondary py-1.5 px-3 text-sm" onClick={() => setOpen(true)}>
+            <Plus size={16} /> {t("passport.addWeight")}
           </button>
         )}
       </div>
-
-      {/* Basic identity facts */}
-      <div className="card p-5">
-        <div className="mb-2 flex items-center justify-between">
-          <h3 className="flex items-center gap-2 font-bold text-ink"><Fingerprint size={18} className="text-brand-600" /> {t("pet.identity", "بيانات الحيوان")}</h3>
-          {canEditProfile && (
-            <button onClick={() => { playTap(); setProfileOpen(true); }} aria-label={t("common.edit")} className="grid h-8 w-8 place-items-center rounded-full text-ink-subtle transition hover:bg-surface-2 hover:text-brand-600">
-              <Pencil size={15} />
-            </button>
-          )}
-        </div>
-        <dl className="divide-y divide-line">
-          {rows.map(([k, v]) => (
-            <div key={k} className="flex justify-between gap-4 py-2.5">
-              <dt className="text-ink-muted">{k}</dt>
-              <dd className="font-medium text-ink text-end">{v}</dd>
-            </div>
-          ))}
-        </dl>
-      </div>
-
-      {/* Important dates */}
-      <div className="card p-5">
-        <h3 className="mb-3 flex items-center gap-2 font-bold text-ink"><Calendar size={18} className="text-brand-600" /> {t("dates.title")}</h3>
-        <div className="space-y-2">
-          {importantDates.map((d) => (
-            <div key={d.key} className="flex items-center gap-3">
-              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-surface-2">{d.icon}</span>
-              <div className="min-w-0 flex-1">
-                <p className="text-xs text-ink-subtle">{d.label}</p>
-                <p className="font-medium text-ink">
-                  {d.value}
-                  {d.sub && <span className="ms-2 text-xs font-normal text-ink-muted">{d.sub}</span>}
-                </p>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Caretakers / authorized contacts */}
-      <div className="card p-5">
-        <div className="mb-3 flex items-center justify-between">
-          <h3 className="flex items-center gap-2 font-bold text-ink"><Users size={18} className="text-brand-600" /> {t("contacts.title")}</h3>
-          {canEditProfile && (
-            <button className="btn-secondary py-1.5 px-3 text-sm" onClick={() => { playTap(); setContactOpen(true); }}>
-              <UserPlus size={15} /> {t("contacts.add")}
-            </button>
-          )}
-        </div>
-        {contacts.length === 0 ? (
-          <p className="text-sm text-ink-subtle">{t("contacts.empty")}</p>
-        ) : (
-          <ul className="space-y-3">
-            {contacts.map((c) => (
-              <li key={c.id} className="flex items-center gap-3">
-                <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-brand-grad font-display text-sm font-bold text-white">{petInitials(c.name)}</span>
-                <div className="min-w-0 flex-1">
-                  <p className="flex flex-wrap items-center gap-2 font-medium text-ink">
-                    {c.name}
-                    {c.role && <span className="rounded-full bg-surface-2 px-2 py-0.5 text-[11px] font-medium text-ink-muted">{c.role}</span>}
-                  </p>
-                  <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-ink-muted">
-                    {c.phone && <a href={`tel:${c.phone}`} className="flex items-center gap-1 hover:text-brand-600"><Phone size={11} /> {c.phone}</a>}
-                    {c.email && <a href={`mailto:${c.email}`} className="flex items-center gap-1 hover:text-brand-600"><Mail size={11} /> {c.email}</a>}
-                  </div>
-                </div>
-                {canEditProfile && (
-                  <button onClick={() => removeContact(c.id)} aria-label={t("common.delete")} className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-ink-subtle transition hover:bg-danger-50 hover:text-danger-600 dark:hover:bg-danger-500/15">
-                    <X size={15} />
-                  </button>
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-
-      {/* Doctor-only: per-animal normal reading ranges */}
-      {canEdit && (
-        <button className="card w-full p-4 flex items-center justify-between text-start hover:shadow-soft" onClick={() => setRangesOpen(true)}>
-          <span className="flex items-center gap-2 font-medium text-ink"><SlidersHorizontal size={18} className="text-brand-600" /> {t("reading.editRanges")}</span>
-          <Plus size={16} className="text-ink-subtle" />
-        </button>
+      {weights.length >= 2 ? (
+        <HealthCurve
+          data={[...weights]
+            .sort((a, b) => a.measured_at.localeCompare(b.measured_at))
+            .map<CurvePoint>((w) => ({ label: formatDate(w.measured_at, i18n.language), value: w.weight_kg }))}
+          unit={` ${t("common.kg")}`}
+          height={180}
+        />
+      ) : weights.length === 1 ? (
+        <WeightChart logs={weights} />
+      ) : (
+        <p className="text-ink-subtle text-sm">{t("passport.noWeights")}</p>
       )}
-      {canEdit && (
-        <RangesEditor open={rangesOpen} petId={pet.id} species={pet.species} petName={pet.name} onClose={() => setRangesOpen(false)} />
-      )}
-
-      {/* Owner-controlled: which animals are allowed/shared at clinics */}
-      {isOwner && (
-        <div className="card p-4 flex items-center justify-between">
-          <span className="font-medium text-ink">{t("passport.sharedWithClinic")}</span>
-          <button className={`chip ${shared ? "bg-brand-50 text-brand-700" : "bg-surface-2 text-ink-muted"}`} onClick={toggleShared}>
-            {shared ? <Check size={15} /> : <ShieldAlert size={15} />}
-            {shared ? t("passport.sharedOn") : t("passport.sharedOff")}
-          </button>
-        </div>
-      )}
-
-      <div className="card p-5">
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="font-bold text-ink">{t("passport.weightChart")}</h3>
-          {canEdit && (
-            <button className="btn-secondary py-1.5 px-3 text-sm" onClick={() => setOpen(true)}>
-              <Plus size={16} /> {t("passport.addWeight")}
-            </button>
-          )}
-        </div>
-        {weights.length >= 2 ? (
-          <HealthCurve
-            data={[...weights]
-              .sort((a, b) => a.measured_at.localeCompare(b.measured_at))
-              .map<CurvePoint>((w) => ({ label: formatDate(w.measured_at, i18n.language), value: w.weight_kg }))}
-            unit={` ${t("common.kg")}`}
-            height={180}
-          />
-        ) : weights.length === 1 ? (
-          <WeightChart logs={weights} />
-        ) : (
-          <p className="text-ink-subtle text-sm">{t("passport.noWeights")}</p>
-        )}
-      </div>
-
       <Modal open={open} onClose={() => setOpen(false)} title={t("passport.addWeight")}>
         <label className="label">{t("pet.weight")} ({t("common.kg")})</label>
         <input type="number" step="0.1" className="input" value={weight} onChange={(e) => setWeight(e.target.value)} autoFocus />
         <button className="btn-primary w-full mt-4" onClick={save}>{t("common.save")}</button>
       </Modal>
+    </div>
+  );
+}
 
-      <ProfileEditModal open={profileOpen} pet={pet} onClose={() => setProfileOpen(false)} onSaved={onChanged} />
-      <ContactModal open={contactOpen} pet={pet} onClose={() => setContactOpen(false)} onSaved={onChanged} />
+/** Doctor-only: per-animal normal reading ranges — trigger card + editor modal. */
+function RangesCard({ pet }: { pet: Pet }) {
+  const { t } = useTranslation();
+  const [rangesOpen, setRangesOpen] = useState(false);
+  return (
+    <>
+      <button className="card w-full p-5 flex items-center justify-between text-start transition hover:shadow-soft" onClick={() => setRangesOpen(true)}>
+        <span className="flex items-center gap-2 font-bold text-ink"><SlidersHorizontal size={18} className="text-brand-600" /> {t("reading.editRanges")}</span>
+        <Plus size={16} className="text-ink-subtle" />
+      </button>
+      <RangesEditor open={rangesOpen} petId={pet.id} species={pet.species} petName={pet.name} onClose={() => setRangesOpen(false)} />
+    </>
+  );
+}
+
+/** Owner-only: whether this animal's record is shared with clinics. */
+function SharedToggleCard({ pet, onChanged }: { pet: Pet; onChanged: () => void }) {
+  const { t } = useTranslation();
+  const shared = pet.shared_with_clinic !== false;
+  const toggleShared = async () => {
+    await repo.updatePet(pet.id, { shared_with_clinic: !shared });
+    playSuccess();
+    onChanged();
+  };
+  return (
+    <div className="card p-5 flex items-center justify-between">
+      <span className="font-medium text-ink">{t("passport.sharedWithClinic")}</span>
+      <button className={`chip ${shared ? "bg-brand-50 text-brand-700" : "bg-surface-2 text-ink-muted"}`} onClick={toggleShared}>
+        {shared ? <Check size={15} /> : <ShieldAlert size={15} />}
+        {shared ? t("passport.sharedOn") : t("passport.sharedOff")}
+      </button>
     </div>
   );
 }
