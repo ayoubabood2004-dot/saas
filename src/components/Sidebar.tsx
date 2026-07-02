@@ -23,7 +23,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { usePermissions } from "@/hooks/usePermissions";
 import { setLang, type Lang } from "@/i18n";
 import { playTap } from "@/lib/sounds";
-import { prefetchHandlers, prefetchIdle } from "@/lib/routePrefetch";
+import { prefetchHandlers, prefetchAllIdle } from "@/lib/routePrefetch";
 import { warmDataIdle } from "@/lib/prefetchData";
 import { ThemeToggle, Tooltip } from "@/components/ui";
 import { Logo } from "@/components/Logo";
@@ -40,11 +40,11 @@ export function Sidebar() {
   const { can } = usePermissions();
   const otherRole = activeRole === "clinic" ? "owner" : "clinic";
 
-  // Once idle after first paint, warm both the JS chunks AND the data snapshots
-  // for the most-likely-next screens — so even the FIRST visit paints instantly
-  // instead of stalling on a chunk download + a multi-second data fetch.
+  // Once idle after first paint, eagerly warm EVERY route's JS chunk AND the
+  // data snapshots for the heavy screens — so any navigation is "click → already
+  // there" with no chunk download, no Suspense fallback, no data fetch.
   useEffect(() => {
-    prefetchIdle(["/reception", "/records", "/retail", "/reports", "/new-case"]);
+    prefetchAllIdle();
     warmDataIdle(user?.clinic_id ?? user?.id, {
       records: true,
       retail: can("processSales"),

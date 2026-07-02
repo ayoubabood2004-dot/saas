@@ -44,6 +44,13 @@ export function prefetchIdle(paths: string[]): void {
   else setTimeout(run, 1500);
 }
 
+/** Eagerly warm EVERY route chunk during idle time, so no navigation ever hits
+ *  a Suspense fallback. The app is an internal tool (~15 small page chunks), so
+ *  the total is modest and the "click → already there" payoff is worth it. */
+export function prefetchAllIdle(): void {
+  prefetchIdle(Object.keys(importers));
+}
+
 /** Handy spread onto a nav <Link> to warm its target on user intent. */
 export function prefetchHandlers(to: string) {
   const fire = () => prefetchRoute(to);

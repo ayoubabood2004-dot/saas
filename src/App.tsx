@@ -1,6 +1,5 @@
 import { lazy, Suspense, useState, type ReactNode } from "react";
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
-import { motion } from "framer-motion";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { TopBar } from "@/components/TopBar";
 import { Sidebar } from "@/components/Sidebar";
@@ -8,7 +7,6 @@ import { CommandPaletteProvider } from "@/components/CommandPaletteProvider";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { RoleSelect } from "@/components/RoleSelect";
 import { Spinner } from "@/components/ui";
-import { pageVariants } from "@/lib/motion";
 
 // Route-level code splitting — each page is its own chunk.
 const Login = lazy(() => import("@/pages/Login").then((m) => ({ default: m.Login })));
@@ -41,11 +39,10 @@ function Protected({ children }: { children: ReactNode }) {
   const { user, loading } = useAuth();
   if (loading) return <FullScreenLoader />;
   if (!user) return <Navigate to="/login" replace />;
-  return (
-    <motion.main variants={pageVariants} initial="initial" animate="animate" className="pb-20">
-      {children}
-    </motion.main>
-  );
+  // No enter animation on route content — a native-app feel: the moment you
+  // click, the page is simply THERE at full opacity, not fading in. Combined
+  // with preloaded chunks + a warm data cache, navigation has no perceptible load.
+  return <main className="pb-20">{children}</main>;
 }
 
 /** /login is for logged-OUT users only. If a session is already active — e.g. the
