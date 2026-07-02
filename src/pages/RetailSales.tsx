@@ -4,12 +4,12 @@ import { useTranslation } from "react-i18next";
 import { AnimatePresence, motion } from "framer-motion";
 import { Store, ShoppingCart, ReceiptText, BarChart3, HandCoins } from "lucide-react";
 import type { Product, Invoice, Species } from "@/types";
-import { repo } from "@/lib/repo";
 import { useAuth } from "@/contexts/AuthContext";
 import { Skeleton } from "@/components/ui";
 import { cn } from "@/lib/utils";
 import { withTimeout } from "@/lib/errors";
 import { getCached, setCached } from "@/lib/swrCache";
+import { loadRetailSnap, retailKey, type RetailSnap } from "@/lib/prefetchData";
 import { playTap } from "@/lib/sounds";
 import { SaleBuilder, type RetailPrefill } from "@/components/retail/SaleBuilder";
 import { InvoicesPanel } from "@/components/retail/InvoicesPanel";
@@ -27,10 +27,10 @@ export function RetailSales() {
   const clinicId = user?.clinic_id ?? user?.id; // shared workspace id (manager's id for staff)
   const [tab, setTab] = useState<Tab>("sell");
 
-  // Stale-while-revalidate: paint the last snapshot instantly on return.
-  type Snap = { products: Product[]; invoices: Invoice[] };
-  const cacheKey = `retail:${clinicId ?? "anon"}`;
-  const seed = getCached<Snap>(cacheKey);
+  // Stale-while-revalidate: paint the last snapshot instantly (seeded by the
+  // page's own load() or the idle background-warmer — same key + shape).
+  const cacheKey = retailKey(clinicId);
+  const seed = getCached<RetailSnap>(cacheKey);
   const [products, setProducts] = useState<Product[]>(seed?.products ?? []);
   const [invoices, setInvoices] = useState<Invoice[]>(seed?.invoices ?? []);
   const [loading, setLoading] = useState(!seed);
@@ -59,11 +59,11 @@ export function RetailSales() {
   const mounted = useRef(true);
   const load = async () => {
     try {
-      const [p, inv] = await withTimeout(Promise.all([repo.listProducts(clinicId), repo.listInvoices(clinicId)]), 15000);
+      const snap = await withTimeout(loadRetailSnap(clinicId), 15000);
       if (!mounted.current) return;
-      setProducts(p);
-      setInvoices(inv);
-      setCached<Snap>(cacheKey, { products: p, invoices: inv });
+      setProducts(snap.products);
+      setInvoices(snap.invoices);
+      setCached<RetailSnap>(cacheKey, snap);
     } catch {
       /* a hung/failed query still clears the skeleton below */
     } finally {

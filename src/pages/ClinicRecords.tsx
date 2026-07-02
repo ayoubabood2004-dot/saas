@@ -23,6 +23,7 @@ import { getDialCode } from "@/lib/settings";
 import { useAuth } from "@/contexts/AuthContext";
 import { withTimeout } from "@/lib/errors";
 import { getCached, setCached } from "@/lib/swrCache";
+import { loadRecordsSnap, recordsKey, type RecordsSnap } from "@/lib/prefetchData";
 
 type Tab = "log" | "cases" | "boarding" | "movement";
 
@@ -83,10 +84,10 @@ export function ClinicRecords() {
   const navigate = useNavigate();
   const [tab, setTab] = useState<Tab>("log");
 
-  // Stale-while-revalidate: paint the last snapshot instantly on return.
-  type Snap = { pets: Pet[]; admissions: Admission[]; treatments: TreatmentEntry[]; visits: MedicalVisit[] };
-  const cacheKey = `records:${user?.clinic_id ?? user?.id ?? "anon"}`;
-  const seed = getCached<Snap>(cacheKey);
+  // Stale-while-revalidate: paint the last snapshot instantly (seeded by the
+  // page's own load() or the idle background-warmer — same key + shape).
+  const cacheKey = recordsKey(user?.clinic_id ?? user?.id);
+  const seed = getCached<RecordsSnap>(cacheKey);
   const [pets, setPets] = useState<Pet[]>(seed?.pets ?? []);
   const [admissions, setAdmissions] = useState<Admission[]>(seed?.admissions ?? []);
   const [treatments, setTreatments] = useState<TreatmentEntry[]>(seed?.treatments ?? []);
@@ -97,21 +98,15 @@ export function ClinicRecords() {
   const load = async () => {
     try {
       // Tenant isolation: only this clinic's own patients & records (RLS enforces
-      // it server-side; this filter keeps the dashboard query explicit too).
-      const [allPets, a] = await withTimeout(Promise.all([repo.listAllPets(user?.clinic_id ?? user?.id), repo.listAdmissions(user?.clinic_id ?? user?.id)]), 15000);
+      // it server-side). Fetch composition lives in prefetchData so the page and
+      // the idle warmer stay identical.
+      const snap = await withTimeout(loadRecordsSnap(user?.clinic_id ?? user?.id), 15000);
       if (!mounted.current) return;
-      const p = allPets.filter((pet) => pet.shared_with_clinic !== false);
-      setPets(p);
-      setAdmissions(a);
-      const ids = p.map((pet) => pet.id);
-      const [tx, vs] = await withTimeout(Promise.all([
-        Promise.all(p.map((pet) => repo.listTreatments(pet.id))).then((r) => r.flat()),
-        repo.listAllVisits(ids), // health status + last-visit date for the directory
-      ]), 15000);
-      if (mounted.current) {
-        setTreatments(tx); setVisits(vs);
-        setCached<Snap>(cacheKey, { pets: p, admissions: a, treatments: tx, visits: vs });
-      }
+      setPets(snap.pets);
+      setAdmissions(snap.admissions);
+      setTreatments(snap.treatments);
+      setVisits(snap.visits);
+      setCached<RecordsSnap>(cacheKey, snap);
     } catch {
       /* hung/failed query — finally still clears the skeleton */
     } finally {

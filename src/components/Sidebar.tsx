@@ -24,6 +24,7 @@ import { usePermissions } from "@/hooks/usePermissions";
 import { setLang, type Lang } from "@/i18n";
 import { playTap } from "@/lib/sounds";
 import { prefetchHandlers, prefetchIdle } from "@/lib/routePrefetch";
+import { warmDataIdle } from "@/lib/prefetchData";
 import { ThemeToggle, Tooltip } from "@/components/ui";
 import { Logo } from "@/components/Logo";
 import { useCommandPalette } from "./CommandPaletteProvider";
@@ -39,10 +40,17 @@ export function Sidebar() {
   const { can } = usePermissions();
   const otherRole = activeRole === "clinic" ? "owner" : "clinic";
 
-  // Warm the most-likely-next screens once the browser is idle after first paint,
-  // so the first click into them is instant instead of stalling on a chunk fetch.
+  // Once idle after first paint, warm both the JS chunks AND the data snapshots
+  // for the most-likely-next screens — so even the FIRST visit paints instantly
+  // instead of stalling on a chunk download + a multi-second data fetch.
   useEffect(() => {
-    prefetchIdle(["/reception", "/records", "/retail", "/new-case"]);
+    prefetchIdle(["/reception", "/records", "/retail", "/reports", "/new-case"]);
+    warmDataIdle(user?.clinic_id ?? user?.id, {
+      records: true,
+      retail: can("processSales"),
+      analytics: can("viewReports"),
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // RBAC-aware navigation — items requiring a capability the role lacks are hidden.

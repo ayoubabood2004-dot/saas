@@ -10,9 +10,9 @@ import {
   ScrollText, Search,
 } from "lucide-react";
 import type { Pet, Invoice, InvoiceItem, Product, MedicalVisit, PaymentMethod, Species, MediaItem, TreatmentEntry, AuditEntry, LoginEvent } from "@/types";
-import { repo } from "@/lib/repo";
-import { listStaff, type StaffMember } from "@/lib/staff";
+import { type StaffMember } from "@/lib/staff";
 import { getCached, setCached } from "@/lib/swrCache";
+import { loadAnalyticsSnap, analyticsKey, type AnalyticsSnap } from "@/lib/prefetchData";
 import { useAuth } from "@/contexts/AuthContext";
 import { usePermissions } from "@/hooks/usePermissions";
 import { useToast, Skeleton } from "@/components/ui";
@@ -89,13 +89,9 @@ export function AnalyticsHub() {
   const canProfit = can("viewProfits");
 
   // Stale-while-revalidate: reports are the heaviest fetch — paint the last
-  // snapshot instantly on return and refresh in the background.
-  type Snap = {
-    pets: Pet[]; invoices: Invoice[]; items: InvoiceItem[]; products: Product[]; visits: MedicalVisit[];
-    staff: StaffMember[]; media: MediaItem[]; treatments: TreatmentEntry[]; audit: AuditEntry[]; logins: LoginEvent[];
-  };
-  const cacheKey = `analytics:${user?.clinic_id ?? user?.id ?? "anon"}`;
-  const seed = getCached<Snap>(cacheKey);
+  // snapshot instantly (seeded by the page's own load() or the idle warmer).
+  const cacheKey = analyticsKey(user?.clinic_id ?? user?.id);
+  const seed = getCached<AnalyticsSnap>(cacheKey);
 
   const [loading, setLoading] = useState(!seed);
   const [pets, setPets] = useState<Pet[]>(seed?.pets ?? []);
@@ -124,31 +120,18 @@ export function AnalyticsHub() {
     const clinicId = user?.clinic_id ?? user?.id;
     (async () => {
       try {
-        const [pp, inv, it, pr] = await Promise.all([
-          repo.listAllPets(clinicId),
-          repo.listInvoices(clinicId),
-          repo.listAllInvoiceItems(clinicId),
-          repo.listProducts(clinicId),
-        ]);
+        // Fetch composition lives in prefetchData so the page and the idle warmer
+        // stay identical. Populate every slice from the one snapshot.
+        const s = await loadAnalyticsSnap(clinicId);
         if (!alive) return;
-        setPets(pp); setInvoices(inv); setItems(it); setProducts(pr);
-        const petIds = pp.map((p) => p.id);
-        // Second wave: clinical + audit datasets for the expanded reports (each guarded).
-        const [vis, med, tx, st, au, lg] = await Promise.all([
-          repo.listAllVisits(petIds),
-          repo.listAllMedia(petIds).catch(() => [] as MediaItem[]),
-          repo.listAllTreatments(petIds).catch(() => [] as TreatmentEntry[]),
-          listStaff().catch(() => [] as StaffMember[]),
-          repo.listAuditLog(clinicId).catch(() => [] as AuditEntry[]),
-          repo.listLoginEvents(clinicId).catch(() => [] as LoginEvent[]),
-        ]);
-        if (!alive) return;
-        setVisits(vis); setMedia(med); setTreatments(tx); setStaff(st); setAudit(au); setLogins(lg);
-        setCached<Snap>(cacheKey, { pets: pp, invoices: inv, items: it, products: pr, visits: vis, media: med, treatments: tx, staff: st, audit: au, logins: lg });
+        setPets(s.pets); setInvoices(s.invoices); setItems(s.items); setProducts(s.products);
+        setVisits(s.visits); setMedia(s.media); setTreatments(s.treatments); setStaff(s.staff); setAudit(s.audit); setLogins(s.logins);
+        setCached<AnalyticsSnap>(cacheKey, s);
       } catch { /* empty states cover it */ }
       finally { if (alive) setLoading(false); }
     })();
     return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.clinic_id, user?.id]);
 
   const { lo, hi } = useMemo(() => rangeBounds(range, from, to), [range, from, to]);
