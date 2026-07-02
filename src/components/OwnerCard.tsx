@@ -41,7 +41,7 @@ function CopyButton({ copied, onClick, label }: { copied: boolean; onClick: () =
  * Each field has its own subtle copy button with independent ✓ feedback, plus a
  * "Copy all details" button. Every successful copy plays a short sound.
  */
-export function OwnerCard({ pet, canEdit = false, onUpdated }: { pet: Pet; canEdit?: boolean; onUpdated?: () => void }) {
+export function OwnerCard({ pet, canEdit = false, onUpdated, bare = false }: { pet: Pet; canEdit?: boolean; onUpdated?: () => void; /** Render without the card chrome (for embedding in a shared banner). */ bare?: boolean }) {
   const { t } = useTranslation();
   const toast = useToast();
   // The single field/button currently flashing its "Copied!" state, or null.
@@ -87,7 +87,7 @@ export function OwnerCard({ pet, canEdit = false, onUpdated }: { pet: Pet; canEd
   };
 
   return (
-    <div className="card p-5">
+    <div className={bare ? "" : "card p-5"}>
       <h3 className="mb-3 flex items-center gap-2 font-bold text-ink">
         <User size={18} className="text-brand-600" /> {t("owner.title")}
         {canEdit && (

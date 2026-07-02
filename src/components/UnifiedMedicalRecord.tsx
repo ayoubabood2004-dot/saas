@@ -207,12 +207,23 @@ export function UnifiedMedicalRecord({ pet, treatments, vaccinations, notes, isO
       },
     },
     {
-      key: "body", header: t("chart.colDetails", "التفاصيل والملاحظات"), cell: (e) => (
-        <div className="min-w-0 max-w-[340px] [overflow-wrap:anywhere]">
-          {e.type !== "note" && <p className="font-semibold text-ink">{e.title}</p>}
-          {e.details && <p className="whitespace-pre-wrap text-2xs leading-relaxed text-ink-muted">{e.details}</p>}
-        </div>
-      ),
+      key: "body", header: t("chart.colDetails", "التفاصيل والملاحظات"), cell: (e) => {
+        // A clinical note is the star of its row: give it its own comfortable box with
+        // larger, clearer type so it reads like a written note, not a table cell footnote.
+        if (e.type === "note") {
+          return (
+            <div className="max-w-2xl rounded-xl border border-line/70 bg-surface-2/50 px-3.5 py-2.5 [overflow-wrap:anywhere]">
+              <p className="whitespace-pre-wrap text-sm leading-relaxed text-ink">{e.details || "—"}</p>
+            </div>
+          );
+        }
+        return (
+          <div className="min-w-0 max-w-2xl [overflow-wrap:anywhere]">
+            <p className="font-semibold text-ink">{e.title}</p>
+            {e.details && <p className="mt-0.5 whitespace-pre-wrap text-xs leading-relaxed text-ink-muted">{e.details}</p>}
+          </div>
+        );
+      },
     },
     { key: "doctor", header: t("chart.colDoctor", "الطبيب المعالج"), cell: (e) => <span className="[overflow-wrap:anywhere] text-ink-muted">{e.doctor_name || "—"}</span> },
   ];

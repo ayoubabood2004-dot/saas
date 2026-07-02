@@ -182,16 +182,29 @@ export function MedicalEntry({
   const add = (entry: MedicalDraft) => { setSheet((s) => [entry, ...s]); playSuccess(); };
   const remove = (id: string) => setSheet((s) => s.filter((e) => e.id !== id));
 
+  // A medication/vaccine that's fully configured in the form but hasn't been "Added"
+  // to the sheet yet. Save flushes it too, so the doctor never loses an entry just by
+  // skipping the "Add" button — one Save captures everything.
+  const [hasPending, setHasPending] = useState(false);
+  const pendingFlush = useRef<(() => MedicalDraft | null) | null>(null);
+  // Only one sub-form is mounted at a time; clear the pending state when the mode flips.
+  useEffect(() => { setHasPending(false); pendingFlush.current = null; }, [mode]);
+
   const [busy, setBusy] = useState(false);
-  // Saveable when there's at least one entry OR a clinical assessment to record.
-  const canSave = sheet.length > 0 || !!condition || notes.trim().length > 0;
+  // Saveable when there's an added entry, a configured-but-unadded one, OR an assessment.
+  const pendingCount = sheet.length + (hasPending ? 1 : 0);
+  const canSave = pendingCount > 0 || !!condition || notes.trim().length > 0;
   const commit = async () => {
-    if (!canSave || busy) return;
+    if (busy) return;
+    // Flush the configured-but-unadded medication/vaccine so a single Save saves it too.
+    const pending = pendingFlush.current?.() ?? null;
+    const entries = pending ? [pending, ...sheet] : sheet; // pending = the most-recent add
+    if (entries.length === 0 && !condition && notes.trim().length === 0) return;
     setBusy(true);
     try {
-      await onCommit?.(sheet.slice().reverse(), { condition, notes: notes.trim() }, doctor || undefined); // committed in add-order
+      await onCommit?.(entries.slice().reverse(), { condition, notes: notes.trim() }, doctor || undefined); // committed in add-order
       toast.success(t("medentry.savedToast", "Saved to the patient's record"));
-      setSheet([]); setCondition(null); setNotes("");
+      setSheet([]); setCondition(null); setNotes(""); setHasPending(false); pendingFlush.current = null;
     } catch (error) {
       // Surface the exact backend error to the console for diagnosis, then keep
       // the draft so nothing the doctor typed is lost.
@@ -236,8 +249,8 @@ export function MedicalEntry({
         transition={{ duration: 0.2, ease: "easeOut" }}
       >
         {mode === "medication"
-          ? <MedicationForm onAdd={add} version={catalogVersion} />
-          : <VaccinationForm species={activeSpecies} hasSpeciesProp={!!species} draftSpecies={draftSpecies} setDraftSpecies={setDraftSpecies} onAdd={add} version={catalogVersion} />}
+          ? <MedicationForm onAdd={add} version={catalogVersion} onReadyChange={setHasPending} flushRef={pendingFlush} />
+          : <VaccinationForm species={activeSpecies} hasSpeciesProp={!!species} draftSpecies={draftSpecies} setDraftSpecies={setDraftSpecies} onAdd={add} version={catalogVersion} onReadyChange={setHasPending} flushRef={pendingFlush} />}
       </motion.div>
 
       {/* Unified treatment record */}
@@ -303,8 +316,8 @@ export function MedicalEntry({
           leftIcon={<Check size={18} />}
           onClick={commit}
         >
-          {sheet.length
-            ? t("medentry.saveN", { n: sheet.length, defaultValue: "Save {{n}} to record" })
+          {pendingCount
+            ? t("medentry.saveN", { n: pendingCount, defaultValue: "Save {{n}} to record" })
             : t("medentry.saveAssessment", "Save assessment")}
         </Button>
       )}
@@ -313,7 +326,7 @@ export function MedicalEntry({
 }
 
 /* ---------------- Medication (cascading) ---------------- */
-export function MedicationForm({ onAdd, version, addLabel }: { onAdd: (e: MedicalDraft) => void; version: number; addLabel?: string }) {
+export function MedicationForm({ onAdd, version, addLabel, onReadyChange, flushRef }: { onAdd: (e: MedicalDraft) => void; version: number; addLabel?: string; onReadyChange?: (ready: boolean) => void; flushRef?: { current: (() => MedicalDraft | null) | null } }) {
   // Built-in catalogue MERGED with the clinic's custom medications (added in
   // Settings) — grouped under their therapeutic type. `version` forces a refresh
   // after the catalog re-hydrates so newly-added meds appear instantly.
@@ -340,6 +353,18 @@ export function MedicationForm({ onAdd, version, addLabel }: { onAdd: (e: Medica
   const ready = !!drug && !!route && !!dosage.trim();
 
   const reset = () => { setFamily(""); setDrug(""); setRoute(null); setDosage(""); setNote(""); setGiven(true); };
+
+  // Build the current selection as a draft (or null if incomplete). Shared by the "Add"
+  // button and the parent's Save (which flushes this via flushRef so a configured-but-
+  // unadded medication is never lost).
+  const buildDraft = (): MedicalDraft | null =>
+    ready && route ? { id: uid("med"), kind: "medication", family, name: drug, route, dosage: dosage.trim(), note: note.trim() || undefined, administered: given } : null;
+  useEffect(() => { onReadyChange?.(ready); }, [ready, onReadyChange]);
+  useEffect(() => {
+    if (flushRef) flushRef.current = buildDraft;
+    return () => { if (flushRef) flushRef.current = null; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [flushRef, ready, route, family, drug, dosage, note, given]);
 
   return (
     <div className="space-y-5">
@@ -476,11 +501,7 @@ export function MedicationForm({ onAdd, version, addLabel }: { onAdd: (e: Medica
         variant="secondary"
         disabled={!ready}
         leftIcon={<Plus size={16} />}
-        onClick={() => {
-          if (!ready || !route) return;
-          onAdd({ id: uid("med"), kind: "medication", family, name: drug, route, dosage: dosage.trim(), note: note.trim() || undefined, administered: given });
-          reset();
-        }}
+        onClick={() => { const d = buildDraft(); if (d) { onAdd(d); reset(); } }}
       >
         {addLabel ?? "Add medication"}
       </Button>
@@ -489,14 +510,28 @@ export function MedicationForm({ onAdd, version, addLabel }: { onAdd: (e: Medica
 }
 
 /* ---------------- Vaccination (species-aware) ---------------- */
-export function VaccinationForm({ species, hasSpeciesProp, draftSpecies, setDraftSpecies, onAdd, version, addLabel }: {
-  species: Species; hasSpeciesProp: boolean; draftSpecies: Species; setDraftSpecies: (s: Species) => void; onAdd: (e: MedicalDraft) => void; version: number; addLabel?: string;
+export function VaccinationForm({ species, hasSpeciesProp, draftSpecies, setDraftSpecies, onAdd, version, addLabel, onReadyChange, flushRef }: {
+  species: Species; hasSpeciesProp: boolean; draftSpecies: Species; setDraftSpecies: (s: Species) => void; onAdd: (e: MedicalDraft) => void; version: number; addLabel?: string; onReadyChange?: (ready: boolean) => void; flushRef?: { current: (() => MedicalDraft | null) | null };
 }) {
   const toast = useToast();
   const [vaccine, setVaccine] = useState("");
   const [nextDue, setNextDue] = useState<string | null>(null);
   const [lot, setLot] = useState("");
   const [given, setGiven] = useState(true);
+
+  // Current selection as a draft (or null). Shared by "Add" and the parent's Save flush,
+  // so a chosen-but-unadded vaccine is saved by a single Save.
+  const buildDraft = (): MedicalDraft | null => {
+    if (!vaccine) return null;
+    const due = nextDue && !Number.isNaN(new Date(nextDue + "T00:00:00").getTime()) ? nextDue : null;
+    return { id: uid("vac"), kind: "vaccination", name: vaccine, nextDue: due, lot: lot.trim() || undefined, administered: given };
+  };
+  useEffect(() => { onReadyChange?.(!!vaccine); }, [vaccine, onReadyChange]);
+  useEffect(() => {
+    if (flushRef) flushRef.current = buildDraft;
+    return () => { if (flushRef) flushRef.current = null; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [flushRef, vaccine, nextDue, lot, given]);
 
   const group = SPECIES_GROUP[species];
   // Clinic-custom vaccines (added in Settings) aren't species-tagged → always offered.
@@ -648,12 +683,10 @@ export function VaccinationForm({ species, hasSpeciesProp, draftSpecies, setDraf
         disabled={!vaccine}
         leftIcon={<Plus size={16} />}
         onClick={() => {
-          if (!vaccine) return;
+          const d = buildDraft();
+          if (!d) return;
           try {
-            // A custom date arrives as YYYY-MM-DD; normalize & reject anything unparseable
-            // so a bad value can never silently break the add.
-            const due = nextDue && !Number.isNaN(new Date(nextDue + "T00:00:00").getTime()) ? nextDue : null;
-            onAdd({ id: uid("vac"), kind: "vaccination", name: vaccine, nextDue: due, lot: lot.trim() || undefined, administered: given });
+            onAdd(d);
             setVaccine(""); setNextDue(null); setLot(""); setGiven(true);
           } catch (err) {
             console.error("Add vaccination failed:", err);

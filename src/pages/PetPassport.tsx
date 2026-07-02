@@ -55,10 +55,6 @@ const TABS: { id: Tab; icon: typeof IdCard; fill: string; text: string }[] = [
 /** Map a feed event category to the tab that shows its detail. */
 const EVENT_TAB: Partial<Record<string, Tab>> = { vaccine: "vaccines", medication: "treatment", feeding: "diet", recheck: "history" };
 
-function Chip({ icon, children }: { icon?: React.ReactNode; children: React.ReactNode }) {
-  return <span className="inline-flex items-center gap-1 rounded-full bg-surface-2 px-2.5 py-1 text-xs font-medium text-ink-muted">{icon}{children}</span>;
-}
-
 /** Full-width banner hero: pet photo + name + breed + core-info chips + allergy. */
 function ProfileHead({ pet, onPhoto }: { pet: Pet; onPhoto: (e: React.ChangeEvent<HTMLInputElement>) => void }) {
   const { t, i18n } = useTranslation();
@@ -71,22 +67,24 @@ function ProfileHead({ pet, onPhoto }: { pet: Pet; onPhoto: (e: React.ChangeEven
   ) : null;
   const sexSym = pet.sex === "male" ? "♂" : pet.sex === "female" ? "♀" : "•";
   const sexColor = pet.sex === "male" ? "text-brand-600" : pet.sex === "female" ? "text-accent-600" : "text-ink-subtle";
+  const pill = "inline-flex items-center gap-1.5 rounded-full bg-surface-2 px-3.5 py-2 text-sm font-semibold text-ink";
   return (
-    <div className="card flex items-center gap-5 p-5">
+    // Bare (no card) — embedded as the first section of the unified banner card.
+    <div className="flex items-center gap-5">
       <label className="relative cursor-pointer shrink-0 no-print" title={t("passport.changePhoto")}>
-        <PetAvatar pet={pet} size={92} photoFallback />
-        <span className="absolute -bottom-1 -end-1 grid h-7 w-7 place-items-center rounded-full bg-brand-600 text-white shadow-soft">
-          <Camera size={15} />
+        <PetAvatar pet={pet} size={120} photoFallback />
+        <span className="absolute -bottom-1 -end-1 grid h-8 w-8 place-items-center rounded-full bg-brand-600 text-white shadow-soft">
+          <Camera size={16} />
         </span>
         <input type="file" accept="image/*" className="hidden" onChange={onPhoto} />
       </label>
       <div className="min-w-0 flex-1">
-        <h1 className="truncate font-display text-2xl font-extrabold tracking-tighter2 text-ink">{pet.name}</h1>
-        <p className="truncate text-sm text-ink-muted">{speciesBreed}</p>
-        <div className="mt-2.5 flex flex-wrap gap-1.5">
-          {age && <Chip icon={<Cake size={12} className="text-brand-500" />}>{age.years > 0 ? `${age.years}${t("pet.yShort", "y")} ` : ""}{age.months}{t("pet.mShort", "m")}</Chip>}
-          {pet.current_weight_kg != null && <Chip icon={<Scale size={12} className="text-brand-500" />}>{pet.current_weight_kg} {t("common.kg")}</Chip>}
-          <Chip><span className={cn("text-sm font-bold leading-none", sexColor)}>{sexSym}</span> {t(`pet.sex.${pet.sex}`)}</Chip>
+        <h1 className="truncate font-display text-2xl font-extrabold tracking-tighter2 text-ink sm:text-3xl">{pet.name}</h1>
+        <p className="truncate text-base text-ink-muted">{speciesBreed}</p>
+        <div className="mt-3 flex flex-wrap gap-2">
+          {age && <span className={pill}><Cake size={15} className="text-brand-500" /> {age.years > 0 ? `${age.years}${t("pet.yShort", "y")} ` : ""}{age.months}{t("pet.mShort", "m")}</span>}
+          {pet.current_weight_kg != null && <span className={pill}><Scale size={15} className="text-brand-500" /> {pet.current_weight_kg} {t("common.kg")}</span>}
+          <span className={pill}><span className={cn("text-base font-bold leading-none", sexColor)}>{sexSym}</span> {t(`pet.sex.${pet.sex}`)}</span>
         </div>
         {allergy && <div className="mt-2.5">{allergy}</div>}
       </div>
@@ -348,11 +346,14 @@ export function PetPassport() {
       {/* FULL-WIDTH VERTICAL FLOW — zero sidebars:
           ① Profile banner  →  ② 100%-width الطبلة canvas  →  ③ bottom widgets grid */}
 
-      {/* ① Profile banner — pet + core info · owner details · caregivers (horizontal). */}
-      <section className={cn("grid gap-4", isOwner ? "md:grid-cols-2" : "lg:grid-cols-3")}>
-        <ProfileHead pet={pet} onPhoto={onPhoto} />
-        {!isOwner && <OwnerCard pet={pet} canEdit={canEditClinical} onUpdated={reload} />}
-        <ContactsCard pet={pet} canEdit={canEditClinical || isOwner} onChanged={reload} />
+      {/* ① Profile banner — ONE unified card (pet + core info · owner details · animal data),
+          merged with subtle dividers so it reads as a single clean record, not many boxes. */}
+      <section className="card overflow-hidden p-0">
+        <div className={cn("grid divide-y divide-line lg:divide-y-0 lg:divide-x", isOwner ? "lg:grid-cols-2" : "lg:grid-cols-3")}>
+          <div className="p-5 sm:p-6"><ProfileHead pet={pet} onPhoto={onPhoto} /></div>
+          {!isOwner && <div className="p-5 sm:p-6"><OwnerCard pet={pet} canEdit={canEditClinical} onUpdated={reload} bare /></div>}
+          <div className="p-5 sm:p-6"><IdentityFactsCard pet={pet} canEdit={canEditClinical || isOwner} onChanged={reload} bare /></div>
+        </div>
       </section>
 
       {/* ② Maximized clinical canvas — the tab bar + content span the FULL width. */}
@@ -445,8 +446,9 @@ export function PetPassport() {
           <WeightCard pet={pet} weights={weights} canEdit={canEditClinical} onChanged={reload} />
           {canEditClinical && <RangesCard pet={pet} />}
           {!isOwner && <PetSalesWidget pet={pet} />}
-          <IdentityFactsCard pet={pet} canEdit={canEditClinical || isOwner} onChanged={reload} />
           <MarkingsCard pet={pet} canEdit={canEditClinical || isOwner} onChanged={reload} />
+          {/* Caregivers moved down here, out of the banner. */}
+          <ContactsCard pet={pet} canEdit={canEditClinical || isOwner} onChanged={reload} />
           {isOwner && <SharedToggleCard pet={pet} onChanged={reload} />}
         </div>
       </section>
@@ -536,7 +538,7 @@ function MarkingsCard({ pet, canEdit, onChanged }: { pet: Pet; canEdit: boolean;
 }
 
 /** Basic identity facts (serial, chip, sex, colour, weight) — display + edit. */
-function IdentityFactsCard({ pet, canEdit, onChanged }: { pet: Pet; canEdit: boolean; onChanged: () => void }) {
+function IdentityFactsCard({ pet, canEdit, onChanged, bare = false }: { pet: Pet; canEdit: boolean; onChanged: () => void; bare?: boolean }) {
   const { t } = useTranslation();
   const [profileOpen, setProfileOpen] = useState(false);
   const rows: [string, string][] = [
@@ -547,7 +549,7 @@ function IdentityFactsCard({ pet, canEdit, onChanged }: { pet: Pet; canEdit: boo
     [t("pet.weight"), pet.current_weight_kg ? `${pet.current_weight_kg} ${t("common.kg")}` : "—"],
   ];
   return (
-    <div className="card p-5">
+    <div className={bare ? "" : "card p-5"}>
       <div className="mb-2 flex items-center justify-between">
         <h3 className="flex items-center gap-2 font-bold text-ink"><Fingerprint size={18} className="text-brand-600" /> {t("pet.identity", "بيانات الحيوان")}</h3>
         {canEdit && (
