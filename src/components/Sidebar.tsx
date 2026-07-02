@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
@@ -22,6 +23,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { usePermissions } from "@/hooks/usePermissions";
 import { setLang, type Lang } from "@/i18n";
 import { playTap } from "@/lib/sounds";
+import { prefetchHandlers, prefetchIdle } from "@/lib/routePrefetch";
 import { ThemeToggle, Tooltip } from "@/components/ui";
 import { Logo } from "@/components/Logo";
 import { useCommandPalette } from "./CommandPaletteProvider";
@@ -36,6 +38,12 @@ export function Sidebar() {
   const palette = useCommandPalette();
   const { can } = usePermissions();
   const otherRole = activeRole === "clinic" ? "owner" : "clinic";
+
+  // Warm the most-likely-next screens once the browser is idle after first paint,
+  // so the first click into them is instant instead of stalling on a chunk fetch.
+  useEffect(() => {
+    prefetchIdle(["/reception", "/records", "/retail", "/new-case"]);
+  }, []);
 
   // RBAC-aware navigation — items requiring a capability the role lacks are hidden.
   const items = [
@@ -92,6 +100,7 @@ export function Sidebar() {
             <Link
               key={item.to}
               to={item.to}
+              {...prefetchHandlers(item.to)}
               onClick={() => playTap()}
               className={cn(
                 "relative flex items-center gap-3 rounded-2xl px-3.5 py-3 text-sm font-semibold transition-colors",

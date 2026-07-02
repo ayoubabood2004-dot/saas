@@ -24,6 +24,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { setLang, type Lang } from "@/i18n";
 import { useAuth } from "@/contexts/AuthContext";
 import { isSoundEnabled, setSoundEnabled, playTap } from "@/lib/sounds";
+import { prefetchHandlers } from "@/lib/routePrefetch";
 import { Tooltip, ThemeToggle } from "@/components/ui";
 import { Logo } from "@/components/Logo";
 import { useCommandPalette } from "@/components/CommandPaletteProvider";
@@ -89,6 +90,7 @@ export function TopBar({ mobileOnly = false }: { mobileOnly?: boolean }) {
                 <Link
                   key={item.to}
                   to={item.to}
+                  {...prefetchHandlers(item.to)}
                   className={cn(
                     "relative inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold transition-colors",
                     active ? "text-brand-700 dark:text-brand-300" : "text-ink-muted hover:text-ink hover:bg-surface-2",
@@ -207,6 +209,7 @@ export function TopBar({ mobileOnly = false }: { mobileOnly?: boolean }) {
                     <Link
                       key={item.to}
                       to={item.to}
+                      {...prefetchHandlers(item.to)}
                       className={cn(
                         "flex items-center gap-3 rounded-2xl px-3 py-3 font-medium",
                         isActive(item.to) ? "bg-brand-50 text-brand-700 dark:bg-brand-500/15 dark:text-brand-300" : "text-ink hover:bg-surface-2",

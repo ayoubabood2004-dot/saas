@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { withTimeout } from "@/lib/errors";
 import { useTranslation } from "react-i18next";
@@ -17,7 +17,6 @@ import {
   RotateCw,
   WifiOff,
 } from "lucide-react";
-import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
 import type { Appointment, Pet, Admission, Species, Reminder } from "@/types";
 import { repo } from "@/lib/repo";
 import { useAuth } from "@/contexts/AuthContext";
@@ -28,8 +27,13 @@ import { UpcomingEvents } from "@/components/UpcomingEvents";
 import { BirthdaysWidget } from "@/components/BirthdaysWidget";
 import { RemindersWidget } from "@/components/RemindersWidget";
 import { buildUpcomingEvents } from "@/lib/events";
-import { Card, CardTitle, Button, Badge, RingStat, Skeleton, EmptyState, HealthCurve, ProgressRing, type CurvePoint } from "@/components/ui";
+import { getCached, setCached } from "@/lib/swrCache";
+import { Card, CardTitle, Button, Badge, RingStat, Skeleton, EmptyState, ProgressRing, type CurvePoint } from "@/components/ui";
 import { staggerContainer, fadeUp } from "@/lib/motion";
+
+// recharts loads lazily (after first paint) — both charts share one chunk.
+const SpeciesDonut = lazy(() => import("@/components/dashboard/DashboardCharts").then((m) => ({ default: m.SpeciesDonut })));
+const ActivityCurve = lazy(() => import("@/components/dashboard/DashboardCharts").then((m) => ({ default: m.ActivityCurve })));
 
 const SPECIES_COLOR: Record<Species, string> = {
   dog: "#1266d8",
@@ -53,12 +57,20 @@ export function Dashboard() {
   const { t, i18n } = useTranslation();
   const { user } = useAuth();
   const navigate = useNavigate();
-  const [loading, setLoading] = useState(true);
-  const [pets, setPets] = useState<Pet[]>([]);
-  const [appts, setAppts] = useState<Appointment[]>([]);
-  const [admissions, setAdmissions] = useState<Admission[]>([]);
-  const [reminders, setReminders] = useState<Reminder[]>([]);
-  const [activity, setActivity] = useState<CurvePoint[]>([]);
+
+  // Stale-while-revalidate: seed from the last snapshot so returning to the home
+  // screen paints its data instantly instead of flashing skeletons. We still
+  // revalidate in the background on every mount and swap in fresh data.
+  type Snap = { pets: Pet[]; appts: Appointment[]; admissions: Admission[]; reminders: Reminder[]; activity: CurvePoint[] };
+  const cacheKey = `dashboard:${user?.clinic_id ?? user?.id ?? "anon"}`;
+  const seed = getCached<Snap>(cacheKey);
+
+  const [loading, setLoading] = useState(!seed);
+  const [pets, setPets] = useState<Pet[]>(seed?.pets ?? []);
+  const [appts, setAppts] = useState<Appointment[]>(seed?.appts ?? []);
+  const [admissions, setAdmissions] = useState<Admission[]>(seed?.admissions ?? []);
+  const [reminders, setReminders] = useState<Reminder[]>(seed?.reminders ?? []);
+  const [activity, setActivity] = useState<CurvePoint[]>(seed?.activity ?? []);
   const [error, setError] = useState(false);
 
   const mounted = useRef(true);
@@ -68,7 +80,8 @@ export function Dashboard() {
       d.setDate(d.getDate() - (6 - i));
       return d;
     });
-    if (mounted.current) { setLoading(true); setError(false); }
+    // Only show skeletons on a cold load; a revalidation over cached data stays visible.
+    if (mounted.current) { if (getCached<Snap>(cacheKey) === undefined) setLoading(true); setError(false); }
     try {
       // 4 queries instead of 10 — one range query covers the whole week.
       const [allPets, adm, rem, weekAppts] = await withTimeout(Promise.all([
@@ -79,16 +92,18 @@ export function Dashboard() {
       ]), 12000);
       if (!mounted.current) return; // unmounted mid-flight → drop the result
       const apptsOn = (d: Date) => weekAppts.filter((a) => a.scheduled_at.slice(0, 10) === d.toISOString().slice(0, 10));
+      const todayAppts = apptsOn(days[6]); // today is the last day
+      const activityPts = days.map((d) => ({
+        label: d.toLocaleDateString(i18n.language === "ar" ? "ar-EG-u-nu-latn" : "en-US", { weekday: "short" }),
+        value: apptsOn(d).length,
+      }));
       setPets(allPets);
       setAdmissions(adm);
       setReminders(rem);
-      setAppts(apptsOn(days[6])); // today is the last day
-      setActivity(
-        days.map((d) => ({
-          label: d.toLocaleDateString(i18n.language === "ar" ? "ar-EG-u-nu-latn" : "en-US", { weekday: "short" }),
-          value: apptsOn(d).length,
-        })),
-      );
+      setAppts(todayAppts);
+      setActivity(activityPts);
+      // Snapshot for instant paint on the next visit to the home screen.
+      setCached<Snap>(cacheKey, { pets: allPets, admissions: adm, reminders: rem, appts: todayAppts, activity: activityPts });
     } catch {
       if (mounted.current) setError(true); // surface a retry instead of endless skeletons
     } finally {
@@ -207,7 +222,11 @@ export function Dashboard() {
             <CardTitle>{t("dash.activity", "Clinic activity")}</CardTitle>
             <Badge tone="brand" icon={<Activity size={13} />}>{t("dash.last7", "Last 7 days")}</Badge>
           </div>
-          {loading ? <Skeleton className="h-40 rounded-2xl" /> : <HealthCurve data={activity} unit="" />}
+          {loading ? <Skeleton className="h-40 rounded-2xl" /> : (
+            <Suspense fallback={<Skeleton className="h-40 rounded-2xl" />}>
+              <ActivityCurve data={activity} unit="" />
+            </Suspense>
+          )}
         </Card>
 
         <Card padded className="flex flex-col items-center justify-center">
@@ -308,13 +327,9 @@ export function Dashboard() {
           ) : (
             <>
               <div className="relative mx-auto h-44 w-44">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie data={speciesData} dataKey="value" nameKey="species" innerRadius={52} outerRadius={76} paddingAngle={3} stroke="none">
-                      {speciesData.map((d) => <Cell key={d.species} fill={SPECIES_COLOR[d.species]} />)}
-                    </Pie>
-                  </PieChart>
-                </ResponsiveContainer>
+                <Suspense fallback={<Skeleton className="h-44 w-44 rounded-full" />}>
+                  <SpeciesDonut data={speciesData} colors={SPECIES_COLOR} />
+                </Suspense>
                 <div className="pointer-events-none absolute inset-0 grid place-items-center">
                   <div className="text-center">
                     <p className="font-display text-2xl font-extrabold text-ink">{pets.length}</p>

@@ -1,6 +1,6 @@
 import { lazy, Suspense, useState, type ReactNode } from "react";
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
-import { AnimatePresence, motion } from "framer-motion";
+import { motion } from "framer-motion";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { TopBar } from "@/components/TopBar";
 import { Sidebar } from "@/components/Sidebar";
@@ -42,7 +42,7 @@ function Protected({ children }: { children: ReactNode }) {
   if (loading) return <FullScreenLoader />;
   if (!user) return <Navigate to="/login" replace />;
   return (
-    <motion.main variants={pageVariants} initial="initial" animate="animate" exit="exit" className="pb-20">
+    <motion.main variants={pageVariants} initial="initial" animate="animate" className="pb-20">
       {children}
     </motion.main>
   );
@@ -118,7 +118,10 @@ function Shell() {
     // one broken screen can never trap the user.
     <ErrorBoundary key={location.pathname} scope="route">
       <Suspense fallback={<FullScreenLoader />}>
-        <AnimatePresence mode="wait">
+        {/* No AnimatePresence/mode="wait" here: it held the incoming page back
+            until the outgoing one finished animating out. The route subtree is
+            keyed by pathname (via ErrorBoundary) so the new page mounts and
+            plays its fast enter immediately. */}
           <Routes location={location} key={location.pathname}>
             <Route path="/login" element={<LoginRoute />} />
             <Route path="/join" element={<JoinClinic />} />
@@ -138,7 +141,6 @@ function Shell() {
             <Route path="/settings" element={<Protected><Settings /></Protected>} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
-        </AnimatePresence>
       </Suspense>
     </ErrorBoundary>
   );
