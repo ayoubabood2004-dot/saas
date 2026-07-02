@@ -1,53 +1,132 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
-import { withTimeout } from "@/lib/errors";
-import { motion } from "framer-motion";
-import { CalendarDays, Clock, UserCheck, DoorOpen, Stethoscope, Plus, Siren, CheckCircle2, ArrowRight } from "lucide-react";
-import type { Appointment, Pet } from "@/types";
+import {
+  DndContext, DragOverlay, MouseSensor, TouchSensor, useSensor, useSensors,
+  useDraggable, useDroppable, pointerWithin, type DragStartEvent, type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  CalendarDays, Stethoscope, BedDouble, CalendarClock, LogOut, Plus,
+  ChevronRight, ChevronLeft, LayoutGrid, Columns3, GripVertical,
+} from "lucide-react";
+import type { Admission, Pet } from "@/types";
 import { repo } from "@/lib/repo";
-import { DOCTORS, SERVICE_COLOR } from "@/lib/clinic";
 import { PetAvatar } from "@/components/PetAvatar";
-import { Modal } from "@/components/Modal";
-import { Button, Badge } from "@/components/ui";
-import { formatTime, cn } from "@/lib/utils";
-import { staggerContainer, staggerItem } from "@/lib/motion";
-import { playSuccess, playWarning, playTap } from "@/lib/sounds";
+import { Button, useToast } from "@/components/ui";
+import { cn, localISO } from "@/lib/utils";
+import { playTap, playSuccess, playWarning } from "@/lib/sounds";
+import { useAuth } from "@/contexts/AuthContext";
+import { withTimeout } from "@/lib/errors";
 
-/** Triage acuity colour language (1 = critical … 5 = routine). */
-const TRIAGE: Record<number, { solid: string; chip: string; ring: string }> = {
-  1: { solid: "bg-danger-500", chip: "bg-danger-50 text-danger-700 dark:bg-danger-500/15 dark:text-danger-200", ring: "ring-danger-400" },
-  2: { solid: "bg-accent-500", chip: "bg-accent-50 text-accent-700 dark:bg-accent-500/15 dark:text-accent-300", ring: "ring-accent-400" },
-  3: { solid: "bg-warn-500", chip: "bg-warn-50 text-warn-700 dark:bg-warn-500/15 dark:text-warn-200", ring: "ring-warn-400" },
-  4: { solid: "bg-sky-500", chip: "bg-sky-50 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300", ring: "ring-sky-400" },
-  5: { solid: "bg-success-500", chip: "bg-success-50 text-success-700 dark:bg-success-500/15 dark:text-success-200", ring: "ring-success-400" },
+/* ============================================================================
+ * التقويم الرئيسي — Operational Operations Calendar.
+ *
+ * Not a booking tool: it manages the clinic's live medical cases + boarding
+ * (الفندقة) as draggable cards. Two views share one DnD engine:
+ *   • Monthly grid — drag a pet between days to reschedule the stay (admitted_on).
+ *   • Daily kanban — drag a pet between status columns (care ⇄ boarding ⇄ …).
+ * Every drop updates local state instantly (buttery), then fires the Supabase
+ * UPDATE in the background (revert on failure). Clicking any card opens the
+ * pet's unified medical record (الطبلة). RTL-first, premium status colours.
+ * ==========================================================================*/
+
+type OpStatus = "scheduled" | "care" | "boarding" | "done";
+
+/** The kanban columns, in reading order (RTL flips them visually). */
+const COLUMN_ORDER: OpStatus[] = ["scheduled", "care", "boarding", "done"];
+
+const STATUS_META: Record<OpStatus, {
+  key: string; def: string; icon: typeof Stethoscope;
+  head: string; dot: string; card: string; over: string; chip: string;
+}> = {
+  scheduled: {
+    key: "reception.schedBoarding", def: "حجوزات الفندقة", icon: CalendarClock,
+    head: "bg-violet-100 text-violet-700 dark:bg-violet-500/20 dark:text-violet-200",
+    dot: "bg-violet-500",
+    card: "border-violet-200 bg-violet-50/70 dark:border-violet-500/30 dark:bg-violet-500/10",
+    over: "ring-violet-400/70 bg-violet-50/80 dark:bg-violet-500/10",
+    chip: "bg-violet-100 text-violet-700 dark:bg-violet-500/20 dark:text-violet-200",
+  },
+  care: {
+    key: "reception.care", def: "تحت الرعاية الطبية", icon: Stethoscope,
+    head: "bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-200",
+    dot: "bg-amber-500",
+    card: "border-amber-200 bg-amber-50/70 dark:border-amber-500/30 dark:bg-amber-500/10",
+    over: "ring-amber-400/70 bg-amber-50/80 dark:bg-amber-500/10",
+    chip: "bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-200",
+  },
+  boarding: {
+    key: "reception.boarding", def: "الفندقة", icon: BedDouble,
+    head: "bg-sky-100 text-sky-700 dark:bg-sky-500/20 dark:text-sky-200",
+    dot: "bg-sky-500",
+    card: "border-sky-200 bg-sky-50/70 dark:border-sky-500/30 dark:bg-sky-500/10",
+    over: "ring-sky-400/70 bg-sky-50/80 dark:bg-sky-500/10",
+    chip: "bg-sky-100 text-sky-700 dark:bg-sky-500/20 dark:text-sky-200",
+  },
+  done: {
+    key: "reception.doneLeft", def: "مكتملة / غادرت", icon: LogOut,
+    head: "bg-success-100 text-success-700 dark:bg-success-500/20 dark:text-success-200",
+    dot: "bg-success-500",
+    card: "border-success-200 bg-success-50/60 dark:border-success-500/30 dark:bg-success-500/10",
+    over: "ring-success-400/70 bg-success-50/80 dark:bg-success-500/10",
+    chip: "bg-success-100 text-success-700 dark:bg-success-500/20 dark:text-success-200",
+  },
 };
-const tri = (a: Appointment) => a.triage_score ?? 3;
+
+const AR_WEEKDAYS = ["السبت", "الأحد", "الإثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة"];
+
+const dayNumber = (admittedOn: string): number => {
+  const t = new Date(admittedOn + "T00:00:00").getTime();
+  if (Number.isNaN(t)) return 1;
+  return Math.max(1, Math.floor((Date.now() - t) / 86400000) + 1);
+};
+const arDate = (iso: string) => new Date(iso + "T00:00:00").toLocaleDateString("ar-EG-u-nu-latn", { day: "2-digit", month: "long" });
+const arMonthYear = (d: Date) => d.toLocaleDateString("ar-EG-u-nu-latn", { month: "long", year: "numeric" });
+
+/** Six-week matrix covering the cursor's month, weeks starting Saturday. */
+function monthMatrix(cursor: Date): Date[][] {
+  const first = new Date(cursor.getFullYear(), cursor.getMonth(), 1);
+  const startIdx = (first.getDay() + 1) % 7; // Sat=0 … Fri=6
+  const cur = new Date(first.getFullYear(), first.getMonth(), 1 - startIdx);
+  const weeks: Date[][] = [];
+  for (let w = 0; w < 6; w++) {
+    const week: Date[] = [];
+    for (let d = 0; d < 7; d++) { week.push(new Date(cur)); cur.setDate(cur.getDate() + 1); }
+    weeks.push(week);
+  }
+  return weeks;
+}
 
 export function Reception() {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const navigate = useNavigate();
-  const [appts, setAppts] = useState<Appointment[]>([]);
-  const [pets, setPets] = useState<Record<string, Pet>>({});
-  const [checkin, setCheckin] = useState<Appointment | null>(null);
+  const toast = useToast();
+  const { user } = useAuth();
+  const todayISO = localISO();
 
-  const today = new Date().toISOString();
+  const [admissions, setAdmissions] = useState<Admission[]>([]);
+  const [pets, setPets] = useState<Record<string, Pet>>({});
+  const [loading, setLoading] = useState(true);
+  const [view, setView] = useState<"month" | "day">("day");
+  const [cursor, setCursor] = useState(() => new Date());
+  const [activeId, setActiveId] = useState<string | null>(null);
 
   const mounted = useRef(true);
   const load = async () => {
     try {
-      const list = await withTimeout(repo.listAppointmentsForDay(today), 15000);
+      const scope = user?.clinic_id ?? user?.id;
+      const [adm, allPets] = await withTimeout(Promise.all([repo.listAdmissions(scope), repo.listAllPets(scope)]), 15000);
       if (!mounted.current) return;
-      setAppts(list);
-      const ids = Array.from(new Set(list.map((a) => a.pet_id)));
+      setAdmissions(adm);
       const map: Record<string, Pet> = {};
-      await withTimeout(Promise.all(ids.map(async (id) => { const p = await repo.getPet(id); if (p) map[id] = p; })), 15000);
-      if (mounted.current) setPets(map);
+      for (const p of allPets) map[p.id] = p;
+      setPets(map);
     } catch {
-      /* hung/failed query — leave previous state, don't crash */
+      /* hung/failed — keep previous state */
+    } finally {
+      if (mounted.current) setLoading(false);
     }
   };
-
   useEffect(() => {
     mounted.current = true;
     void load();
@@ -55,213 +134,299 @@ export function Reception() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const waiting = appts.filter((a) => a.status === "checked_in" || a.status === "in_room");
-  const queue = [...waiting].sort((a, b) => tri(a) - tri(b)); // critical first
-  const inRoom = appts.filter((a) => a.status === "in_room").length;
-  const done = appts.filter((a) => a.status === "done").length;
-
-  const stats = [
-    { icon: CalendarDays, label: t("reception.scheduled", "Scheduled"), value: appts.length, tone: "brand" as const },
-    { icon: UserCheck, label: t("reception.waiting"), value: waiting.length, tone: "warn" as const },
-    { icon: DoorOpen, label: t("reception.inRoom", "In room"), value: inRoom, tone: "sky" as const },
-    { icon: CheckCircle2, label: t("reception.done", "Completed"), value: done, tone: "success" as const },
-  ];
-  const statTone: Record<string, string> = {
-    brand: "bg-brand-50 text-brand-600 dark:bg-brand-500/15 dark:text-brand-300",
-    warn: "bg-warn-50 text-warn-600 dark:bg-warn-500/15 dark:text-warn-300",
-    sky: "bg-sky-50 text-sky-600 dark:bg-sky-500/15 dark:text-sky-300",
-    success: "bg-success-50 text-success-600 dark:bg-success-500/15 dark:text-success-200",
+  const statusOf = (a: Admission): OpStatus => {
+    if (a.status === "discharged") return "done";
+    if (a.kind === "treatment") return "care";
+    return (a.admitted_on || "") > todayISO ? "scheduled" : "boarding";
   };
 
+  const byStatus = useMemo(() => {
+    const m: Record<OpStatus, Admission[]> = { scheduled: [], care: [], boarding: [], done: [] };
+    for (const a of admissions) m[statusOf(a)].push(a);
+    // Newest admitted first within a column (done can be long — cap the tail visually only).
+    for (const k of COLUMN_ORDER) m[k].sort((a, b) => (b.admitted_on || "").localeCompare(a.admitted_on || ""));
+    return m;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [admissions, todayISO]);
+
+  const byDay = useMemo(() => {
+    const m = new Map<string, Admission[]>();
+    for (const a of admissions) {
+      const d = a.admitted_on;
+      if (!d) continue;
+      const arr = m.get(d) ?? [];
+      arr.push(a);
+      m.set(d, arr);
+    }
+    return m;
+  }, [admissions]);
+
+  const sensors = useSensors(
+    useSensor(MouseSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 180, tolerance: 8 } }),
+  );
+
+  const patchForStatus = (target: OpStatus): Partial<Admission> => {
+    const tomorrow = localISO(new Date(Date.now() + 86400000));
+    switch (target) {
+      case "care": return { kind: "treatment", status: "active", discharged_on: null };
+      case "boarding": return { kind: "boarding", status: "active", admitted_on: todayISO, discharged_on: null };
+      case "scheduled": return { kind: "boarding", status: "active", admitted_on: tomorrow, discharged_on: null };
+      case "done": return { status: "discharged", discharged_on: todayISO };
+    }
+  };
+
+  // Optimistic mutate: patch local state now, persist in the background, revert on error.
+  const persist = async (id: string, patch: Partial<Admission>) => {
+    const before = admissions.find((a) => a.id === id);
+    if (!before) return;
+    setAdmissions((list) => list.map((a) => (a.id === id ? { ...a, ...patch } : a)));
+    playTap();
+    try {
+      await repo.updateAdmission(id, patch);
+      playSuccess();
+    } catch (e) {
+      setAdmissions((list) => list.map((a) => (a.id === id ? before : a)));
+      playWarning();
+      toast.error(t("reception.moveError", "تعذّر تحديث الحالة، حاول مجدداً."), e instanceof Error ? e.message : undefined);
+    }
+  };
+
+  const onDragStart = (e: DragStartEvent) => setActiveId(String(e.active.id));
+  const onDragEnd = (e: DragEndEvent) => {
+    setActiveId(null);
+    const over = e.over;
+    if (!over) return;
+    const id = String(e.active.id);
+    const adm = admissions.find((a) => a.id === id);
+    if (!adm) return;
+    const overId = String(over.id);
+    if (overId.startsWith("col:")) {
+      const target = overId.slice(4) as OpStatus;
+      if (statusOf(adm) === target) return;
+      void persist(id, patchForStatus(target));
+    } else if (overId.startsWith("day:")) {
+      const date = overId.slice(4);
+      if (adm.admitted_on === date) return;
+      void persist(id, { admitted_on: date });
+    }
+  };
+
+  const activeAdm = activeId ? admissions.find((a) => a.id === activeId) : null;
+
+  const stats = COLUMN_ORDER.map((s) => ({ status: s, count: byStatus[s].length }));
+
   return (
-    <div className="mx-auto max-w-6xl px-4 py-6">
-      <div className="mb-5 flex items-center gap-2">
+    <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6">
+      {/* Header */}
+      <div className="mb-4 flex flex-wrap items-center gap-2">
         <span className="grid h-10 w-10 place-items-center rounded-2xl bg-brand-grad text-white shadow-soft"><CalendarDays size={20} /></span>
-        <h1 className="font-display text-xl font-extrabold tracking-tighter2 text-ink">{t("reception.title")}</h1>
-        <span className="chip ms-2 bg-brand-50 text-sm text-brand-700 dark:bg-brand-500/15 dark:text-brand-300">{t("reception.today")}</span>
-        <Button className="ms-auto" size="sm" leftIcon={<Plus size={16} />} onClick={() => { playTap(); navigate("/new-case"); }}>
+        <div className="me-auto">
+          <h1 className="font-display text-xl font-extrabold tracking-tighter2 text-ink">{t("reception.title")}</h1>
+          <p className="text-xs text-ink-subtle">{t("reception.opsSubtitle", "أدِر الحالات الطبية والفندقة — اسحب لإعادة الجدولة أو تغيير الحالة.")}</p>
+        </div>
+        {/* View toggle */}
+        <div className="inline-flex items-center gap-1 rounded-2xl border border-line bg-surface-2 p-1">
+          <button onClick={() => { playTap(); setView("day"); }} className={cn("inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-sm font-semibold transition", view === "day" ? "bg-surface-1 text-brand-700 shadow-card dark:text-brand-300" : "text-ink-muted hover:text-ink")}>
+            <Columns3 size={15} /> {t("reception.viewDay", "يومي")}
+          </button>
+          <button onClick={() => { playTap(); setView("month"); }} className={cn("inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-sm font-semibold transition", view === "month" ? "bg-surface-1 text-brand-700 shadow-card dark:text-brand-300" : "text-ink-muted hover:text-ink")}>
+            <LayoutGrid size={15} /> {t("reception.viewMonth", "شهري")}
+          </button>
+        </div>
+        <Button size="sm" leftIcon={<Plus size={16} />} onClick={() => { playTap(); navigate("/new-case"); }}>
           {t("newCase.newCaseBtn")}
         </Button>
       </div>
 
-      {/* Stats strip */}
-      <motion.div variants={staggerContainer} initial="initial" animate="animate" className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
-        {stats.map((s) => {
-          const Icon = s.icon;
+      {/* Status summary strip */}
+      <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        {stats.map(({ status, count }) => {
+          const m = STATUS_META[status];
+          const Icon = m.icon;
           return (
-            <motion.div key={s.label} variants={staggerItem} className="flex items-center gap-3 rounded-2xl border border-line bg-surface-1 p-3 shadow-card">
-              <span className={cn("grid h-10 w-10 shrink-0 place-items-center rounded-xl", statTone[s.tone])}><Icon size={18} /></span>
+            <div key={status} className="flex items-center gap-3 rounded-2xl border border-line bg-surface-1 p-3 shadow-card">
+              <span className={cn("grid h-10 w-10 shrink-0 place-items-center rounded-xl", m.head)}><Icon size={18} /></span>
               <div className="min-w-0">
-                <p className="font-display text-xl font-extrabold leading-none text-ink">{s.value}</p>
-                <p className="mt-0.5 truncate text-xs text-ink-muted">{s.label}</p>
+                <p className="font-display text-xl font-extrabold leading-none text-ink">{count}</p>
+                <p className="mt-0.5 truncate text-xs text-ink-muted">{t(m.key, m.def)}</p>
               </div>
-            </motion.div>
+            </div>
           );
         })}
-      </motion.div>
+      </div>
 
-      {/* Triage acuity queue */}
-      {queue.length > 0 && (
-        <div className="card mb-5 p-4">
-          <h2 className="mb-3 flex items-center gap-2 font-display font-bold text-ink">
-            <Siren size={18} className="text-warn-600" /> {t("reception.triageQueue", "Triage queue")}
-            <Badge tone="warn">{queue.length}</Badge>
-          </h2>
-          <motion.div variants={staggerContainer} initial="initial" animate="animate" className="space-y-2">
-            {queue.map((a) => {
-              const cfg = TRIAGE[tri(a)];
-              const pet = pets[a.pet_id];
-              return (
-                <motion.div key={a.id} variants={staggerItem} className="flex items-center gap-3 rounded-2xl border border-line bg-surface-1 p-2.5">
-                  <span className={cn("h-11 w-1.5 shrink-0 rounded-full", cfg.solid)} />
-                  {pet && <PetAvatar pet={pet} size={40} photoFallback />}
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate font-semibold text-ink">{pet?.name}</p>
-                    <p className="flex items-center gap-1 truncate text-xs text-ink-muted">
-                      <Clock size={11} /> {formatTime(a.scheduled_at, i18n.language)} · {t(`service.${a.service}`)} · {a.doctor_name.split(" ").slice(-1)}
-                    </p>
-                  </div>
-                  <span className={cn("chip shrink-0 text-xs font-semibold", cfg.chip)}>
-                    T{tri(a)} · {t(`triage.${tri(a)}`)}
-                  </span>
-                  <Button size="sm" variant="secondary" rightIcon={<ArrowRight size={14} />} onClick={() => { playTap(); navigate(`/consult/${a.pet_id}?appt=${a.id}`); }}>
-                    {t("consult.open")}
-                  </Button>
-                </motion.div>
-              );
-            })}
-          </motion.div>
-        </div>
-      )}
+      <DndContext sensors={sensors} collisionDetection={pointerWithin} onDragStart={onDragStart} onDragEnd={onDragEnd} onDragCancel={() => setActiveId(null)}>
+        {view === "day" ? (
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            {COLUMN_ORDER.map((status) => (
+              <KanbanColumn key={status} status={status} items={byStatus[status]} pets={pets} onOpen={(pid) => navigate(`/pet/${pid}?tab=timeline`)} statusOf={statusOf} loading={loading} />
+            ))}
+          </div>
+        ) : (
+          <MonthGrid cursor={cursor} setCursor={setCursor} byDay={byDay} pets={pets} todayISO={todayISO} statusOf={statusOf} onOpen={(pid) => navigate(`/pet/${pid}?tab=timeline`)} />
+        )}
 
-      {/* Doctor board */}
-      {appts.length === 0 ? (
-        <div className="card p-8 text-center text-ink-subtle">{t("reception.noToday")}</div>
-      ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {DOCTORS.map((doc) => {
-            const col = appts.filter((a) => a.doctor_id === doc.id);
-            return (
-              <div key={doc.id} className="card p-3">
-                <div className="mb-2 flex items-center justify-between gap-2 border-b border-line px-1 pb-2">
-                  <div>
-                    <p className="text-sm font-bold text-ink">{doc.name}</p>
-                    <p className="text-xs text-ink-subtle">{doc.specialty}</p>
-                  </div>
-                  <span className="chip bg-surface-2 text-2xs text-ink-muted">{col.length}</span>
-                </div>
-                <div className="min-h-12 space-y-2">
-                  {col.length === 0 && <p className="px-1 py-3 text-xs text-ink-subtle">—</p>}
-                  {col.map((a) => {
-                    const color = SERVICE_COLOR[a.service];
-                    const pet = pets[a.pet_id];
-                    const arrived = a.status === "checked_in" || a.status === "in_room";
-                    const cfg = TRIAGE[tri(a)];
-                    return (
-                      <div key={a.id} className={cn("rounded-2xl p-2.5 ring-1", arrived ? "bg-surface-1 ring-line" : "bg-surface-2 ring-line")}>
-                        <div className="flex items-center gap-2">
-                          {pet && <PetAvatar pet={pet} size={36} photoFallback />}
-                          <div className="min-w-0 flex-1">
-                            <p className="truncate text-sm font-semibold text-ink">{pet?.name}</p>
-                            <p className="flex items-center gap-1 text-[11px] text-ink-muted">
-                              <Clock size={11} /> {formatTime(a.scheduled_at, i18n.language)} · {t(`service.${a.service}`)}
-                            </p>
-                          </div>
-                          <span className={cn("h-2.5 w-2.5 rounded-full", color.dot)} />
-                        </div>
-                        <div className="mt-2">
-                          {arrived ? (
-                            <div className="space-y-1.5">
-                              <div className="flex items-center gap-1.5">
-                                <span className="chip flex-1 justify-center bg-warn-100 text-[11px] text-warn-800 dark:bg-warn-500/20 dark:text-warn-200">
-                                  <DoorOpen size={12} /> {t(`status.${a.status}`)}
-                                </span>
-                                {a.triage_score && (
-                                  <span className={cn("chip shrink-0 text-[11px] font-semibold", cfg.chip)}>T{a.triage_score}</span>
-                                )}
-                              </div>
-                              <button className="btn-secondary w-full py-1.5 text-xs" onClick={() => { playTap(); navigate(`/consult/${a.pet_id}?appt=${a.id}`); }}>
-                                <Stethoscope size={14} /> {t("consult.open")}
-                              </button>
-                            </div>
-                          ) : (
-                            <button className="btn-primary w-full py-1.5 text-xs" onClick={() => { playTap(); setCheckin(a); }}>
-                              <UserCheck size={14} /> {t("reception.checkIn")}
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      <CheckInModal
-        appt={checkin}
-        pet={checkin ? pets[checkin.pet_id] : undefined}
-        onClose={() => setCheckin(null)}
-        onSaved={() => { setCheckin(null); void load(); }}
-      />
+        <DragOverlay dropAnimation={{ duration: 180, easing: "cubic-bezier(0.2,0,0,1)" }}>
+          {activeAdm ? <OpCard adm={activeAdm} pet={pets[activeAdm.pet_id]} status={statusOf(activeAdm)} overlay /> : null}
+        </DragOverlay>
+      </DndContext>
     </div>
   );
 }
 
-function CheckInModal({ appt, pet, onClose, onSaved }: { appt: Appointment | null; pet?: Pet; onClose: () => void; onSaved: () => void }) {
+/* ---------------- Kanban column (droppable) ---------------- */
+function KanbanColumn({ status, items, pets, onOpen, statusOf, loading }: {
+  status: OpStatus; items: Admission[]; pets: Record<string, Pet>; onOpen: (petId: string) => void;
+  statusOf: (a: Admission) => OpStatus; loading: boolean;
+}) {
   const { t } = useTranslation();
-  const [weight, setWeight] = useState("");
-  const [triage, setTriage] = useState(3);
+  const m = STATUS_META[status];
+  const Icon = m.icon;
+  const { setNodeRef, isOver } = useDroppable({ id: `col:${status}` });
+  return (
+    <div className="flex flex-col">
+      <div className={cn("mb-2 flex items-center gap-2 rounded-2xl px-3 py-2 font-display text-sm font-bold", m.head)}>
+        <Icon size={16} /> <span className="truncate">{t(m.key, m.def)}</span>
+        <span className="ms-auto rounded-full bg-white/50 px-2 text-2xs font-extrabold tabular-nums text-inherit dark:bg-black/20">{items.length}</span>
+      </div>
+      <div
+        ref={setNodeRef}
+        data-col={status}
+        className={cn(
+          "min-h-[140px] flex-1 space-y-2.5 rounded-2xl border border-dashed p-2 transition-colors",
+          isOver ? cn("ring-2", m.over) : "border-line bg-surface-2/40",
+        )}
+      >
+        {loading ? (
+          <div className="space-y-2.5">{Array.from({ length: 2 }).map((_, i) => <div key={i} className="h-[68px] animate-pulse rounded-2xl bg-surface-2" />)}</div>
+        ) : items.length === 0 ? (
+          <p className="grid h-24 place-items-center text-center text-xs text-ink-subtle">{t("reception.colEmpty", "اسحب حالة إلى هنا")}</p>
+        ) : (
+          items.map((a) => <DraggableCard key={a.id} adm={a} pet={pets[a.pet_id]} status={statusOf(a)} onOpen={onOpen} />)
+        )}
+      </div>
+    </div>
+  );
+}
 
-  useEffect(() => {
-    if (appt && pet) setWeight(pet.current_weight_kg ? String(pet.current_weight_kg) : "");
-    setTriage(3);
-  }, [appt, pet]);
-
-  if (!appt) return null;
-
-  const save = async () => {
-    if (weight) await repo.addWeight(appt.pet_id, Number(weight));
-    await repo.updateAppointment(appt.id, { status: "checked_in", checkin_weight_kg: weight ? Number(weight) : null, triage_score: triage });
-    if (triage <= 2) playWarning();
-    else playSuccess();
-    onSaved();
-  };
+/* ---------------- Month grid (droppable day cells) ---------------- */
+function MonthGrid({ cursor, setCursor, byDay, pets, todayISO, statusOf, onOpen }: {
+  cursor: Date; setCursor: (d: Date) => void; byDay: Map<string, Admission[]>; pets: Record<string, Pet>;
+  todayISO: string; statusOf: (a: Admission) => OpStatus; onOpen: (petId: string) => void;
+}) {
+  const { t } = useTranslation();
+  const weeks = useMemo(() => monthMatrix(cursor), [cursor]);
+  const month = cursor.getMonth();
+  const shift = (n: number) => setCursor(new Date(cursor.getFullYear(), cursor.getMonth() + n, 1));
 
   return (
-    <Modal open={!!appt} onClose={onClose} title={t("reception.checkInTitle", { name: pet?.name ?? "" })}>
-      <div className="space-y-4">
-        <div>
-          <label className="label">{t("reception.currentWeight")} ({t("common.kg")})</label>
-          <input type="number" step="0.1" className="input" value={weight} onChange={(e) => setWeight(e.target.value)} autoFocus />
+    <div className="card p-3 sm:p-4">
+      {/* Month nav — chevrons are direction-agnostic in RTL (prev = ChevronRight). */}
+      <div className="mb-3 flex items-center justify-between">
+        <button onClick={() => { playTap(); shift(-1); }} className="grid h-9 w-9 place-items-center rounded-xl border border-line text-ink-muted transition hover:bg-surface-2"><ChevronRight size={18} /></button>
+        <div className="flex items-center gap-2">
+          <h2 className="font-display text-lg font-extrabold text-ink">{arMonthYear(cursor)}</h2>
+          <button onClick={() => { playTap(); setCursor(new Date()); }} className="chip bg-brand-50 text-xs text-brand-700 dark:bg-brand-500/15 dark:text-brand-300">{t("reception.today", "اليوم")}</button>
         </div>
-        <div>
-          <label className="label">{t("reception.triage")}</label>
-          <div className="flex gap-2">
-            {[1, 2, 3, 4, 5].map((n) => (
-              <button
-                key={n}
-                onClick={() => { setTriage(n); playTap(); }}
-                className={cn(
-                  "flex flex-1 flex-col items-center gap-1 rounded-2xl py-2.5 font-bold text-white transition",
-                  TRIAGE[n].solid,
-                  triage === n ? "scale-105 ring-4 ring-offset-2 ring-offset-surface-1 " + TRIAGE[n].ring : "opacity-50 hover:opacity-80",
-                )}
-              >
-                <span className="text-lg leading-none">{n}</span>
-              </button>
-            ))}
-          </div>
-          <p className="mt-2 flex items-center gap-1.5 text-xs">
-            <span className={cn("h-2.5 w-2.5 rounded-full", TRIAGE[triage].solid)} />
-            <span className="font-semibold text-ink">{t(`triage.${triage}`)}</span>
-            <span className="text-ink-subtle">· {t("reception.triageHint")}</span>
-          </p>
-        </div>
-        <Button className="w-full" onClick={save}>{t("reception.save")}</Button>
+        <button onClick={() => { playTap(); shift(1); }} className="grid h-9 w-9 place-items-center rounded-xl border border-line text-ink-muted transition hover:bg-surface-2"><ChevronLeft size={18} /></button>
       </div>
-    </Modal>
+
+      {/* Weekday headers */}
+      <div className="grid grid-cols-7 gap-1.5 sm:gap-2">
+        {AR_WEEKDAYS.map((d) => (
+          <div key={d} className="pb-1 text-center text-2xs font-bold text-ink-subtle sm:text-xs">{d}</div>
+        ))}
+        {weeks.flat().map((date) => {
+          const iso = localISO(date);
+          const inMonth = date.getMonth() === month;
+          const isToday = iso === todayISO;
+          const items = byDay.get(iso) ?? [];
+          return <DayCell key={iso} iso={iso} dayNum={date.getDate()} inMonth={inMonth} isToday={isToday} items={items} pets={pets} statusOf={statusOf} onOpen={onOpen} />;
+        })}
+      </div>
+    </div>
+  );
+}
+
+function DayCell({ iso, dayNum, inMonth, isToday, items, pets, statusOf, onOpen }: {
+  iso: string; dayNum: number; inMonth: boolean; isToday: boolean; items: Admission[];
+  pets: Record<string, Pet>; statusOf: (a: Admission) => OpStatus; onOpen: (petId: string) => void;
+}) {
+  const { setNodeRef, isOver } = useDroppable({ id: `day:${iso}` });
+  return (
+    <div
+      ref={setNodeRef}
+      data-day={iso}
+      className={cn(
+        "min-h-[92px] rounded-xl border p-1.5 transition-colors sm:min-h-[112px]",
+        inMonth ? "border-line bg-surface-1" : "border-transparent bg-surface-2/30",
+        isOver && "ring-2 ring-brand-400/70 bg-brand-50/60 dark:bg-brand-500/10",
+      )}
+    >
+      <div className="mb-1 flex items-center justify-between">
+        <span className={cn("grid h-6 min-w-6 place-items-center rounded-full px-1 text-2xs font-bold tabular-nums", isToday ? "bg-brand-600 text-white" : inMonth ? "text-ink-muted" : "text-ink-subtle/50")}>{dayNum}</span>
+        {items.length > 0 && <span className="text-2xs font-bold text-ink-subtle">{items.length}</span>}
+      </div>
+      <div className="space-y-1 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" style={{ maxHeight: 72 }}>
+        {items.map((a) => <DraggableChip key={a.id} adm={a} pet={pets[a.pet_id]} status={statusOf(a)} onOpen={onOpen} />)}
+      </div>
+    </div>
+  );
+}
+
+/* ---------------- Draggable wrappers ---------------- */
+function DraggableCard({ adm, pet, status, onOpen }: { adm: Admission; pet?: Pet; status: OpStatus; onOpen: (petId: string) => void }) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: adm.id });
+  return (
+    <div ref={setNodeRef} {...listeners} {...attributes} data-card={adm.id} onClick={() => { playTap(); onOpen(adm.pet_id); }} className={cn("cursor-pointer touch-none", isDragging && "opacity-30")}>
+      <OpCard adm={adm} pet={pet} status={status} />
+    </div>
+  );
+}
+
+function DraggableChip({ adm, pet, status, onOpen }: { adm: Admission; pet?: Pet; status: OpStatus; onOpen: (petId: string) => void }) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: adm.id });
+  const m = STATUS_META[status];
+  return (
+    <div
+      ref={setNodeRef} {...listeners} {...attributes}
+      data-card={adm.id}
+      onClick={() => { playTap(); onOpen(adm.pet_id); }}
+      title={pet?.name}
+      className={cn("flex cursor-pointer touch-none items-center gap-1 rounded-md px-1.5 py-1 text-2xs font-semibold", m.chip, isDragging && "opacity-30")}
+    >
+      <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", m.dot)} />
+      <span className="truncate">{pet?.name ?? "—"}</span>
+    </div>
+  );
+}
+
+/* ---------------- Presentational card (shared by column + DragOverlay) ---------------- */
+function OpCard({ adm, pet, status, overlay }: { adm: Admission; pet?: Pet; status: OpStatus; overlay?: boolean }) {
+  const { t } = useTranslation();
+  const m = STATUS_META[status];
+  const meta =
+    status === "care" ? `${t("snapshot.day", "اليوم")} ${dayNumber(adm.admitted_on)}`
+      : status === "boarding" ? `${t("snapshot.day", "اليوم")} ${dayNumber(adm.admitted_on)}${adm.cage ? ` · ${t("records.cage", "قفص")} ${adm.cage}` : ""}`
+        : status === "scheduled" ? `${t("reception.arrives", "الوصول")} ${arDate(adm.admitted_on)}`
+          : adm.discharged_on ? `${t("reception.left", "غادر")} ${arDate(adm.discharged_on)}` : arDate(adm.admitted_on);
+  return (
+    <div className={cn("rounded-2xl border p-2.5 shadow-card", m.card, overlay ? "w-64 rotate-2 cursor-grabbing shadow-raised" : "")}>
+      <div className="flex items-center gap-2.5">
+        <GripVertical size={15} className="shrink-0 text-ink-subtle/60" />
+        {pet && <PetAvatar pet={pet} size={38} photoFallback />}
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-bold text-ink">{pet?.name ?? "—"}</p>
+          <p className="truncate text-2xs text-ink-muted">{pet?.owner_name || "—"}</p>
+        </div>
+        <span className={cn("h-2.5 w-2.5 shrink-0 rounded-full", m.dot)} />
+      </div>
+      <div className="mt-2 flex items-center justify-between gap-2">
+        <span className={cn("chip text-2xs font-semibold", m.chip)}>{t(m.key, m.def)}</span>
+        <span className="truncate text-2xs text-ink-subtle">{meta}</span>
+      </div>
+      {adm.reason && <p className="mt-1.5 truncate text-2xs text-ink-muted">{adm.reason}</p>}
+    </div>
   );
 }
