@@ -73,6 +73,9 @@ interface Props<T> {
    *  summary, chart, toolbar or on-screen table. Lets a host view (e.g. the interactive
    *  timeline workspace) keep the A4 print + Excel export without the summary grid. */
   printOnly?: boolean;
+  /** Render ONLY the on-screen data table (no header, buttons, summary, chart, toolbar
+   *  or print portal) — for hosts that supply their own chrome and just want the dense grid. */
+  tableOnly?: boolean;
 }
 
 const alignClass = (a?: ReportAlign) => (a === "end" ? "text-end" : a === "center" ? "text-center" : "text-start");
@@ -80,7 +83,7 @@ const alignClass = (a?: ReportAlign) => (a === "end" ? "text-end" : a === "cente
 export function UniversalReportTable<T>({
   title, clinicName, dateRangeLabel, printButtonLabel, columns, screenColumns, data, rowKey,
   summaryMetrics = [], chart, toolbar, emptyText = "لا توجد بيانات لعرضها.",
-  pageSize = 25, sort, onSort, isRowMuted, exportFileName, printOnly = false,
+  pageSize = 25, sort, onSort, isRowMuted, exportFileName, printOnly = false, tableOnly = false,
 }: Props<T>) {
   const toast = useToast();
   const [page, setPage] = useState(0);
@@ -144,30 +147,32 @@ export function UniversalReportTable<T>({
   return (
     <div className="space-y-4">
       {/* Header — title, range, print */}
-      <div className={cn("flex flex-wrap items-center gap-3", printOnly && "justify-end")}>
-        {!printOnly && (
-          <div className="me-auto">
-            <h3 className="font-display text-lg font-extrabold text-ink">{title}</h3>
-            {dateRangeLabel && <p className="text-2xs text-ink-subtle">{dateRangeLabel}</p>}
-          </div>
-        )}
-        <button
-          onClick={handleExport}
-          disabled={exporting || data.length === 0}
-          className="inline-flex items-center gap-1.5 rounded-xl bg-success-600 px-3.5 py-2.5 text-sm font-semibold text-white shadow-soft transition hover:bg-success-700 disabled:opacity-50"
-        >
-          <FileSpreadsheet size={16} /> {exporting ? "جارٍ التصدير…" : "تصدير إلى Excel"}
-        </button>
-        <button
-          onClick={() => setPrinting(true)}
-          className="inline-flex items-center gap-1.5 rounded-xl bg-brand-600 px-3.5 py-2.5 text-sm font-semibold text-white shadow-soft transition hover:bg-brand-700"
-        >
-          <Printer size={16} /> {printButtonLabel ?? "طباعة التقرير"}
-        </button>
-      </div>
+      {!tableOnly && (
+        <div className={cn("flex flex-wrap items-center gap-3", printOnly && "justify-end")}>
+          {!printOnly && (
+            <div className="me-auto">
+              <h3 className="font-display text-lg font-extrabold text-ink">{title}</h3>
+              {dateRangeLabel && <p className="text-2xs text-ink-subtle">{dateRangeLabel}</p>}
+            </div>
+          )}
+          <button
+            onClick={handleExport}
+            disabled={exporting || data.length === 0}
+            className="inline-flex items-center gap-1.5 rounded-xl bg-success-600 px-3.5 py-2.5 text-sm font-semibold text-white shadow-soft transition hover:bg-success-700 disabled:opacity-50"
+          >
+            <FileSpreadsheet size={16} /> {exporting ? "جارٍ التصدير…" : "تصدير إلى Excel"}
+          </button>
+          <button
+            onClick={() => setPrinting(true)}
+            className="inline-flex items-center gap-1.5 rounded-xl bg-brand-600 px-3.5 py-2.5 text-sm font-semibold text-white shadow-soft transition hover:bg-brand-700"
+          >
+            <Printer size={16} /> {printButtonLabel ?? "طباعة التقرير"}
+          </button>
+        </div>
+      )}
 
       {/* Summary cards (screen) */}
-      {!printOnly && summaryMetrics.length > 0 && (
+      {!printOnly && !tableOnly && summaryMetrics.length > 0 && (
         <div className={cn("grid grid-cols-2 gap-3", summaryMetrics.length >= 4 ? "sm:grid-cols-4" : "sm:grid-cols-3")}>
           {summaryMetrics.map((m, i) => (
             <div key={i} className="card p-4">
@@ -178,8 +183,8 @@ export function UniversalReportTable<T>({
         </div>
       )}
 
-      {!printOnly && chart}
-      {!printOnly && toolbar}
+      {!printOnly && !tableOnly && chart}
+      {!printOnly && !tableOnly && toolbar}
 
       {/* Screen data table */}
       {printOnly ? null : data.length === 0 ? (

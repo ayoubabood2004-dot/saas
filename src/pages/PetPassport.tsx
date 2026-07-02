@@ -7,7 +7,7 @@ import {
   Plus, Check, Clock, AlertCircle, ChevronDown, Printer, ShieldAlert, Pill, Trash2, BedDouble, Camera,
   Share2, Copy, Globe, PawPrint, Repeat, Columns2, X, Calendar,
   Utensils, Fingerprint, Cake, Heart, Scissors, Users, UserPlus, User, Phone, Mail, Pencil,
-  Scale, Sparkles, Loader2, NotebookPen, CalendarClock, FileSignature, ClipboardList,
+  Scale, Sparkles, Loader2, NotebookPen, CalendarClock, FileSignature, ClipboardList, Table2, LayoutList,
 } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, TreatmentEntry, Admission, FoodType, DietPlan, Appointment, Reminder, MedicalAssessment, PatientCondition, Species, Sex, PetNote } from "@/types";
@@ -2040,6 +2040,9 @@ function TimelineWorkspace({ pet, treatments, vaccinations, notes, admissions, i
   const [administer, setAdminister] = useState<Vaccination | null>(null);
   const [noteText, setNoteText] = useState("");
   const [noteBusy, setNoteBusy] = useState(false);
+  // Two arrangements of the same unified data, merged in one workspace: a dense "جدول"
+  // that shows every event at once, and the rich interactive "بطاقات" feed.
+  const [view, setView] = useState<"table" | "cards">("table");
 
   const activeTreatment = admissions.find((a) => a.kind === "treatment" && a.status === "active");
   // Treatment flowsheet actions unlock only during an active daily treatment (same rule as the tab).
@@ -2106,30 +2109,49 @@ function TimelineWorkspace({ pet, treatments, vaccinations, notes, admissions, i
         <UnifiedMedicalRecord pet={pet} treatments={treatments} vaccinations={vaccinations} notes={notes} isOwner={isOwner} printOnly />
       </div>
 
-      {/* Inline quick-add actions — the primary workflow lives here (staff only) */}
-      {canEdit && !isOwner && (
-        <div className="flex flex-wrap gap-2">
-          <button className="btn-secondary py-1.5 px-3 text-sm" onClick={() => { playTap(); setTxOpen(true); }}><Pill size={16} /> {t("treatment.add", "إضافة علاج")}</button>
-          <button className="btn-secondary py-1.5 px-3 text-sm" onClick={() => { playTap(); setVaxOpen(true); }}><Syringe size={16} /> {t("passport.addVaccine", "إضافة تطعيم")}</button>
-          <button className="btn-secondary py-1.5 px-3 text-sm" onClick={() => { playTap(); setNoteOpen(true); }}><NotebookPen size={16} /> {t("notes.add", "إضافة ملاحظة")}</button>
+      {/* Quick-add actions (staff) on the start · view toggle (everyone) on the end */}
+      <div className="flex flex-wrap items-center gap-2">
+        {canEdit && !isOwner && (
+          <>
+            <button className="btn-secondary py-1.5 px-3 text-sm" onClick={() => { playTap(); setTxOpen(true); }}><Pill size={16} /> {t("treatment.add", "إضافة علاج")}</button>
+            <button className="btn-secondary py-1.5 px-3 text-sm" onClick={() => { playTap(); setVaxOpen(true); }}><Syringe size={16} /> {t("passport.addVaccine", "إضافة تطعيم")}</button>
+            <button className="btn-secondary py-1.5 px-3 text-sm" onClick={() => { playTap(); setNoteOpen(true); }}><NotebookPen size={16} /> {t("notes.add", "إضافة ملاحظة")}</button>
+          </>
+        )}
+        <div className="ms-auto inline-flex items-center gap-1 rounded-2xl border border-line bg-surface-2 p-1">
+          <button
+            onClick={() => { playTap(); setView("table"); }}
+            className={cn("inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-sm font-semibold transition", view === "table" ? "bg-surface-1 text-brand-700 shadow-card dark:text-brand-300" : "text-ink-muted hover:text-ink")}
+          >
+            <Table2 size={15} /> {t("chart.viewTable", "جدول")}
+          </button>
+          <button
+            onClick={() => { playTap(); setView("cards"); }}
+            className={cn("inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-sm font-semibold transition", view === "cards" ? "bg-surface-1 text-brand-700 shadow-card dark:text-brand-300" : "text-ink-muted hover:text-ink")}
+          >
+            <LayoutList size={15} /> {t("chart.viewCards", "بطاقات")}
+          </button>
         </div>
-      )}
+      </div>
 
-      {/* Treatment admission status — re-admit so flowsheet actions unlock (parity with the tab) */}
-      {canEdit && !isOwner && !activeTreatment && (
+      {/* Treatment admission status — re-admit so the cards' flowsheet actions unlock (parity with the tab) */}
+      {view === "cards" && canEdit && !isOwner && !activeTreatment && (
         <div className="card flex flex-wrap items-center justify-between gap-2 p-3">
           <span className="chip bg-surface-2 text-xs text-ink-muted"><Stethoscope size={13} /> {t("treatment.notAdmitted", "غير مقبول حاليًا")}</span>
           <button className="btn-primary py-1.5 px-3 text-xs" onClick={() => { playTap(); readmit(); }}><Stethoscope size={14} /> {t("treatment.readmitTreatment", "إعادة إدخال للعلاج اليومي")}</button>
         </div>
       )}
 
-      {/* The unified feed — rich cards, newest first */}
-      {feed.length === 0 ? (
+      {view === "table" ? (
+        /* Dense "جدول" — every event's info at a glance (the classic chart layout) */
+        <UnifiedMedicalRecord pet={pet} treatments={treatments} vaccinations={vaccinations} notes={notes} isOwner={isOwner} tableOnly />
+      ) : feed.length === 0 ? (
         <div className="card grid place-items-center p-10 text-center text-ink-subtle">
           <ClipboardList size={28} className="mb-2 opacity-40" />
           {t("chart.empty", "لا توجد أحداث طبية مسجّلة لهذا الحيوان بعد.")}
         </div>
       ) : (
+        /* Rich interactive "بطاقات" feed — full cards, newest first */
         <div className="space-y-4">
           {feed.map((item) => {
             if (item.kind === "treatment") {

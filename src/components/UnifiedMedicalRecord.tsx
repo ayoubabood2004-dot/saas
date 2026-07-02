@@ -144,11 +144,14 @@ const fmtDay = (ts: number) => (ts <= 0 ? "—" : new Date(ts).toLocaleDateStrin
 const fmtTime = (ts: number) => new Date(ts).toLocaleTimeString("ar-EG-u-nu-latn", { hour: "2-digit", minute: "2-digit", hour12: true });
 const fmtFull = (e: UnifiedEvent) => (e.timestamp <= 0 ? "—" : e.hasTime ? `${fmtDay(e.timestamp)}، ${fmtTime(e.timestamp)}` : fmtDay(e.timestamp));
 
-export function UnifiedMedicalRecord({ pet, treatments, vaccinations, notes, isOwner = false, printOnly = false }: {
+export function UnifiedMedicalRecord({ pet, treatments, vaccinations, notes, isOwner = false, printOnly = false, tableOnly = false }: {
   pet: Pet; treatments: TreatmentEntry[]; vaccinations: Vaccination[]; notes: PetNote[]; isOwner?: boolean;
   /** Render only the "طباعة الطبلة"/Excel action buttons + the print portal (no on-screen
    *  table) — lets the interactive workspace keep the A4 chart & export without the summary grid. */
   printOnly?: boolean;
+  /** Render only the dense on-screen chart table (no header/buttons) — the "جدول" view of
+   *  the interactive workspace, which supplies its own header + print buttons. */
+  tableOnly?: boolean;
 }) {
   const { t } = useTranslation();
 
@@ -230,6 +233,7 @@ export function UnifiedMedicalRecord({ pet, treatments, vaccinations, notes, isO
       rowKey={(e) => e.id}
       pageSize={30}
       printOnly={printOnly}
+      tableOnly={tableOnly}
       emptyText={t("chart.empty", "لا توجد أحداث طبية مسجّلة لهذا الحيوان بعد.")}
       toolbar={
         <p className="flex items-center gap-1.5 text-2xs text-ink-subtle">
