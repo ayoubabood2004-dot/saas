@@ -378,8 +378,9 @@ export function PetPassport() {
           <IdentityTab pet={pet} weights={weights} onChanged={reload} canEdit={canEditClinical} isOwner={isOwner} />
         </aside>
 
-        {/* Center — tabbed clinical detail */}
-        <main className="order-1 min-w-0 lg:order-2 lg:col-span-6">
+        {/* Center — tabbed clinical detail. The الطبلة workspace claims the activity
+            rail's width (lg:col-span-9) so the chart/feed uses the full screen cleanly. */}
+        <main className={cn("order-1 min-w-0 lg:order-2", tab === "timeline" ? "lg:col-span-9" : "lg:col-span-6")}>
           <div className="relative mb-5 flex gap-1 overflow-x-auto rounded-2xl bg-surface-2 p-1.5 no-print [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             {TABS.map(({ id, icon: Icon, fill, text }) => {
               const active = tab === id;
@@ -444,8 +445,9 @@ export function PetPassport() {
           </AnimatePresence>
         </main>
 
-        {/* Right rail — stats + activity (reference's right column) */}
-        <aside className="order-3 space-y-4 lg:col-span-3 lg:sticky lg:top-6 lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto lg:pe-1 lg:[scrollbar-width:thin]">
+        {/* Right rail — stats + activity (reference's right column). Hidden on the الطبلة
+            tab (desktop) to free its width for the full record; still stacks on mobile. */}
+        <aside className={cn("order-3 space-y-4 lg:col-span-3 lg:sticky lg:top-6 lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto lg:pe-1 lg:[scrollbar-width:thin]", tab === "timeline" && "lg:hidden")}>
           <WellnessCard vaccines={vaccines} admissions={admissions} />
           <div className="hidden lg:block"><HealthSnapshot pet={pet} vaccines={vaccines} weights={weights} admissions={admissions} stack /></div>
           <UpcomingEvents
@@ -2096,6 +2098,12 @@ function TimelineWorkspace({ pet, treatments, vaccinations, notes, admissions, i
     return items.sort((a, b) => b.ts - a.ts);
   }, [treatments, vaccinations, notes]);
 
+  // The جدول / print / Excel is the OFFICIAL record — only what was actually administered
+  // (given doses + given vaccines) plus clinical notes. Anything still pending or scheduled
+  // for the future stays in the interactive بطاقات feed, where the doctor acts on it.
+  const givenTreatments = useMemo(() => treatments.filter((tx) => !!tx.administered_at), [treatments]);
+  const givenVaccinations = useMemo(() => vaccinations.filter((v) => !!v.administered_at), [vaccinations]);
+
   return (
     <div className="space-y-4 animate-fade-in">
       {/* Header: title + hint on the start side, print/export (preserved) on the end */}
@@ -2106,7 +2114,7 @@ function TimelineWorkspace({ pet, treatments, vaccinations, notes, admissions, i
             <ClipboardList size={13} className="text-brand-600" /> {t("chart.workspaceHint", "أضِف العلاجات واللقاحات والملاحظات وتابعها في سجلّ زمني واحد — الأحدث أولاً.")}
           </p>
         </div>
-        <UnifiedMedicalRecord pet={pet} treatments={treatments} vaccinations={vaccinations} notes={notes} isOwner={isOwner} printOnly />
+        <UnifiedMedicalRecord pet={pet} treatments={givenTreatments} vaccinations={givenVaccinations} notes={notes} isOwner={isOwner} printOnly />
       </div>
 
       {/* Quick-add actions (staff) on the start · view toggle (everyone) on the end */}
@@ -2143,8 +2151,8 @@ function TimelineWorkspace({ pet, treatments, vaccinations, notes, admissions, i
       )}
 
       {view === "table" ? (
-        /* Dense "جدول" — every event's info at a glance (the classic chart layout) */
-        <UnifiedMedicalRecord pet={pet} treatments={treatments} vaccinations={vaccinations} notes={notes} isOwner={isOwner} tableOnly />
+        /* Dense "جدول" — the official record: only administered items + notes, at a glance */
+        <UnifiedMedicalRecord pet={pet} treatments={givenTreatments} vaccinations={givenVaccinations} notes={notes} isOwner={isOwner} tableOnly />
       ) : feed.length === 0 ? (
         <div className="card grid place-items-center p-10 text-center text-ink-subtle">
           <ClipboardList size={28} className="mb-2 opacity-40" />
