@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { motion } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import {
   Search, Receipt, User, Printer, RotateCcw, Trash2, TrendingUp, Banknote, CreditCard,
-  ArrowLeftRight, Package, AlertTriangle, CheckCircle2, Wallet,
+  ArrowLeftRight, Package, AlertTriangle, CheckCircle2, Wallet, Pencil, Check, Loader2,
 } from "lucide-react";
 import type { Invoice, InvoiceItem, PaymentMethod } from "@/types";
 import { repo } from "@/lib/repo";
@@ -123,18 +123,22 @@ function InvoiceDetail({ invoice, onClose, onChanged, setOpen }: {
   const [items, setItems] = useState<InvoiceItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState<"refund" | "delete" | null>(null);
+  const [payBusy, setPayBusy] = useState(false);
 
+  // Keyed on the invoice ID, so editing the payment method (same invoice) doesn't
+  // needlessly reload the line items.
+  const invoiceId = invoice?.id;
   useEffect(() => {
-    if (!invoice) return;
+    if (!invoiceId) return;
     let alive = true;
     setLoading(true);
     setItems([]);
-    repo.listInvoiceItems(invoice.id)
+    repo.listInvoiceItems(invoiceId)
       .then((r) => { if (alive) setItems(r); })
       .catch(() => { if (alive) setItems([]); })
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
-  }, [invoice]);
+  }, [invoiceId]);
 
   if (!invoice) return null;
   const refunded = (invoice.status ?? "paid") === "refunded";
@@ -178,6 +182,26 @@ function InvoiceDetail({ invoice, onClose, onChanged, setOpen }: {
   };
 
   const afterPrint = (n: number) => { setOpen({ ...invoice, print_count: n }); onChanged(); };
+
+  // Fix a mis-keyed payment method inline: optimistic UI, then persist + reconcile.
+  const changePayment = async (method: PaymentMethod) => {
+    if (payBusy || invoice.payment_method === method) return;
+    setPayBusy(true);
+    setOpen({ ...invoice, payment_method: method }); // instant
+    try {
+      const updated = await repo.setInvoicePaymentMethod(invoice.id, method);
+      if (updated) setOpen(updated);
+      playSuccess();
+      toast.success(t("retail.payMethodUpdated", "تم تحديث طريقة الدفع بنجاح"));
+      onChanged();
+    } catch (e) {
+      setOpen(invoice); // revert
+      playWarning();
+      toast.error(describeDbError(e, t), e instanceof Error ? e.message : undefined);
+    } finally {
+      setPayBusy(false);
+    }
+  };
 
   return (
     <Modal open={!!invoice} onClose={onClose} title={invoiceNo(invoice.id)}>
@@ -244,10 +268,15 @@ function InvoiceDetail({ invoice, onClose, onChanged, setOpen }: {
             </div>
           )}
           <div className="flex items-center justify-between text-xs text-ink-subtle">
-            <span className="flex items-center gap-1.5">
-              {isSplit
-                ? <><Wallet size={13} /> {t("retail.split", "دفع مجزأ")}</>
-                : <>{PayIcon && <PayIcon size={13} />} {invoice.payment_method ? PAY_AR[invoice.payment_method] : t("retail.unpaidMethod", "—")}</>}
+            <span className="flex items-center gap-2">
+              <span className="text-ink-subtle">{t("retail.payMethodLabel", "طريقة الدفع")}</span>
+              {isSplit ? (
+                <span className="inline-flex items-center gap-1.5 font-semibold text-ink-muted"><Wallet size={13} /> {t("retail.split", "دفع مجزأ")}</span>
+              ) : refunded ? (
+                <span className="inline-flex items-center gap-1.5 font-semibold text-ink-muted">{PayIcon && <PayIcon size={13} />} {invoice.payment_method ? PAY_AR[invoice.payment_method] : t("retail.unpaidMethod", "—")}</span>
+              ) : (
+                <PaymentMethodEditor invoice={invoice} busy={payBusy} onPick={changePayment} />
+              )}
             </span>
             <span className="flex items-center gap-1"><Printer size={12} /> {t("retail.printsN", { n: invoice.print_count ?? 0, defaultValue: "prints: {{n}}" })}</span>
           </div>
@@ -286,5 +315,80 @@ function InvoiceDetail({ invoice, onClose, onChanged, setOpen }: {
         )}
       </div>
     </Modal>
+  );
+}
+
+/** Inline dropdown to correct an invoice's payment method — a sleek, dark-theme menu
+ *  of the 3 methods that opens upward (it sits low in the modal). RTL-aware. */
+function PaymentMethodEditor({ invoice, busy, onPick }: { invoice: Invoice; busy: boolean; onPick: (m: PaymentMethod) => void }) {
+  const { t } = useTranslation();
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
+    document.addEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
+    return () => { document.removeEventListener("mousedown", onDoc); document.removeEventListener("keydown", onKey); };
+  }, [open]);
+
+  const cur = invoice.payment_method;
+  const CurIcon = cur ? PAY_ICON[cur] : Wallet;
+  const METHODS: PaymentMethod[] = ["cash", "card", "transfer"];
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => { playTap(); setOpen((o) => !o); }}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        className={cn(
+          "group inline-flex items-center gap-1.5 rounded-lg border px-2 py-1 text-xs font-semibold transition",
+          open ? "border-brand-400 bg-brand-50 text-brand-700 dark:bg-brand-500/15 dark:text-brand-300" : "border-line bg-surface-2 text-ink-muted hover:border-brand-300 hover:text-ink",
+        )}
+      >
+        <CurIcon size={13} className="text-brand-600" />
+        {cur ? PAY_AR[cur] : t("retail.setMethod", "تحديد الطريقة")}
+        {busy ? <Loader2 size={12} className="animate-spin" /> : <Pencil size={11} className="opacity-60 transition group-hover:opacity-100" />}
+      </button>
+
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            role="listbox"
+            initial={{ opacity: 0, y: 4, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 4, scale: 0.98 }}
+            transition={{ duration: 0.14, ease: "easeOut" }}
+            className="absolute bottom-full z-50 mb-1.5 min-w-[168px] overflow-hidden rounded-xl border border-line bg-surface-1 p-1 shadow-raised ltr:left-0 rtl:right-0"
+          >
+            {METHODS.map((m) => {
+              const Icon = PAY_ICON[m];
+              const active = m === cur;
+              return (
+                <button
+                  key={m}
+                  type="button"
+                  role="option"
+                  aria-selected={active}
+                  onClick={() => { setOpen(false); onPick(m); }}
+                  className={cn(
+                    "flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-sm font-medium transition",
+                    active ? "bg-brand-50 text-brand-700 dark:bg-brand-500/15 dark:text-brand-300" : "text-ink-muted hover:bg-surface-2 hover:text-ink",
+                  )}
+                >
+                  <Icon size={15} className={active ? "text-brand-600" : "text-ink-subtle"} />
+                  <span className="flex-1 text-start">{PAY_AR[m]}</span>
+                  {active && <Check size={14} className="text-brand-600" />}
+                </button>
+              );
+            })}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
   );
 }

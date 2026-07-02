@@ -595,6 +595,20 @@ const demoRepo = {
     saveDB(db);
     return inv.print_count;
   },
+  /** Correct a cashier's payment-method mistake on an existing invoice. Keeps a single
+   *  settled leg in sync so print/analytics agree; refunded sales are locked. */
+  async setInvoicePaymentMethod(invoiceId: string, method: PaymentMethod): Promise<Invoice | undefined> {
+    const db = loadDB();
+    const inv = (db.invoices ?? []).find((x) => x.id === invoiceId);
+    if (!inv) return undefined;
+    if (inv.status === "refunded") throw new Error("invoice refunded");
+    inv.payment_method = method;
+    if (inv.payment_details && inv.payment_details.length === 1) {
+      inv.payment_details = [{ ...inv.payment_details[0], method }];
+    }
+    saveDB(db);
+    return inv;
+  },
   /** Distinct walk-in customers seen on past invoices, most-recent first. */
   async searchCustomers(query: string, _clinicId?: string): Promise<Customer[]> {
     return dedupeCustomers(loadDB().invoices ?? [], query);
@@ -931,6 +945,16 @@ const supabaseRepo: typeof demoRepo = {
     const res = await sbc().rpc("bump_invoice_prints", { p_invoice: invoiceId });
     if (res.error) { console.error("[supabase]", res.error.message); return 0; }
     return (res.data as number) ?? 0;
+  },
+  async setInvoicePaymentMethod(invoiceId, method) {
+    // Direct UPDATE (invoices_clinic_all policy permits staff). Sync a single leg too.
+    const inv = need<Invoice>(await sbc().from("invoices").select("*").eq("id", invoiceId).single());
+    if (inv.status === "refunded") throw new Error("invoice refunded");
+    const patch: Record<string, unknown> = { payment_method: method };
+    if (Array.isArray(inv.payment_details) && inv.payment_details.length === 1) {
+      patch.payment_details = [{ ...inv.payment_details[0], method }];
+    }
+    return need<Invoice>(await sbc().from("invoices").update(patch).eq("id", invoiceId).select().single());
   },
   async searchCustomers(query, clinicId) {
     let q = sbc().from("invoices").select("customer_name,customer_phone,created_at").order("created_at", { ascending: false }).limit(300);
