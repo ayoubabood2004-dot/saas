@@ -119,12 +119,19 @@ export function UniversalReportTable<T>({
 
   // Mount the print document just-in-time, print, then tear it down (keeps the
   // heavy full-data table out of the live DOM until it's actually needed).
+  // The body class scopes the "hide the app" print CSS to REPORT prints only, so
+  // legacy window.print() flows elsewhere (.print-area cards) keep working.
   useEffect(() => {
     if (!printing) return;
+    document.body.classList.add("report-printing");
     const t = window.setTimeout(() => window.print(), 80);
     const done = () => setPrinting(false);
     window.addEventListener("afterprint", done);
-    return () => { window.clearTimeout(t); window.removeEventListener("afterprint", done); };
+    return () => {
+      window.clearTimeout(t);
+      window.removeEventListener("afterprint", done);
+      document.body.classList.remove("report-printing");
+    };
   }, [printing]);
 
   const issued = useMemo(() => new Date().toLocaleDateString("ar-EG-u-nu-latn", { day: "2-digit", month: "long", year: "numeric" }), []);

@@ -437,7 +437,7 @@ export function PetPassport() {
               {tab === "history" && <HistoryTab visits={visits} admissions={admissions} treatments={treatments} isOwner={isOwner} />}
               {tab === "treatment" && <TreatmentTab pet={pet} treatments={treatments} admissions={admissions} onChanged={reload} canEdit={canEditClinical} isOwner={isOwner} />}
               {tab === "notes" && <NotesTab pet={pet} notes={notes} canEdit={canEditClinical} onChanged={reload} />}
-              {tab === "timeline" && <UnifiedMedicalRecord pet={pet} treatments={treatments} vaccinations={vaccines} notes={notes} />}
+              {tab === "timeline" && <UnifiedMedicalRecord pet={pet} treatments={treatments} vaccinations={vaccines} notes={notes} isOwner={isOwner} />}
               {tab === "media" && <MediaTab pet={pet} media={media} onChanged={reload} canEdit={canEditClinical} />}
               {tab === "qr" && <QrTab pet={pet} />}
             </motion.div>

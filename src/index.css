@@ -127,7 +127,10 @@ button,
 [data-report-print] { display: none; }
 
 @media print {
-  #root { display: none !important; }
+  /* Hide the app ONLY while a report portal is actually printing (body class is
+     toggled by UniversalReportTable) — legacy window.print() flows that print
+     .print-area cards inside #root keep working untouched. */
+  body.report-printing #root { display: none !important; }
   [data-report-print] { display: block !important; }
 
   @page { margin: 14mm; }

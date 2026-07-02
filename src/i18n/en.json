@@ -725,6 +725,27 @@
     "saved": "Ranges saved"
   },
   "phone": { "country": "Country code", "number": "Phone number", "ownerPhone": "Owner phone", "ownerEmail": "Owner email", "email": "Email" },
+  "chart": {
+    "title": "Unified medical chart",
+    "print": "Print chart",
+    "subtitle": "Patient: {{name}} · Serial: {{serial}}",
+    "ownerPrefix": "Owner",
+    "hint": "One chronological record unifying treatments, vaccinations and clinical notes — newest first.",
+    "empty": "No medical events recorded for this patient yet.",
+    "colWhen": "Date & time",
+    "colType": "Action type",
+    "colAction": "Action / medication",
+    "colDetails": "Details & notes",
+    "colDoctor": "Attending doctor",
+    "typeVaccine": "Vaccine",
+    "typeTreatment": "Treatment",
+    "typeNote": "Note",
+    "clinicalNote": "Clinical note",
+    "scheduled": "Scheduled — not given yet",
+    "missed": "Not given (missed)",
+    "overdue": "Overdue",
+    "dose": "Dose {{n}}/{{total}}"
+  },
   "notes": {
     "title": "Clinical notes",
     "add": "Add note",
