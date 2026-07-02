@@ -240,6 +240,8 @@ export interface Admission {
   cycle_hours?: number;
   /** When the current cycle's treatment was last marked complete. */
   last_completed_at?: string | null;
+  /** Row creation timestamp (ISO). Drives newest-first ordering of the case history. */
+  created_at?: string;
 }
 
 /** Category of a unified-feed event / reminder (drives its icon + colour). */

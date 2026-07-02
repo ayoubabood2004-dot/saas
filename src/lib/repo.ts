@@ -7,6 +7,13 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, AppointmentStatus, TreatmentEntry, Admission, Reminder, Product, Invoice, InvoiceItem, CheckoutItem, SaleMeta, Customer, DiscountType, PaymentMethod, WhatsAppMessage, AuditEntry, LoginEvent, PetNote } from "@/types";
 import { uid, uuid, ageMonths } from "./utils";
 
+/** Sort key for a case/admission — newest first. Prefers the precise `created_at`
+ *  timestamp (so same-day cases keep their true insertion order) and falls back to
+ *  the day-granularity `admitted_on` for any legacy row that predates the column. */
+function admOrderKey(a: Admission): string {
+  return a.created_at ?? a.admitted_on;
+}
+
 /** Resolve a discount input (percent 0–100 or a fixed amount) to an amount, clamped to [0, subtotal]. */
 export function resolveDiscount(subtotal: number, type: DiscountType | null | undefined, value: number): number {
   if (!type || !value || value <= 0) return 0;
@@ -421,19 +428,21 @@ const demoRepo = {
   async listAdmissions(_clinicId?: string): Promise<Admission[]> {
     return loadDB()
       .admissions.slice()
-      .sort((a, b) => b.admitted_on.localeCompare(a.admitted_on));
+      .sort((a, b) => admOrderKey(b).localeCompare(admOrderKey(a)));
   },
 
   async listAdmissionsForPet(petId: string): Promise<Admission[]> {
     return loadDB()
       .admissions.filter((a) => a.pet_id === petId)
-      .sort((a, b) => b.admitted_on.localeCompare(a.admitted_on));
+      .sort((a, b) => admOrderKey(b).localeCompare(admOrderKey(a)));
   },
 
   async addAdmission(input: Omit<Admission, "id">): Promise<Admission> {
     const db = loadDB();
-    const adm: Admission = { ...input, id: uid("adm") };
-    db.admissions.push(adm);
+    // Stamp the creation time so ordering is exact, then prepend so the local cache
+    // mirrors the newest-first fetch — the new case shows at the top instantly.
+    const adm: Admission = { created_at: new Date().toISOString(), ...input, id: uid("adm") };
+    db.admissions.unshift(adm);
     saveDB(db);
     return adm;
   },
@@ -832,12 +841,14 @@ const supabaseRepo: typeof demoRepo = {
     ok(await sbc().from("treatment_entries").update({ administered_at: given ? new Date().toISOString() : null, administered_by: given ? by : null }).eq("id", id));
   },
   async listAdmissions(clinicId) {
-    let q = sbc().from("admissions").select("*").order("admitted_on", { ascending: false });
+    // Newest case first — order by the precise created_at so cases opened on the same
+    // day still sort by real entry order (the day-only admitted_on can't distinguish them).
+    let q = sbc().from("admissions").select("*").order("created_at", { ascending: false });
     if (clinicId) q = q.eq("clinic_id", clinicId);
     return listOf<Admission>(await q);
   },
   async listAdmissionsForPet(petId) {
-    return listOf<Admission>(await sbc().from("admissions").select("*").eq("pet_id", petId).order("admitted_on", { ascending: false }));
+    return listOf<Admission>(await sbc().from("admissions").select("*").eq("pet_id", petId).order("created_at", { ascending: false }));
   },
   async addAdmission(input) {
     return need<Admission>(await sbc().from("admissions").insert(input).select().single());
