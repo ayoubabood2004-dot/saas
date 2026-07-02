@@ -59,72 +59,36 @@ function Chip({ icon, children }: { icon?: React.ReactNode; children: React.Reac
   return <span className="inline-flex items-center gap-1 rounded-full bg-surface-2 px-2.5 py-1 text-xs font-medium text-ink-muted">{icon}{children}</span>;
 }
 
-/** Pet photo + name + breed + allergy — horizontal (mobile header) or premium gradient hero card (desktop rail). */
-function ProfileHead({ pet, onPhoto, variant }: { pet: Pet; onPhoto: (e: React.ChangeEvent<HTMLInputElement>) => void; variant: "row" | "card" | "banner" }) {
+/** Full-width banner hero: pet photo + name + breed + core-info chips + allergy. */
+function ProfileHead({ pet, onPhoto }: { pet: Pet; onPhoto: (e: React.ChangeEvent<HTMLInputElement>) => void }) {
   const { t, i18n } = useTranslation();
   const age = ageFromDOB(pet.dob);
-  const photo = (size: number, ring?: boolean) => (
-    <label className={cn("relative cursor-pointer shrink-0 no-print", ring && "rounded-full ring-4 ring-surface-1")} title={t("passport.changePhoto")}>
-      <PetAvatar pet={pet} size={size} photoFallback />
-      <span className="absolute -bottom-1 -end-1 grid h-7 w-7 place-items-center rounded-full bg-brand-600 text-white shadow-soft">
-        <Camera size={15} />
-      </span>
-      <input type="file" accept="image/*" className="hidden" onChange={onPhoto} />
-    </label>
-  );
   const speciesBreed = `${t(`pet.species.${pet.species}`)}${pet.breed ? ` · ${breedLabel(pet.breed, i18n.language)}` : ""}`;
   const allergy = pet.allergies && pet.allergies.length > 0 ? (
     <span className="chip animate-pulse-ring bg-danger-50 text-danger-700 dark:bg-danger-500/15 dark:text-danger-200">
       <ShieldAlert size={14} /> {t("pet.allergies")}: {pet.allergies.join(", ")}
     </span>
   ) : null;
-
-  if (variant === "card") {
-    const sexSym = pet.sex === "male" ? "♂" : pet.sex === "female" ? "♀" : "•";
-    const sexColor = pet.sex === "male" ? "text-brand-600" : pet.sex === "female" ? "text-accent-600" : "text-ink-subtle";
-    return (
-      <div className="card relative overflow-hidden p-0">
-        <div className="h-20 bg-brand-grad" />
-        <div className="-mt-12 flex flex-col items-center px-5 pb-5 text-center">
-          {photo(88, true)}
-          <h1 className="mt-2.5 font-display text-xl font-extrabold text-ink">{pet.name}</h1>
-          <p className="text-sm text-ink-muted">{speciesBreed}</p>
-          <div className="mt-3 flex flex-wrap justify-center gap-1.5">
-            {age && <Chip icon={<Cake size={12} className="text-brand-500" />}>{age.years > 0 ? `${age.years}${t("pet.yShort", "y")} ` : ""}{age.months}{t("pet.mShort", "m")}</Chip>}
-            {pet.current_weight_kg != null && <Chip icon={<Scale size={12} className="text-brand-500" />}>{pet.current_weight_kg} {t("common.kg")}</Chip>}
-            <Chip><span className={cn("text-sm font-bold leading-none", sexColor)}>{sexSym}</span> {t(`pet.sex.${pet.sex}`)}</Chip>
-          </div>
-          {allergy && <div className="mt-3">{allergy}</div>}
-        </div>
-      </div>
-    );
-  }
-  if (variant === "banner") {
-    const sexSym = pet.sex === "male" ? "♂" : pet.sex === "female" ? "♀" : "•";
-    const sexColor = pet.sex === "male" ? "text-brand-600" : pet.sex === "female" ? "text-accent-600" : "text-ink-subtle";
-    return (
-      <div className="card flex items-center gap-5 p-5">
-        {photo(92)}
-        <div className="min-w-0 flex-1">
-          <h1 className="truncate font-display text-2xl font-extrabold tracking-tighter2 text-ink">{pet.name}</h1>
-          <p className="truncate text-sm text-ink-muted">{speciesBreed}</p>
-          <div className="mt-2.5 flex flex-wrap gap-1.5">
-            {age && <Chip icon={<Cake size={12} className="text-brand-500" />}>{age.years > 0 ? `${age.years}${t("pet.yShort", "y")} ` : ""}{age.months}{t("pet.mShort", "m")}</Chip>}
-            {pet.current_weight_kg != null && <Chip icon={<Scale size={12} className="text-brand-500" />}>{pet.current_weight_kg} {t("common.kg")}</Chip>}
-            <Chip><span className={cn("text-sm font-bold leading-none", sexColor)}>{sexSym}</span> {t(`pet.sex.${pet.sex}`)}</Chip>
-          </div>
-          {allergy && <div className="mt-2.5">{allergy}</div>}
-        </div>
-      </div>
-    );
-  }
+  const sexSym = pet.sex === "male" ? "♂" : pet.sex === "female" ? "♀" : "•";
+  const sexColor = pet.sex === "male" ? "text-brand-600" : pet.sex === "female" ? "text-accent-600" : "text-ink-subtle";
   return (
-    <div className="flex items-center gap-4">
-      {photo(84)}
+    <div className="card flex items-center gap-5 p-5">
+      <label className="relative cursor-pointer shrink-0 no-print" title={t("passport.changePhoto")}>
+        <PetAvatar pet={pet} size={92} photoFallback />
+        <span className="absolute -bottom-1 -end-1 grid h-7 w-7 place-items-center rounded-full bg-brand-600 text-white shadow-soft">
+          <Camera size={15} />
+        </span>
+        <input type="file" accept="image/*" className="hidden" onChange={onPhoto} />
+      </label>
       <div className="min-w-0 flex-1">
-        <h1 className="truncate text-2xl font-extrabold text-ink">{pet.name}</h1>
-        <p className="text-ink-muted">{speciesBreed}{age ? ` · ${t("pet.ageValue", { years: age.years, months: age.months })}` : ""}</p>
-        {allergy && <div className="mt-1">{allergy}</div>}
+        <h1 className="truncate font-display text-2xl font-extrabold tracking-tighter2 text-ink">{pet.name}</h1>
+        <p className="truncate text-sm text-ink-muted">{speciesBreed}</p>
+        <div className="mt-2.5 flex flex-wrap gap-1.5">
+          {age && <Chip icon={<Cake size={12} className="text-brand-500" />}>{age.years > 0 ? `${age.years}${t("pet.yShort", "y")} ` : ""}{age.months}{t("pet.mShort", "m")}</Chip>}
+          {pet.current_weight_kg != null && <Chip icon={<Scale size={12} className="text-brand-500" />}>{pet.current_weight_kg} {t("common.kg")}</Chip>}
+          <Chip><span className={cn("text-sm font-bold leading-none", sexColor)}>{sexSym}</span> {t(`pet.sex.${pet.sex}`)}</Chip>
+        </div>
+        {allergy && <div className="mt-2.5">{allergy}</div>}
       </div>
     </div>
   );
@@ -386,7 +350,7 @@ export function PetPassport() {
 
       {/* ① Profile banner — pet + core info · owner details · caregivers (horizontal). */}
       <section className={cn("grid gap-4", isOwner ? "md:grid-cols-2" : "lg:grid-cols-3")}>
-        <ProfileHead pet={pet} onPhoto={onPhoto} variant="banner" />
+        <ProfileHead pet={pet} onPhoto={onPhoto} />
         {!isOwner && <OwnerCard pet={pet} canEdit={canEditClinical} onUpdated={reload} />}
         <ContactsCard pet={pet} canEdit={canEditClinical || isOwner} onChanged={reload} />
       </section>
@@ -458,7 +422,7 @@ export function PetPassport() {
       </section>
 
       {/* ③ Bottom widgets — every secondary widget lives BELOW the timeline (no rails). */}
-      <section className="mt-8 space-y-6 no-print">
+      <section className="mt-8 space-y-6">
         {/* At-a-glance metrics strip: wellness index + vaccination / weight / care status. */}
         <div className="grid items-stretch gap-4 md:grid-cols-4">
           <WellnessCard vaccines={vaccines} admissions={admissions} />
