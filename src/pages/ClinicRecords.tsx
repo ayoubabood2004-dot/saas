@@ -22,7 +22,7 @@ import { phoneMatches, nationalNumber } from "@/lib/phone";
 import { getDialCode } from "@/lib/settings";
 import { useAuth } from "@/contexts/AuthContext";
 import { withTimeout } from "@/lib/errors";
-import { getCached, setCached } from "@/lib/swrCache";
+import { getCached, setCached, isFresh } from "@/lib/swrCache";
 import { loadRecordsSnap, recordsKey, type RecordsSnap } from "@/lib/prefetchData";
 
 type Tab = "log" | "cases" | "boarding" | "movement";
@@ -116,7 +116,7 @@ export function ClinicRecords() {
 
   useEffect(() => {
     mounted.current = true;
-    void load();
+    if (!isFresh(cacheKey, 20_000)) void load(); // skip refetch when fresh (< 20s)
     return () => { mounted.current = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -205,7 +205,7 @@ export function ClinicRecords() {
         })}
       </div>
 
-      <AnimatePresence mode="wait">
+      <AnimatePresence mode="wait" initial={false}>
         <motion.div key={tab} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.2 }}>
           {tab === "log" && <PatientLog pets={pets} admissions={admissions} visits={visits} onChanged={load} loading={loading} />}
           {tab === "cases" && <CurrentCases pets={pets} admissions={admissions} treatments={treatments} onChanged={load} />}
@@ -885,7 +885,7 @@ function CurrentCases({ pets, admissions, treatments, onChanged }: { pets: Pet[]
     const { done, remainingH } = completion(a);
     const cycle = a.cycle_hours ?? 24;
     return (
-      <motion.div key={a.id} layout variants={staggerItem} className={cn("card p-4", done && "ring-1 ring-success-200 dark:ring-success-500/30")}>
+      <div key={a.id} className={cn("card p-4", done && "ring-1 ring-success-200 dark:ring-success-500/30")}>
         <div className="flex items-center gap-3">
           <PetAvatar pet={p} size={48} photoFallback />
           <div className="min-w-0 flex-1">
@@ -921,7 +921,7 @@ function CurrentCases({ pets, admissions, treatments, onChanged }: { pets: Pet[]
           <Button size="sm" variant="secondary" className="flex-1" leftIcon={<Pill size={15} />} onClick={() => { playTap(); navigate(`/pet/${p.id}?tab=treatment`); }}>{t("records.openSheet")}</Button>
           <Button size="sm" variant="ghost" onClick={() => discharge(a.id)} aria-label={t("records.discharge")}><DischargeIcon size={15} /></Button>
         </div>
-      </motion.div>
+      </div>
     );
   };
 
@@ -950,11 +950,11 @@ function CurrentCases({ pets, admissions, treatments, onChanged }: { pets: Pet[]
                   <h3 className="font-display text-sm font-bold tracking-tighter2 text-ink">{col.title}</h3>
                   <span className="rounded-full bg-surface-2 px-2 text-2xs font-bold text-ink-subtle">{col.items.length}</span>
                 </div>
-                <motion.div layout variants={staggerContainer} initial="initial" animate="animate" className="space-y-3">
+                <div className="space-y-3">
                   {col.items.length === 0 ? (
                     <div className="rounded-2xl border border-dashed border-line p-6 text-center text-xs text-ink-subtle">{t("records.colEmpty", "Nothing here")}</div>
                   ) : col.items.map(renderCard)}
-                </motion.div>
+                </div>
               </div>
             );
           })}

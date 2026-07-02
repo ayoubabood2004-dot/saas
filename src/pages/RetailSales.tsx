@@ -8,7 +8,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Skeleton } from "@/components/ui";
 import { cn } from "@/lib/utils";
 import { withTimeout } from "@/lib/errors";
-import { getCached, setCached } from "@/lib/swrCache";
+import { getCached, setCached, isFresh } from "@/lib/swrCache";
 import { loadRetailSnap, retailKey, type RetailSnap } from "@/lib/prefetchData";
 import { playTap } from "@/lib/sounds";
 import { SaleBuilder, type RetailPrefill } from "@/components/retail/SaleBuilder";
@@ -72,7 +72,7 @@ export function RetailSales() {
   };
   useEffect(() => {
     mounted.current = true;
-    void load();
+    if (!isFresh(cacheKey, 20_000)) void load(); // skip refetch when fresh (< 20s)
     return () => { mounted.current = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

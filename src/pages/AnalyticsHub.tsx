@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 import type { Pet, Invoice, InvoiceItem, Product, MedicalVisit, PaymentMethod, Species, MediaItem, TreatmentEntry, AuditEntry, LoginEvent } from "@/types";
 import { type StaffMember } from "@/lib/staff";
-import { getCached, setCached } from "@/lib/swrCache";
+import { getCached, setCached, isFresh } from "@/lib/swrCache";
 import { loadAnalyticsSnap, analyticsKey, type AnalyticsSnap } from "@/lib/prefetchData";
 import { useAuth } from "@/contexts/AuthContext";
 import { usePermissions } from "@/hooks/usePermissions";
@@ -118,6 +118,7 @@ export function AnalyticsHub() {
   useEffect(() => {
     let alive = true;
     const clinicId = user?.clinic_id ?? user?.id;
+    if (isFresh(cacheKey, 20_000)) return; // fresh snapshot — skip the heavy refetch
     (async () => {
       try {
         // Fetch composition lives in prefetchData so the page and the idle warmer

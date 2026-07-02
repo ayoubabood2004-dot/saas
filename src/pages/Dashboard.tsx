@@ -27,7 +27,7 @@ import { UpcomingEvents } from "@/components/UpcomingEvents";
 import { BirthdaysWidget } from "@/components/BirthdaysWidget";
 import { RemindersWidget } from "@/components/RemindersWidget";
 import { buildUpcomingEvents } from "@/lib/events";
-import { getCached, setCached } from "@/lib/swrCache";
+import { getCached, setCached, isFresh } from "@/lib/swrCache";
 import { Card, CardTitle, Button, Badge, RingStat, Skeleton, EmptyState, ProgressRing, type CurvePoint } from "@/components/ui";
 import { staggerContainer, fadeUp } from "@/lib/motion";
 
@@ -113,7 +113,9 @@ export function Dashboard() {
 
   useEffect(() => {
     mounted.current = true;
-    void load();
+    // Skip the background refetch when the snapshot is fresh (< 20s) — switching
+    // back within that window renders once from cache, no second re-render.
+    if (!isFresh(cacheKey, 20_000)) void load();
     return () => { mounted.current = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

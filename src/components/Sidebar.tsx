@@ -1,7 +1,6 @@
 import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { motion } from "framer-motion";
 import {
   LayoutDashboard,
   CalendarDays,
@@ -115,13 +114,11 @@ export function Sidebar() {
                 active ? "text-brand-700 dark:text-brand-200" : "text-ink-muted hover:bg-surface-2 hover:text-ink",
               )}
             >
-              {active && (
-                <motion.span
-                  layoutId="sidebar-active"
-                  className="absolute inset-0 rounded-2xl bg-brand-50 dark:bg-brand-500/15"
-                  transition={{ type: "spring", stiffness: 380, damping: 30 }}
-                />
-              )}
+              {/* Instant CSS active background — no framer-motion layoutId. The
+                  shared-layout "projection" that slides this pill forced a DOM
+                  measure (measureScroll) + delta math on EVERY navigation, which
+                  profiling flagged as the top cost of switching sections. */}
+              {active && <span className="absolute inset-0 rounded-2xl bg-brand-50 dark:bg-brand-500/15" />}
               <span className="relative z-10 flex items-center gap-3">
                 <Icon size={19} />
                 {item.label}

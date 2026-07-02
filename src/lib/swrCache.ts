@@ -15,6 +15,15 @@ export function getCached<T>(key: string): T | undefined {
   return (store.get(key)?.data as T | undefined) ?? undefined;
 }
 
+/** True if the key was cached within the last `ttlMs`. Lets a page skip the
+ *  background revalidation on mount when its data is still fresh — so rapid
+ *  section-to-section switching renders ONCE (cache hit) instead of twice
+ *  (cache hit + refetch re-render), which is the bulk of per-navigation cost. */
+export function isFresh(key: string, ttlMs: number): boolean {
+  const e = store.get(key);
+  return !!e && Date.now() - e.at < ttlMs;
+}
+
 /** Overwrite the cached value for a key. */
 export function setCached<T>(key: string, data: T): void {
   store.set(key, { data, at: Date.now() });

@@ -96,13 +96,9 @@ export function TopBar({ mobileOnly = false }: { mobileOnly?: boolean }) {
                     active ? "text-brand-700 dark:text-brand-300" : "text-ink-muted hover:text-ink hover:bg-surface-2",
                   )}
                 >
-                  {active && (
-                    <motion.span
-                      layoutId="nav-active"
-                      className="absolute inset-0 rounded-full bg-brand-50 dark:bg-brand-500/15"
-                      transition={{ type: "spring", stiffness: 380, damping: 30 }}
-                    />
-                  )}
+                  {/* Instant CSS active background (no framer-motion layoutId) —
+                      the sliding projection cost a DOM measure on every nav. */}
+                  {active && <span className="absolute inset-0 rounded-full bg-brand-50 dark:bg-brand-500/15" />}
                   <span className="relative z-10 inline-flex items-center gap-2">
                     <Icon size={17} />
                     {item.label}
