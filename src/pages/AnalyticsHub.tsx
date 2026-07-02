@@ -1136,7 +1136,7 @@ function LedgerTab({ rows, canProfit }: { rows: LedgerRow[]; canProfit: boolean 
       <UniversalReportTable<LedgerRow>
         title="تقرير المبيعات الشامل — سجل الحركات"
         clinicName={getClinicName()}
-        dateRangeLabel={`${shortDate(loMs)} — ${shortDate(hiMs)}`}
+        dateRangeLabel={`الفترة: ${shortDate(loMs)} — ${shortDate(hiMs)}`}
         columns={columns}
         screenColumns={screenColumns}
         data={sorted}

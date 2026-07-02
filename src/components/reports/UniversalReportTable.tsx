@@ -45,7 +45,11 @@ export interface SummaryMetric { label: string; value: string }
 interface Props<T> {
   title: string;
   clinicName?: string;
+  /** Subtitle under the title (screen + print letterhead), rendered VERBATIM —
+   *  include your own prefix (e.g. "الفترة: …" or "المريض: …"). */
   dateRangeLabel?: string;
+  /** Label for the print button (default "طباعة التقرير"). */
+  printButtonLabel?: string;
   /** Granular columns — drive the print document, Excel export, and sorting. */
   columns: ReportColumn<T>[];
   /** Optional composite columns for the on-screen table only (data stacking for tablets).
@@ -70,7 +74,7 @@ interface Props<T> {
 const alignClass = (a?: ReportAlign) => (a === "end" ? "text-end" : a === "center" ? "text-center" : "text-start");
 
 export function UniversalReportTable<T>({
-  title, clinicName, dateRangeLabel, columns, screenColumns, data, rowKey,
+  title, clinicName, dateRangeLabel, printButtonLabel, columns, screenColumns, data, rowKey,
   summaryMetrics = [], chart, toolbar, emptyText = "لا توجد بيانات لعرضها.",
   pageSize = 25, sort, onSort, isRowMuted, exportFileName,
 }: Props<T>) {
@@ -132,7 +136,7 @@ export function UniversalReportTable<T>({
       <div className="flex flex-wrap items-center gap-3">
         <div className="me-auto">
           <h3 className="font-display text-lg font-extrabold text-ink">{title}</h3>
-          {dateRangeLabel && <p className="text-2xs text-ink-subtle">الفترة: {dateRangeLabel}</p>}
+          {dateRangeLabel && <p className="text-2xs text-ink-subtle">{dateRangeLabel}</p>}
         </div>
         <button
           onClick={handleExport}
@@ -145,7 +149,7 @@ export function UniversalReportTable<T>({
           onClick={() => setPrinting(true)}
           className="inline-flex items-center gap-1.5 rounded-xl bg-brand-600 px-3.5 py-2.5 text-sm font-semibold text-white shadow-soft transition hover:bg-brand-700"
         >
-          <Printer size={16} /> طباعة التقرير
+          <Printer size={16} /> {printButtonLabel ?? "طباعة التقرير"}
         </button>
       </div>
 
@@ -174,7 +178,7 @@ export function UniversalReportTable<T>({
               <thead className="sticky top-0 z-10 bg-surface-2/95 backdrop-blur">
                 <tr>
                   {screenCols.map((c) => (
-                    <th key={c.key} className={cn("whitespace-nowrap border-b border-line px-3 py-2.5 text-2xs font-bold text-ink-muted", alignClass(c.align))}>
+                    <th key={c.key} className={cn("border-b border-line px-3 py-2.5 text-2xs font-bold text-ink-muted", alignClass(c.align))}>
                       {c.sortKey && onSort ? (
                         <button onClick={() => onSort(c.sortKey!)} className="inline-flex items-center gap-1 transition hover:text-brand-600">
                           {c.header}<ArrowUpDown size={11} className={sort?.key === c.sortKey ? "text-brand-600" : "opacity-40"} />
@@ -215,7 +219,7 @@ export function UniversalReportTable<T>({
             <header className="rp-head">
               <div className="rp-clinic">{clinic}</div>
               <div className="rp-title">{title}</div>
-              {dateRangeLabel && <div className="rp-range">الفترة: {dateRangeLabel}</div>}
+              {dateRangeLabel && <div className="rp-range">{dateRangeLabel}</div>}
               <div className="rp-meta">تاريخ الإصدار: {issued} · صادر عن نظام doctorVet</div>
             </header>
 

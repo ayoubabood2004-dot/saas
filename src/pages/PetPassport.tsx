@@ -7,7 +7,7 @@ import {
   Plus, Check, Clock, AlertCircle, ChevronDown, Printer, ShieldAlert, Pill, Trash2, BedDouble, Camera,
   Share2, Copy, Globe, PawPrint, Repeat, Columns2, X, Calendar,
   Utensils, Fingerprint, Cake, Heart, Scissors, Users, UserPlus, User, Phone, Mail, Pencil,
-  Scale, Sparkles, Loader2, NotebookPen, CalendarClock, FileSignature,
+  Scale, Sparkles, Loader2, NotebookPen, CalendarClock, FileSignature, ClipboardList,
 } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, TreatmentEntry, Admission, FoodType, DietPlan, Appointment, Reminder, MedicalAssessment, PatientCondition, Species, Sex, PetNote } from "@/types";
@@ -16,6 +16,7 @@ import { repo } from "@/lib/repo";
 import { persistMedicalEntries } from "@/lib/medSync";
 import { PetAvatar } from "@/components/PetAvatar";
 import { OwnerCard } from "@/components/OwnerCard";
+import { UnifiedMedicalRecord } from "@/components/UnifiedMedicalRecord";
 import { UpcomingEvents } from "@/components/UpcomingEvents";
 import { buildUpcomingEvents } from "@/lib/events";
 import { WeightChart } from "@/components/WeightChart";
@@ -38,9 +39,10 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Stethoscope, SlidersHorizontal, ShoppingCart } from "lucide-react";
 import { RangesEditor } from "@/components/RangesEditor";
 
-type Tab = "diet" | "vaccines" | "history" | "treatment" | "notes" | "media" | "qr";
+type Tab = "timeline" | "diet" | "vaccines" | "history" | "treatment" | "notes" | "media" | "qr";
 /** Each section carries its own colour identity (matched to the events-feed category colours). */
 const TABS: { id: Tab; icon: typeof IdCard; fill: string; text: string }[] = [
+  { id: "timeline", icon: ClipboardList, fill: "bg-brand-100 dark:bg-brand-500/20", text: "text-brand-700 dark:text-brand-200" },
   { id: "diet", icon: Utensils, fill: "bg-success-100 dark:bg-success-500/20", text: "text-success-700 dark:text-success-200" },
   { id: "vaccines", icon: Syringe, fill: "bg-violet-100 dark:bg-violet-500/20", text: "text-violet-700 dark:text-violet-200" },
   { id: "history", icon: FileText, fill: "bg-sky-100 dark:bg-sky-500/20", text: "text-sky-700 dark:text-sky-200" },
@@ -285,6 +287,7 @@ export function PetPassport() {
   const treatmentDue = petEvents.some((e) => e.category === "medication" && e.urgent);
   const vaccineOverdue = vaccines.some((v) => v.status === "overdue");
   const tabBadge: Record<Tab, { dot?: boolean; count?: number }> = {
+    timeline: {},
     diet: {},
     history: {},
     qr: {},
@@ -434,6 +437,7 @@ export function PetPassport() {
               {tab === "history" && <HistoryTab visits={visits} admissions={admissions} treatments={treatments} isOwner={isOwner} />}
               {tab === "treatment" && <TreatmentTab pet={pet} treatments={treatments} admissions={admissions} onChanged={reload} canEdit={canEditClinical} isOwner={isOwner} />}
               {tab === "notes" && <NotesTab pet={pet} notes={notes} canEdit={canEditClinical} onChanged={reload} />}
+              {tab === "timeline" && <UnifiedMedicalRecord pet={pet} treatments={treatments} vaccinations={vaccines} notes={notes} />}
               {tab === "media" && <MediaTab pet={pet} media={media} onChanged={reload} canEdit={canEditClinical} />}
               {tab === "qr" && <QrTab pet={pet} />}
             </motion.div>

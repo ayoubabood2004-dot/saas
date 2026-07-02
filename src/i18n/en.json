@@ -593,7 +593,7 @@
     "title": "Digital Pet Passport",
     "medicalEntry": "Medical entry",
     "medicalEntryTitle": "Medical entry — {{name}}",
-    "tabs": { "identity": "Identity", "diet": "Diet", "vaccines": "Vaccinations", "history": "Medical history", "treatment": "Treatment", "notes": "Notes", "media": "Media", "qr": "QR chart" },
+    "tabs": { "identity": "Identity", "timeline": "Medical chart", "diet": "Diet", "vaccines": "Vaccinations", "history": "Medical history", "treatment": "Treatment", "notes": "Notes", "media": "Media", "qr": "QR chart" },
     "weightChart": "Weight & growth",
     "addWeight": "Record weight",
     "noWeights": "No weight records yet.",

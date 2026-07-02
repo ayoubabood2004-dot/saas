@@ -35,7 +35,7 @@ export async function exportReportXlsx(r: XlsxReport): Promise<void> {
   const aoa: (string | number)[][] = [];
   const master = `${r.clinicName ? r.clinicName + " · " : ""}doctorVet — ${r.title}`;
   aoa.push([master]);
-  aoa.push([r.dateRange ? `الفترة: ${r.dateRange}` : ""]);
+  aoa.push([r.dateRange ?? ""]); // subtitle line, rendered verbatim (caller includes its prefix)
   aoa.push([]); // spacer
   const headRow = aoa.length;             // 0-based row of the column headers
   aoa.push(r.columns.map((c) => c.header));
