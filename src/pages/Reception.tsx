@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import {
@@ -10,13 +10,12 @@ import {
   ChevronRight, ChevronLeft, LayoutGrid, Columns3, GripVertical,
 } from "lucide-react";
 import type { Admission, Pet } from "@/types";
-import { repo } from "@/lib/repo";
+import { opsStore } from "@/lib/opsStore";
 import { PetAvatar } from "@/components/PetAvatar";
 import { Button, useToast } from "@/components/ui";
 import { cn, localISO } from "@/lib/utils";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
 import { useAuth } from "@/contexts/AuthContext";
-import { withTimeout } from "@/lib/errors";
 
 /* ============================================================================
  * التقويم الرئيسي — Operational Operations Calendar.
@@ -104,33 +103,21 @@ export function Reception() {
   const { user } = useAuth();
   const todayISO = localISO();
 
-  const [admissions, setAdmissions] = useState<Admission[]>([]);
-  const [pets, setPets] = useState<Record<string, Pet>>({});
-  const [loading, setLoading] = useState(true);
+  // The shared, synchronous ops cache — the SAME source-of-truth the New Case modal
+  // and the drag-and-drop both write through. Seeded from the snapshot instantly (so a
+  // just-registered walk-in is already here with no flicker), then reconciled via hydrate.
+  const [ops, setOps] = useState(() => opsStore.get());
   const [view, setView] = useState<"month" | "day">("day");
   const [cursor, setCursor] = useState(() => new Date());
   const [activeId, setActiveId] = useState<string | null>(null);
+  const admissions = ops.admissions;
+  const pets = ops.pets;
+  const loading = !ops.hydrated;
 
-  const mounted = useRef(true);
-  const load = async () => {
-    try {
-      const scope = user?.clinic_id ?? user?.id;
-      const [adm, allPets] = await withTimeout(Promise.all([repo.listAdmissions(scope), repo.listAllPets(scope)]), 15000);
-      if (!mounted.current) return;
-      setAdmissions(adm);
-      const map: Record<string, Pet> = {};
-      for (const p of allPets) map[p.id] = p;
-      setPets(map);
-    } catch {
-      /* hung/failed — keep previous state */
-    } finally {
-      if (mounted.current) setLoading(false);
-    }
-  };
   useEffect(() => {
-    mounted.current = true;
-    void load();
-    return () => { mounted.current = false; };
+    const unsub = opsStore.subscribe(() => setOps(opsStore.get()));
+    void opsStore.hydrate(user?.clinic_id ?? user?.id).catch(() => {});
+    return unsub;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -176,17 +163,14 @@ export function Reception() {
     }
   };
 
-  // Optimistic mutate: patch local state now, persist in the background, revert on error.
+  // Drag drop → the shared store patches optimistically (instant), persists in the
+  // background and reverts the row on failure; we just add the tap/success/error cues.
   const persist = async (id: string, patch: Partial<Admission>) => {
-    const before = admissions.find((a) => a.id === id);
-    if (!before) return;
-    setAdmissions((list) => list.map((a) => (a.id === id ? { ...a, ...patch } : a)));
     playTap();
     try {
-      await repo.updateAdmission(id, patch);
+      await opsStore.patch(id, patch);
       playSuccess();
     } catch (e) {
-      setAdmissions((list) => list.map((a) => (a.id === id ? before : a)));
       playWarning();
       toast.error(t("reception.moveError", "تعذّر تحديث الحالة، حاول مجدداً."), e instanceof Error ? e.message : undefined);
     }

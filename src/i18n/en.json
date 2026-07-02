@@ -1047,6 +1047,7 @@
     "createdLog": "Added to the daily treatment log.",
     "createdBoarding": "Animal admitted for boarding.",
     "createdRelease": "Visit logged and animal released.",
+    "goCalendar": "Master calendar",
     "goRecords": "Go to records"
   },
   "records": {

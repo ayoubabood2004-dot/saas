@@ -242,6 +242,8 @@ export interface Admission {
   last_completed_at?: string | null;
   /** Row creation timestamp (ISO). Drives newest-first ordering of the case history. */
   created_at?: string;
+  /** Owning clinic (shared workspace). Scopes the operational calendar. */
+  clinic_id?: string | null;
 }
 
 /** Category of a unified-feed event / reminder (drives its icon + colour). */
