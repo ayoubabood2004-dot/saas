@@ -12,6 +12,7 @@ import {
 import type { Pet, Invoice, InvoiceItem, Product, MedicalVisit, PaymentMethod, Species, MediaItem, TreatmentEntry, AuditEntry, LoginEvent } from "@/types";
 import { repo } from "@/lib/repo";
 import { listStaff, type StaffMember } from "@/lib/staff";
+import { getCached, setCached } from "@/lib/swrCache";
 import { useAuth } from "@/contexts/AuthContext";
 import { usePermissions } from "@/hooks/usePermissions";
 import { useToast, Skeleton } from "@/components/ui";
@@ -87,17 +88,26 @@ export function AnalyticsHub() {
   const toast = useToast();
   const canProfit = can("viewProfits");
 
-  const [loading, setLoading] = useState(true);
-  const [pets, setPets] = useState<Pet[]>([]);
-  const [invoices, setInvoices] = useState<Invoice[]>([]);
-  const [items, setItems] = useState<InvoiceItem[]>([]);
-  const [products, setProducts] = useState<Product[]>([]);
-  const [visits, setVisits] = useState<MedicalVisit[]>([]);
-  const [staff, setStaff] = useState<StaffMember[]>([]);
-  const [media, setMedia] = useState<MediaItem[]>([]);
-  const [treatments, setTreatments] = useState<TreatmentEntry[]>([]);
-  const [audit, setAudit] = useState<AuditEntry[]>([]);
-  const [logins, setLogins] = useState<LoginEvent[]>([]);
+  // Stale-while-revalidate: reports are the heaviest fetch — paint the last
+  // snapshot instantly on return and refresh in the background.
+  type Snap = {
+    pets: Pet[]; invoices: Invoice[]; items: InvoiceItem[]; products: Product[]; visits: MedicalVisit[];
+    staff: StaffMember[]; media: MediaItem[]; treatments: TreatmentEntry[]; audit: AuditEntry[]; logins: LoginEvent[];
+  };
+  const cacheKey = `analytics:${user?.clinic_id ?? user?.id ?? "anon"}`;
+  const seed = getCached<Snap>(cacheKey);
+
+  const [loading, setLoading] = useState(!seed);
+  const [pets, setPets] = useState<Pet[]>(seed?.pets ?? []);
+  const [invoices, setInvoices] = useState<Invoice[]>(seed?.invoices ?? []);
+  const [items, setItems] = useState<InvoiceItem[]>(seed?.items ?? []);
+  const [products, setProducts] = useState<Product[]>(seed?.products ?? []);
+  const [visits, setVisits] = useState<MedicalVisit[]>(seed?.visits ?? []);
+  const [staff, setStaff] = useState<StaffMember[]>(seed?.staff ?? []);
+  const [media, setMedia] = useState<MediaItem[]>(seed?.media ?? []);
+  const [treatments, setTreatments] = useState<TreatmentEntry[]>(seed?.treatments ?? []);
+  const [audit, setAudit] = useState<AuditEntry[]>(seed?.audit ?? []);
+  const [logins, setLogins] = useState<LoginEvent[]>(seed?.logins ?? []);
 
   const [range, setRange] = useState<RangeKey>("month");
   const [from, setFrom] = useState("");
@@ -134,6 +144,7 @@ export function AnalyticsHub() {
         ]);
         if (!alive) return;
         setVisits(vis); setMedia(med); setTreatments(tx); setStaff(st); setAudit(au); setLogins(lg);
+        setCached<Snap>(cacheKey, { pets: pp, invoices: inv, items: it, products: pr, visits: vis, media: med, treatments: tx, staff: st, audit: au, logins: lg });
       } catch { /* empty states cover it */ }
       finally { if (alive) setLoading(false); }
     })();

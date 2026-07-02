@@ -9,6 +9,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Skeleton } from "@/components/ui";
 import { cn } from "@/lib/utils";
 import { withTimeout } from "@/lib/errors";
+import { getCached, setCached } from "@/lib/swrCache";
 import { playTap } from "@/lib/sounds";
 import { SaleBuilder, type RetailPrefill } from "@/components/retail/SaleBuilder";
 import { InvoicesPanel } from "@/components/retail/InvoicesPanel";
@@ -25,9 +26,14 @@ export function RetailSales() {
   const { user } = useAuth();
   const clinicId = user?.clinic_id ?? user?.id; // shared workspace id (manager's id for staff)
   const [tab, setTab] = useState<Tab>("sell");
-  const [products, setProducts] = useState<Product[]>([]);
-  const [invoices, setInvoices] = useState<Invoice[]>([]);
-  const [loading, setLoading] = useState(true);
+
+  // Stale-while-revalidate: paint the last snapshot instantly on return.
+  type Snap = { products: Product[]; invoices: Invoice[] };
+  const cacheKey = `retail:${clinicId ?? "anon"}`;
+  const seed = getCached<Snap>(cacheKey);
+  const [products, setProducts] = useState<Product[]>(seed?.products ?? []);
+  const [invoices, setInvoices] = useState<Invoice[]>(seed?.invoices ?? []);
+  const [loading, setLoading] = useState(!seed);
 
   // The "bridge": an animal record handed us a customer + pet via the URL. Capture it
   // into state (so it survives the URL cleanup + the initial data load), jump to the
@@ -57,6 +63,7 @@ export function RetailSales() {
       if (!mounted.current) return;
       setProducts(p);
       setInvoices(inv);
+      setCached<Snap>(cacheKey, { products: p, invoices: inv });
     } catch {
       /* a hung/failed query still clears the skeleton below */
     } finally {

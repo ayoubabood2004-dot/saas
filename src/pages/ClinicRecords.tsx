@@ -22,6 +22,7 @@ import { phoneMatches, nationalNumber } from "@/lib/phone";
 import { getDialCode } from "@/lib/settings";
 import { useAuth } from "@/contexts/AuthContext";
 import { withTimeout } from "@/lib/errors";
+import { getCached, setCached } from "@/lib/swrCache";
 
 type Tab = "log" | "cases" | "boarding" | "movement";
 
@@ -81,11 +82,16 @@ export function ClinicRecords() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [tab, setTab] = useState<Tab>("log");
-  const [pets, setPets] = useState<Pet[]>([]);
-  const [admissions, setAdmissions] = useState<Admission[]>([]);
-  const [treatments, setTreatments] = useState<TreatmentEntry[]>([]);
-  const [visits, setVisits] = useState<MedicalVisit[]>([]);
-  const [loading, setLoading] = useState(true);
+
+  // Stale-while-revalidate: paint the last snapshot instantly on return.
+  type Snap = { pets: Pet[]; admissions: Admission[]; treatments: TreatmentEntry[]; visits: MedicalVisit[] };
+  const cacheKey = `records:${user?.clinic_id ?? user?.id ?? "anon"}`;
+  const seed = getCached<Snap>(cacheKey);
+  const [pets, setPets] = useState<Pet[]>(seed?.pets ?? []);
+  const [admissions, setAdmissions] = useState<Admission[]>(seed?.admissions ?? []);
+  const [treatments, setTreatments] = useState<TreatmentEntry[]>(seed?.treatments ?? []);
+  const [visits, setVisits] = useState<MedicalVisit[]>(seed?.visits ?? []);
+  const [loading, setLoading] = useState(!seed);
 
   const mounted = useRef(true);
   const load = async () => {
@@ -102,7 +108,10 @@ export function ClinicRecords() {
         Promise.all(p.map((pet) => repo.listTreatments(pet.id))).then((r) => r.flat()),
         repo.listAllVisits(ids), // health status + last-visit date for the directory
       ]), 15000);
-      if (mounted.current) { setTreatments(tx); setVisits(vs); }
+      if (mounted.current) {
+        setTreatments(tx); setVisits(vs);
+        setCached<Snap>(cacheKey, { pets: p, admissions: a, treatments: tx, visits: vs });
+      }
     } catch {
       /* hung/failed query — finally still clears the skeleton */
     } finally {
