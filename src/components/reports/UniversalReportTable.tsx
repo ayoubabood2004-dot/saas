@@ -69,6 +69,10 @@ interface Props<T> {
   isRowMuted?: (row: T) => boolean;
   /** Base file name for the Excel export (".xlsx" appended). */
   exportFileName?: string;
+  /** Render only the export/print action buttons + the print portal — no title,
+   *  summary, chart, toolbar or on-screen table. Lets a host view (e.g. the interactive
+   *  timeline workspace) keep the A4 print + Excel export without the summary grid. */
+  printOnly?: boolean;
 }
 
 const alignClass = (a?: ReportAlign) => (a === "end" ? "text-end" : a === "center" ? "text-center" : "text-start");
@@ -76,7 +80,7 @@ const alignClass = (a?: ReportAlign) => (a === "end" ? "text-end" : a === "cente
 export function UniversalReportTable<T>({
   title, clinicName, dateRangeLabel, printButtonLabel, columns, screenColumns, data, rowKey,
   summaryMetrics = [], chart, toolbar, emptyText = "لا توجد بيانات لعرضها.",
-  pageSize = 25, sort, onSort, isRowMuted, exportFileName,
+  pageSize = 25, sort, onSort, isRowMuted, exportFileName, printOnly = false,
 }: Props<T>) {
   const toast = useToast();
   const [page, setPage] = useState(0);
@@ -140,11 +144,13 @@ export function UniversalReportTable<T>({
   return (
     <div className="space-y-4">
       {/* Header — title, range, print */}
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="me-auto">
-          <h3 className="font-display text-lg font-extrabold text-ink">{title}</h3>
-          {dateRangeLabel && <p className="text-2xs text-ink-subtle">{dateRangeLabel}</p>}
-        </div>
+      <div className={cn("flex flex-wrap items-center gap-3", printOnly && "justify-end")}>
+        {!printOnly && (
+          <div className="me-auto">
+            <h3 className="font-display text-lg font-extrabold text-ink">{title}</h3>
+            {dateRangeLabel && <p className="text-2xs text-ink-subtle">{dateRangeLabel}</p>}
+          </div>
+        )}
         <button
           onClick={handleExport}
           disabled={exporting || data.length === 0}
@@ -161,7 +167,7 @@ export function UniversalReportTable<T>({
       </div>
 
       {/* Summary cards (screen) */}
-      {summaryMetrics.length > 0 && (
+      {!printOnly && summaryMetrics.length > 0 && (
         <div className={cn("grid grid-cols-2 gap-3", summaryMetrics.length >= 4 ? "sm:grid-cols-4" : "sm:grid-cols-3")}>
           {summaryMetrics.map((m, i) => (
             <div key={i} className="card p-4">
@@ -172,11 +178,11 @@ export function UniversalReportTable<T>({
         </div>
       )}
 
-      {chart}
-      {toolbar}
+      {!printOnly && chart}
+      {!printOnly && toolbar}
 
       {/* Screen data table */}
-      {data.length === 0 ? (
+      {printOnly ? null : data.length === 0 ? (
         <div className="card grid place-items-center p-12 text-center text-ink-subtle">{emptyText}</div>
       ) : (
         <div className="card overflow-hidden p-0">

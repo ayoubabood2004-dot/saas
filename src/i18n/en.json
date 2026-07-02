@@ -731,6 +731,7 @@
     "subtitle": "Patient: {{name}} · Serial: {{serial}}",
     "ownerPrefix": "Owner",
     "hint": "One chronological record unifying treatments, vaccinations and clinical notes — newest first.",
+    "workspaceHint": "Add treatments, vaccines and notes — and track them all in one chronological record, newest first.",
     "empty": "No medical events recorded for this patient yet.",
     "colWhen": "Date & time",
     "colType": "Action type",

@@ -51,8 +51,9 @@ const TYPE_CHIP: Record<UnifiedEventType, { chip: string; icon: typeof Pill }> =
 
 const DATE_ONLY_RE = /^\d{4}-\d{2}-\d{2}$/;
 
-/** Parse "YYYY-MM-DD" (+ optional "H:mm"/"HH:mm") as LOCAL wall-clock; NaN-safe. */
-const localTs = (day: string, time?: string): { ts: number; hasTime: boolean } => {
+/** Parse "YYYY-MM-DD" (+ optional "H:mm"/"HH:mm") as LOCAL wall-clock; NaN-safe.
+ *  Exported so the interactive timeline feed places events on the exact same axis. */
+export const localTs = (day: string, time?: string): { ts: number; hasTime: boolean } => {
   const m = /^(\d{1,2}):(\d{2})$/.exec((time ?? "").trim());
   const hm = m ? `${m[1].padStart(2, "0")}:${m[2]}` : null; // "8:30" → "08:30" (Invalid Date otherwise)
   const d = new Date(`${day}T${hm ?? "12:00"}:00`);
@@ -60,10 +61,23 @@ const localTs = (day: string, time?: string): { ts: number; hasTime: boolean } =
 };
 
 /** ISO datetime → epoch ms; 0 when invalid (sinks to the bottom of the feed). */
-const isoTs = (iso?: string | null): number => {
+export const isoTs = (iso?: string | null): number => {
   if (!iso) return 0;
   const t = new Date(iso).getTime();
   return Number.isNaN(t) ? 0 : t;
+};
+
+/** Timeline position for a vaccination: an administered dose sits at its real moment
+ *  (date-only columns anchored to local noon, never UTC-midnight); a planned one at
+ *  its due date. Shared by the summary chart and the interactive feed. */
+export const vaccinationTs = (v: Vaccination): { ts: number; hasTime: boolean } => {
+  if (v.administered_at) {
+    const raw = String(v.administered_at).trim();
+    if (DATE_ONLY_RE.test(raw)) return { ts: localTs(raw).ts, hasTime: false };
+    const ts = isoTs(raw);
+    return { ts, hasTime: ts > 0 };
+  }
+  return { ts: v.due_date ? localTs(v.due_date).ts : 0, hasTime: false };
 };
 
 interface UnifyOptions {
@@ -95,18 +109,8 @@ export function unifyMedicalEvents(
   }
 
   for (const v of vaccinations) {
-    // An administered dose sits at its real moment; a planned one at its due date. The
-    // administered_at column is date-only in the DB — anchor those to local noon rather
-    // than letting UTC-midnight parsing fabricate a clock time / shift the day.
     const given = !!v.administered_at;
-    let ts = 0; let hasTime = false;
-    if (given) {
-      const raw = (v.administered_at as string).trim();
-      if (DATE_ONLY_RE.test(raw)) { ts = localTs(raw).ts; hasTime = false; }
-      else { ts = isoTs(raw); hasTime = ts > 0; }
-    } else {
-      ts = v.due_date ? localTs(v.due_date).ts : 0;
-    }
+    const { ts, hasTime } = vaccinationTs(v);
     if (ts === 0) continue; // no usable date at all — cannot be placed on a timeline
     const bits = [
       v.dose_number != null && v.doses_total != null ? labels.dose(v.dose_number, v.doses_total) : null,
@@ -140,8 +144,11 @@ const fmtDay = (ts: number) => (ts <= 0 ? "—" : new Date(ts).toLocaleDateStrin
 const fmtTime = (ts: number) => new Date(ts).toLocaleTimeString("ar-EG-u-nu-latn", { hour: "2-digit", minute: "2-digit", hour12: true });
 const fmtFull = (e: UnifiedEvent) => (e.timestamp <= 0 ? "—" : e.hasTime ? `${fmtDay(e.timestamp)}، ${fmtTime(e.timestamp)}` : fmtDay(e.timestamp));
 
-export function UnifiedMedicalRecord({ pet, treatments, vaccinations, notes, isOwner = false }: {
+export function UnifiedMedicalRecord({ pet, treatments, vaccinations, notes, isOwner = false, printOnly = false }: {
   pet: Pet; treatments: TreatmentEntry[]; vaccinations: Vaccination[]; notes: PetNote[]; isOwner?: boolean;
+  /** Render only the "طباعة الطبلة"/Excel action buttons + the print portal (no on-screen
+   *  table) — lets the interactive workspace keep the A4 chart & export without the summary grid. */
+  printOnly?: boolean;
 }) {
   const { t } = useTranslation();
 
@@ -222,6 +229,7 @@ export function UnifiedMedicalRecord({ pet, treatments, vaccinations, notes, isO
       data={events}
       rowKey={(e) => e.id}
       pageSize={30}
+      printOnly={printOnly}
       emptyText={t("chart.empty", "لا توجد أحداث طبية مسجّلة لهذا الحيوان بعد.")}
       toolbar={
         <p className="flex items-center gap-1.5 text-2xs text-ink-subtle">

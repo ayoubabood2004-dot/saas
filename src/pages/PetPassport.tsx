@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
@@ -16,7 +16,7 @@ import { repo } from "@/lib/repo";
 import { persistMedicalEntries } from "@/lib/medSync";
 import { PetAvatar } from "@/components/PetAvatar";
 import { OwnerCard } from "@/components/OwnerCard";
-import { UnifiedMedicalRecord } from "@/components/UnifiedMedicalRecord";
+import { UnifiedMedicalRecord, localTs, isoTs, vaccinationTs } from "@/components/UnifiedMedicalRecord";
 import { UpcomingEvents } from "@/components/UpcomingEvents";
 import { buildUpcomingEvents } from "@/lib/events";
 import { WeightChart } from "@/components/WeightChart";
@@ -437,7 +437,7 @@ export function PetPassport() {
               {tab === "history" && <HistoryTab visits={visits} admissions={admissions} treatments={treatments} isOwner={isOwner} />}
               {tab === "treatment" && <TreatmentTab pet={pet} treatments={treatments} admissions={admissions} onChanged={reload} canEdit={canEditClinical} isOwner={isOwner} />}
               {tab === "notes" && <NotesTab pet={pet} notes={notes} canEdit={canEditClinical} onChanged={reload} />}
-              {tab === "timeline" && <UnifiedMedicalRecord pet={pet} treatments={treatments} vaccinations={vaccines} notes={notes} isOwner={isOwner} />}
+              {tab === "timeline" && <TimelineWorkspace pet={pet} treatments={treatments} vaccinations={vaccines} notes={notes} admissions={admissions} isOwner={isOwner} canEdit={canEditClinical} onChanged={reload} />}
               {tab === "media" && <MediaTab pet={pet} media={media} onChanged={reload} canEdit={canEditClinical} />}
               {tab === "qr" && <QrTab pet={pet} />}
             </motion.div>
@@ -1157,8 +1157,49 @@ function MealModal({ open, onClose, onAdd }: { open: boolean; onClose: () => voi
 }
 
 /* ---------------- Vaccinations ---------------- */
-function VaccinesTab({ pet, vaccines, onChanged, canEdit, isOwner }: { pet: Pet; vaccines: Vaccination[]; onChanged: () => void; canEdit: boolean; isOwner: boolean }) {
+/** A single vaccination, rendered EXACTLY as in the vaccines timeline card — reused
+ *  verbatim in the interactive الطبلة feed (the timeline rail stays inside the tab's <ol>). */
+function VaccineCardBody({ v, isOwner, canEdit, onAdminister }: {
+  v: Vaccination; isOwner: boolean; canEdit: boolean; onAdminister: (v: Vaccination) => void;
+}) {
   const { t, i18n } = useTranslation();
+  const done = v.status === "administered";
+  const overdue = v.status === "overdue";
+  const pending = !done; // scheduled or overdue — an actionable future/late booster
+  const days = v.due_date ? daysUntil(v.due_date) : null;
+  return (
+    <div className={cn("card p-4", pending && "border-dashed", overdue && "border-danger-300 dark:border-danger-500/40")}>
+      <div className="flex items-center justify-between gap-2">
+        <p className="font-semibold text-ink">{isOwner ? vaccineScientific(v.name) : v.name}</p>
+        <span
+          className={`chip text-xs ${done ? "bg-success-50 text-success-700 dark:bg-success-500/15 dark:text-success-200" : overdue ? "bg-danger-50 text-danger-700 dark:bg-danger-500/15 dark:text-danger-200" : "bg-warn-50 text-warn-700 dark:bg-warn-500/15 dark:text-warn-200"}`}
+        >
+          {done ? t("passport.administered") : overdue ? t("passport.overdue") : t("passport.pending", "Pending")}
+        </span>
+      </div>
+      <p className="text-xs text-ink-muted mt-1">
+        {done
+          ? (v.administered_at ? t("passport.givenOn", { date: formatDate(v.administered_at.slice(0, 10), i18n.language), defaultValue: "Given {{date}}" }) : "")
+          : (v.due_date ? `${t("passport.dueOn", { date: formatDate(v.due_date, i18n.language), defaultValue: "Due {{date}}" })}${days !== null && days >= 0 ? ` · ${t("passport.dueIn", { days })}` : ""}` : "")}
+        {v.doses_total ? ` · ${t("passport.dose", { n: v.dose_number, total: v.doses_total })}` : ""}
+        {v.administered_by ? ` · ${t("passport.by", { who: v.administered_by })}` : ""}
+      </p>
+      {v.notes && (
+        <p className="mt-1.5 flex items-start gap-1.5 text-xs text-ink-muted">
+          <NotebookPen size={12} className="mt-0.5 shrink-0 text-brand-600" /> {v.notes}
+        </p>
+      )}
+      {pending && canEdit && (
+        <button onClick={() => onAdminister(v)} className="btn-primary mt-3 w-full py-1.5 text-sm">
+          <Syringe size={15} /> {t("passport.administerBooster", "Administer booster")}
+        </button>
+      )}
+    </div>
+  );
+}
+
+function VaccinesTab({ pet, vaccines, onChanged, canEdit, isOwner }: { pet: Pet; vaccines: Vaccination[]; onChanged: () => void; canEdit: boolean; isOwner: boolean }) {
+  const { t } = useTranslation();
   const { user } = useAuth();
   const [open, setOpen] = useState(false);
   const [administer, setAdminister] = useState<Vaccination | null>(null);
@@ -1195,8 +1236,6 @@ function VaccinesTab({ pet, vaccines, onChanged, canEdit, isOwner }: { pet: Pet;
           {sorted.map((v) => {
             const done = v.status === "administered";
             const overdue = v.status === "overdue";
-            const pending = !done; // scheduled or overdue — an actionable future/late booster
-            const days = v.due_date ? daysUntil(v.due_date) : null;
             const Icon = done ? Check : overdue ? AlertCircle : Clock;
             const color = done ? "bg-success-500" : overdue ? "bg-danger-500" : "bg-warn-500";
             return (
@@ -1204,33 +1243,7 @@ function VaccinesTab({ pet, vaccines, onChanged, canEdit, isOwner }: { pet: Pet;
                 <span className={`absolute -start-[11px] grid place-items-center w-5 h-5 rounded-full text-white ${color}`}>
                   <Icon size={12} strokeWidth={3} />
                 </span>
-                <div className={cn("card p-4", pending && "border-dashed", overdue && "border-danger-300 dark:border-danger-500/40")}>
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="font-semibold text-ink">{isOwner ? vaccineScientific(v.name) : v.name}</p>
-                    <span
-                      className={`chip text-xs ${done ? "bg-success-50 text-success-700 dark:bg-success-500/15 dark:text-success-200" : overdue ? "bg-danger-50 text-danger-700 dark:bg-danger-500/15 dark:text-danger-200" : "bg-warn-50 text-warn-700 dark:bg-warn-500/15 dark:text-warn-200"}`}
-                    >
-                      {done ? t("passport.administered") : overdue ? t("passport.overdue") : t("passport.pending", "Pending")}
-                    </span>
-                  </div>
-                  <p className="text-xs text-ink-muted mt-1">
-                    {done
-                      ? (v.administered_at ? t("passport.givenOn", { date: formatDate(v.administered_at.slice(0, 10), i18n.language), defaultValue: "Given {{date}}" }) : "")
-                      : (v.due_date ? `${t("passport.dueOn", { date: formatDate(v.due_date, i18n.language), defaultValue: "Due {{date}}" })}${days !== null && days >= 0 ? ` · ${t("passport.dueIn", { days })}` : ""}` : "")}
-                    {v.doses_total ? ` · ${t("passport.dose", { n: v.dose_number, total: v.doses_total })}` : ""}
-                    {v.administered_by ? ` · ${t("passport.by", { who: v.administered_by })}` : ""}
-                  </p>
-                  {v.notes && (
-                    <p className="mt-1.5 flex items-start gap-1.5 text-xs text-ink-muted">
-                      <NotebookPen size={12} className="mt-0.5 shrink-0 text-brand-600" /> {v.notes}
-                    </p>
-                  )}
-                  {pending && canEdit && (
-                    <button onClick={() => setAdminister(v)} className="btn-primary mt-3 w-full py-1.5 text-sm">
-                      <Syringe size={15} /> {t("passport.administerBooster", "Administer booster")}
-                    </button>
-                  )}
-                </div>
+                <VaccineCardBody v={v} isOwner={isOwner} canEdit={canEdit} onAdminister={setAdminister} />
               </li>
             );
           })}
@@ -1469,6 +1482,98 @@ function nowHM(): string {
   return new Date().toTimeString().slice(0, 5);
 }
 
+type TxStatus = "given" | "overdue" | "due" | "missed" | "scheduled";
+/** Flowsheet task state for a dose — shared by the treatment tab and the unified feed.
+ *  `today`/`currentHM` are LOCAL wall-clock (must match how persistMedicalEntries writes tx.day). */
+function treatmentStatus(tx: TreatmentEntry, today: string, currentHM: string): TxStatus {
+  if (tx.administered_at) return "given";
+  if (tx.day < today) return "missed";
+  if (tx.day > today) return "scheduled";
+  // Strict `<` so a dose just planned for the current minute reads as "due", not "overdue".
+  return tx.time < currentHM ? "overdue" : "due";
+}
+
+/** One medication dose, rendered EXACTLY as in the treatment flowsheet — reused verbatim
+ *  inside the interactive الطبلة feed. Actions are hidden when the sheet is locked. */
+function TreatmentDoseRow({ tx, isOwner, status, locked, onGiven, onRepeat, onRemove }: {
+  tx: TreatmentEntry; isOwner: boolean; status: TxStatus; locked: boolean;
+  onGiven: (id: string, given: boolean) => void; onRepeat: (tx: TreatmentEntry) => void; onRemove: (id: string) => void;
+}) {
+  const { t, i18n } = useTranslation();
+  const given = status === "given";
+  const dotColor =
+    status === "given" ? "bg-success-500" : status === "overdue" ? "bg-warn-500" : status === "missed" ? "bg-danger-400" : "bg-ink-subtle";
+  const SIcon = given ? Check : status === "overdue" || status === "missed" ? AlertCircle : Clock;
+  return (
+    <div className={cn("flex items-start gap-3 p-4 transition-colors", status === "overdue" && !locked && "bg-warn-50/50 dark:bg-warn-500/5")}>
+      {/* Status rail */}
+      <span className={cn("mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-full text-white", dotColor)}>
+        <SIcon size={14} strokeWidth={2.5} />
+      </span>
+      {/* Medication (left) + daily note (right) */}
+      <div className="grid flex-1 gap-2 sm:grid-cols-2 sm:gap-4">
+        <div>
+          <p className={cn("font-semibold", given ? "text-ink-muted line-through decoration-success-500/40" : "text-ink")}>
+            {medicationDisplay(tx.medication, tx.day, isOwner)}
+          </p>
+          <p className="mt-1 flex flex-wrap items-center gap-2 text-xs">
+            <span className="chip bg-sky-50 text-[11px] text-sky-700 dark:bg-sky-500/15 dark:text-sky-300"><Clock size={11} /> {formatHM(tx.time, i18n.language)}</span>
+            {tx.amount && <span className="chip bg-surface-2 text-[11px] text-ink-muted">{tx.amount}</span>}
+            {given && (
+              <span className="chip bg-success-50 text-[11px] text-success-700 dark:bg-success-500/15 dark:text-success-200"><Check size={11} /> {t("treatment.given", "تم الإعطاء")}</span>
+            )}
+            {/* Any pending dose reads as "Planned"; overdue is a secondary flag that only
+                matters during an active daily treatment. */}
+            {!given && status !== "missed" && (
+              <span className="chip bg-surface-2 text-[11px] text-ink-muted"><Clock size={11} /> {t("treatment.planned", "مُخطّط")}</span>
+            )}
+            {status === "overdue" && !locked && (
+              <span className="chip bg-warn-50 text-[11px] text-warn-700 dark:bg-warn-500/15 dark:text-warn-200"><AlertCircle size={11} /> {t("treatment.overdue", "Overdue")}</span>
+            )}
+            {status === "missed" && (
+              <span className="chip bg-danger-50 text-[11px] text-danger-700 dark:bg-danger-500/15 dark:text-danger-200">{t("treatment.missed", "Not given")}</span>
+            )}
+          </p>
+          {given && tx.administered_at && (
+            <p className="mt-1 inline-flex items-center gap-1 text-[11px] font-medium text-success-600">
+              <Check size={12} /> {t("treatment.givenAt", { time: formatTime(tx.administered_at, i18n.language), defaultValue: "Given {{time}}" })}
+              {tx.administered_by ? ` · ${tx.administered_by.split(" ").slice(-1)}` : ""}
+            </p>
+          )}
+        </div>
+        <div className="sm:border-s sm:border-line sm:ps-4">
+          <p className="mb-0.5 text-[10px] uppercase tracking-wide text-ink-subtle">{t("treatment.noteColumn")}</p>
+          <p className="text-sm text-ink-muted">{tx.observations || "—"}</p>
+        </div>
+      </div>
+      {/* Actions */}
+      {!locked && (
+        <div className="flex shrink-0 flex-col items-end gap-1.5">
+          {given ? (
+            <button onClick={() => onGiven(tx.id, false)} className="text-[11px] text-ink-subtle underline transition hover:text-ink">{t("treatment.undo", "Undo")}</button>
+          ) : (
+            <button onClick={() => onGiven(tx.id, true)} className="inline-flex items-center gap-1 rounded-full bg-success-500 px-2.5 py-1 text-xs font-semibold text-white transition hover:bg-success-600 active:scale-95">
+              <Check size={13} /> {t("treatment.markGiven", "Give")}
+            </button>
+          )}
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => onRepeat(tx)}
+              title={t("treatment.repeatHint", "Schedule this medication again now")}
+              className="inline-flex items-center gap-1 rounded-full bg-brand-50 px-2.5 py-1 text-xs font-semibold text-brand-700 transition hover:bg-brand-100 dark:bg-brand-500/15 dark:text-brand-300 dark:hover:bg-brand-500/25"
+            >
+              <Repeat size={12} /> {t("treatment.repeat", "Repeat")}
+            </button>
+            <button className="rounded-full p-1 text-ink-subtle transition hover:text-danger-500" onClick={() => onRemove(tx.id)} aria-label={t("treatment.delete")}>
+              <Trash2 size={15} />
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function TreatmentTab({ pet, treatments, admissions, onChanged, canEdit, isOwner }: { pet: Pet; treatments: TreatmentEntry[]; admissions: Admission[]; onChanged: () => void; canEdit: boolean; isOwner: boolean }) {
   const { t, i18n } = useTranslation();
   const { user } = useAuth();
@@ -1507,14 +1612,7 @@ function TreatmentTab({ pet, treatments, admissions, onChanged, canEdit, isOwner
 
   // Flowsheet task state: given / overdue / due-later / missed / scheduled.
   const currentHM = nowHM();
-  const statusOf = (tx: TreatmentEntry): "given" | "overdue" | "due" | "missed" | "scheduled" => {
-    if (tx.administered_at) return "given";
-    if (tx.day < today) return "missed";
-    if (tx.day > today) return "scheduled";
-    // Strict `<` so a dose just planned for the current minute reads as "due", not
-    // already "overdue"; it only becomes overdue once its time is genuinely in the past.
-    return tx.time < currentHM ? "overdue" : "due";
-  };
+  const statusOf = (tx: TreatmentEntry) => treatmentStatus(tx, today, currentHM);
   const markGiven = async (id: string, given: boolean) => {
     await repo.setTreatmentGiven(id, given, user?.full_name);
     if (given) playSuccess();
@@ -1607,81 +1705,18 @@ function TreatmentTab({ pet, treatments, admissions, onChanged, canEdit, isOwner
                   )}
                 </div>
                 <div className="divide-y divide-line">
-                  {dayTx.map((tx) => {
-                    const status = statusOf(tx);
-                    const given = status === "given";
-                    const dotColor =
-                      status === "given" ? "bg-success-500" : status === "overdue" ? "bg-warn-500" : status === "missed" ? "bg-danger-400" : "bg-ink-subtle";
-                    const SIcon = given ? Check : status === "overdue" || status === "missed" ? AlertCircle : Clock;
-                    return (
-                      <div key={tx.id} className={cn("flex items-start gap-3 p-4 transition-colors", status === "overdue" && !locked && "bg-warn-50/50 dark:bg-warn-500/5")}>
-                        {/* Status rail */}
-                        <span className={cn("mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-full text-white", dotColor)}>
-                          <SIcon size={14} strokeWidth={2.5} />
-                        </span>
-                        {/* Medication (left) + daily note (right) */}
-                        <div className="grid flex-1 gap-2 sm:grid-cols-2 sm:gap-4">
-                          <div>
-                            <p className={cn("font-semibold", given ? "text-ink-muted line-through decoration-success-500/40" : "text-ink")}>
-                              {medicationDisplay(tx.medication, tx.day, isOwner)}
-                            </p>
-                            <p className="mt-1 flex flex-wrap items-center gap-2 text-xs">
-                              <span className="chip bg-sky-50 text-[11px] text-sky-700 dark:bg-sky-500/15 dark:text-sky-300"><Clock size={11} /> {formatHM(tx.time, i18n.language)}</span>
-                              {tx.amount && <span className="chip bg-surface-2 text-[11px] text-ink-muted">{tx.amount}</span>}
-                              {given && (
-                                <span className="chip bg-success-50 text-[11px] text-success-700 dark:bg-success-500/15 dark:text-success-200"><Check size={11} /> {t("treatment.given", "تم الإعطاء")}</span>
-                              )}
-                              {/* Any pending dose reads as "Planned"; overdue is a secondary
-                                  flag that only matters during an active daily treatment. */}
-                              {!given && status !== "missed" && (
-                                <span className="chip bg-surface-2 text-[11px] text-ink-muted"><Clock size={11} /> {t("treatment.planned", "مُخطّط")}</span>
-                              )}
-                              {status === "overdue" && !locked && (
-                                <span className="chip bg-warn-50 text-[11px] text-warn-700 dark:bg-warn-500/15 dark:text-warn-200"><AlertCircle size={11} /> {t("treatment.overdue", "Overdue")}</span>
-                              )}
-                              {status === "missed" && (
-                                <span className="chip bg-danger-50 text-[11px] text-danger-700 dark:bg-danger-500/15 dark:text-danger-200">{t("treatment.missed", "Not given")}</span>
-                              )}
-                            </p>
-                            {given && tx.administered_at && (
-                              <p className="mt-1 inline-flex items-center gap-1 text-[11px] font-medium text-success-600">
-                                <Check size={12} /> {t("treatment.givenAt", { time: formatTime(tx.administered_at, i18n.language), defaultValue: "Given {{time}}" })}
-                                {tx.administered_by ? ` · ${tx.administered_by.split(" ").slice(-1)}` : ""}
-                              </p>
-                            )}
-                          </div>
-                          <div className="sm:border-s sm:border-line sm:ps-4">
-                            <p className="mb-0.5 text-[10px] uppercase tracking-wide text-ink-subtle">{t("treatment.noteColumn")}</p>
-                            <p className="text-sm text-ink-muted">{tx.observations || "—"}</p>
-                          </div>
-                        </div>
-                        {/* Actions */}
-                        {!locked && (
-                          <div className="flex shrink-0 flex-col items-end gap-1.5">
-                            {given ? (
-                              <button onClick={() => markGiven(tx.id, false)} className="text-[11px] text-ink-subtle underline transition hover:text-ink">{t("treatment.undo", "Undo")}</button>
-                            ) : (
-                              <button onClick={() => markGiven(tx.id, true)} className="inline-flex items-center gap-1 rounded-full bg-success-500 px-2.5 py-1 text-xs font-semibold text-white transition hover:bg-success-600 active:scale-95">
-                                <Check size={13} /> {t("treatment.markGiven", "Give")}
-                              </button>
-                            )}
-                            <div className="flex items-center gap-1">
-                              <button
-                                onClick={() => repeatTreatment(tx)}
-                                title={t("treatment.repeatHint", "Schedule this medication again now")}
-                                className="inline-flex items-center gap-1 rounded-full bg-brand-50 px-2.5 py-1 text-xs font-semibold text-brand-700 transition hover:bg-brand-100 dark:bg-brand-500/15 dark:text-brand-300 dark:hover:bg-brand-500/25"
-                              >
-                                <Repeat size={12} /> {t("treatment.repeat", "Repeat")}
-                              </button>
-                              <button className="rounded-full p-1 text-ink-subtle transition hover:text-danger-500" onClick={() => remove(tx.id)} aria-label={t("treatment.delete")}>
-                                <Trash2 size={15} />
-                              </button>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
+                  {dayTx.map((tx) => (
+                    <TreatmentDoseRow
+                      key={tx.id}
+                      tx={tx}
+                      isOwner={isOwner}
+                      status={statusOf(tx)}
+                      locked={locked}
+                      onGiven={markGiven}
+                      onRepeat={repeatTreatment}
+                      onRemove={remove}
+                    />
+                  ))}
                 </div>
               </div>
             );
@@ -1898,6 +1933,20 @@ const fmtNoteDate = (iso: string) => {
     : d.toLocaleString("ar-EG-u-nu-latn", { day: "2-digit", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: true });
 };
 
+/** A single clinical-note card — reused by the notes tab and the الطبلة feed. */
+function NoteCard({ note }: { note: PetNote }) {
+  const { t } = useTranslation();
+  return (
+    <div className="card p-4">
+      <div className="mb-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-2xs text-ink-subtle">
+        <span className="flex items-center gap-1 font-semibold text-ink-muted"><User size={12} /> {note.author_name?.trim() || t("notes.unknownAuthor", "غير محدّد")}</span>
+        <span className="flex items-center gap-1"><Clock size={12} /> {fmtNoteDate(note.created_at)}</span>
+      </div>
+      <p className="whitespace-pre-wrap leading-relaxed text-ink">{note.note_text}</p>
+    </div>
+  );
+}
+
 function NotesTab({ pet, notes, canEdit, onChanged }: { pet: Pet; notes: PetNote[]; canEdit: boolean; onChanged: () => void }) {
   const { t } = useTranslation();
   const { user } = useAuth();
@@ -1957,16 +2006,175 @@ function NotesTab({ pet, notes, canEdit, onChanged }: { pet: Pet; notes: PetNote
       ) : (
         <ol className="space-y-3">
           {items.map((n) => (
-            <li key={n.id} className="card p-4">
-              <div className="mb-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-2xs text-ink-subtle">
-                <span className="flex items-center gap-1 font-semibold text-ink-muted"><User size={12} /> {n.author_name?.trim() || t("notes.unknownAuthor", "غير محدّد")}</span>
-                <span className="flex items-center gap-1"><Clock size={12} /> {fmtNoteDate(n.created_at)}</span>
-              </div>
-              <p className="whitespace-pre-wrap leading-relaxed text-ink">{n.note_text}</p>
-            </li>
+            <li key={n.id}><NoteCard note={n} /></li>
           ))}
         </ol>
       )}
+    </div>
+  );
+}
+
+/* ============================================================================
+ * TimelineWorkspace — the interactive "الطبلة" (Master Timeline) workspace.
+ *
+ * NOT a read-only summary: the doctor ADDS treatments, vaccines and notes right
+ * here (the very same modals the standalone tabs use), and every entry renders
+ * with the FULL rich card from its home tab — treatment flowsheet rows, vaccine
+ * booster cards, clinical-note cards — merged into ONE newest-first vertical
+ * feed (gap-4). The printable A4 chart + Excel export are preserved via the
+ * UnifiedMedicalRecord engine in printOnly mode. RTL + dark theme throughout.
+ * ==========================================================================*/
+function TimelineWorkspace({ pet, treatments, vaccinations, notes, admissions, isOwner, canEdit, onChanged }: {
+  pet: Pet; treatments: TreatmentEntry[]; vaccinations: Vaccination[]; notes: PetNote[];
+  admissions: Admission[]; isOwner: boolean; canEdit: boolean; onChanged: () => void;
+}) {
+  const { t, i18n } = useTranslation();
+  const { user } = useAuth();
+  const toast = useToast();
+  const today = localISO();
+  const currentHM = nowHM();
+
+  const [txOpen, setTxOpen] = useState(false);
+  const [vaxOpen, setVaxOpen] = useState(false);
+  const [noteOpen, setNoteOpen] = useState(false);
+  const [administer, setAdminister] = useState<Vaccination | null>(null);
+  const [noteText, setNoteText] = useState("");
+  const [noteBusy, setNoteBusy] = useState(false);
+
+  const activeTreatment = admissions.find((a) => a.kind === "treatment" && a.status === "active");
+  // Treatment flowsheet actions unlock only during an active daily treatment (same rule as the tab).
+  const locked = !canEdit || !activeTreatment;
+
+  // ---- Add actions — identical commit paths to the standalone tabs ----
+  const commitTreatment = async (entries: MedicalDraft[], assessment: MedicalAssessment, attendingDoctor?: string) => {
+    await persistMedicalDrafts(pet.id, attendingDoctor ?? user?.full_name, entries, assessment);
+    onChanged(); setTxOpen(false);
+  };
+  const commitVaccine = async (entries: MedicalDraft[], assessment: MedicalAssessment, attendingDoctor?: string) => {
+    await persistMedicalDrafts(pet.id, attendingDoctor ?? user?.full_name, entries, assessment);
+    onChanged(); setVaxOpen(false);
+  };
+  const addNote = async () => {
+    const body = noteText.trim();
+    if (!body || noteBusy) return;
+    setNoteBusy(true);
+    try {
+      await repo.addPetNote({ pet_id: pet.id, note_text: body, author_id: user?.id ?? null, author_name: user?.full_name ?? null });
+      setNoteText(""); setNoteOpen(false); playSuccess(); onChanged();
+    } catch (e) {
+      playWarning();
+      toast.error(t("notes.saveFail", "تعذّر حفظ الملاحظة"), e instanceof Error ? e.message : undefined);
+    } finally { setNoteBusy(false); }
+  };
+  const readmit = async () => {
+    await repo.addAdmission({ pet_id: pet.id, kind: "treatment", status: "active", admitted_on: today });
+    playSuccess(); onChanged();
+  };
+
+  // ---- Treatment flowsheet actions (mark given / repeat / delete) ----
+  const markGiven = async (id: string, given: boolean) => { await repo.setTreatmentGiven(id, given, user?.full_name); if (given) playSuccess(); onChanged(); };
+  const removeTx = async (id: string) => { await repo.deleteTreatment(id); onChanged(); };
+  const repeatTx = async (tx: TreatmentEntry) => {
+    addClinicMed(tx.medication);
+    await repo.addTreatment({ pet_id: pet.id, day: today, doctor: tx.doctor || (user?.role === "doctor" ? user.full_name : undefined), medication: tx.medication, time: nowHM(), amount: tx.amount, observations: undefined });
+    playSuccess(); onChanged();
+  };
+
+  // ---- Merge the three feeds into ONE newest-first timeline (keeping rich objects) ----
+  type FeedItem =
+    | { id: string; ts: number; kind: "treatment"; tx: TreatmentEntry }
+    | { id: string; ts: number; kind: "vaccination"; vax: Vaccination }
+    | { id: string; ts: number; kind: "note"; note: PetNote };
+  const feed = useMemo<FeedItem[]>(() => {
+    const items: FeedItem[] = [];
+    for (const tx of treatments) items.push({ id: `t:${tx.id}`, ts: localTs(tx.day, tx.time).ts, kind: "treatment", tx });
+    for (const v of vaccinations) { const { ts } = vaccinationTs(v); if (ts) items.push({ id: `v:${v.id}`, ts, kind: "vaccination", vax: v }); }
+    for (const n of notes) items.push({ id: `n:${n.id}`, ts: isoTs(n.created_at), kind: "note", note: n });
+    return items.sort((a, b) => b.ts - a.ts);
+  }, [treatments, vaccinations, notes]);
+
+  return (
+    <div className="space-y-4 animate-fade-in">
+      {/* Header: title + hint on the start side, print/export (preserved) on the end */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="me-auto">
+          <h3 className="font-bold text-ink">{t("chart.title", "الطبلة الطبية الموحّدة")}</h3>
+          <p className="flex items-center gap-1.5 text-xs text-ink-subtle">
+            <ClipboardList size={13} className="text-brand-600" /> {t("chart.workspaceHint", "أضِف العلاجات واللقاحات والملاحظات وتابعها في سجلّ زمني واحد — الأحدث أولاً.")}
+          </p>
+        </div>
+        <UnifiedMedicalRecord pet={pet} treatments={treatments} vaccinations={vaccinations} notes={notes} isOwner={isOwner} printOnly />
+      </div>
+
+      {/* Inline quick-add actions — the primary workflow lives here (staff only) */}
+      {canEdit && !isOwner && (
+        <div className="flex flex-wrap gap-2">
+          <button className="btn-secondary py-1.5 px-3 text-sm" onClick={() => { playTap(); setTxOpen(true); }}><Pill size={16} /> {t("treatment.add", "إضافة علاج")}</button>
+          <button className="btn-secondary py-1.5 px-3 text-sm" onClick={() => { playTap(); setVaxOpen(true); }}><Syringe size={16} /> {t("passport.addVaccine", "إضافة تطعيم")}</button>
+          <button className="btn-secondary py-1.5 px-3 text-sm" onClick={() => { playTap(); setNoteOpen(true); }}><NotebookPen size={16} /> {t("notes.add", "إضافة ملاحظة")}</button>
+        </div>
+      )}
+
+      {/* Treatment admission status — re-admit so flowsheet actions unlock (parity with the tab) */}
+      {canEdit && !isOwner && !activeTreatment && (
+        <div className="card flex flex-wrap items-center justify-between gap-2 p-3">
+          <span className="chip bg-surface-2 text-xs text-ink-muted"><Stethoscope size={13} /> {t("treatment.notAdmitted", "غير مقبول حاليًا")}</span>
+          <button className="btn-primary py-1.5 px-3 text-xs" onClick={() => { playTap(); readmit(); }}><Stethoscope size={14} /> {t("treatment.readmitTreatment", "إعادة إدخال للعلاج اليومي")}</button>
+        </div>
+      )}
+
+      {/* The unified feed — rich cards, newest first */}
+      {feed.length === 0 ? (
+        <div className="card grid place-items-center p-10 text-center text-ink-subtle">
+          <ClipboardList size={28} className="mb-2 opacity-40" />
+          {t("chart.empty", "لا توجد أحداث طبية مسجّلة لهذا الحيوان بعد.")}
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {feed.map((item) => {
+            if (item.kind === "treatment") {
+              return (
+                <div key={item.id} className="card overflow-hidden">
+                  <div className="flex items-center gap-2 bg-brand-50 px-4 py-2 text-xs font-semibold text-brand-700 dark:bg-brand-500/10 dark:text-brand-300">
+                    <Pill size={14} /> {formatDate(item.tx.day, i18n.language)}
+                  </div>
+                  <TreatmentDoseRow tx={item.tx} isOwner={isOwner} status={treatmentStatus(item.tx, today, currentHM)} locked={locked} onGiven={markGiven} onRepeat={repeatTx} onRemove={removeTx} />
+                </div>
+              );
+            }
+            if (item.kind === "vaccination") {
+              return <VaccineCardBody key={item.id} v={item.vax} isOwner={isOwner} canEdit={canEdit} onAdminister={setAdminister} />;
+            }
+            return <NoteCard key={item.id} note={item.note} />;
+          })}
+        </div>
+      )}
+
+      {/* Add-treatment / add-vaccine — the exact MedicalEntry workflow the tabs use */}
+      <Modal open={txOpen} onClose={() => setTxOpen(false)} title={t("treatment.addTitle", "إضافة سجل علاج")}>
+        <MedicalEntry species={pet.species} initialMode="medication" lockMode onCommit={commitTreatment} defaultDoctor={user?.full_name} />
+      </Modal>
+      <Modal open={vaxOpen} onClose={() => setVaxOpen(false)} title={t("passport.addVaccine", "إضافة تطعيم")}>
+        <MedicalEntry species={pet.species} initialMode="vaccination" lockMode onCommit={commitVaccine} defaultDoctor={user?.full_name} />
+      </Modal>
+
+      {/* Add-note */}
+      <Modal open={noteOpen} onClose={() => { setNoteOpen(false); setNoteText(""); }} title={t("notes.add", "إضافة ملاحظة")}>
+        <div className="space-y-3">
+          <textarea
+            rows={4} value={noteText} onChange={(e) => setNoteText(e.target.value)} autoFocus
+            onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); void addNote(); } }}
+            placeholder={t("notes.placeholder", "اكتب ملاحظة سريرية عن الحالة…")}
+            className="input min-h-[110px] resize-y leading-relaxed"
+          />
+          <div className="flex justify-end">
+            <Button leftIcon={<Plus size={16} />} disabled={!noteText.trim()} loading={noteBusy} onClick={addNote}>{t("notes.add", "إضافة ملاحظة")}</Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Confirm-administration (booster) — shared with the vaccines tab */}
+      <AdministerBoosterModal vaccine={administer} defaultDoctor={user?.full_name} onClose={() => setAdminister(null)} onDone={() => { setAdminister(null); onChanged(); }} />
     </div>
   );
 }
