@@ -12,12 +12,15 @@ import { useAuth } from "@/contexts/AuthContext";
 import { PetAvatar } from "@/components/PetAvatar";
 import { useToast, Skeleton } from "@/components/ui";
 import { cn } from "@/lib/utils";
-import { getDialCode } from "@/lib/settings";
+import { getDialCode, getClinicName } from "@/lib/settings";
 import { phoneDigits, waNumber } from "@/lib/phone";
 import { playTap } from "@/lib/sounds";
 
 const VAR_OWNER = "{{اسم_المالك}}";
 const VAR_PET = "{{اسم_الحيوان}}";
+// The clinic's own registered name (Settings → clinic name). Fixed per clinic,
+// so it's substituted into the template up-front rather than per recipient.
+const VAR_CLINIC = "{{اسم_العيادة}}";
 
 type SpeciesFilter = "all" | Species;
 /** Smart audience segments (CRM targeting). */
@@ -111,13 +114,18 @@ export function WhatsAppCampaigns() {
 
   const fmtDate = (iso: string) => new Date(iso).toLocaleDateString("ar-EG-u-nu-latn", { day: "numeric", month: "short" });
 
+  // Each clinic's own registered name (falls back to the brand if unset), baked
+  // into every template so messages read "عيادة <this clinic>" — not "doctorVet".
+  const clinicName = getClinicName() || t("app.name", "doctorVet");
+  const withClinic = (s: string) => s.split(VAR_CLINIC).join(clinicName);
+
   // Default, ready-to-use Arabic templates.
   const templates = useMemo(() => [
-    { id: "birthday", icon: Gift, label: t("campaigns.tplBirthday", "Birthday greeting"), text: t("campaigns.msgBirthday", `Hello ${VAR_OWNER}! 🎉`) },
-    { id: "vaccine", icon: Syringe, label: t("campaigns.tplVaccine", "Vaccination reminder"), text: t("campaigns.msgVaccine", `Hello ${VAR_OWNER}`) },
-    { id: "deworming", icon: Bug, label: t("campaigns.tplDeworming", "Deworming reminder"), text: t("campaigns.msgDeworming", `Hello ${VAR_OWNER}`) },
-    { id: "offer", icon: Tag, label: t("campaigns.tplOffer", "General offer"), text: t("campaigns.msgOffer", `Hello ${VAR_OWNER}`) },
-  ], [t]);
+    { id: "birthday", icon: Gift, label: t("campaigns.tplBirthday", "Birthday greeting"), text: withClinic(t("campaigns.msgBirthday", `Hello ${VAR_OWNER}! 🎉`)) },
+    { id: "vaccine", icon: Syringe, label: t("campaigns.tplVaccine", "Vaccination reminder"), text: withClinic(t("campaigns.msgVaccine", `Hello ${VAR_OWNER}`)) },
+    { id: "deworming", icon: Bug, label: t("campaigns.tplDeworming", "Deworming reminder"), text: withClinic(t("campaigns.msgDeworming", `Hello ${VAR_OWNER}`)) },
+    { id: "offer", icon: Tag, label: t("campaigns.tplOffer", "General offer"), text: withClinic(t("campaigns.msgOffer", `Hello ${VAR_OWNER}`)) },
+  ], [t, clinicName]);
 
   // Map a reminder type (from the dashboard Reminders widget) to its draft template.
   const TEMPLATE_FOR: Record<ReminderType, string> = { birthday: "birthday", vaccine: "vaccine", deworming: "deworming" };

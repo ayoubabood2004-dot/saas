@@ -72,10 +72,10 @@
     "tplVaccine": "Vaccination reminder",
     "tplDeworming": "Deworming reminder",
     "tplOffer": "General offer",
-    "msgBirthday": "Hello {{اسم_المالك}}! 🎉 doctorVet clinic wishes {{اسم_الحيوان}} a very happy birthday! 🐾",
-    "msgVaccine": "Hello {{اسم_المالك}}, a reminder from doctorVet clinic: {{اسم_الحيوان}}'s vaccination is due. Please contact us to book a visit. 🐾",
-    "msgDeworming": "Hello {{اسم_المالك}}, a friendly reminder from doctorVet clinic: {{اسم_الحيوان}}'s deworming dose is due. Please contact us to arrange it. 🐛",
-    "msgOffer": "Hello {{اسم_المالك}}! 🎁 doctorVet clinic has a special offer for you and {{اسم_الحيوان}}. Contact us for details.",
+    "msgBirthday": "Hello {{اسم_المالك}}! 🎉 {{اسم_العيادة}} clinic wishes {{اسم_الحيوان}} a very happy birthday! 🐾",
+    "msgVaccine": "Hello {{اسم_المالك}}, a reminder from {{اسم_العيادة}} clinic: {{اسم_الحيوان}}'s vaccination is due. Please contact us to book a visit. 🐾",
+    "msgDeworming": "Hello {{اسم_المالك}}, a friendly reminder from {{اسم_العيادة}} clinic: {{اسم_الحيوان}}'s deworming dose is due. Please contact us to arrange it. 🐛",
+    "msgOffer": "Hello {{اسم_المالك}}! 🎁 {{اسم_العيادة}} clinic has a special offer for you and {{اسم_الحيوان}}. Contact us for details.",
     "audience": "Audience",
     "all": "All",
     "cats": "Cats only",
@@ -866,7 +866,7 @@
       "tomorrow": "Tomorrow",
       "inDays": "in {{n}} days",
       "whatsapp": "Send WhatsApp greeting",
-      "greeting": "Hello! doctorVet clinic wishes {{name}} a very happy birthday! 🐾🎉"
+      "greeting": "Hello! {{clinic}} clinic wishes {{name}} a very happy birthday! 🐾🎉"
     }
   },
   "snapshot": {

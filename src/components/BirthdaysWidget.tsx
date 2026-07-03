@@ -5,7 +5,7 @@ import type { Pet } from "@/types";
 import { PetAvatar } from "@/components/PetAvatar";
 import { cn } from "@/lib/utils";
 import { playTap } from "@/lib/sounds";
-import { getDialCode } from "@/lib/settings";
+import { getDialCode, getClinicName } from "@/lib/settings";
 import { waNumber } from "@/lib/phone";
 
 interface BirthdayEntry { pet: Pet; inDays: number; turningAge: number }
@@ -49,7 +49,8 @@ export function BirthdaysWidget({ pets }: { pets: Pet[] }) {
     if (!(pet.owner_phone ?? "").trim()) return;
     const num = waNumber(pet.owner_phone ?? "", getDialCode());
     if (!num) return;
-    const msg = t("dash.birthdays.greeting", { name: pet.name, defaultValue: "Happy birthday {{name}}! 🐾🎉" });
+    const clinic = getClinicName() || t("app.name", "doctorVet");
+    const msg = t("dash.birthdays.greeting", { name: pet.name, clinic, defaultValue: "Happy birthday {{name}}! 🐾🎉" });
     window.open(`https://wa.me/${num}?text=${encodeURIComponent(msg)}`, "_blank", "noopener,noreferrer");
   };
 

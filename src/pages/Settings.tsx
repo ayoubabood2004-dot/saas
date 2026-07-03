@@ -288,7 +288,7 @@ function ClinicIdentity() {
           onBlur={saveName}
           placeholder={t("settings.clinicNamePlaceholder", "مثال: عيادة الرحمة البيطرية")}
         />
-        <p className="text-xs text-ink-subtle mt-1">{t("settings.clinicNameHint", "يظهر في ترويسة الفاتورة ونماذج الإقرار بدل اسم الموقع.")}</p>
+        <p className="text-xs text-ink-subtle mt-1">{t("settings.clinicNameHint", "يظهر في ترويسة الفاتورة ونماذج الإقرار ورسائل واتساب بدل اسم الموقع.")}</p>
       </div>
 
       {/* Logo */}
