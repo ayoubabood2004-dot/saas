@@ -7,10 +7,13 @@ import {
 } from "@dnd-kit/core";
 import {
   CalendarDays, Stethoscope, BedDouble, LogOut, Plus, HeartPulse,
-  ChevronRight, ChevronLeft, LayoutGrid, Columns3, GripVertical,
+  ChevronRight, ChevronLeft, LayoutGrid, Columns3, GripVertical, Syringe, Bug, Cake, Bell,
 } from "lucide-react";
-import type { Admission, Pet } from "@/types";
+import type { Admission, Pet, Vaccination, Reminder } from "@/types";
 import { opsStore } from "@/lib/opsStore";
+import { repo } from "@/lib/repo";
+import { getCached, setCached } from "@/lib/swrCache";
+import { buildCalendarReminders, type CalReminder, type CalReminderKind } from "@/lib/calendarReminders";
 import { PetAvatar } from "@/components/PetAvatar";
 import { Button, useToast } from "@/components/ui";
 import { cn, localISO } from "@/lib/utils";
@@ -72,6 +75,31 @@ const STATUS_META: Record<OpStatus, {
   },
 };
 
+/** Reminder kinds plotted on the month grid — each its own colour + icon so a
+ *  glance tells you what's coming (تطعيم / ديدان / عيد ميلاد / تذكير). */
+const REMINDER_META: Record<CalReminderKind, { key: string; def: string; icon: typeof Syringe; chip: string; dot: string }> = {
+  vaccine: {
+    key: "reception.remVaccine", def: "تطعيم", icon: Syringe,
+    chip: "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-200",
+    dot: "bg-emerald-500",
+  },
+  deworming: {
+    key: "reception.remDeworming", def: "ديدان", icon: Bug,
+    chip: "bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-200",
+    dot: "bg-amber-500",
+  },
+  birthday: {
+    key: "reception.remBirthday", def: "عيد ميلاد", icon: Cake,
+    chip: "bg-pink-100 text-pink-700 dark:bg-pink-500/20 dark:text-pink-200",
+    dot: "bg-pink-500",
+  },
+  reminder: {
+    key: "reception.remReminder", def: "تذكير", icon: Bell,
+    chip: "bg-indigo-100 text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-200",
+    dot: "bg-indigo-500",
+  },
+};
+
 const AR_WEEKDAYS = ["السبت", "الأحد", "الإثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة"];
 
 const dayNumber = (admittedOn: string): number => {
@@ -114,12 +142,34 @@ export function Reception() {
   const pets = ops.pets;
   const loading = !ops.hydrated;
 
+  const clinicId = user?.clinic_id ?? user?.id;
+
   useEffect(() => {
     const unsub = opsStore.subscribe(() => setOps(opsStore.get()));
-    void opsStore.hydrate(user?.clinic_id ?? user?.id).catch(() => {});
+    void opsStore.hydrate(clinicId).catch(() => {});
     return unsub;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Reminders/vaccinations for the MONTH view — plotted on their due dates so
+  // staff see what's coming ahead of time. Seeded from cache for an instant paint.
+  const [reminders, setReminders] = useState<Reminder[]>(() => getCached<Reminder[]>(`recRem:${clinicId ?? "x"}`) ?? []);
+  const [vaccinations, setVaccinations] = useState<Vaccination[]>(() => getCached<Vaccination[]>(`recVax:${clinicId ?? "x"}`) ?? []);
+
+  useEffect(() => {
+    let alive = true;
+    repo.listReminders({ ownerId: null }).then((r) => { if (alive) { setReminders(r); setCached(`recRem:${clinicId ?? "x"}`, r); } }).catch(() => {});
+    return () => { alive = false; };
+  }, [clinicId]);
+
+  const petIdsKey = useMemo(() => Object.keys(pets).sort().join(","), [pets]);
+  useEffect(() => {
+    const ids = petIdsKey ? petIdsKey.split(",") : [];
+    if (!ids.length) return;
+    let alive = true;
+    repo.listAllVaccinations(ids).then((v) => { if (alive) { setVaccinations(v); setCached(`recVax:${clinicId ?? "x"}`, v); } }).catch(() => {});
+    return () => { alive = false; };
+  }, [petIdsKey, clinicId]);
 
   const statusOf = (a: Admission): OpStatus => {
     if (a.status === "discharged") return "done";
@@ -148,6 +198,20 @@ export function Reception() {
     }
     return m;
   }, [admissions]);
+
+  // Dated reminders for exactly the visible month matrix (only computed in month view).
+  const remindersByDay = useMemo(() => {
+    if (view !== "month") return new Map<string, CalReminder[]>();
+    const weeks = monthMatrix(cursor);
+    return buildCalendarReminders({
+      pets: Object.values(pets),
+      vaccinations,
+      reminders,
+      fromISO: localISO(weeks[0][0]),
+      toISO: localISO(weeks[5][6]),
+      todayISO,
+    });
+  }, [view, cursor, pets, vaccinations, reminders, todayISO]);
 
   const sensors = useSensors(
     useSensor(MouseSensor, { activationConstraint: { distance: 6 } }),
@@ -248,7 +312,7 @@ export function Reception() {
             ))}
           </div>
         ) : (
-          <MonthGrid cursor={cursor} setCursor={setCursor} byDay={byDay} pets={pets} todayISO={todayISO} statusOf={statusOf} onOpen={(pid) => navigate(`/pet/${pid}?tab=timeline`)} />
+          <MonthGrid cursor={cursor} setCursor={setCursor} byDay={byDay} remindersByDay={remindersByDay} pets={pets} todayISO={todayISO} statusOf={statusOf} onOpen={(pid) => navigate(`/pet/${pid}?tab=timeline`)} />
         )}
 
         <DragOverlay dropAnimation={{ duration: 180, easing: "cubic-bezier(0.2,0,0,1)" }}>
@@ -295,9 +359,9 @@ function KanbanColumn({ status, items, pets, onOpen, statusOf, loading }: {
 }
 
 /* ---------------- Month grid (droppable day cells) ---------------- */
-function MonthGrid({ cursor, setCursor, byDay, pets, todayISO, statusOf, onOpen }: {
-  cursor: Date; setCursor: (d: Date) => void; byDay: Map<string, Admission[]>; pets: Record<string, Pet>;
-  todayISO: string; statusOf: (a: Admission) => OpStatus; onOpen: (petId: string) => void;
+function MonthGrid({ cursor, setCursor, byDay, remindersByDay, pets, todayISO, statusOf, onOpen }: {
+  cursor: Date; setCursor: (d: Date) => void; byDay: Map<string, Admission[]>; remindersByDay: Map<string, CalReminder[]>;
+  pets: Record<string, Pet>; todayISO: string; statusOf: (a: Admission) => OpStatus; onOpen: (petId: string) => void;
 }) {
   const { t } = useTranslation();
   const weeks = useMemo(() => monthMatrix(cursor), [cursor]);
@@ -316,6 +380,20 @@ function MonthGrid({ cursor, setCursor, byDay, pets, todayISO, statusOf, onOpen 
         <button onClick={() => { playTap(); shift(1); }} className="grid h-9 w-9 place-items-center rounded-xl border border-line text-ink-muted transition hover:bg-surface-2"><ChevronLeft size={18} /></button>
       </div>
 
+      {/* Reminder legend — what the coloured chips on each day mean. */}
+      <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-xl border border-line bg-surface-2/50 px-3 py-2">
+        {(Object.keys(REMINDER_META) as CalReminderKind[]).map((k) => {
+          const rm = REMINDER_META[k];
+          const Icon = rm.icon;
+          return (
+            <span key={k} className="inline-flex items-center gap-1.5 text-2xs font-semibold text-ink-muted">
+              <span className={cn("grid h-4 w-4 place-items-center rounded", rm.chip)}><Icon size={11} /></span>
+              {t(rm.key, rm.def)}
+            </span>
+          );
+        })}
+      </div>
+
       {/* Weekday headers */}
       <div className="grid grid-cols-7 gap-1.5 sm:gap-2">
         {AR_WEEKDAYS.map((d) => (
@@ -326,35 +404,63 @@ function MonthGrid({ cursor, setCursor, byDay, pets, todayISO, statusOf, onOpen 
           const inMonth = date.getMonth() === month;
           const isToday = iso === todayISO;
           const items = byDay.get(iso) ?? [];
-          return <DayCell key={iso} iso={iso} dayNum={date.getDate()} inMonth={inMonth} isToday={isToday} items={items} pets={pets} statusOf={statusOf} onOpen={onOpen} />;
+          const rems = remindersByDay.get(iso) ?? [];
+          return <DayCell key={iso} iso={iso} dayNum={date.getDate()} inMonth={inMonth} isToday={isToday} items={items} rems={rems} pets={pets} statusOf={statusOf} onOpen={onOpen} />;
         })}
       </div>
     </div>
   );
 }
 
-function DayCell({ iso, dayNum, inMonth, isToday, items, pets, statusOf, onOpen }: {
-  iso: string; dayNum: number; inMonth: boolean; isToday: boolean; items: Admission[];
+function DayCell({ iso, dayNum, inMonth, isToday, items, rems, pets, statusOf, onOpen }: {
+  iso: string; dayNum: number; inMonth: boolean; isToday: boolean; items: Admission[]; rems: CalReminder[];
   pets: Record<string, Pet>; statusOf: (a: Admission) => OpStatus; onOpen: (petId: string) => void;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: `day:${iso}` });
+  const total = items.length + rems.length;
   return (
     <div
       ref={setNodeRef}
       data-day={iso}
       className={cn(
-        "min-h-[92px] rounded-xl border p-1.5 transition-colors sm:min-h-[112px]",
+        "min-h-[92px] rounded-xl border p-1.5 transition-colors sm:min-h-[118px]",
         inMonth ? "border-line bg-surface-1" : "border-transparent bg-surface-2/30",
         isOver && "ring-2 ring-brand-400/70 bg-brand-50/60 dark:bg-brand-500/10",
       )}
     >
       <div className="mb-1 flex items-center justify-between">
         <span className={cn("grid h-6 min-w-6 place-items-center rounded-full px-1 text-2xs font-bold tabular-nums", isToday ? "bg-brand-600 text-white" : inMonth ? "text-ink-muted" : "text-ink-subtle/50")}>{dayNum}</span>
-        {items.length > 0 && <span className="text-2xs font-bold text-ink-subtle">{items.length}</span>}
+        {total > 0 && <span className="text-2xs font-bold text-ink-subtle">{total}</span>}
       </div>
-      <div className="space-y-1 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" style={{ maxHeight: 72 }}>
+      <div className="space-y-1 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" style={{ maxHeight: 78 }}>
+        {/* Reminders first — they're the look-ahead the month view is for. */}
+        {rems.map((r) => <ReminderChip key={r.id} rem={r} onOpen={onOpen} />)}
         {items.map((a) => <DraggableChip key={a.id} adm={a} pet={pets[a.pet_id]} status={statusOf(a)} onOpen={onOpen} />)}
       </div>
+    </div>
+  );
+}
+
+/** A non-draggable, colour-coded reminder pill in a month day cell. Clicking it
+ *  opens the pet (when linked). Overdue items get a ring so they don't slip by. */
+function ReminderChip({ rem, onOpen }: { rem: CalReminder; onOpen: (petId: string) => void }) {
+  const { t } = useTranslation();
+  const rm = REMINDER_META[rem.kind];
+  const Icon = rm.icon;
+  const label = rem.petName || t(rm.key, rm.def);
+  return (
+    <div
+      onClick={() => { if (rem.petId) { playTap(); onOpen(rem.petId); } }}
+      title={`${t(rm.key, rm.def)}${rem.petName ? ` · ${rem.petName}` : ""}${rem.title ? ` · ${rem.title}` : ""}`}
+      className={cn(
+        "flex items-center gap-1 rounded-md px-1.5 py-1 text-2xs font-semibold",
+        rm.chip,
+        rem.petId && "cursor-pointer",
+        rem.overdue && "ring-1 ring-danger-400/70",
+      )}
+    >
+      <Icon size={11} className="shrink-0" />
+      <span className="truncate">{label}</span>
     </div>
   );
 }
