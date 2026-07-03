@@ -71,7 +71,7 @@ function CountUp({ value }: { value: number }) {
 type PetStatus = "treatment" | "boarding" | "recent" | null;
 function petStatusOf(petId: string, admByPet: Map<string, Admission[]>): PetStatus {
   const adms = admByPet.get(petId) ?? [];
-  if (adms.some((a) => a.kind === "treatment" && a.status === "active")) return "treatment";
+  if (adms.some((a) => (a.kind === "treatment" || a.kind === "treatment_boarding") && a.status === "active")) return "treatment";
   if (adms.some((a) => a.kind === "boarding" && a.status === "active")) return "boarding";
   const last = adms.reduce((m, a) => Math.max(m, new Date(a.admitted_on).getTime()), 0);
   if (last && Date.now() - last < 30 * 86400000) return "recent";
@@ -121,8 +121,9 @@ export function ClinicRecords() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const activeCases = admissions.filter((a) => a.kind === "treatment" && a.status === "active").length;
-  const activeBoarding = admissions.filter((a) => a.kind === "boarding" && a.status === "active").length;
+  // Therapeutic boarding counts toward both KPIs (it's treatment + boarding at once).
+  const activeCases = admissions.filter((a) => (a.kind === "treatment" || a.kind === "treatment_boarding") && a.status === "active").length;
+  const activeBoarding = admissions.filter((a) => (a.kind === "boarding" || a.kind === "treatment_boarding") && a.status === "active").length;
   const movements = admissions.reduce((n, a) => n + 1 + (a.discharged_on ? 1 : 0), 0);
 
   const TABS: { id: Tab; icon: typeof ClipboardList; count: number }[] = [
@@ -854,7 +855,7 @@ function CurrentCases({ pets, admissions, treatments, onChanged }: { pets: Pet[]
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const today = new Date().toISOString().slice(0, 10);
-  const active = admissions.filter((a) => a.kind === "treatment" && a.status === "active");
+  const active = admissions.filter((a) => (a.kind === "treatment" || a.kind === "treatment_boarding") && a.status === "active");
 
   const [, setTick] = useState(0);
   useEffect(() => { const id = setInterval(() => setTick((n) => n + 1), 60000); return () => clearInterval(id); }, []);
@@ -969,7 +970,7 @@ function Boarding({ pets, admissions, onChanged }: { pets: Pet[]; admissions: Ad
   const { t, i18n } = useTranslation();
   const toast = useToast();
   const today = new Date().toISOString().slice(0, 10);
-  const active = admissions.filter((a) => a.kind === "boarding" && a.status === "active");
+  const active = admissions.filter((a) => (a.kind === "boarding" || a.kind === "treatment_boarding") && a.status === "active");
   const petOf = (id: string) => pets.find((p) => p.id === id);
 
   const [selecting, setSelecting] = useState(false);
@@ -1104,7 +1105,7 @@ function MovementLog({ pets, admissions }: { pets: Pet[]; admissions: Admission[
                         <p className="truncate text-xs text-ink-muted">{e.pet.owner_name}</p>
                       </div>
                       <div className="flex shrink-0 items-center gap-1.5">
-                        <span className="chip bg-surface-2 text-[10px] text-ink-muted">{e.kind === "boarding" ? <BedDouble size={10} /> : <Stethoscope size={10} />}</span>
+                        <span className="chip bg-surface-2 text-[10px] text-ink-muted">{e.kind === "boarding" || e.kind === "treatment_boarding" ? <BedDouble size={10} /> : <Stethoscope size={10} />}</span>
                         <Badge tone={isIn ? "success" : "neutral"}>{isIn ? t("records.entered") : t("records.left")}</Badge>
                       </div>
                     </div>

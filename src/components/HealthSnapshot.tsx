@@ -42,8 +42,9 @@ export function HealthSnapshot({
     return { latest, delta, series: sorted.slice(-8).map((w) => w.weight_kg) };
   }, [weights, pet.current_weight_kg]);
 
-  const activeTx = admissions.find((a) => a.kind === "treatment" && a.status === "active");
-  const boarding = admissions.find((a) => a.kind === "boarding" && a.status === "active");
+  // Therapeutic boarding is both treatment + boarding; surface it as under-treatment.
+  const activeTx = admissions.find((a) => (a.kind === "treatment" || a.kind === "treatment_boarding") && a.status === "active");
+  const boarding = admissions.find((a) => (a.kind === "boarding" || a.kind === "treatment_boarding") && a.status === "active");
 
   const nextVaccine = useMemo(() => {
     const upcoming = vaccines

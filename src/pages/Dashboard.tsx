@@ -123,8 +123,9 @@ export function Dashboard() {
   const petById = useMemo(() => Object.fromEntries(pets.map((p) => [p.id, p])), [pets]);
   const waiting = appts.filter((a) => a.status === "checked_in" || a.status === "in_room");
   const done = appts.filter((a) => a.status === "done");
-  const activeCases = admissions.filter((a) => a.kind === "treatment" && a.status === "active");
-  const boarding = admissions.filter((a) => a.kind === "boarding" && a.status === "active");
+  // Therapeutic boarding counts as BOTH an active case and a boarder.
+  const activeCases = admissions.filter((a) => (a.kind === "treatment" || a.kind === "treatment_boarding") && a.status === "active");
+  const boarding = admissions.filter((a) => (a.kind === "boarding" || a.kind === "treatment_boarding") && a.status === "active");
 
   // Proportions for the KPI rings.
   const cycleDone = (a: Admission) => {

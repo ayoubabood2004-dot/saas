@@ -2,7 +2,7 @@ import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
-import { ArrowLeft, ArrowRight, Camera, Stethoscope, BedDouble, CheckCircle2, Pill, Plus, Trash2, Activity, ChevronDown, Search, Loader2, ShieldCheck, FolderPlus, CalendarDays } from "lucide-react";
+import { ArrowLeft, ArrowRight, Camera, Stethoscope, BedDouble, CheckCircle2, Pill, Plus, Trash2, Activity, ChevronDown, Search, Loader2, ShieldCheck, FolderPlus, CalendarDays, HeartPulse } from "lucide-react";
 import type { Species, Sex, AdmissionKind, Pet } from "@/types";
 import { repo } from "@/lib/repo";
 import { opsStore } from "@/lib/opsStore";
@@ -23,7 +23,7 @@ import { prepareUpload } from "@/lib/image";
 import { uid } from "@/lib/utils";
 import { playSuccess, playTap, playWarning } from "@/lib/sounds";
 
-type Disposition = "log" | "boarding" | "record";
+type Disposition = "log" | "boarding" | "boardingCare" | "record";
 
 type Health = "healthy" | "sick";
 
@@ -144,6 +144,9 @@ export function NewCase() {
           await withTimeout(opsStore.addCase({ pet_id: pet.id, clinic_id: clinicId, kind: "treatment" as AdmissionKind, status: "active", admitted_on: today, reason }, pet), 8000);
         } else if (a.disp === "boarding") {
           await withTimeout(opsStore.addCase({ pet_id: pet.id, clinic_id: clinicId, kind: "boarding" as AdmissionKind, status: "active", admitted_on: today, cage: a.cage.trim() || undefined, reason }, pet), 8000);
+        } else if (a.disp === "boardingCare") {
+          // Therapeutic boarding — staying in the clinic AND under active care.
+          await withTimeout(opsStore.addCase({ pet_id: pet.id, clinic_id: clinicId, kind: "treatment_boarding" as AdmissionKind, status: "active", admitted_on: today, cage: a.cage.trim() || undefined, reason }, pet), 8000);
         }
 
         // A diagnosis and/or registration readings become a dated consultation record
@@ -197,7 +200,7 @@ export function NewCase() {
               <div className="flex-1 min-w-0">
                 <p className="font-semibold text-ink text-sm">{o.name}</p>
                 <span className="chip bg-brand-50 text-brand-700 text-[11px] dark:bg-brand-500/15 dark:text-brand-300">
-                  {o.disp === "log" ? t("newCase.toLog") : o.disp === "boarding" ? t("newCase.toBoarding") : t("newCase.toRecord")}
+                  {o.disp === "log" ? t("newCase.toLog") : o.disp === "boarding" ? t("newCase.toBoarding") : o.disp === "boardingCare" ? t("newCase.toBoardingCare", "الفندقة العلاجية") : t("newCase.toRecord")}
                 </span>
               </div>
               {o.disp === "record" ? (
@@ -214,7 +217,7 @@ export function NewCase() {
         </div>
         {/* An active case is already injected into the shared ops cache — the calendar
             shows its card the instant it opens (no reload). */}
-        {outcomes.some((o) => o.disp === "log" || o.disp === "boarding") && (
+        {outcomes.some((o) => o.disp === "log" || o.disp === "boarding" || o.disp === "boardingCare") && (
           <button className="btn-primary w-full mt-6" onClick={() => navigate("/reception")}>
             <CalendarDays size={18} /> {t("newCase.goCalendar", "التقويم الرئيسي")}
           </button>
@@ -387,16 +390,20 @@ export function NewCase() {
                 <PetAvatar pet={{ species: a.species, photo_url: a.photo, name: a.name }} size={36} />
                 <span className="font-bold text-ink">{a.name}</span>
               </div>
-              {/* Next action — 3 symmetric choices (no discharge on first registration). */}
-              <div className="grid grid-cols-3 gap-2">
+              {/* Next action — 4 symmetric choices (no discharge on first registration). */}
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                 <DispMini active={a.disp === "log"} icon={Stethoscope} label={t("newCase.toLog")} onClick={() => { playTap(); setAnimal(a.key, { disp: "log", addMeds: true }); }} />
                 <DispMini active={a.disp === "boarding"} icon={BedDouble} label={t("newCase.toBoarding")} onClick={() => { playTap(); setAnimal(a.key, { disp: "boarding", addMeds: false }); }} />
+                <DispMini active={a.disp === "boardingCare"} icon={HeartPulse} label={t("newCase.toBoardingCare", "الفندقة العلاجية")} onClick={() => { playTap(); setAnimal(a.key, { disp: "boardingCare", addMeds: true }); }} />
                 <DispMini active={a.disp === "record"} icon={FolderPlus} label={t("newCase.toRecord")} onClick={() => { playTap(); setAnimal(a.key, { disp: "record", addMeds: false }); }} />
               </div>
               {a.disp === "record" && (
                 <p className="rounded-xl bg-surface-2 px-3 py-2 text-xs text-ink-muted">{t("newCase.toRecordDesc")}</p>
               )}
-              {a.disp === "boarding" && (
+              {a.disp === "boardingCare" && (
+                <p className="rounded-xl bg-rose-50 px-3 py-2 text-xs text-rose-700 dark:bg-rose-500/10 dark:text-rose-200">{t("newCase.toBoardingCareDesc", "يبقى الحيوان في العيادة تحت الرعاية العلاجية — يظهر في عمودَي «الفندقة» و«الرعاية الطبية».")}</p>
+              )}
+              {(a.disp === "boarding" || a.disp === "boardingCare") && (
                 <div>
                   <label className="label">{t("newCase.cage")}</label>
                   <input className="input py-2" value={a.cage} onChange={(e) => setAnimal(a.key, { cage: e.target.value })} placeholder="B-2" />
@@ -530,6 +537,7 @@ function SerialAdmit({ today, doctorName, onAdmitted }: { today: string; doctorN
       const clinicId = user?.clinic_id ?? user?.id ?? null;
       // Inject into the shared ops cache so the calendar shows the card instantly.
       if (disp === "boarding") await withTimeout(opsStore.addCase({ pet_id: pet.id, clinic_id: clinicId, kind: "boarding" as AdmissionKind, status: "active", admitted_on: today, cage: cage.trim() || undefined, reason }, pet), 8000);
+      else if (disp === "boardingCare") await withTimeout(opsStore.addCase({ pet_id: pet.id, clinic_id: clinicId, kind: "treatment_boarding" as AdmissionKind, status: "active", admitted_on: today, cage: cage.trim() || undefined, reason }, pet), 8000);
       else await withTimeout(opsStore.addCase({ pet_id: pet.id, clinic_id: clinicId, kind: "treatment" as AdmissionKind, status: "active", admitted_on: today, reason }, pet), 8000);
       const objective = formatReadings(readings, pet.species, pet.id, (k) => t(`reading.${k}`));
       if (dx || objective) {
@@ -568,11 +576,12 @@ function SerialAdmit({ today, doctorName, onAdmitted }: { today: string; doctorN
               <p className="text-xs text-ink-muted">{t(`pet.species.${pet.species}`)}{pet.breed ? ` · ${breedLabel(pet.breed, i18n.language)}` : ""} · {pet.owner_name}</p>
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-3 gap-2">
             <DispMini active={disp === "log"} icon={Stethoscope} label={t("newCase.toLog")} onClick={() => { playTap(); setDisp("log"); setAddMeds(true); }} />
             <DispMini active={disp === "boarding"} icon={BedDouble} label={t("newCase.toBoarding")} onClick={() => { playTap(); setDisp("boarding"); setAddMeds(false); }} />
+            <DispMini active={disp === "boardingCare"} icon={HeartPulse} label={t("newCase.toBoardingCare", "الفندقة العلاجية")} onClick={() => { playTap(); setDisp("boardingCare"); setAddMeds(true); }} />
           </div>
-          {disp === "boarding" && (
+          {(disp === "boarding" || disp === "boardingCare") && (
             <div>
               <label className="label">{t("newCase.cage")}</label>
               <input className="input py-2" value={cage} onChange={(e) => setCage(e.target.value)} placeholder="B-2" />

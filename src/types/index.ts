@@ -222,7 +222,9 @@ export interface TreatmentEntry {
   created_at: string;
 }
 
-export type AdmissionKind = "treatment" | "boarding";
+// "treatment_boarding" = therapeutic boarding: the pet is staying in the clinic
+// AND under active medical care at the same time (counts as both boarding + care).
+export type AdmissionKind = "treatment" | "boarding" | "treatment_boarding";
 export type AdmissionStatus = "active" | "discharged";
 
 /** A clinic admission/case. Active treatment cases and boarding stays both live here;
