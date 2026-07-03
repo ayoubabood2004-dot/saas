@@ -6,7 +6,7 @@ import {
   useDraggable, useDroppable, pointerWithin, type DragStartEvent, type DragEndEvent,
 } from "@dnd-kit/core";
 import {
-  CalendarDays, Stethoscope, BedDouble, CalendarClock, LogOut, Plus, HeartPulse,
+  CalendarDays, Stethoscope, BedDouble, LogOut, Plus, HeartPulse,
   ChevronRight, ChevronLeft, LayoutGrid, Columns3, GripVertical,
 } from "lucide-react";
 import type { Admission, Pet } from "@/types";
@@ -29,23 +29,15 @@ import { useAuth } from "@/contexts/AuthContext";
  * pet's unified medical record (الطبلة). RTL-first, premium status colours.
  * ==========================================================================*/
 
-type OpStatus = "scheduled" | "care" | "careBoarding" | "boarding" | "done";
+type OpStatus = "care" | "careBoarding" | "boarding" | "done";
 
 /** The kanban columns, in reading order (RTL flips them visually). */
-const COLUMN_ORDER: OpStatus[] = ["scheduled", "care", "careBoarding", "boarding", "done"];
+const COLUMN_ORDER: OpStatus[] = ["care", "careBoarding", "boarding", "done"];
 
 const STATUS_META: Record<OpStatus, {
   key: string; def: string; icon: typeof Stethoscope;
   head: string; dot: string; card: string; over: string; chip: string;
 }> = {
-  scheduled: {
-    key: "reception.schedBoarding", def: "حجوزات الفندقة", icon: CalendarClock,
-    head: "bg-violet-100 text-violet-700 dark:bg-violet-500/20 dark:text-violet-200",
-    dot: "bg-violet-500",
-    card: "border-violet-200 bg-violet-50/70 dark:border-violet-500/30 dark:bg-violet-500/10",
-    over: "ring-violet-400/70 bg-violet-50/80 dark:bg-violet-500/10",
-    chip: "bg-violet-100 text-violet-700 dark:bg-violet-500/20 dark:text-violet-200",
-  },
   care: {
     key: "reception.care", def: "تحت الرعاية الطبية", icon: Stethoscope,
     head: "bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-200",
@@ -133,11 +125,11 @@ export function Reception() {
     if (a.status === "discharged") return "done";
     if (a.kind === "treatment") return "care";
     if (a.kind === "treatment_boarding") return "careBoarding";
-    return (a.admitted_on || "") > todayISO ? "scheduled" : "boarding";
+    return "boarding";
   };
 
   const byStatus = useMemo(() => {
-    const m: Record<OpStatus, Admission[]> = { scheduled: [], care: [], careBoarding: [], boarding: [], done: [] };
+    const m: Record<OpStatus, Admission[]> = { care: [], careBoarding: [], boarding: [], done: [] };
     for (const a of admissions) m[statusOf(a)].push(a);
     // Newest admitted first within a column (done can be long — cap the tail visually only).
     for (const k of COLUMN_ORDER) m[k].sort((a, b) => (b.admitted_on || "").localeCompare(a.admitted_on || ""));
@@ -163,12 +155,10 @@ export function Reception() {
   );
 
   const patchForStatus = (target: OpStatus): Partial<Admission> => {
-    const tomorrow = localISO(new Date(Date.now() + 86400000));
     switch (target) {
       case "care": return { kind: "treatment", status: "active", discharged_on: null };
       case "careBoarding": return { kind: "treatment_boarding", status: "active", admitted_on: todayISO, discharged_on: null };
       case "boarding": return { kind: "boarding", status: "active", admitted_on: todayISO, discharged_on: null };
-      case "scheduled": return { kind: "boarding", status: "active", admitted_on: tomorrow, discharged_on: null };
       case "done": return { status: "discharged", discharged_on: todayISO };
     }
   };
@@ -234,7 +224,7 @@ export function Reception() {
       </div>
 
       {/* Status summary strip */}
-      <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+      <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
         {stats.map(({ status, count }) => {
           const m = STATUS_META[status];
           const Icon = m.icon;
@@ -252,7 +242,7 @@ export function Reception() {
 
       <DndContext sensors={sensors} collisionDetection={pointerWithin} onDragStart={onDragStart} onDragEnd={onDragEnd} onDragCancel={() => setActiveId(null)}>
         {view === "day" ? (
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5">
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             {COLUMN_ORDER.map((status) => (
               <KanbanColumn key={status} status={status} items={byStatus[status]} pets={pets} onOpen={(pid) => navigate(`/pet/${pid}?tab=timeline`)} statusOf={statusOf} loading={loading} />
             ))}
@@ -403,8 +393,7 @@ function OpCard({ adm, pet, status, overlay }: { adm: Admission; pet?: Pet; stat
   const meta =
     status === "care" ? `${t("snapshot.day", "اليوم")} ${dayNumber(adm.admitted_on)}`
       : status === "boarding" || status === "careBoarding" ? `${t("snapshot.day", "اليوم")} ${dayNumber(adm.admitted_on)}${adm.cage ? ` · ${t("records.cage", "قفص")} ${adm.cage}` : ""}`
-        : status === "scheduled" ? `${t("reception.arrives", "الوصول")} ${arDate(adm.admitted_on)}`
-          : adm.discharged_on ? `${t("reception.left", "غادر")} ${arDate(adm.discharged_on)}` : arDate(adm.admitted_on);
+        : adm.discharged_on ? `${t("reception.left", "غادر")} ${arDate(adm.discharged_on)}` : arDate(adm.admitted_on);
   return (
     <div className={cn("rounded-2xl border p-2.5 shadow-card", m.card, overlay ? "w-64 rotate-2 cursor-grabbing shadow-raised" : "")}>
       <div className="flex items-center gap-2.5">
