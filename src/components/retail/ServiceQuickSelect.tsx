@@ -1,12 +1,14 @@
+import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Plus, Stethoscope, Tag } from "lucide-react";
+import { Plus, Stethoscope, Tag, Search, X } from "lucide-react";
 import type { ServiceCatalog, Service } from "@/types";
 import { cn, money } from "@/lib/utils";
 import { playTap } from "@/lib/sounds";
 
 /**
  * POS quick-select grid for non-barcode services, grouped by the categories the
- * clinic defined in Settings. One tap adds the service (at its default price,
+ * clinic defined in Settings. A search box filters by service name or category
+ * so long catalogs stay usable. One tap adds the service (at its default price,
  * overridable in the cart) to the active invoice.
  */
 export function ServiceQuickSelect({ catalog, onPick, flashId }: {
@@ -15,9 +17,25 @@ export function ServiceQuickSelect({ catalog, onPick, flashId }: {
   flashId?: string | null;
 }) {
   const { t } = useTranslation();
-  const cats = catalog.categories.filter((c) => catalog.services.some((s) => s.category_id === c.id));
+  const [q, setQ] = useState("");
+  const ql = q.trim().toLowerCase();
 
-  if (cats.length === 0) {
+  // Categories that still have services after the query (a category-name match
+  // keeps all of its services; otherwise only the services whose name matches).
+  const groups = useMemo(() => {
+    return catalog.categories
+      .map((cat) => {
+        const catHit = ql && cat.name.toLowerCase().includes(ql);
+        const items = catalog.services.filter(
+          (s) => s.category_id === cat.id && (!ql || catHit || s.name.toLowerCase().includes(ql)),
+        );
+        return { cat, items };
+      })
+      .filter((g) => g.items.length > 0);
+  }, [catalog, ql]);
+
+  // No services configured at all — point the user to Settings.
+  if (catalog.services.length === 0) {
     return (
       <div className="card grid place-items-center p-10 text-center text-sm text-ink-subtle">
         <Stethoscope size={28} className="mb-2 opacity-40" />
@@ -28,9 +46,32 @@ export function ServiceQuickSelect({ catalog, onPick, flashId }: {
 
   return (
     <div className="space-y-4">
-      {cats.map((cat) => {
-        const items = catalog.services.filter((s) => s.category_id === cat.id);
-        return (
+      {/* Search */}
+      <div className="relative">
+        <Search size={16} className="pointer-events-none absolute top-1/2 -translate-y-1/2 text-ink-subtle ltr:left-3 rtl:right-3" />
+        <input
+          className="input ltr:pl-9 rtl:pr-9"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder={t("retail.searchServices", "ابحث عن خدمة…")}
+        />
+        {q && (
+          <button
+            onClick={() => { playTap(); setQ(""); }}
+            aria-label={t("common.clear", "Clear")}
+            className="absolute top-1/2 grid h-6 w-6 -translate-y-1/2 place-items-center rounded-full text-ink-subtle transition hover:bg-surface-2 hover:text-ink ltr:right-2 rtl:left-2"
+          >
+            <X size={14} />
+          </button>
+        )}
+      </div>
+
+      {groups.length === 0 ? (
+        <div className="grid h-32 place-items-center px-6 text-center text-sm text-ink-subtle">
+          {t("retail.noServiceMatch", "لا توجد خدمة مطابقة.")}
+        </div>
+      ) : (
+        groups.map(({ cat, items }) => (
           <div key={cat.id}>
             <div className="mb-2 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-ink-muted">
               <Tag size={12} className="text-brand-600" /> {cat.name}
@@ -60,8 +101,8 @@ export function ServiceQuickSelect({ catalog, onPick, flashId }: {
               ))}
             </div>
           </div>
-        );
-      })}
+        ))
+      )}
     </div>
   );
 }
