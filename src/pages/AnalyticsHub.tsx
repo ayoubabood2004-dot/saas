@@ -29,7 +29,12 @@ import { UniversalReportTable, type ReportColumn, type SummaryMetric } from "@/c
  * ==========================================================================*/
 
 type RangeKey = "today" | "week" | "month" | "custom";
-type TabKey = "ops" | "revenue" | "sales" | "ledger" | "top" | "audit" | "clinical";
+type TabKey = "ops" | "revenue" | "sales" | "staff" | "ledger" | "top" | "audit" | "clinical";
+
+/** One staff member's sales performance in the selected range. */
+interface StaffSalesRow {
+  id: string; name: string; invoices: number; revenue: number; profit: number; units: number; avg: number; topItem: string; topItemRev: number;
+}
 
 /** Lab/imaging media kinds counted in the "الأشعة والتحاليل" report. */
 const CLINICAL_MEDIA: Record<string, string> = { lab: "تحاليل مخبرية", xray: "أشعة سينية", ultrasound: "سونار / تصوير" };
@@ -258,6 +263,27 @@ export function AnalyticsHub() {
     return Array.from(m, ([doctor, count]) => ({ doctor, count })).sort((a, b) => b.count - a.count);
   }, [visits, lo, hi]);
 
+  // ---- Staff sales performance: revenue + top item each seller made (in range) ----
+  const staffSales = useMemo<StaffSalesRow[]>(() => {
+    type Agg = { id: string; name: string; invoices: number; revenue: number; profit: number; units: number; itemRev: Map<string, number> };
+    const m = new Map<string, Agg>();
+    for (const inv of paid) {
+      const key = inv.staff_id || "__none";
+      let a = m.get(key);
+      if (!a) { a = { id: key, name: key === "__none" ? "غير محدد" : (staffById.get(key) || "غير محدد"), invoices: 0, revenue: 0, profit: 0, units: 0, itemRev: new Map() }; m.set(key, a); }
+      a.invoices += 1;
+      a.revenue += inv.total;
+      a.profit += inv.profit ?? 0;
+      a.units += inv.item_count ?? 0;
+      for (const it of itemsByInvoice.get(inv.id) ?? []) a.itemRev.set(it.name, (a.itemRev.get(it.name) ?? 0) + it.line_total);
+    }
+    return Array.from(m.values()).map((a) => {
+      let topItem = "—"; let topItemRev = 0;
+      for (const [n, v] of a.itemRev) if (v > topItemRev) { topItemRev = v; topItem = n; }
+      return { id: a.id, name: a.name, invoices: a.invoices, revenue: a.revenue, profit: a.profit, units: a.units, avg: a.invoices ? a.revenue / a.invoices : 0, topItem, topItemRev };
+    }).sort((x, y) => y.revenue - x.revenue);
+  }, [paid, itemsByInvoice, staffById]);
+
   // ---- Module 3: Sales & Inventory ----
   const movers = useMemo(() => {
     const m = new Map<string, { name: string; qty: number; revenue: number }>();
@@ -403,6 +429,7 @@ export function AnalyticsHub() {
     { id: "ops", label: "التشغيل اليومي", icon: Wallet },
     { id: "revenue", label: "الإيرادات والأرباح", icon: TrendingUp },
     { id: "sales", label: "المبيعات والمخزون", icon: Package },
+    { id: "staff", label: "مبيعات الموظفين", icon: Users },
     { id: "ledger", label: "سجل الحركات", icon: ScrollText },
     { id: "top", label: "الأفضل أداءً", icon: Crown },
     { id: "clinical", label: "التقارير الطبية", icon: Stethoscope },
@@ -493,6 +520,7 @@ export function AnalyticsHub() {
           {tab === "ops" && <OpsTab z={zReport} receivables={receivables} series={series} paymentPie={paymentPie} />}
           {tab === "revenue" && <RevenueTab revenue={revenue} categoryData={categoryData} staff={staffPerf} canProfit={canProfit} series={series} />}
           {tab === "sales" && <SalesTab movers={movers} species={speciesActivity} />}
+          {tab === "staff" && <StaffSalesTab rows={staffSales} canProfit={canProfit} />}
           {tab === "ledger" && <LedgerTab rows={ledger} canProfit={canProfit} />}
           {tab === "top" && <TopTab clients={topClients} services={topServices} />}
           {tab === "clinical" && <ClinicalTab labXray={labXray} meds={dispensedMeds} />}
@@ -905,6 +933,120 @@ const dt = (iso: string) => {
 };
 
 /* ----------------------------- Transaction log (سجل الحركات) ----------------------------- */
+/* ===== Staff sales performance — revenue + best-seller per employee ===== */
+type StaffSortKey = "name" | "invoices" | "units" | "avg" | "revenue" | "profit";
+
+function StaffSalesTab({ rows, canProfit }: { rows: StaffSalesRow[]; canProfit: boolean }) {
+  const [q, setQ] = useState("");
+  const [sortKey, setSortKey] = useState<StaffSortKey>("revenue");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+
+  const filtered = useMemo(() => {
+    const ql = q.trim().toLowerCase();
+    return ql ? rows.filter((r) => r.name.toLowerCase().includes(ql) || r.topItem.toLowerCase().includes(ql)) : rows;
+  }, [rows, q]);
+
+  const sorted = useMemo(() => {
+    const arr = filtered.slice();
+    const dir = sortDir === "asc" ? 1 : -1;
+    arr.sort((a, b) => {
+      const av = a[sortKey]; const bv = b[sortKey];
+      if (typeof av === "number" && typeof bv === "number") return (av - bv) * dir;
+      return String(av).localeCompare(String(bv), "ar") * dir;
+    });
+    return arr;
+  }, [filtered, sortKey, sortDir]);
+
+  const totals = useMemo(() => ({
+    staff: filtered.length,
+    invoices: filtered.reduce((s, r) => s + r.invoices, 0),
+    revenue: filtered.reduce((s, r) => s + r.revenue, 0),
+    profit: filtered.reduce((s, r) => s + r.profit, 0),
+  }), [filtered]);
+
+  const setSort = (k: string) => {
+    if (k === sortKey) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    else { setSortKey(k as StaffSortKey); setSortDir(k === "name" ? "asc" : "desc"); }
+  };
+
+  const chartData = useMemo(
+    () => rows.slice().sort((a, b) => b.revenue - a.revenue).slice(0, 10).map((r) => ({ name: r.name, revenue: Math.round(r.revenue), profit: Math.round(r.profit) })),
+    [rows],
+  );
+
+  const rank = (r: StaffSalesRow) => sorted.indexOf(r);
+
+  const columns: ReportColumn<StaffSalesRow>[] = [
+    {
+      key: "name", header: "الموظف / الكاشير", sortKey: "name",
+      cell: (r) => {
+        const i = rank(r);
+        const medal = sortKey === "revenue" && sortDir === "desc" && i < 3 ? ["🥇", "🥈", "🥉"][i] : null;
+        return <span className="flex items-center gap-1.5 font-semibold text-ink">{medal && <span>{medal}</span>}{r.name}</span>;
+      },
+      printCell: (r) => r.name,
+    },
+    { key: "invoices", header: "عدد الفواتير", sortKey: "invoices", align: "end", numeric: true, numFmt: "#,##0", excelValue: (r) => r.invoices, cell: (r) => <span className="tabular-nums text-ink">{formatNum(r.invoices)}</span>, printCell: (r) => formatNum(r.invoices) },
+    { key: "units", header: "الأصناف المباعة", sortKey: "units", align: "end", numeric: true, numFmt: "#,##0", excelValue: (r) => r.units, cell: (r) => <span className="tabular-nums text-ink-muted">{formatNum(r.units)}</span>, printCell: (r) => formatNum(r.units) },
+    {
+      key: "topItem", header: "الأكثر مبيعاً",
+      cell: (r) => (
+        <div className="min-w-0">
+          <p className="truncate text-ink" title={r.topItem}>{r.topItem}</p>
+          {r.topItemRev > 0 && <p className="text-2xs text-ink-subtle tabular-nums">{money(r.topItemRev)}</p>}
+        </div>
+      ),
+      printCell: (r) => (r.topItemRev > 0 ? `${r.topItem} (${money(r.topItemRev)})` : r.topItem),
+    },
+    { key: "avg", header: "متوسط الفاتورة", sortKey: "avg", align: "end", numeric: true, numFmt: "#,##0", excelValue: (r) => Math.round(r.avg), cell: (r) => <span className="tabular-nums text-ink-muted">{money(r.avg)}</span>, printCell: (r) => money(r.avg) },
+    { key: "revenue", header: "إجمالي المبيعات", sortKey: "revenue", align: "end", numeric: true, numFmt: "#,##0", excelValue: (r) => r.revenue, cell: (r) => <span className="font-bold tabular-nums text-ink">{money(r.revenue)}</span>, printCell: (r) => money(r.revenue) },
+  ];
+  if (canProfit) columns.push({ key: "profit", header: "صافي الربح", sortKey: "profit", align: "end", numeric: true, numFmt: "#,##0", excelValue: (r) => r.profit, cell: (r) => <span className={cn("font-semibold tabular-nums", r.profit >= 0 ? "text-success-600" : "text-danger-600")}>{money(r.profit)}</span>, printCell: (r) => money(r.profit) });
+
+  const summaryMetrics: SummaryMetric[] = [
+    { label: "عدد الموظفين", value: formatNum(totals.staff) },
+    { label: "إجمالي الفواتير", value: formatNum(totals.invoices) },
+    { label: "إجمالي المبيعات", value: money(totals.revenue) },
+    ...(canProfit ? [{ label: "صافي الربح", value: money(totals.profit) }] : []),
+  ];
+
+  return (
+    <UniversalReportTable<StaffSalesRow>
+      title="تقرير مبيعات الموظفين"
+      clinicName={getClinicName()}
+      columns={columns}
+      data={sorted}
+      rowKey={(r) => r.id}
+      summaryMetrics={summaryMetrics}
+      sort={{ key: sortKey, dir: sortDir }}
+      onSort={setSort}
+      emptyText={rows.length === 0 ? "لا توجد مبيعات في هذه الفترة." : "لا يوجد موظف مطابق لبحثك."}
+      exportFileName="doctorvet-staff-sales"
+      chart={
+        <Panel title="إجمالي المبيعات لكل موظف" icon={Users}>
+          {chartData.length === 0 ? <Empty text="لا توجد بيانات في هذه الفترة." /> : (
+            <ResponsiveContainer width="100%" height={Math.max(200, chartData.length * 42)}>
+              <BarChart data={chartData} layout="vertical" margin={{ top: 4, right: 12, left: 8, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" className="stroke-line" horizontal={false} />
+                <XAxis type="number" tick={{ fontSize: 11 }} stroke="currentColor" className="text-ink-subtle" tickFormatter={(v: number) => formatNum(v)} />
+                <YAxis type="category" dataKey="name" width={96} tick={{ fontSize: 11 }} stroke="currentColor" className="text-ink-subtle" />
+                <Tooltip formatter={(v: number) => money(v)} labelStyle={{ color: "#64748b" }} />
+                <Bar dataKey="revenue" name="المبيعات" fill="#2563eb" radius={[0, 4, 4, 0]} maxBarSize={26} />
+              </BarChart>
+            </ResponsiveContainer>
+          )}
+        </Panel>
+      }
+      toolbar={
+        <div className="relative">
+          <Search size={16} className="pointer-events-none absolute top-1/2 -translate-y-1/2 text-ink-subtle ltr:left-3 rtl:right-3" />
+          <input className="input ltr:pl-9 rtl:pr-9" value={q} onChange={(e) => setQ(e.target.value)} placeholder="ابحث باسم الموظف أو الصنف…" />
+        </div>
+      }
+    />
+  );
+}
+
 interface LedgerRow {
   id: string; ref: string; when: string; whenMs: number; client: string; staff: string;
   items: string; method: string; total: number; discount: number; profit: number; refunded: boolean;
