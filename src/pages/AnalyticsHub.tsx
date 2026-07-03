@@ -7,8 +7,9 @@ import {
   BarChart3, Wallet, Banknote, CreditCard, ArrowLeftRight, Receipt, TrendingUp,
   Stethoscope, Package, Trophy, Snail, PawPrint, Lock, Download, FileText, CalendarRange,
   Crown, Star, ShieldAlert, Trash2, LogIn, FlaskConical, Pill, Users, Clock,
-  ScrollText, Search,
+  ScrollText, Search, Eye, X, BadgePercent,
 } from "lucide-react";
+import { playTap } from "@/lib/sounds";
 import type { Pet, Invoice, InvoiceItem, Product, MedicalVisit, PaymentMethod, Species, MediaItem, TreatmentEntry, AuditEntry, LoginEvent } from "@/types";
 import { type StaffMember } from "@/lib/staff";
 import { getCached, setCached, isFresh } from "@/lib/swrCache";
@@ -32,9 +33,27 @@ type RangeKey = "today" | "week" | "month" | "custom";
 type TabKey = "ops" | "revenue" | "sales" | "staff" | "ledger" | "top" | "audit" | "clinical";
 
 /** One staff member's sales performance in the selected range. */
+interface StaffTopItem { name: string; qty: number; revenue: number }
 interface StaffSalesRow {
-  id: string; name: string; invoices: number; revenue: number; profit: number; units: number; avg: number; topItem: string; topItemRev: number;
+  id: string; name: string; invoices: number; revenue: number; profit: number; units: number; avg: number;
+  topItem: string; topItemRev: number;
+  /** Top 5 items this seller moved (by revenue) — feeds the drill-down panel. */
+  topItems: StaffTopItem[];
+  /** Distinct customers served (by phone, falling back to name). */
+  customers: number;
+  /** Total discounts this seller granted. */
+  discounts: number;
+  servicesRev: number; productsRev: number;
+  /** Amount collected per payment method across this seller's invoices. */
+  payMix: Record<PaymentMethod, number>;
+  /** The single largest invoice in range. */
+  biggest: { total: number; client: string; when: string } | null;
+  /** Share of the clinic's total revenue in range (0–100). */
+  share: number;
 }
+/** Per-bucket revenue series (2h buckets for a single day, daily up to ~6 months,
+ *  monthly beyond). Series are keyed by staff ID — display names can collide. */
+interface StaffTrend { series: Array<Record<string, number | string>>; keys: { id: string; name: string }[] }
 
 /** Lab/imaging media kinds counted in the "الأشعة والتحاليل" report. */
 const CLINICAL_MEDIA: Record<string, string> = { lab: "تحاليل مخبرية", xray: "أشعة سينية", ultrasound: "سونار / تصوير" };
@@ -263,26 +282,109 @@ export function AnalyticsHub() {
     return Array.from(m, ([doctor, count]) => ({ doctor, count })).sort((a, b) => b.count - a.count);
   }, [visits, lo, hi]);
 
-  // ---- Staff sales performance: revenue + top item each seller made (in range) ----
+  // ---- Staff sales performance: full per-seller profile (revenue, best sellers,
+  //      customers, discounts, service/product mix, payment mix, biggest ticket) ----
   const staffSales = useMemo<StaffSalesRow[]>(() => {
-    type Agg = { id: string; name: string; invoices: number; revenue: number; profit: number; units: number; itemRev: Map<string, number> };
+    type Agg = {
+      id: string; name: string; invoices: number; revenue: number; profit: number; units: number; discounts: number;
+      servicesRev: number; productsRev: number;
+      itemAgg: Map<string, StaffTopItem>; customers: Set<string>;
+      payMix: Record<PaymentMethod, number>; biggest: { total: number; client: string; when: string } | null;
+    };
     const m = new Map<string, Agg>();
     for (const inv of paid) {
       const key = inv.staff_id || "__none";
       let a = m.get(key);
-      if (!a) { a = { id: key, name: key === "__none" ? "غير محدد" : (staffById.get(key) || "غير محدد"), invoices: 0, revenue: 0, profit: 0, units: 0, itemRev: new Map() }; m.set(key, a); }
+      if (!a) {
+        a = {
+          id: key, name: key === "__none" ? "غير محدد" : (staffById.get(key) || "غير محدد"),
+          invoices: 0, revenue: 0, profit: 0, units: 0, discounts: 0, servicesRev: 0, productsRev: 0,
+          itemAgg: new Map(), customers: new Set(), payMix: { cash: 0, card: 0, transfer: 0 }, biggest: null,
+        };
+        m.set(key, a);
+      }
       a.invoices += 1;
       a.revenue += inv.total;
       a.profit += inv.profit ?? 0;
       a.units += inv.item_count ?? 0;
-      for (const it of itemsByInvoice.get(inv.id) ?? []) a.itemRev.set(it.name, (a.itemRev.get(it.name) ?? 0) + it.line_total);
+      a.discounts += inv.discount ?? 0;
+      const ck = ((inv.customer_phone ?? "").trim() || (inv.customer_name ?? "").trim()).toLowerCase();
+      if (ck) a.customers.add(ck);
+      for (const leg of paymentsOf(inv)) if (a.payMix[leg.method] !== undefined) a.payMix[leg.method] += leg.amount;
+      if (!a.biggest || inv.total > a.biggest.total) a.biggest = { total: inv.total, client: (inv.customer_name ?? "").trim() || "عميل نقدي", when: inv.created_at };
+      for (const it of itemsByInvoice.get(inv.id) ?? []) {
+        const e = a.itemAgg.get(it.name) ?? { name: it.name, qty: 0, revenue: 0 };
+        e.qty += it.qty; e.revenue += it.line_total;
+        a.itemAgg.set(it.name, e);
+        if (it.product_id) a.productsRev += it.line_total; else a.servicesRev += it.line_total;
+      }
     }
+    const totalRev = Array.from(m.values()).reduce((s, a) => s + a.revenue, 0);
     return Array.from(m.values()).map((a) => {
-      let topItem = "—"; let topItemRev = 0;
-      for (const [n, v] of a.itemRev) if (v > topItemRev) { topItemRev = v; topItem = n; }
-      return { id: a.id, name: a.name, invoices: a.invoices, revenue: a.revenue, profit: a.profit, units: a.units, avg: a.invoices ? a.revenue / a.invoices : 0, topItem, topItemRev };
+      const topItems = Array.from(a.itemAgg.values()).sort((x, y) => y.revenue - x.revenue).slice(0, 5);
+      return {
+        id: a.id, name: a.name, invoices: a.invoices, revenue: a.revenue, profit: a.profit, units: a.units,
+        avg: a.invoices ? a.revenue / a.invoices : 0,
+        topItem: topItems[0]?.name ?? "—", topItemRev: topItems[0]?.revenue ?? 0, topItems,
+        customers: a.customers.size, discounts: a.discounts,
+        servicesRev: a.servicesRev, productsRev: a.productsRev, payMix: a.payMix, biggest: a.biggest,
+        share: totalRev ? (a.revenue / totalRev) * 100 : 0,
+      };
     }).sort((x, y) => y.revenue - x.revenue);
   }, [paid, itemsByInvoice, staffById]);
+
+  // Per-seller revenue over time (stacked). Series are keyed by staff ID (never by
+  // display name — names can collide); top-4 named sellers get their own series,
+  // unattributed sales keep a distinct "غير محدد" series, the rest fold into "أخرى".
+  // Granularity adapts: 2h buckets for a single day, daily up to ~6 months, monthly
+  // beyond — so long custom ranges aggregate instead of silently dropping days.
+  const staffTrend = useMemo<StaffTrend>(() => {
+    const named = staffSales.filter((s) => s.id !== "__none");
+    const top = named.slice(0, 4);
+    const topIds = new Set(top.map((s) => s.id));
+    // A blank custom "from" reaches us as lo=0 (epoch) — treat it as unbounded too.
+    const spanLo = Number.isFinite(lo) && lo > 0 ? lo : paid.reduce((mn, i) => Math.min(mn, new Date(i.created_at).getTime()), Date.now());
+    const spanHi = Number.isFinite(hi) ? hi : paid.reduce((mx, i) => Math.max(mx, new Date(i.created_at).getTime()), Date.now());
+    const spanDays = (spanHi - spanLo) / 86400000;
+    const mode: "hour" | "day" | "month" = spanDays <= 1.5 ? "hour" : spanDays <= 190 ? "day" : "month";
+    const buckets = new Map<string, Record<string, number | string>>();
+    if (mode === "hour") {
+      for (let h = 0; h < 24; h += 2) buckets.set(String(h), { label: hourLabel(h), order: h });
+    } else if (mode === "day") {
+      const d = startOfDay(new Date(spanLo));
+      for (let i = 0; d.getTime() <= spanHi && i < 200; i++) {
+        buckets.set(localISO(d), { label: `${d.getMonth() + 1}/${d.getDate()}`, order: d.getTime() });
+        d.setDate(d.getDate() + 1);
+      }
+    } else {
+      const d = new Date(spanLo); d.setDate(1); d.setHours(0, 0, 0, 0);
+      for (let i = 0; d.getTime() <= spanHi && i < 60; i++) {
+        buckets.set(`${d.getFullYear()}-${d.getMonth()}`, { label: `${d.getMonth() + 1}/${String(d.getFullYear()).slice(2)}`, order: d.getTime() });
+        d.setMonth(d.getMonth() + 1);
+      }
+    }
+    const keyOf = (dd: Date) =>
+      mode === "hour" ? String(Math.floor(dd.getHours() / 2) * 2)
+        : mode === "day" ? localISO(startOfDay(dd))
+          : `${dd.getFullYear()}-${dd.getMonth()}`;
+    let hasNone = false; let hasOther = false;
+    for (const inv of paid) {
+      const b = buckets.get(keyOf(new Date(inv.created_at)));
+      if (!b) continue;
+      const sid = inv.staff_id || "__none";
+      const bk = sid === "__none" ? "__none" : topIds.has(sid) ? sid : "__other";
+      if (bk === "__none") hasNone = true;
+      if (bk === "__other") hasOther = true;
+      b[bk] = ((b[bk] as number) ?? 0) + inv.total;
+    }
+    const series = Array.from(buckets.values()).sort((a, b) => (a.order as number) - (b.order as number));
+    const keys = [
+      ...top.map((s) => ({ id: s.id, name: s.name })),
+      ...(hasOther ? [{ id: "__other", name: "أخرى" }] : []),
+      ...(hasNone ? [{ id: "__none", name: "غير محدد" }] : []),
+    ];
+    return { series, keys };
+  }, [staffSales, paid, lo, hi]);
 
   // ---- Module 3: Sales & Inventory ----
   const movers = useMemo(() => {
@@ -520,7 +622,14 @@ export function AnalyticsHub() {
           {tab === "ops" && <OpsTab z={zReport} receivables={receivables} series={series} paymentPie={paymentPie} />}
           {tab === "revenue" && <RevenueTab revenue={revenue} categoryData={categoryData} staff={staffPerf} canProfit={canProfit} series={series} />}
           {tab === "sales" && <SalesTab movers={movers} species={speciesActivity} />}
-          {tab === "staff" && <StaffSalesTab rows={staffSales} canProfit={canProfit} />}
+          {tab === "staff" && (
+            <StaffSalesTab
+              rows={staffSales}
+              trend={staffTrend}
+              canProfit={canProfit}
+              rangeLabel={Number.isFinite(lo) && lo > 0 && Number.isFinite(hi) ? `الفترة: ${shortDate(lo)} — ${shortDate(hi)}` : undefined}
+            />
+          )}
           {tab === "ledger" && <LedgerTab rows={ledger} canProfit={canProfit} />}
           {tab === "top" && <TopTab clients={topClients} services={topServices} />}
           {tab === "clinical" && <ClinicalTab labXray={labXray} meds={dispensedMeds} />}
@@ -933,13 +1042,301 @@ const dt = (iso: string) => {
 };
 
 /* ----------------------------- Transaction log (سجل الحركات) ----------------------------- */
-/* ===== Staff sales performance — revenue + best-seller per employee ===== */
-type StaffSortKey = "name" | "invoices" | "units" | "avg" | "revenue" | "profit";
+/* ===== Staff sales performance — leaderboard, insights, trends & drill-down ===== */
+type StaffSortKey = "name" | "invoices" | "units" | "customers" | "avg" | "revenue" | "profit";
 
-function StaffSalesTab({ rows, canProfit }: { rows: StaffSalesRow[]; canProfit: boolean }) {
+/** Stable per-seller palette. Colour is resolved from the seller's ID via ONE
+ *  `colorOf` mapping (rank among NAMED sellers), and that same colour feeds the
+ *  avatar, donut slice and trend series — one colour = one person everywhere.
+ *  Unattributed sales (غير محدد) and the fold-bucket (أخرى) get distinct neutrals. */
+const STAFF_COLORS = ["#3b82f6", "#22c55e", "#f59e0b", "#a855f7", "#ec4899", "#14b8a6"];
+const OTHER_COLOR = "#64748b";
+const UNATTRIBUTED_COLOR = "#94a3b8";
+const PAY_ICONS: Record<PaymentMethod, typeof Banknote> = { cash: Banknote, card: CreditCard, transfer: ArrowLeftRight };
+
+const initialsOf = (name: string) =>
+  name.split(" ").filter(Boolean).slice(0, 2).map((w) => w[0]).join("") || "؟";
+
+function StaffAvatar({ name, color, size = 40 }: { name: string; color: string; size?: number }) {
+  return (
+    <span
+      className="grid shrink-0 place-items-center rounded-full font-display font-bold text-white shadow-soft"
+      style={{ width: size, height: size, background: color, fontSize: Math.max(11, size * 0.34) }}
+    >
+      {initialsOf(name)}
+    </span>
+  );
+}
+
+/** Top-3 podium — gold centre (lifted on desktop), silver and bronze flanking. */
+function StaffPodium({ rows, colorOf, onSelect }: {
+  rows: StaffSalesRow[]; colorOf: (id: string) => string; onSelect: (id: string) => void;
+}) {
+  const named = rows.filter((r) => r.id !== "__none").slice(0, 3);
+  if (named.length === 0) return null;
+  const TONES = [
+    { label: "المركز الأول", medal: "🥇", ring: "border-amber-400/60 ring-1 ring-amber-400/30", grad: "from-amber-400/15", bar: "#f59e0b", order: "order-1 md:order-2", lift: "md:-mt-2" },
+    { label: "المركز الثاني", medal: "🥈", ring: "border-slate-400/50", grad: "from-slate-400/10", bar: "#94a3b8", order: "order-2 md:order-1", lift: "" },
+    { label: "المركز الثالث", medal: "🥉", ring: "border-orange-400/50", grad: "from-orange-400/10", bar: "#fb923c", order: "order-3", lift: "" },
+  ];
+  return (
+    <div className="grid items-start gap-3 md:grid-cols-3">
+      {named.map((r, i) => {
+        const tone = TONES[i];
+        return (
+          <button
+            key={r.id}
+            onClick={() => { playTap(); onSelect(r.id); }}
+            className={cn("card relative w-full overflow-hidden border p-4 text-start transition hover:shadow-raised", tone.ring, tone.order, tone.lift)}
+          >
+            <div className={cn("pointer-events-none absolute inset-x-0 top-0 h-20 bg-gradient-to-b to-transparent", tone.grad)} />
+            <div className="relative flex items-center gap-3">
+              <StaffAvatar name={r.name} color={colorOf(r.id)} size={46} />
+              <div className="min-w-0 flex-1">
+                <span className="chip bg-surface-2 text-2xs font-bold text-ink-muted">{tone.medal} {tone.label}</span>
+                <p className="mt-1 truncate font-display font-extrabold text-ink">{r.name}</p>
+              </div>
+            </div>
+            <p className="relative mt-3 font-display text-2xl font-extrabold tabular-nums text-ink">{money(r.revenue)}</p>
+            <p className="mt-0.5 flex flex-wrap items-center gap-x-2 text-2xs text-ink-muted">
+              <span>{formatNum(r.invoices)} فاتورة</span>·<span>حصة {r.share.toFixed(0)}%</span>·<span>{formatNum(r.customers)} عميل</span>
+            </p>
+            <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-surface-2">
+              <div className="h-full rounded-full" style={{ width: `${Math.min(100, r.share)}%`, background: tone.bar }} />
+            </div>
+            {r.topItem !== "—" && <p className="mt-2 truncate text-2xs text-ink-subtle">⭐ الأكثر مبيعاً: {r.topItem}</p>}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Auto-computed highlights — the "so what?" of the numbers, at a glance. */
+function StaffInsights({ rows }: { rows: StaffSalesRow[] }) {
+  const named = rows.filter((r) => r.id !== "__none");
+  const star = named[0] ?? rows[0];
+  let bigInv: { total: number; client: string; seller: string } | null = null;
+  for (const r of rows) if (r.biggest && (!bigInv || r.biggest.total > bigInv.total)) bigInv = { total: r.biggest.total, client: r.biggest.client, seller: r.name };
+  let bestItem: { item: string; rev: number; seller: string } | null = null;
+  for (const r of rows) if (r.topItemRev > (bestItem?.rev ?? 0)) bestItem = { item: r.topItem, rev: r.topItemRev, seller: r.name };
+  const avgKing = named.filter((r) => r.invoices >= 2).sort((a, b) => b.avg - a.avg)[0] ?? null;
+  const cards = [
+    star ? { icon: Crown, tone: "bg-amber-100 text-amber-600 dark:bg-amber-500/15 dark:text-amber-300", title: "نجم الفترة", line: star.name, sub: `${star.share.toFixed(0)}% من إجمالي المبيعات` } : null,
+    bigInv ? { icon: Receipt, tone: "bg-brand-50 text-brand-600 dark:bg-brand-500/15 dark:text-brand-300", title: "أكبر فاتورة", line: money(bigInv.total), sub: `${bigInv.seller} · ${bigInv.client}` } : null,
+    bestItem && bestItem.rev > 0 ? { icon: Star, tone: "bg-violet-100 text-violet-600 dark:bg-violet-500/15 dark:text-violet-300", title: "أفضل صنف", line: bestItem.item, sub: `${money(bestItem.rev)} · ${bestItem.seller}` } : null,
+    avgKing ? { icon: TrendingUp, tone: "bg-success-50 text-success-600 dark:bg-success-500/15 dark:text-success-300", title: "أعلى متوسط فاتورة", line: money(avgKing.avg), sub: avgKing.name } : null,
+  ].filter((c): c is NonNullable<typeof c> => !!c);
+  if (cards.length === 0) return null;
+  return (
+    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      {cards.map((c) => {
+        const I = c.icon;
+        return (
+          <div key={c.title} className="card flex items-center gap-3 p-3">
+            <span className={cn("grid h-10 w-10 shrink-0 place-items-center rounded-xl", c.tone)}><I size={18} /></span>
+            <div className="min-w-0">
+              <p className="text-2xs text-ink-subtle">{c.title}</p>
+              <p className="truncate text-sm font-bold text-ink" title={c.line}>{c.line}</p>
+              <p className="truncate text-2xs text-ink-muted">{c.sub}</p>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Revenue-share donut with a total in the centre and a % legend beside it.
+ *  Top-5 NAMED sellers get their identity colours; unattributed sales keep their
+ *  own distinct slice; everyone else folds into "أخرى" — same populations and
+ *  colours as the trend chart next to it. */
+function StaffShareDonut({ rows, colorOf }: { rows: StaffSalesRow[]; colorOf: (id: string) => string }) {
+  const named = rows.filter((r) => r.id !== "__none");
+  const unattributed = rows.find((r) => r.id === "__none");
+  const top = named.slice(0, 5);
+  const otherRev = named.slice(5).reduce((s, r) => s + r.revenue, 0);
+  const data = [
+    ...top.map((r) => ({ id: r.id, name: r.name, value: Math.round(r.revenue), color: colorOf(r.id) })),
+    ...(otherRev > 0 ? [{ id: "__other", name: "أخرى", value: Math.round(otherRev), color: OTHER_COLOR }] : []),
+    ...(unattributed && unattributed.revenue > 0 ? [{ id: "__none", name: "غير محدد", value: Math.round(unattributed.revenue), color: UNATTRIBUTED_COLOR }] : []),
+  ].filter((d) => d.value > 0);
+  const total = data.reduce((s, d) => s + d.value, 0);
+  if (!total) return <Empty text="لا توجد بيانات في هذه الفترة." />;
+  return (
+    <div className="flex flex-col items-center gap-4 sm:flex-row">
+      <div className="relative h-[190px] w-[190px] shrink-0">
+        <ResponsiveContainer width="100%" height="100%">
+          <PieChart>
+            <Pie data={data} dataKey="value" nameKey="name" innerRadius={58} outerRadius={86} paddingAngle={3} stroke="none">
+              {data.map((d) => <Cell key={d.id} fill={d.color} />)}
+            </Pie>
+            <Tooltip formatter={(v: number) => money(v)} />
+          </PieChart>
+        </ResponsiveContainer>
+        <div className="pointer-events-none absolute inset-0 grid place-items-center text-center">
+          <div>
+            <p className="font-display text-sm font-extrabold tabular-nums text-ink">{money(total)}</p>
+            <p className="text-2xs text-ink-subtle">الإجمالي</p>
+          </div>
+        </div>
+      </div>
+      <div className="w-full flex-1 space-y-1.5">
+        {data.map((d) => (
+          <div key={d.id} className="flex items-center gap-2 text-xs">
+            <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: d.color }} />
+            <span className="min-w-0 flex-1 truncate text-ink">{d.name}</span>
+            <span className="font-semibold tabular-nums text-ink">{pct(d.value, total)}%</span>
+            <span className="w-20 text-end text-2xs tabular-nums text-ink-subtle">{money(d.value)}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** Everything about one seller — opens when their row/podium card is clicked. */
+function StaffDetailPanel({ row, color, canProfit, onClose, panelRef }: {
+  row: StaffSalesRow; color: string; canProfit: boolean; onClose: () => void; panelRef: React.RefObject<HTMLDivElement>;
+}) {
+  const maxItem = row.topItems[0]?.revenue || 1;
+  const mixTotal = row.servicesRev + row.productsRev;
+  const kpis = [
+    { icon: Wallet, label: "إجمالي المبيعات", value: money(row.revenue) },
+    { icon: Receipt, label: "عدد الفواتير", value: formatNum(row.invoices) },
+    { icon: TrendingUp, label: "متوسط الفاتورة", value: money(row.avg) },
+    { icon: Users, label: "عدد العملاء", value: formatNum(row.customers) },
+    { icon: Package, label: "أصناف مباعة", value: formatNum(row.units) },
+    { icon: BadgePercent, label: "خصومات ممنوحة", value: row.discounts > 0 ? money(row.discounts) : "—" },
+  ];
+  return (
+    <div ref={panelRef} className="card animate-fade-in scroll-mt-24 border-brand-300/50 p-4 ring-1 ring-brand-400/20 sm:p-5">
+      <div className="mb-4 flex items-center gap-3">
+        <StaffAvatar name={row.name} color={color} size={44} />
+        <div className="min-w-0 flex-1">
+          <p className="truncate font-display text-lg font-extrabold text-ink">{row.name}</p>
+          <p className="text-2xs text-ink-muted">
+            حصة {row.share.toFixed(1)}% من مبيعات الفترة{canProfit ? <> · صافي الربح <b className={cn("tabular-nums", row.profit >= 0 ? "text-success-600" : "text-danger-600")}>{money(row.profit)}</b></> : null}
+          </p>
+        </div>
+        <button onClick={() => { playTap(); onClose(); }} aria-label="إغلاق" className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-ink-subtle transition hover:bg-surface-2 hover:text-ink"><X size={16} /></button>
+      </div>
+
+      <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-6">
+        {kpis.map((k) => {
+          const I = k.icon;
+          return (
+            <div key={k.label} className="rounded-2xl border border-line bg-surface-2/50 p-2.5">
+              <p className="flex items-center gap-1.5 text-2xs text-ink-subtle"><I size={13} className="shrink-0 text-brand-500" /> {k.label}</p>
+              <p className="mt-1 truncate font-display text-sm font-extrabold tabular-nums text-ink">{k.value}</p>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="grid gap-5 lg:grid-cols-2">
+        {/* Best sellers — relative bars */}
+        <div>
+          <h4 className="mb-2 flex items-center gap-1.5 text-sm font-bold text-ink"><Star size={14} className="text-amber-500" /> أفضل الأصناف مبيعاً</h4>
+          {row.topItems.length === 0 ? (
+            <p className="text-2xs text-ink-subtle">لا توجد أصناف مسجلة.</p>
+          ) : (
+            <div className="space-y-2.5">
+              {row.topItems.map((it) => (
+                <div key={it.name}>
+                  <div className="flex items-center justify-between gap-2 text-xs">
+                    <span className="min-w-0 truncate text-ink" title={it.name}>{it.name}</span>
+                    <span className="shrink-0 tabular-nums text-ink-muted">{formatNum(it.qty)}× · <b className="text-ink">{money(it.revenue)}</b></span>
+                  </div>
+                  <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-surface-2">
+                    <div className="h-full rounded-full bg-brand-500" style={{ width: `${Math.max(4, (it.revenue / maxItem) * 100)}%` }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="space-y-5">
+          {/* Services vs products split */}
+          <div>
+            <h4 className="mb-2 text-sm font-bold text-ink">الخدمات مقابل المنتجات</h4>
+            {mixTotal <= 0 ? (
+              <p className="text-2xs text-ink-subtle">—</p>
+            ) : (
+              <>
+                <div className="flex h-2.5 overflow-hidden rounded-full bg-surface-2">
+                  <div className="h-full bg-sky-500" style={{ width: `${(row.servicesRev / mixTotal) * 100}%` }} />
+                  <div className="h-full bg-violet-500" style={{ width: `${(row.productsRev / mixTotal) * 100}%` }} />
+                </div>
+                <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-2xs text-ink-muted">
+                  <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-sky-500" /> خدمات: <b className="tabular-nums text-ink">{money(row.servicesRev)}</b> ({pct(row.servicesRev, mixTotal)}%)</span>
+                  <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-violet-500" /> منتجات: <b className="tabular-nums text-ink">{money(row.productsRev)}</b> ({pct(row.productsRev, mixTotal)}%)</span>
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* Payment mix */}
+          <div>
+            <h4 className="mb-2 text-sm font-bold text-ink">طرق الدفع</h4>
+            <div className="flex flex-wrap gap-2">
+              {(Object.keys(row.payMix) as PaymentMethod[]).filter((k) => row.payMix[k] > 0).map((k) => {
+                const I = PAY_ICONS[k];
+                return (
+                  <span key={k} className="chip bg-surface-2 text-xs text-ink">
+                    <I size={13} className="me-1 text-brand-500" /> {PAY_AR[k]}: <b className="ms-1 tabular-nums">{money(row.payMix[k])}</b>
+                  </span>
+                );
+              })}
+              {(Object.values(row.payMix) as number[]).every((v) => v <= 0) && <span className="text-2xs text-ink-subtle">لا مدفوعات مسجلة (بيع آجل).</span>}
+            </div>
+          </div>
+
+          {/* Biggest ticket */}
+          {row.biggest && (
+            <div className="rounded-2xl border border-line bg-surface-2/50 p-3">
+              <p className="text-2xs text-ink-subtle">أكبر فاتورة في الفترة</p>
+              <p className="mt-0.5 flex flex-wrap items-center gap-x-2 text-sm">
+                <b className="font-display tabular-nums text-ink">{money(row.biggest.total)}</b>
+                <span className="text-ink-muted">· {row.biggest.client}</span>
+                <span className="text-2xs text-ink-subtle">{dt(row.biggest.when)}</span>
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function StaffSalesTab({ rows, trend, canProfit, rangeLabel }: {
+  rows: StaffSalesRow[]; trend: StaffTrend; canProfit: boolean; rangeLabel?: string;
+}) {
   const [q, setQ] = useState("");
   const [sortKey, setSortKey] = useState<StaffSortKey>("revenue");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  const [sel, setSel] = useState<string | null>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  // Colour/rank maps come from the revenue order among NAMED sellers (props order),
+  // NOT the table sort — so medals, avatar colours, donut slices and trend series
+  // all agree AND never shuffle. Unattributed sales get a fixed neutral.
+  const namedRank = useMemo(() => new Map(rows.filter((r) => r.id !== "__none").map((r, i) => [r.id, i])), [rows]);
+  const colorOf = (id: string) =>
+    id === "__none" ? UNATTRIBUTED_COLOR
+      : id === "__other" ? OTHER_COLOR
+        : STAFF_COLORS[(namedRank.get(id) ?? 0) % STAFF_COLORS.length];
+
+  const selRow = sel ? rows.find((r) => r.id === sel) ?? null : null;
+  // Drop a selection the moment its row leaves the dataset (range/filter change) —
+  // otherwise the panel would silently "reopen" if that seller reappears later.
+  useEffect(() => {
+    if (sel && !rows.some((r) => r.id === sel)) setSel(null);
+  }, [rows, sel]);
+  useEffect(() => {
+    if (sel && panelRef.current) panelRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [sel]);
 
   const filtered = useMemo(() => {
     const ql = q.trim().toLowerCase();
@@ -969,39 +1366,74 @@ function StaffSalesTab({ rows, canProfit }: { rows: StaffSalesRow[]; canProfit: 
     else { setSortKey(k as StaffSortKey); setSortDir(k === "name" ? "asc" : "desc"); }
   };
 
-  const chartData = useMemo(
-    () => rows.slice().sort((a, b) => b.revenue - a.revenue).slice(0, 10).map((r) => ({ name: r.name, revenue: Math.round(r.revenue), profit: Math.round(r.profit) })),
-    [rows],
-  );
-
-  const rank = (r: StaffSalesRow) => sorted.indexOf(r);
-
+  // Granular columns — drive the PRINT document and the Excel export.
   const columns: ReportColumn<StaffSalesRow>[] = [
+    { key: "name", header: "الموظف / الكاشير", sortKey: "name", cell: (r) => <span className="font-semibold text-ink">{r.name}</span>, printCell: (r) => r.name },
+    { key: "invoices", header: "الفواتير", sortKey: "invoices", align: "end", numeric: true, numFmt: "#,##0", excelValue: (r) => r.invoices, cell: (r) => <span className="tabular-nums">{formatNum(r.invoices)}</span>, printCell: (r) => formatNum(r.invoices) },
+    { key: "units", header: "الأصناف", sortKey: "units", align: "end", numeric: true, numFmt: "#,##0", excelValue: (r) => r.units, cell: (r) => <span className="tabular-nums">{formatNum(r.units)}</span>, printCell: (r) => formatNum(r.units) },
+    { key: "customers", header: "العملاء", sortKey: "customers", align: "end", numeric: true, numFmt: "#,##0", excelValue: (r) => r.customers, cell: (r) => <span className="tabular-nums">{formatNum(r.customers)}</span>, printCell: (r) => formatNum(r.customers) },
+    { key: "topItem", header: "الأكثر مبيعاً", cell: (r) => <span>{r.topItem}</span>, printCell: (r) => (r.topItemRev > 0 ? `${r.topItem} (${money(r.topItemRev)})` : r.topItem) },
+    { key: "avg", header: "متوسط الفاتورة", sortKey: "avg", align: "end", numeric: true, numFmt: "#,##0", excelValue: (r) => Math.round(r.avg), cell: (r) => <span className="tabular-nums">{money(r.avg)}</span>, printCell: (r) => money(r.avg) },
+    { key: "share", header: "الحصة %", align: "end", numeric: true, numFmt: "#,##0.0", excelValue: (r) => Number(r.share.toFixed(1)), cell: (r) => <span className="tabular-nums">{r.share.toFixed(1)}%</span>, printCell: (r) => `${r.share.toFixed(1)}%` },
+    { key: "revenue", header: "إجمالي المبيعات", sortKey: "revenue", align: "end", numeric: true, numFmt: "#,##0", excelValue: (r) => r.revenue, cell: (r) => <span className="font-bold tabular-nums">{money(r.revenue)}</span>, printCell: (r) => money(r.revenue) },
+  ];
+  if (canProfit) columns.push({ key: "profit", header: "صافي الربح", sortKey: "profit", align: "end", numeric: true, numFmt: "#,##0", excelValue: (r) => r.profit, cell: (r) => <span className="tabular-nums">{money(r.profit)}</span>, printCell: (r) => money(r.profit) });
+
+  // Composite on-screen columns — 4 rich cells that read like a leaderboard.
+  const screenColumns: ReportColumn<StaffSalesRow>[] = [
     {
       key: "name", header: "الموظف / الكاشير", sortKey: "name",
       cell: (r) => {
-        const i = rank(r);
-        const medal = sortKey === "revenue" && sortDir === "desc" && i < 3 ? ["🥇", "🥈", "🥉"][i] : null;
-        return <span className="flex items-center gap-1.5 font-semibold text-ink">{medal && <span>{medal}</span>}{r.name}</span>;
+        const rk = namedRank.get(r.id);
+        const medal = rk !== undefined && rk < 3 ? ["🥇", "🥈", "🥉"][rk] : null;
+        return (
+          <button onClick={() => { playTap(); setSel(r.id); }} className="group flex w-full items-center gap-2.5 text-start">
+            <StaffAvatar name={r.name} color={colorOf(r.id)} size={34} />
+            <span className="min-w-0">
+              <span className="flex items-center gap-1.5 font-semibold text-ink transition group-hover:text-brand-600">
+                {medal && <span className="shrink-0">{medal}</span>}
+                <span className="truncate">{r.name}</span>
+              </span>
+              <span className="mt-0.5 flex items-center gap-1 text-2xs text-ink-subtle"><Eye size={11} className="shrink-0" /> عرض التفاصيل</span>
+            </span>
+          </button>
+        );
       },
-      printCell: (r) => r.name,
     },
-    { key: "invoices", header: "عدد الفواتير", sortKey: "invoices", align: "end", numeric: true, numFmt: "#,##0", excelValue: (r) => r.invoices, cell: (r) => <span className="tabular-nums text-ink">{formatNum(r.invoices)}</span>, printCell: (r) => formatNum(r.invoices) },
-    { key: "units", header: "الأصناف المباعة", sortKey: "units", align: "end", numeric: true, numFmt: "#,##0", excelValue: (r) => r.units, cell: (r) => <span className="tabular-nums text-ink-muted">{formatNum(r.units)}</span>, printCell: (r) => formatNum(r.units) },
     {
-      key: "topItem", header: "الأكثر مبيعاً",
+      key: "perf", header: "الأداء", sortKey: "invoices",
       cell: (r) => (
-        <div className="min-w-0">
-          <p className="truncate text-ink" title={r.topItem}>{r.topItem}</p>
-          {r.topItemRev > 0 && <p className="text-2xs text-ink-subtle tabular-nums">{money(r.topItemRev)}</p>}
+        <div className="text-xs leading-relaxed text-ink-muted tabular-nums">
+          <p><b className="text-ink">{formatNum(r.invoices)}</b> فاتورة</p>
+          <p>{formatNum(r.units)} صنف · {formatNum(r.customers)} عميل</p>
         </div>
       ),
-      printCell: (r) => (r.topItemRev > 0 ? `${r.topItem} (${money(r.topItemRev)})` : r.topItem),
     },
-    { key: "avg", header: "متوسط الفاتورة", sortKey: "avg", align: "end", numeric: true, numFmt: "#,##0", excelValue: (r) => Math.round(r.avg), cell: (r) => <span className="tabular-nums text-ink-muted">{money(r.avg)}</span>, printCell: (r) => money(r.avg) },
-    { key: "revenue", header: "إجمالي المبيعات", sortKey: "revenue", align: "end", numeric: true, numFmt: "#,##0", excelValue: (r) => r.revenue, cell: (r) => <span className="font-bold tabular-nums text-ink">{money(r.revenue)}</span>, printCell: (r) => money(r.revenue) },
+    {
+      key: "top", header: "الأكثر مبيعاً",
+      cell: (r) => (
+        <div className="min-w-0 max-w-[200px]">
+          <p className="truncate text-ink" title={r.topItem}>{r.topItem}</p>
+          {r.topItemRev > 0 && <p className="text-2xs tabular-nums text-ink-subtle">{money(r.topItemRev)}</p>}
+        </div>
+      ),
+    },
+    {
+      key: "fin", header: "المالية", align: "end", sortKey: "revenue",
+      cell: (r) => (
+        <div className="min-w-[130px] text-end">
+          <p className="font-display font-extrabold tabular-nums text-ink">{money(r.revenue)}</p>
+          <div className="ms-auto mt-1 flex h-1 w-24 overflow-hidden rounded-full bg-surface-2">
+            <div className="h-full rounded-full bg-brand-500" style={{ width: `${Math.min(100, r.share)}%` }} />
+          </div>
+          <p className="mt-1 text-2xs tabular-nums text-ink-subtle">
+            متوسط {money(r.avg)}
+            {canProfit && <> · <span className={r.profit >= 0 ? "text-success-600" : "text-danger-600"}>{money(r.profit)}</span></>}
+          </p>
+        </div>
+      ),
+    },
   ];
-  if (canProfit) columns.push({ key: "profit", header: "صافي الربح", sortKey: "profit", align: "end", numeric: true, numFmt: "#,##0", excelValue: (r) => r.profit, cell: (r) => <span className={cn("font-semibold tabular-nums", r.profit >= 0 ? "text-success-600" : "text-danger-600")}>{money(r.profit)}</span>, printCell: (r) => money(r.profit) });
 
   const summaryMetrics: SummaryMetric[] = [
     { label: "عدد الموظفين", value: formatNum(totals.staff) },
@@ -1010,11 +1442,15 @@ function StaffSalesTab({ rows, canProfit }: { rows: StaffSalesRow[]; canProfit: 
     ...(canProfit ? [{ label: "صافي الربح", value: money(totals.profit) }] : []),
   ];
 
+  const hasTrend = trend.keys.length > 0 && trend.series.some((p) => trend.keys.some((k) => ((p[k.id] as number) ?? 0) > 0));
+
   return (
     <UniversalReportTable<StaffSalesRow>
       title="تقرير مبيعات الموظفين"
       clinicName={getClinicName()}
+      dateRangeLabel={rangeLabel}
       columns={columns}
+      screenColumns={screenColumns}
       data={sorted}
       rowKey={(r) => r.id}
       summaryMetrics={summaryMetrics}
@@ -1022,21 +1458,44 @@ function StaffSalesTab({ rows, canProfit }: { rows: StaffSalesRow[]; canProfit: 
       onSort={setSort}
       emptyText={rows.length === 0 ? "لا توجد مبيعات في هذه الفترة." : "لا يوجد موظف مطابق لبحثك."}
       exportFileName="doctorvet-staff-sales"
-      chart={
-        <Panel title="إجمالي المبيعات لكل موظف" icon={Users}>
-          {chartData.length === 0 ? <Empty text="لا توجد بيانات في هذه الفترة." /> : (
-            <ResponsiveContainer width="100%" height={Math.max(200, chartData.length * 42)}>
-              <BarChart data={chartData} layout="vertical" margin={{ top: 4, right: 12, left: 8, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" className="stroke-line" horizontal={false} />
-                <XAxis type="number" tick={{ fontSize: 11 }} stroke="currentColor" className="text-ink-subtle" tickFormatter={(v: number) => formatNum(v)} />
-                <YAxis type="category" dataKey="name" width={96} tick={{ fontSize: 11 }} stroke="currentColor" className="text-ink-subtle" />
-                <Tooltip formatter={(v: number) => money(v)} labelStyle={{ color: "#64748b" }} />
-                <Bar dataKey="revenue" name="المبيعات" fill="#2563eb" radius={[0, 4, 4, 0]} maxBarSize={26} />
-              </BarChart>
-            </ResponsiveContainer>
+      chart={rows.length > 0 ? (
+        <div className="space-y-4">
+          <StaffPodium rows={rows} colorOf={colorOf} onSelect={setSel} />
+          <StaffInsights rows={rows} />
+          <div className="grid gap-4 xl:grid-cols-5">
+            <div className="xl:col-span-2"><Panel title="توزيع حصص المبيعات" icon={Users}><StaffShareDonut rows={rows} colorOf={colorOf} /></Panel></div>
+            <div className="xl:col-span-3">
+              <Panel title="مبيعات الموظفين عبر الفترة" icon={TrendingUp}>
+                {!hasTrend ? <Empty text="لا توجد بيانات في هذه الفترة." /> : (
+                  <ResponsiveContainer width="100%" height={240}>
+                    <BarChart data={trend.series} margin={{ top: 4, right: 8, left: -8, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" className="stroke-line" vertical={false} />
+                      <XAxis dataKey="label" tick={{ fontSize: 11 }} stroke="currentColor" className="text-ink-subtle" />
+                      <YAxis tick={{ fontSize: 11 }} width={56} stroke="currentColor" className="text-ink-subtle" tickFormatter={(v: number) => formatNum(v)} />
+                      <Tooltip formatter={(v: number) => money(v)} labelStyle={{ color: "#64748b" }} />
+                      <Legend iconType="circle" wrapperStyle={{ fontSize: 12 }} />
+                      {trend.keys.map((k, i) => (
+                        <Bar key={k.id} dataKey={k.id} stackId="rev" name={k.name} maxBarSize={30}
+                          fill={colorOf(k.id)}
+                          radius={i === trend.keys.length - 1 ? [4, 4, 0, 0] : [0, 0, 0, 0]} />
+                      ))}
+                    </BarChart>
+                  </ResponsiveContainer>
+                )}
+              </Panel>
+            </div>
+          </div>
+          {selRow && (
+            <StaffDetailPanel
+              row={selRow}
+              color={colorOf(selRow.id)}
+              canProfit={canProfit}
+              onClose={() => setSel(null)}
+              panelRef={panelRef}
+            />
           )}
-        </Panel>
-      }
+        </div>
+      ) : undefined}
       toolbar={
         <div className="relative">
           <Search size={16} className="pointer-events-none absolute top-1/2 -translate-y-1/2 text-ink-subtle ltr:left-3 rtl:right-3" />
