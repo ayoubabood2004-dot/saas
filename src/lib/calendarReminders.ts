@@ -113,7 +113,7 @@ export function buildCalendarReminders(opts: {
   // 🎂 Birthdays — this year's and next year's occurrence (covers Dec→Jan ranges).
   const years = Array.from(new Set([Number(fromISO.slice(0, 4)), Number(toISO.slice(0, 4))]));
   for (const p of pets) {
-    if (!p.dob) continue;
+    if (!p.dob || p.deceased) continue; // never greet a deceased pet
     const birth = new Date(p.dob);
     if (Number.isNaN(birth.getTime())) continue;
     for (const yr of years) {

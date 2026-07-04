@@ -17,6 +17,8 @@ import { repo } from "@/lib/repo";
 import { getCached, setCached } from "@/lib/swrCache";
 import { buildCalendarReminders, occursOn, type CalReminder, type CalReminderKind } from "@/lib/calendarReminders";
 import { PetAvatar } from "@/components/PetAvatar";
+import { OutcomeDialog, type OutcomeTarget } from "@/components/OutcomeDialog";
+import { OUTCOME_META } from "@/lib/opsStatus";
 import { Button, useToast } from "@/components/ui";
 import { getDialCode, getClinicName } from "@/lib/settings";
 import { waNumber, phoneDigits } from "@/lib/phone";
@@ -124,6 +126,8 @@ export function Reception() {
   const [view, setView] = useState<"month" | "day">("day");
   const [cursor, setCursor] = useState(() => new Date());
   const [activeId, setActiveId] = useState<string | null>(null);
+  // Ask "عايش أم متوفى؟" right after a case is dropped on مكتملة.
+  const [outcomeFor, setOutcomeFor] = useState<OutcomeTarget | null>(null);
   const pets = ops.pets;
   const loading = !ops.hydrated;
 
@@ -264,6 +268,11 @@ export function Reception() {
       const target = overId.slice(4) as OpStatus;
       if (statusOf(adm) === target) return;
       void persist(id, patchForStatus(target, todayISO));
+      // Discharge → capture the outcome (عايش / متوفى) in one tap.
+      if (target === "done") {
+        const pet = pets[adm.pet_id];
+        if (pet) setOutcomeFor({ admissionId: id, pet });
+      }
     }
   };
 
@@ -428,6 +437,8 @@ export function Reception() {
           {activeAdm ? <OpCard adm={activeAdm} pet={pets[activeAdm.pet_id]} status={statusOf(activeAdm)} overlay /> : null}
         </DragOverlay>
       </DndContext>
+
+      <OutcomeDialog target={outcomeFor} onClose={() => setOutcomeFor(null)} />
     </div>
   );
 }
@@ -872,7 +883,14 @@ function OpCard({ adm, pet, status, overlay }: { adm: Admission; pet?: Pet; stat
         <span className={cn("h-2.5 w-2.5 shrink-0 rounded-full", m.dot)} />
       </div>
       <div className="mt-2 flex items-center justify-between gap-2">
-        <span className={cn("chip text-2xs font-semibold", m.chip)}>{t(m.key, m.def)}</span>
+        <span className="flex min-w-0 items-center gap-1">
+          <span className={cn("chip text-2xs font-semibold", m.chip)}>{t(m.key, m.def)}</span>
+          {status === "done" && adm.outcome && (
+            <span className={cn("chip shrink-0 text-2xs font-semibold", OUTCOME_META[adm.outcome].chip)}>
+              {OUTCOME_META[adm.outcome].emoji} {t(OUTCOME_META[adm.outcome].key, OUTCOME_META[adm.outcome].def)}
+            </span>
+          )}
+        </span>
         <span className="truncate text-2xs text-ink-subtle">{meta}</span>
       </div>
       {adm.reason && <p className="mt-1.5 truncate text-2xs text-ink-muted">{adm.reason}</p>}

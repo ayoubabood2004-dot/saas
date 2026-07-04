@@ -3,7 +3,8 @@ import { useTranslation } from "react-i18next";
 import { MapPin } from "lucide-react";
 import type { Pet } from "@/types";
 import { opsStore } from "@/lib/opsStore";
-import { COLUMN_ORDER, STATUS_META, statusOf, patchForStatus, currentAdmissionFor, type OpStatus } from "@/lib/opsStatus";
+import { COLUMN_ORDER, STATUS_META, OUTCOME_META, statusOf, patchForStatus, currentAdmissionFor, type OpStatus } from "@/lib/opsStatus";
+import { OutcomeDialog, type OutcomeTarget } from "@/components/OutcomeDialog";
 import { branchStore } from "@/lib/branchStore";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/components/ui";
@@ -30,6 +31,7 @@ export function ClinicPresenceBar({ pet }: { pet: Pet }) {
 
   const [ops, setOps] = useState(() => opsStore.get());
   const [busy, setBusy] = useState(false);
+  const [outcomeFor, setOutcomeFor] = useState<OutcomeTarget | null>(null);
   useEffect(() => {
     const unsub = opsStore.subscribe(() => setOps(opsStore.get()));
     void opsStore.hydrate(clinicId).catch(() => {});
@@ -51,6 +53,8 @@ export function ClinicPresenceBar({ pet }: { pet: Pet }) {
       if (inClinic && current) {
         // Move the live stay — identical semantics to the calendar's DnD.
         await opsStore.patch(current.id, patchForStatus(target, todayISO));
+        // Discharge → capture the outcome (عايش / متوفى) in one tap.
+        if (target === "done") setOutcomeFor({ admissionId: current.id, pet });
       } else {
         // Not in the clinic (never admitted, or last stay closed) → check in as a
         // NEW case today, on this device's branch. History stays intact.
@@ -89,6 +93,24 @@ export function ClinicPresenceBar({ pet }: { pet: Pet }) {
               ? t("presence.left", "غادر العيادة")
               : t("presence.notIn", "غير مسجّل في العيادة حالياً")}
         </span>
+        {currentStatus === "done" && current?.outcome && (
+          <span className={cn("chip text-2xs font-semibold", OUTCOME_META[current.outcome].chip)}>
+            {OUTCOME_META[current.outcome].emoji} {t(OUTCOME_META[current.outcome].key, OUTCOME_META[current.outcome].def)}
+          </span>
+        )}
+        {currentStatus === "done" && current && !current.outcome && (
+          <button
+            onClick={() => { playTap(); setOutcomeFor({ admissionId: current.id, pet }); }}
+            className="rounded-full border border-dashed border-line px-2.5 py-0.5 text-2xs font-semibold text-ink-subtle transition hover:border-brand-300 hover:text-brand-600"
+          >
+            {t("outcome.setNow", "عايش أم متوفى؟ حدد")}
+          </button>
+        )}
+        {pet.deceased && currentStatus !== "done" && (
+          <span className={cn("chip text-2xs font-semibold", OUTCOME_META.deceased.chip)}>
+            {OUTCOME_META.deceased.emoji} {t(OUTCOME_META.deceased.key, OUTCOME_META.deceased.def)}
+          </span>
+        )}
       </div>
 
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
@@ -121,6 +143,8 @@ export function ClinicPresenceBar({ pet }: { pet: Pet }) {
       <p className="mt-2 text-2xs text-ink-subtle">
         {t("presence.hint", "اختر حالة لنقل الحيوان — يتحدّث التقويم الرئيسي فوراً.")}
       </p>
+
+      <OutcomeDialog target={outcomeFor} onClose={() => setOutcomeFor(null)} />
     </section>
   );
 }

@@ -72,6 +72,8 @@ export interface Pet {
   species: Species;
   breed?: string;
   sex: Sex;
+  /** The animal has passed away — suppresses birthday greetings/reminders. */
+  deceased?: boolean;
   dob?: string | null; // ISO date
   microchip_id?: string;
   color?: string;
@@ -249,6 +251,8 @@ export interface Admission {
   /** Branch (location) inside the clinic. NULL always means the main branch —
    *  existing single-branch clinics never carry a value here. */
   branch_id?: string | null;
+  /** How the stay ended: recovered (عايش) or deceased (متوفى). NULL = unspecified. */
+  outcome?: "recovered" | "deceased" | null;
 }
 
 /** A physical location of the clinic. Purely organisational — the security

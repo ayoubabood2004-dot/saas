@@ -16,7 +16,7 @@ function upcomingBirthdays(pets: Pet[], windowDays = 7): BirthdayEntry[] {
   today.setHours(0, 0, 0, 0);
   const out: BirthdayEntry[] = [];
   for (const p of pets) {
-    if (!p.dob) continue;
+    if (!p.dob || p.deceased) continue; // never greet a deceased pet
     const birth = new Date(p.dob);
     if (Number.isNaN(birth.getTime())) continue;
     // The next occurrence of this month/day, this year or next.

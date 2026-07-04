@@ -74,6 +74,20 @@ export const STATUS_META: Record<OpStatus, {
   },
 };
 
+/** Presentation for a discharge outcome (عايش / متوفى). */
+export const OUTCOME_META: Record<"recovered" | "deceased", { key: string; def: string; chip: string; emoji: string }> = {
+  recovered: {
+    key: "outcome.recoveredChip", def: "تعافى",
+    chip: "bg-success-100 text-success-700 dark:bg-success-500/20 dark:text-success-300",
+    emoji: "💚",
+  },
+  deceased: {
+    key: "outcome.deceasedChip", def: "متوفى",
+    chip: "bg-surface-3 text-ink-muted dark:bg-surface-2 dark:text-ink-subtle",
+    emoji: "🖤",
+  },
+};
+
 /** The pet's CURRENT admission for presence purposes: its newest row — an active
  *  one means the pet is in the clinic; a discharged one means it has left. */
 export function currentAdmissionFor(petId: string, admissions: Admission[]): Admission | null {

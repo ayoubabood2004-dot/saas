@@ -1487,5 +1487,18 @@
     "left": "Left the clinic",
     "hint": "Pick a status to move the animal — the master calendar updates instantly.",
     "updateFail": "Couldn't update the animal's location — try again."
+  },
+  "outcome": {
+    "title": "How did {{name}} leave?",
+    "sub": "Record how the case ended — shown on the card and in the log.",
+    "recovered": "Alive — recovered",
+    "recoveredSub": "Left the clinic in good health",
+    "deceased": "Deceased",
+    "deceasedSub": "Birthday greetings stop automatically",
+    "later": "Decide later",
+    "setNow": "Alive or deceased? Set it",
+    "saveFail": "Couldn't save the outcome — try again.",
+    "recoveredChip": "Recovered",
+    "deceasedChip": "Deceased"
   }
 }
