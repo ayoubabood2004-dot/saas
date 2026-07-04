@@ -1149,7 +1149,9 @@
     "pickDayHint": "to see its reminders and cases",
     "reminderPlaceholder": "Reminder title…",
     "remindersSection": "Reminders",
-    "whatsapp": "WhatsApp"
+    "whatsapp": "WhatsApp",
+    "searchPh": "Search: pet name, number, owner name or phone…",
+    "searchCount": "{{n}} results"
   },
   "triage": {
     "1": "Critical",
@@ -1478,5 +1480,12 @@
   "clinicSync": {
     "saveFail": "Couldn't save to the cloud",
     "savedLocal": "Saved on this device — we'll retry syncing later."
+  },
+  "presence": {
+    "title": "Current location in the clinic",
+    "notIn": "Not currently checked in",
+    "left": "Left the clinic",
+    "hint": "Pick a status to move the animal — the master calendar updates instantly.",
+    "updateFail": "Couldn't update the animal's location — try again."
   }
 }

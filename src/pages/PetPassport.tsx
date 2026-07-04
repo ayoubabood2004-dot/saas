@@ -16,6 +16,7 @@ import { repo } from "@/lib/repo";
 import { persistMedicalEntries } from "@/lib/medSync";
 import { PetAvatar } from "@/components/PetAvatar";
 import { OwnerCard } from "@/components/OwnerCard";
+import { ClinicPresenceBar } from "@/components/ClinicPresenceBar";
 import { UnifiedMedicalRecord, localTs, isoTs, vaccinationTs } from "@/components/UnifiedMedicalRecord";
 import { UpcomingEvents } from "@/components/UpcomingEvents";
 import { buildUpcomingEvents } from "@/lib/events";
@@ -355,6 +356,10 @@ export function PetPassport() {
           <div className="p-5 sm:p-6"><IdentityFactsCard pet={pet} canEdit={canEditClinical || isOwner} onChanged={reload} bare /></div>
         </div>
       </section>
+
+      {/* Where is this animal inside the clinic RIGHT NOW — reads and writes the
+          same shared ops store as the التقويم الرئيسي, so both stay in lockstep. */}
+      {canEditClinical && <ClinicPresenceBar pet={pet} />}
 
       {/* ② Maximized clinical canvas — the tab bar + content span the FULL width. */}
       <section className="mt-6">

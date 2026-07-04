@@ -6,11 +6,12 @@ import {
   useDraggable, useDroppable, pointerWithin, type DragStartEvent, type DragEndEvent,
 } from "@dnd-kit/core";
 import {
-  CalendarDays, Stethoscope, BedDouble, LogOut, Plus, HeartPulse,
+  CalendarDays, Stethoscope, Plus, HeartPulse, Search,
   ChevronRight, ChevronLeft, LayoutGrid, Columns3, GripVertical, Syringe, Bug, Cake, Bell, X, Check, MessageCircle,
 } from "lucide-react";
 import type { Admission, Pet, Vaccination, Reminder, VaccinationStatus } from "@/types";
 import { opsStore } from "@/lib/opsStore";
+import { COLUMN_ORDER, STATUS_META, statusOf, patchForStatus, type OpStatus } from "@/lib/opsStatus";
 import { matchesBranch, useBranchState } from "@/lib/branchStore";
 import { repo } from "@/lib/repo";
 import { getCached, setCached } from "@/lib/swrCache";
@@ -18,7 +19,8 @@ import { buildCalendarReminders, occursOn, type CalReminder, type CalReminderKin
 import { PetAvatar } from "@/components/PetAvatar";
 import { Button, useToast } from "@/components/ui";
 import { getDialCode, getClinicName } from "@/lib/settings";
-import { waNumber } from "@/lib/phone";
+import { waNumber, phoneDigits } from "@/lib/phone";
+import { normalizeDigits } from "@/lib/digits";
 import { cn, localISO, dateLocale } from "@/lib/utils";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
 import { useAuth } from "@/contexts/AuthContext";
@@ -35,48 +37,6 @@ import { useAuth } from "@/contexts/AuthContext";
  * pet's unified medical record (الطبلة). RTL-first, premium status colours.
  * ==========================================================================*/
 
-type OpStatus = "care" | "careBoarding" | "boarding" | "done";
-
-/** The kanban columns, in reading order (RTL flips them visually). */
-const COLUMN_ORDER: OpStatus[] = ["care", "careBoarding", "boarding", "done"];
-
-const STATUS_META: Record<OpStatus, {
-  key: string; def: string; icon: typeof Stethoscope;
-  head: string; dot: string; card: string; over: string; chip: string;
-}> = {
-  care: {
-    key: "reception.care", def: "تحت الرعاية الطبية", icon: Stethoscope,
-    head: "bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-200",
-    dot: "bg-amber-500",
-    card: "border-amber-200 bg-amber-50/70 dark:border-amber-500/30 dark:bg-amber-500/10",
-    over: "ring-amber-400/70 bg-amber-50/80 dark:bg-amber-500/10",
-    chip: "bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-200",
-  },
-  careBoarding: {
-    key: "reception.careBoarding", def: "الفندقة العلاجية", icon: HeartPulse,
-    head: "bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-200",
-    dot: "bg-rose-500",
-    card: "border-rose-200 bg-rose-50/70 dark:border-rose-500/30 dark:bg-rose-500/10",
-    over: "ring-rose-400/70 bg-rose-50/80 dark:bg-rose-500/10",
-    chip: "bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-200",
-  },
-  boarding: {
-    key: "reception.boarding", def: "الفندقة", icon: BedDouble,
-    head: "bg-sky-100 text-sky-700 dark:bg-sky-500/20 dark:text-sky-200",
-    dot: "bg-sky-500",
-    card: "border-sky-200 bg-sky-50/70 dark:border-sky-500/30 dark:bg-sky-500/10",
-    over: "ring-sky-400/70 bg-sky-50/80 dark:bg-sky-500/10",
-    chip: "bg-sky-100 text-sky-700 dark:bg-sky-500/20 dark:text-sky-200",
-  },
-  done: {
-    key: "reception.doneLeft", def: "مكتملة / غادرت", icon: LogOut,
-    head: "bg-success-100 text-success-700 dark:bg-success-500/20 dark:text-success-200",
-    dot: "bg-success-500",
-    card: "border-success-200 bg-success-50/60 dark:border-success-500/30 dark:bg-success-500/10",
-    over: "ring-success-400/70 bg-success-50/80 dark:bg-success-500/10",
-    chip: "bg-success-100 text-success-700 dark:bg-success-500/20 dark:text-success-200",
-  },
-};
 
 /** Reminder kinds plotted on the month grid — each its own colour + icon so a
  *  glance tells you what's coming (تطعيم / ديدان / عيد ميلاد / تذكير). */
@@ -173,12 +133,31 @@ export function Reception() {
   // cases (rows with branch_id NULL belong to the main branch). "كل الفروع" —
   // and every single-branch clinic — sees everything, exactly as before.
   const { branches, active: activeBranch } = useBranchState(clinicId);
-  const admissions = useMemo(
+  const branchAdmissions = useMemo(
     () => (activeBranch === "all" || branches.length < 2
       ? ops.admissions
       : ops.admissions.filter((a) => matchesBranch(a.branch_id, activeBranch, branches))),
     [ops.admissions, activeBranch, branches],
   );
+
+  // Find a specific animal instantly — by its name, serial / microchip number,
+  // or the owner's name / phone. Filters every view (kanban, month, stats) live.
+  const [search, setSearch] = useState("");
+  const admissions = useMemo(() => {
+    const q = normalizeDigits(search.trim().toLowerCase());
+    if (!q) return branchAdmissions;
+    const qDigits = q.replace(/\D/g, "");
+    return branchAdmissions.filter((a) => {
+      const p = pets[a.pet_id];
+      if (!p) return false;
+      if (p.name?.toLowerCase().includes(q)) return true;
+      if (p.owner_name?.toLowerCase().includes(q)) return true;
+      if ((p.serial ?? "").toLowerCase().includes(q)) return true;
+      if ((p.microchip_id ?? "").toLowerCase().includes(q)) return true;
+      if (qDigits && phoneDigits(p.owner_phone ?? "").includes(qDigits)) return true;
+      return false;
+    });
+  }, [branchAdmissions, search, pets]);
 
   useEffect(() => {
     const unsub = opsStore.subscribe(() => setOps(opsStore.get()));
@@ -206,13 +185,6 @@ export function Reception() {
     repo.listAllVaccinations(ids).then((v) => { if (alive) { setVaccinations(v); setCached(`recVax:${clinicId ?? "x"}`, v); } }).catch(() => {});
     return () => { alive = false; };
   }, [petIdsKey, clinicId]);
-
-  const statusOf = (a: Admission): OpStatus => {
-    if (a.status === "discharged") return "done";
-    if (a.kind === "treatment") return "care";
-    if (a.kind === "treatment_boarding") return "careBoarding";
-    return "boarding";
-  };
 
   const byStatus = useMemo(() => {
     const m: Record<OpStatus, Admission[]> = { care: [], careBoarding: [], boarding: [], done: [] };
@@ -264,15 +236,6 @@ export function Reception() {
     useSensor(TouchSensor, { activationConstraint: { delay: 180, tolerance: 8 } }),
   );
 
-  const patchForStatus = (target: OpStatus): Partial<Admission> => {
-    switch (target) {
-      case "care": return { kind: "treatment", status: "active", discharged_on: null };
-      case "careBoarding": return { kind: "treatment_boarding", status: "active", admitted_on: todayISO, discharged_on: null };
-      case "boarding": return { kind: "boarding", status: "active", admitted_on: todayISO, discharged_on: null };
-      case "done": return { status: "discharged", discharged_on: todayISO };
-    }
-  };
-
   // Drag drop → the shared store patches optimistically (instant), persists in the
   // background and reverts the row on failure; we just add the tap/success/error cues.
   const persist = async (id: string, patch: Partial<Admission>) => {
@@ -300,7 +263,7 @@ export function Reception() {
     if (overId.startsWith("col:")) {
       const target = overId.slice(4) as OpStatus;
       if (statusOf(adm) === target) return;
-      void persist(id, patchForStatus(target));
+      void persist(id, patchForStatus(target, todayISO));
     }
   };
 
@@ -410,6 +373,27 @@ export function Reception() {
         <Button size="sm" leftIcon={<Plus size={16} />} onClick={() => { playTap(); navigate("/new-case"); }}>
           {t("newCase.newCaseBtn")}
         </Button>
+      </div>
+
+      {/* Find an animal — name, serial/microchip number, owner name or phone. */}
+      <div className="relative mb-4">
+        <Search size={17} className="pointer-events-none absolute top-1/2 -translate-y-1/2 text-ink-subtle ltr:left-3.5 rtl:right-3.5" />
+        <input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder={t("reception.searchPh", "ابحث: اسم الحيوان، رقمه، اسم المالك أو هاتفه…")}
+          className="input h-11 w-full ps-10 pe-24 text-sm"
+        />
+        {search.trim() && (
+          <span className="absolute top-1/2 flex -translate-y-1/2 items-center gap-1.5 ltr:right-2 rtl:left-2">
+            <span className="rounded-full bg-brand-50 px-2 py-0.5 text-2xs font-bold tabular-nums text-brand-700 dark:bg-brand-500/15 dark:text-brand-300">
+              {t("reception.searchCount", { n: admissions.length, defaultValue: "{{n}} نتيجة" })}
+            </span>
+            <button onClick={() => { playTap(); setSearch(""); }} aria-label={t("common.close", "إغلاق")} className="grid h-7 w-7 place-items-center rounded-full text-ink-subtle transition hover:bg-surface-2 hover:text-ink">
+              <X size={14} />
+            </button>
+          </span>
+        )}
       </div>
 
       {/* Status summary strip */}
