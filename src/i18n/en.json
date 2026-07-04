@@ -281,7 +281,13 @@
     "enterSalePriceDesc": "Set a positive price before adding to the cart.",
     "priceAndQty": "Sale price & quantity",
     "unitPrice": "Unit price",
-    "addToCart": "Add to cart"
+    "addToCart": "Add to cart",
+    "saleFor": "Sale for",
+    "addAnotherPet": "Another pet",
+    "activePetHint": "New meds/vaccines are recorded on the highlighted pet",
+    "petSearchPh": "Search by pet or owner name…",
+    "noMorePets": "No other matching pets.",
+    "sameOwner": "Same owner"
   },
   "promos": {
     "title": "Offers management",

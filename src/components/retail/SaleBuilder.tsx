@@ -6,8 +6,9 @@ import {
   Banknote, CreditCard, ArrowLeftRight, CheckCircle2, Printer, Sparkles, TrendingUp, Package, PawPrint, X,
   Stethoscope, Pencil, Pill, Syringe, CalendarClock, Wallet,
 } from "lucide-react";
-import type { Product, Invoice, InvoiceItem, CheckoutItem, SaleMeta, PaymentMethod, PaymentSplit, DiscountType, Customer, Service, ServiceCatalog, Species } from "@/types";
+import type { Product, Invoice, InvoiceItem, CheckoutItem, SaleMeta, PaymentMethod, PaymentSplit, DiscountType, Customer, Service, ServiceCatalog, Species, Pet } from "@/types";
 import { repo, resolveDiscount } from "@/lib/repo";
+import { phoneDigits } from "@/lib/phone";
 import { getServiceCatalog } from "@/lib/services";
 import { computePromotions, getPromoRules } from "@/lib/promotions";
 import { useBarcodeScanner } from "@/hooks/useBarcodeScanner";
@@ -41,6 +42,10 @@ interface Line {
   subcategory: string | null; // product subcategory, for Mix & Match promotions
   /** Medical draft for a "med" line — synced into the patient's record on checkout. */
   med?: MedicalDraft;
+  /** Which patient this line belongs to — a multi-pet sale bills several animals on
+   *  ONE invoice, and each med line syncs into ITS OWN pet's medical record. */
+  petId?: string | null;
+  petName?: string | null;
   /** Fractional sales — this product can be sold whole (box) or by a smaller sub-unit. */
   hasSubUnit?: boolean;
   subUnitName?: string | null;   // e.g. "حبة" / "شريط" / "مل"
@@ -78,6 +83,11 @@ const prettyShort = (iso: string) => {
  *  petId + species are carried so a sold medication/vaccine can sync into the record. */
 export interface RetailPrefill { name: string; phone: string; pet: string; petId?: string; species?: Species }
 
+/** A patient attached to the sale. Several can be attached (e.g. vaccinating all the
+ *  owner's animals in one visit) — one is ACTIVE at a time: new medication/vaccine
+ *  lines belong to it and the vaccine list follows its species. */
+interface SalePet { id: string | null; name: string; species: Species | null }
+
 export function SaleBuilder({ products, clinicId, onSold, prefill }: { products: Product[]; clinicId?: string; onSold: () => void; prefill?: RetailPrefill | null }) {
   const { t } = useTranslation();
   const toast = useToast();
@@ -92,10 +102,15 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
   const [query, setQuery] = useState("");
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
-  const [petContext, setPetContext] = useState<string | null>(null);
-  // Patient identity for the medical-record sync (only when the sale is for a known pet).
-  const [petId, setPetId] = useState<string | null>(null);
-  const [petSpecies, setPetSpecies] = useState<Species | null>(null);
+  // Patients attached to this sale. The ACTIVE one receives new medication/vaccine
+  // lines; more of the owner's animals can be attached to vaccinate them in one visit.
+  const [salePets, setSalePets] = useState<SalePet[]>([]);
+  const [activePetIdx, setActivePetIdx] = useState(0);
+  const activePet: SalePet | null = salePets[Math.min(activePetIdx, salePets.length - 1)] ?? null;
+  // "+ حيوان آخر" picker: the clinic's pets, owner's animals surfaced first.
+  const [petPickOpen, setPetPickOpen] = useState(false);
+  const [petPickAll, setPetPickAll] = useState<Pet[] | null>(null); // null = loading
+  const [petPickQ, setPetPickQ] = useState("");
   const searchRef = useRef<HTMLInputElement>(null);
   const [custMatches, setCustMatches] = useState<Customer[]>([]);
   const [custOpen, setCustOpen] = useState(false);
@@ -176,7 +191,8 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
   const addMedLine = (draft: MedicalDraft, price: number, qty: number) => {
     const id = `m:${draft.id}`; // each draft has a unique uid → always a fresh line
     const unit_price = Math.max(0, Math.round(price * 100) / 100); // same rounding as setPrice
-    setCart((c) => [...c, { id, kind: "med", name: draft.name, barcode: null, unit_price, unit_cost: 0, qty: Math.max(1, qty), stock: null, product_id: null, subcategory: null, med: draft }]);
+    // The line belongs to the ACTIVE patient — its record receives the sync on checkout.
+    setCart((c) => [...c, { id, kind: "med", name: draft.name, barcode: null, unit_price, unit_cost: 0, qty: Math.max(1, qty), stock: null, product_id: null, subcategory: null, med: draft, petId: activePet?.id ?? null, petName: activePet?.name ?? null }]);
     playSuccess();
     flashLine(id);
   };
@@ -204,9 +220,8 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
     if (!prefill) return;
     if (prefill.name) setName(prefill.name);
     if (prefill.phone) setPhone(prefill.phone);
-    setPetContext(prefill.pet || null);
-    setPetId(prefill.petId || null);
-    setPetSpecies(prefill.species || null);
+    setSalePets(prefill.pet ? [{ id: prefill.petId || null, name: prefill.pet, species: prefill.species || null }] : []);
+    setActivePetIdx(0);
     setDone(null);
     const id = window.setTimeout(() => searchRef.current?.focus(), 160);
     return () => window.clearTimeout(id);
@@ -344,11 +359,51 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
     // sales keep syncing into the same animal's record; clear it for a plain walk-in.
     if (prefill) {
       setName(prefill.name || ""); setPhone(prefill.phone || "");
-      setPetContext(prefill.pet || null); setPetId(prefill.petId || null); setPetSpecies(prefill.species || null);
+      setSalePets(prefill.pet ? [{ id: prefill.petId || null, name: prefill.pet, species: prefill.species || null }] : []);
     } else {
-      setName(""); setPhone(""); setPetContext(null); setPetId(null); setPetSpecies(null);
+      setName(""); setPhone(""); setSalePets([]);
     }
+    setActivePetIdx(0); setPetPickOpen(false); setPetPickQ("");
   };
+
+  // ---- "+ حيوان آخر" — attach another of the clinic's patients to this sale ----
+  const openPetPicker = async () => {
+    playTap();
+    setPetPickOpen((o) => !o);
+    if (petPickAll) return; // already loaded this session
+    try { setPetPickAll((await repo.listAllPets(clinicId)).filter((p) => p.shared_with_clinic !== false)); }
+    catch { setPetPickAll([]); }
+  };
+  const attachPet = (p: Pet) => {
+    playSuccess();
+    setSalePets((s) => [...s, { id: p.id, name: p.name, species: p.species ?? null }]);
+    setActivePetIdx(salePets.length); // the newly appended pet becomes active
+    setPetPickOpen(false); setPetPickQ("");
+    // First attachment for a walk-in: adopt the owner as the invoice customer too.
+    if (!name.trim() && p.owner_name) setName(p.owner_name);
+    if (!phone.trim() && p.owner_phone) setPhone(p.owner_phone);
+  };
+  const removePet = (idx: number) => {
+    playTap();
+    setSalePets((s) => s.filter((_, i) => i !== idx));
+    setActivePetIdx((a) => Math.max(0, a > idx ? a - 1 : Math.min(a, salePets.length - 2)));
+  };
+  // Owner's other animals float to the top; the search box covers every patient.
+  const petPickList = useMemo(() => {
+    if (!petPickAll) return [];
+    const attached = new Set(salePets.map((p) => p.id).filter(Boolean));
+    const nd = phoneDigits(phone);
+    const nm = name.trim().toLowerCase();
+    const q = petPickQ.trim().toLowerCase();
+    const pool = petPickAll.filter((p) => !attached.has(p.id));
+    const isOwners = (p: Pet) =>
+      (!!nd && phoneDigits(p.owner_phone ?? "") === nd) || (!!nm && (p.owner_name ?? "").trim().toLowerCase() === nm);
+    const filtered = q
+      ? pool.filter((p) => p.name.toLowerCase().includes(q) || (p.owner_name ?? "").toLowerCase().includes(q))
+      : pool;
+    return [...filtered.filter(isOwners), ...filtered.filter((p) => !isOwners(p))].slice(0, 8)
+      .map((p) => ({ pet: p, owners: isOwners(p) }));
+  }, [petPickAll, salePets, phone, name, petPickQ]);
 
   const checkout = async () => {
     if (cart.length === 0 || busy) return;
@@ -386,10 +441,12 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
       }
       const paidToday = round2(legs.reduce((s, p) => s + p.amount, 0)); // = min(total, tendered)
       const primary: PaymentMethod | null = legs.length ? legs.reduce((best, p) => (p.amount > best.amount ? p : best), legs[0]).method : null;
+      // Every attached patient goes on the invoice (prints under "الحيوان: …").
+      const petNames = Array.from(new Set(salePets.map((p) => p.name.trim()).filter(Boolean)));
       const meta: SaleMeta = {
         customer_name: name.trim() || null,
         customer_phone: phone.trim() || null,
-        pet_name: petContext?.trim() || null,
+        pet_name: petNames.length ? petNames.join(" + ") : null,
         // The client computes the authoritative final price (promotions + manual discount
         // + any manual final-price override, which may be a markup); the server records it.
         final_total: total,
@@ -399,11 +456,18 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
         staff_id: cashierId,
       };
       const invoice = await withTimeout(repo.retailCheckout(items, meta), 12000);
-      const medDrafts = cart.filter((l) => l.kind === "med" && l.med).map((l) => l.med!);
+      // Med lines grouped per patient — each pet's record gets ITS OWN entries.
+      const medByPet = new Map<string, MedicalDraft[]>();
+      for (const l of cart) {
+        if (l.kind !== "med" || !l.med || !l.petId) continue;
+        const arr = medByPet.get(l.petId) ?? []; arr.push(l.med); medByPet.set(l.petId, arr);
+      }
       // Snapshot the lines for instant printing (services + products, with overrides).
+      // With several pets on one bill, each med line is labelled with its animal.
+      const multiPet = petNames.length > 1;
       const invItems: InvoiceItem[] = cart.map((l) => ({
         id: `tmp-${l.id}`, invoice_id: invoice.id, clinic_id: clinicId ?? null,
-        product_id: l.product_id, name: l.name, barcode: l.barcode,
+        product_id: l.product_id, name: multiPet && l.petName ? `${l.name} — ${l.petName}` : l.name, barcode: l.barcode,
         qty: l.qty, unit_price: l.unit_price, unit_cost: l.unit_cost, line_total: l.qty * l.unit_price,
         unit_label: l.kind === "product" && l.hasSubUnit ? (l.saleUnit === "sub" ? (l.subUnitName || t("retail.unitSingle")) : t("retail.unitBox")) : null,
       }));
@@ -413,12 +477,16 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
       // the receipt/print UI even if Supabase stalls mid-flow.
       setDone({ invoice, items: invItems });
       onSold();
-      // When the sale is for a known patient, mirror any medication/vaccine lines into
-      // the animal's record — administered dose, scheduled booster (→ reminders),
-      // treatment-sheet rows — exactly as if entered from the record.
-      if (petId && medDrafts.length) {
-        try { await withTimeout(persistMedicalEntries(petId, user?.full_name, medDrafts), 12000); }
-        catch (e) { toast.error(t("retail.medSyncFailed", "تم تسجيل البيع، لكن تعذّر تحديث السجل الطبي للحيوان"), e instanceof Error ? e.message : undefined); }
+      // Mirror medication/vaccine lines into each known patient's record —
+      // administered dose, scheduled booster (→ reminders), treatment-sheet rows —
+      // exactly as if entered from the record. One call per pet on the bill.
+      if (medByPet.size) {
+        try {
+          await withTimeout(
+            Promise.all(Array.from(medByPet, ([pid, drafts]) => persistMedicalEntries(pid, user?.full_name, drafts))),
+            12000,
+          );
+        } catch (e) { toast.error(t("retail.medSyncFailed", "تم تسجيل البيع، لكن تعذّر تحديث السجل الطبي للحيوان"), e instanceof Error ? e.message : undefined); }
       }
     } catch (e) {
       playWarning();
@@ -444,9 +512,10 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
             <div className="flex items-end justify-center gap-2">
               <span className="font-display text-4xl font-extrabold text-ink tabular-nums">{money(done.invoice.total)}</span>
             </div>
-            <div className="flex items-center justify-center gap-4 text-sm text-ink-muted">
+            <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-sm text-ink-muted">
               <span className="flex items-center gap-1 text-success-600"><TrendingUp size={14} /> {t("retail.profit", "Profit")} {money(done.invoice.profit)}</span>
               {done.invoice.customer_name && <span className="flex items-center gap-1"><User size={14} /> {done.invoice.customer_name}</span>}
+              {done.invoice.pet_name && <span className="flex items-center gap-1"><PawPrint size={14} /> {done.invoice.pet_name}</span>}
             </div>
             {dueOf(done.invoice) > 0.01 && (
               <div className="rounded-xl border border-warn-200 bg-warn-50 px-3 py-2 text-sm dark:border-warn-500/30 dark:bg-warn-500/10">
@@ -480,13 +549,88 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
     <div className="grid gap-4 lg:grid-cols-[1fr,380px]">
       {/* LEFT — customer + products/services */}
       <div className="space-y-4">
-        {/* Bridge context — which animal this sale is for (from the medical record) */}
-        {petContext && (
+        {/* Bridge context — which animal(s) this sale is for. Several of the owner's
+            pets can be attached; the highlighted one receives new med/vaccine lines. */}
+        {salePets.length > 0 && (
           <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}
-            className="flex items-center gap-2.5 rounded-2xl border border-brand-200 bg-brand-50 px-3.5 py-2.5 text-sm dark:border-brand-500/30 dark:bg-brand-500/10">
-            <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-brand-600 text-white"><PawPrint size={15} /></span>
-            <span className="flex-1 font-medium text-brand-800 dark:text-brand-200">{t("retail.saleForPet", { pet: petContext, defaultValue: "Sale for {{pet}}" })}</span>
-            <button onClick={() => { setPetContext(null); setPetId(null); setPetSpecies(null); }} aria-label={t("common.dismiss", "Dismiss")} className="grid h-6 w-6 place-items-center rounded-full text-brand-700/70 transition hover:bg-brand-100 dark:text-brand-300 dark:hover:bg-brand-500/20"><X size={14} /></button>
+            className="relative rounded-2xl border border-brand-200 bg-brand-50 px-3.5 py-2.5 text-sm dark:border-brand-500/30 dark:bg-brand-500/10">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-brand-600 text-white"><PawPrint size={15} /></span>
+              <span className="font-medium text-brand-800 dark:text-brand-200">{t("retail.saleFor", "البيع لـ")}</span>
+              {salePets.map((p, i) => {
+                const active = i === Math.min(activePetIdx, salePets.length - 1);
+                return (
+                  <span
+                    key={(p.id ?? "x") + i}
+                    className={cn(
+                      "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-bold transition",
+                      active
+                        ? "border-transparent bg-brand-600 text-white shadow-soft"
+                        : "border-brand-300/60 bg-surface-1 text-brand-700 hover:bg-brand-100 dark:text-brand-300 dark:hover:bg-brand-500/20",
+                    )}
+                  >
+                    <button onClick={() => { playTap(); setActivePetIdx(i); }} className="inline-flex items-center gap-1">
+                      <PawPrint size={11} /> {p.name}
+                    </button>
+                    {salePets.length > 1 && (
+                      <button onClick={() => removePet(i)} aria-label={t("common.remove", "إزالة")} className={cn("grid h-4 w-4 place-items-center rounded-full transition", active ? "hover:bg-white/25" : "hover:bg-brand-200/60 dark:hover:bg-brand-500/30")}>
+                        <X size={10} />
+                      </button>
+                    )}
+                  </span>
+                );
+              })}
+              <button
+                onClick={() => void openPetPicker()}
+                className="inline-flex items-center gap-1 rounded-full border border-dashed border-brand-400/70 px-2.5 py-1 text-xs font-bold text-brand-700 transition hover:bg-brand-100 dark:text-brand-300 dark:hover:bg-brand-500/20"
+              >
+                <Plus size={12} /> {t("retail.addAnotherPet", "حيوان آخر")}
+              </button>
+              {salePets.length > 1 && (
+                <span className="text-2xs text-brand-700/70 dark:text-brand-300/70">{t("retail.activePetHint", "الأدوية واللقاحات الجديدة تُسجَّل على المحدد")}</span>
+              )}
+              <button onClick={() => { setSalePets([]); setPetPickOpen(false); }} aria-label={t("common.dismiss", "Dismiss")} className="ms-auto grid h-6 w-6 shrink-0 place-items-center rounded-full text-brand-700/70 transition hover:bg-brand-100 dark:text-brand-300 dark:hover:bg-brand-500/20"><X size={14} /></button>
+            </div>
+
+            {/* Owner's other animals first; the search covers every patient in the clinic */}
+            {petPickOpen && (
+              <div className="mt-2.5 rounded-xl border border-line bg-surface-1 p-2 shadow-raised">
+                <div className="relative mb-1.5">
+                  <Search size={13} className="pointer-events-none absolute top-1/2 -translate-y-1/2 text-ink-subtle ltr:left-2.5 rtl:right-2.5" />
+                  <input
+                    className="w-full rounded-lg bg-surface-2 py-1.5 text-xs text-ink outline-none placeholder:text-ink-subtle ltr:pl-8 ltr:pr-2 rtl:pr-8 rtl:pl-2"
+                    value={petPickQ} onChange={(e) => setPetPickQ(e.target.value)}
+                    placeholder={t("retail.petSearchPh", "ابحث باسم الحيوان أو المالك…")}
+                  />
+                </div>
+                {petPickAll === null ? (
+                  <p className="px-2 py-3 text-center text-xs text-ink-subtle">{t("common.loading", "جارٍ التحميل…")}</p>
+                ) : petPickList.length === 0 ? (
+                  <p className="px-2 py-3 text-center text-xs text-ink-subtle">{t("retail.noMorePets", "لا توجد حيوانات أخرى مطابقة.")}</p>
+                ) : (
+                  <div className="max-h-52 space-y-0.5 overflow-y-auto">
+                    {petPickList.map(({ pet: p, owners }) => (
+                      <button
+                        key={p.id}
+                        onClick={() => attachPet(p)}
+                        className="flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-start transition hover:bg-surface-2"
+                      >
+                        <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-brand-50 text-brand-600 dark:bg-brand-500/15 dark:text-brand-300"><PawPrint size={13} /></span>
+                        <span className="min-w-0 flex-1">
+                          <span className="flex items-center gap-1.5 text-xs font-bold text-ink">
+                            {p.name}
+                            <span className="font-normal text-ink-subtle">· {t(`pet.species.${p.species}`, p.species)}</span>
+                            {owners && <span className="chip bg-success-50 text-[10px] font-semibold text-success-700 dark:bg-success-500/15 dark:text-success-300">{t("retail.sameOwner", "نفس المالك")}</span>}
+                          </span>
+                          {p.owner_name && <span className="block truncate text-2xs text-ink-subtle">{p.owner_name}</span>}
+                        </span>
+                        <Plus size={13} className="shrink-0 text-brand-600" />
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </motion.div>
         )}
         {/* Customer */}
@@ -601,7 +745,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
         ) : browseTab === "services" ? (
           <ServiceQuickSelect catalog={catalog} onPick={addService} flashId={flash} />
         ) : (
-          <MedSaleForm species={petSpecies ?? undefined} onAddLine={addMedLine} />
+          <MedSaleForm species={activePet?.species ?? undefined} onAddLine={addMedLine} />
         )}
       </div>
 
@@ -629,6 +773,9 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
                           l.med?.kind === "vaccination"
                             ? <span className="chip shrink-0 bg-success-50 text-2xs font-medium text-success-700 dark:bg-success-500/15 dark:text-success-200"><Syringe size={10} className="me-0.5 inline" />{t("retail.vaccine", "لقاح")}</span>
                             : <span className="chip shrink-0 bg-brand-50 text-2xs font-medium text-brand-700 dark:bg-brand-500/15 dark:text-brand-300"><Pill size={10} className="me-0.5 inline" />{t("retail.medication", "دواء")}</span>
+                        )}
+                        {l.kind === "med" && l.petName && (
+                          <span className="chip shrink-0 bg-surface-2 text-2xs font-medium text-ink-muted"><PawPrint size={10} className="me-0.5 inline" />{l.petName}</span>
                         )}
                       </p>
                       {l.kind === "med" && l.med && (
