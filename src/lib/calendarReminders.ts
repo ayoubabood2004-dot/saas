@@ -16,6 +16,14 @@ export interface CalReminder {
   petName?: string;
   /** Due in the past (relative to today) — surfaces with an alert accent. */
   overdue?: boolean;
+  /** Source row this entry maps back to, so the UI can mark it done in place.
+   *  vaccination → repo.updateVaccination(status:'administered'); reminder →
+   *  repo.updateReminder(enabled:false). Birthdays have no stored row. */
+  refKind?: "vaccination" | "reminder";
+  refId?: string;
+  /** True for one occurrence of a repeating custom reminder — a "done" here would
+   *  kill the whole series (single `enabled` flag), so the UI hides that action. */
+  recurring?: boolean;
 }
 
 const DEWORM_RE = /deworm|ديدان|دود/i;
@@ -24,6 +32,33 @@ const ymd = (d: Date) =>
 
 /** Priority within a single day cell: overdue medical first, then by kind. */
 const KIND_RANK: Record<CalReminderKind, number> = { vaccine: 0, deworming: 1, birthday: 2, reminder: 3 };
+
+/** Every date a (possibly repeating) reminder falls on inside the visible window.
+ *  A one-off returns its single date; daily/weekly/monthly expand across the range
+ *  (fast-forwarded to the first occurrence so an old start date stays cheap). */
+function expandOccurrences(baseISO: string, recurring: Reminder["recurring"], fromISO: string, toISO: string): string[] {
+  const rec = recurring && recurring !== "none" ? recurring : null;
+  if (!rec) return baseISO >= fromISO && baseISO <= toISO ? [baseISO] : [];
+  const out: string[] = [];
+  const to = new Date(toISO + "T00:00:00");
+  const from = new Date(fromISO + "T00:00:00");
+  const cur = new Date(baseISO + "T00:00:00");
+  if (cur > to) return out;
+  if (rec === "daily" || rec === "weekly") {
+    const step = rec === "daily" ? 1 : 7;
+    if (cur < from) {
+      const jumps = Math.floor((from.getTime() - cur.getTime()) / 86400000 / step);
+      cur.setDate(cur.getDate() + jumps * step);
+      while (cur < from) cur.setDate(cur.getDate() + step);
+    }
+    let guard = 0;
+    while (cur <= to && guard < 120) { out.push(ymd(cur)); cur.setDate(cur.getDate() + step); guard++; }
+  } else {
+    let guard = 0;
+    while (cur <= to && guard < 240) { if (cur >= from) out.push(ymd(cur)); cur.setMonth(cur.getMonth() + 1); guard++; }
+  }
+  return out;
+}
 
 export function buildCalendarReminders(opts: {
   pets: Pet[];
@@ -56,6 +91,8 @@ export function buildCalendarReminders(opts: {
       petId: v.pet_id,
       petName: petById.get(v.pet_id)?.name,
       overdue: dISO < todayISO,
+      refKind: "vaccination",
+      refId: v.id,
     });
   }
 
@@ -77,19 +114,26 @@ export function buildCalendarReminders(opts: {
     }
   }
 
-  // 🔔 Custom reminders (enabled only).
+  // 🔔 Custom reminders (enabled only) — repeating ones expand across the window
+  //    so a weekly/monthly reminder shows on every due date, not just the first.
   for (const r of reminders) {
     if (!r.enabled) continue;
-    const dISO = r.date.slice(0, 10);
-    add({
-      id: `rem-${r.id}`,
-      kind: "reminder",
-      dateISO: dISO,
-      title: r.title,
-      petId: r.pet_id ?? undefined,
-      petName: r.pet_name ?? (r.pet_id ? petById.get(r.pet_id)?.name : undefined),
-      overdue: dISO < todayISO,
-    });
+    const base = r.date.slice(0, 10);
+    const rec = r.recurring && r.recurring !== "none";
+    for (const dISO of expandOccurrences(base, r.recurring, fromISO, toISO)) {
+      add({
+        id: rec ? `rem-${r.id}-${dISO}` : `rem-${r.id}`,
+        kind: "reminder",
+        dateISO: dISO,
+        title: r.title,
+        petId: r.pet_id ?? undefined,
+        petName: r.pet_name ?? (r.pet_id ? petById.get(r.pet_id)?.name : undefined),
+        overdue: dISO < todayISO,
+        refKind: "reminder",
+        refId: r.id,
+        recurring: rec,
+      });
+    }
   }
 
   for (const arr of map.values()) {

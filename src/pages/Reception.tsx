@@ -7,15 +7,17 @@ import {
 } from "@dnd-kit/core";
 import {
   CalendarDays, Stethoscope, BedDouble, LogOut, Plus, HeartPulse,
-  ChevronRight, ChevronLeft, LayoutGrid, Columns3, GripVertical, Syringe, Bug, Cake, Bell, X,
+  ChevronRight, ChevronLeft, LayoutGrid, Columns3, GripVertical, Syringe, Bug, Cake, Bell, X, Check, MessageCircle,
 } from "lucide-react";
-import type { Admission, Pet, Vaccination, Reminder } from "@/types";
+import type { Admission, Pet, Vaccination, Reminder, VaccinationStatus } from "@/types";
 import { opsStore } from "@/lib/opsStore";
 import { repo } from "@/lib/repo";
 import { getCached, setCached } from "@/lib/swrCache";
 import { buildCalendarReminders, type CalReminder, type CalReminderKind } from "@/lib/calendarReminders";
 import { PetAvatar } from "@/components/PetAvatar";
 import { Button, useToast } from "@/components/ui";
+import { getDialCode, getClinicName } from "@/lib/settings";
+import { waNumber } from "@/lib/phone";
 import { cn, localISO } from "@/lib/utils";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
 import { useAuth } from "@/contexts/AuthContext";
@@ -111,6 +113,16 @@ const arDate = (iso: string) => new Date(iso + "T00:00:00").toLocaleDateString("
 const arMonthYear = (d: Date) => d.toLocaleDateString("ar-EG-u-nu-latn", { month: "long", year: "numeric" });
 const arFullDate = (iso: string) => new Date(iso + "T00:00:00").toLocaleDateString("ar-EG-u-nu-latn", { weekday: "long", day: "numeric", month: "long" });
 
+/** Open WhatsApp to the owner with a pre-filled Arabic message. Builds the
+ *  international number from the clinic dial code (same helper as Campaigns), so a
+ *  nationally-stored 07xx… becomes a valid link. No-op if there's no number. */
+function openWhatsApp(phone: string | null | undefined, message: string) {
+  const num = waNumber(phone ?? "", getDialCode());
+  if (!num) return;
+  playTap();
+  window.open(`https://wa.me/${num}?text=${encodeURIComponent(message)}`, "_blank", "noopener,noreferrer");
+}
+
 /** Six-week matrix covering the cursor's month, weeks starting Saturday. */
 function monthMatrix(cursor: Date): Date[][] {
   const first = new Date(cursor.getFullYear(), cursor.getMonth(), 1);
@@ -188,17 +200,27 @@ export function Reception() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [admissions, todayISO]);
 
+  // Which cases sit on each day. A live boarding stay (فندقة / فندقة علاجية) is
+  // present EVERY night from admission through today — not just its admission day —
+  // so "من عندنا الليلة؟" is answerable on any day of the stay. Everything else
+  // (treatment visits, discharged rows) stays on its single admission day.
   const byDay = useMemo(() => {
     const m = new Map<string, Admission[]>();
+    const push = (iso: string, a: Admission) => { const arr = m.get(iso); if (arr) arr.push(a); else m.set(iso, [a]); };
     for (const a of admissions) {
-      const d = a.admitted_on;
-      if (!d) continue;
-      const arr = m.get(d) ?? [];
-      arr.push(a);
-      m.set(d, arr);
+      if (!a.admitted_on) continue;
+      const boards = (a.kind === "boarding" || a.kind === "treatment_boarding") && a.status !== "discharged";
+      if (boards && a.admitted_on <= todayISO) {
+        const cur = new Date(a.admitted_on + "T00:00:00");
+        const end = new Date(todayISO + "T00:00:00");
+        let guard = 0;
+        while (cur <= end && guard < 400) { push(localISO(cur), a); cur.setDate(cur.getDate() + 1); guard++; }
+      } else {
+        push(a.admitted_on, a);
+      }
     }
     return m;
-  }, [admissions]);
+  }, [admissions, todayISO]);
 
   // Dated reminders for exactly the visible month matrix (only computed in month view).
   const remindersByDay = useMemo(() => {
@@ -250,14 +272,47 @@ export function Reception() {
     const adm = admissions.find((a) => a.id === id);
     if (!adm) return;
     const overId = String(over.id);
+    // Only the daily kanban has drop targets (status columns). The month view is a
+    // calm read-only overview, so there is no day-to-day drag here.
     if (overId.startsWith("col:")) {
       const target = overId.slice(4) as OpStatus;
       if (statusOf(adm) === target) return;
       void persist(id, patchForStatus(target));
-    } else if (overId.startsWith("day:")) {
-      const date = overId.slice(4);
-      if (adm.admitted_on === date) return;
-      void persist(id, { admitted_on: date });
+    }
+  };
+
+  // Tick a reminder off in place: administer the vaccine/deworming dose, or disable
+  // the custom reminder. Optimistic — the coloured dot vanishes instantly (an
+  // administered vaccine / disabled reminder is dropped by buildCalendarReminders),
+  // then persists in the background and re-syncs from the server on failure.
+  const markReminderDone = (rem: CalReminder) => {
+    if (!rem.refId) return;
+    playTap();
+    const key = clinicId ?? "x";
+    if (rem.refKind === "vaccination") {
+      const id = rem.refId, at = new Date().toISOString();
+      setVaccinations((vs) => {
+        const next = vs.map((v) => (v.id === id ? { ...v, status: "administered" as VaccinationStatus, administered_at: at } : v));
+        setCached(`recVax:${key}`, next);
+        return next;
+      });
+      repo.updateVaccination(id, { status: "administered", administered_at: at }).then(playSuccess).catch(() => {
+        playWarning();
+        toast.error(t("reception.doneError", "تعذّر حفظ الإجراء، حاول مجدداً."));
+        repo.listAllVaccinations(Object.keys(pets)).then((v) => { setVaccinations(v); setCached(`recVax:${key}`, v); }).catch(() => {});
+      });
+    } else if (rem.refKind === "reminder") {
+      const id = rem.refId;
+      setReminders((rs) => {
+        const next = rs.map((r) => (r.id === id ? { ...r, enabled: false } : r));
+        setCached(`recRem:${key}`, next);
+        return next;
+      });
+      repo.updateReminder(id, { enabled: false }).then(playSuccess).catch(() => {
+        playWarning();
+        toast.error(t("reception.doneError", "تعذّر حفظ الإجراء، حاول مجدداً."));
+        repo.listReminders({ ownerId: null }).then((r) => { setReminders(r); setCached(`recRem:${key}`, r); }).catch(() => {});
+      });
     }
   };
 
@@ -313,7 +368,7 @@ export function Reception() {
             ))}
           </div>
         ) : (
-          <MonthGrid cursor={cursor} setCursor={setCursor} byDay={byDay} remindersByDay={remindersByDay} pets={pets} todayISO={todayISO} statusOf={statusOf} onOpen={(pid) => navigate(`/pet/${pid}?tab=timeline`)} />
+          <MonthGrid cursor={cursor} setCursor={setCursor} byDay={byDay} remindersByDay={remindersByDay} pets={pets} todayISO={todayISO} statusOf={statusOf} onOpen={(pid) => navigate(`/pet/${pid}?tab=timeline`)} onOpenTab={(pid, tab) => navigate(`/pet/${pid}?tab=${tab}`)} onDone={markReminderDone} />
         )}
 
         <DragOverlay dropAnimation={{ duration: 180, easing: "cubic-bezier(0.2,0,0,1)" }}>
@@ -365,9 +420,10 @@ function KanbanColumn({ status, items, pets, onOpen, statusOf, loading }: {
  * blink. Clicking a day opens the panel beside it with the FULL, plain-language
  * detail (pet names, owners, statuses, actions) so nothing needs deciphering.
  * ------------------------------------------------------------------------- */
-function MonthGrid({ cursor, setCursor, byDay, remindersByDay, pets, todayISO, statusOf, onOpen }: {
+function MonthGrid({ cursor, setCursor, byDay, remindersByDay, pets, todayISO, statusOf, onOpen, onOpenTab, onDone }: {
   cursor: Date; setCursor: (d: Date) => void; byDay: Map<string, Admission[]>; remindersByDay: Map<string, CalReminder[]>;
   pets: Record<string, Pet>; todayISO: string; statusOf: (a: Admission) => OpStatus; onOpen: (petId: string) => void;
+  onOpenTab: (petId: string, tab: string) => void; onDone: (rem: CalReminder) => void;
 }) {
   const { t } = useTranslation();
   const weeks = useMemo(() => monthMatrix(cursor), [cursor]);
@@ -441,6 +497,8 @@ function MonthGrid({ cursor, setCursor, byDay, remindersByDay, pets, todayISO, s
         pets={pets}
         statusOf={statusOf}
         onOpen={onOpen}
+        onOpenTab={onOpenTab}
+        onDone={onDone}
         onClose={() => setSelected(null)}
       />
     </div>
@@ -500,9 +558,10 @@ function DayCell({ iso, dayNum, inMonth, isToday, isSelected, caseCount, rems, o
 
 /** The readable detail for the selected day — everything on that date laid out
  *  in plain, grouped rows so staff grasp and act on it without any deciphering. */
-function DayDetailPanel({ iso, isToday, items, rems, pets, statusOf, onOpen, onClose }: {
+function DayDetailPanel({ iso, isToday, items, rems, pets, statusOf, onOpen, onOpenTab, onDone, onClose }: {
   iso: string | null; isToday: boolean; items: Admission[]; rems: CalReminder[];
-  pets: Record<string, Pet>; statusOf: (a: Admission) => OpStatus; onOpen: (petId: string) => void; onClose: () => void;
+  pets: Record<string, Pet>; statusOf: (a: Admission) => OpStatus; onOpen: (petId: string) => void;
+  onOpenTab: (petId: string, tab: string) => void; onDone: (rem: CalReminder) => void; onClose: () => void;
 }) {
   const { t } = useTranslation();
 
@@ -548,7 +607,7 @@ function DayDetailPanel({ iso, isToday, items, rems, pets, statusOf, onOpen, onC
                 <span className="rounded-full bg-surface-2 px-1.5 text-2xs font-bold tabular-nums text-ink-muted">{rems.length}</span>
               </div>
               <div className="space-y-1.5">
-                {rems.map((r) => <ReminderRow key={r.id} rem={r} onOpen={onOpen} />)}
+                {rems.map((r) => <ReminderRow key={r.id} rem={r} pet={r.petId ? pets[r.petId] : undefined} onOpenTab={onOpenTab} onDone={onDone} />)}
               </div>
             </section>
           )}
@@ -572,16 +631,34 @@ function DayDetailPanel({ iso, isToday, items, rems, pets, statusOf, onOpen, onC
 }
 
 /** A single reminder in the day panel — icon + who it's for + what it is, an
- *  overdue flag when late, and a direct link to the pet's record. */
-function ReminderRow({ rem, onOpen }: { rem: CalReminder; onOpen: (petId: string) => void }) {
+ *  overdue flag when late. Tapping the row opens the pet's record on the right
+ *  tab; two quick actions handle it in place: WhatsApp the owner, or mark "تم"
+ *  (administer the dose / disable the reminder). "تم" is hidden for repeating
+ *  reminders (one flag would end the whole series). */
+function ReminderRow({ rem, pet, onOpenTab, onDone }: {
+  rem: CalReminder; pet?: Pet; onOpenTab: (petId: string, tab: string) => void; onDone: (rem: CalReminder) => void;
+}) {
   const { t } = useTranslation();
   const rm = REMINDER_META[rem.kind];
   const Icon = rm.icon;
   const kindLabel = t(rm.key, rm.def);
   const title = rem.petName || rem.title || kindLabel;
   const sub = rem.petName && rem.title ? `${kindLabel} · ${rem.title}` : kindLabel;
+  const tab = rem.kind === "vaccine" || rem.kind === "deworming" ? "vaccines" : "timeline";
+  const canDone = !!rem.refKind && !rem.recurring;
+  const phone = pet?.owner_phone;
+  const openRecord = () => { if (rem.petId) { playTap(); onOpenTab(rem.petId, tab); } };
+  const waMsg =
+    rem.kind === "birthday"
+      ? `كل عام و${rem.petName || "حبيبكم"} بخير 🎂🐾 — ${getClinicName() || "عيادتنا"}`
+      : rem.kind === "vaccine" || rem.kind === "deworming"
+        ? `مرحباً 🐾 تذكير من ${getClinicName() || "عيادتنا"}: حان موعد ${kindLabel}${rem.title ? ` (${rem.title})` : ""} لـ ${rem.petName || "حيوانكم"}.`
+        : `مرحباً 🐾 تذكير من ${getClinicName() || "عيادتنا"}: ${rem.title || kindLabel}${rem.petName ? ` — ${rem.petName}` : ""}.`;
   return (
-    <div className="flex items-center gap-2.5 rounded-xl border border-line bg-surface-1 p-2">
+    <div
+      onClick={openRecord}
+      className={cn("flex items-center gap-2.5 rounded-xl border border-line bg-surface-1 p-2", rem.petId && "cursor-pointer transition hover:bg-surface-2/60")}
+    >
       <span className={cn("grid h-9 w-9 shrink-0 place-items-center rounded-lg", rm.chip)}><Icon size={16} /></span>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">
@@ -590,17 +667,32 @@ function ReminderRow({ rem, onOpen }: { rem: CalReminder; onOpen: (petId: string
         </div>
         <p className="truncate text-2xs text-ink-muted">{sub}</p>
       </div>
-      {rem.petId && (
-        <button onClick={() => { playTap(); onOpen(rem.petId!); }} className="shrink-0 rounded-lg border border-line px-2.5 py-1 text-2xs font-semibold text-ink-muted transition hover:bg-surface-2 hover:text-ink">
-          {t("reception.openRecord", "فتح الطبلة")}
-        </button>
-      )}
+      <div className="flex shrink-0 items-center gap-1">
+        {phone && (
+          <button
+            onClick={(e) => { e.stopPropagation(); openWhatsApp(phone, waMsg); }}
+            aria-label={t("reception.whatsapp", "واتساب")}
+            className="grid h-8 w-8 place-items-center rounded-lg bg-success-100 text-success-700 transition hover:bg-success-200 dark:bg-success-500/20 dark:text-success-300"
+          >
+            <MessageCircle size={15} />
+          </button>
+        )}
+        {canDone && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onDone(rem); }}
+            className="inline-flex h-8 items-center gap-1 rounded-lg bg-brand-600 px-2 text-2xs font-bold text-white transition hover:bg-brand-700"
+          >
+            <Check size={14} /> {t("reception.markDone", "تم")}
+          </button>
+        )}
+      </div>
     </div>
   );
 }
 
 /** A single live case in the day panel — avatar, owner, status chip and how long
- *  it's been in the clinic. The whole row opens the pet's record. */
+ *  it's been in the clinic. Tapping the row opens the record; a WhatsApp button
+ *  reaches the owner in one tap. */
 function CaseRow({ adm, pet, status, onOpen }: { adm: Admission; pet?: Pet; status: OpStatus; onOpen: (petId: string) => void }) {
   const { t } = useTranslation();
   const m = STATUS_META[status];
@@ -608,18 +700,31 @@ function CaseRow({ adm, pet, status, onOpen }: { adm: Admission; pet?: Pet; stat
     status === "care" ? `${t("snapshot.day", "اليوم")} ${dayNumber(adm.admitted_on)}`
       : status === "boarding" || status === "careBoarding" ? `${t("snapshot.day", "اليوم")} ${dayNumber(adm.admitted_on)}${adm.cage ? ` · ${t("records.cage", "قفص")} ${adm.cage}` : ""}`
         : adm.discharged_on ? `${t("reception.left", "غادر")} ${arDate(adm.discharged_on)}` : arDate(adm.admitted_on);
+  const phone = pet?.owner_phone;
+  const waMsg = `مرحباً 🐾 من ${getClinicName() || "عيادتنا"} بخصوص ${pet?.name || "حيوانكم"}.`;
   return (
-    <button type="button" onClick={() => { playTap(); onOpen(adm.pet_id); }} className="flex w-full items-center gap-2.5 rounded-xl border border-line bg-surface-1 p-2 text-start transition hover:bg-surface-2/60">
+    <div onClick={() => { playTap(); onOpen(adm.pet_id); }} className="flex w-full cursor-pointer items-center gap-2.5 rounded-xl border border-line bg-surface-1 p-2 text-start transition hover:bg-surface-2/60">
       {pet ? <PetAvatar pet={pet} size={36} photoFallback /> : <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-surface-2 text-ink-subtle"><Stethoscope size={16} /></span>}
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-bold text-ink">{pet?.name ?? "—"}</p>
         <p className="truncate text-2xs text-ink-muted">{pet?.owner_name || "—"}</p>
       </div>
-      <div className="flex shrink-0 flex-col items-end gap-1">
-        <span className={cn("chip text-2xs font-semibold", m.chip)}>{t(m.key, m.def)}</span>
-        <span className="text-2xs text-ink-subtle">{meta}</span>
+      <div className="flex shrink-0 items-center gap-2">
+        <div className="flex flex-col items-end gap-1">
+          <span className={cn("chip text-2xs font-semibold", m.chip)}>{t(m.key, m.def)}</span>
+          <span className="text-2xs text-ink-subtle">{meta}</span>
+        </div>
+        {phone && (
+          <button
+            onClick={(e) => { e.stopPropagation(); openWhatsApp(phone, waMsg); }}
+            aria-label={t("reception.whatsapp", "واتساب")}
+            className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-success-100 text-success-700 transition hover:bg-success-200 dark:bg-success-500/20 dark:text-success-300"
+          >
+            <MessageCircle size={15} />
+          </button>
+        )}
       </div>
-    </button>
+    </div>
   );
 }
 
