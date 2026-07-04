@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import i18next from "i18next";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Pill, Syringe, Droplet, Plus, Search, ChevronDown, Trash2, Check, X,
@@ -11,7 +12,7 @@ import { MED_CATALOG, getClinicMeds, hydrateMeds } from "@/lib/meds";
 import { VACCINE_CATALOG, BUILTIN_VACCINES, getClinicVaccines, hydrateVaccines } from "@/lib/vaccines";
 import { listStaff, ROLE_LABEL, type StaffMember } from "@/lib/staff";
 import { Button, useToast } from "@/components/ui";
-import { cn, uid } from "@/lib/utils";
+import { cn, uid, dateLocale } from "@/lib/utils";
 import { playTap, playSuccess } from "@/lib/sounds";
 
 /* ============================================================================
@@ -32,13 +33,15 @@ const ROUTES: RouteDef[] = [
   { id: "liquid", label: "Syrup", sub: "Liquid", icon: Droplet, doses: ["1 ml", "2 ml", "5 ml", "10 ml"] },
 ];
 
-interface Booster { label: string; days?: number; months?: number; years?: number }
+interface Booster { key: string; def: string; days?: number; months?: number; years?: number }
 const BOOSTERS: Booster[] = [
-  { label: "2 Weeks", days: 14 },
-  { label: "3 Weeks", days: 21 },
-  { label: "1 Month", months: 1 },
-  { label: "3 Months", months: 3 },
-  { label: "1 Year", years: 1 },
+  { key: "medentry.b2w", def: "أسبوعان", days: 14 },
+  { key: "medentry.b3w", def: "3 أسابيع", days: 21 },
+  { key: "medentry.b1m", def: "شهر", months: 1 },
+  { key: "medentry.b2m", def: "شهران", months: 2 },
+  { key: "medentry.b3m", def: "3 أشهر", months: 3 },
+  { key: "medentry.b6m", def: "6 أشهر", months: 6 },
+  { key: "medentry.b1y", def: "سنة", years: 1 },
 ];
 
 /** Patient-condition triage chips — neutral by default, vibrant on hover/active.
@@ -101,7 +104,7 @@ function addToToday(b: Booster): string {
 /** Format a YYYY-MM-DD safely — never throws / never renders "Invalid Date". */
 const prettyDate = (iso: string) => {
   const d = new Date(iso + "T00:00:00");
-  return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+  return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString(dateLocale(), { day: "numeric", month: "short", year: "numeric" });
 };
 
 export interface MedicationDraft { id: string; kind: "medication"; family: string; name: string; route: RouteId; dosage: string; note?: string; administered: boolean }
@@ -327,6 +330,7 @@ export function MedicalEntry({
 
 /* ---------------- Medication (cascading) ---------------- */
 export function MedicationForm({ onAdd, version, addLabel, onReadyChange, flushRef }: { onAdd: (e: MedicalDraft) => void; version: number; addLabel?: string; onReadyChange?: (ready: boolean) => void; flushRef?: { current: (() => MedicalDraft | null) | null } }) {
+  const { t } = useTranslation();
   // Built-in catalogue MERGED with the clinic's custom medications (added in
   // Settings) — grouped under their therapeutic type. `version` forces a refresh
   // after the catalog re-hydrates so newly-added meds appear instantly.
@@ -369,10 +373,10 @@ export function MedicationForm({ onAdd, version, addLabel, onReadyChange, flushR
   return (
     <div className="space-y-5">
       {/* Tier 1 — family */}
-      <Tier n={1} label="Drug family" icon={<Layers size={14} />}>
+      <Tier n={1} label={t("medentry.tierFamily", "العائلة الدوائية")} icon={<Layers size={14} />}>
         <FancySelect
           value={family}
-          placeholder="Choose a pharmacological family…"
+          placeholder={t("medentry.familyPh", "اختر العائلة الدوائية…")}
           options={families.map((f) => ({ value: f.type, label: f.type, hint: `${f.items.length}` }))}
           onChange={(v) => { setFamily(v); setDrug(""); setRoute(null); setDosage(""); }}
         />
@@ -382,10 +386,10 @@ export function MedicationForm({ onAdd, version, addLabel, onReadyChange, flushR
       <AnimatePresence>
         {family && (
           <Reveal key="t2">
-            <Tier n={2} label="Specific drug" icon={<Stethoscope size={14} />}>
+            <Tier n={2} label={t("medentry.tierDrug", "الدواء")} icon={<Stethoscope size={14} />}>
               <FancySelect
                 value={drug}
-                placeholder="Select a drug…"
+                placeholder={t("medentry.drugPh", "اختر الدواء…")}
                 searchable
                 options={drugs.map((d) => ({ value: d, label: d }))}
                 onChange={(v) => { setDrug(v); setRoute(null); setDosage(""); }}
@@ -399,7 +403,7 @@ export function MedicationForm({ onAdd, version, addLabel, onReadyChange, flushR
       <AnimatePresence>
         {drug && (
           <Reveal key="t3">
-            <Tier n={3} label="Route of administration" icon={<Syringe size={14} />}>
+            <Tier n={3} label={t("medentry.tierRoute", "طريقة الإعطاء")} icon={<Syringe size={14} />}>
               <div className="grid grid-cols-3 gap-2">
                 {ROUTES.map((r) => {
                   const Icon = r.icon;
@@ -419,8 +423,8 @@ export function MedicationForm({ onAdd, version, addLabel, onReadyChange, flushR
                       <span className={cn("relative grid h-10 w-10 place-items-center rounded-xl transition", active ? "bg-brand-600 text-white" : "bg-surface-2 text-ink-subtle group-hover:text-brand-600")}>
                         <Icon size={20} />
                       </span>
-                      <span className="relative text-xs font-bold">{r.label}</span>
-                      <span className="relative text-2xs text-ink-subtle">{r.sub}</span>
+                      <span className="relative text-xs font-bold">{t(`medentry.route.${r.id}`, r.label)}</span>
+                      <span className="relative text-2xs text-ink-subtle">{t(`medentry.routeSub.${r.id}`, r.sub)}</span>
                     </button>
                   );
                 })}
@@ -434,7 +438,7 @@ export function MedicationForm({ onAdd, version, addLabel, onReadyChange, flushR
       <AnimatePresence>
         {route && routeDef && (
           <Reveal key="t4">
-            <Tier n={4} label="Dosage" icon={<ClipboardList size={14} />}>
+            <Tier n={4} label={t("medentry.tierDosage", "الجرعة")} icon={<ClipboardList size={14} />}>
               <div className="flex flex-wrap gap-1.5">
                 {routeDef.doses.map((d) => {
                   const active = dosage === d;
@@ -459,10 +463,10 @@ export function MedicationForm({ onAdd, version, addLabel, onReadyChange, flushR
                   className="input pe-16"
                   value={dosage}
                   onChange={(e) => setDosage(e.target.value)}
-                  placeholder="Or type a custom dose…"
+                  placeholder={t("medentry.customDosePh", "أو اكتب جرعة مخصصة…")}
                   inputMode="decimal"
                 />
-                <span className="pointer-events-none absolute top-1/2 -translate-y-1/2 text-2xs font-medium text-ink-subtle ltr:right-3 rtl:left-3">custom</span>
+                <span className="pointer-events-none absolute top-1/2 -translate-y-1/2 text-2xs font-medium text-ink-subtle ltr:right-3 rtl:left-3">{t("medentry.customTag", "مخصص")}</span>
               </div>
             </Tier>
           </Reveal>
@@ -473,12 +477,12 @@ export function MedicationForm({ onAdd, version, addLabel, onReadyChange, flushR
       <AnimatePresence>
         {route && (
           <Reveal key="t5">
-            <Tier n={5} label="Note" icon={<NotebookPen size={14} />} optional>
+            <Tier n={5} label={t("medentry.tierNote", "ملاحظة")} icon={<NotebookPen size={14} />} optional>
               <input
                 className="input"
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
-                placeholder="e.g. given with food, mild reaction observed…"
+                placeholder={t("medentry.notePh", "مثال: يُعطى مع الطعام، لوحظ تحسس خفيف…")}
               />
             </Tier>
           </Reveal>
@@ -489,7 +493,7 @@ export function MedicationForm({ onAdd, version, addLabel, onReadyChange, flushR
       <AnimatePresence>
         {route && (
           <Reveal key="t6">
-            <Tier n={6} label="Status" icon={<Check size={14} />}>
+            <Tier n={6} label={t("medentry.tierStatus", "الحالة")} icon={<Check size={14} />}>
               <GivenToggle given={given} onChange={setGiven} />
             </Tier>
           </Reveal>
@@ -503,7 +507,7 @@ export function MedicationForm({ onAdd, version, addLabel, onReadyChange, flushR
         leftIcon={<Plus size={16} />}
         onClick={() => { const d = buildDraft(); if (d) { onAdd(d); reset(); } }}
       >
-        {addLabel ?? "Add medication"}
+        {addLabel ?? t("medentry.addMedication", "إضافة الدواء")}
       </Button>
     </div>
   );
@@ -555,12 +559,12 @@ export function VaccinationForm({ species, hasSpeciesProp, draftSpecies, setDraf
   return (
     <div className="space-y-5">
       {/* Species filter chip / picker */}
-      <Tier n={1} label="Patient species" icon={<ShieldCheck size={14} />}>
+      <Tier n={1} label={t("medentry.tierSpecies", "نوع الحيوان")} icon={<ShieldCheck size={14} />}>
         {hasSpeciesProp ? (
           <div className="flex items-center gap-2 rounded-2xl border border-line bg-surface-2 px-3.5 py-2.5">
             <span className="grid h-7 w-7 place-items-center rounded-full bg-brand-600 text-white"><ShieldCheck size={15} /></span>
-            <span className="text-sm font-semibold capitalize text-ink">{species}</span>
-            <span className="ms-auto text-xs text-ink-subtle">{vaccines.length} vaccines available</span>
+            <span className="text-sm font-semibold capitalize text-ink">{t(`pet.species.${species}`, species)}</span>
+            <span className="ms-auto text-xs text-ink-subtle">{t("medentry.vaccinesAvailable", { n: vaccines.length, defaultValue: "{{n}} لقاح متاح" })}</span>
           </div>
         ) : (
           <div className="flex flex-wrap gap-1.5">
@@ -573,7 +577,7 @@ export function VaccinationForm({ species, hasSpeciesProp, draftSpecies, setDraf
                   draftSpecies === s ? "border-brand-500 bg-brand-600 text-white" : "border-line bg-surface-1 text-ink-muted hover:bg-surface-2",
                 )}
               >
-                {s}
+                {t(`pet.species.${s}`, s)}
               </button>
             ))}
           </div>
@@ -581,10 +585,10 @@ export function VaccinationForm({ species, hasSpeciesProp, draftSpecies, setDraf
       </Tier>
 
       {/* Vaccine select (filtered) */}
-      <Tier n={2} label="Vaccine" icon={<Syringe size={14} />}>
+      <Tier n={2} label={t("medentry.tierVaccine", "اللقاح")} icon={<Syringe size={14} />}>
         <FancySelect
           value={vaccine}
-          placeholder="Select a vaccine for this species…"
+          placeholder={t("medentry.vaccinePh", "اختر لقاحاً لهذا النوع…")}
           searchable
           options={vaccines.map((v) => ({ value: v, label: v, hint: customSet.has(v.toLowerCase()) ? t("medentry.clinicCustom") : undefined }))}
           onChange={setVaccine}
@@ -595,21 +599,21 @@ export function VaccinationForm({ species, hasSpeciesProp, draftSpecies, setDraf
       <AnimatePresence>
         {vaccine && (
           <Reveal key="booster">
-            <Tier n={3} label="Next booster due" icon={<CalendarClock size={14} />}>
+            <Tier n={3} label={t("medentry.tierBooster", "موعد الجرعة القادمة")} icon={<CalendarClock size={14} />}>
               <div className="flex flex-wrap items-center gap-1.5">
                 {BOOSTERS.map((b) => {
                   const iso = addToToday(b);
                   const active = nextDue === iso;
                   return (
                     <button
-                      key={b.label}
+                      key={b.key}
                       onClick={() => { playTap(); setNextDue(active ? null : iso); }}
                       className={cn(
                         "rounded-full border px-3.5 py-1.5 text-sm font-semibold transition",
                         active ? "border-brand-500 bg-brand-600 text-white shadow-soft" : "border-line bg-surface-1 text-ink-muted hover:border-brand-300 hover:bg-brand-50 dark:hover:bg-brand-500/10",
                       )}
                     >
-                      {b.label}
+                      {t(b.key, b.def)}
                     </button>
                   );
                 })}
@@ -625,12 +629,12 @@ export function VaccinationForm({ species, hasSpeciesProp, draftSpecies, setDraf
                   <CalendarClock size={17} />
                 </span>
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm font-bold text-ink">Custom date</p>
-                  <p className="text-2xs text-ink-subtle">Pick a specific day</p>
+                  <p className="text-sm font-bold text-ink">{t("medentry.customDate", "تاريخ مخصص")}</p>
+                  <p className="text-2xs text-ink-subtle">{t("medentry.customDateSub", "اختر يوماً محدداً")}</p>
                 </div>
                 <input
                   type="date"
-                  aria-label="Custom next-dose date"
+                  aria-label={t("medentry.customDate", "تاريخ مخصص")}
                   className="shrink-0 rounded-lg bg-surface-2 px-2.5 py-1.5 text-sm font-bold text-ink outline-none ring-1 ring-line transition focus:ring-brand-400 [color-scheme:light] dark:[color-scheme:dark]"
                   value={nextDue ?? ""}
                   onChange={(e) => setNextDue(e.target.value || null)}
@@ -644,8 +648,8 @@ export function VaccinationForm({ species, hasSpeciesProp, draftSpecies, setDraf
                     className="mt-2 flex items-center gap-2 rounded-xl bg-success-50 px-3 py-2 text-xs font-medium text-success-700 dark:bg-success-500/10 dark:text-success-300"
                   >
                     <CalendarClock size={14} className="shrink-0" />
-                    <span className="flex-1">Next dose scheduled for <span className="font-bold">{prettyDate(nextDue)}</span></span>
-                    <button type="button" onClick={() => { playTap(); setNextDue(null); }} aria-label="Clear date" className="shrink-0 rounded-full p-1 transition hover:bg-success-100 dark:hover:bg-success-500/20">
+                    <span className="flex-1">{t("medentry.nextDoseScheduled", "موعد الجرعة القادمة:")} <span className="font-bold">{prettyDate(nextDue)}</span></span>
+                    <button type="button" onClick={() => { playTap(); setNextDue(null); }} aria-label={t("common.clear", "مسح")} className="shrink-0 rounded-full p-1 transition hover:bg-success-100 dark:hover:bg-success-500/20">
                       <X size={13} />
                     </button>
                   </motion.div>
@@ -660,8 +664,8 @@ export function VaccinationForm({ species, hasSpeciesProp, draftSpecies, setDraf
       <AnimatePresence>
         {vaccine && (
           <Reveal key="lot">
-            <Tier n={4} label="Lot number" icon={<ClipboardList size={14} />} optional>
-              <input className="input font-mono" value={lot} onChange={(e) => setLot(e.target.value)} placeholder="e.g. RB-2291-A" />
+            <Tier n={4} label={t("medentry.tierLot", "رقم التشغيلة (Lot)")} icon={<ClipboardList size={14} />} optional>
+              <input className="input font-mono" value={lot} onChange={(e) => setLot(e.target.value)} placeholder={t("medentry.lotPh", "مثال: RB-2291-A")} />
             </Tier>
           </Reveal>
         )}
@@ -671,7 +675,7 @@ export function VaccinationForm({ species, hasSpeciesProp, draftSpecies, setDraf
       <AnimatePresence>
         {vaccine && (
           <Reveal key="vstatus">
-            <Tier n={5} label="Status" icon={<Check size={14} />}>
+            <Tier n={5} label={t("medentry.tierStatus", "الحالة")} icon={<Check size={14} />}>
               <GivenToggle given={given} onChange={setGiven} />
             </Tier>
           </Reveal>
@@ -695,7 +699,7 @@ export function VaccinationForm({ species, hasSpeciesProp, draftSpecies, setDraf
           }
         }}
       >
-        {addLabel ?? "Add vaccination"}
+        {addLabel ?? t("medentry.addVaccination", "إضافة اللقاح")}
       </Button>
     </div>
   );
@@ -703,17 +707,18 @@ export function VaccinationForm({ species, hasSpeciesProp, draftSpecies, setDraf
 
 /* ---------------- Unified treatment record ---------------- */
 function TreatmentSheet({ entries, onRemove }: { entries: MedicalDraft[]; onRemove: (id: string) => void }) {
+  const { t } = useTranslation();
   return (
     <div className="rounded-2xl border border-line bg-surface-1/60">
       <div className="flex items-center justify-between border-b border-line px-4 py-2.5">
-        <span className="flex items-center gap-2 text-sm font-bold text-ink"><ClipboardList size={16} className="text-brand-600" /> Treatment record</span>
+        <span className="flex items-center gap-2 text-sm font-bold text-ink"><ClipboardList size={16} className="text-brand-600" /> {t("medentry.sheetTitle", "سجل العلاج")}</span>
         {entries.length > 0 && <span className="chip bg-brand-50 text-2xs text-brand-700 dark:bg-brand-500/15 dark:text-brand-300">{entries.length}</span>}
       </div>
 
       {entries.length === 0 ? (
         <div className="grid place-items-center px-6 py-8 text-center">
           <ClipboardList size={26} className="mb-2 text-ink-subtle/40" />
-          <p className="text-sm text-ink-subtle">Added medications & vaccinations appear here.</p>
+          <p className="text-sm text-ink-subtle">{t("medentry.sheetEmpty", "الأدوية واللقاحات المضافة تظهر هنا.")}</p>
         </div>
       ) : (
         <div className="divide-y divide-line">
@@ -732,14 +737,14 @@ function TreatmentSheet({ entries, onRemove }: { entries: MedicalDraft[]; onRemo
                   <p className="flex items-center gap-2 truncate text-sm font-semibold text-ink">
                     {e.name}
                     <span className={cn("chip shrink-0 text-2xs font-medium", e.kind === "vaccination" ? "bg-success-50 text-success-700 dark:bg-success-500/15 dark:text-success-200" : "bg-surface-2 text-ink-muted")}>
-                      {e.kind === "vaccination" ? "Vaccine" : e.family}
+                      {e.kind === "vaccination" ? t("medentry.vaccineTag", "لقاح") : e.family}
                     </span>
                     <StatusChip given={e.administered} />
                   </p>
                   <p className="truncate text-xs text-ink-subtle">
                     {e.kind === "medication"
                       ? `${routeLabel(e.route)} · ${e.dosage}`
-                      : e.nextDue ? `${e.administered ? "Given today · next due" : "Planned for"} ${prettyDate(e.nextDue)}${e.lot ? ` · Lot ${e.lot}` : ""}` : `${e.administered ? "Administered today" : "Planned"}${e.lot ? ` · Lot ${e.lot}` : ""}`}
+                      : e.nextDue ? `${e.administered ? t("medentry.givenNextDue", "أُعطي اليوم · القادمة") : t("medentry.plannedFor", "مُخطّط بتاريخ")} ${prettyDate(e.nextDue)}${e.lot ? ` · Lot ${e.lot}` : ""}` : `${e.administered ? t("medentry.givenTodayLine", "أُعطي اليوم") : t("medentry.plannedTag", "مُخطّط")}${e.lot ? ` · Lot ${e.lot}` : ""}`}
                   </p>
                   {e.kind === "medication" && e.note && (
                     <p className="mt-0.5 flex items-center gap-1 truncate text-xs text-ink-muted">
@@ -747,7 +752,7 @@ function TreatmentSheet({ entries, onRemove }: { entries: MedicalDraft[]; onRemo
                     </p>
                   )}
                 </div>
-                <button onClick={() => onRemove(e.id)} aria-label="Remove" className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-ink-subtle transition hover:bg-danger-50 hover:text-danger-600">
+                <button onClick={() => onRemove(e.id)} aria-label={t("common.remove", "إزالة")} className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-ink-subtle transition hover:bg-danger-50 hover:text-danger-600">
                   <Trash2 size={15} />
                 </button>
               </motion.div>
@@ -767,7 +772,7 @@ function RouteGlyph({ entry }: { entry: MedicalDraft }) {
     </span>
   );
 }
-const routeLabel = (id: RouteId) => ROUTES.find((r) => r.id === id)?.label ?? id;
+const routeLabel = (id: RouteId) => i18next.t(`medentry.route.${id}`, ROUTES.find((r) => r.id === id)?.label ?? id);
 
 /** Given (green) vs Planned/prescription (gray) status pill — mirrors the badge the
  *  flowsheet & vaccines record show, so the doctor sees the same distinction at add-time. */
@@ -824,12 +829,13 @@ export function CashierSelect({ value, onChange }: { value: string | null; onCha
 
 /* ---------------- Primitives ---------------- */
 function Tier({ n, label, icon, optional, children }: { n: number; label: string; icon?: React.ReactNode; optional?: boolean; children: React.ReactNode }) {
+  const { t } = useTranslation();
   return (
     <div>
       <div className="mb-2 flex items-center gap-2">
         <span className="grid h-5 w-5 place-items-center rounded-md bg-brand-600 text-2xs font-bold text-white">{n}</span>
         <span className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-ink-muted">{icon}{label}</span>
-        {optional && <span className="text-2xs font-normal normal-case text-ink-subtle">· optional</span>}
+        {optional && <span className="text-2xs font-normal normal-case text-ink-subtle">· {t("medentry.optional", "اختياري")}</span>}
       </div>
       {children}
     </div>
@@ -859,6 +865,7 @@ function FancySelect({ value, options, onChange, placeholder, searchable, emptyT
   searchable?: boolean;
   emptyText?: string;
 }) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -910,14 +917,14 @@ function FancySelect({ value, options, onChange, placeholder, searchable, emptyT
                   ref={searchRef}
                   value={q}
                   onChange={(e) => setQ(e.target.value)}
-                  placeholder="Search…"
+                  placeholder={t("common.searchPh", "ابحث…")}
                   className="w-full rounded-xl bg-surface-2 py-2 text-sm text-ink outline-none placeholder:text-ink-subtle ltr:pl-8 ltr:pr-3 rtl:pr-8 rtl:pl-3"
                 />
               </div>
             )}
             <div className="max-h-60 overflow-y-auto p-1 [scrollbar-width:thin]">
               {filtered.length === 0 ? (
-                <p className="px-3 py-6 text-center text-sm text-ink-subtle">{emptyText ?? "No matches"}</p>
+                <p className="px-3 py-6 text-center text-sm text-ink-subtle">{emptyText ?? t("common.noMatches", "لا توجد نتائج مطابقة")}</p>
               ) : (
                 filtered.map((o) => {
                   const isSel = o.value === value;
