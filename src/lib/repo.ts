@@ -4,7 +4,7 @@
 import { loadDB, saveDB } from "./demoStore";
 import { supabase } from "./supabase";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, AppointmentStatus, TreatmentEntry, Admission, Reminder, Product, Invoice, InvoiceItem, CheckoutItem, SaleMeta, Customer, DiscountType, PaymentMethod, WhatsAppMessage, AuditEntry, LoginEvent, PetNote } from "@/types";
+import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, AppointmentStatus, TreatmentEntry, Admission, Branch, Reminder, Product, Invoice, InvoiceItem, CheckoutItem, SaleMeta, Customer, DiscountType, PaymentMethod, WhatsAppMessage, AuditEntry, LoginEvent, PetNote } from "@/types";
 import { uid, uuid, ageMonths } from "./utils";
 
 /** Sort key for a case/admission — newest first. Prefers the precise `created_at`
@@ -456,6 +456,30 @@ const demoRepo = {
     }
   },
 
+  /** Branches — the clinic's physical locations. Main branch first, then by age. */
+  async listBranches(_clinicId?: string): Promise<Branch[]> {
+    return (loadDB().branches ?? [])
+      .filter((b) => b.is_active !== false)
+      .sort((a, b) => Number(!!b.is_main) - Number(!!a.is_main) || (a.created_at ?? "").localeCompare(b.created_at ?? ""));
+  },
+
+  async createBranch(input: Omit<Branch, "id" | "created_at">): Promise<Branch> {
+    const db = loadDB();
+    const branch: Branch = { ...input, id: uid("br"), created_at: new Date().toISOString() };
+    db.branches = [...(db.branches ?? []), branch];
+    saveDB(db);
+    return branch;
+  },
+
+  async updateBranch(id: string, patch: Partial<Omit<Branch, "id" | "clinic_id">>): Promise<void> {
+    const db = loadDB();
+    const branch = (db.branches ?? []).find((b) => b.id === id);
+    if (branch) {
+      Object.assign(branch, patch);
+      saveDB(db);
+    }
+  },
+
   /** Reminders. Pass { ownerId } to scope: null/undefined-in-key → clinic reminders, a value → that owner's. */
   async listReminders(filter?: { ownerId?: string | null }): Promise<Reminder[]> {
     const db = loadDB();
@@ -889,10 +913,29 @@ const supabaseRepo: typeof demoRepo = {
     return listOf<Admission>(await sbc().from("admissions").select("*").eq("pet_id", petId).order("created_at", { ascending: false }));
   },
   async addAdmission(input) {
-    return need<Admission>(await sbc().from("admissions").insert(input).select().single());
+    // Omit a null branch_id so a pre-0042 database (no column yet) keeps working —
+    // a real branch id can only exist after that migration created the table.
+    const { branch_id, ...rest } = input;
+    const row = branch_id ? { ...rest, branch_id } : rest;
+    return need<Admission>(await sbc().from("admissions").insert(row).select().single());
   },
   async updateAdmission(id, patch) {
     ok(await sbc().from("admissions").update(patch).eq("id", id));
+  },
+  async listBranches(clinicId) {
+    // RLS already scopes to the clinic; the explicit filter is belt-and-suspenders.
+    let q = sbc().from("branches").select("*").eq("is_active", true)
+      .order("is_main", { ascending: false }).order("created_at", { ascending: true });
+    if (clinicId) q = q.eq("clinic_id", clinicId);
+    return listOf<Branch>(await q);
+  },
+  async createBranch(input) {
+    // clinic_id is stamped server-side by the auth_clinic() column default.
+    const { clinic_id: _omit, ...row } = input;
+    return need<Branch>(await sbc().from("branches").insert(row).select().single());
+  },
+  async updateBranch(id, patch) {
+    ok(await sbc().from("branches").update(patch).eq("id", id));
   },
   async listReminders(filter) {
     let q = sbc().from("reminders").select("*");

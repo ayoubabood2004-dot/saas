@@ -27,6 +27,8 @@ import { isSoundEnabled, setSoundEnabled, playTap } from "@/lib/sounds";
 import { prefetchHandlers } from "@/lib/routePrefetch";
 import { Tooltip, ThemeToggle } from "@/components/ui";
 import { Logo } from "@/components/Logo";
+import { BranchSwitcher } from "@/components/BranchSwitcher";
+import { branchStore } from "@/lib/branchStore";
 import { useCommandPalette } from "@/components/CommandPaletteProvider";
 import { usePermissions } from "@/hooks/usePermissions";
 import { cn } from "@/lib/utils";
@@ -45,6 +47,14 @@ export function TopBar({ mobileOnly = false }: { mobileOnly?: boolean }) {
   const staff = user?.role === "doctor" || user?.role === "reception" || user?.role === "admin";
 
   useEffect(() => setMenuOpen(false), [location.pathname]);
+
+  // Eagerly hydrate the branch store on every layout (the sidebar is desktop-only),
+  // so the device's saved branch is restored before any write stamps a branch —
+  // a mobile reload followed by an immediate "new case" still lands correctly.
+  useEffect(() => {
+    if (staff) void branchStore.ensure(user?.clinic_id ?? user?.id).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [staff, user?.clinic_id, user?.id]);
 
   const toggleLang = () => {
     setLang(i18n.language === "ar" ? "en" : ("ar" as Lang));
@@ -190,6 +200,8 @@ export function TopBar({ mobileOnly = false }: { mobileOnly?: boolean }) {
               className="overflow-hidden border-t border-line md:hidden"
             >
               <nav className="mx-auto flex max-w-6xl flex-col gap-1 px-4 py-3">
+                {/* Branch switcher — mobile placement (renders only with 2+ branches). */}
+                <BranchSwitcher className="mb-1" inline />
                 <button
                   onClick={() => {
                     setMenuOpen(false);

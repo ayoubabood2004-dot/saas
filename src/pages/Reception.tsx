@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import type { Admission, Pet, Vaccination, Reminder, VaccinationStatus } from "@/types";
 import { opsStore } from "@/lib/opsStore";
+import { matchesBranch, useBranchState } from "@/lib/branchStore";
 import { repo } from "@/lib/repo";
 import { getCached, setCached } from "@/lib/swrCache";
 import { buildCalendarReminders, occursOn, type CalReminder, type CalReminderKind } from "@/lib/calendarReminders";
@@ -159,11 +160,21 @@ export function Reception() {
   const [view, setView] = useState<"month" | "day">("day");
   const [cursor, setCursor] = useState(() => new Date());
   const [activeId, setActiveId] = useState<string | null>(null);
-  const admissions = ops.admissions;
   const pets = ops.pets;
   const loading = !ops.hydrated;
 
   const clinicId = user?.clinic_id ?? user?.id;
+
+  // Branch lens: with 2+ branches, the calendar shows only the active branch's
+  // cases (rows with branch_id NULL belong to the main branch). "كل الفروع" —
+  // and every single-branch clinic — sees everything, exactly as before.
+  const { branches, active: activeBranch } = useBranchState(clinicId);
+  const admissions = useMemo(
+    () => (activeBranch === "all" || branches.length < 2
+      ? ops.admissions
+      : ops.admissions.filter((a) => matchesBranch(a.branch_id, activeBranch, branches))),
+    [ops.admissions, activeBranch, branches],
+  );
 
   useEffect(() => {
     const unsub = opsStore.subscribe(() => setOps(opsStore.get()));

@@ -6,6 +6,7 @@ import { ArrowLeft, ArrowRight, Camera, Stethoscope, BedDouble, CheckCircle2, Pi
 import type { Species, Sex, AdmissionKind, Pet } from "@/types";
 import { repo } from "@/lib/repo";
 import { opsStore } from "@/lib/opsStore";
+import { branchStore } from "@/lib/branchStore";
 import { breedLabel } from "@/lib/breeds";
 import { Combobox } from "@/components/Combobox";
 import { GovernorateAreaPicker } from "@/components/GovernorateAreaPicker";
@@ -140,13 +141,15 @@ export function NewCase() {
         // operational calendar. The two active dispositions inject through opsStore so
         // the pet's card appears in the التقويم الرئيسي instantly, no reload.
         const clinicId = user?.clinic_id ?? user?.id ?? null;
+        // Stamp the device's active branch (null = main / single-branch clinic).
+        const branchId = branchStore.branchForWrite();
         if (a.disp === "log") {
-          await withTimeout(opsStore.addCase({ pet_id: pet.id, clinic_id: clinicId, kind: "treatment" as AdmissionKind, status: "active", admitted_on: today, reason }, pet), 8000);
+          await withTimeout(opsStore.addCase({ pet_id: pet.id, clinic_id: clinicId, branch_id: branchId, kind: "treatment" as AdmissionKind, status: "active", admitted_on: today, reason }, pet), 8000);
         } else if (a.disp === "boarding") {
-          await withTimeout(opsStore.addCase({ pet_id: pet.id, clinic_id: clinicId, kind: "boarding" as AdmissionKind, status: "active", admitted_on: today, cage: a.cage.trim() || undefined, reason }, pet), 8000);
+          await withTimeout(opsStore.addCase({ pet_id: pet.id, clinic_id: clinicId, branch_id: branchId, kind: "boarding" as AdmissionKind, status: "active", admitted_on: today, cage: a.cage.trim() || undefined, reason }, pet), 8000);
         } else if (a.disp === "boardingCare") {
           // Therapeutic boarding — staying in the clinic AND under active care.
-          await withTimeout(opsStore.addCase({ pet_id: pet.id, clinic_id: clinicId, kind: "treatment_boarding" as AdmissionKind, status: "active", admitted_on: today, cage: a.cage.trim() || undefined, reason }, pet), 8000);
+          await withTimeout(opsStore.addCase({ pet_id: pet.id, clinic_id: clinicId, branch_id: branchId, kind: "treatment_boarding" as AdmissionKind, status: "active", admitted_on: today, cage: a.cage.trim() || undefined, reason }, pet), 8000);
         }
 
         // A diagnosis and/or registration readings become a dated consultation record
@@ -535,10 +538,12 @@ function SerialAdmit({ today, doctorName, onAdmitted }: { today: string; doctorN
       const dx = health === "sick" ? diagnosis.trim() : "";
       const reason = dx || undefined;
       const clinicId = user?.clinic_id ?? user?.id ?? null;
+      // Stamp the device's active branch (null = main / single-branch clinic).
+      const branchId = branchStore.branchForWrite();
       // Inject into the shared ops cache so the calendar shows the card instantly.
-      if (disp === "boarding") await withTimeout(opsStore.addCase({ pet_id: pet.id, clinic_id: clinicId, kind: "boarding" as AdmissionKind, status: "active", admitted_on: today, cage: cage.trim() || undefined, reason }, pet), 8000);
-      else if (disp === "boardingCare") await withTimeout(opsStore.addCase({ pet_id: pet.id, clinic_id: clinicId, kind: "treatment_boarding" as AdmissionKind, status: "active", admitted_on: today, cage: cage.trim() || undefined, reason }, pet), 8000);
-      else await withTimeout(opsStore.addCase({ pet_id: pet.id, clinic_id: clinicId, kind: "treatment" as AdmissionKind, status: "active", admitted_on: today, reason }, pet), 8000);
+      if (disp === "boarding") await withTimeout(opsStore.addCase({ pet_id: pet.id, clinic_id: clinicId, branch_id: branchId, kind: "boarding" as AdmissionKind, status: "active", admitted_on: today, cage: cage.trim() || undefined, reason }, pet), 8000);
+      else if (disp === "boardingCare") await withTimeout(opsStore.addCase({ pet_id: pet.id, clinic_id: clinicId, branch_id: branchId, kind: "treatment_boarding" as AdmissionKind, status: "active", admitted_on: today, cage: cage.trim() || undefined, reason }, pet), 8000);
+      else await withTimeout(opsStore.addCase({ pet_id: pet.id, clinic_id: clinicId, branch_id: branchId, kind: "treatment" as AdmissionKind, status: "active", admitted_on: today, reason }, pet), 8000);
       const objective = formatReadings(readings, pet.species, pet.id, (k) => t(`reading.${k}`));
       if (dx || objective) {
         await withTimeout(repo.addVisit({ pet_id: pet.id, clinic_name: "Happy Paws Veterinary Clinic", doctor_name: doctorName, visit_date: today, objective: objective || undefined, assessment: dx || t("newCase.admissionReadings") }), 8000);

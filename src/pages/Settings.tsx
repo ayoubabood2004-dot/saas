@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Settings as SettingsIcon, RotateCcw, Check, Volume2, VolumeX, Plus, Trash2, Pill, PawPrint, Stethoscope, Tag, FolderPlus, BadgePercent, IdCard, Mail, UserCog, Image as ImageIcon, Upload, Facebook, Instagram } from "lucide-react";
+import { Settings as SettingsIcon, RotateCcw, Check, Volume2, VolumeX, Plus, Trash2, Pill, PawPrint, Stethoscope, Tag, FolderPlus, BadgePercent, IdCard, Mail, UserCog, Image as ImageIcon, Upload, Facebook, Instagram, Building2 } from "lucide-react";
 import type { Species, Service, ServiceCategory, ServiceCatalog, Product } from "@/types";
 import { useAuth } from "@/contexts/AuthContext";
+import { usePermissions } from "@/hooks/usePermissions";
+import { branchStore, useBranchState } from "@/lib/branchStore";
 import { repo } from "@/lib/repo";
 import { Combobox } from "@/components/Combobox";
 import { cn, IQD } from "@/lib/utils";
@@ -141,6 +143,7 @@ export function Settings() {
       </div>
 
       {isStaff && <ClinicIdentity />}
+      {isStaff && <BranchesManager />}
       {isStaff && <ServiceSettings />}
       {isStaff && <PromotionsManager clinicId={user?.clinic_id ?? user?.id} />}
       <ClinicMedications />
@@ -237,6 +240,120 @@ function AccountInfo() {
         <p className={`mt-3 flex items-center gap-1.5 text-sm font-medium ${flash.ok ? "text-brand-700" : "text-warn-600"}`}>
           <Check size={15} /> {flash.msg}
         </p>
+      )}
+    </div>
+  );
+}
+
+/* ---------------- Branches: the clinic's physical locations -------------
+ * Manager-only. Creating the FIRST extra branch also creates the main-branch
+ * row ("الفرع الرئيسي") so all existing data (branch_id NULL) keeps a visible
+ * home. Phase 1 supports add + rename; removing/merging branches ships later
+ * with a proper "move cases" flow so data can never be stranded. */
+function BranchesManager() {
+  const { t } = useTranslation();
+  const toast = useToast();
+  const { user } = useAuth();
+  const { can } = usePermissions();
+  const clinicId = user?.clinic_id ?? user?.id;
+  const { branches, hydrated } = useBranchState(clinicId);
+  const [name, setName] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editName, setEditName] = useState("");
+
+  if (!can("manageSettings")) return null;
+
+  const add = async () => {
+    const trimmed = name.trim();
+    if (!trimmed || busy) return;
+    if (branches.some((b) => b.name.trim() === trimmed)) {
+      toast.error(t("branches.dup", "يوجد فرع بهذا الاسم مسبقاً."));
+      return;
+    }
+    setBusy(true);
+    try {
+      // First extra branch → materialise the main branch first so pre-branches
+      // data (branch_id NULL) has a named home in the switcher.
+      if (branches.length === 0) {
+        await repo.createBranch({ name: t("branches.main", "الفرع الرئيسي"), is_main: true, is_active: true });
+      }
+      await repo.createBranch({ name: trimmed, is_main: false, is_active: true });
+      await branchStore.refresh();
+      setName("");
+      playSuccess();
+    } catch (e) {
+      toast.error(t("branches.addFail", "تعذّر إضافة الفرع، حاول مجدداً."), e instanceof Error ? e.message : undefined);
+    } finally { setBusy(false); }
+  };
+
+  const rename = async (id: string) => {
+    const trimmed = editName.trim();
+    setEditingId(null);
+    if (!trimmed) return;
+    const current = branches.find((b) => b.id === id);
+    if (!current || current.name === trimmed) return;
+    try {
+      await repo.updateBranch(id, { name: trimmed });
+      await branchStore.refresh();
+      playSuccess();
+    } catch {
+      toast.error(t("branches.renameFail", "تعذّرت إعادة التسمية، حاول مجدداً."));
+    }
+  };
+
+  return (
+    <div className="card p-5 mb-4">
+      <h2 className="font-bold text-ink mb-1 flex items-center gap-2"><Building2 size={18} className="text-brand-600" /> {t("branches.title", "فروع العيادة")}</h2>
+      <p className="text-xs text-ink-subtle mb-4">
+        {t("branches.hint", "أضف فروعك (مواقع العيادة) ليظهر مبدّل الفروع للفريق — كل فرع يشوف حالاته، وكل بياناتك الحالية تبقى تابعة للفرع الرئيسي.")}
+      </p>
+
+      {/* Existing branches (or the implicit single-branch state) */}
+      <div className="mb-4 space-y-2">
+        {hydrated && branches.length === 0 && (
+          <div className="flex items-center gap-2.5 rounded-2xl border border-dashed border-line bg-surface-2/50 px-3.5 py-3">
+            <Building2 size={16} className="shrink-0 text-ink-subtle" />
+            <p className="text-sm text-ink-muted">{t("branches.single", "عيادتك تعمل حالياً بفرع واحد — أضف فرعاً ثانياً لتفعيل تعدد الفروع.")}</p>
+          </div>
+        )}
+        {branches.map((b) => (
+          <div key={b.id} className="flex items-center gap-2.5 rounded-2xl border border-line bg-surface-1 px-3.5 py-2.5">
+            <Building2 size={16} className={cn("shrink-0", b.is_main ? "text-brand-600 dark:text-brand-300" : "text-ink-subtle")} />
+            {editingId === b.id ? (
+              <form className="flex min-w-0 flex-1 items-center gap-2" onSubmit={(e) => { e.preventDefault(); void rename(b.id); }}>
+                <input autoFocus className="input h-9 flex-1 py-1 text-sm" value={editName} onChange={(e) => setEditName(e.target.value)} onBlur={() => void rename(b.id)} />
+              </form>
+            ) : (
+              <p className="min-w-0 flex-1 truncate text-sm font-semibold text-ink">{b.name}</p>
+            )}
+            {b.is_main && <span className="chip shrink-0 bg-brand-50 text-2xs text-brand-700 dark:bg-brand-500/15 dark:text-brand-300">{t("branches.mainBadge", "الرئيسي")}</span>}
+            {editingId !== b.id && (
+              <button
+                onClick={() => { playTap(); setEditingId(b.id); setEditName(b.name); }}
+                className="shrink-0 rounded-lg border border-line px-2.5 py-1 text-2xs font-semibold text-ink-muted transition hover:bg-surface-2 hover:text-ink"
+              >
+                {t("branches.rename", "إعادة تسمية")}
+              </button>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {/* Add branch */}
+      <form className="flex items-center gap-2" onSubmit={(e) => { e.preventDefault(); void add(); }}>
+        <input
+          className="input h-10 flex-1 text-sm"
+          placeholder={t("branches.namePh", "اسم الفرع الجديد — مثلاً: فرع المنصور")}
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+        />
+        <Button size="sm" type="submit" loading={busy} disabled={!name.trim()} leftIcon={<Plus size={15} />}>
+          {t("branches.add", "إضافة فرع")}
+        </Button>
+      </form>
+      {branches.length === 0 && name.trim() && (
+        <p className="mt-2 text-2xs text-ink-subtle">{t("branches.firstNote", "عند الإضافة سيُنشأ تلقائياً «الفرع الرئيسي» ويضم كل بياناتك الحالية.")}</p>
       )}
     </div>
   );

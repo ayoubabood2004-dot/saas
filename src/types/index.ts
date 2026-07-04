@@ -246,6 +246,23 @@ export interface Admission {
   created_at?: string;
   /** Owning clinic (shared workspace). Scopes the operational calendar. */
   clinic_id?: string | null;
+  /** Branch (location) inside the clinic. NULL always means the main branch —
+   *  existing single-branch clinics never carry a value here. */
+  branch_id?: string | null;
+}
+
+/** A physical location of the clinic. Purely organisational — the security
+ *  boundary stays clinic_id; branches never gate data access on their own. */
+export interface Branch {
+  id: string;
+  clinic_id?: string | null;
+  name: string;
+  address?: string | null;
+  phone?: string | null;
+  /** The primary location. Pre-branches data (branch_id NULL) belongs to it. */
+  is_main?: boolean;
+  is_active?: boolean;
+  created_at?: string;
 }
 
 /** Category of a unified-feed event / reminder (drives its icon + colour). */
@@ -462,4 +479,5 @@ export interface DemoDB {
   invoices: Invoice[];
   invoiceItems: InvoiceItem[];
   waMessages?: WhatsAppMessage[];
+  branches?: Branch[];
 }

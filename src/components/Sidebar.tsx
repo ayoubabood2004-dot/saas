@@ -26,6 +26,7 @@ import { prefetchHandlers, prefetchAllIdle } from "@/lib/routePrefetch";
 import { warmDataIdle } from "@/lib/prefetchData";
 import { ThemeToggle, Tooltip } from "@/components/ui";
 import { Logo } from "@/components/Logo";
+import { BranchSwitcher } from "@/components/BranchSwitcher";
 import { useCommandPalette } from "./CommandPaletteProvider";
 import { cn } from "@/lib/utils";
 
@@ -97,6 +98,9 @@ export function Sidebar() {
         <span className="flex-1 text-start">{t("nav.search", "Search")}</span>
         <kbd className="rounded-md border border-line bg-surface-1 px-1.5 text-2xs font-semibold">⌘K</kbd>
       </button>
+
+      {/* Branch switcher — renders only when the clinic has 2+ branches. */}
+      <BranchSwitcher className="mt-3" />
 
       {/* Nav */}
       <nav className="mt-4 flex flex-1 flex-col gap-1">
