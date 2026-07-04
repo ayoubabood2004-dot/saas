@@ -13,7 +13,7 @@ import type { Admission, Pet, Vaccination, Reminder, VaccinationStatus } from "@
 import { opsStore } from "@/lib/opsStore";
 import { repo } from "@/lib/repo";
 import { getCached, setCached } from "@/lib/swrCache";
-import { buildCalendarReminders, type CalReminder, type CalReminderKind } from "@/lib/calendarReminders";
+import { buildCalendarReminders, occursOn, type CalReminder, type CalReminderKind } from "@/lib/calendarReminders";
 import { PetAvatar } from "@/components/PetAvatar";
 import { Button, useToast } from "@/components/ui";
 import { getDialCode, getClinicName } from "@/lib/settings";
@@ -121,6 +121,14 @@ function openWhatsApp(phone: string | null | undefined, message: string) {
   if (!num) return;
   playTap();
   window.open(`https://wa.me/${num}?text=${encodeURIComponent(message)}`, "_blank", "noopener,noreferrer");
+}
+
+/** Is the treatment cycle's next dose due now? Never completed → due immediately;
+ *  otherwise due once cycle_hours (default 24h) have passed since the last dose. */
+function doseDue(a: Admission): boolean {
+  if (!a.last_completed_at) return true;
+  const cyc = a.cycle_hours && a.cycle_hours > 0 ? a.cycle_hours : 24;
+  return Date.now() >= new Date(a.last_completed_at).getTime() + cyc * 3600000;
 }
 
 /** Six-week matrix covering the cursor's month, weeks starting Saturday. */
@@ -316,6 +324,52 @@ export function Reception() {
     }
   };
 
+  // Record a treatment dose as given now — optimistic through the shared store,
+  // so the "مستحق الآن" flag clears instantly and reverts on failure.
+  const markDoseDone = (admId: string) => {
+    playTap();
+    opsStore.patch(admId, { last_completed_at: new Date().toISOString() })
+      .then(playSuccess)
+      .catch(() => { playWarning(); toast.error(t("reception.doseError", "تعذّر تسجيل الجرعة، حاول مجدداً.")); });
+  };
+
+  // Jot a one-off reminder straight onto a day, without leaving the calendar.
+  const addQuickReminder = (dateISO: string, title: string) => {
+    const key = clinicId ?? "x";
+    repo.addReminder({ owner_id: null, pet_id: null, category: "recheck", title, date: dateISO, enabled: true, recurring: "none" })
+      .then((r) => { setReminders((rs) => { const next = [...rs, r]; setCached(`recRem:${key}`, next); return next; }); playSuccess(); })
+      .catch(() => { playWarning(); toast.error(t("reception.addError", "تعذّر إضافة التذكير، حاول مجدداً.")); });
+  };
+
+  // "What do I do today?" — reminders due today + how many are overdue (with the
+  // earliest, so one tap jumps to it). Counted straight from the source rows so
+  // it's accurate across every month; recurring reminders never count as overdue.
+  const focus = useMemo(() => {
+    let today = 0, overdue = 0;
+    let earliest: string | null = null;
+    const bump = (d: string) => { if (!earliest || d < earliest) earliest = d; };
+    for (const v of vaccinations) {
+      if (v.status === "administered" || !v.due_date) continue;
+      const d = v.due_date.slice(0, 10);
+      if (d === todayISO) today++;
+      else if (d < todayISO) { overdue++; bump(d); }
+    }
+    for (const r of reminders) {
+      if (!r.enabled) continue;
+      const base = r.date.slice(0, 10);
+      if (r.recurring && r.recurring !== "none") { if (occursOn(base, r.recurring, todayISO)) today++; }
+      else if (base === todayISO) today++;
+      else if (base < todayISO) { overdue++; bump(base); }
+    }
+    const td = new Date(todayISO + "T00:00:00");
+    for (const p of Object.values(pets)) {
+      if (!p.dob) continue;
+      const b = new Date(p.dob);
+      if (!Number.isNaN(b.getTime()) && b.getMonth() === td.getMonth() && b.getDate() === td.getDate()) today++;
+    }
+    return { today, overdue, earliest };
+  }, [vaccinations, reminders, pets, todayISO]);
+
   const activeAdm = activeId ? admissions.find((a) => a.id === activeId) : null;
 
   const stats = COLUMN_ORDER.map((s) => ({ status: s, count: byStatus[s].length }));
@@ -368,7 +422,7 @@ export function Reception() {
             ))}
           </div>
         ) : (
-          <MonthGrid cursor={cursor} setCursor={setCursor} byDay={byDay} remindersByDay={remindersByDay} pets={pets} todayISO={todayISO} statusOf={statusOf} onOpen={(pid) => navigate(`/pet/${pid}?tab=timeline`)} onOpenTab={(pid, tab) => navigate(`/pet/${pid}?tab=${tab}`)} onDone={markReminderDone} />
+          <MonthGrid cursor={cursor} setCursor={setCursor} byDay={byDay} remindersByDay={remindersByDay} pets={pets} todayISO={todayISO} statusOf={statusOf} focus={focus} onOpen={(pid) => navigate(`/pet/${pid}?tab=timeline`)} onOpenTab={(pid, tab) => navigate(`/pet/${pid}?tab=${tab}`)} onDone={markReminderDone} onDoseDone={markDoseDone} onAddReminder={addQuickReminder} />
         )}
 
         <DragOverlay dropAnimation={{ duration: 180, easing: "cubic-bezier(0.2,0,0,1)" }}>
@@ -420,10 +474,12 @@ function KanbanColumn({ status, items, pets, onOpen, statusOf, loading }: {
  * blink. Clicking a day opens the panel beside it with the FULL, plain-language
  * detail (pet names, owners, statuses, actions) so nothing needs deciphering.
  * ------------------------------------------------------------------------- */
-function MonthGrid({ cursor, setCursor, byDay, remindersByDay, pets, todayISO, statusOf, onOpen, onOpenTab, onDone }: {
+function MonthGrid({ cursor, setCursor, byDay, remindersByDay, pets, todayISO, statusOf, focus, onOpen, onOpenTab, onDone, onDoseDone, onAddReminder }: {
   cursor: Date; setCursor: (d: Date) => void; byDay: Map<string, Admission[]>; remindersByDay: Map<string, CalReminder[]>;
-  pets: Record<string, Pet>; todayISO: string; statusOf: (a: Admission) => OpStatus; onOpen: (petId: string) => void;
-  onOpenTab: (petId: string, tab: string) => void; onDone: (rem: CalReminder) => void;
+  pets: Record<string, Pet>; todayISO: string; statusOf: (a: Admission) => OpStatus;
+  focus: { today: number; overdue: number; earliest: string | null };
+  onOpen: (petId: string) => void; onOpenTab: (petId: string, tab: string) => void; onDone: (rem: CalReminder) => void;
+  onDoseDone: (admId: string) => void; onAddReminder: (dateISO: string, title: string) => void;
 }) {
   const { t } = useTranslation();
   const weeks = useMemo(() => monthMatrix(cursor), [cursor]);
@@ -448,6 +504,23 @@ function MonthGrid({ cursor, setCursor, byDay, remindersByDay, pets, todayISO, s
           </div>
           <button onClick={() => { playTap(); shift(1); }} className="grid h-9 w-9 place-items-center rounded-xl border border-line text-ink-muted transition hover:bg-surface-2"><ChevronLeft size={18} /></button>
         </div>
+
+        {/* Focus strip — the "what do I do today?" answer: due-today + overdue,
+            each a one-tap jump (overdue → the earliest late day). */}
+        {(focus.today > 0 || focus.overdue > 0) && (
+          <div className="mb-3 flex flex-wrap items-center gap-2">
+            {focus.today > 0 && (
+              <button onClick={() => { playTap(); setCursor(new Date()); setSelected(todayISO); }} className="inline-flex items-center gap-1.5 rounded-full bg-brand-50 px-3 py-1 text-2xs font-bold text-brand-700 transition hover:bg-brand-100 dark:bg-brand-500/15 dark:text-brand-300 dark:hover:bg-brand-500/25">
+                <Bell size={12} /> {t("reception.dueToday", "اليوم")} {focus.today}
+              </button>
+            )}
+            {focus.overdue > 0 && (
+              <button onClick={() => { if (focus.earliest) { playTap(); setCursor(new Date(focus.earliest + "T00:00:00")); setSelected(focus.earliest); } }} className="inline-flex items-center gap-1.5 rounded-full bg-danger-100 px-3 py-1 text-2xs font-bold text-danger-700 transition hover:bg-danger-200 dark:bg-danger-500/20 dark:text-danger-200 dark:hover:bg-danger-500/30">
+                <span className="h-1.5 w-1.5 rounded-full bg-danger-500" /> {t("reception.overdueCount", "متأخر")} {focus.overdue}
+              </button>
+            )}
+          </div>
+        )}
 
         {/* Legend — what the coloured dots on each day mean. */}
         <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-xl border border-line bg-surface-2/50 px-3 py-2">
@@ -499,6 +572,8 @@ function MonthGrid({ cursor, setCursor, byDay, remindersByDay, pets, todayISO, s
         onOpen={onOpen}
         onOpenTab={onOpenTab}
         onDone={onDone}
+        onDoseDone={onDoseDone}
+        onAddReminder={onAddReminder}
         onClose={() => setSelected(null)}
       />
     </div>
@@ -558,12 +633,17 @@ function DayCell({ iso, dayNum, inMonth, isToday, isSelected, caseCount, rems, o
 
 /** The readable detail for the selected day — everything on that date laid out
  *  in plain, grouped rows so staff grasp and act on it without any deciphering. */
-function DayDetailPanel({ iso, isToday, items, rems, pets, statusOf, onOpen, onOpenTab, onDone, onClose }: {
+function DayDetailPanel({ iso, isToday, items, rems, pets, statusOf, onOpen, onOpenTab, onDone, onDoseDone, onAddReminder, onClose }: {
   iso: string | null; isToday: boolean; items: Admission[]; rems: CalReminder[];
   pets: Record<string, Pet>; statusOf: (a: Admission) => OpStatus; onOpen: (petId: string) => void;
-  onOpenTab: (petId: string, tab: string) => void; onDone: (rem: CalReminder) => void; onClose: () => void;
+  onOpenTab: (petId: string, tab: string) => void; onDone: (rem: CalReminder) => void;
+  onDoseDone: (admId: string) => void; onAddReminder: (dateISO: string, title: string) => void; onClose: () => void;
 }) {
   const { t } = useTranslation();
+  const [adding, setAdding] = useState(false);
+  const [draft, setDraft] = useState("");
+  // Reset the quick-add form whenever the selected day changes.
+  useEffect(() => { setAdding(false); setDraft(""); }, [iso]);
 
   if (!iso) {
     return (
@@ -578,6 +658,7 @@ function DayDetailPanel({ iso, isToday, items, rems, pets, statusOf, onOpen, onO
   }
 
   const empty = rems.length === 0 && items.length === 0;
+  const submitDraft = () => { const v = draft.trim(); if (v) { onAddReminder(iso, v); } setDraft(""); setAdding(false); };
 
   return (
     <div className="card p-4">
@@ -591,7 +672,7 @@ function DayDetailPanel({ iso, isToday, items, rems, pets, statusOf, onOpen, onO
       </div>
 
       {empty ? (
-        <div className="grid min-h-[150px] place-items-center rounded-xl border border-dashed border-line bg-surface-2/30 p-6 text-center">
+        <div className="grid min-h-[120px] place-items-center rounded-xl border border-dashed border-line bg-surface-2/30 p-6 text-center">
           <div>
             <span className="mx-auto mb-2 grid h-10 w-10 place-items-center rounded-xl bg-surface-2 text-ink-subtle"><CalendarDays size={18} /></span>
             <p className="text-xs font-semibold text-ink-muted">{t("reception.dayEmpty", "لا توجد تذكيرات أو حالات في هذا اليوم")}</p>
@@ -620,12 +701,31 @@ function DayDetailPanel({ iso, isToday, items, rems, pets, statusOf, onOpen, onO
                 <span className="rounded-full bg-surface-2 px-1.5 text-2xs font-bold tabular-nums text-ink-muted">{items.length}</span>
               </div>
               <div className="space-y-1.5">
-                {items.map((a) => <CaseRow key={a.id} adm={a} pet={pets[a.pet_id]} status={statusOf(a)} onOpen={onOpen} />)}
+                {items.map((a) => <CaseRow key={a.id} adm={a} pet={pets[a.pet_id]} status={statusOf(a)} onOpen={onOpen} onDoseDone={onDoseDone} />)}
               </div>
             </section>
           )}
         </div>
       )}
+
+      {/* Quick-add — jot a one-off reminder onto this day without leaving. One field. */}
+      <div className="mt-4 border-t border-line pt-3">
+        {adding ? (
+          <form onSubmit={(e) => { e.preventDefault(); submitDraft(); }} className="flex items-center gap-2">
+            <input
+              autoFocus value={draft} onChange={(e) => setDraft(e.target.value)}
+              placeholder={t("reception.reminderPlaceholder", "عنوان التذكير…")}
+              className="input h-9 flex-1 text-sm"
+            />
+            <button type="submit" className="shrink-0 rounded-lg bg-brand-600 px-3 py-2 text-2xs font-bold text-white transition hover:bg-brand-700">{t("common.save", "حفظ")}</button>
+            <button type="button" onClick={() => { setAdding(false); setDraft(""); }} className="grid h-9 w-9 shrink-0 place-items-center rounded-lg text-ink-subtle transition hover:bg-surface-2 hover:text-ink" aria-label={t("common.cancel", "إلغاء")}><X size={15} /></button>
+          </form>
+        ) : (
+          <button onClick={() => { playTap(); setAdding(true); }} className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-line py-2 text-2xs font-semibold text-ink-muted transition hover:border-brand-300 hover:text-brand-600 dark:hover:border-brand-500/50">
+            <Plus size={14} /> {t("reception.addReminder", "إضافة تذكير لهذا اليوم")}
+          </button>
+        )}
+      </div>
     </div>
   );
 }
@@ -692,8 +792,11 @@ function ReminderRow({ rem, pet, onOpenTab, onDone }: {
 
 /** A single live case in the day panel — avatar, owner, status chip and how long
  *  it's been in the clinic. Tapping the row opens the record; a WhatsApp button
- *  reaches the owner in one tap. */
-function CaseRow({ adm, pet, status, onOpen }: { adm: Admission; pet?: Pet; status: OpStatus; onOpen: (petId: string) => void }) {
+ *  reaches the owner. When a treatment case's next dose is due, a clear amber
+ *  footer records it (تمت الجرعة) in one tap. */
+function CaseRow({ adm, pet, status, onOpen, onDoseDone }: {
+  adm: Admission; pet?: Pet; status: OpStatus; onOpen: (petId: string) => void; onDoseDone: (admId: string) => void;
+}) {
   const { t } = useTranslation();
   const m = STATUS_META[status];
   const meta =
@@ -702,28 +805,40 @@ function CaseRow({ adm, pet, status, onOpen }: { adm: Admission; pet?: Pet; stat
         : adm.discharged_on ? `${t("reception.left", "غادر")} ${arDate(adm.discharged_on)}` : arDate(adm.admitted_on);
   const phone = pet?.owner_phone;
   const waMsg = `مرحباً 🐾 من ${getClinicName() || "عيادتنا"} بخصوص ${pet?.name || "حيوانكم"}.`;
+  // Treatment cases (care / therapeutic boarding) get a dose-due prompt.
+  const dueDose = (status === "care" || status === "careBoarding") && doseDue(adm);
   return (
-    <div onClick={() => { playTap(); onOpen(adm.pet_id); }} className="flex w-full cursor-pointer items-center gap-2.5 rounded-xl border border-line bg-surface-1 p-2 text-start transition hover:bg-surface-2/60">
-      {pet ? <PetAvatar pet={pet} size={36} photoFallback /> : <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-surface-2 text-ink-subtle"><Stethoscope size={16} /></span>}
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-bold text-ink">{pet?.name ?? "—"}</p>
-        <p className="truncate text-2xs text-ink-muted">{pet?.owner_name || "—"}</p>
-      </div>
-      <div className="flex shrink-0 items-center gap-2">
-        <div className="flex flex-col items-end gap-1">
-          <span className={cn("chip text-2xs font-semibold", m.chip)}>{t(m.key, m.def)}</span>
-          <span className="text-2xs text-ink-subtle">{meta}</span>
+    <div className="overflow-hidden rounded-xl border border-line bg-surface-1">
+      <div onClick={() => { playTap(); onOpen(adm.pet_id); }} className="flex w-full cursor-pointer items-center gap-2.5 p-2 text-start transition hover:bg-surface-2/60">
+        {pet ? <PetAvatar pet={pet} size={36} photoFallback /> : <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-surface-2 text-ink-subtle"><Stethoscope size={16} /></span>}
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-bold text-ink">{pet?.name ?? "—"}</p>
+          <p className="truncate text-2xs text-ink-muted">{pet?.owner_name || "—"}</p>
         </div>
-        {phone && (
-          <button
-            onClick={(e) => { e.stopPropagation(); openWhatsApp(phone, waMsg); }}
-            aria-label={t("reception.whatsapp", "واتساب")}
-            className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-success-100 text-success-700 transition hover:bg-success-200 dark:bg-success-500/20 dark:text-success-300"
-          >
-            <MessageCircle size={15} />
-          </button>
-        )}
+        <div className="flex shrink-0 items-center gap-2">
+          <div className="flex flex-col items-end gap-1">
+            <span className={cn("chip text-2xs font-semibold", m.chip)}>{t(m.key, m.def)}</span>
+            <span className="text-2xs text-ink-subtle">{meta}</span>
+          </div>
+          {phone && (
+            <button
+              onClick={(e) => { e.stopPropagation(); openWhatsApp(phone, waMsg); }}
+              aria-label={t("reception.whatsapp", "واتساب")}
+              className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-success-100 text-success-700 transition hover:bg-success-200 dark:bg-success-500/20 dark:text-success-300"
+            >
+              <MessageCircle size={15} />
+            </button>
+          )}
+        </div>
       </div>
+      {dueDose && (
+        <button
+          onClick={() => onDoseDone(adm.id)}
+          className="flex w-full items-center justify-center gap-1.5 border-t border-amber-200 bg-amber-50 py-1.5 text-2xs font-bold text-amber-800 transition hover:bg-amber-100 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200 dark:hover:bg-amber-500/20"
+        >
+          <Check size={13} /> {t("reception.doseDue", "الجرعة مستحقة الآن — سجّل تمّت")}
+        </button>
+      )}
     </div>
   );
 }

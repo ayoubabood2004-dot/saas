@@ -33,6 +33,20 @@ const ymd = (d: Date) =>
 /** Priority within a single day cell: overdue medical first, then by kind. */
 const KIND_RANK: Record<CalReminderKind, number> = { vaccine: 0, deworming: 1, birthday: 2, reminder: 3 };
 
+/** Does a (possibly repeating) reminder starting at baseISO land exactly on `iso`?
+ *  Shared with the calendar's "today / overdue" focus counts so recurrence is
+ *  judged in one place. */
+export function occursOn(baseISO: string, recurring: Reminder["recurring"], iso: string): boolean {
+  const rec = recurring && recurring !== "none" ? recurring : null;
+  if (!rec) return baseISO === iso;
+  if (iso < baseISO) return false;
+  if (rec === "daily") return true;
+  const a = new Date(baseISO + "T00:00:00");
+  const b = new Date(iso + "T00:00:00");
+  if (rec === "weekly") return Math.round((b.getTime() - a.getTime()) / 86400000) % 7 === 0;
+  return a.getDate() === b.getDate(); // monthly
+}
+
 /** Every date a (possibly repeating) reminder falls on inside the visible window.
  *  A one-off returns its single date; daily/weekly/monthly expand across the range
  *  (fast-forwarded to the first occurrence so an old start date stays cheap). */
