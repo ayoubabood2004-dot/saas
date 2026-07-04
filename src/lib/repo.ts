@@ -678,6 +678,25 @@ function ok(res: { error: { message: string; code?: string; details?: string; hi
   }
 }
 
+// medical-media is a PRIVATE bucket: media_items.url holds the storage PATH, and
+// we mint a short-lived signed URL for display. Legacy rows that still hold a full
+// http(s)/data:/blob: URL pass straight through, so the switch is seamless.
+const MEDIA_BUCKET = "medical-media";
+const MEDIA_URL_TTL = 60 * 60 * 8; // 8 hours — comfortably longer than a work session
+const isStoragePath = (u: string): boolean => !!u && !/^(https?:|data:|blob:)/i.test(u);
+async function withSignedMedia(items: MediaItem[]): Promise<MediaItem[]> {
+  const paths = items.filter((m) => isStoragePath(m.url)).map((m) => m.url);
+  if (paths.length === 0) return items;
+  try {
+    const { data } = await sbc().storage.from(MEDIA_BUCKET).createSignedUrls(paths, MEDIA_URL_TTL);
+    const signed = new Map<string, string>();
+    for (const d of data ?? []) if (d.signedUrl && d.path) signed.set(d.path, d.signedUrl);
+    return items.map((m) => (isStoragePath(m.url) && signed.has(m.url) ? { ...m, url: signed.get(m.url)! } : m));
+  } catch {
+    return items; // never let a signing hiccup drop the whole gallery
+  }
+}
+
 const supabaseRepo: typeof demoRepo = {
   async listPets(ownerId) {
     return listOf<Pet>(await sbc().from("pets").select("*").eq("owner_id", ownerId));
@@ -777,20 +796,23 @@ const supabaseRepo: typeof demoRepo = {
     }).select().single());
   },
   async listMedia(petId) {
-    return listOf<MediaItem>(await sbc().from("media_items").select("*").eq("pet_id", petId).order("created_at", { ascending: false }));
+    const items = listOf<MediaItem>(await sbc().from("media_items").select("*").eq("pet_id", petId).order("created_at", { ascending: false }));
+    return withSignedMedia(items);
   },
   async listAllMedia(petIds) {
     if (petIds.length === 0) return [];
-    return listOf<MediaItem>(await sbc().from("media_items").select("*").in("pet_id", petIds));
+    const items = listOf<MediaItem>(await sbc().from("media_items").select("*").in("pet_id", petIds));
+    return withSignedMedia(items);
   },
   async addMedia(input) {
     return need<MediaItem>(await sbc().from("media_items").insert(input).select().single());
   },
   async uploadMedia(petId, upload, kind, caption) {
     const sb = sbc();
-    // UUID object name keeps uploads collision-free; foldered by pet for tidiness.
+    // UUID object name keeps uploads collision-free; foldered by pet (the folder
+    // name IS the pet id — the storage RLS policy scopes access by it).
     const path = `${petId}/${uuid()}.${upload.ext}`;
-    const up = await sb.storage.from("medical-media").upload(path, upload.blob, {
+    const up = await sb.storage.from(MEDIA_BUCKET).upload(path, upload.blob, {
       contentType: upload.contentType,
       cacheControl: "3600",
       upsert: false,
@@ -800,11 +822,13 @@ const supabaseRepo: typeof demoRepo = {
       e.name = "StorageError";
       throw e;
     }
-    const { data: pub } = sb.storage.from("medical-media").getPublicUrl(path);
-    // Link the stored file to the pet's record (FK pet_id) so it lives in the vault.
-    return need<MediaItem>(
-      await sb.from("media_items").insert({ pet_id: petId, kind, url: pub.publicUrl, caption }).select().single(),
+    // Store the PATH (private bucket); link the file to the pet's record.
+    const item = need<MediaItem>(
+      await sb.from("media_items").insert({ pet_id: petId, kind, url: path, caption }).select().single(),
     );
+    // Return a ready-to-display signed URL so the just-uploaded image renders at once.
+    const { data: signed } = await sb.storage.from(MEDIA_BUCKET).createSignedUrl(path, MEDIA_URL_TTL);
+    return { ...item, url: signed?.signedUrl ?? item.url };
   },
   async listAppointmentsForOwner(ownerId) {
     return listOf<Appointment>(await sbc().from("appointments").select("*").eq("owner_id", ownerId).neq("status", "cancelled").order("scheduled_at", { ascending: true }));
