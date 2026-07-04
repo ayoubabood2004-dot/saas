@@ -131,7 +131,7 @@ function Hero() {
             className="mt-8 flex flex-wrap items-center justify-center gap-3 lg:justify-start"
           >
             <a href={appUrl("/login")} className="inline-flex items-center gap-2 rounded-full bg-brand-600 px-6 py-3.5 text-base font-bold text-white shadow-soft transition hover:bg-brand-700 hover:shadow-raised active:scale-[0.98]">
-              ابدأ مجاناً — ١٤ يوم <ArrowLeft size={18} />
+              ابدأ مجاناً — 14 يوم <ArrowLeft size={18} />
             </a>
             <a href="#features" className="inline-flex items-center gap-2 rounded-full border border-line-strong bg-surface-1 px-6 py-3.5 text-base font-bold text-ink transition hover:bg-surface-2">
               شاهد المميزات
@@ -262,9 +262,9 @@ const BOARD_STATUS = {
 } as const;
 type BoardStatus = keyof typeof BOARD_STATUS;
 const BOARD_CASES: { id: string; name: string; owner: string; status: BoardStatus; meta: string }[] = [
-  { id: "c1", name: "ريكس", owner: "أحمد سالم", status: "care", meta: "اليوم ٣" },
-  { id: "c2", name: "لونا", owner: "سارة كريم", status: "care", meta: "اليوم ١" },
-  { id: "c3", name: "مشمش", owner: "علي حسن", status: "boarding", meta: "قفص A2 · اليوم ٥" },
+  { id: "c1", name: "ريكس", owner: "أحمد سالم", status: "care", meta: "اليوم 3" },
+  { id: "c2", name: "لونا", owner: "سارة كريم", status: "care", meta: "اليوم 1" },
+  { id: "c3", name: "مشمش", owner: "علي حسن", status: "boarding", meta: "قفص A2 · اليوم 5" },
   { id: "c4", name: "بوبي", owner: "نور محمد", status: "done", meta: "غادر اليوم" },
 ];
 
@@ -279,7 +279,7 @@ function BoardScreen() {
     <div>
       <div className="mb-3 flex items-center justify-between">
         <h3 className="font-display text-sm font-extrabold">التقويم الرئيسي</h3>
-        <span className="inline-flex items-center gap-1 rounded-full bg-brand-50 px-2.5 py-1 text-2xs font-bold text-brand-700 dark:bg-brand-500/15 dark:text-brand-300"><Bell size={11} /> اليوم ٣ · متأخر ١</span>
+        <span className="inline-flex items-center gap-1 rounded-full bg-brand-50 px-2.5 py-1 text-2xs font-bold text-brand-700 dark:bg-brand-500/15 dark:text-brand-300"><Bell size={11} /> اليوم 3 · متأخر 1</span>
       </div>
       <div className="grid grid-cols-3 gap-2">
         {cols.map((col) => (
@@ -347,8 +347,8 @@ function BoardScreen() {
 function RecordScreen() {
   const rows = [
     { icon: Syringe, tint: "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300", title: "تطعيم رباعي", meta: "أُعطي اليوم · د. سارة" },
-    { icon: HeartPulse, tint: "bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-300", title: "فحص وعلاج", meta: "حرارة ٣٨.٦ · مضاد حيوي" },
-    { icon: Cake, tint: "bg-pink-100 text-pink-700 dark:bg-pink-500/20 dark:text-pink-300", title: "عيد ميلاد قريب", meta: "بعد ٤ أيام 🎂" },
+    { icon: HeartPulse, tint: "bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-300", title: "فحص وعلاج", meta: "حرارة 38.6 · مضاد حيوي" },
+    { icon: Cake, tint: "bg-pink-100 text-pink-700 dark:bg-pink-500/20 dark:text-pink-300", title: "عيد ميلاد قريب", meta: "بعد 4 أيام 🎂" },
   ];
   return (
     <div>
@@ -356,7 +356,7 @@ function RecordScreen() {
         <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-brand-100 text-xl dark:bg-brand-500/20">🐕</span>
         <div>
           <p className="font-display text-sm font-extrabold text-ink">ريكس</p>
-          <p className="text-2xs text-ink-muted">كلب · جيرمن شيبرد · ٣ سنوات</p>
+          <p className="text-2xs text-ink-muted">كلب · جيرمن شيبرد · 3 سنوات</p>
         </div>
         <span className="ms-auto inline-flex items-center gap-1 rounded-full bg-surface-1 px-2 py-1 text-2xs font-bold text-brand-700 dark:text-brand-300"><ShieldCheck size={11} /> جواز موحّد</span>
       </div>
@@ -385,7 +385,7 @@ function RecordScreen() {
 
 /* ---- Screen: POS — click products, watch the cart total update (real!) ---- */
 const POS_PRODUCTS = [
-  { id: "p1", name: "رويال كانين ٤كغ", price: 32 },
+  { id: "p1", name: "رويال كانين 4كغ", price: 32 },
   { id: "p2", name: "فرونت لاين (بيبيت)", price: 12 },
   { id: "p3", name: "درونتال (حبة)", price: 4 },
   { id: "p4", name: "شامبو طبي", price: 9 },
@@ -437,9 +437,9 @@ function ReportsScreen() {
     <div>
       <div className="mb-2.5 grid grid-cols-3 gap-2">
         {[
-          { k: "إيراد اليوم", v: "$١,٤٢٠", i: Wallet, t: "text-success-600" },
-          { k: "حالات", v: "٣١", i: Stethoscope, t: "text-brand-600" },
-          { k: "نمو", v: "٪١٨+", i: TrendingUp, t: "text-accent-600" },
+          { k: "إيراد اليوم", v: "$1,420", i: Wallet, t: "text-success-600" },
+          { k: "حالات", v: "31", i: Stethoscope, t: "text-brand-600" },
+          { k: "نمو", v: "٪18+", i: TrendingUp, t: "text-accent-600" },
         ].map((s) => {
           const Icon = s.i;
           return (
@@ -530,7 +530,7 @@ function Features() {
 /* -------------------------------------------------------------- Pricing ---- */
 const TIERS = [
   { name: "الأساسية", m: 19, y: 190, tag: "لعيادة صغيرة", pop: false, feats: ["مستخدمان", "حيوانات ومنتجات بلا حد", "التقويم والسجل الطبي", "تذكيرات واتساب"] },
-  { name: "الاحترافية", m: 39, y: 390, tag: "الأكثر رواجاً", pop: true, feats: ["حتى ٦ مستخدمين", "المخزون والكاشير", "الديون + حملات واتساب", "التقارير والتحليلات", "إدارة الفندقة"] },
+  { name: "الاحترافية", m: 39, y: 390, tag: "الأكثر رواجاً", pop: true, feats: ["حتى 6 مستخدمين", "المخزون والكاشير", "الديون + حملات واتساب", "التقارير والتحليلات", "إدارة الفندقة"] },
   { name: "المتقدمة", m: 89, y: 890, tag: "للمستشفيات والفروع", pop: false, feats: ["مستخدمون بلا حد", "تعدد الفروع", "أداء الموظفين", "دعم مخصص + تدريب"] },
 ];
 
@@ -542,7 +542,7 @@ function Pricing() {
         <motion.div {...REVEAL} className="mx-auto max-w-2xl text-center">
           <span className="inline-flex items-center gap-2 rounded-full bg-brand-50 px-3.5 py-1.5 text-xs font-bold text-brand-700 dark:bg-brand-500/15 dark:text-brand-300"><Star size={14} /> أسعار عادلة</span>
           <h2 className="mt-4 font-display text-3xl font-extrabold tracking-tighter2 sm:text-4xl">اختر باقتك</h2>
-          <p className="mt-3 text-lg text-ink-muted">ابدأ مجاناً ١٤ يوم — بلا بطاقة.</p>
+          <p className="mt-3 text-lg text-ink-muted">ابدأ مجاناً 14 يوم — بلا بطاقة.</p>
 
           {/* Billing toggle */}
           <div className="mt-6 inline-flex items-center gap-1 rounded-full border border-line bg-surface-1 p-1">

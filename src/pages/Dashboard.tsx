@@ -20,7 +20,7 @@ import {
 import type { Appointment, Pet, Admission, Species, Reminder } from "@/types";
 import { repo } from "@/lib/repo";
 import { useAuth } from "@/contexts/AuthContext";
-import { formatTime } from "@/lib/utils";
+import { formatTime, dateLocale } from "@/lib/utils";
 import { playTap } from "@/lib/sounds";
 import { PetAvatar } from "@/components/PetAvatar";
 import { UpcomingEvents } from "@/components/UpcomingEvents";
@@ -94,7 +94,7 @@ export function Dashboard() {
       const apptsOn = (d: Date) => weekAppts.filter((a) => a.scheduled_at.slice(0, 10) === d.toISOString().slice(0, 10));
       const todayAppts = apptsOn(days[6]); // today is the last day
       const activityPts = days.map((d) => ({
-        label: d.toLocaleDateString(i18n.language === "ar" ? "ar-EG-u-nu-latn" : "en-US", { weekday: "short" }),
+        label: d.toLocaleDateString(i18n.language === "ar" ? dateLocale() : "en-US", { weekday: "short" }),
         value: apptsOn(d).length,
       }));
       setPets(allPets);
@@ -162,7 +162,7 @@ export function Dashboard() {
   const today = new Date();
   const hour = today.getHours();
   const greeting = hour < 12 ? t("dash.morning", "Good morning") : hour < 18 ? t("dash.afternoon", "Good afternoon") : t("dash.evening", "Good evening");
-  const dateLabel = today.toLocaleDateString(i18n.language === "ar" ? "ar-EG-u-nu-latn" : "en-US", { weekday: "long", day: "numeric", month: "long" });
+  const dateLabel = today.toLocaleDateString(i18n.language === "ar" ? dateLocale() : "en-US", { weekday: "long", day: "numeric", month: "long" });
   const firstName = (user?.full_name || "").replace(/^Dr\.?\s*/i, "").split(" ")[0];
   const tip = TIPS[today.getDate() % TIPS.length];
   const progressPct = appts.length ? Math.round((done.length / appts.length) * 100) : 0;

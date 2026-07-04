@@ -25,7 +25,7 @@ import { PetSalesWidget } from "@/components/PetSalesWidget";
 import { HealthCurve, type CurvePoint, Button, useToast, ProgressRing } from "@/components/ui";
 import { QrCode } from "@/components/QrCode";
 import { Modal } from "@/components/Modal";
-import { ageFromDOB, daysUntil, uid, formatDate, formatTime, formatHM, cn, localISO } from "@/lib/utils";
+import { ageFromDOB, daysUntil, uid, formatDate, formatTime, formatHM, cn, localISO, dateLocale } from "@/lib/utils";
 import { prepareUpload } from "@/lib/image";
 import { withTimeout, describeUploadError } from "@/lib/errors";
 import { playSuccess, playScan, playTap, playWarning } from "@/lib/sounds";
@@ -687,7 +687,7 @@ function petInitials(name: string): string {
   return name.trim().split(/\s+/).map((p) => p[0]).slice(0, 2).join("").toUpperCase();
 }
 function fullDate(iso: string, lang: string): string {
-  return new Date(iso).toLocaleDateString(lang === "ar" ? "ar-EG-u-nu-latn" : "en-US", { day: "numeric", month: "long", year: "numeric" });
+  return new Date(iso).toLocaleDateString(lang === "ar" ? dateLocale() : "en-US", { day: "numeric", month: "long", year: "numeric" });
 }
 function ageLabel(age: { years: number; months: number }, t: (k: string, o?: Record<string, unknown>) => string): string {
   if (age.years <= 0 && age.months <= 0) return t("pet.newborn", { defaultValue: "Newborn" });
@@ -1918,7 +1918,7 @@ function PhotoCompare({ items, lang, title, onClose }: { items: MediaItem[]; lan
 const fmtNoteDate = (iso: string) => {
   const d = new Date(iso);
   return Number.isNaN(d.getTime()) ? "—"
-    : d.toLocaleString("ar-EG-u-nu-latn", { day: "2-digit", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: true });
+    : d.toLocaleString(dateLocale(), { day: "2-digit", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: true });
 };
 
 /** A single clinical-note card — reused by the notes tab and the الطبلة feed. */

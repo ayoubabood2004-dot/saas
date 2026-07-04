@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Printer, ArrowUpDown, ChevronLeft, ChevronRight, FileSpreadsheet } from "lucide-react";
-import { cn, formatNum } from "@/lib/utils";
+import { useTranslation } from "react-i18next";
+import { cn, formatNum, dateLocale } from "@/lib/utils";
 import { useToast } from "@/components/ui";
 import { exportReportXlsx } from "@/lib/excelExport";
 
@@ -82,15 +83,17 @@ const alignClass = (a?: ReportAlign) => (a === "end" ? "text-end" : a === "cente
 
 export function UniversalReportTable<T>({
   title, clinicName, dateRangeLabel, printButtonLabel, columns, screenColumns, data, rowKey,
-  summaryMetrics = [], chart, toolbar, emptyText = "لا توجد بيانات لعرضها.",
+  summaryMetrics = [], chart, toolbar, emptyText,
   pageSize = 25, sort, onSort, isRowMuted, exportFileName, printOnly = false, tableOnly = false,
 }: Props<T>) {
+  const { t, i18n } = useTranslation();
   const toast = useToast();
   const [page, setPage] = useState(0);
   const [printing, setPrinting] = useState(false);
   const [exporting, setExporting] = useState(false);
   // The on-screen table may use fewer, composite columns; print/Excel stay granular.
   const screenCols = screenColumns ?? columns;
+  const emptyLabel = emptyText ?? t("report.empty");
 
   // Styled .xlsx export — real numbers stay summable; xlsx-js-style loads on demand.
   const handleExport = async () => {
@@ -109,9 +112,9 @@ export function UniversalReportTable<T>({
         columns: xlCols, rows: xlRows,
         summary: summaryMetrics.map((m) => ({ label: m.label, value: m.value })),
       });
-      toast.success("تم تصدير التقرير إلى Excel", "XLSX");
+      toast.success(t("report.exported"), "XLSX");
     } catch (e) {
-      toast.error("تعذّر تصدير الملف", e instanceof Error ? e.message : undefined);
+      toast.error(t("report.exportFail"), e instanceof Error ? e.message : undefined);
     } finally {
       setExporting(false);
     }
@@ -141,8 +144,8 @@ export function UniversalReportTable<T>({
     };
   }, [printing]);
 
-  const issued = useMemo(() => new Date().toLocaleDateString("ar-EG-u-nu-latn", { day: "2-digit", month: "long", year: "numeric" }), []);
-  const clinic = (clinicName || "").trim() || "العيادة البيطرية";
+  const issued = useMemo(() => new Date().toLocaleDateString(i18n.language === "ar" ? dateLocale() : "en-GB", { day: "2-digit", month: "long", year: "numeric" }), [i18n.language]);
+  const clinic = (clinicName || "").trim() || t("report.clinicFallback");
 
   return (
     <div className="space-y-4">
@@ -160,13 +163,13 @@ export function UniversalReportTable<T>({
             disabled={exporting || data.length === 0}
             className="inline-flex items-center gap-1.5 rounded-xl bg-success-600 px-3.5 py-2.5 text-sm font-semibold text-white shadow-soft transition hover:bg-success-700 disabled:opacity-50"
           >
-            <FileSpreadsheet size={16} /> {exporting ? "جارٍ التصدير…" : "تصدير إلى Excel"}
+            <FileSpreadsheet size={16} /> {exporting ? t("report.exporting") : t("report.exportExcel")}
           </button>
           <button
             onClick={() => setPrinting(true)}
             className="inline-flex items-center gap-1.5 rounded-xl bg-brand-600 px-3.5 py-2.5 text-sm font-semibold text-white shadow-soft transition hover:bg-brand-700"
           >
-            <Printer size={16} /> {printButtonLabel ?? "طباعة التقرير"}
+            <Printer size={16} /> {printButtonLabel ?? t("report.print")}
           </button>
         </div>
       )}
@@ -188,7 +191,7 @@ export function UniversalReportTable<T>({
 
       {/* Screen data table */}
       {printOnly ? null : data.length === 0 ? (
-        <div className="card grid place-items-center p-12 text-center text-ink-subtle">{emptyText}</div>
+        <div className="card grid place-items-center p-12 text-center text-ink-subtle">{emptyLabel}</div>
       ) : (
         <div className="card overflow-hidden p-0">
           <div className="max-h-[70vh] overflow-auto">
@@ -219,7 +222,7 @@ export function UniversalReportTable<T>({
           </div>
           {pageCount > 1 && (
             <div className="flex items-center justify-between border-t border-line px-3 py-2 text-xs text-ink-subtle">
-              <span>عرض {formatNum(safePage * pageSize + 1)}–{formatNum(Math.min(data.length, (safePage + 1) * pageSize))} من {formatNum(data.length)}</span>
+              <span>{t("report.pageOf", { from: formatNum(safePage * pageSize + 1), to: formatNum(Math.min(data.length, (safePage + 1) * pageSize)), total: formatNum(data.length) })}</span>
               <div className="flex items-center gap-1">
                 <button disabled={safePage === 0} onClick={() => setPage(safePage - 1)} className="grid h-8 w-8 place-items-center rounded-lg border border-line bg-surface-1 text-ink-muted transition hover:bg-surface-2 disabled:opacity-40"><ChevronRight size={16} /></button>
                 <span className="px-2 font-semibold text-ink">{formatNum(safePage + 1)} / {formatNum(pageCount)}</span>
@@ -238,7 +241,7 @@ export function UniversalReportTable<T>({
               <div className="rp-clinic">{clinic}</div>
               <div className="rp-title">{title}</div>
               {dateRangeLabel && <div className="rp-range">{dateRangeLabel}</div>}
-              <div className="rp-meta">تاريخ الإصدار: {issued} · صادر عن نظام doctorVet</div>
+              <div className="rp-meta">{t("report.issuedAt", { date: issued })}</div>
             </header>
 
             <table className="rp-table">
@@ -265,7 +268,7 @@ export function UniversalReportTable<T>({
               </section>
             )}
 
-            <footer className="rp-foot">عدد السجلات: {formatNum(data.length)} · تم إنشاء هذا التقرير بواسطة نظام doctorVet — {issued}</footer>
+            <footer className="rp-foot">{t("report.recordCount", { n: formatNum(data.length), date: issued })}</footer>
           </div>
         </div>,
         document.body,

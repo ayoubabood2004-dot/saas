@@ -11,7 +11,7 @@ import { repo } from "@/lib/repo";
 import { useAuth } from "@/contexts/AuthContext";
 import { PetAvatar } from "@/components/PetAvatar";
 import { useToast, Skeleton } from "@/components/ui";
-import { cn } from "@/lib/utils";
+import { cn, dateLocale } from "@/lib/utils";
 import { getDialCode, getClinicName } from "@/lib/settings";
 import { phoneDigits, waNumber } from "@/lib/phone";
 import { playTap } from "@/lib/sounds";
@@ -112,7 +112,7 @@ export function WhatsAppCampaigns() {
     return m;
   }, [waLog]);
 
-  const fmtDate = (iso: string) => new Date(iso).toLocaleDateString("ar-EG-u-nu-latn", { day: "numeric", month: "short" });
+  const fmtDate = (iso: string) => new Date(iso).toLocaleDateString(dateLocale(), { day: "numeric", month: "short" });
 
   // Each clinic's own registered name (falls back to the brand if unset), baked
   // into every template so messages read "عيادة <this clinic>" — not "doctorVet".

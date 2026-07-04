@@ -5,7 +5,7 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 
 import { Banknote, TrendingUp, Receipt, Crown, Package, Trophy, CalendarRange } from "lucide-react";
 import type { Invoice, InvoiceItem } from "@/types";
 import { repo } from "@/lib/repo";
-import { cn, money, formatNum } from "@/lib/utils";
+import { cn, money, formatNum, dateLocale } from "@/lib/utils";
 import { playTap } from "@/lib/sounds";
 
 const isPaid = (i: Invoice) => (i.status ?? "paid") !== "refunded";
@@ -23,7 +23,7 @@ type Period = "day" | "week" | "month" | "year";
 interface Bucket { key: string; label: string; start: Date }
 
 function buildBuckets(period: Period, lang: string): Bucket[] {
-  const loc = lang === "ar" ? "ar-EG-u-nu-latn" : "en-US";
+  const loc = lang === "ar" ? dateLocale() : "en-US";
   const now = new Date();
   const out: Bucket[] = [];
   if (period === "day") {

@@ -19,7 +19,7 @@ import { PetAvatar } from "@/components/PetAvatar";
 import { Button, useToast } from "@/components/ui";
 import { getDialCode, getClinicName } from "@/lib/settings";
 import { waNumber } from "@/lib/phone";
-import { cn, localISO } from "@/lib/utils";
+import { cn, localISO, dateLocale } from "@/lib/utils";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -103,16 +103,20 @@ const REMINDER_META: Record<CalReminderKind, { key: string; def: string; icon: t
   },
 };
 
-const AR_WEEKDAYS = ["السبت", "الأحد", "الإثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة"];
+/** Week starts Saturday. Follows the UI language (Western digits either way). */
+const WEEKDAYS = () =>
+  dateLocale().startsWith("ar")
+    ? ["السبت", "الأحد", "الإثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة"]
+    : ["Sat", "Sun", "Mon", "Tue", "Wed", "Thu", "Fri"];
 
 const dayNumber = (admittedOn: string): number => {
   const t = new Date(admittedOn + "T00:00:00").getTime();
   if (Number.isNaN(t)) return 1;
   return Math.max(1, Math.floor((Date.now() - t) / 86400000) + 1);
 };
-const arDate = (iso: string) => new Date(iso + "T00:00:00").toLocaleDateString("ar-EG-u-nu-latn", { day: "2-digit", month: "long" });
-const arMonthYear = (d: Date) => d.toLocaleDateString("ar-EG-u-nu-latn", { month: "long", year: "numeric" });
-const arFullDate = (iso: string) => new Date(iso + "T00:00:00").toLocaleDateString("ar-EG-u-nu-latn", { weekday: "long", day: "numeric", month: "long" });
+const arDate = (iso: string) => new Date(iso + "T00:00:00").toLocaleDateString(dateLocale(), { day: "2-digit", month: "long" });
+const arMonthYear = (d: Date) => d.toLocaleDateString(dateLocale(), { month: "long", year: "numeric" });
+const arFullDate = (iso: string) => new Date(iso + "T00:00:00").toLocaleDateString(dateLocale(), { weekday: "long", day: "numeric", month: "long" });
 
 /** Open WhatsApp to the owner with a pre-filled Arabic message. Builds the
  *  international number from the clinic dial code (same helper as Campaigns), so a
@@ -548,7 +552,7 @@ function MonthGrid({ cursor, setCursor, byDay, remindersByDay, pets, todayISO, s
 
         {/* Weekday headers + day cells */}
         <div className="grid grid-cols-7 gap-1 sm:gap-1.5">
-          {AR_WEEKDAYS.map((d) => (
+          {WEEKDAYS().map((d) => (
             <div key={d} className="pb-1 text-center text-2xs font-bold text-ink-subtle sm:text-xs">{d}</div>
           ))}
           {weeks.flat().map((date) => {

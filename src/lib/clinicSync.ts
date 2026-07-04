@@ -11,6 +11,7 @@
 // to auth_clinic() and RLS restricts every row to the caller's clinic, so the
 // client never has to pass a clinic id.
 import { supabase } from "./supabase";
+import i18next from "i18next";
 import { emitGlobalToast } from "./globalToast";
 
 /** The Supabase client when a real backend is configured, else null (demo mode). */
@@ -33,8 +34,8 @@ export function cloudWrite(
     if (/does not exist|schema cache|relation|42p01|could not find the table/i.test(msg)) return;
     emitGlobalToast({
       tone: "warn",
-      title: "تعذّر الحفظ في السحابة",
-      description: "تم الحفظ على هذا الجهاز — سنحاول المزامنة لاحقًا.",
+      title: i18next.t("clinicSync.saveFail"),
+      description: i18next.t("clinicSync.savedLocal"),
     });
   };
   try {

@@ -8,7 +8,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { repo } from "@/lib/repo";
 import { PetAvatar } from "@/components/PetAvatar";
 import { doctorsForService, SERVICES, SLOT_MINUTES, CLINIC_OPEN_HOUR, CLINIC_CLOSE_HOUR } from "@/lib/clinic";
-import { generateSlots, formatTime } from "@/lib/utils";
+import { generateSlots, formatTime, dateLocale } from "@/lib/utils";
 import { playTap, playWarning } from "@/lib/sounds";
 import { Button, Card, SuccessDialog, useToast } from "@/components/ui";
 import { cn } from "@/lib/utils";
@@ -45,7 +45,7 @@ export function BookingWizard() {
   const [symptoms, setSymptoms] = useState("");
   const [done, setDone] = useState(false);
 
-  const lang = i18n.language === "ar" ? "ar-EG-u-nu-latn" : "en-US";
+  const lang = i18n.language === "ar" ? dateLocale() : "en-US";
   const Next = i18n.dir() === "rtl" ? ArrowLeft : ArrowRight;
   const Prev = i18n.dir() === "rtl" ? ArrowRight : ArrowLeft;
 

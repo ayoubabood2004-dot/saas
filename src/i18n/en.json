@@ -1,5 +1,11 @@
 {
-  "app": { "name": "doctorVet", "tagline": "One passport. Every clinic." },
+  "app": {
+    "name": "doctorVet",
+    "tagline": "One passport. Every clinic.",
+    "otherClinicNote": "You're currently working inside a clinic you joined — your own clinic's data is safe and temporarily hidden.",
+    "leaveClinic": "Leave and return to my clinic",
+    "leaving": "Leaving…"
+  },
   "login": {
     "heroTitle": "Every pet deserves a record that travels with them.",
     "trust": "Trusted by veterinarians, loved by pet owners.",
@@ -28,7 +34,10 @@
     "days": "days",
     "kg": "kg",
     "none": "None",
-    "demoMode": "Demo mode — data is stored only in this browser"
+    "demoMode": "Demo mode — data is stored only in this browser",
+    "dismiss": "Dismiss",
+    "remove": "Remove",
+    "retry": "Retry"
   },
   "errors": {
     "title": "Something went wrong",
@@ -237,7 +246,40 @@
     "noTop": "No sales in this period.",
     "unitsSold": "{{n}} sold",
     "popupBlocked": "Allow pop-ups to print",
-    "popupBlockedHint": "Your browser blocked the print window — enable pop-ups for this site."
+    "popupBlockedHint": "Your browser blocked the print window — enable pop-ups for this site.",
+    "cashier": "Sales staff / cashier",
+    "completePartial": "Complete sale",
+    "debtNameGate": "A debt needs a name — enter the customer's name first",
+    "debtNeedsName": "⚠️ Enter the customer's name (the \"Customer\" box above) so the debt is recorded under it",
+    "debtOnName": "The debt will be recorded under: {{name}} · shown in the Debts log",
+    "debtShort": "debt",
+    "editTotal": "Edit final price",
+    "finalPriceDiscount": "Discount (final price)",
+    "finalPriceManual": "Final price set manually",
+    "givenToday": "Given today",
+    "half": "Half",
+    "medSyncFailed": "Sale saved, but the pet's medical record couldn't be updated",
+    "medication": "Medication",
+    "meds": "Medications",
+    "nextDose": "Next dose",
+    "noCashier": "Unassigned",
+    "noDebtYet": "Lower the paid amount or tap Half/Quarter — the rest is recorded as debt automatically",
+    "noStaff": "No staff added yet",
+    "payPartial": "🧾 Partial — rest as debt",
+    "paysNow": "Pays now:",
+    "paysNowLabel": "Pays now",
+    "quarter": "Quarter",
+    "recordedAsDebt": "Recorded as debt",
+    "resetAuto": "Reset",
+    "selectCashier": "Choose a staff member…",
+    "unitBox": "box",
+    "unitSingle": "single",
+    "vaccine": "Vaccine",
+    "enterSalePrice": "Enter a sale price",
+    "enterSalePriceDesc": "Set a positive price before adding to the cart.",
+    "priceAndQty": "Sale price & quantity",
+    "unitPrice": "Unit price",
+    "addToCart": "Add to cart"
   },
   "promos": {
     "title": "Offers management",
@@ -284,7 +326,11 @@
     "givenToday": "Given today",
     "planned": "Planned (Rx)",
     "givenTag": "Given",
-    "plannedTag": "Planned"
+    "plannedTag": "Planned",
+    "noDoctors": "No doctors added yet",
+    "clinicCustom": "Clinic custom",
+    "vaccineAddFail": "Couldn't add the vaccination",
+    "checkDate": "Check the selected date."
   },
   "services": {
     "title": "Services & non-barcode items",
@@ -344,7 +390,13 @@
     "subcategoryHint": "(for offers — e.g. canned, litter)",
     "subcategoryPh": "e.g. canned, litter, dry food",
     "subcategoryCreate": "Use “{{value}}”",
-    "cat": { "medicine": "Medicine", "food": "Food", "accessories": "Accessories", "consumables": "Consumables", "other": "Other" },
+    "cat": {
+      "medicine": "Medicine",
+      "food": "Food",
+      "accessories": "Accessories",
+      "consumables": "Consumables",
+      "other": "Other"
+    },
     "minStock": "Min. stock alert",
     "profitPerUnit": "Profit per unit",
     "lossPerUnit": "Loss per unit",
@@ -356,7 +408,15 @@
     "salesCount": "Sales",
     "revenue": "Revenue",
     "profit": "Profit",
-    "itemsSold": "{{n}} items sold"
+    "itemsSold": "{{n}} items sold",
+    "subUnitDerived": "Box price {{box}} ÷ {{n}} ≈ {{each}} per unit",
+    "subUnitHint": "Sell the whole box or split it (pill, strip, ml…) from the same stock.",
+    "subUnitName": "Sub-unit name",
+    "subUnitNamePh": "e.g. pill, strip, ml",
+    "subUnitNeedsCount": "Enter the number of units per box (greater than zero)",
+    "subUnitPrice": "Price per unit",
+    "subUnitToggle": "Contains sub-units (sell singles)",
+    "unitsPerBox": "Units per box"
   },
   "role": {
     "admin": "Clinic",
@@ -389,7 +449,16 @@
     "soundOn": "On",
     "soundOff": "Off",
     "dialCode": "Default dialing code",
-    "dialCodeHint": "Applied automatically to phone numbers and search. Edit if your clinic is in another country."
+    "dialCodeHint": "Applied automatically to phone numbers and search. Edit if your clinic is in another country.",
+    "changeLogo": "Change logo",
+    "clinicName": "Clinic name",
+    "clinicNameHint": "Shown on invoice headers, consent forms and WhatsApp messages instead of the app name.",
+    "clinicNamePlaceholder": "e.g. Al-Rahma Veterinary Clinic",
+    "facebook": "Facebook",
+    "identity": "Clinic identity",
+    "identityHint": "The clinic's name and logo appear on invoices, consent forms and as a watermark; social handles appear at the bottom.",
+    "instagram": "Instagram",
+    "uploadLogo": "Upload logo"
   },
   "auth": {
     "signIn": "Sign in",
@@ -459,9 +528,35 @@
     "rateLimited": "Too many attempts. Please wait a moment and try again.",
     "genericError": "Couldn't sign in. Please try again.",
     "pwMismatch": "Passwords don't match (min 4 characters).",
-    "backToSignin": "Back to sign in"
+    "backToSignin": "Back to sign in",
+    "checkEmailBody": "We've sent a confirmation link to",
+    "checkEmailHint": "Open it to activate your account — you'll be signed in automatically.",
+    "checkEmailTitle": "Verify your email",
+    "checkSpam": "Can't find it? Check your spam or promotions folder.",
+    "clinicSub": "Run your clinic with doctorVet — records, reception and treatments.",
+    "createAccount": "Create your account",
+    "forgotLink": "Forgot password?",
+    "forgotSub": "Enter your email and we'll send a reset link.",
+    "forgotTitle": "Reset your password",
+    "invalidEmail": "Enter a valid email address.",
+    "linkResent": "Sent — check your inbox again.",
+    "nameRequired": "Please enter your name.",
+    "ownerSub": "Manage your pets with doctorVet — all in one place.",
+    "phone": "Phone",
+    "pwTooShort": "Password must be at least 6 characters.",
+    "resendLink": "Resend confirmation email",
+    "resetSent": "Check your email for a password-reset link.",
+    "sendReset": "Send reset link",
+    "setNewPassword": "Set a new password",
+    "setNewPasswordSub": "Choose a new password for your account.",
+    "updatePassword": "Update password",
+    "welcomeBack": "Welcome back"
   },
-  "greeting": { "morning": "Good morning", "afternoon": "Good afternoon", "evening": "Good evening" },
+  "greeting": {
+    "morning": "Good morning",
+    "afternoon": "Good afternoon",
+    "evening": "Good evening"
+  },
   "dashboard": {
     "yourPets": "Your pets",
     "addPet": "Add a pet",
@@ -473,8 +568,20 @@
     "vaccineDue": "{{vaccine}} for {{name}} is due in {{days}} days"
   },
   "pet": {
-    "species": { "dog": "Dog", "cat": "Cat", "horse": "Horse", "cow": "Cow", "bird": "Bird", "rabbit": "Rabbit", "other": "Other" },
-    "sex": { "male": "Male", "female": "Female", "unknown": "Unknown" },
+    "species": {
+      "dog": "Dog",
+      "cat": "Cat",
+      "horse": "Horse",
+      "cow": "Cow",
+      "bird": "Bird",
+      "rabbit": "Rabbit",
+      "other": "Other"
+    },
+    "sex": {
+      "male": "Male",
+      "female": "Female",
+      "unknown": "Unknown"
+    },
     "name": "Name",
     "serial": "Serial number",
     "speciesLabel": "Species",
@@ -506,7 +613,8 @@
     "mShort": "m",
     "newborn": "Newborn",
     "modeAge": "By age",
-    "modeDate": "Exact date"
+    "modeDate": "Exact date",
+    "identity": "Pet identity"
   },
   "wellness": {
     "title": "Wellness index",
@@ -523,7 +631,11 @@
     "birthday": "Birthday",
     "adopted": "Adoption day",
     "neuter": "Spay / neuter",
-    "neuterValues": { "intact": "Intact", "neutered": "Neutered", "unknown": "Unknown" }
+    "neuterValues": {
+      "intact": "Intact",
+      "neutered": "Neutered",
+      "unknown": "Unknown"
+    }
   },
   "contacts": {
     "title": "Caretakers & contacts",
@@ -532,7 +644,13 @@
     "name": "Full name",
     "role": "Role",
     "email": "Email",
-    "roles": { "Owner": "Owner", "Co-owner": "Co-owner", "Emergency": "Emergency", "Caretaker": "Caretaker", "Walker": "Walker" }
+    "roles": {
+      "Owner": "Owner",
+      "Co-owner": "Co-owner",
+      "Emergency": "Emergency",
+      "Caretaker": "Caretaker",
+      "Walker": "Walker"
+    }
   },
   "diet": {
     "current": "Current diet",
@@ -540,7 +658,14 @@
     "addPlan": "Add diet plan",
     "editTitle": "Edit diet",
     "foodType": "Food type",
-    "foodTypes": { "dry": "Kibble / Dry", "wet": "Wet food", "home": "Home cooked", "raw": "Raw", "mixed": "Mixed", "prescription": "Prescription" },
+    "foodTypes": {
+      "dry": "Kibble / Dry",
+      "wet": "Wet food",
+      "home": "Home cooked",
+      "raw": "Raw",
+      "mixed": "Mixed",
+      "prescription": "Prescription"
+    },
     "brand": "Brand / recipe",
     "brandPlaceholder": "e.g. Royal Canin Maxi Adult",
     "noBrand": "Diet",
@@ -561,8 +686,17 @@
     "off": "Off",
     "notes": "Notes",
     "mealAdded": "Meal added",
-    "freq": { "everyday": "Every day", "weekdays": "Weekdays", "weekends": "Weekends" },
-    "meals": { "Breakfast": "Breakfast", "Lunch": "Lunch", "Dinner": "Dinner", "Snack": "Snack" }
+    "freq": {
+      "everyday": "Every day",
+      "weekdays": "Weekdays",
+      "weekends": "Weekends"
+    },
+    "meals": {
+      "Breakfast": "Breakfast",
+      "Lunch": "Lunch",
+      "Dinner": "Dinner",
+      "Snack": "Snack"
+    }
   },
   "events": {
     "title": "Upcoming",
@@ -582,8 +716,19 @@
     "pet": "Pet (optional)",
     "noPet": "No specific pet",
     "repeat": "Repeat",
-    "cat": { "recheck": "Recheck", "medication": "Medication", "vaccine": "Vaccine", "grooming": "Grooming", "reminder": "Reminder" },
-    "recur": { "none": "Once", "daily": "Daily", "weekly": "Weekly", "monthly": "Monthly" }
+    "cat": {
+      "recheck": "Recheck",
+      "medication": "Medication",
+      "vaccine": "Vaccine",
+      "grooming": "Grooming",
+      "reminder": "Reminder"
+    },
+    "recur": {
+      "none": "Once",
+      "daily": "Daily",
+      "weekly": "Weekly",
+      "monthly": "Monthly"
+    }
   },
   "edu": {
     "title": "Learn & care",
@@ -591,14 +736,34 @@
     "all": "All",
     "minRead": "min read",
     "disclaimer": "General guidance only — always follow your veterinarian's specific advice for your pet.",
-    "cat": { "recovery": "Recovery", "nutrition": "Nutrition", "preventive": "Preventive", "behaviour": "Behaviour", "emergency": "Emergency" },
-    "level": { "essential": "Essential", "intermediate": "Intermediate", "advanced": "Advanced" }
+    "cat": {
+      "recovery": "Recovery",
+      "nutrition": "Nutrition",
+      "preventive": "Preventive",
+      "behaviour": "Behaviour",
+      "emergency": "Emergency"
+    },
+    "level": {
+      "essential": "Essential",
+      "intermediate": "Intermediate",
+      "advanced": "Advanced"
+    }
   },
   "passport": {
     "title": "Digital Pet Passport",
     "medicalEntry": "Medical entry",
     "medicalEntryTitle": "Medical entry — {{name}}",
-    "tabs": { "identity": "Identity", "timeline": "Medical chart", "diet": "Diet", "vaccines": "Vaccinations", "history": "Medical history", "treatment": "Treatment", "notes": "Notes", "media": "Media", "qr": "QR chart" },
+    "tabs": {
+      "identity": "Identity",
+      "timeline": "Medical chart",
+      "diet": "Diet",
+      "vaccines": "Vaccinations",
+      "history": "Medical history",
+      "treatment": "Treatment",
+      "notes": "Notes",
+      "media": "Media",
+      "qr": "QR chart"
+    },
     "weightChart": "Weight & growth",
     "addWeight": "Record weight",
     "noWeights": "No weight records yet.",
@@ -690,7 +855,13 @@
     "print": "Print chart"
   },
   "media": {
-    "kind": { "photo": "Photo", "xray": "X-ray", "ultrasound": "Ultrasound", "lab": "Lab / CBC", "document": "Document" },
+    "kind": {
+      "photo": "Photo",
+      "xray": "X-ray",
+      "ultrasound": "Ultrasound",
+      "lab": "Lab / CBC",
+      "document": "Document"
+    },
     "all": "All",
     "uploading": "Uploading…",
     "uploaded": "Image added to the vault",
@@ -705,7 +876,10 @@
     "selected": "{{n}} selected",
     "comparison": "Comparison"
   },
-  "vitals": { "normal": "Normal range", "critical": "Out of range" },
+  "vitals": {
+    "normal": "Normal range",
+    "critical": "Out of range"
+  },
   "reading": {
     "vitals": "Vital signs",
     "cbc": "Complete Blood Count (CBC)",
@@ -729,7 +903,13 @@
     "reset": "Reset to type defaults",
     "saved": "Ranges saved"
   },
-  "phone": { "country": "Country code", "number": "Phone number", "ownerPhone": "Owner phone", "ownerEmail": "Owner email", "email": "Email" },
+  "phone": {
+    "country": "Country code",
+    "number": "Phone number",
+    "ownerPhone": "Owner phone",
+    "ownerEmail": "Owner email",
+    "email": "Email"
+  },
   "chart": {
     "title": "Unified medical chart",
     "print": "Print chart",
@@ -869,7 +1049,8 @@
       "inDays": "in {{n}} days",
       "whatsapp": "Send WhatsApp greeting",
       "greeting": "Hello! {{clinic}} clinic wishes {{name}} a very happy birthday! 🐾🎉"
-    }
+    },
+    "loadError": "Couldn't reach the server — it may be paused or your connection dropped."
   },
   "snapshot": {
     "vaccinated": "Vaccinated",
@@ -887,8 +1068,17 @@
     "healthy": "Healthy"
   },
   "color": {
-    "black": "Black", "white": "White", "gray": "Gray", "brown": "Brown", "golden": "Golden",
-    "cream": "Cream", "ginger": "Ginger", "tan": "Tan", "brindle": "Brindle", "spotted": "Spotted", "tricolor": "Tricolor"
+    "black": "Black",
+    "white": "White",
+    "gray": "Gray",
+    "brown": "Brown",
+    "golden": "Golden",
+    "cream": "Cream",
+    "ginger": "Ginger",
+    "tan": "Tan",
+    "brindle": "Brindle",
+    "spotted": "Spotted",
+    "tricolor": "Tricolor"
   },
   "breeds": {
     "title": "Custom breeds",
@@ -943,7 +1133,23 @@
     "waiting": "Waiting patients",
     "noToday": "No appointments today.",
     "room": "Room",
-    "sendToRoom": "Sent to {{doctor}}'s room"
+    "sendToRoom": "Sent to {{doctor}}'s room",
+    "addError": "Couldn't add the reminder — try again.",
+    "addReminder": "Add a reminder for this day",
+    "casesSection": "Clinic cases",
+    "dayEmpty": "No reminders or cases on this day",
+    "doneError": "Couldn't save — try again.",
+    "doseDue": "Dose due now — mark as given",
+    "doseError": "Couldn't record the dose — try again.",
+    "dueToday": "Today",
+    "markDone": "Done",
+    "overdue": "Overdue",
+    "overdueCount": "Overdue",
+    "pickDay": "Pick a day from the calendar",
+    "pickDayHint": "to see its reminders and cases",
+    "reminderPlaceholder": "Reminder title…",
+    "remindersSection": "Reminders",
+    "whatsapp": "WhatsApp"
   },
   "triage": {
     "1": "Critical",
@@ -1064,7 +1270,12 @@
   },
   "records": {
     "title": "Clinic records",
-    "tabs": { "log": "Patient log", "cases": "Current cases", "boarding": "Boarding", "movement": "Movement log" },
+    "tabs": {
+      "log": "Patient log",
+      "cases": "Current cases",
+      "boarding": "Boarding",
+      "movement": "Movement log"
+    },
     "kpiPatients": "Patients",
     "kpiActive": "Active treatments",
     "kpiClients": "Total clients",
@@ -1227,5 +1438,45 @@
     "progress": "{{done}}/{{total}} sections",
     "outOfRange": "Out of range",
     "normalRange": "Normal {{min}}–{{max}} {{unit}}"
+  },
+  "branches": {
+    "add": "Add branch",
+    "addFail": "Couldn't add the branch — try again.",
+    "all": "All branches",
+    "dup": "A branch with this name already exists.",
+    "firstNote": "The \"Main branch\" will also be created automatically and will hold all your existing data.",
+    "hint": "Add your locations to enable the branch switcher — each branch sees its own cases, and all existing data stays under the main branch.",
+    "main": "Main branch",
+    "mainBadge": "Main",
+    "namePh": "New branch name — e.g. Mansour branch",
+    "rename": "Rename",
+    "renameFail": "Couldn't rename — try again.",
+    "single": "Your clinic currently runs as a single branch — add another to enable multi-branch.",
+    "switch": "Switch branch",
+    "title": "Clinic branches"
+  },
+  "petSales": {
+    "title": "Previous sales",
+    "totalSpend": "Total spend",
+    "empty": "No sales recorded for this pet.",
+    "items": "{{n}} items",
+    "showLess": "Show less",
+    "showAll": "Show all ({{n}})"
+  },
+  "report": {
+    "exported": "Report exported to Excel",
+    "exportFail": "Couldn't export the file",
+    "exporting": "Exporting…",
+    "exportExcel": "Export to Excel",
+    "print": "Print report",
+    "pageOf": "Showing {{from}}–{{to}} of {{total}}",
+    "issuedAt": "Issued: {{date}} · generated by doctorVet",
+    "recordCount": "Records: {{n}} · generated by doctorVet — {{date}}",
+    "clinicFallback": "Veterinary Clinic",
+    "empty": "No data to display."
+  },
+  "clinicSync": {
+    "saveFail": "Couldn't save to the cloud",
+    "savedLocal": "Saved on this device — we'll retry syncing later."
   }
 }

@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { motion } from "framer-motion";
 import { Pill, Syringe, Tag } from "lucide-react";
 import type { Species } from "@/types";
 import { MedicationForm, VaccinationForm, type MedicalDraft } from "@/components/MedicalEntry";
 import { hydrateMeds } from "@/lib/meds";
 import { hydrateVaccines } from "@/lib/vaccines";
-import { cn, IQD } from "@/lib/utils";
+import { cn, currencySymbol } from "@/lib/utils";
 import { playTap, playWarning } from "@/lib/sounds";
 import { useToast } from "@/components/ui";
 
@@ -22,6 +23,7 @@ export function MedSaleForm({ species, onAddLine }: {
   species?: Species;
   onAddLine: (draft: MedicalDraft, price: number, qty: number) => void;
 }) {
+  const { t } = useTranslation();
   const toast = useToast();
   const [mode, setMode] = useState<"medication" | "vaccination">("medication");
   const [price, setPrice] = useState("");
@@ -40,7 +42,7 @@ export function MedSaleForm({ species, onAddLine }: {
 
   const handleAdd = (draft: MedicalDraft) => {
     const p = Number(price);
-    if (Number.isNaN(p) || p <= 0) { playWarning(); toast.error("أدخل سعر البيع", "حدّد سعراً موجباً قبل الإضافة إلى السلة."); return; }
+    if (Number.isNaN(p) || p <= 0) { playWarning(); toast.error(t("retail.enterSalePrice"), t("retail.enterSalePriceDesc")); return; }
     onAddLine(draft, p, Math.max(1, qty));
     setPrice(""); setQty(1);
   };
@@ -50,8 +52,8 @@ export function MedSaleForm({ species, onAddLine }: {
       {/* Medication | Vaccination toggle — same control as the medical record */}
       <div className="inline-flex w-full items-center gap-1 rounded-full border border-line bg-surface-2 p-1">
         {([
-          { v: "medication", label: "دواء", icon: <Pill size={16} /> },
-          { v: "vaccination", label: "لقاح", icon: <Syringe size={16} /> },
+          { v: "medication", label: t("retail.medication"), icon: <Pill size={16} /> },
+          { v: "vaccination", label: t("retail.vaccine"), icon: <Syringe size={16} /> },
         ] as const).map((o) => (
           <button
             key={o.v}
@@ -69,15 +71,15 @@ export function MedSaleForm({ species, onAddLine }: {
       {/* Sale price + quantity (applied to the item added below) */}
       <div className="rounded-2xl border border-line bg-surface-1 p-3.5">
         <div className="mb-2 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-ink-muted">
-          <Tag size={14} className="text-brand-600" /> سعر البيع والكمية
+          <Tag size={14} className="text-brand-600" /> {t("retail.priceAndQty")}
         </div>
         <div className="grid grid-cols-[1fr_auto] gap-2">
           <div className="relative">
-            <span className="pointer-events-none absolute top-1/2 -translate-y-1/2 text-xs font-bold text-ink-subtle ltr:left-3 rtl:right-3">{IQD}</span>
+            <span className="pointer-events-none absolute top-1/2 -translate-y-1/2 text-xs font-bold text-ink-subtle ltr:left-3 rtl:right-3">{currencySymbol()}</span>
             <input
               type="number" min="0" step="1" inputMode="numeric"
               value={price} onChange={(e) => setPrice(e.target.value)}
-              placeholder="سعر الوحدة" className="input ltr:pl-10 rtl:pr-10 tabular-nums"
+              placeholder={t("retail.unitPrice")} className="input ltr:pl-10 rtl:pr-10 tabular-nums"
             />
           </div>
           <div className="flex items-center gap-1 rounded-xl border border-line bg-surface-2 px-1">
@@ -96,8 +98,8 @@ export function MedSaleForm({ species, onAddLine }: {
         transition={{ duration: 0.2, ease: "easeOut" }}
       >
         {mode === "medication"
-          ? <MedicationForm onAdd={handleAdd} version={catalogVersion} addLabel="أضف إلى السلة" />
-          : <VaccinationForm species={activeSpecies} hasSpeciesProp={!!species} draftSpecies={draftSpecies} setDraftSpecies={setDraftSpecies} onAdd={handleAdd} version={catalogVersion} addLabel="أضف إلى السلة" />}
+          ? <MedicationForm onAdd={handleAdd} version={catalogVersion} addLabel={t("retail.addToCart")} />
+          : <VaccinationForm species={activeSpecies} hasSpeciesProp={!!species} draftSpecies={draftSpecies} setDraftSpecies={setDraftSpecies} onAdd={handleAdd} version={catalogVersion} addLabel={t("retail.addToCart")} />}
       </motion.div>
     </div>
   );

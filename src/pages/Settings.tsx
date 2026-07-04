@@ -7,7 +7,7 @@ import { usePermissions } from "@/hooks/usePermissions";
 import { branchStore, useBranchState } from "@/lib/branchStore";
 import { repo } from "@/lib/repo";
 import { Combobox } from "@/components/Combobox";
-import { cn, IQD } from "@/lib/utils";
+import { cn, currencySymbol } from "@/lib/utils";
 import { getPromoRules, addPromoRule, togglePromoRule, removePromoRule, subcategoriesOf, type PromoRule } from "@/lib/promotions";
 import { getServiceCatalog, addServiceCategory, removeServiceCategory, addService, updateService, removeService } from "@/lib/services";
 import { DEFAULT_RANGES, VITAL_KEYS, CBC_KEYS, rangeFor, type VitalKey } from "@/lib/vitals";
@@ -749,7 +749,7 @@ function CategoryBlock({ cat, services, onChanged }: { cat: ServiceCategory; ser
                   onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
                   className="w-24 rounded-lg border border-line bg-surface-1 px-2 py-1 text-end text-sm font-semibold tabular-nums text-ink outline-none focus:border-brand-400"
                 />
-                <span className="text-2xs text-ink-subtle">{IQD}</span>
+                <span className="text-2xs text-ink-subtle">{currencySymbol()}</span>
               </div>
               <button onClick={() => { removeService(s.id); playTap(); onChanged(); }} aria-label={t("common.delete", "Delete")} className="grid h-7 w-7 place-items-center rounded-full text-ink-subtle transition hover:bg-danger-50 hover:text-danger-600"><Trash2 size={13} /></button>
             </div>

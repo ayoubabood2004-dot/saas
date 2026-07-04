@@ -2,8 +2,12 @@
 // Doctors type digits only — no spaces, and the international dialing code is optional
 // (defaults to the clinic's configured code, see settings.getDialCode).
 
+import { normalizeDigits } from "./digits";
+
 export function phoneDigits(s: string): string {
-  return (s || "").replace(/\D/g, "");
+  // Eastern-Arabic digits are converted first (NOT stripped) — a legacy number
+  // stored as 0771… must keep working for search and WhatsApp links.
+  return normalizeDigits(s || "").replace(/\D/g, "");
 }
 
 /** National significant number: stored digits with the dial code and leading zeros stripped. */

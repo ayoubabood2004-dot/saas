@@ -12,14 +12,14 @@ import { Modal } from "@/components/Modal";
 import { Button, Badge, useToast, Skeleton } from "@/components/ui";
 import { useInvoicePrinter } from "./usePrintInvoice";
 import { invoiceNo } from "@/lib/invoicePrint";
-import { cn, formatDate, money } from "@/lib/utils";
+import { cn, formatDate, money, dateLocale } from "@/lib/utils";
 import { dueOf, paidOf, isDebt, paymentStatusOf } from "@/lib/debt";
 import { describeDbError } from "@/lib/errors";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
 import { staggerContainer, staggerItem } from "@/lib/motion";
 
 const PAY_ICON: Record<PaymentMethod, typeof Banknote> = { cash: Banknote, card: CreditCard, transfer: ArrowLeftRight };
-const PAY_AR: Record<PaymentMethod, string> = { cash: "نقدي", card: "بطاقة ائتمان", transfer: "حوالة بنكية" };
+const PAY_KEY: Record<PaymentMethod, string> = { cash: "retail.payCash", card: "retail.payCard", transfer: "retail.payTransfer" };
 
 type StatusFilter = "all" | "paid" | "refunded";
 
@@ -87,7 +87,7 @@ export function InvoicesPanel({ invoices, onChanged }: { invoices: Invoice[]; cl
                     <span className="font-mono text-2xs font-normal text-ink-subtle">{invoiceNo(inv.id)}</span>
                   </p>
                   <div className="flex flex-wrap items-center gap-x-2 text-xs text-ink-subtle">
-                    <span>{formatDate(inv.created_at, i18n.language)} · {new Date(inv.created_at).toLocaleTimeString(i18n.language === "ar" ? "ar-EG-u-nu-latn" : "en-GB", { hour: "2-digit", minute: "2-digit" })}</span>
+                    <span>{formatDate(inv.created_at, i18n.language)} · {new Date(inv.created_at).toLocaleTimeString(i18n.language === "ar" ? dateLocale() : "en-GB", { hour: "2-digit", minute: "2-digit" })}</span>
                     <span>· {t("retail.itemsN", { n: inv.item_count, defaultValue: "{{n}} items" })}</span>
                     {PayIcon && <span className="flex items-center gap-0.5"><PayIcon size={11} /></span>}
                     {(inv.print_count ?? 0) > 0 && <span className="flex items-center gap-0.5"><Printer size={11} /> {inv.print_count}</span>}
@@ -214,7 +214,7 @@ function InvoiceDetail({ invoice, onClose, onChanged, setOpen }: {
             </p>
             {invoice.customer_phone && <p className="text-sm text-ink-subtle">{invoice.customer_phone}</p>}
             <p className="mt-0.5 text-xs text-ink-subtle">
-              {formatDate(invoice.created_at, i18n.language)} · {new Date(invoice.created_at).toLocaleTimeString(i18n.language === "ar" ? "ar-EG-u-nu-latn" : "en-GB", { hour: "2-digit", minute: "2-digit" })}
+              {formatDate(invoice.created_at, i18n.language)} · {new Date(invoice.created_at).toLocaleTimeString(i18n.language === "ar" ? dateLocale() : "en-GB", { hour: "2-digit", minute: "2-digit" })}
             </p>
           </div>
           {refunded ? (
@@ -273,7 +273,7 @@ function InvoiceDetail({ invoice, onClose, onChanged, setOpen }: {
               {isSplit ? (
                 <span className="inline-flex items-center gap-1.5 font-semibold text-ink-muted"><Wallet size={13} /> {t("retail.split", "دفع مجزأ")}</span>
               ) : refunded ? (
-                <span className="inline-flex items-center gap-1.5 font-semibold text-ink-muted">{PayIcon && <PayIcon size={13} />} {invoice.payment_method ? PAY_AR[invoice.payment_method] : t("retail.unpaidMethod", "—")}</span>
+                <span className="inline-flex items-center gap-1.5 font-semibold text-ink-muted">{PayIcon && <PayIcon size={13} />} {invoice.payment_method ? t(PAY_KEY[invoice.payment_method]) : t("retail.unpaidMethod", "—")}</span>
               ) : (
                 <PaymentMethodEditor invoice={invoice} busy={payBusy} onPick={changePayment} />
               )}
@@ -286,7 +286,7 @@ function InvoiceDetail({ invoice, onClose, onChanged, setOpen }: {
                 const Icon = PAY_ICON[p.method] ?? Banknote;
                 return (
                   <div key={i} className="flex items-center justify-between">
-                    <span className="flex items-center gap-1.5"><Icon size={11} /> {PAY_AR[p.method] ?? p.method}</span>
+                    <span className="flex items-center gap-1.5"><Icon size={11} /> {PAY_KEY[p.method] ? t(PAY_KEY[p.method]) : p.method}</span>
                     <span className="tabular-nums">{money(p.amount)}</span>
                   </div>
                 );
@@ -351,7 +351,7 @@ function PaymentMethodEditor({ invoice, busy, onPick }: { invoice: Invoice; busy
         )}
       >
         <CurIcon size={13} className="text-brand-600" />
-        {cur ? PAY_AR[cur] : t("retail.setMethod", "تحديد الطريقة")}
+        {cur ? t(PAY_KEY[cur]) : t("retail.setMethod", "تحديد الطريقة")}
         {busy ? <Loader2 size={12} className="animate-spin" /> : <Pencil size={11} className="opacity-60 transition group-hover:opacity-100" />}
       </button>
 
@@ -381,7 +381,7 @@ function PaymentMethodEditor({ invoice, busy, onPick }: { invoice: Invoice; busy
                   )}
                 >
                   <Icon size={15} className={active ? "text-brand-600" : "text-ink-subtle"} />
-                  <span className="flex-1 text-start">{PAY_AR[m]}</span>
+                  <span className="flex-1 text-start">{t(PAY_KEY[m])}</span>
                   {active && <Check size={14} className="text-brand-600" />}
                 </button>
               );

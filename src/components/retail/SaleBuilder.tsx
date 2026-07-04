@@ -20,7 +20,7 @@ import { useInvoicePrinter } from "./usePrintInvoice";
 import { invoiceNo } from "@/lib/invoicePrint";
 import { persistMedicalEntries } from "@/lib/medSync";
 import type { MedicalDraft } from "@/components/MedicalEntry";
-import { cn, money, IQD } from "@/lib/utils";
+import { cn, money, currencySymbol } from "@/lib/utils";
 import { dueOf, paidOf } from "@/lib/debt";
 import { withTimeout, describeDbError } from "@/lib/errors";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
@@ -362,7 +362,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
           : isSub ? Math.round((l.qty / (l.unitsPerBox as number)) * 1000) / 1000
           : l.qty;
         const unit_label = l.kind === "product" && l.hasSubUnit
-          ? (isSub ? (l.subUnitName || "مفرد") : "علبة")
+          ? (isSub ? (l.subUnitName || t("retail.unitSingle")) : t("retail.unitBox"))
           : null;
         return {
           product_id: l.product_id, name: l.name, barcode: l.barcode,
@@ -405,7 +405,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
         id: `tmp-${l.id}`, invoice_id: invoice.id, clinic_id: clinicId ?? null,
         product_id: l.product_id, name: l.name, barcode: l.barcode,
         qty: l.qty, unit_price: l.unit_price, unit_cost: l.unit_cost, line_total: l.qty * l.unit_price,
-        unit_label: l.kind === "product" && l.hasSubUnit ? (l.saleUnit === "sub" ? (l.subUnitName || "مفرد") : "علبة") : null,
+        unit_label: l.kind === "product" && l.hasSubUnit ? (l.saleUnit === "sub" ? (l.subUnitName || t("retail.unitSingle")) : t("retail.unitBox")) : null,
       }));
       playSuccess();
       // Show the completion screen immediately — the sale is final. The medical-record
@@ -694,7 +694,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
             <div className="ms-auto flex items-center gap-1.5">
               <div className="flex overflow-hidden rounded-lg border border-line">
                 <button onClick={() => setDiscountType("percent")} className={cn("grid h-8 w-8 place-items-center text-xs", discountType === "percent" ? "bg-brand-600 text-white" : "bg-surface-1 text-ink-muted hover:bg-surface-2")} aria-label="Percent"><Percent size={14} /></button>
-                <button onClick={() => setDiscountType("fixed")} className={cn("grid h-8 px-2 place-items-center text-2xs font-bold", discountType === "fixed" ? "bg-brand-600 text-white" : "bg-surface-1 text-ink-muted hover:bg-surface-2")} aria-label="Fixed">{IQD}</button>
+                <button onClick={() => setDiscountType("fixed")} className={cn("grid h-8 px-2 place-items-center text-2xs font-bold", discountType === "fixed" ? "bg-brand-600 text-white" : "bg-surface-1 text-ink-muted hover:bg-surface-2")} aria-label="Fixed">{currencySymbol()}</button>
               </div>
               <input type="number" min="0" step="1" inputMode="numeric" value={discountValue} onChange={(e) => { setDiscountValue(e.target.value); setFinalOverride(null); }} placeholder="0" className="input h-8 w-24 px-2 py-0 text-end text-sm" />
             </div>
@@ -845,7 +845,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
               <span className="font-display font-bold text-ink">{t("retail.total", "Total")}</span>
               {editingTotal ? (
                 <div className="flex items-center gap-1">
-                  <span className="text-2xs font-bold text-ink-subtle">{IQD}</span>
+                  <span className="text-2xs font-bold text-ink-subtle">{currencySymbol()}</span>
                   <input
                     autoFocus type="number" min="0" step="1" inputMode="numeric" value={totalDraft}
                     onChange={(e) => setTotalDraft(e.target.value)}

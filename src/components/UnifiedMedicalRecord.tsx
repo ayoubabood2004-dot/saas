@@ -5,7 +5,7 @@ import type { Pet, TreatmentEntry, Vaccination, PetNote } from "@/types";
 import { getClinicName } from "@/lib/settings";
 import { medicationDisplay } from "@/lib/meds";
 import { vaccineScientific } from "@/lib/vaccines";
-import { cn } from "@/lib/utils";
+import { cn, dateLocale } from "@/lib/utils";
 import { UniversalReportTable, type ReportColumn } from "@/components/reports/UniversalReportTable";
 
 /* ============================================================================
@@ -140,8 +140,8 @@ export function unifyMedicalEvents(
 }
 
 /* -------- Western-numeral Arabic date/time formatters (native Intl) -------- */
-const fmtDay = (ts: number) => (ts <= 0 ? "—" : new Date(ts).toLocaleDateString("ar-EG-u-nu-latn", { day: "2-digit", month: "long", year: "numeric" }));
-const fmtTime = (ts: number) => new Date(ts).toLocaleTimeString("ar-EG-u-nu-latn", { hour: "2-digit", minute: "2-digit", hour12: true });
+const fmtDay = (ts: number) => (ts <= 0 ? "—" : new Date(ts).toLocaleDateString(dateLocale(), { day: "2-digit", month: "long", year: "numeric" }));
+const fmtTime = (ts: number) => new Date(ts).toLocaleTimeString(dateLocale(), { hour: "2-digit", minute: "2-digit", hour12: true });
 const fmtFull = (e: UnifiedEvent) => (e.timestamp <= 0 ? "—" : e.hasTime ? `${fmtDay(e.timestamp)}، ${fmtTime(e.timestamp)}` : fmtDay(e.timestamp));
 
 export function UnifiedMedicalRecord({ pet, treatments, vaccinations, notes, isOwner = false, printOnly = false, tableOnly = false }: {

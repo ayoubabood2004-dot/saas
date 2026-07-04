@@ -513,6 +513,7 @@ export function MedicationForm({ onAdd, version, addLabel, onReadyChange, flushR
 export function VaccinationForm({ species, hasSpeciesProp, draftSpecies, setDraftSpecies, onAdd, version, addLabel, onReadyChange, flushRef }: {
   species: Species; hasSpeciesProp: boolean; draftSpecies: Species; setDraftSpecies: (s: Species) => void; onAdd: (e: MedicalDraft) => void; version: number; addLabel?: string; onReadyChange?: (ready: boolean) => void; flushRef?: { current: (() => MedicalDraft | null) | null };
 }) {
+  const { t } = useTranslation();
   const toast = useToast();
   const [vaccine, setVaccine] = useState("");
   const [nextDue, setNextDue] = useState<string | null>(null);
@@ -585,7 +586,7 @@ export function VaccinationForm({ species, hasSpeciesProp, draftSpecies, setDraf
           value={vaccine}
           placeholder="Select a vaccine for this species…"
           searchable
-          options={vaccines.map((v) => ({ value: v, label: v, hint: customSet.has(v.toLowerCase()) ? "خاص بالعيادة" : undefined }))}
+          options={vaccines.map((v) => ({ value: v, label: v, hint: customSet.has(v.toLowerCase()) ? t("medentry.clinicCustom") : undefined }))}
           onChange={setVaccine}
         />
       </Tier>
@@ -690,7 +691,7 @@ export function VaccinationForm({ species, hasSpeciesProp, draftSpecies, setDraf
             setVaccine(""); setNextDue(null); setLot(""); setGiven(true);
           } catch (err) {
             console.error("Add vaccination failed:", err);
-            toast.error("تعذّرت إضافة اللقاح", err instanceof Error ? err.message : "تحقّق من التاريخ المُختار.");
+            toast.error(t("medentry.vaccineAddFail"), err instanceof Error ? err.message : t("medentry.checkDate"));
           }
         }}
       >

@@ -1,3 +1,4 @@
+import i18next from "i18next";
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
 
@@ -7,6 +8,11 @@ export function cn(...inputs: ClassValue[]) {
 
 /** Iraqi Dinar currency symbol. */
 export const IQD = "د.ع";
+
+/** Currency symbol that follows the UI language — د.ع in Arabic, IQD in English. */
+export const currencySymbol = () => (i18next.language === "ar" ? "د.ع" : "IQD");
+
+
 
 // 'en-US' is intentional: it guarantees Western numerals (0-9) with thousands
 // separators regardless of the browser locale, and never Eastern Arabic digits.
@@ -19,7 +25,7 @@ export function formatNum(n: number): string {
 
 /** Format an amount as Iraqi Dinar — e.g. 25000 → "25,000 د.ع". */
 export function money(n: number): string {
-  return `${formatNum(n)} ${IQD}`;
+  return `${formatNum(n)} ${currencySymbol()}`;
 }
 
 export function uid(prefix = "id"): string {
@@ -75,7 +81,8 @@ export function localISO(d: Date = new Date()): string {
 
 // Arabic locale variant that keeps Arabic names but forces Western (Latin) numerals
 // via the Unicode `nu=latn` extension — so dates/times never show Eastern-Arabic digits.
-const dateLocale = (lang: string) => (lang === "ar" ? "ar-EG-u-nu-latn" : "en-US");
+// Defaults to the CURRENT UI language so date rendering follows the app language.
+export const dateLocale = (lang: string = i18next.language) => (lang === "ar" ? "ar-EG-u-nu-latn" : "en-GB");
 
 export function formatTime(iso: string, lang: string): string {
   return new Date(iso).toLocaleTimeString(dateLocale(lang), { hour: "numeric", minute: "2-digit" });
