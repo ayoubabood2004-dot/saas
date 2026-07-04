@@ -1,6 +1,7 @@
 import { lazy, Suspense, useState, type ReactNode } from "react";
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
+import { isAppHost } from "@/lib/appUrl";
 import { TopBar } from "@/components/TopBar";
 import { Sidebar } from "@/components/Sidebar";
 import { CommandPaletteProvider } from "@/components/CommandPaletteProvider";
@@ -26,6 +27,7 @@ const WhatsAppCampaigns = lazy(() => import("@/pages/WhatsAppCampaigns").then((m
 const StaffManagement = lazy(() => import("@/pages/StaffManagement").then((m) => ({ default: m.StaffManagement })));
 const AnalyticsHub = lazy(() => import("@/pages/AnalyticsHub").then((m) => ({ default: m.AnalyticsHub })));
 const JoinClinic = lazy(() => import("@/pages/JoinClinic").then((m) => ({ default: m.JoinClinic })));
+const Landing = lazy(() => import("@/pages/Landing").then((m) => ({ default: m.Landing })));
 
 function FullScreenLoader() {
   return (
@@ -100,6 +102,19 @@ function Home() {
   return <Dashboard />;
 }
 
+/** The root route `/`.
+ *  • Signed in → the app home (dashboard).
+ *  • Signed out on the app subdomain → the login front door.
+ *  • Signed out on the root/marketing domain → the public landing page.
+ *  This keeps the app fully reachable even before the subdomain split exists. */
+function HomeRoute() {
+  const { user, loading } = useAuth();
+  if (loading) return <FullScreenLoader />;
+  if (user) return <Home />;
+  if (isAppHost()) return <Navigate to="/login" replace />;
+  return <Landing />;
+}
+
 function Shell() {
   const location = useLocation();
   const { user, needsRoleChoice } = useAuth();
@@ -122,7 +137,7 @@ function Shell() {
           <Routes location={location} key={location.pathname}>
             <Route path="/login" element={<LoginRoute />} />
             <Route path="/join" element={<JoinClinic />} />
-            <Route path="/" element={<Protected><Home /></Protected>} />
+            <Route path="/" element={<HomeRoute />} />
             <Route path="/pet/:petId" element={<Protected><PetPassport /></Protected>} />
             <Route path="/book" element={<Protected><BookingWizard /></Protected>} />
             <Route path="/scan" element={<Protected><ScanChart /></Protected>} />
