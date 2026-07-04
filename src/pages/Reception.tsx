@@ -7,7 +7,7 @@ import {
 } from "@dnd-kit/core";
 import {
   CalendarDays, Stethoscope, BedDouble, LogOut, Plus, HeartPulse,
-  ChevronRight, ChevronLeft, LayoutGrid, Columns3, GripVertical, Syringe, Bug, Cake, Bell,
+  ChevronRight, ChevronLeft, LayoutGrid, Columns3, GripVertical, Syringe, Bug, Cake, Bell, X,
 } from "lucide-react";
 import type { Admission, Pet, Vaccination, Reminder } from "@/types";
 import { opsStore } from "@/lib/opsStore";
@@ -109,6 +109,7 @@ const dayNumber = (admittedOn: string): number => {
 };
 const arDate = (iso: string) => new Date(iso + "T00:00:00").toLocaleDateString("ar-EG-u-nu-latn", { day: "2-digit", month: "long" });
 const arMonthYear = (d: Date) => d.toLocaleDateString("ar-EG-u-nu-latn", { month: "long", year: "numeric" });
+const arFullDate = (iso: string) => new Date(iso + "T00:00:00").toLocaleDateString("ar-EG-u-nu-latn", { weekday: "long", day: "numeric", month: "long" });
 
 /** Six-week matrix covering the cursor's month, weeks starting Saturday. */
 function monthMatrix(cursor: Date): Date[][] {
@@ -358,7 +359,12 @@ function KanbanColumn({ status, items, pets, onOpen, statusOf, loading }: {
   );
 }
 
-/* ---------------- Month grid (droppable day cells) ---------------- */
+/* ---------------- Month grid — at-a-glance overview + a readable day panel ----
+ * The grid is deliberately calm: each day shows only coloured dots (reminders,
+ * by kind) and a small badge for live cases — enough to scan a whole month in a
+ * blink. Clicking a day opens the panel beside it with the FULL, plain-language
+ * detail (pet names, owners, statuses, actions) so nothing needs deciphering.
+ * ------------------------------------------------------------------------- */
 function MonthGrid({ cursor, setCursor, byDay, remindersByDay, pets, todayISO, statusOf, onOpen }: {
   cursor: Date; setCursor: (d: Date) => void; byDay: Map<string, Admission[]>; remindersByDay: Map<string, CalReminder[]>;
   pets: Record<string, Pet>; todayISO: string; statusOf: (a: Admission) => OpStatus; onOpen: (petId: string) => void;
@@ -366,102 +372,254 @@ function MonthGrid({ cursor, setCursor, byDay, remindersByDay, pets, todayISO, s
   const { t } = useTranslation();
   const weeks = useMemo(() => monthMatrix(cursor), [cursor]);
   const month = cursor.getMonth();
-  const shift = (n: number) => setCursor(new Date(cursor.getFullYear(), cursor.getMonth() + n, 1));
+  // The focused day whose details fill the side panel. Starts on today.
+  const [selected, setSelected] = useState<string | null>(todayISO);
+  const shift = (n: number) => { setSelected(null); setCursor(new Date(cursor.getFullYear(), cursor.getMonth() + n, 1)); };
+
+  const selItems = selected ? (byDay.get(selected) ?? []) : [];
+  const selRems = selected ? (remindersByDay.get(selected) ?? []) : [];
 
   return (
-    <div className="card p-3 sm:p-4">
-      {/* Month nav — chevrons are direction-agnostic in RTL (prev = ChevronRight). */}
-      <div className="mb-3 flex items-center justify-between">
-        <button onClick={() => { playTap(); shift(-1); }} className="grid h-9 w-9 place-items-center rounded-xl border border-line text-ink-muted transition hover:bg-surface-2"><ChevronRight size={18} /></button>
-        <div className="flex items-center gap-2">
-          <h2 className="font-display text-lg font-extrabold text-ink">{arMonthYear(cursor)}</h2>
-          <button onClick={() => { playTap(); setCursor(new Date()); }} className="chip bg-brand-50 text-xs text-brand-700 dark:bg-brand-500/15 dark:text-brand-300">{t("reception.today", "اليوم")}</button>
+    <div className="grid gap-4 lg:grid-cols-[1fr_minmax(320px,380px)] lg:items-start">
+      {/* ---- Calendar ---- */}
+      <div className="card p-3 sm:p-4">
+        {/* Month nav — chevrons are direction-agnostic in RTL (prev = ChevronRight). */}
+        <div className="mb-3 flex items-center justify-between">
+          <button onClick={() => { playTap(); shift(-1); }} className="grid h-9 w-9 place-items-center rounded-xl border border-line text-ink-muted transition hover:bg-surface-2"><ChevronRight size={18} /></button>
+          <div className="flex items-center gap-2">
+            <h2 className="font-display text-lg font-extrabold text-ink">{arMonthYear(cursor)}</h2>
+            <button onClick={() => { playTap(); setCursor(new Date()); setSelected(todayISO); }} className="chip bg-brand-50 text-xs text-brand-700 dark:bg-brand-500/15 dark:text-brand-300">{t("reception.today", "اليوم")}</button>
+          </div>
+          <button onClick={() => { playTap(); shift(1); }} className="grid h-9 w-9 place-items-center rounded-xl border border-line text-ink-muted transition hover:bg-surface-2"><ChevronLeft size={18} /></button>
         </div>
-        <button onClick={() => { playTap(); shift(1); }} className="grid h-9 w-9 place-items-center rounded-xl border border-line text-ink-muted transition hover:bg-surface-2"><ChevronLeft size={18} /></button>
+
+        {/* Legend — what the coloured dots on each day mean. */}
+        <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-xl border border-line bg-surface-2/50 px-3 py-2">
+          {(Object.keys(REMINDER_META) as CalReminderKind[]).map((k) => {
+            const rm = REMINDER_META[k];
+            return (
+              <span key={k} className="inline-flex items-center gap-1.5 text-2xs font-semibold text-ink-muted">
+                <span className={cn("h-2.5 w-2.5 rounded-full", rm.dot)} />
+                {t(rm.key, rm.def)}
+              </span>
+            );
+          })}
+        </div>
+
+        {/* Weekday headers + day cells */}
+        <div className="grid grid-cols-7 gap-1 sm:gap-1.5">
+          {AR_WEEKDAYS.map((d) => (
+            <div key={d} className="pb-1 text-center text-2xs font-bold text-ink-subtle sm:text-xs">{d}</div>
+          ))}
+          {weeks.flat().map((date) => {
+            const iso = localISO(date);
+            const items = byDay.get(iso) ?? [];
+            const rems = remindersByDay.get(iso) ?? [];
+            return (
+              <DayCell
+                key={iso}
+                iso={iso}
+                dayNum={date.getDate()}
+                inMonth={date.getMonth() === month}
+                isToday={iso === todayISO}
+                isSelected={iso === selected}
+                caseCount={items.length}
+                rems={rems}
+                onSelect={() => { playTap(); setSelected(iso); }}
+              />
+            );
+          })}
+        </div>
       </div>
 
-      {/* Reminder legend — what the coloured chips on each day mean. */}
-      <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-xl border border-line bg-surface-2/50 px-3 py-2">
-        {(Object.keys(REMINDER_META) as CalReminderKind[]).map((k) => {
-          const rm = REMINDER_META[k];
-          const Icon = rm.icon;
-          return (
-            <span key={k} className="inline-flex items-center gap-1.5 text-2xs font-semibold text-ink-muted">
-              <span className={cn("grid h-4 w-4 place-items-center rounded", rm.chip)}><Icon size={11} /></span>
-              {t(rm.key, rm.def)}
-            </span>
-          );
-        })}
-      </div>
-
-      {/* Weekday headers */}
-      <div className="grid grid-cols-7 gap-1.5 sm:gap-2">
-        {AR_WEEKDAYS.map((d) => (
-          <div key={d} className="pb-1 text-center text-2xs font-bold text-ink-subtle sm:text-xs">{d}</div>
-        ))}
-        {weeks.flat().map((date) => {
-          const iso = localISO(date);
-          const inMonth = date.getMonth() === month;
-          const isToday = iso === todayISO;
-          const items = byDay.get(iso) ?? [];
-          const rems = remindersByDay.get(iso) ?? [];
-          return <DayCell key={iso} iso={iso} dayNum={date.getDate()} inMonth={inMonth} isToday={isToday} items={items} rems={rems} pets={pets} statusOf={statusOf} onOpen={onOpen} />;
-        })}
-      </div>
+      {/* ---- Selected-day detail ---- */}
+      <DayDetailPanel
+        iso={selected}
+        isToday={selected === todayISO}
+        items={selItems}
+        rems={selRems}
+        pets={pets}
+        statusOf={statusOf}
+        onOpen={onOpen}
+        onClose={() => setSelected(null)}
+      />
     </div>
   );
 }
 
-function DayCell({ iso, dayNum, inMonth, isToday, items, rems, pets, statusOf, onOpen }: {
-  iso: string; dayNum: number; inMonth: boolean; isToday: boolean; items: Admission[]; rems: CalReminder[];
-  pets: Record<string, Pet>; statusOf: (a: Admission) => OpStatus; onOpen: (petId: string) => void;
+/** One day in the month grid: a calm, scannable summary you tap to see details.
+ *  Coloured dots = reminders (by kind); a small badge = live cases; a red mark
+ *  in the corner flags anything overdue so it can't slip by. */
+function DayCell({ iso, dayNum, inMonth, isToday, isSelected, caseCount, rems, onSelect }: {
+  iso: string; dayNum: number; inMonth: boolean; isToday: boolean; isSelected: boolean;
+  caseCount: number; rems: CalReminder[]; onSelect: () => void;
 }) {
-  const { setNodeRef, isOver } = useDroppable({ id: `day:${iso}` });
-  const total = items.length + rems.length;
+  const shownDots = rems.slice(0, 4);
+  const extra = rems.length - shownDots.length;
+  const hasOverdue = rems.some((r) => r.overdue);
   return (
-    <div
-      ref={setNodeRef}
+    <button
+      type="button"
       data-day={iso}
+      onClick={onSelect}
+      aria-pressed={isSelected}
       className={cn(
-        "min-h-[92px] rounded-xl border p-1.5 transition-colors sm:min-h-[118px]",
-        inMonth ? "border-line bg-surface-1" : "border-transparent bg-surface-2/30",
-        isOver && "ring-2 ring-brand-400/70 bg-brand-50/60 dark:bg-brand-500/10",
+        "flex min-h-[64px] flex-col rounded-xl border p-1.5 text-start transition sm:min-h-[88px]",
+        inMonth ? "bg-surface-1" : "bg-surface-2/30",
+        isSelected
+          ? "border-brand-400 ring-2 ring-brand-400/60 dark:border-brand-500"
+          : "border-line hover:border-brand-200 hover:bg-surface-2/60 dark:hover:border-brand-500/40",
       )}
     >
-      <div className="mb-1 flex items-center justify-between">
+      <div className="flex items-center justify-between">
         <span className={cn("grid h-6 min-w-6 place-items-center rounded-full px-1 text-2xs font-bold tabular-nums", isToday ? "bg-brand-600 text-white" : inMonth ? "text-ink-muted" : "text-ink-subtle/50")}>{dayNum}</span>
-        {total > 0 && <span className="text-2xs font-bold text-ink-subtle">{total}</span>}
+        {hasOverdue && <span className="h-2 w-2 rounded-full bg-danger-500 ring-2 ring-danger-500/25" aria-hidden />}
       </div>
-      <div className="space-y-1 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" style={{ maxHeight: 78 }}>
-        {/* Reminders first — they're the look-ahead the month view is for. */}
-        {rems.map((r) => <ReminderChip key={r.id} rem={r} onOpen={onOpen} />)}
-        {items.map((a) => <DraggableChip key={a.id} adm={a} pet={pets[a.pet_id]} status={statusOf(a)} onOpen={onOpen} />)}
+
+      {/* Reminder dots (coloured by kind) */}
+      {rems.length > 0 && (
+        <div className="mt-auto flex flex-wrap items-center gap-1 pt-1">
+          {shownDots.map((r) => (
+            <span key={r.id} className={cn("h-2 w-2 rounded-full", REMINDER_META[r.kind].dot)} />
+          ))}
+          {extra > 0 && <span className="text-2xs font-bold leading-none text-ink-subtle">+{extra}</span>}
+        </div>
+      )}
+
+      {/* Live-cases badge */}
+      {caseCount > 0 && (
+        <div className={cn("flex pt-1", rems.length === 0 && "mt-auto")}>
+          <span className="inline-flex items-center gap-1 rounded-md bg-surface-2 px-1.5 py-0.5 text-2xs font-bold text-ink-muted">
+            <HeartPulse size={10} className="text-brand-500" /> {caseCount}
+          </span>
+        </div>
+      )}
+    </button>
+  );
+}
+
+/** The readable detail for the selected day — everything on that date laid out
+ *  in plain, grouped rows so staff grasp and act on it without any deciphering. */
+function DayDetailPanel({ iso, isToday, items, rems, pets, statusOf, onOpen, onClose }: {
+  iso: string | null; isToday: boolean; items: Admission[]; rems: CalReminder[];
+  pets: Record<string, Pet>; statusOf: (a: Admission) => OpStatus; onOpen: (petId: string) => void; onClose: () => void;
+}) {
+  const { t } = useTranslation();
+
+  if (!iso) {
+    return (
+      <div className="card grid min-h-[220px] place-items-center p-6 text-center">
+        <div>
+          <span className="mx-auto mb-3 grid h-12 w-12 place-items-center rounded-2xl bg-surface-2 text-ink-subtle"><CalendarDays size={22} /></span>
+          <p className="text-sm font-semibold text-ink-muted">{t("reception.pickDay", "اختر يوماً من التقويم")}</p>
+          <p className="mt-1 text-xs text-ink-subtle">{t("reception.pickDayHint", "لعرض التذكيرات والحالات في ذلك اليوم")}</p>
+        </div>
       </div>
+    );
+  }
+
+  const empty = rems.length === 0 && items.length === 0;
+
+  return (
+    <div className="card p-4">
+      {/* Header */}
+      <div className="mb-3 flex items-start gap-2">
+        <div className="me-auto flex items-center gap-2">
+          <h3 className="font-display text-base font-extrabold text-ink">{arFullDate(iso)}</h3>
+          {isToday && <span className="chip bg-brand-50 text-2xs text-brand-700 dark:bg-brand-500/15 dark:text-brand-300">{t("reception.today", "اليوم")}</span>}
+        </div>
+        <button onClick={() => { playTap(); onClose(); }} className="grid h-7 w-7 shrink-0 place-items-center rounded-lg text-ink-subtle transition hover:bg-surface-2 hover:text-ink" aria-label={t("common.close", "إغلاق")}><X size={15} /></button>
+      </div>
+
+      {empty ? (
+        <div className="grid min-h-[150px] place-items-center rounded-xl border border-dashed border-line bg-surface-2/30 p-6 text-center">
+          <div>
+            <span className="mx-auto mb-2 grid h-10 w-10 place-items-center rounded-xl bg-surface-2 text-ink-subtle"><CalendarDays size={18} /></span>
+            <p className="text-xs font-semibold text-ink-muted">{t("reception.dayEmpty", "لا توجد تذكيرات أو حالات في هذا اليوم")}</p>
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {rems.length > 0 && (
+            <section>
+              <div className="mb-2 flex items-center gap-2">
+                <span className="grid h-6 w-6 place-items-center rounded-lg bg-indigo-100 text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-300"><Bell size={13} /></span>
+                <h4 className="font-display text-sm font-bold text-ink">{t("reception.remindersSection", "التذكيرات")}</h4>
+                <span className="rounded-full bg-surface-2 px-1.5 text-2xs font-bold tabular-nums text-ink-muted">{rems.length}</span>
+              </div>
+              <div className="space-y-1.5">
+                {rems.map((r) => <ReminderRow key={r.id} rem={r} onOpen={onOpen} />)}
+              </div>
+            </section>
+          )}
+
+          {items.length > 0 && (
+            <section>
+              <div className="mb-2 flex items-center gap-2">
+                <span className="grid h-6 w-6 place-items-center rounded-lg bg-brand-100 text-brand-600 dark:bg-brand-500/20 dark:text-brand-300"><Stethoscope size={13} /></span>
+                <h4 className="font-display text-sm font-bold text-ink">{t("reception.casesSection", "حالات العيادة")}</h4>
+                <span className="rounded-full bg-surface-2 px-1.5 text-2xs font-bold tabular-nums text-ink-muted">{items.length}</span>
+              </div>
+              <div className="space-y-1.5">
+                {items.map((a) => <CaseRow key={a.id} adm={a} pet={pets[a.pet_id]} status={statusOf(a)} onOpen={onOpen} />)}
+              </div>
+            </section>
+          )}
+        </div>
+      )}
     </div>
   );
 }
 
-/** A non-draggable, colour-coded reminder pill in a month day cell. Clicking it
- *  opens the pet (when linked). Overdue items get a ring so they don't slip by. */
-function ReminderChip({ rem, onOpen }: { rem: CalReminder; onOpen: (petId: string) => void }) {
+/** A single reminder in the day panel — icon + who it's for + what it is, an
+ *  overdue flag when late, and a direct link to the pet's record. */
+function ReminderRow({ rem, onOpen }: { rem: CalReminder; onOpen: (petId: string) => void }) {
   const { t } = useTranslation();
   const rm = REMINDER_META[rem.kind];
   const Icon = rm.icon;
-  const label = rem.petName || t(rm.key, rm.def);
+  const kindLabel = t(rm.key, rm.def);
+  const title = rem.petName || rem.title || kindLabel;
+  const sub = rem.petName && rem.title ? `${kindLabel} · ${rem.title}` : kindLabel;
   return (
-    <div
-      onClick={() => { if (rem.petId) { playTap(); onOpen(rem.petId); } }}
-      title={`${t(rm.key, rm.def)}${rem.petName ? ` · ${rem.petName}` : ""}${rem.title ? ` · ${rem.title}` : ""}`}
-      className={cn(
-        "flex items-center gap-1 rounded-md px-1.5 py-1 text-2xs font-semibold",
-        rm.chip,
-        rem.petId && "cursor-pointer",
-        rem.overdue && "ring-1 ring-danger-400/70",
+    <div className="flex items-center gap-2.5 rounded-xl border border-line bg-surface-1 p-2">
+      <span className={cn("grid h-9 w-9 shrink-0 place-items-center rounded-lg", rm.chip)}><Icon size={16} /></span>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-1.5">
+          <p className="truncate text-sm font-bold text-ink">{title}</p>
+          {rem.overdue && <span className="chip shrink-0 bg-danger-100 text-2xs text-danger-700 dark:bg-danger-500/20 dark:text-danger-200">{t("reception.overdue", "متأخر")}</span>}
+        </div>
+        <p className="truncate text-2xs text-ink-muted">{sub}</p>
+      </div>
+      {rem.petId && (
+        <button onClick={() => { playTap(); onOpen(rem.petId!); }} className="shrink-0 rounded-lg border border-line px-2.5 py-1 text-2xs font-semibold text-ink-muted transition hover:bg-surface-2 hover:text-ink">
+          {t("reception.openRecord", "فتح الطبلة")}
+        </button>
       )}
-    >
-      <Icon size={11} className="shrink-0" />
-      <span className="truncate">{label}</span>
     </div>
+  );
+}
+
+/** A single live case in the day panel — avatar, owner, status chip and how long
+ *  it's been in the clinic. The whole row opens the pet's record. */
+function CaseRow({ adm, pet, status, onOpen }: { adm: Admission; pet?: Pet; status: OpStatus; onOpen: (petId: string) => void }) {
+  const { t } = useTranslation();
+  const m = STATUS_META[status];
+  const meta =
+    status === "care" ? `${t("snapshot.day", "اليوم")} ${dayNumber(adm.admitted_on)}`
+      : status === "boarding" || status === "careBoarding" ? `${t("snapshot.day", "اليوم")} ${dayNumber(adm.admitted_on)}${adm.cage ? ` · ${t("records.cage", "قفص")} ${adm.cage}` : ""}`
+        : adm.discharged_on ? `${t("reception.left", "غادر")} ${arDate(adm.discharged_on)}` : arDate(adm.admitted_on);
+  return (
+    <button type="button" onClick={() => { playTap(); onOpen(adm.pet_id); }} className="flex w-full items-center gap-2.5 rounded-xl border border-line bg-surface-1 p-2 text-start transition hover:bg-surface-2/60">
+      {pet ? <PetAvatar pet={pet} size={36} photoFallback /> : <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-surface-2 text-ink-subtle"><Stethoscope size={16} /></span>}
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-bold text-ink">{pet?.name ?? "—"}</p>
+        <p className="truncate text-2xs text-ink-muted">{pet?.owner_name || "—"}</p>
+      </div>
+      <div className="flex shrink-0 flex-col items-end gap-1">
+        <span className={cn("chip text-2xs font-semibold", m.chip)}>{t(m.key, m.def)}</span>
+        <span className="text-2xs text-ink-subtle">{meta}</span>
+      </div>
+    </button>
   );
 }
 
@@ -471,23 +629,6 @@ function DraggableCard({ adm, pet, status, onOpen }: { adm: Admission; pet?: Pet
   return (
     <div ref={setNodeRef} {...listeners} {...attributes} data-card={adm.id} onClick={() => { playTap(); onOpen(adm.pet_id); }} className={cn("cursor-pointer touch-none", isDragging && "opacity-30")}>
       <OpCard adm={adm} pet={pet} status={status} />
-    </div>
-  );
-}
-
-function DraggableChip({ adm, pet, status, onOpen }: { adm: Admission; pet?: Pet; status: OpStatus; onOpen: (petId: string) => void }) {
-  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: adm.id });
-  const m = STATUS_META[status];
-  return (
-    <div
-      ref={setNodeRef} {...listeners} {...attributes}
-      data-card={adm.id}
-      onClick={() => { playTap(); onOpen(adm.pet_id); }}
-      title={pet?.name}
-      className={cn("flex cursor-pointer touch-none items-center gap-1 rounded-md px-1.5 py-1 text-2xs font-semibold", m.chip, isDragging && "opacity-30")}
-    >
-      <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", m.dot)} />
-      <span className="truncate">{pet?.name ?? "—"}</span>
     </div>
   );
 }
