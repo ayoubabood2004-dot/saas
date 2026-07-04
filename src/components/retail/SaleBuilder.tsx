@@ -111,6 +111,9 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
   const [payments, setPayments] = useState<PaymentSplit[]>([{ method: "cash", amount: 0 }]);
   // Whether the cashier has manually touched the paid amount (stops the auto-pin to total).
   const [paidEdited, setPaidEdited] = useState(false);
+  // Explicit "دفع جزئي" mode — the cashier chose partial payment via the button
+  // (a manually-typed shortfall still shows the same loud debt panel).
+  const [partialMode, setPartialMode] = useState(false);
   // Optional cashier / sales rep (staff id) — attached to the invoice for reports.
   const [cashierId, setCashierId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -272,6 +275,39 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
     });
   };
 
+  // ---- Explicit partial-payment (credit) mode ------------------------------
+  // "دفع جزئي": one obvious button instead of silently typing a lower amount.
+  // Entering it pre-fills HALF the bill (the everyday case) — the cashier can
+  // then type any amount; the rest is loudly shown as debt before checkout.
+  const enterPartial = () => {
+    playTap();
+    setPartialMode(true);
+    setPaidEdited(true);
+    setPayments([{ method: payments[0]?.method ?? "cash", amount: Math.max(0, Math.round(total / 2)) }]);
+  };
+  const exitPartial = () => {
+    setPartialMode(false);
+    if (payments.length === 1) {
+      // Single leg → back to auto-tracking the live total (paid in full).
+      playTap();
+      setPaidEdited(false);
+      setPayments((ps) => [{ ...ps[0], amount: total }]);
+    } else {
+      // Split → top the first leg up, keep the other legs as entered.
+      collectFull();
+    }
+  };
+  const setPaidQuick = (amount: number) => {
+    playTap();
+    setPaidEdited(true);
+    setPayments((ps) => ps.map((p, i) => (i === 0 ? { ...p, amount: Math.max(0, Math.round(amount)) } : p)));
+  };
+  // The partial panel shows for the explicit mode AND for a manually-typed
+  // shortfall, so the debt can never sneak through quietly.
+  const partialUi = partialMode || isCredit;
+  // A debt must belong to someone — block checkout until the customer is named.
+  const needsDebtName = isCredit && !name.trim();
+
   // ---- Final-price override (acts as an approximate discount) ----------------
   const beginEditTotal = () => { setTotalDraft(String(Math.round(total))); setEditingTotal(true); };
   const commitTotal = () => {
@@ -302,7 +338,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
 
   const reset = () => {
     setCart([]); setQuery(""); setDiscountValue(""); setFinalOverride(null); setEditingTotal(false);
-    setDiscountType("percent"); setPayments([{ method: "cash", amount: 0 }]); setPaidEdited(false); setDone(null); setLastPrints(0);
+    setDiscountType("percent"); setPayments([{ method: "cash", amount: 0 }]); setPaidEdited(false); setPartialMode(false); setDone(null); setLastPrints(0);
     setCashierId(null); setBrowseTab("products");
     // Preserve the patient/customer bridge across "New sale" so repeated per-patient
     // sales keep syncing into the same animal's record; clear it for a plain walk-in.
@@ -670,18 +706,34 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
               <span className="flex items-center gap-1.5 text-xs font-semibold text-ink-muted">
                 <Wallet size={13} /> {t("retail.payment", "الدفع")}
                 {isSplit && <span className="chip bg-brand-50 text-2xs font-medium text-brand-700 dark:bg-brand-500/15 dark:text-brand-300">{t("retail.split", "دفع مجزأ")}</span>}
-                {isCredit && <span className="chip bg-warn-50 text-2xs font-medium text-warn-700 dark:bg-warn-500/15 dark:text-warn-300">{t("retail.creditSale", "دفع آجل")}</span>}
               </span>
-              <div className="flex items-center gap-2">
-                {isCredit && (
-                  <button onClick={collectFull} className="text-2xs font-semibold text-success-600 transition hover:text-success-700">{t("retail.collectFull", "تحصيل كامل المبلغ")}</button>
+              {payments.length < PAY_SEQUENCE.length && (
+                <button onClick={addPayment} className="inline-flex items-center gap-1 text-2xs font-semibold text-brand-600 transition hover:text-brand-700">
+                  <Plus size={12} /> {t("retail.addPayment", "إضافة طريقة دفع أخرى")}
+                </button>
+              )}
+            </div>
+
+            {/* ONE obvious choice: pay in full, or pay part and record the rest as debt. */}
+            <div className="grid grid-cols-2 gap-1.5 rounded-xl border border-line bg-surface-2 p-1">
+              <button
+                onClick={exitPartial}
+                className={cn(
+                  "rounded-lg px-2 py-2 text-xs font-bold transition",
+                  !partialUi ? "bg-surface-1 text-success-700 shadow-card dark:text-success-300" : "text-ink-muted hover:text-ink",
                 )}
-                {payments.length < PAY_SEQUENCE.length && (
-                  <button onClick={addPayment} className="inline-flex items-center gap-1 text-2xs font-semibold text-brand-600 transition hover:text-brand-700">
-                    <Plus size={12} /> {t("retail.addPayment", "إضافة طريقة دفع أخرى")}
-                  </button>
+              >
+                {t("retail.payFull", "💵 دفع كامل")}
+              </button>
+              <button
+                onClick={enterPartial}
+                className={cn(
+                  "rounded-lg px-2 py-2 text-xs font-bold transition",
+                  partialUi ? "bg-surface-1 text-warn-700 shadow-card dark:text-warn-300" : "text-ink-muted hover:text-ink",
                 )}
-              </div>
+              >
+                {t("retail.payPartial", "🧾 دفع جزئي — الباقي دين")}
+              </button>
             </div>
 
             {payments.map((p, i) => (
@@ -709,13 +761,49 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
               </div>
             ))}
 
-            {/* Live allocation calculator — shown for splits, credit sales, or over-tendered cash */}
-            {(isSplit || isCredit || change > 0) && (
+            {/* Partial mode: quick amounts + a LOUD "this becomes debt" panel. */}
+            {partialUi && (
+              <>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-2xs font-semibold text-ink-subtle">{t("retail.paysNow", "يدفع الآن:")}</span>
+                  <button onClick={() => setPaidQuick(total / 2)} className="rounded-full border border-line bg-surface-1 px-3 py-1 text-2xs font-bold text-ink-muted transition hover:border-warn-300 hover:text-warn-700">{t("retail.half", "النصف")}</button>
+                  <button onClick={() => setPaidQuick(total / 4)} className="rounded-full border border-line bg-surface-1 px-3 py-1 text-2xs font-bold text-ink-muted transition hover:border-warn-300 hover:text-warn-700">{t("retail.quarter", "الربع")}</button>
+                  <button onClick={exitPartial} className="ms-auto rounded-full px-2 py-1 text-2xs font-semibold text-success-600 transition hover:text-success-700">{t("retail.collectFull", "تحصيل كامل المبلغ")}</button>
+                </div>
+                <div className="overflow-hidden rounded-xl border border-warn-200 dark:border-warn-500/30">
+                  <div className="space-y-1 bg-warn-50/60 px-3 py-2.5 text-sm dark:bg-warn-500/10">
+                    <div className="flex items-center justify-between text-ink-muted">
+                      <span>{t("retail.paysNowLabel", "يدفع الآن")}</span>
+                      <span className="font-bold tabular-nums text-ink">{money(totalPaid)}</span>
+                    </div>
+                    <div className="flex items-center justify-between font-display text-base font-extrabold text-warn-700 dark:text-warn-300">
+                      <span>🧾 {t("retail.recordedAsDebt", "يُسجَّل دين")}</span>
+                      <span className="tabular-nums">{money(Math.max(0, remaining))}</span>
+                    </div>
+                  </div>
+                  <div className={cn(
+                    "px-3 py-2 text-2xs font-semibold",
+                    needsDebtName
+                      ? "bg-danger-50 text-danger-700 dark:bg-danger-500/15 dark:text-danger-300"
+                      : "bg-surface-2 text-ink-muted",
+                  )}>
+                    {needsDebtName
+                      ? t("retail.debtNeedsName", "⚠️ اكتب اسم الزبون (خانة «العميل» أعلاه) حتى يُسجَّل الدين باسمه")
+                      : isCredit
+                        ? t("retail.debtOnName", { name: name.trim(), defaultValue: "الدين سيُسجَّل باسم: {{name}} · يظهر في سجل الديون" })
+                        : t("retail.noDebtYet", "قلّل «المبلغ المدفوع» أو اختر النصف/الربع — الباقي يُسجَّل ديناً تلقائياً")}
+                  </div>
+                </div>
+              </>
+            )}
+
+            {/* Split / over-tendered calculator (non-credit cases). */}
+            {!partialUi && (isSplit || change > 0) && (
               <div className="space-y-0.5 rounded-xl bg-surface-2 px-3 py-2 text-xs">
                 <div className="flex items-center justify-between text-ink-muted"><span>{t("retail.grandTotal", "إجمالي الفاتورة")}</span><span className="tabular-nums">{money(total)}</span></div>
                 <div className="flex items-center justify-between text-ink-muted"><span>{t("retail.amountReceived", "المبلغ المستلم")}</span><span className="tabular-nums">{money(totalPaid)}</span></div>
-                <div className={cn("flex items-center justify-between font-bold", isCredit ? "text-warn-600" : "text-success-600")}>
-                  <span>{change > 0 ? t("retail.changeDue", "الباقي") : isCredit ? t("retail.creditRemaining", "المتبقي على العميل") : t("retail.remaining", "المتبقي")}</span>
+                <div className="flex items-center justify-between font-bold text-success-600">
+                  <span>{change > 0 ? t("retail.changeDue", "الباقي") : t("retail.remaining", "المتبقي")}</span>
                   <span className="tabular-nums">{money(change > 0 ? change : Math.abs(remaining))}</span>
                 </div>
               </div>
@@ -784,13 +872,16 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
             <div className="flex items-center justify-end gap-1 text-2xs text-success-600"><TrendingUp size={11} /> {t("retail.profit", "Profit")} {money(profit)}</div>
           </div>
 
-          <Button className="w-full" size="lg" disabled={cart.length === 0} loading={busy} onClick={checkout} leftIcon={<CheckCircle2 size={18} />}>
+          <Button className="w-full" size="lg" disabled={cart.length === 0 || needsDebtName} loading={busy} onClick={checkout} leftIcon={<CheckCircle2 size={18} />}>
             {isCredit
-              ? `${t("retail.saveCredit", "حفظ (دفع آجل)")} · ${t("retail.remainingDue", "المتبقي")} ${money(remaining)}`
+              ? `${t("retail.completePartial", "إتمام البيع")} · ${t("retail.paysNowLabel", "يدفع الآن")} ${money(totalPaid)} · ${t("retail.debtShort", "دين")} ${money(remaining)}`
               : change > 0
                 ? `${t("retail.complete", "إصدار الفاتورة")} · ${t("retail.changeDue", "الباقي")} ${money(change)}`
                 : `${t("retail.complete", "إصدار الفاتورة")} · ${money(total)}`}
           </Button>
+          {needsDebtName && (
+            <p className="text-center text-2xs font-semibold text-danger-600">{t("retail.debtNameGate", "لا يمكن تسجيل دين بلا اسم — اكتب اسم الزبون أولاً")}</p>
+          )}
         </div>
       </div>
     </div>
