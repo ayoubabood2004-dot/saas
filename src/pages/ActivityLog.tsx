@@ -61,6 +61,7 @@ export function ActivityLog() {
   const [rows, setRows] = useState<AuditEntry[]>([]);
   const [pets, setPets] = useState<Pet[]>([]);
   const [staffByUser, setStaffByUser] = useState<Map<string, string>>(new Map());
+  const [staffById, setStaffById] = useState<Map<string, string>>(new Map());
   const [q, setQ] = useState("");
   const [cat, setCat] = useState<Category>("all");
   const [shown, setShown] = useState(60);
@@ -87,6 +88,7 @@ export function ActivityLog() {
         setRows([...audit, ...loginRows].sort((a, b) => b.created_at.localeCompare(a.created_at)));
         setPets(allPets);
         setStaffByUser(new Map(staff.filter((s) => s.userId).map((s) => [s.userId as string, s.name])));
+        setStaffById(new Map(staff.map((s) => [s.id, s.name])));
       } finally { if (alive) setLoading(false); }
     })();
     return () => { alive = false; };
@@ -203,8 +205,15 @@ export function ActivityLog() {
   const actorOf = (e: AuditEntry): string => {
     if (e.actor && staffByUser.get(e.actor)) return staffByUser.get(e.actor)!;
     if (e.actor && user && e.actor === user.id) return user.full_name || t("act.manager", "مدير العيادة");
-    const a = (e.details as Record<string, unknown> | null)?.["__actor"];
+    const d = e.details as Record<string, unknown> | null;
+    const a = d?.["__actor"];
     if (typeof a === "string" && a.trim()) return a;
+    // Backfilled/old rows carry no auth actor — fall back to whoever the row itself
+    // names: the invoice's cashier, or the dose/visit's attending doctor.
+    const sid = d?.["staff_id"];
+    if (typeof sid === "string" && staffById.get(sid)) return staffById.get(sid)!;
+    const doc = d?.["doctor_name"] ?? d?.["doctor"];
+    if (typeof doc === "string" && doc.trim()) return doc.trim();
     return e.actor ? t("act.manager", "مدير العيادة") : t("act.system", "النظام");
   };
 
@@ -221,7 +230,7 @@ export function ActivityLog() {
     const r = render(e);
     return { e, r, actor: actorOf(e), ms: new Date(e.created_at).getTime() };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [rows, render, staffByUser, user?.id]);
+  }), [rows, render, staffByUser, staffById, user?.id]);
 
   const filtered = useMemo(() => {
     const ql = q.trim().toLowerCase();
