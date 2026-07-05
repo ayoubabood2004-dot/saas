@@ -22,3 +22,20 @@ export function appUrl(path: string): string {
   const p = path.startsWith("/") ? path : `/${path}`;
   return APP_BASE ? APP_BASE + p : p;
 }
+
+/** The public ROOT domain for display (invoice/consent footers, landing chip).
+ *  Derived from the live hostname so changing the domain needs ZERO code edits.
+ *  Falls back to the brand name on localhost / previews where no real domain exists. */
+export function siteHost(): string {
+  if (typeof window === "undefined") return "doctorVet";
+  const h = window.location.hostname.replace(/^(app|www)\./, "");
+  if (h === "localhost" || /^[0-9.]+$/.test(h) || h.endsWith(".vercel.app")) return "doctorVet";
+  return h;
+}
+
+/** The app subdomain as display text (e.g. "app.example.com") — prefers the
+ *  configured VITE_APP_URL, else derives from the current hostname. */
+export function appHostLabel(): string {
+  if (APP_BASE) return APP_BASE.replace(/^https?:\/\//, "");
+  return `app.${siteHost()}`;
+}

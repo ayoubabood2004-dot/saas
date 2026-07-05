@@ -6,7 +6,7 @@ import {
   Bell, Wallet, ArrowLeft, Star, Menu, X, TrendingUp, Cake,
 } from "lucide-react";
 import { Logo, LogoMark } from "@/components/Logo";
-import { appUrl } from "@/lib/appUrl";
+import { appUrl, appHostLabel } from "@/lib/appUrl";
 import { cn } from "@/lib/utils";
 
 /* ============================================================================
@@ -196,7 +196,7 @@ function AppShowcase() {
             <span className="h-3 w-3 rounded-full bg-success-400/70" />
           </span>
           <span className="mx-auto inline-flex items-center gap-1.5 rounded-lg bg-surface-1 px-3 py-1 text-2xs font-semibold text-ink-subtle" dir="ltr">
-            <ShieldCheck size={12} className="text-success-600" /> app.doctorvet.doctor
+            <ShieldCheck size={12} className="text-success-600" /> {appHostLabel()}
           </span>
         </div>
 

@@ -1,4 +1,5 @@
 import type { Species, Sex } from "@/types";
+import { siteHost } from "@/lib/appUrl";
 
 /* ============================================================================
  * Legal consent forms (Operation / Anesthesia / Treatment & Estimated Cost).
@@ -37,8 +38,6 @@ export interface ConsentOptions {
   /** Website shown in the page footer (replaces the browser's about:blank line). */
   website?: string | null;
 }
-
-const WEBSITE = "doctorvet.doctor";
 
 const esc = (s: unknown) =>
   String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!));
@@ -264,7 +263,7 @@ export function buildConsentHTML(opts: ConsentOptions): string {
     : "";
 
   const logo = opts.logoUrl?.trim() || "";
-  const website = opts.website?.trim() || WEBSITE;
+  const website = opts.website?.trim() || siteHost(); // follows the live domain
   const clinicName = opts.clinic.name?.trim() || (ar ? "العيادة البيطرية" : "Veterinary Clinic");
 
   // Web fonts greatly improve Arabic print legibility: 'Amiri' is a refined Naskh
