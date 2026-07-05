@@ -7,6 +7,7 @@ import {
   ClipboardList,
   ScanLine,
   Settings as SettingsIcon,
+  History,
   PawPrint,
   Search,
   LogOut,
@@ -64,6 +65,7 @@ export function Sidebar() {
     { to: "/campaigns", icon: MessageCircle, label: t("nav.campaigns", "WhatsApp Campaigns") },
     { to: "/staff", icon: Briefcase, label: t("nav.staff", "Staff Management"), show: can("manageStaff") },
     { to: "/scan", icon: ScanLine, label: t("nav.scan") },
+    { to: "/activity", icon: History, label: t("nav.activity", "سجل الحركات"), show: can("manageSettings") },
     { to: "/settings", icon: SettingsIcon, label: t("nav.settings"), show: can("manageSettings") },
   ].filter((it) => it.show !== false);
 

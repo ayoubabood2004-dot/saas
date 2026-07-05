@@ -107,9 +107,25 @@ function demoAuditLoad(): AuditEntry[] {
   try { const r = localStorage.getItem(DEMO_AUDIT_KEY); if (r) return JSON.parse(r) as AuditEntry[]; } catch { /* ignore */ }
   return [];
 }
+/** Signed-in demo user's display name — stamped on demo log rows (the server
+ *  stores auth.uid() instead and the UI resolves it via the staff list). */
+function demoActorName(): string | null {
+  try {
+    const s = JSON.parse(localStorage.getItem("vp_session") || "null") as { raw?: { full_name?: string } } | null;
+    return s?.raw?.full_name ?? null;
+  } catch { return null; }
+}
 function demoAuditPush(e: Omit<AuditEntry, "id" | "created_at" | "actor">) {
-  const entry: AuditEntry = { ...e, id: uid("au"), actor: null, created_at: new Date().toISOString() };
-  try { localStorage.setItem(DEMO_AUDIT_KEY, JSON.stringify([entry, ...demoAuditLoad()].slice(0, 200))); } catch { /* ignore */ }
+  const details = { ...((e.details ?? {}) as Record<string, unknown>), __actor: demoActorName() };
+  const entry: AuditEntry = { ...e, details, id: uid("au"), actor: null, created_at: new Date().toISOString() };
+  try { localStorage.setItem(DEMO_AUDIT_KEY, JSON.stringify([entry, ...demoAuditLoad()].slice(0, 500))); } catch { /* ignore */ }
+}
+/** 30-day retention — the demo mirror of purge_activity_log(). */
+function demoAuditPurge() {
+  const cutoff = Date.now() - 30 * 86400000;
+  try {
+    localStorage.setItem(DEMO_AUDIT_KEY, JSON.stringify(demoAuditLoad().filter((e) => new Date(e.created_at).getTime() >= cutoff)));
+  } catch { /* ignore */ }
 }
 function demoLoginLoad(): LoginEvent[] {
   try { const r = localStorage.getItem(DEMO_LOGIN_KEY); if (r) return JSON.parse(r) as LoginEvent[]; } catch { /* ignore */ }
@@ -652,6 +668,10 @@ const demoRepo = {
   async listAuditLog(_clinicId?: string, limit = 200): Promise<AuditEntry[]> {
     return demoAuditLoad().slice(0, limit);
   },
+  /** Drop this clinic's activity older than 30 days (fire-and-forget from the log page). */
+  async purgeAuditLog(): Promise<void> {
+    demoAuditPurge();
+  },
   async listLoginEvents(_clinicId?: string, limit = 100): Promise<LoginEvent[]> {
     return demoLoginLoad().slice(0, limit);
   },
@@ -660,6 +680,51 @@ const demoRepo = {
     demoLoginSave([e, ...demoLoginLoad()].slice(0, 100));
   },
 };
+
+/* Demo-only activity mirror: on Supabase, DB triggers (migrations 0018 + 0044)
+ * record every INSERT/UPDATE/DELETE automatically. In demo mode we wrap the
+ * mutating repo methods ONCE so the clinic activity log fills up identically —
+ * offline and testable. Logging failures never break the real operation. */
+const DEMO_ACTIVITY_MAP: Record<string, { entity: string; action: "INSERT" | "UPDATE" | "DELETE" }> = {
+  createPet: { entity: "pets", action: "INSERT" },
+  updatePet: { entity: "pets", action: "UPDATE" },
+  deletePet: { entity: "pets", action: "DELETE" },
+  addWeight: { entity: "weight_logs", action: "INSERT" },
+  addVaccination: { entity: "vaccinations", action: "INSERT" },
+  addVisit: { entity: "medical_visits", action: "INSERT" },
+  addPetNote: { entity: "pet_notes", action: "INSERT" },
+  addMedia: { entity: "media_items", action: "INSERT" },
+  addTreatment: { entity: "treatment_entries", action: "INSERT" },
+  setTreatmentGiven: { entity: "treatment_entries", action: "UPDATE" },
+  deleteTreatment: { entity: "treatment_entries", action: "DELETE" },
+  addAdmission: { entity: "admissions", action: "INSERT" },
+  updateAdmission: { entity: "admissions", action: "UPDATE" },
+  createBranch: { entity: "branches", action: "INSERT" },
+  addReminder: { entity: "reminders", action: "INSERT" },
+  createProduct: { entity: "products", action: "INSERT" },
+  updateProduct: { entity: "products", action: "UPDATE" },
+  deleteProduct: { entity: "products", action: "DELETE" },
+  checkout: { entity: "invoices", action: "INSERT" },
+  retailCheckout: { entity: "invoices", action: "INSERT" },
+  settleInvoice: { entity: "invoices", action: "UPDATE" },
+  refundInvoice: { entity: "invoices", action: "UPDATE" },
+};
+{
+  const target = demoRepo as unknown as Record<string, (...args: unknown[]) => Promise<unknown>>;
+  for (const [method, meta] of Object.entries(DEMO_ACTIVITY_MAP)) {
+    const orig = target[method];
+    if (typeof orig !== "function") continue;
+    target[method] = async (...args: unknown[]) => {
+      const res = await orig.apply(demoRepo, args);
+      try {
+        const row = (res && typeof res === "object" ? res : (typeof args[0] === "object" && args[0] !== null ? args[0] : undefined)) as Record<string, unknown> | undefined;
+        const entityId = (row && typeof row.id === "string" ? row.id : undefined) ?? (typeof args[0] === "string" ? args[0] : null);
+        demoAuditPush({ action: meta.action, entity: meta.entity, entity_id: entityId, details: row ?? null });
+      } catch { /* the log must never break the operation itself */ }
+      return res;
+    };
+  }
+}
 
 /* ============================================================================
  * Live Supabase implementation — used automatically when VITE_SUPABASE_* are
@@ -1034,6 +1099,10 @@ const supabaseRepo: typeof demoRepo = {
   },
   async listWhatsAppLog() {
     return listOf<WhatsAppMessage>(await sbc().from("wa_messages").select("*").order("sent_at", { ascending: false }).limit(1000));
+  },
+  async purgeAuditLog() {
+    // Pre-0044 databases don't have the RPC yet — never surface that to the UI.
+    try { await sbc().rpc("purge_activity_log"); } catch { /* retention starts after the migration */ }
   },
   async listAuditLog(_clinicId, limit = 200) {
     // RLS already scopes to the manager's clinic; just order + cap.

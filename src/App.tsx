@@ -20,6 +20,7 @@ const BookingWizard = lazy(() => import("@/pages/BookingWizard").then((m) => ({ 
 const Reception = lazy(() => import("@/pages/Reception").then((m) => ({ default: m.Reception })));
 const Consultation = lazy(() => import("@/pages/Consultation").then((m) => ({ default: m.Consultation })));
 const Settings = lazy(() => import("@/pages/Settings").then((m) => ({ default: m.Settings })));
+const ActivityLog = lazy(() => import("@/pages/ActivityLog").then((m) => ({ default: m.ActivityLog })));
 const ClinicRecords = lazy(() => import("@/pages/ClinicRecords").then((m) => ({ default: m.ClinicRecords })));
 const NewCase = lazy(() => import("@/pages/NewCase").then((m) => ({ default: m.NewCase })));
 const Inventory = lazy(() => import("@/pages/Inventory").then((m) => ({ default: m.Inventory })));
@@ -152,6 +153,7 @@ function Shell() {
             <Route path="/campaigns" element={<Protected><ClinicOnly><WhatsAppCampaigns /></ClinicOnly></Protected>} />
             <Route path="/staff" element={<Protected><ClinicOnly><StaffManagement /></ClinicOnly></Protected>} />
             <Route path="/reports" element={<Protected><ClinicOnly><AnalyticsHub /></ClinicOnly></Protected>} />
+            <Route path="/activity" element={<Protected><ClinicOnly><ActivityLog /></ClinicOnly></Protected>} />
             <Route path="/settings" element={<Protected><Settings /></Protected>} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
