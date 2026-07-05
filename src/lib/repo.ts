@@ -672,6 +672,10 @@ const demoRepo = {
   async purgeAuditLog(): Promise<void> {
     demoAuditPurge();
   },
+  /** Record a client-side action (print / export) in the activity log. Best-effort. */
+  async logClientEvent(event: string, details?: Record<string, unknown>): Promise<void> {
+    demoAuditPush({ action: "CLIENT", entity: "client", entity_id: null, details: { ...(details ?? {}), event } });
+  },
   async listLoginEvents(_clinicId?: string, limit = 100): Promise<LoginEvent[]> {
     return demoLoginLoad().slice(0, limit);
   },
@@ -708,6 +712,16 @@ const DEMO_ACTIVITY_MAP: Record<string, { entity: string; action: "INSERT" | "UP
   retailCheckout: { entity: "invoices", action: "INSERT" },
   settleInvoice: { entity: "invoices", action: "UPDATE" },
   refundInvoice: { entity: "invoices", action: "UPDATE" },
+  setInvoicePaymentMethod: { entity: "invoices", action: "UPDATE" },
+  uploadMedia: { entity: "media_items", action: "INSERT" },
+  updateVaccination: { entity: "vaccinations", action: "UPDATE" },
+  createAppointment: { entity: "appointments", action: "INSERT" },
+  updateAppointment: { entity: "appointments", action: "UPDATE" },
+  setAppointmentStatus: { entity: "appointments", action: "UPDATE" },
+  updateReminder: { entity: "reminders", action: "UPDATE" },
+  removeReminder: { entity: "reminders", action: "DELETE" },
+  updateBranch: { entity: "branches", action: "UPDATE" },
+  logWhatsApp: { entity: "wa_messages", action: "INSERT" },
 };
 {
   const target = demoRepo as unknown as Record<string, (...args: unknown[]) => Promise<unknown>>;
@@ -720,6 +734,13 @@ const DEMO_ACTIVITY_MAP: Record<string, { entity: string; action: "INSERT" | "UP
         const row = (res && typeof res === "object" ? res : (typeof args[0] === "object" && args[0] !== null ? args[0] : undefined)) as Record<string, unknown> | undefined;
         const entityId = (row && typeof row.id === "string" ? row.id : undefined) ?? (typeof args[0] === "string" ? args[0] : null);
         demoAuditPush({ action: meta.action, entity: meta.entity, entity_id: entityId, details: row ?? null });
+        // Checkout also logs each sold LINE — mirroring the invoice_items trigger.
+        if ((method === "checkout" || method === "retailCheckout") && Array.isArray(args[0])) {
+          for (const it of args[0] as Array<Record<string, unknown>>) {
+            const qty = Number(it.qty) || 0; const price = Number(it.unit_price) || 0;
+            demoAuditPush({ action: "INSERT", entity: "invoice_items", entity_id: null, details: { ...it, line_total: Math.round(qty * price * 100) / 100 } });
+          }
+        }
       } catch { /* the log must never break the operation itself */ }
       return res;
     };
@@ -1103,6 +1124,10 @@ const supabaseRepo: typeof demoRepo = {
   async purgeAuditLog() {
     // Pre-0044 databases don't have the RPC yet — never surface that to the UI.
     try { await sbc().rpc("purge_activity_log"); } catch { /* retention starts after the migration */ }
+  },
+  async logClientEvent(event, details) {
+    // Pre-0045 databases don't have the RPC yet — best-effort, always silent.
+    try { await sbc().rpc("log_client_event", { p_event: event, p_details: details ?? {} }); } catch { /* ignore */ }
   },
   async listAuditLog(_clinicId, limit = 200) {
     // RLS already scopes to the manager's clinic; just order + cap.

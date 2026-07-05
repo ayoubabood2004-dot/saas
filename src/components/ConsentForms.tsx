@@ -12,6 +12,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { getClinic, getActiveClinicId } from "@/lib/clinics";
 import { getClinicName, getClinicLogo } from "@/lib/settings";
 import { buildConsentHTML, openConsentPrint, consentFormLabel, type ConsentFormType, type ConsentOptions } from "@/lib/consentForms";
+import { repo } from "@/lib/repo";
 
 /**
  * Consent-form studio: pick a form (Surgery / Anesthesia / Treatment & Cost) and a
@@ -72,6 +73,7 @@ export function ConsentForms({ open, onClose, pet }: { open: boolean; onClose: (
     playTap();
     const ok = openConsentPrint(opts);
     if (!ok) toast.error(t("consent.popupBlocked", "Allow pop-ups to print"), t("consent.popupBlockedHint", "Your browser blocked the print window — enable pop-ups for this site."));
+    else void repo.logClientEvent("consent.print", { pet: pet.name, form }); // activity trail
   };
 
   const FORMS: { id: ConsentFormType; icon: typeof Scissors }[] = [

@@ -1827,6 +1827,18 @@
     "staffAdd": "Added staff member: {{name}}",
     "staffUpd": "Edited staff member {{name}} (details / permissions)",
     "staffDel": "Removed staff member {{name}}",
-    "accessChange": "Team access change (invite / membership)"
+    "accessChange": "Team access change (invite / membership)",
+    "vacUpd": "Updated the {{name}} vaccine",
+    "itemSold": "Sold: {{name}} ×{{qty}} — {{total}}",
+    "waSend": "Sent a WhatsApp message — {{name}} ({{kind}})",
+    "clinicUpd": "Edited clinic details / settings",
+    "login": "Signed in to the system",
+    "invPrint": "Printed invoice {{ref}} ({{format}})",
+    "printThermal": "thermal receipt",
+    "reportExcel": "Exported an Excel report — {{title}}",
+    "reportPrint": "Printed a report — {{title}}",
+    "reportCsv": "Exported a CSV file from reports",
+    "consentPrint": "Printed a consent form — {{pet}}",
+    "settingsChange": "Clinic settings change: {{name}}"
   }
 }

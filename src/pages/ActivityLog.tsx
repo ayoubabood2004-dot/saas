@@ -71,13 +71,20 @@ export function ActivityLog() {
       // Retention first (fire-and-forget), then read the fresh window.
       void repo.purgeAuditLog().catch(() => {});
       try {
-        const [audit, allPets, staff] = await Promise.all([
+        const [audit, logins, allPets, staff] = await Promise.all([
           repo.listAuditLog(clinicId, 500),
+          repo.listLoginEvents(clinicId, 100).catch(() => []),
           repo.listAllPets(clinicId).catch(() => [] as Pet[]),
           listStaff().catch(() => []),
         ]);
         if (!alive) return;
-        setRows(audit);
+        // Sign-ins join the same timeline as pseudo-entries (they live in their own table).
+        const loginRows: AuditEntry[] = logins.map((l) => ({
+          id: `login-${l.id}`, clinic_id: null, actor: null, action: "LOGIN", entity: "login", entity_id: null,
+          details: { __actor: (l.name ?? "").trim() || (l.email ?? "").trim() || null },
+          created_at: l.created_at,
+        }));
+        setRows([...audit, ...loginRows].sort((a, b) => b.created_at.localeCompare(a.created_at)));
         setPets(allPets);
         setStaffByUser(new Map(staff.filter((s) => s.userId).map((s) => [s.userId as string, s.name])));
       } finally { if (alive) setLoading(false); }
@@ -124,7 +131,9 @@ export function ActivityLog() {
           : { icon: Pill, tone: "muted", category, text: t("act.doseUpd", { med, defaultValue: "عدّل جرعة الدواء {{med}}" }) };
       }
       case "vaccinations":
-        return { icon: Syringe, tone: "success", category, text: t("act.vacAdd", { name: s("vaccine") || s("name"), pet: pn(), defaultValue: "سجّل لقاح {{name}} لـ {{pet}}" }) };
+        return e.action === "UPDATE"
+          ? { icon: Syringe, tone: "muted", category, text: t("act.vacUpd", { name: s("vaccine") || s("name"), defaultValue: "حدّث لقاح {{name}}" }) }
+          : { icon: Syringe, tone: "success", category, text: t("act.vacAdd", { name: s("vaccine") || s("name"), pet: pn(), defaultValue: "سجّل لقاح {{name}} لـ {{pet}}" }) };
       case "medical_visits":
         return { icon: Stethoscope, tone: "brand", category, text: t("act.visitAdd", { pet: pn(), doctor: s("doctor_name"), defaultValue: "أضاف استشارة لـ {{pet}} — {{doctor}}" }) };
       case "pet_notes":
@@ -163,7 +172,30 @@ export function ActivityLog() {
             : { icon: Users, tone: "muted", category, text: t("act.staffUpd", { name: s("name"), defaultValue: "عدّل بيانات / صلاحيات الموظف {{name}}" }) };
       case "memberships": case "invites":
         return { icon: Users, tone: "muted", category, text: t("act.accessChange", "تغيير في وصول الكادر (دعوة / عضوية)") };
+      case "invoice_items": {
+        const qty = formatNum(Number(d["qty"]) || 0);
+        return { icon: Receipt, tone: "muted", category: "finance", text: t("act.itemSold", { name: s("name"), qty, total: money(Number(d["line_total"]) || 0), defaultValue: "باع: {{name}} ×{{qty}} — {{total}}" }) };
+      }
+      case "wa_messages":
+        return { icon: BellRing, tone: "success", category: "records", text: t("act.waSend", { name: s("owner_name") || t("rpt.clientFallback", "عميل"), kind: s("reminder_type"), defaultValue: "أرسل رسالة واتساب — {{name}} ({{kind}})" }) };
+      case "clinics":
+        return { icon: Building2, tone: "muted", category: "team", text: t("act.clinicUpd", "عدّل بيانات / إعدادات العيادة") };
+      case "login":
+        return { icon: Users, tone: "muted", category: "team", text: t("act.login", "سجّل دخول إلى النظام") };
+      case "client": {
+        const ev = s("event");
+        if (ev === "invoice.print") return { icon: Receipt, tone: "muted", category: "finance", text: t("act.invPrint", { ref: s("ref"), format: s("format") === "thermal" ? t("act.printThermal", "إيصال حراري") : "A4", defaultValue: "طبع الفاتورة {{ref}} ({{format}})" }) };
+        if (ev === "report.excel") return { icon: Receipt, tone: "muted", category: "finance", text: t("act.reportExcel", { title: s("title"), defaultValue: "صدّر تقرير Excel — {{title}}" }) };
+        if (ev === "report.print") return { icon: Receipt, tone: "muted", category: "finance", text: t("act.reportPrint", { title: s("title"), defaultValue: "طبع تقرير — {{title}}" }) };
+        if (ev === "report.csv") return { icon: Receipt, tone: "muted", category: "finance", text: t("act.reportCsv", "صدّر ملف CSV من التقارير") };
+        if (ev === "consent.print") return { icon: NotebookPen, tone: "muted", category: "medical", text: t("act.consentPrint", { pet: s("pet"), defaultValue: "طبع نموذج إقرار — {{pet}}" }) };
+        return { icon: History, tone: "muted", category: "team", text: ev || "client" };
+      }
       default:
+        // Any clinic_* configuration table → a settings change.
+        if (e.entity.startsWith("clinic_")) {
+          return { icon: Building2, tone: "muted", category: "team", text: t("act.settingsChange", { name: s("name") || s("label") || e.entity.replace("clinic_", ""), defaultValue: "تعديل في إعدادات العيادة: {{name}}" }) };
+        }
         return { icon: History, tone: "muted", category, text: `${e.action} — ${e.entity}` };
     }
   }, [petName, t]);

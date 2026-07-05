@@ -2,7 +2,7 @@ import { useTranslation } from "react-i18next";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/components/ui";
 import { repo } from "@/lib/repo";
-import { openInvoicePrint, type PrintFormat } from "@/lib/invoicePrint";
+import { openInvoicePrint, invoiceNo, type PrintFormat } from "@/lib/invoicePrint";
 import { getClinicLogo, getClinicSocials, getClinicName } from "@/lib/settings";
 import type { Invoice, InvoiceItem } from "@/types";
 
@@ -41,6 +41,7 @@ export function useInvoicePrinter() {
       instagram: socials.instagram || null,
     });
     if (!ok) toast.error(t("retail.popupBlocked", "Allow pop-ups to print"), t("retail.popupBlockedHint", "Your browser blocked the print window — enable pop-ups for this site."));
+    else void repo.logClientEvent("invoice.print", { ref: invoiceNo(invoice.id), format }); // activity trail
     opts?.onCounted?.(printNo);
     return printNo;
   };

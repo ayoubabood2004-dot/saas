@@ -1824,6 +1824,18 @@
     "staffAdd": "أضاف موظفاً: {{name}}",
     "staffUpd": "عدّل بيانات / صلاحيات الموظف {{name}}",
     "staffDel": "أزال الموظف {{name}}",
-    "accessChange": "تغيير في وصول الكادر (دعوة / عضوية)"
+    "accessChange": "تغيير في وصول الكادر (دعوة / عضوية)",
+    "vacUpd": "حدّث لقاح {{name}}",
+    "itemSold": "باع: {{name}} ×{{qty}} — {{total}}",
+    "waSend": "أرسل رسالة واتساب — {{name}} ({{kind}})",
+    "clinicUpd": "عدّل بيانات / إعدادات العيادة",
+    "login": "سجّل دخول إلى النظام",
+    "invPrint": "طبع الفاتورة {{ref}} ({{format}})",
+    "printThermal": "إيصال حراري",
+    "reportExcel": "صدّر تقرير Excel — {{title}}",
+    "reportPrint": "طبع تقرير — {{title}}",
+    "reportCsv": "صدّر ملف CSV من التقارير",
+    "consentPrint": "طبع نموذج إقرار — {{pet}}",
+    "settingsChange": "تعديل في إعدادات العيادة: {{name}}"
   }
 }

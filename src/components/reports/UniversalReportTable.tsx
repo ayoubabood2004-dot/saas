@@ -5,6 +5,7 @@ import { useTranslation } from "react-i18next";
 import { cn, formatNum, dateLocale } from "@/lib/utils";
 import { useToast } from "@/components/ui";
 import { exportReportXlsx } from "@/lib/excelExport";
+import { repo } from "@/lib/repo";
 
 /* ============================================================================
  * UniversalReportTable — the clinic's "Enterprise Report Engine".
@@ -113,6 +114,7 @@ export function UniversalReportTable<T>({
         summary: summaryMetrics.map((m) => ({ label: m.label, value: m.value })),
       });
       toast.success(t("report.exported"), "XLSX");
+      void repo.logClientEvent("report.excel", { title }); // activity trail
     } catch (e) {
       toast.error(t("report.exportFail"), e instanceof Error ? e.message : undefined);
     } finally {
@@ -166,7 +168,7 @@ export function UniversalReportTable<T>({
             <FileSpreadsheet size={16} /> {exporting ? t("report.exporting") : t("report.exportExcel")}
           </button>
           <button
-            onClick={() => setPrinting(true)}
+            onClick={() => { setPrinting(true); void repo.logClientEvent("report.print", { title }); }}
             className="inline-flex items-center gap-1.5 rounded-xl bg-brand-600 px-3.5 py-2.5 text-sm font-semibold text-white shadow-soft transition hover:bg-brand-700"
           >
             <Printer size={16} /> {printButtonLabel ?? t("report.print")}

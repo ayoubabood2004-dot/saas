@@ -17,6 +17,7 @@ import type { Pet, Invoice, InvoiceItem, Product, MedicalVisit, PaymentMethod, S
 import { type StaffMember } from "@/lib/staff";
 import { getCached, setCached, isFresh } from "@/lib/swrCache";
 import { loadAnalyticsSnap, analyticsKey, type AnalyticsSnap } from "@/lib/prefetchData";
+import { repo } from "@/lib/repo";
 import { useAuth } from "@/contexts/AuthContext";
 import { usePermissions } from "@/hooks/usePermissions";
 import { useToast, Skeleton } from "@/components/ui";
@@ -590,6 +591,7 @@ export function AnalyticsHub() {
     a.href = url; a.download = `doctorvet-report-${new Date().toISOString().slice(0, 10)}.csv`; a.click();
     URL.revokeObjectURL(url);
     toast.success(t("rpt.csv.done", "تم تصدير الملف"), "CSV");
+    void repo.logClientEvent("report.csv", {}); // activity trail
   };
 
   const TABS: { id: TabKey; label: string; icon: typeof BarChart3 }[] = [
