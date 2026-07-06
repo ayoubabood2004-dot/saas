@@ -440,6 +440,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     storeActive(null);
     clearActiveClinic();
     try { localStorage.removeItem(KEY); } catch { /* ignore */ }
+    // Hard navigation on the way out: it tears down every in-memory cache
+    // (permissions, clinic-config, ops/branch stores, SWR snapshots) so the
+    // NEXT person to sign in on a shared/kiosk device can never briefly see the
+    // previous clinic's data. A soft state reset alone leaves those caches warm.
+    try { window.location.href = "/login"; } catch { /* non-browser env */ }
   };
 
   // Leaving a joined clinic only removes the membership row (never any data); a
