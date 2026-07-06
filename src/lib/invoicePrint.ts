@@ -18,6 +18,9 @@ export interface InvoicePrintOptions {
   /** Social handles printed in the footer. */
   facebook?: string | null;
   instagram?: string | null;
+  /** Pro-forma print BEFORE the sale is completed: shows a "قبل البيع" badge
+   *  instead of an invoice number (the invoice doesn't exist yet). */
+  preSale?: boolean;
 }
 
 const esc = (s: unknown) =>
@@ -57,6 +60,7 @@ function strings(lang: string) {
     items: ar ? "الأصناف" : "Items",
     thanks: ar ? "شكراً لزيارتكم! 🐾" : "Thank you for your visit! 🐾",
     refunded: ar ? "مُرجعة" : "REFUNDED",
+    preSale: ar ? "فاتورة أولية — قبل إتمام البيع" : "PRO-FORMA — NOT A RECEIPT",
     printNo: ar ? "نسخة الطباعة رقم" : "Print",
   };
 }
@@ -76,6 +80,9 @@ export function buildInvoiceHTML(invoice: Invoice, items: InvoiceItem[], opts: I
   const subtotal = invoice.subtotal ?? invoice.total;
   const discount = invoice.discount ?? 0;
   const refunded = invoice.status === "refunded";
+  // Pro-forma: no real invoice row exists yet, so hide the invoice number and
+  // stamp a badge instead — the customer must not mistake it for a receipt.
+  const preSale = !!opts.preSale;
   const payLabel = invoice.payment_method ? s.pay[invoice.payment_method] ?? invoice.payment_method : "";
   // Split payment: each leg printed under a "دفع مجزأ" header. Single legs print as before.
   const payLegs = (invoice.payment_details ?? []).filter((p) => p && p.method && Number(p.amount) > 0);
@@ -226,12 +233,13 @@ export function buildInvoiceHTML(invoice: Invoice, items: InvoiceItem[], opts: I
     </div>
     <hr/>
     <div class="meta">
-      <div><b>${esc(invoiceNo(invoice.id))}</b></div>
+      ${preSale ? "" : `<div><b>${esc(invoiceNo(invoice.id))}</b></div>`}
       <div>${s.date}: ${esc(dateStr)}</div>
       ${invoice.customer_name || invoice.customer_phone ? `<div>${s.billedTo}: ${esc(invoice.customer_name || s.walkIn)}</div>` : ""}
       ${invoice.pet_name ? `<div>${s.pet}: ${esc(invoice.pet_name)}</div>` : ""}
       ${invoice.customer_phone ? `<div>${s.phone}: ${phoneHTML(invoice.customer_phone)}</div>` : ""}
     </div>
+    ${preSale ? `<div class="badge">${s.preSale}</div>` : ""}
     ${refunded ? `<div class="badge">${s.refunded}</div>` : ""}
     <table>
       <thead><tr><th>${s.item}</th><th class="i-num">${s.qty}</th><th class="i-num">${s.price}</th><th class="i-num">${s.amount}</th></tr></thead>
@@ -263,7 +271,7 @@ export function buildInvoiceHTML(invoice: Invoice, items: InvoiceItem[], opts: I
         ${logo ? `<div class="logo-mid"><img src="${logo}" alt="logo"/></div>` : `<div></div>`}
         <div class="party end">
           <div class="doc-title">${s.invoice}</div>
-          <div class="doc-no">${esc(invoiceNo(invoice.id))}</div>
+          ${preSale ? `<div style="margin-top:6px"><span class="badge" style="transform:none;font-size:11px">${s.preSale}</span></div>` : `<div class="doc-no">${esc(invoiceNo(invoice.id))}</div>`}
           ${opts.printNo && opts.printNo > 1 ? `<div class="doc-no">${s.printNo} #${opts.printNo}</div>` : ""}
         </div>
       </div>
@@ -299,7 +307,7 @@ export function buildInvoiceHTML(invoice: Invoice, items: InvoiceItem[], opts: I
     `;
 
   return `<!doctype html><html lang="${esc(opts.lang)}" dir="${s.dir}"><head><meta charset="utf-8"/>
-    <title>${esc(invoiceNo(invoice.id))}</title>
+    <title>${preSale ? esc(s.preSale) : esc(invoiceNo(invoice.id))}</title>
     <style>${page} ${css}</style></head>
     <body>${body}
     <script>window.addEventListener('load',function(){setTimeout(function(){window.focus();window.print();},120);});window.addEventListener('afterprint',function(){setTimeout(function(){window.close();},200);});</script>

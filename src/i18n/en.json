@@ -288,7 +288,9 @@
     "activePetHint": "New meds/vaccines are recorded on the highlighted pet",
     "petSearchPh": "Search by pet or owner name…",
     "noMorePets": "No other matching pets.",
-    "sameOwner": "Same owner"
+    "sameOwner": "Same owner",
+    "preSaleA4": "Pro-forma A4",
+    "preSaleThermal": "Pro-forma 80mm"
   },
   "promos": {
     "title": "Offers management",
@@ -513,7 +515,11 @@
     "identity": "Clinic identity",
     "identityHint": "The clinic's name and logo appear on invoices, consent forms and as a watermark; social handles appear at the bottom.",
     "instagram": "Instagram",
-    "uploadLogo": "Upload logo"
+    "uploadLogo": "Upload logo",
+    "cashier": "Cashier options",
+    "cashierHint": "Extra point-of-sale features — off by default, enable only what suits your clinic.",
+    "preSalePrint": "Print the invoice before completing the sale",
+    "preSalePrintHint": "Adds a \"pro-forma\" print button to the sale screen so the customer can review the bill before paying — nothing is recorded as an invoice and stock is untouched."
   },
   "auth": {
     "signIn": "Sign in",
@@ -1839,6 +1845,7 @@
     "reportPrint": "Printed a report — {{title}}",
     "reportCsv": "Exported a CSV file from reports",
     "consentPrint": "Printed a consent form — {{pet}}",
-    "settingsChange": "Clinic settings change: {{name}}"
+    "settingsChange": "Clinic settings change: {{name}}",
+    "invPreprint": "Printed a pro-forma invoice (before sale) for {{total}}"
   }
 }

@@ -18,7 +18,8 @@ import { ServiceQuickSelect } from "./ServiceQuickSelect";
 import { MedSaleForm } from "./MedSaleForm";
 import { CashierSelect } from "@/components/MedicalEntry";
 import { useInvoicePrinter } from "./usePrintInvoice";
-import { invoiceNo } from "@/lib/invoicePrint";
+import { invoiceNo, openInvoicePrint, type PrintFormat } from "@/lib/invoicePrint";
+import { getPreSalePrint, getClinicLogo, getClinicSocials, getClinicName } from "@/lib/settings";
 import { persistMedicalEntries } from "@/lib/medSync";
 import type { MedicalDraft } from "@/components/MedicalEntry";
 import { cn, money, currencySymbol } from "@/lib/utils";
@@ -89,7 +90,7 @@ export interface RetailPrefill { name: string; phone: string; pet: string; petId
 interface SalePet { id: string | null; name: string; species: Species | null }
 
 export function SaleBuilder({ products, clinicId, onSold, prefill }: { products: Product[]; clinicId?: string; onSold: () => void; prefill?: RetailPrefill | null }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const toast = useToast();
   const print = useInvoicePrinter();
   const { user } = useAuth();
@@ -404,6 +405,50 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
     return [...filtered.filter(isOwners), ...filtered.filter((p) => !isOwners(p))].slice(0, 8)
       .map((p) => ({ pet: p, owners: isOwners(p) }));
   }, [petPickAll, salePets, phone, name, petPickQ]);
+
+  // ---- Opt-in pro-forma print (BEFORE the sale) ----------------------------
+  // Some customers want the bill on paper before deciding to pay. Clinics turn
+  // this on in Settings → خيارات الكاشير; it prints the LIVE CART only — no
+  // invoice row is created, stock is untouched, and the page carries a loud
+  // "فاتورة أولية" badge so it can never pass for a real receipt.
+  const preSaleEnabled = getPreSalePrint();
+  const printPreSale = (format: PrintFormat) => {
+    if (cart.length === 0) return;
+    playTap();
+    const petNames = Array.from(new Set(salePets.map((p) => p.name.trim()).filter(Boolean)));
+    const multiPet = petNames.length > 1;
+    const draftItems: InvoiceItem[] = cart.map((l) => ({
+      id: `draft-${l.id}`, invoice_id: "draft", clinic_id: clinicId ?? null,
+      product_id: l.product_id, name: multiPet && l.petName ? `${l.name} — ${l.petName}` : l.name, barcode: l.barcode,
+      qty: l.qty, unit_price: l.unit_price, unit_cost: l.unit_cost, line_total: l.qty * l.unit_price,
+      unit_label: l.kind === "product" && l.hasSubUnit ? (l.saleUnit === "sub" ? (l.subUnitName || t("retail.unitSingle")) : t("retail.unitBox")) : null,
+    }));
+    const draft: Invoice = {
+      id: "draft", clinic_id: clinicId ?? null,
+      customer_name: name.trim() || null, customer_phone: phone.trim() || null,
+      pet_name: petNames.length ? petNames.join(" + ") : null,
+      subtotal, discount: discountAmt, discount_type: null,
+      payment_method: null, payment_details: null,
+      // Nothing is owed on paper yet — marking it fully "paid" keeps the
+      // paid/balance-due rows off a document that precedes any payment.
+      total, amount_paid: total, cost_total: cost, profit, item_count: units,
+      status: "paid", created_at: new Date().toISOString(),
+    };
+    const socials = getClinicSocials();
+    const ok = openInvoicePrint(draft, draftItems, {
+      clinicName: getClinicName() || user?.full_name || "doctorVet",
+      clinicPhone: user?.phone ?? null,
+      brand: "doctorVet",
+      format,
+      lang: i18n.language,
+      logoUrl: getClinicLogo(),
+      facebook: socials.facebook || null,
+      instagram: socials.instagram || null,
+      preSale: true,
+    });
+    if (!ok) { playWarning(); toast.error(t("retail.popupBlocked", "Allow pop-ups to print"), t("retail.popupBlockedHint", "Your browser blocked the print window — enable pop-ups for this site.")); }
+    else void repo.logClientEvent("invoice.preprint", { total, items: cart.length, format }); // activity trail
+  };
 
   const checkout = async () => {
     if (cart.length === 0 || busy) return;
@@ -1019,6 +1064,16 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
             <div className="flex items-center justify-end gap-1 text-2xs text-success-600"><TrendingUp size={11} /> {t("retail.profit", "Profit")} {money(profit)}</div>
           </div>
 
+          {preSaleEnabled && (
+            <div className="grid grid-cols-2 gap-2">
+              <Button variant="secondary" size="sm" disabled={cart.length === 0} leftIcon={<Printer size={15} />} onClick={() => printPreSale("a4")} data-presale="a4">
+                {t("retail.preSaleA4", "فاتورة أولية A4")}
+              </Button>
+              <Button variant="secondary" size="sm" disabled={cart.length === 0} leftIcon={<Printer size={15} />} onClick={() => printPreSale("thermal")} data-presale="thermal">
+                {t("retail.preSaleThermal", "فاتورة أولية 80mm")}
+              </Button>
+            </div>
+          )}
           <Button className="w-full" size="lg" disabled={cart.length === 0 || needsDebtName} loading={busy} onClick={checkout} leftIcon={<CheckCircle2 size={18} />}>
             {isCredit
               ? `${t("retail.completePartial", "إتمام البيع")} · ${t("retail.paysNowLabel", "يدفع الآن")} ${money(totalPaid)} · ${t("retail.debtShort", "دين")} ${money(remaining)}`

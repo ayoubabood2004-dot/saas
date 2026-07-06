@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Settings as SettingsIcon, RotateCcw, Check, Volume2, VolumeX, Plus, Trash2, Pill, PawPrint, Stethoscope, Tag, FolderPlus, BadgePercent, IdCard, Mail, UserCog, Image as ImageIcon, Upload, Facebook, Instagram, Building2 } from "lucide-react";
+import { Settings as SettingsIcon, RotateCcw, Check, Volume2, VolumeX, Plus, Trash2, Pill, PawPrint, Stethoscope, Tag, FolderPlus, BadgePercent, IdCard, Mail, UserCog, Image as ImageIcon, Upload, Facebook, Instagram, Building2, Printer } from "lucide-react";
 import type { Species, Service, ServiceCategory, ServiceCatalog, Product } from "@/types";
 import { useAuth } from "@/contexts/AuthContext";
 import { usePermissions } from "@/hooks/usePermissions";
@@ -13,7 +13,7 @@ import { getServiceCatalog, addServiceCategory, removeServiceCategory, addServic
 import { DEFAULT_RANGES, VITAL_KEYS, CBC_KEYS, rangeFor, type VitalKey } from "@/lib/vitals";
 
 const ALL_KEYS: VitalKey[] = [...VITAL_KEYS, ...CBC_KEYS];
-import { setVitalOverride, clearVitalOverrides, getDialCode, setDialCode, getClinicLogo, setClinicLogo, getClinicSocials, setClinicSocials, getClinicName, setClinicName } from "@/lib/settings";
+import { setVitalOverride, clearVitalOverrides, getDialCode, setDialCode, getClinicLogo, setClinicLogo, getClinicSocials, setClinicSocials, getClinicName, setClinicName, getPreSalePrint, setPreSalePrint } from "@/lib/settings";
 import { prepareUpload } from "@/lib/image";
 import { isSoundEnabled, setSoundEnabled, playSuccess, playTap } from "@/lib/sounds";
 import { getClinicMeds, addClinicMed, removeClinicMed, allMedTypes, allMedicationNames, BUILTIN_MEDICATIONS, type ClinicMed } from "@/lib/meds";
@@ -143,6 +143,7 @@ export function Settings() {
       </div>
 
       {isStaff && <ClinicIdentity />}
+      {isStaff && <CashierOptions />}
       {isStaff && <BranchesManager />}
       {isStaff && <ServiceSettings />}
       {isStaff && <PromotionsManager clinicId={user?.clinic_id ?? user?.id} />}
@@ -391,7 +392,7 @@ function ClinicIdentity() {
   const saveName = () => { setClinicName(name); playTap(); };
 
   return (
-    <div className="card p-5">
+    <div className="card p-5 mb-4">
       <h2 className="font-bold text-ink mb-1 flex items-center gap-2"><ImageIcon size={18} className="text-brand-600" /> {t("settings.identity", "هوية العيادة")}</h2>
       <p className="text-xs text-ink-subtle mb-4">{t("settings.identityHint", "اسم العيادة وشعارها يظهران في أعلى الفاتورة ونماذج الإقرار وكعلامة مائية، وحسابات التواصل تظهر في الأسفل.")}</p>
 
@@ -432,6 +433,45 @@ function ClinicIdentity() {
           <label className="label flex items-center gap-1.5"><Instagram size={14} className="text-[#e1306c]" /> {t("settings.instagram", "إنستغرام")}</label>
           <input className="input" dir="ltr" value={instagram} onChange={(e) => setInstagram(e.target.value)} onBlur={saveSocials} placeholder="@myclinic" />
         </div>
+      </div>
+    </div>
+  );
+}
+
+/* ------------- Cashier options (opt-in pre-sale pro-forma print) ---------- */
+function CashierOptions() {
+  const { t } = useTranslation();
+  const { can } = usePermissions();
+  const [preSale, setPreSale] = useState(getPreSalePrint());
+
+  if (!can("manageSettings")) return null;
+
+  const toggle = () => {
+    const next = !preSale;
+    setPreSale(next);
+    setPreSalePrint(next);
+    if (next) playSuccess(); else playTap();
+  };
+
+  return (
+    <div className="card p-5 mb-4">
+      <h2 className="font-bold text-ink mb-1 flex items-center gap-2"><Printer size={18} className="text-brand-600" /> {t("settings.cashier", "خيارات الكاشير")}</h2>
+      <p className="text-xs text-ink-subtle mb-4">{t("settings.cashierHint", "ميزات إضافية لشاشة البيع — معطّلة افتراضياً، فعّل ما يناسب عيادتك فقط.")}</p>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-sm font-bold text-ink">{t("settings.preSalePrint", "طباعة الفاتورة قبل إتمام البيع")}</p>
+          <p className="text-xs text-ink-subtle mt-0.5">{t("settings.preSalePrintHint", "يضيف زر طباعة «فاتورة أولية» داخل شاشة البيع ليطّلع الزبون على الحساب قبل الدفع — لا تُسجَّل كفاتورة ولا تُخصم من المخزون.")}</p>
+        </div>
+        <button
+          role="switch" aria-checked={preSale}
+          onClick={toggle}
+          className="mt-0.5 shrink-0"
+          aria-label={t("settings.preSalePrint", "طباعة الفاتورة قبل إتمام البيع")}
+        >
+          <span className={cn("relative block h-6 w-11 rounded-full transition-colors", preSale ? "bg-brand-600" : "border border-line bg-surface-3")}>
+            <span className={cn("absolute start-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform", preSale && "translate-x-5 rtl:-translate-x-5")} />
+          </span>
+        </button>
       </div>
     </div>
   );

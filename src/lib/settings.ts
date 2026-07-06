@@ -140,8 +140,8 @@ export function clearPetRanges(petId: string) {
 export const DEFAULT_DIAL_CODE = "+964"; // Iraq
 
 export interface ClinicSocials { facebook: string; instagram: string }
-interface ClinicPrefs { dial_code: string; logo_url: string | null; social_facebook: string; social_instagram: string; clinic_name: string }
-const DEFAULT_PREFS: ClinicPrefs = { dial_code: DEFAULT_DIAL_CODE, logo_url: null, social_facebook: "", social_instagram: "", clinic_name: "" };
+interface ClinicPrefs { dial_code: string; logo_url: string | null; social_facebook: string; social_instagram: string; clinic_name: string; pre_sale_print: boolean }
+const DEFAULT_PREFS: ClinicPrefs = { dial_code: DEFAULT_DIAL_CODE, logo_url: null, social_facebook: "", social_instagram: "", clinic_name: "", pre_sale_print: false };
 
 const prefsKey = () => `vp_clinic_prefs_${getActiveClinicId()}`;
 const legacyDialKey = () => `vp_dial_code_${getActiveClinicId()}`;
@@ -171,15 +171,23 @@ export async function hydrateClinicPrefs(): Promise<void> {
   const client = sb();
   if (!client) { prefsCache = readPrefsLocal(); return; }
   try {
-    const { data, error } = await client.from("clinic_prefs").select("dial_code,logo_url,social_facebook,social_instagram,clinic_name").maybeSingle();
+    // Ask for the full column set; a pre-0047 database (no pre_sale_print yet)
+    // errors on the first select, so retry with the legacy columns — existing
+    // prefs keep syncing either way.
+    let res = await client.from("clinic_prefs").select("dial_code,logo_url,social_facebook,social_instagram,clinic_name,pre_sale_print").maybeSingle();
+    if (res.error) res = await client.from("clinic_prefs").select("dial_code,logo_url,social_facebook,social_instagram,clinic_name").maybeSingle();
+    const { data, error } = res;
     if (error) throw error;
     if (data) {
+      const d = data as Partial<ClinicPrefs>;
       prefsCache = {
-        dial_code: (data.dial_code as string) || DEFAULT_DIAL_CODE,
-        logo_url: (data.logo_url as string) ?? null,
-        social_facebook: (data.social_facebook as string) ?? "",
-        social_instagram: (data.social_instagram as string) ?? "",
-        clinic_name: (data.clinic_name as string) ?? "",
+        dial_code: d.dial_code || DEFAULT_DIAL_CODE,
+        logo_url: d.logo_url ?? null,
+        social_facebook: d.social_facebook ?? "",
+        social_instagram: d.social_instagram ?? "",
+        clinic_name: d.clinic_name ?? "",
+        // Column missing pre-migration → keep whatever this device had locally.
+        pre_sale_print: d.pre_sale_print ?? readPrefsLocal().pre_sale_print,
       };
     } else {
       // No row yet → migrate any local prefs up (or seed the default dial code).
@@ -237,4 +245,13 @@ export function getClinicName(): string {
 }
 export function setClinicName(name: string) {
   patchPrefs({ clinic_name: name.trim() }, "clinic-name-set");
+}
+
+/** Opt-in cashier feature: print a PRO-FORMA invoice BEFORE completing the sale.
+ *  Off by default — only clinics that enable it in Settings see the button. */
+export function getPreSalePrint(): boolean {
+  return !!prefs().pre_sale_print;
+}
+export function setPreSalePrint(v: boolean) {
+  patchPrefs({ pre_sale_print: v }, "pre-sale-print-set");
 }

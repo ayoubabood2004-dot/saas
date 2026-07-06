@@ -187,6 +187,7 @@ export function ActivityLog() {
       case "client": {
         const ev = s("event");
         if (ev === "invoice.print") return { icon: Receipt, tone: "muted", category: "finance", text: t("act.invPrint", { ref: s("ref"), format: s("format") === "thermal" ? t("act.printThermal", "إيصال حراري") : "A4", defaultValue: "طبع الفاتورة {{ref}} ({{format}})" }) };
+        if (ev === "invoice.preprint") return { icon: Receipt, tone: "muted", category: "finance", text: t("act.invPreprint", { total: s("total"), defaultValue: "طبع فاتورة أولية (قبل البيع) بمبلغ {{total}}" }) };
         if (ev === "report.excel") return { icon: Receipt, tone: "muted", category: "finance", text: t("act.reportExcel", { title: s("title"), defaultValue: "صدّر تقرير Excel — {{title}}" }) };
         if (ev === "report.print") return { icon: Receipt, tone: "muted", category: "finance", text: t("act.reportPrint", { title: s("title"), defaultValue: "طبع تقرير — {{title}}" }) };
         if (ev === "report.csv") return { icon: Receipt, tone: "muted", category: "finance", text: t("act.reportCsv", "صدّر ملف CSV من التقارير") };
