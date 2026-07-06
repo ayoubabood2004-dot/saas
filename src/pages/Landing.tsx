@@ -528,11 +528,12 @@ function Features() {
 }
 
 /* -------------------------------------------------------------- Pricing ---- */
-/** The growth story: سجّل → بِع → اكتمل. Annual subscriptions, one clinic each;
- *  extra clinics of the same owner get a loyalty discount (strip below the cards). */
-const TIERS: { name: string; price: number; perMonth: number; tag: string; pop?: boolean; feats: string[]; missing: string[] }[] = [
+/** The growth story: سجّل → بِع → اكتمل. Monthly OR annual (2 months free on
+ *  annual). Features are deliberately loaded onto the highlighted "السوبر" so
+ *  any serious clinic gravitates to it. 14-day free trial of the full Super. */
+const TIERS: { name: string; monthly: number; annual: number; tag: string; pop?: boolean; feats: string[]; missing: string[] }[] = [
   {
-    name: "العادية", price: 300, perMonth: 25, tag: "سجّل عيادتك — للعيادات الصغيرة",
+    name: "العادية", monthly: 30, annual: 299, tag: "سجّل عيادتك — للعيادات الصغيرة",
     feats: [
       "سجلات الحيوانات والملف الطبي الكامل",
       "التقويم الأساسي والتذكيرات",
@@ -543,7 +544,7 @@ const TIERS: { name: string; price: number; perMonth: number; tag: string; pop?:
     missing: ["الكاشير والبيع والفواتير", "التقارير", "حملات واتساب"],
   },
   {
-    name: "المطورة", price: 550, perMonth: 46, tag: "عيادتك بدت تبيع — للعيادات المتوسطة",
+    name: "المطورة", monthly: 55, annual: 549, tag: "عيادتك بدت تبيع — للعيادات المتوسطة",
     feats: [
       "كل ما في العادية",
       "الكاشير الكامل + فواتير A4 وحراري",
@@ -555,7 +556,7 @@ const TIERS: { name: string; price: number; perMonth: number; tag: string; pop?:
     missing: ["البيع بالدين وسجل الديون", "تصدير Excel وطباعة التقارير", "حملات واتساب"],
   },
   {
-    name: "السوبر", price: 779, perMonth: 65, tag: "كل شيء — للعيادة المتكاملة", pop: true,
+    name: "السوبر", monthly: 78, annual: 779, tag: "كل شيء — للعيادة المتكاملة", pop: true,
     feats: [
       "كل ما في المطورة",
       "البيع بالدين + سجل الديون + الدفع الجزئي",
@@ -571,6 +572,7 @@ const TIERS: { name: string; price: number; perMonth: number; tag: string; pop?:
 ];
 
 function Pricing() {
+  const [annual, setAnnual] = useState(true);
   return (
     <section id="pricing" className="border-t border-line bg-surface-2/30 py-20">
       <div className="mx-auto max-w-6xl px-4 sm:px-6">
@@ -578,6 +580,14 @@ function Pricing() {
           <span className="inline-flex items-center gap-2 rounded-full bg-brand-50 px-3.5 py-1.5 text-xs font-bold text-brand-700 dark:bg-brand-500/15 dark:text-brand-300"><Star size={14} /> أسعار عادلة</span>
           <h2 className="mt-4 font-display text-3xl font-extrabold tracking-tighter2 sm:text-4xl">اختر باقتك</h2>
           <p className="mt-3 text-lg text-ink-muted">جرّب <b className="text-ink">السوبر كاملة 14 يوماً مجاناً</b> — بلا بطاقة، وبعدها اختر ما يناسب عيادتك.</p>
+
+          {/* Monthly / annual toggle */}
+          <div className="mt-6 inline-flex items-center gap-1 rounded-full border border-line bg-surface-1 p-1">
+            <button onClick={() => setAnnual(false)} className={cn("rounded-full px-5 py-2 text-sm font-bold transition", !annual ? "bg-brand-600 text-white shadow-soft" : "text-ink-muted")}>شهري</button>
+            <button onClick={() => setAnnual(true)} className={cn("inline-flex items-center gap-1.5 rounded-full px-5 py-2 text-sm font-bold transition", annual ? "bg-brand-600 text-white shadow-soft" : "text-ink-muted")}>
+              سنوي <span className={cn("rounded-full px-1.5 py-0.5 text-2xs", annual ? "bg-white/20" : "bg-success-100 text-success-700 dark:bg-success-500/20 dark:text-success-300")}>شهران هدية</span>
+            </button>
+          </div>
         </motion.div>
 
         <div className="mt-12 grid items-stretch gap-5 lg:grid-cols-3">
@@ -595,10 +605,17 @@ function Pricing() {
               <p className="font-display text-lg font-extrabold text-ink">{t.name}</p>
               <p className="text-2xs font-semibold text-ink-subtle">{t.tag}</p>
               <div className="mt-4 flex items-end gap-1">
-                <span className="font-display text-4xl font-extrabold tracking-tighter2 text-ink">${t.price}</span>
-                <span className="mb-1 text-sm font-semibold text-ink-subtle">/ سنة</span>
+                <AnimatePresence mode="popLayout">
+                  <motion.span key={annual ? "y" : "m"} initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 8 }} transition={{ duration: 0.2 }} className="font-display text-4xl font-extrabold tracking-tighter2 text-ink">
+                    ${annual ? t.annual : t.monthly}
+                  </motion.span>
+                </AnimatePresence>
+                <span className="mb-1 text-sm font-semibold text-ink-subtle">/ {annual ? "سنة" : "شهر"}</span>
               </div>
-              <p className="mt-1 text-2xs text-ink-subtle">يعادل ${t.perMonth} شهرياً</p>
+              <p className="mt-1 text-2xs text-ink-subtle">
+                {annual ? `شهران هدية — يعادل $${Math.round(t.annual / 12)} شهرياً` : `أو $${t.annual} سنوياً — شهران هدية`}
+              </p>
+              {t.pop && <span className="mt-3 inline-flex items-center gap-1 self-start rounded-full bg-success-50 px-2.5 py-1 text-2xs font-bold text-success-700 dark:bg-success-500/15 dark:text-success-300"><Sparkles size={12} /> ١٤ يوم تجربة مجانية — بلا بطاقة</span>}
               <ul className="mt-5 flex-1 space-y-2.5">
                 {t.feats.map((f) => (
                   <li key={f} className="flex items-start gap-2 text-sm text-ink-muted">
@@ -618,17 +635,11 @@ function Pricing() {
                   t.pop ? "bg-brand-600 text-white shadow-soft hover:bg-brand-700 hover:shadow-raised" : "border border-line-strong bg-surface-1 text-ink hover:bg-surface-2",
                 )}
               >
-                ابدأ الآن <ArrowLeft size={15} />
+                {t.pop ? "ابدأ تجربة ١٤ يوم مجاناً" : "ابدأ الآن"} <ArrowLeft size={15} />
               </a>
             </motion.div>
           ))}
         </div>
-
-        {/* Multi-clinic loyalty discount — every clinic subscribes, extra ones cost less */}
-        <motion.div {...REVEAL} className="mx-auto mt-8 max-w-3xl rounded-2xl border border-line bg-surface-1 px-5 py-4 text-center">
-          <p className="text-sm font-bold text-ink"><Building2 size={15} className="mb-0.5 inline text-brand-600" /> عندك أكثر من عيادة؟</p>
-          <p className="mt-1 text-sm text-ink-muted">كل عيادة باشتراكها الخاص — والعيادة الثانية بخصم <b className="text-success-600">20%</b> والثالثة فما فوق بخصم <b className="text-success-600">30%</b>، على أي باقة.</p>
-        </motion.div>
 
         <p className="mt-6 text-center text-2xs text-ink-subtle">الدفع بالدينار بالسعر المكافئ · زين كاش · فاست باي · Qi · كاش عبر مندوب</p>
       </div>
