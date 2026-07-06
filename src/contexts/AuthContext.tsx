@@ -439,6 +439,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // cleared, so its localStorage key still resolves) — otherwise the next user
     // on a shared device inherits the previous person's 10-minute manager access.
     try { endElevationOnLogout(); } catch { /* ignore */ }
+    // Purge the service-worker media cache so the previous clinic's patient
+    // photos (cached from Supabase storage) can't be read by the next person on
+    // a shared/kiosk device via DevTools → Cache Storage.
+    try { if ("caches" in window) void caches.keys().then((ks) => ks.forEach((k) => caches.delete(k))); } catch { /* ignore */ }
     setRaw(null);
     setActiveRole(null);
     setRecovery(false);

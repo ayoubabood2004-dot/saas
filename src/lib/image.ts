@@ -93,6 +93,10 @@ export async function prepareUpload(
   const objectUrl = URL.createObjectURL(file);
   try {
     const img = await loadImage(objectUrl);
+    // Decompression-bomb guard: a tiny highly-compressible file can decode to a
+    // gigapixel bitmap and OOM/hang the tab. Reject anything above 40 megapixels
+    // before we ever draw it (a real clinic photo is well under that).
+    if ((img.width * img.height) > 40_000_000) throw new FileTooLargeError(MAX_INPUT_MB);
     const longest = Math.max(img.width, img.height) || 1;
     const scale = Math.min(1, maxDim / longest);
     const width = Math.max(1, Math.round(img.width * scale));

@@ -133,7 +133,14 @@ export async function setOverridePin(pin: string): Promise<void> {
 export function endElevationOnLogout(): void {
   const client = sb();
   if (client) void Promise.resolve(client.rpc("end_elevation")).then(() => undefined, () => undefined);
-  try { localStorage.removeItem(untilKey()); } catch { /* ignore */ }
+  // Remove EVERY clinic's elevation flag, not just the active one — a user who
+  // switched clinics mid-session could otherwise leave a stale flag that unlocks
+  // the manager UI for the next person on a shared device.
+  try {
+    for (const k of Object.keys(localStorage)) {
+      if (k.startsWith("vp_override_until_")) localStorage.removeItem(k);
+    }
+  } catch { /* ignore */ }
   if (expiryTimer != null) { window.clearTimeout(expiryTimer); expiryTimer = null; }
   notify();
 }
