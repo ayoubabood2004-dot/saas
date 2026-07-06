@@ -98,19 +98,44 @@ async function localHash(pin: string): Promise<string> {
   return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-/** Save the clinic PIN. Server-side for real backends (managers only, enforced
- *  by the RPC); ALWAYS mirrored locally so demo mode and pre-migration
- *  databases keep a working device-local PIN. */
+/** Save the clinic PIN. On a real backend the PIN lives bcrypt-hashed server-side
+ *  (managers only, enforced by the RPC). We deliberately do NOT keep a local
+ *  mirror in production: a SHA-256 of a 4-digit PIN in localStorage is trivially
+ *  brute-forced by anyone who can read storage, which would defeat the server's
+ *  lockout. The device-local mirror is used ONLY in demo/offline mode, or as a
+ *  fallback on a pre-0048 backend (until the migration is applied). */
 export async function setOverridePin(pin: string): Promise<void> {
   if (!/^\d{4}$/.test(pin)) throw new Error("PIN must be 4 digits");
-  try { localStorage.setItem(pinKey(), await localHash(pin)); } catch { /* ignore */ }
   const client = sb();
-  if (client) {
-    const { error } = await client.rpc("set_override_pin", { p_pin: pin });
-    // Pre-0048 database → the local mirror above still makes the feature work
-    // on this device; anything else is a real failure the UI should surface.
-    if (error && !MISSING_FN.test(error.message)) throw new Error(error.message);
+  if (!client) {
+    // Demo / offline → localStorage is the only store available.
+    try { localStorage.setItem(pinKey(), await localHash(pin)); } catch { /* ignore */ }
+    return;
   }
+  const { error } = await client.rpc("set_override_pin", { p_pin: pin });
+  if (error) {
+    if (MISSING_FN.test(error.message)) {
+      // Pre-0048 backend → device-local fallback so the feature still works
+      // until the migration is applied.
+      try { localStorage.setItem(pinKey(), await localHash(pin)); } catch { /* ignore */ }
+      return;
+    }
+    throw new Error(error.message);
+  }
+  // Migrated backend holds the real PIN → drop any stale local mirror.
+  try { localStorage.removeItem(pinKey()); } catch { /* ignore */ }
+}
+
+/** Logout teardown: end any running PIN elevation (server + this device) so the
+ *  NEXT user to sign in on a shared/kiosk device never inherits manager access.
+ *  A deliberate device lock (kiosk reception view) is intentionally PRESERVED —
+ *  it must survive staff signing in and out all day. */
+export function endElevationOnLogout(): void {
+  const client = sb();
+  if (client) void Promise.resolve(client.rpc("end_elevation")).then(() => undefined, () => undefined);
+  try { localStorage.removeItem(untilKey()); } catch { /* ignore */ }
+  if (expiryTimer != null) { window.clearTimeout(expiryTimer); expiryTimer = null; }
+  notify();
 }
 
 export async function hasOverridePin(): Promise<boolean> {

@@ -6,6 +6,7 @@ import { setActiveClinicId, clearActiveClinic, getActiveClinicId, type ClinicAcc
 import { hydrateClinicConfig, hydratedFor } from "@/lib/clinicConfig";
 import { leaveClinic as apiLeaveClinic } from "@/lib/invites";
 import { repo } from "@/lib/repo";
+import { endElevationOnLogout } from "@/lib/managerOverride";
 import type { OwnerAccount } from "@/lib/owners";
 
 interface SignupExtra {
@@ -434,6 +435,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOut = () => {
     if (isSupabaseConfigured && supabase) void supabase.auth.signOut();
+    // End any live manager-override elevation FIRST (before the active clinic is
+    // cleared, so its localStorage key still resolves) — otherwise the next user
+    // on a shared device inherits the previous person's 10-minute manager access.
+    try { endElevationOnLogout(); } catch { /* ignore */ }
     setRaw(null);
     setActiveRole(null);
     setRecovery(false);
