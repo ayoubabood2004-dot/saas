@@ -579,7 +579,7 @@ function Pricing() {
         <motion.div {...REVEAL} className="mx-auto max-w-2xl text-center">
           <span className="inline-flex items-center gap-2 rounded-full bg-brand-50 px-3.5 py-1.5 text-xs font-bold text-brand-700 dark:bg-brand-500/15 dark:text-brand-300"><Star size={14} /> أسعار عادلة</span>
           <h2 className="mt-4 font-display text-3xl font-extrabold tracking-tighter2 sm:text-4xl">اختر باقتك</h2>
-          <p className="mt-3 text-lg text-ink-muted">جرّب <b className="text-ink">السوبر كاملة 14 يوماً مجاناً</b> — بلا بطاقة، وبعدها اختر ما يناسب عيادتك.</p>
+          <p className="mt-3 text-lg text-ink-muted">أسعار واضحة وعادلة — وتجربة مجانية بالكامل بلا أي التزام.</p>
 
           {/* Monthly / annual toggle */}
           <div className="mt-6 inline-flex items-center gap-1 rounded-full border border-line bg-surface-1 p-1">
@@ -615,7 +615,6 @@ function Pricing() {
               <p className="mt-1 text-2xs text-ink-subtle">
                 {annual ? `شهران هدية — يعادل $${Math.round(t.annual / 12)} شهرياً` : `أو $${t.annual} سنوياً — شهران هدية`}
               </p>
-              {t.pop && <span className="mt-3 inline-flex items-center gap-1 self-start rounded-full bg-success-50 px-2.5 py-1 text-2xs font-bold text-success-700 dark:bg-success-500/15 dark:text-success-300"><Sparkles size={12} /> ١٤ يوم تجربة مجانية — بلا بطاقة</span>}
               <ul className="mt-5 flex-1 space-y-2.5">
                 {t.feats.map((f) => (
                   <li key={f} className="flex items-start gap-2 text-sm text-ink-muted">
@@ -635,11 +634,25 @@ function Pricing() {
                   t.pop ? "bg-brand-600 text-white shadow-soft hover:bg-brand-700 hover:shadow-raised" : "border border-line-strong bg-surface-1 text-ink hover:bg-surface-2",
                 )}
               >
-                {t.pop ? "ابدأ تجربة ١٤ يوم مجاناً" : "ابدأ الآن"} <ArrowLeft size={15} />
+                ابدأ الآن <ArrowLeft size={15} />
               </a>
             </motion.div>
           ))}
         </div>
+
+        {/* The 14-day free trial — its own standalone rectangle under the plans */}
+        <motion.div {...REVEAL} className="mt-6 overflow-hidden rounded-3xl border-2 border-dashed border-brand-300 bg-brand-50/40 dark:border-brand-500/40 dark:bg-brand-500/10">
+          <div className="flex flex-col items-center gap-4 p-6 text-center sm:flex-row sm:p-7 sm:text-start">
+            <span className="grid h-14 w-14 shrink-0 place-items-center rounded-2xl bg-brand-grad text-white shadow-soft"><Sparkles size={26} /></span>
+            <div className="flex-1">
+              <p className="font-display text-xl font-extrabold text-ink">جرّب السوبر كاملة 14 يوماً — مجاناً</p>
+              <p className="mt-1 text-sm text-ink-muted">كل الميزات مفتوحة (البيع بالدين، الواتساب، التقارير الكاملة…) — بلا بطاقة، وبلا أي التزام.</p>
+            </div>
+            <a href={appUrl("/login")} className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-brand-600 px-6 py-3.5 text-sm font-extrabold text-white shadow-soft transition hover:bg-brand-700 hover:shadow-raised active:scale-[0.98]">
+              ابدأ التجربة المجانية <ArrowLeft size={16} />
+            </a>
+          </div>
+        </motion.div>
 
         <p className="mt-6 text-center text-2xs text-ink-subtle">الدفع بالدينار بالسعر المكافئ · زين كاش · فاست باي · Qi · كاش عبر مندوب</p>
       </div>
