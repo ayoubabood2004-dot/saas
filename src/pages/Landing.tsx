@@ -612,9 +612,6 @@ function Pricing() {
                 </AnimatePresence>
                 <span className="mb-1 text-sm font-semibold text-ink-subtle">/ {annual ? "سنة" : "شهر"}</span>
               </div>
-              <p className="mt-1 text-2xs text-ink-subtle">
-                {annual ? `شهران هدية — يعادل $${Math.round(t.annual / 12)} شهرياً` : `أو $${t.annual} سنوياً — شهران هدية`}
-              </p>
               <ul className="mt-5 flex-1 space-y-2.5">
                 {t.feats.map((f) => (
                   <li key={f} className="flex items-start gap-2 text-sm text-ink-muted">
