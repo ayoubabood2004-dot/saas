@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import {
   History, Search, PawPrint, Receipt, Pill, Syringe, Stethoscope, Package,
   Users, Trash2, NotebookPen, Image as ImageIcon, Building2, CalendarDays,
-  Scale, BellRing, Lock, Clock, LucideIcon,
+  Scale, BellRing, Lock, Clock, KeyRound, LucideIcon,
 } from "lucide-react";
 import type { AuditEntry, Pet } from "@/types";
 import { repo } from "@/lib/repo";
@@ -192,6 +192,11 @@ export function ActivityLog() {
         if (ev === "report.print") return { icon: Receipt, tone: "muted", category: "finance", text: t("act.reportPrint", { title: s("title"), defaultValue: "طبع تقرير — {{title}}" }) };
         if (ev === "report.csv") return { icon: Receipt, tone: "muted", category: "finance", text: t("act.reportCsv", "صدّر ملف CSV من التقارير") };
         if (ev === "consent.print") return { icon: NotebookPen, tone: "muted", category: "medical", text: t("act.consentPrint", { pet: s("pet"), defaultValue: "طبع نموذج إقرار — {{pet}}" }) };
+        if (ev === "override.unlock") return { icon: KeyRound, tone: "brand", category: "team", text: t("act.ovUnlock", "فتح وضع المدير بالرمز السري") };
+        if (ev === "override.fail") return { icon: KeyRound, tone: "danger", category: "team", text: t("act.ovFail", "أدخل رمزاً خاطئاً لوضع المدير") };
+        if (ev === "override.lock") return { icon: KeyRound, tone: "muted", category: "team", text: t("act.ovLock", "أقفل وضع المدير") };
+        if (ev === "override.devlock") return { icon: KeyRound, tone: "muted", category: "team", text: t("act.ovDevLock", "قفل هذا الجهاز بواجهة الاستقبال") };
+        if (ev === "override.devunlock") return { icon: KeyRound, tone: "muted", category: "team", text: t("act.ovDevUnlock", "ألغى قفل واجهة الاستقبال لهذا الجهاز") };
         return { icon: History, tone: "muted", category: "team", text: ev || "client" };
       }
       default:

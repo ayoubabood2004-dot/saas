@@ -26,6 +26,7 @@ import { playTap } from "@/lib/sounds";
 import { prefetchHandlers, prefetchAllIdle } from "@/lib/routePrefetch";
 import { warmDataIdle } from "@/lib/prefetchData";
 import { ThemeToggle, Tooltip } from "@/components/ui";
+import { OverrideCorner } from "@/components/ManagerOverride";
 import { Logo } from "@/components/Logo";
 import { BranchSwitcher } from "@/components/BranchSwitcher";
 import { useCommandPalette } from "./CommandPaletteProvider";
@@ -155,6 +156,7 @@ export function Sidebar() {
             </button>
           </Tooltip>
           <ThemeToggle />
+          <OverrideCorner />
           {roles.length > 1 && (
             <Tooltip label={t("role.switchTo", { role: t(`role.${otherRole}`), defaultValue: "Switch to {{role}}" })}>
               <button

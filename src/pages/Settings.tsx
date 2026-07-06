@@ -21,12 +21,17 @@ import { getClinicVaccines, addClinicVaccine, removeClinicVaccine, BUILTIN_VACCI
 import { getClinicBreeds, addClinicBreed, removeClinicBreed } from "@/lib/breeds";
 import { SpeciesPicker } from "@/components/PetFields";
 import { PhoneInput } from "@/components/PhoneInput";
+import { ManagerOverrideCard } from "@/components/ManagerOverride";
 import { Button, useToast } from "@/components/ui";
 
 export function Settings() {
   const { t } = useTranslation();
   const { user } = useAuth();
+  const { can } = usePermissions();
   const isStaff = user?.role !== "owner";
+  // Clinic-wide cards need real settings rights — a device pinned to the
+  // reception view (manager override) hides them like any receptionist.
+  const canSettings = isStaff && can("manageSettings");
   const [species, setSpecies] = useState<Species>("dog");
   // version bumps force re-read of effective ranges after save/reset
   const [version, setVersion] = useState(0);
@@ -142,11 +147,12 @@ export function Settings() {
         )}
       </div>
 
-      {isStaff && <ClinicIdentity />}
-      {isStaff && <CashierOptions />}
-      {isStaff && <BranchesManager />}
-      {isStaff && <ServiceSettings />}
-      {isStaff && <PromotionsManager clinicId={user?.clinic_id ?? user?.id} />}
+      {canSettings && <ClinicIdentity />}
+      {canSettings && <ManagerOverrideCard />}
+      {canSettings && <CashierOptions />}
+      {canSettings && <BranchesManager />}
+      {canSettings && <ServiceSettings />}
+      {canSettings && <PromotionsManager clinicId={user?.clinic_id ?? user?.id} />}
       <ClinicMedications />
       <ClinicVaccinations />
       <ClinicBreeds />

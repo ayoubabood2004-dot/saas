@@ -140,8 +140,8 @@ export function clearPetRanges(petId: string) {
 export const DEFAULT_DIAL_CODE = "+964"; // Iraq
 
 export interface ClinicSocials { facebook: string; instagram: string }
-interface ClinicPrefs { dial_code: string; logo_url: string | null; social_facebook: string; social_instagram: string; clinic_name: string; pre_sale_print: boolean }
-const DEFAULT_PREFS: ClinicPrefs = { dial_code: DEFAULT_DIAL_CODE, logo_url: null, social_facebook: "", social_instagram: "", clinic_name: "", pre_sale_print: false };
+interface ClinicPrefs { dial_code: string; logo_url: string | null; social_facebook: string; social_instagram: string; clinic_name: string; pre_sale_print: boolean; override_enabled: boolean }
+const DEFAULT_PREFS: ClinicPrefs = { dial_code: DEFAULT_DIAL_CODE, logo_url: null, social_facebook: "", social_instagram: "", clinic_name: "", pre_sale_print: false, override_enabled: false };
 
 const prefsKey = () => `vp_clinic_prefs_${getActiveClinicId()}`;
 const legacyDialKey = () => `vp_dial_code_${getActiveClinicId()}`;
@@ -171,23 +171,23 @@ export async function hydrateClinicPrefs(): Promise<void> {
   const client = sb();
   if (!client) { prefsCache = readPrefsLocal(); return; }
   try {
-    // Ask for the full column set; a pre-0047 database (no pre_sale_print yet)
-    // errors on the first select, so retry with the legacy columns — existing
-    // prefs keep syncing either way.
-    let res = await client.from("clinic_prefs").select("dial_code,logo_url,social_facebook,social_instagram,clinic_name,pre_sale_print").maybeSingle();
-    if (res.error) res = await client.from("clinic_prefs").select("dial_code,logo_url,social_facebook,social_instagram,clinic_name").maybeSingle();
-    const { data, error } = res;
+    // select("*") tolerates any schema age: columns a pre-migration database
+    // doesn't have yet simply aren't in the payload, and the mapping below
+    // falls back to this device's local mirror for them.
+    const { data, error } = await client.from("clinic_prefs").select("*").maybeSingle();
     if (error) throw error;
     if (data) {
       const d = data as Partial<ClinicPrefs>;
+      const local = readPrefsLocal();
       prefsCache = {
         dial_code: d.dial_code || DEFAULT_DIAL_CODE,
         logo_url: d.logo_url ?? null,
         social_facebook: d.social_facebook ?? "",
         social_instagram: d.social_instagram ?? "",
         clinic_name: d.clinic_name ?? "",
-        // Column missing pre-migration → keep whatever this device had locally.
-        pre_sale_print: d.pre_sale_print ?? readPrefsLocal().pre_sale_print,
+        // Columns missing pre-migration → keep whatever this device had locally.
+        pre_sale_print: d.pre_sale_print ?? local.pre_sale_print,
+        override_enabled: d.override_enabled ?? local.override_enabled,
       };
     } else {
       // No row yet → migrate any local prefs up (or seed the default dial code).
@@ -254,4 +254,13 @@ export function getPreSalePrint(): boolean {
 }
 export function setPreSalePrint(v: boolean) {
   patchPrefs({ pre_sale_print: v }, "pre-sale-print-set");
+}
+
+/** Opt-in Manager Override (وضع المدير برمز سري): this flag only reveals the
+ *  unlock icon — the PIN itself is verified server-side (migration 0048). */
+export function getOverrideEnabled(): boolean {
+  return !!prefs().override_enabled;
+}
+export function setOverrideEnabled(v: boolean) {
+  patchPrefs({ override_enabled: v }, "override-enabled-set");
 }

@@ -26,6 +26,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { isSoundEnabled, setSoundEnabled, playTap } from "@/lib/sounds";
 import { prefetchHandlers } from "@/lib/routePrefetch";
 import { Tooltip, ThemeToggle } from "@/components/ui";
+import { OverrideCorner } from "@/components/ManagerOverride";
 import { Logo } from "@/components/Logo";
 import { BranchSwitcher } from "@/components/BranchSwitcher";
 import { branchStore } from "@/lib/branchStore";
@@ -146,8 +147,9 @@ export function TopBar({ mobileOnly = false }: { mobileOnly?: boolean }) {
             </Tooltip>
 
             <ThemeToggle />
+            <OverrideCorner compact />
 
-            {staff && (
+            {staff && can("manageSettings") && (
               <Tooltip label={t("nav.settings")}>
                 <Link to="/settings" className="hidden h-11 w-11 place-items-center rounded-full text-ink-muted transition hover:bg-surface-2 hover:text-ink sm:grid">
                   <SettingsIcon size={19} />
@@ -227,9 +229,11 @@ export function TopBar({ mobileOnly = false }: { mobileOnly?: boolean }) {
                     </Link>
                   );
                 })}
-                <Link to="/settings" className="flex items-center gap-3 rounded-2xl px-3 py-3 text-ink hover:bg-surface-2">
-                  <SettingsIcon size={18} /> {t("nav.settings")}
-                </Link>
+                {can("manageSettings") && (
+                  <Link to="/settings" className="flex items-center gap-3 rounded-2xl px-3 py-3 text-ink hover:bg-surface-2">
+                    <SettingsIcon size={18} /> {t("nav.settings")}
+                  </Link>
+                )}
                 {roles.length > 1 && (
                   <button
                     onClick={() => { setMenuOpen(false); switchRole(); navigate("/"); }}
