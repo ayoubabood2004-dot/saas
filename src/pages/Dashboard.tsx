@@ -493,26 +493,90 @@ function AnimatedNumber({ value, className }: { value: number; className?: strin
 }
 
 /**
- * The clinic's heartbeat — an ECG waveform that sweeps continuously across the
- * base of the hero, like a live vitals monitor. Two identical tiles marquee by
- * exactly one tile width for a seamless, infinite loop. Pure decoration
- * (aria-hidden), soft and low-contrast so it reads as ambient life, not noise.
+ * The clinic's heartbeat — a genuinely LIVE, single-lead ECG monitor. Not a
+ * looping video: the trace is synthesised in real time from a real PQRST
+ * complex (a sum of Gaussians — P wave, Q/R/S spikes, T wave), scrolled
+ * right→left like a strip-chart with the drawing "pen" at the right edge.
+ *
+ * It never repeats because the heart rate drifts toward a fresh random target
+ * every few seconds and each beat gets a small amplitude variation — exactly
+ * how a real monitor looks. Rendered imperatively (setAttribute on one <path>
+ * per frame) so 60 fps costs no React reconciliation. Pure decoration
+ * (aria-hidden); honours prefers-reduced-motion by drawing one static trace.
  */
 function ClinicPulseLine() {
-  const W = 260; // tile width in the viewBox
-  // baseline → QRS spike (up/down/up) → baseline, then a gentle T bump
-  const path = `M0 24 H86 L96 24 L102 8 L110 40 L118 14 L126 24 H150 Q168 24 176 16 Q184 24 200 24 H${W}`;
+  const pathRef = useRef<SVGPathElement>(null);
+  const dotRef = useRef<SVGCircleElement>(null);
+
+  useEffect(() => {
+    const W = 600, H = 48, mid = H * 0.60, amp = 17; // viewBox + baseline + R height
+    const cols = 220;                                 // samples across the width
+    const dx = W / (cols - 1);
+    const buf = new Array<number>(cols).fill(0);
+
+    // One PQRST beat as a sum of Gaussians over beat-phase p∈[0,1). R peaks at 1.
+    const g = (p: number, mu: number, s: number, a: number) => a * Math.exp(-((p - mu) * (p - mu)) / (2 * s * s));
+    const ecg = (p: number) =>
+      g(p, 0.20, 0.028, 0.11) +   // P wave
+      g(p, 0.385, 0.008, -0.07) + // Q
+      g(p, 0.42, 0.009, 1.0) +    // R
+      g(p, 0.46, 0.011, -0.22) +  // S
+      g(p, 0.66, 0.046, 0.24);    // T wave
+
+    const colsPerSec = 78;        // scroll speed (samples/sec)
+    const secPerCol = 1 / colsPerSec;
+
+    let phase = Math.random();
+    let beatAmp = 1;
+    let bpm = 74, targetBpm = 74;
+
+    const advanceOne = () => {
+      const prev = phase % 1;
+      phase += (bpm / 60) * secPerCol;
+      if ((phase % 1) < prev) beatAmp = 0.9 + Math.random() * 0.22; // new beat → vary amplitude
+      const wander = 0.02 * Math.sin(phase * 0.7);                  // gentle baseline drift
+      return ecg(phase % 1) * beatAmp + wander;
+    };
+
+    const buildD = () => {
+      let d = `M0 ${(mid - buf[0] * amp).toFixed(2)}`;
+      for (let i = 1; i < cols; i++) d += ` L${(i * dx).toFixed(1)} ${(mid - buf[i] * amp).toFixed(2)}`;
+      return d;
+    };
+
+    // Prime the buffer with a few seconds of history so it's alive on first paint.
+    for (let i = 0; i < cols; i++) buf[i] = advanceOne();
+    pathRef.current?.setAttribute("d", buildD());
+
+    const reduce = typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    if (reduce) return; // static trace, no animation
+
+    let raf = 0, last = performance.now(), acc = 0, nextChange = last + 3000;
+    const tick = (now: number) => {
+      const dt = Math.min((now - last) / 1000, 0.05); last = now;
+      if (now >= nextChange) { targetBpm = 62 + Math.random() * 30; nextChange = now + 3000 + Math.random() * 4500; }
+      bpm += (targetBpm - bpm) * Math.min(dt * 0.6, 1);
+      acc += colsPerSec * dt;
+      let steps = Math.floor(acc); acc -= steps;
+      if (steps > cols) steps = cols;
+      for (let s = 0; s < steps; s++) { buf.shift(); buf.push(advanceOne()); }
+      if (steps > 0) {
+        pathRef.current?.setAttribute("d", buildD());
+        dotRef.current?.setAttribute("cy", (mid - buf[cols - 1] * amp).toFixed(2));
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, []);
+
   return (
-    <div aria-hidden className="pointer-events-none absolute inset-x-0 bottom-0 h-14 overflow-hidden opacity-70">
-      <motion.div className="flex h-full" style={{ width: W * 2 }}
-        animate={{ x: [0, -W] }} transition={{ duration: 4.5, repeat: Infinity, ease: "linear" }}>
-        {[0, 1].map((i) => (
-          <svg key={i} width={W} height="56" viewBox={`0 0 ${W} 48`} className="h-full shrink-0" preserveAspectRatio="none">
-            <path d={path} fill="none" stroke="white" strokeOpacity="0.45" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
-              style={{ filter: "drop-shadow(0 0 5px rgba(255,255,255,0.55))" }} />
-          </svg>
-        ))}
-      </motion.div>
+    <div aria-hidden className="pointer-events-none absolute inset-x-0 bottom-0 h-16 overflow-hidden opacity-70">
+      <svg width="100%" height="100%" viewBox="0 0 600 48" className="h-full w-full" preserveAspectRatio="none">
+        <path ref={pathRef} fill="none" stroke="white" strokeOpacity="0.5" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"
+          style={{ filter: "drop-shadow(0 0 5px rgba(255,255,255,0.5))" }} />
+        <circle ref={dotRef} cx="600" cy="28" r="2.4" fill="white" style={{ filter: "drop-shadow(0 0 6px rgba(255,255,255,0.9))" }} />
+      </svg>
     </div>
   );
 }
