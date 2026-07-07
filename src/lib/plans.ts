@@ -5,8 +5,8 @@
 // Prices are defined in USD. The clinic is charged the equivalent amount in
 // Iraqi Dinar (IQD) through Wayl, converted at a configurable rate (the Iraqi
 // market rate drifts, so the owner can update it from the admin panel rather
-// than it being locked to a hard-coded number). Annual = 12 × monthly (no
-// discount — the "two months free" promo was intentionally removed).
+// than it being locked to a hard-coded number). Annual = 12 × monthly — no
+// discount.
 // ============================================================================
 
 export type PlanId = "basic" | "advanced" | "super";
@@ -23,7 +23,7 @@ export interface Plan {
   missing: string[];    // features NOT in this tier (shown struck-through)
 }
 
-const monthly = (m: number) => m * 12; // annual price helper (no discount)
+const annualUsdFor = (m: number) => m * 12; // annual = 12 × monthly (no discount)
 
 export const PLANS: Plan[] = [
   {
@@ -31,7 +31,7 @@ export const PLANS: Plan[] = [
     name: "العادية",
     tag: "سجّل عيادتك — للعيادات الصغيرة",
     monthlyUsd: 30,
-    annualUsd: monthly(30),
+    annualUsd: annualUsdFor(30),
     feats: [
       "سجلات الحيوانات والملف الطبي الكامل",
       "التقويم الأساسي والتذكيرات",
@@ -46,7 +46,7 @@ export const PLANS: Plan[] = [
     name: "المطورة",
     tag: "عيادتك بدت تبيع — للعيادات المتوسطة",
     monthlyUsd: 55,
-    annualUsd: monthly(55),
+    annualUsd: annualUsdFor(55),
     feats: [
       "كل ما في العادية",
       "الكاشير الكامل + فواتير A4 وحراري",
@@ -62,7 +62,7 @@ export const PLANS: Plan[] = [
     name: "السوبر",
     tag: "كل شيء — للعيادة المتكاملة",
     monthlyUsd: 78,
-    annualUsd: monthly(78),
+    annualUsd: annualUsdFor(78),
     popular: true,
     feats: [
       "كل ما في المطورة",
