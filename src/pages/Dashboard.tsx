@@ -18,6 +18,9 @@ import {
   AlertTriangle,
   Package,
   CheckCircle2,
+  Sun,
+  Sunrise,
+  Moon,
 } from "lucide-react";
 import type { Appointment, Pet, Admission, Species, Reminder, Invoice, Product } from "@/types";
 import { repo } from "@/lib/repo";
@@ -30,7 +33,7 @@ import { RemindersWidget } from "@/components/RemindersWidget";
 import { buildUpcomingEvents } from "@/lib/events";
 import { getCached, setCached, isFresh } from "@/lib/swrCache";
 import { Card, CardTitle, Button, Badge, RingStat, Skeleton, EmptyState, type CurvePoint } from "@/components/ui";
-import { staggerContainer, fadeUp } from "@/lib/motion";
+import { staggerContainer, staggerItem, fadeUp } from "@/lib/motion";
 
 // recharts loads lazily (after first paint) — both charts share one chunk.
 const SpeciesDonut = lazy(() => import("@/components/dashboard/DashboardCharts").then((m) => ({ default: m.SpeciesDonut })));
@@ -186,6 +189,7 @@ export function Dashboard() {
   const dateLabel = today.toLocaleDateString(i18n.language === "ar" ? dateLocale() : "en-US", { weekday: "long", day: "numeric", month: "long" });
   const firstName = (user?.full_name || "").replace(/^Dr\.?\s*/i, "").split(" ")[0];
   const tipKey = TIPS[today.getDate() % TIPS.length];
+  const TimeIcon = hour < 12 ? Sunrise : hour < 18 ? Sun : Moon; // greeting mood, by clock
 
   // Live pulse pills shown inside the hero — the clinic's state at a glance.
   const pulse = [
@@ -210,14 +214,26 @@ export function Dashboard() {
         </div>
       )}
 
-      {/* Greeting hero — now carries the live clinic pulse so "how are we doing
-          right now?" is answered before a single click. */}
+      {/* Greeting hero — a living centrepiece: a drifting aurora, an animated
+          ECG "clinic pulse" line, and count-up vitals. Answers "how are we
+          doing right now?" before a single click, and feels alive doing it. */}
       <motion.div variants={fadeUp} initial="initial" animate="animate" className="relative overflow-hidden rounded-3xl bg-brand-grad p-6 text-white shadow-soft sm:p-8">
-        <div className="pointer-events-none absolute -right-10 -top-10 h-48 w-48 rounded-full bg-white/10 blur-2xl" />
-        <PawPrint className="pointer-events-none absolute -bottom-8 right-6 text-white/10" size={140} />
+        {/* Drifting aurora — two soft colour blobs that give the panel depth and
+            gentle motion without ever pulling the eye. */}
+        <motion.div aria-hidden className="pointer-events-none absolute -left-16 -top-24 h-72 w-72 rounded-full bg-sky-300/25 blur-3xl"
+          animate={{ x: [0, 34, 0], y: [0, 22, 0], scale: [1, 1.15, 1] }} transition={{ duration: 15, repeat: Infinity, ease: "easeInOut" }} />
+        <motion.div aria-hidden className="pointer-events-none absolute -right-12 top-4 h-64 w-64 rounded-full bg-accent-400/20 blur-3xl"
+          animate={{ x: [0, -28, 0], y: [0, 26, 0], scale: [1.1, 1, 1.1] }} transition={{ duration: 19, repeat: Infinity, ease: "easeInOut" }} />
+        <PawPrint className="pointer-events-none absolute -bottom-9 right-6 text-white/10" size={140} />
+        {/* Signature: the clinic's heartbeat, sweeping across the base. */}
+        <ClinicPulseLine />
+
         <div className="relative flex flex-wrap items-start justify-between gap-4">
           <div>
-            <p className="text-sm font-medium text-white/80">{dateLabel}</p>
+            <p className="flex items-center gap-2 text-sm font-medium text-white/80">
+              <TimeIcon size={16} className="text-white/90" />
+              {dateLabel}
+            </p>
             <h1 className="mt-1 font-display text-2xl font-extrabold tracking-tighter2 sm:text-3xl">
               {greeting}{firstName ? `، ${firstName}` : ""} 👋
             </h1>
@@ -232,19 +248,19 @@ export function Dashboard() {
             </Button>
           </div>
         </div>
-        {/* Pulse pills */}
-        <div className="relative mt-5 flex flex-wrap gap-2">
+        {/* Pulse pills — count-up vitals */}
+        <motion.div variants={staggerContainer} initial="initial" animate="animate" className="relative mt-5 flex flex-wrap gap-2">
           {pulse.map((p, i) => {
             const Icon = p.icon;
             return (
-              <span key={i} className="inline-flex items-center gap-1.5 rounded-full bg-white/15 px-3 py-1.5 text-sm font-semibold backdrop-blur-sm">
+              <motion.span key={i} variants={staggerItem} className="inline-flex items-center gap-1.5 rounded-full bg-white/15 px-3 py-1.5 text-sm font-semibold ring-1 ring-white/10 backdrop-blur-sm transition hover:bg-white/25">
                 <Icon size={14} className="text-white/80" />
-                <span className="tabular-nums">{formatNum(p.value)}</span>
+                <AnimatedNumber value={p.value} className="tabular-nums" />
                 <span className="text-white/75">{p.label}</span>
-              </span>
+              </motion.span>
             );
           })}
-        </div>
+        </motion.div>
       </motion.div>
 
       {/* KPI grid */}
@@ -253,10 +269,10 @@ export function Dashboard() {
           Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-24 rounded-3xl" />)
         ) : (
           <>
-            <RingStat label={t("dash.casesToday", "Cases today")} value={casesToday} percent={pctBusy} color="#1266d8" center={<Stethoscope size={18} className="text-brand-600" />} hint={t("dash.recordedToday", "recorded today")} />
-            <RingStat label={t("dash.activeCases", "Active cases")} value={activeCases.length} percent={pctCases} color="#8b5cf6" hint={t("dash.underTreatment", "under treatment")} />
-            <RingStat label={t("dash.boarding", "Boarding")} value={boarding.length} percent={pctBoard} color="#0ea5e9" hint={t("dash.guests", "guests staying")} />
-            <RingStat label={t("dash.lowStock", "Low stock")} value={lowStock.length} percent={pctLow} color={lowStock.length ? "#ef4444" : "#10b981"} center={<AlertTriangle size={18} className={lowStock.length ? "text-danger-600" : "text-success-600"} />} hint={t("dash.reorderSoon", "needs reordering")} />
+            <RingStat className="transition duration-200 hover:-translate-y-0.5 hover:shadow-soft" label={t("dash.casesToday", "Cases today")} value={<AnimatedNumber value={casesToday} />} percent={pctBusy} color="#1266d8" center={<Stethoscope size={18} className="text-brand-600" />} hint={t("dash.recordedToday", "recorded today")} />
+            <RingStat className="transition duration-200 hover:-translate-y-0.5 hover:shadow-soft" label={t("dash.activeCases", "Active cases")} value={<AnimatedNumber value={activeCases.length} />} percent={pctCases} color="#8b5cf6" hint={t("dash.underTreatment", "under treatment")} />
+            <RingStat className="transition duration-200 hover:-translate-y-0.5 hover:shadow-soft" label={t("dash.boarding", "Boarding")} value={<AnimatedNumber value={boarding.length} />} percent={pctBoard} color="#0ea5e9" hint={t("dash.guests", "guests staying")} />
+            <RingStat className="transition duration-200 hover:-translate-y-0.5 hover:shadow-soft" label={t("dash.lowStock", "Low stock")} value={<AnimatedNumber value={lowStock.length} />} percent={pctLow} color={lowStock.length ? "#ef4444" : "#10b981"} center={<AlertTriangle size={18} className={lowStock.length ? "text-danger-600" : "text-success-600"} />} hint={t("dash.reorderSoon", "needs reordering")} />
           </>
         )}
       </motion.div>
@@ -443,5 +459,60 @@ function QuickAction({ icon, label, onClick }: { icon: React.ReactNode; label: s
       <span className="grid h-11 w-11 place-items-center rounded-2xl bg-brand-50 text-brand-600 dark:bg-brand-500/15 dark:text-brand-300">{icon}</span>
       <span className="text-xs font-semibold text-ink">{label}</span>
     </button>
+  );
+}
+
+/**
+ * A number that smoothly counts up to its target (ease-out) and re-animates
+ * whenever the value changes — makes every KPI feel alive on load and refresh.
+ * Locale-aware digits via formatNum. Honours prefers-reduced-motion by snapping.
+ */
+function AnimatedNumber({ value, className }: { value: number; className?: string }) {
+  const [shown, setShown] = useState(0);
+  const fromRef = useRef(0);
+  useEffect(() => {
+    const reduce = typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    const from = fromRef.current;
+    const to = value;
+    if (reduce || from === to) { setShown(to); fromRef.current = to; return; }
+    const duration = 850;
+    let raf = 0;
+    let startTs = 0;
+    const step = (ts: number) => {
+      if (!startTs) startTs = ts;
+      const p = Math.min((ts - startTs) / duration, 1);
+      const eased = 1 - Math.pow(1 - p, 3); // easeOutCubic
+      setShown(from + (to - from) * eased);
+      if (p < 1) raf = requestAnimationFrame(step);
+      else fromRef.current = to;
+    };
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
+  }, [value]);
+  return <span className={className}>{formatNum(Math.round(shown))}</span>;
+}
+
+/**
+ * The clinic's heartbeat — an ECG waveform that sweeps continuously across the
+ * base of the hero, like a live vitals monitor. Two identical tiles marquee by
+ * exactly one tile width for a seamless, infinite loop. Pure decoration
+ * (aria-hidden), soft and low-contrast so it reads as ambient life, not noise.
+ */
+function ClinicPulseLine() {
+  const W = 260; // tile width in the viewBox
+  // baseline → QRS spike (up/down/up) → baseline, then a gentle T bump
+  const path = `M0 24 H86 L96 24 L102 8 L110 40 L118 14 L126 24 H150 Q168 24 176 16 Q184 24 200 24 H${W}`;
+  return (
+    <div aria-hidden className="pointer-events-none absolute inset-x-0 bottom-0 h-14 overflow-hidden opacity-70">
+      <motion.div className="flex h-full" style={{ width: W * 2 }}
+        animate={{ x: [0, -W] }} transition={{ duration: 4.5, repeat: Infinity, ease: "linear" }}>
+        {[0, 1].map((i) => (
+          <svg key={i} width={W} height="56" viewBox={`0 0 ${W} 48`} className="h-full shrink-0" preserveAspectRatio="none">
+            <path d={path} fill="none" stroke="white" strokeOpacity="0.45" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+              style={{ filter: "drop-shadow(0 0 5px rgba(255,255,255,0.55))" }} />
+          </svg>
+        ))}
+      </motion.div>
+    </div>
   );
 }
