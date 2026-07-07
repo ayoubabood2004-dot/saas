@@ -10,7 +10,7 @@ import { repo } from "@/lib/repo";
 import { listStaff, type StaffMember } from "@/lib/staff";
 import { getCached, setCached } from "@/lib/swrCache";
 import type {
-  Pet, Admission, TreatmentEntry, MedicalVisit, Product, Invoice, InvoiceItem, MediaItem, AuditEntry, LoginEvent,
+  Pet, Admission, TreatmentEntry, MedicalVisit, Product, Invoice, InvoiceItem, MediaItem, AuditEntry, LoginEvent, Expense,
 } from "@/types";
 
 const cid = (clinicId?: string | null) => clinicId ?? "anon";
@@ -43,6 +43,7 @@ export async function loadRetailSnap(clinicId?: string | null): Promise<RetailSn
 export type AnalyticsSnap = {
   pets: Pet[]; invoices: Invoice[]; items: InvoiceItem[]; products: Product[]; visits: MedicalVisit[];
   staff: StaffMember[]; media: MediaItem[]; treatments: TreatmentEntry[]; audit: AuditEntry[]; logins: LoginEvent[];
+  expenses: Expense[];
 };
 export const analyticsKey = (clinicId?: string | null) => `analytics:${cid(clinicId)}`;
 export async function loadAnalyticsSnap(clinicId?: string | null): Promise<AnalyticsSnap> {
@@ -51,15 +52,17 @@ export async function loadAnalyticsSnap(clinicId?: string | null): Promise<Analy
     repo.listAllPets(id), repo.listInvoices(id), repo.listAllInvoiceItems(id), repo.listProducts(id),
   ]);
   const petIds = pets.map((p) => p.id);
-  const [visits, media, treatments, staff, audit, logins] = await Promise.all([
+  const [visits, media, treatments, staff, audit, logins, expenses] = await Promise.all([
     repo.listAllVisits(petIds),
     repo.listAllMedia(petIds).catch(() => [] as MediaItem[]),
     repo.listAllTreatments(petIds).catch(() => [] as TreatmentEntry[]),
     listStaff().catch(() => [] as StaffMember[]),
     repo.listAuditLog(id).catch(() => [] as AuditEntry[]),
     repo.listLoginEvents(id).catch(() => [] as LoginEvent[]),
+    // Back-compat guard: the expenses table (migration 0052) may not exist yet.
+    repo.listExpenses(id).catch(() => [] as Expense[]),
   ]);
-  return { pets, invoices, items, products, visits, media, treatments, staff, audit, logins };
+  return { pets, invoices, items, products, visits, media, treatments, staff, audit, logins, expenses };
 }
 
 /** Warm a data snapshot into the cache once, but only if a page visit hasn't

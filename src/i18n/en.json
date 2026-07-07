@@ -1602,7 +1602,8 @@
       "staff": "Staff",
       "best": "Top & sales",
       "clinical": "Clinical reports",
-      "audit": "Audit & activity"
+      "audit": "Audit & activity",
+      "expenses": "Expenses / Withdrawals"
     },
     "kpi": {
       "sales": "Total sales",
@@ -1775,8 +1776,33 @@
       "topSellers": "Best sellers",
       "qty": "Quantity",
       "revenue": "Revenue",
-      "done": "File exported"
-    }
+      "done": "File exported",
+      "expenses": "Expenses / withdrawals",
+      "netCash": "Net cash in drawer"
+    },
+    "exp": {
+      "title": "Cash expenses & withdrawals",
+      "total": "Total expenses",
+      "count": "entries",
+      "cashCollected": "Cash collected from sales",
+      "amount": "Amount",
+      "desc": "Description (where & why)",
+      "descPlaceholder": "e.g. shop rent, salaries, cleaning supplies…",
+      "category": "Category",
+      "optional": "Optional",
+      "spentAt": "Date spent",
+      "add": "Record expense",
+      "delete": "Delete",
+      "list": "Expenses ledger",
+      "empty": "No expenses in this period.",
+      "added": "Expense recorded",
+      "needAmount": "Enter a valid amount",
+      "needDesc": "Enter what it was spent on",
+      "saveFail": "Could not record the expense",
+      "delFail": "Could not delete"
+    },
+    "zWithdrawals": "Withdrawals / expenses",
+    "zNetCash": "Net cash in drawer"
   },
   "act": {
     "title": "Activity log",

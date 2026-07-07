@@ -4,7 +4,7 @@
 import { loadDB, saveDB } from "./demoStore";
 import { supabase } from "./supabase";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, AppointmentStatus, TreatmentEntry, Admission, Branch, Reminder, Product, Invoice, InvoiceItem, CheckoutItem, SaleMeta, Customer, DiscountType, PaymentMethod, WhatsAppMessage, AuditEntry, LoginEvent, PetNote } from "@/types";
+import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, AppointmentStatus, TreatmentEntry, Admission, Branch, Reminder, Product, Invoice, InvoiceItem, CheckoutItem, SaleMeta, Customer, DiscountType, PaymentMethod, WhatsAppMessage, AuditEntry, LoginEvent, PetNote, Expense } from "@/types";
 import { uid, uuid, ageMonths } from "./utils";
 
 /** Sort key for a case/admission — newest first. Prefers the precise `created_at`
@@ -103,6 +103,12 @@ function demoNotesLoad(): PetNote[] {
   return [];
 }
 function demoNotesSave(list: PetNote[]) { try { localStorage.setItem(DEMO_NOTES_KEY, JSON.stringify(list)); } catch { /* ignore */ } }
+const DEMO_EXPENSES_KEY = "vp_demo_expenses";
+function demoExpensesLoad(): Expense[] {
+  try { const r = localStorage.getItem(DEMO_EXPENSES_KEY); if (r) return JSON.parse(r) as Expense[]; } catch { /* ignore */ }
+  return [];
+}
+function demoExpensesSave(list: Expense[]) { try { localStorage.setItem(DEMO_EXPENSES_KEY, JSON.stringify(list)); } catch { /* ignore */ } }
 function demoAuditLoad(): AuditEntry[] {
   try { const r = localStorage.getItem(DEMO_AUDIT_KEY); if (r) return JSON.parse(r) as AuditEntry[]; } catch { /* ignore */ }
   return [];
@@ -654,6 +660,22 @@ const demoRepo = {
     return dedupeCustomers(loadDB().invoices ?? [], query);
   },
 
+  /* ---- Cash expenses / withdrawals ledger ---- */
+  async listExpenses(_clinicId?: string): Promise<Expense[]> {
+    return demoExpensesLoad().slice().sort((a, b) => b.spent_at.localeCompare(a.spent_at));
+  },
+  async addExpense(input: Omit<Expense, "id" | "created_at">): Promise<Expense> {
+    const e: Expense = { ...input, id: uid("exp"), clinic_id: null, created_at: new Date().toISOString() };
+    demoExpensesSave([e, ...demoExpensesLoad()]);
+    return e;
+  },
+  async deleteExpense(id: string): Promise<void> {
+    const before = demoExpensesLoad();
+    const row = before.find((x) => x.id === id);
+    demoExpensesSave(before.filter((x) => x.id !== id));
+    if (row) demoAuditPush({ action: "DELETE", entity: "expenses", entity_id: id, details: row as unknown as Record<string, unknown> });
+  },
+
   /** Log a WhatsApp message send (campaign history / "last contacted"). */
   async logWhatsApp(input: { pet_id?: string | null; owner_name?: string | null; owner_phone?: string | null; reminder_type?: string | null }): Promise<void> {
     const db = loadDB();
@@ -697,6 +719,7 @@ const DEMO_ACTIVITY_MAP: Record<string, { entity: string; action: "INSERT" | "UP
   addVaccination: { entity: "vaccinations", action: "INSERT" },
   addVisit: { entity: "medical_visits", action: "INSERT" },
   addPetNote: { entity: "pet_notes", action: "INSERT" },
+  addExpense: { entity: "expenses", action: "INSERT" },
   addMedia: { entity: "media_items", action: "INSERT" },
   addTreatment: { entity: "treatment_entries", action: "INSERT" },
   setTreatmentGiven: { entity: "treatment_entries", action: "UPDATE" },
@@ -1114,6 +1137,22 @@ const supabaseRepo: typeof demoRepo = {
     if (clinicId) q = q.eq("clinic_id", clinicId);
     const rows = listOf<{ customer_name: string | null; customer_phone: string | null; created_at: string }>(await q);
     return dedupeCustomers(rows, query);
+  },
+  async listExpenses(clinicId) {
+    let q = sbc().from("expenses").select("*").order("spent_at", { ascending: false });
+    if (clinicId) q = q.eq("clinic_id", clinicId);
+    return listOf<Expense>(await q);
+  },
+  async addExpense(input) {
+    // clinic_id + staff_id are stamped by the column defaults (auth_clinic() / auth.uid());
+    // send only the explicit fields so a caller can never set another clinic's id.
+    return need<Expense>(await sbc().from("expenses").insert({
+      amount: input.amount, description: input.description,
+      category: input.category ?? null, spent_at: input.spent_at,
+    }).select().single());
+  },
+  async deleteExpense(id) {
+    ok(await sbc().from("expenses").delete().eq("id", id));
   },
   async logWhatsApp(input) {
     ok(await sbc().from("wa_messages").insert(input));

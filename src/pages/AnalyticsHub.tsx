@@ -10,17 +10,17 @@ import {
   Stethoscope, Package, Trophy, Snail, PawPrint, Lock, Download, CalendarRange,
   Crown, Star, ShieldAlert, Trash2, LogIn, FlaskConical, Pill, Users, Clock,
   ScrollText, Search, Eye, X, BadgePercent, SlidersHorizontal, ChevronDown,
-  ChevronLeft, LayoutDashboard, History,
+  ChevronLeft, LayoutDashboard, History, TrendingDown, Plus,
 } from "lucide-react";
-import { playTap } from "@/lib/sounds";
-import type { Pet, Invoice, InvoiceItem, Product, MedicalVisit, PaymentMethod, Species, MediaItem, TreatmentEntry, AuditEntry, LoginEvent } from "@/types";
+import { playTap, playSuccess, playWarning } from "@/lib/sounds";
+import type { Pet, Invoice, InvoiceItem, Product, MedicalVisit, PaymentMethod, Species, MediaItem, TreatmentEntry, AuditEntry, LoginEvent, Expense } from "@/types";
 import { type StaffMember } from "@/lib/staff";
 import { getCached, setCached, isFresh } from "@/lib/swrCache";
 import { loadAnalyticsSnap, analyticsKey, type AnalyticsSnap } from "@/lib/prefetchData";
 import { repo } from "@/lib/repo";
 import { useAuth } from "@/contexts/AuthContext";
 import { usePermissions } from "@/hooks/usePermissions";
-import { useToast, Skeleton } from "@/components/ui";
+import { useToast, Skeleton, Button } from "@/components/ui";
 import { money, formatNum, cn, dateLocale } from "@/lib/utils";
 import { dueOf, isDebt, paidOf } from "@/lib/debt";
 import { invoiceNo } from "@/lib/invoicePrint";
@@ -49,7 +49,7 @@ import { UniversalReportTable, type ReportColumn, type SummaryMetric } from "@/c
  * ==========================================================================*/
 
 type RangeKey = "today" | "yesterday" | "week" | "month" | "lastMonth" | "custom";
-type TabKey = "overview" | "money" | "ledger" | "staff" | "best" | "clinical" | "audit";
+type TabKey = "overview" | "money" | "ledger" | "staff" | "best" | "clinical" | "audit" | "expenses";
 
 /** One staff member's sales performance in the selected range. */
 interface StaffTopItem { name: string; qty: number; revenue: number }
@@ -128,7 +128,7 @@ const shortDate = (ms: number) => (Number.isFinite(ms)
 export function AnalyticsHub() {
   const { t } = useTranslation();
   const { user } = useAuth();
-  const { can } = usePermissions();
+  const { can, role } = usePermissions();
   const toast = useToast();
   const canProfit = can("viewProfits");
 
@@ -148,6 +148,7 @@ export function AnalyticsHub() {
   const [treatments, setTreatments] = useState<TreatmentEntry[]>(seed?.treatments ?? []);
   const [audit, setAudit] = useState<AuditEntry[]>(seed?.audit ?? []);
   const [logins, setLogins] = useState<LoginEvent[]>(seed?.logins ?? []);
+  const [expenses, setExpenses] = useState<Expense[]>(seed?.expenses ?? []);
 
   // ---- Unified period: the two date inputs ARE the source of truth (always filled).
   //      Presets simply fill them; editing an input flips the preset to "custom".
@@ -179,7 +180,7 @@ export function AnalyticsHub() {
         const s = await loadAnalyticsSnap(clinicId);
         if (!alive) return;
         setPets(s.pets); setInvoices(s.invoices); setItems(s.items); setProducts(s.products);
-        setVisits(s.visits); setMedia(s.media); setTreatments(s.treatments); setStaff(s.staff); setAudit(s.audit); setLogins(s.logins);
+        setVisits(s.visits); setMedia(s.media); setTreatments(s.treatments); setStaff(s.staff); setAudit(s.audit); setLogins(s.logins); setExpenses(s.expenses);
         setCached<AnalyticsSnap>(cacheKey, s);
       } catch { /* empty states cover it */ }
       finally { if (alive) setLoading(false); }
@@ -278,6 +279,16 @@ export function AnalyticsHub() {
     const refundTotal = refunds.reduce((s, i) => s + i.total, 0);
     return { byMethod, gross, pending, txCount: paid.length, refundCount: refunds.length, refundTotal };
   }, [paid, invInRange]);
+
+  // ---- Cash expenses / withdrawals (المصروفات) — filtered by the money-left date.
+  const expensesInRange = useMemo(
+    () => expenses.filter((e) => { const tm = new Date(e.spent_at).getTime(); return tm >= lo && tm <= hi && tsOk(e.spent_at); }),
+    [expenses, lo, hi, tsOk],
+  );
+  const expensesTotal = useMemo(() => expensesInRange.reduce((s, e) => s + e.amount, 0), [expensesInRange]);
+  // Every expense is cash-out of the drawer (the ledger has no payment method),
+  // so net cash on hand = cash collected from sales − cash withdrawn/spent.
+  const netCash = useMemo(() => zReport.byMethod.cash.total - expensesTotal, [zReport, expensesTotal]);
 
   // Outstanding balances (credit / آجل): any non-refunded sale still owing — partial or unpaid.
   const receivables = useMemo(() => paid.filter(isDebt), [paid]);
@@ -578,6 +589,8 @@ export function AnalyticsHub() {
       [t("rpt.csv.net", "صافي الربح"), String(Math.round(revenue.net))],
       [t("rpt.csv.cogs", "تكلفة البضاعة"), String(Math.round(revenue.cogs))],
       [t("rpt.csv.txCount", "عدد العمليات"), String(zReport.txCount)],
+      [t("rpt.csv.expenses", "المصروفات والسحوبات"), String(Math.round(expensesTotal))],
+      [t("rpt.csv.netCash", "صافي النقد في الصندوق"), String(Math.round(netCash))],
       [],
       [t("rpt.csv.method", "طريقة الدفع"), t("rpt.csv.amount", "المبلغ"), t("rpt.csv.txCount", "عدد العمليات")],
       ...(["cash", "card", "transfer"] as PaymentMethod[]).map((k) => [t(`rpt.pay.${k}`, k), String(Math.round(zReport.byMethod[k].total)), String(zReport.byMethod[k].count)]),
@@ -601,6 +614,7 @@ export function AnalyticsHub() {
     { id: "staff", label: t("rpt.tab.staff", "الموظفون"), icon: Users },
     { id: "best", label: t("rpt.tab.best", "الأفضل والمبيعات"), icon: Crown },
     { id: "clinical", label: t("rpt.tab.clinical", "التقارير الطبية"), icon: Stethoscope },
+    { id: "expenses", label: t("rpt.tab.expenses", "المصروفات والسحوبات"), icon: TrendingDown },
     { id: "audit", label: t("rpt.tab.audit", "المراقبة والنشاط"), icon: ShieldAlert },
   ];
   const RANGES: { id: RangeKey; label: string }[] = [
@@ -767,12 +781,22 @@ export function AnalyticsHub() {
               z={zReport} receivables={receivables} series={series} paymentPie={paymentPie}
               revenue={revenue} categoryData={categoryData} staffPerf={staffPerf}
               canProfit={canProfit} yesterday={yesterday} isToday={preset === "today"} onExportCSV={exportCSV}
+              expensesTotal={expensesTotal} netCash={netCash}
             />
           )}
           {tab === "ledger" && <LedgerTab rows={ledger} canProfit={canProfit} loMs={lo} hiMs={hi} rangeLabel={rangeLabel} />}
           {tab === "staff" && <StaffSalesTab rows={staffSales} trend={staffTrend} canProfit={canProfit} rangeLabel={rangeLabel} />}
           {tab === "best" && <BestTab clients={topClients} services={topServices} movers={movers} species={speciesActivity} />}
           {tab === "clinical" && <ClinicalTab labXray={labXray} meds={dispensedMeds} />}
+          {tab === "expenses" && (
+            <ExpensesTab
+              rows={expensesInRange} total={expensesTotal} netCash={netCash}
+              cashCollected={zReport.byMethod.cash.total} rangeLabel={rangeLabel}
+              canRecord={role === "manager"} canProfit={canProfit}
+              clinicId={user?.clinic_id ?? user?.id} staffId={user?.id ?? null}
+              onChanged={(next) => { setExpenses(next); setCached<AnalyticsSnap>(cacheKey, { ...(getCached<AnalyticsSnap>(cacheKey) as AnalyticsSnap), expenses: next }); }}
+            />
+          )}
           {tab === "audit" && <AuditTab deleted={deletedInvoices} logins={loginsInRange} />}
         </>
       )}
@@ -925,7 +949,7 @@ function CmpCell({ label, value, delta }: { label: string; value: string; delta:
   );
 }
 
-function MoneyTab({ z, receivables, series, paymentPie, revenue, categoryData, staffPerf, canProfit, yesterday, isToday, onExportCSV }: {
+function MoneyTab({ z, receivables, series, paymentPie, revenue, categoryData, staffPerf, canProfit, yesterday, isToday, onExportCSV, expensesTotal, netCash }: {
   z: ZReport; receivables: Invoice[]; series: Series; paymentPie: { name: string; value: number }[];
   revenue: RevenueSummary; categoryData: { name: string; value: number }[];
   staffPerf: { doctor: string; count: number }[];
@@ -933,6 +957,8 @@ function MoneyTab({ z, receivables, series, paymentPie, revenue, categoryData, s
   yesterday: { gross: number; tx: number; net: number; dateMs: number } | null;
   isToday: boolean;
   onExportCSV: () => void;
+  expensesTotal: number;
+  netCash: number;
 }) {
   const { t } = useTranslation();
   const methods: PaymentMethod[] = ["cash", "card", "transfer"];
@@ -1035,6 +1061,19 @@ function MoneyTab({ z, receivables, series, paymentPie, revenue, categoryData, s
               <div className="flex items-center justify-between rounded-xl border border-danger-200 bg-danger-50/50 p-3 text-sm dark:border-danger-500/30 dark:bg-danger-500/10">
                 <span className="font-semibold text-danger-700 dark:text-danger-300">{t("rpt.refunds", { n: formatNum(z.refundCount), defaultValue: "مرتجعات ({{n}})" })}</span>
                 <span className="font-display font-bold tabular-nums text-danger-700 dark:text-danger-300">− {money(z.refundTotal)}</span>
+              </div>
+            )}
+            {/* Cash withdrawals/expenses out of the drawer, and the resulting net cash. */}
+            {expensesTotal > 0 && (
+              <div className="flex items-center justify-between rounded-xl border border-warn-200 bg-warn-50/60 p-3 text-sm dark:border-warn-500/30 dark:bg-warn-500/10">
+                <span className="font-semibold text-warn-700 dark:text-warn-300">{t("rpt.zWithdrawals", "السحوبات / المصروفات")}</span>
+                <span className="font-display font-bold tabular-nums text-warn-700 dark:text-warn-300">− {money(expensesTotal)}</span>
+              </div>
+            )}
+            {canProfit && (
+              <div className="flex items-center justify-between rounded-xl border border-brand-200 bg-brand-50 p-3 text-sm dark:border-brand-500/30 dark:bg-brand-500/10">
+                <span className="font-bold text-brand-800 dark:text-brand-200">{t("rpt.zNetCash", "صافي النقد في الصندوق")}</span>
+                <span className="font-display text-base font-extrabold tabular-nums text-brand-800 dark:text-brand-200">{money(netCash)}</span>
               </div>
             )}
           </div>
@@ -1297,6 +1336,143 @@ function AuditTab({ deleted, logins }: {
                   {l.email && <p className="truncate text-2xs text-ink-subtle" dir="ltr">{l.email}</p>}
                 </div>
                 <span className="shrink-0 text-2xs text-ink-subtle" dir="ltr">{dt(l.when)}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Panel>
+    </div>
+  );
+}
+
+/* ----------------------------- Expenses / Withdrawals (المصروفات والسحوبات) -----------------------------
+ * Record cash taken out of the drawer (rent, supplies, salaries, petty cash…) with
+ * WHERE & WHY, and see the period total + resulting net cash. Recording/deleting is
+ * managers-only (mirrors the 0052 RLS); the append-only ledger corrects via delete + re-add. */
+function ExpensesTab({ rows, total, netCash, cashCollected, rangeLabel, canRecord, canProfit, clinicId, staffId, onChanged }: {
+  rows: Expense[];
+  total: number;
+  netCash: number;
+  cashCollected: number;
+  rangeLabel: string;
+  canRecord: boolean;
+  canProfit: boolean;
+  clinicId?: string;
+  staffId: string | null;
+  onChanged: (next: Expense[]) => void;
+}) {
+  const { t } = useTranslation();
+  const toast = useToast();
+  const [amount, setAmount] = useState("");
+  const [description, setDescription] = useState("");
+  const [category, setCategory] = useState("");
+  const [spentAt, setSpentAt] = useState(() => localISO(new Date()));
+  const [busy, setBusy] = useState(false);
+
+  const submit = async () => {
+    const amt = Number(amount);
+    if (!Number.isFinite(amt) || amt <= 0) { playWarning(); toast.error(t("rpt.exp.needAmount", "أدخل مبلغاً صحيحاً")); return; }
+    if (!description.trim()) { playWarning(); toast.error(t("rpt.exp.needDesc", "اكتب بيان الصرف")); return; }
+    setBusy(true);
+    try {
+      await repo.addExpense({
+        amount: Math.round(amt * 100) / 100,
+        description: description.trim(),
+        category: category.trim() || null,
+        staff_id: staffId,
+        spent_at: new Date(spentAt + "T12:00:00").toISOString(),
+      });
+      onChanged(await repo.listExpenses(clinicId));
+      setAmount(""); setDescription(""); setCategory("");
+      playSuccess();
+      toast.success(t("rpt.exp.added", "تم تسجيل المصروف"));
+    } catch (e) {
+      playWarning();
+      toast.error(t("rpt.exp.saveFail", "تعذّر تسجيل المصروف"), e instanceof Error ? e.message : undefined);
+    } finally { setBusy(false); }
+  };
+
+  const remove = async (id: string) => {
+    playTap();
+    try {
+      await repo.deleteExpense(id);
+      onChanged(await repo.listExpenses(clinicId));
+    } catch (e) {
+      toast.error(t("rpt.exp.delFail", "تعذّر الحذف"), e instanceof Error ? e.message : undefined);
+    }
+  };
+
+  return (
+    <div className="space-y-5">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="font-display text-lg font-bold text-ink">{t("rpt.exp.title", "المصروفات والسحوبات النقدية")}</h2>
+        <span className="chip bg-surface-2 text-2xs font-semibold text-ink-muted">{rangeLabel}</span>
+      </div>
+
+      {/* Totals strip */}
+      <div className="grid gap-3 sm:grid-cols-3">
+        <div className="rounded-2xl border border-warn-200 bg-warn-50/60 p-4 dark:border-warn-500/30 dark:bg-warn-500/10">
+          <p className="text-2xs font-semibold text-warn-700 dark:text-warn-300">{t("rpt.exp.total", "إجمالي المصروفات")}</p>
+          <p className="mt-1 font-display text-2xl font-extrabold tabular-nums text-warn-800 dark:text-warn-200">{money(total)}</p>
+          <p className="text-2xs text-ink-subtle">{formatNum(rows.length)} {t("rpt.exp.count", "عملية")}</p>
+        </div>
+        <div className="rounded-2xl border border-line bg-surface-1 p-4">
+          <p className="text-2xs font-semibold text-ink-muted">{t("rpt.exp.cashCollected", "النقد المُحصّل من المبيعات")}</p>
+          <p className="mt-1 font-display text-2xl font-extrabold tabular-nums text-ink">{money(cashCollected)}</p>
+        </div>
+        {canProfit && (
+          <div className="rounded-2xl border border-brand-200 bg-brand-50 p-4 dark:border-brand-500/30 dark:bg-brand-500/10">
+            <p className="text-2xs font-semibold text-brand-700 dark:text-brand-300">{t("rpt.zNetCash", "صافي النقد في الصندوق")}</p>
+            <p className="mt-1 font-display text-2xl font-extrabold tabular-nums text-brand-800 dark:text-brand-200">{money(netCash)}</p>
+          </div>
+        )}
+      </div>
+
+      {/* Add-entry form — managers only, matching the RLS (hidden otherwise). */}
+      {canRecord && (
+        <div className="card p-4">
+          <div className="grid gap-3 md:grid-cols-[120px,1fr,140px,150px,auto] md:items-end">
+            <div>
+              <label className="label">{t("rpt.exp.amount", "المبلغ")}</label>
+              <input type="number" min="0" step="1" inputMode="numeric" className="input" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0" />
+            </div>
+            <div>
+              <label className="label">{t("rpt.exp.desc", "البيان (أين ولماذا صُرف)")}</label>
+              <input className="input" value={description} onChange={(e) => setDescription(e.target.value)} placeholder={t("rpt.exp.descPlaceholder", "مثال: إيجار المحل، رواتب، مستلزمات نظافة…")} />
+            </div>
+            <div>
+              <label className="label">{t("rpt.exp.category", "التصنيف")}</label>
+              <input className="input" value={category} onChange={(e) => setCategory(e.target.value)} placeholder={t("rpt.exp.optional", "اختياري")} />
+            </div>
+            <div>
+              <label className="label">{t("rpt.exp.spentAt", "تاريخ الصرف")}</label>
+              <input type="date" className="input" value={spentAt} onChange={(e) => setSpentAt(e.target.value)} />
+            </div>
+            <Button onClick={submit} loading={busy} leftIcon={<Plus size={16} />}>{t("rpt.exp.add", "تسجيل مصروف")}</Button>
+          </div>
+        </div>
+      )}
+
+      {/* Ledger list */}
+      <Panel title={t("rpt.exp.list", "سجلّ المصروفات")} icon={TrendingDown}>
+        {rows.length === 0 ? <Empty text={t("rpt.exp.empty", "لا توجد مصروفات في هذه الفترة.")} /> : (
+          <ul className="divide-y divide-line">
+            {rows.map((e) => (
+              <li key={e.id} className="flex items-center gap-3 py-2.5">
+                <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-warn-50 text-warn-600 dark:bg-warn-500/15 dark:text-warn-300"><TrendingDown size={16} /></span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-semibold text-ink">{e.description}</p>
+                  <p className="text-2xs text-ink-subtle">
+                    <span dir="ltr">{new Date(e.spent_at).toLocaleDateString(dateLocale(), { day: "2-digit", month: "short", year: "numeric" })}</span>
+                    {e.category ? ` · ${e.category}` : ""}
+                  </p>
+                </div>
+                <span className="shrink-0 font-display font-bold tabular-nums text-warn-700 dark:text-warn-300">− {money(e.amount)}</span>
+                {canRecord && (
+                  <button onClick={() => remove(e.id)} aria-label={t("rpt.exp.delete", "حذف")} className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-ink-subtle transition hover:bg-danger-50 hover:text-danger-600">
+                    <Trash2 size={15} />
+                  </button>
+                )}
               </li>
             ))}
           </ul>
