@@ -1495,7 +1495,8 @@
     "openSheet": "جدول العلاج",
     "discharge": "خروج",
     "todayMeds": "{{n}} أدوية اليوم",
-    "admissions": "الإقامات"
+    "admissions": "الإقامات",
+    "grpRecent": "الأحدث"
   },
   "meds": {
     "title": "أدوية العيادة",

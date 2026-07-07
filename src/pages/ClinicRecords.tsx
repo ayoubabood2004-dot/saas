@@ -5,7 +5,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import {
   ClipboardList, Search, Phone, Stethoscope, BedDouble, Pill, CalendarDays,
   LogOut as DischargeIcon, Plus, Check, PawPrint, ArrowRightLeft, LogIn, LogOut, Users, X,
-  Clock, ChevronDown, ChevronRight, ListChecks, ArrowDownAZ, CalendarClock, Pencil, Trash2, AlertTriangle,
+  Clock, ChevronDown, ChevronRight, ListChecks, ArrowDownAZ, Pencil, Trash2, AlertTriangle,
 } from "lucide-react";
 import type { Pet, Admission, TreatmentEntry, Species, Sex, MedicalVisit, PatientCondition } from "@/types";
 import { repo } from "@/lib/repo";
@@ -233,7 +233,7 @@ interface DirRow {
   activityMs: number; // recency (visit | admission | registration)
 }
 
-type GroupBy = "owner" | "alpha" | "species" | "date";
+type GroupBy = "recent" | "owner" | "alpha" | "species" | "date";
 /** A collapsible accordion section. Owner sections carry header extras (phone + a named flag). */
 interface DirGroup { key: string; title: string; rows: DirRow[]; subtitle?: string; ownerHeader?: boolean; ownerNamed?: boolean }
 
@@ -249,7 +249,7 @@ function PatientLog({ pets, admissions, visits, onChanged, loading }: { pets: Pe
   const [species, setSpecies] = useState<"all" | Species>("all");
   const [health, setHealth] = useState<"all" | PatientCondition>("all");
   const [dateRange, setDateRange] = useState<"all" | "week" | "month">("all");
-  const [groupBy, setGroupBy] = useState<GroupBy>("owner");
+  const [groupBy, setGroupBy] = useState<GroupBy>("recent");
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [reassign, setReassign] = useState<Pet | null>(null);
   const [rq, setRq] = useState("");
@@ -348,6 +348,11 @@ function PatientLog({ pets, admissions, visits, onChanged, loading }: { pets: Pe
   // Build the accordion groups for the active grouping.
   const groups: DirGroup[] = useMemo(() => {
     const byName = (a: DirRow, b: DirRow) => a.ownerName.localeCompare(b.ownerName, lang) || a.pet.name.localeCompare(b.pet.name, lang);
+    if (groupBy === "recent") {
+      // One flat, newest-first list — a just-registered or just-seen patient
+      // always sits at the very top. Rendered without accordion chrome below.
+      return [{ key: "recent", title: "", rows: [...filtered].sort((a, b) => b.activityMs - a.activityMs) }];
+    }
     if (groupBy === "owner") {
       // Owner-centric hierarchy: one accordion per unique client (keyed by phone,
       // falling back to a per-pet key for pets with no number). Each section's
@@ -460,10 +465,9 @@ function PatientLog({ pets, admissions, visits, onChanged, loading }: { pets: Pe
   const ownerInitials = (name: string) => name.split(" ").map((w) => w[0]).slice(0, 2).join("").toUpperCase();
 
   const GROUPS: { id: GroupBy; label: string; icon: typeof ArrowDownAZ }[] = [
+    { id: "recent", label: t("records.grpRecent", "الأحدث"), icon: Clock },
     { id: "owner", label: t("records.grpOwner", "By owner"), icon: Users },
-    { id: "alpha", label: t("records.grpAlpha", "Alphabet"), icon: ArrowDownAZ },
     { id: "species", label: t("records.grpSpecies", "Species"), icon: PawPrint },
-    { id: "date", label: t("records.grpDate", "Last visit"), icon: CalendarClock },
   ];
 
   return (
@@ -540,6 +544,23 @@ function PatientLog({ pets, admissions, visits, onChanged, loading }: { pets: Pe
         <div className="card flex flex-col items-center p-10 text-center">
           <span className="mb-3 grid h-14 w-14 place-items-center rounded-3xl bg-surface-2 text-ink-subtle"><Search size={26} /></span>
           <p className="font-semibold text-ink">{t("records.noResults")}</p>
+        </div>
+      ) : groupBy === "recent" ? (
+        // Newest-first flat list — the freshest patient is always at the top.
+        <div className="divide-y divide-line overflow-hidden rounded-3xl border border-line bg-surface-1 shadow-card">
+          {(groups[0]?.rows ?? []).map((r) => (
+            <DirectoryRow
+              key={r.pet.id}
+              row={r}
+              lang={lang}
+              hideOwner={false}
+              onView={() => { playTap(); navigate(`/pet/${r.pet.id}?tab=history`); }}
+              onTreatment={() => { playTap(); navigate(`/pet/${r.pet.id}?tab=treatment`); }}
+              onMove={() => { playTap(); setReassign(r.pet); setRq(""); setRNew({ name: "", phone: "", email: "" }); }}
+              onEdit={() => { playTap(); setEditing(r.pet); }}
+              onDelete={() => { playTap(); setDeleting(r.pet); }}
+            />
+          ))}
         </div>
       ) : (
         <div className="space-y-3">
@@ -855,7 +876,10 @@ function CurrentCases({ pets, admissions, treatments, onChanged }: { pets: Pet[]
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const today = new Date().toISOString().slice(0, 10);
-  const active = admissions.filter((a) => (a.kind === "treatment" || a.kind === "treatment_boarding") && a.status === "active");
+  // Newest admissions first, so a just-opened case leads the board.
+  const active = admissions
+    .filter((a) => (a.kind === "treatment" || a.kind === "treatment_boarding") && a.status === "active")
+    .sort((a, b) => new Date(b.admitted_on).getTime() - new Date(a.admitted_on).getTime());
 
   const [, setTick] = useState(0);
   useEffect(() => { const id = setInterval(() => setTick((n) => n + 1), 60000); return () => clearInterval(id); }, []);
@@ -970,7 +994,10 @@ function Boarding({ pets, admissions, onChanged }: { pets: Pet[]; admissions: Ad
   const { t, i18n } = useTranslation();
   const toast = useToast();
   const today = new Date().toISOString().slice(0, 10);
-  const active = admissions.filter((a) => (a.kind === "boarding" || a.kind === "treatment_boarding") && a.status === "active");
+  // Newest admissions first, so the latest boarder leads the grid.
+  const active = admissions
+    .filter((a) => (a.kind === "boarding" || a.kind === "treatment_boarding") && a.status === "active")
+    .sort((a, b) => new Date(b.admitted_on).getTime() - new Date(a.admitted_on).getTime());
   const petOf = (id: string) => pets.find((p) => p.id === id);
 
   const [selecting, setSelecting] = useState(false);

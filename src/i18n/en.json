@@ -1498,7 +1498,8 @@
     "openSheet": "Treatment sheet",
     "discharge": "Discharge",
     "todayMeds": "{{n}} meds today",
-    "admissions": "Admissions"
+    "admissions": "Admissions",
+    "grpRecent": "Recent"
   },
   "meds": {
     "title": "Clinic medications",
