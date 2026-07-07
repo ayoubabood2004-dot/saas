@@ -30,6 +30,7 @@ const StaffManagement = lazy(() => import("@/pages/StaffManagement").then((m) =>
 const AnalyticsHub = lazy(() => import("@/pages/AnalyticsHub").then((m) => ({ default: m.AnalyticsHub })));
 const JoinClinic = lazy(() => import("@/pages/JoinClinic").then((m) => ({ default: m.JoinClinic })));
 const Landing = lazy(() => import("@/pages/Landing").then((m) => ({ default: m.Landing })));
+const Subscribe = lazy(() => import("@/pages/Subscribe").then((m) => ({ default: m.Subscribe })));
 
 function FullScreenLoader() {
   return (
@@ -155,6 +156,7 @@ function Shell() {
             <Route path="/reports" element={<Protected><ClinicOnly><AnalyticsHub /></ClinicOnly></Protected>} />
             <Route path="/activity" element={<Protected><ClinicOnly><ActivityLog /></ClinicOnly></Protected>} />
             <Route path="/settings" element={<Protected><Settings /></Protected>} />
+            <Route path="/subscribe" element={<Protected><Subscribe /></Protected>} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
       </Suspense>
