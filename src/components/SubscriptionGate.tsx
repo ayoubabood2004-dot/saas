@@ -19,8 +19,9 @@ export function SubscriptionGate({ children }: { children: ReactNode }) {
 
   useEffect(() => { void syncSubscriptionFromServer(); }, []);
 
-  // Never-subscribed clinic: the system is hidden — only /subscribe is reachable.
-  if (access === "blocked" && location.pathname !== "/subscribe") {
+  // Never-subscribed clinic: the system is hidden — only the subscribe screen
+  // (and the platform-operator console) stay reachable.
+  if (access === "blocked" && location.pathname !== "/subscribe" && location.pathname !== "/admin") {
     return <Navigate to="/subscribe" replace />;
   }
 

@@ -43,7 +43,6 @@ Deno.serve(async (req) => {
   const APP_URL = Deno.env.get("APP_URL") ?? "https://doctorvet.vet";
   const WAYL_BASE = Deno.env.get("WAYL_BASE") ?? "https://api.thewayl.com";
   const WAYL_ENV = Deno.env.get("WAYL_ENV") ?? "live";
-  const RATE = Number(Deno.env.get("WAYL_USD_RATE") ?? "1535");
 
   if (!WAYL_KEY || !WEBHOOK_SECRET) return json({ error: "server_not_configured" }, 500);
 
@@ -68,6 +67,10 @@ Deno.serve(async (req) => {
   const plan = String(payload.plan ?? "");
   const period = payload.period === "annual" ? "annual" : "monthly";
   if (!(plan in PLAN_USD)) return json({ error: "unknown_plan" }, 400);
+
+  // Live USD→IQD rate from app_config (admin-editable), falling back to env/default.
+  const { data: cfg } = await admin.from("app_config").select("value").eq("key", "usd_rate").maybeSingle();
+  const RATE = Number(cfg?.value) || Number(Deno.env.get("WAYL_USD_RATE") ?? "1535");
 
   const months = period === "annual" ? 12 : 1;
   const usd = PLAN_USD[plan] * months;

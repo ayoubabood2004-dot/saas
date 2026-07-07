@@ -4,6 +4,9 @@ import { Check, X, Crown, Sparkles, Clock, ShieldCheck, Wallet, AlertTriangle } 
 import { PLANS, priceUsd, periodMonths, usdToIqd, DEFAULT_USD_RATE, type BillingPeriod } from "@/lib/plans";
 import { useSubscription, activateSubscription, createPaymentLink, syncSubscriptionFromServer } from "@/lib/subscription";
 import { sb } from "@/lib/clinicSync";
+import { isPlatformAdmin } from "@/lib/platformAdmin";
+import { useAuth } from "@/contexts/AuthContext";
+import { useNavigate } from "react-router-dom";
 import { Button, useToast } from "@/components/ui";
 import { money, formatNum, cn } from "@/lib/utils";
 import { playSuccess, playTap, playWarning } from "@/lib/sounds";
@@ -16,6 +19,8 @@ import { playSuccess, playTap, playWarning } from "@/lib/sounds";
  */
 export function Subscribe() {
   const toast = useToast();
+  const { user } = useAuth();
+  const navigate = useNavigate();
   const { sub, status, trialDaysLeft, periodDaysLeft } = useSubscription();
   const [annual, setAnnual] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
@@ -149,6 +154,14 @@ export function Subscribe() {
       <p className="mt-5 text-center text-2xs text-ink-subtle">
         <ShieldCheck size={13} className="inline" /> الدفع بالدينار بالسعر المكافئ ($1 = {formatNum(DEFAULT_USD_RATE)} دينار) · زين كاش · فاست باي · Qi · كاش عبر مندوب
       </p>
+
+      {isPlatformAdmin(user?.email) && (
+        <div className="mt-4 text-center">
+          <button onClick={() => navigate("/admin")} className="text-xs font-semibold text-brand-600 underline-offset-2 hover:underline dark:text-brand-300">
+            لوحة المنصّة (تفعيل يدوي وسعر الصرف)
+          </button>
+        </div>
+      )}
     </div>
   );
 }
