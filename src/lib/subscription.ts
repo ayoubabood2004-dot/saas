@@ -17,6 +17,7 @@
 // ============================================================================
 import { useSyncExternalStore } from "react";
 import { getActiveClinicId } from "./clinics";
+import { sb } from "./clinicSync";
 import { TRIAL_DAYS, type BillingPeriod, type PlanId } from "./plans";
 
 export type SubStatus = "trialing" | "active" | "expired" | "locked";
@@ -153,4 +154,44 @@ export function getSubscriptionNow() {
   const sub = read();
   const status = statusOf(sub);
   return { sub, status, access: accessOf(status) };
+}
+
+/* --------------------------- server integration -------------------------- */
+/**
+ * Pull the authoritative subscription from the server into the local mirror
+ * (the hook reads the mirror). On a real backend the server is the source of
+ * truth — the Wayl webhook writes it after a verified payment. In demo mode
+ * there is no server, so localStorage stays authoritative.
+ */
+export async function syncSubscriptionFromServer(): Promise<void> {
+  const client = sb();
+  if (!client) return;
+  try {
+    const { data, error } = await client.rpc("get_or_init_subscription");
+    if (error || !data) return; // pre-migration backend → keep the local mirror
+    const row = (Array.isArray(data) ? data[0] : data) as Record<string, unknown> | undefined;
+    if (!row) return;
+    write({
+      plan: (row.plan as PlanId) ?? null,
+      period: (row.period as BillingPeriod) ?? null,
+      trialEndsAt: String(row.trial_ends_at),
+      currentPeriodEnd: (row.current_period_end as string) ?? null,
+      wasSubscriber: !!row.was_subscriber,
+      updatedAt: (row.updated_at as string) ?? new Date().toISOString(),
+    });
+  } catch { /* network hiccup → keep the local mirror */ }
+}
+
+/**
+ * Start a Wayl checkout for a plan via the wayl-create-link Edge Function
+ * (which holds the secret key server-side). Resolves to the hosted payment URL
+ * the browser should redirect to.
+ */
+export async function createPaymentLink(plan: PlanId, period: BillingPeriod): Promise<string> {
+  const client = sb();
+  if (!client) throw new Error("no_backend");
+  const { data, error } = await client.functions.invoke("wayl-create-link", { body: { plan, period } });
+  if (error) throw new Error(error.message || "wayl_failed");
+  if (!data?.url) throw new Error("wayl_failed");
+  return data.url as string;
 }

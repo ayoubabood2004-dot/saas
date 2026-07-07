@@ -1,11 +1,12 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Check, X, Crown, Sparkles, Clock, ShieldCheck, Wallet, AlertTriangle } from "lucide-react";
 import { PLANS, priceUsd, periodMonths, usdToIqd, DEFAULT_USD_RATE, type BillingPeriod } from "@/lib/plans";
-import { useSubscription, activateSubscription } from "@/lib/subscription";
+import { useSubscription, activateSubscription, createPaymentLink, syncSubscriptionFromServer } from "@/lib/subscription";
+import { sb } from "@/lib/clinicSync";
 import { Button, useToast } from "@/components/ui";
 import { money, formatNum, cn } from "@/lib/utils";
-import { playSuccess, playTap } from "@/lib/sounds";
+import { playSuccess, playTap, playWarning } from "@/lib/sounds";
 
 /**
  * Subscription / billing page. Shows the three plans (monthly ↔ annual), each
@@ -20,16 +21,41 @@ export function Subscribe() {
   const [busy, setBusy] = useState<string | null>(null);
   const period: BillingPeriod = annual ? "annual" : "monthly";
 
+  // Pull the authoritative state from the server; on returning from Wayl
+  // (?paid=1) the webhook may still be settling, so re-check a moment later.
+  useEffect(() => {
+    void syncSubscriptionFromServer();
+    if (new URLSearchParams(window.location.search).get("paid") === "1") {
+      toast.success("نتحقق من دفعتك…", "لحظات وتُفعّل خطتك تلقائياً.");
+      const t = setTimeout(() => void syncSubscriptionFromServer(), 3500);
+      return () => clearTimeout(t);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const subscribe = async (planId: string) => {
+    const plan = PLANS.find((p) => p.id === planId)!;
     setBusy(planId);
     playTap();
-    // Phase 1 (demo): activate locally. Phase 3: create a Wayl payment link and
-    // redirect here; activation happens server-side on the confirmed webhook.
-    const plan = PLANS.find((p) => p.id === planId)!;
+    // Real backend → Wayl hosted checkout: create the link server-side (secret
+    // stays on the server) and redirect. Activation happens on the verified
+    // webhook. Demo mode has no server, so activate locally for testing.
+    if (sb()) {
+      try {
+        const url = await createPaymentLink(plan.id, period);
+        window.location.href = url;
+        return;
+      } catch (e) {
+        setBusy(null);
+        playWarning();
+        toast.error("تعذّر بدء الدفع", e instanceof Error ? e.message : undefined);
+        return;
+      }
+    }
     activateSubscription(plan.id, period, periodMonths(period));
     setBusy(null);
     playSuccess();
-    toast.success(`تم تفعيل خطة ${plan.name} (تجريبياً)`, "الدفع الحقيقي عبر Wayl يُضاف في المرحلة القادمة.");
+    toast.success(`تم تفعيل خطة ${plan.name} (تجريبياً)`, "على السيرفر الحقيقي يتم الدفع عبر Wayl.");
   };
 
   return (
