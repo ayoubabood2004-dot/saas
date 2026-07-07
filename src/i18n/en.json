@@ -1799,7 +1799,9 @@
       "needAmount": "Enter a valid amount",
       "needDesc": "Enter what it was spent on",
       "saveFail": "Could not record the expense",
-      "delFail": "Could not delete"
+      "delFail": "Could not delete",
+      "netCashLabel": "Net cash (collected − withdrawn)",
+      "confirmDel": "Confirm delete?"
     },
     "zWithdrawals": "Withdrawals / expenses",
     "zNetCash": "Net cash in drawer"

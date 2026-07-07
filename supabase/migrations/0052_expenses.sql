@@ -62,7 +62,9 @@ create policy expenses_select on expenses
 
 drop policy if exists expenses_insert on expenses;
 create policy expenses_insert on expenses
-  for insert with check (clinic_id = auth_clinic() and auth_role() = 'manager');
+  -- staff_id is pinned to the caller so a hand-crafted API insert can't forge the
+  -- attribution onto another staff member (it defaults to auth.uid() anyway).
+  for insert with check (clinic_id = auth_clinic() and auth_role() = 'manager' and staff_id = auth.uid());
 
 drop policy if exists expenses_delete on expenses;
 create policy expenses_delete on expenses

@@ -281,9 +281,12 @@ export function AnalyticsHub() {
   }, [paid, invInRange]);
 
   // ---- Cash expenses / withdrawals (المصروفات) — filtered by the money-left date.
+  // Date-only concept (the form captures no time), so — like staffPerf/visits —
+  // it is NOT narrowed by the advanced shift-time window; applying tsOk to the
+  // synthetic noon timestamp would wrongly drop every expense for evening shifts.
   const expensesInRange = useMemo(
-    () => expenses.filter((e) => { const tm = new Date(e.spent_at).getTime(); return tm >= lo && tm <= hi && tsOk(e.spent_at); }),
-    [expenses, lo, hi, tsOk],
+    () => expenses.filter((e) => { const tm = new Date(e.spent_at).getTime(); return tm >= lo && tm <= hi; }),
+    [expenses, lo, hi],
   );
   const expensesTotal = useMemo(() => expensesInRange.reduce((s, e) => s + e.amount, 0), [expensesInRange]);
   // Every expense is cash-out of the drawer (the ledger has no payment method),
@@ -586,11 +589,15 @@ export function AnalyticsHub() {
       [t("rpt.csv.title", "تقرير doctorVet"), new Date().toLocaleDateString("en-GB")],
       [],
       [t("rpt.csv.gross", "إجمالي المبيعات"), String(Math.round(zReport.gross))],
-      [t("rpt.csv.net", "صافي الربح"), String(Math.round(revenue.net))],
-      [t("rpt.csv.cogs", "تكلفة البضاعة"), String(Math.round(revenue.cogs))],
+      // Profit-sensitive rows follow the same viewProfits gate as the on-screen
+      // figures — a viewReports-only user must not read them out of the export.
+      ...(canProfit ? [
+        [t("rpt.csv.net", "صافي الربح"), String(Math.round(revenue.net))],
+        [t("rpt.csv.cogs", "تكلفة البضاعة"), String(Math.round(revenue.cogs))],
+      ] : []),
       [t("rpt.csv.txCount", "عدد العمليات"), String(zReport.txCount)],
       [t("rpt.csv.expenses", "المصروفات والسحوبات"), String(Math.round(expensesTotal))],
-      [t("rpt.csv.netCash", "صافي النقد في الصندوق"), String(Math.round(netCash))],
+      ...(canProfit ? [[t("rpt.csv.netCash", "صافي النقد في الصندوق"), String(Math.round(netCash))]] : []),
       [],
       [t("rpt.csv.method", "طريقة الدفع"), t("rpt.csv.amount", "المبلغ"), t("rpt.csv.txCount", "عدد العمليات")],
       ...(["cash", "card", "transfer"] as PaymentMethod[]).map((k) => [t(`rpt.pay.${k}`, k), String(Math.round(zReport.byMethod[k].total)), String(zReport.byMethod[k].count)]),
@@ -794,7 +801,7 @@ export function AnalyticsHub() {
               cashCollected={zReport.byMethod.cash.total} rangeLabel={rangeLabel}
               canRecord={role === "manager"} canProfit={canProfit}
               clinicId={user?.clinic_id ?? user?.id} staffId={user?.id ?? null}
-              onChanged={(next) => { setExpenses(next); setCached<AnalyticsSnap>(cacheKey, { ...(getCached<AnalyticsSnap>(cacheKey) as AnalyticsSnap), expenses: next }); }}
+              onChanged={(next) => { setExpenses(next); const prev = getCached<AnalyticsSnap>(cacheKey); if (prev) setCached<AnalyticsSnap>(cacheKey, { ...prev, expenses: next }); }}
             />
           )}
           {tab === "audit" && <AuditTab deleted={deletedInvoices} logins={loginsInRange} />}
@@ -1368,6 +1375,7 @@ function ExpensesTab({ rows, total, netCash, cashCollected, rangeLabel, canRecor
   const [category, setCategory] = useState("");
   const [spentAt, setSpentAt] = useState(() => localISO(new Date()));
   const [busy, setBusy] = useState(false);
+  const [confirmDel, setConfirmDel] = useState<string | null>(null);
 
   const submit = async () => {
     const amt = Number(amount);
@@ -1392,14 +1400,20 @@ function ExpensesTab({ rows, total, netCash, cashCollected, rangeLabel, canRecor
     } finally { setBusy(false); }
   };
 
-  const remove = async (id: string) => {
-    playTap();
-    try {
-      await repo.deleteExpense(id);
-      onChanged(await repo.listExpenses(clinicId));
-    } catch (e) {
-      toast.error(t("rpt.exp.delFail", "تعذّر الحذف"), e instanceof Error ? e.message : undefined);
-    }
+  // Two-step delete: the first click arms the row (button turns red "تأكيد؟"),
+  // the second confirms — no accidental one-click wipe of a ledger entry.
+  const onDeleteClick = (id: string) => {
+    if (confirmDel !== id) { playTap(); setConfirmDel(id); return; }
+    setConfirmDel(null);
+    void (async () => {
+      playTap();
+      try {
+        await repo.deleteExpense(id);
+        onChanged(await repo.listExpenses(clinicId));
+      } catch (e) {
+        toast.error(t("rpt.exp.delFail", "تعذّر الحذف"), e instanceof Error ? e.message : undefined);
+      }
+    })();
   };
 
   return (
@@ -1416,14 +1430,18 @@ function ExpensesTab({ rows, total, netCash, cashCollected, rangeLabel, canRecor
           <p className="mt-1 font-display text-2xl font-extrabold tabular-nums text-warn-800 dark:text-warn-200">{money(total)}</p>
           <p className="text-2xs text-ink-subtle">{formatNum(rows.length)} {t("rpt.exp.count", "عملية")}</p>
         </div>
-        <div className="rounded-2xl border border-line bg-surface-1 p-4">
-          <p className="text-2xs font-semibold text-ink-muted">{t("rpt.exp.cashCollected", "النقد المُحصّل من المبيعات")}</p>
-          <p className="mt-1 font-display text-2xl font-extrabold tabular-nums text-ink">{money(cashCollected)}</p>
-        </div>
+        {/* Cash collected + net cash follow the viewProfits gate together — hiding
+            only the result while showing both operands would defeat the gate. */}
+        {canProfit && (
+          <div className="rounded-2xl border border-line bg-surface-1 p-4">
+            <p className="text-2xs font-semibold text-ink-muted">{t("rpt.exp.cashCollected", "النقد المُحصّل من المبيعات")}</p>
+            <p className="mt-1 font-display text-2xl font-extrabold tabular-nums text-ink">{money(cashCollected)}</p>
+          </div>
+        )}
         {canProfit && (
           <div className="rounded-2xl border border-brand-200 bg-brand-50 p-4 dark:border-brand-500/30 dark:bg-brand-500/10">
-            <p className="text-2xs font-semibold text-brand-700 dark:text-brand-300">{t("rpt.zNetCash", "صافي النقد في الصندوق")}</p>
-            <p className="mt-1 font-display text-2xl font-extrabold tabular-nums text-brand-800 dark:text-brand-200">{money(netCash)}</p>
+            <p className="text-2xs font-semibold text-brand-700 dark:text-brand-300">{t("rpt.exp.netCashLabel", "صافي النقد (المُحصّل − المسحوب)")}</p>
+            <p className={cn("mt-1 font-display text-2xl font-extrabold tabular-nums", netCash < 0 ? "text-danger-600 dark:text-danger-400" : "text-brand-800 dark:text-brand-200")}>{money(netCash)}</p>
           </div>
         )}
       </div>
@@ -1434,11 +1452,11 @@ function ExpensesTab({ rows, total, netCash, cashCollected, rangeLabel, canRecor
           <div className="grid gap-3 md:grid-cols-[120px,1fr,140px,150px,auto] md:items-end">
             <div>
               <label className="label">{t("rpt.exp.amount", "المبلغ")}</label>
-              <input type="number" min="0" step="1" inputMode="numeric" className="input" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0" />
+              <input type="number" min="0" max="1000000000" step="1" inputMode="numeric" className="input" value={amount} onChange={(e) => setAmount(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") submit(); }} placeholder="0" />
             </div>
             <div>
               <label className="label">{t("rpt.exp.desc", "البيان (أين ولماذا صُرف)")}</label>
-              <input className="input" value={description} onChange={(e) => setDescription(e.target.value)} placeholder={t("rpt.exp.descPlaceholder", "مثال: إيجار المحل، رواتب، مستلزمات نظافة…")} />
+              <input className="input" maxLength={200} value={description} onChange={(e) => setDescription(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") submit(); }} placeholder={t("rpt.exp.descPlaceholder", "مثال: إيجار المحل، رواتب، مستلزمات نظافة…")} />
             </div>
             <div>
               <label className="label">{t("rpt.exp.category", "التصنيف")}</label>
@@ -1469,9 +1487,15 @@ function ExpensesTab({ rows, total, netCash, cashCollected, rangeLabel, canRecor
                 </div>
                 <span className="shrink-0 font-display font-bold tabular-nums text-warn-700 dark:text-warn-300">− {money(e.amount)}</span>
                 {canRecord && (
-                  <button onClick={() => remove(e.id)} aria-label={t("rpt.exp.delete", "حذف")} className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-ink-subtle transition hover:bg-danger-50 hover:text-danger-600">
-                    <Trash2 size={15} />
-                  </button>
+                  confirmDel === e.id ? (
+                    <button onClick={() => onDeleteClick(e.id)} onBlur={() => setConfirmDel(null)} className="shrink-0 rounded-full bg-danger-600 px-2.5 py-1 text-2xs font-bold text-white transition hover:bg-danger-700">
+                      {t("rpt.exp.confirmDel", "تأكيد الحذف؟")}
+                    </button>
+                  ) : (
+                    <button onClick={() => onDeleteClick(e.id)} aria-label={t("rpt.exp.delete", "حذف")} className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-ink-subtle transition hover:bg-danger-50 hover:text-danger-600">
+                      <Trash2 size={15} />
+                    </button>
+                  )
                 )}
               </li>
             ))}
