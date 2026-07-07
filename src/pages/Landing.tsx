@@ -8,6 +8,7 @@ import {
 import { Logo, LogoMark } from "@/components/Logo";
 import { appUrl, appHostLabel } from "@/lib/appUrl";
 import { cn } from "@/lib/utils";
+import { PLANS } from "@/lib/plans";
 
 /* ============================================================================
  * Landing — the public marketing page on the ROOT domain. Arabic-first, RTL,
@@ -528,49 +529,11 @@ function Features() {
 }
 
 /* -------------------------------------------------------------- Pricing ---- */
-/** The growth story: سجّل → بِع → اكتمل. Monthly OR annual (2 months free on
- *  annual). Features are deliberately loaded onto the highlighted "السوبر" so
- *  any serious clinic gravitates to it. 14-day free trial of the full Super. */
-const TIERS: { name: string; monthly: number; annual: number; tag: string; pop?: boolean; feats: string[]; missing: string[] }[] = [
-  {
-    name: "العادية", monthly: 30, annual: 299, tag: "سجّل عيادتك — للعيادات الصغيرة",
-    feats: [
-      "سجلات الحيوانات والملف الطبي الكامل",
-      "التقويم الأساسي والتذكيرات",
-      "المخزن — تسجيل المنتجات والكميات",
-      "مساحة وسائط 5GB",
-      "مستخدمان",
-    ],
-    missing: ["الكاشير والبيع والفواتير", "التقارير", "حملات واتساب"],
-  },
-  {
-    name: "المطورة", monthly: 55, annual: 549, tag: "عيادتك بدت تبيع — للعيادات المتوسطة",
-    feats: [
-      "كل ما في العادية",
-      "الكاشير الكامل + فواتير A4 وحراري",
-      "البيع الجزئي (حبة / شريط / مل)",
-      "تقارير أساسية: اليوم والأسبوع والشهر",
-      "مساحة وسائط 25GB",
-      "4 مستخدمين",
-    ],
-    missing: ["البيع بالدين وسجل الديون", "تصدير Excel وطباعة التقارير", "حملات واتساب"],
-  },
-  {
-    name: "السوبر", monthly: 78, annual: 779, tag: "كل شيء — للعيادة المتكاملة", pop: true,
-    feats: [
-      "كل ما في المطورة",
-      "البيع بالدين + سجل الديون + الدفع الجزئي",
-      "التقارير والإحصائيات كاملة + Excel وطباعة",
-      "حملات واتساب والتذكيرات الآلية",
-      "نماذج الإقرار + مطبوعات بشعار عيادتك",
-      "صلاحيات الموظفين الدقيقة",
-      "مساحة وسائط 100GB",
-      "10 مستخدمين + دعم أولوية وتدريب",
-    ],
-    missing: [],
-  },
-];
-
+/** The growth story: سجّل → بِع → اكتمل. Monthly OR annual (annual = 12× monthly,
+ *  no discount). Features are deliberately loaded onto the highlighted "السوبر"
+ *  so any serious clinic gravitates to it. 14-day free trial of the full Super.
+ *  Plans come from the shared src/lib/plans.ts — one source of truth with the
+ *  in-app subscription/billing system. */
 function Pricing() {
   const [annual, setAnnual] = useState(true);
   return (
@@ -584,30 +547,28 @@ function Pricing() {
           {/* Monthly / annual toggle */}
           <div className="mt-6 inline-flex items-center gap-1 rounded-full border border-line bg-surface-1 p-1">
             <button onClick={() => setAnnual(false)} className={cn("rounded-full px-5 py-2 text-sm font-bold transition", !annual ? "bg-brand-600 text-white shadow-soft" : "text-ink-muted")}>شهري</button>
-            <button onClick={() => setAnnual(true)} className={cn("inline-flex items-center gap-1.5 rounded-full px-5 py-2 text-sm font-bold transition", annual ? "bg-brand-600 text-white shadow-soft" : "text-ink-muted")}>
-              سنوي <span className={cn("rounded-full px-1.5 py-0.5 text-2xs", annual ? "bg-white/20" : "bg-success-100 text-success-700 dark:bg-success-500/20 dark:text-success-300")}>شهران هدية</span>
-            </button>
+            <button onClick={() => setAnnual(true)} className={cn("rounded-full px-5 py-2 text-sm font-bold transition", annual ? "bg-brand-600 text-white shadow-soft" : "text-ink-muted")}>سنوي</button>
           </div>
         </motion.div>
 
         <div className="mt-12 grid items-stretch gap-5 lg:grid-cols-3">
-          {TIERS.map((t, i) => (
+          {PLANS.map((t, i) => (
             <motion.div
               key={t.name}
               initial={{ opacity: 0, y: 24 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, margin: "-40px" }}
               transition={{ duration: 0.5, delay: i * 0.08, ease: [0.16, 1, 0.3, 1] }}
               className={cn(
                 "relative flex flex-col rounded-3xl border p-6 shadow-card transition hover:shadow-raised",
-                t.pop ? "border-brand-300 bg-surface-1 ring-1 ring-brand-200 lg:-translate-y-3 dark:border-brand-500/40 dark:ring-brand-500/20" : "border-line bg-surface-1",
+                t.popular ? "border-brand-300 bg-surface-1 ring-1 ring-brand-200 lg:-translate-y-3 dark:border-brand-500/40 dark:ring-brand-500/20" : "border-line bg-surface-1",
               )}
             >
-              {t.pop && <span className="absolute -top-3 start-1/2 -translate-x-1/2 rounded-full bg-brand-600 px-3.5 py-1 text-2xs font-extrabold text-white shadow-soft">👑 الأكثر تكاملاً</span>}
+              {t.popular && <span className="absolute -top-3 start-1/2 -translate-x-1/2 rounded-full bg-brand-600 px-3.5 py-1 text-2xs font-extrabold text-white shadow-soft">👑 الأكثر تكاملاً</span>}
               <p className="font-display text-lg font-extrabold text-ink">{t.name}</p>
               <p className="text-2xs font-semibold text-ink-subtle">{t.tag}</p>
               <div className="mt-4 flex items-end gap-1">
                 <AnimatePresence mode="popLayout">
                   <motion.span key={annual ? "y" : "m"} initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 8 }} transition={{ duration: 0.2 }} className="font-display text-4xl font-extrabold tracking-tighter2 text-ink">
-                    ${annual ? t.annual : t.monthly}
+                    ${annual ? t.annualUsd : t.monthlyUsd}
                   </motion.span>
                 </AnimatePresence>
                 <span className="mb-1 text-sm font-semibold text-ink-subtle">/ {annual ? "سنة" : "شهر"}</span>
@@ -628,7 +589,7 @@ function Pricing() {
                 href={appUrl("/login")}
                 className={cn(
                   "mt-6 inline-flex items-center justify-center gap-1.5 rounded-full px-5 py-3 text-sm font-bold transition active:scale-[0.98]",
-                  t.pop ? "bg-brand-600 text-white shadow-soft hover:bg-brand-700 hover:shadow-raised" : "border border-line-strong bg-surface-1 text-ink hover:bg-surface-2",
+                  t.popular ? "bg-brand-600 text-white shadow-soft hover:bg-brand-700 hover:shadow-raised" : "border border-line-strong bg-surface-1 text-ink hover:bg-surface-2",
                 )}
               >
                 ابدأ الآن <ArrowLeft size={15} />
