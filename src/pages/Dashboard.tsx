@@ -15,7 +15,6 @@ import {
   Lightbulb,
   RotateCw,
   WifiOff,
-  Banknote,
   AlertTriangle,
   Package,
   CheckCircle2,
@@ -23,7 +22,7 @@ import {
 import type { Appointment, Pet, Admission, Species, Reminder, Invoice, Product } from "@/types";
 import { repo } from "@/lib/repo";
 import { useAuth } from "@/contexts/AuthContext";
-import { formatTime, dateLocale, formatNum, money } from "@/lib/utils";
+import { formatTime, dateLocale, formatNum } from "@/lib/utils";
 import { playTap } from "@/lib/sounds";
 import { UpcomingEvents } from "@/components/UpcomingEvents";
 import { BirthdaysWidget } from "@/components/BirthdaysWidget";
@@ -84,8 +83,8 @@ export function Dashboard() {
     if (mounted.current) { if (getCached<Snap>(cacheKey) === undefined) setLoading(true); setError(false); }
     try {
       // One range query covers the whole week; invoices + products power the
-      // money / stock KPIs (this clinic barely uses bookings, so the home
-      // screen leads with cash flow and inventory, not the appointment book).
+      // visits + low-stock widgets (this clinic barely uses bookings, so the
+      // home screen leads with daily activity and inventory — no money figures).
       const [allPets, adm, rem, weekAppts, invs, prods] = await withTimeout(Promise.all([
         repo.listAllPets(user?.clinic_id ?? user?.id),
         repo.listAdmissions(user?.clinic_id ?? user?.id),
@@ -130,17 +129,15 @@ export function Dashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Today's completed sales (refunds excluded) — the clinic's cash pulse. Uses
-  // local start-of-day so "today" matches the owner's wall clock, not UTC.
+  // Today's visits = today's completed sales (refunds excluded), a count only —
+  // the dashboard intentionally shows NO money figures. Uses local start-of-day
+  // so "today" matches the owner's wall clock, not UTC.
   const startMs = useMemo(() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d.getTime(); }, []);
   const todaySales = useMemo(
     () => invoices.filter((iv) => iv.status !== "refunded" && new Date(iv.created_at).getTime() >= startMs),
     [invoices, startMs],
   );
-  const revenueToday = todaySales.reduce((s, iv) => s + (iv.total || 0), 0);
-  const collectedToday = todaySales.reduce((s, iv) => s + (iv.amount_paid ?? iv.total ?? 0), 0);
   const casesToday = todaySales.length;
-  const collectRatio = revenueToday > 0 ? Math.min(collectedToday / revenueToday, 1) : 0;
   const pctBusy = Math.min(casesToday / 15, 1); // soft daily-traffic gauge for the ring
 
   // Therapeutic boarding counts as BOTH an active case and a boarder.
@@ -153,6 +150,7 @@ export function Dashboard() {
   };
   const casesDoneCount = activeCases.filter(cycleDone).length;
   const pctCases = activeCases.length ? casesDoneCount / activeCases.length : 0;
+  const pctBoard = Math.min(boarding.length / 12, 1);
 
   // Low-stock: any product at/below its reorder level (its own min_stock, else 5).
   const LOW_STOCK = 5;
@@ -255,9 +253,9 @@ export function Dashboard() {
           Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-24 rounded-3xl" />)
         ) : (
           <>
-            <RingStat label={t("dash.revenueToday", "Today's revenue")} value={money(revenueToday)} percent={collectRatio} color="#10b981" center={<Banknote size={18} className="text-success-600" />} hint={`${formatNum(casesToday)} ${t("dash.visitsWord", "زيارة")}`} />
             <RingStat label={t("dash.casesToday", "Cases today")} value={casesToday} percent={pctBusy} color="#1266d8" center={<Stethoscope size={18} className="text-brand-600" />} hint={t("dash.recordedToday", "recorded today")} />
             <RingStat label={t("dash.activeCases", "Active cases")} value={activeCases.length} percent={pctCases} color="#8b5cf6" hint={t("dash.underTreatment", "under treatment")} />
+            <RingStat label={t("dash.boarding", "Boarding")} value={boarding.length} percent={pctBoard} color="#0ea5e9" hint={t("dash.guests", "guests staying")} />
             <RingStat label={t("dash.lowStock", "Low stock")} value={lowStock.length} percent={pctLow} color={lowStock.length ? "#ef4444" : "#10b981"} center={<AlertTriangle size={18} className={lowStock.length ? "text-danger-600" : "text-success-600"} />} hint={t("dash.reorderSoon", "needs reordering")} />
           </>
         )}
@@ -278,7 +276,7 @@ export function Dashboard() {
             {loading ? (
               <div className="space-y-3">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-16 rounded-2xl" />)}</div>
             ) : todaySales.length === 0 ? (
-              <EmptyState icon={<Banknote size={28} />} title={t("dash.noSalesToday", "No sales yet today")} description={t("dash.noSalesHint", "Sales you record will show up here as they happen.")} action={<Button leftIcon={<Plus size={16} />} onClick={() => navigate("/retail")}>{t("nav.retail")}</Button>} />
+              <EmptyState icon={<PawPrint size={28} />} title={t("dash.noSalesToday", "No sales yet today")} description={t("dash.noSalesHint", "Sales you record will show up here as they happen.")} action={<Button leftIcon={<Plus size={16} />} onClick={() => navigate("/retail")}>{t("nav.retail")}</Button>} />
             ) : (
               <div className="space-y-2">
                 {todaySales.slice(0, 7).map((iv) => {
@@ -294,7 +292,7 @@ export function Dashboard() {
                       <div className="flex w-14 shrink-0 flex-col items-center">
                         <span className="font-display text-sm font-bold text-ink">{formatTime(iv.created_at, i18n.language)}</span>
                       </div>
-                      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-success-50 text-success-600 dark:bg-success-500/15"><Banknote size={18} /></span>
+                      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-brand-50 text-brand-600 dark:bg-brand-500/15"><PawPrint size={18} /></span>
                       <div className="min-w-0 flex-1">
                         <p className="truncate font-semibold text-ink">{name}</p>
                         <p className="flex items-center gap-1 truncate text-xs text-ink-muted">
@@ -302,7 +300,6 @@ export function Dashboard() {
                         </p>
                       </div>
                       <div className="flex shrink-0 flex-col items-end gap-1">
-                        <span className="font-display font-bold tabular-nums text-ink">{money(iv.total || 0)}</span>
                         {due > 0
                           ? <Badge tone="warn" dot>{t("dash.credit", "آجل")}</Badge>
                           : <Badge tone="success">{t("dash.paidBadge", "مدفوع")}</Badge>}
