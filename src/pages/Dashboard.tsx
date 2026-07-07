@@ -510,7 +510,8 @@ function AnimatedNumber({ value, className }: { value: number; className?: strin
  * single static trace with no sweep.
  */
 function ClinicPulseLine() {
-  const pathRef = useRef<SVGPathElement>(null);
+  const baseRef = useRef<SVGPathElement>(null);
+  const headRef = useRef<SVGPathElement>(null);
   const dotRef = useRef<SVGCircleElement>(null);
 
   useEffect(() => {
@@ -534,32 +535,46 @@ function ClinicPulseLine() {
       g(p, 0.46, 0.011, -0.22) +  // S
       g(p, 0.66, 0.046, 0.24);    // T wave
 
+    const HEAD = 46; // columns just behind the pen drawn bright (the glowing "comet tail")
+
     let phase = Math.random();
     let beatAmp = 1;
+    let rrMul = 1;                 // per-beat RR-interval multiplier (sinus arrhythmia)
     let bpm = 72, targetBpm = 72;
 
     const nextSample = () => {
       const prev = phase % 1;
-      phase += (bpm / 60) * secPerCol;
-      if ((phase % 1) < prev) beatAmp = 0.9 + Math.random() * 0.2; // new beat → vary amplitude
+      // A real heart isn't metronomic — each beat is slightly long or short.
+      phase += (bpm / 60) * secPerCol / rrMul;
+      if ((phase % 1) < prev) {     // a new beat begins
+        beatAmp = 0.9 + Math.random() * 0.2;   // vary the height a touch
+        rrMul = 0.93 + Math.random() * 0.14;   // vary the spacing a touch (HRV)
+      }
       return ecg(phase % 1) * beatAmp + 0.02 * Math.sin(phase * 0.7); // + gentle baseline wander
     };
 
-    const buildD = () => {
+    // Draw a contiguous index run [a..b], lifting the pen across erase-gaps.
+    const drawRun = (a: number, b: number) => {
       let d = "", pen = false;
-      for (let i = 0; i < cols; i++) {
-        if (blank[i]) { pen = false; continue; } // erase-gap → lift the pen (break the line)
-        const x = (i * dx).toFixed(1), y = (mid - buf[i] * amp).toFixed(2);
-        d += (pen ? " L" : " M") + x + " " + y;
+      for (let i = a; i <= b; i++) {
+        if (blank[i]) { pen = false; continue; }
+        d += (pen ? " L" : " M") + (i * dx).toFixed(1) + " " + (mid - buf[i] * amp).toFixed(2);
         pen = true;
       }
       return d;
+    };
+    const fullD = () => drawRun(0, cols - 1);
+    const headD = () => {                     // the last HEAD columns behind the pen, wrap-aware
+      const end = (cursor - 1 + cols) % cols;
+      const start = (cursor - HEAD + cols) % cols;
+      return start <= end ? drawRun(start, end) : drawRun(start, cols - 1) + drawRun(0, end);
     };
 
     // Prime the whole screen with a continuous trace so it's alive on first paint.
     for (let i = 0; i < cols; i++) buf[i] = nextSample();
     let cursor = 0;
-    pathRef.current?.setAttribute("d", buildD());
+    baseRef.current?.setAttribute("d", fullD());
+    headRef.current?.setAttribute("d", headD());
 
     const reduce = typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
     if (reduce) return; // static trace, no sweep
@@ -579,10 +594,13 @@ function ClinicPulseLine() {
         cursor = (cursor + 1) % cols;
       }
       if (steps > 0) {
-        pathRef.current?.setAttribute("d", buildD());
-        const px = (((cursor - 1 + cols) % cols) * dx).toFixed(1);
-        dotRef.current?.setAttribute("cx", px);
-        dotRef.current?.setAttribute("cy", (mid - buf[(cursor - 1 + cols) % cols] * amp).toFixed(2));
+        baseRef.current?.setAttribute("d", fullD());
+        headRef.current?.setAttribute("d", headD());
+        const end = (cursor - 1 + cols) % cols;
+        const cy = buf[end];
+        dotRef.current?.setAttribute("cx", (end * dx).toFixed(1));
+        dotRef.current?.setAttribute("cy", (mid - cy * amp).toFixed(2));
+        dotRef.current?.setAttribute("r", (2.2 + Math.max(0, cy) * 2).toFixed(2)); // flare on the R spike
       }
       raf = requestAnimationFrame(tick);
     };
@@ -591,11 +609,13 @@ function ClinicPulseLine() {
   }, []);
 
   return (
-    <div aria-hidden className="pointer-events-none absolute inset-x-0 bottom-0 h-16 overflow-hidden opacity-70">
+    <div aria-hidden className="pointer-events-none absolute inset-x-0 bottom-0 h-16 overflow-hidden">
       <svg width="100%" height="100%" viewBox="0 0 600 48" className="h-full w-full" preserveAspectRatio="none">
-        <path ref={pathRef} fill="none" stroke="white" strokeOpacity="0.5" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"
-          style={{ filter: "drop-shadow(0 0 5px rgba(255,255,255,0.5))" }} />
-        <circle ref={dotRef} cx="0" cy="28" r="2.4" fill="white" style={{ filter: "drop-shadow(0 0 6px rgba(255,255,255,0.9))" }} />
+        {/* Dim tail (older trace) + bright freshly-drawn head = a real monitor's fading glow */}
+        <path ref={baseRef} fill="none" stroke="white" strokeOpacity="0.22" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+        <path ref={headRef} fill="none" stroke="white" strokeOpacity="0.85" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"
+          style={{ filter: "drop-shadow(0 0 5px rgba(255,255,255,0.6))" }} />
+        <circle ref={dotRef} cx="0" cy="28" r="2.4" fill="white" style={{ filter: "drop-shadow(0 0 6px rgba(255,255,255,0.95))" }} />
       </svg>
     </div>
   );
