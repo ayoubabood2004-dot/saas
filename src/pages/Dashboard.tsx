@@ -493,26 +493,37 @@ function AnimatedNumber({ value, className }: { value: number; className?: strin
 }
 
 /**
- * The clinic's heartbeat — a genuinely LIVE, single-lead ECG monitor. Not a
- * looping video: the trace is synthesised in real time from a real PQRST
- * complex (a sum of Gaussians — P wave, Q/R/S spikes, T wave), scrolled
- * right→left like a strip-chart with the drawing "pen" at the right edge.
+ * The clinic's heartbeat — a faithful simulation of a bedside ECG monitor in
+ * SWEEP mode. The trace is STATIONARY; a write-head ("pen") travels left→right
+ * across a fixed screen, drawing the new PQRST signal in place and leaving a
+ * short blank erase-gap just ahead of itself (exactly how a real monitor
+ * refreshes). When the pen reaches the right edge it wraps back to the left and
+ * overwrites — nothing ever scrolls, so it never reads as a looping video.
  *
- * It never repeats because the heart rate drifts toward a fresh random target
- * every few seconds and each beat gets a small amplitude variation — exactly
- * how a real monitor looks. Rendered imperatively (setAttribute on one <path>
- * per frame) so 60 fps costs no React reconciliation. Pure decoration
- * (aria-hidden); honours prefers-reduced-motion by drawing one static trace.
+ * The PQRST complex is synthesised from a sum of Gaussians. It never repeats:
+ * heart rate drifts to a fresh random target every few seconds and each beat
+ * varies slightly in amplitude, with a gentle baseline wander. Speed is tuned
+ * to a realistic human rhythm (~5.5 s to sweep the screen, ~60–84 bpm).
+ *
+ * Drawn imperatively (one setAttribute per frame) so 60 fps costs no React
+ * reconciliation. Pure decoration (aria-hidden); prefers-reduced-motion gets a
+ * single static trace with no sweep.
  */
 function ClinicPulseLine() {
   const pathRef = useRef<SVGPathElement>(null);
   const dotRef = useRef<SVGCircleElement>(null);
 
   useEffect(() => {
-    const W = 600, H = 48, mid = H * 0.60, amp = 17; // viewBox + baseline + R height
-    const cols = 220;                                 // samples across the width
+    const W = 600, H = 48, mid = H * 0.58, amp = 17; // viewBox + baseline + R height
+    const cols = 300;                                 // screen columns (samples)
     const dx = W / (cols - 1);
+    const T_screen = 5.5;                             // seconds to cross the screen (real ECG pace)
+    const secPerCol = T_screen / cols;                // ECG time each column represents
+    const colsPerSec = cols / T_screen;               // pen speed
+    const GAP = 7;                                     // blank erase-bar width (cols) ahead of the pen
+
     const buf = new Array<number>(cols).fill(0);
+    const blank = new Array<boolean>(cols).fill(false);
 
     // One PQRST beat as a sum of Gaussians over beat-phase p∈[0,1). R peaks at 1.
     const g = (p: number, mu: number, s: number, a: number) => a * Math.exp(-((p - mu) * (p - mu)) / (2 * s * s));
@@ -523,46 +534,55 @@ function ClinicPulseLine() {
       g(p, 0.46, 0.011, -0.22) +  // S
       g(p, 0.66, 0.046, 0.24);    // T wave
 
-    const colsPerSec = 78;        // scroll speed (samples/sec)
-    const secPerCol = 1 / colsPerSec;
-
     let phase = Math.random();
     let beatAmp = 1;
-    let bpm = 74, targetBpm = 74;
+    let bpm = 72, targetBpm = 72;
 
-    const advanceOne = () => {
+    const nextSample = () => {
       const prev = phase % 1;
       phase += (bpm / 60) * secPerCol;
-      if ((phase % 1) < prev) beatAmp = 0.9 + Math.random() * 0.22; // new beat → vary amplitude
-      const wander = 0.02 * Math.sin(phase * 0.7);                  // gentle baseline drift
-      return ecg(phase % 1) * beatAmp + wander;
+      if ((phase % 1) < prev) beatAmp = 0.9 + Math.random() * 0.2; // new beat → vary amplitude
+      return ecg(phase % 1) * beatAmp + 0.02 * Math.sin(phase * 0.7); // + gentle baseline wander
     };
 
     const buildD = () => {
-      let d = `M0 ${(mid - buf[0] * amp).toFixed(2)}`;
-      for (let i = 1; i < cols; i++) d += ` L${(i * dx).toFixed(1)} ${(mid - buf[i] * amp).toFixed(2)}`;
+      let d = "", pen = false;
+      for (let i = 0; i < cols; i++) {
+        if (blank[i]) { pen = false; continue; } // erase-gap → lift the pen (break the line)
+        const x = (i * dx).toFixed(1), y = (mid - buf[i] * amp).toFixed(2);
+        d += (pen ? " L" : " M") + x + " " + y;
+        pen = true;
+      }
       return d;
     };
 
-    // Prime the buffer with a few seconds of history so it's alive on first paint.
-    for (let i = 0; i < cols; i++) buf[i] = advanceOne();
+    // Prime the whole screen with a continuous trace so it's alive on first paint.
+    for (let i = 0; i < cols; i++) buf[i] = nextSample();
+    let cursor = 0;
     pathRef.current?.setAttribute("d", buildD());
 
     const reduce = typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-    if (reduce) return; // static trace, no animation
+    if (reduce) return; // static trace, no sweep
 
-    let raf = 0, last = performance.now(), acc = 0, nextChange = last + 3000;
+    let raf = 0, last = performance.now(), acc = 0, nextChange = last + 3500;
     const tick = (now: number) => {
       const dt = Math.min((now - last) / 1000, 0.05); last = now;
-      if (now >= nextChange) { targetBpm = 62 + Math.random() * 30; nextChange = now + 3000 + Math.random() * 4500; }
-      bpm += (targetBpm - bpm) * Math.min(dt * 0.6, 1);
+      if (now >= nextChange) { targetBpm = 60 + Math.random() * 24; nextChange = now + 3500 + Math.random() * 4000; }
+      bpm += (targetBpm - bpm) * Math.min(dt * 0.5, 1);
       acc += colsPerSec * dt;
       let steps = Math.floor(acc); acc -= steps;
       if (steps > cols) steps = cols;
-      for (let s = 0; s < steps; s++) { buf.shift(); buf.push(advanceOne()); }
+      for (let s = 0; s < steps; s++) {
+        buf[cursor] = nextSample();  // write fresh signal under the pen
+        blank[cursor] = false;
+        for (let k = 1; k <= GAP; k++) blank[(cursor + k) % cols] = true; // erase-bar just ahead
+        cursor = (cursor + 1) % cols;
+      }
       if (steps > 0) {
         pathRef.current?.setAttribute("d", buildD());
-        dotRef.current?.setAttribute("cy", (mid - buf[cols - 1] * amp).toFixed(2));
+        const px = (((cursor - 1 + cols) % cols) * dx).toFixed(1);
+        dotRef.current?.setAttribute("cx", px);
+        dotRef.current?.setAttribute("cy", (mid - buf[(cursor - 1 + cols) % cols] * amp).toFixed(2));
       }
       raf = requestAnimationFrame(tick);
     };
@@ -575,7 +595,7 @@ function ClinicPulseLine() {
       <svg width="100%" height="100%" viewBox="0 0 600 48" className="h-full w-full" preserveAspectRatio="none">
         <path ref={pathRef} fill="none" stroke="white" strokeOpacity="0.5" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"
           style={{ filter: "drop-shadow(0 0 5px rgba(255,255,255,0.5))" }} />
-        <circle ref={dotRef} cx="600" cy="28" r="2.4" fill="white" style={{ filter: "drop-shadow(0 0 6px rgba(255,255,255,0.9))" }} />
+        <circle ref={dotRef} cx="0" cy="28" r="2.4" fill="white" style={{ filter: "drop-shadow(0 0 6px rgba(255,255,255,0.9))" }} />
       </svg>
     </div>
   );
