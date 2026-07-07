@@ -249,7 +249,7 @@ function PatientLog({ pets, admissions, visits, onChanged, loading }: { pets: Pe
   const [species, setSpecies] = useState<"all" | Species>("all");
   const [health, setHealth] = useState<"all" | PatientCondition>("all");
   const [dateRange, setDateRange] = useState<"all" | "week" | "month">("all");
-  const [groupBy, setGroupBy] = useState<GroupBy>("recent");
+  const [groupBy, setGroupBy] = useState<GroupBy>("owner");
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [reassign, setReassign] = useState<Pet | null>(null);
   const [rq, setRq] = useState("");
@@ -364,8 +364,9 @@ function PatientLog({ pets, admissions, visits, onChanged, loading }: { pets: Pe
         const a = m.get(key) ?? []; a.push(r); m.set(key, a);
       }
       return [...m.entries()]
-        .map(([key, rs]): DirGroup => {
-          const sorted = rs.sort((a, b) => a.pet.name.localeCompare(b.pet.name, lang));
+        .map(([key, rs]): DirGroup & { recency: number } => {
+          // Newest pet first inside each owner (freshest activity at the top).
+          const sorted = rs.sort((a, b) => b.activityMs - a.activityMs);
           // Title = the most common owner name in the group, so one mistyped record
           // can't override the majority; falls back to the unassigned label.
           const nameCounts = new Map<string, number>();
@@ -378,10 +379,12 @@ function PatientLog({ pets, admissions, visits, onChanged, loading }: { pets: Pe
             ownerHeader: true,
             ownerNamed: Boolean(named),
             rows: sorted,
+            recency: sorted.reduce((mx, r) => Math.max(mx, r.activityMs), 0), // group's freshest activity
           };
         })
-        // Named clients first (alphabetical); the "no owner" bucket sinks to the end.
-        .sort((a, b) => Number(b.ownerNamed) - Number(a.ownerNamed) || a.title.localeCompare(b.title, lang));
+        // Newest-active client first; ties fall back to name (the "no owner"
+        // bucket only sinks when it isn't itself the most recent).
+        .sort((a, b) => b.recency - a.recency || a.title.localeCompare(b.title, lang));
     }
     if (groupBy === "species") {
       const m = new Map<Species, DirRow[]>();
