@@ -8,6 +8,8 @@ import { Sidebar } from "@/components/Sidebar";
 import { CommandPaletteProvider } from "@/components/CommandPaletteProvider";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { RoleSelect } from "@/components/RoleSelect";
+import { SubscriptionGate } from "@/components/SubscriptionGate";
+import { useSubscription } from "@/lib/subscription";
 import { Spinner } from "@/components/ui";
 
 // Route-level code splitting — each page is its own chunk.
@@ -122,6 +124,7 @@ function HomeRoute() {
 function Shell() {
   const location = useLocation();
   const { user, needsRoleChoice } = useAuth();
+  const { access: subAccess } = useSubscription();
 
   // A multi-role account must pick a workspace before anything else renders.
   if (user && needsRoleChoice) return <RoleSelect />;
@@ -165,12 +168,24 @@ function Shell() {
 
   // Staff get a desktop sidebar rail (mobile keeps the top bar); owners/login keep the top bar only.
   if (showChrome && staff) {
+    // A clinic whose subscription never started (trial over, never paid) has the
+    // whole app hidden — only the subscribe screen, no sidebar. The gate forces
+    // the redirect; here we just drop the chrome so nothing else is reachable.
+    if (subAccess === "blocked") {
+      return (
+        <div className="min-h-screen bg-surface">
+          <TopBar minimal />
+          <SubscriptionGate>{routes}</SubscriptionGate>
+          <DemoBanner />
+        </div>
+      );
+    }
     return (
       <div className="min-h-screen bg-surface">
         <CommandPaletteProvider>
           <Sidebar />
           <TopBar mobileOnly />
-          <div className="lg:ps-64"><OtherClinicBanner />{routes}</div>
+          <div className="lg:ps-64"><OtherClinicBanner /><SubscriptionGate>{routes}</SubscriptionGate></div>
         </CommandPaletteProvider>
         <DemoBanner />
       </div>

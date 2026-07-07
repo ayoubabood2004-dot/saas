@@ -1182,4 +1182,36 @@ const supabaseRepo: typeof demoRepo = {
 };
 
 /** Live when Supabase is configured, otherwise the local demo store. */
-export const repo = supabase ? supabaseRepo : demoRepo;
+const baseRepo = supabase ? supabaseRepo : demoRepo;
+
+// ---------------------------------------------------------------------------
+// Read-only guard. When a clinic's subscription has lapsed (was a subscriber,
+// now expired → read-only access), it may still VIEW everything but must not
+// change anything. Rather than disable every button, we block writes at the one
+// chokepoint they all pass through: the repo. A checker is registered by
+// src/lib/subscription.ts; it defaults to "allow" so nothing ever locks by
+// accident (fail-open). Only method names that mutate are gated — reads pass
+// straight through.
+// ---------------------------------------------------------------------------
+let readOnlyChecker: () => boolean = () => false;
+export function registerReadOnlyChecker(fn: () => boolean) { readOnlyChecker = fn; }
+
+/** Thrown by a blocked write so call sites can show a "renew to edit" message. */
+export class ReadOnlyError extends Error {
+  constructor() { super("READ_ONLY"); this.name = "ReadOnlyError"; }
+}
+
+const WRITE_RE = /^(add|create|update|delete|settle|checkout|save|remove|discharge|refund|set|record|invalidate|cancel|apply|restock|move|assign|activate|bulk|import|deduct|upsert|toggle)/i;
+
+export const repo: typeof demoRepo = new Proxy(baseRepo, {
+  get(target, prop, receiver) {
+    const value = Reflect.get(target, prop, receiver);
+    if (typeof value === "function" && typeof prop === "string" && WRITE_RE.test(prop)) {
+      return (...args: unknown[]) => {
+        if (readOnlyChecker()) return Promise.reject(new ReadOnlyError());
+        return (value as (...a: unknown[]) => unknown).apply(target, args);
+      };
+    }
+    return value;
+  },
+}) as typeof demoRepo;

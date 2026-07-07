@@ -34,7 +34,7 @@ import { useCommandPalette } from "@/components/CommandPaletteProvider";
 import { usePermissions } from "@/hooks/usePermissions";
 import { cn } from "@/lib/utils";
 
-export function TopBar({ mobileOnly = false }: { mobileOnly?: boolean }) {
+export function TopBar({ mobileOnly = false, minimal = false }: { mobileOnly?: boolean; minimal?: boolean }) {
   const { t, i18n } = useTranslation();
   const { user, signOut, roles, activeRole, switchRole } = useAuth();
   const navigate = useNavigate();
@@ -68,7 +68,10 @@ export function TopBar({ mobileOnly = false }: { mobileOnly?: boolean }) {
     if (next) playTap();
   };
 
-  const navItems = staff
+  // `minimal` (a subscription-locked clinic) hides all navigation — only the
+  // logo + theme/language/logout remain, so nothing but the subscribe screen
+  // is reachable.
+  const navItems = minimal ? [] : staff
     ? [
         { to: "/reception", icon: CalendarDays, label: t("reception.title") },
         { to: "/records", icon: ClipboardList, label: t("records.title") },

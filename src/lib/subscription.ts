@@ -18,6 +18,7 @@
 import { useSyncExternalStore } from "react";
 import { getActiveClinicId } from "./clinics";
 import { sb } from "./clinicSync";
+import { registerReadOnlyChecker } from "./repo";
 import { TRIAL_DAYS, type BillingPeriod, type PlanId } from "./plans";
 
 export type SubStatus = "trialing" | "active" | "expired" | "locked";
@@ -155,6 +156,18 @@ export function getSubscriptionNow() {
   const status = statusOf(sub);
   return { sub, status, access: accessOf(status) };
 }
+
+/** Expired-but-was-a-subscriber → may view but not change anything. */
+export function isReadOnlyNow(): boolean {
+  return getSubscriptionNow().access === "readonly";
+}
+/** Never paid + trial over → the app is hidden; only the subscribe screen shows. */
+export function isBlockedNow(): boolean {
+  return getSubscriptionNow().access === "blocked";
+}
+
+// Wire the repo write-guard to the live subscription state (see repo.ts).
+registerReadOnlyChecker(isReadOnlyNow);
 
 /* --------------------------- server integration -------------------------- */
 /**
