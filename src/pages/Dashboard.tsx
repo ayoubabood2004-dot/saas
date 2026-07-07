@@ -16,15 +16,12 @@ import {
   Lightbulb,
   RotateCw,
   WifiOff,
-  Zap,
-  Timer,
-  CheckCircle2,
   Hourglass,
 } from "lucide-react";
 import type { Appointment, Pet, Admission, Species, Reminder } from "@/types";
 import { repo } from "@/lib/repo";
 import { useAuth } from "@/contexts/AuthContext";
-import { formatTime, dateLocale, formatNum, cn } from "@/lib/utils";
+import { formatTime, dateLocale, formatNum } from "@/lib/utils";
 import { playTap } from "@/lib/sounds";
 import { PetAvatar } from "@/components/PetAvatar";
 import { UpcomingEvents } from "@/components/UpcomingEvents";
@@ -72,13 +69,6 @@ export function Dashboard() {
   const [reminders, setReminders] = useState<Reminder[]>(seed?.reminders ?? []);
   const [activity, setActivity] = useState<CurvePoint[]>(seed?.activity ?? []);
   const [error, setError] = useState(false);
-  // A gently-ticking clock (30s) drives the live "next up" countdown + now-state
-  // without a heavy re-render loop.
-  const [nowMs, setNowMs] = useState(() => Date.now());
-  useEffect(() => {
-    const id = window.setInterval(() => setNowMs(Date.now()), 30_000);
-    return () => window.clearInterval(id);
-  }, []);
 
   const mounted = useRef(true);
   const load = async () => {
@@ -145,19 +135,6 @@ export function Dashboard() {
   const pctWaiting = appts.length ? waiting.length / appts.length : 0;
   const pctCases = activeCases.length ? casesDoneCount / activeCases.length : 0;
   const pctBoard = Math.min(boarding.length / 12, 1);
-
-  // ---- "التالي في جدولك": the single next thing that needs the doctor. ----
-  // Priority: a patient already waiting in the clinic → then the next scheduled
-  // appointment still ahead → else nothing (a clear, calm empty state).
-  const nextUp = useMemo(() => {
-    const nextWaiting = [...waiting].sort((a, b) => a.scheduled_at.localeCompare(b.scheduled_at))[0];
-    if (nextWaiting) return { appt: nextWaiting, kind: "waiting" as const };
-    const upcoming = appts
-      .filter((a) => a.status !== "done" && a.status !== "cancelled" && new Date(a.scheduled_at).getTime() >= nowMs - 5 * 60_000)
-      .sort((a, b) => a.scheduled_at.localeCompare(b.scheduled_at))[0];
-    if (upcoming) return { appt: upcoming, kind: "upcoming" as const };
-    return null;
-  }, [appts, waiting, nowMs]);
 
   // Unified upcoming-events feed (color-coded: appointments, treatment-due, reminders)
   const events = useMemo(
@@ -246,16 +223,6 @@ export function Dashboard() {
           })}
         </div>
       </motion.div>
-
-      {/* ⭐ Next-up focus card — the one thing that needs the doctor now, with a
-          live countdown. Calm, celebratory empty state when the queue is clear. */}
-      <div className="mt-6">
-        {loading ? (
-          <Skeleton className="h-28 rounded-3xl" />
-        ) : (
-          <NextUpCard nextUp={nextUp} pet={nextUp ? petById[nextUp.appt.pet_id] : undefined} nowMs={nowMs} lang={i18n.language} onGo={(a) => navigate(`/consult/${a.pet_id}?appt=${a.id}`)} onNew={() => navigate("/new-case")} />
-        )}
-      </div>
 
       {/* KPI grid */}
       <motion.div variants={staggerContainer} initial="initial" animate="animate" className="mt-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
@@ -415,82 +382,6 @@ export function Dashboard() {
         </div>
       </Card>
     </div>
-  );
-}
-
-/** The single next thing the doctor should do, with a live countdown. */
-function NextUpCard({ nextUp, pet, nowMs, lang, onGo, onNew }: {
-  nextUp: { appt: Appointment; kind: "waiting" | "upcoming" } | null;
-  pet: Pet | undefined;
-  nowMs: number;
-  lang: string;
-  onGo: (a: Appointment) => void;
-  onNew: () => void;
-}) {
-  const { t } = useTranslation();
-
-  // Clear queue → a calm, positive state (not an empty void).
-  if (!nextUp) {
-    return (
-      <div className="flex flex-wrap items-center justify-between gap-4 rounded-3xl border border-line bg-surface-1 p-5">
-        <div className="flex items-center gap-3">
-          <span className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-success-50 text-success-600 dark:bg-success-500/15 dark:text-success-300"><CheckCircle2 size={24} /></span>
-          <div>
-            <p className="font-display text-lg font-bold text-ink">{t("dash.allClear", "لا مواعيد قادمة الآن")}</p>
-            <p className="text-sm text-ink-muted">{t("dash.allClearHint", "طابور اليوم فارغ — وقت مناسب للمتابعات أو استقبال حالة جديدة.")}</p>
-          </div>
-        </div>
-        <Button variant="secondary" leftIcon={<Plus size={16} />} onClick={onNew}>{t("newCase.newCaseBtn")}</Button>
-      </div>
-    );
-  }
-
-  const { appt, kind } = nextUp;
-  const startMs = new Date(appt.scheduled_at).getTime();
-  const diffMin = Math.round((startMs - nowMs) / 60_000);
-  const waiting = kind === "waiting";
-  // Countdown copy: waiting → "ينتظر الآن"; else in N min / N min ago / now.
-  const when = waiting
-    ? t("dash.waitingNow", "ينتظر الآن")
-    : diffMin > 1 ? t("dash.inMin", { n: formatNum(diffMin), defaultValue: "بعد {{n}} دقيقة" })
-      : diffMin >= -1 ? t("dash.nowLabel", "الآن")
-        : t("dash.lateMin", { n: formatNum(Math.abs(diffMin)), defaultValue: "متأخّر {{n}} دقيقة" });
-  const tone = waiting || diffMin <= 1 ? "urgent" : "calm";
-
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
-      className={cn(
-        "relative flex flex-wrap items-center justify-between gap-4 overflow-hidden rounded-3xl border p-5 shadow-soft",
-        tone === "urgent"
-          ? "border-warn-300 bg-gradient-to-br from-warn-50 to-amber-50 dark:border-warn-500/40 dark:from-warn-500/10 dark:to-amber-500/5"
-          : "border-brand-200 bg-gradient-to-br from-brand-50 to-sky-50 dark:border-brand-500/30 dark:from-brand-500/10 dark:to-sky-500/5",
-      )}
-    >
-      <div className="flex min-w-0 items-center gap-4">
-        <div className="relative shrink-0">
-          {pet ? <PetAvatar pet={pet} size={56} /> : <span className="grid h-14 w-14 place-items-center rounded-2xl bg-surface-2 text-ink-subtle"><PawPrint size={24} /></span>}
-          {tone === "urgent" && <span className="absolute -end-1 -top-1 h-3.5 w-3.5 animate-pulse rounded-full bg-warn-500 ring-2 ring-surface-1" />}
-        </div>
-        <div className="min-w-0">
-          <span className={cn(
-            "inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-2xs font-bold",
-            tone === "urgent" ? "bg-warn-500/15 text-warn-700 dark:text-warn-300" : "bg-brand-500/15 text-brand-700 dark:text-brand-300",
-          )}>
-            {waiting ? <Hourglass size={12} /> : <Timer size={12} />}
-            {t("dash.nextUp", "التالي في جدولك")}
-          </span>
-          <p className="mt-1 truncate font-display text-xl font-extrabold text-ink">{pet?.name ?? "—"}</p>
-          <p className="flex items-center gap-1.5 truncate text-sm text-ink-muted">
-            <Clock size={13} /> {formatTime(appt.scheduled_at, lang)} · {t(`service.${appt.service}`)}
-            <span className={cn("ms-1 font-bold", tone === "urgent" ? "text-warn-700 dark:text-warn-300" : "text-brand-700 dark:text-brand-300")}>· {when}</span>
-          </p>
-        </div>
-      </div>
-      <Button size="lg" leftIcon={<Zap size={18} />} onClick={() => { playTap(); onGo(appt); }}>
-        {t("dash.startExam", "ابدأ الكشف")}
-      </Button>
-    </motion.div>
   );
 }
 
