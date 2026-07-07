@@ -1142,7 +1142,26 @@
         "t": "وضوح للمالك",
         "b": "اكتب تعليمات الخروج بلغة بسيطة — الالتزام يرتفع حين يفهم المالك السبب."
       }
-    }
+    },
+    "revenueToday": "إيراد اليوم",
+    "visitsWord": "زيارة",
+    "casesToday": "حالات اليوم",
+    "recordedToday": "سُجّلت اليوم",
+    "lowStock": "نقص المخزون",
+    "reorderSoon": "يحتاج إعادة طلب",
+    "casesTodayShort": "حالة اليوم",
+    "lowStockShort": "نقص مخزون",
+    "visitsToday": "زيارات اليوم",
+    "noSalesToday": "لا مبيعات اليوم بعد",
+    "noSalesHint": "المبيعات التي تسجّلها ستظهر هنا فور حدوثها.",
+    "walkIn": "زبون",
+    "itemsWord": "صنف",
+    "credit": "آجل",
+    "paidBadge": "مدفوع",
+    "stockHealthy": "المخزون بحالة جيدة 👍",
+    "outOfStock": "نفد",
+    "unitsLeft": "متبقّي {{n}}",
+    "andMore": "و {{n}} غيرها"
   },
   "snapshot": {
     "vaccinated": "التطعيم",

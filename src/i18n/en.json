@@ -1145,7 +1145,26 @@
         "t": "Owner clarity",
         "b": "Send discharge notes in plain language — adherence rises when owners understand the why."
       }
-    }
+    },
+    "revenueToday": "Today’s revenue",
+    "visitsWord": "visits",
+    "casesToday": "Cases today",
+    "recordedToday": "recorded today",
+    "lowStock": "Low stock",
+    "reorderSoon": "Reorder soon",
+    "casesTodayShort": "today",
+    "lowStockShort": "low stock",
+    "visitsToday": "Today’s visits",
+    "noSalesToday": "No sales yet today",
+    "noSalesHint": "Sales you record will show up here as they happen.",
+    "walkIn": "Walk-in",
+    "itemsWord": "items",
+    "credit": "Credit",
+    "paidBadge": "Paid",
+    "stockHealthy": "Stock levels look healthy 👍",
+    "outOfStock": "Out",
+    "unitsLeft": "{{n}} left",
+    "andMore": "and {{n}} more"
   },
   "snapshot": {
     "vaccinated": "Vaccinated",
