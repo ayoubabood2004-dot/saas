@@ -1111,7 +1111,41 @@
       "whatsapp": "Send WhatsApp greeting",
       "greeting": "Hello! {{clinic}} clinic wishes {{name}} a very happy birthday! 🐾🎉"
     },
-    "loadError": "Couldn't reach the server — it may be paused or your connection dropped."
+    "loadError": "Couldn't reach the server — it may be paused or your connection dropped.",
+    "apptsWord": "appts",
+    "waitingShort": "waiting",
+    "casesShort": "in care",
+    "boardingShort": "boarding",
+    "nextUp": "Next up",
+    "startExam": "Start exam",
+    "waitingNow": "waiting now",
+    "inMin": "in {{n}} min",
+    "nowLabel": "now",
+    "lateMin": "{{n}} min late",
+    "allClear": "No appointments coming up",
+    "allClearHint": "Today's queue is clear — a good time for follow-ups or a new case.",
+    "tip": {
+      "coldChain": {
+        "t": "Vaccine cold-chain",
+        "b": "Store vaccines at 2–8 °C and log the lot number at every administration."
+      },
+      "painScore": {
+        "t": "Pain scoring",
+        "b": "Re-assess inpatient pain every cycle — small behaviour changes flag early decline."
+      },
+      "weightFirst": {
+        "t": "Weight first",
+        "b": "Always capture an accurate weight at check-in; every dose depends on it."
+      },
+      "triageColour": {
+        "t": "Triage colour",
+        "b": "Red & orange (T1–T2) patients should never wait — escalate to a free room immediately."
+      },
+      "ownerClarity": {
+        "t": "Owner clarity",
+        "b": "Send discharge notes in plain language — adherence rises when owners understand the why."
+      }
+    }
   },
   "snapshot": {
     "vaccinated": "Vaccinated",
