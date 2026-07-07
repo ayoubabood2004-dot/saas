@@ -173,26 +173,41 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (isSupabaseConfigured && supabase) {
       const sb = supabase;
       let active = true;
-      // Failsafe: a slow/unreachable backend must never trap the app on a blank spinner.
-      const failsafe = setTimeout(() => { if (active) setLoading(false); }, 7000);
+      // A persisted Supabase token means the user WAS signed in. Its presence lets
+      // us tell "genuinely logged out" from "getSession is momentarily slow" (auth
+      // Web-Lock contention on a rapid refresh, or a CDN switch right after a
+      // deploy) — so a valid session is never dumped to the login screen.
+      const hasStoredSbToken = () => {
+        try { return Object.keys(localStorage).some((k) => /^sb-.*-auth-token$/.test(k)); } catch { return false; }
+      };
+      // Failsafe: never trap the app on a blank spinner if the backend is unreachable.
+      const failsafe = setTimeout(() => { if (active) setLoading(false); }, 12000);
       const finish = () => { if (active) { clearTimeout(failsafe); setLoading(false); } };
 
       void (async () => {
         try {
-          const { data } = await withTimeout(sb.auth.getSession(), 8000);
-          if (!active) return;
-          const session = data.session;
-          if (session?.user) {
-            // A valid persisted session exists (e.g. after F5). hydrateSession
-            // falls back to a token-derived profile so a transient profiles-read
-            // failure can NEVER log the user out on refresh.
-            const rp = await hydrateSession(session.user);
-            if (active) setRaw(rp);
-          } else if (active) {
-            setRaw(null);
+          let user: SbUserLike | null = null;
+          // Retry getSession while a token exists — a transient empty/timeout on
+          // refresh or just after a deploy must NOT log the user out.
+          for (let attempt = 0; attempt < 4; attempt++) {
+            try {
+              const { data } = await withTimeout(sb.auth.getSession(), 6000);
+              if (data.session?.user) { user = data.session.user; break; }
+            } catch { /* transient — fall through to the retry decision */ }
+            if (!active || !hasStoredSbToken()) break; // no token → genuinely signed out
+            await new Promise((r) => setTimeout(r, 300 * (attempt + 1)));
           }
-        } catch {
-          /* getSession timed out / errored — show login (the failsafe also covers it) */
+          if (!active) return;
+          if (user) {
+            // hydrateSession falls back to a token-derived profile so a transient
+            // profiles-read failure can NEVER log the user out on refresh.
+            const rp = await hydrateSession(user);
+            if (active) setRaw(rp);
+          } else if (!hasStoredSbToken()) {
+            setRaw(null); // confirmed signed out
+          }
+          // Token present but still unresolved → keep current state; the
+          // onAuthStateChange listener settles it without a forced logout.
         } finally {
           finish();
         }
