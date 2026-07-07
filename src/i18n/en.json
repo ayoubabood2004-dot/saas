@@ -1964,6 +1964,12 @@
     "devLockHint": "For a reception device signed in with your account: reports and settings disappear from this device only, and your PIN brings them back for ten minutes whenever needed.",
     "devLockBtn": "Lock this device now",
     "devLockConfirm": "Press again to confirm",
-    "needPinFirst": "Set the PIN first so you can unlock later."
+    "needPinFirst": "Set the PIN first so you can unlock later.",
+    "lockDeviceShort": "Lock this device to reception view",
+    "lockTitle": "Lock this device to reception view",
+    "lockExplain": "This device switches to the limited reception view (reports and settings disappear). Your PIN reopens it for ten minutes whenever you need it.",
+    "lockNow": "Lock this device now",
+    "lockConfirm": "Tap to confirm — lock now",
+    "goSettings": "Go to Settings to set a PIN"
   }
 }

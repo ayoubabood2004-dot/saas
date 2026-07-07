@@ -43,8 +43,11 @@ export function OverrideCorner({ compact = false }: { compact?: boolean }) {
   const staff = user?.role === "admin" || user?.role === "doctor" || user?.role === "reception";
   if (!user || !staff || !getOverrideEnabled()) return null;
   const baseRole = appRoleToStaffRole(user.role);
-  // Managers on an unlocked device have nothing to unlock — stay invisible.
-  if (!ov.active && !ov.deviceLocked && baseRole === "manager") return null;
+  // A manager on their own UNLOCKED device has nothing to *unlock* — but the
+  // manager-direction of the feature is to LOCK this device into the reception
+  // view. So instead of hiding (which reads as "the key vanished"), surface a
+  // lock control right here; once locked, the key below reappears to unlock.
+  if (!ov.active && !ov.deviceLocked && baseRole === "manager") return <ManagerLockButton compact={compact} />;
 
   if (ov.active) {
     return (
@@ -78,6 +81,61 @@ export function OverrideCorner({ compact = false }: { compact?: boolean }) {
         </button>
       </Tooltip>
       <PinModal open={open} onClose={() => setOpen(false)} />
+    </>
+  );
+}
+
+/* ------- Manager-direction: lock THIS device into the reception view ------ */
+function ManagerLockButton({ compact = false }: { compact?: boolean }) {
+  const { t } = useTranslation();
+  const navigate = useNavigate();
+  const [open, setOpen] = useState(false);
+  const [confirm, setConfirm] = useState(false);
+  const [pinSet, setPinSet] = useState<boolean | null>(null);
+
+  useEffect(() => { void hasOverridePin().then(setPinSet); }, []);
+  useEffect(() => { if (!open) setConfirm(false); }, [open]);
+
+  const doLock = () => { playSuccess(); setDeviceLocked(true); setOpen(false); navigate("/"); };
+
+  return (
+    <>
+      <Tooltip label={t("override.lockDeviceShort", "قفل الجهاز بواجهة الاستقبال")}>
+        <button
+          onClick={() => { playTap(); setOpen(true); }}
+          aria-label={t("override.lockDeviceShort", "قفل الجهاز بواجهة الاستقبال")}
+          data-override="lock"
+          className={cn(
+            "grid place-items-center rounded-full text-ink-muted transition hover:bg-surface-1 hover:text-ink",
+            compact ? "h-11 w-11" : "h-10 w-10",
+          )}
+        >
+          <Lock size={18} />
+        </button>
+      </Tooltip>
+
+      <Modal open={open} onClose={() => setOpen(false)} title={t("override.lockTitle", "قفل الجهاز بواجهة الاستقبال")}>
+        <div className="mx-auto max-w-sm text-center">
+          <span className="mx-auto mb-3 grid h-14 w-14 place-items-center rounded-2xl bg-brand-grad text-white shadow-soft"><Lock size={24} /></span>
+          <p className="mb-4 text-sm text-ink-muted">{t("override.lockExplain", "يتحوّل هذا الجهاز إلى واجهة الاستقبال المحدودة (تختفي التقارير والإعدادات). رمزك السري يفتحه عشر دقائق كلما احتجت.")}</p>
+          {pinSet === false ? (
+            <>
+              <p className="mb-3 text-xs font-semibold text-warn-600">{t("override.needPinFirst", "عيّن الرمز السري أولاً حتى تتمكن من فتح القفل لاحقاً.")}</p>
+              <Button variant="secondary" leftIcon={<KeyRound size={16} />} onClick={() => { setOpen(false); navigate("/settings"); }}>
+                {t("override.goSettings", "اذهب للإعدادات لتعيين الرمز")}
+              </Button>
+            </>
+          ) : (
+            <Button
+              variant={confirm ? "primary" : "secondary"}
+              leftIcon={<Lock size={16} />}
+              onClick={() => { playTap(); if (!confirm) { setConfirm(true); return; } doLock(); }}
+            >
+              {confirm ? t("override.lockConfirm", "اضغط للتأكيد — قفل الآن") : t("override.lockNow", "قفل الجهاز الآن")}
+            </Button>
+          )}
+        </div>
+      </Modal>
     </>
   );
 }
