@@ -18,6 +18,7 @@
 import { useSyncExternalStore } from "react";
 import { getActiveClinicId } from "./clinics";
 import { sb } from "./clinicSync";
+import { supabaseUrl } from "./supabase";
 import { registerReadOnlyChecker } from "./repo";
 import { TRIAL_DAYS, type BillingPeriod, type PlanId } from "./plans";
 
@@ -202,9 +203,28 @@ export async function syncSubscriptionFromServer(): Promise<void> {
  */
 export async function createPaymentLink(plan: PlanId, period: BillingPeriod): Promise<string> {
   const client = sb();
-  if (!client) throw new Error("no_backend");
-  const { data, error } = await client.functions.invoke("wayl-create-link", { body: { plan, period } });
-  if (error) throw new Error(error.message || "wayl_failed");
-  if (!data?.url) throw new Error("wayl_failed");
-  return data.url as string;
+  if (!client || !supabaseUrl) throw new Error("no_backend");
+
+  // NOTE: we deliberately DON'T use `client.functions.invoke()` here. That helper
+  // attaches `apikey` + `x-client-info` headers, which forces the CORS preflight
+  // to request them — and if the deployed function's Access-Control-Allow-Headers
+  // doesn't list them, the browser blocks the POST ("Failed to send a request to
+  // the Edge Function"). A hand-built fetch sends only `authorization` +
+  // `content-type` — the two headers every deployment already allows — so the
+  // call works regardless of the function's exact CORS config. The user's JWT in
+  // Authorization is what the function authenticates against (auth.getUser()).
+  const { data: sess } = await client.auth.getSession();
+  const token = sess?.session?.access_token;
+  if (!token) throw new Error("not_signed_in");
+
+  const res = await fetch(`${supabaseUrl}/functions/v1/wayl-create-link`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ plan, period }),
+  });
+  const body = await res.json().catch(() => ({} as Record<string, unknown>));
+  if (!res.ok || !body?.url) {
+    throw new Error(String(body?.detail || body?.error || `wayl_failed_${res.status}`));
+  }
+  return body.url as string;
 }
