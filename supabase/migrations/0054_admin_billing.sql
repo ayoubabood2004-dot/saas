@@ -106,16 +106,29 @@ as $$
 begin
   if not is_platform_admin() then raise exception 'not_admin'; end if;
   return query
-  select c.clinic_id,
+  -- The clinic universe = every clinic that exists in ANY billing-relevant
+  -- table, so solo owners (no staff) and trial-only clinics still appear.
+  with ids as (
+    select m.clinic_id  from memberships m
+    union
+    select s.clinic_id  from subscriptions s
+    union
+    select cp.clinic_id from clinic_prefs cp
+  ),
+  mc as (
+    select m.clinic_id, count(*)::int as members from memberships m group by m.clinic_id
+  )
+  select ids.clinic_id,
          cp.clinic_name,
          u.email::text,
          s.plan, s.period, s.trial_ends_at, s.current_period_end,
          coalesce(s.was_subscriber, false),
-         c.members
-  from (select m.clinic_id, count(*)::int as members from memberships m group by m.clinic_id) c
-  left join clinic_prefs   cp on cp.clinic_id = c.clinic_id
-  left join auth.users     u  on u.id         = c.clinic_id
-  left join subscriptions  s  on s.clinic_id  = c.clinic_id
+         coalesce(mc.members, 0)
+  from ids
+  left join clinic_prefs   cp on cp.clinic_id = ids.clinic_id
+  left join auth.users     u  on u.id         = ids.clinic_id
+  left join subscriptions  s  on s.clinic_id  = ids.clinic_id
+  left join mc                on mc.clinic_id = ids.clinic_id
   order by cp.clinic_name nulls last;
 end $$;
 revoke all on function admin_list_subscriptions() from public, anon;

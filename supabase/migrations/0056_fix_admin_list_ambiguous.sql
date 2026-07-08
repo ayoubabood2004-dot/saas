@@ -1,9 +1,16 @@
 -- ============================================================================
--- Fix: admin_list_subscriptions() raised
---   "column reference \"clinic_id\" is ambiguous"
--- The members subquery selected an unqualified `clinic_id`, which collided with
--- the function's RETURNS TABLE output column of the same name. Qualify it with
--- the `memberships` alias so Postgres reads it as the column, not the OUT var.
+-- admin_list_subscriptions() — two fixes:
+--
+-- 1. "column reference \"clinic_id\" is ambiguous": the members subquery
+--    selected an unqualified clinic_id, colliding with the RETURNS TABLE output
+--    column of the same name. Every clinic_id is now table-qualified.
+--
+-- 2. Missing clinics: the list was built from `memberships` alone, so a clinic
+--    with no staff rows (a solo owner, or a trial clinic we seeded with only a
+--    subscriptions row) never appeared. Build the clinic universe from the UNION
+--    of memberships ∪ subscriptions ∪ clinic_prefs so EVERY clinic shows,
+--    regardless of which table it lives in. members falls back to 0.
+--
 -- Idempotent (CREATE OR REPLACE) — safe to run against an already-migrated DB.
 -- ============================================================================
 create or replace function admin_list_subscriptions()
@@ -19,16 +26,27 @@ as $$
 begin
   if not is_platform_admin() then raise exception 'not_admin'; end if;
   return query
-  select c.clinic_id,
+  with ids as (
+    select m.clinic_id  from memberships m
+    union
+    select s.clinic_id  from subscriptions s
+    union
+    select cp.clinic_id from clinic_prefs cp
+  ),
+  mc as (
+    select m.clinic_id, count(*)::int as members from memberships m group by m.clinic_id
+  )
+  select ids.clinic_id,
          cp.clinic_name,
          u.email::text,
          s.plan, s.period, s.trial_ends_at, s.current_period_end,
          coalesce(s.was_subscriber, false),
-         c.members
-  from (select m.clinic_id, count(*)::int as members from memberships m group by m.clinic_id) c
-  left join clinic_prefs   cp on cp.clinic_id = c.clinic_id
-  left join auth.users     u  on u.id         = c.clinic_id
-  left join subscriptions  s  on s.clinic_id  = c.clinic_id
+         coalesce(mc.members, 0)
+  from ids
+  left join clinic_prefs   cp on cp.clinic_id = ids.clinic_id
+  left join auth.users     u  on u.id         = ids.clinic_id
+  left join subscriptions  s  on s.clinic_id  = ids.clinic_id
+  left join mc                on mc.clinic_id = ids.clinic_id
   order by cp.clinic_name nulls last;
 end $$;
 
