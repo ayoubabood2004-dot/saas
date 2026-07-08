@@ -67,7 +67,7 @@ export function AdminBilling() {
 
   const cancelSub = async (c: AdminClinic) => {
     if (!c.email) { toast.error("لا يوجد بريد لهذه العيادة"); return; }
-    if (!window.confirm(`إلغاء اشتراك «${c.clinicName || c.email}»؟\nستنتهي مدّته فوراً (تبقى القراءة فقط إن كان قد دفع سابقاً).`)) return;
+    if (!window.confirm(`إلغاء اشتراك «${c.clinicName || c.email}»؟\nينتهي وصولها فوراً — قراءة فقط إن كانت قد دفعت سابقاً، وإلا يُقفل النظام.`)) return;
     setRowBusy(c.clinicId);
     try {
       await adminCancelSubscription(c.email);

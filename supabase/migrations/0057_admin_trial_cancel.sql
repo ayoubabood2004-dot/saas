@@ -3,11 +3,14 @@
 --
 --   • admin_grant_trial(email, days)      → give / reset a free trial (full
 --                                            access, no payment). Default 14d.
---   • admin_cancel_subscription(email)    → end the paid window NOW. A clinic
---                                            that paid before keeps READ-ONLY
---                                            access (was_subscriber stays true →
---                                            "expired"); one that never paid
---                                            falls back to its trial/lock state.
+--   • admin_cancel_subscription(email)    → revoke access NOW. Ends BOTH the
+--                                            paid window AND the trial, so the
+--                                            cancel actually bites even for a
+--                                            clinic still on its free trial. A
+--                                            clinic that paid before keeps
+--                                            READ-ONLY access (was_subscriber
+--                                            stays true → "expired"); one that
+--                                            never paid becomes "locked".
 --
 -- Both are SECURITY DEFINER and gated by is_platform_admin(), like the rest of
 -- 0054. Additive & idempotent. Apply AFTER 0054.
@@ -54,8 +57,10 @@ begin
   select id into v_clinic from auth.users where lower(email) = lower(p_email);
   if v_clinic is null then raise exception 'clinic_not_found'; end if;
 
+  insert into subscriptions (clinic_id) values (v_clinic) on conflict (clinic_id) do nothing;
+  -- End BOTH windows so the cancel bites even on a still-running free trial.
   update subscriptions
-     set current_period_end = now(), updated_at = now()
+     set current_period_end = now(), trial_ends_at = now(), updated_at = now()
    where clinic_id = v_clinic;
 end $$;
 revoke all on function admin_cancel_subscription(text) from public, anon;
