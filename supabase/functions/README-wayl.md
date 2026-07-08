@@ -20,13 +20,15 @@ supabase secrets set WAYL_BASE="https://api.thewayl.com"
 
 ## 3. Deploy the functions
 ```
-supabase functions deploy wayl-create-link
+supabase functions deploy wayl-create-link --no-verify-jwt
 supabase functions deploy wayl-webhook --no-verify-jwt
 ```
-`wayl-create-link` keeps JWT verification (only signed-in clinics may call it).
-`wayl-webhook` disables it (Wayl can't send a Supabase JWT); it is secured by
-the shared secret **and** by independently re-verifying every order against Wayl
-before granting paid time.
+BOTH deploy with `--no-verify-jwt`. The platform JWT gate rejects the browser's
+CORS preflight (OPTIONS has no JWT), so `wayl-create-link` must disable it and
+authenticate INTERNALLY instead (it calls `auth.getUser()` and 401s if the
+caller isn't signed in). `wayl-webhook` disables it because Wayl can't send a
+Supabase JWT; it is secured by the shared secret **and** by independently
+re-verifying every order against Wayl before granting paid time.
 
 The webhook URL Wayl calls is:
 `https://<project-ref>.supabase.co/functions/v1/wayl-webhook`

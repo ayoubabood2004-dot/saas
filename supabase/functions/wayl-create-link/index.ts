@@ -9,7 +9,10 @@
 //   4. asks Wayl to create a payment link;
 //   5. returns the hosted payment URL for the browser to redirect to.
 //
-// Deploy WITH JWT verification (default) so only signed-in clinics can call it.
+// Deploy WITHOUT the platform JWT gate (verify_jwt = false): that gate rejects
+// the browser's CORS preflight (OPTIONS carries no JWT), which breaks the call.
+// Auth is still enforced HERE — asUser.auth.getUser() validates the caller's
+// token and 401s if it's missing/invalid.
 //
 // Required secrets (supabase secrets set …):
 //   WAYL_API_KEY, WAYL_WEBHOOK_SECRET, APP_URL
