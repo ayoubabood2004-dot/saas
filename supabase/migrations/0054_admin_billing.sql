@@ -88,3 +88,35 @@ begin
 end $$;
 revoke all on function admin_activate_subscription(text, text, text, int) from anon;
 grant execute on function admin_activate_subscription(text, text, text, int) to authenticated;
+
+-- --- list every clinic + its subscription (for the operator console) ---------
+-- One row per clinic (a clinic = its owner's user id). Left-joins the name,
+-- owner email, and subscription so the operator sees who is trialing / active /
+-- expired and can act on each. Admin-only.
+create or replace function admin_list_subscriptions()
+returns table (
+  clinic_id uuid, clinic_name text, email text,
+  plan text, period text, trial_ends_at timestamptz,
+  current_period_end timestamptz, was_subscriber boolean, members int
+)
+language plpgsql
+security definer
+set search_path = public, auth
+as $$
+begin
+  if not is_platform_admin() then raise exception 'not_admin'; end if;
+  return query
+  select c.clinic_id,
+         cp.clinic_name,
+         u.email::text,
+         s.plan, s.period, s.trial_ends_at, s.current_period_end,
+         coalesce(s.was_subscriber, false),
+         c.members
+  from (select clinic_id, count(*)::int as members from memberships group by clinic_id) c
+  left join clinic_prefs   cp on cp.clinic_id = c.clinic_id
+  left join auth.users     u  on u.id         = c.clinic_id
+  left join subscriptions  s  on s.clinic_id  = c.clinic_id
+  order by cp.clinic_name nulls last;
+end $$;
+revoke all on function admin_list_subscriptions() from anon;
+grant execute on function admin_list_subscriptions() to authenticated;

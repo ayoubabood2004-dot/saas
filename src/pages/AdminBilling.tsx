@@ -1,12 +1,19 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ShieldCheck, Coins, Wallet, ArrowLeft, Lock } from "lucide-react";
+import { ShieldCheck, Coins, Wallet, ArrowLeft, Lock, Building2, RefreshCw, Users } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
-import { isPlatformAdmin, getUsdRate, setUsdRate, adminActivate } from "@/lib/platformAdmin";
+import { isPlatformAdmin, getUsdRate, setUsdRate, adminActivate, adminListClinics, type AdminClinic } from "@/lib/platformAdmin";
 import { PLANS, usdToIqd, priceUsd, type BillingPeriod, type PlanId } from "@/lib/plans";
-import { Button, useToast } from "@/components/ui";
+import { Button, Badge, Skeleton, useToast } from "@/components/ui";
 import { money, formatNum, cn } from "@/lib/utils";
-import { playSuccess, playWarning } from "@/lib/sounds";
+import { playSuccess, playWarning, playTap } from "@/lib/sounds";
+
+const STATUS_META: Record<string, { label: string; tone: "success" | "brand" | "warn" | "danger" }> = {
+  active: { label: "نشط", tone: "success" },
+  trialing: { label: "تجربة", tone: "brand" },
+  expired: { label: "منتهي", tone: "warn" },
+  locked: { label: "مقفل", tone: "danger" },
+};
 
 /**
  * Platform-operator console: adjust the USD→IQD rate and manually activate a
@@ -24,8 +31,23 @@ export function AdminBilling() {
   const [plan, setPlan] = useState<PlanId>("super");
   const [period, setPeriod] = useState<BillingPeriod>("annual");
   const [actBusy, setActBusy] = useState(false);
+  const [clinics, setClinics] = useState<AdminClinic[]>([]);
+  const [clinicsBusy, setClinicsBusy] = useState(true);
 
-  useEffect(() => { void getUsdRate().then((r) => setRate(String(r))); }, []);
+  const loadClinics = async () => {
+    setClinicsBusy(true);
+    try { setClinics(await adminListClinics()); }
+    catch (e) { toast.error("تعذّر جلب العيادات", e instanceof Error ? e.message : undefined); }
+    finally { setClinicsBusy(false); }
+  };
+
+  useEffect(() => { void getUsdRate().then((r) => setRate(String(r))); void loadClinics(); }, []);
+
+  const pickClinic = (c: AdminClinic) => {
+    playTap();
+    if (c.email) setEmail(c.email);
+    document.getElementById("manual-activation")?.scrollIntoView({ behavior: "smooth", block: "center" });
+  };
 
   if (!isPlatformAdmin(user?.email)) {
     return (
@@ -55,6 +77,7 @@ export function AdminBilling() {
       playSuccess();
       toast.success("تم التفعيل يدوياً", `${PLANS.find((p) => p.id === plan)?.name} · ${period === "annual" ? "سنوي" : "شهري"}`);
       setEmail("");
+      void loadClinics();
     } catch (e) { playWarning(); toast.error("تعذّر التفعيل", e instanceof Error ? e.message : undefined); }
     finally { setActBusy(false); }
   };
@@ -70,6 +93,47 @@ export function AdminBilling() {
           <p className="text-sm text-ink-muted">إدارة الاشتراكات وسعر الصرف — لمشغّل المنصّة.</p>
         </div>
       </div>
+
+      {/* Clinics list */}
+      <section className="mb-5 rounded-3xl border border-line bg-surface-1 p-5 shadow-card">
+        <div className="mb-3 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="grid h-9 w-9 place-items-center rounded-xl bg-brand-50 text-brand-600 dark:bg-brand-500/15"><Building2 size={18} /></span>
+            <h2 className="font-display font-bold text-ink">العيادات ({clinicsBusy ? "…" : formatNum(clinics.length)})</h2>
+          </div>
+          <button onClick={() => { playTap(); void loadClinics(); }} aria-label="تحديث" className="grid h-9 w-9 place-items-center rounded-full text-ink-muted transition hover:bg-surface-2 hover:text-ink"><RefreshCw size={16} /></button>
+        </div>
+        {clinicsBusy ? (
+          <div className="space-y-2">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-14 rounded-2xl" />)}</div>
+        ) : clinics.length === 0 ? (
+          <p className="py-6 text-center text-sm text-ink-subtle">لا توجد عيادات بعد.</p>
+        ) : (
+          <div className="space-y-2">
+            {clinics.map((c) => {
+              const meta = STATUS_META[c.status] ?? STATUS_META.trialing;
+              const planName = PLANS.find((p) => p.id === c.plan)?.name;
+              return (
+                <div key={c.clinicId} className="flex flex-wrap items-center gap-3 rounded-2xl border border-line bg-surface-1 p-3">
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate font-semibold text-ink">{c.clinicName || c.email || "—"}</p>
+                    <p className="flex items-center gap-2 truncate text-xs text-ink-muted">
+                      {c.email && <span dir="ltr" className="truncate">{c.email}</span>}
+                      <span className="inline-flex items-center gap-0.5"><Users size={11} /> {formatNum(c.members)}</span>
+                    </p>
+                  </div>
+                  <div className="flex flex-col items-end gap-0.5">
+                    <Badge tone={meta.tone}>{meta.label}{planName && c.status === "active" ? ` · ${planName}` : ""}</Badge>
+                    {(c.status === "active" || c.status === "trialing") && c.daysLeft > 0 && (
+                      <span className="text-2xs text-ink-subtle">باقي {formatNum(c.daysLeft)} يوم</span>
+                    )}
+                  </div>
+                  <Button size="sm" variant="secondary" onClick={() => pickClinic(c)}>فعّل / مدّد</Button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
 
       {/* Exchange rate */}
       <section className="mb-5 rounded-3xl border border-line bg-surface-1 p-5 shadow-card">
@@ -90,7 +154,7 @@ export function AdminBilling() {
       </section>
 
       {/* Manual cash activation */}
-      <section className="rounded-3xl border border-line bg-surface-1 p-5 shadow-card">
+      <section id="manual-activation" className="rounded-3xl border border-line bg-surface-1 p-5 shadow-card">
         <div className="mb-3 flex items-center gap-2">
           <span className="grid h-9 w-9 place-items-center rounded-xl bg-success-50 text-success-600 dark:bg-success-500/15"><Wallet size={18} /></span>
           <h2 className="font-display font-bold text-ink">تفعيل يدوي (دفع كاش)</h2>
