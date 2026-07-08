@@ -26,7 +26,7 @@ as $$
     'ayoubabood2004@gmail.com'
   ), false);
 $$;
-revoke all on function is_platform_admin() from anon;
+revoke all on function is_platform_admin() from public, anon;
 grant execute on function is_platform_admin() to authenticated;
 
 -- --- live app config (USD rate…) --------------------------------------------
@@ -57,7 +57,7 @@ begin
   insert into app_config (key, value, updated_at) values ('usd_rate', p_rate::text, now())
     on conflict (key) do update set value = excluded.value, updated_at = now();
 end $$;
-revoke all on function set_usd_rate(numeric) from anon;
+revoke all on function set_usd_rate(numeric) from public, anon;
 grant execute on function set_usd_rate(numeric) to authenticated;
 
 -- --- manual (cash) activation ------------------------------------------------
@@ -86,7 +86,7 @@ begin
          was_subscriber = true, updated_at = now()
    where clinic_id = v_clinic;
 end $$;
-revoke all on function admin_activate_subscription(text, text, text, int) from anon;
+revoke all on function admin_activate_subscription(text, text, text, int) from public, anon;
 grant execute on function admin_activate_subscription(text, text, text, int) to authenticated;
 
 -- --- list every clinic + its subscription (for the operator console) ---------
@@ -118,5 +118,5 @@ begin
   left join subscriptions  s  on s.clinic_id  = c.clinic_id
   order by cp.clinic_name nulls last;
 end $$;
-revoke all on function admin_list_subscriptions() from anon;
+revoke all on function admin_list_subscriptions() from public, anon;
 grant execute on function admin_list_subscriptions() to authenticated;

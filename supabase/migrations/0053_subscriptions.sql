@@ -86,7 +86,7 @@ begin
   return r;
 end $$;
 
-revoke all on function get_or_init_subscription() from anon;
+revoke all on function get_or_init_subscription() from public, anon;
 grant execute on function get_or_init_subscription() to authenticated;
 
 -- ---------------------------------------------------------------------------
@@ -117,5 +117,5 @@ begin
 end $$;
 
 -- Lock this down: only the service role (Edge Functions) may activate paid time.
-revoke all on function apply_subscription_payment(uuid, text, text, int) from anon, authenticated;
+revoke all on function apply_subscription_payment(uuid, text, text, int) from public, anon, authenticated;
 grant execute on function apply_subscription_payment(uuid, text, text, int) to service_role;
