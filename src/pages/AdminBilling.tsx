@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ShieldCheck, Coins, Wallet, ArrowLeft, Lock, Building2, RefreshCw, Users } from "lucide-react";
+import { ShieldCheck, Coins, Wallet, ArrowLeft, Lock, Building2, RefreshCw, Users, Sparkles, XCircle } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
-import { isPlatformAdmin, getUsdRate, setUsdRate, adminActivate, adminListClinics, type AdminClinic } from "@/lib/platformAdmin";
+import { isPlatformAdmin, getUsdRate, setUsdRate, adminActivate, adminGrantTrial, adminCancelSubscription, adminListClinics, type AdminClinic } from "@/lib/platformAdmin";
 import { PLANS, usdToIqd, priceUsd, type BillingPeriod, type PlanId } from "@/lib/plans";
 import { Button, Badge, Skeleton, useToast } from "@/components/ui";
 import { money, formatNum, cn } from "@/lib/utils";
@@ -47,6 +47,35 @@ export function AdminBilling() {
     playTap();
     if (c.email) setEmail(c.email);
     document.getElementById("manual-activation")?.scrollIntoView({ behavior: "smooth", block: "center" });
+  };
+
+  // Per-clinic row actions: grant a fresh 14-day trial, or cancel the subscription.
+  const [rowBusy, setRowBusy] = useState<string | null>(null);
+
+  const grantTrial = async (c: AdminClinic) => {
+    if (!c.email) { toast.error("لا يوجد بريد لهذه العيادة"); return; }
+    playTap();
+    setRowBusy(c.clinicId);
+    try {
+      await adminGrantTrial(c.email, 14);
+      playSuccess();
+      toast.success("تم منح تجربة 14 يوم", c.clinicName || c.email);
+      void loadClinics();
+    } catch (e) { playWarning(); toast.error("تعذّر منح التجربة", e instanceof Error ? e.message : undefined); }
+    finally { setRowBusy(null); }
+  };
+
+  const cancelSub = async (c: AdminClinic) => {
+    if (!c.email) { toast.error("لا يوجد بريد لهذه العيادة"); return; }
+    if (!window.confirm(`إلغاء اشتراك «${c.clinicName || c.email}»؟\nستنتهي مدّته فوراً (تبقى القراءة فقط إن كان قد دفع سابقاً).`)) return;
+    setRowBusy(c.clinicId);
+    try {
+      await adminCancelSubscription(c.email);
+      playSuccess();
+      toast.success("تم إلغاء الاشتراك", c.clinicName || c.email);
+      void loadClinics();
+    } catch (e) { playWarning(); toast.error("تعذّر الإلغاء", e instanceof Error ? e.message : undefined); }
+    finally { setRowBusy(null); }
   };
 
   if (!isPlatformAdmin(user?.email)) {
@@ -127,7 +156,17 @@ export function AdminBilling() {
                       <span className="text-2xs text-ink-subtle">باقي {formatNum(c.daysLeft)} يوم</span>
                     )}
                   </div>
-                  <Button size="sm" variant="secondary" onClick={() => pickClinic(c)}>فعّل / مدّد</Button>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <Button size="sm" variant="secondary" onClick={() => pickClinic(c)}>فعّل / مدّد</Button>
+                    <Button size="sm" variant="secondary" leftIcon={<Sparkles size={14} />} loading={rowBusy === c.clinicId} onClick={() => grantTrial(c)}>
+                      تجربة ١٤ يوم
+                    </Button>
+                    {(c.status === "active" || c.status === "trialing" || c.wasSubscriber) && (
+                      <Button size="sm" variant="ghost" leftIcon={<XCircle size={14} />} loading={rowBusy === c.clinicId} onClick={() => cancelSub(c)} className="text-danger-600 hover:bg-danger-50 dark:hover:bg-danger-500/10">
+                        إلغاء
+                      </Button>
+                    )}
+                  </div>
                 </div>
               );
             })}

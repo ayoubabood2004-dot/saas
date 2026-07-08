@@ -4,7 +4,7 @@
 // in sync with is_platform_admin() there.
 // ============================================================================
 import { sb } from "./clinicSync";
-import { activateSubscription, statusOf, type SubStatus } from "./subscription";
+import { activateSubscription, statusOf, _debugSetState, type SubStatus } from "./subscription";
 import { DEFAULT_USD_RATE, periodMonths, type BillingPeriod, type PlanId } from "./plans";
 
 /** Operator accounts. EDIT to add/rotate — must match is_platform_admin() in SQL. */
@@ -54,6 +54,32 @@ export async function adminActivate(email: string, plan: PlanId, period: Billing
   }
   // Demo: no server → activate the local (single) subscription for testing.
   activateSubscription(plan, period, months);
+}
+
+/** Admin: grant / reset a free trial (full access, no payment). Default 14 days. */
+export async function adminGrantTrial(email: string, days = 14): Promise<void> {
+  const client = sb();
+  if (client) {
+    const { error } = await client.rpc("admin_grant_trial", { p_email: email.trim(), p_days: days });
+    if (error) throw new Error(error.message);
+    return;
+  }
+  // Demo: no server → put the local subscription into a fresh trial for testing.
+  _debugSetState("trialing");
+}
+
+/** Admin: cancel a subscription — end the paid window now. A clinic that paid
+ *  before keeps READ-ONLY access; one that never paid falls back to its trial /
+ *  lock state. Reversible via activate / grant-trial. */
+export async function adminCancelSubscription(email: string): Promise<void> {
+  const client = sb();
+  if (client) {
+    const { error } = await client.rpc("admin_cancel_subscription", { p_email: email.trim() });
+    if (error) throw new Error(error.message);
+    return;
+  }
+  // Demo: no server → expire the local subscription for testing.
+  _debugSetState("expired");
 }
 
 /* ------------------------------ clinics list ----------------------------- */
