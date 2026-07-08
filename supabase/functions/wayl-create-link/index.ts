@@ -82,6 +82,10 @@ Deno.serve(async (req) => {
   const amountIqd = Math.max(1000, Math.round(usd * RATE));
   const referenceId = crypto.randomUUID();
 
+  // A human label for the checkout line — Wayl shows it on the payment page.
+  const planName: Record<string, string> = { basic: "العادية", advanced: "المطورة", super: "السوبر" };
+  const lineLabel = `اشتراك doctorVet — الباقة ${planName[plan] ?? plan} (${period === "annual" ? "سنوي" : "شهري"})`;
+
   // 3) Record the pending order (trusted amount/clinic live here, not in the client).
   const { error: insErr } = await admin.from("billing_orders").insert({
     reference_id: referenceId, clinic_id: clinicId, plan, period, months,
@@ -98,6 +102,10 @@ Deno.serve(async (req) => {
       referenceId,
       total: amountIqd,
       currency: "IQD",
+      // A single line item whose amount equals `total`. Wayl rejects links with
+      // "missing fields" when no breakdown is supplied, and requires the sum of
+      // line items to equal the total when present — so one item = the total.
+      lineItem: [{ label: lineLabel, amount: amountIqd, type: "increase" }],
       customParameter: `${clinicId}|${plan}|${period}|${months}`,
       webhookUrl: `${SUPABASE_URL}/functions/v1/wayl-webhook`,
       webhookSecret: WEBHOOK_SECRET,
@@ -108,7 +116,11 @@ Deno.serve(async (req) => {
   const waylBody = await waylRes.json().catch(() => ({}));
   if (!waylRes.ok || !waylBody?.data?.url) {
     await admin.from("billing_orders").update({ status: "failed" }).eq("reference_id", referenceId);
-    return json({ error: "wayl_failed", detail: waylBody?.message ?? `HTTP ${waylRes.status}` }, 502);
+    // Surface Wayl's field-level errors too (its `message` alone is often the
+    // generic "Whoops, missing fields"), so the exact culprit is visible.
+    const fields = waylBody?.errors ? ` — ${JSON.stringify(waylBody.errors)}` : "";
+    const detail = `${waylBody?.message ?? `HTTP ${waylRes.status}`}${fields}`;
+    return json({ error: "wayl_failed", detail }, 502);
   }
 
   await admin.from("billing_orders").update({ wayl_id: waylBody.data.id }).eq("reference_id", referenceId);
