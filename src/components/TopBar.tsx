@@ -19,6 +19,7 @@ import {
   MessageCircle,
   Briefcase,
   BarChart3,
+  Sparkles,
 } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { setLang, type Lang } from "@/i18n";
@@ -81,6 +82,7 @@ export function TopBar({ mobileOnly = false, minimal = false }: { mobileOnly?: b
         { to: "/campaigns", icon: MessageCircle, label: t("nav.campaigns", "WhatsApp Campaigns") },
         { to: "/staff", icon: Briefcase, label: t("nav.staff", "Staff Management"), show: can("manageStaff") },
         { to: "/scan", icon: ScanLine, label: t("nav.scan") },
+        { to: "/subscribe", icon: Sparkles, label: t("nav.subscribe", "الاشتراك") },
       ].filter((it) => it.show !== false)
     : [];
 

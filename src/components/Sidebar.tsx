@@ -18,9 +18,14 @@ import {
   MessageCircle,
   Briefcase,
   BarChart3,
+  Sparkles,
+  Crown,
+  ArrowLeft,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { usePermissions } from "@/hooks/usePermissions";
+import { useSubscription } from "@/lib/subscription";
+import { formatNum } from "@/lib/utils";
 import { setLang, type Lang } from "@/i18n";
 import { playTap } from "@/lib/sounds";
 import { prefetchHandlers, prefetchAllIdle } from "@/lib/routePrefetch";
@@ -135,6 +140,9 @@ export function Sidebar() {
         })}
       </nav>
 
+      {/* Subscription status — always visible so paying is one tap away. */}
+      <SubscriptionNavCard />
+
       {/* Profile card + actions */}
       <div className="mt-2">
         <div className="flex items-center gap-3 rounded-2xl border border-line bg-surface-2 p-3">
@@ -180,4 +188,64 @@ export function Sidebar() {
       </div>
     </aside>
   );
+}
+
+/**
+ * Subscription status card in the sidebar — makes upgrading discoverable so a
+ * trialing clinic never has to hunt for a URL. Trial → an eye-catching upgrade
+ * card; active → a subtle "days left"; expired → a renew prompt. One tap → the
+ * subscribe screen. Hidden while blocked (the whole app is already the gate).
+ */
+function SubscriptionNavCard() {
+  const navigate = useNavigate();
+  const { status, trialDaysLeft, periodDaysLeft } = useSubscription();
+
+  if (status === "trialing") {
+    return (
+      <button
+        onClick={() => { playTap(); navigate("/subscribe"); }}
+        className="mt-3 flex w-full items-center gap-2.5 rounded-2xl bg-brand-grad p-3 text-start text-white shadow-soft transition hover:shadow-raised"
+      >
+        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-white/20"><Sparkles size={17} /></span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-sm font-bold">اشترك الآن</span>
+          <span className="block text-2xs text-white/85">تجربة مجانية · باقي {formatNum(trialDaysLeft)} يوم</span>
+        </span>
+        <ArrowLeft size={16} className="shrink-0 text-white/80" />
+      </button>
+    );
+  }
+
+  if (status === "expired") {
+    return (
+      <button
+        onClick={() => { playTap(); navigate("/subscribe"); }}
+        className="mt-3 flex w-full items-center gap-2.5 rounded-2xl border border-warn-300 bg-warn-50 p-3 text-start text-warn-800 transition hover:bg-warn-100 dark:border-warn-500/40 dark:bg-warn-500/10 dark:text-warn-200"
+      >
+        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-warn-500/20"><Sparkles size={17} /></span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-sm font-bold">انتهى الاشتراك</span>
+          <span className="block text-2xs opacity-80">جدّد للمتابعة</span>
+        </span>
+        <ArrowLeft size={16} className="shrink-0 opacity-70" />
+      </button>
+    );
+  }
+
+  if (status === "active") {
+    return (
+      <button
+        onClick={() => { playTap(); navigate("/subscribe"); }}
+        className="mt-3 flex w-full items-center gap-2.5 rounded-2xl border border-line bg-surface-2 p-3 text-start transition hover:bg-surface-3"
+      >
+        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-success-50 text-success-600 dark:bg-success-500/15"><Crown size={17} /></span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-sm font-bold text-ink">اشتراكك فعّال</span>
+          <span className="block text-2xs text-ink-subtle">باقي {formatNum(periodDaysLeft)} يوم</span>
+        </span>
+      </button>
+    );
+  }
+
+  return null;
 }

@@ -70,7 +70,8 @@
     "campaigns": "WhatsApp Campaigns",
     "reports": "Reports & Analytics",
     "staff": "Staff Management",
-    "activity": "Activity log"
+    "activity": "Activity log",
+    "subscribe": "Subscription"
   },
   "campaigns": {
     "title": "WhatsApp Campaigns",
