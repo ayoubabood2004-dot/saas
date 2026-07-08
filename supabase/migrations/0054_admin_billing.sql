@@ -112,7 +112,7 @@ begin
          s.plan, s.period, s.trial_ends_at, s.current_period_end,
          coalesce(s.was_subscriber, false),
          c.members
-  from (select clinic_id, count(*)::int as members from memberships group by clinic_id) c
+  from (select m.clinic_id, count(*)::int as members from memberships m group by m.clinic_id) c
   left join clinic_prefs   cp on cp.clinic_id = c.clinic_id
   left join auth.users     u  on u.id         = c.clinic_id
   left join subscriptions  s  on s.clinic_id  = c.clinic_id
