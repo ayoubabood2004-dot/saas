@@ -9,6 +9,7 @@ import { CommandPaletteProvider } from "@/components/CommandPaletteProvider";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { RoleSelect } from "@/components/RoleSelect";
 import { SubscriptionGate } from "@/components/SubscriptionGate";
+import { FeatureGate } from "@/components/FeatureGate";
 import { useSubscription } from "@/lib/subscription";
 import { Spinner } from "@/components/ui";
 
@@ -154,10 +155,10 @@ function Shell() {
             <Route path="/records" element={<Protected><ClinicRecords /></Protected>} />
             <Route path="/new-case" element={<Protected><NewCase /></Protected>} />
             <Route path="/inventory" element={<Protected><ClinicOnly><Inventory /></ClinicOnly></Protected>} />
-            <Route path="/retail" element={<Protected><ClinicOnly><RetailSales /></ClinicOnly></Protected>} />
-            <Route path="/campaigns" element={<Protected><ClinicOnly><WhatsAppCampaigns /></ClinicOnly></Protected>} />
+            <Route path="/retail" element={<Protected><ClinicOnly><FeatureGate feature="pos"><RetailSales /></FeatureGate></ClinicOnly></Protected>} />
+            <Route path="/campaigns" element={<Protected><ClinicOnly><FeatureGate feature="whatsapp"><WhatsAppCampaigns /></FeatureGate></ClinicOnly></Protected>} />
             <Route path="/staff" element={<Protected><ClinicOnly><StaffManagement /></ClinicOnly></Protected>} />
-            <Route path="/reports" element={<Protected><ClinicOnly><AnalyticsHub /></ClinicOnly></Protected>} />
+            <Route path="/reports" element={<Protected><ClinicOnly><FeatureGate feature="reports"><AnalyticsHub /></FeatureGate></ClinicOnly></Protected>} />
             <Route path="/activity" element={<Protected><ClinicOnly><ActivityLog /></ClinicOnly></Protected>} />
             <Route path="/settings" element={<Protected><Settings /></Protected>} />
             <Route path="/subscribe" element={<Protected><Subscribe /></Protected>} />

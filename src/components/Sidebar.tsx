@@ -25,6 +25,7 @@ import {
 import { useAuth } from "@/contexts/AuthContext";
 import { usePermissions } from "@/hooks/usePermissions";
 import { useSubscription } from "@/lib/subscription";
+import { useEntitlements } from "@/lib/entitlements";
 import { formatNum } from "@/lib/utils";
 import { setLang, type Lang } from "@/i18n";
 import { playTap } from "@/lib/sounds";
@@ -45,6 +46,7 @@ export function Sidebar() {
   const location = useLocation();
   const palette = useCommandPalette();
   const { can } = usePermissions();
+  const { has } = useEntitlements();
   const otherRole = activeRole === "clinic" ? "owner" : "clinic";
 
   // Once idle after first paint, eagerly warm EVERY route's JS chunk AND the
@@ -66,9 +68,9 @@ export function Sidebar() {
     { to: "/reception", icon: CalendarDays, label: t("reception.title") },
     { to: "/records", icon: ClipboardList, label: t("records.title") },
     { to: "/inventory", icon: Boxes, label: t("nav.inventory", "Inventory"), show: can("manageInventory") },
-    { to: "/retail", icon: Store, label: t("nav.retail", "Retail & Sales"), show: can("processSales") },
-    { to: "/reports", icon: BarChart3, label: t("nav.reports", "التقارير"), show: can("viewReports") },
-    { to: "/campaigns", icon: MessageCircle, label: t("nav.campaigns", "WhatsApp Campaigns") },
+    { to: "/retail", icon: Store, label: t("nav.retail", "Retail & Sales"), show: can("processSales") && has("pos") },
+    { to: "/reports", icon: BarChart3, label: t("nav.reports", "التقارير"), show: can("viewReports") && has("reports") },
+    { to: "/campaigns", icon: MessageCircle, label: t("nav.campaigns", "WhatsApp Campaigns"), show: has("whatsapp") },
     { to: "/staff", icon: Briefcase, label: t("nav.staff", "Staff Management"), show: can("manageStaff") },
     { to: "/scan", icon: ScanLine, label: t("nav.scan") },
     { to: "/activity", icon: History, label: t("nav.activity", "سجل الحركات"), show: can("manageSettings") },

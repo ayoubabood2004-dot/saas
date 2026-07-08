@@ -33,6 +33,7 @@ import { BranchSwitcher } from "@/components/BranchSwitcher";
 import { branchStore } from "@/lib/branchStore";
 import { useCommandPalette } from "@/components/CommandPaletteProvider";
 import { usePermissions } from "@/hooks/usePermissions";
+import { useEntitlements } from "@/lib/entitlements";
 import { cn } from "@/lib/utils";
 
 export function TopBar({ mobileOnly = false, minimal = false }: { mobileOnly?: boolean; minimal?: boolean }) {
@@ -42,6 +43,7 @@ export function TopBar({ mobileOnly = false, minimal = false }: { mobileOnly?: b
   const location = useLocation();
   const palette = useCommandPalette();
   const { can } = usePermissions();
+  const { has } = useEntitlements();
   const [sound, setSound] = useState(isSoundEnabled());
   const [menuOpen, setMenuOpen] = useState(false);
   const otherRole = activeRole === "clinic" ? "owner" : "clinic";
@@ -77,9 +79,9 @@ export function TopBar({ mobileOnly = false, minimal = false }: { mobileOnly?: b
         { to: "/reception", icon: CalendarDays, label: t("reception.title") },
         { to: "/records", icon: ClipboardList, label: t("records.title") },
         { to: "/inventory", icon: Boxes, label: t("nav.inventory", "Inventory"), show: can("manageInventory") },
-        { to: "/retail", icon: Store, label: t("nav.retail", "Retail & Sales"), show: can("processSales") },
-        { to: "/reports", icon: BarChart3, label: t("nav.reports", "التقارير"), show: can("viewReports") },
-        { to: "/campaigns", icon: MessageCircle, label: t("nav.campaigns", "WhatsApp Campaigns") },
+        { to: "/retail", icon: Store, label: t("nav.retail", "Retail & Sales"), show: can("processSales") && has("pos") },
+        { to: "/reports", icon: BarChart3, label: t("nav.reports", "التقارير"), show: can("viewReports") && has("reports") },
+        { to: "/campaigns", icon: MessageCircle, label: t("nav.campaigns", "WhatsApp Campaigns"), show: has("whatsapp") },
         { to: "/staff", icon: Briefcase, label: t("nav.staff", "Staff Management"), show: can("manageStaff") },
         { to: "/scan", icon: ScanLine, label: t("nav.scan") },
         { to: "/subscribe", icon: Sparkles, label: t("nav.subscribe", "الاشتراك") },

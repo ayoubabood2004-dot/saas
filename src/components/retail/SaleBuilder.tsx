@@ -13,6 +13,7 @@ import { getServiceCatalog } from "@/lib/services";
 import { computePromotions, getPromoRules } from "@/lib/promotions";
 import { useBarcodeScanner } from "@/hooks/useBarcodeScanner";
 import { useAuth } from "@/contexts/AuthContext";
+import { useEntitlements } from "@/lib/entitlements";
 import { Button, useToast } from "@/components/ui";
 import { ServiceQuickSelect } from "./ServiceQuickSelect";
 import { MedSaleForm } from "./MedSaleForm";
@@ -94,6 +95,8 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
   const toast = useToast();
   const print = useInvoicePrinter();
   const { user } = useAuth();
+  const { has } = useEntitlements();
+  const canDebt = has("debt"); // البيع بالدين — super plan only (full during trial)
 
   const [cart, setCart] = useState<Line[]>([]);
   const [browseTab, setBrowseTab] = useState<"products" | "services" | "meds">("products");
@@ -906,27 +909,31 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
               )}
             </div>
 
-            {/* ONE obvious choice: pay in full, or pay part and record the rest as debt. */}
-            <div className="grid grid-cols-2 gap-1.5 rounded-xl border border-line bg-surface-2 p-1">
-              <button
-                onClick={exitPartial}
-                className={cn(
-                  "rounded-lg px-2 py-2 text-xs font-bold transition",
-                  !partialUi ? "bg-surface-1 text-success-700 shadow-card dark:text-success-300" : "text-ink-muted hover:text-ink",
-                )}
-              >
-                {t("retail.payFull", "💵 دفع كامل")}
-              </button>
-              <button
-                onClick={enterPartial}
-                className={cn(
-                  "rounded-lg px-2 py-2 text-xs font-bold transition",
-                  partialUi ? "bg-surface-1 text-warn-700 shadow-card dark:text-warn-300" : "text-ink-muted hover:text-ink",
-                )}
-              >
-                {t("retail.payPartial", "🧾 دفع جزئي — الباقي دين")}
-              </button>
-            </div>
+            {/* ONE obvious choice: pay in full, or pay part and record the rest as
+                debt. Credit selling (البيع بالدين) is a super-plan feature — for
+                other plans the toggle is hidden, so every sale is paid in full. */}
+            {canDebt && (
+              <div className="grid grid-cols-2 gap-1.5 rounded-xl border border-line bg-surface-2 p-1">
+                <button
+                  onClick={exitPartial}
+                  className={cn(
+                    "rounded-lg px-2 py-2 text-xs font-bold transition",
+                    !partialUi ? "bg-surface-1 text-success-700 shadow-card dark:text-success-300" : "text-ink-muted hover:text-ink",
+                  )}
+                >
+                  {t("retail.payFull", "💵 دفع كامل")}
+                </button>
+                <button
+                  onClick={enterPartial}
+                  className={cn(
+                    "rounded-lg px-2 py-2 text-xs font-bold transition",
+                    partialUi ? "bg-surface-1 text-warn-700 shadow-card dark:text-warn-300" : "text-ink-muted hover:text-ink",
+                  )}
+                >
+                  {t("retail.payPartial", "🧾 دفع جزئي — الباقي دين")}
+                </button>
+              </div>
+            )}
 
             {payments.map((p, i) => (
               <div key={i} className="flex items-center gap-1.5">

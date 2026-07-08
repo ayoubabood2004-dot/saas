@@ -5,6 +5,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { Store, ShoppingCart, ReceiptText, BarChart3, HandCoins } from "lucide-react";
 import type { Product, Invoice, Species } from "@/types";
 import { useAuth } from "@/contexts/AuthContext";
+import { useEntitlements } from "@/lib/entitlements";
 import { Skeleton } from "@/components/ui";
 import { cn } from "@/lib/utils";
 import { withTimeout } from "@/lib/errors";
@@ -24,6 +25,7 @@ const SPECIES_SET = new Set<string>(["dog", "cat", "horse", "cow", "bird", "rabb
 export function RetailSales() {
   const { t } = useTranslation();
   const { user } = useAuth();
+  const { has } = useEntitlements();
   const clinicId = user?.clinic_id ?? user?.id; // shared workspace id (manager's id for staff)
   const [tab, setTab] = useState<Tab>("sell");
 
@@ -77,10 +79,11 @@ export function RetailSales() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // The debts ledger is a super-plan feature (البيع بالدين) — hidden otherwise.
   const TABS: { id: Tab; label: string; icon: typeof Store }[] = [
     { id: "sell", label: t("retail.newSaleTab", "New sale"), icon: ShoppingCart },
     { id: "invoices", label: t("retail.invoicesTab", "Invoices"), icon: ReceiptText },
-    { id: "debts", label: t("retail.debtsTab", "سجل الديون"), icon: HandCoins },
+    ...(has("debt") ? [{ id: "debts" as Tab, label: t("retail.debtsTab", "سجل الديون"), icon: HandCoins }] : []),
     { id: "reports", label: t("retail.reportsTab", "Reports"), icon: BarChart3 },
   ];
 
