@@ -90,6 +90,29 @@ export interface RetailPrefill { name: string; phone: string; pet: string; petId
  *  lines belong to it and the vaccine list follows its species. */
 interface SalePet { id: string | null; name: string; species: Species | null }
 
+/* --------------------- Draft persistence (walk-in cart) -------------------
+ * The in-progress sale — cart, customer and discount — survives navigating
+ * away and back, so the doctor can go look something up and return without
+ * losing it. Keyed per clinic; cleared on checkout or "New sale". Per-patient
+ * sales (opened with a prefill) are intentionally NOT persisted as a walk-in
+ * draft. */
+interface SaleDraft {
+  cart: Line[]; name: string; phone: string; salePets: SalePet[];
+  discountType: DiscountType; discountValue: string; finalOverride: number | null; cashierId: string | null;
+}
+const saleDraftKey = (clinicId?: string) => `vp_sale_draft_${clinicId ?? "default"}`;
+function loadSaleDraft(clinicId?: string): SaleDraft | null {
+  try { const raw = localStorage.getItem(saleDraftKey(clinicId)); return raw ? (JSON.parse(raw) as SaleDraft) : null; } catch { return null; }
+}
+function saveSaleDraft(clinicId: string | undefined, d: SaleDraft): void {
+  try {
+    const empty = d.cart.length === 0 && !d.name.trim() && !d.phone.trim() && d.salePets.length === 0;
+    if (empty) localStorage.removeItem(saleDraftKey(clinicId));
+    else localStorage.setItem(saleDraftKey(clinicId), JSON.stringify(d));
+  } catch { /* ignore */ }
+}
+function clearSaleDraft(clinicId?: string): void { try { localStorage.removeItem(saleDraftKey(clinicId)); } catch { /* ignore */ } }
+
 export function SaleBuilder({ products, clinicId, onSold, prefill }: { products: Product[]; clinicId?: string; onSold: () => void; prefill?: RetailPrefill | null }) {
   const { t, i18n } = useTranslation();
   const toast = useToast();
@@ -98,17 +121,20 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
   const { has } = useEntitlements();
   const canDebt = has("debt"); // البيع بالدين — super plan only (full during trial)
 
-  const [cart, setCart] = useState<Line[]>([]);
+  // Restore an unfinished walk-in sale (see SaleDraft). Read ONCE on mount.
+  const [draft0] = useState(() => (prefill ? null : loadSaleDraft(clinicId)));
+
+  const [cart, setCart] = useState<Line[]>(draft0?.cart ?? []);
   const [browseTab, setBrowseTab] = useState<"products" | "services" | "meds">("products");
   const [catalog] = useState<ServiceCatalog>(() => getServiceCatalog());
   // Doctor-defined Mix & Match offers (clinic-scoped). Loaded once per sale session.
   const [promoRules] = useState(() => getPromoRules());
   const [query, setQuery] = useState("");
-  const [name, setName] = useState("");
-  const [phone, setPhone] = useState("");
+  const [name, setName] = useState(draft0?.name ?? "");
+  const [phone, setPhone] = useState(draft0?.phone ?? "");
   // Patients attached to this sale. The ACTIVE one receives new medication/vaccine
   // lines; more of the owner's animals can be attached to vaccinate them in one visit.
-  const [salePets, setSalePets] = useState<SalePet[]>([]);
+  const [salePets, setSalePets] = useState<SalePet[]>(draft0?.salePets ?? []);
   const [activePetIdx, setActivePetIdx] = useState(0);
   const activePet: SalePet | null = salePets[Math.min(activePetIdx, salePets.length - 1)] ?? null;
   // "+ حيوان آخر" picker: the clinic's pets, owner's animals surfaced first.
@@ -118,11 +144,11 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
   const searchRef = useRef<HTMLInputElement>(null);
   const [custMatches, setCustMatches] = useState<Customer[]>([]);
   const [custOpen, setCustOpen] = useState(false);
-  const [discountType, setDiscountType] = useState<DiscountType>("percent");
-  const [discountValue, setDiscountValue] = useState("");
+  const [discountType, setDiscountType] = useState<DiscountType>(draft0?.discountType ?? "percent");
+  const [discountValue, setDiscountValue] = useState(draft0?.discountValue ?? "");
   // Doctor-set FINAL price: the total to charge outright. The gap from the subtotal
   // becomes an automatic (approximate) discount. Null = compute the total normally.
-  const [finalOverride, setFinalOverride] = useState<number | null>(null);
+  const [finalOverride, setFinalOverride] = useState<number | null>(draft0?.finalOverride ?? null);
   const [editingTotal, setEditingTotal] = useState(false);
   const [totalDraft, setTotalDraft] = useState("");
   // Tracks the subtotal that a manual final price was anchored to, so that
@@ -139,7 +165,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
   // (a manually-typed shortfall still shows the same loud debt panel).
   const [partialMode, setPartialMode] = useState(false);
   // Optional cashier / sales rep (staff id) — attached to the invoice for reports.
-  const [cashierId, setCashierId] = useState<string | null>(null);
+  const [cashierId, setCashierId] = useState<string | null>(draft0?.cashierId ?? null);
   const [busy, setBusy] = useState(false);
   const [flash, setFlash] = useState<string | null>(null);
   const [done, setDone] = useState<{ invoice: Invoice; items: InvoiceItem[] } | null>(null);
@@ -265,6 +291,13 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [subtotal]);
 
+  // Persist the in-progress walk-in sale so it survives leaving and coming back.
+  // (A per-patient sale — prefill — is never saved as a walk-in draft.)
+  useEffect(() => {
+    if (prefill) return;
+    saveSaleDraft(clinicId, { cart, name, phone, salePets, discountType, discountValue, finalOverride, cashierId });
+  }, [prefill, clinicId, cart, name, phone, salePets, discountType, discountValue, finalOverride, cashierId]);
+
   // ---- Payment: full, split, partial (credit), or over-tendered (change due) ----
   const isSplit = payments.length > 1;
   const totalPaid = round2(payments.reduce((s, p) => s + (Number.isFinite(p.amount) ? p.amount : 0), 0));
@@ -374,6 +407,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
   const pickCustomer = (c: Customer) => { setName(c.name); setPhone(c.phone); setCustOpen(false); setCustMatches([]); playTap(); };
 
   const reset = () => {
+    clearSaleDraft(clinicId);
     setCart([]); setQuery(""); setDiscountValue(""); setFinalOverride(null); setEditingTotal(false);
     setDiscountType("percent"); setPayments([{ method: "cash", amount: 0 }]); setPaidEdited(false); setPartialMode(false); setDone(null); setLastPrints(0);
     setCashierId(null); setBrowseTab("products");
@@ -542,6 +576,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
       // sync runs AFTER, time-bounded and non-fatal, so its latency can never freeze
       // the receipt/print UI even if Supabase stalls mid-flow.
       setDone({ invoice, items: invItems });
+      clearSaleDraft(clinicId); // sale is final — drop the saved draft
       onSold();
       // Mirror medication/vaccine lines into each known patient's record —
       // administered dose, scheduled booster (→ reminders), treatment-sheet rows —
