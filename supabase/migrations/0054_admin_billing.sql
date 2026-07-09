@@ -62,20 +62,19 @@ grant execute on function set_usd_rate(numeric) to authenticated;
 
 -- --- manual (cash) activation ------------------------------------------------
 -- Activate a clinic that paid outside Wayl. Resolves the clinic by owner email,
--- then SETS its plan + paid window to exactly `p_months` FROM NOW. Admin-only.
---
--- Deliberately a SET, not an extend: the operator is choosing what this clinic
--- has right now, so switching العادية → المطورة should read "365 days" — not
--- stack onto whatever was left (which made "basic then advanced" show 731 days).
--- (The Wayl webhook path, apply_subscription_payment, still stacks so a customer
--- renewing early never loses remaining days.)
+-- then updates its paid window. Admin-only. Rule:
+--   • SAME plan as before → EXTEND (add the months onto whatever is left), so a
+--     renewal of the same tier accumulates the paid days.
+--   • DIFFERENT plan (or expired) → SET from NOW, so switching العادية → المطورة
+--     reads a clean "365 days" instead of stacking two tiers (the old 731-day bug).
+-- (The Wayl webhook path always stacks — a customer's early renewal keeps its days.)
 create or replace function admin_activate_subscription(p_email text, p_plan text, p_period text, p_months int)
 returns void
 language plpgsql
 security definer
 set search_path = public, auth
 as $$
-declare v_clinic uuid;
+declare v_clinic uuid; v_plan text; v_end timestamptz; v_base timestamptz;
 begin
   if not is_platform_admin() then raise exception 'not_admin'; end if;
   if p_months is null or p_months < 1 then raise exception 'bad_months'; end if;
@@ -84,9 +83,19 @@ begin
   if v_clinic is null then raise exception 'clinic_not_found'; end if;
 
   insert into subscriptions (clinic_id) values (v_clinic) on conflict (clinic_id) do nothing;
+  select plan, current_period_end into v_plan, v_end
+    from subscriptions where clinic_id = v_clinic;
+
+  -- Same plan → build on the remaining window (renewal); else start fresh today.
+  if v_plan is not distinct from p_plan then
+    v_base := greatest(coalesce(v_end, now()), now());
+  else
+    v_base := now();
+  end if;
+
   update subscriptions
      set plan = p_plan, period = p_period,
-         current_period_end = now() + make_interval(months => p_months),
+         current_period_end = v_base + make_interval(months => p_months),
          was_subscriber = true, updated_at = now()
    where clinic_id = v_clinic;
 end $$;
