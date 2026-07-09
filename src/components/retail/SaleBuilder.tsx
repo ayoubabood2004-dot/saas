@@ -125,6 +125,11 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
   const [finalOverride, setFinalOverride] = useState<number | null>(null);
   const [editingTotal, setEditingTotal] = useState(false);
   const [totalDraft, setTotalDraft] = useState("");
+  // Tracks the subtotal that a manual final price was anchored to, so that
+  // adding/removing items afterwards shifts the final price by the SAME delta —
+  // the doctor's discount amount stays fixed and a newly added item is charged
+  // in full, instead of being silently swallowed by the frozen final price.
+  const prevSubtotalRef = useRef(0);
   // Payment allocation — one leg by default (full total), expandable into a split, or
   // reduced below the total to save the sale on credit (دفع آجل).
   const [payments, setPayments] = useState<PaymentSplit[]>([{ method: "cash", amount: 0 }]);
@@ -246,6 +251,19 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
   const discountAmt = Math.max(0, subtotal - total);
   const surchargeAmt = Math.max(0, total - subtotal);
   const profit = total - cost;
+
+  // When the cart changes while a manual final price is active, move the final
+  // price by the same amount the subtotal moved — so the discount/surcharge the
+  // doctor set stays constant and any item added after the price was fixed is
+  // billed at full price (not absorbed into the discount). CRITICAL: without
+  // this, adding a product after setting the final total gives it away for free.
+  useEffect(() => {
+    const prev = prevSubtotalRef.current;
+    prevSubtotalRef.current = subtotal;
+    if (finalOverride == null || subtotal === prev) return;
+    setFinalOverride((fo) => (fo == null ? null : Math.max(0, Math.round(fo + (subtotal - prev)))));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [subtotal]);
 
   // ---- Payment: full, split, partial (credit), or over-tendered (change due) ----
   const isSplit = payments.length > 1;
