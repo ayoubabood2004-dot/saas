@@ -301,12 +301,6 @@ export function ActivityLog() {
         </span>
       </div>
 
-      {restricted && (
-        <div className="mb-4 flex items-center gap-2.5 rounded-2xl border border-warn-200 bg-warn-50 px-4 py-3 text-sm font-semibold text-warn-800 dark:border-warn-500/30 dark:bg-warn-500/10 dark:text-warn-200">
-          <Lock size={16} className="shrink-0" />
-          {t("act.lockedToday", "تُعرض حركات اليوم فقط — افتح بوضع المدير لرؤية السجل الكامل.")}
-        </div>
-      )}
 
       {/* Search + category filter */}
       <div className="mb-4 space-y-2.5 rounded-2xl border border-line bg-surface-1 p-3">

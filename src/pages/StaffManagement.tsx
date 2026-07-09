@@ -10,7 +10,7 @@ import {
 import { Button, Dialog, useToast, Skeleton } from "@/components/ui";
 import { PhoneInput } from "@/components/PhoneInput";
 import { usePermissions } from "@/hooks/usePermissions";
-import { useOverride } from "@/lib/managerOverride";
+import { useOverride, noteLockedTap } from "@/lib/managerOverride";
 import {
   listStaff, saveStaff, deleteStaff, setStaffStatus, blankStaff,
   STAFF_ROLES, ROLE_LABEL, CAPABILITIES, SENSITIVE_CAPS, presetMap,
@@ -42,6 +42,9 @@ export function StaffManagement() {
   const toast = useToast();
   const { can } = usePermissions();
   const { restricted } = useOverride(); // locked device (no manager session) → view-only
+  // Hidden lock: buttons look normal but silently ignore taps; after a few, a toast explains.
+  const lockedNudge = () => noteLockedTap(() => toast.toast({ tone: "info", title: "مقفل — يُفتح بوضع المدير" }));
+  const guard = (fn: () => void) => { if (restricted) { lockedNudge(); return; } fn(); };
   const [staff, setStaff] = useState<StaffMember[]>([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<StaffMember | null>(null);
@@ -99,24 +102,15 @@ export function StaffManagement() {
           <h1 className="font-display text-2xl font-extrabold text-ink">إدارة الكادر</h1>
           <p className="text-sm text-ink-subtle">فريق العيادة وملفّاتهم الوظيفية وصلاحياتهم.</p>
         </div>
-        {!restricted && (
-          <div className="ms-auto flex items-center gap-2">
-            <Button variant="secondary" leftIcon={<Send size={17} />} onClick={() => { playTap(); setInvitesOpen(true); }}>
-              دعوة موظف
-            </Button>
-            <Button leftIcon={<UserPlus size={18} />} onClick={() => { playTap(); setEditing(blankStaff()); }}>
-              إضافة موظف
-            </Button>
-          </div>
-        )}
-      </div>
-
-      {restricted && (
-        <div className="mb-4 flex items-center gap-2.5 rounded-2xl border border-warn-200 bg-warn-50 px-4 py-3 text-sm font-semibold text-warn-800 dark:border-warn-500/30 dark:bg-warn-500/10 dark:text-warn-200">
-          <Lock size={16} className="shrink-0" />
-          عرض فقط — لا يمكن تعديل الكادر أو صلاحياتهم إلا بوضع المدير.
+        <div className="ms-auto flex items-center gap-2">
+          <Button variant="secondary" leftIcon={<Send size={17} />} onClick={() => guard(() => { playTap(); setInvitesOpen(true); })}>
+            دعوة موظف
+          </Button>
+          <Button leftIcon={<UserPlus size={18} />} onClick={() => guard(() => { playTap(); setEditing(blankStaff()); })}>
+            إضافة موظف
+          </Button>
         </div>
-      )}
+      </div>
 
       {/* KPIs */}
       <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-3">
@@ -173,18 +167,16 @@ export function StaffManagement() {
                 <div className="flex items-center gap-2"><Calendar size={13} className="shrink-0 text-ink-subtle" /> {m.status === "pending" ? "مدعو · لم ينضمّ بعد" : `انضمّ في ${fmtDate(m.joinDate)}`}</div>
               </dl>
 
-              {/* Quick actions — hidden on a guarded device (view-only). */}
-              {!restricted && (
-                <div className="mt-4 flex items-center gap-1.5 border-t border-line pt-3">
-                  <Button size="sm" variant="secondary" className="flex-1" leftIcon={<Pencil size={14} />} onClick={() => { playTap(); setEditing(m); }}>تعديل</Button>
-                  <button onClick={() => onToggle(m)} title={m.status === "active" ? "إيقاف" : "تفعيل"} className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-ink-subtle transition hover:bg-warn-50 hover:text-warn-600 dark:hover:bg-warn-500/15">
-                    {m.status === "active" ? <PauseCircle size={17} /> : <PlayCircle size={17} />}
-                  </button>
-                  <button onClick={() => { playTap(); setDeleting(m); }} title="حذف" className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-ink-subtle transition hover:bg-danger-50 hover:text-danger-600 dark:hover:bg-danger-500/15">
-                    <Trash2 size={16} />
-                  </button>
-                </div>
-              )}
+              {/* Quick actions — on a guarded device they look normal but silently no-op. */}
+              <div className="mt-4 flex items-center gap-1.5 border-t border-line pt-3">
+                <Button size="sm" variant="secondary" className="flex-1" leftIcon={<Pencil size={14} />} onClick={() => guard(() => { playTap(); setEditing(m); })}>تعديل</Button>
+                <button onClick={() => guard(() => onToggle(m))} title={m.status === "active" ? "إيقاف" : "تفعيل"} className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-ink-subtle transition hover:bg-warn-50 hover:text-warn-600 dark:hover:bg-warn-500/15">
+                  {m.status === "active" ? <PauseCircle size={17} /> : <PlayCircle size={17} />}
+                </button>
+                <button onClick={() => guard(() => { playTap(); setDeleting(m); })} title="حذف" className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-ink-subtle transition hover:bg-danger-50 hover:text-danger-600 dark:hover:bg-danger-500/15">
+                  <Trash2 size={16} />
+                </button>
+              </div>
             </motion.div>
           ))}
         </AnimatePresence>

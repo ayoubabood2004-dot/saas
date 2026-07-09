@@ -220,6 +220,15 @@ export function overrideRestricted(): boolean {
   return isDeviceLocked() && !overrideActive();
 }
 
+// Hidden-lock feedback: locked controls look normal and silently ignore input;
+// only after several taps does a small toast reveal WHY nothing happened — so a
+// bystander can't tell at a glance which controls are guarded.
+let lockedTaps = 0;
+export function noteLockedTap(reveal: () => void, threshold = 5): void {
+  lockedTaps++;
+  if (lockedTaps >= threshold) { lockedTaps = 0; reveal(); }
+}
+
 /* ------------------------------ React hook ------------------------------ */
 export function useOverride(): { active: boolean; until: number | null; deviceLocked: boolean; restricted: boolean } {
   useSyncExternalStore(
