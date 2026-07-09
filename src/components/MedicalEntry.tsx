@@ -11,6 +11,8 @@ import type { Species, PatientCondition, MedicalAssessment } from "@/types";
 import { MED_CATALOG, getClinicMeds, hydrateMeds } from "@/lib/meds";
 import { VACCINE_CATALOG, BUILTIN_VACCINES, getClinicVaccines, hydrateVaccines } from "@/lib/vaccines";
 import { listStaff, ROLE_LABEL, type StaffMember } from "@/lib/staff";
+import { DiagnosisPicker } from "@/components/DiagnosisPicker";
+import { summarizeDiagnoses, type Diagnosis } from "@/lib/diagnoses";
 import { Button, useToast } from "@/components/ui";
 import { cn, uid, dateLocale } from "@/lib/utils";
 import { playTap, playSuccess } from "@/lib/sounds";
@@ -176,6 +178,9 @@ export function MedicalEntry({
   // Per-visit clinical assessment — attached to the patient's medical record on save.
   const [condition, setCondition] = useState<PatientCondition | null>(null);
   const [notes, setNotes] = useState("");
+  // Structured clinical diagnoses (by body system + severity). Folded into the
+  // saved assessment note as a tidy summary line.
+  const [diagnoses, setDiagnoses] = useState<Diagnosis[]>([]);
   // Who administered this entry. Defaults to the signed-in vet; DoctorSelect fills the
   // option list from the clinic's real staff and always keeps this value selectable.
   const [doctor, setDoctor] = useState<string>(defaultDoctor ?? "");
@@ -196,18 +201,21 @@ export function MedicalEntry({
   const [busy, setBusy] = useState(false);
   // Saveable when there's an added entry, a configured-but-unadded one, OR an assessment.
   const pendingCount = sheet.length + (hasPending ? 1 : 0);
-  const canSave = pendingCount > 0 || !!condition || notes.trim().length > 0;
+  const canSave = pendingCount > 0 || !!condition || notes.trim().length > 0 || diagnoses.length > 0;
   const commit = async () => {
     if (busy) return;
     // Flush the configured-but-unadded medication/vaccine so a single Save saves it too.
     const pending = pendingFlush.current?.() ?? null;
     const entries = pending ? [pending, ...sheet] : sheet; // pending = the most-recent add
-    if (entries.length === 0 && !condition && notes.trim().length === 0) return;
+    if (entries.length === 0 && !condition && notes.trim().length === 0 && diagnoses.length === 0) return;
     setBusy(true);
     try {
-      await onCommit?.(entries.slice().reverse(), { condition, notes: notes.trim() }, doctor || undefined); // committed in add-order
+      // Prepend the structured diagnoses as a tidy summary line on the note.
+      const dxLine = diagnoses.length ? `🩺 التشخيص: ${summarizeDiagnoses(diagnoses)}` : "";
+      const finalNotes = [dxLine, notes.trim()].filter(Boolean).join("\n\n");
+      await onCommit?.(entries.slice().reverse(), { condition, notes: finalNotes }, doctor || undefined); // committed in add-order
       toast.success(t("medentry.savedToast", "Saved to the patient's record"));
-      setSheet([]); setCondition(null); setNotes(""); setHasPending(false); pendingFlush.current = null;
+      setSheet([]); setCondition(null); setNotes(""); setDiagnoses([]); setHasPending(false); pendingFlush.current = null;
     } catch (error) {
       // Surface the exact backend error to the console for diagnosis, then keep
       // the draft so nothing the doctor typed is lost.
@@ -292,6 +300,15 @@ export function MedicalEntry({
               );
             })}
           </div>
+        </div>
+
+        {/* Structured diagnosis (التشخيص) — pick by body system, grade severity */}
+        <div>
+          <div className="mb-2 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-ink-muted">
+            <ClipboardList size={14} className="text-brand-600" /> {t("medentry.diagnosis", "التشخيص")}
+            <span className="text-2xs font-normal normal-case text-ink-subtle">· {t("medentry.optional", "optional")}</span>
+          </div>
+          <DiagnosisPicker value={diagnoses} onChange={setDiagnoses} />
         </div>
 
         {/* Clinical Notes (ملاحظات طبية) */}
