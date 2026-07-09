@@ -291,12 +291,14 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [subtotal]);
 
-  // Persist the in-progress walk-in sale so it survives leaving and coming back.
-  // (A per-patient sale — prefill — is never saved as a walk-in draft.)
+  // Persist the in-progress sale so it survives leaving and coming back — for a
+  // walk-in AND for a sale started from a case record (the prefill's customer /
+  // pet get saved too, so navigating away no longer drops them). A FRESH prefill
+  // entry still starts clean (see draft0's load guard); this only saves what the
+  // sale currently holds.
   useEffect(() => {
-    if (prefill) return;
     saveSaleDraft(clinicId, { cart, name, phone, salePets, discountType, discountValue, finalOverride, cashierId });
-  }, [prefill, clinicId, cart, name, phone, salePets, discountType, discountValue, finalOverride, cashierId]);
+  }, [clinicId, cart, name, phone, salePets, discountType, discountValue, finalOverride, cashierId]);
 
   // ---- Payment: full, split, partial (credit), or over-tendered (change due) ----
   const isSplit = payments.length > 1;
