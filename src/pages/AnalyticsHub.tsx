@@ -20,6 +20,7 @@ import { loadAnalyticsSnap, analyticsKey, type AnalyticsSnap } from "@/lib/prefe
 import { repo } from "@/lib/repo";
 import { useAuth } from "@/contexts/AuthContext";
 import { usePermissions } from "@/hooks/usePermissions";
+import { useOverride } from "@/lib/managerOverride";
 import { useToast, Skeleton, Button } from "@/components/ui";
 import { money, formatNum, cn, dateLocale } from "@/lib/utils";
 import { dueOf, isDebt, paidOf } from "@/lib/debt";
@@ -129,6 +130,7 @@ export function AnalyticsHub() {
   const { t } = useTranslation();
   const { user } = useAuth();
   const { can, role } = usePermissions();
+  const { restricted } = useOverride(); // locked device (no manager session) → today only
   const toast = useToast();
   const canProfit = can("viewProfits");
 
@@ -189,7 +191,18 @@ export function AnalyticsHub() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.clinic_id, user?.id]);
 
+  // On a guarded (locked) device with no manager session, the reports are pinned
+  // to TODAY — historical figures stay hidden until someone enters the PIN. The
+  // date controls are disabled below; this keeps the window itself on today even
+  // if a stale custom range was set before the device was locked.
+  useEffect(() => {
+    if (!restricted) return;
+    const iso = localISO(new Date());
+    setFrom(iso); setTo(iso); setPreset("today");
+  }, [restricted]);
+
   const applyPreset = (p: RangeKey) => {
+    if (restricted) return; // date is locked to today
     playTap();
     const now = new Date();
     const back = (n: number) => { const d = new Date(now); d.setDate(d.getDate() - n); return localISO(d); };
@@ -660,19 +673,26 @@ export function AnalyticsHub() {
       <div className="mb-4 space-y-2.5 rounded-2xl border border-line bg-surface-1 p-3">
         <div className="flex flex-wrap items-center gap-2">
           <span className="flex items-center gap-1.5 text-xs font-bold text-ink-muted"><CalendarRange size={15} className="text-brand-600" /> {t("rpt.period", "الفترة")}</span>
-          <div className="flex flex-wrap gap-1.5">
-            {RANGES.map((r) => (
-              <button key={r.id} onClick={() => applyPreset(r.id)}
-                className={cn("rounded-full px-3.5 py-1.5 text-sm font-semibold transition", preset === r.id ? "bg-brand-600 text-white shadow-soft" : "bg-surface-2 text-ink-muted hover:text-ink")}>
-                {r.label}
-              </button>
-            ))}
-          </div>
+          {restricted ? (
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-warn-50 px-3 py-1.5 text-xs font-bold text-warn-700 dark:bg-warn-500/15 dark:text-warn-300">
+              <Lock size={13} /> {t("rpt.lockedToday", "مقفل على اليوم — افتح بوضع المدير لرؤية باقي التواريخ")}
+            </span>
+          ) : (
+            <div className="flex flex-wrap gap-1.5">
+              {RANGES.map((r) => (
+                <button key={r.id} onClick={() => applyPreset(r.id)}
+                  className={cn("rounded-full px-3.5 py-1.5 text-sm font-semibold transition", preset === r.id ? "bg-brand-600 text-white shadow-soft" : "bg-surface-2 text-ink-muted hover:text-ink")}>
+                  {r.label}
+                </button>
+              ))}
+            </div>
+          )}
           <button
-            onClick={() => { playTap(); setAdvOpen((o) => !o); }}
+            onClick={() => { if (restricted) return; playTap(); setAdvOpen((o) => !o); }}
             aria-expanded={advOpen}
+            disabled={restricted}
             className={cn(
-              "ms-auto inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition",
+              "ms-auto inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-50",
               advOpen || advActiveCount > 0 ? "bg-brand-50 text-brand-700 dark:bg-brand-500/15 dark:text-brand-300" : "bg-surface-2 text-ink-muted hover:text-ink",
             )}
           >
@@ -686,25 +706,26 @@ export function AnalyticsHub() {
           <label className="flex items-center gap-1.5 text-xs text-ink-subtle">
             {t("rpt.fromDate", "من التاريخ")}
             <input
-              ref={fromRef} type="date" dir="ltr" value={from} max={to || undefined}
+              ref={fromRef} type="date" dir="ltr" value={from} max={to || undefined} disabled={restricted}
               onChange={(e) => { if (e.target.value) { setFrom(e.target.value); setPreset("custom"); } }}
-              onClick={(e) => openNativePicker(e.currentTarget)}
-              className="input h-9 cursor-pointer py-0 [color-scheme:light] dark:[color-scheme:dark]"
+              onClick={(e) => { if (!restricted) openNativePicker(e.currentTarget); }}
+              className="input h-9 cursor-pointer py-0 disabled:cursor-not-allowed disabled:opacity-60 [color-scheme:light] dark:[color-scheme:dark]"
             />
           </label>
           <label className="flex items-center gap-1.5 text-xs text-ink-subtle">
             {t("rpt.toDate", "إلى التاريخ")}
             <input
-              type="date" dir="ltr" value={to} min={from || undefined}
+              type="date" dir="ltr" value={to} min={from || undefined} disabled={restricted}
               onChange={(e) => { if (e.target.value) { setTo(e.target.value); setPreset("custom"); } }}
-              onClick={(e) => openNativePicker(e.currentTarget)}
-              className="input h-9 cursor-pointer py-0 [color-scheme:light] dark:[color-scheme:dark]"
+              onClick={(e) => { if (!restricted) openNativePicker(e.currentTarget); }}
+              className="input h-9 cursor-pointer py-0 disabled:cursor-not-allowed disabled:opacity-60 [color-scheme:light] dark:[color-scheme:dark]"
             />
           </label>
           {/* Readable active window (Western numerals); click to open the start calendar */}
           <button
-            type="button" onClick={() => { setPreset("custom"); if (fromRef.current) openNativePicker(fromRef.current); }}
-            className="chip ms-auto bg-brand-50 text-2xs font-semibold text-brand-700 transition hover:bg-brand-100 dark:bg-brand-500/15 dark:text-brand-300 dark:hover:bg-brand-500/25"
+            type="button" disabled={restricted}
+            onClick={() => { if (restricted) return; setPreset("custom"); if (fromRef.current) openNativePicker(fromRef.current); }}
+            className="chip ms-auto bg-brand-50 text-2xs font-semibold text-brand-700 transition hover:bg-brand-100 disabled:cursor-not-allowed dark:bg-brand-500/15 dark:text-brand-300 dark:hover:bg-brand-500/25"
             title={t("rpt.pickDate", "اختر تاريخاً")}
           >
             {shortDate(lo)} — {shortDate(hi)}

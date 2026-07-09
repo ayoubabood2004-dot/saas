@@ -29,7 +29,11 @@ export function usePermissions(): { role: StaffRole; baseRole: StaffRole; can: (
   const { user } = useAuth();
   const baseRole = appRoleToStaffRole(user?.role);
   const ov = useOverride();
-  const role: StaffRole = ov.active ? "manager" : ov.deviceLocked ? "receptionist" : baseRole;
+  // A PIN elevation always grants the full manager view. A device merely LOCKED
+  // (guarded) keeps the user's own role — daily operations and the sidebar icons
+  // stay available; the sensitive AREAS (report history, staff edits, activity
+  // history) are content-locked instead, via `restricted` (see useRestricted).
+  const role: StaffRole = ov.active ? "manager" : baseRole;
   const [overrides, setOverrides] = useState<PermissionMap | null>(() => peekMyPermissions(user?.email));
 
   useEffect(() => {
@@ -40,8 +44,6 @@ export function usePermissions(): { role: StaffRole; baseRole: StaffRole; can: (
     return () => { alive = false; };
   }, [user?.email, role]);
 
-  // A locked device ignores per-staff extras too — the cap must be exactly the
-  // receptionist preset, or a manager's own staff-row grants would leak through.
-  const ignoreOverrides = role === "manager" || (ov.deviceLocked && !ov.active);
+  const ignoreOverrides = role === "manager";
   return { role, baseRole, can: (cap: Capability) => effectiveCan(role, cap, ignoreOverrides ? null : overrides) };
 }

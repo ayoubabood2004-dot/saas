@@ -274,6 +274,12 @@ export function ManagerOverrideCard() {
   const [pin2, setPin2] = useState("");
   const [busy, setBusy] = useState(false);
   const [confirmLock, setConfirmLock] = useState(false);
+  // Disabling the feature must be authenticated — otherwise anyone at an unlocked
+  // manager device could switch the whole protection off without the PIN.
+  const [disarmOpen, setDisarmOpen] = useState(false);
+  const [disarmPin, setDisarmPin] = useState("");
+  const [disarmBusy, setDisarmBusy] = useState(false);
+  const [disarmErr, setDisarmErr] = useState<string | null>(null);
 
   useEffect(() => { void hasOverridePin().then(setPinSet); }, []);
 
@@ -281,10 +287,33 @@ export function ManagerOverrideCard() {
   if (appRoleToStaffRole(user?.role) !== "manager" || (ov.deviceLocked && !ov.active)) return null;
 
   const toggle = () => {
-    const next = !enabled;
-    setEnabled(next);
-    setOverrideEnabled(next);
-    if (next) playSuccess(); else playTap();
+    if (enabled) {
+      // Turning OFF → require the current PIN first (if one is set).
+      if (!pinSet) { setEnabled(false); setOverrideEnabled(false); playTap(); return; }
+      setDisarmPin(""); setDisarmErr(null); setDisarmOpen(true);
+      return;
+    }
+    setEnabled(true); setOverrideEnabled(true); playSuccess();
+  };
+
+  const confirmDisable = async () => {
+    if (!/^\d{4}$/.test(disarmPin)) { setDisarmErr(t("override.pinFormat", "الرمز يجب أن يكون 4 أرقام بالضبط")); return; }
+    setDisarmBusy(true);
+    const res = await unlockWithPin(disarmPin);
+    setDisarmBusy(false);
+    if (!res.ok) {
+      playWarning();
+      setDisarmPin("");
+      setDisarmErr(res.reason === "wrong" ? t("override.wrong", "رمز خاطئ")
+        : res.reason === "locked" ? t("override.lockedShort", "محاولات كثيرة — انتظر قليلاً")
+        : t("override.error", "تعذّر التحقق — حاول مجدداً"));
+      return;
+    }
+    lockNow(); // end the elevation the verify just created
+    setEnabled(false); setOverrideEnabled(false);
+    setDisarmOpen(false);
+    playSuccess();
+    toast.success(t("override.disabled", "تم إيقاف وضع المدير"));
   };
 
   const savePin = async () => {
@@ -373,6 +402,28 @@ export function ManagerOverrideCard() {
           </div>
         </>
       )}
+
+      {/* Disable-confirm: entering the PIN is required to switch the feature off. */}
+      <Modal open={disarmOpen} onClose={() => setDisarmOpen(false)} title={t("override.disableTitle", "إيقاف وضع المدير")}>
+        <div className="mx-auto max-w-sm text-center">
+          <span className="mx-auto mb-3 grid h-14 w-14 place-items-center rounded-2xl bg-danger-50 text-danger-600 dark:bg-danger-500/15"><KeyRound size={24} /></span>
+          <p className="mb-4 text-sm text-ink-muted">{t("override.disableExplain", "أدخل الرمز السري الحالي لتأكيد إيقاف الحماية.")}</p>
+          <input
+            type="password" inputMode="numeric" autoComplete="one-time-code" placeholder="••••" autoFocus
+            className="input mx-auto w-32 text-center tracking-[8px]" dir="ltr"
+            value={disarmPin}
+            onChange={(e) => { setDisarmErr(null); setDisarmPin(e.target.value.replace(/\D/g, "").slice(0, 4)); }}
+            onKeyDown={(e) => { if (e.key === "Enter") void confirmDisable(); }}
+          />
+          {disarmErr && <p className="mt-2 text-xs font-semibold text-danger-600">{disarmErr}</p>}
+          <div className="mt-5 flex justify-center gap-2">
+            <Button variant="ghost" onClick={() => setDisarmOpen(false)}>{t("common.cancel", "إلغاء")}</Button>
+            <Button variant="danger" leftIcon={<Lock size={15} />} loading={disarmBusy} disabled={disarmPin.length !== 4} onClick={() => void confirmDisable()}>
+              {t("override.disableConfirm", "إيقاف")}
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

@@ -212,13 +212,21 @@ export async function unlockWithPin(pin: string): Promise<UnlockResult> {
   }
 }
 
+/** "Restricted" = a device locked to the guarded view with NO active manager
+ *  session. In this state the icons/operations stay available, but the sensitive
+ *  areas (report history, staff editing, activity history) are content-locked.
+ *  Entering the PIN (→ active) lifts every restriction for 10 minutes. */
+export function overrideRestricted(): boolean {
+  return isDeviceLocked() && !overrideActive();
+}
+
 /* ------------------------------ React hook ------------------------------ */
-export function useOverride(): { active: boolean; until: number | null; deviceLocked: boolean } {
+export function useOverride(): { active: boolean; until: number | null; deviceLocked: boolean; restricted: boolean } {
   useSyncExternalStore(
     (cb) => { subs.add(cb); return () => subs.delete(cb); },
     () => version,
   );
-  return { active: overrideActive(), until: overrideUntil(), deviceLocked: isDeviceLocked() };
+  return { active: overrideActive(), until: overrideUntil(), deviceLocked: isDeviceLocked(), restricted: overrideRestricted() };
 }
 
 armExpiry(); // resume a countdown that survived a page reload

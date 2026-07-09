@@ -10,6 +10,7 @@ import { repo } from "@/lib/repo";
 import { listStaff } from "@/lib/staff";
 import { useAuth } from "@/contexts/AuthContext";
 import { usePermissions } from "@/hooks/usePermissions";
+import { useOverride } from "@/lib/managerOverride";
 import { Skeleton } from "@/components/ui";
 import { cn, money, formatNum, dateLocale } from "@/lib/utils";
 import { playTap } from "@/lib/sounds";
@@ -55,6 +56,7 @@ export function ActivityLog() {
   const { t } = useTranslation();
   const { user } = useAuth();
   const { can } = usePermissions();
+  const { restricted } = useOverride(); // locked device (no manager session) → today only
   const clinicId = user?.clinic_id ?? user?.id;
 
   const [loading, setLoading] = useState(true);
@@ -240,12 +242,15 @@ export function ActivityLog() {
 
   const filtered = useMemo(() => {
     const ql = q.trim().toLowerCase();
-    return enriched.filter(({ r, actor }) => {
+    // Guarded device with no manager session → only TODAY's activity is visible.
+    const todayStart = restricted ? new Date().setHours(0, 0, 0, 0) : 0;
+    return enriched.filter(({ r, actor, ms }) => {
+      if (restricted && ms < todayStart) return false;
       if (cat !== "all" && r.category !== cat) return false;
       if (ql && !r.text.toLowerCase().includes(ql) && !actor.toLowerCase().includes(ql)) return false;
       return true;
     });
-  }, [enriched, q, cat]);
+  }, [enriched, q, cat, restricted]);
 
   // Group by calendar day — "اليوم", "أمس", then dated headers.
   const groups = useMemo(() => {
@@ -295,6 +300,13 @@ export function ActivityLog() {
           <Clock size={12} className="me-1 inline" /> {t("act.retention", "يُحتفظ بآخر 30 يوماً فقط — الأقدم يُحذف تلقائياً")}
         </span>
       </div>
+
+      {restricted && (
+        <div className="mb-4 flex items-center gap-2.5 rounded-2xl border border-warn-200 bg-warn-50 px-4 py-3 text-sm font-semibold text-warn-800 dark:border-warn-500/30 dark:bg-warn-500/10 dark:text-warn-200">
+          <Lock size={16} className="shrink-0" />
+          {t("act.lockedToday", "تُعرض حركات اليوم فقط — افتح بوضع المدير لرؤية السجل الكامل.")}
+        </div>
+      )}
 
       {/* Search + category filter */}
       <div className="mb-4 space-y-2.5 rounded-2xl border border-line bg-surface-1 p-3">
