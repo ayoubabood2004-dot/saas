@@ -32,6 +32,7 @@ import { withTimeout, describeUploadError } from "@/lib/errors";
 import { playSuccess, playScan, playTap, playWarning } from "@/lib/sounds";
 import { ImageLightbox } from "@/components/ImageLightbox";
 import { MedicalEntry, DoctorSelect, type MedicalDraft } from "@/components/MedicalEntry";
+import { TreatmentPlan } from "@/components/TreatmentPlan";
 import { ConsentForms } from "@/components/ConsentForms";
 import { addClinicMed, medicationDisplay } from "@/lib/meds";
 import { breedLabel } from "@/lib/breeds";
@@ -294,7 +295,7 @@ export function PetPassport() {
         </button>
         {/* Staff actions: unified medical entry + the POS bridge (pre-fills this client). */}
         {!isOwner && (
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Button
               size="sm"
               variant="secondary"
@@ -2033,6 +2034,8 @@ function TimelineWorkspace({ pet, treatments, vaccinations, notes, admissions, i
   const [administer, setAdminister] = useState<Vaccination | null>(null);
   const [noteText, setNoteText] = useState("");
   const [noteBusy, setNoteBusy] = useState(false);
+  const [planOpen, setPlanOpen] = useState(false);
+  const [planBusy, setPlanBusy] = useState(false);
   // Two arrangements of the same unified data, merged in one workspace: a dense "جدول"
   // that shows every event at once, and the rich interactive "بطاقات" feed.
   const [view, setView] = useState<"table" | "cards">("table");
@@ -2061,6 +2064,17 @@ function TimelineWorkspace({ pet, treatments, vaccinations, notes, admissions, i
       playWarning();
       toast.error(t("notes.saveFail", "تعذّر حفظ الملاحظة"), e instanceof Error ? e.message : undefined);
     } finally { setNoteBusy(false); }
+  };
+  const savePlan = async (body: string) => {
+    if (!body.trim() || planBusy) return;
+    setPlanBusy(true);
+    try {
+      await repo.addPetNote({ pet_id: pet.id, note_text: body, author_id: user?.id ?? null, author_name: user?.full_name ?? null });
+      setPlanOpen(false); playSuccess(); onChanged();
+    } catch (e) {
+      playWarning();
+      toast.error(t("notes.saveFail", "تعذّر الحفظ"), e instanceof Error ? e.message : undefined);
+    } finally { setPlanBusy(false); }
   };
   const readmit = async () => {
     await repo.addAdmission({ pet_id: pet.id, kind: "treatment", status: "active", admitted_on: today });
@@ -2112,6 +2126,7 @@ function TimelineWorkspace({ pet, treatments, vaccinations, notes, admissions, i
       <div className="flex flex-wrap items-center gap-2">
         {canEdit && !isOwner && (
           <>
+            <button className="btn-primary py-1.5 px-3 text-sm" onClick={() => { playTap(); setPlanOpen(true); }}><ClipboardList size={16} /> {t("plan.add", "التشخيص وخطة العلاج")}</button>
             <button className="btn-secondary py-1.5 px-3 text-sm" onClick={() => { playTap(); setTxOpen(true); }}><Pill size={16} /> {t("treatment.add", "إضافة علاج")}</button>
             <button className="btn-secondary py-1.5 px-3 text-sm" onClick={() => { playTap(); setVaxOpen(true); }}><Syringe size={16} /> {t("passport.addVaccine", "إضافة تطعيم")}</button>
             <button className="btn-secondary py-1.5 px-3 text-sm" onClick={() => { playTap(); setNoteOpen(true); }}><NotebookPen size={16} /> {t("notes.add", "إضافة ملاحظة")}</button>
@@ -2192,6 +2207,11 @@ function TimelineWorkspace({ pet, treatments, vaccinations, notes, admissions, i
             <Button leftIcon={<Plus size={16} />} disabled={!noteText.trim()} loading={noteBusy} onClick={addNote}>{t("notes.add", "إضافة ملاحظة")}</Button>
           </div>
         </div>
+      </Modal>
+
+      {/* Standalone diagnosis + scheduled treatment plan */}
+      <Modal open={planOpen} onClose={() => setPlanOpen(false)} title={t("plan.title", "التشخيص وخطة العلاج — {{name}}", { name: pet.name })}>
+        <TreatmentPlan onSubmit={savePlan} busy={planBusy} />
       </Modal>
 
       {/* Confirm-administration (booster) — shared with the vaccines tab */}
