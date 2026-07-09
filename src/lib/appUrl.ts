@@ -1,7 +1,7 @@
 /* ============================================================================
  * Root domain vs. app subdomain.
  *
- * The marketing landing lives on the ROOT domain (doctorvet.doctor); the app
+ * The marketing landing lives on the ROOT domain (doctorvet.vet); the app
  * lives on the `app.` subdomain. Both are served by the SAME deployment — we
  * only branch on the hostname. Until the subdomain is actually configured,
  * `isAppHost()` is false everywhere (localhost, root), so the landing shows on
