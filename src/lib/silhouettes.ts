@@ -101,6 +101,12 @@ const PATHS: Record<Species, string> = {
   other: DOG,
 };
 
+/** Raw inner shapes for a species (no wrapper <svg>/<g>), on the 300×230 canvas.
+ *  Lets callers embed the silhouette in their own themed <g> (see AnatomyMap). */
+export function silhouetteInner(species: Species): string {
+  return PATHS[species] ?? DOG;
+}
+
 export function silhouetteSvg(species: Species): string {
   const inner = PATHS[species] ?? DOG;
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 230"><g fill="#e2e8f0" stroke="#64748b" stroke-width="2" stroke-linejoin="round" stroke-linecap="round">${inner}</g></svg>`;

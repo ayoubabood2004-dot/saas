@@ -258,10 +258,11 @@ export interface AnatomyRegion {
   structures: AnatomyStructure[];
 }
 
-// Hotspots laid over a 320×200 quadruped side-profile (see AnatomyMap.tsx).
+// Hotspots laid over the species side-profile silhouette (300×230 canvas,
+// facing right — head on the right, tail on the left). See AnatomyMap.tsx.
 export const ANATOMY: AnatomyRegion[] = [
   {
-    id: "head", name: "الرأس والوجه", system: "neuro", cx: 262, cy: 74, r: 26,
+    id: "head", name: "الرأس والوجه", system: "neuro", cx: 208, cy: 102, r: 22,
     structures: [
       { name: "الجمجمة", latin: "Cranium" }, { name: "الفك السفلي", latin: "Mandible" },
       { name: "الدماغ", latin: "Cerebrum" }, { name: "العين", latin: "Oculus" },
@@ -269,28 +270,28 @@ export const ANATOMY: AnatomyRegion[] = [
     ],
   },
   {
-    id: "oral", name: "الفم والأسنان", system: "dental", cx: 286, cy: 96, r: 18,
+    id: "oral", name: "الفم والأسنان", system: "dental", cx: 244, cy: 111, r: 15,
     structures: [
       { name: "الأنياب", latin: "Canini" }, { name: "الأضراس", latin: "Molares" },
       { name: "اللثة", latin: "Gingiva" }, { name: "اللسان", latin: "Lingua" },
     ],
   },
   {
-    id: "neck", name: "الرقبة", system: "msk", cx: 222, cy: 82, r: 20,
+    id: "neck", name: "الرقبة", system: "msk", cx: 186, cy: 104, r: 15,
     structures: [
       { name: "الفقرات الرقبية", latin: "Vertebrae cervicales" }, { name: "القصبة الهوائية", latin: "Trachea" },
       { name: "المريء", latin: "Oesophagus" }, { name: "الغدة الدرقية", latin: "Gl. thyroidea" },
     ],
   },
   {
-    id: "thorax", name: "الصدر", system: "respiratory", cx: 176, cy: 104, r: 30,
+    id: "thorax", name: "الصدر", system: "respiratory", cx: 166, cy: 117, r: 25,
     structures: [
       { name: "الرئتان", latin: "Pulmones" }, { name: "القلب", latin: "Cor" },
       { name: "الأضلاع", latin: "Costae" }, { name: "الحجاب الحاجز", latin: "Diaphragma" },
     ],
   },
   {
-    id: "abdomen", name: "البطن", system: "digestive", cx: 120, cy: 116, r: 32,
+    id: "abdomen", name: "البطن", system: "digestive", cx: 112, cy: 126, r: 27,
     structures: [
       { name: "المعدة", latin: "Gaster" }, { name: "الأمعاء", latin: "Intestinum" },
       { name: "الكبد", latin: "Hepar" }, { name: "الطحال", latin: "Lien" },
@@ -299,7 +300,7 @@ export const ANATOMY: AnatomyRegion[] = [
     ],
   },
   {
-    id: "spine", name: "العمود الفقري", system: "neuro", cx: 150, cy: 66, r: 22,
+    id: "spine", name: "العمود الفقري", system: "neuro", cx: 138, cy: 97, r: 17,
     structures: [
       { name: "الفقرات الصدرية", latin: "Vertebrae thoracicae" },
       { name: "الفقرات القطنية", latin: "Vertebrae lumbales" },
@@ -307,14 +308,14 @@ export const ANATOMY: AnatomyRegion[] = [
     ],
   },
   {
-    id: "pelvis", name: "الحوض", system: "msk", cx: 74, cy: 82, r: 20,
+    id: "pelvis", name: "الحوض", system: "msk", cx: 84, cy: 116, r: 17,
     structures: [
       { name: "عظم الحوض", latin: "Pelvis" }, { name: "المفصل الوركي", latin: "Art. coxae" },
       { name: "العجز", latin: "Os sacrum" },
     ],
   },
   {
-    id: "foreleg", name: "الطرف الأمامي", system: "msk", cx: 176, cy: 168, r: 22,
+    id: "foreleg", name: "الطرف الأمامي", system: "msk", cx: 180, cy: 174, r: 21,
     structures: [
       { name: "عظم العضد", latin: "Humerus" }, { name: "عظم الكعبرة", latin: "Radius" },
       { name: "عظم الزند", latin: "Ulna" }, { name: "مفصل الكتف", latin: "Art. humeri" },
@@ -322,7 +323,7 @@ export const ANATOMY: AnatomyRegion[] = [
     ],
   },
   {
-    id: "hindleg", name: "الطرف الخلفي", system: "msk", cx: 74, cy: 162, r: 24,
+    id: "hindleg", name: "الطرف الخلفي", system: "msk", cx: 104, cy: 174, r: 22,
     structures: [
       { name: "عظم الفخذ", latin: "Femur" }, { name: "عظم الظنبوب", latin: "Tibia" },
       { name: "عظم الشظية", latin: "Fibula" }, { name: "مفصل الركبة", latin: "Art. genus" },

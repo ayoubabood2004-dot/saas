@@ -2,6 +2,8 @@ import { useState } from "react";
 import { Layers, X, Crosshair } from "lucide-react";
 import { ANATOMY, regionById, type AnatomyRegion } from "@/lib/clinicalKnowledge";
 import { systemById } from "@/lib/diagnoses";
+import { silhouetteInner } from "@/lib/silhouettes";
+import type { Species } from "@/types";
 import { playTap } from "@/lib/sounds";
 import { cn } from "@/lib/utils";
 
@@ -20,10 +22,17 @@ export interface AnatomyFocus {
  * names, then pin the exact structure the case concerns. Built from ANATOMY in
  * clinicalKnowledge.ts, so every hotspot is data-driven.
  */
-export function AnatomyMap({ value, onChange }: { value: AnatomyFocus | null; onChange: (f: AnatomyFocus | null) => void }) {
+export function AnatomyMap({ value, onChange, species = "dog" }: { value: AnatomyFocus | null; onChange: (f: AnatomyFocus | null) => void; species?: Species }) {
   const [openId, setOpenId] = useState<string | null>(value?.regionId ?? null);
   const open = openId ? regionById(openId) : undefined;
   const dots = ANATOMY.filter((r) => r.r > 0); // the "skin" region (r:0) is a whole-body chip, not a hotspot
+  // Per-species posture overrides: some animals hold the head high (horse) or sit
+  // compact (rabbit), so the shared hotspot coords are nudged to land on the figure.
+  const posture = POSTURE[species];
+  const coordsFor = (r: AnatomyRegion) => {
+    const o = posture?.[r.id];
+    return { cx: o?.cx ?? r.cx, cy: o?.cy ?? r.cy, r: o?.r ?? r.r };
+  };
 
   const pickRegion = (r: AnatomyRegion) => {
     playTap();
@@ -47,54 +56,45 @@ export function AnatomyMap({ value, onChange }: { value: AnatomyFocus | null; on
         <div className="pointer-events-none absolute inset-x-0 top-2 flex items-center justify-center gap-1.5 text-2xs font-bold uppercase tracking-wide text-ink-subtle">
           <Layers size={12} /> الخريطة التشريحية — اضغط منطقة لعرض تركيبها
         </div>
-        <svg viewBox="0 0 320 210" className="mx-auto block h-auto w-full max-w-md" role="img" aria-label="خريطة تشريحية">
-          {/* ---- Silhouette (stylised quadruped, facing right) ---- */}
-          <g className="text-brand-200 dark:text-brand-500/25" fill="currentColor">
-            {/* hind + fore legs */}
-            <rect x="64" y="120" width="16" height="74" rx="8" />
-            <rect x="90" y="122" width="15" height="72" rx="7" />
-            <rect x="168" y="122" width="16" height="72" rx="8" />
-            <rect x="192" y="120" width="15" height="74" rx="7" />
-            {/* torso */}
-            <ellipse cx="132" cy="108" rx="82" ry="36" />
-            {/* rump / pelvis */}
-            <ellipse cx="70" cy="96" rx="30" ry="30" />
-            {/* neck */}
-            <path d="M196 78 Q224 62 250 66 L256 96 Q226 104 200 104 Z" />
-            {/* head */}
-            <ellipse cx="264" cy="76" rx="27" ry="23" />
-            {/* muzzle */}
-            <path d="M286 74 Q308 76 306 92 Q304 102 288 98 Q282 86 286 74 Z" />
-            {/* ear */}
-            <path d="M250 56 L244 30 L266 50 Z" />
-            {/* tail */}
-            <path d="M42 92 Q20 84 14 62 Q26 70 34 80 Q40 86 48 88 Z" />
-          </g>
-          {/* subtle body separation line (spine hint) */}
-          <path d="M60 82 Q130 62 210 74" className="text-brand-300 dark:text-brand-500/40" stroke="currentColor" strokeWidth="1.5" fill="none" strokeDasharray="3 4" strokeLinecap="round" />
+        <svg viewBox="0 0 300 230" className="mx-auto block h-auto w-full max-w-md" role="img" aria-label="خريطة تشريحية">
+          {/* ---- Species silhouette (side-profile, facing right) ---- */}
+          <g
+            className="text-brand-200 dark:text-brand-500/25"
+            fill="currentColor"
+            stroke="rgb(100 116 139 / 0.55)"
+            strokeWidth={2}
+            strokeLinejoin="round"
+            strokeLinecap="round"
+            dangerouslySetInnerHTML={{ __html: silhouetteInner(species) }}
+          />
 
-          {/* ---- Hotspots ---- */}
+          {/* ---- Hotspots — subtle markers that highlight on hover/select ---- */}
           {dots.map((r) => {
             const active = openId === r.id;
             const focused = isFocused(r.id);
+            const c = coordsFor(r);
+            const emphasised = active || focused;
             return (
               <g key={r.id} onClick={() => pickRegion(r)} className="cursor-pointer" role="button" aria-label={r.name}>
                 {/* halo */}
-                {(active || focused) && (
-                  <circle cx={r.cx} cy={r.cy} r={r.r + 5} className="text-brand-400/30" fill="currentColor">
-                    <animate attributeName="r" values={`${r.r + 3};${r.r + 7};${r.r + 3}`} dur="2s" repeatCount="indefinite" />
+                {emphasised && (
+                  <circle cx={c.cx} cy={c.cy} r={c.r + 5} className="text-brand-400/25" fill="currentColor">
+                    <animate attributeName="r" values={`${c.r + 3};${c.r + 7};${c.r + 3}`} dur="2s" repeatCount="indefinite" />
                   </circle>
                 )}
                 <circle
-                  cx={r.cx} cy={r.cy} r={r.r}
+                  cx={c.cx} cy={c.cy} r={c.r}
                   className={cn(
-                    "transition-colors",
-                    focused ? "fill-brand-600" : active ? "fill-brand-500/70" : "fill-brand-500/15 hover:fill-brand-500/35",
-                    "stroke-brand-500",
+                    "transition-all",
+                    focused
+                      ? "fill-brand-600/85 stroke-brand-600"
+                      : active
+                        ? "fill-brand-500/45 stroke-brand-500"
+                        : "fill-brand-500/5 stroke-brand-500/25 hover:fill-brand-500/20 hover:stroke-brand-500/60",
                   )}
-                  strokeWidth={focused ? 2 : 1.25}
+                  strokeWidth={emphasised ? 2 : 1}
                 />
-                <circle cx={r.cx} cy={r.cy} r={2.5} className={cn(focused ? "fill-white" : "fill-brand-600")} />
+                <circle cx={c.cx} cy={c.cy} r={emphasised ? 3 : 2} className={cn("transition-all", focused ? "fill-white" : emphasised ? "fill-brand-600" : "fill-brand-500/60")} />
               </g>
             );
           })}
@@ -188,3 +188,25 @@ export function AnatomyMap({ value, onChange }: { value: AnatomyFocus | null; on
     </div>
   );
 }
+
+/* Per-species hotspot nudges for animals whose posture differs from the low
+ * quadruped default (dog/cat/cow). Only the listed regions are overridden;
+ * everything else falls back to the shared ANATOMY coordinates. */
+type Pt = { cx: number; cy: number; r?: number };
+const POSTURE: Partial<Record<Species, Record<string, Pt>>> = {
+  horse: {
+    head: { cx: 222, cy: 58, r: 20 }, oral: { cx: 238, cy: 66, r: 12 }, neck: { cx: 200, cy: 88, r: 15 },
+    spine: { cx: 140, cy: 84, r: 15 }, thorax: { cx: 162, cy: 106, r: 22 }, abdomen: { cx: 112, cy: 116, r: 24 },
+    pelvis: { cx: 86, cy: 104, r: 16 }, foreleg: { cx: 178, cy: 172, r: 20 }, hindleg: { cx: 108, cy: 172, r: 20 },
+  },
+  rabbit: {
+    head: { cx: 202, cy: 118, r: 20 }, oral: { cx: 222, cy: 126, r: 12 }, neck: { cx: 182, cy: 124, r: 13 },
+    spine: { cx: 150, cy: 104, r: 15 }, thorax: { cx: 158, cy: 132, r: 20 }, abdomen: { cx: 124, cy: 142, r: 22 },
+    pelvis: { cx: 114, cy: 152, r: 15 }, foreleg: { cx: 178, cy: 168, r: 15 }, hindleg: { cx: 124, cy: 176, r: 18 },
+  },
+  bird: {
+    head: { cx: 196, cy: 104, r: 17 }, oral: { cx: 220, cy: 108, r: 11 }, neck: { cx: 176, cy: 116, r: 12 },
+    spine: { cx: 140, cy: 112, r: 14 }, thorax: { cx: 150, cy: 128, r: 18 }, abdomen: { cx: 122, cy: 138, r: 18 },
+    pelvis: { cx: 108, cy: 140, r: 13 }, foreleg: { cx: 148, cy: 176, r: 13 }, hindleg: { cx: 132, cy: 176, r: 13 },
+  },
+};

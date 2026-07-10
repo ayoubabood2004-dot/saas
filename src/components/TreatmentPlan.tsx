@@ -197,7 +197,7 @@ export function TreatmentPlan({
         {step === "anatomy" && (
           <section className="space-y-2">
             <StepTitle icon={Crosshair} title="حدّد المنطقة التشريحية" hint="اختياري — يربط الحالة بالعضو أو العظم بالاسم العلمي." />
-            <AnatomyMap value={focus} onChange={setFocus} />
+            <AnatomyMap value={focus} onChange={setFocus} species={species} />
           </section>
         )}
 
