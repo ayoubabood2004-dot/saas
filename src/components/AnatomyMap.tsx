@@ -3,6 +3,7 @@ import { Layers, X, Crosshair } from "lucide-react";
 import { ANATOMY, regionById, type AnatomyRegion } from "@/lib/clinicalKnowledge";
 import { systemById } from "@/lib/diagnoses";
 import { animalArt, ANIMAL_ART_DEFS } from "@/lib/anatomyArt";
+import { Glyph } from "@/lib/clinicalIcons";
 import type { Species } from "@/types";
 import { playTap } from "@/lib/sounds";
 import { cn } from "@/lib/utils";
@@ -121,8 +122,8 @@ export function AnatomyMap({ value, onChange, species = "dog" }: { value: Anatom
           <div className="mb-2 flex items-center justify-between gap-2">
             <div className="flex items-center gap-1.5 text-sm font-extrabold text-brand-800 dark:text-brand-200">
               <Crosshair size={15} /> {open.name}
-              <span className="rounded-full bg-white/70 px-2 py-0.5 text-2xs font-bold text-brand-600 dark:bg-black/20 dark:text-brand-300">
-                {systemById(open.system)?.emoji} {systemById(open.system)?.name}
+              <span className="inline-flex items-center gap-1 rounded-full bg-white/70 py-0.5 pe-2 ps-0.5 text-2xs font-bold text-brand-600 dark:bg-black/20 dark:text-brand-300">
+                <Glyph name={open.system} size={16} /> {systemById(open.system)?.name}
               </span>
             </div>
             <button type="button" onClick={() => setOpenId(null)} aria-label="إغلاق" className="grid h-6 w-6 place-items-center rounded-full text-ink-subtle hover:bg-white/60 dark:hover:bg-black/20">

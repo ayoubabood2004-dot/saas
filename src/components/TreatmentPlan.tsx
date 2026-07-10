@@ -13,6 +13,7 @@ import {
   type Disease, type CaseOutcome, type Sp,
 } from "@/lib/clinicalKnowledge";
 import { CBC, cbcRange, cbcFlag, FLAG_ARROW } from "@/lib/cbc";
+import { Glyph, GlyphMark, glyphTone, glyphToneText } from "@/lib/clinicalIcons";
 import { repo } from "@/lib/repo";
 import { prepareUpload } from "@/lib/image";
 import { Button, useToast } from "@/components/ui";
@@ -263,11 +264,11 @@ export function TreatmentPlan({
                     key={s.id} type="button"
                     onClick={() => { playTap(); setSymptoms((xs) => (on ? xs.filter((x) => x !== s.id) : [...xs, s.id])); }}
                     className={cn(
-                      "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition",
+                      "inline-flex items-center gap-1.5 rounded-full border py-1 pe-3 ps-1 text-xs font-semibold transition",
                       on ? "border-brand-500 bg-brand-600 text-white shadow-soft" : "border-line bg-surface-1 text-ink-muted hover:border-brand-300 hover:text-brand-700",
                     )}
                   >
-                    <span>{s.emoji}</span> {s.label}
+                    <Glyph name={s.id} size={22} /> {s.label}
                   </button>
                 );
               })}
@@ -503,7 +504,7 @@ export function TreatmentPlan({
                       on ? OUTCOME_TONE[o.tone] : "border-line bg-surface-1 text-ink-muted hover:border-brand-300",
                     )}
                   >
-                    <span className="text-2xl">{o.emoji}</span>
+                    <GlyphMark name={o.id} size={34} className={on ? "text-white" : glyphToneText(glyphTone(o.id) ?? "blue")} />
                     <span className="text-xs font-bold">{o.label}</span>
                   </button>
                 );

@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { Search, X, Plus, Check } from "lucide-react";
 import { BODY_SYSTEMS, SEVERITIES, systemById, type Diagnosis, type Severity } from "@/lib/diagnoses";
+import { Glyph } from "@/lib/clinicalIcons";
 import { playTap } from "@/lib/sounds";
 import { cn } from "@/lib/utils";
 
@@ -45,10 +46,9 @@ export function DiagnosisPicker({ value, onChange }: { value: Diagnosis[]; onCha
       {value.length > 0 && (
         <div className="space-y-2">
           {value.map((d) => {
-            const sysMeta = systemById(d.system);
             return (
               <div key={`${d.system}::${d.disease}`} className="flex flex-wrap items-center gap-2 rounded-2xl border border-line bg-surface-1 p-2.5">
-                <span className="text-base">{sysMeta?.emoji}</span>
+                <Glyph name={d.system} size={26} />
                 <span className="min-w-0 flex-1 truncate text-sm font-bold text-ink">{d.disease}</span>
                 <div className="inline-flex items-center rounded-full border border-line bg-surface-2 p-0.5">
                   {SEVERITIES.map((s) => (
@@ -87,7 +87,7 @@ export function DiagnosisPicker({ value, onChange }: { value: Diagnosis[]; onCha
               sys === s.id ? "bg-brand-600 text-white shadow-soft" : "bg-surface-2 text-ink-muted hover:text-ink",
             )}
           >
-            <span>{s.emoji}</span> {s.name}
+            <Glyph name={s.id} size={18} /> {s.name}
           </button>
         ))}
       </div>
