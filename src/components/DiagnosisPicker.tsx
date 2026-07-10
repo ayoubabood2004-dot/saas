@@ -83,11 +83,11 @@ export function DiagnosisPicker({ value, onChange }: { value: Diagnosis[]; onCha
             type="button"
             onClick={() => { playTap(); setSys(s.id); setQ(""); }}
             className={cn(
-              "inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold transition",
+              "inline-flex items-center gap-1.5 rounded-full py-1 pe-3 ps-1 text-xs font-bold transition",
               sys === s.id ? "bg-brand-600 text-white shadow-soft" : "bg-surface-2 text-ink-muted hover:text-ink",
             )}
           >
-            <Glyph name={s.id} size={18} /> {s.name}
+            <Glyph name={s.id} size={22} /> {s.name}
           </button>
         ))}
       </div>

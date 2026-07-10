@@ -268,7 +268,7 @@ export function TreatmentPlan({
                       on ? "border-brand-500 bg-brand-600 text-white shadow-soft" : "border-line bg-surface-1 text-ink-muted hover:border-brand-300 hover:text-brand-700",
                     )}
                   >
-                    <Glyph name={s.id} size={22} /> {s.label}
+                    <Glyph name={s.id} size={26} /> {s.label}
                   </button>
                 );
               })}
