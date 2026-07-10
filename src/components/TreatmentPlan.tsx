@@ -13,6 +13,7 @@ import {
   type Disease, type CaseOutcome, type Sp,
 } from "@/lib/clinicalKnowledge";
 import { CBC, cbcRange, cbcFlag, FLAG_ARROW } from "@/lib/cbc";
+import { encodeClinical, type ClinicalRecord } from "@/lib/clinicalRecord";
 import { Glyph, GlyphMark, glyphTone, glyphToneText } from "@/lib/clinicalIcons";
 import { repo } from "@/lib/repo";
 import { prepareUpload } from "@/lib/image";
@@ -205,6 +206,27 @@ export function TreatmentPlan({
     }
     return lines.join("\n");
   };
+
+  /** Structured payload so the timeline can render this as an organised card. */
+  const buildRecord = (): ClinicalRecord => ({
+    v: 1,
+    focus: focus ? { region: focus.region, structure: focus.structure, latin: focus.latin } : undefined,
+    symptoms: symptoms.length ? symptoms : undefined,
+    cbc: cbcIds.length
+      ? CBC.filter((p) => cbc[p.id] !== undefined).map((p) => ({ id: p.id, value: cbc[p.id], flag: cbcFlag(cbc[p.id], cbcRange(p, species)) }))
+      : undefined,
+    diagnoses: diagnoses.length ? diagnoses : undefined,
+    redFlags: redFlags.length ? redFlags.map((d) => ({ name: d.name, note: d.redFlag! })) : undefined,
+    zoonotic: zoonotic.length ? zoonotic.map((d) => d.name) : undefined,
+    reportable: reportable.length ? reportable.map((d) => d.name) : undefined,
+    pathogens: pickedDiseases.filter((d) => d.latin).map((d) => ({ name: d.name, latin: d.latin! })),
+    treatment: filledRows.length
+      ? filledRows.map((r) => ({ name: r.name.trim(), dose: r.dose.trim() || undefined, freq: FREQS.find((f) => f.id === r.freq)?.label ?? "", days: r.days, doses: dosesOf(r), note: r.note?.trim() || undefined }))
+      : undefined,
+    interactions: interactions.length ? interactions : undefined,
+    outcome: outcome ?? undefined,
+    hasPhoto: labPhoto ? true : undefined,
+  });
 
   const stepIndex = STEPS.findIndex((s) => s.id === step);
   const go = (dir: -1 | 1) => { playTap(); const n = STEPS[stepIndex + dir]; if (n) setStep(n.id); };
@@ -530,7 +552,7 @@ export function TreatmentPlan({
             التالي
           </Button>
         ) : (
-          <Button className="ms-auto" leftIcon={<Check size={18} />} disabled={!canSave} loading={busy} onClick={() => onSubmit(compose())}>
+          <Button className="ms-auto" leftIcon={<Check size={18} />} disabled={!canSave} loading={busy} onClick={() => onSubmit(encodeClinical(buildRecord(), compose()))}>
             حفظ التشخيص وخطة العلاج
           </Button>
         )}

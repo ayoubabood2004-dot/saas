@@ -7,6 +7,8 @@ import { medicationDisplay } from "@/lib/meds";
 import { vaccineScientific } from "@/lib/vaccines";
 import { cn, dateLocale } from "@/lib/utils";
 import { UniversalReportTable, type ReportColumn } from "@/components/reports/UniversalReportTable";
+import { ClinicalRecordCard } from "@/components/ClinicalRecordCard";
+import { parseClinical, type ClinicalRecord } from "@/lib/clinicalRecord";
 
 /* ============================================================================
  * UnifiedMedicalRecord — "الطبلة" الطبية الموحّدة.
@@ -41,6 +43,8 @@ export interface UnifiedEvent {
   /** Dose, lot, status and free-text observations / the note body. */
   details: string;
   doctor_name: string;
+  /** Present when the note is a structured diagnosis & treatment record. */
+  clinical?: ClinicalRecord;
 }
 
 const TYPE_CHIP: Record<UnifiedEventType, { chip: string; icon: typeof Pill }> = {
@@ -128,10 +132,12 @@ export function unifyMedicalEvents(
 
   for (const n of notes) {
     const ts = isoTs(n.created_at);
+    const { record, text } = parseClinical(n.note_text);
     events.push({
       id: `n:${n.id}`, timestamp: ts, hasTime: ts > 0, type: "note",
       title: labels.note,
-      details: n.note_text,
+      details: text || n.note_text,
+      clinical: record ?? undefined,
       doctor_name: (n.author_name ?? "").trim(),
     });
   }
@@ -211,6 +217,7 @@ export function UnifiedMedicalRecord({ pet, treatments, vaccinations, notes, isO
         // A clinical note is the star of its row: give it its own comfortable box with
         // larger, clearer type so it reads like a written note, not a table cell footnote.
         if (e.type === "note") {
+          if (e.clinical) return <div className="max-w-2xl"><ClinicalRecordCard record={e.clinical} compact /></div>;
           return (
             <div className="max-w-2xl rounded-xl border border-line/70 bg-surface-2/50 px-3.5 py-2.5 [overflow-wrap:anywhere]">
               <p className="whitespace-pre-wrap text-sm leading-relaxed text-ink">{e.details || "—"}</p>

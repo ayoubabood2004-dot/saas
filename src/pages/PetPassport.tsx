@@ -33,6 +33,8 @@ import { playSuccess, playScan, playTap, playWarning } from "@/lib/sounds";
 import { ImageLightbox } from "@/components/ImageLightbox";
 import { MedicalEntry, DoctorSelect, type MedicalDraft } from "@/components/MedicalEntry";
 import { TreatmentPlan } from "@/components/TreatmentPlan";
+import { ClinicalRecordCard } from "@/components/ClinicalRecordCard";
+import { parseClinical } from "@/lib/clinicalRecord";
 import { ConsentForms } from "@/components/ConsentForms";
 import { addClinicMed, medicationDisplay } from "@/lib/meds";
 import { breedLabel } from "@/lib/breeds";
@@ -1930,13 +1932,14 @@ const fmtNoteDate = (iso: string) => {
 /** A single clinical-note card — reused by the notes tab and the الطبلة feed. */
 function NoteCard({ note }: { note: PetNote }) {
   const { t } = useTranslation();
+  const { record, text } = parseClinical(note.note_text);
   return (
     <div className="card p-4">
       <div className="mb-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-2xs text-ink-subtle">
         <span className="flex items-center gap-1 font-semibold text-ink-muted"><User size={12} /> {note.author_name?.trim() || t("notes.unknownAuthor", "غير محدّد")}</span>
         <span className="flex items-center gap-1"><Clock size={12} /> {fmtNoteDate(note.created_at)}</span>
       </div>
-      <p className="whitespace-pre-wrap leading-relaxed text-ink">{note.note_text}</p>
+      {record ? <ClinicalRecordCard record={record} /> : <p className="whitespace-pre-wrap leading-relaxed text-ink">{text}</p>}
     </div>
   );
 }
