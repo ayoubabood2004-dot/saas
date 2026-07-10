@@ -10,7 +10,8 @@ import {
   Scale, Sparkles, Loader2, NotebookPen, CalendarClock, FileSignature, ClipboardList, Table2, LayoutList,
 } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
-import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, TreatmentEntry, Admission, FoodType, DietPlan, Appointment, Reminder, MedicalAssessment, PatientCondition, Species, Sex, PetNote } from "@/types";
+import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, TreatmentEntry, Admission, FoodType, DietPlan, Appointment, Reminder, MedicalAssessment, PatientCondition, Species, Sex, PetNote, ClinicVisit } from "@/types";
+import { VisitsPanel } from "@/components/VisitsPanel";
 import { SpeciesPicker, SexPicker, AgeInput, BreedPicker, ColorPicker } from "@/components/PetFields";
 import { repo } from "@/lib/repo";
 import { persistMedicalEntries } from "@/lib/medSync";
@@ -43,9 +44,10 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Stethoscope, SlidersHorizontal, ShoppingCart } from "lucide-react";
 import { RangesEditor } from "@/components/RangesEditor";
 
-type Tab = "timeline" | "diet" | "vaccines" | "history" | "treatment" | "notes" | "media" | "qr";
+type Tab = "visits" | "timeline" | "diet" | "vaccines" | "history" | "treatment" | "notes" | "media" | "qr";
 /** Each section carries its own colour identity (matched to the events-feed category colours). */
 const TABS: { id: Tab; icon: typeof IdCard; fill: string; text: string }[] = [
+  { id: "visits", icon: Stethoscope, fill: "bg-danger-100 dark:bg-danger-500/20", text: "text-danger-700 dark:text-danger-200" },
   { id: "timeline", icon: ClipboardList, fill: "bg-brand-100 dark:bg-brand-500/20", text: "text-brand-700 dark:text-brand-200" },
   { id: "diet", icon: Utensils, fill: "bg-success-100 dark:bg-success-500/20", text: "text-success-700 dark:text-success-200" },
   { id: "vaccines", icon: Syringe, fill: "bg-violet-100 dark:bg-violet-500/20", text: "text-violet-700 dark:text-violet-200" },
@@ -179,6 +181,7 @@ export function PetPassport() {
   const [vaccines, setVaccines] = useState<Vaccination[]>([]);
   const [notes, setNotes] = useState<PetNote[]>([]);
   const [visits, setVisits] = useState<MedicalVisit[]>([]);
+  const [clinicVisits, setClinicVisits] = useState<ClinicVisit[]>([]);
   const [media, setMedia] = useState<MediaItem[]>([]);
   const [treatments, setTreatments] = useState<TreatmentEntry[]>([]);
   const [admissions, setAdmissions] = useState<Admission[]>([]);
@@ -214,7 +217,7 @@ export function PetPassport() {
 
   const reload = async () => {
     if (!petId) return;
-    const [p, w, v, h, m, tx, adm, apt, rem, nt] = await Promise.all([
+    const [p, w, v, h, m, tx, adm, apt, rem, nt, cv] = await Promise.all([
       repo.getPet(petId),
       repo.listWeights(petId),
       repo.listVaccinations(petId),
@@ -225,6 +228,7 @@ export function PetPassport() {
       repo.listAppointmentsForPet(petId),
       repo.listReminders(),
       repo.listPetNotes(petId).catch(() => [] as PetNote[]),
+      repo.listClinicVisitsForPet(petId).catch(() => [] as ClinicVisit[]),
     ]);
     setPet(p ?? null);
     setWeights(w);
@@ -236,6 +240,7 @@ export function PetPassport() {
     setAppointments(apt);
     setReminders(rem.filter((r) => r.pet_id === petId));
     setNotes(nt);
+    setClinicVisits(cv);
   };
 
   // Persist a batch from the unified Medical Entry: vaccinations → vaccination
@@ -272,6 +277,7 @@ export function PetPassport() {
   const treatmentDue = petEvents.some((e) => e.category === "medication" && e.urgent);
   const vaccineOverdue = vaccines.some((v) => v.status === "overdue");
   const tabBadge: Record<Tab, { dot?: boolean; count?: number }> = {
+    visits: { count: clinicVisits.filter((v) => v.status === "open").length || undefined },
     timeline: {},
     diet: {},
     history: {},
@@ -418,6 +424,7 @@ export function PetPassport() {
             exit={{ opacity: 0, y: -8 }}
             transition={{ duration: 0.2 }}
           >
+            {tab === "visits" && <VisitsPanel pet={pet} visits={clinicVisits} canEdit={canEditClinical && !isOwner} onChanged={reload} />}
             {tab === "diet" && <DietTab pet={pet} onChanged={reload} canEdit={canEditClinical || isOwner} />}
             {tab === "vaccines" && <VaccinesTab pet={pet} vaccines={vaccines} onChanged={reload} canEdit={canEditClinical} isOwner={isOwner} />}
             {tab === "history" && <HistoryTab visits={visits} admissions={admissions} treatments={treatments} isOwner={isOwner} />}

@@ -116,6 +116,8 @@ export interface PetNote {
   /** Denormalized author display name, snapshotted at write time. */
   author_name?: string | null;
   note_text: string;
+  /** When set, this note belongs to a specific visit (زيارة). */
+  visit_id?: string | null;
   created_at: string; // ISO timestamp
 }
 
@@ -221,6 +223,10 @@ export interface TreatmentEntry {
   /** Set when the dose has actually been administered (flowsheet done-state). */
   administered_at?: string | null; // ISO datetime
   administered_by?: string; // who gave it
+  /** When set, this scheduled dose belongs to a visit's treatment plan. */
+  visit_id?: string | null;
+  /** Marks a dose whose plan row was edited after the plan was first saved. */
+  edited?: boolean;
   created_at: string;
 }
 
@@ -253,6 +259,32 @@ export interface Admission {
   branch_id?: string | null;
   /** How the stay ended: recovered (عايش) or deceased (متوفى). NULL = unspecified. */
   outcome?: "recovered" | "deceased" | null;
+}
+
+// A clinic VISIT (زيارة) — a self-contained encounter opened each time the pet
+// comes in. Routine (checkup/grooming/…) visits are quick; an "illness" visit
+// carries the full clinical workspace (diagnosis + a day-by-day treatment plan).
+export type VisitKind = "illness" | "checkup" | "grooming" | "vaccination" | "followup" | "other";
+export type VisitStatus = "open" | "ended";
+
+export interface ClinicVisit {
+  id: string;
+  pet_id: string;
+  clinic_id?: string | null;
+  kind: VisitKind;
+  reason?: string | null;
+  status: VisitStatus;
+  /** Case status at intake — a CaseOutcome id (under_treatment / recovered / …). */
+  condition?: string | null;
+  opened_at: string;            // ISO datetime the pet came in
+  ended_at?: string | null;
+  opened_by?: string | null;
+  ended_by?: string | null;
+  /** Final case status when the visit is ended — a CaseOutcome id. */
+  outcome?: string | null;
+  /** Closing note recorded on end. */
+  summary?: string | null;
+  created_at?: string;
 }
 
 /** A physical location of the clinic. Purely organisational — the security
@@ -489,6 +521,7 @@ export interface DemoDB {
   vaccinations: Vaccination[];
   media: MediaItem[];
   visits: MedicalVisit[];
+  clinicVisits: ClinicVisit[];
   appointments: Appointment[];
   treatments: TreatmentEntry[];
   admissions: Admission[];

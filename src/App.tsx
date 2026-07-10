@@ -18,6 +18,7 @@ const Login = lazy(() => import("@/pages/Login").then((m) => ({ default: m.Login
 const Dashboard = lazy(() => import("@/pages/Dashboard").then((m) => ({ default: m.Dashboard })));
 const OwnerDashboard = lazy(() => import("@/pages/OwnerDashboard").then((m) => ({ default: m.OwnerDashboard })));
 const PetPassport = lazy(() => import("@/pages/PetPassport").then((m) => ({ default: m.PetPassport })));
+const VisitPage = lazy(() => import("@/pages/VisitPage"));
 const ScanChart = lazy(() => import("@/pages/ScanChart").then((m) => ({ default: m.ScanChart })));
 const BookingWizard = lazy(() => import("@/pages/BookingWizard").then((m) => ({ default: m.BookingWizard })));
 const Reception = lazy(() => import("@/pages/Reception").then((m) => ({ default: m.Reception })));
@@ -148,6 +149,7 @@ function Shell() {
             <Route path="/join" element={<JoinClinic />} />
             <Route path="/" element={<HomeRoute />} />
             <Route path="/pet/:petId" element={<Protected><PetPassport /></Protected>} />
+            <Route path="/pet/:petId/visit/:visitId" element={<Protected><VisitPage /></Protected>} />
             <Route path="/book" element={<Protected><BookingWizard /></Protected>} />
             <Route path="/scan" element={<Protected><ScanChart /></Protected>} />
             <Route path="/reception" element={<Protected><Reception /></Protected>} />

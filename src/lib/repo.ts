@@ -4,7 +4,7 @@
 import { loadDB, saveDB } from "./demoStore";
 import { supabase } from "./supabase";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, AppointmentStatus, TreatmentEntry, Admission, Branch, Reminder, Product, Invoice, InvoiceItem, CheckoutItem, SaleMeta, Customer, DiscountType, PaymentMethod, WhatsAppMessage, AuditEntry, LoginEvent, PetNote, Expense } from "@/types";
+import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, AppointmentStatus, TreatmentEntry, Admission, Branch, Reminder, Product, Invoice, InvoiceItem, CheckoutItem, SaleMeta, Customer, DiscountType, PaymentMethod, WhatsAppMessage, AuditEntry, LoginEvent, PetNote, Expense, ClinicVisit } from "@/types";
 import { uid, uuid, ageMonths } from "./utils";
 
 /** Sort key for a case/admission — newest first. Prefers the precise `created_at`
@@ -309,14 +309,36 @@ const demoRepo = {
   async listPetNotes(petId: string): Promise<PetNote[]> {
     return demoNotesLoad().filter((n) => n.pet_id === petId).sort((a, b) => b.created_at.localeCompare(a.created_at));
   },
-  async addPetNote(input: { pet_id: string; note_text: string; author_id?: string | null; author_name?: string | null }): Promise<PetNote> {
+  async addPetNote(input: { pet_id: string; note_text: string; author_id?: string | null; author_name?: string | null; visit_id?: string | null }): Promise<PetNote> {
     const note: PetNote = {
       id: uid("note"), pet_id: input.pet_id, clinic_id: null,
       author_id: input.author_id ?? null, author_name: input.author_name ?? null,
-      note_text: input.note_text, created_at: new Date().toISOString(),
+      note_text: input.note_text, visit_id: input.visit_id ?? null, created_at: new Date().toISOString(),
     };
     demoNotesSave([note, ...demoNotesLoad()]);
     return note;
+  },
+
+  /* ---------------- Clinic visits (الزيارات) ---------------- */
+  async listClinicVisitsForPet(petId: string): Promise<ClinicVisit[]> {
+    return (loadDB().clinicVisits ?? [])
+      .filter((v) => v.pet_id === petId)
+      .sort((a, b) => (b.opened_at || "").localeCompare(a.opened_at || ""));
+  },
+  async getClinicVisit(id: string): Promise<ClinicVisit | null> {
+    return (loadDB().clinicVisits ?? []).find((v) => v.id === id) ?? null;
+  },
+  async addClinicVisit(input: Omit<ClinicVisit, "id" | "created_at">): Promise<ClinicVisit> {
+    const db = loadDB();
+    const v: ClinicVisit = { created_at: new Date().toISOString(), ...input, id: uid("visit") };
+    (db.clinicVisits ??= []).unshift(v);
+    saveDB(db);
+    return v;
+  },
+  async updateClinicVisit(id: string, patch: Partial<ClinicVisit>): Promise<void> {
+    const db = loadDB();
+    const v = (db.clinicVisits ??= []).find((x) => x.id === id);
+    if (v) { Object.assign(v, patch); saveDB(db); }
   },
 
   async listMedia(petId: string): Promise<MediaItem[]> {
@@ -719,6 +741,8 @@ const DEMO_ACTIVITY_MAP: Record<string, { entity: string; action: "INSERT" | "UP
   addVaccination: { entity: "vaccinations", action: "INSERT" },
   addVisit: { entity: "medical_visits", action: "INSERT" },
   addPetNote: { entity: "pet_notes", action: "INSERT" },
+  addClinicVisit: { entity: "clinic_visits", action: "INSERT" },
+  updateClinicVisit: { entity: "clinic_visits", action: "UPDATE" },
   addExpense: { entity: "expenses", action: "INSERT" },
   addMedia: { entity: "media_items", action: "INSERT" },
   addTreatment: { entity: "treatment_entries", action: "INSERT" },
@@ -926,7 +950,20 @@ const supabaseRepo: typeof demoRepo = {
     return need<PetNote>(await sbc().from("pet_notes").insert({
       pet_id: input.pet_id, note_text: input.note_text,
       author_id: input.author_id ?? undefined, author_name: input.author_name ?? null,
+      visit_id: input.visit_id ?? null,
     }).select().single());
+  },
+  async listClinicVisitsForPet(petId) {
+    return listOf<ClinicVisit>(await sbc().from("clinic_visits").select("*").eq("pet_id", petId).order("opened_at", { ascending: false }));
+  },
+  async getClinicVisit(id) {
+    return maybe<ClinicVisit>(await sbc().from("clinic_visits").select("*").eq("id", id).maybeSingle()) ?? null;
+  },
+  async addClinicVisit(input) {
+    return need<ClinicVisit>(await sbc().from("clinic_visits").insert(input).select().single());
+  },
+  async updateClinicVisit(id, patch) {
+    ok(await sbc().from("clinic_visits").update(patch).eq("id", id));
   },
   async listMedia(petId) {
     const items = listOf<MediaItem>(await sbc().from("media_items").select("*").eq("pet_id", petId).order("created_at", { ascending: false }));

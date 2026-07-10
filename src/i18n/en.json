@@ -817,6 +817,7 @@
     "medicalEntryTitle": "Medical entry — {{name}}",
     "tabs": {
       "identity": "Identity",
+      "visits": "Visits",
       "timeline": "Medical chart",
       "diet": "Diet",
       "vaccines": "Vaccinations",

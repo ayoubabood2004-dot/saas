@@ -817,6 +817,7 @@
     "medicalEntryTitle": "إدخال طبي — {{name}}",
     "tabs": {
       "identity": "الهوية",
+      "visits": "الزيارات",
       "timeline": "الطبلة",
       "diet": "الغذاء",
       "vaccines": "التطعيمات",
