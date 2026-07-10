@@ -190,6 +190,43 @@ button,
   .rp-foot { margin-top: 20px; text-align: center; font-size: 10px; color: #94a3b8; }
 }
 
+/* CBC slider — transparent native track so we can paint our own band behind it;
+   only the draggable thumb is visible. */
+.cbc-range {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 22px;
+  background: transparent;
+  cursor: pointer;
+  margin: 0;
+  touch-action: pan-y;
+}
+.cbc-range::-webkit-slider-runnable-track { background: transparent; height: 22px; }
+.cbc-range::-moz-range-track { background: transparent; height: 22px; }
+.cbc-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 9999px;
+  background: #2563eb;
+  border: 3px solid #fff;
+  box-shadow: 0 1px 4px rgba(37, 99, 235, 0.5);
+  cursor: grab;
+}
+.cbc-range::-webkit-slider-thumb:active { cursor: grabbing; }
+.cbc-range::-moz-range-thumb {
+  width: 22px;
+  height: 22px;
+  border-radius: 9999px;
+  background: #2563eb;
+  border: 3px solid #fff;
+  box-shadow: 0 1px 4px rgba(37, 99, 235, 0.5);
+  cursor: grab;
+}
+.cbc-range:focus-visible::-webkit-slider-thumb { outline: 2px solid #2563eb; outline-offset: 2px; }
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

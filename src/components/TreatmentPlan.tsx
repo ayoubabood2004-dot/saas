@@ -1,18 +1,23 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useMemo, useRef, useState, type ReactNode } from "react";
 import {
   Plus, X, Pill, ClipboardList, CalendarClock, Check, Activity, Stethoscope,
   AlertTriangle, ShieldAlert, Biohazard, Sparkles, TrendingUp, ChevronLeft, ChevronRight, Crosshair,
+  Droplets, ChevronDown, Camera, Loader2, ImageIcon,
 } from "lucide-react";
 import { AnatomyMap, type AnatomyFocus } from "@/components/AnatomyMap";
 import { DiagnosisPicker } from "@/components/DiagnosisPicker";
+import { CbcPanel } from "@/components/CbcPanel";
 import { summarizeDiagnoses, type Diagnosis } from "@/lib/diagnoses";
 import {
   SYMPTOMS, DISEASES, differentialFor, interactionsIn, OUTCOMES,
   type Disease, type CaseOutcome, type Sp,
 } from "@/lib/clinicalKnowledge";
-import { Button } from "@/components/ui";
+import { CBC, cbcRange, cbcFlag, FLAG_ARROW } from "@/lib/cbc";
+import { repo } from "@/lib/repo";
+import { prepareUpload } from "@/lib/image";
+import { Button, useToast } from "@/components/ui";
 import { formatNum, cn } from "@/lib/utils";
-import { playTap } from "@/lib/sounds";
+import { playTap, playSuccess, playWarning } from "@/lib/sounds";
 
 /** How often a treatment is given — drives the dose-count math. */
 const FREQS: { id: string; label: string; perDay: number }[] = [
@@ -62,14 +67,48 @@ const OUTCOME_TONE: Record<string, string> = {
  *   ⑤ Outcome   — track how the case ended.
  */
 export function TreatmentPlan({
-  onSubmit, busy, species,
-}: { onSubmit: (body: string) => void | Promise<void>; busy?: boolean; species?: Sp }) {
+  onSubmit, busy, species, petId, onMediaAdded,
+}: {
+  onSubmit: (body: string) => void | Promise<void>;
+  busy?: boolean;
+  species?: Sp;
+  petId?: string;
+  onMediaAdded?: () => void;
+}) {
+  const toast = useToast();
   const [step, setStep] = useState<StepId>("anatomy");
   const [focus, setFocus] = useState<AnatomyFocus | null>(null);
   const [symptoms, setSymptoms] = useState<string[]>([]);
+  const [cbc, setCbc] = useState<Record<string, number>>({});
+  const [cbcOpen, setCbcOpen] = useState(false);
+  const [labPhoto, setLabPhoto] = useState<string | null>(null);
+  const [photoBusy, setPhotoBusy] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
   const [diagnoses, setDiagnoses] = useState<Diagnosis[]>([]);
   const [rows, setRows] = useState<PlanRow[]>([blankRow()]);
   const [outcome, setOutcome] = useState<CaseOutcome | null>(null);
+
+  /* ---- Lab photo: take a picture and file it into the pet's media vault ---- */
+  const onPickPhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file || photoBusy) return;
+    if (!petId) { toast.error("تعذّر إرفاق الصورة"); return; }
+    setPhotoBusy(true);
+    try {
+      const prepared = await prepareUpload(file, { maxDim: 2400 });
+      await repo.uploadMedia(petId, prepared, "lab", "تحليل CBC");
+      setLabPhoto(prepared.dataUrl);
+      playSuccess();
+      toast.success("أُضيفت صورة التحليل إلى المعرض");
+      onMediaAdded?.();
+    } catch (err) {
+      playWarning();
+      toast.error("تعذّر رفع الصورة", err instanceof Error ? err.message : undefined);
+    } finally {
+      setPhotoBusy(false);
+    }
+  };
 
   /* ---- Differential engine ---- */
   const differential = useMemo(() => differentialFor(symptoms, species), [symptoms, species]);
@@ -112,8 +151,9 @@ export function TreatmentPlan({
 
   const filledRows = rows.filter((r) => r.name.trim());
   const interactions = useMemo(() => interactionsIn(filledRows.map((r) => r.name)), [filledRows]);
+  const cbcIds = Object.keys(cbc);
 
-  const canSave = !busy && (!!focus || symptoms.length > 0 || diagnoses.length > 0 || filledRows.length > 0 || !!outcome);
+  const canSave = !busy && (!!focus || symptoms.length > 0 || cbcIds.length > 0 || !!labPhoto || diagnoses.length > 0 || filledRows.length > 0 || !!outcome);
 
   const compose = () => {
     const lines: string[] = [];
@@ -122,6 +162,17 @@ export function TreatmentPlan({
       const labels = symptoms.map((id) => SYMPTOMS.find((s) => s.id === id)?.label).filter(Boolean);
       lines.push(`🔬 الأعراض: ${labels.join(" · ")}`);
     }
+    if (cbcIds.length) {
+      lines.push("🩸 تحليل الدم (CBC):");
+      for (const p of CBC) {
+        if (cbc[p.id] === undefined) continue;
+        const v = cbc[p.id];
+        const flag = cbcFlag(v, cbcRange(p, species));
+        const val = formatNum(Number(v.toFixed(p.step < 1 ? 1 : 0)));
+        lines.push(`• ${p.abbr} (${p.label}): ${val} ${p.unit} ${FLAG_ARROW[flag]}${flag !== "normal" ? " ⚠️" : ""}`);
+      }
+    }
+    if (labPhoto) lines.push("📎 صورة التحليل مُرفقة بمعرض الصور.");
     if (diagnoses.length) lines.push(`🩺 التشخيص: ${summarizeDiagnoses(diagnoses)}`);
     for (const d of pickedDiseases) if (d.latin) lines.push(`   ↳ ${d.name} — ${d.latin}`);
     if (zoonotic.length) lines.push(`⚠️ مرض حيواني المنشأ (ينتقل للإنسان): ${zoonotic.map((d) => d.name).join("، ")} — التزم الحماية.`);
@@ -160,7 +211,7 @@ export function TreatmentPlan({
   /* completion dots per step */
   const done: Record<StepId, boolean> = {
     anatomy: !!focus,
-    symptoms: symptoms.length > 0,
+    symptoms: symptoms.length > 0 || cbcIds.length > 0 || !!labPhoto,
     diagnosis: diagnoses.length > 0,
     treatment: filledRows.length > 0,
     outcome: !!outcome,
@@ -226,6 +277,58 @@ export function TreatmentPlan({
                 <Sparkles size={14} /> عرض التشخيص التفريقي ({formatNum(differential.length)})
               </button>
             )}
+
+            {/* ---- CBC blood panel (collapsible) ---- */}
+            <div className="border-t border-line pt-3">
+              <button
+                type="button"
+                onClick={() => { playTap(); setCbcOpen((o) => !o); }}
+                className="flex w-full items-center gap-2 rounded-2xl bg-surface-2 px-3 py-2.5 text-start transition hover:bg-surface-3"
+              >
+                <span className="grid h-8 w-8 place-items-center rounded-xl bg-danger-50 text-danger-600 dark:bg-danger-500/15"><Droplets size={16} /></span>
+                <span className="flex-1">
+                  <span className="block text-sm font-bold text-ink">تحليل الدم (CBC)</span>
+                  <span className="block text-2xs text-ink-subtle">اسحب مؤشر كل قيمة — يظهر الطبيعي والمرتفع والمنخفض فوراً</span>
+                </span>
+                {cbcIds.length > 0 && (
+                  <span className="rounded-full bg-brand-600 px-2 py-0.5 text-2xs font-bold text-white">{formatNum(cbcIds.length)}</span>
+                )}
+                <ChevronDown size={18} className={cn("shrink-0 text-ink-subtle transition-transform", cbcOpen && "rotate-180")} />
+              </button>
+
+              {cbcOpen && (
+                <div className="mt-3 space-y-3">
+                  <CbcPanel species={species} value={cbc} onChange={setCbc} />
+
+                  {/* Photo of the lab report → filed into the media vault */}
+                  <div className="rounded-2xl border border-dashed border-line bg-surface-1 p-3">
+                    <input ref={fileRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={onPickPhoto} />
+                    {labPhoto ? (
+                      <div className="flex items-center gap-3">
+                        <img src={labPhoto} alt="صورة التحليل" className="h-16 w-16 rounded-xl border border-line object-cover" />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5 text-xs font-bold text-success-700 dark:text-success-300"><ImageIcon size={14} /> أُضيفت إلى المعرض</div>
+                          <div className="text-2xs text-ink-subtle">صُنّفت كتحليل مخبري في صور الحالة</div>
+                        </div>
+                        <button type="button" onClick={() => { playTap(); fileRef.current?.click(); }} disabled={photoBusy} className="rounded-full border border-line px-3 py-1.5 text-2xs font-bold text-ink-muted transition hover:border-brand-300">
+                          تغيير
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => { playTap(); fileRef.current?.click(); }}
+                        disabled={photoBusy || !petId}
+                        className="flex w-full items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-bold text-brand-700 transition hover:bg-brand-50 disabled:opacity-50 dark:text-brand-300 dark:hover:bg-brand-500/10"
+                      >
+                        {photoBusy ? <Loader2 size={16} className="animate-spin" /> : <Camera size={16} />}
+                        {photoBusy ? "جارٍ الرفع…" : "صوّر ورقة التحليل وأرفقها"}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
           </section>
         )}
 
