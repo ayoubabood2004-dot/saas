@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Layers, X, Crosshair } from "lucide-react";
 import { ANATOMY, regionById, type AnatomyRegion } from "@/lib/clinicalKnowledge";
 import { systemById } from "@/lib/diagnoses";
-import { silhouetteInner } from "@/lib/silhouettes";
+import { animalArt, ANIMAL_ART_DEFS } from "@/lib/anatomyArt";
 import type { Species } from "@/types";
 import { playTap } from "@/lib/sounds";
 import { cn } from "@/lib/utils";
@@ -57,16 +57,9 @@ export function AnatomyMap({ value, onChange, species = "dog" }: { value: Anatom
           <Layers size={12} /> الخريطة التشريحية — اضغط منطقة لعرض تركيبها
         </div>
         <svg viewBox="0 0 300 230" className="mx-auto block h-auto w-full max-w-md" role="img" aria-label="خريطة تشريحية">
-          {/* ---- Species silhouette (side-profile, facing right) ---- */}
-          <g
-            className="text-brand-200 dark:text-brand-500/25"
-            fill="currentColor"
-            stroke="rgb(100 116 139 / 0.55)"
-            strokeWidth={2}
-            strokeLinejoin="round"
-            strokeLinecap="round"
-            dangerouslySetInnerHTML={{ __html: silhouetteInner(species) }}
-          />
+          {/* ---- Shaded, dimensional species figure (side-profile, facing right) ---- */}
+          <defs dangerouslySetInnerHTML={{ __html: ANIMAL_ART_DEFS }} />
+          <g dangerouslySetInnerHTML={{ __html: animalArt(species) }} />
 
           {/* ---- Hotspots — subtle markers that highlight on hover/select ---- */}
           {dots.map((r) => {
@@ -195,18 +188,18 @@ export function AnatomyMap({ value, onChange, species = "dog" }: { value: Anatom
 type Pt = { cx: number; cy: number; r?: number };
 const POSTURE: Partial<Record<Species, Record<string, Pt>>> = {
   horse: {
-    head: { cx: 222, cy: 58, r: 20 }, oral: { cx: 238, cy: 66, r: 12 }, neck: { cx: 200, cy: 88, r: 15 },
-    spine: { cx: 140, cy: 84, r: 15 }, thorax: { cx: 162, cy: 106, r: 22 }, abdomen: { cx: 112, cy: 116, r: 24 },
-    pelvis: { cx: 86, cy: 104, r: 16 }, foreleg: { cx: 178, cy: 172, r: 20 }, hindleg: { cx: 108, cy: 172, r: 20 },
+    head: { cx: 222, cy: 58, r: 19 }, oral: { cx: 232, cy: 66, r: 11 }, neck: { cx: 198, cy: 90, r: 15 },
+    spine: { cx: 140, cy: 100, r: 15 }, thorax: { cx: 160, cy: 112, r: 21 }, abdomen: { cx: 114, cy: 116, r: 22 },
+    pelvis: { cx: 84, cy: 110, r: 15 }, foreleg: { cx: 190, cy: 172, r: 18 }, hindleg: { cx: 110, cy: 172, r: 18 },
   },
   rabbit: {
-    head: { cx: 202, cy: 118, r: 20 }, oral: { cx: 222, cy: 126, r: 12 }, neck: { cx: 182, cy: 124, r: 13 },
-    spine: { cx: 150, cy: 104, r: 15 }, thorax: { cx: 158, cy: 132, r: 20 }, abdomen: { cx: 124, cy: 142, r: 22 },
-    pelvis: { cx: 114, cy: 152, r: 15 }, foreleg: { cx: 178, cy: 168, r: 15 }, hindleg: { cx: 124, cy: 176, r: 18 },
+    head: { cx: 206, cy: 118, r: 18 }, oral: { cx: 230, cy: 120, r: 11 }, neck: { cx: 184, cy: 122, r: 13 },
+    spine: { cx: 150, cy: 102, r: 15 }, thorax: { cx: 156, cy: 130, r: 20 }, abdomen: { cx: 124, cy: 142, r: 20 },
+    pelvis: { cx: 100, cy: 150, r: 15 }, foreleg: { cx: 178, cy: 168, r: 14 }, hindleg: { cx: 112, cy: 174, r: 16 },
   },
   bird: {
-    head: { cx: 196, cy: 104, r: 17 }, oral: { cx: 220, cy: 108, r: 11 }, neck: { cx: 176, cy: 116, r: 12 },
-    spine: { cx: 140, cy: 112, r: 14 }, thorax: { cx: 150, cy: 128, r: 18 }, abdomen: { cx: 122, cy: 138, r: 18 },
-    pelvis: { cx: 108, cy: 140, r: 13 }, foreleg: { cx: 148, cy: 176, r: 13 }, hindleg: { cx: 132, cy: 176, r: 13 },
+    head: { cx: 196, cy: 104, r: 16 }, oral: { cx: 218, cy: 110, r: 10 }, neck: { cx: 176, cy: 116, r: 12 },
+    spine: { cx: 140, cy: 112, r: 14 }, thorax: { cx: 150, cy: 128, r: 17 }, abdomen: { cx: 122, cy: 138, r: 17 },
+    pelvis: { cx: 108, cy: 140, r: 13 }, foreleg: { cx: 152, cy: 176, r: 12 }, hindleg: { cx: 132, cy: 176, r: 12 },
   },
 };
