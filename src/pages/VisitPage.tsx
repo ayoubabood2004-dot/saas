@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import {
   ArrowRight, Clock, CalendarDays, Check, Plus, NotebookPen, ClipboardList,
   Loader2, Lock, CheckCircle2, Pencil, Stethoscope, UserRound, Syringe, RotateCcw,
+  Activity, StickyNote, type LucideIcon,
 } from "lucide-react";
 import type { Pet, ClinicVisit, PetNote, TreatmentEntry } from "@/types";
 import { repo } from "@/lib/repo";
@@ -220,152 +221,179 @@ export default function VisitPage() {
   );
 
   const remaining = totalDoses - doneDoses;
+  const isIllness = visit.kind === "illness";
+  // Latest saved plan → the diagnosis headline for the progress quadrant.
+  const primary = clinicalNotes.length ? clinicalNotes[clinicalNotes.length - 1].record : null;
+  const dxName = primary?.diagnoses?.[0]?.disease;
+  const dxLatin = primary?.pathogens?.find((p) => p.name === dxName)?.latin ?? primary?.pathogens?.[0]?.latin;
+  const dxWarn = (primary?.redFlags?.length ?? 0) > 0 || (primary?.zoonotic?.length ?? 0) > 0 || (primary?.reportable?.length ?? 0) > 0;
 
   return (
-    <div className="mx-auto max-w-5xl px-4 py-6 sm:px-6">
+    <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6">
       <button onClick={() => navigate(`/pet/${petId}`)} className="mb-4 inline-flex items-center gap-1.5 text-sm font-bold text-ink-muted transition hover:text-ink">
         <ArrowRight size={16} /> رجوع إلى ملف {pet.name}
       </button>
 
-      {/* ── Header + progress hero ─────────────────────────────────────────── */}
-      <div className={cn("overflow-hidden rounded-3xl border shadow-card", ended ? "border-line" : "border-brand-200 dark:border-brand-500/30")}>
-        <div className={cn("flex items-center gap-3 p-4", ended ? "bg-surface-2" : "bg-gradient-to-l from-brand-50/70 to-transparent dark:from-brand-500/10")}>
-          <span className={cn("grid h-12 w-12 shrink-0 place-items-center rounded-2xl text-white shadow-soft", kind!.solid)}><KindIcon size={24} /></span>
-          <div className="min-w-0 flex-1">
-            <h1 className="flex items-center gap-2 text-lg font-extrabold text-ink">{kind!.label} — {pet.name}</h1>
-            <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-2xs text-ink-subtle">
-              <span className="flex items-center gap-1"><CalendarDays size={12} /> فُتحت {formatDate(visit.opened_at, lang)}</span>
-              {visit.opened_by && <span className="flex items-center gap-1"><Stethoscope size={12} /> {visit.opened_by}</span>}
-              {ended && visit.ended_at && <span className="flex items-center gap-1"><Lock size={12} /> انتهت {formatDate(visit.ended_at, lang)}</span>}
-            </div>
-          </div>
-          {ended ? (
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-200 px-3 py-1.5 text-xs font-extrabold text-slate-600 dark:bg-slate-500/20 dark:text-slate-300"><Lock size={13} /> منتهية</span>
-          ) : (
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-success-50 px-3 py-1.5 text-xs font-extrabold text-success-700 dark:bg-success-500/15 dark:text-success-300">
-              <span className="h-2 w-2 rounded-full bg-success-500 shadow-[0_0_0_4px_rgba(34,197,94,.25)]" /> مفتوحة
-            </span>
-          )}
-        </div>
+      {/* ═══ 4-quadrant dashboard — sharp corners, thin dividers ═══ */}
+      <div className="overflow-hidden rounded border border-line-strong shadow-card">
+        <div className={cn("grid gap-px bg-line", isIllness && "lg:grid-cols-2")}>
 
-        {/* condition / outcome + progress */}
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-line px-4 py-3">
-          <div className="flex flex-wrap items-center gap-2 text-2xs">
-            {visit.condition && <><span className="font-bold text-ink-subtle">الحالة عند الدخول:</span> <OutcomeBadge id={visit.condition} /></>}
-            {ended && visit.outcome && <><span className="ms-1 font-bold text-ink-subtle">النتيجة:</span> <OutcomeBadge id={visit.outcome} /></>}
-          </div>
-          {hasFlowsheet && (
-            <div className="ms-auto flex items-center gap-3">
-              <div className="text-end">
-                <div className="text-2xs font-bold text-ink-subtle">تقدّم العلاج</div>
-                <div className="text-sm font-extrabold text-ink">
-                  {remaining > 0 ? <>متبقٍّ <span className="text-brand-600 dark:text-brand-300">{formatNum(remaining)}</span> جرعة</> : <span className="text-success-600 dark:text-success-400">اكتملت كل الجرعات ✓</span>}
+          {/* Q1 — visit / patient */}
+          <section className="bg-surface-1">
+            <QuadHead icon={ClipboardList} label="بيانات الزيارة" num="١" />
+            <div className="p-3.5">
+              <div className="mb-3 flex items-center gap-3">
+                <span className={cn("grid h-11 w-11 shrink-0 place-items-center rounded text-white", kind!.solid)}><KindIcon size={22} /></span>
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-lg font-black text-ink">{pet.name}</div>
+                  <div className="truncate text-2xs font-bold text-ink-subtle">{[kind!.label, pet.breed].filter(Boolean).join(" · ")}</div>
                 </div>
-                <div className="text-2xs text-ink-subtle">على {formatNum(days.length)} أيام</div>
+                {ended ? (
+                  <span className="inline-flex items-center gap-1.5 rounded-sm bg-slate-200 px-2.5 py-1 text-xs font-extrabold text-slate-600 dark:bg-slate-500/20 dark:text-slate-300"><Lock size={12} /> منتهية</span>
+                ) : (
+                  <span className="inline-flex items-center gap-1.5 rounded-sm bg-success-50 px-2.5 py-1 text-xs font-extrabold text-success-700 dark:bg-success-500/15 dark:text-success-300"><span className="h-2 w-2 rounded-full bg-success-500" /> مفتوحة</span>
+                )}
               </div>
-              <ProgressRing done={doneDoses} total={totalDoses} />
+              <div className="grid grid-cols-2 gap-px overflow-hidden rounded border border-line bg-line">
+                <InfoCell icon={CalendarDays} k="فُتحت" v={formatDate(visit.opened_at, lang)} />
+                <InfoCell icon={UserRound} k="الطبيب" v={visit.opened_by || "—"} />
+                <InfoCell icon={Stethoscope} k="الحالة عند الدخول">{visit.condition ? <OutcomeBadge id={visit.condition} /> : "—"}</InfoCell>
+                <InfoCell icon={ended ? Lock : Clock} k={ended ? "أُغلقت" : "المدة"} v={ended && visit.ended_at ? formatDate(visit.ended_at, lang) : hasFlowsheet ? `${formatNum(days.length)} أيام` : "—"} />
+              </div>
+              {ended && visit.summary && (
+                <div className="mt-2.5 flex items-start gap-2 rounded border border-success-200 bg-success-50 p-2.5 text-2xs text-success-800 dark:border-success-500/30 dark:bg-success-500/10 dark:text-success-200">
+                  <CheckCircle2 size={14} className="mt-0.5 shrink-0" /><div><b>الخلاصة:</b> {visit.summary}</div>
+                </div>
+              )}
             </div>
-          )}
+          </section>
+
+          {isIllness && <>
+            {/* Q2 — progress + diagnosis */}
+            <section className="bg-surface-1">
+              <QuadHead icon={Activity} label="التقدّم والتشخيص" num="٢" />
+              <div className="p-3.5">
+                {hasFlowsheet || dxName ? (
+                  <div className="flex items-center gap-4">
+                    {hasFlowsheet && <ProgressRing done={doneDoses} total={totalDoses} size={92} />}
+                    <div className="min-w-0 flex-1">
+                      {dxName ? (
+                        <>
+                          <div className="text-[10px] font-extrabold uppercase tracking-wide text-ink-subtle">التشخيص</div>
+                          <div className="text-base font-black leading-tight text-ink">{dxName} {dxLatin && <span className="text-2xs font-bold not-italic text-ink-subtle"> · <i>{dxLatin}</i></span>}</div>
+                        </>
+                      ) : <div className="text-sm font-bold text-ink-muted">خطة علاج بلا تشخيص محدّد</div>}
+                      {hasFlowsheet && (
+                        <div className="mt-1.5 text-sm font-extrabold">
+                          {remaining > 0 ? <span className="text-brand-600 dark:text-brand-300">متبقٍّ {formatNum(remaining)} جرعة</span> : <span className="text-success-600 dark:text-success-400">اكتملت كل الجرعات ✓</span>}
+                          <span className="ms-1 text-2xs font-bold text-ink-subtle">· على {formatNum(days.length)} أيام</span>
+                        </div>
+                      )}
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {ended && visit.outcome && <OutcomeBadge id={visit.outcome} />}
+                        {dxWarn && <span className="rounded-sm bg-danger-50 px-2 py-0.5 text-[10px] font-extrabold text-danger-700 dark:bg-danger-500/15 dark:text-danger-300">⚠ علامة حمراء</span>}
+                      </div>
+                    </div>
+                  </div>
+                ) : <Empty icon={Stethoscope} text="ابدأ بزر «التشخيص وخطة العلاج» بالأسفل — يظهر التشخيص والتقدّم هنا." />}
+              </div>
+            </section>
+
+            {/* Q3 — day calendar */}
+            <section className="bg-surface-1">
+              <QuadHead icon={CalendarDays} label="أيام العلاج" num="٣" />
+              <div className="p-3.5">
+                {hasFlowsheet ? (
+                  <div className="grid grid-cols-4 gap-2 sm:grid-cols-5">
+                    {days.map(([day, rows], di) => {
+                      const done = rows.filter((r) => r.administered_at).length;
+                      const all = done === rows.length;
+                      const some = done > 0 && !all;
+                      const isToday = day === todayISO;
+                      const active = day === activeDay;
+                      const { wd, dn } = dayShort(day, lang);
+                      return (
+                        <button key={day} type="button" onClick={() => { playTap(); setSelDay(day); }}
+                          className={cn("relative flex flex-col items-center gap-0.5 rounded border-2 py-1.5 transition",
+                            active ? "border-brand-500 bg-brand-50 dark:bg-brand-500/10" : all ? "border-success-300 bg-success-50/60 dark:border-success-500/30 dark:bg-success-500/5" : some ? "border-warn-300" : "border-line bg-surface-1 hover:border-brand-300")}>
+                          {isToday && <span className="absolute end-1 top-1 h-1.5 w-1.5 rounded-full bg-brand-500" title="اليوم" />}
+                          <span className="text-[9px] font-bold text-ink-subtle">{wd}</span>
+                          <span className={cn("grid h-7 w-7 place-items-center rounded text-sm font-black",
+                            all ? "bg-success-500 text-white" : active ? "bg-brand-600 text-white" : "bg-surface-2 text-ink-muted")}>
+                            {all ? <Check size={15} /> : dn}
+                          </span>
+                          <span className="text-[8px] font-bold text-ink-muted">{isToday ? "اليوم" : `يوم ${formatNum(di + 1)}`}</span>
+                          <span className="text-[8px] font-bold text-ink-subtle tabular-nums">{formatNum(done)}/{formatNum(rows.length)}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : <Empty icon={CalendarDays} text="تظهر أيام العلاج هنا بعد حفظ خطة العلاج." />}
+              </div>
+            </section>
+
+            {/* Q4 — selected-day doses */}
+            <section className="bg-surface-1">
+              <QuadHead icon={Syringe} label="جرعات اليوم المحدّد" right={activeDay ? <span className="ms-auto text-[10px] font-bold text-ink-subtle">{formatDate(activeDay, lang)}</span> : undefined} />
+              <div className="p-3.5">
+                {activeDay ? (
+                  <>
+                    <div className="mb-2.5 flex items-center gap-2">
+                      <span className="grid h-7 w-7 place-items-center rounded bg-brand-100 text-sm font-black text-brand-700 dark:bg-brand-500/15 dark:text-brand-300">{formatNum(activeIndex + 1)}</span>
+                      <div className="text-sm font-black text-ink">اليوم {formatNum(activeIndex + 1)}{activeDay === todayISO && <span className="ms-1.5 rounded-sm bg-brand-600 px-1.5 py-0.5 text-[10px] font-bold text-white">اليوم</span>}</div>
+                      <span className="ms-auto text-2xs font-bold text-ink-subtle">{formatNum(activeRows.filter((r) => r.administered_at).length)}/{formatNum(activeRows.length)} تم</span>
+                    </div>
+                    <div className="space-y-2">
+                      {activeRows.map((t) => (
+                        <DoseRow key={t.id} t={t} ended={ended} lang={lang} defaultDoctor={user?.full_name ?? ""} onGive={giveDose} onUndo={undoDose} />
+                      ))}
+                    </div>
+                    {(dayNotes.get(activeDay) ?? []).length > 0 && (
+                      <div className="mt-2.5 space-y-1">
+                        {(dayNotes.get(activeDay) ?? []).map((n) => (
+                          <div key={n.id} className="flex items-start gap-1.5 rounded border border-line bg-surface-2 px-2.5 py-1.5 text-2xs text-ink-muted"><StickyNote size={12} className="mt-0.5 shrink-0 text-ink-subtle" /> {parseDayNote(n.note_text).body}</div>
+                        ))}
+                      </div>
+                    )}
+                    {!ended && <DayNoteInput onNote={(text) => addNote(text, activeDay)} />}
+                  </>
+                ) : <Empty icon={Syringe} text="لا جرعات بعد — احفظ خطة العلاج لتُولّد الجرعات اليومية." />}
+              </div>
+            </section>
+          </>}
         </div>
       </div>
 
-      {ended && visit.summary && (
-        <div className="mt-4 flex items-start gap-2 rounded-2xl border border-success-200 bg-success-50 p-3.5 text-sm text-success-800 dark:border-success-500/30 dark:bg-success-500/10 dark:text-success-200">
-          <CheckCircle2 size={18} className="mt-0.5 shrink-0" />
-          <div><b className="font-extrabold">تم إنهاء العلاج</b> — {visit.summary}</div>
-        </div>
-      )}
-
-      {visit.kind === "illness" && !ended && (
-        <div className="mt-4 flex flex-wrap gap-2">
-          <button className="btn-primary py-2 px-4 text-sm" onClick={() => { playTap(); setPlanOpen(true); }}>
-            <ClipboardList size={16} /> {clinicalNotes.length ? "تعديل التشخيص وخطة العلاج" : "التشخيص وخطة العلاج"}
-          </button>
-          <button className="btn-secondary py-2 px-4 text-sm" onClick={() => { playTap(); setNoteText(""); setNoteOpen(true); }}>
+      {/* Toolbar */}
+      {!ended && (
+        <div className="mt-4 flex flex-wrap items-center gap-2">
+          {isIllness && (
+            <button onClick={() => { playTap(); setPlanOpen(true); }} className="inline-flex items-center gap-2 rounded bg-brand-600 px-4 py-2.5 text-sm font-extrabold text-white transition hover:bg-brand-700">
+              <ClipboardList size={16} /> {clinicalNotes.length ? "تعديل التشخيص وخطة العلاج" : "التشخيص وخطة العلاج"}
+            </button>
+          )}
+          <button onClick={() => { playTap(); setNoteText(""); setNoteOpen(true); }} className="inline-flex items-center gap-2 rounded border border-line-strong bg-surface-1 px-4 py-2.5 text-sm font-bold text-ink-muted transition hover:border-brand-300 hover:text-ink">
             <NotebookPen size={16} /> إضافة ملاحظة
           </button>
+          <button onClick={() => { playTap(); setEndOpen(true); }} className="ms-auto inline-flex items-center gap-2 rounded bg-danger-600 px-4 py-2.5 text-sm font-extrabold text-white transition hover:bg-danger-700">
+            <Check size={16} /> إنهاء العلاج وإغلاق الزيارة
+          </button>
         </div>
       )}
 
+      {/* Full diagnosis & plan detail — the fifth, expandable panel */}
       {clinicalNotes.length > 0 && (
         <div className="mt-4 space-y-3">
-          {clinicalNotes.map(({ n, record }) => <div key={n.id}><ClinicalRecordCard record={record!} /></div>)}
+          {clinicalNotes.map(({ n, record }) => <div key={n.id}><ClinicalRecordCard record={record!} compact /></div>)}
         </div>
-      )}
-
-      {/* ── Daily treatment flowsheet: day tracker + focused day ────────────── */}
-      {hasFlowsheet && (
-        <section className="mt-5">
-          <h2 className="mb-2.5 flex items-center gap-1.5 text-sm font-extrabold text-ink"><CalendarDays size={16} className="text-brand-600" /> جدول العلاج اليومي</h2>
-
-          {/* Day tracker — a compact wrapping grid, no vertical monotony */}
-          <div className="grid grid-cols-4 gap-2 sm:grid-cols-6 lg:grid-cols-8">
-            {days.map(([day, rows], di) => {
-              const done = rows.filter((r) => r.administered_at).length;
-              const all = done === rows.length;
-              const some = done > 0 && !all;
-              const isToday = day === todayISO;
-              const active = day === activeDay;
-              const { wd, dn } = dayShort(day, lang);
-              return (
-                <button
-                  key={day} type="button" onClick={() => { playTap(); setSelDay(day); }}
-                  className={cn(
-                    "relative flex flex-col items-center gap-0.5 rounded-2xl border-2 py-2 transition",
-                    active ? "border-brand-500 bg-brand-50 dark:bg-brand-500/10" : "border-line bg-surface-1 hover:border-brand-300",
-                  )}
-                >
-                  {isToday && <span className="absolute end-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-brand-500" title="اليوم" />}
-                  <span className="text-[10px] font-bold text-ink-subtle">{wd}</span>
-                  <span className={cn("grid h-8 w-8 place-items-center rounded-xl text-sm font-black",
-                    all ? "bg-success-500 text-white" : some ? "bg-warn-100 text-warn-700 dark:bg-warn-500/20 dark:text-warn-200" : "bg-surface-2 text-ink-muted")}>
-                    {all ? <Check size={16} /> : dn}
-                  </span>
-                  <span className="text-[10px] font-bold text-ink-muted">يوم {formatNum(di + 1)}</span>
-                  <span className="text-[9px] font-bold text-ink-subtle">{formatNum(done)}/{formatNum(rows.length)}</span>
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Focused day panel */}
-          {activeDay && (
-            <div className="mt-3 rounded-2xl border border-line bg-surface-1 p-3.5">
-              <div className="mb-2.5 flex items-center gap-2">
-                <span className="grid h-8 w-8 place-items-center rounded-xl bg-brand-100 text-sm font-black text-brand-700 dark:bg-brand-500/15 dark:text-brand-300">{formatNum(activeIndex + 1)}</span>
-                <div>
-                  <div className="text-sm font-extrabold text-ink">اليوم {formatNum(activeIndex + 1)}{activeDay === todayISO && <span className="ms-1.5 rounded-full bg-brand-600 px-2 py-0.5 text-[10px] font-bold text-white">اليوم</span>}</div>
-                  <div className="text-2xs text-ink-subtle">{formatDate(activeDay, lang)}</div>
-                </div>
-                <span className="ms-auto text-2xs font-bold text-ink-subtle">{formatNum(activeRows.filter((r) => r.administered_at).length)}/{formatNum(activeRows.length)} تم</span>
-              </div>
-
-              <div className="space-y-2">
-                {activeRows.map((t) => (
-                  <DoseRow key={t.id} t={t} ended={ended} lang={lang} defaultDoctor={user?.full_name ?? ""} onGive={giveDose} onUndo={undoDose} />
-                ))}
-              </div>
-
-              {/* Per-day notes */}
-              {(dayNotes.get(activeDay) ?? []).length > 0 && (
-                <div className="mt-2.5 space-y-1">
-                  {(dayNotes.get(activeDay) ?? []).map((n) => (
-                    <div key={n.id} className="rounded-lg bg-surface-2 px-2.5 py-1.5 text-2xs text-ink-muted">📝 {parseDayNote(n.note_text).body}</div>
-                  ))}
-                </div>
-              )}
-              {!ended && <DayNoteInput onNote={(text) => addNote(text, activeDay)} />}
-            </div>
-          )}
-        </section>
       )}
 
       {generalNotes.length > 0 && (
-        <section className="mt-5">
+        <section className="mt-4">
           <h2 className="mb-2 flex items-center gap-1.5 text-sm font-extrabold text-ink"><NotebookPen size={16} className="text-brand-600" /> ملاحظات الزيارة</h2>
-          <div className="grid gap-2 sm:grid-cols-2">
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
             {generalNotes.map((n) => (
-              <div key={n.id} className="rounded-2xl border border-line bg-surface-1 p-3">
+              <div key={n.id} className="rounded border border-line bg-surface-1 p-3">
                 <div className="mb-1 flex items-center gap-2 text-2xs text-ink-subtle">
                   <span className="font-semibold text-ink-muted">{n.author_name || "—"}</span>
                   <span className="flex items-center gap-1"><Clock size={11} /> {formatDate(n.created_at, lang)}</span>
@@ -375,23 +403,6 @@ export default function VisitPage() {
             ))}
           </div>
         </section>
-      )}
-
-      {visit.kind !== "illness" && !ended && clinicalNotes.length === 0 && generalNotes.length === 0 && (
-        <div className="mt-4">
-          <button className="btn-secondary py-2 px-4 text-sm" onClick={() => { playTap(); setNoteText(""); setNoteOpen(true); }}>
-            <NotebookPen size={16} /> إضافة ملاحظة
-          </button>
-        </div>
-      )}
-
-      {!ended && (
-        <div className="sticky bottom-3 z-10 mt-6">
-          <button onClick={() => { playTap(); setEndOpen(true); }}
-            className="flex w-full items-center justify-center gap-2 rounded-2xl bg-danger-600 py-3.5 text-base font-extrabold text-white shadow-raised transition hover:bg-danger-700">
-            <Check size={20} /> تم إنهاء العلاج — إغلاق الزيارة
-          </button>
-        </div>
       )}
 
       <Modal open={planOpen} onClose={() => setPlanOpen(false)} size="full" title={`التشخيص وخطة العلاج — ${pet.name}`}>
@@ -408,6 +419,33 @@ export default function VisitPage() {
       </Modal>
 
       <EndVisitModal open={endOpen} onClose={() => setEndOpen(false)} onEnd={endVisit} />
+    </div>
+  );
+}
+
+/* --------------------------- Dashboard helpers ---------------------------- */
+function QuadHead({ icon: Icon, label, num, right }: { icon: LucideIcon; label: string; num?: string; right?: React.ReactNode }) {
+  return (
+    <div className="flex items-center gap-2 border-b border-line bg-surface-2 px-3.5 py-2">
+      <Icon size={15} className="text-brand-600" />
+      <span className="text-[11px] font-black uppercase tracking-wide text-brand-700 dark:text-brand-300">{label}</span>
+      {right ?? (num && <span className="ms-auto rounded-sm border border-line bg-surface-1 px-1.5 text-[10px] font-bold text-ink-subtle">{num}</span>)}
+    </div>
+  );
+}
+function InfoCell({ icon: Icon, k, v, children }: { icon: LucideIcon; k: string; v?: string; children?: React.ReactNode }) {
+  return (
+    <div className="bg-surface-1 p-2.5">
+      <div className="mb-1 flex items-center gap-1.5 text-[10px] font-extrabold text-ink-subtle"><Icon size={11} /> {k}</div>
+      <div className="text-xs font-extrabold text-ink">{children ?? v}</div>
+    </div>
+  );
+}
+function Empty({ icon: Icon, text }: { icon: LucideIcon; text: string }) {
+  return (
+    <div className="flex flex-col items-center justify-center gap-2 rounded border border-dashed border-line bg-surface-2/40 px-4 py-8 text-center">
+      <Icon size={22} className="text-ink-subtle/50" />
+      <p className="text-2xs font-semibold leading-relaxed text-ink-subtle">{text}</p>
     </div>
   );
 }
@@ -430,9 +468,9 @@ function DoseRow({ t, ended, lang, defaultDoctor, onGive, onUndo }: {
 
   if (given) {
     return (
-      <div className="rounded-xl border border-success-200 bg-success-50/50 p-2.5 dark:border-success-500/25 dark:bg-success-500/5">
+      <div className="rounded border border-success-200 bg-success-50/50 p-2.5 dark:border-success-500/25 dark:bg-success-500/5">
         <div className="flex items-center gap-2.5">
-          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-success-500 text-white"><Check size={17} /></span>
+          <span className="grid h-9 w-9 shrink-0 place-items-center rounded bg-success-500 text-white"><Check size={17} /></span>
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-1.5 truncate text-sm font-bold text-ink">
               {t.medication}
@@ -447,19 +485,19 @@ function DoseRow({ t, ended, lang, defaultDoctor, onGive, onUndo }: {
           )}
         </div>
         <div className="mt-1.5 flex flex-wrap items-center gap-1.5 ps-11">
-          <span className="inline-flex items-center gap-1 rounded-lg bg-surface-1 px-2 py-1 text-[11px] font-bold text-success-700 dark:text-success-300"><Clock size={12} /> {clockOf(t.administered_at!, lang)}</span>
-          {t.administered_by && <span className="inline-flex items-center gap-1 rounded-lg bg-surface-1 px-2 py-1 text-[11px] font-bold text-ink-muted"><UserRound size={12} /> {t.administered_by}</span>}
+          <span className="inline-flex items-center gap-1 rounded bg-surface-1 px-2 py-1 text-[11px] font-bold text-success-700 dark:text-success-300"><Clock size={12} /> {clockOf(t.administered_at!, lang)}</span>
+          {t.administered_by && <span className="inline-flex items-center gap-1 rounded bg-surface-1 px-2 py-1 text-[11px] font-bold text-ink-muted"><UserRound size={12} /> {t.administered_by}</span>}
         </div>
       </div>
     );
   }
 
   return (
-    <div className="rounded-xl border border-line bg-surface-2/50 p-2.5">
+    <div className="rounded border border-line bg-surface-2/50 p-2.5">
       <div className="flex items-center gap-2.5">
         <button
           type="button" disabled={ended} onClick={() => setOpen((o) => !o)}
-          className={cn("grid h-9 w-9 shrink-0 place-items-center rounded-lg border-2 transition disabled:opacity-60", open ? "border-brand-500 bg-brand-500 text-white" : "border-ink-subtle/40 text-transparent hover:border-success-400 hover:text-success-400")}
+          className={cn("grid h-9 w-9 shrink-0 place-items-center rounded border-2 transition disabled:opacity-60", open ? "border-brand-500 bg-brand-500 text-white" : "border-ink-subtle/40 text-transparent hover:border-success-400 hover:text-success-400")}
           aria-label="تم العلاج"
         ><Check size={17} /></button>
         <div className="min-w-0 flex-1">
@@ -476,7 +514,7 @@ function DoseRow({ t, ended, lang, defaultDoctor, onGive, onUndo }: {
 
       {/* Give panel — who gave it + at what time */}
       {open && !ended && (
-        <div className="mt-2.5 space-y-2.5 rounded-xl border border-brand-200 bg-brand-50/50 p-2.5 dark:border-brand-500/25 dark:bg-brand-500/5">
+        <div className="mt-2.5 space-y-2.5 rounded border border-brand-200 bg-brand-50/50 p-2.5 dark:border-brand-500/25 dark:bg-brand-500/5">
           <div className="grid gap-2 sm:grid-cols-2">
             <div>
               <div className="mb-1 flex items-center gap-1 text-[10px] font-extrabold text-ink-subtle"><UserRound size={11} /> الطبيب الذي أعطى العلاج</div>
@@ -504,7 +542,7 @@ function DayNoteInput({ onNote }: { onNote: (text: string) => void }) {
   return (
     <div className="mt-2.5 flex gap-2">
       <input value={note} onChange={(e) => setNote(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") submit(); }} placeholder="ملاحظة على هذا اليوم…" className="input h-9 flex-1 py-0 text-xs" />
-      <button type="button" disabled={!note.trim()} onClick={submit} className="rounded-xl bg-brand-50 px-3 text-xs font-bold text-brand-700 disabled:opacity-40 dark:bg-brand-500/10 dark:text-brand-300">حفظ</button>
+      <button type="button" disabled={!note.trim()} onClick={submit} className="rounded bg-brand-50 px-3 text-xs font-bold text-brand-700 disabled:opacity-40 dark:bg-brand-500/10 dark:text-brand-300">حفظ</button>
     </div>
   );
 }
@@ -524,7 +562,7 @@ function EndVisitModal({ open, onClose, onEnd }: { open: boolean; onClose: () =>
               const on = outcome === o.id;
               return (
                 <button key={o.id} type="button" onClick={() => { playTap(); setOutcome(o.id); }}
-                  className={cn("flex flex-col items-center gap-1 rounded-2xl border-2 p-3 text-center transition", on ? "border-brand-500 bg-brand-50 dark:bg-brand-500/10" : "border-line bg-surface-1 hover:border-brand-300")}>
+                  className={cn("flex flex-col items-center gap-1 rounded border-2 p-3 text-center transition", on ? "border-brand-500 bg-brand-50 dark:bg-brand-500/10" : "border-line bg-surface-1 hover:border-brand-300")}>
                   <GlyphMark name={o.id} size={28} className={glyphToneText(glyphTone(o.id) ?? "blue")} />
                   <span className="text-2xs font-bold text-ink">{o.label}</span>
                 </button>
