@@ -1963,6 +1963,8 @@
     "confirmPin": "Confirm PIN",
     "savePin": "Save PIN",
     "pinIsSet": "PIN is set ✓",
+    "pinDeviceOnly": "Saved on this device only",
+    "pinDeviceWarn": "The protection PIN is stored on this device/browser only, so it can disappear if you clear browser data or use another device. To save it permanently in the cloud and across all devices: make sure cloud storage is enabled, then re-enter and save the PIN here.",
     "pinFormat": "The PIN must be exactly 4 digits",
     "pinMismatch": "The PINs do not match",
     "pinSaved": "PIN saved",

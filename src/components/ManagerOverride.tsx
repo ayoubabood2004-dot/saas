@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
-import { KeyRound, Lock, Unlock, Delete, MonitorSmartphone, ShieldCheck } from "lucide-react";
+import { KeyRound, Lock, Unlock, Delete, MonitorSmartphone, ShieldCheck, CloudOff } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { appRoleToStaffRole } from "@/lib/staff";
 import { getOverrideEnabled, setOverrideEnabled } from "@/lib/settings";
 import {
-  hasOverridePin, lockNow, setDeviceLocked, setOverridePin,
+  hasOverridePin, lockNow, overridePinScope, setDeviceLocked, setOverridePin,
   unlockWithPin, useOverride,
 } from "@/lib/managerOverride";
 import { playSuccess, playTap, playWarning } from "@/lib/sounds";
@@ -270,6 +270,7 @@ export function ManagerOverrideCard() {
   const ov = useOverride();
   const [enabled, setEnabled] = useState(getOverrideEnabled());
   const [pinSet, setPinSet] = useState(false);
+  const [pinScope, setPinScope] = useState<"cloud" | "device" | "none">("none");
   const [pin1, setPin1] = useState("");
   const [pin2, setPin2] = useState("");
   const [busy, setBusy] = useState(false);
@@ -281,7 +282,8 @@ export function ManagerOverrideCard() {
   const [disarmBusy, setDisarmBusy] = useState(false);
   const [disarmErr, setDisarmErr] = useState<string | null>(null);
 
-  useEffect(() => { void hasOverridePin().then(setPinSet); }, []);
+  const refreshScope = () => { void overridePinScope().then((s) => { setPinScope(s); setPinSet(s !== "none"); }); };
+  useEffect(refreshScope, []);
 
   // REAL managers only — a temporarily elevated receptionist must not see this.
   if (appRoleToStaffRole(user?.role) !== "manager" || (ov.deviceLocked && !ov.active)) return null;
@@ -323,6 +325,7 @@ export function ManagerOverrideCard() {
     try {
       await setOverridePin(pin1);
       setPinSet(true);
+      refreshScope();
       setPin1(""); setPin2("");
       playSuccess();
       toast.success(t("override.pinSaved", "تم حفظ الرمز السري"));
@@ -381,8 +384,26 @@ export function ManagerOverrideCard() {
               <Button size="sm" onClick={savePin} loading={busy} disabled={pin1.length !== 4 || pin2.length !== 4}>
                 {t("override.savePin", "حفظ الرمز")}
               </Button>
-              {pinSet && <span className="chip bg-success-50 text-2xs font-semibold text-success-600 dark:bg-success-500/15 dark:text-success-300">{t("override.pinIsSet", "الرمز معيَّن ✓")}</span>}
+              {pinSet && (
+                <span className={cn(
+                  "chip text-2xs font-semibold",
+                  pinScope === "cloud"
+                    ? "bg-success-50 text-success-600 dark:bg-success-500/15 dark:text-success-300"
+                    : "bg-warn-50 text-warn-700 dark:bg-warn-500/15 dark:text-warn-300",
+                )}>
+                  {pinScope === "cloud" ? t("override.pinIsSet", "الرمز معيَّن ✓") : t("override.pinDeviceOnly", "محفوظ على هذا الجهاز فقط")}
+                </span>
+              )}
             </div>
+
+            {/* Durability warning: a device-only PIN is the one that "disappears".
+                Re-saving on a cloud-enabled backend moves it to the durable store. */}
+            {pinScope === "device" && (
+              <div className="mt-3 flex items-start gap-2 rounded-lg border border-warn-200 bg-warn-50 p-3 text-xs leading-relaxed text-warn-800 dark:border-warn-500/30 dark:bg-warn-500/10 dark:text-warn-200">
+                <CloudOff size={16} className="mt-0.5 shrink-0" />
+                <span>{t("override.pinDeviceWarn", "رمز الحماية محفوظ على هذا الجهاز/المتصفّح فقط، وقد يختفي عند مسح بيانات المتصفّح أو استخدام جهاز آخر. لحفظه بشكل دائم على السحابة وعلى كل الأجهزة: تأكّد من تفعيل التخزين السحابي ثم أعد كتابة الرمز وحفظه هنا.")}</span>
+              </div>
+            )}
           </div>
 
           {/* device lock */}

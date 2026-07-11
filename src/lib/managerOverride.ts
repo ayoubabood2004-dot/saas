@@ -145,15 +145,33 @@ export function endElevationOnLogout(): void {
   notify();
 }
 
-export async function hasOverridePin(): Promise<boolean> {
+function hasLocalPin(): boolean {
+  try { return !!localStorage.getItem(pinKey()); } catch { return false; }
+}
+
+/** Where the clinic's PIN actually lives:
+ *  · "cloud"  — saved server-side (durable: survives cache clears, deploys, and
+ *               works on every device). This is the safe, permanent home.
+ *  · "device" — only a device-local mirror exists (set before the cloud store was
+ *               available). FRAGILE: lost if this browser's data is cleared or the
+ *               manager signs in elsewhere — the cause of a PIN "disappearing".
+ *  · "none"   — no PIN set anywhere. */
+export async function overridePinScope(): Promise<"cloud" | "device" | "none"> {
   const client = sb();
   if (client) {
     try {
       const { data, error } = await client.rpc("has_override_pin");
-      if (!error) return !!data;
+      if (!error) return data ? "cloud" : (hasLocalPin() ? "device" : "none");
     } catch { /* fall through to the local mirror */ }
   }
-  try { return !!localStorage.getItem(pinKey()); } catch { return false; }
+  return hasLocalPin() ? "device" : "none";
+}
+
+/** True if a PIN exists ANYWHERE (cloud or this device). We honour the device
+ *  mirror even when the server reports none, so a code set before the cloud store
+ *  existed never silently reads as "not set" on the device that holds it. */
+export async function hasOverridePin(): Promise<boolean> {
+  return (await overridePinScope()) !== "none";
 }
 
 export type UnlockResult =
