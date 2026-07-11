@@ -2,7 +2,11 @@ import { createContext, useContext, useEffect, useMemo, useState, type ReactNode
 import type { Profile, Role, AccountRole } from "@/types";
 import { isSupabaseConfigured, supabase } from "@/lib/supabase";
 import { withTimeout } from "@/lib/errors";
-import { setActiveClinicId, clearActiveClinic, type ClinicAccount } from "@/lib/clinics";
+import { setActiveClinicId, clearActiveClinic, getActiveClinicId, type ClinicAccount } from "@/lib/clinics";
+import { hydrateClinicConfig, hydratedFor } from "@/lib/clinicConfig";
+import { leaveClinic as apiLeaveClinic } from "@/lib/invites";
+import { repo } from "@/lib/repo";
+import { endElevationOnLogout } from "@/lib/managerOverride";
 import type { OwnerAccount } from "@/lib/owners";
 
 interface SignupExtra {
@@ -19,6 +23,8 @@ interface RawProfile {
   roles: AccountRole[]; // account types the user holds
   phone?: string;
   clinic_id?: string | null;
+  /** Set when the user is staff of another clinic (accepted an invite). */
+  staff?: { clinicId: string; role: Role } | null;
 }
 
 interface AuthState {
@@ -47,7 +53,13 @@ interface AuthState {
   resendConfirmation: (email: string) => Promise<{ error: string | null }>;
   resetPassword: (email: string) => Promise<{ error: string | null }>;
   updatePassword: (newPassword: string) => Promise<{ error: string | null }>;
+  /** Update the signed-in user's own name/phone (profiles table; reflects immediately). */
+  updateProfile: (patch: { full_name?: string; phone?: string }) => Promise<{ error: string | null }>;
   signOut: () => void;
+  /** True when the signed-in user is operating inside ANOTHER clinic they joined. */
+  inAnotherClinic: boolean;
+  /** Leave the joined clinic and return to your own workspace (data was only hidden). */
+  leaveClinic: () => Promise<{ error: string | null }>;
 }
 
 const AuthContext = createContext<AuthState | undefined>(undefined);
@@ -71,6 +83,35 @@ function effectiveRole(active: AccountRole, raw: RawProfile): Role {
   return raw.rawRole !== "owner" ? raw.rawRole : "admin";
 }
 
+/** Map a staff membership role → the app's clinic sub-role (least-privilege fallback). */
+const STAFF_TO_APP_ROLE: Record<string, Role> = {
+  manager: "admin", veterinarian: "doctor", receptionist: "reception", groomer: "reception",
+};
+
+/**
+ * Detect whether the signed-in user is STAFF of another clinic (i.e. accepted an
+ * invite). We deliberately ignore a self-membership (clinic_id === own user id),
+ * which every legacy clinic account has from the 0016 backfill — so this NEVER
+ * changes behaviour for existing clinics/owners. Returns null if not staff, or if
+ * the memberships table doesn't exist yet (pre-0016) → safe no-op.
+ */
+async function loadMembership(userId: string): Promise<{ clinicId: string; role: Role } | null> {
+  if (!supabase) return null;
+  try {
+    const { data, error } = await supabase
+      .from("memberships")
+      .select("clinic_id, role, status")
+      .eq("user_id", userId)
+      .eq("status", "active");
+    if (error || !data) return null;
+    const staff = (data as { clinic_id: string; role: string }[]).find((m) => m.clinic_id !== userId);
+    if (!staff) return null;
+    return { clinicId: staff.clinic_id, role: STAFF_TO_APP_ROLE[staff.role] ?? "reception" };
+  } catch {
+    return null;
+  }
+}
+
 const DEMO_OWNER = { id: "demo-owner", full_name: "Maya Khalil", email: "owner@demo.vet" };
 const DEMO_VET = { id: "demo-vet", full_name: "Dr. Sarah Mansour", email: "vet@demo.vet", clinic_id: "clinic-happy-paws" };
 
@@ -84,7 +125,8 @@ async function loadRawProfile(userId: string): Promise<RawProfile | null> {
     // `roles` column may not exist yet (before migration 0005) — derive from `role`.
     const fromArr = Array.isArray(data.roles) ? (data.roles as unknown[]).filter(isAccountRole) : [];
     const roles = fromArr.length ? fromArr : [accountOf(rawRole)];
-    return { id: data.id, full_name: data.full_name, email: data.email, rawRole, roles, phone: data.phone ?? undefined, clinic_id: data.clinic_id ?? null };
+    const staff = await loadMembership(userId);
+    return { id: data.id, full_name: data.full_name, email: data.email, rawRole, roles, phone: data.phone ?? undefined, clinic_id: data.clinic_id ?? null, staff };
   } catch {
     // Network/backend error (e.g. project paused) — treat as "no profile" so boot never hangs.
     return null;
@@ -113,7 +155,11 @@ async function hydrateSession(u: SbUserLike): Promise<RawProfile> {
     clinic_id: null,
   };
   const rp = await loadRawProfile(u.id).catch(() => null);
-  return rp ?? fallback;
+  if (rp) return rp;
+  // Profile unreachable (transient) — still detect a staff membership so an
+  // invited employee isn't mis-routed to the owner view.
+  fallback.staff = await loadMembership(u.id).catch(() => null);
+  return fallback;
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -127,26 +173,41 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (isSupabaseConfigured && supabase) {
       const sb = supabase;
       let active = true;
-      // Failsafe: a slow/unreachable backend must never trap the app on a blank spinner.
-      const failsafe = setTimeout(() => { if (active) setLoading(false); }, 7000);
+      // A persisted Supabase token means the user WAS signed in. Its presence lets
+      // us tell "genuinely logged out" from "getSession is momentarily slow" (auth
+      // Web-Lock contention on a rapid refresh, or a CDN switch right after a
+      // deploy) — so a valid session is never dumped to the login screen.
+      const hasStoredSbToken = () => {
+        try { return Object.keys(localStorage).some((k) => /^sb-.*-auth-token$/.test(k)); } catch { return false; }
+      };
+      // Failsafe: never trap the app on a blank spinner if the backend is unreachable.
+      const failsafe = setTimeout(() => { if (active) setLoading(false); }, 12000);
       const finish = () => { if (active) { clearTimeout(failsafe); setLoading(false); } };
 
       void (async () => {
         try {
-          const { data } = await withTimeout(sb.auth.getSession(), 8000);
-          if (!active) return;
-          const session = data.session;
-          if (session?.user) {
-            // A valid persisted session exists (e.g. after F5). hydrateSession
-            // falls back to a token-derived profile so a transient profiles-read
-            // failure can NEVER log the user out on refresh.
-            const rp = await hydrateSession(session.user);
-            if (active) setRaw(rp);
-          } else if (active) {
-            setRaw(null);
+          let user: SbUserLike | null = null;
+          // Retry getSession while a token exists — a transient empty/timeout on
+          // refresh or just after a deploy must NOT log the user out.
+          for (let attempt = 0; attempt < 4; attempt++) {
+            try {
+              const { data } = await withTimeout(sb.auth.getSession(), 6000);
+              if (data.session?.user) { user = data.session.user; break; }
+            } catch { /* transient — fall through to the retry decision */ }
+            if (!active || !hasStoredSbToken()) break; // no token → genuinely signed out
+            await new Promise((r) => setTimeout(r, 300 * (attempt + 1)));
           }
-        } catch {
-          /* getSession timed out / errored — show login (the failsafe also covers it) */
+          if (!active) return;
+          if (user) {
+            // hydrateSession falls back to a token-derived profile so a transient
+            // profiles-read failure can NEVER log the user out on refresh.
+            const rp = await hydrateSession(user);
+            if (active) setRaw(rp);
+          } else if (!hasStoredSbToken()) {
+            setRaw(null); // confirmed signed out
+          }
+          // Token present but still unresolved → keep current state; the
+          // onAuthStateChange listener settles it without a forced logout.
         } finally {
           finish();
         }
@@ -209,28 +270,44 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   // ---- Derive active role + the exposed Profile ---------------------------
+  // A staff member (accepted a clinic invite) is treated purely as clinic staff.
+  const effRoles: AccountRole[] = !raw ? [] : raw.staff ? ["clinic"] : raw.roles;
   const resolvedActive: AccountRole | null = !raw
     ? null
-    : raw.roles.length <= 1
-      ? (raw.roles[0] ?? accountOf(raw.rawRole))
-      : (activeRole && raw.roles.includes(activeRole)) ? activeRole : null;
+    : effRoles.length <= 1
+      ? (effRoles[0] ?? accountOf(raw.rawRole))
+      : (activeRole && effRoles.includes(activeRole)) ? activeRole : null;
   const needsRoleChoice = !!raw && resolvedActive === null;
 
   const user = useMemo<Profile | null>(() => {
     if (!raw) return null;
-    const act = resolvedActive ?? raw.roles[0] ?? accountOf(raw.rawRole);
+    const act = resolvedActive ?? effRoles[0] ?? accountOf(raw.rawRole);
+    // Staff membership wins for the clinic workspace (role + which clinic's data).
+    const role = raw.staff && act === "clinic" ? raw.staff.role : effectiveRole(act, raw);
+    // The SHARED workspace id: the clinic you joined as staff, else (for a clinic
+    // account) your own id — every clinic row is stamped with that id, so this is
+    // what all reads/writes must scope by. Owners stay null.
+    const clinicId = act === "clinic"
+      ? (raw.staff ? raw.staff.clinicId : (raw.clinic_id ?? raw.id))
+      : (raw.clinic_id ?? null);
     return {
       id: raw.id, full_name: raw.full_name, email: raw.email,
-      role: effectiveRole(act, raw), roles: raw.roles,
-      phone: raw.phone, clinic_id: raw.clinic_id ?? null,
+      role, roles: effRoles,
+      phone: raw.phone, clinic_id: clinicId,
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [raw, resolvedActive]);
 
-  // Keep the active clinic id in sync with the active role.
+  // Keep the active clinic id in sync with the active role, then pull the clinic's
+  // shared config (services, breeds, meds, …) from Supabase into the local caches.
   useEffect(() => {
-    if (resolvedActive === "clinic" && raw?.clinic_id) setActiveClinicId(raw.clinic_id);
+    const clinicId = raw?.staff ? raw.staff.clinicId : raw?.clinic_id;
+    if (resolvedActive === "clinic" && clinicId) setActiveClinicId(clinicId);
     else if (resolvedActive === "owner") clearActiveClinic();
+    if (resolvedActive === "clinic") {
+      const key = getActiveClinicId();
+      if (key !== hydratedFor()) void hydrateClinicConfig(key);
+    }
   }, [resolvedActive, raw]);
 
   // ---- Demo persistence ---------------------------------------------------
@@ -244,6 +321,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signInDemo = (role: Role, name?: string) => {
     const base = role === "owner" ? DEMO_OWNER : DEMO_VET;
     persistRaw({ id: base.id, full_name: name || base.full_name, email: base.email, rawRole: role, roles: [accountOf(role)], clinic_id: (base as { clinic_id?: string }).clinic_id ?? null }, accountOf(role));
+    void repo.logLogin({ email: base.email, name: name || base.full_name }).catch(() => { /* non-blocking */ });
   };
   const signInClinic = (clinic: ClinicAccount) => {
     persistRaw({ id: clinic.id, full_name: clinic.name, email: clinic.email, rawRole: "admin", roles: ["clinic"], clinic_id: clinic.id }, "clinic");
@@ -319,7 +397,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Set the user NOW rather than waiting for the async onAuthStateChange
       // listener — otherwise the caller's navigate("/") races ahead of the user
       // being set and the Protected route bounces it back to /login.
-      if (data.user) setRaw(await hydrateSession(data.user));
+      if (data.user) {
+        const prof = await hydrateSession(data.user);
+        setRaw(prof);
+        // Record the sign-in for the Reports user-login audit trail (non-blocking).
+        void repo.logLogin({ email: prof.email, name: prof.full_name }).catch(() => { /* never block login */ });
+      }
       return { error: null };
     } catch (e) {
       return { error: e instanceof Error ? e.message : "Sign-in failed." };
@@ -347,23 +430,63 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { error: error?.message ?? null };
   };
 
+  const updateProfile = async (patch: { full_name?: string; phone?: string }): Promise<{ error: string | null }> => {
+    if (!raw) return { error: "No active session." };
+    const clean: { full_name?: string; phone?: string } = {};
+    if (patch.full_name !== undefined) clean.full_name = patch.full_name.trim();
+    if (patch.phone !== undefined) clean.phone = patch.phone.trim();
+    if (isSupabaseConfigured && supabase) {
+      const { error } = await supabase.from("profiles").update(clean).eq("id", raw.id);
+      if (error) return { error: error.message };
+    }
+    setRaw((prev) => {
+      if (!prev) return prev;
+      const next = { ...prev, full_name: clean.full_name ?? prev.full_name, phone: clean.phone ?? prev.phone };
+      if (!isSupabaseConfigured) { try { localStorage.setItem(KEY, JSON.stringify({ raw: next, active: resolvedActive })); } catch { /* ignore */ } }
+      return next;
+    });
+    return { error: null };
+  };
+
   const signOut = () => {
     if (isSupabaseConfigured && supabase) void supabase.auth.signOut();
+    // End any live manager-override elevation FIRST (before the active clinic is
+    // cleared, so its localStorage key still resolves) — otherwise the next user
+    // on a shared device inherits the previous person's 10-minute manager access.
+    try { endElevationOnLogout(); } catch { /* ignore */ }
+    // Purge the service-worker media cache so the previous clinic's patient
+    // photos (cached from Supabase storage) can't be read by the next person on
+    // a shared/kiosk device via DevTools → Cache Storage.
+    try { if ("caches" in window) void caches.keys().then((ks) => ks.forEach((k) => caches.delete(k))); } catch { /* ignore */ }
     setRaw(null);
     setActiveRole(null);
     setRecovery(false);
     storeActive(null);
     clearActiveClinic();
     try { localStorage.removeItem(KEY); } catch { /* ignore */ }
+    // Hard navigation on the way out: it tears down every in-memory cache
+    // (permissions, clinic-config, ops/branch stores, SWR snapshots) so the
+    // NEXT person to sign in on a shared/kiosk device can never briefly see the
+    // previous clinic's data. A soft state reset alone leaves those caches warm.
+    try { window.location.href = "/login"; } catch { /* non-browser env */ }
+  };
+
+  // Leaving a joined clinic only removes the membership row (never any data); a
+  // full reload re-resolves auth_clinic() back to the user's own clinic.
+  const leaveClinic = async () => {
+    const r = await apiLeaveClinic();
+    if (!r.error) { storeActive("clinic"); window.location.href = "/"; }
+    return { error: r.error ?? null };
   };
 
   const value = useMemo<AuthState>(
     () => ({
       user, loading, recovery, demo: !isSupabaseConfigured,
-      roles: raw?.roles ?? [], activeRole: resolvedActive, needsRoleChoice,
+      roles: effRoles, activeRole: resolvedActive, needsRoleChoice,
       chooseRole, switchRole, addRole,
       signInDemo, signInClinic, signInOwner,
-      signUpEmail, signInEmail, resendConfirmation, resetPassword, updatePassword, signOut,
+      signUpEmail, signInEmail, resendConfirmation, resetPassword, updatePassword, updateProfile, signOut,
+      inAnotherClinic: !!raw?.staff, leaveClinic,
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [user, loading, recovery, raw, resolvedActive, needsRoleChoice],

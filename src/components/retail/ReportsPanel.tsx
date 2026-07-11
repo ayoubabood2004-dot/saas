@@ -5,11 +5,15 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 
 import { Banknote, TrendingUp, Receipt, Crown, Package, Trophy, CalendarRange } from "lucide-react";
 import type { Invoice, InvoiceItem } from "@/types";
 import { repo } from "@/lib/repo";
-import { cn } from "@/lib/utils";
+import { cn, money, formatNum, dateLocale } from "@/lib/utils";
 import { playTap } from "@/lib/sounds";
 
-const money = (n: number) => n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const isPaid = (i: Invoice) => (i.status ?? "paid") !== "refunded";
+// Compact axis labels for large Iraqi Dinar amounts (Western numerals): 1500000 → "1.5M".
+const compactNum = (v: number): string =>
+  v >= 1e6 ? `${(v / 1e6).toLocaleString("en-US", { maximumFractionDigits: 1 })}M`
+    : v >= 1e3 ? `${Math.round(v / 1e3)}k`
+      : formatNum(v);
 const localYMD = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 const startOfDay = (d: Date) => { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; };
 const startOfWeek = (d: Date) => { const x = startOfDay(d); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return x; };
@@ -19,14 +23,15 @@ type Period = "day" | "week" | "month" | "year";
 interface Bucket { key: string; label: string; start: Date }
 
 function buildBuckets(period: Period, lang: string): Bucket[] {
-  const loc = lang === "ar" ? "ar-EG" : "en-US";
+  const loc = lang === "ar" ? dateLocale() : "en-US";
   const now = new Date();
   const out: Bucket[] = [];
   if (period === "day") {
     for (let i = 6; i >= 0; i--) { const d = startOfDay(now); d.setDate(d.getDate() - i); out.push({ key: localYMD(d), label: d.toLocaleDateString(loc, { weekday: "short" }), start: d }); }
   } else if (period === "week") {
     const m = startOfWeek(now);
-    for (let i = 7; i >= 0; i--) { const d = new Date(m); d.setDate(d.getDate() - i * 7); out.push({ key: localYMD(d), label: d.toLocaleDateString(loc, { month: "short", day: "numeric" }), start: d }); }
+    // Arabic month name + Western day number (avoids Eastern-Arabic digits from ar-EG).
+    for (let i = 7; i >= 0; i--) { const d = new Date(m); d.setDate(d.getDate() - i * 7); out.push({ key: localYMD(d), label: `${d.toLocaleDateString(loc, { month: "short" })} ${d.getDate()}`, start: d }); }
   } else if (period === "month") {
     for (let i = 11; i >= 0; i--) { const d = new Date(now.getFullYear(), now.getMonth() - i, 1); out.push({ key: `${d.getFullYear()}-${d.getMonth()}`, label: d.toLocaleDateString(loc, { month: "short" }), start: d }); }
   } else {
@@ -139,7 +144,7 @@ export function ReportsPanel({ invoices, clinicId }: { invoices: Invoice[]; clin
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={chart} margin={{ top: 6, right: 4, left: -16, bottom: 0 }} barGap={2}>
                 <XAxis dataKey="label" tick={{ fontSize: 11, fill: "currentColor" }} className="text-ink-subtle" axisLine={false} tickLine={false} />
-                <YAxis tick={{ fontSize: 11, fill: "currentColor" }} className="text-ink-subtle" axisLine={false} tickLine={false} width={48} />
+                <YAxis tick={{ fontSize: 11, fill: "currentColor" }} className="text-ink-subtle" axisLine={false} tickLine={false} width={56} tickFormatter={compactNum} />
                 <Tooltip cursor={{ fill: "rgba(120,120,120,0.08)" }} content={<ChartTip />} />
                 <Bar dataKey="gross" radius={[5, 5, 0, 0]} maxBarSize={34}>
                   {chart.map((_, i) => <Cell key={i} fill="#1266d8" />)}
@@ -217,7 +222,7 @@ function KpiBig({ icon: Icon, tone, label, value }: { icon: typeof Banknote; ton
     <div className="card flex items-center gap-3.5 p-4">
       <span className={cn("grid h-12 w-12 shrink-0 place-items-center rounded-2xl", tones[tone])}><Icon size={24} /></span>
       <div className="min-w-0">
-        <p className="truncate font-display text-2xl font-extrabold text-ink tabular-nums">{value}</p>
+        <p className="font-display text-xl font-extrabold leading-tight text-ink tabular-nums break-words">{value}</p>
         <p className="truncate text-xs text-ink-subtle">{label}</p>
       </div>
     </div>

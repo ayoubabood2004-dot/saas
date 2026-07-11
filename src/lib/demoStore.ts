@@ -1,4 +1,4 @@
-import type { DemoDB, Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, TreatmentEntry, Admission, Reminder, Product } from "@/types";
+import type { DemoDB, Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, TreatmentEntry, Admission, Reminder, Product, ClinicVisit } from "@/types";
 import { uid } from "./utils";
 
 const KEY = "vp_demo_db_v12";
@@ -293,9 +293,14 @@ function seed(): DemoDB {
     { id: uid("prod"), barcode: "8901030710011", name: "Disposable syringe 5ml (box of 100)", category: "consumables", purchase_price: 7, sell_price: 14, stock: 3, min_stock: 5, expiry_date: iso(-10), created_at: new Date().toISOString() },
   ];
 
+  const clinicVisits: ClinicVisit[] = [
+    { id: uid("visit"), pet_id: rocky.id, kind: "checkup", status: "ended", condition: "recovered", opened_at: isoAt(-25, 10, 0), ended_at: isoAt(-25, 10, 20), opened_by: "Dr. Sarah Mansour", outcome: "recovered", summary: "فحص عام سليم", created_at: isoAt(-25, 10, 0) },
+    { id: uid("visit"), pet_id: luna.id, kind: "illness", status: "ended", condition: "under_treatment", opened_at: isoAt(-40, 9, 30), ended_at: isoAt(-38, 12, 0), opened_by: "Dr. Sarah Mansour", outcome: "recovered", summary: "شُفيت من التهاب الجهاز التنفسي العلوي", created_at: isoAt(-40, 9, 30) },
+  ];
+
   return {
     pets: [bobby, luna, francisco, rocky, bella, coco, max],
-    weightLogs, vaccinations, visits, media, appointments, treatments, admissions, reminders,
+    weightLogs, vaccinations, visits, clinicVisits, media, appointments, treatments, admissions, reminders,
     products, invoices: [], invoiceItems: [],
   };
 }

@@ -24,9 +24,15 @@ export default defineConfig({
       workbox: {
         runtimeCaching: [
           {
-            urlPattern: ({ url }) => url.pathname.startsWith("/storage/"),
+            // Cache Supabase storage objects (patient photos) only. Bounded by a
+            // 1-day max age + a hard purge on logout (AuthContext.signOut), so a
+            // previous clinic's images can't linger on a shared/kiosk device.
+            urlPattern: ({ url }) => url.hostname.endsWith(".supabase.co") && url.pathname.includes("/storage/"),
             handler: "CacheFirst",
-            options: { cacheName: "media-cache", expiration: { maxEntries: 200 } },
+            options: {
+              cacheName: "media-cache",
+              expiration: { maxEntries: 200, maxAgeSeconds: 86400, purgeOnQuotaError: true },
+            },
           },
         ],
       },

@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { ScanLine, Search, Printer, ShieldAlert, Mail } from "lucide-react";
 import type { Pet, Vaccination, MedicalVisit, WeightLog } from "@/types";
 import { repo } from "@/lib/repo";
+import { breedLabel } from "@/lib/breeds";
 import { PetAvatar } from "@/components/PetAvatar";
 import { WeightChart } from "@/components/WeightChart";
 import { ageFromDOB } from "@/lib/utils";
@@ -17,7 +18,7 @@ interface Chart {
 }
 
 export function ScanChart() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [code, setCode] = useState("");
   const [chart, setChart] = useState<Chart | null>(null);
   const [error, setError] = useState(false);
@@ -141,7 +142,7 @@ export function ScanChart() {
                       <PetAvatar pet={p} size={40} />
                       <div className="min-w-0">
                         <p className="font-semibold text-ink text-sm">{p.name}</p>
-                        <p className="text-xs text-ink-muted">{t(`pet.species.${p.species}`)}{p.breed ? ` · ${p.breed}` : ""}</p>
+                        <p className="text-xs text-ink-muted">{t(`pet.species.${p.species}`)}{p.breed ? ` · ${breedLabel(p.breed, i18n.language)}` : ""}</p>
                       </div>
                     </button>
                   ))}
@@ -159,7 +160,7 @@ export function ScanChart() {
 }
 
 function PrintableChart({ chart, onBack }: { chart: Chart; onBack: () => void }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { pet, vaccines, visits, weights } = chart;
   const age = ageFromDOB(pet.dob);
 
@@ -178,7 +179,7 @@ function PrintableChart({ chart, onBack }: { chart: Chart; onBack: () => void })
           <div className="flex-1">
             <h1 className="text-2xl font-extrabold text-ink">{t("qr.chartFor", { name: pet.name })}</h1>
             <p className="text-ink-muted">
-              {t(`pet.species.${pet.species}`)}{pet.breed ? ` · ${pet.breed}` : ""}
+              {t(`pet.species.${pet.species}`)}{pet.breed ? ` · ${breedLabel(pet.breed, i18n.language)}` : ""}
               {age ? ` · ${t("pet.ageValue", { years: age.years, months: age.months })}` : ""}
               {pet.microchip_id ? ` · ${t("pet.microchip")} ${pet.microchip_id}` : ""}
             </p>

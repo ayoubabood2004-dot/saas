@@ -34,7 +34,7 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
     if (open) {
       setQuery("");
       setActive(0);
-      void repo.listAllPets(user?.id).then(setPets).catch(() => setPets([]));
+      void repo.listAllPets(user?.clinic_id ?? user?.id).then(setPets).catch(() => setPets([]));
       setTimeout(() => inputRef.current?.focus(), 40);
     }
   }, [open]);

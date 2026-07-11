@@ -2,28 +2,40 @@ import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { AnimatePresence, motion } from "framer-motion";
-import { Store, ShoppingCart, ReceiptText, BarChart3 } from "lucide-react";
-import type { Product, Invoice } from "@/types";
-import { repo } from "@/lib/repo";
+import { Store, ShoppingCart, ReceiptText, BarChart3, HandCoins } from "lucide-react";
+import type { Product, Invoice, Species } from "@/types";
 import { useAuth } from "@/contexts/AuthContext";
+import { useEntitlements } from "@/lib/entitlements";
 import { Skeleton } from "@/components/ui";
 import { cn } from "@/lib/utils";
 import { withTimeout } from "@/lib/errors";
+import { getCached, setCached, isFresh } from "@/lib/swrCache";
+import { loadRetailSnap, retailKey, type RetailSnap } from "@/lib/prefetchData";
 import { playTap } from "@/lib/sounds";
 import { SaleBuilder, type RetailPrefill } from "@/components/retail/SaleBuilder";
 import { InvoicesPanel } from "@/components/retail/InvoicesPanel";
+import { DebtsPanel } from "@/components/retail/DebtsPanel";
 import { ReportsPanel } from "@/components/retail/ReportsPanel";
 
-type Tab = "sell" | "invoices" | "reports";
+type Tab = "sell" | "invoices" | "debts" | "reports";
+
+/** Valid Species values — guards the `species` bridge param against tampered URLs. */
+const SPECIES_SET = new Set<string>(["dog", "cat", "horse", "cow", "bird", "rabbit", "other"]);
 
 export function RetailSales() {
   const { t } = useTranslation();
   const { user } = useAuth();
-  const clinicId = user?.id;
+  const { has } = useEntitlements();
+  const clinicId = user?.clinic_id ?? user?.id; // shared workspace id (manager's id for staff)
   const [tab, setTab] = useState<Tab>("sell");
-  const [products, setProducts] = useState<Product[]>([]);
-  const [invoices, setInvoices] = useState<Invoice[]>([]);
-  const [loading, setLoading] = useState(true);
+
+  // Stale-while-revalidate: paint the last snapshot instantly (seeded by the
+  // page's own load() or the idle background-warmer — same key + shape).
+  const cacheKey = retailKey(clinicId);
+  const seed = getCached<RetailSnap>(cacheKey);
+  const [products, setProducts] = useState<Product[]>(seed?.products ?? []);
+  const [invoices, setInvoices] = useState<Invoice[]>(seed?.invoices ?? []);
+  const [loading, setLoading] = useState(!seed);
 
   // The "bridge": an animal record handed us a customer + pet via the URL. Capture it
   // into state (so it survives the URL cleanup + the initial data load), jump to the
@@ -34,8 +46,12 @@ export function RetailSales() {
     const customer = params.get("customer") ?? "";
     const phone = params.get("phone") ?? "";
     const pet = params.get("pet") ?? "";
+    const petId = params.get("petId") ?? "";
+    // Validate against the known set — never blind-cast a tampered/stale query string.
+    const rawSpecies = params.get("species");
+    const species = rawSpecies && SPECIES_SET.has(rawSpecies) ? (rawSpecies as Species) : undefined;
     if (customer || phone || pet) {
-      setPrefill({ name: customer, phone, pet });
+      setPrefill({ name: customer, phone, pet, petId: petId || undefined, species });
       setTab("sell");
       setParams({}, { replace: true });
     }
@@ -45,10 +61,11 @@ export function RetailSales() {
   const mounted = useRef(true);
   const load = async () => {
     try {
-      const [p, inv] = await withTimeout(Promise.all([repo.listProducts(clinicId), repo.listInvoices(clinicId)]), 15000);
+      const snap = await withTimeout(loadRetailSnap(clinicId), 15000);
       if (!mounted.current) return;
-      setProducts(p);
-      setInvoices(inv);
+      setProducts(snap.products);
+      setInvoices(snap.invoices);
+      setCached<RetailSnap>(cacheKey, snap);
     } catch {
       /* a hung/failed query still clears the skeleton below */
     } finally {
@@ -57,14 +74,16 @@ export function RetailSales() {
   };
   useEffect(() => {
     mounted.current = true;
-    void load();
+    if (!isFresh(cacheKey, 20_000)) void load(); // skip refetch when fresh (< 20s)
     return () => { mounted.current = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // The debts ledger is a super-plan feature (البيع بالدين) — hidden otherwise.
   const TABS: { id: Tab; label: string; icon: typeof Store }[] = [
     { id: "sell", label: t("retail.newSaleTab", "New sale"), icon: ShoppingCart },
     { id: "invoices", label: t("retail.invoicesTab", "Invoices"), icon: ReceiptText },
+    ...(has("debt") ? [{ id: "debts" as Tab, label: t("retail.debtsTab", "سجل الديون"), icon: HandCoins }] : []),
     { id: "reports", label: t("retail.reportsTab", "Reports"), icon: BarChart3 },
   ];
 
@@ -99,6 +118,8 @@ export function RetailSales() {
             <SaleBuilder products={products} clinicId={clinicId} onSold={load} prefill={prefill} />
           ) : tab === "invoices" ? (
             <InvoicesPanel invoices={invoices} clinicId={clinicId} onChanged={load} />
+          ) : tab === "debts" ? (
+            <DebtsPanel invoices={invoices} clinicId={clinicId} onChanged={load} />
           ) : (
             <ReportsPanel invoices={invoices} clinicId={clinicId} />
           )}

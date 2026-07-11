@@ -8,6 +8,12 @@ import "./i18n";
 import "./index.css";
 import { emitGlobalToast } from "./lib/globalToast";
 import { pruneStaleStorage } from "./lib/demoStore";
+import { installDigitNormalizer } from "./lib/digits";
+
+// Western numerals everywhere: typing or pasting Arabic-Indic digits into ANY
+// input converts them to 0-9 on the fly — no data is ever lost to a digit-shape
+// mismatch.
+installDigitNormalizer();
 
 // Reclaim localStorage on every boot: old-version demo databases (with embedded
 // base64 media) pile up and can exhaust the ~5 MB quota, after which writes throw

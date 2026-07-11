@@ -16,22 +16,34 @@ import {
   ArrowLeftRight,
   Boxes,
   Store,
+  MessageCircle,
+  Briefcase,
+  BarChart3,
+  Sparkles,
 } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { setLang, type Lang } from "@/i18n";
 import { useAuth } from "@/contexts/AuthContext";
 import { isSoundEnabled, setSoundEnabled, playTap } from "@/lib/sounds";
+import { prefetchHandlers } from "@/lib/routePrefetch";
 import { Tooltip, ThemeToggle } from "@/components/ui";
+import { OverrideCorner } from "@/components/ManagerOverride";
 import { Logo } from "@/components/Logo";
+import { BranchSwitcher } from "@/components/BranchSwitcher";
+import { branchStore } from "@/lib/branchStore";
 import { useCommandPalette } from "@/components/CommandPaletteProvider";
+import { usePermissions } from "@/hooks/usePermissions";
+import { useEntitlements } from "@/lib/entitlements";
 import { cn } from "@/lib/utils";
 
-export function TopBar({ mobileOnly = false }: { mobileOnly?: boolean }) {
+export function TopBar({ mobileOnly = false, minimal = false }: { mobileOnly?: boolean; minimal?: boolean }) {
   const { t, i18n } = useTranslation();
   const { user, signOut, roles, activeRole, switchRole } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const palette = useCommandPalette();
+  const { can } = usePermissions();
+  const { has } = useEntitlements();
   const [sound, setSound] = useState(isSoundEnabled());
   const [menuOpen, setMenuOpen] = useState(false);
   const otherRole = activeRole === "clinic" ? "owner" : "clinic";
@@ -39,6 +51,14 @@ export function TopBar({ mobileOnly = false }: { mobileOnly?: boolean }) {
   const staff = user?.role === "doctor" || user?.role === "reception" || user?.role === "admin";
 
   useEffect(() => setMenuOpen(false), [location.pathname]);
+
+  // Eagerly hydrate the branch store on every layout (the sidebar is desktop-only),
+  // so the device's saved branch is restored before any write stamps a branch —
+  // a mobile reload followed by an immediate "new case" still lands correctly.
+  useEffect(() => {
+    if (staff) void branchStore.ensure(user?.clinic_id ?? user?.id).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [staff, user?.clinic_id, user?.id]);
 
   const toggleLang = () => {
     setLang(i18n.language === "ar" ? "en" : ("ar" as Lang));
@@ -51,14 +71,21 @@ export function TopBar({ mobileOnly = false }: { mobileOnly?: boolean }) {
     if (next) playTap();
   };
 
-  const navItems = staff
+  // `minimal` (a subscription-locked clinic) hides all navigation — only the
+  // logo + theme/language/logout remain, so nothing but the subscribe screen
+  // is reachable.
+  const navItems = minimal ? [] : staff
     ? [
         { to: "/reception", icon: CalendarDays, label: t("reception.title") },
         { to: "/records", icon: ClipboardList, label: t("records.title") },
-        { to: "/inventory", icon: Boxes, label: t("nav.inventory", "Inventory") },
-        { to: "/retail", icon: Store, label: t("nav.retail", "Retail & Sales") },
+        { to: "/inventory", icon: Boxes, label: t("nav.inventory", "Inventory"), show: can("manageInventory") },
+        { to: "/retail", icon: Store, label: t("nav.retail", "Retail & Sales"), show: can("processSales") && has("pos") },
+        { to: "/reports", icon: BarChart3, label: t("nav.reports", "التقارير"), show: can("viewReports") && has("reports") },
+        { to: "/campaigns", icon: MessageCircle, label: t("nav.campaigns", "WhatsApp Campaigns"), show: has("whatsapp") },
+        { to: "/staff", icon: Briefcase, label: t("nav.staff", "Staff Management"), show: can("manageStaff") },
         { to: "/scan", icon: ScanLine, label: t("nav.scan") },
-      ]
+        { to: "/subscribe", icon: Sparkles, label: t("nav.subscribe", "الاشتراك") },
+      ].filter((it) => it.show !== false)
     : [];
 
   const isActive = (to: string) => location.pathname === to || location.pathname.startsWith(to + "/");
@@ -81,18 +108,15 @@ export function TopBar({ mobileOnly = false }: { mobileOnly?: boolean }) {
                 <Link
                   key={item.to}
                   to={item.to}
+                  {...prefetchHandlers(item.to)}
                   className={cn(
                     "relative inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold transition-colors",
                     active ? "text-brand-700 dark:text-brand-300" : "text-ink-muted hover:text-ink hover:bg-surface-2",
                   )}
                 >
-                  {active && (
-                    <motion.span
-                      layoutId="nav-active"
-                      className="absolute inset-0 rounded-full bg-brand-50 dark:bg-brand-500/15"
-                      transition={{ type: "spring", stiffness: 380, damping: 30 }}
-                    />
-                  )}
+                  {/* Instant CSS active background (no framer-motion layoutId) —
+                      the sliding projection cost a DOM measure on every nav. */}
+                  {active && <span className="absolute inset-0 rounded-full bg-brand-50 dark:bg-brand-500/15" />}
                   <span className="relative z-10 inline-flex items-center gap-2">
                     <Icon size={17} />
                     {item.label}
@@ -130,8 +154,9 @@ export function TopBar({ mobileOnly = false }: { mobileOnly?: boolean }) {
             </Tooltip>
 
             <ThemeToggle />
+            <OverrideCorner compact />
 
-            {staff && (
+            {staff && can("manageSettings") && (
               <Tooltip label={t("nav.settings")}>
                 <Link to="/settings" className="hidden h-11 w-11 place-items-center rounded-full text-ink-muted transition hover:bg-surface-2 hover:text-ink sm:grid">
                   <SettingsIcon size={19} />
@@ -184,6 +209,8 @@ export function TopBar({ mobileOnly = false }: { mobileOnly?: boolean }) {
               className="overflow-hidden border-t border-line md:hidden"
             >
               <nav className="mx-auto flex max-w-6xl flex-col gap-1 px-4 py-3">
+                {/* Branch switcher — mobile placement (renders only with 2+ branches). */}
+                <BranchSwitcher className="mb-1" inline />
                 <button
                   onClick={() => {
                     setMenuOpen(false);
@@ -199,6 +226,7 @@ export function TopBar({ mobileOnly = false }: { mobileOnly?: boolean }) {
                     <Link
                       key={item.to}
                       to={item.to}
+                      {...prefetchHandlers(item.to)}
                       className={cn(
                         "flex items-center gap-3 rounded-2xl px-3 py-3 font-medium",
                         isActive(item.to) ? "bg-brand-50 text-brand-700 dark:bg-brand-500/15 dark:text-brand-300" : "text-ink hover:bg-surface-2",
@@ -208,9 +236,11 @@ export function TopBar({ mobileOnly = false }: { mobileOnly?: boolean }) {
                     </Link>
                   );
                 })}
-                <Link to="/settings" className="flex items-center gap-3 rounded-2xl px-3 py-3 text-ink hover:bg-surface-2">
-                  <SettingsIcon size={18} /> {t("nav.settings")}
-                </Link>
+                {can("manageSettings") && (
+                  <Link to="/settings" className="flex items-center gap-3 rounded-2xl px-3 py-3 text-ink hover:bg-surface-2">
+                    <SettingsIcon size={18} /> {t("nav.settings")}
+                  </Link>
+                )}
                 {roles.length > 1 && (
                   <button
                     onClick={() => { setMenuOpen(false); switchRole(); navigate("/"); }}

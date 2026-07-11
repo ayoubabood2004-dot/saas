@@ -72,6 +72,8 @@ export interface Pet {
   species: Species;
   breed?: string;
   sex: Sex;
+  /** The animal has passed away — suppresses birthday greetings/reminders. */
+  deceased?: boolean;
   dob?: string | null; // ISO date
   microchip_id?: string;
   color?: string;
@@ -102,6 +104,21 @@ export interface WeightLog {
   pet_id: string;
   weight_kg: number;
   measured_at: string; // ISO date
+}
+
+/** A free-text clinical / progress note on the patient record (سجل الملاحظات السريرية). */
+export interface PetNote {
+  id: string;
+  pet_id: string;
+  clinic_id?: string | null;
+  /** The acting user who wrote the note (accountability). */
+  author_id?: string | null;
+  /** Denormalized author display name, snapshotted at write time. */
+  author_name?: string | null;
+  note_text: string;
+  /** When set, this note belongs to a specific visit (زيارة). */
+  visit_id?: string | null;
+  created_at: string; // ISO timestamp
 }
 
 export type VaccinationStatus = "administered" | "scheduled" | "overdue";
@@ -144,6 +161,8 @@ export interface MedicalVisit {
   clinic_name: string;
   doctor_name: string;
   visit_date: string; // ISO date
+  /** Patient's age in whole months at the time of the visit (historical snapshot). */
+  patient_age_months?: number | null;
   // SOAP
   subjective?: string;
   objective?: string;
@@ -204,10 +223,16 @@ export interface TreatmentEntry {
   /** Set when the dose has actually been administered (flowsheet done-state). */
   administered_at?: string | null; // ISO datetime
   administered_by?: string; // who gave it
+  /** When set, this scheduled dose belongs to a visit's treatment plan. */
+  visit_id?: string | null;
+  /** Marks a dose whose plan row was edited after the plan was first saved. */
+  edited?: boolean;
   created_at: string;
 }
 
-export type AdmissionKind = "treatment" | "boarding";
+// "treatment_boarding" = therapeutic boarding: the pet is staying in the clinic
+// AND under active medical care at the same time (counts as both boarding + care).
+export type AdmissionKind = "treatment" | "boarding" | "treatment_boarding";
 export type AdmissionStatus = "active" | "discharged";
 
 /** A clinic admission/case. Active treatment cases and boarding stays both live here;
@@ -225,6 +250,55 @@ export interface Admission {
   cycle_hours?: number;
   /** When the current cycle's treatment was last marked complete. */
   last_completed_at?: string | null;
+  /** Row creation timestamp (ISO). Drives newest-first ordering of the case history. */
+  created_at?: string;
+  /** Owning clinic (shared workspace). Scopes the operational calendar. */
+  clinic_id?: string | null;
+  /** Branch (location) inside the clinic. NULL always means the main branch —
+   *  existing single-branch clinics never carry a value here. */
+  branch_id?: string | null;
+  /** How the stay ended: recovered (عايش) or deceased (متوفى). NULL = unspecified. */
+  outcome?: "recovered" | "deceased" | null;
+}
+
+// A clinic VISIT (زيارة) — a self-contained encounter opened each time the pet
+// comes in. Routine (checkup/grooming/…) visits are quick; an "illness" visit
+// carries the full clinical workspace (diagnosis + a day-by-day treatment plan).
+export type VisitKind = "illness" | "checkup" | "grooming" | "vaccination" | "followup" | "other";
+export type VisitStatus = "open" | "ended";
+
+export interface ClinicVisit {
+  id: string;
+  pet_id: string;
+  clinic_id?: string | null;
+  kind: VisitKind;
+  reason?: string | null;
+  status: VisitStatus;
+  /** Case status at intake — a CaseOutcome id (under_treatment / recovered / …). */
+  condition?: string | null;
+  opened_at: string;            // ISO datetime the pet came in
+  ended_at?: string | null;
+  opened_by?: string | null;
+  ended_by?: string | null;
+  /** Final case status when the visit is ended — a CaseOutcome id. */
+  outcome?: string | null;
+  /** Closing note recorded on end. */
+  summary?: string | null;
+  created_at?: string;
+}
+
+/** A physical location of the clinic. Purely organisational — the security
+ *  boundary stays clinic_id; branches never gate data access on their own. */
+export interface Branch {
+  id: string;
+  clinic_id?: string | null;
+  name: string;
+  address?: string | null;
+  phone?: string | null;
+  /** The primary location. Pre-branches data (branch_id NULL) belongs to it. */
+  is_main?: boolean;
+  is_active?: boolean;
+  created_at?: string;
 }
 
 /** Category of a unified-feed event / reminder (drives its icon + colour). */
@@ -264,16 +338,30 @@ export interface Product {
   barcode?: string | null;
   name: string;
   category?: ProductCategory | null;
+  /** Free-text subcategory (e.g. "معلبات", "رمل", "دراي فود") — used by Mix & Match promotions. */
+  subcategory?: string | null;
   purchase_price: number;
   sell_price: number;
   stock: number;
   /** Reorder level — stock at or below this triggers a low-stock warning. */
   min_stock?: number | null;
   expiry_date?: string | null; // ISO date
+  /** Fractional sales: the box can be broken into smaller units (e.g. a pill from a strip). */
+  has_sub_unit?: boolean;
+  /** Name of one sub-unit shown at the till, e.g. "حبة" / "شريط" / "مل". */
+  sub_unit_name?: string | null;
+  /** How many sub-units fill one box (e.g. 20 pills per box). */
+  units_per_box?: number | null;
+  /** Price of a single sub-unit (used when selling by the sub-unit). */
+  sub_unit_price?: number | null;
   created_at: string;
 }
 
 export type PaymentMethod = "cash" | "card" | "transfer";
+/** One leg of a (possibly split) payment — a method and the amount paid through it. */
+export interface PaymentSplit { method: PaymentMethod; amount: number }
+/** Settlement state of a sale relative to its total. Derived from amount_paid vs total. */
+export type PaymentStatus = "paid" | "partial" | "unpaid";
 export type DiscountType = "percent" | "fixed";
 export type InvoiceStatus = "paid" | "refunded";
 
@@ -284,27 +372,61 @@ export interface Invoice {
   /** Walk-in customer captured at sale time (retail module; optional). */
   customer_name?: string | null;
   customer_phone?: string | null;
+  /** Patient name when the sale was raised for a specific animal (optional). */
+  pet_name?: string | null;
   subtotal?: number; // revenue before discount
   discount?: number; // resolved discount amount applied
   discount_type?: DiscountType | null;
+  /** Primary/dominant method (largest leg) — kept for legacy reads & quick filters. */
   payment_method?: PaymentMethod | null;
+  /** Split payment: every method+amount leg of this sale. Single-method sales hold one leg. */
+  payment_details?: PaymentSplit[] | null;
   total: number; // revenue after discount
+  /** Cumulative amount received so far (incl. later installments). Absent on legacy rows = fully paid. */
+  amount_paid?: number;
   cost_total: number; // sum of purchase prices (cost of goods)
   profit: number; // total - cost_total
   item_count: number; // number of units sold
   print_count?: number; // times this invoice has been printed
   status?: InvoiceStatus; // 'paid' | 'refunded'
   refunded_at?: string | null;
+  /** Cashier / sales rep (staff id) who made the sale — for staff performance reports. */
+  staff_id?: string | null;
   created_at: string;
+}
+
+/** A cash expense / withdrawal from the clinic drawer (rent, supplies, salaries,
+ *  petty cash…). Append-only ledger, clinic-isolated. `description` says WHERE &
+ *  WHY the money was spent. Every expense is treated as cash-out of the drawer. */
+export interface Expense {
+  id: string;
+  clinic_id?: string | null;
+  amount: number;                 // > 0
+  description: string;            // where & why the money was spent (required)
+  category?: string | null;       // optional bucket (rent/salaries/utilities/supplies…)
+  staff_id?: string | null;       // who recorded it (auto-stamped)
+  spent_at: string;               // ISO — when the money actually left
+  created_at: string;             // ISO — when it was recorded
 }
 
 /** Sale-level metadata captured by the retail builder and sent to checkout. */
 export interface SaleMeta {
   customer_name?: string | null;
   customer_phone?: string | null;
+  /** Patient name when the sale is raised for a specific animal (prints on the invoice). */
+  pet_name?: string | null;
   discount_type?: DiscountType | null;
   discount_value?: number; // raw input: a percent (0–100) or a fixed amount
   payment_method?: PaymentMethod | null;
+  /** Split payment legs (method + amount). When present, their sum equals amount_paid. */
+  payment_details?: PaymentSplit[] | null;
+  /** Amount received today at checkout. When < total the sale is saved on credit (دفع آجل). */
+  amount_paid?: number;
+  /** Cashier-set final price to charge outright. May be ABOVE the cart subtotal (a markup)
+   *  or below it (a discount). When present it IS the invoice total (clamped ≥ 0). */
+  final_total?: number;
+  /** Cashier / sales rep (staff id) who made the sale — for staff performance reports. */
+  staff_id?: string | null;
 }
 
 /** A distinct retail customer, derived from past invoices for quick re-selection. */
@@ -326,6 +448,10 @@ export interface InvoiceItem {
   unit_price: number; // sell price at sale time
   unit_cost: number; // purchase price at sale time
   line_total: number; // qty * unit_price
+  /** Box-equivalent removed from stock (0.25 for 5 of 20 pills). Null on box sales → equals qty. */
+  stock_qty?: number | null;
+  /** Unit the customer bought, snapshotted for the receipt (e.g. "علبة" / "حبة"). */
+  unit_label?: string | null;
 }
 
 /** A line in the POS cart before checkout. */
@@ -342,6 +468,10 @@ export interface CheckoutItem {
   qty: number;
   unit_price: number;
   unit_cost: number;
+  /** Box-equivalent to deduct from stock (qty / units_per_box for sub-unit sales). Defaults to qty. */
+  stock_qty?: number;
+  /** Sale unit label persisted for the receipt (e.g. "علبة" / "حبة"). */
+  unit_label?: string | null;
 }
 
 /* ---------------- Services & non-barcode items ---------------- */
@@ -351,12 +481,47 @@ export interface ServiceCategory { id: string; name: string }
 export interface Service { id: string; category_id: string; name: string; price: number }
 export interface ServiceCatalog { categories: ServiceCategory[]; services: Service[] }
 
+/** An audit-trail row (who did what, when) — from the audit_log table (migration 0018).
+ *  Used by the Reports module's security log (e.g. deleted invoices + who deleted them). */
+export interface AuditEntry {
+  id: number | string;
+  clinic_id?: string | null;
+  actor?: string | null;   // auth.uid() of who performed the action
+  action: string;          // INSERT | UPDATE | DELETE
+  entity: string;          // affected table name
+  entity_id?: string | null;
+  details?: Record<string, unknown> | null; // snapshot of the affected row
+  created_at: string;
+}
+
+/** A staff login event — for the Reports module's user-login audit trail. */
+export interface LoginEvent {
+  id: number | string;
+  clinic_id?: string | null;
+  user_id?: string | null;
+  email?: string | null;
+  name?: string | null;
+  created_at: string;
+}
+
+/** A logged WhatsApp message (campaign send history / "last contacted"). */
+export interface WhatsAppMessage {
+  id: string;
+  clinic_id?: string | null;
+  pet_id?: string | null;
+  owner_name?: string | null;
+  owner_phone?: string | null;
+  reminder_type?: string | null;
+  sent_at: string;
+}
+
 export interface DemoDB {
   pets: Pet[];
   weightLogs: WeightLog[];
   vaccinations: Vaccination[];
   media: MediaItem[];
   visits: MedicalVisit[];
+  clinicVisits: ClinicVisit[];
   appointments: Appointment[];
   treatments: TreatmentEntry[];
   admissions: Admission[];
@@ -364,4 +529,6 @@ export interface DemoDB {
   products: Product[];
   invoices: Invoice[];
   invoiceItems: InvoiceItem[];
+  waMessages?: WhatsAppMessage[];
+  branches?: Branch[];
 }

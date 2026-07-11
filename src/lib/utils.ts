@@ -1,8 +1,31 @@
+import i18next from "i18next";
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
+}
+
+/** Iraqi Dinar currency symbol. */
+export const IQD = "د.ع";
+
+/** Currency symbol that follows the UI language — د.ع in Arabic, IQD in English. */
+export const currencySymbol = () => (i18next.language === "ar" ? "د.ع" : "IQD");
+
+
+
+// 'en-US' is intentional: it guarantees Western numerals (0-9) with thousands
+// separators regardless of the browser locale, and never Eastern Arabic digits.
+const numFmt = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
+
+/** Group a number with thousands separators, no decimals — e.g. 1500000 → "1,500,000". */
+export function formatNum(n: number): string {
+  return numFmt.format(Number.isFinite(n) ? n : 0);
+}
+
+/** Format an amount as Iraqi Dinar — e.g. 25000 → "25,000 د.ع". */
+export function money(n: number): string {
+  return `${formatNum(n)} ${currencySymbol()}`;
 }
 
 export function uid(prefix = "id"): string {
@@ -33,14 +56,36 @@ export function ageFromDOB(dob?: string | null): { years: number; months: number
   return { years: Math.floor(months / 12), months: months % 12 };
 }
 
+/** Total age in whole months from a DOB (null if missing/invalid). Used to snapshot a
+ *  patient's age onto a visit record so history shows their age at that moment. */
+export function ageMonths(dob?: string | null): number | null {
+  const a = ageFromDOB(dob);
+  return a ? a.years * 12 + a.months : null;
+}
+
 export function daysUntil(date: string): number {
   const target = new Date(date);
   const now = new Date();
   return Math.ceil((target.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
 }
 
+/** Local calendar date as YYYY-MM-DD. Uses local getters (NOT toISOString, which is
+ *  UTC and lands on the wrong day late-evening/early-morning in positive-offset zones
+ *  like Iraq UTC+3). The single source of truth for "today" across the app. */
+export function localISO(d: Date = new Date()): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+// Arabic locale variant that keeps Arabic names but forces Western (Latin) numerals
+// via the Unicode `nu=latn` extension — so dates/times never show Eastern-Arabic digits.
+// Defaults to the CURRENT UI language so date rendering follows the app language.
+export const dateLocale = (lang: string = i18next.language) => (lang === "ar" ? "ar-EG-u-nu-latn" : "en-GB");
+
 export function formatTime(iso: string, lang: string): string {
-  return new Date(iso).toLocaleTimeString(lang === "ar" ? "ar-EG" : "en-US", { hour: "numeric", minute: "2-digit" });
+  return new Date(iso).toLocaleTimeString(dateLocale(lang), { hour: "numeric", minute: "2-digit" });
 }
 
 /** Format a bare "HH:MM" (24h) clock string into a locale-aware 12-hour time (e.g. "2:57 PM"). */
@@ -49,11 +94,11 @@ export function formatHM(hm: string, lang: string): string {
   if (Number.isNaN(h)) return hm;
   const d = new Date();
   d.setHours(h, Number.isNaN(m) ? 0 : m, 0, 0);
-  return d.toLocaleTimeString(lang === "ar" ? "ar-EG" : "en-US", { hour: "numeric", minute: "2-digit" });
+  return d.toLocaleTimeString(dateLocale(lang), { hour: "numeric", minute: "2-digit" });
 }
 
 export function formatDate(iso: string, lang: string): string {
-  return new Date(iso).toLocaleDateString(lang === "ar" ? "ar-EG" : "en-US", { weekday: "short", day: "numeric", month: "short" });
+  return new Date(iso).toLocaleDateString(dateLocale(lang), { weekday: "short", day: "numeric", month: "short" });
 }
 
 /** Generate slot start datetimes (ISO) for a day between open/close hours. */

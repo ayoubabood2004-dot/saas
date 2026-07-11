@@ -1,6 +1,7 @@
 import type { Species } from "@/types";
 import type { VitalKey } from "./vitals";
 import { getActiveClinicId } from "./clinics";
+import { sb, cloudWrite, registerHydrator, registerReset } from "./clinicSync";
 
 // Doctor-customizable overrides for the medical reading (vital) normal ranges.
 // Persisted locally; merged over the built-in defaults by vitals.rangeFor().
@@ -14,23 +15,60 @@ type Overrides = Partial<Record<Species, Partial<Record<VitalKey, MinMax>>>>;
 
 const overridesKey = () => `vp_vital_overrides_${getActiveClinicId()}`;
 
-function load(): Overrides {
+// Clinic-level vital-range overrides are now persisted to Supabase
+// (clinic_vital_ranges, isolated by clinic_id = auth_clinic()) with an in-memory
+// cache + localStorage mirror, so every staff device shares the same thresholds.
+let cache: Overrides | null = null;
+
+function readLocal(): Overrides {
   try {
     const raw = localStorage.getItem(overridesKey());
     if (raw) return JSON.parse(raw) as Overrides;
-  } catch {
-    /* ignore */
-  }
+  } catch { /* ignore */ }
   return {};
 }
 
+function load(): Overrides {
+  return cache ?? readLocal();
+}
+
 function save(o: Overrides) {
+  cache = o;
+  try { localStorage.setItem(overridesKey(), JSON.stringify(o)); } catch { /* ignore */ }
+}
+
+interface VitalRow { species: string; vital_key: string; min_val: number; max_val: number }
+
+export async function hydrateVitalOverrides(): Promise<void> {
+  const client = sb();
+  if (!client) { cache = readLocal(); return; }
   try {
-    localStorage.setItem(overridesKey(), JSON.stringify(o));
+    const { data, error } = await client.from("clinic_vital_ranges").select("species,vital_key,min_val,max_val");
+    if (error) throw error;
+    const o: Overrides = {};
+    for (const r of (data ?? []) as VitalRow[]) {
+      (o[r.species as Species] ??= {})[r.vital_key as VitalKey] = { min: Number(r.min_val), max: Number(r.max_val) };
+    }
+    if ((data ?? []).length === 0) {
+      const local = readLocal();
+      const rows: VitalRow[] = [];
+      for (const sp of Object.keys(local) as Species[]) {
+        for (const k of Object.keys(local[sp] ?? {}) as VitalKey[]) {
+          const mm = local[sp]![k]!;
+          (o[sp] ??= {})[k] = mm;
+          rows.push({ species: sp, vital_key: k, min_val: mm.min, max_val: mm.max });
+        }
+      }
+      if (rows.length) await client.from("clinic_vital_ranges").insert(rows);
+    }
+    cache = o;
+    try { localStorage.setItem(overridesKey(), JSON.stringify(o)); } catch { /* ignore */ }
   } catch {
-    /* ignore */
+    cache = readLocal();
   }
 }
+registerHydrator(hydrateVitalOverrides);
+registerReset(() => { cache = null; });
 
 export function getVitalOverride(species: Species, key: VitalKey): MinMax | undefined {
   return load()[species]?.[key];
@@ -39,13 +77,18 @@ export function getVitalOverride(species: Species, key: VitalKey): MinMax | unde
 export function setVitalOverride(species: Species, key: VitalKey, range: MinMax) {
   const o = load();
   o[species] = { ...o[species], [key]: range };
-  save(o);
+  save({ ...o });
+  cloudWrite(() => sb()!.from("clinic_vital_ranges").upsert(
+    { species, vital_key: key, min_val: range.min, max_val: range.max },
+    { onConflict: "clinic_id,species,vital_key" },
+  ), "vital-override-set");
 }
 
 export function clearVitalOverrides(species: Species) {
   const o = load();
   delete o[species];
-  save(o);
+  save({ ...o });
+  cloudWrite(() => sb()!.from("clinic_vital_ranges").delete().eq("species", species), "vital-override-clear");
 }
 
 /* ---------------- Per-animal (individual) reading-range overrides ---------------- */
@@ -90,23 +133,134 @@ export function clearPetRanges(petId: string) {
   savePet(o);
 }
 
-/* ---------------- Default international dialing code (per clinic) ---------------- */
-const dialKey = () => `vp_dial_code_${getActiveClinicId()}`;
+/* ---------------- Clinic preferences (dial code + branding), per clinic --------------
+ * One clinic_prefs row holds the default dial code, the clinic logo (a compressed
+ * data-URL), and social handles. Same dual-adapter pattern: in-memory cache hydrated
+ * at login, localStorage mirror, optimistic write-through to Supabase. */
 export const DEFAULT_DIAL_CODE = "+964"; // Iraq
 
-export function getDialCode(): string {
+export interface ClinicSocials { facebook: string; instagram: string }
+interface ClinicPrefs { dial_code: string; logo_url: string | null; social_facebook: string; social_instagram: string; clinic_name: string; pre_sale_print: boolean; override_enabled: boolean }
+const DEFAULT_PREFS: ClinicPrefs = { dial_code: DEFAULT_DIAL_CODE, logo_url: null, social_facebook: "", social_instagram: "", clinic_name: "", pre_sale_print: false, override_enabled: false };
+
+const prefsKey = () => `vp_clinic_prefs_${getActiveClinicId()}`;
+const legacyDialKey = () => `vp_dial_code_${getActiveClinicId()}`;
+
+let prefsCache: ClinicPrefs | null = null;
+
+function readPrefsLocal(): ClinicPrefs {
   try {
-    return localStorage.getItem(dialKey()) || DEFAULT_DIAL_CODE;
+    const raw = localStorage.getItem(prefsKey());
+    if (raw) return { ...DEFAULT_PREFS, ...(JSON.parse(raw) as Partial<ClinicPrefs>) };
+  } catch { /* ignore */ }
+  // Fall back to the legacy dial-only key so existing dial codes aren't lost.
+  try { const d = localStorage.getItem(legacyDialKey()); if (d) return { ...DEFAULT_PREFS, dial_code: d }; } catch { /* ignore */ }
+  return { ...DEFAULT_PREFS };
+}
+
+function savePrefsLocal(p: ClinicPrefs) {
+  prefsCache = p;
+  try { localStorage.setItem(prefsKey(), JSON.stringify(p)); } catch { /* ignore */ }
+}
+
+function prefs(): ClinicPrefs {
+  return prefsCache ?? readPrefsLocal();
+}
+
+export async function hydrateClinicPrefs(): Promise<void> {
+  const client = sb();
+  if (!client) { prefsCache = readPrefsLocal(); return; }
+  try {
+    // select("*") tolerates any schema age: columns a pre-migration database
+    // doesn't have yet simply aren't in the payload, and the mapping below
+    // falls back to this device's local mirror for them.
+    const { data, error } = await client.from("clinic_prefs").select("*").maybeSingle();
+    if (error) throw error;
+    if (data) {
+      const d = data as Partial<ClinicPrefs>;
+      const local = readPrefsLocal();
+      prefsCache = {
+        dial_code: d.dial_code || DEFAULT_DIAL_CODE,
+        logo_url: d.logo_url ?? null,
+        social_facebook: d.social_facebook ?? "",
+        social_instagram: d.social_instagram ?? "",
+        clinic_name: d.clinic_name ?? "",
+        // Columns missing pre-migration → keep whatever this device had locally.
+        pre_sale_print: d.pre_sale_print ?? local.pre_sale_print,
+        override_enabled: d.override_enabled ?? local.override_enabled,
+      };
+    } else {
+      // No row yet → migrate any local prefs up (or seed the default dial code).
+      const local = readPrefsLocal();
+      prefsCache = local;
+      await client.from("clinic_prefs").upsert(
+        { dial_code: local.dial_code, logo_url: local.logo_url, social_facebook: local.social_facebook, social_instagram: local.social_instagram, clinic_name: local.clinic_name },
+        { onConflict: "clinic_id" },
+      );
+    }
+    savePrefsLocal(prefsCache);
   } catch {
-    return DEFAULT_DIAL_CODE;
+    prefsCache = readPrefsLocal();
   }
+}
+registerHydrator(hydrateClinicPrefs);
+registerReset(() => { prefsCache = null; });
+
+/** Write one or more pref fields: optimistic cache+local update, then cloud upsert. */
+function patchPrefs(patch: Partial<ClinicPrefs>, ctx: string) {
+  savePrefsLocal({ ...prefs(), ...patch });
+  cloudWrite(() => sb()!.from("clinic_prefs").upsert(patch, { onConflict: "clinic_id" }), ctx);
+}
+
+export function getDialCode(): string {
+  return prefs().dial_code || DEFAULT_DIAL_CODE;
 }
 
 export function setDialCode(code: string) {
   const clean = code.trim() || DEFAULT_DIAL_CODE;
-  try {
-    localStorage.setItem(dialKey(), clean.startsWith("+") ? clean : `+${clean.replace(/\D/g, "")}`);
-  } catch {
-    /* ignore */
-  }
+  const normalized = clean.startsWith("+") ? clean : `+${clean.replace(/\D/g, "")}`;
+  patchPrefs({ dial_code: normalized }, "dial-code-set");
+}
+
+/** Clinic logo as a data-URL (null when none). Shown on printed invoices. */
+export function getClinicLogo(): string | null {
+  return prefs().logo_url;
+}
+export function setClinicLogo(dataUrl: string | null) {
+  patchPrefs({ logo_url: dataUrl }, "clinic-logo-set");
+}
+
+export function getClinicSocials(): ClinicSocials {
+  const p = prefs();
+  return { facebook: p.social_facebook, instagram: p.social_instagram };
+}
+export function setClinicSocials(s: ClinicSocials) {
+  patchPrefs({ social_facebook: s.facebook.trim(), social_instagram: s.instagram.trim() }, "clinic-socials-set");
+}
+
+/** The clinic's own display name, shown on printed invoices and legal consent forms.
+ *  Empty string when unset — callers fall back to the staff full_name / brand text. */
+export function getClinicName(): string {
+  return prefs().clinic_name.trim();
+}
+export function setClinicName(name: string) {
+  patchPrefs({ clinic_name: name.trim() }, "clinic-name-set");
+}
+
+/** Opt-in cashier feature: print a PRO-FORMA invoice BEFORE completing the sale.
+ *  Off by default — only clinics that enable it in Settings see the button. */
+export function getPreSalePrint(): boolean {
+  return !!prefs().pre_sale_print;
+}
+export function setPreSalePrint(v: boolean) {
+  patchPrefs({ pre_sale_print: v }, "pre-sale-print-set");
+}
+
+/** Opt-in Manager Override (وضع المدير برمز سري): this flag only reveals the
+ *  unlock icon — the PIN itself is verified server-side (migration 0048). */
+export function getOverrideEnabled(): boolean {
+  return !!prefs().override_enabled;
+}
+export function setOverrideEnabled(v: boolean) {
+  patchPrefs({ override_enabled: v }, "override-enabled-set");
 }

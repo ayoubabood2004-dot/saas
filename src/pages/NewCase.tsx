@@ -2,9 +2,12 @@ import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
-import { ArrowLeft, ArrowRight, Camera, Stethoscope, BedDouble, LogOut as ReleaseIcon, CheckCircle2, Pill, Plus, Trash2, Activity, ChevronDown, Search, Loader2, ShieldCheck } from "lucide-react";
+import { ArrowLeft, ArrowRight, Camera, Stethoscope, BedDouble, CheckCircle2, Pill, Plus, Trash2, Activity, ChevronDown, Search, Loader2, ShieldCheck, FolderPlus, CalendarDays, HeartPulse } from "lucide-react";
 import type { Species, Sex, AdmissionKind, Pet } from "@/types";
 import { repo } from "@/lib/repo";
+import { opsStore } from "@/lib/opsStore";
+import { branchStore } from "@/lib/branchStore";
+import { breedLabel } from "@/lib/breeds";
 import { Combobox } from "@/components/Combobox";
 import { GovernorateAreaPicker } from "@/components/GovernorateAreaPicker";
 import { COMMON_DISEASES } from "@/lib/diseases";
@@ -21,7 +24,7 @@ import { prepareUpload } from "@/lib/image";
 import { uid } from "@/lib/utils";
 import { playSuccess, playTap, playWarning } from "@/lib/sounds";
 
-type Disposition = "log" | "boarding" | "release";
+type Disposition = "log" | "boarding" | "boardingCare" | "record";
 
 type Health = "healthy" | "sick";
 
@@ -113,7 +116,7 @@ export function NewCase() {
         // surfaces an error instead of spinning forever (see the catch/finally below).
         const pet = await withTimeout(repo.createPet({
           owner_id: ownerId,
-          clinic_id: user?.id ?? null, // tenant: this clinic owns the record
+          clinic_id: user?.clinic_id ?? user?.id ?? null, // shared workspace owns the record (manager's id for staff)
           owner_name: ownerName.trim() || "—",
           owner_phone: phone || undefined,
           owner_email: email.trim() || undefined,
@@ -133,18 +136,27 @@ export function NewCase() {
         const diagnosis = a.health === "sick" ? a.diagnosis.trim() : "";
         // The admission reason leads with the diagnosis (if any), then the free note.
         const reason = [diagnosis, a.notes.trim()].filter(Boolean).join(" — ") || undefined;
+        // "فتح طبلة فقط" (record only) registers the pet + owner (searchable in Clinic
+        // Records) but deliberately creates NO admission — it never enters the daily
+        // operational calendar. The two active dispositions inject through opsStore so
+        // the pet's card appears in the التقويم الرئيسي instantly, no reload.
+        const clinicId = user?.clinic_id ?? user?.id ?? null;
+        // Stamp the device's active branch (null = main / single-branch clinic).
+        const branchId = branchStore.branchForWrite();
         if (a.disp === "log") {
-          await withTimeout(repo.addAdmission({ pet_id: pet.id, kind: "treatment" as AdmissionKind, status: "active", admitted_on: today, reason }), 8000);
+          await withTimeout(opsStore.addCase({ pet_id: pet.id, clinic_id: clinicId, branch_id: branchId, kind: "treatment" as AdmissionKind, status: "active", admitted_on: today, reason }, pet), 8000);
         } else if (a.disp === "boarding") {
-          await withTimeout(repo.addAdmission({ pet_id: pet.id, kind: "boarding" as AdmissionKind, status: "active", admitted_on: today, cage: a.cage.trim() || undefined, reason }), 8000);
-        } else {
-          await withTimeout(repo.addAdmission({ pet_id: pet.id, kind: "treatment" as AdmissionKind, status: "discharged", admitted_on: today, discharged_on: today, reason }), 8000);
+          await withTimeout(opsStore.addCase({ pet_id: pet.id, clinic_id: clinicId, branch_id: branchId, kind: "boarding" as AdmissionKind, status: "active", admitted_on: today, cage: a.cage.trim() || undefined, reason }, pet), 8000);
+        } else if (a.disp === "boardingCare") {
+          // Therapeutic boarding — staying in the clinic AND under active care.
+          await withTimeout(opsStore.addCase({ pet_id: pet.id, clinic_id: clinicId, branch_id: branchId, kind: "treatment_boarding" as AdmissionKind, status: "active", admitted_on: today, cage: a.cage.trim() || undefined, reason }, pet), 8000);
         }
 
         // A diagnosis and/or registration readings become a dated consultation record
         // in the patient's history — the diagnosis is the visit's assessment (title).
+        // Skipped for "record only": no clinical visit is logged on registration.
         const objective = formatReadings(a.readings, a.species, pet.id, (k) => t(`reading.${k}`));
-        if (diagnosis || objective) {
+        if (a.disp !== "record" && (diagnosis || objective)) {
           await withTimeout(repo.addVisit({
             pet_id: pet.id,
             clinic_name: "Happy Paws Veterinary Clinic",
@@ -169,6 +181,13 @@ export function NewCase() {
       setIsSubmitting(false);
     }
     playSuccess();
+    // Open Record Only with a single new patient: jump straight to the new file so
+    // the doctor can verify it was opened (it's already in Clinic Records too).
+    if (results.length === 1 && results[0].disp === "record") {
+      toast.success(t("newCase.recordOpened", "Record opened"));
+      navigate(`/pet/${results[0].petId}`);
+      return;
+    }
     setOutcomes(results);
   };
 
@@ -183,19 +202,30 @@ export function NewCase() {
               <PetAvatar pet={{ species: o.species, photo_url: null, name: o.name }} size={40} />
               <div className="flex-1 min-w-0">
                 <p className="font-semibold text-ink text-sm">{o.name}</p>
-                <span className="chip bg-brand-50 text-brand-700 text-[11px]">
-                  {o.disp === "log" ? t("newCase.toLog") : o.disp === "boarding" ? t("newCase.toBoarding") : t("newCase.toRelease")}
+                <span className="chip bg-brand-50 text-brand-700 text-[11px] dark:bg-brand-500/15 dark:text-brand-300">
+                  {o.disp === "log" ? t("newCase.toLog") : o.disp === "boarding" ? t("newCase.toBoarding") : o.disp === "boardingCare" ? t("newCase.toBoardingCare", "الفندقة العلاجية") : t("newCase.toRecord")}
                 </span>
               </div>
-              {o.disp !== "release" && o.addMeds && (
+              {o.disp === "record" ? (
+                <button className="btn-secondary py-1.5 px-3 text-xs" onClick={() => navigate(`/pet/${o.petId}`)}>
+                  <FolderPlus size={14} /> {t("newCase.openRecord")}
+                </button>
+              ) : o.addMeds ? (
                 <button className="btn-secondary py-1.5 px-3 text-xs" onClick={() => navigate(`/pet/${o.petId}?tab=treatment`)}>
                   <Pill size={14} /> {t("treatment.openSheet")}
                 </button>
-              )}
+              ) : null}
             </div>
           ))}
         </div>
-        <button className="btn-primary w-full mt-6" onClick={() => navigate("/records")}>{t("newCase.goRecords")}</button>
+        {/* An active case is already injected into the shared ops cache — the calendar
+            shows its card the instant it opens (no reload). */}
+        {outcomes.some((o) => o.disp === "log" || o.disp === "boarding" || o.disp === "boardingCare") && (
+          <button className="btn-primary w-full mt-6" onClick={() => navigate("/reception")}>
+            <CalendarDays size={18} /> {t("newCase.goCalendar", "التقويم الرئيسي")}
+          </button>
+        )}
+        <button className="btn-ghost w-full mt-2" onClick={() => navigate("/records")}>{t("newCase.goRecords")}</button>
       </div>
     );
   }
@@ -363,18 +393,26 @@ export function NewCase() {
                 <PetAvatar pet={{ species: a.species, photo_url: a.photo, name: a.name }} size={36} />
                 <span className="font-bold text-ink">{a.name}</span>
               </div>
-              <div className="grid grid-cols-3 gap-2">
+              {/* Next action — 4 symmetric choices (no discharge on first registration). */}
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                 <DispMini active={a.disp === "log"} icon={Stethoscope} label={t("newCase.toLog")} onClick={() => { playTap(); setAnimal(a.key, { disp: "log", addMeds: true }); }} />
                 <DispMini active={a.disp === "boarding"} icon={BedDouble} label={t("newCase.toBoarding")} onClick={() => { playTap(); setAnimal(a.key, { disp: "boarding", addMeds: false }); }} />
-                <DispMini active={a.disp === "release"} icon={ReleaseIcon} label={t("newCase.toRelease")} onClick={() => { playTap(); setAnimal(a.key, { disp: "release" }); }} />
+                <DispMini active={a.disp === "boardingCare"} icon={HeartPulse} label={t("newCase.toBoardingCare", "الفندقة العلاجية")} onClick={() => { playTap(); setAnimal(a.key, { disp: "boardingCare", addMeds: true }); }} />
+                <DispMini active={a.disp === "record"} icon={FolderPlus} label={t("newCase.toRecord")} onClick={() => { playTap(); setAnimal(a.key, { disp: "record", addMeds: false }); }} />
               </div>
-              {a.disp === "boarding" && (
+              {a.disp === "record" && (
+                <p className="rounded-xl bg-surface-2 px-3 py-2 text-xs text-ink-muted">{t("newCase.toRecordDesc")}</p>
+              )}
+              {a.disp === "boardingCare" && (
+                <p className="rounded-xl bg-rose-50 px-3 py-2 text-xs text-rose-700 dark:bg-rose-500/10 dark:text-rose-200">{t("newCase.toBoardingCareDesc", "يبقى الحيوان في العيادة تحت الرعاية العلاجية — يظهر في عمودَي «الفندقة» و«الرعاية الطبية».")}</p>
+              )}
+              {(a.disp === "boarding" || a.disp === "boardingCare") && (
                 <div>
                   <label className="label">{t("newCase.cage")}</label>
                   <input className="input py-2" value={a.cage} onChange={(e) => setAnimal(a.key, { cage: e.target.value })} placeholder="B-2" />
                 </div>
               )}
-              {a.disp !== "release" && (
+              {a.disp !== "record" && (
                 <label className="flex items-center justify-between cursor-pointer text-sm">
                   <span className="flex items-center gap-2 text-ink">
                     <Pill size={16} className="text-brand-600" /> {t("newCase.addMeds")}
@@ -448,16 +486,27 @@ function HealthStatusField({ health, diagnosis, onHealth, onDiagnosis }: {
 
 function DispMini({ active, icon: Icon, label, onClick }: { active: boolean; icon: typeof Stethoscope; label: string; onClick: () => void }) {
   return (
-    <button onClick={onClick} className={`flex flex-col items-center gap-1 py-3 rounded-xl text-xs font-semibold transition border ${active ? "bg-brand-600 text-white border-brand-600" : "bg-white text-ink-muted border-line"}`}>
-      <Icon size={20} />
-      {label}
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={cn(
+        "flex h-full min-h-[82px] flex-col items-center justify-center gap-1.5 rounded-2xl border px-2 text-center text-xs font-semibold leading-tight transition",
+        active
+          ? "border-brand-600 bg-brand-600 text-white shadow-soft"
+          : "border-line bg-surface-1 text-ink-muted hover:border-brand-300 hover:bg-surface-2 hover:text-ink dark:hover:bg-surface-2",
+      )}
+    >
+      <Icon size={20} className="shrink-0" />
+      <span>{label}</span>
     </button>
   );
 }
 
 /** Admit an EXISTING animal to the clinic by its serial — no new registration. */
 function SerialAdmit({ today, doctorName, onAdmitted }: { today: string; doctorName: string; onAdmitted: (o: Outcome) => void }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const { user } = useAuth();
   const toast = useToast();
   const [serial, setSerial] = useState("");
   const [pet, setPet] = useState<Pet | null>(null);
@@ -488,9 +537,13 @@ function SerialAdmit({ today, doctorName, onAdmitted }: { today: string; doctorN
     try {
       const dx = health === "sick" ? diagnosis.trim() : "";
       const reason = dx || undefined;
-      if (disp === "log") await withTimeout(repo.addAdmission({ pet_id: pet.id, kind: "treatment" as AdmissionKind, status: "active", admitted_on: today, reason }), 8000);
-      else if (disp === "boarding") await withTimeout(repo.addAdmission({ pet_id: pet.id, kind: "boarding" as AdmissionKind, status: "active", admitted_on: today, cage: cage.trim() || undefined, reason }), 8000);
-      else await withTimeout(repo.addAdmission({ pet_id: pet.id, kind: "treatment" as AdmissionKind, status: "discharged", admitted_on: today, discharged_on: today, reason }), 8000);
+      const clinicId = user?.clinic_id ?? user?.id ?? null;
+      // Stamp the device's active branch (null = main / single-branch clinic).
+      const branchId = branchStore.branchForWrite();
+      // Inject into the shared ops cache so the calendar shows the card instantly.
+      if (disp === "boarding") await withTimeout(opsStore.addCase({ pet_id: pet.id, clinic_id: clinicId, branch_id: branchId, kind: "boarding" as AdmissionKind, status: "active", admitted_on: today, cage: cage.trim() || undefined, reason }, pet), 8000);
+      else if (disp === "boardingCare") await withTimeout(opsStore.addCase({ pet_id: pet.id, clinic_id: clinicId, branch_id: branchId, kind: "treatment_boarding" as AdmissionKind, status: "active", admitted_on: today, cage: cage.trim() || undefined, reason }, pet), 8000);
+      else await withTimeout(opsStore.addCase({ pet_id: pet.id, clinic_id: clinicId, branch_id: branchId, kind: "treatment" as AdmissionKind, status: "active", admitted_on: today, reason }, pet), 8000);
       const objective = formatReadings(readings, pet.species, pet.id, (k) => t(`reading.${k}`));
       if (dx || objective) {
         await withTimeout(repo.addVisit({ pet_id: pet.id, clinic_name: "Happy Paws Veterinary Clinic", doctor_name: doctorName, visit_date: today, objective: objective || undefined, assessment: dx || t("newCase.admissionReadings") }), 8000);
@@ -504,7 +557,7 @@ function SerialAdmit({ today, doctorName, onAdmitted }: { today: string; doctorN
       setAdmitting(false);
     }
     playSuccess();
-    onAdmitted({ petId: pet.id, name: pet.name, species: pet.species, disp, addMeds: disp !== "release" && addMeds });
+    onAdmitted({ petId: pet.id, name: pet.name, species: pet.species, disp, addMeds });
   };
 
   return (
@@ -525,26 +578,24 @@ function SerialAdmit({ today, doctorName, onAdmitted }: { today: string; doctorN
             <PetAvatar pet={pet} size={48} />
             <div>
               <p className="font-bold text-ink">{pet.name} <span className="text-xs text-ink-subtle font-mono">#{pet.serial}</span></p>
-              <p className="text-xs text-ink-muted">{t(`pet.species.${pet.species}`)}{pet.breed ? ` · ${pet.breed}` : ""} · {pet.owner_name}</p>
+              <p className="text-xs text-ink-muted">{t(`pet.species.${pet.species}`)}{pet.breed ? ` · ${breedLabel(pet.breed, i18n.language)}` : ""} · {pet.owner_name}</p>
             </div>
           </div>
           <div className="grid grid-cols-3 gap-2">
             <DispMini active={disp === "log"} icon={Stethoscope} label={t("newCase.toLog")} onClick={() => { playTap(); setDisp("log"); setAddMeds(true); }} />
             <DispMini active={disp === "boarding"} icon={BedDouble} label={t("newCase.toBoarding")} onClick={() => { playTap(); setDisp("boarding"); setAddMeds(false); }} />
-            <DispMini active={disp === "release"} icon={ReleaseIcon} label={t("newCase.toRelease")} onClick={() => { playTap(); setDisp("release"); }} />
+            <DispMini active={disp === "boardingCare"} icon={HeartPulse} label={t("newCase.toBoardingCare", "الفندقة العلاجية")} onClick={() => { playTap(); setDisp("boardingCare"); setAddMeds(true); }} />
           </div>
-          {disp === "boarding" && (
+          {(disp === "boarding" || disp === "boardingCare") && (
             <div>
               <label className="label">{t("newCase.cage")}</label>
               <input className="input py-2" value={cage} onChange={(e) => setCage(e.target.value)} placeholder="B-2" />
             </div>
           )}
-          {disp !== "release" && (
-            <label className="flex items-center justify-between cursor-pointer text-sm">
-              <span className="flex items-center gap-2 text-ink"><Pill size={16} className="text-brand-600" /> {t("newCase.addMeds")}{disp === "boarding" && <span className="text-xs text-ink-subtle">· {t("newCase.addMedsOptional")}</span>}</span>
-              <input type="checkbox" className="w-5 h-5 accent-brand-600" checked={addMeds} onChange={(e) => setAddMeds(e.target.checked)} />
-            </label>
-          )}
+          <label className="flex items-center justify-between cursor-pointer text-sm">
+            <span className="flex items-center gap-2 text-ink"><Pill size={16} className="text-brand-600" /> {t("newCase.addMeds")}{disp === "boarding" && <span className="text-xs text-ink-subtle">· {t("newCase.addMedsOptional")}</span>}</span>
+            <input type="checkbox" className="w-5 h-5 accent-brand-600" checked={addMeds} onChange={(e) => setAddMeds(e.target.checked)} />
+          </label>
 
           <HealthStatusField
             health={health}

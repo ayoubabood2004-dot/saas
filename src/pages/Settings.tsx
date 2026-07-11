@@ -1,24 +1,37 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Settings as SettingsIcon, RotateCcw, Check, Volume2, VolumeX, Plus, Trash2, Pill, PawPrint, Stethoscope, Tag, FolderPlus } from "lucide-react";
-import type { Species, Service, ServiceCategory, ServiceCatalog } from "@/types";
+import { Settings as SettingsIcon, RotateCcw, Check, Volume2, VolumeX, Plus, Trash2, Pill, PawPrint, Stethoscope, Tag, FolderPlus, BadgePercent, IdCard, Mail, UserCog, Image as ImageIcon, Upload, Facebook, Instagram, Building2, Printer } from "lucide-react";
+import type { Species, Service, ServiceCategory, ServiceCatalog, Product } from "@/types";
 import { useAuth } from "@/contexts/AuthContext";
+import { usePermissions } from "@/hooks/usePermissions";
+import { branchStore, useBranchState } from "@/lib/branchStore";
+import { repo } from "@/lib/repo";
+import { Combobox } from "@/components/Combobox";
+import { cn, currencySymbol } from "@/lib/utils";
+import { getPromoRules, addPromoRule, togglePromoRule, removePromoRule, subcategoriesOf, type PromoRule } from "@/lib/promotions";
 import { getServiceCatalog, addServiceCategory, removeServiceCategory, addService, updateService, removeService } from "@/lib/services";
 import { DEFAULT_RANGES, VITAL_KEYS, CBC_KEYS, rangeFor, type VitalKey } from "@/lib/vitals";
 
 const ALL_KEYS: VitalKey[] = [...VITAL_KEYS, ...CBC_KEYS];
-import { setVitalOverride, clearVitalOverrides, getDialCode, setDialCode } from "@/lib/settings";
+import { setVitalOverride, clearVitalOverrides, getDialCode, setDialCode, getClinicLogo, setClinicLogo, getClinicSocials, setClinicSocials, getClinicName, setClinicName, getPreSalePrint, setPreSalePrint } from "@/lib/settings";
+import { prepareUpload } from "@/lib/image";
 import { isSoundEnabled, setSoundEnabled, playSuccess, playTap } from "@/lib/sounds";
 import { getClinicMeds, addClinicMed, removeClinicMed, allMedTypes, allMedicationNames, BUILTIN_MEDICATIONS, type ClinicMed } from "@/lib/meds";
 import { getClinicVaccines, addClinicVaccine, removeClinicVaccine, BUILTIN_VACCINES, type ClinicVaccine } from "@/lib/vaccines";
 import { getClinicBreeds, addClinicBreed, removeClinicBreed } from "@/lib/breeds";
 import { SpeciesPicker } from "@/components/PetFields";
-import { Button } from "@/components/ui";
+import { PhoneInput } from "@/components/PhoneInput";
+import { ManagerOverrideCard } from "@/components/ManagerOverride";
+import { Button, useToast } from "@/components/ui";
 
 export function Settings() {
   const { t } = useTranslation();
   const { user } = useAuth();
+  const { can } = usePermissions();
   const isStaff = user?.role !== "owner";
+  // Clinic-wide cards need real settings rights — a device pinned to the
+  // reception view (manager override) hides them like any receptionist.
+  const canSettings = isStaff && can("manageSettings");
   const [species, setSpecies] = useState<Species>("dog");
   // version bumps force re-read of effective ranges after save/reset
   const [version, setVersion] = useState(0);
@@ -78,6 +91,8 @@ export function Settings() {
       </div>
       <p className="mb-6 text-sm text-ink-muted">{t("settings.subtitle")}</p>
 
+      <AccountInfo />
+
       <div className="card p-5 mb-4">
         <h2 className="font-bold text-ink mb-3">{t("settings.readingRanges")}</h2>
 
@@ -132,7 +147,12 @@ export function Settings() {
         )}
       </div>
 
-      {isStaff && <ServiceSettings />}
+      {canSettings && <ClinicIdentity />}
+      {canSettings && <ManagerOverrideCard />}
+      {canSettings && <CashierOptions />}
+      {canSettings && <BranchesManager />}
+      {canSettings && <ServiceSettings />}
+      {canSettings && <PromotionsManager clinicId={user?.clinic_id ?? user?.id} />}
       <ClinicMedications />
       <ClinicVaccinations />
       <ClinicBreeds />
@@ -157,6 +177,307 @@ export function Settings() {
           />
           <p className="text-xs text-ink-subtle mt-1.5">{t("settings.dialCodeHint")}</p>
         </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---------------- Logged-in account info (editable name + phone) --------- */
+function AccountInfo() {
+  const { t } = useTranslation();
+  const { user, activeRole, updateProfile } = useAuth();
+  const [name, setName] = useState(user?.full_name ?? "");
+  const [phone, setPhone] = useState(user?.phone ?? "");
+  const [busy, setBusy] = useState(false);
+  const [flash, setFlash] = useState<{ ok: boolean; msg: string } | null>(null);
+
+  if (!user) return null;
+  const dirty = name.trim() !== (user.full_name ?? "").trim() || phone.trim() !== (user.phone ?? "").trim();
+
+  const save = async () => {
+    if (!name.trim() || busy) return;
+    setBusy(true); setFlash(null);
+    const { error } = await updateProfile({ full_name: name, phone });
+    setBusy(false);
+    if (error) { playTap(); setFlash({ ok: false, msg: t("account.saveFail") }); }
+    else { playSuccess(); setFlash({ ok: true, msg: t("account.saved") }); }
+  };
+
+  return (
+    <div className="card p-5 mb-4">
+      <div className="mb-1 flex items-center gap-2">
+        <IdCard size={18} className="text-brand-600" />
+        <h2 className="font-bold text-ink">{t("account.infoTitle")}</h2>
+      </div>
+      <p className="mb-4 text-xs text-ink-subtle">{t("account.infoSubtitle")}</p>
+
+      {/* Identity at a glance */}
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <span className="chip bg-brand-50 text-xs font-semibold text-brand-700 dark:bg-brand-500/15 dark:text-brand-300">
+          <UserCog size={13} /> {t(`role.${user.role}`)}
+        </span>
+        <span className="chip bg-surface-2 text-xs text-ink-muted">
+          {activeRole === "owner" ? t("account.typeOwner") : t("account.typeClinic")}
+        </span>
+      </div>
+
+      <div className="space-y-3">
+        <div>
+          <label className="label">{t("account.name")}</label>
+          <input className="input py-2" value={name} onChange={(e) => { setName(e.target.value); setFlash(null); }} />
+        </div>
+        <div>
+          <label className="label">{t("account.email")}</label>
+          <div className="flex items-center gap-2 rounded-2xl border border-line bg-surface-2 px-3 py-2.5 text-sm text-ink-muted">
+            <Mail size={15} className="shrink-0 text-ink-subtle" />
+            <span className="min-w-0 flex-1 truncate" dir="ltr">{user.email || "—"}</span>
+          </div>
+          <p className="mt-1 text-2xs text-ink-subtle">{t("account.emailLocked")}</p>
+        </div>
+        <div>
+          <label className="label">{t("account.phone")}</label>
+          <PhoneInput value={phone} onChange={(v) => { setPhone(v); setFlash(null); }} />
+        </div>
+      </div>
+
+      <div className="mt-4 flex items-center gap-3">
+        <Button className="flex-1" onClick={save} loading={busy} disabled={!dirty || !name.trim()}>{t("account.save")}</Button>
+      </div>
+      {flash && (
+        <p className={`mt-3 flex items-center gap-1.5 text-sm font-medium ${flash.ok ? "text-brand-700" : "text-warn-600"}`}>
+          <Check size={15} /> {flash.msg}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/* ---------------- Branches: the clinic's physical locations -------------
+ * Manager-only. Creating the FIRST extra branch also creates the main-branch
+ * row ("الفرع الرئيسي") so all existing data (branch_id NULL) keeps a visible
+ * home. Phase 1 supports add + rename; removing/merging branches ships later
+ * with a proper "move cases" flow so data can never be stranded. */
+function BranchesManager() {
+  const { t } = useTranslation();
+  const toast = useToast();
+  const { user } = useAuth();
+  const { can } = usePermissions();
+  const clinicId = user?.clinic_id ?? user?.id;
+  const { branches, hydrated } = useBranchState(clinicId);
+  const [name, setName] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editName, setEditName] = useState("");
+
+  if (!can("manageSettings")) return null;
+
+  const add = async () => {
+    const trimmed = name.trim();
+    if (!trimmed || busy) return;
+    if (branches.some((b) => b.name.trim() === trimmed)) {
+      toast.error(t("branches.dup", "يوجد فرع بهذا الاسم مسبقاً."));
+      return;
+    }
+    setBusy(true);
+    try {
+      // First extra branch → materialise the main branch first so pre-branches
+      // data (branch_id NULL) has a named home in the switcher.
+      if (branches.length === 0) {
+        await repo.createBranch({ name: t("branches.main", "الفرع الرئيسي"), is_main: true, is_active: true });
+      }
+      await repo.createBranch({ name: trimmed, is_main: false, is_active: true });
+      await branchStore.refresh();
+      setName("");
+      playSuccess();
+    } catch (e) {
+      toast.error(t("branches.addFail", "تعذّر إضافة الفرع، حاول مجدداً."), e instanceof Error ? e.message : undefined);
+    } finally { setBusy(false); }
+  };
+
+  const rename = async (id: string) => {
+    const trimmed = editName.trim();
+    setEditingId(null);
+    if (!trimmed) return;
+    const current = branches.find((b) => b.id === id);
+    if (!current || current.name === trimmed) return;
+    try {
+      await repo.updateBranch(id, { name: trimmed });
+      await branchStore.refresh();
+      playSuccess();
+    } catch {
+      toast.error(t("branches.renameFail", "تعذّرت إعادة التسمية، حاول مجدداً."));
+    }
+  };
+
+  return (
+    <div className="card p-5 mb-4">
+      <h2 className="font-bold text-ink mb-1 flex items-center gap-2"><Building2 size={18} className="text-brand-600" /> {t("branches.title", "فروع العيادة")}</h2>
+      <p className="text-xs text-ink-subtle mb-4">
+        {t("branches.hint", "أضف فروعك (مواقع العيادة) ليظهر مبدّل الفروع للفريق — كل فرع يشوف حالاته، وكل بياناتك الحالية تبقى تابعة للفرع الرئيسي.")}
+      </p>
+
+      {/* Existing branches (or the implicit single-branch state) */}
+      <div className="mb-4 space-y-2">
+        {hydrated && branches.length === 0 && (
+          <div className="flex items-center gap-2.5 rounded-2xl border border-dashed border-line bg-surface-2/50 px-3.5 py-3">
+            <Building2 size={16} className="shrink-0 text-ink-subtle" />
+            <p className="text-sm text-ink-muted">{t("branches.single", "عيادتك تعمل حالياً بفرع واحد — أضف فرعاً ثانياً لتفعيل تعدد الفروع.")}</p>
+          </div>
+        )}
+        {branches.map((b) => (
+          <div key={b.id} className="flex items-center gap-2.5 rounded-2xl border border-line bg-surface-1 px-3.5 py-2.5">
+            <Building2 size={16} className={cn("shrink-0", b.is_main ? "text-brand-600 dark:text-brand-300" : "text-ink-subtle")} />
+            {editingId === b.id ? (
+              <form className="flex min-w-0 flex-1 items-center gap-2" onSubmit={(e) => { e.preventDefault(); void rename(b.id); }}>
+                <input autoFocus className="input h-9 flex-1 py-1 text-sm" value={editName} onChange={(e) => setEditName(e.target.value)} onBlur={() => void rename(b.id)} />
+              </form>
+            ) : (
+              <p className="min-w-0 flex-1 truncate text-sm font-semibold text-ink">{b.name}</p>
+            )}
+            {b.is_main && <span className="chip shrink-0 bg-brand-50 text-2xs text-brand-700 dark:bg-brand-500/15 dark:text-brand-300">{t("branches.mainBadge", "الرئيسي")}</span>}
+            {editingId !== b.id && (
+              <button
+                onClick={() => { playTap(); setEditingId(b.id); setEditName(b.name); }}
+                className="shrink-0 rounded-lg border border-line px-2.5 py-1 text-2xs font-semibold text-ink-muted transition hover:bg-surface-2 hover:text-ink"
+              >
+                {t("branches.rename", "إعادة تسمية")}
+              </button>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {/* Add branch */}
+      <form className="flex items-center gap-2" onSubmit={(e) => { e.preventDefault(); void add(); }}>
+        <input
+          className="input h-10 flex-1 text-sm"
+          placeholder={t("branches.namePh", "اسم الفرع الجديد — مثلاً: فرع المنصور")}
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+        />
+        <Button size="sm" type="submit" loading={busy} disabled={!name.trim()} leftIcon={<Plus size={15} />}>
+          {t("branches.add", "إضافة فرع")}
+        </Button>
+      </form>
+      {branches.length === 0 && name.trim() && (
+        <p className="mt-2 text-2xs text-ink-subtle">{t("branches.firstNote", "عند الإضافة سيُنشأ تلقائياً «الفرع الرئيسي» ويضم كل بياناتك الحالية.")}</p>
+      )}
+    </div>
+  );
+}
+
+/* ---------------- Clinic identity: logo + social handles ---------------- */
+function ClinicIdentity() {
+  const { t } = useTranslation();
+  const toast = useToast();
+  const [logo, setLogo] = useState<string | null>(getClinicLogo());
+  const [busy, setBusy] = useState(false);
+  const initial = getClinicSocials();
+  const [facebook, setFacebook] = useState(initial.facebook);
+  const [instagram, setInstagram] = useState(initial.instagram);
+  const [name, setName] = useState(getClinicName());
+
+  const onPick = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    e.target.value = "";
+    if (!f) return;
+    setBusy(true);
+    try {
+      // Compress to a small square-ish logo; store the data-URL (same as avatars).
+      const prepared = await prepareUpload(f, { maxDim: 400, quality: 0.9 });
+      setClinicLogo(prepared.dataUrl);
+      setLogo(prepared.dataUrl);
+      playSuccess();
+    } catch {
+      toast.error("تعذّر رفع الشعار", "اختر صورة صالحة (PNG/JPG).");
+    } finally { setBusy(false); }
+  };
+
+  const removeLogo = () => { setClinicLogo(null); setLogo(null); playTap(); };
+  const saveSocials = () => { setClinicSocials({ facebook, instagram }); playTap(); };
+  const saveName = () => { setClinicName(name); playTap(); };
+
+  return (
+    <div className="card p-5 mb-4">
+      <h2 className="font-bold text-ink mb-1 flex items-center gap-2"><ImageIcon size={18} className="text-brand-600" /> {t("settings.identity", "هوية العيادة")}</h2>
+      <p className="text-xs text-ink-subtle mb-4">{t("settings.identityHint", "اسم العيادة وشعارها يظهران في أعلى الفاتورة ونماذج الإقرار وكعلامة مائية، وحسابات التواصل تظهر في الأسفل.")}</p>
+
+      {/* Clinic name */}
+      <div className="mb-5">
+        <label className="label">{t("settings.clinicName", "اسم العيادة")}</label>
+        <input
+          className="input"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          onBlur={saveName}
+          placeholder={t("settings.clinicNamePlaceholder", "مثال: عيادة الرحمة البيطرية")}
+        />
+        <p className="text-xs text-ink-subtle mt-1">{t("settings.clinicNameHint", "يظهر في ترويسة الفاتورة ونماذج الإقرار ورسائل واتساب بدل اسم الموقع.")}</p>
+      </div>
+
+      {/* Logo */}
+      <div className="flex items-center gap-4">
+        <div className="grid h-20 w-20 shrink-0 place-items-center overflow-hidden rounded-2xl border border-line bg-surface-2">
+          {logo ? <img src={logo} alt="logo" className="h-full w-full object-contain" /> : <ImageIcon size={26} className="text-ink-subtle/50" />}
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <label className="btn-secondary cursor-pointer text-sm">
+            <Upload size={15} /> {logo ? t("settings.changeLogo", "تغيير الشعار") : t("settings.uploadLogo", "رفع شعار")}
+            <input type="file" accept="image/*" className="hidden" onChange={onPick} disabled={busy} />
+          </label>
+          {logo && <button onClick={removeLogo} className="chip bg-surface-2 text-xs font-semibold text-danger-600 hover:bg-danger-50"><Trash2 size={14} /> {t("common.remove", "إزالة")}</button>}
+        </div>
+      </div>
+
+      {/* Social handles */}
+      <div className="mt-5 space-y-3 border-t border-line pt-4">
+        <div>
+          <label className="label flex items-center gap-1.5"><Facebook size={14} className="text-[#1877f2]" /> {t("settings.facebook", "فيسبوك")}</label>
+          <input className="input" dir="ltr" value={facebook} onChange={(e) => setFacebook(e.target.value)} onBlur={saveSocials} placeholder="@MyClinic" />
+        </div>
+        <div>
+          <label className="label flex items-center gap-1.5"><Instagram size={14} className="text-[#e1306c]" /> {t("settings.instagram", "إنستغرام")}</label>
+          <input className="input" dir="ltr" value={instagram} onChange={(e) => setInstagram(e.target.value)} onBlur={saveSocials} placeholder="@myclinic" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ------------- Cashier options (opt-in pre-sale pro-forma print) ---------- */
+function CashierOptions() {
+  const { t } = useTranslation();
+  const { can } = usePermissions();
+  const [preSale, setPreSale] = useState(getPreSalePrint());
+
+  if (!can("manageSettings")) return null;
+
+  const toggle = () => {
+    const next = !preSale;
+    setPreSale(next);
+    setPreSalePrint(next);
+    if (next) playSuccess(); else playTap();
+  };
+
+  return (
+    <div className="card p-5 mb-4">
+      <h2 className="font-bold text-ink mb-1 flex items-center gap-2"><Printer size={18} className="text-brand-600" /> {t("settings.cashier", "خيارات الكاشير")}</h2>
+      <p className="text-xs text-ink-subtle mb-4">{t("settings.cashierHint", "ميزات إضافية لشاشة البيع — معطّلة افتراضياً، فعّل ما يناسب عيادتك فقط.")}</p>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-sm font-bold text-ink">{t("settings.preSalePrint", "طباعة الفاتورة قبل إتمام البيع")}</p>
+          <p className="text-xs text-ink-subtle mt-0.5">{t("settings.preSalePrintHint", "يضيف زر طباعة «فاتورة أولية» داخل شاشة البيع ليطّلع الزبون على الحساب قبل الدفع — لا تُسجَّل كفاتورة ولا تُخصم من المخزون.")}</p>
+        </div>
+        <button
+          role="switch" aria-checked={preSale}
+          onClick={toggle}
+          className="mt-0.5 shrink-0"
+          aria-label={t("settings.preSalePrint", "طباعة الفاتورة قبل إتمام البيع")}
+        >
+          <span className={cn("relative block h-6 w-11 rounded-full transition-colors", preSale ? "bg-brand-600" : "border border-line bg-surface-3")}>
+            <span className={cn("absolute start-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform", preSale && "translate-x-5 rtl:-translate-x-5")} />
+          </span>
+        </button>
       </div>
     </div>
   );
@@ -296,6 +617,100 @@ function ClinicBreeds() {
   );
 }
 
+/* ---------------- Mix & Match promotions ---------------- */
+function PromotionsManager({ clinicId }: { clinicId?: string }) {
+  const { t } = useTranslation();
+  const [rules, setRules] = useState<PromoRule[]>(() => getPromoRules());
+  const [subcats, setSubcats] = useState<string[]>([]);
+  const [name, setName] = useState("");
+  const [subcategory, setSubcategory] = useState("");
+  const [qty, setQty] = useState("");
+  const [bundlePrice, setBundlePrice] = useState("");
+  const [flash, setFlash] = useState<{ ok: boolean; msg: string } | null>(null);
+
+  // Suggest the subcategories that actually exist on the clinic's products.
+  useEffect(() => {
+    let on = true;
+    repo.listProducts(clinicId).then((p: Product[]) => { if (on) setSubcats(subcategoriesOf(p)); }).catch(() => { /* ignore */ });
+    return () => { on = false; };
+  }, [clinicId]);
+
+  const refresh = () => setRules(getPromoRules());
+  const add = () => {
+    const rule = addPromoRule({ name, subcategory, qty: Number(qty) || 0, bundlePrice: Number(bundlePrice) || 0 });
+    if (rule) {
+      playSuccess();
+      setName(""); setSubcategory(""); setQty(""); setBundlePrice("");
+      setFlash({ ok: true, msg: t("promos.added") });
+      refresh();
+    } else {
+      playTap();
+      setFlash({ ok: false, msg: t("promos.invalid") });
+    }
+  };
+  const toggle = (id: string) => { togglePromoRule(id); playTap(); refresh(); };
+  const remove = (id: string) => { removePromoRule(id); playTap(); refresh(); };
+
+  return (
+    <div className="card p-5 mb-4">
+      <div className="mb-1 flex items-center gap-2">
+        <BadgePercent size={18} className="text-brand-600" />
+        <h2 className="font-bold text-ink">{t("promos.title")}</h2>
+      </div>
+      <p className="mb-4 text-xs text-ink-subtle">{t("promos.subtitle")}</p>
+
+      <div className="space-y-2">
+        <div>
+          <label className="label">{t("promos.name")}</label>
+          <input className="input py-2" value={name} onChange={(e) => setName(e.target.value)} placeholder={t("promos.namePh", "e.g. Canned 3 for 5,000")} />
+        </div>
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+          <div className="sm:col-span-1">
+            <label className="label">{t("promos.subcategory")}</label>
+            <Combobox value={subcategory} onChange={setSubcategory} options={subcats} placeholder={t("promos.subcategoryPh", "e.g. canned")} createLabel={(q) => t("promos.subcategoryCreate", { value: q, defaultValue: `Use “${q}”` })} />
+          </div>
+          <div>
+            <label className="label">{t("promos.qty")}</label>
+            <input type="number" inputMode="numeric" min="1" step="1" className="input py-2" value={qty} onChange={(e) => setQty(e.target.value)} placeholder="3" />
+          </div>
+          <div>
+            <label className="label">{t("promos.bundlePrice")}</label>
+            <input type="number" inputMode="numeric" min="0" step="1" className="input py-2" value={bundlePrice} onChange={(e) => setBundlePrice(e.target.value)} placeholder="5000" />
+          </div>
+        </div>
+        <button className="btn-primary w-full py-2.5" onClick={add}><Plus size={16} /> {t("promos.add")}</button>
+      </div>
+
+      {flash && (
+        <p className={`mt-2 flex items-center gap-1.5 text-sm ${flash.ok ? "text-brand-700" : "text-warn-600"}`}>
+          <Check size={15} /> {flash.msg}
+        </p>
+      )}
+
+      <div className="mt-4 space-y-2">
+        {rules.length === 0 ? (
+          <p className="text-sm text-ink-subtle">{t("promos.empty")}</p>
+        ) : (
+          rules.map((r) => (
+            <div key={r.id} className={cn("flex items-center gap-3 rounded-2xl border p-3", r.active ? "border-line bg-surface-1" : "border-line bg-surface-2 opacity-70")}>
+              <div className="min-w-0 flex-1">
+                <p className="truncate font-semibold text-ink">{r.name}</p>
+                <p className="text-xs text-ink-muted">{t("promos.ruleSummary", { qty: r.qty, price: r.bundlePrice.toLocaleString("en-US"), sub: r.subcategory, defaultValue: "{{qty}} for {{price}} · {{sub}}" })}</p>
+              </div>
+              <button onClick={() => toggle(r.id)} className={cn("chip text-xs", r.active ? "bg-success-50 text-success-700 dark:bg-success-500/15 dark:text-success-300" : "bg-surface-2 text-ink-muted")}>
+                {r.active ? t("promos.active") : t("promos.inactive")}
+              </button>
+              <button onClick={() => remove(r.id)} aria-label={t("promos.delete")} className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-ink-subtle transition hover:bg-danger-50 hover:text-danger-600 dark:hover:bg-danger-500/15">
+                <Trash2 size={15} />
+              </button>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
 /* ---------------- Services & non-barcode items ---------------- */
 function ServiceSettings() {
   const { t } = useTranslation();
@@ -373,14 +788,14 @@ function CategoryBlock({ cat, services, onChanged }: { cat: ServiceCategory; ser
             <div key={s.id} className="flex items-center gap-2 rounded-xl bg-surface-2 px-2.5 py-1.5">
               <span className="min-w-0 flex-1 truncate text-sm text-ink">{s.name}</span>
               <div className="flex items-center gap-1 text-sm text-ink-muted">
-                <span className="text-xs">$</span>
                 <input
-                  type="number" min="0" step="0.01" inputMode="decimal"
+                  type="number" min="0" step="1" inputMode="numeric"
                   defaultValue={s.price}
                   onBlur={(e) => { const v = Number(e.target.value); if (!Number.isNaN(v)) { updateService(s.id, { price: v }); onChanged(); } }}
                   onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
-                  className="w-20 rounded-lg border border-line bg-surface-1 px-2 py-1 text-end text-sm font-semibold tabular-nums text-ink outline-none focus:border-brand-400"
+                  className="w-24 rounded-lg border border-line bg-surface-1 px-2 py-1 text-end text-sm font-semibold tabular-nums text-ink outline-none focus:border-brand-400"
                 />
+                <span className="text-2xs text-ink-subtle">{currencySymbol()}</span>
               </div>
               <button onClick={() => { removeService(s.id); playTap(); onChanged(); }} aria-label={t("common.delete", "Delete")} className="grid h-7 w-7 place-items-center rounded-full text-ink-subtle transition hover:bg-danger-50 hover:text-danger-600"><Trash2 size={13} /></button>
             </div>
@@ -394,7 +809,7 @@ function CategoryBlock({ cat, services, onChanged }: { cat: ServiceCategory; ser
           <input className="input py-2" value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && add()} placeholder={t("services.servicePh", "Service name (e.g. CBC Test)")} />
         </div>
         <div className="w-24">
-          <input type="number" min="0" step="0.01" inputMode="decimal" className="input py-2 text-end" value={price} onChange={(e) => setPrice(e.target.value)} onKeyDown={(e) => e.key === "Enter" && add()} placeholder={t("services.price", "Price")} />
+          <input type="number" min="0" step="1" inputMode="numeric" className="input py-2 text-end" value={price} onChange={(e) => setPrice(e.target.value)} onKeyDown={(e) => e.key === "Enter" && add()} placeholder={t("services.price", "Price")} />
         </div>
         <button className="btn-secondary py-2.5" onClick={add}><Plus size={16} /></button>
       </div>

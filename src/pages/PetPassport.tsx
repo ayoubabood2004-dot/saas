@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
@@ -6,39 +6,54 @@ import {
   IdCard, Syringe, FileText, Images, QrCode as QrIcon, ArrowLeft, ArrowRight,
   Plus, Check, Clock, AlertCircle, ChevronDown, Printer, ShieldAlert, Pill, Trash2, BedDouble, Camera,
   Share2, Copy, Globe, PawPrint, Repeat, Columns2, X, Calendar,
-  Utensils, Fingerprint, Cake, Heart, Scissors, Users, UserPlus, Phone, Mail, Pencil,
-  Scale, Sparkles, Loader2, NotebookPen, CalendarClock,
+  Utensils, Fingerprint, Cake, Heart, Scissors, Users, UserPlus, User, Phone, Mail, Pencil,
+  Scale, Sparkles, Loader2, NotebookPen, CalendarClock, FileSignature, ClipboardList, Table2, LayoutList,
 } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
-import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, TreatmentEntry, Admission, FoodType, DietPlan, Appointment, Reminder, MedicalAssessment, PatientCondition } from "@/types";
+import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, TreatmentEntry, Admission, FoodType, DietPlan, Appointment, Reminder, MedicalAssessment, PatientCondition, Species, Sex, PetNote, ClinicVisit } from "@/types";
+import { VisitsPanel } from "@/components/VisitsPanel";
+import { SpeciesPicker, SexPicker, AgeInput, BreedPicker, ColorPicker } from "@/components/PetFields";
 import { repo } from "@/lib/repo";
+import { persistMedicalEntries } from "@/lib/medSync";
 import { PetAvatar } from "@/components/PetAvatar";
+import { OwnerCard } from "@/components/OwnerCard";
+import { ClinicPresenceBar } from "@/components/ClinicPresenceBar";
+import { UnifiedMedicalRecord, localTs, isoTs, vaccinationTs } from "@/components/UnifiedMedicalRecord";
 import { UpcomingEvents } from "@/components/UpcomingEvents";
 import { buildUpcomingEvents } from "@/lib/events";
 import { WeightChart } from "@/components/WeightChart";
 import { HealthSnapshot } from "@/components/HealthSnapshot";
+import { PetSalesWidget } from "@/components/PetSalesWidget";
 import { HealthCurve, type CurvePoint, Button, useToast, ProgressRing } from "@/components/ui";
 import { QrCode } from "@/components/QrCode";
 import { Modal } from "@/components/Modal";
-import { ageFromDOB, daysUntil, uid, formatDate, formatTime, formatHM, cn } from "@/lib/utils";
+import { ageFromDOB, daysUntil, uid, formatDate, formatTime, formatHM, cn, localISO, dateLocale } from "@/lib/utils";
 import { prepareUpload } from "@/lib/image";
 import { withTimeout, describeUploadError } from "@/lib/errors";
 import { playSuccess, playScan, playTap, playWarning } from "@/lib/sounds";
 import { ImageLightbox } from "@/components/ImageLightbox";
-import { MedicalEntry, DoctorSelect, DOCTOR_NAMES, type MedicalDraft } from "@/components/MedicalEntry";
+import { MedicalEntry, DoctorSelect, type MedicalDraft } from "@/components/MedicalEntry";
+import { TreatmentPlan } from "@/components/TreatmentPlan";
+import { ClinicalRecordCard } from "@/components/ClinicalRecordCard";
+import { parseClinical } from "@/lib/clinicalRecord";
+import { ConsentForms } from "@/components/ConsentForms";
 import { addClinicMed, medicationDisplay } from "@/lib/meds";
+import { breedLabel } from "@/lib/breeds";
 import { vaccineScientific } from "@/lib/vaccines";
 import { useAuth } from "@/contexts/AuthContext";
 import { Stethoscope, SlidersHorizontal, ShoppingCart } from "lucide-react";
 import { RangesEditor } from "@/components/RangesEditor";
 
-type Tab = "diet" | "vaccines" | "history" | "treatment" | "media" | "qr";
+type Tab = "visits" | "timeline" | "diet" | "vaccines" | "history" | "treatment" | "notes" | "media" | "qr";
 /** Each section carries its own colour identity (matched to the events-feed category colours). */
 const TABS: { id: Tab; icon: typeof IdCard; fill: string; text: string }[] = [
+  { id: "visits", icon: Stethoscope, fill: "bg-danger-100 dark:bg-danger-500/20", text: "text-danger-700 dark:text-danger-200" },
+  { id: "timeline", icon: ClipboardList, fill: "bg-brand-100 dark:bg-brand-500/20", text: "text-brand-700 dark:text-brand-200" },
   { id: "diet", icon: Utensils, fill: "bg-success-100 dark:bg-success-500/20", text: "text-success-700 dark:text-success-200" },
   { id: "vaccines", icon: Syringe, fill: "bg-violet-100 dark:bg-violet-500/20", text: "text-violet-700 dark:text-violet-200" },
   { id: "history", icon: FileText, fill: "bg-sky-100 dark:bg-sky-500/20", text: "text-sky-700 dark:text-sky-200" },
   { id: "treatment", icon: Pill, fill: "bg-danger-100 dark:bg-danger-500/20", text: "text-danger-700 dark:text-danger-200" },
+  { id: "notes", icon: NotebookPen, fill: "bg-amber-100 dark:bg-amber-500/20", text: "text-amber-700 dark:text-amber-200" },
   { id: "media", icon: Images, fill: "bg-accent-100 dark:bg-accent-500/20", text: "text-accent-700 dark:text-accent-200" },
   { id: "qr", icon: QrIcon, fill: "bg-brand-100 dark:bg-brand-500/20", text: "text-brand-700 dark:text-brand-200" },
 ];
@@ -46,57 +61,38 @@ const TABS: { id: Tab; icon: typeof IdCard; fill: string; text: string }[] = [
 /** Map a feed event category to the tab that shows its detail. */
 const EVENT_TAB: Partial<Record<string, Tab>> = { vaccine: "vaccines", medication: "treatment", feeding: "diet", recheck: "history" };
 
-function Chip({ icon, children }: { icon?: React.ReactNode; children: React.ReactNode }) {
-  return <span className="inline-flex items-center gap-1 rounded-full bg-surface-2 px-2.5 py-1 text-xs font-medium text-ink-muted">{icon}{children}</span>;
-}
-
-/** Pet photo + name + breed + allergy — horizontal (mobile header) or premium gradient hero card (desktop rail). */
-function ProfileHead({ pet, onPhoto, variant }: { pet: Pet; onPhoto: (e: React.ChangeEvent<HTMLInputElement>) => void; variant: "row" | "card" }) {
-  const { t } = useTranslation();
+/** Full-width banner hero: pet photo + name + breed + core-info chips + allergy. */
+function ProfileHead({ pet, onPhoto }: { pet: Pet; onPhoto: (e: React.ChangeEvent<HTMLInputElement>) => void }) {
+  const { t, i18n } = useTranslation();
   const age = ageFromDOB(pet.dob);
-  const photo = (size: number, ring?: boolean) => (
-    <label className={cn("relative cursor-pointer shrink-0 no-print", ring && "rounded-full ring-4 ring-surface-1")} title={t("passport.changePhoto")}>
-      <PetAvatar pet={pet} size={size} photoFallback />
-      <span className="absolute -bottom-1 -end-1 grid h-7 w-7 place-items-center rounded-full bg-brand-600 text-white shadow-soft">
-        <Camera size={15} />
-      </span>
-      <input type="file" accept="image/*" className="hidden" onChange={onPhoto} />
-    </label>
-  );
-  const speciesBreed = `${t(`pet.species.${pet.species}`)}${pet.breed ? ` · ${pet.breed}` : ""}`;
+  const speciesBreed = `${t(`pet.species.${pet.species}`)}${pet.breed ? ` · ${breedLabel(pet.breed, i18n.language)}` : ""}`;
   const allergy = pet.allergies && pet.allergies.length > 0 ? (
     <span className="chip animate-pulse-ring bg-danger-50 text-danger-700 dark:bg-danger-500/15 dark:text-danger-200">
       <ShieldAlert size={14} /> {t("pet.allergies")}: {pet.allergies.join(", ")}
     </span>
   ) : null;
-
-  if (variant === "card") {
-    const sexSym = pet.sex === "male" ? "♂" : pet.sex === "female" ? "♀" : "•";
-    const sexColor = pet.sex === "male" ? "text-brand-600" : pet.sex === "female" ? "text-accent-600" : "text-ink-subtle";
-    return (
-      <div className="card relative overflow-hidden p-0">
-        <div className="h-20 bg-brand-grad" />
-        <div className="-mt-12 flex flex-col items-center px-5 pb-5 text-center">
-          {photo(88, true)}
-          <h1 className="mt-2.5 font-display text-xl font-extrabold text-ink">{pet.name}</h1>
-          <p className="text-sm text-ink-muted">{speciesBreed}</p>
-          <div className="mt-3 flex flex-wrap justify-center gap-1.5">
-            {age && <Chip icon={<Cake size={12} className="text-brand-500" />}>{age.years > 0 ? `${age.years}${t("pet.yShort", "y")} ` : ""}{age.months}{t("pet.mShort", "m")}</Chip>}
-            {pet.current_weight_kg != null && <Chip icon={<Scale size={12} className="text-brand-500" />}>{pet.current_weight_kg} {t("common.kg")}</Chip>}
-            <Chip><span className={cn("text-sm font-bold leading-none", sexColor)}>{sexSym}</span> {t(`pet.sex.${pet.sex}`)}</Chip>
-          </div>
-          {allergy && <div className="mt-3">{allergy}</div>}
-        </div>
-      </div>
-    );
-  }
+  const sexSym = pet.sex === "male" ? "♂" : pet.sex === "female" ? "♀" : "•";
+  const sexColor = pet.sex === "male" ? "text-brand-600" : pet.sex === "female" ? "text-accent-600" : "text-ink-subtle";
+  const pill = "inline-flex items-center gap-1.5 rounded-full bg-surface-2 px-3.5 py-2 text-sm font-semibold text-ink";
   return (
-    <div className="flex items-center gap-4">
-      {photo(84)}
+    // Bare (no card) — embedded as the first section of the unified banner card.
+    <div className="flex items-center gap-5">
+      <label className="relative cursor-pointer shrink-0 no-print" title={t("passport.changePhoto")}>
+        <PetAvatar pet={pet} size={120} photoFallback />
+        <span className="absolute -bottom-1 -end-1 grid h-8 w-8 place-items-center rounded-full bg-brand-600 text-white shadow-soft">
+          <Camera size={16} />
+        </span>
+        <input type="file" accept="image/*" className="hidden" onChange={onPhoto} />
+      </label>
       <div className="min-w-0 flex-1">
-        <h1 className="truncate text-2xl font-extrabold text-ink">{pet.name}</h1>
-        <p className="text-ink-muted">{speciesBreed}{age ? ` · ${t("pet.ageValue", { years: age.years, months: age.months })}` : ""}</p>
-        {allergy && <div className="mt-1">{allergy}</div>}
+        <h1 className="truncate font-display text-2xl font-extrabold tracking-tighter2 text-ink sm:text-3xl">{pet.name}</h1>
+        <p className="truncate text-base text-ink-muted">{speciesBreed}</p>
+        <div className="mt-3 flex flex-wrap gap-2">
+          {age && <span className={pill}><Cake size={15} className="text-brand-500" /> {age.years > 0 ? `${age.years}${t("pet.yShort", "y")} ` : ""}{age.months}{t("pet.mShort", "m")}</span>}
+          {pet.current_weight_kg != null && <span className={pill}><Scale size={15} className="text-brand-500" /> {pet.current_weight_kg} {t("common.kg")}</span>}
+          <span className={pill}><span className={cn("text-base font-bold leading-none", sexColor)}>{sexSym}</span> {t(`pet.sex.${pet.sex}`)}</span>
+        </div>
+        {allergy && <div className="mt-2.5">{allergy}</div>}
       </div>
     </div>
   );
@@ -153,35 +149,9 @@ function WellnessCard({ vaccines, admissions }: { vaccines: Vaccination[]; admis
  *  Throws on failure so the caller keeps the draft. Shared by the record header button
  *  and the Treatment/Vaccinations tab "Add" actions. */
 async function persistMedicalDrafts(petId: string, doctorName: string | undefined, entries: MedicalDraft[], assessment?: MedicalAssessment) {
-  const ROUTE_LABEL: Record<string, string> = { injection: "Injection", tablet: "Tablet", liquid: "Syrup" };
-  const now = new Date();
-  const nowISO = now.toISOString();
-  const today = nowISO.slice(0, 10);
-  const hhmm = now.toTimeString().slice(0, 5);
-  for (const e of entries) {
-    if (e.kind === "vaccination") {
-      // The dose given today.
-      await repo.addVaccination({
-        pet_id: petId, name: e.name, status: "administered",
-        administered_at: nowISO, due_date: null,
-        lot_number: e.lot, administered_by: doctorName,
-      });
-      // A scheduled booster becomes its own pending item — actioned later via "Administer booster".
-      if (e.nextDue) {
-        await repo.addVaccination({
-          pet_id: petId, name: e.name, status: "scheduled",
-          administered_at: null, due_date: e.nextDue,
-        });
-      }
-    } else {
-      await repo.addTreatment({
-        pet_id: petId, day: today, medication: e.name, time: hhmm, amount: e.dosage,
-        administered_at: nowISO, administered_by: doctorName, doctor: doctorName,
-        // The doctor's note for this drug shows on the treatment card; falls back to route · family.
-        observations: e.note?.trim() || `${ROUTE_LABEL[e.route]} · ${e.family}`,
-      });
-    }
-  }
+  const today = localISO(); // LOCAL date (not UTC) for the consultation record
+  // Vaccination/medication rows — shared with the retail "الأدوية" sale sync.
+  await persistMedicalEntries(petId, doctorName, entries);
   // The doctor's condition triage + clinical notes become a permanent consultation
   // record in the patient's file (shown in the History tab).
   if (assessment && (assessment.condition || assessment.notes.trim())) {
@@ -209,7 +179,9 @@ export function PetPassport() {
   const [tab, setTab] = useState<Tab>(TABS.some((x) => x.id === initialTab) ? initialTab : "diet");
   const [weights, setWeights] = useState<WeightLog[]>([]);
   const [vaccines, setVaccines] = useState<Vaccination[]>([]);
+  const [notes, setNotes] = useState<PetNote[]>([]);
   const [visits, setVisits] = useState<MedicalVisit[]>([]);
+  const [clinicVisits, setClinicVisits] = useState<ClinicVisit[]>([]);
   const [media, setMedia] = useState<MediaItem[]>([]);
   const [treatments, setTreatments] = useState<TreatmentEntry[]>([]);
   const [admissions, setAdmissions] = useState<Admission[]>([]);
@@ -221,6 +193,7 @@ export function PetPassport() {
   const canEditClinical = user?.role !== "owner";
   const isOwner = user?.role === "owner";
   const [medOpen, setMedOpen] = useState(false);
+  const [consentOpen, setConsentOpen] = useState(false);
 
   const Back = i18n.dir() === "rtl" ? ArrowRight : ArrowLeft;
 
@@ -244,7 +217,7 @@ export function PetPassport() {
 
   const reload = async () => {
     if (!petId) return;
-    const [p, w, v, h, m, tx, adm, apt, rem] = await Promise.all([
+    const [p, w, v, h, m, tx, adm, apt, rem, nt, cv] = await Promise.all([
       repo.getPet(petId),
       repo.listWeights(petId),
       repo.listVaccinations(petId),
@@ -254,6 +227,8 @@ export function PetPassport() {
       repo.listAdmissionsForPet(petId),
       repo.listAppointmentsForPet(petId),
       repo.listReminders(),
+      repo.listPetNotes(petId).catch(() => [] as PetNote[]),
+      repo.listClinicVisitsForPet(petId).catch(() => [] as ClinicVisit[]),
     ]);
     setPet(p ?? null);
     setWeights(w);
@@ -264,6 +239,8 @@ export function PetPassport() {
     setAdmissions(adm);
     setAppointments(apt);
     setReminders(rem.filter((r) => r.pet_id === petId));
+    setNotes(nt);
+    setClinicVisits(cv);
   };
 
   // Persist a batch from the unified Medical Entry: vaccinations → vaccination
@@ -300,16 +277,19 @@ export function PetPassport() {
   const treatmentDue = petEvents.some((e) => e.category === "medication" && e.urgent);
   const vaccineOverdue = vaccines.some((v) => v.status === "overdue");
   const tabBadge: Record<Tab, { dot?: boolean; count?: number }> = {
+    visits: { count: clinicVisits.filter((v) => v.status === "open").length || undefined },
+    timeline: {},
     diet: {},
     history: {},
     qr: {},
     vaccines: { dot: vaccineOverdue },
     treatment: { dot: treatmentDue },
+    notes: { count: notes.length || undefined },
     media: { count: media.length || undefined },
   };
 
   return (
-    <div className="relative isolate mx-auto max-w-7xl px-4 py-6">
+    <div className="relative isolate mx-auto max-w-[1700px] px-4 py-6 sm:px-6">
       {/* Ambient aurora canvas — soft brand-tinted glow behind the floating panels */}
       <div aria-hidden className="pointer-events-none absolute inset-0 -z-10 overflow-hidden no-print">
         <div className="absolute -start-24 -top-12 h-72 w-72 rounded-full bg-brand-400/20 blur-3xl dark:bg-brand-500/10" />
@@ -323,7 +303,7 @@ export function PetPassport() {
         </button>
         {/* Staff actions: unified medical entry + the POS bridge (pre-fills this client). */}
         {!isOwner && (
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Button
               size="sm"
               variant="secondary"
@@ -334,6 +314,14 @@ export function PetPassport() {
             </Button>
             <Button
               size="sm"
+              variant="ghost"
+              leftIcon={<FileSignature size={16} />}
+              onClick={() => { playTap(); setConsentOpen(true); }}
+            >
+              {t("consent.title", "Consent forms")}
+            </Button>
+            <Button
+              size="sm"
               leftIcon={<ShoppingCart size={16} />}
               onClick={() => {
                 playTap();
@@ -341,6 +329,9 @@ export function PetPassport() {
                 if (pet.owner_name) q.set("customer", pet.owner_name);
                 if (pet.owner_phone) q.set("phone", pet.owner_phone);
                 if (pet.name) q.set("pet", pet.name);
+                // Carry the patient identity so a sold medication/vaccine syncs into the record.
+                q.set("petId", pet.id);
+                if (pet.species) q.set("species", pet.species);
                 navigate(`/retail?${q.toString()}`);
               }}
             >
@@ -355,94 +346,107 @@ export function PetPassport() {
         <MedicalEntry species={pet.species} onCommit={commitMedical} defaultDoctor={user?.full_name} />
       </Modal>
 
-      {/* Mobile/tablet header + snapshot (on desktop these live inside the rails) */}
-      <div className="mb-5 lg:hidden">
-        <ProfileHead pet={pet} onPhoto={onPhoto} variant="row" />
-      </div>
-      <div className="mb-6 lg:hidden">
-        <HealthSnapshot pet={pet} vaccines={vaccines} weights={weights} admissions={admissions} />
-      </div>
+      {/* Legal consent forms (operation / anesthesia / treatment) — bilingual, printable */}
+      <ConsentForms open={consentOpen} onClose={() => setConsentOpen(false)} pet={pet} />
 
       {isOwner && (
         <div className="mb-6 rounded-2xl bg-sky-50 px-4 py-2.5 text-sm text-sky-700 dark:bg-sky-500/10 dark:text-sky-300">{t("passport.ownerViewOnly")}</div>
       )}
 
-      {/* 3-column pet workspace: identity rail · tabbed detail · activity rail */}
-      <div className="grid gap-6 lg:grid-cols-12 lg:items-start">
-        {/* Left rail — profile + identity (the reference's "Pet Profile" column) */}
-        <aside className="order-2 space-y-4 lg:order-1 lg:col-span-3 lg:sticky lg:top-6 lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto lg:pe-1 lg:[scrollbar-width:thin]">
-          <div className="hidden lg:block"><ProfileHead pet={pet} onPhoto={onPhoto} variant="card" /></div>
-          <IdentityTab pet={pet} weights={weights} onChanged={reload} canEdit={canEditClinical} isOwner={isOwner} />
-        </aside>
+      {/* FULL-WIDTH VERTICAL FLOW — zero sidebars:
+          ① Profile banner  →  ② 100%-width الطبلة canvas  →  ③ bottom widgets grid */}
 
-        {/* Center — tabbed clinical detail */}
-        <main className="order-1 min-w-0 lg:order-2 lg:col-span-6">
-          <div className="relative mb-5 flex gap-1 overflow-x-auto rounded-2xl bg-surface-2 p-1.5 no-print [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-            {TABS.map(({ id, icon: Icon, fill, text }) => {
-              const active = tab === id;
-              const badge = tabBadge[id];
-              return (
-                <button
-                  key={id}
-                  onClick={() => { setTab(id); playTap(); }}
-                  aria-current={active ? "page" : undefined}
-                  className={cn(
-                    "relative flex min-w-[64px] flex-1 flex-col items-center gap-1.5 rounded-xl py-2.5 text-[11px] font-semibold transition-colors",
-                    active ? text : "text-ink-muted hover:text-ink",
-                  )}
-                >
-                  {active && (
-                    <motion.span
-                      layoutId="passport-tab"
-                      className={cn("absolute inset-0 rounded-xl shadow-card", fill)}
-                      transition={{ type: "spring", stiffness: 380, damping: 30 }}
-                    />
-                  )}
-                  <span className="relative z-10 flex flex-col items-center gap-1">
-                    <motion.span animate={{ scale: active ? 1.14 : 1, y: active ? -1 : 0 }} transition={{ type: "spring", stiffness: 420, damping: 22 }}>
-                      <Icon size={20} strokeWidth={active ? 2.4 : 1.8} />
-                    </motion.span>
-                    <span className="text-center leading-tight">{t(`passport.tabs.${id}`)}</span>
+      {/* ① Profile banner — ONE unified card (pet + core info · owner details · animal data),
+          merged with subtle dividers so it reads as a single clean record, not many boxes. */}
+      <section className="card overflow-hidden p-0">
+        <div className={cn("grid divide-y divide-line lg:divide-y-0 lg:divide-x", isOwner ? "lg:grid-cols-2" : "lg:grid-cols-3")}>
+          <div className="p-5 sm:p-6"><ProfileHead pet={pet} onPhoto={onPhoto} /></div>
+          {!isOwner && <div className="p-5 sm:p-6"><OwnerCard pet={pet} canEdit={canEditClinical} onUpdated={reload} bare /></div>}
+          <div className="p-5 sm:p-6"><IdentityFactsCard pet={pet} canEdit={canEditClinical || isOwner} onChanged={reload} bare /></div>
+        </div>
+      </section>
+
+      {/* Where is this animal inside the clinic RIGHT NOW — reads and writes the
+          same shared ops store as the التقويم الرئيسي, so both stay in lockstep. */}
+      {canEditClinical && <ClinicPresenceBar pet={pet} />}
+
+      {/* ② Maximized clinical canvas — the tab bar + content span the FULL width. */}
+      <section className="mt-6">
+        <div className="relative mb-5 flex gap-1 overflow-x-auto rounded-2xl bg-surface-2 p-1.5 no-print [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          {TABS.map(({ id, icon: Icon, fill, text }) => {
+            const active = tab === id;
+            const badge = tabBadge[id];
+            return (
+              <button
+                key={id}
+                onClick={() => { setTab(id); playTap(); }}
+                aria-current={active ? "page" : undefined}
+                className={cn(
+                  "relative flex min-w-[64px] flex-1 flex-col items-center gap-1.5 rounded-xl py-2.5 text-[11px] font-semibold transition-colors",
+                  active ? text : "text-ink-muted hover:text-ink",
+                )}
+              >
+                {active && (
+                  <motion.span
+                    layoutId="passport-tab"
+                    className={cn("absolute inset-0 rounded-xl shadow-card", fill)}
+                    transition={{ type: "spring", stiffness: 380, damping: 30 }}
+                  />
+                )}
+                <span className="relative z-10 flex flex-col items-center gap-1">
+                  <motion.span animate={{ scale: active ? 1.14 : 1, y: active ? -1 : 0 }} transition={{ type: "spring", stiffness: 420, damping: 22 }}>
+                    <Icon size={20} strokeWidth={active ? 2.4 : 1.8} />
+                  </motion.span>
+                  <span className="text-center leading-tight">{t(`passport.tabs.${id}`)}</span>
+                </span>
+                {(badge.dot || badge.count != null) && (
+                  <span className="absolute end-2 top-1.5 z-20">
+                    {badge.count != null ? (
+                      <span className="grid h-[15px] min-w-[15px] place-items-center rounded-full bg-ink px-1 text-[9px] font-bold leading-none text-surface-1">{badge.count}</span>
+                    ) : (
+                      <span className="relative flex h-2.5 w-2.5">
+                        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-danger-500 opacity-60" />
+                        <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-danger-500 ring-2 ring-surface-2" />
+                      </span>
+                    )}
                   </span>
-                  {(badge.dot || badge.count != null) && (
-                    <span className="absolute end-2 top-1.5 z-20">
-                      {badge.count != null ? (
-                        <span className="grid h-[15px] min-w-[15px] place-items-center rounded-full bg-ink px-1 text-[9px] font-bold leading-none text-surface-1">{badge.count}</span>
-                      ) : (
-                        <span className="relative flex h-2.5 w-2.5">
-                          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-danger-500 opacity-60" />
-                          <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-danger-500 ring-2 ring-surface-2" />
-                        </span>
-                      )}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-          </div>
+                )}
+              </button>
+            );
+          })}
+        </div>
 
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={tab}
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -8 }}
-              transition={{ duration: 0.2 }}
-            >
-              {tab === "diet" && <DietTab pet={pet} onChanged={reload} canEdit={canEditClinical || isOwner} />}
-              {tab === "vaccines" && <VaccinesTab pet={pet} vaccines={vaccines} onChanged={reload} canEdit={canEditClinical} isOwner={isOwner} />}
-              {tab === "history" && <HistoryTab visits={visits} admissions={admissions} treatments={treatments} isOwner={isOwner} />}
-              {tab === "treatment" && <TreatmentTab pet={pet} treatments={treatments} admissions={admissions} onChanged={reload} canEdit={canEditClinical} isOwner={isOwner} />}
-              {tab === "media" && <MediaTab pet={pet} media={media} onChanged={reload} canEdit={canEditClinical} />}
-              {tab === "qr" && <QrTab pet={pet} />}
-            </motion.div>
-          </AnimatePresence>
-        </main>
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={tab}
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.2 }}
+          >
+            {tab === "visits" && <VisitsPanel pet={pet} visits={clinicVisits} canEdit={canEditClinical && !isOwner} onChanged={reload} />}
+            {tab === "diet" && <DietTab pet={pet} onChanged={reload} canEdit={canEditClinical || isOwner} />}
+            {tab === "vaccines" && <VaccinesTab pet={pet} vaccines={vaccines} onChanged={reload} canEdit={canEditClinical} isOwner={isOwner} />}
+            {tab === "history" && <HistoryTab visits={visits} admissions={admissions} treatments={treatments} isOwner={isOwner} />}
+            {tab === "treatment" && <TreatmentTab pet={pet} treatments={treatments} admissions={admissions} onChanged={reload} canEdit={canEditClinical} isOwner={isOwner} />}
+            {tab === "notes" && <NotesTab pet={pet} notes={notes} canEdit={canEditClinical} onChanged={reload} />}
+            {tab === "timeline" && <TimelineWorkspace pet={pet} treatments={treatments} vaccinations={vaccines} notes={notes} admissions={admissions} isOwner={isOwner} canEdit={canEditClinical} onChanged={reload} />}
+            {tab === "media" && <MediaTab pet={pet} media={media} onChanged={reload} canEdit={canEditClinical} />}
+            {tab === "qr" && <QrTab pet={pet} />}
+          </motion.div>
+        </AnimatePresence>
+      </section>
 
-        {/* Right rail — stats + activity (reference's right column) */}
-        <aside className="order-3 space-y-4 lg:col-span-3 lg:sticky lg:top-6 lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto lg:pe-1 lg:[scrollbar-width:thin]">
+      {/* ③ Bottom widgets — every secondary widget lives BELOW the timeline (no rails). */}
+      <section className="mt-8 space-y-6">
+        {/* At-a-glance metrics strip: wellness index + vaccination / weight / care status. */}
+        <div className="grid items-stretch gap-4 md:grid-cols-4">
           <WellnessCard vaccines={vaccines} admissions={admissions} />
-          <div className="hidden lg:block"><HealthSnapshot pet={pet} vaccines={vaccines} weights={weights} admissions={admissions} stack /></div>
+          <HealthSnapshot pet={pet} vaccines={vaccines} weights={weights} admissions={admissions} className="md:col-span-3" />
+        </div>
+
+        {/* Secondary widgets — responsive grid, natural heights (no awkward stretch). */}
+        <div className="grid grid-cols-1 items-start gap-6 md:grid-cols-2 lg:grid-cols-4">
           <UpcomingEvents
             events={petEvents}
             reminders={reminders}
@@ -453,49 +457,105 @@ export function PetPassport() {
             onChanged={reload}
             onEventClick={(e) => { const tgt = EVENT_TAB[e.category]; if (tgt) { setTab(tgt); playTap(); } }}
           />
-
-          {media.length > 0 && (
-            <div className="card p-4 no-print">
-              <div className="mb-2.5 flex items-center justify-between">
-                <h3 className="flex items-center gap-2 text-sm font-bold text-ink"><Images size={16} className="text-brand-600" /> {t("passport.tabs.media")}</h3>
-                <button className="text-xs font-semibold text-brand-600 hover:underline" onClick={() => { playTap(); setTab("media"); }}>{t("media.all", "All")}</button>
-              </div>
-              <div className="grid grid-cols-3 gap-1.5">
-                {media.slice(0, 6).map((m) => (
-                  <button key={m.id} onClick={() => { playTap(); setTab("media"); }} className="aspect-square overflow-hidden rounded-lg bg-surface-2">
-                    {/(photo|xray|ultrasound)/.test(m.kind) ? (
-                      <img src={m.url} alt={m.caption || ""} loading="lazy" decoding="async" className="h-full w-full object-cover" />
-                    ) : (
-                      <span className="grid h-full w-full place-items-center text-ink-subtle"><FileText size={18} /></span>
-                    )}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-        </aside>
-      </div>
+          <ImportantDatesCard pet={pet} />
+          <WeightCard pet={pet} weights={weights} canEdit={canEditClinical} onChanged={reload} />
+          {canEditClinical && <RangesCard pet={pet} />}
+          {!isOwner && <PetSalesWidget pet={pet} />}
+          <MarkingsCard pet={pet} canEdit={canEditClinical || isOwner} onChanged={reload} />
+          {/* Caregivers moved down here, out of the banner. */}
+          <ContactsCard pet={pet} canEdit={canEditClinical || isOwner} onChanged={reload} />
+          {isOwner && <SharedToggleCard pet={pet} onChanged={reload} />}
+        </div>
+      </section>
     </div>
   );
 }
 
-/* ---------------- Identity ---------------- */
-function IdentityTab({ pet, weights, onChanged, canEdit, isOwner }: { pet: Pet; weights: WeightLog[]; onChanged: () => void; canEdit: boolean; isOwner: boolean }) {
-  const { t, i18n } = useTranslation();
-  const [open, setOpen] = useState(false);
-  const [rangesOpen, setRangesOpen] = useState(false);
-  const [profileOpen, setProfileOpen] = useState(false);
-  const [contactOpen, setContactOpen] = useState(false);
-  const [weight, setWeight] = useState("");
+/* ---------------- Identity cards (decomposed from the old identity rail) ----------------
+ * Each is a self-contained card owning its own modal state, so they can be freely placed
+ * in the full-width banner or the bottom widgets grid — no sidebar required. */
 
-  const canEditProfile = canEdit || isOwner;
-  const shared = pet.shared_with_clinic !== false;
-  const toggleShared = async () => {
-    await repo.updatePet(pet.id, { shared_with_clinic: !shared });
-    playSuccess();
+/** Owner-authorized caretakers / contacts — list + add + remove. */
+function ContactsCard({ pet, canEdit, onChanged }: { pet: Pet; canEdit: boolean; onChanged: () => void }) {
+  const { t } = useTranslation();
+  const [contactOpen, setContactOpen] = useState(false);
+  const contacts = pet.contacts ?? [];
+  const removeContact = async (id: string) => {
+    await repo.updatePet(pet.id, { contacts: contacts.filter((c) => c.id !== id) });
+    playTap();
     onChanged();
   };
+  return (
+    <div className="card p-5">
+      <div className="mb-3 flex items-center justify-between">
+        <h3 className="flex items-center gap-2 font-bold text-ink"><Users size={18} className="text-brand-600" /> {t("contacts.title")}</h3>
+        {canEdit && (
+          <button className="btn-secondary py-1.5 px-3 text-sm" onClick={() => { playTap(); setContactOpen(true); }}>
+            <UserPlus size={15} /> {t("contacts.add")}
+          </button>
+        )}
+      </div>
+      {contacts.length === 0 ? (
+        <p className="text-sm text-ink-subtle">{t("contacts.empty")}</p>
+      ) : (
+        <ul className="space-y-3">
+          {contacts.map((c) => (
+            <li key={c.id} className="flex items-center gap-3">
+              <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-brand-grad font-display text-sm font-bold text-white">{petInitials(c.name)}</span>
+              <div className="min-w-0 flex-1">
+                <p className="flex flex-wrap items-center gap-2 font-medium text-ink">
+                  {c.name}
+                  {c.role && <span className="rounded-full bg-surface-2 px-2 py-0.5 text-[11px] font-medium text-ink-muted">{c.role}</span>}
+                </p>
+                <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-ink-muted">
+                  {c.phone && <a href={`tel:${c.phone}`} className="flex items-center gap-1 hover:text-brand-600"><Phone size={11} /> {c.phone}</a>}
+                  {c.email && <a href={`mailto:${c.email}`} className="flex items-center gap-1 hover:text-brand-600"><Mail size={11} /> {c.email}</a>}
+                </div>
+              </div>
+              {canEdit && (
+                <button onClick={() => removeContact(c.id)} aria-label={t("common.delete")} className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-ink-subtle transition hover:bg-danger-50 hover:text-danger-600 dark:hover:bg-danger-500/15">
+                  <X size={15} />
+                </button>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+      <ContactModal open={contactOpen} pet={pet} onClose={() => setContactOpen(false)} onSaved={onChanged} />
+    </div>
+  );
+}
 
+/** Appearance & distinctive markings — display + edit (opens the profile modal). */
+function MarkingsCard({ pet, canEdit, onChanged }: { pet: Pet; canEdit: boolean; onChanged: () => void }) {
+  const { t } = useTranslation();
+  const [profileOpen, setProfileOpen] = useState(false);
+  return (
+    <div className="card p-5">
+      <div className="mb-2 flex items-center justify-between">
+        <h3 className="flex items-center gap-2 font-bold text-ink"><Fingerprint size={18} className="text-brand-600" /> {t("pet.markings")}</h3>
+        {canEdit && (
+          <button onClick={() => { playTap(); setProfileOpen(true); }} aria-label={t("common.edit")} className="grid h-8 w-8 place-items-center rounded-full text-ink-subtle transition hover:bg-surface-2 hover:text-brand-600">
+            <Pencil size={15} />
+          </button>
+        )}
+      </div>
+      {pet.distinctive_markings ? (
+        <p className="text-sm leading-relaxed text-ink-muted">{pet.distinctive_markings}</p>
+      ) : (
+        <button onClick={() => canEdit && setProfileOpen(true)} disabled={!canEdit} className="text-sm text-ink-subtle enabled:hover:text-brand-600">
+          {canEdit ? t("pet.addMarkings") : "—"}
+        </button>
+      )}
+      <ProfileEditModal open={profileOpen} pet={pet} onClose={() => setProfileOpen(false)} onSaved={onChanged} />
+    </div>
+  );
+}
+
+/** Basic identity facts (serial, chip, sex, colour, weight) — display + edit. */
+function IdentityFactsCard({ pet, canEdit, onChanged, bare = false }: { pet: Pet; canEdit: boolean; onChanged: () => void; bare?: boolean }) {
+  const { t } = useTranslation();
+  const [profileOpen, setProfileOpen] = useState(false);
   const rows: [string, string][] = [
     [t("pet.serial"), pet.serial],
     [t("pet.microchip"), pet.microchip_id || "—"],
@@ -503,7 +563,32 @@ function IdentityTab({ pet, weights, onChanged, canEdit, isOwner }: { pet: Pet; 
     [t("pet.color"), pet.color || "—"],
     [t("pet.weight"), pet.current_weight_kg ? `${pet.current_weight_kg} ${t("common.kg")}` : "—"],
   ];
+  return (
+    <div className={bare ? "" : "card p-5"}>
+      <div className="mb-2 flex items-center justify-between">
+        <h3 className="flex items-center gap-2 font-bold text-ink"><Fingerprint size={18} className="text-brand-600" /> {t("pet.identity", "بيانات الحيوان")}</h3>
+        {canEdit && (
+          <button onClick={() => { playTap(); setProfileOpen(true); }} aria-label={t("common.edit")} className="grid h-8 w-8 place-items-center rounded-full text-ink-subtle transition hover:bg-surface-2 hover:text-brand-600">
+            <Pencil size={15} />
+          </button>
+        )}
+      </div>
+      <dl className="divide-y divide-line">
+        {rows.map(([k, v]) => (
+          <div key={k} className="flex justify-between gap-4 py-2.5">
+            <dt className="text-ink-muted">{k}</dt>
+            <dd className="font-medium text-ink text-end">{v}</dd>
+          </div>
+        ))}
+      </dl>
+      <ProfileEditModal open={profileOpen} pet={pet} onClose={() => setProfileOpen(false)} onSaved={onChanged} />
+    </div>
+  );
+}
 
+/** Important dates — birthday, adopted, neuter status. Display only. */
+function ImportantDatesCard({ pet }: { pet: Pet }) {
+  const { t, i18n } = useTranslation();
   const age = ageFromDOB(pet.dob);
   const neuter = pet.neuter_status ?? "unknown";
   const importantDates = [
@@ -511,13 +596,32 @@ function IdentityTab({ pet, weights, onChanged, canEdit, isOwner }: { pet: Pet; 
     { key: "ad", icon: <Heart size={16} className="text-accent-500" />, label: t("dates.adopted"), value: pet.adopted_on ? fullDate(pet.adopted_on, i18n.language) : "—", sub: undefined as string | undefined },
     { key: "nt", icon: <Scissors size={16} className="text-sky-500" />, label: t("dates.neuter"), value: t(`dates.neuterValues.${neuter}`), sub: undefined as string | undefined },
   ];
-  const contacts = pet.contacts ?? [];
-  const removeContact = async (id: string) => {
-    await repo.updatePet(pet.id, { contacts: contacts.filter((c) => c.id !== id) });
-    playTap();
-    onChanged();
-  };
+  return (
+    <div className="card p-5">
+      <h3 className="mb-3 flex items-center gap-2 font-bold text-ink"><Calendar size={18} className="text-brand-600" /> {t("dates.title")}</h3>
+      <div className="space-y-2">
+        {importantDates.map((d) => (
+          <div key={d.key} className="flex items-center gap-3">
+            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-surface-2">{d.icon}</span>
+            <div className="min-w-0 flex-1">
+              <p className="text-xs text-ink-subtle">{d.label}</p>
+              <p className="font-medium text-ink">
+                {d.value}
+                {d.sub && <span className="ms-2 text-xs font-normal text-ink-muted">{d.sub}</span>}
+              </p>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
+/** Weight & growth chart — add-weight modal owned here. */
+function WeightCard({ pet, weights, canEdit, onChanged }: { pet: Pet; weights: WeightLog[]; canEdit: boolean; onChanged: () => void }) {
+  const { t, i18n } = useTranslation();
+  const [open, setOpen] = useState(false);
+  const [weight, setWeight] = useState("");
   const save = async () => {
     if (!weight) return;
     await repo.addWeight(pet.id, Number(weight));
@@ -526,151 +630,69 @@ function IdentityTab({ pet, weights, onChanged, canEdit, isOwner }: { pet: Pet; 
     setOpen(false);
     onChanged();
   };
-
   return (
-    <div className="space-y-4 animate-fade-in">
-      {/* Appearance & distinctive markings */}
-      <div className="card p-5">
-        <div className="mb-2 flex items-center justify-between">
-          <h3 className="flex items-center gap-2 font-bold text-ink"><Fingerprint size={18} className="text-brand-600" /> {t("pet.markings")}</h3>
-          {canEditProfile && (
-            <button onClick={() => { playTap(); setProfileOpen(true); }} aria-label={t("common.edit")} className="grid h-8 w-8 place-items-center rounded-full text-ink-subtle transition hover:bg-surface-2 hover:text-brand-600">
-              <Pencil size={15} />
-            </button>
-          )}
-        </div>
-        {pet.distinctive_markings ? (
-          <p className="text-sm leading-relaxed text-ink-muted">{pet.distinctive_markings}</p>
-        ) : (
-          <button onClick={() => canEditProfile && setProfileOpen(true)} disabled={!canEditProfile} className="text-sm text-ink-subtle enabled:hover:text-brand-600">
-            {canEditProfile ? t("pet.addMarkings") : "—"}
+    <div className="card p-5">
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="font-bold text-ink">{t("passport.weightChart")}</h3>
+        {canEdit && (
+          <button className="btn-secondary py-1.5 px-3 text-sm" onClick={() => setOpen(true)}>
+            <Plus size={16} /> {t("passport.addWeight")}
           </button>
         )}
       </div>
-
-      {/* Basic identity facts */}
-      <div className="card p-5">
-        <dl className="divide-y divide-line">
-          {rows.map(([k, v]) => (
-            <div key={k} className="flex justify-between gap-4 py-2.5">
-              <dt className="text-ink-muted">{k}</dt>
-              <dd className="font-medium text-ink text-end">{v}</dd>
-            </div>
-          ))}
-        </dl>
-      </div>
-
-      {/* Important dates */}
-      <div className="card p-5">
-        <h3 className="mb-3 flex items-center gap-2 font-bold text-ink"><Calendar size={18} className="text-brand-600" /> {t("dates.title")}</h3>
-        <div className="space-y-2">
-          {importantDates.map((d) => (
-            <div key={d.key} className="flex items-center gap-3">
-              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-surface-2">{d.icon}</span>
-              <div className="min-w-0 flex-1">
-                <p className="text-xs text-ink-subtle">{d.label}</p>
-                <p className="font-medium text-ink">
-                  {d.value}
-                  {d.sub && <span className="ms-2 text-xs font-normal text-ink-muted">{d.sub}</span>}
-                </p>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Caretakers / authorized contacts */}
-      <div className="card p-5">
-        <div className="mb-3 flex items-center justify-between">
-          <h3 className="flex items-center gap-2 font-bold text-ink"><Users size={18} className="text-brand-600" /> {t("contacts.title")}</h3>
-          {canEditProfile && (
-            <button className="btn-secondary py-1.5 px-3 text-sm" onClick={() => { playTap(); setContactOpen(true); }}>
-              <UserPlus size={15} /> {t("contacts.add")}
-            </button>
-          )}
-        </div>
-        {contacts.length === 0 ? (
-          <p className="text-sm text-ink-subtle">{t("contacts.empty")}</p>
-        ) : (
-          <ul className="space-y-3">
-            {contacts.map((c) => (
-              <li key={c.id} className="flex items-center gap-3">
-                <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-brand-grad font-display text-sm font-bold text-white">{petInitials(c.name)}</span>
-                <div className="min-w-0 flex-1">
-                  <p className="flex flex-wrap items-center gap-2 font-medium text-ink">
-                    {c.name}
-                    {c.role && <span className="rounded-full bg-surface-2 px-2 py-0.5 text-[11px] font-medium text-ink-muted">{c.role}</span>}
-                  </p>
-                  <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-ink-muted">
-                    {c.phone && <a href={`tel:${c.phone}`} className="flex items-center gap-1 hover:text-brand-600"><Phone size={11} /> {c.phone}</a>}
-                    {c.email && <a href={`mailto:${c.email}`} className="flex items-center gap-1 hover:text-brand-600"><Mail size={11} /> {c.email}</a>}
-                  </div>
-                </div>
-                {canEditProfile && (
-                  <button onClick={() => removeContact(c.id)} aria-label={t("common.delete")} className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-ink-subtle transition hover:bg-danger-50 hover:text-danger-600 dark:hover:bg-danger-500/15">
-                    <X size={15} />
-                  </button>
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-
-      {/* Doctor-only: per-animal normal reading ranges */}
-      {canEdit && (
-        <button className="card w-full p-4 flex items-center justify-between text-start hover:shadow-soft" onClick={() => setRangesOpen(true)}>
-          <span className="flex items-center gap-2 font-medium text-ink"><SlidersHorizontal size={18} className="text-brand-600" /> {t("reading.editRanges")}</span>
-          <Plus size={16} className="text-ink-subtle" />
-        </button>
+      {weights.length >= 2 ? (
+        <HealthCurve
+          data={[...weights]
+            .sort((a, b) => a.measured_at.localeCompare(b.measured_at))
+            .map<CurvePoint>((w) => ({ label: formatDate(w.measured_at, i18n.language), value: w.weight_kg }))}
+          unit={` ${t("common.kg")}`}
+          height={180}
+        />
+      ) : weights.length === 1 ? (
+        <WeightChart logs={weights} />
+      ) : (
+        <p className="text-ink-subtle text-sm">{t("passport.noWeights")}</p>
       )}
-      {canEdit && (
-        <RangesEditor open={rangesOpen} petId={pet.id} species={pet.species} petName={pet.name} onClose={() => setRangesOpen(false)} />
-      )}
-
-      {/* Owner-controlled: which animals are allowed/shared at clinics */}
-      {isOwner && (
-        <div className="card p-4 flex items-center justify-between">
-          <span className="font-medium text-ink">{t("passport.sharedWithClinic")}</span>
-          <button className={`chip ${shared ? "bg-brand-50 text-brand-700" : "bg-surface-2 text-ink-muted"}`} onClick={toggleShared}>
-            {shared ? <Check size={15} /> : <ShieldAlert size={15} />}
-            {shared ? t("passport.sharedOn") : t("passport.sharedOff")}
-          </button>
-        </div>
-      )}
-
-      <div className="card p-5">
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="font-bold text-ink">{t("passport.weightChart")}</h3>
-          {canEdit && (
-            <button className="btn-secondary py-1.5 px-3 text-sm" onClick={() => setOpen(true)}>
-              <Plus size={16} /> {t("passport.addWeight")}
-            </button>
-          )}
-        </div>
-        {weights.length >= 2 ? (
-          <HealthCurve
-            data={[...weights]
-              .sort((a, b) => a.measured_at.localeCompare(b.measured_at))
-              .map<CurvePoint>((w) => ({ label: formatDate(w.measured_at, i18n.language), value: w.weight_kg }))}
-            unit={` ${t("common.kg")}`}
-            height={180}
-          />
-        ) : weights.length === 1 ? (
-          <WeightChart logs={weights} />
-        ) : (
-          <p className="text-ink-subtle text-sm">{t("passport.noWeights")}</p>
-        )}
-      </div>
-
       <Modal open={open} onClose={() => setOpen(false)} title={t("passport.addWeight")}>
         <label className="label">{t("pet.weight")} ({t("common.kg")})</label>
         <input type="number" step="0.1" className="input" value={weight} onChange={(e) => setWeight(e.target.value)} autoFocus />
         <button className="btn-primary w-full mt-4" onClick={save}>{t("common.save")}</button>
       </Modal>
+    </div>
+  );
+}
 
-      <ProfileEditModal open={profileOpen} pet={pet} onClose={() => setProfileOpen(false)} onSaved={onChanged} />
-      <ContactModal open={contactOpen} pet={pet} onClose={() => setContactOpen(false)} onSaved={onChanged} />
+/** Doctor-only: per-animal normal reading ranges — trigger card + editor modal. */
+function RangesCard({ pet }: { pet: Pet }) {
+  const { t } = useTranslation();
+  const [rangesOpen, setRangesOpen] = useState(false);
+  return (
+    <>
+      <button className="card w-full p-5 flex items-center justify-between text-start transition hover:shadow-soft" onClick={() => setRangesOpen(true)}>
+        <span className="flex items-center gap-2 font-bold text-ink"><SlidersHorizontal size={18} className="text-brand-600" /> {t("reading.editRanges")}</span>
+        <Plus size={16} className="text-ink-subtle" />
+      </button>
+      <RangesEditor open={rangesOpen} petId={pet.id} species={pet.species} petName={pet.name} onClose={() => setRangesOpen(false)} />
+    </>
+  );
+}
+
+/** Owner-only: whether this animal's record is shared with clinics. */
+function SharedToggleCard({ pet, onChanged }: { pet: Pet; onChanged: () => void }) {
+  const { t } = useTranslation();
+  const shared = pet.shared_with_clinic !== false;
+  const toggleShared = async () => {
+    await repo.updatePet(pet.id, { shared_with_clinic: !shared });
+    playSuccess();
+    onChanged();
+  };
+  return (
+    <div className="card p-5 flex items-center justify-between">
+      <span className="font-medium text-ink">{t("passport.sharedWithClinic")}</span>
+      <button className={`chip ${shared ? "bg-brand-50 text-brand-700" : "bg-surface-2 text-ink-muted"}`} onClick={toggleShared}>
+        {shared ? <Check size={15} /> : <ShieldAlert size={15} />}
+        {shared ? t("passport.sharedOn") : t("passport.sharedOff")}
+      </button>
     </div>
   );
 }
@@ -680,7 +702,7 @@ function petInitials(name: string): string {
   return name.trim().split(/\s+/).map((p) => p[0]).slice(0, 2).join("").toUpperCase();
 }
 function fullDate(iso: string, lang: string): string {
-  return new Date(iso).toLocaleDateString(lang === "ar" ? "ar-EG" : "en-US", { day: "numeric", month: "long", year: "numeric" });
+  return new Date(iso).toLocaleDateString(lang === "ar" ? dateLocale() : "en-US", { day: "numeric", month: "long", year: "numeric" });
 }
 function ageLabel(age: { years: number; months: number }, t: (k: string, o?: Record<string, unknown>) => string): string {
   if (age.years <= 0 && age.months <= 0) return t("pet.newborn", { defaultValue: "Newborn" });
@@ -689,63 +711,143 @@ function ageLabel(age: { years: number; months: number }, t: (k: string, o?: Rec
   if (age.months > 0) parts.push(`${age.months} ${t(age.months === 1 ? "pet.monthOne" : "pet.monthMany")}`);
   return parts.join(" ");
 }
+/** Format a stored age-in-months snapshot for a visit (null when none recorded). */
+function ageMonthsLabel(total: number | null | undefined, t: (k: string, o?: Record<string, unknown>) => string): string | null {
+  if (total == null) return null;
+  return ageLabel({ years: Math.floor(total / 12), months: total % 12 }, t);
+}
 
 const NEUTER_OPTIONS: Array<Pet["neuter_status"]> = ["intact", "neutered", "unknown"];
 
 function ProfileEditModal({ open, pet, onClose, onSaved }: { open: boolean; pet: Pet; onClose: () => void; onSaved: () => void }) {
   const { t } = useTranslation();
+  // Core identity
+  const [name, setName] = useState(pet.name);
+  const [species, setSpecies] = useState<Species>(pet.species);
+  const [breed, setBreed] = useState(pet.breed ?? "");
+  const [sex, setSex] = useState<Sex>(pet.sex);
+  const [dob, setDob] = useState(pet.dob ?? "");
+  const [color, setColor] = useState(pet.color ?? "");
+  const [microchip, setMicrochip] = useState(pet.microchip_id ?? "");
+  // Appearance & dates
   const [markings, setMarkings] = useState(pet.distinctive_markings ?? "");
   const [adopted, setAdopted] = useState(pet.adopted_on ?? "");
   const [neuter, setNeuter] = useState<Pet["neuter_status"]>(pet.neuter_status ?? "unknown");
+  const [busy, setBusy] = useState(false);
 
+  // Re-seed every field from the pet each time the modal opens.
   useEffect(() => {
-    if (open) {
-      setMarkings(pet.distinctive_markings ?? "");
-      setAdopted(pet.adopted_on ?? "");
-      setNeuter(pet.neuter_status ?? "unknown");
-    }
+    if (!open) return;
+    setName(pet.name);
+    setSpecies(pet.species);
+    setBreed(pet.breed ?? "");
+    setSex(pet.sex);
+    setDob(pet.dob ?? "");
+    setColor(pet.color ?? "");
+    setMicrochip(pet.microchip_id ?? "");
+    setMarkings(pet.distinctive_markings ?? "");
+    setAdopted(pet.adopted_on ?? "");
+    setNeuter(pet.neuter_status ?? "unknown");
   }, [open, pet]);
 
+  const canSave = name.trim().length > 0 && !busy;
+
   const save = async () => {
-    await repo.updatePet(pet.id, {
-      distinctive_markings: markings.trim() || undefined,
-      adopted_on: adopted || null,
-      neuter_status: neuter,
-    });
-    playSuccess();
-    onClose();
-    onSaved();
+    if (!canSave) return;
+    setBusy(true);
+    try {
+      await repo.updatePet(pet.id, {
+        name: name.trim(),
+        // Changing species clears a now-mismatched breed so the record stays consistent.
+        species,
+        breed: breed.trim() || undefined,
+        sex,
+        dob: dob || null,
+        color: color.trim() || undefined,
+        microchip_id: microchip.trim() || undefined,
+        distinctive_markings: markings.trim() || undefined,
+        adopted_on: adopted || null,
+        neuter_status: neuter,
+      });
+      playSuccess();
+      onClose();
+      onSaved();
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
-    <Modal open={open} onClose={onClose} title={t("pet.editProfile")}>
+    <Modal open={open} onClose={onClose} title={t("pet.editProfile", "تعديل بيانات الحيوان")}>
       <div className="space-y-4">
+        {/* Name */}
         <div>
-          <label className="label">{t("pet.markings")}</label>
-          <textarea className="input min-h-[88px]" value={markings} onChange={(e) => setMarkings(e.target.value)} placeholder={t("pet.markingsPlaceholder")} autoFocus />
+          <label className="label">{t("pet.name", "الاسم")}</label>
+          <input className="input" value={name} onChange={(e) => setName(e.target.value)} autoFocus />
         </div>
+        {/* Species */}
         <div>
-          <label className="label">{t("dates.adopted")}</label>
-          <input type="date" className="input" value={adopted} onChange={(e) => setAdopted(e.target.value)} />
+          <label className="label">{t("pet.speciesLabel", "النوع")}</label>
+          <SpeciesPicker value={species} onChange={(s) => { setSpecies(s); setBreed(""); }} />
         </div>
+        {/* Breed (species-aware) */}
         <div>
-          <label className="label">{t("dates.neuter")}</label>
-          <div className="flex gap-2">
-            {NEUTER_OPTIONS.map((n) => (
-              <button
-                key={n}
-                onClick={() => setNeuter(n)}
-                className={cn(
-                  "flex-1 rounded-xl border py-2 text-sm font-semibold transition",
-                  neuter === n ? "border-brand-400 bg-brand-50 text-brand-700 dark:bg-brand-500/15 dark:text-brand-300" : "border-line text-ink-muted hover:bg-surface-2",
-                )}
-              >
-                {t(`dates.neuterValues.${n}`)}
-              </button>
-            ))}
+          <label className="label">{t("pet.breed", "السلالة")}</label>
+          <BreedPicker species={species} value={breed} onChange={setBreed} />
+        </div>
+        {/* Sex */}
+        <div>
+          <label className="label">{t("pet.sexLabel", "الجنس")}</label>
+          <SexPicker value={sex} onChange={setSex} />
+        </div>
+        {/* Age / DOB */}
+        <div>
+          <label className="label">{t("dates.birthday", "تاريخ الميلاد")}</label>
+          <AgeInput dob={dob} onChange={setDob} />
+        </div>
+        {/* Colour */}
+        <div>
+          <label className="label">{t("pet.color", "اللون")}</label>
+          <ColorPicker value={color} onChange={setColor} />
+        </div>
+        {/* Microchip */}
+        <div>
+          <label className="label">{t("pet.microchip", "رقم الرقاقة")}</label>
+          <input className="input font-mono" dir="ltr" value={microchip} onChange={(e) => setMicrochip(e.target.value)} placeholder="—" />
+        </div>
+
+        <div className="border-t border-line pt-4 space-y-4">
+          {/* Distinctive markings */}
+          <div>
+            <label className="label">{t("pet.markings")}</label>
+            <textarea className="input min-h-[80px]" value={markings} onChange={(e) => setMarkings(e.target.value)} placeholder={t("pet.markingsPlaceholder")} />
+          </div>
+          {/* Adopted on */}
+          <div>
+            <label className="label">{t("dates.adopted")}</label>
+            <input type="date" className="input" value={adopted} onChange={(e) => setAdopted(e.target.value)} />
+          </div>
+          {/* Neuter status */}
+          <div>
+            <label className="label">{t("dates.neuter")}</label>
+            <div className="flex gap-2">
+              {NEUTER_OPTIONS.map((n) => (
+                <button
+                  key={n}
+                  onClick={() => setNeuter(n)}
+                  className={cn(
+                    "flex-1 rounded-xl border py-2 text-sm font-semibold transition",
+                    neuter === n ? "border-brand-400 bg-brand-50 text-brand-700 dark:bg-brand-500/15 dark:text-brand-300" : "border-line text-ink-muted hover:bg-surface-2",
+                  )}
+                >
+                  {t(`dates.neuterValues.${n}`)}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
-        <Button className="w-full" onClick={save}>{t("common.save")}</Button>
+
+        <Button className="w-full" onClick={save} disabled={!canSave} loading={busy}>{t("common.save")}</Button>
       </div>
     </Modal>
   );
@@ -1058,8 +1160,49 @@ function MealModal({ open, onClose, onAdd }: { open: boolean; onClose: () => voi
 }
 
 /* ---------------- Vaccinations ---------------- */
-function VaccinesTab({ pet, vaccines, onChanged, canEdit, isOwner }: { pet: Pet; vaccines: Vaccination[]; onChanged: () => void; canEdit: boolean; isOwner: boolean }) {
+/** A single vaccination, rendered EXACTLY as in the vaccines timeline card — reused
+ *  verbatim in the interactive الطبلة feed (the timeline rail stays inside the tab's <ol>). */
+function VaccineCardBody({ v, isOwner, canEdit, onAdminister }: {
+  v: Vaccination; isOwner: boolean; canEdit: boolean; onAdminister: (v: Vaccination) => void;
+}) {
   const { t, i18n } = useTranslation();
+  const done = v.status === "administered";
+  const overdue = v.status === "overdue";
+  const pending = !done; // scheduled or overdue — an actionable future/late booster
+  const days = v.due_date ? daysUntil(v.due_date) : null;
+  return (
+    <div className={cn("card p-4", pending && "border-dashed", overdue && "border-danger-300 dark:border-danger-500/40")}>
+      <div className="flex items-center justify-between gap-2">
+        <p className="font-semibold text-ink">{isOwner ? vaccineScientific(v.name) : v.name}</p>
+        <span
+          className={`chip text-xs ${done ? "bg-success-50 text-success-700 dark:bg-success-500/15 dark:text-success-200" : overdue ? "bg-danger-50 text-danger-700 dark:bg-danger-500/15 dark:text-danger-200" : "bg-warn-50 text-warn-700 dark:bg-warn-500/15 dark:text-warn-200"}`}
+        >
+          {done ? t("passport.administered") : overdue ? t("passport.overdue") : t("passport.pending", "Pending")}
+        </span>
+      </div>
+      <p className="text-xs text-ink-muted mt-1">
+        {done
+          ? (v.administered_at ? t("passport.givenOn", { date: formatDate(v.administered_at.slice(0, 10), i18n.language), defaultValue: "Given {{date}}" }) : "")
+          : (v.due_date ? `${t("passport.dueOn", { date: formatDate(v.due_date, i18n.language), defaultValue: "Due {{date}}" })}${days !== null && days >= 0 ? ` · ${t("passport.dueIn", { days })}` : ""}` : "")}
+        {v.doses_total ? ` · ${t("passport.dose", { n: v.dose_number, total: v.doses_total })}` : ""}
+        {v.administered_by ? ` · ${t("passport.by", { who: v.administered_by })}` : ""}
+      </p>
+      {v.notes && (
+        <p className="mt-1.5 flex items-start gap-1.5 text-xs text-ink-muted">
+          <NotebookPen size={12} className="mt-0.5 shrink-0 text-brand-600" /> {v.notes}
+        </p>
+      )}
+      {pending && canEdit && (
+        <button onClick={() => onAdminister(v)} className="btn-primary mt-3 w-full py-1.5 text-sm">
+          <Syringe size={15} /> {t("passport.administerBooster", "Administer booster")}
+        </button>
+      )}
+    </div>
+  );
+}
+
+function VaccinesTab({ pet, vaccines, onChanged, canEdit, isOwner }: { pet: Pet; vaccines: Vaccination[]; onChanged: () => void; canEdit: boolean; isOwner: boolean }) {
+  const { t } = useTranslation();
   const { user } = useAuth();
   const [open, setOpen] = useState(false);
   const [administer, setAdminister] = useState<Vaccination | null>(null);
@@ -1096,8 +1239,6 @@ function VaccinesTab({ pet, vaccines, onChanged, canEdit, isOwner }: { pet: Pet;
           {sorted.map((v) => {
             const done = v.status === "administered";
             const overdue = v.status === "overdue";
-            const pending = !done; // scheduled or overdue — an actionable future/late booster
-            const days = v.due_date ? daysUntil(v.due_date) : null;
             const Icon = done ? Check : overdue ? AlertCircle : Clock;
             const color = done ? "bg-success-500" : overdue ? "bg-danger-500" : "bg-warn-500";
             return (
@@ -1105,33 +1246,7 @@ function VaccinesTab({ pet, vaccines, onChanged, canEdit, isOwner }: { pet: Pet;
                 <span className={`absolute -start-[11px] grid place-items-center w-5 h-5 rounded-full text-white ${color}`}>
                   <Icon size={12} strokeWidth={3} />
                 </span>
-                <div className={cn("card p-4", pending && "border-dashed", overdue && "border-danger-300 dark:border-danger-500/40")}>
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="font-semibold text-ink">{isOwner ? vaccineScientific(v.name) : v.name}</p>
-                    <span
-                      className={`chip text-xs ${done ? "bg-success-50 text-success-700 dark:bg-success-500/15 dark:text-success-200" : overdue ? "bg-danger-50 text-danger-700 dark:bg-danger-500/15 dark:text-danger-200" : "bg-warn-50 text-warn-700 dark:bg-warn-500/15 dark:text-warn-200"}`}
-                    >
-                      {done ? t("passport.administered") : overdue ? t("passport.overdue") : t("passport.pending", "Pending")}
-                    </span>
-                  </div>
-                  <p className="text-xs text-ink-muted mt-1">
-                    {done
-                      ? (v.administered_at ? t("passport.givenOn", { date: formatDate(v.administered_at.slice(0, 10), i18n.language), defaultValue: "Given {{date}}" }) : "")
-                      : (v.due_date ? `${t("passport.dueOn", { date: formatDate(v.due_date, i18n.language), defaultValue: "Due {{date}}" })}${days !== null && days >= 0 ? ` · ${t("passport.dueIn", { days })}` : ""}` : "")}
-                    {v.doses_total ? ` · ${t("passport.dose", { n: v.dose_number, total: v.doses_total })}` : ""}
-                    {v.administered_by ? ` · ${t("passport.by", { who: v.administered_by })}` : ""}
-                  </p>
-                  {v.notes && (
-                    <p className="mt-1.5 flex items-start gap-1.5 text-xs text-ink-muted">
-                      <NotebookPen size={12} className="mt-0.5 shrink-0 text-brand-600" /> {v.notes}
-                    </p>
-                  )}
-                  {pending && canEdit && (
-                    <button onClick={() => setAdminister(v)} className="btn-primary mt-3 w-full py-1.5 text-sm">
-                      <Syringe size={15} /> {t("passport.administerBooster", "Administer booster")}
-                    </button>
-                  )}
-                </div>
+                <VaccineCardBody v={v} isOwner={isOwner} canEdit={canEdit} onAdminister={setAdminister} />
               </li>
             );
           })}
@@ -1168,7 +1283,7 @@ function AdministerBoosterModal({ vaccine, defaultDoctor, onClose, onDone }: { v
   // Fresh form each time a booster opens: default doctor = signed-in vet, time = now.
   useEffect(() => {
     if (!vaccine) return;
-    setDoctor(defaultDoctor && DOCTOR_NAMES.includes(defaultDoctor) ? defaultDoctor : DOCTOR_NAMES[0] ?? "");
+    setDoctor(defaultDoctor ?? "");
     setNotes("");
     setWhen(nowLocalDT());
   }, [vaccine, defaultDoctor]);
@@ -1301,7 +1416,7 @@ function HistoryTab({ visits, admissions, treatments, isOwner }: { visits: Medic
                         <span className="truncate">{v.assessment}</span>
                         {v.condition && <ConditionBadge condition={v.condition} />}
                       </p>
-                      <p className="text-xs text-ink-muted">{[v.visit_date, v.clinic_name, v.doctor_name].filter(Boolean).join(" · ")}</p>
+                      <p className="text-xs text-ink-muted">{[v.visit_date, ageMonthsLabel(v.patient_age_months, t), v.clinic_name, v.doctor_name].filter(Boolean).join(" · ")}</p>
                     </div>
                     <ChevronDown size={20} className={`text-ink-subtle transition ${expanded ? "rotate-180" : ""}`} />
                   </button>
@@ -1370,11 +1485,105 @@ function nowHM(): string {
   return new Date().toTimeString().slice(0, 5);
 }
 
+type TxStatus = "given" | "overdue" | "due" | "missed" | "scheduled";
+/** Flowsheet task state for a dose — shared by the treatment tab and the unified feed.
+ *  `today`/`currentHM` are LOCAL wall-clock (must match how persistMedicalEntries writes tx.day). */
+function treatmentStatus(tx: TreatmentEntry, today: string, currentHM: string): TxStatus {
+  if (tx.administered_at) return "given";
+  if (tx.day < today) return "missed";
+  if (tx.day > today) return "scheduled";
+  // Strict `<` so a dose just planned for the current minute reads as "due", not "overdue".
+  return tx.time < currentHM ? "overdue" : "due";
+}
+
+/** One medication dose, rendered EXACTLY as in the treatment flowsheet — reused verbatim
+ *  inside the interactive الطبلة feed. Actions are hidden when the sheet is locked. */
+function TreatmentDoseRow({ tx, isOwner, status, locked, onGiven, onRepeat, onRemove }: {
+  tx: TreatmentEntry; isOwner: boolean; status: TxStatus; locked: boolean;
+  onGiven: (id: string, given: boolean) => void; onRepeat: (tx: TreatmentEntry) => void; onRemove: (id: string) => void;
+}) {
+  const { t, i18n } = useTranslation();
+  const given = status === "given";
+  const dotColor =
+    status === "given" ? "bg-success-500" : status === "overdue" ? "bg-warn-500" : status === "missed" ? "bg-danger-400" : "bg-ink-subtle";
+  const SIcon = given ? Check : status === "overdue" || status === "missed" ? AlertCircle : Clock;
+  return (
+    <div className={cn("flex items-start gap-3 p-4 transition-colors", status === "overdue" && !locked && "bg-warn-50/50 dark:bg-warn-500/5")}>
+      {/* Status rail */}
+      <span className={cn("mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-full text-white", dotColor)}>
+        <SIcon size={14} strokeWidth={2.5} />
+      </span>
+      {/* Medication (left) + daily note (right) */}
+      <div className="grid flex-1 gap-2 sm:grid-cols-2 sm:gap-4">
+        <div>
+          <p className={cn("font-semibold", given ? "text-ink-muted line-through decoration-success-500/40" : "text-ink")}>
+            {medicationDisplay(tx.medication, tx.day, isOwner)}
+          </p>
+          <p className="mt-1 flex flex-wrap items-center gap-2 text-xs">
+            <span className="chip bg-sky-50 text-[11px] text-sky-700 dark:bg-sky-500/15 dark:text-sky-300"><Clock size={11} /> {formatHM(tx.time, i18n.language)}</span>
+            {tx.amount && <span className="chip bg-surface-2 text-[11px] text-ink-muted">{tx.amount}</span>}
+            {given && (
+              <span className="chip bg-success-50 text-[11px] text-success-700 dark:bg-success-500/15 dark:text-success-200"><Check size={11} /> {t("treatment.given", "تم الإعطاء")}</span>
+            )}
+            {/* Any pending dose reads as "Planned"; overdue is a secondary flag that only
+                matters during an active daily treatment. */}
+            {!given && status !== "missed" && (
+              <span className="chip bg-surface-2 text-[11px] text-ink-muted"><Clock size={11} /> {t("treatment.planned", "مُخطّط")}</span>
+            )}
+            {status === "overdue" && !locked && (
+              <span className="chip bg-warn-50 text-[11px] text-warn-700 dark:bg-warn-500/15 dark:text-warn-200"><AlertCircle size={11} /> {t("treatment.overdue", "Overdue")}</span>
+            )}
+            {status === "missed" && (
+              <span className="chip bg-danger-50 text-[11px] text-danger-700 dark:bg-danger-500/15 dark:text-danger-200">{t("treatment.missed", "Not given")}</span>
+            )}
+          </p>
+          {given && tx.administered_at && (
+            <p className="mt-1 inline-flex items-center gap-1 text-[11px] font-medium text-success-600">
+              <Check size={12} /> {t("treatment.givenAt", { time: formatTime(tx.administered_at, i18n.language), defaultValue: "Given {{time}}" })}
+              {tx.administered_by ? ` · ${tx.administered_by.split(" ").slice(-1)}` : ""}
+            </p>
+          )}
+        </div>
+        <div className="sm:border-s sm:border-line sm:ps-4">
+          <p className="mb-0.5 text-[10px] uppercase tracking-wide text-ink-subtle">{t("treatment.noteColumn")}</p>
+          <p className="text-sm text-ink-muted">{tx.observations || "—"}</p>
+        </div>
+      </div>
+      {/* Actions */}
+      {!locked && (
+        <div className="flex shrink-0 flex-col items-end gap-1.5">
+          {given ? (
+            <button onClick={() => onGiven(tx.id, false)} className="text-[11px] text-ink-subtle underline transition hover:text-ink">{t("treatment.undo", "Undo")}</button>
+          ) : (
+            <button onClick={() => onGiven(tx.id, true)} className="inline-flex items-center gap-1 rounded-full bg-success-500 px-2.5 py-1 text-xs font-semibold text-white transition hover:bg-success-600 active:scale-95">
+              <Check size={13} /> {t("treatment.markGiven", "Give")}
+            </button>
+          )}
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => onRepeat(tx)}
+              title={t("treatment.repeatHint", "Schedule this medication again now")}
+              className="inline-flex items-center gap-1 rounded-full bg-brand-50 px-2.5 py-1 text-xs font-semibold text-brand-700 transition hover:bg-brand-100 dark:bg-brand-500/15 dark:text-brand-300 dark:hover:bg-brand-500/25"
+            >
+              <Repeat size={12} /> {t("treatment.repeat", "Repeat")}
+            </button>
+            <button className="rounded-full p-1 text-ink-subtle transition hover:text-danger-500" onClick={() => onRemove(tx.id)} aria-label={t("treatment.delete")}>
+              <Trash2 size={15} />
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function TreatmentTab({ pet, treatments, admissions, onChanged, canEdit, isOwner }: { pet: Pet; treatments: TreatmentEntry[]; admissions: Admission[]; onChanged: () => void; canEdit: boolean; isOwner: boolean }) {
   const { t, i18n } = useTranslation();
   const { user } = useAuth();
   const [open, setOpen] = useState(false);
-  const today = new Date().toISOString().slice(0, 10);
+  // LOCAL date — must match how persistMedicalEntries writes tx.day (localISO), or
+  // statusOf would compare two different calendars and mislabel doses near midnight.
+  const today = localISO();
 
   const activeTreatment = admissions.find((a) => a.kind === "treatment" && a.status === "active");
   const activeBoarding = admissions.find((a) => a.kind === "boarding" && a.status === "active");
@@ -1406,12 +1615,7 @@ function TreatmentTab({ pet, treatments, admissions, onChanged, canEdit, isOwner
 
   // Flowsheet task state: given / overdue / due-later / missed / scheduled.
   const currentHM = nowHM();
-  const statusOf = (tx: TreatmentEntry): "given" | "overdue" | "due" | "missed" | "scheduled" => {
-    if (tx.administered_at) return "given";
-    if (tx.day < today) return "missed";
-    if (tx.day > today) return "scheduled";
-    return tx.time <= currentHM ? "overdue" : "due";
-  };
+  const statusOf = (tx: TreatmentEntry) => treatmentStatus(tx, today, currentHM);
   const markGiven = async (id: string, given: boolean) => {
     await repo.setTreatmentGiven(id, given, user?.full_name);
     if (given) playSuccess();
@@ -1504,73 +1708,18 @@ function TreatmentTab({ pet, treatments, admissions, onChanged, canEdit, isOwner
                   )}
                 </div>
                 <div className="divide-y divide-line">
-                  {dayTx.map((tx) => {
-                    const status = statusOf(tx);
-                    const given = status === "given";
-                    const dotColor =
-                      status === "given" ? "bg-success-500" : status === "overdue" ? "bg-warn-500" : status === "missed" ? "bg-danger-400" : "bg-ink-subtle";
-                    const SIcon = given ? Check : status === "overdue" || status === "missed" ? AlertCircle : Clock;
-                    return (
-                      <div key={tx.id} className={cn("flex items-start gap-3 p-4 transition-colors", status === "overdue" && !locked && "bg-warn-50/50 dark:bg-warn-500/5")}>
-                        {/* Status rail */}
-                        <span className={cn("mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-full text-white", dotColor)}>
-                          <SIcon size={14} strokeWidth={2.5} />
-                        </span>
-                        {/* Medication (left) + daily note (right) */}
-                        <div className="grid flex-1 gap-2 sm:grid-cols-2 sm:gap-4">
-                          <div>
-                            <p className={cn("font-semibold", given ? "text-ink-muted line-through decoration-success-500/40" : "text-ink")}>
-                              {medicationDisplay(tx.medication, tx.day, isOwner)}
-                            </p>
-                            <p className="mt-1 flex flex-wrap items-center gap-2 text-xs">
-                              <span className="chip bg-sky-50 text-[11px] text-sky-700 dark:bg-sky-500/15 dark:text-sky-300"><Clock size={11} /> {formatHM(tx.time, i18n.language)}</span>
-                              {tx.amount && <span className="chip bg-surface-2 text-[11px] text-ink-muted">{tx.amount}</span>}
-                              {status === "overdue" && (
-                                <span className="chip bg-warn-50 text-[11px] text-warn-700 dark:bg-warn-500/15 dark:text-warn-200"><AlertCircle size={11} /> {t("treatment.overdue", "Overdue")}</span>
-                              )}
-                              {status === "missed" && (
-                                <span className="chip bg-danger-50 text-[11px] text-danger-700 dark:bg-danger-500/15 dark:text-danger-200">{t("treatment.missed", "Not given")}</span>
-                              )}
-                            </p>
-                            {given && tx.administered_at && (
-                              <p className="mt-1 inline-flex items-center gap-1 text-[11px] font-medium text-success-600">
-                                <Check size={12} /> {t("treatment.givenAt", { time: formatTime(tx.administered_at, i18n.language), defaultValue: "Given {{time}}" })}
-                                {tx.administered_by ? ` · ${tx.administered_by.split(" ").slice(-1)}` : ""}
-                              </p>
-                            )}
-                          </div>
-                          <div className="sm:border-s sm:border-line sm:ps-4">
-                            <p className="mb-0.5 text-[10px] uppercase tracking-wide text-ink-subtle">{t("treatment.noteColumn")}</p>
-                            <p className="text-sm text-ink-muted">{tx.observations || "—"}</p>
-                          </div>
-                        </div>
-                        {/* Actions */}
-                        {!locked && (
-                          <div className="flex shrink-0 flex-col items-end gap-1.5">
-                            {given ? (
-                              <button onClick={() => markGiven(tx.id, false)} className="text-[11px] text-ink-subtle underline transition hover:text-ink">{t("treatment.undo", "Undo")}</button>
-                            ) : (
-                              <button onClick={() => markGiven(tx.id, true)} className="inline-flex items-center gap-1 rounded-full bg-success-500 px-2.5 py-1 text-xs font-semibold text-white transition hover:bg-success-600 active:scale-95">
-                                <Check size={13} /> {t("treatment.markGiven", "Give")}
-                              </button>
-                            )}
-                            <div className="flex items-center gap-1">
-                              <button
-                                onClick={() => repeatTreatment(tx)}
-                                title={t("treatment.repeatHint", "Schedule this medication again now")}
-                                className="inline-flex items-center gap-1 rounded-full bg-brand-50 px-2.5 py-1 text-xs font-semibold text-brand-700 transition hover:bg-brand-100 dark:bg-brand-500/15 dark:text-brand-300 dark:hover:bg-brand-500/25"
-                              >
-                                <Repeat size={12} /> {t("treatment.repeat", "Repeat")}
-                              </button>
-                              <button className="rounded-full p-1 text-ink-subtle transition hover:text-danger-500" onClick={() => remove(tx.id)} aria-label={t("treatment.delete")}>
-                                <Trash2 size={15} />
-                              </button>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
+                  {dayTx.map((tx) => (
+                    <TreatmentDoseRow
+                      key={tx.id}
+                      tx={tx}
+                      isOwner={isOwner}
+                      status={statusOf(tx)}
+                      locked={locked}
+                      onGiven={markGiven}
+                      onRepeat={repeatTreatment}
+                      onRemove={remove}
+                    />
+                  ))}
                 </div>
               </div>
             );
@@ -1779,9 +1928,311 @@ function PhotoCompare({ items, lang, title, onClose }: { items: MediaItem[]; lan
   );
 }
 
+/* ---------------- Clinical / progress notes ---------------- */
+/** Exact date+time in flawless Arabic with Western numerals, e.g. "01 يوليو 2026، 09:30 م". */
+const fmtNoteDate = (iso: string) => {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? "—"
+    : d.toLocaleString(dateLocale(), { day: "2-digit", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: true });
+};
+
+/** A single clinical-note card — reused by the notes tab and the الطبلة feed. */
+function NoteCard({ note }: { note: PetNote }) {
+  const { t } = useTranslation();
+  const { record, text } = parseClinical(note.note_text);
+  return (
+    <div className="card p-4">
+      <div className="mb-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-2xs text-ink-subtle">
+        <span className="flex items-center gap-1 font-semibold text-ink-muted"><User size={12} /> {note.author_name?.trim() || t("notes.unknownAuthor", "غير محدّد")}</span>
+        <span className="flex items-center gap-1"><Clock size={12} /> {fmtNoteDate(note.created_at)}</span>
+      </div>
+      {record ? <ClinicalRecordCard record={record} /> : <p className="whitespace-pre-wrap leading-relaxed text-ink">{text}</p>}
+    </div>
+  );
+}
+
+function NotesTab({ pet, notes, canEdit, onChanged }: { pet: Pet; notes: PetNote[]; canEdit: boolean; onChanged: () => void }) {
+  const { t } = useTranslation();
+  const { user } = useAuth();
+  const toast = useToast();
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
+  // Optimistic local feed: seeded from the loaded notes, prepended instantly on add.
+  const [items, setItems] = useState<PetNote[]>(notes);
+  useEffect(() => { setItems(notes); }, [notes]);
+
+  const add = async () => {
+    const body = text.trim();
+    if (!body || busy) return;
+    setBusy(true);
+    try {
+      const note = await repo.addPetNote({ pet_id: pet.id, note_text: body, author_id: user?.id ?? null, author_name: user?.full_name ?? null });
+      setItems((prev) => [note, ...prev.filter((n) => n.id !== note.id)]); // instant append to top
+      setText("");
+      playSuccess();
+      onChanged(); // reconcile the parent's cache
+    } catch (e) {
+      playWarning();
+      toast.error(t("notes.saveFail", "تعذّر حفظ الملاحظة"), e instanceof Error ? e.message : undefined);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* Input area */}
+      {canEdit && (
+        <div className="card p-4">
+          <label className="mb-2 flex items-center gap-2 text-sm font-bold text-ink">
+            <NotebookPen size={16} className="text-amber-600" /> {t("notes.title", "الملاحظات السريرية")}
+          </label>
+          <textarea
+            rows={3} value={text} onChange={(e) => setText(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); void add(); } }}
+            placeholder={t("notes.placeholder", "اكتب ملاحظة سريرية عن الحالة…")}
+            className="input min-h-[88px] resize-y leading-relaxed"
+          />
+          <div className="mt-2 flex justify-end">
+            <Button leftIcon={<Plus size={16} />} disabled={!text.trim()} loading={busy} onClick={add}>
+              {t("notes.add", "إضافة ملاحظة")}
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Timeline feed */}
+      {items.length === 0 ? (
+        <div className="card grid place-items-center p-10 text-center text-ink-subtle">
+          <NotebookPen size={28} className="mb-2 opacity-40" />
+          {t("notes.empty", "لا توجد ملاحظات سابقة لهذا الحيوان.")}
+        </div>
+      ) : (
+        <ol className="space-y-3">
+          {items.map((n) => (
+            <li key={n.id}><NoteCard note={n} /></li>
+          ))}
+        </ol>
+      )}
+    </div>
+  );
+}
+
+/* ============================================================================
+ * TimelineWorkspace — the interactive "الطبلة" (Master Timeline) workspace.
+ *
+ * NOT a read-only summary: the doctor ADDS treatments, vaccines and notes right
+ * here (the very same modals the standalone tabs use), and every entry renders
+ * with the FULL rich card from its home tab — treatment flowsheet rows, vaccine
+ * booster cards, clinical-note cards — merged into ONE newest-first vertical
+ * feed (gap-4). The printable A4 chart + Excel export are preserved via the
+ * UnifiedMedicalRecord engine in printOnly mode. RTL + dark theme throughout.
+ * ==========================================================================*/
+function TimelineWorkspace({ pet, treatments, vaccinations, notes, admissions, isOwner, canEdit, onChanged }: {
+  pet: Pet; treatments: TreatmentEntry[]; vaccinations: Vaccination[]; notes: PetNote[];
+  admissions: Admission[]; isOwner: boolean; canEdit: boolean; onChanged: () => void;
+}) {
+  const { t, i18n } = useTranslation();
+  const { user } = useAuth();
+  const toast = useToast();
+  const today = localISO();
+  const currentHM = nowHM();
+
+  const [txOpen, setTxOpen] = useState(false);
+  const [vaxOpen, setVaxOpen] = useState(false);
+  const [noteOpen, setNoteOpen] = useState(false);
+  const [administer, setAdminister] = useState<Vaccination | null>(null);
+  const [noteText, setNoteText] = useState("");
+  const [noteBusy, setNoteBusy] = useState(false);
+  const [planOpen, setPlanOpen] = useState(false);
+  const [planBusy, setPlanBusy] = useState(false);
+  // Two arrangements of the same unified data, merged in one workspace: a dense "جدول"
+  // that shows every event at once, and the rich interactive "بطاقات" feed.
+  const [view, setView] = useState<"table" | "cards">("table");
+
+  const activeTreatment = admissions.find((a) => a.kind === "treatment" && a.status === "active");
+  // Treatment flowsheet actions unlock only during an active daily treatment (same rule as the tab).
+  const locked = !canEdit || !activeTreatment;
+
+  // ---- Add actions — identical commit paths to the standalone tabs ----
+  const commitTreatment = async (entries: MedicalDraft[], assessment: MedicalAssessment, attendingDoctor?: string) => {
+    await persistMedicalDrafts(pet.id, attendingDoctor ?? user?.full_name, entries, assessment);
+    onChanged(); setTxOpen(false);
+  };
+  const commitVaccine = async (entries: MedicalDraft[], assessment: MedicalAssessment, attendingDoctor?: string) => {
+    await persistMedicalDrafts(pet.id, attendingDoctor ?? user?.full_name, entries, assessment);
+    onChanged(); setVaxOpen(false);
+  };
+  const addNote = async () => {
+    const body = noteText.trim();
+    if (!body || noteBusy) return;
+    setNoteBusy(true);
+    try {
+      await repo.addPetNote({ pet_id: pet.id, note_text: body, author_id: user?.id ?? null, author_name: user?.full_name ?? null });
+      setNoteText(""); setNoteOpen(false); playSuccess(); onChanged();
+    } catch (e) {
+      playWarning();
+      toast.error(t("notes.saveFail", "تعذّر حفظ الملاحظة"), e instanceof Error ? e.message : undefined);
+    } finally { setNoteBusy(false); }
+  };
+  const savePlan = async (body: string) => {
+    if (!body.trim() || planBusy) return;
+    setPlanBusy(true);
+    try {
+      await repo.addPetNote({ pet_id: pet.id, note_text: body, author_id: user?.id ?? null, author_name: user?.full_name ?? null });
+      setPlanOpen(false); playSuccess(); onChanged();
+    } catch (e) {
+      playWarning();
+      toast.error(t("notes.saveFail", "تعذّر الحفظ"), e instanceof Error ? e.message : undefined);
+    } finally { setPlanBusy(false); }
+  };
+  const readmit = async () => {
+    await repo.addAdmission({ pet_id: pet.id, kind: "treatment", status: "active", admitted_on: today });
+    playSuccess(); onChanged();
+  };
+
+  // ---- Treatment flowsheet actions (mark given / repeat / delete) ----
+  const markGiven = async (id: string, given: boolean) => { await repo.setTreatmentGiven(id, given, user?.full_name); if (given) playSuccess(); onChanged(); };
+  const removeTx = async (id: string) => { await repo.deleteTreatment(id); onChanged(); };
+  const repeatTx = async (tx: TreatmentEntry) => {
+    addClinicMed(tx.medication);
+    await repo.addTreatment({ pet_id: pet.id, day: today, doctor: tx.doctor || (user?.role === "doctor" ? user.full_name : undefined), medication: tx.medication, time: nowHM(), amount: tx.amount, observations: undefined });
+    playSuccess(); onChanged();
+  };
+
+  // ---- Merge the three feeds into ONE newest-first timeline (keeping rich objects) ----
+  type FeedItem =
+    | { id: string; ts: number; kind: "treatment"; tx: TreatmentEntry }
+    | { id: string; ts: number; kind: "vaccination"; vax: Vaccination }
+    | { id: string; ts: number; kind: "note"; note: PetNote };
+  const feed = useMemo<FeedItem[]>(() => {
+    const items: FeedItem[] = [];
+    for (const tx of treatments) items.push({ id: `t:${tx.id}`, ts: localTs(tx.day, tx.time).ts, kind: "treatment", tx });
+    for (const v of vaccinations) { const { ts } = vaccinationTs(v); if (ts) items.push({ id: `v:${v.id}`, ts, kind: "vaccination", vax: v }); }
+    for (const n of notes) items.push({ id: `n:${n.id}`, ts: isoTs(n.created_at), kind: "note", note: n });
+    return items.sort((a, b) => b.ts - a.ts);
+  }, [treatments, vaccinations, notes]);
+
+  // The جدول / print / Excel is the OFFICIAL record — only what was actually administered
+  // (given doses + given vaccines) plus clinical notes. Anything still pending or scheduled
+  // for the future stays in the interactive بطاقات feed, where the doctor acts on it.
+  const givenTreatments = useMemo(() => treatments.filter((tx) => !!tx.administered_at), [treatments]);
+  const givenVaccinations = useMemo(() => vaccinations.filter((v) => !!v.administered_at), [vaccinations]);
+
+  return (
+    <div className="space-y-4 animate-fade-in">
+      {/* Header: title + hint on the start side, print/export (preserved) on the end */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="me-auto">
+          <h3 className="font-bold text-ink">{t("chart.title", "الطبلة الطبية الموحّدة")}</h3>
+          <p className="flex items-center gap-1.5 text-xs text-ink-subtle">
+            <ClipboardList size={13} className="text-brand-600" /> {t("chart.workspaceHint", "أضِف العلاجات واللقاحات والملاحظات وتابعها في سجلّ زمني واحد — الأحدث أولاً.")}
+          </p>
+        </div>
+        <UnifiedMedicalRecord pet={pet} treatments={givenTreatments} vaccinations={givenVaccinations} notes={notes} isOwner={isOwner} printOnly />
+      </div>
+
+      {/* Quick-add actions (staff) on the start · view toggle (everyone) on the end */}
+      <div className="flex flex-wrap items-center gap-2">
+        {canEdit && !isOwner && (
+          <>
+            <button className="btn-primary py-1.5 px-3 text-sm" onClick={() => { playTap(); setPlanOpen(true); }}><ClipboardList size={16} /> {t("plan.add", "التشخيص وخطة العلاج")}</button>
+            <button className="btn-secondary py-1.5 px-3 text-sm" onClick={() => { playTap(); setTxOpen(true); }}><Pill size={16} /> {t("treatment.add", "إضافة علاج")}</button>
+            <button className="btn-secondary py-1.5 px-3 text-sm" onClick={() => { playTap(); setVaxOpen(true); }}><Syringe size={16} /> {t("passport.addVaccine", "إضافة تطعيم")}</button>
+            <button className="btn-secondary py-1.5 px-3 text-sm" onClick={() => { playTap(); setNoteOpen(true); }}><NotebookPen size={16} /> {t("notes.add", "إضافة ملاحظة")}</button>
+          </>
+        )}
+        <div className="ms-auto inline-flex items-center gap-1 rounded-2xl border border-line bg-surface-2 p-1">
+          <button
+            onClick={() => { playTap(); setView("table"); }}
+            className={cn("inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-sm font-semibold transition", view === "table" ? "bg-surface-1 text-brand-700 shadow-card dark:text-brand-300" : "text-ink-muted hover:text-ink")}
+          >
+            <Table2 size={15} /> {t("chart.viewTable", "جدول")}
+          </button>
+          <button
+            onClick={() => { playTap(); setView("cards"); }}
+            className={cn("inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-sm font-semibold transition", view === "cards" ? "bg-surface-1 text-brand-700 shadow-card dark:text-brand-300" : "text-ink-muted hover:text-ink")}
+          >
+            <LayoutList size={15} /> {t("chart.viewCards", "بطاقات")}
+          </button>
+        </div>
+      </div>
+
+      {/* Treatment admission status — re-admit so the cards' flowsheet actions unlock (parity with the tab) */}
+      {view === "cards" && canEdit && !isOwner && !activeTreatment && (
+        <div className="card flex flex-wrap items-center justify-between gap-2 p-3">
+          <span className="chip bg-surface-2 text-xs text-ink-muted"><Stethoscope size={13} /> {t("treatment.notAdmitted", "غير مقبول حاليًا")}</span>
+          <button className="btn-primary py-1.5 px-3 text-xs" onClick={() => { playTap(); readmit(); }}><Stethoscope size={14} /> {t("treatment.readmitTreatment", "إعادة إدخال للعلاج اليومي")}</button>
+        </div>
+      )}
+
+      {view === "table" ? (
+        /* Dense "جدول" — the official record: only administered items + notes, at a glance */
+        <UnifiedMedicalRecord pet={pet} treatments={givenTreatments} vaccinations={givenVaccinations} notes={notes} isOwner={isOwner} tableOnly />
+      ) : feed.length === 0 ? (
+        <div className="card grid place-items-center p-10 text-center text-ink-subtle">
+          <ClipboardList size={28} className="mb-2 opacity-40" />
+          {t("chart.empty", "لا توجد أحداث طبية مسجّلة لهذا الحيوان بعد.")}
+        </div>
+      ) : (
+        /* Rich interactive "بطاقات" feed — full cards, newest first */
+        <div className="space-y-4">
+          {feed.map((item) => {
+            if (item.kind === "treatment") {
+              return (
+                <div key={item.id} className="card overflow-hidden">
+                  <div className="flex items-center gap-2 bg-brand-50 px-4 py-2 text-xs font-semibold text-brand-700 dark:bg-brand-500/10 dark:text-brand-300">
+                    <Pill size={14} /> {formatDate(item.tx.day, i18n.language)}
+                  </div>
+                  <TreatmentDoseRow tx={item.tx} isOwner={isOwner} status={treatmentStatus(item.tx, today, currentHM)} locked={locked} onGiven={markGiven} onRepeat={repeatTx} onRemove={removeTx} />
+                </div>
+              );
+            }
+            if (item.kind === "vaccination") {
+              return <VaccineCardBody key={item.id} v={item.vax} isOwner={isOwner} canEdit={canEdit} onAdminister={setAdminister} />;
+            }
+            return <NoteCard key={item.id} note={item.note} />;
+          })}
+        </div>
+      )}
+
+      {/* Add-treatment / add-vaccine — the exact MedicalEntry workflow the tabs use */}
+      <Modal open={txOpen} onClose={() => setTxOpen(false)} title={t("treatment.addTitle", "إضافة سجل علاج")}>
+        <MedicalEntry species={pet.species} initialMode="medication" lockMode onCommit={commitTreatment} defaultDoctor={user?.full_name} />
+      </Modal>
+      <Modal open={vaxOpen} onClose={() => setVaxOpen(false)} title={t("passport.addVaccine", "إضافة تطعيم")}>
+        <MedicalEntry species={pet.species} initialMode="vaccination" lockMode onCommit={commitVaccine} defaultDoctor={user?.full_name} />
+      </Modal>
+
+      {/* Add-note */}
+      <Modal open={noteOpen} onClose={() => { setNoteOpen(false); setNoteText(""); }} title={t("notes.add", "إضافة ملاحظة")}>
+        <div className="space-y-3">
+          <textarea
+            rows={4} value={noteText} onChange={(e) => setNoteText(e.target.value)} autoFocus
+            onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); void addNote(); } }}
+            placeholder={t("notes.placeholder", "اكتب ملاحظة سريرية عن الحالة…")}
+            className="input min-h-[110px] resize-y leading-relaxed"
+          />
+          <div className="flex justify-end">
+            <Button leftIcon={<Plus size={16} />} disabled={!noteText.trim()} loading={noteBusy} onClick={addNote}>{t("notes.add", "إضافة ملاحظة")}</Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Standalone diagnosis + scheduled treatment plan */}
+      <Modal open={planOpen} onClose={() => setPlanOpen(false)} title={t("plan.title", "التشخيص وخطة العلاج — {{name}}", { name: pet.name })}>
+        <TreatmentPlan onSubmit={savePlan} busy={planBusy} species={pet.species} petId={pet.id} onMediaAdded={onChanged} />
+      </Modal>
+
+      {/* Confirm-administration (booster) — shared with the vaccines tab */}
+      <AdministerBoosterModal vaccine={administer} defaultDoctor={user?.full_name} onClose={() => setAdminister(null)} onDone={() => { setAdminister(null); onChanged(); }} />
+    </div>
+  );
+}
+
 /* ---------------- QR passport ---------------- */
 function QrTab({ pet }: { pet: Pet }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const toast = useToast();
   useEffect(() => {
     playScan();
@@ -1836,7 +2287,7 @@ function QrTab({ pet }: { pet: Pet }) {
           <div className="min-w-0 flex-1">
             <p className="truncate font-display text-lg font-bold tracking-tighter2 text-ink">{pet.name}</p>
             <p className="truncate text-xs text-ink-muted">
-              {t(`pet.species.${pet.species}`)}{pet.breed ? ` · ${pet.breed}` : ""}
+              {t(`pet.species.${pet.species}`)}{pet.breed ? ` · ${breedLabel(pet.breed, i18n.language)}` : ""}
             </p>
           </div>
           <div className="text-end">

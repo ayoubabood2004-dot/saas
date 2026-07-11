@@ -34,6 +34,13 @@ const rawUrl = readEnv(import.meta.env.VITE_SUPABASE_URL);
 const anonKey = readEnv(import.meta.env.VITE_SUPABASE_ANON_KEY);
 const url = resolveSupabaseUrl(rawUrl);
 
+/** The resolved project origin (e.g. https://xxx.supabase.co), or "" in demo mode.
+ *  Exposed so callers can hit Edge Functions with a hand-built fetch when they
+ *  need tight control over which headers the browser sends (CORS preflight). */
+export const supabaseUrl = url;
+/** The public anon key, for the same hand-built Edge Function calls. */
+export const supabaseAnonKey = anonKey;
+
 export const isSupabaseConfigured = Boolean(url && anonKey);
 
 // A value was provided but couldn't be parsed — warn loudly instead of crashing.

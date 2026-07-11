@@ -5,14 +5,16 @@ import { AnimatePresence, motion } from "framer-motion";
 import {
   ClipboardList, Search, Phone, Stethoscope, BedDouble, Pill, CalendarDays,
   LogOut as DischargeIcon, Plus, Check, PawPrint, ArrowRightLeft, LogIn, LogOut, Users, X,
-  Clock, ChevronDown, ChevronRight, ListChecks, ArrowDownAZ, CalendarClock,
+  Clock, ChevronDown, ChevronRight, ListChecks, ArrowDownAZ, Pencil, Trash2, AlertTriangle,
 } from "lucide-react";
-import type { Pet, Admission, TreatmentEntry, Species, MedicalVisit, PatientCondition } from "@/types";
+import type { Pet, Admission, TreatmentEntry, Species, Sex, MedicalVisit, PatientCondition } from "@/types";
 import { repo } from "@/lib/repo";
+import { breedLabel } from "@/lib/breeds";
 import { PetAvatar } from "@/components/PetAvatar";
 import { Modal } from "@/components/Modal";
 import { PhoneInput } from "@/components/PhoneInput";
-import { Button, Badge, useToast, Skeleton } from "@/components/ui";
+import { SpeciesPicker, SexPicker, AgeInput, WeightInput, ColorPicker, BreedPicker } from "@/components/PetFields";
+import { Button, Badge, Dialog, useToast, Skeleton } from "@/components/ui";
 import { formatDate, cn } from "@/lib/utils";
 import { staggerContainer, staggerItem } from "@/lib/motion";
 import { playTap, playSuccess } from "@/lib/sounds";
@@ -20,6 +22,8 @@ import { phoneMatches, nationalNumber } from "@/lib/phone";
 import { getDialCode } from "@/lib/settings";
 import { useAuth } from "@/contexts/AuthContext";
 import { withTimeout } from "@/lib/errors";
+import { getCached, setCached, isFresh } from "@/lib/swrCache";
+import { loadRecordsSnap, recordsKey, type RecordsSnap } from "@/lib/prefetchData";
 
 type Tab = "log" | "cases" | "boarding" | "movement";
 
@@ -67,7 +71,7 @@ function CountUp({ value }: { value: number }) {
 type PetStatus = "treatment" | "boarding" | "recent" | null;
 function petStatusOf(petId: string, admByPet: Map<string, Admission[]>): PetStatus {
   const adms = admByPet.get(petId) ?? [];
-  if (adms.some((a) => a.kind === "treatment" && a.status === "active")) return "treatment";
+  if (adms.some((a) => (a.kind === "treatment" || a.kind === "treatment_boarding") && a.status === "active")) return "treatment";
   if (adms.some((a) => a.kind === "boarding" && a.status === "active")) return "boarding";
   const last = adms.reduce((m, a) => Math.max(m, new Date(a.admitted_on).getTime()), 0);
   if (last && Date.now() - last < 30 * 86400000) return "recent";
@@ -79,28 +83,30 @@ export function ClinicRecords() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [tab, setTab] = useState<Tab>("log");
-  const [pets, setPets] = useState<Pet[]>([]);
-  const [admissions, setAdmissions] = useState<Admission[]>([]);
-  const [treatments, setTreatments] = useState<TreatmentEntry[]>([]);
-  const [visits, setVisits] = useState<MedicalVisit[]>([]);
-  const [loading, setLoading] = useState(true);
+
+  // Stale-while-revalidate: paint the last snapshot instantly (seeded by the
+  // page's own load() or the idle background-warmer — same key + shape).
+  const cacheKey = recordsKey(user?.clinic_id ?? user?.id);
+  const seed = getCached<RecordsSnap>(cacheKey);
+  const [pets, setPets] = useState<Pet[]>(seed?.pets ?? []);
+  const [admissions, setAdmissions] = useState<Admission[]>(seed?.admissions ?? []);
+  const [treatments, setTreatments] = useState<TreatmentEntry[]>(seed?.treatments ?? []);
+  const [visits, setVisits] = useState<MedicalVisit[]>(seed?.visits ?? []);
+  const [loading, setLoading] = useState(!seed);
 
   const mounted = useRef(true);
   const load = async () => {
     try {
       // Tenant isolation: only this clinic's own patients & records (RLS enforces
-      // it server-side; this filter keeps the dashboard query explicit too).
-      const [allPets, a] = await withTimeout(Promise.all([repo.listAllPets(user?.id), repo.listAdmissions(user?.id)]), 15000);
+      // it server-side). Fetch composition lives in prefetchData so the page and
+      // the idle warmer stay identical.
+      const snap = await withTimeout(loadRecordsSnap(user?.clinic_id ?? user?.id), 15000);
       if (!mounted.current) return;
-      const p = allPets.filter((pet) => pet.shared_with_clinic !== false);
-      setPets(p);
-      setAdmissions(a);
-      const ids = p.map((pet) => pet.id);
-      const [tx, vs] = await withTimeout(Promise.all([
-        Promise.all(p.map((pet) => repo.listTreatments(pet.id))).then((r) => r.flat()),
-        repo.listAllVisits(ids), // health status + last-visit date for the directory
-      ]), 15000);
-      if (mounted.current) { setTreatments(tx); setVisits(vs); }
+      setPets(snap.pets);
+      setAdmissions(snap.admissions);
+      setTreatments(snap.treatments);
+      setVisits(snap.visits);
+      setCached<RecordsSnap>(cacheKey, snap);
     } catch {
       /* hung/failed query — finally still clears the skeleton */
     } finally {
@@ -110,13 +116,14 @@ export function ClinicRecords() {
 
   useEffect(() => {
     mounted.current = true;
-    void load();
+    if (!isFresh(cacheKey, 20_000)) void load(); // skip refetch when fresh (< 20s)
     return () => { mounted.current = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const activeCases = admissions.filter((a) => a.kind === "treatment" && a.status === "active").length;
-  const activeBoarding = admissions.filter((a) => a.kind === "boarding" && a.status === "active").length;
+  // Therapeutic boarding counts toward both KPIs (it's treatment + boarding at once).
+  const activeCases = admissions.filter((a) => (a.kind === "treatment" || a.kind === "treatment_boarding") && a.status === "active").length;
+  const activeBoarding = admissions.filter((a) => (a.kind === "boarding" || a.kind === "treatment_boarding") && a.status === "active").length;
   const movements = admissions.reduce((n, a) => n + 1 + (a.discharged_on ? 1 : 0), 0);
 
   const TABS: { id: Tab; icon: typeof ClipboardList; count: number }[] = [
@@ -199,7 +206,7 @@ export function ClinicRecords() {
         })}
       </div>
 
-      <AnimatePresence mode="wait">
+      <AnimatePresence mode="wait" initial={false}>
         <motion.div key={tab} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.2 }}>
           {tab === "log" && <PatientLog pets={pets} admissions={admissions} visits={visits} onChanged={load} loading={loading} />}
           {tab === "cases" && <CurrentCases pets={pets} admissions={admissions} treatments={treatments} onChanged={load} />}
@@ -226,7 +233,7 @@ interface DirRow {
   activityMs: number; // recency (visit | admission | registration)
 }
 
-type GroupBy = "owner" | "alpha" | "species" | "date";
+type GroupBy = "recent" | "owner" | "alpha" | "species" | "date";
 /** A collapsible accordion section. Owner sections carry header extras (phone + a named flag). */
 interface DirGroup { key: string; title: string; rows: DirRow[]; subtitle?: string; ownerHeader?: boolean; ownerNamed?: boolean }
 
@@ -247,6 +254,31 @@ function PatientLog({ pets, admissions, visits, onChanged, loading }: { pets: Pe
   const [reassign, setReassign] = useState<Pet | null>(null);
   const [rq, setRq] = useState("");
   const [rNew, setRNew] = useState({ name: "", phone: "", email: "" });
+  const [editing, setEditing] = useState<Pet | null>(null);
+  const [deleting, setDeleting] = useState<Pet | null>(null);
+  const [delBusy, setDelBusy] = useState(false);
+  // Optimistically hidden pets (removed from the list before the server confirms).
+  const [deletedIds, setDeletedIds] = useState<Set<string>>(new Set());
+
+  const confirmDelete = async () => {
+    if (!deleting || delBusy) return;
+    const pet = deleting;
+    setDelBusy(true);
+    setDeletedIds((s) => new Set(s).add(pet.id)); // optimistic removal
+    try {
+      await repo.deletePet(pet.id);
+      playSuccess();
+      toast.success(t("records.petDeleted", { name: pet.name, defaultValue: "{{name}} deleted" }));
+      setDeleting(null);
+      onChanged(); // re-sync from the source of truth
+    } catch (e) {
+      // Roll back the optimistic removal and surface the error.
+      setDeletedIds((s) => { const n = new Set(s); n.delete(pet.id); return n; });
+      toast.error(t("records.saveError", "Couldn't save. Please try again."), e instanceof Error ? e.message : undefined);
+    } finally {
+      setDelBusy(false);
+    }
+  };
 
   // Press "/" anywhere to jump to search.
   useEffect(() => {
@@ -282,7 +314,7 @@ function PatientLog({ pets, admissions, visits, onChanged, loading }: { pets: Pe
     return Math.max(admMs, visMs, new Date(p.created_at ?? 0).getTime());
   };
 
-  const rows: DirRow[] = useMemo(() => pets.map((p) => ({
+  const rows: DirRow[] = useMemo(() => pets.filter((p) => !deletedIds.has(p.id)).map((p) => ({
     pet: p,
     ownerName: p.owner_name?.trim() || "—",
     ownerPhone: p.owner_phone?.trim() || "",
@@ -290,7 +322,7 @@ function PatientLog({ pets, admissions, visits, onChanged, loading }: { pets: Pe
     health: healthByPet.get(p.id) ?? null,
     status: petStatusOf(p.id, admByPet),
     activityMs: activityMs(p),
-  })), [pets, lastVisitByPet, healthByPet, admByPet]); // eslint-disable-line react-hooks/exhaustive-deps
+  })), [pets, deletedIds, lastVisitByPet, healthByPet, admByPet]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const speciesPresent = useMemo(() => Array.from(new Set(pets.map((p) => p.species))), [pets]);
   const healthCounts = useMemo(() => {
@@ -316,6 +348,11 @@ function PatientLog({ pets, admissions, visits, onChanged, loading }: { pets: Pe
   // Build the accordion groups for the active grouping.
   const groups: DirGroup[] = useMemo(() => {
     const byName = (a: DirRow, b: DirRow) => a.ownerName.localeCompare(b.ownerName, lang) || a.pet.name.localeCompare(b.pet.name, lang);
+    if (groupBy === "recent") {
+      // One flat, newest-first list — a just-registered or just-seen patient
+      // always sits at the very top. Rendered without accordion chrome below.
+      return [{ key: "recent", title: "", rows: [...filtered].sort((a, b) => b.activityMs - a.activityMs) }];
+    }
     if (groupBy === "owner") {
       // Owner-centric hierarchy: one accordion per unique client (keyed by phone,
       // falling back to a per-pet key for pets with no number). Each section's
@@ -327,8 +364,9 @@ function PatientLog({ pets, admissions, visits, onChanged, loading }: { pets: Pe
         const a = m.get(key) ?? []; a.push(r); m.set(key, a);
       }
       return [...m.entries()]
-        .map(([key, rs]): DirGroup => {
-          const sorted = rs.sort((a, b) => a.pet.name.localeCompare(b.pet.name, lang));
+        .map(([key, rs]): DirGroup & { recency: number } => {
+          // Newest pet first inside each owner (freshest activity at the top).
+          const sorted = rs.sort((a, b) => b.activityMs - a.activityMs);
           // Title = the most common owner name in the group, so one mistyped record
           // can't override the majority; falls back to the unassigned label.
           const nameCounts = new Map<string, number>();
@@ -341,10 +379,12 @@ function PatientLog({ pets, admissions, visits, onChanged, loading }: { pets: Pe
             ownerHeader: true,
             ownerNamed: Boolean(named),
             rows: sorted,
+            recency: sorted.reduce((mx, r) => Math.max(mx, r.activityMs), 0), // group's freshest activity
           };
         })
-        // Named clients first (alphabetical); the "no owner" bucket sinks to the end.
-        .sort((a, b) => Number(b.ownerNamed) - Number(a.ownerNamed) || a.title.localeCompare(b.title, lang));
+        // Newest-active client first; ties fall back to name (the "no owner"
+        // bucket only sinks when it isn't itself the most recent).
+        .sort((a, b) => b.recency - a.recency || a.title.localeCompare(b.title, lang));
     }
     if (groupBy === "species") {
       const m = new Map<Species, DirRow[]>();
@@ -428,10 +468,9 @@ function PatientLog({ pets, admissions, visits, onChanged, loading }: { pets: Pe
   const ownerInitials = (name: string) => name.split(" ").map((w) => w[0]).slice(0, 2).join("").toUpperCase();
 
   const GROUPS: { id: GroupBy; label: string; icon: typeof ArrowDownAZ }[] = [
+    { id: "recent", label: t("records.grpRecent", "الأحدث"), icon: Clock },
     { id: "owner", label: t("records.grpOwner", "By owner"), icon: Users },
-    { id: "alpha", label: t("records.grpAlpha", "Alphabet"), icon: ArrowDownAZ },
     { id: "species", label: t("records.grpSpecies", "Species"), icon: PawPrint },
-    { id: "date", label: t("records.grpDate", "Last visit"), icon: CalendarClock },
   ];
 
   return (
@@ -509,6 +548,23 @@ function PatientLog({ pets, admissions, visits, onChanged, loading }: { pets: Pe
           <span className="mb-3 grid h-14 w-14 place-items-center rounded-3xl bg-surface-2 text-ink-subtle"><Search size={26} /></span>
           <p className="font-semibold text-ink">{t("records.noResults")}</p>
         </div>
+      ) : groupBy === "recent" ? (
+        // Newest-first flat list — the freshest patient is always at the top.
+        <div className="divide-y divide-line overflow-hidden rounded-3xl border border-line bg-surface-1 shadow-card">
+          {(groups[0]?.rows ?? []).map((r) => (
+            <DirectoryRow
+              key={r.pet.id}
+              row={r}
+              lang={lang}
+              hideOwner={false}
+              onView={() => { playTap(); navigate(`/pet/${r.pet.id}?tab=history`); }}
+              onTreatment={() => { playTap(); navigate(`/pet/${r.pet.id}?tab=treatment`); }}
+              onMove={() => { playTap(); setReassign(r.pet); setRq(""); setRNew({ name: "", phone: "", email: "" }); }}
+              onEdit={() => { playTap(); setEditing(r.pet); }}
+              onDelete={() => { playTap(); setDeleting(r.pet); }}
+            />
+          ))}
+        </div>
       ) : (
         <div className="space-y-3">
           {groups.map((g) => {
@@ -550,6 +606,8 @@ function PatientLog({ pets, admissions, visits, onChanged, loading }: { pets: Pe
                             onView={() => { playTap(); navigate(`/pet/${r.pet.id}?tab=history`); }}
                             onTreatment={() => { playTap(); navigate(`/pet/${r.pet.id}?tab=treatment`); }}
                             onMove={() => { playTap(); setReassign(r.pet); setRq(""); setRNew({ name: "", phone: "", email: "" }); }}
+                            onEdit={() => { playTap(); setEditing(r.pet); }}
+                            onDelete={() => { playTap(); setDeleting(r.pet); }}
                           />
                         ))}
                       </div>
@@ -623,7 +681,119 @@ function PatientLog({ pets, admissions, visits, onChanged, loading }: { pets: Pe
           );
         })()}
       </Modal>
+
+      {/* Edit an existing pet's details. */}
+      <EditPetModal pet={editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); onChanged(); }} />
+
+      {/* Delete confirmation — destructive, irreversible. */}
+      <Dialog
+        open={!!deleting}
+        onClose={() => { if (!delBusy) setDeleting(null); }}
+        title={t("records.deletePet", "Delete pet")}
+        size="sm"
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setDeleting(null)} disabled={delBusy}>{t("common.cancel", "Cancel")}</Button>
+            <Button variant="danger" onClick={confirmDelete} loading={delBusy} leftIcon={<Trash2 size={16} />}>{t("common.delete", "Delete")}</Button>
+          </>
+        }
+      >
+        <div className="flex items-start gap-3">
+          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-danger-50 text-danger-600 dark:bg-danger-500/15 dark:text-danger-300"><AlertTriangle size={20} /></span>
+          <p className="text-sm leading-relaxed text-ink-muted">{t("records.deleteConfirm", "Are you sure you want to delete this pet? This action cannot be undone.")}</p>
+        </div>
+      </Dialog>
     </div>
+  );
+}
+
+/** Edit an existing pet's core details (name, species, breed, age/DOB, sex, weight, colour). */
+function EditPetModal({ pet, onClose, onSaved }: { pet: Pet | null; onClose: () => void; onSaved: () => void }) {
+  const { t } = useTranslation();
+  const toast = useToast();
+  const [name, setName] = useState("");
+  const [species, setSpecies] = useState<Species>("dog");
+  const [breed, setBreed] = useState("");
+  const [sex, setSex] = useState<Sex>("unknown");
+  const [dob, setDob] = useState("");
+  const [weight, setWeight] = useState("");
+  const [color, setColor] = useState("");
+  const [saving, setSaving] = useState(false);
+  const submittingRef = useRef(false);
+
+  // Pre-fill from the pet whenever the modal opens on a new record.
+  useEffect(() => {
+    if (!pet) return;
+    setName(pet.name);
+    setSpecies(pet.species);
+    setBreed(pet.breed ?? "");
+    setSex(pet.sex);
+    setDob(pet.dob ?? "");
+    setWeight(pet.current_weight_kg != null ? String(pet.current_weight_kg) : "");
+    setColor(pet.color ?? "");
+  }, [pet]);
+
+  const save = async () => {
+    if (!pet || !name.trim() || submittingRef.current) return;
+    submittingRef.current = true;
+    setSaving(true);
+    try {
+      await repo.updatePet(pet.id, {
+        name: name.trim(),
+        species,
+        breed: breed.trim() || undefined,
+        sex,
+        dob: dob || null,
+        current_weight_kg: weight ? Number(weight) : null,
+        color: color.trim() || undefined,
+      });
+      playSuccess();
+      toast.success(t("records.petUpdated", "Pet updated"));
+      onSaved();
+    } catch (e) {
+      toast.error(t("records.saveError", "Couldn't save. Please try again."), e instanceof Error ? e.message : undefined);
+    } finally {
+      submittingRef.current = false;
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Modal open={!!pet} onClose={onClose} title={t("records.editPetTitle", { name: pet?.name ?? "", defaultValue: "Edit {{name}}" })}>
+      <div className="space-y-4">
+        <div>
+          <label className="label">{t("pet.name")}</label>
+          <input className="input" value={name} onChange={(e) => setName(e.target.value)} autoFocus />
+        </div>
+        <div>
+          <label className="label">{t("pet.speciesLabel")}</label>
+          <SpeciesPicker value={species} onChange={setSpecies} />
+        </div>
+        <div>
+          <label className="label">{t("pet.breed")}</label>
+          <BreedPicker species={species} value={breed} onChange={setBreed} />
+        </div>
+        <div>
+          <label className="label">{t("pet.sexLabel")}</label>
+          <SexPicker value={sex} onChange={setSex} />
+        </div>
+        <div>
+          <label className="label">{t("pet.ageLabel", "Age")}</label>
+          <AgeInput dob={dob} onChange={setDob} />
+        </div>
+        <div>
+          <WeightInput value={weight} onChange={setWeight} />
+        </div>
+        <div>
+          <label className="label">{t("pet.color")}</label>
+          <ColorPicker value={color} onChange={setColor} />
+        </div>
+        <div className="flex gap-3 pt-2">
+          <button className="btn-ghost flex-1" onClick={onClose}>{t("common.cancel")}</button>
+          <Button className="flex-1" onClick={save} loading={saving} disabled={!name.trim()}>{t("common.save")}</Button>
+        </div>
+      </div>
+    </Modal>
   );
 }
 
@@ -641,8 +811,8 @@ function FilterPill({ active, onClick, children }: { active: boolean; onClick: (
   );
 }
 
-function DirectoryRow({ row, lang, hideOwner, onView, onTreatment, onMove }: { row: DirRow; lang: string; hideOwner?: boolean; onView: () => void; onTreatment: () => void; onMove: () => void }) {
-  const { t } = useTranslation();
+function DirectoryRow({ row, lang, hideOwner, onView, onTreatment, onMove, onEdit, onDelete }: { row: DirRow; lang: string; hideOwner?: boolean; onView: () => void; onTreatment: () => void; onMove: () => void; onEdit: () => void; onDelete: () => void }) {
+  const { t, i18n } = useTranslation();
   const { pet, ownerName, ownerPhone, lastVisit, health, status } = row;
   const hasAllergy = pet.allergies && pet.allergies.length > 0;
   return (
@@ -652,7 +822,7 @@ function DirectoryRow({ row, lang, hideOwner, onView, onTreatment, onMove }: { r
         <div className="min-w-0">
           <p className="flex items-center gap-1.5 truncate text-sm font-semibold text-ink">
             {pet.name}
-            <span className="truncate font-normal text-ink-subtle">· {pet.breed || t(`pet.species.${pet.species}`)}</span>
+            <span className="truncate font-normal text-ink-subtle">· {pet.breed ? breedLabel(pet.breed, i18n.language) : t(`pet.species.${pet.species}`)}</span>
             {hasAllergy && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-danger-500" title={pet.allergies?.join(", ")} />}
           </p>
           {hideOwner ? (
@@ -691,6 +861,8 @@ function DirectoryRow({ row, lang, hideOwner, onView, onTreatment, onMove }: { r
       {status === "boarding" && <Badge tone="sky" icon={<BedDouble size={11} />} className="hidden shrink-0 md:inline-flex">{t("records.stBoarding", "Boarding")}</Badge>}
 
       <div className="flex shrink-0 items-center gap-0.5">
+        <button title={t("records.editPet", "Edit pet")} onClick={onEdit} className="grid h-8 w-8 place-items-center rounded-full text-ink-subtle transition hover:bg-brand-50 hover:text-brand-600 dark:hover:bg-brand-500/15"><Pencil size={15} /></button>
+        <button title={t("records.deletePet", "Delete pet")} onClick={onDelete} className="grid h-8 w-8 place-items-center rounded-full text-ink-subtle transition hover:bg-danger-50 hover:text-danger-600 dark:hover:bg-danger-500/15"><Trash2 size={15} /></button>
         <button title={t("records.moveOwner", "Move to owner")} onClick={onMove} className="hidden h-8 w-8 place-items-center rounded-full text-ink-subtle transition hover:bg-brand-50 hover:text-brand-600 dark:hover:bg-brand-500/15 sm:grid"><ArrowRightLeft size={15} /></button>
         <button title={t("treatment.title")} onClick={onTreatment} className="hidden h-8 w-8 place-items-center rounded-full text-ink-subtle transition hover:bg-brand-50 hover:text-brand-600 dark:hover:bg-brand-500/15 sm:grid"><Pill size={15} /></button>
         <Button size="sm" variant="secondary" rightIcon={<ChevronRight size={15} />} onClick={onView}>
@@ -707,7 +879,10 @@ function CurrentCases({ pets, admissions, treatments, onChanged }: { pets: Pet[]
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const today = new Date().toISOString().slice(0, 10);
-  const active = admissions.filter((a) => a.kind === "treatment" && a.status === "active");
+  // Newest admissions first, so a just-opened case leads the board.
+  const active = admissions
+    .filter((a) => (a.kind === "treatment" || a.kind === "treatment_boarding") && a.status === "active")
+    .sort((a, b) => new Date(b.admitted_on).getTime() - new Date(a.admitted_on).getTime());
 
   const [, setTick] = useState(0);
   useEffect(() => { const id = setInterval(() => setTick((n) => n + 1), 60000); return () => clearInterval(id); }, []);
@@ -738,7 +913,7 @@ function CurrentCases({ pets, admissions, treatments, onChanged }: { pets: Pet[]
     const { done, remainingH } = completion(a);
     const cycle = a.cycle_hours ?? 24;
     return (
-      <motion.div key={a.id} layout variants={staggerItem} className={cn("card p-4", done && "ring-1 ring-success-200 dark:ring-success-500/30")}>
+      <div key={a.id} className={cn("card p-4", done && "ring-1 ring-success-200 dark:ring-success-500/30")}>
         <div className="flex items-center gap-3">
           <PetAvatar pet={p} size={48} photoFallback />
           <div className="min-w-0 flex-1">
@@ -774,7 +949,7 @@ function CurrentCases({ pets, admissions, treatments, onChanged }: { pets: Pet[]
           <Button size="sm" variant="secondary" className="flex-1" leftIcon={<Pill size={15} />} onClick={() => { playTap(); navigate(`/pet/${p.id}?tab=treatment`); }}>{t("records.openSheet")}</Button>
           <Button size="sm" variant="ghost" onClick={() => discharge(a.id)} aria-label={t("records.discharge")}><DischargeIcon size={15} /></Button>
         </div>
-      </motion.div>
+      </div>
     );
   };
 
@@ -803,11 +978,11 @@ function CurrentCases({ pets, admissions, treatments, onChanged }: { pets: Pet[]
                   <h3 className="font-display text-sm font-bold tracking-tighter2 text-ink">{col.title}</h3>
                   <span className="rounded-full bg-surface-2 px-2 text-2xs font-bold text-ink-subtle">{col.items.length}</span>
                 </div>
-                <motion.div layout variants={staggerContainer} initial="initial" animate="animate" className="space-y-3">
+                <div className="space-y-3">
                   {col.items.length === 0 ? (
                     <div className="rounded-2xl border border-dashed border-line p-6 text-center text-xs text-ink-subtle">{t("records.colEmpty", "Nothing here")}</div>
                   ) : col.items.map(renderCard)}
-                </motion.div>
+                </div>
               </div>
             );
           })}
@@ -822,7 +997,10 @@ function Boarding({ pets, admissions, onChanged }: { pets: Pet[]; admissions: Ad
   const { t, i18n } = useTranslation();
   const toast = useToast();
   const today = new Date().toISOString().slice(0, 10);
-  const active = admissions.filter((a) => a.kind === "boarding" && a.status === "active");
+  // Newest admissions first, so the latest boarder leads the grid.
+  const active = admissions
+    .filter((a) => (a.kind === "boarding" || a.kind === "treatment_boarding") && a.status === "active")
+    .sort((a, b) => new Date(b.admitted_on).getTime() - new Date(a.admitted_on).getTime());
   const petOf = (id: string) => pets.find((p) => p.id === id);
 
   const [selecting, setSelecting] = useState(false);
@@ -957,7 +1135,7 @@ function MovementLog({ pets, admissions }: { pets: Pet[]; admissions: Admission[
                         <p className="truncate text-xs text-ink-muted">{e.pet.owner_name}</p>
                       </div>
                       <div className="flex shrink-0 items-center gap-1.5">
-                        <span className="chip bg-surface-2 text-[10px] text-ink-muted">{e.kind === "boarding" ? <BedDouble size={10} /> : <Stethoscope size={10} />}</span>
+                        <span className="chip bg-surface-2 text-[10px] text-ink-muted">{e.kind === "boarding" || e.kind === "treatment_boarding" ? <BedDouble size={10} /> : <Stethoscope size={10} />}</span>
                         <Badge tone={isIn ? "success" : "neutral"}>{isIn ? t("records.entered") : t("records.left")}</Badge>
                       </div>
                     </div>
