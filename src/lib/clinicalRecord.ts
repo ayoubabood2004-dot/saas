@@ -16,6 +16,7 @@ export interface ClinicalRecord {
   v: 1;
   focus?: { region: string; structure?: string; latin?: string };
   symptoms?: string[];                                   // symptom ids
+  qualifiers?: Record<string, Record<string, string>>;   // symptomId → { qualifierId: chosen option }
   cbc?: { id: string; value: number; flag: CbcFlag }[];
   diagnoses?: { system: string; disease: string; severity: Severity }[];
   redFlags?: { name: string; note: string }[];

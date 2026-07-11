@@ -3,7 +3,7 @@ import { ChevronDown, AlertTriangle, ShieldAlert, Biohazard, Paperclip } from "l
 import type { ClinicalRecord } from "@/lib/clinicalRecord";
 import { Glyph, GlyphMark, glyphTone, glyphToneText } from "@/lib/clinicalIcons";
 import { SEVERITIES } from "@/lib/diagnoses";
-import { SYMPTOMS, OUTCOMES } from "@/lib/clinicalKnowledge";
+import { symptomById, symptomLabel, OUTCOMES } from "@/lib/clinicalKnowledge";
 import { cbcById, FLAG_ARROW } from "@/lib/cbc";
 import { formatNum, cn } from "@/lib/utils";
 import { playTap } from "@/lib/sounds";
@@ -88,10 +88,13 @@ export function ClinicalRecordCard({ record, compact = false, className }: { rec
             <Node icon="fever" color="bg-rose-500" title="الأعراض">
               <span className="flex flex-wrap gap-1.5">
                 {record.symptoms.map((id) => {
-                  const s = SYMPTOMS.find((x) => x.id === id);
+                  const qm = record.qualifiers?.[id];
+                  const sym = symptomById(id);
+                  const summary = qm && sym?.qualifiers ? sym.qualifiers.map((ax) => qm[ax.id]).filter(Boolean).join("، ") : "";
                   return (
                     <span key={id} className="inline-flex items-center gap-1 rounded-full border border-line bg-surface-2 py-0.5 pe-2 ps-0.5 text-2xs font-bold">
-                      <Glyph name={id} size={16} /> {s?.label ?? id}
+                      <Glyph name={id} size={16} /> {symptomLabel(id)}
+                      {summary && <span className="font-semibold text-brand-600 dark:text-brand-300">· {summary}</span>}
                     </span>
                   );
                 })}

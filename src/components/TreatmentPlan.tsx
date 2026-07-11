@@ -6,15 +6,16 @@ import {
 } from "lucide-react";
 import { AnatomyMap, type AnatomyFocus } from "@/components/AnatomyMap";
 import { DiagnosisPicker } from "@/components/DiagnosisPicker";
+import { SymptomPicker, type QualifierMap } from "@/components/SymptomPicker";
 import { CbcPanel } from "@/components/CbcPanel";
 import { summarizeDiagnoses, type Diagnosis } from "@/lib/diagnoses";
 import {
-  SYMPTOMS, DISEASES, differentialFor, interactionsIn, OUTCOMES,
+  DISEASES, differentialFor, interactionsIn, OUTCOMES, symptomById, symptomLabel, RED_FLAG_QUALIFIERS,
   type Disease, type CaseOutcome, type Sp,
 } from "@/lib/clinicalKnowledge";
 import { CBC, cbcRange, cbcFlag, FLAG_ARROW } from "@/lib/cbc";
 import { encodeClinical, type ClinicalRecord } from "@/lib/clinicalRecord";
-import { Glyph, GlyphMark, glyphTone, glyphToneText } from "@/lib/clinicalIcons";
+import { GlyphMark, glyphTone, glyphToneText } from "@/lib/clinicalIcons";
 import { repo } from "@/lib/repo";
 import { prepareUpload } from "@/lib/image";
 import { Button, useToast } from "@/components/ui";
@@ -81,6 +82,7 @@ export function TreatmentPlan({
   const [step, setStep] = useState<StepId>("anatomy");
   const [focus, setFocus] = useState<AnatomyFocus | null>(null);
   const [symptoms, setSymptoms] = useState<string[]>([]);
+  const [qualifiers, setQualifiers] = useState<QualifierMap>({});
   const [cbc, setCbc] = useState<Record<string, number>>({});
   const [cbcOpen, setCbcOpen] = useState(false);
   const [labPhoto, setLabPhoto] = useState<string | null>(null);
@@ -115,6 +117,17 @@ export function TreatmentPlan({
   /* ---- Differential engine ---- */
   const differential = useMemo(() => differentialFor(symptoms, species), [symptoms, species]);
   const topScore = differential[0]?.score ?? 1;
+
+  /* ---- Descriptor (qualifier) helpers + red-flag detection ---- */
+  const qualSummary = (id: string): string => {
+    const q = qualifiers[id]; const sym = symptomById(id);
+    if (!q || !sym?.qualifiers) return "";
+    return sym.qualifiers.map((ax) => q[ax.id]).filter(Boolean).join("، ");
+  };
+  const qualifierRedFlags = useMemo(
+    () => RED_FLAG_QUALIFIERS.filter((rf) => qualifiers[rf.symptomId]?.[rf.qualifierId] === rf.value),
+    [qualifiers],
+  );
 
   /* ---- Which knowledge-base diseases are currently chosen (single source: diagnoses) ---- */
   const pickedDiseases = useMemo(
@@ -161,9 +174,13 @@ export function TreatmentPlan({
     const lines: string[] = [];
     if (focus) lines.push(`🧭 التركيز التشريحي: ${focus.structure ?? focus.region}${focus.latin ? ` (${focus.latin})` : ""}`);
     if (symptoms.length) {
-      const labels = symptoms.map((id) => SYMPTOMS.find((s) => s.id === id)?.label).filter(Boolean);
-      lines.push(`🔬 الأعراض: ${labels.join(" · ")}`);
+      const parts = symptoms.map((id) => {
+        const s = qualSummary(id);
+        return s ? `${symptomLabel(id)} (${s})` : symptomLabel(id);
+      });
+      lines.push(`🔬 الأعراض: ${parts.join(" · ")}`);
     }
+    for (const rf of qualifierRedFlags) lines.push(`❗ علامة حمراء — ${rf.warn}`);
     if (cbcIds.length) {
       lines.push("🩸 تحليل الدم (CBC):");
       for (const p of CBC) {
@@ -212,6 +229,7 @@ export function TreatmentPlan({
     v: 1,
     focus: focus ? { region: focus.region, structure: focus.structure, latin: focus.latin } : undefined,
     symptoms: symptoms.length ? symptoms : undefined,
+    qualifiers: Object.keys(qualifiers).length ? qualifiers : undefined,
     cbc: cbcIds.length
       ? CBC.filter((p) => cbc[p.id] !== undefined).map((p) => ({ id: p.id, value: cbc[p.id], flag: cbcFlag(cbc[p.id], cbcRange(p, species)) }))
       : undefined,
@@ -277,29 +295,28 @@ export function TreatmentPlan({
 
         {step === "symptoms" && (
           <section className="space-y-3">
-            <StepTitle icon={Activity} title="العلامات السريرية المُلاحَظة" hint="اختر الأعراض — يبني منها النظام تشخيصاً تفريقياً مرتّباً." />
-            <div className="flex flex-wrap gap-1.5">
-              {SYMPTOMS.map((s) => {
-                const on = symptoms.includes(s.id);
-                return (
-                  <button
-                    key={s.id} type="button"
-                    onClick={() => { playTap(); setSymptoms((xs) => (on ? xs.filter((x) => x !== s.id) : [...xs, s.id])); }}
-                    className={cn(
-                      "inline-flex items-center gap-1.5 rounded-full border py-1 pe-3 ps-1 text-xs font-semibold transition",
-                      on ? "border-brand-500 bg-brand-600 text-white shadow-soft" : "border-line bg-surface-1 text-ink-muted hover:border-brand-300 hover:text-brand-700",
-                    )}
-                  >
-                    <Glyph name={s.id} size={26} /> {s.label}
-                  </button>
-                );
-              })}
-            </div>
-            {symptoms.length > 0 && (
-              <button type="button" onClick={() => { playTap(); setStep("diagnosis"); }} className="inline-flex items-center gap-1.5 rounded-full bg-brand-50 px-4 py-2 text-xs font-bold text-brand-700 transition hover:bg-brand-100 dark:bg-brand-500/10 dark:text-brand-300">
-                <Sparkles size={14} /> عرض التشخيص التفريقي ({formatNum(differential.length)})
-              </button>
+            <StepTitle icon={Activity} title="العلامات السريرية المُلاحَظة" hint="اختر قالب الشكوى أو تصفّح المجموعات — واضغط «وصف» لتفصيل العرض." />
+
+            {/* Red-flag qualifier warnings — surfaced the moment a critical descriptor is picked */}
+            {qualifierRedFlags.length > 0 && (
+              <div className="space-y-2">
+                {qualifierRedFlags.map((rf) => (
+                  <Banner key={`${rf.symptomId}-${rf.qualifierId}`} tone="danger" icon={AlertTriangle} title={`علامة حمراء — ${symptomLabel(rf.symptomId)}`}>
+                    {rf.warn}
+                  </Banner>
+                ))}
+              </div>
             )}
+
+            <SymptomPicker
+              value={symptoms}
+              onChange={setSymptoms}
+              qualifiers={qualifiers}
+              onQualifiersChange={setQualifiers}
+              differentialCount={differential.length}
+              onShowDifferential={() => setStep("diagnosis")}
+              focusSystem={focus?.system}
+            />
 
             {/* ---- CBC blood panel (collapsible) ---- */}
             <div className="border-t border-line pt-3">

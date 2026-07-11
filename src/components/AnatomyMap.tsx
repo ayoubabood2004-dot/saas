@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Layers, X, Crosshair } from "lucide-react";
-import { ANATOMY, regionById, type AnatomyRegion } from "@/lib/clinicalKnowledge";
+import { anatomyFor, SPECIES_ANATOMY, type AnatomyRegion } from "@/lib/clinicalKnowledge";
 import { systemById } from "@/lib/diagnoses";
 import { animalArt, ANIMAL_ART_DEFS } from "@/lib/anatomyArt";
 import { Glyph } from "@/lib/clinicalIcons";
@@ -17,23 +17,35 @@ export interface AnatomyFocus {
   latin?: string;          // scientific name of the structure
 }
 
+type Coords = { cx: number; cy: number; r: number };
+
 /**
- * Interactive anatomical map — a scientific, clickable quadruped side-profile.
- * Tap a body region to reveal its structures (organs / bones) with their Latin
- * names, then pin the exact structure the case concerns. Built from ANATOMY in
- * clinicalKnowledge.ts, so every hotspot is data-driven.
+ * Interactive anatomical map — a scientific, clickable, SPECIES-CORRECT figure.
+ * The region set comes from anatomyFor(species): a bird shows a beak + wing and
+ * no teeth; a cow shows the forestomach + udder + cloven hoof, etc. Regions that
+ * place cleanly on the figure are hotspots; internal viscera (crop, gizzard,
+ * cloaca, forestomach, udder, hindgut) render as labeled chips below the map.
  */
 export function AnatomyMap({ value, onChange, species = "dog" }: { value: AnatomyFocus | null; onChange: (f: AnatomyFocus | null) => void; species?: Species }) {
   const [openId, setOpenId] = useState<string | null>(value?.regionId ?? null);
-  const open = openId ? regionById(openId) : undefined;
-  const dots = ANATOMY.filter((r) => r.r > 0); // the "skin" region (r:0) is a whole-body chip, not a hotspot
-  // Per-species posture overrides: some animals hold the head high (horse) or sit
-  // compact (rabbit), so the shared hotspot coords are nudged to land on the figure.
+  const regions = useMemo(() => anatomyFor(species), [species]);
+  const note = SPECIES_ANATOMY[species]?.note;
   const posture = POSTURE[species];
-  const coordsFor = (r: AnatomyRegion) => {
+
+  // A region is a hotspot if it resolves to real coords (from POSTURE or its own
+  // cx/cy/r with r>0); otherwise it's a chip below the map.
+  const coordsFor = (r: AnatomyRegion): Coords | null => {
     const o = posture?.[r.id];
-    return { cx: o?.cx ?? r.cx, cy: o?.cy ?? r.cy, r: o?.r ?? r.r };
+    const cx = o?.cx ?? r.cx;
+    const cy = o?.cy ?? r.cy;
+    const rad = o?.r ?? r.r;
+    if (cx == null || cy == null || rad == null || rad <= 0) return null;
+    return { cx, cy, r: rad };
   };
+  const placed = regions.map((r) => ({ r, c: coordsFor(r) }));
+  const dots = placed.filter((p): p is { r: AnatomyRegion; c: Coords } => p.c !== null);
+  const chipRegions = placed.filter((p) => p.c === null).map((p) => p.r);
+  const open = openId ? regions.find((r) => r.id === openId) : undefined;
 
   const pickRegion = (r: AnatomyRegion) => {
     playTap();
@@ -63,10 +75,9 @@ export function AnatomyMap({ value, onChange, species = "dog" }: { value: Anatom
           <g dangerouslySetInnerHTML={{ __html: animalArt(species) }} />
 
           {/* ---- Hotspots — subtle markers that highlight on hover/select ---- */}
-          {dots.map((r) => {
+          {dots.map(({ r, c }) => {
             const active = openId === r.id;
             const focused = isFocused(r.id);
-            const c = coordsFor(r);
             const emphasised = active || focused;
             return (
               <g key={r.id} onClick={() => pickRegion(r)} className="cursor-pointer" role="button" aria-label={r.name}>
@@ -94,26 +105,30 @@ export function AnatomyMap({ value, onChange, species = "dog" }: { value: Anatom
           })}
         </svg>
 
-        {/* whole-body: skin/fur chip */}
-        <div className="mt-1 flex justify-center">
-          {(() => {
-            const skin = ANATOMY.find((r) => r.r === 0);
-            if (!skin) return null;
-            const active = openId === skin.id;
-            return (
-              <button
-                type="button"
-                onClick={() => pickRegion(skin)}
-                className={cn(
-                  "inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-2xs font-bold transition",
-                  active || isFocused(skin.id) ? "border-brand-500 bg-brand-600 text-white" : "border-line bg-surface-1 text-ink-muted hover:border-brand-300",
-                )}
-              >
-                🐾 {skin.name}
-              </button>
-            );
-          })()}
-        </div>
+        {/* Coordless regions (skin + internal viscera) as chips below the figure */}
+        {chipRegions.length > 0 && (
+          <div className="mt-1 flex flex-wrap justify-center gap-1.5 px-1">
+            {chipRegions.map((r) => {
+              const active = openId === r.id || isFocused(r.id);
+              return (
+                <button
+                  key={r.id}
+                  type="button"
+                  onClick={() => pickRegion(r)}
+                  className={cn(
+                    "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-2xs font-bold transition",
+                    active ? "border-brand-500 bg-brand-600 text-white" : "border-line bg-surface-1 text-ink-muted hover:border-brand-300",
+                  )}
+                >
+                  <Glyph name={r.system} size={15} className={active ? "opacity-90" : ""} /> {r.name}
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Species clinical caption */}
+        {note && <p className="mt-2 px-2 text-center text-2xs leading-relaxed text-ink-subtle">{note}</p>}
       </div>
 
       {/* Structure drawer for the open region */}
@@ -183,15 +198,17 @@ export function AnatomyMap({ value, onChange, species = "dog" }: { value: Anatom
   );
 }
 
-/* Per-species hotspot nudges for animals whose posture differs from the low
- * quadruped default (dog/cat/cow). Only the listed regions are overridden;
- * everything else falls back to the shared ANATOMY coordinates. */
+/* Per-species hotspot coords. Overrides the shared template where a species holds
+ * a different posture (horse head high, rabbit compact) and places SPECIES-ADDED
+ * hotspots (bird beak/wing, horse hoof, cow cloven hoof). Regions with no entry
+ * fall back to their CORE_REGIONS coords; coordless regions become chips. */
 type Pt = { cx: number; cy: number; r?: number };
 const POSTURE: Partial<Record<Species, Record<string, Pt>>> = {
   horse: {
     head: { cx: 222, cy: 58, r: 19 }, oral: { cx: 232, cy: 66, r: 11 }, neck: { cx: 198, cy: 90, r: 15 },
     spine: { cx: 140, cy: 100, r: 15 }, thorax: { cx: 160, cy: 112, r: 21 }, abdomen: { cx: 114, cy: 116, r: 22 },
     pelvis: { cx: 84, cy: 110, r: 15 }, foreleg: { cx: 190, cy: 172, r: 18 }, hindleg: { cx: 110, cy: 172, r: 18 },
+    hoof: { cx: 190, cy: 206, r: 11 },
   },
   rabbit: {
     head: { cx: 206, cy: 118, r: 18 }, oral: { cx: 230, cy: 120, r: 11 }, neck: { cx: 184, cy: 122, r: 13 },
@@ -199,8 +216,11 @@ const POSTURE: Partial<Record<Species, Record<string, Pt>>> = {
     pelvis: { cx: 100, cy: 150, r: 15 }, foreleg: { cx: 178, cy: 168, r: 14 }, hindleg: { cx: 112, cy: 174, r: 16 },
   },
   bird: {
-    head: { cx: 196, cy: 104, r: 16 }, oral: { cx: 218, cy: 110, r: 10 }, neck: { cx: 176, cy: 116, r: 12 },
-    spine: { cx: 140, cy: 112, r: 14 }, thorax: { cx: 150, cy: 128, r: 17 }, abdomen: { cx: 122, cy: 138, r: 17 },
-    pelvis: { cx: 108, cy: 140, r: 13 }, foreleg: { cx: 152, cy: 176, r: 12 }, hindleg: { cx: 132, cy: 176, r: 12 },
+    head: { cx: 196, cy: 102, r: 16 }, neck: { cx: 176, cy: 116, r: 12 }, beak: { cx: 216, cy: 112, r: 9 },
+    wing: { cx: 150, cy: 120, r: 15 }, spine: { cx: 132, cy: 106, r: 12 }, thorax: { cx: 156, cy: 132, r: 15 },
+    abdomen: { cx: 120, cy: 140, r: 14 }, pelvis: { cx: 106, cy: 138, r: 12 }, hindleg: { cx: 140, cy: 174, r: 13 },
+  },
+  cow: {
+    cloven_hoof: { cx: 176, cy: 206, r: 11 },
   },
 };
