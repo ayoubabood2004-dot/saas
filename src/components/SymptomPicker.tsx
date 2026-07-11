@@ -158,7 +158,7 @@ export function SymptomPicker({
       {/* ── Chief-complaint template cards ───────────────────────────────── */}
       <div>
         <div className="mb-1.5 text-2xs font-bold text-ink-subtle">قوالب الشكوى الرئيسية — لمسة تقترح الأعراض لتؤكّدها</div>
-        <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
           {COMMON_COMPLAINTS.map((c, i) => {
             const on = activeComplaint === i;
             const have = countIn(c.symptomIds);
@@ -167,11 +167,11 @@ export function SymptomPicker({
                 key={c.label} type="button"
                 onClick={() => { playTap(); setActiveComplaint(on ? null : i); }}
                 className={cn(
-                  "flex w-28 shrink-0 flex-col items-center gap-1.5 rounded-2xl border-2 p-2.5 text-center transition",
+                  "flex flex-col items-center gap-1.5 rounded-2xl border-2 p-2.5 text-center transition",
                   on ? "border-brand-500 bg-brand-50 dark:bg-brand-500/10" : "border-line bg-surface-1 hover:border-brand-300",
                 )}
               >
-                <Glyph name={c.system} size={30} />
+                <Glyph name={c.system} size={32} />
                 <span className="text-2xs font-bold leading-tight text-ink">{c.label}</span>
                 {have > 0 && <span className="rounded-full bg-brand-600 px-1.5 py-0.5 text-[9px] font-bold text-white">{formatNum(have)} مختار</span>}
               </button>

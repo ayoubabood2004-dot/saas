@@ -442,6 +442,80 @@ export const DISEASES: Disease[] = [
     system: "ear", species: ["dog", "cat"], symptoms: ["pain", "pruritus", "ear_discharge", "head_tilt"],
     protocol: [{ drug: "قطرة أذن (مضاد حيوي/فطري)", dose: "قطرات", freq: "2", days: 10 }],
   },
+  // — avian (poultry & pet birds) — famous viral / bacterial / parasitic / fungal —
+  {
+    id: "newcastle", name: "مرض نيوكاسل", latin: "Newcastle Disease (APMV-1)",
+    system: "respiratory", species: ["bird"], symptoms: ["dyspnea", "nasal_discharge", "sneezing", "diarrhea", "ataxia", "head_tilt", "lethargy"],
+    reportable: true, redFlag: "شديد العدوى وواجب التبليغ — اعزل القطيع وبلّغ الجهات البيطرية فوراً؛ لا علاج، الوقاية باللقاح.",
+  },
+  {
+    id: "avian_influenza", name: "إنفلونزا الطيور", latin: "Avian Influenza (H5N1)",
+    system: "respiratory", species: ["bird"], symptoms: ["dyspnea", "nasal_discharge", "ocular_discharge", "diarrhea", "lethargy", "swelling", "anorexia"],
+    zoonotic: true, reportable: true, redFlag: "⚠️ ينتقل للإنسان وواجب التبليغ — حماية كاملة وإبلاغ فوري وإعدام رحيم للمصاب.",
+  },
+  {
+    id: "infectious_bronchitis", name: "التهاب الشعب الهوائية المعدي", latin: "Avian Infectious Bronchitis (IBV)",
+    system: "respiratory", species: ["bird"], symptoms: ["cough", "sneezing", "nasal_discharge", "dyspnea", "ocular_discharge"],
+    redFlag: "فيروسي شديد العدوى — يقلّل إنتاج ونوعية البيض؛ الوقاية باللقاح.",
+  },
+  {
+    id: "crd_mycoplasma", name: "التنفّسي المزمن (المفطورة)", latin: "Mycoplasma gallisepticum (CRD)",
+    system: "respiratory", species: ["bird"], symptoms: ["nasal_discharge", "sneezing", "cough", "ocular_discharge", "dyspnea", "swelling"],
+    protocol: [
+      { drug: "تايلوسين", dose: "20 mg/kg", freq: "2", days: 5, note: "أو في ماء الشرب" },
+      { drug: "دوكسيسيكلين", dose: "10 mg/kg", freq: "1", days: 7 },
+    ],
+  },
+  {
+    id: "fowl_cholera", name: "كوليرا الطيور", latin: "Fowl Cholera (Pasteurella multocida)",
+    system: "respiratory", species: ["bird"], symptoms: ["fever", "dyspnea", "diarrhea", "lethargy", "swelling", "anorexia"],
+    redFlag: "بكتيري حاد قد يقتل فجأة — اعزل وعالج مبكراً.",
+    protocol: [
+      { drug: "إنروفلوكساسين", dose: "10 mg/kg", freq: "1", days: 5 },
+      { drug: "سلفوناميد", dose: "حسب ماء الشرب", freq: "prn", days: 5 },
+    ],
+  },
+  {
+    id: "colibacillosis", name: "عدوى الكولاي (E. coli)", latin: "Avian Colibacillosis",
+    system: "respiratory", species: ["bird"], symptoms: ["dyspnea", "lethargy", "diarrhea", "anorexia", "swelling"],
+    protocol: [{ drug: "إنروفلوكساسين", dose: "10 mg/kg", freq: "1", days: 5 }],
+  },
+  {
+    id: "aspergillosis_bird", name: "الرشاشيات (فطر الرئة)", latin: "Aspergillosis",
+    system: "respiratory", species: ["bird"], symptoms: ["dyspnea", "lethargy", "weight_loss", "anorexia"],
+    redFlag: "فطري صعب العلاج — حسّن التهوية وقلّل الرطوبة والغبار.",
+    protocol: [{ drug: "إيتراكونازول", dose: "10 mg/kg", freq: "1", days: 30 }],
+  },
+  {
+    id: "psittacosis", name: "حمى الببغاء (الكلاميديا)", latin: "Psittacosis / Chlamydia psittaci",
+    system: "respiratory", species: ["bird"], symptoms: ["nasal_discharge", "ocular_discharge", "lethargy", "diarrhea", "anorexia"],
+    zoonotic: true, redFlag: "ينتقل للإنسان — التزم الحماية والنظافة.",
+    protocol: [{ drug: "دوكسيسيكلين", dose: "25 mg/kg", freq: "1", days: 45, note: "علاج طويل" }],
+  },
+  {
+    id: "fowl_pox", name: "جدري الطيور", latin: "Fowl Pox (Avipoxvirus)",
+    system: "derm", species: ["bird"], symptoms: ["skin_lesion", "mass", "ocular_discharge", "anorexia"],
+    redFlag: "فيروسي — عزل ومكافحة البعوض الناقل؛ الوقاية باللقاح.",
+  },
+  {
+    id: "mareks", name: "مرض ماريك", latin: "Marek's Disease (GaHV-2)",
+    system: "neuro", species: ["bird"], symptoms: ["lameness", "ataxia", "weight_loss", "mass"],
+    redFlag: "فيروسي ورمي — لا علاج، الوقاية باللقاح في عمر يوم.",
+  },
+  {
+    id: "salmonellosis_bird", name: "السالمونيلا (الإسهال الأبيض)", latin: "Salmonellosis / Pullorum",
+    system: "digestive", species: ["bird"], symptoms: ["diarrhea", "lethargy", "anorexia", "dehydration"],
+    zoonotic: true, redFlag: "ينتقل للإنسان — نظافة صارمة.",
+    protocol: [{ drug: "إنروفلوكساسين", dose: "10 mg/kg", freq: "1", days: 5 }],
+  },
+  {
+    id: "coccidiosis", name: "الكوكسيديا", latin: "Coccidiosis (Eimeria spp.)",
+    system: "digestive", species: ["bird"], symptoms: ["bloody_stool", "diarrhea", "lethargy", "weight_loss", "anorexia"],
+    protocol: [
+      { drug: "تولترازوريل", dose: "حسب ماء الشرب", freq: "1", days: 2 },
+      { drug: "أمبروليوم", dose: "حسب ماء الشرب", freq: "prn", days: 5 },
+    ],
+  },
   // — added to host the new descriptive signs (constipation, mass) —
   {
     id: "obstipation", name: "إمساك وانحشار البراز", latin: "Constipation / Obstipation",

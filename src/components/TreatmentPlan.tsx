@@ -479,7 +479,7 @@ function DiagnosisStep({
       {differential.length > 0 && (
         <div className="space-y-2">
           <div className="text-2xs font-bold uppercase tracking-wide text-ink-subtle">مرشّحات حسب الأعراض</div>
-          <div className="grid gap-2 sm:grid-cols-2">
+          <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
             {differential.map((d) => (
               <DiseaseCard key={d.id} d={d} picked={isDiseasePicked(d)} onToggle={() => toggleDisease(d)} onApply={() => applyProtocol(d)} pct={Math.round((d.score / topScore) * 100)} />
             ))}
@@ -490,20 +490,20 @@ function DiagnosisStep({
       {/* Browse by system — species-filtered */}
       <div className="border-t border-line pt-3">
         <div className="mb-2 text-2xs font-bold uppercase tracking-wide text-ink-subtle">تصفّح حسب الجهاز</div>
-        <div className="mb-3 flex flex-wrap gap-1.5">
+        <div className="mb-3 flex flex-wrap gap-2">
           {BODY_SYSTEMS.map((s) => {
             const on = sys === s.id;
             return (
               <button key={s.id} type="button" onClick={() => { playTap(); setSys(s.id); setQ(""); }}
-                className={cn("inline-flex items-center gap-1.5 rounded-full border py-1.5 pe-3 ps-1.5 text-xs font-bold transition", on ? "border-brand-500 bg-brand-50 text-brand-700 dark:bg-brand-500/10 dark:text-brand-300" : "border-line bg-surface-1 text-ink-muted hover:border-brand-300")}>
-                <Glyph name={s.id} size={20} /> {s.name}
+                className={cn("inline-flex items-center gap-2 rounded-2xl border-2 py-1.5 pe-3.5 ps-2 text-sm font-bold transition", on ? "border-brand-500 bg-brand-50 text-brand-700 dark:bg-brand-500/10 dark:text-brand-300" : "border-line bg-surface-1 text-ink-muted hover:border-brand-300")}>
+                <Glyph name={s.id} size={30} /> {s.name}
               </button>
             );
           })}
         </div>
 
         {sysDiseases.length > 0 ? (
-          <div className="grid gap-2 sm:grid-cols-2">
+          <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
             {sysDiseases.map((d) => (
               <DiseaseCard key={d.id} d={d} picked={isDiseasePicked(d)} onToggle={() => toggleDisease(d)} onApply={() => applyProtocol(d)} />
             ))}

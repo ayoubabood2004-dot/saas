@@ -10,7 +10,7 @@ type ModalSize = "default" | "wide" | "full";
 const SIZE_CLASS: Record<ModalSize, string> = {
   default: "sm:max-w-lg sm:rounded-3xl",
   wide: "sm:max-w-3xl sm:rounded-3xl",
-  full: "sm:max-w-6xl sm:rounded-3xl",
+  full: "sm:max-w-[96vw] sm:rounded-3xl xl:max-w-[1400px]",
 };
 
 export function Modal({ open, onClose, title, children, size = "default" }: { open: boolean; onClose: () => void; title: string; children: ReactNode; size?: ModalSize }) {
