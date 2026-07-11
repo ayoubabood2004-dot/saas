@@ -1,10 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import {
   ArrowRight, Clock, Check, Plus, NotebookPen, ClipboardList,
-  Loader2, Lock, CheckCircle2, Stethoscope, UserRound, Syringe, RotateCcw,
-  AlertTriangle, LayoutGrid,
+  Loader2, Lock, CheckCircle2, Stethoscope, UserRound, RotateCcw, AlertTriangle,
 } from "lucide-react";
 import type { Pet, ClinicVisit, PetNote, TreatmentEntry } from "@/types";
 import { repo } from "@/lib/repo";
@@ -38,16 +37,15 @@ const dayShort = (iso: string, lang: string) => {
   return { wd: d.toLocaleDateString(lang, { weekday: "short" }), dn: formatNum(d.getDate()) };
 };
 
-/** Four-state dose status — the semantic system used by leading vet treatment sheets. */
+/** Four-state dose status — the semantic system leading vet treatment sheets use. */
 type DoseStatus = "done" | "overdue" | "due" | "upcoming";
 const doseStatus = (t: TreatmentEntry, todayISO: string): DoseStatus =>
   t.administered_at ? "done" : t.day < todayISO ? "overdue" : t.day === todayISO ? "due" : "upcoming";
-
-const STATUS_META: Record<DoseStatus, { label: string; cell: string; mark: string; text: string; legend: string }> = {
-  done: { label: "تمّ", cell: "bg-success-50 dark:bg-success-500/5", mark: "bg-success-600 text-white", text: "text-success-700 dark:text-success-300", legend: "bg-success-600" },
-  due: { label: "مستحقّة", cell: "bg-warn-50 dark:bg-warn-500/10", mark: "bg-warn-500 text-white", text: "text-warn-700 dark:text-warn-200", legend: "bg-warn-500" },
-  overdue: { label: "متأخّرة", cell: "bg-danger-50 dark:bg-danger-500/10", mark: "bg-danger-600 text-white", text: "text-danger-700 dark:text-danger-300", legend: "bg-danger-600" },
-  upcoming: { label: "قادمة", cell: "bg-surface-1", mark: "bg-surface-2 text-ink-subtle border border-line", text: "text-ink-subtle", legend: "bg-surface-2 border border-line" },
+const STATUS_META: Record<DoseStatus, { label: string; row: string; mark: string; bar: string }> = {
+  done: { label: "تمّ", row: "bg-success-50 dark:bg-success-500/10", mark: "bg-success-600 text-white", bar: "bg-success-500" },
+  due: { label: "مستحقّة", row: "bg-warn-50 dark:bg-warn-500/10", mark: "bg-warn-500 text-white", bar: "bg-warn-500" },
+  overdue: { label: "متأخّرة", row: "bg-danger-50 dark:bg-danger-500/10", mark: "bg-danger-600 text-white", bar: "bg-danger-500" },
+  upcoming: { label: "قادمة", row: "bg-surface-1", mark: "bg-surface-2 text-ink-subtle border border-line", bar: "bg-line" },
 };
 
 const OUTCOME_BADGE: Record<string, string> = {
@@ -67,12 +65,28 @@ function OutcomeBadge({ id }: { id: string }) {
   );
 }
 
+/** Circular progress dial (not mirrored in RTL — clocks/rings turn the same). */
+function ProgressRing({ done, total, size = 72 }: { done: number; total: number; size?: number }) {
+  const r = size / 2 - 6; const c = 2 * Math.PI * r; const pct = total ? done / total : 0;
+  const full = total > 0 && done === total;
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="shrink-0">
+      <circle cx={size / 2} cy={size / 2} r={r} fill="none" strokeWidth={6} className="stroke-line" />
+      <circle cx={size / 2} cy={size / 2} r={r} fill="none" strokeWidth={6} strokeLinecap="round"
+        className={cn(full ? "stroke-success-500" : "stroke-brand-500", "transition-all")}
+        strokeDasharray={c} strokeDashoffset={c * (1 - pct)} transform={`rotate(-90 ${size / 2} ${size / 2})`} />
+      <text x="50%" y="50%" dominantBaseline="central" textAnchor="middle" className={cn("fill-ink font-black", full && "fill-success-600")} fontSize={size * 0.28}>
+        {formatNum(done)}<tspan className="fill-ink-subtle" fontSize={size * 0.2}>/{formatNum(total)}</tspan>
+      </text>
+    </svg>
+  );
+}
+
 /**
- * Standalone VISIT page (زيارة). The treatment plan is laid out as a research-backed
- * TREATMENT SHEET: a medication × day grid where each dose carries a four-state
- * status colour (done / due-now / overdue / upcoming), a "due now" action strip for
- * fast administration, and a give-flow that records who administered each dose + when.
- * "تم إنهاء العلاج" locks the visit and syncs into the record.
+ * Standalone VISIT page (زيارة) — an AGENDA timeline treatment sheet: each day of
+ * the course is a column (right-to-left), the current day expanded with one-tap
+ * administration, others compact. Every dose carries a four-state status colour
+ * (done / due / overdue / upcoming); giving a dose records who + when.
  */
 export default function VisitPage() {
   const { petId, visitId } = useParams<{ petId: string; visitId: string }>();
@@ -94,7 +108,6 @@ export default function VisitPage() {
   const [noteText, setNoteText] = useState("");
   const [endOpen, setEndOpen] = useState(false);
   const [giveId, setGiveId] = useState<string | null>(null);
-  const [noteDay, setNoteDay] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
     if (!petId || !visitId) return;
@@ -113,6 +126,13 @@ export default function VisitPage() {
 
   useEffect(() => { void reload(); }, [reload]);
 
+  // Bring the current day into view — with a multi-day course the "today" column
+  // is the one the doctor needs, and it may otherwise sit off-screen.
+  const todayColRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    todayColRef.current?.scrollIntoView({ inline: "center", block: "nearest" });
+  }, [loading, treatments.length]);
+
   const ended = visit?.status === "ended";
   const kind = visit ? visitKindMeta(visit.kind) : null;
   const KindIcon = kind?.icon ?? Stethoscope;
@@ -124,14 +144,11 @@ export default function VisitPage() {
     [notes],
   );
 
-  // Days (columns) + medications (rows) of the treatment-sheet matrix.
-  const days = useMemo(() => [...new Set(treatments.map((t) => t.day))].sort((a, b) => a.localeCompare(b)), [treatments]);
-  const meds = useMemo(() => {
-    const seen = new Set<string>(); const out: TreatmentEntry[] = [];
-    for (const t of treatments) if (!seen.has(t.medication)) { seen.add(t.medication); out.push(t); }
-    return out;
+  const dayGroups = useMemo(() => {
+    const map = new Map<string, TreatmentEntry[]>();
+    for (const t of treatments) (map.get(t.day) ?? map.set(t.day, []).get(t.day)!).push(t);
+    return [...map.entries()].sort((a, b) => a[0].localeCompare(b[0]));
   }, [treatments]);
-  const cellFor = (med: string, day: string) => treatments.find((t) => t.medication === med && t.day === day);
   const dayNotes = useMemo(() => {
     const map = new Map<string, PetNote[]>();
     for (const n of notes) { const { day } = parseDayNote(n.note_text); if (day) (map.get(day) ?? map.set(day, []).get(day)!).push(n); }
@@ -141,21 +158,13 @@ export default function VisitPage() {
   const hasFlowsheet = treatments.length > 0;
   const totalDoses = treatments.length;
   const doneDoses = treatments.filter((t) => t.administered_at).length;
-  const pct = totalDoses ? Math.round((doneDoses / totalDoses) * 100) : 0;
-
-  // "Due now" = every not-yet-given dose scheduled for today or earlier (overdue first).
-  const dueNow = useMemo(
-    () => treatments.filter((t) => !t.administered_at && t.day <= todayISO).sort((a, b) => a.day.localeCompare(b.day)),
-    [treatments, todayISO],
-  );
+  const remaining = totalDoses - doneDoses;
   const giveTarget = treatments.find((t) => t.id === giveId) ?? null;
 
   const isIllness = visit?.kind === "illness";
   const primary = clinicalNotes.length ? clinicalNotes[clinicalNotes.length - 1].record : null;
   const dxName = primary?.diagnoses?.[0]?.disease;
   const dxWarn = (primary?.redFlags?.length ?? 0) > 0 || (primary?.zoonotic?.length ?? 0) > 0 || (primary?.reportable?.length ?? 0) > 0;
-
-  const effNoteDay = noteDay && days.includes(noteDay) ? noteDay : (days.includes(todayISO) ? todayISO : days[days.length - 1] ?? null);
 
   /* ---- Save the clinical console: store the record note + generate the daily flowsheet ---- */
   const savePlan = async (body: string) => {
@@ -195,14 +204,12 @@ export default function VisitPage() {
     await repo.setTreatmentGiven(t.id, false);
     setGiveId(null); await reload();
   };
-
   const addNote = async (text: string, day?: string) => {
     if (!visit || !text.trim()) return;
     const body = day ? dayNoteEncode(day, text.trim()) : text.trim();
     await repo.addPetNote({ pet_id: visit.pet_id, note_text: body, author_id: user?.id ?? null, author_name: user?.full_name ?? null, visit_id: visit.id });
     playSuccess(); await reload();
   };
-
   const endVisit = async (outcome: string, summary: string) => {
     if (!visit) return;
     await repo.updateClinicVisit(visit.id, { status: "ended", ended_at: new Date().toISOString(), ended_by: user?.full_name ?? null, outcome, summary: summary.trim() || null });
@@ -223,22 +230,25 @@ export default function VisitPage() {
         <ArrowRight size={16} /> رجوع إلى ملف {pet.name}
       </button>
 
-      {/* ── Header strip: patient · diagnosis · progress · doctor · status ── */}
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-3 rounded border border-line-strong bg-surface-1 p-3.5 shadow-card">
-        <span className={cn("grid h-11 w-11 shrink-0 place-items-center rounded text-white", kind!.solid)}><KindIcon size={22} /></span>
+      {/* ── Header + progress ring hero ── */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-3 rounded border border-line-strong bg-surface-1 p-4 shadow-card">
+        <span className={cn("grid h-12 w-12 shrink-0 place-items-center rounded text-white", kind!.solid)}><KindIcon size={23} /></span>
         <div className="min-w-0">
-          <div className="text-base font-black text-ink">{pet.name}</div>
-          <div className="text-2xs font-bold text-ink-subtle">{[kind!.label, pet.breed].filter(Boolean).join(" · ")}</div>
-        </div>
-        {dxName && <><Divider /><KpiBlock k="التشخيص"><span className="flex items-center gap-1.5">{dxName}{dxWarn && <AlertTriangle size={13} className="text-danger-500" />}</span></KpiBlock></>}
-        {hasFlowsheet && <><Divider /><div>
-          <div className="text-[10px] font-extrabold uppercase tracking-wide text-ink-subtle">تقدّم العلاج</div>
-          <div className="mt-0.5 flex items-center gap-2">
-            <div className="h-2 w-28 overflow-hidden rounded-full bg-surface-2"><div className="h-full rounded-full bg-brand-500 transition-all" style={{ width: `${pct}%` }} /></div>
-            <span className="text-xs font-black text-ink">{formatNum(doneDoses)}<span className="text-ink-subtle">/{formatNum(totalDoses)}</span></span>
+          <div className="text-lg font-black text-ink">{pet.name}</div>
+          <div className="flex items-center gap-1.5 text-2xs font-bold text-ink-subtle">
+            {[kind!.label, pet.breed].filter(Boolean).join(" · ")}
+            {dxName && <span className="flex items-center gap-1 text-ink-muted">· {dxName}{dxWarn && <AlertTriangle size={12} className="text-danger-500" />}</span>}
           </div>
-        </div></>}
-        {visit.opened_by && <><Divider /><KpiBlock k="الطبيب"><span className="inline-flex items-center gap-1"><UserRound size={12} /> {visit.opened_by}</span></KpiBlock></>}
+        </div>
+        {hasFlowsheet && <>
+          <span className="mx-1 hidden h-10 w-px bg-line sm:block" />
+          <ProgressRing done={doneDoses} total={totalDoses} />
+          <div>
+            <div className="text-[10px] font-extrabold uppercase tracking-wide text-ink-subtle">{remaining > 0 ? "متبقٍّ" : "اكتمل"}</div>
+            <div className="text-sm font-black text-ink">{remaining > 0 ? <>{formatNum(remaining)} جرعة</> : "كل الجرعات ✓"}</div>
+            <div className="text-2xs text-ink-subtle">على {formatNum(dayGroups.length)} أيام</div>
+          </div>
+        </>}
         <div className="ms-auto flex items-center gap-2">
           {ended && visit.outcome && <OutcomeBadge id={visit.outcome} />}
           {ended ? (
@@ -255,108 +265,29 @@ export default function VisitPage() {
         </div>
       )}
 
-      {/* ── "Due now" action strip — administer with one tap ── */}
-      {!ended && dueNow.length > 0 && (
-        <div className="mt-3 rounded border border-warn-200 bg-surface-1 p-3.5 dark:border-warn-500/30">
-          <div className="mb-2.5 flex items-center gap-2 text-sm font-black text-warn-700 dark:text-warn-200">
-            <Clock size={16} /> مستحقّة الآن — أعطِها بضغطة
-            <span className="rounded bg-warn-500 px-2 py-0.5 text-2xs font-bold text-white">{formatNum(dueNow.length)}</span>
-            <span className="ms-auto text-2xs font-bold text-ink-subtle">{formatDate(todayISO, lang)}</span>
-          </div>
-          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-            {dueNow.map((t) => {
-              const st = doseStatus(t, todayISO);
-              const m = STATUS_META[st];
-              return (
-                <div key={t.id} className={cn("flex items-center gap-2.5 rounded border p-2.5", st === "overdue" ? "border-danger-200 bg-danger-50 dark:border-danger-500/30 dark:bg-danger-500/10" : "border-warn-200 bg-warn-50 dark:border-warn-500/30 dark:bg-warn-500/10")}>
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-sm font-black text-ink">{t.medication}</div>
-                    <div className="text-2xs font-bold text-ink-muted">{[t.amount, t.observations].filter(Boolean).join(" · ")}</div>
-                  </div>
-                  <span className={cn("shrink-0 rounded px-1.5 py-0.5 text-[10px] font-extrabold", m.mark)}>{m.label}</span>
-                  <button type="button" onClick={() => { playTap(); setGiveId(t.id); }} className="inline-flex shrink-0 items-center gap-1.5 rounded bg-brand-600 px-3 py-2 text-2xs font-black text-white transition hover:bg-brand-700">
-                    <Syringe size={13} /> تم العلاج
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* ── Treatment sheet — medication × day matrix, four-state status ── */}
+      {/* ── Agenda timeline — day columns, today expanded ── */}
       {hasFlowsheet && (
-        <div className="mt-3 overflow-hidden rounded border border-line-strong">
-          <div className="flex items-center gap-2 border-b border-line bg-surface-2 px-3.5 py-2.5">
-            <LayoutGrid size={16} className="text-brand-600" />
-            <span className="text-sm font-black text-ink">ورقة العلاج</span>
+        <div className="mt-3">
+          <div className="mb-2 flex items-center gap-2">
+            <h2 className="flex items-center gap-1.5 text-sm font-extrabold text-ink">جدول العلاج اليومي</h2>
             <div className="ms-auto flex flex-wrap gap-x-3 gap-y-1">
               {(["done", "due", "overdue", "upcoming"] as DoseStatus[]).map((s) => (
-                <span key={s} className="inline-flex items-center gap-1.5 text-[10px] font-extrabold text-ink-muted">
-                  <span className={cn("inline-block h-3 w-3 rounded-sm", STATUS_META[s].legend)} /> {STATUS_META[s].label}
-                </span>
+                <span key={s} className="inline-flex items-center gap-1.5 text-[10px] font-extrabold text-ink-muted"><span className={cn("inline-block h-3 w-3 rounded-sm", STATUS_META[s].bar)} /> {STATUS_META[s].label}</span>
               ))}
             </div>
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[560px] border-collapse text-center">
-              <thead>
-                <tr>
-                  <th className="sticky start-0 z-10 w-44 min-w-[150px] border border-line bg-surface-1 p-2.5 text-start text-2xs font-extrabold text-ink-muted">الدواء</th>
-                  {days.map((day) => {
-                    const isToday = day === todayISO;
-                    const { wd, dn } = dayShort(day, lang);
-                    return (
-                      <th key={day} onClick={() => setNoteDay(day)} className={cn("cursor-pointer border border-line p-2 align-middle", isToday ? "bg-brand-50 dark:bg-brand-500/10" : "bg-surface-2", effNoteDay === day && "ring-1 ring-inset ring-brand-400")}>
-                        <div className="text-[9px] font-bold text-ink-subtle">{wd}{isToday && " · اليوم"}</div>
-                        <div className={cn("text-sm font-black", isToday ? "text-brand-700 dark:text-brand-300" : "text-ink")}>{dn}</div>
-                      </th>
-                    );
-                  })}
-                </tr>
-              </thead>
-              <tbody>
-                {meds.map((row) => (
-                  <tr key={row.medication}>
-                    <td className="sticky start-0 z-10 border border-line bg-surface-1 p-2.5 text-start">
-                      <div className="text-xs font-black text-ink">{row.medication}</div>
-                      <div className="text-[10px] font-bold text-ink-subtle">{[row.amount, row.observations].filter(Boolean).join(" · ")}</div>
-                    </td>
-                    {days.map((day) => {
-                      const t = cellFor(row.medication, day);
-                      if (!t) return <td key={day} className="border border-line bg-surface-2/40 text-ink-subtle">·</td>;
-                      const st = doseStatus(t, todayISO);
-                      const m = STATUS_META[st];
-                      const isToday = day === todayISO;
-                      return (
-                        <td key={day} className={cn("border border-line p-0", m.cell, isToday && "shadow-[inset_0_0_0_2px] shadow-brand-200 dark:shadow-brand-500/40")}>
-                          <button type="button" disabled={ended} onClick={() => { playTap(); setGiveId(t.id); }} className="flex h-14 w-full flex-col items-center justify-center gap-0.5 transition enabled:hover:brightness-95 disabled:cursor-default">
-                            <span className={cn("grid h-6 w-6 place-items-center rounded text-xs font-black", m.mark)}>
-                              {st === "done" ? <Check size={14} /> : st === "overdue" ? "!" : st === "due" ? "●" : "○"}
-                            </span>
-                            <span className={cn("text-[8px] font-extrabold", m.text)}>{st === "done" && t.administered_at ? clockOf(t.administered_at, lang) : m.label}</span>
-                          </button>
-                        </td>
-                      );
-                    })}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          {/* Day note + existing day notes */}
-          {effNoteDay && (
-            <div className="border-t border-line bg-surface-1 p-3">
-              {(dayNotes.get(effNoteDay) ?? []).length > 0 && (
-                <div className="mb-2 flex flex-wrap gap-1.5">
-                  {(dayNotes.get(effNoteDay) ?? []).map((n) => (
-                    <span key={n.id} className="inline-flex items-center gap-1 rounded border border-line bg-surface-2 px-2 py-1 text-2xs text-ink-muted"><NotebookPen size={11} className="text-ink-subtle" /> {parseDayNote(n.note_text).body}</span>
-                  ))}
-                </div>
-              )}
-              {!ended && <DayNoteInput key={effNoteDay} dayLabel={formatDate(effNoteDay, lang)} onNote={(text) => addNote(text, effNoteDay)} />}
+          <div className="overflow-x-auto pb-1">
+            <div className="flex gap-2.5">
+              {dayGroups.map(([day, rows]) => (
+                <DayColumn
+                  key={day} innerRef={day === todayISO ? todayColRef : undefined}
+                  day={day} rows={rows} isToday={day === todayISO} todayISO={todayISO}
+                  ended={ended} lang={lang} notes={dayNotes.get(day) ?? []}
+                  onGive={(t) => { playTap(); setGiveId(t.id); }} onNote={(text) => addNote(text, day)}
+                />
+              ))}
             </div>
-          )}
+          </div>
         </div>
       )}
 
@@ -377,7 +308,6 @@ export default function VisitPage() {
         </div>
       )}
 
-      {/* Full diagnosis & plan detail — expandable */}
       {clinicalNotes.length > 0 && (
         <div className="mt-3 space-y-3">
           {clinicalNotes.map(({ n, record }) => <div key={n.id}><ClinicalRecordCard record={record!} compact /></div>)}
@@ -414,11 +344,60 @@ export default function VisitPage() {
         </div>
       </Modal>
 
-      {giveTarget && (
-        <GiveModal t={giveTarget} lang={lang} defaultDoctor={user?.full_name ?? ""} ended={ended} onClose={() => setGiveId(null)} onGive={giveDose} onUndo={undoDose} />
-      )}
-
+      {giveTarget && <GiveModal t={giveTarget} lang={lang} defaultDoctor={user?.full_name ?? ""} ended={ended} onClose={() => setGiveId(null)} onGive={giveDose} onUndo={undoDose} />}
       <EndVisitModal open={endOpen} onClose={() => setEndOpen(false)} onEnd={endVisit} />
+    </div>
+  );
+}
+
+/* ------------------------------- Day column ------------------------------- */
+function DayColumn({ day, rows, isToday, todayISO, ended, lang, notes, onGive, onNote, innerRef }: {
+  day: string; rows: TreatmentEntry[]; isToday: boolean; todayISO: string; ended: boolean; lang: string;
+  notes: PetNote[]; onGive: (t: TreatmentEntry) => void; onNote: (text: string) => void;
+  innerRef?: React.Ref<HTMLDivElement>;
+}) {
+  const { wd, dn } = dayShort(day, lang);
+  const doneN = rows.filter((r) => r.administered_at).length;
+  const overdue = rows.filter((r) => doseStatus(r, todayISO) === "overdue").length;
+  const dueN = rows.filter((r) => doseStatus(r, todayISO) === "due").length;
+  const allDone = doneN === rows.length;
+  const barStatus: DoseStatus = allDone ? "done" : overdue ? "overdue" : dueN ? "due" : "upcoming";
+  const summary = allDone ? "اكتمل" : [overdue && `${formatNum(overdue)} متأخّرة`, dueN && `${formatNum(dueN)} مستحقّة`].filter(Boolean).join(" · ") || `${formatNum(doneN)}/${formatNum(rows.length)}`;
+
+  return (
+    <div ref={innerRef} className={cn("flex shrink-0 flex-col overflow-hidden rounded border bg-surface-1", isToday ? "w-72 border-brand-500 shadow-card" : "w-40 border-line")}>
+      <div className={cn("px-2.5 py-2 text-center", isToday ? "bg-brand-50 dark:bg-brand-500/10" : "bg-surface-2")}>
+        <div className="text-[9px] font-extrabold text-ink-subtle">{wd}{isToday && " · اليوم"}</div>
+        <div className={cn("text-lg font-black leading-none", isToday ? "text-brand-700 dark:text-brand-300" : "text-ink")}>{dn}</div>
+        <div className={cn("mt-0.5 text-[9px] font-bold", overdue ? "text-danger-600" : dueN ? "text-warn-600" : allDone ? "text-success-600" : "text-ink-subtle")}>{summary}</div>
+      </div>
+      <div className={cn("h-1", STATUS_META[barStatus].bar)} />
+      <div className="flex flex-col gap-1.5 p-2">
+        {rows.map((t) => {
+          const st = doseStatus(t, todayISO);
+          const m = STATUS_META[st];
+          return (
+            <button key={t.id} type="button" disabled={ended} onClick={() => onGive(t)}
+              className={cn("flex items-center gap-2 rounded border border-transparent text-start transition enabled:hover:border-brand-300 disabled:cursor-default", m.row, isToday ? "p-2" : "px-2 py-1.5")}>
+              <span className={cn("grid shrink-0 place-items-center rounded font-black", m.mark, isToday ? "h-6 w-6 text-xs" : "h-4 w-4 text-[9px]")}>
+                {st === "done" ? <Check size={isToday ? 14 : 10} /> : st === "overdue" ? "!" : st === "due" ? "●" : "○"}
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className={cn("block truncate font-black text-ink", isToday ? "text-xs" : "text-[10px]")}>{t.medication}</span>
+                {isToday && <span className="block truncate text-[9px] font-bold text-ink-subtle">{[t.amount, t.observations].filter(Boolean).join(" · ")}</span>}
+                {st === "done" && t.administered_at && <span className={cn("block text-[9px] font-bold", isToday ? "text-success-700 dark:text-success-300" : "text-ink-subtle")}>{clockOf(t.administered_at, lang)}{isToday && t.administered_by ? ` · ${t.administered_by}` : ""}</span>}
+              </span>
+              {isToday && !ended && st !== "done" && <span className="shrink-0 rounded bg-brand-600 px-2 py-1 text-[10px] font-black text-white">تم العلاج</span>}
+            </button>
+          );
+        })}
+        {notes.length > 0 && (
+          <div className="mt-0.5 space-y-1">
+            {notes.map((n) => <div key={n.id} className="flex items-start gap-1 rounded bg-surface-2 px-1.5 py-1 text-[9px] leading-snug text-ink-muted"><NotebookPen size={9} className="mt-0.5 shrink-0 text-ink-subtle" /> {parseDayNote(n.note_text).body}</div>)}
+          </div>
+        )}
+        {isToday && !ended && <DayNoteInput onNote={onNote} />}
+      </div>
     </div>
   );
 }
@@ -449,9 +428,7 @@ function GiveModal({ t, lang, defaultDoctor, ended, onClose, onGive, onUndo }: {
               <span className="inline-flex items-center gap-1.5 rounded border border-line bg-surface-1 px-2.5 py-2 text-xs font-bold text-ink-muted"><Clock size={13} /> {clockOf(t.administered_at!, lang)}</span>
               {t.administered_by && <span className="inline-flex items-center gap-1.5 rounded border border-line bg-surface-1 px-2.5 py-2 text-xs font-bold text-ink-muted"><UserRound size={13} /> {t.administered_by}</span>}
             </div>
-            {!ended && (
-              <Button variant="secondary" className="w-full" leftIcon={<RotateCcw size={16} />} onClick={() => onUndo(t)}>تراجع عن الإعطاء</Button>
-            )}
+            {!ended && <Button variant="secondary" className="w-full" leftIcon={<RotateCcw size={16} />} onClick={() => onUndo(t)}>تراجع عن الإعطاء</Button>}
           </>
         ) : (
           <>
@@ -472,24 +449,13 @@ function GiveModal({ t, lang, defaultDoctor, ended, onClose, onGive, onUndo }: {
 }
 
 /* ------------------------------ Day note input ---------------------------- */
-function DayNoteInput({ dayLabel, onNote }: { dayLabel: string; onNote: (text: string) => void }) {
+function DayNoteInput({ onNote }: { onNote: (text: string) => void }) {
   const [note, setNote] = useState("");
   const submit = () => { if (note.trim()) { onNote(note); setNote(""); } };
   return (
-    <div className="flex gap-2">
-      <input value={note} onChange={(e) => setNote(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") submit(); }} placeholder={`ملاحظة على ${dayLabel}…`} className="input h-9 flex-1 py-0 text-xs" />
-      <button type="button" disabled={!note.trim()} onClick={submit} className="rounded bg-brand-50 px-3 text-xs font-bold text-brand-700 disabled:opacity-40 dark:bg-brand-500/10 dark:text-brand-300">حفظ</button>
-    </div>
-  );
-}
-
-/* --------------------------------- Small bits ----------------------------- */
-function Divider() { return <span className="hidden h-9 w-px bg-line sm:block" />; }
-function KpiBlock({ k, children }: { k: string; children: React.ReactNode }) {
-  return (
-    <div>
-      <div className="text-[10px] font-extrabold uppercase tracking-wide text-ink-subtle">{k}</div>
-      <div className="mt-0.5 text-sm font-black text-ink">{children}</div>
+    <div className="mt-1 flex gap-1.5">
+      <input value={note} onChange={(e) => setNote(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") submit(); }} placeholder="ملاحظة على اليوم…" className="input h-8 flex-1 py-0 text-[11px]" />
+      <button type="button" disabled={!note.trim()} onClick={submit} className="rounded bg-brand-50 px-2.5 text-[11px] font-bold text-brand-700 disabled:opacity-40 dark:bg-brand-500/10 dark:text-brand-300">حفظ</button>
     </div>
   );
 }
