@@ -25,7 +25,9 @@ export interface ClinicalRecord {
   pathogens?: { name: string; latin: string }[];
   treatment?: { name: string; dose?: string; freq: string; days: number; doses: number; note?: string }[];
   interactions?: { a: string; b: string; severity: "major" | "moderate"; note: string }[];
-  outcome?: CaseOutcome;
+  notes?: string;                                        // free-text doctor clinical notes
+  weightKg?: number;                                     // weight used for dose calculations
+  outcome?: CaseOutcome;                                 // legacy — outcome now lives on the visit close
   hasPhoto?: boolean;
 }
 

@@ -5,7 +5,15 @@ import { useTranslation } from "react-i18next";
 import { AnimatePresence, motion } from "framer-motion";
 import { overlayVariants, dialogVariants } from "@/lib/motion";
 
-export function Modal({ open, onClose, title, children }: { open: boolean; onClose: () => void; title: string; children: ReactNode }) {
+/** Dialog width: default (max-w-lg), wide (max-w-3xl), or full (near-fullscreen workspace). */
+type ModalSize = "default" | "wide" | "full";
+const SIZE_CLASS: Record<ModalSize, string> = {
+  default: "sm:max-w-lg sm:rounded-3xl",
+  wide: "sm:max-w-3xl sm:rounded-3xl",
+  full: "sm:max-w-6xl sm:rounded-3xl",
+};
+
+export function Modal({ open, onClose, title, children, size = "default" }: { open: boolean; onClose: () => void; title: string; children: ReactNode; size?: ModalSize }) {
   const { t } = useTranslation();
 
   useEffect(() => {
@@ -34,7 +42,7 @@ export function Modal({ open, onClose, title, children }: { open: boolean; onClo
           <motion.div
             role="dialog"
             aria-modal="true"
-            className="relative max-h-[92vh] w-full overflow-y-auto rounded-t-4xl border border-line bg-surface-1 shadow-raised sm:max-w-lg sm:rounded-3xl"
+            className={`relative max-h-[92vh] w-full overflow-y-auto rounded-t-4xl border border-line bg-surface-1 shadow-raised ${SIZE_CLASS[size]}`}
             variants={dialogVariants}
             initial="initial"
             animate="animate"

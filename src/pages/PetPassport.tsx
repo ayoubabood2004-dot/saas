@@ -2220,8 +2220,8 @@ function TimelineWorkspace({ pet, treatments, vaccinations, notes, admissions, i
       </Modal>
 
       {/* Standalone diagnosis + scheduled treatment plan */}
-      <Modal open={planOpen} onClose={() => setPlanOpen(false)} title={t("plan.title", "التشخيص وخطة العلاج — {{name}}", { name: pet.name })}>
-        <TreatmentPlan onSubmit={savePlan} busy={planBusy} species={pet.species} petId={pet.id} onMediaAdded={onChanged} />
+      <Modal open={planOpen} onClose={() => setPlanOpen(false)} size="full" title={t("plan.title", "التشخيص وخطة العلاج — {{name}}", { name: pet.name })}>
+        <TreatmentPlan onSubmit={savePlan} busy={planBusy} species={pet.species} petId={pet.id} weightKg={pet.current_weight_kg} onMediaAdded={onChanged} />
       </Modal>
 
       {/* Confirm-administration (booster) — shared with the vaccines tab */}

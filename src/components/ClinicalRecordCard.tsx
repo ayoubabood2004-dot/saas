@@ -130,6 +130,12 @@ export function ClinicalRecordCard({ record, compact = false, className }: { rec
           {record.zoonotic?.length ? <Banner tone="warn" icon={Biohazard} title="ينتقل للإنسان">{record.zoonotic.join("، ")}</Banner> : null}
           {record.redFlags?.map((f) => <Banner key={f.name} tone="danger" icon={AlertTriangle} title={f.name}>{f.note}</Banner>)}
 
+          {record.notes && (
+            <Node icon="general" color="bg-amber-500" title="ملاحظات الطبيب">
+              <span className="whitespace-pre-wrap text-ink-muted">{record.notes}</span>
+            </Node>
+          )}
+
           {medN > 0 && (
             <Node icon="under_treatment" color="bg-brand-600" title="خطة العلاج">
               <div className="overflow-hidden rounded-xl border border-line">

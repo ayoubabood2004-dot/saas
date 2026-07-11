@@ -300,8 +300,8 @@ export default function VisitPage() {
       )}
 
       {/* Clinical console modal */}
-      <Modal open={planOpen} onClose={() => setPlanOpen(false)} title={`التشخيص وخطة العلاج — ${pet.name}`}>
-        <TreatmentPlan onSubmit={savePlan} busy={planBusy} species={pet.species} petId={pet.id} onMediaAdded={reload} />
+      <Modal open={planOpen} onClose={() => setPlanOpen(false)} size="full" title={`التشخيص وخطة العلاج — ${pet.name}`}>
+        <TreatmentPlan onSubmit={savePlan} busy={planBusy} species={pet.species} petId={pet.id} weightKg={pet.current_weight_kg} onMediaAdded={reload} />
       </Modal>
 
       {/* Add-note modal */}
