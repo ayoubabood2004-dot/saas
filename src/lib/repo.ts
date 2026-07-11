@@ -459,12 +459,13 @@ const demoRepo = {
     saveDB(db);
   },
 
-  /** Toggle a scheduled treatment between given/not-given (flowsheet check-off). */
-  async setTreatmentGiven(id: string, given: boolean, by?: string): Promise<void> {
+  /** Toggle a scheduled treatment between given/not-given (flowsheet check-off).
+   *  `at` overrides the administration time (defaults to now). */
+  async setTreatmentGiven(id: string, given: boolean, by?: string, at?: string): Promise<void> {
     const db = loadDB();
     const tx = db.treatments.find((t) => t.id === id);
     if (!tx) return;
-    tx.administered_at = given ? new Date().toISOString() : null;
+    tx.administered_at = given ? (at || new Date().toISOString()) : null;
     tx.administered_by = given ? by : undefined;
     saveDB(db);
   },
@@ -1045,8 +1046,8 @@ const supabaseRepo: typeof demoRepo = {
   async deleteTreatment(id) {
     ok(await sbc().from("treatment_entries").delete().eq("id", id));
   },
-  async setTreatmentGiven(id, given, by) {
-    ok(await sbc().from("treatment_entries").update({ administered_at: given ? new Date().toISOString() : null, administered_by: given ? by : null }).eq("id", id));
+  async setTreatmentGiven(id, given, by, at) {
+    ok(await sbc().from("treatment_entries").update({ administered_at: given ? (at || new Date().toISOString()) : null, administered_by: given ? by : null }).eq("id", id));
   },
   async listAdmissions(clinicId) {
     // Newest case first — order by the precise created_at so cases opened on the same
