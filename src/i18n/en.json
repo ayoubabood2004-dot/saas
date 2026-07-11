@@ -1580,7 +1580,8 @@
     "empty": "No sales recorded for this pet.",
     "items": "{{n}} items",
     "showLess": "Show less",
-    "showAll": "Show all ({{n}})"
+    "showAll": "Show all ({{n}})",
+    "openInvoice": "View invoice"
   },
   "report": {
     "exported": "Report exported to Excel",
@@ -1807,6 +1808,9 @@
     "colStaffPay": "Staff / payment",
     "sumTx": "Transactions",
     "sumDiscounts": "Total discounts",
+    "sumSettled": "Debt collected",
+    "debtSettlement": "Debt settlement",
+    "debtCollected": "Debt collected",
     "ledgerReportTitle": "Full sales report — transaction log",
     "emptyLedger": "No financial transactions in this period.",
     "noLedgerMatch": "No transactions match your search.",

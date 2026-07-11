@@ -649,7 +649,9 @@ const demoRepo = {
     const add = Math.max(0, Math.min(Math.round((Number(amount) || 0) * 100) / 100, Math.round((inv.total - paid) * 100) / 100));
     if (add > 0) {
       inv.amount_paid = Math.round((paid + add) * 100) / 100;
-      const legs = [...(inv.payment_details ?? []), { method, amount: add }];
+      // Stamp the settlement with the collection time so the money reports date it on
+      // the day it was actually received, not the original invoice day.
+      const legs = [...(inv.payment_details ?? []), { method, amount: add, at: new Date().toISOString() }];
       inv.payment_details = legs;
       inv.payment_method = legs.reduce((b, p) => (p.amount > b.amount ? p : b), legs[0]).method;
       saveDB(db);

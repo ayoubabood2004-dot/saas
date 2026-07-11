@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Receipt, ChevronDown, RotateCcw } from "lucide-react";
+import { Receipt, ChevronDown, RotateCcw, ChevronLeft } from "lucide-react";
 import type { Pet, Invoice, InvoiceItem } from "@/types";
 import { repo } from "@/lib/repo";
 import { phoneDigits } from "@/lib/phone";
 import { money, cn } from "@/lib/utils";
+import { InvoiceDetail } from "@/components/retail/InvoicesPanel";
 
 /**
  * Mini sales history for a pet's profile (clinic-staff view). Invoices aren't
@@ -20,16 +21,17 @@ export function PetSalesWidget({ pet }: { pet: Pet }) {
   const [items, setItems] = useState<InvoiceItem[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [showAll, setShowAll] = useState(false);
+  const [open, setOpen] = useState<Invoice | null>(null);
 
-  useEffect(() => {
-    let alive = true;
-    if (!ownerKey) { setLoaded(true); return; }
-    Promise.all([repo.listInvoices(), repo.listAllInvoiceItems()])
-      .then(([inv, it]) => { if (alive) { setInvoices(inv); setItems(it); } })
+  const load = useCallback(() => {
+    if (!ownerKey) { setLoaded(true); return Promise.resolve(); }
+    return Promise.all([repo.listInvoices(), repo.listAllInvoiceItems()])
+      .then(([inv, it]) => { setInvoices(inv); setItems(it); })
       .catch(() => { /* empty state covers it */ })
-      .finally(() => { if (alive) setLoaded(true); });
-    return () => { alive = false; };
+      .finally(() => setLoaded(true));
   }, [ownerKey]);
+
+  useEffect(() => { let alive = true; void load().then(() => { if (!alive) return; }); return () => { alive = false; }; }, [load]);
 
   const rows = useMemo(() => {
     if (!ownerKey) return [];
@@ -73,15 +75,23 @@ export function PetSalesWidget({ pet }: { pet: Pet }) {
               const refunded = (inv.status ?? "paid") === "refunded";
               const summary = names.length ? names.join("، ") : t("petSales.items", { n: inv.item_count });
               return (
-                <li key={inv.id} className="flex items-center gap-3 px-4 py-2.5">
-                  <div className="min-w-0 flex-1">
-                    <p className="flex items-center gap-1.5 truncate text-sm font-semibold text-ink">
-                      <span className="truncate">{summary}</span>
-                      {refunded && <span className="chip shrink-0 inline-flex items-center gap-0.5 bg-danger-50 text-2xs font-medium text-danger-600 dark:bg-danger-500/15 dark:text-danger-300"><RotateCcw size={10} /> {t("retail.refunded", "مُرتجع")}</span>}
-                    </p>
-                    <p className="text-2xs text-ink-subtle" dir="ltr">{fmtDate(inv.created_at)}</p>
-                  </div>
-                  <span className={cn("shrink-0 font-display font-bold tabular-nums", refunded ? "text-ink-subtle line-through" : "text-ink")}>{money(inv.total)}</span>
+                <li key={inv.id}>
+                  <button
+                    type="button"
+                    onClick={() => setOpen(inv)}
+                    className="flex w-full items-center gap-3 px-4 py-2.5 text-start transition hover:bg-surface-2"
+                    title={t("petSales.openInvoice", "عرض الفاتورة")}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="flex items-center gap-1.5 truncate text-sm font-semibold text-ink">
+                        <span className="truncate">{summary}</span>
+                        {refunded && <span className="chip shrink-0 inline-flex items-center gap-0.5 bg-danger-50 text-2xs font-medium text-danger-600 dark:bg-danger-500/15 dark:text-danger-300"><RotateCcw size={10} /> {t("retail.refunded", "مُرتجع")}</span>}
+                      </p>
+                      <p className="text-2xs text-ink-subtle" dir="ltr">{fmtDate(inv.created_at)}</p>
+                    </div>
+                    <span className={cn("shrink-0 font-display font-bold tabular-nums", refunded ? "text-ink-subtle line-through" : "text-ink")}>{money(inv.total)}</span>
+                    <ChevronLeft size={15} className="shrink-0 text-ink-subtle rtl:rotate-0 ltr:rotate-180" />
+                  </button>
                 </li>
               );
             })}
@@ -97,6 +107,8 @@ export function PetSalesWidget({ pet }: { pet: Pet }) {
           )}
         </>
       )}
+
+      <InvoiceDetail invoice={open} onClose={() => setOpen(null)} onChanged={load} setOpen={setOpen} />
     </div>
   );
 }

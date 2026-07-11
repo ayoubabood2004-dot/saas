@@ -1577,7 +1577,8 @@
     "empty": "لا توجد مبيعات مسجّلة لهذا الحيوان.",
     "items": "{{n}} صنف",
     "showLess": "عرض أقل",
-    "showAll": "عرض الكل ({{n}})"
+    "showAll": "عرض الكل ({{n}})",
+    "openInvoice": "عرض الفاتورة"
   },
   "report": {
     "exported": "تم تصدير التقرير إلى Excel",
@@ -1804,6 +1805,9 @@
     "colStaffPay": "الموظف / الدفع",
     "sumTx": "عدد الحركات",
     "sumDiscounts": "إجمالي الخصومات",
+    "sumSettled": "محصّل من الديون",
+    "debtSettlement": "تسديد دين",
+    "debtCollected": "محصّل من دين",
     "ledgerReportTitle": "تقرير المبيعات الشامل — سجل الحركات",
     "emptyLedger": "لا توجد حركات مالية في هذه الفترة.",
     "noLedgerMatch": "لا توجد حركات مطابقة لبحثك.",

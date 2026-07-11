@@ -252,6 +252,31 @@ export function AnalyticsHub() {
   const inRangeInvoiceIds = useMemo(() => new Set(paid.map((i) => i.id)), [paid]);
   const itemsInRange = useMemo(() => items.filter((it) => inRangeInvoiceIds.has(it.invoice_id)), [items, inRangeInvoiceIds]);
 
+  // ---- Cash actually COLLECTED in the period, dated by each payment leg ----
+  // A payment leg is dated by its own `at` (set on later debt settlements) and falls
+  // back to the invoice date for the original checkout legs. This makes money collected
+  // today from settling an OLD debt land in today's drawer & movements — not the sale day.
+  const collectionsInRange = useMemo(() => {
+    const out: { inv: Invoice; method: PaymentMethod; amount: number; at: string; settlement: boolean }[] = [];
+    for (const inv of invoices) {
+      if ((inv.status ?? "paid") === "refunded") continue;
+      const legs = inv.payment_details;
+      if (Array.isArray(legs) && legs.length) {
+        for (const p of legs) {
+          if (!p || !p.method || !(Number(p.amount) > 0)) continue;
+          const at = p.at ?? inv.created_at;
+          const tm = new Date(at).getTime();
+          if (tm >= lo && tm <= hi && tsOk(at)) out.push({ inv, method: p.method, amount: Number(p.amount), at, settlement: !!p.at });
+        }
+      } else if (inv.payment_method) {
+        // Legacy single-method sale (no leg history): one implicit leg at the sale date.
+        const tm = new Date(inv.created_at).getTime();
+        if (tm >= lo && tm <= hi && tsOk(inv.created_at)) out.push({ inv, method: inv.payment_method, amount: inv.total, at: inv.created_at, settlement: false });
+      }
+    }
+    return out;
+  }, [invoices, lo, hi, tsOk]);
+
   // ---- Transaction log (سجل الحركات): one enriched row per invoice in range ----
   const staffById = useMemo(() => { const m = new Map<string, string>(); for (const s of staff) m.set(s.id, s.name); return m; }, [staff]);
   const itemsByInvoice = useMemo(() => {
@@ -272,30 +297,50 @@ export function AnalyticsHub() {
         : legs.length === 1 ? t(`rpt.pay.${legs[0].method}`, legs[0].method)
           : t("rpt.pay.credit", "آجل");
     return {
+      kind: "sale" as const,
       id: inv.id, ref: invoiceNo(inv.id), when: inv.created_at, whenMs: new Date(inv.created_at).getTime(),
       client: (inv.customer_name ?? "").trim() || t("rpt.walkIn", "عميل نقدي"),
       staff: (inv.staff_id && staffById.get(inv.staff_id)) || "—",
       items: summary, method,
       total: inv.total, discount: inv.discount ?? 0, profit: inv.profit ?? 0, refunded,
     };
-  }).sort((a, b) => b.whenMs - a.whenMs), [invInRange, itemsByInvoice, staffById, t]);
+  }), [invInRange, itemsByInvoice, staffById, t]);
+
+  // Debt settlements collected in this period appear as their OWN dated movement rows
+  // (on the day the cash was received), so "حركات اليوم" shows a debt was settled today.
+  // They carry no sales revenue/profit — the original sale was already booked on its day.
+  const settlementRows = useMemo<LedgerRow[]>(() => collectionsInRange
+    .filter((c) => c.settlement)
+    .map((c, i) => ({
+      kind: "settlement" as const,
+      id: `${c.inv.id}::settle::${c.at}::${i}`, ref: invoiceNo(c.inv.id), when: c.at, whenMs: new Date(c.at).getTime(),
+      client: (c.inv.customer_name ?? "").trim() || t("rpt.walkIn", "عميل نقدي"),
+      staff: "—",
+      items: t("rpt.debtSettlement", "تسديد دين"),
+      method: t(`rpt.pay.${c.method}`, c.method),
+      total: c.amount, discount: 0, profit: 0, refunded: false,
+    })), [collectionsInRange, t]);
+
+  const ledgerRows = useMemo<LedgerRow[]>(
+    () => [...ledger, ...settlementRows].sort((a, b) => b.whenMs - a.whenMs),
+    [ledger, settlementRows],
+  );
 
   // ---- Money: cash-drawer Z-report ----
   const zReport = useMemo(() => {
     const byMethod: Record<PaymentMethod, { total: number; count: number }> = {
       cash: { total: 0, count: 0 }, card: { total: 0, count: 0 }, transfer: { total: 0, count: 0 },
     };
+    // Cash-in is dated by collection (so settlements land on their own day); sales
+    // revenue (gross) and still-owed (pending) stay keyed to the sale.
+    for (const c of collectionsInRange) { if (byMethod[c.method]) { byMethod[c.method].total += c.amount; byMethod[c.method].count += 1; } }
     let gross = 0; let pending = 0;
-    for (const i of paid) {
-      gross += i.total;
-      const legs = paymentsOf(i);
-      if (legs.length) for (const p of legs) { if (byMethod[p.method]) { byMethod[p.method].total += p.amount; byMethod[p.method].count += 1; } }
-      else pending += i.total;
-    }
+    for (const i of paid) { gross += i.total; if (paymentsOf(i).length === 0) pending += i.total; }
+    const settled = collectionsInRange.filter((c) => c.settlement).reduce((s, c) => s + c.amount, 0);
     const refunds = invInRange.filter((i) => (i.status ?? "paid") === "refunded");
     const refundTotal = refunds.reduce((s, i) => s + i.total, 0);
-    return { byMethod, gross, pending, txCount: paid.length, refundCount: refunds.length, refundTotal };
-  }, [paid, invInRange]);
+    return { byMethod, gross, pending, settled, txCount: paid.length, refundCount: refunds.length, refundTotal };
+  }, [paid, invInRange, collectionsInRange]);
 
   // ---- Cash expenses / withdrawals (المصروفات) — filtered by the money-left date.
   // Date-only concept (the form captures no time), so — like staffPerf/visits —
@@ -353,9 +398,9 @@ export function AnalyticsHub() {
 
   const paymentPie = useMemo(() => {
     const m = { cash: 0, card: 0, transfer: 0 } as Record<PaymentMethod, number>;
-    for (const i of paid) for (const p of paymentsOf(i)) if (m[p.method] !== undefined) m[p.method] += p.amount;
+    for (const c of collectionsInRange) if (m[c.method] !== undefined) m[c.method] += c.amount;
     return (["cash", "card", "transfer"] as PaymentMethod[]).map((k) => ({ name: t(`rpt.pay.${k}`, k), value: Math.round(m[k]) })).filter((d) => d.value > 0);
-  }, [paid, t]);
+  }, [collectionsInRange, t]);
 
   // ---- Money: revenue & profit ----
   const revenue = useMemo(() => {
@@ -811,7 +856,7 @@ export function AnalyticsHub() {
               expensesTotal={expensesTotal} netCash={netCash}
             />
           )}
-          {tab === "ledger" && <LedgerTab rows={ledger} canProfit={canProfit} loMs={lo} hiMs={hi} rangeLabel={rangeLabel} />}
+          {tab === "ledger" && <LedgerTab rows={ledgerRows} canProfit={canProfit} loMs={lo} hiMs={hi} rangeLabel={rangeLabel} />}
           {tab === "staff" && <StaffSalesTab rows={staffSales} trend={staffTrend} canProfit={canProfit} rangeLabel={rangeLabel} />}
           {tab === "best" && <BestTab clients={topClients} services={topServices} movers={movers} species={speciesActivity} />}
           {tab === "clinical" && <ClinicalTab labXray={labXray} meds={dispensedMeds} />}
@@ -2006,6 +2051,8 @@ function StaffSalesTab({ rows, trend, canProfit, rangeLabel }: {
 
 /* ----------------------------- Transaction log (سجل الحركات) ----------------------------- */
 interface LedgerRow {
+  /** "sale" = a booked sale (revenue); "settlement" = debt collected later (cash only). */
+  kind: "sale" | "settlement";
   id: string; ref: string; when: string; whenMs: number; client: string; staff: string;
   items: string; method: string; total: number; discount: number; profit: number; refunded: boolean;
 }
@@ -2042,7 +2089,7 @@ function LedgerTab({ rows, canProfit, loMs, hiMs, rangeLabel }: {
       }
     }
     for (const r of rows) {
-      if (r.refunded) continue;
+      if (r.refunded || r.kind === "settlement") continue; // settlements are cash, not revenue
       const dd = new Date(r.whenMs);
       const key = hourly ? String(Math.floor(dd.getHours() / 2) * 2) : localISO(startOfDay(dd));
       const b = buckets.get(key);
@@ -2062,12 +2109,16 @@ function LedgerTab({ rows, canProfit, loMs, hiMs, rangeLabel }: {
     return arr;
   }, [filtered, sortKey, sortDir]);
 
-  const totals = useMemo(() => ({
-    count: filtered.length,
-    gross: filtered.reduce((s, r) => s + r.total, 0),
-    discount: filtered.reduce((s, r) => s + r.discount, 0),
-    profit: filtered.reduce((s, r) => s + r.profit, 0),
-  }), [filtered]);
+  const totals = useMemo(() => {
+    const sales = filtered.filter((r) => r.kind !== "settlement");
+    return {
+      count: filtered.length,
+      gross: sales.reduce((s, r) => s + r.total, 0),
+      discount: sales.reduce((s, r) => s + r.discount, 0),
+      profit: sales.reduce((s, r) => s + r.profit, 0),
+      settled: filtered.filter((r) => r.kind === "settlement").reduce((s, r) => s + r.total, 0),
+    };
+  }, [filtered]);
 
   const setSort = (k: string) => {
     if (k === sortKey) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -2117,19 +2168,30 @@ function LedgerTab({ rows, canProfit, loMs, hiMs, rangeLabel }: {
         </div>
       ),
     },
-    { key: "items", header: t("rpt.colItems", "تفاصيل الحركة"), cell: (r) => <span className="block max-w-[180px] truncate text-ink-muted" title={r.items}>{r.items}</span> },
+    { key: "items", header: t("rpt.colItems", "تفاصيل الحركة"), cell: (r) => (
+      r.kind === "settlement"
+        ? <span className="chip inline-flex items-center gap-1 bg-warn-50 text-2xs font-bold text-warn-700 dark:bg-warn-500/15 dark:text-warn-300"><Wallet size={11} /> {r.items}</span>
+        : <span className="block max-w-[180px] truncate text-ink-muted" title={r.items}>{r.items}</span>
+    ) },
     {
       key: "fin", header: t("rpt.colFin", "المالية"), align: "end", sortKey: canProfit ? "profit" : "total", cell: (r) => (
-        <div className="text-end tabular-nums">
-          {canProfit
-            ? <p className={cn("font-bold", r.profit >= 0 ? "text-success-600" : "text-danger-600")}>{money(r.profit)}</p>
-            : <p className="font-bold text-ink">{money(r.total)}</p>}
-          <p className="mt-0.5 text-2xs text-ink-subtle">
+        r.kind === "settlement" ? (
+          <div className="text-end tabular-nums">
+            <p className="font-bold text-success-600">+{money(r.total)}</p>
+            <p className="mt-0.5 text-2xs text-ink-subtle">{t("rpt.debtCollected", "محصّل من دين")}</p>
+          </div>
+        ) : (
+          <div className="text-end tabular-nums">
             {canProfit
-              ? <>{t("rpt.colTotal", "الإجمالي")}: {money(r.total)}{r.discount > 0 ? ` · ${t("rpt.colDiscount", "الخصم")}: ${money(r.discount)}` : ""}</>
-              : (r.discount > 0 ? <>{t("rpt.colDiscount", "الخصم")}: {money(r.discount)}</> : "—")}
-          </p>
-        </div>
+              ? <p className={cn("font-bold", r.profit >= 0 ? "text-success-600" : "text-danger-600")}>{money(r.profit)}</p>
+              : <p className="font-bold text-ink">{money(r.total)}</p>}
+            <p className="mt-0.5 text-2xs text-ink-subtle">
+              {canProfit
+                ? <>{t("rpt.colTotal", "الإجمالي")}: {money(r.total)}{r.discount > 0 ? ` · ${t("rpt.colDiscount", "الخصم")}: ${money(r.discount)}` : ""}</>
+                : (r.discount > 0 ? <>{t("rpt.colDiscount", "الخصم")}: {money(r.discount)}</> : "—")}
+            </p>
+          </div>
+        )
       ),
     },
   ];
@@ -2137,6 +2199,7 @@ function LedgerTab({ rows, canProfit, loMs, hiMs, rangeLabel }: {
   const summaryMetrics: SummaryMetric[] = [
     { label: t("rpt.sumTx", "عدد الحركات"), value: formatNum(totals.count) },
     { label: t("rpt.kpi.sales", "إجمالي المبيعات"), value: money(totals.gross) },
+    ...(totals.settled > 0 ? [{ label: t("rpt.sumSettled", "محصّل من الديون"), value: money(totals.settled) }] : []),
     { label: t("rpt.sumDiscounts", "إجمالي الخصومات"), value: money(totals.discount) },
     ...(canProfit ? [{ label: t("rpt.seriesNet", "صافي الربح"), value: money(totals.profit) }] : []),
   ];

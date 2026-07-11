@@ -112,7 +112,7 @@ export function InvoicesPanel({ invoices, onChanged }: { invoices: Invoice[]; cl
   );
 }
 
-function InvoiceDetail({ invoice, onClose, onChanged, setOpen }: {
+export function InvoiceDetail({ invoice, onClose, onChanged, setOpen }: {
   invoice: Invoice | null; onClose: () => void; onChanged: () => void; setOpen: (i: Invoice | null) => void;
 }) {
   const { t, i18n } = useTranslation();
