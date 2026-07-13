@@ -31,15 +31,29 @@ export function InvoicesPanel({ invoices, onChanged }: { invoices: Invoice[]; cl
   const [status, setStatus] = useState<StatusFilter>("all");
   const [open, setOpen] = useState<Invoice | null>(null);
 
+  // "Last activity" = the newest of the sale itself and any later payment. Settlement
+  // legs carry an `at` timestamp, so recording a debt payment bumps that invoice back
+  // to the top of the list — a quiet signal that it was just settled — without adding
+  // or duplicating anything on the sale.
+  const lastActivity = (inv: Invoice): number => {
+    let ms = new Date(inv.created_at).getTime();
+    for (const leg of inv.payment_details ?? []) {
+      if (leg?.at) { const t = new Date(leg.at).getTime(); if (t > ms) ms = t; }
+    }
+    return ms;
+  };
+
   const shown = useMemo(() => {
     const ql = q.trim().toLowerCase();
-    return invoices.filter((inv) => {
-      if (status !== "all" && (inv.status ?? "paid") !== status) return false;
-      if (!ql) return true;
-      return (inv.customer_name ?? "").toLowerCase().includes(ql)
-        || (inv.customer_phone ?? "").includes(ql)
-        || invoiceNo(inv.id).toLowerCase().includes(ql);
-    });
+    return invoices
+      .filter((inv) => {
+        if (status !== "all" && (inv.status ?? "paid") !== status) return false;
+        if (!ql) return true;
+        return (inv.customer_name ?? "").toLowerCase().includes(ql)
+          || (inv.customer_phone ?? "").includes(ql)
+          || invoiceNo(inv.id).toLowerCase().includes(ql);
+      })
+      .sort((a, b) => lastActivity(b) - lastActivity(a));
   }, [invoices, q, status]);
 
   const FILTERS: { id: StatusFilter; label: string }[] = [
