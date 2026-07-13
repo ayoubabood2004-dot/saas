@@ -4,7 +4,7 @@
 import { loadDB, saveDB } from "./demoStore";
 import { supabase } from "./supabase";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, AppointmentStatus, TreatmentEntry, Admission, Branch, Reminder, Product, Invoice, InvoiceItem, CheckoutItem, SaleMeta, Customer, DiscountType, PaymentMethod, WhatsAppMessage, AuditEntry, LoginEvent, PetNote, Expense, ClinicVisit } from "@/types";
+import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, AppointmentStatus, TreatmentEntry, Admission, Branch, Reminder, Product, Invoice, InvoiceItem, CheckoutItem, SaleMeta, Customer, DiscountType, PaymentMethod, PaymentSplit, WhatsAppMessage, AuditEntry, LoginEvent, PetNote, Expense, ClinicVisit } from "@/types";
 import { uid, uuid, ageMonths } from "./utils";
 
 /** Sort key for a case/admission — newest first. Prefers the precise `created_at`
@@ -680,6 +680,23 @@ const demoRepo = {
     saveDB(db);
     return inv;
   },
+  /** Rewrite a split payment's legs (correct a mis-keyed method / re-allocate the
+   *  breakdown). Only the method×amount split changes — the total collected
+   *  (amount_paid) and the debt math are untouched; the caller guarantees the legs
+   *  sum to what was already received. */
+  async setInvoicePaymentDetails(invoiceId: string, legs: PaymentSplit[]): Promise<Invoice | undefined> {
+    const db = loadDB();
+    const inv = (db.invoices ?? []).find((x) => x.id === invoiceId);
+    if (!inv) return undefined;
+    if (inv.status === "refunded") throw new Error("invoice refunded");
+    const clean = legs.filter((l) => l && l.method && Number(l.amount) > 0);
+    if (clean.length) {
+      inv.payment_details = clean;
+      inv.payment_method = clean.reduce((b, p) => (p.amount > b.amount ? p : b), clean[0]).method;
+      saveDB(db);
+    }
+    return inv;
+  },
   /** Distinct walk-in customers seen on past invoices, most-recent first. */
   async searchCustomers(query: string, _clinicId?: string): Promise<Customer[]> {
     return dedupeCustomers(loadDB().invoices ?? [], query);
@@ -763,6 +780,7 @@ const DEMO_ACTIVITY_MAP: Record<string, { entity: string; action: "INSERT" | "UP
   settleInvoice: { entity: "invoices", action: "UPDATE" },
   refundInvoice: { entity: "invoices", action: "UPDATE" },
   setInvoicePaymentMethod: { entity: "invoices", action: "UPDATE" },
+  setInvoicePaymentDetails: { entity: "invoices", action: "UPDATE" },
   uploadMedia: { entity: "media_items", action: "INSERT" },
   updateVaccination: { entity: "vaccinations", action: "UPDATE" },
   createAppointment: { entity: "appointments", action: "INSERT" },
@@ -1171,6 +1189,14 @@ const supabaseRepo: typeof demoRepo = {
       patch.payment_details = [{ ...inv.payment_details[0], method }];
     }
     return need<Invoice>(await sbc().from("invoices").update(patch).eq("id", invoiceId).select().single());
+  },
+  async setInvoicePaymentDetails(invoiceId, legs) {
+    const inv = need<Invoice>(await sbc().from("invoices").select("*").eq("id", invoiceId).single());
+    if (inv.status === "refunded") throw new Error("invoice refunded");
+    const clean = (legs as PaymentSplit[]).filter((l) => l && l.method && Number(l.amount) > 0);
+    if (!clean.length) return inv;
+    const dominant = clean.reduce((b, p) => (p.amount > b.amount ? p : b), clean[0]).method;
+    return need<Invoice>(await sbc().from("invoices").update({ payment_details: clean, payment_method: dominant }).eq("id", invoiceId).select().single());
   },
   async searchCustomers(query, clinicId) {
     let q = sbc().from("invoices").select("customer_name,customer_phone,created_at").order("created_at", { ascending: false }).limit(300);

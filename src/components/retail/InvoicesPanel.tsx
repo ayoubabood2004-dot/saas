@@ -3,9 +3,9 @@ import { useTranslation } from "react-i18next";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Search, Receipt, User, Printer, RotateCcw, Trash2, TrendingUp, Banknote, CreditCard,
-  ArrowLeftRight, Package, AlertTriangle, CheckCircle2, Wallet, Pencil, Check, Loader2,
+  ArrowLeftRight, Package, AlertTriangle, CheckCircle2, Wallet, Pencil, Check, Loader2, Plus, X,
 } from "lucide-react";
-import type { Invoice, InvoiceItem, PaymentMethod } from "@/types";
+import type { Invoice, InvoiceItem, PaymentMethod, PaymentSplit } from "@/types";
 import { repo } from "@/lib/repo";
 import { usePermissions } from "@/hooks/usePermissions";
 import { Modal } from "@/components/Modal";
@@ -13,7 +13,7 @@ import { Button, Badge, useToast, Skeleton } from "@/components/ui";
 import { useInvoicePrinter } from "./usePrintInvoice";
 import { invoiceNo } from "@/lib/invoicePrint";
 import { cn, formatDate, money, dateLocale } from "@/lib/utils";
-import { dueOf, paidOf, isDebt, paymentStatusOf } from "@/lib/debt";
+import { dueOf, paidOf, isDebt, paymentStatusOf, round2 } from "@/lib/debt";
 import { describeDbError } from "@/lib/errors";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
 import { staggerContainer, staggerItem } from "@/lib/motion";
@@ -124,6 +124,8 @@ export function InvoiceDetail({ invoice, onClose, onChanged, setOpen }: {
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState<"refund" | "delete" | null>(null);
   const [payBusy, setPayBusy] = useState(false);
+  const [editLegs, setEditLegs] = useState<PaymentSplit[] | null>(null);
+  const [legsBusy, setLegsBusy] = useState(false);
 
   // Keyed on the invoice ID, so editing the payment method (same invoice) doesn't
   // needlessly reload the line items.
@@ -203,6 +205,26 @@ export function InvoiceDetail({ invoice, onClose, onChanged, setOpen }: {
     }
   };
 
+  // Save an edited split: only the method×amount breakdown of the already-collected
+  // money changes; the total received stays fixed, so no other figure is disturbed.
+  const saveLegs = async () => {
+    if (!editLegs || legsBusy) return;
+    setLegsBusy(true);
+    try {
+      const updated = await repo.setInvoicePaymentDetails(invoice.id, editLegs);
+      if (updated) setOpen(updated);
+      setEditLegs(null);
+      playSuccess();
+      toast.success(t("retail.payMethodUpdated", "تم تحديث طريقة الدفع بنجاح"));
+      onChanged();
+    } catch (e) {
+      playWarning();
+      toast.error(describeDbError(e, t), e instanceof Error ? e.message : undefined);
+    } finally {
+      setLegsBusy(false);
+    }
+  };
+
   return (
     <Modal open={!!invoice} onClose={onClose} title={invoiceNo(invoice.id)}>
       <div className="space-y-4">
@@ -271,7 +293,15 @@ export function InvoiceDetail({ invoice, onClose, onChanged, setOpen }: {
             <span className="flex items-center gap-2">
               <span className="text-ink-subtle">{t("retail.payMethodLabel", "طريقة الدفع")}</span>
               {isSplit ? (
-                <span className="inline-flex items-center gap-1.5 font-semibold text-ink-muted"><Wallet size={13} /> {t("retail.split", "دفع مجزأ")}</span>
+                <span className="inline-flex items-center gap-1.5 font-semibold text-ink-muted">
+                  <Wallet size={13} /> {t("retail.split", "دفع مجزأ")}
+                  {!refunded && editLegs === null && (
+                    <button type="button" onClick={() => { playTap(); setEditLegs(payLegs.map((l) => ({ method: l.method, amount: l.amount, at: l.at }))); }}
+                      className="ms-1 inline-flex items-center gap-1 rounded-md border border-line bg-surface-2 px-1.5 py-0.5 text-2xs font-semibold text-ink-muted transition hover:border-brand-300 hover:text-ink">
+                      <Pencil size={11} /> {t("retail.edit", "تعديل")}
+                    </button>
+                  )}
+                </span>
               ) : refunded ? (
                 <span className="inline-flex items-center gap-1.5 font-semibold text-ink-muted">{PayIcon && <PayIcon size={13} />} {invoice.payment_method ? t(PAY_KEY[invoice.payment_method]) : t("retail.unpaidMethod", "—")}</span>
               ) : (
@@ -281,17 +311,22 @@ export function InvoiceDetail({ invoice, onClose, onChanged, setOpen }: {
             <span className="flex items-center gap-1"><Printer size={12} /> {t("retail.printsN", { n: invoice.print_count ?? 0, defaultValue: "prints: {{n}}" })}</span>
           </div>
           {isSplit && (
-            <div className="space-y-0.5 rounded-lg bg-surface-2 px-2.5 py-1.5 text-2xs text-ink-muted">
-              {payLegs.map((p, i) => {
-                const Icon = PAY_ICON[p.method] ?? Banknote;
-                return (
-                  <div key={i} className="flex items-center justify-between">
-                    <span className="flex items-center gap-1.5"><Icon size={11} /> {PAY_KEY[p.method] ? t(PAY_KEY[p.method]) : p.method}</span>
-                    <span className="tabular-nums">{money(p.amount)}</span>
-                  </div>
-                );
-              })}
-            </div>
+            editLegs !== null ? (
+              <SplitLegsEditor legs={editLegs} required={paidOf(invoice)} busy={legsBusy}
+                onChange={setEditLegs} onSave={saveLegs} onCancel={() => setEditLegs(null)} />
+            ) : (
+              <div className="space-y-0.5 rounded-lg bg-surface-2 px-2.5 py-1.5 text-2xs text-ink-muted">
+                {payLegs.map((p, i) => {
+                  const Icon = PAY_ICON[p.method] ?? Banknote;
+                  return (
+                    <div key={i} className="flex items-center justify-between">
+                      <span className="flex items-center gap-1.5"><Icon size={11} /> {PAY_KEY[p.method] ? t(PAY_KEY[p.method]) : p.method}</span>
+                      <span className="tabular-nums">{money(p.amount)}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            )
           )}
         </div>
 
@@ -315,6 +350,63 @@ export function InvoiceDetail({ invoice, onClose, onChanged, setOpen }: {
         )}
       </div>
     </Modal>
+  );
+}
+
+/** Inline editor for a SPLIT payment — correct the method of each leg and/or
+ *  re-allocate how much went through each. The legs must still sum to the amount
+ *  already collected, so nothing but the breakdown changes. */
+function SplitLegsEditor({ legs, required, busy, onChange, onSave, onCancel }: {
+  legs: PaymentSplit[]; required: number; busy: boolean;
+  onChange: (l: PaymentSplit[]) => void; onSave: () => void; onCancel: () => void;
+}) {
+  const { t } = useTranslation();
+  const METHODS: PaymentMethod[] = ["cash", "card", "transfer"];
+  const sum = round2(legs.reduce((s, l) => s + (Number(l.amount) || 0), 0));
+  const balanced = Math.abs(sum - required) < 0.01 && legs.every((l) => Number(l.amount) > 0);
+  const setLeg = (i: number, patch: Partial<PaymentSplit>) => onChange(legs.map((l, idx) => (idx === i ? { ...l, ...patch } : l)));
+  const add = () => { playTap(); onChange([...legs, { method: "cash", amount: 0 }]); };
+  const remove = (i: number) => { playTap(); onChange(legs.filter((_, idx) => idx !== i)); };
+
+  return (
+    <div className="space-y-2 rounded-lg border border-brand-200 bg-surface-2 p-2.5 dark:border-brand-500/30">
+      <p className="text-2xs font-bold text-ink-muted">{t("retail.editSplitTitle", "تعديل طرق الدفع")}</p>
+      {legs.map((leg, i) => {
+        const Icon = PAY_ICON[leg.method] ?? Banknote;
+        return (
+          <div key={i} className="flex items-center gap-2">
+            <div className="relative flex-1">
+              <select value={leg.method} onChange={(e) => setLeg(i, { method: e.target.value as PaymentMethod })}
+                className="input h-9 w-full appearance-none py-0 ps-8 pe-2 text-xs font-semibold">
+                {METHODS.map((m) => <option key={m} value={m}>{t(PAY_KEY[m])}</option>)}
+              </select>
+              <Icon size={13} className="pointer-events-none absolute top-1/2 -translate-y-1/2 text-ink-subtle ltr:left-2.5 rtl:right-2.5" />
+            </div>
+            <input type="number" min="0" step="1" inputMode="decimal" value={leg.amount || ""}
+              onChange={(e) => setLeg(i, { amount: Number(e.target.value) || 0 })}
+              placeholder="0" className="input h-9 w-28 text-end text-xs font-bold tabular-nums" />
+            {legs.length > 1 && (
+              <button type="button" onClick={() => remove(i)} aria-label={t("common.remove", "حذف")}
+                className="grid h-9 w-8 shrink-0 place-items-center rounded-lg text-danger-500 transition hover:bg-danger-50 dark:hover:bg-danger-500/15">
+                <X size={15} />
+              </button>
+            )}
+          </div>
+        );
+      })}
+      <button type="button" onClick={add} className="inline-flex items-center gap-1 text-2xs font-bold text-brand-600 transition hover:text-brand-700">
+        <Plus size={13} /> {t("retail.addPayMethod", "أضف طريقة دفع")}
+      </button>
+      <div className={cn("flex items-center justify-between rounded-md px-2 py-1 text-2xs font-bold",
+        balanced ? "bg-success-50 text-success-700 dark:bg-success-500/15 dark:text-success-300" : "bg-warn-50 text-warn-700 dark:bg-warn-500/15 dark:text-warn-300")}>
+        <span>{t("retail.legsMustEqual", "المجموع يجب أن يساوي المدفوع")}: {money(required)}</span>
+        <span className="tabular-nums">{money(sum)}</span>
+      </div>
+      <div className="flex items-center gap-2">
+        <Button size="sm" className="flex-1" disabled={!balanced} loading={busy} onClick={onSave} leftIcon={<Check size={15} />}>{t("common.save", "حفظ")}</Button>
+        <Button size="sm" variant="ghost" onClick={onCancel}>{t("common.cancel", "إلغاء")}</Button>
+      </div>
+    </div>
   );
 }
 
