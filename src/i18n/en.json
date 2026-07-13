@@ -170,6 +170,7 @@
     "statusPartial": "Partial payment",
     "statusUnpaid": "Unpaid (credit)",
     "debtBadge": "Debt",
+    "wasDebt": "Debt settled",
     "outstandingTotal": "Total outstanding",
     "debtorsCount": "Debtor invoices",
     "debtorsCount2": "Debtor customers",

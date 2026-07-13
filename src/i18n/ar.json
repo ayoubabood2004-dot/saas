@@ -170,6 +170,7 @@
     "statusPartial": "دفع جزئي",
     "statusUnpaid": "آجل بالكامل",
     "debtBadge": "دين",
+    "wasDebt": "سُدِّد دَينها",
     "outstandingTotal": "إجمالي الديون المستحقة",
     "debtorsCount": "عدد الفواتير المدينة",
     "debtorsCount2": "عدد العملاء المدينين",

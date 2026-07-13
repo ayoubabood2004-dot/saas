@@ -109,6 +109,10 @@ export function InvoicesPanel({ invoices, onChanged }: { invoices: Invoice[]; cl
                 </div>
                 {refunded && <Badge tone="danger">{t("retail.refunded", "Refunded")}</Badge>}
                 {!refunded && isDebt(inv) && <Badge tone="warn">{t("retail.debtBadge", "دين")}</Badge>}
+                {/* Was a debt, now paid off — a quiet marker on the invoice that just floated up. */}
+                {!refunded && !isDebt(inv) && (inv.payment_details ?? []).some((l) => l?.at) && (
+                  <Badge tone="success"><CheckCircle2 size={12} /> {t("retail.wasDebt", "سُدِّد دَينها")}</Badge>
+                )}
                 <div className="text-end">
                   <p className={cn("font-display font-bold tabular-nums", refunded ? "text-ink-subtle line-through" : "text-ink")}>{money(inv.total)}</p>
                   {!refunded && isDebt(inv)
