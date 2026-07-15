@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   Plus, X, Pill, CalendarClock, Check, Activity, Stethoscope,
   AlertTriangle, ShieldAlert, Biohazard, Sparkles, ChevronLeft, ChevronRight, Crosshair,
-  Droplets, ChevronDown, Camera, Loader2, ImageIcon, Search, Scale, Calculator, FileText, ClipboardList,
+  Droplets, Camera, Loader2, ImageIcon, Search, Scale, Calculator, FileText, ClipboardList,
 } from "lucide-react";
 import { AnatomyMap, type AnatomyFocus } from "@/components/AnatomyMap";
 import { SymptomPicker, type QualifierMap } from "@/components/SymptomPicker";
@@ -54,10 +54,11 @@ const allMeds = (): { name: string; type: string }[] => {
   return Array.from(map, ([name, type]) => ({ name, type }));
 };
 
-type StepId = "anatomy" | "symptoms" | "diagnosis" | "treatment";
+type StepId = "anatomy" | "symptoms" | "labs" | "diagnosis" | "treatment";
 const STEPS: { id: StepId; label: string; icon: typeof Activity }[] = [
   { id: "anatomy", label: "التشريح", icon: Crosshair },
   { id: "symptoms", label: "الأعراض", icon: Activity },
+  { id: "labs", label: "التحاليل", icon: Droplets },
   { id: "diagnosis", label: "التشخيص", icon: Stethoscope },
   { id: "treatment", label: "العلاج", icon: Pill },
 ];
@@ -91,7 +92,6 @@ export function TreatmentPlan({
   const [symptoms, setSymptoms] = useState<string[]>([]);
   const [qualifiers, setQualifiers] = useState<QualifierMap>({});
   const [cbc, setCbc] = useState<Record<string, number>>({});
-  const [cbcOpen, setCbcOpen] = useState(false);
   const [labPhoto, setLabPhoto] = useState<string | null>(null);
   const [photoBusy, setPhotoBusy] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -286,7 +286,8 @@ export function TreatmentPlan({
 
   const done: Record<StepId, boolean> = {
     anatomy: !!focus,
-    symptoms: symptoms.length > 0 || cbcIds.length > 0 || !!labPhoto,
+    symptoms: symptoms.length > 0,
+    labs: cbcIds.length > 0 || !!labPhoto,
     diagnosis: diagnoses.length > 0 || !!notes.trim(),
     treatment: filledRows.length > 0,
   };
@@ -344,46 +345,30 @@ export function TreatmentPlan({
                 onShowDifferential={() => setStep("diagnosis")}
                 focusSystem={focus?.system}
               />
+            </section>
+          )}
 
-              {/* ---- CBC blood panel (collapsible) ---- */}
-              <div className="border-t border-line pt-3">
-                <button
-                  type="button"
-                  onClick={() => { playTap(); setCbcOpen((o) => !o); }}
-                  className="flex w-full items-center gap-2 rounded-2xl bg-surface-2 px-3 py-2.5 text-start transition hover:bg-surface-3"
-                >
-                  <span className="grid h-8 w-8 place-items-center rounded-xl bg-danger-50 text-danger-600 dark:bg-danger-500/15"><Droplets size={16} /></span>
-                  <span className="flex-1">
-                    <span className="block text-sm font-bold text-ink">تحليل الدم (CBC)</span>
-                    <span className="block text-2xs text-ink-subtle">اسحب مؤشر كل قيمة — يظهر الطبيعي والمرتفع والمنخفض فوراً</span>
-                  </span>
-                  {cbcIds.length > 0 && <span className="rounded-full bg-brand-600 px-2 py-0.5 text-2xs font-bold text-white">{formatNum(cbcIds.length)}</span>}
-                  <ChevronDown size={18} className={cn("shrink-0 text-ink-subtle transition-transform", cbcOpen && "rotate-180")} />
-                </button>
-
-                {cbcOpen && (
-                  <div className="mt-3 space-y-3">
-                    <CbcPanel species={species} value={cbc} onChange={setCbc} />
-                    <div className="rounded-2xl border border-dashed border-line bg-surface-1 p-3">
-                      <input ref={fileRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={onPickPhoto} />
-                      {labPhoto ? (
-                        <div className="flex items-center gap-3">
-                          <img src={labPhoto} alt="صورة التحليل" className="h-16 w-16 rounded-xl border border-line object-cover" />
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-1.5 text-xs font-bold text-success-700 dark:text-success-300"><ImageIcon size={14} /> أُضيفت إلى المعرض</div>
-                            <div className="text-2xs text-ink-subtle">صُنّفت كتحليل مخبري في صور الحالة</div>
-                          </div>
-                          <button type="button" onClick={() => { playTap(); fileRef.current?.click(); }} disabled={photoBusy} className="rounded-full border border-line px-3 py-1.5 text-2xs font-bold text-ink-muted transition hover:border-brand-300">تغيير</button>
-                        </div>
-                      ) : (
-                        <button type="button" onClick={() => { playTap(); fileRef.current?.click(); }} disabled={photoBusy || !petId}
-                          className="flex w-full items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-bold text-brand-700 transition hover:bg-brand-50 disabled:opacity-50 dark:text-brand-300 dark:hover:bg-brand-500/10">
-                          {photoBusy ? <Loader2 size={16} className="animate-spin" /> : <Camera size={16} />}
-                          {photoBusy ? "جارٍ الرفع…" : "صوّر ورقة التحليل وأرفقها"}
-                        </button>
-                      )}
+          {step === "labs" && (
+            <section className="space-y-3">
+              <StepTitle icon={Droplets} title="نتيجة التحليل — تحليل الدم (CBC)" hint="اسحب مؤشر كل قيمة يمين/يسار — يظهر الطبيعي والمرتفع والمنخفض فوراً حسب نوع الحيوان." />
+              <CbcPanel species={species} value={cbc} onChange={setCbc} />
+              <div className="rounded-2xl border border-dashed border-line bg-surface-1 p-3">
+                <input ref={fileRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={onPickPhoto} />
+                {labPhoto ? (
+                  <div className="flex items-center gap-3">
+                    <img src={labPhoto} alt="صورة التحليل" className="h-16 w-16 rounded-xl border border-line object-cover" />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5 text-xs font-bold text-success-700 dark:text-success-300"><ImageIcon size={14} /> أُضيفت إلى المعرض</div>
+                      <div className="text-2xs text-ink-subtle">صُنّفت كتحليل مخبري في صور الحالة</div>
                     </div>
+                    <button type="button" onClick={() => { playTap(); fileRef.current?.click(); }} disabled={photoBusy} className="rounded-full border border-line px-3 py-1.5 text-2xs font-bold text-ink-muted transition hover:border-brand-300">تغيير</button>
                   </div>
+                ) : (
+                  <button type="button" onClick={() => { playTap(); fileRef.current?.click(); }} disabled={photoBusy || !petId}
+                    className="flex w-full items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-bold text-brand-700 transition hover:bg-brand-50 disabled:opacity-50 dark:text-brand-300 dark:hover:bg-brand-500/10">
+                    {photoBusy ? <Loader2 size={16} className="animate-spin" /> : <Camera size={16} />}
+                    {photoBusy ? "جارٍ الرفع…" : "صوّر ورقة التحليل وأرفقها"}
+                  </button>
                 )}
               </div>
             </section>
@@ -598,12 +583,25 @@ function TreatmentStep({
   interactions: { a: string; b: string; severity: "major" | "moderate"; note: string }[];
 }) {
   const [q, setQ] = useState("");
-  const meds = useMemo(() => allMeds(), []);
+  // One unified picker: the default catalog + clinic-custom meds (allMeds) PLUS the
+  // clinic's own stocked POS medicines — so a drug the clinic actually carries but
+  // that isn't in the catalog is still searchable here, not only in the chip strip.
+  const meds = useMemo(() => {
+    const base = allMeds();
+    const seen = new Set(base.map((m) => m.name.toLowerCase()));
+    const stockOnly = stockMeds
+      .filter((p) => !seen.has(p.name.toLowerCase()))
+      .map((p) => ({ name: p.name, type: "من مخزون العيادة" }));
+    return [...stockOnly, ...base];
+  }, [stockMeds]);
   const matches = useMemo(() => {
     const ql = q.trim().toLowerCase();
     if (!ql) return [];
-    return meds.filter((m) => m.name.toLowerCase().includes(ql)).slice(0, 8);
-  }, [q, meds]);
+    return meds
+      .filter((m) => m.name.toLowerCase().includes(ql))
+      .sort((a, b) => (stockFor(b.name) ? 1 : 0) - (stockFor(a.name) ? 1 : 0)) // in-stock first
+      .slice(0, 8);
+  }, [q, meds, stockFor]);
 
   return (
     <section className="space-y-3">
