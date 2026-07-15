@@ -75,11 +75,12 @@ export function AnatomyMap({ value, onChange, species = "dog" }: { value: Anatom
                 key={`z-${z.id}`} d={z.d} role="button" aria-label={r.name}
                 onClick={() => pickRegion(r)}
                 fill={z.color}
-                stroke={emphasised ? "currentColor" : "#ffffff"} strokeWidth={emphasised ? 3 : 1.7}
+                stroke={emphasised ? "currentColor" : "#ffffff"}
+                strokeWidth={emphasised ? 2.8 : 1.1} strokeOpacity={emphasised ? 1 : 0.5}
                 strokeLinejoin="round"
                 className={cn(
                   "cursor-pointer text-brand-700 transition-[fill-opacity]",
-                  emphasised ? "[fill-opacity:0.95]" : "[fill-opacity:0.5] hover:[fill-opacity:0.78]",
+                  emphasised ? "[fill-opacity:0.92]" : "[fill-opacity:0.3] hover:[fill-opacity:0.55]",
                 )}
               />
             );
