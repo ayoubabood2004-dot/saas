@@ -18,12 +18,12 @@ export interface AnatomyFocus {
 }
 
 /**
- * Interactive anatomical map — a colourful, cartoon-yet-natural, SPECIES-CORRECT
- * figure whose body is divided into CLICKABLE anatomical zones by sharp dividing
- * lines (no dots). The region set comes from anatomyFor(species). A body zone that
- * exists on the figure is clickable in place; regions with no figure zone (skin +
- * internal viscera: crop, gizzard, cloaca, forestomach, udder, hindgut) render as
- * labeled chips below the map.
+ * Interactive anatomical map — ONE cohesive, breed-shaped animal whose interior
+ * is divided INTO beautifully coloured anatomical regions (a "real anatomy" map).
+ * Each coloured region tiles the body and is clickable in place; regions with no
+ * figure zone (skin + internal viscera: crop, gizzard, cloaca, forestomach, udder,
+ * hindgut) render as labeled chips below the map. The region set comes from
+ * anatomyFor(species); the artwork + region colours come from figureFor(species).
  */
 export function AnatomyMap({ value, onChange, species = "dog" }: { value: AnatomyFocus | null; onChange: (f: AnatomyFocus | null) => void; species?: Species }) {
   const [openId, setOpenId] = useState<string | null>(value?.regionId ?? null);
@@ -61,10 +61,10 @@ export function AnatomyMap({ value, onChange, species = "dog" }: { value: Anatom
           <Layers size={12} /> الخريطة التشريحية — اضغط منطقة لعرض تركيبها
         </div>
         <svg viewBox="0 0 300 230" className="mx-auto block h-auto w-full max-w-md" role="img" aria-label="خريطة تشريحية">
-          {/* ---- The flat, coloured animal (drawn once, non-interactive) ---- */}
-          <g style={{ pointerEvents: "none" }} dangerouslySetInnerHTML={{ __html: fig.body }} />
+          {/* ---- Cohesive body silhouette + tail (drawn first, non-interactive) ---- */}
+          <g style={{ pointerEvents: "none" }} dangerouslySetInnerHTML={{ __html: fig.base }} />
 
-          {/* ---- Clickable anatomical zones — transparent until hovered / selected ---- */}
+          {/* ---- Coloured anatomical regions that tile the body — clickable ---- */}
           {fig.zones.filter((z) => regionById.has(z.id)).map((z) => {
             const r = regionById.get(z.id)!;
             const active = openId === r.id;
@@ -74,15 +74,20 @@ export function AnatomyMap({ value, onChange, species = "dog" }: { value: Anatom
               <path
                 key={`z-${z.id}`} d={z.d} role="button" aria-label={r.name}
                 onClick={() => pickRegion(r)}
-                fill="currentColor" stroke={emphasised ? "currentColor" : "none"} strokeWidth={emphasised ? 2.4 : 0}
+                fill={z.color}
+                stroke={emphasised ? "currentColor" : "#ffffff"} strokeWidth={emphasised ? 3 : 1.7}
                 strokeLinejoin="round"
                 className={cn(
-                  "cursor-pointer transition-opacity",
-                  focused ? "text-brand-600 opacity-80" : active ? "text-brand-500 opacity-45" : "text-brand-500 opacity-0 hover:opacity-25",
+                  "cursor-pointer text-brand-700 transition-opacity",
+                  emphasised ? "opacity-100" : "opacity-90 hover:opacity-100",
                 )}
               />
             );
           })}
+
+          {/* ---- Clean outer outline + breed detail overlay (non-interactive) ---- */}
+          <g style={{ pointerEvents: "none" }} dangerouslySetInnerHTML={{ __html: fig.outline }} />
+          <g style={{ pointerEvents: "none" }} dangerouslySetInnerHTML={{ __html: fig.overlay }} />
         </svg>
 
         {/* Coordless regions (skin + internal viscera) as chips below the figure */}
