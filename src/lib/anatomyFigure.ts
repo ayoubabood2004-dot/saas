@@ -40,7 +40,8 @@ const zonesFrom = (reg: Record<string, string>, order: string[]): Zone[] =>
 
 interface Kit {
   coat: string; ink: string;      // silhouette fill + outer outline colour
-  tail: string; ears: string; face: string; feet: string; extras?: string;
+  tail: string; ears: string; face: string; feet: string;
+  markings?: string; extras?: string;  // realistic coat details + horns/udder/mane
 }
 
 function quadFigure(k: Kit): Figure {
@@ -48,6 +49,7 @@ function quadFigure(k: Kit): Figure {
     <ellipse cx="150" cy="216" rx="104" ry="9" fill="#1e293b" opacity="0.10"/>
     <g fill="${k.coat}"><path d="M164 152 h20 v58 q0 4 -10 4 q-12 0 -12 -8 Z"/><path d="M96 152 h20 v58 q0 4 -10 4 q-16 0 -16 -12 Z"/></g>
     <path d="${QUAD_SIL}" fill="${k.coat}"/>
+    ${k.markings ?? ""}
     ${k.tail}`;
   const outline = `<path d="${QUAD_SIL}" fill="none" stroke="${k.ink}" stroke-width="2.6" stroke-linejoin="round"/>`;
   const overlay = `${k.feet}${k.ears}${k.face}${k.extras ?? ""}`;
@@ -84,6 +86,7 @@ export function figureFor(species: Species): Figure {
     case "dog": // Siberian Husky — grey/white, triangular ears, blue eye, mask, curled tail
       return quadFigure({
         coat: "#d3dbe1", ink: "#7f8c99",
+        markings: `<path d="M60 100 Q110 84 198 92 Q207 96 203 120 Q150 128 96 126 Q64 124 58 116 Q56 108 60 100 Z" fill="#aab6c0"/><path d="M96 126 Q140 138 176 132 Q188 130 200 138 Q196 150 174 154 Q120 158 96 152 Z" fill="#f2f6f9"/><path d="M200 120 Q210 128 200 150 Q192 150 190 138 Q194 128 200 120 Z" fill="#f2f6f9"/>`,
         tail: `<path d="M62 102 C40 98 28 74 44 60 C57 49 73 56 70 70 C62 63 51 70 52 82 C53 95 60 101 70 106 Z" fill="#c3ccd4" stroke="#7f8c99" stroke-width="1.6" stroke-linejoin="round"/><path d="M44 60 C52 53 65 54 70 64 C61 61 53 65 50 74 Z" fill="#f2f6f9"/>`,
         ears: earTriangle("#c8d0d8", "#7f8c99", "#efe7de"),
         feet: socks("#8994a0"),
@@ -92,7 +95,8 @@ export function figureFor(species: Species): Figure {
     case "cat": // orange tabby — pointy ears, green eye (slit), pink nose, up-curled tail
       return quadFigure({
         coat: "#e79a4a", ink: "#a06c34",
-        tail: `<path d="M62 104 C40 100 30 78 44 62 C58 50 74 58 70 72 C62 66 52 72 52 86 C53 100 60 106 70 110 Z" fill="#e79a4a" stroke="#a06c34" stroke-width="1.6" stroke-linejoin="round"/>`,
+        markings: `<path d="M60 100 Q110 86 198 92 Q204 98 200 116 Q150 122 96 120 Q64 118 58 112 Q56 106 60 100 Z" fill="#d07f2c"/><path d="M96 126 Q140 138 176 132 Q186 148 150 154 Q118 156 96 150 Z" fill="#fbe7c4"/><g stroke="#c9791f" stroke-width="4" stroke-opacity="0.55" fill="none" stroke-linecap="round"><path d="M108 94 V120"/><path d="M128 92 V122"/><path d="M148 92 V122"/><path d="M170 96 V118"/></g>`,
+        tail: `<path d="M62 104 C40 100 30 78 44 62 C58 50 74 58 70 72 C62 66 52 72 52 86 C53 100 60 106 70 110 Z" fill="#e79a4a" stroke="#a06c34" stroke-width="1.6" stroke-linejoin="round"/><g stroke="#c9791f" stroke-width="3.5" stroke-opacity="0.5" fill="none" stroke-linecap="round"><path d="M40 74 H56 M42 88 H58"/></g>`,
         ears: earPointy("#e79a4a", "#a06c34", "#f6c79b"),
         feet: toes("#a06c34"),
         face: `${nose("#e07b7b")}${eye("#7cae54", true)}<g stroke="#c98a44" stroke-width="1.2" fill="none" stroke-linecap="round" opacity="0.8"><path d="M258 116 H236 M258 120 H238"/></g>`,
@@ -101,6 +105,7 @@ export function figureFor(species: Species): Figure {
       return {
         ...quadFigure({
           coat: "#9a6b3f", ink: "#5e4630",
+          markings: `<path d="M60 100 Q110 86 198 92 Q204 98 200 116 Q150 122 96 120 Q64 118 58 112 Q56 106 60 100 Z" fill="#7a4f28"/><path d="M96 128 Q140 138 176 132 Q186 148 150 154 Q118 156 96 150 Z" fill="#b3855a"/>`,
           tail: `<path d="M60 104 C40 108 32 132 32 172 C31 186 42 188 48 178 C44 158 52 138 64 126 C70 120 68 110 66 104 Z" fill="#3a2412" stroke="#5e4630" stroke-width="1.6" stroke-linejoin="round"/>`,
           ears: earPointy("#9a6b3f", "#5e4630", "#7d5330"),
           feet: hooves("#3a2a1c"),
@@ -111,6 +116,7 @@ export function figureFor(species: Species): Figure {
     case "cow": // Holstein — floppy ears, horns, udder, hooves, pink muzzle
       return quadFigure({
         coat: "#eef1f4", ink: "#8a9098",
+        markings: `<g fill="#2f333b"><path d="M96 96 Q120 88 140 96 Q150 116 136 130 Q108 134 92 124 Q86 104 96 96 Z"/><ellipse cx="176" cy="114" rx="16" ry="13"/><ellipse cx="118" cy="142" rx="12" ry="8"/></g>`,
         tail: `<path d="M66 104 C48 100 40 128 40 150 C40 166 50 166 54 156 C50 138 60 128 70 122 Z" fill="#eef1f4" stroke="#8a9098" stroke-width="1.6" stroke-linejoin="round"/><path d="M50 156 C46 170 54 176 60 168 C60 160 56 156 50 156 Z" fill="#3b3f46"/>`,
         ears: earFloppy("#eef1f4", "#8a9098", "#e6b8b8"),
         feet: hooves("#5b5550"),
@@ -120,6 +126,7 @@ export function figureFor(species: Species): Figure {
     case "rabbit": // tall-eared rabbit — puff tail, pink nose
       return quadFigure({
         coat: "#d9d2c6", ink: "#a89e90",
+        markings: `<path d="M60 100 Q110 86 198 92 Q204 98 200 116 Q150 122 96 120 Q64 118 58 112 Q56 106 60 100 Z" fill="#c2b7a6"/><path d="M96 128 Q140 138 176 132 Q186 148 150 154 Q118 156 96 150 Z" fill="#f6f3ec"/>`,
         tail: `<circle cx="60" cy="118" r="15" fill="#f6f3ec" stroke="#a89e90" stroke-width="1.6"/>`,
         ears: earTall("#d9d2c6", "#a89e90", "#efd6d6"),
         feet: toes("#a89e90"),
@@ -156,8 +163,10 @@ function birdFigure(): Figure {
   const base = `
     <ellipse cx="150" cy="204" rx="86" ry="8" fill="#1e293b" opacity="0.10"/>
     <g stroke="#e0961c" stroke-width="4.5" stroke-linecap="round" fill="none"><path d="M134 158 L134 190 M127 192 L142 192"/><path d="M156 156 L156 190 M149 192 L164 192"/></g>
-    <path d="M92 118 C66 110 50 120 46 124 C64 130 84 130 96 128 Z" fill="#cfd8de"/>
-    <path d="M186 92 C226 96 234 120 232 138 C230 166 190 174 150 172 C110 170 90 150 88 128 C86 104 118 84 150 84 C168 84 178 88 186 92 Z" fill="#dce4ea"/>`;
+    <path d="M92 118 C66 110 50 120 46 124 C64 130 84 130 96 128 Z" fill="#8a6f4a"/>
+    <path d="M186 92 C226 96 234 120 232 138 C230 166 190 174 150 172 C110 170 90 150 88 128 C86 104 118 84 150 84 C168 84 178 88 186 92 Z" fill="#b98a53"/>
+    <path d="M150 108 C182 104 190 128 186 146 C178 164 140 162 128 156 Q122 132 150 108 Z" fill="#e7a86a"/>
+    <path d="M96 100 Q150 84 190 94 Q186 108 150 100 Q110 96 96 112 Z" fill="#8a6f4a"/>`;
   const zones: Zone[] = BIRD_ORDER.map((id) => ({ id, d: BIRD_REG[id], color: BIRD_RC[id] ?? "#d8dee6" }));
   const outline = `<path d="M186 92 C226 96 234 120 232 138 C230 166 190 174 150 172 C110 170 90 150 88 128 C86 104 118 84 150 84 C168 84 178 88 186 92 Z" fill="none" stroke="${ink}" stroke-width="2.6" stroke-linejoin="round"/>`;
   const overlay = `

@@ -78,8 +78,8 @@ export function AnatomyMap({ value, onChange, species = "dog" }: { value: Anatom
                 stroke={emphasised ? "currentColor" : "#ffffff"} strokeWidth={emphasised ? 3 : 1.7}
                 strokeLinejoin="round"
                 className={cn(
-                  "cursor-pointer text-brand-700 transition-opacity",
-                  emphasised ? "opacity-100" : "opacity-90 hover:opacity-100",
+                  "cursor-pointer text-brand-700 transition-[fill-opacity]",
+                  emphasised ? "[fill-opacity:0.95]" : "[fill-opacity:0.5] hover:[fill-opacity:0.78]",
                 )}
               />
             );
