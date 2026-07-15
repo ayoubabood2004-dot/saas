@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   Plus, X, Pill, CalendarClock, Check, Activity, Stethoscope,
   AlertTriangle, ShieldAlert, Biohazard, Sparkles, ChevronLeft, ChevronRight, Crosshair,
-  Droplets, Camera, Loader2, ImageIcon, Search, Scale, Calculator, FileText, ClipboardList,
+  Droplets, Camera, Loader2, ImageIcon, Search, Scale, Calculator, FileText, ClipboardList, ScanLine,
 } from "lucide-react";
 import { AnatomyMap, type AnatomyFocus } from "@/components/AnatomyMap";
 import { SymptomPicker, type QualifierMap } from "@/components/SymptomPicker";
@@ -13,6 +13,7 @@ import {
   type Disease, type Sp,
 } from "@/lib/clinicalKnowledge";
 import { CBC, cbcRange, cbcFlag, FLAG_ARROW } from "@/lib/cbc";
+import { readLabImage } from "@/lib/labOcr";
 import { encodeClinical, type ClinicalRecord } from "@/lib/clinicalRecord";
 import { Glyph } from "@/lib/clinicalIcons";
 import { MED_CATALOG, getClinicMeds } from "@/lib/meds";
@@ -94,6 +95,8 @@ export function TreatmentPlan({
   const [cbc, setCbc] = useState<Record<string, number>>({});
   const [labPhoto, setLabPhoto] = useState<string | null>(null);
   const [photoBusy, setPhotoBusy] = useState(false);
+  const [ocrBusy, setOcrBusy] = useState(false);
+  const [ocrCount, setOcrCount] = useState<number | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const [diagnoses, setDiagnoses] = useState<Diagnosis[]>([]);
   const [notes, setNotes] = useState("");
@@ -125,11 +128,31 @@ export function TreatmentPlan({
       playSuccess();
       toast.success("أُضيفت صورة التحليل إلى المعرض");
       onMediaAdded?.();
+      void runOcr(prepared.dataUrl); // read the values off the slip (best-effort)
     } catch (err) {
       playWarning();
       toast.error("تعذّر رفع الصورة", err instanceof Error ? err.message : undefined);
     } finally {
       setPhotoBusy(false);
+    }
+  };
+
+  /** Read the lab photo in-browser and pre-fill the CBC sliders (doctor reviews). */
+  const runOcr = async (src: string) => {
+    setOcrBusy(true); setOcrCount(null);
+    try {
+      const { values } = await readLabImage(src);
+      const n = Object.keys(values).length;
+      setOcrCount(n);
+      if (n > 0) {
+        setCbc((prev) => ({ ...prev, ...values })); // OCR fills/overrides matched values
+        playSuccess();
+        toast.success(`تمّت قراءة ${formatNum(n)} قيمة من التحليل — راجعها قبل الحفظ`);
+      }
+    } catch {
+      setOcrCount(0);
+    } finally {
+      setOcrBusy(false);
     }
   };
 
@@ -355,19 +378,41 @@ export function TreatmentPlan({
               <div className="rounded-2xl border border-dashed border-line bg-surface-1 p-3">
                 <input ref={fileRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={onPickPhoto} />
                 {labPhoto ? (
-                  <div className="flex items-center gap-3">
-                    <img src={labPhoto} alt="صورة التحليل" className="h-16 w-16 rounded-xl border border-line object-cover" />
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-1.5 text-xs font-bold text-success-700 dark:text-success-300"><ImageIcon size={14} /> أُضيفت إلى المعرض</div>
-                      <div className="text-2xs text-ink-subtle">صُنّفت كتحليل مخبري في صور الحالة</div>
+                  <div className="space-y-2.5">
+                    <div className="flex items-center gap-3">
+                      <img src={labPhoto} alt="صورة التحليل" className="h-16 w-16 rounded-xl border border-line object-cover" />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5 text-xs font-bold text-success-700 dark:text-success-300"><ImageIcon size={14} /> أُضيفت إلى المعرض</div>
+                        <div className="text-2xs text-ink-subtle">صُنّفت كتحليل مخبري في صور الحالة</div>
+                      </div>
+                      <button type="button" onClick={() => { playTap(); fileRef.current?.click(); }} disabled={photoBusy || ocrBusy} className="rounded-full border border-line px-3 py-1.5 text-2xs font-bold text-ink-muted transition hover:border-brand-300">تغيير</button>
                     </div>
-                    <button type="button" onClick={() => { playTap(); fileRef.current?.click(); }} disabled={photoBusy} className="rounded-full border border-line px-3 py-1.5 text-2xs font-bold text-ink-muted transition hover:border-brand-300">تغيير</button>
+                    {/* Auto-read status */}
+                    {ocrBusy ? (
+                      <div className="flex items-center gap-2 rounded-xl bg-brand-50 px-3 py-2 text-xs font-bold text-brand-700 dark:bg-brand-500/10 dark:text-brand-300">
+                        <Loader2 size={14} className="animate-spin" /> جارٍ قراءة قيم التحليل من الصورة…
+                      </div>
+                    ) : ocrCount !== null && ocrCount > 0 ? (
+                      <div className="flex items-center gap-2 rounded-xl bg-success-50 px-3 py-2 text-xs font-bold text-success-700 dark:bg-success-500/10 dark:text-success-300">
+                        <Check size={14} /> قُرئت {formatNum(ocrCount)} قيمة تلقائياً — راجع المؤشرات بالأعلى وعدّل عند اللزوم.
+                      </div>
+                    ) : ocrCount === 0 ? (
+                      <button type="button" onClick={() => { playTap(); if (labPhoto) void runOcr(labPhoto); }}
+                        className="flex w-full items-center justify-center gap-2 rounded-xl bg-surface-2 py-2 text-xs font-bold text-ink-muted transition hover:text-ink">
+                        <ScanLine size={14} /> تعذّرت القراءة التلقائية — أعِد المحاولة أو أدخل القيم يدوياً
+                      </button>
+                    ) : (
+                      <button type="button" onClick={() => { playTap(); if (labPhoto) void runOcr(labPhoto); }}
+                        className="flex w-full items-center justify-center gap-2 rounded-xl bg-brand-50 py-2 text-xs font-bold text-brand-700 transition hover:bg-brand-100 dark:bg-brand-500/10 dark:text-brand-300">
+                        <ScanLine size={14} /> اقرأ القيم من الصورة تلقائياً
+                      </button>
+                    )}
                   </div>
                 ) : (
                   <button type="button" onClick={() => { playTap(); fileRef.current?.click(); }} disabled={photoBusy || !petId}
                     className="flex w-full items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-bold text-brand-700 transition hover:bg-brand-50 disabled:opacity-50 dark:text-brand-300 dark:hover:bg-brand-500/10">
                     {photoBusy ? <Loader2 size={16} className="animate-spin" /> : <Camera size={16} />}
-                    {photoBusy ? "جارٍ الرفع…" : "صوّر ورقة التحليل وأرفقها"}
+                    {photoBusy ? "جارٍ الرفع…" : "صوّر ورقة التحليل — تُقرأ القيم تلقائياً"}
                   </button>
                 )}
               </div>
