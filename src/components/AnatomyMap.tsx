@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { Layers, X, Crosshair } from "lucide-react";
 import { anatomyFor, SPECIES_ANATOMY, type AnatomyRegion } from "@/lib/clinicalKnowledge";
 import { systemById } from "@/lib/diagnoses";
-import { animalArt, ANIMAL_ART_DEFS } from "@/lib/anatomyArt";
+import { figureFor } from "@/lib/anatomyFigure";
 import { Glyph } from "@/lib/clinicalIcons";
 import type { Species } from "@/types";
 import { playTap } from "@/lib/sounds";
@@ -17,34 +17,25 @@ export interface AnatomyFocus {
   latin?: string;          // scientific name of the structure
 }
 
-type Coords = { cx: number; cy: number; r: number };
-
 /**
- * Interactive anatomical map — a scientific, clickable, SPECIES-CORRECT figure.
- * The region set comes from anatomyFor(species): a bird shows a beak + wing and
- * no teeth; a cow shows the forestomach + udder + cloven hoof, etc. Regions that
- * place cleanly on the figure are hotspots; internal viscera (crop, gizzard,
- * cloaca, forestomach, udder, hindgut) render as labeled chips below the map.
+ * Interactive anatomical map — a colourful, cartoon-yet-natural, SPECIES-CORRECT
+ * figure whose body is divided into CLICKABLE anatomical zones by sharp dividing
+ * lines (no dots). The region set comes from anatomyFor(species). A body zone that
+ * exists on the figure is clickable in place; regions with no figure zone (skin +
+ * internal viscera: crop, gizzard, cloaca, forestomach, udder, hindgut) render as
+ * labeled chips below the map.
  */
 export function AnatomyMap({ value, onChange, species = "dog" }: { value: AnatomyFocus | null; onChange: (f: AnatomyFocus | null) => void; species?: Species }) {
   const [openId, setOpenId] = useState<string | null>(value?.regionId ?? null);
   const regions = useMemo(() => anatomyFor(species), [species]);
   const note = SPECIES_ANATOMY[species]?.note;
-  const posture = POSTURE[species];
+  const fig = useMemo(() => figureFor(species), [species]);
 
-  // A region is a hotspot if it resolves to real coords (from POSTURE or its own
-  // cx/cy/r with r>0); otherwise it's a chip below the map.
-  const coordsFor = (r: AnatomyRegion): Coords | null => {
-    const o = posture?.[r.id];
-    const cx = o?.cx ?? r.cx;
-    const cy = o?.cy ?? r.cy;
-    const rad = o?.r ?? r.r;
-    if (cx == null || cy == null || rad == null || rad <= 0) return null;
-    return { cx, cy, r: rad };
-  };
-  const placed = regions.map((r) => ({ r, c: coordsFor(r) }));
-  const dots = placed.filter((p): p is { r: AnatomyRegion; c: Coords } => p.c !== null);
-  const chipRegions = placed.filter((p) => p.c === null).map((p) => p.r);
+  // Anatomy regions keyed by id, and which figure zones are clickable (= exist in
+  // this species' anatomy). Figure zones with no matching region stay static body.
+  const regionById = useMemo(() => new Map(regions.map((r) => [r.id, r])), [regions]);
+  const figIds = useMemo(() => new Set(fig.regions.map((z) => z.id)), [fig]);
+  const chipRegions = regions.filter((r) => !figIds.has(r.id));
   const open = openId ? regions.find((r) => r.id === openId) : undefined;
 
   const pickRegion = (r: AnatomyRegion) => {
@@ -70,39 +61,37 @@ export function AnatomyMap({ value, onChange, species = "dog" }: { value: Anatom
           <Layers size={12} /> الخريطة التشريحية — اضغط منطقة لعرض تركيبها
         </div>
         <svg viewBox="0 0 300 230" className="mx-auto block h-auto w-full max-w-md" role="img" aria-label="خريطة تشريحية">
-          {/* ---- Shaded, dimensional species figure (side-profile, facing right) ---- */}
-          <defs dangerouslySetInnerHTML={{ __html: ANIMAL_ART_DEFS }} />
-          <g dangerouslySetInnerHTML={{ __html: animalArt(species) }} />
+          {/* Ground shadow */}
+          <ellipse cx="150" cy="214" rx="110" ry="8" fill="#1e293b" opacity="0.10" />
 
-          {/* ---- Hotspots — subtle markers that highlight on hover/select ---- */}
-          {dots.map(({ r, c }) => {
+          {/* ---- Body zones, in the species' real colour, split by sharp lines ---- */}
+          {fig.regions.map((z) => (
+            <path key={`b-${z.id}`} d={z.d} fill={fig.palette.base} stroke={fig.palette.edge}
+              strokeWidth={2.2} strokeLinejoin="round" style={{ pointerEvents: "none" }} />
+          ))}
+
+          {/* ---- Clickable highlight overlay per anatomical zone ---- */}
+          {fig.regions.filter((z) => regionById.has(z.id)).map((z) => {
+            const r = regionById.get(z.id)!;
             const active = openId === r.id;
             const focused = isFocused(r.id);
             const emphasised = active || focused;
             return (
-              <g key={r.id} onClick={() => pickRegion(r)} className="cursor-pointer" role="button" aria-label={r.name}>
-                {/* halo */}
-                {emphasised && (
-                  <circle cx={c.cx} cy={c.cy} r={c.r + 5} className="text-brand-400/25" fill="currentColor">
-                    <animate attributeName="r" values={`${c.r + 3};${c.r + 7};${c.r + 3}`} dur="2s" repeatCount="indefinite" />
-                  </circle>
+              <path
+                key={`h-${z.id}`} d={z.d} role="button" aria-label={r.name}
+                onClick={() => pickRegion(r)}
+                fill="currentColor" stroke={emphasised ? "currentColor" : "none"} strokeWidth={emphasised ? 2.6 : 0}
+                strokeLinejoin="round"
+                className={cn(
+                  "cursor-pointer transition-opacity",
+                  focused ? "text-brand-600 opacity-90" : active ? "text-brand-500 opacity-55" : "text-brand-500 opacity-0 hover:opacity-25",
                 )}
-                <circle
-                  cx={c.cx} cy={c.cy} r={c.r}
-                  className={cn(
-                    "transition-all",
-                    focused
-                      ? "fill-brand-600/85 stroke-brand-600"
-                      : active
-                        ? "fill-brand-500/45 stroke-brand-500"
-                        : "fill-brand-500/5 stroke-brand-500/25 hover:fill-brand-500/20 hover:stroke-brand-500/60",
-                  )}
-                  strokeWidth={emphasised ? 2 : 1}
-                />
-                <circle cx={c.cx} cy={c.cy} r={emphasised ? 3 : 2} className={cn("transition-all", focused ? "fill-white" : emphasised ? "fill-brand-600" : "fill-brand-500/60")} />
-              </g>
+              />
             );
           })}
+
+          {/* ---- Ears / eyes / nose / markings (non-interactive) ---- */}
+          <g style={{ pointerEvents: "none" }} dangerouslySetInnerHTML={{ __html: fig.details }} />
         </svg>
 
         {/* Coordless regions (skin + internal viscera) as chips below the figure */}
@@ -198,29 +187,3 @@ export function AnatomyMap({ value, onChange, species = "dog" }: { value: Anatom
   );
 }
 
-/* Per-species hotspot coords. Overrides the shared template where a species holds
- * a different posture (horse head high, rabbit compact) and places SPECIES-ADDED
- * hotspots (bird beak/wing, horse hoof, cow cloven hoof). Regions with no entry
- * fall back to their CORE_REGIONS coords; coordless regions become chips. */
-type Pt = { cx: number; cy: number; r?: number };
-const POSTURE: Partial<Record<Species, Record<string, Pt>>> = {
-  horse: {
-    head: { cx: 222, cy: 58, r: 19 }, oral: { cx: 232, cy: 66, r: 11 }, neck: { cx: 198, cy: 90, r: 15 },
-    spine: { cx: 140, cy: 100, r: 15 }, thorax: { cx: 160, cy: 112, r: 21 }, abdomen: { cx: 114, cy: 116, r: 22 },
-    pelvis: { cx: 84, cy: 110, r: 15 }, foreleg: { cx: 190, cy: 172, r: 18 }, hindleg: { cx: 110, cy: 172, r: 18 },
-    hoof: { cx: 190, cy: 206, r: 11 },
-  },
-  rabbit: {
-    head: { cx: 206, cy: 118, r: 18 }, oral: { cx: 230, cy: 120, r: 11 }, neck: { cx: 184, cy: 122, r: 13 },
-    spine: { cx: 150, cy: 102, r: 15 }, thorax: { cx: 156, cy: 130, r: 20 }, abdomen: { cx: 124, cy: 142, r: 20 },
-    pelvis: { cx: 100, cy: 150, r: 15 }, foreleg: { cx: 178, cy: 168, r: 14 }, hindleg: { cx: 112, cy: 174, r: 16 },
-  },
-  bird: {
-    head: { cx: 196, cy: 102, r: 16 }, neck: { cx: 176, cy: 116, r: 12 }, beak: { cx: 216, cy: 112, r: 9 },
-    wing: { cx: 150, cy: 120, r: 15 }, spine: { cx: 132, cy: 106, r: 12 }, thorax: { cx: 156, cy: 132, r: 15 },
-    abdomen: { cx: 120, cy: 140, r: 14 }, pelvis: { cx: 106, cy: 138, r: 12 }, hindleg: { cx: 140, cy: 174, r: 13 },
-  },
-  cow: {
-    cloven_hoof: { cx: 176, cy: 206, r: 11 },
-  },
-};
