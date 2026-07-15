@@ -1,98 +1,138 @@
 // ============================================================================
-// Segmented anatomy figure — a colourful, cartoon-yet-natural animal drawn as
-// CLICKABLE anatomical zones separated by sharp dividing lines (no dots/circles).
-// Each region is a polygon on a 300×230 canvas facing right; AnatomyMap styles
-// the fill by selection state and draws the non-interactive details on top.
+// Anatomy figure — a clean FLAT-VECTOR animal (modern illustration style) whose
+// side-profile body is divided into anatomical zones by fine topographic lines.
+// AnatomyMap draws the `body` art once, then overlays the transparent, clickable
+// `zones` (one per scientific region) that highlight on hover / selection.
 // ============================================================================
 import type { Species } from "@/types";
 
-export interface FigRegion { id: string; d: string }
-export interface Palette { base: string; edge: string; hi: string }
-export interface Figure {
-  regions: FigRegion[]; // clickable body zones (sharp-edged partitions)
-  details: string;      // eyes / ears / nose / markings drawn over the regions (pointer-events:none)
-  palette: Palette;
-}
+export interface Zone { id: string; d: string }
+export interface Figure { body: string; zones: Zone[] }
 
-const PAL: Record<Species, Palette> = {
-  dog:    { base: "#d99a58", edge: "#8a5a2b", hi: "#f4d7ac" },
-  cat:    { base: "#e8a24e", edge: "#a86a24", hi: "#f8e3bf" },
-  cow:    { base: "#eef1f5", edge: "#8f98a6", hi: "#ffffff" },
-  horse:  { base: "#a4693a", edge: "#6e401f", hi: "#c99a63" },
-  rabbit: { base: "#cfc8bd", edge: "#8f887c", hi: "#efece6" },
-  bird:   { base: "#54bd66", edge: "#2f7d3c", hi: "#9fe0a8" },
-  other:  { base: "#c9a878", edge: "#8a6a44", hi: "#e7d6ba" },
-};
-
-// Shared quadruped zones. Straight shared edges = the sharp partition lines.
-const QUAD: FigRegion[] = [
-  { id: "spine",   d: "M62 120 C62 112 74 104 104 102 L150 100 L196 106 L196 122 L150 116 L104 118 C80 120 66 126 62 132 Z" },
-  { id: "pelvis",  d: "M62 132 C64 122 78 119 104 118 L104 168 L82 168 C68 168 62 154 62 132 Z" },
-  { id: "abdomen", d: "M104 118 L150 116 L150 168 L104 168 Z" },
-  { id: "thorax",  d: "M150 116 L196 122 L196 168 L150 168 Z" },
-  { id: "neck",    d: "M196 106 L196 168 L210 160 C221 146 223 122 214 111 C208 104 202 104 196 106 Z" },
-  { id: "head",    d: "M214 111 C207 92 221 74 241 76 C260 78 266 96 260 111 L266 116 C268 124 260 130 250 128 C244 134 232 134 226 126 C218 124 214 118 214 111 Z" },
-  { id: "oral",    d: "M250 108 L268 112 C270 121 261 127 251 124 C244 123 244 112 250 108 Z" },
-  { id: "foreleg", d: "M168 160 L192 160 L190 206 C190 210 184 212 180 210 L170 210 C166 210 166 204 167 200 Z" },
-  { id: "hindleg", d: "M74 160 L104 162 L102 206 C102 210 96 212 92 210 L80 210 C74 210 74 204 75 200 Z" },
+// ---- Clickable anatomical zones over the shared flat quadruped (300×230) ------
+const QUAD_ZONES: Zone[] = [
+  { id: "spine",   d: "M64 104 Q120 90 198 96 L196 110 Q120 100 66 118 Z" },
+  { id: "pelvis",  d: "M58 118 Q56 134 66 152 Q86 158 104 153 L104 100 Q80 94 62 108 Z" },
+  { id: "abdomen", d: "M104 100 L150 95 L150 156 Q126 160 104 153 Z" },
+  { id: "thorax",  d: "M150 95 L196 93 L201 150 Q174 158 150 156 Z" },
+  { id: "neck",    d: "M196 93 Q210 95 211 112 Q211 132 203 150 L196 152 Z" },
+  { id: "head",    d: "M191 104 A22 22 0 1 1 233 100 Q234 116 224 122 Q205 125 196 116 Q191 111 191 104 Z" },
+  { id: "oral",    d: "M228 96 Q252 96 264 108 Q262 120 248 121 Q232 121 226 111 Q224 102 228 96 Z" },
+  { id: "foreleg", d: "M172 148 L193 148 L193 208 Q193 213 184 213 Q173 213 173 206 Z" },
+  { id: "hindleg", d: "M95 148 L114 148 L114 208 Q114 213 105 213 Q95 213 95 206 Z" },
 ];
 
-// Decorative-only tail (not an anatomical region).
-const TAIL = (p: Palette) => `<path d="M40 150 C30 140 34 120 46 112 C54 118 58 128 62 138 L62 156 C56 160 46 158 40 150 Z" fill="${p.base}" stroke="${p.edge}" stroke-width="2.4" stroke-linejoin="round"/>`;
-
-// Common head furniture (eye + mouth) shared by all quadrupeds.
-const FACE = (p: Palette, nose: string) =>
-  `<ellipse cx="266" cy="116" rx="4.6" ry="3.7" fill="${nose}"/>` +
-  `<path d="M262 122 C260 126 254 126 252 123" fill="none" stroke="${p.edge}" stroke-width="1.6" stroke-linecap="round"/>` +
-  `<circle cx="240" cy="98" r="3.6" fill="#26201b"/><circle cx="241.3" cy="96.7" r="1.15" fill="#fff"/>`;
-
-const EAR = {
-  floppy: (p: Palette) => `<path d="M224 96 C213 86 212 68 223 61 C236 65 239 84 237 100 Z" fill="${p.hi}" stroke="${p.edge}" stroke-width="2" stroke-linejoin="round" opacity="0.95"/>`,
-  pointy: (p: Palette) => `<path d="M222 88 L224 60 L240 80 Z" fill="${p.hi}" stroke="${p.edge}" stroke-width="2" stroke-linejoin="round"/><path d="M238 82 L250 60 L252 86 Z" fill="${p.hi}" stroke="${p.edge}" stroke-width="2" stroke-linejoin="round"/>`,
-  tall:   (p: Palette) => `<path d="M226 82 C220 52 224 30 234 30 C242 32 240 60 236 84 Z" fill="${p.hi}" stroke="${p.edge}" stroke-width="2" stroke-linejoin="round"/><path d="M240 84 C238 54 246 32 256 34 C262 40 254 64 250 86 Z" fill="${p.hi}" stroke="${p.edge}" stroke-width="2" stroke-linejoin="round"/>`,
-};
-
-function quadFigure(species: Species, opts: {
-  regions?: FigRegion[]; nose?: string; ear: (p: Palette) => string; extras?: (p: Palette) => string;
-}): Figure {
-  const p = PAL[species];
-  const nose = opts.nose ?? "#3a2a20";
-  const details =
-    TAIL(p) +
-    // soft top light for a rounded, 3D feel
-    `<ellipse cx="150" cy="118" rx="86" ry="26" fill="#ffffff" opacity="0.16"/>` +
-    `<g style="pointer-events:none">` + opts.ear(p) + (opts.extras?.(p) ?? "") + FACE(p, nose) + `</g>`;
-  return { regions: opts.regions ?? QUAD, palette: p, details };
+interface Kit {
+  coat: string; dark: string; belly: string; muzzle: string;
+  nose: string; ear: string; tail: string; extras?: string; feet?: string;
 }
+
+// A flat, clean quadruped built from a per-species kit. Subtle division lines
+// mark the region boundaries; nothing is gradient-shaded.
+function quadBody(k: Kit): string {
+  const eye = `<circle cx="220" cy="100" r="4.4" fill="#2b2b2b"/><circle cx="221.7" cy="98.2" r="1.4" fill="#fff"/>`;
+  const nose = `<ellipse cx="261" cy="109" rx="5.2" ry="4.4" fill="${k.nose}"/><path d="M252 117 Q246 122 239 118" stroke="${k.dark}" stroke-width="1.7" fill="none" stroke-linecap="round"/>`;
+  return `
+  <ellipse cx="150" cy="210" rx="104" ry="8" fill="#1e293b" opacity="0.09"/>
+  <g fill="${k.dark}"><rect x="158" y="150" width="14" height="58" rx="6"/><rect x="82" y="150" width="14" height="58" rx="6"/></g>
+  ${k.tail}
+  <path d="M60 112 Q60 92 96 90 Q150 86 196 92 Q212 94 216 112 Q218 134 210 150 Q150 160 96 154 Q64 150 58 132 Q56 120 60 112 Z" fill="${k.coat}"/>
+  <path d="M96 132 Q150 140 200 132 Q198 150 168 156 Q120 160 96 152 Z" fill="${k.belly}"/>
+  ${k.extras ?? ""}
+  <g fill="${k.coat}"><rect x="176" y="148" width="15" height="60" rx="6.5"/><rect x="98" y="148" width="15" height="60" rx="6.5"/></g>
+  ${k.feet ?? ""}
+  ${k.ear}
+  <circle cx="212" cy="104" r="22" fill="${k.coat}"/>
+  <path d="M228 96 Q252 96 264 108 Q262 120 248 121 Q232 121 226 111 Q224 102 228 96 Z" fill="${k.muzzle}"/>
+  ${nose}${eye}
+  <g stroke="${k.dark}" stroke-width="1.4" stroke-opacity="0.55" fill="none" stroke-linecap="round">
+    <path d="M196 94 Q199 112 195 150"/>
+    <path d="M150 90 Q148 112 150 156"/>
+    <path d="M104 90 Q100 112 104 154"/>
+    <path d="M64 104 Q120 90 198 96" stroke-opacity="0.4"/>
+    <path d="M194 96 Q196 108 200 118" stroke-opacity="0.45"/>
+  </g>`;
+}
+
+const ear = {
+  floppy: (k: Kit) => `<path d="M206 92 Q192 92 190 112 Q192 130 210 124 Q216 112 212 98 Z" fill="${k.dark}"/>`,
+  pointy: (k: Kit, inner: string) => `<path d="M204 86 L200 58 L224 78 Z" fill="${k.dark}"/><path d="M208 82 L206 66 L217 78 Z" fill="${inner}"/>`,
+  tall: (k: Kit, inner: string) => `<path d="M204 88 Q196 44 212 42 Q222 48 216 92 Z" fill="${k.dark}"/><path d="M208 86 Q204 56 212 56 Q218 62 214 86 Z" fill="${inner}"/>`,
+};
 
 export function figureFor(species: Species): Figure {
   switch (species) {
     case "dog":
-      return quadFigure("dog", { ear: EAR.floppy });
+      return { zones: QUAD_ZONES, body: quadBody({
+        coat: "#e0a15a", dark: "#c17e3a", belly: "#f6e2c0", muzzle: "#f6e2c0", nose: "#2b2b2b",
+        ear: ear.floppy({ coat: "", dark: "#b06a34", belly: "", muzzle: "", nose: "", ear: "", tail: "" }),
+        extras: `<path d="M100 92 Q150 88 176 92 Q186 112 178 138 Q140 146 100 142 Q94 116 100 92 Z" fill="#6e4a2c"/>`,
+        tail: `<path d="M66 112 Q44 108 36 138 Q34 154 48 156 Q44 138 58 130 Q66 124 70 116 Z" fill="#e0a15a"/>`,
+      }) };
     case "cat":
-      return quadFigure("cat", { ear: EAR.pointy, nose: "#c86a6a" });
+      return { zones: QUAD_ZONES, body: quadBody({
+        coat: "#efa44e", dark: "#d0842f", belly: "#fbe7c4", muzzle: "#fbe7c4", nose: "#e07b7b",
+        ear: ear.pointy({ coat: "", dark: "#c47a2a", belly: "", muzzle: "", nose: "", ear: "", tail: "" }, "#f2c78e"),
+        extras: `<g stroke="#cf8330" stroke-width="4" fill="none" stroke-linecap="round"><path d="M100 96 V132"/><path d="M120 94 V134"/><path d="M140 93 V135"/></g>`,
+        tail: `<path d="M64 120 Q38 118 34 150 Q34 166 46 164 Q42 146 58 136 Q66 130 68 122 Z" fill="#efa44e"/>`,
+      }) };
     case "horse":
-      return quadFigure("horse", {
-        ear: EAR.pointy,
-        // mane along the neck + crest
-        extras: (p) => `<path d="M196 106 C204 96 214 90 224 78 C220 96 214 108 210 120 C204 116 200 110 196 106 Z" fill="${p.edge}" opacity="0.85"/>`,
-      });
+      return { zones: QUAD_ZONES, body: quadBody({
+        coat: "#a4693a", dark: "#82552c", belly: "#c08a54", muzzle: "#8a5730", nose: "#2b241c",
+        ear: ear.pointy({ coat: "", dark: "#7d4a24", belly: "", muzzle: "", nose: "", ear: "", tail: "" }, "#5e3718"),
+        extras: `<path d="M214 58 Q222 82 206 116 Q202 100 196 100 Q204 78 214 58 Z" fill="#3a2412"/>`,
+        tail: `<path d="M62 108 Q40 116 40 168 Q42 180 50 174 Q46 150 62 130 Q68 122 68 110 Z" fill="#3a2412"/>`,
+        feet: `<g fill="#3a2a1a"><rect x="175" y="201" width="17" height="9" rx="2"/><rect x="97" y="201" width="17" height="9" rx="2"/></g>`,
+      }) };
     case "cow":
-      return quadFigure("cow", {
-        ear: EAR.floppy, nose: "#c98a8a",
-        // little horns + a couple of black patches
-        extras: () => `<path d="M226 62 C222 54 224 48 230 48 C232 54 231 60 232 66 Z" fill="#e8ddc7" stroke="#9a8f78" stroke-width="1.4"/><path d="M242 60 C246 52 252 50 256 54 C252 58 248 62 246 68 Z" fill="#e8ddc7" stroke="#9a8f78" stroke-width="1.4"/><ellipse cx="120" cy="140" rx="16" ry="12" fill="#3a3f47" opacity="0.9"/><ellipse cx="176" cy="146" rx="11" ry="9" fill="#3a3f47" opacity="0.9"/>`,
-      });
+      return { zones: QUAD_ZONES, body: quadBody({
+        coat: "#f2f3f6", dark: "#d7dce3", belly: "#ffffff", muzzle: "#f6d9d3", nose: "#d99a9a",
+        ear: ear.floppy({ coat: "", dark: "#cdd3dc", belly: "", muzzle: "", nose: "", ear: "", tail: "" }),
+        extras: `<ellipse cx="120" cy="118" rx="20" ry="15" fill="#3b3f46"/><ellipse cx="176" cy="116" rx="12" ry="10" fill="#3b3f46"/><path d="M204 62 Q200 52 208 50 Q212 56 210 66 Z" fill="#e6dcc4"/><path d="M214 60 Q220 50 226 54 Q222 60 220 68 Z" fill="#e6dcc4"/><ellipse cx="128" cy="152" rx="13" ry="8" fill="#f0c9c0"/>`,
+        tail: `<path d="M66 112 Q46 108 40 150 Q40 168 50 166 Q46 138 60 128 Q68 122 70 114 Z" fill="#f2f3f6"/><path d="M46 166 Q44 178 52 180 Q56 174 54 166 Z" fill="#3b3f46"/>`,
+        feet: `<g fill="#7c8592"><rect x="175" y="201" width="17" height="9" rx="2"/><rect x="97" y="201" width="17" height="9" rx="2"/></g>`,
+      }) };
     case "rabbit":
-      return quadFigure("rabbit", { ear: EAR.tall, nose: "#c98a8a" });
+      return { zones: QUAD_ZONES, body: quadBody({
+        coat: "#d6cfc3", dark: "#c2bab0", belly: "#f4f1eb", muzzle: "#f4f1eb", nose: "#d99a9a",
+        ear: ear.tall({ coat: "", dark: "#c2bab0", belly: "", muzzle: "", nose: "", ear: "", tail: "" }, "#eddede"),
+        tail: `<circle cx="60" cy="150" r="15" fill="#f4f1eb"/>`,
+      }) };
     case "bird":
-      return quadFigure("bird", {
-        // pointed beak instead of a muzzle + a yellow crest + tail feathers
-        nose: "#e7a11e",
-        ear: (p) => `<path d="M228 84 C224 64 230 46 240 46 C246 52 242 72 238 86 Z" fill="#f2c53d" stroke="${p.edge}" stroke-width="1.8" stroke-linejoin="round"/>`,
-        extras: () => `<path d="M266 112 L284 116 L266 122 Z" fill="#e7a11e" stroke="#b57d10" stroke-width="1.4" stroke-linejoin="round"/>`,
-      });
+      return { zones: BIRD_ZONES, body: birdBody() };
     default:
-      return quadFigure("other", { ear: EAR.floppy });
+      return { zones: QUAD_ZONES, body: quadBody({
+        coat: "#cdae82", dark: "#a98a5a", belly: "#eaddc4", muzzle: "#eaddc4", nose: "#2b2b2b",
+        ear: ear.floppy({ coat: "", dark: "#a98a5a", belly: "", muzzle: "", nose: "", ear: "", tail: "" }),
+        tail: `<path d="M66 112 Q46 108 38 138 Q36 154 50 156 Q46 138 60 130 Q68 124 70 116 Z" fill="#cdae82"/>`,
+      }) };
   }
+}
+
+// ---- Bird — a plump flat songbird with wing + beak + crest + tail feathers ----
+const BIRD_ZONES: Zone[] = [
+  { id: "head",    d: "M188 74 Q186 52 210 52 Q234 54 232 80 Q226 98 200 96 Q188 90 188 74 Z" },
+  { id: "beak",    d: "M230 74 L262 82 L232 92 Z" },
+  { id: "neck",    d: "M186 88 Q182 104 190 118 L204 112 Q200 100 196 92 Z" },
+  { id: "spine",   d: "M96 100 Q150 84 190 94 L186 108 Q150 96 100 114 Z" },
+  { id: "thorax",  d: "M150 108 Q182 104 188 130 Q184 150 156 150 Q150 130 150 108 Z" },
+  { id: "wing",    d: "M96 106 Q140 98 172 122 Q146 148 104 138 Q86 122 96 106 Z" },
+  { id: "abdomen", d: "M104 138 Q136 154 168 146 Q160 168 124 166 Q104 158 104 138 Z" },
+  { id: "hindleg", d: "M134 158 L134 192 M127 193 L142 193 M156 156 L156 192 M149 193 L164 193" },
+];
+
+function birdBody(): string {
+  return `
+  <ellipse cx="150" cy="204" rx="86" ry="8" fill="#1e293b" opacity="0.09"/>
+  <g stroke="#e0961c" stroke-width="4" stroke-linecap="round" fill="none"><path d="M134 158 L134 192 M127 193 L142 193"/><path d="M156 156 L156 192 M149 193 L164 193"/></g>
+  <path d="M92 118 Q66 110 50 122 Q70 128 96 128 Z" fill="#3fa050"/>
+  <path d="M186 92 Q226 96 232 132 Q230 168 178 170 Q112 172 92 128 Q86 98 128 88 Q158 82 186 92 Z" fill="#57bd67"/>
+  <path d="M150 108 Q182 104 188 130 Q182 160 132 158 Q128 128 150 108 Z" fill="#bfe8c4"/>
+  <path d="M96 106 Q140 98 172 122 Q146 148 104 138 Q86 122 96 106 Z" fill="#3fa050"/>
+  <g stroke="#2f7d3c" stroke-width="1.4" stroke-opacity="0.55" fill="none"><path d="M112 114 Q140 118 158 130"/><path d="M108 124 Q134 128 150 138"/></g>
+  <path d="M188 74 Q186 52 210 52 Q234 54 232 80 Q226 98 200 96 Q188 90 188 74 Z" fill="#57bd67"/>
+  <path d="M204 54 Q200 36 210 34 Q216 38 214 56 Z" fill="#f2c53d"/>
+  <path d="M230 74 L262 82 L232 92 Z" fill="#e7a11e"/>
+  <circle cx="214" cy="72" r="4.4" fill="#20160f"/><circle cx="215.6" cy="70.4" r="1.4" fill="#fff"/>
+  <g stroke="#2f7d3c" stroke-width="1.4" stroke-opacity="0.5" fill="none" stroke-linecap="round"><path d="M186 88 Q182 104 190 118"/><path d="M150 106 Q150 128 156 150"/></g>`;
 }

@@ -34,7 +34,7 @@ export function AnatomyMap({ value, onChange, species = "dog" }: { value: Anatom
   // Anatomy regions keyed by id, and which figure zones are clickable (= exist in
   // this species' anatomy). Figure zones with no matching region stay static body.
   const regionById = useMemo(() => new Map(regions.map((r) => [r.id, r])), [regions]);
-  const figIds = useMemo(() => new Set(fig.regions.map((z) => z.id)), [fig]);
+  const figIds = useMemo(() => new Set(fig.zones.map((z) => z.id)), [fig]);
   const chipRegions = regions.filter((r) => !figIds.has(r.id));
   const open = openId ? regions.find((r) => r.id === openId) : undefined;
 
@@ -61,37 +61,28 @@ export function AnatomyMap({ value, onChange, species = "dog" }: { value: Anatom
           <Layers size={12} /> الخريطة التشريحية — اضغط منطقة لعرض تركيبها
         </div>
         <svg viewBox="0 0 300 230" className="mx-auto block h-auto w-full max-w-md" role="img" aria-label="خريطة تشريحية">
-          {/* Ground shadow */}
-          <ellipse cx="150" cy="214" rx="110" ry="8" fill="#1e293b" opacity="0.10" />
+          {/* ---- The flat, coloured animal (drawn once, non-interactive) ---- */}
+          <g style={{ pointerEvents: "none" }} dangerouslySetInnerHTML={{ __html: fig.body }} />
 
-          {/* ---- Body zones, in the species' real colour, split by sharp lines ---- */}
-          {fig.regions.map((z) => (
-            <path key={`b-${z.id}`} d={z.d} fill={fig.palette.base} stroke={fig.palette.edge}
-              strokeWidth={2.2} strokeLinejoin="round" style={{ pointerEvents: "none" }} />
-          ))}
-
-          {/* ---- Clickable highlight overlay per anatomical zone ---- */}
-          {fig.regions.filter((z) => regionById.has(z.id)).map((z) => {
+          {/* ---- Clickable anatomical zones — transparent until hovered / selected ---- */}
+          {fig.zones.filter((z) => regionById.has(z.id)).map((z) => {
             const r = regionById.get(z.id)!;
             const active = openId === r.id;
             const focused = isFocused(r.id);
             const emphasised = active || focused;
             return (
               <path
-                key={`h-${z.id}`} d={z.d} role="button" aria-label={r.name}
+                key={`z-${z.id}`} d={z.d} role="button" aria-label={r.name}
                 onClick={() => pickRegion(r)}
-                fill="currentColor" stroke={emphasised ? "currentColor" : "none"} strokeWidth={emphasised ? 2.6 : 0}
+                fill="currentColor" stroke={emphasised ? "currentColor" : "none"} strokeWidth={emphasised ? 2.4 : 0}
                 strokeLinejoin="round"
                 className={cn(
                   "cursor-pointer transition-opacity",
-                  focused ? "text-brand-600 opacity-90" : active ? "text-brand-500 opacity-55" : "text-brand-500 opacity-0 hover:opacity-25",
+                  focused ? "text-brand-600 opacity-80" : active ? "text-brand-500 opacity-45" : "text-brand-500 opacity-0 hover:opacity-25",
                 )}
               />
             );
           })}
-
-          {/* ---- Ears / eyes / nose / markings (non-interactive) ---- */}
-          <g style={{ pointerEvents: "none" }} dangerouslySetInnerHTML={{ __html: fig.details }} />
         </svg>
 
         {/* Coordless regions (skin + internal viscera) as chips below the figure */}
