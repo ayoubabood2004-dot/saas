@@ -4,7 +4,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import {
   Search, Barcode, Plus, Minus, Trash2, ShoppingCart, User, Phone, Tag, Percent,
   Banknote, CreditCard, ArrowLeftRight, CheckCircle2, Printer, Sparkles, TrendingUp, Package, PawPrint, X,
-  Stethoscope, Pencil, Pill, Syringe, CalendarClock, Wallet,
+  Stethoscope, Pencil, Pill, Syringe, CalendarClock, Wallet, StickyNote,
 } from "lucide-react";
 import type { Product, Invoice, InvoiceItem, CheckoutItem, SaleMeta, PaymentMethod, PaymentSplit, DiscountType, Customer, Service, ServiceCatalog, Species, Pet } from "@/types";
 import { repo, resolveDiscount } from "@/lib/repo";
@@ -98,6 +98,7 @@ interface SalePet { id: string | null; name: string; species: Species | null }
  * draft. */
 interface SaleDraft {
   cart: Line[]; name: string; phone: string; salePets: SalePet[];
+  notes?: string;
   discountType: DiscountType; discountValue: string; finalOverride: number | null; cashierId: string | null;
 }
 const saleDraftKey = (clinicId?: string) => `vp_sale_draft_${clinicId ?? "default"}`;
@@ -106,7 +107,7 @@ function loadSaleDraft(clinicId?: string): SaleDraft | null {
 }
 function saveSaleDraft(clinicId: string | undefined, d: SaleDraft): void {
   try {
-    const empty = d.cart.length === 0 && !d.name.trim() && !d.phone.trim() && d.salePets.length === 0;
+    const empty = d.cart.length === 0 && !d.name.trim() && !d.phone.trim() && d.salePets.length === 0 && !(d.notes ?? "").trim();
     if (empty) localStorage.removeItem(saleDraftKey(clinicId));
     else localStorage.setItem(saleDraftKey(clinicId), JSON.stringify(d));
   } catch { /* ignore */ }
@@ -135,6 +136,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
   // Patients attached to this sale. The ACTIVE one receives new medication/vaccine
   // lines; more of the owner's animals can be attached to vaccinate them in one visit.
   const [salePets, setSalePets] = useState<SalePet[]>(draft0?.salePets ?? []);
+  const [saleNotes, setSaleNotes] = useState(draft0?.notes ?? "");
   const [activePetIdx, setActivePetIdx] = useState(0);
   const activePet: SalePet | null = salePets[Math.min(activePetIdx, salePets.length - 1)] ?? null;
   // "+ حيوان آخر" picker: the clinic's pets, owner's animals surfaced first.
@@ -297,8 +299,8 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
   // entry still starts clean (see draft0's load guard); this only saves what the
   // sale currently holds.
   useEffect(() => {
-    saveSaleDraft(clinicId, { cart, name, phone, salePets, discountType, discountValue, finalOverride, cashierId });
-  }, [clinicId, cart, name, phone, salePets, discountType, discountValue, finalOverride, cashierId]);
+    saveSaleDraft(clinicId, { cart, name, phone, salePets, notes: saleNotes, discountType, discountValue, finalOverride, cashierId });
+  }, [clinicId, cart, name, phone, salePets, saleNotes, discountType, discountValue, finalOverride, cashierId]);
 
   // ---- Payment: full, split, partial (credit), or over-tendered (change due) ----
   const isSplit = payments.length > 1;
@@ -412,7 +414,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
     clearSaleDraft(clinicId);
     setCart([]); setQuery(""); setDiscountValue(""); setFinalOverride(null); setEditingTotal(false);
     setDiscountType("percent"); setPayments([{ method: "cash", amount: 0 }]); setPaidEdited(false); setPartialMode(false); setDone(null); setLastPrints(0);
-    setCashierId(null); setBrowseTab("products");
+    setCashierId(null); setBrowseTab("products"); setSaleNotes("");
     // Preserve the patient/customer bridge across "New sale" so repeated per-patient
     // sales keep syncing into the same animal's record; clear it for a plain walk-in.
     if (prefill) {
@@ -556,6 +558,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
         payment_details: legs.length ? legs : null,
         amount_paid: paidToday,
         staff_id: cashierId,
+        notes: saleNotes.trim() || null,
       };
       const invoice = await withTimeout(repo.retailCheckout(items, meta), 12000);
       // Med lines grouped per patient — each pet's record gets ITS OWN entries.
@@ -781,6 +784,24 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
               <span className="text-2xs font-normal text-ink-subtle">· {t("retail.optional", "optional")}</span>
             </label>
             <CashierSelect value={cashierId} onChange={setCashierId} />
+          </div>
+
+          {/* Doctor's note on the invoice — surfaces in the pet's record. */}
+          <div className="mt-3 border-t border-line pt-3">
+            <label htmlFor="sale-notes" className="mb-1.5 flex items-center gap-1.5 text-xs font-bold text-ink-muted">
+              <StickyNote size={14} className="text-brand-600" /> {t("retail.saleNotes", "ملاحظات الطبيب على الفاتورة")}
+              <span className="text-2xs font-normal text-ink-subtle">· {t("retail.optional", "optional")}</span>
+            </label>
+            <textarea
+              id="sale-notes"
+              rows={2}
+              value={saleNotes}
+              maxLength={500}
+              onChange={(e) => setSaleNotes(e.target.value)}
+              placeholder={t("retail.saleNotesPh", "مثال: الحالة تحتاج مراجعة بعد أسبوع…")}
+              className="input min-h-[2.5rem] resize-y py-2 text-sm leading-relaxed"
+            />
+            <p className="mt-1 text-2xs text-ink-subtle">{t("retail.saleNotesHint", "تظهر داخل خانة الملاحظات في سجل الحيوان وعلى الفاتورة المطبوعة.")}</p>
           </div>
         </div>
 

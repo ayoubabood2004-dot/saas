@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Receipt, ChevronDown, RotateCcw, ChevronLeft } from "lucide-react";
+import { Receipt, ChevronDown, RotateCcw, ChevronLeft, StickyNote } from "lucide-react";
 import type { Pet, Invoice, InvoiceItem } from "@/types";
 import { repo } from "@/lib/repo";
 import { phoneDigits } from "@/lib/phone";
@@ -88,6 +88,12 @@ export function PetSalesWidget({ pet }: { pet: Pet }) {
                         {refunded && <span className="chip shrink-0 inline-flex items-center gap-0.5 bg-danger-50 text-2xs font-medium text-danger-600 dark:bg-danger-500/15 dark:text-danger-300"><RotateCcw size={10} /> {t("retail.refunded", "مُرتجع")}</span>}
                       </p>
                       <p className="text-2xs text-ink-subtle" dir="ltr">{fmtDate(inv.created_at)}</p>
+                      {inv.notes && (
+                        <p className="mt-1 flex items-start gap-1 rounded-lg bg-warn-50 px-2 py-1 text-2xs leading-relaxed text-warn-800 dark:bg-warn-500/10 dark:text-warn-200">
+                          <StickyNote size={12} className="mt-px shrink-0" />
+                          <span className="min-w-0 break-words">{inv.notes}</span>
+                        </p>
+                      )}
                     </div>
                     <span className={cn("shrink-0 font-display font-bold tabular-nums", refunded ? "text-ink-subtle line-through" : "text-ink")}>{money(inv.total)}</span>
                     <ChevronLeft size={15} className="shrink-0 text-ink-subtle rtl:rotate-0 ltr:rotate-180" />

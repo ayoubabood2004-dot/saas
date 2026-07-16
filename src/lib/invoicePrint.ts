@@ -46,6 +46,7 @@ function strings(lang: string) {
     walkIn: ar ? "عميل نقدي" : "Walk-in customer",
     phone: ar ? "الهاتف" : "Phone",
     pet: ar ? "الحيوان" : "Patient",
+    notes: ar ? "ملاحظات" : "Notes",
     item: ar ? "الصنف" : "Item",
     qty: ar ? "الكمية" : "Qty",
     price: ar ? "السعر" : "Price",
@@ -260,6 +261,7 @@ export function buildInvoiceHTML(invoice: Invoice, items: InvoiceItem[], opts: I
       ${payRowsA4}
       ${dueRowsA4}
     </div>
+    ${invoice.notes ? `<div style="margin-top:10px;padding:8px 10px;border:1px solid #e5e7eb;border-radius:8px;font-size:12px;line-height:1.5;white-space:pre-wrap;text-align:start"><strong>${s.notes}:</strong> ${esc(invoice.notes)}</div>` : ""}
     <div class="thanks">${s.thanks}</div>
     ${socialText ? `<div class="social">${socialText}</div>` : ""}
     <div class="site">${WEBSITE}</div>
@@ -310,6 +312,8 @@ export function buildInvoiceHTML(invoice: Invoice, items: InvoiceItem[], opts: I
         ${discount > 0 ? `<div class="row"><span>${s.subtotal}</span><span>${money(subtotal)}</span></div><div class="row disc"><span>${s.discount}${invoice.discount_type === "percent" ? "" : ""}</span><span>-${money(discount)}</span></div>` : ""}
         <div class="row grand"><span>${s.total}</span><span>${money(invoice.total)}</span></div>
       </div>
+
+      ${invoice.notes ? `<div style="margin-top:10px;padding:8px 10px;border:1px solid #e5e7eb;border-radius:8px;font-size:12px;line-height:1.5;white-space:pre-wrap;text-align:start"><strong>${s.notes}:</strong> ${esc(invoice.notes)}</div>` : ""}
 
       <div class="foot">${s.thanks}</div>
     </div>

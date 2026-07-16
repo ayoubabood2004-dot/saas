@@ -395,6 +395,9 @@ export interface Invoice {
   refunded_at?: string | null;
   /** Cashier / sales rep (staff id) who made the sale — for staff performance reports. */
   staff_id?: string | null;
+  /** Free-text note the doctor/cashier attached at checkout (shown in the pet's
+   *  record and on the printed invoice). Optional. */
+  notes?: string | null;
   created_at: string;
 }
 
@@ -430,6 +433,8 @@ export interface SaleMeta {
   final_total?: number;
   /** Cashier / sales rep (staff id) who made the sale — for staff performance reports. */
   staff_id?: string | null;
+  /** Free-text note the doctor/cashier attached at checkout. */
+  notes?: string | null;
 }
 
 /** A distinct retail customer, derived from past invoices for quick re-selection. */

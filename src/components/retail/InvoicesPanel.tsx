@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Search, Receipt, User, Printer, RotateCcw, Trash2, TrendingUp, Banknote, CreditCard,
-  ArrowLeftRight, Package, AlertTriangle, CheckCircle2, Wallet, Pencil, Check, Loader2, Plus, X,
+  ArrowLeftRight, Package, AlertTriangle, CheckCircle2, Wallet, Pencil, Check, Loader2, Plus, X, StickyNote,
 } from "lucide-react";
 import type { Invoice, InvoiceItem, PaymentMethod, PaymentSplit } from "@/types";
 import { repo } from "@/lib/repo";
@@ -288,6 +288,14 @@ export function InvoiceDetail({ invoice, onClose, onChanged, setOpen }: {
             </div>
           )}
         </div>
+
+        {/* Doctor's note */}
+        {invoice.notes && (
+          <div className="rounded-2xl border border-warn-200 bg-warn-50 p-3 dark:border-warn-500/30 dark:bg-warn-500/10">
+            <p className="mb-1 flex items-center gap-1.5 text-xs font-bold text-warn-800 dark:text-warn-200"><StickyNote size={14} /> {t("retail.notesLabel", "ملاحظات")}</p>
+            <p className="whitespace-pre-wrap break-words text-sm leading-relaxed text-warn-900 dark:text-warn-100">{invoice.notes}</p>
+          </div>
+        )}
 
         {/* Totals */}
         <div className="space-y-1 text-sm">
