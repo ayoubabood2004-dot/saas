@@ -53,11 +53,11 @@ export function PetSalesWidget({ pet }: { pet: Pet }) {
 
   return (
     <div className="card overflow-hidden p-0">
-      <div className="flex items-center gap-2.5 border-b border-line bg-gradient-to-br from-brand-500/10 to-success-500/10 px-4 py-3">
-        <span className="grid h-9 w-9 place-items-center rounded-xl bg-brand-600 text-white shadow-soft"><Receipt size={17} /></span>
-        <h3 className="font-display font-bold text-ink">{t("petSales.title")}</h3>
+      <div className="flex items-center gap-3 border-b border-line bg-gradient-to-br from-brand-500/10 to-success-500/10 px-5 py-4">
+        <span className="grid h-11 w-11 place-items-center rounded-2xl bg-brand-600 text-white shadow-soft"><Receipt size={20} /></span>
+        <h3 className="font-display text-lg font-bold text-ink">{t("petSales.title")}</h3>
         {rows.length > 0 && (
-          <span className="chip ms-auto bg-surface-1 text-2xs font-bold text-ink-muted tabular-nums" title={t("petSales.totalSpend")}>{money(totalSpend)}</span>
+          <span className="chip ms-auto bg-surface-1 text-xs font-bold text-ink-muted tabular-nums" title={t("petSales.totalSpend")}>{money(totalSpend)}</span>
         )}
       </div>
 
@@ -70,7 +70,7 @@ export function PetSalesWidget({ pet }: { pet: Pet }) {
         </div>
       ) : (
         <>
-          <ul className={cn("divide-y divide-line", showAll && "max-h-64 overflow-y-auto [scrollbar-width:thin]")}>
+          <ul className={cn("divide-y divide-line", showAll && "max-h-[28rem] overflow-y-auto [scrollbar-width:thin]")}>
             {shown.map(({ inv, names }) => {
               const refunded = (inv.status ?? "paid") === "refunded";
               const summary = names.length ? names.join("، ") : t("petSales.items", { n: inv.item_count });
@@ -79,24 +79,24 @@ export function PetSalesWidget({ pet }: { pet: Pet }) {
                   <button
                     type="button"
                     onClick={() => setOpen(inv)}
-                    className="flex w-full items-center gap-3 px-4 py-2.5 text-start transition hover:bg-surface-2"
+                    className="flex w-full items-start gap-3 px-5 py-3.5 text-start transition hover:bg-surface-2"
                     title={t("petSales.openInvoice", "عرض الفاتورة")}
                   >
                     <div className="min-w-0 flex-1">
-                      <p className="flex items-center gap-1.5 truncate text-sm font-semibold text-ink">
+                      <p className="flex items-center gap-1.5 text-[15px] font-semibold text-ink">
                         <span className="truncate">{summary}</span>
                         {refunded && <span className="chip shrink-0 inline-flex items-center gap-0.5 bg-danger-50 text-2xs font-medium text-danger-600 dark:bg-danger-500/15 dark:text-danger-300"><RotateCcw size={10} /> {t("retail.refunded", "مُرتجع")}</span>}
                       </p>
-                      <p className="text-2xs text-ink-subtle" dir="ltr">{fmtDate(inv.created_at)}</p>
+                      <p className="mt-0.5 text-xs text-ink-subtle" dir="ltr">{fmtDate(inv.created_at)}</p>
                       {inv.notes && (
-                        <p className="mt-1 flex items-start gap-1 rounded-lg bg-warn-50 px-2 py-1 text-2xs leading-relaxed text-warn-800 dark:bg-warn-500/10 dark:text-warn-200">
-                          <StickyNote size={12} className="mt-px shrink-0" />
-                          <span className="min-w-0 break-words">{inv.notes}</span>
+                        <p className="mt-2 flex items-start gap-1.5 rounded-xl border border-warn-200/70 bg-warn-50 px-3 py-2 text-[13px] font-medium leading-relaxed text-warn-800 dark:border-warn-500/20 dark:bg-warn-500/10 dark:text-warn-200">
+                          <StickyNote size={15} className="mt-0.5 shrink-0" />
+                          <span className="min-w-0 whitespace-pre-wrap break-words">{inv.notes}</span>
                         </p>
                       )}
                     </div>
-                    <span className={cn("shrink-0 font-display font-bold tabular-nums", refunded ? "text-ink-subtle line-through" : "text-ink")}>{money(inv.total)}</span>
-                    <ChevronLeft size={15} className="shrink-0 text-ink-subtle rtl:rotate-0 ltr:rotate-180" />
+                    <span className={cn("mt-0.5 shrink-0 font-display text-base font-bold tabular-nums", refunded ? "text-ink-subtle line-through" : "text-ink")}>{money(inv.total)}</span>
+                    <ChevronLeft size={16} className="mt-1 shrink-0 text-ink-subtle rtl:rotate-0 ltr:rotate-180" />
                   </button>
                 </li>
               );

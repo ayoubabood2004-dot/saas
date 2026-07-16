@@ -460,7 +460,7 @@ export function PetPassport() {
           <ImportantDatesCard pet={pet} />
           <WeightCard pet={pet} weights={weights} canEdit={canEditClinical} onChanged={reload} />
           {canEditClinical && <RangesCard pet={pet} />}
-          {!isOwner && <PetSalesWidget pet={pet} />}
+          {!isOwner && <div className="md:col-span-2"><PetSalesWidget pet={pet} /></div>}
           <MarkingsCard pet={pet} canEdit={canEditClinical || isOwner} onChanged={reload} />
           {/* Caregivers moved down here, out of the banner. */}
           <ContactsCard pet={pet} canEdit={canEditClinical || isOwner} onChanged={reload} />
