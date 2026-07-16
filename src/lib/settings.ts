@@ -148,10 +148,24 @@ const legacyDialKey = () => `vp_dial_code_${getActiveClinicId()}`;
 
 let prefsCache: ClinicPrefs | null = null;
 
+const PREFS_PREFIX = "vp_clinic_prefs_";
+
 function readPrefsLocal(): ClinicPrefs {
   try {
     const raw = localStorage.getItem(prefsKey());
     if (raw) return { ...DEFAULT_PREFS, ...(JSON.parse(raw) as Partial<ClinicPrefs>) };
+  } catch { /* ignore */ }
+  // Self-heal across clinic-id changes: if this clinic's key is empty but exactly
+  // ONE clinic_prefs blob exists on the device, adopt it — so the dial code, logo
+  // AND the Manager-Override enable flag don't "disappear" when the active clinic
+  // id is represented differently between sessions (the same class of bug that
+  // made the override PIN vanish).
+  try {
+    const hits = Object.keys(localStorage).filter((k) => k.startsWith(PREFS_PREFIX));
+    if (hits.length === 1) {
+      const raw = localStorage.getItem(hits[0]);
+      if (raw) return { ...DEFAULT_PREFS, ...(JSON.parse(raw) as Partial<ClinicPrefs>) };
+    }
   } catch { /* ignore */ }
   // Fall back to the legacy dial-only key so existing dial codes aren't lost.
   try { const d = localStorage.getItem(legacyDialKey()); if (d) return { ...DEFAULT_PREFS, dial_code: d }; } catch { /* ignore */ }

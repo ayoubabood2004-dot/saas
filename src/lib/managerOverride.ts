@@ -20,7 +20,8 @@ const MAX_TRIES = 5;               // wrong PINs before the cooldown
 const COOLDOWN_MS = 5 * 60 * 1000;
 
 const untilKey = () => `vp_override_until_${getActiveClinicId()}`;
-const lockKey = () => `vp_device_lock_${getActiveClinicId()}`;
+const LOCK_PREFIX = "vp_device_lock_";
+const lockKey = () => `${LOCK_PREFIX}${getActiveClinicId()}`;
 const pinKey = () => `vp_override_pin_${getActiveClinicId()}`; // demo / pre-migration hash
 
 /* ------------------------------ store core ------------------------------ */
@@ -63,14 +64,29 @@ export function overrideUntil(): number | null {
 }
 
 export function isDeviceLocked(): boolean {
-  try { return localStorage.getItem(lockKey()) === "1"; } catch { return false; }
+  try {
+    if (localStorage.getItem(lockKey()) === "1") return true;
+    // Self-heal across clinic-id changes: a kiosk locked under a different id
+    // representation must stay locked (never silently drop the guard).
+    for (const k of Object.keys(localStorage)) {
+      if (k.startsWith(LOCK_PREFIX) && localStorage.getItem(k) === "1") return true;
+    }
+    return false;
+  } catch { return false; }
 }
 
 /** Manager action: pin THIS device to the reception-only view (or release it). */
 export function setDeviceLocked(v: boolean) {
   try {
-    if (v) localStorage.setItem(lockKey(), "1");
-    else localStorage.removeItem(lockKey());
+    if (v) {
+      localStorage.setItem(lockKey(), "1");
+    } else {
+      // Clear EVERY clinic-id representation so an orphaned lock can't keep the
+      // device stuck in the restricted view after an unlock.
+      for (const k of Object.keys(localStorage)) {
+        if (k.startsWith(LOCK_PREFIX)) localStorage.removeItem(k);
+      }
+    }
   } catch { /* ignore */ }
   if (v) writeUntil(0); // locking also ends any running elevation
   notify();
@@ -91,39 +107,66 @@ export function lockNow() {
 
 /* ------------------------------ PIN handling ---------------------------- */
 const MISSING_FN = /could not find the function|does not exist|schema cache|42883/i;
+const PIN_PREFIX = "vp_override_pin_";
 
-async function localHash(pin: string): Promise<string> {
-  const data = new TextEncoder().encode(`${getActiveClinicId()}:${pin}`);
-  const buf = await crypto.subtle.digest("SHA-256", data);
+async function sha256(s: string): Promise<string> {
+  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s));
   return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, "0")).join("");
 }
+// v2 device-mirror hash: clinic-id-INDEPENDENT. The storage key is already
+// clinic-scoped, so baking the (volatile) clinic id into the salt only made the
+// PIN stop verifying whenever the active id was later represented differently —
+// the #1 cause of a code "disappearing". v2 removes that coupling.
+const hashPin = (pin: string) => sha256(`vp_override_v2:${pin}`);
+// Legacy (pre-v2) salt embedded the clinic id: SHA-256(`${cid}:${pin}`). Still
+// accepted on unlock so codes set before this change keep working, then migrate.
+const hashLegacy = (cid: string, pin: string) => sha256(`${cid}:${pin}`);
 
-/** Save the clinic PIN. On a real backend the PIN lives bcrypt-hashed server-side
- *  (managers only, enforced by the RPC). We deliberately do NOT keep a local
- *  mirror in production: a SHA-256 of a 4-digit PIN in localStorage is trivially
- *  brute-forced by anyone who can read storage, which would defeat the server's
- *  lockout. The device-local mirror is used ONLY in demo/offline mode, or as a
- *  fallback on a pre-0048 backend (until the migration is applied). */
+/** Locate the device PIN mirror, SELF-HEALING across clinic-id changes: if the
+ *  exact active-clinic key is missing but exactly ONE override PIN exists on this
+ *  device (the common single-clinic case, or a legacy key saved under a different
+ *  id such as "default"), we still find it. This is what stops a code from
+ *  silently vanishing just because the active clinic id shifted between sessions. */
+function findLocalPin(): { key: string; cid: string; hash: string } | null {
+  try {
+    const direct = localStorage.getItem(pinKey());
+    if (direct) return { key: pinKey(), cid: getActiveClinicId(), hash: direct };
+    const hits: { key: string; cid: string; hash: string }[] = [];
+    for (const k of Object.keys(localStorage)) {
+      if (k.startsWith(PIN_PREFIX)) {
+        const v = localStorage.getItem(k);
+        if (v) hits.push({ key: k, cid: k.slice(PIN_PREFIX.length), hash: v });
+      }
+    }
+    return hits.length === 1 ? hits[0] : null;
+  } catch { return null; }
+}
+
+/** Persist the device mirror under the CURRENT active-clinic key (v2 hash), and
+ *  drop the single stale key it may have been adopted from. */
+async function writeLocalPin(pin: string, from?: string): Promise<void> {
+  try {
+    const k = pinKey();
+    localStorage.setItem(k, await hashPin(pin));
+    if (from && from !== k) localStorage.removeItem(from);
+  } catch { /* ignore */ }
+}
+
+/** Save the clinic PIN. On a migrated backend the PIN lives bcrypt-hashed
+ *  server-side (managers only, enforced by the RPC) — the durable, cross-device
+ *  home. We ALSO keep a synced device mirror so a transient cloud hiccup can
+ *  never make a set code read as "not set". In demo / pre-0048 mode the mirror
+ *  is the only store; it is now clinic-id-robust so it does not disappear. */
 export async function setOverridePin(pin: string): Promise<void> {
   if (!/^\d{4}$/.test(pin)) throw new Error("PIN must be 4 digits");
   const client = sb();
-  if (!client) {
-    // Demo / offline → localStorage is the only store available.
-    try { localStorage.setItem(pinKey(), await localHash(pin)); } catch { /* ignore */ }
-    return;
-  }
+  if (!client) { await writeLocalPin(pin); return; }   // demo / offline
   const { error } = await client.rpc("set_override_pin", { p_pin: pin });
   if (error) {
-    if (MISSING_FN.test(error.message)) {
-      // Pre-0048 backend → device-local fallback so the feature still works
-      // until the migration is applied.
-      try { localStorage.setItem(pinKey(), await localHash(pin)); } catch { /* ignore */ }
-      return;
-    }
+    if (MISSING_FN.test(error.message)) { await writeLocalPin(pin); return; } // pre-0048
     throw new Error(error.message);
   }
-  // Migrated backend holds the real PIN → drop any stale local mirror.
-  try { localStorage.removeItem(pinKey()); } catch { /* ignore */ }
+  await writeLocalPin(pin); // cloud is source of truth; mirror is the safety net
 }
 
 /** Logout teardown: end any running PIN elevation (server + this device) so the
@@ -146,7 +189,7 @@ export function endElevationOnLogout(): void {
 }
 
 function hasLocalPin(): boolean {
-  try { return !!localStorage.getItem(pinKey()); } catch { return false; }
+  return !!findLocalPin();
 }
 
 /** Where the clinic's PIN actually lives:
@@ -184,11 +227,20 @@ let localLockedUntil = 0;
 
 async function unlockLocal(pin: string): Promise<UnlockResult> {
   if (localLockedUntil > Date.now()) return { ok: false, reason: "locked", lockedUntil: localLockedUntil };
-  let stored: string | null = null;
-  try { stored = localStorage.getItem(pinKey()); } catch { /* ignore */ }
-  if (!stored) return { ok: false, reason: "no_pin" };
-  if ((await localHash(pin)) === stored) {
+  const rec = findLocalPin();
+  if (!rec) return { ok: false, reason: "no_pin" };
+  // Accept the v2 hash and every legacy salt (the id the mirror was stored under,
+  // the current active id, and "default") so codes set before this change keep
+  // working — then migrate the match to the stable v2 form under the current key.
+  const candidates = new Set([
+    await hashPin(pin),
+    await hashLegacy(rec.cid, pin),
+    await hashLegacy(getActiveClinicId(), pin),
+    await hashLegacy("default", pin),
+  ]);
+  if (candidates.has(rec.hash)) {
     localFails = 0;
+    await writeLocalPin(pin, rec.key);
     writeUntil(Date.now() + SESSION_MS);
     void repo.logClientEvent("override.unlock", {});
     return { ok: true };

@@ -391,17 +391,17 @@ export function ManagerOverrideCard() {
                     ? "bg-success-50 text-success-600 dark:bg-success-500/15 dark:text-success-300"
                     : "bg-warn-50 text-warn-700 dark:bg-warn-500/15 dark:text-warn-300",
                 )}>
-                  {pinScope === "cloud" ? t("override.pinIsSet", "الرمز معيَّن ✓") : t("override.pinDeviceOnly", "محفوظ على هذا الجهاز فقط")}
+                  {pinScope === "cloud" ? t("override.pinIsSet", "محفوظ في السحابة — على كل الأجهزة ✓") : t("override.pinDeviceOnly", "محفوظ على هذا الجهاز")}
                 </span>
               )}
             </div>
 
-            {/* Durability warning: a device-only PIN is the one that "disappears".
-                Re-saving on a cloud-enabled backend moves it to the durable store. */}
+            {/* Device-only note: the PIN is durable on THIS device (it no longer
+                disappears); this only invites enabling cloud sync across devices. */}
             {pinScope === "device" && (
-              <div className="mt-3 flex items-start gap-2 rounded-lg border border-warn-200 bg-warn-50 p-3 text-xs leading-relaxed text-warn-800 dark:border-warn-500/30 dark:bg-warn-500/10 dark:text-warn-200">
+              <div className="mt-3 flex items-start gap-2 rounded-lg border border-brand-200 bg-brand-50 p-3 text-xs leading-relaxed text-brand-800 dark:border-brand-500/30 dark:bg-brand-500/10 dark:text-brand-200">
                 <CloudOff size={16} className="mt-0.5 shrink-0" />
-                <span>{t("override.pinDeviceWarn", "رمز الحماية محفوظ على هذا الجهاز/المتصفّح فقط، وقد يختفي عند مسح بيانات المتصفّح أو استخدام جهاز آخر. لحفظه بشكل دائم على السحابة وعلى كل الأجهزة: تأكّد من تفعيل التخزين السحابي ثم أعد كتابة الرمز وحفظه هنا.")}</span>
+                <span>{t("override.pinDeviceWarn", "رمزك محفوظ على هذا الجهاز ولن يختفي منه. لمزامنته تلقائياً على كل أجهزة العيادة (والحاسبة والموبايل)، فعّل التخزين السحابي ثم أعد حفظ الرمز هنا مرة واحدة.")}</span>
               </div>
             )}
           </div>
