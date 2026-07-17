@@ -310,14 +310,16 @@ export const SYMPTOM_CATEGORIES: SymptomCategory[] = [
   { id: "urinary", name: "التبوّل والعطش", systemId: "urinary", symptomIds: ["dysuria", "stranguria", "pollakiuria", "polyuria", "oliguria", "hematuria", "urinary_incontinence", "inappropriate_urination", "polydipsia"] },
   { id: "reproductive", name: "الجهاز التناسلي", systemId: "reproductive", symptomIds: ["vaginal_discharge", "preputial_discharge", "mammary_mass", "testicular_swelling", "dystocia", "infertility", "abortion"] },
   { id: "msk", name: "الحركة والعظام", systemId: "msk", symptomIds: ["lameness", "stiffness", "swelling", "joint_swelling", "pain", "reluctance_to_move", "muscle_atrophy", "fracture"] },
-  { id: "senses", name: "العين والأذن والفم", systemId: "eyes", symptomIds: ["ocular_discharge", "eye_redness", "epiphora", "blepharospasm", "corneal_opacity", "blindness", "third_eyelid", "anisocoria", "ear_discharge", "otitis_externa", "head_shaking", "aural_hematoma", "drooling", "halitosis", "gingivitis", "dental_tartar", "oral_ulcer", "oral_mass"] },
+  { id: "eyes", name: "العين", systemId: "eyes", symptomIds: ["ocular_discharge", "eye_redness", "epiphora", "blepharospasm", "corneal_opacity", "blindness", "third_eyelid", "anisocoria"] },
+  { id: "ear", name: "الأذن", systemId: "ear", symptomIds: ["ear_discharge", "otitis_externa", "head_shaking", "aural_hematoma"] },
+  { id: "mouth", name: "الفم والأسنان", systemId: "dental", symptomIds: ["drooling", "halitosis", "gingivitis", "dental_tartar", "oral_ulcer", "oral_mass"] },
   { id: "neuro", name: "الجهاز العصبي", systemId: "neuro", symptomIds: ["seizures", "ataxia", "paralysis", "paresis", "head_tilt", "circling", "disorientation", "nystagmus", "head_pressing", "tremor", "hyperesthesia", "behavioral_change", "vocalization"] },
 ];
 
 /** Which category a body-system id belongs to (folds dental/ear/eyes into "senses").
  *  Lets the Anatomy step pre-open the matching symptom category. */
 export function categoryForSystem(system: string): SymptomCategory | undefined {
-  if (system === "dental" || system === "ear" || system === "eyes") return SYMPTOM_CATEGORIES.find((c) => c.id === "senses");
+  if (system === "oral") return SYMPTOM_CATEGORIES.find((c) => c.id === "mouth");
   return SYMPTOM_CATEGORIES.find((c) => c.systemId === system);
 }
 
