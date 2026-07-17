@@ -71,6 +71,50 @@ export const CLINICAL_ICONS: Record<string, GlyphDef> = {
   tremor: { tone: "violet", inner: "<path d=\"M8 5c-1.3 2 1.3 3.5 0 5.5s1.3 3.5 0 5.5\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" /><path d=\"M12 5c-1.3 2 1.3 3.5 0 5.5s1.3 3.5 0 5.5\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" /><path d=\"M16 5c-1.3 2 1.3 3.5 0 5.5s1.3 3.5 0 5.5\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" />" },
 };
 
+// Generic fallback tile so ANY concept id (incl. free-typed "custom:…" signs)
+// still renders a coloured glyph instead of a blank slot.
+const FALLBACK_GLYPH: GlyphDef = { tone: "slate", inner: "<circle cx=\"12\" cy=\"12\" r=\"7.5\" fill=\"currentColor\" opacity=\"0.25\" stroke=\"none\"/><circle cx=\"12\" cy=\"12\" r=\"7.5\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\"/><circle cx=\"12\" cy=\"12\" r=\"2\" fill=\"currentColor\" stroke=\"none\"/>" };
+
+// The expanded descriptive-sign corpus reuses the closest existing glyph (its
+// LABEL differentiates it) so every sign is tiled & coloured without hand-drawing
+// dozens of new icons. Registered onto CLINICAL_ICONS below.
+const ICON_ALIASES: Record<string, string> = {
+  // general
+  hypothermia: "lethargy", weakness: "lethargy", collapse: "lethargy", pale_mucous: "dehydration",
+  weight_gain: "endocrine", polyphagia: "digestive", lymphadenopathy: "swelling", edema: "swelling",
+  // digestive
+  regurgitation: "vomiting", nausea: "vomiting", hematemesis: "bloody_stool", melena: "bloody_stool",
+  tenesmus: "constipation", dysphagia: "drooling", abdominal_pain: "pain", ascites: "abdominal_distension",
+  pica: "digestive", flatulence: "abdominal_distension",
+  // respiratory
+  tachypnea: "dyspnea", open_mouth_breathing: "dyspnea", wheezing: "dyspnea", stertor: "dyspnea",
+  epistaxis: "nasal_discharge", exercise_intolerance: "lethargy",
+  // cardio
+  heart_murmur: "cardio", arrhythmia: "cardio", syncope: "cardio", cyanosis: "cardio", weak_pulse: "cardio",
+  // derm
+  erythema: "skin_lesion", scaling: "skin_lesion", crusting: "skin_lesion", pustules: "skin_lesion",
+  pyoderma: "skin_lesion", wound: "skin_lesion", ectoparasites: "pruritus", skin_odor: "halitosis",
+  hyperpigmentation: "skin_lesion",
+  // urinary
+  pollakiuria: "polyuria", stranguria: "dysuria", urinary_incontinence: "polyuria", oliguria: "dysuria",
+  inappropriate_urination: "polyuria",
+  // reproductive
+  vaginal_discharge: "reproductive", preputial_discharge: "reproductive", mammary_mass: "mass",
+  testicular_swelling: "swelling", dystocia: "reproductive", infertility: "reproductive", abortion: "reproductive",
+  // musculoskeletal
+  stiffness: "msk", joint_swelling: "swelling", reluctance_to_move: "lameness", muscle_atrophy: "weight_loss", fracture: "msk",
+  // eyes / ears / mouth
+  blepharospasm: "eyes", epiphora: "ocular_discharge", corneal_opacity: "eyes", blindness: "eyes",
+  third_eyelid: "eyes", anisocoria: "eyes", head_shaking: "ear", aural_hematoma: "ear", otitis_externa: "ear_discharge",
+  gingivitis: "dental", dental_tartar: "dental", oral_ulcer: "dental", oral_mass: "mass",
+  // neuro
+  paralysis: "neuro", paresis: "neuro", circling: "neuro", disorientation: "neuro", nystagmus: "neuro",
+  head_pressing: "neuro", behavioral_change: "neuro", hyperesthesia: "neuro", vocalization: "neuro",
+};
+for (const [id, base] of Object.entries(ICON_ALIASES)) {
+  if (!CLINICAL_ICONS[id] && CLINICAL_ICONS[base]) CLINICAL_ICONS[id] = CLINICAL_ICONS[base];
+}
+
 const TILE: Record<GlyphTone, string> = {
   sky: "bg-sky-100 text-sky-600 dark:bg-sky-500/15 dark:text-sky-300",
   cyan: "bg-cyan-100 text-cyan-600 dark:bg-cyan-500/15 dark:text-cyan-300",
@@ -102,8 +146,7 @@ export function glyphToneText(tone: GlyphTone): string { return TEXT[tone]; }
 
 /** A clinical concept as a soft, coloured rounded tile with its duotone glyph. */
 export function Glyph({ name, size = 24, className }: { name: string; size?: number; className?: string }) {
-  const def = CLINICAL_ICONS[name];
-  if (!def) return null;
+  const def = CLINICAL_ICONS[name] ?? FALLBACK_GLYPH;
   const inset = Math.round(size * 0.16);
   return (
     <span
@@ -118,7 +161,6 @@ export function Glyph({ name, size = 24, className }: { name: string; size?: num
 
 /** The bare glyph (no tile) — inherits currentColor. For filled contexts. */
 export function GlyphMark({ name, size = 24, className }: { name: string; size?: number; className?: string }) {
-  const def = CLINICAL_ICONS[name];
-  if (!def) return null;
+  const def = CLINICAL_ICONS[name] ?? FALLBACK_GLYPH;
   return <svg viewBox="0 0 24 24" width={size} height={size} className={className} dangerouslySetInnerHTML={{ __html: def.inner }} aria-hidden />;
 }
