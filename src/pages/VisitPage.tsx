@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import {
   ArrowRight, Clock, Check, Plus, NotebookPen, ClipboardList,
   Loader2, Lock, CheckCircle2, Stethoscope, UserRound, RotateCcw, AlertTriangle,
+  Printer, PawPrint, Syringe, ShieldCheck,
 } from "lucide-react";
 import type { Pet, ClinicVisit, PetNote, TreatmentEntry } from "@/types";
 import { repo } from "@/lib/repo";
@@ -13,11 +14,13 @@ import { Modal } from "@/components/Modal";
 import { TreatmentPlan } from "@/components/TreatmentPlan";
 import { DoctorSelect } from "@/components/MedicalEntry";
 import { ClinicalRecordCard } from "@/components/ClinicalRecordCard";
-import { parseClinical } from "@/lib/clinicalRecord";
+import { parseClinical, type ClinicalRecord } from "@/lib/clinicalRecord";
 import { OUTCOMES } from "@/lib/clinicalKnowledge";
 import { GlyphMark, glyphTone, glyphToneText } from "@/lib/clinicalIcons";
 import { visitKindMeta } from "@/lib/visits";
-import { localISO, formatDate, formatNum, cn } from "@/lib/utils";
+import { localISO, formatDate, formatNum, ageFromDOB, cn } from "@/lib/utils";
+import { getClinicName, getClinicLogo } from "@/lib/settings";
+import { openTreatmentSheet, type SheetTreatmentRow } from "@/lib/treatmentSheetPrint";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
 
 const DAY_MARK = "⟦D:";
@@ -36,6 +39,24 @@ const dayShort = (iso: string, lang: string) => {
   const d = new Date(`${iso}T00:00:00`);
   return { wd: d.toLocaleDateString(lang, { weekday: "short" }), dn: formatNum(d.getDate()) };
 };
+
+/** Human age string ("٣ سنة و٤ أشهر" / "8 أشهر") — empty when DOB is unknown. */
+function ageText(dob?: string | null): string {
+  const a = ageFromDOB(dob);
+  if (!a) return "";
+  const parts: string[] = [];
+  if (a.years) parts.push(`${formatNum(a.years)} سنة`);
+  if (a.months) parts.push(`${formatNum(a.months)} شهر`);
+  return parts.join(" و") || "أقل من شهر";
+}
+
+/** Brief diagnosis line from a clinical record ("داء البارفو (شديد) · و٢ آخر"). */
+function diagnosisText(rec: ClinicalRecord | null): string {
+  const dx = rec?.diagnoses ?? [];
+  if (!dx.length) return "";
+  const first = dx[0].disease;
+  return dx.length > 1 ? `${first} · و${formatNum(dx.length - 1)} آخر` : first;
+}
 
 /** Four-state dose status — the semantic system leading vet treatment sheets use. */
 type DoseStatus = "done" | "overdue" | "due" | "upcoming";
@@ -91,7 +112,7 @@ function ProgressRing({ done, total, size = 72 }: { done: number; total: number;
 export default function VisitPage() {
   const { petId, visitId } = useParams<{ petId: string; visitId: string }>();
   const navigate = useNavigate();
-  const { i18n } = useTranslation();
+  const { t, i18n } = useTranslation();
   const lang = i18n.language;
   const { user } = useAuth();
   const toast = useToast();
@@ -216,6 +237,36 @@ export default function VisitPage() {
     playSuccess(); setEndOpen(false); await reload();
   };
 
+  /* ---- Print the paper treatment sheet (ورقة خطة العلاج) — one row per dose ---- */
+  const printSheet = () => {
+    if (!pet || !visit) return;
+    playTap();
+    const rows: SheetTreatmentRow[] = treatments.map((tx) => ({
+      dayTime: [formatDate(tx.day, lang), tx.administered_at ? clockOf(tx.administered_at, lang) : tx.time]
+        .filter(Boolean).join(" · "),
+      treatment: [tx.medication, tx.amount, tx.observations].filter(Boolean).join(" · "),
+      doctor: tx.administered_by || tx.doctor || "",
+      notes: tx.administered_at ? "✓ أُعطيت" : "",
+    }));
+    const ok = openTreatmentSheet({
+      clinicName: getClinicName() || "عيادة بيطرية",
+      logoUrl: getClinicLogo(),
+      lang,
+      pet: {
+        name: pet.name,
+        species: t(`pet.species.${pet.species}`, pet.species),
+        sex: t(`pet.sex.${pet.sex}`, pet.sex),
+        age: ageText(pet.dob),
+        photoUrl: pet.photo_url,
+      },
+      date: formatDate(visit.opened_at, lang),
+      diagnosis: diagnosisText(primary),
+      clinicalTreatments: primary?.treatment?.map((m) => m.name).join("، ") ?? "",
+      rows,
+    });
+    if (!ok) toast.error("تعذّرت الطباعة", "اسمح بالنوافذ المنبثقة ثم أعد المحاولة.");
+  };
+
   if (loading) return <div className="mx-auto max-w-3xl px-4 py-16 text-center text-ink-subtle"><Loader2 className="mx-auto mb-2 animate-spin" /> جارٍ التحميل…</div>;
   if (!visit || !pet) return (
     <div className="mx-auto max-w-3xl px-4 py-16 text-center text-ink-subtle">
@@ -264,6 +315,14 @@ export default function VisitPage() {
           <CheckCircle2 size={17} className="mt-0.5 shrink-0" /><div><b className="font-extrabold">تم إنهاء العلاج</b> — {visit.summary}</div>
         </div>
       )}
+
+      {/* ── Paper-style patient & diagnosis summary (mirrors the clinic's form) ── */}
+      <PaperSummary
+        pet={pet} date={formatDate(visit.opened_at, lang)}
+        speciesLabel={t(`pet.species.${pet.species}`, pet.species)} sexLabel={t(`pet.sex.${pet.sex}`, pet.sex)}
+        diagnosis={diagnosisText(primary)} record={primary}
+        onPrint={printSheet} printable={hasFlowsheet || !!primary}
+      />
 
       {/* ── Agenda timeline — day columns, today expanded ── */}
       {hasFlowsheet && (
@@ -347,6 +406,75 @@ export default function VisitPage() {
       {giveTarget && <GiveModal t={giveTarget} lang={lang} defaultDoctor={user?.full_name ?? ""} ended={ended} onClose={() => setGiveId(null)} onGive={giveDose} onUndo={undoDose} />}
       <EndVisitModal open={endOpen} onClose={() => setEndOpen(false)} onEnd={endVisit} />
     </div>
+  );
+}
+
+/* --------------------------- Paper-style summary -------------------------- */
+/** A compact on-screen mirror of the clinic's paper form header — animal photo,
+ *  brief animal info, and a brief diagnosis — with a one-tap print of the full sheet. */
+function PaperSummary({ pet, date, speciesLabel, sexLabel, diagnosis, record, onPrint, printable }: {
+  pet: Pet; date: string; speciesLabel: string; sexLabel: string;
+  diagnosis: string; record: ClinicalRecord | null; onPrint: () => void; printable: boolean;
+}) {
+  const age = ageText(pet.dob);
+  const weight = pet.current_weight_kg ?? record?.weightKg;
+  const fields: { label: string; value: string }[] = [
+    { label: "اسم الحيوان", value: pet.name },
+    { label: "نوع الحيوان", value: speciesLabel },
+    { label: "الجنس", value: sexLabel },
+    { label: "العمر", value: age || "—" },
+    { label: "التاريخ", value: date },
+  ];
+  const dxWarn = (record?.redFlags?.length ?? 0) > 0 || (record?.zoonotic?.length ?? 0) > 0 || (record?.reportable?.length ?? 0) > 0;
+
+  return (
+    <section className="mt-3 rounded border border-line-strong bg-surface-1 p-4 shadow-card">
+      <div className="mb-3 flex items-center gap-2">
+        <h2 className="flex items-center gap-1.5 text-sm font-extrabold text-ink"><ClipboardList size={16} className="text-brand-600" /> ورقة الحالة</h2>
+        <button type="button" onClick={onPrint} disabled={!printable}
+          className="ms-auto inline-flex items-center gap-2 rounded border border-brand-300 bg-brand-50 px-3.5 py-2 text-xs font-extrabold text-brand-700 transition hover:bg-brand-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-brand-500/30 dark:bg-brand-500/10 dark:text-brand-300">
+          <Printer size={15} /> طباعة خطة العلاج
+        </button>
+      </div>
+
+      <div className="flex flex-col gap-3 sm:flex-row">
+        {/* Photo */}
+        <div className="grid h-28 w-28 shrink-0 place-items-center overflow-hidden rounded border border-line bg-surface-2">
+          {pet.photo_url
+            ? <img src={pet.photo_url} alt={pet.name} className="h-full w-full object-cover" />
+            : <PawPrint size={34} className="text-ink-subtle" />}
+        </div>
+
+        {/* Animal info + diagnosis */}
+        <div className="min-w-0 flex-1 space-y-3">
+          <div className="grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-3 lg:grid-cols-5">
+            {fields.map((f) => (
+              <div key={f.label} className="min-w-0">
+                <div className="text-[10px] font-extrabold uppercase tracking-wide text-ink-subtle">{f.label}</div>
+                <div className="truncate text-sm font-bold text-ink">{f.value}</div>
+              </div>
+            ))}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 border-t border-line pt-3">
+            {diagnosis ? (
+              <span className={cn("inline-flex items-center gap-1.5 rounded px-2.5 py-1 text-xs font-extrabold",
+                dxWarn ? "bg-danger-50 text-danger-700 dark:bg-danger-500/15 dark:text-danger-300" : "bg-brand-50 text-brand-700 dark:bg-brand-500/15 dark:text-brand-300")}>
+                <Stethoscope size={13} /> {diagnosis}{dxWarn && <AlertTriangle size={12} />}
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1.5 rounded bg-surface-2 px-2.5 py-1 text-xs font-bold text-ink-subtle"><Stethoscope size={13} /> لا يوجد تشخيص بعد</span>
+            )}
+            {weight != null && (
+              <span className="inline-flex items-center gap-1.5 rounded border border-line bg-surface-1 px-2.5 py-1 text-xs font-bold text-ink-muted"><ShieldCheck size={13} /> {formatNum(weight)} كغم</span>
+            )}
+            {(record?.treatment?.length ?? 0) > 0 && (
+              <span className="inline-flex items-center gap-1.5 rounded border border-line bg-surface-1 px-2.5 py-1 text-xs font-bold text-ink-muted"><Syringe size={13} /> {formatNum(record!.treatment!.length)} دواء</span>
+            )}
+          </div>
+        </div>
+      </div>
+    </section>
   );
 }
 
