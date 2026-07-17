@@ -33,7 +33,18 @@ const FREQS: { id: string; label: string; short: string; perDay: number }[] = [
   { id: "prn", label: "عند اللزوم", short: "PRN", perDay: 0 },
 ];
 
-interface PlanRow { id: string; name: string; dose: string; mgPerKg?: number; freq: string; days: number; note?: string }
+/** Route of administration — how the drug is given. */
+const ROUTES: { id: string; label: string }[] = [
+  { id: "oral", label: "فموي" },
+  { id: "sc", label: "تحت الجلد" },
+  { id: "im", label: "عضلي" },
+  { id: "iv", label: "وريدي" },
+  { id: "topical", label: "موضعي" },
+  { id: "eye_ear", label: "عين / أذن" },
+];
+const routeLabel = (id?: string) => ROUTES.find((x) => x.id === id)?.label;
+
+interface PlanRow { id: string; name: string; dose: string; mgPerKg?: number; freq: string; days: number; note?: string; route?: string; doseMode?: "weight" | "manual" }
 
 const rid = () => Math.random().toString(36).slice(2);
 const blankRow = (): PlanRow => ({ id: rid(), name: "", dose: "", freq: "2", days: 7 });
@@ -206,7 +217,7 @@ export function TreatmentPlan({
     playTap();
     const added: PlanRow[] = d.protocol.map((p) => {
       const mgkg = parseMgKg(p.dose);
-      return { id: rid(), name: p.drug, dose: mgkg ? "" : p.dose, mgPerKg: mgkg, freq: p.freq, days: p.days, note: p.note };
+      return { id: rid(), name: p.drug, dose: mgkg ? "" : p.dose, mgPerKg: mgkg, doseMode: (mgkg ? "weight" : "manual") as "weight" | "manual", freq: p.freq, days: p.days, note: p.note };
     });
     setRows((rs) => {
       const kept = rs.filter((r) => r.name.trim());
@@ -266,6 +277,7 @@ export function TreatmentPlan({
           r.name.trim(),
           dt || null,
           r.mgPerKg && weight ? `(${formatNum(r.mgPerKg)} mg/kg)` : null,
+          routeLabel(r.route) || null,
           freq,
           r.freq === "prn" ? null : `لمدة ${formatNum(r.days)} يوم`,
           doses ? `(${formatNum(doses)} جرعة)` : null,
@@ -296,7 +308,7 @@ export function TreatmentPlan({
     reportable: reportable.length ? reportable.map((d) => d.name) : undefined,
     pathogens: pickedDiseases.filter((d) => d.latin).map((d) => ({ name: d.name, latin: d.latin! })),
     treatment: filledRows.length
-      ? filledRows.map((r) => ({ name: r.name.trim(), dose: doseText(r) || undefined, freq: FREQS.find((f) => f.id === r.freq)?.label ?? "", days: r.days, doses: dosesOf(r), note: r.note?.trim() || undefined }))
+      ? filledRows.map((r) => ({ name: r.name.trim(), dose: doseText(r) || undefined, freq: FREQS.find((f) => f.id === r.freq)?.label ?? "", days: r.days, doses: dosesOf(r), note: [routeLabel(r.route), r.note?.trim()].filter(Boolean).join(" · ") || undefined }))
       : undefined,
     interactions: interactions.length ? interactions : undefined,
     notes: notes.trim() || undefined,
@@ -718,60 +730,97 @@ function TreatmentStep({
         )}
       </div>
 
-      {/* Drug rows */}
-      <div className="space-y-2.5">
-        {rows.map((r) => {
+      {/* Drug rows — each a clear "prescription card" */}
+      <div className="space-y-3">
+        {rows.map((r, idx) => {
           const doses = dosesOf(r);
           const stk = r.name.trim() ? stockFor(r.name) : undefined;
           const computed = r.mgPerKg && weight ? Math.round(r.mgPerKg * weight * 100) / 100 : undefined;
+          const mode: "weight" | "manual" = r.doseMode ?? (r.dose.trim() && r.mgPerKg === undefined ? "manual" : (weight ? "weight" : "manual"));
+          const doseDisplay = computed !== undefined ? `${formatNum(computed)} mg` : r.dose.trim();
+          const freqLabel = FREQS.find((f) => f.id === r.freq)?.label ?? "";
+          const rx = r.name.trim()
+            ? [doseDisplay || null, routeLabel(r.route) || null, freqLabel, r.freq !== "prn" && r.days ? `لمدة ${formatNum(r.days)} يوم` : null, doses ? `${formatNum(doses)} جرعة` : null].filter(Boolean).join(" · ")
+            : "";
           return (
-            <div key={r.id} className="rounded-2xl border border-line bg-surface-1 p-3">
-              <div className="flex items-center gap-2">
-                <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-brand-50 text-brand-600 dark:bg-brand-500/15"><Pill size={16} /></span>
-                <input value={r.name} onChange={(e) => setRow(r.id, { name: e.target.value })} placeholder="اسم الدواء / العلاج" className="input h-9 flex-1 py-0 text-sm font-semibold" />
-                {stk && <span className="hidden shrink-0 rounded-lg bg-success-50 px-2 py-1 text-[10px] font-bold text-success-700 dark:bg-success-500/15 dark:text-success-300 sm:inline">✓ من المخزون · {formatNum(stk.stock)}</span>}
+            <div key={r.id} className="overflow-hidden rounded-2xl border border-line bg-surface-1 shadow-soft">
+              {/* Name */}
+              <div className="flex items-center gap-2 border-b border-line/70 bg-surface-2/60 p-2.5">
+                <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-brand-600 text-white shadow-soft"><Pill size={17} /></span>
+                <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-brand-100 text-[10px] font-black text-brand-700 dark:bg-brand-500/20 dark:text-brand-300">{formatNum(idx + 1)}</span>
+                <input value={r.name} onChange={(e) => setRow(r.id, { name: e.target.value })} placeholder="اسم الدواء / العلاج" className="input h-9 flex-1 py-0 text-[15px] font-bold" />
+                {stk && <span className="hidden shrink-0 rounded-lg bg-success-50 px-2 py-1 text-[10px] font-bold text-success-700 dark:bg-success-500/15 dark:text-success-300 sm:inline">✓ متوفّر · {formatNum(stk.stock)}</span>}
                 <button type="button" onClick={() => removeRow(r.id)} aria-label="إزالة" className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-ink-subtle transition hover:bg-danger-50 hover:text-danger-600"><X size={15} /></button>
               </div>
 
-              {/* Dose: weight calculator + manual */}
-              <div className="mt-2.5 rounded-xl border border-violet-100 bg-violet-50/60 p-2.5 dark:border-violet-500/20 dark:bg-violet-500/5">
-                <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 text-sm">
-                  <span className="inline-flex items-center gap-1 text-2xs font-extrabold text-violet-600 dark:text-violet-300"><Calculator size={13} /> الجرعة</span>
-                  <input type="number" min={0} step="0.05" inputMode="decimal" value={r.mgPerKg === undefined ? "" : String(r.mgPerKg)}
-                    onChange={(e) => { const v = Number(e.target.value); setRow(r.id, { mgPerKg: e.target.value === "" || Number.isNaN(v) || v <= 0 ? undefined : v }); }}
-                    className="input h-8 w-16 px-1.5 py-0 text-center text-sm font-bold tabular-nums" placeholder="mg/kg" />
-                  <span className="text-2xs font-bold text-ink-subtle">mg/kg</span>
-                  {computed !== undefined ? (
-                    <>
-                      <span className="font-black text-violet-500">× {formatNum(weight!)} كغ =</span>
-                      <span className="rounded-lg bg-violet-600 px-2.5 py-1 text-sm font-extrabold text-white">{formatNum(computed)} mg</span>
-                    </>
+              <div className="space-y-2.5 p-3">
+                {/* Dose — segmented mode toggle then the matching input */}
+                <div className="rounded-xl border border-violet-100 bg-violet-50/60 p-2.5 dark:border-violet-500/20 dark:bg-violet-500/5">
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <span className="inline-flex items-center gap-1 text-2xs font-extrabold text-violet-600 dark:text-violet-300"><Calculator size={13} /> الجرعة</span>
+                    <div className="inline-flex items-center gap-0.5 rounded-full border border-violet-200 bg-surface-1 p-0.5 dark:border-violet-500/30">
+                      <button type="button" onClick={() => { playTap(); setRow(r.id, { doseMode: "weight", dose: "" }); }}
+                        className={cn("rounded-full px-2.5 py-1 text-2xs font-bold transition", mode === "weight" ? "bg-violet-600 text-white shadow-soft" : "text-ink-muted hover:text-ink")}>حسب الوزن</button>
+                      <button type="button" onClick={() => { playTap(); setRow(r.id, { doseMode: "manual", mgPerKg: undefined }); }}
+                        className={cn("rounded-full px-2.5 py-1 text-2xs font-bold transition", mode === "manual" ? "bg-violet-600 text-white shadow-soft" : "text-ink-muted hover:text-ink")}>يدوي</button>
+                    </div>
+                  </div>
+                  {mode === "weight" ? (
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 text-sm">
+                      <input type="number" min={0} step="0.05" inputMode="decimal" value={r.mgPerKg === undefined ? "" : String(r.mgPerKg)}
+                        onChange={(e) => { const v = Number(e.target.value); setRow(r.id, { mgPerKg: e.target.value === "" || Number.isNaN(v) || v <= 0 ? undefined : v }); }}
+                        className="input h-9 w-20 px-1.5 py-0 text-center text-sm font-bold tabular-nums" placeholder="mg/kg" />
+                      <span className="text-2xs font-bold text-ink-subtle">mg/kg</span>
+                      {computed !== undefined ? (
+                        <>
+                          <span className="font-black text-violet-500">× {formatNum(weight!)} كغ =</span>
+                          <span className="rounded-lg bg-violet-600 px-3 py-1.5 text-base font-extrabold text-white">{formatNum(computed)} mg</span>
+                        </>
+                      ) : (
+                        <span className="text-2xs font-semibold text-warn-600 dark:text-warn-300">↑ أدخل وزن الحيوان بالأعلى ليُحسب تلقائياً</span>
+                      )}
+                    </div>
                   ) : (
-                    <>
-                      <span className="text-2xs text-ink-subtle">أو</span>
-                      <input value={r.dose} onChange={(e) => setRow(r.id, { dose: e.target.value })} placeholder="جرعة يدوية (مثال: قطرة)" className="input h-8 flex-1 min-w-[120px] px-2 py-0 text-sm" />
-                    </>
+                    <input value={r.dose} onChange={(e) => setRow(r.id, { dose: e.target.value })} placeholder="اكتب الجرعة (مثال: قرص واحد، ٥ قطرات، 1 مل)" className="input h-9 w-full px-2.5 py-0 text-sm" />
                   )}
                 </div>
-              </div>
 
-              <div className="mt-2.5 flex flex-wrap items-center gap-2">
-                <div className="inline-flex flex-wrap items-center gap-1 rounded-full border border-line bg-surface-2 p-0.5">
-                  {FREQS.map((f) => (
-                    <button key={f.id} type="button" onClick={() => { playTap(); setRow(r.id, { freq: f.id }); }}
-                      className={cn("rounded-full px-2.5 py-1 text-2xs font-bold transition", r.freq === f.id ? "bg-brand-600 text-white shadow-soft" : "text-ink-muted hover:text-ink")}>{f.label}</button>
+                {/* Route of administration */}
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="text-2xs font-bold text-ink-subtle">طريقة الإعطاء:</span>
+                  {ROUTES.map((rt) => (
+                    <button key={rt.id} type="button" onClick={() => { playTap(); setRow(r.id, { route: r.route === rt.id ? undefined : rt.id }); }}
+                      className={cn("rounded-full border px-2.5 py-1 text-2xs font-bold transition", r.route === rt.id ? "border-brand-500 bg-brand-600 text-white shadow-soft" : "border-line bg-surface-2 text-ink-muted hover:border-brand-300")}>{rt.label}</button>
                   ))}
                 </div>
-                {r.freq !== "prn" && (
-                  <label className="inline-flex items-center gap-1.5 text-2xs font-semibold text-ink-muted">
-                    المدة
-                    <input type="number" min={1} max={365} inputMode="numeric" value={r.days === 0 ? "" : String(r.days)} onChange={(e) => setRow(r.id, { days: Math.max(0, Number(e.target.value) || 0) })} className="input h-8 w-16 px-2 py-0 text-center text-sm font-bold tabular-nums" />
-                    يوم
-                  </label>
+
+                {/* Frequency + duration */}
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="inline-flex flex-wrap items-center gap-1 rounded-full border border-line bg-surface-2 p-0.5">
+                    {FREQS.map((f) => (
+                      <button key={f.id} type="button" onClick={() => { playTap(); setRow(r.id, { freq: f.id }); }}
+                        className={cn("rounded-full px-2.5 py-1 text-2xs font-bold transition", r.freq === f.id ? "bg-brand-600 text-white shadow-soft" : "text-ink-muted hover:text-ink")}>{f.label}</button>
+                    ))}
+                  </div>
+                  {r.freq !== "prn" && (
+                    <label className="inline-flex items-center gap-1.5 text-2xs font-semibold text-ink-muted">
+                      المدة
+                      <input type="number" min={1} max={365} inputMode="numeric" value={r.days === 0 ? "" : String(r.days)} onChange={(e) => setRow(r.id, { days: Math.max(0, Number(e.target.value) || 0) })} className="input h-8 w-16 px-2 py-0 text-center text-sm font-bold tabular-nums" />
+                      يوم
+                    </label>
+                  )}
+                  {doses > 0 && <span className="ms-auto inline-flex items-center gap-1 rounded-full bg-success-50 px-2.5 py-1 text-2xs font-bold text-success-700 dark:bg-success-500/15 dark:text-success-300">{formatNum(doses)} جرعة</span>}
+                </div>
+
+                {/* Plain-language prescription line — the doctor reads the full instruction at a glance */}
+                {rx && (
+                  <div className="flex items-start gap-1.5 rounded-xl bg-brand-50 px-3 py-2 text-xs font-semibold leading-relaxed text-brand-800 dark:bg-brand-500/10 dark:text-brand-200">
+                    <Pill size={14} className="mt-0.5 shrink-0" />
+                    <span><span className="font-extrabold">{r.name.trim()}</span> — {rx}</span>
+                  </div>
                 )}
-                {doses > 0 && <span className="ms-auto inline-flex items-center gap-1 rounded-full bg-success-50 px-2.5 py-1 text-2xs font-bold text-success-700 dark:bg-success-500/15 dark:text-success-300">{formatNum(doses)} جرعة</span>}
+                {r.note?.trim() && <div className="text-2xs text-ink-subtle">📝 {r.note}</div>}
               </div>
-              {r.note?.trim() && <div className="mt-2 text-2xs text-ink-subtle">📝 {r.note}</div>}
             </div>
           );
         })}
