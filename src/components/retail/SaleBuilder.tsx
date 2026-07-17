@@ -594,6 +594,20 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
           );
         } catch (e) { toast.error(t("retail.medSyncFailed", "تم تسجيل البيع، لكن تعذّر تحديث السجل الطبي للحيوان"), e instanceof Error ? e.message : undefined); }
       }
+      // The doctor's invoice note is ALSO filed into every attached patient's
+      // clinical notes (سجل الحيوان → الملاحظات), keyed by pet id. This makes the
+      // note appear in the animal's record reliably — cloud-backed and independent
+      // of the invoice-notes column, so it shows even before that migration is run.
+      const notedPets = salePets.filter((p) => p.id);
+      if (saleNotes.trim() && notedPets.length) {
+        const text = `🧾 ${t("retail.notesLabel", "ملاحظات")} — ${saleNotes.trim()}`;
+        try {
+          await withTimeout(
+            Promise.all(notedPets.map((p) => repo.addPetNote({ pet_id: p.id as string, note_text: text, author_name: user?.full_name ?? null }))),
+            12000,
+          );
+        } catch { /* non-fatal: the sale is already recorded */ }
+      }
     } catch (e) {
       playWarning();
       toast.error(describeDbError(e, t), e instanceof Error ? e.message : undefined);
