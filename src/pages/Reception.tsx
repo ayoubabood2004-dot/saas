@@ -133,9 +133,10 @@ export function Reception() {
 
   const clinicId = user?.clinic_id ?? user?.id;
 
-  // Branch lens: with 2+ branches, the calendar shows only the active branch's
-  // cases (rows with branch_id NULL belong to the main branch). "كل الفروع" —
-  // and every single-branch clinic — sees everything, exactly as before.
+  // Branch lens: with 2+ branches, the calendar shows the active branch's cases
+  // PLUS any unassigned case (branch_id NULL) — so cases added before branches
+  // existed, or while on "كل الفروع", never vanish when a branch is picked. "كل
+  // الفروع" — and every single-branch clinic — sees everything, exactly as before.
   const { branches, active: activeBranch } = useBranchState(clinicId);
   const branchAdmissions = useMemo(
     () => (activeBranch === "all" || branches.length < 2

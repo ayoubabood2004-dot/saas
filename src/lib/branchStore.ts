@@ -91,11 +91,14 @@ export const branchStore = {
 };
 
 /** Does a row (by its branch_id) belong to the active selection?
- *  NULL rows belong to the MAIN branch. "all" matches everything. */
-export function matchesBranch(rowBranchId: string | null | undefined, active: ActiveBranch, branches: Branch[]): boolean {
+ *  - "all" matches everything.
+ *  - A row with NO branch (branch_id NULL) is UNASSIGNED and shows under EVERY
+ *    branch — so cases created before branches existed, or added while on "كل
+ *    الفروع", never disappear when a specific branch is selected.
+ *  - A branch-tagged row shows only under its own branch. */
+export function matchesBranch(rowBranchId: string | null | undefined, active: ActiveBranch, _branches: Branch[]): boolean {
   if (active === "all") return true;
-  const main = branches.find((b) => b.is_main);
-  if (active === main?.id) return rowBranchId == null || rowBranchId === active;
+  if (rowBranchId == null) return true; // unassigned → visible everywhere (never lost)
   return rowBranchId === active;
 }
 
