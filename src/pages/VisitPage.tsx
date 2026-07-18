@@ -4,7 +4,7 @@ import { useTranslation } from "react-i18next";
 import {
   ArrowRight, Clock, Check, Plus, NotebookPen, ClipboardList,
   Loader2, Lock, CheckCircle2, Stethoscope, UserRound, RotateCcw, AlertTriangle,
-  Printer, Syringe, ShieldCheck,
+  Printer, Syringe, ShieldCheck, Pill,
 } from "lucide-react";
 import type { Pet, ClinicVisit, PetNote, TreatmentEntry } from "@/types";
 import { repo } from "@/lib/repo";
@@ -16,6 +16,7 @@ import { DoctorSelect } from "@/components/MedicalEntry";
 import { ClinicalRecordCard } from "@/components/ClinicalRecordCard";
 import { parseClinical, type ClinicalRecord } from "@/lib/clinicalRecord";
 import { OUTCOMES } from "@/lib/clinicalKnowledge";
+import { MED_CATALOG, getClinicMeds } from "@/lib/meds";
 import { GlyphMark, glyphTone, glyphToneText } from "@/lib/clinicalIcons";
 import { visitKindMeta } from "@/lib/visits";
 import { localISO, formatDate, formatNum, ageFromDOB, cn } from "@/lib/utils";
@@ -131,6 +132,8 @@ export default function VisitPage() {
   const [noteDay, setNoteDay] = useState<string | null>(null);
   const [endOpen, setEndOpen] = useState(false);
   const [giveId, setGiveId] = useState<string | null>(null);
+  const [addDrugOpen, setAddDrugOpen] = useState(false);
+  const [addDrugDay, setAddDrugDay] = useState<string>(() => localISO(new Date()));
 
   const reload = useCallback(async () => {
     if (!petId || !visitId) return;
@@ -242,6 +245,22 @@ export default function VisitPage() {
     playSuccess(); setEndOpen(false); await reload();
   };
 
+  /* ---- Add a single ad-hoc medication for one day (بشكل مفرد) ---- */
+  const openAddDrug = (day?: string) => { playTap(); setAddDrugDay(day ?? localISO(new Date())); setAddDrugOpen(true); };
+  const addDrug = async (d: { day: string; medication: string; amount: string; freq: string; doctor: string; givenNow: boolean }) => {
+    if (!visit || !d.medication.trim()) return;
+    const nowISO = new Date().toISOString();
+    const by = d.doctor || (user?.full_name ?? undefined);
+    await repo.addTreatment({
+      pet_id: visit.pet_id, visit_id: visit.id, day: d.day,
+      medication: d.medication.trim(), amount: d.amount.trim(), time: "",
+      observations: d.freq.trim(), doctor: by,
+      administered_at: d.givenNow ? nowISO : undefined,
+      administered_by: d.givenNow ? by : undefined,
+    });
+    playSuccess(); setAddDrugOpen(false); await reload();
+  };
+
   /* ---- Print the paper treatment sheet (ورقة خطة العلاج) — one row per dose ---- */
   const printSheet = () => {
     if (!pet || !visit) return;
@@ -349,6 +368,7 @@ export default function VisitPage() {
             todayRowRef={todayRowRef}
             onGive={(tx) => { playTap(); setGiveId(tx.id); }}
             onAddNote={(day) => { playTap(); setNoteText(""); setNoteDay(day); setNoteOpen(true); }}
+            onAddDrug={openAddDrug}
           />
         </div>
       )}
@@ -361,6 +381,9 @@ export default function VisitPage() {
               <ClipboardList size={16} /> {clinicalNotes.length ? "تعديل التشخيص وخطة العلاج" : "التشخيص وخطة العلاج"}
             </button>
           )}
+          <button onClick={() => openAddDrug()} className="inline-flex items-center gap-2 rounded border border-brand-300 bg-brand-50 px-4 py-2.5 text-sm font-extrabold text-brand-700 transition hover:bg-brand-100 dark:border-brand-500/30 dark:bg-brand-500/10 dark:text-brand-300">
+            <Pill size={16} /> إضافة دواء
+          </button>
           <button onClick={() => { playTap(); setNoteText(""); setNoteDay(null); setNoteOpen(true); }} className="inline-flex items-center gap-2 rounded border border-line-strong bg-surface-1 px-4 py-2.5 text-sm font-bold text-ink-muted transition hover:border-brand-300 hover:text-ink">
             <NotebookPen size={16} /> إضافة ملاحظة
           </button>
@@ -407,6 +430,7 @@ export default function VisitPage() {
       </Modal>
 
       {giveTarget && <GiveModal t={giveTarget} lang={lang} defaultDoctor={user?.full_name ?? ""} ended={ended} onClose={() => setGiveId(null)} onGive={giveDose} onUndo={undoDose} />}
+      <AddDrugModal open={addDrugOpen} day={addDrugDay} lang={lang} defaultDoctor={user?.full_name ?? ""} onClose={() => setAddDrugOpen(false)} onAdd={addDrug} />
       <EndVisitModal open={endOpen} onClose={() => setEndOpen(false)} onEnd={endVisit} />
     </div>
   );
@@ -481,10 +505,10 @@ function PaperSummary({ pet, date, speciesLabel, sexLabel, diagnosis, record, on
  * one row per dose. Doctors used to the paper read it the same way; giving a dose
  * fills in the treating doctor + time just as they would write it by hand.
  */
-function TreatmentSheetTable({ dayGroups, todayISO, ended, lang, dayNotes, onGive, onAddNote, todayRowRef }: {
+function TreatmentSheetTable({ dayGroups, todayISO, ended, lang, dayNotes, onGive, onAddNote, onAddDrug, todayRowRef }: {
   dayGroups: [string, TreatmentEntry[]][]; todayISO: string; ended: boolean; lang: string;
   dayNotes: Map<string, PetNote[]>;
-  onGive: (t: TreatmentEntry) => void; onAddNote: (day: string) => void;
+  onGive: (t: TreatmentEntry) => void; onAddNote: (day: string) => void; onAddDrug: (day: string) => void;
   todayRowRef?: React.Ref<HTMLTableRowElement>;
 }) {
   const th = "border-b-2 border-line-strong bg-surface-2 px-3 py-2.5 text-start text-xs font-extrabold text-ink";
@@ -520,6 +544,12 @@ function TreatmentSheetTable({ dayGroups, todayISO, ended, lang, dayNotes, onGiv
                     <div className="mt-1 ps-4 text-xs font-bold tabular-nums text-ink-subtle" dir="ltr">
                       {t.administered_at ? clockOf(t.administered_at, lang) : (t.time || "—")}
                     </div>
+                    {first && !ended && (
+                      <button type="button" onClick={() => onAddDrug(day)}
+                        className="mt-1.5 inline-flex items-center gap-1 text-[11px] font-bold text-brand-600 transition hover:text-brand-700 dark:text-brand-300">
+                        <Plus size={11} /> دواء
+                      </button>
+                    )}
                   </td>
                   {/* العلاج */}
                   <td className="border-e border-line px-3 py-2.5 align-top">
@@ -607,6 +637,84 @@ function GiveModal({ t, lang, defaultDoctor, ended, onClose, onGive, onUndo }: {
             <Button size="lg" className="w-full" leftIcon={<Check size={18} />} onClick={confirm}>تأكيد الإعطاء</Button>
           </>
         )}
+      </div>
+    </Modal>
+  );
+}
+
+/* ------------------------------ Add-drug modal ---------------------------- */
+/** Add a SINGLE ad-hoc medication for one day — for when the doctor decides to give
+ *  an extra drug on the spot, without reopening the full diagnosis & plan. */
+function AddDrugModal({ open, day, defaultDoctor, onClose, onAdd }: {
+  open: boolean; day: string; lang: string; defaultDoctor: string;
+  onClose: () => void;
+  onAdd: (d: { day: string; medication: string; amount: string; freq: string; doctor: string; givenNow: boolean }) => void | Promise<void>;
+}) {
+  const [med, setMed] = useState("");
+  const [amount, setAmount] = useState("");
+  const [freq, setFreq] = useState("");
+  const [doctor, setDoctor] = useState(defaultDoctor);
+  const [d, setD] = useState(day);
+  const [givenNow, setGivenNow] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  // Reset the form each time the modal opens (for a fresh day/doctor).
+  useEffect(() => {
+    if (open) { setMed(""); setAmount(""); setFreq(""); setDoctor(defaultDoctor); setD(day); setGivenNow(false); setBusy(false); }
+  }, [open, day, defaultDoctor]);
+
+  // Drug-name suggestions: the built-in catalogue + the clinic's own medications.
+  const drugNames = useMemo(() => {
+    const set = new Set<string>();
+    for (const c of MED_CATALOG) if (c.type !== "Vaccines") for (const it of c.items) set.add(it);
+    for (const m of getClinicMeds()) set.add(m.name);
+    return [...set].sort((a, b) => a.localeCompare(b));
+  }, [open]);
+
+  const submit = async () => {
+    if (!med.trim() || busy) return;
+    setBusy(true);
+    try { await onAdd({ day: d, medication: med, amount, freq, doctor, givenNow }); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <Modal open={open} onClose={onClose} title="إضافة دواء لهذا اليوم">
+      <div className="space-y-3">
+        <div>
+          <div className="mb-1.5 flex items-center gap-1.5 text-xs font-bold text-ink-muted"><Pill size={13} /> اسم الدواء</div>
+          <input list="vp-drug-list" value={med} onChange={(e) => setMed(e.target.value)} autoFocus
+            onKeyDown={(e) => { if (e.key === "Enter" && med.trim()) submit(); }}
+            placeholder="اكتب أو اختر من القائمة…" className="input h-11 w-full text-base" />
+          <datalist id="vp-drug-list">{drugNames.map((n) => <option key={n} value={n} />)}</datalist>
+        </div>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div>
+            <div className="mb-1.5 text-xs font-bold text-ink-muted">الجرعة / الكمية</div>
+            <input value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="مثال: ١٦٠ ملغ" className="input h-11 w-full" />
+          </div>
+          <div>
+            <div className="mb-1.5 text-xs font-bold text-ink-muted">التكرار / ملاحظة</div>
+            <input value={freq} onChange={(e) => setFreq(e.target.value)} placeholder="مثال: مرتين يومياً" className="input h-11 w-full" />
+          </div>
+        </div>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div>
+            <div className="mb-1.5 flex items-center gap-1.5 text-xs font-bold text-ink-muted"><Clock size={13} /> اليوم</div>
+            <input type="date" value={d} onChange={(e) => setD(e.target.value)} dir="ltr" className="input h-11 w-full tabular-nums" />
+          </div>
+          <div>
+            <div className="mb-1.5 flex items-center gap-1.5 text-xs font-bold text-ink-muted"><UserRound size={13} /> الطبيب</div>
+            <DoctorSelect value={doctor} onChange={setDoctor} placeholder="اختر الطبيب…" />
+          </div>
+        </div>
+        <label className="flex cursor-pointer items-center gap-2 rounded border border-line bg-surface-2 px-3 py-2.5 text-sm font-bold text-ink">
+          <input type="checkbox" checked={givenNow} onChange={(e) => setGivenNow(e.target.checked)} className="h-4 w-4 accent-success-600" />
+          <Check size={15} className="text-success-600" /> تم إعطاؤه الآن (تسجيل الجرعة كمُعطاة)
+        </label>
+        <Button size="lg" className="w-full" leftIcon={<Plus size={18} />} disabled={!med.trim()} loading={busy} onClick={submit}>
+          إضافة الدواء
+        </Button>
       </div>
     </Modal>
   );
