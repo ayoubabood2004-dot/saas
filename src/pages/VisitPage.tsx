@@ -36,8 +36,6 @@ const addDaysISO = (iso: string, n: number) => localISO(new Date(new Date(iso).g
 const pad = (n: number) => (n < 10 ? "0" : "") + n;
 const nowHHMM = () => { const d = new Date(); return `${pad(d.getHours())}:${pad(d.getMinutes())}`; };
 const clockOf = (iso: string, lang: string) => new Date(iso).toLocaleTimeString(lang, { hour: "2-digit", minute: "2-digit" });
-/** The day as a single word — the weekday name ("السبت") — so rows of one day differ only by time. */
-const weekdayWord = (iso: string, lang: string) => new Date(`${iso}T00:00:00`).toLocaleDateString(lang, { weekday: "long" });
 
 /** Human age string ("٣ سنة و٤ أشهر" / "8 أشهر") — empty when DOB is unknown. */
 function ageText(dob?: string | null): string {
@@ -267,13 +265,18 @@ export default function VisitPage() {
   const printSheet = () => {
     if (!pet || !visit) return;
     playTap();
-    const rows: SheetTreatmentRow[] = treatments.map((tx) => ({
-      dayTime: [formatDate(tx.day, lang), tx.administered_at ? clockOf(tx.administered_at, lang) : tx.time]
-        .filter(Boolean).join(" · "),
-      treatment: [tx.medication, tx.amount, tx.observations].filter(Boolean).join(" · "),
-      doctor: tx.administered_by || tx.doctor || "",
-      notes: tx.administered_at ? "✓ أُعطيت" : "",
-    }));
+    // Group by day so the date is printed once per day; each dose row shows only its time.
+    const rows: SheetTreatmentRow[] = dayGroups.flatMap(([day, dayRows]) =>
+      dayRows.map((tx, i) => {
+        const time = tx.administered_at ? clockOf(tx.administered_at, lang) : tx.time;
+        return {
+          dayTime: [i === 0 ? formatDate(day, lang) : "", time].filter(Boolean).join(" — "),
+          treatment: [tx.medication, tx.amount, tx.observations].filter(Boolean).join(" · "),
+          doctor: tx.administered_by || tx.doctor || "",
+          notes: tx.administered_at ? "✓ أُعطيت" : "",
+        };
+      }),
+    );
     const socials = getClinicSocials();
     const ok = openTreatmentSheet({
       clinicName: getClinicName() || user?.full_name || "عيادة بيطرية",
@@ -536,15 +539,19 @@ function TreatmentSheetTable({ dayGroups, todayISO, ended, lang, dayNotes, onGiv
               return (
                 <tr key={t.id} ref={isToday && first ? todayRowRef : undefined}
                   className={cn(m.row, first ? "border-t-2 border-line-strong" : "border-t border-line")}>
-                  {/* اليوم والساعة */}
+                  {/* اليوم والساعة — the date shows once per day; each dose row differs only by its time */}
                   <td className="border-e border-line px-3 py-2.5 align-top">
+                    {first && (
+                      <div className="mb-1.5 flex items-center gap-1.5">
+                        <span className="text-sm font-black text-ink">{formatDate(day, lang)}</span>
+                        {isToday && <span className="rounded bg-brand-600 px-1.5 py-0.5 text-[9px] font-black text-white">اليوم</span>}
+                      </div>
+                    )}
                     <div className="flex items-center gap-1.5">
                       <span className={cn("inline-block h-2.5 w-2.5 shrink-0 rounded-sm", m.bar)} />
-                      <span className="text-sm font-black text-ink">{weekdayWord(day, lang)}</span>
-                      {isToday && <span className="rounded bg-brand-600 px-1.5 py-0.5 text-[9px] font-black text-white">اليوم</span>}
-                    </div>
-                    <div className="mt-1 ps-4 text-xs font-bold tabular-nums text-ink-subtle" dir="ltr">
-                      {t.administered_at ? clockOf(t.administered_at, lang) : (t.time || "—")}
+                      <span className="text-xs font-bold tabular-nums text-ink-subtle" dir="ltr">
+                        {t.administered_at ? clockOf(t.administered_at, lang) : (t.time || "—")}
+                      </span>
                     </div>
                     {first && !ended && (
                       <button type="button" onClick={() => onAddDrug(day)}
