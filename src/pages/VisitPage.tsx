@@ -14,14 +14,12 @@ import { Modal } from "@/components/Modal";
 import { TreatmentPlan } from "@/components/TreatmentPlan";
 import { DoctorSelect } from "@/components/MedicalEntry";
 import { ClinicalRecordCard } from "@/components/ClinicalRecordCard";
-import { PetAvatar } from "@/components/PetAvatar";
 import { parseClinical, type ClinicalRecord } from "@/lib/clinicalRecord";
 import { OUTCOMES } from "@/lib/clinicalKnowledge";
 import { GlyphMark, glyphTone, glyphToneText } from "@/lib/clinicalIcons";
 import { visitKindMeta } from "@/lib/visits";
 import { localISO, formatDate, formatNum, ageFromDOB, cn } from "@/lib/utils";
 import { getClinicName, getClinicLogo, getClinicSocials } from "@/lib/settings";
-import { silhouetteDataUrl } from "@/lib/silhouettes";
 import { openTreatmentSheet, type SheetTreatmentRow } from "@/lib/treatmentSheetPrint";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
 
@@ -47,6 +45,11 @@ function ageText(dob?: string | null): string {
   if (a.months) parts.push(`${formatNum(a.months)} شهر`);
   return parts.join(" و") || "أقل من شهر";
 }
+
+/** Singular Arabic species name for a single patient ("كلب" — not the plural "كلاب"). */
+const SPECIES_SINGULAR_AR: Record<string, string> = {
+  dog: "كلب", cat: "قطة", horse: "حصان", cow: "بقرة", bird: "طائر", rabbit: "أرنب", other: "أخرى",
+};
 
 /** Brief diagnosis line from a clinical record ("داء البارفو (شديد) · و٢ آخر"). */
 function diagnosisText(rec: ClinicalRecord | null): string {
@@ -182,6 +185,9 @@ export default function VisitPage() {
   const giveTarget = treatments.find((t) => t.id === giveId) ?? null;
 
   const isIllness = visit?.kind === "illness";
+  // Singular species name for a single patient (Arabic uses a plural in the catalog).
+  const speciesSingular = (species: string) =>
+    lang.startsWith("ar") ? SPECIES_SINGULAR_AR[species] ?? t(`pet.species.${species}`, species) : t(`pet.species.${species}`, species);
   const primary = clinicalNotes.length ? clinicalNotes[clinicalNotes.length - 1].record : null;
   const dxName = primary?.diagnoses?.[0]?.disease;
   const dxWarn = (primary?.redFlags?.length ?? 0) > 0 || (primary?.zoonotic?.length ?? 0) > 0 || (primary?.reportable?.length ?? 0) > 0;
@@ -258,12 +264,9 @@ export default function VisitPage() {
       lang,
       pet: {
         name: pet.name,
-        species: t(`pet.species.${pet.species}`, pet.species),
+        species: speciesSingular(pet.species),
         sex: t(`pet.sex.${pet.sex}`, pet.sex),
         age: ageText(pet.dob),
-        // Real photo when present; otherwise a self-contained species silhouette
-        // that always prints (an external image would break when the clinic is offline).
-        photoUrl: pet.photo_url || silhouetteDataUrl(pet.species),
       },
       date: formatDate(visit.opened_at, lang),
       diagnosis: diagnosisText(primary),
@@ -325,7 +328,7 @@ export default function VisitPage() {
       {/* ── Paper-style patient & diagnosis summary (mirrors the clinic's form) ── */}
       <PaperSummary
         pet={pet} date={formatDate(visit.opened_at, lang)}
-        speciesLabel={t(`pet.species.${pet.species}`, pet.species)} sexLabel={t(`pet.sex.${pet.sex}`, pet.sex)}
+        speciesLabel={speciesSingular(pet.species)} sexLabel={t(`pet.sex.${pet.sex}`, pet.sex)}
         diagnosis={diagnosisText(primary)} record={primary}
         onPrint={printSheet} printable={hasFlowsheet || !!primary}
       />
@@ -437,12 +440,9 @@ function PaperSummary({ pet, date, speciesLabel, sexLabel, diagnosis, record, on
         </button>
       </div>
 
-      <div className="flex flex-col gap-3 sm:flex-row">
-        {/* Photo — the pet's own picture, or a default image of its species */}
-        <PetAvatar pet={pet} photoFallback size={112} className="!rounded border border-line shadow-sm" />
-
+      <div className="space-y-3">
         {/* Animal info + diagnosis */}
-        <div className="min-w-0 flex-1 space-y-3">
+        <div>
           <div className="grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-3 lg:grid-cols-5">
             {fields.map((f) => (
               <div key={f.label} className="min-w-0">
@@ -452,7 +452,7 @@ function PaperSummary({ pet, date, speciesLabel, sexLabel, diagnosis, record, on
             ))}
           </div>
 
-          <div className="flex flex-wrap items-center gap-2 border-t border-line pt-3">
+          <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-line pt-3">
             {diagnosis ? (
               <span className={cn("inline-flex items-center gap-1.5 rounded px-2.5 py-1 text-xs font-extrabold",
                 dxWarn ? "bg-danger-50 text-danger-700 dark:bg-danger-500/15 dark:text-danger-300" : "bg-brand-50 text-brand-700 dark:bg-brand-500/15 dark:text-brand-300")}>

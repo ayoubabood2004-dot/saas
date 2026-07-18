@@ -25,7 +25,7 @@ export interface TreatmentSheetOptions {
   instagram?: string | null;
   lang: string;
   /** Animal header fields. */
-  pet: { name: string; species: string; sex: string; age: string; photoUrl?: string | null };
+  pet: { name: string; species: string; sex: string; age: string };
   date: string;
   /** Brief diagnosis block (blank strings render as a fillable dotted line, like the paper). */
   vaccinated?: string;      // ملقح أم لا
@@ -82,10 +82,6 @@ export function buildTreatmentSheetHTML(o: TreatmentSheetOptions): string {
     )
     .join("");
 
-  const photo = o.pet.photoUrl
-    ? `<div class="photo"><img src="${esc(String(o.pet.photoUrl))}" alt=""/></div>`
-    : `<div class="photo empty"><span>صورة الحيوان</span></div>`;
-
   const animalCell = (label: string, value: string) =>
     `<div class="af"><span class="al">${esc(label)}</span><span class="av">${esc(value) || "—"}</span></div>`;
 
@@ -119,22 +115,17 @@ export function buildTreatmentSheetHTML(o: TreatmentSheetOptions): string {
     /* Owner-liability consent strip */
     .consent{display:flex;align-items:flex-start;gap:8px;background:#eff5ff;border:1px solid #cfe0fb;border-radius:9px;padding:8px 11px;font-size:11px;font-weight:600;line-height:1.65;color:#1e3a5f}
 
-    /* Patient card */
-    .patient{display:flex;gap:10px}
-    .pinfo{flex:1;min-width:0;display:flex;flex-direction:column;gap:8px}
+    /* Patient info */
     .animal{display:grid;grid-template-columns:repeat(5,1fr);gap:1px;background:#e2e8f0;border:1px solid #e2e8f0;border-radius:9px;overflow:hidden}
     .af{background:#f8fafc;padding:7px 9px;min-width:0;display:flex;flex-direction:column;gap:2px}
     .al{font-size:9px;font-weight:800;letter-spacing:.3px;color:#94a3b8;text-transform:uppercase}
     .av{font-size:13px;font-weight:700;color:#0b1220;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-    .dx{flex:1;background:#f8fafc;border:1px solid #e2e8f0;border-radius:9px;padding:9px 11px;display:flex;flex-direction:column;gap:7px}
+    .dx{background:#f8fafc;border:1px solid #e2e8f0;border-radius:9px;padding:10px 12px;display:flex;flex-direction:column;gap:8px}
     .dxf{display:flex;align-items:center;gap:8px}
-    .dxl{font-size:11px;font-weight:800;color:#334155;white-space:nowrap}
+    .dxl{font-size:11px;font-weight:800;color:#334155;white-space:nowrap;min-width:96px}
     .dxv{flex:1;font-size:12px;font-weight:600;color:#0b1220;min-height:15px;border-bottom:1px dotted #b6c2d1;padding-bottom:2px}
     .dxv.has{border-bottom-color:transparent}
     .dxv.hi{border-bottom:none;color:#0b4ea3;font-weight:800;background:#e7f0fe;border-radius:5px;padding:2px 8px;flex:0 1 auto}
-    .photo{width:40mm;min-height:47mm;border:1px solid #e2e8f0;border-radius:9px;overflow:hidden;display:grid;place-items:center;background:#f8fafc}
-    .photo img{width:100%;height:100%;object-fit:cover}
-    .photo.empty span{font-size:10px;font-weight:600;color:#94a3b8}
 
     /* Treatment table */
     .tx-title{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:800;color:#0b1220;margin:2px 0 -2px}
@@ -195,17 +186,12 @@ export function buildTreatmentSheetHTML(o: TreatmentSheetOptions): string {
         ${animalCell("التاريخ", o.date)}
       </div>
 
-      <div class="patient">
-        <div class="pinfo">
-          <div class="dx">
-            ${dxField("ملقّح أم لا", o.vaccinated)}
-            ${dxField("الأمراض السابقة", o.priorDiseases)}
-            ${dxField("المراجعات السابقة", o.priorVisits)}
-            ${dxField("العلاجات السريرية", o.clinicalTreatments)}
-            ${dxField("التشخيص", o.diagnosis, true)}
-          </div>
-        </div>
-        ${photo}
+      <div class="dx">
+        ${dxField("ملقّح أم لا", o.vaccinated)}
+        ${dxField("الأمراض السابقة", o.priorDiseases)}
+        ${dxField("المراجعات السابقة", o.priorVisits)}
+        ${dxField("العلاجات السريرية", o.clinicalTreatments)}
+        ${dxField("التشخيص", o.diagnosis, true)}
       </div>
 
       <div class="tx-title"><span class="bar"></span> خطة العلاج اليومية</div>
