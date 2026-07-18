@@ -4,7 +4,7 @@ import { useTranslation } from "react-i18next";
 import {
   ArrowRight, Clock, Check, Plus, NotebookPen, ClipboardList,
   Loader2, Lock, CheckCircle2, Stethoscope, UserRound, RotateCcw, AlertTriangle,
-  Printer, PawPrint, Syringe, ShieldCheck,
+  Printer, Syringe, ShieldCheck,
 } from "lucide-react";
 import type { Pet, ClinicVisit, PetNote, TreatmentEntry } from "@/types";
 import { repo } from "@/lib/repo";
@@ -14,12 +14,14 @@ import { Modal } from "@/components/Modal";
 import { TreatmentPlan } from "@/components/TreatmentPlan";
 import { DoctorSelect } from "@/components/MedicalEntry";
 import { ClinicalRecordCard } from "@/components/ClinicalRecordCard";
+import { PetAvatar } from "@/components/PetAvatar";
 import { parseClinical, type ClinicalRecord } from "@/lib/clinicalRecord";
 import { OUTCOMES } from "@/lib/clinicalKnowledge";
 import { GlyphMark, glyphTone, glyphToneText } from "@/lib/clinicalIcons";
 import { visitKindMeta } from "@/lib/visits";
 import { localISO, formatDate, formatNum, ageFromDOB, cn } from "@/lib/utils";
 import { getClinicName, getClinicLogo } from "@/lib/settings";
+import { silhouetteDataUrl } from "@/lib/silhouettes";
 import { openTreatmentSheet, type SheetTreatmentRow } from "@/lib/treatmentSheetPrint";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
 
@@ -35,10 +37,6 @@ const addDaysISO = (iso: string, n: number) => localISO(new Date(new Date(iso).g
 const pad = (n: number) => (n < 10 ? "0" : "") + n;
 const nowHHMM = () => { const d = new Date(); return `${pad(d.getHours())}:${pad(d.getMinutes())}`; };
 const clockOf = (iso: string, lang: string) => new Date(iso).toLocaleTimeString(lang, { hour: "2-digit", minute: "2-digit" });
-const dayShort = (iso: string, lang: string) => {
-  const d = new Date(`${iso}T00:00:00`);
-  return { wd: d.toLocaleDateString(lang, { weekday: "short" }), dn: formatNum(d.getDate()) };
-};
 
 /** Human age string ("٣ سنة و٤ أشهر" / "8 أشهر") — empty when DOB is unknown. */
 function ageText(dob?: string | null): string {
@@ -127,6 +125,7 @@ export default function VisitPage() {
   const [planBusy, setPlanBusy] = useState(false);
   const [noteOpen, setNoteOpen] = useState(false);
   const [noteText, setNoteText] = useState("");
+  const [noteDay, setNoteDay] = useState<string | null>(null);
   const [endOpen, setEndOpen] = useState(false);
   const [giveId, setGiveId] = useState<string | null>(null);
 
@@ -149,9 +148,9 @@ export default function VisitPage() {
 
   // Bring the current day into view — with a multi-day course the "today" column
   // is the one the doctor needs, and it may otherwise sit off-screen.
-  const todayColRef = useRef<HTMLDivElement | null>(null);
+  const todayRowRef = useRef<HTMLTableRowElement | null>(null);
   useEffect(() => {
-    todayColRef.current?.scrollIntoView({ inline: "center", block: "nearest" });
+    todayRowRef.current?.scrollIntoView({ block: "nearest" });
   }, [loading, treatments.length]);
 
   const ended = visit?.status === "ended";
@@ -257,7 +256,9 @@ export default function VisitPage() {
         species: t(`pet.species.${pet.species}`, pet.species),
         sex: t(`pet.sex.${pet.sex}`, pet.sex),
         age: ageText(pet.dob),
-        photoUrl: pet.photo_url,
+        // Real photo when present; otherwise a self-contained species silhouette
+        // that always prints (an external image would break when the clinic is offline).
+        photoUrl: pet.photo_url || silhouetteDataUrl(pet.species),
       },
       date: formatDate(visit.opened_at, lang),
       diagnosis: diagnosisText(primary),
@@ -324,29 +325,23 @@ export default function VisitPage() {
         onPrint={printSheet} printable={hasFlowsheet || !!primary}
       />
 
-      {/* ── Agenda timeline — day columns, today expanded ── */}
+      {/* ── Daily treatment plan — laid out exactly like the clinic's paper sheet ── */}
       {hasFlowsheet && (
         <div className="mt-3">
-          <div className="mb-2 flex items-center gap-2">
-            <h2 className="flex items-center gap-1.5 text-sm font-extrabold text-ink">جدول العلاج اليومي</h2>
+          <div className="mb-2 flex flex-wrap items-center gap-2">
+            <h2 className="flex items-center gap-1.5 text-sm font-extrabold text-ink"><ClipboardList size={16} className="text-brand-600" /> خطة العلاج</h2>
             <div className="ms-auto flex flex-wrap gap-x-3 gap-y-1">
               {(["done", "due", "overdue", "upcoming"] as DoseStatus[]).map((s) => (
                 <span key={s} className="inline-flex items-center gap-1.5 text-[10px] font-extrabold text-ink-muted"><span className={cn("inline-block h-3 w-3 rounded-sm", STATUS_META[s].bar)} /> {STATUS_META[s].label}</span>
               ))}
             </div>
           </div>
-          <div className="overflow-x-auto pb-1">
-            <div className="flex gap-2.5">
-              {dayGroups.map(([day, rows]) => (
-                <DayColumn
-                  key={day} innerRef={day === todayISO ? todayColRef : undefined}
-                  day={day} rows={rows} isToday={day === todayISO} todayISO={todayISO}
-                  ended={ended} lang={lang} notes={dayNotes.get(day) ?? []}
-                  onGive={(t) => { playTap(); setGiveId(t.id); }} onNote={(text) => addNote(text, day)}
-                />
-              ))}
-            </div>
-          </div>
+          <TreatmentSheetTable
+            dayGroups={dayGroups} todayISO={todayISO} ended={ended} lang={lang} dayNotes={dayNotes}
+            todayRowRef={todayRowRef}
+            onGive={(tx) => { playTap(); setGiveId(tx.id); }}
+            onAddNote={(day) => { playTap(); setNoteText(""); setNoteDay(day); setNoteOpen(true); }}
+          />
         </div>
       )}
 
@@ -358,7 +353,7 @@ export default function VisitPage() {
               <ClipboardList size={16} /> {clinicalNotes.length ? "تعديل التشخيص وخطة العلاج" : "التشخيص وخطة العلاج"}
             </button>
           )}
-          <button onClick={() => { playTap(); setNoteText(""); setNoteOpen(true); }} className="inline-flex items-center gap-2 rounded border border-line-strong bg-surface-1 px-4 py-2.5 text-sm font-bold text-ink-muted transition hover:border-brand-300 hover:text-ink">
+          <button onClick={() => { playTap(); setNoteText(""); setNoteDay(null); setNoteOpen(true); }} className="inline-flex items-center gap-2 rounded border border-line-strong bg-surface-1 px-4 py-2.5 text-sm font-bold text-ink-muted transition hover:border-brand-300 hover:text-ink">
             <NotebookPen size={16} /> إضافة ملاحظة
           </button>
           <button onClick={() => { playTap(); setEndOpen(true); }} className="ms-auto inline-flex items-center gap-2 rounded bg-danger-600 px-4 py-2.5 text-sm font-extrabold text-white transition hover:bg-danger-700">
@@ -394,11 +389,11 @@ export default function VisitPage() {
         <TreatmentPlan onSubmit={savePlan} busy={planBusy} species={pet.species} petId={pet.id} weightKg={pet.current_weight_kg} onMediaAdded={reload} />
       </Modal>
 
-      <Modal open={noteOpen} onClose={() => { setNoteOpen(false); setNoteText(""); }} title="إضافة ملاحظة">
+      <Modal open={noteOpen} onClose={() => { setNoteOpen(false); setNoteText(""); setNoteDay(null); }} title={noteDay ? `ملاحظة على ${formatDate(noteDay, lang)}` : "إضافة ملاحظة"}>
         <div className="space-y-3">
           <textarea rows={4} value={noteText} onChange={(e) => setNoteText(e.target.value)} autoFocus placeholder="اكتب ملاحظة…" className="input min-h-[110px] resize-y leading-relaxed" />
           <div className="flex justify-end">
-            <Button leftIcon={<Plus size={16} />} disabled={!noteText.trim()} onClick={async () => { await addNote(noteText); setNoteOpen(false); setNoteText(""); }}>إضافة</Button>
+            <Button leftIcon={<Plus size={16} />} disabled={!noteText.trim()} onClick={async () => { await addNote(noteText, noteDay ?? undefined); setNoteOpen(false); setNoteText(""); setNoteDay(null); }}>إضافة</Button>
           </div>
         </div>
       </Modal>
@@ -438,12 +433,8 @@ function PaperSummary({ pet, date, speciesLabel, sexLabel, diagnosis, record, on
       </div>
 
       <div className="flex flex-col gap-3 sm:flex-row">
-        {/* Photo */}
-        <div className="grid h-28 w-28 shrink-0 place-items-center overflow-hidden rounded border border-line bg-surface-2">
-          {pet.photo_url
-            ? <img src={pet.photo_url} alt={pet.name} className="h-full w-full object-cover" />
-            : <PawPrint size={34} className="text-ink-subtle" />}
-        </div>
+        {/* Photo — the pet's own picture, or a default image of its species */}
+        <PetAvatar pet={pet} photoFallback size={112} className="!rounded border border-line shadow-sm" />
 
         {/* Animal info + diagnosis */}
         <div className="min-w-0 flex-1 space-y-3">
@@ -478,54 +469,94 @@ function PaperSummary({ pet, date, speciesLabel, sexLabel, diagnosis, record, on
   );
 }
 
-/* ------------------------------- Day column ------------------------------- */
-function DayColumn({ day, rows, isToday, todayISO, ended, lang, notes, onGive, onNote, innerRef }: {
-  day: string; rows: TreatmentEntry[]; isToday: boolean; todayISO: string; ended: boolean; lang: string;
-  notes: PetNote[]; onGive: (t: TreatmentEntry) => void; onNote: (text: string) => void;
-  innerRef?: React.Ref<HTMLDivElement>;
+/* -------------------- Paper-style daily treatment table ------------------- */
+/**
+ * The daily plan laid out EXACTLY like the clinic's paper sheet — the same four
+ * columns in the same order (اليوم والساعة | العلاج | الطبيب المعالج | الملاحظات),
+ * one row per dose. Doctors used to the paper read it the same way; giving a dose
+ * fills in the treating doctor + time just as they would write it by hand.
+ */
+function TreatmentSheetTable({ dayGroups, todayISO, ended, lang, dayNotes, onGive, onAddNote, todayRowRef }: {
+  dayGroups: [string, TreatmentEntry[]][]; todayISO: string; ended: boolean; lang: string;
+  dayNotes: Map<string, PetNote[]>;
+  onGive: (t: TreatmentEntry) => void; onAddNote: (day: string) => void;
+  todayRowRef?: React.Ref<HTMLTableRowElement>;
 }) {
-  const { wd, dn } = dayShort(day, lang);
-  const doneN = rows.filter((r) => r.administered_at).length;
-  const overdue = rows.filter((r) => doseStatus(r, todayISO) === "overdue").length;
-  const dueN = rows.filter((r) => doseStatus(r, todayISO) === "due").length;
-  const allDone = doneN === rows.length;
-  const barStatus: DoseStatus = allDone ? "done" : overdue ? "overdue" : dueN ? "due" : "upcoming";
-  const summary = allDone ? "اكتمل" : [overdue && `${formatNum(overdue)} متأخّرة`, dueN && `${formatNum(dueN)} مستحقّة`].filter(Boolean).join(" · ") || `${formatNum(doneN)}/${formatNum(rows.length)}`;
-
+  const th = "border-b-2 border-line-strong bg-surface-2 px-3 py-2.5 text-start text-xs font-extrabold text-ink";
   return (
-    <div ref={innerRef} className={cn("flex shrink-0 flex-col overflow-hidden rounded border bg-surface-1", isToday ? "w-72 border-brand-500 shadow-card" : "w-40 border-line")}>
-      <div className={cn("px-2.5 py-2 text-center", isToday ? "bg-brand-50 dark:bg-brand-500/10" : "bg-surface-2")}>
-        <div className="text-[9px] font-extrabold text-ink-subtle">{wd}{isToday && " · اليوم"}</div>
-        <div className={cn("text-lg font-black leading-none", isToday ? "text-brand-700 dark:text-brand-300" : "text-ink")}>{dn}</div>
-        <div className={cn("mt-0.5 text-[9px] font-bold", overdue ? "text-danger-600" : dueN ? "text-warn-600" : allDone ? "text-success-600" : "text-ink-subtle")}>{summary}</div>
-      </div>
-      <div className={cn("h-1", STATUS_META[barStatus].bar)} />
-      <div className="flex flex-col gap-1.5 p-2">
-        {rows.map((t) => {
-          const st = doseStatus(t, todayISO);
-          const m = STATUS_META[st];
-          return (
-            <button key={t.id} type="button" disabled={ended} onClick={() => onGive(t)}
-              className={cn("flex items-center gap-2 rounded border border-transparent text-start transition enabled:hover:border-brand-300 disabled:cursor-default", m.row, isToday ? "p-2" : "px-2 py-1.5")}>
-              <span className={cn("grid shrink-0 place-items-center rounded font-black", m.mark, isToday ? "h-6 w-6 text-xs" : "h-4 w-4 text-[9px]")}>
-                {st === "done" ? <Check size={isToday ? 14 : 10} /> : st === "overdue" ? "!" : st === "due" ? "●" : "○"}
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className={cn("block truncate font-black text-ink", isToday ? "text-xs" : "text-[10px]")}>{t.medication}</span>
-                {isToday && <span className="block truncate text-[9px] font-bold text-ink-subtle">{[t.amount, t.observations].filter(Boolean).join(" · ")}</span>}
-                {st === "done" && t.administered_at && <span className={cn("block text-[9px] font-bold", isToday ? "text-success-700 dark:text-success-300" : "text-ink-subtle")}>{clockOf(t.administered_at, lang)}{isToday && t.administered_by ? ` · ${t.administered_by}` : ""}</span>}
-              </span>
-              {isToday && !ended && st !== "done" && <span className="shrink-0 rounded bg-brand-600 px-2 py-1 text-[10px] font-black text-white">تم العلاج</span>}
-            </button>
-          );
-        })}
-        {notes.length > 0 && (
-          <div className="mt-0.5 space-y-1">
-            {notes.map((n) => <div key={n.id} className="flex items-start gap-1 rounded bg-surface-2 px-1.5 py-1 text-[9px] leading-snug text-ink-muted"><NotebookPen size={9} className="mt-0.5 shrink-0 text-ink-subtle" /> {parseDayNote(n.note_text).body}</div>)}
-          </div>
-        )}
-        {isToday && !ended && <DayNoteInput onNote={onNote} />}
-      </div>
+    <div className="overflow-x-auto rounded border border-line-strong shadow-card">
+      <table className="w-full min-w-[620px] border-collapse">
+        <thead>
+          <tr>
+            <th className={cn(th, "w-[26%] border-e border-line")}>اليوم والساعة</th>
+            <th className={cn(th, "w-[36%] border-e border-line")}>العلاج</th>
+            <th className={cn(th, "w-[20%] border-e border-line")}>الطبيب المعالج</th>
+            <th className={cn(th, "w-[18%]")}>الملاحظات</th>
+          </tr>
+        </thead>
+        <tbody>
+          {dayGroups.map(([day, rows]) => {
+            const isToday = day === todayISO;
+            const notes = dayNotes.get(day) ?? [];
+            return rows.map((t, idx) => {
+              const st = doseStatus(t, todayISO);
+              const m = STATUS_META[st];
+              const first = idx === 0;
+              return (
+                <tr key={t.id} ref={isToday && first ? todayRowRef : undefined}
+                  className={cn(m.row, first ? "border-t-2 border-line-strong" : "border-t border-line")}>
+                  {/* اليوم والساعة */}
+                  <td className="border-e border-line px-3 py-2.5 align-top">
+                    <div className="flex items-center gap-1.5">
+                      <span className={cn("inline-block h-2.5 w-2.5 shrink-0 rounded-sm", m.bar)} />
+                      <span className="text-sm font-black text-ink">{formatDate(day, lang)}</span>
+                      {isToday && <span className="rounded bg-brand-600 px-1.5 py-0.5 text-[9px] font-black text-white">اليوم</span>}
+                    </div>
+                    <div className="mt-1 ps-4 text-xs font-bold tabular-nums text-ink-subtle" dir="ltr">
+                      {t.administered_at ? clockOf(t.administered_at, lang) : (t.time || "—")}
+                    </div>
+                  </td>
+                  {/* العلاج */}
+                  <td className="border-e border-line px-3 py-2.5 align-top">
+                    <div className="text-sm font-extrabold text-ink">{t.medication}</div>
+                    {[t.amount, t.observations].filter(Boolean).length > 0 && (
+                      <div className="mt-0.5 text-xs font-semibold text-ink-subtle">{[t.amount, t.observations].filter(Boolean).join(" · ")}</div>
+                    )}
+                  </td>
+                  {/* الطبيب المعالج */}
+                  <td className="border-e border-line px-3 py-2.5 align-top">
+                    {t.administered_at ? (
+                      <span className="inline-flex items-center gap-1 text-sm font-bold text-ink"><UserRound size={13} className="shrink-0 text-ink-subtle" /> {t.administered_by || "—"}</span>
+                    ) : ended ? (
+                      <span className="text-sm text-ink-subtle">—</span>
+                    ) : (
+                      <button type="button" onClick={() => onGive(t)}
+                        className="inline-flex items-center gap-1.5 rounded bg-brand-600 px-3 py-1.5 text-xs font-black text-white transition hover:bg-brand-700">
+                        <Check size={13} /> تم العلاج
+                      </button>
+                    )}
+                  </td>
+                  {/* الملاحظات */}
+                  <td className="px-3 py-2.5 align-top">
+                    {t.administered_at && (
+                      <div className="mb-1 flex items-center gap-1 text-xs font-bold text-success-700 dark:text-success-300"><Check size={12} className="shrink-0" /> أُعطيت</div>
+                    )}
+                    {first && notes.map((n) => (
+                      <div key={n.id} className="flex items-start gap-1 text-xs leading-snug text-ink-muted"><NotebookPen size={11} className="mt-0.5 shrink-0 text-ink-subtle" /> {parseDayNote(n.note_text).body}</div>
+                    ))}
+                    {first && !ended && (
+                      <button type="button" onClick={() => onAddNote(day)}
+                        className="mt-1 inline-flex items-center gap-1 text-[11px] font-bold text-brand-600 transition hover:text-brand-700 dark:text-brand-300">
+                        <Plus size={11} /> ملاحظة
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              );
+            });
+          })}
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -573,18 +604,6 @@ function GiveModal({ t, lang, defaultDoctor, ended, onClose, onGive, onUndo }: {
         )}
       </div>
     </Modal>
-  );
-}
-
-/* ------------------------------ Day note input ---------------------------- */
-function DayNoteInput({ onNote }: { onNote: (text: string) => void }) {
-  const [note, setNote] = useState("");
-  const submit = () => { if (note.trim()) { onNote(note); setNote(""); } };
-  return (
-    <div className="mt-1 flex gap-1.5">
-      <input value={note} onChange={(e) => setNote(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") submit(); }} placeholder="ملاحظة على اليوم…" className="input h-8 flex-1 py-0 text-[11px]" />
-      <button type="button" disabled={!note.trim()} onClick={submit} className="rounded bg-brand-50 px-2.5 text-[11px] font-bold text-brand-700 disabled:opacity-40 dark:bg-brand-500/10 dark:text-brand-300">حفظ</button>
-    </div>
   );
 }
 
