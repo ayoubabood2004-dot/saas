@@ -36,6 +36,8 @@ const addDaysISO = (iso: string, n: number) => localISO(new Date(new Date(iso).g
 const pad = (n: number) => (n < 10 ? "0" : "") + n;
 const nowHHMM = () => { const d = new Date(); return `${pad(d.getHours())}:${pad(d.getMinutes())}`; };
 const clockOf = (iso: string, lang: string) => new Date(iso).toLocaleTimeString(lang, { hour: "2-digit", minute: "2-digit" });
+/** The day as a single word — the weekday name ("السبت") — so rows of one day differ only by time. */
+const weekdayWord = (iso: string, lang: string) => new Date(`${iso}T00:00:00`).toLocaleDateString(lang, { weekday: "long" });
 
 /** Human age string ("٣ سنة و٤ أشهر" / "8 أشهر") — empty when DOB is unknown. */
 function ageText(dob?: string | null): string {
@@ -538,7 +540,7 @@ function TreatmentSheetTable({ dayGroups, todayISO, ended, lang, dayNotes, onGiv
                   <td className="border-e border-line px-3 py-2.5 align-top">
                     <div className="flex items-center gap-1.5">
                       <span className={cn("inline-block h-2.5 w-2.5 shrink-0 rounded-sm", m.bar)} />
-                      <span className="text-sm font-black text-ink">{formatDate(day, lang)}</span>
+                      <span className="text-sm font-black text-ink">{weekdayWord(day, lang)}</span>
                       {isToday && <span className="rounded bg-brand-600 px-1.5 py-0.5 text-[9px] font-black text-white">اليوم</span>}
                     </div>
                     <div className="mt-1 ps-4 text-xs font-bold tabular-nums text-ink-subtle" dir="ltr">
