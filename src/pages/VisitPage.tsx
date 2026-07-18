@@ -20,7 +20,7 @@ import { OUTCOMES } from "@/lib/clinicalKnowledge";
 import { GlyphMark, glyphTone, glyphToneText } from "@/lib/clinicalIcons";
 import { visitKindMeta } from "@/lib/visits";
 import { localISO, formatDate, formatNum, ageFromDOB, cn } from "@/lib/utils";
-import { getClinicName, getClinicLogo } from "@/lib/settings";
+import { getClinicName, getClinicLogo, getClinicSocials } from "@/lib/settings";
 import { silhouetteDataUrl } from "@/lib/silhouettes";
 import { openTreatmentSheet, type SheetTreatmentRow } from "@/lib/treatmentSheetPrint";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
@@ -247,9 +247,14 @@ export default function VisitPage() {
       doctor: tx.administered_by || tx.doctor || "",
       notes: tx.administered_at ? "✓ أُعطيت" : "",
     }));
+    const socials = getClinicSocials();
     const ok = openTreatmentSheet({
-      clinicName: getClinicName() || "عيادة بيطرية",
+      clinicName: getClinicName() || user?.full_name || "عيادة بيطرية",
+      clinicPhone: user?.phone ?? null,
+      brand: "doctorVet",
       logoUrl: getClinicLogo(),
+      facebook: socials.facebook || null,
+      instagram: socials.instagram || null,
       lang,
       pet: {
         name: pet.name,
