@@ -22,23 +22,22 @@ const BUCKETS: { key: BucketKey; label: string; icon: typeof Stethoscope; tint: 
   { key: "boarding", label: "طبلات الفندقة", icon: BedDouble, tint: "text-sky-600 dark:text-sky-300", ring: "bg-sky-100 dark:bg-sky-500/15", badge: "bg-sky-100 text-sky-700 dark:bg-sky-500/20 dark:text-sky-200" },
   { key: "visit", label: "طبلات الزيارة", icon: ClipboardList, tint: "text-brand-600 dark:text-brand-300", ring: "bg-brand-100 dark:bg-brand-500/15", badge: "bg-brand-100 text-brand-700 dark:bg-brand-500/20 dark:text-brand-300" },
 ];
+const SPECIES_AR: Record<string, string> = { dog: "كلب", cat: "قطة", horse: "حصان", cow: "بقرة", bird: "طائر", rabbit: "أرنب", other: "أخرى" };
 
-/** A single treatment chart — a card the doctor taps to jump into the plan. */
+/** A single treatment chart — a card the doctor taps to jump into the plan (visit). */
 interface Chart {
   id: string;
   bucket: BucketKey;
   petId: string;
+  visitId?: string;      // the open visit to jump into (undefined → create on click)
   pet: Pet | undefined;
-  title: string;   // diagnosis / reason
+  title: string;
   cage?: string | null;
-  since: string;   // ISO date (admitted_on) or datetime (opened_at)
-  href: string;
-  // Dose status for the chart's own treatments
+  since: string;
   dueToday: number;
   overdue: number;
   doneTotal: number;
   total: number;
-  totalToday: number;
 }
 
 const dayNumber = (iso: string, todayISO: string) => {
@@ -58,45 +57,58 @@ export function Charts() {
   const [ops, setOps] = useState(() => opsStore.get());
   const [visits, setVisits] = useState<ClinicVisit[]>([]);
   const [treatments, setTreatments] = useState<TreatmentEntry[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [txLoaded, setTxLoaded] = useState(false);
+  const [opening, setOpening] = useState<string | null>(null);
   const [filter, setFilter] = useState<BucketKey | "all">("all");
   const [query, setQuery] = useState("");
 
   const { branches, active: activeBranch } = useBranchState(clinicId);
 
-  // Admissions come from the shared ops cache (clinic-wide, live).
+  // Admissions come from the shared ops cache (clinic-wide, live, usually already warm
+  // from Reception). Only pay the full re-hydrate when the cache is cold — otherwise
+  // render instantly from cache; local mutations keep it fresh.
   useEffect(() => {
     const unsub = opsStore.subscribe(() => setOps(opsStore.get()));
-    void opsStore.hydrate(clinicId).catch(() => {});
+    if (!opsStore.get().hydrated) void opsStore.hydrate(clinicId).catch(() => {});
     return unsub;
   }, [clinicId]);
 
-  // Open visits + the treatments for every charted pet (to show today's dose status).
+  // Open visits (one lightweight query).
   useEffect(() => {
     let cancel = false;
-    (async () => {
-      const vs = await repo.listOpenClinicVisits(clinicId).catch(() => [] as ClinicVisit[]);
-      if (cancel) return;
-      const ids = new Set<string>();
-      for (const a of opsStore.get().admissions) if (a.status === "active") ids.add(a.pet_id);
-      for (const v of vs) ids.add(v.pet_id);
-      const tx = ids.size ? await repo.listAllTreatments([...ids]).catch(() => [] as TreatmentEntry[]) : [];
-      if (cancel) return;
-      setVisits(vs);
-      setTreatments(tx);
-      setLoading(false);
-    })();
+    repo.listOpenClinicVisits(clinicId).then((vs) => { if (!cancel) setVisits(vs); }).catch(() => {});
     return () => { cancel = true; };
-  }, [clinicId, ops.hydrated, ops.admissions.length]);
+  }, [clinicId]);
+
+  // The set of charted pets — stable key so treatments refetch only when it truly changes.
+  const petIdKey = useMemo(() => {
+    const ids = new Set<string>();
+    for (const a of ops.admissions) if (a.status === "active") ids.add(a.pet_id);
+    for (const v of visits) ids.add(v.pet_id);
+    return [...ids].sort().join(",");
+  }, [ops.admissions, visits]);
+
+  // Dose status loads in the BACKGROUND — the cards render instantly without it.
+  useEffect(() => {
+    if (!petIdKey) { setTreatments([]); setTxLoaded(true); return; }
+    let cancel = false;
+    repo.listAllTreatments(petIdKey.split(","))
+      .then((tx) => { if (!cancel) { setTreatments(tx); setTxLoaded(true); } })
+      .catch(() => { if (!cancel) setTxLoaded(true); });
+    return () => { cancel = true; };
+  }, [petIdKey]);
 
   const pets = ops.pets;
+  const openVisitByPet = useMemo(() => {
+    const m = new Map<string, ClinicVisit>();
+    for (const v of visits) if (!m.has(v.pet_id)) m.set(v.pet_id, v); // visits are sorted newest-first
+    return m;
+  }, [visits]);
 
-  // Dose status for a set of a chart's treatments.
-  const statusOf = (list: TreatmentEntry[]) => {
+  const statusFrom = (list: TreatmentEntry[]) => {
     const todayTx = list.filter((t) => t.day === todayISO);
     return {
       dueToday: todayTx.filter((t) => !t.administered_at).length,
-      totalToday: todayTx.length,
       overdue: list.filter((t) => !t.administered_at && t.day < todayISO).length,
       doneTotal: list.filter((t) => t.administered_at).length,
       total: list.length,
@@ -108,10 +120,10 @@ export function Charts() {
     const matchQ = (pet: Pet | undefined, title: string) =>
       !q || (pet?.name ?? "").toLowerCase().includes(q) || title.toLowerCase().includes(q);
 
-    // Active admissions on the current branch.
     const adm = ops.admissions.filter(
       (a) => a.status === "active" && (activeBranch === "all" || branches.length < 2 || matchesBranch(a.branch_id, activeBranch, branches)),
     );
+    const admPetIds = new Set(adm.map((a) => a.pet_id));
     const kindBucket: Record<Admission["kind"], BucketKey> = { treatment: "daily", treatment_boarding: "careBoarding", boarding: "boarding" };
 
     const out: Chart[] = [];
@@ -119,21 +131,19 @@ export function Charts() {
       const pet = pets[a.pet_id];
       const title = a.reason?.trim() || "—";
       if (!matchQ(pet, title)) continue;
-      // The daily flowsheet = the pet's non-visit treatments.
-      const s = statusOf(treatments.filter((t) => t.pet_id === a.pet_id && !t.visit_id));
-      out.push({ id: `adm_${a.id}`, bucket: kindBucket[a.kind], petId: a.pet_id, pet, title, cage: a.cage, since: a.admitted_on, href: `/pet/${a.pet_id}?tab=treatment`, ...s });
+      const visit = openVisitByPet.get(a.pet_id);
+      out.push({ id: `adm_${a.id}`, bucket: kindBucket[a.kind], petId: a.pet_id, visitId: visit?.id, pet, title, cage: a.cage, since: a.admitted_on, ...statusFrom(treatments.filter((t) => t.pet_id === a.pet_id)) });
     }
+    // Standalone open visits — only for pets NOT already shown via an admission (no duplicates).
     for (const v of visits) {
+      if (admPetIds.has(v.pet_id)) continue;
       const pet = pets[v.pet_id];
-      // Prefer the recorded diagnosis; fall back to the visit reason.
       const title = v.reason?.trim() || "زيارة";
       if (!matchQ(pet, title)) continue;
-      const s = statusOf(treatments.filter((t) => t.visit_id === v.id));
-      out.push({ id: `vis_${v.id}`, bucket: "visit", petId: v.pet_id, pet, title, since: v.opened_at, href: `/pet/${v.pet_id}/visit/${v.id}`, ...s });
+      out.push({ id: `vis_${v.id}`, bucket: "visit", petId: v.pet_id, visitId: v.id, pet, title, since: v.opened_at, ...statusFrom(treatments.filter((t) => t.visit_id === v.id)) });
     }
-    // Most urgent first: overdue, then due-today, then newest.
     return out.sort((a, b) => (b.overdue - a.overdue) || (b.dueToday - a.dueToday) || b.since.localeCompare(a.since));
-  }, [ops.admissions, visits, treatments, pets, activeBranch, branches, query, todayISO]);
+  }, [ops.admissions, visits, treatments, pets, openVisitByPet, activeBranch, branches, query, todayISO]);
 
   const counts = useMemo(() => {
     const c: Record<BucketKey, number> = { daily: 0, careBoarding: 0, boarding: 0, visit: 0 };
@@ -143,9 +153,25 @@ export function Charts() {
   const dueNow = charts.filter((c) => c.dueToday > 0 || c.overdue > 0).length;
   const shownBuckets = BUCKETS.filter((b) => filter === "all" || filter === b.key);
 
-  if (loading) {
-    return <div className="mx-auto max-w-3xl px-4 py-16 text-center text-ink-subtle"><Loader2 className="mx-auto mb-2 animate-spin" /> جارٍ تحميل الطبلات…</div>;
-  }
+  /** Open the treatment plan (VISIT). Reuse the pet's open visit, or create one on the spot. */
+  const openChart = async (c: Chart) => {
+    playTap();
+    if (c.visitId) { navigate(`/pet/${c.petId}/visit/${c.visitId}`); return; }
+    if (opening) return;
+    setOpening(c.id);
+    try {
+      const existing = openVisitByPet.get(c.petId);
+      if (existing) { navigate(`/pet/${c.petId}/visit/${existing.id}`); return; }
+      const v = await repo.addClinicVisit({
+        pet_id: c.petId, kind: "illness", status: "open",
+        condition: "under_treatment", reason: c.title !== "—" ? c.title : null,
+        opened_at: new Date().toISOString(), opened_by: user?.full_name ?? null,
+      });
+      navigate(`/pet/${c.petId}/visit/${v.id}`);
+    } finally { setOpening(null); }
+  };
+
+  const booting = !ops.hydrated && charts.length === 0 && visits.length === 0;
 
   return (
     <div className="mx-auto w-full max-w-2xl px-4 py-6 sm:px-6 lg:max-w-6xl xl:max-w-7xl">
@@ -182,8 +208,10 @@ export function Charts() {
         </div>
       </div>
 
-      {/* Sections */}
-      {charts.length === 0 ? (
+      {/* Body */}
+      {booting ? (
+        <div className="py-16 text-center text-ink-subtle"><Loader2 className="mx-auto mb-2 animate-spin" /> جارٍ التحميل…</div>
+      ) : charts.length === 0 ? (
         <div className="rounded-xl border border-line bg-surface-1 p-10 text-center">
           <LayoutGrid size={40} className="mx-auto mb-3 text-ink-subtle" />
           <p className="text-sm font-bold text-ink">لا توجد طبلات نشطة حالياً</p>
@@ -202,7 +230,7 @@ export function Charts() {
                   <span className={cn("rounded-full px-2 py-0.5 text-2xs font-black", b.badge)}>{formatNum(items.length)}</span>
                 </div>
                 <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
-                  {items.map((c) => <ChartCard key={c.id} chart={c} lang={lang} todayISO={todayISO} onOpen={() => { playTap(); navigate(c.href); }} />)}
+                  {items.map((c) => <ChartCard key={c.id} chart={c} lang={lang} todayISO={todayISO} txLoaded={txLoaded} busy={opening === c.id} onOpen={() => void openChart(c)} />)}
                 </div>
               </section>
             );
@@ -226,28 +254,28 @@ function FilterChip({ active, label, count, icon, onClick }: { active: boolean; 
 }
 
 /* ── Chart card ───────────────────────────────────────────────────────────── */
-function ChartCard({ chart: c, lang, todayISO, onOpen }: { chart: Chart; lang: string; todayISO: string; onOpen: () => void }) {
+function ChartCard({ chart: c, lang, todayISO, txLoaded, busy, onOpen }: { chart: Chart; lang: string; todayISO: string; txLoaded: boolean; busy: boolean; onOpen: () => void }) {
   const day = dayNumber(c.since, todayISO);
-  const status =
-    c.overdue > 0 ? { cls: "bg-danger-50 text-danger-700 dark:bg-danger-500/15 dark:text-danger-300", icon: <AlertTriangle size={13} />, text: `${formatNum(c.overdue)} متأخّرة` }
+  const status = !txLoaded
+    ? null
+    : c.overdue > 0 ? { cls: "bg-danger-50 text-danger-700 dark:bg-danger-500/15 dark:text-danger-300", icon: <AlertTriangle size={13} />, text: `${formatNum(c.overdue)} متأخّرة` }
     : c.dueToday > 0 ? { cls: "bg-warn-50 text-warn-700 dark:bg-warn-500/15 dark:text-warn-300", icon: <Pill size={13} />, text: `${formatNum(c.dueToday)} مستحقّة اليوم` }
     : c.total > 0 && c.doneTotal === c.total ? { cls: "bg-success-50 text-success-700 dark:bg-success-500/15 dark:text-success-300", icon: <CheckCircle2 size={13} />, text: "مكتمل" }
     : c.total > 0 ? { cls: "bg-surface-2 text-ink-muted", icon: <CheckCircle2 size={13} />, text: "لا جرعات اليوم" }
     : { cls: "bg-surface-2 text-ink-subtle", icon: <ClipboardList size={13} />, text: "لا توجد خطة بعد" };
 
   return (
-    <button type="button" onClick={onOpen}
-      className="group flex flex-col gap-2.5 rounded-xl border border-line-strong bg-surface-1 p-3.5 text-start shadow-card transition hover:border-brand-300 hover:shadow-lg">
+    <button type="button" onClick={onOpen} disabled={busy}
+      className="group flex flex-col gap-2.5 rounded-xl border border-line-strong bg-surface-1 p-3.5 text-start shadow-card transition hover:border-brand-300 hover:shadow-lg disabled:opacity-60">
       <div className="flex items-center gap-2.5">
-        <PetAvatar pet={c.pet ?? { species: "other", photo_url: null, name: "?" }} size={44} photoFallback className="!rounded-xl shrink-0" />
+        <PetAvatar pet={c.pet ?? { species: "other", photo_url: null, name: "?" }} size={44} className="!rounded-xl shrink-0" />
         <div className="min-w-0 flex-1">
           <div className="truncate text-sm font-black text-ink">{c.pet?.name ?? "—"}</div>
           <div className="truncate text-2xs font-bold text-ink-subtle">
-            {c.pet ? `${{ dog: "كلب", cat: "قطة", horse: "حصان", cow: "بقرة", bird: "طائر", rabbit: "أرنب", other: "أخرى" }[c.pet.species] ?? c.pet.species}` : ""}
-            {c.cage ? ` · قفص ${c.cage}` : ""}
+            {c.pet ? (SPECIES_AR[c.pet.species] ?? c.pet.species) : ""}{c.cage ? ` · قفص ${c.cage}` : ""}
           </div>
         </div>
-        <ChevronLeft size={16} className="shrink-0 text-ink-subtle transition group-hover:text-brand-600 rtl:rotate-180" />
+        {busy ? <Loader2 size={16} className="shrink-0 animate-spin text-brand-600" /> : <ChevronLeft size={16} className="shrink-0 text-ink-subtle transition group-hover:text-brand-600 rtl:rotate-180" />}
       </div>
 
       <div className="line-clamp-2 min-h-[2.4em] rounded-lg bg-surface-2 px-2.5 py-1.5 text-xs font-semibold leading-snug text-ink-muted">
@@ -255,7 +283,9 @@ function ChartCard({ chart: c, lang, todayISO, onOpen }: { chart: Chart; lang: s
       </div>
 
       <div className="flex items-center justify-between gap-2">
-        <span className={cn("inline-flex items-center gap-1 rounded-md px-2 py-1 text-2xs font-black", status.cls)}>{status.icon} {status.text}</span>
+        {status
+          ? <span className={cn("inline-flex items-center gap-1 rounded-md px-2 py-1 text-2xs font-black", status.cls)}>{status.icon} {status.text}</span>
+          : <span className="h-[26px] w-24 animate-pulse rounded-md bg-surface-2" />}
         <span className="inline-flex items-center gap-1 text-2xs font-bold text-ink-subtle"><Clock size={11} /> اليوم {formatNum(day)} · {formatDate(c.since, lang)}</span>
       </div>
     </button>
