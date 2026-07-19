@@ -10,6 +10,7 @@ import {
   CalendarDays,
   Settings as SettingsIcon,
   ClipboardList,
+  LayoutGrid,
   Search,
   Menu,
   X,
@@ -77,6 +78,7 @@ export function TopBar({ mobileOnly = false, minimal = false }: { mobileOnly?: b
   const navItems = minimal ? [] : staff
     ? [
         { to: "/reception", icon: CalendarDays, label: t("reception.title") },
+        { to: "/charts", icon: LayoutGrid, label: t("nav.charts", "الطبلات") },
         { to: "/records", icon: ClipboardList, label: t("records.title") },
         { to: "/inventory", icon: Boxes, label: t("nav.inventory", "Inventory"), show: can("manageInventory") },
         { to: "/retail", icon: Store, label: t("nav.retail", "Retail & Sales"), show: can("processSales") && has("pos") },

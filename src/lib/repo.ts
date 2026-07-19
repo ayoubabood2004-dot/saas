@@ -329,6 +329,12 @@ const demoRepo = {
   async getClinicVisit(id: string): Promise<ClinicVisit | null> {
     return (loadDB().clinicVisits ?? []).find((v) => v.id === id) ?? null;
   },
+  /** Clinic-wide list of still-open visits (across all pets) — powers the charts hub. */
+  async listOpenClinicVisits(_clinicId?: string): Promise<ClinicVisit[]> {
+    return (loadDB().clinicVisits ?? [])
+      .filter((v) => v.status === "open")
+      .sort((a, b) => (b.opened_at || "").localeCompare(a.opened_at || ""));
+  },
   async addClinicVisit(input: Omit<ClinicVisit, "id" | "created_at">): Promise<ClinicVisit> {
     const db = loadDB();
     const v: ClinicVisit = { created_at: new Date().toISOString(), ...input, id: uid("visit") };
@@ -980,6 +986,11 @@ const supabaseRepo: typeof demoRepo = {
   },
   async getClinicVisit(id) {
     return maybe<ClinicVisit>(await sbc().from("clinic_visits").select("*").eq("id", id).maybeSingle()) ?? null;
+  },
+  async listOpenClinicVisits(clinicId) {
+    let q = sbc().from("clinic_visits").select("*").eq("status", "open").order("opened_at", { ascending: false });
+    if (clinicId) q = q.eq("clinic_id", clinicId);
+    return listOf<ClinicVisit>(await q);
   },
   async addClinicVisit(input) {
     return need<ClinicVisit>(await sbc().from("clinic_visits").insert(input).select().single());

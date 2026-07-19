@@ -5,6 +5,7 @@ import {
   LayoutDashboard,
   CalendarDays,
   ClipboardList,
+  LayoutGrid,
   ScanLine,
   Settings as SettingsIcon,
   History,
@@ -66,6 +67,7 @@ export function Sidebar() {
   const items = [
     { to: "/", icon: LayoutDashboard, label: t("nav.dashboard", "Dashboard"), exact: true },
     { to: "/reception", icon: CalendarDays, label: t("reception.title") },
+    { to: "/charts", icon: LayoutGrid, label: t("nav.charts", "الطبلات") },
     { to: "/records", icon: ClipboardList, label: t("records.title") },
     { to: "/inventory", icon: Boxes, label: t("nav.inventory", "Inventory"), show: can("manageInventory") },
     { to: "/retail", icon: Store, label: t("nav.retail", "Retail & Sales"), show: can("processSales") && has("pos") },
