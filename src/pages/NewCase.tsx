@@ -325,16 +325,20 @@ export function NewCase() {
                   <label className="label">{t("pet.breed")}</label>
                   <BreedPicker species={a.species} value={a.breed} onChange={(v) => setAnimal(a.key, { breed: v })} />
                 </div>
-                <div>
+                {/* Sex — its own full-width row: the three choices spread evenly */}
+                <div className="sm:col-span-2 xl:col-span-3">
                   <label className="label">{t("pet.sexLabel")}</label>
                   <SexPicker value={a.sex} onChange={(s) => setAnimal(a.key, { sex: s })} />
                 </div>
-                <div>
-                  <label className="label">{t("pet.ageLabel", "Age")}</label>
-                  <AgeInput dob={a.dob} onChange={(d) => setAnimal(a.key, { dob: d })} />
-                </div>
-                <div>
-                  <WeightInput value={a.weight} onChange={(v) => setAnimal(a.key, { weight: v })} />
+                {/* Age + Weight — the numeric fields grouped together, stepper boxes bottom-aligned */}
+                <div className="grid items-end gap-4 sm:col-span-2 sm:grid-cols-3 xl:col-span-3">
+                  <div className="sm:col-span-2">
+                    <label className="label">{t("pet.ageLabel", "Age")}</label>
+                    <AgeInput dob={a.dob} onChange={(d) => setAnimal(a.key, { dob: d })} />
+                  </div>
+                  <div>
+                    <WeightInput value={a.weight} onChange={(v) => setAnimal(a.key, { weight: v })} />
+                  </div>
                 </div>
                 <div className="sm:col-span-2 xl:col-span-3">
                   <label className="label">{t("pet.color")}</label>
@@ -344,7 +348,7 @@ export function NewCase() {
                   <label className="label">{t("pet.microchip")}</label>
                   <input className="input" value={a.microchip} onChange={(e) => setAnimal(a.key, { microchip: e.target.value })} />
                 </div>
-                <div className="sm:col-span-1 xl:col-span-2">
+                <div className="xl:col-span-2">
                   <label className="label">{t("newCase.allergies")}</label>
                   <input className="input" value={a.allergies} onChange={(e) => setAnimal(a.key, { allergies: e.target.value })} placeholder="Penicillin, …" />
                 </div>
