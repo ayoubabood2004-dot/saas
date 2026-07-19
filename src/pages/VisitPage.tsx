@@ -5,6 +5,7 @@ import {
   ArrowRight, Clock, Check, Plus, NotebookPen, ClipboardList,
   Loader2, Lock, CheckCircle2, Stethoscope, UserRound, RotateCcw, AlertTriangle,
   Printer, Syringe, ShieldCheck, Pill,
+  Zap, Rows3, LayoutGrid, CalendarPlus, Gauge, CalendarClock,
 } from "lucide-react";
 import type { Pet, ClinicVisit, PetNote, TreatmentEntry } from "@/types";
 import { repo } from "@/lib/repo";
@@ -134,6 +135,8 @@ export default function VisitPage() {
   const [giveId, setGiveId] = useState<string | null>(null);
   const [addDrugOpen, setAddDrugOpen] = useState(false);
   const [addDrugDay, setAddDrugDay] = useState<string>(() => localISO(new Date()));
+  const [extendOpen, setExtendOpen] = useState(false);
+  const [planView, setPlanView] = useState<"day" | "drug">("day");
 
   const reload = useCallback(async () => {
     if (!petId || !visitId) return;
@@ -187,6 +190,37 @@ export default function VisitPage() {
   const remaining = totalDoses - doneDoses;
   const giveTarget = treatments.find((t) => t.id === giveId) ?? null;
 
+  // ── Smart treatment intelligence — the numbers that drive the command panel ──
+  const todayDoses = useMemo(() => treatments.filter((t) => t.day === todayISO), [treatments, todayISO]);
+  const todayPending = useMemo(() => todayDoses.filter((t) => !t.administered_at), [todayDoses]);
+  const overdueDoses = useMemo(
+    () => treatments.filter((t) => !t.administered_at && t.day < todayISO).sort((a, b) => a.day.localeCompare(b.day)),
+    [treatments, todayISO],
+  );
+  const nextDose = useMemo(
+    () => treatments.filter((t) => !t.administered_at && t.day > todayISO).sort((a, b) => a.day.localeCompare(b.day))[0] ?? null,
+    [treatments, todayISO],
+  );
+  const adherence = totalDoses ? Math.round((doneDoses / totalDoses) * 100) : 0;
+  const lastDay = dayGroups.length ? dayGroups[dayGroups.length - 1][0] : null;
+  const daysLeft = lastDay
+    ? Math.max(0, Math.round((new Date(`${lastDay}T00:00:00`).getTime() - new Date(`${todayISO}T00:00:00`).getTime()) / 86400000))
+    : 0;
+  // Group the flowsheet by medication — a clinical bird's-eye course view.
+  const medCourses = useMemo(() => {
+    const map = new Map<string, TreatmentEntry[]>();
+    for (const t of treatments) (map.get(t.medication) ?? map.set(t.medication, []).get(t.medication)!).push(t);
+    return [...map.entries()]
+      .map(([name, rows]) => {
+        const sorted = [...rows].sort((a, b) => a.day.localeCompare(b.day));
+        const given = sorted.filter((r) => r.administered_at).length;
+        const overdueN = sorted.filter((r) => !r.administered_at && r.day < todayISO).length;
+        const next = sorted.find((r) => !r.administered_at) ?? null;
+        return { name, rows: sorted, total: sorted.length, given, overdueN, next, amount: sorted[0]?.amount ?? "", freq: sorted[0]?.observations ?? "" };
+      })
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [treatments, todayISO]);
+
   const isIllness = visit?.kind === "illness";
   // Singular species name for a single patient (Arabic uses a plural in the catalog).
   const speciesSingular = (species: string) =>
@@ -227,6 +261,34 @@ export default function VisitPage() {
     playSuccess();
     await repo.setTreatmentGiven(t.id, true, doctor || (user?.full_name ?? undefined), atISO);
     setGiveId(null); await reload();
+  };
+  /** One-tap give for a single dose (records the current doctor + now). */
+  const giveQuick = async (t: TreatmentEntry) => {
+    playSuccess();
+    await repo.setTreatmentGiven(t.id, true, user?.full_name ?? undefined, new Date().toISOString());
+    await reload();
+  };
+  /** Batch give — mark every dose in the list administered now by the current doctor. */
+  const giveMany = async (list: TreatmentEntry[]) => {
+    if (!list.length) return;
+    playSuccess();
+    const at = new Date().toISOString();
+    for (const t of list) await repo.setTreatmentGiven(t.id, true, user?.full_name ?? undefined, at);
+    await reload();
+  };
+  /** Extend the course — repeat the last day's medications for N more days. */
+  const extendCourse = async (extraDays: number) => {
+    if (!visit || !lastDay || extraDays < 1) return;
+    const lastMeds = treatments.filter((t) => t.day === lastDay);
+    if (!lastMeds.length) { setExtendOpen(false); return; }
+    for (let i = 1; i <= extraDays; i++) {
+      const base = new Date(`${lastDay}T00:00:00`); base.setDate(base.getDate() + i);
+      const day = localISO(base);
+      for (const m of lastMeds) {
+        await repo.addTreatment({ pet_id: visit.pet_id, visit_id: visit.id, day, medication: m.medication, amount: m.amount, time: "", observations: m.observations, doctor: user?.full_name });
+      }
+    }
+    playSuccess(); setExtendOpen(false); await reload();
   };
   const undoDose = async (t: TreatmentEntry) => {
     playTap();
@@ -327,10 +389,18 @@ export default function VisitPage() {
         {hasFlowsheet && <>
           <span className="mx-1 hidden h-10 w-px bg-line sm:block" />
           <ProgressRing done={doneDoses} total={totalDoses} />
-          <div>
-            <div className="text-[10px] font-extrabold uppercase tracking-wide text-ink-subtle">{remaining > 0 ? "متبقٍّ" : "اكتمل"}</div>
-            <div className="text-sm font-black text-ink">{remaining > 0 ? <>{formatNum(remaining)} جرعة</> : "كل الجرعات ✓"}</div>
-            <div className="text-2xs text-ink-subtle">على {formatNum(dayGroups.length)} أيام</div>
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+            <div>
+              <div className="text-[10px] font-extrabold uppercase tracking-wide text-ink-subtle">{remaining > 0 ? "متبقٍّ" : "اكتمل"}</div>
+              <div className="text-sm font-black text-ink">{remaining > 0 ? <>{formatNum(remaining)} جرعة</> : "كل الجرعات ✓"}</div>
+              <div className="text-2xs text-ink-subtle">على {formatNum(dayGroups.length)} أيام</div>
+            </div>
+            <HeaderStat icon={<Gauge size={14} />} label="الالتزام" value={`${formatNum(adherence)}%`}
+              tone={adherence >= 80 ? "success" : adherence >= 50 ? "warn" : "danger"} />
+            <HeaderStat icon={<CalendarClock size={14} />} label="ينتهي" value={remaining === 0 ? "اكتمل" : daysLeft > 0 ? `بعد ${formatNum(daysLeft)} يوم` : "اليوم"} tone="brand" />
+            {overdueDoses.length > 0 && (
+              <HeaderStat icon={<AlertTriangle size={14} />} label="متأخّرة" value={`${formatNum(overdueDoses.length)} جرعة`} tone="danger" />
+            )}
           </div>
         </>}
         <div className="ms-auto flex items-center gap-2">
@@ -357,24 +427,46 @@ export default function VisitPage() {
         onPrint={printSheet} printable={hasFlowsheet || !!primary}
       />
 
-      {/* ── Daily treatment plan — laid out exactly like the clinic's paper sheet ── */}
+      {/* ── Smart "today" command panel — what the doctor must do right now ── */}
+      {hasFlowsheet && !ended && (
+        <TodayPanel
+          todayISO={todayISO} lang={lang}
+          todayPending={todayPending} todayDoneCount={todayDoses.length - todayPending.length}
+          overdueDoses={overdueDoses} nextDose={nextDose} remaining={remaining} totalDoses={totalDoses}
+          onGiveAll={() => giveMany(todayPending)} onGiveOne={giveQuick} onGiveOverdue={() => giveMany(overdueDoses)}
+        />
+      )}
+
+      {/* ── Treatment plan — switchable between the paper day-sheet and a per-drug course view ── */}
       {hasFlowsheet && (
         <div className="mt-3">
           <div className="mb-2 flex flex-wrap items-center gap-2">
             <h2 className="flex items-center gap-1.5 text-sm font-extrabold text-ink"><ClipboardList size={16} className="text-brand-600" /> خطة العلاج</h2>
-            <div className="ms-auto flex flex-wrap gap-x-3 gap-y-1">
-              {(["done", "due", "overdue", "upcoming"] as DoseStatus[]).map((s) => (
-                <span key={s} className="inline-flex items-center gap-1.5 text-[10px] font-extrabold text-ink-muted"><span className={cn("inline-block h-3 w-3 rounded-sm", STATUS_META[s].bar)} /> {STATUS_META[s].label}</span>
-              ))}
+            <div className="ms-auto flex flex-wrap items-center gap-2">
+              <div className="inline-flex rounded-lg border border-line bg-surface-2 p-0.5">
+                <ViewToggleBtn active={planView === "day"} icon={<Rows3 size={14} />} label="باليوم" onClick={() => { playTap(); setPlanView("day"); }} />
+                <ViewToggleBtn active={planView === "drug"} icon={<LayoutGrid size={14} />} label="بالدواء" onClick={() => { playTap(); setPlanView("drug"); }} />
+              </div>
+              {planView === "day" && (
+                <div className="hidden flex-wrap gap-x-3 gap-y-1 sm:flex">
+                  {(["done", "due", "overdue", "upcoming"] as DoseStatus[]).map((s) => (
+                    <span key={s} className="inline-flex items-center gap-1.5 text-[10px] font-extrabold text-ink-muted"><span className={cn("inline-block h-3 w-3 rounded-sm", STATUS_META[s].bar)} /> {STATUS_META[s].label}</span>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
-          <TreatmentSheetTable
-            dayGroups={dayGroups} todayISO={todayISO} ended={ended} lang={lang} dayNotes={dayNotes}
-            todayRowRef={todayRowRef}
-            onGive={(tx) => { playTap(); setGiveId(tx.id); }}
-            onAddNote={(day) => { playTap(); setNoteText(""); setNoteDay(day); setNoteOpen(true); }}
-            onAddDrug={openAddDrug}
-          />
+          {planView === "day" ? (
+            <TreatmentSheetTable
+              dayGroups={dayGroups} todayISO={todayISO} ended={ended} lang={lang} dayNotes={dayNotes}
+              todayRowRef={todayRowRef}
+              onGive={(tx) => { playTap(); setGiveId(tx.id); }}
+              onAddNote={(day) => { playTap(); setNoteText(""); setNoteDay(day); setNoteOpen(true); }}
+              onAddDrug={openAddDrug}
+            />
+          ) : (
+            <MedCourseView courses={medCourses} todayISO={todayISO} ended={ended} lang={lang} onGive={giveQuick} />
+          )}
         </div>
       )}
 
@@ -389,6 +481,11 @@ export default function VisitPage() {
           <button onClick={() => openAddDrug()} className="inline-flex items-center gap-2 rounded border border-brand-300 bg-brand-50 px-4 py-2.5 text-sm font-extrabold text-brand-700 transition hover:bg-brand-100 dark:border-brand-500/30 dark:bg-brand-500/10 dark:text-brand-300">
             <Pill size={16} /> إضافة دواء
           </button>
+          {hasFlowsheet && (
+            <button onClick={() => { playTap(); setExtendOpen(true); }} className="inline-flex items-center gap-2 rounded border border-line-strong bg-surface-1 px-4 py-2.5 text-sm font-bold text-ink-muted transition hover:border-brand-300 hover:text-ink">
+              <CalendarPlus size={16} /> تمديد الخطة
+            </button>
+          )}
           <button onClick={() => { playTap(); setNoteText(""); setNoteDay(null); setNoteOpen(true); }} className="inline-flex items-center gap-2 rounded border border-line-strong bg-surface-1 px-4 py-2.5 text-sm font-bold text-ink-muted transition hover:border-brand-300 hover:text-ink">
             <NotebookPen size={16} /> إضافة ملاحظة
           </button>
@@ -436,8 +533,171 @@ export default function VisitPage() {
 
       {giveTarget && <GiveModal t={giveTarget} lang={lang} defaultDoctor={user?.full_name ?? ""} ended={ended} onClose={() => setGiveId(null)} onGive={giveDose} onUndo={undoDose} />}
       <AddDrugModal open={addDrugOpen} day={addDrugDay} lang={lang} defaultDoctor={user?.full_name ?? ""} onClose={() => setAddDrugOpen(false)} onAdd={addDrug} />
+      <ExtendPlanModal open={extendOpen} lastDay={lastDay} lang={lang} medCount={lastDay ? treatments.filter((t) => t.day === lastDay).length : 0} onClose={() => setExtendOpen(false)} onExtend={extendCourse} />
       <EndVisitModal open={endOpen} onClose={() => setEndOpen(false)} onEnd={endVisit} />
     </div>
+  );
+}
+
+/* ------------------------------ Header stat ------------------------------- */
+function HeaderStat({ icon, label, value, tone }: { icon: React.ReactNode; label: string; value: string; tone: "brand" | "success" | "warn" | "danger" }) {
+  const toneCls = { brand: "text-brand-700 dark:text-brand-300", success: "text-success-700 dark:text-success-300", warn: "text-warn-700 dark:text-warn-300", danger: "text-danger-700 dark:text-danger-300" }[tone];
+  return (
+    <div className="flex items-center gap-1.5">
+      <span className={cn("grid h-7 w-7 place-items-center rounded-lg bg-surface-2", toneCls)}>{icon}</span>
+      <div>
+        <div className="text-[10px] font-extrabold uppercase tracking-wide text-ink-subtle">{label}</div>
+        <div className={cn("text-sm font-black leading-tight", toneCls)}>{value}</div>
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------ View toggle ------------------------------- */
+function ViewToggleBtn({ active, icon, label, onClick }: { active: boolean; icon: React.ReactNode; label: string; onClick: () => void }) {
+  return (
+    <button type="button" onClick={onClick}
+      className={cn("inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-extrabold transition", active ? "bg-brand-600 text-white shadow-sm" : "text-ink-muted hover:text-ink")}>
+      {icon} {label}
+    </button>
+  );
+}
+
+/* -------------------------- Today command panel --------------------------- */
+/** The single most-used surface: what the doctor must do RIGHT NOW — today's due
+ *  doses with one-tap give (and give-all), overdue catch-up, or a calm all-done state. */
+function TodayPanel({ todayISO, lang, todayPending, todayDoneCount, overdueDoses, nextDose, remaining, totalDoses, onGiveAll, onGiveOne, onGiveOverdue }: {
+  todayISO: string; lang: string; todayPending: TreatmentEntry[]; todayDoneCount: number;
+  overdueDoses: TreatmentEntry[]; nextDose: TreatmentEntry | null; remaining: number; totalDoses: number;
+  onGiveAll: () => void; onGiveOne: (t: TreatmentEntry) => void; onGiveOverdue: () => void;
+}) {
+  const hasToday = todayPending.length > 0;
+  const allDoneEver = totalDoses > 0 && remaining === 0;
+  return (
+    <section className="mt-3 overflow-hidden rounded-xl border border-brand-200 bg-gradient-to-br from-brand-50 to-surface-1 shadow-card dark:border-brand-500/30 dark:from-brand-500/10 dark:to-surface-1">
+      <div className="flex items-center gap-2 border-b border-brand-100 px-4 py-2.5 dark:border-brand-500/20">
+        <Zap size={16} className="text-brand-600" />
+        <h2 className="text-sm font-black text-ink">لوحة اليوم</h2>
+        <span className="text-2xs font-bold text-ink-subtle">· {formatDate(todayISO, lang)}</span>
+      </div>
+      <div className="space-y-3 p-4">
+        {overdueDoses.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2 rounded-lg border border-danger-200 bg-danger-50 px-3 py-2.5 dark:border-danger-500/30 dark:bg-danger-500/10">
+            <AlertTriangle size={16} className="shrink-0 text-danger-600" />
+            <span className="text-sm font-extrabold text-danger-700 dark:text-danger-300">{formatNum(overdueDoses.length)} جرعة متأخّرة</span>
+            <span className="text-xs text-danger-600/80 dark:text-danger-300/80">لم تُعطَ في أيامها</span>
+            <button onClick={onGiveOverdue} className="ms-auto inline-flex items-center gap-1.5 rounded-lg bg-danger-600 px-3 py-1.5 text-xs font-black text-white transition hover:bg-danger-700">
+              <Check size={13} /> تسجيل إعطائها الآن
+            </button>
+          </div>
+        )}
+        {hasToday ? (
+          <>
+            <div className="flex items-center justify-between">
+              <div className="text-sm font-extrabold text-ink">جرعات اليوم المستحقّة <span className="text-brand-600">({formatNum(todayPending.length)})</span></div>
+              {todayDoneCount > 0 && <div className="text-2xs font-bold text-success-600">✓ أُعطيت {formatNum(todayDoneCount)}</div>}
+            </div>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {todayPending.map((t) => (
+                <div key={t.id} className="flex items-center gap-2 rounded-lg border border-line bg-surface-1 p-2.5">
+                  <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-warn-50 text-warn-600 dark:bg-warn-500/15"><Pill size={16} /></span>
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm font-black text-ink">{t.medication}</div>
+                    <div className="truncate text-2xs font-bold text-ink-subtle">{[t.amount, t.observations].filter(Boolean).join(" · ") || "—"}</div>
+                  </div>
+                  <button onClick={() => onGiveOne(t)} className="shrink-0 rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-black text-white transition hover:bg-brand-700">تم</button>
+                </div>
+              ))}
+            </div>
+            <button onClick={onGiveAll} className="flex w-full items-center justify-center gap-2 rounded-xl bg-brand-600 py-3 text-sm font-black text-white shadow-sm transition hover:bg-brand-700">
+              <Check size={18} /> إعطاء كل جرعات اليوم ({formatNum(todayPending.length)})
+            </button>
+          </>
+        ) : allDoneEver ? (
+          <div className="flex items-center gap-2.5 rounded-lg bg-success-50 px-3 py-3 text-success-700 dark:bg-success-500/10 dark:text-success-300">
+            <CheckCircle2 size={20} className="shrink-0" /><div><b className="font-black">اكتمل العلاج بالكامل</b> — كل الجرعات أُعطيت. أحسنت! 🎉</div>
+          </div>
+        ) : todayDoneCount > 0 ? (
+          <div className="flex items-center gap-2.5 rounded-lg bg-success-50 px-3 py-3 text-success-700 dark:bg-success-500/10 dark:text-success-300">
+            <CheckCircle2 size={20} className="shrink-0" /><div><b className="font-black">أُكملت جرعات اليوم</b> — لا جرعات متبقية اليوم.{nextDose && <> القادمة {formatDate(nextDose.day, lang)}.</>}</div>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2.5 rounded-lg bg-surface-2 px-3 py-3 text-ink-muted">
+            <CalendarClock size={20} className="shrink-0 text-brand-600" /><div>لا جرعات مجدولة اليوم.{nextDose && <> الجرعة القادمة <b className="font-bold text-ink">{formatDate(nextDose.day, lang)}</b> — {nextDose.medication}.</>}</div>
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+/* ------------------------- Per-medication course view --------------------- */
+interface MedCourse { name: string; rows: TreatmentEntry[]; total: number; given: number; overdueN: number; next: TreatmentEntry | null; amount: string; freq: string }
+function MedCourseView({ courses, todayISO, ended, lang, onGive }: { courses: MedCourse[]; todayISO: string; ended: boolean; lang: string; onGive: (t: TreatmentEntry) => void }) {
+  return (
+    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      {courses.map((c) => {
+        const pct = c.total ? Math.round((c.given / c.total) * 100) : 0;
+        const done = c.given === c.total;
+        const dueNow = !!c.next && c.next.day <= todayISO;
+        return (
+          <div key={c.name} className="flex flex-col gap-2.5 rounded-xl border border-line-strong bg-surface-1 p-3.5 shadow-card">
+            <div className="flex items-start gap-2">
+              <span className={cn("grid h-9 w-9 shrink-0 place-items-center rounded-lg", done ? "bg-success-50 text-success-600 dark:bg-success-500/15" : c.overdueN ? "bg-danger-50 text-danger-600 dark:bg-danger-500/15" : "bg-brand-50 text-brand-600 dark:bg-brand-500/15")}><Pill size={18} /></span>
+              <div className="min-w-0 flex-1">
+                <div className="text-sm font-black leading-tight text-ink">{c.name}</div>
+                {(c.amount || c.freq) && <div className="truncate text-2xs font-bold text-ink-subtle">{[c.amount, c.freq].filter(Boolean).join(" · ")}</div>}
+              </div>
+              {done ? <CheckCircle2 size={18} className="shrink-0 text-success-500" /> : c.overdueN > 0 ? <span className="shrink-0 rounded bg-danger-100 px-1.5 py-0.5 text-[9px] font-black text-danger-700 dark:bg-danger-500/20 dark:text-danger-300">{formatNum(c.overdueN)} متأخّرة</span> : null}
+            </div>
+            <div>
+              <div className="mb-1 flex items-center justify-between text-2xs font-bold">
+                <span className="text-ink-subtle">{formatNum(c.given)} من {formatNum(c.total)} جرعة</span>
+                <span className={done ? "text-success-600" : "text-brand-600"}>{formatNum(pct)}%</span>
+              </div>
+              <div className="h-2 overflow-hidden rounded-full bg-surface-2">
+                <div className={cn("h-full rounded-full transition-all", done ? "bg-success-500" : c.overdueN ? "bg-danger-500" : "bg-brand-500")} style={{ width: `${pct}%` }} />
+              </div>
+            </div>
+            <div className="mt-auto flex items-center justify-between gap-2 pt-0.5">
+              <span className="text-2xs font-bold text-ink-muted">
+                {done ? <span className="text-success-600">✓ مكتمل</span> : c.next ? <>التالية: {formatDate(c.next.day, lang)}</> : "—"}
+              </span>
+              {!ended && !done && c.next && dueNow && (
+                <button onClick={() => onGive(c.next!)} className="rounded-lg bg-brand-600 px-2.5 py-1 text-2xs font-black text-white transition hover:bg-brand-700">تم إعطاؤها</button>
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ----------------------------- Extend plan modal -------------------------- */
+function ExtendPlanModal({ open, lastDay, lang, medCount, onClose, onExtend }: {
+  open: boolean; lastDay: string | null; lang: string; medCount: number; onClose: () => void; onExtend: (days: number) => void | Promise<void>;
+}) {
+  const [days, setDays] = useState(7);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { if (open) { setDays(7); setBusy(false); } }, [open]);
+  const submit = async () => { if (busy || days < 1) return; setBusy(true); try { await onExtend(days); } finally { setBusy(false); } };
+  return (
+    <Modal open={open} onClose={onClose} title="تمديد خطة العلاج">
+      <div className="space-y-4">
+        <p className="text-sm text-ink-muted">تُكرَّر أدوية آخر يوم{medCount ? ` (${formatNum(medCount)} دواء)` : ""} لعدد إضافي من الأيام{lastDay ? <> بعد <b className="text-ink">{formatDate(lastDay, lang)}</b></> : ""}.</p>
+        <div className="flex flex-wrap gap-2">
+          {[3, 5, 7, 14].map((d) => (
+            <button key={d} type="button" onClick={() => setDays(d)} className={cn("rounded-lg border px-4 py-2 text-sm font-black transition", days === d ? "border-brand-500 bg-brand-50 text-brand-700 dark:bg-brand-500/15 dark:text-brand-300" : "border-line bg-surface-1 text-ink-muted hover:border-brand-300")}>{formatNum(d)} أيام</button>
+          ))}
+        </div>
+        <div>
+          <div className="mb-1.5 text-xs font-bold text-ink-muted">عدد الأيام</div>
+          <input type="number" min={1} max={60} value={days} onChange={(e) => setDays(Math.max(1, Math.min(60, Number(e.target.value) || 1)))} className="input h-11 w-full tabular-nums" dir="ltr" />
+        </div>
+        <Button size="lg" className="w-full" leftIcon={<CalendarPlus size={18} />} loading={busy} disabled={!medCount} onClick={submit}>تمديد {formatNum(days)} أيام</Button>
+      </div>
+    </Modal>
   );
 }
 
