@@ -2,7 +2,7 @@ import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
-import { ArrowLeft, ArrowRight, Camera, Stethoscope, BedDouble, CheckCircle2, Pill, Plus, Trash2, Activity, ChevronDown, Search, Loader2, ShieldCheck, FolderPlus, CalendarDays, HeartPulse } from "lucide-react";
+import { ArrowLeft, ArrowRight, Camera, Stethoscope, BedDouble, CheckCircle2, Pill, Plus, Trash2, Activity, ChevronDown, Search, Loader2, ShieldCheck, FolderPlus, CalendarDays, HeartPulse, User, PawPrint } from "lucide-react";
 import type { Species, Sex, AdmissionKind, Pet } from "@/types";
 import { repo } from "@/lib/repo";
 import { opsStore } from "@/lib/opsStore";
@@ -257,53 +257,44 @@ export function NewCase() {
           <SerialAdmit today={today} doctorName={user?.full_name ?? "Doctor"} onAdmitted={(o) => setOutcomes([o])} />
         </div>
       ) : step === 1 ? (
-        <div className="animate-fade-in lg:grid lg:grid-cols-12 lg:items-start lg:gap-6">
-          {/* Owner (once) — becomes a sticky sidebar on large screens */}
-          <div className="card space-y-3 p-4 lg:sticky lg:top-6 lg:col-span-5 xl:col-span-4">
-            <h2 className="font-bold text-ink">{t("newCase.ownerSection")}</h2>
-            <div>
-              <label className="label">{t("newCase.ownerName")}</label>
-              <input className="input" value={ownerName} onChange={(e) => setOwnerName(e.target.value)} />
+        <div className="space-y-6 animate-fade-in">
+          {/* Owner (once) — a full-width card with a precise multi-column field grid */}
+          <div className="card p-4 sm:p-5">
+            <h2 className="mb-4 flex items-center gap-2 font-bold text-ink"><User size={18} className="text-brand-600" /> {t("newCase.ownerSection")}</h2>
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+              <div>
+                <label className="label">{t("newCase.ownerName")}</label>
+                <input className="input" value={ownerName} onChange={(e) => setOwnerName(e.target.value)} />
+              </div>
+              <div>
+                <label className="label">{t("phone.ownerPhone")}</label>
+                <PhoneInput value={phone} onChange={setPhone} />
+              </div>
+              <div>
+                <label className="label">{t("phone.ownerEmail")}</label>
+                <input type="email" className="input" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="owner@email.com" />
+              </div>
+              <div className="sm:col-span-2 xl:col-span-3">
+                <GovernorateAreaPicker governorate={governorate} area={area} onChange={(g, a) => { setGovernorate(g); setArea(a); }} />
+              </div>
             </div>
-            <div>
-              <label className="label">{t("phone.ownerPhone")}</label>
-              <PhoneInput value={phone} onChange={setPhone} />
-            </div>
-            <div>
-              <label className="label">{t("phone.ownerEmail")}</label>
-              <input type="email" className="input" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="owner@email.com" />
-            </div>
-            <GovernorateAreaPicker
-              governorate={governorate}
-              area={area}
-              onChange={(g, a) => { setGovernorate(g); setArea(a); }}
-            />
           </div>
 
-          {/* Animals + actions — the main column on large screens */}
-          <div className="mt-5 space-y-5 lg:col-span-7 lg:mt-0 xl:col-span-8">
           {/* Animals (one or more) */}
           <div className="flex items-center justify-between">
-            <h2 className="font-bold text-ink">{t("newCase.animals")}</h2>
+            <h2 className="flex items-center gap-2 font-bold text-ink"><PawPrint size={18} className="text-brand-600" /> {t("newCase.animals")}</h2>
             <span className="chip bg-surface-2 text-ink-muted text-xs">{animals.length}</span>
           </div>
 
           {animals.map((a, i) => (
-            <div key={a.key} className="card p-4 space-y-3 relative">
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-semibold text-brand-700">{t("newCase.animalLabel", { n: i + 1 })}</span>
-                {animals.length > 1 && (
-                  <button className="text-ink-subtle hover:text-red-500" onClick={() => removeAnimal(a.key)} aria-label={t("newCase.removeAnimal")}>
-                    <Trash2 size={16} />
-                  </button>
-                )}
-              </div>
-              <div className="flex items-center gap-3">
+            <div key={a.key} className="card p-4 sm:p-5 relative space-y-4">
+              {/* Identity row — a compact avatar next to the animal label */}
+              <div className="flex items-center gap-3 border-b border-line pb-3">
                 <label className="cursor-pointer shrink-0">
                   {a.photo ? (
-                    <img src={a.photo} alt="" className="w-20 h-20 rounded-2xl object-cover" />
+                    <img src={a.photo} alt="" className="h-14 w-14 rounded-2xl object-cover" />
                   ) : (
-                    <span className="w-20 h-20 rounded-2xl bg-brand-50 text-brand-500 grid place-items-center"><Camera size={26} /></span>
+                    <span className="grid h-14 w-14 place-items-center rounded-2xl bg-brand-50 text-brand-500 dark:bg-brand-500/15"><Camera size={22} /></span>
                   )}
                   <input type="file" accept="image/*" className="hidden" onChange={async (e) => {
                     const f = e.target.files?.[0]; e.target.value = "";
@@ -312,17 +303,25 @@ export function NewCase() {
                     catch (err) { toast.error(describeUploadError(err, t)); }
                   }} />
                 </label>
-                <div className="flex-1">
+                <span className="flex-1 text-sm font-extrabold text-brand-700 dark:text-brand-300">{t("newCase.animalLabel", { n: i + 1 })}</span>
+                {animals.length > 1 && (
+                  <button className="text-ink-subtle transition hover:text-red-500" onClick={() => removeAnimal(a.key)} aria-label={t("newCase.removeAnimal")}>
+                    <Trash2 size={16} />
+                  </button>
+                )}
+              </div>
+
+              {/* Fields — a precise grid: identity spans full, attributes pair/triple up */}
+              <div className="grid gap-x-5 gap-y-4 sm:grid-cols-2 xl:grid-cols-3">
+                <div className="sm:col-span-2 xl:col-span-3">
                   <label className="label">{t("pet.name")}</label>
                   <input className="input" value={a.name} onChange={(e) => setAnimal(a.key, { name: e.target.value })} />
                 </div>
-              </div>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="sm:col-span-2">
+                <div className="sm:col-span-2 xl:col-span-3">
                   <label className="label">{t("pet.speciesLabel")}</label>
                   <SpeciesPicker value={a.species} onChange={(s) => setAnimal(a.key, { species: s })} />
                 </div>
-                <div className="sm:col-span-2">
+                <div className="sm:col-span-2 xl:col-span-3">
                   <label className="label">{t("pet.breed")}</label>
                   <BreedPicker species={a.species} value={a.breed} onChange={(v) => setAnimal(a.key, { breed: v })} />
                 </div>
@@ -337,7 +336,7 @@ export function NewCase() {
                 <div>
                   <WeightInput value={a.weight} onChange={(v) => setAnimal(a.key, { weight: v })} />
                 </div>
-                <div>
+                <div className="sm:col-span-2 xl:col-span-3">
                   <label className="label">{t("pet.color")}</label>
                   <ColorPicker value={a.color} onChange={(v) => setAnimal(a.key, { color: v })} />
                 </div>
@@ -345,11 +344,11 @@ export function NewCase() {
                   <label className="label">{t("pet.microchip")}</label>
                   <input className="input" value={a.microchip} onChange={(e) => setAnimal(a.key, { microchip: e.target.value })} />
                 </div>
-                <div>
+                <div className="sm:col-span-1 xl:col-span-2">
                   <label className="label">{t("newCase.allergies")}</label>
                   <input className="input" value={a.allergies} onChange={(e) => setAnimal(a.key, { allergies: e.target.value })} placeholder="Penicillin, …" />
                 </div>
-                <div className="sm:col-span-2">
+                <div className="sm:col-span-2 xl:col-span-3">
                   <label className="label">{t("newCase.notes")}</label>
                   <textarea className="input min-h-16" value={a.notes} onChange={(e) => setAnimal(a.key, { notes: e.target.value })} placeholder={t("newCase.notesPlaceholder")} />
                 </div>
@@ -393,7 +392,6 @@ export function NewCase() {
           <button className="btn-primary w-full" disabled={valid.length === 0} onClick={() => { playTap(); setStep(2); }}>
             {t("common.next")} <Next size={18} />
           </button>
-          </div>
         </div>
       ) : (
         <div className="mx-auto max-w-3xl space-y-5 animate-fade-in">
