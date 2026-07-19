@@ -7,7 +7,7 @@ import { playTap } from "@/lib/sounds";
 import { allBreeds, breedLabel } from "@/lib/breeds";
 
 const SPECIES_EMOJI: Record<Species, string> = {
-  dog: "🐶", cat: "🐱", horse: "🐴", cow: "🐄", bird: "🦜", rabbit: "🐰", other: "🐾",
+  dog: "🐶", cat: "🐈", horse: "🐴", cow: "🐄", bird: "🦜", rabbit: "🐰", other: "🐾",
 };
 const SPECIES_ORDER: Species[] = ["dog", "cat", "horse", "cow", "bird", "rabbit", "other"];
 
