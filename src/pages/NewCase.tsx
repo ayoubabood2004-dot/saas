@@ -236,7 +236,7 @@ export function NewCase() {
   }
 
   return (
-    <div className="mx-auto max-w-2xl px-4 py-6">
+    <div className="mx-auto w-full max-w-2xl px-4 py-6 lg:max-w-6xl xl:max-w-7xl">
       <button className="btn-ghost px-2 py-1 mb-2 text-sm" onClick={() => (step === 1 ? navigate(-1) : setStep(1))}>
         <Prev size={18} /> {t("common.back")}
       </button>
@@ -253,11 +253,13 @@ export function NewCase() {
       </div>
 
       {entry === "serial" ? (
-        <SerialAdmit today={today} doctorName={user?.full_name ?? "Doctor"} onAdmitted={(o) => setOutcomes([o])} />
+        <div className="mx-auto max-w-2xl">
+          <SerialAdmit today={today} doctorName={user?.full_name ?? "Doctor"} onAdmitted={(o) => setOutcomes([o])} />
+        </div>
       ) : step === 1 ? (
-        <div className="space-y-5 animate-fade-in">
-          {/* Owner (once) */}
-          <div className="card p-4 space-y-3">
+        <div className="animate-fade-in lg:grid lg:grid-cols-12 lg:items-start lg:gap-6">
+          {/* Owner (once) — becomes a sticky sidebar on large screens */}
+          <div className="card space-y-3 p-4 lg:sticky lg:top-6 lg:col-span-5 xl:col-span-4">
             <h2 className="font-bold text-ink">{t("newCase.ownerSection")}</h2>
             <div>
               <label className="label">{t("newCase.ownerName")}</label>
@@ -278,6 +280,8 @@ export function NewCase() {
             />
           </div>
 
+          {/* Animals + actions — the main column on large screens */}
+          <div className="mt-5 space-y-5 lg:col-span-7 lg:mt-0 xl:col-span-8">
           {/* Animals (one or more) */}
           <div className="flex items-center justify-between">
             <h2 className="font-bold text-ink">{t("newCase.animals")}</h2>
@@ -313,40 +317,42 @@ export function NewCase() {
                   <input className="input" value={a.name} onChange={(e) => setAnimal(a.key, { name: e.target.value })} />
                 </div>
               </div>
-              <div>
-                <label className="label">{t("pet.speciesLabel")}</label>
-                <SpeciesPicker value={a.species} onChange={(s) => setAnimal(a.key, { species: s })} />
-              </div>
-              <div>
-                <label className="label">{t("pet.breed")}</label>
-                <BreedPicker species={a.species} value={a.breed} onChange={(v) => setAnimal(a.key, { breed: v })} />
-              </div>
-              <div>
-                <label className="label">{t("pet.sexLabel")}</label>
-                <SexPicker value={a.sex} onChange={(s) => setAnimal(a.key, { sex: s })} />
-              </div>
-              <div>
-                <label className="label">{t("pet.ageLabel", "Age")}</label>
-                <AgeInput dob={a.dob} onChange={(d) => setAnimal(a.key, { dob: d })} />
-              </div>
-              <div>
-                <WeightInput value={a.weight} onChange={(v) => setAnimal(a.key, { weight: v })} />
-              </div>
-              <div>
-                <label className="label">{t("pet.color")}</label>
-                <ColorPicker value={a.color} onChange={(v) => setAnimal(a.key, { color: v })} />
-              </div>
-              <div>
-                <label className="label">{t("pet.microchip")}</label>
-                <input className="input" value={a.microchip} onChange={(e) => setAnimal(a.key, { microchip: e.target.value })} />
-              </div>
-              <div>
-                <label className="label">{t("newCase.allergies")}</label>
-                <input className="input" value={a.allergies} onChange={(e) => setAnimal(a.key, { allergies: e.target.value })} placeholder="Penicillin, …" />
-              </div>
-              <div>
-                <label className="label">{t("newCase.notes")}</label>
-                <textarea className="input min-h-16" value={a.notes} onChange={(e) => setAnimal(a.key, { notes: e.target.value })} placeholder={t("newCase.notesPlaceholder")} />
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="sm:col-span-2">
+                  <label className="label">{t("pet.speciesLabel")}</label>
+                  <SpeciesPicker value={a.species} onChange={(s) => setAnimal(a.key, { species: s })} />
+                </div>
+                <div className="sm:col-span-2">
+                  <label className="label">{t("pet.breed")}</label>
+                  <BreedPicker species={a.species} value={a.breed} onChange={(v) => setAnimal(a.key, { breed: v })} />
+                </div>
+                <div>
+                  <label className="label">{t("pet.sexLabel")}</label>
+                  <SexPicker value={a.sex} onChange={(s) => setAnimal(a.key, { sex: s })} />
+                </div>
+                <div>
+                  <label className="label">{t("pet.ageLabel", "Age")}</label>
+                  <AgeInput dob={a.dob} onChange={(d) => setAnimal(a.key, { dob: d })} />
+                </div>
+                <div>
+                  <WeightInput value={a.weight} onChange={(v) => setAnimal(a.key, { weight: v })} />
+                </div>
+                <div>
+                  <label className="label">{t("pet.color")}</label>
+                  <ColorPicker value={a.color} onChange={(v) => setAnimal(a.key, { color: v })} />
+                </div>
+                <div>
+                  <label className="label">{t("pet.microchip")}</label>
+                  <input className="input" value={a.microchip} onChange={(e) => setAnimal(a.key, { microchip: e.target.value })} />
+                </div>
+                <div>
+                  <label className="label">{t("newCase.allergies")}</label>
+                  <input className="input" value={a.allergies} onChange={(e) => setAnimal(a.key, { allergies: e.target.value })} placeholder="Penicillin, …" />
+                </div>
+                <div className="sm:col-span-2">
+                  <label className="label">{t("newCase.notes")}</label>
+                  <textarea className="input min-h-16" value={a.notes} onChange={(e) => setAnimal(a.key, { notes: e.target.value })} placeholder={t("newCase.notesPlaceholder")} />
+                </div>
               </div>
 
               {/* Health status + smart diagnosis combobox */}
@@ -387,9 +393,10 @@ export function NewCase() {
           <button className="btn-primary w-full" disabled={valid.length === 0} onClick={() => { playTap(); setStep(2); }}>
             {t("common.next")} <Next size={18} />
           </button>
+          </div>
         </div>
       ) : (
-        <div className="space-y-5 animate-fade-in">
+        <div className="mx-auto max-w-3xl space-y-5 animate-fade-in">
           <h2 className="font-bold text-ink">{t("newCase.disposition")}</h2>
 
           {/* Admission date (تاريخ الدخول) — auto-set to today, editable for late/back-dated entries. */}
@@ -400,6 +407,7 @@ export function NewCase() {
             <p className="text-xs text-ink-subtle">{t("newCase.admissionDateHint", "يُحدَّد تلقائياً بتاريخ اليوم — عدّله فقط إذا دخلت الحالة في يوم سابق.")}</p>
           </div>
 
+          <div className={cn("grid gap-4", valid.length > 1 && "lg:grid-cols-2")}>
           {valid.map((a) => (
             <div key={a.key} className="card p-4 space-y-3">
               <div className="flex items-center gap-2">
@@ -436,6 +444,7 @@ export function NewCase() {
               )}
             </div>
           ))}
+          </div>
 
           <button className="btn-primary w-full py-4 disabled:opacity-60 disabled:cursor-not-allowed" onClick={finish} disabled={isSubmitting}>
             {isSubmitting ? (
