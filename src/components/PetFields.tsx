@@ -7,7 +7,9 @@ import { playTap } from "@/lib/sounds";
 import { allBreeds, breedLabel } from "@/lib/breeds";
 
 const SPECIES_EMOJI: Record<Species, string> = {
-  dog: "🐶", cat: "🐈", horse: "🐴", cow: "🐄", bird: "🦜", rabbit: "🐰", other: "🐾",
+  // ️ (VS16) forces color-emoji presentation — some devices rendered the
+  // bare cat face as a monochrome text glyph.
+  dog: "🐶", cat: "🐱️", horse: "🐴", cow: "🐄", bird: "🦜", rabbit: "🐰", other: "🐾",
 };
 const SPECIES_ORDER: Species[] = ["dog", "cat", "horse", "cow", "bird", "rabbit", "other"];
 

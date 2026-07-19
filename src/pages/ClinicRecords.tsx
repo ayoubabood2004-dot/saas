@@ -40,7 +40,7 @@ const KPI_TONE: Record<string, string> = {
   success: "bg-success-50 text-success-600 dark:bg-success-500/15 dark:text-success-200",
 };
 
-const SPECIES_EMOJI: Record<Species, string> = { dog: "🐶", cat: "🐈", horse: "🐴", cow: "🐄", bird: "🦜", rabbit: "🐰", other: "🐾" };
+const SPECIES_EMOJI: Record<Species, string> = { dog: "🐶", cat: "🐱️", horse: "🐴", cow: "🐄", bird: "🦜", rabbit: "🐰", other: "🐾" };
 
 /** Patient health triage → Red / Green / Blue (from the per-visit condition). */
 const HEALTH: Record<PatientCondition, { key: string; def: string; dot: string; cls: string }> = {
