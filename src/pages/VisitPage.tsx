@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import {
   ArrowRight, Clock, Check, Plus, NotebookPen, ClipboardList,
@@ -115,16 +115,21 @@ function ProgressRing({ done, total, size = 72 }: { done: number; total: number;
 export default function VisitPage() {
   const { petId, visitId } = useParams<{ petId: string; visitId: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const { t, i18n } = useTranslation();
   const lang = i18n.language;
   const { user } = useAuth();
   const toast = useToast();
 
-  const [pet, setPet] = useState<Pet | null>(null);
-  const [visit, setVisit] = useState<ClinicVisit | null>(null);
+  // Seed from navigation state (e.g. the charts hub) so the page paints instantly
+  // with the pet/visit/doses we already have, then refreshes in the background.
+  const seed = location.state as { pet?: Pet; visit?: ClinicVisit; treatments?: TreatmentEntry[] } | null;
+  const seeded = !!(seed?.pet && seed?.visit && seed.visit.id === visitId);
+  const [pet, setPet] = useState<Pet | null>(seeded ? seed!.pet! : null);
+  const [visit, setVisit] = useState<ClinicVisit | null>(seeded ? seed!.visit! : null);
   const [notes, setNotes] = useState<PetNote[]>([]);
-  const [treatments, setTreatments] = useState<TreatmentEntry[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [treatments, setTreatments] = useState<TreatmentEntry[]>(seeded ? (seed!.treatments ?? []) : []);
+  const [loading, setLoading] = useState(!seeded);
 
   const [planOpen, setPlanOpen] = useState(false);
   const [planBusy, setPlanBusy] = useState(false);

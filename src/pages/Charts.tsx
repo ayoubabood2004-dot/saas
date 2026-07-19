@@ -80,6 +80,9 @@ export function Charts() {
     return () => { cancel = true; };
   }, [clinicId]);
 
+  // Warm the visit-page code chunk up front so tapping a card never waits on JS.
+  useEffect(() => { void import("@/pages/VisitPage"); }, []);
+
   // The set of charted pets — stable key so treatments refetch only when it truly changes.
   const petIdKey = useMemo(() => {
     const ids = new Set<string>();
@@ -153,21 +156,24 @@ export function Charts() {
   const dueNow = charts.filter((c) => c.dueToday > 0 || c.overdue > 0).length;
   const shownBuckets = BUCKETS.filter((b) => filter === "all" || filter === b.key);
 
+  // Hand the visit page the data we already have so it paints instantly (no spinner).
+  const go = (petId: string, visit: ClinicVisit) =>
+    navigate(`/pet/${petId}/visit/${visit.id}`, { state: { pet: pets[petId], visit, treatments: treatments.filter((t) => t.visit_id === visit.id) } });
+
   /** Open the treatment plan (VISIT). Reuse the pet's open visit, or create one on the spot. */
   const openChart = async (c: Chart) => {
     playTap();
-    if (c.visitId) { navigate(`/pet/${c.petId}/visit/${c.visitId}`); return; }
+    const known = c.visitId ? visits.find((v) => v.id === c.visitId) : openVisitByPet.get(c.petId);
+    if (known) { go(c.petId, known); return; }
     if (opening) return;
     setOpening(c.id);
     try {
-      const existing = openVisitByPet.get(c.petId);
-      if (existing) { navigate(`/pet/${c.petId}/visit/${existing.id}`); return; }
       const v = await repo.addClinicVisit({
         pet_id: c.petId, kind: "illness", status: "open",
         condition: "under_treatment", reason: c.title !== "—" ? c.title : null,
         opened_at: new Date().toISOString(), opened_by: user?.full_name ?? null,
       });
-      navigate(`/pet/${c.petId}/visit/${v.id}`);
+      go(c.petId, v);
     } finally { setOpening(null); }
   };
 
