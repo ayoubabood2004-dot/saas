@@ -10,7 +10,6 @@ import { repo } from "@/lib/repo";
 import { opsStore } from "@/lib/opsStore";
 import { useAuth } from "@/contexts/AuthContext";
 import { useBranchState, matchesBranch } from "@/lib/branchStore";
-import { PetAvatar } from "@/components/PetAvatar";
 import { localISO, formatDate, formatNum, cn } from "@/lib/utils";
 import { playTap } from "@/lib/sounds";
 
@@ -23,6 +22,29 @@ const BUCKETS: { key: BucketKey; label: string; icon: typeof Stethoscope; tint: 
   { key: "visit", label: "طبلات الزيارة", icon: ClipboardList, tint: "text-brand-600 dark:text-brand-300", ring: "bg-brand-100 dark:bg-brand-500/15", badge: "bg-brand-100 text-brand-700 dark:bg-brand-500/20 dark:text-brand-300" },
 ];
 const SPECIES_AR: Record<string, string> = { dog: "كلب", cat: "قطة", horse: "حصان", cow: "بقرة", bird: "طائر", rabbit: "أرنب", other: "أخرى" };
+// Default avatar: the species emoji (️ = VS16 forces a colour cat) on a soft tint —
+// self-contained, so it paints instantly with zero network requests.
+const SPECIES_EMOJI: Record<string, string> = { dog: "🐶", cat: "🐱️", horse: "🐴", cow: "🐄", bird: "🦜", rabbit: "🐰", other: "🐾" };
+const SPECIES_GRAD: Record<string, string> = {
+  dog: "from-amber-100 to-orange-100 dark:from-amber-500/15 dark:to-orange-500/10",
+  cat: "from-violet-100 to-fuchsia-100 dark:from-violet-500/15 dark:to-fuchsia-500/10",
+  horse: "from-emerald-100 to-teal-100 dark:from-emerald-500/15 dark:to-teal-500/10",
+  cow: "from-sky-100 to-cyan-100 dark:from-sky-500/15 dark:to-cyan-500/10",
+  bird: "from-lime-100 to-green-100 dark:from-lime-500/15 dark:to-green-500/10",
+  rabbit: "from-pink-100 to-rose-100 dark:from-pink-500/15 dark:to-rose-500/10",
+  other: "from-slate-100 to-brand-100 dark:from-slate-500/15 dark:to-brand-500/10",
+};
+
+/** Instant, self-contained pet avatar — real photo when present, else a colour species emoji. */
+function CardAvatar({ pet }: { pet: Pet | undefined }) {
+  const sp = pet?.species ?? "other";
+  if (pet?.photo_url) return <img src={pet.photo_url} alt="" loading="lazy" className="h-11 w-11 shrink-0 rounded-xl object-cover" />;
+  return (
+    <span className={cn("grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-gradient-to-br text-2xl leading-none", SPECIES_GRAD[sp] ?? SPECIES_GRAD.other)}>
+      {SPECIES_EMOJI[sp] ?? SPECIES_EMOJI.other}
+    </span>
+  );
+}
 
 /** A single treatment chart — a card the doctor taps to jump into the plan (visit). */
 interface Chart {
@@ -274,7 +296,7 @@ function ChartCard({ chart: c, lang, todayISO, txLoaded, busy, onOpen }: { chart
     <button type="button" onClick={onOpen} disabled={busy}
       className="group flex flex-col gap-2.5 rounded-xl border border-line-strong bg-surface-1 p-3.5 text-start shadow-card transition hover:border-brand-300 hover:shadow-lg disabled:opacity-60">
       <div className="flex items-center gap-2.5">
-        <PetAvatar pet={c.pet ?? { species: "other", photo_url: null, name: "?" }} size={44} className="!rounded-xl shrink-0" />
+        <CardAvatar pet={c.pet} />
         <div className="min-w-0 flex-1">
           <div className="truncate text-sm font-black text-ink">{c.pet?.name ?? "—"}</div>
           <div className="truncate text-2xs font-bold text-ink-subtle">
