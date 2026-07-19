@@ -427,7 +427,7 @@ export function PetPassport() {
             {tab === "visits" && <VisitsPanel pet={pet} visits={clinicVisits} canEdit={canEditClinical && !isOwner} onChanged={reload} />}
             {tab === "diet" && <DietTab pet={pet} onChanged={reload} canEdit={canEditClinical || isOwner} />}
             {tab === "vaccines" && <VaccinesTab pet={pet} vaccines={vaccines} onChanged={reload} canEdit={canEditClinical} isOwner={isOwner} />}
-            {tab === "history" && <HistoryTab visits={visits} admissions={admissions} treatments={treatments} isOwner={isOwner} />}
+            {tab === "history" && <HistoryTab visits={visits} admissions={admissions} treatments={treatments} isOwner={isOwner} canEdit={canEditClinical && !isOwner} onChanged={reload} />}
             {tab === "treatment" && <TreatmentTab pet={pet} treatments={treatments} admissions={admissions} onChanged={reload} canEdit={canEditClinical} isOwner={isOwner} />}
             {tab === "notes" && <NotesTab pet={pet} notes={notes} canEdit={canEditClinical} onChanged={reload} />}
             {tab === "timeline" && <TimelineWorkspace pet={pet} treatments={treatments} vaccinations={vaccines} notes={notes} admissions={admissions} isOwner={isOwner} canEdit={canEditClinical} onChanged={reload} />}
@@ -1365,7 +1365,61 @@ function ConditionBadge({ condition }: { condition: PatientCondition }) {
   return <span className={cn("chip shrink-0 text-2xs font-semibold", c.cls)}>{t(c.key, c.def)}</span>;
 }
 
-function HistoryTab({ visits, admissions, treatments, isOwner }: { visits: MedicalVisit[]; admissions: Admission[]; treatments: TreatmentEntry[]; isOwner: boolean }) {
+/* ---- Admission date (تاريخ دخول الحالة) — the day the case first entered the clinic ---- */
+function AdmissionDateModal({ admission, onClose, onChanged }: { admission: Admission; onClose: () => void; onChanged: () => void }) {
+  const { t } = useTranslation();
+  const toast = useToast();
+  const today = localISO();
+  const [date, setDate] = useState((admission.admitted_on || today).slice(0, 10));
+  const [busy, setBusy] = useState(false);
+  const save = async () => {
+    if (!date || busy) return;
+    setBusy(true);
+    try {
+      await repo.updateAdmission(admission.id, { admitted_on: date });
+      playSuccess();
+      onChanged();
+      onClose();
+    } catch (e) {
+      playWarning();
+      toast.error(t("passport.admissionDateError", "تعذّر حفظ التاريخ"), e instanceof Error ? e.message : undefined);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Modal open onClose={onClose} title={t("passport.editAdmissionDate", "تعديل تاريخ الدخول")}>
+      <div className="space-y-4">
+        <p className="text-sm text-ink-muted">{t("passport.admissionDateHint", "اليوم الذي دخلت فيه الحالة إلى العيادة لأول مرة.")}</p>
+        <div>
+          <label className="label flex items-center gap-1.5"><Calendar size={15} className="text-brand-600" /> {t("newCase.admissionDate", "تاريخ الدخول")}</label>
+          <input type="date" className="input h-11 w-full tabular-nums" dir="ltr" value={date} max={today} onChange={(e) => setDate(e.target.value)} />
+        </div>
+        <Button size="lg" className="w-full" loading={busy} disabled={!date} onClick={save}>{t("common.save", "حفظ")}</Button>
+      </div>
+    </Modal>
+  );
+}
+
+/** The admission date, with an inline pencil that opens the editor (staff only). */
+function AdmissionDate({ admission, canEdit, onChanged, className }: { admission: Admission; canEdit: boolean; onChanged: () => void; className?: string }) {
+  const { t, i18n } = useTranslation();
+  const [open, setOpen] = useState(false);
+  return (
+    <span className={cn("inline-flex items-center gap-1", className)}>
+      {formatDate(admission.admitted_on, i18n.language)}
+      {canEdit && (
+        <button type="button" onClick={() => setOpen(true)} aria-label={t("passport.editAdmissionDate", "تعديل تاريخ الدخول")}
+          className="grid h-5 w-5 place-items-center rounded-full text-ink-subtle transition hover:bg-surface-2 hover:text-brand-600">
+          <Pencil size={11} />
+        </button>
+      )}
+      {open && <AdmissionDateModal admission={admission} onClose={() => setOpen(false)} onChanged={onChanged} />}
+    </span>
+  );
+}
+
+function HistoryTab({ visits, admissions, treatments, isOwner, canEdit, onChanged }: { visits: MedicalVisit[]; admissions: Admission[]; treatments: TreatmentEntry[]; isOwner: boolean; canEdit: boolean; onChanged: () => void }) {
   const { t, i18n } = useTranslation();
   const [openId, setOpenId] = useState<string | null>(null);
 
@@ -1390,9 +1444,9 @@ function HistoryTab({ visits, admissions, treatments, isOwner }: { visits: Medic
                     {a.kind === "boarding" ? t("passport.kindBoarding") : t("passport.kindTreatment")}
                     {a.reason ? ` — ${a.reason}` : ""}
                   </p>
-                  <p className="text-xs text-ink-muted">
-                    {formatDate(a.admitted_on, i18n.language)}
-                    {a.discharged_on ? ` → ${formatDate(a.discharged_on, i18n.language)}` : ` · ${t("passport.ongoing")}`}
+                  <p className="text-xs text-ink-muted flex flex-wrap items-center gap-1">
+                    <AdmissionDate admission={a} canEdit={canEdit} onChanged={onChanged} />
+                    <span>{a.discharged_on ? `→ ${formatDate(a.discharged_on, i18n.language)}` : `· ${t("passport.ongoing")}`}</span>
                   </p>
                 </div>
               </div>
@@ -1656,7 +1710,7 @@ function TreatmentTab({ pet, treatments, admissions, onChanged, canEdit, isOwner
         <div className="flex items-center justify-between gap-2 flex-wrap">
           {activeTreatment ? (
             <span className="chip bg-brand-50 text-xs text-brand-700 dark:bg-brand-500/15 dark:text-brand-300">
-              <Stethoscope size={13} /> {t("treatment.inTreatment")} · {t("treatment.since", { date: formatDate(activeTreatment.admitted_on, i18n.language) })}
+              <Stethoscope size={13} /> {t("treatment.inTreatment")}
             </span>
           ) : activeBoarding ? (
             <span className="chip bg-sky-50 text-xs text-sky-700 dark:bg-sky-500/15 dark:text-sky-300">
@@ -1680,6 +1734,13 @@ function TreatmentTab({ pet, treatments, admissions, onChanged, canEdit, isOwner
             </div>
           )}
         </div>
+        {(activeTreatment || activeBoarding) && (
+          <div className="mt-2 flex flex-wrap items-center gap-1.5 border-t border-line pt-2 text-xs text-ink-muted">
+            <Calendar size={13} className="text-brand-600" />
+            <span className="font-semibold">{t("newCase.admissionDate", "تاريخ الدخول")}:</span>
+            <AdmissionDate admission={(activeTreatment ?? activeBoarding)!} canEdit={canEdit} onChanged={onChanged} className="font-bold text-ink" />
+          </div>
+        )}
         {canEdit && locked && <p className="mt-2 text-xs text-warn-600">{t("treatment.locked")}</p>}
       </div>
 

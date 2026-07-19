@@ -21,7 +21,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { formatReadings, type ReadingKey } from "@/lib/vitals";
 import { withTimeout, describeDbError, isTimeoutError, describeUploadError } from "@/lib/errors";
 import { prepareUpload } from "@/lib/image";
-import { uid } from "@/lib/utils";
+import { uid, localISO } from "@/lib/utils";
 import { playSuccess, playTap, playWarning } from "@/lib/sounds";
 
 type Disposition = "log" | "boarding" | "boardingCare" | "record";
@@ -72,9 +72,14 @@ export function NewCase() {
   const { user } = useAuth();
   const toast = useToast();
   const navigate = useNavigate();
-  const today = new Date().toISOString().slice(0, 10);
+  // Local calendar date (NOT the UTC toISOString slice, which lands on the wrong
+  // day late-evening in Iraq UTC+3) — this is the case's admission date.
+  const today = localISO();
 
   const [entry, setEntry] = useState<"new" | "serial">("new");
+  // Admission date (تاريخ الدخول) — defaults to today, editable so a case entered
+  // late can still be dated to the day it actually came in.
+  const [admittedOn, setAdmittedOn] = useState(today);
   const [step, setStep] = useState(1);
   const [ownerName, setOwnerName] = useState("");
   const [phone, setPhone] = useState("");
@@ -144,12 +149,12 @@ export function NewCase() {
         // Stamp the device's active branch (null = main / single-branch clinic).
         const branchId = branchStore.branchForWrite();
         if (a.disp === "log") {
-          await withTimeout(opsStore.addCase({ pet_id: pet.id, clinic_id: clinicId, branch_id: branchId, kind: "treatment" as AdmissionKind, status: "active", admitted_on: today, reason }, pet), 8000);
+          await withTimeout(opsStore.addCase({ pet_id: pet.id, clinic_id: clinicId, branch_id: branchId, kind: "treatment" as AdmissionKind, status: "active", admitted_on: admittedOn, reason }, pet), 8000);
         } else if (a.disp === "boarding") {
-          await withTimeout(opsStore.addCase({ pet_id: pet.id, clinic_id: clinicId, branch_id: branchId, kind: "boarding" as AdmissionKind, status: "active", admitted_on: today, cage: a.cage.trim() || undefined, reason }, pet), 8000);
+          await withTimeout(opsStore.addCase({ pet_id: pet.id, clinic_id: clinicId, branch_id: branchId, kind: "boarding" as AdmissionKind, status: "active", admitted_on: admittedOn, cage: a.cage.trim() || undefined, reason }, pet), 8000);
         } else if (a.disp === "boardingCare") {
           // Therapeutic boarding — staying in the clinic AND under active care.
-          await withTimeout(opsStore.addCase({ pet_id: pet.id, clinic_id: clinicId, branch_id: branchId, kind: "treatment_boarding" as AdmissionKind, status: "active", admitted_on: today, cage: a.cage.trim() || undefined, reason }, pet), 8000);
+          await withTimeout(opsStore.addCase({ pet_id: pet.id, clinic_id: clinicId, branch_id: branchId, kind: "treatment_boarding" as AdmissionKind, status: "active", admitted_on: admittedOn, cage: a.cage.trim() || undefined, reason }, pet), 8000);
         }
 
         // A diagnosis and/or registration readings become a dated consultation record
@@ -161,7 +166,7 @@ export function NewCase() {
             pet_id: pet.id,
             clinic_name: "Happy Paws Veterinary Clinic",
             doctor_name: user?.full_name ?? "Doctor",
-            visit_date: today,
+            visit_date: admittedOn,
             objective: objective || undefined,
             assessment: diagnosis || t("newCase.admissionReadings"),
           }), 8000);
@@ -387,6 +392,14 @@ export function NewCase() {
         <div className="space-y-5 animate-fade-in">
           <h2 className="font-bold text-ink">{t("newCase.disposition")}</h2>
 
+          {/* Admission date (تاريخ الدخول) — auto-set to today, editable for late/back-dated entries. */}
+          <div className="card p-4 space-y-2">
+            <label className="label flex items-center gap-1.5" htmlFor="admittedOn"><CalendarDays size={15} className="text-brand-600" /> {t("newCase.admissionDate", "تاريخ الدخول")}</label>
+            <input id="admittedOn" type="date" className="input tabular-nums" dir="ltr" value={admittedOn} max={today}
+              onChange={(e) => setAdmittedOn(e.target.value || today)} />
+            <p className="text-xs text-ink-subtle">{t("newCase.admissionDateHint", "يُحدَّد تلقائياً بتاريخ اليوم — عدّله فقط إذا دخلت الحالة في يوم سابق.")}</p>
+          </div>
+
           {valid.map((a) => (
             <div key={a.key} className="card p-4 space-y-3">
               <div className="flex items-center gap-2">
@@ -511,6 +524,7 @@ function SerialAdmit({ today, doctorName, onAdmitted }: { today: string; doctorN
   const [serial, setSerial] = useState("");
   const [pet, setPet] = useState<Pet | null>(null);
   const [notFound, setNotFound] = useState(false);
+  const [admittedOn, setAdmittedOn] = useState(today);
   const [disp, setDisp] = useState<Disposition>("log");
   const [cage, setCage] = useState("");
   const [addMeds, setAddMeds] = useState(true);
@@ -541,12 +555,12 @@ function SerialAdmit({ today, doctorName, onAdmitted }: { today: string; doctorN
       // Stamp the device's active branch (null = main / single-branch clinic).
       const branchId = branchStore.branchForWrite();
       // Inject into the shared ops cache so the calendar shows the card instantly.
-      if (disp === "boarding") await withTimeout(opsStore.addCase({ pet_id: pet.id, clinic_id: clinicId, branch_id: branchId, kind: "boarding" as AdmissionKind, status: "active", admitted_on: today, cage: cage.trim() || undefined, reason }, pet), 8000);
-      else if (disp === "boardingCare") await withTimeout(opsStore.addCase({ pet_id: pet.id, clinic_id: clinicId, branch_id: branchId, kind: "treatment_boarding" as AdmissionKind, status: "active", admitted_on: today, cage: cage.trim() || undefined, reason }, pet), 8000);
-      else await withTimeout(opsStore.addCase({ pet_id: pet.id, clinic_id: clinicId, branch_id: branchId, kind: "treatment" as AdmissionKind, status: "active", admitted_on: today, reason }, pet), 8000);
+      if (disp === "boarding") await withTimeout(opsStore.addCase({ pet_id: pet.id, clinic_id: clinicId, branch_id: branchId, kind: "boarding" as AdmissionKind, status: "active", admitted_on: admittedOn, cage: cage.trim() || undefined, reason }, pet), 8000);
+      else if (disp === "boardingCare") await withTimeout(opsStore.addCase({ pet_id: pet.id, clinic_id: clinicId, branch_id: branchId, kind: "treatment_boarding" as AdmissionKind, status: "active", admitted_on: admittedOn, cage: cage.trim() || undefined, reason }, pet), 8000);
+      else await withTimeout(opsStore.addCase({ pet_id: pet.id, clinic_id: clinicId, branch_id: branchId, kind: "treatment" as AdmissionKind, status: "active", admitted_on: admittedOn, reason }, pet), 8000);
       const objective = formatReadings(readings, pet.species, pet.id, (k) => t(`reading.${k}`));
       if (dx || objective) {
-        await withTimeout(repo.addVisit({ pet_id: pet.id, clinic_name: "Happy Paws Veterinary Clinic", doctor_name: doctorName, visit_date: today, objective: objective || undefined, assessment: dx || t("newCase.admissionReadings") }), 8000);
+        await withTimeout(repo.addVisit({ pet_id: pet.id, clinic_name: "Happy Paws Veterinary Clinic", doctor_name: doctorName, visit_date: admittedOn, objective: objective || undefined, assessment: dx || t("newCase.admissionReadings") }), 8000);
       }
     } catch (e) {
       playWarning();
@@ -580,6 +594,10 @@ function SerialAdmit({ today, doctorName, onAdmitted }: { today: string; doctorN
               <p className="font-bold text-ink">{pet.name} <span className="text-xs text-ink-subtle font-mono">#{pet.serial}</span></p>
               <p className="text-xs text-ink-muted">{t(`pet.species.${pet.species}`)}{pet.breed ? ` · ${breedLabel(pet.breed, i18n.language)}` : ""} · {pet.owner_name}</p>
             </div>
+          </div>
+          <div>
+            <label className="label flex items-center gap-1.5"><CalendarDays size={15} className="text-brand-600" /> {t("newCase.admissionDate", "تاريخ الدخول")}</label>
+            <input type="date" className="input py-2 tabular-nums" dir="ltr" value={admittedOn} max={today} onChange={(e) => setAdmittedOn(e.target.value || today)} />
           </div>
           <div className="grid grid-cols-3 gap-2">
             <DispMini active={disp === "log"} icon={Stethoscope} label={t("newCase.toLog")} onClick={() => { playTap(); setDisp("log"); setAddMeds(true); }} />
