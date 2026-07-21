@@ -62,9 +62,28 @@ const TABS: { id: Tab; icon: typeof IdCard; fill: string; text: string }[] = [
 const EVENT_TAB: Partial<Record<string, Tab>> = { vaccine: "vaccines", medication: "treatment", feeding: "diet", recheck: "history" };
 
 /** Full-width banner hero: pet photo + name + breed + core-info chips + allergy. */
-function ProfileHead({ pet, onPhoto }: { pet: Pet; onPhoto: (e: React.ChangeEvent<HTMLInputElement>) => void }) {
+function ProfileHead({ pet, canEdit, onPhoto, onRenamed }: { pet: Pet; canEdit: boolean; onPhoto: (e: React.ChangeEvent<HTMLInputElement>) => void; onRenamed: () => void }) {
   const { t, i18n } = useTranslation();
   const age = ageFromDOB(pet.dob);
+  // Inline rename — the name is edited right here on the record header, not buried
+  // in a modal. Pencil → the title becomes an input; ✓ saves, ✕ cancels.
+  const [editing, setEditing] = useState(false);
+  const [name, setName] = useState(pet.name);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { setName(pet.name); }, [pet.name]);
+  const saveName = async () => {
+    const next = name.trim();
+    if (!next || next === pet.name) { setName(pet.name); setEditing(false); return; }
+    setBusy(true);
+    try {
+      await repo.updatePet(pet.id, { name: next });
+      playSuccess();
+      setEditing(false);
+      onRenamed();
+    } finally {
+      setBusy(false);
+    }
+  };
   const speciesBreed = `${t(`pet.species.${pet.species}`)}${pet.breed ? ` · ${breedLabel(pet.breed, i18n.language)}` : ""}`;
   const allergy = pet.allergies && pet.allergies.length > 0 ? (
     <span className="chip animate-pulse-ring bg-danger-50 text-danger-700 dark:bg-danger-500/15 dark:text-danger-200">
@@ -85,7 +104,52 @@ function ProfileHead({ pet, onPhoto }: { pet: Pet; onPhoto: (e: React.ChangeEven
         <input type="file" accept="image/*" className="hidden" onChange={onPhoto} />
       </label>
       <div className="min-w-0 flex-1">
-        <h1 className="truncate font-display text-2xl font-extrabold tracking-tighter2 text-ink sm:text-3xl">{pet.name}</h1>
+        {editing ? (
+          <div className="flex items-center gap-2 no-print">
+            <input
+              className="input flex-1 font-display text-2xl font-extrabold tracking-tighter2 sm:text-3xl"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") saveName(); if (e.key === "Escape") { setName(pet.name); setEditing(false); } }}
+              autoFocus
+              disabled={busy}
+              aria-label={t("pet.name", "الاسم")}
+            />
+            <button
+              type="button"
+              onClick={saveName}
+              disabled={busy || !name.trim()}
+              aria-label={t("common.save", "حفظ")}
+              className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-brand-600 text-white shadow-soft transition hover:bg-brand-700 disabled:opacity-50"
+            >
+              {busy ? <Loader2 size={18} className="animate-spin" /> : <Check size={18} />}
+            </button>
+            <button
+              type="button"
+              onClick={() => { setName(pet.name); setEditing(false); }}
+              disabled={busy}
+              aria-label={t("common.cancel", "إلغاء")}
+              className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-ink-subtle transition hover:bg-surface-2 hover:text-ink disabled:opacity-50"
+            >
+              <X size={18} />
+            </button>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2">
+            <h1 className="truncate font-display text-2xl font-extrabold tracking-tighter2 text-ink sm:text-3xl">{pet.name}</h1>
+            {canEdit && (
+              <button
+                type="button"
+                onClick={() => { playTap(); setEditing(true); }}
+                aria-label={t("pet.editName", "تعديل الاسم")}
+                title={t("pet.editName", "تعديل الاسم")}
+                className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-ink-subtle transition hover:bg-surface-2 hover:text-brand-600 no-print"
+              >
+                <Pencil size={16} />
+              </button>
+            )}
+          </div>
+        )}
         <p className="truncate text-base text-ink-muted">{speciesBreed}</p>
         <div className="mt-3 flex flex-wrap gap-2">
           {age && <span className={pill}><Cake size={15} className="text-brand-500" /> {age.years > 0 ? `${age.years}${t("pet.yShort", "y")} ` : ""}{age.months}{t("pet.mShort", "m")}</span>}
@@ -360,7 +424,7 @@ export function PetPassport() {
           merged with subtle dividers so it reads as a single clean record, not many boxes. */}
       <section className="card overflow-hidden p-0">
         <div className={cn("grid divide-y divide-line lg:divide-y-0 lg:divide-x", isOwner ? "lg:grid-cols-2" : "lg:grid-cols-3")}>
-          <div className="p-5 sm:p-6"><ProfileHead pet={pet} onPhoto={onPhoto} /></div>
+          <div className="p-5 sm:p-6"><ProfileHead pet={pet} canEdit={canEditClinical || isOwner} onPhoto={onPhoto} onRenamed={reload} /></div>
           {!isOwner && <div className="p-5 sm:p-6"><OwnerCard pet={pet} canEdit={canEditClinical} onUpdated={reload} bare /></div>}
           <div className="p-5 sm:p-6"><IdentityFactsCard pet={pet} canEdit={canEditClinical || isOwner} onChanged={reload} bare /></div>
         </div>
