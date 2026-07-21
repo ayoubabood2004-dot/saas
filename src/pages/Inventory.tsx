@@ -171,9 +171,13 @@ function ProductRow({ p, companyName, onEdit, onRemove }: { p: Product; companyN
           )}
         </div>
       </div>
-      <Badge tone={p.stock === 0 ? "danger" : p.stock <= lowThreshold(p) ? "warn" : "neutral"}>
-        {t("pos.qtyStock", { n: p.stock, defaultValue: "{{n}} in stock" })}
-      </Badge>
+      {p.pooled ? (
+        <Badge tone="brand"><Layers size={12} /> {t("pos.pooledItem", "مجمّع")}</Badge>
+      ) : (
+        <Badge tone={p.stock === 0 ? "danger" : p.stock <= lowThreshold(p) ? "warn" : "neutral"}>
+          {t("pos.qtyStock", { n: p.stock, defaultValue: "{{n}} in stock" })}
+        </Badge>
+      )}
       <button onClick={onEdit} aria-label={t("common.edit", "Edit")} className="grid h-9 w-9 place-items-center rounded-full text-ink-subtle transition hover:bg-brand-50 hover:text-brand-600"><Pencil size={16} /></button>
       <button onClick={onRemove} aria-label={t("common.delete", "Remove")} className="grid h-9 w-9 place-items-center rounded-full text-ink-subtle transition hover:bg-danger-50 hover:text-danger-600"><Trash2 size={16} /></button>
     </motion.div>
@@ -244,7 +248,7 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
 }) {
   const { t } = useTranslation();
   const toast = useToast();
-  const blank = { barcode: "", name: "", company: "", section: "", category: "", subcategory: "", purchase_price: "", sell_price: "", stock: "", min_stock: "", expiry_date: "", has_sub_unit: false, sub_unit_name: "", units_per_box: "", sub_unit_price: "" };
+  const blank = { barcode: "", name: "", company: "", section: "", category: "", subcategory: "", purchase_price: "", sell_price: "", stock: "", min_stock: "", expiry_date: "", pooled: false, has_sub_unit: false, sub_unit_name: "", units_per_box: "", sub_unit_price: "" };
   const [f, setF] = useState(blank);
   const [busy, setBusy] = useState(false);
   const barcodeRef = useRef<HTMLInputElement>(null);
@@ -272,6 +276,7 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
         purchase_price: String(product.purchase_price), sell_price: String(product.sell_price),
         stock: String(product.stock), min_stock: product.min_stock ? String(product.min_stock) : "",
         expiry_date: product.expiry_date ?? "",
+        pooled: !!product.pooled,
         has_sub_unit: !!product.has_sub_unit,
         sub_unit_name: product.sub_unit_name ?? "",
         units_per_box: product.units_per_box ? String(product.units_per_box) : "",
@@ -343,16 +348,20 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
           section_id = createdSection.id;
         }
       }
+      // "Pooled" (added without a count) only makes sense inside a section — it
+      // draws from that section's pool. Force stock to 0 when pooled.
+      const pooled = f.pooled && section_id != null;
       const payload = {
         barcode: f.barcode.trim() || null,
         name: f.name.trim(),
         company_id,
         section_id,
+        pooled,
         category: (f.category || null) as ProductCategory | null,
         subcategory: f.subcategory.trim() || null,
         purchase_price: Number(f.purchase_price) || 0,
         sell_price: Number(f.sell_price) || 0,
-        stock: Math.max(0, Math.round((Number(f.stock) || 0) * 1000) / 1000),
+        stock: pooled ? 0 : Math.max(0, Math.round((Number(f.stock) || 0) * 1000) / 1000),
         min_stock: Math.max(0, Math.round(Number(f.min_stock) || 0)),
         expiry_date: f.expiry_date || null,
         has_sub_unit: subUnitOn,
@@ -478,11 +487,32 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
             </span>
           </div>
         )}
-        <div className="grid grid-cols-2 gap-3">
+        {/* Pooled (add without a count) — only inside a section. The item then
+            sells from the section's shared pool instead of its own stock. */}
+        {f.section.trim() && (
+          <div className="rounded-xl border border-line bg-surface-2/40 p-3">
+            <div className="flex items-center justify-between gap-3">
+              <span className="flex items-center gap-2 text-sm font-semibold text-ink">
+                <Layers size={16} className="text-brand-600" /> {t("pos.pooledToggle", "بدون كمية — ضمن مخزون الصنف المجمّع")}
+              </span>
+              <button
+                type="button" role="switch" aria-checked={f.pooled}
+                onClick={() => { playTap(); set({ pooled: !f.pooled }); }}
+                className={cn("relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition", f.pooled ? "bg-brand-600" : "bg-surface-3")}
+              >
+                <span className={cn("inline-block h-5 w-5 transform rounded-full bg-white shadow transition", f.pooled ? "ltr:translate-x-5 rtl:-translate-x-5" : "ltr:translate-x-0.5 rtl:-translate-x-0.5")} />
+              </button>
+            </div>
+            <p className="mt-1 text-2xs text-ink-subtle">{t("pos.pooledHint", "لا نعرف كميته بالضبط — يُباع من مخزون الصنف المجمّع حتى يجيه شراء بكمية محددة.")}</p>
+          </div>
+        )}
+        <div className={cn("grid gap-3", f.pooled && f.section.trim() ? "grid-cols-1" : "grid-cols-2")}>
+          {!(f.pooled && f.section.trim()) && (
           <div>
             <label className="label">{t("pos.stock", "Stock")}</label>
             <input type="number" inputMode="numeric" min="0" step="1" className="input" value={f.stock} onChange={(e) => set({ stock: e.target.value })} placeholder="0" />
           </div>
+          )}
           <div>
             <label className="label flex items-center gap-1"><AlertTriangle size={12} /> {t("pos.minStock", "Min. stock alert")}</label>
             <input type="number" inputMode="numeric" min="0" step="1" className="input" value={f.min_stock} onChange={(e) => set({ min_stock: e.target.value })} placeholder="0" />
@@ -742,7 +772,9 @@ function CompanyDetail({ company, products, companies, sections, clinicId, onBac
       ) : (
         <motion.div variants={staggerContainer} initial="initial" animate="animate" className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {mySections.map((sec) => {
-            const st = statsBy(products, (p) => p.section_id === sec.id);
+            const base = statsBy(products, (p) => p.section_id === sec.id);
+            // Section total units include the pooled (legacy) count.
+            const st = { ...base, units: base.units + (sec.pooled_stock ?? 0) };
             return (
               <SectionCard key={sec.id} icon={FolderTree} title={sec.name} stats={st} onOpen={() => { playTap(); setOpenSectionId(sec.id); }} onEdit={() => { playTap(); setEditingSection(sec); }} />
             );
@@ -806,6 +838,7 @@ function SectionProducts({ company, section, products, companies, sections, clin
   const { t, i18n } = useTranslation();
   const toast = useToast();
   const [addingProduct, setAddingProduct] = useState(false);
+  const [poolOpen, setPoolOpen] = useState(false);
   const [editing, setEditing] = useState<Product | null>(null);
 
   const Back = i18n.dir() === "rtl" ? ArrowRight : ArrowLeft;
@@ -813,6 +846,9 @@ function SectionProducts({ company, section, products, companies, sections, clin
     ? products.filter((p) => p.section_id === section.id)
     : products.filter((p) => p.company_id === company.id && !p.section_id);
   const title = section ? section.name : t("pos.uncategorized", "بدون صنف");
+  const pool = section?.pooled_stock ?? 0;
+  const trackedUnits = mine.reduce((n, p) => n + (p.pooled ? 0 : p.stock || 0), 0);
+  const estTotal = pool + trackedUnits;
 
   const removeProduct = async (p: Product) => {
     if (!window.confirm(t("pos.confirmDelete", { name: p.name, defaultValue: "Remove \"{{name}}\" from inventory?" }))) return;
@@ -838,6 +874,23 @@ function SectionProducts({ company, section, products, companies, sections, clin
         <Button size="sm" leftIcon={<PackagePlus size={15} />} onClick={() => { playTap(); setAddingProduct(true); }}>{t("pos.addBarcode", "أضف باركود")}</Button>
       </div>
 
+      {/* Pooled (legacy) stock for the section — the "we have ~N of these but don't
+          know the per-barcode split" total. Editable (a stock-count / جرد). */}
+      {section && (
+        <div className="card flex flex-wrap items-center gap-4 p-4">
+          <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-brand-50 text-brand-600 dark:bg-brand-500/15 dark:text-brand-300"><Layers size={20} /></span>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-bold text-ink">{t("pos.pooledStock", "المخزون المجمّع للصنف")}</p>
+            <p className="text-xs text-ink-subtle">{t("pos.pooledStockHint", "عدد تقديري مجهول التوزيع — يُخصم منه أولاً عند البيع.")}</p>
+          </div>
+          <div className="text-end">
+            <p className="text-2xl font-extrabold text-brand-600 tabular-nums dark:text-brand-300">{pool}</p>
+            {trackedUnits > 0 && <p className="text-2xs text-ink-subtle">{t("pos.estTotal", { n: estTotal, defaultValue: "الإجمالي التقديري {{n}}" })}</p>}
+          </div>
+          <Button size="sm" variant="secondary" leftIcon={<Pencil size={15} />} onClick={() => { playTap(); setPoolOpen(true); }}>{t("pos.setPool", "تعديل / جرد")}</Button>
+        </div>
+      )}
+
       {mine.length === 0 ? (
         <div className="card p-10 text-center text-ink-subtle">{t("pos.noCompanyBarcodes", "لا توجد باركودات في هذا الصنف بعد. أضف أول باركود.")}</div>
       ) : (
@@ -861,8 +914,53 @@ function SectionProducts({ company, section, products, companies, sections, clin
         onClose={() => { setAddingProduct(false); setEditing(null); }}
         onSaved={() => { setAddingProduct(false); setEditing(null); onChanged(); }}
       />
+      {section && <SetPoolModal open={poolOpen} section={section} onClose={() => setPoolOpen(false)} onSaved={() => { setPoolOpen(false); onChanged(); }} />}
       {children}
     </div>
+  );
+}
+
+/** Set / adjust a section's pooled (legacy) stock total — a stock-count (جرد). */
+function SetPoolModal({ open, section, onClose, onSaved }: { open: boolean; section: CompanySection; onClose: () => void; onSaved: () => void }) {
+  const { t } = useTranslation();
+  const toast = useToast();
+  const [val, setVal] = useState("");
+  const [busy, setBusy] = useState(false);
+  const ref = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    setVal(String(section.pooled_stock ?? 0));
+    setTimeout(() => ref.current?.select(), 80);
+  }, [open, section]);
+
+  const save = async () => {
+    if (busy) return;
+    const n = Math.max(0, Math.round((Number(val) || 0) * 1000) / 1000);
+    setBusy(true);
+    try {
+      await repo.updateCompanySection(section.id, { pooled_stock: n });
+      playSuccess();
+      onSaved();
+    } catch (e) {
+      playWarning();
+      toast.error(describeDbError(e, t), e instanceof Error ? e.message : undefined);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal open={open} onClose={onClose} title={t("pos.setPoolTitle", "المخزون المجمّع — {{name}}", { name: section.name })}>
+      <div className="space-y-3">
+        <p className="text-sm text-ink-subtle">{t("pos.setPoolBody", "حدّد العدد الكلي التقديري لبضاعة هذا الصنف. البيع يخصم منه أولاً، والشراء بكمية محددة يبدأ التتبّع الدقيق.")}</p>
+        <div>
+          <label className="label flex items-center gap-1"><Layers size={12} /> {t("pos.pooledStock", "المخزون المجمّع للصنف")}</label>
+          <input ref={ref} type="number" inputMode="numeric" min="0" step="1" className="input text-lg font-bold" value={val} onChange={(e) => setVal(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") save(); }} placeholder="0" />
+        </div>
+        <Button className="mt-1 w-full" loading={busy} onClick={save}>{t("common.save", "Save")}</Button>
+      </div>
+    </Modal>
   );
 }
 

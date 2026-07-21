@@ -353,6 +353,11 @@ export interface CompanySection {
   /** The company this section lives under. */
   company_id: string;
   name: string;
+  /** Legacy/opening "pooled" stock — an aggregate count of unknown per-barcode
+   *  breakdown held at the section level. Barcodes added without a count draw
+   *  from this pool; a sale of any barcode in the section decrements it first
+   *  (oldest-stock-first), before touching a product's own tracked `stock`. */
+  pooled_stock?: number | null;
   created_at: string;
 }
 
@@ -367,6 +372,10 @@ export interface Product {
   company_id?: string | null;
   /** The section (صنف) inside the company this product belongs to — see `CompanySection`. Optional. */
   section_id?: string | null;
+  /** True = this barcode was added WITHOUT an individual count; its quantity is
+   *  unknown and it sells from its section's pooled_stock. `stock` is usually 0
+   *  until a purchase gives it a real count (which flips this back to false). */
+  pooled?: boolean;
   /** Free-text subcategory (e.g. "معلبات", "رمل", "دراي فود") — used by Mix & Match promotions. */
   subcategory?: string | null;
   purchase_price: number;

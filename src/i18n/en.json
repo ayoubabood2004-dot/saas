@@ -577,7 +577,16 @@
     "sectionDup": "A section with this name already exists in this company",
     "sectionName": "Section name",
     "sectionNamePh": "e.g. Dry food, Canned, Medicines",
-    "sectionInCompany": "Inside {{name}}"
+    "sectionInCompany": "Inside {{name}}",
+    "pooledItem": "Pooled",
+    "pooledToggle": "No count — part of the section's pooled stock",
+    "pooledHint": "Exact quantity unknown — sells from the section's pooled stock until a purchase gives it a real count.",
+    "pooledStock": "Section pooled stock",
+    "pooledStockHint": "An estimated total of unknown breakdown — sold from first.",
+    "estTotal": "Estimated total {{n}}",
+    "setPool": "Edit / count",
+    "setPoolTitle": "Pooled stock — {{name}}",
+    "setPoolBody": "Set the estimated total for this section. Sales draw from it first; a purchase with a real count starts precise tracking."
   },
   "role": {
     "admin": "Clinic",

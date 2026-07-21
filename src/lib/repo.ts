@@ -60,14 +60,26 @@ function createInvoiceLocal(items: CheckoutItem[], meta?: SaleMeta): Invoice {
     created_at: new Date().toISOString(),
   };
   db.invoices.push(invoice);
+  const r3 = (n: number) => Math.max(0, Math.round(n * 1000) / 1000);
   for (const i of items) {
     // Box-equivalent removed from stock: the fraction for sub-unit sales, else the qty.
     const stockQty = i.stock_qty != null ? i.stock_qty : i.qty;
     db.invoiceItems.push({ id: uid("ii"), invoice_id: invoice.id, product_id: i.product_id ?? null, name: i.name, barcode: i.barcode ?? null, qty: i.qty, unit_price: i.unit_price, unit_cost: i.unit_cost, line_total: i.qty * i.unit_price, stock_qty: stockQty, unit_label: i.unit_label ?? null });
     if (i.product_id) {
       const p = db.products.find((x) => x.id === i.product_id);
-      // Round to 3 decimals to keep stock free of binary-float drift (e.g. 0.1+0.2).
-      if (p) p.stock = Math.max(0, Math.round((p.stock - stockQty) * 1000) / 1000);
+      if (p) {
+        // Pool-first (oldest-stock-first): drain the product's section pool
+        // before its own tracked stock, then round to 3 dp to avoid float drift.
+        let rem = stockQty;
+        const sec = p.section_id ? (db.companySections ?? []).find((x) => x.id === p.section_id) : undefined;
+        const pool = sec?.pooled_stock ?? 0;
+        if (sec && pool > 0) {
+          const fromPool = Math.min(rem, pool);
+          sec.pooled_stock = r3(pool - fromPool);
+          rem -= fromPool;
+        }
+        if (rem > 0) p.stock = r3(p.stock - rem);
+      }
     }
   }
   saveDB(db);
@@ -690,6 +702,9 @@ const demoRepo = {
       const existing = pid ? db.products.find((x) => x.id === pid) : undefined;
       if (existing) {
         existing.stock = round3((existing.stock || 0) + qty);
+        // A received count makes this a TRACKED product — no longer part of the
+        // section's unknown pool (the pool itself is deliberately left untouched).
+        existing.pooled = false;
         // Only refresh a price when a positive value was entered — a blank/0
         // field on a restock line KEEPS the product's real price (never zero it).
         if (cost > 0) existing.purchase_price = cost;
