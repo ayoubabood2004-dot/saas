@@ -4,7 +4,7 @@
 import { loadDB, saveDB } from "./demoStore";
 import { supabase } from "./supabase";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, AppointmentStatus, TreatmentEntry, Admission, Branch, Reminder, Product, Invoice, InvoiceItem, CheckoutItem, SaleMeta, Customer, DiscountType, PaymentMethod, PaymentSplit, WhatsAppMessage, AuditEntry, LoginEvent, PetNote, Expense, ClinicVisit } from "@/types";
+import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, AppointmentStatus, TreatmentEntry, Admission, Branch, Reminder, Product, Company, Invoice, InvoiceItem, CheckoutItem, SaleMeta, Customer, DiscountType, PaymentMethod, PaymentSplit, WhatsAppMessage, AuditEntry, LoginEvent, PetNote, Expense, ClinicVisit } from "@/types";
 import { uid, uuid, ageMonths } from "./utils";
 
 /** Sort key for a case/admission — newest first. Prefers the precise `created_at`
@@ -592,6 +592,35 @@ const demoRepo = {
     db.products = (db.products ?? []).filter((x) => x.id !== id);
     saveDB(db);
   },
+
+  /* ---------------- Companies (الشركات) — inventory grouping ---------------- */
+  async listCompanies(_clinicId?: string): Promise<Company[]> {
+    return (loadDB().companies ?? []).slice().sort((a, b) => a.name.localeCompare(b.name));
+  },
+  async createCompany(input: Omit<Company, "id" | "created_at">): Promise<Company> {
+    const db = loadDB();
+    if (!db.companies) db.companies = [];
+    const c: Company = { ...input, id: uid("co"), created_at: new Date().toISOString() };
+    db.companies.push(c);
+    saveDB(db);
+    return c;
+  },
+  async updateCompany(id: string, patch: Partial<Company>): Promise<Company | undefined> {
+    const db = loadDB();
+    const c = (db.companies ?? []).find((x) => x.id === id);
+    if (!c) return undefined;
+    Object.assign(c, patch);
+    saveDB(db);
+    return c;
+  },
+  async deleteCompany(id: string): Promise<void> {
+    const db = loadDB();
+    db.companies = (db.companies ?? []).filter((x) => x.id !== id);
+    // Products keep existing — they just lose the (now-gone) company link.
+    for (const p of db.products ?? []) if (p.company_id === id) p.company_id = null;
+    saveDB(db);
+  },
+
   async listInvoices(_clinicId?: string): Promise<Invoice[]> {
     return (loadDB().invoices ?? []).slice().sort((a, b) => b.created_at.localeCompare(a.created_at));
   },
@@ -782,6 +811,9 @@ const DEMO_ACTIVITY_MAP: Record<string, { entity: string; action: "INSERT" | "UP
   createProduct: { entity: "products", action: "INSERT" },
   updateProduct: { entity: "products", action: "UPDATE" },
   deleteProduct: { entity: "products", action: "DELETE" },
+  createCompany: { entity: "companies", action: "INSERT" },
+  updateCompany: { entity: "companies", action: "UPDATE" },
+  deleteCompany: { entity: "companies", action: "DELETE" },
   checkout: { entity: "invoices", action: "INSERT" },
   retailCheckout: { entity: "invoices", action: "INSERT" },
   settleInvoice: { entity: "invoices", action: "UPDATE" },
@@ -1153,6 +1185,24 @@ const supabaseRepo: typeof demoRepo = {
   async deleteProduct(id) {
     ok(await sbc().from("products").delete().eq("id", id));
   },
+
+  /* ---------------- Companies (الشركات) ---------------- */
+  async listCompanies(clinicId) {
+    let q = sbc().from("companies").select("*").order("name", { ascending: true });
+    if (clinicId) q = q.eq("clinic_id", clinicId);
+    return listOf<Company>(await q);
+  },
+  async createCompany(input) {
+    return need<Company>(await sbc().from("companies").insert(input).select().single());
+  },
+  async updateCompany(id, patch) {
+    return maybe<Company>(await sbc().from("companies").update(patch).eq("id", id).select().maybeSingle());
+  },
+  async deleteCompany(id) {
+    // FK on products.company_id is ON DELETE SET NULL, so products survive.
+    ok(await sbc().from("companies").delete().eq("id", id));
+  },
+
   async listInvoices(clinicId) {
     let q = sbc().from("invoices").select("*").order("created_at", { ascending: false });
     if (clinicId) q = q.eq("clinic_id", clinicId);

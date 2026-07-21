@@ -1,11 +1,11 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { motion } from "framer-motion";
 import {
-  Barcode, Package, Trash2, Search,
-  TrendingUp, AlertTriangle, CalendarClock, Pencil, PackagePlus, Boxes, Layers,
+  Barcode, Package, Trash2, Search, Building2, Plus, ChevronLeft, ArrowRight, ArrowLeft,
+  TrendingUp, AlertTriangle, CalendarClock, Pencil, PackagePlus, Boxes, Layers, Wallet,
 } from "lucide-react";
-import type { Product, ProductCategory } from "@/types";
+import type { Product, ProductCategory, Company } from "@/types";
 import { repo } from "@/lib/repo";
 import { useAuth } from "@/contexts/AuthContext";
 import { Modal } from "@/components/Modal";
@@ -23,23 +23,31 @@ const daysUntil = (iso?: string | null) => (iso ? Math.floor((new Date(iso).getT
 /** A product's reorder level — its own min_stock if set, else the default. */
 const lowThreshold = (p: Product) => (p.min_stock && p.min_stock > 0 ? p.min_stock : LOW_STOCK);
 
+type View = "products" | "companies";
+
 /**
- * Inventory — dedicated stock management: products, add/edit, low-stock & expiry
- * alerts. Point-of-sale lives in the separate "Retail & Sales" module.
+ * Inventory — dedicated stock management: products, companies (الشركات),
+ * add/edit, low-stock & expiry alerts. Point-of-sale lives in "Retail & Sales".
  */
 export function Inventory() {
   const { t } = useTranslation();
   const { user } = useAuth();
   const clinicId = user?.clinic_id ?? user?.id; // shared workspace id (manager's id for staff)
   const [products, setProducts] = useState<Product[]>([]);
+  const [companies, setCompanies] = useState<Company[]>([]);
   const [loading, setLoading] = useState(true);
+  const [view, setView] = useState<View>("products");
 
   const mounted = useRef(true);
   const load = async () => {
     try {
-      const p = await withTimeout(repo.listProducts(clinicId), 15000);
+      const [p, c] = await Promise.all([
+        withTimeout(repo.listProducts(clinicId), 15000),
+        withTimeout(repo.listCompanies(clinicId), 15000).catch(() => [] as Company[]),
+      ]);
       if (!mounted.current) return;
       setProducts(p);
+      setCompanies(c);
     } catch {
       /* a hung/failed query still clears the skeleton below */
     } finally {
@@ -67,18 +75,41 @@ export function Inventory() {
       </div>
 
       {/* KPIs */}
-      <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-3">
+      <div className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Kpi icon={Package} tone="brand" label={t("pos.products", "Products")} value={String(products.length)} />
+        <Kpi icon={Building2} tone="accent" label={t("pos.companies", "الشركات")} value={String(companies.length)} />
         <Kpi icon={AlertTriangle} tone={lowStock ? "warn" : "success"} label={t("pos.lowStock", "Low stock")} value={String(lowStock)} />
         <Kpi icon={CalendarClock} tone={expiringSoon ? "warn" : "success"} label={t("pos.expiringSoon", "Expiring ≤30d")} value={String(expiringSoon)} />
       </div>
 
+      {/* View switch — products vs. companies (الشركات) */}
+      <div className="mb-4 inline-flex rounded-2xl bg-surface-2 p-1">
+        <ViewTab active={view === "products"} icon={Package} label={t("pos.tabProducts", "المنتجات")} onClick={() => { playTap(); setView("products"); }} />
+        <ViewTab active={view === "companies"} icon={Building2} label={t("pos.tabCompanies", "الشركات")} onClick={() => { playTap(); setView("companies"); }} />
+      </div>
+
       {loading ? (
         <div className="space-y-3">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-20 rounded-2xl" />)}</div>
+      ) : view === "products" ? (
+        <InventoryTab products={products} companies={companies} clinicId={clinicId} onChanged={load} />
       ) : (
-        <InventoryTab products={products} clinicId={clinicId} onChanged={load} />
+        <CompaniesTab products={products} companies={companies} clinicId={clinicId} onChanged={load} />
       )}
     </div>
+  );
+}
+
+function ViewTab({ active, icon: Icon, label, onClick }: { active: boolean; icon: typeof Package; label: string; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className={cn(
+        "flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-bold transition",
+        active ? "bg-surface-1 text-brand-700 shadow-soft dark:text-brand-200" : "text-ink-muted hover:text-ink",
+      )}
+    >
+      <Icon size={16} /> {label}
+    </button>
   );
 }
 
@@ -100,16 +131,59 @@ function Kpi({ icon: Icon, tone, label, value }: { icon: typeof Package; tone: "
   );
 }
 
-/* ---------------- Inventory ---------------- */
-function InventoryTab({ products, clinicId, onChanged }: { products: Product[]; clinicId?: string; onChanged: () => void }) {
+/* ---------------- Shared product row ---------------- */
+function ProductRow({ p, companyName, onEdit, onRemove }: { p: Product; companyName?: string; onEdit: () => void; onRemove: () => void }) {
   const { t, i18n } = useTranslation();
+  const exp = daysUntil(p.expiry_date);
+  const expired = exp != null && exp < 0;
+  const expiringSoon = exp != null && exp >= 0 && exp <= 30;
+  return (
+    <motion.div variants={staggerItem} className="card flex items-center gap-3 p-3">
+      <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-surface-2 text-ink-subtle"><Package size={20} /></span>
+      <div className="min-w-0 flex-1">
+        <p className="flex flex-wrap items-center gap-x-2 gap-y-1 truncate text-sm font-semibold text-ink">
+          {p.name}
+          {companyName && <span className="chip shrink-0 bg-accent-50 text-2xs font-semibold text-accent-700 dark:bg-accent-500/15 dark:text-accent-200"><Building2 size={11} /> {companyName}</span>}
+          {p.category && <span className="chip shrink-0 bg-surface-2 text-2xs font-medium text-ink-muted">{t(`pos.cat.${p.category}`)}</span>}
+        </p>
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-ink-subtle">
+          {p.barcode && <span className="flex items-center gap-1 font-mono"><Barcode size={11} /> {p.barcode}</span>}
+          <span>{t("pos.buy", "Buy")} {money(p.purchase_price)}</span>
+          <span className="font-semibold text-ink-muted">{t("pos.sell", "Sell")} {money(p.sell_price)}</span>
+          {p.expiry_date && (
+            <span className={cn("flex items-center gap-1", expired ? "text-danger-600" : expiringSoon ? "text-warn-600" : "")}>
+              <CalendarClock size={11} /> {formatDate(p.expiry_date, i18n.language)}
+              {expired ? ` · ${t("pos.expired", "expired")}` : expiringSoon ? ` · ${t("pos.soon", "soon")}` : ""}
+            </span>
+          )}
+        </div>
+      </div>
+      <Badge tone={p.stock === 0 ? "danger" : p.stock <= lowThreshold(p) ? "warn" : "neutral"}>
+        {t("pos.qtyStock", { n: p.stock, defaultValue: "{{n}} in stock" })}
+      </Badge>
+      <button onClick={onEdit} aria-label={t("common.edit", "Edit")} className="grid h-9 w-9 place-items-center rounded-full text-ink-subtle transition hover:bg-brand-50 hover:text-brand-600"><Pencil size={16} /></button>
+      <button onClick={onRemove} aria-label={t("common.delete", "Remove")} className="grid h-9 w-9 place-items-center rounded-full text-ink-subtle transition hover:bg-danger-50 hover:text-danger-600"><Trash2 size={16} /></button>
+    </motion.div>
+  );
+}
+
+/* ---------------- Products tab ---------------- */
+function InventoryTab({ products, companies, clinicId, onChanged }: { products: Product[]; companies: Company[]; clinicId?: string; onChanged: () => void }) {
+  const { t } = useTranslation();
   const toast = useToast();
   const [editing, setEditing] = useState<Product | null>(null);
   const [adding, setAdding] = useState(false);
   const [q, setQ] = useState("");
 
+  const companyName = useMemo(() => {
+    const m = new Map(companies.map((c) => [c.id, c.name]));
+    return (id?: string | null) => (id ? m.get(id) : undefined);
+  }, [companies]);
+
   const ql = q.trim().toLowerCase();
-  const shown = ql ? products.filter((p) => p.name.toLowerCase().includes(ql) || (p.barcode ?? "").includes(ql)) : products;
+  const shown = ql
+    ? products.filter((p) => p.name.toLowerCase().includes(ql) || (p.barcode ?? "").includes(ql) || (companyName(p.company_id) ?? "").toLowerCase().includes(ql))
+    : products;
 
   const remove = async (p: Product) => {
     if (!window.confirm(t("pos.confirmDelete", { name: p.name, defaultValue: "Remove \"{{name}}\" from inventory?" }))) return;
@@ -131,61 +205,46 @@ function InventoryTab({ products, clinicId, onChanged }: { products: Product[]; 
         <div className="card p-10 text-center text-ink-subtle">{t("pos.noProducts", "No products yet. Add your first one.")}</div>
       ) : (
         <motion.div variants={staggerContainer} initial="initial" animate="animate" className="space-y-2">
-          {shown.map((p) => {
-            const exp = daysUntil(p.expiry_date);
-            const expired = exp != null && exp < 0;
-            const expiringSoon = exp != null && exp >= 0 && exp <= 30;
-            return (
-              <motion.div key={p.id} variants={staggerItem} className="card flex items-center gap-3 p-3">
-                <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-surface-2 text-ink-subtle"><Package size={20} /></span>
-                <div className="min-w-0 flex-1">
-                  <p className="flex items-center gap-2 truncate text-sm font-semibold text-ink">
-                    {p.name}
-                    {p.category && <span className="chip shrink-0 bg-surface-2 text-2xs font-medium text-ink-muted">{t(`pos.cat.${p.category}`)}</span>}
-                  </p>
-                  <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-ink-subtle">
-                    {p.barcode && <span className="flex items-center gap-1 font-mono"><Barcode size={11} /> {p.barcode}</span>}
-                    <span>{t("pos.buy", "Buy")} {money(p.purchase_price)}</span>
-                    <span className="font-semibold text-ink-muted">{t("pos.sell", "Sell")} {money(p.sell_price)}</span>
-                    {p.expiry_date && (
-                      <span className={cn("flex items-center gap-1", expired ? "text-danger-600" : expiringSoon ? "text-warn-600" : "")}>
-                        <CalendarClock size={11} /> {formatDate(p.expiry_date, i18n.language)}
-                        {expired ? ` · ${t("pos.expired", "expired")}` : expiringSoon ? ` · ${t("pos.soon", "soon")}` : ""}
-                      </span>
-                    )}
-                  </div>
-                </div>
-                <Badge tone={p.stock === 0 ? "danger" : p.stock <= lowThreshold(p) ? "warn" : "neutral"}>
-                  {t("pos.qtyStock", { n: p.stock, defaultValue: "{{n}} in stock" })}
-                </Badge>
-                <button onClick={() => { playTap(); setEditing(p); }} aria-label={t("common.edit", "Edit")} className="grid h-9 w-9 place-items-center rounded-full text-ink-subtle transition hover:bg-brand-50 hover:text-brand-600"><Pencil size={16} /></button>
-                <button onClick={() => remove(p)} aria-label={t("common.delete", "Remove")} className="grid h-9 w-9 place-items-center rounded-full text-ink-subtle transition hover:bg-danger-50 hover:text-danger-600"><Trash2 size={16} /></button>
-              </motion.div>
-            );
-          })}
+          {shown.map((p) => (
+            <ProductRow key={p.id} p={p} companyName={companyName(p.company_id)} onEdit={() => { playTap(); setEditing(p); }} onRemove={() => remove(p)} />
+          ))}
         </motion.div>
       )}
 
-      <ProductModal open={adding || !!editing} product={editing} clinicId={clinicId} subcategories={subcategoriesOf(products)} onClose={() => { setAdding(false); setEditing(null); }} onSaved={() => { setAdding(false); setEditing(null); onChanged(); }} />
+      <ProductModal
+        open={adding || !!editing}
+        product={editing}
+        companies={companies}
+        clinicId={clinicId}
+        subcategories={subcategoriesOf(products)}
+        onClose={() => { setAdding(false); setEditing(null); }}
+        onSaved={() => { setAdding(false); setEditing(null); onChanged(); }}
+      />
     </div>
   );
 }
 
-function ProductModal({ open, product, clinicId, subcategories, onClose, onSaved }: { open: boolean; product: Product | null; clinicId?: string; subcategories: string[]; onClose: () => void; onSaved: () => void }) {
+function ProductModal({ open, product, companies, clinicId, subcategories, defaultCompanyName, onClose, onSaved }: {
+  open: boolean; product: Product | null; companies: Company[]; clinicId?: string; subcategories: string[];
+  defaultCompanyName?: string; onClose: () => void; onSaved: () => void;
+}) {
   const { t } = useTranslation();
   const toast = useToast();
-  const blank = { barcode: "", name: "", category: "", subcategory: "", purchase_price: "", sell_price: "", stock: "", min_stock: "", expiry_date: "", has_sub_unit: false, sub_unit_name: "", units_per_box: "", sub_unit_price: "" };
+  const blank = { barcode: "", name: "", company: "", category: "", subcategory: "", purchase_price: "", sell_price: "", stock: "", min_stock: "", expiry_date: "", has_sub_unit: false, sub_unit_name: "", units_per_box: "", sub_unit_price: "" };
   const [f, setF] = useState(blank);
   const [busy, setBusy] = useState(false);
   const barcodeRef = useRef<HTMLInputElement>(null);
   const nameRef = useRef<HTMLInputElement>(null);
   const saveRef = useRef<HTMLButtonElement>(null);
 
+  const companyNameOf = (id?: string | null) => (id ? companies.find((c) => c.id === id)?.name ?? "" : "");
+
   useEffect(() => {
     if (!open) return;
     if (product) {
       setF({
-        barcode: product.barcode ?? "", name: product.name, category: product.category ?? "",
+        barcode: product.barcode ?? "", name: product.name,
+        company: companyNameOf(product.company_id), category: product.category ?? "",
         subcategory: product.subcategory ?? "",
         purchase_price: String(product.purchase_price), sell_price: String(product.sell_price),
         stock: String(product.stock), min_stock: product.min_stock ? String(product.min_stock) : "",
@@ -196,7 +255,7 @@ function ProductModal({ open, product, clinicId, subcategories, onClose, onSaved
         sub_unit_price: product.sub_unit_price != null ? String(product.sub_unit_price) : "",
       });
     } else {
-      setF(blank);
+      setF({ ...blank, company: defaultCompanyName ?? "" });
       setTimeout(() => barcodeRef.current?.focus(), 80);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -216,6 +275,18 @@ function ProductModal({ open, product, clinicId, subcategories, onClose, onSaved
     { value: "other", label: t("pos.cat.other", "Other") },
   ];
 
+  /** Resolve the typed company name to an id: reuse an existing company
+   *  (case-insensitive) or create a new one. Empty → no company. */
+  const resolveCompanyId = async (): Promise<string | null> => {
+    const typed = f.company.trim();
+    if (!typed) return null;
+    const key = typed.toLowerCase();
+    const existing = companies.find((c) => c.name.trim().toLowerCase() === key);
+    if (existing) return existing.id;
+    const created = await repo.createCompany({ name: typed, note: null, clinic_id: clinicId ?? null });
+    return created.id;
+  };
+
   const save = async () => {
     if (!f.name.trim() || busy) return;
     // A sub-unit needs a positive units-per-box to be meaningful; otherwise it's off.
@@ -227,9 +298,11 @@ function ProductModal({ open, product, clinicId, subcategories, onClose, onSaved
     }
     setBusy(true);
     try {
+      const company_id = await resolveCompanyId();
       const payload = {
         barcode: f.barcode.trim() || null,
         name: f.name.trim(),
+        company_id,
         category: (f.category || null) as ProductCategory | null,
         subcategory: f.subcategory.trim() || null,
         purchase_price: Number(f.purchase_price) || 0,
@@ -274,6 +347,18 @@ function ProductModal({ open, product, clinicId, subcategories, onClose, onSaved
         <div>
           <label className="label">{t("pos.name", "Product name")}</label>
           <input ref={nameRef} className="input" value={f.name} onChange={(e) => set({ name: e.target.value })} placeholder={t("pos.namePh", "e.g. Royal Canin Maxi Adult 4kg")} />
+        </div>
+        {/* Company (الشركة) — pick an existing one or create a new section by typing. */}
+        <div>
+          <label className="label flex items-center gap-1"><Building2 size={12} /> {t("pos.company", "الشركة")} <span className="font-normal text-ink-subtle">{t("pos.companyHint", "(اختياري)")}</span></label>
+          <Combobox
+            value={f.company}
+            onChange={(v) => set({ company: v })}
+            options={companies.map((c) => c.name)}
+            placeholder={t("pos.companyPh", "اختر شركة أو أنشئ واحدة…")}
+            icon={<Building2 size={16} />}
+            createLabel={(v) => t("pos.companyCreate", { value: v, defaultValue: `إنشاء شركة “${v}”` })}
+          />
         </div>
         <div>
           <label className="label">{t("pos.category", "Category")}</label>
@@ -384,6 +469,238 @@ function ProductModal({ open, product, clinicId, subcategories, onClose, onSaved
           />
         </div>
         <Button ref={saveRef} className="mt-1 w-full" disabled={!f.name.trim()} loading={busy} onClick={save}>{t("common.save", "Save")}</Button>
+      </div>
+    </Modal>
+  );
+}
+
+/* ---------------- Companies tab (الشركات) ---------------- */
+type CompanyStats = { count: number; units: number; value: number };
+
+function statsFor(products: Product[], companyId: string): CompanyStats {
+  let count = 0, units = 0, value = 0;
+  for (const p of products) {
+    if (p.company_id !== companyId) continue;
+    count += 1;
+    units += p.stock || 0;
+    value += (p.stock || 0) * (p.sell_price || 0);
+  }
+  return { count, units, value };
+}
+
+function CompaniesTab({ products, companies, clinicId, onChanged }: { products: Product[]; companies: Company[]; clinicId?: string; onChanged: () => void }) {
+  const { t } = useTranslation();
+  const [q, setQ] = useState("");
+  const [adding, setAdding] = useState(false);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  // Always derive the selected company from the live list so edits/reloads reflect.
+  const selected = selectedId ? companies.find((c) => c.id === selectedId) ?? null : null;
+
+  if (selected) {
+    return (
+      <CompanyDetail
+        company={selected}
+        products={products}
+        companies={companies}
+        clinicId={clinicId}
+        onBack={() => setSelectedId(null)}
+        onChanged={onChanged}
+      />
+    );
+  }
+
+  const ql = q.trim().toLowerCase();
+  const shown = ql ? companies.filter((c) => c.name.toLowerCase().includes(ql)) : companies;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-2">
+        <div className="relative flex-1">
+          <Search size={16} className="pointer-events-none absolute top-1/2 -translate-y-1/2 text-ink-subtle ltr:left-3 rtl:right-3" />
+          <input className="input ltr:pl-9 rtl:pr-9" value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("pos.searchCompanies", "ابحث عن شركة…")} />
+        </div>
+        <Button leftIcon={<Plus size={16} />} onClick={() => { playTap(); setAdding(true); }}>{t("pos.addCompany", "أضف شركة")}</Button>
+      </div>
+
+      {shown.length === 0 ? (
+        <div className="card flex flex-col items-center gap-3 p-10 text-center">
+          <span className="grid h-14 w-14 place-items-center rounded-2xl bg-accent-50 text-accent-500 dark:bg-accent-500/15"><Building2 size={26} /></span>
+          <p className="text-ink-subtle">{companies.length === 0 ? t("pos.noCompanies", "لا توجد شركات بعد. أنشئ أول شركة ثم أضف باركوداتها.") : t("pos.noCompanyMatch", "لا توجد شركة بهذا الاسم.")}</p>
+          {companies.length === 0 && <Button leftIcon={<Plus size={16} />} onClick={() => { playTap(); setAdding(true); }}>{t("pos.addCompany", "أضف شركة")}</Button>}
+        </div>
+      ) : (
+        <motion.div variants={staggerContainer} initial="initial" animate="animate" className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {shown.map((c) => {
+            const s = statsFor(products, c.id);
+            return (
+              <motion.button
+                key={c.id}
+                variants={staggerItem}
+                onClick={() => { playTap(); setSelectedId(c.id); }}
+                className="card group flex flex-col gap-3 p-4 text-start transition hover:shadow-raised"
+              >
+                <div className="flex items-center gap-3">
+                  <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-accent-grad text-white shadow-soft"><Building2 size={22} /></span>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate font-display text-base font-bold text-ink">{c.name}</p>
+                    {c.note ? <p className="truncate text-xs text-ink-subtle">{c.note}</p> : <p className="text-xs text-ink-subtle">{t("pos.companyProducts", { n: s.count, defaultValue: "{{n}} منتج" })}</p>}
+                  </div>
+                  <ChevronLeft size={18} className="shrink-0 text-ink-subtle transition group-hover:text-brand-600 rtl:rotate-0 ltr:rotate-180" />
+                </div>
+                <div className="grid grid-cols-3 gap-2 border-t border-line pt-3">
+                  <Stat icon={Barcode} label={t("pos.barcodesShort", "باركود")} value={String(s.count)} />
+                  <Stat icon={Package} label={t("pos.unitsShort", "قطعة")} value={String(s.units)} />
+                  <Stat icon={Wallet} label={t("pos.valueShort", "قيمة")} value={money(s.value)} />
+                </div>
+              </motion.button>
+            );
+          })}
+        </motion.div>
+      )}
+
+      <CompanyModal open={adding} company={null} clinicId={clinicId} onClose={() => setAdding(false)} onSaved={() => { setAdding(false); onChanged(); }} />
+    </div>
+  );
+}
+
+function Stat({ icon: Icon, label, value }: { icon: typeof Package; label: string; value: string }) {
+  return (
+    <div className="min-w-0">
+      <p className="flex items-center gap-1 text-2xs text-ink-subtle"><Icon size={11} /> {label}</p>
+      <p className="truncate text-sm font-bold text-ink tabular-nums">{value}</p>
+    </div>
+  );
+}
+
+function CompanyDetail({ company, products, companies, clinicId, onBack, onChanged }: {
+  company: Company; products: Product[]; companies: Company[]; clinicId?: string; onBack: () => void; onChanged: () => void;
+}) {
+  const { t, i18n } = useTranslation();
+  const toast = useToast();
+  const [editingCo, setEditingCo] = useState(false);
+  const [addingProduct, setAddingProduct] = useState(false);
+  const [editing, setEditing] = useState<Product | null>(null);
+
+  const Back = i18n.dir() === "rtl" ? ArrowRight : ArrowLeft;
+  const mine = products.filter((p) => p.company_id === company.id);
+  const s = statsFor(products, company.id);
+
+  const removeProduct = async (p: Product) => {
+    if (!window.confirm(t("pos.confirmDelete", { name: p.name, defaultValue: "Remove \"{{name}}\" from inventory?" }))) return;
+    try { await repo.deleteProduct(p.id); playSuccess(); onChanged(); }
+    catch (e) { toast.error(describeDbError(e, t), e instanceof Error ? e.message : undefined); }
+  };
+
+  const removeCompany = async () => {
+    if (!window.confirm(t("pos.confirmDeleteCompany", { name: company.name, defaultValue: "حذف شركة \"{{name}}\"؟ ستبقى المنتجات لكن بدون شركة." }))) return;
+    try { await repo.deleteCompany(company.id); playSuccess(); onChanged(); onBack(); }
+    catch (e) { toast.error(describeDbError(e, t), e instanceof Error ? e.message : undefined); }
+  };
+
+  return (
+    <div className="space-y-4">
+      <button onClick={() => { playTap(); onBack(); }} className="inline-flex items-center gap-1.5 text-sm font-semibold text-ink-muted transition hover:text-brand-600">
+        <Back size={16} /> {t("pos.backToCompanies", "كل الشركات")}
+      </button>
+
+      {/* Company header */}
+      <div className="card flex flex-wrap items-center gap-4 p-5">
+        <span className="grid h-14 w-14 shrink-0 place-items-center rounded-2xl bg-accent-grad text-white shadow-soft"><Building2 size={28} /></span>
+        <div className="min-w-0 flex-1">
+          <h2 className="truncate font-display text-xl font-extrabold text-ink">{company.name}</h2>
+          {company.note && <p className="truncate text-sm text-ink-subtle">{company.note}</p>}
+          <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-ink-subtle">
+            <span>{t("pos.companyProducts", { n: s.count, defaultValue: "{{n}} منتج" })}</span>
+            <span>·</span>
+            <span>{t("pos.companyUnits", { n: s.units, defaultValue: "{{n}} قطعة بالمخزون" })}</span>
+            <span>·</span>
+            <span className="font-semibold text-ink-muted">{money(s.value)}</span>
+          </div>
+        </div>
+        <div className="flex items-center gap-1">
+          <button onClick={() => { playTap(); setEditingCo(true); }} aria-label={t("common.edit", "Edit")} className="grid h-9 w-9 place-items-center rounded-full text-ink-subtle transition hover:bg-brand-50 hover:text-brand-600"><Pencil size={16} /></button>
+          <button onClick={removeCompany} aria-label={t("common.delete", "Delete")} className="grid h-9 w-9 place-items-center rounded-full text-ink-subtle transition hover:bg-danger-50 hover:text-danger-600"><Trash2 size={16} /></button>
+        </div>
+      </div>
+
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-sm font-semibold text-ink-muted">{t("pos.companyItems", "المنتجات والباركودات")}</p>
+        <Button size="sm" leftIcon={<PackagePlus size={15} />} onClick={() => { playTap(); setAddingProduct(true); }}>{t("pos.addBarcode", "أضف باركود")}</Button>
+      </div>
+
+      {mine.length === 0 ? (
+        <div className="card p-10 text-center text-ink-subtle">{t("pos.noCompanyBarcodes", "لا توجد باركودات في هذه الشركة بعد. أضف أول باركود.")}</div>
+      ) : (
+        <motion.div variants={staggerContainer} initial="initial" animate="animate" className="space-y-2">
+          {mine.map((p) => (
+            <ProductRow key={p.id} p={p} onEdit={() => { playTap(); setEditing(p); }} onRemove={() => removeProduct(p)} />
+          ))}
+        </motion.div>
+      )}
+
+      {/* Edit company */}
+      <CompanyModal open={editingCo} company={company} clinicId={clinicId} onClose={() => setEditingCo(false)} onSaved={() => { setEditingCo(false); onChanged(); }} />
+
+      {/* Add/edit a product filed under THIS company */}
+      <ProductModal
+        open={addingProduct || !!editing}
+        product={editing}
+        companies={companies}
+        clinicId={clinicId}
+        subcategories={subcategoriesOf(products)}
+        defaultCompanyName={company.name}
+        onClose={() => { setAddingProduct(false); setEditing(null); }}
+        onSaved={() => { setAddingProduct(false); setEditing(null); onChanged(); }}
+      />
+    </div>
+  );
+}
+
+function CompanyModal({ open, company, clinicId, onClose, onSaved }: { open: boolean; company: Company | null; clinicId?: string; onClose: () => void; onSaved: () => void }) {
+  const { t } = useTranslation();
+  const toast = useToast();
+  const [name, setName] = useState("");
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const nameRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    setName(company?.name ?? "");
+    setNote(company?.note ?? "");
+    setTimeout(() => nameRef.current?.focus(), 80);
+  }, [open, company]);
+
+  const save = async () => {
+    if (!name.trim() || busy) return;
+    setBusy(true);
+    try {
+      const payload = { name: name.trim(), note: note.trim() || null };
+      if (company) await repo.updateCompany(company.id, payload);
+      else await repo.createCompany({ ...payload, clinic_id: clinicId ?? null });
+      playSuccess();
+      onSaved();
+    } catch (e) {
+      playWarning();
+      toast.error(describeDbError(e, t), e instanceof Error ? e.message : undefined);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal open={open} onClose={onClose} title={company ? t("pos.editCompany", "تعديل الشركة") : t("pos.addCompany", "أضف شركة")}>
+      <div className="space-y-3">
+        <div>
+          <label className="label flex items-center gap-1"><Building2 size={12} /> {t("pos.companyName", "اسم الشركة")}</label>
+          <input ref={nameRef} className="input" value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") save(); }} placeholder={t("pos.companyNamePh", "مثال: Royal Canin")} />
+        </div>
+        <div>
+          <label className="label">{t("pos.companyNote", "ملاحظة")} <span className="font-normal text-ink-subtle">{t("pos.companyNoteHint", "(اختياري — الوكيل، الهاتف…)")}</span></label>
+          <input className="input" value={note} onChange={(e) => setNote(e.target.value)} placeholder={t("pos.companyNotePh", "الوكيل الرسمي، رقم المندوب…")} />
+        </div>
+        <Button className="mt-1 w-full" disabled={!name.trim()} loading={busy} onClick={save}>{t("common.save", "Save")}</Button>
       </div>
     </Modal>
   );

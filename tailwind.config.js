@@ -123,6 +123,7 @@ export default {
       },
       backgroundImage: {
         "brand-grad": "linear-gradient(135deg, #1266d8 0%, #2f7df2 45%, #38bdf8 100%)",
+        "accent-grad": "linear-gradient(135deg, #ec3a09 0%, #fb5413 45%, #ff8a4c 100%)",
         "brand-soft": "linear-gradient(160deg, rgb(var(--surface-1)) 0%, rgb(var(--surface-2)) 100%)",
         "sheen": "linear-gradient(110deg, transparent 30%, rgb(255 255 255 / 0.35) 50%, transparent 70%)",
       },

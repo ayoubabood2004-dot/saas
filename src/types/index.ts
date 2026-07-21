@@ -331,6 +331,19 @@ export interface Reminder {
 /* ---------------- Inventory & POS ---------------- */
 export type ProductCategory = "medicine" | "food" | "accessories" | "consumables" | "other";
 
+/** A supplier / brand "company" (شركة) — a section inside inventory that groups
+ *  the barcodes/products belonging to it. Created by the clinic; a product links
+ *  to at most one company via `company_id`. Clinic-isolated. */
+export interface Company {
+  id: string;
+  /** Owning clinic (tenant isolation). */
+  clinic_id?: string | null;
+  name: string;
+  /** Optional free-text note (agent, phone, price list…). */
+  note?: string | null;
+  created_at: string;
+}
+
 export interface Product {
   id: string;
   /** Owning clinic (tenant isolation). */
@@ -338,6 +351,8 @@ export interface Product {
   barcode?: string | null;
   name: string;
   category?: ProductCategory | null;
+  /** The company/brand (شركة) this product belongs to — see `Company`. Optional. */
+  company_id?: string | null;
   /** Free-text subcategory (e.g. "معلبات", "رمل", "دراي فود") — used by Mix & Match promotions. */
   subcategory?: string | null;
   purchase_price: number;
@@ -535,6 +550,7 @@ export interface DemoDB {
   admissions: Admission[];
   reminders: Reminder[];
   products: Product[];
+  companies?: Company[];
   invoices: Invoice[];
   invoiceItems: InvoiceItem[];
   waMessages?: WhatsAppMessage[];
