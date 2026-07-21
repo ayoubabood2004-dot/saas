@@ -465,6 +465,7 @@
     "searchCompanies": "ابحث عن شركة…",
     "addCompany": "أضف شركة",
     "editCompany": "تعديل الشركة",
+    "companyDup": "توجد شركة بهذا الاسم بالفعل",
     "companyName": "اسم الشركة",
     "companyNamePh": "مثال: Royal Canin",
     "companyNote": "ملاحظة",

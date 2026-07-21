@@ -465,6 +465,7 @@
     "searchCompanies": "Search companies…",
     "addCompany": "Add company",
     "editCompany": "Edit company",
+    "companyDup": "A company with this name already exists",
     "companyName": "Company name",
     "companyNamePh": "e.g. Royal Canin",
     "companyNote": "Note",

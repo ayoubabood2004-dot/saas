@@ -23,6 +23,12 @@ const daysUntil = (iso?: string | null) => (iso ? Math.floor((new Date(iso).getT
 /** A product's reorder level — its own min_stock if set, else the default. */
 const lowThreshold = (p: Product) => (p.min_stock && p.min_stock > 0 ? p.min_stock : LOW_STOCK);
 
+/** Canonical company name: trim, collapse internal whitespace, NFC-normalize
+ *  (so visually-identical Arabic/Latin names don't split into two companies). */
+const normName = (s: string) => s.trim().replace(/\s+/g, " ").normalize("NFC");
+/** Case-insensitive match key for a company name. */
+const normKey = (s: string) => normName(s).toLowerCase();
+
 type View = "products" | "companies";
 
 /**
@@ -236,11 +242,16 @@ function ProductModal({ open, product, companies, clinicId, subcategories, defau
   const barcodeRef = useRef<HTMLInputElement>(null);
   const nameRef = useRef<HTMLInputElement>(null);
   const saveRef = useRef<HTMLButtonElement>(null);
+  // Companies created inline during THIS modal session — merged into the lookup
+  // so a retry after a failed save reuses the one just made instead of
+  // duplicating it (the props list only refreshes after onSaved).
+  const createdRef = useRef<Company[]>([]);
 
   const companyNameOf = (id?: string | null) => (id ? companies.find((c) => c.id === id)?.name ?? "" : "");
 
   useEffect(() => {
     if (!open) return;
+    createdRef.current = [];
     if (product) {
       setF({
         barcode: product.barcode ?? "", name: product.name,
@@ -275,18 +286,6 @@ function ProductModal({ open, product, companies, clinicId, subcategories, defau
     { value: "other", label: t("pos.cat.other", "Other") },
   ];
 
-  /** Resolve the typed company name to an id: reuse an existing company
-   *  (case-insensitive) or create a new one. Empty → no company. */
-  const resolveCompanyId = async (): Promise<string | null> => {
-    const typed = f.company.trim();
-    if (!typed) return null;
-    const key = typed.toLowerCase();
-    const existing = companies.find((c) => c.name.trim().toLowerCase() === key);
-    if (existing) return existing.id;
-    const created = await repo.createCompany({ name: typed, note: null, clinic_id: clinicId ?? null });
-    return created.id;
-  };
-
   const save = async () => {
     if (!f.name.trim() || busy) return;
     // A sub-unit needs a positive units-per-box to be meaningful; otherwise it's off.
@@ -297,8 +296,25 @@ function ProductModal({ open, product, companies, clinicId, subcategories, defau
       return;
     }
     setBusy(true);
+    // A company we create as a side effect of THIS save — rolled back if the
+    // product write then fails, so no empty orphan company is left behind.
+    let createdCompany: Company | null = null;
     try {
-      const company_id = await resolveCompanyId();
+      // Resolve the typed company name → id: reuse an existing/just-created
+      // company (normalized, case-insensitive) or create a new one. Empty → none.
+      let company_id: string | null = null;
+      const typed = normName(f.company);
+      if (typed) {
+        const key = typed.toLowerCase();
+        const existing = [...companies, ...createdRef.current].find((c) => normKey(c.name) === key);
+        if (existing) {
+          company_id = existing.id;
+        } else {
+          createdCompany = await repo.createCompany({ name: typed, note: null, clinic_id: clinicId ?? null });
+          createdRef.current.push(createdCompany);
+          company_id = createdCompany.id;
+        }
+      }
       const payload = {
         barcode: f.barcode.trim() || null,
         name: f.name.trim(),
@@ -320,6 +336,13 @@ function ProductModal({ open, product, companies, clinicId, subcategories, defau
       playSuccess();
       onSaved();
     } catch (e) {
+      // Undo a company created only for this now-failed product. If the cleanup
+      // itself fails, keep it in the ref so a retry reuses it (no duplicate).
+      if (createdCompany) {
+        const cc = createdCompany;
+        try { await repo.deleteCompany(cc.id); createdRef.current = createdRef.current.filter((c) => c.id !== cc.id); }
+        catch { /* best effort */ }
+      }
       playWarning();
       toast.error(describeDbError(e, t), e instanceof Error ? e.message : undefined);
     } finally {
@@ -559,7 +582,7 @@ function CompaniesTab({ products, companies, clinicId, onChanged }: { products: 
         </motion.div>
       )}
 
-      <CompanyModal open={adding} company={null} clinicId={clinicId} onClose={() => setAdding(false)} onSaved={() => { setAdding(false); onChanged(); }} />
+      <CompanyModal open={adding} company={null} companies={companies} clinicId={clinicId} onClose={() => setAdding(false)} onSaved={() => { setAdding(false); onChanged(); }} />
     </div>
   );
 }
@@ -640,7 +663,7 @@ function CompanyDetail({ company, products, companies, clinicId, onBack, onChang
       )}
 
       {/* Edit company */}
-      <CompanyModal open={editingCo} company={company} clinicId={clinicId} onClose={() => setEditingCo(false)} onSaved={() => { setEditingCo(false); onChanged(); }} />
+      <CompanyModal open={editingCo} company={company} companies={companies} clinicId={clinicId} onClose={() => setEditingCo(false)} onSaved={() => { setEditingCo(false); onChanged(); }} />
 
       {/* Add/edit a product filed under THIS company */}
       <ProductModal
@@ -657,7 +680,7 @@ function CompanyDetail({ company, products, companies, clinicId, onBack, onChang
   );
 }
 
-function CompanyModal({ open, company, clinicId, onClose, onSaved }: { open: boolean; company: Company | null; clinicId?: string; onClose: () => void; onSaved: () => void }) {
+function CompanyModal({ open, company, companies, clinicId, onClose, onSaved }: { open: boolean; company: Company | null; companies: Company[]; clinicId?: string; onClose: () => void; onSaved: () => void }) {
   const { t } = useTranslation();
   const toast = useToast();
   const [name, setName] = useState("");
@@ -674,9 +697,16 @@ function CompanyModal({ open, company, clinicId, onClose, onSaved }: { open: boo
 
   const save = async () => {
     if (!name.trim() || busy) return;
+    // Block a second company with the same (normalized) name — otherwise the
+    // product→company name lookup can't tell them apart and stats fragment.
+    const key = normKey(name);
+    if (companies.some((c) => c.id !== company?.id && normKey(c.name) === key)) {
+      toast.error(t("pos.companyDup", "توجد شركة بهذا الاسم بالفعل"));
+      return;
+    }
     setBusy(true);
     try {
-      const payload = { name: name.trim(), note: note.trim() || null };
+      const payload = { name: normName(name), note: note.trim() || null };
       if (company) await repo.updateCompany(company.id, payload);
       else await repo.createCompany({ ...payload, clinic_id: clinicId ?? null });
       playSuccess();
