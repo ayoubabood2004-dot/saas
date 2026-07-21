@@ -497,6 +497,75 @@ export interface CheckoutItem {
   unit_label?: string | null;
 }
 
+/* ---------------- Purchases (المشتريات — restocking from a company) ---------------- */
+/** A purchase/restock invoice: goods received FROM a supplier company. Saving one
+ *  bulk-updates inventory (existing products get +stock & refreshed prices; new
+ *  barcodes become new products under the company) and keeps a printable record. */
+export interface Purchase {
+  id: string;
+  clinic_id?: string | null;
+  /** The supplier company (شركة) the goods came from. */
+  company_id?: string | null;
+  /** Snapshot of the company name at purchase time (survives company rename/delete). */
+  company_name?: string | null;
+  /** The supplier's own invoice/reference number (optional). */
+  reference?: string | null;
+  total: number;            // sum of line costs (qty × purchase_price)
+  item_count: number;       // total units received across all lines
+  /** Amount paid to the supplier so far. Absent = fully paid (legacy). */
+  amount_paid?: number;
+  payment_method?: PaymentMethod | null;
+  /** Settlement state vs. total — derived from amount_paid. */
+  status?: PaymentStatus;
+  notes?: string | null;
+  purchased_at: string;     // ISO — when the goods were received
+  staff_id?: string | null; // who recorded it
+  created_at: string;
+}
+
+/** One received line of a purchase — a snapshot of what came in and at what cost. */
+export interface PurchaseItem {
+  id: string;
+  purchase_id: string;
+  clinic_id?: string | null;
+  /** The inventory product this line stocked (existing or newly created). */
+  product_id?: string | null;
+  barcode?: string | null;
+  name: string;             // snapshot of the product name
+  category?: ProductCategory | null;
+  qty: number;              // units received (added to stock)
+  purchase_price: number;   // cost per unit at receipt
+  sell_price: number;       // sell price set/kept at receipt
+  created_at: string;
+}
+
+/** One line from the purchase builder handed to the repo. `product_id` is set when
+ *  the barcode/name matched an existing product (→ restock); otherwise a new
+ *  product is created under the purchase's company. */
+export interface PurchaseDraftLine {
+  product_id?: string | null;
+  barcode?: string | null;
+  name: string;
+  category?: ProductCategory | null;
+  qty: number;
+  purchase_price: number;
+  sell_price: number;
+  min_stock?: number | null;
+  expiry_date?: string | null;
+}
+
+/** Purchase-level metadata sent to the repo alongside the draft lines. */
+export interface PurchaseMeta {
+  company_id?: string | null;
+  company_name?: string | null;
+  reference?: string | null;
+  amount_paid?: number;
+  payment_method?: PaymentMethod | null;
+  notes?: string | null;
+  purchased_at?: string | null;
+  staff_id?: string | null;
+}
+
 /* ---------------- Services & non-barcode items ---------------- */
 /** A clinic-defined service category (e.g. Laboratory, Imaging, Consultation). */
 export interface ServiceCategory { id: string; name: string }
@@ -553,6 +622,8 @@ export interface DemoDB {
   companies?: Company[];
   invoices: Invoice[];
   invoiceItems: InvoiceItem[];
+  purchases?: Purchase[];
+  purchaseItems?: PurchaseItem[];
   waMessages?: WhatsAppMessage[];
   branches?: Branch[];
 }

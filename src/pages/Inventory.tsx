@@ -3,9 +3,10 @@ import { useTranslation } from "react-i18next";
 import { motion } from "framer-motion";
 import {
   Barcode, Package, Trash2, Search, Building2, Plus, ChevronLeft, ArrowRight, ArrowLeft,
-  TrendingUp, AlertTriangle, CalendarClock, Pencil, PackagePlus, Boxes, Layers, Wallet,
+  TrendingUp, AlertTriangle, CalendarClock, Pencil, PackagePlus, Boxes, Layers, Wallet, ShoppingBag,
 } from "lucide-react";
 import type { Product, ProductCategory, Company } from "@/types";
+import { PurchasesTab, PurchaseBuilderModal } from "@/components/inventory/Purchases";
 import { repo } from "@/lib/repo";
 import { useAuth } from "@/contexts/AuthContext";
 import { Modal } from "@/components/Modal";
@@ -29,7 +30,7 @@ const normName = (s: string) => s.trim().replace(/\s+/g, " ").normalize("NFC");
 /** Case-insensitive match key for a company name. */
 const normKey = (s: string) => normName(s).toLowerCase();
 
-type View = "products" | "companies";
+type View = "products" | "companies" | "purchases";
 
 /**
  * Inventory — dedicated stock management: products, companies (الشركات),
@@ -88,18 +89,21 @@ export function Inventory() {
         <Kpi icon={CalendarClock} tone={expiringSoon ? "warn" : "success"} label={t("pos.expiringSoon", "Expiring ≤30d")} value={String(expiringSoon)} />
       </div>
 
-      {/* View switch — products vs. companies (الشركات) */}
-      <div className="mb-4 inline-flex rounded-2xl bg-surface-2 p-1">
+      {/* View switch — products · companies (الشركات) · purchases (المشتريات) */}
+      <div className="mb-4 inline-flex flex-wrap rounded-2xl bg-surface-2 p-1">
         <ViewTab active={view === "products"} icon={Package} label={t("pos.tabProducts", "المنتجات")} onClick={() => { playTap(); setView("products"); }} />
         <ViewTab active={view === "companies"} icon={Building2} label={t("pos.tabCompanies", "الشركات")} onClick={() => { playTap(); setView("companies"); }} />
+        <ViewTab active={view === "purchases"} icon={ShoppingBag} label={t("pos.tabPurchases", "المشتريات")} onClick={() => { playTap(); setView("purchases"); }} />
       </div>
 
       {loading ? (
         <div className="space-y-3">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-20 rounded-2xl" />)}</div>
       ) : view === "products" ? (
         <InventoryTab products={products} companies={companies} clinicId={clinicId} onChanged={load} />
-      ) : (
+      ) : view === "companies" ? (
         <CompaniesTab products={products} companies={companies} clinicId={clinicId} onChanged={load} />
+      ) : (
+        <PurchasesTab products={products} companies={companies} clinicId={clinicId} onChanged={load} />
       )}
     </div>
   );
@@ -603,6 +607,7 @@ function CompanyDetail({ company, products, companies, clinicId, onBack, onChang
   const toast = useToast();
   const [editingCo, setEditingCo] = useState(false);
   const [addingProduct, setAddingProduct] = useState(false);
+  const [purchasing, setPurchasing] = useState(false);
   const [editing, setEditing] = useState<Product | null>(null);
 
   const Back = i18n.dir() === "rtl" ? ArrowRight : ArrowLeft;
@@ -647,9 +652,12 @@ function CompanyDetail({ company, products, companies, clinicId, onBack, onChang
         </div>
       </div>
 
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-sm font-semibold text-ink-muted">{t("pos.companyItems", "المنتجات والباركودات")}</p>
-        <Button size="sm" leftIcon={<PackagePlus size={15} />} onClick={() => { playTap(); setAddingProduct(true); }}>{t("pos.addBarcode", "أضف باركود")}</Button>
+        <div className="flex items-center gap-2">
+          <Button size="sm" variant="secondary" leftIcon={<ShoppingBag size={15} />} onClick={() => { playTap(); setPurchasing(true); }}>{t("purchase.new", "فاتورة شراء")}</Button>
+          <Button size="sm" leftIcon={<PackagePlus size={15} />} onClick={() => { playTap(); setAddingProduct(true); }}>{t("pos.addBarcode", "أضف باركود")}</Button>
+        </div>
       </div>
 
       {mine.length === 0 ? (
@@ -664,6 +672,9 @@ function CompanyDetail({ company, products, companies, clinicId, onBack, onChang
 
       {/* Edit company */}
       <CompanyModal open={editingCo} company={company} companies={companies} clinicId={clinicId} onClose={() => setEditingCo(false)} onSaved={() => { setEditingCo(false); onChanged(); }} />
+
+      {/* Purchase invoice pre-filled with this company */}
+      <PurchaseBuilderModal open={purchasing} products={products} companies={companies} clinicId={clinicId} defaultCompanyName={company.name} onClose={() => setPurchasing(false)} onSaved={() => { setPurchasing(false); onChanged(); }} />
 
       {/* Add/edit a product filed under THIS company */}
       <ProductModal

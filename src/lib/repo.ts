@@ -4,7 +4,7 @@
 import { loadDB, saveDB } from "./demoStore";
 import { supabase } from "./supabase";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, AppointmentStatus, TreatmentEntry, Admission, Branch, Reminder, Product, Company, Invoice, InvoiceItem, CheckoutItem, SaleMeta, Customer, DiscountType, PaymentMethod, PaymentSplit, WhatsAppMessage, AuditEntry, LoginEvent, PetNote, Expense, ClinicVisit } from "@/types";
+import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, AppointmentStatus, TreatmentEntry, Admission, Branch, Reminder, Product, Company, Purchase, PurchaseItem, PurchaseDraftLine, PurchaseMeta, Invoice, InvoiceItem, CheckoutItem, SaleMeta, Customer, DiscountType, PaymentMethod, PaymentSplit, WhatsAppMessage, AuditEntry, LoginEvent, PetNote, Expense, ClinicVisit } from "@/types";
 import { uid, uuid, ageMonths } from "./utils";
 
 /** Sort key for a case/admission — newest first. Prefers the precise `created_at`
@@ -621,6 +621,80 @@ const demoRepo = {
     saveDB(db);
   },
 
+  /* ---------------- Purchases (المشتريات) — restock from a company ---------------- */
+  async listPurchases(_clinicId?: string): Promise<Purchase[]> {
+    return (loadDB().purchases ?? []).slice().sort((a, b) => (b.purchased_at || "").localeCompare(a.purchased_at || ""));
+  },
+  async listPurchaseItems(purchaseId: string): Promise<PurchaseItem[]> {
+    return (loadDB().purchaseItems ?? []).filter((x) => x.purchase_id === purchaseId);
+  },
+  /** Bulk-receive stock from a company: restock existing barcodes (+ refresh
+   *  prices), create new products for unknown barcodes, and save a purchase
+   *  record. Mirrors the record_purchase RPC used on Supabase. */
+  async recordPurchase(lines: PurchaseDraftLine[], meta: PurchaseMeta): Promise<Purchase> {
+    const db = loadDB();
+    if (!db.products) db.products = [];
+    if (!db.purchases) db.purchases = [];
+    if (!db.purchaseItems) db.purchaseItems = [];
+    const now = new Date().toISOString();
+    const companyId = meta.company_id ?? null;
+    const purchaseId = uid("pur");
+    const round3 = (n: number) => Math.max(0, Math.round(n * 1000) / 1000);
+    const minStock = (v: number | null | undefined) => (v != null && !Number.isNaN(Number(v)) ? Math.max(0, Math.round(Number(v))) : null);
+    let total = 0, count = 0;
+    for (const l of lines) {
+      const qty = round3(Number(l.qty) || 0);
+      const cost = Number(l.purchase_price) || 0;
+      const sell = Number(l.sell_price) || 0;
+      total += qty * cost;
+      count += qty;
+      // Resolve a product: explicit id, else an existing barcode in stock.
+      let pid = l.product_id ?? null;
+      if (!pid && l.barcode) pid = db.products.find((p) => (p.barcode ?? "") === l.barcode)?.id ?? null;
+      const existing = pid ? db.products.find((x) => x.id === pid) : undefined;
+      if (existing) {
+        existing.stock = round3((existing.stock || 0) + qty);
+        existing.purchase_price = cost;
+        existing.sell_price = sell;
+        const ms = minStock(l.min_stock);
+        if (ms != null) existing.min_stock = ms;
+        if (l.expiry_date) existing.expiry_date = l.expiry_date;
+        if (l.category) existing.category = l.category;
+        if (!existing.company_id && companyId) existing.company_id = companyId;
+        pid = existing.id;
+      } else {
+        const np: Product = {
+          id: uid("prod"), clinic_id: null, company_id: companyId,
+          barcode: l.barcode?.trim() || null, name: l.name?.trim() || "Item",
+          category: l.category ?? null, subcategory: null,
+          purchase_price: cost, sell_price: sell, stock: qty,
+          min_stock: minStock(l.min_stock) ?? 0, expiry_date: l.expiry_date || null,
+          created_at: now,
+        };
+        db.products.push(np);
+        pid = np.id;
+      }
+      db.purchaseItems.push({
+        id: uid("pi"), purchase_id: purchaseId, clinic_id: null, product_id: pid,
+        barcode: l.barcode?.trim() || null, name: l.name?.trim() || "Item",
+        category: l.category ?? null, qty, purchase_price: cost, sell_price: sell, created_at: now,
+      });
+    }
+    const totalR = Math.round(total * 100) / 100;
+    const paid = meta.amount_paid != null ? Math.max(0, Math.min(totalR, Math.round(meta.amount_paid * 100) / 100)) : totalR;
+    const purchase: Purchase = {
+      id: purchaseId, clinic_id: null, company_id: companyId, company_name: meta.company_name ?? null,
+      reference: meta.reference?.trim() || null, total: totalR, item_count: Math.round(count),
+      amount_paid: paid, payment_method: meta.payment_method ?? null,
+      status: paid >= totalR ? "paid" : paid <= 0 ? "unpaid" : "partial",
+      notes: meta.notes?.trim() || null, purchased_at: meta.purchased_at || now,
+      staff_id: meta.staff_id ?? null, created_at: now,
+    };
+    db.purchases.push(purchase);
+    saveDB(db);
+    return purchase;
+  },
+
   async listInvoices(_clinicId?: string): Promise<Invoice[]> {
     return (loadDB().invoices ?? []).slice().sort((a, b) => b.created_at.localeCompare(a.created_at));
   },
@@ -814,6 +888,7 @@ const DEMO_ACTIVITY_MAP: Record<string, { entity: string; action: "INSERT" | "UP
   createCompany: { entity: "companies", action: "INSERT" },
   updateCompany: { entity: "companies", action: "UPDATE" },
   deleteCompany: { entity: "companies", action: "DELETE" },
+  recordPurchase: { entity: "purchases", action: "INSERT" },
   checkout: { entity: "invoices", action: "INSERT" },
   retailCheckout: { entity: "invoices", action: "INSERT" },
   settleInvoice: { entity: "invoices", action: "UPDATE" },
@@ -1201,6 +1276,20 @@ const supabaseRepo: typeof demoRepo = {
   async deleteCompany(id) {
     // FK on products.company_id is ON DELETE SET NULL, so products survive.
     ok(await sbc().from("companies").delete().eq("id", id));
+  },
+
+  /* ---------------- Purchases (المشتريات) ---------------- */
+  async listPurchases(clinicId) {
+    let q = sbc().from("purchases").select("*").order("purchased_at", { ascending: false });
+    if (clinicId) q = q.eq("clinic_id", clinicId);
+    return listOf<Purchase>(await q);
+  },
+  async listPurchaseItems(purchaseId) {
+    return listOf<PurchaseItem>(await sbc().from("purchase_items").select("*").eq("purchase_id", purchaseId));
+  },
+  async recordPurchase(lines, meta) {
+    // Atomic on the server: restock/create products + insert purchase & items.
+    return need<Purchase>(await sbc().rpc("record_purchase", { p_lines: lines, p_meta: meta }));
   },
 
   async listInvoices(clinicId) {
