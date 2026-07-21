@@ -280,11 +280,15 @@ export function PurchaseBuilderModal({ open, products, companies, clinicId, defa
   const onBarcode = (key: string, code: string) => {
     const clean = code.replace(/\s/g, "");
     const match = clean ? byBarcode.get(clean) : undefined;
-    if (match) {
-      setLines((ls) => ls.map((l) => (l.key === key ? { ...lineFromProduct(match, clean), key: l.key, qty: l.qty } : l)));
-    } else {
-      patchLine(key, { barcode: clean, product_id: null });
-    }
+    setLines((ls) => ls.map((l) => {
+      if (l.key !== key) return l;
+      if (match) return { ...lineFromProduct(match, clean), key: l.key, qty: l.qty };
+      // No match. If this line was previously matched to a product, editing the
+      // barcode to a new code starts a CLEAN new-product entry — don't carry the
+      // old product's name/prices over into a mislabeled duplicate.
+      if (l.product_id) return blankLine({ key: l.key, barcode: clean, qty: l.qty });
+      return { ...l, barcode: clean, product_id: null };
+    }));
   };
 
   // Top scan box: scan/type a barcode → add (or focus) a line for it.

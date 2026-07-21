@@ -134,16 +134,22 @@ begin
 
     if v_pid is not null then
       -- Restock an existing product: add qty, refresh prices, fill blanks.
+      -- A blank/zero price KEEPS the product's real price (never zero it).
       update products set
         stock          = greatest(0, coalesce(stock, 0) + v_qty),
-        purchase_price = v_cost,
-        sell_price     = v_sell,
+        purchase_price = case when v_cost > 0 then v_cost else purchase_price end,
+        sell_price     = case when v_sell > 0 then v_sell else sell_price end,
         min_stock      = coalesce(nullif(it->>'min_stock','')::int, min_stock),
         expiry_date    = coalesce(nullif(it->>'expiry_date','')::date, expiry_date),
         category       = coalesce(nullif(it->>'category',''), category),
         company_id     = coalesce(company_id, v_company)
       where id = v_pid and clinic_id = v_clinic;
-    else
+      -- Explicit product_id that no longer resolves in this clinic (e.g. deleted
+      -- concurrently): fall through and create a fresh product, mirroring demo.
+      if not found then v_pid := null; end if;
+    end if;
+
+    if v_pid is null then
       -- A brand-new barcode becomes a new product under this company.
       insert into products (clinic_id, company_id, barcode, name, category,
                             purchase_price, sell_price, stock, min_stock, expiry_date)

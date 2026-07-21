@@ -640,12 +640,13 @@ const demoRepo = {
     const companyId = meta.company_id ?? null;
     const purchaseId = uid("pur");
     const round3 = (n: number) => Math.max(0, Math.round(n * 1000) / 1000);
+    const round2 = (n: number) => Math.round((Number(n) || 0) * 100) / 100; // match numeric(12,2) on the server
     const minStock = (v: number | null | undefined) => (v != null && !Number.isNaN(Number(v)) ? Math.max(0, Math.round(Number(v))) : null);
     let total = 0, count = 0;
     for (const l of lines) {
       const qty = round3(Number(l.qty) || 0);
-      const cost = Number(l.purchase_price) || 0;
-      const sell = Number(l.sell_price) || 0;
+      const cost = round2(Number(l.purchase_price) || 0);
+      const sell = round2(Number(l.sell_price) || 0);
       total += qty * cost;
       count += qty;
       // Resolve a product: explicit id, else an existing barcode in stock.
@@ -654,8 +655,10 @@ const demoRepo = {
       const existing = pid ? db.products.find((x) => x.id === pid) : undefined;
       if (existing) {
         existing.stock = round3((existing.stock || 0) + qty);
-        existing.purchase_price = cost;
-        existing.sell_price = sell;
+        // Only refresh a price when a positive value was entered — a blank/0
+        // field on a restock line KEEPS the product's real price (never zero it).
+        if (cost > 0) existing.purchase_price = cost;
+        if (sell > 0) existing.sell_price = sell;
         const ms = minStock(l.min_stock);
         if (ms != null) existing.min_stock = ms;
         if (l.expiry_date) existing.expiry_date = l.expiry_date;
