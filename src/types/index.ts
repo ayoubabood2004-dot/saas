@@ -496,6 +496,10 @@ export interface InvoiceItem {
   line_total: number; // qty * unit_price
   /** Box-equivalent removed from stock (0.25 for 5 of 20 pills). Null on box sales → equals qty. */
   stock_qty?: number | null;
+  /** How much of this line was drawn from the section's pooled_stock (vs the
+   *  product's own tracked stock) at sale time. Lets a refund/void credit the
+   *  exact split back — the pooled part to the pool, the rest to stock. */
+  pooled_qty?: number | null;
   /** Unit the customer bought, snapshotted for the receipt (e.g. "علبة" / "حبة"). */
   unit_label?: string | null;
 }

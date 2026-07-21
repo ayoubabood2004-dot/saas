@@ -64,7 +64,7 @@ function createInvoiceLocal(items: CheckoutItem[], meta?: SaleMeta): Invoice {
   for (const i of items) {
     // Box-equivalent removed from stock: the fraction for sub-unit sales, else the qty.
     const stockQty = i.stock_qty != null ? i.stock_qty : i.qty;
-    db.invoiceItems.push({ id: uid("ii"), invoice_id: invoice.id, product_id: i.product_id ?? null, name: i.name, barcode: i.barcode ?? null, qty: i.qty, unit_price: i.unit_price, unit_cost: i.unit_cost, line_total: i.qty * i.unit_price, stock_qty: stockQty, unit_label: i.unit_label ?? null });
+    let fromPool = 0;
     if (i.product_id) {
       const p = db.products.find((x) => x.id === i.product_id);
       if (p) {
@@ -74,16 +74,34 @@ function createInvoiceLocal(items: CheckoutItem[], meta?: SaleMeta): Invoice {
         const sec = p.section_id ? (db.companySections ?? []).find((x) => x.id === p.section_id) : undefined;
         const pool = sec?.pooled_stock ?? 0;
         if (sec && pool > 0) {
-          const fromPool = Math.min(rem, pool);
+          fromPool = Math.min(rem, pool);
           sec.pooled_stock = r3(pool - fromPool);
           rem -= fromPool;
         }
         if (rem > 0) p.stock = r3(p.stock - rem);
       }
     }
+    db.invoiceItems.push({ id: uid("ii"), invoice_id: invoice.id, product_id: i.product_id ?? null, name: i.name, barcode: i.barcode ?? null, qty: i.qty, unit_price: i.unit_price, unit_cost: i.unit_cost, line_total: i.qty * i.unit_price, stock_qty: stockQty, pooled_qty: fromPool, unit_label: i.unit_label ?? null });
   }
   saveDB(db);
   return invoice;
+}
+/** Credit a refunded/voided line back to inventory, reversing the pool-first
+ *  split: the part that came from the section pool returns to the pool, the rest
+ *  to the product's tracked stock. Legacy rows (pooled_qty absent) → all to stock. */
+function restockLocal(db: ReturnType<typeof loadDB>, it: InvoiceItem) {
+  if (!it.product_id) return;
+  const p = (db.products ?? []).find((x) => x.id === it.product_id);
+  if (!p) return;
+  const r3 = (n: number) => Math.round(n * 1000) / 1000;
+  const sq = it.stock_qty != null ? it.stock_qty : it.qty;
+  const pq = it.pooled_qty ?? 0;
+  let credited = 0;
+  if (pq > 0 && p.section_id) {
+    const sec = (db.companySections ?? []).find((s) => s.id === p.section_id);
+    if (sec) { sec.pooled_stock = r3((sec.pooled_stock ?? 0) + pq); credited = pq; }
+  }
+  p.stock = r3(p.stock + (sq - credited));
 }
 import type { PreparedUpload } from "./image";
 
@@ -770,12 +788,7 @@ const demoRepo = {
     const inv = (db.invoices ?? []).find((x) => x.id === invoiceId);
     if (!inv) return undefined;
     if (inv.status !== "refunded") {
-      for (const it of (db.invoiceItems ?? []).filter((x) => x.invoice_id === invoiceId)) {
-        if (it.product_id) {
-          const p = (db.products ?? []).find((x) => x.id === it.product_id);
-          if (p) p.stock = Math.round((p.stock + (it.stock_qty != null ? it.stock_qty : it.qty)) * 1000) / 1000; // return the box-equivalent to stock
-        }
-      }
+      for (const it of (db.invoiceItems ?? []).filter((x) => x.invoice_id === invoiceId)) restockLocal(db, it);
       inv.status = "refunded";
       inv.refunded_at = new Date().toISOString();
       saveDB(db);
@@ -787,12 +800,7 @@ const demoRepo = {
     const inv = (db.invoices ?? []).find((x) => x.id === invoiceId);
     // Restock unless it was already refunded (which already restocked).
     if (inv && inv.status !== "refunded") {
-      for (const it of (db.invoiceItems ?? []).filter((x) => x.invoice_id === invoiceId)) {
-        if (it.product_id) {
-          const p = (db.products ?? []).find((x) => x.id === it.product_id);
-          if (p) p.stock = Math.round((p.stock + (it.stock_qty != null ? it.stock_qty : it.qty)) * 1000) / 1000;
-        }
-      }
+      for (const it of (db.invoiceItems ?? []).filter((x) => x.invoice_id === invoiceId)) restockLocal(db, it);
     }
     db.invoices = (db.invoices ?? []).filter((x) => x.id !== invoiceId);
     db.invoiceItems = (db.invoiceItems ?? []).filter((x) => x.invoice_id !== invoiceId);

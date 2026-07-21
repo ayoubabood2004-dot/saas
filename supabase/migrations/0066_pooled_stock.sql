@@ -5,31 +5,34 @@
 --   • company_sections.pooled_stock — the section's aggregate legacy units
 --   • products.pooled               — a barcode added WITHOUT a count (unknown
 --                                     quantity; sells from its section pool)
+--   • invoice_items.pooled_qty      — how much of a sold line came from the pool
+--                                     (so refunds/voids credit the exact split back)
 -- Selling any barcode in a section drains the section pool FIRST (oldest stock
 -- first / FIFO), then the product's own tracked stock. A purchase gives a barcode
 -- a real count and flips it to tracked (pooled=false); the pool is never touched
--- by a purchase, so the total (pool + Σ tracked) is always conserved.
--- Apply AFTER 0063–0065. Additive & idempotent.
+-- by a purchase, so the total (pool + Σ tracked) is always conserved — including
+-- across refunds and deletions. Apply AFTER 0063–0065. Additive & idempotent.
 -- ============================================================================
 
 alter table company_sections add column if not exists pooled_stock numeric(14,3) not null default 0;
 alter table products         add column if not exists pooled       boolean       not null default false;
+alter table invoice_items    add column if not exists pooled_qty   numeric(14,3) not null default 0;
 
 -- ----------------------------------------------------------------------------
 -- deduct_stock_pooled — remove p_qty from a product, pool-first: drain the
--- product's section pool before its own tracked stock. Shared by both checkout
--- RPCs so the rule lives in exactly one place. Internal helper (called only from
--- the security-definer checkout functions); not granted to API roles.
+-- product's section pool before its own tracked stock, and RETURN how much came
+-- from the pool (so the caller can record it on the invoice line for refunds).
+-- Internal helper (called only from the security-definer checkout RPCs).
 -- ----------------------------------------------------------------------------
 create or replace function deduct_stock_pooled(p_product uuid, p_qty numeric, p_clinic uuid)
-returns void language plpgsql security definer set search_path = public as $$
+returns numeric language plpgsql security definer set search_path = public as $$
 declare
   v_sec      uuid;
   v_pool     numeric(14,3);
   v_frompool numeric(14,3) := 0;
   v_rem      numeric(14,3);
 begin
-  if p_product is null or coalesce(p_qty, 0) <= 0 then return; end if;
+  if p_product is null or coalesce(p_qty, 0) <= 0 then return 0; end if;
   select section_id into v_sec from products where id = p_product and clinic_id = p_clinic;
   if v_sec is not null then
     -- Lock the section row so concurrent sales can't over-draw the pool.
@@ -46,11 +49,12 @@ begin
     update products set stock = greatest(0, stock - v_rem)
      where id = p_product and clinic_id = p_clinic;
   end if;
+  return v_frompool;
 end $$;
 
 -- ----------------------------------------------------------------------------
--- pos_checkout — pool-aware (redefined on top of 0020). Same shape; only the
--- stock decrement now goes through deduct_stock_pooled.
+-- pos_checkout — pool-aware (redefined on top of 0020). The per-line deduction
+-- now drains the pool first and records the pooled part on the invoice line.
 -- ----------------------------------------------------------------------------
 create or replace function pos_checkout(p_items jsonb) returns invoices
 language plpgsql security definer set search_path = public as $$
@@ -61,6 +65,7 @@ declare
   v_total numeric(12,2) := 0;
   v_cost  numeric(12,2) := 0;
   v_count integer := 0;
+  v_fp    numeric(14,3);
 begin
   if v_clinic is null then raise exception 'not authenticated'; end if;
   if jsonb_array_length(coalesce(p_items, '[]'::jsonb)) = 0 then raise exception 'empty cart'; end if;
@@ -76,7 +81,11 @@ begin
   returning * into v_invoice;
 
   for it in select * from jsonb_array_elements(p_items) loop
-    insert into invoice_items (invoice_id, clinic_id, product_id, name, barcode, qty, unit_price, unit_cost, line_total)
+    v_fp := 0;
+    if nullif(it->>'product_id','') is not null then
+      v_fp := deduct_stock_pooled((it->>'product_id')::uuid, (it->>'qty')::numeric, v_clinic);
+    end if;
+    insert into invoice_items (invoice_id, clinic_id, product_id, name, barcode, qty, unit_price, unit_cost, line_total, pooled_qty)
     values (
       v_invoice.id, v_clinic,
       nullif(it->>'product_id','')::uuid,
@@ -85,11 +94,9 @@ begin
       (it->>'qty')::int,
       (it->>'unit_price')::numeric,
       (it->>'unit_cost')::numeric,
-      (it->>'qty')::int * (it->>'unit_price')::numeric
+      (it->>'qty')::int * (it->>'unit_price')::numeric,
+      v_fp
     );
-    if nullif(it->>'product_id','') is not null then
-      perform deduct_stock_pooled((it->>'product_id')::uuid, (it->>'qty')::numeric, v_clinic);
-    end if;
   end loop;
 
   return v_invoice;
@@ -98,7 +105,8 @@ end $$;
 -- ----------------------------------------------------------------------------
 -- retail_checkout — pool-aware (redefined on top of 0062; every prior feature —
 -- fractional sub-units, split payments, credit/amount_paid, final-price override,
--- notes — preserved). Only the per-line stock decrement now drains the pool first.
+-- notes — preserved). Only the per-line stock decrement now drains the pool first
+-- and records the pooled part on the invoice line.
 -- ----------------------------------------------------------------------------
 create or replace function retail_checkout(p_items jsonb, p_meta jsonb default '{}'::jsonb)
 returns invoices language plpgsql security definer set search_path = public as $$
@@ -108,6 +116,7 @@ declare
   it         jsonb;
   v_qty      numeric(14,3);
   v_stockq   numeric(14,3);
+  v_fp       numeric(14,3);
   v_subtotal numeric(14,2) := 0;
   v_cost     numeric(14,2) := 0;
   v_count    numeric(14,3) := 0;
@@ -162,7 +171,11 @@ begin
   for it in select * from jsonb_array_elements(p_items) loop
     v_qty    := (it->>'qty')::numeric;
     v_stockq := coalesce(nullif(it->>'stock_qty','')::numeric, v_qty);
-    insert into invoice_items (invoice_id, clinic_id, product_id, name, barcode, qty, unit_price, unit_cost, line_total, stock_qty, unit_label)
+    v_fp     := 0;
+    if nullif(it->>'product_id','') is not null then
+      v_fp := deduct_stock_pooled((it->>'product_id')::uuid, v_stockq, v_clinic);
+    end if;
+    insert into invoice_items (invoice_id, clinic_id, product_id, name, barcode, qty, unit_price, unit_cost, line_total, stock_qty, pooled_qty, unit_label)
     values (
       v_invoice.id, v_clinic,
       nullif(it->>'product_id','')::uuid,
@@ -173,14 +186,93 @@ begin
       (it->>'unit_cost')::numeric,
       v_qty * (it->>'unit_price')::numeric,
       v_stockq,
+      v_fp,
       nullif(it->>'unit_label','')
     );
-    if nullif(it->>'product_id','') is not null then
-      perform deduct_stock_pooled((it->>'product_id')::uuid, v_stockq, v_clinic);
-    end if;
   end loop;
 
   return v_invoice;
+end $$;
+
+-- ----------------------------------------------------------------------------
+-- refund_invoice — pool-aware (redefined on top of 0051). Credit the pooled part
+-- of each line back to the section pool and the rest to the product's stock, so a
+-- refund exactly reverses the pool-first sale. Legacy lines (pooled_qty 0) behave
+-- as before (all to stock).
+-- ----------------------------------------------------------------------------
+create or replace function refund_invoice(p_invoice uuid)
+returns invoices language plpgsql security definer set search_path = public as $$
+declare
+  v_clinic uuid := auth_clinic();
+  v_invoice invoices;
+  r record;
+begin
+  if v_clinic is null then raise exception 'not authenticated'; end if;
+  update invoices set status = 'refunded', refunded_at = now()
+    where id = p_invoice and clinic_id = v_clinic and status is distinct from 'refunded'
+    returning * into v_invoice;
+  if not found then
+    select * into v_invoice from invoices where id = p_invoice and clinic_id = v_clinic;
+    if not found then raise exception 'invoice not found'; end if;
+    return v_invoice; -- already refunded → no double restock
+  end if;
+  for r in
+    select ii.product_id, ii.qty, ii.stock_qty, ii.pooled_qty, p.section_id
+      from invoice_items ii
+      left join products p on p.id = ii.product_id and p.clinic_id = v_clinic
+     where ii.invoice_id = p_invoice and ii.clinic_id = v_clinic
+  loop
+    if r.product_id is not null then
+      if coalesce(r.pooled_qty, 0) > 0 and r.section_id is not null then
+        update company_sections set pooled_stock = pooled_stock + r.pooled_qty
+          where id = r.section_id and clinic_id = v_clinic;
+        update products set stock = stock + (coalesce(r.stock_qty, r.qty) - r.pooled_qty)
+          where id = r.product_id and clinic_id = v_clinic;
+      else
+        update products set stock = stock + coalesce(r.stock_qty, r.qty)
+          where id = r.product_id and clinic_id = v_clinic;
+      end if;
+    end if;
+  end loop;
+  return v_invoice;
+end $$;
+
+-- ----------------------------------------------------------------------------
+-- delete_invoice — pool-aware (redefined on top of 0051). Same reversal as refund
+-- when the invoice wasn't already refunded.
+-- ----------------------------------------------------------------------------
+create or replace function delete_invoice(p_invoice uuid)
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  v_clinic uuid := auth_clinic();
+  v_status text;
+  r record;
+begin
+  if v_clinic is null then raise exception 'not authenticated'; end if;
+  if auth_role() <> 'manager' then raise exception 'forbidden: managers only'; end if;
+  select status into v_status from invoices where id = p_invoice and clinic_id = v_clinic for update;
+  if not found then raise exception 'invoice not found'; end if;
+  if v_status is distinct from 'refunded' then
+    for r in
+      select ii.product_id, ii.qty, ii.stock_qty, ii.pooled_qty, p.section_id
+        from invoice_items ii
+        left join products p on p.id = ii.product_id and p.clinic_id = v_clinic
+       where ii.invoice_id = p_invoice and ii.clinic_id = v_clinic
+    loop
+      if r.product_id is not null then
+        if coalesce(r.pooled_qty, 0) > 0 and r.section_id is not null then
+          update company_sections set pooled_stock = pooled_stock + r.pooled_qty
+            where id = r.section_id and clinic_id = v_clinic;
+          update products set stock = stock + (coalesce(r.stock_qty, r.qty) - r.pooled_qty)
+            where id = r.product_id and clinic_id = v_clinic;
+        else
+          update products set stock = stock + coalesce(r.stock_qty, r.qty)
+            where id = r.product_id and clinic_id = v_clinic;
+        end if;
+      end if;
+    end loop;
+  end if;
+  delete from invoices where id = p_invoice and clinic_id = v_clinic;
 end $$;
 
 -- ----------------------------------------------------------------------------

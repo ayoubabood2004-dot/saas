@@ -71,7 +71,9 @@ export function Inventory() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const lowStock = products.filter((p) => p.stock <= lowThreshold(p)).length;
+  // Pooled products carry no per-barcode count (they sell from the section pool),
+  // so a stock of 0 is expected — never flag them as low stock.
+  const lowStock = products.filter((p) => !p.pooled && p.stock <= lowThreshold(p)).length;
   const expiringSoon = products.filter((p) => { const d = daysUntil(p.expiry_date); return d != null && d >= 0 && d <= 30; }).length;
 
   return (
@@ -369,6 +371,13 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
         units_per_box: subUnitOn ? unitsPerBox : null,
         sub_unit_price: subUnitOn ? (Number(f.sub_unit_price) || 0) : null,
       };
+      // Flipping an existing TRACKED product to pooled would drop its real count
+      // to 0 — fold that stock into the section pool first so nothing is lost.
+      if (product && pooled && !product.pooled && (product.stock || 0) > 0 && section_id) {
+        const sec = [...sections, ...createdSecRef.current].find((s) => s.id === section_id);
+        const cur = sec?.pooled_stock ?? 0;
+        await repo.updateCompanySection(section_id, { pooled_stock: Math.round((cur + (product.stock || 0)) * 1000) / 1000 });
+      }
       if (product) await repo.updateProduct(product.id, payload);
       else await repo.createProduct({ ...payload, clinic_id: clinicId ?? null });
       playSuccess();
