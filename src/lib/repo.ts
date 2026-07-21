@@ -4,7 +4,7 @@
 import { loadDB, saveDB } from "./demoStore";
 import { supabase } from "./supabase";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, AppointmentStatus, TreatmentEntry, Admission, Branch, Reminder, Product, Company, Purchase, PurchaseItem, PurchaseDraftLine, PurchaseMeta, Invoice, InvoiceItem, CheckoutItem, SaleMeta, Customer, DiscountType, PaymentMethod, PaymentSplit, WhatsAppMessage, AuditEntry, LoginEvent, PetNote, Expense, ClinicVisit } from "@/types";
+import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, AppointmentStatus, TreatmentEntry, Admission, Branch, Reminder, Product, Company, CompanySection, Purchase, PurchaseItem, PurchaseDraftLine, PurchaseMeta, Invoice, InvoiceItem, CheckoutItem, SaleMeta, Customer, DiscountType, PaymentMethod, PaymentSplit, WhatsAppMessage, AuditEntry, LoginEvent, PetNote, Expense, ClinicVisit } from "@/types";
 import { uid, uuid, ageMonths } from "./utils";
 
 /** Sort key for a case/admission — newest first. Prefers the precise `created_at`
@@ -616,8 +616,43 @@ const demoRepo = {
   async deleteCompany(id: string): Promise<void> {
     const db = loadDB();
     db.companies = (db.companies ?? []).filter((x) => x.id !== id);
-    // Products keep existing — they just lose the (now-gone) company link.
-    for (const p of db.products ?? []) if (p.company_id === id) p.company_id = null;
+    // Its sections go too; products keep existing but lose the (now-gone) links.
+    const gone = new Set((db.companySections ?? []).filter((s) => s.company_id === id).map((s) => s.id));
+    db.companySections = (db.companySections ?? []).filter((s) => s.company_id !== id);
+    for (const p of db.products ?? []) {
+      if (p.company_id === id) p.company_id = null;
+      if (p.section_id && gone.has(p.section_id)) p.section_id = null;
+    }
+    saveDB(db);
+  },
+
+  /* ---------------- Company sections (أصناف) — groups inside a company ---------------- */
+  async listCompanySections(companyId?: string, _clinicId?: string): Promise<CompanySection[]> {
+    let rows = (loadDB().companySections ?? []).slice();
+    if (companyId) rows = rows.filter((s) => s.company_id === companyId);
+    return rows.sort((a, b) => a.name.localeCompare(b.name));
+  },
+  async createCompanySection(input: Omit<CompanySection, "id" | "created_at">): Promise<CompanySection> {
+    const db = loadDB();
+    if (!db.companySections) db.companySections = [];
+    const s: CompanySection = { ...input, id: uid("sec"), created_at: new Date().toISOString() };
+    db.companySections.push(s);
+    saveDB(db);
+    return s;
+  },
+  async updateCompanySection(id: string, patch: Partial<CompanySection>): Promise<CompanySection | undefined> {
+    const db = loadDB();
+    const s = (db.companySections ?? []).find((x) => x.id === id);
+    if (!s) return undefined;
+    Object.assign(s, patch);
+    saveDB(db);
+    return s;
+  },
+  async deleteCompanySection(id: string): Promise<void> {
+    const db = loadDB();
+    db.companySections = (db.companySections ?? []).filter((x) => x.id !== id);
+    // Products stay in the company — they just lose the (now-gone) section link.
+    for (const p of db.products ?? []) if (p.section_id === id) p.section_id = null;
     saveDB(db);
   },
 
@@ -891,6 +926,9 @@ const DEMO_ACTIVITY_MAP: Record<string, { entity: string; action: "INSERT" | "UP
   createCompany: { entity: "companies", action: "INSERT" },
   updateCompany: { entity: "companies", action: "UPDATE" },
   deleteCompany: { entity: "companies", action: "DELETE" },
+  createCompanySection: { entity: "company_sections", action: "INSERT" },
+  updateCompanySection: { entity: "company_sections", action: "UPDATE" },
+  deleteCompanySection: { entity: "company_sections", action: "DELETE" },
   recordPurchase: { entity: "purchases", action: "INSERT" },
   checkout: { entity: "invoices", action: "INSERT" },
   retailCheckout: { entity: "invoices", action: "INSERT" },
@@ -1279,6 +1317,24 @@ const supabaseRepo: typeof demoRepo = {
   async deleteCompany(id) {
     // FK on products.company_id is ON DELETE SET NULL, so products survive.
     ok(await sbc().from("companies").delete().eq("id", id));
+  },
+
+  /* ---------------- Company sections (أصناف) ---------------- */
+  async listCompanySections(companyId, clinicId) {
+    let q = sbc().from("company_sections").select("*").order("name", { ascending: true });
+    if (companyId) q = q.eq("company_id", companyId);
+    if (clinicId) q = q.eq("clinic_id", clinicId);
+    return listOf<CompanySection>(await q);
+  },
+  async createCompanySection(input) {
+    return need<CompanySection>(await sbc().from("company_sections").insert(input).select().single());
+  },
+  async updateCompanySection(id, patch) {
+    return maybe<CompanySection>(await sbc().from("company_sections").update(patch).eq("id", id).select().maybeSingle());
+  },
+  async deleteCompanySection(id) {
+    // FK on products.section_id is ON DELETE SET NULL, so products survive.
+    ok(await sbc().from("company_sections").delete().eq("id", id));
   },
 
   /* ---------------- Purchases (المشتريات) ---------------- */

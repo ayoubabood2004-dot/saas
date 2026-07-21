@@ -564,7 +564,20 @@
     "subUnitNeedsCount": "أدخل عدد الوحدات في العلبة (أكبر من صفر)",
     "subUnitPrice": "سعر الوحدة الواحدة",
     "subUnitToggle": "يحتوي على وحدات فرعية (مفرد)",
-    "unitsPerBox": "عدد الوحدات في العلبة"
+    "unitsPerBox": "عدد الوحدات في العلبة",
+    "section": "الصنف",
+    "sectionPh": "اختر صنفاً أو أنشئ واحداً…",
+    "sectionCreate": "إنشاء صنف “{{value}}”",
+    "sections": "الأصناف",
+    "addSection": "أضف صنف",
+    "editSection": "تعديل الصنف",
+    "noSections": "لا توجد أصناف بعد. أنشئ صنفاً (مثلاً دراي فود) ثم أضف باركوداته.",
+    "companySections": "{{n}} صنف",
+    "uncategorized": "بدون صنف",
+    "sectionDup": "يوجد صنف بهذا الاسم في هذه الشركة",
+    "sectionName": "اسم الصنف",
+    "sectionNamePh": "مثال: دراي فود، معلبات، أدوية",
+    "sectionInCompany": "داخل شركة {{name}}"
   },
   "role": {
     "admin": "العيادة",

@@ -564,7 +564,20 @@
     "subUnitNeedsCount": "Enter the number of units per box (greater than zero)",
     "subUnitPrice": "Price per unit",
     "subUnitToggle": "Contains sub-units (sell singles)",
-    "unitsPerBox": "Units per box"
+    "unitsPerBox": "Units per box",
+    "section": "Section",
+    "sectionPh": "Pick a section or create one…",
+    "sectionCreate": "Create section “{{value}}”",
+    "sections": "Sections",
+    "addSection": "Add section",
+    "editSection": "Edit section",
+    "noSections": "No sections yet. Create one (e.g. Dry food), then add its barcodes.",
+    "companySections": "{{n}} sections",
+    "uncategorized": "No section",
+    "sectionDup": "A section with this name already exists in this company",
+    "sectionName": "Section name",
+    "sectionNamePh": "e.g. Dry food, Canned, Medicines",
+    "sectionInCompany": "Inside {{name}}"
   },
   "role": {
     "admin": "Clinic",

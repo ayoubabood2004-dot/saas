@@ -344,6 +344,18 @@ export interface Company {
   created_at: string;
 }
 
+/** A named section/group (صنف) INSIDE a company — the middle level of the
+ *  Company → Section → Barcode hierarchy. A product links to at most one section
+ *  via `section_id` (and that section belongs to the product's company). */
+export interface CompanySection {
+  id: string;
+  clinic_id?: string | null;
+  /** The company this section lives under. */
+  company_id: string;
+  name: string;
+  created_at: string;
+}
+
 export interface Product {
   id: string;
   /** Owning clinic (tenant isolation). */
@@ -353,6 +365,8 @@ export interface Product {
   category?: ProductCategory | null;
   /** The company/brand (شركة) this product belongs to — see `Company`. Optional. */
   company_id?: string | null;
+  /** The section (صنف) inside the company this product belongs to — see `CompanySection`. Optional. */
+  section_id?: string | null;
   /** Free-text subcategory (e.g. "معلبات", "رمل", "دراي فود") — used by Mix & Match promotions. */
   subcategory?: string | null;
   purchase_price: number;
@@ -620,6 +634,7 @@ export interface DemoDB {
   reminders: Reminder[];
   products: Product[];
   companies?: Company[];
+  companySections?: CompanySection[];
   invoices: Invoice[];
   invoiceItems: InvoiceItem[];
   purchases?: Purchase[];

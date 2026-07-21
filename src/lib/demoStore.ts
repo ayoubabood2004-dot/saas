@@ -1,4 +1,4 @@
-import type { DemoDB, Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, TreatmentEntry, Admission, Reminder, Product, Company, ClinicVisit } from "@/types";
+import type { DemoDB, Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, TreatmentEntry, Admission, Reminder, Product, Company, CompanySection, ClinicVisit } from "@/types";
 import { uid } from "./utils";
 
 const KEY = "vp_demo_db_v12";
@@ -289,10 +289,15 @@ function seed(): DemoDB {
   const coHills: Company = { id: uid("co"), name: "Hill's", note: null, created_at: new Date().toISOString() };
   const companies: Company[] = [coRoyal, coBoehringer, coHills];
 
+  // Sections (أصناف) inside a company — the middle level of Company → Section → Barcode.
+  const secRoyalDry: CompanySection = { id: uid("sec"), company_id: coRoyal.id, name: "دراي فود", created_at: new Date().toISOString() };
+  const secBoehParasite: CompanySection = { id: uid("sec"), company_id: coBoehringer.id, name: "مضادات الطفيليات", created_at: new Date().toISOString() };
+  const companySections: CompanySection[] = [secRoyalDry, secBoehParasite];
+
   const products: Product[] = [
-    { id: uid("prod"), barcode: "6221031492015", name: "Royal Canin Maxi Adult 4kg", category: "food", company_id: coRoyal.id, purchase_price: 22, sell_price: 32, stock: 14, min_stock: 5, expiry_date: iso(420), created_at: new Date().toISOString() },
-    { id: uid("prod"), barcode: "6224000110017", name: "Frontline Plus (Dog, single pipette)", category: "medicine", company_id: coBoehringer.id, purchase_price: 6.5, sell_price: 12, stock: 40, min_stock: 10, expiry_date: iso(210), created_at: new Date().toISOString() },
-    { id: uid("prod"), barcode: "5391520947018", name: "Drontal Plus Dewormer (tablet)", category: "medicine", company_id: coBoehringer.id, purchase_price: 1.8, sell_price: 4, stock: 8, min_stock: 10, expiry_date: iso(30), created_at: new Date().toISOString() },
+    { id: uid("prod"), barcode: "6221031492015", name: "Royal Canin Maxi Adult 4kg", category: "food", company_id: coRoyal.id, section_id: secRoyalDry.id, purchase_price: 22, sell_price: 32, stock: 14, min_stock: 5, expiry_date: iso(420), created_at: new Date().toISOString() },
+    { id: uid("prod"), barcode: "6224000110017", name: "Frontline Plus (Dog, single pipette)", category: "medicine", company_id: coBoehringer.id, section_id: secBoehParasite.id, purchase_price: 6.5, sell_price: 12, stock: 40, min_stock: 10, expiry_date: iso(210), created_at: new Date().toISOString() },
+    { id: uid("prod"), barcode: "5391520947018", name: "Drontal Plus Dewormer (tablet)", category: "medicine", company_id: coBoehringer.id, section_id: secBoehParasite.id, purchase_price: 1.8, sell_price: 4, stock: 8, min_stock: 10, expiry_date: iso(30), created_at: new Date().toISOString() },
     { id: uid("prod"), barcode: "6291100630019", name: "Hill's i/d Digestive Care 360g can", category: "food", company_id: coHills.id, purchase_price: 2.4, sell_price: 4.5, stock: 26, min_stock: 6, expiry_date: iso(180), created_at: new Date().toISOString() },
     { id: uid("prod"), barcode: "4002448210010", name: "Cat scratching post — medium", category: "accessories", purchase_price: 9, sell_price: 18, stock: 5, min_stock: 3, expiry_date: null, created_at: new Date().toISOString() },
     { id: uid("prod"), barcode: "8901030710011", name: "Disposable syringe 5ml (box of 100)", category: "consumables", purchase_price: 7, sell_price: 14, stock: 3, min_stock: 5, expiry_date: iso(-10), created_at: new Date().toISOString() },
@@ -306,7 +311,7 @@ function seed(): DemoDB {
   return {
     pets: [bobby, luna, francisco, rocky, bella, coco, max],
     weightLogs, vaccinations, visits, clinicVisits, media, appointments, treatments, admissions, reminders,
-    products, companies, invoices: [], invoiceItems: [],
+    products, companies, companySections, invoices: [], invoiceItems: [],
   };
 }
 
