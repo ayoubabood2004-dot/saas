@@ -593,7 +593,12 @@
     "invValueCost": "Cost (capital)",
     "invValueRetail": "Retail value",
     "invValueProfit": "Expected profit",
-    "invValueEstimated": "of which estimated (pooled): {{cost}} cost · {{retail}} retail"
+    "invValueEstimated": "of which estimated (pooled): {{cost}} cost · {{retail}} retail",
+    "searchInCompany": "Search sections & barcodes…",
+    "searchInSection": "Search by name or barcode…",
+    "searchResults": "Search results",
+    "searchProductsFound": "Matching barcodes ({{n}})",
+    "noSearchResults": "No matches."
   },
   "role": {
     "admin": "Clinic",

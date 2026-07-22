@@ -211,7 +211,7 @@ function ValueCell({ label, value, tone }: { label: string; value: string; tone:
 }
 
 /* ---------------- Shared product row ---------------- */
-function ProductRow({ p, companyName, onEdit, onRemove }: { p: Product; companyName?: string; onEdit: () => void; onRemove: () => void }) {
+function ProductRow({ p, companyName, sectionName, onEdit, onRemove }: { p: Product; companyName?: string; sectionName?: string; onEdit: () => void; onRemove: () => void }) {
   const { t, i18n } = useTranslation();
   const exp = daysUntil(p.expiry_date);
   const expired = exp != null && exp < 0;
@@ -223,6 +223,7 @@ function ProductRow({ p, companyName, onEdit, onRemove }: { p: Product; companyN
         <p className="flex flex-wrap items-center gap-x-2 gap-y-1 truncate text-sm font-semibold text-ink">
           {p.name}
           {companyName && <span className="chip shrink-0 bg-accent-50 text-2xs font-semibold text-accent-700 dark:bg-accent-500/15 dark:text-accent-200"><Building2 size={11} /> {companyName}</span>}
+          {sectionName && <span className="chip shrink-0 bg-brand-50 text-2xs font-semibold text-brand-700 dark:bg-brand-500/15 dark:text-brand-200"><FolderTree size={11} /> {sectionName}</span>}
           {p.category && <span className="chip shrink-0 bg-surface-2 text-2xs font-medium text-ink-muted">{t(`pos.cat.${p.category}`)}</span>}
         </p>
         <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-ink-subtle">
@@ -765,6 +766,8 @@ function CompanyDetail({ company, products, companies, sections, clinicId, onBac
   const [purchasing, setPurchasing] = useState(false);
   const [addingSection, setAddingSection] = useState(false);
   const [editingSection, setEditingSection] = useState<CompanySection | null>(null);
+  const [editing, setEditing] = useState<Product | null>(null);
+  const [q, setQ] = useState("");
   // Which section is open (a section id, or the UNCAT bucket). null = sections overview.
   const [openSectionId, setOpenSectionId] = useState<string | null>(null);
 
@@ -773,6 +776,17 @@ function CompanyDetail({ company, products, companies, sections, clinicId, onBac
   const mySections = sections.filter((s) => s.company_id === company.id);
   const uncatProducts = mine.filter((p) => !p.section_id);
   const s = statsFor(products, company.id);
+
+  // Search WITHIN this company — matches section names AND product name/barcode.
+  const ql = q.trim().toLowerCase();
+  const shownSections = ql ? mySections.filter((sec) => sec.name.toLowerCase().includes(ql)) : mySections;
+  const matchedProducts = ql ? mine.filter((p) => p.name.toLowerCase().includes(ql) || (p.barcode ?? "").includes(ql)) : [];
+  const sectionNameOf = (id?: string | null) => (id ? mySections.find((x) => x.id === id)?.name : undefined);
+  const removeProduct = async (p: Product) => {
+    if (!window.confirm(t("pos.confirmDelete", { name: p.name, defaultValue: "Remove \"{{name}}\" from inventory?" }))) return;
+    try { await repo.deleteProduct(p.id); playSuccess(); onChanged(); }
+    catch (e) { toast.error(describeDbError(e, t), e instanceof Error ? e.message : undefined); }
+  };
 
   const pooledTotal = mySections.reduce((n, sec) => n + (sec.pooled_stock ?? 0), 0);
   const removeCompany = async () => {
@@ -834,15 +848,45 @@ function CompanyDetail({ company, products, companies, sections, clinicId, onBac
         </div>
       </div>
 
+      {/* Search inside this company — finds sections AND barcodes */}
+      <div className="relative">
+        <Search size={16} className="pointer-events-none absolute top-1/2 -translate-y-1/2 text-ink-subtle ltr:left-3 rtl:right-3" />
+        <input className="input ltr:pl-9 rtl:pr-9" value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("pos.searchInCompany", "ابحث في الأصناف والباركودات…")} />
+      </div>
+
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-sm font-semibold text-ink-muted">{t("pos.sections", "الأصناف")}</p>
+        <p className="text-sm font-semibold text-ink-muted">{ql ? t("pos.searchResults", "نتائج البحث") : t("pos.sections", "الأصناف")}</p>
         <div className="flex items-center gap-2">
           <Button size="sm" variant="secondary" leftIcon={<ShoppingBag size={15} />} onClick={() => { playTap(); setPurchasing(true); }}>{t("purchase.new", "فاتورة شراء")}</Button>
           <Button size="sm" leftIcon={<Plus size={15} />} onClick={() => { playTap(); setAddingSection(true); }}>{t("pos.addSection", "أضف صنف")}</Button>
         </div>
       </div>
 
-      {mySections.length === 0 && uncatProducts.length === 0 ? (
+      {ql ? (
+        /* ---- Search results: matching sections + matching barcodes ---- */
+        <div className="space-y-4">
+          {shownSections.length > 0 && (
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {shownSections.map((sec) => {
+                const base = statsBy(products, (p) => p.section_id === sec.id);
+                const st = { ...base, units: base.units + (sec.pooled_stock ?? 0) };
+                return <SectionCard key={sec.id} icon={FolderTree} title={sec.name} stats={st} onOpen={() => { playTap(); setOpenSectionId(sec.id); }} onEdit={() => { playTap(); setEditingSection(sec); }} />;
+              })}
+            </div>
+          )}
+          {matchedProducts.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-xs font-semibold text-ink-subtle">{t("pos.searchProductsFound", { n: matchedProducts.length, defaultValue: "باركودات مطابقة ({{n}})" })}</p>
+              {matchedProducts.map((p) => (
+                <ProductRow key={p.id} p={p} sectionName={sectionNameOf(p.section_id)} onEdit={() => { playTap(); setEditing(p); }} onRemove={() => removeProduct(p)} />
+              ))}
+            </div>
+          )}
+          {shownSections.length === 0 && matchedProducts.length === 0 && (
+            <div className="card p-10 text-center text-ink-subtle">{t("pos.noSearchResults", "لا نتائج مطابقة.")}</div>
+          )}
+        </div>
+      ) : mySections.length === 0 && uncatProducts.length === 0 ? (
         <div className="card flex flex-col items-center gap-3 p-10 text-center">
           <span className="grid h-14 w-14 place-items-center rounded-2xl bg-brand-50 text-brand-500 dark:bg-brand-500/15"><FolderTree size={26} /></span>
           <p className="text-ink-subtle">{t("pos.noSections", "لا توجد أصناف بعد. أنشئ صنفاً (مثلاً دراي فود) ثم أضف باركوداته.")}</p>
@@ -872,6 +916,9 @@ function CompanyDetail({ company, products, companies, sections, clinicId, onBac
 
       {/* Edit company */}
       <CompanyModal open={editingCo} company={company} companies={companies} clinicId={clinicId} onClose={() => setEditingCo(false)} onSaved={() => { setEditingCo(false); onChanged(); }} />
+
+      {/* Edit a product from the search results */}
+      <ProductModal open={!!editing} product={editing} companies={companies} sections={sections} clinicId={clinicId} subcategories={subcategoriesOf(products)} defaultCompanyName={company.name} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); onChanged(); }} />
 
       {/* Add / edit a section */}
       <SectionModal open={addingSection} company={company} section={null} sections={sections} clinicId={clinicId} onClose={() => setAddingSection(false)} onSaved={() => { setAddingSection(false); onChanged(); }} />
@@ -919,11 +966,14 @@ function SectionProducts({ company, section, products, companies, sections, clin
   const [addingProduct, setAddingProduct] = useState(false);
   const [poolOpen, setPoolOpen] = useState(false);
   const [editing, setEditing] = useState<Product | null>(null);
+  const [q, setQ] = useState("");
 
   const Back = i18n.dir() === "rtl" ? ArrowRight : ArrowLeft;
   const mine = section
     ? products.filter((p) => p.section_id === section.id)
     : products.filter((p) => p.company_id === company.id && !p.section_id);
+  const ql = q.trim().toLowerCase();
+  const shown = ql ? mine.filter((p) => p.name.toLowerCase().includes(ql) || (p.barcode ?? "").includes(ql)) : mine;
   const title = section ? section.name : t("pos.uncategorized", "بدون صنف");
   const pool = section?.pooled_stock ?? 0;
   const trackedUnits = mine.reduce((n, p) => n + (p.pooled ? 0 : p.stock || 0), 0);
@@ -970,11 +1020,21 @@ function SectionProducts({ company, section, products, companies, sections, clin
         </div>
       )}
 
+      {/* Search the barcodes in this section */}
+      {mine.length > 0 && (
+        <div className="relative">
+          <Search size={16} className="pointer-events-none absolute top-1/2 -translate-y-1/2 text-ink-subtle ltr:left-3 rtl:right-3" />
+          <input className="input ltr:pl-9 rtl:pr-9" value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("pos.searchInSection", "ابحث بالاسم أو الباركود…")} />
+        </div>
+      )}
+
       {mine.length === 0 ? (
         <div className="card p-10 text-center text-ink-subtle">{t("pos.noCompanyBarcodes", "لا توجد باركودات في هذا الصنف بعد. أضف أول باركود.")}</div>
+      ) : shown.length === 0 ? (
+        <div className="card p-10 text-center text-ink-subtle">{t("pos.noSearchResults", "لا نتائج مطابقة.")}</div>
       ) : (
         <motion.div variants={staggerContainer} initial="initial" animate="animate" className="space-y-2">
-          {mine.map((p) => (
+          {shown.map((p) => (
             <ProductRow key={p.id} p={p} onEdit={() => { playTap(); setEditing(p); }} onRemove={() => removeProduct(p)} />
           ))}
         </motion.div>

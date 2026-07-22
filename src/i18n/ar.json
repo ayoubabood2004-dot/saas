@@ -593,7 +593,12 @@
     "invValueCost": "رأس المال (شراء)",
     "invValueRetail": "قيمة البيع",
     "invValueProfit": "الربح المتوقع",
-    "invValueEstimated": "منها تقديري (مخزون مجمّع): {{cost}} شراء · {{retail}} بيع"
+    "invValueEstimated": "منها تقديري (مخزون مجمّع): {{cost}} شراء · {{retail}} بيع",
+    "searchInCompany": "ابحث في الأصناف والباركودات…",
+    "searchInSection": "ابحث بالاسم أو الباركود…",
+    "searchResults": "نتائج البحث",
+    "searchProductsFound": "باركودات مطابقة ({{n}})",
+    "noSearchResults": "لا نتائج مطابقة."
   },
   "role": {
     "admin": "العيادة",
