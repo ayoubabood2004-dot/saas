@@ -7,9 +7,9 @@
 --                                     quantity; sells from its section pool)
 --   • invoice_items.pooled_qty      — how much of a sold line came from the pool
 --                                     (so refunds/voids credit the exact split back)
--- Selling any barcode in a section drains the section pool FIRST (oldest stock
--- first / FIFO), then the product's own tracked stock. A purchase gives a barcode
--- a real count and flips it to tracked (pooled=false); the pool is never touched
+-- Selling a barcode uses its own KNOWN/tracked stock FIRST, then falls back to
+-- its section pool (the unknown legacy reserve). A purchase gives a barcode a
+-- real count and flips it to tracked (pooled=false); the pool is never touched
 -- by a purchase, so the total (pool + Σ tracked) is always conserved — including
 -- across refunds and deletions. Apply AFTER 0063–0065. Additive & idempotent.
 -- ============================================================================
@@ -19,35 +19,41 @@ alter table products         add column if not exists pooled       boolean      
 alter table invoice_items    add column if not exists pooled_qty   numeric(14,3) not null default 0;
 
 -- ----------------------------------------------------------------------------
--- deduct_stock_pooled — remove p_qty from a product, pool-first: drain the
--- product's section pool before its own tracked stock, and RETURN how much came
--- from the pool (so the caller can record it on the invoice line for refunds).
--- Internal helper (called only from the security-definer checkout RPCs).
+-- deduct_stock_pooled — remove p_qty from a product, KNOWN-first: sell the
+-- product's own tracked stock first, then fall back to its section's pool, and
+-- RETURN how much came from the pool (so the caller records it on the invoice
+-- line for exact refunds). Internal helper (called only from the checkout RPCs).
 -- ----------------------------------------------------------------------------
 create or replace function deduct_stock_pooled(p_product uuid, p_qty numeric, p_clinic uuid)
 returns numeric language plpgsql security definer set search_path = public as $$
 declare
-  v_sec      uuid;
-  v_pool     numeric(14,3);
-  v_frompool numeric(14,3) := 0;
-  v_rem      numeric(14,3);
+  v_sec       uuid;
+  v_stock     numeric(14,3);
+  v_pool      numeric(14,3);
+  v_fromstock numeric(14,3) := 0;
+  v_frompool  numeric(14,3) := 0;
+  v_rem       numeric(14,3);
 begin
   if p_product is null or coalesce(p_qty, 0) <= 0 then return 0; end if;
-  select section_id into v_sec from products where id = p_product and clinic_id = p_clinic;
-  if v_sec is not null then
-    -- Lock the section row so concurrent sales can't over-draw the pool.
+  -- Known/tracked stock first — lock the product row.
+  select stock, section_id into v_stock, v_sec from products
+   where id = p_product and clinic_id = p_clinic for update;
+  if not found then return 0; end if;
+  v_fromstock := least(p_qty, greatest(0, coalesce(v_stock, 0)));
+  if v_fromstock > 0 then
+    update products set stock = greatest(0, stock - v_fromstock)
+     where id = p_product and clinic_id = p_clinic;
+  end if;
+  v_rem := p_qty - v_fromstock;
+  -- Only the shortfall draws on the section pool (the unknown legacy reserve).
+  if v_rem > 0 and v_sec is not null then
     select pooled_stock into v_pool from company_sections
      where id = v_sec and clinic_id = p_clinic for update;
     if v_pool is not null and v_pool > 0 then
-      v_frompool := least(p_qty, v_pool);
+      v_frompool := least(v_rem, v_pool);
       update company_sections set pooled_stock = greatest(0, pooled_stock - v_frompool)
        where id = v_sec and clinic_id = p_clinic;
     end if;
-  end if;
-  v_rem := p_qty - v_frompool;
-  if v_rem > 0 then
-    update products set stock = greatest(0, stock - v_rem)
-     where id = p_product and clinic_id = p_clinic;
   end if;
   return v_frompool;
 end $$;

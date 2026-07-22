@@ -580,13 +580,14 @@
     "sectionInCompany": "Inside {{name}}",
     "pooledItem": "Pooled",
     "pooledToggle": "No count — part of the section's pooled stock",
-    "pooledHint": "Exact quantity unknown — sells from the section's pooled stock until a purchase gives it a real count.",
+    "pooledHint": "Exact quantity unknown — sells from the section's pooled stock. A purchase gives it a real count and it then sells from that first.",
     "pooledStock": "Section pooled stock",
-    "pooledStockHint": "An estimated total of unknown breakdown — sold from first.",
+    "pooledStockHint": "An estimated total of unknown breakdown — sold from after a barcode's known count runs out.",
     "estTotal": "Estimated total {{n}}",
     "setPool": "Edit / count",
     "setPoolTitle": "Pooled stock — {{name}}",
-    "setPoolBody": "Set the estimated total for this section. Sales draw from it first; a purchase with a real count starts precise tracking."
+    "setPoolBody": "Set the estimated total for this section. A sale draws from a barcode's known count first, then this pool; when both hit zero, selling stops.",
+    "confirmDeleteCompanyPooled": "Delete company \"{{name}}\"?\n\nWarning: it has {{sections}} section(s) and a pooled stock of {{n}} — that count will be permanently lost. Products stay but lose their company and pooled stock.\n\nContinue?"
   },
   "role": {
     "admin": "Clinic",

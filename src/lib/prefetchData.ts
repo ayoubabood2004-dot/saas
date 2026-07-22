@@ -35,8 +35,21 @@ export type RetailSnap = { products: Product[]; invoices: Invoice[] };
 export const retailKey = (clinicId?: string | null) => `retail:${cid(clinicId)}`;
 export async function loadRetailSnap(clinicId?: string | null): Promise<RetailSnap> {
   const id = clinicId ?? undefined;
-  const [products, invoices] = await Promise.all([repo.listProducts(id), repo.listInvoices(id)]);
-  return { products, invoices };
+  const [products, invoices, sections] = await Promise.all([
+    repo.listProducts(id),
+    repo.listInvoices(id),
+    repo.listCompanySections(undefined, id).catch(() => []),
+  ]);
+  // For the TILL only, a product's sellable count = its own tracked stock PLUS its
+  // section's pooled (legacy) reserve — so pooled barcodes (stock 0) are sellable
+  // and the cart naturally stops at zero. The real per-layer deduction (tracked
+  // first, then pool) happens server-side at checkout; this just sets the cap.
+  const pool = new Map(sections.map((s) => [s.id, s.pooled_stock ?? 0]));
+  const effective = products.map((p) => {
+    const extra = p.section_id ? (pool.get(p.section_id) ?? 0) : 0;
+    return extra > 0 ? { ...p, stock: (p.stock || 0) + extra } : p;
+  });
+  return { products: effective, invoices };
 }
 
 // ---- Reports (التقارير) ----

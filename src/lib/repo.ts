@@ -68,17 +68,20 @@ function createInvoiceLocal(items: CheckoutItem[], meta?: SaleMeta): Invoice {
     if (i.product_id) {
       const p = db.products.find((x) => x.id === i.product_id);
       if (p) {
-        // Pool-first (oldest-stock-first): drain the product's section pool
-        // before its own tracked stock, then round to 3 dp to avoid float drift.
+        // Known-first: sell the product's own tracked stock, then fall back to
+        // its section pool (the unknown legacy reserve). Round to 3 dp to avoid drift.
         let rem = stockQty;
-        const sec = p.section_id ? (db.companySections ?? []).find((x) => x.id === p.section_id) : undefined;
-        const pool = sec?.pooled_stock ?? 0;
-        if (sec && pool > 0) {
-          fromPool = Math.min(rem, pool);
-          sec.pooled_stock = r3(pool - fromPool);
-          rem -= fromPool;
+        const fromStock = Math.min(rem, Math.max(0, p.stock || 0));
+        if (fromStock > 0) { p.stock = r3(p.stock - fromStock); rem -= fromStock; }
+        if (rem > 0 && p.section_id) {
+          const sec = (db.companySections ?? []).find((x) => x.id === p.section_id);
+          const pool = sec?.pooled_stock ?? 0;
+          if (sec && pool > 0) {
+            fromPool = Math.min(rem, pool);
+            sec.pooled_stock = r3(pool - fromPool);
+            rem -= fromPool;
+          }
         }
-        if (rem > 0) p.stock = r3(p.stock - rem);
       }
     }
     db.invoiceItems.push({ id: uid("ii"), invoice_id: invoice.id, product_id: i.product_id ?? null, name: i.name, barcode: i.barcode ?? null, qty: i.qty, unit_price: i.unit_price, unit_cost: i.unit_cost, line_total: i.qty * i.unit_price, stock_qty: stockQty, pooled_qty: fromPool, unit_label: i.unit_label ?? null });

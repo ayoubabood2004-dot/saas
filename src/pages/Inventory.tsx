@@ -710,8 +710,14 @@ function CompanyDetail({ company, products, companies, sections, clinicId, onBac
   const uncatProducts = mine.filter((p) => !p.section_id);
   const s = statsFor(products, company.id);
 
+  const pooledTotal = mySections.reduce((n, sec) => n + (sec.pooled_stock ?? 0), 0);
   const removeCompany = async () => {
-    if (!window.confirm(t("pos.confirmDeleteCompany", { name: company.name, defaultValue: "حذف شركة \"{{name}}\"؟ ستبقى المنتجات لكن بدون شركة." }))) return;
+    // Deleting a company removes its sections too — which would erase any pooled
+    // (legacy) counts they hold. Warn loudly and require an explicit confirmation.
+    const msg = pooledTotal > 0
+      ? t("pos.confirmDeleteCompanyPooled", { name: company.name, sections: mySections.length, n: pooledTotal, defaultValue: "حذف شركة \"{{name}}\"؟\n\nتحذير: فيها {{sections}} صنف ومخزون مجمّع مقداره {{n}} — هذا العدد سيُحذف نهائياً. المنتجات تبقى لكن بدون شركة ولا مخزون مجمّع.\n\nمتأكد؟" })
+      : t("pos.confirmDeleteCompany", { name: company.name, defaultValue: "حذف شركة \"{{name}}\"؟ ستبقى المنتجات لكن بدون شركة." });
+    if (!window.confirm(msg)) return;
     try { await repo.deleteCompany(company.id); playSuccess(); onChanged(); onBack(); }
     catch (e) { toast.error(describeDbError(e, t), e instanceof Error ? e.message : undefined); }
   };
