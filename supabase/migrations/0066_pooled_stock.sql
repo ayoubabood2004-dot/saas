@@ -24,6 +24,11 @@ alter table invoice_items    add column if not exists pooled_qty   numeric(14,3)
 -- RETURN how much came from the pool (so the caller records it on the invoice
 -- line for exact refunds). Internal helper (called only from the checkout RPCs).
 -- ----------------------------------------------------------------------------
+-- An earlier build of this file defined the helper as RETURNS void; Postgres
+-- refuses to change a function's return type via CREATE OR REPLACE, so drop the
+-- old signature first. Safe: PL/pgSQL callers resolve it by name at call time,
+-- and the checkout RPCs below are recreated in the same migration.
+drop function if exists deduct_stock_pooled(uuid, numeric, uuid);
 create or replace function deduct_stock_pooled(p_product uuid, p_qty numeric, p_clinic uuid)
 returns numeric language plpgsql security definer set search_path = public as $$
 declare
