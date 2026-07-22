@@ -587,7 +587,13 @@
     "setPool": "Edit / count",
     "setPoolTitle": "Pooled stock — {{name}}",
     "setPoolBody": "Set the estimated total for this section. A sale draws from a barcode's known count first, then this pool; when both hit zero, selling stops.",
-    "confirmDeleteCompanyPooled": "Delete company \"{{name}}\"?\n\nWarning: it has {{sections}} section(s) and a pooled stock of {{n}} — that count will be permanently lost. Products stay but lose their company and pooled stock.\n\nContinue?"
+    "confirmDeleteCompanyPooled": "Delete company \"{{name}}\"?\n\nWarning: it has {{sections}} section(s) and a pooled stock of {{n}} — that count will be permanently lost. Products stay but lose their company and pooled stock.\n\nContinue?",
+    "invValueTitle": "Inventory value",
+    "invValueSub": "worth of stock on hand now",
+    "invValueCost": "Cost (capital)",
+    "invValueRetail": "Retail value",
+    "invValueProfit": "Expected profit",
+    "invValueEstimated": "of which estimated (pooled): {{cost}} cost · {{retail}} retail"
   },
   "role": {
     "admin": "Clinic",

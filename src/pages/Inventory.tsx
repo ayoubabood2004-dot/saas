@@ -94,6 +94,9 @@ export function Inventory() {
         <Kpi icon={CalendarClock} tone={expiringSoon ? "warn" : "success"} label={t("pos.expiringSoon", "Expiring ≤30d")} value={String(expiringSoon)} />
       </div>
 
+      {/* Inventory value (قيمة المخزون) — cost, retail, expected profit; includes pooled. */}
+      {!loading && <InventoryValueCard products={products} sections={sections} />}
+
       {/* View switch — products · companies (الشركات) · purchases (المشتريات) */}
       <div className="mb-4 inline-flex flex-wrap rounded-2xl bg-surface-2 p-1">
         <ViewTab active={view === "products"} icon={Package} label={t("pos.tabProducts", "المنتجات")} onClick={() => { playTap(); setView("products"); }} />
@@ -142,6 +145,67 @@ function Kpi({ icon: Icon, tone, label, value }: { icon: typeof Package; tone: "
         <p className="truncate text-lg font-bold text-ink tabular-nums">{value}</p>
         <p className="truncate text-xs text-ink-subtle">{label}</p>
       </div>
+    </div>
+  );
+}
+
+/* ---------------- Inventory value (قيمة المخزون) ---------------- */
+/** Worth of the stock on hand — tracked products (stock × price) PLUS an estimate
+ *  of each section's pooled (legacy) units valued at the average price of that
+ *  section's barcodes (prices within a section are typically close). */
+function computeInventoryValue(products: Product[], sections: CompanySection[]) {
+  let trackedCost = 0, trackedRetail = 0;
+  for (const p of products) {
+    trackedCost += (p.stock || 0) * (p.purchase_price || 0);
+    trackedRetail += (p.stock || 0) * (p.sell_price || 0);
+  }
+  let pooledCost = 0, pooledRetail = 0;
+  for (const sec of sections) {
+    const pool = sec.pooled_stock || 0;
+    if (pool <= 0) continue;
+    const inSec = products.filter((p) => p.section_id === sec.id);
+    if (!inSec.length) continue;
+    const avgBuy = inSec.reduce((s, p) => s + (p.purchase_price || 0), 0) / inSec.length;
+    const avgSell = inSec.reduce((s, p) => s + (p.sell_price || 0), 0) / inSec.length;
+    pooledCost += pool * avgBuy;
+    pooledRetail += pool * avgSell;
+  }
+  const cost = trackedCost + pooledCost;
+  const retail = trackedRetail + pooledRetail;
+  return { cost, retail, profit: retail - cost, pooledCost, pooledRetail, hasPooled: pooledCost > 0 || pooledRetail > 0 };
+}
+
+function InventoryValueCard({ products, sections }: { products: Product[]; sections: CompanySection[] }) {
+  const { t } = useTranslation();
+  const v = useMemo(() => computeInventoryValue(products, sections), [products, sections]);
+  return (
+    <div className="card mb-5 overflow-hidden p-0">
+      <div className="flex items-center gap-2 border-b border-line px-5 py-3">
+        <span className="grid h-8 w-8 place-items-center rounded-xl bg-brand-50 text-brand-600 dark:bg-brand-500/15 dark:text-brand-300"><Wallet size={16} /></span>
+        <h3 className="text-sm font-bold text-ink">{t("pos.invValueTitle", "قيمة المخزون")}</h3>
+        <span className="ms-auto text-2xs text-ink-subtle">{t("pos.invValueSub", "قيمة البضاعة الموجودة الآن")}</span>
+      </div>
+      <div className="grid grid-cols-1 divide-y divide-line sm:grid-cols-3 sm:divide-x sm:divide-y-0 rtl:sm:divide-x-reverse">
+        <ValueCell label={t("pos.invValueCost", "رأس المال (شراء)")} value={money(Math.round(v.cost))} tone="ink" />
+        <ValueCell label={t("pos.invValueRetail", "قيمة البيع")} value={money(Math.round(v.retail))} tone="brand" />
+        <ValueCell label={t("pos.invValueProfit", "الربح المتوقع")} value={money(Math.round(v.profit))} tone="success" />
+      </div>
+      {v.hasPooled && (
+        <div className="flex items-center gap-1.5 border-t border-line bg-surface-2/50 px-5 py-2.5 text-xs text-ink-subtle">
+          <Layers size={13} className="shrink-0 text-brand-500" />
+          {t("pos.invValueEstimated", { cost: money(Math.round(v.pooledCost)), retail: money(Math.round(v.pooledRetail)), defaultValue: "منها تقديري (مخزون مجمّع): {{cost}} شراء · {{retail}} بيع" })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ValueCell({ label, value, tone }: { label: string; value: string; tone: "ink" | "brand" | "success" }) {
+  const c = tone === "brand" ? "text-brand-600 dark:text-brand-300" : tone === "success" ? "text-success-600 dark:text-success-300" : "text-ink";
+  return (
+    <div className="px-5 py-4">
+      <p className="text-xs text-ink-subtle">{label}</p>
+      <p className={cn("mt-0.5 font-display text-xl font-extrabold tabular-nums", c)}>{value}</p>
     </div>
   );
 }
