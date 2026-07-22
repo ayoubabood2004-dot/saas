@@ -199,7 +199,11 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
         id: `p:${p.id}`, kind: "product", name: p.name, barcode: p.barcode ?? null,
         unit_price: startSub ? (p.sub_unit_price ?? 0) : p.sell_price,
         unit_cost: startSub ? subCost : p.purchase_price,
-        qty: 1, stock: p.stock, product_id: p.id, subcategory: p.subcategory ?? null,
+        // A pooled (legacy, unknown-count) product sells from its section pool —
+        // it has no own per-barcode count, so leave the cart line UNCAPPED (the
+        // server deducts tracked-then-pool and clamps). Capping it at its 0 stock
+        // is what collapsed a second scan to qty 0.
+        qty: 1, stock: p.pooled ? null : p.stock, product_id: p.id, subcategory: p.subcategory ?? null,
         hasSubUnit: hasSub, subUnitName: p.sub_unit_name ?? null, unitsPerBox,
         boxPrice: p.sell_price, subPrice: p.sub_unit_price ?? null, boxCost: p.purchase_price,
         saleUnit: startSub ? "sub" : "box",
@@ -856,8 +860,9 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                 {shown.map((p) => {
                   // A sub-unit product is only "out" when not even one single can be sold.
+                  // Pooled products are never "out" here — they sell from the section pool.
                   const subAvail = !!p.has_sub_unit && !!p.units_per_box && p.units_per_box > 0;
-                  const out = subAvail ? p.stock * (p.units_per_box as number) < 1 : p.stock <= 0;
+                  const out = p.pooled ? false : subAvail ? p.stock * (p.units_per_box as number) < 1 : p.stock <= 0;
                   return (
                     <button
                       key={p.id} disabled={out} onClick={() => { playTap(); addProduct(p); }}
