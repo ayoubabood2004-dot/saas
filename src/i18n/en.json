@@ -614,7 +614,20 @@
     "assignInto": "Selected: {{n}} · to: {{target}}",
     "searchLabel": "Search",
     "assignShownCount": "{{n}} product(s)",
-    "assignPickHint": "Select one or more products to add"
+    "assignPickHint": "Select one or more products to add",
+    "bulkTitle": "Add several products",
+    "bulkToggle": "Add several barcodes at once",
+    "bulkToggleHint": "Same company, prices & category — barcode, name, count and expiry differ per line",
+    "bulkShared": "Shared settings — applied to every barcode",
+    "bulkRows": "Barcodes",
+    "bulkRowsHint": "Scan barcode → name → count → expiry, and it jumps to the next line automatically",
+    "bulkAddRow": "Add a line",
+    "bulkCount": "{{n}} product(s) ready to add",
+    "bulkSave": "Add products ({{n}})",
+    "bulkDone": "Added {{n}} product(s)",
+    "bulkPartial": "Added {{done}}, {{failed}} failed — the remaining lines are ready to retry",
+    "bulkDupBarcode": "Barcode {{code}} is repeated in the list",
+    "bulkBarcodeExists": "Barcode {{code}} already belongs to \"{{name}}\" — use a purchase invoice to restock it"
   },
   "role": {
     "admin": "Clinic",

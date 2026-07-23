@@ -302,7 +302,7 @@ function InventoryTab({ products, companies, sections, clinicId, onChanged }: { 
         companies={companies}
         sections={sections}
         clinicId={clinicId}
-        subcategories={subcategoriesOf(products)}
+        subcategories={subcategoriesOf(products)} allProducts={products}
         onClose={() => { setAdding(false); setEditing(null); }}
         onSaved={() => { setAdding(false); setEditing(null); onChanged(); }}
       />
@@ -310,8 +310,10 @@ function InventoryTab({ products, companies, sections, clinicId, onChanged }: { 
   );
 }
 
-function ProductModal({ open, product, companies, sections, clinicId, subcategories, defaultCompanyName, defaultSectionName, onClose, onSaved }: {
+function ProductModal({ open, product, companies, sections, clinicId, subcategories, allProducts, defaultCompanyName, defaultSectionName, onClose, onSaved }: {
   open: boolean; product: Product | null; companies: Company[]; sections: CompanySection[]; clinicId?: string; subcategories: string[];
+  /** Full product list — used to catch "this barcode already exists" mistakes in bulk mode. */
+  allProducts?: Product[];
   defaultCompanyName?: string; defaultSectionName?: string; onClose: () => void; onSaved: () => void;
 }) {
   const { t } = useTranslation();
@@ -319,6 +321,13 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
   const blank = { barcode: "", name: "", company: "", section: "", category: "", subcategory: "", purchase_price: "", sell_price: "", stock: "", min_stock: "", expiry_date: "", pooled: false, has_sub_unit: false, sub_unit_name: "", units_per_box: "", sub_unit_price: "" };
   const [f, setF] = useState(blank);
   const [busy, setBusy] = useState(false);
+  // Bulk mode (create-only): add several barcodes at once sharing price/category,
+  // each row differing only in barcode, name, count and expiry. Surfaced on wide
+  // screens (iPad/desktop); phone keeps the classic one-product layout.
+  type BulkRow = { barcode: string; name: string; stock: string; expiry_date: string };
+  const blankRow: BulkRow = { barcode: "", name: "", stock: "", expiry_date: "" };
+  const [bulk, setBulk] = useState(false);
+  const [rows, setRows] = useState<BulkRow[]>([{ ...blankRow }]);
   const barcodeRef = useRef<HTMLInputElement>(null);
   const nameRef = useRef<HTMLInputElement>(null);
   const saveRef = useRef<HTMLButtonElement>(null);
@@ -354,6 +363,8 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
       setF({ ...blank, company: defaultCompanyName ?? "", section: defaultSectionName ?? "" });
       setTimeout(() => barcodeRef.current?.focus(), 80);
     }
+    setBulk(false);
+    setRows([{ ...blankRow }]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, product]);
 
@@ -371,6 +382,63 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
     { value: "other", label: t("pos.cat.other", "Other") },
   ];
 
+  // Section options for the typed company (used by both layouts).
+  const typedCo = [...companies, ...createdRef.current].find((c) => normKey(c.name) === normKey(f.company));
+  const secOptions = typedCo ? sections.filter((s) => s.company_id === typedCo.id).map((s) => s.name) : [];
+  // Pooled is only meaningful inside a section (it sells from the section pool).
+  const pooledOn = f.pooled && !!f.section.trim();
+
+  /** Resolve the typed company/section names → ids, creating either if needed.
+   *  Returns what was created so a failed save can roll it back (no orphans). */
+  const resolveGrouping = async () => {
+    let createdCompany: Company | null = null;
+    let createdSection: CompanySection | null = null;
+    // Reuse an existing/just-created company (normalized, case-insensitive) or
+    // create a new one. Empty → none.
+    let company_id: string | null = null;
+    const typed = normName(f.company);
+    if (typed) {
+      const key = typed.toLowerCase();
+      const existing = [...companies, ...createdRef.current].find((c) => normKey(c.name) === key);
+      if (existing) {
+        company_id = existing.id;
+      } else {
+        createdCompany = await repo.createCompany({ name: typed, note: null, clinic_id: clinicId ?? null });
+        createdRef.current.push(createdCompany);
+        company_id = createdCompany.id;
+      }
+    }
+    // Resolve the section (صنف) WITHIN the resolved company. Only meaningful
+    // when a company is set; reuse/create the same way as the company.
+    let section_id: string | null = null;
+    const secTyped = normName(f.section);
+    if (company_id && secTyped) {
+      const key = secTyped.toLowerCase();
+      const existing = [...sections, ...createdSecRef.current].find((s) => s.company_id === company_id && normKey(s.name) === key);
+      if (existing) {
+        section_id = existing.id;
+      } else {
+        createdSection = await repo.createCompanySection({ company_id, name: secTyped, clinic_id: clinicId ?? null });
+        createdSecRef.current.push(createdSection);
+        section_id = createdSection.id;
+      }
+    }
+    return { company_id, section_id, createdCompany, createdSection };
+  };
+
+  /** Undo a section/company created only for a now-failed save. If the cleanup
+   *  itself fails, keep it in the ref so a retry reuses it (no duplicate). */
+  const rollbackGrouping = async (createdCompany: Company | null, createdSection: CompanySection | null) => {
+    if (createdSection) {
+      try { await repo.deleteCompanySection(createdSection.id); createdSecRef.current = createdSecRef.current.filter((s) => s.id !== createdSection.id); }
+      catch { /* best effort */ }
+    }
+    if (createdCompany) {
+      try { await repo.deleteCompany(createdCompany.id); createdRef.current = createdRef.current.filter((c) => c.id !== createdCompany.id); }
+      catch { /* best effort */ }
+    }
+  };
+
   const save = async () => {
     if (!f.name.trim() || busy) return;
     // A sub-unit needs a positive units-per-box to be meaningful; otherwise it's off.
@@ -386,36 +454,10 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
     let createdCompany: Company | null = null;
     let createdSection: CompanySection | null = null;
     try {
-      // Resolve the typed company name → id: reuse an existing/just-created
-      // company (normalized, case-insensitive) or create a new one. Empty → none.
-      let company_id: string | null = null;
-      const typed = normName(f.company);
-      if (typed) {
-        const key = typed.toLowerCase();
-        const existing = [...companies, ...createdRef.current].find((c) => normKey(c.name) === key);
-        if (existing) {
-          company_id = existing.id;
-        } else {
-          createdCompany = await repo.createCompany({ name: typed, note: null, clinic_id: clinicId ?? null });
-          createdRef.current.push(createdCompany);
-          company_id = createdCompany.id;
-        }
-      }
-      // Resolve the section (صنف) WITHIN the resolved company. Only meaningful
-      // when a company is set; reuse/create the same way as the company.
-      let section_id: string | null = null;
-      const secTyped = normName(f.section);
-      if (company_id && secTyped) {
-        const key = secTyped.toLowerCase();
-        const existing = [...sections, ...createdSecRef.current].find((s) => s.company_id === company_id && normKey(s.name) === key);
-        if (existing) {
-          section_id = existing.id;
-        } else {
-          createdSection = await repo.createCompanySection({ company_id, name: secTyped, clinic_id: clinicId ?? null });
-          createdSecRef.current.push(createdSection);
-          section_id = createdSection.id;
-        }
-      }
+      const g = await resolveGrouping();
+      createdCompany = g.createdCompany;
+      createdSection = g.createdSection;
+      const { company_id, section_id } = g;
       // "Pooled" (added without a count) only makes sense inside a section — it
       // draws from that section's pool. Force stock to 0 when pooled.
       const pooled = f.pooled && section_id != null;
@@ -449,18 +491,7 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
       playSuccess();
       onSaved();
     } catch (e) {
-      // Undo a section/company created only for this now-failed product. If the
-      // cleanup fails, keep it in the ref so a retry reuses it (no duplicate).
-      if (createdSection) {
-        const cs = createdSection;
-        try { await repo.deleteCompanySection(cs.id); createdSecRef.current = createdSecRef.current.filter((s) => s.id !== cs.id); }
-        catch { /* best effort */ }
-      }
-      if (createdCompany) {
-        const cc = createdCompany;
-        try { await repo.deleteCompany(cc.id); createdRef.current = createdRef.current.filter((c) => c.id !== cc.id); }
-        catch { /* best effort */ }
-      }
+      await rollbackGrouping(createdCompany, createdSection);
       playWarning();
       toast.error(describeDbError(e, t), e instanceof Error ? e.message : undefined);
     } finally {
@@ -468,187 +499,438 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
     }
   };
 
-  return (
-    <Modal open={open} onClose={onClose} title={product ? t("pos.editProduct", "Edit product") : t("pos.addProduct", "Add product")}>
-      <div className="space-y-3">
-        <div>
-          <label className="label">{t("pos.barcode", "Barcode")}</label>
-          <div className="relative">
-            <Barcode size={16} className="pointer-events-none absolute top-1/2 -translate-y-1/2 text-ink-subtle ltr:left-3 rtl:right-3" />
-            <input
-              ref={barcodeRef}
-              className="input font-mono ltr:pl-9 rtl:pr-9"
-              value={f.barcode}
-              onChange={(e) => set({ barcode: e.target.value.replace(/\s/g, "") })}
-              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); nameRef.current?.focus(); } }}
-              placeholder={t("pos.scanOrType", "Scan or type…")}
-            />
-          </div>
-        </div>
-        <div>
-          <label className="label">{t("pos.name", "Product name")}</label>
-          <input ref={nameRef} className="input" value={f.name} onChange={(e) => set({ name: e.target.value })} placeholder={t("pos.namePh", "e.g. Royal Canin Maxi Adult 4kg")} />
-        </div>
-        {/* Company (الشركة) — pick an existing one or create a new one by typing. */}
-        <div>
-          <label className="label flex items-center gap-1"><Building2 size={12} /> {t("pos.company", "الشركة")} <span className="font-normal text-ink-subtle">{t("pos.companyHint", "(اختياري)")}</span></label>
-          <Combobox
-            value={f.company}
-            onChange={(v) => set({ company: v, section: "" })}
-            options={companies.map((c) => c.name)}
-            placeholder={t("pos.companyPh", "اختر شركة أو أنشئ واحدة…")}
-            icon={<Building2 size={16} />}
-            createLabel={(v) => t("pos.companyCreate", { value: v, defaultValue: `إنشاء شركة “${v}”` })}
-          />
-        </div>
-        {/* Section (الصنف) — a group INSIDE the chosen company. Only when a company is set. */}
-        {f.company.trim() && (() => {
-          const co = [...companies, ...createdRef.current].find((c) => normKey(c.name) === normKey(f.company));
-          const secOptions = co ? sections.filter((s) => s.company_id === co.id).map((s) => s.name) : [];
-          return (
-            <div>
-              <label className="label flex items-center gap-1"><FolderTree size={12} /> {t("pos.section", "الصنف")} <span className="font-normal text-ink-subtle">{t("pos.companyHint", "(اختياري)")}</span></label>
-              <Combobox
-                value={f.section}
-                onChange={(v) => set({ section: v })}
-                options={secOptions}
-                placeholder={t("pos.sectionPh", "اختر صنفاً أو أنشئ واحداً…")}
-                icon={<FolderTree size={16} />}
-                createLabel={(v) => t("pos.sectionCreate", { value: v, defaultValue: `إنشاء صنف “${v}”` })}
+  /* ---------------- Bulk save — many barcodes sharing price/category ---------------- */
+  const updateRow = (i: number, patch: Partial<BulkRow>) => {
+    setRows((prev) => {
+      const next = prev.map((r, idx) => (idx === i ? { ...r, ...patch } : r));
+      // Typing into the last row auto-appends a fresh empty one — the doctor
+      // just keeps scanning without hunting for an "add row" button.
+      const last = next[next.length - 1];
+      if (last.barcode.trim() || last.name.trim()) next.push({ ...blankRow });
+      return next;
+    });
+  };
+  const removeRow = (i: number) => setRows((prev) => (prev.length > 1 ? prev.filter((_, idx) => idx !== i) : prev));
+  const validRows = rows.filter((r) => r.name.trim());
+
+  const saveBulk = async () => {
+    if (!validRows.length || busy) return;
+    // Duplicate barcodes typed twice in the form — almost certainly a mistake.
+    const codes = validRows.map((r) => r.barcode.trim()).filter(Boolean);
+    const dup = codes.find((c, i) => codes.indexOf(c) !== i);
+    if (dup) {
+      toast.error(t("pos.bulkDupBarcode", { code: dup, defaultValue: "الباركود {{code}} مكرر في القائمة" }));
+      return;
+    }
+    // A barcode that already belongs to a product would create a confusing twin —
+    // restocks belong in a purchase invoice (فاتورة شراء), not here.
+    const clash = allProducts?.find((p) => p.barcode && codes.includes(p.barcode));
+    if (clash) {
+      toast.error(t("pos.bulkBarcodeExists", { code: clash.barcode, name: clash.name, defaultValue: "الباركود {{code}} مستخدم مسبقاً للمنتج \"{{name}}\" — للإضافة على مخزونه استخدم فاتورة شراء" }));
+      return;
+    }
+    setBusy(true);
+    let createdCompany: Company | null = null;
+    let createdSection: CompanySection | null = null;
+    try {
+      const g = await resolveGrouping();
+      createdCompany = g.createdCompany;
+      createdSection = g.createdSection;
+      const { company_id, section_id } = g;
+      const pooled = f.pooled && section_id != null;
+      const shared = {
+        company_id,
+        section_id,
+        pooled,
+        category: (f.category || null) as ProductCategory | null,
+        subcategory: f.subcategory.trim() || null,
+        purchase_price: Number(f.purchase_price) || 0,
+        sell_price: Number(f.sell_price) || 0,
+        min_stock: Math.max(0, Math.round(Number(f.min_stock) || 0)),
+        has_sub_unit: false,
+        sub_unit_name: null,
+        units_per_box: null,
+        sub_unit_price: null,
+        clinic_id: clinicId ?? null,
+      };
+      // Create sequentially; collect failures instead of stopping so one bad row
+      // never blocks the rest of the batch.
+      const failedIdx: number[] = [];
+      let done = 0;
+      let lastErr: unknown = null;
+      for (const r of validRows) {
+        try {
+          await repo.createProduct({
+            ...shared,
+            barcode: r.barcode.trim() || null,
+            name: r.name.trim(),
+            stock: pooled ? 0 : Math.max(0, Math.round((Number(r.stock) || 0) * 1000) / 1000),
+            expiry_date: r.expiry_date || null,
+          });
+          done++;
+        } catch (e) {
+          failedIdx.push(rows.indexOf(r));
+          lastErr = e;
+        }
+      }
+      if (failedIdx.length === 0) {
+        playSuccess();
+        toast.success(t("pos.bulkDone", { n: done, defaultValue: "تمت إضافة {{n}} منتج" }));
+        onSaved();
+      } else {
+        // Keep ONLY the failed rows so a retry re-sends just those.
+        setRows([...rows.filter((_, i) => failedIdx.includes(i)), { ...blankRow }]);
+        if (done === 0) await rollbackGrouping(createdCompany, createdSection);
+        playWarning();
+        toast.error(
+          done > 0
+            ? t("pos.bulkPartial", { done, failed: failedIdx.length, defaultValue: "أُضيف {{done}} وفشل {{failed}} — الصفوف المتبقية جاهزة لإعادة المحاولة" })
+            : describeDbError(lastErr, t),
+          lastErr instanceof Error ? lastErr.message : undefined,
+        );
+      }
+    } catch (e) {
+      await rollbackGrouping(createdCompany, createdSection);
+      playWarning();
+      toast.error(describeDbError(e, t), e instanceof Error ? e.message : undefined);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // Shared toggle-switch classes (pooled / sub-unit / bulk switches).
+  const switchCls = (on: boolean) => cn("relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition", on ? "bg-brand-600" : "bg-surface-3");
+  const knobCls = (on: boolean) => cn("inline-block h-5 w-5 transform rounded-full bg-white shadow transition", on ? "ltr:translate-x-5 rtl:-translate-x-5" : "ltr:translate-x-0.5 rtl:-translate-x-0.5");
+  const focusById = (id: string) => document.getElementById(id)?.focus();
+
+  const companyField = (
+    <div>
+      <label className="label flex items-center gap-1"><Building2 size={12} /> {t("pos.company", "الشركة")} <span className="font-normal text-ink-subtle">{t("pos.companyHint", "(اختياري)")}</span></label>
+      <Combobox
+        value={f.company}
+        onChange={(v) => set({ company: v, section: "" })}
+        options={companies.map((c) => c.name)}
+        placeholder={t("pos.companyPh", "اختر شركة أو أنشئ واحدة…")}
+        icon={<Building2 size={16} />}
+        createLabel={(v) => t("pos.companyCreate", { value: v, defaultValue: `إنشاء شركة “${v}”` })}
+      />
+    </div>
+  );
+  const sectionField = f.company.trim() ? (
+    <div>
+      <label className="label flex items-center gap-1"><FolderTree size={12} /> {t("pos.section", "الصنف")} <span className="font-normal text-ink-subtle">{t("pos.companyHint", "(اختياري)")}</span></label>
+      <Combobox
+        value={f.section}
+        onChange={(v) => set({ section: v })}
+        options={secOptions}
+        placeholder={t("pos.sectionPh", "اختر صنفاً أو أنشئ واحداً…")}
+        icon={<FolderTree size={16} />}
+        createLabel={(v) => t("pos.sectionCreate", { value: v, defaultValue: `إنشاء صنف “${v}”` })}
+      />
+    </div>
+  ) : null;
+  const categoryField = (
+    <div>
+      <label className="label">{t("pos.category", "Category")}</label>
+      <select className="input" value={f.category} onChange={(e) => set({ category: e.target.value })}>
+        <option value="">{t("pos.categoryPick", "Select a category…")}</option>
+        {CATEGORIES.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+      </select>
+    </div>
+  );
+  const subcategoryField = (
+    <div>
+      <label className="label">{t("pos.subcategory", "Subcategory")} <span className="font-normal text-ink-subtle">{t("pos.subcategoryHint", "(for offers — e.g. canned, litter)")}</span></label>
+      <Combobox
+        value={f.subcategory}
+        onChange={(v) => set({ subcategory: v })}
+        options={subcategories}
+        placeholder={t("pos.subcategoryPh", "e.g. معلبات, رمل, دراي فود")}
+        createLabel={(q) => t("pos.subcategoryCreate", { value: q, defaultValue: `Use “${q}”` })}
+      />
+    </div>
+  );
+  const priceFields = (
+    <div className="grid grid-cols-2 gap-3">
+      <div>
+        <label className="label">{t("pos.purchasePrice", "Purchase price")}</label>
+        <input type="number" inputMode="numeric" min="0" step="1" className="input" value={f.purchase_price} onChange={(e) => set({ purchase_price: e.target.value })} placeholder="0" />
+      </div>
+      <div>
+        <label className="label">{t("pos.sellPrice", "Sell price")}</label>
+        <input type="number" inputMode="numeric" min="0" step="1" className="input" value={f.sell_price} onChange={(e) => set({ sell_price: e.target.value })} placeholder="0" />
+      </div>
+    </div>
+  );
+  const profitStrip = hasPrices ? (
+    <div className={cn(
+      "flex items-center justify-between rounded-xl px-3 py-2",
+      profit > 0 ? "bg-success-50 text-success-700 dark:bg-success-500/15 dark:text-success-200"
+        : profit < 0 ? "bg-danger-50 text-danger-700 dark:bg-danger-500/15 dark:text-danger-200"
+          : "bg-surface-2 text-ink-muted",
+    )}>
+      <span className="flex items-center gap-1.5 text-sm font-medium">
+        <TrendingUp size={15} className={profit < 0 ? "rotate-180" : ""} />
+        {profit < 0 ? t("pos.lossPerUnit", "Loss per unit") : t("pos.profitPerUnit", "Profit per unit")}
+      </span>
+      <span className="text-sm font-bold tabular-nums">
+        {money(profit)}{sell > 0 ? ` · ${marginPct}%` : ""}
+      </span>
+    </div>
+  ) : null;
+  // Pooled (add without a count) — only inside a section. The item then sells
+  // from the section's shared pool instead of its own stock.
+  const pooledToggle = f.section.trim() ? (
+    <div className="rounded-xl border border-line bg-surface-2/40 p-3">
+      <div className="flex items-center justify-between gap-3">
+        <span className="flex items-center gap-2 text-sm font-semibold text-ink">
+          <Layers size={16} className="text-brand-600" /> {t("pos.pooledToggle", "بدون كمية — ضمن مخزون الصنف المجمّع")}
+        </span>
+        <button type="button" role="switch" aria-checked={f.pooled} onClick={() => { playTap(); set({ pooled: !f.pooled }); }} className={switchCls(f.pooled)}>
+          <span className={knobCls(f.pooled)} />
+        </button>
+      </div>
+      <p className="mt-1 text-2xs text-ink-subtle">{t("pos.pooledHint", "لا نعرف كميته بالضبط — يُباع من مخزون الصنف المجمّع حتى يجيه شراء بكمية محددة.")}</p>
+    </div>
+  ) : null;
+  const minStockField = (
+    <div>
+      <label className="label flex items-center gap-1"><AlertTriangle size={12} /> {t("pos.minStock", "Min. stock alert")}</label>
+      <input type="number" inputMode="numeric" min="0" step="1" className="input" value={f.min_stock} onChange={(e) => set({ min_stock: e.target.value })} placeholder="0" />
+    </div>
+  );
+
+  const singleForm = (
+    /* Two columns on wide screens (identity | pricing & stock); the classic
+       single-column stack on phones — untouched field order. */
+    <div className="mx-auto w-full max-w-4xl">
+      <div className="grid items-start gap-x-8 gap-y-3 sm:grid-cols-2">
+        <div className="space-y-3">
+          <div>
+            <label className="label">{t("pos.barcode", "Barcode")}</label>
+            <div className="relative">
+              <Barcode size={16} className="pointer-events-none absolute top-1/2 -translate-y-1/2 text-ink-subtle ltr:left-3 rtl:right-3" />
+              <input
+                ref={barcodeRef}
+                className="input font-mono ltr:pl-9 rtl:pr-9"
+                value={f.barcode}
+                onChange={(e) => set({ barcode: e.target.value.replace(/\s/g, "") })}
+                onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); nameRef.current?.focus(); } }}
+                placeholder={t("pos.scanOrType", "Scan or type…")}
               />
             </div>
-          );
-        })()}
-        <div>
-          <label className="label">{t("pos.category", "Category")}</label>
-          <select className="input" value={f.category} onChange={(e) => set({ category: e.target.value })}>
-            <option value="">{t("pos.categoryPick", "Select a category…")}</option>
-            {CATEGORIES.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
-          </select>
-        </div>
-        <div>
-          <label className="label">{t("pos.subcategory", "Subcategory")} <span className="font-normal text-ink-subtle">{t("pos.subcategoryHint", "(for offers — e.g. canned, litter)")}</span></label>
-          <Combobox
-            value={f.subcategory}
-            onChange={(v) => set({ subcategory: v })}
-            options={subcategories}
-            placeholder={t("pos.subcategoryPh", "e.g. معلبات, رمل, دراي فود")}
-            createLabel={(q) => t("pos.subcategoryCreate", { value: q, defaultValue: `Use “${q}”` })}
-          />
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="label">{t("pos.purchasePrice", "Purchase price")}</label>
-            <input type="number" inputMode="numeric" min="0" step="1" className="input" value={f.purchase_price} onChange={(e) => set({ purchase_price: e.target.value })} placeholder="0" />
           </div>
           <div>
-            <label className="label">{t("pos.sellPrice", "Sell price")}</label>
-            <input type="number" inputMode="numeric" min="0" step="1" className="input" value={f.sell_price} onChange={(e) => set({ sell_price: e.target.value })} placeholder="0" />
+            <label className="label">{t("pos.name", "Product name")}</label>
+            <input ref={nameRef} className="input" value={f.name} onChange={(e) => set({ name: e.target.value })} placeholder={t("pos.namePh", "e.g. Royal Canin Maxi Adult 4kg")} />
           </div>
+          {companyField}
+          {sectionField}
+          {categoryField}
+          {subcategoryField}
         </div>
-        {hasPrices && (
-          <div className={cn(
-            "flex items-center justify-between rounded-xl px-3 py-2",
-            profit > 0 ? "bg-success-50 text-success-700 dark:bg-success-500/15 dark:text-success-200"
-              : profit < 0 ? "bg-danger-50 text-danger-700 dark:bg-danger-500/15 dark:text-danger-200"
-                : "bg-surface-2 text-ink-muted",
-          )}>
-            <span className="flex items-center gap-1.5 text-sm font-medium">
-              <TrendingUp size={15} className={profit < 0 ? "rotate-180" : ""} />
-              {profit < 0 ? t("pos.lossPerUnit", "Loss per unit") : t("pos.profitPerUnit", "Profit per unit")}
-            </span>
-            <span className="text-sm font-bold tabular-nums">
-              {money(profit)}{sell > 0 ? ` · ${marginPct}%` : ""}
-            </span>
+
+        <div className="space-y-3">
+          {priceFields}
+          {profitStrip}
+          {pooledToggle}
+          <div className={cn("grid gap-3", pooledOn ? "grid-cols-1" : "grid-cols-2")}>
+            {!pooledOn && (
+              <div>
+                <label className="label">{t("pos.stock", "Stock")}</label>
+                <input type="number" inputMode="numeric" min="0" step="1" className="input" value={f.stock} onChange={(e) => set({ stock: e.target.value })} placeholder="0" />
+              </div>
+            )}
+            {minStockField}
           </div>
-        )}
-        {/* Pooled (add without a count) — only inside a section. The item then
-            sells from the section's shared pool instead of its own stock. */}
-        {f.section.trim() && (
+
+          {/* Sub-unit (fractional) sales — sell the whole box or break it into singles */}
           <div className="rounded-xl border border-line bg-surface-2/40 p-3">
             <div className="flex items-center justify-between gap-3">
               <span className="flex items-center gap-2 text-sm font-semibold text-ink">
-                <Layers size={16} className="text-brand-600" /> {t("pos.pooledToggle", "بدون كمية — ضمن مخزون الصنف المجمّع")}
+                <Layers size={16} className="text-brand-600" /> {t("pos.subUnitToggle", "يحتوي على وحدات فرعية (مفرد)")}
               </span>
-              <button
-                type="button" role="switch" aria-checked={f.pooled}
-                onClick={() => { playTap(); set({ pooled: !f.pooled }); }}
-                className={cn("relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition", f.pooled ? "bg-brand-600" : "bg-surface-3")}
-              >
-                <span className={cn("inline-block h-5 w-5 transform rounded-full bg-white shadow transition", f.pooled ? "ltr:translate-x-5 rtl:-translate-x-5" : "ltr:translate-x-0.5 rtl:-translate-x-0.5")} />
+              <button type="button" role="switch" aria-checked={f.has_sub_unit} onClick={() => { playTap(); set({ has_sub_unit: !f.has_sub_unit }); }} className={switchCls(f.has_sub_unit)}>
+                <span className={knobCls(f.has_sub_unit)} />
               </button>
             </div>
-            <p className="mt-1 text-2xs text-ink-subtle">{t("pos.pooledHint", "لا نعرف كميته بالضبط — يُباع من مخزون الصنف المجمّع حتى يجيه شراء بكمية محددة.")}</p>
+            <p className="mt-1 text-2xs text-ink-subtle">{t("pos.subUnitHint", "بِع العلبة كاملة أو جزّئها (حبة، شريط، مل…) من نفس المخزون.")}</p>
+            {f.has_sub_unit && (
+              <div className="mt-3 space-y-3">
+                <div>
+                  <label className="label">{t("pos.subUnitName", "اسم الوحدة الفرعية")}</label>
+                  <input className="input" value={f.sub_unit_name} onChange={(e) => set({ sub_unit_name: e.target.value })} placeholder={t("pos.subUnitNamePh", "مثال: حبة، شريط، مل")} />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="label">{t("pos.unitsPerBox", "عدد الوحدات في العلبة")}</label>
+                    <input type="number" inputMode="numeric" min="0" step="1" className="input" value={f.units_per_box} onChange={(e) => set({ units_per_box: e.target.value })} placeholder="مثال: 20" />
+                  </div>
+                  <div>
+                    <label className="label">{t("pos.subUnitPrice", "سعر الوحدة الواحدة")}</label>
+                    <input type="number" inputMode="numeric" min="0" step="1" className="input" value={f.sub_unit_price} onChange={(e) => set({ sub_unit_price: e.target.value })} placeholder="0" />
+                  </div>
+                </div>
+                {Number(f.units_per_box) > 0 && Number(f.sell_price) > 0 && (
+                  <p className="rounded-lg bg-surface-2 px-2.5 py-1.5 text-2xs text-ink-muted">
+                    {t("pos.subUnitDerived", {
+                      box: money(Number(f.sell_price)), n: Number(f.units_per_box),
+                      each: money(Math.round((Number(f.sell_price) / Number(f.units_per_box)) * 100) / 100),
+                      defaultValue: "سعر العلبة {{box}} ÷ {{n}} ≈ {{each}} للوحدة الواحدة",
+                    })}
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+
+          <div>
+            <label className="label">{t("pos.expiry", "Expiry date")} <span className="font-normal text-ink-subtle">{t("pos.expiryHint", "(DD/MM/YYYY)")}</span></label>
+            <ExpiryInput
+              id="product-expiry"
+              value={f.expiry_date}
+              onChange={(iso) => set({ expiry_date: iso })}
+              onComplete={() => saveRef.current?.focus()}
+              invalidLabel={t("pos.expiryInvalid", "Enter a valid date")}
+            />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
+  // Row grid: barcode | name | count | expiry | remove (count hidden when pooled).
+  const rowGridCls = pooledOn
+    ? "grid grid-cols-[170px_minmax(0,1fr)_170px_36px] items-start gap-2"
+    : "grid grid-cols-[170px_minmax(0,1fr)_100px_170px_36px] items-start gap-2";
+
+  const bulkForm = (
+    <div className="space-y-4">
+      {/* Shared settings — applied to every barcode below */}
+      <div className="rounded-2xl border border-line bg-surface-2/30 p-4">
+        <p className="mb-3 text-xs font-bold uppercase tracking-wide text-ink-subtle">{t("pos.bulkShared", "الإعدادات المشتركة — تنطبق على كل الباركودات")}</p>
+        <div className="grid items-start gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {companyField}
+          {sectionField}
+          {categoryField}
+          {subcategoryField}
+          {priceFields}
+          {minStockField}
+        </div>
+        {(profitStrip || pooledToggle) && (
+          <div className="mt-3 grid items-start gap-3 lg:grid-cols-2">
+            {profitStrip}
+            {pooledToggle}
           </div>
         )}
-        <div className={cn("grid gap-3", f.pooled && f.section.trim() ? "grid-cols-1" : "grid-cols-2")}>
-          {!(f.pooled && f.section.trim()) && (
-          <div>
-            <label className="label">{t("pos.stock", "Stock")}</label>
-            <input type="number" inputMode="numeric" min="0" step="1" className="input" value={f.stock} onChange={(e) => set({ stock: e.target.value })} placeholder="0" />
-          </div>
-          )}
-          <div>
-            <label className="label flex items-center gap-1"><AlertTriangle size={12} /> {t("pos.minStock", "Min. stock alert")}</label>
-            <input type="number" inputMode="numeric" min="0" step="1" className="input" value={f.min_stock} onChange={(e) => set({ min_stock: e.target.value })} placeholder="0" />
-          </div>
-        </div>
+      </div>
 
-        {/* Sub-unit (fractional) sales — sell the whole box or break it into singles */}
-        <div className="rounded-xl border border-line bg-surface-2/40 p-3">
-          <div className="flex items-center justify-between gap-3">
-            <span className="flex items-center gap-2 text-sm font-semibold text-ink">
-              <Layers size={16} className="text-brand-600" /> {t("pos.subUnitToggle", "يحتوي على وحدات فرعية (مفرد)")}
+      {/* One line per barcode — only what actually differs between products */}
+      <div>
+        <div className="mb-2 flex items-center justify-between">
+          <p className="text-xs font-bold uppercase tracking-wide text-ink-subtle">{t("pos.bulkRows", "الباركودات")}</p>
+          <p className="text-xs text-ink-subtle">{t("pos.bulkRowsHint", "اسحب الباركود ← الاسم ← العدد ← الانتهاء، وينتقل تلقائياً للسطر التالي")}</p>
+        </div>
+        <div className={cn(rowGridCls, "mb-1 px-1 text-2xs font-semibold text-ink-subtle")}>
+          <span>{t("pos.barcode", "Barcode")}</span>
+          <span>{t("pos.name", "Product name")}</span>
+          {!pooledOn && <span>{t("pos.stock", "Stock")}</span>}
+          <span>{t("pos.expiry", "Expiry date")}</span>
+          <span />
+        </div>
+        <div className="space-y-2">
+          {rows.map((r, i) => (
+            <div key={i} className={rowGridCls}>
+              <div className="relative">
+                <Barcode size={14} className="pointer-events-none absolute top-1/2 -translate-y-1/2 text-ink-subtle ltr:left-2.5 rtl:right-2.5" />
+                <input
+                  id={`bulk-bc-${i}`}
+                  className="input font-mono ltr:pl-8 rtl:pr-8"
+                  value={r.barcode}
+                  onChange={(e) => updateRow(i, { barcode: e.target.value.replace(/\s/g, "") })}
+                  onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); focusById(`bulk-name-${i}`); } }}
+                  placeholder={t("pos.scanOrType", "Scan or type…")}
+                />
+              </div>
+              <input
+                id={`bulk-name-${i}`}
+                className="input"
+                value={r.name}
+                onChange={(e) => updateRow(i, { name: e.target.value })}
+                onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); focusById(pooledOn ? `bulk-exp-${i}` : `bulk-stock-${i}`); } }}
+                placeholder={t("pos.namePh", "e.g. Royal Canin Maxi Adult 4kg")}
+              />
+              {!pooledOn && (
+                <input
+                  id={`bulk-stock-${i}`}
+                  type="number" inputMode="numeric" min="0" step="1"
+                  className="input"
+                  value={r.stock}
+                  onChange={(e) => updateRow(i, { stock: e.target.value })}
+                  onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); focusById(`bulk-exp-${i}`); } }}
+                  placeholder="0"
+                />
+              )}
+              <ExpiryInput
+                id={`bulk-exp-${i}`}
+                value={r.expiry_date}
+                onChange={(iso) => updateRow(i, { expiry_date: iso })}
+                onComplete={() => focusById(`bulk-bc-${i + 1}`)}
+                invalidLabel={t("pos.expiryInvalid", "Enter a valid date")}
+              />
+              <button
+                onClick={() => { playTap(); removeRow(i); }}
+                disabled={rows.length === 1}
+                aria-label={t("common.delete", "Remove")}
+                className="grid h-10 w-9 place-items-center rounded-xl text-ink-subtle transition hover:bg-danger-50 hover:text-danger-600 disabled:opacity-30"
+              >
+                <Trash2 size={15} />
+              </button>
+            </div>
+          ))}
+        </div>
+        <button onClick={() => { playTap(); setRows((prev) => [...prev, { ...blankRow }]); }} className="mt-2 inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold text-brand-600 transition hover:bg-brand-50 dark:hover:bg-brand-500/10">
+          <Plus size={13} /> {t("pos.bulkAddRow", "أضف سطراً")}
+        </button>
+      </div>
+    </div>
+  );
+
+  const isBulk = bulk && !product;
+  return (
+    <Modal open={open} onClose={onClose} size="full" title={isBulk ? t("pos.bulkTitle", "إضافة عدة منتجات") : product ? t("pos.editProduct", "Edit product") : t("pos.addProduct", "Add product")}>
+      <div className="flex flex-col gap-4 sm:h-[75vh]">
+        {/* Bulk switch — create-only; hidden on phones (they keep the simple form) */}
+        {!product && (
+          <div className="hidden shrink-0 items-center justify-between gap-3 rounded-2xl border border-line bg-surface-2/40 p-3 sm:flex">
+            <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm font-semibold text-ink">
+              <ListPlus size={16} className="text-brand-600" /> {t("pos.bulkToggle", "إضافة عدة باركودات دفعة واحدة")}
+              <span className="font-normal text-ink-subtle">{t("pos.bulkToggleHint", "نفس الشركة والأسعار والفئة — يختلف الباركود والاسم والعدد والانتهاء")}</span>
             </span>
-            <button
-              type="button" role="switch" aria-checked={f.has_sub_unit}
-              onClick={() => { playTap(); set({ has_sub_unit: !f.has_sub_unit }); }}
-              className={cn("relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition", f.has_sub_unit ? "bg-brand-600" : "bg-surface-3")}
-            >
-              <span className={cn("inline-block h-5 w-5 transform rounded-full bg-white shadow transition", f.has_sub_unit ? "ltr:translate-x-5 rtl:-translate-x-5" : "ltr:translate-x-0.5 rtl:-translate-x-0.5")} />
+            <button type="button" role="switch" aria-checked={bulk} onClick={() => { playTap(); setBulk(!bulk); }} className={switchCls(bulk)}>
+              <span className={knobCls(bulk)} />
             </button>
           </div>
-          <p className="mt-1 text-2xs text-ink-subtle">{t("pos.subUnitHint", "بِع العلبة كاملة أو جزّئها (حبة، شريط، مل…) من نفس المخزون.")}</p>
-          {f.has_sub_unit && (
-            <div className="mt-3 space-y-3">
-              <div>
-                <label className="label">{t("pos.subUnitName", "اسم الوحدة الفرعية")}</label>
-                <input className="input" value={f.sub_unit_name} onChange={(e) => set({ sub_unit_name: e.target.value })} placeholder={t("pos.subUnitNamePh", "مثال: حبة، شريط، مل")} />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="label">{t("pos.unitsPerBox", "عدد الوحدات في العلبة")}</label>
-                  <input type="number" inputMode="numeric" min="0" step="1" className="input" value={f.units_per_box} onChange={(e) => set({ units_per_box: e.target.value })} placeholder="مثال: 20" />
-                </div>
-                <div>
-                  <label className="label">{t("pos.subUnitPrice", "سعر الوحدة الواحدة")}</label>
-                  <input type="number" inputMode="numeric" min="0" step="1" className="input" value={f.sub_unit_price} onChange={(e) => set({ sub_unit_price: e.target.value })} placeholder="0" />
-                </div>
-              </div>
-              {Number(f.units_per_box) > 0 && Number(f.sell_price) > 0 && (
-                <p className="rounded-lg bg-surface-2 px-2.5 py-1.5 text-2xs text-ink-muted">
-                  {t("pos.subUnitDerived", {
-                    box: money(Number(f.sell_price)), n: Number(f.units_per_box),
-                    each: money(Math.round((Number(f.sell_price) / Number(f.units_per_box)) * 100) / 100),
-                    defaultValue: "سعر العلبة {{box}} ÷ {{n}} ≈ {{each}} للوحدة الواحدة",
-                  })}
-                </p>
-              )}
-            </div>
-          )}
+        )}
+
+        {/* Body — scrolls internally on wide screens; natural flow on phones */}
+        <div className="min-h-0 flex-1 sm:overflow-y-auto sm:pe-1">
+          {isBulk ? bulkForm : singleForm}
         </div>
 
-        <div>
-          <label className="label">{t("pos.expiry", "Expiry date")} <span className="font-normal text-ink-subtle">{t("pos.expiryHint", "(DD/MM/YYYY)")}</span></label>
-          <ExpiryInput
-            id="product-expiry"
-            value={f.expiry_date}
-            onChange={(iso) => set({ expiry_date: iso })}
-            onComplete={() => saveRef.current?.focus()}
-            invalidLabel={t("pos.expiryInvalid", "Enter a valid date")}
-          />
+        {/* Footer (fixed on wide screens) */}
+        <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-line pt-3">
+          {isBulk ? (
+            <p className="text-sm text-ink-subtle">{t("pos.bulkCount", { n: validRows.length, defaultValue: "{{n}} منتج جاهز للإضافة" })}</p>
+          ) : <span className="hidden sm:block" />}
+          {isBulk ? (
+            <Button size="lg" className="w-full sm:w-auto sm:min-w-56" disabled={validRows.length === 0} loading={busy} leftIcon={<ListPlus size={18} />} onClick={saveBulk}>
+              {t("pos.bulkSave", { n: validRows.length, defaultValue: "أضف المنتجات ({{n}})" })}
+            </Button>
+          ) : (
+            <Button ref={saveRef} className="w-full sm:w-auto sm:min-w-56" disabled={!f.name.trim()} loading={busy} onClick={save}>{t("common.save", "Save")}</Button>
+          )}
         </div>
-        <Button ref={saveRef} className="mt-1 w-full" disabled={!f.name.trim()} loading={busy} onClick={save}>{t("common.save", "Save")}</Button>
       </div>
     </Modal>
   );
@@ -921,7 +1203,7 @@ function CompanyDetail({ company, products, companies, sections, clinicId, onBac
       <CompanyModal open={editingCo} company={company} companies={companies} clinicId={clinicId} onClose={() => setEditingCo(false)} onSaved={() => { setEditingCo(false); onChanged(); }} />
 
       {/* Edit a product from the search results */}
-      <ProductModal open={!!editing} product={editing} companies={companies} sections={sections} clinicId={clinicId} subcategories={subcategoriesOf(products)} defaultCompanyName={company.name} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); onChanged(); }} />
+      <ProductModal open={!!editing} product={editing} companies={companies} sections={sections} clinicId={clinicId} subcategories={subcategoriesOf(products)} allProducts={products} defaultCompanyName={company.name} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); onChanged(); }} />
 
       {/* Add / edit a section */}
       <SectionModal open={addingSection} company={company} section={null} sections={sections} clinicId={clinicId} onClose={() => setAddingSection(false)} onSaved={() => { setAddingSection(false); onChanged(); }} />
@@ -1055,7 +1337,7 @@ function SectionProducts({ company, section, products, companies, sections, clin
         companies={companies}
         sections={sections}
         clinicId={clinicId}
-        subcategories={subcategoriesOf(products)}
+        subcategories={subcategoriesOf(products)} allProducts={products}
         defaultCompanyName={company.name}
         defaultSectionName={section ? section.name : ""}
         onClose={() => { setAddingProduct(false); setEditing(null); }}
