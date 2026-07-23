@@ -611,7 +611,10 @@
     "assignDone": "تمت إضافة {{n}} منتج",
     "assignFailed": "تعذّرت إضافة {{n}} منتج",
     "assignSelected": "أضف المحدد ({{n}})",
-    "assignInto": "المحدد: {{n}} · إلى: {{target}}"
+    "assignInto": "المحدد: {{n}} · إلى: {{target}}",
+    "searchLabel": "بحث",
+    "assignShownCount": "{{n}} منتج",
+    "assignPickHint": "حدّد منتجاً أو أكثر للإضافة"
   },
   "role": {
     "admin": "العيادة",

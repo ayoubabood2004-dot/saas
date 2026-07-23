@@ -611,7 +611,10 @@
     "assignDone": "Added {{n}} product(s)",
     "assignFailed": "Couldn't add {{n}} product(s)",
     "assignSelected": "Add selected ({{n}})",
-    "assignInto": "Selected: {{n}} · to: {{target}}"
+    "assignInto": "Selected: {{n}} · to: {{target}}",
+    "searchLabel": "Search",
+    "assignShownCount": "{{n}} product(s)",
+    "assignPickHint": "Select one or more products to add"
   },
   "role": {
     "admin": "Clinic",

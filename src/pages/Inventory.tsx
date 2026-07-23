@@ -1315,78 +1315,102 @@ function AssignProductsModal({ open, company, companies, sections, products, def
   const targetLabel = target ? mySections.find((s) => s.id === target)?.name : t("pos.companyOnly", "الشركة فقط (بدون صنف)");
 
   return (
-    <Modal open={open} onClose={onClose} size="wide" title={t("pos.assignProductsTitle", { name: company.name, defaultValue: "إضافة منتجات إلى {{name}}" })}>
-      <div className="space-y-4">
-        <p className="text-sm text-ink-subtle">{t("pos.assignProductsHint", "اختر منتجات مُضافة سابقاً وأضفها لهذه الشركة أو لأحد أصنافها. لن تتغيّر الكميات ولا الأسعار.")}</p>
+    <Modal open={open} onClose={onClose} size="full" title={t("pos.assignProductsTitle", { name: company.name, defaultValue: "إضافة منتجات إلى {{name}}" })}>
+      <div className="flex h-[78vh] flex-col gap-4">
+        {/* ---- Controls (fixed) ---- */}
+        <div className="shrink-0 space-y-3">
+          <p className="text-sm text-ink-subtle">{t("pos.assignProductsHint", "اختر منتجات مُضافة سابقاً وأضفها لهذه الشركة أو لأحد أصنافها. لن تتغيّر الكميات ولا الأسعار.")}</p>
 
-        {/* Where to file the selected products */}
-        <div>
-          <label className="label flex items-center gap-1"><FolderTree size={12} /> {t("pos.assignTarget", "أضفها إلى")}</label>
-          <select className="input" value={target} onChange={(e) => setTarget(e.target.value)}>
-            <option value="">{t("pos.companyOnly", "الشركة فقط (بدون صنف)")}</option>
-            {mySections.map((s) => (
-              <option key={s.id} value={s.id}>{s.name}</option>
-            ))}
-          </select>
-        </div>
-
-        {/* Search + select-all */}
-        <div className="flex items-center gap-2">
-          <div className="relative flex-1">
-            <Search size={16} className="pointer-events-none absolute top-1/2 -translate-y-1/2 text-ink-subtle ltr:left-3 rtl:right-3" />
-            <input className="input ltr:pl-9 rtl:pr-9" value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("pos.searchInv", "ابحث عن منتج…")} />
+          <div className="grid gap-3 sm:grid-cols-2">
+            {/* Where to file the selected products */}
+            <div>
+              <label className="label flex items-center gap-1"><FolderTree size={12} /> {t("pos.assignTarget", "أضفها إلى")}</label>
+              <select className="input" value={target} onChange={(e) => setTarget(e.target.value)}>
+                <option value="">{t("pos.companyOnly", "الشركة فقط (بدون صنف)")}</option>
+                {mySections.map((s) => (
+                  <option key={s.id} value={s.id}>{s.name}</option>
+                ))}
+              </select>
+            </div>
+            {/* Search */}
+            <div>
+              <label className="label flex items-center gap-1"><Search size={12} /> {t("pos.searchLabel", "بحث")}</label>
+              <div className="relative">
+                <Search size={16} className="pointer-events-none absolute top-1/2 -translate-y-1/2 text-ink-subtle ltr:left-3 rtl:right-3" />
+                <input className="input ltr:pl-9 rtl:pr-9" value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("pos.searchInv", "ابحث عن منتج…")} />
+              </div>
+            </div>
           </div>
+
+          {/* Count + select-all */}
           {shown.length > 0 && (
-            <Button size="sm" variant="secondary" onClick={toggleAll}>{allShownPicked ? t("pos.clearSel", "إلغاء التحديد") : t("pos.selectAll", "تحديد الكل")}</Button>
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-xs font-semibold text-ink-subtle">{t("pos.assignShownCount", { n: shown.length, defaultValue: "{{n}} منتج" })}</p>
+              <button onClick={toggleAll} className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold text-brand-600 transition hover:bg-brand-50 dark:hover:bg-brand-500/10">
+                <Check size={13} /> {allShownPicked ? t("pos.clearSel", "إلغاء التحديد") : t("pos.selectAll", "تحديد الكل")}
+              </button>
+            </div>
           )}
         </div>
 
-        {/* Product list — checkbox rows */}
+        {/* ---- Product grid (scrolls internally) ---- */}
         {shown.length === 0 ? (
-          <div className="card p-8 text-center text-ink-subtle">{ql ? t("pos.noSearchResults", "لا نتائج مطابقة.") : t("pos.assignNoProducts", "لا توجد منتجات لإضافتها.")}</div>
+          <div className="grid flex-1 place-items-center rounded-3xl bg-surface-2 text-center text-ink-subtle">
+            <div className="space-y-2 p-8">
+              <span className="mx-auto grid h-12 w-12 place-items-center rounded-2xl bg-surface-1 text-ink-subtle"><Package size={22} /></span>
+              <p>{ql ? t("pos.noSearchResults", "لا نتائج مطابقة.") : t("pos.assignNoProducts", "لا توجد منتجات لإضافتها.")}</p>
+            </div>
+          </div>
         ) : (
-          <div className="max-h-[46vh] space-y-2 overflow-y-auto pe-1">
-            {shown.map((p) => {
-              const on = picked.has(p.id);
-              const here = p.company_id === company.id;
-              const otherCo = !here ? companyNameOf(p.company_id) : undefined;
-              return (
-                <button
-                  key={p.id}
-                  onClick={() => toggle(p.id)}
-                  className={cn(
-                    "flex w-full items-center gap-3 rounded-2xl border p-3 text-start transition",
-                    on ? "border-brand-400 bg-brand-50 dark:bg-brand-500/10" : "border-line bg-surface-1 hover:bg-surface-2",
-                  )}
-                >
-                  <span className={cn("grid h-6 w-6 shrink-0 place-items-center rounded-lg border-2 transition", on ? "border-brand-500 bg-brand-500 text-white" : "border-line text-transparent")}>
-                    <Check size={15} strokeWidth={3} />
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <p className="flex flex-wrap items-center gap-x-2 gap-y-1 truncate text-sm font-semibold text-ink">
-                      {p.name}
-                      {here && <span className="chip shrink-0 bg-brand-50 text-2xs font-semibold text-brand-700 dark:bg-brand-500/15 dark:text-brand-200"><Building2 size={11} /> {t("pos.inThisCompany", "في هذه الشركة")}</span>}
-                      {otherCo && <span className="chip shrink-0 bg-accent-50 text-2xs font-semibold text-accent-700 dark:bg-accent-500/15 dark:text-accent-200"><Building2 size={11} /> {otherCo}</span>}
-                    </p>
-                    <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-ink-subtle">
-                      {p.barcode && <span className="flex items-center gap-1 font-mono"><Barcode size={11} /> {p.barcode}</span>}
-                      {p.pooled
-                        ? <span className="flex items-center gap-1"><Layers size={11} /> {t("pos.pooledItem", "مجمّع")}</span>
-                        : <span>{t("pos.qtyStock", { n: p.stock, defaultValue: "{{n}} in stock" })}</span>}
+          <div className="-mx-1 min-h-0 flex-1 overflow-y-auto px-1">
+            <div className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-3">
+              {shown.map((p) => {
+                const on = picked.has(p.id);
+                const here = p.company_id === company.id;
+                const otherCo = !here ? companyNameOf(p.company_id) : undefined;
+                return (
+                  <button
+                    key={p.id}
+                    onClick={() => toggle(p.id)}
+                    className={cn(
+                      "flex items-center gap-3 rounded-2xl border p-3 text-start transition",
+                      on ? "border-brand-400 bg-brand-50 shadow-soft ring-1 ring-brand-300 dark:bg-brand-500/10 dark:ring-brand-500/40" : "border-line bg-surface-1 hover:border-brand-200 hover:bg-surface-2",
+                    )}
+                  >
+                    <span className={cn("grid h-6 w-6 shrink-0 place-items-center rounded-full border-2 transition", on ? "border-brand-500 bg-brand-500 text-white" : "border-line text-transparent")}>
+                      <Check size={14} strokeWidth={3} />
+                    </span>
+                    <span className={cn("grid h-10 w-10 shrink-0 place-items-center rounded-xl transition", on ? "bg-brand-500/15 text-brand-600 dark:text-brand-300" : "bg-surface-2 text-ink-subtle")}><Package size={18} /></span>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-semibold text-ink">{p.name}</p>
+                      <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-ink-subtle">
+                        {p.barcode && <span className="flex items-center gap-1 font-mono"><Barcode size={11} /> {p.barcode}</span>}
+                        {p.pooled
+                          ? <span className="flex items-center gap-1"><Layers size={11} /> {t("pos.pooledItem", "مجمّع")}</span>
+                          : <span>{t("pos.qtyStock", { n: p.stock, defaultValue: "{{n}} in stock" })}</span>}
+                      </div>
+                      {(here || otherCo) && (
+                        <div className="mt-1 flex flex-wrap gap-1">
+                          {here && <span className="chip shrink-0 bg-brand-50 text-2xs font-semibold text-brand-700 dark:bg-brand-500/15 dark:text-brand-200"><Building2 size={11} /> {t("pos.inThisCompany", "في هذه الشركة")}</span>}
+                          {otherCo && <span className="chip shrink-0 bg-accent-50 text-2xs font-semibold text-accent-700 dark:bg-accent-500/15 dark:text-accent-200"><Building2 size={11} /> {otherCo}</span>}
+                        </div>
+                      )}
                     </div>
-                  </div>
-                </button>
-              );
-            })}
+                  </button>
+                );
+              })}
+            </div>
           </div>
         )}
 
-        {/* Footer: what & where, then confirm */}
-        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line pt-3">
+        {/* ---- Footer (fixed) ---- */}
+        <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-line pt-3">
           <p className="text-sm text-ink-subtle">
-            {t("pos.assignInto", { n: picked.size, target: targetLabel, defaultValue: "المحدد: {{n}} · إلى: {{target}}" })}
+            {picked.size > 0
+              ? t("pos.assignInto", { n: picked.size, target: targetLabel, defaultValue: "المحدد: {{n}} · إلى: {{target}}" })
+              : t("pos.assignPickHint", "حدّد منتجاً أو أكثر للإضافة")}
           </p>
-          <Button disabled={picked.size === 0} loading={busy} leftIcon={<ListPlus size={16} />} onClick={save}>
+          <Button size="lg" disabled={picked.size === 0} loading={busy} leftIcon={<ListPlus size={18} />} onClick={save}>
             {t("pos.assignSelected", { n: picked.size, defaultValue: "أضف المحدد ({{n}})" })}
           </Button>
         </div>
