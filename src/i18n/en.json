@@ -598,7 +598,20 @@
     "searchInSection": "Search by name or barcode…",
     "searchResults": "Search results",
     "searchProductsFound": "Matching barcodes ({{n}})",
-    "noSearchResults": "No matches."
+    "noSearchResults": "No matches.",
+    "assignProducts": "Add products",
+    "assignProductsTitle": "Add products to {{name}}",
+    "assignProductsHint": "Pick previously-added products and file them under this company or one of its sections. Quantities and prices are left unchanged.",
+    "assignTarget": "Add them to",
+    "companyOnly": "Company only (no section)",
+    "selectAll": "Select all",
+    "clearSel": "Clear selection",
+    "inThisCompany": "In this company",
+    "assignNoProducts": "No products to add.",
+    "assignDone": "Added {{n}} product(s)",
+    "assignFailed": "Couldn't add {{n}} product(s)",
+    "assignSelected": "Add selected ({{n}})",
+    "assignInto": "Selected: {{n}} · to: {{target}}"
   },
   "role": {
     "admin": "Clinic",

@@ -4,6 +4,7 @@ import { motion } from "framer-motion";
 import {
   Barcode, Package, Trash2, Search, Building2, Plus, ChevronLeft, ArrowRight, ArrowLeft,
   TrendingUp, AlertTriangle, CalendarClock, Pencil, PackagePlus, Boxes, Layers, Wallet, ShoppingBag, FolderTree,
+  Check, ListPlus,
 } from "lucide-react";
 import type { Product, ProductCategory, Company, CompanySection } from "@/types";
 import { PurchasesTab, PurchaseBuilderModal } from "@/components/inventory/Purchases";
@@ -765,6 +766,7 @@ function CompanyDetail({ company, products, companies, sections, clinicId, onBac
   const [editingCo, setEditingCo] = useState(false);
   const [purchasing, setPurchasing] = useState(false);
   const [addingSection, setAddingSection] = useState(false);
+  const [assigning, setAssigning] = useState(false);
   const [editingSection, setEditingSection] = useState<CompanySection | null>(null);
   const [editing, setEditing] = useState<Product | null>(null);
   const [q, setQ] = useState("");
@@ -857,6 +859,7 @@ function CompanyDetail({ company, products, companies, sections, clinicId, onBac
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-sm font-semibold text-ink-muted">{ql ? t("pos.searchResults", "نتائج البحث") : t("pos.sections", "الأصناف")}</p>
         <div className="flex items-center gap-2">
+          <Button size="sm" variant="secondary" leftIcon={<ListPlus size={15} />} onClick={() => { playTap(); setAssigning(true); }}>{t("pos.assignProducts", "إضافة منتجات")}</Button>
           <Button size="sm" variant="secondary" leftIcon={<ShoppingBag size={15} />} onClick={() => { playTap(); setPurchasing(true); }}>{t("purchase.new", "فاتورة شراء")}</Button>
           <Button size="sm" leftIcon={<Plus size={15} />} onClick={() => { playTap(); setAddingSection(true); }}>{t("pos.addSection", "أضف صنف")}</Button>
         </div>
@@ -926,6 +929,9 @@ function CompanyDetail({ company, products, companies, sections, clinicId, onBac
         <SectionModal open company={company} section={editingSection} sections={sections} clinicId={clinicId} onClose={() => setEditingSection(null)} onSaved={() => { setEditingSection(null); onChanged(); }} />
       )}
 
+      {/* Assign already-added products to this company (optionally a section) */}
+      <AssignProductsModal open={assigning} company={company} companies={companies} sections={sections} products={products} onClose={() => setAssigning(false)} onSaved={() => { setAssigning(false); onChanged(); }} />
+
       {/* Purchase invoice pre-filled with this company */}
       <PurchaseBuilderModal open={purchasing} products={products} companies={companies} clinicId={clinicId} defaultCompanyName={company.name} onClose={() => setPurchasing(false)} onSaved={() => { setPurchasing(false); onChanged(); }} />
     </div>
@@ -964,6 +970,7 @@ function SectionProducts({ company, section, products, companies, sections, clin
   const { t, i18n } = useTranslation();
   const toast = useToast();
   const [addingProduct, setAddingProduct] = useState(false);
+  const [assigning, setAssigning] = useState(false);
   const [poolOpen, setPoolOpen] = useState(false);
   const [editing, setEditing] = useState<Product | null>(null);
   const [q, setQ] = useState("");
@@ -1000,6 +1007,7 @@ function SectionProducts({ company, section, products, companies, sections, clin
         {section && onEditSection && (
           <button onClick={() => { playTap(); onEditSection(); }} aria-label={t("common.edit", "Edit")} className="grid h-9 w-9 place-items-center rounded-full text-ink-subtle transition hover:bg-brand-50 hover:text-brand-600"><Pencil size={16} /></button>
         )}
+        <Button size="sm" variant="secondary" leftIcon={<ListPlus size={15} />} onClick={() => { playTap(); setAssigning(true); }}>{t("pos.assignProducts", "إضافة منتجات")}</Button>
         <Button size="sm" leftIcon={<PackagePlus size={15} />} onClick={() => { playTap(); setAddingProduct(true); }}>{t("pos.addBarcode", "أضف باركود")}</Button>
       </div>
 
@@ -1054,6 +1062,9 @@ function SectionProducts({ company, section, products, companies, sections, clin
         onSaved={() => { setAddingProduct(false); setEditing(null); onChanged(); }}
       />
       {section && <SetPoolModal open={poolOpen} section={section} onClose={() => setPoolOpen(false)} onSaved={() => { setPoolOpen(false); onChanged(); }} />}
+
+      {/* Assign already-added products straight into this section */}
+      <AssignProductsModal open={assigning} company={company} companies={companies} sections={sections} products={products} defaultSectionId={section?.id ?? null} onClose={() => setAssigning(false)} onSaved={() => { setAssigning(false); onChanged(); }} />
       {children}
     </div>
   );
@@ -1206,6 +1217,179 @@ function CompanyModal({ open, company, companies, clinicId, onClose, onSaved }: 
           <input className="input" value={note} onChange={(e) => setNote(e.target.value)} placeholder={t("pos.companyNotePh", "الوكيل الرسمي، رقم المندوب…")} />
         </div>
         <Button className="mt-1 w-full" disabled={!name.trim()} loading={busy} onClick={save}>{t("common.save", "Save")}</Button>
+      </div>
+    </Modal>
+  );
+}
+
+/**
+ * Assign already-added products to this company (and optionally one of its
+ * sections). Built for clinics that had a product list BEFORE companies/sections
+ * existed: pick one or many products from a searchable list and file them all at
+ * once. Only company_id / section_id change — stock, prices and the pooled flag
+ * are left untouched.
+ */
+function AssignProductsModal({ open, company, companies, sections, products, defaultSectionId, onClose, onSaved }: {
+  open: boolean; company: Company; companies: Company[]; sections: CompanySection[]; products: Product[];
+  defaultSectionId?: string | null; onClose: () => void; onSaved: () => void;
+}) {
+  const { t } = useTranslation();
+  const toast = useToast();
+  const [q, setQ] = useState("");
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [target, setTarget] = useState<string>(""); // "" = company only (no section)
+  const [busy, setBusy] = useState(false);
+
+  const mySections = useMemo(() => sections.filter((s) => s.company_id === company.id), [sections, company.id]);
+  const companyNameOf = useMemo(() => {
+    const m = new Map(companies.map((c) => [c.id, c.name]));
+    return (id?: string | null) => (id ? m.get(id) : undefined);
+  }, [companies]);
+
+  useEffect(() => {
+    if (!open) return;
+    setQ("");
+    setPicked(new Set());
+    // Default the target to the section the modal was opened from (if any),
+    // but only if that section still belongs to this company.
+    setTarget(defaultSectionId && mySections.some((s) => s.id === defaultSectionId) ? defaultSectionId : "");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, defaultSectionId]);
+
+  const ql = q.trim().toLowerCase();
+  // Products already filed under THIS company sink to the bottom; everything
+  // else — especially the unassigned legacy products — surfaces first.
+  const shown = useMemo(() => {
+    const list = ql
+      ? products.filter((p) => p.name.toLowerCase().includes(ql) || (p.barcode ?? "").includes(ql))
+      : products.slice();
+    return list.sort((a, b) => {
+      const am = a.company_id === company.id ? 1 : 0;
+      const bm = b.company_id === company.id ? 1 : 0;
+      if (am !== bm) return am - bm;
+      return a.name.localeCompare(b.name);
+    });
+  }, [products, ql, company.id]);
+
+  const toggle = (id: string) => {
+    setPicked((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+    playTap();
+  };
+  const allShownPicked = shown.length > 0 && shown.every((p) => picked.has(p.id));
+  const toggleAll = () => {
+    playTap();
+    setPicked((prev) => {
+      const next = new Set(prev);
+      if (allShownPicked) shown.forEach((p) => next.delete(p.id));
+      else shown.forEach((p) => next.add(p.id));
+      return next;
+    });
+  };
+
+  const save = async () => {
+    const ids = [...picked];
+    if (!ids.length || busy) return;
+    setBusy(true);
+    let done = 0;
+    let failed = 0;
+    for (const id of ids) {
+      try { await repo.updateProduct(id, { company_id: company.id, section_id: target || null }); done++; }
+      catch { failed++; }
+    }
+    setBusy(false);
+    if (done > 0) {
+      playSuccess();
+      toast.success(t("pos.assignDone", { n: done, defaultValue: "تمت إضافة {{n}} منتج" }));
+    }
+    if (failed > 0) {
+      playWarning();
+      toast.error(t("pos.assignFailed", { n: failed, defaultValue: "تعذّرت إضافة {{n}} منتج" }));
+    }
+    if (done > 0) onSaved(); // reloads + closes; keep open on total failure to retry
+  };
+
+  const targetLabel = target ? mySections.find((s) => s.id === target)?.name : t("pos.companyOnly", "الشركة فقط (بدون صنف)");
+
+  return (
+    <Modal open={open} onClose={onClose} size="wide" title={t("pos.assignProductsTitle", { name: company.name, defaultValue: "إضافة منتجات إلى {{name}}" })}>
+      <div className="space-y-4">
+        <p className="text-sm text-ink-subtle">{t("pos.assignProductsHint", "اختر منتجات مُضافة سابقاً وأضفها لهذه الشركة أو لأحد أصنافها. لن تتغيّر الكميات ولا الأسعار.")}</p>
+
+        {/* Where to file the selected products */}
+        <div>
+          <label className="label flex items-center gap-1"><FolderTree size={12} /> {t("pos.assignTarget", "أضفها إلى")}</label>
+          <select className="input" value={target} onChange={(e) => setTarget(e.target.value)}>
+            <option value="">{t("pos.companyOnly", "الشركة فقط (بدون صنف)")}</option>
+            {mySections.map((s) => (
+              <option key={s.id} value={s.id}>{s.name}</option>
+            ))}
+          </select>
+        </div>
+
+        {/* Search + select-all */}
+        <div className="flex items-center gap-2">
+          <div className="relative flex-1">
+            <Search size={16} className="pointer-events-none absolute top-1/2 -translate-y-1/2 text-ink-subtle ltr:left-3 rtl:right-3" />
+            <input className="input ltr:pl-9 rtl:pr-9" value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("pos.searchInv", "ابحث عن منتج…")} />
+          </div>
+          {shown.length > 0 && (
+            <Button size="sm" variant="secondary" onClick={toggleAll}>{allShownPicked ? t("pos.clearSel", "إلغاء التحديد") : t("pos.selectAll", "تحديد الكل")}</Button>
+          )}
+        </div>
+
+        {/* Product list — checkbox rows */}
+        {shown.length === 0 ? (
+          <div className="card p-8 text-center text-ink-subtle">{ql ? t("pos.noSearchResults", "لا نتائج مطابقة.") : t("pos.assignNoProducts", "لا توجد منتجات لإضافتها.")}</div>
+        ) : (
+          <div className="max-h-[46vh] space-y-2 overflow-y-auto pe-1">
+            {shown.map((p) => {
+              const on = picked.has(p.id);
+              const here = p.company_id === company.id;
+              const otherCo = !here ? companyNameOf(p.company_id) : undefined;
+              return (
+                <button
+                  key={p.id}
+                  onClick={() => toggle(p.id)}
+                  className={cn(
+                    "flex w-full items-center gap-3 rounded-2xl border p-3 text-start transition",
+                    on ? "border-brand-400 bg-brand-50 dark:bg-brand-500/10" : "border-line bg-surface-1 hover:bg-surface-2",
+                  )}
+                >
+                  <span className={cn("grid h-6 w-6 shrink-0 place-items-center rounded-lg border-2 transition", on ? "border-brand-500 bg-brand-500 text-white" : "border-line text-transparent")}>
+                    <Check size={15} strokeWidth={3} />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="flex flex-wrap items-center gap-x-2 gap-y-1 truncate text-sm font-semibold text-ink">
+                      {p.name}
+                      {here && <span className="chip shrink-0 bg-brand-50 text-2xs font-semibold text-brand-700 dark:bg-brand-500/15 dark:text-brand-200"><Building2 size={11} /> {t("pos.inThisCompany", "في هذه الشركة")}</span>}
+                      {otherCo && <span className="chip shrink-0 bg-accent-50 text-2xs font-semibold text-accent-700 dark:bg-accent-500/15 dark:text-accent-200"><Building2 size={11} /> {otherCo}</span>}
+                    </p>
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-ink-subtle">
+                      {p.barcode && <span className="flex items-center gap-1 font-mono"><Barcode size={11} /> {p.barcode}</span>}
+                      {p.pooled
+                        ? <span className="flex items-center gap-1"><Layers size={11} /> {t("pos.pooledItem", "مجمّع")}</span>
+                        : <span>{t("pos.qtyStock", { n: p.stock, defaultValue: "{{n}} in stock" })}</span>}
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Footer: what & where, then confirm */}
+        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line pt-3">
+          <p className="text-sm text-ink-subtle">
+            {t("pos.assignInto", { n: picked.size, target: targetLabel, defaultValue: "المحدد: {{n}} · إلى: {{target}}" })}
+          </p>
+          <Button disabled={picked.size === 0} loading={busy} leftIcon={<ListPlus size={16} />} onClick={save}>
+            {t("pos.assignSelected", { n: picked.size, defaultValue: "أضف المحدد ({{n}})" })}
+          </Button>
+        </div>
       </div>
     </Modal>
   );

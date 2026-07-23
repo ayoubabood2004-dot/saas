@@ -598,7 +598,20 @@
     "searchInSection": "ابحث بالاسم أو الباركود…",
     "searchResults": "نتائج البحث",
     "searchProductsFound": "باركودات مطابقة ({{n}})",
-    "noSearchResults": "لا نتائج مطابقة."
+    "noSearchResults": "لا نتائج مطابقة.",
+    "assignProducts": "إضافة منتجات",
+    "assignProductsTitle": "إضافة منتجات إلى {{name}}",
+    "assignProductsHint": "اختر منتجات مُضافة سابقاً وأضفها لهذه الشركة أو لأحد أصنافها. لن تتغيّر الكميات ولا الأسعار.",
+    "assignTarget": "أضفها إلى",
+    "companyOnly": "الشركة فقط (بدون صنف)",
+    "selectAll": "تحديد الكل",
+    "clearSel": "إلغاء التحديد",
+    "inThisCompany": "في هذه الشركة",
+    "assignNoProducts": "لا توجد منتجات لإضافتها.",
+    "assignDone": "تمت إضافة {{n}} منتج",
+    "assignFailed": "تعذّرت إضافة {{n}} منتج",
+    "assignSelected": "أضف المحدد ({{n}})",
+    "assignInto": "المحدد: {{n}} · إلى: {{target}}"
   },
   "role": {
     "admin": "العيادة",
