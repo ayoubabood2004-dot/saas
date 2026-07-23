@@ -181,6 +181,29 @@ function prefs(): ClinicPrefs {
   return prefsCache ?? readPrefsLocal();
 }
 
+/* Pending cloud patches — pref writes whose Supabase upsert hasn't been
+ * CONFIRMED yet (typically because the column's migration hasn't run on the
+ * clinic's database). Without this, enabling a new toggle pre-migration is
+ * silently reverted the first time the column lands with its false default and
+ * hydrate overwrites the local mirror. Pending keys win over the hydrated row
+ * and are re-pushed after every successful hydrate. */
+const pendingPrefsKey = () => `vp_clinic_prefs_pending_${getActiveClinicId()}`;
+function readPendingPrefs(): Partial<ClinicPrefs> {
+  try { const raw = localStorage.getItem(pendingPrefsKey()); if (raw) return JSON.parse(raw) as Partial<ClinicPrefs>; } catch { /* ignore */ }
+  return {};
+}
+function setPendingPrefs(p: Partial<ClinicPrefs>) {
+  try {
+    if (Object.keys(p).length === 0) localStorage.removeItem(pendingPrefsKey());
+    else localStorage.setItem(pendingPrefsKey(), JSON.stringify(p));
+  } catch { /* ignore */ }
+}
+function clearPendingPrefKeys(keys: string[]) {
+  const cur = readPendingPrefs() as Record<string, unknown>;
+  for (const k of keys) delete cur[k];
+  setPendingPrefs(cur as Partial<ClinicPrefs>);
+}
+
 export async function hydrateClinicPrefs(): Promise<void> {
   const client = sb();
   if (!client) { prefsCache = readPrefsLocal(); return; }
@@ -213,6 +236,17 @@ export async function hydrateClinicPrefs(): Promise<void> {
         { onConflict: "clinic_id" },
       );
     }
+    // Unconfirmed pref writes (e.g. a toggle flipped before its column's
+    // migration ran) beat the hydrated row and get re-pushed now.
+    const pending = readPendingPrefs();
+    if (Object.keys(pending).length) {
+      prefsCache = { ...prefsCache, ...pending };
+      cloudWrite(async () => {
+        const res = await client.from("clinic_prefs").upsert(pending, { onConflict: "clinic_id" });
+        if (!res.error) clearPendingPrefKeys(Object.keys(pending));
+        return res;
+      }, "prefs-pending-resync");
+    }
     savePrefsLocal(prefsCache);
   } catch {
     prefsCache = readPrefsLocal();
@@ -221,10 +255,19 @@ export async function hydrateClinicPrefs(): Promise<void> {
 registerHydrator(hydrateClinicPrefs);
 registerReset(() => { prefsCache = null; });
 
-/** Write one or more pref fields: optimistic cache+local update, then cloud upsert. */
+/** Write one or more pref fields: optimistic cache+local update, then cloud upsert.
+ *  The patch stays "pending" until the upsert is confirmed, so a write the DB
+ *  can't take yet (missing column pre-migration) re-syncs on the next hydrate
+ *  instead of being reverted by the column's default. */
 function patchPrefs(patch: Partial<ClinicPrefs>, ctx: string) {
   savePrefsLocal({ ...prefs(), ...patch });
-  cloudWrite(() => sb()!.from("clinic_prefs").upsert(patch, { onConflict: "clinic_id" }), ctx);
+  if (!sb()) return; // demo/offline — localStorage IS the source of truth
+  setPendingPrefs({ ...readPendingPrefs(), ...patch });
+  cloudWrite(async () => {
+    const res = await sb()!.from("clinic_prefs").upsert(patch, { onConflict: "clinic_id" });
+    if (!res.error) clearPendingPrefKeys(Object.keys(patch));
+    return res;
+  }, ctx);
 }
 
 export function getDialCode(): string {
