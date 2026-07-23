@@ -23,6 +23,7 @@ import { visitKindMeta } from "@/lib/visits";
 import { localISO, formatDate, formatNum, ageFromDOB, cn } from "@/lib/utils";
 import { getClinicName, getClinicLogo, getClinicSocials } from "@/lib/settings";
 import { openTreatmentSheet, type SheetTreatmentRow } from "@/lib/treatmentSheetPrint";
+import { syncDoseCycleForPet } from "@/lib/doseCycle";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
 
 const DAY_MARK = "⟦D:";
@@ -255,6 +256,7 @@ export default function VisitPage() {
       } else if (record?.treatment?.length && hasFlowsheet) {
         for (const t of treatments) await repo.setTreatmentGiven(t.id, !!t.administered_at, t.administered_by, t.administered_at ?? undefined).catch(() => {});
       }
+      if (visit) await syncDoseCycleForPet(visit.pet_id);
       setPlanOpen(false); playSuccess(); await reload();
     } catch (e) {
       playWarning();
@@ -265,12 +267,14 @@ export default function VisitPage() {
   const giveDose = async (t: TreatmentEntry, doctor: string, atISO: string) => {
     playSuccess();
     await repo.setTreatmentGiven(t.id, true, doctor || (user?.full_name ?? undefined), atISO);
+    await syncDoseCycleForPet(t.pet_id);
     setGiveId(null); await reload();
   };
   /** One-tap give for a single dose (records the current doctor + now). */
   const giveQuick = async (t: TreatmentEntry) => {
     playSuccess();
     await repo.setTreatmentGiven(t.id, true, user?.full_name ?? undefined, new Date().toISOString());
+    await syncDoseCycleForPet(t.pet_id);
     await reload();
   };
   /** Batch give — mark every dose in the list administered now by the current doctor. */
@@ -279,6 +283,7 @@ export default function VisitPage() {
     playSuccess();
     const at = new Date().toISOString();
     for (const t of list) await repo.setTreatmentGiven(t.id, true, user?.full_name ?? undefined, at);
+    await syncDoseCycleForPet(list[0].pet_id);
     await reload();
   };
   /** Extend the course — repeat the last day's medications for N more days. */
@@ -293,11 +298,13 @@ export default function VisitPage() {
         await repo.addTreatment({ pet_id: visit.pet_id, visit_id: visit.id, day, medication: m.medication, amount: m.amount, time: "", observations: m.observations, doctor: user?.full_name });
       }
     }
+    await syncDoseCycleForPet(visit.pet_id);
     playSuccess(); setExtendOpen(false); await reload();
   };
   const undoDose = async (t: TreatmentEntry) => {
     playTap();
     await repo.setTreatmentGiven(t.id, false);
+    await syncDoseCycleForPet(t.pet_id);
     setGiveId(null); await reload();
   };
   const addNote = async (text: string, day?: string) => {
@@ -325,6 +332,7 @@ export default function VisitPage() {
       administered_at: d.givenNow ? nowISO : undefined,
       administered_by: d.givenNow ? by : undefined,
     });
+    await syncDoseCycleForPet(visit.pet_id);
     playSuccess(); setAddDrugOpen(false); await reload();
   };
 

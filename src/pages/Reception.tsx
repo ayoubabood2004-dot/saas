@@ -98,6 +98,14 @@ function doseDue(a: Admission): boolean {
   return Date.now() >= new Date(a.last_completed_at).getTime() + cyc * 3600000;
 }
 
+/** Today's treatment is complete and the next dose isn't due yet → the card gets
+ *  a calm aqua "done" tint (cleared automatically once the cycle elapses). */
+const doseDone = (a: Admission, status: OpStatus): boolean =>
+  (status === "care" || status === "careBoarding") && !doseDue(a);
+
+/** Soft watery-green treatment for a completed case card. */
+const DONE_CARD = "border-teal-300 bg-teal-50/70 ring-1 ring-teal-300/60 dark:border-teal-500/40 dark:bg-teal-500/10 dark:ring-teal-500/30";
+
 /** Six-week matrix covering the cursor's month, weeks starting Saturday. */
 function monthMatrix(cursor: Date): Date[][] {
   const first = new Date(cursor.getFullYear(), cursor.getMonth(), 1);
@@ -169,6 +177,14 @@ export function Reception() {
     void opsStore.hydrate(clinicId).catch(() => {});
     return unsub;
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Minute tick so time-based card states (dose done ⇄ due) flip live while the
+  // board sits open — the aqua tint disappears the moment the next dose is due.
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setTick((n) => n + 1), 60000);
+    return () => clearInterval(id);
   }, []);
 
   // Reminders/vaccinations for the MONTH view — plotted on their due dates so
@@ -818,8 +834,9 @@ function CaseRow({ adm, pet, status, onOpen, onDoseDone }: {
   const waMsg = `مرحباً 🐾 من ${getClinicName() || "عيادتنا"} بخصوص ${pet?.name || "حيوانكم"}.`;
   // Treatment cases (care / therapeutic boarding) get a dose-due prompt.
   const dueDose = (status === "care" || status === "careBoarding") && doseDue(adm);
+  const done = doseDone(adm, status);
   return (
-    <div className="overflow-hidden rounded-xl border border-line bg-surface-1">
+    <div className={cn("overflow-hidden rounded-xl border border-line bg-surface-1", done && DONE_CARD)}>
       <div onClick={() => { playTap(); onOpen(adm.pet_id); }} className="flex w-full cursor-pointer items-center gap-2.5 p-2 text-start transition hover:bg-surface-2/60">
         {pet ? <PetAvatar pet={pet} size={36} photoFallback /> : <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-surface-2 text-ink-subtle"><Stethoscope size={16} /></span>}
         <div className="min-w-0 flex-1">
@@ -828,7 +845,13 @@ function CaseRow({ adm, pet, status, onOpen, onDoseDone }: {
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <div className="flex flex-col items-end gap-1">
-            <span className={cn("chip text-2xs font-semibold", m.chip)}>{t(m.key, m.def)}</span>
+            {done ? (
+              <span className="chip bg-teal-100 text-2xs font-semibold text-teal-700 dark:bg-teal-500/20 dark:text-teal-300">
+                <Check size={11} /> {t("reception.doseDoneChip", "تم علاج اليوم")}
+              </span>
+            ) : (
+              <span className={cn("chip text-2xs font-semibold", m.chip)}>{t(m.key, m.def)}</span>
+            )}
             <span className="text-2xs text-ink-subtle">{meta}</span>
           </div>
           {phone && (
@@ -868,12 +891,14 @@ function DraggableCard({ adm, pet, status, onOpen }: { adm: Admission; pet?: Pet
 function OpCard({ adm, pet, status, overlay }: { adm: Admission; pet?: Pet; status: OpStatus; overlay?: boolean }) {
   const { t } = useTranslation();
   const m = STATUS_META[status];
+  // Today's treatment done → calm aqua tint until the next dose comes due.
+  const done = doseDone(adm, status);
   const meta =
     status === "care" ? `${t("snapshot.day", "اليوم")} ${dayNumber(adm.admitted_on)}`
       : status === "boarding" || status === "careBoarding" ? `${t("snapshot.day", "اليوم")} ${dayNumber(adm.admitted_on)}${adm.cage ? ` · ${t("records.cage", "قفص")} ${adm.cage}` : ""}`
         : adm.discharged_on ? `${t("reception.left", "غادر")} ${arDate(adm.discharged_on)}` : arDate(adm.admitted_on);
   return (
-    <div className={cn("rounded-2xl border p-2.5 shadow-card", m.card, overlay ? "w-64 rotate-2 cursor-grabbing shadow-raised" : "")}>
+    <div className={cn("rounded-2xl border p-2.5 shadow-card", m.card, done && DONE_CARD, overlay ? "w-64 rotate-2 cursor-grabbing shadow-raised" : "")}>
       <div className="flex items-center gap-2.5">
         <GripVertical size={15} className="shrink-0 text-ink-subtle/60" />
         {pet && <PetAvatar pet={pet} size={38} photoFallback />}
@@ -881,11 +906,20 @@ function OpCard({ adm, pet, status, overlay }: { adm: Admission; pet?: Pet; stat
           <p className="truncate text-sm font-bold text-ink">{pet?.name ?? "—"}</p>
           <p className="truncate text-2xs text-ink-muted">{pet?.owner_name || "—"}</p>
         </div>
-        <span className={cn("h-2.5 w-2.5 shrink-0 rounded-full", m.dot)} />
+        {done ? (
+          <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-teal-500 text-white"><Check size={12} strokeWidth={3} /></span>
+        ) : (
+          <span className={cn("h-2.5 w-2.5 shrink-0 rounded-full", m.dot)} />
+        )}
       </div>
       <div className="mt-2 flex items-center justify-between gap-2">
         <span className="flex min-w-0 items-center gap-1">
           <span className={cn("chip text-2xs font-semibold", m.chip)}>{t(m.key, m.def)}</span>
+          {done && (
+            <span className="chip shrink-0 bg-teal-100 text-2xs font-semibold text-teal-700 dark:bg-teal-500/20 dark:text-teal-300">
+              <Check size={11} /> {t("reception.doseDoneChip", "تم علاج اليوم")}
+            </span>
+          )}
           {status === "done" && adm.outcome && (
             <span className={cn("chip shrink-0 text-2xs font-semibold", OUTCOME_META[adm.outcome].chip)}>
               {OUTCOME_META[adm.outcome].emoji} {t(OUTCOME_META[adm.outcome].key, OUTCOME_META[adm.outcome].def)}

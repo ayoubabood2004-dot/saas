@@ -6,6 +6,7 @@
 // the medical record. Pure data layer (no React); dual-adapter via repo.
 import { repo } from "./repo";
 import { localISO } from "./utils";
+import { syncDoseCycleForPet } from "./doseCycle";
 import type { MedicalDraft } from "@/components/MedicalEntry";
 
 const ROUTE_LABEL: Record<string, string> = { injection: "Injection", tablet: "Tablet", liquid: "Syrup" };
@@ -66,4 +67,6 @@ export async function persistMedicalEntries(
       });
     }
   }
+  // Reflect the new flowsheet state on the case boards (green "done" tint / amber due).
+  await syncDoseCycleForPet(petId);
 }

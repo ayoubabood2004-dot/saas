@@ -15,6 +15,7 @@ import { VisitsPanel } from "@/components/VisitsPanel";
 import { SpeciesPicker, SexPicker, AgeInput, BreedPicker, ColorPicker } from "@/components/PetFields";
 import { repo } from "@/lib/repo";
 import { persistMedicalEntries } from "@/lib/medSync";
+import { syncDoseCycleForPet } from "@/lib/doseCycle";
 import { PetAvatar } from "@/components/PetAvatar";
 import { OwnerCard } from "@/components/OwnerCard";
 import { ClinicPresenceBar } from "@/components/ClinicPresenceBar";
@@ -1725,6 +1726,7 @@ function TreatmentTab({ pet, treatments, admissions, onChanged, canEdit, isOwner
 
   const remove = async (id: string) => {
     await repo.deleteTreatment(id);
+    await syncDoseCycleForPet(pet.id);
     onChanged();
   };
 
@@ -1737,6 +1739,8 @@ function TreatmentTab({ pet, treatments, admissions, onChanged, canEdit, isOwner
   const markGiven = async (id: string, given: boolean) => {
     await repo.setTreatmentGiven(id, given, user?.full_name);
     if (given) playSuccess();
+    // Completing (or breaking) today's set updates the case-board tint too.
+    await syncDoseCycleForPet(pet.id);
     onChanged();
   };
   // Repeat the same medication as a fresh dose (today, auto-timed to now) without re-selecting it.
@@ -1751,6 +1755,7 @@ function TreatmentTab({ pet, treatments, admissions, onChanged, canEdit, isOwner
       amount: tx.amount,
       observations: undefined,
     });
+    await syncDoseCycleForPet(pet.id);
     playSuccess();
     onChanged();
   };
@@ -2217,11 +2222,12 @@ function TimelineWorkspace({ pet, treatments, vaccinations, notes, admissions, i
   };
 
   // ---- Treatment flowsheet actions (mark given / repeat / delete) ----
-  const markGiven = async (id: string, given: boolean) => { await repo.setTreatmentGiven(id, given, user?.full_name); if (given) playSuccess(); onChanged(); };
-  const removeTx = async (id: string) => { await repo.deleteTreatment(id); onChanged(); };
+  const markGiven = async (id: string, given: boolean) => { await repo.setTreatmentGiven(id, given, user?.full_name); if (given) playSuccess(); await syncDoseCycleForPet(pet.id); onChanged(); };
+  const removeTx = async (id: string) => { await repo.deleteTreatment(id); await syncDoseCycleForPet(pet.id); onChanged(); };
   const repeatTx = async (tx: TreatmentEntry) => {
     addClinicMed(tx.medication);
     await repo.addTreatment({ pet_id: pet.id, day: today, doctor: tx.doctor || (user?.role === "doctor" ? user.full_name : undefined), medication: tx.medication, time: nowHM(), amount: tx.amount, observations: undefined });
+    await syncDoseCycleForPet(pet.id);
     playSuccess(); onChanged();
   };
 

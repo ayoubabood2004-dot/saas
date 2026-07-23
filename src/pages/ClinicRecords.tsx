@@ -913,7 +913,7 @@ function CurrentCases({ pets, admissions, treatments, onChanged }: { pets: Pet[]
     const { done, remainingH } = completion(a);
     const cycle = a.cycle_hours ?? 24;
     return (
-      <div key={a.id} className={cn("card p-4", done && "ring-1 ring-success-200 dark:ring-success-500/30")}>
+      <div key={a.id} className={cn("card p-4", done && "border-teal-300 bg-teal-50/50 ring-1 ring-teal-300/60 dark:border-teal-500/40 dark:bg-teal-500/10 dark:ring-teal-500/30")}>
         <div className="flex items-center gap-3">
           <PetAvatar pet={p} size={48} photoFallback />
           <div className="min-w-0 flex-1">

@@ -1421,7 +1421,8 @@
     "remindersSection": "التذكيرات",
     "whatsapp": "واتساب",
     "searchPh": "ابحث: اسم الحيوان، رقمه، اسم المالك أو هاتفه…",
-    "searchCount": "{{n}} نتيجة"
+    "searchCount": "{{n}} نتيجة",
+    "doseDoneChip": "تم علاج اليوم"
   },
   "triage": {
     "1": "حرج",
