@@ -140,8 +140,8 @@ export function clearPetRanges(petId: string) {
 export const DEFAULT_DIAL_CODE = "+964"; // Iraq
 
 export interface ClinicSocials { facebook: string; instagram: string }
-interface ClinicPrefs { dial_code: string; logo_url: string | null; social_facebook: string; social_instagram: string; clinic_name: string; pre_sale_print: boolean; override_enabled: boolean }
-const DEFAULT_PREFS: ClinicPrefs = { dial_code: DEFAULT_DIAL_CODE, logo_url: null, social_facebook: "", social_instagram: "", clinic_name: "", pre_sale_print: false, override_enabled: false };
+interface ClinicPrefs { dial_code: string; logo_url: string | null; social_facebook: string; social_instagram: string; clinic_name: string; pre_sale_print: boolean; override_enabled: boolean; resizable_cart: boolean }
+const DEFAULT_PREFS: ClinicPrefs = { dial_code: DEFAULT_DIAL_CODE, logo_url: null, social_facebook: "", social_instagram: "", clinic_name: "", pre_sale_print: false, override_enabled: false, resizable_cart: false };
 
 const prefsKey = () => `vp_clinic_prefs_${getActiveClinicId()}`;
 const legacyDialKey = () => `vp_dial_code_${getActiveClinicId()}`;
@@ -202,6 +202,7 @@ export async function hydrateClinicPrefs(): Promise<void> {
         // Columns missing pre-migration → keep whatever this device had locally.
         pre_sale_print: d.pre_sale_print ?? local.pre_sale_print,
         override_enabled: d.override_enabled ?? local.override_enabled,
+        resizable_cart: d.resizable_cart ?? local.resizable_cart,
       };
     } else {
       // No row yet → migrate any local prefs up (or seed the default dial code).
@@ -277,4 +278,14 @@ export function getOverrideEnabled(): boolean {
 }
 export function setOverrideEnabled(v: boolean) {
   patchPrefs({ override_enabled: v }, "override-enabled-set");
+}
+
+/** Opt-in resizable POS cart (سلة قابلة لتغيير الحجم): reveals a drag handle on
+ *  the sale cart's edge on wide screens (migration 0067). The chosen width is a
+ *  per-device preference — only this enable flag is clinic-wide. */
+export function getResizableCart(): boolean {
+  return !!prefs().resizable_cart;
+}
+export function setResizableCart(v: boolean) {
+  patchPrefs({ resizable_cart: v }, "resizable-cart-set");
 }

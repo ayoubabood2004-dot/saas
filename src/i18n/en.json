@@ -311,7 +311,9 @@
     "noMorePets": "No other matching pets.",
     "sameOwner": "Same owner",
     "preSaleA4": "Pro-forma A4",
-    "preSaleThermal": "Pro-forma 80mm"
+    "preSaleThermal": "Pro-forma 80mm",
+    "cartResize": "Resize cart",
+    "cartResizeHint": "Drag to resize the cart — double-click to reset"
   },
   "promos": {
     "title": "Offers management",
@@ -673,7 +675,9 @@
     "cashier": "Cashier options",
     "cashierHint": "Extra point-of-sale features — off by default, enable only what suits your clinic.",
     "preSalePrint": "Print the invoice before completing the sale",
-    "preSalePrintHint": "Adds a \"pro-forma\" print button to the sale screen so the customer can review the bill before paying — nothing is recorded as an invoice and stock is untouched."
+    "preSalePrintHint": "Adds a \"pro-forma\" print button to the sale screen so the customer can review the bill before paying — nothing is recorded as an invoice and stock is untouched.",
+    "resizableCart": "Resizable cart",
+    "resizableCartHint": "On wide screens: drag the cart's edge to make it wider or narrower — the preferred width is saved on this device, and double-clicking the edge restores the default size."
   },
   "auth": {
     "signIn": "Sign in",

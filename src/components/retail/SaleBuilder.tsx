@@ -20,7 +20,7 @@ import { MedSaleForm } from "./MedSaleForm";
 import { CashierSelect } from "@/components/MedicalEntry";
 import { useInvoicePrinter } from "./usePrintInvoice";
 import { invoiceNo, openInvoicePrint, type PrintFormat } from "@/lib/invoicePrint";
-import { getPreSalePrint, getClinicLogo, getClinicSocials, getClinicName } from "@/lib/settings";
+import { getPreSalePrint, getResizableCart, getClinicLogo, getClinicSocials, getClinicName } from "@/lib/settings";
 import { persistMedicalEntries } from "@/lib/medSync";
 import type { MedicalDraft } from "@/components/MedicalEntry";
 import { cn, money, currencySymbol } from "@/lib/utils";
@@ -114,6 +114,192 @@ function saveSaleDraft(clinicId: string | undefined, d: SaleDraft): void {
 }
 function clearSaleDraft(clinicId?: string): void { try { localStorage.removeItem(saleDraftKey(clinicId)); } catch { /* ignore */ } }
 
+/* --------------------- Resizable cart (سلة قابلة لتغيير الحجم) ---------------
+ * Opt-in from Settings → خيارات الكاشير. On wide (lg+) screens the cart column
+ * grows/shrinks by dragging the handle on its inner edge; the chosen width is a
+ * per-device preference. Pointer events cover mouse + touch + pen; double-click
+ * (or Home on the keyboard) resets to the default width. */
+const CART_W_DEFAULT = 380;
+const CART_W_MIN = 300;
+const CART_W_MAX = 720;
+const CART_W_KEY = "vp_cart_width";
+/** Keep the cart between its hard bounds AND leave the products pane usable.
+ *  The viewport budget accounts for the app sidebar + page chrome (~700px total
+ *  incl. a usable products pane), so the cart can never squeeze products out. */
+function clampCartWidth(w: number): number {
+  const viewportCap = typeof window !== "undefined" ? Math.max(CART_W_MIN, window.innerWidth - 700) : CART_W_MAX;
+  return Math.round(Math.min(CART_W_MAX, viewportCap, Math.max(CART_W_MIN, w)));
+}
+function loadCartWidth(): number {
+  try {
+    const raw = Number(localStorage.getItem(CART_W_KEY));
+    if (Number.isFinite(raw) && raw > 0) return clampCartWidth(raw);
+  } catch { /* ignore */ }
+  return CART_W_DEFAULT;
+}
+function saveCartWidth(w: number): void {
+  try { localStorage.setItem(CART_W_KEY, String(w)); } catch { /* ignore */ }
+}
+
+/** Reactive `min-width: 1024px` (Tailwind lg) — resizing only exists on wide screens. */
+function useIsLg(): boolean {
+  const [isLg, setIsLg] = useState(() => typeof window !== "undefined" && window.matchMedia("(min-width: 1024px)").matches);
+  useEffect(() => {
+    const mq = window.matchMedia("(min-width: 1024px)");
+    const on = () => setIsLg(mq.matches);
+    mq.addEventListener("change", on);
+    return () => mq.removeEventListener("change", on);
+  }, []);
+  return isLg;
+}
+
+/** Drag state + handlers for the cart width. RTL-aware: dragging the handle
+ *  toward the products pane always makes the cart wider.
+ *
+ *  Perf: pointer moves write the width STRAIGHT to a CSS variable on the grid
+ *  element (no React state) — the 1000+-node sale tree (and its framer-motion
+ *  layout animations) re-renders only once, at drag end, not 60×/second. */
+function useCartResize(enabled: boolean) {
+  const { i18n } = useTranslation();
+  const isLg = useIsLg();
+  const gridRef = useRef<HTMLDivElement>(null);
+  const [width, setWidth] = useState(loadCartWidth); // committed width (persisted)
+  const [dragging, setDragging] = useState(false);
+  const drag = useRef<{ id: number; startX: number; startW: number; moved: boolean } | null>(null);
+  const liveW = useRef(width); // follows the CSS var during a drag
+  const dragEndAt = useRef(0); // suppress the dblclick fired by two quick drags
+
+  // While dragging: freeze text selection & keep the resize cursor everywhere.
+  useEffect(() => {
+    if (!dragging) return;
+    const prevSelect = document.body.style.userSelect;
+    const prevCursor = document.body.style.cursor;
+    document.body.style.userSelect = "none";
+    document.body.style.cursor = "col-resize";
+    return () => {
+      document.body.style.userSelect = prevSelect;
+      document.body.style.cursor = prevCursor;
+    };
+  }, [dragging]);
+
+  const active = enabled && isLg;
+
+  /** Paint a width now (CSS var, no re-render) and remember it. */
+  const apply = (w: number) => {
+    liveW.current = w;
+    gridRef.current?.style.setProperty("--cart-w", `${w}px`);
+  };
+  /** Commit = re-render with the final width + persist it. */
+  const commit = (w: number) => {
+    apply(w);
+    setWidth(w);
+    saveCartWidth(w);
+  };
+
+  // The handle can vanish MID-drag (window resized below lg, setting toggled):
+  // abandon the drag cleanly so the body cursor/selection unfreeze and the last
+  // painted width still gets persisted.
+  useEffect(() => {
+    if (active) return;
+    if (drag.current) {
+      drag.current = null;
+      setDragging(false);
+      setWidth(liveW.current);
+      saveCartWidth(liveW.current);
+    }
+  }, [active]);
+
+  // Window shrinks after the width was chosen → re-clamp so the products pane
+  // never collapses. (Runs only while the feature is active.)
+  useEffect(() => {
+    if (!active) return;
+    const onResize = () => {
+      if (drag.current) return; // live drags clamp per-move already
+      const w = clampCartWidth(liveW.current);
+      if (w !== liveW.current) commit(w);
+    };
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active]);
+
+  const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (drag.current) return; // one pointer owns the drag — ignore extra touches
+    if (e.button !== 0 && e.pointerType === "mouse") return; // primary button only
+    e.preventDefault();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    drag.current = { id: e.pointerId, startX: e.clientX, startW: liveW.current, moved: false };
+    setDragging(true);
+  };
+  const onPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const d = drag.current;
+    if (!d || e.pointerId !== d.id) return;
+    const delta = e.clientX - d.startX;
+    if (Math.abs(delta) > 3) d.moved = true;
+    // RTL: cart sits at the inline-end (left); its inner edge moves RIGHT (+x) to widen.
+    // LTR: mirrored — the inner edge moves LEFT (−x) to widen.
+    apply(clampCartWidth(d.startW + (i18n.dir() === "rtl" ? delta : -delta)));
+  };
+  const endDrag = (e: React.PointerEvent<HTMLDivElement>) => {
+    const d = drag.current;
+    if (!d || e.pointerId !== d.id) return;
+    if (d.moved) dragEndAt.current = Date.now();
+    drag.current = null;
+    setDragging(false);
+    commit(liveW.current);
+  };
+  const reset = () => {
+    // Two quick REAL drags register as a double-click; that synthetic dblclick
+    // lands within a few ms of the second drag's pointerup — swallow only that,
+    // so a genuine double-tap (no movement) still resets.
+    if (Date.now() - dragEndAt.current < 150) return;
+    commit(CART_W_DEFAULT);
+    playTap();
+  };
+  const onKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    // "Wider" is always the arrow pointing INTO the products pane.
+    const rtl = i18n.dir() === "rtl";
+    const nudge = (dir: 1 | -1) => commit(clampCartWidth(liveW.current + dir * 24));
+    if (e.key === "ArrowRight") { e.preventDefault(); nudge(rtl ? 1 : -1); }
+    else if (e.key === "ArrowLeft") { e.preventDefault(); nudge(rtl ? -1 : 1); }
+    else if (e.key === "Home") { e.preventDefault(); reset(); }
+  };
+
+  return {
+    active, width, dragging, gridRef,
+    // The grid reads the LIVE width from the CSS var; React only re-seeds the var
+    // when the committed width changes (and after any unrelated re-render).
+    gridStyle: active ? ({ gridTemplateColumns: "minmax(0,1fr) var(--cart-w)", "--cart-w": `${width}px` } as React.CSSProperties) : undefined,
+    handleProps: { onPointerDown, onPointerMove, onPointerUp: endDrag, onPointerCancel: endDrag, onDoubleClick: reset, onKeyDown },
+  };
+}
+
+/** The grab handle riding the cart's inner edge (inside the grid gap). */
+function CartResizeHandle({ dragging, width, handleProps }: { dragging: boolean; width: number; handleProps: React.HTMLAttributes<HTMLDivElement> }) {
+  const { t } = useTranslation();
+  return (
+    <div
+      role="separator"
+      aria-orientation="vertical"
+      aria-label={t("retail.cartResize", "تغيير عرض السلة")}
+      aria-valuemin={CART_W_MIN}
+      aria-valuemax={CART_W_MAX}
+      aria-valuenow={width}
+      tabIndex={0}
+      title={t("retail.cartResizeHint", "اسحب لتغيير عرض السلة — نقرة مزدوجة للإرجاع")}
+      className="group absolute -start-4 top-0 z-10 hidden h-full w-4 cursor-col-resize touch-none items-center justify-center outline-none lg:flex"
+      {...handleProps}
+    >
+      <span
+        className={cn(
+          "h-14 w-1 rounded-full transition-all group-hover:h-20 group-hover:w-1.5 group-focus-visible:ring-2 group-focus-visible:ring-brand-400",
+          dragging ? "h-24 w-1.5 bg-brand-500" : "bg-line-strong group-hover:bg-brand-400",
+        )}
+      />
+    </div>
+  );
+}
+
 export function SaleBuilder({ products, clinicId, onSold, prefill }: { products: Product[]; clinicId?: string; onSold: () => void; prefill?: RetailPrefill | null }) {
   const { t, i18n } = useTranslation();
   const toast = useToast();
@@ -172,6 +358,8 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
   const [flash, setFlash] = useState<string | null>(null);
   const [done, setDone] = useState<{ invoice: Invoice; items: InvoiceItem[] } | null>(null);
   const [lastPrints, setLastPrints] = useState(0);
+  // Opt-in resizable cart (Settings → خيارات الكاشير) — drag the cart edge on lg+.
+  const cartResize = useCartResize(getResizableCart());
 
   const flashLine = (id: string) => { setFlash(id); setTimeout(() => setFlash((f) => (f === id ? null : f)), 600); };
 
@@ -670,7 +858,13 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
 
   // ---- Builder --------------------------------------------------------------
   return (
-    <div className="grid gap-4 lg:grid-cols-[1fr,380px]">
+    <div
+      ref={cartResize.gridRef}
+      className="grid gap-4 lg:grid-cols-[1fr,380px]"
+      // Opt-in resizable cart: on lg+ the cart column takes the dragged width
+      // (live CSS var while dragging — see useCartResize).
+      style={cartResize.gridStyle}
+    >
       {/* LEFT — customer + products/services */}
       <div className="space-y-4">
         {/* Bridge context — which animal(s) this sale is for. Several of the owner's
@@ -893,7 +1087,8 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
       </div>
 
       {/* RIGHT — cart */}
-      <div className="card flex max-h-[78vh] flex-col p-0 lg:sticky lg:top-4">
+      <div className="card relative flex max-h-[78vh] flex-col p-0 lg:sticky lg:top-4">
+        {cartResize.active && <CartResizeHandle dragging={cartResize.dragging} width={cartResize.width} handleProps={cartResize.handleProps} />}
         <div className="flex items-center justify-between border-b border-line p-4">
           <span className="flex items-center gap-2 font-display font-bold text-ink"><ShoppingCart size={18} /> {t("retail.cart", "Cart")} {units > 0 && <span className="chip bg-brand-50 text-2xs text-brand-700 dark:bg-brand-500/15 dark:text-brand-300">{units}</span>}</span>
           {cart.length > 0 && <button onClick={() => { playTap(); setCart([]); }} className="text-xs text-ink-subtle transition hover:text-danger-600">{t("common.clear", "Clear")}</button>}

@@ -13,7 +13,7 @@ import { getServiceCatalog, addServiceCategory, removeServiceCategory, addServic
 import { DEFAULT_RANGES, VITAL_KEYS, CBC_KEYS, rangeFor, type VitalKey } from "@/lib/vitals";
 
 const ALL_KEYS: VitalKey[] = [...VITAL_KEYS, ...CBC_KEYS];
-import { setVitalOverride, clearVitalOverrides, getDialCode, setDialCode, getClinicLogo, setClinicLogo, getClinicSocials, setClinicSocials, getClinicName, setClinicName, getPreSalePrint, setPreSalePrint } from "@/lib/settings";
+import { setVitalOverride, clearVitalOverrides, getDialCode, setDialCode, getClinicLogo, setClinicLogo, getClinicSocials, setClinicSocials, getClinicName, setClinicName, getPreSalePrint, setPreSalePrint, getResizableCart, setResizableCart } from "@/lib/settings";
 import { prepareUpload } from "@/lib/image";
 import { isSoundEnabled, setSoundEnabled, playSuccess, playTap } from "@/lib/sounds";
 import { getClinicMeds, addClinicMed, removeClinicMed, allMedTypes, allMedicationNames, BUILTIN_MEDICATIONS, type ClinicMed } from "@/lib/meds";
@@ -444,18 +444,41 @@ function ClinicIdentity() {
   );
 }
 
-/* ------------- Cashier options (opt-in pre-sale pro-forma print) ---------- */
+/* ------------- Cashier options (opt-in POS extras) ---------- */
+function CashierToggle({ label, hint, checked, onToggle }: { label: string; hint: string; checked: boolean; onToggle: () => void }) {
+  return (
+    <div className="flex items-start justify-between gap-3">
+      <div className="min-w-0">
+        <p className="text-sm font-bold text-ink">{label}</p>
+        <p className="text-xs text-ink-subtle mt-0.5">{hint}</p>
+      </div>
+      <button role="switch" aria-checked={checked} onClick={onToggle} className="mt-0.5 shrink-0" aria-label={label}>
+        <span className={cn("relative block h-6 w-11 rounded-full transition-colors", checked ? "bg-brand-600" : "border border-line bg-surface-3")}>
+          <span className={cn("absolute start-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform", checked && "translate-x-5 rtl:-translate-x-5")} />
+        </span>
+      </button>
+    </div>
+  );
+}
+
 function CashierOptions() {
   const { t } = useTranslation();
   const { can } = usePermissions();
   const [preSale, setPreSale] = useState(getPreSalePrint());
+  const [resizableCart, setResizableCartOn] = useState(getResizableCart());
 
   if (!can("manageSettings")) return null;
 
-  const toggle = () => {
+  const togglePreSale = () => {
     const next = !preSale;
     setPreSale(next);
     setPreSalePrint(next);
+    if (next) playSuccess(); else playTap();
+  };
+  const toggleResizableCart = () => {
+    const next = !resizableCart;
+    setResizableCartOn(next);
+    setResizableCart(next);
     if (next) playSuccess(); else playTap();
   };
 
@@ -463,21 +486,20 @@ function CashierOptions() {
     <div className="card p-5 mb-4">
       <h2 className="font-bold text-ink mb-1 flex items-center gap-2"><Printer size={18} className="text-brand-600" /> {t("settings.cashier", "خيارات الكاشير")}</h2>
       <p className="text-xs text-ink-subtle mb-4">{t("settings.cashierHint", "ميزات إضافية لشاشة البيع — معطّلة افتراضياً، فعّل ما يناسب عيادتك فقط.")}</p>
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-sm font-bold text-ink">{t("settings.preSalePrint", "طباعة الفاتورة قبل إتمام البيع")}</p>
-          <p className="text-xs text-ink-subtle mt-0.5">{t("settings.preSalePrintHint", "يضيف زر طباعة «فاتورة أولية» داخل شاشة البيع ليطّلع الزبون على الحساب قبل الدفع — لا تُسجَّل كفاتورة ولا تُخصم من المخزون.")}</p>
-        </div>
-        <button
-          role="switch" aria-checked={preSale}
-          onClick={toggle}
-          className="mt-0.5 shrink-0"
-          aria-label={t("settings.preSalePrint", "طباعة الفاتورة قبل إتمام البيع")}
-        >
-          <span className={cn("relative block h-6 w-11 rounded-full transition-colors", preSale ? "bg-brand-600" : "border border-line bg-surface-3")}>
-            <span className={cn("absolute start-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform", preSale && "translate-x-5 rtl:-translate-x-5")} />
-          </span>
-        </button>
+      <div className="space-y-4">
+        <CashierToggle
+          label={t("settings.preSalePrint", "طباعة الفاتورة قبل إتمام البيع")}
+          hint={t("settings.preSalePrintHint", "يضيف زر طباعة «فاتورة أولية» داخل شاشة البيع ليطّلع الزبون على الحساب قبل الدفع — لا تُسجَّل كفاتورة ولا تُخصم من المخزون.")}
+          checked={preSale}
+          onToggle={togglePreSale}
+        />
+        <div className="border-t border-line" />
+        <CashierToggle
+          label={t("settings.resizableCart", "سلة قابلة لتغيير الحجم")}
+          hint={t("settings.resizableCartHint", "على الشاشات الواسعة: اسحب حافة السلة بالماوس لتكبيرها أو تصغيرها كما يناسبك — العرض المفضّل يُحفَظ على هذا الجهاز، ونقرة مزدوجة على الحافة تُرجع الحجم الافتراضي.")}
+          checked={resizableCart}
+          onToggle={toggleResizableCart}
+        />
       </div>
     </div>
   );
