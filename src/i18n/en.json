@@ -1424,8 +1424,7 @@
     "remindersSection": "Reminders",
     "whatsapp": "WhatsApp",
     "searchPh": "Search: pet name, number, owner name or phone…",
-    "searchCount": "{{n}} results",
-    "doseDoneChip": "Today's treatment done"
+    "searchCount": "{{n}} results"
   },
   "triage": {
     "1": "Critical",

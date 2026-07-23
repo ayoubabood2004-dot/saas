@@ -57,6 +57,8 @@ interface Chart {
   cage?: string | null;
   since: string;
   dueToday: number;
+  /** Doses scheduled for today (given or not) — todayTotal>0 && dueToday===0 → اليوم مكتمل. */
+  todayTotal: number;
   overdue: number;
   doneTotal: number;
   total: number;
@@ -77,6 +79,13 @@ export function Charts() {
   const todayISO = localISO();
 
   const [ops, setOps] = useState(() => opsStore.get());
+  // Minute tick — re-renders so the "اليوم مكتمل" aqua tint clears by itself the
+  // moment the next dose comes due (e.g. the day rolls over to tomorrow's doses).
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setTick((n) => n + 1), 60000);
+    return () => clearInterval(id);
+  }, []);
   const [visits, setVisits] = useState<ClinicVisit[]>([]);
   const [treatments, setTreatments] = useState<TreatmentEntry[]>([]);
   const [txLoaded, setTxLoaded] = useState(false);
@@ -134,6 +143,7 @@ export function Charts() {
     const todayTx = list.filter((t) => t.day === todayISO);
     return {
       dueToday: todayTx.filter((t) => !t.administered_at).length,
+      todayTotal: todayTx.length,
       overdue: list.filter((t) => !t.administered_at && t.day < todayISO).length,
       doneTotal: list.filter((t) => t.administered_at).length,
       total: list.length,
@@ -284,17 +294,27 @@ function FilterChip({ active, label, count, icon, onClick }: { active: boolean; 
 /* ── Chart card ───────────────────────────────────────────────────────────── */
 function ChartCard({ chart: c, lang, todayISO, txLoaded, busy, onOpen }: { chart: Chart; lang: string; todayISO: string; txLoaded: boolean; busy: boolean; onOpen: () => void }) {
   const day = dayNumber(c.since, todayISO);
+  // اليوم مكتمل: every dose scheduled for today was given (and nothing overdue).
+  // The card takes a soft watery-green tint until the next dose comes due —
+  // tomorrow's doses (or a new dose added today) clear it automatically.
+  const doneToday = txLoaded && c.todayTotal > 0 && c.dueToday === 0 && c.overdue === 0;
   const status = !txLoaded
     ? null
     : c.overdue > 0 ? { cls: "bg-danger-50 text-danger-700 dark:bg-danger-500/15 dark:text-danger-300", icon: <AlertTriangle size={13} />, text: `${formatNum(c.overdue)} متأخّرة` }
     : c.dueToday > 0 ? { cls: "bg-warn-50 text-warn-700 dark:bg-warn-500/15 dark:text-warn-300", icon: <Pill size={13} />, text: `${formatNum(c.dueToday)} مستحقّة اليوم` }
+    : doneToday ? { cls: "bg-teal-100 text-teal-700 dark:bg-teal-500/20 dark:text-teal-300", icon: <CheckCircle2 size={13} />, text: "تم علاج اليوم" }
     : c.total > 0 && c.doneTotal === c.total ? { cls: "bg-success-50 text-success-700 dark:bg-success-500/15 dark:text-success-300", icon: <CheckCircle2 size={13} />, text: "مكتمل" }
     : c.total > 0 ? { cls: "bg-surface-2 text-ink-muted", icon: <CheckCircle2 size={13} />, text: "لا جرعات اليوم" }
     : { cls: "bg-surface-2 text-ink-subtle", icon: <ClipboardList size={13} />, text: "لا توجد خطة بعد" };
 
   return (
     <button type="button" onClick={onOpen} disabled={busy}
-      className="group flex flex-col gap-2.5 rounded-xl border border-line-strong bg-surface-1 p-3.5 text-start shadow-card transition hover:border-brand-300 hover:shadow-lg disabled:opacity-60">
+      className={cn(
+        "group flex flex-col gap-2.5 rounded-xl border p-3.5 text-start shadow-card transition hover:shadow-lg disabled:opacity-60",
+        doneToday
+          ? "border-teal-300 bg-teal-50/60 ring-1 ring-teal-300/60 hover:border-teal-400 dark:border-teal-500/40 dark:bg-teal-500/10 dark:ring-teal-500/30"
+          : "border-line-strong bg-surface-1 hover:border-brand-300",
+      )}>
       <div className="flex items-center gap-2.5">
         <CardAvatar pet={c.pet} />
         <div className="min-w-0 flex-1">
@@ -303,6 +323,9 @@ function ChartCard({ chart: c, lang, todayISO, txLoaded, busy, onOpen }: { chart
             {c.pet ? (SPECIES_AR[c.pet.species] ?? c.pet.species) : ""}{c.cage ? ` · قفص ${c.cage}` : ""}
           </div>
         </div>
+        {doneToday && !busy && (
+          <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-teal-500 text-white"><CheckCircle2 size={13} /></span>
+        )}
         {busy ? <Loader2 size={16} className="shrink-0 animate-spin text-brand-600" /> : <ChevronLeft size={16} className="shrink-0 text-ink-subtle transition group-hover:text-brand-600 rtl:rotate-180" />}
       </div>
 
