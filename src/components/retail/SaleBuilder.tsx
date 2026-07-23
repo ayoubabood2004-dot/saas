@@ -131,9 +131,12 @@ function clampCartWidth(w: number): number {
   return Math.round(Math.min(CART_W_MAX, viewportCap, Math.max(CART_W_MIN, w)));
 }
 function loadCartWidth(): number {
+  // The stored PREFERENCE is bounded to the hard limits only — the viewport cap
+  // is a display concern (gridStyle/apply clamp per paint), so a width chosen on
+  // a big screen survives sessions spent on a smaller one.
   try {
     const raw = Number(localStorage.getItem(CART_W_KEY));
-    if (Number.isFinite(raw) && raw > 0) return clampCartWidth(raw);
+    if (Number.isFinite(raw) && raw > 0) return Math.min(CART_W_MAX, Math.max(CART_W_MIN, Math.round(raw)));
   } catch { /* ignore */ }
   return CART_W_DEFAULT;
 }
@@ -163,10 +166,11 @@ function useCartResize(enabled: boolean) {
   const { i18n } = useTranslation();
   const isLg = useIsLg();
   const gridRef = useRef<HTMLDivElement>(null);
-  const [width, setWidth] = useState(loadCartWidth); // committed width (persisted)
+  const [width, setWidth] = useState(loadCartWidth); // committed PREFERENCE (persisted)
   const [dragging, setDragging] = useState(false);
   const drag = useRef<{ id: number; startX: number; startW: number; moved: boolean } | null>(null);
-  const liveW = useRef(width); // follows the CSS var during a drag
+  const widthPref = useRef(width); // ref mirror of the committed preference
+  const liveW = useRef(width); // the width currently painted (display-clamped)
   const dragEndAt = useRef(0); // suppress the dblclick fired by two quick drags
 
   // While dragging: freeze text selection & keep the resize cursor everywhere.
@@ -189,9 +193,10 @@ function useCartResize(enabled: boolean) {
     liveW.current = w;
     gridRef.current?.style.setProperty("--cart-w", `${w}px`);
   };
-  /** Commit = re-render with the final width + persist it. */
+  /** Commit = the user CHOSE this width: re-render with it + persist it. */
   const commit = (w: number) => {
     apply(w);
+    widthPref.current = w;
     setWidth(w);
     saveCartWidth(w);
   };
@@ -209,14 +214,14 @@ function useCartResize(enabled: boolean) {
     }
   }, [active]);
 
-  // Window shrinks after the width was chosen → re-clamp so the products pane
-  // never collapses. (Runs only while the feature is active.)
+  // Window shrinks after the width was chosen → clamp the DISPLAYED width so
+  // the products pane never collapses — but never persist that clamp: the saved
+  // preference survives, and re-growing the window restores it automatically.
   useEffect(() => {
     if (!active) return;
     const onResize = () => {
       if (drag.current) return; // live drags clamp per-move already
-      const w = clampCartWidth(liveW.current);
-      if (w !== liveW.current) commit(w);
+      apply(clampCartWidth(widthPref.current));
     };
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
@@ -267,9 +272,10 @@ function useCartResize(enabled: boolean) {
 
   return {
     active, width, dragging, gridRef,
-    // The grid reads the LIVE width from the CSS var; React only re-seeds the var
-    // when the committed width changes (and after any unrelated re-render).
-    gridStyle: active ? ({ gridTemplateColumns: "minmax(0,1fr) var(--cart-w)", "--cart-w": `${width}px` } as React.CSSProperties) : undefined,
+    // The grid reads the LIVE width from the CSS var; React re-seeds the var on
+    // re-renders with the DISPLAY-clamped preference (never wider than the
+    // current viewport allows, never persisted).
+    gridStyle: active ? ({ gridTemplateColumns: "minmax(0,1fr) var(--cart-w)", "--cart-w": `${clampCartWidth(width)}px` } as React.CSSProperties) : undefined,
     handleProps: { onPointerDown, onPointerMove, onPointerUp: endDrag, onPointerCancel: endDrag, onDoubleClick: reset, onKeyDown },
   };
 }

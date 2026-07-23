@@ -235,6 +235,15 @@ export async function hydrateClinicPrefs(): Promise<void> {
         { dial_code: local.dial_code, logo_url: local.logo_url, social_facebook: local.social_facebook, social_instagram: local.social_instagram, clinic_name: local.clinic_name },
         { onConflict: "clinic_id" },
       );
+      // The seed payload can't carry the boolean opt-ins (one missing column
+      // would fail the whole upsert on an un-migrated DB). Queue any that are
+      // locally enabled as pending — the resync below pushes each patch
+      // separately, so the seeded row's false defaults can't clobber them.
+      const boolPatch: Partial<ClinicPrefs> = {};
+      if (local.pre_sale_print) boolPatch.pre_sale_print = true;
+      if (local.override_enabled) boolPatch.override_enabled = true;
+      if (local.resizable_cart) boolPatch.resizable_cart = true;
+      if (Object.keys(boolPatch).length) setPendingPrefs({ ...readPendingPrefs(), ...boolPatch });
     }
     // Unconfirmed pref writes (e.g. a toggle flipped before its column's
     // migration ran) beat the hydrated row and get re-pushed now.
