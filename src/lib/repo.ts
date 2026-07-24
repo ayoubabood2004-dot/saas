@@ -4,7 +4,7 @@
 import { loadDB, saveDB } from "./demoStore";
 import { supabase } from "./supabase";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, AppointmentStatus, TreatmentEntry, Admission, Branch, Reminder, Product, Company, CompanySection, Purchase, PurchaseItem, PurchaseDraftLine, PurchaseMeta, Courier, DeliveryOrder, Invoice, InvoiceItem, CheckoutItem, SaleMeta, Customer, DiscountType, PaymentMethod, PaymentSplit, WhatsAppMessage, AuditEntry, LoginEvent, PetNote, Expense, ClinicVisit } from "@/types";
+import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, AppointmentStatus, TreatmentEntry, Admission, Branch, Reminder, Product, Company, CompanySection, Purchase, PurchaseItem, PurchaseDraftLine, PurchaseMeta, Courier, DeliveryOrder, PetMovement, DemoDB, Invoice, InvoiceItem, CheckoutItem, SaleMeta, Customer, DiscountType, PaymentMethod, PaymentSplit, WhatsAppMessage, AuditEntry, LoginEvent, PetNote, Expense, ClinicVisit } from "@/types";
 import { uid, uuid, ageMonths } from "./utils";
 
 /** Sort key for a case/admission — newest first. Prefers the precise `created_at`
@@ -23,6 +23,13 @@ export function resolveDiscount(subtotal: number, type: DiscountType | null | un
 
 /** Demo-store sale core: create the invoice + its items and decrement stock. Shared by
  *  the quick POS checkout and the retail checkout (which adds customer/discount/payment). */
+/** Append one movement event (demo mirror of the 0070 server trigger). Caller saves. */
+function pushMovementLocal(db: DemoDB, m: Omit<PetMovement, "id" | "at" | "created_at">): void {
+  if (!db.petMovements) db.petMovements = [];
+  const now = new Date().toISOString();
+  db.petMovements.push({ ...m, id: uid("mov"), at: now, created_at: now });
+}
+
 function createInvoiceLocal(items: CheckoutItem[], meta?: SaleMeta): Invoice {
   const db = loadDB();
   if (!db.products) db.products = [];
@@ -528,6 +535,9 @@ const demoRepo = {
     // mirrors the newest-first fetch — the new case shows at the top instantly.
     const adm: Admission = { created_at: new Date().toISOString(), ...input, id: uid("adm") };
     db.admissions.unshift(adm);
+    // Mirror the production trigger: every admission writes an 'admitted' event
+    // to the per-animal movement trail (سجل الحركات).
+    pushMovementLocal(db, { pet_id: adm.pet_id, admission_id: adm.id, event: "admitted", to_kind: adm.kind, to_cage: adm.cage ?? null });
     saveDB(db);
     return adm;
   },
@@ -536,9 +546,29 @@ const demoRepo = {
     const db = loadDB();
     const adm = db.admissions.find((a) => a.id === id);
     if (adm) {
+      const before = { status: adm.status, kind: adm.kind, cage: adm.cage ?? null };
       Object.assign(adm, patch);
+      // Mirror the production trigger (migration 0070) exactly — see its rules.
+      if (before.status === "active" && adm.status === "discharged") {
+        pushMovementLocal(db, { pet_id: adm.pet_id, admission_id: adm.id, event: "discharged", from_kind: adm.kind });
+      } else if (before.status === "discharged" && adm.status === "active") {
+        pushMovementLocal(db, { pet_id: adm.pet_id, admission_id: adm.id, event: "admitted", to_kind: adm.kind, to_cage: adm.cage ?? null });
+      }
+      if (adm.kind !== before.kind && adm.status === "active" && before.status === "active") {
+        pushMovementLocal(db, { pet_id: adm.pet_id, admission_id: adm.id, event: "transferred", from_kind: before.kind, to_kind: adm.kind });
+      }
+      if ((adm.cage ?? null) !== before.cage && adm.status === "active" && before.status === "active") {
+        pushMovementLocal(db, { pet_id: adm.pet_id, admission_id: adm.id, event: "cage_changed", from_cage: before.cage, to_cage: adm.cage ?? null });
+      }
       saveDB(db);
     }
+  },
+
+  /** The animal's movement trail — newest first (سجل حركات الحيوان). */
+  async listPetMovements(petId: string): Promise<PetMovement[]> {
+    return (loadDB().petMovements ?? [])
+      .filter((m) => m.pet_id === petId)
+      .sort((a, b) => b.at.localeCompare(a.at));
   },
 
   /** Branches — the clinic's physical locations. Main branch first, then by age. */
@@ -1315,6 +1345,9 @@ const supabaseRepo: typeof demoRepo = {
     const { branch_id, ...rest } = input;
     const row = branch_id ? { ...rest, branch_id } : rest;
     return need<Admission>(await sbc().from("admissions").insert(row).select().single());
+  },
+  async listPetMovements(petId) {
+    return listOf<PetMovement>(await sbc().from("pet_movements").select("*").eq("pet_id", petId).order("at", { ascending: false }));
   },
   async updateAdmission(id, patch) {
     ok(await sbc().from("admissions").update(patch).eq("id", id));

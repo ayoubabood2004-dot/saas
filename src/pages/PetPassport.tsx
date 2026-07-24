@@ -8,9 +8,10 @@ import {
   Share2, Copy, Globe, PawPrint, Repeat, Columns2, X, Calendar,
   Utensils, Fingerprint, Cake, Heart, Scissors, Users, UserPlus, User, Phone, Mail, Pencil,
   Scale, Sparkles, Loader2, NotebookPen, CalendarClock, FileSignature, ClipboardList, Table2, LayoutList,
+  History, LogIn, LogOut, ArrowLeftRight,
 } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
-import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, TreatmentEntry, Admission, FoodType, DietPlan, Appointment, Reminder, MedicalAssessment, PatientCondition, Species, Sex, PetNote, ClinicVisit } from "@/types";
+import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, TreatmentEntry, Admission, FoodType, DietPlan, Appointment, Reminder, MedicalAssessment, PatientCondition, Species, Sex, PetNote, ClinicVisit, PetMovement } from "@/types";
 import { VisitsPanel } from "@/components/VisitsPanel";
 import { SpeciesPicker, SexPicker, AgeInput, BreedPicker, ColorPicker } from "@/components/PetFields";
 import { repo } from "@/lib/repo";
@@ -1696,6 +1697,96 @@ function TreatmentDoseRow({ tx, isOwner, status, locked, onGiven, onRepeat, onRe
   );
 }
 
+/** سجل الحركات — the animal's precise in/out/transfer trail, from the immutable
+ *  pet_movements events (server trigger in production, demo mirror locally). */
+function MovementsCard({ petId, admissions }: { petId: string; admissions: Admission[] }) {
+  const { t, i18n } = useTranslation();
+  const [moves, setMoves] = useState<PetMovement[] | null>(null);
+  const [expanded, setExpanded] = useState(false);
+
+  // Reload whenever the admissions list changes — every movement source
+  // (admit / discharge / transfer / cage) also mutates an admission.
+  const admKey = admissions.map((a) => `${a.id}:${a.status}:${a.kind}:${a.cage ?? ""}`).join("|");
+  useEffect(() => {
+    let alive = true;
+    repo.listPetMovements(petId).then((m) => { if (alive) setMoves(m); }).catch(() => { if (alive) setMoves([]); });
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [petId, admKey]);
+
+  const KIND_AR: Record<string, string> = {
+    treatment: t("records.kindTreatment", "علاج يومي"),
+    boarding: t("records.kindBoarding", "فندقة"),
+    treatment_boarding: t("records.kindCareBoarding", "فندقة علاجية"),
+  };
+  const kindOf = (k?: string | null) => (k ? KIND_AR[k] ?? k : "—");
+
+  /** Stay length in days for a discharge — from its admission's 'admitted' event. */
+  const stayDays = (m: PetMovement): number | null => {
+    if (m.event !== "discharged" || !m.admission_id || !moves) return null;
+    const start = moves.find((x) => x.admission_id === m.admission_id && x.event === "admitted");
+    if (!start) return null;
+    return Math.max(1, Math.round((new Date(m.at).getTime() - new Date(start.at).getTime()) / 86400000));
+  };
+
+  if (moves === null) return null; // loading — the card appears when data is ready
+  if (moves.length === 0) return null; // nothing recorded yet — stay out of the way
+
+  const shown = expanded ? moves : moves.slice(0, 6);
+  const META: Record<PetMovement["event"], { icon: typeof LogIn; cls: string; dot: string }> = {
+    admitted: { icon: LogIn, cls: "bg-success-50 text-success-700 dark:bg-success-500/15 dark:text-success-300", dot: "bg-success-500" },
+    discharged: { icon: LogOut, cls: "bg-danger-50 text-danger-600 dark:bg-danger-500/15 dark:text-danger-300", dot: "bg-danger-500" },
+    transferred: { icon: ArrowLeftRight, cls: "bg-brand-50 text-brand-700 dark:bg-brand-500/15 dark:text-brand-300", dot: "bg-brand-500" },
+    cage_changed: { icon: BedDouble, cls: "bg-sky-50 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300", dot: "bg-sky-500" },
+  };
+  const label = (m: PetMovement): string => {
+    switch (m.event) {
+      case "admitted": return t("movements.admitted", { kind: kindOf(m.to_kind), defaultValue: "دخل العيادة — {{kind}}" }) + (m.to_cage ? ` · ${t("records.cage", "قفص")} ${m.to_cage}` : "");
+      case "discharged": {
+        const d = stayDays(m);
+        return t("movements.discharged", "خرج من العيادة") + (d != null ? ` · ${t("movements.stay", { n: d, defaultValue: "المدة {{n}} يوم" })}` : "");
+      }
+      case "transferred": return t("movements.transferred", { from: kindOf(m.from_kind), to: kindOf(m.to_kind), defaultValue: "انتقل: {{from}} ← {{to}}" });
+      case "cage_changed": return t("movements.cage", { from: m.from_cage ?? "—", to: m.to_cage ?? "—", defaultValue: "تغيير القفص: {{from}} ← {{to}}" });
+    }
+  };
+
+  return (
+    <div className="card p-4">
+      <h4 className="mb-3 flex items-center gap-2 text-sm font-bold text-ink">
+        <History size={16} className="text-brand-600" /> {t("movements.title", "سجل الحركات")}
+        <span className="chip bg-surface-2 text-2xs font-semibold text-ink-muted">{moves.length}</span>
+      </h4>
+      <div className="relative space-y-0 ps-4">
+        {/* the timeline rail */}
+        <span className="absolute bottom-2 top-2 w-px bg-line ltr:left-[7px] rtl:right-[7px]" aria-hidden />
+        {shown.map((m) => {
+          const Meta = META[m.event];
+          const Icon = Meta.icon;
+          return (
+            <div key={m.id} className="relative flex items-start gap-2.5 py-1.5">
+              <span className={cn("absolute top-3 h-2 w-2 rounded-full ring-2 ring-surface-1 ltr:-left-[13px] rtl:-right-[13px]", Meta.dot)} aria-hidden />
+              <span className={cn("grid h-7 w-7 shrink-0 place-items-center rounded-lg", Meta.cls)}><Icon size={14} /></span>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold text-ink">{label(m)}</p>
+                <p className="text-2xs text-ink-subtle tabular-nums">
+                  {formatDate(m.at.slice(0, 10), i18n.language)} · {formatTime(m.at, i18n.language)}
+                </p>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      {moves.length > 6 && (
+        <button onClick={() => { playTap(); setExpanded((v) => !v); }} className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-brand-600 transition hover:text-brand-700">
+          <ChevronDown size={14} className={cn("transition", expanded && "rotate-180")} />
+          {expanded ? t("movements.showLess", "عرض أقل") : t("movements.showAll", { n: moves.length, defaultValue: "عرض الكل ({{n}})" })}
+        </button>
+      )}
+    </div>
+  );
+}
+
 function TreatmentTab({ pet, treatments, admissions, onChanged, canEdit, isOwner }: { pet: Pet; treatments: TreatmentEntry[]; admissions: Admission[]; onChanged: () => void; canEdit: boolean; isOwner: boolean }) {
   const { t, i18n } = useTranslation();
   const { user } = useAuth();
@@ -1812,6 +1903,9 @@ function TreatmentTab({ pet, treatments, admissions, onChanged, canEdit, isOwner
         )}
         {canEdit && locked && <p className="mt-2 text-xs text-warn-600">{t("treatment.locked")}</p>}
       </div>
+
+      {/* سجل الحركات — exact entry/exit/transfer history for THIS animal */}
+      <MovementsCard petId={pet.id} admissions={admissions} />
 
       {days.length === 0 ? (
         <div className="card p-6 text-center text-ink-subtle">{t("treatment.none")}</div>

@@ -2198,5 +2198,15 @@
     "lockNow": "قفل الجهاز الآن",
     "lockConfirm": "اضغط للتأكيد — قفل الآن",
     "goSettings": "اذهب للإعدادات لتعيين الرمز"
+  },
+  "movements": {
+    "title": "سجل الحركات",
+    "admitted": "دخل العيادة — {{kind}}",
+    "discharged": "خرج من العيادة",
+    "stay": "المدة {{n}} يوم",
+    "transferred": "انتقل: {{from}} ← {{to}}",
+    "cage": "تغيير القفص: {{from}} ← {{to}}",
+    "showAll": "عرض الكل ({{n}})",
+    "showLess": "عرض أقل"
   }
 }

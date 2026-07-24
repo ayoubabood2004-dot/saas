@@ -566,6 +566,26 @@ export interface PurchaseItem {
   created_at: string;
 }
 
+/* ---------------- Pet movements (سجل حركات الحيوان) ---------------- */
+export type PetMovementEvent = "admitted" | "discharged" | "transferred" | "cage_changed";
+
+/** One immutable movement event in an animal's clinic history — written
+ *  automatically whenever an admission is created or its status/kind/cage
+ *  changes (server trigger in production; mirrored by the demo adapter). */
+export interface PetMovement {
+  id: string;
+  clinic_id?: string | null;
+  pet_id: string;
+  admission_id?: string | null;
+  at: string; // ISO — the exact moment of the movement
+  event: PetMovementEvent;
+  from_kind?: AdmissionKind | null;
+  to_kind?: AdmissionKind | null;
+  from_cage?: string | null;
+  to_cage?: string | null;
+  created_at: string;
+}
+
 /* ---------------- Delivery (التوصيل — الدفع عند الاستلام) ---------------- */
 /** Lifecycle of a cash-on-delivery order:
  *  preparing (قيد التجهيز) → out (بالطريق) → delivered (مستلم) | returned (راجع). */
@@ -701,6 +721,7 @@ export interface DemoDB {
   purchaseItems?: PurchaseItem[];
   couriers?: Courier[];
   deliveryOrders?: DeliveryOrder[];
+  petMovements?: PetMovement[];
   waMessages?: WhatsAppMessage[];
   branches?: Branch[];
 }

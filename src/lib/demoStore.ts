@@ -1,4 +1,4 @@
-import type { DemoDB, Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, TreatmentEntry, Admission, Reminder, Product, Company, CompanySection, Courier, ClinicVisit } from "@/types";
+import type { DemoDB, Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, TreatmentEntry, Admission, Reminder, Product, Company, CompanySection, Courier, PetMovement, ClinicVisit } from "@/types";
 import { uid } from "./utils";
 
 const KEY = "vp_demo_db_v12";
@@ -218,6 +218,15 @@ function seed(): DemoDB {
     { id: uid("adm"), pet_id: bobby.id, kind: "treatment", status: "discharged", admitted_on: iso(-180), discharged_on: iso(-179), reason: "Wellness observation" },
   ];
 
+  // Movement trail (سجل الحركات) — backfilled from the seeded admissions, the
+  // same events the 0070 trigger would have written.
+  const petMovements: PetMovement[] = [];
+  for (const a of admissions) {
+    petMovements.push({ id: uid("mov"), pet_id: a.pet_id, admission_id: a.id, at: `${a.admitted_on}T09:00:00.000Z`, event: "admitted", to_kind: a.kind, to_cage: a.cage ?? null, created_at: new Date().toISOString() });
+    if (a.discharged_on) petMovements.push({ id: uid("mov"), pet_id: a.pet_id, admission_id: a.id, at: `${a.discharged_on}T17:00:00.000Z`, event: "discharged", from_kind: a.kind, created_at: new Date().toISOString() });
+  }
+
+
   const appointments: Appointment[] = [
     {
       id: uid("apt"),
@@ -317,7 +326,7 @@ function seed(): DemoDB {
 
   return {
     pets: [bobby, luna, francisco, rocky, bella, coco, max],
-    weightLogs, vaccinations, visits, clinicVisits, media, appointments, treatments, admissions, reminders, couriers,
+    weightLogs, vaccinations, visits, clinicVisits, media, appointments, treatments, admissions, reminders, couriers, petMovements,
     products, companies, companySections, invoices: [], invoiceItems: [],
   };
 }

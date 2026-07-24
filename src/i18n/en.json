@@ -2201,5 +2201,15 @@
     "lockNow": "Lock this device now",
     "lockConfirm": "Tap to confirm — lock now",
     "goSettings": "Go to Settings to set a PIN"
+  },
+  "movements": {
+    "title": "Movement log",
+    "admitted": "Entered the clinic — {{kind}}",
+    "discharged": "Left the clinic",
+    "stay": "{{n}}-day stay",
+    "transferred": "Moved: {{from}} → {{to}}",
+    "cage": "Cage change: {{from}} → {{to}}",
+    "showAll": "Show all ({{n}})",
+    "showLess": "Show less"
   }
 }
