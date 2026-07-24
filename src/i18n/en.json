@@ -682,7 +682,8 @@
     "bulkDone": "Added {{n}} product(s)",
     "bulkPartial": "Added {{done}}, {{failed}} failed — the remaining lines are ready to retry",
     "bulkDupBarcode": "Barcode {{code}} is repeated in the list",
-    "bulkBarcodeExists": "Barcode {{code}} already belongs to \"{{name}}\" — use a purchase invoice to restock it"
+    "bulkBarcodeExists": "Barcode {{code}} already belongs to \"{{name}}\" — use a purchase invoice to restock it",
+    "stockReport": "Print stock report"
   },
   "role": {
     "admin": "Clinic",

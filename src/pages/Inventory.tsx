@@ -4,7 +4,7 @@ import { motion } from "framer-motion";
 import {
   Barcode, Package, Trash2, Search, Building2, Plus, ChevronLeft, ArrowRight, ArrowLeft,
   TrendingUp, AlertTriangle, CalendarClock, Pencil, PackagePlus, Boxes, Layers, Wallet, ShoppingBag, FolderTree,
-  Check, ListPlus,
+  Check, ListPlus, Printer,
 } from "lucide-react";
 import type { Product, ProductCategory, Company, CompanySection } from "@/types";
 import { PurchasesTab, PurchaseBuilderModal } from "@/components/inventory/Purchases";
@@ -18,6 +18,7 @@ import { Button, Badge, useToast, Skeleton } from "@/components/ui";
 import { cn, formatDate, money } from "@/lib/utils";
 import { withTimeout, describeDbError } from "@/lib/errors";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
+import { openStockReport } from "@/lib/stockReportPrint";
 import { staggerContainer, staggerItem } from "@/lib/motion";
 
 const LOW_STOCK = 5;
@@ -79,12 +80,18 @@ export function Inventory() {
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-6">
-      <div className="mb-5 flex items-center gap-3">
+      <div className="mb-5 flex flex-wrap items-center gap-3">
         <span className="grid h-11 w-11 place-items-center rounded-2xl bg-brand-grad text-white shadow-soft"><Boxes size={24} /></span>
-        <div>
+        <div className="me-auto">
           <h1 className="font-display text-2xl font-extrabold text-ink">{t("pos.title", "Inventory")}</h1>
           <p className="text-sm text-ink-subtle">{t("pos.subtitle", "Stock, products & low-stock alerts — for this clinic only.")}</p>
         </div>
+        {/* Full printable stock-count sheet (تقرير جرد) — matches the on-screen value card. */}
+        {!loading && products.length > 0 && (
+          <Button variant="secondary" leftIcon={<Printer size={16} />} onClick={() => { playTap(); openStockReport(products, companies, sections); }}>
+            {t("pos.stockReport", "طباعة تقرير جرد")}
+          </Button>
+        )}
       </div>
 
       {/* KPIs */}
