@@ -4,6 +4,7 @@ import { isSupabaseConfigured, supabase } from "@/lib/supabase";
 import { withTimeout } from "@/lib/errors";
 import { setActiveClinicId, clearActiveClinic, getActiveClinicId, type ClinicAccount } from "@/lib/clinics";
 import { hydrateClinicConfig, hydratedFor } from "@/lib/clinicConfig";
+import { applyFontScale } from "@/lib/fontScale";
 import { leaveClinic as apiLeaveClinic } from "@/lib/invites";
 import { repo } from "@/lib/repo";
 import { endElevationOnLogout } from "@/lib/managerOverride";
@@ -306,7 +307,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     else if (resolvedActive === "owner") clearActiveClinic();
     if (resolvedActive === "clinic") {
       const key = getActiveClinicId();
-      if (key !== hydratedFor()) void hydrateClinicConfig(key);
+      if (key !== hydratedFor()) void hydrateClinicConfig(key).then(applyFontScale);
     }
   }, [resolvedActive, raw]);
 

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Settings as SettingsIcon, RotateCcw, Check, Volume2, VolumeX, Plus, Trash2, Pill, PawPrint, Stethoscope, Tag, FolderPlus, BadgePercent, IdCard, Mail, UserCog, Image as ImageIcon, Upload, Facebook, Instagram, Building2, Printer } from "lucide-react";
+import { Settings as SettingsIcon, RotateCcw, Check, Volume2, VolumeX, Plus, Trash2, Pill, PawPrint, Stethoscope, Tag, FolderPlus, BadgePercent, IdCard, Mail, UserCog, Image as ImageIcon, Upload, Facebook, Instagram, Building2, Printer, Type } from "lucide-react";
 import type { Species, Service, ServiceCategory, ServiceCatalog, Product } from "@/types";
 import { useAuth } from "@/contexts/AuthContext";
 import { usePermissions } from "@/hooks/usePermissions";
@@ -13,7 +13,8 @@ import { getServiceCatalog, addServiceCategory, removeServiceCategory, addServic
 import { DEFAULT_RANGES, VITAL_KEYS, CBC_KEYS, rangeFor, type VitalKey } from "@/lib/vitals";
 
 const ALL_KEYS: VitalKey[] = [...VITAL_KEYS, ...CBC_KEYS];
-import { setVitalOverride, clearVitalOverrides, getDialCode, setDialCode, getClinicLogo, setClinicLogo, getClinicSocials, setClinicSocials, getClinicName, setClinicName, getPreSalePrint, setPreSalePrint, getResizableCart, setResizableCart } from "@/lib/settings";
+import { setVitalOverride, clearVitalOverrides, getDialCode, setDialCode, getClinicLogo, setClinicLogo, getClinicSocials, setClinicSocials, getClinicName, setClinicName, getPreSalePrint, setPreSalePrint, getResizableCart, setResizableCart, getFontScaleEnabled, setFontScaleEnabled } from "@/lib/settings";
+import { FONT_SCALES, getFontScale, setFontScale, applyFontScale, type FontScaleId } from "@/lib/fontScale";
 import { prepareUpload } from "@/lib/image";
 import { isSoundEnabled, setSoundEnabled, playSuccess, playTap } from "@/lib/sounds";
 import { getClinicMeds, addClinicMed, removeClinicMed, allMedTypes, allMedicationNames, BUILTIN_MEDICATIONS, type ClinicMed } from "@/lib/meds";
@@ -150,6 +151,7 @@ export function Settings() {
       {canSettings && <ClinicIdentity />}
       {canSettings && <ManagerOverrideCard />}
       {canSettings && <CashierOptions />}
+      {canSettings && <FontScaleOptions />}
       {canSettings && <BranchesManager />}
       {canSettings && <ServiceSettings />}
       {canSettings && <PromotionsManager clinicId={user?.clinic_id ?? user?.id} />}
@@ -501,6 +503,82 @@ function CashierOptions() {
           onToggle={toggleResizableCart}
         />
       </div>
+    </div>
+  );
+}
+
+/* ------------- UI font scale (حجم الخط) — opt-in, per-device size ---------- */
+function FontScaleOptions() {
+  const { t } = useTranslation();
+  const { can } = usePermissions();
+  const [enabled, setEnabled] = useState(getFontScaleEnabled());
+  const [scale, setScale] = useState<FontScaleId>(getFontScale());
+
+  if (!can("manageSettings")) return null;
+
+  const toggle = () => {
+    const next = !enabled;
+    setEnabled(next);
+    setFontScaleEnabled(next);
+    applyFontScale(); // live: turning off restores the stock size instantly
+    if (next) playSuccess(); else playTap();
+  };
+  const pick = (id: FontScaleId) => {
+    playTap();
+    setScale(id);
+    setFontScale(id); // applies instantly — the whole app resizes live
+  };
+
+  const LABELS: Record<FontScaleId, string> = {
+    compact: t("settings.fontScaleCompact", "صغير"),
+    normal: t("settings.fontScaleNormal", "افتراضي"),
+    large: t("settings.fontScaleLarge", "كبير"),
+    xlarge: t("settings.fontScaleXlarge", "أكبر"),
+  };
+  // The sample glyph's size mirrors each option's real scale.
+  const SAMPLE_PX: Record<FontScaleId, number> = { compact: 14, normal: 16, large: 18, xlarge: 20 };
+
+  return (
+    <div className="card p-5 mb-4">
+      <h2 className="font-bold text-ink mb-1 flex items-center gap-2"><Type size={18} className="text-brand-600" /> {t("settings.fontScale", "حجم الخط")}</h2>
+      <p className="text-xs text-ink-subtle mb-4">{t("settings.fontScaleSectionHint", "للشاشات الصغيرة أو النظر المجهد — كل النصوص والمسافات تكبر بتناسق كامل دون أن يختل أي تخطيط.")}</p>
+      <CashierToggle
+        label={t("settings.fontScaleToggle", "تفعيل تغيير حجم الخط")}
+        hint={t("settings.fontScaleToggleHint", "اختر الحجم الذي يناسب شاشتك — الحجم المختار يُحفَظ على هذا الجهاز فقط، فكل جهاز في العيادة يقدر يختار ما يريحه.")}
+        checked={enabled}
+        onToggle={toggle}
+      />
+      {enabled && (
+        <div className="mt-4 space-y-3 border-t border-line pt-4">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            {FONT_SCALES.map((s) => {
+              const active = scale === s.id;
+              return (
+                <button
+                  key={s.id}
+                  onClick={() => pick(s.id)}
+                  aria-pressed={active}
+                  className={cn(
+                    "flex flex-col items-center gap-1 rounded-2xl border px-3 py-3 transition",
+                    active
+                      ? "border-brand-500 bg-brand-50 shadow-soft ring-1 ring-brand-300 dark:bg-brand-500/10 dark:ring-brand-500/40"
+                      : "border-line bg-surface-1 hover:border-brand-300 hover:bg-surface-2",
+                  )}
+                >
+                  {/* Fixed-px sample so the four options keep their relative sizes
+                      even while the app itself is scaled. */}
+                  <span className={cn("font-display font-extrabold leading-none", active ? "text-brand-600 dark:text-brand-300" : "text-ink")} style={{ fontSize: `${SAMPLE_PX[s.id]}px` }}>أ</span>
+                  <span className={cn("text-xs font-semibold", active ? "text-brand-700 dark:text-brand-300" : "text-ink-muted")}>{LABELS[s.id]}</span>
+                  <span className="text-2xs text-ink-subtle tabular-nums" dir="ltr">{s.pct}%</span>
+                </button>
+              );
+            })}
+          </div>
+          <p className="rounded-xl bg-surface-2 px-3 py-2 text-sm text-ink-muted">
+            {t("settings.fontScalePreview", "معاينة حيّة: هذا النص وكل الواجهة يتغير حجمهما فوراً حسب اختيارك.")}
+          </p>
+        </div>
+      )}
     </div>
   );
 }

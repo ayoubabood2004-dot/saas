@@ -9,6 +9,7 @@ import "./index.css";
 import { emitGlobalToast } from "./lib/globalToast";
 import { pruneStaleStorage } from "./lib/demoStore";
 import { installDigitNormalizer } from "./lib/digits";
+import { applyFontScale } from "./lib/fontScale";
 
 // Western numerals everywhere: typing or pasting Arabic-Indic digits into ANY
 // input converts them to 0-9 on the fly — no data is ever lost to a digit-shape
@@ -19,6 +20,11 @@ installDigitNormalizer();
 // base64 media) pile up and can exhaust the ~5 MB quota, after which writes throw
 // and the UI appears to hang. Clearing them keeps storage bounded across upgrades.
 pruneStaleStorage();
+
+// Apply the device's chosen UI font scale (حجم الخط) before first paint — the
+// local prefs mirror answers synchronously, so there's no size flash. Re-applied
+// after the clinic config hydrates in case the enable flag changed remotely.
+applyFontScale();
 
 // Safety net: surface otherwise-silent async failures (e.g. a database write that
 // hit a backend error and wasn't caught at the call site) as a toast instead of

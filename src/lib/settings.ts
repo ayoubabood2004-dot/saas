@@ -140,8 +140,8 @@ export function clearPetRanges(petId: string) {
 export const DEFAULT_DIAL_CODE = "+964"; // Iraq
 
 export interface ClinicSocials { facebook: string; instagram: string }
-interface ClinicPrefs { dial_code: string; logo_url: string | null; social_facebook: string; social_instagram: string; clinic_name: string; pre_sale_print: boolean; override_enabled: boolean; resizable_cart: boolean }
-const DEFAULT_PREFS: ClinicPrefs = { dial_code: DEFAULT_DIAL_CODE, logo_url: null, social_facebook: "", social_instagram: "", clinic_name: "", pre_sale_print: false, override_enabled: false, resizable_cart: false };
+interface ClinicPrefs { dial_code: string; logo_url: string | null; social_facebook: string; social_instagram: string; clinic_name: string; pre_sale_print: boolean; override_enabled: boolean; resizable_cart: boolean; font_scale_enabled: boolean }
+const DEFAULT_PREFS: ClinicPrefs = { dial_code: DEFAULT_DIAL_CODE, logo_url: null, social_facebook: "", social_instagram: "", clinic_name: "", pre_sale_print: false, override_enabled: false, resizable_cart: false, font_scale_enabled: false };
 
 const prefsKey = () => `vp_clinic_prefs_${getActiveClinicId()}`;
 const legacyDialKey = () => `vp_dial_code_${getActiveClinicId()}`;
@@ -226,6 +226,7 @@ export async function hydrateClinicPrefs(): Promise<void> {
         pre_sale_print: d.pre_sale_print ?? local.pre_sale_print,
         override_enabled: d.override_enabled ?? local.override_enabled,
         resizable_cart: d.resizable_cart ?? local.resizable_cart,
+        font_scale_enabled: d.font_scale_enabled ?? local.font_scale_enabled,
       };
     } else {
       // No row yet → migrate any local prefs up (or seed the default dial code).
@@ -243,6 +244,7 @@ export async function hydrateClinicPrefs(): Promise<void> {
       if (local.pre_sale_print) boolPatch.pre_sale_print = true;
       if (local.override_enabled) boolPatch.override_enabled = true;
       if (local.resizable_cart) boolPatch.resizable_cart = true;
+      if (local.font_scale_enabled) boolPatch.font_scale_enabled = true;
       if (Object.keys(boolPatch).length) setPendingPrefs({ ...readPendingPrefs(), ...boolPatch });
     }
     // Unconfirmed pref writes (e.g. a toggle flipped before its column's
@@ -340,4 +342,14 @@ export function getResizableCart(): boolean {
 }
 export function setResizableCart(v: boolean) {
   patchPrefs({ resizable_cart: v }, "resizable-cart-set");
+}
+
+/** Opt-in UI font scaling (حجم الخط): reveals the size picker in Settings
+ *  (migration 0068). The chosen size is a per-device preference — only this
+ *  enable flag is clinic-wide. */
+export function getFontScaleEnabled(): boolean {
+  return !!prefs().font_scale_enabled;
+}
+export function setFontScaleEnabled(v: boolean) {
+  patchPrefs({ font_scale_enabled: v }, "font-scale-enabled-set");
 }

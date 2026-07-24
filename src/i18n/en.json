@@ -677,7 +677,16 @@
     "preSalePrint": "Print the invoice before completing the sale",
     "preSalePrintHint": "Adds a \"pro-forma\" print button to the sale screen so the customer can review the bill before paying — nothing is recorded as an invoice and stock is untouched.",
     "resizableCart": "Resizable cart",
-    "resizableCartHint": "On wide screens: drag the cart's edge to make it wider or narrower — the preferred width is saved on this device, and double-clicking the edge restores the default size."
+    "resizableCartHint": "On wide screens: drag the cart's edge to make it wider or narrower — the preferred width is saved on this device, and double-clicking the edge restores the default size.",
+    "fontScale": "Font size",
+    "fontScaleSectionHint": "For small screens or tired eyes — all text and spacing scale together in perfect proportion without breaking any layout.",
+    "fontScaleToggle": "Enable font scaling",
+    "fontScaleToggleHint": "Pick the size that suits your screen — the chosen size is saved on this device only, so every device in the clinic can pick what reads best.",
+    "fontScaleCompact": "Small",
+    "fontScaleNormal": "Default",
+    "fontScaleLarge": "Large",
+    "fontScaleXlarge": "Extra large",
+    "fontScalePreview": "Live preview: this text and the whole interface resize instantly as you choose."
   },
   "auth": {
     "signIn": "Sign in",
