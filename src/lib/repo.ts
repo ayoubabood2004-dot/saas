@@ -4,7 +4,7 @@
 import { loadDB, saveDB } from "./demoStore";
 import { supabase } from "./supabase";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, AppointmentStatus, TreatmentEntry, Admission, Branch, Reminder, Product, Company, CompanySection, Purchase, PurchaseItem, PurchaseDraftLine, PurchaseMeta, Invoice, InvoiceItem, CheckoutItem, SaleMeta, Customer, DiscountType, PaymentMethod, PaymentSplit, WhatsAppMessage, AuditEntry, LoginEvent, PetNote, Expense, ClinicVisit } from "@/types";
+import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, AppointmentStatus, TreatmentEntry, Admission, Branch, Reminder, Product, Company, CompanySection, Purchase, PurchaseItem, PurchaseDraftLine, PurchaseMeta, Courier, DeliveryOrder, Invoice, InvoiceItem, CheckoutItem, SaleMeta, Customer, DiscountType, PaymentMethod, PaymentSplit, WhatsAppMessage, AuditEntry, LoginEvent, PetNote, Expense, ClinicVisit } from "@/types";
 import { uid, uuid, ageMonths } from "./utils";
 
 /** Sort key for a case/admission — newest first. Prefers the precise `created_at`
@@ -776,6 +776,46 @@ const demoRepo = {
     return createInvoiceLocal(items);
   },
 
+  /* ---------------- Delivery (التوصيل — الدفع عند الاستلام) ---------------- */
+  async listCouriers(_clinicId?: string): Promise<Courier[]> {
+    return (loadDB().couriers ?? []).slice().sort((a, b) => a.name.localeCompare(b.name));
+  },
+  async createCourier(input: Omit<Courier, "id" | "created_at">): Promise<Courier> {
+    const db = loadDB();
+    if (!db.couriers) db.couriers = [];
+    const c: Courier = { ...input, id: uid("cur"), created_at: new Date().toISOString() };
+    db.couriers.push(c);
+    saveDB(db);
+    return c;
+  },
+  async updateCourier(id: string, patch: Partial<Courier>): Promise<Courier | undefined> {
+    const db = loadDB();
+    const c = (db.couriers ?? []).find((x) => x.id === id);
+    if (!c) return undefined;
+    Object.assign(c, patch);
+    saveDB(db);
+    return c;
+  },
+  async listDeliveryOrders(_clinicId?: string): Promise<DeliveryOrder[]> {
+    return (loadDB().deliveryOrders ?? []).slice().sort((a, b) => b.created_at.localeCompare(a.created_at));
+  },
+  async createDeliveryOrder(input: Omit<DeliveryOrder, "id" | "created_at">): Promise<DeliveryOrder> {
+    const db = loadDB();
+    if (!db.deliveryOrders) db.deliveryOrders = [];
+    const o: DeliveryOrder = { ...input, id: uid("dlv"), created_at: new Date().toISOString() };
+    db.deliveryOrders.push(o);
+    saveDB(db);
+    return o;
+  },
+  async updateDeliveryOrder(id: string, patch: Partial<DeliveryOrder>): Promise<DeliveryOrder | undefined> {
+    const db = loadDB();
+    const o = (db.deliveryOrders ?? []).find((x) => x.id === id);
+    if (!o) return undefined;
+    Object.assign(o, patch);
+    saveDB(db);
+    return o;
+  },
+
   /* ---------------- Retail & advanced invoicing ---------------- */
   async retailCheckout(items: CheckoutItem[], meta: SaleMeta): Promise<Invoice> {
     return createInvoiceLocal(items, meta);
@@ -956,6 +996,10 @@ const DEMO_ACTIVITY_MAP: Record<string, { entity: string; action: "INSERT" | "UP
   updateCompanySection: { entity: "company_sections", action: "UPDATE" },
   deleteCompanySection: { entity: "company_sections", action: "DELETE" },
   recordPurchase: { entity: "purchases", action: "INSERT" },
+  createCourier: { entity: "couriers", action: "INSERT" },
+  updateCourier: { entity: "couriers", action: "UPDATE" },
+  createDeliveryOrder: { entity: "delivery_orders", action: "INSERT" },
+  updateDeliveryOrder: { entity: "delivery_orders", action: "UPDATE" },
   checkout: { entity: "invoices", action: "INSERT" },
   retailCheckout: { entity: "invoices", action: "INSERT" },
   settleInvoice: { entity: "invoices", action: "UPDATE" },
@@ -1385,6 +1429,30 @@ const supabaseRepo: typeof demoRepo = {
   async checkout(items) {
     // Atomic on the server (creates invoice + items, decrements stock, computes profit).
     return need<Invoice>(await sbc().rpc("pos_checkout", { p_items: items }));
+  },
+
+  /* ---------------- Delivery (التوصيل — الدفع عند الاستلام) ---------------- */
+  async listCouriers(clinicId) {
+    let q = sbc().from("couriers").select("*").order("name", { ascending: true });
+    if (clinicId) q = q.eq("clinic_id", clinicId);
+    return listOf<Courier>(await q);
+  },
+  async createCourier(input) {
+    return need<Courier>(await sbc().from("couriers").insert(input).select().single());
+  },
+  async updateCourier(id, patch) {
+    return maybe<Courier>(await sbc().from("couriers").update(patch).eq("id", id).select().maybeSingle());
+  },
+  async listDeliveryOrders(clinicId) {
+    let q = sbc().from("delivery_orders").select("*").order("created_at", { ascending: false });
+    if (clinicId) q = q.eq("clinic_id", clinicId);
+    return listOf<DeliveryOrder>(await q);
+  },
+  async createDeliveryOrder(input) {
+    return need<DeliveryOrder>(await sbc().from("delivery_orders").insert(input).select().single());
+  },
+  async updateDeliveryOrder(id, patch) {
+    return maybe<DeliveryOrder>(await sbc().from("delivery_orders").update(patch).eq("id", id).select().maybeSingle());
   },
 
   /* ---------------- Retail & advanced invoicing ---------------- */

@@ -4,9 +4,9 @@ import { AnimatePresence, motion } from "framer-motion";
 import {
   Search, Barcode, Plus, Minus, Trash2, ShoppingCart, User, Phone, Tag, Percent,
   Banknote, CreditCard, ArrowLeftRight, CheckCircle2, Printer, Sparkles, TrendingUp, Package, PawPrint, X,
-  Stethoscope, Pencil, Pill, Syringe, CalendarClock, Wallet, StickyNote,
+  Stethoscope, Pencil, Pill, Syringe, CalendarClock, Wallet, StickyNote, Bike,
 } from "lucide-react";
-import type { Product, Invoice, InvoiceItem, CheckoutItem, SaleMeta, PaymentMethod, PaymentSplit, DiscountType, Customer, Service, ServiceCatalog, Species, Pet } from "@/types";
+import type { Product, Invoice, InvoiceItem, CheckoutItem, SaleMeta, PaymentMethod, PaymentSplit, DiscountType, Customer, Service, ServiceCatalog, Species, Pet, Courier } from "@/types";
 import { repo, resolveDiscount } from "@/lib/repo";
 import { phoneDigits } from "@/lib/phone";
 import { getServiceCatalog } from "@/lib/services";
@@ -358,6 +358,15 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
   // Explicit "دفع جزئي" mode — the cashier chose partial payment via the button
   // (a manually-typed shortfall still shows the same loud debt panel).
   const [partialMode, setPartialMode] = useState(false);
+  // ---- Delivery mode (توصيل — الدفع عند الاستلام) --------------------------
+  // The sale ships with a courier: stock is deducted now, but the money enters
+  // the system only when the courier hands it over (see the التوصيل tab).
+  const [deliveryOn, setDeliveryOn] = useState(false);
+  const [dCouriers, setDCouriers] = useState<Courier[] | null>(null); // null = not loaded yet
+  const [dCourierId, setDCourierId] = useState("");
+  const [dAddress, setDAddress] = useState("");
+  const [dFee, setDFee] = useState("");
+  const [dFeeToClinic, setDFeeToClinic] = useState(false);
   // Optional cashier / sales rep (staff id) — attached to the invoice for reports.
   const [cashierId, setCashierId] = useState<string | null>(draft0?.cashierId ?? null);
   const [busy, setBusy] = useState(false);
@@ -569,16 +578,37 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
       collectFull();
     }
   };
+
+  // ---- Delivery (توصيل) mode switches --------------------------------------
+  const enterDelivery = () => {
+    playTap();
+    setPartialMode(false);
+    setDeliveryOn(true);
+    setPaidEdited(true);
+    // COD default: nothing received now — the payment row becomes "المدفوع مقدماً".
+    setPayments([{ method: "cash", amount: 0 }]);
+    if (dCouriers === null) repo.listCouriers(clinicId).then(setDCouriers).catch(() => setDCouriers([]));
+  };
   const setPaidQuick = (amount: number) => {
     playTap();
     setPaidEdited(true);
     setPayments((ps) => ps.map((p, i) => (i === 0 ? { ...p, amount: Math.max(0, Math.round(amount)) } : p)));
   };
   // The partial panel shows for the explicit mode AND for a manually-typed
-  // shortfall, so the debt can never sneak through quietly.
-  const partialUi = partialMode || isCredit;
+  // shortfall, so the debt can never sneak through quietly. Delivery mode has
+  // its own panel — the COD balance is expected, not a quiet debt.
+  const partialUi = !deliveryOn && (partialMode || isCredit);
   // A debt must belong to someone — block checkout until the customer is named.
-  const needsDebtName = isCredit && !name.trim();
+  // A delivery order likewise always needs a customer name.
+  const needsDebtName = (isCredit || deliveryOn) && !name.trim();
+
+  // Delivery fee — collected at the door on top of the goods. When the clinic
+  // keeps it, it's added to the invoice as a service line (= real revenue).
+  const deliveryFee = deliveryOn ? Math.max(0, Number(dFee) || 0) : 0;
+  const feeToClinic = deliveryOn && dFeeToClinic && deliveryFee > 0;
+  const effTotal = round2(total + (feeToClinic ? deliveryFee : 0));
+  // What the courier must hand back to the clinic when he returns.
+  const codAmount = round2(Math.max(0, effTotal - totalPaid));
 
   // ---- Final-price override (acts as an approximate discount) ----------------
   const beginEditTotal = () => { setTotalDraft(String(Math.round(total))); setEditingTotal(true); };
@@ -613,6 +643,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
     setCart([]); setQuery(""); setDiscountValue(""); setFinalOverride(null); setEditingTotal(false);
     setDiscountType("percent"); setPayments([{ method: "cash", amount: 0 }]); setPaidEdited(false); setPartialMode(false); setDone(null); setLastPrints(0);
     setCashierId(null); setBrowseTab("products"); setSaleNotes("");
+    setDeliveryOn(false); setDCourierId(""); setDAddress(""); setDFee(""); setDFeeToClinic(false);
     // Preserve the patient/customer bridge across "New sale" so repeated per-patient
     // sales keep syncing into the same animal's record; clear it for a plain walk-in.
     if (prefill) {
@@ -727,11 +758,16 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
           stock_qty, unit_label,
         };
       });
+      // Delivery fee kept by the clinic → a real service line on the invoice, so
+      // revenue/profit reports include it with zero special-casing.
+      if (feeToClinic) {
+        items.push({ product_id: null, name: t("retail.deliveryFeeLine", "أجرة توصيل"), barcode: null, qty: 1, unit_price: deliveryFee, unit_cost: 0, stock_qty: 0, unit_label: null });
+      }
       // Payment legs received today. Anything tendered ABOVE the total is change handed
       // back, so the recorded legs are trimmed to sum to the total (largest leg first) —
       // revenue-by-method stays accurate and amount_paid never exceeds the bill.
       let legs: PaymentSplit[] = payments.filter((p) => p.amount > 0).map((p) => ({ method: p.method, amount: round2(p.amount) }));
-      let over = round2(legs.reduce((s, p) => s + p.amount, 0) - total);
+      let over = round2(legs.reduce((s, p) => s + p.amount, 0) - effTotal);
       if (over > 0.005) {
         legs = legs.slice().sort((a, b) => b.amount - a.amount);
         for (let i = 0; i < legs.length && over > 0.005; i++) {
@@ -751,7 +787,8 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
         pet_name: petNames.length ? petNames.join(" + ") : null,
         // The client computes the authoritative final price (promotions + manual discount
         // + any manual final-price override, which may be a markup); the server records it.
-        final_total: total,
+        // In delivery mode this includes the clinic-kept delivery fee line.
+        final_total: effTotal,
         payment_method: primary,
         payment_details: legs.length ? legs : null,
         amount_paid: paidToday,
@@ -759,6 +796,38 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
         notes: saleNotes.trim() || null,
       };
       const invoice = await withTimeout(repo.retailCheckout(items, meta), 12000);
+      // Delivery order wrapping the invoice: stock is already deducted; the COD
+      // balance stays OUT of revenue until the courier hands it over. A failure
+      // here never voids the sale — the invoice stands and the order can be
+      // recreated; the cashier is told explicitly.
+      if (deliveryOn) {
+        try {
+          const nowISO = new Date().toISOString();
+          await repo.createDeliveryOrder({
+            clinic_id: clinicId ?? null,
+            invoice_id: invoice.id,
+            courier_id: dCourierId || null,
+            customer_name: name.trim() || null,
+            customer_phone: phone.trim() || null,
+            address: dAddress.trim() || null,
+            note: null,
+            delivery_fee: deliveryFee,
+            fee_to_clinic: feeToClinic,
+            // Derive the COD from the invoice the server ACTUALLY recorded (it
+            // may round the client total) — the courier figure and the invoice
+            // due must never disagree by a fils.
+            cod_amount: round2(Math.max(0, invoice.total - (invoice.amount_paid ?? paidToday))),
+            prepaid: invoice.amount_paid ?? paidToday,
+            status: dCourierId ? "out" : "preparing",
+            dispatched_at: dCourierId ? nowISO : null,
+            delivered_at: null,
+            returned_at: null,
+          });
+        } catch {
+          playWarning();
+          toast.error(t("retail.deliveryOrderFail", "الفاتورة انحفظت لكن تعذّر إنشاء طلب التوصيل — أنشئه من تبويب التوصيل"));
+        }
+      }
       // Med lines grouped per patient — each pet's record gets ITS OWN entries.
       const medByPet = new Map<string, MedicalDraft[]>();
       for (const l of cart) {
@@ -774,6 +843,13 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
         qty: l.qty, unit_price: l.unit_price, unit_cost: l.unit_cost, line_total: l.qty * l.unit_price,
         unit_label: l.kind === "product" && l.hasSubUnit ? (l.saleUnit === "sub" ? (l.subUnitName || t("retail.unitSingle")) : t("retail.unitBox")) : null,
       }));
+      if (feeToClinic) {
+        invItems.push({
+          id: "tmp-dfee", invoice_id: invoice.id, clinic_id: clinicId ?? null,
+          product_id: null, name: t("retail.deliveryFeeLine", "أجرة توصيل"), barcode: null,
+          qty: 1, unit_price: deliveryFee, unit_cost: 0, line_total: deliveryFee, unit_label: null,
+        });
+      }
       playSuccess();
       // Show the completion screen immediately — the sale is final. The medical-record
       // sync runs AFTER, time-bounded and non-fatal, so its latency can never freeze
@@ -1205,29 +1281,81 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
               )}
             </div>
 
-            {/* ONE obvious choice: pay in full, or pay part and record the rest as
-                debt. Credit selling (البيع بالدين) is a super-plan feature — for
-                other plans the toggle is hidden, so every sale is paid in full. */}
+            {/* ONE obvious choice: pay in full, pay part (rest = debt), or ship it
+                with a courier (COD — money enters when the cash comes back).
+                Credit selling (البيع بالدين) is a super-plan feature — for other
+                plans the toggles are hidden, so every sale is paid in full. */}
             {canDebt && (
-              <div className="grid grid-cols-2 gap-1.5 rounded-xl border border-line bg-surface-2 p-1">
+              <div className="grid grid-cols-3 gap-1.5 rounded-xl border border-line bg-surface-2 p-1">
                 <button
-                  onClick={exitPartial}
+                  onClick={() => { setDeliveryOn(false); exitPartial(); }}
                   className={cn(
                     "rounded-lg px-2 py-2 text-xs font-bold transition",
-                    !partialUi ? "bg-surface-1 text-success-700 shadow-card dark:text-success-300" : "text-ink-muted hover:text-ink",
+                    !partialUi && !deliveryOn ? "bg-surface-1 text-success-700 shadow-card dark:text-success-300" : "text-ink-muted hover:text-ink",
                   )}
                 >
                   {t("retail.payFull", "💵 دفع كامل")}
                 </button>
                 <button
-                  onClick={enterPartial}
+                  onClick={() => { setDeliveryOn(false); enterPartial(); }}
                   className={cn(
                     "rounded-lg px-2 py-2 text-xs font-bold transition",
                     partialUi ? "bg-surface-1 text-warn-700 shadow-card dark:text-warn-300" : "text-ink-muted hover:text-ink",
                   )}
                 >
-                  {t("retail.payPartial", "🧾 دفع جزئي — الباقي دين")}
+                  {t("retail.payPartial", "🧾 دفع جزئي")}
                 </button>
+                <button
+                  onClick={enterDelivery}
+                  className={cn(
+                    "rounded-lg px-2 py-2 text-xs font-bold transition",
+                    deliveryOn ? "bg-surface-1 text-sky-700 shadow-card dark:text-sky-300" : "text-ink-muted hover:text-ink",
+                  )}
+                >
+                  {t("retail.payDelivery", "🛵 توصيل")}
+                </button>
+              </div>
+            )}
+
+            {/* Delivery details — courier, address, fee. The COD balance is shown
+                loudly; it enters the system only when the courier hands it over. */}
+            {deliveryOn && (
+              <div className="space-y-2 rounded-xl border border-sky-200 bg-sky-50/60 p-3 dark:border-sky-500/30 dark:bg-sky-500/10">
+                <p className="flex items-center gap-1.5 text-xs font-bold text-sky-800 dark:text-sky-200">
+                  <Bike size={14} /> {t("retail.deliveryTitle", "توصيل — الدفع عند الاستلام")}
+                </p>
+                <select className="input h-9 w-full py-0 text-sm" value={dCourierId} onChange={(e) => { playTap(); setDCourierId(e.target.value); }}>
+                  <option value="">{t("retail.deliveryNoCourier", "اختيار السائق لاحقاً (يبقى قيد التجهيز)")}</option>
+                  {(dCouriers ?? []).filter((c) => c.active).map((c) => <option key={c.id} value={c.id}>{c.name}{c.phone ? ` — ${c.phone}` : ""}</option>)}
+                </select>
+                <input className="input h-9 text-sm" value={dAddress} onChange={(e) => setDAddress(e.target.value)} placeholder={t("retail.deliveryAddressPh", "العنوان: المنطقة، أقرب نقطة دالة…")} />
+                <div className="flex items-center gap-2">
+                  <input type="number" min="0" step="1" inputMode="numeric" className="input h-9 w-28 px-2 py-0 text-end text-sm font-bold tabular-nums" value={dFee} onChange={(e) => setDFee(e.target.value)} placeholder="0" />
+                  <span className="text-xs font-semibold text-ink-muted">{t("retail.deliveryFee", "أجرة التوصيل")}</span>
+                  {deliveryFee > 0 && (
+                    <label className="ms-auto inline-flex cursor-pointer items-center gap-1.5 text-2xs font-semibold text-ink-muted">
+                      <input type="checkbox" checked={dFeeToClinic} onChange={(e) => { playTap(); setDFeeToClinic(e.target.checked); }} className="h-4 w-4 accent-sky-600" />
+                      {t("retail.deliveryFeeToClinic", "الأجرة للعيادة (تُضاف للفاتورة)")}
+                    </label>
+                  )}
+                </div>
+                <div className="space-y-1 rounded-lg bg-surface-1/80 px-3 py-2 text-sm dark:bg-surface-1/40">
+                  <div className="flex items-center justify-between text-ink-muted">
+                    <span>{t("retail.deliveryCollectAtDoor", "يُحصَّل من الزبون عند الباب")}</span>
+                    <span className="font-bold tabular-nums text-ink">{money(round2(codAmount + (feeToClinic ? 0 : deliveryFee)))}</span>
+                  </div>
+                  <div className="flex items-center justify-between font-display text-base font-extrabold text-sky-700 dark:text-sky-300">
+                    <span>{t("retail.deliveryCourierOwes", "يُسلِّم السائق للعيادة")}</span>
+                    <span className="tabular-nums">{money(codAmount)}</span>
+                  </div>
+                  {totalPaid > 0 && (
+                    <div className="flex items-center justify-between text-2xs text-ink-subtle">
+                      <span>{t("retail.deliveryPrepaid", "مدفوع مقدماً في العيادة")}</span>
+                      <span className="tabular-nums">{money(totalPaid)}</span>
+                    </div>
+                  )}
+                </div>
+                <p className="text-2xs text-ink-subtle">{t("retail.deliveryPrepaidHint", "إذا دفع الزبون جزءاً مقدماً اكتبه في خانة الدفع أدناه — وإلا اتركها 0.")}</p>
               </div>
             )}
 
@@ -1364,6 +1492,12 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
                 <button onClick={clearFinalOverride} className="rounded-full px-1.5 font-semibold underline decoration-dotted underline-offset-2 hover:text-brand-700">{t("retail.resetAuto", "إلغاء")}</button>
               </div>
             )}
+            {feeToClinic && (
+              <div className="flex items-center justify-between text-sky-700 dark:text-sky-300">
+                <span className="flex items-center gap-1.5"><Bike size={13} className="shrink-0" /> {t("retail.deliveryFeeLine", "أجرة توصيل")}</span>
+                <span className="tabular-nums">+{money(deliveryFee)} = <b>{money(effTotal)}</b></span>
+              </div>
+            )}
             <div className="flex items-center justify-end gap-1 text-2xs text-success-600"><TrendingUp size={11} /> {t("retail.profit", "Profit")} {money(profit)}</div>
           </div>
 
@@ -1377,15 +1511,21 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
               </Button>
             </div>
           )}
-          <Button className="w-full" size="lg" disabled={cart.length === 0 || needsDebtName} loading={busy} onClick={checkout} leftIcon={<CheckCircle2 size={18} />}>
-            {isCredit
-              ? `${t("retail.completePartial", "إتمام البيع")} · ${t("retail.paysNowLabel", "يدفع الآن")} ${money(totalPaid)} · ${t("retail.debtShort", "دين")} ${money(remaining)}`
-              : change > 0
-                ? `${t("retail.complete", "إصدار الفاتورة")} · ${t("retail.changeDue", "الباقي")} ${money(change)}`
-                : `${t("retail.complete", "إصدار الفاتورة")} · ${money(total)}`}
+          <Button className="w-full" size="lg" disabled={cart.length === 0 || needsDebtName} loading={busy} onClick={checkout} leftIcon={deliveryOn ? <Bike size={18} /> : <CheckCircle2 size={18} />}>
+            {deliveryOn
+              ? `${t("retail.completeDelivery", "إرسال للتوصيل")} · ${t("retail.codShort", "يُحصَّل")} ${money(codAmount)}`
+              : isCredit
+                ? `${t("retail.completePartial", "إتمام البيع")} · ${t("retail.paysNowLabel", "يدفع الآن")} ${money(totalPaid)} · ${t("retail.debtShort", "دين")} ${money(remaining)}`
+                : change > 0
+                  ? `${t("retail.complete", "إصدار الفاتورة")} · ${t("retail.changeDue", "الباقي")} ${money(change)}`
+                  : `${t("retail.complete", "إصدار الفاتورة")} · ${money(total)}`}
           </Button>
           {needsDebtName && (
-            <p className="text-center text-2xs font-semibold text-danger-600">{t("retail.debtNameGate", "لا يمكن تسجيل دين بلا اسم — اكتب اسم الزبون أولاً")}</p>
+            <p className="text-center text-2xs font-semibold text-danger-600">
+              {deliveryOn
+                ? t("retail.deliveryNameGate", "التوصيل يحتاج اسم الزبون — اكتبه في خانة «العميل» أعلاه")
+                : t("retail.debtNameGate", "لا يمكن تسجيل دين بلا اسم — اكتب اسم الزبون أولاً")}
+            </p>
           )}
         </div>
       </div>

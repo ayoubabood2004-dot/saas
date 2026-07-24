@@ -1,4 +1,4 @@
-import type { DemoDB, Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, TreatmentEntry, Admission, Reminder, Product, Company, CompanySection, ClinicVisit } from "@/types";
+import type { DemoDB, Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, TreatmentEntry, Admission, Reminder, Product, Company, CompanySection, Courier, ClinicVisit } from "@/types";
 import { uid } from "./utils";
 
 const KEY = "vp_demo_db_v12";
@@ -289,6 +289,12 @@ function seed(): DemoDB {
   const coHills: Company = { id: uid("co"), name: "Hill's", note: null, created_at: new Date().toISOString() };
   const companies: Company[] = [coRoyal, coBoehringer, coHills];
 
+  // Delivery couriers (سجل السواق) — sample drivers for the التوصيل module.
+  const couriers: Courier[] = [
+    { id: uid("cur"), name: "كرار التوصيل", phone: "07701234567", note: "دراجة — الكرادة والمناطق القريبة", active: true, created_at: new Date().toISOString() },
+    { id: uid("cur"), name: "شركة سبيد لايت", phone: "07809876543", note: "توصيل لكل بغداد", active: true, created_at: new Date().toISOString() },
+  ];
+
   // Sections (أصناف) inside a company — the middle level of Company → Section → Barcode.
   const secRoyalDry: CompanySection = { id: uid("sec"), company_id: coRoyal.id, name: "دراي فود", created_at: new Date().toISOString() };
   const secBoehParasite: CompanySection = { id: uid("sec"), company_id: coBoehringer.id, name: "مضادات الطفيليات", pooled_stock: 60, created_at: new Date().toISOString() };
@@ -311,7 +317,7 @@ function seed(): DemoDB {
 
   return {
     pets: [bobby, luna, francisco, rocky, bella, coco, max],
-    weightLogs, vaccinations, visits, clinicVisits, media, appointments, treatments, admissions, reminders,
+    weightLogs, vaccinations, visits, clinicVisits, media, appointments, treatments, admissions, reminders, couriers,
     products, companies, companySections, invoices: [], invoiceItems: [],
   };
 }

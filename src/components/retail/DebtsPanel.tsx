@@ -6,7 +6,7 @@ import {
   Banknote, CreditCard, ArrowLeftRight, CheckCircle2, Wallet, ChevronLeft,
   ArrowRight, Receipt, BookUser, ReceiptText,
 } from "lucide-react";
-import type { Invoice, PaymentMethod } from "@/types";
+import type { Invoice, PaymentMethod, DeliveryOrder } from "@/types";
 import { repo } from "@/lib/repo";
 import { Modal } from "@/components/Modal";
 import { Button, Badge, useToast } from "@/components/ui";
@@ -41,15 +41,26 @@ interface Ledger {
 /** سجل الديون — a per-customer debt notebook. The top level lists every debtor with
  *  their TOTAL balance; opening one shows their personal ledger of debts, and each
  *  debt drills into the full invoice. Installments are recorded with "تسديد دفعة". */
-export function DebtsPanel({ invoices, onChanged }: { invoices: Invoice[]; clinicId?: string; onChanged: () => void }) {
+export function DebtsPanel({ invoices, clinicId, onChanged }: { invoices: Invoice[]; clinicId?: string; onChanged: () => void }) {
   const { t, i18n } = useTranslation();
   const [q, setQ] = useState("");
   const [openKey, setOpenKey] = useState<string | null>(null);
 
+  // COD orders still on the road are NOT customer debts — they live in the
+  // التوصيل tab. Exclude their invoices from the ledgers here.
+  const [activeDelivery, setActiveDelivery] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    let alive = true;
+    repo.listDeliveryOrders(clinicId)
+      .then((os: DeliveryOrder[]) => { if (alive) setActiveDelivery(new Set(os.filter((o) => o.status === "preparing" || o.status === "out").map((o) => o.invoice_id))); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [clinicId, invoices]);
+
   // Group every live debt (not refunded, still owing) under its customer.
   const ledgers = useMemo<Ledger[]>(() => {
     const map = new Map<string, Ledger>();
-    for (const inv of invoices.filter(isDebt)) {
+    for (const inv of invoices.filter((i) => isDebt(i) && !activeDelivery.has(i.id))) {
       const phone = (inv.customer_phone ?? "").trim() || null;
       const name = (inv.customer_name ?? "").trim();
       // A stable identity: phone wins; else a named customer; else this one anonymous sale.
@@ -66,7 +77,7 @@ export function DebtsPanel({ invoices, onChanged }: { invoices: Invoice[]; clini
     }
     // Biggest balances first — the accounts that need attention.
     return [...map.values()].sort((a, b) => b.due - a.due);
-  }, [invoices]);
+  }, [invoices, activeDelivery]);
 
   const filtered = useMemo(() => {
     const ql = q.trim().toLowerCase();

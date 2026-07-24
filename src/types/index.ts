@@ -566,6 +566,53 @@ export interface PurchaseItem {
   created_at: string;
 }
 
+/* ---------------- Delivery (التوصيل — الدفع عند الاستلام) ---------------- */
+/** Lifecycle of a cash-on-delivery order:
+ *  preparing (قيد التجهيز) → out (بالطريق) → delivered (مستلم) | returned (راجع). */
+export type DeliveryStatus = "preparing" | "out" | "delivered" | "returned";
+
+/** A delivery driver / courier company the clinic works with (سجل السواق). */
+export interface Courier {
+  id: string;
+  clinic_id?: string | null;
+  name: string;
+  phone?: string | null;
+  note?: string | null;   // company, vehicle, area…
+  /** Archived couriers stay on old orders but disappear from pickers. */
+  active: boolean;
+  created_at: string;
+}
+
+/** A cash-on-delivery order wrapping a retail invoice. The invoice is created by
+ *  the normal checkout with amount_paid = prepaid (stock deducted at dispatch,
+ *  revenue NOT counted); the courier's hand-over settles the invoice (money
+ *  enters on the day it actually arrives) and a returned order refunds it
+ *  (restock, pooled-aware). */
+export interface DeliveryOrder {
+  id: string;
+  clinic_id?: string | null;
+  invoice_id: string;
+  courier_id?: string | null;
+  customer_name?: string | null;
+  customer_phone?: string | null;
+  address?: string | null;
+  note?: string | null;
+  /** Collected from the customer at the door ON TOP of the goods total. */
+  delivery_fee: number;
+  /** true → the fee is clinic revenue (added to the invoice as a service line,
+   *  i.e. included in cod_amount); false → the courier keeps the fee. */
+  fee_to_clinic: boolean;
+  /** What the courier owes the clinic on return = the invoice's due at creation. */
+  cod_amount: number;
+  /** Paid in the clinic before dispatch (already in the invoice's amount_paid). */
+  prepaid: number;
+  status: DeliveryStatus;
+  created_at: string;
+  dispatched_at?: string | null;
+  delivered_at?: string | null;
+  returned_at?: string | null;
+}
+
 /** One line from the purchase builder handed to the repo. `product_id` is set when
  *  the barcode/name matched an existing product (→ restock); otherwise a new
  *  product is created under the purchase's company. */
@@ -652,6 +699,8 @@ export interface DemoDB {
   invoiceItems: InvoiceItem[];
   purchases?: Purchase[];
   purchaseItems?: PurchaseItem[];
+  couriers?: Courier[];
+  deliveryOrders?: DeliveryOrder[];
   waMessages?: WhatsAppMessage[];
   branches?: Branch[];
 }
