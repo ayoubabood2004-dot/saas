@@ -5,6 +5,7 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 
 import { Banknote, TrendingUp, Receipt, Crown, Package, Trophy, CalendarRange } from "lucide-react";
 import type { Invoice, InvoiceItem } from "@/types";
 import { repo } from "@/lib/repo";
+import { receiptsOf } from "@/lib/debt";
 import { cn, money, formatNum, dateLocale } from "@/lib/utils";
 import { playTap } from "@/lib/sounds";
 
@@ -58,31 +59,51 @@ export function ReportsPanel({ invoices, clinicId }: { invoices: Invoice[]; clin
     return () => { alive = false; };
   }, [clinicId]);
 
-  // Fixed "today" KPIs (per spec).
+  // CASH BASIS: every figure below sums money that ACTUALLY arrived, dated by
+  // when it arrived — a debt installment counts on its collection day, a COD
+  // delivery counts when the courier handed the cash over, and an unpaid or
+  // on-the-road sale contributes nothing yet. Profit is allocated in proportion
+  // to what was received (half paid → half its profit so far).
+
+  // Fixed "today" KPIs.
   const today = localYMD(new Date());
-  const todays = invoices.filter((i) => localYMD(new Date(i.created_at)) === today && isPaid(i));
-  const todayGross = todays.reduce((s, i) => s + i.total, 0);
-  const todayNet = todays.reduce((s, i) => s + i.profit, 0);
+  const { todayGross, todayNet } = useMemo(() => {
+    let g = 0, n = 0;
+    for (const inv of invoices) {
+      const total = inv.total > 0 ? inv.total : 0;
+      for (const r of receiptsOf(inv)) {
+        if (localYMD(new Date(r.at)) !== today) continue;
+        g += r.amount;
+        if (total > 0) n += inv.profit * (r.amount / total);
+      }
+    }
+    return { todayGross: Math.round(g * 100) / 100, todayNet: Math.round(n * 100) / 100 };
+  }, [invoices, today]);
 
   const buckets = useMemo(() => buildBuckets(period, i18n.language), [period, i18n.language]);
   const periodStart = buckets[0]?.start ?? new Date(0);
 
-  // Chart data + period totals.
+  // Chart data + period totals — receipts bucketed by their collection moment.
   const { chart, pGross, pNet, pCount } = useMemo(() => {
-    const acc = new Map<string, { gross: number; net: number; count: number }>();
-    let pGross = 0, pNet = 0, pCount = 0;
+    const acc = new Map<string, { gross: number; net: number }>();
+    const paidInvoices = new Set<string>();
+    let pGross = 0, pNet = 0;
     for (const inv of invoices) {
-      if (!isPaid(inv)) continue;
-      const d = new Date(inv.created_at);
-      if (d < periodStart) continue;
-      const k = bucketKeyOf(d, period);
-      const cur = acc.get(k) ?? { gross: 0, net: 0, count: 0 };
-      cur.gross += inv.total; cur.net += inv.profit; cur.count += 1;
-      acc.set(k, cur);
-      pGross += inv.total; pNet += inv.profit; pCount += 1;
+      const total = inv.total > 0 ? inv.total : 0;
+      for (const r of receiptsOf(inv)) {
+        const d = new Date(r.at);
+        if (d < periodStart) continue;
+        const k = bucketKeyOf(d, period);
+        const cur = acc.get(k) ?? { gross: 0, net: 0 };
+        const net = total > 0 ? inv.profit * (r.amount / total) : 0;
+        cur.gross += r.amount; cur.net += net;
+        acc.set(k, cur);
+        pGross += r.amount; pNet += net;
+        paidInvoices.add(inv.id);
+      }
     }
     const chart = buckets.map((b) => ({ label: b.label, gross: Math.round((acc.get(b.key)?.gross ?? 0) * 100) / 100, net: Math.round((acc.get(b.key)?.net ?? 0) * 100) / 100 }));
-    return { chart, pGross, pNet, pCount };
+    return { chart, pGross: Math.round(pGross * 100) / 100, pNet: Math.round(pNet * 100) / 100, pCount: paidInvoices.size };
   }, [invoices, buckets, period, periodStart]);
 
   // Top products within the period (paid only).
@@ -112,7 +133,7 @@ export function ReportsPanel({ invoices, clinicId }: { invoices: Invoice[]; clin
     <div className="space-y-5">
       {/* Today KPIs */}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <KpiBig icon={Banknote} tone="brand" label={t("retail.todayGross", "Today's gross income")} value={money(todayGross)} />
+        <KpiBig icon={Banknote} tone="brand" label={t("retail.todayReceived", "مقبوضات اليوم (فعلي)")} value={money(todayGross)} />
         <KpiBig icon={TrendingUp} tone="success" label={t("retail.todayNet", "Today's net profit")} value={money(todayNet)} />
         <KpiBig icon={Receipt} tone="accent" label={t("retail.totalInvoices", "Total invoices")} value={String(invoices.length)} />
       </div>
@@ -133,7 +154,7 @@ export function ReportsPanel({ invoices, clinicId }: { invoices: Invoice[]; clin
       {/* Chart */}
       <div className="card p-4">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-          <h3 className="font-display font-bold text-ink">{t("retail.salesOverTime", "Sales over time")}</h3>
+          <h3 className="font-display font-bold text-ink">{t("retail.receiptsOverTime", "المقبوضات عبر الوقت — حسب يوم الاستلام الفعلي")}</h3>
           <div className="flex items-center gap-3 text-xs">
             <span className="flex items-center gap-1.5 text-ink-muted"><span className="h-2.5 w-2.5 rounded-sm bg-brand-500" /> {t("retail.gross", "Gross")}</span>
             <span className="flex items-center gap-1.5 text-ink-muted"><span className="h-2.5 w-2.5 rounded-sm bg-success-500" /> {t("retail.net", "Net")}</span>

@@ -613,6 +613,8 @@ export interface DeliveryOrder {
   clinic_id?: string | null;
   invoice_id: string;
   courier_id?: string | null;
+  /** Branch the order was dispatched from (NULL = main/unassigned — shows everywhere). */
+  branch_id?: string | null;
   customer_name?: string | null;
   customer_phone?: string | null;
   address?: string | null;

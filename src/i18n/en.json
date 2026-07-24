@@ -362,7 +362,9 @@
     "deliveryNoCouriersYet": "No couriers yet — add them from “Couriers”.",
     "deliverySlip": "Delivery slip",
     "deliveryCollectPlusFee": "Customer pays {{n}} (incl. fee)",
-    "deliveryPrepaidChip": "Prepaid {{n}}"
+    "deliveryPrepaidChip": "Prepaid {{n}}",
+    "todayReceived": "Received today (actual)",
+    "receiptsOverTime": "Receipts over time — by actual collection day"
   },
   "promos": {
     "title": "Offers management",

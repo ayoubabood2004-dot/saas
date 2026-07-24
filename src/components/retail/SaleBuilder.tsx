@@ -21,6 +21,7 @@ import { CashierSelect } from "@/components/MedicalEntry";
 import { useInvoicePrinter } from "./usePrintInvoice";
 import { invoiceNo, openInvoicePrint, type PrintFormat } from "@/lib/invoicePrint";
 import { getPreSalePrint, getResizableCart, getClinicLogo, getClinicSocials, getClinicName } from "@/lib/settings";
+import { branchStore } from "@/lib/branchStore";
 import { persistMedicalEntries } from "@/lib/medSync";
 import type { MedicalDraft } from "@/components/MedicalEntry";
 import { cn, money, currencySymbol } from "@/lib/utils";
@@ -806,6 +807,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
           await repo.createDeliveryOrder({
             clinic_id: clinicId ?? null,
             invoice_id: invoice.id,
+            branch_id: branchStore.branchForWrite(),
             courier_id: dCourierId || null,
             customer_name: name.trim() || null,
             customer_phone: phone.trim() || null,

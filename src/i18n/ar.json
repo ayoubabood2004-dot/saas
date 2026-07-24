@@ -362,7 +362,9 @@
     "deliveryNoCouriersYet": "لا يوجد سواق بعد — أضفهم من «سجل السواق».",
     "deliverySlip": "وصل التوصيل",
     "deliveryCollectPlusFee": "يُحصَّل من الزبون {{n}} (مع الأجرة)",
-    "deliveryPrepaidChip": "مقدّم {{n}}"
+    "deliveryPrepaidChip": "مقدّم {{n}}",
+    "todayReceived": "مقبوضات اليوم (فعلي)",
+    "receiptsOverTime": "المقبوضات عبر الوقت — حسب يوم الاستلام الفعلي"
   },
   "promos": {
     "title": "إدارة العروض",

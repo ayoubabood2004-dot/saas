@@ -1482,7 +1482,10 @@ const supabaseRepo: typeof demoRepo = {
     return listOf<DeliveryOrder>(await q);
   },
   async createDeliveryOrder(input) {
-    return need<DeliveryOrder>(await sbc().from("delivery_orders").insert(input).select().single());
+    // Omit a null branch_id so a pre-0071 database (no column yet) keeps working.
+    const { branch_id, ...rest } = input;
+    const row = branch_id ? { ...rest, branch_id } : rest;
+    return need<DeliveryOrder>(await sbc().from("delivery_orders").insert(row).select().single());
   },
   async updateDeliveryOrder(id, patch) {
     return maybe<DeliveryOrder>(await sbc().from("delivery_orders").update(patch).eq("id", id).select().maybeSingle());

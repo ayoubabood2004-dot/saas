@@ -7,6 +7,8 @@ import {
 } from "lucide-react";
 import type { Invoice, Courier, DeliveryOrder } from "@/types";
 import { repo } from "@/lib/repo";
+import { useBranchState, matchesBranch } from "@/lib/branchStore";
+import { useAuth } from "@/contexts/AuthContext";
 import { Modal } from "@/components/Modal";
 import { Button, Badge, useToast } from "@/components/ui";
 import { openDeliverySlip } from "@/lib/deliveryPrint";
@@ -41,7 +43,17 @@ const timeAgo = (iso: string): string => {
 export function DeliveryPanel({ invoices, clinicId, onChanged }: { invoices: Invoice[]; clinicId?: string; onChanged: () => void }) {
   const { t } = useTranslation();
   const toast = useToast();
-  const [orders, setOrders] = useState<DeliveryOrder[]>([]);
+  const { user } = useAuth();
+  // Branch lens (multi-branch clinics): the board shows the active branch's
+  // orders plus unassigned ones — same rule as the Master calendar.
+  const { branches, active: activeBranch } = useBranchState(user?.clinic_id ?? user?.id ?? clinicId);
+  const [allOrders, setAllOrders] = useState<DeliveryOrder[]>([]);
+  const orders = useMemo(
+    () => (activeBranch === "all" || branches.length < 2
+      ? allOrders
+      : allOrders.filter((o) => matchesBranch(o.branch_id, activeBranch, branches))),
+    [allOrders, activeBranch, branches],
+  );
   const [couriers, setCouriers] = useState<Courier[]>([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
@@ -52,7 +64,7 @@ export function DeliveryPanel({ invoices, clinicId, onChanged }: { invoices: Inv
   const load = async () => {
     try {
       const [o, c] = await Promise.all([repo.listDeliveryOrders(clinicId), repo.listCouriers(clinicId)]);
-      setOrders(o);
+      setAllOrders(o);
       setCouriers(c);
     } catch { /* keep whatever we had */ }
     finally { setLoading(false); }

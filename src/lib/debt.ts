@@ -25,3 +25,29 @@ export const paymentStatusOf = (inv: Invoice): PaymentStatus => {
 
 /** A sale is a live debt when it isn't refunded and still has a balance due. */
 export const isDebt = (inv: Invoice): boolean => (inv.status ?? "paid") !== "refunded" && dueOf(inv) > EPS;
+
+/** One actual money receipt: an amount that physically arrived, at a moment. */
+export interface Receipt { amount: number; at: string; method: string | null }
+
+/**
+ * The CASH-BASIS view of a sale: when did money actually arrive, and how much.
+ * This is what till/receipts reports must sum — a COD order on the road or an
+ * open debt contributes NOTHING until it is settled, and a settlement counts on
+ * the day it was collected (its leg's `at` stamp), not the sale day.
+ *  • refunded sales → no receipts (the money went back);
+ *  • payment legs carry their own timestamps; legacy legs without one (paid at
+ *    the till when the sale was made) date to the sale itself;
+ *  • legacy invoices with no legs at all → one receipt of amount_paid (absent =
+ *    fully paid, pre-credit era) dated to the sale.
+ */
+export function receiptsOf(inv: Invoice): Receipt[] {
+  if ((inv.status ?? "paid") === "refunded") return [];
+  const legs = inv.payment_details ?? [];
+  if (legs.length === 0) {
+    const paid = paidOf(inv);
+    return paid > EPS ? [{ amount: paid, at: inv.created_at, method: inv.payment_method ?? null }] : [];
+  }
+  return legs
+    .filter((l) => (l.amount ?? 0) > EPS)
+    .map((l) => ({ amount: l.amount, at: l.at ?? inv.created_at, method: l.method ?? null }));
+}

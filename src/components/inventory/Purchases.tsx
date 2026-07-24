@@ -37,12 +37,14 @@ type Line = {
   purchase_price: string;
   sell_price: string;
   min_stock: string;
+  /** New batch expiry (ISO yyyy-mm-dd). Blank = keep the product's current one. */
+  expiry: string;
 };
 
 let LINE_SEQ = 0;
 const blankLine = (patch: Partial<Line> = {}): Line => ({
   key: `l${++LINE_SEQ}`, product_id: null, barcode: "", name: "", category: "",
-  qty: "", purchase_price: "", sell_price: "", min_stock: "", ...patch,
+  qty: "", purchase_price: "", sell_price: "", min_stock: "", expiry: "", ...patch,
 });
 
 /** Prefill a line from an existing product (a restock). */
@@ -350,7 +352,7 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
         purchase_price: Number(l.purchase_price) || 0,
         sell_price: Number(l.sell_price) || 0,
         min_stock: l.min_stock.trim() === "" ? null : Math.max(0, Math.round(Number(l.min_stock) || 0)),
-        expiry_date: null,
+        expiry_date: l.expiry.trim() || null,
       }));
       const meta: PurchaseMeta = {
         company_id: co.id,
@@ -449,6 +451,7 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
                           {t("purchase.stockJump", { from: product.stock ?? 0, to: (product.stock ?? 0) + qtyN, defaultValue: "المخزون: {{from}} ← {{to}}" })}
                         </span>
                         <span>{t("pos.buy", "شراء")} {money(Number(l.purchase_price) || 0)} · {t("pos.sell", "بيع")} {money(Number(l.sell_price) || 0)}</span>
+                        {product.expiry_date && <span className="flex items-center gap-1"><CalendarClock size={10} /> {t("purchase.currentExpiry", { d: product.expiry_date.slice(0, 10), defaultValue: "الانتهاء الحالي {{d}}" })}</span>}
                       </p>
                     </div>
                     <div className="flex items-center gap-1.5">
@@ -525,6 +528,10 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
                   <div className="sm:col-span-3">
                     <label className="label text-2xs">{t("pos.minStock", "تنبيه المخزون")}</label>
                     <input type="number" inputMode="numeric" min="0" step="1" className="input text-sm" value={l.min_stock} onChange={(e) => patchLine(l.key, { min_stock: e.target.value })} placeholder="0" />
+                  </div>
+                  <div className="sm:col-span-3">
+                    <label className="label text-2xs">{t("purchase.batchExpiry", "انتهاء الوجبة الجديدة")} <span className="font-normal text-ink-subtle">{t("purchase.batchExpiryHint", "(اختياري — فارغ يبقي القديم)")}</span></label>
+                    <input type="date" className="input text-sm" value={l.expiry} onChange={(e) => patchLine(l.key, { expiry: e.target.value })} />
                   </div>
                   <div className="flex items-end sm:col-span-3">
                     <div className="w-full rounded-xl bg-surface-2 px-3 py-2 text-center">
