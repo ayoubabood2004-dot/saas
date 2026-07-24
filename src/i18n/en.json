@@ -512,7 +512,11 @@
     "paid": "Paid",
     "due": "Balance due",
     "item": "Item",
-    "print": "Print invoice"
+    "print": "Print invoice",
+    "scanAddFast": "Scan the barcode and type the count only — a known product goes to its place (company, section & prices) automatically",
+    "stockJump": "Stock: {{from}} → {{to}}",
+    "editOptional": "Adjust prices (optional)",
+    "collapse": "Collapse"
   },
   "pos": {
     "title": "Inventory",

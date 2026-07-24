@@ -112,7 +112,7 @@ export function Inventory() {
       ) : view === "companies" ? (
         <CompaniesTab products={products} companies={companies} sections={sections} clinicId={clinicId} onChanged={load} />
       ) : (
-        <PurchasesTab products={products} companies={companies} clinicId={clinicId} onChanged={load} />
+        <PurchasesTab products={products} companies={companies} sections={sections} clinicId={clinicId} onChanged={load} />
       )}
     </div>
   );
@@ -1215,7 +1215,7 @@ function CompanyDetail({ company, products, companies, sections, clinicId, onBac
       <AssignProductsModal open={assigning} company={company} companies={companies} sections={sections} products={products} onClose={() => setAssigning(false)} onSaved={() => { setAssigning(false); onChanged(); }} />
 
       {/* Purchase invoice pre-filled with this company */}
-      <PurchaseBuilderModal open={purchasing} products={products} companies={companies} clinicId={clinicId} defaultCompanyName={company.name} onClose={() => setPurchasing(false)} onSaved={() => { setPurchasing(false); onChanged(); }} />
+      <PurchaseBuilderModal open={purchasing} products={products} companies={companies} sections={sections} clinicId={clinicId} defaultCompanyName={company.name} onClose={() => setPurchasing(false)} onSaved={() => { setPurchasing(false); onChanged(); }} />
     </div>
   );
 }

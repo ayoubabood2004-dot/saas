@@ -3,9 +3,9 @@ import { useTranslation } from "react-i18next";
 import { motion } from "framer-motion";
 import {
   Barcode, Plus, Search, Building2, ShoppingBag, PackageCheck, Sparkles,
-  Wallet, CalendarClock, X, ScanLine,
+  Wallet, CalendarClock, X, ScanLine, FolderTree, SlidersHorizontal, ChevronDown,
 } from "lucide-react";
-import type { Product, Company, Purchase, PurchaseItem, PurchaseDraftLine, PurchaseMeta, ProductCategory, PaymentMethod } from "@/types";
+import type { Product, Company, CompanySection, Purchase, PurchaseItem, PurchaseDraftLine, PurchaseMeta, ProductCategory, PaymentMethod } from "@/types";
 import { repo } from "@/lib/repo";
 import { useAuth } from "@/contexts/AuthContext";
 import { Modal } from "@/components/Modal";
@@ -55,8 +55,8 @@ const lineFromProduct = (p: Product, barcode: string): Line => blankLine({
 const statusTone = (s?: string): "success" | "warn" | "danger" => (s === "paid" ? "success" : s === "partial" ? "warn" : "danger");
 
 /* ============================ Purchases tab ============================ */
-export function PurchasesTab({ products, companies, clinicId, onChanged }: {
-  products: Product[]; companies: Company[]; clinicId?: string; onChanged: () => void;
+export function PurchasesTab({ products, companies, sections, clinicId, onChanged }: {
+  products: Product[]; companies: Company[]; sections?: CompanySection[]; clinicId?: string; onChanged: () => void;
 }) {
   const { t, i18n } = useTranslation();
   const [purchases, setPurchases] = useState<Purchase[]>([]);
@@ -130,6 +130,7 @@ export function PurchasesTab({ products, companies, clinicId, onChanged }: {
         open={building}
         products={products}
         companies={companies}
+        sections={sections}
         clinicId={clinicId}
         onClose={() => setBuilding(false)}
         onSaved={() => { setBuilding(false); void load(); onChanged(); }}
@@ -237,8 +238,8 @@ function PurchaseDetailModal({ purchase, onClose }: { purchase: Purchase | null;
 }
 
 /* ============================ Builder ============================ */
-export function PurchaseBuilderModal({ open, products, companies, clinicId, defaultCompanyName, onClose, onSaved }: {
-  open: boolean; products: Product[]; companies: Company[]; clinicId?: string; defaultCompanyName?: string;
+export function PurchaseBuilderModal({ open, products, companies, sections, clinicId, defaultCompanyName, onClose, onSaved }: {
+  open: boolean; products: Product[]; companies: Company[]; sections?: CompanySection[]; clinicId?: string; defaultCompanyName?: string;
   onClose: () => void; onSaved: () => void;
 }) {
   const { t } = useTranslation();
@@ -253,6 +254,10 @@ export function PurchaseBuilderModal({ open, products, companies, clinicId, defa
   const [lines, setLines] = useState<Line[]>([blankLine()]);
   const [scan, setScan] = useState("");
   const [busy, setBusy] = useState(false);
+  // Matched (restock) lines render COMPACT — barcode, name, where it lives, and
+  // ONE required field: the count. This set holds lines the user expanded to
+  // optionally adjust prices/alerts.
+  const [expandedKeys, setExpandedKeys] = useState<Set<string>>(new Set());
   const scanRef = useRef<HTMLInputElement>(null);
   const createdRef = useRef<Company[]>([]);
 
@@ -269,6 +274,7 @@ export function PurchaseBuilderModal({ open, products, companies, clinicId, defa
     setReference(""); setNotes(""); setPurchasedAt(localISO());
     setPayMethod("cash"); setAmountPaid(""); setScan("");
     setLines([blankLine()]);
+    setExpandedKeys(new Set());
     setTimeout(() => scanRef.current?.focus(), 90);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
@@ -399,7 +405,7 @@ export function PurchaseBuilderModal({ open, products, companies, clinicId, defa
 
         {/* Fast scan/add */}
         <div className="rounded-2xl border border-brand-100 bg-brand-50/50 p-3 dark:border-brand-500/20 dark:bg-brand-500/10">
-          <label className="label flex items-center gap-1.5 text-brand-700 dark:text-brand-200"><ScanLine size={14} /> {t("purchase.scanAdd", "امسح أو اكتب باركود لإضافته بسرعة")}</label>
+          <label className="label flex items-center gap-1.5 text-brand-700 dark:text-brand-200"><ScanLine size={14} /> {t("purchase.scanAddFast", "امسح الباركود واكتب العدد فقط — المنتج المعروف يذهب لمكانه (شركته وصنفه وأسعاره) تلقائياً")}</label>
           <div className="flex gap-2">
             <div className="relative flex-1">
               <Barcode size={16} className="pointer-events-none absolute top-1/2 -translate-y-1/2 text-ink-subtle ltr:left-3 rtl:right-3" />
@@ -420,6 +426,58 @@ export function PurchaseBuilderModal({ open, products, companies, clinicId, defa
         <div className="space-y-2">
           {lines.map((l, idx) => {
             const matched = !!l.product_id;
+            const product = matched ? products.find((p) => p.id === l.product_id) : undefined;
+            // FAST restock row: the product is already known and already filed —
+            // show where it lives + the stock jump, and ask ONLY for the count.
+            if (matched && product && !expandedKeys.has(l.key)) {
+              const coName = product.company_id ? companies.find((c) => c.id === product.company_id)?.name : undefined;
+              const secName = product.section_id ? (sections ?? []).find((s) => s.id === product.section_id)?.name : undefined;
+              const qtyN = Number(l.qty) || 0;
+              return (
+                <div key={l.key} className="rounded-2xl border border-success-200 bg-success-50/40 p-3 dark:border-success-500/25 dark:bg-success-500/5">
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                    <span className="chip shrink-0 bg-success-100 text-2xs font-semibold text-success-700 dark:bg-success-500/20 dark:text-success-200"><PackageCheck size={11} /> {t("purchase.restock", "موجود · تحديث مخزون")}</span>
+                    <div className="min-w-0 flex-1">
+                      <p className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm font-bold text-ink">
+                        {l.name}
+                        {coName && <span className="chip shrink-0 bg-accent-50 text-2xs font-semibold text-accent-700 dark:bg-accent-500/15 dark:text-accent-200"><Building2 size={11} /> {coName}</span>}
+                        {secName && <span className="chip shrink-0 bg-brand-50 text-2xs font-semibold text-brand-700 dark:bg-brand-500/15 dark:text-brand-200"><FolderTree size={11} /> {secName}</span>}
+                      </p>
+                      <p className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-2xs text-ink-subtle">
+                        {l.barcode && <span className="flex items-center gap-1 font-mono"><Barcode size={10} /> {l.barcode}</span>}
+                        <span className="tabular-nums">
+                          {t("purchase.stockJump", { from: product.stock ?? 0, to: (product.stock ?? 0) + qtyN, defaultValue: "المخزون: {{from}} ← {{to}}" })}
+                        </span>
+                        <span>{t("pos.buy", "شراء")} {money(Number(l.purchase_price) || 0)} · {t("pos.sell", "بيع")} {money(Number(l.sell_price) || 0)}</span>
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <div>
+                        <label className="label text-2xs">{t("purchase.qty", "الكمية المستلمة")}</label>
+                        <input
+                          type="number" inputMode="numeric" min="0" step="1"
+                          className="input h-10 w-24 text-center text-base font-extrabold tabular-nums"
+                          value={l.qty}
+                          onChange={(e) => patchLine(l.key, { qty: e.target.value })}
+                          onFocus={(e) => e.target.select()}
+                          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); scanRef.current?.focus(); } }}
+                          placeholder="0"
+                        />
+                      </div>
+                      <button
+                        onClick={() => { playTap(); setExpandedKeys((s) => new Set(s).add(l.key)); }}
+                        title={t("purchase.editOptional", "تعديل الأسعار (اختياري)")}
+                        aria-label={t("purchase.editOptional", "تعديل الأسعار (اختياري)")}
+                        className="mt-4 grid h-9 w-9 place-items-center rounded-xl text-ink-subtle transition hover:bg-surface-2 hover:text-brand-600"
+                      >
+                        <SlidersHorizontal size={15} />
+                      </button>
+                      <button onClick={() => { playTap(); removeLine(l.key); }} aria-label={t("common.delete", "حذف")} className="mt-4 grid h-9 w-9 place-items-center rounded-xl text-ink-subtle transition hover:bg-danger-50 hover:text-danger-600"><X size={15} /></button>
+                    </div>
+                  </div>
+                </div>
+              );
+            }
             return (
               <div key={l.key} className={cn("rounded-2xl border p-3", matched ? "border-success-200 bg-success-50/40 dark:border-success-500/25 dark:bg-success-500/5" : "border-line bg-surface-1")}>
                 <div className="mb-2 flex items-center justify-between gap-2">
@@ -429,7 +487,12 @@ export function PurchaseBuilderModal({ open, products, companies, clinicId, defa
                       ? <span className="chip bg-success-100 text-2xs font-semibold text-success-700 dark:bg-success-500/20 dark:text-success-200"><PackageCheck size={11} /> {t("purchase.restock", "موجود · تحديث مخزون")}</span>
                       : (l.barcode || l.name) ? <span className="chip bg-brand-50 text-2xs font-semibold text-brand-700 dark:bg-brand-500/15 dark:text-brand-200"><Sparkles size={11} /> {t("purchase.newItem", "منتج جديد")}</span> : null}
                   </span>
-                  <button onClick={() => { playTap(); removeLine(l.key); }} aria-label={t("common.delete", "حذف")} className="grid h-7 w-7 place-items-center rounded-full text-ink-subtle transition hover:bg-danger-50 hover:text-danger-600"><X size={15} /></button>
+                  <span className="flex items-center gap-1">
+                    {matched && expandedKeys.has(l.key) && (
+                      <button onClick={() => { playTap(); setExpandedKeys((s) => { const n = new Set(s); n.delete(l.key); return n; }); }} aria-label={t("purchase.collapse", "طيّ")} className="grid h-7 w-7 place-items-center rounded-full text-ink-subtle transition hover:bg-surface-2 hover:text-brand-600"><ChevronDown size={15} className="rotate-180" /></button>
+                    )}
+                    <button onClick={() => { playTap(); removeLine(l.key); }} aria-label={t("common.delete", "حذف")} className="grid h-7 w-7 place-items-center rounded-full text-ink-subtle transition hover:bg-danger-50 hover:text-danger-600"><X size={15} /></button>
+                  </span>
                 </div>
                 <div className="grid gap-2 sm:grid-cols-12">
                   <div className="sm:col-span-3">
