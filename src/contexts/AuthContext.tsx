@@ -6,6 +6,7 @@ import { setActiveClinicId, clearActiveClinic, getActiveClinicId, type ClinicAcc
 import { hydrateClinicConfig, hydratedFor } from "@/lib/clinicConfig";
 import { applyFontScale } from "@/lib/fontScale";
 import { leaveClinic as apiLeaveClinic } from "@/lib/invites";
+import { startPresenceBeat } from "@/lib/presence";
 import { repo } from "@/lib/repo";
 import { endElevationOnLogout } from "@/lib/managerOverride";
 import type { OwnerAccount } from "@/lib/owners";
@@ -98,6 +99,21 @@ const STAFF_TO_APP_ROLE: Record<string, Role> = {
  */
 async function loadMembership(userId: string): Promise<{ clinicId: string; role: Role } | null> {
   if (!supabase) return null;
+  // SERVER truth first (migration 0072): my_workspace() returns the exact
+  // clinic/role that auth_clinic()/auth_role() — i.e. every RLS policy — will
+  // use. Mirroring it means the app can never disagree with the backend about
+  // "am I inside a clinic?", which is what produced accounts stuck between
+  // joined and left (UI says one thing, writes land per the other).
+  try {
+    const { data, error } = await supabase.rpc("my_workspace");
+    if (!error && data && typeof data === "object") {
+      const w = data as { clinic_id?: string | null; role?: string | null; is_staff?: boolean };
+      if (w.clinic_id) {
+        if (!w.is_staff) return null; // the server routes me to my own clinic
+        return { clinicId: w.clinic_id, role: STAFF_TO_APP_ROLE[w.role ?? ""] ?? "reception" };
+      }
+    }
+  } catch { /* pre-0072 backend — fall through to the direct query */ }
   try {
     const { data, error } = await supabase
       .from("memberships")
@@ -310,6 +326,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (key !== hydratedFor()) void hydrateClinicConfig(key).then(applyFontScale);
     }
   }, [resolvedActive, raw]);
+
+  // Live presence heartbeat (منو فاتح السستم الآن) — beats once a minute while a
+  // clinic user has the app open, so إدارة الكادر shows who's online right now.
+  useEffect(() => {
+    if (resolvedActive !== "clinic" || !raw) return;
+    return startPresenceBeat(raw.id, raw.full_name);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resolvedActive, raw?.id]);
 
   // ---- Demo persistence ---------------------------------------------------
   const persistRaw = (rp: RawProfile, active: AccountRole) => {

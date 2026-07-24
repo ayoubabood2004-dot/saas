@@ -204,8 +204,20 @@ export async function saveStaff(m: StaffMember): Promise<void> {
 
 export async function deleteStaff(id: string): Promise<void> {
   if (!supabase) { saveLocal(loadLocal().filter((x) => x.id !== id)); return; }
-  const { error } = await supabase.from("staff").delete().eq("id", id);
-  if (error) throw new Error(error.message);
+  // Atomic removal (migration 0072): revokes the MEMBERSHIP (the actual access),
+  // burns the invite code, and deletes the roster row — in one server call. The
+  // old client-side roster delete left the membership active, so a "removed"
+  // employee silently kept full access to the clinic.
+  const { data, error } = await supabase.rpc("remove_staff_member", { p_staff: id });
+  if (!error) {
+    const r = (data ?? {}) as { ok?: boolean; error?: string };
+    if (r.ok === false) throw new Error(r.error ?? "remove_failed");
+    return;
+  }
+  // Pre-0072 backend (function missing) → legacy roster-only delete.
+  if (!/function|schema cache|does not exist|PGRST202|42883/i.test(error.message)) throw new Error(error.message);
+  const { error: e2 } = await supabase.from("staff").delete().eq("id", id);
+  if (e2) throw new Error(e2.message);
 }
 
 export async function setStaffStatus(id: string, status: StaffStatus): Promise<void> {

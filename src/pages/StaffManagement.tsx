@@ -5,7 +5,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import {
   Users, UserPlus, Pencil, Trash2, Check, X, ShieldCheck, ShieldX, Briefcase,
   Mail, Phone as PhoneIcon, Calendar, Camera, PauseCircle, PlayCircle, BadgeCheck, Lock,
-  Send, Copy, Ticket, AlertTriangle,
+  Send, Copy, Ticket, AlertTriangle, Wifi, Clock,
 } from "lucide-react";
 import { Button, Dialog, useToast, Skeleton } from "@/components/ui";
 import { PhoneInput } from "@/components/PhoneInput";
@@ -19,6 +19,8 @@ import {
 import { prepareUpload } from "@/lib/image";
 import { createInvite, listInvites, revokeInvite, joinLink, type Invite } from "@/lib/invites";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/contexts/AuthContext";
+import { listPresence, isOnline, type PresenceRow } from "@/lib/presence";
 import { playTap, playSuccess } from "@/lib/sounds";
 
 /** Western-numeral join date, Arabic month name. */
@@ -37,6 +39,17 @@ const ROLE_TONE: Record<StaffRole, string> = {
   groomer: "bg-sky-50 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300",
 };
 
+/** Membership role (as stamped by presence_beat) → Arabic label. */
+const PRESENCE_ROLE_AR: Record<string, string> = { manager: "مدير", veterinarian: "طبيب", receptionist: "استقبال", groomer: "موظف" };
+const agoAr = (iso: string): string => {
+  const mins = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 60000));
+  if (mins < 1) return "الآن";
+  if (mins < 60) return `قبل ${mins} د`;
+  const h = Math.floor(mins / 60);
+  if (h < 24) return `قبل ${h} س`;
+  return `قبل ${Math.floor(h / 24)} يوم`;
+};
+
 export function StaffManagement() {
   const { i18n } = useTranslation();
   const toast = useToast();
@@ -50,6 +63,27 @@ export function StaffManagement() {
   const [editing, setEditing] = useState<StaffMember | null>(null);
   const [deleting, setDeleting] = useState<StaffMember | null>(null);
   const [invitesOpen, setInvitesOpen] = useState(false);
+  const { user } = useAuth();
+
+  // ---- Live presence (منو فاتح السستم الآن) — polled every 30s ----
+  const [presence, setPresence] = useState<PresenceRow[]>([]);
+  useEffect(() => {
+    let alive = true;
+    const pull = () => { void listPresence().then((r) => { if (alive) setPresence(r); }); };
+    pull();
+    const id = window.setInterval(pull, 30_000);
+    return () => { alive = false; window.clearInterval(id); };
+  }, []);
+  // Always count the viewing manager himself (his own beat may lag a few seconds).
+  const presenceRows = (() => {
+    const rows = [...presence];
+    if (user && !rows.some((r) => r.user_id === user.id)) {
+      rows.unshift({ clinic_id: user.clinic_id ?? user.id, user_id: user.id, name: user.full_name, role: "manager", last_seen: new Date().toISOString() });
+    }
+    return rows;
+  })();
+  const onlineRows = presenceRows.filter(isOnline);
+  const presenceByUser = new Map(presenceRows.map((r) => [r.user_id, r]));
 
   const reload = () => listStaff().then(setStaff).catch(() => toast.error("تعذّر تحميل الكادر"));
   useEffect(() => { void listStaff().then(setStaff).catch(() => toast.error("تعذّر تحميل الكادر")).finally(() => setLoading(false)); }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -113,10 +147,47 @@ export function StaffManagement() {
       </div>
 
       {/* KPIs */}
-      <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-3">
+      <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
         <Kpi icon={Users} label="إجمالي الكادر" value={String(staff.length)} />
         <Kpi icon={BadgeCheck} label="نشط" value={String(active)} tone="success" />
         <Kpi icon={PauseCircle} label="بانتظار الانضمام" value={String(pending)} tone="warn" />
+        <Kpi icon={Wifi} label="متصل الآن" value={String(onlineRows.length)} tone="success" />
+      </div>
+
+      {/* Live presence — who has the system open at THIS moment */}
+      <div className="card mb-5 p-4">
+        <h3 className="mb-3 flex items-center gap-2 text-sm font-bold text-ink">
+          <span className="relative grid h-8 w-8 place-items-center rounded-xl bg-success-50 text-success-600 dark:bg-success-500/15 dark:text-success-300">
+            <Wifi size={16} />
+          </span>
+          المتواجدون الآن
+          <span className="chip bg-success-50 text-2xs font-bold text-success-700 dark:bg-success-500/15 dark:text-success-300">{onlineRows.length}</span>
+          <span className="ms-auto text-2xs font-normal text-ink-subtle">يتحدّث تلقائياً كل ٣٠ ثانية</span>
+        </h3>
+        {onlineRows.length === 0 ? (
+          <p className="text-sm text-ink-subtle">لا أحد فاتح السستم حالياً.</p>
+        ) : (
+          <div className="flex flex-wrap gap-2">
+            {onlineRows.map((r) => (
+              <span key={r.user_id} className="inline-flex items-center gap-2 rounded-full border border-success-200 bg-success-50/60 py-1.5 pe-3 ps-2 text-sm dark:border-success-500/30 dark:bg-success-500/10">
+                <span className="relative flex h-2.5 w-2.5">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-success-400 opacity-60" />
+                  <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-success-500" />
+                </span>
+                <span className="font-bold text-ink">{r.name || "—"}</span>
+                <span className="text-2xs text-ink-subtle">{PRESENCE_ROLE_AR[r.role ?? ""] ?? r.role ?? ""}</span>
+              </span>
+            ))}
+          </div>
+        )}
+        {/* Recently seen (offline) — آخر ظهور */}
+        {presenceRows.some((r) => !isOnline(r)) && (
+          <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 border-t border-line pt-2.5 text-2xs text-ink-subtle">
+            {presenceRows.filter((r) => !isOnline(r)).slice(0, 8).map((r) => (
+              <span key={r.user_id} className="inline-flex items-center gap-1"><Clock size={11} /> {r.name || "—"} · آخر ظهور {agoAr(r.last_seen)}</span>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Cards grid */}
@@ -142,10 +213,18 @@ export function StaffManagement() {
               className={cn("card group relative overflow-hidden p-5 transition hover:-translate-y-0.5 hover:shadow-raised", m.status === "suspended" && "opacity-70")}
             >
               <div className="flex items-center gap-3">
-                <Avatar member={m} size={52} />
+                <span className="relative">
+                  <Avatar member={m} size={52} />
+                  {m.userId && presenceByUser.has(m.userId) && isOnline(presenceByUser.get(m.userId)!) && (
+                    <span title="متصل الآن" className="absolute -bottom-0.5 -end-0.5 h-3.5 w-3.5 rounded-full border-2 border-surface-1 bg-success-500" />
+                  )}
+                </span>
                 <div className="min-w-0 flex-1">
                   <p className="truncate font-display font-bold text-ink">{m.name || "—"}</p>
                   <p className="truncate text-xs text-ink-muted">{m.specialty || ROLE_LABEL[m.role]}</p>
+                  {m.userId && presenceByUser.has(m.userId) && !isOnline(presenceByUser.get(m.userId)!) && (
+                    <p className="truncate text-2xs text-ink-subtle">آخر ظهور {agoAr(presenceByUser.get(m.userId)!.last_seen)}</p>
+                  )}
                 </div>
               </div>
 
