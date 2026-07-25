@@ -27,7 +27,7 @@ export const SURGERY_CATALOG: SurgeryCategory[] = [
     icon: "🐾",
     items: [
       { name: "تعقيم أنثى (استئصال الرحم والمبايض)", en: "Ovariohysterectomy (Spay)", followupDays: 10 },
-      { name: "خصي ذكر", en: "Castration (Neuter)", followupDays: 7 },
+      { name: "تعقيم ذكر", en: "Castration (Neuter)", followupDays: 7 },
       { name: "عملية قيصرية", en: "Caesarean Section", followupDays: 10 },
       { name: "استئصال رحم متقيح", en: "Pyometra Surgery", followupDays: 10 },
       { name: "إنزال خصية معلقة", en: "Cryptorchid Castration", followupDays: 10 },
