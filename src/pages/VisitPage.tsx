@@ -14,6 +14,7 @@ import { useToast, Button } from "@/components/ui";
 import { Modal } from "@/components/Modal";
 import { TreatmentPlan } from "@/components/TreatmentPlan";
 import { DoctorSelect } from "@/components/MedicalEntry";
+import { SurgerySection } from "@/components/Surgeries";
 import { ClinicalRecordCard } from "@/components/ClinicalRecordCard";
 import { parseClinical, type ClinicalRecord } from "@/lib/clinicalRecord";
 import { OUTCOMES } from "@/lib/clinicalKnowledge";
@@ -507,6 +508,9 @@ export default function VisitPage() {
           </button>
         </div>
       )}
+
+      {/* ── سجل العمليات الجراحية — اختيار علمي + تفاصيل المدخل والخياطة ── */}
+      <SurgerySection petId={pet.id} visitId={visit.id} lang={lang} defaultSurgeon={user?.full_name ?? ""} readonly={ended} />
 
       {clinicalNotes.length > 0 && (
         <div className="mt-3 space-y-3">

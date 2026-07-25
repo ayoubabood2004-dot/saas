@@ -703,6 +703,37 @@ export interface WhatsAppMessage {
   sent_at: string;
 }
 
+/** عملية جراحية مسجلة على حيوان — تُنشأ من داخل سجل الحالة (الطبلة). */
+export interface Surgery {
+  id: string;
+  pet_id: string;
+  /** الزيارة/الطبلة التي سُجلت منها العملية. */
+  visit_id?: string | null;
+  clinic_id?: string | null;
+  /** اسم العملية (من الكتالوج أو مخصص). */
+  name: string;
+  /** تصنيف الكتالوج (تعقيم، عظام، …) — للعرض والفرز. */
+  category?: string | null;
+  performed_at: string; // ISO datetime
+  surgeon?: string | null;
+  anesthesia?: string | null;
+  duration_min?: number | null;
+  /** success | complications | critical */
+  outcome?: string | null;
+  /** المدخل الجراحي (Ventral midline, Flank, …). */
+  approach?: string | null;
+  /** أنماط الخياطة المستخدمة — نص مجمّع "نمط + نمط". */
+  suture_pattern?: string | null;
+  /** مادة الخيط (PDS, Vicryl, …). */
+  suture_material?: string | null;
+  /** قياس الخيط USP (3-0, 4-0, …). */
+  suture_size?: string | null;
+  notes?: string | null;
+  /** موعد المتابعة / شيل الخيوط (تاريخ). */
+  followup_on?: string | null;
+  created_at?: string;
+}
+
 export interface DemoDB {
   pets: Pet[];
   weightLogs: WeightLog[];
@@ -724,6 +755,7 @@ export interface DemoDB {
   couriers?: Courier[];
   deliveryOrders?: DeliveryOrder[];
   petMovements?: PetMovement[];
+  surgeries?: Surgery[];
   waMessages?: WhatsAppMessage[];
   branches?: Branch[];
 }

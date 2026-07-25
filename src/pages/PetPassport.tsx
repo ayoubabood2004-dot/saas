@@ -15,6 +15,7 @@ import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, TreatmentEnt
 import { VisitsPanel } from "@/components/VisitsPanel";
 import { SpeciesPicker, SexPicker, AgeInput, BreedPicker, ColorPicker } from "@/components/PetFields";
 import { repo } from "@/lib/repo";
+import { SurgerySection } from "@/components/Surgeries";
 import { persistMedicalEntries } from "@/lib/medSync";
 import { syncDoseCycleForPet } from "@/lib/doseCycle";
 import { PetAvatar } from "@/components/PetAvatar";
@@ -493,7 +494,7 @@ export function PetPassport() {
             {tab === "visits" && <VisitsPanel pet={pet} visits={clinicVisits} canEdit={canEditClinical && !isOwner} onChanged={reload} />}
             {tab === "diet" && <DietTab pet={pet} onChanged={reload} canEdit={canEditClinical || isOwner} />}
             {tab === "vaccines" && <VaccinesTab pet={pet} vaccines={vaccines} onChanged={reload} canEdit={canEditClinical} isOwner={isOwner} />}
-            {tab === "history" && <HistoryTab visits={visits} admissions={admissions} treatments={treatments} isOwner={isOwner} canEdit={canEditClinical && !isOwner} onChanged={reload} />}
+            {tab === "history" && <HistoryTab petId={pet.id} visits={visits} admissions={admissions} treatments={treatments} isOwner={isOwner} canEdit={canEditClinical && !isOwner} onChanged={reload} />}
             {tab === "treatment" && <TreatmentTab pet={pet} treatments={treatments} admissions={admissions} onChanged={reload} canEdit={canEditClinical} isOwner={isOwner} />}
             {tab === "notes" && <NotesTab pet={pet} notes={notes} canEdit={canEditClinical} onChanged={reload} />}
             {tab === "timeline" && <TimelineWorkspace pet={pet} treatments={treatments} vaccinations={vaccines} notes={notes} admissions={admissions} isOwner={isOwner} canEdit={canEditClinical} onChanged={reload} />}
@@ -1485,7 +1486,7 @@ function AdmissionDate({ admission, canEdit, onChanged, className }: { admission
   );
 }
 
-function HistoryTab({ visits, admissions, treatments, isOwner, canEdit, onChanged }: { visits: MedicalVisit[]; admissions: Admission[]; treatments: TreatmentEntry[]; isOwner: boolean; canEdit: boolean; onChanged: () => void }) {
+function HistoryTab({ petId, visits, admissions, treatments, isOwner, canEdit, onChanged }: { petId: string; visits: MedicalVisit[]; admissions: Admission[]; treatments: TreatmentEntry[]; isOwner: boolean; canEdit: boolean; onChanged: () => void }) {
   const { t, i18n } = useTranslation();
   const [openId, setOpenId] = useState<string | null>(null);
 
@@ -1497,6 +1498,8 @@ function HistoryTab({ visits, admissions, treatments, isOwner, canEdit, onChange
 
   return (
     <div className="space-y-6 animate-fade-in">
+      {/* العمليات الجراحية — سجل مقروء فقط داخل ملف الحيوان */}
+      <SurgerySection petId={petId} lang={i18n.language} readonly />
       {/* All times at the clinic */}
       {admissions.length > 0 && (
         <section>

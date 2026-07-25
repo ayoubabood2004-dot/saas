@@ -3,15 +3,16 @@ import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import {
   Stethoscope, BedDouble, HeartPulse, ClipboardList, Pill, AlertTriangle,
-  CheckCircle2, Clock, Loader2, Search, LayoutGrid, ChevronLeft,
+  CheckCircle2, Clock, Loader2, Search, LayoutGrid, ChevronLeft, Slice,
 } from "lucide-react";
-import type { Admission, ClinicVisit, Pet, TreatmentEntry } from "@/types";
+import type { Admission, ClinicVisit, Pet, TreatmentEntry , Surgery } from "@/types";
 import { repo } from "@/lib/repo";
 import { opsStore } from "@/lib/opsStore";
 import { useAuth } from "@/contexts/AuthContext";
 import { useBranchState, matchesBranch } from "@/lib/branchStore";
 import { localISO, formatDate, formatNum, cn } from "@/lib/utils";
 import { playTap } from "@/lib/sounds";
+import { Modal } from "@/components/Modal";
 
 /* ── Bucket configuration ─────────────────────────────────────────────────── */
 type BucketKey = "daily" | "careBoarding" | "boarding" | "visit";
@@ -209,6 +210,17 @@ export function Charts() {
     } finally { setOpening(null); }
   };
 
+  // عمليات هذا الشهر — الجرّاح يشوف مباشرة كم عملية أجرى (0073).
+  const [surgeries, setSurgeries] = useState<Surgery[]>([]);
+  const [surgOpen, setSurgOpen] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    repo.listAllSurgeries().then((r) => { if (alive) setSurgeries(r); }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
+  const monthKey = todayISO.slice(0, 7);
+  const monthSurgeries = useMemo(() => surgeries.filter((x) => x.performed_at.slice(0, 7) === monthKey), [surgeries, monthKey]);
+
   const booting = !ops.hydrated && charts.length === 0 && visits.length === 0;
 
   return (
@@ -229,6 +241,10 @@ export function Charts() {
             <span className={cn("block text-lg font-black leading-none", dueNow > 0 ? "text-warn-700 dark:text-warn-300" : "text-ink")}>{formatNum(dueNow)}</span>
             <span className="text-[10px] font-bold text-ink-subtle">تحتاج متابعة</span>
           </span>
+          <button onClick={() => { playTap(); setSurgOpen(true); }} className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-center transition hover:bg-rose-100 dark:border-rose-500/30 dark:bg-rose-500/10">
+            <span className="block text-lg font-black leading-none text-rose-700 dark:text-rose-300">{formatNum(monthSurgeries.length)}</span>
+            <span className="text-[10px] font-bold text-ink-subtle">🔪 عمليات هذا الشهر</span>
+          </button>
         </div>
       </div>
 
@@ -275,6 +291,26 @@ export function Charts() {
           })}
         </div>
       )}
+
+      {/* سجل عمليات هذا الشهر */}
+      <Modal open={surgOpen} onClose={() => setSurgOpen(false)} title={`العمليات الجراحية — هذا الشهر (${formatNum(monthSurgeries.length)})`}>
+        {monthSurgeries.length === 0 ? (
+          <p className="rounded-xl bg-surface-2 px-3 py-6 text-center text-sm text-ink-muted">لا عمليات مسجلة هذا الشهر — تُسجل من داخل سجل الحالة بزر «تسجيل عملية».</p>
+        ) : (
+          <div className="max-h-[60vh] space-y-2 overflow-y-auto">
+            {monthSurgeries.map((x) => (
+              <button key={x.id} onClick={() => { playTap(); navigate(`/pet/${x.pet_id}`); }} className="flex w-full items-center gap-2.5 rounded-xl border border-line bg-surface-1 p-3 text-start transition hover:border-rose-300">
+                <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-rose-50 text-rose-600 dark:bg-rose-500/15 dark:text-rose-300"><Slice size={16} /></span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-black text-ink">{x.name}</span>
+                  <span className="block text-2xs font-bold text-ink-subtle">{pets[x.pet_id]?.name ?? "—"} · {formatDate(x.performed_at, lang)}{x.surgeon ? ` · ${x.surgeon}` : ""}</span>
+                </span>
+                {x.outcome === "success" && <span className="rounded-full bg-success-50 px-2 py-0.5 text-2xs font-black text-success-700 dark:bg-success-500/15 dark:text-success-300">ناجحة</span>}
+              </button>
+            ))}
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }

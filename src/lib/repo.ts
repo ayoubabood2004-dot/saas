@@ -4,7 +4,7 @@
 import { loadDB, saveDB } from "./demoStore";
 import { supabase } from "./supabase";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, AppointmentStatus, TreatmentEntry, Admission, Branch, Reminder, Product, Company, CompanySection, Purchase, PurchaseItem, PurchaseDraftLine, PurchaseMeta, Courier, DeliveryOrder, PetMovement, DemoDB, Invoice, InvoiceItem, CheckoutItem, SaleMeta, Customer, DiscountType, PaymentMethod, PaymentSplit, WhatsAppMessage, AuditEntry, LoginEvent, PetNote, Expense, ClinicVisit } from "@/types";
+import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, AppointmentStatus, TreatmentEntry, Admission, Branch, Reminder, Product, Company, CompanySection, Purchase, PurchaseItem, PurchaseDraftLine, PurchaseMeta, Courier, DeliveryOrder, PetMovement, DemoDB, Invoice, InvoiceItem, CheckoutItem, SaleMeta, Customer, DiscountType, PaymentMethod, PaymentSplit, WhatsAppMessage, AuditEntry, LoginEvent, PetNote, Expense, ClinicVisit , Surgery } from "@/types";
 import { uid, uuid, ageMonths } from "./utils";
 
 /** Sort key for a case/admission — newest first. Prefers the precise `created_at`
@@ -503,6 +503,38 @@ const demoRepo = {
   async deleteTreatment(id: string): Promise<void> {
     const db = loadDB();
     db.treatments = db.treatments.filter((t) => t.id !== id);
+    saveDB(db);
+  },
+
+  /* ---- العمليات الجراحية (سجل الحالة) ---- */
+  async listSurgeries(petId: string): Promise<Surgery[]> {
+    return (loadDB().surgeries ?? [])
+      .filter((x) => x.pet_id === petId)
+      .sort((a, b) => b.performed_at.localeCompare(a.performed_at));
+  },
+
+  async addSurgery(input: Omit<Surgery, "id" | "created_at">): Promise<Surgery> {
+    const db = loadDB();
+    const row: Surgery = { ...input, id: uid("srg"), created_at: new Date().toISOString() };
+    db.surgeries = [...(db.surgeries ?? []), row];
+    saveDB(db);
+    return row;
+  },
+
+  /** كل عمليات العيادة (لعدّاد الشهر في سجل الطبلات). */
+  async listAllSurgeries(): Promise<Surgery[]> {
+    return (loadDB().surgeries ?? []).slice().sort((a, b) => b.performed_at.localeCompare(a.performed_at));
+  },
+
+  async updateSurgery(id: string, patch: Partial<Surgery>): Promise<void> {
+    const db = loadDB();
+    db.surgeries = (db.surgeries ?? []).map((x) => (x.id === id ? { ...x, ...patch } : x));
+    saveDB(db);
+  },
+
+  async deleteSurgery(id: string): Promise<void> {
+    const db = loadDB();
+    db.surgeries = (db.surgeries ?? []).filter((x) => x.id !== id);
     saveDB(db);
   },
 
@@ -1013,6 +1045,9 @@ const DEMO_ACTIVITY_MAP: Record<string, { entity: string; action: "INSERT" | "UP
   setTreatmentGiven: { entity: "treatment_entries", action: "UPDATE" },
   deleteTreatment: { entity: "treatment_entries", action: "DELETE" },
   addAdmission: { entity: "admissions", action: "INSERT" },
+  addSurgery: { entity: "surgeries", action: "INSERT" },
+  updateSurgery: { entity: "surgeries", action: "UPDATE" },
+  deleteSurgery: { entity: "surgeries", action: "DELETE" },
   updateAdmission: { entity: "admissions", action: "UPDATE" },
   createBranch: { entity: "branches", action: "INSERT" },
   addReminder: { entity: "reminders", action: "INSERT" },
@@ -1325,6 +1360,26 @@ const supabaseRepo: typeof demoRepo = {
   },
   async deleteTreatment(id) {
     ok(await sbc().from("treatment_entries").delete().eq("id", id));
+  },
+  async listSurgeries(petId) {
+    // Pre-0073 backend (table missing) must never break the case page — empty list.
+    try {
+      return listOf<Surgery>(await sbc().from("surgeries").select("*").eq("pet_id", petId).order("performed_at", { ascending: false }));
+    } catch { return []; }
+  },
+  async addSurgery(input) {
+    return need<Surgery>(await sbc().from("surgeries").insert(input).select().single());
+  },
+  async listAllSurgeries() {
+    try {
+      return listOf<Surgery>(await sbc().from("surgeries").select("*").order("performed_at", { ascending: false }).limit(500));
+    } catch { return []; }
+  },
+  async updateSurgery(id, patch) {
+    ok(await sbc().from("surgeries").update(patch).eq("id", id));
+  },
+  async deleteSurgery(id) {
+    ok(await sbc().from("surgeries").delete().eq("id", id));
   },
   async setTreatmentGiven(id, given, by, at) {
     ok(await sbc().from("treatment_entries").update({ administered_at: given ? (at || new Date().toISOString()) : null, administered_by: given ? by : null }).eq("id", id));
