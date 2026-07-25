@@ -15,15 +15,20 @@ let cache: ServiceCatalog | null = null;
 
 /** Starter catalogue so a new clinic (and the demo) has services out of the box. */
 function seedCatalog(): ServiceCatalog {
-  const lab = uuid(), img = uuid(), con = uuid(), grm = uuid();
+  const lab = uuid(), img = uuid(), con = uuid(), grm = uuid(), srg = uuid();
   return {
     categories: [
       { id: lab, name: "المختبر" },
       { id: img, name: "الأشعة" },
       { id: con, name: "الاستشاريات" },
       { id: grm, name: "حلاقة وعناية" },
+      { id: srg, name: "العمليات الجراحية" },
     ],
     services: [
+      // بيع عملية من الكاشير يسجّلها تلقائياً في طبلة الحيوان وسجل العمليات.
+      { id: uuid(), category_id: srg, name: "عملية قيصرية", price: 150000 },
+      { id: uuid(), category_id: srg, name: "تعقيم أنثى", price: 100000 },
+      { id: uuid(), category_id: srg, name: "تعقيم ذكر", price: 75000 },
       { id: uuid(), category_id: lab, name: "تحليل دم شامل (CBC)", price: 25000 },
       { id: uuid(), category_id: lab, name: "تحاليل كيمياء الدم", price: 35000 },
       { id: uuid(), category_id: lab, name: "تحليل بول", price: 15000 },

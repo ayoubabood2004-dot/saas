@@ -177,3 +177,39 @@ export const SURGERY_OUTCOMES = [
 
 export const outcomeLabel = (id: string | null | undefined): string =>
   SURGERY_OUTCOMES.find((o) => o.id === id)?.label ?? (id || "—");
+
+/* ---------------------------------------------------------------------------
+ * ربط الكاشير بالعمليات: بيع خدمة اسمها يطابق عملية من الكتالوج يسجّلها
+ * تلقائياً في طبلة الحيوان — بنفس فلسفة الأدوية واللقاحات المباعة.
+ * ------------------------------------------------------------------------- */
+
+const normalize = (x: string) =>
+  x.toLowerCase()
+    .replace(/[إأآ]/g, "ا").replace(/ة/g, "ه").replace(/ى/g, "ي")
+    .replace(/[^\p{L}\p{N} ]/gu, " ").replace(/\s+/g, " ").trim();
+
+/** كلمات عامة لا تكفي وحدها لتحديد عملية بعينها. */
+const GENERIC = new Set(["عمليه", "جراحه", "عمليه جراحيه", "surgery", "operation"]);
+
+export interface SurgeryServiceMatch { name: string; category: string; followupDays?: number }
+
+/** يطابق اسم خدمة مباعة مع الكتالوج الجراحي — أو null إذا ليست عملية. */
+export function matchSurgeryService(lineName: string): SurgeryServiceMatch | null {
+  const n = normalize(lineName);
+  if (!n || GENERIC.has(n)) return null;
+  for (const cat of SURGERY_CATALOG) {
+    for (const it of cat.items) {
+      if (it.en === "Custom procedure") continue;
+      const base = normalize(it.name.split("(")[0]);
+      const full = normalize(it.name);
+      const en = normalize(it.en ?? "");
+      const hit =
+        n.includes(base) || n.includes(full) ||
+        (en && (n === en || n.includes(en) || (n.length >= 6 && en.includes(n)))) ||
+        // "قيصريه" وحدها تكفي — جزء مميز من اسم أطول، بشرط ألا تكون كلمة عامة.
+        (n.length >= 5 && base.includes(n));
+      if (hit) return { name: it.en ? `${it.name} — ${it.en}` : it.name, category: cat.label, followupDays: it.followupDays };
+    }
+  }
+  return null;
+}

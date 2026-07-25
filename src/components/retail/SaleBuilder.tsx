@@ -28,6 +28,7 @@ import { cn, money, currencySymbol } from "@/lib/utils";
 import { dueOf, paidOf } from "@/lib/debt";
 import { withTimeout, describeDbError } from "@/lib/errors";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
+import { matchSurgeryService, type SurgeryServiceMatch } from "@/lib/surgeryCatalog";
 
 /** A unified cart line — a physical product OR a non-barcode service. The price is an
  *  editable override; services carry product_id=null + zero cost so they flow through
@@ -429,7 +430,8 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
     }));
 
   const addService = (s: Service) =>
-    bump(`s:${s.id}`, () => ({ id: `s:${s.id}`, kind: "service", name: s.name, barcode: null, unit_price: s.price, unit_cost: 0, qty: 1, stock: null, product_id: null, subcategory: null }));
+    // الخدمة تُنسب للحيوان النشط — خدمة "عملية" تسجَّل تلقائياً في طبلته عند الإتمام.
+    bump(`s:${s.id}`, () => ({ id: `s:${s.id}`, kind: "service", name: s.name, barcode: null, unit_price: s.price, unit_cost: 0, qty: 1, stock: null, product_id: null, subcategory: null, petId: activePet?.id ?? null, petName: activePet?.name ?? null }));
 
   // A medication/vaccine from the "الأدوية" tab — a priced cart line carrying the full
   // medical draft (dose/route/booster/lot) so it can be written into the pet's record.
@@ -869,6 +871,40 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
             12000,
           );
         } catch (e) { toast.error(t("retail.medSyncFailed", "تم تسجيل البيع، لكن تعذّر تحديث السجل الطبي للحيوان"), e instanceof Error ? e.message : undefined); }
+      }
+      // عمليات مباعة من الكاشير (خدمة اسمها يطابق الكتالوج الجراحي) تصعد
+      // تلقائياً إلى طبلة الحيوان وسجل عملياته — مثل الأدوية واللقاحات تماماً.
+      const surgeryLines = cart
+        .map((l) => ({ l, m: l.kind === "service" ? matchSurgeryService(l.name) : null }))
+        .filter((x): x is { l: Line; m: SurgeryServiceMatch } => !!x.m);
+      if (surgeryLines.length) {
+        const fallbackPet = salePets.find((p) => p.id)?.id ?? null;
+        let synced = 0;
+        try {
+          await withTimeout(
+            Promise.all(surgeryLines.map(async ({ l, m }) => {
+              const pid = l.petId ?? fallbackPet;
+              if (!pid) return;
+              // اربطها بالطبلة المفتوحة إن وُجدت لتظهر مباشرة في سجل الحالة.
+              let visitId: string | null = null;
+              try { visitId = (await repo.listClinicVisitsForPet(pid)).find((v) => v.status === "open")?.id ?? null; } catch { /* optional */ }
+              const followup = m.followupDays
+                ? (() => { const d = new Date(); d.setDate(d.getDate() + m.followupDays!); return d.toISOString().slice(0, 10); })()
+                : null;
+              await repo.addSurgery({
+                pet_id: pid, visit_id: visitId, name: m.name, category: m.category,
+                performed_at: new Date().toISOString(), surgeon: user?.full_name ?? null,
+                anesthesia: null, duration_min: null, outcome: "success",
+                approach: null, suture_pattern: null, suture_material: null, suture_size: null,
+                notes: `سُجّلت تلقائياً من فاتورة البيع ${invoiceNo(invoice.id)}`,
+                followup_on: followup,
+              });
+              synced++;
+            })),
+            12000,
+          );
+          if (synced) toast.success(t("retail.surgerySynced", "سُجّلت العملية تلقائياً في طبلة الحيوان وسجل العمليات 🔪"));
+        } catch { /* non-fatal: the sale is already recorded */ }
       }
       // The doctor's invoice note is ALSO filed into every attached patient's
       // clinical notes (سجل الحيوان → الملاحظات), keyed by pet id. This makes the
