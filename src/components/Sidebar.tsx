@@ -31,6 +31,7 @@ import { useSubscription } from "@/lib/subscription";
 import { useEntitlements } from "@/lib/entitlements";
 import { formatNum } from "@/lib/utils";
 import { setLang, type Lang } from "@/i18n";
+import { QuickZoomBar } from "@/components/QuickZoom";
 import { playTap } from "@/lib/sounds";
 import { prefetchHandlers, prefetchAllIdle } from "@/lib/routePrefetch";
 import { warmDataIdle } from "@/lib/prefetchData";
@@ -125,7 +126,7 @@ export function Sidebar() {
       <BranchSwitcher className="mt-3" />
 
       {/* Nav */}
-      <nav className="mt-4 flex flex-1 flex-col gap-1">
+      <nav className="mt-4 flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto overscroll-contain pe-0.5">
         {items.map((item) => {
           const Icon = item.icon;
           const active = isActive(item.to, item.exact);
@@ -207,6 +208,7 @@ export function Sidebar() {
             <p className="truncate text-xs text-ink-subtle">{roleLabel}</p>
           </div>
         </div>
+        <QuickZoomBar />
         <div className="mt-2 flex items-center gap-1">
           <Tooltip label={i18n.language === "ar" ? "English" : "العربية"}>
             <button
@@ -302,3 +304,4 @@ function SubscriptionNavCard() {
 
   return null;
 }
+

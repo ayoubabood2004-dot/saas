@@ -25,6 +25,14 @@ pruneStaleStorage();
 // local prefs mirror answers synchronously, so there's no size flash. Re-applied
 // after the clinic config hydrates in case the enable flag changed remotely.
 applyFontScale();
+// الملاءمة التلقائية تتبع تغيّر حجم النافذة (تكبير/استعادة) عندما لا يوجد اختيار محفوظ.
+{
+  let t: number | undefined;
+  window.addEventListener("resize", () => {
+    window.clearTimeout(t);
+    t = window.setTimeout(applyFontScale, 250);
+  });
+}
 
 // Safety net: surface otherwise-silent async failures (e.g. a database write that
 // hit a backend error and wasn't caught at the call site) as a toast instead of

@@ -29,6 +29,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { isSoundEnabled, setSoundEnabled, playTap } from "@/lib/sounds";
 import { prefetchHandlers } from "@/lib/routePrefetch";
 import { Tooltip, ThemeToggle } from "@/components/ui";
+import { QuickZoom } from "@/components/QuickZoom";
 import { OverrideCorner } from "@/components/ManagerOverride";
 import { Logo } from "@/components/Logo";
 import { BranchSwitcher } from "@/components/BranchSwitcher";
@@ -157,6 +158,7 @@ export function TopBar({ mobileOnly = false, minimal = false }: { mobileOnly?: b
               </button>
             </Tooltip>
 
+            <QuickZoom compact />
             <ThemeToggle />
             <OverrideCorner compact />
 

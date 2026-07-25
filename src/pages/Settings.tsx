@@ -570,7 +570,9 @@ function FontScaleOptions() {
     const next = !enabled;
     setEnabled(next);
     setFontScaleEnabled(next);
-    applyFontScale(); // live: turning off restores the stock size instantly
+    // إيقاف القسم يرجّع حجم هذا الجهاز للافتراضي فوراً (السلوك البديهي القديم).
+    if (!next) { setFontScale("normal"); setScale("normal"); }
+    applyFontScale();
     if (next) playSuccess(); else playTap();
   };
   const pick = (id: FontScaleId) => {
@@ -580,13 +582,14 @@ function FontScaleOptions() {
   };
 
   const LABELS: Record<FontScaleId, string> = {
+    xcompact: t("settings.fontScaleXcompact", "مصغّر"),
     compact: t("settings.fontScaleCompact", "صغير"),
     normal: t("settings.fontScaleNormal", "افتراضي"),
     large: t("settings.fontScaleLarge", "كبير"),
     xlarge: t("settings.fontScaleXlarge", "أكبر"),
   };
   // The sample glyph's size mirrors each option's real scale.
-  const SAMPLE_PX: Record<FontScaleId, number> = { compact: 14, normal: 16, large: 18, xlarge: 20 };
+  const SAMPLE_PX: Record<FontScaleId, number> = { xcompact: 13, compact: 14, normal: 16, large: 18, xlarge: 20 };
 
   return (
     <div className="card p-5 mb-4">
@@ -600,7 +603,7 @@ function FontScaleOptions() {
       />
       {enabled && (
         <div className="mt-4 space-y-3 border-t border-line pt-4">
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
             {FONT_SCALES.map((s) => {
               const active = scale === s.id;
               return (
