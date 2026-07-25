@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
@@ -19,6 +19,8 @@ import {
   MessageCircle,
   Briefcase,
   BarChart3,
+  Slice,
+  ChevronDown,
   Sparkles,
   Crown,
   ArrowLeft,
@@ -67,7 +69,14 @@ export function Sidebar() {
   const items = [
     { to: "/", icon: LayoutDashboard, label: t("nav.dashboard", "Dashboard"), exact: true },
     { to: "/reception", icon: CalendarDays, label: t("reception.title") },
-    { to: "/charts", icon: LayoutGrid, label: t("nav.charts", "الطبلات") },
+    {
+      to: "/charts", icon: LayoutGrid, label: t("nav.charts", "الطبلات"),
+      // قائمة منسدلة: الطبلات (خطط العلاج) + العمليات (سجل الجراحة الكامل).
+      children: [
+        { to: "/charts", icon: LayoutGrid, label: t("nav.charts", "الطبلات") },
+        { to: "/surgeries", icon: Slice, label: t("nav.surgeries", "العمليات") },
+      ],
+    },
     { to: "/records", icon: ClipboardList, label: t("records.title") },
     { to: "/inventory", icon: Boxes, label: t("nav.inventory", "Inventory"), show: can("manageInventory") },
     { to: "/retail", icon: Store, label: t("nav.retail", "Retail & Sales"), show: can("processSales") && has("pos") },
@@ -79,6 +88,7 @@ export function Sidebar() {
     { to: "/settings", icon: SettingsIcon, label: t("nav.settings"), show: can("manageSettings") },
   ].filter((it) => it.show !== false);
 
+  const [chartsOpen, setChartsOpen] = useState(false);
   const isActive = (to: string, exact?: boolean) =>
     exact ? location.pathname === "/" : location.pathname === to || location.pathname.startsWith(to + "/");
 
@@ -119,6 +129,45 @@ export function Sidebar() {
         {items.map((item) => {
           const Icon = item.icon;
           const active = isActive(item.to, item.exact);
+          if ("children" in item && item.children) {
+            const kids = item.children;
+            const anyActive = kids.some((k) => isActive(k.to));
+            const open = chartsOpen || anyActive;
+            return (
+              <div key={item.to}>
+                <button
+                  onClick={() => { playTap(); setChartsOpen((v) => !v); }}
+                  className={cn(
+                    "relative flex w-full items-center gap-3 rounded-2xl px-3.5 py-3 text-sm font-semibold transition-colors",
+                    anyActive ? "text-brand-700 dark:text-brand-200" : "text-ink-muted hover:bg-surface-2 hover:text-ink",
+                  )}
+                >
+                  {anyActive && <span className="absolute inset-0 rounded-2xl bg-brand-50 dark:bg-brand-500/15" />}
+                  <span className="relative z-10 flex flex-1 items-center gap-3"><Icon size={19} /> {item.label}</span>
+                  <ChevronDown size={15} className={cn("relative z-10 transition-transform", open && "rotate-180")} />
+                </button>
+                {open && (
+                  <div className="mt-1 space-y-1 border-s-2 border-line ps-3 ms-5">
+                    {kids.map((k) => {
+                      const KIcon = k.icon;
+                      const kActive = isActive(k.to);
+                      return (
+                        <Link
+                          key={k.to} to={k.to} {...prefetchHandlers(k.to)} onClick={() => playTap()}
+                          className={cn(
+                            "relative flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm font-semibold transition-colors",
+                            kActive ? "bg-brand-50 text-brand-700 dark:bg-brand-500/15 dark:text-brand-200" : "text-ink-muted hover:bg-surface-2 hover:text-ink",
+                          )}
+                        >
+                          <KIcon size={17} /> {k.label}
+                        </Link>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          }
           return (
             <Link
               key={item.to}

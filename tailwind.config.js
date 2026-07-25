@@ -96,9 +96,9 @@ export default {
         canvas: "rgb(var(--surface) / <alpha-value>)",
       },
       fontFamily: {
-        sans: ["Inter", "Tajawal", "system-ui", "sans-serif"],
-        display: ["'Plus Jakarta Sans'", "Inter", "Tajawal", "system-ui", "sans-serif"],
-        arabic: ["Tajawal", "Inter", "sans-serif"],
+        sans: ["Inter", "'IBM Plex Sans Arabic'", "system-ui", "sans-serif"],
+        display: ["'Plus Jakarta Sans'", "Inter", "'IBM Plex Sans Arabic'", "system-ui", "sans-serif"],
+        arabic: ["'IBM Plex Sans Arabic'", "Inter", "sans-serif"],
       },
       fontSize: {
         "2xs": ["0.6875rem", { lineHeight: "1rem" }],

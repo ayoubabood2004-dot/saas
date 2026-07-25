@@ -26,6 +26,7 @@ const Settings = lazy(() => import("@/pages/Settings").then((m) => ({ default: m
 const ActivityLog = lazy(() => import("@/pages/ActivityLog").then((m) => ({ default: m.ActivityLog })));
 const ClinicRecords = lazy(() => import("@/pages/ClinicRecords").then((m) => ({ default: m.ClinicRecords })));
 const Charts = lazy(() => import("@/pages/Charts").then((m) => ({ default: m.Charts })));
+const SurgeriesHub = lazy(() => import("@/pages/SurgeriesHub").then((m) => ({ default: m.SurgeriesHub })));
 const NewCase = lazy(() => import("@/pages/NewCase").then((m) => ({ default: m.NewCase })));
 const Inventory = lazy(() => import("@/pages/Inventory").then((m) => ({ default: m.Inventory })));
 const RetailSales = lazy(() => import("@/pages/RetailSales").then((m) => ({ default: m.RetailSales })));
@@ -136,6 +137,7 @@ function Shell() {
             <Route path="/scan" element={<Protected><ScanChart /></Protected>} />
             <Route path="/reception" element={<Protected><Reception /></Protected>} />
             <Route path="/charts" element={<Protected><ClinicOnly><Charts /></ClinicOnly></Protected>} />
+            <Route path="/surgeries" element={<Protected><ClinicOnly><SurgeriesHub /></ClinicOnly></Protected>} />
             <Route path="/consult/:petId" element={<Protected><Consultation /></Protected>} />
             <Route path="/records" element={<Protected><ClinicRecords /></Protected>} />
             <Route path="/new-case" element={<Protected><NewCase /></Protected>} />

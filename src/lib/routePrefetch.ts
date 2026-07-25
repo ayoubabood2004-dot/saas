@@ -23,6 +23,7 @@ const importers: Record<string, Importer> = {
   "/settings": () => import("@/pages/Settings"),
   "/book": () => import("@/pages/BookingWizard"),
   "/new-case": () => import("@/pages/NewCase"),
+  "/surgeries": () => import("@/pages/SurgeriesHub"),
 };
 
 const warmed = new Set<string>();

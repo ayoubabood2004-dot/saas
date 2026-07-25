@@ -21,6 +21,7 @@ import {
   Briefcase,
   BarChart3,
   Sparkles,
+ Slice,
 } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { setLang, type Lang } from "@/i18n";
@@ -79,6 +80,7 @@ export function TopBar({ mobileOnly = false, minimal = false }: { mobileOnly?: b
     ? [
         { to: "/reception", icon: CalendarDays, label: t("reception.title") },
         { to: "/charts", icon: LayoutGrid, label: t("nav.charts", "الطبلات") },
+        { to: "/surgeries", icon: Slice, label: t("nav.surgeries", "العمليات") },
         { to: "/records", icon: ClipboardList, label: t("records.title") },
         { to: "/inventory", icon: Boxes, label: t("nav.inventory", "Inventory"), show: can("manageInventory") },
         { to: "/retail", icon: Store, label: t("nav.retail", "Retail & Sales"), show: can("processSales") && has("pos") },
