@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Settings as SettingsIcon, RotateCcw, Check, Volume2, VolumeX, Plus, Trash2, Pill, PawPrint, Stethoscope, Tag, FolderPlus, BadgePercent, IdCard, Mail, UserCog, Image as ImageIcon, Upload, Facebook, Instagram, Building2, Printer, Type } from "lucide-react";
+import { Settings as SettingsIcon, RotateCcw, Check, Volume2, VolumeX, Plus, Trash2, Pill, PawPrint, Stethoscope, Tag, FolderPlus, BadgePercent, IdCard, Mail, UserCog, Image as ImageIcon, Upload, Facebook, Instagram, Building2, Printer, Type, LogOut } from "lucide-react";
 import type { Species, Service, ServiceCategory, ServiceCatalog, Product } from "@/types";
 import { useAuth } from "@/contexts/AuthContext";
 import { usePermissions } from "@/hooks/usePermissions";
@@ -152,6 +152,7 @@ export function Settings() {
       {canSettings && <ManagerOverrideCard />}
       {canSettings && <CashierOptions />}
       {canSettings && <FontScaleOptions />}
+      <ClinicMembership />
       {canSettings && <BranchesManager />}
       {canSettings && <ServiceSettings />}
       {canSettings && <PromotionsManager clinicId={user?.clinic_id ?? user?.id} />}
@@ -502,6 +503,55 @@ function CashierOptions() {
           checked={resizableCart}
           onToggle={toggleResizableCart}
         />
+      </div>
+    </div>
+  );
+}
+
+/* ------------- Clinic membership (عضوية العيادة) — leave, deliberately ------ */
+/** Shown ONLY to users working inside ANOTHER clinic they joined as staff.
+ *  Replaces the old always-visible top banner: leaving is now a deliberate,
+ *  double-confirmed action tucked in Settings, not a button under the cursor. */
+function ClinicMembership() {
+  const { t } = useTranslation();
+  const { user, inAnotherClinic, leaveClinic } = useAuth();
+  const [busy, setBusy] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+
+  if (!inAnotherClinic) return null;
+
+  const doLeave = async () => {
+    setBusy(true);
+    const r = await leaveClinic();
+    if (r.error) { setBusy(false); setConfirming(false); }
+  };
+
+  return (
+    <div className="card p-5 mb-4">
+      <h2 className="font-bold text-ink mb-1 flex items-center gap-2"><LogOut size={18} className="text-warn-600" /> {t("settings.membership", "عضوية العيادة")}</h2>
+      <p className="text-xs text-ink-subtle mb-4">{t("settings.membershipHint", "أنت تعمل حالياً داخل عيادة انضممت إليها كموظف — بياناتك الخاصة ليست محذوفة، فقط مخفية أثناء عملك هنا.")}</p>
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-warn-200 bg-warn-50/50 p-3.5 dark:border-warn-500/30 dark:bg-warn-500/10">
+        <div className="min-w-0">
+          <p className="text-sm font-bold text-ink">{t("settings.leaveTitle", "مغادرة هذه العيادة")}</p>
+          <p className="text-xs text-ink-muted">{t("settings.leaveHint", "تفقد وصولك لبيانات العيادة وتعود لحسابك الخاص. للعودة تحتاج دعوة جديدة من المدير.")}</p>
+        </div>
+        {!confirming ? (
+          <Button variant="secondary" leftIcon={<LogOut size={15} />} onClick={() => { playTap(); setConfirming(true); }}>
+            {t("settings.leaveBtn", "مغادرة العيادة…")}
+          </Button>
+        ) : (
+          <span className="flex items-center gap-2">
+            <span className="text-xs font-bold text-warn-700 dark:text-warn-300">{t("settings.leaveSure", { name: user?.full_name ?? "", defaultValue: "متأكد؟ هذا الإجراء فوري." })}</span>
+            <Button variant="secondary" onClick={() => { playTap(); setConfirming(false); }}>{t("common.cancel", "إلغاء")}</Button>
+            <button
+              onClick={() => void doLeave()}
+              disabled={busy}
+              className="inline-flex items-center gap-1.5 rounded-full bg-warn-600 px-4 py-2 text-xs font-bold text-white shadow-soft transition hover:bg-warn-700 disabled:opacity-60"
+            >
+              <LogOut size={13} /> {busy ? t("app.leaving", "جارٍ المغادرة…") : t("settings.leaveConfirm", "نعم، غادر العيادة")}
+            </button>
+          </span>
+        )}
       </div>
     </div>
   );

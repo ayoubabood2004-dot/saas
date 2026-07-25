@@ -742,7 +742,14 @@
     "fontScaleNormal": "Default",
     "fontScaleLarge": "Large",
     "fontScaleXlarge": "Extra large",
-    "fontScalePreview": "Live preview: this text and the whole interface resize instantly as you choose."
+    "fontScalePreview": "Live preview: this text and the whole interface resize instantly as you choose.",
+    "membership": "Clinic membership",
+    "membershipHint": "You are currently working inside a clinic you joined as staff — your own data isn't deleted, only hidden while you work here.",
+    "leaveTitle": "Leave this clinic",
+    "leaveHint": "You lose access to the clinic's data and return to your own account. Rejoining needs a fresh invite from the manager.",
+    "leaveBtn": "Leave clinic…",
+    "leaveSure": "Sure? This takes effect immediately.",
+    "leaveConfirm": "Yes, leave the clinic"
   },
   "auth": {
     "signIn": "Sign in",
