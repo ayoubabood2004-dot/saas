@@ -1,7 +1,7 @@
 import type { DemoDB, Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, TreatmentEntry, Admission, Reminder, Product, Company, CompanySection, Courier, PetMovement, ClinicVisit } from "@/types";
 import { uid } from "./utils";
 
-const KEY = "vp_demo_db_v12";
+const KEY = "vp_demo_db_v13";
 
 function iso(daysFromNow: number): string {
   const d = new Date();
@@ -195,16 +195,22 @@ function seed(): DemoDB {
 
   const media: MediaItem[] = [];
 
+  // Open treatment visits (طبلات) for the two active cases — the chart opened
+  // from قسم الطبلات is a VISIT, and each dose row must carry its visit_id or
+  // the opened chart shows an empty plan.
+  const visFrancisco: ClinicVisit = { id: uid("visit"), pet_id: francisco.id, kind: "illness", status: "open", condition: "under_treatment", reason: "Gastroenteritis — IV fluids & antibiotics", opened_at: isoAt(-2, 9, 0), opened_by: "Dr. Sarah Mansour", created_at: isoAt(-2, 9, 0) };
+  const visBella: ClinicVisit = { id: uid("visit"), pet_id: bella.id, kind: "illness", status: "open", condition: "under_treatment", reason: "Post-operative care (spay)", opened_at: isoAt(0, 9, 0), opened_by: "Dr. Omar Haddad", created_at: isoAt(0, 9, 0) };
+
   // Francisco is on a 3-day continued (inpatient) treatment course.
   const treatments: TreatmentEntry[] = [
-    { id: uid("tx"), pet_id: francisco.id, day: iso(-2), doctor: "Dr. Sarah Mansour", medication: "Amoxicillin 250mg", time: "08:00", amount: "1 tablet", observations: "Lethargic, low appetite. Mild fever.", created_at: new Date().toISOString() },
-    { id: uid("tx"), pet_id: francisco.id, day: iso(-2), doctor: "Dr. Sarah Mansour", medication: "Lactated Ringer's (IV)", time: "09:30", amount: "250 ml", observations: "Started IV fluids for dehydration.", created_at: new Date().toISOString() },
-    { id: uid("tx"), pet_id: francisco.id, day: iso(-1), doctor: "Dr. Omar Haddad", medication: "Amoxicillin 250mg", time: "08:00", amount: "1 tablet", observations: "More alert, ate small portion. Fever down.", created_at: new Date().toISOString() },
-    { id: uid("tx"), pet_id: francisco.id, day: iso(-1), doctor: "Dr. Omar Haddad", medication: "Maropitant", time: "08:15", amount: "1.0 ml SC", observations: "No vomiting overnight.", created_at: new Date().toISOString() },
-    { id: uid("tx"), pet_id: francisco.id, day: iso(0), doctor: "Dr. Sarah Mansour", medication: "Amoxicillin 250mg", time: "08:00", amount: "1 tablet", observations: "Bright, eating normally. Hydration good — plan discharge tomorrow.", created_at: new Date().toISOString() },
+    { id: uid("tx"), pet_id: francisco.id, visit_id: visFrancisco.id, day: iso(-2), doctor: "Dr. Sarah Mansour", medication: "Amoxicillin 250mg", time: "08:00", amount: "1 tablet", observations: "Lethargic, low appetite. Mild fever.", created_at: new Date().toISOString() },
+    { id: uid("tx"), pet_id: francisco.id, visit_id: visFrancisco.id, day: iso(-2), doctor: "Dr. Sarah Mansour", medication: "Lactated Ringer's (IV)", time: "09:30", amount: "250 ml", observations: "Started IV fluids for dehydration.", created_at: new Date().toISOString() },
+    { id: uid("tx"), pet_id: francisco.id, visit_id: visFrancisco.id, day: iso(-1), doctor: "Dr. Omar Haddad", medication: "Amoxicillin 250mg", time: "08:00", amount: "1 tablet", observations: "More alert, ate small portion. Fever down.", created_at: new Date().toISOString() },
+    { id: uid("tx"), pet_id: francisco.id, visit_id: visFrancisco.id, day: iso(-1), doctor: "Dr. Omar Haddad", medication: "Maropitant", time: "08:15", amount: "1.0 ml SC", observations: "No vomiting overnight.", created_at: new Date().toISOString() },
+    { id: uid("tx"), pet_id: francisco.id, visit_id: visFrancisco.id, day: iso(0), doctor: "Dr. Sarah Mansour", medication: "Amoxicillin 250mg", time: "08:00", amount: "1 tablet", observations: "Bright, eating normally. Hydration good — plan discharge tomorrow.", created_at: new Date().toISOString() },
     // Bella — current daily-treatment case
-    { id: uid("tx"), pet_id: bella.id, day: iso(0), doctor: "Dr. Omar Haddad", medication: "Meloxicam", time: "09:00", amount: "0.3 ml", observations: "Post-spay recovery, comfortable.", created_at: new Date().toISOString() },
-    { id: uid("tx"), pet_id: bella.id, day: iso(0), doctor: "Dr. Omar Haddad", medication: "Cefovecin (Convenia)", time: "09:05", amount: "0.4 ml SC", observations: "Single long-acting antibiotic.", created_at: new Date().toISOString() },
+    { id: uid("tx"), pet_id: bella.id, visit_id: visBella.id, day: iso(0), doctor: "Dr. Omar Haddad", medication: "Meloxicam", time: "09:00", amount: "0.3 ml", observations: "Post-spay recovery, comfortable.", created_at: new Date().toISOString() },
+    { id: uid("tx"), pet_id: bella.id, visit_id: visBella.id, day: iso(0), doctor: "Dr. Omar Haddad", medication: "Cefovecin (Convenia)", time: "09:05", amount: "0.4 ml SC", observations: "Single long-acting antibiotic.", created_at: new Date().toISOString() },
   ];
 
   // Clinic admissions / cases — active treatment, active boarding, and discharged history.
@@ -320,6 +326,7 @@ function seed(): DemoDB {
   ];
 
   const clinicVisits: ClinicVisit[] = [
+    visFrancisco, visBella,
     { id: uid("visit"), pet_id: rocky.id, kind: "checkup", status: "ended", condition: "recovered", opened_at: isoAt(-25, 10, 0), ended_at: isoAt(-25, 10, 20), opened_by: "Dr. Sarah Mansour", outcome: "recovered", summary: "فحص عام سليم", created_at: isoAt(-25, 10, 0) },
     { id: uid("visit"), pet_id: luna.id, kind: "illness", status: "ended", condition: "under_treatment", opened_at: isoAt(-40, 9, 30), ended_at: isoAt(-38, 12, 0), opened_by: "Dr. Sarah Mansour", outcome: "recovered", summary: "شُفيت من التهاب الجهاز التنفسي العلوي", created_at: isoAt(-40, 9, 30) },
   ];
