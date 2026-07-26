@@ -5,7 +5,7 @@ import {
   ArrowRight, Clock, Check, Plus, NotebookPen, ClipboardList,
   Loader2, Lock, CheckCircle2, Stethoscope, UserRound, RotateCcw, AlertTriangle,
   Printer, Syringe, ShieldCheck, Pill,
-  Zap, Rows3, LayoutGrid, CalendarPlus, Gauge, CalendarClock,
+  Zap, Rows3, LayoutGrid, CalendarPlus, Gauge, CalendarClock, FolderOpen,
 } from "lucide-react";
 import type { Pet, ClinicVisit, PetNote, TreatmentEntry } from "@/types";
 import { repo } from "@/lib/repo";
@@ -125,7 +125,9 @@ export default function VisitPage() {
 
   // Seed from navigation state (e.g. the charts hub) so the page paints instantly
   // with the pet/visit/doses we already have, then refreshes in the background.
-  const seed = location.state as { pet?: Pet; visit?: ClinicVisit; treatments?: TreatmentEntry[] } | null;
+  const seed = location.state as { pet?: Pet; visit?: ClinicVisit; treatments?: TreatmentEntry[]; from?: string } | null;
+  // جاي من قسم الطبلات؟ زر الرجوع يرجعه للطبلات — وملف الحيوان له زر مستقل.
+  const cameFromCharts = seed?.from === "charts";
   const seeded = !!(seed?.pet && seed?.visit && seed.visit.id === visitId);
   const [pet, setPet] = useState<Pet | null>(seeded ? seed!.pet! : null);
   const [visit, setVisit] = useState<ClinicVisit | null>(seeded ? seed!.visit! : null);
@@ -386,9 +388,20 @@ export default function VisitPage() {
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6">
-      <button onClick={() => navigate(`/pet/${petId}`)} className="mb-4 inline-flex items-center gap-1.5 text-sm font-bold text-ink-muted transition hover:text-ink">
-        <ArrowRight size={16} /> رجوع إلى ملف {pet.name}
-      </button>
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <button
+          onClick={() => navigate(cameFromCharts ? "/charts" : `/pet/${petId}`)}
+          className="inline-flex items-center gap-1.5 text-sm font-bold text-ink-muted transition hover:text-ink"
+        >
+          <ArrowRight size={16} /> {cameFromCharts ? "رجوع إلى الطبلات" : `رجوع إلى ملف ${pet.name}`}
+        </button>
+        <button
+          onClick={() => navigate(`/pet/${petId}`)}
+          className="ms-auto inline-flex items-center gap-1.5 rounded-lg border border-line bg-surface-1 px-3 py-1.5 text-xs font-extrabold text-ink-muted transition hover:border-brand-300 hover:text-brand-700"
+        >
+          <FolderOpen size={14} /> ملف الحيوان الكامل
+        </button>
+      </div>
 
       {/* ── Header + progress ring hero ── */}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-3 rounded border border-line-strong bg-surface-1 p-4 shadow-card">
@@ -733,6 +746,10 @@ function PaperSummary({ pet, date, speciesLabel, sexLabel, diagnosis, record, on
     { label: "الجنس", value: sexLabel },
     { label: "العمر", value: age || "—" },
     { label: "التاريخ", value: date },
+    // معلومات المالك — حتى يعرف الطبيب الحالة ويتواصل مباشرة من الطبلة.
+    { label: "المالك", value: pet.owner_name || "—" },
+    { label: "هاتف المالك", value: pet.owner_phone || "—" },
+    { label: "رقم الملف", value: pet.serial || "—" },
   ];
   const dxWarn = (record?.redFlags?.length ?? 0) > 0 || (record?.zoonotic?.length ?? 0) > 0 || (record?.reportable?.length ?? 0) > 0;
 

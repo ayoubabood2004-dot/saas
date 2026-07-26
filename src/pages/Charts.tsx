@@ -191,7 +191,7 @@ export function Charts() {
 
   // Hand the visit page the data we already have so it paints instantly (no spinner).
   const go = (petId: string, visit: ClinicVisit) =>
-    navigate(`/pet/${petId}/visit/${visit.id}`, { state: { pet: pets[petId], visit, treatments: treatments.filter((t) => t.visit_id === visit.id) } });
+    navigate(`/pet/${petId}/visit/${visit.id}`, { state: { pet: pets[petId], visit, treatments: treatments.filter((t) => t.visit_id === visit.id), from: "charts" } });
 
   /** Open the treatment plan (VISIT). Reuse the pet's open visit, or create one on the spot. */
   const openChart = async (c: Chart) => {
