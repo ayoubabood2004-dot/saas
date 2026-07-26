@@ -11,6 +11,8 @@ export interface SurgeryCatalogItem {
   en?: string;
   /** أيام المتابعة المقترحة (شيل خيوط / مراجعة). 0 = بلا اقتراح. */
   followupDays?: number;
+  /** مرادفات دارجة/لهجات — تُستخدم في مطابقة خدمات الكاشير فقط. */
+  aliases?: string[];
 }
 
 export interface SurgeryCategory {
@@ -26,9 +28,9 @@ export const SURGERY_CATALOG: SurgeryCategory[] = [
     label: "التعقيم والتوليد",
     icon: "🐾",
     items: [
-      { name: "تعقيم أنثى (استئصال الرحم والمبايض)", en: "Ovariohysterectomy (Spay)", followupDays: 10 },
-      { name: "تعقيم ذكر", en: "Castration (Neuter)", followupDays: 7 },
-      { name: "عملية قيصرية", en: "Caesarean Section", followupDays: 10 },
+      { name: "تعقيم أنثى (استئصال الرحم والمبايض)", en: "Ovariohysterectomy (Spay)", followupDays: 10, aliases: ["تعقيم انثى", "تعقيم اناث", "تعقيم قطة", "تعقيم كلبة", "spay", "سباي"] },
+      { name: "تعقيم ذكر", en: "Castration (Neuter)", followupDays: 7, aliases: ["خصي", "اخصاء", "إخصاء", "خصي ذكر", "neuter", "نيوتر"] },
+      { name: "عملية قيصرية", en: "Caesarean Section", followupDays: 10, aliases: ["قيصريه", "قيصري", "ولادة قيصرية", "ولاده قيصريه", "عملية ولادة", "سيزر", "سيزيريان", "c-section", "cs"] },
       { name: "استئصال رحم متقيح", en: "Pyometra Surgery", followupDays: 10 },
       { name: "إنزال خصية معلقة", en: "Cryptorchid Castration", followupDays: 10 },
     ],
@@ -41,13 +43,13 @@ export const SURGERY_CATALOG: SurgeryCategory[] = [
       { name: "فتح بطن استكشافي", en: "Exploratory Laparotomy", followupDays: 10 },
       { name: "استخراج جسم غريب (معدة/أمعاء)", en: "GI Foreign Body Removal", followupDays: 10 },
       { name: "استئصال الطحال", en: "Splenectomy", followupDays: 10 },
-      { name: "إصلاح فتق (سري/أربي/حجابي)", en: "Hernia Repair", followupDays: 10 },
+      { name: "إصلاح فتق (سري/أربي/حجابي)", en: "Hernia Repair", followupDays: 10, aliases: ["فتق", "هرنيا", "فتاق"] },
       { name: "استئصال المرارة", en: "Cholecystectomy", followupDays: 10 },
       { name: "تثبيت المعدة (انتفاخ والتواء)", en: "Gastropexy (GDV)", followupDays: 10 },
       { name: "استئصال كتلة/ورم جلدي", en: "Mass / Tumor Removal", followupDays: 10 },
       { name: "استئصال أورام الغدد اللبنية", en: "Mammary Tumor Removal", followupDays: 10 },
-      { name: "خياطة جرح / تنضير", en: "Wound Repair & Debridement", followupDays: 7 },
-      { name: "تصريف خراج", en: "Abscess Drainage", followupDays: 5 },
+      { name: "خياطة جرح / تنضير", en: "Wound Repair & Debridement", followupDays: 7, aliases: ["خياطة جرح", "خياطه", "قطبة", "قطب جرح", "تخييط"] },
+      { name: "تصريف خراج", en: "Abscess Drainage", followupDays: 5, aliases: ["خراج", "دمل", "فتح خراج"] },
     ],
   },
   {
@@ -60,7 +62,7 @@ export const SURGERY_CATALOG: SurgeryCategory[] = [
       { name: "إصلاح خلع الرضفة", en: "Patellar Luxation Repair", followupDays: 14 },
       { name: "استئصال رأس عظم الفخذ", en: "FHO — Femoral Head Ostectomy", followupDays: 14 },
       { name: "بتر طرف", en: "Limb Amputation", followupDays: 12 },
-      { name: "بتر ذيل", en: "Tail Amputation / Docking", followupDays: 10 },
+      { name: "بتر ذيل", en: "Tail Amputation / Docking", followupDays: 10, aliases: ["قص ذيل", "قطع ذيل"] },
     ],
   },
   {
@@ -69,7 +71,7 @@ export const SURGERY_CATALOG: SurgeryCategory[] = [
     icon: "🦷",
     items: [
       { name: "تنظيف أسنان تحت التخدير", en: "Dental Scaling & Polishing", followupDays: 0 },
-      { name: "قلع أسنان", en: "Tooth Extraction", followupDays: 7 },
+      { name: "قلع أسنان", en: "Tooth Extraction", followupDays: 7, aliases: ["قلع سن", "شلع سن", "شلع اسنان", "خلع سن", "خلع اسنان"] },
       { name: "إصلاح كسر فك", en: "Jaw Fracture Repair", followupDays: 14 },
       { name: "استئصال ورم فموي", en: "Oral Mass Removal", followupDays: 10 },
     ],
@@ -100,7 +102,7 @@ export const SURGERY_CATALOG: SurgeryCategory[] = [
     label: "المسالك البولية",
     icon: "💧",
     items: [
-      { name: "فتح مثانة واستخراج حصى", en: "Cystotomy — Stone Removal", followupDays: 10 },
+      { name: "فتح مثانة واستخراج حصى", en: "Cystotomy — Stone Removal", followupDays: 10, aliases: ["حصى المثانة", "حصوة", "حصاة", "استخراج حصى"] },
       { name: "توسيع مجرى البول / تحويله", en: "Urethrostomy", followupDays: 10 },
       { name: "قسطرة انسداد بولي تحت تخدير", en: "Urethral Obstruction Relief", followupDays: 3 },
     ],
@@ -203,7 +205,12 @@ export function matchSurgeryService(lineName: string): SurgeryServiceMatch | nul
       const base = normalize(it.name.split("(")[0]);
       const full = normalize(it.name);
       const en = normalize(it.en ?? "");
-      const hit =
+      // المرادفات الدارجة (خصي، سيزر، ولادة قيصرية…) تطابق بالاحتواء بالاتجاهين.
+      const aliasHit = (it.aliases ?? []).some((a) => {
+        const an = normalize(a);
+        return an && (n === an || n.includes(an) || (n.length >= 4 && an.includes(n)));
+      });
+      const hit = aliasHit ||
         n.includes(base) || n.includes(full) ||
         (en && (n === en || n.includes(en) || (n.length >= 6 && en.includes(n)))) ||
         // "قيصريه" وحدها تكفي — جزء مميز من اسم أطول، بشرط ألا تكون كلمة عامة.
@@ -212,4 +219,12 @@ export function matchSurgeryService(lineName: string): SurgeryServiceMatch | nul
     }
   }
   return null;
+}
+
+/** قاعدة التصنيف — الضمانة القاطعة ضد اختلاف اللهجات: أي خدمة داخل تصنيف
+ *  اسمه يدل على العمليات (عمليات / جراحة / جراحية…) تُعامل كعملية مهما كان
+ *  اسمها، وتُسجَّل باسمها كما كتبه الدكتور. */
+export function isSurgeryCategoryName(catName: string | null | undefined): boolean {
+  const n = normalize(catName ?? "");
+  return !!n && (n.includes("عمليات") || n.includes("جراح") || n.includes("surger") || n.includes("operation"));
 }

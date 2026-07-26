@@ -28,7 +28,7 @@ import { cn, money, currencySymbol } from "@/lib/utils";
 import { dueOf, paidOf } from "@/lib/debt";
 import { withTimeout, describeDbError } from "@/lib/errors";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
-import { matchSurgeryService, type SurgeryServiceMatch } from "@/lib/surgeryCatalog";
+import { matchSurgeryService, isSurgeryCategoryName, type SurgeryServiceMatch } from "@/lib/surgeryCatalog";
 
 /** A unified cart line — a physical product OR a non-barcode service. The price is an
  *  editable override; services carry product_id=null + zero cost so they flow through
@@ -50,6 +50,8 @@ interface Line {
    *  ONE invoice, and each med line syncs into ITS OWN pet's medical record. */
   petId?: string | null;
   petName?: string | null;
+  /** خدمة من تصنيف "عمليات/جراحة" — تُسجَّل كعملية باسمها مهما اختلفت اللهجة. */
+  surgeryCat?: boolean;
   /** Fractional sales — this product can be sold whole (box) or by a smaller sub-unit. */
   hasSubUnit?: boolean;
   subUnitName?: string | null;   // e.g. "حبة" / "شريط" / "مل"
@@ -429,9 +431,11 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
       return { ...next, qty: Math.min(Math.max(1, l.qty), Math.max(1, cap)) };
     }));
 
-  const addService = (s: Service) =>
+  const addService = (s: Service) => {
     // الخدمة تُنسب للحيوان النشط — خدمة "عملية" تسجَّل تلقائياً في طبلته عند الإتمام.
-    bump(`s:${s.id}`, () => ({ id: `s:${s.id}`, kind: "service", name: s.name, barcode: null, unit_price: s.price, unit_cost: 0, qty: 1, stock: null, product_id: null, subcategory: null, petId: activePet?.id ?? null, petName: activePet?.name ?? null }));
+    const catName = catalog.categories.find((c) => c.id === s.category_id)?.name ?? null;
+    bump(`s:${s.id}`, () => ({ id: `s:${s.id}`, kind: "service", name: s.name, barcode: null, unit_price: s.price, unit_cost: 0, qty: 1, stock: null, product_id: null, subcategory: null, petId: activePet?.id ?? null, petName: activePet?.name ?? null, surgeryCat: isSurgeryCategoryName(catName) }));
+  };
 
   // A medication/vaccine from the "الأدوية" tab — a priced cart line carrying the full
   // medical draft (dose/route/booster/lot) so it can be written into the pet's record.
@@ -875,7 +879,14 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
       // عمليات مباعة من الكاشير (خدمة اسمها يطابق الكتالوج الجراحي) تصعد
       // تلقائياً إلى طبلة الحيوان وسجل عملياته — مثل الأدوية واللقاحات تماماً.
       const surgeryLines = cart
-        .map((l) => ({ l, m: l.kind === "service" ? matchSurgeryService(l.name) : null }))
+        .map((l) => {
+          if (l.kind !== "service") return { l, m: null };
+          // اسم مطابق للكتالوج (مع المرادفات) — أو أي خدمة من تصنيف "عمليات":
+          // قاعدة التصنيف تضمن التقاط أي تسمية مهما اختلفت اللهجة.
+          const m = matchSurgeryService(l.name)
+            ?? (l.surgeryCat ? ({ name: l.name, category: "العمليات الجراحية" } as SurgeryServiceMatch) : null);
+          return { l, m };
+        })
         .filter((x): x is { l: Line; m: SurgeryServiceMatch } => !!x.m);
       if (surgeryLines.length) {
         const fallbackPet = salePets.find((p) => p.id)?.id ?? null;
