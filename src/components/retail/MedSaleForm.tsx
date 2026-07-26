@@ -18,10 +18,13 @@ import { useToast } from "@/components/ui";
  * to the cart; on checkout SaleBuilder bills it AND (when the sale is for a known
  * patient) writes the same record into the animal's file via persistMedicalEntries.
  */
-export function MedSaleForm({ species, onAddLine }: {
+export function MedSaleForm({ species, onAddLine, petId, petName }: {
   /** Patient species when the sale was launched from a record — locks the vaccine filter. */
   species?: Species;
   onAddLine: (draft: MedicalDraft, price: number, qty: number) => void;
+  /** الحيوان المربوط — يُظهر سجل لقاحاته داخل تبويب اللقاحات. */
+  petId?: string | null;
+  petName?: string | null;
 }) {
   const { t } = useTranslation();
   const toast = useToast();
@@ -99,7 +102,7 @@ export function MedSaleForm({ species, onAddLine }: {
       >
         {mode === "medication"
           ? <MedicationForm onAdd={handleAdd} version={catalogVersion} addLabel={t("retail.addToCart")} />
-          : <VaccinationForm species={activeSpecies} hasSpeciesProp={!!species} draftSpecies={draftSpecies} setDraftSpecies={setDraftSpecies} onAdd={handleAdd} version={catalogVersion} addLabel={t("retail.addToCart")} />}
+          : <VaccinationForm species={activeSpecies} hasSpeciesProp={!!species} draftSpecies={draftSpecies} setDraftSpecies={setDraftSpecies} onAdd={handleAdd} version={catalogVersion} addLabel={t("retail.addToCart")} petId={petId} petName={petName} />}
       </motion.div>
     </div>
   );

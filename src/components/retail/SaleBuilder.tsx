@@ -1242,7 +1242,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
         ) : browseTab === "services" ? (
           <ServiceQuickSelect catalog={catalog} onPick={addService} flashId={flash} />
         ) : (
-          <MedSaleForm species={activePet?.species ?? undefined} onAddLine={addMedLine} />
+          <MedSaleForm species={activePet?.species ?? undefined} onAddLine={addMedLine} petId={activePet?.id ?? null} petName={activePet?.name ?? null} />
         )}
       </div>
 

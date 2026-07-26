@@ -7,9 +7,10 @@ import {
   ShieldCheck, Stethoscope, CalendarClock, Layers, ClipboardList,
   HeartPulse, Activity, AlertTriangle, NotebookPen,
 } from "lucide-react";
-import type { Species, PatientCondition, MedicalAssessment } from "@/types";
+import type { Species, PatientCondition, MedicalAssessment , Vaccination } from "@/types";
 import { MED_CATALOG, getClinicMeds, hydrateMeds } from "@/lib/meds";
 import { VACCINE_CATALOG, BUILTIN_VACCINES, getClinicVaccines, hydrateVaccines } from "@/lib/vaccines";
+import { repo } from "@/lib/repo";
 import { listStaff, ROLE_LABEL, type StaffMember } from "@/lib/staff";
 import { Button, useToast } from "@/components/ui";
 import { cn, uid, dateLocale } from "@/lib/utils";
@@ -352,6 +353,7 @@ export function MedicationForm({ onAdd, version, addLabel, onReadyChange, flushR
   const [note, setNote] = useState<string>("");
   const [given, setGiven] = useState(true);
 
+
   const drugs = useMemo(() => families.find((f) => f.type === family)?.items ?? [], [families, family]);
   const routeDef = ROUTES.find((r) => r.id === route);
   const ready = !!drug && !!route && !!dosage.trim();
@@ -514,8 +516,10 @@ export function MedicationForm({ onAdd, version, addLabel, onReadyChange, flushR
 }
 
 /* ---------------- Vaccination (species-aware) ---------------- */
-export function VaccinationForm({ species, hasSpeciesProp, draftSpecies, setDraftSpecies, onAdd, version, addLabel, onReadyChange, flushRef }: {
+export function VaccinationForm({ species, hasSpeciesProp, draftSpecies, setDraftSpecies, onAdd, version, addLabel, onReadyChange, flushRef, petId, petName }: {
   species: Species; hasSpeciesProp: boolean; draftSpecies: Species; setDraftSpecies: (s: Species) => void; onAdd: (e: MedicalDraft) => void; version: number; addLabel?: string; onReadyChange?: (ready: boolean) => void; flushRef?: { current: (() => MedicalDraft | null) | null };
+  /** حيوان مربوط (بيع من ملفه): يُعرض سجل لقاحاته — السابق والمستحق — للاختيار بضغطة. */
+  petId?: string | null; petName?: string | null;
 }) {
   const { t } = useTranslation();
   const toast = useToast();
@@ -523,6 +527,34 @@ export function VaccinationForm({ species, hasSpeciesProp, draftSpecies, setDraf
   const [nextDue, setNextDue] = useState<string | null>(null);
   const [lot, setLot] = useState("");
   const [given, setGiven] = useState(true);
+
+  // سجل لقاحات الحيوان المربوط — يجاوب "شنو انطى سابقاً وشنو المستحق هسة؟"
+  const [history, setHistory] = useState<Vaccination[] | null>(null);
+  useEffect(() => {
+    if (!petId) { setHistory(null); return; }
+    let alive = true;
+    repo.listVaccinations(petId).then((r) => { if (alive) setHistory(r); }).catch(() => { if (alive) setHistory([]); });
+    return () => { alive = false; };
+  }, [petId]);
+  const vaxSummary = useMemo(() => {
+    if (!history || history.length === 0) return [];
+    const todayISO = new Date().toISOString().slice(0, 10);
+    const byName = new Map<string, { last?: Vaccination; next?: Vaccination }>();
+    for (const v of history) {
+      const e = byName.get(v.name) ?? {};
+      if (v.administered_at) { if (!e.last || (v.administered_at > (e.last.administered_at ?? ""))) e.last = v; }
+      else if (v.due_date) { if (!e.next || (v.due_date < (e.next.due_date ?? "9999"))) e.next = v; }
+      byName.set(v.name, e);
+    }
+    return [...byName.entries()]
+      .map(([name, e]) => {
+        const due = e.next?.due_date ?? null;
+        const status: "due" | "upcoming" | "done" = due ? (due.slice(0, 10) <= todayISO ? "due" : "upcoming") : "done";
+        return { name, last: e.last, next: e.next, due, status };
+      })
+      .sort((a, b) => (a.status === "due" ? 0 : a.status === "upcoming" ? 1 : 2) - (b.status === "due" ? 0 : b.status === "upcoming" ? 1 : 2) || (a.due ?? "9999").localeCompare(b.due ?? "9999"));
+  }, [history]);
+
 
   // Current selection as a draft (or null). Shared by "Add" and the parent's Save flush,
   // so a chosen-but-unadded vaccine is saved by a single Save.
@@ -544,10 +576,12 @@ export function VaccinationForm({ species, hasSpeciesProp, draftSpecies, setDraf
   const customSet = useMemo(() => new Set(customNames.map((n) => n.toLowerCase())), [customNames]);
   const vaccines = useMemo(() => {
     const builtin = group ? VACCINE_CATALOG.find((g) => g.group === group)?.items ?? [] : BUILTIN_VACCINES;
-    // Custom vaccines FIRST so a just-added one is immediately visible (no scrolling).
-    return Array.from(new Set([...customNames, ...builtin]));
+    // Custom vaccines FIRST so a just-added one is immediately visible (no scrolling);
+    // أسماء سجل الحيوان تُضاف أيضاً كي يبقى «تلقيحه الآن» قابلاً للاختيار دائماً.
+    const historyNames = (history ?? []).map((v) => v.name);
+    return Array.from(new Set([...customNames, ...builtin, ...historyNames]));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [group, version]);
+  }, [group, version, history]);
 
   // Reset the chosen vaccine when the species filter changes it out of the list.
   useEffect(() => { if (vaccine && !vaccines.includes(vaccine)) setVaccine(""); }, [vaccines, vaccine]);
@@ -583,6 +617,41 @@ export function VaccinationForm({ species, hasSpeciesProp, draftSpecies, setDraf
           </div>
         )}
       </Tier>
+
+      {/* سجل لقاحات الحيوان — السابق والمستحق، مع اختيار بضغطة */}
+      {petId && vaxSummary.length > 0 && (
+        <div className="rounded-2xl border border-brand-200 bg-brand-50/50 p-3 dark:border-brand-500/30 dark:bg-brand-500/5">
+          <div className="mb-2 flex items-center gap-1.5 text-xs font-black text-ink">
+            <Syringe size={13} className="text-brand-600" /> سجل لقاحات {petName || "الحيوان"}
+          </div>
+          <div className="space-y-1.5">
+            {vaxSummary.map((r) => (
+              <div key={r.name} className={cn("flex flex-wrap items-center gap-2 rounded-xl border p-2.5",
+                r.status === "due" ? "border-danger-300 bg-danger-50/60 dark:border-danger-500/30 dark:bg-danger-500/10" : "border-line bg-surface-1")}>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-xs font-extrabold text-ink">{r.name}</span>
+                  <span className="block text-2xs font-bold text-ink-subtle">
+                    {r.last?.administered_at
+                      ? <>آخر جرعة: {new Date(r.last.administered_at).toLocaleDateString("ar-IQ")}{r.last.dose_number ? ` (${r.last.dose_number}/${r.last.doses_total ?? "؟"})` : ""}</>
+                      : "لم يُعطَ سابقاً"}
+                  </span>
+                </span>
+                {r.status === "due" && <span className="rounded-full bg-danger-100 px-2.5 py-1 text-2xs font-black text-danger-700 dark:bg-danger-500/20 dark:text-danger-300">مستحق الآن</span>}
+                {r.status === "upcoming" && r.due && <span className="rounded-full bg-warn-50 px-2.5 py-1 text-2xs font-black text-warn-700 dark:bg-warn-500/15 dark:text-warn-300">موعده {new Date(r.due + "T00:00:00").toLocaleDateString("ar-IQ")}</span>}
+                {r.status === "done" && <span className="rounded-full bg-success-50 px-2.5 py-1 text-2xs font-black text-success-700 dark:bg-success-500/15 dark:text-success-300">مكتمل ✓</span>}
+                <button
+                  onClick={() => { playTap(); setVaccine(r.name); }}
+                  className={cn("rounded-lg px-3 py-1.5 text-2xs font-black transition",
+                    vaccine === r.name ? "bg-brand-600 text-white" : "bg-brand-50 text-brand-700 hover:bg-brand-100 dark:bg-brand-500/15 dark:text-brand-300")}
+                >
+                  {vaccine === r.name ? "محدد ✓" : "تلقيحه الآن"}
+                </button>
+              </div>
+            ))}
+          </div>
+          <p className="mt-2 text-2xs leading-relaxed text-ink-muted">اختر اللقاح، بيعه، وحدد موعد الجرعة القادمة تحت — الموعد الجديد ينحفظ بسجل الحيوان وتذكيراته تلقائياً. تكدر تضيف أكثر من لقاح، كل واحد بموعده.</p>
+        </div>
+      )}
 
       {/* Vaccine select (filtered) */}
       <Tier n={2} label={t("medentry.tierVaccine", "اللقاح")} icon={<Syringe size={14} />}>
