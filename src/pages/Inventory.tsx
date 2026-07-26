@@ -233,6 +233,7 @@ function ProductRow({ p, companyName, sectionName, onEdit, onRemove }: { p: Prod
           {companyName && <span className="chip shrink-0 bg-accent-50 text-2xs font-semibold text-accent-700 dark:bg-accent-500/15 dark:text-accent-200"><Building2 size={11} /> {companyName}</span>}
           {sectionName && <span className="chip shrink-0 bg-brand-50 text-2xs font-semibold text-brand-700 dark:bg-brand-500/15 dark:text-brand-200"><FolderTree size={11} /> {sectionName}</span>}
           {p.category && <span className="chip shrink-0 bg-surface-2 text-2xs font-medium text-ink-muted">{t(`pos.cat.${p.category}`)}</span>}
+          {p.bulk_group && <span className="chip shrink-0 bg-violet-50 text-2xs font-semibold text-violet-700 dark:bg-violet-500/15 dark:text-violet-300" title={t("pos.groupChipHint", "أُضيف ضمن دفعة واحدة — افتح تعديله لتعديل المجموعة كاملة")}><ListPlus size={11} /> {t("pos.groupChip", "مجموعة")}</span>}
         </p>
         <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-ink-subtle">
           {p.barcode && <span className="flex items-center gap-1 font-mono"><Barcode size={11} /> {p.barcode}</span>}
