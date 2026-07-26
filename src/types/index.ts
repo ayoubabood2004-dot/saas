@@ -362,6 +362,8 @@ export interface CompanySection {
 }
 
 export interface Product {
+  /** منتجات أُضيفت سوية من «إضافة عدة باركودات» — نفس المعرف = مجموعة واحدة تُعدَّل معاً. */
+  bulk_group?: string | null;
   id: string;
   /** Owning clinic (tenant isolation). */
   clinic_id?: string | null;

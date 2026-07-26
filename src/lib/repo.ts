@@ -1451,10 +1451,23 @@ const supabaseRepo: typeof demoRepo = {
     return maybe<Product>(await q.maybeSingle());
   },
   async createProduct(input) {
-    return need<Product>(await sbc().from("products").insert(input).select().single());
+    // قبل ترحيل 0075 لا يوجد عمود bulk_group — أعد المحاولة بدونه.
+    const r = await sbc().from("products").insert(input).select().single();
+    if (r.error && /bulk_group/i.test(r.error.message)) {
+      const { bulk_group, ...rest } = input as Record<string, unknown>;
+      void bulk_group;
+      return need<Product>(await sbc().from("products").insert(rest as never).select().single());
+    }
+    return need<Product>(r);
   },
   async updateProduct(id, patch) {
-    return maybe<Product>(await sbc().from("products").update(patch).eq("id", id).select().maybeSingle());
+    const r = await sbc().from("products").update(patch).eq("id", id).select().maybeSingle();
+    if (r.error && /bulk_group/i.test(r.error.message)) {
+      const { bulk_group, ...rest } = patch as Record<string, unknown>;
+      void bulk_group;
+      return maybe<Product>(await sbc().from("products").update(rest as never).eq("id", id).select().maybeSingle());
+    }
+    return maybe<Product>(r);
   },
   async deleteProduct(id) {
     ok(await sbc().from("products").delete().eq("id", id));

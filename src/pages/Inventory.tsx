@@ -331,10 +331,13 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
   // Bulk mode (create-only): add several barcodes at once sharing price/category,
   // each row differing only in barcode, name, count and expiry. Surfaced on wide
   // screens (iPad/desktop); phone keeps the classic one-product layout.
-  type BulkRow = { barcode: string; name: string; stock: string; expiry_date: string };
+  type BulkRow = { barcode: string; name: string; stock: string; expiry_date: string; productId?: string };
   const blankRow: BulkRow = { barcode: "", name: "", stock: "", expiry_date: "" };
   const [bulk, setBulk] = useState(false);
   const [rows, setRows] = useState<BulkRow[]>([{ ...blankRow }]);
+  // تعديل مجموعة: معرف المجموعة قيد التعديل + المنتجات المحذوفة من صفوفها.
+  const [editGroup, setEditGroup] = useState<string | null>(null);
+  const [removedIds, setRemovedIds] = useState<string[]>([]);
   const barcodeRef = useRef<HTMLInputElement>(null);
   const nameRef = useRef<HTMLInputElement>(null);
   const saveRef = useRef<HTMLButtonElement>(null);
@@ -372,6 +375,8 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
     }
     setBulk(false);
     setRows([{ ...blankRow }]);
+    setEditGroup(null);
+    setRemovedIds([]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, product]);
 
@@ -517,8 +522,14 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
       return next;
     });
   };
-  const removeRow = (i: number) => setRows((prev) => (prev.length > 1 ? prev.filter((_, idx) => idx !== i) : prev));
-  const validRows = rows.filter((r) => r.name.trim());
+  const removeRow = (i: number) => setRows((prev) => {
+    if (prev.length <= 1) return prev;
+    const victim = prev[i];
+    if (victim?.productId) setRemovedIds((ids) => [...ids, victim.productId as string]);
+    return prev.filter((_, idx) => idx !== i);
+  });
+  // يكفي باركود أو اسم — الاسم الفارغ يكمل تلقائياً من السطر الذي فوقه.
+  const validRows = rows.filter((r) => r.name.trim() || r.barcode.trim());
 
   const saveBulk = async () => {
     if (!validRows.length || busy) return;
@@ -531,7 +542,8 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
     }
     // A barcode that already belongs to a product would create a confusing twin —
     // restocks belong in a purchase invoice (فاتورة شراء), not here.
-    const clash = allProducts?.find((p) => p.barcode && codes.includes(p.barcode));
+    const ownIds = new Set(rows.map((r) => r.productId).filter(Boolean));
+    const clash = allProducts?.find((p) => p.barcode && codes.includes(p.barcode) && !ownIds.has(p.id));
     if (clash) {
       toast.error(t("pos.bulkBarcodeExists", { code: clash.barcode, name: clash.name, defaultValue: "الباركود {{code}} مستخدم مسبقاً للمنتج \"{{name}}\" — للإضافة على مخزونه استخدم فاتورة شراء" }));
       return;
@@ -565,24 +577,40 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
       const failedIdx: number[] = [];
       let done = 0;
       let lastErr: unknown = null;
+      // مجموعة واحدة لكل دفعة (سطران فأكثر) — أو نفس المجموعة عند تعديلها.
+      const grp = editGroup ?? (validRows.length > 1 ? `blk_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}` : null);
+      let lastName = "";
       for (const r of validRows) {
         try {
-          await repo.createProduct({
+          const explicit = r.name.trim();
+          if (explicit) lastName = explicit;
+          // اسم فارغ → يكمل من السطر السابق؛ ولا سطر سابق → من الباركود.
+          const nm = explicit || lastName || `منتج ${r.barcode.trim()}`;
+          const rowPayload = {
             ...shared,
             barcode: r.barcode.trim() || null,
-            name: r.name.trim(),
+            name: nm,
             stock: pooled ? 0 : Math.max(0, Math.round((Number(r.stock) || 0) * 1000) / 1000),
             expiry_date: r.expiry_date || null,
-          });
+            bulk_group: grp,
+          };
+          if (editGroup && r.productId) await repo.updateProduct(r.productId, rowPayload);
+          else await repo.createProduct(rowPayload);
           done++;
         } catch (e) {
           failedIdx.push(rows.indexOf(r));
           lastErr = e;
         }
       }
+      // صفوف حُذفت أثناء تعديل المجموعة → منتجاتها تُحذف فعلاً.
+      if (editGroup) {
+        for (const id of removedIds) {
+          try { await repo.deleteProduct(id); } catch { /* best effort */ }
+        }
+      }
       if (failedIdx.length === 0) {
         playSuccess();
-        toast.success(t("pos.bulkDone", { n: done, defaultValue: "تمت إضافة {{n}} منتج" }));
+        toast.success(editGroup ? t("pos.bulkUpdated", { n: done, defaultValue: "تم تحديث المجموعة ({{n}} منتج)" }) : t("pos.bulkDone", { n: done, defaultValue: "تمت إضافة {{n}} منتج" }));
         onSaved();
       } else {
         // Keep ONLY the failed rows so a retry re-sends just those.
@@ -836,7 +864,7 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
       <div>
         <div className="mb-2 flex items-center justify-between">
           <p className="text-xs font-bold uppercase tracking-wide text-ink-subtle">{t("pos.bulkRows", "الباركودات")}</p>
-          <p className="text-xs text-ink-subtle">{t("pos.bulkRowsHint", "اسحب الباركود ← الاسم ← العدد ← الانتهاء، وينتقل تلقائياً للسطر التالي")}</p>
+          <p className="text-xs text-ink-subtle">{t("pos.bulkRowsHint", "امسح الباركود واكتب العدد — الاسم اختياري: الفارغ يكمل تلقائياً من السطر الذي فوقه")}</p>
         </div>
         <div className={cn(rowGridCls, "mb-1 px-1 text-2xs font-semibold text-ink-subtle")}>
           <span>{t("pos.barcode", "Barcode")}</span>
@@ -903,9 +931,9 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
     </div>
   );
 
-  const isBulk = bulk && !product;
+  const isBulk = (bulk && !product) || !!editGroup;
   return (
-    <Modal open={open} onClose={onClose} size="full" title={isBulk ? t("pos.bulkTitle", "إضافة عدة منتجات") : product ? t("pos.editProduct", "Edit product") : t("pos.addProduct", "Add product")}>
+    <Modal open={open} onClose={onClose} size="full" title={editGroup ? t("pos.bulkEditTitle", "تعديل مجموعة منتجات") : isBulk ? t("pos.bulkTitle", "إضافة عدة منتجات") : product ? t("pos.editProduct", "Edit product") : t("pos.addProduct", "Add product")}>
       <div className="flex flex-col gap-4 sm:h-[75vh]">
         {/* Bulk switch — create-only; hidden on phones (they keep the simple form) */}
         {!product && (
@@ -914,7 +942,7 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
               <ListPlus size={16} className="text-brand-600" /> {t("pos.bulkToggle", "إضافة عدة باركودات دفعة واحدة")}
               <span className="font-normal text-ink-subtle">{t("pos.bulkToggleHint", "نفس الشركة والأسعار والفئة — يختلف الباركود والاسم والعدد والانتهاء")}</span>
             </span>
-            <button type="button" role="switch" aria-checked={bulk} onClick={() => { playTap(); setBulk(!bulk); }} className={switchCls(bulk)}>
+            <button type="button" role="switch" aria-checked={bulk} aria-label={t("pos.bulkToggle", "إضافة عدة باركودات دفعة واحدة")} onClick={() => { playTap(); setBulk(!bulk); }} className={switchCls(bulk)}>
               <span className={knobCls(bulk)} />
             </button>
           </div>
@@ -922,6 +950,30 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
 
         {/* Body — scrolls internally on wide screens; natural flow on phones */}
         <div className="min-h-0 flex-1 sm:overflow-y-auto sm:pe-1">
+          {!isBulk && product?.bulk_group && (allProducts?.filter((p) => p.bulk_group === product.bulk_group).length ?? 0) > 1 && (
+            <button
+              onClick={() => {
+                playTap();
+                const groupId = product.bulk_group as string;
+                const members = (allProducts ?? []).filter((p) => p.bulk_group === groupId)
+                  .sort((a, b) => (a.created_at ?? "").localeCompare(b.created_at ?? ""));
+                setRows([
+                  ...members.map((p) => ({ barcode: p.barcode ?? "", name: p.name, stock: String(p.stock ?? 0), expiry_date: p.expiry_date ?? "", productId: p.id })),
+                  { ...blankRow },
+                ]);
+                setRemovedIds([]);
+                setEditGroup(groupId);
+              }}
+              className="mb-4 flex w-full items-center gap-2.5 rounded-2xl border border-brand-300 bg-brand-50 p-3.5 text-start transition hover:bg-brand-100 dark:border-brand-500/30 dark:bg-brand-500/10"
+            >
+              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-brand-600 text-white"><ListPlus size={17} /></span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm font-extrabold text-ink">{t("pos.groupEditBtn", "هذا المنتج ضمن مجموعة — تعديل المجموعة كاملة")}</span>
+                <span className="block text-2xs text-ink-subtle">{t("pos.groupEditHint", { n: allProducts?.filter((p) => p.bulk_group === product.bulk_group).length ?? 0, defaultValue: "{{n}} منتجات أُضيفت سوية — عدّل أسعارها وتصنيفها مرة واحدة، وكل سطر باسمه وعدده وانتهائه" })}</span>
+              </span>
+              <ChevronLeft size={16} className="shrink-0 text-brand-600 ltr:rotate-180" />
+            </button>
+          )}
           {isBulk ? bulkForm : singleForm}
         </div>
 
@@ -932,7 +984,7 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
           ) : <span className="hidden sm:block" />}
           {isBulk ? (
             <Button size="lg" className="w-full sm:w-auto sm:min-w-56" disabled={validRows.length === 0} loading={busy} leftIcon={<ListPlus size={18} />} onClick={saveBulk}>
-              {t("pos.bulkSave", { n: validRows.length, defaultValue: "أضف المنتجات ({{n}})" })}
+              {editGroup ? t("pos.bulkSaveEdit", { n: validRows.length, defaultValue: "حفظ المجموعة ({{n}})" }) : t("pos.bulkSave", { n: validRows.length, defaultValue: "أضف المنتجات ({{n}})" })}
             </Button>
           ) : (
             <Button ref={saveRef} className="w-full sm:w-auto sm:min-w-56" disabled={!f.name.trim()} loading={busy} onClick={save}>{t("common.save", "Save")}</Button>
