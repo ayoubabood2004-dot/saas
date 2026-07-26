@@ -662,6 +662,12 @@ const demoRepo = {
   async listProducts(_clinicId?: string): Promise<Product[]> {
     return (loadDB().products ?? []).slice().sort((a, b) => a.name.localeCompare(b.name));
   },
+  /** هل قاعدة البيانات تدعم عمود مجموعات الدفعات (bulk_group / ترحيل 0075)؟
+   *  المخزن المحلي يدعمه دائماً؛ السحابة تُفحص فعلياً لتنبيه العيادة قبل أن
+   *  تضيع روابط المجموعات بصمت. */
+  async supportsBulkGroup(): Promise<boolean> {
+    return true;
+  },
   async getProductByBarcode(barcode: string, _clinicId?: string): Promise<Product | undefined> {
     const code = barcode.trim();
     return (loadDB().products ?? []).find((p) => (p.barcode ?? "") === code);
@@ -1444,6 +1450,15 @@ const supabaseRepo: typeof demoRepo = {
     let q = sbc().from("products").select("*").order("name", { ascending: true });
     if (clinicId) q = q.eq("clinic_id", clinicId);
     return listOf<Product>(await q);
+  },
+  async supportsBulkGroup() {
+    try {
+      const r = await sbc().from("products").select("bulk_group").limit(1);
+      // خطأ يذكر العمود = الترحيل 0075 غير منفَّذ بعد على قاعدة هذه العيادة.
+      return !(r.error && /bulk_group/i.test(r.error.message));
+    } catch {
+      return true; // فشل شبكة — لا نُظهر تحذيراً خاطئاً
+    }
   },
   async getProductByBarcode(barcode, clinicId) {
     let q = sbc().from("products").select("*").eq("barcode", barcode.trim());

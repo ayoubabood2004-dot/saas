@@ -4,7 +4,7 @@ import { motion } from "framer-motion";
 import {
   Barcode, Package, Trash2, Search, Building2, Plus, ChevronLeft, ArrowRight, ArrowLeft,
   TrendingUp, AlertTriangle, CalendarClock, Pencil, PackagePlus, Boxes, Layers, Wallet, ShoppingBag, FolderTree,
-  Check, ListPlus, Printer,
+  Check, ListPlus, Printer, Copy,
 } from "lucide-react";
 import type { Product, ProductCategory, Company, CompanySection } from "@/types";
 import { PurchasesTab, PurchaseBuilderModal } from "@/components/inventory/Purchases";
@@ -34,6 +34,63 @@ const normKey = (s: string) => normName(s).toLowerCase();
 
 type View = "products" | "companies" | "purchases";
 
+/* --------------------------------------------------------------------------
+ * مجموعات الدفعات (bulk_group)
+ * قاعدة سحابية لم يُنفَّذ عليها ترحيل 0075 ترفض العمود، فيسقط رابط المجموعة
+ * بصمت وتظهر كل دفعة منتجات مفرّقة. الفحص أدناه يكشف ذلك ويُظهر للمدير
+ * تنبيهاً فيه أمر SQL الجاهز، وبعد تنفيذه زرٌ يربط الدفعات القديمة رجعياً.
+ * ------------------------------------------------------------------------ */
+
+/** أمر ترحيل 0075 — يُعرض مع زر نسخ عندما يكون العمود ناقصاً. */
+const BULK_GROUP_SQL =
+  "alter table products add column if not exists bulk_group text;\n" +
+  "create index if not exists products_bulk_group_idx on products(bulk_group) where bulk_group is not null;";
+
+/** دفعات انحفظت بدون رابط: منتجات متتالية أُنشئت خلال ثوانٍ من بعضها وتتطابق
+ *  حقولها المشتركة (الأسعار/الفئة/الشركة/الصنف) — نفس بصمة «إضافة عدة
+ *  باركودات»، فنستطيع إعادة ربطها بثقة. */
+function findUngroupedBatches(products: Product[]): Product[][] {
+  const loose = products
+    .filter((p) => !p.bulk_group && p.created_at)
+    .slice()
+    .sort((a, b) => a.created_at.localeCompare(b.created_at));
+  const sameBatch = (a: Product, b: Product) =>
+    new Date(b.created_at).getTime() - new Date(a.created_at).getTime() <= 20_000 &&
+    a.purchase_price === b.purchase_price &&
+    a.sell_price === b.sell_price &&
+    (a.category ?? null) === (b.category ?? null) &&
+    (a.company_id ?? null) === (b.company_id ?? null) &&
+    (a.section_id ?? null) === (b.section_id ?? null) &&
+    (a.subcategory ?? null) === (b.subcategory ?? null);
+  const batches: Product[][] = [];
+  let cur: Product[] = [];
+  for (const p of loose) {
+    if (cur.length && sameBatch(cur[cur.length - 1], p)) cur.push(p);
+    else {
+      if (cur.length > 1) batches.push(cur);
+      cur = [p];
+    }
+  }
+  if (cur.length > 1) batches.push(cur);
+  return batches;
+}
+
+/** يختم كل دفعة بمعرف مجموعة مشترك. يعيد [منتجات رُبطت، مجموعات]. */
+async function stampBatches(batches: Product[][]): Promise<[number, number]> {
+  let linked = 0;
+  let groups = 0;
+  for (const batch of batches) {
+    const grp = `blk_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+    let any = false;
+    for (const p of batch) {
+      try { await repo.updateProduct(p.id, { bulk_group: grp }); linked++; any = true; }
+      catch { /* best effort — ما فشل يبقى مفرداً */ }
+    }
+    if (any) groups++;
+  }
+  return [linked, groups];
+}
+
 /**
  * Inventory — dedicated stock management: products, companies (الشركات),
  * add/edit, low-stock & expiry alerts. Point-of-sale lives in "Retail & Sales".
@@ -41,12 +98,16 @@ type View = "products" | "companies" | "purchases";
 export function Inventory() {
   const { t } = useTranslation();
   const { user } = useAuth();
+  const toast = useToast();
   const clinicId = user?.clinic_id ?? user?.id; // shared workspace id (manager's id for staff)
   const [products, setProducts] = useState<Product[]>([]);
   const [companies, setCompanies] = useState<Company[]>([]);
   const [sections, setSections] = useState<CompanySection[]>([]);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState<View>("products");
+  // null = لم يُفحص بعد · false = ترحيل 0075 ناقص (المجموعات تسقط بصمت)
+  const [groupsOk, setGroupsOk] = useState<boolean | null>(null);
+  const [fixBusy, setFixBusy] = useState(false);
 
   const mounted = useRef(true);
   const load = async () => {
@@ -69,9 +130,69 @@ export function Inventory() {
   useEffect(() => {
     mounted.current = true;
     void load();
+    void repo.supportsBulkGroup().then((ok) => { if (mounted.current) setGroupsOk(ok); }).catch(() => {});
     return () => { mounted.current = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // دفعات قديمة بلا رابط مجموعة — تُعرض فقط عندما تكون الميزة شغّالة فعلاً.
+  const pendingBatches = useMemo(() => (groupsOk ? findUngroupedBatches(products) : []), [groupsOk, products]);
+
+  const copySql = async () => {
+    try {
+      await navigator.clipboard.writeText(BULK_GROUP_SQL);
+      toast.success(t("pos.sqlCopied", "انتسخ الأمر — الصقه في SQL Editor واضغط Run"));
+    } catch {
+      toast.error(t("pos.copyFailed", "تعذّر النسخ — ظلّل النص وانسخه يدوياً"));
+    }
+  };
+
+  /** يربط دفعات مكتشفة ويحدّث القائمة، مع رسالة نجاح موحّدة. */
+  const linkBatches = async (batches: Product[][]) => {
+    const [linked, groups] = await stampBatches(batches);
+    if (linked > 0) toast.success(t("pos.groupsFixed", { linked, groups, defaultValue: "رُبط {{linked}} منتجاً في {{groups}} مجموعة — افتح أي واحد منها لتعديل مجموعته كاملة" }));
+    await load();
+  };
+
+  /** «افحص وأصلح»: يتأكد أن الترحيل نُفِّذ، وإذا اشتغل يربط الدفعات القديمة. */
+  const recheckGroups = async () => {
+    if (fixBusy) return;
+    setFixBusy(true);
+    try {
+      const ok = await repo.supportsBulkGroup();
+      setGroupsOk(ok);
+      if (!ok) {
+        playWarning();
+        toast.error(t("pos.groupsStillOff", "العمود ما زال ناقصاً"), t("pos.groupsStillOffHint", "نفّذ الأمر في Supabase → SQL Editor ثم اضغط «افحص وأصلح» مرة أخرى"));
+        return;
+      }
+      playSuccess();
+      const fresh = await withTimeout(repo.listProducts(clinicId), 15000);
+      const batches = findUngroupedBatches(fresh);
+      if (batches.length) await linkBatches(batches);
+      else {
+        toast.success(t("pos.groupsOnNow", "تم التفعيل — الدفعات الجديدة ستُربط كمجموعات تلقائياً"));
+        await load();
+      }
+    } catch (e) {
+      toast.error(describeDbError(e, t), e instanceof Error ? e.message : undefined);
+    } finally {
+      setFixBusy(false);
+    }
+  };
+
+  const fixOldBatches = async () => {
+    if (fixBusy || !pendingBatches.length) return;
+    setFixBusy(true);
+    try {
+      playSuccess();
+      await linkBatches(pendingBatches);
+    } catch (e) {
+      toast.error(describeDbError(e, t), e instanceof Error ? e.message : undefined);
+    } finally {
+      setFixBusy(false);
+    }
+  };
 
   // Pooled products carry no per-barcode count (they sell from the section pool),
   // so a stock of 0 is expected — never flag them as low stock.
@@ -93,6 +214,37 @@ export function Inventory() {
           </Button>
         )}
       </div>
+
+      {/* الترحيل 0075 غير منفَّذ — كل دفعة منتجات تنحفظ مفرّقة بلا رابط مجموعة.
+          تنبيه صريح مع أمر SQL جاهز للنسخ وزر يفحص ثم يربط الدفعات القديمة. */}
+      {groupsOk === false && (
+        <div className="card mb-5 border-2 border-warn-300 bg-warn-50/60 p-4 dark:border-warn-500/40 dark:bg-warn-500/10">
+          <div className="flex flex-wrap items-start gap-3">
+            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-warn-100 text-warn-700 dark:bg-warn-500/20 dark:text-warn-300"><AlertTriangle size={20} /></span>
+            <div className="min-w-0 flex-1 space-y-1.5">
+              <p className="font-bold text-ink">{t("pos.groupsOffTitle", "ربط مجموعات المنتجات غير مفعّل على قاعدة بياناتك")}</p>
+              <p className="text-sm leading-relaxed text-ink-muted">{t("pos.groupsOffBody", "المنتجات تنحفظ، لكن رابط «أُضيفت سوية» يسقط لأن قاعدة البيانات ينقصها عمود واحد. انسخ الأمر التالي ونفّذه مرة واحدة في Supabase ← SQL Editor ← Run، ثم ارجع واضغط «افحص وأصلح» — وسنربط دفعاتك السابقة تلقائياً.")}</p>
+              <pre dir="ltr" className="overflow-x-auto rounded-xl bg-surface-2 p-3 text-start text-xs leading-relaxed text-ink">{BULK_GROUP_SQL}</pre>
+            </div>
+            <div className="flex w-full flex-wrap justify-end gap-2 sm:w-auto sm:flex-col sm:justify-start">
+              <Button size="sm" variant="secondary" leftIcon={<Copy size={14} />} onClick={() => { playTap(); void copySql(); }}>{t("pos.copySql", "نسخ الأمر")}</Button>
+              <Button size="sm" loading={fixBusy} leftIcon={<Check size={14} />} onClick={() => { playTap(); void recheckGroups(); }}>{t("pos.recheckFix", "افحص وأصلح")}</Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* الميزة شغّالة لكن توجد دفعات قديمة انحفظت قبل تفعيلها — ربط رجعي بضغطة. */}
+      {groupsOk === true && pendingBatches.length > 0 && (
+        <div className="card mb-5 flex flex-wrap items-center gap-3 border border-violet-200 bg-violet-50/60 p-4 dark:border-violet-500/30 dark:bg-violet-500/10">
+          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-violet-100 text-violet-700 dark:bg-violet-500/20 dark:text-violet-300"><ListPlus size={20} /></span>
+          <div className="min-w-0 flex-1">
+            <p className="font-bold text-ink">{t("pos.oldBatchesTitle", { n: pendingBatches.reduce((s, b) => s + b.length, 0), defaultValue: "وجدنا {{n}} منتجاً يبدو أنها أُضيفت سوية بدون ربط مجموعة" })}</p>
+            <p className="text-sm text-ink-muted">{t("pos.oldBatchesBody", "أُضيفت قبل تفعيل الميزة — اضغط لربطها فتقدر تعدّل كل دفعة كمجموعة واحدة من الآن.")}</p>
+          </div>
+          <Button size="sm" loading={fixBusy} leftIcon={<ListPlus size={14} />} onClick={() => { playTap(); void fixOldBatches(); }}>{t("pos.linkBatches", "اربطها كمجموعات")}</Button>
+        </div>
+      )}
 
       {/* KPIs */}
       <div className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -339,6 +491,12 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
   // تعديل مجموعة: معرف المجموعة قيد التعديل + المنتجات المحذوفة من صفوفها.
   const [editGroup, setEditGroup] = useState<string | null>(null);
   const [removedIds, setRemovedIds] = useState<string[]>([]);
+  // false = ترحيل 0075 ناقص فرابط المجموعة سيسقط — نُحذّر بدل الحفظ الصامت.
+  const [groupsOk, setGroupsOk] = useState<boolean | null>(null);
+  useEffect(() => {
+    if (open && bulk && groupsOk === null) void repo.supportsBulkGroup().then(setGroupsOk).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, bulk]);
   const barcodeRef = useRef<HTMLInputElement>(null);
   const nameRef = useRef<HTMLInputElement>(null);
   const saveRef = useRef<HTMLButtonElement>(null);
@@ -610,8 +768,18 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
         }
       }
       if (failedIdx.length === 0) {
-        playSuccess();
-        toast.success(editGroup ? t("pos.bulkUpdated", { n: done, defaultValue: "تم تحديث المجموعة ({{n}} منتج)" }) : t("pos.bulkDone", { n: done, defaultValue: "تمت إضافة {{n}} منتج" }));
+        if (grp && groupsOk === false) {
+          // انحفظت المنتجات لكن القاعدة أسقطت رابط المجموعة — قلها بصراحة.
+          playWarning();
+          toast.toast({
+            tone: "warn",
+            title: t("pos.bulkSavedNoGroup", { n: done, defaultValue: "أُضيف {{n}} منتج — لكن بدون ربطها كمجموعة" }),
+            description: t("pos.bulkSavedNoGroupHint", "فعّل الميزة من التنبيه أعلى صفحة المخزون ثم اضغط «افحص وأصلح»"),
+          });
+        } else {
+          playSuccess();
+          toast.success(editGroup ? t("pos.bulkUpdated", { n: done, defaultValue: "تم تحديث المجموعة ({{n}} منتج)" }) : t("pos.bulkDone", { n: done, defaultValue: "تمت إضافة {{n}} منتج" }));
+        }
         onSaved();
       } else {
         // Keep ONLY the failed rows so a retry re-sends just those.
@@ -974,6 +1142,12 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
               </span>
               <ChevronLeft size={16} className="shrink-0 text-brand-600 ltr:rotate-180" />
             </button>
+          )}
+          {isBulk && groupsOk === false && (
+            <div className="mb-4 flex items-start gap-2.5 rounded-2xl border border-warn-300 bg-warn-50/70 p-3 text-sm dark:border-warn-500/40 dark:bg-warn-500/10">
+              <AlertTriangle size={17} className="mt-0.5 shrink-0 text-warn-600 dark:text-warn-300" />
+              <span className="text-ink-muted">{t("pos.bulkGroupsOffInline", "تنبيه: المنتجات ستنحفظ لكن بدون ربطها كمجموعة — ربط المجموعات غير مفعّل على قاعدة بياناتك. فعّله من التنبيه أعلى صفحة المخزون (أمر SQL واحد) ثم «افحص وأصلح».")}</span>
+            </div>
           )}
           {isBulk ? bulkForm : singleForm}
         </div>
