@@ -28,7 +28,7 @@ import { cn, money, currencySymbol } from "@/lib/utils";
 import { dueOf, paidOf } from "@/lib/debt";
 import { withTimeout, describeDbError } from "@/lib/errors";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
-import { matchSurgeryService, isSurgeryCategoryName, type SurgeryServiceMatch } from "@/lib/surgeryCatalog";
+import { matchSurgeryService, isSurgeryCategoryName, surgeryByRef, type SurgeryServiceMatch } from "@/lib/surgeryCatalog";
 
 /** A unified cart line — a physical product OR a non-barcode service. The price is an
  *  editable override; services carry product_id=null + zero cost so they flow through
@@ -52,6 +52,8 @@ interface Line {
   petName?: string | null;
   /** خدمة من تصنيف "عمليات/جراحة" — تُسجَّل كعملية باسمها مهما اختلفت اللهجة. */
   surgeryCat?: boolean;
+  /** مرجع عملية من «مكتبة العمليات» — تعريف قاطع للنوع مهما تغيّر الاسم. */
+  surgeryRef?: string | null;
   /** Fractional sales — this product can be sold whole (box) or by a smaller sub-unit. */
   hasSubUnit?: boolean;
   subUnitName?: string | null;   // e.g. "حبة" / "شريط" / "مل"
@@ -434,7 +436,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
   const addService = (s: Service) => {
     // الخدمة تُنسب للحيوان النشط — خدمة "عملية" تسجَّل تلقائياً في طبلته عند الإتمام.
     const catName = catalog.categories.find((c) => c.id === s.category_id)?.name ?? null;
-    bump(`s:${s.id}`, () => ({ id: `s:${s.id}`, kind: "service", name: s.name, barcode: null, unit_price: s.price, unit_cost: 0, qty: 1, stock: null, product_id: null, subcategory: null, petId: activePet?.id ?? null, petName: activePet?.name ?? null, surgeryCat: isSurgeryCategoryName(catName) }));
+    bump(`s:${s.id}`, () => ({ id: `s:${s.id}`, kind: "service", name: s.name, barcode: null, unit_price: s.price, unit_cost: 0, qty: 1, stock: null, product_id: null, subcategory: null, petId: activePet?.id ?? null, petName: activePet?.name ?? null, surgeryCat: isSurgeryCategoryName(catName), surgeryRef: s.surgery_ref ?? null }));
   };
 
   // A medication/vaccine from the "الأدوية" tab — a priced cart line carrying the full
@@ -881,9 +883,10 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
       const surgeryLines = cart
         .map((l) => {
           if (l.kind !== "service") return { l, m: null };
-          // اسم مطابق للكتالوج (مع المرادفات) — أو أي خدمة من تصنيف "عمليات":
-          // قاعدة التصنيف تضمن التقاط أي تسمية مهما اختلفت اللهجة.
-          const m = matchSurgeryService(l.name)
+          // الأولوية: مرجع «مكتبة العمليات» (تعريف قاطع) ← مطابقة الاسم
+          // والمرادفات ← قاعدة تصنيف "عمليات" كشبكة أمان أخيرة.
+          const m = surgeryByRef(l.surgeryRef)
+            ?? matchSurgeryService(l.name)
             ?? (l.surgeryCat ? ({ name: l.name, category: "العمليات الجراحية" } as SurgeryServiceMatch) : null);
           return { l, m };
         })

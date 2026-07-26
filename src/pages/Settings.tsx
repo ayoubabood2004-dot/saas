@@ -1,13 +1,13 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Settings as SettingsIcon, RotateCcw, Check, Volume2, VolumeX, Plus, Trash2, Pill, PawPrint, Stethoscope, Tag, FolderPlus, BadgePercent, IdCard, Mail, UserCog, Image as ImageIcon, Upload, Facebook, Instagram, Building2, Printer, Type, LogOut } from "lucide-react";
+import { Settings as SettingsIcon, RotateCcw, Check, Volume2, VolumeX, Plus, Trash2, Pill, PawPrint, Stethoscope, Tag, FolderPlus, BadgePercent, IdCard, Mail, UserCog, Image as ImageIcon, Upload, Facebook, Instagram, Building2, Printer, Type, LogOut , Slice, ChevronDown } from "lucide-react";
 import type { Species, Service, ServiceCategory, ServiceCatalog, Product } from "@/types";
 import { useAuth } from "@/contexts/AuthContext";
 import { usePermissions } from "@/hooks/usePermissions";
 import { branchStore, useBranchState } from "@/lib/branchStore";
 import { repo } from "@/lib/repo";
 import { Combobox } from "@/components/Combobox";
-import { cn, currencySymbol } from "@/lib/utils";
+import { cn, currencySymbol , formatNum } from "@/lib/utils";
 import { getPromoRules, addPromoRule, togglePromoRule, removePromoRule, subcategoriesOf, type PromoRule } from "@/lib/promotions";
 import { getServiceCatalog, addServiceCategory, removeServiceCategory, addService, updateService, removeService } from "@/lib/services";
 import { DEFAULT_RANGES, VITAL_KEYS, CBC_KEYS, rangeFor, type VitalKey } from "@/lib/vitals";
@@ -15,6 +15,7 @@ import { DEFAULT_RANGES, VITAL_KEYS, CBC_KEYS, rangeFor, type VitalKey } from "@
 const ALL_KEYS: VitalKey[] = [...VITAL_KEYS, ...CBC_KEYS];
 import { setVitalOverride, clearVitalOverrides, getDialCode, setDialCode, getClinicLogo, setClinicLogo, getClinicSocials, setClinicSocials, getClinicName, setClinicName, getPreSalePrint, setPreSalePrint, getResizableCart, setResizableCart, getFontScaleEnabled, setFontScaleEnabled } from "@/lib/settings";
 import { FONT_SCALES, getFontScale, setFontScale, applyFontScale, type FontScaleId } from "@/lib/fontScale";
+import { SURGERY_CATALOG, isSurgeryCategoryName } from "@/lib/surgeryCatalog";
 import { prepareUpload } from "@/lib/image";
 import { isSoundEnabled, setSoundEnabled, playSuccess, playTap } from "@/lib/sounds";
 import { getClinicMeds, addClinicMed, removeClinicMed, allMedTypes, allMedicationNames, BUILTIN_MEDICATIONS, type ClinicMed } from "@/lib/meds";
@@ -886,6 +887,9 @@ function ServiceSettings() {
       </div>
       <p className="mb-4 text-xs text-ink-subtle">{t("services.subtitle", "CBC tests, X-rays, consultations, grooming… these appear in the POS for one-tap billing.")}</p>
 
+      {/* مكتبة العمليات الجاهزة — فعّل، سعّر، وعدّل الاسم براحتك */}
+      <SurgeryLibrary catalog={catalog} onChanged={refresh} />
+
       {/* Add category */}
       <div className="mb-4 flex items-end gap-2">
         <div className="flex-1">
@@ -902,6 +906,106 @@ function ServiceSettings() {
           {catalog.categories.map((cat) => (
             <CategoryBlock key={cat.id} cat={cat} services={catalog.services.filter((s) => s.category_id === cat.id)} onChanged={refresh} />
           ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ---------- مكتبة العمليات الجاهزة (داخل إدارة الخدمات) ----------
+ * كل عمليات الكتالوج العلمي بمفاتيح تشغيل/إيقاف: يفعّل الطبيب ما يجريه فقط،
+ * يحدد سعره، ويغيّر الاسم لاحقاً بأي صيغة تعجبه — الخدمة تحمل مرجع العملية
+ * (surgery_ref) فيبقى نوعها معروفاً بدقة وتُسجَّل في الطبلة بالاسم العلمي. */
+function SurgeryLibrary({ catalog, onChanged }: { catalog: ServiceCatalog; onChanged: () => void }) {
+  const [open, setOpen] = useState(false);
+  const byRef = new Map(catalog.services.filter((s) => s.surgery_ref).map((s) => [s.surgery_ref as string, s]));
+  const enabledCount = byRef.size;
+
+  /** تصنيف «العمليات الجراحية» — يُنشأ تلقائياً عند أول تفعيل. */
+  const ensureSurgeryCategory = (): string => {
+    const existing = catalog.categories.find((c) => isSurgeryCategoryName(c.name));
+    if (existing) return existing.id;
+    const created = addServiceCategory("العمليات الجراحية");
+    return created ? created.id : (getServiceCatalog().categories.find((c) => isSurgeryCategoryName(c.name))?.id ?? "");
+  };
+
+  const toggle = (ref: string, arName: string) => {
+    const existing = byRef.get(ref);
+    if (existing) {
+      removeService(existing.id);
+      playTap();
+    } else {
+      const catId = ensureSurgeryCategory();
+      if (!catId) return;
+      addService(catId, arName, 0, ref);
+      playSuccess();
+    }
+    onChanged();
+  };
+
+  const setPrice = (ref: string, price: number) => {
+    const svc = byRef.get(ref);
+    if (svc) { updateService(svc.id, { price }); onChanged(); }
+  };
+
+  return (
+    <div className="mb-4 overflow-hidden rounded-2xl border border-rose-200 dark:border-rose-500/30">
+      <button onClick={() => { playTap(); setOpen((v) => !v); }} className="flex w-full items-center gap-2 bg-rose-50 px-3.5 py-3 text-start dark:bg-rose-500/10">
+        <Slice size={16} className="shrink-0 text-rose-600" />
+        <span className="min-w-0 flex-1">
+          <span className="block text-sm font-extrabold text-ink">مكتبة العمليات الجاهزة</span>
+          <span className="block text-2xs text-ink-subtle">فعّل العمليات التي تجريها وحدد أسعارها — تظهر في الكاشير وتُسجَّل تلقائياً في طبلة الحيوان. الاسم والسعر قابلان للتعديل دائماً.</span>
+        </span>
+        {enabledCount > 0 && <span className="chip bg-rose-100 text-2xs font-black text-rose-700 dark:bg-rose-500/20 dark:text-rose-300">{formatNum(enabledCount)} مفعّلة</span>}
+        <ChevronDown size={15} className={cn("shrink-0 text-ink-subtle transition-transform", open && "rotate-180")} />
+      </button>
+      {open && (
+        <div className="max-h-[46vh] space-y-4 overflow-y-auto p-3.5">
+          {SURGERY_CATALOG.map((cat) => {
+            const items = cat.items.filter((it) => it.en && it.en !== "Custom procedure");
+            if (items.length === 0) return null;
+            return (
+              <div key={cat.key}>
+                <div className="mb-1.5 text-2xs font-black text-ink-subtle">{cat.icon} {cat.label}</div>
+                <div className="space-y-1.5">
+                  {items.map((it) => {
+                    const ref = it.en as string;
+                    const svc = byRef.get(ref);
+                    const on = !!svc;
+                    return (
+                      <div key={ref} className={cn("flex flex-wrap items-center gap-2.5 rounded-xl border p-2.5 transition", on ? "border-rose-300 bg-rose-50/50 dark:border-rose-500/30 dark:bg-rose-500/5" : "border-line bg-surface-1")}>
+                        <button role="switch" aria-checked={on} aria-label={it.name} onClick={() => toggle(ref, it.name)} className="shrink-0">
+                          <span className={cn("relative block h-5.5 w-10 rounded-full transition-colors", on ? "bg-rose-600" : "border border-line bg-surface-3")} style={{ height: 22 }}>
+                            <span className={cn("absolute start-0.5 top-0.5 h-[18px] w-[18px] rounded-full bg-white shadow transition-transform", on && "translate-x-[18px] rtl:-translate-x-[18px]")} />
+                          </span>
+                        </button>
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-xs font-extrabold text-ink">{svc ? svc.name : it.name}</span>
+                          <span className="block truncate text-2xs text-ink-subtle" dir="ltr">{it.en}</span>
+                        </span>
+                        {on && (
+                          <span className="flex items-center gap-1.5">
+                            <input
+                              type="number" min="0" step="250" inputMode="numeric"
+                              className="input h-8 w-28 px-2 py-0 text-end text-xs font-bold tabular-nums"
+                              defaultValue={svc!.price || ""}
+                              placeholder="السعر"
+                              onBlur={(e) => setPrice(ref, Number(e.target.value) || 0)}
+                              onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+                            />
+                            <span className="text-2xs font-bold text-ink-subtle">د.ع</span>
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+          <p className="rounded-xl bg-surface-2 px-3 py-2.5 text-2xs leading-relaxed text-ink-muted">
+            💡 العملية المفعّلة تظهر كخدمة في تصنيف «العمليات الجراحية» بالكاشير. غيّر اسمها أو سعرها من القائمة تحت مثل أي خدمة — تبقى معروفة النوع وتُسجَّل بالاسم العلمي وموعد المتابعة الصحيحين مهما غيّرت التسمية.
+          </p>
         </div>
       )}
     </div>

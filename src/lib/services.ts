@@ -67,22 +67,30 @@ async function pushCatalog(c: ServiceCatalog) {
   const client = sb();
   if (!client) return;
   if (c.categories.length) await client.from("clinic_service_categories").insert(c.categories.map((x) => ({ id: x.id, name: x.name })));
-  if (c.services.length) await client.from("clinic_services").insert(c.services.map((s) => ({ id: s.id, category_id: s.category_id, name: s.name, price: s.price })));
+  if (c.services.length) {
+    const withRef = c.services.map((s) => ({ id: s.id, category_id: s.category_id, name: s.name, price: s.price, surgery_ref: s.surgery_ref ?? null }));
+    const r = await client.from("clinic_services").insert(withRef as never[]);
+    if (r.error && /surgery_ref/i.test(r.error.message)) await client.from("clinic_services").insert(c.services.map((s) => ({ id: s.id, category_id: s.category_id, name: s.name, price: s.price })) as never[]);
+  }
 }
 
 export async function hydrateServices(): Promise<void> {
   const client = sb();
   if (!client) { cache = readLocal(); return; }
   try {
-    const [cats, svcs] = await Promise.all([
+    let [cats, svcs] = await Promise.all([
       client.from("clinic_service_categories").select("id,name").order("created_at"),
-      client.from("clinic_services").select("id,category_id,name,price").order("created_at"),
+      client.from("clinic_services").select("id,category_id,name,price,surgery_ref").order("created_at"),
     ]);
+    // قبل 0074: العمود غير موجود → أعد الجلب بدونه بدلاً من فقدان المزامنة كلها.
+    if (svcs.error && /surgery_ref/i.test(svcs.error.message)) {
+      svcs = (await client.from("clinic_services").select("id,category_id,name,price").order("created_at")) as unknown as typeof svcs;
+    }
     if (cats.error) throw cats.error;
     if (svcs.error) throw svcs.error;
     let next: ServiceCatalog = {
       categories: (cats.data ?? []).map((c) => ({ id: c.id as string, name: c.name as string })),
-      services: (svcs.data ?? []).map((s) => ({ id: s.id as string, category_id: s.category_id as string, name: s.name as string, price: Number(s.price) })),
+      services: (svcs.data ?? []).map((s) => ({ id: s.id as string, category_id: s.category_id as string, name: s.name as string, price: Number(s.price), surgery_ref: (s as { surgery_ref?: string | null }).surgery_ref ?? null })),
     };
     // First run on a live backend → migrate existing local data (or seed) up.
     if (next.categories.length === 0 && next.services.length === 0) {
@@ -122,13 +130,20 @@ export function removeServiceCategory(id: string) {
   cloudWrite(() => sb()!.from("clinic_service_categories").delete().eq("id", id), "service-category-del");
 }
 
-export function addService(categoryId: string, name: string, price: number): Service | null {
+export function addService(categoryId: string, name: string, price: number, surgeryRef?: string | null): Service | null {
   const clean = name.trim();
   if (!clean) return null;
   const c = getServiceCatalog();
-  const svc: Service = { id: uuid(), category_id: categoryId, name: clean, price: Math.max(0, Math.round(price * 100) / 100) || 0 };
+  const svc: Service = { id: uuid(), category_id: categoryId, name: clean, price: Math.max(0, Math.round(price * 100) / 100) || 0, surgery_ref: surgeryRef ?? null };
   commit({ ...c, services: [...c.services, svc] });
-  cloudWrite(() => sb()!.from("clinic_services").insert({ id: svc.id, category_id: svc.category_id, name: svc.name, price: svc.price }), "service-add");
+  cloudWrite(async () => {
+    const base: Record<string, unknown> = { id: svc.id, category_id: svc.category_id, name: svc.name, price: svc.price };
+    // قبل ترحيل 0074 لا يوجد عمود surgery_ref — أعد المحاولة بدونه كي لا تضيع الخدمة.
+    const row: Record<string, unknown> = svc.surgery_ref ? { ...base, surgery_ref: svc.surgery_ref } : base;
+    const r = await sb()!.from("clinic_services").insert(row as never);
+    if (r.error && /surgery_ref/i.test(r.error.message)) return sb()!.from("clinic_services").insert(base as never);
+    return r;
+  }, "service-add");
   return svc;
 }
 

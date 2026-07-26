@@ -666,7 +666,12 @@ export interface PurchaseMeta {
 /** A clinic-defined service category (e.g. Laboratory, Imaging, Consultation). */
 export interface ServiceCategory { id: string; name: string }
 /** A billable non-barcode service with a default price (overridable per sale). */
-export interface Service { id: string; category_id: string; name: string; price: number }
+export interface Service {
+  id: string; category_id: string; name: string; price: number;
+  /** مرجع لعملية من الكتالوج الجراحي (الاسم العلمي) — خدمة أُنشئت من «مكتبة
+   *  العمليات»: تبقى معروفة النوع بدقة حتى لو غيّر الطبيب اسمها أو سعرها. */
+  surgery_ref?: string | null;
+}
 export interface ServiceCatalog { categories: ServiceCategory[]; services: Service[] }
 
 /** An audit-trail row (who did what, when) — from the audit_log table (migration 0018).

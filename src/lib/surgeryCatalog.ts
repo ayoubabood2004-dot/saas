@@ -228,3 +228,13 @@ export function isSurgeryCategoryName(catName: string | null | undefined): boole
   const n = normalize(catName ?? "");
   return !!n && (n.includes("عمليات") || n.includes("جراح") || n.includes("surger") || n.includes("operation"));
 }
+
+/** يرجع عنصر الكتالوج المطابق لمرجع خدمة من «مكتبة العمليات» (المرجع = الاسم العلمي). */
+export function surgeryByRef(ref: string | null | undefined): SurgeryServiceMatch | null {
+  if (!ref) return null;
+  for (const cat of SURGERY_CATALOG) {
+    const it = cat.items.find((x) => x.en === ref);
+    if (it) return { name: it.en ? `${it.name} — ${it.en}` : it.name, category: cat.label, followupDays: it.followupDays };
+  }
+  return null;
+}
