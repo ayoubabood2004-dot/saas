@@ -894,30 +894,56 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
       if (surgeryLines.length) {
         const fallbackPet = salePets.find((p) => p.id)?.id ?? null;
         let synced = 0;
+        let openedNewChart = false;
         try {
+          // عمليات كل حيوان تُجمع سوية: طبلة واحدة لكل حيوان في الفاتورة.
+          const byPet = new Map<string, SurgeryServiceMatch[]>();
+          for (const { l, m } of surgeryLines) {
+            const pid = l.petId ?? fallbackPet;
+            if (!pid) continue;
+            const arr = byPet.get(pid) ?? [];
+            arr.push(m);
+            byPet.set(pid, arr);
+          }
           await withTimeout(
-            Promise.all(surgeryLines.map(async ({ l, m }) => {
-              const pid = l.petId ?? fallbackPet;
-              if (!pid) return;
-              // اربطها بالطبلة المفتوحة إن وُجدت لتظهر مباشرة في سجل الحالة.
+            Promise.all(Array.from(byPet, async ([pid, matches]) => {
+              // الطبلة المفتوحة إن وُجدت — وإلا تُفتَح طبلة جديدة للعملية فوراً.
+              // طبلة مسدودة (علاج منتهٍ) لا تُستعمل أبداً: البيع بعد السد يفتح جديدة.
               let visitId: string | null = null;
               try { visitId = (await repo.listClinicVisitsForPet(pid)).find((v) => v.status === "open")?.id ?? null; } catch { /* optional */ }
-              const followup = m.followupDays
-                ? (() => { const d = new Date(); d.setDate(d.getDate() + m.followupDays!); return d.toISOString().slice(0, 10); })()
-                : null;
-              await repo.addSurgery({
-                pet_id: pid, visit_id: visitId, name: m.name, category: m.category,
-                performed_at: new Date().toISOString(), surgeon: user?.full_name ?? null,
-                anesthesia: null, duration_min: null, outcome: "success",
-                approach: null, suture_pattern: null, suture_material: null, suture_size: null,
-                notes: `سُجّلت تلقائياً من فاتورة البيع ${invoiceNo(invoice.id)}`,
-                followup_on: followup,
-              });
-              synced++;
+              if (!visitId) {
+                try {
+                  const v = await repo.addClinicVisit({
+                    pet_id: pid, kind: "illness", status: "open", condition: "under_treatment",
+                    reason: matches[0].name.split("—")[0].trim() || matches[0].name,
+                    opened_at: new Date().toISOString(), opened_by: user?.full_name ?? null,
+                  });
+                  visitId = v.id;
+                  openedNewChart = true;
+                } catch { /* الطبلة اختيارية — العملية تُسجَّل على ملف الحيوان بكل الأحوال */ }
+              }
+              for (const m of matches) {
+                const followup = m.followupDays
+                  ? (() => { const d = new Date(); d.setDate(d.getDate() + m.followupDays!); return d.toISOString().slice(0, 10); })()
+                  : null;
+                await repo.addSurgery({
+                  pet_id: pid, visit_id: visitId, name: m.name, category: m.category,
+                  performed_at: new Date().toISOString(), surgeon: user?.full_name ?? null,
+                  anesthesia: null, duration_min: null, outcome: "success",
+                  approach: null, suture_pattern: null, suture_material: null, suture_size: null,
+                  notes: `سُجّلت تلقائياً من فاتورة البيع ${invoiceNo(invoice.id)}`,
+                  followup_on: followup,
+                });
+                synced++;
+              }
             })),
             12000,
           );
-          if (synced) toast.success(t("retail.surgerySynced", "سُجّلت العملية تلقائياً في طبلة الحيوان وسجل العمليات 🔪"));
+          if (synced) {
+            toast.success(openedNewChart
+              ? t("retail.surgerySyncedNew", "سُجّلت العملية وفُتحت طبلة جديدة للحيوان 🔪")
+              : t("retail.surgerySynced", "سُجّلت العملية تلقائياً في طبلة الحيوان وسجل العمليات 🔪"));
+          }
         } catch { /* non-fatal: the sale is already recorded */ }
       }
       // The doctor's invoice note is ALSO filed into every attached patient's

@@ -328,9 +328,13 @@ export function SurgerySection({ petId, visitId, lang, defaultSurgeon, readonly 
 
   useEffect(() => {
     let alive = true;
-    repo.listSurgeries(petId).then((r) => { if (alive) setRows(r); }).catch(() => {});
+    // داخل الطبلة: عمليات هذه الطبلة فقط — كل طبلة سجلها المستقل.
+    // في ملف الحيوان (بدون visitId): التاريخ الجراحي الكامل.
+    repo.listSurgeries(petId)
+      .then((r) => { if (alive) setRows(visitId ? r.filter((x) => x.visit_id === visitId) : r); })
+      .catch(() => {});
     return () => { alive = false; };
-  }, [petId]);
+  }, [petId, visitId]);
 
   const doDelete = async (s: Surgery) => {
     try {
