@@ -639,17 +639,20 @@ export function VaccinationForm({ species, hasSpeciesProp, draftSpecies, setDraf
                 {r.status === "due" && <span className="rounded-full bg-danger-100 px-2.5 py-1 text-2xs font-black text-danger-700 dark:bg-danger-500/20 dark:text-danger-300">مستحق الآن</span>}
                 {r.status === "upcoming" && r.due && <span className="rounded-full bg-warn-50 px-2.5 py-1 text-2xs font-black text-warn-700 dark:bg-warn-500/15 dark:text-warn-300">موعده {new Date(r.due + "T00:00:00").toLocaleDateString("ar-IQ")}</span>}
                 {r.status === "done" && <span className="rounded-full bg-success-50 px-2.5 py-1 text-2xs font-black text-success-700 dark:bg-success-500/15 dark:text-success-300">مكتمل ✓</span>}
-                <button
-                  onClick={() => { playTap(); setVaccine(r.name); }}
-                  className={cn("rounded-lg px-3 py-1.5 text-2xs font-black transition",
-                    vaccine === r.name ? "bg-brand-600 text-white" : "bg-brand-50 text-brand-700 hover:bg-brand-100 dark:bg-brand-500/15 dark:text-brand-300")}
-                >
-                  {vaccine === r.name ? "محدد ✓" : "تلقيحه الآن"}
-                </button>
+                {/* المكتمل بلا زر سريع — إعادة تلقيحه قرار متعمد يمر عبر القائمة اليدوية فقط. */}
+                {r.status !== "done" && (
+                  <button
+                    onClick={() => { playTap(); setVaccine(r.name); }}
+                    className={cn("rounded-lg px-3 py-1.5 text-2xs font-black transition",
+                      vaccine === r.name ? "bg-brand-600 text-white" : "bg-brand-50 text-brand-700 hover:bg-brand-100 dark:bg-brand-500/15 dark:text-brand-300")}
+                  >
+                    {vaccine === r.name ? "محدد ✓" : "تلقيحه الآن"}
+                  </button>
+                )}
               </div>
             ))}
           </div>
-          <p className="mt-2 text-2xs leading-relaxed text-ink-muted">اختر اللقاح، بيعه، وحدد موعد الجرعة القادمة تحت — الموعد الجديد ينحفظ بسجل الحيوان وتذكيراته تلقائياً. تكدر تضيف أكثر من لقاح، كل واحد بموعده.</p>
+          <p className="mt-2 text-2xs leading-relaxed text-ink-muted">اختر اللقاح، بيعه، وحدد موعد الجرعة القادمة تحت — الموعد الجديد ينحفظ بسجل الحيوان وتذكيراته تلقائياً. تكدر تضيف أكثر من لقاح، كل واحد بموعده. اللقاح المكتمل ✓ بلا زر سريع — إذا يحتاج جرعة معزّزة (سنوية مثلاً) اختره يدوياً من قائمة اللقاح تحت.</p>
         </div>
       )}
 
