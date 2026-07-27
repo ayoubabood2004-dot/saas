@@ -183,7 +183,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [raw, setRaw] = useState<RawProfile | null>(null);
   const [activeRole, setActiveRole] = useState<AccountRole | null>(readStoredActive());
   const [loading, setLoading] = useState(true);
-  const [recovery, setRecovery] = useState(false);
+  // وضع الاستعادة يُلتقط من الرابط نفسه فور الفتح (قبل أن يعالج Supabase الرمز
+  // ويحذفه من العنوان) — فيظهر نموذج «كلمة مرور جديدة» أياً كانت الصفحة التي
+  // هبط عليها رابط البريد. حدث PASSWORD_RECOVERY يغطي الحالات الأخرى (PKCE).
+  const [recovery, setRecovery] = useState(() =>
+    isSupabaseConfigured &&
+    typeof window !== "undefined" &&
+    (window.location.hash.includes("type=recovery") || window.location.search.includes("type=recovery")));
 
   // ---- Mount: restore session (Supabase live, or demo localStorage) -------
   useEffect(() => {

@@ -1,5 +1,5 @@
-import { lazy, Suspense, type ReactNode } from "react";
-import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
+import { lazy, Suspense, useEffect, useRef, type ReactNode } from "react";
+import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { isAppHost } from "@/lib/appUrl";
 import { TopBar } from "@/components/TopBar";
@@ -61,9 +61,11 @@ function Protected({ children }: { children: ReactNode }) {
  *  opened /login with a live session — send them home instead of stranding them on
  *  the form (which would otherwise re-mount on its default tab and look "stuck"). */
 function LoginRoute() {
-  const { user, loading } = useAuth();
+  const { user, loading, recovery } = useAuth();
   if (loading) return <FullScreenLoader />;
-  if (user) return <Navigate to="/" replace />;
+  // رابط «نسيت كلمة المرور» يسجّل دخولاً مؤقتاً — لولا هذا الشرط لطُرد المستخدم
+  // إلى الرئيسية قبل أن يرى نموذج تعيين كلمة المرور الجديدة.
+  if (user && !recovery) return <Navigate to="/" replace />;
   return <Login />;
 }
 
@@ -109,8 +111,21 @@ function HomeRoute() {
 
 function Shell() {
   const location = useLocation();
-  const { user, needsRoleChoice } = useAuth();
+  const navigate = useNavigate();
+  const { user, needsRoleChoice, recovery } = useAuth();
   const { access: subAccess } = useSubscription();
+
+  // رابط استعادة كلمة المرور قد يهبط على أي صفحة (حسب إعدادات Supabase) —
+  // أول ما يشتغل وضع الاستعادة نوجّه المستخدم مرة واحدة إلى نموذج التعيين.
+  // مرة واحدة فقط: لو غادر النموذج عمداً لا نحاصره فيه.
+  const sentToReset = useRef(false);
+  useEffect(() => {
+    if (!recovery) { sentToReset.current = false; return; }
+    if (!sentToReset.current && location.pathname !== "/login") {
+      sentToReset.current = true;
+      navigate("/login", { replace: true });
+    }
+  }, [recovery, location.pathname, navigate]);
 
   // A multi-role account must pick a workspace before anything else renders.
   if (user && needsRoleChoice) return <RoleSelect />;
