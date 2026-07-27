@@ -10,7 +10,7 @@ import {
   Stethoscope, Package, Trophy, Snail, PawPrint, Lock, Download, CalendarRange,
   Crown, Star, ShieldAlert, Trash2, LogIn, FlaskConical, Pill, Users, Clock,
   ScrollText, Search, Eye, X, BadgePercent, SlidersHorizontal, ChevronDown,
-  ChevronLeft, LayoutDashboard, History, TrendingDown, Plus,
+  ChevronLeft, LayoutDashboard, History, TrendingDown, Plus, BookUser,
 } from "lucide-react";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
 import type { Pet, Invoice, InvoiceItem, Product, MedicalVisit, PaymentMethod, Species, MediaItem, TreatmentEntry, AuditEntry, LoginEvent, Expense } from "@/types";
@@ -27,6 +27,7 @@ import { dueOf, isDebt, paidOf } from "@/lib/debt";
 import { invoiceNo } from "@/lib/invoicePrint";
 import { getClinicName } from "@/lib/settings";
 import { UniversalReportTable, type ReportColumn, type SummaryMetric } from "@/components/reports/UniversalReportTable";
+import { CustomersTab } from "@/components/reports/CustomerLedger";
 
 /* ============================================================================
  * Reports & Analytics hub (التقارير والإحصائيات) — admin-only, clinic-scoped.
@@ -50,7 +51,7 @@ import { UniversalReportTable, type ReportColumn, type SummaryMetric } from "@/c
  * ==========================================================================*/
 
 type RangeKey = "today" | "yesterday" | "week" | "month" | "lastMonth" | "custom";
-type TabKey = "overview" | "money" | "ledger" | "staff" | "best" | "clinical" | "audit" | "expenses";
+type TabKey = "overview" | "money" | "ledger" | "customers" | "staff" | "best" | "clinical" | "audit" | "expenses";
 
 /** One staff member's sales performance in the selected range. */
 interface StaffTopItem { name: string; qty: number; revenue: number }
@@ -680,6 +681,7 @@ export function AnalyticsHub() {
     { id: "overview", label: t("rpt.tab.overview", "نظرة عامة"), icon: LayoutDashboard },
     { id: "money", label: t("rpt.tab.money", "المال والصندوق"), icon: Wallet },
     { id: "ledger", label: t("rpt.tab.ledger", "سجل الحركات"), icon: ScrollText },
+    { id: "customers", label: t("rpt.tab.customers", "سجل العملاء"), icon: BookUser },
     { id: "staff", label: t("rpt.tab.staff", "الموظفون"), icon: Users },
     { id: "best", label: t("rpt.tab.best", "الأفضل والمبيعات"), icon: Crown },
     { id: "clinical", label: t("rpt.tab.clinical", "التقارير الطبية"), icon: Stethoscope },
@@ -857,6 +859,7 @@ export function AnalyticsHub() {
             />
           )}
           {tab === "ledger" && <LedgerTab rows={ledgerRows} canProfit={canProfit} loMs={lo} hiMs={hi} rangeLabel={rangeLabel} />}
+          {tab === "customers" && <CustomersTab invoices={invoices} items={items} inRange={invInRange} rangeLabel={rangeLabel} canProfit={canProfit} />}
           {tab === "staff" && <StaffSalesTab rows={staffSales} trend={staffTrend} canProfit={canProfit} rangeLabel={rangeLabel} />}
           {tab === "best" && <BestTab clients={topClients} services={topServices} movers={movers} species={speciesActivity} />}
           {tab === "clinical" && <ClinicalTab labXray={labXray} meds={dispensedMeds} />}
