@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import type { Product, ProductCategory, Company, CompanySection } from "@/types";
 import { PurchasesTab, PurchaseBuilderModal } from "@/components/inventory/Purchases";
+import { SupplierLedgerTab } from "@/components/inventory/SupplierLedger";
 import { repo } from "@/lib/repo";
 import { useAuth } from "@/contexts/AuthContext";
 import { Modal } from "@/components/Modal";
@@ -32,7 +33,7 @@ const normName = (s: string) => s.trim().replace(/\s+/g, " ").normalize("NFC");
 /** Case-insensitive match key for a company name. */
 const normKey = (s: string) => normName(s).toLowerCase();
 
-type View = "products" | "companies" | "purchases";
+type View = "products" | "companies" | "purchases" | "ledger";
 
 /* --------------------------------------------------------------------------
  * مجموعات الدفعات (bulk_group)
@@ -262,6 +263,7 @@ export function Inventory() {
         <ViewTab active={view === "products"} icon={Package} label={t("pos.tabProducts", "المنتجات")} onClick={() => { playTap(); setView("products"); }} />
         <ViewTab active={view === "companies"} icon={Building2} label={t("pos.tabCompanies", "الشركات")} onClick={() => { playTap(); setView("companies"); }} />
         <ViewTab active={view === "purchases"} icon={ShoppingBag} label={t("pos.tabPurchases", "المشتريات")} onClick={() => { playTap(); setView("purchases"); }} />
+        <ViewTab active={view === "ledger"} icon={Wallet} label={t("pos.tabLedger", "الديون والفواتير")} onClick={() => { playTap(); setView("ledger"); }} />
       </div>
 
       {loading ? (
@@ -270,6 +272,8 @@ export function Inventory() {
         <InventoryTab products={products} companies={companies} sections={sections} clinicId={clinicId} onChanged={load} />
       ) : view === "companies" ? (
         <CompaniesTab products={products} companies={companies} sections={sections} clinicId={clinicId} onChanged={load} />
+      ) : view === "ledger" ? (
+        <SupplierLedgerTab companies={companies} clinicId={clinicId} />
       ) : (
         <PurchasesTab products={products} companies={companies} sections={sections} clinicId={clinicId} onChanged={load} />
       )}

@@ -4,7 +4,7 @@
 import { loadDB, saveDB } from "./demoStore";
 import { supabase } from "./supabase";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, AppointmentStatus, TreatmentEntry, Admission, Branch, Reminder, Product, Company, CompanySection, Purchase, PurchaseItem, PurchaseDraftLine, PurchaseMeta, Courier, DeliveryOrder, PetMovement, DemoDB, Invoice, InvoiceItem, CheckoutItem, SaleMeta, Customer, DiscountType, PaymentMethod, PaymentSplit, WhatsAppMessage, AuditEntry, LoginEvent, PetNote, Expense, ClinicVisit , Surgery } from "@/types";
+import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, AppointmentStatus, TreatmentEntry, Admission, Branch, Reminder, Product, Company, CompanySection, Purchase, PurchaseItem, PurchasePayment, PurchaseDraftLine, PurchaseMeta, Courier, DeliveryOrder, PetMovement, DemoDB, Invoice, InvoiceItem, CheckoutItem, SaleMeta, Customer, DiscountType, PaymentMethod, PaymentSplit, WhatsAppMessage, AuditEntry, LoginEvent, PetNote, Expense, ClinicVisit , Surgery } from "@/types";
 import { uid, uuid, ageMonths } from "./utils";
 
 /** Sort key for a case/admission — newest first. Prefers the precise `created_at`
@@ -829,12 +829,45 @@ const demoRepo = {
       reference: meta.reference?.trim() || null, total: totalR, item_count: Math.round(count),
       amount_paid: paid, payment_method: meta.payment_method ?? null,
       status: paid >= totalR ? "paid" : paid <= 0 ? "unpaid" : "partial",
+      supplier_name: meta.supplier_name?.trim() || null,
+      supplier_phone: meta.supplier_phone?.trim() || null,
       notes: meta.notes?.trim() || null, purchased_at: meta.purchased_at || now,
       staff_id: meta.staff_id ?? null, created_at: now,
     };
     db.purchases.push(purchase);
     saveDB(db);
     return purchase;
+  },
+  /** سجل تسديدات فاتورة شراء — كل دفعة انسدّت على دين المورّد. */
+  async listPurchasePayments(purchaseId: string): Promise<PurchasePayment[]> {
+    return (loadDB().purchasePayments ?? [])
+      .filter((x) => x.purchase_id === purchaseId)
+      .sort((a, b) => (b.paid_at || "").localeCompare(a.paid_at || ""));
+  },
+  /** تسديد دفعة على فاتورة شراء آجلة: تُقص على المتبقّي، تُسجَّل في سجل
+   *  التسديدات، ويُحدَّث رأس الفاتورة. يطابق settle_purchase RPC في السحابة. */
+  async settlePurchase(purchaseId: string, amount: number, method: PaymentMethod = "cash", note?: string | null): Promise<Purchase | undefined> {
+    const db = loadDB();
+    const p = (db.purchases ?? []).find((x) => x.id === purchaseId);
+    if (!p) return undefined;
+    const paid = p.amount_paid != null ? p.amount_paid : p.total;
+    const due = Math.max(0, p.total - paid);
+    const amt = Math.round(Math.min(Math.max(Number(amount) || 0, 0), due) * 100) / 100;
+    if (amt <= 0) throw new Error("nothing to settle");
+    if (!db.purchasePayments) db.purchasePayments = [];
+    const now = new Date().toISOString();
+    db.purchasePayments.push({
+      id: uid("pp"), clinic_id: null, purchase_id: p.id, company_id: p.company_id ?? null,
+      amount: amt, method, note: note?.trim() || null, paid_at: now, staff_id: null, created_at: now,
+    });
+    p.amount_paid = Math.round((paid + amt) * 100) / 100;
+    p.status = p.amount_paid >= p.total ? "paid" : p.amount_paid <= 0 ? "unpaid" : "partial";
+    saveDB(db);
+    return p;
+  },
+  /** هل قاعدة البيانات تدعم دفتر ديون المورّدين (ترحيل 0076)؟ */
+  async supportsSupplierLedger(): Promise<boolean> {
+    return true;
   },
 
   async listInvoices(_clinicId?: string): Promise<Invoice[]> {
@@ -1086,6 +1119,7 @@ const DEMO_ACTIVITY_MAP: Record<string, { entity: string; action: "INSERT" | "UP
   removeReminder: { entity: "reminders", action: "DELETE" },
   updateBranch: { entity: "branches", action: "UPDATE" },
   logWhatsApp: { entity: "wa_messages", action: "INSERT" },
+  settlePurchase: { entity: "purchases", action: "UPDATE" },
 };
 {
   const target = demoRepo as unknown as Record<string, (...args: unknown[]) => Promise<unknown>>;
@@ -1534,7 +1568,30 @@ const supabaseRepo: typeof demoRepo = {
   },
   async recordPurchase(lines, meta) {
     // Atomic on the server: restock/create products + insert purchase & items.
+    // قبل ترحيل 0076 يتجاهل الخادم supplier_name/supplier_phone بأمان.
     return need<Purchase>(await sbc().rpc("record_purchase", { p_lines: lines, p_meta: meta }));
+  },
+  async listPurchasePayments(purchaseId) {
+    // قبل ترحيل 0076 لا يوجد جدول purchase_payments — أعد قائمة فارغة.
+    try {
+      const r = await sbc().from("purchase_payments").select("*").eq("purchase_id", purchaseId).order("paid_at", { ascending: false });
+      if (r.error) return [];
+      return (r.data ?? []) as PurchasePayment[];
+    } catch {
+      return [];
+    }
+  },
+  async settlePurchase(purchaseId, amount, method = "cash", note) {
+    return need<Purchase>(await sbc().rpc("settle_purchase", { p_purchase: purchaseId, p_amount: amount, p_method: method, p_note: note ?? null }));
+  },
+  async supportsSupplierLedger() {
+    try {
+      const r = await sbc().from("purchase_payments").select("id").limit(1);
+      // جدول ناقص = الترحيل 0076 غير منفَّذ بعد على قاعدة هذه العيادة.
+      return !r.error;
+    } catch {
+      return true; // فشل شبكة — لا نُظهر تحذيراً خاطئاً
+    }
   },
 
   async listInvoices(clinicId) {

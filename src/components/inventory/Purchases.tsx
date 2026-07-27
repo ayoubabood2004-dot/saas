@@ -4,8 +4,9 @@ import { motion } from "framer-motion";
 import {
   Barcode, Plus, Search, Building2, ShoppingBag, PackageCheck, Sparkles,
   Wallet, CalendarClock, X, ScanLine, FolderTree, SlidersHorizontal, ChevronDown,
+  UserRound, Phone, HandCoins,
 } from "lucide-react";
-import type { Product, Company, CompanySection, Purchase, PurchaseItem, PurchaseDraftLine, PurchaseMeta, ProductCategory, PaymentMethod } from "@/types";
+import type { Product, Company, CompanySection, Purchase, PurchaseItem, PurchasePayment, PurchaseDraftLine, PurchaseMeta, ProductCategory, PaymentMethod } from "@/types";
 import { repo } from "@/lib/repo";
 import { useAuth } from "@/contexts/AuthContext";
 import { Modal } from "@/components/Modal";
@@ -83,7 +84,7 @@ export function PurchasesTab({ products, companies, sections, clinicId, onChange
   }, []);
 
   const ql = q.trim().toLowerCase();
-  const shown = ql ? purchases.filter((p) => (p.company_name ?? "").toLowerCase().includes(ql) || (p.reference ?? "").toLowerCase().includes(ql)) : purchases;
+  const shown = ql ? purchases.filter((p) => (p.company_name ?? "").toLowerCase().includes(ql) || (p.reference ?? "").toLowerCase().includes(ql) || (p.supplier_name ?? "").toLowerCase().includes(ql)) : purchases;
 
   return (
     <div className="space-y-4">
@@ -117,11 +118,14 @@ export function PurchasesTab({ products, companies, sections, clinicId, onChange
                 <div className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-xs text-ink-subtle">
                   <span className="flex items-center gap-1"><CalendarClock size={11} /> {formatDate(p.purchased_at, i18n.language)}</span>
                   <span className="flex items-center gap-1"><PackageCheck size={11} /> {t("purchase.units", { n: p.item_count, defaultValue: "{{n}} قطعة" })}</span>
+                  {p.supplier_name && <span className="flex items-center gap-1"><UserRound size={11} /> {p.supplier_name}</span>}
                 </div>
               </div>
               <div className="text-end">
                 <p className="text-sm font-bold text-ink tabular-nums">{money(p.total)}</p>
-                <Badge tone={statusTone(p.status)}>{t(`purchase.status.${p.status ?? "paid"}`, p.status ?? "paid")}</Badge>
+                {(() => { const d = Math.max(0, p.total - (p.amount_paid ?? p.total)); return d > 0
+                  ? <p className="text-xs font-bold text-danger-600 tabular-nums dark:text-danger-400">{t("purchase.dueShort", { v: money(d), defaultValue: "عليه {{v}}" })}</p>
+                  : <Badge tone={statusTone(p.status)}>{t(`purchase.status.${p.status ?? "paid"}`, p.status ?? "paid")}</Badge>; })()}
               </div>
             </motion.button>
           ))}
@@ -138,33 +142,72 @@ export function PurchasesTab({ products, companies, sections, clinicId, onChange
         onSaved={() => { setBuilding(false); void load(); onChanged(); }}
       />
 
-      <PurchaseDetailModal purchase={viewing} onClose={() => setViewing(null)} />
+      <PurchaseDetailModal purchase={viewing} onClose={() => setViewing(null)} onChanged={() => { void load(); onChanged(); }} />
     </div>
   );
 }
 
 /* ============================ Detail + print ============================ */
-function PurchaseDetailModal({ purchase, onClose }: { purchase: Purchase | null; onClose: () => void }) {
+/** فاتورة شراء كاملة: البضاعة + المورّد + سجل التسديدات + تسديد دفعة.
+ *  Exported — «دفتر الديون» في المخزون يفتح نفس النافذة. */
+export function PurchaseDetailModal({ purchase: purchaseProp, onClose, onChanged }: { purchase: Purchase | null; onClose: () => void; onChanged?: () => void }) {
   const { t, i18n } = useTranslation();
   const toast = useToast();
   const { user } = useAuth();
   const [items, setItems] = useState<PurchaseItem[]>([]);
+  const [payments, setPayments] = useState<PurchasePayment[]>([]);
   const [loading, setLoading] = useState(false);
+  // التسديد يحدّث الفاتورة — نعرض نسخة محلية تعكس الدفعات فوراً.
+  const [purchase, setPurchase] = useState<Purchase | null>(purchaseProp);
+  const [settling, setSettling] = useState(false);
+  const [payAmount, setPayAmount] = useState("");
+  const [payMethod, setPayMethod] = useState<PaymentMethod>("cash");
+  const [payNote, setPayNote] = useState("");
+  const [payBusy, setPayBusy] = useState(false);
+  // قبل ترحيل 0076 لا يوجد settle_purchase — نخفي زر التسديد بدل فشل صامت.
+  const [ledgerOk, setLedgerOk] = useState<boolean | null>(null);
 
   useEffect(() => {
-    if (!purchase) { setItems([]); return; }
+    setPurchase(purchaseProp);
+    setSettling(false); setPayAmount(""); setPayMethod("cash"); setPayNote("");
+    if (!purchaseProp) { setItems([]); setPayments([]); return; }
     let alive = true;
     setLoading(true);
-    repo.listPurchaseItems(purchase.id)
-      .then((rows) => { if (alive) setItems(rows); })
-      .catch(() => { if (alive) setItems([]); })
+    Promise.all([
+      repo.listPurchaseItems(purchaseProp.id).catch(() => [] as PurchaseItem[]),
+      repo.listPurchasePayments(purchaseProp.id).catch(() => [] as PurchasePayment[]),
+      repo.supportsSupplierLedger().catch(() => true),
+    ])
+      .then(([rows, pays, ok]) => { if (alive) { setItems(rows); setPayments(pays); setLedgerOk(ok); } })
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
-  }, [purchase]);
+  }, [purchaseProp]);
 
   if (!purchase) return null;
   const paid = purchase.amount_paid != null ? purchase.amount_paid : purchase.total;
   const due = Math.max(0, purchase.total - paid);
+
+  const settle = async () => {
+    if (payBusy) return;
+    const amt = Math.min(Number(payAmount) || 0, due);
+    if (amt <= 0) { toast.error(t("purchase.settleAmount", "أدخل مبلغاً أكبر من صفر")); return; }
+    setPayBusy(true);
+    try {
+      const updated = await repo.settlePurchase(purchase.id, amt, payMethod, payNote.trim() || null);
+      if (updated) setPurchase(updated);
+      const pays = await repo.listPurchasePayments(purchase.id).catch(() => payments);
+      setPayments(pays);
+      setSettling(false); setPayAmount(""); setPayNote("");
+      playSuccess();
+      toast.success(t("purchase.settled", { v: money(amt), defaultValue: "سُدِّد {{v}} من دين هذه الفاتورة" }));
+      onChanged?.();
+    } catch (e) {
+      playWarning();
+      toast.error(describeDbError(e, t), e instanceof Error ? e.message : undefined);
+    } finally {
+      setPayBusy(false);
+    }
+  };
 
   const print = () => {
     const socials = getClinicSocials();
@@ -187,9 +230,11 @@ function PurchaseDetailModal({ purchase, onClose }: { purchase: Purchase | null;
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl bg-surface-2 p-3.5">
           <div className="min-w-0">
             <p className="flex items-center gap-1.5 truncate font-bold text-ink"><Building2 size={14} className="text-ink-subtle" /> {purchase.company_name || t("purchase.noCompany", "بدون شركة")}</p>
-            <p className="mt-0.5 flex flex-wrap items-center gap-x-2.5 text-xs text-ink-subtle">
+            <p className="mt-0.5 flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-xs text-ink-subtle">
               <span className="flex items-center gap-1"><CalendarClock size={11} /> {formatDate(purchase.purchased_at, i18n.language)}</span>
               {purchase.reference && <span className="font-mono">#{purchase.reference}</span>}
+              {purchase.supplier_name && <span className="flex items-center gap-1"><UserRound size={11} /> {purchase.supplier_name}</span>}
+              {purchase.supplier_phone && <span className="flex items-center gap-1 font-mono" dir="ltr"><Phone size={11} /> {purchase.supplier_phone}</span>}
             </p>
           </div>
           <Badge tone={statusTone(purchase.status)}>{t(`purchase.status.${purchase.status ?? "paid"}`, purchase.status ?? "paid")}</Badge>
@@ -231,6 +276,57 @@ function PurchaseDetailModal({ purchase, onClose }: { purchase: Purchase | null;
           {due > 0 && <div className="flex items-center justify-between font-semibold text-danger-600"><span>{t("purchase.due", "المتبقّي")}</span><span className="tabular-nums">{money(due)}</span></div>}
         </div>
 
+        {/* تسديد الدين — يظهر فقط عندما يوجد متبقٍّ والترحيل 0076 مفعَّل */}
+        {due > 0 && ledgerOk && (
+          settling ? (
+            <div className="space-y-3 rounded-2xl border border-brand-200 bg-brand-50/50 p-3.5 dark:border-brand-500/25 dark:bg-brand-500/10">
+              <p className="flex items-center gap-1.5 text-sm font-bold text-ink"><HandCoins size={15} className="text-brand-600" /> {t("purchase.settleTitle", "تسديد دفعة من الدين")}</p>
+              <div className="grid gap-2 sm:grid-cols-3">
+                <div>
+                  <label className="label text-2xs">{t("purchase.settleAmountLbl", "المبلغ")}</label>
+                  <input type="number" inputMode="numeric" min="0" step="1" className="input font-bold tabular-nums" value={payAmount} onChange={(e) => setPayAmount(e.target.value)} placeholder={money(due)} autoFocus />
+                </div>
+                <div>
+                  <label className="label text-2xs">{t("purchase.payMethod", "طريقة الدفع")}</label>
+                  <div className="flex gap-1">
+                    {(["cash", "card", "transfer"] as PaymentMethod[]).map((m) => (
+                      <button key={m} onClick={() => { playTap(); setPayMethod(m); }} className={cn("flex-1 rounded-xl px-1.5 py-2 text-xs font-bold transition", payMethod === m ? "bg-brand-600 text-white shadow-soft" : "bg-surface-2 text-ink-muted hover:text-ink")}>{t(`pay.${m}`, m)}</button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <label className="label text-2xs">{t("purchase.notes", "ملاحظات")}</label>
+                  <input className="input" value={payNote} onChange={(e) => setPayNote(e.target.value)} placeholder="—" />
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button size="sm" loading={payBusy} leftIcon={<HandCoins size={15} />} onClick={settle}>{t("purchase.settleDo", "سدّد")}</Button>
+                <Button size="sm" variant="secondary" onClick={() => { playTap(); setPayAmount(String(due)); }}>{t("purchase.settleAll", { v: money(due), defaultValue: "المبلغ كامل ({{v}})" })}</Button>
+                <Button size="sm" variant="ghost" onClick={() => { playTap(); setSettling(false); }}>{t("common.cancel", "إلغاء")}</Button>
+              </div>
+            </div>
+          ) : (
+            <Button variant="secondary" className="w-full border-danger-200 text-danger-700 hover:bg-danger-50 dark:text-danger-300" leftIcon={<HandCoins size={16} />} onClick={() => { playTap(); setSettling(true); setPayAmount(String(due)); }}>
+              {t("purchase.settleOpen", { v: money(due), defaultValue: "تسديد الدين — المتبقّي {{v}}" })}
+            </Button>
+          )
+        )}
+
+        {/* سجل التسديدات — كل دفعة انسدّت على هذه الفاتورة */}
+        {payments.length > 0 && (
+          <div className="overflow-hidden rounded-2xl border border-line">
+            <p className="flex items-center gap-1.5 bg-surface-2 p-2.5 text-xs font-bold text-ink-muted"><HandCoins size={13} /> {t("purchase.paymentsLog", "سجل التسديدات")}</p>
+            {payments.map((pp) => (
+              <div key={pp.id} className="flex flex-wrap items-center gap-x-3 gap-y-0.5 border-t border-line p-2.5 text-xs">
+                <span className="font-bold text-ink tabular-nums">{money(pp.amount)}</span>
+                <span className="text-ink-subtle">{formatDate(pp.paid_at, i18n.language)}</span>
+                {pp.method && <span className="chip bg-surface-2 text-2xs text-ink-muted">{t(`pay.${pp.method}`, pp.method)}</span>}
+                {pp.note && <span className="text-ink-subtle">{pp.note}</span>}
+              </div>
+            ))}
+          </div>
+        )}
+
         {purchase.notes && <p className="rounded-xl border border-line bg-surface-1 p-3 text-sm text-ink-muted"><strong>{t("purchase.notes", "ملاحظات")}:</strong> {purchase.notes}</p>}
 
         <Button className="w-full" leftIcon={<Printer size={16} />} onClick={print}>{t("purchase.print", "طباعة الفاتورة")}</Button>
@@ -249,6 +345,8 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
   const { user } = useAuth();
   const [company, setCompany] = useState("");
   const [reference, setReference] = useState("");
+  const [supplierName, setSupplierName] = useState("");
+  const [supplierPhone, setSupplierPhone] = useState("");
   const [notes, setNotes] = useState("");
   const [purchasedAt, setPurchasedAt] = useState(localISO());
   const [payMethod, setPayMethod] = useState<PaymentMethod>("cash");
@@ -273,7 +371,7 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
     if (!open) return;
     createdRef.current = [];
     setCompany(defaultCompanyName ?? "");
-    setReference(""); setNotes(""); setPurchasedAt(localISO());
+    setReference(""); setSupplierName(""); setSupplierPhone(""); setNotes(""); setPurchasedAt(localISO());
     setPayMethod("cash"); setAmountPaid(""); setScan("");
     setLines([blankLine()]);
     setExpandedKeys(new Set());
@@ -360,6 +458,8 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
         reference: reference.trim() || null,
         amount_paid: amountPaid.trim() === "" ? undefined : paidNum,
         payment_method: payMethod,
+        supplier_name: supplierName.trim() || null,
+        supplier_phone: supplierPhone.trim() || null,
         notes: notes.trim() || null,
         purchased_at: purchasedAt ? new Date(purchasedAt).toISOString() : undefined,
         staff_id: user?.id ?? null,
@@ -402,6 +502,14 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
           <div>
             <label className="label">{t("purchase.date", "تاريخ الاستلام")}</label>
             <input type="date" className="input" value={purchasedAt} onChange={(e) => setPurchasedAt(e.target.value)} />
+          </div>
+          <div>
+            <label className="label flex items-center gap-1"><UserRound size={12} /> {t("purchase.supplierName", "اسم المورّد / المندوب")} <span className="font-normal text-ink-subtle">{t("pos.companyHint", "(اختياري)")}</span></label>
+            <input className="input" value={supplierName} onChange={(e) => setSupplierName(e.target.value)} placeholder={t("purchase.supplierNamePh", "مثال: أبو علي — مندوب الشركة")} />
+          </div>
+          <div>
+            <label className="label flex items-center gap-1"><Phone size={12} /> {t("purchase.supplierPhone", "هاتف المورّد")} <span className="font-normal text-ink-subtle">{t("pos.companyHint", "(اختياري)")}</span></label>
+            <input className="input font-mono" dir="ltr" inputMode="tel" value={supplierPhone} onChange={(e) => setSupplierPhone(e.target.value)} placeholder="07xxxxxxxxx" />
           </div>
         </div>
 

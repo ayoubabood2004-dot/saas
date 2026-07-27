@@ -546,9 +546,29 @@ export interface Purchase {
   payment_method?: PaymentMethod | null;
   /** Settlement state vs. total — derived from amount_paid. */
   status?: PaymentStatus;
+  /** اسم المورد/المندوب الذي جهّز هذه الفاتورة (اختياري — ترحيل 0076). */
+  supplier_name?: string | null;
+  /** هاتف المورد/المندوب (اختياري). */
+  supplier_phone?: string | null;
   notes?: string | null;
   purchased_at: string;     // ISO — when the goods were received
   staff_id?: string | null; // who recorded it
+  created_at: string;
+}
+
+/** دفعة تسديد على فاتورة شراء آجلة — سجل «دفتر الديون» (ترحيل 0076).
+ *  Every settlement leg against a supplier purchase; amount_paid on the
+ *  purchase is the running sum, these rows are the history. */
+export interface PurchasePayment {
+  id: string;
+  clinic_id?: string | null;
+  purchase_id: string;
+  company_id?: string | null;
+  amount: number;
+  method?: PaymentMethod | null;
+  note?: string | null;
+  paid_at: string; // ISO — when the money was handed over
+  staff_id?: string | null;
   created_at: string;
 }
 
@@ -659,6 +679,8 @@ export interface PurchaseMeta {
   reference?: string | null;
   amount_paid?: number;
   payment_method?: PaymentMethod | null;
+  supplier_name?: string | null;
+  supplier_phone?: string | null;
   notes?: string | null;
   purchased_at?: string | null;
   staff_id?: string | null;
@@ -759,6 +781,7 @@ export interface DemoDB {
   invoiceItems: InvoiceItem[];
   purchases?: Purchase[];
   purchaseItems?: PurchaseItem[];
+  purchasePayments?: PurchasePayment[];
   couriers?: Courier[];
   deliveryOrders?: DeliveryOrder[];
   petMovements?: PetMovement[];

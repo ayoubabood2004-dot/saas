@@ -29,6 +29,7 @@ function strings(lang: string) {
     dir: ar ? "rtl" : "ltr",
     doc: ar ? "فاتورة شراء" : "PURCHASE",
     supplier: ar ? "المورّد" : "Supplier",
+    supplierRep: ar ? "المندوب" : "Rep",
     noCompany: ar ? "بدون شركة" : "No company",
     ref: ar ? "رقم فاتورة المورّد" : "Supplier ref",
     date: ar ? "تاريخ الاستلام" : "Received",
@@ -145,6 +146,7 @@ export function buildPurchaseHTML(purchase: Purchase, items: PurchaseItem[], opt
         <div>
           <h4>${s.supplier}</h4>
           <div class="v">${esc(purchase.company_name || s.noCompany)}</div>
+          ${purchase.supplier_name ? `<div class="muted">${s.supplierRep}: ${esc(purchase.supplier_name)}${purchase.supplier_phone ? ` · <span dir="ltr">${esc(purchase.supplier_phone)}</span>` : ""}</div>` : ""}
           ${purchase.reference ? `<div class="muted" dir="ltr">${s.ref}: ${esc(purchase.reference)}</div>` : ""}
         </div>
         <div style="text-align:end">
