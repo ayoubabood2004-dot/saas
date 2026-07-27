@@ -17,6 +17,7 @@ import {
   Boxes,
   Store,
   MessageCircle,
+  BellRing,
   Briefcase,
   BarChart3,
   Slice,
@@ -82,14 +83,23 @@ export function Sidebar() {
     { to: "/inventory", icon: Boxes, label: t("nav.inventory", "Inventory"), show: can("manageInventory") },
     { to: "/retail", icon: Store, label: t("nav.retail", "Retail & Sales"), show: can("processSales") && has("pos") },
     { to: "/reports", icon: BarChart3, label: t("nav.reports", "التقارير"), show: can("viewReports") && has("reports") },
-    { to: "/campaigns", icon: MessageCircle, label: t("nav.campaigns", "WhatsApp Campaigns"), show: has("whatsapp") },
+    {
+      to: "/campaigns", icon: MessageCircle, label: t("nav.campaigns", "WhatsApp Campaigns"), show: has("whatsapp"),
+      // قائمة منسدلة: الحملات (إرسال جماعي) + التذكيرات (كل ما يجب تذكّره).
+      children: [
+        { to: "/campaigns", icon: MessageCircle, label: t("nav.campaignsChild", "الحملات") },
+        { to: "/reminders", icon: BellRing, label: t("nav.reminders", "التذكيرات") },
+      ],
+    },
     { to: "/staff", icon: Briefcase, label: t("nav.staff", "Staff Management"), show: can("manageStaff") },
     { to: "/scan", icon: ScanLine, label: t("nav.scan") },
     { to: "/activity", icon: History, label: t("nav.activity", "سجل الحركات"), show: can("manageSettings") },
     { to: "/settings", icon: SettingsIcon, label: t("nav.settings"), show: can("manageSettings") },
   ].filter((it) => it.show !== false);
 
-  const [chartsOpen, setChartsOpen] = useState(false);
+  // فتح/غلق المجموعات المنسدلة — حالة مستقلة لكل مجموعة (الطبلات، الواتساب…).
+  const [openGroups, setOpenGroups] = useState<Set<string>>(new Set());
+  const toggleGroup = (key: string) => setOpenGroups((s) => { const n = new Set(s); if (n.has(key)) n.delete(key); else n.add(key); return n; });
   const isActive = (to: string, exact?: boolean) =>
     exact ? location.pathname === "/" : location.pathname === to || location.pathname.startsWith(to + "/");
 
@@ -133,11 +143,11 @@ export function Sidebar() {
           if ("children" in item && item.children) {
             const kids = item.children;
             const anyActive = kids.some((k) => isActive(k.to));
-            const open = chartsOpen || anyActive;
+            const open = openGroups.has(item.to) || anyActive;
             return (
               <div key={item.to}>
                 <button
-                  onClick={() => { playTap(); setChartsOpen((v) => !v); }}
+                  onClick={() => { playTap(); toggleGroup(item.to); }}
                   className={cn(
                     "relative flex w-full items-center gap-3 rounded-2xl px-3.5 py-3 text-sm font-semibold transition-colors",
                     anyActive ? "text-brand-700 dark:text-brand-200" : "text-ink-muted hover:bg-surface-2 hover:text-ink",

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import {
-  MessageCircle, Send, Check, Search, Users, Gift, Syringe, Tag, CheckCircle2, Bug, Cake, Clock, UserCheck,
+  MessageCircle, Send, Check, Search, Users, Gift, Syringe, Tag, CheckCircle2, Bug, Cake, Clock, UserCheck, BellRing,
 } from "lucide-react";
 import type { Pet, Species, Vaccination, MedicalVisit, WhatsAppMessage } from "@/types";
 import type { CampaignPrefill, ReminderType } from "@/lib/reminders";
@@ -233,12 +233,19 @@ export function WhatsAppCampaigns() {
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-6">
-      <div className="mb-5 flex items-center gap-3">
+      <div className="mb-5 flex flex-wrap items-center gap-3">
         <span className="grid h-11 w-11 place-items-center rounded-2xl bg-success-500 text-white shadow-soft"><MessageCircle size={24} /></span>
-        <div>
+        <div className="me-auto">
           <h1 className="font-display text-2xl font-extrabold text-ink">{t("campaigns.title", "WhatsApp Campaigns")}</h1>
           <p className="text-sm text-ink-subtle">{t("campaigns.subtitle", "Reach clients via direct WhatsApp links — no API cost, no ban risk.")}</p>
         </div>
+        {/* مركز التذكيرات — القسم الشقيق: كل المستحقات بلا أي نافذة تقصّها */}
+        <button
+          onClick={() => { playTap(); navigate("/reminders"); }}
+          className="inline-flex items-center gap-2 rounded-2xl border border-brand-200 bg-brand-50 px-4 py-2.5 text-sm font-bold text-brand-700 transition hover:bg-brand-100 dark:border-brand-500/30 dark:bg-brand-500/10 dark:text-brand-300"
+        >
+          <BellRing size={17} /> {t("nav.reminders", "التذكيرات")}
+        </button>
       </div>
 
       <div className="grid gap-5 lg:grid-cols-[1fr,380px] lg:items-start">
