@@ -3,8 +3,8 @@ import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { motion } from "framer-motion";
 import {
-  BellRing, Syringe, Bug, Slice, CalendarDays, Cake, AlarmClock, Search, Phone,
-  MessageCircle, FolderOpen, Plus, AlertTriangle, CheckCircle2, Sun, CalendarClock,
+  BellRing, Syringe, Bug, Slice, CalendarDays, Cake, AlarmClock, Search,
+  MessageCircle, Plus, AlertTriangle, CheckCircle2, Sun, CalendarClock,
 } from "lucide-react";
 import type { Pet, Vaccination, Surgery, Appointment, Reminder, EventCategory } from "@/types";
 import { repo } from "@/lib/repo";
@@ -229,12 +229,6 @@ export function RemindersHub() {
     return rows.sort((a, b) => (a.inDays - b.inDays) || a.petName.localeCompare(b.petName));
   }, [vaccinations, surgeries, appointments, manual, pets, petById]);
 
-  const counts = useMemo(() => {
-    const c: Record<Kind | "all", number> = { all: allRows.length, vaccine: 0, deworming: 0, surgery: 0, appointment: 0, manual: 0, birthday: 0 };
-    for (const r of allRows) c[r.kind]++;
-    return c;
-  }, [allRows]);
-
   const kpis = useMemo(() => ({
     overdue: allRows.filter((r) => r.inDays < 0).length,
     today: allRows.filter((r) => r.inDays === 0).length,
@@ -297,36 +291,43 @@ export function RemindersHub() {
     { id: "manual", label: "تذكيرات يدوية", icon: AlarmClock },
     { id: "birthday", label: "أعياد ميلاد", icon: Cake },
   ];
-  const TIME_CHIPS: { id: TimeFilter; label: string }[] = [
-    { id: "all", label: "كل الأوقات" },
-    { id: "overdue", label: "المتأخرة" },
-    { id: "today", label: "اليوم" },
-    { id: "week", label: "٧ أيام" },
-    { id: "month", label: "٣٠ يوماً" },
+  /** شريط الملخص = هو نفسه فلتر الوقت: أربع خانات كبيرة تُضغط. */
+  const SEGMENTS: { id: TimeFilter; label: string; value: number; icon: typeof Sun; activeCls: string; valueCls: string }[] = [
+    { id: "overdue", label: "متأخرة", value: kpis.overdue, icon: AlertTriangle, activeCls: "bg-danger-50 dark:bg-danger-500/15", valueCls: kpis.overdue ? "text-danger-600 dark:text-danger-400" : "text-ink" },
+    { id: "today", label: "اليوم", value: kpis.today, icon: Sun, activeCls: "bg-warn-50 dark:bg-warn-500/15", valueCls: kpis.today ? "text-warn-600 dark:text-warn-400" : "text-ink" },
+    { id: "week", label: "هذا الأسبوع", value: kpis.week, icon: CalendarDays, activeCls: "bg-brand-50 dark:bg-brand-500/15", valueCls: "text-ink" },
+    { id: "all", label: "الكل", value: kpis.total, icon: BellRing, activeCls: "bg-brand-50 dark:bg-brand-500/15", valueCls: "text-ink" },
   ];
 
   return (
-    <div className="mx-auto max-w-5xl px-4 py-6">
+    <div className="mx-auto max-w-4xl px-4 py-6">
       {/* Header */}
       <div className="mb-5 flex flex-wrap items-center gap-3">
         <span className="grid h-11 w-11 place-items-center rounded-2xl bg-brand-grad text-white shadow-soft"><BellRing size={24} /></span>
         <div className="me-auto">
           <h1 className="font-display text-2xl font-extrabold text-ink">{t("rem.title", "التذكيرات")}</h1>
-          <p className="text-sm text-ink-subtle">{t("rem.subtitle", "كل ما يجب تذكّره — لقاحات، متابعات، مواعيد وتذكيراتك — لا يسقط منها شيء مهما بَعُد موعده.")}</p>
+          <p className="text-sm text-ink-subtle">{t("rem.subtitle", "لقاحات ومتابعات ومواعيد — كلها هنا، ولا شيء يفوت.")}</p>
         </div>
         <Button leftIcon={<Plus size={16} />} onClick={() => { playTap(); setAdding(true); }}>{t("rem.add", "إضافة تذكير")}</Button>
       </div>
 
-      {/* KPIs */}
-      <div className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Kpi icon={AlertTriangle} tone={kpis.overdue ? "danger" : "success"} label={t("rem.kOverdue", "متأخرة")} value={String(kpis.overdue)} onClick={() => setTimeF("overdue")} />
-        <Kpi icon={Sun} tone={kpis.today ? "warn" : "success"} label={t("rem.kToday", "مستحقة اليوم")} value={String(kpis.today)} onClick={() => setTimeF("today")} />
-        <Kpi icon={CalendarDays} tone="brand" label={t("rem.kWeek", "خلال ٧ أيام")} value={String(kpis.week)} onClick={() => setTimeF("week")} />
-        <Kpi icon={BellRing} tone="brand" label={t("rem.kAll", "كل التذكيرات")} value={String(kpis.total)} onClick={() => setTimeF("all")} />
+      {/* شريط الملخص — أرقام كبيرة تُضغط للتصفية (يجمع الإحصاء والفلترة بصفٍّ واحد) */}
+      <div className="card mb-4 grid grid-cols-4 overflow-hidden p-0">
+        {SEGMENTS.map((s, i) => {
+          const SIcon = s.icon;
+          const active = timeF === s.id;
+          return (
+            <button key={s.id} onClick={() => { playTap(); setTimeF(s.id); }}
+              className={cn("flex flex-col items-center gap-0.5 py-3.5 transition", i > 0 && "border-s border-line", active ? s.activeCls : "hover:bg-surface-2/60")}>
+              <span className={cn("flex items-center gap-1.5 text-2xs font-bold", active ? "text-ink" : "text-ink-subtle")}><SIcon size={13} /> {s.label}</span>
+              <span className={cn("text-2xl font-extrabold tabular-nums", s.valueCls)}>{s.value}</span>
+            </button>
+          );
+        })}
       </div>
 
-      {/* Filters */}
-      <div className="mb-3 flex flex-wrap items-center gap-1.5">
+      {/* صف واحد: نوع التذكير + بحث */}
+      <div className="mb-4 flex flex-wrap items-center gap-1.5">
         {KIND_CHIPS.map((c) => {
           const Icon = c.icon;
           const active = kind === c.id;
@@ -334,19 +335,10 @@ export function RemindersHub() {
             <button key={c.id} onClick={() => { playTap(); setKind(c.id); }}
               className={cn("inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold transition", active ? "bg-brand-600 text-white shadow-soft" : "bg-surface-2 text-ink-muted hover:text-ink")}>
               <Icon size={13} /> {c.label}
-              <span className={cn("rounded-full px-1.5 text-2xs tabular-nums", active ? "bg-white/20" : "bg-surface-1 text-ink-subtle")}>{counts[c.id]}</span>
             </button>
           );
         })}
-      </div>
-      <div className="mb-4 flex flex-wrap items-center gap-1.5">
-        {TIME_CHIPS.map((c) => (
-          <button key={c.id} onClick={() => { playTap(); setTimeF(c.id); }}
-            className={cn("rounded-full px-2.5 py-1 text-2xs font-bold transition", timeF === c.id ? "bg-ink text-surface-1" : "bg-surface-2 text-ink-muted hover:text-ink")}>
-            {c.label}
-          </button>
-        ))}
-        <div className="relative ms-auto min-w-[180px] flex-1 sm:max-w-xs">
+        <div className="relative ms-auto min-w-[170px] flex-1 sm:max-w-56">
           <Search size={15} className="pointer-events-none absolute top-1/2 -translate-y-1/2 text-ink-subtle ltr:left-3 rtl:right-3" />
           <input className="input h-9 py-0 ltr:pl-9 rtl:pr-9" value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("rem.search", "ابحث بالحيوان أو المالك أو الهاتف…")} />
         </div>
@@ -362,88 +354,68 @@ export function RemindersHub() {
         </div>
       ) : (
         <div className="space-y-5">
-          {buckets.map((b) => {
-            const BIcon = b.icon;
-            return (
-              <section key={b.key}>
-                <h2 className={cn("mb-2 flex items-center gap-2 text-sm font-extrabold", b.tone)}>
-                  <BIcon size={16} /> {b.label}
-                  <span className="rounded-full bg-surface-2 px-2 text-2xs font-bold text-ink-subtle tabular-nums">{b.rows.length}</span>
-                </h2>
-                <motion.div variants={staggerContainer} initial="initial" animate="animate" className="space-y-2">
-                  {b.rows.map((r) => {
-                    const M = KIND_META[r.kind];
-                    const MIcon = M.icon;
-                    const done = sent.has(r.id);
-                    return (
-                      <motion.div key={r.id} variants={staggerItem}
-                        className={cn("card flex flex-wrap items-center gap-3 p-3.5", r.inDays < 0 && "border border-danger-200 dark:border-danger-500/30")}>
-                        <span className={cn("grid h-11 w-11 shrink-0 place-items-center rounded-2xl", M.tile)}><MIcon size={20} /></span>
-                        <div className="min-w-0 flex-1">
-                          <p className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm font-extrabold text-ink">
-                            {r.petName || "—"}
-                            <span className="chip bg-surface-2 text-2xs font-semibold text-ink-muted">{M.label}</span>
-                            {done && <span className="chip bg-success-50 text-2xs font-bold text-success-700 dark:bg-success-500/15 dark:text-success-300"><CheckCircle2 size={10} /> أُرسل</span>}
-                          </p>
-                          <p className="truncate text-xs font-semibold text-ink-muted">{r.detail}</p>
-                          <p className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-2xs text-ink-subtle">
-                            {r.ownerName && <span>{r.ownerName}</span>}
-                            {r.phone
-                              ? <span className="flex items-center gap-1 font-mono" dir="ltr"><Phone size={10} /> {r.phone}</span>
-                              : <span className="chip bg-warn-50 text-2xs font-semibold text-warn-700 dark:bg-warn-500/15 dark:text-warn-300">بلا هاتف</span>}
-                            <span className="flex items-center gap-1"><CalendarClock size={10} /> {formatDate(r.date, i18n.language)}{r.time ? ` · ${r.time}` : ""}</span>
-                          </p>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span className={cn("chip text-2xs font-extrabold tabular-nums",
-                            r.inDays < 0 ? "bg-danger-50 text-danger-700 dark:bg-danger-500/15 dark:text-danger-300"
-                              : r.inDays === 0 ? "bg-warn-50 text-warn-700 dark:bg-warn-500/15 dark:text-warn-300"
-                                : "bg-surface-2 text-ink-muted")}>
-                            {relLabel(r.inDays)}
-                          </span>
-                          {r.phone && (
-                            <button onClick={() => sendWA(r)} title={t("rem.sendWA", "إرسال تذكير واتساب")}
-                              className="grid h-9 w-9 place-items-center rounded-xl bg-[#25D366]/10 text-[#128C4A] transition hover:bg-[#25D366]/20 dark:text-[#4ade80]">
-                              <MessageCircle size={17} />
-                            </button>
-                          )}
-                          {r.petId && (
-                            <button onClick={() => { playTap(); navigate(`/pet/${r.petId}`); }} title={t("rem.openFile", "فتح ملف الحيوان")}
-                              className="grid h-9 w-9 place-items-center rounded-xl bg-surface-2 text-ink-muted transition hover:text-brand-600">
-                              <FolderOpen size={16} />
-                            </button>
-                          )}
-                        </div>
-                      </motion.div>
-                    );
-                  })}
-                </motion.div>
-              </section>
-            );
-          })}
+          {buckets.map((b) => (
+            <section key={b.key}>
+              {/* عنوان هادئ: نقطة ملوّنة + اسم المرحلة + العدد */}
+              <h2 className="mb-1.5 flex items-center gap-2 px-1 text-xs font-extrabold text-ink-muted">
+                <span className={cn("h-2 w-2 rounded-full",
+                  b.key === "overdue" ? "bg-danger-500" : b.key === "today" ? "bg-warn-500" : b.key === "tomorrow" ? "bg-brand-500" : "bg-ink-subtle/40")} />
+                {b.key === "overdue" ? "متأخرة" : b.label}
+                <span className="text-2xs font-bold text-ink-subtle tabular-nums">{b.rows.length}</span>
+              </h2>
+              <motion.div variants={staggerContainer} initial="initial" animate="animate" className="overflow-hidden rounded-2xl border border-line bg-surface-1 shadow-soft">
+                {b.rows.map((r, i) => {
+                  const M = KIND_META[r.kind];
+                  const MIcon = M.icon;
+                  const done = sent.has(r.id);
+                  const openFile = () => { if (r.petId) { playTap(); navigate(`/pet/${r.petId}`); } };
+                  return (
+                    <motion.div key={r.id} variants={staggerItem}
+                      onClick={openFile}
+                      className={cn(
+                        "flex items-center gap-3 px-3.5 py-3 transition",
+                        i > 0 && "border-t border-line",
+                        r.petId && "cursor-pointer hover:bg-surface-2/50",
+                        r.inDays < 0 && "bg-danger-50/40 dark:bg-danger-500/5",
+                      )}>
+                      <span className={cn("grid h-10 w-10 shrink-0 place-items-center rounded-xl", M.tile)} title={M.label}><MIcon size={18} /></span>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-bold text-ink">
+                          {/* التذكير اليدوي عنوانه يكفي (قد يتضمن اسم الحيوان أصلاً) */}
+                          {r.kind !== "manual" && r.petName
+                            ? <>{r.petName} <span className="font-semibold text-ink-muted">— {r.detail}</span></>
+                            : r.detail}
+                          {done && <CheckCircle2 size={13} className="ms-1.5 inline text-success-500" />}
+                        </p>
+                        <p className="truncate text-2xs text-ink-subtle">
+                          {r.ownerName && <>{r.ownerName} · </>}
+                          {r.phone ? <span className="font-mono" dir="ltr">{r.phone}</span> : "بلا هاتف"}
+                          {" · "}{formatDate(r.date, i18n.language)}{r.time ? ` · ${r.time}` : ""}
+                        </p>
+                      </div>
+                      <span className={cn("chip shrink-0 text-2xs font-extrabold tabular-nums",
+                        r.inDays < 0 ? "bg-danger-50 text-danger-700 dark:bg-danger-500/15 dark:text-danger-300"
+                          : r.inDays === 0 ? "bg-warn-50 text-warn-700 dark:bg-warn-500/15 dark:text-warn-300"
+                            : "bg-surface-2 text-ink-muted")}>
+                        {relLabel(r.inDays)}
+                      </span>
+                      {r.phone && (
+                        <button onClick={(e) => { e.stopPropagation(); sendWA(r); }} title={t("rem.sendWA", "إرسال تذكير واتساب")}
+                          className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-[#25D366]/10 text-[#128C4A] transition hover:bg-[#25D366]/25 dark:text-[#4ade80]">
+                          <MessageCircle size={17} />
+                        </button>
+                      )}
+                    </motion.div>
+                  );
+                })}
+              </motion.div>
+            </section>
+          ))}
         </div>
       )}
 
       <AddReminderModal open={adding} pets={pets} onClose={() => setAdding(false)} onSaved={() => { setAdding(false); playSuccess(); toast.success(t("rem.added", "أُضيف التذكير")); void load(); }} />
     </div>
-  );
-}
-
-function Kpi({ icon: Icon, tone, label, value, onClick }: { icon: typeof BellRing; tone: "brand" | "success" | "warn" | "danger"; label: string; value: string; onClick?: () => void }) {
-  const tones = {
-    brand: "bg-brand-50 text-brand-600 dark:bg-brand-500/15 dark:text-brand-300",
-    success: "bg-success-50 text-success-600 dark:bg-success-500/15 dark:text-success-300",
-    warn: "bg-warn-50 text-warn-600 dark:bg-warn-500/15 dark:text-warn-300",
-    danger: "bg-danger-50 text-danger-600 dark:bg-danger-500/15 dark:text-danger-300",
-  } as const;
-  return (
-    <button onClick={onClick ? () => { playTap(); onClick(); } : undefined} className="card flex items-center gap-3 p-4 text-start transition hover:shadow-raised">
-      <span className={cn("grid h-10 w-10 shrink-0 place-items-center rounded-xl", tones[tone])}><Icon size={19} /></span>
-      <div className="min-w-0">
-        <p className="truncate text-2xs font-semibold text-ink-subtle">{label}</p>
-        <p className="text-lg font-extrabold text-ink tabular-nums">{value}</p>
-      </div>
-    </button>
   );
 }
 
