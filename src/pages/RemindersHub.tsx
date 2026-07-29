@@ -117,7 +117,22 @@ export function RemindersHub() {
   const [timeF, setTimeF] = useState<TimeFilter>("all");
   const [q, setQ] = useState("");
   const [adding, setAdding] = useState(false);
-  const [sent, setSent] = useState<Set<string>>(new Set());
+  // «أُرسلت» محفوظة بالجهاز: المعرف ← تاريخ الاستحقاق الذي أُرسلت له، فتنمسح
+  // العلامة تلقائياً عندما يتجدد الموعد (تذكير متكرر أو جرعة جديدة).
+  const [sentMap, setSentMap] = useState<Record<string, string>>(() => {
+    try { return JSON.parse(localStorage.getItem("vp_rem_sent") || "{}") as Record<string, string>; } catch { return {}; }
+  });
+  const saveSent = (m: Record<string, string>) => {
+    setSentMap(m);
+    try { localStorage.setItem("vp_rem_sent", JSON.stringify(m)); } catch { /* ignore */ }
+  };
+  const isSent = (r: Row) => sentMap[r.id] === r.date;
+  const unmarkSent = (r: Row) => {
+    const m = { ...sentMap };
+    delete m[r.id];
+    saveSent(m);
+    toast.success(t("rem.resendReady", "أُلغيت العلامة — تقدر ترسل التذكير من جديد"));
+  };
 
   const load = async () => {
     try {
@@ -278,7 +293,7 @@ export function RemindersHub() {
                 : `مرحباً ${r.ownerName || ""} 🌟\nتذكير من ${clinic}: ${r.detail} — ${dateTxt}.\n🐾`;
     window.open(`https://wa.me/${num}?text=${encodeURIComponent(msg)}`, "_blank", "noopener,noreferrer");
     playTap();
-    setSent((s) => new Set(s).add(r.id));
+    saveSent({ ...sentMap, [r.id]: r.date });
     void repo.logWhatsApp({ pet_id: r.petId ?? null, owner_name: r.ownerName || null, owner_phone: r.phone || null, reminder_type: r.kind }).catch(() => {});
   };
 
@@ -367,7 +382,7 @@ export function RemindersHub() {
                 {b.rows.map((r, i) => {
                   const M = KIND_META[r.kind];
                   const MIcon = M.icon;
-                  const done = sent.has(r.id);
+                  const done = isSent(r);
                   const openFile = () => { if (r.petId) { playTap(); navigate(`/pet/${r.petId}`); } };
                   return (
                     <motion.div key={r.id} variants={staggerItem}
@@ -385,7 +400,6 @@ export function RemindersHub() {
                           {r.kind !== "manual" && r.petName
                             ? <>{r.petName} <span className="font-semibold text-ink-muted">— {r.detail}</span></>
                             : r.detail}
-                          {done && <CheckCircle2 size={13} className="ms-1.5 inline text-success-500" />}
                         </p>
                         <p className="truncate text-2xs text-ink-subtle">
                           {r.ownerName && <>{r.ownerName} · </>}
@@ -399,12 +413,19 @@ export function RemindersHub() {
                             : "bg-surface-2 text-ink-muted")}>
                         {relLabel(r.inDays)}
                       </span>
-                      {r.phone && (
+                      {r.phone && (done ? (
+                        /* أُرسلت ✓ — والضغط عليها يلغيها إذا الرسالة ما وصلت، فيرجع زر الإرسال */
+                        <button onClick={(e) => { e.stopPropagation(); playTap(); unmarkSent(r); }}
+                          title={t("rem.sentToggle", "أُرسلت ✓ — اضغط إذا ما وصلت الرسالة لتعيد إرسالها")}
+                          className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-success-500 text-white shadow-soft transition hover:bg-success-600">
+                          <CheckCircle2 size={17} />
+                        </button>
+                      ) : (
                         <button onClick={(e) => { e.stopPropagation(); sendWA(r); }} title={t("rem.sendWA", "إرسال تذكير واتساب")}
                           className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-[#25D366]/10 text-[#128C4A] transition hover:bg-[#25D366]/25 dark:text-[#4ade80]">
                           <MessageCircle size={17} />
                         </button>
-                      )}
+                      ))}
                     </motion.div>
                   );
                 })}

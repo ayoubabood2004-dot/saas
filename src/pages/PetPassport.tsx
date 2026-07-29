@@ -1229,6 +1229,7 @@ function MealModal({ open, onClose, onAdd }: { open: boolean; onClose: () => voi
 /* ---------------- Vaccinations ---------------- */
 /** A single vaccination, rendered EXACTLY as in the vaccines timeline card — reused
  *  verbatim in the interactive الطبلة feed (the timeline rail stays inside the tab's <ol>). */
+/** بطاقة جرعة مفردة — تُستخدم في خلاصة «بطاقات» تبويب العلاج. */
 function VaccineCardBody({ v, isOwner, canEdit, onAdminister }: {
   v: Vaccination; isOwner: boolean; canEdit: boolean; onAdminister: (v: Vaccination) => void;
 }) {
@@ -1269,16 +1270,46 @@ function VaccineCardBody({ v, isOwner, canEdit, onAdminister }: {
 }
 
 function VaccinesTab({ pet, vaccines, onChanged, canEdit, isOwner }: { pet: Pet; vaccines: Vaccination[]; onChanged: () => void; canEdit: boolean; isOwner: boolean }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { user } = useAuth();
   const [open, setOpen] = useState(false);
   const [administer, setAdminister] = useState<Vaccination | null>(null);
 
-  const sorted = [...vaccines].sort((a, b) => {
-    const ad = a.administered_at || a.due_date || "";
-    const bd = b.administered_at || b.due_date || "";
-    return bd.localeCompare(ad);
-  });
+  /* بطاقة لكل لقاح بدل خطّ زمني مبعثر: جرعه مجمّعة بالترتيب — المعطى ✓،
+   * القادم ⏰ بتاريخه، والمتأخر ⚠ بالأحمر — فيعرف الدكتور بنظرة شنو انعطى
+   * وشنو الجرعة الجاية. */
+  const groups = useMemo(() => {
+    const m = new Map<string, Vaccination[]>();
+    for (const v of vaccines) {
+      const k = v.name.trim().toLowerCase();
+      const a = m.get(k) ?? [];
+      a.push(v);
+      m.set(k, a);
+    }
+    const gs = [...m.values()].map((doses) => {
+      doses.sort((a, b) => ((a.administered_at ?? a.due_date) ?? "").localeCompare((b.administered_at ?? b.due_date) ?? ""));
+      const given = doses.filter((d) => d.status === "administered").length;
+      const pend = doses
+        .filter((d) => d.status !== "administered")
+        .sort((a, b) => (a.due_date ?? "9999").localeCompare(b.due_date ?? "9999"));
+      const next = pend[0] ?? null;
+      const overdue = pend.some((d) => d.status === "overdue" || (d.due_date != null && (daysUntil(d.due_date) ?? 0) < 0));
+      return { name: doses[0].name, doses, given, next, overdue, complete: pend.length === 0 };
+    });
+    // المتأخر أولاً، ثم الأقرب موعداً، ثم المكتمل.
+    const rank = (g: (typeof gs)[number]) => (g.overdue ? 0 : g.next ? 1 : 2);
+    return gs.sort((a, b) => rank(a) - rank(b) || (a.next?.due_date ?? "").localeCompare(b.next?.due_date ?? ""));
+  }, [vaccines]);
+
+  const stats = useMemo(() => {
+    const pend = vaccines.filter((v) => v.status !== "administered");
+    const overdue = pend.filter((v) => v.status === "overdue" || (v.due_date != null && (daysUntil(v.due_date) ?? 0) < 0)).length;
+    return {
+      done: vaccines.filter((v) => v.status === "administered").length,
+      upcoming: pend.length - overdue,
+      overdue,
+    };
+  }, [vaccines]);
 
   // The new species-aware vaccination workflow (booster scheduler) commits here,
   // then refreshes the timeline immediately via onChanged().
@@ -1299,25 +1330,109 @@ function VaccinesTab({ pet, vaccines, onChanged, canEdit, isOwner }: { pet: Pet;
         )}
       </div>
 
-      {sorted.length === 0 ? (
+      {vaccines.length === 0 ? (
         <div className="card p-6 text-center text-ink-subtle">{t("passport.noVaccines")}</div>
       ) : (
-        <ol className="relative border-s-2 border-line ms-3 space-y-4">
-          {sorted.map((v) => {
-            const done = v.status === "administered";
-            const overdue = v.status === "overdue";
-            const Icon = done ? Check : overdue ? AlertCircle : Clock;
-            const color = done ? "bg-success-500" : overdue ? "bg-danger-500" : "bg-warn-500";
-            return (
-              <li key={v.id} className="ms-6">
-                <span className={`absolute -start-[11px] grid place-items-center w-5 h-5 rounded-full text-white ${color}`}>
-                  <Icon size={12} strokeWidth={3} />
-                </span>
-                <VaccineCardBody v={v} isOwner={isOwner} canEdit={canEdit} onAdminister={setAdminister} />
-              </li>
-            );
-          })}
-        </ol>
+        <>
+          {/* خلاصة سريعة: شنو انعطى، شنو جاي، شنو متأخر */}
+          <div className="grid grid-cols-3 overflow-hidden rounded-2xl border border-line bg-surface-1 text-center shadow-soft">
+            <div className="py-2.5">
+              <p className="text-lg font-extrabold text-success-600 tabular-nums dark:text-success-400">{stats.done}</p>
+              <p className="text-2xs font-bold text-ink-subtle">{t("passport.vxDone", "جرعات معطاة")}</p>
+            </div>
+            <div className="border-x border-line py-2.5">
+              <p className="text-lg font-extrabold text-warn-600 tabular-nums dark:text-warn-400">{stats.upcoming}</p>
+              <p className="text-2xs font-bold text-ink-subtle">{t("passport.vxUpcoming", "جرعات قادمة")}</p>
+            </div>
+            <div className="py-2.5">
+              <p className={cn("text-lg font-extrabold tabular-nums", stats.overdue ? "text-danger-600 dark:text-danger-400" : "text-ink")}>{stats.overdue}</p>
+              <p className="text-2xs font-bold text-ink-subtle">{t("passport.vxOverdue", "متأخرة")}</p>
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            {groups.map((g) => {
+              const displayName = isOwner ? vaccineScientific(g.name) : g.name;
+              const sci = vaccineScientific(g.name);
+              const tone = g.overdue ? "danger" : g.next ? "warn" : "success";
+              const tile = tone === "danger" ? "bg-danger-50 text-danger-600 dark:bg-danger-500/15 dark:text-danger-300"
+                : tone === "warn" ? "bg-warn-50 text-warn-600 dark:bg-warn-500/15 dark:text-warn-300"
+                  : "bg-success-50 text-success-600 dark:bg-success-500/15 dark:text-success-300";
+              return (
+                <div key={g.name} className={cn("card overflow-hidden", g.overdue && "border border-danger-200 dark:border-danger-500/30")}>
+                  {/* رأس اللقاح: الاسم + حالته بنظرة */}
+                  <div className="flex flex-wrap items-center gap-3 p-3.5">
+                    <span className={cn("grid h-10 w-10 shrink-0 place-items-center rounded-xl", tile)}><Syringe size={18} /></span>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-extrabold text-ink">{displayName}</p>
+                      {!isOwner && sci && sci !== g.name && <p className="truncate text-2xs text-ink-subtle">{sci}</p>}
+                    </div>
+                    <span className={cn("chip shrink-0 text-2xs font-extrabold",
+                      g.overdue ? "bg-danger-50 text-danger-700 dark:bg-danger-500/15 dark:text-danger-300"
+                        : g.next ? "bg-warn-50 text-warn-700 dark:bg-warn-500/15 dark:text-warn-300"
+                          : "bg-success-50 text-success-700 dark:bg-success-500/15 dark:text-success-300")}>
+                      {g.overdue
+                        ? t("passport.vxLate", "جرعة متأخرة!")
+                        : g.next?.due_date
+                          ? t("passport.vxNextOn", { date: formatDate(g.next.due_date, i18n.language), defaultValue: "القادمة {{date}}" })
+                          : t("passport.vxComplete", "مكتمل ✓")}
+                    </span>
+                  </div>
+
+                  {/* الجرعات بالترتيب — كل جرعة سطر واضح */}
+                  <div className="border-t border-line">
+                    {g.doses.map((v, i) => {
+                      const done = v.status === "administered";
+                      const late = !done && (v.status === "overdue" || (v.due_date != null && (daysUntil(v.due_date) ?? 0) < 0));
+                      const days = v.due_date ? daysUntil(v.due_date) : null;
+                      const isNext = g.next?.id === v.id;
+                      const doseLabel = v.doses_total
+                        ? t("passport.vxDoseN", { n: v.dose_number ?? i + 1, total: v.doses_total, defaultValue: "جرعة {{n}} من {{total}}" })
+                        : t("passport.vxDoseIdx", { n: i + 1, defaultValue: "جرعة {{n}}" });
+                      return (
+                        <div key={v.id} className={cn(
+                          "flex flex-wrap items-center gap-x-3 gap-y-1 px-3.5 py-2.5",
+                          i > 0 && "border-t border-line/60",
+                          isNext && !late && "bg-warn-50/50 dark:bg-warn-500/10",
+                          late && "bg-danger-50/50 dark:bg-danger-500/10",
+                        )}>
+                          <span className={cn("grid h-6 w-6 shrink-0 place-items-center rounded-full text-white",
+                            done ? "bg-success-500" : late ? "bg-danger-500" : "bg-warn-500")}>
+                            {done ? <Check size={13} strokeWidth={3} /> : late ? <AlertCircle size={13} /> : <Clock size={13} />}
+                          </span>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-xs font-bold text-ink">
+                              {doseLabel}
+                              {done && v.administered_at && <span className="font-semibold text-ink-muted"> · {t("passport.vxGiven", { date: formatDate(v.administered_at.slice(0, 10), i18n.language), defaultValue: "أُعطيت {{date}}" })}</span>}
+                              {!done && v.due_date && (
+                                <span className={cn("font-semibold", late ? "text-danger-600 dark:text-danger-400" : "text-ink-muted")}>
+                                  {" · "}{formatDate(v.due_date, i18n.language)}
+                                  {days != null && (late
+                                    ? ` (${t("passport.vxLateBy", { n: Math.abs(days), defaultValue: "متأخرة {{n}} يوم" })})`
+                                    : days === 0 ? ` (${t("passport.vxToday", "اليوم")})` : ` (${t("passport.vxInDays", { n: days, defaultValue: "بعد {{n}} يوم" })})`)}
+                                </span>
+                              )}
+                            </p>
+                            <p className="truncate text-2xs text-ink-subtle">
+                              {done && v.administered_by && <>{v.administered_by}</>}
+                              {done && v.lot_number && <> · {t("passport.vxLot", { n: v.lot_number, defaultValue: "لوت {{n}}" })}</>}
+                              {v.notes && <> · {v.notes}</>}
+                            </p>
+                          </div>
+                          {!done && canEdit && (
+                            <button onClick={() => setAdminister(v)} className="btn-primary shrink-0 px-3 py-1.5 text-xs">
+                              <Syringe size={13} /> {t("passport.vxGiveNow", "تسجيل إعطائها")}
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </>
       )}
 
       <Modal open={open} onClose={() => setOpen(false)} title={t("passport.addVaccine")}>

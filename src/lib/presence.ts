@@ -25,18 +25,25 @@ export interface PresenceRow {
 export const isOnline = (r: PresenceRow): boolean =>
   Date.now() - new Date(r.last_seen).getTime() < ONLINE_WINDOW_MS;
 
-/* ---- Demo fallback: presence for the local (single) user ---- */
+/* ---- Demo fallback: multi-row like production (keyed by user_id) ---- */
 const DEMO_KEY = "vp_presence_demo";
+function demoRows(): PresenceRow[] {
+  try {
+    const raw = localStorage.getItem(DEMO_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as PresenceRow | PresenceRow[];
+    return Array.isArray(parsed) ? parsed : [parsed]; // صيغة قديمة: صف واحد
+  } catch { return []; }
+}
 function demoBeat(userId: string, name: string | null) {
   try {
-    localStorage.setItem(DEMO_KEY, JSON.stringify({ clinic_id: "demo", user_id: userId, name, role: "manager", last_seen: new Date().toISOString() }));
+    const rows = demoRows().filter((r) => r.user_id !== userId);
+    rows.unshift({ clinic_id: "demo", user_id: userId, name, role: "manager", last_seen: new Date().toISOString() });
+    localStorage.setItem(DEMO_KEY, JSON.stringify(rows));
   } catch { /* ignore */ }
 }
 function demoList(): PresenceRow[] {
-  try {
-    const raw = localStorage.getItem(DEMO_KEY);
-    return raw ? [JSON.parse(raw) as PresenceRow] : [];
-  } catch { return []; }
+  return demoRows();
 }
 
 /** Start the heartbeat for the signed-in clinic user. Returns a stop function. */
@@ -58,6 +65,18 @@ export function startPresenceBeat(userId: string, name?: string | null): () => v
     document.removeEventListener("visibilitychange", onVisible);
     window.removeEventListener("focus", onVisible);
   };
+}
+
+/** هل بنية الحضور جاهزة بقاعدة البيانات (ترحيل 0072)؟ يكشف الجدول الناقص
+ *  لتحذير المدير بدل بقاء الجميع «غير متصل» بصمت. */
+export async function presenceBackendReady(): Promise<boolean> {
+  if (!supabase) return true;
+  try {
+    const { error } = await supabase.from("staff_presence").select("user_id").limit(1);
+    return !error;
+  } catch {
+    return true; // فشل شبكة — لا تحذير خاطئ
+  }
 }
 
 /** Everyone's latest beat for the caller's clinic (RLS-scoped server-side). */

@@ -20,8 +20,9 @@ import { prepareUpload } from "@/lib/image";
 import { createInvite, listInvites, revokeInvite, joinLink, type Invite } from "@/lib/invites";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
-import { listPresence, isOnline, type PresenceRow } from "@/lib/presence";
-import { playTap, playSuccess } from "@/lib/sounds";
+import { listPresence, isOnline, presenceBackendReady, type PresenceRow } from "@/lib/presence";
+import { playTap, playSuccess, playWarning } from "@/lib/sounds";
+import presenceSQL from "../../supabase/migrations/0072_staff_integrity.sql?raw";
 
 /** Western-numeral join date, Arabic month name. */
 const fmtDate = (iso: string) => {
@@ -67,10 +68,14 @@ export function StaffManagement() {
 
   // ---- Live presence (منو فاتح السستم الآن) — polled every 30s ----
   const [presence, setPresence] = useState<PresenceRow[]>([]);
+  // null = لم يُفحص · false = ترحيل 0072 ناقص (الكل سيظهر «غير متصل» بلا سبب ظاهر)
+  const [presenceOk, setPresenceOk] = useState<boolean | null>(null);
+  const [checkBusy, setCheckBusy] = useState(false);
   useEffect(() => {
     let alive = true;
     const pull = () => { void listPresence().then((r) => { if (alive) setPresence(r); }); };
     pull();
+    void presenceBackendReady().then((ok) => { if (alive) setPresenceOk(ok); }).catch(() => {});
     const id = window.setInterval(pull, 30_000);
     return () => { alive = false; window.clearInterval(id); };
   }, []);
@@ -84,6 +89,33 @@ export function StaffManagement() {
   })();
   const onlineRows = presenceRows.filter(isOnline);
   const presenceByUser = new Map(presenceRows.map((r) => [r.user_id, r]));
+  // مطابقة احتياطية بالاسم: موظف أُضيف يدوياً (سطره بلا userId) وله حساب فعّال
+  // يبقى يظهر متصلاً — نطابق نبضته باسمه الموحّد بدل تركه رمادياً للأبد.
+  const normName = (s: string) => s.trim().toLowerCase().replace(/^(dr\.?|د\.?)\s*/i, "").replace(/\s+/g, " ");
+  const presenceByName = new Map(presenceRows.filter((r) => r.name).map((r) => [normName(r.name!), r]));
+  const presenceFor = (m: StaffMember): PresenceRow | null =>
+    (m.userId ? presenceByUser.get(m.userId) : undefined) ?? presenceByName.get(normName(m.name)) ?? null;
+
+  const copyPresenceSQL = async () => {
+    try {
+      await navigator.clipboard.writeText(presenceSQL);
+      toast.success("انتسخ الأمر — الصقه في SQL Editor واضغط Run");
+    } catch {
+      toast.error("تعذّر النسخ — ظلّل النص وانسخه يدوياً");
+    }
+  };
+  const recheckPresence = async () => {
+    if (checkBusy) return;
+    setCheckBusy(true);
+    try {
+      const ok = await presenceBackendReady();
+      setPresenceOk(ok);
+      if (ok) { playSuccess(); toast.success("تم التفعيل — حالة الاتصال ستظهر خلال دقيقة لكل من يفتح السستم"); }
+      else { playWarning(); toast.error("الترحيل ما زال ناقصاً", "نفّذ الأمر في Supabase → SQL Editor ثم أعد الفحص"); }
+    } finally {
+      setCheckBusy(false);
+    }
+  };
 
   const reload = () => listStaff().then(setStaff).catch(() => toast.error("تعذّر تحميل الكادر"));
   useEffect(() => { void listStaff().then(setStaff).catch(() => toast.error("تعذّر تحميل الكادر")).finally(() => setLoading(false)); }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -154,6 +186,23 @@ export function StaffManagement() {
         <Kpi icon={Wifi} label="متصل الآن" value={String(onlineRows.length)} tone="success" />
       </div>
 
+      {/* ترحيل 0072 غير منفَّذ — الكل سيبدو «غير متصل» مهما فتحوا السستم */}
+      {presenceOk === false && (
+        <div className="card mb-5 border-2 border-warn-300 bg-warn-50/60 p-4 dark:border-warn-500/40 dark:bg-warn-500/10">
+          <div className="flex flex-wrap items-start gap-3">
+            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-warn-100 text-warn-700 dark:bg-warn-500/20 dark:text-warn-300"><AlertTriangle size={20} /></span>
+            <div className="min-w-0 flex-1 space-y-1">
+              <p className="font-bold text-ink">حالة «متصل الآن» تحتاج تفعيلاً على قاعدة بياناتك</p>
+              <p className="text-sm leading-relaxed text-ink-muted">بدونه سيظهر كل الموظفين «غير متصلين» حتى وهم فاتحين السستم. اضغط «نسخ الأمر» ونفّذه مرة واحدة في Supabase ← SQL Editor ← Run، ثم «إعادة الفحص».</p>
+            </div>
+            <div className="flex w-full flex-wrap justify-end gap-2 sm:w-auto sm:flex-col sm:justify-start">
+              <Button size="sm" variant="secondary" leftIcon={<Copy size={14} />} onClick={() => { playTap(); void copyPresenceSQL(); }}>نسخ الأمر</Button>
+              <Button size="sm" loading={checkBusy} leftIcon={<Check size={14} />} onClick={() => { playTap(); void recheckPresence(); }}>إعادة الفحص</Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Live presence — who has the system open at THIS moment */}
       <div className="card mb-5 p-4">
         <h3 className="mb-3 flex items-center gap-2 text-sm font-bold text-ink">
@@ -215,16 +264,16 @@ export function StaffManagement() {
               <div className="flex items-center gap-3">
                 <span className="relative">
                   <Avatar member={m} size={52} />
-                  {m.userId && presenceByUser.has(m.userId) && isOnline(presenceByUser.get(m.userId)!) && (
-                    <span title="متصل الآن" className="absolute -bottom-0.5 -end-0.5 h-3.5 w-3.5 rounded-full border-2 border-surface-1 bg-success-500" />
-                  )}
+                  {(() => { const p = presenceFor(m); return p && isOnline(p)
+                    ? <span title="متصل الآن" className="absolute -bottom-0.5 -end-0.5 h-3.5 w-3.5 rounded-full border-2 border-surface-1 bg-success-500" />
+                    : null; })()}
                 </span>
                 <div className="min-w-0 flex-1">
                   <p className="truncate font-display font-bold text-ink">{m.name || "—"}</p>
                   <p className="truncate text-xs text-ink-muted">{m.specialty || ROLE_LABEL[m.role]}</p>
-                  {m.userId && presenceByUser.has(m.userId) && !isOnline(presenceByUser.get(m.userId)!) && (
-                    <p className="truncate text-2xs text-ink-subtle">آخر ظهور {agoAr(presenceByUser.get(m.userId)!.last_seen)}</p>
-                  )}
+                  {(() => { const p = presenceFor(m); return p && !isOnline(p)
+                    ? <p className="truncate text-2xs text-ink-subtle">آخر ظهور {agoAr(p.last_seen)}</p>
+                    : null; })()}
                 </div>
               </div>
 

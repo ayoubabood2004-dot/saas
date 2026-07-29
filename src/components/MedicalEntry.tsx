@@ -861,14 +861,21 @@ function StatusChip({ given }: { given: boolean }) {
   );
 }
 
-/** Sleek attending-doctor picker — now bound to the clinic's REAL active veterinarians
- *  (no hardcoded names). The current value (e.g. the signed-in doctor) is always kept
- *  selectable even if they aren't tagged as a vet. Reused by the entry form + booster modal. */
+/** Sleek attending-staff picker bound to the clinic's REAL roster (إدارة الكادر) —
+ *  the whole ACTIVE team, vets first, each labeled by role, so a manager can
+ *  attribute a dose/procedure to ANY member. The current value (e.g. the signed-in
+ *  doctor) always stays selectable. Reused by the entry form + booster modal. */
 export function DoctorSelect({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder?: string }) {
   const { t } = useTranslation();
-  const { staff } = useActiveStaff("veterinarian");
+  const { staff } = useActiveStaff();
   const options = useMemo(() => {
-    const opts = staff.map((s) => ({ value: s.name, label: s.name, hint: s.specialty || undefined }));
+    const order: Record<string, number> = { veterinarian: 0, manager: 1, receptionist: 2, groomer: 3 };
+    const opts = [...staff]
+      .sort((a, b) => (order[a.role] ?? 9) - (order[b.role] ?? 9) || a.name.localeCompare(b.name))
+      .map((s) => ({
+        value: s.name, label: s.name,
+        hint: (s.role === "veterinarian" ? (s.specialty || ROLE_LABEL[s.role]) : ROLE_LABEL[s.role]) as string | undefined,
+      }));
     if (value && !opts.some((o) => o.value === value)) opts.unshift({ value, label: value, hint: undefined });
     return opts;
   }, [staff, value]);
@@ -876,7 +883,7 @@ export function DoctorSelect({ value, onChange, placeholder }: { value: string; 
     <FancySelect
       value={value} options={options} onChange={onChange} searchable
       placeholder={placeholder ?? t("medentry.selectDoctor", "اختر الطبيب المعالج…")}
-      emptyText={t("medentry.noDoctors", "لا يوجد أطباء مضافين")}
+      emptyText={t("medentry.noDoctors", "لا يوجد موظفون مضافون — أضفهم من إدارة الكادر")}
     />
   );
 }
