@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
-import { Plus, AlertTriangle, ChevronLeft, ChevronRight, UserCog, Check, Sparkles, X } from "lucide-react";
+import { Plus, AlertTriangle, ChevronLeft, ChevronRight, UserCog, Check, Sparkles, X, PawPrint, CalendarClock, CalendarPlus, QrCode as QrIcon } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { repo } from "@/lib/repo";
 import { breedLabel } from "@/lib/breeds";
@@ -109,13 +109,69 @@ export function OwnerDashboard() {
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-6">
-      <div className="mb-6 animate-fade-in flex items-end justify-between">
-        <div>
-          <p className="text-ink-muted">{t(`greeting.${greetingKey()}`)},</p>
-          <h1 className="font-display text-2xl font-extrabold tracking-tighter2 text-ink">{user?.full_name}</h1>
+      {/* ── هيرو فاخر: ترحيب + نبض اليوم بلمحة ── */}
+      <div className="relative mb-5 overflow-hidden rounded-3xl bg-brand-grad p-6 text-white shadow-soft animate-fade-in sm:p-7">
+        <PawPrint size={150} className="pointer-events-none absolute -bottom-8 -start-8 rotate-12 text-white/10" />
+        <div className="pointer-events-none absolute -end-16 -top-16 h-56 w-56 rounded-full bg-white/10 blur-3xl" />
+        <div className="relative flex items-start justify-between gap-3">
+          <div>
+            <p className="text-sm text-white/75">{t(`greeting.${greetingKey()}`)}،</p>
+            <h1 className="mt-0.5 font-display text-2xl font-extrabold tracking-tighter2 sm:text-3xl">{user?.full_name}</h1>
+            <p className="mt-1 text-xs text-white/70">
+              {new Date().toLocaleDateString(i18n.language === "ar" ? "ar-IQ" : "en-US", { weekday: "long", day: "numeric", month: "long" })}
+            </p>
+          </div>
+          <button
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-white/15 px-3 py-2 text-sm font-semibold backdrop-blur transition hover:bg-white/25"
+            onClick={() => {
+              playTap();
+              setAcctPhone(pets[0]?.owner_phone ?? "");
+              setAcctEmail(pets[0]?.owner_email ?? "");
+              setAcctSaved(false);
+              setAcctOpen(true);
+            }}
+          >
+            <UserCog size={17} /> {t("account.title")}
+          </button>
         </div>
+        {!loading && (
+          <div className="relative mt-5 flex flex-wrap gap-2">
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-white/15 px-3 py-1.5 text-xs font-semibold backdrop-blur">
+              <PawPrint size={13} /> {t("dashboard.statPets", { n: pets.length, defaultValue: "{{n}} حيوانات" })}
+            </span>
+            <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold backdrop-blur ${alerts.length ? "bg-white text-danger-600" : "bg-white/15"}`}>
+              <AlertTriangle size={13} /> {alerts.length ? t("dashboard.statAlerts", { n: alerts.length, defaultValue: "{{n}} تنبيهات صحية" }) : t("dashboard.statNoAlerts", "ماكو تنبيهات 🎉")}
+            </span>
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-white/15 px-3 py-1.5 text-xs font-semibold backdrop-blur tabular-nums">
+              <CalendarClock size={13} />
+              {nextAppt
+                ? t("dashboard.statNextAppt", {
+                    when: new Date(nextAppt.scheduled_at).toLocaleDateString(i18n.language === "ar" ? "ar-IQ" : "en-US", { weekday: "long", day: "numeric", month: "short" }),
+                    defaultValue: "موعدك القادم: {{when}}",
+                  })
+                : t("dashboard.statNoAppt", "ماكو موعد قادم")}
+            </span>
+          </div>
+        )}
+      </div>
+
+      {/* ── إجراءات سريعة ── */}
+      <div className="mb-6 grid grid-cols-3 gap-2.5 animate-fade-in">
         <button
-          className="btn-ghost py-2 px-3 text-sm"
+          onClick={() => { playTap(); navigate("/book"); }}
+          className="card flex flex-col items-center gap-1.5 p-3.5 transition hover:-translate-y-0.5 hover:border-brand-200 hover:shadow-raised dark:hover:border-brand-500/40"
+        >
+          <span className="grid h-10 w-10 place-items-center rounded-2xl bg-brand-50 text-brand-600 dark:bg-brand-500/15 dark:text-brand-300"><CalendarPlus size={19} /></span>
+          <span className="text-xs font-semibold text-ink">{t("dashboard.quickBook", "حجز موعد")}</span>
+        </button>
+        <button
+          onClick={() => { playTap(); setAddOpen(true); }}
+          className="card flex flex-col items-center gap-1.5 p-3.5 transition hover:-translate-y-0.5 hover:border-brand-200 hover:shadow-raised dark:hover:border-brand-500/40"
+        >
+          <span className="grid h-10 w-10 place-items-center rounded-2xl bg-success-50 text-success-600 dark:bg-success-500/15 dark:text-success-300"><Plus size={19} /></span>
+          <span className="text-xs font-semibold text-ink">{t("dashboard.addPet")}</span>
+        </button>
+        <button
           onClick={() => {
             playTap();
             setAcctPhone(pets[0]?.owner_phone ?? "");
@@ -123,8 +179,10 @@ export function OwnerDashboard() {
             setAcctSaved(false);
             setAcctOpen(true);
           }}
+          className="card flex flex-col items-center gap-1.5 p-3.5 transition hover:-translate-y-0.5 hover:border-brand-200 hover:shadow-raised dark:hover:border-brand-500/40"
         >
-          <UserCog size={18} /> {t("account.title")}
+          <span className="grid h-10 w-10 place-items-center rounded-2xl bg-sky-50 text-sky-600 dark:bg-sky-500/15 dark:text-sky-300"><QrIcon size={19} /></span>
+          <span className="text-xs font-semibold text-ink">{t("dashboard.myCode", "رمزي للعيادة")}</span>
         </button>
       </div>
 

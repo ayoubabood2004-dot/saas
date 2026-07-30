@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
-import { Stethoscope, Syringe, Scissors, Video, Home, Check, ArrowLeft, ArrowRight, Sun, Sunset, CalendarClock, Building2, MapPin, HeartHandshake } from "lucide-react";
+import { Stethoscope, Syringe, Scissors, Video, Home, Check, ArrowLeft, ArrowRight, Sun, Sunset, CalendarClock, Building2, MapPin, HeartHandshake, Search, Zap } from "lucide-react";
 import type { Pet, ServiceType, ClinicInfo, PublicStaff } from "@/types";
 import { useAuth } from "@/contexts/AuthContext";
 import { repo } from "@/lib/repo";
@@ -46,7 +46,11 @@ export function BookingWizard() {
   const [doctor, setDoctor] = useState<{ id: string; name: string; specialty?: string | null } | null>(null);
   const [dayOffset, setDayOffset] = useState(1);
   const [slot, setSlot] = useState<string | null>(null);
-  const [takenSlots, setTakenSlots] = useState<Set<string>>(new Set());
+  // Busy times per doctor over the whole horizon — ONE fetch powers the
+  // «أقرب موعد» badges, the per-day free counts and the slot grid.
+  const [busy, setBusy] = useState<Record<string, string[]>>({});
+  const [clinicQuery, setClinicQuery] = useState("");
+  const [clinicFilter, setClinicFilter] = useState<"all" | "mine">("all");
   const [symptoms, setSymptoms] = useState("");
   const [done, setDone] = useState(false);
 
@@ -78,15 +82,61 @@ export function BookingWizard() {
       .map((id) => ({ id, name: t("booking.yourPetsClinic", "عيادة حيواناتك"), city: null, phone: null, mine: true })),
   ].sort((a, b) => Number(b.mine) - Number(a.mine));
 
+  const q = clinicQuery.trim().toLowerCase();
+  const visibleClinics = clinicRows.filter(
+    (c) => (clinicFilter === "all" || c.mine) && (!q || c.name.toLowerCase().includes(q) || (c.city ?? "").toLowerCase().includes(q)),
+  );
+
+  /** Booking horizon (days ahead) shown in the date strip + scanned for «أقرب موعد». */
+  const HORIZON = 12;
+  const dayISOFor = (off: number) => {
+    const d = new Date();
+    d.setDate(d.getDate() + off);
+    return d.toISOString().slice(0, 10);
+  };
+  const slotsForDay = (off: number) => generateSlots(dayISOFor(off), CLINIC_OPEN_HOUR, CLINIC_CLOSE_HOUR, SLOT_MINUTES);
+  const busySetOf = (docId: string) => new Set(busy[docId] ?? []);
+  /** First free slot for a doctor across the horizon (drives the badge + quick-book). */
+  const nextFreeFor = (docId: string): string | null => {
+    const b = busySetOf(docId);
+    for (let off = 1; off <= HORIZON; off++) {
+      for (const s of slotsForDay(off)) if (!b.has(s)) return s;
+    }
+    return null;
+  };
+  const freeCountForDay = (docId: string, off: number) => {
+    const b = busySetOf(docId);
+    return slotsForDay(off).filter((s) => !b.has(s)).length;
+  };
+
   const pickClinic = (id: string) => {
     setClinicId(id);
     setDoctor(null);
     setSlot(null);
     setStaffLoading(true);
     repo.listClinicStaffPublic(id)
-      .then((list) => setStaffList(list.filter((s) => s.role === "veterinarian" || s.role === "manager")))
+      .then(async (list) => {
+        const bookable = list.filter((s) => s.role === "veterinarian" || s.role === "manager");
+        setStaffList(bookable);
+        // One availability sweep for the whole roster (plus the any-doctor key).
+        const from = `${dayISOFor(1)}T00:00:00`;
+        const to = `${dayISOFor(HORIZON)}T23:59:59`;
+        const ids = [...bookable.map((s) => s.id), `any:${id}`];
+        setBusy(await repo.listDoctorBusySlots(ids, from, to).catch(() => ({})));
+      })
       .catch(() => setStaffList([]))
       .finally(() => setStaffLoading(false));
+  };
+
+  /** One-tap quick booking: jump straight to the doctor's nearest free slot. */
+  const quickBook = (d: { id: string; name: string; specialty?: string | null }) => {
+    const s = nextFreeFor(d.id);
+    if (!s) return;
+    playTap();
+    setDoctor(d);
+    const off = Math.max(1, Math.round((new Date(s.slice(0, 10)).getTime() - new Date(dayISOFor(0)).getTime()) / 864e5));
+    setDayOffset(off);
+    setSlot(s);
   };
 
   useEffect(() => {
@@ -100,13 +150,8 @@ export function BookingWizard() {
     return d.toISOString().slice(0, 10);
   })();
 
-  useEffect(() => {
-    if (!doctor) return;
-    const slots = generateSlots(dayISO, CLINIC_OPEN_HOUR, CLINIC_CLOSE_HOUR, SLOT_MINUTES);
-    Promise.all(slots.map((s) => repo.slotTaken(doctor.id, s)))
-      .then((res) => setTakenSlots(new Set(slots.filter((_, i) => res[i]))))
-      .catch(() => setTakenSlots(new Set())); // booking re-checks the slot before confirming
-  }, [doctor, dayISO]);
+  // Slot grid derives straight from the availability sweep — no per-slot queries.
+  const takenSlots = new Set<string>(doctor ? (busy[doctor.id] ?? []).filter((s) => s.slice(0, 10) === dayISO) : []);
 
   const pet = pets.find((p) => p.id === petId);
 
@@ -114,7 +159,10 @@ export function BookingWizard() {
     if (!user || !pet || !service || !clinicId || !doctor || !slot || booking) return;
     setBooking(true);
     try {
-      if (await repo.slotTaken(doctor.id, slot)) {
+      // Final clash re-check via the availability RPC — works for owners too,
+      // where direct appointment reads are (rightly) blocked by RLS.
+      const clash = await repo.listDoctorBusySlots([doctor.id], slot, slot).catch(() => ({} as Record<string, string[]>));
+      if ((clash[doctor.id] ?? []).length > 0 || (await repo.slotTaken(doctor.id, slot).catch(() => false))) {
         playWarning();
         setSlot(null);
         return;
@@ -247,11 +295,45 @@ export function BookingWizard() {
               {/* Which clinic? — real clinics; the ones treating your pets come first */}
               <div>
                 <h2 className="mb-3 font-display font-bold text-ink">{t("booking.selectClinic", "اختر العيادة")}</h2>
+
+                {/* بحث + فلترة: كل العيادات / عيادات حيواناتي */}
+                {clinicRows.length > 1 && (
+                  <div className="mb-3 flex flex-col gap-2 sm:flex-row">
+                    <div className="relative flex-1">
+                      <Search size={15} className="pointer-events-none absolute start-3 top-1/2 -translate-y-1/2 text-ink-subtle" />
+                      <input
+                        className="input ps-9"
+                        value={clinicQuery}
+                        onChange={(e) => setClinicQuery(e.target.value)}
+                        placeholder={t("booking.searchClinic", "دور بالاسم أو المدينة…")}
+                      />
+                    </div>
+                    {myClinicIds.size > 0 && (
+                      <div className="flex gap-1 rounded-xl bg-surface-2 p-1">
+                        {(["all", "mine"] as const).map((f) => (
+                          <button
+                            key={f}
+                            onClick={() => { playTap(); setClinicFilter(f); }}
+                            className={cn(
+                              "flex-1 whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-semibold transition sm:flex-none",
+                              clinicFilter === f ? "bg-white text-brand-700 shadow-card dark:bg-surface-1 dark:text-brand-300" : "text-ink-muted hover:text-ink",
+                            )}
+                          >
+                            {f === "all" ? t("booking.allClinics", "كل العيادات") : t("booking.mineOnly", "عيادات حيواناتي")}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {clinicRows.length === 0 ? (
                   <p className="rounded-2xl border border-dashed border-line p-5 text-center text-sm text-ink-subtle">{t("booking.noClinics", "ماكو عيادات متاحة للحجز بعد.")}</p>
+                ) : visibleClinics.length === 0 ? (
+                  <p className="rounded-2xl border border-dashed border-line p-5 text-center text-sm text-ink-subtle">{t("booking.noMatch", "ماكو نتيجة مطابقة — جرب كلمة ثانية.")}</p>
                 ) : (
                   <div className="grid gap-2.5 sm:grid-cols-2">
-                    {clinicRows.map((c) => {
+                    {visibleClinics.map((c) => {
                       const sel = clinicId === c.id;
                       return (
                         <button
@@ -307,24 +389,50 @@ export function BookingWizard() {
                     <div className="grid gap-2.5 sm:grid-cols-2">
                       {staffList.map((d) => {
                         const sel = doctor?.id === d.id;
+                        const nf = nextFreeFor(d.id);
                         return (
                           <button
                             key={d.id}
                             onClick={() => { playTap(); setDoctor({ id: d.id, name: d.name, specialty: d.specialty }); setSlot(null); }}
-                            className={cn("card flex items-center gap-3 p-3.5 text-start transition hover:-translate-y-0.5 hover:shadow-card", sel && "ring-2 ring-brand-400")}
+                            className={cn("card flex flex-col gap-2.5 p-3.5 text-start transition hover:-translate-y-0.5 hover:shadow-card", sel && "ring-2 ring-brand-400")}
                           >
-                            <span className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-brand-grad font-display text-sm font-bold text-white shadow-soft">
-                              {initials(d.name)}
+                            <span className="flex w-full items-center gap-3">
+                              <span className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-brand-grad font-display text-sm font-bold text-white shadow-soft">
+                                {initials(d.name)}
+                              </span>
+                              <span className="min-w-0 flex-1">
+                                <span className="block truncate font-semibold text-ink">{d.name}</span>
+                                <span className="block truncate text-xs text-ink-muted">{d.specialty || t("booking.vet", "طبيب بيطري")}</span>
+                              </span>
+                              {sel ? (
+                                <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-brand-600 text-white"><Check size={14} /></span>
+                              ) : (
+                                <span className="h-6 w-6 shrink-0 rounded-full border-2 border-line-strong" />
+                              )}
                             </span>
-                            <div className="min-w-0 flex-1">
-                              <p className="truncate font-semibold text-ink">{d.name}</p>
-                              <p className="truncate text-xs text-ink-muted">{d.specialty || t("booking.vet", "طبيب بيطري")}</p>
-                            </div>
-                            {sel ? (
-                              <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-brand-600 text-white"><Check size={14} /></span>
-                            ) : (
-                              <span className="h-6 w-6 shrink-0 rounded-full border-2 border-line-strong" />
-                            )}
+                            {/* أقرب موعد متاح + حجز سريع بضغطة */}
+                            <span className="flex w-full items-center justify-between gap-2">
+                              <span className={cn("flex items-center gap-1 text-xs font-medium tabular-nums", nf ? "text-success-700 dark:text-success-300" : "text-ink-subtle")}>
+                                <CalendarClock size={13} />
+                                {nf
+                                  ? t("booking.nextFree", {
+                                      when: `${new Date(nf).toLocaleDateString(lang, { weekday: "long" })} ${formatTime(nf, i18n.language)}`,
+                                      defaultValue: "أقرب موعد: {{when}}",
+                                    })
+                                  : t("booking.fullyBooked", "محجوز بالكامل هالفترة")}
+                              </span>
+                              {nf && (
+                                <span
+                                  role="button"
+                                  tabIndex={0}
+                                  onClick={(e) => { e.stopPropagation(); quickBook(d); }}
+                                  onKeyDown={(e) => { if (e.key === "Enter") { e.stopPropagation(); quickBook(d); } }}
+                                  className="inline-flex shrink-0 items-center gap-1 rounded-full bg-brand-50 px-2.5 py-1 text-xs font-bold text-brand-700 transition hover:bg-brand-100 dark:bg-brand-500/15 dark:text-brand-300 dark:hover:bg-brand-500/25"
+                                >
+                                  <Zap size={12} /> {t("booking.quickBook", "احجز أقرب موعد")}
+                                </span>
+                              )}
+                            </span>
                           </button>
                         );
                       })}
@@ -339,10 +447,11 @@ export function BookingWizard() {
                   <div>
                     <h3 className="mb-2 flex items-center gap-1.5 font-semibold text-ink-muted"><CalendarClock size={16} /> {t("booking.selectDay")}</h3>
                     <div className="flex gap-2 overflow-x-auto pb-2">
-                      {Array.from({ length: 12 }, (_, i) => i + 1).map((off) => {
+                      {Array.from({ length: HORIZON }, (_, i) => i + 1).map((off) => {
                         const d = new Date();
                         d.setDate(d.getDate() + off);
                         const active = off === dayOffset;
+                        const free = freeCountForDay(doctor.id, off);
                         return (
                           <button
                             key={off}
@@ -355,6 +464,13 @@ export function BookingWizard() {
                             <span className="text-xs font-medium opacity-80">{d.toLocaleDateString(lang, { weekday: "short" })}</span>
                             <span className="font-display text-lg font-bold leading-none">{d.getDate()}</span>
                             <span className="text-2xs opacity-80">{d.toLocaleDateString(lang, { month: "short" })}</span>
+                            {/* كم وقت فاضي باليوم — يوجه الزبون لليوم الأنسب بلمحة */}
+                            <span className={cn(
+                              "mt-0.5 rounded-full px-1.5 text-2xs font-semibold tabular-nums",
+                              active ? "bg-white/20 text-white" : free === 0 ? "bg-danger-50 text-danger-600 dark:bg-danger-500/15 dark:text-danger-300" : "bg-success-50 text-success-700 dark:bg-success-500/15 dark:text-success-300",
+                            )}>
+                              {free === 0 ? t("booking.dayFull", "ممتلئ") : t("booking.dayFree", { n: free, defaultValue: "{{n}} متاح" })}
+                            </span>
                           </button>
                         );
                       })}

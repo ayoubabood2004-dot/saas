@@ -496,6 +496,20 @@ const demoRepo = {
     );
   },
 
+  /** Busy times for a set of doctors in a window — feeds the availability badges
+   *  and the slot grid. Times only; no patient information. */
+  async listDoctorBusySlots(doctorIds: string[], fromISO: string, toISO: string): Promise<Record<string, string[]>> {
+    const out: Record<string, string[]> = {};
+    if (doctorIds.length === 0) return out;
+    const ids = new Set(doctorIds);
+    for (const a of loadDB().appointments) {
+      if (!ids.has(a.doctor_id) || a.status === "cancelled") continue;
+      if (a.scheduled_at < fromISO || a.scheduled_at > toISO) continue;
+      (out[a.doctor_id] ??= []).push(a.scheduled_at);
+    }
+    return out;
+  },
+
   /** Booking directory: clinics an owner can book at (safe public fields only). */
   async listClinicDirectory(): Promise<ClinicInfo[]> {
     return loadClinics().map((c) => ({ id: c.id, name: c.name, city: c.city ?? null, phone: c.phone ?? null }));
@@ -1448,6 +1462,18 @@ const supabaseRepo: typeof demoRepo = {
   },
   async slotTaken(doctorId, scheduledAt) {
     return listOf<{ id: string }>(await sbc().from("appointments").select("id").eq("doctor_id", doctorId).eq("scheduled_at", scheduledAt).neq("status", "cancelled")).length > 0;
+  },
+  async listDoctorBusySlots(doctorIds, fromISO, toISO) {
+    const out: Record<string, string[]> = {};
+    if (doctorIds.length === 0) return out;
+    try {
+      const { data, error } = await sbc().rpc("doctor_busy_slots", { p_doctors: doctorIds, p_from: fromISO, p_to: toISO });
+      if (error) return out; // pre-0079 backend — availability badges just don't show
+      for (const row of (data as { doctor_id: string; scheduled_at: string }[]) ?? []) {
+        (out[row.doctor_id] ??= []).push(row.scheduled_at);
+      }
+      return out;
+    } catch { return out; }
   },
   async listClinicDirectory() {
     // Pre-0078 backend (RPC missing) → empty directory, the wizard copes.

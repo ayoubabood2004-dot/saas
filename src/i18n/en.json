@@ -879,7 +879,14 @@
     "clinicTreats": "Treating: {{names}}",
     "waClinic": "WhatsApp",
     "callClinic": "Call",
-    "bookAtClinic": "Book"
+    "bookAtClinic": "Book",
+    "statPets": "{{n}} pets",
+    "statAlerts": "{{n}} health alerts",
+    "statNoAlerts": "No alerts 🎉",
+    "statNextAppt": "Next visit: {{when}}",
+    "statNoAppt": "No upcoming visit",
+    "quickBook": "Book a visit",
+    "myCode": "My clinic code"
   },
   "pet": {
     "species": {
@@ -1335,7 +1342,16 @@
     "anyDoctor": "Any available doctor",
     "noStaffHint": "This clinic hasn't published its team yet — book and they'll assign a doctor.",
     "clinic": "Clinic",
-    "vet": "Veterinarian"
+    "vet": "Veterinarian",
+    "searchClinic": "Search by name or city…",
+    "allClinics": "All clinics",
+    "mineOnly": "My pets' clinics",
+    "noMatch": "No match — try another word.",
+    "nextFree": "Next available: {{when}}",
+    "fullyBooked": "Fully booked in this period",
+    "quickBook": "Book nearest slot",
+    "dayFull": "Full",
+    "dayFree": "{{n}} free"
   },
   "dash": {
     "morning": "Good morning",

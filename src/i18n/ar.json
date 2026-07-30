@@ -879,7 +879,14 @@
     "clinicTreats": "يعالجون: {{names}}",
     "waClinic": "واتساب",
     "callClinic": "اتصال",
-    "bookAtClinic": "حجز موعد"
+    "bookAtClinic": "حجز موعد",
+    "statPets": "{{n}} حيوانات",
+    "statAlerts": "{{n}} تنبيهات صحية",
+    "statNoAlerts": "ماكو تنبيهات 🎉",
+    "statNextAppt": "موعدك القادم: {{when}}",
+    "statNoAppt": "ماكو موعد قادم",
+    "quickBook": "حجز موعد",
+    "myCode": "رمزي للعيادة"
   },
   "pet": {
     "species": {
@@ -1332,7 +1339,16 @@
     "anyDoctor": "أي طبيب متاح",
     "noStaffHint": "هذه العيادة لم تنشر كادرها بعد — احجز والعيادة تحدد لك الطبيب.",
     "clinic": "العيادة",
-    "vet": "طبيب بيطري"
+    "vet": "طبيب بيطري",
+    "searchClinic": "دور بالاسم أو المدينة…",
+    "allClinics": "كل العيادات",
+    "mineOnly": "عيادات حيواناتي",
+    "noMatch": "ماكو نتيجة مطابقة — جرب كلمة ثانية.",
+    "nextFree": "أقرب موعد: {{when}}",
+    "fullyBooked": "محجوز بالكامل هالفترة",
+    "quickBook": "احجز أقرب موعد",
+    "dayFull": "ممتلئ",
+    "dayFree": "{{n}} متاح"
   },
   "dash": {
     "morning": "صباح الخير",
