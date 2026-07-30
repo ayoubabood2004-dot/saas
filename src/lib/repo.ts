@@ -133,6 +133,13 @@ function dedupeCustomers(rows: { customer_name?: string | null; customer_phone?:
   return list.sort((a, b) => b.last_seen.localeCompare(a.last_seen)).slice(0, 8);
 }
 
+/** A clinic owner-contact field counts as "blank" when empty or the "—" placeholder
+ *  NewCase writes for walk-ins — only then may a claiming owner account fill it. */
+function blankOwnerField(v?: string | null): boolean {
+  const s = (v ?? "").trim();
+  return !s || s === "—";
+}
+
 /* Demo-only audit + login trails (localStorage). On Supabase these live in the
  * audit_log / login_events tables; in demo we keep small local mirrors so the
  * Reports security-log views are populated and testable offline. */
@@ -212,15 +219,18 @@ const demoRepo = {
     return loadDB().pets.find((p) => p.serial === s);
   },
 
-  /** Owner claims an existing animal (by serial) into their profile. */
+  /** Owner claims an existing animal (by serial) into their profile.
+   *  Claiming only LINKS the account (owner_id). The clinic's stored customer
+   *  fields (اسم المراجع/هاتفه) are never overwritten — they're only filled
+   *  when the clinic left them blank. */
   async claimPet(serial: string, owner: { owner_id: string; owner_name?: string; owner_phone?: string; owner_email?: string }): Promise<Pet | undefined> {
     const db = loadDB();
     const pet = db.pets.find((p) => p.serial === serial.trim());
     if (!pet) return undefined;
     pet.owner_id = owner.owner_id;
-    if (owner.owner_name) pet.owner_name = owner.owner_name;
-    if (owner.owner_phone) pet.owner_phone = owner.owner_phone;
-    if (owner.owner_email) pet.owner_email = owner.owner_email;
+    if (blankOwnerField(pet.owner_name) && owner.owner_name) pet.owner_name = owner.owner_name;
+    if (blankOwnerField(pet.owner_phone) && owner.owner_phone) pet.owner_phone = owner.owner_phone;
+    if (blankOwnerField(pet.owner_email) && owner.owner_email) pet.owner_email = owner.owner_email;
     saveDB(db);
     return pet;
   },
@@ -1227,11 +1237,16 @@ const supabaseRepo: typeof demoRepo = {
     return maybe<Pet>(await sbc().from("pets").select("*").eq("serial", serial.trim()).maybeSingle());
   },
   async claimPet(serial, owner) {
+    // Claiming only LINKS the owner account. The clinic's stored customer name/
+    // phone (اسم المراجع) must survive the claim — we read the row first and only
+    // fill fields the clinic left blank.
+    const cur = maybe<Pet>(await sbc().from("pets").select("*").eq("serial", serial.trim()).maybeSingle());
+    if (!cur) return undefined;
     const patch: Partial<Pet> = { owner_id: owner.owner_id };
-    if (owner.owner_name) patch.owner_name = owner.owner_name;
-    if (owner.owner_phone) patch.owner_phone = owner.owner_phone;
-    if (owner.owner_email) patch.owner_email = owner.owner_email;
-    return maybe<Pet>(await sbc().from("pets").update(patch).eq("serial", serial.trim()).select().maybeSingle());
+    if (blankOwnerField(cur.owner_name) && owner.owner_name) patch.owner_name = owner.owner_name;
+    if (blankOwnerField(cur.owner_phone) && owner.owner_phone) patch.owner_phone = owner.owner_phone;
+    if (blankOwnerField(cur.owner_email) && owner.owner_email) patch.owner_email = owner.owner_email;
+    return maybe<Pet>(await sbc().from("pets").update(patch).eq("id", cur.id).select().maybeSingle());
   },
   async getPetsByOwnerEmail(email) {
     const e = email.trim();
