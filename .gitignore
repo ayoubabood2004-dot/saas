@@ -9,3 +9,4 @@ dist-ssr
 .vite
 *.tsbuildinfo
 .claude/settings.local.json
+dist-sbtest/

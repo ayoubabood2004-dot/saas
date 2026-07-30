@@ -53,6 +53,10 @@ interface AuthState {
   signInEmail: (email: string, password: string) => Promise<{ error: string | null }>;
   /** Re-send the email-confirmation LINK (link-based signup; no numeric code). */
   resendConfirmation: (email: string) => Promise<{ error: string | null }>;
+  /** Owner phone-OTP: send the code (WhatsApp first, SMS fallback). */
+  sendPhoneOtp: (phone: string, name?: string) => Promise<{ error: string | null; notEnabled?: boolean }>;
+  /** Owner phone-OTP: verify the code and sign in. */
+  verifyPhoneOtp: (phone: string, code: string) => Promise<{ error: string | null }>;
   resetPassword: (email: string) => Promise<{ error: string | null }>;
   updatePassword: (newPassword: string) => Promise<{ error: string | null }>;
   /** Update the signed-in user's own name/phone (profiles table; reflects immediately). */
@@ -440,6 +444,52 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  /** Phone-OTP sign-in (owners): send a verification code to the phone.
+   *  Tries WhatsApp first, falls back to plain SMS. Requires an SMS provider
+   *  (e.g. Twilio) configured on the Supabase project — until then the caller
+   *  receives a NOT_ENABLED error to show a friendly "coming soon" note. */
+  const sendPhoneOtp = async (phone: string, name?: string): Promise<{ error: string | null; notEnabled?: boolean }> => {
+    if (!supabase) return { error: "Supabase is not configured." };
+    const sb = supabase;
+    const p = phone.trim();
+    // New accounts created by this OTP are seeded as OWNER profiles (the signup
+    // trigger reads the metadata) — the phone becomes the account's identity.
+    const data = { role: "owner", full_name: name?.trim() || undefined, phone: p };
+    try {
+      let res = await withTimeout(sb.auth.signInWithOtp({ phone: p, options: { channel: "whatsapp", shouldCreateUser: true, data } }), 15000);
+      if (res.error) {
+        // Project without a WhatsApp sender — retry over classic SMS.
+        res = await withTimeout(sb.auth.signInWithOtp({ phone: p, options: { channel: "sms", shouldCreateUser: true, data } }), 15000);
+      }
+      if (res.error) {
+        const m = res.error.message ?? "";
+        const notEnabled = /provider|channel|not.*(enabled|configured|supported)|disabled/i.test(m);
+        return { error: m, notEnabled };
+      }
+      return { error: null };
+    } catch (e) {
+      return { error: e instanceof Error ? e.message : "Couldn't send the code." };
+    }
+  };
+
+  /** Verify the phone-OTP code and finish the session (mirrors signInEmail's hydration). */
+  const verifyPhoneOtp = async (phone: string, code: string): Promise<{ error: string | null }> => {
+    if (!supabase) return { error: "Supabase is not configured." };
+    const sb = supabase;
+    try {
+      const { data, error } = await withTimeout(sb.auth.verifyOtp({ phone: phone.trim(), token: code.trim(), type: "sms" }), 15000);
+      if (error) return { error: error.message };
+      if (data.user) {
+        const prof = await hydrateSession(data.user);
+        setRaw(prof);
+        void repo.logLogin({ email: prof.email || phone.trim(), name: prof.full_name }).catch(() => { /* never block login */ });
+      }
+      return { error: null };
+    } catch (e) {
+      return { error: e instanceof Error ? e.message : "Verification failed." };
+    }
+  };
+
   const resendConfirmation = async (email: string) => {
     if (!supabase) return { error: "Supabase is not configured." };
     const emailRedirectTo = typeof window !== "undefined" ? `${window.location.origin}/` : undefined;
@@ -516,7 +566,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       roles: effRoles, activeRole: resolvedActive, needsRoleChoice,
       chooseRole, switchRole, addRole,
       signInDemo, signInClinic, signInOwner,
-      signUpEmail, signInEmail, resendConfirmation, resetPassword, updatePassword, updateProfile, signOut,
+      signUpEmail, signInEmail, resendConfirmation, sendPhoneOtp, verifyPhoneOtp, resetPassword, updatePassword, updateProfile, signOut,
       inAnotherClinic: !!raw?.staff, leaveClinic,
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -1,5 +1,6 @@
 // Pet-owner accounts (demo). Each owner registers their own info and gets a personal
 // barcode (owner_token) — distinct from each pet's passport QR and from clinic accounts.
+import { samePhone, phoneKey } from "./phone";
 
 export interface OwnerAccount {
   id: string;
@@ -82,6 +83,28 @@ export function registerOwner(input: { name: string; email: string; password: st
 export function authenticateOwner(email: string, password: string): OwnerAccount | null {
   const e = email.trim().toLowerCase();
   return loadOwners().find((o) => o.email.toLowerCase() === e && o.password === password) ?? null;
+}
+
+export function getOwnerByPhone(phone: string): OwnerAccount | undefined {
+  return loadOwners().find((o) => o.phone && samePhone(o.phone, phone));
+}
+
+/** Phone-first signup (demo mirror of the OTP flow): the phone IS the identity.
+ *  A synthetic email keeps the account shape compatible with the email paths. */
+export function registerOwnerByPhone(input: { name: string; phone: string }): OwnerAccount {
+  const list = loadOwners();
+  const owner: OwnerAccount = {
+    id: `owner_${Math.random().toString(36).slice(2, 10)}`,
+    name: input.name.trim(),
+    email: `p${phoneKey(input.phone)}@phone.local`,
+    password: Math.random().toString(36).slice(2, 12),
+    phone: input.phone.trim(),
+    owner_token: makeToken(input.name),
+    created_at: new Date().toISOString(),
+  };
+  list.push(owner);
+  saveOwners(list);
+  return owner;
 }
 
 export function getOwnerByEmail(email: string): OwnerAccount | undefined {

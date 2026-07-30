@@ -18,6 +18,7 @@ import {
   MailCheck,
   ArrowLeft,
   CheckCircle2,
+  Smartphone,
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { useAuth } from "@/contexts/AuthContext";
@@ -25,7 +26,7 @@ import { setLang, type Lang } from "@/i18n";
 import { playScan, playTap, playSuccess } from "@/lib/sounds";
 import { describeAuthError } from "@/lib/errors";
 import { registerClinic, authenticateClinic, getClinicByEmail, setClinicPassword } from "@/lib/clinics";
-import { registerOwner, authenticateOwner, getOwnerByEmail, setOwnerPassword } from "@/lib/owners";
+import { registerOwner, authenticateOwner, getOwnerByEmail, setOwnerPassword, getOwnerByPhone, registerOwnerByPhone } from "@/lib/owners";
 import { Button, Input, Label, Segmented, Card, ThemeToggle, SuccessDialog, useToast } from "@/components/ui";
 import { staggerContainer, staggerItem } from "@/lib/motion";
 import { HERO_PHOTO } from "@/lib/petPhotos";
@@ -74,11 +75,139 @@ function PasswordField({ label, value, onChange, show, setShow, autoComplete, wi
   );
 }
 
+/**
+ * Phone-first owner sign-in: number → verification code → in. Shared by the demo
+ * build (simulated code shown on screen) and the live build (WhatsApp/SMS via
+ * Supabase). `send` returns an optional demoCode to display and isNew so the
+ * code step can ask a first-time user for their name.
+ */
+function PhoneOtpCard({ send, verify, askNameUpfront, t }: {
+  send: (phone: string, name: string) => Promise<{ error: string | null; demoCode?: string; isNew?: boolean; notEnabled?: boolean }>;
+  verify: (phone: string, code: string, name: string) => Promise<{ error: string | null }>;
+  /** Live build: name is collected up-front (we can't know locally if the number is new). */
+  askNameUpfront?: boolean;
+  t: TFunction;
+}) {
+  const [step, setStep] = useState<"phone" | "code">("phone");
+  const [phone, setPhone] = useState("");
+  const [name, setName] = useState("");
+  const [code, setCode] = useState("");
+  const [isNew, setIsNew] = useState(false);
+  const [demoCode, setDemoCode] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [notEnabled, setNotEnabled] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  const doSend = async () => {
+    if (busy) return;
+    if (phoneDigitsLen(phone) < 8) { setError(t("auth.phoneInvalid", "أدخل رقم هاتف صحيح.")); return; }
+    setError(null); setNotEnabled(false);
+    setBusy(true);
+    try {
+      const res = await send(phone, name);
+      if (res.notEnabled) { setNotEnabled(true); return; }
+      if (res.error) { setError(res.error); return; }
+      playSuccess();
+      setDemoCode(res.demoCode ?? null);
+      setIsNew(!!res.isNew);
+      setCode("");
+      setStep("code");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const doVerify = async () => {
+    if (busy || !code.trim()) return;
+    setError(null);
+    setBusy(true);
+    try {
+      const res = await verify(phone, code, name);
+      if (res.error) setError(res.error);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="space-y-3">
+      {step === "phone" ? (
+        <>
+          <p className="text-xs text-ink-subtle">{t("auth.phoneHint", "أدخل رقمك وراح يوصلك رمز تحقق على الواتساب أو برسالة نصية.")}</p>
+          <div>
+            <Label>{t("phone.number", "رقم الهاتف")}</Label>
+            <PhoneInput value={phone} onChange={setPhone} />
+          </div>
+          {askNameUpfront && (
+            <div>
+              <Label>{t("auth.yourNameOptional", "اسمك (للحساب الجديد)")}</Label>
+              <Input value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" />
+            </div>
+          )}
+          {notEnabled && (
+            <p className="rounded-xl bg-warn-50 px-3 py-2 text-xs text-warn-700 dark:bg-warn-500/10 dark:text-warn-200">
+              {t("auth.otpNotEnabled", "الدخول بالهاتف قيد التفعيل حالياً — استخدم البريد الإلكتروني، وقريباً يشتغل الرقم مباشرة.")}
+            </p>
+          )}
+          {error && <ErrorNote>{error}</ErrorNote>}
+          <Button className="w-full" onClick={doSend} disabled={busy}>
+            {busy ? t("common.loading", "لحظة…") : t("auth.sendOtp", "أرسل الرمز")}
+          </Button>
+        </>
+      ) : (
+        <>
+          <p className="text-sm text-ink-muted">{t("auth.otpSent", { phone, defaultValue: "دزينا رمز تحقق إلى {{phone}}" })}</p>
+          {demoCode && (
+            <p className="rounded-xl bg-warn-50 px-3 py-2 text-xs text-warn-700 dark:bg-warn-500/10 dark:text-warn-200">
+              {t("auth.otpDemoNote", { code: demoCode, defaultValue: "وضع تجريبي: الرمز هو {{code}}" })}
+            </p>
+          )}
+          {isNew && !askNameUpfront && (
+            <div>
+              <Label>{t("auth.fullName", "الاسم الكامل")}</Label>
+              <Input value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" autoFocus />
+            </div>
+          )}
+          <div>
+            <Label>{t("auth.enterOtp", "رمز التحقق")}</Label>
+            <Input
+              className="text-center font-mono text-lg tracking-[0.4em]"
+              inputMode="numeric"
+              value={code}
+              onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+              onKeyDown={(e) => e.key === "Enter" && doVerify()}
+              placeholder="••••••"
+              autoFocus={!isNew || askNameUpfront}
+            />
+          </div>
+          {error && <ErrorNote>{error}</ErrorNote>}
+          <Button className="w-full" onClick={doVerify} disabled={busy || !code.trim()}>
+            {busy ? t("common.loading", "لحظة…") : t("auth.verifyOtp", "تأكيد ودخول")}
+          </Button>
+          <div className="flex items-center justify-between text-sm">
+            <button className="font-medium text-ink-muted hover:text-ink" onClick={() => { setStep("phone"); setError(null); }}>
+              {t("auth.changePhone", "تغيير الرقم")}
+            </button>
+            <button className="font-medium text-brand-600 hover:underline" onClick={doSend} disabled={busy}>
+              {t("auth.resendOtp", "إعادة إرسال الرمز")}
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+/** Loose length check on the significant digits of a typed phone number. */
+function phoneDigitsLen(v: string): number {
+  return v.replace(/\D/g, "").replace(/^0+/, "").length;
+}
+
 /** Live Supabase auth — sign in / sign up (+ phone, clinic city), email-code verification,
  *  and forgot/reset password. Shown when VITE_SUPABASE_* are configured. */
 function SupabaseAuthCard() {
   const { t, i18n } = useTranslation();
-  const { signUpEmail, signInEmail, resendConfirmation, resetPassword, updatePassword, addRole, recovery, user, loading } = useAuth();
+  const { signUpEmail, signInEmail, resendConfirmation, sendPhoneOtp, verifyPhoneOtp, resetPassword, updatePassword, addRole, recovery, user, loading } = useAuth();
   const navigate = useNavigate();
   const toast = useToast();
   const clearedStale = useRef(false);
@@ -111,6 +240,24 @@ function SupabaseAuthCard() {
 
   const clear = () => { setError(null); setInfo(null); };
   const emailOk = (v: string) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v.trim());
+  // Owner sign-in method — phone-first; email remains for existing accounts.
+  const [method, setMethod] = useState<"phone" | "email">("phone");
+
+  const sbSendOtp = async (p: string, nm: string) => {
+    const res = await sendPhoneOtp(p, nm);
+    if (res.notEnabled) return { error: null, notEnabled: true };
+    if (res.error) return { error: describeAuthError(res.error, t) };
+    return { error: null };
+  };
+  const sbVerifyOtp = async (p: string, code: string) => {
+    const res = await verifyPhoneOtp(p, code);
+    if (res.error) {
+      return { error: /invalid|expired|incorrect/i.test(res.error) ? t("auth.otpWrong", "الرمز غير صحيح — دقق وحاول مرة ثانية.") : describeAuthError(res.error, t) };
+    }
+    playSuccess();
+    navigate("/");
+    return { error: null };
+  };
 
   const submitAuth = async (e: FormEvent) => {
     e.preventDefault();
@@ -345,15 +492,36 @@ function SupabaseAuthCard() {
                   />
                 </motion.div>
 
+                {portal === "owner" && (
+                  <motion.div variants={staggerItem}>
+                    <Segmented
+                      className="mb-5 w-full [&>button]:flex-1"
+                      layoutId="sbmethod"
+                      value={method}
+                      onChange={(m) => { setMethod(m as "phone" | "email"); clear(); }}
+                      options={[
+                        { value: "phone", label: t("auth.phoneMethod", "رقم الهاتف"), icon: <Smartphone size={15} /> },
+                        { value: "email", label: t("auth.emailMethod", "البريد الإلكتروني"), icon: <MailCheck size={15} /> },
+                      ]}
+                    />
+                  </motion.div>
+                )}
+
                 <motion.div variants={staggerItem}>
                   <h2 className="font-display text-xl font-extrabold text-ink">
-                    {mode === "signin" ? t("auth.welcomeBack", "Welcome back") : t("auth.createAccount", "Create your account")}
+                    {portal === "owner" && method === "phone" ? t("auth.phoneLogin", "الدخول برقم الهاتف") : mode === "signin" ? t("auth.welcomeBack", "Welcome back") : t("auth.createAccount", "Create your account")}
                   </h2>
                   <p className="mb-4 text-sm text-ink-muted">
                     {portal === "owner" ? t("auth.ownerSub", "Manage your pets with doctorVet — all in one place.") : t("auth.clinicSub", "Run your clinic with doctorVet — records, reception and treatments.")}
                   </p>
                 </motion.div>
 
+                {portal === "owner" && method === "phone" ? (
+                  <motion.div variants={staggerItem}>
+                    <PhoneOtpCard t={t} send={sbSendOtp} verify={sbVerifyOtp} askNameUpfront />
+                  </motion.div>
+                ) : (
+                <>
                 <motion.form variants={staggerItem} onSubmit={submitAuth} className="space-y-3">
                   {mode === "signup" && (
                     <>
@@ -393,6 +561,8 @@ function SupabaseAuthCard() {
                     {mode === "signin" ? t("auth.signUp", "Create one") : t("auth.signIn", "Sign in")}
                   </button>
                 </motion.p>
+                </>
+                )}
               </>
             )}
           </motion.div>
@@ -420,6 +590,9 @@ function DemoLogin() {
   const [phone, setPhone] = useState("");
   const [license, setLicense] = useState("");
   const [error, setError] = useState<string | null>(null);
+  // Owner sign-in method — phone-first (رقم الهاتف هو الهوية), email as fallback.
+  const [method, setMethod] = useState<"phone" | "email">("phone");
+  const demoOtpRef = useRef("");
 
   // Password reset flow
   const [view, setView] = useState<"auth" | "reset">("auth");
@@ -440,6 +613,25 @@ function DemoLogin() {
 
   const openReset = () => { setView("reset"); setResetStep("email"); setError(null); setResetNote(null); setResetDone(false); setSentCode(""); setEnteredCode(""); setNewPw(""); setNewPw2(""); };
   const backToSignin = () => { setView("auth"); setMode("signin"); setError(null); };
+
+  // Demo mirror of the live WhatsApp/SMS OTP — the code is displayed on screen.
+  const demoSendOtp = async (p: string) => {
+    const code = String(Math.floor(100000 + Math.random() * 900000));
+    demoOtpRef.current = code;
+    return { error: null, demoCode: code, isNew: !getOwnerByPhone(p) };
+  };
+  const demoVerifyOtp = async (p: string, code: string, nm: string) => {
+    if (code.trim() !== demoOtpRef.current) return { error: t("auth.otpWrong", "الرمز غير صحيح — دقق وحاول مرة ثانية.") };
+    let owner = getOwnerByPhone(p);
+    if (!owner) {
+      if (!nm.trim()) return { error: t("auth.nameNeeded", "اكتب اسمك حتى ننشئ حسابك الجديد.") };
+      owner = registerOwnerByPhone({ name: nm, phone: p });
+    }
+    playScan();
+    signInOwner(owner);
+    navigate("/");
+    return { error: null };
+  };
 
   const sendCode = () => {
     setError(null);
@@ -606,6 +798,22 @@ function DemoLogin() {
                   </div>
                   <p className="mb-4 text-xs text-ink-subtle">{isOwner ? t("auth.ownerHint") : t("auth.clinicHint")}</p>
 
+                  {isOwner && (
+                    <Segmented
+                      className="mb-4 w-full [&>button]:flex-1"
+                      layoutId="ownermethod"
+                      value={method}
+                      onChange={(m) => { setMethod(m as "phone" | "email"); setError(null); }}
+                      options={[
+                        { value: "phone", label: t("auth.phoneMethod", "رقم الهاتف"), icon: <Smartphone size={15} /> },
+                        { value: "email", label: t("auth.emailMethod", "البريد الإلكتروني"), icon: <MailCheck size={15} /> },
+                      ]}
+                    />
+                  )}
+
+                  {isOwner && method === "phone" ? (
+                    <PhoneOtpCard t={t} send={demoSendOtp} verify={demoVerifyOtp} />
+                  ) : (
                   <div className="space-y-3">
                     {mode === "register" && (
                       <div>
@@ -658,6 +866,7 @@ function DemoLogin() {
                     )}
                     {mode === "signin" && <p className="text-center text-[11px] text-ink-subtle">{isOwner ? t("auth.demoOwner") : t("auth.demoClinic")}</p>}
                   </div>
+                  )}
                 </Card>
               ) : (
                 <Card padded>
