@@ -8,7 +8,7 @@ import {
   Share2, Copy, Globe, PawPrint, Repeat, Columns2, X, Calendar,
   Utensils, Fingerprint, Cake, Heart, Scissors, Users, UserPlus, User, Phone, Mail, Pencil,
   Scale, Sparkles, Loader2, NotebookPen, CalendarClock, FileSignature, ClipboardList, Table2, LayoutList,
-  History, LogIn, LogOut, ArrowLeftRight, ShieldCheck, AlertTriangle, ChevronLeft,
+  History, LogIn, LogOut, ArrowLeftRight, AlertTriangle, ChevronLeft,
 } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, TreatmentEntry, Admission, FoodType, DietPlan, Appointment, Reminder, MedicalAssessment, PatientCondition, Species, Sex, PetNote, ClinicVisit, PetMovement } from "@/types";
@@ -1270,7 +1270,6 @@ function VaccineStatusCard({ vaccines, onOpen }: { vaccines: Vaccination[]; onOp
 
   const overdue = rows.filter((r) => r.late).length;
   const upcoming = rows.filter((r) => r.next && !r.late).length;
-  const VerdictIcon = overdue ? AlertTriangle : upcoming ? CalendarClock : ShieldCheck;
   const verdictText = overdue
     ? t("passport.vaxGlanceLate", { n: overdue, defaultValue: "متأخر عن {{n}} لقاح" })
     : upcoming
@@ -1278,50 +1277,32 @@ function VaccineStatusCard({ vaccines, onOpen }: { vaccines: Vaccination[]; onOp
       : rows.length
         ? t("passport.vaxGlanceOk", "محصّن بالكامل")
         : t("passport.vaxGlanceNone", "لا لقاحات مسجلة");
-  const verdictTone = overdue
-    ? "bg-danger-50 text-danger-700 dark:bg-danger-500/15 dark:text-danger-300"
-    : upcoming
-      ? "bg-warn-50 text-warn-700 dark:bg-warn-500/15 dark:text-warn-300"
-      : rows.length
-        ? "bg-success-50 text-success-700 dark:bg-success-500/15 dark:text-success-300"
-        : "bg-surface-2 text-ink-subtle";
 
   return (
-    /* العمود كله زر واحد — ضغطة بأي مكان تفتح تبويب التطعيمات */
+    /* العمود كله زر واحد — ضغطة بأي مكان تفتح تبويب التطعيمات.
+       النص أسود كباقي الأعمدة؛ اللون محصور بالأزرار الجانبية الثلاثة. */
     <button
       onClick={onOpen}
       title={t("passport.vaxGlanceOpen", "فتح التطعيمات — كل التفاصيل والجرعات")}
-      className="group flex h-full w-full flex-col p-4 text-start transition hover:bg-violet-50/40 dark:hover:bg-violet-500/5 sm:p-5"
+      className="group flex h-full w-full flex-col p-4 text-start transition hover:bg-surface-2/50 sm:p-5"
     >
-      <span className="mb-3 flex w-full items-center gap-2">
-        <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-violet-100 text-violet-700 dark:bg-violet-500/20 dark:text-violet-300"><Syringe size={16} /></span>
-        <span className="text-sm font-bold text-ink">{t("passport.vaxGlance", "حالة اللقاحات")}</span>
-        <ChevronLeft size={16} className="ms-auto shrink-0 text-ink-subtle transition group-hover:-translate-x-0.5 group-hover:text-violet-600 ltr:rotate-180 dark:group-hover:text-violet-300" />
+      <span className="mb-1 flex w-full items-center gap-2 font-bold text-ink">
+        <Syringe size={18} className="text-brand-600" /> {t("passport.vaxGlance", "حالة اللقاحات")}
+        <ChevronLeft size={16} className="ms-auto shrink-0 text-ink-subtle transition group-hover:-translate-x-0.5 group-hover:text-ink ltr:rotate-180" />
       </span>
-
-      {/* الحكم العام — شريط واحد أنيق بأيقونة رفيعة */}
-      <span className={cn("mb-3 flex w-full items-center gap-2 rounded-xl px-3 py-2 text-xs font-extrabold", verdictTone)}>
-        <VerdictIcon size={15} className="shrink-0" /> {verdictText}
-      </span>
+      <span className="mb-3 block text-xs text-ink-subtle">{verdictText}</span>
 
       {rows.length === 0 ? (
         <span className="text-xs leading-relaxed text-ink-subtle">{t("passport.vaxGlanceEmpty", "سجّل أول لقاح من تبويب التطعيمات.")}</span>
       ) : (
-        <span className="flex w-full flex-col gap-2">
+        <span className="flex w-full flex-col divide-y divide-line">
           {rows.slice(0, 4).map((r) => {
             const RowIcon = r.late ? AlertTriangle : r.next ? Clock : Check;
             return (
-              <span key={r.name} className="flex w-full items-center gap-2.5">
-                <span className={cn("grid h-7 w-7 shrink-0 place-items-center rounded-lg",
-                  r.late ? "bg-danger-50 text-danger-600 dark:bg-danger-500/15 dark:text-danger-300"
-                    : r.next ? "bg-warn-50 text-warn-600 dark:bg-warn-500/15 dark:text-warn-300"
-                      : "bg-success-50 text-success-600 dark:bg-success-500/15 dark:text-success-300")}>
-                  <RowIcon size={13} strokeWidth={2.5} />
-                </span>
+              <span key={r.name} className="flex w-full items-center gap-3 py-2 first:pt-0">
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-xs font-bold text-ink">{r.name}</span>
-                  <span className={cn("block truncate text-2xs font-semibold tabular-nums",
-                    r.late ? "text-danger-600 dark:text-danger-400" : "text-ink-subtle")}>
+                  <span className="block truncate text-sm font-medium text-ink">{r.name}</span>
+                  <span className="block truncate text-2xs text-ink-subtle tabular-nums">
                     {r.late && r.next?.due_date
                       ? t("passport.vaxRowLate", { n: Math.abs(daysUntil(r.next.due_date) ?? 0), defaultValue: "متأخر {{n}} يوم" })
                       : r.next?.due_date
@@ -1331,18 +1312,23 @@ function VaccineStatusCard({ vaccines, onOpen }: { vaccines: Vaccination[]; onOp
                           : t("passport.vaxRowDone", "أُعطي")}
                   </span>
                 </span>
+                {/* الزر الجانبي الملوّن — أحمر متأخر · برتقالي قادم · أخضر مأخوذ */}
+                <span className={cn("grid h-8 w-8 shrink-0 place-items-center rounded-xl text-white shadow-soft",
+                  r.late ? "bg-danger-500" : r.next ? "bg-orange-500" : "bg-success-500")}>
+                  <RowIcon size={15} strokeWidth={2.75} />
+                </span>
               </span>
             );
           })}
           {rows.length > 4 && (
-            <span className="text-2xs font-bold text-violet-600 dark:text-violet-300">
+            <span className="pt-2 text-2xs font-semibold text-ink-subtle">
               {t("passport.vaxGlanceMore", { n: rows.length - 4, defaultValue: "+{{n}} لقاحات أخرى" })}
             </span>
           )}
         </span>
       )}
 
-      <span className="mt-auto flex items-center gap-1 pt-3 text-2xs font-semibold text-ink-subtle transition group-hover:text-violet-600 dark:group-hover:text-violet-300">
+      <span className="mt-auto flex items-center gap-1 pt-3 text-2xs font-semibold text-ink-subtle transition group-hover:text-ink">
         {t("passport.vaxGlanceHint", "اضغط لكل التفاصيل والجرعات")}
       </span>
     </button>
