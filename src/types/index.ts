@@ -192,10 +192,28 @@ export interface Doctor {
   services: ServiceType[];
 }
 
+/** Safe public listing of a clinic for the owner-side booking directory. */
+export interface ClinicInfo {
+  id: string;
+  name: string;
+  city?: string | null;
+  phone?: string | null;
+}
+
+/** Safe public subset of a clinic staff member (owner-side booking). */
+export interface PublicStaff {
+  id: string;
+  name: string;
+  role: string;
+  specialty?: string | null;
+}
+
 export interface Appointment {
   id: string;
   pet_id: string;
   owner_id: string;
+  /** Clinic workspace the booking targets — how it reaches that clinic's reception. */
+  clinic_id?: string | null;
   doctor_id: string;
   doctor_name: string;
   service: ServiceType;

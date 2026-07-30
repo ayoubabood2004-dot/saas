@@ -4,10 +4,12 @@
 import { loadDB, saveDB } from "./demoStore";
 import { supabase } from "./supabase";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, AppointmentStatus, TreatmentEntry, Admission, Branch, Reminder, Product, Company, CompanySection, Purchase, PurchaseItem, PurchasePayment, PurchaseDraftLine, PurchaseMeta, Courier, DeliveryOrder, PetMovement, DemoDB, Invoice, InvoiceItem, CheckoutItem, SaleMeta, Customer, DiscountType, PaymentMethod, PaymentSplit, WhatsAppMessage, AuditEntry, LoginEvent, PetNote, Expense, ClinicVisit , Surgery } from "@/types";
+import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, AppointmentStatus, ClinicInfo, PublicStaff, TreatmentEntry, Admission, Branch, Reminder, Product, Company, CompanySection, Purchase, PurchaseItem, PurchasePayment, PurchaseDraftLine, PurchaseMeta, Courier, DeliveryOrder, PetMovement, DemoDB, Invoice, InvoiceItem, CheckoutItem, SaleMeta, Customer, DiscountType, PaymentMethod, PaymentSplit, WhatsAppMessage, AuditEntry, LoginEvent, PetNote, Expense, ClinicVisit , Surgery } from "@/types";
 import { uid, uuid, ageMonths } from "./utils";
 import { phoneKey } from "./phone";
 import { loadOwners } from "./owners";
+import { loadClinics } from "./clinics";
+import { listStaff } from "./staff";
 
 /** Sort key for a case/admission — newest first. Prefers the precise `created_at`
  *  timestamp (so same-day cases keep their true insertion order) and falls back to
@@ -492,6 +494,19 @@ const demoRepo = {
     return loadDB().appointments.some(
       (a) => a.doctor_id === doctorId && a.scheduled_at === scheduledAt && a.status !== "cancelled",
     );
+  },
+
+  /** Booking directory: clinics an owner can book at (safe public fields only). */
+  async listClinicDirectory(): Promise<ClinicInfo[]> {
+    return loadClinics().map((c) => ({ id: c.id, name: c.name, city: c.city ?? null, phone: c.phone ?? null }));
+  },
+
+  /** Active bookable team of one clinic (demo shares the single local roster). */
+  async listClinicStaffPublic(_clinicId: string): Promise<PublicStaff[]> {
+    const list = await listStaff();
+    return list
+      .filter((s) => s.status === "active")
+      .map((s) => ({ id: s.id, name: s.name, role: s.role, specialty: s.specialty || null }));
   },
 
   async createAppointment(input: Omit<Appointment, "id" | "created_at">): Promise<Appointment> {
@@ -1433,6 +1448,21 @@ const supabaseRepo: typeof demoRepo = {
   },
   async slotTaken(doctorId, scheduledAt) {
     return listOf<{ id: string }>(await sbc().from("appointments").select("id").eq("doctor_id", doctorId).eq("scheduled_at", scheduledAt).neq("status", "cancelled")).length > 0;
+  },
+  async listClinicDirectory() {
+    // Pre-0078 backend (RPC missing) → empty directory, the wizard copes.
+    try {
+      const { data, error } = await sbc().rpc("clinic_directory");
+      if (error) return [];
+      return ((data as { id: string; name: string; city: string | null; phone: string | null }[]) ?? []);
+    } catch { return []; }
+  },
+  async listClinicStaffPublic(clinicId) {
+    try {
+      const { data, error } = await sbc().rpc("clinic_staff_public", { p_clinic: clinicId });
+      if (error) return [];
+      return ((data as { id: string; name: string; role: string; specialty: string | null }[]) ?? []);
+    } catch { return []; }
   },
   async createAppointment(input) {
     return need<Appointment>(await sbc().from("appointments").insert(input).select().single());

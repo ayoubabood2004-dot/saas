@@ -1321,7 +1321,15 @@
     "afternoon": "Afternoon",
     "doctor": "Doctor",
     "date": "Date",
-    "time": "Time"
+    "time": "Time",
+    "selectClinic": "Choose a clinic",
+    "noClinics": "No clinics available for booking yet.",
+    "myClinicBadge": "Treats your pets",
+    "yourPetsClinic": "Your pets' clinic",
+    "anyDoctor": "Any available doctor",
+    "noStaffHint": "This clinic hasn't published its team yet — book and they'll assign a doctor.",
+    "clinic": "Clinic",
+    "vet": "Veterinarian"
   },
   "dash": {
     "morning": "Good morning",

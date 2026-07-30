@@ -2,12 +2,12 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
-import { Stethoscope, Syringe, Scissors, Video, Home, Check, ArrowLeft, ArrowRight, Sun, Sunset, CalendarClock } from "lucide-react";
-import type { Pet, ServiceType, Doctor } from "@/types";
+import { Stethoscope, Syringe, Scissors, Video, Home, Check, ArrowLeft, ArrowRight, Sun, Sunset, CalendarClock, Building2, MapPin, HeartHandshake } from "lucide-react";
+import type { Pet, ServiceType, ClinicInfo, PublicStaff } from "@/types";
 import { useAuth } from "@/contexts/AuthContext";
 import { repo } from "@/lib/repo";
 import { PetAvatar } from "@/components/PetAvatar";
-import { doctorsForService, SERVICES, SLOT_MINUTES, CLINIC_OPEN_HOUR, CLINIC_CLOSE_HOUR } from "@/lib/clinic";
+import { SERVICES, SLOT_MINUTES, CLINIC_OPEN_HOUR, CLINIC_CLOSE_HOUR } from "@/lib/clinic";
 import { generateSlots, formatTime, dateLocale } from "@/lib/utils";
 import { playTap, playWarning } from "@/lib/sounds";
 import { Button, Card, SuccessDialog, useToast } from "@/components/ui";
@@ -38,7 +38,12 @@ export function BookingWizard() {
   const [pets, setPets] = useState<Pet[]>([]);
   const [petId, setPetId] = useState<string | null>(params.get("pet"));
   const [service, setService] = useState<ServiceType | null>(null);
-  const [doctor, setDoctor] = useState<Doctor | null>(null);
+  // Real clinics + the chosen clinic's REAL team (no more hardcoded demo doctors).
+  const [clinics, setClinics] = useState<ClinicInfo[]>([]);
+  const [clinicId, setClinicId] = useState<string | null>(null);
+  const [staffList, setStaffList] = useState<PublicStaff[]>([]);
+  const [staffLoading, setStaffLoading] = useState(false);
+  const [doctor, setDoctor] = useState<{ id: string; name: string; specialty?: string | null } | null>(null);
   const [dayOffset, setDayOffset] = useState(1);
   const [slot, setSlot] = useState<string | null>(null);
   const [takenSlots, setTakenSlots] = useState<Set<string>>(new Set());
@@ -52,6 +57,37 @@ export function BookingWizard() {
   useEffect(() => {
     if (user) repo.listPets(user.id).then(setPets).catch(() => setPets([]));
   }, [user]);
+
+  // Clinics that have treated this owner's pets — surfaced first, badged.
+  const myClinicIds = new Set(pets.map((p) => p.clinic_id).filter(Boolean) as string[]);
+
+  useEffect(() => {
+    let alive = true;
+    repo.listClinicDirectory()
+      .then((dir) => { if (alive) setClinics(dir); })
+      .catch(() => { if (alive) setClinics([]); });
+    return () => { alive = false; };
+  }, []);
+
+  // Directory rows: my-pets' clinics first; a pet clinic missing from the
+  // directory (pre-migration backend) still gets a bookable placeholder row.
+  const clinicRows: (ClinicInfo & { mine: boolean })[] = [
+    ...clinics.map((c) => ({ ...c, mine: myClinicIds.has(c.id) })),
+    ...[...myClinicIds]
+      .filter((id) => !clinics.some((c) => c.id === id))
+      .map((id) => ({ id, name: t("booking.yourPetsClinic", "عيادة حيواناتك"), city: null, phone: null, mine: true })),
+  ].sort((a, b) => Number(b.mine) - Number(a.mine));
+
+  const pickClinic = (id: string) => {
+    setClinicId(id);
+    setDoctor(null);
+    setSlot(null);
+    setStaffLoading(true);
+    repo.listClinicStaffPublic(id)
+      .then((list) => setStaffList(list.filter((s) => s.role === "veterinarian" || s.role === "manager")))
+      .catch(() => setStaffList([]))
+      .finally(() => setStaffLoading(false));
+  };
 
   useEffect(() => {
     if (petId && step === 1) setStep(2);
@@ -75,7 +111,7 @@ export function BookingWizard() {
   const pet = pets.find((p) => p.id === petId);
 
   const book = async () => {
-    if (!user || !pet || !service || !doctor || !slot || booking) return;
+    if (!user || !pet || !service || !clinicId || !doctor || !slot || booking) return;
     setBooking(true);
     try {
       if (await repo.slotTaken(doctor.id, slot)) {
@@ -86,6 +122,7 @@ export function BookingWizard() {
       await repo.createAppointment({
         pet_id: pet.id,
         owner_id: user.id,
+        clinic_id: clinicId, // the booking lands in THIS clinic's reception
         doctor_id: doctor.id,
         doctor_name: doctor.name,
         service,
@@ -114,7 +151,7 @@ export function BookingWizard() {
     t("booking.stConfirm", "Confirm"),
   ];
 
-  const canNext = (step === 1 && !!petId) || (step === 2 && !!service) || (step === 3 && !!doctor && !!slot);
+  const canNext = (step === 1 && !!petId) || (step === 2 && !!service) || (step === 3 && !!clinicId && !!doctor && !!slot);
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-6 sm:py-8">
@@ -204,34 +241,42 @@ export function BookingWizard() {
             </div>
           )}
 
-          {/* Step 3: doctor + time */}
+          {/* Step 3: clinic + doctor + time */}
           {step === 3 && service && (
             <div className="space-y-6">
+              {/* Which clinic? — real clinics; the ones treating your pets come first */}
               <div>
-                <h2 className="mb-3 font-display font-bold text-ink">{t("booking.selectDoctor")}</h2>
-                {doctorsForService(service).length === 0 ? (
-                  <p className="text-ink-subtle">{t("booking.noDoctors")}</p>
+                <h2 className="mb-3 font-display font-bold text-ink">{t("booking.selectClinic", "اختر العيادة")}</h2>
+                {clinicRows.length === 0 ? (
+                  <p className="rounded-2xl border border-dashed border-line p-5 text-center text-sm text-ink-subtle">{t("booking.noClinics", "ماكو عيادات متاحة للحجز بعد.")}</p>
                 ) : (
                   <div className="grid gap-2.5 sm:grid-cols-2">
-                    {doctorsForService(service).map((d) => {
-                      const sel = doctor?.id === d.id;
+                    {clinicRows.map((c) => {
+                      const sel = clinicId === c.id;
                       return (
                         <button
-                          key={d.id}
-                          onClick={() => { playTap(); setDoctor(d); setSlot(null); }}
+                          key={c.id}
+                          onClick={() => { playTap(); pickClinic(c.id); }}
                           className={cn("card flex items-center gap-3 p-3.5 text-start transition hover:-translate-y-0.5 hover:shadow-card", sel && "ring-2 ring-brand-400")}
                         >
-                          <span className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-brand-grad font-display text-sm font-bold text-white shadow-soft">
-                            {initials(d.name)}
+                          <span className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-brand-50 text-brand-600 dark:bg-brand-500/15 dark:text-brand-300">
+                            <Building2 size={22} />
                           </span>
                           <div className="min-w-0 flex-1">
-                            <p className="truncate font-semibold text-ink">{d.name}</p>
-                            <p className="truncate text-xs text-ink-muted">{d.specialty}</p>
+                            <p className="truncate font-semibold text-ink">{c.name}</p>
+                            <p className="flex items-center gap-2 text-xs text-ink-muted">
+                              {c.city && <span className="flex items-center gap-0.5"><MapPin size={11} /> {c.city}</span>}
+                              {c.mine && (
+                                <span className="flex items-center gap-1 rounded-full bg-success-50 px-2 py-0.5 font-semibold text-success-700 dark:bg-success-500/15 dark:text-success-300">
+                                  <HeartHandshake size={11} /> {t("booking.myClinicBadge", "تعالج حيواناتك")}
+                                </span>
+                              )}
+                            </p>
                           </div>
                           {sel ? (
-                            <span className="grid h-6 w-6 place-items-center rounded-full bg-brand-600 text-white"><Check size={14} /></span>
+                            <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-brand-600 text-white"><Check size={14} /></span>
                           ) : (
-                            <span className="h-6 w-6 rounded-full border-2 border-line-strong" />
+                            <span className="h-6 w-6 shrink-0 rounded-full border-2 border-line-strong" />
                           )}
                         </button>
                       );
@@ -239,6 +284,54 @@ export function BookingWizard() {
                   </div>
                 )}
               </div>
+
+              {/* The chosen clinic's REAL team */}
+              {clinicId && (
+                <div>
+                  <h2 className="mb-3 font-display font-bold text-ink">{t("booking.selectDoctor")}</h2>
+                  {staffLoading ? (
+                    <p className="text-sm text-ink-subtle">{t("common.loading", "لحظة…")}</p>
+                  ) : staffList.length === 0 ? (
+                    <button
+                      onClick={() => { playTap(); setDoctor({ id: `any:${clinicId}`, name: t("booking.anyDoctor", "أي طبيب متاح") }); setSlot(null); }}
+                      className={cn("card flex w-full items-center gap-3 p-3.5 text-start transition hover:-translate-y-0.5 hover:shadow-card", doctor?.id === `any:${clinicId}` && "ring-2 ring-brand-400")}
+                    >
+                      <span className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-brand-grad text-white shadow-soft"><Stethoscope size={20} /></span>
+                      <div className="min-w-0 flex-1">
+                        <p className="font-semibold text-ink">{t("booking.anyDoctor", "أي طبيب متاح")}</p>
+                        <p className="text-xs text-ink-muted">{t("booking.noStaffHint", "هذه العيادة لم تنشر كادرها بعد — احجز والعيادة تحدد لك الطبيب.")}</p>
+                      </div>
+                      {doctor?.id === `any:${clinicId}` && <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-brand-600 text-white"><Check size={14} /></span>}
+                    </button>
+                  ) : (
+                    <div className="grid gap-2.5 sm:grid-cols-2">
+                      {staffList.map((d) => {
+                        const sel = doctor?.id === d.id;
+                        return (
+                          <button
+                            key={d.id}
+                            onClick={() => { playTap(); setDoctor({ id: d.id, name: d.name, specialty: d.specialty }); setSlot(null); }}
+                            className={cn("card flex items-center gap-3 p-3.5 text-start transition hover:-translate-y-0.5 hover:shadow-card", sel && "ring-2 ring-brand-400")}
+                          >
+                            <span className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-brand-grad font-display text-sm font-bold text-white shadow-soft">
+                              {initials(d.name)}
+                            </span>
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate font-semibold text-ink">{d.name}</p>
+                              <p className="truncate text-xs text-ink-muted">{d.specialty || t("booking.vet", "طبيب بيطري")}</p>
+                            </div>
+                            {sel ? (
+                              <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-brand-600 text-white"><Check size={14} /></span>
+                            ) : (
+                              <span className="h-6 w-6 shrink-0 rounded-full border-2 border-line-strong" />
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
 
               {doctor && (
                 <>
@@ -297,6 +390,7 @@ export function BookingWizard() {
                   </div>
                 </div>
                 <div className="mt-4 space-y-2 border-t border-line pt-4 text-sm">
+                  <Row label={t("booking.clinic", "العيادة")} value={clinicRows.find((c) => c.id === clinicId)?.name ?? "—"} />
                   <Row label={t("booking.doctor", "Doctor")} value={doctor?.name ?? "—"} />
                   <Row label={t("booking.date", "Date")} value={slot ? new Date(slot).toLocaleDateString(lang, { weekday: "long", day: "numeric", month: "long" }) : "—"} />
                   <Row label={t("booking.time", "Time")} value={slot ? formatTime(slot, i18n.language) : "—"} />
