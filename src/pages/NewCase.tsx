@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { ArrowLeft, ArrowRight, Camera, Stethoscope, BedDouble, CheckCircle2, Pill, Plus, Trash2, Activity, ChevronDown, Search, Loader2, ShieldCheck, FolderPlus, CalendarDays, HeartPulse, User, PawPrint } from "lucide-react";
 import type { Species, Sex, AdmissionKind, Pet } from "@/types";
@@ -67,25 +67,34 @@ interface Outcome {
   addMeds: boolean;
 }
 
+/** بيانات مالك جاهزة (زر «إضافة حيوان» من سجلات العيادة) — تُمرَّر عبر حالة الراوتر. */
+export interface OwnerPrefill { name: string; phone: string; email: string; governorate: string; area: string }
+
 export function NewCase() {
   const { t, i18n } = useTranslation();
   const { user } = useAuth();
   const toast = useToast();
   const navigate = useNavigate();
+  const location = useLocation();
   // Local calendar date (NOT the UTC toISOString slice, which lands on the wrong
   // day late-evening in Iraq UTC+3) — this is the case's admission date.
   const today = localISO();
+
+  // مالك موجود مسبقاً؟ حقوله تتعبّى تلقائياً ونقفز مباشرة لبيانات الحيوان.
+  const prefill = (location.state as { ownerPrefill?: OwnerPrefill } | null)?.ownerPrefill ?? null;
 
   const [entry, setEntry] = useState<"new" | "serial">("new");
   // Admission date (تاريخ الدخول) — defaults to today, editable so a case entered
   // late can still be dated to the day it actually came in.
   const [admittedOn, setAdmittedOn] = useState(today);
   const [step, setStep] = useState(1);
-  const [ownerName, setOwnerName] = useState("");
-  const [phone, setPhone] = useState("");
-  const [email, setEmail] = useState("");
-  const [governorate, setGovernorate] = useState("");
-  const [area, setArea] = useState("");
+  // بطاقة المالك مطويّة عندما تأتي بياناته جاهزة — يركّز الدكتور على الحيوان فقط.
+  const [ownerCollapsed, setOwnerCollapsed] = useState(!!prefill);
+  const [ownerName, setOwnerName] = useState(prefill?.name ?? "");
+  const [phone, setPhone] = useState(prefill?.phone ?? "");
+  const [email, setEmail] = useState(prefill?.email ?? "");
+  const [governorate, setGovernorate] = useState(prefill?.governorate ?? "");
+  const [area, setArea] = useState(prefill?.area ?? "");
   const [animals, setAnimals] = useState<AnimalDraft[]>([newAnimal()]);
   const [outcomes, setOutcomes] = useState<Outcome[] | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -252,14 +261,34 @@ export function NewCase() {
         <button className={`flex-1 py-2 rounded-lg text-sm font-semibold ${entry === "serial" ? "bg-white text-brand-700 shadow-card" : "text-ink-muted"}`} onClick={() => setEntry("serial")}>{t("newCase.entrySerial")}</button>
       </div>
 
+      {/* مالك معبأ من سجلات العيادة — يوضَع أمام عينه دائماً مع مخرج للتعديل */}
+      {prefill && entry === "new" && (
+        <div className="mb-5 flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-2xl border border-success-200 bg-success-50/60 p-3.5 text-sm dark:border-success-500/30 dark:bg-success-500/10">
+          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-success-500 text-white"><User size={17} /></span>
+          <span className="min-w-0 flex-1">
+            <span className="block truncate font-extrabold text-ink">{ownerName || "—"}</span>
+            <span className="flex flex-wrap items-center gap-x-2 text-xs text-ink-muted">
+              {phone && <span className="font-mono" dir="ltr">{phone}</span>}
+              <span className="chip bg-success-100 text-2xs font-bold text-success-700 dark:bg-success-500/20 dark:text-success-300"><CheckCircle2 size={10} /> {t("newCase.ownerPrefilled", "بيانات المالك معبأة من السجل")}</span>
+            </span>
+          </span>
+          {ownerCollapsed && step === 1 && (
+            <button onClick={() => { playTap(); setOwnerCollapsed(false); }} className="shrink-0 text-xs font-bold text-brand-600 transition hover:text-brand-700">
+              {t("newCase.editOwner", "تعديل بيانات المالك")}
+            </button>
+          )}
+        </div>
+      )}
+
       {entry === "serial" ? (
         <div className="mx-auto max-w-2xl">
           <SerialAdmit today={today} doctorName={user?.full_name ?? "Doctor"} onAdmitted={(o) => setOutcomes([o])} />
         </div>
       ) : step === 1 ? (
         <div className="space-y-6 animate-fade-in">
-          {/* Owner (once) — a full-width card with a precise multi-column field grid */}
-          <div className="card p-4 sm:p-5">
+          {/* Owner (once) — a full-width card with a precise multi-column field grid.
+              مطويّة عندما تصل بيانات المالك جاهزة من سجلات العيادة. */}
+          <div className={cn("card p-4 sm:p-5", ownerCollapsed && "hidden")}>
             <h2 className="mb-4 flex items-center gap-2 font-bold text-ink"><User size={18} className="text-brand-600" /> {t("newCase.ownerSection")}</h2>
             <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
               <div>

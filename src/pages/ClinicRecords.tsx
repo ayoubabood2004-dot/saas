@@ -584,6 +584,31 @@ function PatientLog({ pets, admissions, visits, onChanged, loading }: { pets: Pe
                         </span>
                       </span>
                       <span className="chip shrink-0 bg-brand-50 text-2xs font-bold text-brand-700 dark:bg-brand-500/15 dark:text-brand-300">{g.rows.length} {t("records.pets")}</span>
+                      {/* إضافة حيوان جديد لنفس المالك — يفتح تسجيل الحالة ببياناته جاهزة.
+                          span بدور زر (لا يجوز <button> داخل <button> الأكورديون). */}
+                      {g.ownerNamed && (
+                        <span
+                          role="button"
+                          tabIndex={0}
+                          title={t("records.addPetHint", "إضافة حيوان جديد لهذا المالك")}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            playTap();
+                            const src = g.rows[0]?.pet;
+                            navigate("/new-case", { state: { ownerPrefill: {
+                              name: g.title,
+                              phone: src?.owner_phone ?? "",
+                              email: src?.owner_email ?? "",
+                              governorate: src?.owner_governorate ?? "",
+                              area: src?.owner_area ?? "",
+                            } } });
+                          }}
+                          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); (e.currentTarget as HTMLElement).click(); } }}
+                          className="inline-flex shrink-0 items-center gap-1 rounded-full bg-success-50 px-2.5 py-1 text-2xs font-bold text-success-700 transition hover:bg-success-100 dark:bg-success-500/15 dark:text-success-300 dark:hover:bg-success-500/25"
+                        >
+                          <Plus size={12} /> {t("records.addPet", "إضافة حيوان")}
+                        </span>
+                      )}
                     </>
                   ) : (
                     <>
