@@ -1313,9 +1313,10 @@ function VaccineStatusCard({ vaccines, onOpen }: { vaccines: Vaccination[]; onOp
                   </span>
                 </span>
                 {/* الزر الجانبي الملوّن — كبسولة: أحمر متأخر · برتقالي قادم · أخضر مأخوذ */}
-                <span className={cn("grid h-9 w-16 shrink-0 place-items-center rounded-full text-white shadow-soft",
+                {/* كبسولة رفيعة وعريضة */}
+                <span className={cn("grid h-6 w-20 shrink-0 place-items-center rounded-full text-white shadow-soft",
                   r.late ? "bg-danger-500" : r.next ? "bg-orange-500" : "bg-success-500")}>
-                  <RowIcon size={16} strokeWidth={2.75} />
+                  <RowIcon size={13} strokeWidth={2.75} />
                 </span>
               </span>
             );
