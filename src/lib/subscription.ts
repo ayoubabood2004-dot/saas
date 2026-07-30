@@ -18,12 +18,39 @@
 import { useSyncExternalStore } from "react";
 import { getActiveClinicId } from "./clinics";
 import { sb } from "./clinicSync";
-import { supabaseUrl } from "./supabase";
+import { supabaseUrl, isSupabaseConfigured } from "./supabase";
 import { registerReadOnlyChecker } from "./repo";
 import { TRIAL_DAYS, type BillingPeriod, type PlanId } from "./plans";
 
 export type SubStatus = "trialing" | "active" | "expired" | "locked";
 export type AccessLevel = "full" | "readonly" | "blocked";
+
+/**
+ * Cloud sync state. On a Supabase build the SERVER is the only authority that
+ * may lock a clinic out: until a sync succeeds ("ok") the app fails OPEN, so a
+ * stale local mirror (old device, shared browser, missing migration, network
+ * hiccup) can never trap a paying clinic on the subscribe screen — the exact
+ * "keeps locking me out" loop this replaces. Demo builds have no server, so
+ * the local record IS the truth and behaves as before.
+ */
+type SubSyncState = "pending" | "ok" | "failed";
+let syncState: SubSyncState = isSupabaseConfigured ? "pending" : "ok";
+function markSync(s: SubSyncState) {
+  if (syncState === s) return;
+  syncState = s;
+  snapshot = null;
+  subs.forEach((f) => f());
+}
+
+/** The signed-in clinic workspace (cloud) — keys the mirror PER ACCOUNT so two
+ *  clinics sharing one browser can't inherit each other's subscription state. */
+let scopeId: string | null = null;
+export function setSubscriptionScope(id: string | null) {
+  if (id === scopeId) return;
+  scopeId = id;
+  snapshot = null;
+  subs.forEach((f) => f());
+}
 
 export interface Subscription {
   plan: PlanId | null;
@@ -34,21 +61,15 @@ export interface Subscription {
   updatedAt: string;
 }
 
-const key = () => `vp_subscription_${getActiveClinicId()}`;
+const key = () => `vp_subscription_${scopeId ?? getActiveClinicId()}`;
 const DAY = 86400000;
 
 /* ------------------------------ store core ------------------------------ */
 const subs = new Set<() => void>();
 let snapshot: string | null = null; // cached serialized value for useSyncExternalStore stability
 
-function read(): Subscription {
-  try {
-    const raw = localStorage.getItem(key());
-    if (raw) return JSON.parse(raw) as Subscription;
-  } catch { /* ignore */ }
-  // First touch → start the free trial now.
-  const now = Date.now();
-  const fresh: Subscription = {
+function freshTrial(now = Date.now()): Subscription {
+  return {
     plan: null,
     period: null,
     trialEndsAt: new Date(now + TRIAL_DAYS * DAY).toISOString(),
@@ -56,6 +77,28 @@ function read(): Subscription {
     wasSubscriber: false,
     updatedAt: new Date(now).toISOString(),
   };
+}
+
+function read(): Subscription {
+  try {
+    const raw = localStorage.getItem(key());
+    if (raw) {
+      const s = JSON.parse(raw) as Subscription;
+      // Demo self-heal: the showcase must never stay dead-locked on a device
+      // just because it was first opened weeks ago. A never-paid demo trial
+      // that lapsed >2 days ago silently restarts (the recently-set "locked"
+      // debug state survives long enough to be demonstrated).
+      if (!isSupabaseConfigured && !s.wasSubscriber && statusOf(s) === "locked"
+          && Date.now() - new Date(s.trialEndsAt).getTime() > 2 * DAY) {
+        const fresh = freshTrial();
+        try { localStorage.setItem(key(), JSON.stringify(fresh)); } catch { /* ignore */ }
+        return fresh;
+      }
+      return s;
+    }
+  } catch { /* ignore */ }
+  // First touch → start the free trial now.
+  const fresh = freshTrial();
   try { localStorage.setItem(key(), JSON.stringify(fresh)); } catch { /* ignore */ }
   return fresh;
 }
@@ -66,9 +109,10 @@ function write(next: Subscription) {
   subs.forEach((f) => f());
 }
 
-/** Stable serialized snapshot so useSyncExternalStore doesn't loop. */
+/** Stable serialized snapshot so useSyncExternalStore doesn't loop.
+ *  Prefixed with the sync state so components re-render when it changes. */
 function getSnapshot(): string {
-  if (snapshot == null) snapshot = JSON.stringify(read());
+  if (snapshot == null) snapshot = `${syncState}|${JSON.stringify(read())}`;
   return snapshot;
 }
 function subscribe(cb: () => void) {
@@ -141,12 +185,16 @@ export function _debugSetState(state: SubStatus) {
 /* ------------------------------- hook ----------------------------------- */
 export function useSubscription() {
   const raw = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
-  const sub = JSON.parse(raw) as Subscription;
+  const sep = raw.indexOf("|");
+  const sync = raw.slice(0, sep) as SubSyncState;
+  const sub = JSON.parse(raw.slice(sep + 1)) as Subscription;
   const status = statusOf(sub);
+  // Cloud: only a server-confirmed state may restrict access (fail-open).
+  const access: AccessLevel = sync === "ok" ? accessOf(status) : "full";
   return {
     sub,
     status,
-    access: accessOf(status),
+    access,
     trialDaysLeft: trialDaysLeft(sub),
     periodDaysLeft: periodDaysLeft(sub),
   };
@@ -155,7 +203,8 @@ export function useSubscription() {
 export function getSubscriptionNow() {
   const sub = read();
   const status = statusOf(sub);
-  return { sub, status, access: accessOf(status) };
+  const access: AccessLevel = syncState === "ok" ? accessOf(status) : "full";
+  return { sub, status, access };
 }
 
 /** Expired-but-was-a-subscriber → may view but not change anything. */
@@ -179,12 +228,12 @@ registerReadOnlyChecker(isReadOnlyNow);
  */
 export async function syncSubscriptionFromServer(): Promise<void> {
   const client = sb();
-  if (!client) return;
+  if (!client) { markSync("ok"); return; } // demo — local record is the truth
   try {
     const { data, error } = await client.rpc("get_or_init_subscription");
-    if (error || !data) return; // pre-migration backend → keep the local mirror
+    if (error || !data) { markSync("failed"); return; } // pre-migration backend → fail OPEN, never lock
     const row = (Array.isArray(data) ? data[0] : data) as Record<string, unknown> | undefined;
-    if (!row) return;
+    if (!row) { markSync("failed"); return; }
     write({
       plan: (row.plan as PlanId) ?? null,
       period: (row.period as BillingPeriod) ?? null,
@@ -193,7 +242,8 @@ export async function syncSubscriptionFromServer(): Promise<void> {
       wasSubscriber: !!row.was_subscriber,
       updatedAt: (row.updated_at as string) ?? new Date().toISOString(),
     });
-  } catch { /* network hiccup → keep the local mirror */ }
+    markSync("ok"); // server truth is in the mirror — enforcement may resume
+  } catch { markSync("failed"); /* network hiccup → fail open until it recovers */ }
 }
 
 /**

@@ -4,6 +4,7 @@ import { isSupabaseConfigured, supabase } from "@/lib/supabase";
 import { withTimeout } from "@/lib/errors";
 import { setActiveClinicId, clearActiveClinic, getActiveClinicId, type ClinicAccount } from "@/lib/clinics";
 import { hydrateClinicConfig, hydratedFor } from "@/lib/clinicConfig";
+import { setSubscriptionScope, syncSubscriptionFromServer } from "@/lib/subscription";
 import { applyFontScale } from "@/lib/fontScale";
 import { leaveClinic as apiLeaveClinic } from "@/lib/invites";
 import { startPresenceBeat } from "@/lib/presence";
@@ -334,6 +335,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (resolvedActive === "clinic") {
       const key = getActiveClinicId();
       if (key !== hydratedFor()) void hydrateClinicConfig(key).then(applyFontScale);
+    }
+    // Cloud subscription mirror: key it to THIS clinic workspace and refresh the
+    // server truth on every sign-in/account switch — never off a stale shared key.
+    if (isSupabaseConfigured) {
+      const scope = resolvedActive === "clinic" && raw ? (clinicId ?? raw.id) : null;
+      setSubscriptionScope(scope);
+      if (scope) void syncSubscriptionFromServer();
     }
   }, [resolvedActive, raw]);
 
