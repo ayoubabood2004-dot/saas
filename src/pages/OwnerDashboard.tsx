@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
-import { Plus, AlertTriangle, ChevronLeft, ChevronRight, UserCog, Check } from "lucide-react";
+import { Plus, AlertTriangle, ChevronLeft, ChevronRight, UserCog, Check, Sparkles, X } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { repo } from "@/lib/repo";
 import { breedLabel } from "@/lib/breeds";
@@ -47,9 +47,24 @@ export function OwnerDashboard() {
   const [acctPhone, setAcctPhone] = useState("");
   const [acctEmail, setAcctEmail] = useState("");
   const [acctSaved, setAcctSaved] = useState(false);
+  // Pets auto-linked to this account by phone match during this session (celebration banner).
+  const [autoClaimed, setAutoClaimed] = useState<Pet[]>([]);
 
   const load = async () => {
     if (!user) return;
+    // Phone-as-identity: silently link any pet registered under this account's
+    // number (in any clinic) before listing. Clinic records are never modified —
+    // only the link. Cheap no-op when there is nothing new to link.
+    const acc = getOwner(user.id);
+    try {
+      const claimed = await repo.claimPetsByPhone({
+        owner_id: user.id,
+        phone: acc?.phone ?? user.phone,
+        name: user.full_name,
+        email: acc?.email ?? user.email,
+      });
+      if (claimed.length) setAutoClaimed((prev) => [...prev, ...claimed]);
+    } catch { /* linking must never block the dashboard */ }
     const list = await repo.listPets(user.id);
     const withVax = await Promise.all(
       list.map(async (p) => ({ ...p, vaccinations: await repo.listVaccinations(p.id) })),
@@ -122,6 +137,25 @@ export function OwnerDashboard() {
           <button onClick={() => { playTap(); setAddOpen(true); }} className="flex w-16 shrink-0 flex-col items-center gap-1.5">
             <span className="grid h-14 w-14 place-items-center rounded-full border-2 border-dashed border-line text-ink-subtle transition hover:border-brand-400 hover:text-brand-600"><Plus size={22} /></span>
             <span className="text-xs font-medium text-ink-subtle">{t("dashboard.addNew")}</span>
+          </button>
+        </div>
+      )}
+
+      {autoClaimed.length > 0 && (
+        <div className="mb-6 flex items-start gap-3 rounded-2xl bg-success-50 px-4 py-3 text-success-700 animate-fade-in dark:bg-success-500/10 dark:text-success-200">
+          <Sparkles size={20} className="mt-0.5 shrink-0" />
+          <p className="flex-1 text-sm font-medium">
+            {t("dashboard.autoClaimed", {
+              count: autoClaimed.length,
+              names: autoClaimed.map((p) => p.name).join("، "),
+            })}
+          </p>
+          <button
+            className="shrink-0 rounded-lg p-1 text-success-700/70 transition hover:bg-success-100 dark:text-success-200/70 dark:hover:bg-success-500/20"
+            onClick={() => setAutoClaimed([])}
+            aria-label={t("common.close")}
+          >
+            <X size={16} />
           </button>
         </div>
       )}

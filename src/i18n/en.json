@@ -852,6 +852,7 @@
     "yourPets": "Your pets",
     "addPet": "Add a pet",
     "addNew": "Add new",
+    "autoClaimed": "Good news! We found your pets registered under your phone number at the clinics and linked them to your account automatically: {{names}}",
     "noPets": "No pets yet. Add your first companion.",
     "vaccinationComplete": "vaccinated",
     "alertsTitle": "Health alerts",

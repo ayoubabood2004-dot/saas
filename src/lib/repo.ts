@@ -6,6 +6,8 @@ import { supabase } from "./supabase";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, AppointmentStatus, TreatmentEntry, Admission, Branch, Reminder, Product, Company, CompanySection, Purchase, PurchaseItem, PurchasePayment, PurchaseDraftLine, PurchaseMeta, Courier, DeliveryOrder, PetMovement, DemoDB, Invoice, InvoiceItem, CheckoutItem, SaleMeta, Customer, DiscountType, PaymentMethod, PaymentSplit, WhatsAppMessage, AuditEntry, LoginEvent, PetNote, Expense, ClinicVisit , Surgery } from "@/types";
 import { uid, uuid, ageMonths } from "./utils";
+import { phoneKey } from "./phone";
+import { loadOwners } from "./owners";
 
 /** Sort key for a case/admission — newest first. Prefers the precise `created_at`
  *  timestamp (so same-day cases keep their true insertion order) and falls back to
@@ -233,6 +235,29 @@ const demoRepo = {
     if (blankOwnerField(pet.owner_email) && owner.owner_email) pet.owner_email = owner.owner_email;
     saveDB(db);
     return pet;
+  },
+
+  /** Phone-as-identity auto-claim: link every pet registered (in any clinic) under
+   *  the account's phone number to this owner account. Only the LINK (owner_id)
+   *  changes — clinic-entered contact fields stay untouched. Pets already linked
+   *  to another real owner account are never re-claimed. Returns the newly linked pets. */
+  async claimPetsByPhone(input: { owner_id: string; phone?: string; name?: string; email?: string }): Promise<Pet[]> {
+    const key = phoneKey(input.phone ?? "");
+    if (key.length < 8) return [];
+    const db = loadDB();
+    const ownerAccountIds = new Set(loadOwners().map((o) => o.id));
+    const claimed: Pet[] = [];
+    for (const p of db.pets) {
+      if (p.owner_id === input.owner_id) continue;
+      if (ownerAccountIds.has(p.owner_id)) continue; // belongs to another owner account
+      if (phoneKey(p.owner_phone ?? "") !== key) continue;
+      p.owner_id = input.owner_id;
+      if (blankOwnerField(p.owner_name) && input.name) p.owner_name = input.name;
+      if (blankOwnerField(p.owner_email) && input.email) p.owner_email = input.email;
+      claimed.push(p);
+    }
+    if (claimed.length) saveDB(db);
+    return claimed;
   },
 
   /** Clinic lookup of an owner's shared pets by email (cross-clinic account access). */
@@ -1247,6 +1272,21 @@ const supabaseRepo: typeof demoRepo = {
     if (blankOwnerField(cur.owner_phone) && owner.owner_phone) patch.owner_phone = owner.owner_phone;
     if (blankOwnerField(cur.owner_email) && owner.owner_email) patch.owner_email = owner.owner_email;
     return maybe<Pet>(await sbc().from("pets").update(patch).eq("id", cur.id).select().maybeSingle());
+  },
+  async claimPetsByPhone(input) {
+    // Server-side matching (migration 0077): the RPC uses the PROFILE's stored
+    // phone — never a client-supplied one — so an account can only ever claim
+    // pets registered under its own verified number. Missing RPC ⇒ no-op.
+    try {
+      const { data, error } = await sbc().rpc("claim_pets_by_phone", {
+        p_name: input.name ?? null,
+        p_email: input.email ?? null,
+      });
+      if (error) return [];
+      return (data as Pet[]) ?? [];
+    } catch {
+      return [];
+    }
   },
   async getPetsByOwnerEmail(email) {
     const e = email.trim();

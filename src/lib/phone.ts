@@ -31,6 +31,25 @@ export function phoneMatches(stored: string, query: string, dialCode: string): b
   return storedFull.includes(qd) || storedNat.includes(qd) || (queryNat.length > 0 && storedNat.includes(queryNat));
 }
 
+/**
+ * Canonical identity key for a phone number — used to match an owner account to
+ * pets registered across DIFFERENT clinics regardless of how each clinic typed
+ * the number (spaces, +964, 00964, leading zero, Eastern-Arabic digits).
+ * "+964 770 111 2222", "07701112222" and "٠٧٧٠١١١٢٢٢٢" all yield "7701112222".
+ */
+export function phoneKey(s: string): string {
+  let d = phoneDigits(s);
+  if (d.startsWith("00")) d = d.slice(2);
+  if (d.startsWith("964")) d = d.slice(3);
+  return d.replace(/^0+/, "");
+}
+
+/** Two numbers identify the same person (keys equal and long enough to be unambiguous). */
+export function samePhone(a: string, b: string): boolean {
+  const ka = phoneKey(a);
+  return ka.length >= 8 && ka === phoneKey(b);
+}
+
 /** Build a canonical stored value from a national number + dial code. */
 export function withDialCode(nationalInput: string, dialCode: string): string {
   const nat = phoneDigits(nationalInput).replace(/^0+/, "");
