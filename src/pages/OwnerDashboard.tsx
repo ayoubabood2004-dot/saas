@@ -12,6 +12,7 @@ import { AddPetModal } from "@/components/AddPetModal";
 import { NextAppointment } from "@/components/NextAppointment";
 import { UpcomingEvents } from "@/components/UpcomingEvents";
 import { EducationHub } from "@/components/EducationHub";
+import { MyClinics } from "@/components/MyClinics";
 import { buildUpcomingEvents } from "@/lib/events";
 import { Modal } from "@/components/Modal";
 import { PhoneInput } from "@/components/PhoneInput";
@@ -83,9 +84,11 @@ export function OwnerDashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id]);
 
+  // Never miss a shot: EVERY overdue vaccine (however old) + anything due within
+  // a month — the old 7-day window hid upcoming doses from owners.
   const alerts = pets.flatMap((p) =>
     p.vaccinations
-      .filter((v) => v.status === "overdue" || (v.status === "scheduled" && v.due_date && daysUntil(v.due_date) <= 7))
+      .filter((v) => v.status === "overdue" || (v.status === "scheduled" && v.due_date && daysUntil(v.due_date) <= 30))
       .map((v) => ({ pet: p, vax: v })),
   );
 
@@ -186,6 +189,12 @@ export function OwnerDashboard() {
       <div className="mb-6">
         <NextAppointment appt={nextAppt} onChanged={load} />
       </div>
+
+      {!loading && (
+        <div className="mb-6">
+          <MyClinics pets={pets} />
+        </div>
+      )}
 
       <div className="mb-6">
         <UpcomingEvents

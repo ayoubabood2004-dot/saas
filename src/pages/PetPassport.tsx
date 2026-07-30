@@ -427,9 +427,11 @@ export function PetPassport() {
           merged with subtle dividers so it reads as a single clean record, not many boxes. */}
       <section className="card overflow-hidden p-0">
         {isOwner ? (
-          <div className="grid divide-y divide-line lg:grid-cols-2 lg:divide-y-0 lg:divide-x">
+          /* المالك همين يشوف حالة اللقاحات بلمحة — نفس عمود العيادة، بالأسماء العلمية */
+          <div className="grid divide-y divide-line lg:grid-cols-3 lg:divide-y-0 lg:divide-x">
             <div className="p-4 sm:p-5"><ProfileHead pet={pet} canEdit onPhoto={onPhoto} onRenamed={reload} /></div>
             <div className="p-4 sm:p-5"><IdentityFactsCard pet={pet} canEdit onChanged={reload} bare /></div>
+            <div><VaccineStatusCard vaccines={vaccines} display={vaccineScientific} onOpen={() => { playTap(); setTab("vaccines"); }} /></div>
           </div>
         ) : (
           /* أربعة أعمدة: الحيوان · المالك · البيانات · اللقاحات (عمود كامل بأقصى اليسار) */
@@ -1243,7 +1245,7 @@ function MealModal({ open, onClose, onAdd }: { open: boolean; onClose: () => voi
 /** حالة اللقاحات بنظرة (رأس السجل) — سطر ملوّن لكل لقاح: أخضر ✓ مأخوذ،
  *  كهرماني ⏰ موعده قادم، أحمر ⚠ متأخر — فيعرف الدكتور فور دخوله هل الحيوان
  *  محصّن وشنو اللقاحات عليه، بلا ما يفتح التبويب. */
-function VaccineStatusCard({ vaccines, onOpen }: { vaccines: Vaccination[]; onOpen: () => void }) {
+function VaccineStatusCard({ vaccines, onOpen, display }: { vaccines: Vaccination[]; onOpen: () => void; /** Optional row-name transform (owner view shows scientific names). */ display?: (name: string) => string }) {
   const { t, i18n } = useTranslation();
   const rows = useMemo(() => {
     const m = new Map<string, Vaccination[]>();
@@ -1301,7 +1303,7 @@ function VaccineStatusCard({ vaccines, onOpen }: { vaccines: Vaccination[]; onOp
             return (
               <span key={r.name} className="flex w-full items-center gap-3 py-2 first:pt-0">
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-medium text-ink">{r.name}</span>
+                  <span className="block truncate text-sm font-medium text-ink">{display ? display(r.name) : r.name}</span>
                   <span className="block truncate text-2xs text-ink-subtle tabular-nums">
                     {r.late && r.next?.due_date
                       ? t("passport.vaxRowLate", { n: Math.abs(daysUntil(r.next.due_date) ?? 0), defaultValue: "متأخر {{n}} يوم" })

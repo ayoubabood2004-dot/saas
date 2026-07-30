@@ -873,7 +873,13 @@
     "vaccinationComplete": "vaccinated",
     "alertsTitle": "Health alerts",
     "dewormingDue": "Deworming dose for {{name}} is due {{when}}",
-    "vaccineDue": "{{vaccine}} for {{name}} is due in {{days}} days"
+    "vaccineDue": "{{vaccine}} for {{name}} is due in {{days}} days",
+    "myClinics": "My pets' clinics",
+    "aClinic": "Your pets' clinic",
+    "clinicTreats": "Treating: {{names}}",
+    "waClinic": "WhatsApp",
+    "callClinic": "Call",
+    "bookAtClinic": "Book"
   },
   "pet": {
     "species": {

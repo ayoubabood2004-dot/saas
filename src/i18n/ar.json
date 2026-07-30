@@ -873,7 +873,13 @@
     "vaccinationComplete": "نسبة التطعيم",
     "alertsTitle": "تنبيهات صحية",
     "dewormingDue": "جرعة التخلص من الديدان لـ {{name}} مستحقة {{when}}",
-    "vaccineDue": "تطعيم {{vaccine}} لـ {{name}} خلال {{days}} أيام"
+    "vaccineDue": "تطعيم {{vaccine}} لـ {{name}} خلال {{days}} أيام",
+    "myClinics": "عيادات حيواناتي",
+    "aClinic": "عيادة حيواناتك",
+    "clinicTreats": "يعالجون: {{names}}",
+    "waClinic": "واتساب",
+    "callClinic": "اتصال",
+    "bookAtClinic": "حجز موعد"
   },
   "pet": {
     "species": {
