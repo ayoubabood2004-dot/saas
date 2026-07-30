@@ -427,9 +427,17 @@ export function PetPassport() {
           merged with subtle dividers so it reads as a single clean record, not many boxes. */}
       <section className="card overflow-hidden p-0">
         <div className={cn("grid divide-y divide-line lg:divide-y-0 lg:divide-x", isOwner ? "lg:grid-cols-2" : "lg:grid-cols-3")}>
-          <div className="p-5 sm:p-6"><ProfileHead pet={pet} canEdit={canEditClinical || isOwner} onPhoto={onPhoto} onRenamed={reload} /></div>
-          {!isOwner && <div className="p-5 sm:p-6"><OwnerCard pet={pet} canEdit={canEditClinical} onUpdated={reload} bare /></div>}
-          <div className="p-5 sm:p-6"><IdentityFactsCard pet={pet} canEdit={canEditClinical || isOwner} onChanged={reload} bare /></div>
+          <div className="p-4 sm:p-5"><ProfileHead pet={pet} canEdit={canEditClinical || isOwner} onPhoto={onPhoto} onRenamed={reload} /></div>
+          {!isOwner && <div className="p-4 sm:p-5"><OwnerCard pet={pet} canEdit={canEditClinical} onUpdated={reload} bare /></div>}
+          <div className="p-4 sm:p-5">
+            <IdentityFactsCard pet={pet} canEdit={canEditClinical || isOwner} onChanged={reload} bare />
+            {/* حالة اللقاحات بنظرة — تملأ فراغ العمود الأيسر: محصّن؟ شنو عليه؟ */}
+            {!isOwner && (
+              <div className="mt-4 border-t border-line pt-3.5">
+                <VaccineStatusCard vaccines={vaccines} onOpen={() => { playTap(); setTab("vaccines"); }} />
+              </div>
+            )}
+          </div>
         </div>
       </section>
 
@@ -1229,6 +1237,85 @@ function MealModal({ open, onClose, onAdd }: { open: boolean; onClose: () => voi
 /* ---------------- Vaccinations ---------------- */
 /** A single vaccination, rendered EXACTLY as in the vaccines timeline card — reused
  *  verbatim in the interactive الطبلة feed (the timeline rail stays inside the tab's <ol>). */
+/** حالة اللقاحات بنظرة (رأس السجل) — سطر ملوّن لكل لقاح: أخضر ✓ مأخوذ،
+ *  كهرماني ⏰ موعده قادم، أحمر ⚠ متأخر — فيعرف الدكتور فور دخوله هل الحيوان
+ *  محصّن وشنو اللقاحات عليه، بلا ما يفتح التبويب. */
+function VaccineStatusCard({ vaccines, onOpen }: { vaccines: Vaccination[]; onOpen: () => void }) {
+  const { t, i18n } = useTranslation();
+  const rows = useMemo(() => {
+    const m = new Map<string, Vaccination[]>();
+    for (const v of vaccines) {
+      const k = v.name.trim().toLowerCase();
+      const a = m.get(k) ?? [];
+      a.push(v);
+      m.set(k, a);
+    }
+    const items = [...m.values()].map((ds) => {
+      const pend = ds
+        .filter((d) => d.status !== "administered")
+        .sort((a, b) => (a.due_date ?? "9999").localeCompare(b.due_date ?? "9999"));
+      const next = pend[0] ?? null;
+      const late = !!next && (next.status === "overdue" || (next.due_date != null && (daysUntil(next.due_date) ?? 0) < 0));
+      const lastGiven = ds
+        .filter((d) => d.status === "administered")
+        .sort((a, b) => (b.administered_at ?? "").localeCompare(a.administered_at ?? ""))[0] ?? null;
+      return { name: ds[0].name, next, late, lastGiven };
+    });
+    const rank = (x: (typeof items)[number]) => (x.late ? 0 : x.next ? 1 : 2);
+    return items.sort((a, b) => rank(a) - rank(b) || (a.next?.due_date ?? "").localeCompare(b.next?.due_date ?? ""));
+  }, [vaccines]);
+
+  const overdue = rows.filter((r) => r.late).length;
+  const upcoming = rows.filter((r) => r.next && !r.late).length;
+
+  return (
+    <div>
+      <h3 className="mb-2.5 flex items-center gap-2 text-sm font-bold text-ink">
+        <Syringe size={15} className="text-violet-600 dark:text-violet-300" /> {t("passport.vaxGlance", "حالة اللقاحات")}
+        {/* الحكم العام بلون واحد صريح */}
+        <span className={cn("ms-auto chip text-2xs font-extrabold",
+          overdue ? "bg-danger-50 text-danger-700 dark:bg-danger-500/15 dark:text-danger-300"
+            : upcoming ? "bg-warn-50 text-warn-700 dark:bg-warn-500/15 dark:text-warn-300"
+              : rows.length ? "bg-success-50 text-success-700 dark:bg-success-500/15 dark:text-success-300"
+                : "bg-surface-2 text-ink-subtle")}>
+          {overdue ? t("passport.vaxGlanceLate", { n: overdue, defaultValue: "متأخر عن {{n}} لقاح ⚠" })
+            : upcoming ? t("passport.vaxGlanceDue", { n: upcoming, defaultValue: "{{n}} لقاح قادم" })
+              : rows.length ? t("passport.vaxGlanceOk", "محصّن ✓")
+                : t("passport.vaxGlanceNone", "بلا لقاحات")}
+        </span>
+      </h3>
+      {rows.length === 0 ? (
+        <p className="text-xs text-ink-subtle">{t("passport.vaxGlanceEmpty", "ما مسجّل أي لقاح — أضفها من تبويب التطعيمات.")}</p>
+      ) : (
+        <div className="space-y-1.5">
+          {rows.slice(0, 5).map((r) => (
+            <div key={r.name} className="flex items-center gap-2 text-xs">
+              <span className={cn("h-2.5 w-2.5 shrink-0 rounded-full",
+                r.late ? "bg-danger-500" : r.next ? "bg-warn-500" : "bg-success-500")} />
+              <span className="min-w-0 flex-1 truncate font-bold text-ink">{r.name}</span>
+              <span className={cn("shrink-0 text-2xs font-semibold tabular-nums",
+                r.late ? "text-danger-600 dark:text-danger-400" : r.next ? "text-warn-600 dark:text-warn-400" : "text-success-600 dark:text-success-400")}>
+                {r.late && r.next?.due_date
+                  ? t("passport.vaxRowLate", { n: Math.abs(daysUntil(r.next.due_date) ?? 0), defaultValue: "متأخر {{n}} يوم" })
+                  : r.next?.due_date
+                    ? formatDate(r.next.due_date, i18n.language)
+                    : r.lastGiven?.administered_at
+                      ? `✓ ${formatDate(r.lastGiven.administered_at.slice(0, 10), i18n.language)}`
+                      : "✓"}
+              </span>
+            </div>
+          ))}
+          <button onClick={onOpen} className="mt-1 inline-flex items-center gap-1 text-2xs font-bold text-violet-600 transition hover:text-violet-700 dark:text-violet-300">
+            {rows.length > 5
+              ? t("passport.vaxGlanceMore", { n: rows.length - 5, defaultValue: "+{{n}} أخرى — كل التفاصيل" })
+              : t("passport.vaxGlanceAll", "كل التفاصيل والجرعات")}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /** بطاقة جرعة مفردة — تُستخدم في خلاصة «بطاقات» تبويب العلاج. */
 function VaccineCardBody({ v, isOwner, canEdit, onAdminister }: {
   v: Vaccination; isOwner: boolean; canEdit: boolean; onAdminister: (v: Vaccination) => void;
