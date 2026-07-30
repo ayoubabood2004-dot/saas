@@ -243,7 +243,7 @@ export function Sidebar() {
           <div className="flex-1" />
           <Tooltip label={t("nav.logout")}>
             <button
-              onClick={() => { signOut(); navigate("/login"); }}
+              onClick={() => { signOut(); }}
               className="grid h-10 w-10 place-items-center rounded-full text-ink-muted transition hover:bg-danger-50 hover:text-danger-600"
             >
               <LogOut size={18} />

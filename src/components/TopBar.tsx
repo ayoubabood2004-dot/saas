@@ -186,10 +186,7 @@ export function TopBar({ mobileOnly = false, minimal = false }: { mobileOnly?: b
             {user && (
               <Tooltip label={t("nav.logout")}>
                 <button
-                  onClick={() => {
-                    signOut();
-                    navigate("/login");
-                  }}
+                  onClick={() => signOut()}
                   className="hidden h-11 w-11 place-items-center rounded-full text-ink-muted transition hover:bg-danger-50 hover:text-danger-600 sm:grid"
                 >
                   <LogOut size={19} />
@@ -258,10 +255,7 @@ export function TopBar({ mobileOnly = false, minimal = false }: { mobileOnly?: b
                   </button>
                 )}
                 <button
-                  onClick={() => {
-                    signOut();
-                    navigate("/login");
-                  }}
+                  onClick={() => signOut()}
                   className="flex items-center gap-3 rounded-2xl px-3 py-3 text-danger-600 hover:bg-danger-50"
                 >
                   <LogOut size={18} /> {t("nav.logout")}

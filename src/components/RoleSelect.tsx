@@ -49,7 +49,7 @@ export function RoleSelect() {
           ))}
         </div>
 
-        <button onClick={() => { signOut(); navigate("/login"); }} className="mt-6 inline-flex items-center gap-1.5 text-sm text-ink-subtle transition hover:text-ink">
+        <button onClick={() => { signOut(); }} className="mt-6 inline-flex items-center gap-1.5 text-sm text-ink-subtle transition hover:text-ink">
           <LogOut size={14} /> {t("auth.signOut", "Sign out")}
         </button>
       </motion.div>

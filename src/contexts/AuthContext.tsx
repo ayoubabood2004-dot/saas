@@ -538,7 +538,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signOut = () => {
-    if (isSupabaseConfigured && supabase) void supabase.auth.signOut();
     // End any live manager-override elevation FIRST (before the active clinic is
     // cleared, so its localStorage key still resolves) — otherwise the next user
     // on a shared device inherits the previous person's 10-minute manager access.
@@ -557,7 +556,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // (permissions, clinic-config, ops/branch stores, SWR snapshots) so the
     // NEXT person to sign in on a shared/kiosk device can never briefly see the
     // previous clinic's data. A soft state reset alone leaves those caches warm.
-    try { window.location.href = "/login"; } catch { /* non-browser env */ }
+    const finish = () => {
+      // Belt-and-braces: strip Supabase auth tokens directly — the reloaded
+      // /login must NEVER rehydrate a session. (The old code fired an async
+      // global signOut and navigated in the same tick; the navigation cancelled
+      // the request, the stored session survived, and "logout" bounced the user
+      // straight back in — the loop seen on locked clinics.)
+      try {
+        Object.keys(localStorage).filter((k) => k.startsWith("sb-")).forEach((k) => localStorage.removeItem(k));
+      } catch { /* ignore */ }
+      try { window.location.href = "/login"; } catch { /* non-browser env */ }
+    };
+    if (isSupabaseConfigured && supabase) {
+      // scope:"local" clears the stored session without the network round-trip a
+      // navigation could cancel; bounded so a hung SDK can't trap the user in.
+      void withTimeout(supabase.auth.signOut({ scope: "local" }), 2000)
+        .catch(() => { /* finish() strips the tokens regardless */ })
+        .then(finish);
+    } else {
+      finish();
+    }
   };
 
   // Leaving a joined clinic only removes the membership row (never any data); a
