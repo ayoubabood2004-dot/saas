@@ -13,6 +13,7 @@ import { playTap, playWarning } from "@/lib/sounds";
 import { Button, Card, SuccessDialog, useToast } from "@/components/ui";
 import { cn } from "@/lib/utils";
 import { fadeUp, staggerContainer, staggerItem } from "@/lib/motion";
+import { getCached, setCached } from "@/lib/swrCache";
 
 const SERVICE_ICON: Record<ServiceType, typeof Stethoscope> = {
   consultation: Stethoscope,
@@ -66,10 +67,13 @@ export function BookingWizard() {
   const myClinicIds = new Set(pets.map((p) => p.clinic_id).filter(Boolean) as string[]);
 
   useEffect(() => {
+    // دليل العيادات: كاش لحظي + تحديث خفي — الخطوة ٣ تفتح جاهزة
+    const cached = getCached<ClinicInfo[]>("clinic_directory");
+    if (cached) setClinics(cached);
     let alive = true;
     repo.listClinicDirectory()
-      .then((dir) => { if (alive) setClinics(dir); })
-      .catch(() => { if (alive) setClinics([]); });
+      .then((dir) => { setCached("clinic_directory", dir); if (alive) setClinics(dir); })
+      .catch(() => { if (alive && !cached) setClinics([]); });
     return () => { alive = false; };
   }, []);
 
@@ -113,10 +117,13 @@ export function BookingWizard() {
     setClinicId(id);
     setDoctor(null);
     setSlot(null);
-    setStaffLoading(true);
+    // كادر العيادة: يظهر لحظياً من الكاش (إن سبق فتحه) والتحديث يلحقه بالخفاء
+    const cachedStaff = getCached<PublicStaff[]>(`clinic_staff_${id}`);
+    if (cachedStaff) { setStaffList(cachedStaff); setStaffLoading(false); } else setStaffLoading(true);
     repo.listClinicStaffPublic(id)
       .then(async (list) => {
         const bookable = list.filter((s) => s.role === "veterinarian" || s.role === "manager");
+        setCached(`clinic_staff_${id}`, bookable);
         setStaffList(bookable);
         // One availability sweep for the whole roster (plus the any-doctor key).
         const from = `${dayISOFor(1)}T00:00:00`;
@@ -124,7 +131,7 @@ export function BookingWizard() {
         const ids = [...bookable.map((s) => s.id), `any:${id}`];
         setBusy(await repo.listDoctorBusySlots(ids, from, to).catch(() => ({})));
       })
-      .catch(() => setStaffList([]))
+      .catch(() => { if (!cachedStaff) setStaffList([]); })
       .finally(() => setStaffLoading(false));
   };
 

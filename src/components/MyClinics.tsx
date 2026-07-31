@@ -5,6 +5,7 @@ import { Building2, MapPin, Phone, CalendarPlus, MessageCircle } from "lucide-re
 import type { Pet, ClinicInfo } from "@/types";
 import { repo } from "@/lib/repo";
 import { waNumber } from "@/lib/phone";
+import { getCached, setCached } from "@/lib/swrCache";
 import { playTap } from "@/lib/sounds";
 
 /**
@@ -31,9 +32,12 @@ export function MyClinics({ pets }: { pets: Pet[] }) {
 
   useEffect(() => {
     if (byClinic.size === 0) { setLoaded(true); return; }
+    // رسمة فورية من الدليل المكاشي + تحديث خفي
+    const cached = getCached<ClinicInfo[]>("clinic_directory");
+    if (cached) { setDirectory(cached); setLoaded(true); }
     let alive = true;
     repo.listClinicDirectory()
-      .then((dir) => { if (alive) setDirectory(dir); })
+      .then((dir) => { setCached("clinic_directory", dir); if (alive) setDirectory(dir); })
       .catch(() => { /* directory unavailable — placeholder names below */ })
       .finally(() => { if (alive) setLoaded(true); });
     return () => { alive = false; };

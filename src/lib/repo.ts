@@ -230,6 +230,13 @@ const demoRepo = {
     return loadDB().pets.find((p) => p.id === petId);
   },
 
+  /** Batch pet fetch — ONE round-trip for a whole list (bookings/requests views). */
+  async getPetsByIds(ids: string[]): Promise<Pet[]> {
+    if (ids.length === 0) return [];
+    const set = new Set(ids);
+    return loadDB().pets.filter((p) => set.has(p.id));
+  },
+
   async getPetByToken(token: string): Promise<Pet | undefined> {
     return loadDB().pets.find((p) => p.passport_token.toUpperCase() === token.trim().toUpperCase());
   },
@@ -1330,6 +1337,10 @@ const supabaseRepo: typeof demoRepo = {
   },
   async getPetByToken(token) {
     return maybe<Pet>(await sbc().from("pets").select("*").eq("passport_token", token.trim().toUpperCase()).maybeSingle());
+  },
+  async getPetsByIds(ids) {
+    if (ids.length === 0) return [];
+    return listOf<Pet>(await sbc().from("pets").select("*").in("id", ids));
   },
   async getPetBySerial(serial) {
     return maybe<Pet>(await sbc().from("pets").select("*").eq("serial", serial.trim()).maybeSingle());

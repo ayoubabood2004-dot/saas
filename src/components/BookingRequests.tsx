@@ -4,6 +4,7 @@ import { BellRing, Check, X, Phone, MessageCircle, CalendarClock, Stethoscope } 
 import type { Appointment, Pet } from "@/types";
 import { repo } from "@/lib/repo";
 import { bumpBookingRequests, requestNotifyPermission } from "@/lib/bookingRequests";
+import { getCached, setCached } from "@/lib/swrCache";
 import { getDialCode, getClinicName } from "@/lib/settings";
 import { waNumber } from "@/lib/phone";
 import { formatTime, dateLocale } from "@/lib/utils";
@@ -27,19 +28,18 @@ export function BookingRequests() {
   const load = async () => {
     try {
       const list = await repo.listBookingRequests();
+      const petList = await repo.getPetsByIds([...new Set(list.map((a) => a.pet_id))]).catch(() => [] as Pet[]);
+      const map = Object.fromEntries(petList.map((p) => [p.id, p]));
+      setCached("bk_requests", { requests: list, pets: map });
       setRequests(list);
-      const map: Record<string, Pet> = {};
-      await Promise.all(
-        [...new Set(list.map((a) => a.pet_id))].map(async (id) => {
-          const p = await repo.getPet(id).catch(() => undefined);
-          if (p) map[id] = p;
-        }),
-      );
       setPets(map);
     } catch { /* transient */ }
   };
 
   useEffect(() => {
+    // رسمة فورية من آخر نسخة محفوظة — التحديث الحقيقي يلحقها بالخفاء
+    const cached = getCached<{ requests: Appointment[]; pets: Record<string, Pet> }>("bk_requests");
+    if (cached) { setRequests(cached.requests); setPets(cached.pets); }
     void load();
     const id = window.setInterval(() => { void load(); }, 45000);
     return () => clearInterval(id);

@@ -5,6 +5,7 @@ import type { DailyNote } from "@/types";
 import { repo } from "@/lib/repo";
 import { useAuth } from "@/contexts/AuthContext";
 import { cn, dateLocale, localISO } from "@/lib/utils";
+import { getCached, setCached } from "@/lib/swrCache";
 import { playTap } from "@/lib/sounds";
 
 /**
@@ -34,22 +35,33 @@ export function StickyNotes() {
     const p = pending.current;
     if (!p.dirty) return;
     p.dirty = false;
+    setCached(`note_${p.dateISO}`, { note: { note_date: p.dateISO, content: p.text, updated_by: user?.full_name ?? null, updated_at: new Date().toISOString() } });
     void repo.saveDailyNote(p.dateISO, p.text, user?.full_name).catch(() => { /* retried on next keystroke */ });
   }, [user?.full_name]);
 
-  // تحميل ورقة اليوم المعروض (بعد تفريغ أي حفظ معلق ليوم سابق)
+  // تحميل ورقة اليوم المعروض (بعد تفريغ أي حفظ معلق ليوم سابق).
+  // التنقل بين الأيام لحظي: آخر نسخة مكاشية تنرسم فوراً والتحديث يلحقها بالخفاء.
   useEffect(() => {
     flush();
     let alive = true;
     setSaveState("idle");
+    const cached = getCached<{ note: DailyNote | null }>(`note_${dateISO}`);
+    if (cached) {
+      setNote(cached.note);
+      setText(cached.note?.content ?? "");
+      pending.current = { dateISO, text: cached.note?.content ?? "", dirty: false };
+    }
     repo.getDailyNote(dateISO)
       .then((n) => {
+        setCached(`note_${dateISO}`, { note: n });
         if (!alive) return;
+        // لا تدعس على كتابة بدأت خلال الجلب
+        if (pending.current.dateISO === dateISO && pending.current.dirty) return;
         setNote(n);
         setText(n?.content ?? "");
         pending.current = { dateISO, text: n?.content ?? "", dirty: false };
       })
-      .catch(() => { if (alive) { setNote(null); setText(""); pending.current = { dateISO, text: "", dirty: false }; } });
+      .catch(() => { if (alive && !cached) { setNote(null); setText(""); pending.current = { dateISO, text: "", dirty: false }; } });
     return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dateISO]);
@@ -65,6 +77,7 @@ export function StickyNotes() {
     debounce.current = window.setTimeout(() => {
       const p = pending.current;
       p.dirty = false;
+      setCached(`note_${p.dateISO}`, { note: { note_date: p.dateISO, content: p.text, updated_by: user?.full_name ?? null, updated_at: new Date().toISOString() } });
       void repo.saveDailyNote(p.dateISO, p.text, user?.full_name)
         .then(() => setSaveState("saved"))
         .catch(() => setSaveState("idle"));

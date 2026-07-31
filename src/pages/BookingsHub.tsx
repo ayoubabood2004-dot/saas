@@ -13,6 +13,7 @@ import { bumpBookingRequests } from "@/lib/bookingRequests";
 import { getDialCode, getClinicName } from "@/lib/settings";
 import { waNumber } from "@/lib/phone";
 import { formatTime, dateLocale, cn, formatNum, localISO } from "@/lib/utils";
+import { getCached, setCached } from "@/lib/swrCache";
 import { PetAvatar } from "@/components/PetAvatar";
 import { EmptyState, useToast } from "@/components/ui";
 import { staggerContainer, staggerItem } from "@/lib/motion";
@@ -70,29 +71,37 @@ export function BookingsHub() {
   const [busyId, setBusyId] = useState<string | null>(null);
 
   const dayISO = dayISOFromOffset(offset);
+  const dayKey = `bk_day_${dayISO}`;
 
-  /* ------------------------------- day data ------------------------------- */
-  const load = async () => {
-    try {
-      const list = await repo.listBookingsForDay(dayISO);
-      setAppts(list);
-      const map: Record<string, Pet> = {};
-      await Promise.all(
-        [...new Set(list.map((a) => a.pet_id))].map(async (id) => {
-          const p = await repo.getPet(id).catch(() => undefined);
-          if (p) map[id] = p;
-        }),
-      );
-      setPets(map);
-    } catch { /* transient */ } finally {
-      setLoading(false);
-    }
-  };
-
+  /* --------------------------- day data (SWR) ----------------------------
+   * سرعة الضوء: أول ما تنفتح الصفحة (أو يتبدل اليوم) نرسم فوراً آخر نسخة
+   * محفوظة بالذاكرة — بدون أي سكيلتون — والتحديث الحقيقي يصير بالخفاء ويحل
+   * محلها بصمت. جلب الحيوانات صار دفعة وحدة بدل استعلام لكل حيوان. */
   useEffect(() => {
     if (view !== "day") return;
-    setLoading(true);
-    void load();
+    const cached = getCached<{ appts: Appointment[]; pets: Record<string, Pet> }>(dayKey);
+    if (cached) {
+      setAppts(cached.appts);
+      setPets(cached.pets);
+      setLoading(false);
+    } else {
+      setLoading(true);
+    }
+    let alive = true;
+    void (async () => {
+      try {
+        const list = await repo.listBookingsForDay(dayISO);
+        const petList = await repo.getPetsByIds([...new Set(list.map((a) => a.pet_id))]).catch(() => [] as Pet[]);
+        const map = Object.fromEntries(petList.map((p) => [p.id, p]));
+        setCached(dayKey, { appts: list, pets: map });
+        if (!alive) return;
+        setAppts(list);
+        setPets(map);
+      } catch { /* transient — keep whatever is painted */ } finally {
+        if (alive) setLoading(false);
+      }
+    })();
+    return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dayISO, view]);
 
@@ -104,11 +113,13 @@ export function BookingsHub() {
 
   useEffect(() => {
     if (view !== "month") return;
-    setLoading(true);
+    const monthKey = `bk_month_${localISO(monthStart).slice(0, 7)}`;
+    const cached = getCached<Appointment[]>(monthKey);
+    if (cached) { setMonthAppts(cached); setLoading(false); } else setLoading(true);
     const end = new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 0);
     repo.listAppointmentsInRange(localISO(monthStart), localISO(end))
-      .then(setMonthAppts)
-      .catch(() => setMonthAppts([]))
+      .then((list) => { setCached(monthKey, list); setMonthAppts(list); })
+      .catch(() => { if (!cached) setMonthAppts([]); })
       .finally(() => setLoading(false));
   }, [view, monthStart]);
 
@@ -141,7 +152,11 @@ export function BookingsHub() {
       await repo.setAppointmentStatus(a.id, status);
       playSuccess();
       toast.success(t(okMsgKey, okMsgDef));
-      setAppts((rs) => rs.map((r) => (r.id === a.id ? { ...r, status } : r)));
+      setAppts((rs) => {
+        const next = rs.map((r) => (r.id === a.id ? { ...r, status } : r));
+        setCached(dayKey, { appts: next, pets }); // الكاش يواكب فوراً
+        return next;
+      });
       if (a.status === "requested") bumpBookingRequests();
     } catch (e) {
       playWarning();

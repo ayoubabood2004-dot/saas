@@ -20,6 +20,7 @@ import { QrCode } from "@/components/QrCode";
 import { Button, Skeleton, EmptyState } from "@/components/ui";
 import { getOwner } from "@/lib/owners";
 import { vaccinationCompletion, daysUntil } from "@/lib/utils";
+import { getCached, setCached } from "@/lib/swrCache";
 import { playTap } from "@/lib/sounds";
 import type { Appointment } from "@/types";
 
@@ -51,36 +52,61 @@ export function OwnerDashboard() {
   // Pets auto-linked to this account by phone match during this session (celebration banner).
   const [autoClaimed, setAutoClaimed] = useState<Pet[]>([]);
 
+  // سرعة الضوء: كل الجلبات تنطلق بالتوازي (مو وحدة ورا الثانية)، وآخر نسخة
+  // محفوظة تنرسم لحظياً عند الرجوع للصفحة — التحديث يصير بالخفاء.
+  const cacheKey = `owner_home_${user?.id ?? ""}`;
   const load = async () => {
     if (!user) return;
-    // Phone-as-identity: silently link any pet registered under this account's
-    // number (in any clinic) before listing. Clinic records are never modified —
-    // only the link. Cheap no-op when there is nothing new to link.
-    const acc = getOwner(user.id);
-    try {
-      const claimed = await repo.claimPetsByPhone({
-        owner_id: user.id,
-        phone: acc?.phone ?? user.phone,
-        name: user.full_name,
-        email: acc?.email ?? user.email,
-      });
-      if (claimed.length) setAutoClaimed((prev) => [...prev, ...claimed]);
-    } catch { /* linking must never block the dashboard */ }
-    const list = await repo.listPets(user.id);
+    const [list, apptList, rems] = await Promise.all([
+      repo.listPets(user.id),
+      repo.listAppointmentsForOwner(user.id).catch(() => [] as Appointment[]),
+      repo.listReminders({ ownerId: user.id }).catch(() => [] as Reminder[]),
+    ]);
     const withVax = await Promise.all(
-      list.map(async (p) => ({ ...p, vaccinations: await repo.listVaccinations(p.id) })),
+      list.map(async (p) => ({ ...p, vaccinations: await repo.listVaccinations(p.id).catch(() => [] as Vaccination[]) })),
     );
     setPets(withVax);
-    const apptList = await repo.listAppointmentsForOwner(user.id);
     setAppts(apptList);
     const upcoming = apptList.find((a) => new Date(a.scheduled_at) >= new Date() && a.status !== "done");
     setNextAppt(upcoming ?? null);
-    setReminders(await repo.listReminders({ ownerId: user.id }));
+    setReminders(rems);
+    setCached(cacheKey, { pets: withVax, appts: apptList, reminders: rems });
     setLoading(false);
   };
 
   useEffect(() => {
+    if (!user) return;
+    // رسمة فورية من الكاش إن وجد — بدون أي سكيلتون
+    const cached = getCached<{ pets: PetWithVax[]; appts: Appointment[]; reminders: Reminder[] }>(cacheKey);
+    if (cached) {
+      setPets(cached.pets);
+      setAppts(cached.appts);
+      const upcoming = cached.appts.find((a) => new Date(a.scheduled_at) >= new Date() && a.status !== "done");
+      setNextAppt(upcoming ?? null);
+      setReminders(cached.reminders);
+      setLoading(false);
+    }
     void load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id]);
+
+  // الربط التلقائي برقم الهاتف — بالخلفية بعد أول رسمة، فلا يؤخر الصفحة أبداً.
+  useEffect(() => {
+    if (!user) return;
+    const acc = getOwner(user.id);
+    repo.claimPetsByPhone({
+      owner_id: user.id,
+      phone: acc?.phone ?? user.phone,
+      name: user.full_name,
+      email: acc?.email ?? user.email,
+    })
+      .then((claimed) => {
+        if (claimed.length) {
+          setAutoClaimed((prev) => [...prev, ...claimed]);
+          void load(); // انضافت حيوانات — حدّث القائمة
+        }
+      })
+      .catch(() => { /* linking must never block the dashboard */ });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id]);
 
