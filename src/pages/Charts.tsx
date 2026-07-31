@@ -8,6 +8,7 @@ import {
 import type { Admission, ClinicVisit, Pet, TreatmentEntry , Surgery } from "@/types";
 import { repo } from "@/lib/repo";
 import { getCached, setCached } from "@/lib/swrCache";
+import { PetAvatar } from "@/components/PetAvatar";
 import { opsStore } from "@/lib/opsStore";
 import { useAuth } from "@/contexts/AuthContext";
 import { useBranchState, matchesBranch } from "@/lib/branchStore";
@@ -37,15 +38,16 @@ const SPECIES_GRAD: Record<string, string> = {
   other: "from-slate-100 to-brand-100 dark:from-slate-500/15 dark:to-brand-500/10",
 };
 
-/** Instant, self-contained pet avatar — real photo when present, else a colour species emoji. */
+/** صورة الحيوان — نفس مكوّن الصور الموحد بكل السستم (صورة مرفوعة ← صورة نوع حقيقية). */
 function CardAvatar({ pet }: { pet: Pet | undefined }) {
-  const sp = pet?.species ?? "other";
-  if (pet?.photo_url) return <img src={pet.photo_url} alt="" loading="lazy" className="h-11 w-11 shrink-0 rounded-xl object-cover" />;
-  return (
-    <span className={cn("grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-gradient-to-br text-2xl leading-none", SPECIES_GRAD[sp] ?? SPECIES_GRAD.other)}>
-      {SPECIES_EMOJI[sp] ?? SPECIES_EMOJI.other}
-    </span>
-  );
+  if (!pet) {
+    return (
+      <span className={cn("grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-gradient-to-br text-2xl leading-none", SPECIES_GRAD.other)}>
+        {SPECIES_EMOJI.other}
+      </span>
+    );
+  }
+  return <PetAvatar pet={pet} size={44} className="shrink-0 rounded-xl" />;
 }
 
 /** A single treatment chart — a card the doctor taps to jump into the plan (visit). */
