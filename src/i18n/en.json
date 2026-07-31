@@ -2272,5 +2272,17 @@
     "cage": "Cage change: {{from}} → {{to}}",
     "showAll": "Show all ({{n}})",
     "showLess": "Show less"
+  },
+  "stickyNotes": {
+    "today": "Today",
+    "yesterday": "Yesterday",
+    "tomorrow": "Tomorrow",
+    "backToday": "Back to today",
+    "prevDay": "Previous day",
+    "nextDay": "Next day",
+    "placeholder": "Write today's notes here… your whole clinic sees them ✏️",
+    "lastBy": "Last edit: {{name}}",
+    "saving": "Saving…",
+    "saved": "Saved"
   }
 }

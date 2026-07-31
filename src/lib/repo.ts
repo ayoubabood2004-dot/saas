@@ -4,11 +4,11 @@
 import { loadDB, saveDB } from "./demoStore";
 import { supabase } from "./supabase";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, AppointmentStatus, ClinicInfo, PublicStaff, TreatmentEntry, Admission, Branch, Reminder, Product, Company, CompanySection, Purchase, PurchaseItem, PurchasePayment, PurchaseDraftLine, PurchaseMeta, Courier, DeliveryOrder, PetMovement, DemoDB, Invoice, InvoiceItem, CheckoutItem, SaleMeta, Customer, DiscountType, PaymentMethod, PaymentSplit, WhatsAppMessage, AuditEntry, LoginEvent, PetNote, Expense, ClinicVisit , Surgery } from "@/types";
+import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, AppointmentStatus, ClinicInfo, PublicStaff, DailyNote, TreatmentEntry, Admission, Branch, Reminder, Product, Company, CompanySection, Purchase, PurchaseItem, PurchasePayment, PurchaseDraftLine, PurchaseMeta, Courier, DeliveryOrder, PetMovement, DemoDB, Invoice, InvoiceItem, CheckoutItem, SaleMeta, Customer, DiscountType, PaymentMethod, PaymentSplit, WhatsAppMessage, AuditEntry, LoginEvent, PetNote, Expense, ClinicVisit , Surgery } from "@/types";
 import { uid, uuid, ageMonths } from "./utils";
 import { phoneKey } from "./phone";
 import { loadOwners } from "./owners";
-import { loadClinics } from "./clinics";
+import { loadClinics, getActiveClinicId } from "./clinics";
 import { listStaff } from "./staff";
 
 /** Sort key for a case/admission — newest first. Prefers the precise `created_at`
@@ -142,6 +142,22 @@ function dedupeCustomers(rows: { customer_name?: string | null; customer_phone?:
 function blankOwnerField(v?: string | null): boolean {
   const s = (v ?? "").trim();
   return !s || s === "—";
+}
+
+/* Daily sticky notes — device-local store. The demo's persistence AND the cloud
+ * fallback while migration 0080 hasn't been applied yet (notes then stay on the
+ * device instead of erroring; the widget keeps working either way). */
+const dailyNotesKey = () => `vp_daily_notes_${getActiveClinicId()}`;
+function dailyNotesLoad(): Record<string, DailyNote> {
+  try { return JSON.parse(localStorage.getItem(dailyNotesKey()) ?? "{}") as Record<string, DailyNote>; } catch { return {}; }
+}
+function dailyNoteLocalGet(dateISO: string): DailyNote | null {
+  return dailyNotesLoad()[dateISO] ?? null;
+}
+function dailyNoteLocalSet(dateISO: string, content: string, author?: string | null) {
+  const map = dailyNotesLoad();
+  map[dateISO] = { note_date: dateISO, content, updated_by: author ?? null, updated_at: new Date().toISOString() };
+  try { localStorage.setItem(dailyNotesKey(), JSON.stringify(map)); } catch { /* ignore */ }
 }
 
 /* Demo-only audit + login trails (localStorage). On Supabase these live in the
@@ -494,6 +510,15 @@ const demoRepo = {
     return loadDB().appointments.some(
       (a) => a.doctor_id === doctorId && a.scheduled_at === scheduledAt && a.status !== "cancelled",
     );
+  },
+
+  /** The clinic's shared sticky note for one calendar day (dashboard widget). */
+  async getDailyNote(dateISO: string): Promise<DailyNote | null> {
+    return dailyNoteLocalGet(dateISO);
+  },
+
+  async saveDailyNote(dateISO: string, content: string, author?: string): Promise<void> {
+    dailyNoteLocalSet(dateISO, content, author ?? demoActorName());
   },
 
   /** Busy times for a set of doctors in a window — feeds the availability badges
@@ -1462,6 +1487,22 @@ const supabaseRepo: typeof demoRepo = {
   },
   async slotTaken(doctorId, scheduledAt) {
     return listOf<{ id: string }>(await sbc().from("appointments").select("id").eq("doctor_id", doctorId).eq("scheduled_at", scheduledAt).neq("status", "cancelled")).length > 0;
+  },
+  async getDailyNote(dateISO) {
+    try {
+      const { data, error } = await sbc().from("clinic_notes").select("note_date, content, updated_by, updated_at").eq("note_date", dateISO).maybeSingle();
+      if (error) return dailyNoteLocalGet(dateISO); // pre-0080 backend → device-local
+      return (data as DailyNote | null) ?? null;
+    } catch { return dailyNoteLocalGet(dateISO); }
+  },
+  async saveDailyNote(dateISO, content, author) {
+    try {
+      const { error } = await sbc().from("clinic_notes").upsert(
+        { note_date: dateISO, content, updated_by: author ?? null, updated_at: new Date().toISOString() },
+        { onConflict: "clinic_id,note_date" },
+      );
+      if (error) dailyNoteLocalSet(dateISO, content, author);
+    } catch { dailyNoteLocalSet(dateISO, content, author); }
   },
   async listDoctorBusySlots(doctorIds, fromISO, toISO) {
     const out: Record<string, string[]> = {};

@@ -330,6 +330,14 @@ export type EventCategory =
   | "boarding"
   | "reminder";
 
+/** One shared sticky-note pad per clinic per calendar day (dashboard widget). */
+export interface DailyNote {
+  note_date: string; // YYYY-MM-DD
+  content: string;
+  updated_by?: string | null;
+  updated_at: string;
+}
+
 /** A user-created scheduled reminder that surfaces in the unified events feed. */
 export interface Reminder {
   id: string;

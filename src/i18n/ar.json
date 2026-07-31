@@ -2269,5 +2269,17 @@
     "cage": "تغيير القفص: {{from}} ← {{to}}",
     "showAll": "عرض الكل ({{n}})",
     "showLess": "عرض أقل"
+  },
+  "stickyNotes": {
+    "today": "اليوم",
+    "yesterday": "أمس",
+    "tomorrow": "غداً",
+    "backToday": "ارجع لليوم",
+    "prevDay": "اليوم السابق",
+    "nextDay": "اليوم التالي",
+    "placeholder": "اكتب ملاحظات اليوم هنا… تشوفها كل عيادتك ✏️",
+    "lastBy": "آخر تعديل: {{name}}",
+    "saving": "يحفظ…",
+    "saved": "انحفظت"
   }
 }

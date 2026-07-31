@@ -29,6 +29,7 @@ import { formatTime, dateLocale, formatNum } from "@/lib/utils";
 import { playTap } from "@/lib/sounds";
 import { UpcomingEvents } from "@/components/UpcomingEvents";
 import { BirthdaysWidget } from "@/components/BirthdaysWidget";
+import { StickyNotes } from "@/components/StickyNotes";
 import { RemindersWidget } from "@/components/RemindersWidget";
 import { buildUpcomingEvents } from "@/lib/events";
 import { getCached, setCached, isFresh } from "@/lib/swrCache";
@@ -406,6 +407,9 @@ export function Dashboard() {
               </div>
             )}
           </Card>
+
+          {/* دفتر الملاحظات اللاصق اليومي — مشترك بين كل الكادر، ورقة لكل يوم */}
+          <StickyNotes />
 
           <UpcomingEvents
             events={events}
