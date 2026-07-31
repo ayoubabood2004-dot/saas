@@ -2322,6 +2322,12 @@
       "done": "Visit completed",
       "no_show": "No-show",
       "cancelled": "Cancelled"
-    }
+    },
+    "kToday": "Today's bookings",
+    "kWaiting": "Waiting",
+    "kAttended": "Attended",
+    "kNoShow": "No-shows",
+    "attendRate": "{{p}}% attendance",
+    "now": "Now"
   }
 }
