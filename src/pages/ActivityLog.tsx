@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import type { AuditEntry, Pet } from "@/types";
 import { repo } from "@/lib/repo";
+import { getCached, setCached } from "@/lib/swrCache";
 import { listStaff } from "@/lib/staff";
 import { useAuth } from "@/contexts/AuthContext";
 import { usePermissions } from "@/hooks/usePermissions";
@@ -70,6 +71,16 @@ export function ActivityLog() {
 
   useEffect(() => {
     let alive = true;
+    const key = `actlog_${clinicId ?? ""}`;
+    // فوري من الكاش + تحديث خفي
+    const c = getCached<{ rows: AuditEntry[]; pets: Pet[]; byUser: [string, string][]; byId: [string, string][] }>(key);
+    if (c) {
+      setRows(c.rows);
+      setPets(c.pets);
+      setStaffByUser(new Map(c.byUser));
+      setStaffById(new Map(c.byId));
+      setLoading(false);
+    }
     (async () => {
       // Retention first (fire-and-forget), then read the fresh window.
       void repo.purgeAuditLog().catch(() => {});
@@ -80,17 +91,21 @@ export function ActivityLog() {
           repo.listAllPets(clinicId).catch(() => [] as Pet[]),
           listStaff().catch(() => []),
         ]);
-        if (!alive) return;
         // Sign-ins join the same timeline as pseudo-entries (they live in their own table).
         const loginRows: AuditEntry[] = logins.map((l) => ({
           id: `login-${l.id}`, clinic_id: null, actor: null, action: "LOGIN", entity: "login", entity_id: null,
           details: { __actor: (l.name ?? "").trim() || (l.email ?? "").trim() || null },
           created_at: l.created_at,
         }));
-        setRows([...audit, ...loginRows].sort((a, b) => b.created_at.localeCompare(a.created_at)));
+        const merged = [...audit, ...loginRows].sort((a, b) => b.created_at.localeCompare(a.created_at));
+        const byUser: [string, string][] = staff.filter((s) => s.userId).map((s) => [s.userId as string, s.name]);
+        const byId: [string, string][] = staff.map((s) => [s.id, s.name]);
+        setCached(key, { rows: merged, pets: allPets, byUser, byId });
+        if (!alive) return;
+        setRows(merged);
         setPets(allPets);
-        setStaffByUser(new Map(staff.filter((s) => s.userId).map((s) => [s.userId as string, s.name])));
-        setStaffById(new Map(staff.map((s) => [s.id, s.name])));
+        setStaffByUser(new Map(byUser));
+        setStaffById(new Map(byId));
       } finally { if (alive) setLoading(false); }
     })();
     return () => { alive = false; };

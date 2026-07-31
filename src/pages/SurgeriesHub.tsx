@@ -13,6 +13,7 @@ import { useTranslation } from "react-i18next";
 import { Slice, Search, TrendingUp, Award, Clock, CalendarCheck2, UserRound, ChevronLeft, Loader2, Activity } from "lucide-react";
 import type { Pet, Surgery } from "@/types";
 import { repo } from "@/lib/repo";
+import { getCached, setCached } from "@/lib/swrCache";
 import { useAuth } from "@/contexts/AuthContext";
 import { localISO, formatDate, formatNum, cn } from "@/lib/utils";
 import { PetAvatar } from "@/components/PetAvatar";
@@ -43,15 +44,20 @@ export function SurgeriesHub() {
 
   useEffect(() => {
     let alive = true;
+    const key = `surghub_${user?.clinic_id ?? user?.id ?? ""}`;
+    // فوري من الكاش + تحديث خفي
+    const c = getCached<{ srg: Surgery[]; pets: Record<string, Pet> }>(key);
+    if (c) { setRows(c.srg); setPets(c.pets); }
     void (async () => {
       const [srg, petList] = await Promise.all([
         repo.listAllSurgeries().catch(() => [] as Surgery[]),
         repo.listAllPets(user?.clinic_id ?? user?.id).catch(() => [] as Pet[]),
       ]);
-      if (!alive) return;
-      setRows(srg);
       const map: Record<string, Pet> = {};
       for (const p of petList) map[p.id] = p;
+      setCached(key, { srg, pets: map });
+      if (!alive) return;
+      setRows(srg);
       setPets(map);
     })();
     return () => { alive = false; };

@@ -15,6 +15,7 @@ import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, TreatmentEnt
 import { VisitsPanel } from "@/components/VisitsPanel";
 import { SpeciesPicker, SexPicker, AgeInput, BreedPicker, ColorPicker } from "@/components/PetFields";
 import { repo } from "@/lib/repo";
+import { getCached, setCached } from "@/lib/swrCache";
 import { SurgerySection } from "@/components/Surgeries";
 import { persistMedicalEntries } from "@/lib/medSync";
 import { syncDoseCycleForPet } from "@/lib/doseCycle";
@@ -297,6 +298,7 @@ export function PetPassport() {
       repo.listPetNotes(petId).catch(() => [] as PetNote[]),
       repo.listClinicVisitsForPet(petId).catch(() => [] as ClinicVisit[]),
     ]);
+    setCached(`pet_${petId}`, { p: p ?? null, w, v, h, m, tx, adm, apt, rem: rem.filter((r) => r.pet_id === petId), nt, cv });
     setPet(p ?? null);
     setWeights(w);
     setVaccines(v);
@@ -310,6 +312,17 @@ export function PetPassport() {
     setClinicVisits(cv);
   };
 
+  /** رسمة فورية لسجل الحيوان من آخر نسخة — فتح الملف ما ينتظر الشبكة أبداً. */
+  const seedFromCache = (): boolean => {
+    if (!petId) return false;
+    const c = getCached<{ p: Pet | null; w: WeightLog[]; v: Vaccination[]; h: MedicalVisit[]; m: MediaItem[]; tx: TreatmentEntry[]; adm: Admission[]; apt: Appointment[]; rem: Reminder[]; nt: PetNote[]; cv: ClinicVisit[] }>(`pet_${petId}`);
+    if (!c || !c.p) return false;
+    setPet(c.p); setWeights(c.w); setVaccines(c.v); setVisits(c.h); setMedia(c.m);
+    setTreatments(c.tx); setAdmissions(c.adm); setAppointments(c.apt); setReminders(c.rem);
+    setNotes(c.nt); setClinicVisits(c.cv);
+    return true;
+  };
+
   // Persist a batch from the unified Medical Entry: vaccinations → vaccination
   // record, medications → treatment sheet. Rejects so the component keeps the
   // draft if anything fails. Then refreshes the record.
@@ -321,6 +334,7 @@ export function PetPassport() {
   };
 
   useEffect(() => {
+    seedFromCache(); // فوري إن سبق فتح الملف — والتحديث الحقيقي يلحقه بالخفاء
     void reload();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [petId]);

@@ -20,6 +20,7 @@ import { prepareUpload } from "@/lib/image";
 import { createInvite, listInvites, revokeInvite, joinLink, type Invite } from "@/lib/invites";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
+import { getCached, setCached } from "@/lib/swrCache";
 import { listPresence, isOnline, presenceBackendReady, type PresenceRow } from "@/lib/presence";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
 import presenceSQL from "../../supabase/migrations/0072_staff_integrity.sql?raw";
@@ -117,8 +118,13 @@ export function StaffManagement() {
     }
   };
 
-  const reload = () => listStaff().then(setStaff).catch(() => toast.error("تعذّر تحميل الكادر"));
-  useEffect(() => { void listStaff().then(setStaff).catch(() => toast.error("تعذّر تحميل الكادر")).finally(() => setLoading(false)); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const reload = () => listStaff().then((l) => { setCached("staff_roster", l); setStaff(l); }).catch(() => toast.error("تعذّر تحميل الكادر"));
+  useEffect(() => {
+    // فوري من الكاش + تحديث خفي
+    const c = getCached<StaffMember[]>("staff_roster");
+    if (c) { setStaff(c); setLoading(false); }
+    void listStaff().then((l) => { setCached("staff_roster", l); setStaff(l); }).catch(() => { if (!c) toast.error("تعذّر تحميل الكادر"); }).finally(() => setLoading(false));
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // RBAC gate — only managers (clinic admins) reach this module.
   if (!can("manageStaff")) {

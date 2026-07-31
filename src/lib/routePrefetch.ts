@@ -24,6 +24,14 @@ const importers: Record<string, Importer> = {
   "/book": () => import("@/pages/BookingWizard"),
   "/new-case": () => import("@/pages/NewCase"),
   "/surgeries": () => import("@/pages/SurgeriesHub"),
+  "/bookings": () => import("@/pages/BookingsHub"),
+  "/reminders": () => import("@/pages/RemindersHub"),
+  "/charts": () => import("@/pages/Charts"),
+  "/activity": () => import("@/pages/ActivityLog"),
+  // Not nav links, but the hottest click-through targets — warm them too so
+  // opening a pet file or a visit sheet never waits on a JS chunk.
+  "/pet": () => import("@/pages/PetPassport"),
+  "/visit": () => import("@/pages/VisitPage"),
 };
 
 const warmed = new Set<string>();

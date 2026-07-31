@@ -8,6 +8,7 @@ import type { Pet, Species, Vaccination, MedicalVisit, WhatsAppMessage } from "@
 import type { CampaignPrefill, ReminderType } from "@/lib/reminders";
 import { computeReminderRows } from "@/lib/reminders";
 import { repo } from "@/lib/repo";
+import { getCached, setCached } from "@/lib/swrCache";
 import { useAuth } from "@/contexts/AuthContext";
 import { PetAvatar } from "@/components/PetAvatar";
 import { useToast, Skeleton } from "@/components/ui";
@@ -60,11 +61,13 @@ export function WhatsAppCampaigns() {
 
   useEffect(() => {
     let alive = true;
+    const key = `wacamp_${user?.clinic_id ?? user?.id ?? ""}`;
+    // فوري من الكاش + تحديث خفي
+    const c = getCached<{ p: Pet[]; vax: Vaccination[]; vis: MedicalVisit[]; log: WhatsAppMessage[] }>(key);
+    if (c) { setPets(c.p); setVaccinations(c.vax); setVisits(c.vis); setWaLog(c.log); setLoading(false); }
     (async () => {
       try {
         const p = await repo.listAllPets(user?.clinic_id ?? user?.id);
-        if (!alive) return;
-        setPets(p);
         const ids = p.map((x) => x.id);
         // Vaccinations + visits power the smart segments; the log powers "last contacted".
         const [vax, vis, log] = await Promise.all([
@@ -72,8 +75,9 @@ export function WhatsAppCampaigns() {
           repo.listAllVisits(ids),
           repo.listWhatsAppLog(),
         ]);
+        setCached(key, { p, vax, vis, log });
         if (!alive) return;
-        setVaccinations(vax); setVisits(vis); setWaLog(log);
+        setPets(p); setVaccinations(vax); setVisits(vis); setWaLog(log);
       } catch { /* empty state covers it */ }
       finally { if (alive) setLoading(false); }
     })();

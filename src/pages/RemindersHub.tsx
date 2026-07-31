@@ -6,6 +6,7 @@ import {
   BellRing, Syringe, Bug, Slice, CalendarDays, Cake, AlarmClock, Search,
   MessageCircle, Plus, AlertTriangle, CheckCircle2, Sun, CalendarClock,
 } from "lucide-react";
+import { getCached, setCached } from "@/lib/swrCache";
 import type { Pet, Vaccination, Surgery, Appointment, Reminder, EventCategory } from "@/types";
 import { repo } from "@/lib/repo";
 import { useAuth } from "@/contexts/AuthContext";
@@ -134,6 +135,7 @@ export function RemindersHub() {
     toast.success(t("rem.resendReady", "أُلغيت العلامة — تقدر ترسل التذكير من جديد"));
   };
 
+  const remKey = `remhub_${user?.clinic_id ?? user?.id ?? ""}`;
   const load = async () => {
     try {
       const p = await repo.listAllPets(user?.clinic_id ?? user?.id);
@@ -146,11 +148,18 @@ export function RemindersHub() {
         repo.listAppointmentsInRange(from, to).catch(() => [] as Appointment[]),
         repo.listReminders().catch(() => [] as Reminder[]),
       ]);
+      setCached(remKey, { p, vax, srg, appts, rems });
       setPets(p); setVaccinations(vax); setSurgeries(srg); setAppointments(appts); setManual(rems);
     } catch { /* empty state covers it */ }
     finally { setLoading(false); }
   };
-  useEffect(() => { void load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [user?.clinic_id, user?.id]);
+  useEffect(() => {
+    // فوري من الكاش + تحديث خفي
+    const c = getCached<{ p: Pet[]; vax: Vaccination[]; srg: Surgery[]; appts: Appointment[]; rems: Reminder[] }>(remKey);
+    if (c) { setPets(c.p); setVaccinations(c.vax); setSurgeries(c.srg); setAppointments(c.appts); setManual(c.rems); setLoading(false); }
+    void load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.clinic_id, user?.id]);
 
   const petById = useMemo(() => new Map(pets.map((p) => [p.id, p])), [pets]);
 

@@ -29,7 +29,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { setLang, type Lang } from "@/i18n";
 import { useAuth } from "@/contexts/AuthContext";
 import { isSoundEnabled, setSoundEnabled, playTap } from "@/lib/sounds";
-import { prefetchHandlers } from "@/lib/routePrefetch";
+import { prefetchHandlers, prefetchAllIdle } from "@/lib/routePrefetch";
 import { Tooltip, ThemeToggle } from "@/components/ui";
 import { QuickZoom } from "@/components/QuickZoom";
 import { OverrideCorner } from "@/components/ManagerOverride";
@@ -60,6 +60,10 @@ export function TopBar({ mobileOnly = false, minimal = false }: { mobileOnly?: b
 
   useEffect(() => setMenuOpen(false), [location.pathname]);
 
+  // Warm EVERY page chunk during idle — on mobile there is no sidebar (whose
+  // hover-prefetch covers desktop), so this is what makes every tap instant.
+  useEffect(() => { prefetchAllIdle(); }, []);
+
   // Eagerly hydrate the branch store on every layout (the sidebar is desktop-only),
   // so the device's saved branch is restored before any write stamps a branch —
   // a mobile reload followed by an immediate "new case" still lands correctly.
@@ -85,6 +89,7 @@ export function TopBar({ mobileOnly = false, minimal = false }: { mobileOnly?: b
   const navItems = minimal ? [] : staff
     ? [
         { to: "/reception", icon: CalendarDays, label: t("reception.title") },
+        { to: "/bookings", icon: CalendarDays, label: t("bookings.title", "الحجوزات") },
         { to: "/charts", icon: LayoutGrid, label: t("nav.charts", "الطبلات") },
         { to: "/surgeries", icon: Slice, label: t("nav.surgeries", "العمليات") },
         { to: "/records", icon: ClipboardList, label: t("records.title") },

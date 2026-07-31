@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import type { Admission, ClinicVisit, Pet, TreatmentEntry , Surgery } from "@/types";
 import { repo } from "@/lib/repo";
+import { getCached, setCached } from "@/lib/swrCache";
 import { opsStore } from "@/lib/opsStore";
 import { useAuth } from "@/contexts/AuthContext";
 import { useBranchState, matchesBranch } from "@/lib/branchStore";
@@ -108,7 +109,9 @@ export function Charts() {
   // Open visits (one lightweight query).
   useEffect(() => {
     let cancel = false;
-    repo.listOpenClinicVisits(clinicId).then((vs) => { if (!cancel) setVisits(vs); }).catch(() => {});
+    const c = getCached<ClinicVisit[]>(`openvisits_${clinicId ?? ""}`);
+    if (c) setVisits(c); // فوري من الكاش — التحديث يلحقه بالخفاء
+    repo.listOpenClinicVisits(clinicId).then((vs) => { setCached(`openvisits_${clinicId ?? ""}`, vs); if (!cancel) setVisits(vs); }).catch(() => {});
     return () => { cancel = true; };
   }, [clinicId]);
 

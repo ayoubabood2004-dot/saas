@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { motion } from "framer-motion";
+import { getCached, setCached } from "@/lib/swrCache";
 import {
   Barcode, Package, Trash2, Search, Building2, Plus, ChevronLeft, ArrowRight, ArrowLeft,
   TrendingUp, AlertTriangle, CalendarClock, Pencil, PackagePlus, Boxes, Layers, Wallet, ShoppingBag, FolderTree,
@@ -111,6 +112,7 @@ export function Inventory() {
   const [fixBusy, setFixBusy] = useState(false);
 
   const mounted = useRef(true);
+  const invKey = `inv_${clinicId ?? "self"}`;
   const load = async () => {
     try {
       const [p, c, s] = await Promise.all([
@@ -118,6 +120,7 @@ export function Inventory() {
         withTimeout(repo.listCompanies(clinicId), 15000).catch(() => [] as Company[]),
         withTimeout(repo.listCompanySections(undefined, clinicId), 15000).catch(() => [] as CompanySection[]),
       ]);
+      setCached(invKey, { p, c, s });
       if (!mounted.current) return;
       setProducts(p);
       setCompanies(c);
@@ -130,6 +133,14 @@ export function Inventory() {
   };
   useEffect(() => {
     mounted.current = true;
+    // رسمة فورية من آخر نسخة — التحديث يلحقها بالخفاء (بلا سكيلتون)
+    const cached = getCached<{ p: Product[]; c: Company[]; s: CompanySection[] }>(invKey);
+    if (cached) {
+      setProducts(cached.p);
+      setCompanies(cached.c);
+      setSections(cached.s);
+      setLoading(false);
+    }
     void load();
     void repo.supportsBulkGroup().then((ok) => { if (mounted.current) setGroupsOk(ok); }).catch(() => {});
     return () => { mounted.current = false; };
