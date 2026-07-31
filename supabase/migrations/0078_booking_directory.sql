@@ -16,15 +16,16 @@ set search_path = public
 stable
 as $$
 begin
-  if to_regclass('public.clinic_members') is not null then
-    -- workspace owners only — an invited staff member's personal profile is not a clinic
+  if to_regclass('public.memberships') is not null then
+    -- workspace owners only — an account that JOINED another clinic as staff
+    -- (memberships row pointing at someone else's clinic) is not itself a clinic
     return query
     select p.id, p.full_name, p.city, p.phone
     from profiles p
     where ('clinic' = any(coalesce(p.roles, '{}'::text[])) or p.role = 'admin')
       and not exists (
-        select 1 from clinic_members cm
-        where cm.user_id = p.id and cm.clinic_id <> p.id and cm.status = 'active'
+        select 1 from memberships m
+        where m.user_id = p.id and m.clinic_id <> p.id and m.status = 'active'
       )
     order by p.full_name;
   else
