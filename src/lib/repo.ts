@@ -5,7 +5,7 @@ import { loadDB, saveDB } from "./demoStore";
 import { supabase } from "./supabase";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, AppointmentStatus, ClinicInfo, PublicStaff, DailyNote, TreatmentEntry, Admission, Branch, Reminder, Product, Company, CompanySection, Purchase, PurchaseItem, PurchasePayment, PurchaseDraftLine, PurchaseMeta, Courier, DeliveryOrder, PetMovement, DemoDB, Invoice, InvoiceItem, CheckoutItem, SaleMeta, Customer, DiscountType, PaymentMethod, PaymentSplit, WhatsAppMessage, AuditEntry, LoginEvent, PetNote, Expense, ClinicVisit , Surgery } from "@/types";
-import { uid, uuid, ageMonths } from "./utils";
+import { uid, uuid, ageMonths, localISO } from "./utils";
 import { phoneKey } from "./phone";
 import { loadOwners } from "./owners";
 import { loadClinics, getActiveClinicId } from "./clinics";
@@ -513,11 +513,12 @@ const demoRepo = {
   },
 
   /** EVERY booking of a calendar day — cancelled and no-show included — for the
-   *  الحجوزات hub (the plain day list hides cancelled for the calendar views). */
+   *  الحجوزات hub. Day matching uses the LOCAL calendar (Iraq evenings must not
+   *  leak into tomorrow via UTC). */
   async listBookingsForDay(dayISO: string): Promise<Appointment[]> {
     const day = dayISO.slice(0, 10);
     return loadDB()
-      .appointments.filter((a) => a.scheduled_at.slice(0, 10) === day)
+      .appointments.filter((a) => localISO(new Date(a.scheduled_at)) === day)
       .sort((a, b) => a.scheduled_at.localeCompare(b.scheduled_at));
   },
 
@@ -1507,10 +1508,17 @@ const supabaseRepo: typeof demoRepo = {
     return listOf<{ id: string }>(await sbc().from("appointments").select("id").eq("doctor_id", doctorId).eq("scheduled_at", scheduledAt).neq("status", "cancelled")).length > 0;
   },
   async listBookingsForDay(dayISO) {
+    // Fetch a ±1-day window then filter by the LOCAL calendar day — timestamps
+    // are stored in UTC and Iraq runs +3, so a plain UTC window drops evenings.
     const day = dayISO.slice(0, 10);
-    return listOf<Appointment>(
-      await sbc().from("appointments").select("*").gte("scheduled_at", `${day}T00:00:00`).lte("scheduled_at", `${day}T23:59:59.999`).order("scheduled_at", { ascending: true }),
+    const from = new Date(`${day}T00:00:00`);
+    from.setDate(from.getDate() - 1);
+    const to = new Date(`${day}T00:00:00`);
+    to.setDate(to.getDate() + 2);
+    const rows = listOf<Appointment>(
+      await sbc().from("appointments").select("*").gte("scheduled_at", from.toISOString()).lt("scheduled_at", to.toISOString()).order("scheduled_at", { ascending: true }),
     );
+    return rows.filter((a) => localISO(new Date(a.scheduled_at)) === day);
   },
   async listBookingRequests() {
     // Clinic-scoped by RLS (appt_clinic_all): only this clinic's requests arrive.

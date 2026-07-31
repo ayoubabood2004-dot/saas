@@ -2328,6 +2328,12 @@
     "kAttended": "Attended",
     "kNoShow": "No-shows",
     "attendRate": "{{p}}% attendance",
-    "now": "Now"
+    "now": "Now",
+    "viewDay": "Day",
+    "viewMonth": "Month",
+    "kMonth": "This month",
+    "thisMonth": "This month",
+    "cellCount": "bookings",
+    "monthHint": "Click any day to open its full schedule"
   }
 }

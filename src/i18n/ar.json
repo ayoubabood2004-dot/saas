@@ -2325,6 +2325,12 @@
     "kAttended": "حضروا",
     "kNoShow": "ما حضروا",
     "attendRate": "نسبة الحضور {{p}}%",
-    "now": "الآن"
+    "now": "الآن",
+    "viewDay": "يومي",
+    "viewMonth": "شهري",
+    "kMonth": "حجوزات الشهر",
+    "thisMonth": "هذا الشهر",
+    "cellCount": "حجز",
+    "monthHint": "اضغط أي يوم لفتح جدوله الكامل"
   }
 }

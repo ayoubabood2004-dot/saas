@@ -4,7 +4,7 @@ import { ChevronLeft, ChevronRight, Paperclip, Check } from "lucide-react";
 import type { DailyNote } from "@/types";
 import { repo } from "@/lib/repo";
 import { useAuth } from "@/contexts/AuthContext";
-import { cn, dateLocale } from "@/lib/utils";
+import { cn, dateLocale, localISO } from "@/lib/utils";
 import { playTap } from "@/lib/sounds";
 
 /**
@@ -26,7 +26,7 @@ export function StickyNotes() {
   const dateISOOf = (off: number) => {
     const d = new Date();
     d.setDate(d.getDate() + off);
-    return d.toISOString().slice(0, 10);
+    return localISO(d); // اليوم بالتقويم المحلي — مو غرينتش
   };
   const dateISO = dateISOOf(offset);
 

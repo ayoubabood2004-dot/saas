@@ -8,7 +8,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { repo } from "@/lib/repo";
 import { PetAvatar } from "@/components/PetAvatar";
 import { SERVICES, SLOT_MINUTES, CLINIC_OPEN_HOUR, CLINIC_CLOSE_HOUR } from "@/lib/clinic";
-import { generateSlots, formatTime, dateLocale } from "@/lib/utils";
+import { generateSlots, formatTime, dateLocale, localISO } from "@/lib/utils";
 import { playTap, playWarning } from "@/lib/sounds";
 import { Button, Card, SuccessDialog, useToast } from "@/components/ui";
 import { cn } from "@/lib/utils";
@@ -92,7 +92,7 @@ export function BookingWizard() {
   const dayISOFor = (off: number) => {
     const d = new Date();
     d.setDate(d.getDate() + off);
-    return d.toISOString().slice(0, 10);
+    return localISO(d); // local calendar — evenings must not flip to tomorrow via UTC
   };
   const slotsForDay = (off: number) => generateSlots(dayISOFor(off), CLINIC_OPEN_HOUR, CLINIC_CLOSE_HOUR, SLOT_MINUTES);
   const busySetOf = (docId: string) => new Set(busy[docId] ?? []);
@@ -134,7 +134,7 @@ export function BookingWizard() {
     if (!s) return;
     playTap();
     setDoctor(d);
-    const off = Math.max(1, Math.round((new Date(s.slice(0, 10)).getTime() - new Date(dayISOFor(0)).getTime()) / 864e5));
+    const off = Math.max(1, Math.round((new Date(localISO(new Date(s))).getTime() - new Date(dayISOFor(0)).getTime()) / 864e5));
     setDayOffset(off);
     setSlot(s);
   };
@@ -144,14 +144,10 @@ export function BookingWizard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const dayISO = (() => {
-    const d = new Date();
-    d.setDate(d.getDate() + dayOffset);
-    return d.toISOString().slice(0, 10);
-  })();
+  const dayISO = dayISOFor(dayOffset);
 
   // Slot grid derives straight from the availability sweep — no per-slot queries.
-  const takenSlots = new Set<string>(doctor ? (busy[doctor.id] ?? []).filter((s) => s.slice(0, 10) === dayISO) : []);
+  const takenSlots = new Set<string>(doctor ? (busy[doctor.id] ?? []).filter((s) => localISO(new Date(s)) === dayISO) : []);
 
   const pet = pets.find((p) => p.id === petId);
 
