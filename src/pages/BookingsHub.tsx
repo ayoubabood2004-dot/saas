@@ -56,22 +56,42 @@ const dayISOFromOffset = (off: number) => {
   return localISO(d);
 };
 
+/* ذاكرة الصفحة: وين كان واقف المستخدم (العرض، اليوم، الشهر، الفلتر) تبقى
+ * محفوظة بالجلسة — يروح لأي صفحة ويرجع يلكي نفسه بنفس المكان بالضبط. */
+const UI_KEY = "vp_bookings_ui";
+type SavedUI = { view?: ViewKey; dayISO?: string; monthOffset?: number; filter?: FilterKey };
+const loadUI = (): SavedUI => {
+  try { return JSON.parse(sessionStorage.getItem(UI_KEY) ?? "{}") as SavedUI; } catch { return {}; }
+};
+const FILTER_KEYS: FilterKey[] = ["all", "requested", "confirmed", "attended", "no_show", "cancelled"];
+
 export function BookingsHub() {
   const { t, i18n } = useTranslation();
   const toast = useToast();
   const navigate = useNavigate();
-  const [view, setView] = useState<ViewKey>("day");
-  const [offset, setOffset] = useState(0);
-  const [monthOffset, setMonthOffset] = useState(0);
+  const saved = loadUI();
+  const [view, setView] = useState<ViewKey>(saved.view === "month" ? "month" : "day");
+  // نخزن التاريخ نفسه (مو الإزاحة) — حتى لو مر يوم كامل، يرجع لنفس التاريخ الصحيح
+  const [offset, setOffset] = useState(() => {
+    if (!saved.dayISO) return 0;
+    const diff = Math.round((new Date(saved.dayISO + "T12:00:00").getTime() - new Date(localISO(new Date()) + "T12:00:00").getTime()) / 864e5);
+    return Number.isFinite(diff) ? diff : 0;
+  });
+  const [monthOffset, setMonthOffset] = useState(typeof saved.monthOffset === "number" ? saved.monthOffset : 0);
   const [appts, setAppts] = useState<Appointment[]>([]);
   const [monthAppts, setMonthAppts] = useState<Appointment[]>([]);
   const [pets, setPets] = useState<Record<string, Pet>>({});
-  const [filter, setFilter] = useState<FilterKey>("all");
+  const [filter, setFilter] = useState<FilterKey>(saved.filter && FILTER_KEYS.includes(saved.filter) ? saved.filter : "all");
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
 
   const dayISO = dayISOFromOffset(offset);
   const dayKey = `bk_day_${dayISO}`;
+
+  // احفظ وضع الصفحة عند أي تغيير — هاي ذاكرتها
+  useEffect(() => {
+    try { sessionStorage.setItem(UI_KEY, JSON.stringify({ view, dayISO, monthOffset, filter } satisfies SavedUI)); } catch { /* ignore */ }
+  }, [view, dayISO, monthOffset, filter]);
 
   /* --------------------------- day data (SWR) ----------------------------
    * سرعة الضوء: أول ما تنفتح الصفحة (أو يتبدل اليوم) نرسم فوراً آخر نسخة
