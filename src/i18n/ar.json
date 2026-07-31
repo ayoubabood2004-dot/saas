@@ -39,7 +39,8 @@
     "remove": "إزالة",
     "retry": "إعادة المحاولة",
     "searchPh": "ابحث…",
-    "noMatches": "لا توجد نتائج مطابقة"
+    "noMatches": "لا توجد نتائج مطابقة",
+    "minutes": "دقيقة"
   },
   "errors": {
     "title": "حدث خطأ ما",
@@ -2292,5 +2293,32 @@
     "aPet": "حيوان",
     "waTitle": "إبلاغ الزبون واتساب",
     "waMsg": "مرحباً {{owner}} 🌟 تم تأكيد موعد {{pet}} — {{when}} في {{clinic}}. بانتظاركم!"
+  },
+  "bookings": {
+    "title": "الحجوزات",
+    "subtitle": "كل حجز بموعده — من الطلب إلى الحضور",
+    "fAll": "الكل",
+    "fRequested": "جديدة",
+    "fConfirmed": "مؤكدة",
+    "fAttended": "حضروا",
+    "fNoShow": "ما حضروا",
+    "fCancelled": "ملغية",
+    "empty": "ماكو حجوزات بهذا اليوم/الفلتر.",
+    "arrivedBtn": "وصل",
+    "noShowBtn": "ما حضر",
+    "doneBtn": "اكتملت",
+    "cameAfterAll": "لا، حضر",
+    "markedArrived": "أهلاً به — وصل ✓",
+    "markedNoShow": "انعلم: ما حضر",
+    "markedDone": "اكتملت الزيارة 🎉",
+    "st": {
+      "requested": "جديد — ينتظر التأكيد",
+      "confirmed": "مؤكد",
+      "checked_in": "حضر ✓",
+      "in_room": "بالغرفة",
+      "done": "اكتملت الزيارة",
+      "no_show": "ما حضر",
+      "cancelled": "ملغي"
+    }
   }
 }

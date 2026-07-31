@@ -156,7 +156,7 @@ export function TopBar({ mobileOnly = false, minimal = false }: { mobileOnly?: b
             {staff && (
               <Tooltip label={t("bookReq.title", "طلبات حجز جديدة")}>
                 <button
-                  onClick={() => { playTap(); requestNotifyPermission(); navigate("/reception"); }}
+                  onClick={() => { playTap(); requestNotifyPermission(); navigate("/bookings"); }}
                   className="relative grid h-11 w-11 place-items-center rounded-full text-ink-muted transition hover:bg-surface-2 hover:text-ink"
                 >
                   <Bell size={19} />

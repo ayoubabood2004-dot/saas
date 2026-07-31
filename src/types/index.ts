@@ -182,6 +182,7 @@ export type AppointmentStatus =
   | "checked_in"
   | "in_room"
   | "done"
+  | "no_show" // حجز وما حضر — يميز المتخلفين عن الملغين (migration 0081)
   | "cancelled";
 
 export interface Doctor {

@@ -39,7 +39,8 @@
     "remove": "Remove",
     "retry": "Retry",
     "searchPh": "Search…",
-    "noMatches": "No matches"
+    "noMatches": "No matches",
+    "minutes": "min"
   },
   "errors": {
     "title": "Something went wrong",
@@ -2295,5 +2296,32 @@
     "aPet": "Pet",
     "waTitle": "Notify customer on WhatsApp",
     "waMsg": "Hello {{owner}} 🌟 {{pet}}'s appointment is confirmed — {{when}} at {{clinic}}. See you!"
+  },
+  "bookings": {
+    "title": "Bookings",
+    "subtitle": "Every booking at its exact time — from request to arrival",
+    "fAll": "All",
+    "fRequested": "New",
+    "fConfirmed": "Confirmed",
+    "fAttended": "Attended",
+    "fNoShow": "No-shows",
+    "fCancelled": "Cancelled",
+    "empty": "No bookings for this day/filter.",
+    "arrivedBtn": "Arrived",
+    "noShowBtn": "No-show",
+    "doneBtn": "Completed",
+    "cameAfterAll": "Came after all",
+    "markedArrived": "Welcome — arrived ✓",
+    "markedNoShow": "Marked as no-show",
+    "markedDone": "Visit completed 🎉",
+    "st": {
+      "requested": "New — awaiting confirmation",
+      "confirmed": "Confirmed",
+      "checked_in": "Arrived ✓",
+      "in_room": "In room",
+      "done": "Visit completed",
+      "no_show": "No-show",
+      "cancelled": "Cancelled"
+    }
   }
 }

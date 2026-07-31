@@ -512,6 +512,15 @@ const demoRepo = {
     );
   },
 
+  /** EVERY booking of a calendar day — cancelled and no-show included — for the
+   *  الحجوزات hub (the plain day list hides cancelled for the calendar views). */
+  async listBookingsForDay(dayISO: string): Promise<Appointment[]> {
+    const day = dayISO.slice(0, 10);
+    return loadDB()
+      .appointments.filter((a) => a.scheduled_at.slice(0, 10) === day)
+      .sort((a, b) => a.scheduled_at.localeCompare(b.scheduled_at));
+  },
+
   /** Incoming owner bookings awaiting the clinic's decision (طلبات الحجز).
    *  Anything still "requested" from yesterday onwards — the reception inbox. */
   async listBookingRequests(): Promise<Appointment[]> {
@@ -1496,6 +1505,12 @@ const supabaseRepo: typeof demoRepo = {
   },
   async slotTaken(doctorId, scheduledAt) {
     return listOf<{ id: string }>(await sbc().from("appointments").select("id").eq("doctor_id", doctorId).eq("scheduled_at", scheduledAt).neq("status", "cancelled")).length > 0;
+  },
+  async listBookingsForDay(dayISO) {
+    const day = dayISO.slice(0, 10);
+    return listOf<Appointment>(
+      await sbc().from("appointments").select("*").gte("scheduled_at", `${day}T00:00:00`).lte("scheduled_at", `${day}T23:59:59.999`).order("scheduled_at", { ascending: true }),
+    );
   },
   async listBookingRequests() {
     // Clinic-scoped by RLS (appt_clinic_all): only this clinic's requests arrive.

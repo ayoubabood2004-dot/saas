@@ -4,6 +4,7 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard,
   CalendarDays,
+  CalendarCheck2,
   ClipboardList,
   LayoutGrid,
   ScanLine,
@@ -72,6 +73,7 @@ export function Sidebar() {
   const items = [
     { to: "/", icon: LayoutDashboard, label: t("nav.dashboard", "Dashboard"), exact: true },
     { to: "/reception", icon: CalendarDays, label: t("reception.title") },
+    { to: "/bookings", icon: CalendarCheck2, label: t("bookings.title", "الحجوزات") },
     {
       to: "/charts", icon: LayoutGrid, label: t("nav.charts", "الطبلات"),
       // قائمة منسدلة: الطبلات (خطط العلاج) + العمليات (سجل الجراحة الكامل).
@@ -202,8 +204,8 @@ export function Sidebar() {
                 <Icon size={19} />
                 {item.label}
               </span>
-              {/* عدّاد طلبات الحجز الجديدة على عنصر الاستقبال */}
-              {item.to === "/reception" && bookingReqs > 0 && (
+              {/* عدّاد طلبات الحجز الجديدة — على الاستقبال وقسم الحجوزات */}
+              {(item.to === "/reception" || item.to === "/bookings") && bookingReqs > 0 && (
                 <span className="relative z-10 grid h-5 min-w-5 place-items-center rounded-full bg-danger-500 px-1.5 text-2xs font-bold text-white shadow-soft animate-pulse">
                   {bookingReqs}
                 </span>

@@ -32,6 +32,7 @@ const Inventory = lazy(() => import("@/pages/Inventory").then((m) => ({ default:
 const RetailSales = lazy(() => import("@/pages/RetailSales").then((m) => ({ default: m.RetailSales })));
 const WhatsAppCampaigns = lazy(() => import("@/pages/WhatsAppCampaigns").then((m) => ({ default: m.WhatsAppCampaigns })));
 const RemindersHub = lazy(() => import("@/pages/RemindersHub").then((m) => ({ default: m.RemindersHub })));
+const BookingsHub = lazy(() => import("@/pages/BookingsHub").then((m) => ({ default: m.BookingsHub })));
 const StaffManagement = lazy(() => import("@/pages/StaffManagement").then((m) => ({ default: m.StaffManagement })));
 const AnalyticsHub = lazy(() => import("@/pages/AnalyticsHub").then((m) => ({ default: m.AnalyticsHub })));
 const JoinClinic = lazy(() => import("@/pages/JoinClinic").then((m) => ({ default: m.JoinClinic })));
@@ -161,6 +162,7 @@ function Shell() {
             <Route path="/retail" element={<Protected><ClinicOnly><FeatureGate feature="pos"><RetailSales /></FeatureGate></ClinicOnly></Protected>} />
             <Route path="/campaigns" element={<Protected><ClinicOnly><FeatureGate feature="whatsapp"><WhatsAppCampaigns /></FeatureGate></ClinicOnly></Protected>} />
             <Route path="/reminders" element={<Protected><ClinicOnly><FeatureGate feature="whatsapp"><RemindersHub /></FeatureGate></ClinicOnly></Protected>} />
+            <Route path="/bookings" element={<Protected><ClinicOnly><BookingsHub /></ClinicOnly></Protected>} />
             <Route path="/staff" element={<Protected><ClinicOnly><StaffManagement /></ClinicOnly></Protected>} />
             <Route path="/reports" element={<Protected><ClinicOnly><FeatureGate feature="reports"><AnalyticsHub /></FeatureGate></ClinicOnly></Protected>} />
             <Route path="/activity" element={<Protected><ClinicOnly><ActivityLog /></ClinicOnly></Protected>} />
