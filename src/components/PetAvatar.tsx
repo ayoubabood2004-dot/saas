@@ -18,12 +18,14 @@ export function PetAvatar({
   pet,
   size = 56,
   className,
-  photoFallback = false,
+  // الافتراضي بكل السستم: صورة نوع حقيقية منسّقة لما ماكو صورة مرفوعة —
+  // نفس مظهر سجل الحيوان بكل مكان (الأيقونة تبقى احتياط أخير فقط).
+  photoFallback = true,
 }: {
   pet: Pick<Pet, "species" | "photo_url" | "name">;
   size?: number;
   className?: string;
-  /** When no uploaded photo exists, show a curated species photo instead of the icon. */
+  /** Pass false to force the flat icon tile instead of the curated species photo. */
   photoFallback?: boolean;
 }) {
   const Icon = ICONS[pet.species] ?? PawPrint;
