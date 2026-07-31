@@ -246,18 +246,22 @@ export default function VisitPage() {
       await repo.addPetNote({ pet_id: visit.pet_id, note_text: body, author_id: user?.id ?? null, author_name: user?.full_name ?? null, visit_id: visit.id });
       const { record } = parseClinical(body);
       if (record?.treatment?.length && !hasFlowsheet) {
+        // كل جرعات الخطة تنبني محلياً ثم تُرسل دفعة وحدة — رحلة سيرفر واحدة
+        // بدل رحلة لكل جرعة (خطة ٣ أدوية × ١٠ أيام كانت ٣٠ رحلة متسلسلة).
         const start = visit.opened_at;
+        const rows: Parameters<typeof repo.addTreatments>[0] = [];
         for (const m of record.treatment) {
           const nDays = Math.max(1, Math.min(60, m.days || 1));
           for (let i = 0; i < nDays; i++) {
-            await repo.addTreatment({
+            rows.push({
               pet_id: visit.pet_id, visit_id: visit.id, day: addDaysISO(start, i),
               medication: m.name, amount: m.dose || "", time: "", observations: m.freq, doctor: user?.full_name,
             });
           }
         }
+        await repo.addTreatments(rows);
       } else if (record?.treatment?.length && hasFlowsheet) {
-        for (const t of treatments) await repo.setTreatmentGiven(t.id, !!t.administered_at, t.administered_by, t.administered_at ?? undefined).catch(() => {});
+        await Promise.all(treatments.map((t) => repo.setTreatmentGiven(t.id, !!t.administered_at, t.administered_by, t.administered_at ?? undefined).catch(() => {})));
       }
       if (visit) await syncDoseCycleForPet(visit.pet_id);
       setPlanOpen(false); playSuccess(); await reload();
@@ -285,7 +289,7 @@ export default function VisitPage() {
     if (!list.length) return;
     playSuccess();
     const at = new Date().toISOString();
-    for (const t of list) await repo.setTreatmentGiven(t.id, true, user?.full_name ?? undefined, at);
+    await Promise.all(list.map((t) => repo.setTreatmentGiven(t.id, true, user?.full_name ?? undefined, at))); // بالتوازي — مو طابور
     await syncDoseCycleForPet(list[0].pet_id);
     await reload();
   };
@@ -294,13 +298,15 @@ export default function VisitPage() {
     if (!visit || !lastDay || extraDays < 1) return;
     const lastMeds = treatments.filter((t) => t.day === lastDay);
     if (!lastMeds.length) { setExtendOpen(false); return; }
+    const rows: Parameters<typeof repo.addTreatments>[0] = [];
     for (let i = 1; i <= extraDays; i++) {
       const base = new Date(`${lastDay}T00:00:00`); base.setDate(base.getDate() + i);
       const day = localISO(base);
       for (const m of lastMeds) {
-        await repo.addTreatment({ pet_id: visit.pet_id, visit_id: visit.id, day, medication: m.medication, amount: m.amount, time: "", observations: m.observations, doctor: user?.full_name });
+        rows.push({ pet_id: visit.pet_id, visit_id: visit.id, day, medication: m.medication, amount: m.amount, time: "", observations: m.observations, doctor: user?.full_name });
       }
     }
+    await repo.addTreatments(rows); // دفعة وحدة
     await syncDoseCycleForPet(visit.pet_id);
     playSuccess(); setExtendOpen(false); await reload();
   };

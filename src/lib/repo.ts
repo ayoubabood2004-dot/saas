@@ -615,6 +615,16 @@ const demoRepo = {
     return entry;
   },
 
+  /** Batch insert for whole treatment plans — ONE write instead of a round-trip
+   *  per dose (a 3-drug × 10-day plan used to cost 30 sequential requests). */
+  async addTreatments(inputs: Omit<TreatmentEntry, "id" | "created_at">[]): Promise<void> {
+    if (inputs.length === 0) return;
+    const db = loadDB();
+    const at = new Date().toISOString();
+    for (const input of inputs) db.treatments.push({ ...input, id: uid("tx"), created_at: at });
+    saveDB(db);
+  },
+
   async deleteTreatment(id: string): Promise<void> {
     const db = loadDB();
     db.treatments = db.treatments.filter((t) => t.id !== id);
@@ -1196,6 +1206,7 @@ const DEMO_ACTIVITY_MAP: Record<string, { entity: string; action: "INSERT" | "UP
   addExpense: { entity: "expenses", action: "INSERT" },
   addMedia: { entity: "media_items", action: "INSERT" },
   addTreatment: { entity: "treatment_entries", action: "INSERT" },
+  addTreatments: { entity: "treatment_entries", action: "INSERT" },
   setTreatmentGiven: { entity: "treatment_entries", action: "UPDATE" },
   deleteTreatment: { entity: "treatment_entries", action: "DELETE" },
   addAdmission: { entity: "admissions", action: "INSERT" },
@@ -1599,6 +1610,10 @@ const supabaseRepo: typeof demoRepo = {
   },
   async addTreatment(input) {
     return need<TreatmentEntry>(await sbc().from("treatment_entries").insert(input).select().single());
+  },
+  async addTreatments(inputs) {
+    if (inputs.length === 0) return;
+    ok(await sbc().from("treatment_entries").insert(inputs)); // دفعة وحدة — رحلة سيرفر واحدة
   },
   async deleteTreatment(id) {
     ok(await sbc().from("treatment_entries").delete().eq("id", id));
