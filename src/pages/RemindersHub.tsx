@@ -9,6 +9,7 @@ import {
 import { getCached, setCached } from "@/lib/swrCache";
 import type { Pet, Vaccination, Surgery, Appointment, Reminder, EventCategory } from "@/types";
 import { repo } from "@/lib/repo";
+import { PetAvatar } from "@/components/PetAvatar";
 import { useAuth } from "@/contexts/AuthContext";
 import { Modal } from "@/components/Modal";
 import { Button, useToast, Skeleton } from "@/components/ui";
@@ -260,6 +261,20 @@ export function RemindersHub() {
     total: allRows.length,
   }), [allRows]);
 
+  /** عدّاد لكل نوع — يظهر على چيبات الفلترة فيعرف الدكتور وين الشغل بلمحة. */
+  const kindCounts = useMemo(() => {
+    const m: Partial<Record<Kind, number>> = {};
+    for (const r of allRows) m[r.kind] = (m[r.kind] ?? 0) + 1;
+    return m;
+  }, [allRows]);
+
+  /** إنجاز التواصل: من المستحق اليوم/المتأخر وله هاتف — كم واحد انبعثله فعلاً؟ */
+  const contact = useMemo(() => {
+    const due = allRows.filter((r) => r.inDays <= 0 && r.phone);
+    const sent = due.filter((r) => sentMap[r.id] === r.date);
+    return { due: due.length, sent: sent.length };
+  }, [allRows, sentMap]);
+
   const ql = q.trim().toLowerCase();
   const shown = allRows
     .filter((r) => (kind === "all" ? true : r.kind === kind))
@@ -315,12 +330,12 @@ export function RemindersHub() {
     { id: "manual", label: "تذكيرات يدوية", icon: AlarmClock },
     { id: "birthday", label: "أعياد ميلاد", icon: Cake },
   ];
-  /** شريط الملخص = هو نفسه فلتر الوقت: أربع خانات كبيرة تُضغط. */
-  const SEGMENTS: { id: TimeFilter; label: string; value: number; icon: typeof Sun; activeCls: string; valueCls: string }[] = [
-    { id: "overdue", label: "متأخرة", value: kpis.overdue, icon: AlertTriangle, activeCls: "bg-danger-50 dark:bg-danger-500/15", valueCls: kpis.overdue ? "text-danger-600 dark:text-danger-400" : "text-ink" },
-    { id: "today", label: "اليوم", value: kpis.today, icon: Sun, activeCls: "bg-warn-50 dark:bg-warn-500/15", valueCls: kpis.today ? "text-warn-600 dark:text-warn-400" : "text-ink" },
-    { id: "week", label: "هذا الأسبوع", value: kpis.week, icon: CalendarDays, activeCls: "bg-brand-50 dark:bg-brand-500/15", valueCls: "text-ink" },
-    { id: "all", label: "الكل", value: kpis.total, icon: BellRing, activeCls: "bg-brand-50 dark:bg-brand-500/15", valueCls: "text-ink" },
+  /** بطاقات الملخص المدرّجة = هي نفسها فلتر الوقت (ضغطة تصفّي). */
+  const SEGMENTS: { id: TimeFilter; label: string; value: number; icon: typeof Sun; wrap: string; bubble: string }[] = [
+    { id: "overdue", label: "متأخرة", value: kpis.overdue, icon: AlertTriangle, wrap: "from-danger-50 to-rose-50 dark:from-danger-500/10 dark:to-danger-500/5", bubble: "bg-danger-500" },
+    { id: "today", label: "اليوم", value: kpis.today, icon: Sun, wrap: "from-warn-50 to-amber-50 dark:from-warn-500/10 dark:to-warn-500/5", bubble: "bg-warn-500" },
+    { id: "week", label: "هذا الأسبوع", value: kpis.week, icon: CalendarDays, wrap: "from-brand-50 to-sky-50 dark:from-brand-500/10 dark:to-sky-500/5", bubble: "bg-brand-600" },
+    { id: "all", label: "الكل", value: kpis.total, icon: BellRing, wrap: "from-sky-50 to-brand-50 dark:from-sky-500/10 dark:to-brand-500/5", bubble: "bg-sky-500" },
   ];
 
   return (
@@ -335,30 +350,65 @@ export function RemindersHub() {
         <Button leftIcon={<Plus size={16} />} onClick={() => { playTap(); setAdding(true); }}>{t("rem.add", "إضافة تذكير")}</Button>
       </div>
 
-      {/* شريط الملخص — أرقام كبيرة تُضغط للتصفية (يجمع الإحصاء والفلترة بصفٍّ واحد) */}
-      <div className="card mb-4 grid grid-cols-4 overflow-hidden p-0">
-        {SEGMENTS.map((s, i) => {
+      {/* بطاقات الملخص المدرّجة — ضغطة وحدة = تصفية (إحصاء وفلترة بنفس المكان) */}
+      <motion.div variants={staggerContainer} initial="initial" animate="animate" className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
+        {SEGMENTS.map((s) => {
           const SIcon = s.icon;
           const active = timeF === s.id;
           return (
-            <button key={s.id} onClick={() => { playTap(); setTimeF(s.id); }}
-              className={cn("flex flex-col items-center gap-0.5 py-3.5 transition", i > 0 && "border-s border-line", active ? s.activeCls : "hover:bg-surface-2/60")}>
-              <span className={cn("flex items-center gap-1.5 text-2xs font-bold", active ? "text-ink" : "text-ink-subtle")}><SIcon size={13} /> {s.label}</span>
-              <span className={cn("text-2xl font-extrabold tabular-nums", s.valueCls)}>{s.value}</span>
-            </button>
+            <motion.button
+              key={s.id} variants={staggerItem}
+              onClick={() => { playTap(); setTimeF(s.id); }}
+              className={cn(
+                "relative overflow-hidden rounded-3xl border bg-gradient-to-br p-4 text-start transition hover:-translate-y-0.5 hover:shadow-raised",
+                s.wrap,
+                active ? "border-brand-400 ring-2 ring-brand-400/60 shadow-raised" : "border-line",
+              )}
+            >
+              <span className={cn("mb-2 grid h-9 w-9 place-items-center rounded-xl text-white shadow-soft", s.bubble)}><SIcon size={17} /></span>
+              <p className="font-display text-3xl font-extrabold leading-none tracking-tighter2 text-ink tabular-nums">{s.value}</p>
+              <p className="mt-1 text-xs font-semibold text-ink-muted">{s.label}</p>
+              {active && <span className="absolute end-3 top-3 grid h-5 w-5 place-items-center rounded-full bg-brand-600 text-white"><CheckCircle2 size={13} /></span>}
+            </motion.button>
           );
         })}
-      </div>
+      </motion.div>
+
+      {/* إنجاز التواصل اليومي — شريط تقدم يشجّع ويوضح المتبقي بلمحة */}
+      {contact.due > 0 && (
+        <div className="card mb-4 flex items-center gap-3 p-3.5">
+          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-[#25D366]/15 text-[#128C4A] dark:text-[#4ade80]"><MessageCircle size={17} /></span>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-baseline justify-between gap-2">
+              <p className="text-sm font-bold text-ink">
+                {contact.sent >= contact.due
+                  ? t("rem.contactDone", "تواصلت مع الكل — يومك مغطى 🎉")
+                  : t("rem.contactProgress", { sent: contact.sent, due: contact.due, defaultValue: "تواصلت مع {{sent}} من {{due}} مستحقين اليوم" })}
+              </p>
+              <span className="shrink-0 text-xs font-extrabold text-ink-muted tabular-nums">{Math.round((contact.sent / contact.due) * 100)}%</span>
+            </div>
+            <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-surface-2">
+              <div
+                className={cn("h-full rounded-full transition-all duration-500", contact.sent >= contact.due ? "bg-success-500" : "bg-[#25D366]")}
+                style={{ width: `${Math.min(100, Math.round((contact.sent / contact.due) * 100))}%` }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* صف واحد: نوع التذكير + بحث */}
       <div className="mb-4 flex flex-wrap items-center gap-1.5">
         {KIND_CHIPS.map((c) => {
           const Icon = c.icon;
           const active = kind === c.id;
+          const n = c.id === "all" ? kpis.total : (kindCounts[c.id] ?? 0);
+          if (c.id !== "all" && n === 0) return null; // ما نعرض نوع فارغ — أقل ضوضاء
           return (
             <button key={c.id} onClick={() => { playTap(); setKind(c.id); }}
               className={cn("inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold transition", active ? "bg-brand-600 text-white shadow-soft" : "bg-surface-2 text-ink-muted hover:text-ink")}>
               <Icon size={13} /> {c.label}
+              <span className={cn("grid h-4.5 min-w-4 place-items-center rounded-full px-1 text-2xs font-extrabold tabular-nums", active ? "bg-white/25" : "bg-surface-1 text-ink-subtle")}>{n}</span>
             </button>
           );
         })}
@@ -392,17 +442,31 @@ export function RemindersHub() {
                   const M = KIND_META[r.kind];
                   const MIcon = M.icon;
                   const done = isSent(r);
+                  const pet = r.petId ? petById.get(r.petId) : undefined;
                   const openFile = () => { if (r.petId) { playTap(); navigate(`/pet/${r.petId}`); } };
                   return (
                     <motion.div key={r.id} variants={staggerItem}
                       onClick={openFile}
                       className={cn(
-                        "flex items-center gap-3 px-3.5 py-3 transition",
-                        i > 0 && "border-t border-line",
+                        "group flex items-center gap-3 border-s-4 px-3.5 py-3 transition",
+                        // حافة ملونة حسب الاستعجال: أحمر متأخر · برتقالي اليوم · شفاف لاحقاً
+                        r.inDays < 0 ? "border-s-danger-500 bg-danger-50/40 dark:bg-danger-500/5" : r.inDays === 0 ? "border-s-warn-400" : "border-s-transparent",
+                        i > 0 && "border-t border-t-line",
                         r.petId && "cursor-pointer hover:bg-surface-2/50",
-                        r.inDays < 0 && "bg-danger-50/40 dark:bg-danger-500/5",
                       )}>
-                      <span className={cn("grid h-10 w-10 shrink-0 place-items-center rounded-xl", M.tile)} title={M.label}><MIcon size={18} /></span>
+                      {/* صورة الحيوان مع شارة النوع — يعرف الدكتور منو وشنو بلمحة */}
+                      {pet ? (
+                        <span className="relative shrink-0">
+                          <span className="rounded-full ring-2 ring-transparent transition group-hover:ring-brand-200 dark:group-hover:ring-brand-500/40">
+                            <PetAvatar pet={pet} size={40} photoFallback />
+                          </span>
+                          <span className={cn("absolute -bottom-1 -end-1 grid h-5 w-5 place-items-center rounded-full border-2 border-surface-1", M.tile)} title={M.label}>
+                            <MIcon size={11} />
+                          </span>
+                        </span>
+                      ) : (
+                        <span className={cn("grid h-10 w-10 shrink-0 place-items-center rounded-xl", M.tile)} title={M.label}><MIcon size={18} /></span>
+                      )}
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-sm font-bold text-ink">
                           {/* التذكير اليدوي عنوانه يكفي (قد يتضمن اسم الحيوان أصلاً) */}
@@ -426,13 +490,13 @@ export function RemindersHub() {
                         /* أُرسلت ✓ — والضغط عليها يلغيها إذا الرسالة ما وصلت، فيرجع زر الإرسال */
                         <button onClick={(e) => { e.stopPropagation(); playTap(); unmarkSent(r); }}
                           title={t("rem.sentToggle", "أُرسلت ✓ — اضغط إذا ما وصلت الرسالة لتعيد إرسالها")}
-                          className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-success-500 text-white shadow-soft transition hover:bg-success-600">
-                          <CheckCircle2 size={17} />
+                          className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-xl bg-success-500 px-2.5 text-xs font-bold text-white shadow-soft transition hover:bg-success-600">
+                          <CheckCircle2 size={16} /> <span className="hidden sm:inline">{t("rem.sentShort", "أُرسلت")}</span>
                         </button>
                       ) : (
                         <button onClick={(e) => { e.stopPropagation(); sendWA(r); }} title={t("rem.sendWA", "إرسال تذكير واتساب")}
-                          className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-[#25D366]/10 text-[#128C4A] transition hover:bg-[#25D366]/25 dark:text-[#4ade80]">
-                          <MessageCircle size={17} />
+                          className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-xl bg-[#25D366] px-2.5 text-xs font-bold text-white shadow-soft transition hover:bg-[#1fb959]">
+                          <MessageCircle size={16} /> <span className="hidden sm:inline">{t("rem.sendShort", "ذكّر")}</span>
                         </button>
                       ))}
                     </motion.div>

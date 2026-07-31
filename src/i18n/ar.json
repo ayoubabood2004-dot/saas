@@ -2332,5 +2332,11 @@
     "thisMonth": "هذا الشهر",
     "cellCount": "حجز",
     "monthHint": "اضغط أي يوم لفتح جدوله الكامل"
+  },
+  "rem": {
+    "contactDone": "تواصلت مع الكل — يومك مغطى 🎉",
+    "contactProgress": "تواصلت مع {{sent}} من {{due}} مستحقين اليوم",
+    "sentShort": "أُرسلت",
+    "sendShort": "ذكّر"
   }
 }

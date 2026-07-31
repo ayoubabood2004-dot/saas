@@ -2335,5 +2335,11 @@
     "thisMonth": "This month",
     "cellCount": "bookings",
     "monthHint": "Click any day to open its full schedule"
+  },
+  "rem": {
+    "contactDone": "Everyone contacted — today is covered 🎉",
+    "contactProgress": "Contacted {{sent}} of {{due}} due today",
+    "sentShort": "Sent",
+    "sendShort": "Remind"
   }
 }
