@@ -512,6 +512,15 @@ const demoRepo = {
     );
   },
 
+  /** Incoming owner bookings awaiting the clinic's decision (طلبات الحجز).
+   *  Anything still "requested" from yesterday onwards — the reception inbox. */
+  async listBookingRequests(): Promise<Appointment[]> {
+    const since = new Date(Date.now() - 86400000).toISOString();
+    return loadDB()
+      .appointments.filter((a) => a.status === "requested" && a.scheduled_at >= since)
+      .sort((a, b) => a.scheduled_at.localeCompare(b.scheduled_at));
+  },
+
   /** The clinic's shared sticky note for one calendar day (dashboard widget). */
   async getDailyNote(dateISO: string): Promise<DailyNote | null> {
     return dailyNoteLocalGet(dateISO);
@@ -1487,6 +1496,13 @@ const supabaseRepo: typeof demoRepo = {
   },
   async slotTaken(doctorId, scheduledAt) {
     return listOf<{ id: string }>(await sbc().from("appointments").select("id").eq("doctor_id", doctorId).eq("scheduled_at", scheduledAt).neq("status", "cancelled")).length > 0;
+  },
+  async listBookingRequests() {
+    // Clinic-scoped by RLS (appt_clinic_all): only this clinic's requests arrive.
+    const since = new Date(Date.now() - 86400000).toISOString();
+    return listOf<Appointment>(
+      await sbc().from("appointments").select("*").eq("status", "requested").gte("scheduled_at", since).order("scheduled_at", { ascending: true }),
+    );
   },
   async getDailyNote(dateISO) {
     try {

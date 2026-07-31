@@ -2284,5 +2284,16 @@
     "lastBy": "Last edit: {{name}}",
     "saving": "Saving…",
     "saved": "Saved"
+  },
+  "bookReq": {
+    "title": "New booking requests",
+    "hint": "From customer accounts — confirm or decline and the customer is informed",
+    "confirm": "Confirm booking",
+    "reject": "Decline",
+    "confirmed": "Booking confirmed ✓",
+    "rejected": "Booking declined",
+    "aPet": "Pet",
+    "waTitle": "Notify customer on WhatsApp",
+    "waMsg": "Hello {{owner}} 🌟 {{pet}}'s appointment is confirmed — {{when}} at {{clinic}}. See you!"
   }
 }

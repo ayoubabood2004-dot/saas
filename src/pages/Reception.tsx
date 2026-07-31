@@ -18,6 +18,7 @@ import { getCached, setCached } from "@/lib/swrCache";
 import { buildCalendarReminders, occursOn, type CalReminder, type CalReminderKind } from "@/lib/calendarReminders";
 import { PetAvatar } from "@/components/PetAvatar";
 import { OutcomeDialog, type OutcomeTarget } from "@/components/OutcomeDialog";
+import { BookingRequests } from "@/components/BookingRequests";
 import { OUTCOME_META } from "@/lib/opsStatus";
 import { Button, useToast } from "@/components/ui";
 import { getDialCode, getClinicName } from "@/lib/settings";
@@ -392,6 +393,9 @@ export function Reception() {
           {t("newCase.newCaseBtn")}
         </Button>
       </div>
+
+      {/* حجوزات الزبائن الواصلة من حساباتهم — تنتظر تأكيد العيادة */}
+      <BookingRequests />
 
       {/* Find an animal — name, serial/microchip number, owner name or phone. */}
       <div className="relative mb-4">

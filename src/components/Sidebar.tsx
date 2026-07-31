@@ -28,6 +28,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { usePermissions } from "@/hooks/usePermissions";
+import { useBookingRequestCount } from "@/lib/bookingRequests";
 import { useSubscription } from "@/lib/subscription";
 import { useEntitlements } from "@/lib/entitlements";
 import { formatNum } from "@/lib/utils";
@@ -99,6 +100,8 @@ export function Sidebar() {
 
   // فتح/غلق المجموعات المنسدلة — حالة مستقلة لكل مجموعة (الطبلات، الواتساب…).
   const [openGroups, setOpenGroups] = useState<Set<string>>(new Set());
+  // عدّاد حي لطلبات الحجز الجديدة (زبائن) — نفس المجس المشترك مال الجرس.
+  const bookingReqs = useBookingRequestCount();
   const toggleGroup = (key: string) => setOpenGroups((s) => { const n = new Set(s); if (n.has(key)) n.delete(key); else n.add(key); return n; });
   const isActive = (to: string, exact?: boolean) =>
     exact ? location.pathname === "/" : location.pathname === to || location.pathname.startsWith(to + "/");
@@ -195,10 +198,16 @@ export function Sidebar() {
                   measure (measureScroll) + delta math on EVERY navigation, which
                   profiling flagged as the top cost of switching sections. */}
               {active && <span className="absolute inset-0 rounded-2xl bg-brand-50 dark:bg-brand-500/15" />}
-              <span className="relative z-10 flex items-center gap-3">
+              <span className="relative z-10 flex flex-1 items-center gap-3">
                 <Icon size={19} />
                 {item.label}
               </span>
+              {/* عدّاد طلبات الحجز الجديدة على عنصر الاستقبال */}
+              {item.to === "/reception" && bookingReqs > 0 && (
+                <span className="relative z-10 grid h-5 min-w-5 place-items-center rounded-full bg-danger-500 px-1.5 text-2xs font-bold text-white shadow-soft animate-pulse">
+                  {bookingReqs}
+                </span>
+              )}
             </Link>
           );
         })}

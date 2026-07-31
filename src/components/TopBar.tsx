@@ -18,6 +18,7 @@ import {
   Boxes,
   Store,
   MessageCircle,
+  Bell,
   BellRing,
   Briefcase,
   BarChart3,
@@ -38,6 +39,7 @@ import { branchStore } from "@/lib/branchStore";
 import { useCommandPalette } from "@/components/CommandPaletteProvider";
 import { usePermissions } from "@/hooks/usePermissions";
 import { useEntitlements } from "@/lib/entitlements";
+import { useBookingRequestCount, requestNotifyPermission } from "@/lib/bookingRequests";
 import { cn } from "@/lib/utils";
 
 export function TopBar({ mobileOnly = false, minimal = false }: { mobileOnly?: boolean; minimal?: boolean }) {
@@ -53,6 +55,8 @@ export function TopBar({ mobileOnly = false, minimal = false }: { mobileOnly?: b
   const otherRole = activeRole === "clinic" ? "owner" : "clinic";
 
   const staff = user?.role === "doctor" || user?.role === "reception" || user?.role === "admin";
+  // عدّاد طلبات الحجز الحي (المجس المشترك) — يشتغل فقط لحسابات العيادة.
+  const bookingReqs = useBookingRequestCount(staff);
 
   useEffect(() => setMenuOpen(false), [location.pathname]);
 
@@ -144,6 +148,23 @@ export function TopBar({ mobileOnly = false, minimal = false }: { mobileOnly?: b
                   <Search size={16} />
                   <span className="hidden lg:inline">Search</span>
                   <kbd className="rounded-md border border-line bg-surface-1 px-1.5 text-2xs font-semibold">⌘K</kbd>
+                </button>
+              </Tooltip>
+            )}
+
+            {/* جرس طلبات الحجز — للعيادات فقط؛ الدوسة تطلب إذن إشعارات المتصفح وتفتح الاستقبال */}
+            {staff && (
+              <Tooltip label={t("bookReq.title", "طلبات حجز جديدة")}>
+                <button
+                  onClick={() => { playTap(); requestNotifyPermission(); navigate("/reception"); }}
+                  className="relative grid h-11 w-11 place-items-center rounded-full text-ink-muted transition hover:bg-surface-2 hover:text-ink"
+                >
+                  <Bell size={19} />
+                  {bookingReqs > 0 && (
+                    <span className="absolute end-1 top-1 grid h-5 min-w-5 place-items-center rounded-full bg-danger-500 px-1 text-2xs font-bold text-white shadow-soft animate-pulse">
+                      {bookingReqs}
+                    </span>
+                  )}
                 </button>
               </Tooltip>
             )}
