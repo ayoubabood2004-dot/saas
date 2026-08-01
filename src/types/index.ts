@@ -468,15 +468,21 @@ export interface Invoice {
   created_at: string;
 }
 
-/** A cash expense / withdrawal from the clinic drawer (rent, supplies, salaries,
- *  petty cash…). Append-only ledger, clinic-isolated. `description` says WHERE &
- *  WHY the money was spent. Every expense is treated as cash-out of the drawer. */
+/** Where a withdrawal's money physically came from — the drawer, the card
+ *  terminal balance, or the bank account. Rows recorded before this existed
+ *  are treated as cash (the ledger's original semantics). */
+export type ExpenseMethod = "cash" | "card" | "bank";
+
+/** An expense / withdrawal from the clinic (rent, supplies, salaries, petty
+ *  cash…). Append-only ledger, clinic-isolated. `description` says WHERE &
+ *  WHY the money was spent; `method` says which pocket it left. */
 export interface Expense {
   id: string;
   clinic_id?: string | null;
   amount: number;                 // > 0
   description: string;            // where & why the money was spent (required)
   category?: string | null;       // optional bucket (rent/salaries/utilities/supplies…)
+  method?: ExpenseMethod | null;  // cash (default) / card / bank
   staff_id?: string | null;       // who recorded it (auto-stamped)
   spent_at: string;               // ISO — when the money actually left
   created_at: string;             // ISO — when it was recorded

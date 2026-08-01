@@ -2124,7 +2124,7 @@
       "netCash": "Net cash in drawer"
     },
     "exp": {
-      "title": "Cash expenses & withdrawals",
+      "title": "Expenses & withdrawals",
       "total": "Total expenses",
       "count": "entries",
       "cashCollected": "Cash collected from sales",
@@ -2143,11 +2143,17 @@
       "needDesc": "Enter what it was spent on",
       "saveFail": "Could not record the expense",
       "delFail": "Could not delete",
-      "netCashLabel": "Net cash (collected − withdrawn)",
-      "confirmDel": "Confirm delete?"
+      "netCashLabel": "Net cash (cash collected − cash withdrawn)",
+      "confirmDel": "Confirm delete?",
+      "methodLabel": "Withdrawal method",
+      "method": { "cash": "Cash", "card": "Card", "bank": "Bank transfer" },
+      "methodHintCash": "Taken from drawer cash — deducted from net cash.",
+      "methodHintOther": "Outside the drawer — not deducted from net cash."
     },
-    "zWithdrawals": "Withdrawals / expenses",
-    "zNetCash": "Net cash in drawer"
+    "zWithdrawals": "Cash withdrawals from drawer",
+    "zWithdrawalsNonCash": "Card / bank withdrawals (outside drawer)",
+    "zNetCash": "Net cash in drawer",
+    "dayNav": { "prev": "Previous day", "next": "Next day", "jumpToday": "Back to today", "range": "Range view" }
   },
   "act": {
     "title": "Activity log",

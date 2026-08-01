@@ -10,10 +10,11 @@ import {
   Stethoscope, Package, Trophy, Snail, PawPrint, Lock, Download, CalendarRange,
   Crown, Star, ShieldAlert, Trash2, LogIn, FlaskConical, Pill, Users, Clock,
   ScrollText, Search, Eye, X, BadgePercent, SlidersHorizontal, ChevronDown,
-  ChevronLeft, LayoutDashboard, History, TrendingDown, Plus, BookUser,
+  ChevronLeft, ChevronRight, LayoutDashboard, History, TrendingDown, Plus, BookUser,
+  Landmark,
 } from "lucide-react";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
-import type { Pet, Invoice, InvoiceItem, Product, MedicalVisit, PaymentMethod, Species, MediaItem, TreatmentEntry, AuditEntry, LoginEvent, Expense } from "@/types";
+import type { Pet, Invoice, InvoiceItem, Product, MedicalVisit, PaymentMethod, Species, MediaItem, TreatmentEntry, AuditEntry, LoginEvent, Expense, ExpenseMethod } from "@/types";
 import { type StaffMember } from "@/lib/staff";
 import { getCached, setCached, isFresh } from "@/lib/swrCache";
 import { loadAnalyticsSnap, analyticsKey, type AnalyticsSnap } from "@/lib/prefetchData";
@@ -81,6 +82,16 @@ const CLINICAL_MEDIA_KINDS = ["lab", "xray", "ultrasound"] as const;
 
 const PIE = ["#2563eb", "#16a34a", "#f59e0b", "#db2777", "#0891b2", "#7c3aed", "#64748b"];
 const PAY_ICON: Record<PaymentMethod, typeof Banknote> = { cash: Banknote, card: CreditCard, transfer: ArrowLeftRight };
+
+/** Withdrawal sources (سجل السحوبات) — where the money physically left from.
+ *  Legacy rows have no method and count as cash (the ledger's original meaning). */
+const EXPENSE_METHODS: { id: ExpenseMethod; label: string; icon: typeof Banknote }[] = [
+  { id: "cash", label: "نقدي", icon: Banknote },
+  { id: "card", label: "بطاقة", icon: CreditCard },
+  { id: "bank", label: "حوالة بنك", icon: Landmark },
+];
+const expenseMethodOf = (e: Expense): ExpenseMethod => e.method ?? "cash";
+const expenseMethodMeta = (m: ExpenseMethod) => EXPENSE_METHODS.find((x) => x.id === m) ?? EXPENSE_METHODS[0];
 /** A sale's payment legs — the recorded split when present, else one leg for the whole
  *  total at the (legacy) single method. Empty when the sale is still unpaid (a receivable). */
 const paymentsOf = (inv: Invoice): { method: PaymentMethod; amount: number }[] => {
@@ -226,6 +237,38 @@ export function AnalyticsHub() {
   };
   const openNativePicker = (el: HTMLInputElement) => { try { el.showPicker?.(); } catch { /* ignore */ } };
 
+  // ---- Day stepper (نفس أسهم ورقة الملاحظات): step the reports one day at a time.
+  // From a multi-day window the arrows first collapse to a single day anchored at
+  // the window's end, then step ±1. Future days are pointless in a financial
+  // report, so stepping never passes today. On a guarded (locked) device the
+  // arrows look normal but silently ignore taps — same hidden-lock as the dates.
+  const todayISOstr = localISO(new Date());
+  const singleDay = from === to;
+  const stepDay = (dir: -1 | 1) => {
+    if (restricted) { lockedNudge(); return; }
+    playTap();
+    const base = new Date(to + "T12:00:00");
+    if (singleDay || dir === -1) base.setDate(base.getDate() + dir); // multi-day + «next» collapses to the window's end first
+    const iso = localISO(base);
+    if (iso > todayISOstr) return;
+    setFrom(iso); setTo(iso);
+    setPreset(iso === todayISOstr ? "today" : "custom");
+  };
+  const goToToday = () => {
+    if (restricted) { lockedNudge(); return; }
+    playTap();
+    setFrom(todayISOstr); setTo(todayISOstr); setPreset("today");
+  };
+  const nextDayBlocked = singleDay && to >= todayISOstr;
+  const dayNavLabel = !singleDay
+    ? t("rpt.dayNav.range", "عرض فترة")
+    : to === todayISOstr ? t("rpt.range.today", "اليوم")
+      : from === localISO(new Date(Date.now() - 86400000)) ? t("rpt.range.yesterday", "أمس")
+        : shortDate(new Date(from + "T12:00:00").getTime());
+  // بالسياق العربي (RTL) السهم الذي يشير لليمين يرجع بالزمن — نفس منطق ورقة الملاحظات.
+  const PrevDayIcon = isAr() ? ChevronRight : ChevronLeft;
+  const NextDayIcon = isAr() ? ChevronLeft : ChevronRight;
+
   // The active window: 00:00:00 of From → 23:59:59.999 of To (single day when From = To).
   const { lo, hi } = useMemo(() => ({
     lo: startOfDay(new Date(from + "T00:00:00")).getTime(),
@@ -352,9 +395,13 @@ export function AnalyticsHub() {
     [expenses, lo, hi],
   );
   const expensesTotal = useMemo(() => expensesInRange.reduce((s, e) => s + e.amount, 0), [expensesInRange]);
-  // Every expense is cash-out of the drawer (the ledger has no payment method),
-  // so net cash on hand = cash collected from sales − cash withdrawn/spent.
-  const netCash = useMemo(() => zReport.byMethod.cash.total - expensesTotal, [zReport, expensesTotal]);
+  // Only CASH withdrawals leave the drawer — card/bank withdrawals come out of
+  // those balances, so net cash on hand = cash collected − cash withdrawn.
+  const cashExpensesTotal = useMemo(
+    () => expensesInRange.filter((e) => expenseMethodOf(e) === "cash").reduce((s, e) => s + e.amount, 0),
+    [expensesInRange],
+  );
+  const netCash = useMemo(() => zReport.byMethod.cash.total - cashExpensesTotal, [zReport, cashExpensesTotal]);
 
   // Outstanding balances (credit / آجل): any non-refunded sale still owing — partial or unpaid.
   const receivables = useMemo(() => paid.filter(isDebt), [paid]);
@@ -747,6 +794,30 @@ export function AnalyticsHub() {
           </button>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          {/* Day stepper — مثل أسهم ورقة الملاحظات: يوم يوم، بلا مستقبل، ومقفول بوضع المدير */}
+          <div className="flex items-center gap-0.5 rounded-full border border-line bg-surface-2 p-0.5">
+            <button
+              type="button" onClick={() => stepDay(-1)}
+              aria-label={t("rpt.dayNav.prev", "اليوم السابق")}
+              className="grid h-8 w-8 place-items-center rounded-full text-ink-muted transition hover:bg-surface-1 hover:text-ink active:scale-95"
+            >
+              <PrevDayIcon size={17} strokeWidth={2.5} />
+            </button>
+            <button
+              type="button" onClick={goToToday}
+              title={t("rpt.dayNav.jumpToday", "الرجوع إلى اليوم")}
+              className="min-w-[86px] rounded-full px-2 py-1 text-center text-xs font-bold text-ink transition hover:bg-surface-1"
+            >
+              {dayNavLabel}
+            </button>
+            <button
+              type="button" onClick={() => stepDay(1)} disabled={nextDayBlocked}
+              aria-label={t("rpt.dayNav.next", "اليوم التالي")}
+              className="grid h-8 w-8 place-items-center rounded-full text-ink-muted transition hover:bg-surface-1 hover:text-ink active:scale-95 disabled:pointer-events-none disabled:opacity-30"
+            >
+              <NextDayIcon size={17} strokeWidth={2.5} />
+            </button>
+          </div>
           <label className="flex items-center gap-1.5 text-xs text-ink-subtle">
             {t("rpt.fromDate", "من التاريخ")}
             <input
@@ -855,7 +926,7 @@ export function AnalyticsHub() {
               z={zReport} receivables={receivables} series={series} paymentPie={paymentPie}
               revenue={revenue} categoryData={categoryData} staffPerf={staffPerf}
               canProfit={canProfit} yesterday={yesterday} isToday={preset === "today"} onExportCSV={exportCSV}
-              expensesTotal={expensesTotal} netCash={netCash}
+              expensesTotal={expensesTotal} cashExpensesTotal={cashExpensesTotal} netCash={netCash}
             />
           )}
           {tab === "ledger" && <LedgerTab rows={ledgerRows} canProfit={canProfit} loMs={lo} hiMs={hi} rangeLabel={rangeLabel} />}
@@ -1024,7 +1095,7 @@ function CmpCell({ label, value, delta }: { label: string; value: string; delta:
   );
 }
 
-function MoneyTab({ z, receivables, series, paymentPie, revenue, categoryData, staffPerf, canProfit, yesterday, isToday, onExportCSV, expensesTotal, netCash }: {
+function MoneyTab({ z, receivables, series, paymentPie, revenue, categoryData, staffPerf, canProfit, yesterday, isToday, onExportCSV, expensesTotal, cashExpensesTotal, netCash }: {
   z: ZReport; receivables: Invoice[]; series: Series; paymentPie: { name: string; value: number }[];
   revenue: RevenueSummary; categoryData: { name: string; value: number }[];
   staffPerf: { doctor: string; count: number }[];
@@ -1033,6 +1104,7 @@ function MoneyTab({ z, receivables, series, paymentPie, revenue, categoryData, s
   isToday: boolean;
   onExportCSV: () => void;
   expensesTotal: number;
+  cashExpensesTotal: number;
   netCash: number;
 }) {
   const { t } = useTranslation();
@@ -1138,11 +1210,18 @@ function MoneyTab({ z, receivables, series, paymentPie, revenue, categoryData, s
                 <span className="font-display font-bold tabular-nums text-danger-700 dark:text-danger-300">− {money(z.refundTotal)}</span>
               </div>
             )}
-            {/* Cash withdrawals/expenses out of the drawer, and the resulting net cash. */}
-            {expensesTotal > 0 && (
+            {/* Cash withdrawals/expenses out of the drawer, and the resulting net cash.
+                Card/bank withdrawals are listed separately — they never touch the drawer. */}
+            {cashExpensesTotal > 0 && (
               <div className="flex items-center justify-between rounded-xl border border-warn-200 bg-warn-50/60 p-3 text-sm dark:border-warn-500/30 dark:bg-warn-500/10">
-                <span className="font-semibold text-warn-700 dark:text-warn-300">{t("rpt.zWithdrawals", "السحوبات / المصروفات")}</span>
-                <span className="font-display font-bold tabular-nums text-warn-700 dark:text-warn-300">− {money(expensesTotal)}</span>
+                <span className="font-semibold text-warn-700 dark:text-warn-300">{t("rpt.zWithdrawals", "السحوبات النقدية من الصندوق")}</span>
+                <span className="font-display font-bold tabular-nums text-warn-700 dark:text-warn-300">− {money(cashExpensesTotal)}</span>
+              </div>
+            )}
+            {expensesTotal - cashExpensesTotal > 0 && (
+              <div className="flex items-center justify-between rounded-xl border border-line bg-surface-2/60 p-3 text-sm">
+                <span className="font-semibold text-ink-muted">{t("rpt.zWithdrawalsNonCash", "سحوبات بطاقة / حوالة (خارج الصندوق)")}</span>
+                <span className="font-display font-bold tabular-nums text-ink-muted">− {money(expensesTotal - cashExpensesTotal)}</span>
               </div>
             )}
             {canProfit && (
@@ -1441,9 +1520,17 @@ function ExpensesTab({ rows, total, netCash, cashCollected, rangeLabel, canRecor
   const [amount, setAmount] = useState("");
   const [description, setDescription] = useState("");
   const [category, setCategory] = useState("");
+  const [method, setMethod] = useState<ExpenseMethod>("cash");
   const [spentAt, setSpentAt] = useState(() => localISO(new Date()));
   const [busy, setBusy] = useState(false);
   const [confirmDel, setConfirmDel] = useState<string | null>(null);
+
+  // How much left each pocket in this period — so the doctor knows WHERE his money went from.
+  const methodTotals = useMemo(() => {
+    const acc: Record<ExpenseMethod, number> = { cash: 0, card: 0, bank: 0 };
+    for (const e of rows) acc[expenseMethodOf(e)] += e.amount;
+    return acc;
+  }, [rows]);
 
   const submit = async () => {
     const amt = Number(amount);
@@ -1455,6 +1542,7 @@ function ExpensesTab({ rows, total, netCash, cashCollected, rangeLabel, canRecor
         amount: Math.round(amt * 100) / 100,
         description: description.trim(),
         category: category.trim() || null,
+        method,
         staff_id: staffId,
         spent_at: new Date(spentAt + "T12:00:00").toISOString(),
       });
@@ -1497,6 +1585,14 @@ function ExpensesTab({ rows, total, netCash, cashCollected, rangeLabel, canRecor
           <p className="text-2xs font-semibold text-warn-700 dark:text-warn-300">{t("rpt.exp.total", "إجمالي المصروفات")}</p>
           <p className="mt-1 font-display text-2xl font-extrabold tabular-nums text-warn-800 dark:text-warn-200">{money(total)}</p>
           <p className="text-2xs text-ink-subtle">{formatNum(rows.length)} {t("rpt.exp.count", "عملية")}</p>
+          {/* منين انسحبت — تفصيل لكل مصدر (يظهر فقط عندما ينسحب منه شيء) */}
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {EXPENSE_METHODS.filter((m) => methodTotals[m.id] > 0).map((m) => (
+              <span key={m.id} className="inline-flex items-center gap-1 rounded-full bg-warn-100/80 px-2 py-0.5 text-2xs font-bold tabular-nums text-warn-800 dark:bg-warn-500/20 dark:text-warn-200">
+                <m.icon size={11} /> {t(`rpt.exp.method.${m.id}`, m.label)}: {money(methodTotals[m.id])}
+              </span>
+            ))}
+          </div>
         </div>
         {/* Cash collected + net cash follow the viewProfits gate together — hiding
             only the result while showing both operands would defeat the gate. */}
@@ -1508,7 +1604,7 @@ function ExpensesTab({ rows, total, netCash, cashCollected, rangeLabel, canRecor
         )}
         {canProfit && (
           <div className="rounded-2xl border border-brand-200 bg-brand-50 p-4 dark:border-brand-500/30 dark:bg-brand-500/10">
-            <p className="text-2xs font-semibold text-brand-700 dark:text-brand-300">{t("rpt.exp.netCashLabel", "صافي النقد (المُحصّل − المسحوب)")}</p>
+            <p className="text-2xs font-semibold text-brand-700 dark:text-brand-300">{t("rpt.exp.netCashLabel", "صافي النقد (المُحصّل نقداً − المسحوب نقداً)")}</p>
             <p className={cn("mt-1 font-display text-2xl font-extrabold tabular-nums", netCash < 0 ? "text-danger-600 dark:text-danger-400" : "text-brand-800 dark:text-brand-200")}>{money(netCash)}</p>
           </div>
         )}
@@ -1536,6 +1632,30 @@ function ExpensesTab({ rows, total, netCash, cashCollected, rangeLabel, canRecor
             </div>
             <Button onClick={submit} loading={busy} leftIcon={<Plus size={16} />}>{t("rpt.exp.add", "تسجيل مصروف")}</Button>
           </div>
+          {/* طريقة السحب — منين تنسحب الفلوس: الصندوق، البطاقة، أم البنك */}
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <span className="text-xs font-bold text-ink-muted">{t("rpt.exp.methodLabel", "طريقة السحب")}</span>
+            <div className="flex gap-1.5">
+              {EXPENSE_METHODS.map((m) => (
+                <button
+                  key={m.id} type="button"
+                  onClick={() => { playTap(); setMethod(m.id); }}
+                  aria-pressed={method === m.id}
+                  className={cn(
+                    "inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-sm font-semibold transition",
+                    method === m.id ? "bg-brand-600 text-white shadow-soft" : "bg-surface-2 text-ink-muted hover:text-ink",
+                  )}
+                >
+                  <m.icon size={15} /> {t(`rpt.exp.method.${m.id}`, m.label)}
+                </button>
+              ))}
+            </div>
+            <span className="text-2xs text-ink-subtle">
+              {method === "cash"
+                ? t("rpt.exp.methodHintCash", "ينسحب من نقد الصندوق ويُخصم من صافي النقد.")
+                : t("rpt.exp.methodHintOther", "خارج الصندوق — لا يُخصم من صافي النقد.")}
+            </span>
+          </div>
         </div>
       )}
 
@@ -1543,13 +1663,16 @@ function ExpensesTab({ rows, total, netCash, cashCollected, rangeLabel, canRecor
       <Panel title={t("rpt.exp.list", "سجلّ المصروفات")} icon={TrendingDown}>
         {rows.length === 0 ? <Empty text={t("rpt.exp.empty", "لا توجد مصروفات في هذه الفترة.")} /> : (
           <ul className="divide-y divide-line">
-            {rows.map((e) => (
+            {rows.map((e) => {
+              const m = expenseMethodMeta(expenseMethodOf(e));
+              return (
               <li key={e.id} className="flex items-center gap-3 py-2.5">
-                <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-warn-50 text-warn-600 dark:bg-warn-500/15 dark:text-warn-300"><TrendingDown size={16} /></span>
+                <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-warn-50 text-warn-600 dark:bg-warn-500/15 dark:text-warn-300"><m.icon size={16} /></span>
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-semibold text-ink">{e.description}</p>
                   <p className="text-2xs text-ink-subtle">
                     <span dir="ltr">{new Date(e.spent_at).toLocaleDateString(dateLocale(), { day: "2-digit", month: "short", year: "numeric" })}</span>
+                    {" · "}{t(`rpt.exp.method.${m.id}`, m.label)}
                     {e.category ? ` · ${e.category}` : ""}
                   </p>
                 </div>
@@ -1566,7 +1689,8 @@ function ExpensesTab({ rows, total, netCash, cashCollected, rangeLabel, canRecor
                   )
                 )}
               </li>
-            ))}
+              );
+            })}
           </ul>
         )}
       </Panel>

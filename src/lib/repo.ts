@@ -1911,7 +1911,7 @@ const supabaseRepo: typeof demoRepo = {
     // send only the explicit fields so a caller can never set another clinic's id.
     return need<Expense>(await sbc().from("expenses").insert({
       amount: input.amount, description: input.description,
-      category: input.category ?? null, spent_at: input.spent_at,
+      category: input.category ?? null, method: input.method ?? "cash", spent_at: input.spent_at,
     }).select().single());
   },
   async deleteExpense(id) {
