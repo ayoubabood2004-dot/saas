@@ -78,11 +78,18 @@ export function BookingsHub() {
     return Number.isFinite(diff) ? diff : 0;
   });
   const [monthOffset, setMonthOffset] = useState(typeof saved.monthOffset === "number" ? saved.monthOffset : 0);
-  const [appts, setAppts] = useState<Appointment[]>([]);
-  const [monthAppts, setMonthAppts] = useState<Appointment[]>([]);
-  const [pets, setPets] = useState<Record<string, Pet>>({});
+  // Seed the first paint synchronously from the cached snapshot of the restored
+  // day/month — effects run AFTER paint, so seeding there flashes one skeleton
+  // frame on every revisit even when the data is already in memory.
+  const initialDayISO = dayISOFromOffset(saved.dayISO ? Math.round((new Date(saved.dayISO + "T12:00:00").getTime() - new Date(localISO(new Date()) + "T12:00:00").getTime()) / 864e5) || 0 : 0);
+  const daySeed = getCached<{ appts: Appointment[]; pets: Record<string, Pet> }>(`bk_day_${initialDayISO}`);
+  const monthSeed = getCached<Appointment[]>(`bk_month_${localISO(new Date(new Date().getFullYear(), new Date().getMonth() + (typeof saved.monthOffset === "number" ? saved.monthOffset : 0), 1)).slice(0, 7)}`);
+  const initialView: ViewKey = saved.view === "month" ? "month" : "day";
+  const [appts, setAppts] = useState<Appointment[]>(daySeed?.appts ?? []);
+  const [monthAppts, setMonthAppts] = useState<Appointment[]>(monthSeed ?? []);
+  const [pets, setPets] = useState<Record<string, Pet>>(daySeed?.pets ?? {});
   const [filter, setFilter] = useState<FilterKey>(saved.filter && FILTER_KEYS.includes(saved.filter) ? saved.filter : "all");
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(initialView === "day" ? !daySeed : !monthSeed);
   const [busyId, setBusyId] = useState<string | null>(null);
 
   const dayISO = dayISOFromOffset(offset);

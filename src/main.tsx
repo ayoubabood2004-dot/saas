@@ -1,5 +1,6 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
+import { registerSW } from "virtual:pwa-register";
 import App from "./App";
 import { ThemeProvider } from "./lib/theme";
 import { ToastProvider } from "./components/ui";
@@ -52,6 +53,26 @@ window.addEventListener("unhandledrejection", (e) => {
     description: i18next.t("errors.tryAgain", { defaultValue: "Please try again." }) as string,
   });
 });
+
+// Keep long-lived installs fresh. The default registration only checks for a
+// new build on a full page load — but on tablets the app runs as a standalone
+// PWA that iOS *resumes* (never reloads), so a clinic could sit on an old
+// bundle for days. Ask the service worker to re-check whenever the app comes
+// back to the foreground, plus a slow background timer; in autoUpdate mode an
+// updated worker activates immediately and the page reloads itself onto the
+// new version.
+{
+  const registration = registerSW({
+    immediate: true,
+    onRegisteredSW(_url, r) {
+      if (!r) return;
+      const check = () => { r.update().catch(() => { /* offline — next resume retries */ }); };
+      document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") check(); });
+      setInterval(check, 20 * 60 * 1000);
+    },
+  });
+  void registration;
+}
 
 // After a new deploy, a tab that was opened on the previous build may still
 // reference old hashed chunk URLs that no longer exist on the server. Vite fires

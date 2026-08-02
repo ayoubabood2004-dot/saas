@@ -60,11 +60,15 @@ export function ActivityLog() {
   const { restricted } = useOverride(); // locked device (no manager session) → today only
   const clinicId = user?.clinic_id ?? user?.id;
 
-  const [loading, setLoading] = useState(true);
-  const [rows, setRows] = useState<AuditEntry[]>([]);
-  const [pets, setPets] = useState<Pet[]>([]);
-  const [staffByUser, setStaffByUser] = useState<Map<string, string>>(new Map());
-  const [staffById, setStaffById] = useState<Map<string, string>>(new Map());
+  // Seed synchronously from the last snapshot — seeding inside the effect paints
+  // one skeleton frame first (effects run AFTER paint), which reads as a loading
+  // intro on every revisit even though the data is already here.
+  const seed = getCached<{ rows: AuditEntry[]; pets: Pet[]; byUser: [string, string][]; byId: [string, string][] }>(`actlog_${clinicId ?? ""}`);
+  const [loading, setLoading] = useState(!seed);
+  const [rows, setRows] = useState<AuditEntry[]>(seed?.rows ?? []);
+  const [pets, setPets] = useState<Pet[]>(seed?.pets ?? []);
+  const [staffByUser, setStaffByUser] = useState<Map<string, string>>(() => new Map(seed?.byUser ?? []));
+  const [staffById, setStaffById] = useState<Map<string, string>>(() => new Map(seed?.byId ?? []));
   const [q, setQ] = useState("");
   const [cat, setCat] = useState<Category>("all");
   const [shown, setShown] = useState(60);

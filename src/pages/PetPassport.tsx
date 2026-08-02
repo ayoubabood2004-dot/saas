@@ -243,18 +243,24 @@ export function PetPassport() {
   const { t, i18n } = useTranslation();
   const [params] = useSearchParams();
   const initialTab = (params.get("tab") as Tab) || "diet";
-  const [pet, setPet] = useState<Pet | null>(null);
+  // Synchronous cache seed: if this file was opened before, the WHOLE record
+  // paints on the very first frame. Seeding only in the effect (which runs
+  // after paint) flashed a "loading…" frame on every re-open.
+  const seed = petId
+    ? getCached<{ p: Pet | null; w: WeightLog[]; v: Vaccination[]; h: MedicalVisit[]; m: MediaItem[]; tx: TreatmentEntry[]; adm: Admission[]; apt: Appointment[]; rem: Reminder[]; nt: PetNote[]; cv: ClinicVisit[] }>(`pet_${petId}`)
+    : undefined;
+  const [pet, setPet] = useState<Pet | null>(seed?.p ?? null);
   const [tab, setTab] = useState<Tab>(TABS.some((x) => x.id === initialTab) ? initialTab : "diet");
-  const [weights, setWeights] = useState<WeightLog[]>([]);
-  const [vaccines, setVaccines] = useState<Vaccination[]>([]);
-  const [notes, setNotes] = useState<PetNote[]>([]);
-  const [visits, setVisits] = useState<MedicalVisit[]>([]);
-  const [clinicVisits, setClinicVisits] = useState<ClinicVisit[]>([]);
-  const [media, setMedia] = useState<MediaItem[]>([]);
-  const [treatments, setTreatments] = useState<TreatmentEntry[]>([]);
-  const [admissions, setAdmissions] = useState<Admission[]>([]);
-  const [appointments, setAppointments] = useState<Appointment[]>([]);
-  const [reminders, setReminders] = useState<Reminder[]>([]);
+  const [weights, setWeights] = useState<WeightLog[]>(seed?.w ?? []);
+  const [vaccines, setVaccines] = useState<Vaccination[]>(seed?.v ?? []);
+  const [notes, setNotes] = useState<PetNote[]>(seed?.nt ?? []);
+  const [visits, setVisits] = useState<MedicalVisit[]>(seed?.h ?? []);
+  const [clinicVisits, setClinicVisits] = useState<ClinicVisit[]>(seed?.cv ?? []);
+  const [media, setMedia] = useState<MediaItem[]>(seed?.m ?? []);
+  const [treatments, setTreatments] = useState<TreatmentEntry[]>(seed?.tx ?? []);
+  const [admissions, setAdmissions] = useState<Admission[]>(seed?.adm ?? []);
+  const [appointments, setAppointments] = useState<Appointment[]>(seed?.apt ?? []);
+  const [reminders, setReminders] = useState<Reminder[]>(seed?.rem ?? []);
   const { user } = useAuth();
   const toast = useToast();
   // Owners may view their pet's health record but not modify clinical data.

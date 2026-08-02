@@ -102,10 +102,13 @@ export function Inventory() {
   const { user } = useAuth();
   const toast = useToast();
   const clinicId = user?.clinic_id ?? user?.id; // shared workspace id (manager's id for staff)
-  const [products, setProducts] = useState<Product[]>([]);
-  const [companies, setCompanies] = useState<Company[]>([]);
-  const [sections, setSections] = useState<CompanySection[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Synchronous cache seed — seeding in the effect would paint one skeleton
+  // frame first (effects run after paint) and read as a loading intro.
+  const seed = getCached<{ p: Product[]; c: Company[]; s: CompanySection[] }>(`inv_${clinicId ?? "self"}`);
+  const [products, setProducts] = useState<Product[]>(seed?.p ?? []);
+  const [companies, setCompanies] = useState<Company[]>(seed?.c ?? []);
+  const [sections, setSections] = useState<CompanySection[]>(seed?.s ?? []);
+  const [loading, setLoading] = useState(!seed);
   const [view, setView] = useState<View>("products");
   // null = لم يُفحص بعد · false = ترحيل 0075 ناقص (المجموعات تسقط بصمت)
   const [groupsOk, setGroupsOk] = useState<boolean | null>(null);

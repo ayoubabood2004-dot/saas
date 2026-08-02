@@ -37,8 +37,11 @@ export function SurgeriesHub() {
   const lang = i18n.language;
   const todayISO = localISO();
 
-  const [rows, setRows] = useState<Surgery[] | null>(null);
-  const [pets, setPets] = useState<Record<string, Pet>>({});
+  // Synchronous cache seed — seeding inside the effect paints one skeleton
+  // frame first (effects run after paint) = a fake loading intro on revisit.
+  const seed = getCached<{ srg: Surgery[]; pets: Record<string, Pet> }>(`surghub_${user?.clinic_id ?? user?.id ?? ""}`);
+  const [rows, setRows] = useState<Surgery[] | null>(seed?.srg ?? null);
+  const [pets, setPets] = useState<Record<string, Pet>>(seed?.pets ?? {});
   const [q, setQ] = useState("");
   const [outcomeFilter, setOutcomeFilter] = useState<string | null>(null);
 

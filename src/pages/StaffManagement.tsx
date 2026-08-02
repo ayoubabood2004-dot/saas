@@ -60,8 +60,11 @@ export function StaffManagement() {
   // Hidden lock: buttons look normal but silently ignore taps; after a few, a toast explains.
   const lockedNudge = () => noteLockedTap(() => toast.toast({ tone: "info", title: "مقفل — يُفتح بوضع المدير" }));
   const guard = (fn: () => void) => { if (restricted) { lockedNudge(); return; } fn(); };
-  const [staff, setStaff] = useState<StaffMember[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Synchronous cache seed — seeding inside the effect paints one skeleton
+  // frame first (effects run after paint) = a fake loading intro on revisit.
+  const rosterSeed = getCached<StaffMember[]>("staff_roster");
+  const [staff, setStaff] = useState<StaffMember[]>(rosterSeed ?? []);
+  const [loading, setLoading] = useState(!rosterSeed);
   const [editing, setEditing] = useState<StaffMember | null>(null);
   const [deleting, setDeleting] = useState<StaffMember | null>(null);
   const [invitesOpen, setInvitesOpen] = useState(false);

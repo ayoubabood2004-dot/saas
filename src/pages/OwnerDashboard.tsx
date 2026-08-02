@@ -39,12 +39,17 @@ export function OwnerDashboard() {
   const { t, i18n } = useTranslation();
   const { user } = useAuth();
   const navigate = useNavigate();
-  const [pets, setPets] = useState<PetWithVax[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Synchronous seed from the last snapshot — seeding in the effect paints one
+  // skeleton frame first (effects run after paint) = a fake "loading intro".
+  const seed = getCached<{ pets: PetWithVax[]; appts: Appointment[]; reminders: Reminder[] }>(`owner_home_${user?.id ?? ""}`);
+  const [pets, setPets] = useState<PetWithVax[]>(seed?.pets ?? []);
+  const [loading, setLoading] = useState(!seed);
   const [addOpen, setAddOpen] = useState(false);
-  const [nextAppt, setNextAppt] = useState<Appointment | null>(null);
-  const [appts, setAppts] = useState<Appointment[]>([]);
-  const [reminders, setReminders] = useState<Reminder[]>([]);
+  const [nextAppt, setNextAppt] = useState<Appointment | null>(
+    () => seed?.appts.find((a) => new Date(a.scheduled_at) >= new Date() && a.status !== "done") ?? null,
+  );
+  const [appts, setAppts] = useState<Appointment[]>(seed?.appts ?? []);
+  const [reminders, setReminders] = useState<Reminder[]>(seed?.reminders ?? []);
   const [acctOpen, setAcctOpen] = useState(false);
   const [acctPhone, setAcctPhone] = useState("");
   const [acctEmail, setAcctEmail] = useState("");

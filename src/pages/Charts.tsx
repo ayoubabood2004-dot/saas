@@ -90,7 +90,9 @@ export function Charts() {
     const id = setInterval(() => setTick((n) => n + 1), 60000);
     return () => clearInterval(id);
   }, []);
-  const [visits, setVisits] = useState<ClinicVisit[]>([]);
+  // Synchronous seed of the open visits — seeding only inside the effect paints
+  // one empty frame first (effects run after paint), a visible flash on revisit.
+  const [visits, setVisits] = useState<ClinicVisit[]>(() => getCached<ClinicVisit[]>(`openvisits_${clinicId ?? ""}`) ?? []);
   const [treatments, setTreatments] = useState<TreatmentEntry[]>([]);
   const [txLoaded, setTxLoaded] = useState(false);
   const [opening, setOpening] = useState<string | null>(null);

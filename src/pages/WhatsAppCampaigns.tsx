@@ -46,11 +46,14 @@ export function WhatsAppCampaigns() {
   const taRef = useRef<HTMLTextAreaElement>(null);
   const prefillApplied = useRef(false);
 
-  const [pets, setPets] = useState<Pet[]>([]);
-  const [vaccinations, setVaccinations] = useState<Vaccination[]>([]);
-  const [visits, setVisits] = useState<MedicalVisit[]>([]);
-  const [waLog, setWaLog] = useState<WhatsAppMessage[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Synchronous cache seed — seeding inside the effect paints one skeleton
+  // frame first (effects run after paint) = a fake loading intro on revisit.
+  const seed = getCached<{ p: Pet[]; vax: Vaccination[]; vis: MedicalVisit[]; log: WhatsAppMessage[] }>(`wacamp_${user?.clinic_id ?? user?.id ?? ""}`);
+  const [pets, setPets] = useState<Pet[]>(seed?.p ?? []);
+  const [vaccinations, setVaccinations] = useState<Vaccination[]>(seed?.vax ?? []);
+  const [visits, setVisits] = useState<MedicalVisit[]>(seed?.vis ?? []);
+  const [waLog, setWaLog] = useState<WhatsAppMessage[]>(seed?.log ?? []);
+  const [loading, setLoading] = useState(!seed);
   const [message, setMessage] = useState("");
   const [filter, setFilter] = useState<SpeciesFilter>("all");
   const [segment, setSegment] = useState<Segment>("all");

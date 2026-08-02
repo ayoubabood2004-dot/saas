@@ -109,12 +109,15 @@ export function RemindersHub() {
   const navigate = useNavigate();
   const dial = getDialCode();
 
-  const [pets, setPets] = useState<Pet[]>([]);
-  const [vaccinations, setVaccinations] = useState<Vaccination[]>([]);
-  const [surgeries, setSurgeries] = useState<Surgery[]>([]);
-  const [appointments, setAppointments] = useState<Appointment[]>([]);
-  const [manual, setManual] = useState<Reminder[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Synchronous cache seed — effects run AFTER paint, so seeding there flashes
+  // one skeleton frame on every revisit (the "loading intro" the doctor sees).
+  const seed = getCached<{ p: Pet[]; vax: Vaccination[]; srg: Surgery[]; appts: Appointment[]; rems: Reminder[] }>(`remhub_${user?.clinic_id ?? user?.id ?? ""}`);
+  const [pets, setPets] = useState<Pet[]>(seed?.p ?? []);
+  const [vaccinations, setVaccinations] = useState<Vaccination[]>(seed?.vax ?? []);
+  const [surgeries, setSurgeries] = useState<Surgery[]>(seed?.srg ?? []);
+  const [appointments, setAppointments] = useState<Appointment[]>(seed?.appts ?? []);
+  const [manual, setManual] = useState<Reminder[]>(seed?.rems ?? []);
+  const [loading, setLoading] = useState(!seed);
   const [kind, setKind] = useState<Kind | "all">("all");
   const [timeF, setTimeF] = useState<TimeFilter>("all");
   const [q, setQ] = useState("");
