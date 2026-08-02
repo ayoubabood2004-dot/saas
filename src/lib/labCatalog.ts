@@ -119,6 +119,42 @@ export const LAB_PANELS: LabPanel[] = [
 
 export const labPanelById = (id: string): LabPanel | undefined => LAB_PANELS.find((p) => p.id === id);
 
+/* ------------------------- Simple entry groups -------------------------
+ * The recording sheet doesn't ask the doctor to know panel names — it shows
+ * ONE sheet of values grouped by organ/system; he types only what's on the
+ * analyser printout and the entry names itself from the groups he touched. */
+export interface LabGroup { id: string; label: string; emoji: string; params: string[] }
+
+export const LAB_GROUPS: LabGroup[] = [
+  { id: "blood", label: "الدم", emoji: "🩸", params: HEMATOLOGY.map((p) => p.id) },
+  { id: "renal", label: "الكلى", emoji: "💧", params: ["bun", "crea", "phos"] },
+  { id: "hepatic", label: "الكبد", emoji: "🟠", params: ["alt", "ast", "alp", "ggt", "tbil"] },
+  { id: "protein", label: "السكر والبروتين", emoji: "🍬", params: ["glu", "tp", "alb", "glob"] },
+  { id: "lytes", label: "الأملاح", emoji: "⚡", params: ["na", "k", "cl", "ca"] },
+  { id: "other", label: "بنكرياس وغدد", emoji: "🧪", params: ["amyl", "lipa", "chol", "t4"] },
+  { id: "urine", label: "البول", emoji: "🟡", params: ["usg", "uph"] },
+];
+
+/** Name a numeric entry from the groups that actually got values. */
+export function nameFromGroups(valueIds: string[]): { panel_id: string; panel_label: string } {
+  const touched = LAB_GROUPS.filter((g) => g.params.some((p) => valueIds.includes(p)));
+  const hasFree = valueIds.some((id) => id.startsWith("free_"));
+  if (touched.length === 0) return { panel_id: "custom", panel_label: "تحاليل مخبرية" };
+  if (touched.length === 1 && !hasFree) {
+    const g = touched[0];
+    return g.id === "blood"
+      ? { panel_id: "cbc", panel_label: "تعداد الدم CBC" }
+      : g.id === "urine"
+        ? { panel_id: "urinalysis", panel_label: "تحليل البول" }
+        : { panel_id: g.id, panel_label: `كيمياء — ${g.label}` };
+  }
+  const blood = touched.some((g) => g.id === "blood");
+  const chem = touched.some((g) => g.id !== "blood" && g.id !== "urine");
+  if (blood && chem) return { panel_id: "mixed", panel_label: "دم + كيمياء" };
+  if (chem) return { panel_id: "chem", panel_label: `كيمياء — ${touched.filter((g) => g.id !== "urine").map((g) => g.label).join(" و")}` };
+  return { panel_id: "mixed", panel_label: "تحاليل مخبرية" };
+}
+
 /* -------------------------------- Snap tests ------------------------------- */
 export interface SnapTest { id: string; label: string; species: "dog" | "cat" | "both" }
 

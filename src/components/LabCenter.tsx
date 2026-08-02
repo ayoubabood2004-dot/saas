@@ -17,8 +17,8 @@ import { FlaskConical, Plus, Camera, Trash2, Receipt, ChevronDown, AlertTriangle
 import type { Pet, LabResult, LabValue } from "@/types";
 import { repo } from "@/lib/repo";
 import {
-  LAB_PANELS, labParamById, labRange, labFlag, snapTestsFor, snapTestById,
-  type LabPanel, type LabFlag,
+  LAB_PARAMS, LAB_GROUPS, nameFromGroups, labParamById, labRange, labFlag,
+  snapTestsFor, snapTestById, type LabFlag,
 } from "@/lib/labCatalog";
 import { FLAG_ARROW } from "@/lib/cbc";
 import { Modal } from "@/components/Modal";
@@ -39,26 +39,39 @@ const FLAG_CELL: Record<LabFlag, string> = {
 };
 
 /* ============================== Recording modal ============================== */
+// One question — «شنو سويت؟» — three big buttons. Numbers mode shows a single
+// grouped sheet: the doctor types only what's on the analyser printout and the
+// entry NAMES ITSELF from the groups he touched. No panel jargon, no catalogs.
+
+type EntryMode = "numbers" | "snap" | "micro";
+
+const MICRO_TYPES = [
+  { id: "fecal", label: "فحص البراز", emoji: "🔬" },
+  { id: "skin", label: "كشط جلد / فطريات", emoji: "🧫" },
+  { id: "cytology", label: "خلايا / خزعة", emoji: "🔍" },
+  { id: "culture", label: "زراعة وحساسية", emoji: "🧬" },
+  { id: "micro_other", label: "فحص آخر", emoji: "📋" },
+];
 
 function LabEntry({ pet, visitId, doctor, onSaved, onClose }: {
   pet: Pet; visitId?: string | null; doctor?: string | null;
   onSaved: () => void; onClose: () => void;
 }) {
   const toast = useToast();
-  const [panel, setPanel] = useState<LabPanel | null>(null);
+  const [mode, setMode] = useState<EntryMode | null>(null);
+  const [group, setGroup] = useState("blood");   // active value-group filter
+  const [q, setQ] = useState("");                 // search across every param
   const [vals, setVals] = useState<Record<string, string>>({});
   const [snapTest, setSnapTest] = useState<string | null>(null);
   const [snapResult, setSnapResult] = useState<"positive" | "negative" | null>(null);
+  const [microType, setMicroType] = useState(MICRO_TYPES[0]);
   const [notes, setNotes] = useState("");
   const [photo, setPhoto] = useState<string | null>(null);
   const [takenAt, setTakenAt] = useState(() => {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   });
-  // free-form rows for the «تحليل حر» panel
-  const [freeRows, setFreeRows] = useState<{ label: string; value: string; unit: string; low: string; high: string }[]>(
-    [{ label: "", value: "", unit: "", low: "", high: "" }],
-  );
+  const [freeRows, setFreeRows] = useState<{ label: string; value: string; unit: string; low: string; high: string }[]>([]);
   const [busy, setBusy] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -70,55 +83,53 @@ function LabEntry({ pet, visitId, doctor, onSaved, onClose }: {
     } catch { playWarning(); toast.error("تعذّر تجهيز الصورة"); }
   };
 
-  /** Build the snapshotted values array from what the doctor actually typed. */
+  /** Snapshot every value the doctor actually typed (any group) + free rows. */
   const buildValues = (): LabValue[] => {
-    if (panel?.id === "custom") {
-      return freeRows
-        .filter((r) => r.label.trim() && r.value.trim() !== "" && Number.isFinite(Number(r.value)))
-        .map((r) => {
-          const v = Number(r.value);
-          const lo = r.low.trim() === "" ? undefined : Number(r.low);
-          const hi = r.high.trim() === "" ? undefined : Number(r.high);
-          return {
-            id: `free_${r.label.trim().toLowerCase().replace(/\s+/g, "_").slice(0, 40)}`,
-            label: r.label.trim(), value: v, unit: r.unit.trim(),
-            low: lo, high: hi, flag: labFlag(v, lo, hi),
-          };
-        });
-    }
     const out: LabValue[] = [];
-    for (const pid of panel?.params ?? []) {
-      const raw = vals[pid];
-      if (raw === undefined || raw.trim() === "" || !Number.isFinite(Number(raw))) continue;
+    for (const [pid, raw] of Object.entries(vals)) {
+      if (raw.trim() === "" || !Number.isFinite(Number(raw))) continue;
       const p = labParamById(pid);
       if (!p) continue;
       const [lo, hi] = labRange(p, pet.species);
       const v = Number(raw);
       out.push({ id: pid, label: p.label, abbr: p.abbr, value: v, unit: p.unit, low: lo, high: hi, flag: labFlag(v, lo, hi) });
     }
+    for (const r of freeRows) {
+      if (!r.label.trim() || r.value.trim() === "" || !Number.isFinite(Number(r.value))) continue;
+      const v = Number(r.value);
+      const lo = r.low.trim() === "" ? undefined : Number(r.low);
+      const hi = r.high.trim() === "" ? undefined : Number(r.high);
+      out.push({
+        id: `free_${r.label.trim().toLowerCase().replace(/\s+/g, "_").slice(0, 40)}`,
+        label: r.label.trim(), value: v, unit: r.unit.trim(),
+        low: lo, high: hi, flag: labFlag(v, lo, hi),
+      });
+    }
     return out;
   };
 
-  const filledCount = panel?.kind === "numeric" ? buildValues().length : 0;
-  const canSave = !busy && !!panel && (
-    panel.kind === "numeric" ? filledCount > 0 || !!notes.trim() || !!photo
-      : panel.kind === "snap" ? !!snapTest && !!snapResult
+  const filledCount = mode === "numbers" ? buildValues().length : 0;
+  const canSave = !busy && !!mode && (
+    mode === "numbers" ? filledCount > 0 || !!notes.trim() || !!photo
+      : mode === "snap" ? !!snapTest && !!snapResult
         : !!notes.trim() || !!photo
   );
 
   const save = async () => {
-    if (!panel || !canSave) return;
+    if (!mode || !canSave) return;
     setBusy(true);
     try {
+      const values = mode === "numbers" ? buildValues() : null;
       const snap = snapTest ? snapTestById(snapTest) : undefined;
+      const named = mode === "numbers" ? nameFromGroups((values ?? []).map((v) => v.id)) : null;
       await repo.addLabResult({
         pet_id: pet.id, visit_id: visitId ?? null,
-        panel_id: panel.id,
-        panel_label: panel.kind === "snap" && snap ? `فحص سريع — ${snap.label}` : panel.label,
-        kind: panel.kind,
-        values: panel.kind === "numeric" ? buildValues() : null,
-        snap_test_id: panel.kind === "snap" ? snapTest : null,
-        snap_result: panel.kind === "snap" ? snapResult : null,
+        panel_id: mode === "numbers" ? named!.panel_id : mode === "snap" ? "snap" : microType.id,
+        panel_label: mode === "numbers" ? named!.panel_label : mode === "snap" ? `فحص سريع — ${snap?.label ?? ""}` : microType.label,
+        kind: mode === "numbers" ? "numeric" : mode === "snap" ? "snap" : "descriptive",
+        values,
+        snap_test_id: mode === "snap" ? snapTest : null,
+        snap_result: mode === "snap" ? snapResult : null,
         notes: notes.trim() || null,
         photo_url: photo,
         doctor: doctor ?? null,
@@ -135,21 +146,26 @@ function LabEntry({ pet, visitId, doctor, onSaved, onClose }: {
     } finally { setBusy(false); }
   };
 
-  /* ---- Step 1: panel picker ---- */
-  if (!panel) {
+  /* ---- Step 1: one question, three big answers ---- */
+  if (!mode) {
+    const MODES: { id: EntryMode; emoji: string; title: string; sub: string }[] = [
+      { id: "numbers", emoji: "🩸", title: "أرقام تحاليل", sub: "دم، كيمياء، بول — اكتب الأرقام اللي بورقة الجهاز وبس" },
+      { id: "snap", emoji: "⚡", title: "فحص سريع", sub: "بارفو، ديستمبر، FeLV… النتيجة إيجابي أو سلبي" },
+      { id: "micro", emoji: "🔬", title: "مجهر / زراعة", sub: "براز، كشط جلد، خلايا — وصف وصورة" },
+    ];
     return (
       <div>
-        <p className="mb-3 text-sm text-ink-muted">اختر نوع الفحص — تنفتح حقوله فقط، بلا قوائم طويلة.</p>
-        <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
-          {LAB_PANELS.map((p) => (
+        <p className="mb-3 text-sm font-bold text-ink-muted">شنو سويت للحيوان؟</p>
+        <div className="grid gap-2.5 sm:grid-cols-3">
+          {MODES.map((m) => (
             <button
-              key={p.id} type="button"
-              onClick={() => { playTap(); setPanel(p); }}
-              className="flex flex-col items-start gap-1 rounded-2xl border border-line bg-surface-1 p-3.5 text-start transition hover:border-brand-300 hover:bg-brand-50/40 active:scale-[.98] dark:hover:bg-brand-500/10"
+              key={m.id} type="button"
+              onClick={() => { playTap(); setMode(m.id); }}
+              className="flex flex-col items-center gap-1.5 rounded-2xl border-2 border-line bg-surface-1 p-5 text-center transition hover:border-brand-400 hover:bg-brand-50/40 active:scale-[.98] dark:hover:bg-brand-500/10"
             >
-              <span className="text-2xl leading-none">{p.emoji}</span>
-              <span className="mt-1 text-sm font-extrabold text-ink">{p.label}</span>
-              {p.hint && <span className="text-2xs leading-snug text-ink-subtle">{p.hint}</span>}
+              <span className="text-4xl leading-none">{m.emoji}</span>
+              <span className="mt-1 text-base font-extrabold text-ink">{m.title}</span>
+              <span className="text-2xs leading-snug text-ink-subtle">{m.sub}</span>
             </button>
           ))}
         </div>
@@ -157,68 +173,101 @@ function LabEntry({ pet, visitId, doctor, onSaved, onClose }: {
     );
   }
 
-  /* ---- Step 2: the panel's own form ---- */
+  /* ---- Shared header: back + date ---- */
+  const header = (
+    <div className="flex flex-wrap items-center gap-2">
+      <button type="button" onClick={() => { playTap(); setMode(null); setQ(""); }} className="chip bg-surface-2 text-2xs font-bold text-ink-muted transition hover:text-ink">
+        ← رجوع
+      </button>
+      <span className="text-base font-extrabold text-ink">
+        {mode === "numbers" ? "🩸 أرقام التحاليل" : mode === "snap" ? "⚡ فحص سريع" : `🔬 ${microType.label}`}
+      </span>
+      <label className="ms-auto flex items-center gap-1.5 text-xs text-ink-subtle">
+        التاريخ
+        <input type="date" dir="ltr" value={takenAt} onChange={(e) => e.target.value && setTakenAt(e.target.value)} className="input h-8 py-0 text-sm [color-scheme:light] dark:[color-scheme:dark]" />
+      </label>
+    </div>
+  );
+
+  /* ---- Numbers: ONE sheet — group chips + search, fill only what you have ---- */
+  const groupFilled = (g: { params: string[] }) => g.params.filter((pid) => (vals[pid] ?? "").trim() !== "").length;
+  const query = q.trim().toLowerCase();
+  const visibleParams = query
+    ? LAB_PARAMS.filter((p) => p.abbr.toLowerCase().includes(query) || p.label.includes(q.trim()))
+    : (LAB_GROUPS.find((g) => g.id === group)?.params ?? []).map((pid) => labParamById(pid)!).filter(Boolean);
+
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-2">
-        <button type="button" onClick={() => { playTap(); setPanel(null); setVals({}); setSnapTest(null); setSnapResult(null); }} className="chip bg-surface-2 text-2xs font-bold text-ink-muted transition hover:text-ink">
-          ← تغيير الفحص
-        </button>
-        <span className="text-base font-extrabold text-ink">{panel.emoji} {panel.label}</span>
-        <label className="ms-auto flex items-center gap-1.5 text-xs text-ink-subtle">
-          تاريخ التحليل
-          <input type="date" dir="ltr" value={takenAt} onChange={(e) => e.target.value && setTakenAt(e.target.value)} className="input h-8 py-0 text-sm [color-scheme:light] dark:[color-scheme:dark]" />
-        </label>
-      </div>
+      {header}
 
-      {panel.kind === "numeric" && panel.id !== "custom" && (
-        <div className="grid gap-2 sm:grid-cols-2">
-          {(panel.params ?? []).map((pid) => {
-            const p = labParamById(pid);
-            if (!p) return null;
-            const [lo, hi] = labRange(p, pet.species);
-            const raw = vals[pid] ?? "";
-            const num = raw.trim() === "" ? null : Number(raw);
-            const flag: LabFlag | null = num === null || !Number.isFinite(num) ? null : labFlag(num, lo, hi);
-            return (
-              <div key={pid} className={cn("flex items-center gap-2.5 rounded-2xl border p-2.5 transition", flag === "high" ? "border-danger-300 bg-danger-50/50 dark:border-danger-500/40 dark:bg-danger-500/10" : flag === "low" ? "border-sky-300 bg-sky-50/50 dark:border-sky-500/40 dark:bg-sky-500/10" : "border-line bg-surface-1")}>
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-bold text-ink"><span dir="ltr">{p.abbr}</span> · {p.label}</p>
-                  <p className="text-2xs tabular-nums text-ink-subtle" dir="ltr">{formatNum(lo)}–{formatNum(hi)} {p.unit}</p>
-                </div>
-                <input
-                  type="number" inputMode="decimal" step={p.step} dir="ltr" placeholder="—" value={raw}
-                  onChange={(e) => setVals((m) => ({ ...m, [pid]: e.target.value }))}
-                  className="input h-10 w-24 px-2 py-0 text-center text-base font-extrabold tabular-nums"
-                />
-                {flag && <span className={cn("grid h-7 w-7 shrink-0 place-items-center rounded-full text-sm font-black", FLAG_CHIP[flag])}>{FLAG_ARROW[flag]}</span>}
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {panel.id === "custom" && (
-        <div className="space-y-2">
-          {freeRows.map((r, i) => (
-            <div key={i} className="grid grid-cols-2 gap-2 rounded-2xl border border-line bg-surface-1 p-2.5 sm:grid-cols-[1fr,90px,80px,80px,80px,auto] sm:items-center">
-              <input value={r.label} onChange={(e) => setFreeRows((rs) => rs.map((x, j) => j === i ? { ...x, label: e.target.value } : x))} placeholder="اسم الفحص" className="input h-9 py-0 text-sm font-bold col-span-2 sm:col-span-1" />
-              <input value={r.value} onChange={(e) => setFreeRows((rs) => rs.map((x, j) => j === i ? { ...x, value: e.target.value } : x))} type="number" dir="ltr" placeholder="القيمة" className="input h-9 px-2 py-0 text-center text-sm font-extrabold tabular-nums" />
-              <input value={r.unit} onChange={(e) => setFreeRows((rs) => rs.map((x, j) => j === i ? { ...x, unit: e.target.value } : x))} dir="ltr" placeholder="الوحدة" className="input h-9 px-2 py-0 text-center text-sm" />
-              <input value={r.low} onChange={(e) => setFreeRows((rs) => rs.map((x, j) => j === i ? { ...x, low: e.target.value } : x))} type="number" dir="ltr" placeholder="من" className="input h-9 px-2 py-0 text-center text-sm tabular-nums" />
-              <input value={r.high} onChange={(e) => setFreeRows((rs) => rs.map((x, j) => j === i ? { ...x, high: e.target.value } : x))} type="number" dir="ltr" placeholder="إلى" className="input h-9 px-2 py-0 text-center text-sm tabular-nums" />
-              <button type="button" onClick={() => setFreeRows((rs) => rs.length > 1 ? rs.filter((_, j) => j !== i) : rs)} className="grid h-8 w-8 place-items-center rounded-full text-ink-subtle transition hover:bg-danger-50 hover:text-danger-600"><Trash2 size={14} /></button>
+      {mode === "numbers" && (
+        <>
+          <p className="rounded-xl bg-brand-50/60 px-3 py-2 text-2xs font-semibold leading-relaxed text-brand-800 dark:bg-brand-500/10 dark:text-brand-200">
+            عبّي بس الأرقام الموجودة بورقة الجهاز — الباقي اتركه فارغ، والسستم يسمي التحليل ويلوّن القيم بروحه.
+          </p>
+          <div className="flex flex-wrap items-center gap-1.5">
+            {LAB_GROUPS.map((g) => {
+              const n = groupFilled(g);
+              return (
+                <button key={g.id} type="button" onClick={() => { playTap(); setGroup(g.id); setQ(""); }}
+                  className={cn("inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-sm font-bold transition",
+                    !query && group === g.id ? "bg-brand-600 text-white shadow-soft" : "bg-surface-2 text-ink-muted hover:text-ink")}>
+                  {g.emoji} {g.label}
+                  {n > 0 && <span className={cn("grid h-[18px] min-w-[18px] place-items-center rounded-full px-1 text-[10px] font-black", !query && group === g.id ? "bg-white/25 text-white" : "bg-brand-600 text-white")}>{formatNum(n)}</span>}
+                </button>
+              );
+            })}
+            <div className="relative ms-auto">
+              <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="دوّر على فحص… (ALT، سكر…)" className="input h-9 w-44 py-0 pe-3 text-sm" />
             </div>
-          ))}
-          <button type="button" onClick={() => setFreeRows((rs) => [...rs, { label: "", value: "", unit: "", low: "", high: "" }])} className="chip bg-surface-2 text-2xs font-bold text-ink-muted transition hover:text-ink">
-            <Plus size={12} /> فحص آخر
-          </button>
-          <p className="text-2xs text-ink-subtle">النطاق الطبيعي (من/إلى) اختياري — إذا كتبته تنلوّن القيمة تلقائياً.</p>
-        </div>
+          </div>
+
+          <div className="grid gap-2 sm:grid-cols-2">
+            {visibleParams.map((p) => {
+              const [lo, hi] = labRange(p, pet.species);
+              const raw = vals[p.id] ?? "";
+              const num = raw.trim() === "" ? null : Number(raw);
+              const flag: LabFlag | null = num === null || !Number.isFinite(num) ? null : labFlag(num, lo, hi);
+              return (
+                <div key={p.id} className={cn("flex items-center gap-2.5 rounded-2xl border p-2.5 transition", flag === "high" ? "border-danger-300 bg-danger-50/50 dark:border-danger-500/40 dark:bg-danger-500/10" : flag === "low" ? "border-sky-300 bg-sky-50/50 dark:border-sky-500/40 dark:bg-sky-500/10" : "border-line bg-surface-1")}>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-bold text-ink"><span dir="ltr">{p.abbr}</span> · {p.label}</p>
+                    <p className="text-2xs tabular-nums text-ink-subtle" dir="ltr">{formatNum(lo)}–{formatNum(hi)} {p.unit}</p>
+                  </div>
+                  <input
+                    type="number" inputMode="decimal" step={p.step} dir="ltr" placeholder="—" value={raw}
+                    onChange={(e) => setVals((m) => ({ ...m, [p.id]: e.target.value }))}
+                    className="input h-10 w-24 px-2 py-0 text-center text-base font-extrabold tabular-nums"
+                  />
+                  {flag && <span className={cn("grid h-7 w-7 shrink-0 place-items-center rounded-full text-sm font-black", FLAG_CHIP[flag])}>{FLAG_ARROW[flag]}</span>}
+                </div>
+              );
+            })}
+            {visibleParams.length === 0 && <p className="col-span-full py-4 text-center text-sm text-ink-subtle">ماكو فحص بهذا الاسم — ضيفه تحت كـ«فحص مو موجود».</p>}
+          </div>
+
+          {/* Anything the catalog doesn't have */}
+          <div className="space-y-2">
+            {freeRows.map((r, i) => (
+              <div key={i} className="grid grid-cols-2 gap-2 rounded-2xl border border-dashed border-line bg-surface-1 p-2.5 sm:grid-cols-[1fr,90px,80px,80px,80px,auto] sm:items-center">
+                <input value={r.label} onChange={(e) => setFreeRows((rs) => rs.map((x, j) => j === i ? { ...x, label: e.target.value } : x))} placeholder="اسم الفحص" className="input h-9 py-0 text-sm font-bold col-span-2 sm:col-span-1" />
+                <input value={r.value} onChange={(e) => setFreeRows((rs) => rs.map((x, j) => j === i ? { ...x, value: e.target.value } : x))} type="number" dir="ltr" placeholder="القيمة" className="input h-9 px-2 py-0 text-center text-sm font-extrabold tabular-nums" />
+                <input value={r.unit} onChange={(e) => setFreeRows((rs) => rs.map((x, j) => j === i ? { ...x, unit: e.target.value } : x))} dir="ltr" placeholder="الوحدة" className="input h-9 px-2 py-0 text-center text-sm" />
+                <input value={r.low} onChange={(e) => setFreeRows((rs) => rs.map((x, j) => j === i ? { ...x, low: e.target.value } : x))} type="number" dir="ltr" placeholder="من" className="input h-9 px-2 py-0 text-center text-sm tabular-nums" />
+                <input value={r.high} onChange={(e) => setFreeRows((rs) => rs.map((x, j) => j === i ? { ...x, high: e.target.value } : x))} type="number" dir="ltr" placeholder="إلى" className="input h-9 px-2 py-0 text-center text-sm tabular-nums" />
+                <button type="button" onClick={() => setFreeRows((rs) => rs.filter((_, j) => j !== i))} className="grid h-8 w-8 place-items-center rounded-full text-ink-subtle transition hover:bg-danger-50 hover:text-danger-600"><Trash2 size={14} /></button>
+              </div>
+            ))}
+            <button type="button" onClick={() => setFreeRows((rs) => [...rs, { label: "", value: "", unit: "", low: "", high: "" }])} className="chip bg-surface-2 text-2xs font-bold text-ink-muted transition hover:text-ink">
+              <Plus size={12} /> فحص مو موجود بالقائمة
+            </button>
+          </div>
+        </>
       )}
 
-      {panel.kind === "snap" && (
+      {mode === "snap" && (
         <div className="space-y-3">
+          <p className="text-2xs font-semibold text-ink-subtle">شنو الفحص؟</p>
           <div className="flex flex-wrap gap-1.5">
             {snapTestsFor(pet.species).map((s) => (
               <button key={s.id} type="button" onClick={() => { playTap(); setSnapTest(s.id); }}
@@ -242,10 +291,21 @@ function LabEntry({ pet, visitId, doctor, onSaved, onClose }: {
         </div>
       )}
 
-      {/* Notes + photo — every kind gets them (sediment, culture table, remarks…). */}
+      {mode === "micro" && (
+        <div className="flex flex-wrap gap-1.5">
+          {MICRO_TYPES.map((m) => (
+            <button key={m.id} type="button" onClick={() => { playTap(); setMicroType(m); }}
+              className={cn("rounded-full px-3.5 py-1.5 text-sm font-semibold transition", microType.id === m.id ? "bg-brand-600 text-white shadow-soft" : "bg-surface-2 text-ink-muted hover:text-ink")}>
+              {m.emoji} {m.label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Notes + photo — every mode gets them. */}
       <div className="space-y-2">
         <textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)}
-          placeholder={panel.kind === "descriptive" ? "النتيجة والملاحظات (ما شوهد بالمجهر، البكتيريا والمضاد الفعال…)" : "ملاحظات إضافية (اختياري)"}
+          placeholder={mode === "micro" ? "النتيجة والملاحظات (ما شوهد بالمجهر، البكتيريا والمضاد الفعال…)" : "ملاحظات إضافية (اختياري)"}
           className="input min-h-[64px] w-full resize-y text-sm leading-relaxed" />
         <div className="flex items-center gap-2">
           <input ref={fileRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => { void pickPhoto(e.target.files?.[0]); e.target.value = ""; }} />
@@ -258,8 +318,8 @@ function LabEntry({ pet, visitId, doctor, onSaved, onClose }: {
       </div>
 
       <div className="flex items-center justify-between border-t border-line pt-3">
-        <span className="text-2xs text-ink-subtle">
-          {panel.kind === "numeric" && filledCount > 0 ? `${formatNum(filledCount)} قيمة جاهزة للحفظ` : ""}
+        <span className="text-2xs font-bold text-ink-subtle">
+          {mode === "numbers" && filledCount > 0 ? `${formatNum(filledCount)} قيمة جاهزة للحفظ` : ""}
         </span>
         <Button onClick={save} loading={busy} disabled={!canSave} leftIcon={<FlaskConical size={16} />}>حفظ النتيجة</Button>
       </div>
