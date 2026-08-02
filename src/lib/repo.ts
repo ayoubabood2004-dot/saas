@@ -4,7 +4,7 @@
 import { loadDB, saveDB } from "./demoStore";
 import { supabase } from "./supabase";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, AppointmentStatus, ClinicInfo, PublicStaff, DailyNote, TreatmentEntry, Admission, Branch, Reminder, Product, Company, CompanySection, Purchase, PurchaseItem, PurchasePayment, PurchaseDraftLine, PurchaseMeta, Courier, DeliveryOrder, PetMovement, DemoDB, Invoice, InvoiceItem, CheckoutItem, SaleMeta, Customer, DiscountType, PaymentMethod, PaymentSplit, WhatsAppMessage, AuditEntry, LoginEvent, PetNote, Expense, ClinicVisit , Surgery } from "@/types";
+import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, AppointmentStatus, ClinicInfo, PublicStaff, DailyNote, TreatmentEntry, Admission, Branch, Reminder, Product, Company, CompanySection, Purchase, PurchaseItem, PurchasePayment, PurchaseDraftLine, PurchaseMeta, Courier, DeliveryOrder, PetMovement, DemoDB, Invoice, InvoiceItem, CheckoutItem, SaleMeta, Customer, DiscountType, PaymentMethod, PaymentSplit, WhatsAppMessage, AuditEntry, LoginEvent, PetNote, Expense, ClinicVisit , Surgery, LabResult } from "@/types";
 import { uid, uuid, ageMonths, localISO } from "./utils";
 import { phoneKey } from "./phone";
 import { loadOwners } from "./owners";
@@ -418,6 +418,30 @@ const demoRepo = {
     };
     demoNotesSave([note, ...demoNotesLoad()]);
     return note;
+  },
+
+  /* ---------------- Laboratory (المختبر) ---------------- */
+  async listLabResults(petId: string): Promise<LabResult[]> {
+    return (loadDB().labResults ?? [])
+      .filter((r) => r.pet_id === petId)
+      .sort((a, b) => b.taken_at.localeCompare(a.taken_at));
+  },
+  async addLabResult(input: Omit<LabResult, "id" | "created_at" | "clinic_id">): Promise<LabResult> {
+    const db = loadDB();
+    const row: LabResult = { ...input, id: uid("lab"), clinic_id: null, created_at: new Date().toISOString() };
+    (db.labResults ??= []).unshift(row);
+    saveDB(db);
+    return row;
+  },
+  async setLabBilled(id: string, billed: boolean): Promise<void> {
+    const db = loadDB();
+    const r = (db.labResults ??= []).find((x) => x.id === id);
+    if (r) { r.billed = billed; saveDB(db); }
+  },
+  async deleteLabResult(id: string): Promise<void> {
+    const db = loadDB();
+    db.labResults = (db.labResults ?? []).filter((x) => x.id !== id);
+    saveDB(db);
   },
 
   /* ---------------- Clinic visits (الزيارات) ---------------- */
@@ -1201,6 +1225,8 @@ const DEMO_ACTIVITY_MAP: Record<string, { entity: string; action: "INSERT" | "UP
   addVaccination: { entity: "vaccinations", action: "INSERT" },
   addVisit: { entity: "medical_visits", action: "INSERT" },
   addPetNote: { entity: "pet_notes", action: "INSERT" },
+  addLabResult: { entity: "lab_results", action: "INSERT" },
+  deleteLabResult: { entity: "lab_results", action: "DELETE" },
   addClinicVisit: { entity: "clinic_visits", action: "INSERT" },
   updateClinicVisit: { entity: "clinic_visits", action: "UPDATE" },
   addExpense: { entity: "expenses", action: "INSERT" },
@@ -1445,6 +1471,26 @@ const supabaseRepo: typeof demoRepo = {
   },
   async listPetNotes(petId) {
     return listOf<PetNote>(await sbc().from("pet_notes").select("*").eq("pet_id", petId).order("created_at", { ascending: false }));
+  },
+  async listLabResults(petId) {
+    return listOf<LabResult>(await sbc().from("lab_results").select("*").eq("pet_id", petId).order("taken_at", { ascending: false }));
+  },
+  async addLabResult(input) {
+    // clinic_id is stamped by the column default (auth_clinic()).
+    return need<LabResult>(await sbc().from("lab_results").insert({
+      pet_id: input.pet_id, visit_id: input.visit_id ?? null,
+      panel_id: input.panel_id, panel_label: input.panel_label, kind: input.kind,
+      values: input.values ?? null, snap_test_id: input.snap_test_id ?? null,
+      snap_result: input.snap_result ?? null, notes: input.notes ?? null,
+      photo_url: input.photo_url ?? null, doctor: input.doctor ?? null,
+      billed: input.billed ?? false, taken_at: input.taken_at,
+    }).select().single());
+  },
+  async setLabBilled(id, billed) {
+    ok(await sbc().from("lab_results").update({ billed }).eq("id", id));
+  },
+  async deleteLabResult(id) {
+    ok(await sbc().from("lab_results").delete().eq("id", id));
   },
   async addPetNote(input) {
     // clinic_id + author_id are stamped by the column defaults (auth_clinic() / auth.uid()).

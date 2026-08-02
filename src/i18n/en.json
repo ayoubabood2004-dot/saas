@@ -1082,6 +1082,7 @@
       "timeline": "Medical chart",
       "diet": "Diet",
       "vaccines": "Vaccinations",
+      "labs": "Laboratory",
       "history": "Medical history",
       "treatment": "Treatment",
       "notes": "Notes",

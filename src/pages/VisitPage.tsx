@@ -7,7 +7,8 @@ import {
   Printer, Syringe, ShieldCheck, Pill,
   Zap, Rows3, LayoutGrid, CalendarPlus, Gauge, CalendarClock, FolderOpen,
 } from "lucide-react";
-import type { Pet, ClinicVisit, PetNote, TreatmentEntry } from "@/types";
+import type { Pet, ClinicVisit, PetNote, TreatmentEntry, LabResult } from "@/types";
+import { LastLabsStrip } from "@/components/LabCenter";
 import { repo } from "@/lib/repo";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast, Button } from "@/components/ui";
@@ -133,6 +134,7 @@ export default function VisitPage() {
   const [visit, setVisit] = useState<ClinicVisit | null>(seeded ? seed!.visit! : null);
   const [notes, setNotes] = useState<PetNote[]>([]);
   const [treatments, setTreatments] = useState<TreatmentEntry[]>(seeded ? (seed!.treatments ?? []) : []);
+  const [labs, setLabs] = useState<LabResult[]>([]);
   const [loading, setLoading] = useState(!seeded);
 
   const [planOpen, setPlanOpen] = useState(false);
@@ -149,16 +151,18 @@ export default function VisitPage() {
 
   const reload = useCallback(async () => {
     if (!petId || !visitId) return;
-    const [p, v, ns, tx] = await Promise.all([
+    const [p, v, ns, tx, lab] = await Promise.all([
       repo.getPet(petId),
       repo.getClinicVisit(visitId),
       repo.listPetNotes(petId).catch(() => [] as PetNote[]),
       repo.listTreatments(petId).catch(() => [] as TreatmentEntry[]),
+      repo.listLabResults(petId).catch(() => [] as LabResult[]),
     ]);
     setPet(p ?? null);
     setVisit(v);
     setNotes(ns.filter((n) => n.visit_id === visitId));
     setTreatments(tx.filter((t) => t.visit_id === visitId));
+    setLabs(lab);
     setLoading(false);
   }, [petId, visitId]);
 
@@ -459,6 +463,13 @@ export default function VisitPage() {
         diagnosis={diagnosisText(primary)} record={primary}
         onPrint={printSheet} printable={hasFlowsheet || !!primary}
       />
+
+      {/* ── آخر تحاليل — نظرة سريعة بدون مغادرة الحالة، وضغطة تفتح تبويب المختبر ── */}
+      {labs.length > 0 && (
+        <div className="mt-3">
+          <LastLabsStrip results={labs} onOpen={() => navigate(`/pet/${pet.id}?tab=labs`)} />
+        </div>
+      )}
 
       {/* ── Smart "today" command panel — what the doctor must do right now ── */}
       {hasFlowsheet && !ended && (

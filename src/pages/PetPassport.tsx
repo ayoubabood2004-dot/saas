@@ -11,7 +11,7 @@ import {
   History, LogIn, LogOut, ArrowLeftRight, AlertTriangle, ChevronLeft,
 } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
-import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, TreatmentEntry, Admission, FoodType, DietPlan, Appointment, Reminder, MedicalAssessment, PatientCondition, Species, Sex, PetNote, ClinicVisit, PetMovement } from "@/types";
+import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, TreatmentEntry, Admission, FoodType, DietPlan, Appointment, Reminder, MedicalAssessment, PatientCondition, Species, Sex, PetNote, ClinicVisit, PetMovement, LabResult } from "@/types";
 import { VisitsPanel } from "@/components/VisitsPanel";
 import { SpeciesPicker, SexPicker, AgeInput, BreedPicker, ColorPicker } from "@/components/PetFields";
 import { repo } from "@/lib/repo";
@@ -45,16 +45,18 @@ import { addClinicMed, medicationDisplay } from "@/lib/meds";
 import { breedLabel } from "@/lib/breeds";
 import { vaccineScientific } from "@/lib/vaccines";
 import { useAuth } from "@/contexts/AuthContext";
-import { Stethoscope, SlidersHorizontal, ShoppingCart } from "lucide-react";
+import { Stethoscope, SlidersHorizontal, ShoppingCart, FlaskConical } from "lucide-react";
+import { LabsTab } from "@/components/LabCenter";
 import { RangesEditor } from "@/components/RangesEditor";
 
-type Tab = "visits" | "timeline" | "diet" | "vaccines" | "history" | "treatment" | "notes" | "media" | "qr";
+type Tab = "visits" | "timeline" | "diet" | "vaccines" | "labs" | "history" | "treatment" | "notes" | "media" | "qr";
 /** Each section carries its own colour identity (matched to the events-feed category colours). */
 const TABS: { id: Tab; icon: typeof IdCard; fill: string; text: string }[] = [
   { id: "visits", icon: Stethoscope, fill: "bg-danger-100 dark:bg-danger-500/20", text: "text-danger-700 dark:text-danger-200" },
   { id: "timeline", icon: ClipboardList, fill: "bg-brand-100 dark:bg-brand-500/20", text: "text-brand-700 dark:text-brand-200" },
   { id: "diet", icon: Utensils, fill: "bg-success-100 dark:bg-success-500/20", text: "text-success-700 dark:text-success-200" },
   { id: "vaccines", icon: Syringe, fill: "bg-violet-100 dark:bg-violet-500/20", text: "text-violet-700 dark:text-violet-200" },
+  { id: "labs", icon: FlaskConical, fill: "bg-teal-100 dark:bg-teal-500/20", text: "text-teal-700 dark:text-teal-200" },
   { id: "history", icon: FileText, fill: "bg-sky-100 dark:bg-sky-500/20", text: "text-sky-700 dark:text-sky-200" },
   { id: "treatment", icon: Pill, fill: "bg-danger-100 dark:bg-danger-500/20", text: "text-danger-700 dark:text-danger-200" },
   { id: "notes", icon: NotebookPen, fill: "bg-amber-100 dark:bg-amber-500/20", text: "text-amber-700 dark:text-amber-200" },
@@ -247,9 +249,10 @@ export function PetPassport() {
   // paints on the very first frame. Seeding only in the effect (which runs
   // after paint) flashed a "loading…" frame on every re-open.
   const seed = petId
-    ? getCached<{ p: Pet | null; w: WeightLog[]; v: Vaccination[]; h: MedicalVisit[]; m: MediaItem[]; tx: TreatmentEntry[]; adm: Admission[]; apt: Appointment[]; rem: Reminder[]; nt: PetNote[]; cv: ClinicVisit[] }>(`pet_${petId}`)
+    ? getCached<{ p: Pet | null; w: WeightLog[]; v: Vaccination[]; h: MedicalVisit[]; m: MediaItem[]; tx: TreatmentEntry[]; adm: Admission[]; apt: Appointment[]; rem: Reminder[]; nt: PetNote[]; cv: ClinicVisit[]; lab?: LabResult[] }>(`pet_${petId}`)
     : undefined;
   const [pet, setPet] = useState<Pet | null>(seed?.p ?? null);
+  const [labs, setLabs] = useState<LabResult[]>(seed?.lab ?? []);
   const [tab, setTab] = useState<Tab>(TABS.some((x) => x.id === initialTab) ? initialTab : "diet");
   const [weights, setWeights] = useState<WeightLog[]>(seed?.w ?? []);
   const [vaccines, setVaccines] = useState<Vaccination[]>(seed?.v ?? []);
@@ -291,7 +294,7 @@ export function PetPassport() {
 
   const reload = async () => {
     if (!petId) return;
-    const [p, w, v, h, m, tx, adm, apt, rem, nt, cv] = await Promise.all([
+    const [p, w, v, h, m, tx, adm, apt, rem, nt, cv, lab] = await Promise.all([
       repo.getPet(petId),
       repo.listWeights(petId),
       repo.listVaccinations(petId),
@@ -303,9 +306,11 @@ export function PetPassport() {
       repo.listReminders(),
       repo.listPetNotes(petId).catch(() => [] as PetNote[]),
       repo.listClinicVisitsForPet(petId).catch(() => [] as ClinicVisit[]),
+      repo.listLabResults(petId).catch(() => [] as LabResult[]),
     ]);
-    setCached(`pet_${petId}`, { p: p ?? null, w, v, h, m, tx, adm, apt, rem: rem.filter((r) => r.pet_id === petId), nt, cv });
+    setCached(`pet_${petId}`, { p: p ?? null, w, v, h, m, tx, adm, apt, rem: rem.filter((r) => r.pet_id === petId), nt, cv, lab });
     setPet(p ?? null);
+    setLabs(lab);
     setWeights(w);
     setVaccines(v);
     setVisits(h);
@@ -321,11 +326,11 @@ export function PetPassport() {
   /** رسمة فورية لسجل الحيوان من آخر نسخة — فتح الملف ما ينتظر الشبكة أبداً. */
   const seedFromCache = (): boolean => {
     if (!petId) return false;
-    const c = getCached<{ p: Pet | null; w: WeightLog[]; v: Vaccination[]; h: MedicalVisit[]; m: MediaItem[]; tx: TreatmentEntry[]; adm: Admission[]; apt: Appointment[]; rem: Reminder[]; nt: PetNote[]; cv: ClinicVisit[] }>(`pet_${petId}`);
+    const c = getCached<{ p: Pet | null; w: WeightLog[]; v: Vaccination[]; h: MedicalVisit[]; m: MediaItem[]; tx: TreatmentEntry[]; adm: Admission[]; apt: Appointment[]; rem: Reminder[]; nt: PetNote[]; cv: ClinicVisit[]; lab?: LabResult[] }>(`pet_${petId}`);
     if (!c || !c.p) return false;
     setPet(c.p); setWeights(c.w); setVaccines(c.v); setVisits(c.h); setMedia(c.m);
     setTreatments(c.tx); setAdmissions(c.adm); setAppointments(c.apt); setReminders(c.rem);
-    setNotes(c.nt); setClinicVisits(c.cv);
+    setNotes(c.nt); setClinicVisits(c.cv); setLabs(c.lab ?? []);
     return true;
   };
 
@@ -370,6 +375,7 @@ export function PetPassport() {
     history: {},
     qr: {},
     vaccines: { dot: vaccineOverdue },
+    labs: { count: labs.length || undefined, dot: labs.some((l) => l.snap_result === "positive") },
     treatment: { dot: treatmentDue },
     notes: { count: notes.length || undefined },
     media: { count: media.length || undefined },
@@ -527,6 +533,7 @@ export function PetPassport() {
             {tab === "visits" && <VisitsPanel pet={pet} visits={clinicVisits} canEdit={canEditClinical && !isOwner} onChanged={reload} />}
             {tab === "diet" && <DietTab pet={pet} onChanged={reload} canEdit={canEditClinical || isOwner} />}
             {tab === "vaccines" && <VaccinesTab pet={pet} vaccines={vaccines} onChanged={reload} canEdit={canEditClinical} isOwner={isOwner} />}
+            {tab === "labs" && <LabsTab pet={pet} results={labs} canEdit={canEditClinical && !isOwner} doctor={user?.full_name} onChanged={reload} />}
             {tab === "history" && <HistoryTab petId={pet.id} visits={visits} admissions={admissions} treatments={treatments} isOwner={isOwner} canEdit={canEditClinical && !isOwner} onChanged={reload} />}
             {tab === "treatment" && <TreatmentTab pet={pet} treatments={treatments} admissions={admissions} onChanged={reload} canEdit={canEditClinical} isOwner={isOwner} />}
             {tab === "notes" && <NotesTab pet={pet} notes={notes} canEdit={canEditClinical} onChanged={reload} />}

@@ -488,6 +488,42 @@ export interface Expense {
   created_at: string;             // ISO — when it was recorded
 }
 
+/** One measured value inside a numeric lab result. Range and unit are
+ *  SNAPSHOTTED at entry time — analysers differ and references evolve, so a
+ *  historic result is never re-judged by tomorrow's ranges. */
+export interface LabValue {
+  id: string;                     // catalog param id, or a slug for free-form
+  label?: string;                 // display label (required for free-form)
+  abbr?: string;
+  value: number;
+  unit: string;
+  low?: number;                   // snapshotted normal band
+  high?: number;
+  flag: "low" | "normal" | "high";
+}
+
+/** A laboratory result (نتيجة تحاليل) on a pet's record. Three shapes:
+ *  numeric (CBC/chemistry values), snap (positive/negative rapid test),
+ *  descriptive (cytology/culture/fecal — text + photo). */
+export interface LabResult {
+  id: string;
+  pet_id: string;
+  clinic_id?: string | null;
+  visit_id?: string | null;       // الطبلة this was run under (if any)
+  panel_id: string;               // catalog panel id ('cbc', 'snap', 'custom'…)
+  panel_label: string;            // snapshot — survives catalog renames
+  kind: "numeric" | "snap" | "descriptive";
+  values?: LabValue[] | null;     // numeric panels
+  snap_test_id?: string | null;   // snap: which rapid test
+  snap_result?: "positive" | "negative" | null;
+  notes?: string | null;          // findings / sediment / culture text
+  photo_url?: string | null;      // photo of the analyser printout / slide
+  doctor?: string | null;
+  billed?: boolean | null;        // marked when charged on a sale
+  taken_at: string;               // ISO — when the sample/result was taken
+  created_at: string;
+}
+
 /** Sale-level metadata captured by the retail builder and sent to checkout. */
 export interface SaleMeta {
   customer_name?: string | null;
@@ -821,4 +857,5 @@ export interface DemoDB {
   surgeries?: Surgery[];
   waMessages?: WhatsAppMessage[];
   branches?: Branch[];
+  labResults?: LabResult[];
 }
