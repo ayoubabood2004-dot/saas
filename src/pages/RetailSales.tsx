@@ -121,7 +121,7 @@ export function RetailSales() {
           ) : tab === "invoices" ? (
             <InvoicesPanel invoices={invoices} clinicId={clinicId} onChanged={load} />
           ) : tab === "debts" ? (
-            <DebtsPanel invoices={invoices} clinicId={clinicId} onChanged={load} />
+            <DebtsPanel invoices={invoices} clinicId={clinicId} onChanged={load} onOpenDelivery={() => setTab("delivery")} />
           ) : tab === "delivery" ? (
             <DeliveryPanel invoices={invoices} clinicId={clinicId} onChanged={load} />
           ) : (

@@ -18,6 +18,7 @@ import { describeDbError } from "@/lib/errors";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
 import { staggerContainer, staggerItem } from "@/lib/motion";
 import { paidOf, dueOf, paymentStatusOf, isDebt, round2 } from "@/lib/debt";
+import { getCached, setCached } from "@/lib/swrCache";
 
 const PAY_OPTIONS: { value: PaymentMethod; icon: typeof Banknote; key: string; def: string }[] = [
   { value: "cash", icon: Banknote, key: "retail.payCash", def: "نقدي" },
@@ -41,25 +42,50 @@ interface Ledger {
 /** سجل الديون — a per-customer debt notebook. The top level lists every debtor with
  *  their TOTAL balance; opening one shows their personal ledger of debts, and each
  *  debt drills into the full invoice. Installments are recorded with "تسديد دفعة". */
-export function DebtsPanel({ invoices, clinicId, onChanged }: { invoices: Invoice[]; clinicId?: string; onChanged: () => void }) {
+export function DebtsPanel({ invoices, clinicId, onChanged, onOpenDelivery }: { invoices: Invoice[]; clinicId?: string; onChanged: () => void; onOpenDelivery?: () => void }) {
   const { t, i18n } = useTranslation();
   const [q, setQ] = useState("");
   const [openKey, setOpenKey] = useState<string | null>(null);
 
-  // COD orders still on the road are NOT customer debts — they live in the
-  // التوصيل tab. Exclude their invoices from the ledgers here.
-  const [activeDelivery, setActiveDelivery] = useState<Set<string>>(new Set());
+  // COD orders still on the road are NOT customer debts — that money is آجل
+  // (arrives in full on delivery, or the goods come back). It gets its own
+  // strip below and is excluded from the ledgers. Seeded synchronously from
+  // the cache: filtering only after an async fetch made delivery customers
+  // FLASH in the debtors list for a beat and then vanish.
+  const dKey = `delivorders_${clinicId ?? ""}`;
+  const [deliveryOrders, setDeliveryOrders] = useState<DeliveryOrder[] | null>(() => getCached<DeliveryOrder[]>(dKey) ?? null);
   useEffect(() => {
     let alive = true;
     repo.listDeliveryOrders(clinicId)
-      .then((os: DeliveryOrder[]) => { if (alive) setActiveDelivery(new Set(os.filter((o) => o.status === "preparing" || o.status === "out").map((o) => o.invoice_id))); })
-      .catch(() => {});
+      .then((os: DeliveryOrder[]) => { setCached(dKey, os); if (alive) setDeliveryOrders(os); })
+      .catch(() => { if (alive) setDeliveryOrders((cur) => cur ?? []); });
     return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clinicId, invoices]);
+  const deliveryReady = deliveryOrders !== null;
+  const activeDeliveryOrders = useMemo(
+    () => (deliveryOrders ?? []).filter((o) => o.status === "preparing" || o.status === "out"),
+    [deliveryOrders],
+  );
+  const activeDelivery = useMemo(() => new Set(activeDeliveryOrders.map((o) => o.invoice_id)), [activeDeliveryOrders]);
+  // المال الآجل الراكب مع المندوب — يوصل كامل عند التسليم أو ترجع البضاعة.
+  const pendingDelivery = useMemo(() => {
+    const byId = new Map(invoices.map((i) => [i.id, i]));
+    let sum = 0;
+    for (const o of activeDeliveryOrders) {
+      const inv = byId.get(o.invoice_id);
+      sum = round2(sum + (inv ? dueOf(inv) : o.cod_amount));
+    }
+    return { total: sum, count: activeDeliveryOrders.length };
+  }, [activeDeliveryOrders, invoices]);
 
   // Group every live debt (not refunded, still owing) under its customer.
+  // Until the delivery list resolves (first-ever visit only — revisits seed
+  // from cache) we can't tell debt from on-the-road COD, so build nothing:
+  // better a beat of emptiness than names that appear and then vanish.
   const ledgers = useMemo<Ledger[]>(() => {
     const map = new Map<string, Ledger>();
+    if (!deliveryReady) return [];
     for (const inv of invoices.filter((i) => isDebt(i) && !activeDelivery.has(i.id))) {
       const phone = (inv.customer_phone ?? "").trim() || null;
       const name = (inv.customer_name ?? "").trim();
@@ -77,7 +103,7 @@ export function DebtsPanel({ invoices, clinicId, onChanged }: { invoices: Invoic
     }
     // Biggest balances first — the accounts that need attention.
     return [...map.values()].sort((a, b) => b.due - a.due);
-  }, [invoices, activeDelivery]);
+  }, [invoices, activeDelivery, deliveryReady]);
 
   const filtered = useMemo(() => {
     const ql = q.trim().toLowerCase();
@@ -112,6 +138,26 @@ export function DebtsPanel({ invoices, clinicId, onChanged }: { invoices: Invoic
           </div>
         </div>
       </div>
+
+      {/* مال آجل قيد التوصيل — مو دين: راكب مع المندوب، يوصل كامل عند التسليم أو ترجع البضاعة */}
+      {pendingDelivery.count > 0 && (
+        <button
+          type="button"
+          onClick={() => { playTap(); onOpenDelivery?.(); }}
+          className="flex w-full flex-wrap items-center gap-3 rounded-2xl border border-sky-200 bg-sky-50/70 p-3.5 text-start transition hover:border-sky-300 dark:border-sky-500/30 dark:bg-sky-500/10"
+        >
+          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-sky-100 text-sky-600 dark:bg-sky-500/20 dark:text-sky-300"><Wallet size={20} /></span>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-extrabold text-sky-800 dark:text-sky-200">
+              {t("retail.pendingDeliveryTitle", "مال آجل قيد التوصيل")} · <span className="tabular-nums">{money(pendingDelivery.total)}</span>
+            </p>
+            <p className="text-2xs leading-relaxed text-sky-700/80 dark:text-sky-300/80">
+              {t("retail.pendingDeliveryHint", { n: formatNum(pendingDelivery.count), defaultValue: "{{n}} طلب مع المندوب — هذا مو دين: يوصل المبلغ كاملاً عند التسليم أو ترجع البضاعة." })}
+            </p>
+          </div>
+          {onOpenDelivery && <span className="shrink-0 text-2xs font-bold text-sky-700 dark:text-sky-300">{t("retail.openDelivery", "فتح التوصيل ←")}</span>}
+        </button>
+      )}
 
       <div className="relative">
         <Search size={16} className="pointer-events-none absolute top-1/2 -translate-y-1/2 text-ink-subtle ltr:left-3 rtl:right-3" />
