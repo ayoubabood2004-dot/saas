@@ -26,6 +26,9 @@ export interface LabParam {
   abbr: string;    // BUN, ALT, …
   unit: string;
   step: number;
+  /** Slider bounds for touch entry — wide enough for markedly abnormal values. */
+  min: number;
+  max: number;
   /** Normal band per species — dog is the universal fallback. */
   ranges: { dog: [number, number]; cat: [number, number] };
 }
@@ -42,47 +45,47 @@ export const labFlag = (value: number, lo?: number, hi?: number): LabFlag => {
 /* ------------------------------- Parameters ------------------------------- */
 // Hematology (CBC + differential)
 const HEMATOLOGY: LabParam[] = [
-  { id: "wbc", label: "كريات بيضاء", abbr: "WBC", unit: "10³/µL", step: 0.1, ranges: { dog: [6, 17], cat: [5.5, 19.5] } },
-  { id: "rbc", label: "كريات حمراء", abbr: "RBC", unit: "10⁶/µL", step: 0.1, ranges: { dog: [5.5, 8.5], cat: [5, 10] } },
-  { id: "hgb", label: "هيموغلوبين", abbr: "HGB", unit: "g/dL", step: 0.1, ranges: { dog: [12, 18], cat: [8, 15] } },
-  { id: "hct", label: "هيماتوكريت (PCV)", abbr: "HCT", unit: "%", step: 1, ranges: { dog: [37, 55], cat: [30, 45] } },
-  { id: "plt", label: "صفائح دموية", abbr: "PLT", unit: "10³/µL", step: 5, ranges: { dog: [200, 500], cat: [300, 700] } },
-  { id: "mcv", label: "متوسط حجم الكرية", abbr: "MCV", unit: "fL", step: 1, ranges: { dog: [60, 77], cat: [39, 55] } },
-  { id: "mchc", label: "تركيز الخضاب الوسطي", abbr: "MCHC", unit: "g/dL", step: 0.1, ranges: { dog: [32, 36], cat: [30, 36] } },
-  { id: "neut", label: "العدلات", abbr: "NEU", unit: "10³/µL", step: 0.1, ranges: { dog: [3, 11.5], cat: [2.5, 12.5] } },
-  { id: "lymph", label: "اللمفاويات", abbr: "LYM", unit: "10³/µL", step: 0.1, ranges: { dog: [1, 4.8], cat: [1.5, 7] } },
-  { id: "mono", label: "الوحيدات", abbr: "MONO", unit: "10³/µL", step: 0.1, ranges: { dog: [0.15, 1.35], cat: [0, 0.85] } },
-  { id: "eos", label: "الحمضات", abbr: "EOS", unit: "10³/µL", step: 0.1, ranges: { dog: [0.1, 1.25], cat: [0, 1.5] } },
+  { id: "wbc", label: "كريات بيضاء", abbr: "WBC", unit: "10³/µL", min: 0, max: 60, step: 0.1, ranges: { dog: [6, 17], cat: [5.5, 19.5] } },
+  { id: "rbc", label: "كريات حمراء", abbr: "RBC", unit: "10⁶/µL", min: 0, max: 15, step: 0.1, ranges: { dog: [5.5, 8.5], cat: [5, 10] } },
+  { id: "hgb", label: "هيموغلوبين", abbr: "HGB", unit: "g/dL", min: 0, max: 25, step: 0.1, ranges: { dog: [12, 18], cat: [8, 15] } },
+  { id: "hct", label: "هيماتوكريت (PCV)", abbr: "HCT", unit: "%", min: 0, max: 75, step: 1, ranges: { dog: [37, 55], cat: [30, 45] } },
+  { id: "plt", label: "صفائح دموية", abbr: "PLT", unit: "10³/µL", min: 0, max: 1000, step: 5, ranges: { dog: [200, 500], cat: [300, 700] } },
+  { id: "mcv", label: "متوسط حجم الكرية", abbr: "MCV", unit: "fL", min: 20, max: 100, step: 1, ranges: { dog: [60, 77], cat: [39, 55] } },
+  { id: "mchc", label: "تركيز الخضاب الوسطي", abbr: "MCHC", unit: "g/dL", min: 20, max: 45, step: 0.1, ranges: { dog: [32, 36], cat: [30, 36] } },
+  { id: "neut", label: "العدلات", abbr: "NEU", unit: "10³/µL", min: 0, max: 30, step: 0.1, ranges: { dog: [3, 11.5], cat: [2.5, 12.5] } },
+  { id: "lymph", label: "اللمفاويات", abbr: "LYM", unit: "10³/µL", min: 0, max: 15, step: 0.1, ranges: { dog: [1, 4.8], cat: [1.5, 7] } },
+  { id: "mono", label: "الوحيدات", abbr: "MONO", unit: "10³/µL", min: 0, max: 4, step: 0.1, ranges: { dog: [0.15, 1.35], cat: [0, 0.85] } },
+  { id: "eos", label: "الحمضات", abbr: "EOS", unit: "10³/µL", min: 0, max: 5, step: 0.1, ranges: { dog: [0.1, 1.25], cat: [0, 1.5] } },
 ];
 
 // Clinical chemistry
 const CHEMISTRY: LabParam[] = [
-  { id: "bun", label: "يوريا الدم", abbr: "BUN", unit: "mg/dL", step: 1, ranges: { dog: [7, 27], cat: [16, 36] } },
-  { id: "crea", label: "كرياتينين", abbr: "CREA", unit: "mg/dL", step: 0.1, ranges: { dog: [0.5, 1.8], cat: [0.8, 2.4] } },
-  { id: "phos", label: "فسفور", abbr: "PHOS", unit: "mg/dL", step: 0.1, ranges: { dog: [2.5, 6.8], cat: [3.1, 7.5] } },
-  { id: "alt", label: "ناقلة أمين الألانين", abbr: "ALT", unit: "U/L", step: 1, ranges: { dog: [10, 125], cat: [12, 130] } },
-  { id: "ast", label: "ناقلة أمين الأسبارتات", abbr: "AST", unit: "U/L", step: 1, ranges: { dog: [0, 50], cat: [0, 48] } },
-  { id: "alp", label: "فوسفاتاز قلوي", abbr: "ALP", unit: "U/L", step: 1, ranges: { dog: [23, 212], cat: [14, 111] } },
-  { id: "ggt", label: "غاما جي تي", abbr: "GGT", unit: "U/L", step: 1, ranges: { dog: [0, 11], cat: [0, 4] } },
-  { id: "tbil", label: "بيليروبين كلي", abbr: "TBIL", unit: "mg/dL", step: 0.1, ranges: { dog: [0, 0.9], cat: [0, 0.9] } },
-  { id: "tp", label: "بروتين كلي", abbr: "TP", unit: "g/dL", step: 0.1, ranges: { dog: [5.2, 8.2], cat: [5.7, 8.9] } },
-  { id: "alb", label: "ألبومين", abbr: "ALB", unit: "g/dL", step: 0.1, ranges: { dog: [2.3, 4], cat: [2.2, 4] } },
-  { id: "glob", label: "غلوبيولين", abbr: "GLOB", unit: "g/dL", step: 0.1, ranges: { dog: [2.5, 4.5], cat: [2.8, 5.1] } },
-  { id: "glu", label: "سكر الدم", abbr: "GLU", unit: "mg/dL", step: 1, ranges: { dog: [74, 143], cat: [74, 159] } },
-  { id: "amyl", label: "أميليز", abbr: "AMYL", unit: "U/L", step: 10, ranges: { dog: [500, 1500], cat: [500, 1500] } },
-  { id: "lipa", label: "لايبيز", abbr: "LIPA", unit: "U/L", step: 10, ranges: { dog: [200, 1800], cat: [100, 1400] } },
-  { id: "chol", label: "كوليسترول", abbr: "CHOL", unit: "mg/dL", step: 1, ranges: { dog: [110, 320], cat: [65, 225] } },
-  { id: "na", label: "صوديوم", abbr: "Na", unit: "mmol/L", step: 1, ranges: { dog: [144, 160], cat: [150, 165] } },
-  { id: "k", label: "بوتاسيوم", abbr: "K", unit: "mmol/L", step: 0.1, ranges: { dog: [3.5, 5.8], cat: [3.5, 5.8] } },
-  { id: "cl", label: "كلورايد", abbr: "Cl", unit: "mmol/L", step: 1, ranges: { dog: [109, 122], cat: [112, 129] } },
-  { id: "ca", label: "كالسيوم", abbr: "Ca", unit: "mg/dL", step: 0.1, ranges: { dog: [7.9, 12], cat: [7.8, 11.3] } },
-  { id: "t4", label: "الغدة الدرقية", abbr: "T4", unit: "µg/dL", step: 0.1, ranges: { dog: [1, 4], cat: [0.8, 4.7] } },
+  { id: "bun", label: "يوريا الدم", abbr: "BUN", unit: "mg/dL", min: 0, max: 150, step: 1, ranges: { dog: [7, 27], cat: [16, 36] } },
+  { id: "crea", label: "كرياتينين", abbr: "CREA", unit: "mg/dL", min: 0, max: 15, step: 0.1, ranges: { dog: [0.5, 1.8], cat: [0.8, 2.4] } },
+  { id: "phos", label: "فسفور", abbr: "PHOS", unit: "mg/dL", min: 0, max: 20, step: 0.1, ranges: { dog: [2.5, 6.8], cat: [3.1, 7.5] } },
+  { id: "alt", label: "ناقلة أمين الألانين", abbr: "ALT", unit: "U/L", min: 0, max: 500, step: 1, ranges: { dog: [10, 125], cat: [12, 130] } },
+  { id: "ast", label: "ناقلة أمين الأسبارتات", abbr: "AST", unit: "U/L", min: 0, max: 400, step: 1, ranges: { dog: [0, 50], cat: [0, 48] } },
+  { id: "alp", label: "فوسفاتاز قلوي", abbr: "ALP", unit: "U/L", min: 0, max: 800, step: 1, ranges: { dog: [23, 212], cat: [14, 111] } },
+  { id: "ggt", label: "غاما جي تي", abbr: "GGT", unit: "U/L", min: 0, max: 50, step: 1, ranges: { dog: [0, 11], cat: [0, 4] } },
+  { id: "tbil", label: "بيليروبين كلي", abbr: "TBIL", unit: "mg/dL", min: 0, max: 10, step: 0.1, ranges: { dog: [0, 0.9], cat: [0, 0.9] } },
+  { id: "tp", label: "بروتين كلي", abbr: "TP", unit: "g/dL", min: 0, max: 12, step: 0.1, ranges: { dog: [5.2, 8.2], cat: [5.7, 8.9] } },
+  { id: "alb", label: "ألبومين", abbr: "ALB", unit: "g/dL", min: 0, max: 6, step: 0.1, ranges: { dog: [2.3, 4], cat: [2.2, 4] } },
+  { id: "glob", label: "غلوبيولين", abbr: "GLOB", unit: "g/dL", min: 0, max: 8, step: 0.1, ranges: { dog: [2.5, 4.5], cat: [2.8, 5.1] } },
+  { id: "glu", label: "سكر الدم", abbr: "GLU", unit: "mg/dL", min: 0, max: 500, step: 1, ranges: { dog: [74, 143], cat: [74, 159] } },
+  { id: "amyl", label: "أميليز", abbr: "AMYL", unit: "U/L", min: 0, max: 4000, step: 10, ranges: { dog: [500, 1500], cat: [500, 1500] } },
+  { id: "lipa", label: "لايبيز", abbr: "LIPA", unit: "U/L", min: 0, max: 5000, step: 10, ranges: { dog: [200, 1800], cat: [100, 1400] } },
+  { id: "chol", label: "كوليسترول", abbr: "CHOL", unit: "mg/dL", min: 0, max: 500, step: 1, ranges: { dog: [110, 320], cat: [65, 225] } },
+  { id: "na", label: "صوديوم", abbr: "Na", unit: "mmol/L", min: 100, max: 200, step: 1, ranges: { dog: [144, 160], cat: [150, 165] } },
+  { id: "k", label: "بوتاسيوم", abbr: "K", unit: "mmol/L", min: 1, max: 10, step: 0.1, ranges: { dog: [3.5, 5.8], cat: [3.5, 5.8] } },
+  { id: "cl", label: "كلورايد", abbr: "Cl", unit: "mmol/L", min: 80, max: 160, step: 1, ranges: { dog: [109, 122], cat: [112, 129] } },
+  { id: "ca", label: "كالسيوم", abbr: "Ca", unit: "mg/dL", min: 4, max: 20, step: 0.1, ranges: { dog: [7.9, 12], cat: [7.8, 11.3] } },
+  { id: "t4", label: "الغدة الدرقية", abbr: "T4", unit: "µg/dL", min: 0, max: 10, step: 0.1, ranges: { dog: [1, 4], cat: [0.8, 4.7] } },
 ];
 
 // Urinalysis (numeric part — sediment goes in the notes)
 const URINALYSIS: LabParam[] = [
-  { id: "usg", label: "الكثافة النوعية", abbr: "USG", unit: "", step: 0.001, ranges: { dog: [1.015, 1.045], cat: [1.035, 1.06] } },
-  { id: "uph", label: "حموضة البول", abbr: "pH", unit: "", step: 0.5, ranges: { dog: [5.5, 7], cat: [6, 7] } },
+  { id: "usg", label: "الكثافة النوعية", abbr: "USG", unit: "", min: 1.0, max: 1.08, step: 0.001, ranges: { dog: [1.015, 1.045], cat: [1.035, 1.06] } },
+  { id: "uph", label: "حموضة البول", abbr: "pH", unit: "", min: 4, max: 9, step: 0.5, ranges: { dog: [5.5, 7], cat: [6, 7] } },
 ];
 
 export const LAB_PARAMS: LabParam[] = [...HEMATOLOGY, ...CHEMISTRY, ...URINALYSIS];

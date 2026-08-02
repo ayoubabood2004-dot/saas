@@ -60,6 +60,7 @@ function LabEntry({ pet, visitId, doctor, onSaved, onClose }: {
   const toast = useToast();
   const [mode, setMode] = useState<EntryMode | null>(null);
   const [group, setGroup] = useState("blood");   // active value-group filter
+  const [openParam, setOpenParam] = useState<string | null>(null); // expanded slider row
   const [q, setQ] = useState("");                 // search across every param
   const [vals, setVals] = useState<Record<string, string>>({});
   const [snapTest, setSnapTest] = useState<string | null>(null);
@@ -203,13 +204,13 @@ function LabEntry({ pet, visitId, doctor, onSaved, onClose }: {
       {mode === "numbers" && (
         <>
           <p className="rounded-xl bg-brand-50/60 px-3 py-2 text-2xs font-semibold leading-relaxed text-brand-800 dark:bg-brand-500/10 dark:text-brand-200">
-            عبّي بس الأرقام الموجودة بورقة الجهاز — الباقي اتركه فارغ، والسستم يسمي التحليل ويلوّن القيم بروحه.
+            اضغط على أي فحص وحرّك المؤشر أو استخدم + و − (أو اكتب مباشرة) — عبّي بس الموجود بورقة الجهاز، والسستم يسمي التحليل ويلوّن القيم بروحه.
           </p>
           <div className="flex flex-wrap items-center gap-1.5">
             {LAB_GROUPS.map((g) => {
               const n = groupFilled(g);
               return (
-                <button key={g.id} type="button" onClick={() => { playTap(); setGroup(g.id); setQ(""); }}
+                <button key={g.id} type="button" onClick={() => { playTap(); setGroup(g.id); setQ(""); setOpenParam(null); }}
                   className={cn("inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-sm font-bold transition",
                     !query && group === g.id ? "bg-brand-600 text-white shadow-soft" : "bg-surface-2 text-ink-muted hover:text-ink")}>
                   {g.emoji} {g.label}
@@ -222,24 +223,83 @@ function LabEntry({ pet, visitId, doctor, onSaved, onClose }: {
             </div>
           </div>
 
-          <div className="grid gap-2 sm:grid-cols-2">
+          <div className="grid gap-2 lg:grid-cols-2">
             {visibleParams.map((p) => {
               const [lo, hi] = labRange(p, pet.species);
               const raw = vals[p.id] ?? "";
               const num = raw.trim() === "" ? null : Number(raw);
               const flag: LabFlag | null = num === null || !Number.isFinite(num) ? null : labFlag(num, lo, hi);
+              const open = openParam === p.id;
+              const dec = p.step < 1 ? (String(p.step).split(".")[1]?.length ?? 1) : 0;
+              const setNum = (n: number) => {
+                const clamped = Math.min(p.max, Math.max(p.min, n));
+                setVals((m) => ({ ...m, [p.id]: clamped.toFixed(dec) }));
+              };
+              const loPct = Math.round(((lo - p.min) / (p.max - p.min)) * 100);
+              const hiPct = Math.round(((hi - p.min) / (p.max - p.min)) * 100);
               return (
-                <div key={p.id} className={cn("flex items-center gap-2.5 rounded-2xl border p-2.5 transition", flag === "high" ? "border-danger-300 bg-danger-50/50 dark:border-danger-500/40 dark:bg-danger-500/10" : flag === "low" ? "border-sky-300 bg-sky-50/50 dark:border-sky-500/40 dark:bg-sky-500/10" : "border-line bg-surface-1")}>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-bold text-ink"><span dir="ltr">{p.abbr}</span> · {p.label}</p>
-                    <p className="text-2xs tabular-nums text-ink-subtle" dir="ltr">{formatNum(lo)}–{formatNum(hi)} {p.unit}</p>
-                  </div>
-                  <input
-                    type="number" inputMode="decimal" step={p.step} dir="ltr" placeholder="—" value={raw}
-                    onChange={(e) => setVals((m) => ({ ...m, [p.id]: e.target.value }))}
-                    className="input h-10 w-24 px-2 py-0 text-center text-base font-extrabold tabular-nums"
-                  />
-                  {flag && <span className={cn("grid h-7 w-7 shrink-0 place-items-center rounded-full text-sm font-black", FLAG_CHIP[flag])}>{FLAG_ARROW[flag]}</span>}
+                <div key={p.id} className={cn("rounded-2xl border transition", open ? "border-brand-400 bg-surface-1 shadow-card lg:col-span-2" : flag === "high" ? "border-danger-300 bg-danger-50/50 dark:border-danger-500/40 dark:bg-danger-500/10" : flag === "low" ? "border-sky-300 bg-sky-50/50 dark:border-sky-500/40 dark:bg-sky-500/10" : "border-line bg-surface-1")}>
+                  {/* Collapsed: the whole row is one big tap target */}
+                  <button type="button" onClick={() => { playTap(); setOpenParam(open ? null : p.id); }} className="flex w-full items-center gap-2.5 p-3 text-start">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-bold text-ink"><span dir="ltr">{p.abbr}</span> · {p.label}</p>
+                      <p className="text-2xs tabular-nums text-ink-subtle" dir="ltr">{formatNum(lo)}–{formatNum(hi)} {p.unit}</p>
+                    </div>
+                    {num !== null && Number.isFinite(num) ? (
+                      <span className={cn("rounded-xl px-2.5 py-1 text-base font-extrabold tabular-nums", FLAG_CHIP[flag ?? "normal"])} dir="ltr">
+                        {formatNum(num)}{flag && flag !== "normal" ? ` ${FLAG_ARROW[flag]}` : ""}
+                      </span>
+                    ) : (
+                      <span className="rounded-xl bg-surface-2 px-3 py-1 text-sm font-bold text-ink-subtle">اضغط للإدخال</span>
+                    )}
+                  </button>
+
+                  {/* Expanded: big slider + big +/- steppers — finger-first entry */}
+                  {open && (
+                    <div className="space-y-3 border-t border-line p-3.5">
+                      <div className="flex items-center justify-center gap-3">
+                        <button type="button" onClick={() => { playTap(); setNum((num ?? (lo + hi) / 2) - p.step); }} className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-surface-2 text-2xl font-black text-ink transition hover:bg-brand-50 active:scale-95">−</button>
+                        <input
+                          aria-label={p.abbr} type="number" inputMode="decimal" step={p.step} dir="ltr" placeholder="—" value={raw}
+                          onChange={(e) => setVals((m) => ({ ...m, [p.id]: e.target.value }))}
+                          className={cn("input h-14 w-36 px-2 py-0 text-center text-2xl font-black tabular-nums", flag === "high" && "border-danger-400 text-danger-700 dark:text-danger-300", flag === "low" && "border-sky-400 text-sky-700 dark:text-sky-300")}
+                        />
+                        <button type="button" onClick={() => { playTap(); setNum((num ?? (lo + hi) / 2) + p.step); }} className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-surface-2 text-2xl font-black text-ink transition hover:bg-brand-50 active:scale-95">+</button>
+                      </div>
+                      {/* Coloured band slider: blue = low zone, green = normal, red = high */}
+                      <div dir="ltr">
+                        <input
+                          type="range" min={p.min} max={p.max} step={p.step}
+                          value={num ?? (lo + hi) / 2}
+                          onChange={(e) => setNum(Number(e.target.value))}
+                          className="h-3 w-full cursor-pointer appearance-none rounded-full accent-brand-700"
+                          style={{ background: `linear-gradient(90deg, #7dd3fc 0%, #7dd3fc ${loPct}%, #86efac ${loPct}%, #86efac ${hiPct}%, #fca5a5 ${hiPct}%, #fca5a5 100%)` }}
+                        />
+                        <div className="mt-1 flex justify-between text-[10px] font-bold tabular-nums text-ink-subtle">
+                          <span>{formatNum(p.min)}</span>
+                          <span className="text-success-600">{formatNum(lo)} — {formatNum(hi)} طبيعي</span>
+                          <span>{formatNum(p.max)}</span>
+                        </div>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        {raw.trim() !== "" ? (
+                          <button type="button" onClick={() => { playTap(); setVals((m) => { const n = { ...m }; delete n[p.id]; return n; }); }} className="chip bg-surface-2 text-2xs font-bold text-ink-muted transition hover:text-danger-600">مسح القيمة</button>
+                        ) : <span />}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            playTap();
+                            const idx = visibleParams.findIndex((x) => x.id === p.id);
+                            const next = visibleParams[idx + 1];
+                            setOpenParam(next ? next.id : null);
+                          }}
+                          className="rounded-full bg-brand-600 px-4 py-1.5 text-sm font-bold text-white shadow-soft transition hover:bg-brand-700 active:scale-95"
+                        >
+                          {visibleParams.findIndex((x) => x.id === p.id) < visibleParams.length - 1 ? "الفحص التالي ←" : "تم ✓"}
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               );
             })}
