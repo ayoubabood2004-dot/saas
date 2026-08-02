@@ -14,7 +14,7 @@ import {
   Landmark,
 } from "lucide-react";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
-import type { Pet, Invoice, InvoiceItem, Product, MedicalVisit, PaymentMethod, Species, MediaItem, TreatmentEntry, AuditEntry, LoginEvent, Expense, ExpenseMethod } from "@/types";
+import type { Pet, Invoice, InvoiceItem, Product, MedicalVisit, PaymentMethod, Species, MediaItem, TreatmentEntry, AuditEntry, LoginEvent, Expense, ExpenseMethod, LabResult } from "@/types";
 import { type StaffMember } from "@/lib/staff";
 import { getCached, setCached, isFresh } from "@/lib/swrCache";
 import { loadAnalyticsSnap, analyticsKey, type AnalyticsSnap } from "@/lib/prefetchData";
@@ -163,6 +163,7 @@ export function AnalyticsHub() {
   const [audit, setAudit] = useState<AuditEntry[]>(seed?.audit ?? []);
   const [logins, setLogins] = useState<LoginEvent[]>(seed?.logins ?? []);
   const [expenses, setExpenses] = useState<Expense[]>(seed?.expenses ?? []);
+  const [labs, setLabs] = useState<LabResult[]>(seed?.labs ?? []);
 
   // ---- Unified period: the two date inputs ARE the source of truth (always filled).
   //      Presets simply fill them; editing an input flips the preset to "custom".
@@ -194,7 +195,7 @@ export function AnalyticsHub() {
         const s = await loadAnalyticsSnap(clinicId);
         if (!alive) return;
         setPets(s.pets); setInvoices(s.invoices); setItems(s.items); setProducts(s.products);
-        setVisits(s.visits); setMedia(s.media); setTreatments(s.treatments); setStaff(s.staff); setAudit(s.audit); setLogins(s.logins); setExpenses(s.expenses);
+        setVisits(s.visits); setMedia(s.media); setTreatments(s.treatments); setStaff(s.staff); setAudit(s.audit); setLogins(s.logins); setExpenses(s.expenses); setLabs(s.labs ?? []);
         setCached<AnalyticsSnap>(cacheKey, s);
       } catch { /* empty states cover it */ }
       finally { if (alive) setLoading(false); }
@@ -402,6 +403,19 @@ export function AnalyticsHub() {
     [expensesInRange],
   );
   const netCash = useMemo(() => zReport.byMethod.cash.total - cashExpensesTotal, [zReport, cashExpensesTotal]);
+
+  // ---- Laboratory results in range (المختبر) — feeds the clinical report.
+  const labStats = useMemo(() => {
+    const inRange = labs.filter((l) => { const tm = new Date(l.taken_at).getTime(); return tm >= lo && tm <= hi; });
+    return {
+      total: inRange.length,
+      numeric: inRange.filter((l) => l.kind === "numeric").length,
+      snap: inRange.filter((l) => l.kind === "snap").length,
+      positive: inRange.filter((l) => l.snap_result === "positive").length,
+      micro: inRange.filter((l) => l.kind === "descriptive").length,
+      unbilled: inRange.filter((l) => !l.billed).length,
+    };
+  }, [labs, lo, hi]);
 
   // Outstanding balances (credit / آجل): any non-refunded sale still owing — partial or unpaid.
   const receivables = useMemo(() => paid.filter(isDebt), [paid]);
@@ -933,7 +947,7 @@ export function AnalyticsHub() {
           {tab === "customers" && <CustomersTab invoices={invoices} items={items} inRange={invInRange} rangeLabel={rangeLabel} canProfit={canProfit} />}
           {tab === "staff" && <StaffSalesTab rows={staffSales} trend={staffTrend} canProfit={canProfit} rangeLabel={rangeLabel} />}
           {tab === "best" && <BestTab clients={topClients} services={topServices} movers={movers} species={speciesActivity} />}
-          {tab === "clinical" && <ClinicalTab labXray={labXray} meds={dispensedMeds} />}
+          {tab === "clinical" && <ClinicalTab labXray={labXray} meds={dispensedMeds} labStats={labStats} />}
           {tab === "expenses" && (
             <ExpensesTab
               rows={expensesInRange} total={expensesTotal} netCash={netCash}
@@ -1409,13 +1423,42 @@ function BestTab({ clients, services, movers, species }: {
 }
 
 /* ----------------------------- Clinical & Medical (التقارير الطبية) ----------------------------- */
-function ClinicalTab({ labXray, meds }: {
+function ClinicalTab({ labXray, meds, labStats }: {
   labXray: { rows: { name: string; count: number }[]; total: number };
   meds: { name: string; count: number; given: number }[];
+  labStats: { total: number; numeric: number; snap: number; positive: number; micro: number; unbilled: number };
 }) {
   const { t } = useTranslation();
   return (
     <div className="space-y-5">
+      {/* نشاط المختبر — كل نتيجة مسجلة بتبويب المختبر خلال الفترة */}
+      <Panel title={t("rpt.labModuleTitle", "نشاط المختبر (سجل التحاليل)")} icon={FlaskConical}>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div className="rounded-2xl border border-line bg-surface-1 p-4 text-center">
+            <p className="font-display text-3xl font-extrabold tabular-nums text-ink">{formatNum(labStats.total)}</p>
+            <p className="mt-1 text-xs text-ink-muted">{t("rpt.labAll", "نتيجة مسجلة")}</p>
+          </div>
+          <div className="rounded-2xl border border-line bg-surface-1 p-4 text-center">
+            <p className="font-display text-3xl font-extrabold tabular-nums text-ink">{formatNum(labStats.numeric)}</p>
+            <p className="mt-1 text-xs text-ink-muted">{t("rpt.labNumeric", "دم وكيمياء")}</p>
+          </div>
+          <div className="rounded-2xl border border-line bg-surface-1 p-4 text-center">
+            <p className="font-display text-3xl font-extrabold tabular-nums text-ink">{formatNum(labStats.snap)}</p>
+            <p className="mt-1 text-xs text-ink-muted">{t("rpt.labSnap", "فحوصات سريعة")}</p>
+            {labStats.positive > 0 && <p className="mt-0.5 text-2xs font-bold text-danger-600">{formatNum(labStats.positive)} {t("rpt.labPositive", "إيجابي ⚠")}</p>}
+          </div>
+          <div className="rounded-2xl border border-line bg-surface-1 p-4 text-center">
+            <p className="font-display text-3xl font-extrabold tabular-nums text-ink">{formatNum(labStats.micro)}</p>
+            <p className="mt-1 text-xs text-ink-muted">{t("rpt.labMicro", "مجهر وزراعة")}</p>
+          </div>
+        </div>
+        {labStats.unbilled > 0 && (
+          <p className="mt-3 rounded-xl bg-warn-50 px-3 py-2 text-center text-2xs font-bold text-warn-700 dark:bg-warn-500/10 dark:text-warn-300">
+            {t("rpt.labUnbilled", { n: formatNum(labStats.unbilled), defaultValue: "{{n}} نتيجة بلا فوترة — راجعها من سجل الحيوان (زر 🧾 على النتيجة)." })}
+          </p>
+        )}
+      </Panel>
+
       <Panel title={t("rpt.labTitle", "تقرير الأشعة والتحاليل")} icon={FlaskConical}>
         <div className="grid gap-3 sm:grid-cols-3">
           {labXray.rows.map((r) => (

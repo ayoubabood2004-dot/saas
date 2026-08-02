@@ -438,6 +438,10 @@ const demoRepo = {
     const r = (db.labResults ??= []).find((x) => x.id === id);
     if (r) { r.billed = billed; saveDB(db); }
   },
+  /** Clinic-wide lab results — feeds the clinical report (عدد التحاليل بالفترة). */
+  async listClinicLabResults(_clinicId?: string): Promise<LabResult[]> {
+    return (loadDB().labResults ?? []).slice().sort((a, b) => b.taken_at.localeCompare(a.taken_at));
+  },
   async deleteLabResult(id: string): Promise<void> {
     const db = loadDB();
     db.labResults = (db.labResults ?? []).filter((x) => x.id !== id);
@@ -1488,6 +1492,11 @@ const supabaseRepo: typeof demoRepo = {
   },
   async setLabBilled(id, billed) {
     ok(await sbc().from("lab_results").update({ billed }).eq("id", id));
+  },
+  async listClinicLabResults(clinicId) {
+    let q = sbc().from("lab_results").select("*").order("taken_at", { ascending: false }).limit(2000);
+    if (clinicId) q = q.eq("clinic_id", clinicId);
+    return listOf<LabResult>(await q);
   },
   async deleteLabResult(id) {
     ok(await sbc().from("lab_results").delete().eq("id", id));

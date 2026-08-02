@@ -5,10 +5,11 @@ import {
   ArrowRight, Clock, Check, Plus, NotebookPen, ClipboardList,
   Loader2, Lock, CheckCircle2, Stethoscope, UserRound, RotateCcw, AlertTriangle,
   Printer, Syringe, ShieldCheck, Pill,
-  Zap, Rows3, LayoutGrid, CalendarPlus, Gauge, CalendarClock, FolderOpen,
+  Zap, Rows3, LayoutGrid, CalendarPlus, Gauge, CalendarClock, FolderOpen, FlaskConical,
 } from "lucide-react";
 import type { Pet, ClinicVisit, PetNote, TreatmentEntry, LabResult } from "@/types";
-import { LastLabsStrip } from "@/components/LabCenter";
+import { LastLabsStrip, LabEntry } from "@/components/LabCenter";
+import { labParamById, labRange } from "@/lib/labCatalog";
 import { repo } from "@/lib/repo";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast, Button } from "@/components/ui";
@@ -139,6 +140,7 @@ export default function VisitPage() {
 
   const [planOpen, setPlanOpen] = useState(false);
   const [planBusy, setPlanBusy] = useState(false);
+  const [labOpen, setLabOpen] = useState(false);
   const [noteOpen, setNoteOpen] = useState(false);
   const [noteText, setNoteText] = useState("");
   const [noteDay, setNoteDay] = useState<string | null>(null);
@@ -249,6 +251,20 @@ export default function VisitPage() {
     try {
       await repo.addPetNote({ pet_id: visit.pet_id, note_text: body, author_id: user?.id ?? null, author_name: user?.full_name ?? null, visit_id: visit.id });
       const { record } = parseClinical(body);
+      // جسر المختبر: قيم الـCBC المكتوبة بمعالج التشخيص تنحفظ تلقائياً كنتيجة
+      // رسمية بالمختبر مربوطة بهاي الزيارة (فقط عند أول تشخيص — التعديل لا يكرر).
+      if (record?.cbc?.length && clinicalNotes.length === 0 && pet) {
+        const values = record.cbc.map((c) => {
+          const p = labParamById(c.id);
+          const [lo, hi] = p ? labRange(p, pet.species) : [undefined, undefined];
+          return { id: c.id, label: p?.label ?? c.id, abbr: p?.abbr, value: c.value, unit: p?.unit ?? "", low: lo, high: hi, flag: c.flag };
+        });
+        void repo.addLabResult({
+          pet_id: visit.pet_id, visit_id: visit.id, panel_id: "cbc", panel_label: "تعداد الدم CBC",
+          kind: "numeric", values, snap_test_id: null, snap_result: null, notes: null, photo_url: null,
+          doctor: user?.full_name ?? null, billed: false, taken_at: new Date().toISOString(),
+        }).catch(() => { /* الجسر إضافة — لا يعطل حفظ الخطة */ });
+      }
       if (record?.treatment?.length && !hasFlowsheet) {
         // كل جرعات الخطة تنبني محلياً ثم تُرسل دفعة وحدة — رحلة سيرفر واحدة
         // بدل رحلة لكل جرعة (خطة ٣ أدوية × ١٠ أيام كانت ٣٠ رحلة متسلسلة).
@@ -525,6 +541,9 @@ export default function VisitPage() {
           <button onClick={() => openAddDrug()} className="inline-flex items-center gap-2 rounded border border-brand-300 bg-brand-50 px-4 py-2.5 text-sm font-extrabold text-brand-700 transition hover:bg-brand-100 dark:border-brand-500/30 dark:bg-brand-500/10 dark:text-brand-300">
             <Pill size={16} /> إضافة دواء
           </button>
+          <button onClick={() => { playTap(); setLabOpen(true); }} className="inline-flex items-center gap-2 rounded border border-teal-300 bg-teal-50 px-4 py-2.5 text-sm font-extrabold text-teal-700 transition hover:bg-teal-100 dark:border-teal-500/30 dark:bg-teal-500/10 dark:text-teal-300">
+            <FlaskConical size={16} /> تسجيل تحاليل
+          </button>
           {hasFlowsheet && (
             <button onClick={() => { playTap(); setExtendOpen(true); }} className="inline-flex items-center gap-2 rounded border border-line-strong bg-surface-1 px-4 py-2.5 text-sm font-bold text-ink-muted transition hover:border-brand-300 hover:text-ink">
               <CalendarPlus size={16} /> تمديد الخطة
@@ -564,6 +583,10 @@ export default function VisitPage() {
           </div>
         </section>
       )}
+
+      <Modal open={labOpen} onClose={() => setLabOpen(false)} size="wide" title={`تسجيل تحاليل — ${pet.name}`}>
+        <LabEntry pet={pet} visitId={visit.id} doctor={user?.full_name} onSaved={() => void reload()} onClose={() => setLabOpen(false)} />
+      </Modal>
 
       <Modal open={planOpen} onClose={() => setPlanOpen(false)} size="full" title={`التشخيص وخطة العلاج — ${pet.name}`}>
         <TreatmentPlan onSubmit={savePlan} busy={planBusy} species={pet.species} petId={pet.id} weightKg={pet.current_weight_kg} onMediaAdded={reload} />

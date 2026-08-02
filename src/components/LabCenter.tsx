@@ -13,7 +13,7 @@
 //     value (world-class rule: never re-judge old results by new references).
 // ============================================================================
 import { useMemo, useRef, useState } from "react";
-import { FlaskConical, Plus, Camera, Trash2, Receipt, ChevronDown, AlertTriangle, CheckCircle2 } from "lucide-react";
+import { FlaskConical, Plus, Camera, Trash2, Receipt, ChevronDown, AlertTriangle, CheckCircle2, MessageCircle } from "lucide-react";
 import type { Pet, LabResult, LabValue } from "@/types";
 import { repo } from "@/lib/repo";
 import {
@@ -26,6 +26,8 @@ import { Button, useToast } from "@/components/ui";
 import { prepareUpload } from "@/lib/image";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
 import { cn, formatNum, formatDate } from "@/lib/utils";
+import { waNumber } from "@/lib/phone";
+import { getDialCode, getClinicName } from "@/lib/settings";
 
 const FLAG_CHIP: Record<LabFlag, string> = {
   low: "bg-sky-100 text-sky-700 dark:bg-sky-500/20 dark:text-sky-300",
@@ -53,7 +55,7 @@ const MICRO_TYPES = [
   { id: "micro_other", label: "فحص آخر", emoji: "📋" },
 ];
 
-function LabEntry({ pet, visitId, doctor, onSaved, onClose }: {
+export function LabEntry({ pet, visitId, doctor, onSaved, onClose }: {
   pet: Pet; visitId?: string | null; doctor?: string | null;
   onSaved: () => void; onClose: () => void;
 }) {
@@ -452,12 +454,36 @@ function TrendTable({ results }: { results: LabResult[] }) {
 
 /* ================================ Result card ================================ */
 
-function ResultCard({ r, canEdit, onDelete, onToggleBilled }: {
-  r: LabResult; canEdit: boolean; onDelete: (id: string) => void; onToggleBilled: (r: LabResult) => void;
+/** Compose the owner-facing WhatsApp summary of one result — clear Arabic, no jargon. */
+function waResultMessage(pet: Pet, r: LabResult): string {
+  const clinic = getClinicName() || "عيادتنا";
+  const lines: string[] = [`مرحباً ${(pet.owner_name ?? "").trim() || ""} 🌟`, `نتائج فحص «${r.panel_label}» لـ${pet.name} بتاريخ ${formatDate(r.taken_at, "ar")}:`];
+  if (r.kind === "numeric" && r.values?.length) {
+    for (const v of r.values) {
+      const range = v.low !== undefined && v.high !== undefined ? ` (الطبيعي ${formatNum(v.low)}–${formatNum(v.high)})` : "";
+      const mark = v.flag === "high" ? " مرتفع ↑" : v.flag === "low" ? " منخفض ↓" : " طبيعي ✓";
+      lines.push(`• ${v.abbr ?? v.label}: ${formatNum(v.value)} ${v.unit}${mark}${range}`);
+    }
+  }
+  if (r.kind === "snap") lines.push(r.snap_result === "positive" ? "النتيجة: إيجابية ⚠ — يرجى مراجعة العيادة." : "النتيجة: سلبية ✓");
+  if (r.notes) lines.push(`ملاحظات الطبيب: ${r.notes}`);
+  lines.push(`مع تمنياتنا بالسلامة لـ${pet.name} — ${clinic} 🐾`);
+  return lines.join("\n");
+}
+
+function ResultCard({ r, pet, canEdit, onDelete, onToggleBilled }: {
+  r: LabResult; pet: Pet; canEdit: boolean; onDelete: (id: string) => void; onToggleBilled: (r: LabResult) => void;
 }) {
   const [openPhoto, setOpenPhoto] = useState(false);
   const abnormal = (r.values ?? []).filter((v) => v.flag !== "normal");
   const positive = r.snap_result === "positive";
+  const waNum = pet.owner_phone ? waNumber(pet.owner_phone, getDialCode()) : "";
+  const sendWa = () => {
+    if (!waNum) return;
+    playTap();
+    window.open(`https://wa.me/${waNum}?text=${encodeURIComponent(waResultMessage(pet, r))}`, "_blank", "noopener,noreferrer");
+    void repo.logWhatsApp({ pet_id: pet.id, owner_name: pet.owner_name ?? null, owner_phone: pet.owner_phone ?? null, reminder_type: "lab_result" }).catch(() => {});
+  };
   return (
     <div className={cn("card p-4", positive && "border-danger-300 ring-1 ring-danger-300/50 dark:border-danger-500/50")}>
       <div className="flex flex-wrap items-center gap-2">
@@ -480,6 +506,15 @@ function ResultCard({ r, canEdit, onDelete, onToggleBilled }: {
           <span className={cn("chip text-2xs font-black", positive ? "bg-danger-100 text-danger-700 dark:bg-danger-500/20 dark:text-danger-300" : "bg-success-100 text-success-700 dark:bg-success-500/20 dark:text-success-300")}>
             {positive ? "⚠ إيجابي" : "سلبي ✓"}
           </span>
+        )}
+        {canEdit && waNum && (
+          <button
+            type="button" onClick={sendWa}
+            title="إرسال النتيجة للمربي واتساب"
+            className="grid h-8 w-8 place-items-center rounded-full text-ink-subtle transition hover:bg-success-50 hover:text-success-600"
+          >
+            <MessageCircle size={15} />
+          </button>
         )}
         {canEdit && (
           <button
@@ -575,7 +610,7 @@ export function LabsTab({ pet, results, canEdit, doctor, onChanged }: {
       ) : (
         <div className="space-y-3">
           {results.slice(0, shown).map((r) => (
-            <ResultCard key={r.id} r={r} canEdit={canEdit} onDelete={onDelete} onToggleBilled={onToggleBilled} />
+            <ResultCard key={r.id} r={r} pet={pet} canEdit={canEdit} onDelete={onDelete} onToggleBilled={onToggleBilled} />
           ))}
           {results.length > shown && (
             <button type="button" onClick={() => setShown((n) => n + 8)} className="mx-auto flex items-center gap-1 rounded-full bg-surface-2 px-4 py-2 text-xs font-bold text-ink-muted transition hover:text-ink">
