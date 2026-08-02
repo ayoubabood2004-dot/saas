@@ -89,7 +89,13 @@ const prettyShort = (iso: string) => {
 
 /** Customer/pet handed over from an animal record to pre-fill the sale (the "bridge").
  *  petId + species are carried so a sold medication/vaccine can sync into the record. */
-export interface RetailPrefill { name: string; phone: string; pet: string; petId?: string; species?: Species }
+export interface RetailPrefill {
+  name: string; phone: string; pet: string; petId?: string; species?: Species;
+  /** بند خدمة يُضاف للسلة جاهزاً (مثل «تعداد الدم CBC» القادم من المختبر). */
+  service?: string;
+  /** نتيجة المختبر التي فتحت هذا البيع — تتعلم «مفوترة» تلقائياً عند الإتمام. */
+  labId?: string;
+}
 
 /** A patient attached to the sale. Several can be attached (e.g. vaccinating all the
  *  owner's animals in one visit) — one is ACTIVE at a time: new medication/vaccine
@@ -476,6 +482,25 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
     setSalePets(prefill.pet ? [{ id: prefill.petId || null, name: prefill.pet, species: prefill.species || null }] : []);
     setActivePetIdx(0);
     setDone(null);
+    // بند المختبر: التحليل ينزل بالسلة جاهزاً بسعره من كتالوج الخدمات (إن وُجد
+    // اسم مطابق أو قريب) — والكاشير يعدّل السعر بحرية مثل أي بند خدمة.
+    if (prefill.service) {
+      const label = prefill.service;
+      const lineId = `s:lab:${prefill.labId ?? label}`;
+      const all = getServiceCatalog().services;
+      const exact = all.find((x) => x.name.trim() === label.trim());
+      let price = exact?.price ?? 0;
+      if (!exact) {
+        for (const k of ["CBC", "كيمياء", "بول", "براز", "أشعة", "تحليل", "فحص"]) {
+          if (label.includes(k)) { const m = all.find((x) => x.name.includes(k)); if (m) { price = m.price; break; } }
+        }
+      }
+      setCart((c) => c.some((l) => l.id === lineId) ? c : [...c, {
+        id: lineId, kind: "service", name: label, barcode: null, unit_price: price, unit_cost: 0,
+        qty: 1, stock: null, product_id: null, subcategory: null,
+        petId: prefill.petId ?? null, petName: prefill.pet || null, surgeryCat: false, surgeryRef: null,
+      }]);
+    }
     const id = window.setTimeout(() => searchRef.current?.focus(), 160);
     return () => window.clearTimeout(id);
   }, [prefill]);
@@ -866,6 +891,8 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
       // the receipt/print UI even if Supabase stalls mid-flow.
       setDone({ invoice, items: invItems });
       clearSaleDraft(clinicId); // sale is final — drop the saved draft
+      // بيع قادم من المختبر؟ علّم النتيجة «مفوترة» تلقائياً — الحلقة انغلقت.
+      if (prefill?.labId) void repo.setLabBilled(prefill.labId, true).catch(() => {});
       onSold();
       // Mirror medication/vaccine lines into each known patient's record —
       // administered dose, scheduled booster (→ reminders), treatment-sheet rows —

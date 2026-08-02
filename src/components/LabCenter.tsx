@@ -13,7 +13,7 @@
 //     value (world-class rule: never re-judge old results by new references).
 // ============================================================================
 import { useMemo, useRef, useState } from "react";
-import { FlaskConical, Plus, Camera, Trash2, Receipt, ChevronDown, AlertTriangle, CheckCircle2, MessageCircle } from "lucide-react";
+import { FlaskConical, Plus, Camera, Trash2, Receipt, ChevronDown, AlertTriangle, CheckCircle2, MessageCircle, Printer, ShoppingCart, ArrowRightLeft } from "lucide-react";
 import type { Pet, LabResult, LabValue } from "@/types";
 import { repo } from "@/lib/repo";
 import {
@@ -27,7 +27,9 @@ import { prepareUpload } from "@/lib/image";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
 import { cn, formatNum, formatDate } from "@/lib/utils";
 import { waNumber } from "@/lib/phone";
-import { getDialCode, getClinicName } from "@/lib/settings";
+import { getDialCode, getClinicName, getClinicLogo } from "@/lib/settings";
+import { openLabPrint } from "@/lib/labPrint";
+import { useNavigate } from "react-router-dom";
 
 const FLAG_CHIP: Record<LabFlag, string> = {
   low: "bg-sky-100 text-sky-700 dark:bg-sky-500/20 dark:text-sky-300",
@@ -471,8 +473,9 @@ function waResultMessage(pet: Pet, r: LabResult): string {
   return lines.join("\n");
 }
 
-function ResultCard({ r, pet, canEdit, onDelete, onToggleBilled }: {
+function ResultCard({ r, pet, canEdit, onDelete, onToggleBilled, onBill, onPrint }: {
   r: LabResult; pet: Pet; canEdit: boolean; onDelete: (id: string) => void; onToggleBilled: (r: LabResult) => void;
+  onBill: (r: LabResult) => void; onPrint: (r: LabResult) => void;
 }) {
   const [openPhoto, setOpenPhoto] = useState(false);
   const abnormal = (r.values ?? []).filter((v) => v.flag !== "normal");
@@ -507,6 +510,22 @@ function ResultCard({ r, pet, canEdit, onDelete, onToggleBilled }: {
             {positive ? "⚠ إيجابي" : "سلبي ✓"}
           </span>
         )}
+        {canEdit && !r.billed && (
+          <button
+            type="button" onClick={() => onBill(r)}
+            title="فوترة بالمبيعات — التحليل ينزل بالسلة جاهزاً"
+            className="inline-flex h-8 items-center gap-1 rounded-full bg-brand-50 px-2.5 text-2xs font-bold text-brand-700 transition hover:bg-brand-100 dark:bg-brand-500/15 dark:text-brand-300"
+          >
+            <ShoppingCart size={13} /> فوترة
+          </button>
+        )}
+        <button
+          type="button" onClick={() => onPrint(r)}
+          title="طباعة تقرير هذه النتيجة"
+          className="grid h-8 w-8 place-items-center rounded-full text-ink-subtle transition hover:bg-surface-2 hover:text-ink"
+        >
+          <Printer size={15} />
+        </button>
         {canEdit && waNum && (
           <button
             type="button" onClick={sendWa}
@@ -561,9 +580,32 @@ export function LabsTab({ pet, results, canEdit, doctor, onChanged }: {
   pet: Pet; results: LabResult[]; canEdit: boolean; doctor?: string | null; onChanged: () => void;
 }) {
   const toast = useToast();
+  const navigate = useNavigate();
   const [entryOpen, setEntryOpen] = useState(false);
+  const [compareOpen, setCompareOpen] = useState(false);
   const [confirmDel, setConfirmDel] = useState<string | null>(null);
   const [shown, setShown] = useState(8);
+
+  const printOpts = () => ({ clinicName: getClinicName() || "doctorVet", logoUrl: getClinicLogo() });
+  const onPrint = (r: LabResult) => {
+    playTap();
+    if (!openLabPrint(pet, [r], printOpts())) toast.error("المتصفح منع نافذة الطباعة — اسمح بالنوافذ المنبثقة");
+  };
+  const printAll = () => {
+    playTap();
+    if (!openLabPrint(pet, results, printOpts())) toast.error("المتصفح منع نافذة الطباعة — اسمح بالنوافذ المنبثقة");
+  };
+  /** فوترة: افتح المبيعات والبند جاهز بالسلة — عند إتمام البيع تتعلم النتيجة «مفوترة» بروحها. */
+  const onBill = (r: LabResult) => {
+    playTap();
+    const q = new URLSearchParams({
+      customer: pet.owner_name ?? "", phone: pet.owner_phone ?? "",
+      pet: pet.name, petId: pet.id, species: pet.species,
+      service: r.panel_label, labId: r.id,
+    });
+    navigate(`/retail?${q.toString()}`);
+  };
+  const numericCount = results.filter((r) => r.kind === "numeric" && (r.values?.length ?? 0) > 0).length;
 
   const onDelete = (id: string) => {
     if (confirmDel !== id) {
@@ -592,9 +634,21 @@ export function LabsTab({ pet, results, canEdit, doctor, onChanged }: {
             {formatNum(positives.length)} فحص إيجابي
           </span>
         )}
-        {canEdit && (
-          <Button className="ms-auto" onClick={() => { playTap(); setEntryOpen(true); }} leftIcon={<Plus size={16} />}>تسجيل تحاليل</Button>
-        )}
+        <div className="ms-auto flex items-center gap-1.5">
+          {numericCount >= 2 && (
+            <button type="button" onClick={() => { playTap(); setCompareOpen(true); }} className="inline-flex items-center gap-1.5 rounded-full bg-surface-2 px-3.5 py-2 text-xs font-bold text-ink-muted transition hover:text-ink">
+              <ArrowRightLeft size={14} /> مقارنة
+            </button>
+          )}
+          {results.length > 0 && (
+            <button type="button" onClick={printAll} className="inline-flex items-center gap-1.5 rounded-full bg-surface-2 px-3.5 py-2 text-xs font-bold text-ink-muted transition hover:text-ink">
+              <Printer size={14} /> طباعة تقرير
+            </button>
+          )}
+          {canEdit && (
+            <Button onClick={() => { playTap(); setEntryOpen(true); }} leftIcon={<Plus size={16} />}>تسجيل تحاليل</Button>
+          )}
+        </div>
       </div>
 
       <TrendTable results={results} />
@@ -610,7 +664,7 @@ export function LabsTab({ pet, results, canEdit, doctor, onChanged }: {
       ) : (
         <div className="space-y-3">
           {results.slice(0, shown).map((r) => (
-            <ResultCard key={r.id} r={r} pet={pet} canEdit={canEdit} onDelete={onDelete} onToggleBilled={onToggleBilled} />
+            <ResultCard key={r.id} r={r} pet={pet} canEdit={canEdit} onDelete={onDelete} onToggleBilled={onToggleBilled} onBill={onBill} onPrint={onPrint} />
           ))}
           {results.length > shown && (
             <button type="button" onClick={() => setShown((n) => n + 8)} className="mx-auto flex items-center gap-1 rounded-full bg-surface-2 px-4 py-2 text-xs font-bold text-ink-muted transition hover:text-ink">
@@ -620,9 +674,105 @@ export function LabsTab({ pet, results, canEdit, doctor, onChanged }: {
         </div>
       )}
 
+      <Modal open={compareOpen} onClose={() => setCompareOpen(false)} size="wide" title={`مقارنة تحاليل — ${pet.name}`}>
+        <CompareView results={results} />
+      </Modal>
+
       <Modal open={entryOpen} onClose={() => setEntryOpen(false)} size="wide" title={`تسجيل تحاليل — ${pet.name}`}>
         <LabEntry pet={pet} doctor={doctor} onSaved={onChanged} onClose={() => setEntryOpen(false)} />
       </Modal>
+    </div>
+  );
+}
+
+/* ============================ Before/after compare ============================ */
+
+/** Side-by-side comparison of two numeric results. The verdict per value is by
+ *  DISTANCE FROM THE NORMAL BAND: moved closer (or into it) = تحسّن, moved
+ *  further = تراجع — direction-aware, so a falling high value counts as better. */
+function CompareView({ results }: { results: LabResult[] }) {
+  const numeric = useMemo(
+    () => results.filter((r) => r.kind === "numeric" && (r.values?.length ?? 0) > 0).slice().sort((a, b) => a.taken_at.localeCompare(b.taken_at)),
+    [results],
+  );
+  const [aId, setAId] = useState(() => numeric[Math.max(0, numeric.length - 2)]?.id ?? "");
+  const [bId, setBId] = useState(() => numeric[numeric.length - 1]?.id ?? "");
+  const A = numeric.find((r) => r.id === aId);
+  const B = numeric.find((r) => r.id === bId);
+  if (numeric.length < 2) return <p className="py-6 text-center text-sm text-ink-subtle">تحتاج نتيجتين رقميتين على الأقل للمقارنة.</p>;
+
+  const dist = (v: { value: number; low?: number; high?: number }) =>
+    v.low === undefined || v.high === undefined ? 0 : v.value < v.low ? v.low - v.value : v.value > v.high ? v.value - v.high : 0;
+
+  const rows: { id: string; label: string; a?: LabValue; b?: LabValue }[] = [];
+  for (const src of [A, B]) {
+    for (const v of src?.values ?? []) {
+      if (!rows.some((x) => x.id === v.id)) rows.push({ id: v.id, label: `${v.abbr ?? ""} ${v.label ?? ""}`.trim() });
+    }
+  }
+  for (const row of rows) {
+    row.a = (A?.values ?? []).find((v) => v.id === row.id);
+    row.b = (B?.values ?? []).find((v) => v.id === row.id);
+  }
+
+  const pick = (id: string, side: "a" | "b") => { playTap(); (side === "a" ? setAId : setBId)(id); };
+
+  return (
+    <div className="space-y-4">
+      <div className="grid gap-3 sm:grid-cols-2">
+        {(["a", "b"] as const).map((side) => (
+          <div key={side}>
+            <p className="mb-1.5 text-2xs font-bold text-ink-muted">{side === "a" ? "قبل" : "بعد"}</p>
+            <div className="flex flex-wrap gap-1.5">
+              {numeric.map((r) => (
+                <button key={r.id} type="button" onClick={() => pick(r.id, side)}
+                  className={cn("rounded-full px-3 py-1.5 text-xs font-bold tabular-nums transition", (side === "a" ? aId : bId) === r.id ? "bg-brand-600 text-white shadow-soft" : "bg-surface-2 text-ink-muted hover:text-ink")} dir="ltr">
+                  {new Date(r.taken_at).toLocaleDateString("en-GB", { day: "2-digit", month: "short" })}
+                </button>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {A && B && (
+        <div className="overflow-x-auto rounded-2xl border border-line">
+          <table className="w-full min-w-[460px] text-sm">
+            <thead>
+              <tr className="border-b border-line bg-surface-2/60 text-2xs text-ink-muted">
+                <th className="px-3 py-2 text-start font-bold">الفحص</th>
+                <th className="px-2 py-2 text-center font-bold" dir="ltr">{new Date(A.taken_at).toLocaleDateString("en-GB", { day: "2-digit", month: "short" })}</th>
+                <th className="px-2 py-2 text-center font-bold" dir="ltr">{new Date(B.taken_at).toLocaleDateString("en-GB", { day: "2-digit", month: "short" })}</th>
+                <th className="px-2 py-2 text-center font-bold">الاتجاه</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-line">
+              {rows.map((row) => {
+                const verdict = row.a && row.b
+                  ? (dist(row.b) < dist(row.a) ? "up" : dist(row.b) > dist(row.a) ? "down" : "flat")
+                  : null;
+                return (
+                  <tr key={row.id}>
+                    <td className="px-3 py-2 font-bold text-ink">{row.label}</td>
+                    {[row.a, row.b].map((v, i) => (
+                      <td key={i} className="px-2 py-2 text-center">
+                        {v ? <span className={cn("inline-block min-w-[56px] rounded-lg px-1.5 py-1 text-xs font-extrabold tabular-nums", FLAG_CELL[v.flag])} dir="ltr">{formatNum(v.value)}{v.flag !== "normal" ? ` ${FLAG_ARROW[v.flag]}` : ""}</span> : <span className="text-ink-subtle/40">—</span>}
+                      </td>
+                    ))}
+                    <td className="px-2 py-2 text-center">
+                      {verdict === "up" && <span className="chip bg-success-50 text-2xs font-black text-success-700 dark:bg-success-500/15 dark:text-success-300">تحسّن ✓</span>}
+                      {verdict === "down" && <span className="chip bg-danger-50 text-2xs font-black text-danger-700 dark:bg-danger-500/15 dark:text-danger-300">تراجع !</span>}
+                      {verdict === "flat" && <span className="chip bg-surface-2 text-2xs font-bold text-ink-subtle">مستقر</span>}
+                      {verdict === null && <span className="text-ink-subtle/40">—</span>}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <p className="text-2xs leading-relaxed text-ink-subtle">«تحسّن» = القيمة اقتربت من نطاقها الطبيعي أو دخلت فيه — حتى لو نزلت من رقم أعلى. المقارنة بمسافة القيمة عن النطاق، مو بمجرد صعودها ونزولها.</p>
     </div>
   );
 }

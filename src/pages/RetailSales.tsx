@@ -51,8 +51,11 @@ export function RetailSales() {
     // Validate against the known set — never blind-cast a tampered/stale query string.
     const rawSpecies = params.get("species");
     const species = rawSpecies && SPECIES_SET.has(rawSpecies) ? (rawSpecies as Species) : undefined;
-    if (customer || phone || pet) {
-      setPrefill({ name: customer, phone, pet, petId: petId || undefined, species });
+    // جسر المختبر: التحليل يوصل كبند خدمة جاهز + معرف النتيجة حتى تتفوتر تلقائياً.
+    const service = params.get("service") ?? "";
+    const labId = params.get("labId") ?? "";
+    if (customer || phone || pet || service) {
+      setPrefill({ name: customer, phone, pet, petId: petId || undefined, species, service: service || undefined, labId: labId || undefined });
       setTab("sell");
       setParams({}, { replace: true });
     }
