@@ -480,6 +480,8 @@ function ResultCard({ r, pet, canEdit, onDelete, onToggleBilled, onBill, onPrint
   const [openPhoto, setOpenPhoto] = useState(false);
   const abnormal = (r.values ?? []).filter((v) => v.flag !== "normal");
   const positive = r.snap_result === "positive";
+  // طلب جاي من المبيعات — انباع بس النتائج بعدها ما مسجلة
+  const pending = r.panel_id === "ordered" && !(r.values?.length) && !r.snap_result;
   const waNum = pet.owner_phone ? waNumber(pet.owner_phone, getDialCode()) : "";
   const sendWa = () => {
     if (!waNum) return;
@@ -488,7 +490,7 @@ function ResultCard({ r, pet, canEdit, onDelete, onToggleBilled, onBill, onPrint
     void repo.logWhatsApp({ pet_id: pet.id, owner_name: pet.owner_name ?? null, owner_phone: pet.owner_phone ?? null, reminder_type: "lab_result" }).catch(() => {});
   };
   return (
-    <div className={cn("card p-4", positive && "border-danger-300 ring-1 ring-danger-300/50 dark:border-danger-500/50")}>
+    <div className={cn("card p-4", positive && "border-danger-300 ring-1 ring-danger-300/50 dark:border-danger-500/50", pending && "border-warn-300 bg-warn-50/30 dark:border-warn-500/40 dark:bg-warn-500/5")}>
       <div className="flex flex-wrap items-center gap-2">
         <span className={cn("grid h-10 w-10 shrink-0 place-items-center rounded-2xl", positive ? "bg-danger-100 text-danger-600 dark:bg-danger-500/20 dark:text-danger-300" : "bg-brand-100 text-brand-700 dark:bg-brand-500/20 dark:text-brand-300")}>
           <FlaskConical size={18} />
@@ -500,6 +502,9 @@ function ResultCard({ r, pet, canEdit, onDelete, onToggleBilled, onBill, onPrint
             {r.doctor ? ` · ${r.doctor}` : ""}
           </p>
         </div>
+        {pending && (
+          <span className="chip bg-warn-100 text-2xs font-black text-warn-700 dark:bg-warn-500/20 dark:text-warn-300">⏳ بانتظار تسجيل النتائج</span>
+        )}
         {r.kind === "numeric" && (r.values?.length ?? 0) > 0 && (
           <span className={cn("chip text-2xs font-bold", abnormal.length ? "bg-warn-50 text-warn-700 dark:bg-warn-500/15 dark:text-warn-300" : "bg-success-50 text-success-700 dark:bg-success-500/15 dark:text-success-300")}>
             {abnormal.length ? `${formatNum(abnormal.length)} خارج الطبيعي` : "كل القيم طبيعية ✓"}

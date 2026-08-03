@@ -487,16 +487,23 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
     if (prefill.service) {
       const label = prefill.service;
       const lineId = `s:lab:${prefill.labId ?? label}`;
-      const all = getServiceCatalog().services;
-      const exact = all.find((x) => x.name.trim() === label.trim());
-      let price = exact?.price ?? 0;
-      if (!exact) {
-        for (const k of ["CBC", "كيمياء", "بول", "براز", "أشعة", "تحليل", "فحص"]) {
-          if (label.includes(k)) { const m = all.find((x) => x.name.includes(k)); if (m) { price = m.price; break; } }
-        }
+      // طابق التحليل مع خدمة الكتالوج مال العيادة نفسها — وإذا لكيناها ناخذ
+      // اسمها وسعرها كما حددهما الدكتور بالضبط (تطابق تام أولاً، وإلا أعلى
+      // تقاطع كلمات مع أفضلية خدمات تصنيف «المختبر»).
+      const catalog = getServiceCatalog();
+      const labCatIds = new Set(catalog.categories.filter((c) => /مختبر|تحاليل|مختبرات/.test(c.name)).map((c) => c.id));
+      const tok = (x: string) => x.toLowerCase().replace(/[()\u064B-\u065F،.\-]/g, " ").split(/\s+/).filter((w) => w.length >= 2);
+      const want = new Set(tok(label));
+      let best: { s: Service; score: number } | null = null;
+      for (const svc of catalog.services) {
+        if (svc.name.trim() === label.trim()) { best = { s: svc, score: 999 }; break; }
+        let score = tok(svc.name).filter((w) => want.has(w)).length;
+        if (score > 0 && labCatIds.has(svc.category_id)) score += 0.5;
+        if (score > 0 && (!best || score > best.score)) best = { s: svc, score };
       }
       setCart((c) => c.some((l) => l.id === lineId) ? c : [...c, {
-        id: lineId, kind: "service", name: label, barcode: null, unit_price: price, unit_cost: 0,
+        id: lineId, kind: "service", name: best ? best.s.name : label, barcode: null,
+        unit_price: best ? best.s.price : 0, unit_cost: 0,
         qty: 1, stock: null, product_id: null, subcategory: null,
         petId: prefill.petId ?? null, petName: prefill.pet || null, surgeryCat: false, surgeryRef: null,
       }]);
@@ -893,6 +900,26 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
       clearSaleDraft(clinicId); // sale is final — drop the saved draft
       // بيع قادم من المختبر؟ علّم النتيجة «مفوترة» تلقائياً — الحلقة انغلقت.
       if (prefill?.labId) void repo.setLabBilled(prefill.labId, true).catch(() => {});
+      // الاتجاه المعاكس: خدمة من تصنيف «المختبر» بيعت لحيوان معروف → سجل
+      // «بانتظار النتائج» يصعد للمختبر والطبلة فوراً، معلَّم مفوتر من البداية.
+      try {
+        const catalog = getServiceCatalog();
+        const labCatIds = new Set(catalog.categories.filter((c) => /مختبر|تحاليل|مختبرات/.test(c.name)).map((c) => c.id));
+        for (const l of cart) {
+          if (l.kind !== "service" || !l.petId || l.id.startsWith("s:lab:")) continue;
+          const sid = l.id.startsWith("s:") ? l.id.slice(2) : "";
+          const svc = catalog.services.find((x) => x.id === sid);
+          const isLab = (svc && labCatIds.has(svc.category_id)) || /تحليل|CBC|كيمياء|مسحة|زراع/i.test(l.name);
+          if (!isLab) continue;
+          void repo.addLabResult({
+            pet_id: l.petId, visit_id: null, panel_id: "ordered", panel_label: l.name,
+            kind: "descriptive", values: null, snap_test_id: null, snap_result: null,
+            notes: "بيع من المبيعات — النتائج لم تُسجَّل بعد. سجّلها من زر «تسجيل تحاليل».",
+            photo_url: null, doctor: user?.full_name ?? null, billed: true,
+            taken_at: new Date().toISOString(),
+          }).catch(() => {});
+        }
+      } catch { /* مزامنة إضافية — لا تعطل البيع أبداً */ }
       onSold();
       // Mirror medication/vaccine lines into each known patient's record —
       // administered dose, scheduled booster (→ reminders), treatment-sheet rows —
