@@ -15,15 +15,15 @@ const esc = (s: unknown) =>
 const fmt = (n: number) => n.toLocaleString("en-US", { maximumFractionDigits: 3 });
 
 const SPECIES_AR: Record<string, string> = { dog: "كلب", cat: "قطة", horse: "حصان", cow: "بقرة", bird: "طائر", rabbit: "أرنب", other: "أخرى" };
-const FLAG_AR = { low: "منخفض ↓", normal: "طبيعي", high: "مرتفع ↑" } as const;
-const FLAG_COLOR = { low: "#0369a1", normal: "#15803d", high: "#b91c1c" } as const;
-const FLAG_BG = { low: "#e0f2fe", normal: "#f0fdf4", high: "#fee2e2" } as const;
+const FLAG_AR = { very_low: "منخفض جداً ↓↓", low: "منخفض ↓", normal: "طبيعي", high: "مرتفع ↑", very_high: "مرتفع جداً ↑↑" } as const;
+const FLAG_COLOR = { very_low: "#075985", low: "#0369a1", normal: "#15803d", high: "#b91c1c", very_high: "#7f1d1d" } as const;
+const FLAG_BG = { very_low: "#bae6fd", low: "#e0f2fe", normal: "#f0fdf4", high: "#fee2e2", very_high: "#fecaca" } as const;
 
 function resultSection(r: LabResult): string {
   const rows = (r.values ?? []).map((v) => `
     <tr>
       <td class="pname"><b dir="ltr">${esc(v.abbr ?? "")}</b> ${esc(v.label ?? "")}</td>
-      <td class="num"><b>${fmt(v.value)}</b> <span class="unit">${esc(v.unit)}</span></td>
+      <td class="num">${v.value !== undefined ? `<b>${fmt(v.value)}</b> <span class="unit">${esc(v.unit)}</span>` : "—"}</td>
       <td class="num">${v.low !== undefined && v.high !== undefined ? `${fmt(v.low)} – ${fmt(v.high)}` : "—"}</td>
       <td><span class="flag" style="color:${FLAG_COLOR[v.flag]};background:${FLAG_BG[v.flag]}">${FLAG_AR[v.flag]}</span></td>
     </tr>`).join("");

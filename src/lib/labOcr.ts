@@ -88,3 +88,66 @@ export async function readLabImage(src: string | File): Promise<{ values: Record
   const text = data?.text ?? "";
   return { values: parseCbcFromText(text), text };
 }
+
+/* --------------------- Full-catalog OCR (المختبر sheet) ---------------------
+ * Same engine, wider net: chemistry/urine abbreviations as printed by common
+ * analyser slips, on top of the CBC synonyms above. */
+const CHEM_SYNONYMS: Record<string, string[]> = {
+  mchc: ["MCHC"],
+  mono: ["MONO", "MONOCYTES", "MONOCYTE", "MID"],
+  eos: ["EOS", "EOSINOPHILS", "EOSINOPHIL"],
+  bun: ["BUN", "UREA", "BLOOD UREA"],
+  crea: ["CREA", "CREATININE", "CRE"],
+  phos: ["PHOS", "PHOSPHORUS", "PHOSPHATE", "P04", "PO4"],
+  alt: ["ALT", "GPT", "SGPT", "ALAT"],
+  ast: ["AST", "GOT", "SGOT", "ASAT"],
+  alp: ["ALP", "ALKP", "ALK PHOS", "ALKALINE"],
+  ggt: ["GGT", "GAMMA GT"],
+  tbil: ["TBIL", "T BIL", "TOTAL BILIRUBIN", "BILIRUBIN"],
+  tp: ["TP", "TOTAL PROTEIN", "T PROTEIN"],
+  alb: ["ALB", "ALBUMIN"],
+  glob: ["GLOB", "GLOBULIN"],
+  glu: ["GLU", "GLUCOSE", "GLUC"],
+  amyl: ["AMYL", "AMYLASE", "AMY"],
+  lipa: ["LIPA", "LIPASE", "LIP"],
+  chol: ["CHOL", "CHOLESTEROL"],
+  na: ["NA", "SODIUM", "NA+"],
+  k: ["K", "POTASSIUM", "K+"],
+  cl: ["CL", "CHLORIDE", "CL-"],
+  ca: ["CA", "CALCIUM", "CA+", "CA2"],
+  t4: ["T4", "TT4", "THYROXINE"],
+  usg: ["USG", "SP GR", "SPECIFIC GRAVITY", "SG"],
+  uph: ["PH"],
+};
+
+export interface OcrParam { id: string; abbr: string; unit: string; min: number; max: number; step: number }
+
+/** Parse OCR text against ANY parameter list (CBC + chemistry + urine). */
+export function parseLabFromText(text: string, params: OcrParam[]): Record<string, number> {
+  const out: Record<string, number> = {};
+  const lines = text.split(/\r?\n/).map(normLine).filter(Boolean);
+  for (const p of params) {
+    const syns = SYNONYMS[p.id] ?? CHEM_SYNONYMS[p.id] ?? [p.abbr.toUpperCase()];
+    let found: number | null = null;
+    outer:
+    for (const syn of syns) {
+      const re = new RegExp(`\\b${escapeRe(syn)}\\b`);
+      for (const line of lines) {
+        if (!re.test(line)) continue;
+        const rest = line.slice(line.search(re) + syn.length);
+        const v = valueAfter(rest, p as unknown as CbcParam);
+        if (v !== null) { found = v; break outer; }
+      }
+    }
+    if (found !== null) out[p.id] = found;
+  }
+  return out;
+}
+
+/** OCR an analyser slip and pull every catalog value we can recognise. */
+export async function readLabImageFull(src: string | File, params: OcrParam[]): Promise<{ values: Record<string, number>; text: string }> {
+  const Tesseract = (await import("tesseract.js")).default;
+  const { data } = await Tesseract.recognize(src, "eng");
+  const text = data?.text ?? "";
+  return { values: parseLabFromText(text, params), text };
+}

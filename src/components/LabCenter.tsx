@@ -14,13 +14,13 @@
 // ============================================================================
 import { useMemo, useRef, useState } from "react";
 import { FlaskConical, Plus, Camera, Trash2, Receipt, ChevronDown, AlertTriangle, CheckCircle2, MessageCircle, Printer, ShoppingCart, ArrowRightLeft } from "lucide-react";
-import type { Pet, LabResult, LabValue } from "@/types";
+import type { Pet, LabResult, LabValue, LabValueFlag } from "@/types";
 import { repo } from "@/lib/repo";
 import {
   LAB_PARAMS, LAB_GROUPS, nameFromGroups, labParamById, labRange, labFlag,
   snapTestsFor, snapTestById, type LabFlag,
 } from "@/lib/labCatalog";
-import { FLAG_ARROW } from "@/lib/cbc";
+import { readLabImageFull } from "@/lib/labOcr";
 import { Modal } from "@/components/Modal";
 import { Button, useToast } from "@/components/ui";
 import { prepareUpload } from "@/lib/image";
@@ -31,16 +31,26 @@ import { getDialCode, getClinicName, getClinicLogo } from "@/lib/settings";
 import { openLabPrint } from "@/lib/labPrint";
 import { useNavigate } from "react-router-dom";
 
-const FLAG_CHIP: Record<LabFlag, string> = {
+const FLAG_CHIP: Record<LabValueFlag, string> = {
+  very_low: "bg-sky-200 text-sky-900 dark:bg-sky-500/35 dark:text-sky-100",
   low: "bg-sky-100 text-sky-700 dark:bg-sky-500/20 dark:text-sky-300",
   normal: "bg-success-50 text-success-700 dark:bg-success-500/15 dark:text-success-300",
   high: "bg-danger-100 text-danger-700 dark:bg-danger-500/20 dark:text-danger-300",
+  very_high: "bg-danger-200 text-danger-900 dark:bg-danger-500/35 dark:text-danger-100",
 };
-const FLAG_CELL: Record<LabFlag, string> = {
+const FLAG_CELL: Record<LabValueFlag, string> = {
+  very_low: "bg-sky-200 text-sky-900 dark:bg-sky-500/35 dark:text-sky-100",
   low: "bg-sky-100 text-sky-800 dark:bg-sky-500/25 dark:text-sky-200",
   normal: "bg-success-50 text-success-800 dark:bg-success-500/10 dark:text-success-200",
   high: "bg-danger-100 text-danger-800 dark:bg-danger-500/25 dark:text-danger-200",
+  very_high: "bg-danger-200 text-danger-900 dark:bg-danger-500/35 dark:text-danger-100",
 };
+/** Five-step verdict scale (بلا أرقام) — the arrows the doctor taps. */
+const ARROW5: Record<LabValueFlag, string> = { very_low: "↓↓", low: "↓", normal: "✓", high: "↑", very_high: "↑↑" };
+const LABEL5: Record<LabValueFlag, string> = { very_low: "منخفض جداً", low: "منخفض", normal: "طبيعي", high: "مرتفع", very_high: "مرتفع جداً" };
+const SCALE5: LabValueFlag[] = ["very_low", "low", "normal", "high", "very_high"];
+/** Ordinal distance from normal — drives the before/after verdict for mixed entries. */
+const FLAG_ORD: Record<LabValueFlag, number> = { very_low: 2, low: 1, normal: 0, high: 1, very_high: 2 };
 
 /* ============================== Recording modal ============================== */
 // One question — «شنو سويت؟» — three big buttons. Numbers mode shows a single
@@ -69,6 +79,8 @@ export function LabEntry({ pet, visitId, doctor, onSaved, onClose, fulfill }: {
   const [openParam, setOpenParam] = useState<string | null>(null); // expanded slider row
   const [q, setQ] = useState("");                 // search across every param
   const [vals, setVals] = useState<Record<string, string>>({});
+  const [quals, setQuals] = useState<Record<string, LabValueFlag>>({}); // حكم بلا رقم
+  const [ocrBusy, setOcrBusy] = useState(false);
   const [snapTest, setSnapTest] = useState<string | null>(null);
   const [snapResult, setSnapResult] = useState<"positive" | "negative" | null>(null);
   const [microType, setMicroType] = useState(MICRO_TYPES[0]);
@@ -90,7 +102,40 @@ export function LabEntry({ pet, visitId, doctor, onSaved, onClose, fulfill }: {
     } catch { playWarning(); toast.error("تعذّر تجهيز الصورة"); }
   };
 
-  /** Snapshot every value the doctor actually typed (any group) + free rows. */
+  const ocrRef = useRef<HTMLInputElement>(null);
+  /** صورة → قراءة تلقائية: القيم المقروءة تتعبى بالحقول والصورة تنحفظ مع النتيجة. */
+  const ocrPick = async (f: File | undefined) => {
+    if (!f) return;
+    setOcrBusy(true);
+    try {
+      const prep = await prepareUpload(f, { maxDim: 1600, quality: 0.8 });
+      setPhoto(prep.dataUrl);
+      const { values } = await readLabImageFull(prep.dataUrl, LAB_PARAMS);
+      const n = Object.keys(values).length;
+      if (n > 0) {
+        setVals((m) => {
+          const next = { ...m };
+          for (const [pid, v] of Object.entries(values)) next[pid] = String(v);
+          return next;
+        });
+        setQuals((q) => {
+          const next = { ...q };
+          for (const pid of Object.keys(values)) delete next[pid]; // الرقم المقروء يغلب الحكم
+          return next;
+        });
+        playSuccess();
+        toast.success(`قرأنا ${formatNum(n)} قيمة من الصورة — راجعها وعدّل اللي يحتاج`);
+      } else {
+        playWarning();
+        toast.toast({ tone: "info", title: "ما كدرنا نقرأ أرقام واضحة", description: "الصورة انحفظت مع النتيجة — قرّب الكاميرا على الأرقام وحاول مرة ثانية، أو عبّي يدوياً." });
+      }
+    } catch {
+      playWarning();
+      toast.error("تعذّرت قراءة الصورة");
+    } finally { setOcrBusy(false); }
+  };
+
+  /** Snapshot every value the doctor actually typed (any group) + verdicts + free rows. */
   const buildValues = (): LabValue[] => {
     const out: LabValue[] = [];
     for (const [pid, raw] of Object.entries(vals)) {
@@ -100,6 +145,14 @@ export function LabEntry({ pet, visitId, doctor, onSaved, onClose, fulfill }: {
       const [lo, hi] = labRange(p, pet.species);
       const v = Number(raw);
       out.push({ id: pid, label: p.label, abbr: p.abbr, value: v, unit: p.unit, low: lo, high: hi, flag: labFlag(v, lo, hi) });
+    }
+    // أحكام بلا أرقام — خمس درجات، تدخل بجدول التطور والمقارنة مثل الأرقام تماماً
+    for (const [pid, flag] of Object.entries(quals)) {
+      if (vals[pid]?.trim()) continue; // الرقم الصريح يغلب الحكم
+      const p = labParamById(pid);
+      if (!p) continue;
+      const [lo, hi] = labRange(p, pet.species);
+      out.push({ id: pid, label: p.label, abbr: p.abbr, unit: p.unit, low: lo, high: hi, flag, qualitative: true });
     }
     for (const r of freeRows) {
       if (!r.label.trim() || r.value.trim() === "" || !Number.isFinite(Number(r.value))) continue;
@@ -199,7 +252,7 @@ export function LabEntry({ pet, visitId, doctor, onSaved, onClose, fulfill }: {
   );
 
   /* ---- Numbers: ONE sheet — group chips + search, fill only what you have ---- */
-  const groupFilled = (g: { params: string[] }) => g.params.filter((pid) => (vals[pid] ?? "").trim() !== "").length;
+  const groupFilled = (g: { params: string[] }) => g.params.filter((pid) => (vals[pid] ?? "").trim() !== "" || quals[pid]).length;
   const query = q.trim().toLowerCase();
   const visibleParams = query
     ? LAB_PARAMS.filter((p) => p.abbr.toLowerCase().includes(query) || p.label.includes(q.trim()))
@@ -211,8 +264,18 @@ export function LabEntry({ pet, visitId, doctor, onSaved, onClose, fulfill }: {
 
       {mode === "numbers" && (
         <>
+          {/* أسهل طريقة: صوّر ورقة الجهاز والأرقام تنقرأ وتتعبى بروحها */}
+          <button
+            type="button"
+            disabled={ocrBusy}
+            onClick={() => { playTap(); ocrRef.current?.click(); }}
+            className="flex w-full items-center justify-center gap-2.5 rounded-2xl border-2 border-dashed border-brand-400 bg-brand-50/60 p-4 text-base font-extrabold text-brand-700 transition hover:bg-brand-100/60 active:scale-[.99] disabled:opacity-60 dark:border-brand-500/50 dark:bg-brand-500/10 dark:text-brand-300"
+          >
+            {ocrBusy ? "📸 دنقرأ الأرقام من الصورة…" : "📸 صوّر ورقة الجهاز — الأرقام تتعبى بروحها"}
+          </button>
+          <input ref={ocrRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => { void ocrPick(e.target.files?.[0]); e.target.value = ""; }} />
           <p className="rounded-xl bg-brand-50/60 px-3 py-2 text-2xs font-semibold leading-relaxed text-brand-800 dark:bg-brand-500/10 dark:text-brand-200">
-            اضغط على أي فحص وحرّك المؤشر أو استخدم + و − (أو اكتب مباشرة) — عبّي بس الموجود بورقة الجهاز، والسستم يسمي التحليل ويلوّن القيم بروحه.
+            أو اضغط الأسهم كدام كل فحص للحكم السريع (↓↓ ↓ ✓ ↑ ↑↑) بلا أرقام — ومن تريد الدقة اضغط اسم الفحص واكتب الرقم.
           </p>
           <div className="flex flex-wrap items-center gap-1.5">
             {LAB_GROUPS.map((g) => {
@@ -253,14 +316,31 @@ export function LabEntry({ pet, visitId, doctor, onSaved, onClose, fulfill }: {
                       <p className="text-sm font-bold text-ink"><span dir="ltr">{p.abbr}</span> · {p.label}</p>
                       <p className="text-2xs tabular-nums text-ink-subtle" dir="ltr">{formatNum(lo)}–{formatNum(hi)} {p.unit}</p>
                     </div>
-                    {num !== null && Number.isFinite(num) ? (
+                    {num !== null && Number.isFinite(num) && (
                       <span className={cn("rounded-xl px-2.5 py-1 text-base font-extrabold tabular-nums", FLAG_CHIP[flag ?? "normal"])} dir="ltr">
-                        {formatNum(num)}{flag && flag !== "normal" ? ` ${FLAG_ARROW[flag]}` : ""}
+                        {formatNum(num)}{flag && flag !== "normal" ? ` ${ARROW5[flag]}` : ""}
                       </span>
-                    ) : (
-                      <span className="rounded-xl bg-surface-2 px-3 py-1 text-sm font-bold text-ink-subtle">اضغط للإدخال</span>
                     )}
                   </button>
+                  {/* الحكم السريع — خمس درجات بلا أرقام (الرقم الصريح يغلبها) */}
+                  {(num === null || !Number.isFinite(num)) && (
+                    <div className="flex items-center gap-1 px-3 pb-3" dir="ltr">
+                      {SCALE5.map((f5) => (
+                        <button
+                          key={f5} type="button"
+                          title={LABEL5[f5]}
+                          onClick={() => { playTap(); setQuals((q) => q[p.id] === f5 ? (() => { const n = { ...q }; delete n[p.id]; return n; })() : { ...q, [p.id]: f5 }); }}
+                          className={cn(
+                            "grid h-10 flex-1 place-items-center rounded-xl text-sm font-black transition active:scale-95",
+                            quals[p.id] === f5 ? FLAG_CHIP[f5] + " ring-2 ring-current" : "bg-surface-2 text-ink-subtle hover:text-ink",
+                          )}
+                        >
+                          {ARROW5[f5]}
+                        </button>
+                      ))}
+                      {quals[p.id] && <span className={cn("ms-1 whitespace-nowrap rounded-lg px-2 py-1 text-2xs font-black", FLAG_CHIP[quals[p.id]])}>{LABEL5[quals[p.id]]}</span>}
+                    </div>
+                  )}
 
                   {/* Expanded: big slider + big +/- steppers — finger-first entry */}
                   {open && (
@@ -443,7 +523,7 @@ function TrendTable({ results }: { results: LabResult[] }) {
                     <td key={c.id} className="px-1.5 py-1.5 text-center">
                       {v ? (
                         <span className={cn("inline-block min-w-[52px] rounded-lg px-1.5 py-1 text-xs font-extrabold tabular-nums", FLAG_CELL[v.flag])} dir="ltr">
-                          {formatNum(v.value)}{v.flag !== "normal" ? ` ${FLAG_ARROW[v.flag]}` : ""}
+                          {v.value !== undefined ? `${formatNum(v.value)}${v.flag !== "normal" ? ` ${ARROW5[v.flag]}` : ""}` : ARROW5[v.flag]}
                         </span>
                       ) : <span className="text-ink-subtle/40">—</span>}
                     </td>
@@ -466,9 +546,10 @@ function waResultMessage(pet: Pet, r: LabResult): string {
   const lines: string[] = [`مرحباً ${(pet.owner_name ?? "").trim() || ""} 🌟`, `نتائج فحص «${r.panel_label}» لـ${pet.name} بتاريخ ${formatDate(r.taken_at, "ar")}:`];
   if (r.kind === "numeric" && r.values?.length) {
     for (const v of r.values) {
-      const range = v.low !== undefined && v.high !== undefined ? ` (الطبيعي ${formatNum(v.low)}–${formatNum(v.high)})` : "";
-      const mark = v.flag === "high" ? " مرتفع ↑" : v.flag === "low" ? " منخفض ↓" : " طبيعي ✓";
-      lines.push(`• ${v.abbr ?? v.label}: ${formatNum(v.value)} ${v.unit}${mark}${range}`);
+      const range = v.value !== undefined && v.low !== undefined && v.high !== undefined ? ` (الطبيعي ${formatNum(v.low)}–${formatNum(v.high)})` : "";
+      const mark = ` ${LABEL5[v.flag]} ${ARROW5[v.flag]}`;
+      const num = v.value !== undefined ? `${formatNum(v.value)} ${v.unit}` : "";
+      lines.push(`• ${v.abbr ?? v.label}: ${num}${mark}${range}`);
     }
   }
   if (r.kind === "snap") lines.push(r.snap_result === "positive" ? "النتيجة: إيجابية ⚠ — يرجى مراجعة العيادة." : "النتيجة: سلبية ✓");
@@ -573,8 +654,8 @@ function ResultCard({ r, pet, canEdit, onDelete, onToggleBilled, onBill, onPrint
           {(r.values ?? []).map((v) => (
             <span key={v.id} className={cn("inline-flex items-baseline gap-1 rounded-xl px-2 py-1 text-xs font-bold tabular-nums", FLAG_CHIP[v.flag])} dir="ltr" title={`${v.label ?? v.id}${v.low !== undefined && v.high !== undefined ? ` · النطاق ${formatNum(v.low)}–${formatNum(v.high)}` : ""}`}>
               <span className="font-black">{v.abbr ?? v.label}</span>
-              {formatNum(v.value)}{v.unit ? <span className="text-[9px] opacity-70">{v.unit}</span> : null}
-              {v.flag !== "normal" && <span>{FLAG_ARROW[v.flag]}</span>}
+              {v.value !== undefined ? <>{formatNum(v.value)}{v.unit ? <span className="text-[9px] opacity-70">{v.unit}</span> : null}</> : <span>{LABEL5[v.flag]}</span>}
+              {v.flag !== "normal" && <span>{ARROW5[v.flag]}</span>}
             </span>
           ))}
         </div>
@@ -719,8 +800,12 @@ function CompareView({ results }: { results: LabResult[] }) {
   const B = numeric.find((r) => r.id === bId);
   if (numeric.length < 2) return <p className="py-6 text-center text-sm text-ink-subtle">تحتاج نتيجتين رقميتين على الأقل للمقارنة.</p>;
 
-  const dist = (v: { value: number; low?: number; high?: number }) =>
-    v.low === undefined || v.high === undefined ? 0 : v.value < v.low ? v.low - v.value : v.value > v.high ? v.value - v.high : 0;
+  // مسافة القيمة عن النطاق. الحكم بلا رقم (أو المقارنة المختلطة) يُقاس بدرجته: جداً=2، عادي=1، طبيعي=0.
+  const dist = (v: LabValue, other?: LabValue) => {
+    const mixed = v.value === undefined || other?.value === undefined;
+    if (mixed || v.low === undefined || v.high === undefined) return FLAG_ORD[v.flag];
+    return v.value! < v.low ? v.low - v.value! : v.value! > v.high ? v.value! - v.high : 0;
+  };
 
   const rows: { id: string; label: string; a?: LabValue; b?: LabValue }[] = [];
   for (const src of [A, B]) {
@@ -767,14 +852,14 @@ function CompareView({ results }: { results: LabResult[] }) {
             <tbody className="divide-y divide-line">
               {rows.map((row) => {
                 const verdict = row.a && row.b
-                  ? (dist(row.b) < dist(row.a) ? "up" : dist(row.b) > dist(row.a) ? "down" : "flat")
+                  ? (dist(row.b, row.a) < dist(row.a, row.b) ? "up" : dist(row.b, row.a) > dist(row.a, row.b) ? "down" : "flat")
                   : null;
                 return (
                   <tr key={row.id}>
                     <td className="px-3 py-2 font-bold text-ink">{row.label}</td>
                     {[row.a, row.b].map((v, i) => (
                       <td key={i} className="px-2 py-2 text-center">
-                        {v ? <span className={cn("inline-block min-w-[56px] rounded-lg px-1.5 py-1 text-xs font-extrabold tabular-nums", FLAG_CELL[v.flag])} dir="ltr">{formatNum(v.value)}{v.flag !== "normal" ? ` ${FLAG_ARROW[v.flag]}` : ""}</span> : <span className="text-ink-subtle/40">—</span>}
+                        {v ? <span className={cn("inline-block min-w-[56px] rounded-lg px-1.5 py-1 text-xs font-extrabold tabular-nums", FLAG_CELL[v.flag])} dir="ltr">{v.value !== undefined ? `${formatNum(v.value)}${v.flag !== "normal" ? ` ${ARROW5[v.flag]}` : ""}` : ARROW5[v.flag]}</span> : <span className="text-ink-subtle/40">—</span>}
                       </td>
                     ))}
                     <td className="px-2 py-2 text-center">
@@ -819,7 +904,7 @@ export function LastLabsStrip({ results, onOpen }: { results: LabResult[]; onOpe
       </div>
       {abnormal.slice(0, 3).map((v) => (
         <span key={v.id} className={cn("rounded-lg px-1.5 py-0.5 text-2xs font-black tabular-nums", FLAG_CHIP[v.flag])} dir="ltr">
-          {v.abbr ?? v.label} {FLAG_ARROW[v.flag]}
+          {v.abbr ?? v.label} {ARROW5[v.flag]}
         </span>
       ))}
       {positives.length > 0 && (

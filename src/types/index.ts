@@ -488,18 +488,25 @@ export interface Expense {
   created_at: string;             // ISO — when it was recorded
 }
 
+/** Verdict scale for a lab value — three levels come from numeric flagging,
+ *  the five-level scale covers quick qualitative entry (بلا أرقام). */
+export type LabValueFlag = "very_low" | "low" | "normal" | "high" | "very_high";
+
 /** One measured value inside a numeric lab result. Range and unit are
  *  SNAPSHOTTED at entry time — analysers differ and references evolve, so a
- *  historic result is never re-judged by tomorrow's ranges. */
+ *  historic result is never re-judged by tomorrow's ranges. `value` is absent
+ *  for qualitative (verdict-only) entries. */
 export interface LabValue {
   id: string;                     // catalog param id, or a slug for free-form
   label?: string;                 // display label (required for free-form)
   abbr?: string;
-  value: number;
+  value?: number;                 // absent → verdict-only (qualitative) entry
   unit: string;
   low?: number;                   // snapshotted normal band
   high?: number;
-  flag: "low" | "normal" | "high";
+  flag: LabValueFlag;
+  /** true → the doctor recorded a verdict, not a number. */
+  qualitative?: boolean;
 }
 
 /** A laboratory result (نتيجة تحاليل) on a pet's record. Three shapes:
