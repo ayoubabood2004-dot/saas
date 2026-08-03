@@ -261,6 +261,10 @@ export function Sidebar() {
             </button>
           </Tooltip>
         </div>
+        {/* ختم النسخة — يتغير مع كل نشر: إذا التاريخ قديم، الجهاز على نسخة قديمة */}
+        <p className="mt-2 text-center text-[10px] tabular-nums text-ink-subtle/60" dir="ltr">
+          v{new Date(__BUILD_AT__).toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}
+        </p>
       </div>
     </aside>
   );

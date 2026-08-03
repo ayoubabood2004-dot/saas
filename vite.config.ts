@@ -4,6 +4,9 @@ import { VitePWA } from "vite-plugin-pwa";
 import path from "node:path";
 
 export default defineConfig({
+  // Visible build stamp (الإصدار) — lets anyone verify WHICH deploy their
+  // device is actually running when debugging stale caches.
+  define: { __BUILD_AT__: JSON.stringify(new Date().toISOString()) },
   plugins: [
     react(),
     VitePWA({
