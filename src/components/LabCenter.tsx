@@ -57,9 +57,11 @@ const MICRO_TYPES = [
   { id: "micro_other", label: "فحص آخر", emoji: "📋" },
 ];
 
-export function LabEntry({ pet, visitId, doctor, onSaved, onClose }: {
+export function LabEntry({ pet, visitId, doctor, onSaved, onClose, fulfill }: {
   pet: Pet; visitId?: string | null; doctor?: string | null;
   onSaved: () => void; onClose: () => void;
+  /** طلب «بانتظار النتائج» (بيع من المبيعات): النتيجة الجديدة تحل محله وترث فوترته وزيارته. */
+  fulfill?: LabResult | null;
 }) {
   const toast = useToast();
   const [mode, setMode] = useState<EntryMode | null>(null);
@@ -128,7 +130,7 @@ export function LabEntry({ pet, visitId, doctor, onSaved, onClose }: {
       const snap = snapTest ? snapTestById(snapTest) : undefined;
       const named = mode === "numbers" ? nameFromGroups((values ?? []).map((v) => v.id)) : null;
       await repo.addLabResult({
-        pet_id: pet.id, visit_id: visitId ?? null,
+        pet_id: pet.id, visit_id: fulfill?.visit_id ?? visitId ?? null,
         panel_id: mode === "numbers" ? named!.panel_id : mode === "snap" ? "snap" : microType.id,
         panel_label: mode === "numbers" ? named!.panel_label : mode === "snap" ? `فحص سريع — ${snap?.label ?? ""}` : microType.label,
         kind: mode === "numbers" ? "numeric" : mode === "snap" ? "snap" : "descriptive",
@@ -138,9 +140,11 @@ export function LabEntry({ pet, visitId, doctor, onSaved, onClose }: {
         notes: notes.trim() || null,
         photo_url: photo,
         doctor: doctor ?? null,
-        billed: false,
+        billed: fulfill?.billed ?? false, // الطلب المباع يبقى مفوتراً بعد تسجيل نتائجه
         taken_at: new Date(takenAt + "T12:00:00").toISOString(),
       });
+      // النتيجة الحقيقية حلت محل بطاقة «بانتظار النتائج» — نشيل البطاقة المؤقتة.
+      if (fulfill) await repo.deleteLabResult(fulfill.id).catch(() => {});
       playSuccess();
       toast.success("انحفظت النتيجة بسجل المختبر");
       onSaved();
@@ -473,9 +477,9 @@ function waResultMessage(pet: Pet, r: LabResult): string {
   return lines.join("\n");
 }
 
-function ResultCard({ r, pet, canEdit, onDelete, onToggleBilled, onBill, onPrint }: {
+function ResultCard({ r, pet, canEdit, onDelete, onToggleBilled, onBill, onPrint, onFulfill }: {
   r: LabResult; pet: Pet; canEdit: boolean; onDelete: (id: string) => void; onToggleBilled: (r: LabResult) => void;
-  onBill: (r: LabResult) => void; onPrint: (r: LabResult) => void;
+  onBill: (r: LabResult) => void; onPrint: (r: LabResult) => void; onFulfill: (r: LabResult) => void;
 }) {
   const [openPhoto, setOpenPhoto] = useState(false);
   const abnormal = (r.values ?? []).filter((v) => v.flag !== "normal");
@@ -504,6 +508,14 @@ function ResultCard({ r, pet, canEdit, onDelete, onToggleBilled, onBill, onPrint
         </div>
         {pending && (
           <span className="chip bg-warn-100 text-2xs font-black text-warn-700 dark:bg-warn-500/20 dark:text-warn-300">⏳ بانتظار تسجيل النتائج</span>
+        )}
+        {pending && canEdit && (
+          <button
+            type="button" onClick={() => onFulfill(r)}
+            className="inline-flex h-9 items-center gap-1.5 rounded-full bg-warn-500 px-3.5 text-xs font-extrabold text-white shadow-soft transition hover:bg-warn-600 active:scale-95"
+          >
+            <FlaskConical size={14} /> تسجيل النتائج
+          </button>
         )}
         {r.kind === "numeric" && (r.values?.length ?? 0) > 0 && (
           <span className={cn("chip text-2xs font-bold", abnormal.length ? "bg-warn-50 text-warn-700 dark:bg-warn-500/15 dark:text-warn-300" : "bg-success-50 text-success-700 dark:bg-success-500/15 dark:text-success-300")}>
@@ -587,6 +599,7 @@ export function LabsTab({ pet, results, canEdit, doctor, onChanged }: {
   const toast = useToast();
   const navigate = useNavigate();
   const [entryOpen, setEntryOpen] = useState(false);
+  const [fulfillTarget, setFulfillTarget] = useState<LabResult | null>(null);
   const [compareOpen, setCompareOpen] = useState(false);
   const [confirmDel, setConfirmDel] = useState<string | null>(null);
   const [shown, setShown] = useState(8);
@@ -669,7 +682,7 @@ export function LabsTab({ pet, results, canEdit, doctor, onChanged }: {
       ) : (
         <div className="space-y-3">
           {results.slice(0, shown).map((r) => (
-            <ResultCard key={r.id} r={r} pet={pet} canEdit={canEdit} onDelete={onDelete} onToggleBilled={onToggleBilled} onBill={onBill} onPrint={onPrint} />
+            <ResultCard key={r.id} r={r} pet={pet} canEdit={canEdit} onDelete={onDelete} onToggleBilled={onToggleBilled} onBill={onBill} onPrint={onPrint} onFulfill={(t) => { playTap(); setFulfillTarget(t); setEntryOpen(true); }} />
           ))}
           {results.length > shown && (
             <button type="button" onClick={() => setShown((n) => n + 8)} className="mx-auto flex items-center gap-1 rounded-full bg-surface-2 px-4 py-2 text-xs font-bold text-ink-muted transition hover:text-ink">
@@ -683,8 +696,8 @@ export function LabsTab({ pet, results, canEdit, doctor, onChanged }: {
         <CompareView results={results} />
       </Modal>
 
-      <Modal open={entryOpen} onClose={() => setEntryOpen(false)} size="wide" title={`تسجيل تحاليل — ${pet.name}`}>
-        <LabEntry pet={pet} doctor={doctor} onSaved={onChanged} onClose={() => setEntryOpen(false)} />
+      <Modal open={entryOpen} onClose={() => { setEntryOpen(false); setFulfillTarget(null); }} size="wide" title={fulfillTarget ? `تسجيل نتائج «${fulfillTarget.panel_label}» — ${pet.name}` : `تسجيل تحاليل — ${pet.name}`}>
+        <LabEntry pet={pet} doctor={doctor} fulfill={fulfillTarget} onSaved={onChanged} onClose={() => { setEntryOpen(false); setFulfillTarget(null); }} />
       </Modal>
     </div>
   );
