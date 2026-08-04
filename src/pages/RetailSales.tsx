@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { AnimatePresence, motion } from "framer-motion";
-import { Store, ShoppingCart, ReceiptText, BarChart3, HandCoins, Bike } from "lucide-react";
+import { Store, ShoppingCart, ReceiptText, BarChart3, HandCoins, Bike, PawPrint, ArrowRight } from "lucide-react";
 import type { Product, Invoice, Species } from "@/types";
 import { useAuth } from "@/contexts/AuthContext";
 import { useEntitlements } from "@/lib/entitlements";
@@ -42,7 +42,10 @@ export function RetailSales() {
   // into state (so it survives the URL cleanup + the initial data load), jump to the
   // sell tab, then strip the query string so a refresh/tab-switch won't re-apply it.
   const [params, setParams] = useSearchParams();
+  const navigate = useNavigate();
   const [prefill, setPrefill] = useState<RetailPrefill | null>(null);
+  // من فتح المبيعات من سجل حيوان؟ نحفظ هويته حتى نرجّعه بضغطة بعد ما ننظّف الرابط.
+  const [returnPet, setReturnPet] = useState<{ id: string; name: string } | null>(null);
   useEffect(() => {
     const customer = params.get("customer") ?? "";
     const phone = params.get("phone") ?? "";
@@ -57,6 +60,7 @@ export function RetailSales() {
     if (customer || phone || pet || service) {
       setPrefill({ name: customer, phone, pet, petId: petId || undefined, species, service: service || undefined, labId: labId || undefined });
       setTab("sell");
+      if (petId) setReturnPet({ id: petId, name: pet || customer || "الحالة" });
       setParams({}, { replace: true });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -100,6 +104,17 @@ export function RetailSales() {
           <h1 className="font-display text-2xl font-extrabold text-ink">{t("retail.title", "Retail & Sales")}</h1>
           <p className="text-sm text-ink-subtle">{t("retail.subtitle", "Walk-in sales, invoicing & receipts — for this clinic only.")}</p>
         </div>
+        {returnPet && (
+          <button
+            type="button"
+            onClick={() => { playTap(); navigate(`/pet/${returnPet.id}`); }}
+            className="ms-auto inline-flex items-center gap-1.5 rounded-full border border-brand-300 bg-brand-50 px-3.5 py-2 text-xs font-extrabold text-brand-700 transition hover:bg-brand-100 active:scale-95 dark:border-brand-500/40 dark:bg-brand-500/15 dark:text-brand-300"
+            title={`رجوع لسجل ${returnPet.name}`}
+          >
+            <PawPrint size={15} /> رجوع لسجل {returnPet.name}
+            <ArrowRight size={15} className="rtl:rotate-180" />
+          </button>
+        )}
       </div>
 
       <div className="mb-4 flex gap-1 rounded-2xl border border-line bg-surface-1 p-1">
