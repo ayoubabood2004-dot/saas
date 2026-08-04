@@ -12,8 +12,8 @@
 //     descriptive form is text + photo. Ranges/units are stored WITH each
 //     value (world-class rule: never re-judge old results by new references).
 // ============================================================================
-import { useMemo, useRef, useState } from "react";
-import { FlaskConical, Plus, Camera, Trash2, Receipt, ChevronDown, AlertTriangle, CheckCircle2, MessageCircle, Printer, ShoppingCart, ArrowRightLeft, Brain, ShieldAlert, ShieldCheck, Activity } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { FlaskConical, Plus, Camera, Trash2, Receipt, ChevronDown, AlertTriangle, CheckCircle2, MessageCircle, Printer, ShoppingCart, ArrowRightLeft, Brain, ShieldAlert, ShieldCheck, Activity, Cable, Cpu, X } from "lucide-react";
 import type { Pet, LabResult, LabValue, LabValueFlag } from "@/types";
 import { repo } from "@/lib/repo";
 import {
@@ -22,6 +22,9 @@ import {
 } from "@/lib/labCatalog";
 import { readLabImageFull } from "@/lib/labOcr";
 import { interpretResult, type Insight, type Severity } from "@/lib/labIntelligence";
+import { serialSupported, connectSerial, type SerialSession } from "@/lib/serialLink";
+import { readAnalyzerMessage, learnCode, type NormalizedReading } from "@/lib/labLink";
+import { getActiveClinicId } from "@/lib/clinics";
 import { Modal } from "@/components/Modal";
 import { Button, useToast } from "@/components/ui";
 import { prepareUpload } from "@/lib/image";
@@ -117,6 +120,11 @@ export function LabEntry({ pet, visitId, doctor, onSaved, onClose, fulfill }: {
   const [vals, setVals] = useState<Record<string, string>>({});
   const [quals, setQuals] = useState<Record<string, LabValueFlag>>({}); // حكم بلا رقم
   const [ocrBusy, setOcrBusy] = useState(false);
+  // ربط جهاز المختبر (Web Serial) — الأرقام تدخل مباشرة من الجهاز بلا كتابة
+  const [serial, setSerial] = useState<SerialSession | null>(null);
+  const [serialStatus, setSerialStatus] = useState<"idle" | "connecting" | "listening" | "error">("idle");
+  const [lastRead, setLastRead] = useState<{ count: number; protocol: string } | null>(null);
+  const [unknownCodes, setUnknownCodes] = useState<{ code: string; value: number; units?: string }[]>([]);
   const [snapTest, setSnapTest] = useState<string | null>(null);
   const [snapResult, setSnapResult] = useState<"positive" | "negative" | null>(null);
   const [microType, setMicroType] = useState(MICRO_TYPES[0]);
@@ -170,6 +178,70 @@ export function LabEntry({ pet, visitId, doctor, onSaved, onClose, fulfill }: {
       toast.error("تعذّرت قراءة الصورة");
     } finally { setOcrBusy(false); }
   };
+
+  /** Snap a value to a parameter's step, as a CLEAN decimal string (no float drift). */
+  const snapStr = (id: string, v: number): string => {
+    const p = labParamById(id);
+    if (!p) return String(v);
+    const dec = p.step < 1 ? (String(p.step).split(".")[1]?.length ?? 1) : 0;
+    return Number((Math.round(v / p.step) * p.step).toFixed(dec)).toString();
+  };
+
+  /** طبّق قراءة الجهاز على الحقول — نفس مسار OCR: الأرقام تتعبّى والأحكام تُمسح. */
+  const applyReading = (read: NormalizedReading) => {
+    const entries = Object.entries(read.values);
+    if (entries.length) {
+      setVals((m) => {
+        const next = { ...m };
+        for (const [id, v] of entries) next[id] = snapStr(id, v);
+        return next;
+      });
+      setQuals((q) => { const next = { ...q }; for (const [id] of entries) delete next[id]; return next; });
+    }
+    setUnknownCodes(read.unknown);
+    setLastRead((prev) => ({ count: entries.length, protocol: (prev?.protocol ?? "") }));
+  };
+
+  /** اربط الجهاز عبر المنفذ التسلسلي؛ كل رسالة كاملة تُقرأ وتُعبّى فوراً. */
+  const connectDevice = async () => {
+    if (!serialSupported()) { toast.error("هذا المتصفح ما يدعم الربط المباشر — استخدم Chrome على الكمبيوتر، أو صوّر الورقة."); return; }
+    if (serial) { await serial.close().catch(() => {}); setSerial(null); setSerialStatus("idle"); return; }
+    setSerialStatus("connecting");
+    try {
+      const clinicId = getActiveClinicId();
+      const session = await connectSerial({}, {
+        framing: "auto",
+        onFrame: (rawMsg) => {
+          const read = readAnalyzerMessage(rawMsg, clinicId);
+          if (read.count === 0 && read.unknown.length === 0) return; // ضجيج — تجاهله
+          applyReading(read);
+          setLastRead({ count: read.count, protocol: read.protocol.toUpperCase() });
+          playSuccess();
+          toast.success(`استلمنا ${formatNum(read.count)} قيمة من الجهاز (${read.protocol.toUpperCase()}) — راجعها واحفظ`);
+        },
+        onStatus: (st) => { if (st === "error") { setSerialStatus("error"); } if (st === "closed") { setSerialStatus("idle"); setSerial(null); } },
+      });
+      setSerial(session);
+      setSerialStatus("listening");
+      toast.toast({ tone: "info", title: "الجهاز مربوط — شغّل التحليل والنتائج راح تدخل بروحها" });
+    } catch (e) {
+      setSerialStatus("idle");
+      const msg = e instanceof Error ? e.message : "";
+      if (!/cancel|no port|gesture/i.test(msg)) toast.error("تعذّر الربط بالجهاز", msg);
+    }
+  };
+
+  /** علّم الجهاز: كود مجهول = أي فحص. يُحفظ للأبد ويُطبّق على القيمة الحالية. */
+  const teachUnknown = (u: { code: string; value: number; units?: string }, canonicalId: string) => {
+    learnCode(u.code, canonicalId, getActiveClinicId());
+    setVals((m) => ({ ...m, [canonicalId]: snapStr(canonicalId, u.value) }));
+    setQuals((q) => { const n = { ...q }; delete n[canonicalId]; return n; });
+    setUnknownCodes((list) => list.filter((x) => x.code !== u.code));
+    playTap();
+  };
+
+  // اقطع الربط عند إغلاق الشاشة حتى لا يبقى المنفذ مفتوحاً.
+  useEffect(() => () => { void serial?.close().catch(() => {}); }, [serial]);
 
   /** Snapshot every value the doctor actually typed (any group) + verdicts + free rows. */
   const buildValues = (): LabValue[] => {
@@ -310,6 +382,52 @@ export function LabEntry({ pet, visitId, doctor, onSaved, onClose, fulfill }: {
             {ocrBusy ? "📸 دنقرأ الأرقام من الصورة…" : "📸 صوّر ورقة الجهاز — الأرقام تتعبى بروحها"}
           </button>
           <input ref={ocrRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => { void ocrPick(e.target.files?.[0]); e.target.value = ""; }} />
+
+          {/* ربط جهاز المختبر مباشرة — الأرقام تدخل من الجهاز بلا كتابة ولا تصوير */}
+          {serialSupported() && (
+            <button
+              type="button"
+              onClick={() => void connectDevice()}
+              className={cn(
+                "flex w-full items-center justify-center gap-2.5 rounded-2xl border-2 p-4 text-base font-extrabold transition active:scale-[.99]",
+                serial
+                  ? "border-success-400 bg-success-50 text-success-700 dark:border-success-500/50 dark:bg-success-500/10 dark:text-success-300"
+                  : "border-dashed border-teal-400 bg-teal-50/60 text-teal-700 hover:bg-teal-100/60 dark:border-teal-500/50 dark:bg-teal-500/10 dark:text-teal-300",
+              )}
+            >
+              {serialStatus === "connecting" ? <><Cpu size={18} className="animate-pulse" /> دنربط الجهاز…</>
+                : serial ? <><Cable size={18} /> الجهاز مربوط — شغّل التحليل (اضغط لفصله)</>
+                  : <><Cable size={18} /> اربط جهاز المختبر مباشرة — القراءة تلقائية</>}
+            </button>
+          )}
+          {serial && lastRead && lastRead.count > 0 && (
+            <p className="rounded-xl bg-success-50 px-3 py-2 text-2xs font-bold text-success-700 dark:bg-success-500/10 dark:text-success-300">
+              ✓ آخر استلام: {formatNum(lastRead.count)} قيمة بلغة {lastRead.protocol}. راجع القيم تحت واضغط حفظ.
+            </p>
+          )}
+
+          {/* تعليم الأكواد المجهولة — يُسأل مرة واحدة ويُحفظ للأبد لكل أجهزة العيادة */}
+          {unknownCodes.length > 0 && (
+            <div className="space-y-2 rounded-2xl border border-warn-300 bg-warn-50/60 p-3 dark:border-warn-500/40 dark:bg-warn-500/10">
+              <p className="text-2xs font-extrabold text-warn-800 dark:text-warn-200">🎓 الجهاز أرسل أكواد ما يعرفها السستم — علّمه مرة وحدة ويحفظها للأبد:</p>
+              {unknownCodes.map((u) => (
+                <div key={u.code} className="flex flex-wrap items-center gap-2">
+                  <span className="rounded-lg bg-surface-1 px-2 py-1 text-xs font-black text-ink" dir="ltr">{u.code} = {formatNum(u.value)}{u.units ? ` ${u.units}` : ""}</span>
+                  <span className="text-2xs text-ink-muted">→ يعني:</span>
+                  <select
+                    defaultValue=""
+                    onChange={(e) => { if (e.target.value) teachUnknown(u, e.target.value); }}
+                    className="input h-8 flex-1 py-0 text-xs"
+                  >
+                    <option value="" disabled>اختر الفحص المقابل…</option>
+                    {LAB_PARAMS.map((p) => <option key={p.id} value={p.id}>{p.abbr} · {p.label}</option>)}
+                  </select>
+                  <button type="button" onClick={() => setUnknownCodes((list) => list.filter((x) => x.code !== u.code))} className="grid h-7 w-7 place-items-center rounded-full text-ink-subtle transition hover:text-danger-600"><X size={14} /></button>
+                </div>
+              ))}
+            </div>
+          )}
+
           <p className="rounded-xl bg-brand-50/60 px-3 py-2 text-2xs font-semibold leading-relaxed text-brand-800 dark:bg-brand-500/10 dark:text-brand-200">
             أو اضغط الأسهم كدام كل فحص للحكم السريع (↓↓ ↓ ✓ ↑ ↑↑) بلا أرقام — ومن تريد الدقة اضغط اسم الفحص واكتب الرقم.
           </p>
