@@ -13,8 +13,12 @@
 //     value (world-class rule: never re-judge old results by new references).
 // ============================================================================
 import { useEffect, useMemo, useRef, useState } from "react";
-import { FlaskConical, Plus, Camera, Trash2, Receipt, ChevronDown, AlertTriangle, CheckCircle2, MessageCircle, Printer, ShoppingCart, ArrowRightLeft, Brain, ShieldAlert, ShieldCheck, Activity, Cable, Cpu, X, Inbox, Radio } from "lucide-react";
-import type { Pet, LabResult, LabValue, LabValueFlag, LabDeviceInbox } from "@/types";
+import { FlaskConical, Plus, Camera, Trash2, Receipt, ChevronDown, AlertTriangle, CheckCircle2, MessageCircle, Printer, ShoppingCart, ArrowRightLeft, Brain, ShieldAlert, ShieldCheck, Activity, Cable, Cpu, X, Inbox, Radio, ClipboardList, TestTube2, BadgeCheck, Ban, Clock, Zap } from "lucide-react";
+import type { Pet, LabResult, LabValue, LabValueFlag, LabDeviceInbox, LabStatusValue } from "@/types";
+import {
+  statusOf, nextStatus, advanceLabel, advanceOpensEntry, isInFlight, STATUS_META,
+  timelineOf, tatMinutes, formatDuration, isOverdue, LAB_FLOW, type LabStatus,
+} from "@/lib/labStatus";
 import { repo } from "@/lib/repo";
 import {
   LAB_PARAMS, LAB_GROUPS, nameFromGroups, labParamById, labRange, labFlag,
@@ -55,6 +59,55 @@ const LABEL5: Record<LabValueFlag, string> = { very_low: "منخفض جداً", 
 const SCALE5: LabValueFlag[] = ["very_low", "low", "normal", "high", "very_high"];
 /** Ordinal distance from normal — drives the before/after verdict for mixed entries. */
 const FLAG_ORD: Record<LabValueFlag, number> = { very_low: 2, low: 1, normal: 0, high: 1, very_high: 2 };
+
+/* ---- Lab lifecycle UI: status pill + progress timeline (LIS worklist) ---- */
+const STATUS_ICON = { ClipboardList, TestTube2, Cpu, FlaskConical, BadgeCheck, Ban } as const;
+
+function StatusPill({ status, className }: { status: LabStatus; className?: string }) {
+  const m = STATUS_META[status];
+  const Icon = STATUS_ICON[m.icon];
+  return (
+    <span className={cn("inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-2xs font-black", m.chip, className)}>
+      <Icon size={12} /> {m.short}
+    </span>
+  );
+}
+
+/** Horizontal stepper: the case's journey with the moment each stage was reached. */
+function LabTimeline({ r }: { r: LabResult }) {
+  const st = statusOf(r);
+  if (st === "canceled") return null;
+  const done = new Set<LabStatus>(timelineOf(r).map((t) => t.status));
+  const AT: Record<string, string | null | undefined> = { ordered: r.ordered_at, collected: r.collected_at, running: r.running_at, resulted: r.resulted_at, verified: r.verified_at };
+  const atOf = (s: LabStatus) => AT[s];
+  const curIdx = LAB_FLOW.indexOf(st);
+  return (
+    <div className="mt-3 flex items-stretch gap-0.5 overflow-x-auto pb-1">
+      {LAB_FLOW.map((s, i) => {
+        const m = STATUS_META[s];
+        const Icon = STATUS_ICON[m.icon];
+        const reached = done.has(s) || i <= curIdx;
+        const isCur = i === curIdx;
+        const at = atOf(s);
+        return (
+          <div key={s} className="flex min-w-[68px] flex-1 flex-col items-center gap-1 text-center">
+            <div className="flex w-full items-center">
+              <span className={cn("h-0.5 flex-1 rounded", i === 0 ? "opacity-0" : reached ? m.dot : "bg-line")} />
+              <span className={cn("grid h-6 w-6 shrink-0 place-items-center rounded-full transition", reached ? `${m.dot} text-white` : "bg-surface-2 text-ink-subtle", isCur && "ring-2 ring-offset-1 ring-offset-surface-1 ring-current")}>
+                <Icon size={12} />
+              </span>
+              <span className={cn("h-0.5 flex-1 rounded", i === LAB_FLOW.length - 1 ? "opacity-0" : i < curIdx ? STATUS_META[LAB_FLOW[i + 1]].dot : "bg-line")} />
+            </div>
+            <span className={cn("text-[9px] font-bold leading-tight", reached ? "text-ink" : "text-ink-subtle")}>{m.short}</span>
+            <span className="text-[9px] leading-none text-ink-subtle" dir="ltr">
+              {at ? new Date(at).toLocaleTimeString("ar", { hour: "2-digit", minute: "2-digit" }) : "—"}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
 /** Severity ribbon styling — one glanceable state (طبيعي / انتبه / حرج). */
 const SEV_META: Record<Severity, { label: string; icon: typeof ShieldCheck; cls: string }> = {
@@ -316,6 +369,14 @@ export function LabEntry({ pet, visitId, doctor, onSaved, onClose, fulfill, pref
         doctor: doctor ?? null,
         billed: fulfill?.billed ?? false, // الطلب المباع يبقى مفوتراً بعد تسجيل نتائجه
         taken_at: new Date(takenAt + "T12:00:00").toISOString(),
+        // دورة الحياة: النتيجة الجديدة «جاهزة بانتظار الاعتماد»، وترث توقيتات الطلب
+        // (متى طُلب/سُحبت العينة/شُغّل) وأولويته حتى يبقى زمن الإنجاز صحيحاً.
+        status: "resulted",
+        priority: fulfill?.priority ?? "routine",
+        ordered_at: fulfill?.ordered_at ?? null,
+        collected_at: fulfill?.collected_at ?? null,
+        running_at: fulfill?.running_at ?? null,
+        collected_by: fulfill?.collected_by ?? null,
       });
       // النتيجة الحقيقية حلت محل بطاقة «بانتظار النتائج» — نشيل البطاقة المؤقتة.
       if (fulfill) await repo.deleteLabResult(fulfill.id).catch(() => {});
@@ -725,16 +786,23 @@ function waResultMessage(pet: Pet, r: LabResult): string {
   return lines.join("\n");
 }
 
-function ResultCard({ r, pet, prior, canEdit, onDelete, onToggleBilled, onBill, onPrint, onFulfill }: {
+function ResultCard({ r, pet, prior, canEdit, onDelete, onToggleBilled, onBill, onPrint, onFulfill, onAdvance, onTogglePriority }: {
   r: LabResult; pet: Pet; prior?: LabResult | null; canEdit: boolean; onDelete: (id: string) => void; onToggleBilled: (r: LabResult) => void;
   onBill: (r: LabResult) => void; onPrint: (r: LabResult) => void; onFulfill: (r: LabResult) => void;
+  onAdvance: (r: LabResult, to: LabStatusValue) => void; onTogglePriority: (r: LabResult) => void;
 }) {
   const [openPhoto, setOpenPhoto] = useState(false);
   const abnormal = (r.values ?? []).filter((v) => v.flag !== "normal");
   const positive = r.snap_result === "positive";
   const interp = useMemo(() => (r.kind === "numeric" && (r.values?.length ?? 0) > 0 ? interpretResult(r, prior, pet.species) : null), [r, prior, pet.species]);
-  // طلب جاي من المبيعات — انباع بس النتائج بعدها ما مسجلة
-  const pending = r.panel_id === "ordered" && !(r.values?.length) && !r.snap_result;
+  // دورة حياة التحليل: مطلوب → عينة → تشغيل → جاهزة → مُعتمدة
+  const st = statusOf(r);
+  const inFlight = isInFlight(st);
+  const urgent = r.priority === "urgent";
+  const nowISO = new Date().toISOString();
+  const overdue = isOverdue(r, nowISO);
+  const next = nextStatus(st);
+  const tat = tatMinutes(r, nowISO);
   const waNum = pet.owner_phone ? waNumber(pet.owner_phone, getDialCode()) : "";
   const sendWa = () => {
     if (!waNum) return;
@@ -743,7 +811,11 @@ function ResultCard({ r, pet, prior, canEdit, onDelete, onToggleBilled, onBill, 
     void repo.logWhatsApp({ pet_id: pet.id, owner_name: pet.owner_name ?? null, owner_phone: pet.owner_phone ?? null, reminder_type: "lab_result" }).catch(() => {});
   };
   return (
-    <div className={cn("card p-4", positive && "border-danger-300 ring-1 ring-danger-300/50 dark:border-danger-500/50", pending && "border-warn-300 bg-warn-50/30 dark:border-warn-500/40 dark:bg-warn-500/5")}>
+    <div className={cn("card p-4",
+      positive && "border-danger-300 ring-1 ring-danger-300/50 dark:border-danger-500/50",
+      st === "ordered" && "border-amber-300 bg-amber-50/30 dark:border-amber-500/40 dark:bg-amber-500/5",
+      st === "resulted" && "border-teal-300 bg-teal-50/30 dark:border-teal-500/40 dark:bg-teal-500/5",
+      overdue && "ring-1 ring-danger-400/60")}>
       <div className="flex flex-wrap items-center gap-2">
         <span className={cn("grid h-10 w-10 shrink-0 place-items-center rounded-2xl", positive ? "bg-danger-100 text-danger-600 dark:bg-danger-500/20 dark:text-danger-300" : "bg-brand-100 text-brand-700 dark:bg-brand-500/20 dark:text-brand-300")}>
           <FlaskConical size={18} />
@@ -753,19 +825,13 @@ function ResultCard({ r, pet, prior, canEdit, onDelete, onToggleBilled, onBill, 
           <p className="text-2xs text-ink-subtle">
             <span dir="ltr">{formatDate(r.taken_at, "ar")}</span>
             {r.doctor ? ` · ${r.doctor}` : ""}
+            {!inFlight && st === "verified" && tat > 0 ? <> · <span className="inline-flex items-center gap-0.5"><Clock size={10} /> {formatDuration(tat)}</span></> : null}
           </p>
         </div>
-        {pending && (
-          <span className="chip bg-warn-100 text-2xs font-black text-warn-700 dark:bg-warn-500/20 dark:text-warn-300">⏳ بانتظار تسجيل النتائج</span>
+        {urgent && (
+          <span className="inline-flex items-center gap-1 rounded-full bg-danger-100 px-2 py-1 text-2xs font-black text-danger-700 dark:bg-danger-500/20 dark:text-danger-300"><Zap size={11} /> عاجل</span>
         )}
-        {pending && canEdit && (
-          <button
-            type="button" onClick={() => onFulfill(r)}
-            className="inline-flex h-9 items-center gap-1.5 rounded-full bg-warn-500 px-3.5 text-xs font-extrabold text-white shadow-soft transition hover:bg-warn-600 active:scale-95"
-          >
-            <FlaskConical size={14} /> تسجيل النتائج
-          </button>
-        )}
+        <StatusPill status={st} />
         {r.kind === "numeric" && (r.values?.length ?? 0) > 0 && (
           <span className={cn("chip text-2xs font-bold", abnormal.length ? "bg-warn-50 text-warn-700 dark:bg-warn-500/15 dark:text-warn-300" : "bg-success-50 text-success-700 dark:bg-success-500/15 dark:text-success-300")}>
             {abnormal.length ? `${formatNum(abnormal.length)} خارج الطبيعي` : "كل القيم طبيعية ✓"}
@@ -822,6 +888,45 @@ function ResultCard({ r, pet, prior, canEdit, onDelete, onToggleBilled, onBill, 
         )}
       </div>
 
+      {/* دورة الحياة: الخط الزمني للمراحل + زر المرحلة التالية (مطلوب→…→مُعتمدة) */}
+      {inFlight && (
+        <>
+          {overdue && (
+            <p className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-danger-50 px-2.5 py-1.5 text-2xs font-black text-danger-700 dark:bg-danger-500/15 dark:text-danger-300">
+              <AlertTriangle size={13} /> {urgent ? "عاجل ومتأخر" : "متأخر"} — {formatDuration(tat)} بلا نتيجة
+            </p>
+          )}
+          <LabTimeline r={r} />
+          {canEdit && (
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              {next && (
+                <button
+                  type="button"
+                  onClick={() => { playTap(); advanceOpensEntry(st) ? onFulfill(r) : onAdvance(r, next); }}
+                  className={cn("inline-flex h-9 items-center gap-1.5 rounded-full px-4 text-xs font-extrabold text-white shadow-soft transition active:scale-95",
+                    st === "resulted" ? "bg-emerald-600 hover:bg-emerald-700" : st === "running" ? "bg-teal-600 hover:bg-teal-700" : "bg-brand-600 hover:bg-brand-700")}
+                >
+                  {st === "resulted" ? <BadgeCheck size={15} /> : st === "running" ? <FlaskConical size={15} /> : <ArrowRightLeft size={15} />}
+                  {advanceLabel(st)}
+                </button>
+              )}
+              {(st === "ordered" || st === "collected") && (
+                <button type="button" onClick={() => { playTap(); onFulfill(r); }} className="text-2xs font-bold text-teal-700 underline-offset-2 hover:underline dark:text-teal-300">
+                  سجّل النتيجة مباشرة
+                </button>
+              )}
+              <button
+                type="button" onClick={() => onTogglePriority(r)}
+                title={urgent ? "إرجاعه عادي" : "علّمه عاجل (STAT)"}
+                className={cn("ms-auto inline-flex h-8 items-center gap-1 rounded-full px-2.5 text-2xs font-bold transition", urgent ? "bg-danger-100 text-danger-700 dark:bg-danger-500/20 dark:text-danger-300" : "bg-surface-2 text-ink-subtle hover:text-ink")}
+              >
+                <Zap size={12} /> {urgent ? "عاجل" : "عادي"}
+              </button>
+            </div>
+          )}
+        </>
+      )}
+
       {r.kind === "numeric" && (r.values?.length ?? 0) > 0 && (
         <div className="mt-3 flex flex-wrap gap-1.5">
           {(r.values ?? []).map((v) => (
@@ -847,6 +952,101 @@ function ResultCard({ r, pet, prior, canEdit, onDelete, onToggleBilled, onBill, 
   );
 }
 
+/* ===================== Clinic lab worklist (طابور المختبر) ===================== */
+/** A live, clinic-wide board of every test still in flight — from «مطلوب» to
+ *  «بانتظار الاعتماد» — grouped by stage, urgent/overdue first. The lab tech
+ *  opens any pet's lab tab and sees the whole queue; a tap jumps to the case. */
+function LabWorklist({ bumpKey, currentPetId, onAct }: { bumpKey: number; currentPetId: string; onAct: () => void }) {
+  const navigate = useNavigate();
+  const [items, setItems] = useState<LabResult[]>([]);
+  const [petName, setPetName] = useState<Record<string, string>>({});
+  const [open, setOpen] = useState(true);
+  useEffect(() => {
+    let alive = true;
+    const pull = async () => {
+      try {
+        const [rs, ps] = await Promise.all([repo.listClinicLabResults(), repo.listAllPets()]);
+        if (!alive) return;
+        setItems(rs.filter((r) => isInFlight(statusOf(r))));
+        const map: Record<string, string> = {};
+        for (const p of ps) map[p.id] = p.name;
+        setPetName(map);
+      } catch { /* offline — keep last */ }
+    };
+    void pull();
+    const t = window.setInterval(() => void pull(), 20000);
+    const onVis = () => { if (document.visibilityState === "visible") void pull(); };
+    document.addEventListener("visibilitychange", onVis);
+    return () => { alive = false; window.clearInterval(t); document.removeEventListener("visibilitychange", onVis); };
+  }, [bumpKey]);
+
+  if (items.length === 0) return null;
+  const nowISO = new Date().toISOString();
+  const overdueCount = items.filter((r) => isOverdue(r, nowISO)).length;
+  const cols: LabStatus[] = ["ordered", "collected", "running", "resulted"];
+  const rank = (r: LabResult) => (isOverdue(r, nowISO) ? 0 : r.priority === "urgent" ? 1 : 2);
+  const inCol = (c: LabStatus) => items
+    .filter((r) => statusOf(r) === c)
+    .sort((a, b) => rank(a) - rank(b) || (a.ordered_at || a.created_at || "").localeCompare(b.ordered_at || b.created_at || ""));
+
+  return (
+    <div className="rounded-2xl border border-brand-200 bg-gradient-to-b from-brand-50/60 to-transparent p-3 dark:border-brand-500/30 dark:from-brand-500/10">
+      <button type="button" onClick={() => setOpen((o) => !o)} className="flex w-full items-center gap-2">
+        <span className="grid h-8 w-8 place-items-center rounded-full bg-brand-500/15 text-brand-700 dark:text-brand-300"><Activity size={16} /></span>
+        <span className="text-sm font-extrabold text-ink">طابور المختبر</span>
+        <span className="chip bg-brand-100 text-2xs font-black text-brand-700 dark:bg-brand-500/20 dark:text-brand-300">{formatNum(items.length)} قيد الفحص</span>
+        {overdueCount > 0 && (
+          <span className="inline-flex items-center gap-1 rounded-full bg-danger-100 px-2 py-1 text-2xs font-black text-danger-700 dark:bg-danger-500/20 dark:text-danger-300"><AlertTriangle size={11} /> {formatNum(overdueCount)} متأخر</span>
+        )}
+        <ChevronDown size={16} className={cn("ms-auto text-ink-subtle transition", open && "rotate-180")} />
+      </button>
+
+      {open && (
+        <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+          {cols.map((c) => {
+            const list = inCol(c);
+            const m = STATUS_META[c];
+            const Icon = STATUS_ICON[m.icon];
+            return (
+              <div key={c} className="rounded-xl bg-surface-1/70 p-2">
+                <div className="mb-1.5 flex items-center gap-1.5 px-1">
+                  <span className={cn("grid h-5 w-5 place-items-center rounded-full text-white", m.dot)}><Icon size={11} /></span>
+                  <span className="text-2xs font-extrabold text-ink">{m.short}</span>
+                  <span className="ms-auto text-2xs font-bold text-ink-subtle">{formatNum(list.length)}</span>
+                </div>
+                <div className="space-y-1.5">
+                  {list.length === 0 && <p className="px-1 py-2 text-center text-[10px] text-ink-subtle">—</p>}
+                  {list.map((r) => {
+                    const od = isOverdue(r, nowISO);
+                    const waited = tatMinutes(r, nowISO);
+                    const isCurrent = r.pet_id === currentPetId;
+                    return (
+                      <button
+                        key={r.id} type="button"
+                        onClick={() => { playTap(); if (r.pet_id === currentPetId) { onAct(); } else { navigate(`/pet/${r.pet_id}?tab=labs`); } }}
+                        className={cn("w-full rounded-lg border bg-surface-1 p-2 text-start transition hover:border-brand-300 active:scale-[.99]",
+                          od ? "border-danger-300 dark:border-danger-500/40" : "border-line",
+                          isCurrent && "ring-1 ring-brand-400/60")}
+                      >
+                        <div className="flex items-center gap-1">
+                          {r.priority === "urgent" && <Zap size={11} className="shrink-0 text-danger-600 dark:text-danger-400" />}
+                          <span className="truncate text-2xs font-extrabold text-ink">{petName[r.pet_id] || "—"}</span>
+                          <span className={cn("ms-auto inline-flex shrink-0 items-center gap-0.5 text-[10px] font-bold", od ? "text-danger-600 dark:text-danger-400" : "text-ink-subtle")}><Clock size={9} /> {formatDuration(waited)}</span>
+                        </div>
+                        <p className="mt-0.5 truncate text-[10px] text-ink-muted">{r.panel_label}</p>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ================================== The tab ================================== */
 
 export function LabsTab({ pet, results, canEdit, doctor, onChanged }: {
@@ -860,6 +1060,8 @@ export function LabsTab({ pet, results, canEdit, doctor, onChanged }: {
   const [compareOpen, setCompareOpen] = useState(false);
   const [confirmDel, setConfirmDel] = useState<string | null>(null);
   const [shown, setShown] = useState(8);
+  const [wlKey, setWlKey] = useState(0);         // bump → clinic worklist re-fetches
+  const bumpWl = () => setWlKey((k) => k + 1);
 
   // صندوق الأجهزة: رسائل وصلت من جهاز المختبر عبر الشبكة، تنتظر ربطها بحيوان.
   // نستطلع بهدوء طول ما تبويب المختبر مفتوح — أي رسالة جديدة تظهر فوق مباشرة.
@@ -914,11 +1116,24 @@ export function LabsTab({ pet, results, canEdit, doctor, onChanged }: {
       return;
     }
     setConfirmDel(null);
-    void repo.deleteLabResult(id).then(onChanged).catch(() => toast.error("تعذّر الحذف"));
+    void repo.deleteLabResult(id).then(() => { onChanged(); bumpWl(); }).catch(() => toast.error("تعذّر الحذف"));
   };
   const onToggleBilled = (r: LabResult) => {
     playTap();
     void repo.setLabBilled(r.id, !r.billed).then(onChanged).catch(() => {});
+  };
+  // نقل التحليل للمرحلة التالية بدورة حياته (سحب/تشغيل/اعتماد) مع ختم اللحظة والمسؤول.
+  const onAdvance = (r: LabResult, to: LabStatusValue) => {
+    playTap();
+    const extra = to === "collected" ? { collected_by: doctor ?? null } : to === "verified" ? { verified_by: doctor ?? null } : undefined;
+    void repo.advanceLabStatus(r.id, to, extra).then(() => {
+      if (to === "verified") playSuccess();
+      onChanged(); bumpWl();
+    }).catch(() => toast.error("تعذّر تحديث الحالة"));
+  };
+  const onTogglePriority = (r: LabResult) => {
+    playTap();
+    void repo.setLabPriority(r.id, r.priority === "urgent" ? "routine" : "urgent").then(() => { onChanged(); bumpWl(); }).catch(() => {});
   };
 
   const positives = results.filter((r) => r.snap_result === "positive");
@@ -942,6 +1157,9 @@ export function LabsTab({ pet, results, canEdit, doctor, onChanged }: {
 
   return (
     <div className="space-y-4">
+      {/* طابور المختبر — كل الحالات قيد الفحص بالعيادة، من الطلب لحد الاعتماد */}
+      {canEdit && <LabWorklist bumpKey={wlKey} currentPetId={pet.id} onAct={bumpWl} />}
+
       {/* صندوق الأجهزة: نتائج وصلت من جهاز المختبر عبر الشبكة — استقبلها على هذا الحيوان */}
       {canEdit && inbox.length > 0 && (
         <div className="rounded-2xl border border-teal-300 bg-teal-50/70 p-3 dark:border-teal-500/40 dark:bg-teal-500/10">
@@ -1039,7 +1257,7 @@ export function LabsTab({ pet, results, canEdit, doctor, onChanged }: {
       ) : (
         <div className="space-y-3">
           {results.slice(0, shown).map((r) => (
-            <ResultCard key={r.id} r={r} pet={pet} prior={priorOf(r)} canEdit={canEdit} onDelete={onDelete} onToggleBilled={onToggleBilled} onBill={onBill} onPrint={onPrint} onFulfill={(t) => { playTap(); setFulfillTarget(t); setEntryOpen(true); }} />
+            <ResultCard key={r.id} r={r} pet={pet} prior={priorOf(r)} canEdit={canEdit} onDelete={onDelete} onToggleBilled={onToggleBilled} onBill={onBill} onPrint={onPrint} onFulfill={(t) => { playTap(); setFulfillTarget(t); setEntryOpen(true); }} onAdvance={onAdvance} onTogglePriority={onTogglePriority} />
           ))}
           {results.length > shown && (
             <button type="button" onClick={() => setShown((n) => n + 8)} className="mx-auto flex items-center gap-1 rounded-full bg-surface-2 px-4 py-2 text-xs font-bold text-ink-muted transition hover:text-ink">
@@ -1069,7 +1287,7 @@ export function LabsTab({ pet, results, canEdit, doctor, onChanged }: {
               setInbox((list) => list.filter((x) => x.id !== id));
               void repo.markInboxHandled(id, "accepted").catch(() => {});
             }
-            onChanged();
+            onChanged(); bumpWl();
           }}
           onClose={() => { setEntryOpen(false); setFulfillTarget(null); setAcceptInbox(null); }}
         />

@@ -4,7 +4,7 @@
 import { loadDB, saveDB } from "./demoStore";
 import { supabase } from "./supabase";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, AppointmentStatus, ClinicInfo, PublicStaff, DailyNote, TreatmentEntry, Admission, Branch, Reminder, Product, Company, CompanySection, Purchase, PurchaseItem, PurchasePayment, PurchaseDraftLine, PurchaseMeta, Courier, DeliveryOrder, PetMovement, DemoDB, Invoice, InvoiceItem, CheckoutItem, SaleMeta, Customer, DiscountType, PaymentMethod, PaymentSplit, WhatsAppMessage, AuditEntry, LoginEvent, PetNote, Expense, ClinicVisit , Surgery, LabResult, LabDeviceLink, LabDeviceInbox } from "@/types";
+import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, AppointmentStatus, ClinicInfo, PublicStaff, DailyNote, TreatmentEntry, Admission, Branch, Reminder, Product, Company, CompanySection, Purchase, PurchaseItem, PurchasePayment, PurchaseDraftLine, PurchaseMeta, Courier, DeliveryOrder, PetMovement, DemoDB, Invoice, InvoiceItem, CheckoutItem, SaleMeta, Customer, DiscountType, PaymentMethod, PaymentSplit, WhatsAppMessage, AuditEntry, LoginEvent, PetNote, Expense, ClinicVisit , Surgery, LabResult, LabDeviceLink, LabDeviceInbox, LabStatusValue } from "@/types";
 import { uid, uuid, ageMonths, localISO } from "./utils";
 import { phoneKey } from "./phone";
 import { loadOwners } from "./owners";
@@ -206,6 +206,30 @@ function demoLoginLoad(): LoginEvent[] {
   return [];
 }
 function demoLoginSave(list: LoginEvent[]) { try { localStorage.setItem(DEMO_LOGIN_KEY, JSON.stringify(list)); } catch { /* ignore */ } }
+
+// ---- Lab lifecycle (LIS) helpers, shared by demo + cloud repos. ----
+const LAB_STAGE_COL: Record<string, keyof LabResult> = {
+  ordered: "ordered_at", collected: "collected_at", running: "running_at", resulted: "resulted_at", verified: "verified_at",
+};
+/** Stamp a new lab record's lifecycle: a placeholder order starts «ordered»,
+ *  a real result lands «resulted» (awaiting the doctor's release), and every
+ *  reached stage gets its timestamp so turnaround time is measurable. */
+function labLifecycleFields(input: Omit<LabResult, "id" | "created_at" | "clinic_id">, nowISO: string) {
+  const isPlaceholder = input.panel_id === "ordered" && !(input.values?.length) && !input.snap_result;
+  const status = input.status ?? (isPlaceholder ? "ordered" : "resulted");
+  const reachedResult = status === "resulted" || status === "verified";
+  return {
+    status,
+    priority: input.priority ?? "routine",
+    ordered_at: input.ordered_at ?? nowISO,
+    collected_at: input.collected_at ?? null,
+    running_at: input.running_at ?? null,
+    resulted_at: input.resulted_at ?? (reachedResult ? nowISO : null),
+    verified_at: input.verified_at ?? (status === "verified" ? nowISO : null),
+    collected_by: input.collected_by ?? null,
+    verified_by: input.verified_by ?? null,
+  };
+}
 
 const demoRepo = {
   async listPets(ownerId: string): Promise<Pet[]> {
@@ -428,10 +452,30 @@ const demoRepo = {
   },
   async addLabResult(input: Omit<LabResult, "id" | "created_at" | "clinic_id">): Promise<LabResult> {
     const db = loadDB();
-    const row: LabResult = { ...input, id: uid("lab"), clinic_id: null, created_at: new Date().toISOString() };
+    const now = new Date().toISOString();
+    const row: LabResult = { ...input, ...labLifecycleFields(input, now), id: uid("lab"), clinic_id: null, created_at: now };
     (db.labResults ??= []).unshift(row);
     saveDB(db);
     return row;
+  },
+  /** Advance a lab order to the next lifecycle stage, stamping the moment (and
+   *  who, for collect/verify). Earlier stamps are preserved. */
+  async advanceLabStatus(id: string, status: LabStatusValue, extra?: { collected_by?: string | null; verified_by?: string | null }): Promise<void> {
+    const db = loadDB();
+    const r = (db.labResults ??= []).find((x) => x.id === id);
+    if (!r) return;
+    const now = new Date().toISOString();
+    r.status = status;
+    const col = LAB_STAGE_COL[status];
+    if (col && !r[col]) (r as unknown as Record<string, unknown>)[col] = now;
+    if (extra?.collected_by !== undefined && status === "collected") r.collected_by = extra.collected_by;
+    if (extra?.verified_by !== undefined && status === "verified") r.verified_by = extra.verified_by;
+    saveDB(db);
+  },
+  async setLabPriority(id: string, priority: "routine" | "urgent"): Promise<void> {
+    const db = loadDB();
+    const r = (db.labResults ??= []).find((x) => x.id === id);
+    if (r) { r.priority = priority; saveDB(db); }
   },
   async setLabBilled(id: string, billed: boolean): Promise<void> {
     const db = loadDB();
@@ -1278,6 +1322,7 @@ const DEMO_ACTIVITY_MAP: Record<string, { entity: string; action: "INSERT" | "UP
   addPetNote: { entity: "pet_notes", action: "INSERT" },
   addLabResult: { entity: "lab_results", action: "INSERT" },
   deleteLabResult: { entity: "lab_results", action: "DELETE" },
+  advanceLabStatus: { entity: "lab_results", action: "UPDATE" },
   createDeviceLink: { entity: "lab_device_links", action: "INSERT" },
   revokeDeviceLink: { entity: "lab_device_links", action: "UPDATE" },
   addClinicVisit: { entity: "clinic_visits", action: "INSERT" },
@@ -1530,6 +1575,7 @@ const supabaseRepo: typeof demoRepo = {
   },
   async addLabResult(input) {
     // clinic_id is stamped by the column default (auth_clinic()).
+    const lc = labLifecycleFields(input, new Date().toISOString());
     return need<LabResult>(await sbc().from("lab_results").insert({
       pet_id: input.pet_id, visit_id: input.visit_id ?? null,
       panel_id: input.panel_id, panel_label: input.panel_label, kind: input.kind,
@@ -1537,10 +1583,25 @@ const supabaseRepo: typeof demoRepo = {
       snap_result: input.snap_result ?? null, notes: input.notes ?? null,
       photo_url: input.photo_url ?? null, doctor: input.doctor ?? null,
       billed: input.billed ?? false, taken_at: input.taken_at,
+      status: lc.status, priority: lc.priority,
+      ordered_at: lc.ordered_at, collected_at: lc.collected_at, running_at: lc.running_at,
+      resulted_at: lc.resulted_at, verified_at: lc.verified_at,
+      collected_by: lc.collected_by, verified_by: lc.verified_by,
     }).select().single());
   },
   async setLabBilled(id, billed) {
     ok(await sbc().from("lab_results").update({ billed }).eq("id", id));
+  },
+  async advanceLabStatus(id, status, extra) {
+    const patch: Record<string, unknown> = { status };
+    const col = LAB_STAGE_COL[status];
+    if (col) patch[col] = new Date().toISOString();
+    if (extra?.collected_by !== undefined && status === "collected") patch.collected_by = extra.collected_by;
+    if (extra?.verified_by !== undefined && status === "verified") patch.verified_by = extra.verified_by;
+    ok(await sbc().from("lab_results").update(patch).eq("id", id));
+  },
+  async setLabPriority(id, priority) {
+    ok(await sbc().from("lab_results").update({ priority }).eq("id", id));
   },
   async listClinicLabResults(clinicId) {
     let q = sbc().from("lab_results").select("*").order("taken_at", { ascending: false }).limit(2000);
@@ -2090,7 +2151,7 @@ export class ReadOnlyError extends Error {
   constructor() { super("READ_ONLY"); this.name = "ReadOnlyError"; }
 }
 
-const WRITE_RE = /^(add|create|update|delete|settle|checkout|save|remove|discharge|refund|set|record|invalidate|cancel|apply|restock|move|assign|activate|bulk|import|deduct|upsert|toggle)/i;
+const WRITE_RE = /^(add|create|update|delete|settle|checkout|save|remove|discharge|refund|set|record|invalidate|cancel|apply|restock|move|assign|activate|bulk|import|deduct|upsert|toggle|advance|ingest|revoke)/i;
 
 export const repo: typeof demoRepo = new Proxy(baseRepo, {
   get(target, prop, receiver) {

@@ -555,7 +555,20 @@ export interface LabResult {
   billed?: boolean | null;        // marked when charged on a sale
   taken_at: string;               // ISO — when the sample/result was taken
   created_at: string;
+  // ---- lifecycle (LIS) — see src/lib/labStatus.ts ----
+  status?: LabStatusValue | null; // ordered → collected → running → resulted → verified
+  priority?: "routine" | "urgent" | null; // urgent = STAT (عاجل)
+  ordered_at?: string | null;
+  collected_at?: string | null;
+  running_at?: string | null;
+  resulted_at?: string | null;
+  verified_at?: string | null;
+  collected_by?: string | null;   // who drew the sample
+  verified_by?: string | null;    // who released the result
 }
+
+/** Lab order lifecycle stage (kept here so LabResult stays self-describing). */
+export type LabStatusValue = "ordered" | "collected" | "running" | "resulted" | "verified" | "canceled";
 
 /** Sale-level metadata captured by the retail builder and sent to checkout. */
 export interface SaleMeta {
