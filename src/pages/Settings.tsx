@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { Settings as SettingsIcon, RotateCcw, Check, Volume2, VolumeX, Plus, Trash2, Pill, PawPrint, Stethoscope, Tag, FolderPlus, BadgePercent, IdCard, Mail, UserCog, Image as ImageIcon, Upload, Facebook, Instagram, Building2, Printer, Type, LogOut , Slice, ChevronDown, Radio, Copy, Download, Cable, Send } from "lucide-react";
 import type { LabDeviceLink } from "@/types";
 import { supabaseUrl, supabaseAnonKey } from "@/lib/supabase";
+import labBridgeAgentSource from "@/assets/lab-bridge.agent.mjs?raw";
 import type { Species, Service, ServiceCategory, ServiceCatalog, Product } from "@/types";
 import { useAuth } from "@/contexts/AuthContext";
 import { usePermissions } from "@/hooks/usePermissions";
@@ -1182,6 +1183,16 @@ function LabDevicesCard() {
     void navigator.clipboard?.writeText(token).then(() => { setCopied(true); playTap(); window.setTimeout(() => setCopied(false), 1500); }).catch(() => {});
   };
 
+  const saveBlob = (content: string, filename: string, type: string) => {
+    const blob = new Blob([content], { type });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+    playTap();
+  };
+
   /** ملف إعداد المُستقبِل — كل الي يحتاجه البرنامج الصغير حتى يوصل للسحابة. */
   const downloadConfig = (link: LabDeviceLink) => {
     const cfg = {
@@ -1196,13 +1207,13 @@ function LabDevicesCard() {
       framing: "auto",
       baudRate: 9600,
     };
-    const blob = new Blob([JSON.stringify(cfg, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url; a.download = "lab-bridge.config.json";
-    document.body.appendChild(a); a.click(); a.remove();
-    URL.revokeObjectURL(url);
-    playTap();
+    saveBlob(JSON.stringify(cfg, null, 2), "lab-bridge.config.json", "application/json");
+  };
+
+  /** برنامج المُستقبِل نفسه — ملف واحد ذاتي الاكتفاء، يشتغل بـ node lab-bridge.mjs. */
+  const downloadAgent = () => {
+    saveBlob(labBridgeAgentSource, "lab-bridge.mjs", "text/javascript");
+    toast.toast({ tone: "info", title: "نزّل «lab-bridge.mjs»", description: "حطّه بمجلد واحد مع ملف الإعداد، وشغّل: node lab-bridge.mjs" });
   };
 
   /** رسالة تجريبية: نمرّر رسالة HL7 نموذجية عبر نفس مسار الاستقبال — تظهر بصندوق المختبر. */
@@ -1229,7 +1240,7 @@ function LabDevicesCard() {
         <h2 className="font-bold text-ink">ربط أجهزة المختبر عبر الشبكة</h2>
       </div>
       <p className="mb-4 text-xs leading-relaxed text-ink-subtle">
-        الجهاز بغرفة والسستم بغرفة ثانية؟ شغّل برنامج «المُستقبِل» الصغير على أي حاسوب قرب الجهاز، وحمّل ملف الإعداد من هنا —
+        الجهاز بغرفة والسستم بغرفة ثانية؟ أضف جهاز من تحت، حمّل <b>برنامج المُستقبِل</b> + <b>ملف الإعداد</b>، وشغّلهم على أي حاسوب قرب الجهاز —
         كل نتيجة يطلعها الجهاز راح توصل تلقائياً لصندوق المختبر داخل السستم، وتربطها بالحيوان بضغطة. بلا كتابة ولا واير طويل.
       </p>
 
@@ -1246,6 +1257,7 @@ function LabDevicesCard() {
               <div className="ms-auto flex items-center gap-1.5">
                 <button type="button" onClick={() => sendTest(l)} className="inline-flex items-center gap-1 rounded-full bg-surface-2 px-2.5 py-1.5 text-2xs font-bold text-ink-muted transition hover:text-ink" title="رسالة تجريبية"><Send size={13} /> تجربة</button>
                 <button type="button" onClick={() => downloadConfig(l)} className="inline-flex items-center gap-1 rounded-full bg-surface-2 px-2.5 py-1.5 text-2xs font-bold text-ink-muted transition hover:text-ink"><Download size={13} /> ملف الإعداد</button>
+                <button type="button" onClick={downloadAgent} className="inline-flex items-center gap-1 rounded-full bg-surface-2 px-2.5 py-1.5 text-2xs font-bold text-ink-muted transition hover:text-ink"><Download size={13} /> البرنامج</button>
                 <button type="button" onClick={() => revoke(l.id)} className="grid h-7 w-7 place-items-center rounded-full text-ink-subtle transition hover:text-danger-600" title="إلغاء"><Trash2 size={14} /></button>
               </div>
             </div>
@@ -1263,12 +1275,18 @@ function LabDevicesCard() {
               {copied ? <Check size={13} /> : <Copy size={13} />}{copied ? "اننسخ" : "انسخ"}
             </button>
           </div>
-          <button type="button" onClick={() => downloadConfig(fresh)} className="flex w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed border-teal-400 bg-teal-50/60 p-3 text-sm font-extrabold text-teal-700 transition hover:bg-teal-100/60 dark:border-teal-500/50 dark:bg-teal-500/10 dark:text-teal-300">
-            <Download size={16} /> حمّل ملف الإعداد (lab-bridge.config.json)
-          </button>
+          <div className="grid gap-2 sm:grid-cols-2">
+            <button type="button" onClick={downloadAgent} className="flex items-center justify-center gap-2 rounded-xl border-2 border-teal-500 bg-teal-600 p-3 text-sm font-extrabold text-white transition hover:bg-teal-700">
+              <Download size={16} /> برنامج المُستقبِل
+            </button>
+            <button type="button" onClick={() => downloadConfig(fresh)} className="flex items-center justify-center gap-2 rounded-xl border-2 border-dashed border-teal-400 bg-teal-50/60 p-3 text-sm font-extrabold text-teal-700 transition hover:bg-teal-100/60 dark:border-teal-500/50 dark:bg-teal-500/10 dark:text-teal-300">
+              <Download size={16} /> ملف الإعداد
+            </button>
+          </div>
           <ol className="list-decimal space-y-1 ps-5 text-2xs leading-relaxed text-ink-muted">
-            <li>على حاسوب قرب الجهاز، نزّل مجلد <code dir="ltr">lab-bridge</code> وحط بيه ملف الإعداد.</li>
-            <li>شغّل الأمر <code dir="ltr">node lab-bridge.mjs</code> — يشتغل بالخلفية ويستقبل من الجهاز.</li>
+            <li>ثبّت <b>Node.js</b> على حاسوب قرب الجهاز (تحميل مجاني من <code dir="ltr">nodejs.org</code>).</li>
+            <li>حمّل الملفين فوك (<code dir="ltr">lab-bridge.mjs</code> + <code dir="ltr">lab-bridge.config.json</code>) وحطهم بمجلد واحد.</li>
+            <li>افتح المجلد بموجّه الأوامر وشغّل <code dir="ltr">node lab-bridge.mjs</code> — يشتغل بالخلفية.</li>
             <li>بإعدادات الجهاز (LIS/Host)، حط عنوان حاسوب المُستقبِل والمنفذ <code dir="ltr">9100</code>.</li>
             <li>شغّل تحليل — راح يوصل لصندوق المختبر هنا. جرّب «تجربة» للتأكد الحين.</li>
           </ol>
