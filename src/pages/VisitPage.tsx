@@ -7,7 +7,7 @@ import {
   Printer, Syringe, ShieldCheck, Pill,
   Zap, Rows3, LayoutGrid, CalendarPlus, Gauge, CalendarClock, FolderOpen, FlaskConical,
 } from "lucide-react";
-import type { Pet, ClinicVisit, PetNote, TreatmentEntry, LabResult } from "@/types";
+import type { Pet, ClinicVisit, PetNote, TreatmentEntry, LabResult, PetProblem } from "@/types";
 import { LastLabsStrip, LabEntry } from "@/components/LabCenter";
 import { labParamById, labRange } from "@/lib/labCatalog";
 import { repo } from "@/lib/repo";
@@ -29,6 +29,7 @@ import { openTreatmentSheet, type SheetTreatmentRow } from "@/lib/treatmentSheet
 import { syncDoseCycleForPet } from "@/lib/doseCycle";
 import { doseTimesFor, perDayFrom } from "@/lib/treatmentSchedule";
 import { ProblemList } from "@/components/ProblemList";
+import { CaseSummary } from "@/components/CaseSummary";
 import { flagsFromProblems, isJuvenile, type ChartFlags } from "@/lib/problems";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
 
@@ -303,7 +304,8 @@ export default function VisitPage() {
 
   // The live problem list feeds the prescription guard: an active renal problem
   // must block an NSAID even when nobody remembers to mention it.
-  const [chartFlags, setChartFlags] = useState<ChartFlags>({});
+  const [problems, setProblems] = useState<PetProblem[]>([]);
+  const chartFlags = useMemo(() => flagsFromProblems(problems), [problems]);
   const prescribingFlags: ChartFlags = { ...chartFlags, puppy: isJuvenile(pet?.dob) || chartFlags.puppy };
 
   const giveDose = async (t: TreatmentEntry, doctor: string, atISO: string) => {
@@ -497,6 +499,11 @@ export default function VisitPage() {
         onPrint={printSheet} printable={hasFlowsheet || !!primary}
       />
 
+      {/* ── ملخّص الحالة — مين هالمريض، فوق الطبلة مباشرة ── */}
+      <div className="mt-3">
+        <CaseSummary pet={pet} problems={problems} treatments={treatments} labs={labs} todayISO={todayISO} />
+      </div>
+
       {/* ── آخر تحاليل — نظرة سريعة بدون مغادرة الحالة، وضغطة تفتح تبويب المختبر ── */}
       {labs.length > 0 && (
         <div className="mt-3">
@@ -602,7 +609,7 @@ export default function VisitPage() {
       )}
 
       <section className="mt-4">
-        <ProblemList petId={pet.id} doctor={user?.full_name} onFlagsChange={(ps) => setChartFlags(flagsFromProblems(ps))} />
+        <ProblemList petId={pet.id} doctor={user?.full_name} onFlagsChange={setProblems} />
       </section>
 
       <Modal open={labOpen} onClose={() => setLabOpen(false)} size="wide" title={`تسجيل تحاليل — ${pet.name}`}>
