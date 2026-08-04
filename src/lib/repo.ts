@@ -420,6 +420,11 @@ const demoRepo = {
       .sort((a, b) => b.visit_date.localeCompare(a.visit_date));
   },
 
+  /** Every visit for the clinic in ONE query — see listClinicTreatments for why. */
+  async listClinicVisits(_clinicId?: string): Promise<MedicalVisit[]> {
+    return (loadDB().visits ?? []).slice().sort((a, b) => b.visit_date.localeCompare(a.visit_date));
+  },
+
   async addVisit(input: Omit<MedicalVisit, "id">): Promise<MedicalVisit> {
     const db = loadDB();
     // Snapshot the patient's age at visit time (unless the caller already provided it).
@@ -724,6 +729,18 @@ const demoRepo = {
   async listAllTreatments(petIds: string[]): Promise<TreatmentEntry[]> {
     const ids = new Set(petIds);
     return (loadDB().treatments ?? []).filter((t) => ids.has(t.pet_id));
+  },
+
+  /**
+   * Treatments for the whole clinic in ONE query, optionally narrowed to a single
+   * day. Prefer this over listAllTreatments(petIds) on clinic-wide screens: the
+   * pet-id variant sends every patient id in the URL, which grows without bound
+   * as the clinic does. RLS already scopes rows to the clinic.
+   */
+  async listClinicTreatments(_clinicId?: string, day?: string): Promise<TreatmentEntry[]> {
+    const all = loadDB().treatments ?? [];
+    return (day ? all.filter((t) => t.day === day) : all.slice())
+      .sort((a, b) => (a.day === b.day ? a.time.localeCompare(b.time) : b.day.localeCompare(a.day)));
   },
 
   async addTreatment(input: Omit<TreatmentEntry, "id" | "created_at">): Promise<TreatmentEntry> {
@@ -1557,6 +1574,11 @@ const supabaseRepo: typeof demoRepo = {
     if (petIds.length === 0) return [];
     return listOf<MedicalVisit>(await sbc().from("medical_visits").select("*").in("pet_id", petIds).order("visit_date", { ascending: false }));
   },
+  async listClinicVisits(clinicId) {
+    let q = sbc().from("medical_visits").select("*").order("visit_date", { ascending: false }).limit(5000);
+    if (clinicId) q = q.eq("clinic_id", clinicId);
+    return listOf<MedicalVisit>(await q);
+  },
   async addVisit(input) {
     // Snapshot the patient's age at visit time. Look up the pet's DOB when the caller
     // didn't supply the age, so every saved visit carries a historical age.
@@ -1794,6 +1816,12 @@ const supabaseRepo: typeof demoRepo = {
   async listAllTreatments(petIds) {
     if (petIds.length === 0) return [];
     return listOf<TreatmentEntry>(await sbc().from("treatment_entries").select("*").in("pet_id", petIds));
+  },
+  async listClinicTreatments(clinicId, day) {
+    let q = sbc().from("treatment_entries").select("*").order("day", { ascending: false }).limit(5000);
+    if (clinicId) q = q.eq("clinic_id", clinicId);
+    if (day) q = q.eq("day", day);
+    return listOf<TreatmentEntry>(await q);
   },
   async addTreatment(input) {
     return need<TreatmentEntry>(await sbc().from("treatment_entries").insert(input).select().single());

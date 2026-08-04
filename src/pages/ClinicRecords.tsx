@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import type { Pet, Admission, TreatmentEntry, Species, Sex, MedicalVisit, PatientCondition } from "@/types";
 import { repo } from "@/lib/repo";
+import { localISO } from "@/lib/utils";
 import { breedLabel } from "@/lib/breeds";
 import { PetAvatar } from "@/components/PetAvatar";
 import { Modal } from "@/components/Modal";
@@ -93,9 +94,11 @@ export function ClinicRecords() {
   const [treatments, setTreatments] = useState<TreatmentEntry[]>(seed?.treatments ?? []);
   const [visits, setVisits] = useState<MedicalVisit[]>(seed?.visits ?? []);
   const [loading, setLoading] = useState(!seed);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const mounted = useRef(true);
   const load = async () => {
+    if (mounted.current) setLoadError(null);
     try {
       // Tenant isolation: only this clinic's own patients & records (RLS enforces
       // it server-side). Fetch composition lives in prefetchData so the page and
@@ -107,8 +110,11 @@ export function ClinicRecords() {
       setTreatments(snap.treatments);
       setVisits(snap.visits);
       setCached<RecordsSnap>(cacheKey, snap);
-    } catch {
-      /* hung/failed query — finally still clears the skeleton */
+    } catch (e) {
+      // Never fail silently: swallowing this left the doctor staring at an empty
+      // screen with no reason and no way to retry — indistinguishable from
+      // "the clinic has no patients".
+      if (mounted.current) setLoadError(e instanceof Error ? e.message : "تعذّر تحميل السجلات");
     } finally {
       if (mounted.current) setLoading(false);
     }
@@ -205,6 +211,23 @@ export function ClinicRecords() {
           );
         })}
       </div>
+
+      {loadError && (
+        <div className="mb-4 flex flex-wrap items-center gap-3 rounded-2xl border border-danger-300 bg-danger-50 p-3 dark:border-danger-500/40 dark:bg-danger-500/10">
+          <AlertTriangle size={18} className="shrink-0 text-danger-600 dark:text-danger-300" />
+          <div className="min-w-0 flex-1">
+            <div className="text-sm font-extrabold text-danger-700 dark:text-danger-300">تعذّر تحميل السجلات</div>
+            <div className="text-2xs font-semibold text-ink-muted">
+              {pets.length > 0 ? "المعروض تحت آخر نسخة محفوظة — ممكن تكون قديمة." : "ما وصلت أي بيانات. تحقّق من الاتصال وحاول مرة ثانية."}
+              {loadError !== "تعذّر تحميل السجلات" && ` (${loadError})`}
+            </div>
+          </div>
+          <button type="button" onClick={() => { setLoading(true); void load(); }}
+            className="rounded-full bg-danger-600 px-4 py-2 text-2xs font-extrabold text-white transition hover:bg-danger-700">
+            حاول مرة ثانية
+          </button>
+        </div>
+      )}
 
       <AnimatePresence mode="wait" initial={false}>
         <motion.div key={tab} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.2 }}>
@@ -903,7 +926,10 @@ function DirectoryRow({ row, lang, hideOwner, onView, onTreatment, onMove, onEdi
 function CurrentCases({ pets, admissions, treatments, onChanged }: { pets: Pet[]; admissions: Admission[]; treatments: TreatmentEntry[]; onChanged: () => void }) {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
-  const today = new Date().toISOString().slice(0, 10);
+  // LOCAL date, not UTC: doses are written with localISO(), so in Baghdad (UTC+3)
+  // a UTC `today` points at yesterday between midnight and 03:00 — the night shift
+  // would see zero doses due for every patient.
+  const today = localISO();
   // Newest admissions first, so a just-opened case leads the board.
   const active = admissions
     .filter((a) => (a.kind === "treatment" || a.kind === "treatment_boarding") && a.status === "active")
@@ -1021,7 +1047,10 @@ function CurrentCases({ pets, admissions, treatments, onChanged }: { pets: Pet[]
 function Boarding({ pets, admissions, onChanged }: { pets: Pet[]; admissions: Admission[]; onChanged: () => void }) {
   const { t, i18n } = useTranslation();
   const toast = useToast();
-  const today = new Date().toISOString().slice(0, 10);
+  // LOCAL date, not UTC: doses are written with localISO(), so in Baghdad (UTC+3)
+  // a UTC `today` points at yesterday between midnight and 03:00 — the night shift
+  // would see zero doses due for every patient.
+  const today = localISO();
   // Newest admissions first, so the latest boarder leads the grid.
   const active = admissions
     .filter((a) => (a.kind === "boarding" || a.kind === "treatment_boarding") && a.status === "active")

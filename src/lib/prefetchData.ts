@@ -9,6 +9,7 @@
 import { repo } from "@/lib/repo";
 import { listStaff, type StaffMember } from "@/lib/staff";
 import { getCached, setCached } from "@/lib/swrCache";
+import { localISO } from "@/lib/utils";
 import type { LabResult,
   Pet, Admission, TreatmentEntry, MedicalVisit, Product, Invoice, InvoiceItem, MediaItem, AuditEntry, LoginEvent, Expense,
 } from "@/types";
@@ -16,17 +17,27 @@ import type { LabResult,
 const cid = (clinicId?: string | null) => clinicId ?? "anon";
 
 // ---- Records (السجلات) ----
+/** NOTE: `treatments` is TODAY's doses only — that is all this screen counts.
+ *  Anything needing dose history must fetch it itself, not read it from here. */
 export type RecordsSnap = { pets: Pet[]; admissions: Admission[]; treatments: TreatmentEntry[]; visits: MedicalVisit[] };
 export const recordsKey = (clinicId?: string | null) => `records:${cid(clinicId)}`;
 export async function loadRecordsSnap(clinicId?: string | null): Promise<RecordsSnap> {
   const id = clinicId ?? undefined;
-  const [allPets, admissions] = await Promise.all([repo.listAllPets(id), repo.listAdmissions(id)]);
-  const pets = allPets.filter((p) => p.shared_with_clinic !== false);
-  const ids = pets.map((p) => p.id);
-  const [treatments, visits] = await Promise.all([
-    Promise.all(pets.map((p) => repo.listTreatments(p.id))).then((r) => r.flat()),
-    repo.listAllVisits(ids),
+  // This used to be a request PER PET (`pets.map(p => listTreatments(p.id))`), so a
+  // clinic with 400 patients fired 400 queries — six at a time through the browser's
+  // connection limit — and the page timed out to a blank screen before they landed.
+  //
+  // Two corrections: fetch clinic-wide in ONE query instead of one per pet, and pull
+  // only TODAY's doses, because the only thing this screen does with treatments is
+  // count today's per patient (see `medsToday` in ClinicRecords). Nothing waits on
+  // the pet list any more either, so all four run in parallel instead of in a waterfall.
+  const [allPets, admissions, treatments, visits] = await Promise.all([
+    repo.listAllPets(id),
+    repo.listAdmissions(id),
+    repo.listClinicTreatments(id, localISO()),
+    repo.listClinicVisits(id),
   ]);
+  const pets = allPets.filter((p) => p.shared_with_clinic !== false);
   return { pets, admissions, treatments, visits };
 }
 
@@ -66,9 +77,11 @@ export async function loadAnalyticsSnap(clinicId?: string | null): Promise<Analy
   ]);
   const petIds = pets.map((p) => p.id);
   const [visits, media, treatments, staff, audit, logins, expenses, labs] = await Promise.all([
-    repo.listAllVisits(petIds),
+    // Clinic-scoped, not pet-id-scoped: the `in(petIds)` form puts every patient id
+    // into the query URL, which eventually exceeds what the server will accept.
+    repo.listClinicVisits(id),
     repo.listAllMedia(petIds).catch(() => [] as MediaItem[]),
-    repo.listAllTreatments(petIds).catch(() => [] as TreatmentEntry[]),
+    repo.listClinicTreatments(id).catch(() => [] as TreatmentEntry[]),
     listStaff().catch(() => [] as StaffMember[]),
     repo.listAuditLog(id).catch(() => [] as AuditEntry[]),
     repo.listLoginEvents(id).catch(() => [] as LoginEvent[]),
