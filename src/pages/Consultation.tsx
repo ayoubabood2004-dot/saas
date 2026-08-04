@@ -9,6 +9,7 @@ import {
 import { AnimatePresence, motion } from "framer-motion";
 import type { Pet, MedicalVisit, MediaItem } from "@/types";
 import { repo } from "@/lib/repo";
+import { templatesFor, applyTemplate } from "@/lib/soapTemplates";
 import { breedLabel } from "@/lib/breeds";
 import { useAuth } from "@/contexts/AuthContext";
 import { PetAvatar } from "@/components/PetAvatar";
@@ -54,6 +55,10 @@ export function Consultation() {
   const [assessment, setAssessment] = useState("");
   const [showSuggest, setShowSuggest] = useState(false);
   const [plan, setPlan] = useState("");
+  /** Free-text exam findings. The vitals cards capture numbers; this is where
+   *  "mucous membranes pale, abdomen painful on palpation" actually goes. */
+  const [objectiveNotes, setObjectiveNotes] = useState("");
+  const [templateUsed, setTemplateUsed] = useState<string | null>(null);
   const [treatments, setTreatments] = useState("");
   const [marking, setMarking] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
@@ -112,7 +117,7 @@ export function Consultation() {
       keys.filter((k) => vitals[k]).map((k) => `${t(`reading.${k}`)} ${vitals[k]}${rangeForPet(pet.species, k, pet.id).unit}`).join(" · ");
     const vitalsStr = fmt(VITAL_KEYS);
     const cbcStr = fmt(CBC_KEYS);
-    const objective = [vitalsStr, cbcStr && `CBC — ${cbcStr}`].filter(Boolean).join("\n");
+    const objective = [vitalsStr, cbcStr && `CBC — ${cbcStr}`, objectiveNotes.trim()].filter(Boolean).join("\n");
     setSaving(true);
     try {
       const visit = await repo.addVisit({
@@ -235,6 +240,35 @@ export function Consultation() {
               <motion.div key={section} initial={{ opacity: 0, x: 16 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -16 }} transition={{ duration: 0.22 }}>
                 <PanelHead icon={<cur.icon size={18} />} title={cur.label} sub={cur.sub} right={section === "O" && abnormalCount > 0 ? <Badge tone="danger">{abnormalCount} {t("consult.outOfRange")}</Badge> : undefined} />
 
+                {/* Case templates — a starting point for the note, never the
+                    finished note. Applying one never overwrites typed text. */}
+                <div className="mb-4 rounded-2xl border border-brand-200 bg-brand-50/60 p-3 dark:border-brand-500/25 dark:bg-brand-500/10">
+                  <div className="mb-2 flex items-center gap-1.5">
+                    <FileText size={14} className="text-brand-600 dark:text-brand-300" />
+                    <span className="text-2xs font-extrabold text-brand-700 dark:text-brand-200">قوالب الحالات</span>
+                    <span className="text-2xs text-ink-subtle">— تعبّي الأربع أقسام، وتعدّل عليها</span>
+                    {templateUsed && (
+                      <span className="ms-auto rounded-full bg-brand-600 px-2 py-0.5 text-[10px] font-extrabold text-white">{templateUsed}</span>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {templatesFor(pet.species).map((tpl) => (
+                      <button key={tpl.id} type="button"
+                        onClick={() => {
+                          playTap();
+                          setSubjective((v) => applyTemplate(v, tpl.subjective));
+                          setObjectiveNotes((v) => applyTemplate(v, tpl.objective));
+                          setAssessment((v) => v.trim() || tpl.assessment);
+                          setPlan((v) => applyTemplate(v, tpl.plan));
+                          setTemplateUsed(tpl.label);
+                        }}
+                        className="rounded-full border border-brand-200 bg-surface-1 px-3 py-1.5 text-2xs font-bold text-ink transition hover:border-brand-400 hover:text-brand-700 dark:border-brand-500/30 dark:hover:text-brand-300">
+                        {tpl.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
                 {section === "S" && (
                   <div>
                     <p className="mb-2 text-xs text-ink-subtle">{t("consult.quickComplaints", "Tap to add common complaints")}</p>
@@ -262,6 +296,12 @@ export function Consultation() {
                       <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
                         {CBC_KEYS.map((k) => <VitalCard key={k} k={k} pet={pet} value={vitals[k] ?? ""} onChange={setVital} />)}
                       </div>
+                    </div>
+                    <div>
+                      <label className="label">ملاحظات الفحص</label>
+                      <textarea className="input min-h-40 font-mono text-xs leading-relaxed" value={objectiveNotes}
+                        onChange={(e) => setObjectiveNotes(e.target.value)}
+                        placeholder="نتائج الفحص السريري — الأغشية المخاطية، الجس، التسمّع…" />
                     </div>
                     <div>
                       <p className="label">{t("consult.marking")}</p>
