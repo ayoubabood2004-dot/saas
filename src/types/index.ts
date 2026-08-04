@@ -106,6 +106,30 @@ export interface WeightLog {
   measured_at: string; // ISO date
 }
 
+/** A row on the hospital care sheet that isn't a drug dose. */
+export type CareKind = "fluid" | "vital" | "intake" | "output";
+
+/**
+ * One timed entry on the treatment sheet beside the doses: a fluid rate, a
+ * recorded vital, or an intake/output volume. One table with a discriminator
+ * so the hour grid reads in a single query.
+ */
+export interface CareEntry {
+  id: string;
+  pet_id: string;
+  clinic_id?: string | null;
+  visit_id?: string | null;
+  day: string;            // ISO date (LOCAL, like TreatmentEntry.day)
+  time: string;           // 'HH:MM' — empty means no fixed hour
+  kind: CareKind;
+  label: string;
+  value?: number | null;
+  unit: string;
+  notes?: string | null;
+  recorded_by?: string | null;
+  created_at: string;
+}
+
 /** What a problem affects — read by the prescription guard, not just a label. */
 export type ProblemCategory =
   | "renal" | "hepatic" | "cardiac" | "endocrine" | "gi" | "derm" | "neuro" | "repro" | "other";
@@ -931,6 +955,7 @@ export interface DemoDB {
   branches?: Branch[];
   labResults?: LabResult[];
   petProblems?: PetProblem[];
+  careEntries?: CareEntry[];
   deviceLinks?: LabDeviceLink[];
   deviceInbox?: LabDeviceInbox[];
 }

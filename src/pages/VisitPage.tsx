@@ -30,6 +30,7 @@ import { syncDoseCycleForPet } from "@/lib/doseCycle";
 import { doseTimesFor, perDayFrom } from "@/lib/treatmentSchedule";
 import { ProblemList } from "@/components/ProblemList";
 import { CaseSummary } from "@/components/CaseSummary";
+import { CareSheet } from "@/components/CareSheet";
 import { flagsFromProblems, isJuvenile, type ChartFlags } from "@/lib/problems";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
 
@@ -607,6 +608,10 @@ export default function VisitPage() {
           </div>
         </section>
       )}
+
+      <section className="mt-4">
+        <CareSheet pet={pet} visitId={visit.id} day={todayISO} doctor={user?.full_name} treatments={treatments} />
+      </section>
 
       <section className="mt-4">
         <ProblemList petId={pet.id} doctor={user?.full_name} onFlagsChange={setProblems} />

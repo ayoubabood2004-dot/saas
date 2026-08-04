@@ -4,7 +4,7 @@
 import { loadDB, saveDB } from "./demoStore";
 import { supabase } from "./supabase";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, AppointmentStatus, ClinicInfo, PublicStaff, DailyNote, TreatmentEntry, Admission, Branch, Reminder, Product, Company, CompanySection, Purchase, PurchaseItem, PurchasePayment, PurchaseDraftLine, PurchaseMeta, Courier, DeliveryOrder, PetMovement, DemoDB, Invoice, InvoiceItem, CheckoutItem, SaleMeta, Customer, DiscountType, PaymentMethod, PaymentSplit, WhatsAppMessage, AuditEntry, LoginEvent, PetNote, Expense, ClinicVisit , Surgery, LabResult, LabDeviceLink, LabDeviceInbox, LabStatusValue, PetProblem } from "@/types";
+import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, AppointmentStatus, ClinicInfo, PublicStaff, DailyNote, TreatmentEntry, Admission, Branch, Reminder, Product, Company, CompanySection, Purchase, PurchaseItem, PurchasePayment, PurchaseDraftLine, PurchaseMeta, Courier, DeliveryOrder, PetMovement, DemoDB, Invoice, InvoiceItem, CheckoutItem, SaleMeta, Customer, DiscountType, PaymentMethod, PaymentSplit, WhatsAppMessage, AuditEntry, LoginEvent, PetNote, Expense, ClinicVisit , Surgery, LabResult, LabDeviceLink, LabDeviceInbox, LabStatusValue, PetProblem, CareEntry } from "@/types";
 import { uid, uuid, ageMonths, localISO } from "./utils";
 import { phoneKey } from "./phone";
 import { loadOwners } from "./owners";
@@ -423,6 +423,27 @@ const demoRepo = {
   /** Every visit for the clinic in ONE query — see listClinicTreatments for why. */
   async listClinicVisits(_clinicId?: string): Promise<MedicalVisit[]> {
     return (loadDB().visits ?? []).slice().sort((a, b) => b.visit_date.localeCompare(a.visit_date));
+  },
+
+  /* ---- Care sheet: fluids, vitals, intake/output beside the doses ---- */
+  async listCareEntries(petId: string, day?: string): Promise<CareEntry[]> {
+    return (loadDB().careEntries ?? [])
+      .filter((c) => c.pet_id === petId && (!day || c.day === day))
+      .sort((a, b) => (a.day === b.day ? (a.time || "99:99").localeCompare(b.time || "99:99") : a.day.localeCompare(b.day)));
+  },
+
+  async addCareEntry(input: Omit<CareEntry, "id" | "created_at">): Promise<CareEntry> {
+    const db = loadDB();
+    const row: CareEntry = { ...input, id: uid("care"), created_at: new Date().toISOString() };
+    (db.careEntries ??= []).push(row);
+    saveDB(db);
+    return row;
+  },
+
+  async deleteCareEntry(id: string): Promise<void> {
+    const db = loadDB();
+    db.careEntries = (db.careEntries ?? []).filter((c) => c.id !== id);
+    saveDB(db);
   },
 
   /* ---- Problem list (POMR) — persists across visits, read at prescribing time ---- */
@@ -1370,6 +1391,8 @@ const DEMO_ACTIVITY_MAP: Record<string, { entity: string; action: "INSERT" | "UP
   advanceLabStatus: { entity: "lab_results", action: "UPDATE" },
   createDeviceLink: { entity: "lab_device_links", action: "INSERT" },
   revokeDeviceLink: { entity: "lab_device_links", action: "UPDATE" },
+  addCareEntry: { entity: "care_entries", action: "INSERT" },
+  deleteCareEntry: { entity: "care_entries", action: "DELETE" },
   addProblem: { entity: "pet_problems", action: "INSERT" },
   updateProblem: { entity: "pet_problems", action: "UPDATE" },
   deleteProblem: { entity: "pet_problems", action: "DELETE" },
@@ -1609,6 +1632,19 @@ const supabaseRepo: typeof demoRepo = {
     let q = sbc().from("medical_visits").select("*").order("visit_date", { ascending: false }).limit(5000);
     if (clinicId) q = q.eq("clinic_id", clinicId);
     return listOf<MedicalVisit>(await q);
+  },
+  async listCareEntries(petId, day) {
+    let q = sbc().from("care_entries").select("*").eq("pet_id", petId).order("day", { ascending: true }).order("time", { ascending: true });
+    if (day) q = q.eq("day", day);
+    return listOf<CareEntry>(await q);
+  },
+  async addCareEntry(input) {
+    const { clinic_id, ...rest } = input;
+    void clinic_id;   // stamped server-side by the auth_clinic() column default
+    return need<CareEntry>(await sbc().from("care_entries").insert(rest).select().single());
+  },
+  async deleteCareEntry(id) {
+    ok(await sbc().from("care_entries").delete().eq("id", id));
   },
   async listProblems(petId) {
     // clinic_id is stamped by the column default (auth_clinic()) — never sent by the client.
