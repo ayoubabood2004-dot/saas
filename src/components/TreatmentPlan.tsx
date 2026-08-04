@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   Plus, X, Pill, CalendarClock, Check, Activity, Stethoscope,
   AlertTriangle, ShieldAlert, Biohazard, Sparkles, ChevronLeft, ChevronRight, Crosshair,
-  Droplets, Camera, Loader2, ImageIcon, Search, Scale, Calculator, FileText, ClipboardList, ScanLine,
+  Droplets, Camera, Loader2, ImageIcon, Search, Scale, FileText, ClipboardList, ScanLine,
 } from "lucide-react";
 import { AnatomyMap, type AnatomyFocus } from "@/components/AnatomyMap";
 import { SymptomPicker, type QualifierMap } from "@/components/SymptomPicker";
@@ -17,6 +17,8 @@ import { readLabImage } from "@/lib/labOcr";
 import { encodeClinical, type ClinicalRecord } from "@/lib/clinicalRecord";
 import { Glyph } from "@/lib/clinicalIcons";
 import { MED_CATALOG, getClinicMeds } from "@/lib/meds";
+import { DoseBlock, DoseAlertRow, type DosePatch } from "@/components/DoseBlock";
+import { matchMonograph, checkSafety, calcDose, appFreqHours, APP_ROUTE, type DoseAlert } from "@/lib/vetFormulary";
 import type { Product } from "@/types";
 import { repo } from "@/lib/repo";
 import { prepareUpload } from "@/lib/image";
@@ -44,7 +46,12 @@ const ROUTES: { id: string; label: string }[] = [
 ];
 const routeLabel = (id?: string) => ROUTES.find((x) => x.id === id)?.label;
 
-interface PlanRow { id: string; name: string; dose: string; mgPerKg?: number; freq: string; days: number; note?: string; route?: string; doseMode?: "weight" | "manual" }
+interface PlanRow {
+  id: string; name: string; dose: string; mgPerKg?: number; freq: string; days: number;
+  note?: string; route?: string; doseMode?: "weight" | "manual";
+  /** Vial concentration (mg/ml) or tablet strength (mg/tab) — drives the volume math. */
+  strength?: number; solid?: boolean;
+}
 
 const rid = () => Math.random().toString(36).slice(2);
 const blankRow = (): PlanRow => ({ id: rid(), name: "", dose: "", freq: "2", days: 7 });
@@ -227,14 +234,53 @@ export function TreatmentPlan({
     setStep("treatment");
   };
 
-  /** The effective dose text for a row — the weight calculation when available, else the manual dose. */
+  /**
+   * The effective dose text for a row. When the vial concentration is known this
+   * is what the vet actually draws — "1.4 مل (35 mg)" — not just the milligrams.
+   */
   const doseText = (r: PlanRow): string => {
-    if (r.mgPerKg && weight) return `${formatNum(Math.round(r.mgPerKg * weight * 100) / 100)} mg`;
+    if (r.mgPerKg && weight) {
+      const c = calcDose({
+        mgPerKg: r.mgPerKg, weightKg: weight, strength: r.strength,
+        solid: r.solid ?? matchMonograph(r.name)?.solid, freq: appFreqHours(r.freq),
+      });
+      const mg = `${formatNum(Math.round(c.mg * 100) / 100)} mg`;
+      if (c.mlRounded) return `${formatNum(c.mlRounded)} مل (${mg})`;
+      if (c.tabletsLabel && c.tablets) return `${c.tabletsLabel} (${mg})`;
+      return mg;
+    }
     return r.dose.trim();
   };
 
   const filledRows = rows.filter((r) => r.name.trim());
   const interactions = useMemo(() => interactionsIn(filledRows.map((r) => r.name)), [filledRows]);
+
+  /**
+   * Live drug-safety pass over the whole plan: species bans, over/under dosing,
+   * daily ceilings, duplicate therapy and dangerous class pairs. Only the
+   * actionable tones surface at plan level — the informational monograph notes
+   * stay inside each drug's own card.
+   */
+  const safety = useMemo(() => {
+    if (!species) return [] as { name: string; alerts: DoseAlert[] }[];
+    const out: { name: string; alerts: DoseAlert[] }[] = [];
+    for (const r of filledRows) {
+      const drug = matchMonograph(r.name);
+      if (!drug) continue;
+      const others = filledRows
+        .filter((x) => x.id !== r.id)
+        .map((x) => matchMonograph(x.name)?.id)
+        .filter((x): x is string => !!x);
+      const alerts = checkSafety({
+        drug, species, weightKg: weight, mgPerKg: r.mgPerKg ?? 0,
+        route: r.route ? APP_ROUTE[r.route] : undefined,
+        freq: appFreqHours(r.freq),
+        concurrent: others,
+      }).filter((a) => a.tone === "critical" || a.tone === "warn");
+      if (alerts.length) out.push({ name: r.name.trim(), alerts });
+    }
+    return out;
+  }, [filledRows, species, weight]);
   const cbcIds = Object.keys(cbc);
 
   const canSave = !busy && (!!focus || symptoms.length > 0 || cbcIds.length > 0 || !!labPhoto || diagnoses.length > 0 || filledRows.length > 0 || !!notes.trim());
@@ -289,6 +335,14 @@ export function TreatmentPlan({
     if (interactions.length) {
       lines.push("⛔ تداخلات دوائية:");
       for (const it of interactions) lines.push(`• ${it.a} + ${it.b} (${it.severity === "major" ? "خطير" : "متوسط"}): ${it.note}`);
+    }
+    if (safety.length) {
+      lines.push("🛡️ فحص الأمان الدوائي:");
+      for (const s of safety) {
+        for (const a of s.alerts) {
+          lines.push(`• ${s.name} — ${a.tone === "critical" ? "⛔" : "⚠️"} ${a.title}${a.detail ? `: ${a.detail}` : ""}`);
+        }
+      }
     }
     return lines.join("\n");
   };
@@ -444,8 +498,8 @@ export function TreatmentPlan({
           {step === "treatment" && (
             <TreatmentStep
               rows={rows} setRow={setRow} removeRow={removeRow} addDrug={addDrug}
-              weight={weight} setWeight={setWeight}
-              stockMeds={stockMeds} stockFor={stockFor} interactions={interactions}
+              weight={weight} setWeight={setWeight} species={species}
+              stockMeds={stockMeds} stockFor={stockFor} interactions={interactions} safety={safety}
             />
           )}
         </div>
@@ -628,16 +682,18 @@ function DiseaseCard({ d, picked, onToggle, onApply, pct }: { d: Disease & { mat
 
 /* =============================== Treatment step ============================ */
 function TreatmentStep({
-  rows, setRow, removeRow, addDrug, weight, setWeight, stockMeds, stockFor, interactions,
+  rows, setRow, removeRow, addDrug, weight, setWeight, species, stockMeds, stockFor, interactions, safety,
 }: {
   rows: PlanRow[];
   setRow: (id: string, patch: Partial<PlanRow>) => void;
   removeRow: (id: string) => void;
   addDrug: (name: string, seed?: Partial<PlanRow>) => void;
   weight?: number; setWeight: (n: number | undefined) => void;
+  species?: Sp;
   stockMeds: Product[];
   stockFor: (name: string) => Product | undefined;
   interactions: { a: string; b: string; severity: "major" | "moderate"; note: string }[];
+  safety: { name: string; alerts: DoseAlert[] }[];
 }) {
   const [q, setQ] = useState("");
   // One unified picker: the default catalog + clinic-custom meds (allMeds) PLUS the
@@ -663,6 +719,20 @@ function TreatmentStep({
   return (
     <section className="space-y-3">
       <StepTitle icon={CalendarClock} title="خطة العلاج — متزامنة مع أدوية العيادة" hint="اختر من المتوفّر بالمخزون، أو ابحث بالكتالوج — الجرعة تُحسب من وزن الحيوان تلقائياً." />
+
+      {/* Plan-wide safety sweep — the blocking findings, gathered above the fold */}
+      {safety.some((s) => s.alerts.some((a) => a.blocking)) && (
+        <div className="rounded-2xl border border-danger-300 bg-danger-50 p-3 dark:border-danger-500/40 dark:bg-danger-500/10">
+          <div className="mb-2 flex items-center gap-1.5 text-2xs font-black text-danger-700 dark:text-danger-300">
+            <ShieldAlert size={14} /> أوقف — في خطر دوائي بهالخطة
+          </div>
+          <div className="space-y-1.5">
+            {safety.flatMap((s) => s.alerts.filter((a) => a.blocking).map((a) => (
+              <DoseAlertRow key={`${s.name}-${a.id}`} alert={{ ...a, title: `${s.name} — ${a.title}` }} />
+            )))}
+          </div>
+        </div>
+      )}
 
       {/* Live drug-interaction warnings */}
       {interactions.length > 0 && (
@@ -735,9 +805,14 @@ function TreatmentStep({
         {rows.map((r, idx) => {
           const doses = dosesOf(r);
           const stk = r.name.trim() ? stockFor(r.name) : undefined;
-          const computed = r.mgPerKg && weight ? Math.round(r.mgPerKg * weight * 100) / 100 : undefined;
-          const mode: "weight" | "manual" = r.doseMode ?? (r.dose.trim() && r.mgPerKg === undefined ? "manual" : (weight ? "weight" : "manual"));
-          const doseDisplay = computed !== undefined ? `${formatNum(computed)} mg` : r.dose.trim();
+          // Summary line mirrors what the calculator resolved — volume when the
+          // concentration is known, otherwise milligrams, otherwise the manual text.
+          const c = r.mgPerKg && weight
+            ? calcDose({ mgPerKg: r.mgPerKg, weightKg: weight, strength: r.strength, solid: r.solid ?? matchMonograph(r.name)?.solid, freq: appFreqHours(r.freq) })
+            : undefined;
+          const doseDisplay = c
+            ? (c.mlRounded ? `${formatNum(c.mlRounded)} مل` : c.tabletsLabel && c.tablets ? c.tabletsLabel : `${formatNum(Math.round(c.mg * 100) / 100)} mg`)
+            : r.dose.trim();
           const freqLabel = FREQS.find((f) => f.id === r.freq)?.label ?? "";
           const rx = r.name.trim()
             ? [doseDisplay || null, routeLabel(r.route) || null, freqLabel, r.freq !== "prn" && r.days ? `لمدة ${formatNum(r.days)} يوم` : null, doses ? `${formatNum(doses)} جرعة` : null].filter(Boolean).join(" · ")
@@ -754,36 +829,21 @@ function TreatmentStep({
               </div>
 
               <div className="space-y-2.5 p-3">
-                {/* Dose — segmented mode toggle then the matching input */}
-                <div className="rounded-xl border border-violet-100 bg-violet-50/60 p-2.5 dark:border-violet-500/20 dark:bg-violet-500/5">
-                  <div className="mb-2 flex items-center justify-between gap-2">
-                    <span className="inline-flex items-center gap-1 text-2xs font-extrabold text-violet-600 dark:text-violet-300"><Calculator size={13} /> الجرعة</span>
-                    <div className="inline-flex items-center gap-0.5 rounded-full border border-violet-200 bg-surface-1 p-0.5 dark:border-violet-500/30">
-                      <button type="button" onClick={() => { playTap(); setRow(r.id, { doseMode: "weight", dose: "" }); }}
-                        className={cn("rounded-full px-2.5 py-1 text-2xs font-bold transition", mode === "weight" ? "bg-violet-600 text-white shadow-soft" : "text-ink-muted hover:text-ink")}>حسب الوزن</button>
-                      <button type="button" onClick={() => { playTap(); setRow(r.id, { doseMode: "manual", mgPerKg: undefined }); }}
-                        className={cn("rounded-full px-2.5 py-1 text-2xs font-bold transition", mode === "manual" ? "bg-violet-600 text-white shadow-soft" : "text-ink-muted hover:text-ink")}>يدوي</button>
-                    </div>
-                  </div>
-                  {mode === "weight" ? (
-                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 text-sm">
-                      <input type="number" min={0} step="0.05" inputMode="decimal" value={r.mgPerKg === undefined ? "" : String(r.mgPerKg)}
-                        onChange={(e) => { const v = Number(e.target.value); setRow(r.id, { mgPerKg: e.target.value === "" || Number.isNaN(v) || v <= 0 ? undefined : v }); }}
-                        className="input h-9 w-20 px-1.5 py-0 text-center text-sm font-bold tabular-nums" placeholder="mg/kg" />
-                      <span className="text-2xs font-bold text-ink-subtle">mg/kg</span>
-                      {computed !== undefined ? (
-                        <>
-                          <span className="font-black text-violet-500">× {formatNum(weight!)} كغ =</span>
-                          <span className="rounded-lg bg-violet-600 px-3 py-1.5 text-base font-extrabold text-white">{formatNum(computed)} mg</span>
-                        </>
-                      ) : (
-                        <span className="text-2xs font-semibold text-warn-600 dark:text-warn-300">↑ أدخل وزن الحيوان بالأعلى ليُحسب تلقائياً</span>
-                      )}
-                    </div>
-                  ) : (
-                    <input value={r.dose} onChange={(e) => setRow(r.id, { dose: e.target.value })} placeholder="اكتب الجرعة (مثال: قرص واحد، ٥ قطرات، 1 مل)" className="input h-9 w-full px-2.5 py-0 text-sm" />
-                  )}
-                </div>
+                {/* Dose — calculator, vial concentration, and the live safety guard */}
+                <DoseBlock
+                  name={r.name}
+                  species={species}
+                  weightKg={weight}
+                  mgPerKg={r.mgPerKg}
+                  dose={r.dose}
+                  doseMode={r.doseMode}
+                  route={r.route}
+                  freq={r.freq}
+                  strength={r.strength}
+                  solid={r.solid}
+                  concurrent={rows.filter((x) => x.id !== r.id && x.name.trim()).map((x) => x.name)}
+                  onPatch={(patch: DosePatch) => setRow(r.id, patch)}
+                />
 
                 {/* Route of administration */}
                 <div className="flex flex-wrap items-center gap-1.5">
