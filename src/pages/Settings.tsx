@@ -1210,6 +1210,20 @@ function LabDevicesCard() {
     saveBlob(JSON.stringify(cfg, null, 2), "lab-bridge.config.json", "application/json");
   };
 
+  /** إعداد صندوق واحد لكل الأجهزة معاً — devices[] بمنافذ متتابعة (9100, 9101…). */
+  const downloadAllConfig = (links: LabDeviceLink[]) => {
+    const cfg = {
+      url: supabaseUrl || "https://YOUR-PROJECT.supabase.co",
+      anonKey: supabaseAnonKey || "YOUR_SUPABASE_ANON_KEY",
+      devices: links.map((l, i) => ({
+        name: l.name, token: l.token,
+        mode: "tcp-listen", host: "0.0.0.0", port: 9100 + i, framing: "auto",
+      })),
+    };
+    saveBlob(JSON.stringify(cfg, null, 2), "lab-bridge.config.json", "application/json");
+    toast.toast({ tone: "info", title: "نزّل إعداد كل الأجهزة", description: "صندوق واحد يستقبل كل أجهزتك — كل جهاز على منفذه (9100، 9101…)." });
+  };
+
   /** برنامج المُستقبِل نفسه — ملف واحد ذاتي الاكتفاء، يشتغل بـ node lab-bridge.mjs. */
   const downloadAgent = () => {
     saveBlob(labBridgeAgentSource, "lab-bridge.mjs", "text/javascript");
@@ -1303,6 +1317,11 @@ function LabDevicesCard() {
               </div>
             </div>
           ))}
+          {active.length >= 2 && (
+            <button type="button" onClick={() => downloadAllConfig(active)} className="flex w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed border-teal-400 bg-teal-50/60 p-2.5 text-xs font-extrabold text-teal-700 transition hover:bg-teal-100/60 dark:border-teal-500/50 dark:bg-teal-500/10 dark:text-teal-300">
+              <Download size={15} /> إعداد صندوق واحد لكل الأجهزة ({formatNum(active.length)}) — CBC + كيمياء + غيرها
+            </button>
+          )}
         </div>
       )}
 
