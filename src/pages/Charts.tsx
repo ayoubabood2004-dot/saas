@@ -5,7 +5,7 @@ import {
   Stethoscope, BedDouble, HeartPulse, ClipboardList, Pill, AlertTriangle,
   CheckCircle2, Clock, Loader2, Search, LayoutGrid, ChevronLeft, Slice,
 } from "lucide-react";
-import type { Admission, ClinicVisit, Pet, TreatmentEntry , Surgery } from "@/types";
+import type { Admission, ClinicVisit, MedicalVisit, Pet, PatientCondition, TreatmentEntry , Surgery } from "@/types";
 import { repo } from "@/lib/repo";
 import { getCached, setCached } from "@/lib/swrCache";
 import { PetAvatar } from "@/components/PetAvatar";
@@ -27,6 +27,30 @@ const BUCKETS: { key: BucketKey; label: string; icon: typeof Stethoscope; tint: 
   { key: "boarding", label: "طبلات الفندقة", icon: BedDouble, tint: "text-sky-600 dark:text-sky-300", ring: "bg-sky-100 dark:bg-sky-500/15", badge: "bg-sky-100 text-sky-700 dark:bg-sky-500/20 dark:text-sky-200" },
   { key: "visit", label: "طبلات الزيارة", icon: ClipboardList, tint: "text-brand-600 dark:text-brand-300", ring: "bg-brand-100 dark:bg-brand-500/15", badge: "bg-brand-100 text-brand-700 dark:bg-brand-500/20 dark:text-brand-300" },
 ];
+/* ── Triage acuity ─────────────────────────────────────────────────────────
+ * One colour language for "how urgent is this patient", so the board can be
+ * read from the doorway. Clinical condition outranks schedule: a critical
+ * patient stays red even when every dose is on time, because the doses being
+ * on time is not the thing you need to know about it. */
+type Acuity = "critical" | "overdue" | "due" | "stable" | "settled";
+const ACUITY: Record<Acuity, { label: string; stripe: string; card: string; dot: string }> = {
+  critical: { label: "حرجة", stripe: "bg-danger-500", card: "border-danger-300 dark:border-danger-500/40", dot: "bg-danger-500" },
+  overdue:  { label: "متأخّرة", stripe: "bg-danger-500", card: "border-danger-300 dark:border-danger-500/40", dot: "bg-danger-500" },
+  due:      { label: "مستحقّة", stripe: "bg-warn-500", card: "border-warn-300 dark:border-warn-500/40", dot: "bg-warn-500" },
+  stable:   { label: "مستقرّة", stripe: "bg-sky-400", card: "border-line-strong", dot: "bg-sky-400" },
+  settled:  { label: "اليوم مكتمل", stripe: "bg-teal-400", card: "border-teal-300 dark:border-teal-500/40", dot: "bg-teal-400" },
+};
+const ACUITY_RANK: Record<Acuity, number> = { critical: 0, overdue: 1, due: 2, stable: 3, settled: 4 };
+
+function acuityOf(c: Chart, txLoaded: boolean): Acuity {
+  if (c.condition === "critical") return "critical";
+  if (!txLoaded) return "stable";
+  if (c.overdue > 0) return "overdue";
+  if (c.dueToday > 0) return "due";
+  if (c.todayTotal > 0) return "settled";
+  return "stable";
+}
+
 const SPECIES_AR: Record<string, string> = { dog: "كلب", cat: "قطة", horse: "حصان", cow: "بقرة", bird: "طائر", rabbit: "أرنب", other: "أخرى" };
 // Default avatar: the species emoji (️ = VS16 forces a colour cat) on a soft tint —
 // self-contained, so it paints instantly with zero network requests.
@@ -63,6 +87,8 @@ interface Chart {
   title: string;
   cage?: string | null;
   since: string;
+  /** Triage condition recorded on the open visit — drives the acuity colour. */
+  condition?: PatientCondition | null;
   dueToday: number;
   /** Doses scheduled for today (given or not) — todayTotal>0 && dueToday===0 → اليوم مكتمل. */
   todayTotal: number;
@@ -124,6 +150,28 @@ export function Charts() {
     repo.listOpenClinicVisits(clinicId).then((vs) => { setCached(`openvisits_${clinicId ?? ""}`, vs); if (!cancel) setVisits(vs); }).catch(() => {});
     return () => { cancel = true; };
   }, [clinicId]);
+
+  // The triage condition (ممتازة/جيدة/حرجة) is recorded on the MEDICAL visit —
+  // ClinicVisit.condition is the case OUTCOME (تحت العلاج/تعافى/مزمنة), a
+  // different axis. One clinic-wide query gives us the latest per patient.
+  const [medVisits, setMedVisits] = useState<MedicalVisit[]>([]);
+  useEffect(() => {
+    let cancel = false;
+    repo.listClinicVisits(clinicId)
+      .then((vs) => { if (!cancel) setMedVisits(vs); })
+      .catch(() => {});
+    return () => { cancel = true; };
+  }, [clinicId]);
+
+  const conditionByPet = useMemo(() => {
+    const m = new Map<string, PatientCondition>();
+    // listClinicVisits returns newest-first, so the first hit per pet is the latest.
+    for (const v of medVisits) {
+      if (!v.condition || m.has(v.pet_id)) continue;
+      m.set(v.pet_id, v.condition);
+    }
+    return m;
+  }, [medVisits]);
 
   // Warm the visit-page code chunk up front so tapping a card never waits on JS.
   useEffect(() => { void import("@/pages/VisitPage"); }, []);
@@ -197,7 +245,7 @@ export function Charts() {
       const title = a.reason?.trim() || "—";
       if (!matchQ(pet, title)) continue;
       const visit = openVisitByPet.get(a.pet_id);
-      out.push({ id: `adm_${a.id}`, bucket: kindBucket[a.kind], petId: a.pet_id, visitId: visit?.id, pet, title, cage: a.cage, since: a.admitted_on, ...statusFrom(treatments.filter((t) => t.pet_id === a.pet_id)) });
+      out.push({ id: `adm_${a.id}`, bucket: kindBucket[a.kind], petId: a.pet_id, visitId: visit?.id, pet, title, cage: a.cage, since: a.admitted_on, condition: conditionByPet.get(a.pet_id) ?? null, ...statusFrom(treatments.filter((t) => t.pet_id === a.pet_id)) });
     }
     // Standalone open visits — only for pets NOT already shown via an admission (no duplicates).
     for (const v of visits) {
@@ -205,12 +253,15 @@ export function Charts() {
       const pet = pets[v.pet_id];
       const title = v.reason?.trim() || "زيارة";
       if (!matchQ(pet, title)) continue;
-      out.push({ id: `vis_${v.id}`, bucket: "visit", petId: v.pet_id, visitId: v.id, pet, title, since: v.opened_at, ...statusFrom(treatments.filter((t) => t.visit_id === v.id)) });
+      out.push({ id: `vis_${v.id}`, bucket: "visit", petId: v.pet_id, visitId: v.id, pet, title, since: v.opened_at, condition: conditionByPet.get(v.pet_id) ?? null, ...statusFrom(treatments.filter((t) => t.visit_id === v.id)) });
     }
-    return out.sort((a, b) => (b.overdue - a.overdue) || (b.dueToday - a.dueToday) || b.since.localeCompare(a.since));
+    // Acuity leads the sort: the critical patient is the first thing you see.
+    return out.sort((a, b) =>
+      (ACUITY_RANK[acuityOf(a, txLoaded)] - ACUITY_RANK[acuityOf(b, txLoaded)]) ||
+      (b.overdue - a.overdue) || (b.dueToday - a.dueToday) || b.since.localeCompare(a.since));
     // `tick` is a dependency on purpose: overdue is now clock-based, so the counts
     // must be recomputed every minute, not only when the data changes.
-  }, [ops.admissions, visits, treatments, pets, openVisitByPet, activeBranch, branches, query, todayISO, tick]);
+  }, [ops.admissions, visits, treatments, pets, openVisitByPet, conditionByPet, activeBranch, branches, query, todayISO, tick, txLoaded]);
 
   const counts = useMemo(() => {
     const c: Record<BucketKey, number> = { daily: 0, careBoarding: 0, boarding: 0, visit: 0 };
@@ -320,7 +371,43 @@ export function Charts() {
           <p className="text-sm font-bold text-ink">لا توجد طبلات نشطة حالياً</p>
           <p className="mt-1 text-xs text-ink-subtle">تظهر هنا خطط علاج الحيوانات الموجودة في العيادة والزيارات المفتوحة.</p>
         </div>
-      ) : view === "board" ? (
+      ) : view === "cards" ? (
+        <>
+          {/* Colour key — a colour language nobody explained is just decoration */}
+          <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-xl border border-line bg-surface-1 px-3 py-2">
+            <span className="text-2xs font-extrabold text-ink-muted">الفرز:</span>
+            {(Object.keys(ACUITY) as Acuity[]).map((k) => (
+              <span key={k} className="inline-flex items-center gap-1.5 text-2xs font-bold text-ink-muted">
+                <span className={cn("h-2.5 w-2.5 rounded-full", ACUITY[k].dot)} aria-hidden />
+                {ACUITY[k].label}
+              </span>
+            ))}
+            <span className="inline-flex items-center gap-1.5 text-2xs font-bold text-danger-600 dark:text-danger-300">
+              <span className="h-2.5 w-2.5 animate-pulse-ring rounded-full bg-danger-500" aria-hidden />
+              يومض = جرعة متأخّرة
+            </span>
+          </div>
+
+          <div className="space-y-6">
+            {shownBuckets.map((b) => {
+              const items = charts.filter((c) => c.bucket === b.key);
+              if (items.length === 0) return null;
+              return (
+                <section key={b.key}>
+                  <div className="mb-2 flex items-center gap-2">
+                    <span className={cn("grid h-7 w-7 place-items-center rounded-lg", b.ring, b.tint)}><b.icon size={16} /></span>
+                    <h2 className="text-sm font-extrabold text-ink">{b.label}</h2>
+                    <span className={cn("rounded-full px-2 py-0.5 text-2xs font-black", b.badge)}>{formatNum(items.length)}</span>
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
+                    {items.map((c) => <ChartCard key={c.id} chart={c} lang={lang} todayISO={todayISO} txLoaded={txLoaded} busy={opening === c.id} onOpen={() => void openChart(c)} />)}
+                  </div>
+                </section>
+              );
+            })}
+          </div>
+        </>
+      ) : (
         <TreatmentBoard
           treatments={boardTreatments}
           pets={pets}
@@ -329,25 +416,6 @@ export function Charts() {
           wall={wall}
           onToggleWall={() => { playTap(); setWall((w) => !w); }}
         />
-      ) : (
-        <div className="space-y-6">
-          {shownBuckets.map((b) => {
-            const items = charts.filter((c) => c.bucket === b.key);
-            if (items.length === 0) return null;
-            return (
-              <section key={b.key}>
-                <div className="mb-2 flex items-center gap-2">
-                  <span className={cn("grid h-7 w-7 place-items-center rounded-lg", b.ring, b.tint)}><b.icon size={16} /></span>
-                  <h2 className="text-sm font-extrabold text-ink">{b.label}</h2>
-                  <span className={cn("rounded-full px-2 py-0.5 text-2xs font-black", b.badge)}>{formatNum(items.length)}</span>
-                </div>
-                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
-                  {items.map((c) => <ChartCard key={c.id} chart={c} lang={lang} todayISO={todayISO} txLoaded={txLoaded} busy={opening === c.id} onOpen={() => void openChart(c)} />)}
-                </div>
-              </section>
-            );
-          })}
-        </div>
       )}
 
       {/* سجل عمليات هذا الشهر */}
@@ -388,6 +456,11 @@ function FilterChip({ active, label, count, icon, onClick }: { active: boolean; 
 /* ── Chart card ───────────────────────────────────────────────────────────── */
 function ChartCard({ chart: c, lang, todayISO, txLoaded, busy, onOpen }: { chart: Chart; lang: string; todayISO: string; txLoaded: boolean; busy: boolean; onOpen: () => void }) {
   const day = dayNumber(c.since, todayISO);
+  const acuity = acuityOf(c, txLoaded);
+  const meta = ACUITY[acuity];
+  // Only a genuinely late dose pulses. If "critical" pulsed too, half the board
+  // would move and the motion would stop meaning "act now".
+  const blink = txLoaded && c.overdue > 0;
   // اليوم مكتمل: every dose scheduled for today was given (and nothing overdue).
   // The card takes a soft watery-green tint until the next dose comes due —
   // tomorrow's doses (or a new dose added today) clear it automatically.
@@ -404,17 +477,25 @@ function ChartCard({ chart: c, lang, todayISO, txLoaded, busy, onOpen }: { chart
   return (
     <button type="button" onClick={onOpen} disabled={busy}
       className={cn(
-        "group flex flex-col gap-2.5 rounded-xl border p-3.5 text-start shadow-card transition hover:shadow-lg disabled:opacity-60",
+        "group relative flex flex-col gap-2.5 overflow-hidden rounded-xl border p-3.5 ps-4 text-start shadow-card transition hover:shadow-lg disabled:opacity-60",
+        meta.card,
         doneToday
-          ? "border-teal-300 bg-teal-50/60 ring-1 ring-teal-300/60 hover:border-teal-400 dark:border-teal-500/40 dark:bg-teal-500/10 dark:ring-teal-500/30"
-          : "border-line-strong bg-surface-1 hover:border-brand-300",
+          ? "bg-teal-50/60 ring-1 ring-teal-300/60 hover:border-teal-400 dark:bg-teal-500/10 dark:ring-teal-500/30"
+          : "bg-surface-1 hover:border-brand-300",
+        blink && "animate-pulse-ring",
       )}>
+      {/* Acuity stripe — the colour you read from across the room */}
+      <span className={cn("absolute inset-y-0 start-0 w-1.5", meta.stripe)} aria-hidden />
+
       <div className="flex items-center gap-2.5">
         <CardAvatar pet={c.pet} />
         <div className="min-w-0 flex-1">
           <div className="truncate text-sm font-black text-ink">{c.pet?.name ?? "—"}</div>
-          <div className="truncate text-2xs font-bold text-ink-subtle">
-            {c.pet ? (SPECIES_AR[c.pet.species] ?? c.pet.species) : ""}{c.cage ? ` · قفص ${c.cage}` : ""}
+          <div className="flex items-center gap-1.5">
+            <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", meta.dot)} aria-hidden />
+            <span className="truncate text-2xs font-bold text-ink-subtle">
+              {c.condition === "critical" ? "حرجة · " : ""}{c.pet ? (SPECIES_AR[c.pet.species] ?? c.pet.species) : ""}{c.cage ? ` · قفص ${c.cage}` : ""}
+            </span>
           </div>
         </div>
         {doneToday && !busy && (
