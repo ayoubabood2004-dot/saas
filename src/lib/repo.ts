@@ -4,7 +4,7 @@
 import { loadDB, saveDB } from "./demoStore";
 import { supabase } from "./supabase";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, AppointmentStatus, ClinicInfo, PublicStaff, DailyNote, TreatmentEntry, Admission, Branch, Reminder, Product, Company, CompanySection, Purchase, PurchaseItem, PurchasePayment, PurchaseDraftLine, PurchaseMeta, Courier, DeliveryOrder, PetMovement, DemoDB, Invoice, InvoiceItem, CheckoutItem, SaleMeta, Customer, DiscountType, PaymentMethod, PaymentSplit, WhatsAppMessage, AuditEntry, LoginEvent, PetNote, Expense, ClinicVisit , Surgery, LabResult } from "@/types";
+import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, AppointmentStatus, ClinicInfo, PublicStaff, DailyNote, TreatmentEntry, Admission, Branch, Reminder, Product, Company, CompanySection, Purchase, PurchaseItem, PurchasePayment, PurchaseDraftLine, PurchaseMeta, Courier, DeliveryOrder, PetMovement, DemoDB, Invoice, InvoiceItem, CheckoutItem, SaleMeta, Customer, DiscountType, PaymentMethod, PaymentSplit, WhatsAppMessage, AuditEntry, LoginEvent, PetNote, Expense, ClinicVisit , Surgery, LabResult, LabDeviceLink, LabDeviceInbox } from "@/types";
 import { uid, uuid, ageMonths, localISO } from "./utils";
 import { phoneKey } from "./phone";
 import { loadOwners } from "./owners";
@@ -446,6 +446,53 @@ const demoRepo = {
     const db = loadDB();
     db.labResults = (db.labResults ?? []).filter((x) => x.id !== id);
     saveDB(db);
+  },
+
+  /* ---------------- Lab device bridge (الجسر الشبكي للمختبر) ---------------- */
+  async createDeviceLink(name: string): Promise<LabDeviceLink> {
+    const db = loadDB();
+    const token = (uuid() + uuid()).replace(/-/g, ""); // secret credential, 64 hex
+    const row: LabDeviceLink = {
+      id: uid("dev"), clinic_id: null, name: name.trim() || "جهاز المختبر",
+      token, revoked: false, last_seen_at: null, created_at: new Date().toISOString(),
+    };
+    (db.deviceLinks ??= []).unshift(row);
+    saveDB(db);
+    return row;
+  },
+  async listDeviceLinks(): Promise<LabDeviceLink[]> {
+    return (loadDB().deviceLinks ?? []).slice().sort((a, b) => b.created_at.localeCompare(a.created_at));
+  },
+  async revokeDeviceLink(id: string): Promise<void> {
+    const db = loadDB();
+    const r = (db.deviceLinks ??= []).find((x) => x.id === id);
+    if (r) { r.revoked = true; saveDB(db); }
+  },
+  /** New (unhandled) inbox messages for this clinic, newest first. */
+  async listDeviceInbox(): Promise<LabDeviceInbox[]> {
+    return (loadDB().deviceInbox ?? [])
+      .filter((m) => m.status === "new")
+      .sort((a, b) => b.received_at.localeCompare(a.received_at));
+  },
+  async markInboxHandled(id: string, status: "accepted" | "dismissed"): Promise<void> {
+    const db = loadDB();
+    const m = (db.deviceInbox ??= []).find((x) => x.id === id);
+    if (m) { m.status = status; m.handled_at = new Date().toISOString(); saveDB(db); }
+  },
+  /** Deliver a raw device message into the inbox (demo mirror of the cloud RPC).
+   *  Used by the in-app «رسالة تجريبية» test and by the local simulator. */
+  async ingestDeviceMessage(token: string, raw: string): Promise<string | null> {
+    const db = loadDB();
+    const link = (db.deviceLinks ?? []).find((x) => x.token === token && !x.revoked);
+    if (!link) return null;
+    const row: LabDeviceInbox = {
+      id: uid("inbox"), clinic_id: link.clinic_id ?? null, link_id: link.id,
+      device_name: link.name, raw, status: "new", received_at: new Date().toISOString(), handled_at: null,
+    };
+    (db.deviceInbox ??= []).unshift(row);
+    link.last_seen_at = row.received_at;
+    saveDB(db);
+    return row.id;
   },
 
   /* ---------------- Clinic visits (الزيارات) ---------------- */
@@ -1231,6 +1278,8 @@ const DEMO_ACTIVITY_MAP: Record<string, { entity: string; action: "INSERT" | "UP
   addPetNote: { entity: "pet_notes", action: "INSERT" },
   addLabResult: { entity: "lab_results", action: "INSERT" },
   deleteLabResult: { entity: "lab_results", action: "DELETE" },
+  createDeviceLink: { entity: "lab_device_links", action: "INSERT" },
+  revokeDeviceLink: { entity: "lab_device_links", action: "UPDATE" },
   addClinicVisit: { entity: "clinic_visits", action: "INSERT" },
   updateClinicVisit: { entity: "clinic_visits", action: "UPDATE" },
   addExpense: { entity: "expenses", action: "INSERT" },
@@ -1500,6 +1549,28 @@ const supabaseRepo: typeof demoRepo = {
   },
   async deleteLabResult(id) {
     ok(await sbc().from("lab_results").delete().eq("id", id));
+  },
+  async createDeviceLink(name) {
+    // token + clinic_id are stamped by column defaults; read them back for display.
+    return need<LabDeviceLink>(await sbc().from("lab_device_links").insert({ name: name.trim() || "جهاز المختبر" }).select().single());
+  },
+  async listDeviceLinks() {
+    return listOf<LabDeviceLink>(await sbc().from("lab_device_links").select("*").order("created_at", { ascending: false }));
+  },
+  async revokeDeviceLink(id) {
+    ok(await sbc().from("lab_device_links").update({ revoked: true }).eq("id", id));
+  },
+  async listDeviceInbox() {
+    return listOf<LabDeviceInbox>(await sbc().from("lab_device_inbox").select("*").eq("status", "new").order("received_at", { ascending: false }));
+  },
+  async markInboxHandled(id, status) {
+    ok(await sbc().from("lab_device_inbox").update({ status, handled_at: new Date().toISOString() }).eq("id", id));
+  },
+  async ingestDeviceMessage(token, raw) {
+    // Same secure path the receiver agent uses — SECURITY DEFINER RPC, token-authed.
+    const { data, error } = await sbc().rpc("ingest_device_message", { p_token: token, p_raw: raw });
+    if (error) return null;
+    return (data as string | null) ?? null;
   },
   async addPetNote(input) {
     // clinic_id + author_id are stamped by the column defaults (auth_clinic() / auth.uid()).

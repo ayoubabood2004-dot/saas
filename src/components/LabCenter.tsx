@@ -13,8 +13,8 @@
 //     value (world-class rule: never re-judge old results by new references).
 // ============================================================================
 import { useEffect, useMemo, useRef, useState } from "react";
-import { FlaskConical, Plus, Camera, Trash2, Receipt, ChevronDown, AlertTriangle, CheckCircle2, MessageCircle, Printer, ShoppingCart, ArrowRightLeft, Brain, ShieldAlert, ShieldCheck, Activity, Cable, Cpu, X } from "lucide-react";
-import type { Pet, LabResult, LabValue, LabValueFlag } from "@/types";
+import { FlaskConical, Plus, Camera, Trash2, Receipt, ChevronDown, AlertTriangle, CheckCircle2, MessageCircle, Printer, ShoppingCart, ArrowRightLeft, Brain, ShieldAlert, ShieldCheck, Activity, Cable, Cpu, X, Inbox, Radio } from "lucide-react";
+import type { Pet, LabResult, LabValue, LabValueFlag, LabDeviceInbox } from "@/types";
 import { repo } from "@/lib/repo";
 import {
   LAB_PARAMS, LAB_GROUPS, nameFromGroups, labParamById, labRange, labFlag,
@@ -106,11 +106,13 @@ const MICRO_TYPES = [
   { id: "micro_other", label: "فحص آخر", emoji: "📋" },
 ];
 
-export function LabEntry({ pet, visitId, doctor, onSaved, onClose, fulfill }: {
+export function LabEntry({ pet, visitId, doctor, onSaved, onClose, fulfill, prefill }: {
   pet: Pet; visitId?: string | null; doctor?: string | null;
   onSaved: () => void; onClose: () => void;
   /** طلب «بانتظار النتائج» (بيع من المبيعات): النتيجة الجديدة تحل محله وترث فوترته وزيارته. */
   fulfill?: LabResult | null;
+  /** رسالة جهاز واردة من الصندوق: تُقرأ فوراً وتتعبّى بوضع الأرقام لهذا الحيوان. */
+  prefill?: { raw: string } | null;
 }) {
   const toast = useToast();
   const [mode, setMode] = useState<EntryMode | null>(null);
@@ -201,6 +203,17 @@ export function LabEntry({ pet, visitId, doctor, onSaved, onClose, fulfill }: {
     setUnknownCodes(read.unknown);
     setLastRead((prev) => ({ count: entries.length, protocol: (prev?.protocol ?? "") }));
   };
+
+  // استقبال رسالة من صندوق الأجهزة: افتح وضع الأرقام واقرأها فوراً على هذا الحيوان.
+  const prefillRaw = prefill?.raw;
+  useEffect(() => {
+    if (!prefillRaw) return;
+    setMode("numbers");
+    const read = readAnalyzerMessage(prefillRaw, getActiveClinicId());
+    applyReading(read);
+    setLastRead({ count: read.count, protocol: read.protocol.toUpperCase() });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prefillRaw]);
 
   /** اربط الجهاز عبر المنفذ التسلسلي؛ كل رسالة كاملة تُقرأ وتُعبّى فوراً. */
   const connectDevice = async () => {
@@ -400,9 +413,9 @@ export function LabEntry({ pet, visitId, doctor, onSaved, onClose, fulfill }: {
                   : <><Cable size={18} /> اربط جهاز المختبر مباشرة — القراءة تلقائية</>}
             </button>
           )}
-          {serial && lastRead && lastRead.count > 0 && (
+          {lastRead && lastRead.count > 0 && (
             <p className="rounded-xl bg-success-50 px-3 py-2 text-2xs font-bold text-success-700 dark:bg-success-500/10 dark:text-success-300">
-              ✓ آخر استلام: {formatNum(lastRead.count)} قيمة بلغة {lastRead.protocol}. راجع القيم تحت واضغط حفظ.
+              ✓ {prefill ? "استلمنا من الجهاز" : "آخر استلام"}: {formatNum(lastRead.count)} قيمة{lastRead.protocol ? ` بلغة ${lastRead.protocol}` : ""}. راجع القيم تحت واضغط حفظ.
             </p>
           )}
 
@@ -843,9 +856,34 @@ export function LabsTab({ pet, results, canEdit, doctor, onChanged }: {
   const navigate = useNavigate();
   const [entryOpen, setEntryOpen] = useState(false);
   const [fulfillTarget, setFulfillTarget] = useState<LabResult | null>(null);
+  const [acceptInbox, setAcceptInbox] = useState<LabDeviceInbox | null>(null);
   const [compareOpen, setCompareOpen] = useState(false);
   const [confirmDel, setConfirmDel] = useState<string | null>(null);
   const [shown, setShown] = useState(8);
+
+  // صندوق الأجهزة: رسائل وصلت من جهاز المختبر عبر الشبكة، تنتظر ربطها بحيوان.
+  // نستطلع بهدوء طول ما تبويب المختبر مفتوح — أي رسالة جديدة تظهر فوق مباشرة.
+  const [inbox, setInbox] = useState<LabDeviceInbox[]>([]);
+  useEffect(() => {
+    if (!canEdit) return;
+    let alive = true;
+    const pull = () => { void repo.listDeviceInbox().then((r) => { if (alive) setInbox(r); }).catch(() => {}); };
+    pull();
+    const t = window.setInterval(pull, 15000);
+    const onVis = () => { if (document.visibilityState === "visible") pull(); };
+    document.addEventListener("visibilitychange", onVis);
+    return () => { alive = false; window.clearInterval(t); document.removeEventListener("visibilitychange", onVis); };
+  }, [canEdit]);
+  const dismissInbox = (m: LabDeviceInbox) => {
+    playTap();
+    setInbox((list) => list.filter((x) => x.id !== m.id));
+    void repo.markInboxHandled(m.id, "dismissed").catch(() => {});
+  };
+  const acceptInboxItem = (m: LabDeviceInbox) => {
+    playTap();
+    setAcceptInbox(m);
+    setEntryOpen(true);
+  };
 
   const printOpts = () => ({ clinicName: getClinicName() || "doctorVet", logoUrl: getClinicLogo() });
   const onPrint = (r: LabResult) => {
@@ -904,6 +942,43 @@ export function LabsTab({ pet, results, canEdit, doctor, onChanged }: {
 
   return (
     <div className="space-y-4">
+      {/* صندوق الأجهزة: نتائج وصلت من جهاز المختبر عبر الشبكة — استقبلها على هذا الحيوان */}
+      {canEdit && inbox.length > 0 && (
+        <div className="rounded-2xl border border-teal-300 bg-teal-50/70 p-3 dark:border-teal-500/40 dark:bg-teal-500/10">
+          <div className="flex items-center gap-2">
+            <span className="relative grid h-8 w-8 place-items-center rounded-full bg-teal-500/15 text-teal-700 dark:text-teal-300">
+              <Radio size={16} />
+              <span className="absolute -end-0.5 -top-0.5 h-2.5 w-2.5 animate-pulse rounded-full bg-teal-500" />
+            </span>
+            <span className="text-sm font-extrabold text-teal-800 dark:text-teal-200">
+              وصلتك {formatNum(inbox.length)} نتيجة من جهاز المختبر
+            </span>
+            <span className="ms-auto text-2xs font-bold text-teal-700/70 dark:text-teal-300/70">اربطها بـ {pet.name}</span>
+          </div>
+          <div className="mt-2 space-y-1.5">
+            {inbox.slice(0, 4).map((m) => {
+              const peek = readAnalyzerMessage(m.raw, getActiveClinicId());
+              return (
+                <div key={m.id} className="flex flex-wrap items-center gap-2 rounded-xl bg-surface-1 px-2.5 py-2">
+                  <Inbox size={15} className="text-teal-600 dark:text-teal-400" />
+                  <span className="text-2xs font-bold text-ink">{m.device_name || "جهاز المختبر"}</span>
+                  <span className="text-2xs text-ink-subtle">
+                    {peek.count > 0 ? `${formatNum(peek.count)} قيمة (${peek.protocol.toUpperCase()})` : "رسالة"} · {new Date(m.received_at).toLocaleTimeString("ar", { hour: "2-digit", minute: "2-digit" })}
+                  </span>
+                  <div className="ms-auto flex items-center gap-1.5">
+                    <button type="button" onClick={() => acceptInboxItem(m)} className="rounded-full bg-teal-600 px-3 py-1.5 text-2xs font-extrabold text-white transition hover:bg-teal-700 active:scale-95">
+                      استقبال لـ {pet.name}
+                    </button>
+                    <button type="button" onClick={() => dismissInbox(m)} className="grid h-7 w-7 place-items-center rounded-full text-ink-subtle transition hover:text-danger-600" title="تجاهل"><X size={14} /></button>
+                  </div>
+                </div>
+              );
+            })}
+            {inbox.length > 4 && <p className="ps-1 text-2xs font-bold text-teal-700/70 dark:text-teal-300/70">و{formatNum(inbox.length - 4)} غيرها…</p>}
+          </div>
+        </div>
+      )}
+
       {/* شريط الخطورة — أول ما يفتح الدكتور: شكد الحالة خطيرة بنظرة، مع القيم الحرجة مبرزة */}
       {caseInterp && caseInterp.severity.level !== "normal" && (() => {
         const meta = SEV_META[caseInterp.severity.level];
@@ -978,8 +1053,26 @@ export function LabsTab({ pet, results, canEdit, doctor, onChanged }: {
         <CompareView results={results} />
       </Modal>
 
-      <Modal open={entryOpen} onClose={() => { setEntryOpen(false); setFulfillTarget(null); }} size="wide" title={fulfillTarget ? `تسجيل نتائج «${fulfillTarget.panel_label}» — ${pet.name}` : `تسجيل تحاليل — ${pet.name}`}>
-        <LabEntry pet={pet} doctor={doctor} fulfill={fulfillTarget} onSaved={onChanged} onClose={() => { setEntryOpen(false); setFulfillTarget(null); }} />
+      <Modal
+        open={entryOpen}
+        onClose={() => { setEntryOpen(false); setFulfillTarget(null); setAcceptInbox(null); }}
+        size="wide"
+        title={acceptInbox ? `استقبال نتائج الجهاز — ${pet.name}` : fulfillTarget ? `تسجيل نتائج «${fulfillTarget.panel_label}» — ${pet.name}` : `تسجيل تحاليل — ${pet.name}`}
+      >
+        <LabEntry
+          pet={pet} doctor={doctor} fulfill={fulfillTarget}
+          prefill={acceptInbox ? { raw: acceptInbox.raw } : null}
+          onSaved={() => {
+            // النتيجة انحفظت — علّم رسالة الجهاز «مستقبَلة» وشيلها من الصندوق.
+            if (acceptInbox) {
+              const id = acceptInbox.id;
+              setInbox((list) => list.filter((x) => x.id !== id));
+              void repo.markInboxHandled(id, "accepted").catch(() => {});
+            }
+            onChanged();
+          }}
+          onClose={() => { setEntryOpen(false); setFulfillTarget(null); setAcceptInbox(null); }}
+        />
       </Modal>
     </div>
   );

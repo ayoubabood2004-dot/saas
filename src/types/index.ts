@@ -509,6 +509,32 @@ export interface LabValue {
   qualitative?: boolean;
 }
 
+/** A paired lab-machine receiver (المُستقبِل الصغير). `token` is the secret
+ *  credential the receiver agent presents to the cloud ingest RPC — shown once
+ *  at creation and stored on the receiver's config, not re-fetched into the UI. */
+export interface LabDeviceLink {
+  id: string;
+  clinic_id?: string | null;
+  name: string;                    // «جهاز CBC — غرفة المختبر»
+  token: string;                   // secret; blank on list responses after creation
+  revoked?: boolean;
+  last_seen_at?: string | null;    // ISO — last message received from this device
+  created_at: string;
+}
+
+/** One raw device message waiting in the clinic's inbox (before a doctor
+ *  attaches it to a pet). Parsed on-device by labLink when accepted. */
+export interface LabDeviceInbox {
+  id: string;
+  clinic_id?: string | null;
+  link_id?: string | null;
+  device_name?: string | null;     // snapshot of the device name at receipt
+  raw: string;                     // the analyzer's raw message (HL7/ASTM/text)
+  status: "new" | "accepted" | "dismissed";
+  received_at: string;             // ISO
+  handled_at?: string | null;
+}
+
 /** A laboratory result (نتيجة تحاليل) on a pet's record. Three shapes:
  *  numeric (CBC/chemistry values), snap (positive/negative rapid test),
  *  descriptive (cytology/culture/fecal — text + photo). */
@@ -865,4 +891,6 @@ export interface DemoDB {
   waMessages?: WhatsAppMessage[];
   branches?: Branch[];
   labResults?: LabResult[];
+  deviceLinks?: LabDeviceLink[];
+  deviceInbox?: LabDeviceInbox[];
 }

@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Settings as SettingsIcon, RotateCcw, Check, Volume2, VolumeX, Plus, Trash2, Pill, PawPrint, Stethoscope, Tag, FolderPlus, BadgePercent, IdCard, Mail, UserCog, Image as ImageIcon, Upload, Facebook, Instagram, Building2, Printer, Type, LogOut , Slice, ChevronDown } from "lucide-react";
+import { Settings as SettingsIcon, RotateCcw, Check, Volume2, VolumeX, Plus, Trash2, Pill, PawPrint, Stethoscope, Tag, FolderPlus, BadgePercent, IdCard, Mail, UserCog, Image as ImageIcon, Upload, Facebook, Instagram, Building2, Printer, Type, LogOut , Slice, ChevronDown, Radio, Copy, Download, Cable, Send } from "lucide-react";
+import type { LabDeviceLink } from "@/types";
+import { supabaseUrl, supabaseAnonKey } from "@/lib/supabase";
 import type { Species, Service, ServiceCategory, ServiceCatalog, Product } from "@/types";
 import { useAuth } from "@/contexts/AuthContext";
 import { usePermissions } from "@/hooks/usePermissions";
@@ -17,7 +19,7 @@ import { setVitalOverride, clearVitalOverrides, getDialCode, setDialCode, getCli
 import { FONT_SCALES, getFontScale, setFontScale, applyFontScale, type FontScaleId } from "@/lib/fontScale";
 import { SURGERY_CATALOG, isSurgeryCategoryName } from "@/lib/surgeryCatalog";
 import { prepareUpload } from "@/lib/image";
-import { isSoundEnabled, setSoundEnabled, playSuccess, playTap } from "@/lib/sounds";
+import { isSoundEnabled, setSoundEnabled, playSuccess, playTap, playWarning } from "@/lib/sounds";
 import { getClinicMeds, addClinicMed, removeClinicMed, allMedTypes, allMedicationNames, BUILTIN_MEDICATIONS, type ClinicMed } from "@/lib/meds";
 import { getClinicVaccines, addClinicVaccine, removeClinicVaccine, BUILTIN_VACCINES, type ClinicVaccine } from "@/lib/vaccines";
 import { getClinicBreeds, addClinicBreed, removeClinicBreed } from "@/lib/breeds";
@@ -156,6 +158,7 @@ export function Settings() {
       <ClinicMembership />
       {canSettings && <BranchesManager />}
       {canSettings && <ServiceSettings />}
+      {canSettings && <LabDevicesCard />}
       {canSettings && <PromotionsManager clinicId={user?.clinic_id ?? user?.id} />}
       <ClinicMedications />
       <ClinicVaccinations />
@@ -1137,6 +1140,152 @@ function ClinicVaccinations() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/* ============================ Lab device bridge (الجسر الشبكي) ============================
+ * ربط أجهزة المختبر عبر الشبكة: الجهاز بغرفة، السستم بغرفة ثانية. برنامج «مُستقبِل»
+ * صغير قرب الجهاز يقرأ نتائجه ويرسلها للسحابة برمز سري، وتظهر بصندوق المختبر لتُربط
+ * بالحيوان. هذي البطاقة تولّد الرمز، تحمّل ملف الإعداد، وتلغي الأجهزة. */
+function LabDevicesCard() {
+  const toast = useToast();
+  const [links, setLinks] = useState<LabDeviceLink[]>([]);
+  const [name, setName] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [fresh, setFresh] = useState<LabDeviceLink | null>(null); // آخر جهاز مضاف — نعرض رمزه
+  const [copied, setCopied] = useState(false);
+
+  const load = () => { void repo.listDeviceLinks().then(setLinks).catch(() => {}); };
+  useEffect(load, []);
+
+  const add = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const link = await repo.createDeviceLink(name.trim() || "جهاز المختبر");
+      setFresh(link);
+      setName("");
+      playSuccess();
+      load();
+    } catch (e) {
+      toast.error("تعذّر إنشاء الجهاز", e instanceof Error ? e.message : undefined);
+    } finally { setBusy(false); }
+  };
+
+  const revoke = async (id: string) => {
+    try { await repo.revokeDeviceLink(id); playTap(); if (fresh?.id === id) setFresh(null); load(); }
+    catch { toast.error("تعذّر الإلغاء"); }
+  };
+
+  const copyToken = (token: string) => {
+    void navigator.clipboard?.writeText(token).then(() => { setCopied(true); playTap(); window.setTimeout(() => setCopied(false), 1500); }).catch(() => {});
+  };
+
+  /** ملف إعداد المُستقبِل — كل الي يحتاجه البرنامج الصغير حتى يوصل للسحابة. */
+  const downloadConfig = (link: LabDeviceLink) => {
+    const cfg = {
+      url: supabaseUrl || "https://YOUR-PROJECT.supabase.co",
+      anonKey: supabaseAnonKey || "YOUR_SUPABASE_ANON_KEY",
+      token: link.token,
+      device: link.name,
+      // الوضع الافتراضي: البرنامج يستمع، والجهاز يرسل له عبر الشبكة (LAN).
+      mode: "tcp-listen",
+      host: "0.0.0.0",
+      port: 9100,
+      framing: "auto",
+      baudRate: 9600,
+    };
+    const blob = new Blob([JSON.stringify(cfg, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = "lab-bridge.config.json";
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+    playTap();
+  };
+
+  /** رسالة تجريبية: نمرّر رسالة HL7 نموذجية عبر نفس مسار الاستقبال — تظهر بصندوق المختبر. */
+  const sendTest = async (link: LabDeviceLink) => {
+    const sample = [
+      "MSH|^~\\&|ANALYZER|LAB|||20260804||ORU^R01|1|P|2.3",
+      "PID|1||TEST||حيوان تجريبي",
+      "OBR|1||T1|CBC",
+      "OBX|1|NM|WBC^White Blood Cells||12.4|10^3/uL|6-17|N",
+      "OBX|2|NM|HGB^Hemoglobin||14.2|g/dL|12-18|N",
+      "OBX|3|NM|PLT^Platelets||320|10^3/uL|200-500|N",
+    ].join("\r") + "\r";
+    const id = await repo.ingestDeviceMessage(link.token, sample).catch(() => null);
+    if (id) { playSuccess(); toast.success("وصلت رسالة تجريبية — افتحها من صندوق المختبر داخل أي سجل حيوان"); }
+    else { playWarning(); toast.error("تعذّر إرسال الرسالة التجريبية"); }
+  };
+
+  const active = links.filter((l) => !l.revoked);
+
+  return (
+    <div className="card p-5">
+      <div className="mb-1 flex items-center gap-2">
+        <span className="grid h-9 w-9 place-items-center rounded-xl bg-teal-500/15 text-teal-600 dark:text-teal-400"><Radio size={18} /></span>
+        <h2 className="font-bold text-ink">ربط أجهزة المختبر عبر الشبكة</h2>
+      </div>
+      <p className="mb-4 text-xs leading-relaxed text-ink-subtle">
+        الجهاز بغرفة والسستم بغرفة ثانية؟ شغّل برنامج «المُستقبِل» الصغير على أي حاسوب قرب الجهاز، وحمّل ملف الإعداد من هنا —
+        كل نتيجة يطلعها الجهاز راح توصل تلقائياً لصندوق المختبر داخل السستم، وتربطها بالحيوان بضغطة. بلا كتابة ولا واير طويل.
+      </p>
+
+      {/* الأجهزة المربوطة */}
+      {active.length > 0 && (
+        <div className="mb-4 space-y-2">
+          {active.map((l) => (
+            <div key={l.id} className="flex flex-wrap items-center gap-2 rounded-xl border border-line bg-surface-1 p-2.5">
+              <Cable size={15} className="text-teal-600 dark:text-teal-400" />
+              <span className="text-sm font-bold text-ink">{l.name}</span>
+              <span className="text-2xs text-ink-subtle">
+                {l.last_seen_at ? `آخر اتصال: ${new Date(l.last_seen_at).toLocaleString("ar")}` : "لم يتصل بعد"}
+              </span>
+              <div className="ms-auto flex items-center gap-1.5">
+                <button type="button" onClick={() => sendTest(l)} className="inline-flex items-center gap-1 rounded-full bg-surface-2 px-2.5 py-1.5 text-2xs font-bold text-ink-muted transition hover:text-ink" title="رسالة تجريبية"><Send size={13} /> تجربة</button>
+                <button type="button" onClick={() => downloadConfig(l)} className="inline-flex items-center gap-1 rounded-full bg-surface-2 px-2.5 py-1.5 text-2xs font-bold text-ink-muted transition hover:text-ink"><Download size={13} /> ملف الإعداد</button>
+                <button type="button" onClick={() => revoke(l.id)} className="grid h-7 w-7 place-items-center rounded-full text-ink-subtle transition hover:text-danger-600" title="إلغاء"><Trash2 size={14} /></button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* رمز الجهاز المضاف حديثاً — يُعرض مرة، مع خطوات التشغيل */}
+      {fresh && (
+        <div className="mb-4 space-y-3 rounded-2xl border border-teal-300 bg-teal-50/60 p-3 dark:border-teal-500/40 dark:bg-teal-500/10">
+          <p className="text-2xs font-extrabold text-teal-800 dark:text-teal-200">✓ انضاف «{fresh.name}». احفظ ملف الإعداد — يحتوي الرمز السري:</p>
+          <div className="flex items-center gap-2 rounded-xl bg-surface-1 p-2">
+            <code className="flex-1 overflow-x-auto whitespace-nowrap text-2xs font-black text-ink" dir="ltr">{fresh.token}</code>
+            <button type="button" onClick={() => copyToken(fresh.token)} className="inline-flex items-center gap-1 rounded-full bg-teal-600 px-2.5 py-1.5 text-2xs font-bold text-white transition hover:bg-teal-700">
+              {copied ? <Check size={13} /> : <Copy size={13} />}{copied ? "اننسخ" : "انسخ"}
+            </button>
+          </div>
+          <button type="button" onClick={() => downloadConfig(fresh)} className="flex w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed border-teal-400 bg-teal-50/60 p-3 text-sm font-extrabold text-teal-700 transition hover:bg-teal-100/60 dark:border-teal-500/50 dark:bg-teal-500/10 dark:text-teal-300">
+            <Download size={16} /> حمّل ملف الإعداد (lab-bridge.config.json)
+          </button>
+          <ol className="list-decimal space-y-1 ps-5 text-2xs leading-relaxed text-ink-muted">
+            <li>على حاسوب قرب الجهاز، نزّل مجلد <code dir="ltr">lab-bridge</code> وحط بيه ملف الإعداد.</li>
+            <li>شغّل الأمر <code dir="ltr">node lab-bridge.mjs</code> — يشتغل بالخلفية ويستقبل من الجهاز.</li>
+            <li>بإعدادات الجهاز (LIS/Host)، حط عنوان حاسوب المُستقبِل والمنفذ <code dir="ltr">9100</code>.</li>
+            <li>شغّل تحليل — راح يوصل لصندوق المختبر هنا. جرّب «تجربة» للتأكد الحين.</li>
+          </ol>
+        </div>
+      )}
+
+      {/* إضافة جهاز */}
+      <div className="flex flex-wrap items-center gap-2">
+        <input
+          className="input flex-1"
+          placeholder="اسم الجهاز — مثال: جهاز CBC غرفة المختبر"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") void add(); }}
+        />
+        <Button onClick={() => void add()} disabled={busy} leftIcon={<Plus size={16} />}>أضف جهاز</Button>
+      </div>
     </div>
   );
 }
