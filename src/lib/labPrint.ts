@@ -3,6 +3,7 @@
 // build a self-contained RTL HTML document, open a window, auto-invoke print.
 import type { Pet, LabResult } from "@/types";
 import { formatDate } from "@/lib/utils";
+import { interpretResult } from "@/lib/labIntelligence";
 
 export interface LabPrintOptions {
   clinicName: string;
@@ -19,7 +20,16 @@ const FLAG_AR = { very_low: "منخفض جداً ↓↓", low: "منخفض ↓",
 const FLAG_COLOR = { very_low: "#075985", low: "#0369a1", normal: "#15803d", high: "#b91c1c", very_high: "#7f1d1d" } as const;
 const FLAG_BG = { very_low: "#bae6fd", low: "#e0f2fe", normal: "#f0fdf4", high: "#fee2e2", very_high: "#fecaca" } as const;
 
-function resultSection(r: LabResult): string {
+/** Interpretation HTML block for the print report (only when insights exist). */
+function interpForPrint(r: LabResult, prior: LabResult | null, species: Pet["species"]): string {
+  if (r.kind !== "numeric" || !(r.values?.length)) return "";
+  const { insights } = interpretResult(r, prior, species);
+  if (!insights.length) return "";
+  const items = insights.map((i) => `<li><b>${esc(i.title)}</b>${i.detail ? `<br><span class="idet">↳ ${esc(i.detail)}</span>` : ""}</li>`).join("");
+  return `<div class="interp"><div class="ihead">🧠 قراءة السستم الذكية <span class="inote">(تفسير مساعد — القرار للطبيب)</span></div><ul>${items}</ul></div>`;
+}
+
+function resultSection(r: LabResult, interp = ""): string {
   const rows = (r.values ?? []).map((v) => `
     <tr>
       <td class="pname"><b dir="ltr">${esc(v.abbr ?? "")}</b> ${esc(v.label ?? "")}</td>
@@ -38,13 +48,20 @@ function resultSection(r: LabResult): string {
     </div>
     ${rows ? `<table><thead><tr><th>الفحص</th><th>النتيجة</th><th>النطاق الطبيعي</th><th>الحكم</th></tr></thead><tbody>${rows}</tbody></table>` : ""}
     ${snap}
+    ${interp}
     ${r.notes ? `<p class="notes">${esc(r.notes)}</p>` : ""}
     ${r.doctor ? `<p class="doc">الطبيب: ${esc(r.doctor)}</p>` : ""}
   </section>`;
 }
 
 export function buildLabReportHTML(pet: Pet, results: LabResult[], opts: LabPrintOptions): string {
-  const sections = results.map(resultSection).join("");
+  // Older numeric results feed the delta-check when interpreting the newer ones.
+  const numericAsc = results.filter((r) => r.kind === "numeric").slice().sort((a, b) => a.taken_at.localeCompare(b.taken_at));
+  const priorOf = (r: LabResult): LabResult | null => {
+    const i = numericAsc.findIndex((x) => x.id === r.id);
+    return i > 0 ? numericAsc[i - 1] : null;
+  };
+  const sections = results.map((r) => resultSection(r, interpForPrint(r, priorOf(r), pet.species))).join("");
   return `<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8">
 <title>تقرير التحاليل — ${esc(pet.name)}</title>
 <style>
@@ -74,6 +91,12 @@ export function buildLabReportHTML(pet: Pet, results: LabResult[], opts: LabPrin
   .snap.neg { background: #f0fdf4; color: #15803d; }
   .notes { background: #f8fafc; border-radius: 10px; padding: 9px 12px; margin-top: 8px; white-space: pre-wrap; color: #334155; }
   .doc { margin-top: 6px; color: #64748b; font-size: 11px; }
+  .interp { margin-top: 8px; border-radius: 10px; background: #eff6ff; border: 1px solid #bfdbfe; padding: 8px 12px; }
+  .ihead { font-weight: 800; color: #1266d8; font-size: 12px; margin-bottom: 4px; }
+  .inote { font-weight: 500; color: #64748b; font-size: 10px; }
+  .interp ul { margin: 0; padding-inline-start: 16px; }
+  .interp li { margin: 3px 0; font-size: 12px; color: #1e293b; }
+  .idet { color: #475569; font-size: 11px; }
   footer { margin-top: 26px; border-top: 1px dashed #cbd5e1; padding-top: 10px; display: flex; justify-content: space-between; color: #64748b; font-size: 11px; }
   @media print { body { padding: 10mm; } }
 </style></head><body>

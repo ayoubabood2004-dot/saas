@@ -13,7 +13,7 @@
 //     value (world-class rule: never re-judge old results by new references).
 // ============================================================================
 import { useMemo, useRef, useState } from "react";
-import { FlaskConical, Plus, Camera, Trash2, Receipt, ChevronDown, AlertTriangle, CheckCircle2, MessageCircle, Printer, ShoppingCart, ArrowRightLeft } from "lucide-react";
+import { FlaskConical, Plus, Camera, Trash2, Receipt, ChevronDown, AlertTriangle, CheckCircle2, MessageCircle, Printer, ShoppingCart, ArrowRightLeft, Brain, ShieldAlert, ShieldCheck, Activity } from "lucide-react";
 import type { Pet, LabResult, LabValue, LabValueFlag } from "@/types";
 import { repo } from "@/lib/repo";
 import {
@@ -21,6 +21,7 @@ import {
   snapTestsFor, snapTestById, type LabFlag,
 } from "@/lib/labCatalog";
 import { readLabImageFull } from "@/lib/labOcr";
+import { interpretResult, type Insight, type Severity } from "@/lib/labIntelligence";
 import { Modal } from "@/components/Modal";
 import { Button, useToast } from "@/components/ui";
 import { prepareUpload } from "@/lib/image";
@@ -51,6 +52,41 @@ const LABEL5: Record<LabValueFlag, string> = { very_low: "منخفض جداً", 
 const SCALE5: LabValueFlag[] = ["very_low", "low", "normal", "high", "very_high"];
 /** Ordinal distance from normal — drives the before/after verdict for mixed entries. */
 const FLAG_ORD: Record<LabValueFlag, number> = { very_low: 2, low: 1, normal: 0, high: 1, very_high: 2 };
+
+/** Severity ribbon styling — one glanceable state (طبيعي / انتبه / حرج). */
+const SEV_META: Record<Severity, { label: string; icon: typeof ShieldCheck; cls: string }> = {
+  normal: { label: "الحالة مطمئنة", icon: ShieldCheck, cls: "border-success-200 bg-success-50 text-success-800 dark:border-success-500/30 dark:bg-success-500/10 dark:text-success-200" },
+  attention: { label: "تحتاج انتباه", icon: Activity, cls: "border-warn-200 bg-warn-50 text-warn-800 dark:border-warn-500/30 dark:bg-warn-500/10 dark:text-warn-200" },
+  critical: { label: "حالة حرجة — راجعها فوراً", icon: ShieldAlert, cls: "border-danger-300 bg-danger-50 text-danger-800 dark:border-danger-500/40 dark:bg-danger-500/10 dark:text-danger-200" },
+};
+const INSIGHT_TONE: Record<Insight["tone"], string> = {
+  critical: "border-s-4 border-danger-500 bg-danger-50/70 text-danger-900 dark:bg-danger-500/10 dark:text-danger-100",
+  warn: "border-s-4 border-warn-500 bg-warn-50/70 text-warn-900 dark:bg-warn-500/10 dark:text-warn-100",
+  info: "border-s-4 border-brand-400 bg-brand-50/60 text-brand-900 dark:bg-brand-500/10 dark:text-brand-100",
+  good: "border-s-4 border-success-500 bg-success-50/70 text-success-900 dark:bg-success-500/10 dark:text-success-100",
+};
+
+/** «قارئ النتائج» — DecisionIQ-style interpretation block for a numeric result. */
+function InterpretationPanel({ insights }: { insights: Insight[] }) {
+  if (!insights.length) return null;
+  return (
+    <div className="mt-3 rounded-2xl border border-brand-200 bg-gradient-to-br from-brand-50/80 to-sky-50/60 p-3 dark:border-brand-500/30 dark:from-brand-500/10 dark:to-sky-500/5">
+      <div className="mb-2 flex items-center gap-1.5">
+        <span className="grid h-6 w-6 place-items-center rounded-lg bg-brand-600 text-white"><Brain size={13} /></span>
+        <span className="text-xs font-extrabold text-brand-800 dark:text-brand-200">قراءة السستم الذكية</span>
+        <span className="chip bg-brand-100 text-[10px] font-bold text-brand-700 dark:bg-brand-500/20 dark:text-brand-300">تفسير مساعد — القرار للطبيب</span>
+      </div>
+      <div className="space-y-1.5">
+        {insights.map((ins) => (
+          <div key={ins.id} className={cn("rounded-lg p-2.5", INSIGHT_TONE[ins.tone])}>
+            <p className="text-sm font-bold leading-snug">{ins.title}</p>
+            {ins.detail && <p className="mt-0.5 text-2xs leading-relaxed opacity-90">↳ {ins.detail}</p>}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 /* ============================== Recording modal ============================== */
 // One question — «شنو سويت؟» — three big buttons. Numbers mode shows a single
@@ -558,13 +594,14 @@ function waResultMessage(pet: Pet, r: LabResult): string {
   return lines.join("\n");
 }
 
-function ResultCard({ r, pet, canEdit, onDelete, onToggleBilled, onBill, onPrint, onFulfill }: {
-  r: LabResult; pet: Pet; canEdit: boolean; onDelete: (id: string) => void; onToggleBilled: (r: LabResult) => void;
+function ResultCard({ r, pet, prior, canEdit, onDelete, onToggleBilled, onBill, onPrint, onFulfill }: {
+  r: LabResult; pet: Pet; prior?: LabResult | null; canEdit: boolean; onDelete: (id: string) => void; onToggleBilled: (r: LabResult) => void;
   onBill: (r: LabResult) => void; onPrint: (r: LabResult) => void; onFulfill: (r: LabResult) => void;
 }) {
   const [openPhoto, setOpenPhoto] = useState(false);
   const abnormal = (r.values ?? []).filter((v) => v.flag !== "normal");
   const positive = r.snap_result === "positive";
+  const interp = useMemo(() => (r.kind === "numeric" && (r.values?.length ?? 0) > 0 ? interpretResult(r, prior, pet.species) : null), [r, prior, pet.species]);
   // طلب جاي من المبيعات — انباع بس النتائج بعدها ما مسجلة
   const pending = r.panel_id === "ordered" && !(r.values?.length) && !r.snap_result;
   const waNum = pet.owner_phone ? waNumber(pet.owner_phone, getDialCode()) : "";
@@ -601,6 +638,11 @@ function ResultCard({ r, pet, canEdit, onDelete, onToggleBilled, onBill, onPrint
         {r.kind === "numeric" && (r.values?.length ?? 0) > 0 && (
           <span className={cn("chip text-2xs font-bold", abnormal.length ? "bg-warn-50 text-warn-700 dark:bg-warn-500/15 dark:text-warn-300" : "bg-success-50 text-success-700 dark:bg-success-500/15 dark:text-success-300")}>
             {abnormal.length ? `${formatNum(abnormal.length)} خارج الطبيعي` : "كل القيم طبيعية ✓"}
+          </span>
+        )}
+        {interp && interp.severity.level !== "normal" && (
+          <span className={cn("chip text-2xs font-black", interp.severity.level === "critical" ? "bg-danger-100 text-danger-700 dark:bg-danger-500/20 dark:text-danger-300" : "bg-warn-100 text-warn-700 dark:bg-warn-500/20 dark:text-warn-300")}>
+            {interp.severity.level === "critical" ? "⚠ حرج" : "انتبه"}
           </span>
         )}
         {r.kind === "snap" && r.snap_result && (
@@ -660,6 +702,8 @@ function ResultCard({ r, pet, canEdit, onDelete, onToggleBilled, onBill, onPrint
           ))}
         </div>
       )}
+
+      {interp && <InterpretationPanel insights={interp.insights} />}
 
       {r.notes && <p className="mt-2.5 whitespace-pre-wrap rounded-xl bg-surface-2/60 p-2.5 text-sm leading-relaxed text-ink">{r.notes}</p>}
 
@@ -723,8 +767,47 @@ export function LabsTab({ pet, results, canEdit, doctor, onChanged }: {
 
   const positives = results.filter((r) => r.snap_result === "positive");
 
+  // Numeric results newest-first, so priorOf can hand each result its predecessor.
+  const numericResults = useMemo(
+    () => results.filter((r) => r.kind === "numeric" && (r.values?.length ?? 0) > 0).slice().sort((a, b) => b.taken_at.localeCompare(a.taken_at)),
+    [results],
+  );
+  const priorOf = (r: LabResult): LabResult | null => {
+    const i = numericResults.findIndex((x) => x.id === r.id);
+    return i >= 0 && i + 1 < numericResults.length ? numericResults[i + 1] : null;
+  };
+
+  // Case-level severity — the highest severity across the latest numeric result.
+  const latestNumeric = numericResults[0];
+  const caseInterp = useMemo(
+    () => (latestNumeric ? interpretResult(latestNumeric, numericResults[1] ?? null, pet.species) : null),
+    [latestNumeric, numericResults, pet.species],
+  );
+
   return (
     <div className="space-y-4">
+      {/* شريط الخطورة — أول ما يفتح الدكتور: شكد الحالة خطيرة بنظرة، مع القيم الحرجة مبرزة */}
+      {caseInterp && caseInterp.severity.level !== "normal" && (() => {
+        const meta = SEV_META[caseInterp.severity.level];
+        const Icon = meta.icon;
+        return (
+          <div className={cn("rounded-2xl border p-3", meta.cls)}>
+            <div className="flex items-center gap-2">
+              <Icon size={20} />
+              <span className="text-sm font-extrabold">{meta.label}</span>
+              <span className="ms-auto text-2xs font-bold opacity-80">{formatNum(caseInterp.severity.abnormal)} قيمة خارج الطبيعي · آخر تحليل</span>
+            </div>
+            {caseInterp.critical.length > 0 && (
+              <div className="mt-2 space-y-1">
+                {caseInterp.critical.map((c) => (
+                  <p key={c.id} className="rounded-lg bg-danger-600/10 px-2.5 py-1.5 text-2xs font-bold text-danger-800 dark:bg-danger-500/20 dark:text-danger-200">{c.title}</p>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
       <div className="flex flex-wrap items-center gap-2">
         <h2 className="font-display text-lg font-extrabold text-ink">🧪 المختبر</h2>
         <span className="chip bg-surface-2 text-2xs font-bold text-ink-muted">{formatNum(results.length)} نتيجة</span>
@@ -763,7 +846,7 @@ export function LabsTab({ pet, results, canEdit, doctor, onChanged }: {
       ) : (
         <div className="space-y-3">
           {results.slice(0, shown).map((r) => (
-            <ResultCard key={r.id} r={r} pet={pet} canEdit={canEdit} onDelete={onDelete} onToggleBilled={onToggleBilled} onBill={onBill} onPrint={onPrint} onFulfill={(t) => { playTap(); setFulfillTarget(t); setEntryOpen(true); }} />
+            <ResultCard key={r.id} r={r} pet={pet} prior={priorOf(r)} canEdit={canEdit} onDelete={onDelete} onToggleBilled={onToggleBilled} onBill={onBill} onPrint={onPrint} onFulfill={(t) => { playTap(); setFulfillTarget(t); setEntryOpen(true); }} />
           ))}
           {results.length > shown && (
             <button type="button" onClick={() => setShown((n) => n + 8)} className="mx-auto flex items-center gap-1 rounded-full bg-surface-2 px-4 py-2 text-xs font-bold text-ink-muted transition hover:text-ink">
