@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Settings as SettingsIcon, RotateCcw, Check, Volume2, VolumeX, Plus, Trash2, Pill, PawPrint, Stethoscope, Tag, FolderPlus, BadgePercent, IdCard, Mail, UserCog, Image as ImageIcon, Upload, Facebook, Instagram, Building2, Printer, Type, LogOut , Slice, ChevronDown, Radio, Copy, Download, Cable, Send } from "lucide-react";
+import { Settings as SettingsIcon, RotateCcw, Check, Volume2, VolumeX, Plus, Trash2, Pill, PawPrint, Stethoscope, Tag, FolderPlus, BadgePercent, IdCard, Mail, UserCog, Image as ImageIcon, Upload, Facebook, Instagram, Building2, Printer, Type, LogOut , Slice, ChevronDown, Radio, Copy, Download, Cable, Send, MousePointerClick } from "lucide-react";
 import type { LabDeviceLink } from "@/types";
 import { supabaseUrl, supabaseAnonKey } from "@/lib/supabase";
 import labBridgeAgentSource from "@/assets/lab-bridge.agent.mjs?raw";
@@ -1216,6 +1216,46 @@ function LabDevicesCard() {
     toast.toast({ tone: "info", title: "نزّل «lab-bridge.mjs»", description: "حطّه بمجلد واحد مع ملف الإعداد، وشغّل: node lab-bridge.mjs" });
   };
 
+  const isWindows = typeof navigator !== "undefined" && /win/i.test(navigator.userAgent || (navigator as unknown as { platform?: string }).platform || "");
+  const MAC_LAUNCHER = [
+    "#!/bin/bash",
+    "# مُشغّل جسر المختبر — دبل-كلك يشغّل المُستقبِل بلا كتابة أوامر.",
+    'cd "$(dirname "$0")" || exit 1',
+    'if ! command -v node >/dev/null 2>&1; then',
+    '  echo "✗ Node.js مو مثبّت. ثبّته من nodejs.org ثم أعد المحاولة."',
+    '  read -n 1 -s -r -p "اضغط أي زر للإغلاق..."; exit 1',
+    "fi",
+    'echo "▶ تشغيل مُستقبِل المختبر — لا تسكّر هذه النافذة."',
+    "node lab-bridge.mjs",
+    'read -n 1 -s -r -p "توقّف المُستقبِل. اضغط أي زر للإغلاق..."',
+    "",
+  ].join("\n");
+  const WIN_LAUNCHER = [
+    "@echo off",
+    "chcp 65001 >nul",
+    'cd /d "%~dp0"',
+    "where node >nul 2>nul",
+    "if errorlevel 1 (",
+    "  echo Node.js is not installed. Install it from nodejs.org then retry.",
+    "  pause & exit /b 1",
+    ")",
+    "echo Starting lab receiver - keep this window open.",
+    "node lab-bridge.mjs",
+    "pause",
+    "",
+  ].join("\r\n");
+
+  /** ملف تشغيل بضغطتين — دبل-كلك يشغّل المُستقبِل بلا Terminal. */
+  const downloadLauncher = () => {
+    if (isWindows) {
+      saveBlob(WIN_LAUNCHER, "start-lab-bridge.bat", "application/bat");
+      toast.toast({ tone: "info", title: "نزّل ملف التشغيل", description: "حطّه بنفس مجلد البرنامج، ودبل-كلك عليه لتشغيل المُستقبِل." });
+    } else {
+      saveBlob(MAC_LAUNCHER, "start-lab-bridge.command", "application/x-sh");
+      toast.toast({ tone: "info", title: "نزّل ملف التشغيل (ماك)", description: "أول مرة فقط: افتح Terminal واكتب chmod +x ثم اسحب الملف عليه واضغط Enter. بعدها دبل-كلك يكفي." });
+    }
+  };
+
   /** رسالة تجريبية: نمرّر رسالة HL7 نموذجية عبر نفس مسار الاستقبال — تظهر بصندوق المختبر. */
   const sendTest = async (link: LabDeviceLink) => {
     const sample = [
@@ -1258,6 +1298,7 @@ function LabDevicesCard() {
                 <button type="button" onClick={() => sendTest(l)} className="inline-flex items-center gap-1 rounded-full bg-surface-2 px-2.5 py-1.5 text-2xs font-bold text-ink-muted transition hover:text-ink" title="رسالة تجريبية"><Send size={13} /> تجربة</button>
                 <button type="button" onClick={() => downloadConfig(l)} className="inline-flex items-center gap-1 rounded-full bg-surface-2 px-2.5 py-1.5 text-2xs font-bold text-ink-muted transition hover:text-ink"><Download size={13} /> ملف الإعداد</button>
                 <button type="button" onClick={downloadAgent} className="inline-flex items-center gap-1 rounded-full bg-surface-2 px-2.5 py-1.5 text-2xs font-bold text-ink-muted transition hover:text-ink"><Download size={13} /> البرنامج</button>
+                <button type="button" onClick={downloadLauncher} className="inline-flex items-center gap-1 rounded-full bg-surface-2 px-2.5 py-1.5 text-2xs font-bold text-ink-muted transition hover:text-ink"><MousePointerClick size={13} /> التشغيل</button>
                 <button type="button" onClick={() => revoke(l.id)} className="grid h-7 w-7 place-items-center rounded-full text-ink-subtle transition hover:text-danger-600" title="إلغاء"><Trash2 size={14} /></button>
               </div>
             </div>
@@ -1275,18 +1316,21 @@ function LabDevicesCard() {
               {copied ? <Check size={13} /> : <Copy size={13} />}{copied ? "اننسخ" : "انسخ"}
             </button>
           </div>
-          <div className="grid gap-2 sm:grid-cols-2">
+          <div className="grid gap-2 sm:grid-cols-3">
             <button type="button" onClick={downloadAgent} className="flex items-center justify-center gap-2 rounded-xl border-2 border-teal-500 bg-teal-600 p-3 text-sm font-extrabold text-white transition hover:bg-teal-700">
-              <Download size={16} /> برنامج المُستقبِل
+              <Download size={16} /> البرنامج
             </button>
             <button type="button" onClick={() => downloadConfig(fresh)} className="flex items-center justify-center gap-2 rounded-xl border-2 border-dashed border-teal-400 bg-teal-50/60 p-3 text-sm font-extrabold text-teal-700 transition hover:bg-teal-100/60 dark:border-teal-500/50 dark:bg-teal-500/10 dark:text-teal-300">
-              <Download size={16} /> ملف الإعداد
+              <Download size={16} /> الإعداد
+            </button>
+            <button type="button" onClick={downloadLauncher} className="flex items-center justify-center gap-2 rounded-xl border-2 border-dashed border-teal-400 bg-teal-50/60 p-3 text-sm font-extrabold text-teal-700 transition hover:bg-teal-100/60 dark:border-teal-500/50 dark:bg-teal-500/10 dark:text-teal-300">
+              <MousePointerClick size={16} /> ملف التشغيل
             </button>
           </div>
           <ol className="list-decimal space-y-1 ps-5 text-2xs leading-relaxed text-ink-muted">
-            <li>ثبّت <b>Node.js</b> على حاسوب قرب الجهاز (تحميل مجاني من <code dir="ltr">nodejs.org</code>).</li>
-            <li>حمّل الملفين فوك (<code dir="ltr">lab-bridge.mjs</code> + <code dir="ltr">lab-bridge.config.json</code>) وحطهم بمجلد واحد.</li>
-            <li>افتح المجلد بموجّه الأوامر وشغّل <code dir="ltr">node lab-bridge.mjs</code> — يشتغل بالخلفية.</li>
+            <li>ثبّت <b>Node.js</b> على حاسوب قرب الجهاز مرة وحدة (تحميل مجاني من <code dir="ltr">nodejs.org</code>).</li>
+            <li>حمّل الملفات الثلاثة فوك وحطهم كلهم <b>بمجلد واحد</b> (باسم إنجليزي بلا مسافات).</li>
+            <li><b>دبل-كلك على «ملف التشغيل»</b> — يشغّل المُستقبِل بلا كتابة أي أمر. {isWindows ? null : <span>(على الماك أول مرة فقط: <code dir="ltr">chmod +x</code> ثم اسحب الملف على Terminal واضغط Enter.)</span>}</li>
             <li>بإعدادات الجهاز (LIS/Host)، حط عنوان حاسوب المُستقبِل والمنفذ <code dir="ltr">9100</code>.</li>
             <li>شغّل تحليل — راح يوصل لصندوق المختبر هنا. جرّب «تجربة» للتأكد الحين.</li>
           </ol>
