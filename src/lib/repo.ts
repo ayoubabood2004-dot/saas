@@ -4,7 +4,7 @@
 import { loadDB, saveDB } from "./demoStore";
 import { supabase } from "./supabase";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, AppointmentStatus, ClinicInfo, PublicStaff, DailyNote, TreatmentEntry, Admission, Branch, Reminder, Product, Company, CompanySection, Purchase, PurchaseItem, PurchasePayment, PurchaseDraftLine, PurchaseMeta, Courier, DeliveryOrder, PetMovement, DemoDB, Invoice, InvoiceItem, CheckoutItem, SaleMeta, Customer, DiscountType, PaymentMethod, PaymentSplit, WhatsAppMessage, AuditEntry, LoginEvent, PetNote, Expense, ClinicVisit , Surgery, LabResult, LabDeviceLink, LabDeviceInbox, LabStatusValue } from "@/types";
+import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, AppointmentStatus, ClinicInfo, PublicStaff, DailyNote, TreatmentEntry, Admission, Branch, Reminder, Product, Company, CompanySection, Purchase, PurchaseItem, PurchasePayment, PurchaseDraftLine, PurchaseMeta, Courier, DeliveryOrder, PetMovement, DemoDB, Invoice, InvoiceItem, CheckoutItem, SaleMeta, Customer, DiscountType, PaymentMethod, PaymentSplit, WhatsAppMessage, AuditEntry, LoginEvent, PetNote, Expense, ClinicVisit , Surgery, LabResult, LabDeviceLink, LabDeviceInbox, LabStatusValue, PetProblem } from "@/types";
 import { uid, uuid, ageMonths, localISO } from "./utils";
 import { phoneKey } from "./phone";
 import { loadOwners } from "./owners";
@@ -423,6 +423,34 @@ const demoRepo = {
   /** Every visit for the clinic in ONE query — see listClinicTreatments for why. */
   async listClinicVisits(_clinicId?: string): Promise<MedicalVisit[]> {
     return (loadDB().visits ?? []).slice().sort((a, b) => b.visit_date.localeCompare(a.visit_date));
+  },
+
+  /* ---- Problem list (POMR) — persists across visits, read at prescribing time ---- */
+  async listProblems(petId: string): Promise<PetProblem[]> {
+    return (loadDB().petProblems ?? [])
+      .filter((p) => p.pet_id === petId)
+      .sort((a, b) => (a.status === b.status ? b.created_at.localeCompare(a.created_at) : a.status === "active" ? -1 : 1));
+  },
+
+  async addProblem(input: Omit<PetProblem, "id" | "created_at">): Promise<PetProblem> {
+    const db = loadDB();
+    const row: PetProblem = { ...input, id: uid("prob"), created_at: new Date().toISOString() };
+    (db.petProblems ??= []).unshift(row);
+    saveDB(db);
+    return row;
+  },
+
+  async updateProblem(id: string, patch: Partial<PetProblem>): Promise<void> {
+    const db = loadDB();
+    const row = (db.petProblems ?? []).find((p) => p.id === id);
+    if (row) Object.assign(row, patch);
+    saveDB(db);
+  },
+
+  async deleteProblem(id: string): Promise<void> {
+    const db = loadDB();
+    db.petProblems = (db.petProblems ?? []).filter((p) => p.id !== id);
+    saveDB(db);
   },
 
   async addVisit(input: Omit<MedicalVisit, "id">): Promise<MedicalVisit> {
@@ -1342,6 +1370,9 @@ const DEMO_ACTIVITY_MAP: Record<string, { entity: string; action: "INSERT" | "UP
   advanceLabStatus: { entity: "lab_results", action: "UPDATE" },
   createDeviceLink: { entity: "lab_device_links", action: "INSERT" },
   revokeDeviceLink: { entity: "lab_device_links", action: "UPDATE" },
+  addProblem: { entity: "pet_problems", action: "INSERT" },
+  updateProblem: { entity: "pet_problems", action: "UPDATE" },
+  deleteProblem: { entity: "pet_problems", action: "DELETE" },
   addClinicVisit: { entity: "clinic_visits", action: "INSERT" },
   updateClinicVisit: { entity: "clinic_visits", action: "UPDATE" },
   addExpense: { entity: "expenses", action: "INSERT" },
@@ -1578,6 +1609,23 @@ const supabaseRepo: typeof demoRepo = {
     let q = sbc().from("medical_visits").select("*").order("visit_date", { ascending: false }).limit(5000);
     if (clinicId) q = q.eq("clinic_id", clinicId);
     return listOf<MedicalVisit>(await q);
+  },
+  async listProblems(petId) {
+    // clinic_id is stamped by the column default (auth_clinic()) — never sent by the client.
+    return listOf<PetProblem>(
+      await sbc().from("pet_problems").select("*").eq("pet_id", petId).order("created_at", { ascending: false }),
+    ).sort((a, b) => (a.status === b.status ? 0 : a.status === "active" ? -1 : 1));
+  },
+  async addProblem(input) {
+    const { clinic_id, ...rest } = input;
+    void clinic_id;
+    return need<PetProblem>(await sbc().from("pet_problems").insert(rest).select().single());
+  },
+  async updateProblem(id, patch) {
+    ok(await sbc().from("pet_problems").update(patch).eq("id", id));
+  },
+  async deleteProblem(id) {
+    ok(await sbc().from("pet_problems").delete().eq("id", id));
   },
   async addVisit(input) {
     // Snapshot the patient's age at visit time. Look up the pet's DOB when the caller

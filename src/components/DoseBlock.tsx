@@ -6,6 +6,7 @@ import {
   type DoseAlert, type DoseTone,
 } from "@/lib/vetFormulary";
 import type { Species } from "@/types";
+import type { ChartFlags } from "@/lib/problems";
 import { formatNum, cn } from "@/lib/utils";
 import { playTap } from "@/lib/sounds";
 
@@ -57,7 +58,7 @@ export function DoseAlertRow({ alert }: { alert: DoseAlert }) {
  * It never blocks the doctor. It shows the reason and lets them decide.
  */
 export function DoseBlock({
-  name, species, weightKg, mgPerKg, dose, doseMode, route, freq, strength, solid, concurrent, allergies, onPatch,
+  name, species, weightKg, mgPerKg, dose, doseMode, route, freq, strength, solid, concurrent, allergies, flags, onPatch,
 }: {
   name: string;
   species?: Species;
@@ -73,6 +74,8 @@ export function DoseBlock({
   concurrent: string[];
   /** Free-text allergies from the patient's chart. */
   allergies?: string[];
+  /** Prescribing flags derived from the live problem list (renal/hepatic/pregnant). */
+  flags?: ChartFlags;
   onPatch: (patch: DosePatch) => void;
 }) {
   const drug = useMemo(() => matchMonograph(name), [name]);
@@ -89,7 +92,7 @@ export function DoseBlock({
   const alerts = useMemo(() => {
     if (!drug || !species || !mgPerKg) {
       // A banned drug must warn even before a dose is typed.
-      if (drug && species) return checkSafety({ drug, species, mgPerKg: 0, allergies, concurrent: concurrent.map(matchId).filter(Boolean) as string[] });
+      if (drug && species) return checkSafety({ drug, species, mgPerKg: 0, allergies, flags, concurrent: concurrent.map(matchId).filter(Boolean) as string[] });
       return [] as DoseAlert[];
     }
     return checkSafety({
@@ -97,9 +100,10 @@ export function DoseBlock({
       route: route ? APP_ROUTE[route] : undefined,
       freq: appFreqHours(freq),
       allergies,
+      flags,
       concurrent: concurrent.map(matchId).filter(Boolean) as string[],
     });
-  }, [drug, species, weightKg, mgPerKg, route, freq, concurrent, allergies]);
+  }, [drug, species, weightKg, mgPerKg, route, freq, concurrent, allergies, flags]);
 
   const tone = worstTone(alerts);
 

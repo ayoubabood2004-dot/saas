@@ -106,6 +106,32 @@ export interface WeightLog {
   measured_at: string; // ISO date
 }
 
+/** What a problem affects — read by the prescription guard, not just a label. */
+export type ProblemCategory =
+  | "renal" | "hepatic" | "cardiac" | "endocrine" | "gi" | "derm" | "neuro" | "repro" | "other";
+
+/**
+ * One entry on the patient's master problem list (POMR). Unlike a diagnosis —
+ * which lives inside the visit it was made in — a problem persists across visits
+ * until someone resolves it, and is consulted every time a drug is prescribed.
+ */
+export interface PetProblem {
+  id: string;
+  pet_id: string;
+  clinic_id?: string | null;
+  title: string;
+  category: ProblemCategory;
+  status: "active" | "resolved";
+  /** Chronic problems stay `active` — controlled is not the same as resolved. */
+  chronic: boolean;
+  severity?: "mild" | "moderate" | "severe" | null;
+  onset_date?: string | null;
+  notes?: string | null;
+  opened_by?: string | null;
+  resolved_at?: string | null;
+  created_at: string;
+}
+
 /** A free-text clinical / progress note on the patient record (سجل الملاحظات السريرية). */
 export interface PetNote {
   id: string;
@@ -904,6 +930,7 @@ export interface DemoDB {
   waMessages?: WhatsAppMessage[];
   branches?: Branch[];
   labResults?: LabResult[];
+  petProblems?: PetProblem[];
   deviceLinks?: LabDeviceLink[];
   deviceInbox?: LabDeviceInbox[];
 }

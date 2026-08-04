@@ -28,6 +28,8 @@ import { getClinicName, getClinicLogo, getClinicSocials } from "@/lib/settings";
 import { openTreatmentSheet, type SheetTreatmentRow } from "@/lib/treatmentSheetPrint";
 import { syncDoseCycleForPet } from "@/lib/doseCycle";
 import { doseTimesFor, perDayFrom } from "@/lib/treatmentSchedule";
+import { ProblemList } from "@/components/ProblemList";
+import { flagsFromProblems, isJuvenile, type ChartFlags } from "@/lib/problems";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
 
 const DAY_MARK = "⟦D:";
@@ -298,6 +300,11 @@ export default function VisitPage() {
       toast.error("تعذّر الحفظ", e instanceof Error ? e.message : undefined);
     } finally { setPlanBusy(false); }
   };
+
+  // The live problem list feeds the prescription guard: an active renal problem
+  // must block an NSAID even when nobody remembers to mention it.
+  const [chartFlags, setChartFlags] = useState<ChartFlags>({});
+  const prescribingFlags: ChartFlags = { ...chartFlags, puppy: isJuvenile(pet?.dob) || chartFlags.puppy };
 
   const giveDose = async (t: TreatmentEntry, doctor: string, atISO: string) => {
     playSuccess();
@@ -594,12 +601,16 @@ export default function VisitPage() {
         </section>
       )}
 
+      <section className="mt-4">
+        <ProblemList petId={pet.id} doctor={user?.full_name} onFlagsChange={(ps) => setChartFlags(flagsFromProblems(ps))} />
+      </section>
+
       <Modal open={labOpen} onClose={() => setLabOpen(false)} size="wide" title={`تسجيل تحاليل — ${pet.name}`}>
         <LabEntry pet={pet} visitId={visit.id} doctor={user?.full_name} onSaved={() => void reload()} onClose={() => setLabOpen(false)} />
       </Modal>
 
       <Modal open={planOpen} onClose={() => setPlanOpen(false)} size="full" title={`التشخيص وخطة العلاج — ${pet.name}`}>
-        <TreatmentPlan onSubmit={savePlan} busy={planBusy} species={pet.species} petId={pet.id} weightKg={pet.current_weight_kg} allergies={pet.allergies} onMediaAdded={reload} />
+        <TreatmentPlan onSubmit={savePlan} busy={planBusy} species={pet.species} petId={pet.id} weightKg={pet.current_weight_kg} allergies={pet.allergies} flags={prescribingFlags} onMediaAdded={reload} />
       </Modal>
 
       <Modal open={noteOpen} onClose={() => { setNoteOpen(false); setNoteText(""); setNoteDay(null); }} title={noteDay ? `ملاحظة على ${formatDate(noteDay, lang)}` : "إضافة ملاحظة"}>
