@@ -27,6 +27,7 @@ import { localISO, formatDate, formatNum, ageFromDOB, cn } from "@/lib/utils";
 import { getClinicName, getClinicLogo, getClinicSocials } from "@/lib/settings";
 import { openTreatmentSheet, type SheetTreatmentRow } from "@/lib/treatmentSheetPrint";
 import { syncDoseCycleForPet } from "@/lib/doseCycle";
+import { doseTimesFor, perDayFrom } from "@/lib/treatmentSchedule";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
 
 const DAY_MARK = "⟦D:";
@@ -272,11 +273,18 @@ export default function VisitPage() {
         const rows: Parameters<typeof repo.addTreatments>[0] = [];
         for (const m of record.treatment) {
           const nDays = Math.max(1, Math.min(60, m.days || 1));
+          // One row PER DOSE at a real clock time — that's what lets الطبلة say
+          // "متأخرة ساعتين" instead of just "في جرعات اليوم". PRN keeps a single
+          // untimed row per day.
+          const times = doseTimesFor(perDayFrom(m.doses, m.days));
+          const slots = times.length ? times : [""];
           for (let i = 0; i < nDays; i++) {
-            rows.push({
-              pet_id: visit.pet_id, visit_id: visit.id, day: addDaysISO(start, i),
-              medication: m.name, amount: m.dose || "", time: "", observations: m.freq, doctor: user?.full_name,
-            });
+            for (const time of slots) {
+              rows.push({
+                pet_id: visit.pet_id, visit_id: visit.id, day: addDaysISO(start, i),
+                medication: m.name, amount: m.dose || "", time, observations: m.freq, doctor: user?.full_name,
+              });
+            }
           }
         }
         await repo.addTreatments(rows);
@@ -323,7 +331,9 @@ export default function VisitPage() {
       const base = new Date(`${lastDay}T00:00:00`); base.setDate(base.getDate() + i);
       const day = localISO(base);
       for (const m of lastMeds) {
-        rows.push({ pet_id: visit.pet_id, visit_id: visit.id, day, medication: m.medication, amount: m.amount, time: "", observations: m.observations, doctor: user?.full_name });
+        // Keep each dose's clock slot — the extension repeats the day as scheduled,
+        // it doesn't flatten it back into untimed rows.
+        rows.push({ pet_id: visit.pet_id, visit_id: visit.id, day, medication: m.medication, amount: m.amount, time: m.time, observations: m.observations, doctor: user?.full_name });
       }
     }
     await repo.addTreatments(rows); // دفعة وحدة

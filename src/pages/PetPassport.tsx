@@ -19,6 +19,7 @@ import { getCached, setCached } from "@/lib/swrCache";
 import { SurgerySection } from "@/components/Surgeries";
 import { persistMedicalEntries } from "@/lib/medSync";
 import { syncDoseCycleForPet } from "@/lib/doseCycle";
+import { taskStatus } from "@/lib/treatmentSchedule";
 import { PetAvatar } from "@/components/PetAvatar";
 import { OwnerCard } from "@/components/OwnerCard";
 import { ClinicPresenceBar } from "@/components/ClinicPresenceBar";
@@ -1866,8 +1867,11 @@ function treatmentStatus(tx: TreatmentEntry, today: string, currentHM: string): 
   if (tx.administered_at) return "given";
   if (tx.day < today) return "missed";
   if (tx.day > today) return "scheduled";
-  // Strict `<` so a dose just planned for the current minute reads as "due", not "overdue".
-  return tx.time < currentHM ? "overdue" : "due";
+  // Delegated so the passport, the flowsheet and لوحة العلاج all agree on what
+  // "late" means. Crucially, a dose with no clock slot (PRN, or a legacy row
+  // written before doses carried times) is due for the whole day — the old
+  // `tx.time < currentHM` made every untimed dose read as overdue at 00:01.
+  return taskStatus(tx, today, currentHM) === "overdue" ? "overdue" : "due";
 }
 
 /** One medication dose, rendered EXACTLY as in the treatment flowsheet — reused verbatim

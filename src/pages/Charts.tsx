@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import {
@@ -10,6 +10,9 @@ import { repo } from "@/lib/repo";
 import { getCached, setCached } from "@/lib/swrCache";
 import { PetAvatar } from "@/components/PetAvatar";
 import { opsStore } from "@/lib/opsStore";
+import { TreatmentBoard } from "@/components/TreatmentBoard";
+import { taskStatus } from "@/lib/treatmentSchedule";
+import { syncDoseCycleForPet } from "@/lib/doseCycle";
 import { useAuth } from "@/contexts/AuthContext";
 import { useBranchState, matchesBranch } from "@/lib/branchStore";
 import { localISO, formatDate, formatNum, cn } from "@/lib/utils";
@@ -85,7 +88,7 @@ export function Charts() {
   const [ops, setOps] = useState(() => opsStore.get());
   // Minute tick — re-renders so the "اليوم مكتمل" aqua tint clears by itself the
   // moment the next dose comes due (e.g. the day rolls over to tomorrow's doses).
-  const [, setTick] = useState(0);
+  const [tick, setTick] = useState(0);
   useEffect(() => {
     const id = setInterval(() => setTick((n) => n + 1), 60000);
     return () => clearInterval(id);
@@ -98,6 +101,9 @@ export function Charts() {
   const [opening, setOpening] = useState<string | null>(null);
   const [filter, setFilter] = useState<BucketKey | "all">("all");
   const [query, setQuery] = useState("");
+  /** "cards" = a card per patient · "board" = a task per dose, by the hour. */
+  const [view, setView] = useState<"cards" | "board">("cards");
+  const [wall, setWall] = useState(false);
 
   const { branches, active: activeBranch } = useBranchState(clinicId);
 
@@ -152,11 +158,27 @@ export function Charts() {
     return {
       dueToday: todayTx.filter((t) => !t.administered_at).length,
       todayTotal: todayTx.length,
-      overdue: list.filter((t) => !t.administered_at && t.day < todayISO).length,
+      // Hour-aware: a dose scheduled for 08:00 and still not given at 11:00 counts
+      // as overdue TODAY — it no longer has to wait for the date to roll over.
+      overdue: list.filter((t) => taskStatus(t, todayISO) === "overdue").length,
       doneTotal: list.filter((t) => t.administered_at).length,
       total: list.length,
     };
   };
+
+  /** One-tap give from the board — optimistic, so a busy round never waits on the network. */
+  const giveDose = useCallback(async (t: TreatmentEntry) => {
+    const at = new Date().toISOString();
+    const by = user?.full_name ?? undefined;
+    setTreatments((prev) => prev.map((x) => (x.id === t.id ? { ...x, administered_at: at, administered_by: by } : x)));
+    try {
+      await repo.setTreatmentGiven(t.id, true, by, at);
+      await syncDoseCycleForPet(t.pet_id);
+    } catch {
+      // Put it back on the board — a dose that didn't save must not look given.
+      setTreatments((prev) => prev.map((x) => (x.id === t.id ? { ...x, administered_at: null, administered_by: undefined } : x)));
+    }
+  }, [user]);
 
   const charts = useMemo<Chart[]>(() => {
     const q = query.trim().toLowerCase();
@@ -186,7 +208,9 @@ export function Charts() {
       out.push({ id: `vis_${v.id}`, bucket: "visit", petId: v.pet_id, visitId: v.id, pet, title, since: v.opened_at, ...statusFrom(treatments.filter((t) => t.visit_id === v.id)) });
     }
     return out.sort((a, b) => (b.overdue - a.overdue) || (b.dueToday - a.dueToday) || b.since.localeCompare(a.since));
-  }, [ops.admissions, visits, treatments, pets, openVisitByPet, activeBranch, branches, query, todayISO]);
+    // `tick` is a dependency on purpose: overdue is now clock-based, so the counts
+    // must be recomputed every minute, not only when the data changes.
+  }, [ops.admissions, visits, treatments, pets, openVisitByPet, activeBranch, branches, query, todayISO, tick]);
 
   const counts = useMemo(() => {
     const c: Record<BucketKey, number> = { daily: 0, careBoarding: 0, boarding: 0, visit: 0 };
@@ -195,6 +219,13 @@ export function Charts() {
   }, [charts]);
   const dueNow = charts.filter((c) => c.dueToday > 0 || c.overdue > 0).length;
   const shownBuckets = BUCKETS.filter((b) => filter === "all" || filter === b.key);
+
+  // The board shows doses for exactly the patients the current filter/search is
+  // showing — so narrowing to "طبلات الفندقة" narrows the dose list with it.
+  const boardTreatments = useMemo(() => {
+    const shown = new Set(charts.filter((c) => filter === "all" || c.bucket === filter).map((c) => c.petId));
+    return treatments.filter((t) => shown.has(t.pet_id));
+  }, [charts, treatments, filter]);
 
   // Hand the visit page the data we already have so it paints instantly (no spinner).
   const go = (petId: string, visit: ClinicVisit) =>
@@ -267,6 +298,17 @@ export function Charts() {
           <Search size={15} className="pointer-events-none absolute inset-y-0 my-auto ms-3 text-ink-subtle" />
           <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="ابحث باسم الحيوان أو التشخيص…" className="input h-10 w-full ps-9" />
         </div>
+        {/* View switch — the same patients, seen as cards or as the hour-by-hour dose board */}
+        <div className="inline-flex items-center gap-0.5 rounded-full border border-line bg-surface-2 p-0.5">
+          <button type="button" onClick={() => { playTap(); setView("cards"); }}
+            className={cn("inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-2xs font-bold transition", view === "cards" ? "bg-brand-600 text-white shadow-soft" : "text-ink-muted hover:text-ink")}>
+            <LayoutGrid size={13} /> بطاقات
+          </button>
+          <button type="button" onClick={() => { playTap(); setView("board"); }}
+            className={cn("inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-2xs font-bold transition", view === "board" ? "bg-brand-600 text-white shadow-soft" : "text-ink-muted hover:text-ink")}>
+            <Clock size={13} /> الجرعات بالساعة
+          </button>
+        </div>
       </div>
 
       {/* Body */}
@@ -278,6 +320,15 @@ export function Charts() {
           <p className="text-sm font-bold text-ink">لا توجد طبلات نشطة حالياً</p>
           <p className="mt-1 text-xs text-ink-subtle">تظهر هنا خطط علاج الحيوانات الموجودة في العيادة والزيارات المفتوحة.</p>
         </div>
+      ) : view === "board" ? (
+        <TreatmentBoard
+          treatments={boardTreatments}
+          pets={pets}
+          todayISO={todayISO}
+          onGive={(t) => void giveDose(t)}
+          wall={wall}
+          onToggleWall={() => { playTap(); setWall((w) => !w); }}
+        />
       ) : (
         <div className="space-y-6">
           {shownBuckets.map((b) => {
