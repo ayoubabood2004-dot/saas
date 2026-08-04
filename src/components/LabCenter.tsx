@@ -832,6 +832,10 @@ function ResultCard({ r, pet, prior, canEdit, onDelete, onToggleBilled, onBill, 
           <span className="inline-flex items-center gap-1 rounded-full bg-danger-100 px-2 py-1 text-2xs font-black text-danger-700 dark:bg-danger-500/20 dark:text-danger-300"><Zap size={11} /> عاجل</span>
         )}
         <StatusPill status={st} />
+        {/* حارس الإيراد: نتيجة فيها محتوى وما انفوترت — لا تفوتك فلوس تحليل سويته */}
+        {!r.billed && st !== "ordered" && ((r.values?.length ?? 0) > 0 || !!r.snap_result || !!(r.notes && r.notes.trim())) && (
+          <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-1 text-2xs font-black text-amber-800 dark:bg-amber-500/20 dark:text-amber-200"><Receipt size={11} /> غير مفوترة</span>
+        )}
         {r.kind === "numeric" && (r.values?.length ?? 0) > 0 && (
           <span className={cn("chip text-2xs font-bold", abnormal.length ? "bg-warn-50 text-warn-700 dark:bg-warn-500/15 dark:text-warn-300" : "bg-success-50 text-success-700 dark:bg-success-500/15 dark:text-success-300")}>
             {abnormal.length ? `${formatNum(abnormal.length)} خارج الطبيعي` : "كل القيم طبيعية ✓"}
@@ -1127,7 +1131,12 @@ export function LabsTab({ pet, results, canEdit, doctor, onChanged }: {
     playTap();
     const extra = to === "collected" ? { collected_by: doctor ?? null } : to === "verified" ? { verified_by: doctor ?? null } : undefined;
     void repo.advanceLabStatus(r.id, to, extra).then(() => {
-      if (to === "verified") playSuccess();
+      if (to === "verified") {
+        playSuccess();
+        // حارس الإيراد: نتيجة اعتُمدت وما انفوترت → ذكّر الطبيب يفوترها بضغطة «فوترة».
+        const hasContent = (r.values?.length ?? 0) > 0 || !!r.snap_result || !!(r.notes && r.notes.trim());
+        if (!r.billed && hasContent) toast.toast({ tone: "info", title: "انعتمدت النتيجة — لا تنسَ فوترتها", description: "اضغط «فوترة» بالبطاقة لإضافتها للمبيعات بسعر عيادتك." });
+      }
       onChanged(); bumpWl();
     }).catch(() => toast.error("تعذّر تحديث الحالة"));
   };
