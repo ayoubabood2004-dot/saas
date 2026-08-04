@@ -2704,7 +2704,7 @@ function TimelineWorkspace({ pet, treatments, vaccinations, notes, admissions, i
 
       {/* Standalone diagnosis + scheduled treatment plan */}
       <Modal open={planOpen} onClose={() => setPlanOpen(false)} size="full" title={t("plan.title", "التشخيص وخطة العلاج — {{name}}", { name: pet.name })}>
-        <TreatmentPlan onSubmit={savePlan} busy={planBusy} species={pet.species} petId={pet.id} weightKg={pet.current_weight_kg} onMediaAdded={onChanged} />
+        <TreatmentPlan onSubmit={savePlan} busy={planBusy} species={pet.species} petId={pet.id} weightKg={pet.current_weight_kg} allergies={pet.allergies} onMediaAdded={onChanged} />
       </Modal>
 
       {/* Confirm-administration (booster) — shared with the vaccines tab */}

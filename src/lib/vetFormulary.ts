@@ -883,6 +883,48 @@ export interface DoseAlert {
   blocking?: boolean;
 }
 
+/* ------------------------- Allergies on the chart -------------------------
+ * `pet.allergies` is free text a receptionist typed months ago — "Penicillin",
+ * "بنسلين", "sulfa drugs". A recorded allergy is only worth having if it fires
+ * on the DRUG CLASS too: a penicillin allergy must stop amoxicillin, not merely
+ * a drug literally spelled "penicillin". */
+const ALLERGY_CLASS_ALIASES: { match: string[]; klass: DrugClass; as: string }[] = [
+  { match: ["penicillin", "بنسلين", "amoxicillin", "أموكسيسيلين", "augmentin", "ampicillin"], klass: "beta-lactam", as: "البنسلينات والبيتا-لاكتام" },
+  { match: ["cephalosporin", "سيفالوسبورين", "cephalexin", "سيفاليكسين"], klass: "beta-lactam", as: "السيفالوسبورينات (تتقاطع مع البنسلين)" },
+  { match: ["sulfa", "sulpha", "سلفا", "sulfonamide", "trimethoprim"], klass: "sulfonamide", as: "السلفا" },
+  { match: ["nsaid", "مضاد التهاب", "meloxicam", "ميلوكسيكام", "carprofen", "aspirin", "أسبرين", "ibuprofen"], klass: "nsaid", as: "مضادات الالتهاب اللاستيرويدية" },
+  { match: ["quinolone", "fluoroquinolone", "كينولون", "enrofloxacin", "ciprofloxacin"], klass: "fluoroquinolone", as: "الكينولونات" },
+  { match: ["tetracycline", "تتراسايكلين", "doxycycline", "دوكسيسيكلين"], klass: "tetracycline", as: "التتراسايكلينات" },
+  { match: ["aminoglycoside", "gentamicin", "جنتاميسين", "amikacin"], klass: "aminoglycoside", as: "الأمينوغلايكوزيدات" },
+  { match: ["opioid", "أفيون", "morphine", "tramadol", "ترامادول"], klass: "opioid", as: "الأفيونيات" },
+];
+
+const norm = (s: string) => s.toLowerCase().trim();
+
+/**
+ * Does a charted allergy cover this drug? Returns the reason to show, or
+ * undefined. Checks the drug's own names first, then its therapeutic class.
+ */
+export function allergyHit(drug: Monograph, allergy: string): string | undefined {
+  const a = norm(allergy);
+  if (!a) return undefined;
+
+  // Direct: the allergy names this exact drug (or one of its brands).
+  const names = [drug.en, drug.ar, ...(drug.brands ?? [])].map(norm);
+  if (names.some((n) => n.includes(a) || a.includes(n))) {
+    return `مسجّل بالملف: حساسية من «${allergy.trim()}» — وهذا هو نفس الدواء.`;
+  }
+
+  // Class-level: a penicillin allergy has to stop every beta-lactam.
+  for (const alias of ALLERGY_CLASS_ALIASES) {
+    if (alias.klass !== drug.klass) continue;
+    if (alias.match.some((m) => a.includes(m))) {
+      return `مسجّل بالملف: حساسية من «${allergy.trim()}» — و${drug.ar} من نفس الصنف (${alias.as}).`;
+    }
+  }
+  return undefined;
+}
+
 /** Pairs that must not be co-administered, by therapeutic class. */
 const BAD_PAIRS: { a: DrugClass; b: DrugClass; tone: DoseTone; msg: string }[] = [
   { a: "nsaid", b: "corticosteroid", tone: "critical", msg: "NSAID مع كورتيزون = قرحة معدة نازفة وثقب. اختر واحد بس، وافصل بينهم ٣–٧ أيام." },
@@ -903,10 +945,12 @@ export function checkSafety(opts: {
   freq?: Frequency;
   /** Drug ids the patient is already on. */
   concurrent?: string[];
+  /** Free-text allergies recorded on the patient's chart (`pet.allergies`). */
+  allergies?: string[];
   /** Known flags on the chart. */
   flags?: { pregnant?: boolean; renal?: boolean; hepatic?: boolean; dehydrated?: boolean; puppy?: boolean };
 }): DoseAlert[] {
-  const { drug, species, mgPerKg, route, freq, concurrent = [], flags = {} } = opts;
+  const { drug, species, mgPerKg, route, freq, concurrent = [], allergies = [], flags = {} } = opts;
   const out: DoseAlert[] = [];
 
   // --- Hard species ban: the highest-value rule in the whole engine.
@@ -914,6 +958,16 @@ export function checkSafety(opts: {
   if (banned) {
     out.push({ id: "banned", tone: "critical", blocking: true, title: `ممنوع منعاً باتاً لهذا النوع — ${drug.ar}`, detail: banned });
     return out; // nothing else matters
+  }
+
+  // --- Charted allergy. Ranked with the species ban because the consequence is
+  //     the same kind of harm, and the chart already knew.
+  for (const a of allergies) {
+    const hit = allergyHit(drug, a);
+    if (hit) {
+      out.push({ id: `allergy-${norm(a)}`, tone: "critical", blocking: true, title: `حساسية مسجّلة — لا تعطيه ${drug.ar}`, detail: hit });
+      return out;
+    }
   }
 
   const win = doseFor(drug, species);

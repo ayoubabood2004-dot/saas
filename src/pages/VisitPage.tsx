@@ -599,7 +599,7 @@ export default function VisitPage() {
       </Modal>
 
       <Modal open={planOpen} onClose={() => setPlanOpen(false)} size="full" title={`التشخيص وخطة العلاج — ${pet.name}`}>
-        <TreatmentPlan onSubmit={savePlan} busy={planBusy} species={pet.species} petId={pet.id} weightKg={pet.current_weight_kg} onMediaAdded={reload} />
+        <TreatmentPlan onSubmit={savePlan} busy={planBusy} species={pet.species} petId={pet.id} weightKg={pet.current_weight_kg} allergies={pet.allergies} onMediaAdded={reload} />
       </Modal>
 
       <Modal open={noteOpen} onClose={() => { setNoteOpen(false); setNoteText(""); setNoteDay(null); }} title={noteDay ? `ملاحظة على ${formatDate(noteDay, lang)}` : "إضافة ملاحظة"}>

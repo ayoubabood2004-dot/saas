@@ -96,13 +96,15 @@ const STEPS: { id: StepId; label: string; icon: typeof Activity }[] = [
  * The final OUTCOME is captured later, when the visit is closed — not here.
  */
 export function TreatmentPlan({
-  onSubmit, busy, species, petId, weightKg, onMediaAdded,
+  onSubmit, busy, species, petId, weightKg, allergies, onMediaAdded,
 }: {
   onSubmit: (body: string) => void | Promise<void>;
   busy?: boolean;
   species?: Sp;
   petId?: string;
   weightKg?: number | null;
+  /** Free-text allergies on the chart — a recorded allergy blocks the drug. */
+  allergies?: string[];
   onMediaAdded?: () => void;
 }) {
   const toast = useToast();
@@ -275,12 +277,13 @@ export function TreatmentPlan({
         drug, species, weightKg: weight, mgPerKg: r.mgPerKg ?? 0,
         route: r.route ? APP_ROUTE[r.route] : undefined,
         freq: appFreqHours(r.freq),
+        allergies,
         concurrent: others,
       }).filter((a) => a.tone === "critical" || a.tone === "warn");
       if (alerts.length) out.push({ name: r.name.trim(), alerts });
     }
     return out;
-  }, [filledRows, species, weight]);
+  }, [filledRows, species, weight, allergies]);
   const cbcIds = Object.keys(cbc);
 
   const canSave = !busy && (!!focus || symptoms.length > 0 || cbcIds.length > 0 || !!labPhoto || diagnoses.length > 0 || filledRows.length > 0 || !!notes.trim());
@@ -498,7 +501,7 @@ export function TreatmentPlan({
           {step === "treatment" && (
             <TreatmentStep
               rows={rows} setRow={setRow} removeRow={removeRow} addDrug={addDrug}
-              weight={weight} setWeight={setWeight} species={species}
+              weight={weight} setWeight={setWeight} species={species} allergies={allergies}
               stockMeds={stockMeds} stockFor={stockFor} interactions={interactions} safety={safety}
             />
           )}
@@ -682,7 +685,7 @@ function DiseaseCard({ d, picked, onToggle, onApply, pct }: { d: Disease & { mat
 
 /* =============================== Treatment step ============================ */
 function TreatmentStep({
-  rows, setRow, removeRow, addDrug, weight, setWeight, species, stockMeds, stockFor, interactions, safety,
+  rows, setRow, removeRow, addDrug, weight, setWeight, species, allergies, stockMeds, stockFor, interactions, safety,
 }: {
   rows: PlanRow[];
   setRow: (id: string, patch: Partial<PlanRow>) => void;
@@ -690,6 +693,7 @@ function TreatmentStep({
   addDrug: (name: string, seed?: Partial<PlanRow>) => void;
   weight?: number; setWeight: (n: number | undefined) => void;
   species?: Sp;
+  allergies?: string[];
   stockMeds: Product[];
   stockFor: (name: string) => Product | undefined;
   interactions: { a: string; b: string; severity: "major" | "moderate"; note: string }[];
@@ -842,6 +846,7 @@ function TreatmentStep({
                   strength={r.strength}
                   solid={r.solid}
                   concurrent={rows.filter((x) => x.id !== r.id && x.name.trim()).map((x) => x.name)}
+                  allergies={allergies}
                   onPatch={(patch: DosePatch) => setRow(r.id, patch)}
                 />
 

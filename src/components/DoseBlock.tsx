@@ -57,7 +57,7 @@ export function DoseAlertRow({ alert }: { alert: DoseAlert }) {
  * It never blocks the doctor. It shows the reason and lets them decide.
  */
 export function DoseBlock({
-  name, species, weightKg, mgPerKg, dose, doseMode, route, freq, strength, solid, concurrent, onPatch,
+  name, species, weightKg, mgPerKg, dose, doseMode, route, freq, strength, solid, concurrent, allergies, onPatch,
 }: {
   name: string;
   species?: Species;
@@ -71,6 +71,8 @@ export function DoseBlock({
   solid?: boolean;
   /** The other drug names already on this plan — drives duplicate/interaction checks. */
   concurrent: string[];
+  /** Free-text allergies from the patient's chart. */
+  allergies?: string[];
   onPatch: (patch: DosePatch) => void;
 }) {
   const drug = useMemo(() => matchMonograph(name), [name]);
@@ -87,16 +89,17 @@ export function DoseBlock({
   const alerts = useMemo(() => {
     if (!drug || !species || !mgPerKg) {
       // A banned drug must warn even before a dose is typed.
-      if (drug && species) return checkSafety({ drug, species, mgPerKg: 0, concurrent: concurrent.map(matchId).filter(Boolean) as string[] });
+      if (drug && species) return checkSafety({ drug, species, mgPerKg: 0, allergies, concurrent: concurrent.map(matchId).filter(Boolean) as string[] });
       return [] as DoseAlert[];
     }
     return checkSafety({
       drug, species, weightKg, mgPerKg,
       route: route ? APP_ROUTE[route] : undefined,
       freq: appFreqHours(freq),
+      allergies,
       concurrent: concurrent.map(matchId).filter(Boolean) as string[],
     });
-  }, [drug, species, weightKg, mgPerKg, route, freq, concurrent]);
+  }, [drug, species, weightKg, mgPerKg, route, freq, concurrent, allergies]);
 
   const tone = worstTone(alerts);
 
