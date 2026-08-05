@@ -31,7 +31,8 @@ import { doseTimesFor, perDayFrom } from "@/lib/treatmentSchedule";
 import { ProblemList } from "@/components/ProblemList";
 import { CareSheet } from "@/components/CareSheet";
 import { VisitBanner } from "@/components/VisitBanner";
-import { VisitTabs, Section, type VisitTab } from "@/components/VisitTabs";
+import { CaseSummary } from "@/components/CaseSummary";
+import { Section } from "@/components/VisitTabs";
 import { flagsFromProblems, isJuvenile, type ChartFlags } from "@/lib/problems";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
 
@@ -139,8 +140,6 @@ export default function VisitPage() {
   const [addDrugDay, setAddDrugDay] = useState<string>(() => localISO(new Date()));
   const [extendOpen, setExtendOpen] = useState(false);
   const [planView, setPlanView] = useState<"day" | "drug">("day");
-  /** One surface at a time — the old screen was eight stacked cards deep. */
-  const [tab, setTab] = useState<"today" | "plan" | "case" | "labs">("today");
 
   const reload = useCallback(async () => {
     if (!petId || !visitId) return;
@@ -418,14 +417,6 @@ export default function VisitPage() {
     </div>
   );
 
-  /** Tab badges carry what's waiting behind the surfaces you're NOT looking at. */
-  const TABS: VisitTab[] = [
-    { id: "today", label: "اليوم", icon: <Zap size={15} />, count: overdueDoses.length + todayPending.length, urgent: overdueDoses.length > 0 },
-    { id: "plan", label: "الخطة", icon: <ClipboardList size={15} />, count: remaining },
-    { id: "case", label: "الحالة", icon: <Stethoscope size={15} />, count: problems.filter((p) => p.status === "active").length },
-    { id: "labs", label: "المختبر", icon: <FlaskConical size={15} />, count: labs.length },
-  ];
-
   return (
     <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6">
       <div className="mb-4 flex flex-wrap items-center gap-2">
@@ -475,146 +466,132 @@ export default function VisitPage() {
         </div>
       )}
 
-      <VisitTabs tabs={TABS} active={tab} onChange={(id) => setTab(id as typeof tab)} />
+      {/* ── ملخّص الحالة — نفس المكان المعتاد ── */}
+      <div className="mt-1">
+        <CaseSummary pet={pet} problems={problems} treatments={treatments} labs={labs} todayISO={todayISO} />
+      </div>
 
-      {/* ═══ TAB: اليوم — the working surface. What must happen right now. ═══ */}
-      {tab === "today" && (
-        <div className="space-y-3">
-          {hasFlowsheet && !ended && (
-            <TodayPanel
-              todayISO={todayISO} lang={lang}
-              todayPending={todayPending} todayDoneCount={todayDoses.length - todayPending.length}
-              overdueDoses={overdueDoses} nextDose={nextDose} remaining={remaining} totalDoses={totalDoses}
-              onGiveAll={() => giveMany(todayPending)} onGiveOne={giveQuick} onGiveOverdue={() => giveMany(overdueDoses)}
-            />
-          )}
+      {/* ── آخر تحاليل — نظرة سريعة، وضغطة تفتح تبويب المختبر ── */}
+      {labs.length > 0 && (
+        <div className="mt-3">
+          <LastLabsStrip results={labs} onOpen={() => navigate(`/pet/${pet.id}?tab=labs`)} />
+        </div>
+      )}
 
-          {!hasFlowsheet && !ended && (
-            <div className="rounded-2xl border border-dashed border-brand-300 bg-brand-50/50 p-6 text-center dark:border-brand-500/30 dark:bg-brand-500/5">
-              <ClipboardList size={28} className="mx-auto mb-2 text-brand-500" />
-              <p className="text-sm font-extrabold text-ink">ما في خطة علاج بعد</p>
-              <p className="mt-1 text-2xs text-ink-muted">ابدأ بالتشخيص وخطة العلاج — الجرعات تتجدول تلقائياً بأوقاتها.</p>
-              <button onClick={() => { playTap(); setPlanOpen(true); }}
-                className="mt-3 inline-flex items-center gap-2 rounded-full bg-brand-600 px-5 py-2.5 text-sm font-extrabold text-white shadow-soft transition hover:bg-brand-700">
-                <ClipboardList size={15} /> التشخيص وخطة العلاج
-              </button>
+      {/* ── لوحة اليوم — شنو لازم يصير الآن ── */}
+      {hasFlowsheet && !ended && (
+        <TodayPanel
+          todayISO={todayISO} lang={lang}
+          todayPending={todayPending} todayDoneCount={todayDoses.length - todayPending.length}
+          overdueDoses={overdueDoses} nextDose={nextDose} remaining={remaining} totalDoses={totalDoses}
+          onGiveAll={() => giveMany(todayPending)} onGiveOne={giveQuick} onGiveOverdue={() => giveMany(overdueDoses)}
+        />
+      )}
+
+      {/* ── دعوة البدء لمّا ما في خطة — بدل جدول فاضي ── */}
+      {!hasFlowsheet && !ended && (
+        <div className="mt-3 rounded-2xl border border-dashed border-brand-300 bg-brand-50/50 p-6 text-center dark:border-brand-500/30 dark:bg-brand-500/5">
+          <ClipboardList size={28} className="mx-auto mb-2 text-brand-500" />
+          <p className="text-sm font-extrabold text-ink">ما في خطة علاج بعد</p>
+          <p className="mt-1 text-2xs text-ink-muted">ابدأ بالتشخيص وخطة العلاج — الجرعات تتجدول تلقائياً بأوقاتها.</p>
+          <button onClick={() => { playTap(); setPlanOpen(true); }}
+            className="mt-3 inline-flex items-center gap-2 rounded-full bg-brand-600 px-5 py-2.5 text-sm font-extrabold text-white shadow-soft transition hover:bg-brand-700">
+            <ClipboardList size={15} /> التشخيص وخطة العلاج
+          </button>
+        </div>
+      )}
+
+      {/* ── خطة العلاج — باليوم أو بالدواء، بمكانها المعتاد ── */}
+      {hasFlowsheet && (
+        <div className="mt-3">
+          <div className="mb-2 flex flex-wrap items-center gap-2">
+            <h2 className="flex items-center gap-1.5 text-sm font-extrabold text-ink"><ClipboardList size={16} className="text-brand-600" /> خطة العلاج</h2>
+            <div className="ms-auto flex flex-wrap items-center gap-2">
+              <div className="inline-flex rounded-full border border-line bg-surface-2 p-0.5">
+                <ViewToggleBtn active={planView === "day"} icon={<Rows3 size={14} />} label="باليوم" onClick={() => { playTap(); setPlanView("day"); }} />
+                <ViewToggleBtn active={planView === "drug"} icon={<LayoutGrid size={14} />} label="بالدواء" onClick={() => { playTap(); setPlanView("drug"); }} />
+              </div>
+              {planView === "day" && (
+                <div className="hidden flex-wrap gap-x-3 gap-y-1 sm:flex">
+                  {(["done", "due", "overdue", "upcoming"] as DoseStatus[]).map((st) => (
+                    <span key={st} className="inline-flex items-center gap-1.5 text-[10px] font-extrabold text-ink-muted"><span className={cn("inline-block h-3 w-3 rounded-sm", STATUS_META[st].bar)} /> {STATUS_META[st].label}</span>
+                  ))}
+                </div>
+              )}
             </div>
+          </div>
+          {planView === "day" ? (
+            <TreatmentSheetTable
+              dayGroups={dayGroups} todayISO={todayISO} ended={ended} lang={lang} dayNotes={dayNotes}
+              todayRowRef={todayRowRef}
+              onGive={(tx) => { playTap(); setGiveId(tx.id); }}
+              onAddNote={(day) => { playTap(); setNoteText(""); setNoteDay(day); setNoteOpen(true); }}
+              onAddDrug={openAddDrug}
+            />
+          ) : (
+            <MedCourseView courses={medCourses} todayISO={todayISO} ended={ended} lang={lang} onGive={giveQuick} />
           )}
-
-          <CareSheet pet={pet} visitId={visit.id} day={todayISO} doctor={user?.full_name} treatments={treatments} />
         </div>
       )}
 
-      {/* ═══ TAB: الخطة — the full course, day-sheet or per-drug ═══ */}
-      {tab === "plan" && (
-        <div className="space-y-3">
-          {hasFlowsheet ? (
-            <>
-              <div className="flex flex-wrap items-center gap-2">
-                <h2 className="flex items-center gap-1.5 text-sm font-extrabold text-ink"><ClipboardList size={16} className="text-brand-600" /> خطة العلاج</h2>
-                <div className="ms-auto flex flex-wrap items-center gap-2">
-                  <div className="inline-flex rounded-lg border border-line bg-surface-2 p-0.5">
-                    <ViewToggleBtn active={planView === "day"} icon={<Rows3 size={14} />} label="باليوم" onClick={() => { playTap(); setPlanView("day"); }} />
-                    <ViewToggleBtn active={planView === "drug"} icon={<LayoutGrid size={14} />} label="بالدواء" onClick={() => { playTap(); setPlanView("drug"); }} />
-                  </div>
-                  {planView === "day" && (
-                    <div className="hidden flex-wrap gap-x-3 gap-y-1 sm:flex">
-                      {(["done", "due", "overdue", "upcoming"] as DoseStatus[]).map((st) => (
-                        <span key={st} className="inline-flex items-center gap-1.5 text-[10px] font-extrabold text-ink-muted"><span className={cn("inline-block h-3 w-3 rounded-sm", STATUS_META[st].bar)} /> {STATUS_META[st].label}</span>
-                      ))}
-                    </div>
-                  )}
+      {/* ── شريط الأزرار — نفس الترتيب المعتاد، بمظهر أهدأ ── */}
+      {!ended && (
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          {isIllness && (
+            <button onClick={() => { playTap(); setPlanOpen(true); }} className="inline-flex items-center gap-2 rounded-full bg-brand-600 px-4 py-2.5 text-sm font-extrabold text-white shadow-soft transition hover:bg-brand-700">
+              <ClipboardList size={16} /> {clinicalNotes.length ? "تعديل التشخيص وخطة العلاج" : "التشخيص وخطة العلاج"}
+            </button>
+          )}
+          <SecondaryBtn icon={<Pill size={15} />} label="إضافة دواء" onClick={() => openAddDrug()} />
+          <SecondaryBtn icon={<FlaskConical size={15} />} label="تسجيل تحاليل" onClick={() => { playTap(); setLabOpen(true); }} />
+          {hasFlowsheet && <SecondaryBtn icon={<CalendarPlus size={15} />} label="تمديد الخطة" onClick={() => { playTap(); setExtendOpen(true); }} />}
+          <SecondaryBtn icon={<NotebookPen size={15} />} label="إضافة ملاحظة" onClick={() => { playTap(); setNoteText(""); setNoteDay(null); setNoteOpen(true); }} />
+          <button onClick={() => { playTap(); setEndOpen(true); }} className="ms-auto inline-flex items-center gap-1.5 rounded-full border border-danger-300 px-4 py-2.5 text-sm font-bold text-danger-600 transition hover:bg-danger-50 dark:border-danger-500/40 dark:hover:bg-danger-500/10">
+            <Check size={15} /> إنهاء العلاج وإغلاق الزيارة
+          </button>
+        </div>
+      )}
+
+      {/* ── العمليات الجراحية — سطر واحد لمّا فاضية ── */}
+      <div className="mt-4">
+        <SurgerySection petId={pet.id} visitId={visit.id} lang={lang} defaultSurgeon={user?.full_name ?? ""} readonly={ended} />
+      </div>
+
+      {clinicalNotes.length > 0 && (
+        <div className="mt-3 space-y-3">
+          {clinicalNotes.map(({ n, record }) => <div key={n.id}><ClinicalRecordCard record={record!} compact /></div>)}
+        </div>
+      )}
+
+      {generalNotes.length > 0 ? (
+        <section className="mt-4">
+          <h2 className="mb-2 flex items-center gap-1.5 text-sm font-extrabold text-ink"><NotebookPen size={16} className="text-brand-600" /> ملاحظات الزيارة</h2>
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {generalNotes.map((n) => (
+              <div key={n.id} className="rounded-xl border border-line bg-surface-1 p-3">
+                <div className="mb-1 flex items-center gap-2 text-2xs text-ink-subtle">
+                  <span className="font-semibold text-ink-muted">{n.author_name || "—"}</span>
+                  <span className="flex items-center gap-1"><Clock size={11} /> {formatDate(n.created_at, lang)}</span>
                 </div>
+                <p className="whitespace-pre-wrap text-sm leading-relaxed text-ink">{n.note_text}</p>
               </div>
-              {planView === "day" ? (
-                <TreatmentSheetTable
-                  dayGroups={dayGroups} todayISO={todayISO} ended={ended} lang={lang} dayNotes={dayNotes}
-                  todayRowRef={todayRowRef}
-                  onGive={(tx) => { playTap(); setGiveId(tx.id); }}
-                  onAddNote={(day) => { playTap(); setNoteText(""); setNoteDay(day); setNoteOpen(true); }}
-                  onAddDrug={openAddDrug}
-                />
-              ) : (
-                <MedCourseView courses={medCourses} todayISO={todayISO} ended={ended} lang={lang} onGive={giveQuick} />
-              )}
-              {!ended && (
-                <div className="flex flex-wrap gap-2">
-                  <SecondaryBtn icon={<Pill size={15} />} label="إضافة دواء" onClick={() => openAddDrug()} />
-                  <SecondaryBtn icon={<CalendarPlus size={15} />} label="تمديد الخطة" onClick={() => { playTap(); setExtendOpen(true); }} />
-                </div>
-              )}
-            </>
-          ) : (
-            <Section icon={<ClipboardList size={14} />} title="خطة العلاج" empty emptyText="ما في خطة بعد"
-              action={() => setPlanOpen(true)} actionLabel="ابدأ الخطة" />
-          )}
+            ))}
+          </div>
+        </section>
+      ) : (
+        <div className="mt-4">
+          <Section icon={<NotebookPen size={14} />} title="ملاحظات الزيارة" empty emptyText="ما في ملاحظات"
+            action={ended ? undefined : () => { setNoteText(""); setNoteDay(null); setNoteOpen(true); }} actionLabel="ملاحظة" />
         </div>
       )}
 
-      {/* ═══ TAB: الحالة — problems, diagnosis, surgeries, notes ═══ */}
-      {tab === "case" && (
-        <div className="space-y-4">
-          <ProblemList petId={pet.id} doctor={user?.full_name} onFlagsChange={setProblems} />
+      <section className="mt-4">
+        <CareSheet pet={pet} visitId={visit.id} day={todayISO} doctor={user?.full_name} treatments={treatments} />
+      </section>
 
-          {isIllness && !ended && (
-            <SecondaryBtn icon={<ClipboardList size={15} />} label={clinicalNotes.length ? "تعديل التشخيص وخطة العلاج" : "التشخيص وخطة العلاج"} onClick={() => { playTap(); setPlanOpen(true); }} />
-          )}
-
-          {clinicalNotes.length > 0 && (
-            <Section icon={<Stethoscope size={14} />} title="السجل السريري" count={clinicalNotes.length}>
-              <div className="space-y-3">
-                {clinicalNotes.map(({ n, record }) => <div key={n.id}><ClinicalRecordCard record={record!} compact /></div>)}
-              </div>
-            </Section>
-          )}
-
-          <SurgerySection petId={pet.id} visitId={visit.id} lang={lang} defaultSurgeon={user?.full_name ?? ""} readonly={ended} />
-
-          {generalNotes.length > 0 ? (
-            <Section icon={<NotebookPen size={14} />} title="ملاحظات الزيارة" count={generalNotes.length}
-              action={ended ? undefined : () => { setNoteText(""); setNoteDay(null); setNoteOpen(true); }} actionLabel="ملاحظة">
-              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                {generalNotes.map((n) => (
-                  <div key={n.id} className="rounded-xl border border-line bg-surface-1 p-3">
-                    <div className="mb-1 flex items-center gap-2 text-2xs text-ink-subtle">
-                      <span className="font-semibold text-ink-muted">{n.author_name || "—"}</span>
-                      <span className="flex items-center gap-1"><Clock size={11} /> {formatDate(n.created_at, lang)}</span>
-                    </div>
-                    <p className="whitespace-pre-wrap text-sm leading-relaxed text-ink">{n.note_text}</p>
-                  </div>
-                ))}
-              </div>
-            </Section>
-          ) : (
-            <Section icon={<NotebookPen size={14} />} title="ملاحظات الزيارة" empty emptyText="ما في ملاحظات"
-              action={ended ? undefined : () => { setNoteText(""); setNoteDay(null); setNoteOpen(true); }} actionLabel="ملاحظة" />
-          )}
-        </div>
-      )}
-
-      {/* ═══ TAB: المختبر ═══ */}
-      {tab === "labs" && (
-        <div className="space-y-3">
-          {labs.length > 0 ? (
-            <>
-              <LastLabsStrip results={labs} onOpen={() => navigate(`/pet/${pet.id}?tab=labs`)} />
-              <SecondaryBtn icon={<FlaskConical size={15} />} label="تسجيل تحاليل" onClick={() => { playTap(); setLabOpen(true); }} />
-            </>
-          ) : (
-            <Section icon={<FlaskConical size={14} />} title="التحاليل" empty emptyText="ما في تحاليل مسجّلة"
-              action={() => setLabOpen(true)} actionLabel="تسجيل تحاليل" />
-          )}
-        </div>
-      )}
-
-      {/* ── One primary action, always reachable, never competing with four others ── */}
-      {!ended && <PrimaryBar
-        dueCount={todayPending.length} overdueCount={overdueDoses.length}
-        onGiveDue={() => giveMany(overdueDoses.length ? overdueDoses : todayPending)}
-        onEnd={() => { playTap(); setEndOpen(true); }}
-        onLab={() => { playTap(); setLabOpen(true); }}
-        onNote={() => { playTap(); setNoteText(""); setNoteDay(null); setNoteOpen(true); }}
-      />}
+      <section className="mt-4">
+        <ProblemList petId={pet.id} doctor={user?.full_name} onFlagsChange={setProblems} />
+      </section>
 
       <Modal open={labOpen} onClose={() => setLabOpen(false)} size="wide" title={`تسجيل تحاليل — ${pet.name}`}>
         <LabEntry pet={pet} visitId={visit.id} doctor={user?.full_name} onSaved={() => void reload()} onClose={() => setLabOpen(false)} />
@@ -1051,40 +1028,6 @@ function EndVisitModal({ open, onClose, onEnd }: { open: boolean; onClose: () =>
   );
 }
 
-
-/* ── One primary action, plus the quiet rest ────────────────────────────────
- * The old toolbar had five same-weight buttons in a row, so nothing looked
- * like the next thing to do. Here the primary button is whatever the case
- * actually needs right now — give the late doses, else give today's, else
- * nothing shouts — and everything else steps back. */
-function PrimaryBar({ dueCount, overdueCount, onGiveDue, onEnd, onLab, onNote }: {
-  dueCount: number; overdueCount: number;
-  onGiveDue: () => void; onEnd: () => void; onLab: () => void; onNote: () => void;
-}) {
-  const pending = overdueCount || dueCount;
-  return (
-    <div className="sticky bottom-0 z-20 -mx-4 mt-4 flex flex-wrap items-center gap-2 border-t border-line bg-surface-1/95 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6">
-      {pending > 0 ? (
-        <button onClick={onGiveDue}
-          className={cn("inline-flex items-center gap-2 rounded-full px-5 py-2.5 text-sm font-extrabold text-white shadow-soft transition",
-            overdueCount > 0 ? "bg-danger-600 hover:bg-danger-700" : "bg-brand-600 hover:bg-brand-700")}>
-          <Check size={16} />
-          {overdueCount > 0 ? `أعطِ المتأخّرة (${formatNum(overdueCount)})` : `أعطِ جرعات اليوم (${formatNum(dueCount)})`}
-        </button>
-      ) : (
-        <span className="inline-flex items-center gap-1.5 rounded-full bg-success-50 px-4 py-2.5 text-sm font-extrabold text-success-700 dark:bg-success-500/15 dark:text-success-300">
-          <CheckCircle2 size={16} /> جرعات اليوم مكتملة
-        </span>
-      )}
-      <SecondaryBtn icon={<FlaskConical size={15} />} label="تحاليل" onClick={onLab} />
-      <SecondaryBtn icon={<NotebookPen size={15} />} label="ملاحظة" onClick={onNote} />
-      <button onClick={onEnd}
-        className="ms-auto inline-flex items-center gap-1.5 rounded-full border border-danger-300 px-4 py-2.5 text-sm font-bold text-danger-600 transition hover:bg-danger-50 dark:border-danger-500/40 dark:hover:bg-danger-500/10">
-        <Check size={15} /> إنهاء الزيارة
-      </button>
-    </div>
-  );
-}
 
 function SecondaryBtn({ icon, label, onClick }: { icon: React.ReactNode; label: string; onClick: () => void }) {
   return (
