@@ -6,14 +6,12 @@
     </linearGradient>
   </defs>
   <rect width="64" height="64" rx="16" fill="url(#vp)"/>
-  <g transform="translate(11 11) scale(1.3)">
-    <g fill="#fff">
-      <ellipse cx="8.6" cy="13.6" rx="2.7" ry="3.5" transform="rotate(-20 8.6 13.6)"/>
-      <ellipse cx="13.4" cy="8.7" rx="2.85" ry="3.7" transform="rotate(-7 13.4 8.7)"/>
-      <ellipse cx="18.6" cy="8.7" rx="2.85" ry="3.7" transform="rotate(7 18.6 8.7)"/>
-      <ellipse cx="23.4" cy="13.6" rx="2.7" ry="3.5" transform="rotate(20 23.4 13.6)"/>
-      <path d="M16 14.4c-4.9 0-8.6 3.2-8.6 7.2 0 3.7 3.8 6.4 8.6 6.4s8.6-2.7 8.6-6.4c0-4-3.7-7.2-8.6-7.2Z"/>
-    </g>
-    <path d="M9.3 22.1h3.5l1.4-3.6 2.1 6.4 1.5-3h4.9" fill="none" stroke="#ff7a45" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Pawfinder: paw whose main pad is a QR finder target (7:5:3), coral center -->
+  <g transform="translate(9.6 9.6) scale(0.7)" fill="#fff">
+    <rect x="4" y="12.5" width="13" height="13" rx="4.5"/>
+    <rect x="25.5" y="4.5" width="13" height="13" rx="4.5"/>
+    <rect x="47" y="12.5" width="13" height="13" rx="4.5"/>
+    <path fill-rule="evenodd" d="M26.5 27h11a10 10 0 0 1 10 10v11a10 10 0 0 1-10 10h-11a10 10 0 0 1-10-10V37a10 10 0 0 1 10-10zm1 4.5h9a5.5 5.5 0 0 1 5.5 5.5v9a5.5 5.5 0 0 1-5.5 5.5h-9a5.5 5.5 0 0 1-5.5-5.5v-9a5.5 5.5 0 0 1 5.5-5.5z"/>
+    <rect x="25.5" y="36" width="13" height="13" rx="4" fill="#ff7a45"/>
   </g>
 </svg>
