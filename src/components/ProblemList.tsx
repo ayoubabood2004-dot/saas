@@ -205,7 +205,7 @@ export function ProblemList({ petId, doctor, onFlagsChange }: {
       {loading ? (
         <div className="py-4 text-center text-2xs text-ink-subtle"><Loader2 size={16} className="mx-auto animate-spin" /></div>
       ) : items.length === 0 ? (
-        !adding && <p className="rounded-xl bg-surface-2 px-3 py-4 text-center text-2xs text-ink-muted">ما في مشاكل مسجّلة. افتح وحدة حتى تضل ظاهرة بكل زيارة.</p>
+        !adding && <p className="text-2xs text-ink-subtle">ما في مشاكل مسجّلة — افتح وحدة حتى تضل ظاهرة بكل زيارة.</p>
       ) : (
         <div className="space-y-1.5">
           {active.map((p) => <Row key={p.id} p={p} />)}

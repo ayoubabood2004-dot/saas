@@ -347,6 +347,28 @@ export function SurgerySection({ petId, visitId, lang, defaultSurgeon, readonly 
 
   if (readonly && rows.length === 0) return null;
 
+  // Nothing recorded → one line, not a headed card with an empty box inside it.
+  if (rows.length === 0) {
+    return (
+      <>
+        <div className="flex items-center gap-2 rounded-xl border border-dashed border-line px-3 py-2.5">
+          <Slice size={14} className="shrink-0 text-ink-subtle" />
+          <span className="text-2xs font-bold text-ink-muted">العمليات الجراحية</span>
+          <span className="min-w-0 flex-1 truncate text-2xs text-ink-subtle">— ما في عمليات مسجّلة</span>
+          {!readonly && (
+            <button onClick={() => { playTap(); setOpen(true); }}
+              className="inline-flex shrink-0 items-center gap-1 rounded-full border border-rose-200 bg-rose-50 px-2.5 py-1 text-2xs font-extrabold text-rose-700 transition hover:bg-rose-100 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300">
+              <Plus size={11} /> تسجيل عملية
+            </button>
+          )}
+        </div>
+        {!readonly && (
+          <SurgeryModal open={open} petId={petId} visitId={visitId} defaultSurgeon={defaultSurgeon ?? ""} onClose={() => setOpen(false)} onSaved={(x) => setRows((rs) => [x, ...rs])} />
+        )}
+      </>
+    );
+  }
+
   return (
     <section className="mt-4">
       <div className="mb-2 flex items-center gap-2">

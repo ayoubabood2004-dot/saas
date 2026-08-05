@@ -4,8 +4,8 @@ import { useTranslation } from "react-i18next";
 import {
   ArrowRight, Clock, Check, Plus, NotebookPen, ClipboardList,
   Loader2, Lock, CheckCircle2, Stethoscope, UserRound, RotateCcw, AlertTriangle,
-  Printer, Syringe, ShieldCheck, Pill,
-  Zap, Rows3, LayoutGrid, CalendarPlus, Gauge, CalendarClock, FolderOpen, FlaskConical,
+  Pill,
+  Zap, Rows3, LayoutGrid, CalendarPlus, CalendarClock, FolderOpen, FlaskConical,
 } from "lucide-react";
 import type { Pet, ClinicVisit, PetNote, TreatmentEntry, LabResult, PetProblem } from "@/types";
 import { LastLabsStrip, LabEntry } from "@/components/LabCenter";
@@ -29,8 +29,9 @@ import { openTreatmentSheet, type SheetTreatmentRow } from "@/lib/treatmentSheet
 import { syncDoseCycleForPet } from "@/lib/doseCycle";
 import { doseTimesFor, perDayFrom } from "@/lib/treatmentSchedule";
 import { ProblemList } from "@/components/ProblemList";
-import { CaseSummary } from "@/components/CaseSummary";
 import { CareSheet } from "@/components/CareSheet";
+import { VisitBanner } from "@/components/VisitBanner";
+import { VisitTabs, Section, type VisitTab } from "@/components/VisitTabs";
 import { flagsFromProblems, isJuvenile, type ChartFlags } from "@/lib/problems";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
 
@@ -98,23 +99,6 @@ function OutcomeBadge({ id }: { id: string }) {
   );
 }
 
-/** Circular progress dial (not mirrored in RTL — clocks/rings turn the same). */
-function ProgressRing({ done, total, size = 72 }: { done: number; total: number; size?: number }) {
-  const r = size / 2 - 6; const c = 2 * Math.PI * r; const pct = total ? done / total : 0;
-  const full = total > 0 && done === total;
-  return (
-    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="shrink-0">
-      <circle cx={size / 2} cy={size / 2} r={r} fill="none" strokeWidth={6} className="stroke-line" />
-      <circle cx={size / 2} cy={size / 2} r={r} fill="none" strokeWidth={6} strokeLinecap="round"
-        className={cn(full ? "stroke-success-500" : "stroke-brand-500", "transition-all")}
-        strokeDasharray={c} strokeDashoffset={c * (1 - pct)} transform={`rotate(-90 ${size / 2} ${size / 2})`} />
-      <text x="50%" y="50%" dominantBaseline="central" textAnchor="middle" className={cn("fill-ink font-black", full && "fill-success-600")} fontSize={size * 0.28}>
-        {formatNum(done)}<tspan className="fill-ink-subtle" fontSize={size * 0.2}>/{formatNum(total)}</tspan>
-      </text>
-    </svg>
-  );
-}
-
 /**
  * Standalone VISIT page (زيارة) — an AGENDA timeline treatment sheet: each day of
  * the course is a column (right-to-left), the current day expanded with one-tap
@@ -155,6 +139,8 @@ export default function VisitPage() {
   const [addDrugDay, setAddDrugDay] = useState<string>(() => localISO(new Date()));
   const [extendOpen, setExtendOpen] = useState(false);
   const [planView, setPlanView] = useState<"day" | "drug">("day");
+  /** One surface at a time — the old screen was eight stacked cards deep. */
+  const [tab, setTab] = useState<"today" | "plan" | "case" | "labs">("today");
 
   const reload = useCallback(async () => {
     if (!petId || !visitId) return;
@@ -432,6 +418,14 @@ export default function VisitPage() {
     </div>
   );
 
+  /** Tab badges carry what's waiting behind the surfaces you're NOT looking at. */
+  const TABS: VisitTab[] = [
+    { id: "today", label: "اليوم", icon: <Zap size={15} />, count: overdueDoses.length + todayPending.length, urgent: overdueDoses.length > 0 },
+    { id: "plan", label: "الخطة", icon: <ClipboardList size={15} />, count: remaining },
+    { id: "case", label: "الحالة", icon: <Stethoscope size={15} />, count: problems.filter((p) => p.status === "active").length },
+    { id: "labs", label: "المختبر", icon: <FlaskConical size={15} />, count: labs.length },
+  ];
+
   return (
     <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6">
       <div className="mb-4 flex flex-wrap items-center gap-2">
@@ -449,173 +443,178 @@ export default function VisitPage() {
         </button>
       </div>
 
-      {/* ── Header + progress ring hero ── */}
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-3 rounded border border-line-strong bg-surface-1 p-4 shadow-card">
-        <span className={cn("grid h-12 w-12 shrink-0 place-items-center rounded text-white", kind!.solid)}><KindIcon size={23} /></span>
-        <div className="min-w-0">
-          <div className="text-lg font-black text-ink">{pet.name}</div>
-          <div className="flex items-center gap-1.5 text-2xs font-bold text-ink-subtle">
-            {[kind!.label, pet.breed].filter(Boolean).join(" · ")}
-            {dxName && <span className="flex items-center gap-1 text-ink-muted">· {dxName}{dxWarn && <AlertTriangle size={12} className="text-danger-500" />}</span>}
-          </div>
-        </div>
-        {hasFlowsheet && <>
-          <span className="mx-1 hidden h-10 w-px bg-line sm:block" />
-          <ProgressRing done={doneDoses} total={totalDoses} />
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-            <div>
-              <div className="text-[10px] font-extrabold uppercase tracking-wide text-ink-subtle">{remaining > 0 ? "متبقٍّ" : "اكتمل"}</div>
-              <div className="text-sm font-black text-ink">{remaining > 0 ? <>{formatNum(remaining)} جرعة</> : "كل الجرعات ✓"}</div>
-              <div className="text-2xs text-ink-subtle">على {formatNum(dayGroups.length)} أيام</div>
-            </div>
-            <HeaderStat icon={<Gauge size={14} />} label="الالتزام" value={`${formatNum(adherence)}%`}
-              tone={adherence >= 80 ? "success" : adherence >= 50 ? "warn" : "danger"} />
-            <HeaderStat icon={<CalendarClock size={14} />} label="ينتهي" value={remaining === 0 ? "اكتمل" : daysLeft > 0 ? `بعد ${formatNum(daysLeft)} يوم` : "اليوم"} tone="brand" />
-            {overdueDoses.length > 0 && (
-              <HeaderStat icon={<AlertTriangle size={14} />} label="متأخّرة" value={`${formatNum(overdueDoses.length)} جرعة`} tone="danger" />
-            )}
-          </div>
-        </>}
-        <div className="ms-auto flex items-center gap-2">
-          {ended && visit.outcome && <OutcomeBadge id={visit.outcome} />}
-          {ended ? (
-            <span className="inline-flex items-center gap-1.5 rounded bg-slate-200 px-3 py-1.5 text-xs font-extrabold text-slate-600 dark:bg-slate-500/20 dark:text-slate-300"><Lock size={12} /> منتهية</span>
-          ) : (
-            <span className="inline-flex items-center gap-1.5 rounded bg-success-50 px-3 py-1.5 text-xs font-extrabold text-success-700 dark:bg-success-500/15 dark:text-success-300"><span className="h-2 w-2 rounded-full bg-success-500" /> مفتوحة</span>
-          )}
-        </div>
-      </div>
+      {/* ── Persistent patient banner — the 90-second rule: identity, weight,
+             allergy, problems and how far behind the doses are, never scrolled away ── */}
+      <VisitBanner
+        pet={pet}
+        kindLabel={kind!.label}
+        kindIcon={<KindIcon size={13} />}
+        kindSolid={kind!.solid}
+        dxName={dxName}
+        dxWarn={dxWarn}
+        problems={problems}
+        weightKg={pet.current_weight_kg}
+        status={ended ? "ended" : "open"}
+        outcomeBadge={ended && visit.outcome ? <OutcomeBadge id={visit.outcome} /> : undefined}
+        dayNumber={dayGroups.length ? (dayGroups.findIndex(([d]) => d === todayISO) + 1 || dayGroups.length) : 1}
+        openedAt={visit.opened_at}
+        lang={lang}
+        fileNo={pet.serial}
+        ownerName={pet.owner_name}
+        ownerPhone={pet.owner_phone}
+        done={doneDoses} total={totalDoses} remaining={remaining}
+        adherence={adherence} daysLeft={daysLeft}
+        overdue={overdueDoses.length} dueNow={todayPending.length}
+        onPrint={printSheet} printable={hasFlowsheet || !!primary}
+        onOpenFile={() => navigate(`/pet/${petId}`)}
+      />
 
       {ended && visit.summary && (
-        <div className="mt-3 flex items-start gap-2 rounded border border-success-200 bg-success-50 p-3 text-sm text-success-800 dark:border-success-500/30 dark:bg-success-500/10 dark:text-success-200">
+        <div className="mb-3 flex items-start gap-2 rounded-xl border border-success-200 bg-success-50 p-3 text-sm text-success-800 dark:border-success-500/30 dark:bg-success-500/10 dark:text-success-200">
           <CheckCircle2 size={17} className="mt-0.5 shrink-0" /><div><b className="font-extrabold">تم إنهاء العلاج</b> — {visit.summary}</div>
         </div>
       )}
 
-      {/* ── Paper-style patient & diagnosis summary (mirrors the clinic's form) ── */}
-      <PaperSummary
-        pet={pet} date={formatDate(visit.opened_at, lang)}
-        speciesLabel={speciesSingular(pet.species)} sexLabel={t(`pet.sex.${pet.sex}`, pet.sex)}
-        diagnosis={diagnosisText(primary)} record={primary}
-        onPrint={printSheet} printable={hasFlowsheet || !!primary}
-      />
+      <VisitTabs tabs={TABS} active={tab} onChange={(id) => setTab(id as typeof tab)} />
 
-      {/* ── ملخّص الحالة — مين هالمريض، فوق الطبلة مباشرة ── */}
-      <div className="mt-3">
-        <CaseSummary pet={pet} problems={problems} treatments={treatments} labs={labs} todayISO={todayISO} />
-      </div>
+      {/* ═══ TAB: اليوم — the working surface. What must happen right now. ═══ */}
+      {tab === "today" && (
+        <div className="space-y-3">
+          {hasFlowsheet && !ended && (
+            <TodayPanel
+              todayISO={todayISO} lang={lang}
+              todayPending={todayPending} todayDoneCount={todayDoses.length - todayPending.length}
+              overdueDoses={overdueDoses} nextDose={nextDose} remaining={remaining} totalDoses={totalDoses}
+              onGiveAll={() => giveMany(todayPending)} onGiveOne={giveQuick} onGiveOverdue={() => giveMany(overdueDoses)}
+            />
+          )}
 
-      {/* ── آخر تحاليل — نظرة سريعة بدون مغادرة الحالة، وضغطة تفتح تبويب المختبر ── */}
-      {labs.length > 0 && (
-        <div className="mt-3">
-          <LastLabsStrip results={labs} onOpen={() => navigate(`/pet/${pet.id}?tab=labs`)} />
+          {!hasFlowsheet && !ended && (
+            <div className="rounded-2xl border border-dashed border-brand-300 bg-brand-50/50 p-6 text-center dark:border-brand-500/30 dark:bg-brand-500/5">
+              <ClipboardList size={28} className="mx-auto mb-2 text-brand-500" />
+              <p className="text-sm font-extrabold text-ink">ما في خطة علاج بعد</p>
+              <p className="mt-1 text-2xs text-ink-muted">ابدأ بالتشخيص وخطة العلاج — الجرعات تتجدول تلقائياً بأوقاتها.</p>
+              <button onClick={() => { playTap(); setPlanOpen(true); }}
+                className="mt-3 inline-flex items-center gap-2 rounded-full bg-brand-600 px-5 py-2.5 text-sm font-extrabold text-white shadow-soft transition hover:bg-brand-700">
+                <ClipboardList size={15} /> التشخيص وخطة العلاج
+              </button>
+            </div>
+          )}
+
+          <CareSheet pet={pet} visitId={visit.id} day={todayISO} doctor={user?.full_name} treatments={treatments} />
         </div>
       )}
 
-      {/* ── Smart "today" command panel — what the doctor must do right now ── */}
-      {hasFlowsheet && !ended && (
-        <TodayPanel
-          todayISO={todayISO} lang={lang}
-          todayPending={todayPending} todayDoneCount={todayDoses.length - todayPending.length}
-          overdueDoses={overdueDoses} nextDose={nextDose} remaining={remaining} totalDoses={totalDoses}
-          onGiveAll={() => giveMany(todayPending)} onGiveOne={giveQuick} onGiveOverdue={() => giveMany(overdueDoses)}
-        />
-      )}
-
-      {/* ── Treatment plan — switchable between the paper day-sheet and a per-drug course view ── */}
-      {hasFlowsheet && (
-        <div className="mt-3">
-          <div className="mb-2 flex flex-wrap items-center gap-2">
-            <h2 className="flex items-center gap-1.5 text-sm font-extrabold text-ink"><ClipboardList size={16} className="text-brand-600" /> خطة العلاج</h2>
-            <div className="ms-auto flex flex-wrap items-center gap-2">
-              <div className="inline-flex rounded-lg border border-line bg-surface-2 p-0.5">
-                <ViewToggleBtn active={planView === "day"} icon={<Rows3 size={14} />} label="باليوم" onClick={() => { playTap(); setPlanView("day"); }} />
-                <ViewToggleBtn active={planView === "drug"} icon={<LayoutGrid size={14} />} label="بالدواء" onClick={() => { playTap(); setPlanView("drug"); }} />
+      {/* ═══ TAB: الخطة — the full course, day-sheet or per-drug ═══ */}
+      {tab === "plan" && (
+        <div className="space-y-3">
+          {hasFlowsheet ? (
+            <>
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="flex items-center gap-1.5 text-sm font-extrabold text-ink"><ClipboardList size={16} className="text-brand-600" /> خطة العلاج</h2>
+                <div className="ms-auto flex flex-wrap items-center gap-2">
+                  <div className="inline-flex rounded-lg border border-line bg-surface-2 p-0.5">
+                    <ViewToggleBtn active={planView === "day"} icon={<Rows3 size={14} />} label="باليوم" onClick={() => { playTap(); setPlanView("day"); }} />
+                    <ViewToggleBtn active={planView === "drug"} icon={<LayoutGrid size={14} />} label="بالدواء" onClick={() => { playTap(); setPlanView("drug"); }} />
+                  </div>
+                  {planView === "day" && (
+                    <div className="hidden flex-wrap gap-x-3 gap-y-1 sm:flex">
+                      {(["done", "due", "overdue", "upcoming"] as DoseStatus[]).map((st) => (
+                        <span key={st} className="inline-flex items-center gap-1.5 text-[10px] font-extrabold text-ink-muted"><span className={cn("inline-block h-3 w-3 rounded-sm", STATUS_META[st].bar)} /> {STATUS_META[st].label}</span>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
-              {planView === "day" && (
-                <div className="hidden flex-wrap gap-x-3 gap-y-1 sm:flex">
-                  {(["done", "due", "overdue", "upcoming"] as DoseStatus[]).map((s) => (
-                    <span key={s} className="inline-flex items-center gap-1.5 text-[10px] font-extrabold text-ink-muted"><span className={cn("inline-block h-3 w-3 rounded-sm", STATUS_META[s].bar)} /> {STATUS_META[s].label}</span>
-                  ))}
+              {planView === "day" ? (
+                <TreatmentSheetTable
+                  dayGroups={dayGroups} todayISO={todayISO} ended={ended} lang={lang} dayNotes={dayNotes}
+                  todayRowRef={todayRowRef}
+                  onGive={(tx) => { playTap(); setGiveId(tx.id); }}
+                  onAddNote={(day) => { playTap(); setNoteText(""); setNoteDay(day); setNoteOpen(true); }}
+                  onAddDrug={openAddDrug}
+                />
+              ) : (
+                <MedCourseView courses={medCourses} todayISO={todayISO} ended={ended} lang={lang} onGive={giveQuick} />
+              )}
+              {!ended && (
+                <div className="flex flex-wrap gap-2">
+                  <SecondaryBtn icon={<Pill size={15} />} label="إضافة دواء" onClick={() => openAddDrug()} />
+                  <SecondaryBtn icon={<CalendarPlus size={15} />} label="تمديد الخطة" onClick={() => { playTap(); setExtendOpen(true); }} />
                 </div>
               )}
-            </div>
-          </div>
-          {planView === "day" ? (
-            <TreatmentSheetTable
-              dayGroups={dayGroups} todayISO={todayISO} ended={ended} lang={lang} dayNotes={dayNotes}
-              todayRowRef={todayRowRef}
-              onGive={(tx) => { playTap(); setGiveId(tx.id); }}
-              onAddNote={(day) => { playTap(); setNoteText(""); setNoteDay(day); setNoteOpen(true); }}
-              onAddDrug={openAddDrug}
-            />
+            </>
           ) : (
-            <MedCourseView courses={medCourses} todayISO={todayISO} ended={ended} lang={lang} onGive={giveQuick} />
+            <Section icon={<ClipboardList size={14} />} title="خطة العلاج" empty emptyText="ما في خطة بعد"
+              action={() => setPlanOpen(true)} actionLabel="ابدأ الخطة" />
           )}
         </div>
       )}
 
-      {/* Toolbar */}
-      {!ended && (
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          {isIllness && (
-            <button onClick={() => { playTap(); setPlanOpen(true); }} className="inline-flex items-center gap-2 rounded bg-brand-600 px-4 py-2.5 text-sm font-extrabold text-white transition hover:bg-brand-700">
-              <ClipboardList size={16} /> {clinicalNotes.length ? "تعديل التشخيص وخطة العلاج" : "التشخيص وخطة العلاج"}
-            </button>
+      {/* ═══ TAB: الحالة — problems, diagnosis, surgeries, notes ═══ */}
+      {tab === "case" && (
+        <div className="space-y-4">
+          <ProblemList petId={pet.id} doctor={user?.full_name} onFlagsChange={setProblems} />
+
+          {isIllness && !ended && (
+            <SecondaryBtn icon={<ClipboardList size={15} />} label={clinicalNotes.length ? "تعديل التشخيص وخطة العلاج" : "التشخيص وخطة العلاج"} onClick={() => { playTap(); setPlanOpen(true); }} />
           )}
-          <button onClick={() => openAddDrug()} className="inline-flex items-center gap-2 rounded border border-brand-300 bg-brand-50 px-4 py-2.5 text-sm font-extrabold text-brand-700 transition hover:bg-brand-100 dark:border-brand-500/30 dark:bg-brand-500/10 dark:text-brand-300">
-            <Pill size={16} /> إضافة دواء
-          </button>
-          <button onClick={() => { playTap(); setLabOpen(true); }} className="inline-flex items-center gap-2 rounded border border-teal-300 bg-teal-50 px-4 py-2.5 text-sm font-extrabold text-teal-700 transition hover:bg-teal-100 dark:border-teal-500/30 dark:bg-teal-500/10 dark:text-teal-300">
-            <FlaskConical size={16} /> تسجيل تحاليل
-          </button>
-          {hasFlowsheet && (
-            <button onClick={() => { playTap(); setExtendOpen(true); }} className="inline-flex items-center gap-2 rounded border border-line-strong bg-surface-1 px-4 py-2.5 text-sm font-bold text-ink-muted transition hover:border-brand-300 hover:text-ink">
-              <CalendarPlus size={16} /> تمديد الخطة
-            </button>
-          )}
-          <button onClick={() => { playTap(); setNoteText(""); setNoteDay(null); setNoteOpen(true); }} className="inline-flex items-center gap-2 rounded border border-line-strong bg-surface-1 px-4 py-2.5 text-sm font-bold text-ink-muted transition hover:border-brand-300 hover:text-ink">
-            <NotebookPen size={16} /> إضافة ملاحظة
-          </button>
-          <button onClick={() => { playTap(); setEndOpen(true); }} className="ms-auto inline-flex items-center gap-2 rounded bg-danger-600 px-4 py-2.5 text-sm font-extrabold text-white transition hover:bg-danger-700">
-            <Check size={16} /> إنهاء العلاج وإغلاق الزيارة
-          </button>
-        </div>
-      )}
 
-      {/* ── سجل العمليات الجراحية — اختيار علمي + تفاصيل المدخل والخياطة ── */}
-      <SurgerySection petId={pet.id} visitId={visit.id} lang={lang} defaultSurgeon={user?.full_name ?? ""} readonly={ended} />
-
-      {clinicalNotes.length > 0 && (
-        <div className="mt-3 space-y-3">
-          {clinicalNotes.map(({ n, record }) => <div key={n.id}><ClinicalRecordCard record={record!} compact /></div>)}
-        </div>
-      )}
-
-      {generalNotes.length > 0 && (
-        <section className="mt-4">
-          <h2 className="mb-2 flex items-center gap-1.5 text-sm font-extrabold text-ink"><NotebookPen size={16} className="text-brand-600" /> ملاحظات الزيارة</h2>
-          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-            {generalNotes.map((n) => (
-              <div key={n.id} className="rounded border border-line bg-surface-1 p-3">
-                <div className="mb-1 flex items-center gap-2 text-2xs text-ink-subtle">
-                  <span className="font-semibold text-ink-muted">{n.author_name || "—"}</span>
-                  <span className="flex items-center gap-1"><Clock size={11} /> {formatDate(n.created_at, lang)}</span>
-                </div>
-                <p className="whitespace-pre-wrap text-sm leading-relaxed text-ink">{n.note_text}</p>
+          {clinicalNotes.length > 0 && (
+            <Section icon={<Stethoscope size={14} />} title="السجل السريري" count={clinicalNotes.length}>
+              <div className="space-y-3">
+                {clinicalNotes.map(({ n, record }) => <div key={n.id}><ClinicalRecordCard record={record!} compact /></div>)}
               </div>
-            ))}
-          </div>
-        </section>
+            </Section>
+          )}
+
+          <SurgerySection petId={pet.id} visitId={visit.id} lang={lang} defaultSurgeon={user?.full_name ?? ""} readonly={ended} />
+
+          {generalNotes.length > 0 ? (
+            <Section icon={<NotebookPen size={14} />} title="ملاحظات الزيارة" count={generalNotes.length}
+              action={ended ? undefined : () => { setNoteText(""); setNoteDay(null); setNoteOpen(true); }} actionLabel="ملاحظة">
+              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                {generalNotes.map((n) => (
+                  <div key={n.id} className="rounded-xl border border-line bg-surface-1 p-3">
+                    <div className="mb-1 flex items-center gap-2 text-2xs text-ink-subtle">
+                      <span className="font-semibold text-ink-muted">{n.author_name || "—"}</span>
+                      <span className="flex items-center gap-1"><Clock size={11} /> {formatDate(n.created_at, lang)}</span>
+                    </div>
+                    <p className="whitespace-pre-wrap text-sm leading-relaxed text-ink">{n.note_text}</p>
+                  </div>
+                ))}
+              </div>
+            </Section>
+          ) : (
+            <Section icon={<NotebookPen size={14} />} title="ملاحظات الزيارة" empty emptyText="ما في ملاحظات"
+              action={ended ? undefined : () => { setNoteText(""); setNoteDay(null); setNoteOpen(true); }} actionLabel="ملاحظة" />
+          )}
+        </div>
       )}
 
-      <section className="mt-4">
-        <CareSheet pet={pet} visitId={visit.id} day={todayISO} doctor={user?.full_name} treatments={treatments} />
-      </section>
+      {/* ═══ TAB: المختبر ═══ */}
+      {tab === "labs" && (
+        <div className="space-y-3">
+          {labs.length > 0 ? (
+            <>
+              <LastLabsStrip results={labs} onOpen={() => navigate(`/pet/${pet.id}?tab=labs`)} />
+              <SecondaryBtn icon={<FlaskConical size={15} />} label="تسجيل تحاليل" onClick={() => { playTap(); setLabOpen(true); }} />
+            </>
+          ) : (
+            <Section icon={<FlaskConical size={14} />} title="التحاليل" empty emptyText="ما في تحاليل مسجّلة"
+              action={() => setLabOpen(true)} actionLabel="تسجيل تحاليل" />
+          )}
+        </div>
+      )}
 
-      <section className="mt-4">
-        <ProblemList petId={pet.id} doctor={user?.full_name} onFlagsChange={setProblems} />
-      </section>
+      {/* ── One primary action, always reachable, never competing with four others ── */}
+      {!ended && <PrimaryBar
+        dueCount={todayPending.length} overdueCount={overdueDoses.length}
+        onGiveDue={() => giveMany(overdueDoses.length ? overdueDoses : todayPending)}
+        onEnd={() => { playTap(); setEndOpen(true); }}
+        onLab={() => { playTap(); setLabOpen(true); }}
+        onNote={() => { playTap(); setNoteText(""); setNoteDay(null); setNoteOpen(true); }}
+      />}
 
       <Modal open={labOpen} onClose={() => setLabOpen(false)} size="wide" title={`تسجيل تحاليل — ${pet.name}`}>
         <LabEntry pet={pet} visitId={visit.id} doctor={user?.full_name} onSaved={() => void reload()} onClose={() => setLabOpen(false)} />
@@ -638,20 +637,6 @@ export default function VisitPage() {
       <AddDrugModal open={addDrugOpen} day={addDrugDay} lang={lang} defaultDoctor={user?.full_name ?? ""} onClose={() => setAddDrugOpen(false)} onAdd={addDrug} />
       <ExtendPlanModal open={extendOpen} lastDay={lastDay} lang={lang} medCount={lastDay ? treatments.filter((t) => t.day === lastDay).length : 0} onClose={() => setExtendOpen(false)} onExtend={extendCourse} />
       <EndVisitModal open={endOpen} onClose={() => setEndOpen(false)} onEnd={endVisit} />
-    </div>
-  );
-}
-
-/* ------------------------------ Header stat ------------------------------- */
-function HeaderStat({ icon, label, value, tone }: { icon: React.ReactNode; label: string; value: string; tone: "brand" | "success" | "warn" | "danger" }) {
-  const toneCls = { brand: "text-brand-700 dark:text-brand-300", success: "text-success-700 dark:text-success-300", warn: "text-warn-700 dark:text-warn-300", danger: "text-danger-700 dark:text-danger-300" }[tone];
-  return (
-    <div className="flex items-center gap-1.5">
-      <span className={cn("grid h-7 w-7 place-items-center rounded-lg bg-surface-2", toneCls)}>{icon}</span>
-      <div>
-        <div className="text-[10px] font-extrabold uppercase tracking-wide text-ink-subtle">{label}</div>
-        <div className={cn("text-sm font-black leading-tight", toneCls)}>{value}</div>
-      </div>
     </div>
   );
 }
@@ -801,72 +786,6 @@ function ExtendPlanModal({ open, lastDay, lang, medCount, onClose, onExtend }: {
         <Button size="lg" className="w-full" leftIcon={<CalendarPlus size={18} />} loading={busy} disabled={!medCount} onClick={submit}>تمديد {formatNum(days)} أيام</Button>
       </div>
     </Modal>
-  );
-}
-
-/* --------------------------- Paper-style summary -------------------------- */
-/** A compact on-screen mirror of the clinic's paper form header — animal photo,
- *  brief animal info, and a brief diagnosis — with a one-tap print of the full sheet. */
-function PaperSummary({ pet, date, speciesLabel, sexLabel, diagnosis, record, onPrint, printable }: {
-  pet: Pet; date: string; speciesLabel: string; sexLabel: string;
-  diagnosis: string; record: ClinicalRecord | null; onPrint: () => void; printable: boolean;
-}) {
-  const age = ageText(pet.dob);
-  const weight = pet.current_weight_kg ?? record?.weightKg;
-  const fields: { label: string; value: string }[] = [
-    { label: "اسم الحيوان", value: pet.name },
-    { label: "نوع الحيوان", value: speciesLabel },
-    { label: "الجنس", value: sexLabel },
-    { label: "العمر", value: age || "—" },
-    { label: "التاريخ", value: date },
-    // معلومات المالك — حتى يعرف الطبيب الحالة ويتواصل مباشرة من الطبلة.
-    { label: "المالك", value: pet.owner_name || "—" },
-    { label: "هاتف المالك", value: pet.owner_phone || "—" },
-    { label: "رقم الملف", value: pet.serial || "—" },
-  ];
-  const dxWarn = (record?.redFlags?.length ?? 0) > 0 || (record?.zoonotic?.length ?? 0) > 0 || (record?.reportable?.length ?? 0) > 0;
-
-  return (
-    <section className="mt-3 rounded border border-line-strong bg-surface-1 p-4 shadow-card">
-      <div className="mb-3 flex items-center gap-2">
-        <h2 className="flex items-center gap-1.5 text-sm font-extrabold text-ink"><ClipboardList size={16} className="text-brand-600" /> ورقة الحالة</h2>
-        <button type="button" onClick={onPrint} disabled={!printable}
-          className="ms-auto inline-flex items-center gap-2 rounded border border-brand-300 bg-brand-50 px-3.5 py-2 text-xs font-extrabold text-brand-700 transition hover:bg-brand-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-brand-500/30 dark:bg-brand-500/10 dark:text-brand-300">
-          <Printer size={15} /> طباعة خطة العلاج
-        </button>
-      </div>
-
-      <div className="space-y-3">
-        {/* Animal info + diagnosis */}
-        <div>
-          <div className="grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-3 lg:grid-cols-5">
-            {fields.map((f) => (
-              <div key={f.label} className="min-w-0">
-                <div className="text-[10px] font-extrabold uppercase tracking-wide text-ink-subtle">{f.label}</div>
-                <div className="truncate text-sm font-bold text-ink">{f.value}</div>
-              </div>
-            ))}
-          </div>
-
-          <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-line pt-3">
-            {diagnosis ? (
-              <span className={cn("inline-flex items-center gap-1.5 rounded px-2.5 py-1 text-xs font-extrabold",
-                dxWarn ? "bg-danger-50 text-danger-700 dark:bg-danger-500/15 dark:text-danger-300" : "bg-brand-50 text-brand-700 dark:bg-brand-500/15 dark:text-brand-300")}>
-                <Stethoscope size={13} /> {diagnosis}{dxWarn && <AlertTriangle size={12} />}
-              </span>
-            ) : (
-              <span className="inline-flex items-center gap-1.5 rounded bg-surface-2 px-2.5 py-1 text-xs font-bold text-ink-subtle"><Stethoscope size={13} /> لا يوجد تشخيص بعد</span>
-            )}
-            {weight != null && (
-              <span className="inline-flex items-center gap-1.5 rounded border border-line bg-surface-1 px-2.5 py-1 text-xs font-bold text-ink-muted"><ShieldCheck size={13} /> {formatNum(weight)} كغم</span>
-            )}
-            {(record?.treatment?.length ?? 0) > 0 && (
-              <span className="inline-flex items-center gap-1.5 rounded border border-line bg-surface-1 px-2.5 py-1 text-xs font-bold text-ink-muted"><Syringe size={13} /> {formatNum(record!.treatment!.length)} دواء</span>
-            )}
-          </div>
-        </div>
-      </div>
-    </section>
   );
 }
 
@@ -1129,5 +1048,49 @@ function EndVisitModal({ open, onClose, onEnd }: { open: boolean; onClose: () =>
         </Button>
       </div>
     </Modal>
+  );
+}
+
+
+/* ── One primary action, plus the quiet rest ────────────────────────────────
+ * The old toolbar had five same-weight buttons in a row, so nothing looked
+ * like the next thing to do. Here the primary button is whatever the case
+ * actually needs right now — give the late doses, else give today's, else
+ * nothing shouts — and everything else steps back. */
+function PrimaryBar({ dueCount, overdueCount, onGiveDue, onEnd, onLab, onNote }: {
+  dueCount: number; overdueCount: number;
+  onGiveDue: () => void; onEnd: () => void; onLab: () => void; onNote: () => void;
+}) {
+  const pending = overdueCount || dueCount;
+  return (
+    <div className="sticky bottom-0 z-20 -mx-4 mt-4 flex flex-wrap items-center gap-2 border-t border-line bg-surface-1/95 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6">
+      {pending > 0 ? (
+        <button onClick={onGiveDue}
+          className={cn("inline-flex items-center gap-2 rounded-full px-5 py-2.5 text-sm font-extrabold text-white shadow-soft transition",
+            overdueCount > 0 ? "bg-danger-600 hover:bg-danger-700" : "bg-brand-600 hover:bg-brand-700")}>
+          <Check size={16} />
+          {overdueCount > 0 ? `أعطِ المتأخّرة (${formatNum(overdueCount)})` : `أعطِ جرعات اليوم (${formatNum(dueCount)})`}
+        </button>
+      ) : (
+        <span className="inline-flex items-center gap-1.5 rounded-full bg-success-50 px-4 py-2.5 text-sm font-extrabold text-success-700 dark:bg-success-500/15 dark:text-success-300">
+          <CheckCircle2 size={16} /> جرعات اليوم مكتملة
+        </span>
+      )}
+      <SecondaryBtn icon={<FlaskConical size={15} />} label="تحاليل" onClick={onLab} />
+      <SecondaryBtn icon={<NotebookPen size={15} />} label="ملاحظة" onClick={onNote} />
+      <button onClick={onEnd}
+        className="ms-auto inline-flex items-center gap-1.5 rounded-full border border-danger-300 px-4 py-2.5 text-sm font-bold text-danger-600 transition hover:bg-danger-50 dark:border-danger-500/40 dark:hover:bg-danger-500/10">
+        <Check size={15} /> إنهاء الزيارة
+      </button>
+    </div>
+  );
+}
+
+function SecondaryBtn({ icon, label, onClick }: { icon: React.ReactNode; label: string; onClick: () => void }) {
+  return (
+    <button type="button" onClick={onClick}
+      className="inline-flex items-center gap-1.5 rounded-full border border-line bg-surface-1 px-4 py-2.5 text-sm font-bold text-ink-muted transition hover:border-brand-300 hover:text-ink">
+      {icon} {label}
+    </button>
   );
 }
