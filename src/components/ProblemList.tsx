@@ -126,9 +126,9 @@ export function ProblemList({ petId, doctor, onFlagsChange }: {
   };
 
   return (
-    <section className="space-y-2.5 rounded-2xl border border-line bg-surface-1 p-3 shadow-soft">
-      <div className="flex items-center gap-2">
-        <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-violet-100 text-violet-600 dark:bg-violet-500/20 dark:text-violet-300"><ListChecks size={16} /></span>
+    <section className="overflow-hidden rounded-2xl border border-line bg-surface-1 shadow-card">
+      <div className="flex items-center gap-2 border-b border-violet-100 bg-gradient-to-l from-violet-50/80 to-transparent px-3 py-2.5 dark:border-violet-500/20 dark:from-violet-500/10">
+        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-violet-100 to-violet-50 text-violet-600 shadow-soft dark:from-violet-500/25 dark:to-violet-500/10 dark:text-violet-300"><ListChecks size={17} /></span>
         <div className="min-w-0 flex-1">
           <h3 className="text-sm font-extrabold text-ink">قائمة المشاكل</h3>
           <p className="text-2xs text-ink-subtle">تبقى مفتوحة عبر كل الزيارات — مو داخل زيارة وحدة.</p>
@@ -141,6 +141,7 @@ export function ProblemList({ petId, doctor, onFlagsChange }: {
         )}
       </div>
 
+      <div className="space-y-2.5 p-3">
       {/* What the prescribing guard will do because of this list */}
       {guardsOn.length > 0 && (
         <div className="flex items-start gap-2 rounded-xl border border-brand-200 bg-brand-50 p-2.5 text-2xs dark:border-brand-500/30 dark:bg-brand-500/10">
@@ -217,6 +218,7 @@ export function ProblemList({ petId, doctor, onFlagsChange }: {
           )}
         </div>
       )}
+      </div>
     </section>
   );
 }

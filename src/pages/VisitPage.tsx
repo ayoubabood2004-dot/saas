@@ -505,7 +505,10 @@ export default function VisitPage() {
       {hasFlowsheet && (
         <div className="mt-3">
           <div className="mb-2 flex flex-wrap items-center gap-2">
-            <h2 className="flex items-center gap-1.5 text-sm font-extrabold text-ink"><ClipboardList size={16} className="text-brand-600" /> خطة العلاج</h2>
+            <h2 className="flex items-center gap-2 text-sm font-extrabold text-ink">
+              <span className="grid h-8 w-8 place-items-center rounded-xl bg-gradient-to-br from-brand-100 to-brand-50 text-brand-600 dark:from-brand-500/25 dark:to-brand-500/10 dark:text-brand-300"><ClipboardList size={16} /></span>
+              خطة العلاج
+            </h2>
             <div className="ms-auto flex flex-wrap items-center gap-2">
               <div className="inline-flex rounded-full border border-line bg-surface-2 p-0.5">
                 <ViewToggleBtn active={planView === "day"} icon={<Rows3 size={14} />} label="باليوم" onClick={() => { playTap(); setPlanView("day"); }} />
@@ -565,7 +568,10 @@ export default function VisitPage() {
 
       {generalNotes.length > 0 ? (
         <section className="mt-4">
-          <h2 className="mb-2 flex items-center gap-1.5 text-sm font-extrabold text-ink"><NotebookPen size={16} className="text-brand-600" /> ملاحظات الزيارة</h2>
+          <h2 className="mb-2 flex items-center gap-2 text-sm font-extrabold text-ink">
+            <span className="grid h-8 w-8 place-items-center rounded-xl bg-gradient-to-br from-amber-100 to-amber-50 text-amber-600 dark:from-amber-500/25 dark:to-amber-500/10 dark:text-amber-300"><NotebookPen size={16} /></span>
+            ملاحظات الزيارة
+          </h2>
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
             {generalNotes.map((n) => (
               <div key={n.id} className="rounded-xl border border-line bg-surface-1 p-3">
@@ -674,7 +680,7 @@ function TodayPanel({ todayISO, lang, todayPending, todayDoneCount, overdueDoses
                 </div>
               ))}
             </div>
-            <button onClick={onGiveAll} className="flex w-full items-center justify-center gap-2 rounded-xl bg-brand-600 py-3 text-sm font-black text-white shadow-sm transition hover:bg-brand-700">
+            <button onClick={onGiveAll} className="flex w-full items-center justify-center gap-2 rounded-xl bg-brand-grad py-3 text-sm font-black text-white shadow-card transition hover:opacity-95 active:scale-[0.99]">
               <Check size={18} /> إعطاء كل جرعات اليوم ({formatNum(todayPending.length)})
             </button>
           </>

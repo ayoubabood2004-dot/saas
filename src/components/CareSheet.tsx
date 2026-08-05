@@ -120,9 +120,9 @@ export function CareSheet({ pet, visitId, day, doctor, treatments }: {
   };
 
   return (
-    <section className="space-y-3 rounded-2xl border border-line bg-surface-1 p-3 shadow-soft">
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-sky-100 text-sky-600 dark:bg-sky-500/20 dark:text-sky-300"><Droplets size={16} /></span>
+    <section className="overflow-hidden rounded-2xl border border-line bg-surface-1 shadow-card">
+      <div className="flex flex-wrap items-center gap-2 border-b border-sky-100 bg-gradient-to-l from-sky-50/80 to-transparent px-3 py-2.5 dark:border-sky-500/20 dark:from-sky-500/10">
+        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-sky-100 to-sky-50 text-sky-600 shadow-soft dark:from-sky-500/25 dark:to-sky-500/10 dark:text-sky-300"><Droplets size={17} /></span>
         <div className="min-w-0 flex-1">
           <h3 className="text-sm font-extrabold text-ink">جدول العلاج الزمني</h3>
           <p className="text-2xs text-ink-subtle">الجرعات والسوائل والمراقبة والداخل/الخارج — على نفس الساعة.</p>
@@ -133,6 +133,7 @@ export function CareSheet({ pet, visitId, day, doctor, treatments }: {
         </button>
       </div>
 
+      <div className="space-y-3 p-3">
       {calcOpen && <FluidCalculator pet={pet} onUse={(rate, label) => { void add("fluid", label, "مل/ساعة", rate, HHMM()); setCalcOpen(false); }} />}
 
       {/* Running totals */}
@@ -219,6 +220,7 @@ export function CareSheet({ pet, visitId, day, doctor, treatments }: {
           })}
         </div>
       )}
+      </div>
     </section>
   );
 }

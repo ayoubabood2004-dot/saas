@@ -58,7 +58,7 @@ export function VisitBanner({
   const age = a ? [a.years ? `${formatNum(a.years)} سنة` : null, a.months ? `${formatNum(a.months)} شهر` : null].filter(Boolean).join(" و") || "أقل من شهر" : null;
 
   return (
-    <div className="sticky top-0 z-30 -mx-4 mb-3 border-b border-line bg-surface-1/95 px-4 pb-2 pt-3 backdrop-blur sm:-mx-6 sm:px-6">
+    <div className="sticky top-0 z-30 -mx-4 mb-3 border-b border-line bg-gradient-to-b from-brand-50/80 to-surface-1/95 px-4 pb-2 pt-3 backdrop-blur dark:from-brand-500/10 dark:to-surface-1/95 sm:-mx-6 sm:px-6">
       {/* Allergy rides above everything — it is the one line that must never be scrolled away */}
       {allergies.length > 0 && (
         <div className="mb-2 flex items-center gap-2 rounded-xl bg-danger-600 px-3 py-1.5 text-white">
@@ -129,7 +129,7 @@ export function VisitBanner({
         <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1.5">
           <div className="flex min-w-[140px] flex-1 items-center gap-2">
             <div className="h-2 flex-1 overflow-hidden rounded-full bg-surface-3">
-              <div className="h-full rounded-full bg-brand-600 transition-all" style={{ width: `${total ? (done / total) * 100 : 0}%` }} />
+              <div className="h-full rounded-full bg-brand-grad transition-all" style={{ width: `${total ? (done / total) * 100 : 0}%` }} />
             </div>
             <span className="shrink-0 text-2xs font-black tabular-nums text-ink">{formatNum(done)}/{formatNum(total)}</span>
           </div>
