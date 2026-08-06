@@ -103,6 +103,18 @@ export function playTap() {
   tone(660, 0, 0.06, "sine", 0.08);
 }
 
+/** جرعة انعطت — a warm music-box roll (G-major arpeggio G5→B5→D6 with a high
+ *  sparkle). Distinct from the generic success chime: this one is the sound of
+ *  care delivered, and a nurse hears it dozens of times a day — so it stays
+ *  short (~0.5s), soft, and consonant no matter how fast doses are ticked. */
+export function playDoseGiven() {
+  if (!isSoundEnabled()) return;
+  tone(783.99, 0, 0.16, "sine", 0.14);          // G5
+  tone(987.77, 0.09, 0.16, "sine", 0.14);       // B5
+  tone(1174.66, 0.18, 0.32, "sine", 0.15);      // D6 — rings out
+  tone(1567.98, 0.24, 0.26, "triangle", 0.05);  // G6 shimmer
+}
+
 /** A step of the wizard just completed — one bright pop, pitched by progress
  *  (later steps ring higher), so filling the form literally plays a scale. */
 export function playStepDone(stepIndex = 0) {

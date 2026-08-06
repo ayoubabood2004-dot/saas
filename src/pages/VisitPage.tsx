@@ -34,7 +34,7 @@ import { VisitBanner } from "@/components/VisitBanner";
 import { CaseSummary } from "@/components/CaseSummary";
 import { Section } from "@/components/VisitTabs";
 import { flagsFromProblems, isJuvenile, type ChartFlags } from "@/lib/problems";
-import { playTap, playSuccess, playWarning, playAchievement } from "@/lib/sounds";
+import { playTap, playSuccess, playWarning, playAchievement, playDoseGiven } from "@/lib/sounds";
 import { celebrate } from "@/lib/celebrate";
 
 const DAY_MARK = "⟦D:";
@@ -309,14 +309,14 @@ export default function VisitPage() {
   const prescribingFlags: ChartFlags = { ...chartFlags, puppy: isJuvenile(pet?.dob) || chartFlags.puppy };
 
   const giveDose = async (t: TreatmentEntry, doctor: string, atISO: string) => {
-    playSuccess();
+    playDoseGiven();
     await repo.setTreatmentGiven(t.id, true, doctor || (user?.full_name ?? undefined), atISO);
     await syncDoseCycleForPet(t.pet_id);
     setGiveId(null); await reload();
   };
   /** One-tap give for a single dose (records the current doctor + now). */
   const giveQuick = async (t: TreatmentEntry) => {
-    playSuccess();
+    playDoseGiven();
     await repo.setTreatmentGiven(t.id, true, user?.full_name ?? undefined, new Date().toISOString());
     await syncDoseCycleForPet(t.pet_id);
     await reload();
@@ -324,7 +324,7 @@ export default function VisitPage() {
   /** Batch give — mark every dose in the list administered now by the current doctor. */
   const giveMany = async (list: TreatmentEntry[]) => {
     if (!list.length) return;
-    playSuccess();
+    playDoseGiven();
     const at = new Date().toISOString();
     await Promise.all(list.map((t) => repo.setTreatmentGiven(t.id, true, user?.full_name ?? undefined, at))); // بالتوازي — مو طابور
     await syncDoseCycleForPet(list[0].pet_id);

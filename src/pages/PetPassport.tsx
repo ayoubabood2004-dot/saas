@@ -35,7 +35,7 @@ import { Modal } from "@/components/Modal";
 import { ageFromDOB, daysUntil, uid, formatDate, formatTime, formatHM, cn, localISO, dateLocale } from "@/lib/utils";
 import { prepareUpload } from "@/lib/image";
 import { withTimeout, describeUploadError } from "@/lib/errors";
-import { playSuccess, playScan, playTap, playWarning, playAchievement } from "@/lib/sounds";
+import { playSuccess, playScan, playTap, playWarning, playAchievement, playDoseGiven } from "@/lib/sounds";
 import { celebrate } from "@/lib/celebrate";
 import { ImageLightbox } from "@/components/ImageLightbox";
 import { MedicalEntry, DoctorSelect, type MedicalDraft } from "@/components/MedicalEntry";
@@ -2088,7 +2088,7 @@ function TreatmentTab({ pet, treatments, admissions, onChanged, canEdit, isOwner
   const statusOf = (tx: TreatmentEntry) => treatmentStatus(tx, today, currentHM);
   const markGiven = async (id: string, given: boolean) => {
     await repo.setTreatmentGiven(id, given, user?.full_name);
-    if (given) playSuccess();
+    if (given) playDoseGiven();
     // Completing (or breaking) today's set updates the case-board tint too.
     await syncDoseCycleForPet(pet.id);
     onChanged();
@@ -2575,7 +2575,7 @@ function TimelineWorkspace({ pet, treatments, vaccinations, notes, admissions, i
   };
 
   // ---- Treatment flowsheet actions (mark given / repeat / delete) ----
-  const markGiven = async (id: string, given: boolean) => { await repo.setTreatmentGiven(id, given, user?.full_name); if (given) playSuccess(); await syncDoseCycleForPet(pet.id); onChanged(); };
+  const markGiven = async (id: string, given: boolean) => { await repo.setTreatmentGiven(id, given, user?.full_name); if (given) playDoseGiven(); await syncDoseCycleForPet(pet.id); onChanged(); };
   const removeTx = async (id: string) => { await repo.deleteTreatment(id); await syncDoseCycleForPet(pet.id); onChanged(); };
   const repeatTx = async (tx: TreatmentEntry) => {
     addClinicMed(tx.medication);

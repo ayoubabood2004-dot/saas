@@ -7,7 +7,7 @@ import {
   type TaskStatus,
 } from "@/lib/treatmentSchedule";
 import { formatNum, cn } from "@/lib/utils";
-import { playSuccess } from "@/lib/sounds";
+import { playDoseGiven } from "@/lib/sounds";
 
 /** A clock slot as shown on the board. The app is Western-numeral throughout (see formatNum). */
 const timeLabel = (hhmm: string) => (/^\d{1,2}:\d{2}$/.test(hhmm.trim()) ? hhmm.trim() : "بلا وقت");
@@ -82,7 +82,7 @@ function TaskCard({ task, onGive, wall }: { task: BoardTask; onGive?: (t: Treatm
         {!done && onGive && (
           <button
             type="button"
-            onClick={() => { playSuccess(); onGive(tx); }}
+            onClick={() => { playDoseGiven(); onGive(tx); }}
             className={cn(
               "rounded-full bg-success-600 font-extrabold text-white shadow-soft transition hover:bg-success-700 active:scale-95",
               wall ? "px-5 py-2.5 text-lg" : "px-3 py-1.5 text-2xs",
