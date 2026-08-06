@@ -2,7 +2,7 @@
 // جدولة الجرعات — the clock behind the treatment whiteboard.
 //
 // Until now a plan wrote ONE flowsheet row per drug per DAY, with an empty
-// time. That made "متأخّر" undecidable: a dose due at 08:00 and one due at
+// time. That made "متأخّر" undecidable: a dose due at 10:00 and one due at
 // 20:00 looked identical all day long, so the board could only ever say "في
 // جرعات اليوم" — never "هاي متأخرة ساعتين".
 //
@@ -11,18 +11,19 @@
 //   1. which times a frequency lands on, and
 //   2. what a row's status is at any given moment.
 //
-// Slots are clinic-practical, not textbook q-intervals: a 4×/day drug lands on
-// waking hours instead of a 00:00 row that belongs to the next calendar day.
+// Slots are clinic-practical, not textbook q-intervals: they anchor at 10:00,
+// when most clinics here actually open, and end by 22:00 — no 08:00 row nobody
+// is there to give, no 00:00 row that belongs to the next calendar day.
 // The doctor can always edit a time on the sheet.
 // ============================================================================
 import type { TreatmentEntry } from "@/types";
 
 /** Clock slots by doses-per-day. Index 0 is unused (PRN has no schedule). */
 export const DOSE_TIMES: Record<number, string[]> = {
-  1: ["08:00"],
-  2: ["08:00", "20:00"],
-  3: ["08:00", "14:00", "20:00"],
-  4: ["08:00", "13:00", "18:00", "23:00"],
+  1: ["10:00"],
+  2: ["10:00", "20:00"],
+  3: ["10:00", "15:00", "20:00"],
+  4: ["10:00", "14:00", "18:00", "22:00"],
 };
 
 /** The times a dose lands on for a given daily count — empty for PRN/unknown. */
