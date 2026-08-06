@@ -34,7 +34,8 @@ import { VisitBanner } from "@/components/VisitBanner";
 import { CaseSummary } from "@/components/CaseSummary";
 import { Section } from "@/components/VisitTabs";
 import { flagsFromProblems, isJuvenile, type ChartFlags } from "@/lib/problems";
-import { playTap, playSuccess, playWarning } from "@/lib/sounds";
+import { playTap, playSuccess, playWarning, playAchievement } from "@/lib/sounds";
+import { celebrate } from "@/lib/celebrate";
 
 const DAY_MARK = "⟦D:";
 const dayNoteEncode = (day: string, text: string) => `${DAY_MARK}${day}⟧${text}`;
@@ -130,6 +131,8 @@ export default function VisitPage() {
 
   const [planOpen, setPlanOpen] = useState(false);
   const [planBusy, setPlanBusy] = useState(false);
+  /** True while the wizard holds unsaved selections — guards the modal close. */
+  const planDirty = useRef(false);
   const [labOpen, setLabOpen] = useState(false);
   const [noteOpen, setNoteOpen] = useState(false);
   const [noteText, setNoteText] = useState("");
@@ -281,7 +284,18 @@ export default function VisitPage() {
         await Promise.all(treatments.map((t) => repo.setTreatmentGiven(t.id, !!t.administered_at, t.administered_by, t.administered_at ?? undefined).catch(() => {})));
       }
       if (visit) await syncDoseCycleForPet(visit.pet_id);
-      setPlanOpen(false); playSuccess(); await reload();
+      // The earned moment: fanfare + a brief spark burst + a receipt of what
+      // was actually created — the wizard's two minutes end with an achievement,
+      // not a silent page swap.
+      planDirty.current = false;
+      setPlanOpen(false);
+      playAchievement();
+      celebrate();
+      const nDrugs = record?.treatment?.length ?? 0;
+      const nDoses = record?.treatment?.reduce((s, t) => s + (t.doses || 0), 0) ?? 0;
+      if (nDrugs > 0) toast.success("حُفظت الخطة 🎉", `${formatNum(nDrugs)} دواء · ${formatNum(nDoses)} جرعة مجدولة بالطبلة`);
+      else toast.success("حُفظ التشخيص");
+      await reload();
     } catch (e) {
       playWarning();
       toast.error("تعذّر الحفظ", e instanceof Error ? e.message : undefined);
@@ -603,8 +617,17 @@ export default function VisitPage() {
         <LabEntry pet={pet} visitId={visit.id} doctor={user?.full_name} onSaved={() => void reload()} onClose={() => setLabOpen(false)} />
       </Modal>
 
-      <Modal open={planOpen} onClose={() => setPlanOpen(false)} size="full" title={`التشخيص وخطة العلاج — ${pet.name}`}>
-        <TreatmentPlan onSubmit={savePlan} busy={planBusy} species={pet.species} petId={pet.id} weightKg={pet.current_weight_kg} allergies={pet.allergies} flags={prescribingFlags} onMediaAdded={reload} />
+      <Modal
+        open={planOpen}
+        onClose={() => {
+          // A stray Escape or backdrop tap must not throw away 5 steps of work.
+          if (planDirty.current && !window.confirm("في تشخيص وخطة غير محفوظة بالمعالج — تريد تسكّر وتخسرها؟")) return;
+          planDirty.current = false;
+          setPlanOpen(false);
+        }}
+        size="full" title={`التشخيص وخطة العلاج — ${pet.name}`}
+      >
+        <TreatmentPlan onSubmit={savePlan} busy={planBusy} species={pet.species} petId={pet.id} weightKg={pet.current_weight_kg} allergies={pet.allergies} flags={prescribingFlags} onMediaAdded={reload} onDirtyChange={(d) => { planDirty.current = d; }} />
       </Modal>
 
       <Modal open={noteOpen} onClose={() => { setNoteOpen(false); setNoteText(""); setNoteDay(null); }} title={noteDay ? `ملاحظة على ${formatDate(noteDay, lang)}` : "إضافة ملاحظة"}>

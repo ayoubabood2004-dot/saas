@@ -36,17 +36,30 @@ export function CbcPanel({
             <div className="mb-1 flex items-center gap-2">
               <span className="grid h-6 min-w-[2.5rem] place-items-center rounded-lg bg-brand-50 px-1.5 text-2xs font-extrabold text-brand-700 dark:bg-brand-500/15 dark:text-brand-300">{p.abbr}</span>
               <span className="flex-1 truncate text-xs font-bold text-ink">{p.label}</span>
+              {/* Type-to-record: transcribing a printed slip is typing work, not
+                  slider work — the input records exactly like a drag does. */}
+              <input
+                type="number" inputMode="decimal" min={p.min} max={p.max} step={p.step}
+                value={recorded ? String(Number(v.toFixed(p.step < 1 ? 1 : 0))) : ""}
+                onChange={(e) => {
+                  const n = Number(e.target.value);
+                  if (e.target.value === "" || Number.isNaN(n)) { const next = { ...value }; delete next[p.id]; onChange(next); }
+                  else setVal(p.id, n);
+                }}
+                placeholder="—"
+                className="input h-7 w-[4.5rem] px-1.5 py-0 text-center text-sm font-extrabold tabular-nums"
+                aria-label={`قيمة ${p.abbr}`}
+              />
+              <span className="text-2xs text-ink-subtle">{p.unit}</span>
               {recorded ? (
                 <>
-                  <span className="text-sm font-extrabold tabular-nums text-ink">{formatNum(Number(v.toFixed(p.step < 1 ? 1 : 0)))}</span>
-                  <span className="text-2xs text-ink-subtle">{p.unit}</span>
                   <span className={cn("rounded-full px-2 py-0.5 text-2xs font-bold", FLAG_CHIP[flag])}>{FLAG_LABEL[flag]}</span>
                   <button type="button" onClick={() => clear(p.id)} aria-label="مسح" className="grid h-6 w-6 place-items-center rounded-full text-ink-subtle transition hover:bg-danger-50 hover:text-danger-600">
                     <X size={13} />
                   </button>
                 </>
               ) : (
-                <span className="text-2xs font-semibold text-ink-subtle">اسحب للتسجيل</span>
+                <span className="text-2xs font-semibold text-ink-subtle">اسحب أو اكتب</span>
               )}
             </div>
 

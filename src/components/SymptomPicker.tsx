@@ -1,16 +1,17 @@
-import { useMemo, useState } from "react";
-import { Search, X, Sparkles, Plus, Check, Pencil } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Search, X, Sparkles, Plus, Check, Pencil, Zap } from "lucide-react";
 import {
-  SYMPTOMS, SYMPTOM_CATEGORIES, symptomById, symptomLabel, categoryForSystem,
+  SYMPTOMS, SYMPTOM_CATEGORIES, COMMON_COMPLAINTS, symptomById, symptomLabel, categoryForSystem,
 } from "@/lib/clinicalKnowledge";
 import { Glyph } from "@/lib/clinicalIcons";
-import { formatNum, cn } from "@/lib/utils";
-import { playTap } from "@/lib/sounds";
+import { formatNum, normalizeAr, cn } from "@/lib/utils";
+import { playTap, playSuccess } from "@/lib/sounds";
 
 /** symptomId → { qualifierId: chosen option } */
 export type QualifierMap = Record<string, Record<string, string>>;
 
-const norm = (s: string) => s.replace(/\s+/g, "").toLowerCase();
+// Fold hamza/teh-marbuta/diacritics too — «اسهال» must find «إسهال».
+const norm = (s: string) => normalizeAr(s);
 
 /**
  * SymptomPicker — ONE simple flow (no more parallel template row + chip accordion):
@@ -52,6 +53,24 @@ export function SymptomPicker({
   };
   const add = (id: string) => { if (!selected.has(id)) { playTap(); onChange([...value, id]); } };
 
+  /** One tap seeds a whole chief-complaint sign bundle — the fastest path for
+   *  the ~12 presentations that make up most of a clinic day. */
+  const applyComplaint = (c: (typeof COMMON_COMPLAINTS)[number]) => {
+    const fresh = c.symptomIds.filter((id) => !selected.has(id));
+    if (fresh.length === 0) return;
+    playSuccess();
+    onChange([...value, ...fresh]);
+    const cat = categoryForSystem(c.system);
+    if (cat) setOpenCat(cat.id);
+  };
+
+  // Opening a category below the fold must never look like a dead tap — bring
+  // the signs tray into view the moment it mounts.
+  const trayRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (openCat) trayRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }, [openCat]);
+
   const setQualifier = (symptomId: string, qualifierId: string, option: string) => {
     playTap();
     const cur = qualifiers[symptomId] ?? {};
@@ -80,11 +99,11 @@ export function SymptomPicker({
   const openCategory = openCat ? SYMPTOM_CATEGORIES.find((c) => c.id === openCat) : undefined;
 
   // One big, clear, tappable symptom button (used in the open system + search).
-  const SignButton = ({ id }: { id: string }) => {
+  const SignButton = ({ id, onAfter }: { id: string; onAfter?: () => void }) => {
     const on = selected.has(id);
     return (
       <button
-        type="button" onClick={() => toggle(id)}
+        type="button" onClick={() => { toggle(id); onAfter?.(); }}
         className={cn(
           "flex items-center gap-2.5 rounded-2xl border-2 px-3.5 py-3 text-start transition active:scale-[0.98]",
           on ? "border-brand-500 bg-brand-600 text-white shadow-soft"
@@ -110,7 +129,9 @@ export function SymptomPicker({
           </span>
           {value.length > 0 && (
             <button type="button" onClick={() => { playTap(); onShowDifferential(); }} className="inline-flex items-center gap-1.5 rounded-full bg-brand-600 px-3 py-1 text-2xs font-bold text-white shadow-soft transition hover:bg-brand-700">
-              <Sparkles size={12} /> التشخيص التفريقي ({formatNum(differentialCount)})
+              <Sparkles size={12} /> التشخيص التفريقي
+              {/* keyed by value → re-mounts with a tiny pop whenever the engine's count changes */}
+              <span key={differentialCount} className="inline-block animate-scale-in tabular-nums">({formatNum(differentialCount)})</span>
             </button>
           )}
         </div>
@@ -176,14 +197,22 @@ export function SymptomPicker({
       <div className="relative">
         <Search size={16} className="pointer-events-none absolute inset-y-0 end-3 my-auto text-ink-subtle" />
         <input
-          value={query} onChange={(e) => setQuery(e.target.value)}
-          placeholder="ابحث عن أي عرض… (مثال: قيء، دم، عرج)"
+          autoFocus value={query} onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && query.trim() && !e.ctrlKey && !e.metaKey) {
+              e.preventDefault();
+              if (matches[0]) { toggle(matches[0].id); setQuery(""); }
+              else if (exactCustom) { add(`custom:${query.trim()}`); setQuery(""); }
+            }
+            if (e.key === "Escape" && query) { e.stopPropagation(); setQuery(""); }
+          }}
+          placeholder="ابحث عن أي عرض… (مثال: قيء، دم، عرج — Enter يضيف)"
           className="input h-11 w-full pe-9 text-sm"
         />
       </div>
       {q && (
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
-          {matches.map((s) => <SignButton key={s.id} id={s.id} />)}
+          {matches.map((s) => <SignButton key={s.id} id={s.id} onAfter={() => setQuery("")} />)}
           {exactCustom && (
             <button
               type="button"
@@ -200,6 +229,23 @@ export function SymptomPicker({
       {/* ── Big body-system boxes → tap to open the signs underneath ─────── */}
       {!q && (
         <>
+          {/* Chief-complaint presets: one tap seeds the whole sign bundle */}
+          <div className="rounded-2xl border border-warn-200/70 bg-warn-50/50 p-2.5 dark:border-warn-500/25 dark:bg-warn-500/5">
+            <div className="mb-1.5 flex items-center gap-1 text-2xs font-extrabold text-warn-700 dark:text-warn-300"><Zap size={12} /> شكاوى شائعة — ضغطة وحدة تعبّي أعراضها</div>
+            <div className="flex flex-wrap gap-1.5">
+              {COMMON_COMPLAINTS.map((c) => {
+                const doneAll = c.symptomIds.every((id) => selected.has(id));
+                return (
+                  <button key={c.label} type="button" onClick={() => applyComplaint(c)}
+                    className={cn("inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-2xs font-bold transition active:scale-[0.97]",
+                      doneAll ? "border-warn-400 bg-warn-100 text-warn-800 dark:bg-warn-500/20 dark:text-warn-200" : "border-line bg-surface-1 text-ink-muted hover:border-warn-300 hover:text-ink")}>
+                    {doneAll && <Check size={11} />} {c.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
           <div className="text-2xs font-bold text-ink-subtle">اختر الجهاز ثم اضغط العرض — كل الأعراض بمكان واحد</div>
           <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-4">
             {SYMPTOM_CATEGORIES.map((cat) => {
@@ -226,7 +272,7 @@ export function SymptomPicker({
 
           {/* The tapped system's signs — large, clear buttons */}
           {openCategory && (
-            <div className="animate-fade-in rounded-2xl border-2 border-brand-200 bg-surface-1 p-3 dark:border-brand-500/25">
+            <div ref={trayRef} className="animate-fade-in rounded-2xl border-2 border-brand-200 bg-surface-1 p-3 dark:border-brand-500/25">
               <div className="mb-2.5 flex items-center gap-2">
                 <Glyph name={openCategory.systemId} size={26} />
                 <span className="flex-1 text-sm font-extrabold text-ink">{openCategory.name}</span>

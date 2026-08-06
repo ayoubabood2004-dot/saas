@@ -102,3 +102,31 @@ export function playTap() {
   if (!isSoundEnabled()) return;
   tone(660, 0, 0.06, "sine", 0.08);
 }
+
+/** A step of the wizard just completed — one bright pop, pitched by progress
+ *  (later steps ring higher), so filling the form literally plays a scale. */
+export function playStepDone(stepIndex = 0) {
+  if (!isSoundEnabled()) return;
+  // Pentatonic degrees — any pair of them is consonant, so quick back-to-back
+  // steps never clash: C5 D5 E5 G5 A5.
+  const scale = [523.25, 587.33, 659.25, 783.99, 880.0];
+  const f = scale[Math.min(scale.length - 1, Math.max(0, stepIndex))];
+  tone(f, 0, 0.12, "sine", 0.14);
+  tone(f * 2, 0.02, 0.16, "sine", 0.05); // airy octave sparkle
+}
+
+/** The earned fanfare — the whole plan saved. A rising major arpeggio that
+ *  resolves on a full chord: short enough to never annoy (~0.9s), warm enough
+ *  to feel like an achievement, not a slot machine. */
+export function playAchievement() {
+  if (!isSoundEnabled()) return;
+  // Rise: C5 → E5 → G5 …
+  tone(523.25, 0, 0.14, "sine", 0.15);
+  tone(659.25, 0.1, 0.14, "sine", 0.15);
+  tone(783.99, 0.2, 0.16, "sine", 0.16);
+  // …resolve: the full C-major chord with a high sparkle, ringing out together.
+  tone(523.25, 0.34, 0.5, "sine", 0.12);
+  tone(659.25, 0.34, 0.5, "sine", 0.12);
+  tone(1046.5, 0.34, 0.55, "sine", 0.14);
+  tone(2093.0, 0.4, 0.35, "triangle", 0.04);
+}

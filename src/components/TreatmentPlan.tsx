@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   Plus, X, Pill, CalendarClock, Check, Activity, Stethoscope,
   AlertTriangle, ShieldAlert, Biohazard, Sparkles, ChevronLeft, ChevronRight, Crosshair,
-  Droplets, Camera, Loader2, ImageIcon, Search, Scale, FileText, ClipboardList, ScanLine,
+  Droplets, Camera, Loader2, ImageIcon, Search, Scale, FileText, ClipboardList, ScanLine, History,
 } from "lucide-react";
 import { AnatomyMap, type AnatomyFocus } from "@/components/AnatomyMap";
 import { SymptomPicker, type QualifierMap } from "@/components/SymptomPicker";
@@ -17,15 +17,15 @@ import { readLabImage } from "@/lib/labOcr";
 import { encodeClinical, type ClinicalRecord } from "@/lib/clinicalRecord";
 import { Glyph } from "@/lib/clinicalIcons";
 import { MED_CATALOG, getClinicMeds } from "@/lib/meds";
-import { DoseBlock, DoseAlertRow, type DosePatch } from "@/components/DoseBlock";
-import { matchMonograph, checkSafety, calcDose, appFreqHours, APP_ROUTE, type DoseAlert } from "@/lib/vetFormulary";
+import { DoseBlock, DoseAlertRow, APP_ROUTE_BACK, type DosePatch } from "@/components/DoseBlock";
+import { matchMonograph, checkSafety, calcDose, appFreqHours, doseFor, freqIdFor, APP_ROUTE, type DoseAlert } from "@/lib/vetFormulary";
 import type { Product } from "@/types";
 import type { ChartFlags } from "@/lib/problems";
 import { repo } from "@/lib/repo";
 import { prepareUpload } from "@/lib/image";
 import { Button, useToast } from "@/components/ui";
-import { formatNum, cn } from "@/lib/utils";
-import { playTap, playSuccess, playWarning } from "@/lib/sounds";
+import { formatNum, normalizeAr, cn } from "@/lib/utils";
+import { playTap, playSuccess, playWarning, playStepDone } from "@/lib/sounds";
 
 /** How often a treatment is given — drives the dose-count math. */
 const FREQS: { id: string; label: string; short: string; perDay: number }[] = [
@@ -66,6 +66,41 @@ const parseMgKg = (dose: string): number | undefined => {
   return m ? Number(m[1]) : undefined;
 };
 
+/**
+ * Everything the formulary already knows about a drug, as row defaults: the
+ * species-typical mg/kg, its frequency, first documented route, and the market
+ * strength. Applied the moment a drug is ADDED — the human-test run showed a
+ * catalog drug otherwise ships doseless to the nurse board unless the doctor
+ * notices the tiny «استعمل الجرعة المعتادة» pill.
+ */
+const formularySeed = (name: string, species?: Sp): Partial<PlanRow> => {
+  const drug = matchMonograph(name);
+  if (!drug) return {};
+  const win = species ? doseFor(drug, species) : undefined;
+  return {
+    strength: drug.strengths?.[0],
+    solid: drug.solid || undefined,
+    ...(win
+      ? { doseMode: "weight" as const, mgPerKg: win.typical, freq: freqIdFor(win.freq), route: APP_ROUTE_BACK[win.routes[0]] }
+      : {}),
+  };
+};
+
+/* ---- The doctor's own habit: last-used drugs, newest first (per device) ---- */
+const RECENT_DRUGS_KEY = "vp_recent_drugs";
+const recentDrugs = (): string[] => {
+  try { const v = JSON.parse(localStorage.getItem(RECENT_DRUGS_KEY) || "[]"); return Array.isArray(v) ? v.filter((x) => typeof x === "string") : []; }
+  catch { return []; }
+};
+const pushRecentDrug = (name: string) => {
+  const t = name.trim();
+  if (!t) return;
+  try {
+    const list = [t, ...recentDrugs().filter((x) => x.toLowerCase() !== t.toLowerCase())].slice(0, 10);
+    localStorage.setItem(RECENT_DRUGS_KEY, JSON.stringify(list));
+  } catch { /* private mode — the habit list is a bonus, never a blocker */ }
+};
+
 /** The clinic's medicine name catalog (built-in + clinic-custom), same source as الطبلة. */
 const allMeds = (): { name: string; type: string }[] => {
   const map = new Map<string, string>();
@@ -97,7 +132,7 @@ const STEPS: { id: StepId; label: string; icon: typeof Activity }[] = [
  * The final OUTCOME is captured later, when the visit is closed — not here.
  */
 export function TreatmentPlan({
-  onSubmit, busy, species, petId, weightKg, allergies, flags, onMediaAdded,
+  onSubmit, busy, species, petId, weightKg, allergies, flags, onMediaAdded, onDirtyChange,
 }: {
   onSubmit: (body: string) => void | Promise<void>;
   busy?: boolean;
@@ -109,6 +144,8 @@ export function TreatmentPlan({
   /** Prescribing flags from the live problem list — renal/hepatic/pregnant. */
   flags?: ChartFlags;
   onMediaAdded?: () => void;
+  /** Fires with true while un-saved selections exist — parents guard their close. */
+  onDirtyChange?: (dirty: boolean) => void;
 }) {
   const toast = useToast();
   const [step, setStep] = useState<StepId>("anatomy");
@@ -218,10 +255,13 @@ export function TreatmentPlan({
   const removeRow = (id: string) => setRows((rs) => (rs.length > 1 ? rs.filter((r) => r.id !== id) : rs.map((r) => (r.id === id ? blankRow() : r))));
   const addDrug = (name: string, seed?: Partial<PlanRow>) => {
     playTap();
+    if (name.trim()) pushRecentDrug(name);
     setRows((rs) => {
       if (name && rs.some((r) => r.name.trim().toLowerCase() === name.trim().toLowerCase())) return rs;
       const kept = rs.filter((r) => r.name.trim());
-      return [...kept, { ...blankRow(), name, ...seed }];
+      // The formulary fills the row before the doctor ever opens it: typical
+      // mg/kg, frequency, route and strength — editing beats typing.
+      return [...kept, { ...blankRow(), ...formularySeed(name, species), name, ...seed }];
     });
   };
   const applyProtocol = (d: Disease) => {
@@ -229,7 +269,15 @@ export function TreatmentPlan({
     playTap();
     const added: PlanRow[] = d.protocol.map((p) => {
       const mgkg = parseMgKg(p.dose);
-      return { id: rid(), name: p.drug, dose: mgkg ? "" : p.dose, mgPerKg: mgkg, doseMode: (mgkg ? "weight" : "manual") as "weight" | "manual", freq: p.freq, days: p.days, note: p.note };
+      const seed = formularySeed(p.drug, species);
+      return {
+        id: rid(), name: p.drug, dose: mgkg ? "" : p.dose, mgPerKg: mgkg,
+        doseMode: (mgkg ? "weight" : "manual") as "weight" | "manual",
+        freq: p.freq, days: p.days, note: p.note,
+        // The protocol says what and how much; the monograph completes how —
+        // route and vial strength — so the ml volume appears with zero extra taps.
+        route: seed.route, strength: seed.strength, solid: seed.solid,
+      };
     });
     setRows((rs) => {
       const kept = rs.filter((r) => r.name.trim());
@@ -290,7 +338,18 @@ export function TreatmentPlan({
   }, [filledRows, species, weight, allergies, flags]);
   const cbcIds = Object.keys(cbc);
 
-  const canSave = !busy && (!!focus || symptoms.length > 0 || cbcIds.length > 0 || !!labPhoto || diagnoses.length > 0 || filledRows.length > 0 || !!notes.trim());
+  const hasContent = !!focus || symptoms.length > 0 || cbcIds.length > 0 || !!labPhoto || diagnoses.length > 0 || filledRows.length > 0 || !!notes.trim();
+  const canSave = !busy && hasContent;
+
+  // The parent's close guard: unsaved work should not vanish on a stray Escape.
+  useEffect(() => { onDirtyChange?.(hasContent); }, [hasContent, onDirtyChange]);
+
+  /* ---- Doseless guard: a drug with no resolvable dose must not slip silently
+     onto the nurse board as «أعطِ أموكسيسيلين — بدون كمية». First save click
+     warns and names the drugs; a second click saves deliberately. ---- */
+  const doseless = filledRows.filter((r) => !doseText(r));
+  const [doselessAck, setDoselessAck] = useState(false);
+  useEffect(() => { setDoselessAck(false); }, [doseless.length]);
 
   const compose = () => {
     const lines: string[] = [];
@@ -387,6 +446,43 @@ export function TreatmentPlan({
     diagnosis: diagnoses.length > 0 || !!notes.trim(),
     treatment: filledRows.length > 0,
   };
+  const doneCount = STEPS.filter((s) => done[s.id]).length;
+
+  /** What each step already holds — the tab wears its count like a quest tracker. */
+  const stepCount: Record<StepId, number> = {
+    anatomy: focus ? 1 : 0,
+    symptoms: symptoms.length,
+    labs: cbcIds.length + (labPhoto ? 1 : 0),
+    diagnosis: diagnoses.length,
+    treatment: filledRows.length,
+  };
+
+  // A step flipping to «done» earns one soft note, pitched by position — filling
+  // the wizard literally plays a rising scale. Never re-fires on edits.
+  const prevDone = useRef(done);
+  useEffect(() => {
+    STEPS.forEach((s, i) => { if (done[s.id] && !prevDone.current[s.id]) playStepDone(i); });
+    prevDone.current = done;
+  });
+
+  const trySave = () => {
+    if (!canSave) return;
+    if (doseless.length > 0 && !doselessAck) { playWarning(); setDoselessAck(true); return; }
+    void onSubmit(encodeClinical(buildRecord(), compose()));
+  };
+
+  // Ctrl/Cmd+Enter anywhere = التالي (or حفظ on the last step) — hands stay put.
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+        e.preventDefault();
+        if (stepIndex < STEPS.length - 1) go(1);
+        else trySave();
+      }
+    };
+    window.addEventListener("keydown", h);
+    return () => window.removeEventListener("keydown", h);
+  });
 
   return (
     <div className="space-y-4">
@@ -404,14 +500,32 @@ export function TreatmentPlan({
                 active ? "bg-brand-600 text-white shadow-card" : done[s.id] ? "text-success-700 hover:bg-surface-1 dark:text-success-300" : "text-ink-muted hover:bg-surface-1 hover:text-ink",
               )}
             >
-              <span className={cn("grid h-5 w-5 place-items-center rounded-full text-[11px] font-extrabold", active ? "bg-white/25 text-white" : done[s.id] ? "bg-success-500 text-white" : "bg-ink-subtle/20 text-ink-subtle")}>
+              <span className={cn("grid h-5 w-5 place-items-center rounded-full text-[11px] font-extrabold", active ? "bg-white/25 text-white" : done[s.id] ? "animate-scale-in bg-success-500 text-white" : "bg-ink-subtle/20 text-ink-subtle")}>
                 {done[s.id] && !active ? "✓" : formatNum(i + 1)}
               </span>
               <Icon size={15} className="hidden sm:block" />
               {s.label}
+              {stepCount[s.id] > 0 && (
+                <span className={cn("rounded-full px-1.5 py-0.5 text-[10px] font-extrabold tabular-nums", active ? "bg-white/25 text-white" : "bg-brand-100 text-brand-700 dark:bg-brand-500/20 dark:text-brand-300")}>
+                  {formatNum(stepCount[s.id])}
+                </span>
+              )}
             </button>
           );
         })}
+      </div>
+
+      {/* Case-completion meter: five segments that fill as steps earn their ✓ —
+          an almost-full bar pulls the doctor to close the loop. */}
+      <div className="flex items-center gap-2 px-0.5">
+        <div className="flex flex-1 items-center gap-1">
+          {STEPS.map((s) => (
+            <span key={s.id} className={cn("h-1.5 flex-1 rounded-full transition-colors duration-500", done[s.id] ? "bg-brand-grad" : "bg-surface-3")} />
+          ))}
+        </div>
+        <span className="shrink-0 text-2xs font-extrabold tabular-nums text-ink-subtle">
+          {doneCount === STEPS.length ? "اكتملت كل الخطوات 🎉" : `اكتمل ${formatNum(doneCount)} من ${formatNum(STEPS.length)}`}
+        </span>
       </div>
 
       {/* Two-column: work area + live case-summary rail (rail shows on lg+) */}
@@ -499,6 +613,7 @@ export function TreatmentPlan({
               diagnoses={diagnoses} setDiagnoses={setDiagnoses}
               zoonotic={zoonotic} reportable={reportable} redFlags={redFlags}
               notes={notes} setNotes={setNotes}
+              initialSystem={focus?.system ?? differential[0]?.system}
             />
           )}
 
@@ -507,6 +622,8 @@ export function TreatmentPlan({
               rows={rows} setRow={setRow} removeRow={removeRow} addDrug={addDrug}
               weight={weight} setWeight={setWeight} species={species} allergies={allergies} flags={flags}
               stockMeds={stockMeds} stockFor={stockFor} interactions={interactions} safety={safety}
+              protocolDiseases={pickedDiseases.filter((d) => d.protocol?.length)}
+              applyProtocol={applyProtocol}
             />
           )}
         </div>
@@ -521,15 +638,29 @@ export function TreatmentPlan({
         </aside>
       </div>
 
+      {/* The deliberate-save gate for doseless drugs — named, explained, and one more click away */}
+      {doselessAck && doseless.length > 0 && (
+        <div className="flex items-start gap-2 rounded-2xl border border-warn-200 bg-warn-50 p-3 text-xs dark:border-warn-500/30 dark:bg-warn-500/10">
+          <AlertTriangle size={16} className="mt-0.5 shrink-0 text-warn-600 dark:text-warn-300" />
+          <div className="min-w-0 leading-relaxed text-warn-800 dark:text-warn-200">
+            <div className="font-extrabold">في أدوية بدون جرعة: {doseless.map((r) => r.name.trim()).join("، ")}</div>
+            <div className="mt-0.5">رح تطلع للممرض بجدول الجرعات <span className="font-extrabold">بدون كمية</span>. ارجع كمّل الجرعة، أو اضغط «حفظ» مرة ثانية إذا هذا مقصود.</div>
+          </div>
+        </div>
+      )}
+
       {/* Footer nav + save */}
       <div className="flex items-center gap-2 border-t border-line pt-3">
         <button type="button" onClick={() => go(-1)} disabled={stepIndex === 0} className="inline-flex items-center gap-1 rounded-full px-3 py-2 text-sm font-bold text-ink-muted transition hover:text-ink disabled:opacity-30">
           <ChevronRight size={16} className="rtl:hidden" /><ChevronLeft size={16} className="ltr:hidden" /> السابق
         </button>
+        <span className="hidden text-2xs font-semibold text-ink-subtle sm:block">Ctrl+Enter = {stepIndex < STEPS.length - 1 ? "التالي" : "حفظ"}</span>
         {stepIndex < STEPS.length - 1 ? (
-          <Button className="ms-auto" rightIcon={<ChevronLeft size={16} className="rtl:block ltr:hidden" />} onClick={() => go(1)}>التالي</Button>
+          <Button className="ms-auto" rightIcon={<ChevronLeft size={16} className="rtl:block ltr:hidden" />} onClick={() => go(1)}>
+            التالي: {STEPS[stepIndex + 1].label}
+          </Button>
         ) : (
-          <Button className="ms-auto" leftIcon={<Check size={18} />} disabled={!canSave} loading={busy} onClick={() => onSubmit(encodeClinical(buildRecord(), compose()))}>
+          <Button className="ms-auto" leftIcon={<Check size={18} />} disabled={!canSave} loading={busy} onClick={trySave}>
             حفظ التشخيص وخطة العلاج
           </Button>
         )}
@@ -541,7 +672,7 @@ export function TreatmentPlan({
 /* =============================== Diagnosis step ============================= */
 function DiagnosisStep({
   species, differential, topScore, isDiseasePicked, toggleDisease, applyProtocol,
-  diagnoses, setDiagnoses, zoonotic, reportable, redFlags, notes, setNotes,
+  diagnoses, setDiagnoses, zoonotic, reportable, redFlags, notes, setNotes, initialSystem,
 }: {
   species?: Sp;
   differential: (Disease & { score: number; match: number })[];
@@ -553,8 +684,12 @@ function DiagnosisStep({
   setDiagnoses: (d: Diagnosis[]) => void;
   zoonotic: Disease[]; reportable: Disease[]; redFlags: Disease[];
   notes: string; setNotes: (s: string) => void;
+  /** Browse opens on the case's own system (anatomy focus → top differential), not a fixed default. */
+  initialSystem?: string;
 }) {
-  const [sys, setSys] = useState<string>(BODY_SYSTEMS[0]?.id ?? "digestive");
+  const [sys, setSys] = useState<string>(
+    (initialSystem && BODY_SYSTEMS.some((s) => s.id === initialSystem) ? initialSystem : undefined) ?? BODY_SYSTEMS[0]?.id ?? "digestive",
+  );
   const [q, setQ] = useState("");
   const sysDiseases = useMemo(() => diseasesForSystem(sys, species), [sys, species]);
   const manualForSys = diagnoses.filter((d) => d.system === sys && !DISEASES.some((x) => x.name === d.disease && x.system === d.system));
@@ -565,6 +700,17 @@ function DiagnosisStep({
     setDiagnoses([...diagnoses, { system: sys, disease: t, severity: "moderate" }]);
     setQ("");
   };
+
+  // The typed text first searches the WHOLE knowledge base (all systems, this
+  // species) with Arabic-orthography folding — a known disease picked here keeps
+  // its latin name, zoonotic/reportable flags and protocol. Free text is the
+  // last resort, not the first result.
+  const kbMatches = useMemo(() => {
+    const ql = normalizeAr(q.trim());
+    if (!ql) return [];
+    const all = BODY_SYSTEMS.flatMap((s) => diseasesForSystem(s.id, species));
+    return all.filter((d) => normalizeAr(d.name).includes(ql) || (d.latin && normalizeAr(d.latin).includes(ql))).slice(0, 6);
+  }, [q, species]);
 
   return (
     <section className="space-y-4">
@@ -629,18 +775,35 @@ function DiagnosisStep({
           </div>
         )}
 
-        {/* free-type */}
+        {/* Search the whole knowledge base — free text only as the last resort */}
         <div className="relative mt-3">
           <Search size={15} className="pointer-events-none absolute inset-y-0 end-3 my-auto text-ink-subtle" />
           <input value={q} onChange={(e) => setQ(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter" && q.trim()) { e.preventDefault(); addManual(q); } }}
-            placeholder={`اكتب تشخيصاً في ${systemById(sys)?.name ?? "هذا الجهاز"}…`}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && q.trim()) {
+                e.preventDefault();
+                if (kbMatches[0]) { toggleDisease(kbMatches[0]); setQ(""); } else addManual(q);
+              }
+              if (e.key === "Escape") setQ("");
+            }}
+            placeholder="ابحث عن أي تشخيص… (بكل الأجهزة، أو اكتبه يدوياً)"
             className="input h-10 w-full pe-9 text-sm" />
         </div>
         {q.trim() && (
-          <button type="button" onClick={() => addManual(q)} className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-dashed border-brand-400 bg-brand-50 px-3 py-1.5 text-xs font-bold text-brand-700 transition hover:bg-brand-100 dark:bg-brand-500/10 dark:text-brand-300">
-            <Plus size={13} /> إضافة تشخيص «{q.trim()}»
-          </button>
+          <div className="mt-2 flex flex-wrap items-center gap-1.5">
+            {kbMatches.map((d) => (
+              <button key={d.id} type="button" onClick={() => { toggleDisease(d); setQ(""); }}
+                className={cn("inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-bold transition",
+                  isDiseasePicked(d) ? "border-brand-500 bg-brand-600 text-white" : "border-brand-300 bg-surface-1 text-ink hover:bg-brand-50 dark:hover:bg-brand-500/10")}>
+                {isDiseasePicked(d) ? <Check size={13} /> : <Plus size={13} />} {d.name}
+                <span className="text-2xs font-semibold opacity-70">{systemById(d.system)?.name}</span>
+                {d.protocol?.length ? <span className="text-2xs">✦</span> : null}
+              </button>
+            ))}
+            <button type="button" onClick={() => addManual(q)} className="inline-flex items-center gap-1.5 rounded-full border border-dashed border-brand-400 bg-brand-50 px-3 py-1.5 text-xs font-bold text-brand-700 transition hover:bg-brand-100 dark:bg-brand-500/10 dark:text-brand-300">
+              <Plus size={13} /> إضافة «{q.trim()}» في {systemById(sys)?.name}
+            </button>
+          </div>
         )}
       </div>
 
@@ -690,6 +853,7 @@ function DiseaseCard({ d, picked, onToggle, onApply, pct }: { d: Disease & { mat
 /* =============================== Treatment step ============================ */
 function TreatmentStep({
   rows, setRow, removeRow, addDrug, weight, setWeight, species, allergies, flags, stockMeds, stockFor, interactions, safety,
+  protocolDiseases, applyProtocol,
 }: {
   rows: PlanRow[];
   setRow: (id: string, patch: Partial<PlanRow>) => void;
@@ -703,6 +867,9 @@ function TreatmentStep({
   stockFor: (name: string) => Product | undefined;
   interactions: { a: string; b: string; severity: "major" | "moderate"; note: string }[];
   safety: { name: string; alerts: DoseAlert[] }[];
+  /** Picked diagnoses that carry a ready protocol — apply them from HERE, no back-navigation. */
+  protocolDiseases: Disease[];
+  applyProtocol: (d: Disease) => void;
 }) {
   const [q, setQ] = useState("");
   // One unified picker: the default catalog + clinic-custom meds (allMeds) PLUS the
@@ -716,14 +883,28 @@ function TreatmentStep({
       .map((p) => ({ name: p.name, type: "من مخزون العيادة" }));
     return [...stockOnly, ...base];
   }, [stockMeds]);
+  // The search haystack folds Arabic orthography AND includes each drug's
+  // monograph aliases — «اموكس» finds «Amoxicillin 250mg» because the formulary
+  // knows it as أموكسيسيلين. Free-typed drugs lose the safety net, so the
+  // search must catch every reasonable spelling first.
+  const medIndex = useMemo(() => meds.map((m) => {
+    const mono = matchMonograph(m.name);
+    const hay = [m.name, mono?.ar, mono?.en, ...(mono?.brands ?? [])].filter(Boolean).map((s) => normalizeAr(s as string)).join("|");
+    return { ...m, hay, ar: mono?.ar };
+  }), [meds]);
   const matches = useMemo(() => {
-    const ql = q.trim().toLowerCase();
+    const ql = normalizeAr(q.trim());
     if (!ql) return [];
-    return meds
-      .filter((m) => m.name.toLowerCase().includes(ql))
+    return medIndex
+      .filter((m) => m.hay.includes(ql))
       .sort((a, b) => (stockFor(b.name) ? 1 : 0) - (stockFor(a.name) ? 1 : 0)) // in-stock first
       .slice(0, 8);
-  }, [q, meds, stockFor]);
+  }, [q, medIndex, stockFor]);
+
+  // The doctor's habitual drugs (this device), minus what's already on the plan.
+  const [recents] = useState<string[]>(recentDrugs);
+  const inPlan = (name: string) => rows.some((r) => r.name.trim().toLowerCase() === name.trim().toLowerCase());
+  const recentPicks = recents.filter((n) => !inPlan(n)).slice(0, 8);
 
   return (
     <section className="space-y-3">
@@ -765,6 +946,34 @@ function TreatmentStep({
         <span className="text-2xs text-ink-subtle">{weight ? "تُحسب الجرعات تلقائياً بالوزن" : "أدخل الوزن لحساب الجرعات تلقائياً"}</span>
       </div>
 
+      {/* Protocols of the diagnoses picked one step ago — applied from here, no back-trip */}
+      {protocolDiseases.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5 rounded-2xl border border-brand-200 bg-brand-50/70 p-3 dark:border-brand-500/25 dark:bg-brand-500/10">
+          <span className="me-1 inline-flex items-center gap-1 text-2xs font-extrabold text-brand-700 dark:text-brand-300"><Sparkles size={13} /> بروتوكولات تشخيصاتك:</span>
+          {protocolDiseases.map((d) => (
+            <button key={d.id} type="button" onClick={() => applyProtocol(d)}
+              className="inline-flex items-center gap-1 rounded-full border border-brand-300 bg-surface-1 px-3 py-1.5 text-xs font-bold text-brand-700 transition hover:bg-brand-100 dark:text-brand-300 dark:hover:bg-brand-500/15">
+              ✦ {d.name} ({formatNum(d.protocol!.length)} أدوية)
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* The doctor's own habit — last drugs they prescribed on this device */}
+      {recentPicks.length > 0 && (
+        <div className="rounded-2xl border border-line bg-surface-2/60 p-3">
+          <div className="mb-2 flex items-center gap-1.5 text-2xs font-extrabold text-ink-muted"><History size={13} /> أدويتك الأخيرة — ضغطة وحدة</div>
+          <div className="flex flex-wrap gap-1.5">
+            {recentPicks.map((n) => (
+              <button key={n} type="button" onClick={() => addDrug(n)}
+                className="rounded-full border border-line bg-surface-1 px-3 py-1.5 text-xs font-bold text-ink transition hover:border-brand-400 hover:bg-brand-50 dark:hover:bg-brand-500/10">
+                {n}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* In-stock quick picks */}
       {stockMeds.length > 0 && (
         <div className="rounded-2xl border border-success-100 bg-success-50 p-3 dark:border-success-500/25 dark:bg-success-500/10">
@@ -781,28 +990,42 @@ function TreatmentStep({
         </div>
       )}
 
-      {/* Catalog search */}
+      {/* Catalog search — Arabic-aware, Enter adds the first match, Escape clears */}
       <div>
         <div className="relative">
           <Search size={15} className="pointer-events-none absolute inset-y-0 end-3 my-auto text-ink-subtle" />
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="ابحث في كتالوج الأدوية… (مضادات حيوية، مسكّنات، سوائل…)" className="input h-11 w-full pe-9 text-sm" />
+          <input
+            autoFocus value={q} onChange={(e) => setQ(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && q.trim() && !e.ctrlKey && !e.metaKey) {
+                e.preventDefault();
+                if (matches[0]) addDrug(matches[0].name); else addDrug(q.trim());
+                setQ("");
+              }
+              if (e.key === "Escape" && q) { e.stopPropagation(); setQ(""); }
+            }}
+            placeholder="ابحث في كتالوج الأدوية… عربي أو إنكليزي (اضغط Enter للإضافة)" className="input h-11 w-full pe-9 text-sm" />
         </div>
         {q.trim() && (
           <div className="mt-2 overflow-hidden rounded-2xl border border-line">
-            {matches.length > 0 ? matches.map((m) => {
+            {matches.length > 0 ? matches.map((m, i) => {
               const stk = stockFor(m.name);
               return (
                 <button key={m.name} type="button" onClick={() => { addDrug(m.name); setQ(""); }}
-                  className="flex w-full items-center gap-2 border-b border-line bg-surface-1 px-3 py-2.5 text-start transition last:border-b-0 hover:bg-brand-50 dark:hover:bg-brand-500/10">
+                  className={cn("flex w-full items-center gap-2 border-b border-line bg-surface-1 px-3 py-2.5 text-start transition last:border-b-0 hover:bg-brand-50 dark:hover:bg-brand-500/10", i === 0 && "bg-brand-50/60 dark:bg-brand-500/10")}>
                   <Pill size={15} className="shrink-0 text-brand-600" />
-                  <span className="flex-1 text-sm font-bold text-ink">{m.name}</span>
+                  <span className="flex-1 text-sm font-bold text-ink">
+                    {m.name}
+                    {m.ar && <span className="ms-2 text-2xs font-semibold text-ink-subtle">{m.ar}</span>}
+                  </span>
+                  {i === 0 && <span className="rounded-md bg-brand-100 px-1.5 py-0.5 text-[10px] font-bold text-brand-700 dark:bg-brand-500/20 dark:text-brand-300">Enter ↵</span>}
                   {stk ? <span className="rounded-full bg-success-50 px-2 py-0.5 text-[10px] font-bold text-success-700 dark:bg-success-500/15 dark:text-success-300">✓ متوفّر</span> : null}
                   <span className="text-2xs text-ink-subtle">{m.type}</span>
                 </button>
               );
             }) : (
               <button type="button" onClick={() => { addDrug(q.trim()); setQ(""); }} className="flex w-full items-center gap-2 bg-surface-1 px-3 py-2.5 text-start hover:bg-brand-50 dark:hover:bg-brand-500/10">
-                <Plus size={15} className="text-brand-600" /> <span className="text-sm font-bold text-brand-700 dark:text-brand-300">إضافة «{q.trim()}»</span>
+                <Plus size={15} className="text-brand-600" /> <span className="text-sm font-bold text-brand-700 dark:text-brand-300">إضافة «{q.trim()}» — بلا مرجع دوائي، الجرعة عليك</span>
               </button>
             )}
           </div>
@@ -876,7 +1099,15 @@ function TreatmentStep({
                   {r.freq !== "prn" && (
                     <label className="inline-flex items-center gap-1.5 text-2xs font-semibold text-ink-muted">
                       المدة
-                      <input type="number" min={1} max={365} inputMode="numeric" value={r.days === 0 ? "" : String(r.days)} onChange={(e) => setRow(r.id, { days: Math.max(0, Number(e.target.value) || 0) })} className="input h-8 w-16 px-2 py-0 text-center text-sm font-bold tabular-nums" />
+                      <span className="inline-flex items-center gap-0.5">
+                        {[3, 5, 7, 10, 14].map((d) => (
+                          <button key={d} type="button" onClick={() => { playTap(); setRow(r.id, { days: d }); }}
+                            className={cn("rounded-full px-2 py-1 text-2xs font-bold tabular-nums transition", r.days === d ? "bg-brand-600 text-white shadow-soft" : "bg-surface-2 text-ink-muted hover:text-ink")}>
+                            {formatNum(d)}
+                          </button>
+                        ))}
+                      </span>
+                      <input type="number" min={1} max={365} inputMode="numeric" value={r.days === 0 ? "" : String(r.days)} onChange={(e) => setRow(r.id, { days: Math.max(0, Number(e.target.value) || 0) })} className="input h-8 w-14 px-2 py-0 text-center text-sm font-bold tabular-nums" />
                       يوم
                     </label>
                   )}

@@ -174,8 +174,10 @@ export function DoseBlock({
                   <span className="font-black text-violet-500">× {formatNum(weightKg!)} كغ =</span>
                   <span className="rounded-lg bg-violet-600 px-3 py-1.5 text-base font-extrabold text-white">{formatNum(round2(calc.mg))} mg</span>
                 </>
-              ) : (
+              ) : !weightKg ? (
                 <span className="text-2xs font-semibold text-warn-600 dark:text-warn-300">↑ أدخل وزن الحيوان بالأعلى ليُحسب تلقائياً</span>
+              ) : (
+                <span className="text-2xs font-semibold text-warn-600 dark:text-warn-300">اكتب mg/kg{win ? " — أو اضغط «استعمل الجرعة المعتادة»" : ""}</span>
               )}
             </div>
 
@@ -244,6 +246,6 @@ const round3 = (n: number) => Math.round(n * 1000) / 1000;
 const matchId = (n: string) => matchMonograph(n)?.id;
 
 /** Formulary route → the id the treatment plan's route chips use. */
-const APP_ROUTE_BACK: Record<string, string> = {
+export const APP_ROUTE_BACK: Record<string, string> = {
   PO: "oral", SC: "sc", IM: "im", IV: "iv", topical: "topical", otic: "eye_ear", ocular: "eye_ear", IP: "iv",
 };

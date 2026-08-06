@@ -35,7 +35,8 @@ import { Modal } from "@/components/Modal";
 import { ageFromDOB, daysUntil, uid, formatDate, formatTime, formatHM, cn, localISO, dateLocale } from "@/lib/utils";
 import { prepareUpload } from "@/lib/image";
 import { withTimeout, describeUploadError } from "@/lib/errors";
-import { playSuccess, playScan, playTap, playWarning } from "@/lib/sounds";
+import { playSuccess, playScan, playTap, playWarning, playAchievement } from "@/lib/sounds";
+import { celebrate } from "@/lib/celebrate";
 import { ImageLightbox } from "@/components/ImageLightbox";
 import { MedicalEntry, DoctorSelect, type MedicalDraft } from "@/components/MedicalEntry";
 import { TreatmentPlan } from "@/components/TreatmentPlan";
@@ -2562,7 +2563,7 @@ function TimelineWorkspace({ pet, treatments, vaccinations, notes, admissions, i
     setPlanBusy(true);
     try {
       await repo.addPetNote({ pet_id: pet.id, note_text: body, author_id: user?.id ?? null, author_name: user?.full_name ?? null });
-      setPlanOpen(false); playSuccess(); onChanged();
+      setPlanOpen(false); playAchievement(); celebrate(); onChanged();
     } catch (e) {
       playWarning();
       toast.error(t("notes.saveFail", "تعذّر الحفظ"), e instanceof Error ? e.message : undefined);

@@ -45,6 +45,23 @@ export function uuid(): string {
   });
 }
 
+/**
+ * Fold Arabic orthography for search: hamza forms أ/إ/آ → ا, ة → ه, ى → ي,
+ * strip diacritics + tatweel, drop spacing, lowercase Latin. A doctor typing
+ * «اموكس» must find «أموكسيسيلين» — search that demands the right hamza is
+ * search that silently fails.
+ */
+export function normalizeAr(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/[ً-ٰٟـ]/g, "") // diacritics + tatweel
+    .replace(/[أإآٱ]/g, "ا")
+    .replace(/ة/g, "ه")
+    .replace(/[ىئ]/g, "ي")
+    .replace(/ؤ/g, "و")
+    .replace(/\s+/g, "");
+}
+
 export function ageFromDOB(dob?: string | null): { years: number; months: number } | null {
   if (!dob) return null;
   const birth = new Date(dob);

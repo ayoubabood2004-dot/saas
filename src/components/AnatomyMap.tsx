@@ -41,6 +41,10 @@ export function AnatomyMap({ value, onChange, species = "dog" }: { value: Anatom
   const pickRegion = (r: AnatomyRegion) => {
     playTap();
     setOpenId((cur) => (cur === r.id ? null : r.id));
+    // One tap = selected. The common case is region-level («it's the abdomen —
+    // next»); the drawer that opens is for narrowing to a structure, not a
+    // second mandatory click. Re-tapping the same region only folds the drawer.
+    if (value?.regionId !== r.id) onChange({ regionId: r.id, region: r.name, system: r.system });
   };
   const pickStructure = (r: AnatomyRegion, s: { name: string; latin: string }) => {
     playTap();
