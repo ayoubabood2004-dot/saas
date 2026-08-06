@@ -103,16 +103,26 @@ export function playTap() {
   tone(660, 0, 0.06, "sine", 0.08);
 }
 
-/** جرعة انعطت — a warm music-box roll (G-major arpeggio G5→B5→D6 with a high
- *  sparkle). Distinct from the generic success chime: this one is the sound of
- *  care delivered, and a nurse hears it dozens of times a day — so it stays
- *  short (~0.5s), soft, and consonant no matter how fast doses are ticked. */
+/** A celesta-like bell: fundamental + soft octave + faint 3rd partial. The
+ *  layered harmonics are what make a note feel "expensive" instead of beepy. */
+function bellNote(freq: number, start: number, dur: number, gain: number) {
+  tone(freq, start, dur, "sine", gain);
+  tone(freq * 2, start, dur * 0.55, "sine", gain * 0.32);
+  tone(freq * 3, start + 0.012, dur * 0.28, "sine", gain * 0.1);
+}
+
+/** جرعة انعطت — the dopamine hit. A quick celesta figure that climbs and
+ *  BLOOMS on the octave: E5 → G5 → C6, the last note ringing with a shimmer
+ *  a major-third above and a warm low C underneath. Bright attack, soft body,
+ *  fully resolved — the brain reads it as «شيء طيب صار وخلص بنجاح».
+ *  Still ~0.6s and consonant back-to-back, because a nurse hears it 50×/day. */
 export function playDoseGiven() {
   if (!isSoundEnabled()) return;
-  tone(783.99, 0, 0.16, "sine", 0.14);          // G5
-  tone(987.77, 0.09, 0.16, "sine", 0.14);       // B5
-  tone(1174.66, 0.18, 0.32, "sine", 0.15);      // D6 — rings out
-  tone(1567.98, 0.24, 0.26, "triangle", 0.05);  // G6 shimmer
+  bellNote(659.25, 0, 0.2, 0.12);        // E5 — lift-off
+  bellNote(783.99, 0.075, 0.2, 0.12);    // G5 — climbing
+  bellNote(1046.5, 0.15, 0.5, 0.16);     // C6 — the bloom, rings out
+  tone(1318.5, 0.21, 0.4, "sine", 0.05); // E6 shimmer floating above
+  tone(261.63, 0.15, 0.45, "sine", 0.055); // C4 — warm bed under the bloom
 }
 
 /** A step of the wizard just completed — one bright pop, pitched by progress

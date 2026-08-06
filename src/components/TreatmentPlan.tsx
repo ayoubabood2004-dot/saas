@@ -16,7 +16,7 @@ import { CBC, cbcRange, cbcFlag, FLAG_ARROW } from "@/lib/cbc";
 import { readLabImage } from "@/lib/labOcr";
 import { encodeClinical, type ClinicalRecord } from "@/lib/clinicalRecord";
 import { Glyph } from "@/lib/clinicalIcons";
-import { MED_CATALOG, getClinicMeds } from "@/lib/meds";
+import { MED_CATALOG, getClinicMeds, medicationExists, addClinicMed } from "@/lib/meds";
 import { DoseBlock, DoseAlertRow, APP_ROUTE_BACK, type DosePatch } from "@/components/DoseBlock";
 import { matchMonograph, checkSafety, calcDose, appFreqHours, doseFor, freqIdFor, APP_ROUTE, type DoseAlert } from "@/lib/vetFormulary";
 import type { Product } from "@/types";
@@ -161,6 +161,13 @@ export function TreatmentPlan({
   const [diagnoses, setDiagnoses] = useState<Diagnosis[]>([]);
   const [notes, setNotes] = useState("");
   const [rows, setRows] = useState<PlanRow[]>([blankRow()]);
+  /** Plan-wide course length — set once at the top, applied to every drug row.
+   *  A row can still be overridden individually for the odd exception. */
+  const [planDays, setPlanDays] = useState(7);
+  const setAllDays = (d: number) => {
+    setPlanDays(d);
+    setRows((rs) => rs.map((r) => ({ ...r, days: d })));
+  };
   const [weight, setWeight] = useState<number | undefined>(weightKg && weightKg > 0 ? weightKg : undefined);
 
   /* ---- In-stock clinic medicines (category=medicine, stock>0) — availability only, no deduction ---- */
@@ -261,7 +268,7 @@ export function TreatmentPlan({
       const kept = rs.filter((r) => r.name.trim());
       // The formulary fills the row before the doctor ever opens it: typical
       // mg/kg, frequency, route and strength — editing beats typing.
-      return [...kept, { ...blankRow(), ...formularySeed(name, species), name, ...seed }];
+      return [...kept, { ...blankRow(), days: planDays, ...formularySeed(name, species), name, ...seed }];
     });
   };
   const applyProtocol = (d: Disease) => {
@@ -624,6 +631,7 @@ export function TreatmentPlan({
               stockMeds={stockMeds} stockFor={stockFor} interactions={interactions} safety={safety}
               protocolDiseases={pickedDiseases.filter((d) => d.protocol?.length)}
               applyProtocol={applyProtocol}
+              planDays={planDays} setAllDays={setAllDays}
             />
           )}
         </div>
@@ -853,7 +861,7 @@ function DiseaseCard({ d, picked, onToggle, onApply, pct }: { d: Disease & { mat
 /* =============================== Treatment step ============================ */
 function TreatmentStep({
   rows, setRow, removeRow, addDrug, weight, setWeight, species, allergies, flags, stockMeds, stockFor, interactions, safety,
-  protocolDiseases, applyProtocol,
+  protocolDiseases, applyProtocol, planDays, setAllDays,
 }: {
   rows: PlanRow[];
   setRow: (id: string, patch: Partial<PlanRow>) => void;
@@ -870,8 +878,15 @@ function TreatmentStep({
   /** Picked diagnoses that carry a ready protocol — apply them from HERE, no back-navigation. */
   protocolDiseases: Disease[];
   applyProtocol: (d: Disease) => void;
+  /** The plan-wide course length + the setter that stamps it on every row. */
+  planDays: number;
+  setAllDays: (d: number) => void;
 }) {
-  const [q, setQ] = useState("");
+  // ONE writing surface: the drug-name field itself searches while the doctor
+  // types. No separate search box to learn — write the name, pick a match (or
+  // keep the free text and save it to the catalog forever).
+  const [box, setBox] = useState<{ rowId: string | null; open: boolean }>({ rowId: null, open: false });
+  const [medsVersion, setMedsVersion] = useState(0); // bumps after «save to catalog»
   // One unified picker: the default catalog + clinic-custom meds (allMeds) PLUS the
   // clinic's own stocked POS medicines — so a drug the clinic actually carries but
   // that isn't in the catalog is still searchable here, not only in the chip strip.
@@ -882,7 +897,8 @@ function TreatmentStep({
       .filter((p) => !seen.has(p.name.toLowerCase()))
       .map((p) => ({ name: p.name, type: "من مخزون العيادة" }));
     return [...stockOnly, ...base];
-  }, [stockMeds]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stockMeds, medsVersion]);
   // The search haystack folds Arabic orthography AND includes each drug's
   // monograph aliases — «اموكس» finds «Amoxicillin 250mg» because the formulary
   // knows it as أموكسيسيلين. Free-typed drugs lose the safety net, so the
@@ -892,14 +908,37 @@ function TreatmentStep({
     const hay = [m.name, mono?.ar, mono?.en, ...(mono?.brands ?? [])].filter(Boolean).map((s) => normalizeAr(s as string)).join("|");
     return { ...m, hay, ar: mono?.ar };
   }), [meds]);
+
+  const activeRow = box.open ? rows.find((r) => r.id === box.rowId) : undefined;
+  const activeQuery = activeRow?.name.trim() ?? "";
   const matches = useMemo(() => {
-    const ql = normalizeAr(q.trim());
+    const ql = normalizeAr(activeQuery);
     if (!ql) return [];
     return medIndex
       .filter((m) => m.hay.includes(ql))
+      .filter((m) => m.name.toLowerCase() !== activeQuery.toLowerCase()) // already exactly this — nothing to suggest
       .sort((a, b) => (stockFor(b.name) ? 1 : 0) - (stockFor(a.name) ? 1 : 0)) // in-stock first
-      .slice(0, 8);
-  }, [q, medIndex, stockFor]);
+      .slice(0, 6);
+  }, [activeQuery, medIndex, stockFor]);
+  const canSaveToCatalog = activeQuery.length > 1 && !medicationExists(activeQuery);
+
+  /** Pick a catalog match INTO the row being typed — name + full formulary seed. */
+  const pickForRow = (rowId: string, name: string) => {
+    playTap();
+    pushRecentDrug(name);
+    setRow(rowId, { name, ...formularySeed(name, species) });
+    setBox({ rowId: null, open: false });
+  };
+  /** Keep the free-typed name and remember it in the clinic catalog for good. */
+  const saveToCatalog = (rowId: string) => {
+    const row = rows.find((r) => r.id === rowId);
+    if (!row) return;
+    playTap();
+    addClinicMed(row.name.trim());
+    pushRecentDrug(row.name);
+    setMedsVersion((v) => v + 1);
+    setBox({ rowId: null, open: false });
+  };
 
   // The doctor's habitual drugs (this device), minus what's already on the plan.
   const [recents] = useState<string[]>(recentDrugs);
@@ -908,7 +947,7 @@ function TreatmentStep({
 
   return (
     <section className="space-y-3">
-      <StepTitle icon={CalendarClock} title="خطة العلاج — متزامنة مع أدوية العيادة" hint="اختر من المتوفّر بالمخزون، أو ابحث بالكتالوج — الجرعة تُحسب من وزن الحيوان تلقائياً." />
+      <StepTitle icon={CalendarClock} title="خطة العلاج — متزامنة مع أدوية العيادة" hint="اكتب اسم الدواء بمكانه مباشرة — يبحث بالكتالوج وأنت تكتب، والجرعة تُحسب من الوزن تلقائياً." />
 
       {/* Plan-wide safety sweep — the blocking findings, gathered above the fold */}
       {safety.some((s) => s.alerts.some((a) => a.blocking)) && (
@@ -944,6 +983,27 @@ function TreatmentStep({
           كغ
         </label>
         <span className="text-2xs text-ink-subtle">{weight ? "تُحسب الجرعات تلقائياً بالوزن" : "أدخل الوزن لحساب الجرعات تلقائياً"}</span>
+      </div>
+
+      {/* Plan-wide course length — set once here, stamps every drug row. */}
+      <div className="flex flex-wrap items-center gap-2.5 rounded-2xl border border-brand-200 bg-brand-50/70 p-3 dark:border-brand-500/25 dark:bg-brand-500/10">
+        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-brand-100 text-brand-600 dark:bg-brand-500/20 dark:text-brand-300"><CalendarClock size={17} /></span>
+        <span className="text-sm font-bold text-ink">مدة الخطة</span>
+        <span className="inline-flex items-center gap-1">
+          {[3, 5, 7, 10, 14].map((d) => (
+            <button key={d} type="button" onClick={() => { playTap(); setAllDays(d); }}
+              className={cn("rounded-full px-3 py-1.5 text-xs font-bold tabular-nums transition", planDays === d ? "bg-brand-600 text-white shadow-soft" : "bg-surface-1 text-ink-muted hover:text-ink")}>
+              {formatNum(d)}
+            </button>
+          ))}
+        </span>
+        <label className="inline-flex items-center gap-1.5 text-2xs font-semibold text-ink-muted">
+          <input type="number" min={1} max={365} inputMode="numeric" value={planDays === 0 ? "" : String(planDays)}
+            onChange={(e) => { const v = Math.max(0, Number(e.target.value) || 0); if (v > 0) setAllDays(v); }}
+            className="input h-9 w-16 px-2 py-0 text-center text-sm font-bold tabular-nums" />
+          يوم
+        </label>
+        <span className="text-2xs text-ink-subtle">تنطبق على كل الأدوية — وتكدر تعدّل أي دواء لوحده</span>
       </div>
 
       {/* Protocols of the diagnoses picked one step ago — applied from here, no back-trip */}
@@ -990,48 +1050,6 @@ function TreatmentStep({
         </div>
       )}
 
-      {/* Catalog search — Arabic-aware, Enter adds the first match, Escape clears */}
-      <div>
-        <div className="relative">
-          <Search size={15} className="pointer-events-none absolute inset-y-0 end-3 my-auto text-ink-subtle" />
-          <input
-            autoFocus value={q} onChange={(e) => setQ(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && q.trim() && !e.ctrlKey && !e.metaKey) {
-                e.preventDefault();
-                if (matches[0]) addDrug(matches[0].name); else addDrug(q.trim());
-                setQ("");
-              }
-              if (e.key === "Escape" && q) { e.stopPropagation(); setQ(""); }
-            }}
-            placeholder="ابحث في كتالوج الأدوية… عربي أو إنكليزي (اضغط Enter للإضافة)" className="input h-11 w-full pe-9 text-sm" />
-        </div>
-        {q.trim() && (
-          <div className="mt-2 overflow-hidden rounded-2xl border border-line">
-            {matches.length > 0 ? matches.map((m, i) => {
-              const stk = stockFor(m.name);
-              return (
-                <button key={m.name} type="button" onClick={() => { addDrug(m.name); setQ(""); }}
-                  className={cn("flex w-full items-center gap-2 border-b border-line bg-surface-1 px-3 py-2.5 text-start transition last:border-b-0 hover:bg-brand-50 dark:hover:bg-brand-500/10", i === 0 && "bg-brand-50/60 dark:bg-brand-500/10")}>
-                  <Pill size={15} className="shrink-0 text-brand-600" />
-                  <span className="flex-1 text-sm font-bold text-ink">
-                    {m.name}
-                    {m.ar && <span className="ms-2 text-2xs font-semibold text-ink-subtle">{m.ar}</span>}
-                  </span>
-                  {i === 0 && <span className="rounded-md bg-brand-100 px-1.5 py-0.5 text-[10px] font-bold text-brand-700 dark:bg-brand-500/20 dark:text-brand-300">Enter ↵</span>}
-                  {stk ? <span className="rounded-full bg-success-50 px-2 py-0.5 text-[10px] font-bold text-success-700 dark:bg-success-500/15 dark:text-success-300">✓ متوفّر</span> : null}
-                  <span className="text-2xs text-ink-subtle">{m.type}</span>
-                </button>
-              );
-            }) : (
-              <button type="button" onClick={() => { addDrug(q.trim()); setQ(""); }} className="flex w-full items-center gap-2 bg-surface-1 px-3 py-2.5 text-start hover:bg-brand-50 dark:hover:bg-brand-500/10">
-                <Plus size={15} className="text-brand-600" /> <span className="text-sm font-bold text-brand-700 dark:text-brand-300">إضافة «{q.trim()}» — بلا مرجع دوائي، الجرعة عليك</span>
-              </button>
-            )}
-          </div>
-        )}
-      </div>
-
       {/* Drug rows — each a clear "prescription card" */}
       <div className="space-y-3">
         {rows.map((r, idx) => {
@@ -1050,14 +1068,61 @@ function TreatmentStep({
             ? [doseDisplay || null, routeLabel(r.route) || null, freqLabel, r.freq !== "prn" && r.days ? `لمدة ${formatNum(r.days)} يوم` : null, doses ? `${formatNum(doses)} جرعة` : null].filter(Boolean).join(" · ")
             : "";
           return (
-            <div key={r.id} className="overflow-hidden rounded-2xl border border-line bg-surface-1 shadow-soft">
-              {/* Name */}
-              <div className="flex items-center gap-2 border-b border-line/70 bg-surface-2/60 p-2.5">
+            <div key={r.id} className="rounded-2xl border border-line bg-surface-1 shadow-soft">
+              {/* Name = the search. Typing here looks up the catalog live (Arabic
+                  or English); picking a match pulls the full formulary seed into
+                  THIS row; unknown names can be saved to the catalog forever. */}
+              <div className="relative flex items-center gap-2 rounded-t-2xl border-b border-line/70 bg-surface-2/60 p-2.5">
                 <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-brand-600 text-white shadow-soft"><Pill size={17} /></span>
                 <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-brand-100 text-[10px] font-black text-brand-700 dark:bg-brand-500/20 dark:text-brand-300">{formatNum(idx + 1)}</span>
-                <input value={r.name} onChange={(e) => setRow(r.id, { name: e.target.value })} placeholder="اسم الدواء / العلاج" className="input h-9 flex-1 py-0 text-[15px] font-bold" />
+                <input
+                  value={r.name}
+                  autoFocus={!r.name}
+                  onChange={(e) => { setRow(r.id, { name: e.target.value }); setBox({ rowId: r.id, open: true }); }}
+                  onFocus={() => { if (r.name.trim()) setBox({ rowId: r.id, open: true }); }}
+                  onBlur={() => setTimeout(() => setBox((b) => (b.rowId === r.id ? { rowId: null, open: false } : b)), 150)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.ctrlKey && !e.metaKey && box.open && box.rowId === r.id) {
+                      e.preventDefault();
+                      if (matches[0]) pickForRow(r.id, matches[0].name);
+                      else setBox({ rowId: null, open: false });
+                    }
+                    if (e.key === "Escape" && box.open) { e.stopPropagation(); setBox({ rowId: null, open: false }); }
+                  }}
+                  placeholder="اكتب اسم الدواء — يبحث بالكتالوج وأنت تكتب"
+                  className="input h-9 flex-1 py-0 text-[15px] font-bold"
+                />
                 {stk && <span className="hidden shrink-0 rounded-lg bg-success-50 px-2 py-1 text-[10px] font-bold text-success-700 dark:bg-success-500/15 dark:text-success-300 sm:inline">✓ متوفّر · {formatNum(stk.stock)}</span>}
                 <button type="button" onClick={() => removeRow(r.id)} aria-label="إزالة" className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-ink-subtle transition hover:bg-danger-50 hover:text-danger-600"><X size={15} /></button>
+
+                {/* Live suggestions under the name field */}
+                {box.open && box.rowId === r.id && (matches.length > 0 || canSaveToCatalog) && (
+                  <div className="absolute inset-x-2 top-full z-20 mt-1 overflow-hidden rounded-xl border border-line bg-surface-1 shadow-raised">
+                    {matches.map((m, i) => {
+                      const mstk = stockFor(m.name);
+                      return (
+                        <button key={m.name} type="button" onMouseDown={(e) => { e.preventDefault(); pickForRow(r.id, m.name); }}
+                          className={cn("flex w-full items-center gap-2 border-b border-line px-3 py-2.5 text-start transition last:border-b-0 hover:bg-brand-50 dark:hover:bg-brand-500/10", i === 0 && "bg-brand-50/60 dark:bg-brand-500/10")}>
+                          <Search size={14} className="shrink-0 text-brand-600" />
+                          <span className="flex-1 text-sm font-bold text-ink">
+                            {m.name}
+                            {m.ar && <span className="ms-2 text-2xs font-semibold text-ink-subtle">{m.ar}</span>}
+                          </span>
+                          {i === 0 && <span className="rounded-md bg-brand-100 px-1.5 py-0.5 text-[10px] font-bold text-brand-700 dark:bg-brand-500/20 dark:text-brand-300">Enter ↵</span>}
+                          {mstk ? <span className="rounded-full bg-success-50 px-2 py-0.5 text-[10px] font-bold text-success-700 dark:bg-success-500/15 dark:text-success-300">✓ متوفّر</span> : null}
+                          <span className="text-2xs text-ink-subtle">{m.type}</span>
+                        </button>
+                      );
+                    })}
+                    {canSaveToCatalog && (
+                      <button type="button" onMouseDown={(e) => { e.preventDefault(); saveToCatalog(r.id); }}
+                        className="flex w-full items-center gap-2 border-t border-dashed border-line px-3 py-2.5 text-start transition hover:bg-brand-50 dark:hover:bg-brand-500/10">
+                        <Plus size={14} className="shrink-0 text-brand-600" />
+                        <span className="flex-1 text-sm font-bold text-brand-700 dark:text-brand-300">احفظ «{r.name.trim()}» بالكتالوج — يبقى للأبد</span>
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
 
               <div className="space-y-2.5 p-3">
@@ -1099,16 +1164,9 @@ function TreatmentStep({
                   {r.freq !== "prn" && (
                     <label className="inline-flex items-center gap-1.5 text-2xs font-semibold text-ink-muted">
                       المدة
-                      <span className="inline-flex items-center gap-0.5">
-                        {[3, 5, 7, 10, 14].map((d) => (
-                          <button key={d} type="button" onClick={() => { playTap(); setRow(r.id, { days: d }); }}
-                            className={cn("rounded-full px-2 py-1 text-2xs font-bold tabular-nums transition", r.days === d ? "bg-brand-600 text-white shadow-soft" : "bg-surface-2 text-ink-muted hover:text-ink")}>
-                            {formatNum(d)}
-                          </button>
-                        ))}
-                      </span>
                       <input type="number" min={1} max={365} inputMode="numeric" value={r.days === 0 ? "" : String(r.days)} onChange={(e) => setRow(r.id, { days: Math.max(0, Number(e.target.value) || 0) })} className="input h-8 w-14 px-2 py-0 text-center text-sm font-bold tabular-nums" />
                       يوم
+                      {r.days !== planDays && <span className="rounded-md bg-warn-50 px-1.5 py-0.5 text-[10px] font-bold text-warn-700 dark:bg-warn-500/15 dark:text-warn-300">مختلفة عن الخطة</span>}
                     </label>
                   )}
                   {doses > 0 && <span className="ms-auto inline-flex items-center gap-1 rounded-full bg-success-50 px-2.5 py-1 text-2xs font-bold text-success-700 dark:bg-success-500/15 dark:text-success-300">{formatNum(doses)} جرعة</span>}
