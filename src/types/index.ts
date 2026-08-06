@@ -156,6 +156,28 @@ export interface PetProblem {
   created_at: string;
 }
 
+/**
+ * طلب تطوير من الدكتور — يرفعه المساعد الذكي لما يُسأل عن شيء مو موجود
+ * بالسستم (أو يكتبه الدكتور يدوياً). يقرأه مشغّل المنصة عبر كل العيادات.
+ */
+export interface FeatureRequest {
+  id: string;
+  clinic_id?: string | null;
+  /** لقطة اسم العيادة وقت الإرسال — الأدمن يقرأ بلا join. */
+  clinic_name?: string | null;
+  requested_by?: string | null;
+  /** نص الطلب كما صاغه الدكتور. */
+  body: string;
+  /** السؤال الأصلي الي عجز عنه المساعد (إن وجد). */
+  question?: string | null;
+  source: "assistant" | "manual";
+  status: "new" | "planned" | "done" | "declined";
+  /** رد مشغّل المنصة — يظهر للعيادة حتى يعرف الدكتور مصير طلبه. */
+  admin_note?: string | null;
+  created_at: string;
+  updated_at?: string | null;
+}
+
 /** A free-text clinical / progress note on the patient record (سجل الملاحظات السريرية). */
 export interface PetNote {
   id: string;
@@ -958,4 +980,5 @@ export interface DemoDB {
   careEntries?: CareEntry[];
   deviceLinks?: LabDeviceLink[];
   deviceInbox?: LabDeviceInbox[];
+  featureRequests?: FeatureRequest[];
 }

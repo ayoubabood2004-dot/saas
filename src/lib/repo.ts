@@ -4,7 +4,7 @@
 import { loadDB, saveDB } from "./demoStore";
 import { supabase } from "./supabase";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, AppointmentStatus, ClinicInfo, PublicStaff, DailyNote, TreatmentEntry, Admission, Branch, Reminder, Product, Company, CompanySection, Purchase, PurchaseItem, PurchasePayment, PurchaseDraftLine, PurchaseMeta, Courier, DeliveryOrder, PetMovement, DemoDB, Invoice, InvoiceItem, CheckoutItem, SaleMeta, Customer, DiscountType, PaymentMethod, PaymentSplit, WhatsAppMessage, AuditEntry, LoginEvent, PetNote, Expense, ClinicVisit , Surgery, LabResult, LabDeviceLink, LabDeviceInbox, LabStatusValue, PetProblem, CareEntry } from "@/types";
+import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, AppointmentStatus, ClinicInfo, PublicStaff, DailyNote, TreatmentEntry, Admission, Branch, Reminder, Product, Company, CompanySection, Purchase, PurchaseItem, PurchasePayment, PurchaseDraftLine, PurchaseMeta, Courier, DeliveryOrder, PetMovement, DemoDB, Invoice, InvoiceItem, CheckoutItem, SaleMeta, Customer, DiscountType, PaymentMethod, PaymentSplit, WhatsAppMessage, AuditEntry, LoginEvent, PetNote, Expense, ClinicVisit , Surgery, LabResult, LabDeviceLink, LabDeviceInbox, LabStatusValue, PetProblem, CareEntry, FeatureRequest } from "@/types";
 import { uid, uuid, ageMonths, localISO } from "./utils";
 import { phoneKey } from "./phone";
 import { loadOwners } from "./owners";
@@ -472,6 +472,32 @@ const demoRepo = {
     const db = loadDB();
     db.petProblems = (db.petProblems ?? []).filter((p) => p.id !== id);
     saveDB(db);
+  },
+
+  /* ---- طلبات التطوير: المساعد يرفعها، والعيادة تتابع حالتها ---- */
+  async listFeatureRequests(): Promise<FeatureRequest[]> {
+    return (loadDB().featureRequests ?? []).slice().sort((a, b) => b.created_at.localeCompare(a.created_at));
+  },
+
+  async addFeatureRequest(input: Omit<FeatureRequest, "id" | "created_at" | "updated_at" | "status"> & { status?: FeatureRequest["status"] }): Promise<FeatureRequest> {
+    const db = loadDB();
+    const now = new Date().toISOString();
+    const row: FeatureRequest = { status: "new", ...input, id: uid("freq"), created_at: now, updated_at: now };
+    (db.featureRequests ??= []).unshift(row);
+    saveDB(db);
+    return row;
+  },
+
+  async updateFeatureRequest(id: string, patch: Partial<FeatureRequest>): Promise<void> {
+    const db = loadDB();
+    const row = (db.featureRequests ?? []).find((r) => r.id === id);
+    if (row) Object.assign(row, patch, { updated_at: new Date().toISOString() });
+    saveDB(db);
+  },
+
+  /** Admin: كل الطلبات عبر كل العيادات — بالديمو نفس قائمة العيادة الوحيدة. */
+  async adminListFeatureRequests(): Promise<FeatureRequest[]> {
+    return (loadDB().featureRequests ?? []).slice().sort((a, b) => b.created_at.localeCompare(a.created_at));
   },
 
   async addVisit(input: Omit<MedicalVisit, "id">): Promise<MedicalVisit> {
@@ -1395,6 +1421,8 @@ const DEMO_ACTIVITY_MAP: Record<string, { entity: string; action: "INSERT" | "UP
   deleteCareEntry: { entity: "care_entries", action: "DELETE" },
   addProblem: { entity: "pet_problems", action: "INSERT" },
   updateProblem: { entity: "pet_problems", action: "UPDATE" },
+  addFeatureRequest: { entity: "feature_requests", action: "INSERT" },
+  updateFeatureRequest: { entity: "feature_requests", action: "UPDATE" },
   deleteProblem: { entity: "pet_problems", action: "DELETE" },
   addClinicVisit: { entity: "clinic_visits", action: "INSERT" },
   updateClinicVisit: { entity: "clinic_visits", action: "UPDATE" },
@@ -1662,6 +1690,26 @@ const supabaseRepo: typeof demoRepo = {
   },
   async deleteProblem(id) {
     ok(await sbc().from("pet_problems").delete().eq("id", id));
+  },
+  async listFeatureRequests() {
+    // RLS تحصرها بطلبات عيادة المستخدم نفسها.
+    return listOf<FeatureRequest>(
+      await sbc().from("feature_requests").select("*").order("created_at", { ascending: false }),
+    );
+  },
+  async addFeatureRequest(input) {
+    const { clinic_id, ...rest } = input;
+    void clinic_id; // يُختم من default العمود auth_clinic() — لا يُرسل من العميل
+    return need<FeatureRequest>(await sbc().from("feature_requests").insert({ status: "new", ...rest }).select().single());
+  },
+  async updateFeatureRequest(id, patch) {
+    ok(await sbc().from("feature_requests").update({ ...patch, updated_at: new Date().toISOString() }).eq("id", id));
+  },
+  async adminListFeatureRequests() {
+    // سياسة is_platform_admin() توسّع القراءة لكل العيادات لمشغّل المنصة.
+    return listOf<FeatureRequest>(
+      await sbc().from("feature_requests").select("*").order("created_at", { ascending: false }).limit(500),
+    );
   },
   async addVisit(input) {
     // Snapshot the patient's age at visit time. Look up the pet's DOB when the caller

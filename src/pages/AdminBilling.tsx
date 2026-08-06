@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ShieldCheck, Coins, Wallet, ArrowLeft, Lock, Building2, RefreshCw, Users, Sparkles, XCircle } from "lucide-react";
+import { ShieldCheck, Coins, Wallet, ArrowLeft, Lock, Building2, RefreshCw, Users, Sparkles, XCircle, Lightbulb, Check } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { isPlatformAdmin, getUsdRate, setUsdRate, adminActivate, adminGrantTrial, adminCancelSubscription, adminListClinics, type AdminClinic } from "@/lib/platformAdmin";
 import { PLANS, usdToIqd, priceUsd, type BillingPeriod, type PlanId } from "@/lib/plans";
+import { repo } from "@/lib/repo";
+import type { FeatureRequest } from "@/types";
 import { Button, Badge, Skeleton, useToast } from "@/components/ui";
-import { money, formatNum, cn } from "@/lib/utils";
+import { money, formatNum, formatDate, cn } from "@/lib/utils";
 import { playSuccess, playWarning, playTap } from "@/lib/sounds";
 
 const STATUS_META: Record<string, { label: string; tone: "success" | "brand" | "warn" | "danger" }> = {
@@ -112,6 +114,45 @@ export function AdminBilling() {
   };
 
   const selectedUsd = priceUsd(PLANS.find((p) => p.id === plan)!, period);
+
+  /* ---- طلبات الدكاترة: صندوق الأفكار الي يرفعه المساعد من كل العيادات ---- */
+  const [requests, setRequests] = useState<FeatureRequest[]>([]);
+  const [reqBusy, setReqBusy] = useState(true);
+  const [reqFilter, setReqFilter] = useState<"all" | FeatureRequest["status"]>("all");
+  const [noteDraft, setNoteDraft] = useState<Record<string, string>>({});
+
+  const loadRequests = async () => {
+    setReqBusy(true);
+    try { setRequests(await repo.adminListFeatureRequests()); }
+    catch { /* pre-0092 database — the section just shows empty */ }
+    finally { setReqBusy(false); }
+  };
+  useEffect(() => { void loadRequests(); }, []);
+
+  const setReqStatus = async (r: FeatureRequest, status: FeatureRequest["status"]) => {
+    playTap();
+    setRequests((prev) => prev.map((x) => (x.id === r.id ? { ...x, status } : x)));
+    try { await repo.updateFeatureRequest(r.id, { status }); }
+    catch { setRequests((prev) => prev.map((x) => (x.id === r.id ? r : x))); toast.error("تعذّر التحديث"); }
+  };
+
+  const saveNote = async (r: FeatureRequest) => {
+    const note = (noteDraft[r.id] ?? "").trim();
+    try {
+      await repo.updateFeatureRequest(r.id, { admin_note: note || null });
+      setRequests((prev) => prev.map((x) => (x.id === r.id ? { ...x, admin_note: note || null } : x)));
+      playSuccess(); toast.success("انحفظ الرد — يظهر للعيادة");
+      setNoteDraft((d) => { const { [r.id]: _drop, ...rest } = d; return rest; });
+    } catch { toast.error("تعذّر الحفظ"); }
+  };
+
+  const REQ_STATUS: { id: FeatureRequest["status"]; label: string; cls: string }[] = [
+    { id: "new", label: "جديد", cls: "bg-brand-50 text-brand-700 dark:bg-brand-500/15 dark:text-brand-300" },
+    { id: "planned", label: "بالخطة", cls: "bg-violet-50 text-violet-700 dark:bg-violet-500/15 dark:text-violet-300" },
+    { id: "done", label: "تم", cls: "bg-success-50 text-success-700 dark:bg-success-500/15 dark:text-success-300" },
+    { id: "declined", label: "اعتذار", cls: "bg-surface-2 text-ink-muted" },
+  ];
+  const shownRequests = reqFilter === "all" ? requests : requests.filter((r) => r.status === reqFilter);
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-8">
@@ -224,6 +265,68 @@ export function AdminBilling() {
         </div>
 
         <Button className="mt-4 w-full" leftIcon={<ShieldCheck size={16} />} onClick={activate} loading={actBusy}>فعّل الاشتراك يدوياً</Button>
+      </section>
+
+      {/* طلبات الدكاترة — شنو يريدون؟ هذا هو مصدر خارطة الطريق */}
+      <section className="mt-5 rounded-3xl border border-line bg-surface-1 p-5 shadow-card">
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <span className="grid h-9 w-9 place-items-center rounded-xl bg-warn-50 text-warn-600 dark:bg-warn-500/15 dark:text-warn-300"><Lightbulb size={18} /></span>
+          <h2 className="font-display font-bold text-ink">طلبات الدكاترة ({reqBusy ? "…" : formatNum(requests.length)})</h2>
+          <div className="ms-auto flex items-center gap-1">
+            <button type="button" onClick={() => { playTap(); setReqFilter("all"); }}
+              className={cn("rounded-full px-2.5 py-1 text-2xs font-bold transition", reqFilter === "all" ? "bg-ink text-surface-1" : "bg-surface-2 text-ink-muted hover:text-ink")}>الكل</button>
+            {REQ_STATUS.map((s) => (
+              <button key={s.id} type="button" onClick={() => { playTap(); setReqFilter(s.id); }}
+                className={cn("rounded-full px-2.5 py-1 text-2xs font-bold transition", reqFilter === s.id ? s.cls + " ring-2 ring-brand-400" : "bg-surface-2 text-ink-muted hover:text-ink")}>{s.label}</button>
+            ))}
+            <button onClick={() => { playTap(); void loadRequests(); }} aria-label="تحديث" className="grid h-8 w-8 place-items-center rounded-full text-ink-muted transition hover:bg-surface-2 hover:text-ink"><RefreshCw size={14} /></button>
+          </div>
+        </div>
+
+        {reqBusy ? (
+          <div className="space-y-2">{Array.from({ length: 2 }).map((_, i) => <Skeleton key={i} className="h-16 rounded-2xl" />)}</div>
+        ) : shownRequests.length === 0 ? (
+          <p className="py-6 text-center text-sm text-ink-subtle">ماكو طلبات {reqFilter !== "all" ? "بهاي الحالة" : "بعد"} — المساعد يرفعها من داخل العيادات تلقائياً.</p>
+        ) : (
+          <div className="space-y-2.5">
+            {shownRequests.map((r) => (
+              <div key={r.id} className="rounded-2xl border border-line bg-surface-2/40 p-3">
+                <div className="flex flex-wrap items-start gap-2">
+                  <div className="min-w-0 flex-1">
+                    <div className="text-sm font-bold leading-relaxed text-ink">{r.body}</div>
+                    {r.question && r.question !== r.body && (
+                      <div className="mt-0.5 text-2xs text-ink-subtle">السؤال الأصلي: «{r.question}»</div>
+                    )}
+                    <div className="mt-1 flex flex-wrap items-center gap-x-2 text-2xs text-ink-subtle">
+                      <span className="font-bold text-ink-muted">{r.clinic_name || "عيادة بلا اسم"}</span>
+                      {r.requested_by && <span>· د. {r.requested_by}</span>}
+                      <span>· {formatDate(r.created_at, "ar")}</span>
+                    </div>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-1">
+                    {REQ_STATUS.map((s) => (
+                      <button key={s.id} type="button" onClick={() => void setReqStatus(r, s.id)}
+                        className={cn("rounded-full px-2 py-1 text-[10px] font-extrabold transition", r.status === s.id ? s.cls + " ring-2 ring-brand-400" : "bg-surface-2 text-ink-subtle hover:text-ink")}>
+                        {s.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="mt-2 flex items-center gap-1.5">
+                  <input
+                    value={noteDraft[r.id] ?? r.admin_note ?? ""}
+                    onChange={(e) => setNoteDraft((d) => ({ ...d, [r.id]: e.target.value }))}
+                    onKeyDown={(e) => { if (e.key === "Enter") void saveNote(r); }}
+                    placeholder="ردّك للعيادة (يظهر بشاشة «طلباتي» عندهم)…"
+                    className="input h-8 flex-1 text-2xs"
+                  />
+                  <button type="button" onClick={() => void saveNote(r)}
+                    className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-brand-600 text-white transition hover:bg-brand-700"><Check size={13} /></button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </section>
 
       <button onClick={() => navigate("/")} className="mt-6 inline-flex items-center gap-1.5 text-sm font-semibold text-ink-muted transition hover:text-ink">

@@ -9,6 +9,7 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { RoleSelect } from "@/components/RoleSelect";
 import { SubscriptionGate } from "@/components/SubscriptionGate";
 import { FeatureGate } from "@/components/FeatureGate";
+import { Assistant } from "@/components/Assistant";
 import { useSubscription } from "@/lib/subscription";
 import { Spinner } from "@/components/ui";
 
@@ -196,6 +197,8 @@ function Shell() {
           <TopBar mobileOnly />
           <div className="lg:ps-64"><SubscriptionGate>{routes}</SubscriptionGate></div>
         </CommandPaletteProvider>
+        {/* المساعد الذكي — حاضر بكل شاشات كادر العيادة */}
+        <Assistant />
         <DemoBanner />
       </div>
     );
