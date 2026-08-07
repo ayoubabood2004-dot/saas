@@ -634,6 +634,13 @@ const demoRepo = {
       .filter((v) => v.status === "open")
       .sort((a, b) => (b.opened_at || "").localeCompare(a.opened_at || ""));
   },
+  /** الحالات المنتهية (مع نتيجتها) — تغذي سكشن الحالات والمنقطعين والتقارير. */
+  async listEndedClinicVisits(_clinicId?: string, limit = 300): Promise<ClinicVisit[]> {
+    return (loadDB().clinicVisits ?? [])
+      .filter((v) => v.status === "ended")
+      .sort((a, b) => (b.ended_at || b.opened_at || "").localeCompare(a.ended_at || a.opened_at || ""))
+      .slice(0, limit);
+  },
   async addClinicVisit(input: Omit<ClinicVisit, "id" | "created_at">): Promise<ClinicVisit> {
     const db = loadDB();
     const v: ClinicVisit = { created_at: new Date().toISOString(), ...input, id: uid("visit") };
@@ -1803,6 +1810,11 @@ const supabaseRepo: typeof demoRepo = {
   },
   async listOpenClinicVisits(clinicId) {
     let q = sbc().from("clinic_visits").select("*").eq("status", "open").order("opened_at", { ascending: false });
+    if (clinicId) q = q.eq("clinic_id", clinicId);
+    return listOf<ClinicVisit>(await q);
+  },
+  async listEndedClinicVisits(clinicId, limit = 300) {
+    let q = sbc().from("clinic_visits").select("*").eq("status", "ended").order("ended_at", { ascending: false }).limit(limit);
     if (clinicId) q = q.eq("clinic_id", clinicId);
     return listOf<ClinicVisit>(await q);
   },

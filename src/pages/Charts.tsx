@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import {
   Stethoscope, BedDouble, HeartPulse, ClipboardList, Pill, AlertTriangle,
   CheckCircle2, Clock, Loader2, Search, LayoutGrid, ChevronLeft, Slice,
+  Archive, DoorOpen, BarChart3, RotateCcw, MessageCircle, FileText,
 } from "lucide-react";
 import type { Admission, ClinicVisit, MedicalVisit, Pet, PatientCondition, TreatmentEntry , Surgery } from "@/types";
 import { repo } from "@/lib/repo";
@@ -13,10 +14,13 @@ import { opsStore } from "@/lib/opsStore";
 import { TreatmentBoard } from "@/components/TreatmentBoard";
 import { taskStatus } from "@/lib/treatmentSchedule";
 import { syncDoseCycleForPet } from "@/lib/doseCycle";
+import { OUTCOMES } from "@/lib/clinicalKnowledge";
+import { waNumber } from "@/lib/phone";
+import { getDialCode, getClinicName } from "@/lib/settings";
 import { useAuth } from "@/contexts/AuthContext";
 import { useBranchState, matchesBranch } from "@/lib/branchStore";
 import { localISO, formatDate, formatNum, cn } from "@/lib/utils";
-import { playTap } from "@/lib/sounds";
+import { playTap, playSuccess } from "@/lib/sounds";
 import { Modal } from "@/components/Modal";
 
 /* ── Bucket configuration ─────────────────────────────────────────────────── */
@@ -27,6 +31,28 @@ const BUCKETS: { key: BucketKey; label: string; icon: typeof Stethoscope; tint: 
   { key: "boarding", label: "طبلات الفندقة", icon: BedDouble, tint: "text-sky-600 dark:text-sky-300", ring: "bg-sky-100 dark:bg-sky-500/15", badge: "bg-sky-100 text-sky-700 dark:bg-sky-500/20 dark:text-sky-200" },
   { key: "visit", label: "طبلات الزيارة", icon: ClipboardList, tint: "text-brand-600 dark:text-brand-300", ring: "bg-brand-100 dark:bg-brand-500/15", badge: "bg-brand-100 text-brand-700 dark:bg-brand-500/20 dark:text-brand-300" },
 ];
+
+/* ── السجلات: هيكلة الصفحة العليا ──────────────────────────────────────────
+ * سجلا العلاج (اليومية + الفندقة العلاجية) هما اللذان يحملان جرعات — فكل
+ * واحد سجل مستقل بواجهته. الفندقة العادية والزيارات (بلا علاجات) بسجل جانبي.
+ * وبعد ما يخلص العلاج، الطبلة تغادر السجلات النشطة: إما «سكشن الحالات»
+ * (انتهت بنتيجة) أو «المنقطعون» (صاحبها ما رجع يكمل). و«التقارير» تحكي
+ * وضع كل هذا بالأرقام وبالجُمل. */
+type RegistryKey = "daily" | "careBoarding" | "other" | "cases" | "lost" | "reports";
+const REGISTRIES: { key: RegistryKey; label: string; icon: typeof Stethoscope }[] = [
+  { key: "daily", label: "سجل الطبلات اليومية", icon: Stethoscope },
+  { key: "careBoarding", label: "سجل الفندقة العلاجية", icon: HeartPulse },
+  { key: "other", label: "الفندقة والزيارات", icon: BedDouble },
+  { key: "cases", label: "سكشن الحالات", icon: Archive },
+  { key: "lost", label: "المنقطعون", icon: DoorOpen },
+  { key: "reports", label: "التقارير", icon: BarChart3 },
+];
+/** أي دلاء تعرضها كل سجلة نشطة. */
+const REG_BUCKETS: Record<"daily" | "careBoarding" | "other", BucketKey[]> = {
+  daily: ["daily"],
+  careBoarding: ["careBoarding"],
+  other: ["boarding", "visit"],
+};
 /* ── Triage acuity ─────────────────────────────────────────────────────────
  * One colour language for "how urgent is this patient", so the board can be
  * read from the doorway. Clinical condition outranks schedule: a critical
@@ -83,6 +109,8 @@ interface Chart {
   bucket: BucketKey;
   petId: string;
   visitId?: string;      // the open visit to jump into (undefined → create on click)
+  /** الإدخال (admission) وراء هالطبلة — تعليم «منقطع» لازم يخرّجه هو أيضاً. */
+  admissionId?: string;
   pet: Pet | undefined;
   title: string;
   cage?: string | null;
@@ -125,7 +153,8 @@ export function Charts() {
   const [treatments, setTreatments] = useState<TreatmentEntry[]>([]);
   const [txLoaded, setTxLoaded] = useState(false);
   const [opening, setOpening] = useState<string | null>(null);
-  const [filter, setFilter] = useState<BucketKey | "all">("all");
+  /** السجل المفتوح — اليومية هي الافتراضية لأنها شغل الصبح الأول. */
+  const [reg, setReg] = useState<RegistryKey>("daily");
   const [query, setQuery] = useState("");
   /** "cards" = a card per patient · "board" = a task per dose, by the hour. */
   const [view, setView] = useState<"cards" | "board">("cards");
@@ -245,7 +274,7 @@ export function Charts() {
       const title = a.reason?.trim() || "—";
       if (!matchQ(pet, title)) continue;
       const visit = openVisitByPet.get(a.pet_id);
-      out.push({ id: `adm_${a.id}`, bucket: kindBucket[a.kind], petId: a.pet_id, visitId: visit?.id, pet, title, cage: a.cage, since: a.admitted_on, condition: conditionByPet.get(a.pet_id) ?? null, ...statusFrom(treatments.filter((t) => t.pet_id === a.pet_id)) });
+      out.push({ id: `adm_${a.id}`, bucket: kindBucket[a.kind], petId: a.pet_id, visitId: visit?.id, admissionId: a.id, pet, title, cage: a.cage, since: a.admitted_on, condition: conditionByPet.get(a.pet_id) ?? null, ...statusFrom(treatments.filter((t) => t.pet_id === a.pet_id)) });
     }
     // Standalone open visits — only for pets NOT already shown via an admission (no duplicates).
     for (const v of visits) {
@@ -263,20 +292,120 @@ export function Charts() {
     // must be recomputed every minute, not only when the data changes.
   }, [ops.admissions, visits, treatments, pets, openVisitByPet, conditionByPet, activeBranch, branches, query, todayISO, tick, txLoaded]);
 
-  const counts = useMemo(() => {
-    const c: Record<BucketKey, number> = { daily: 0, careBoarding: 0, boarding: 0, visit: 0 };
-    for (const ch of charts) c[ch.bucket]++;
-    return c;
-  }, [charts]);
   const dueNow = charts.filter((c) => c.dueToday > 0 || c.overdue > 0).length;
-  const shownBuckets = BUCKETS.filter((b) => filter === "all" || filter === b.key);
 
-  // The board shows doses for exactly the patients the current filter/search is
-  // showing — so narrowing to "طبلات الفندقة" narrows the dose list with it.
+  /* ── الحالات المنتهية: سكشن الحالات + المنقطعون + التقارير ─────────────── */
+  const [ended, setEnded] = useState<ClinicVisit[]>([]);
+  const loadEnded = useCallback(() => {
+    repo.listEndedClinicVisits(clinicId).then(setEnded).catch(() => {});
+  }, [clinicId]);
+  useEffect(() => { loadEnded(); }, [loadEnded]);
+
+  /** انتهت بنتيجة حقيقية (شُفي/مزمنة/مُحال/متوفى) → سكشن الحالات. */
+  const casesList = useMemo(() => ended.filter((v) => v.outcome && v.outcome !== "lost_followup" && v.outcome !== "under_treatment"), [ended]);
+  /** عُلّمت «انقطع عن المراجعة» → سكشن المنقطعين. */
+  const lostList = useMemo(() => ended.filter((v) => v.outcome === "lost_followup"), [ended]);
+
+  // جرعات الحالات المنتهية — تنجلب عند فتح السكاشن حتى نوصف الالتزام بدقة.
+  const [endedTx, setEndedTx] = useState<TreatmentEntry[]>([]);
+  const endedPetKey = useMemo(() => [...new Set(ended.map((v) => v.pet_id))].sort().join(","), [ended]);
+  useEffect(() => {
+    if (!endedPetKey || (reg !== "cases" && reg !== "lost" && reg !== "reports")) return;
+    let cancel = false;
+    repo.listAllTreatments(endedPetKey.split(",")).then((tx) => { if (!cancel) setEndedTx(tx); }).catch(() => {});
+    return () => { cancel = true; };
+  }, [endedPetKey, reg]);
+  const txForVisit = useCallback((visitId: string) => endedTx.filter((t) => t.visit_id === visitId), [endedTx]);
+
+  /* ── كشف المنقطعين تلقائياً ─────────────────────────────────────────────
+   * طبلة نشطة عليها جرعات باقية، وكلها صارت متأخرة، وما انعطت ولا جرعة من
+   * ٤٨ ساعة (أو ما انعطت أصلاً وبدأت خطتها من يومين+) → «تبين منقطعة».
+   * الكشف اقتراح — القرار النهائي ضغطة الدكتور، مو خوارزمية. */
+  const stalled = useMemo(() => {
+    if (!txLoaded) return [] as { chart: Chart; lastGiven: string | null; remaining: number; sinceDays: number }[];
+    const out: { chart: Chart; lastGiven: string | null; remaining: number; sinceDays: number }[] = [];
+    const cutoff = Date.now() - 48 * 3600 * 1000;
+    for (const c of charts) {
+      if (c.bucket === "boarding") continue; // فندقة بلا علاج — الانقطاع لا يعنيها
+      const tx = treatments.filter((t) => t.pet_id === c.petId);
+      if (!tx.length) continue;
+      const remaining = tx.filter((t) => !t.administered_at);
+      if (!remaining.length || !remaining.some((t) => taskStatus(t, todayISO) === "overdue")) continue;
+      const given = tx.filter((t) => t.administered_at).map((t) => t.administered_at!).sort();
+      const lastGiven = given[given.length - 1] ?? null;
+      const firstDay = tx.map((t) => t.day).sort()[0];
+      const anchor = lastGiven ? new Date(lastGiven).getTime() : new Date(`${firstDay}T12:00:00`).getTime();
+      if (anchor >= cutoff) continue;
+      out.push({ chart: c, lastGiven, remaining: remaining.length, sinceDays: Math.max(1, Math.floor((Date.now() - anchor) / 86400000)) });
+    }
+    return out.sort((a, b) => b.sinceDays - a.sinceDays);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [charts, treatments, txLoaded, todayISO, tick]);
+
+  /** علّم الطبلة منقطعة: تسكّر الزيارة بنتيجة «انقطع عن المراجعة» وتخرّج الإدخال. */
+  const [lostBusy, setLostBusy] = useState<string | null>(null);
+  const markLost = async (c: Chart, remaining: number) => {
+    if (!window.confirm(`تعلّم طبلة ${c.pet?.name ?? "الحيوان"} «منقطعة عن المراجعة»؟\nتنتقل لسكشن المنقطعين وتگدر ترجّعها إذا رجع صاحبها.`)) return;
+    playTap();
+    setLostBusy(c.id);
+    const now = new Date().toISOString();
+    const summary = `عُلّمت منقطعة عن المراجعة من سجل الطبلات — بقيت ${remaining} جرعة ما انعطت.`;
+    try {
+      if (c.visitId) {
+        await repo.updateClinicVisit(c.visitId, { status: "ended", ended_at: now, ended_by: user?.full_name ?? null, outcome: "lost_followup", summary });
+      } else {
+        const v = await repo.addClinicVisit({ pet_id: c.petId, kind: "illness", status: "open", condition: "under_treatment", reason: c.title !== "—" ? c.title : null, opened_at: c.since, opened_by: user?.full_name ?? null });
+        await repo.updateClinicVisit(v.id, { status: "ended", ended_at: now, ended_by: user?.full_name ?? null, outcome: "lost_followup", summary });
+      }
+      if (c.admissionId) await repo.updateAdmission(c.admissionId, { status: "discharged", discharged_on: todayISO });
+      playSuccess();
+      // حدّث المصادر الثلاثة حتى تختفي من النشطة وتظهر عند المنقطعين فوراً.
+      loadEnded();
+      repo.listOpenClinicVisits(clinicId).then((vs) => { setCached(`openvisits_${clinicId ?? ""}`, vs); setVisits(vs); }).catch(() => {});
+      void opsStore.hydrate(clinicId).catch(() => {});
+    } finally { setLostBusy(null); }
+  };
+
+  /** صاحبها رجع؟ رجّع الحالة نشطة بضغطة. */
+  const restoreLost = async (v: ClinicVisit) => {
+    playTap();
+    setLostBusy(v.id);
+    try {
+      await repo.updateClinicVisit(v.id, { status: "open", ended_at: null, ended_by: null, outcome: null, summary: null });
+      playSuccess();
+      loadEnded();
+      repo.listOpenClinicVisits(clinicId).then((vs) => { setCached(`openvisits_${clinicId ?? ""}`, vs); setVisits(vs); }).catch(() => {});
+    } finally { setLostBusy(null); }
+  };
+
+  /** رسالة واتساب لصاحب حيوان منقطع — تذكير لطيف يرجّعه. */
+  const nudgeOwner = (pet: Pet | undefined, remaining: number) => {
+    if (!pet?.owner_phone) return;
+    playTap();
+    const msg = `مرحباً ${pet.owner_name ?? ""} 👋\nنحب نطمئن على ${pet.name} — باقي ${remaining > 0 ? `${remaining} جرعة من خطة علاجه` : "متابعة علاجه"} عند ${getClinicName() || "العيادة"}. إكمال العلاج مهم لشفائه الكامل 🐾\nننتظركم، وإذا في أي ظرف خبرونا نرتبلكم موعد ثاني.`;
+    window.open(`https://wa.me/${waNumber(pet.owner_phone, getDialCode())}?text=${encodeURIComponent(msg)}`, "_blank");
+  };
+
+  const regCounts: Record<RegistryKey, number> = useMemo(() => ({
+    daily: charts.filter((c) => c.bucket === "daily").length,
+    careBoarding: charts.filter((c) => c.bucket === "careBoarding").length,
+    other: charts.filter((c) => c.bucket === "boarding" || c.bucket === "visit").length,
+    cases: casesList.length,
+    lost: lostList.length + stalled.length,
+    reports: 0,
+  }), [charts, casesList, lostList, stalled]);
+
+  /** الدلاء المعروضة بالسجل النشط الحالي. */
+  const activeBuckets = reg === "daily" || reg === "careBoarding" || reg === "other" ? REG_BUCKETS[reg] : [];
+  const shownBuckets = BUCKETS.filter((b) => activeBuckets.includes(b.key));
+  const activeCharts = useMemo(() => charts.filter((c) => activeBuckets.includes(c.bucket)), [charts, activeBuckets]);
+
+  // The board shows doses for exactly the patients the current registry/search is
+  // showing — so opening «سجل الفندقة العلاجية» narrows the dose list with it.
   const boardTreatments = useMemo(() => {
-    const shown = new Set(charts.filter((c) => filter === "all" || c.bucket === filter).map((c) => c.petId));
+    const shown = new Set(activeCharts.map((c) => c.petId));
     return treatments.filter((t) => shown.has(t.pet_id));
-  }, [charts, treatments, filter]);
+  }, [activeCharts, treatments]);
 
   // Hand the visit page the data we already have so it paints instantly (no spinner).
   const go = (petId: string, visit: ClinicVisit) =>
@@ -337,39 +466,60 @@ export function Charts() {
         </div>
       </div>
 
-      {/* Filter + search */}
-      <div className="mb-4 flex flex-wrap items-center gap-2">
-        <div className="flex flex-wrap gap-1.5">
-          <FilterChip active={filter === "all"} label="الكل" count={charts.length} onClick={() => { playTap(); setFilter("all"); }} />
-          {BUCKETS.map((b) => (
-            <FilterChip key={b.key} active={filter === b.key} label={b.label} count={counts[b.key]} icon={<b.icon size={13} />} onClick={() => { playTap(); setFilter(b.key); }} />
-          ))}
-        </div>
-        <div className="relative ms-auto min-w-[180px] flex-1 sm:max-w-xs">
-          <Search size={15} className="pointer-events-none absolute inset-y-0 my-auto ms-3 text-ink-subtle" />
-          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="ابحث باسم الحيوان أو التشخيص…" className="input h-10 w-full ps-9" />
-        </div>
-        {/* View switch — the same patients, seen as cards or as the hour-by-hour dose board */}
-        <div className="inline-flex items-center gap-0.5 rounded-full border border-line bg-surface-2 p-0.5">
-          <button type="button" onClick={() => { playTap(); setView("cards"); }}
-            className={cn("inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-2xs font-bold transition", view === "cards" ? "bg-brand-600 text-white shadow-soft" : "text-ink-muted hover:text-ink")}>
-            <LayoutGrid size={13} /> بطاقات
-          </button>
-          <button type="button" onClick={() => { playTap(); setView("board"); }}
-            className={cn("inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-2xs font-bold transition", view === "board" ? "bg-brand-600 text-white shadow-soft" : "text-ink-muted hover:text-ink")}>
-            <Clock size={13} /> الجرعات بالساعة
-          </button>
-        </div>
+      {/* السجلات — دورة حياة الطبلة كاملة بستة أبواب */}
+      <div className="mb-4 flex flex-wrap gap-1.5">
+        {REGISTRIES.map((r) => (
+          <FilterChip key={r.key} active={reg === r.key} label={r.label}
+            count={r.key === "reports" ? undefined : regCounts[r.key]}
+            alert={r.key === "lost" && regCounts.lost > 0}
+            icon={<r.icon size={13} />} onClick={() => { playTap(); setReg(r.key); }} />
+        ))}
       </div>
 
+      {/* أدوات السجلات النشطة فقط: بحث + بطاقات/جرعات بالساعة */}
+      {activeBuckets.length > 0 && (
+        <div className="mb-4 flex flex-wrap items-center gap-2">
+          <div className="relative min-w-[180px] flex-1 sm:max-w-xs">
+            <Search size={15} className="pointer-events-none absolute inset-y-0 my-auto ms-3 text-ink-subtle" />
+            <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="ابحث باسم الحيوان أو التشخيص…" className="input h-10 w-full ps-9" />
+          </div>
+          <div className="ms-auto inline-flex items-center gap-0.5 rounded-full border border-line bg-surface-2 p-0.5">
+            <button type="button" onClick={() => { playTap(); setView("cards"); }}
+              className={cn("inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-2xs font-bold transition", view === "cards" ? "bg-brand-600 text-white shadow-soft" : "text-ink-muted hover:text-ink")}>
+              <LayoutGrid size={13} /> بطاقات
+            </button>
+            <button type="button" onClick={() => { playTap(); setView("board"); }}
+              className={cn("inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-2xs font-bold transition", view === "board" ? "bg-brand-600 text-white shadow-soft" : "text-ink-muted hover:text-ink")}>
+              <Clock size={13} /> الجرعات بالساعة
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Body */}
-      {booting ? (
+      {reg === "cases" ? (
+        <CasesSection cases={casesList} pets={pets} lang={lang} txForVisit={txForVisit}
+          onOpen={(v) => { playTap(); navigate(`/pet/${v.pet_id}/visit/${v.id}`); }} />
+      ) : reg === "lost" ? (
+        <LostSection stalled={stalled} lost={lostList} pets={pets} lang={lang} busyId={lostBusy}
+          txForVisit={txForVisit}
+          onMarkLost={(c, n) => void markLost(c, n)}
+          onRestore={(v) => void restoreLost(v)}
+          onNudge={nudgeOwner}
+          onOpenChart={(c) => void openChart(c)}
+          onOpenVisit={(v) => { playTap(); navigate(`/pet/${v.pet_id}/visit/${v.id}`); }} />
+      ) : reg === "reports" ? (
+        <ReportsSection charts={charts} treatments={treatments} txLoaded={txLoaded}
+          cases={casesList} lost={lostList} stalled={stalled} pets={pets} todayISO={todayISO} lang={lang} txForVisit={txForVisit} />
+      ) : booting ? (
         <div className="py-16 text-center text-ink-subtle"><Loader2 className="mx-auto mb-2 animate-spin" /> جارٍ التحميل…</div>
-      ) : charts.length === 0 ? (
+      ) : activeCharts.length === 0 ? (
         <div className="rounded-xl border border-line bg-surface-1 p-10 text-center">
           <LayoutGrid size={40} className="mx-auto mb-3 text-ink-subtle" />
-          <p className="text-sm font-bold text-ink">لا توجد طبلات نشطة حالياً</p>
-          <p className="mt-1 text-xs text-ink-subtle">تظهر هنا خطط علاج الحيوانات الموجودة في العيادة والزيارات المفتوحة.</p>
+          <p className="text-sm font-bold text-ink">
+            {reg === "daily" ? "ماكو طبلات يومية نشطة" : reg === "careBoarding" ? "ماكو فندقة علاجية نشطة" : "ماكو فندقة أو زيارات مفتوحة"}
+          </p>
+          <p className="mt-1 text-xs text-ink-subtle">الطبلة تنفتح تلقائياً لما تدخّل حالة علاج — والمنتهية تلگيها بـ«سكشن الحالات».</p>
         </div>
       ) : view === "cards" ? (
         <>
@@ -390,7 +540,7 @@ export function Charts() {
 
           <div className="space-y-6">
             {shownBuckets.map((b) => {
-              const items = charts.filter((c) => c.bucket === b.key);
+              const items = activeCharts.filter((c) => c.bucket === b.key);
               if (items.length === 0) return null;
               return (
                 <section key={b.key}>
@@ -442,13 +592,16 @@ export function Charts() {
 }
 
 /* ── Filter chip ──────────────────────────────────────────────────────────── */
-function FilterChip({ active, label, count, icon, onClick }: { active: boolean; label: string; count: number; icon?: React.ReactNode; onClick: () => void }) {
+function FilterChip({ active, label, count, alert, icon, onClick }: { active: boolean; label: string; count?: number; alert?: boolean; icon?: React.ReactNode; onClick: () => void }) {
   return (
     <button type="button" onClick={onClick}
       className={cn("inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-extrabold transition",
         active ? "border-brand-500 bg-brand-600 text-white shadow-sm" : "border-line bg-surface-1 text-ink-muted hover:border-brand-300")}>
       {icon} {label}
-      <span className={cn("rounded-full px-1.5 text-[10px] font-black tabular-nums", active ? "bg-white/25" : "bg-surface-2 text-ink-subtle")}>{formatNum(count)}</span>
+      {count !== undefined && (
+        <span className={cn("rounded-full px-1.5 text-[10px] font-black tabular-nums",
+          active ? "bg-white/25" : alert ? "bg-warn-100 text-warn-700 dark:bg-warn-500/20 dark:text-warn-300" : "bg-surface-2 text-ink-subtle")}>{formatNum(count)}</span>
+      )}
     </button>
   );
 }
@@ -515,5 +668,354 @@ function ChartCard({ chart: c, lang, todayISO, txLoaded, busy, onOpen }: { chart
         <span className="inline-flex items-center gap-1 text-2xs font-bold text-ink-subtle"><Clock size={11} /> اليوم {formatNum(day)} · {formatDate(c.since, lang)}</span>
       </div>
     </button>
+  );
+}
+
+/* ── مساعدات مشتركة لسكاشن ما بعد العلاج ─────────────────────────────────── */
+const outcomeMeta = (id?: string | null) => OUTCOMES.find((o) => o.id === id);
+const OUTCOME_TONE_CLS: Record<string, string> = {
+  brand: "bg-brand-50 text-brand-700 dark:bg-brand-500/15 dark:text-brand-300",
+  success: "bg-success-50 text-success-700 dark:bg-success-500/15 dark:text-success-300",
+  warn: "bg-warn-50 text-warn-700 dark:bg-warn-500/15 dark:text-warn-300",
+  danger: "bg-danger-50 text-danger-700 dark:bg-danger-500/15 dark:text-danger-300",
+  violet: "bg-violet-50 text-violet-700 dark:bg-violet-500/15 dark:text-violet-300",
+};
+const durationDays = (from: string, to?: string | null) =>
+  Math.max(1, Math.round((new Date(to ?? new Date().toISOString()).getTime() - new Date(from).getTime()) / 86400000) + 0);
+
+/** سطر جرعات الحالة: «انعطت ١٢ من ١٤ (٨٦٪)» — أو لا شيء إذا ما عندها خطة. */
+function doseSummary(tx: TreatmentEntry[]): string | null {
+  if (!tx.length) return null;
+  const done = tx.filter((t) => t.administered_at).length;
+  const pct = Math.round((done / tx.length) * 100);
+  return `انعطت ${formatNum(done)} من ${formatNum(tx.length)} جرعة (${formatNum(pct)}٪)`;
+}
+
+/* ── سكشن الحالات: الطبلات الي خلص علاجها وانسكّرت بنتيجة ────────────────── */
+function CasesSection({ cases, pets, lang, txForVisit, onOpen }: {
+  cases: ClinicVisit[];
+  pets: Record<string, Pet>;
+  lang: string;
+  txForVisit: (visitId: string) => TreatmentEntry[];
+  onOpen: (v: ClinicVisit) => void;
+}) {
+  const [outcomeFilter, setOutcomeFilter] = useState<string>("all");
+  const shown = outcomeFilter === "all" ? cases : cases.filter((v) => v.outcome === outcomeFilter);
+  const outcomesHere = OUTCOMES.filter((o) => o.id !== "under_treatment" && o.id !== "lost_followup" && cases.some((v) => v.outcome === o.id));
+
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className="text-2xs font-extrabold text-ink-muted">النتيجة:</span>
+        <FilterChip active={outcomeFilter === "all"} label="الكل" count={cases.length} onClick={() => { playTap(); setOutcomeFilter("all"); }} />
+        {outcomesHere.map((o) => (
+          <FilterChip key={o.id} active={outcomeFilter === o.id} label={`${o.emoji} ${o.label}`} count={cases.filter((v) => v.outcome === o.id).length}
+            onClick={() => { playTap(); setOutcomeFilter(o.id); }} />
+        ))}
+      </div>
+
+      {shown.length === 0 ? (
+        <div className="rounded-xl border border-line bg-surface-1 p-10 text-center">
+          <Archive size={40} className="mx-auto mb-3 text-ink-subtle" />
+          <p className="text-sm font-bold text-ink">ماكو حالات منتهية بعد</p>
+          <p className="mt-1 text-xs text-ink-subtle">لما تنهي زيارة وتسجل نتيجتها (شُفي، مزمنة…) تنتقل الطبلة إلى هنا تلقائياً.</p>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {shown.map((v) => {
+            const pet = pets[v.pet_id];
+            const o = outcomeMeta(v.outcome);
+            const tx = txForVisit(v.id);
+            const ds = doseSummary(tx);
+            const days = durationDays(v.opened_at, v.ended_at);
+            return (
+              <button key={v.id} type="button" onClick={() => onOpen(v)}
+                className="flex w-full items-center gap-3 rounded-xl border border-line bg-surface-1 p-3 text-start shadow-card transition hover:border-brand-300">
+                <CardAvatar pet={pet} />
+                <span className="min-w-0 flex-1">
+                  <span className="flex flex-wrap items-center gap-1.5">
+                    <span className="text-sm font-black text-ink">{pet?.name ?? "—"}</span>
+                    {o && <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-extrabold", OUTCOME_TONE_CLS[o.tone])}>{o.emoji} {o.label}</span>}
+                  </span>
+                  <span className="block truncate text-2xs font-semibold text-ink-muted">{v.reason?.trim() || "بلا تشخيص مسجّل"}</span>
+                  <span className="block text-2xs text-ink-subtle">
+                    {formatDate(v.opened_at, lang)} ← {v.ended_at ? formatDate(v.ended_at, lang) : "—"} · مدة العلاج {formatNum(days)} يوم{ds ? ` · ${ds}` : ""}
+                  </span>
+                  {v.summary?.trim() && <span className="mt-0.5 block truncate text-2xs text-ink-subtle">📝 {v.summary}</span>}
+                </span>
+                <ChevronLeft size={16} className="shrink-0 text-ink-subtle rtl:rotate-180" />
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── سكشن المنقطعين: صاحبها ما رجع يكمل العلاج ───────────────────────────── */
+function LostSection({ stalled, lost, pets, lang, busyId, txForVisit, onMarkLost, onRestore, onNudge, onOpenChart, onOpenVisit }: {
+  stalled: { chart: Chart; lastGiven: string | null; remaining: number; sinceDays: number }[];
+  lost: ClinicVisit[];
+  pets: Record<string, Pet>;
+  lang: string;
+  busyId: string | null;
+  txForVisit: (visitId: string) => TreatmentEntry[];
+  onMarkLost: (c: Chart, remaining: number) => void;
+  onRestore: (v: ClinicVisit) => void;
+  onNudge: (pet: Pet | undefined, remaining: number) => void;
+  onOpenChart: (c: Chart) => void;
+  onOpenVisit: (v: ClinicVisit) => void;
+}) {
+  return (
+    <div className="space-y-5">
+      {/* المشتبه بانقطاعهم — بعدهم بالسجل النشط، والقرار للدكتور */}
+      {stalled.length > 0 && (
+        <section>
+          <div className="mb-2 flex items-center gap-2">
+            <span className="grid h-7 w-7 place-items-center rounded-lg bg-warn-100 text-warn-600 dark:bg-warn-500/15 dark:text-warn-300"><AlertTriangle size={15} /></span>
+            <h2 className="text-sm font-extrabold text-ink">يبينون منقطعين — قرّر بيهم</h2>
+            <span className="rounded-full bg-warn-100 px-2 py-0.5 text-2xs font-black text-warn-700 dark:bg-warn-500/20 dark:text-warn-300">{formatNum(stalled.length)}</span>
+          </div>
+          <p className="mb-2 text-2xs text-ink-subtle">طبلات نشطة ما انعطت منها ولا جرعة من ٤٨ ساعة وأكثر وعليها جرعات متأخرة. ذكّر صاحبها بالواتساب، أو علّمها منقطعة فتنتقل لهذا السكشن رسمياً.</p>
+          <div className="space-y-2">
+            {stalled.map(({ chart: c, lastGiven, remaining, sinceDays }) => (
+              <div key={c.id} className="flex flex-wrap items-center gap-3 rounded-xl border border-warn-300 bg-warn-50/50 p-3 dark:border-warn-500/30 dark:bg-warn-500/5">
+                <CardAvatar pet={c.pet} />
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-black text-ink">{c.pet?.name ?? "—"}</div>
+                  <div className="truncate text-2xs font-semibold text-ink-muted">{c.title}</div>
+                  <div className="text-2xs font-bold text-warn-700 dark:text-warn-300">
+                    {lastGiven ? `آخر جرعة قبل ${formatNum(sinceDays)} يوم` : `ولا جرعة انعطت من ${formatNum(sinceDays)} يوم`} · باقي {formatNum(remaining)} جرعة
+                  </div>
+                </div>
+                <div className="flex shrink-0 items-center gap-1.5">
+                  {c.pet?.owner_phone && (
+                    <button type="button" onClick={() => onNudge(c.pet, remaining)} title="ذكّر صاحبه بالواتساب"
+                      className="inline-flex items-center gap-1 rounded-full bg-success-600 px-3 py-1.5 text-2xs font-extrabold text-white transition hover:bg-success-700">
+                      <MessageCircle size={12} /> ذكّر
+                    </button>
+                  )}
+                  <button type="button" onClick={() => onOpenChart(c)}
+                    className="rounded-full border border-line bg-surface-1 px-3 py-1.5 text-2xs font-bold text-ink-muted transition hover:border-brand-300 hover:text-ink">افتح الطبلة</button>
+                  <button type="button" onClick={() => onMarkLost(c, remaining)} disabled={busyId === c.id}
+                    className="inline-flex items-center gap-1 rounded-full bg-warn-600 px-3 py-1.5 text-2xs font-extrabold text-white transition hover:bg-warn-700 disabled:opacity-50">
+                    {busyId === c.id ? <Loader2 size={12} className="animate-spin" /> : <DoorOpen size={12} />} علّمها منقطعة
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* المعلَّمون منقطعين رسمياً */}
+      <section>
+        <div className="mb-2 flex items-center gap-2">
+          <span className="grid h-7 w-7 place-items-center rounded-lg bg-surface-2 text-ink-muted"><DoorOpen size={15} /></span>
+          <h2 className="text-sm font-extrabold text-ink">منقطعون عن المراجعة</h2>
+          <span className="rounded-full bg-surface-2 px-2 py-0.5 text-2xs font-black text-ink-subtle">{formatNum(lost.length)}</span>
+        </div>
+        {lost.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-line bg-surface-1 p-6 text-center text-xs text-ink-subtle">
+            ماكو حالات معلّمة منقطعة — وهذا خبر زين 🌟
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {lost.map((v) => {
+              const pet = pets[v.pet_id];
+              const tx = txForVisit(v.id);
+              const remaining = tx.filter((t) => !t.administered_at).length;
+              const ds = doseSummary(tx);
+              return (
+                <div key={v.id} className="flex flex-wrap items-center gap-3 rounded-xl border border-line bg-surface-1 p-3 shadow-card">
+                  <CardAvatar pet={pet} />
+                  <div className="min-w-0 flex-1">
+                    <div className="text-sm font-black text-ink">{pet?.name ?? "—"}</div>
+                    <div className="truncate text-2xs font-semibold text-ink-muted">{v.reason?.trim() || "بلا تشخيص مسجّل"}</div>
+                    <div className="text-2xs text-ink-subtle">
+                      انقطع بتاريخ {v.ended_at ? formatDate(v.ended_at, lang) : "—"}{ds ? ` · ${ds}` : ""}{remaining > 0 ? ` · بقيت ${formatNum(remaining)} جرعة` : ""}
+                    </div>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-1.5">
+                    {pet?.owner_phone && (
+                      <button type="button" onClick={() => onNudge(pet, remaining)} title="ذكّر صاحبه بالواتساب"
+                        className="inline-flex items-center gap-1 rounded-full bg-success-600 px-3 py-1.5 text-2xs font-extrabold text-white transition hover:bg-success-700">
+                        <MessageCircle size={12} /> ذكّر
+                      </button>
+                    )}
+                    <button type="button" onClick={() => onOpenVisit(v)}
+                      className="rounded-full border border-line bg-surface-1 px-3 py-1.5 text-2xs font-bold text-ink-muted transition hover:border-brand-300 hover:text-ink">السجل</button>
+                    <button type="button" onClick={() => onRestore(v)} disabled={busyId === v.id}
+                      className="inline-flex items-center gap-1 rounded-full bg-brand-600 px-3 py-1.5 text-2xs font-extrabold text-white transition hover:bg-brand-700 disabled:opacity-50">
+                      {busyId === v.id ? <Loader2 size={12} className="animate-spin" /> : <RotateCcw size={12} />} رجّعها نشطة
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
+    </div>
+  );
+}
+
+/* ── التقارير: وصف دقيق لوضع كل طبلة وحالة ───────────────────────────────── */
+function ReportsSection({ charts, treatments, txLoaded, cases, lost, stalled, pets, todayISO, lang, txForVisit }: {
+  charts: Chart[];
+  treatments: TreatmentEntry[];
+  txLoaded: boolean;
+  cases: ClinicVisit[];
+  lost: ClinicVisit[];
+  stalled: { chart: Chart; lastGiven: string | null; remaining: number; sinceDays: number }[];
+  pets: Record<string, Pet>;
+  todayISO: string;
+  lang: string;
+  txForVisit: (visitId: string) => TreatmentEntry[];
+}) {
+  const monthKey = todayISO.slice(0, 7);
+  const treatingCharts = charts.filter((c) => c.bucket === "daily" || c.bucket === "careBoarding");
+
+  // امتثال اليوم: كل جرعات اليوم عبر السجلات النشطة.
+  const todayTx = treatments.filter((t) => t.day === todayISO);
+  const todayGiven = todayTx.filter((t) => t.administered_at).length;
+  const todayPct = todayTx.length ? Math.round((todayGiven / todayTx.length) * 100) : null;
+  const overdueDoses = treatments.filter((t) => taskStatus(t, todayISO) === "overdue").length;
+
+  // المنتهية هذا الشهر + متوسط مدتها ومعدل إنجاز جرعاتها.
+  const monthCases = cases.filter((v) => (v.ended_at ?? "").slice(0, 7) === monthKey);
+  const avgDays = monthCases.length
+    ? Math.round(monthCases.reduce((s, v) => s + durationDays(v.opened_at, v.ended_at), 0) / monthCases.length)
+    : null;
+  const monthAdherence = (() => {
+    const all = monthCases.flatMap((v) => txForVisit(v.id));
+    if (!all.length) return null;
+    return Math.round((all.filter((t) => t.administered_at).length / all.length) * 100);
+  })();
+  const recoveredPct = monthCases.length
+    ? Math.round((monthCases.filter((v) => v.outcome === "recovered").length / monthCases.length) * 100)
+    : null;
+
+  /** الجملة الدقيقة لوصف طبلة نشطة — أرقامها كلها من جرعاتها الفعلية. */
+  const describe = (c: Chart): string => {
+    const tx = treatments.filter((t) => t.pet_id === c.petId);
+    const day = dayNumber(c.since, todayISO);
+    const days = new Set(tx.map((t) => t.day)).size;
+    const parts: string[] = [];
+    parts.push(`اليوم ${formatNum(day)}${days > 0 ? ` من خطة ${formatNum(days)} يوم` : ""}`);
+    if (tx.length) {
+      const done = tx.filter((t) => t.administered_at).length;
+      parts.push(`انعطت ${formatNum(done)} من ${formatNum(tx.length)} جرعة (${formatNum(Math.round((done / tx.length) * 100))}٪)`);
+      if (c.overdue > 0) parts.push(`${formatNum(c.overdue)} متأخرة هسة`);
+      else if (c.dueToday > 0) parts.push(`${formatNum(c.dueToday)} مستحقة اليوم`);
+      else if (c.todayTotal > 0) parts.push("يومها مكتمل ✓");
+      const given = tx.filter((t) => t.administered_at).map((t) => t.administered_at!).sort();
+      const lastAt = given[given.length - 1];
+      if (lastAt) {
+        const h = Math.round((Date.now() - new Date(lastAt).getTime()) / 3600000);
+        parts.push(h < 1 ? "آخر جرعة قبل شوية" : h < 24 ? `آخر جرعة قبل ${formatNum(h)} ساعة` : `آخر جرعة قبل ${formatNum(Math.floor(h / 24))} يوم`);
+      } else parts.push("بعد ما انعطت ولا جرعة");
+    } else parts.push("بلا خطة علاج بعد");
+    if (c.condition === "critical") parts.push("⚠️ حالتها حرجة");
+    return parts.join("، ") + ".";
+  };
+
+  const worstFirst = [...treatingCharts].sort((a, b) => (b.overdue - a.overdue) || (b.dueToday - a.dueToday));
+
+  const Kpi = ({ label, value, tone }: { label: string; value: string; tone?: "warn" | "danger" | "success" }) => (
+    <div className={cn("rounded-xl border p-3 text-center",
+      tone === "danger" ? "border-danger-300 bg-danger-50 dark:border-danger-500/30 dark:bg-danger-500/10"
+      : tone === "warn" ? "border-warn-300 bg-warn-50 dark:border-warn-500/30 dark:bg-warn-500/10"
+      : tone === "success" ? "border-success-300 bg-success-50 dark:border-success-500/30 dark:bg-success-500/10"
+      : "border-line bg-surface-1")}>
+      <div className="text-xl font-black tabular-nums text-ink">{value}</div>
+      <div className="text-[10px] font-bold text-ink-subtle">{label}</div>
+    </div>
+  );
+
+  return (
+    <div className="space-y-5">
+      {/* الأرقام الكبيرة */}
+      <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+        <Kpi label="طبلة يومية نشطة" value={formatNum(charts.filter((c) => c.bucket === "daily").length)} />
+        <Kpi label="فندقة علاجية نشطة" value={formatNum(charts.filter((c) => c.bucket === "careBoarding").length)} />
+        <Kpi label="امتثال جرعات اليوم" value={todayPct === null ? "—" : `${formatNum(todayPct)}٪`} tone={todayPct !== null && todayPct < 60 ? "warn" : undefined} />
+        <Kpi label="جرعة متأخرة الآن" value={formatNum(overdueDoses)} tone={overdueDoses > 0 ? "danger" : "success"} />
+        <Kpi label="حالة انتهت هذا الشهر" value={formatNum(monthCases.length)} />
+        <Kpi label="نسبة الشفاء (هذا الشهر)" value={recoveredPct === null ? "—" : `${formatNum(recoveredPct)}٪`} tone={recoveredPct !== null && recoveredPct >= 70 ? "success" : undefined} />
+        <Kpi label="متوسط مدة العلاج" value={avgDays === null ? "—" : `${formatNum(avgDays)} يوم`} />
+        <Kpi label="منقطعون (كلي + مشتبه)" value={formatNum(lost.length + stalled.length)} tone={lost.length + stalled.length > 0 ? "warn" : "success"} />
+      </div>
+
+      {/* وصف دقيق لكل طبلة نشطة — الأسوأ أولاً */}
+      <section className="rounded-2xl border border-line bg-surface-1 p-4 shadow-card">
+        <div className="mb-2 flex items-center gap-2">
+          <span className="grid h-7 w-7 place-items-center rounded-lg bg-brand-100 text-brand-600 dark:bg-brand-500/15 dark:text-brand-300"><FileText size={15} /></span>
+          <h2 className="text-sm font-extrabold text-ink">وضع الطبلات النشطة — بالتفصيل</h2>
+          {!txLoaded && <Loader2 size={13} className="animate-spin text-ink-subtle" />}
+        </div>
+        {treatingCharts.length === 0 ? (
+          <p className="py-4 text-center text-xs text-ink-subtle">ماكو طبلات علاجية نشطة حالياً.</p>
+        ) : (
+          <div className="divide-y divide-line/60">
+            {worstFirst.map((c) => (
+              <div key={c.id} className="flex items-start gap-2.5 py-2.5">
+                <span className={cn("mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full", ACUITY[acuityOf(c, txLoaded)].dot)} aria-hidden />
+                <div className="min-w-0 text-xs leading-relaxed">
+                  <span className="font-black text-ink">{c.pet?.name ?? "—"}</span>
+                  <span className="text-ink-subtle"> ({c.pet ? SPECIES_AR[c.pet.species] ?? c.pet.species : "—"}{c.title !== "—" ? ` · ${c.title}` : ""})</span>
+                  <span className="font-semibold text-ink-muted"> — {describe(c)}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      {/* وصف المنقطعين والمنتهين */}
+      <section className="rounded-2xl border border-line bg-surface-1 p-4 shadow-card">
+        <div className="mb-2 flex items-center gap-2">
+          <span className="grid h-7 w-7 place-items-center rounded-lg bg-warn-100 text-warn-600 dark:bg-warn-500/15 dark:text-warn-300"><DoorOpen size={15} /></span>
+          <h2 className="text-sm font-extrabold text-ink">المنقطعون والحالات المنتهية</h2>
+        </div>
+        <div className="space-y-1.5 text-xs leading-relaxed">
+          {stalled.map(({ chart: c, remaining, sinceDays, lastGiven }) => (
+            <p key={c.id} className="text-warn-700 dark:text-warn-300">
+              <span className="font-black">{c.pet?.name ?? "—"}</span>
+              <span className="font-semibold"> — يبين منقطع: {lastGiven ? `آخر جرعة قبل ${formatNum(sinceDays)} يوم` : `ولا جرعة من ${formatNum(sinceDays)} يوم`}، باقي {formatNum(remaining)} جرعة ما انعطت.</span>
+            </p>
+          ))}
+          {lost.map((v) => {
+            const tx = txForVisit(v.id);
+            const remaining = tx.filter((t) => !t.administered_at).length;
+            return (
+              <p key={v.id} className="text-ink-muted">
+                <span className="font-black text-ink">{pets[v.pet_id]?.name ?? "—"}</span>
+                <span className="font-semibold"> — منقطع رسمياً من {v.ended_at ? formatDate(v.ended_at, lang) : "—"}{remaining > 0 ? `، وقف علاجه على ${formatNum(remaining)} جرعة متبقية` : ""}.</span>
+              </p>
+            );
+          })}
+          {monthCases.map((v) => {
+            const o = outcomeMeta(v.outcome);
+            const ds = doseSummary(txForVisit(v.id));
+            return (
+              <p key={v.id} className="text-ink-muted">
+                <span className="font-black text-ink">{pets[v.pet_id]?.name ?? "—"}</span>
+                <span className="font-semibold"> — انتهت {o ? `بـ«${o.label}» ${o.emoji}` : ""} بعد {formatNum(durationDays(v.opened_at, v.ended_at))} يوم علاج{ds ? ` (${ds})` : ""}.</span>
+              </p>
+            );
+          })}
+          {stalled.length === 0 && lost.length === 0 && monthCases.length === 0 && (
+            <p className="py-2 text-center text-ink-subtle">ماكو حركة منتهية أو منقطعة هذا الشهر بعد.</p>
+          )}
+        </div>
+        {monthAdherence !== null && (
+          <p className="mt-3 rounded-xl bg-surface-2 px-3 py-2 text-2xs font-bold text-ink-muted">
+            معدل إنجاز جرعات الحالات المنتهية هذا الشهر: {formatNum(monthAdherence)}٪.
+          </p>
+        )}
+      </section>
+    </div>
   );
 }

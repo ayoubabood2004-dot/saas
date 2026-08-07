@@ -955,11 +955,14 @@ export function interactionsIn(drugNames: string[]): DrugInteraction[] {
 }
 
 /* ------------------------------- Outcomes -------------------------------- */
-export type CaseOutcome = "under_treatment" | "recovered" | "referred" | "deceased" | "chronic";
+export type CaseOutcome = "under_treatment" | "recovered" | "referred" | "deceased" | "chronic" | "lost_followup";
 export const OUTCOMES: { id: CaseOutcome; label: string; emoji: string; tone: "brand" | "success" | "warn" | "danger" | "violet" }[] = [
   { id: "under_treatment", label: "تحت العلاج", emoji: "💊", tone: "brand" },
   { id: "recovered", label: "شُفي", emoji: "✅", tone: "success" },
   { id: "chronic", label: "حالة مزمنة", emoji: "♾️", tone: "violet" },
   { id: "referred", label: "مُحال", emoji: "↗️", tone: "warn" },
   { id: "deceased", label: "متوفى", emoji: "🕊️", tone: "danger" },
+  /* صاحب الحيوان ما رجع يكمل العلاج — تسكّر الحالة بهالنتيجة فتروح لسكشن
+     المنقطعين بسجل الطبلات، وتضل قابلة للإرجاع إذا رجع. */
+  { id: "lost_followup", label: "انقطع عن المراجعة", emoji: "🚪", tone: "warn" },
 ];
