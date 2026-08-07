@@ -17,6 +17,7 @@ import { withTimeout, describeDbError } from "@/lib/errors";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
 import { staggerContainer, staggerItem } from "@/lib/motion";
 import { openPurchasePrint, purchaseNo } from "@/lib/purchasePrint";
+import { PurchaseLog } from "@/components/inventory/PurchaseLog";
 import { getClinicLogo, getClinicSocials, getClinicName } from "@/lib/settings";
 import { Printer } from "lucide-react";
 
@@ -67,6 +68,8 @@ export function PurchasesTab({ products, companies, sections, clinicId, onChange
   const [building, setBuilding] = useState(false);
   const [viewing, setViewing] = useState<Purchase | null>(null);
   const [q, setQ] = useState("");
+  /** «بطاقات» = القائمة المألوفة · «سجل الحركات» = أيام ← فواتير ← بضاعتها بالضبط. */
+  const [mode, setMode] = useState<"cards" | "log">("cards");
   const mounted = useRef(true);
 
   const load = async () => {
@@ -93,6 +96,16 @@ export function PurchasesTab({ products, companies, sections, clinicId, onChange
           <Search size={16} className="pointer-events-none absolute top-1/2 -translate-y-1/2 text-ink-subtle ltr:left-3 rtl:right-3" />
           <input className="input ltr:pl-9 rtl:pr-9" value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("purchase.search", "ابحث بالشركة أو رقم الفاتورة…")} />
         </div>
+        <div className="inline-flex items-center gap-0.5 rounded-full border border-line bg-surface-2 p-0.5">
+          <button type="button" onClick={() => { playTap(); setMode("cards"); }}
+            className={cn("rounded-full px-3 py-1.5 text-2xs font-bold transition", mode === "cards" ? "bg-brand-600 text-white shadow-soft" : "text-ink-muted hover:text-ink")}>
+            {t("purchase.viewCards", "بطاقات")}
+          </button>
+          <button type="button" onClick={() => { playTap(); setMode("log"); }}
+            className={cn("rounded-full px-3 py-1.5 text-2xs font-bold transition", mode === "log" ? "bg-brand-600 text-white shadow-soft" : "text-ink-muted hover:text-ink")}>
+            {t("purchase.viewLog", "سجل الحركات")}
+          </button>
+        </div>
         <Button leftIcon={<Plus size={16} />} onClick={() => { playTap(); setBuilding(true); }}>{t("purchase.new", "فاتورة شراء")}</Button>
       </div>
 
@@ -104,6 +117,8 @@ export function PurchasesTab({ products, companies, sections, clinicId, onChange
           <p className="text-ink-subtle">{purchases.length === 0 ? t("purchase.empty", "لا توجد فواتير شراء بعد. سجّل أول فاتورة ونزّل بضاعتها على المخزون دفعة وحدة.") : t("purchase.noMatch", "لا توجد فاتورة مطابقة.")}</p>
           {purchases.length === 0 && <Button leftIcon={<Plus size={16} />} onClick={() => { playTap(); setBuilding(true); }}>{t("purchase.new", "فاتورة شراء")}</Button>}
         </div>
+      ) : mode === "log" ? (
+        <PurchaseLog purchases={shown} />
       ) : (
         <motion.div variants={staggerContainer} initial="initial" animate="animate" className="space-y-2">
           {shown.map((p) => (

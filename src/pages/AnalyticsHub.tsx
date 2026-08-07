@@ -11,10 +11,11 @@ import {
   Crown, Star, ShieldAlert, Trash2, LogIn, FlaskConical, Pill, Users, Clock,
   ScrollText, Search, Eye, X, BadgePercent, SlidersHorizontal, ChevronDown,
   ChevronLeft, ChevronRight, LayoutDashboard, History, TrendingDown, Plus, BookUser,
-  Landmark,
+  Landmark, ShoppingBag,
 } from "lucide-react";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
-import type { Pet, Invoice, InvoiceItem, Product, MedicalVisit, PaymentMethod, Species, MediaItem, TreatmentEntry, AuditEntry, LoginEvent, Expense, ExpenseMethod, LabResult } from "@/types";
+import type { Pet, Invoice, InvoiceItem, Product, MedicalVisit, PaymentMethod, Species, MediaItem, TreatmentEntry, AuditEntry, LoginEvent, Expense, ExpenseMethod, LabResult, Purchase } from "@/types";
+import { PurchaseLog } from "@/components/inventory/PurchaseLog";
 import { type StaffMember } from "@/lib/staff";
 import { getCached, setCached, isFresh } from "@/lib/swrCache";
 import { loadAnalyticsSnap, analyticsKey, type AnalyticsSnap } from "@/lib/prefetchData";
@@ -52,7 +53,7 @@ import { CustomersTab } from "@/components/reports/CustomerLedger";
  * ==========================================================================*/
 
 type RangeKey = "today" | "yesterday" | "week" | "month" | "lastMonth" | "custom";
-type TabKey = "overview" | "money" | "ledger" | "customers" | "staff" | "best" | "clinical" | "audit" | "expenses";
+type TabKey = "overview" | "money" | "ledger" | "customers" | "staff" | "best" | "clinical" | "audit" | "expenses" | "purchases";
 
 /** One staff member's sales performance in the selected range. */
 interface StaffTopItem { name: string; qty: number; revenue: number }
@@ -738,6 +739,17 @@ export function AnalyticsHub() {
     void repo.logClientEvent("report.csv", {}); // activity trail
   };
 
+  /* ---- فواتير الشراء: تنجلب عند أول فتح للتبويب وتتصفى بفترة الصفحة ---- */
+  const [allPurchases, setAllPurchases] = useState<Purchase[] | null>(null);
+  useEffect(() => {
+    if (tab !== "purchases" || allPurchases !== null) return;
+    repo.listPurchases(user?.clinic_id ?? user?.id).then(setAllPurchases).catch(() => setAllPurchases([]));
+  }, [tab, allPurchases, user]);
+  const purchasesInRange = useMemo(() => (allPurchases ?? []).filter((p) => {
+    const d = (p.purchased_at || p.created_at || "").slice(0, 10);
+    return d >= from && d <= to;
+  }), [allPurchases, from, to]);
+
   const TABS: { id: TabKey; label: string; icon: typeof BarChart3 }[] = [
     { id: "overview", label: t("rpt.tab.overview", "نظرة عامة"), icon: LayoutDashboard },
     { id: "money", label: t("rpt.tab.money", "المال والصندوق"), icon: Wallet },
@@ -747,6 +759,7 @@ export function AnalyticsHub() {
     { id: "best", label: t("rpt.tab.best", "الأفضل والمبيعات"), icon: Crown },
     { id: "clinical", label: t("rpt.tab.clinical", "التقارير الطبية"), icon: Stethoscope },
     { id: "expenses", label: t("rpt.tab.expenses", "المصروفات والسحوبات"), icon: TrendingDown },
+    { id: "purchases", label: t("rpt.tab.purchases", "فواتير الشراء"), icon: ShoppingBag },
     { id: "audit", label: t("rpt.tab.audit", "المراقبة والنشاط"), icon: ShieldAlert },
   ];
   const RANGES: { id: RangeKey; label: string }[] = [
@@ -957,6 +970,7 @@ export function AnalyticsHub() {
               onChanged={(next) => { setExpenses(next); const prev = getCached<AnalyticsSnap>(cacheKey); if (prev) setCached<AnalyticsSnap>(cacheKey, { ...prev, expenses: next }); }}
             />
           )}
+          {tab === "purchases" && <PurchasesReportTab purchases={purchasesInRange} loading={allPurchases === null} rangeLabel={rangeLabel} />}
           {tab === "audit" && <AuditTab deleted={deletedInvoices} logins={loginsInRange} />}
         </>
       )}
@@ -2443,3 +2457,38 @@ function Kpi({ icon: Icon, label, value, tone }: { icon: typeof BarChart3; label
 }
 
 const Empty = ({ text }: { text: string }) => <p className="py-8 text-center text-sm text-ink-subtle">{text}</p>;
+
+/* ---- تبويب فواتير الشراء: متى اشتريت وشنو بالضبط، ضمن فترة التقرير ---- */
+function PurchasesReportTab({ purchases, loading, rangeLabel }: { purchases: Purchase[]; loading: boolean; rangeLabel: string }) {
+  const { t } = useTranslation();
+  const total = purchases.reduce((s, p) => s + (p.total || 0), 0);
+  const paid = purchases.reduce((s, p) => s + (p.amount_paid ?? p.total ?? 0), 0);
+  const due = Math.max(0, total - paid);
+  const days = new Set(purchases.map((p) => (p.purchased_at || p.created_at || "").slice(0, 10))).size;
+
+  const Kpi = ({ label, value, tone }: { label: string; value: string; tone?: "danger" | "success" }) => (
+    <div className={cn("rounded-2xl border p-3 text-center",
+      tone === "danger" ? "border-danger-200 bg-danger-50 dark:border-danger-500/30 dark:bg-danger-500/10"
+      : tone === "success" ? "border-success-200 bg-success-50 dark:border-success-500/30 dark:bg-success-500/10"
+      : "border-line bg-surface-1")}>
+      <div className="text-lg font-black tabular-nums text-ink">{value}</div>
+      <div className="text-2xs font-bold text-ink-subtle">{label}</div>
+    </div>
+  );
+
+  return (
+    <div className="space-y-4">
+      <p className="text-xs font-semibold text-ink-subtle">{t("rpt.purchases.hint", "كل فواتير الشراء ضمن")} {rangeLabel} — {t("rpt.purchases.hint2", "مجمّعة بأيام الشراء، وكل فاتورة تنفتح على بضاعتها بالضبط.")}</p>
+      <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-5">
+        <Kpi label={t("rpt.purchases.count", "فاتورة شراء")} value={formatNum(purchases.length)} />
+        <Kpi label={t("rpt.purchases.days", "يوم شراء")} value={formatNum(days)} />
+        <Kpi label={t("rpt.purchases.total", "إجمالي الشراء")} value={money(total)} />
+        <Kpi label={t("rpt.purchases.paid", "المدفوع للموردين")} value={money(paid)} tone="success" />
+        <Kpi label={t("rpt.purchases.due", "دين متبقٍ")} value={money(due)} tone={due > 0 ? "danger" : "success"} />
+      </div>
+      {loading
+        ? <div className="py-10 text-center text-ink-subtle"><Clock size={18} className="mx-auto mb-2 animate-spin" /> {t("common.loading", "جارٍ التحميل…")}</div>
+        : <PurchaseLog purchases={purchases} />}
+    </div>
+  );
+}
