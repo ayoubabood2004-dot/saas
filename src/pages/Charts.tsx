@@ -4,7 +4,7 @@ import { useTranslation } from "react-i18next";
 import {
   Stethoscope, BedDouble, HeartPulse, ClipboardList, Pill, AlertTriangle,
   CheckCircle2, Clock, Loader2, Search, LayoutGrid, ChevronLeft, Slice,
-  Archive, DoorOpen, BarChart3, RotateCcw, MessageCircle, FileText,
+  Archive, DoorOpen, BarChart3, RotateCcw, MessageCircle, FileText, HeartCrack, Pencil, Check,
 } from "lucide-react";
 import type { Admission, ClinicVisit, MedicalVisit, Pet, PatientCondition, TreatmentEntry , Surgery } from "@/types";
 import { repo } from "@/lib/repo";
@@ -38,12 +38,13 @@ const BUCKETS: { key: BucketKey; label: string; icon: typeof Stethoscope; tint: 
  * وبعد ما يخلص العلاج، الطبلة تغادر السجلات النشطة: إما «سكشن الحالات»
  * (انتهت بنتيجة) أو «المنقطعون» (صاحبها ما رجع يكمل). و«التقارير» تحكي
  * وضع كل هذا بالأرقام وبالجُمل. */
-type RegistryKey = "daily" | "careBoarding" | "other" | "cases" | "lost" | "reports";
+type RegistryKey = "daily" | "careBoarding" | "other" | "cases" | "deceased" | "lost" | "reports";
 const REGISTRIES: { key: RegistryKey; label: string; icon: typeof Stethoscope }[] = [
   { key: "daily", label: "سجل الطبلات اليومية", icon: Stethoscope },
   { key: "careBoarding", label: "سجل الفندقة العلاجية", icon: HeartPulse },
   { key: "other", label: "الفندقة والزيارات", icon: BedDouble },
   { key: "cases", label: "سكشن الحالات", icon: Archive },
+  { key: "deceased", label: "سجل المتوفين", icon: HeartCrack },
   { key: "lost", label: "المنقطعون", icon: DoorOpen },
   { key: "reports", label: "التقارير", icon: BarChart3 },
 ];
@@ -301,8 +302,10 @@ export function Charts() {
   }, [clinicId]);
   useEffect(() => { loadEnded(); }, [loadEnded]);
 
-  /** انتهت بنتيجة حقيقية (شُفي/مزمنة/مُحال/متوفى) → سكشن الحالات. */
-  const casesList = useMemo(() => ended.filter((v) => v.outcome && v.outcome !== "lost_followup" && v.outcome !== "under_treatment"), [ended]);
+  /** انتهت بنتيجة حقيقية (شُفي/مزمنة/مُحال) → سكشن الحالات. المتوفون إلهم سجلهم. */
+  const casesList = useMemo(() => ended.filter((v) => v.outcome && v.outcome !== "lost_followup" && v.outcome !== "under_treatment" && v.outcome !== "deceased"), [ended]);
+  /** توفّى — سجل مستقل بكرامته، مع سبب الوفاة. */
+  const deceasedList = useMemo(() => ended.filter((v) => v.outcome === "deceased"), [ended]);
   /** عُلّمت «انقطع عن المراجعة» → سكشن المنقطعين. */
   const lostList = useMemo(() => ended.filter((v) => v.outcome === "lost_followup"), [ended]);
 
@@ -310,7 +313,7 @@ export function Charts() {
   const [endedTx, setEndedTx] = useState<TreatmentEntry[]>([]);
   const endedPetKey = useMemo(() => [...new Set(ended.map((v) => v.pet_id))].sort().join(","), [ended]);
   useEffect(() => {
-    if (!endedPetKey || (reg !== "cases" && reg !== "lost" && reg !== "reports")) return;
+    if (!endedPetKey || (reg !== "cases" && reg !== "lost" && reg !== "reports" && reg !== "deceased")) return;
     let cancel = false;
     repo.listAllTreatments(endedPetKey.split(",")).then((tx) => { if (!cancel) setEndedTx(tx); }).catch(() => {});
     return () => { cancel = true; };
@@ -391,9 +394,10 @@ export function Charts() {
     careBoarding: charts.filter((c) => c.bucket === "careBoarding").length,
     other: charts.filter((c) => c.bucket === "boarding" || c.bucket === "visit").length,
     cases: casesList.length,
+    deceased: deceasedList.length,
     lost: lostList.length + stalled.length,
     reports: 0,
-  }), [charts, casesList, lostList, stalled]);
+  }), [charts, casesList, deceasedList, lostList, stalled]);
 
   /** الدلاء المعروضة بالسجل النشط الحالي. */
   const activeBuckets = reg === "daily" || reg === "careBoarding" || reg === "other" ? REG_BUCKETS[reg] : [];
@@ -500,6 +504,14 @@ export function Charts() {
       {reg === "cases" ? (
         <CasesSection cases={casesList} pets={pets} lang={lang} txForVisit={txForVisit}
           onOpen={(v) => { playTap(); navigate(`/pet/${v.pet_id}/visit/${v.id}`); }} />
+      ) : reg === "deceased" ? (
+        <DeceasedSection deceased={deceasedList} pets={pets} lang={lang}
+          onOpen={(v) => { playTap(); navigate(`/pet/${v.pet_id}/visit/${v.id}`); }}
+          onSaveCause={async (v, cause) => {
+            await repo.updateClinicVisit(v.id, { summary: cause.trim() || null });
+            playSuccess();
+            loadEnded();
+          }} />
       ) : reg === "lost" ? (
         <LostSection stalled={stalled} lost={lostList} pets={pets} lang={lang} busyId={lostBusy}
           txForVisit={txForVisit}
@@ -510,7 +522,7 @@ export function Charts() {
           onOpenVisit={(v) => { playTap(); navigate(`/pet/${v.pet_id}/visit/${v.id}`); }} />
       ) : reg === "reports" ? (
         <ReportsSection charts={charts} treatments={treatments} txLoaded={txLoaded}
-          cases={casesList} lost={lostList} stalled={stalled} pets={pets} todayISO={todayISO} lang={lang} txForVisit={txForVisit} />
+          cases={casesList} deceased={deceasedList} lost={lostList} stalled={stalled} pets={pets} todayISO={todayISO} lang={lang} txForVisit={txForVisit} />
       ) : booting ? (
         <div className="py-16 text-center text-ink-subtle"><Loader2 className="mx-auto mb-2 animate-spin" /> جارٍ التحميل…</div>
       ) : activeCharts.length === 0 ? (
@@ -753,6 +765,97 @@ function CasesSection({ cases, pets, lang, txForVisit, onOpen }: {
   );
 }
 
+/* ── سجل المتوفين: توثيق محترم — التاريخ، التشخيص، وسبب الوفاة ────────────── */
+function DeceasedSection({ deceased, pets, lang, onOpen, onSaveCause }: {
+  deceased: ClinicVisit[];
+  pets: Record<string, Pet>;
+  lang: string;
+  onOpen: (v: ClinicVisit) => void;
+  onSaveCause: (v: ClinicVisit, cause: string) => Promise<void>;
+}) {
+  const [editId, setEditId] = useState<string | null>(null);
+  const [draft, setDraft] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const save = async (v: ClinicVisit) => {
+    if (busy) return;
+    setBusy(true);
+    try { await onSaveCause(v, draft); setEditId(null); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <div className="space-y-3">
+      <p className="rounded-xl border border-line bg-surface-1 px-3 py-2 text-2xs font-semibold text-ink-subtle">
+        الحالات المنتهية بالوفاة 🕊️ — تنتقل هنا تلقائياً لما تُنهى الزيارة بنتيجة «متوفى». سبب الوفاة يُقرأ من ملاحظة الإغلاق، وتگدر تكتبه أو تعدّله من هنا مباشرة. الحيوان المتوفى تسكت عنه التهاني والتذكيرات تلقائياً بكل السستم.
+      </p>
+      {deceased.length === 0 ? (
+        <div className="rounded-xl border border-line bg-surface-1 p-10 text-center">
+          <HeartCrack size={40} className="mx-auto mb-3 text-ink-subtle" />
+          <p className="text-sm font-bold text-ink">ماكو وفيات مسجّلة</p>
+          <p className="mt-1 text-xs text-ink-subtle">نتمنى تضل هالصفحة فارغة دائماً 🤍</p>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {deceased.map((v) => {
+            const pet = pets[v.pet_id];
+            const days = durationDays(v.opened_at, v.ended_at);
+            const editing = editId === v.id;
+            return (
+              <div key={v.id} className="rounded-xl border border-line bg-surface-1 p-3 shadow-card">
+                <div className="flex flex-wrap items-center gap-3">
+                  <CardAvatar pet={pet} />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span className="text-sm font-black text-ink">{pet?.name ?? "—"}</span>
+                      <span className="rounded-full bg-danger-50 px-2 py-0.5 text-[10px] font-extrabold text-danger-700 dark:bg-danger-500/15 dark:text-danger-300">🕊️ متوفى</span>
+                      <span className="text-2xs text-ink-subtle">{pet ? SPECIES_AR[pet.species] ?? pet.species : ""}</span>
+                    </div>
+                    <div className="text-2xs font-semibold text-ink-muted">{v.reason?.trim() ? `التشخيص: ${v.reason}` : "بلا تشخيص مسجّل"}</div>
+                    <div className="text-2xs text-ink-subtle">
+                      دخل {formatDate(v.opened_at, lang)} · توفّى {v.ended_at ? formatDate(v.ended_at, lang) : "—"} · بعد {formatNum(days)} يوم علاج
+                      {v.ended_by ? ` · سجّلها ${v.ended_by}` : ""}
+                    </div>
+                  </div>
+                  <button type="button" onClick={() => onOpen(v)}
+                    className="shrink-0 rounded-full border border-line bg-surface-1 px-3 py-1.5 text-2xs font-bold text-ink-muted transition hover:border-brand-300 hover:text-ink">السجل الكامل</button>
+                </div>
+
+                {/* سبب الوفاة — يُعرض دائماً، ويتحرر بضغطة */}
+                <div className="mt-2 flex items-center gap-1.5">
+                  {editing ? (
+                    <>
+                      <input autoFocus value={draft} onChange={(e) => setDraft(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === "Enter") void save(v); if (e.key === "Escape") setEditId(null); }}
+                        placeholder="سبب الوفاة… (مثال: فشل كلوي حاد رغم المحاليل)"
+                        className="input h-8 flex-1 text-2xs" />
+                      <button type="button" onClick={() => void save(v)} disabled={busy}
+                        className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-brand-600 text-white transition hover:bg-brand-700 disabled:opacity-50">
+                        {busy ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <span className={cn("min-w-0 flex-1 truncate rounded-lg px-2.5 py-1.5 text-2xs font-semibold",
+                        v.summary?.trim() ? "bg-surface-2 text-ink" : "border border-dashed border-line text-ink-subtle")}>
+                        {v.summary?.trim() ? `سبب الوفاة: ${v.summary}` : "سبب الوفاة غير مسجّل — اضغط القلم لتوثيقه"}
+                      </span>
+                      <button type="button" onClick={() => { playTap(); setEditId(v.id); setDraft(v.summary ?? ""); }} title="تعديل سبب الوفاة"
+                        className="grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-line text-ink-muted transition hover:border-brand-300 hover:text-ink">
+                        <Pencil size={13} />
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ── سكشن المنقطعين: صاحبها ما رجع يكمل العلاج ───────────────────────────── */
 function LostSection({ stalled, lost, pets, lang, busyId, txForVisit, onMarkLost, onRestore, onNudge, onOpenChart, onOpenVisit }: {
   stalled: { chart: Chart; lastGiven: string | null; remaining: number; sinceDays: number }[];
@@ -862,11 +965,12 @@ function LostSection({ stalled, lost, pets, lang, busyId, txForVisit, onMarkLost
 }
 
 /* ── التقارير: وصف دقيق لوضع كل طبلة وحالة ───────────────────────────────── */
-function ReportsSection({ charts, treatments, txLoaded, cases, lost, stalled, pets, todayISO, lang, txForVisit }: {
+function ReportsSection({ charts, treatments, txLoaded, cases, deceased, lost, stalled, pets, todayISO, lang, txForVisit }: {
   charts: Chart[];
   treatments: TreatmentEntry[];
   txLoaded: boolean;
   cases: ClinicVisit[];
+  deceased: ClinicVisit[];
   lost: ClinicVisit[];
   stalled: { chart: Chart; lastGiven: string | null; remaining: number; sinceDays: number }[];
   pets: Record<string, Pet>;
@@ -883,18 +987,21 @@ function ReportsSection({ charts, treatments, txLoaded, cases, lost, stalled, pe
   const todayPct = todayTx.length ? Math.round((todayGiven / todayTx.length) * 100) : null;
   const overdueDoses = treatments.filter((t) => taskStatus(t, todayISO) === "overdue").length;
 
-  // المنتهية هذا الشهر + متوسط مدتها ومعدل إنجاز جرعاتها.
+  // المنتهية هذا الشهر (بنتيجة أو وفاة) + متوسط مدتها ومعدل إنجاز جرعاتها.
   const monthCases = cases.filter((v) => (v.ended_at ?? "").slice(0, 7) === monthKey);
-  const avgDays = monthCases.length
-    ? Math.round(monthCases.reduce((s, v) => s + durationDays(v.opened_at, v.ended_at), 0) / monthCases.length)
+  const monthDeceased = deceased.filter((v) => (v.ended_at ?? "").slice(0, 7) === monthKey);
+  const monthClosed = [...monthCases, ...monthDeceased];
+  const avgDays = monthClosed.length
+    ? Math.round(monthClosed.reduce((s, v) => s + durationDays(v.opened_at, v.ended_at), 0) / monthClosed.length)
     : null;
   const monthAdherence = (() => {
-    const all = monthCases.flatMap((v) => txForVisit(v.id));
+    const all = monthClosed.flatMap((v) => txForVisit(v.id));
     if (!all.length) return null;
     return Math.round((all.filter((t) => t.administered_at).length / all.length) * 100);
   })();
-  const recoveredPct = monthCases.length
-    ? Math.round((monthCases.filter((v) => v.outcome === "recovered").length / monthCases.length) * 100)
+  // نسبة الشفاء تُحسب على كل الإغلاقات — الوفيات جزء من المقام، هذا هو الصدق.
+  const recoveredPct = monthClosed.length
+    ? Math.round((monthClosed.filter((v) => v.outcome === "recovered").length / monthClosed.length) * 100)
     : null;
 
   /** الجملة الدقيقة لوصف طبلة نشطة — أرقامها كلها من جرعاتها الفعلية. */
@@ -942,8 +1049,9 @@ function ReportsSection({ charts, treatments, txLoaded, cases, lost, stalled, pe
         <Kpi label="فندقة علاجية نشطة" value={formatNum(charts.filter((c) => c.bucket === "careBoarding").length)} />
         <Kpi label="امتثال جرعات اليوم" value={todayPct === null ? "—" : `${formatNum(todayPct)}٪`} tone={todayPct !== null && todayPct < 60 ? "warn" : undefined} />
         <Kpi label="جرعة متأخرة الآن" value={formatNum(overdueDoses)} tone={overdueDoses > 0 ? "danger" : "success"} />
-        <Kpi label="حالة انتهت هذا الشهر" value={formatNum(monthCases.length)} />
+        <Kpi label="حالة انتهت هذا الشهر" value={formatNum(monthClosed.length)} />
         <Kpi label="نسبة الشفاء (هذا الشهر)" value={recoveredPct === null ? "—" : `${formatNum(recoveredPct)}٪`} tone={recoveredPct !== null && recoveredPct >= 70 ? "success" : undefined} />
+        <Kpi label="وفيات هذا الشهر 🕊️" value={formatNum(monthDeceased.length)} tone={monthDeceased.length > 0 ? "danger" : "success"} />
         <Kpi label="متوسط مدة العلاج" value={avgDays === null ? "—" : `${formatNum(avgDays)} يوم`} />
         <Kpi label="منقطعون (كلي + مشتبه)" value={formatNum(lost.length + stalled.length)} tone={lost.length + stalled.length > 0 ? "warn" : "success"} />
       </div>
@@ -996,6 +1104,12 @@ function ReportsSection({ charts, treatments, txLoaded, cases, lost, stalled, pe
               </p>
             );
           })}
+          {monthDeceased.map((v) => (
+            <p key={v.id} className="text-danger-700 dark:text-danger-300">
+              <span className="font-black">{pets[v.pet_id]?.name ?? "—"}</span>
+              <span className="font-semibold"> — توفّى 🕊️ بعد {formatNum(durationDays(v.opened_at, v.ended_at))} يوم علاج{v.summary?.trim() ? `، السبب: ${v.summary}` : "، سبب الوفاة غير مسجّل"}.</span>
+            </p>
+          ))}
           {monthCases.map((v) => {
             const o = outcomeMeta(v.outcome);
             const ds = doseSummary(txForVisit(v.id));
@@ -1006,7 +1120,7 @@ function ReportsSection({ charts, treatments, txLoaded, cases, lost, stalled, pe
               </p>
             );
           })}
-          {stalled.length === 0 && lost.length === 0 && monthCases.length === 0 && (
+          {stalled.length === 0 && lost.length === 0 && monthClosed.length === 0 && (
             <p className="py-2 text-center text-ink-subtle">ماكو حركة منتهية أو منقطعة هذا الشهر بعد.</p>
           )}
         </div>
