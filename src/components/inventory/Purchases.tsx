@@ -12,7 +12,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Modal } from "@/components/Modal";
 import { Combobox } from "@/components/Combobox";
 import { Button, Badge, useToast, Skeleton } from "@/components/ui";
-import { cn, money, formatDate, localISO } from "@/lib/utils";
+import { cn, money, formatDate, localISO, normalizeAr } from "@/lib/utils";
 import { withTimeout, describeDbError } from "@/lib/errors";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
 import { staggerContainer, staggerItem } from "@/lib/motion";
@@ -398,15 +398,48 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
   };
 
   // Top scan box: scan/type a barcode → add (or focus) a line for it.
+  /* -- مطابقة بالاسم: «رويال» تلگي «Royal Canin…» و«اموكس» تلگي «أموكسيسيلين» --
+   * الموظف بالمخزن أغلب وقته يعرف الاسم مو الباركود، وكتابة اسم موجود يجب أن
+   * تسحب المنتج بمكانه (شركته وأسعاره) بدل ما تخلق نسخة مكررة عمياء. */
+  const nameIndex = useMemo(() => products.map((p) => ({ p, key: normalizeAr(p.name) })), [products]);
+  const findByName = (text: string): Product[] => {
+    const q = normalizeAr(normName(text));
+    if (q.length < 2) return [];
+    return nameIndex.filter((x) => x.key.includes(q)).map((x) => x.p).slice(0, 6);
+  };
+
+  /** أضف منتجاً معروفاً كسطر (أو زد كمية سطره الموجود) — من المسح أو الاقتراح. */
+  const addProductLine = (p: Product) => {
+    setLines((ls) => {
+      const existing = ls.find((l) => l.product_id === p.id);
+      if (existing) return ls.map((l) => (l.key === existing.key ? { ...l, qty: String((Number(l.qty) || 0) + 1) } : l));
+      const base = ls.length === 1 && !ls[0].barcode && !ls[0].name ? [] : ls;
+      return [...base, { ...lineFromProduct(p, p.barcode ?? ""), qty: "1" }];
+    });
+    setScan("");
+    playTap();
+    scanRef.current?.focus();
+  };
+
   const scanAdd = () => {
-    const code = scan.replace(/\s/g, "").trim();
-    if (!code) return;
-    const match = byBarcode.get(code);
+    const raw = scan.trim();
+    if (!raw) return;
+    const code = raw.replace(/\s/g, "");
+    // باركود أولاً، وإلا اسم: مطابقة تامة، أو مرشح وحيد لا لبس فيه.
+    let match = byBarcode.get(code);
+    if (!match) {
+      const cands = findByName(raw);
+      const exact = cands.find((p) => normalizeAr(p.name) === normalizeAr(normName(raw)));
+      match = exact ?? (cands.length === 1 ? cands[0] : undefined);
+    }
+    if (match) { addProductLine(match); return; }
     setLines((ls) => {
       // Merge into an existing line with the same barcode if present.
-      const existing = ls.find((l) => l.barcode === code);
+      const existing = ls.find((l) => l.barcode === code && code);
       if (existing) return ls.map((l) => (l.key === existing.key ? { ...l, qty: String((Number(l.qty) || 0) + 1) } : l));
-      const fresh = match ? { ...lineFromProduct(match, code), qty: "1" } : blankLine({ barcode: code, qty: "1" });
+      // نص فيه حروف/مسافات = اسم منتج جديد؛ أرقام صرفة = باركود جديد.
+      const looksBarcode = /^[0-9A-Za-z_-]+$/.test(raw);
+      const fresh = looksBarcode ? blankLine({ barcode: code, qty: "1" }) : blankLine({ name: normName(raw), qty: "1" });
       // Drop a leading empty line so the list stays clean.
       const base = ls.length === 1 && !ls[0].barcode && !ls[0].name ? [] : ls;
       return [...base, fresh];
@@ -415,6 +448,14 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
     playTap();
     scanRef.current?.focus();
   };
+
+  /** اقتراحات حية وأنت تكتب بصندوق الإدخال — منتج موجود يظهر اسمه فوراً. */
+  const scanSuggestions = useMemo(() => {
+    const raw = scan.trim();
+    if (raw.length < 2 || byBarcode.get(raw.replace(/\s/g, ""))) return [];
+    return findByName(raw);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scan, nameIndex]);
 
   const validLines = lines.filter((l) => (l.name.trim() || l.barcode.trim()) && Number(l.qty) > 0);
   const total = validLines.reduce((s, l) => s + (Number(l.qty) || 0) * (Number(l.purchase_price) || 0), 0);
@@ -525,11 +566,25 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
                 value={scan}
                 onChange={(e) => setScan(e.target.value)}
                 onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); scanAdd(); } }}
-                placeholder={t("pos.scanOrType", "امسح أو اكتب…")}
+                placeholder={t("pos.scanOrTypeName", "امسح الباركود أو اكتب اسم المنتج…")}
               />
             </div>
             <Button variant="secondary" onClick={scanAdd}>{t("common.add", "إضافة")}</Button>
           </div>
+          {/* منتجات موجودة تطابق المكتوب — ضغطة تسحب المنتج بمكانه وأسعاره */}
+          {scanSuggestions.length > 0 && (
+            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+              <span className="text-2xs font-bold text-success-700 dark:text-success-300">{t("purchase.foundExisting", "موجود عندك:")}</span>
+              {scanSuggestions.map((p) => (
+                <button key={p.id} type="button" onClick={() => addProductLine(p)}
+                  className="inline-flex items-center gap-1.5 rounded-full border border-success-300 bg-surface-1 px-2.5 py-1 text-2xs font-bold text-ink transition hover:bg-success-50 dark:border-success-500/30 dark:hover:bg-success-500/10">
+                  <PackageCheck size={11} className="text-success-600 dark:text-success-300" />
+                  {p.name}
+                  <span className="font-mono text-[10px] text-ink-subtle" dir="ltr">{p.barcode ?? ""}</span>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Lines */}
@@ -613,6 +668,23 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
                   <div className="sm:col-span-4">
                     <label className="label text-2xs">{t("pos.name", "الاسم")}</label>
                     <input className="input text-sm" value={l.name} onChange={(e) => patchLine(l.key, { name: e.target.value })} placeholder={t("pos.namePh", "اسم المنتج")} readOnly={matched} />
+                    {/* الاسم المكتوب يطابق منتجاً موجوداً؟ اعرضه — ضغطة تحوّل السطر
+                        لإعادة تعبئة بدل ما ينخلق توأم أعمى بنفس الاسم. */}
+                    {!matched && l.name.trim().length >= 2 && (() => {
+                      const sugg = findByName(l.name).slice(0, 4);
+                      if (!sugg.length) return null;
+                      return (
+                        <div className="mt-1 flex flex-wrap gap-1">
+                          {sugg.map((p) => (
+                            <button key={p.id} type="button"
+                              onClick={() => { playTap(); setLines((ls) => ls.map((x) => (x.key === l.key ? { ...lineFromProduct(p, p.barcode ?? ""), key: x.key, qty: x.qty || "1" } : x))); }}
+                              className="inline-flex items-center gap-1 rounded-full border border-success-300 bg-success-50/60 px-2 py-0.5 text-[10px] font-bold text-success-800 transition hover:bg-success-100 dark:border-success-500/30 dark:bg-success-500/10 dark:text-success-200">
+                              <PackageCheck size={10} /> {t("purchase.useExisting", "موجود:")} {p.name}
+                            </button>
+                          ))}
+                        </div>
+                      );
+                    })()}
                   </div>
                   <div className="sm:col-span-2">
                     <label className="label text-2xs">{t("pos.category", "الفئة")}</label>
