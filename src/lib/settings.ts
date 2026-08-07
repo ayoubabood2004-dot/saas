@@ -140,8 +140,8 @@ export function clearPetRanges(petId: string) {
 export const DEFAULT_DIAL_CODE = "+964"; // Iraq
 
 export interface ClinicSocials { facebook: string; instagram: string }
-interface ClinicPrefs { dial_code: string; logo_url: string | null; social_facebook: string; social_instagram: string; clinic_name: string; pre_sale_print: boolean; override_enabled: boolean; resizable_cart: boolean; font_scale_enabled: boolean }
-const DEFAULT_PREFS: ClinicPrefs = { dial_code: DEFAULT_DIAL_CODE, logo_url: null, social_facebook: "", social_instagram: "", clinic_name: "", pre_sale_print: false, override_enabled: false, resizable_cart: false, font_scale_enabled: false };
+interface ClinicPrefs { dial_code: string; logo_url: string | null; social_facebook: string; social_instagram: string; clinic_name: string; pre_sale_print: boolean; override_enabled: boolean; resizable_cart: boolean; font_scale_enabled: boolean; override_pin_mirror: string | null }
+const DEFAULT_PREFS: ClinicPrefs = { dial_code: DEFAULT_DIAL_CODE, logo_url: null, social_facebook: "", social_instagram: "", clinic_name: "", pre_sale_print: false, override_enabled: false, resizable_cart: false, font_scale_enabled: false, override_pin_mirror: null };
 
 const prefsKey = () => `vp_clinic_prefs_${getActiveClinicId()}`;
 const legacyDialKey = () => `vp_dial_code_${getActiveClinicId()}`;
@@ -227,6 +227,9 @@ export async function hydrateClinicPrefs(): Promise<void> {
         override_enabled: d.override_enabled ?? local.override_enabled,
         resizable_cart: d.resizable_cart ?? local.resizable_cart,
         font_scale_enabled: d.font_scale_enabled ?? local.font_scale_enabled,
+        // مرآة رمز المدير السحابية (0093): جهاز جديد كلياً يستلم الرمز من هنا.
+        // «?? local» عمداً — سحابة بلا العمود/بلا قيمة لا تمسح مرآة موجودة أبداً.
+        override_pin_mirror: d.override_pin_mirror ?? local.override_pin_mirror,
       };
     } else {
       // No row yet → migrate any local prefs up (or seed the default dial code).
@@ -245,6 +248,7 @@ export async function hydrateClinicPrefs(): Promise<void> {
       if (local.override_enabled) boolPatch.override_enabled = true;
       if (local.resizable_cart) boolPatch.resizable_cart = true;
       if (local.font_scale_enabled) boolPatch.font_scale_enabled = true;
+      if (local.override_pin_mirror) boolPatch.override_pin_mirror = local.override_pin_mirror;
       if (Object.keys(boolPatch).length) setPendingPrefs({ ...readPendingPrefs(), ...boolPatch });
     }
     // Unconfirmed pref writes (e.g. a toggle flipped before its column's
@@ -332,6 +336,16 @@ export function getOverrideEnabled(): boolean {
 }
 export function setOverrideEnabled(v: boolean) {
   patchPrefs({ override_enabled: v }, "override-enabled-set");
+}
+
+/* ---- مرآة رمز المدير السحابية — البيت الثالث للرمز (بعد bcrypt السيرفر
+ * ومرآة الجهاز). تتزامن عبر الأجهزة بنفس نظام الـ prefs، فحتى مسح تخزين
+ * المتصفح الكامل ما يضيّع الرمز: أول hydration يرجّعه. ---- */
+export function getOverridePinMirror(): string | null {
+  return prefs().override_pin_mirror ?? null;
+}
+export function setOverridePinMirror(hash: string | null) {
+  patchPrefs({ override_pin_mirror: hash }, "override-pin-mirror-set");
 }
 
 /** Opt-in resizable POS cart (سلة قابلة لتغيير الحجم): reveals a drag handle on

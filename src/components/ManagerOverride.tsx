@@ -6,8 +6,8 @@ import { useAuth } from "@/contexts/AuthContext";
 import { appRoleToStaffRole } from "@/lib/staff";
 import { getOverrideEnabled, setOverrideEnabled } from "@/lib/settings";
 import {
-  hasOverridePin, lockNow, overridePinScope, setDeviceLocked, setOverridePin,
-  unlockWithPin, useOverride,
+  clearPinPresenceMarker, hasOverridePin, lockNow, overridePinScope, pinExistsSync,
+  setDeviceLocked, setOverridePin, unlockWithPin, useOverride,
 } from "@/lib/managerOverride";
 import { playSuccess, playTap, playWarning } from "@/lib/sounds";
 import { Button, Tooltip, useToast } from "@/components/ui";
@@ -41,7 +41,10 @@ export function OverrideCorner({ compact = false }: { compact?: boolean }) {
   }, [ov.active]);
 
   const staff = user?.role === "admin" || user?.role === "doctor" || user?.role === "reception";
-  if (!user || !staff || !getOverrideEnabled()) return null;
+  // القاعدة الجذرية: مفتاح موجود = أيقونة ظاهرة. علم التفعيل يقدر يضيف
+  // الأيقونة قبل أول إعداد، لكن ما يقدر يخفيها ورمز العيادة موجود —
+  // إلا بالتعطيل الصريح (الذي يمسح علم الوجود بعد التحقق بالرمز نفسه).
+  if (!user || !staff || (!getOverrideEnabled() && !pinExistsSync())) return null;
   const baseRole = appRoleToStaffRole(user.role);
   // A manager on their own UNLOCKED device has nothing to *unlock* — but the
   // manager-direction of the feature is to LOCK this device into the reception
@@ -313,6 +316,7 @@ export function ManagerOverrideCard() {
     }
     lockNow(); // end the elevation the verify just created
     setEnabled(false); setOverrideEnabled(false);
+    clearPinPresenceMarker(); // إيقاف صريح ومتحقق منه — هنا فقط يحق الإخفاء
     setDisarmOpen(false);
     playSuccess();
     toast.success(t("override.disabled", "تم إيقاف وضع المدير"));
@@ -325,6 +329,8 @@ export function ManagerOverrideCard() {
     try {
       await setOverridePin(pin1);
       setPinSet(true);
+      // حفظ رمز = الميزة شغّالة حكماً — يصلّح علم تفعيل انطفى بالغلط.
+      if (!enabled) { setEnabled(true); setOverrideEnabled(true); }
       refreshScope();
       setPin1(""); setPin2("");
       playSuccess();

@@ -13,6 +13,7 @@
 import { useSyncExternalStore } from "react";
 import { sb } from "./clinicSync";
 import { getActiveClinicId } from "./clinics";
+import { getOverridePinMirror, setOverridePinMirror } from "./settings";
 import { repo } from "./repo";
 
 const SESSION_MS = 10 * 60 * 1000; // elevation lifetime
@@ -122,34 +123,70 @@ const hashPin = (pin: string) => sha256(`vp_override_v2:${pin}`);
 // accepted on unlock so codes set before this change keep working, then migrate.
 const hashLegacy = (cid: string, pin: string) => sha256(`${cid}:${pin}`);
 
-/** Locate the device PIN mirror, SELF-HEALING across clinic-id changes: if the
- *  exact active-clinic key is missing but exactly ONE override PIN exists on this
- *  device (the common single-clinic case, or a legacy key saved under a different
- *  id such as "default"), we still find it. This is what stops a code from
- *  silently vanishing just because the active clinic id shifted between sessions. */
-function findLocalPin(): { key: string; cid: string; hash: string } | null {
+/** كل نسخ المرآة الموجودة على هذا الجهاز + مرآة الـ prefs السحابية —
+ *  المفتاح النشط أولاً. الفتح يجرّب كلها، فما يهم شگد تغيّر تمثيل clinic id
+ *  ولا چم نسخة قديمة تراكمت: أي نسخة صحيحة تكفي، وبعد النجاح كلهن يتوحدن.
+ *  (النسخة القديمة كانت ترجع null إذا صار أكثر من مفتاح — جذر «اختفاء» حقيقي.) */
+function findLocalPins(): { key: string; cid: string; hash: string }[] {
+  const hits: { key: string; cid: string; hash: string }[] = [];
   try {
     const direct = localStorage.getItem(pinKey());
-    if (direct) return { key: pinKey(), cid: getActiveClinicId(), hash: direct };
-    const hits: { key: string; cid: string; hash: string }[] = [];
+    if (direct) hits.push({ key: pinKey(), cid: getActiveClinicId(), hash: direct });
     for (const k of Object.keys(localStorage)) {
-      if (k.startsWith(PIN_PREFIX)) {
-        const v = localStorage.getItem(k);
-        if (v) hits.push({ key: k, cid: k.slice(PIN_PREFIX.length), hash: v });
-      }
+      if (!k.startsWith(PIN_PREFIX) || k === pinKey()) continue;
+      const v = localStorage.getItem(k);
+      if (v) hits.push({ key: k, cid: k.slice(PIN_PREFIX.length), hash: v });
     }
-    return hits.length === 1 ? hits[0] : null;
-  } catch { return null; }
+  } catch { /* ignore */ }
+  // مرآة الـ prefs: تتزامن من السحابة، فترجع حتى بعد مسح تخزين المتصفح.
+  try {
+    const m = getOverridePinMirror();
+    if (m && !hits.some((h) => h.hash === m)) hits.push({ key: "", cid: getActiveClinicId(), hash: m });
+  } catch { /* ignore */ }
+  return hits;
 }
 
-/** Persist the device mirror under the CURRENT active-clinic key (v2 hash), and
- *  drop the single stale key it may have been adopted from. */
-async function writeLocalPin(pin: string, from?: string): Promise<void> {
+/* ---- علم «الرمز موجود» ثلاثي الحالات — القرار الصريح فقط يغلبه ----
+ *   "1"     — مؤكد موجود (حفظ / فحص سحابي / فتح ناجح). فشل شبكي عابر
+ *             لا يقدر يرجّع الواجهة تتصرف كأن ماكو رمز.
+ *   "0"     — معطَّل صراحة بزر «إيقاف» المتحقق منه بالرمز — يخفي الأيقونة
+ *             حتى لو المرايا بعدها موجودة (الرمز يُحفظ، الميزة تنطفي).
+ *   (فارغ)  — لا قرار → الحقيقة من مسح المرايا.
+ * أي حفظ أو فتح ناجح لاحق يرجّع العلم "1" فتظهر الأيقونة من جديد. */
+const HAS_PIN_FLAG = "vp_override_has_pin";
+function markPinExists() {
+  try { localStorage.setItem(HAS_PIN_FLAG, "1"); } catch { /* ignore */ }
+}
+/** فحص متزامن: هل يوجد رمز بأي بيت من بيوته؟ يقود ظهور أيقونة المفتاح. */
+export function pinExistsSync(): boolean {
+  try {
+    const f = localStorage.getItem(HAS_PIN_FLAG);
+    if (f === "1") return true;
+    if (f === "0") return false; // إيقاف صريح — الوحيد المسموح له يخفي
+  } catch { /* ignore */ }
+  return findLocalPins().length > 0;
+}
+/** التعطيل الصريح فقط (زر «إيقاف الميزة» بعد التحقق بالرمز) — يعلّم "0"
+ *  فيُخفي الأيقونة مقصوداً؛ أي false قادم من تهيئة أو سحابة لا يمر من هنا. */
+export function clearPinPresenceMarker() {
+  try { localStorage.setItem(HAS_PIN_FLAG, "0"); } catch { /* ignore */ }
+}
+
+/** Persist the device mirror under the CURRENT active-clinic key (v2 hash),
+ *  prune every stale representation, replicate to the synced prefs mirror,
+ *  and stamp the presence flag. One write = the code is home in every house. */
+async function writeLocalPin(pin: string): Promise<void> {
+  let h = "";
+  try { h = await hashPin(pin); } catch { return; }
   try {
     const k = pinKey();
-    localStorage.setItem(k, await hashPin(pin));
-    if (from && from !== k) localStorage.removeItem(from);
+    localStorage.setItem(k, h);
+    for (const kk of Object.keys(localStorage)) {
+      if (kk.startsWith(PIN_PREFIX) && kk !== k) localStorage.removeItem(kk);
+    }
   } catch { /* ignore */ }
+  try { if (getOverridePinMirror() !== h) setOverridePinMirror(h); } catch { /* ignore */ }
+  markPinExists();
 }
 
 /** Save the clinic PIN. On a migrated backend the PIN lives bcrypt-hashed
@@ -166,7 +203,7 @@ export async function setOverridePin(pin: string): Promise<void> {
     if (MISSING_FN.test(error.message)) { await writeLocalPin(pin); return; } // pre-0048
     throw new Error(error.message);
   }
-  await writeLocalPin(pin); // cloud is source of truth; mirror is the safety net
+  await writeLocalPin(pin); // cloud is source of truth; mirrors are the safety net
 }
 
 /** Logout teardown: end any running PIN elevation (server + this device) so the
@@ -189,7 +226,7 @@ export function endElevationOnLogout(): void {
 }
 
 function hasLocalPin(): boolean {
-  return !!findLocalPin();
+  return findLocalPins().length > 0;
 }
 
 /** Where the clinic's PIN actually lives:
@@ -204,7 +241,10 @@ export async function overridePinScope(): Promise<"cloud" | "device" | "none"> {
   if (client) {
     try {
       const { data, error } = await client.rpc("has_override_pin");
-      if (!error) return data ? "cloud" : (hasLocalPin() ? "device" : "none");
+      if (!error) {
+        if (data) { markPinExists(); return "cloud"; }
+        return hasLocalPin() ? "device" : "none";
+      }
     } catch { /* fall through to the local mirror */ }
   }
   return hasLocalPin() ? "device" : "none";
@@ -227,20 +267,21 @@ let localLockedUntil = 0;
 
 async function unlockLocal(pin: string): Promise<UnlockResult> {
   if (localLockedUntil > Date.now()) return { ok: false, reason: "locked", lockedUntil: localLockedUntil };
-  const rec = findLocalPin();
-  if (!rec) return { ok: false, reason: "no_pin" };
-  // Accept the v2 hash and every legacy salt (the id the mirror was stored under,
-  // the current active id, and "default") so codes set before this change keep
-  // working — then migrate the match to the stable v2 form under the current key.
+  const recs = findLocalPins();
+  if (!recs.length) return { ok: false, reason: "no_pin" };
+  // Accept the v2 hash and every legacy salt (the ids the mirrors were stored
+  // under, the current active id, and "default") so codes set before any change
+  // keep working — then migrate the match to the stable v2 form under the
+  // current key. EVERY mirror is tried: one correct copy anywhere is enough.
   const candidates = new Set([
     await hashPin(pin),
-    await hashLegacy(rec.cid, pin),
     await hashLegacy(getActiveClinicId(), pin),
     await hashLegacy("default", pin),
   ]);
-  if (candidates.has(rec.hash)) {
+  for (const rec of recs) candidates.add(await hashLegacy(rec.cid, pin));
+  if (recs.some((rec) => candidates.has(rec.hash))) {
     localFails = 0;
-    await writeLocalPin(pin, rec.key);
+    await writeLocalPin(pin); // النجاح يوحّد كل المرايا على الشكل الحديث
     writeUntil(Date.now() + SESSION_MS);
     void repo.logClientEvent("override.unlock", {});
     return { ok: true };
@@ -268,6 +309,9 @@ export async function unlockWithPin(pin: string): Promise<UnlockResult> {
     const d = (data ?? {}) as { ok?: boolean; until?: string; reason?: string; remaining?: number; locked_until?: string };
     if (d.ok && d.until) {
       writeUntil(new Date(d.until).getTime());
+      markPinExists();
+      // الفتح الناجح سحابياً يجدد مرايا الجهاز والـ prefs — شفاء ذاتي بكل استخدام.
+      void writeLocalPin(pin);
       return { ok: true };
     }
     if (d.reason === "no_pin") return unlockLocal(pin); // PIN set pre-migration on this device only
