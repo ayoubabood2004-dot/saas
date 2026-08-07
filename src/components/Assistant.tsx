@@ -31,13 +31,48 @@ interface Msg {
   offerRequest?: boolean;
   /** السؤال الي ولّد عرض الطلب — يُرفق بالطلب حتى يفتهم الأدمن السياق. */
   question?: string;
+  /** false = بعده «يكتب» — النص يظهر حرف حرف والأزرار تنطر لحد ما يخلص. */
+  typed?: boolean;
 }
 
 const SS_KEY = "vp_assistant_chat";
 const loadMsgs = (): Msg[] => {
-  try { const v = JSON.parse(sessionStorage.getItem(SS_KEY) || "[]"); return Array.isArray(v) ? v : []; }
-  catch { return []; }
+  try {
+    const v = JSON.parse(sessionStorage.getItem(SS_KEY) || "[]");
+    // الرسائل المسترجعة من الجلسة تظهر فوراً — الكتابة الحية للجديد فقط.
+    return Array.isArray(v) ? v.map((m: Msg) => ({ ...m, typed: true })) : [];
+  } catch { return []; }
 };
+
+/**
+ * الكتابة الحية — الجواب يظهر مثل ما واحد گاعد يكتبه هسة، مو بالون جاهز
+ * ينسبگ بوجهك. السرعة تتأقلم مع الطول: أطول جواب يخلص بحدود ثانيتين ونص.
+ */
+function TypeText({ text, instant, onDone, onTick }: {
+  text: string; instant: boolean; onDone: () => void; onTick: () => void;
+}) {
+  const [n, setN] = useState(instant ? text.length : 0);
+  useEffect(() => {
+    if (instant || n >= text.length) return;
+    const step = Math.max(2, Math.ceil(text.length / 90)); // ~90 دفعة كحد أقصى
+    const id = setInterval(() => {
+      setN((cur) => {
+        const next = Math.min(text.length, cur + step);
+        if (next >= text.length) { clearInterval(id); onDone(); }
+        return next;
+      });
+      onTick();
+    }, 28);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [instant, text]);
+  return (
+    <>
+      {text.slice(0, n)}
+      {n < text.length && <span className="ms-0.5 inline-block h-3.5 w-[2px] animate-pulse rounded bg-brand-500 align-middle" />}
+    </>
+  );
+}
 
 /** محرك المساعد + قاعدة معرفته (~100KB) يتحمّلان عند أول فتح، مو مع التطبيق. */
 type Engine = typeof import("@/lib/assistant");
@@ -89,8 +124,15 @@ export function Assistant() {
       route: r.route,
       offerRequest: r.offerRequest,
       question,
+      typed: false,
     }]);
   };
+
+  /** الرسالة خلصت كتابة — تثبت وتظهر أزرارها. */
+  const markTyped = (idx: number) => {
+    setMsgs((m) => m.map((x, i) => (i === idx ? { ...x, typed: true } : x)));
+  };
+  const scrollDown = () => endRef.current?.scrollIntoView({ block: "end" });
 
   // السؤال ما ينبلع أبداً: إذا المحرك بعده يتحمّل، ننتظره هنا بدل ما نهمل الرسالة.
   const getEngine = async (): Promise<Engine> => {
@@ -141,9 +183,10 @@ export function Assistant() {
       setMsgs((m) => [...m, {
         who: "bot",
         text: "تم ✅ وصل طلبك لفريق التطوير مباشرة.\nتگدر تتابع حالته من أيقونة «طلباتي» فوق — وأول ما يتنفذ رح تشوفه هناك 🚀",
+        typed: false,
       }]);
     } catch {
-      setMsgs((m) => [...m, { who: "bot", text: "ما گدرت أرسل الطلب هسة — جرب بعد شوية." }]);
+      setMsgs((m) => [...m, { who: "bot", text: "ما گدرت أرسل الطلب هسة — جرب بعد شوية.", typed: false }]);
     } finally { setReqBusy(false); }
   };
 
@@ -165,7 +208,7 @@ export function Assistant() {
 
       {/* اللوحة */}
       {open && (
-        <div className="fixed bottom-0 left-0 z-50 flex h-[min(640px,92dvh)] w-full flex-col overflow-hidden rounded-t-3xl border border-line bg-surface-1 shadow-raised sm:bottom-4 sm:left-4 sm:w-[400px] sm:rounded-3xl">
+        <div className="fixed bottom-0 left-0 z-50 flex h-[min(640px,92dvh)] w-full flex-col overflow-hidden rounded-t-3xl border border-line bg-surface-1 font-chat shadow-raised sm:bottom-4 sm:left-4 sm:w-[400px] sm:rounded-3xl">
           {/* الرأس */}
           <div className="flex items-center gap-2.5 border-b border-line bg-brand-grad px-4 py-3 text-white">
             <span className="grid h-9 w-9 place-items-center rounded-xl bg-white/20"><Sparkles size={18} /></span>
@@ -221,7 +264,7 @@ export function Assistant() {
                   <div className="space-y-2.5 pt-2">
                     <div className="flex items-start gap-2">
                       <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-brand-100 text-brand-600 dark:bg-brand-500/20 dark:text-brand-300"><Sparkles size={13} /></span>
-                      <div className="rounded-2xl rounded-ts-md bg-surface-2 px-3 py-2 text-xs font-semibold leading-relaxed text-ink">
+                      <div className="whitespace-pre-line rounded-2xl rounded-ts-md bg-surface-2 px-3 py-2 text-[13px] font-normal leading-relaxed text-ink">
                         هلو دكتور 👋 آني مساعدك بالسستم.
                         {"\n"}اسألني أي شيء — وإذا سألت عن شيء مو موجود، أرفعلك طلب بيه لفريق التطوير.
                       </div>
@@ -241,11 +284,13 @@ export function Assistant() {
                   <div key={i} className={cn("flex items-start gap-2", m.who === "user" && "flex-row-reverse")}>
                     {m.who === "bot" && <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-brand-100 text-brand-600 dark:bg-brand-500/20 dark:text-brand-300"><Sparkles size={13} /></span>}
                     <div className={cn(
-                      "max-w-[85%] whitespace-pre-line rounded-2xl px-3 py-2 text-xs font-semibold leading-relaxed",
+                      "max-w-[85%] whitespace-pre-line rounded-2xl px-3 py-2 text-[13px] font-normal leading-relaxed",
                       m.who === "user" ? "rounded-te-md bg-brand-600 text-white" : "rounded-ts-md bg-surface-2 text-ink",
                     )}>
-                      {m.text}
-                      {m.options && m.options.length > 0 && (
+                      {m.who === "bot"
+                        ? <TypeText text={m.text} instant={m.typed !== false} onDone={() => markTyped(i)} onTick={scrollDown} />
+                        : m.text}
+                      {m.typed !== false && m.options && m.options.length > 0 && (
                         <span className="mt-2 flex flex-wrap gap-1.5">
                           {m.options.map((o) => (
                             <button key={o.id} type="button" onClick={() => pickOption(o.id)}
@@ -255,7 +300,7 @@ export function Assistant() {
                           ))}
                         </span>
                       )}
-                      {m.route && (
+                      {m.typed !== false && m.route && (
                         <span className="mt-2 block">
                           <button type="button" onClick={() => { playTap(); setOpen(false); navigate(m.route!); }}
                             className="inline-flex items-center gap-1 rounded-full bg-brand-600 px-3 py-1.5 text-2xs font-extrabold text-white shadow-soft transition hover:bg-brand-700">
@@ -263,7 +308,7 @@ export function Assistant() {
                           </button>
                         </span>
                       )}
-                      {m.offerRequest && (
+                      {m.typed !== false && m.offerRequest && (
                         <span className="mt-2 block">
                           <button type="button"
                             onClick={() => { playTap(); setReqDraft({ question: m.question, text: m.question ?? "" }); }}

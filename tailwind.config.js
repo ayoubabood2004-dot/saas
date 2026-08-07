@@ -99,6 +99,8 @@ export default {
         sans: ["Inter", "Alexandria", "system-ui", "sans-serif"],
         display: ["'Plus Jakarta Sans'", "Inter", "Alexandria", "system-ui", "sans-serif"],
         arabic: ["Alexandria", "Inter", "sans-serif"],
+        // خط مراسلات عادي (مثل تطبيقات الشات) — لبالونات المساعد، مو خط العرض
+        chat: ["-apple-system", "'Segoe UI'", "system-ui", "Tahoma", "'Helvetica Neue'", "sans-serif"],
       },
       fontSize: {
         "2xs": ["0.6875rem", { lineHeight: "1rem" }],

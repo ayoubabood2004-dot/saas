@@ -39,7 +39,10 @@ const STOPWORDS = new Set([
   "لو", "سمحت", "رجاء", "بليز", "الله", "يخليك", "عندي", "عدنا", "اكو", "ماكو", "في", "يوجد",
   "الي", "اللي", "التي", "الذي", "هذا", "هذي", "هاي", "ذاك", "على", "عن", "الى", "إلى",
   "مال", "مالت", "بال", "بيه", "بيها", "منه", "منها", "له", "لها", "احتاج", "أحتاج", "لازم",
-  "how", "to", "do", "i", "can", "the", "a", "an", "is", "what", "where", "why", "want",
+  // أفعال «سوّي» العامة — ما تحمل أي موضوع: «شلون اسوي دين» موضوعه «دين» مو «اسوي».
+  // لو خليناها مرادفة لـ«اضيف» چانت توزع نقاط على كل مقالات الإضافة وتشتت الجواب.
+  "اسوي", "أسوي", "اسويها", "اعمل", "أعمل", "انشئ", "أنشئ", "سوي", "اسو",
+  "how", "to", "do", "i", "can", "the", "a", "an", "is", "what", "where", "why", "want", "make",
 ]);
 
 /**
@@ -47,8 +50,8 @@ const STOPWORDS = new Set([
  * كلها تصير «جرعة» قبل المطابقة. المفاتيح والقيم كلها بصيغة normalizeAr.
  */
 const SYNONYMS: Record<string, string> = {
-  // أفعال شائعة
-  "اسوي": "اضيف", "أسوي": "اضيف", "اعمل": "اضيف", "انشئ": "اضيف", "اسجل": "اضيف", "ادخل": "اضيف",
+  // أفعال شائعة (أما «اسوي/اعمل» فهي STOPWORDS — فعل عام بلا موضوع)
+  "اسجل": "اضيف", "ادخل": "اضيف", "اضافه": "اضيف",
   "امسح": "احذف", "اشيل": "احذف", "الغي": "احذف",
   "اعدل": "اغير", "ابدل": "اغير", "احدث": "اغير",
   // مفردات المجال
@@ -88,6 +91,10 @@ export function tokenize(q: string): string[] {
 
 interface Scored { article: KbArticle; score: number; hits: number }
 
+/** أفعال إجرائية تطابق عشرات المقالات (اضيف/احذف/اطبع…) — نصف وزن، حتى يبقى
+ *  الاسم المميِّز («دين»، «لقاح»…) هو صاحب الكلمة الفصل. */
+const GENERIC_ACTIONS = new Set(["اضيف", "احذف", "اغير", "طباعه", "افتح", "اشوف"]);
+
 function scoreArticle(tokens: string[], art: KbArticle): Scored {
   const keys = art.keywords.map((k) => normalizeAr(k));
   const title = normalizeAr(art.title);
@@ -103,7 +110,7 @@ function scoreArticle(tokens: string[], art: KbArticle): Scored {
     if (title.includes(t)) best = Math.max(best, 2.5);
     if (best === 0 && t.length > 2 && answer.includes(t)) best = 0.5;
     if (best > 0) hits++;
-    score += best;
+    score += GENERIC_ACTIONS.has(t) ? best * 0.5 : best;
   }
   // مكافأة التغطية للأسئلة الطويلة فقط: سؤال من ٥ كلمات انطبقت منه وحدة مشكوك،
   // أما «مصروف» لوحدها فضربة مفتاحية كاملة وما تستاهل عقوبة على قِصَرها.
@@ -128,7 +135,7 @@ const WISH_RE = /(اتمنى|ياريت|يا ريت|لو تضيفون|ممكن �
 /* ------------------------------- الواجهة -------------------------------- */
 
 const CONFIDENT = 3;   // ضربة مفتاحية كاملة وحدة (=٣) تكفي كجواب واثق
-const CLOSE_RATIO = 0.75; // البدائل ضمن 75% من الأول تُعرض كخيارات
+const CLOSE_RATIO = 0.85; // البدائل لازم تكون قريبة فعلاً (85%+) حتى تستاهل التخيير
 
 export function ask(question: string): AssistantReply {
   const raw = question.trim();
@@ -168,9 +175,12 @@ export function ask(question: string): AssistantReply {
     };
   }
 
-  // كم مقال متقارب → خيارات بدل تخمين
+  // كم مقال متقارب → خيارات بدل تخمين. بس إذا الأول متقدم بفارق واضح
+  // (٣٥٪+) على الثاني، الجواب المباشر أفيد من التخيير.
+  const second = scored[1];
+  const clearlyAhead = !second || top.score >= second.score * 1.35;
   const close = scored.slice(1, 4).filter((s) => s.score >= top.score * CLOSE_RATIO && s.score >= CONFIDENT);
-  if (close.length > 0 && top.score < CONFIDENT * 2.5) {
+  if (!clearlyAhead && close.length > 0 && top.score < CONFIDENT * 2.5) {
     return {
       kind: "options",
       text: "سؤالك يحتمل أكثر من موضوع — تقصد وحدة من هاي؟",
