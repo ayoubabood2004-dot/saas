@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
-  Barcode as BarcodeIcon, Check, Link2, Loader2, Package, Printer, ScanBarcode,
+  Barcode as BarcodeIcon, Check, Link2, Loader2, Package, Pencil, Printer, ScanBarcode,
   Search, Sparkles, History,
 } from "lucide-react";
 import type { GeneratedBarcode, Product } from "@/types";
@@ -36,6 +36,12 @@ export function BarcodeStudio({ products, onChanged }: { products: Product[]; on
   const [batchLabel, setBatchLabel] = useState("");
   const [lastBatch, setLastBatch] = useState<GeneratedBarcode[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  /** إظهار الاسم تحت الباركود على الملصق المطبوع — والافتراضي نعم. */
+  const [printNames, setPrintNames] = useState(true);
+  /** إعادة تسمية بالسجل: id الصف المفتوح + مسودة الاسم. */
+  const [renameId, setRenameId] = useState<string | null>(null);
+  const [renameDraft, setRenameDraft] = useState("");
+  const [renameBusy, setRenameBusy] = useState(false);
   const mounted = useRef(true);
 
   const load = async () => {
@@ -133,17 +139,20 @@ export function BarcodeStudio({ products, onChanged }: { products: Product[]; on
     } finally { setBusy(null); }
   };
 
-  /** طباعة ملصقات — ورقة A4 شبكة 4×10، كل ملصق: الاسم + الباركود + الرقم. */
+  /** طباعة ملصقات — ورقة A4 شبكة 4×10: الباركود، وتحته الاسم (إن مطلوب). */
   const printLabels = (rows: GeneratedBarcode[]) => {
     if (!rows.length) return;
     playTap();
     const clinic = getClinicName() || "doctorVet";
     const esc = (s: unknown) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!));
-    const cells = rows.map((g) => `
+    const cells = rows.map((g) => {
+      const name = g.label || productById.get(g.product_id ?? "")?.name || clinic;
+      return `
       <div class="cell">
-        <div class="name">${esc(g.label || productById.get(g.product_id ?? "")?.name || clinic)}</div>
         ${ean13Svg(g.barcode, { moduleW: 1.6, height: 34, fontSize: 9 })}
-      </div>`).join("");
+        ${printNames ? `<div class="name">${esc(name)}</div>` : ""}
+      </div>`;
+    }).join("");
     const w = window.open("", "_blank", "width=900,height=700");
     if (!w) { toast.error("اسمح بالنوافذ المنبثقة للطباعة"); return; }
     w.document.write(`<!doctype html><html dir="rtl"><head><meta charset="utf-8"><title>ملصقات باركود — ${esc(clinic)}</title>
@@ -153,7 +162,7 @@ export function BarcodeStudio({ products, onChanged }: { products: Product[]; on
         .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 3mm; }
         .cell { border: 0.3mm dashed #bbb; border-radius: 2mm; padding: 2mm; text-align: center; page-break-inside: avoid; }
         .cell svg { width: 100%; height: auto; }
-        .name { font-size: 8pt; font-weight: 700; margin-bottom: 1mm; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+        .name { font-size: 8pt; font-weight: 700; margin-top: 1mm; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
         @media print { .cell { border-style: solid; border-color: #eee; } }
       </style></head><body><div class="grid">${cells}</div>
       <script>window.onload = () => setTimeout(() => window.print(), 250);</script></body></html>`);
@@ -177,6 +186,21 @@ export function BarcodeStudio({ products, onChanged }: { products: Product[]; on
     setSelected((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   };
   const selectedRows = (registry ?? []).filter((g) => selected.has(g.id));
+
+  /** حفظ تسمية باركود — تظهر بالسجل وتحت الباركود بالطبعة. */
+  const saveRename = async (g: GeneratedBarcode) => {
+    if (renameBusy) return;
+    setRenameBusy(true);
+    try {
+      await repo.updateGeneratedBarcode(g.id, { label: renameDraft.trim() || null });
+      playSuccess();
+      setRenameId(null);
+      await load();
+    } catch {
+      playWarning();
+      toast.error("تعذّر حفظ الاسم");
+    } finally { setRenameBusy(false); }
+  };
 
   return (
     <div className="space-y-4">
@@ -269,6 +293,10 @@ export function BarcodeStudio({ products, onChanged }: { products: Product[]; on
             <Search size={14} className="pointer-events-none absolute inset-y-0 my-auto ms-3 text-ink-subtle" />
             <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="ابحث بالكود أو الغرض أو المنتج…" className="input h-9 w-full ps-9 text-xs" />
           </div>
+          <label className="inline-flex shrink-0 items-center gap-1.5 text-2xs font-bold text-ink-muted">
+            <input type="checkbox" checked={printNames} onChange={(e) => setPrintNames(e.target.checked)} className="h-4 w-4 accent-brand-600" />
+            الاسم تحت الباركود بالطبعة
+          </label>
           {selectedRows.length > 0 && (
             <Button size="sm" variant="secondary" leftIcon={<Printer size={13} />} onClick={() => printLabels(selectedRows)}>
               اطبع المحدد ({formatNum(selectedRows.length)})
@@ -292,7 +320,23 @@ export function BarcodeStudio({ products, onChanged }: { products: Product[]; on
                   <input type="checkbox" checked={selected.has(g.id)} onChange={() => toggleSel(g.id)} className="h-4 w-4 shrink-0 accent-brand-600" />
                   <span className="shrink-0 rounded border border-line bg-white p-1 dark:bg-surface-2" dangerouslySetInnerHTML={{ __html: ean13Svg(g.barcode, { moduleW: 0.9, height: 18, fontSize: 6 }) }} />
                   <span className="font-mono text-xs font-bold tabular-nums text-ink" dir="ltr">{g.barcode}</span>
-                  <span className="min-w-0 flex-1 truncate text-xs font-semibold text-ink-muted">{g.label || prod?.name || "—"}</span>
+                  {renameId === g.id ? (
+                    <span className="flex min-w-0 flex-1 items-center gap-1">
+                      <input autoFocus value={renameDraft} onChange={(e) => setRenameDraft(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === "Enter") void saveRename(g); if (e.key === "Escape") setRenameId(null); }}
+                        placeholder="اسم هذا الباركود…" className="input h-7 min-w-0 flex-1 text-xs" />
+                      <button type="button" onClick={() => void saveRename(g)} disabled={renameBusy}
+                        className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-brand-600 text-white transition hover:bg-brand-700 disabled:opacity-50">
+                        {renameBusy ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
+                      </button>
+                    </span>
+                  ) : (
+                    <span className="flex min-w-0 flex-1 items-center gap-1">
+                      <span className={cn("truncate text-xs font-semibold", g.label || prod ? "text-ink-muted" : "text-ink-subtle")}>{g.label || prod?.name || "بلا اسم — اضغط القلم للتسمية"}</span>
+                      <button type="button" onClick={() => { playTap(); setRenameId(g.id); setRenameDraft(g.label ?? ""); }} title="تسمية / إعادة تسمية"
+                        className="grid h-6 w-6 shrink-0 place-items-center rounded-full text-ink-subtle transition hover:bg-surface-2 hover:text-ink"><Pencil size={11} /></button>
+                    </span>
+                  )}
                   {prod
                     ? <Badge tone="success"><Link2 size={10} /> {prod.name}</Badge>
                     : g.product_id ? <Badge tone="warn">منتج محذوف</Badge> : <Badge tone="brand">حر</Badge>}

@@ -1041,6 +1041,13 @@ const demoRepo = {
   async listGeneratedBarcodes(): Promise<GeneratedBarcode[]> {
     return (loadDB().generatedBarcodes ?? []).slice().sort((a, b) => b.created_at.localeCompare(a.created_at));
   },
+  /** تسمية/إعادة تسمية باركود مولد — الاسم يظهر بالسجل وعلى الملصق المطبوع. */
+  async updateGeneratedBarcode(id: string, patch: Partial<Pick<GeneratedBarcode, "label" | "product_id">>): Promise<void> {
+    const db = loadDB();
+    const row = (db.generatedBarcodes ?? []).find((g) => g.id === id);
+    if (row) { Object.assign(row, patch); saveDB(db); }
+  },
+
   /** حفظ دفعة أكواد مولدة — إدراج واحد للدفعة كلها. */
   async addGeneratedBarcodes(rows: Omit<GeneratedBarcode, "id" | "created_at">[]): Promise<GeneratedBarcode[]> {
     const db = loadDB();
@@ -1448,6 +1455,7 @@ const DEMO_ACTIVITY_MAP: Record<string, { entity: string; action: "INSERT" | "UP
   addFeatureRequest: { entity: "feature_requests", action: "INSERT" },
   updateFeatureRequest: { entity: "feature_requests", action: "UPDATE" },
   addGeneratedBarcodes: { entity: "generated_barcodes", action: "INSERT" },
+  updateGeneratedBarcode: { entity: "generated_barcodes", action: "UPDATE" },
   deleteProblem: { entity: "pet_problems", action: "DELETE" },
   addClinicVisit: { entity: "clinic_visits", action: "INSERT" },
   updateClinicVisit: { entity: "clinic_visits", action: "UPDATE" },
@@ -2121,6 +2129,9 @@ const supabaseRepo: typeof demoRepo = {
     return listOf<GeneratedBarcode>(
       await sbc().from("generated_barcodes").select("*").order("created_at", { ascending: false }).limit(2000),
     );
+  },
+  async updateGeneratedBarcode(id, patch) {
+    ok(await sbc().from("generated_barcodes").update(patch).eq("id", id));
   },
   async addGeneratedBarcodes(rows) {
     // clinic_id يُختم من default العمود؛ upsert بتجاهل التعارض يحاكي سلوك الديمو
