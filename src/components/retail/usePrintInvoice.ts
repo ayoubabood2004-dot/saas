@@ -3,6 +3,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/components/ui";
 import { repo } from "@/lib/repo";
 import { openInvoicePrint, invoiceNo, type PrintFormat } from "@/lib/invoicePrint";
+import { resolveStaffName } from "@/lib/staffNames";
 import { getClinicLogo, getClinicSocials, getClinicName } from "@/lib/settings";
 import type { Invoice, InvoiceItem } from "@/types";
 
@@ -28,6 +29,8 @@ export function useInvoicePrinter() {
     let printNo = (invoice.print_count ?? 0) + 1;
     try { printNo = await repo.bumpInvoicePrints(invoice.id); } catch { /* keep optimistic count */ }
 
+    // البائع يُطبع باسمه — يُحل من كاش الكادر؛ فشل الحل ما يمنع الطباعة.
+    const sellerName = await resolveStaffName(invoice.staff_id).catch(() => null);
     const socials = getClinicSocials();
     const ok = openInvoicePrint({ ...invoice, print_count: printNo }, items ?? [], {
       clinicName: getClinicName() || user?.full_name || "doctorVet",
@@ -39,6 +42,7 @@ export function useInvoicePrinter() {
       logoUrl: getClinicLogo(),
       facebook: socials.facebook || null,
       instagram: socials.instagram || null,
+      sellerName,
     });
     if (!ok) toast.error(t("retail.popupBlocked", "Allow pop-ups to print"), t("retail.popupBlockedHint", "Your browser blocked the print window — enable pop-ups for this site."));
     else void repo.logClientEvent("invoice.print", { ref: invoiceNo(invoice.id), format }); // activity trail

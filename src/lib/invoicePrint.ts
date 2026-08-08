@@ -21,6 +21,8 @@ export interface InvoicePrintOptions {
   /** Pro-forma print BEFORE the sale is completed: shows a "قبل البيع" badge
    *  instead of an invoice number (the invoice doesn't exist yet). */
   preSale?: boolean;
+  /** اسم موظف المبيعات (البائع) — يُطبع على الفاتورة حتى يُعرف منو باعها. */
+  sellerName?: string | null;
 }
 
 const esc = (s: unknown) =>
@@ -46,6 +48,7 @@ function strings(lang: string) {
     walkIn: ar ? "عميل نقدي" : "Walk-in customer",
     phone: ar ? "الهاتف" : "Phone",
     pet: ar ? "الحيوان" : "Patient",
+    seller: ar ? "البائع" : "Sold by",
     notes: ar ? "ملاحظات" : "Notes",
     item: ar ? "الصنف" : "Item",
     qty: ar ? "الكمية" : "Qty",
@@ -248,6 +251,7 @@ export function buildInvoiceHTML(invoice: Invoice, items: InvoiceItem[], opts: I
       ${invoice.customer_name || invoice.customer_phone ? `<div>${s.billedTo}: ${esc(invoice.customer_name || s.walkIn)}</div>` : ""}
       ${invoice.pet_name ? `<div>${s.pet}: ${esc(invoice.pet_name)}</div>` : ""}
       ${invoice.customer_phone ? `<div>${waPhone(invoice.customer_phone)}</div>` : ""}
+      ${opts.sellerName ? `<div>${s.seller}: ${esc(opts.sellerName)}</div>` : ""}
     </div>
     ${preSale ? `<div class="badge">${s.preSale}</div>` : ""}
     ${refunded ? `<div class="badge">${s.refunded}</div>` : ""}
@@ -297,6 +301,7 @@ export function buildInvoiceHTML(invoice: Invoice, items: InvoiceItem[], opts: I
         <div style="text-align:end">
           <h4>${s.date}</h4>
           <div class="v">${esc(dateStr)}</div>
+          ${opts.sellerName ? `<div class="muted">${s.seller}: ${esc(opts.sellerName)}</div>` : ""}
           ${payRowsThermal}
           ${dueRowsThermal}
           ${refunded ? `<div style="margin-top:8px"><span class="badge">${s.refunded}</span></div>` : ""}

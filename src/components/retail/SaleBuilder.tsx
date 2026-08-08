@@ -4,10 +4,11 @@ import { AnimatePresence, motion } from "framer-motion";
 import {
   Search, Barcode, Plus, Minus, Trash2, ShoppingCart, User, Phone, Tag, Percent,
   Banknote, CreditCard, ArrowLeftRight, CheckCircle2, Printer, Sparkles, TrendingUp, Package, PawPrint, X,
-  Stethoscope, Pencil, Pill, Syringe, CalendarClock, Wallet, StickyNote, Bike,
+  Stethoscope, Pencil, Pill, Syringe, CalendarClock, Wallet, StickyNote, Bike, UserCheck, AlertTriangle,
 } from "lucide-react";
 import type { Product, Invoice, InvoiceItem, CheckoutItem, SaleMeta, PaymentMethod, PaymentSplit, DiscountType, Customer, Service, ServiceCatalog, Species, Pet, Courier } from "@/types";
 import { repo, resolveDiscount } from "@/lib/repo";
+import { matchStaffToUser, resolveStaffName } from "@/lib/staffNames";
 import { phoneDigits } from "@/lib/phone";
 import { getServiceCatalog } from "@/lib/services";
 import { computePromotions, getPromoRules } from "@/lib/promotions";
@@ -381,6 +382,19 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
   const [dFeeToClinic, setDFeeToClinic] = useState(false);
   // Optional cashier / sales rep (staff id) — attached to the invoice for reports.
   const [cashierId, setCashierId] = useState<string | null>(draft0?.cashierId ?? null);
+
+  // البائع الافتراضي = الموظف المسجّل دخوله حالياً (يُطابَق مع صف الكادر ماله
+  // بمعرّف الحساب أو الإيميل) — فكل فاتورة تنحسب لصاحبها من دون أي ضغطة.
+  // مسودة محفوظة أو اختيار يدوي سابق يبقيان مقدَّمين على التلقائي.
+  useEffect(() => {
+    if (cashierId) return;
+    let alive = true;
+    void matchStaffToUser(user?.id, user?.email).then((m) => {
+      if (alive && m) setCashierId((c) => c ?? m.id);
+    });
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [busy, setBusy] = useState(false);
   const [flash, setFlash] = useState<string | null>(null);
   const [done, setDone] = useState<{ invoice: Invoice; items: InvoiceItem[] } | null>(null);
@@ -741,9 +755,11 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
   // invoice row is created, stock is untouched, and the page carries a loud
   // "فاتورة أولية" badge so it can never pass for a real receipt.
   const preSaleEnabled = getPreSalePrint();
-  const printPreSale = (format: PrintFormat) => {
+  const printPreSale = async (format: PrintFormat) => {
     if (cart.length === 0) return;
     playTap();
+    // الطبعة الأولية تطلع باسم البائع المحدد حالياً (إن وُجد).
+    const sellerName = await resolveStaffName(cashierId).catch(() => null);
     const petNames = Array.from(new Set(salePets.map((p) => p.name.trim()).filter(Boolean)));
     const multiPet = petNames.length > 1;
     const draftItems: InvoiceItem[] = cart.map((l) => ({
@@ -774,6 +790,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
       facebook: socials.facebook || null,
       instagram: socials.instagram || null,
       preSale: true,
+      sellerName,
     });
     if (!ok) { playWarning(); toast.error(t("retail.popupBlocked", "Allow pop-ups to print"), t("retail.popupBlockedHint", "Your browser blocked the print window — enable pop-ups for this site.")); }
     else void repo.logClientEvent("invoice.preprint", { total, items: cart.length, format }); // activity trail
@@ -1203,13 +1220,22 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
             )}
           </div>
 
-          {/* Cashier / sales rep — optional; recorded on the invoice for staff reports */}
+          {/* موظف المبيعات (البائع) — يتثبّت تلقائياً على المسجّل دخوله؛ يظهر
+              بالفاتورة المطبوعة وسجل الفواتير وتقارير أداء الموظفين. */}
           <div className="mt-3 border-t border-line pt-3">
             <label className="mb-1.5 flex items-center gap-1.5 text-xs font-bold text-ink-muted">
-              <Stethoscope size={14} className="text-brand-600" /> {t("retail.cashier", "موظف المبيعات / الكاشير")}
-              <span className="text-2xs font-normal text-ink-subtle">· {t("retail.optional", "optional")}</span>
+              <UserCheck size={14} className="text-brand-600" /> {t("retail.cashier", "موظف المبيعات (البائع)")}
             </label>
             <CashierSelect value={cashierId} onChange={setCashierId} />
+            {cashierId ? (
+              <p className="mt-1 flex items-center gap-1 text-2xs text-success-600">
+                <CheckCircle2 size={11} className="shrink-0" /> {t("retail.sellerOnInvoice", "تنحسب الفاتورة لهذا الموظف وتطلع باسمه بالطباعة والتقارير.")}
+              </p>
+            ) : (
+              <p className="mt-1 flex items-center gap-1 text-2xs font-semibold text-warn-600">
+                <AlertTriangle size={11} className="shrink-0" /> {t("retail.noSellerHint", "بلا بائع محدد — حدّد منو باع حتى تنحسب الفاتورة إله بالتقارير.")}
+              </p>
+            )}
           </div>
 
           {/* Doctor's note on the invoice — surfaces in the pet's record. */}

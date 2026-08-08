@@ -3,10 +3,11 @@ import { useTranslation } from "react-i18next";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Search, Receipt, User, Printer, RotateCcw, Trash2, TrendingUp, Banknote, CreditCard,
-  ArrowLeftRight, Package, AlertTriangle, CheckCircle2, Wallet, Pencil, Check, Loader2, Plus, X, StickyNote,
+  ArrowLeftRight, Package, AlertTriangle, CheckCircle2, Wallet, Pencil, Check, Loader2, Plus, X, StickyNote, UserCheck,
 } from "lucide-react";
 import type { Invoice, InvoiceItem, PaymentMethod, PaymentSplit } from "@/types";
 import { repo } from "@/lib/repo";
+import { staffNameMap } from "@/lib/staffNames";
 import { usePermissions } from "@/hooks/usePermissions";
 import { Modal } from "@/components/Modal";
 import { Button, Badge, useToast, Skeleton } from "@/components/ui";
@@ -30,6 +31,13 @@ export function InvoicesPanel({ invoices, onChanged }: { invoices: Invoice[]; cl
   const [q, setQ] = useState("");
   const [status, setStatus] = useState<StatusFilter>("all");
   const [open, setOpen] = useState<Invoice | null>(null);
+  // أسماء الكادر — حتى يبين البائع على كل فاتورة ويشتغل البحث باسمه.
+  const [staffById, setStaffById] = useState<Map<string, string>>(() => new Map());
+  useEffect(() => {
+    let alive = true;
+    void staffNameMap().then((m) => { if (alive) setStaffById(m); });
+    return () => { alive = false; };
+  }, []);
 
   // "Last activity" = the newest of the sale itself and any later payment. Settlement
   // legs carry an `at` timestamp, so recording a debt payment bumps that invoice back
@@ -51,10 +59,11 @@ export function InvoicesPanel({ invoices, onChanged }: { invoices: Invoice[]; cl
         if (!ql) return true;
         return (inv.customer_name ?? "").toLowerCase().includes(ql)
           || (inv.customer_phone ?? "").includes(ql)
-          || invoiceNo(inv.id).toLowerCase().includes(ql);
+          || invoiceNo(inv.id).toLowerCase().includes(ql)
+          || ((inv.staff_id && staffById.get(inv.staff_id)) ?? "").toLowerCase().includes(ql);
       })
       .sort((a, b) => lastActivity(b) - lastActivity(a));
-  }, [invoices, q, status]);
+  }, [invoices, q, status, staffById]);
 
   const FILTERS: { id: StatusFilter; label: string }[] = [
     { id: "all", label: t("retail.fAll", "All") },
@@ -103,6 +112,9 @@ export function InvoicesPanel({ invoices, onChanged }: { invoices: Invoice[]; cl
                   <div className="flex flex-wrap items-center gap-x-2 text-xs text-ink-subtle">
                     <span>{formatDate(inv.created_at, i18n.language)} · {new Date(inv.created_at).toLocaleTimeString(i18n.language === "ar" ? dateLocale() : "en-GB", { hour: "2-digit", minute: "2-digit" })}</span>
                     <span>· {t("retail.itemsN", { n: inv.item_count, defaultValue: "{{n}} items" })}</span>
+                    {inv.staff_id && staffById.get(inv.staff_id) && (
+                      <span className="flex items-center gap-0.5 font-semibold text-brand-600 dark:text-brand-300"><UserCheck size={11} /> {staffById.get(inv.staff_id)}</span>
+                    )}
                     {PayIcon && <span className="flex items-center gap-0.5"><PayIcon size={11} /></span>}
                     {(inv.print_count ?? 0) > 0 && <span className="flex items-center gap-0.5"><Printer size={11} /> {inv.print_count}</span>}
                   </div>
@@ -144,6 +156,15 @@ export function InvoiceDetail({ invoice, onClose, onChanged, setOpen }: {
   const [payBusy, setPayBusy] = useState(false);
   const [editLegs, setEditLegs] = useState<PaymentSplit[] | null>(null);
   const [legsBusy, setLegsBusy] = useState(false);
+  // اسم البائع (من كاش الكادر) — يظهر أعلى التفاصيل حتى يُعرف منو باعها.
+  const [sellerName, setSellerName] = useState<string | null>(null);
+  const staffId = invoice?.staff_id ?? null;
+  useEffect(() => {
+    let alive = true;
+    setSellerName(null);
+    if (staffId) void staffNameMap().then((m) => { if (alive) setSellerName(m.get(staffId) ?? null); });
+    return () => { alive = false; };
+  }, [staffId]);
 
   // Keyed on the invoice ID, so editing the payment method (same invoice) doesn't
   // needlessly reload the line items.
@@ -256,6 +277,11 @@ export function InvoiceDetail({ invoice, onClose, onChanged, setOpen }: {
             <p className="mt-0.5 text-xs text-ink-subtle">
               {formatDate(invoice.created_at, i18n.language)} · {new Date(invoice.created_at).toLocaleTimeString(i18n.language === "ar" ? dateLocale() : "en-GB", { hour: "2-digit", minute: "2-digit" })}
             </p>
+            {sellerName && (
+              <p className="mt-1 flex items-center gap-1 text-xs font-semibold text-brand-600 dark:text-brand-300">
+                <UserCheck size={13} /> {t("retail.soldBy", "البائع")}: {sellerName}
+              </p>
+            )}
           </div>
           {refunded ? (
             <Badge tone="danger">{t("retail.refunded", "Refunded")}</Badge>

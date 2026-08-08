@@ -2,9 +2,10 @@ import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { motion } from "framer-motion";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from "recharts";
-import { Banknote, TrendingUp, Receipt, Crown, Package, Trophy, CalendarRange } from "lucide-react";
+import { Banknote, TrendingUp, Receipt, Crown, Package, Trophy, CalendarRange, UserCheck, Users } from "lucide-react";
 import type { Invoice, InvoiceItem } from "@/types";
 import { repo } from "@/lib/repo";
+import { staffNameMap } from "@/lib/staffNames";
 import { receiptsOf } from "@/lib/debt";
 import { cn, money, formatNum, dateLocale } from "@/lib/utils";
 import { playTap } from "@/lib/sounds";
@@ -52,10 +53,13 @@ export function ReportsPanel({ invoices, clinicId }: { invoices: Invoice[]; clin
   const { t, i18n } = useTranslation();
   const [period, setPeriod] = useState<Period>("day");
   const [items, setItems] = useState<InvoiceItem[]>([]);
+  // أسماء الكادر — لجدول «المبيعات حسب الموظف».
+  const [staffById, setStaffById] = useState<Map<string, string>>(() => new Map());
 
   useEffect(() => {
     let alive = true;
     repo.listAllInvoiceItems(clinicId).then((r) => { if (alive) setItems(r); }).catch(() => {});
+    void staffNameMap().then((m) => { if (alive) setStaffById(m); });
     return () => { alive = false; };
   }, [clinicId]);
 
@@ -118,6 +122,27 @@ export function ReportsPanel({ invoices, clinicId }: { invoices: Invoice[]; clin
     }
     return Array.from(m.values()).sort((a, b) => b.revenue - a.revenue).slice(0, 5);
   }, [items, invoices, periodStart]);
+
+  // ---- المبيعات حسب الموظف (البائع) داخل الفترة المختارة ------------------
+  // من باع شكد: عدد فواتير، إيراد، وربح لكل موظف مثبَّت على فواتيره — والفواتير
+  // الي انباعت بلا تحديد بائع تنجمع بصف «غير محدد» حتى يبين حجمها ويقل مع الوقت.
+  const byStaff = useMemo(() => {
+    const m = new Map<string, { name: string; invoices: number; revenue: number; profit: number }>();
+    for (const inv of invoices) {
+      if (!isPaid(inv) || new Date(inv.created_at) < periodStart) continue;
+      const key = inv.staff_id || "__none";
+      const cur = m.get(key) ?? {
+        name: key === "__none" ? t("retail.noSeller", "غير محدد") : (staffById.get(key) ?? t("retail.noSeller", "غير محدد")),
+        invoices: 0, revenue: 0, profit: 0,
+      };
+      cur.invoices += 1; cur.revenue += inv.total; cur.profit += inv.profit ?? 0;
+      m.set(key, cur);
+    }
+    return Array.from(m.entries())
+      .map(([id, v]) => ({ id, ...v }))
+      .sort((a, b) => (a.id === "__none" ? 1 : b.id === "__none" ? -1 : b.revenue - a.revenue));
+  }, [invoices, periodStart, staffById, t]);
+  const maxStaffRev = Math.max(1, ...byStaff.map((s) => s.revenue));
 
   const maxRevenue = top[0]?.revenue ?? 1;
   const hasChart = chart.some((c) => c.gross > 0);
@@ -185,6 +210,45 @@ export function ReportsPanel({ invoices, clinicId }: { invoices: Invoice[]; clin
           <Mini label={t("retail.net", "Net")} value={money(pNet)} tone="success" />
           <Mini label={t("retail.salesN", "Sales")} value={String(pCount)} />
         </div>
+      </div>
+
+      {/* المبيعات حسب الموظف — منو باع شكد بالفترة المختارة */}
+      <div className="card p-4">
+        <h3 className="mb-3 flex items-center gap-2 font-display font-bold text-ink"><Users size={17} className="text-brand-600" /> {t("retail.salesByStaff", "المبيعات حسب الموظف")}</h3>
+        {byStaff.length === 0 ? (
+          <div className="grid h-24 place-items-center text-sm text-ink-subtle">{t("retail.noPeriodSales", "No sales in this period yet.")}</div>
+        ) : (
+          <div className="space-y-2.5">
+            {byStaff.map((s, i) => (
+              <motion.div key={s.id} initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.04 }} className="flex items-center gap-3">
+                <span className={cn("grid h-8 w-8 shrink-0 place-items-center rounded-xl",
+                  s.id === "__none" ? "bg-surface-2 text-ink-subtle"
+                    : i === 0 ? "bg-brand-50 text-brand-600 dark:bg-brand-500/15 dark:text-brand-300" : "bg-surface-2 text-ink-muted")}>
+                  {s.id === "__none" ? "؟" : i === 0 ? <Crown size={16} /> : <UserCheck size={15} />}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className={cn("truncate text-sm font-semibold", s.id === "__none" ? "text-ink-subtle" : "text-ink")}>{s.name}</p>
+                    <p className="shrink-0 text-sm font-bold tabular-nums text-ink">{money(s.revenue)}</p>
+                  </div>
+                  <div className="mt-1 flex items-center gap-2">
+                    <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-surface-2">
+                      <div className={cn("h-full rounded-full", s.id === "__none" ? "bg-ink-subtle/40" : "bg-brand-grad")} style={{ width: `${Math.max(4, (s.revenue / maxStaffRev) * 100)}%` }} />
+                    </div>
+                    <span className="shrink-0 text-2xs text-ink-subtle">
+                      {t("retail.invoicesN", { n: formatNum(s.invoices), defaultValue: "{{n}} فاتورة" })} · {t("retail.net", "Net")} {money(s.profit)}
+                    </span>
+                  </div>
+                </div>
+              </motion.div>
+            ))}
+          </div>
+        )}
+        {byStaff.some((s) => s.id === "__none") && (
+          <p className="mt-3 border-t border-line pt-2 text-2xs text-ink-subtle">
+            {t("retail.noSellerFootnote", "«غير محدد» = فواتير انباعت بلا اختيار بائع — حدّد موظف المبيعات عند البيع حتى تنحسب إله.")}
+          </p>
+        )}
       </div>
 
       {/* Top products */}
