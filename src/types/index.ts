@@ -178,6 +178,20 @@ export interface FeatureRequest {
   updated_at?: string | null;
 }
 
+/** باركود ولّده السستم للعيادة (EAN-13 داخلي بادئته 20) — مع سجله الكامل. */
+export interface GeneratedBarcode {
+  id: string;
+  clinic_id?: string | null;
+  /** الكود الكامل: 13 رقماً برقم تحقق سليم. */
+  barcode: string;
+  /** الغرض أو اسم المنتج وقت التوليد — حتى يبقى السجل مقروءاً. */
+  label?: string | null;
+  /** المنتج المربوط (إن وُلّد لمنتج محدد). */
+  product_id?: string | null;
+  created_by?: string | null;
+  created_at: string;
+}
+
 /** A free-text clinical / progress note on the patient record (سجل الملاحظات السريرية). */
 export interface PetNote {
   id: string;
@@ -981,4 +995,5 @@ export interface DemoDB {
   deviceLinks?: LabDeviceLink[];
   deviceInbox?: LabDeviceInbox[];
   featureRequests?: FeatureRequest[];
+  generatedBarcodes?: GeneratedBarcode[];
 }

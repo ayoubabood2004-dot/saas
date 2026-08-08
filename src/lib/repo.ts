@@ -4,7 +4,7 @@
 import { loadDB, saveDB } from "./demoStore";
 import { supabase } from "./supabase";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, AppointmentStatus, ClinicInfo, PublicStaff, DailyNote, TreatmentEntry, Admission, Branch, Reminder, Product, Company, CompanySection, Purchase, PurchaseItem, PurchasePayment, PurchaseDraftLine, PurchaseMeta, Courier, DeliveryOrder, PetMovement, DemoDB, Invoice, InvoiceItem, CheckoutItem, SaleMeta, Customer, DiscountType, PaymentMethod, PaymentSplit, WhatsAppMessage, AuditEntry, LoginEvent, PetNote, Expense, ClinicVisit , Surgery, LabResult, LabDeviceLink, LabDeviceInbox, LabStatusValue, PetProblem, CareEntry, FeatureRequest } from "@/types";
+import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, AppointmentStatus, ClinicInfo, PublicStaff, DailyNote, TreatmentEntry, Admission, Branch, Reminder, Product, Company, CompanySection, Purchase, PurchaseItem, PurchasePayment, PurchaseDraftLine, PurchaseMeta, Courier, DeliveryOrder, PetMovement, DemoDB, Invoice, InvoiceItem, CheckoutItem, SaleMeta, Customer, DiscountType, PaymentMethod, PaymentSplit, WhatsAppMessage, AuditEntry, LoginEvent, PetNote, Expense, ClinicVisit , Surgery, LabResult, LabDeviceLink, LabDeviceInbox, LabStatusValue, PetProblem, CareEntry, FeatureRequest, GeneratedBarcode } from "@/types";
 import { uid, uuid, ageMonths, localISO } from "./utils";
 import { phoneKey } from "./phone";
 import { loadOwners } from "./owners";
@@ -1037,6 +1037,23 @@ const demoRepo = {
     saveDB(db);
   },
 
+  /* ---- سجل الباركودات المولدة (مولد الباركود الداخلي) ---- */
+  async listGeneratedBarcodes(): Promise<GeneratedBarcode[]> {
+    return (loadDB().generatedBarcodes ?? []).slice().sort((a, b) => b.created_at.localeCompare(a.created_at));
+  },
+  /** حفظ دفعة أكواد مولدة — إدراج واحد للدفعة كلها. */
+  async addGeneratedBarcodes(rows: Omit<GeneratedBarcode, "id" | "created_at">[]): Promise<GeneratedBarcode[]> {
+    const db = loadDB();
+    const now = new Date().toISOString();
+    const existing = new Set((db.generatedBarcodes ?? []).map((g) => g.barcode));
+    const fresh = rows
+      .filter((r) => !existing.has(r.barcode)) // مرآة قيد unique بالسحابة
+      .map((r) => ({ ...r, id: uid("gbc"), created_at: now }));
+    (db.generatedBarcodes ??= []).unshift(...fresh);
+    saveDB(db);
+    return fresh;
+  },
+
   /* ---------------- Companies (الشركات) — inventory grouping ---------------- */
   async listCompanies(_clinicId?: string): Promise<Company[]> {
     return (loadDB().companies ?? []).slice().sort((a, b) => a.name.localeCompare(b.name));
@@ -1430,6 +1447,7 @@ const DEMO_ACTIVITY_MAP: Record<string, { entity: string; action: "INSERT" | "UP
   updateProblem: { entity: "pet_problems", action: "UPDATE" },
   addFeatureRequest: { entity: "feature_requests", action: "INSERT" },
   updateFeatureRequest: { entity: "feature_requests", action: "UPDATE" },
+  addGeneratedBarcodes: { entity: "generated_barcodes", action: "INSERT" },
   deleteProblem: { entity: "pet_problems", action: "DELETE" },
   addClinicVisit: { entity: "clinic_visits", action: "INSERT" },
   updateClinicVisit: { entity: "clinic_visits", action: "UPDATE" },
@@ -2099,6 +2117,19 @@ const supabaseRepo: typeof demoRepo = {
   },
 
   /* ---------------- Companies (الشركات) ---------------- */
+  async listGeneratedBarcodes() {
+    return listOf<GeneratedBarcode>(
+      await sbc().from("generated_barcodes").select("*").order("created_at", { ascending: false }).limit(2000),
+    );
+  },
+  async addGeneratedBarcodes(rows) {
+    // clinic_id يُختم من default العمود؛ upsert بتجاهل التعارض يحاكي سلوك الديمو
+    // (كود موجود سابقاً لا يُدرج مرتين ولا يفشّل الدفعة كلها).
+    const payload = rows.map(({ clinic_id, ...rest }) => { void clinic_id; return rest; });
+    return listOf<GeneratedBarcode>(
+      await sbc().from("generated_barcodes").upsert(payload, { onConflict: "clinic_id,barcode", ignoreDuplicates: true }).select(),
+    );
+  },
   async listCompanies(clinicId) {
     let q = sbc().from("companies").select("*").order("name", { ascending: true });
     if (clinicId) q = q.eq("clinic_id", clinicId);
