@@ -39,40 +39,43 @@ export interface ParsedMessage {
 /* ============================ Canonical dictionary ============================
  * canonical id → every code an analyzer might print for it (UPPER-CASE, no #/%,
  * spaces collapsed). Percent-differential codes are handled separately below. */
+// ملاحظة: القائمة تخلط الأسماء النصية بأكواد LOINC العالمية عمداً. الأجهزة
+// الحديثة (Mindray BC، Sysmex، Abbott…) ترسل بـHL7 كوداً رقمياً مثل «6690-2»
+// بدل «WBC» — فبلا هذي الأكواد تصل النتيجة ويقف السستم عاجزاً عن فهمها.
 const DICT: Record<string, string[]> = {
-  wbc:  ["WBC", "WBCS", "WBC#", "WB", "LEUKOCYTE", "LEUKOCYTES", "LEUCOCYTE", "LEUCOCYTES", "WHITE BLOOD CELL", "WHITE BLOOD CELLS", "WHITE BLOOD"],
-  rbc:  ["RBC", "RBCS", "RBC#", "ERYTHROCYTE", "ERYTHROCYTES", "RED BLOOD CELL", "RED BLOOD CELLS", "RED BLOOD"],
-  hgb:  ["HGB", "HB", "HG", "HGB#", "HAEMOGLOBIN", "HEMOGLOBIN"],
-  hct:  ["HCT", "PCV", "HCT#", "HAEMATOCRIT", "HEMATOCRIT"],
-  mcv:  ["MCV"],
-  mchc: ["MCHC"],
-  plt:  ["PLT", "PLT#", "PLATELET", "PLATELETS", "THROMBOCYTE", "THROMBOCYTES", "THR"],
-  neut: ["NEUT", "NEUT#", "NEU", "NE", "NE#", "GRAN", "GRAN#", "GRA", "GRA#", "GR", "GR#", "GRANULOCYTE", "GRANULOCYTES", "NEUTROPHIL", "NEUTROPHILS", "SEG"],
-  lymph:["LYMPH", "LYM", "LY", "LYM#", "LY#", "LYMPH#", "LYMPHOCYTE", "LYMPHOCYTES", "LYMPHO"],
-  mono: ["MONO", "MON", "MO", "MON#", "MO#", "MONO#", "MID", "MID#", "MXD", "MONOCYTE", "MONOCYTES"],
-  eos:  ["EOS", "EO", "EO#", "EOS#", "EOSINOPHIL", "EOSINOPHILS"],
-  bun:  ["BUN", "UREA", "UREA NITROGEN", "BLOOD UREA", "BLOOD UREA NITROGEN", "BUN/UREA", "UN"],
-  crea: ["CREA", "CRE", "CREAT", "CREATININE", "CREATinine", "CR"],
-  phos: ["PHOS", "PHOSPHORUS", "PHOSPHATE", "IP", "PHOS(P)", "PO4"],
-  alt:  ["ALT", "GPT", "SGPT", "ALAT", "ALT/GPT", "ALT(GPT)"],
-  ast:  ["AST", "GOT", "SGOT", "ASAT", "AST/GOT", "AST(GOT)"],
-  alp:  ["ALP", "ALKP", "ALKPHOS", "ALK PHOS", "ALK.PHOS", "ALKALINE PHOSPHATASE", "ALPL"],
-  ggt:  ["GGT", "GAMMA GT", "GAMMAGT", "Y-GT", "GAMMA-GT"],
-  tbil: ["TBIL", "TBIL#", "T BIL", "T.BIL", "TOTAL BILIRUBIN", "BILIRUBIN", "BILIRUBIN TOTAL", "TBILI", "TB"],
-  tp:   ["TP", "TOTAL PROTEIN", "T PROTEIN", "T.PROTEIN", "TPROT", "TOT PROTEIN"],
-  alb:  ["ALB", "ALBUMIN", "ALBUMINE"],
-  glob: ["GLOB", "GLOBULIN", "GLB"],
-  glu:  ["GLU", "GLUC", "GLUCOSE", "GLU-", "GLUCOSA", "BG", "BLOOD GLUCOSE"],
-  amyl: ["AMYL", "AMY", "AMYLASE", "A-AMYL"],
-  lipa: ["LIPA", "LIP", "LIPASE"],
-  chol: ["CHOL", "CHOLESTEROL", "TC", "T-CHO", "TCHO", "CHO"],
-  na:   ["NA", "NA+", "SODIUM", "NATRIUM"],
-  k:    ["K", "K+", "POTASSIUM", "KALIUM"],
-  cl:   ["CL", "CL-", "CHLORIDE", "CHLORID"],
-  ca:   ["CA", "CA++", "CA2+", "CALCIUM", "T-CA", "TCA"],
-  t4:   ["T4", "TT4", "TOTAL T4", "THYROXINE", "TETRAIODOTHYRONINE"],
-  usg:  ["USG", "SG", "SP GR", "SP.GR", "SPECIFIC GRAVITY"],
-  uph:  ["UPH", "URINE PH", "U-PH"],
+  wbc:  ["WBC", "WBCS", "WBC#", "WB", "LEUKOCYTE", "LEUKOCYTES", "LEUCOCYTE", "LEUCOCYTES", "WHITE BLOOD CELL", "WHITE BLOOD CELLS", "WHITE BLOOD", "6690-2", "804-5", "26464-8"],
+  rbc:  ["RBC", "RBCS", "RBC#", "ERYTHROCYTE", "ERYTHROCYTES", "RED BLOOD CELL", "RED BLOOD CELLS", "RED BLOOD", "789-8", "790-6", "26453-1"],
+  hgb:  ["HGB", "HB", "HG", "HGB#", "HAEMOGLOBIN", "HEMOGLOBIN", "718-7", "30313-1", "30350-3"],
+  hct:  ["HCT", "PCV", "HCT#", "HAEMATOCRIT", "HEMATOCRIT", "4544-3", "20570-8", "31100-1"],
+  mcv:  ["MCV", "787-2", "30428-7"],
+  mchc: ["MCHC", "786-4", "28540-3"],
+  plt:  ["PLT", "PLT#", "PLATELET", "PLATELETS", "THROMBOCYTE", "THROMBOCYTES", "THR", "777-3", "26515-7"],
+  neut: ["NEUT", "NEUT#", "NEU", "NE", "NE#", "GRAN", "GRAN#", "GRA", "GRA#", "GR", "GR#", "GRANULOCYTE", "GRANULOCYTES", "NEUTROPHIL", "NEUTROPHILS", "SEG", "751-8", "26499-4", "753-4"],
+  lymph:["LYMPH", "LYM", "LY", "LYM#", "LY#", "LYMPH#", "LYMPHOCYTE", "LYMPHOCYTES", "LYMPHO", "731-0", "26474-7", "732-8"],
+  mono: ["MONO", "MON", "MO", "MON#", "MO#", "MONO#", "MID", "MID#", "MXD", "MONOCYTE", "MONOCYTES", "742-7", "26484-6", "743-5"],
+  eos:  ["EOS", "EO", "EO#", "EOS#", "EOSINOPHIL", "EOSINOPHILS", "711-2", "26449-9", "712-0"],
+  bun:  ["BUN", "UREA", "UREA NITROGEN", "BLOOD UREA", "BLOOD UREA NITROGEN", "BUN/UREA", "UN", "3094-0", "6299-2", "22664-7"],
+  crea: ["CREA", "CRE", "CREAT", "CREATININE", "CREATinine", "CR", "2160-0", "38483-4"],
+  phos: ["PHOS", "PHOSPHORUS", "PHOSPHATE", "IP", "PHOS(P)", "PO4", "2777-1", "14879-1"],
+  alt:  ["ALT", "GPT", "SGPT", "ALAT", "ALT/GPT", "ALT(GPT)", "1742-6", "1743-4"],
+  ast:  ["AST", "GOT", "SGOT", "ASAT", "AST/GOT", "AST(GOT)", "1920-8", "30239-8"],
+  alp:  ["ALP", "ALKP", "ALKPHOS", "ALK PHOS", "ALK.PHOS", "ALKALINE PHOSPHATASE", "ALPL", "6768-6", "1783-0"],
+  ggt:  ["GGT", "GAMMA GT", "GAMMAGT", "Y-GT", "GAMMA-GT", "2324-2"],
+  tbil: ["TBIL", "TBIL#", "T BIL", "T.BIL", "TOTAL BILIRUBIN", "BILIRUBIN", "BILIRUBIN TOTAL", "TBILI", "TB", "1975-2", "42719-5"],
+  tp:   ["TP", "TOTAL PROTEIN", "T PROTEIN", "T.PROTEIN", "TPROT", "TOT PROTEIN", "2885-2", "2884-5"],
+  alb:  ["ALB", "ALBUMIN", "ALBUMINE", "1751-7", "61151-7"],
+  glob: ["GLOB", "GLOBULIN", "GLB", "2336-6", "10834-0"],
+  glu:  ["GLU", "GLUC", "GLUCOSE", "GLU-", "GLUCOSA", "BG", "BLOOD GLUCOSE", "2345-7", "2339-0", "15074-8"],
+  amyl: ["AMYL", "AMY", "AMYLASE", "A-AMYL", "1798-8", "1795-4"],
+  lipa: ["LIPA", "LIP", "LIPASE", "3040-3", "24331-1"],
+  chol: ["CHOL", "CHOLESTEROL", "TC", "T-CHO", "TCHO", "CHO", "2093-3", "2085-9"],
+  na:   ["NA", "NA+", "SODIUM", "NATRIUM", "2951-2", "2947-0"],
+  k:    ["K", "K+", "POTASSIUM", "KALIUM", "2823-3", "6298-4"],
+  cl:   ["CL", "CL-", "CHLORIDE", "CHLORID", "2075-0", "2069-3"],
+  ca:   ["CA", "CA++", "CA2+", "CALCIUM", "T-CA", "TCA", "17861-6", "2000-8"],
+  t4:   ["T4", "TT4", "TOTAL T4", "THYROXINE", "TETRAIODOTHYRONINE", "3026-2", "3024-7"],
+  usg:  ["USG", "SG", "SP GR", "SP.GR", "SPECIFIC GRAVITY", "5811-5", "2965-2"],
+  uph:  ["UPH", "URINE PH", "U-PH", "5803-2", "2756-5"],
 };
 
 /** Codes that are DIFFERENTIAL PERCENTAGES (not absolute counts) — routed to
@@ -83,11 +86,29 @@ const PERCENT_CODES: Record<string, string> = {
   "NEUT%": "neut", "NEU%": "neut", "NE%": "neut", "GRAN%": "neut", "GRA%": "neut", "GR%": "neut", "SEG%": "neut",
   "MONO%": "mono", "MON%": "mono", "MO%": "mono", "MID%": "mono", "MXD%": "mono",
   "EOS%": "eos", "EO%": "eos",
+  // أكواد LOINC للنِسَب التفريقية — نفس المعنى بلغة الأجهزة الحديثة.
+  "736-9": "lymph", "26478-8": "lymph",
+  "770-8": "neut", "23761-0": "neut", "26511-6": "neut",
+  "5905-5": "mono", "26485-3": "mono",
+  "713-8": "eos", "26450-7": "eos",
 };
+
+/** المعايير التي لها صيغتان: عدد مطلق ونسبة مئوية من الكريات البيضاء. */
+const DIFFERENTIAL = new Set(["neut", "lymph", "mono", "eos"]);
 
 /** Codes we deliberately ignore (not in our canonical set) — silences noise
  *  like RDW/MCH/MPV/PDW rather than surfacing them as "unknown". */
-const IGNORE = new Set(["RDW", "RDW-SD", "RDW-CV", "MCH", "MPV", "PDW", "PCT", "P-LCR", "P-LCC", "NRBC", "RET", "IG", "BASO", "BA", "BA#", "BA%", "ATL", "AL"]);
+const IGNORE = new Set([
+  "RDW", "RDW-SD", "RDW-CV", "MCH", "MPV", "PDW", "PCT", "P-LCR", "P-LCC", "NRBC", "RET", "IG", "BASO", "BA", "BA#", "BA%", "ATL", "AL",
+  // مقابلاتها بأكواد LOINC + حقول ليست فحوصاً أصلاً (عمر المريض مثلاً) —
+  // بدونها تظهر للطبيب كـ«أكواد مجهولة» ويُطلب منه تعليمها بلا فائدة.
+  "788-0", "21000-5", "30385-9",           // RDW-CV / RDW-SD
+  "785-6", "28539-5",                      // MCH
+  "32623-1", "776-5",                      // MPV / PDW
+  "704-7", "706-2", "26444-0", "30180-4",  // Basophils (abs/%)
+  "30525-0", "29463-7", "8302-2",          // العمر / الوزن / الطول — بيانات مريض لا فحوص
+  "58410-2", "57021-8", "69742-3",         // عناوين لوحات CBC (لا قيم)
+]);
 
 /** Build the reverse lookup once (code → canonical id). */
 const CODE_TO_ID: Record<string, string> = (() => {
@@ -275,7 +296,13 @@ export function normalize(msg: ParsedMessage, clinicId?: string): NormalizedRead
       if (!IGNORE.has(n) && !/%$/.test(t.code)) unknown.push({ code: t.code.trim(), value: t.value, units: t.units });
       continue;
     }
-    if (r.isPercent || t.isPercent) { if (percents[r.id] === undefined) percents[r.id] = t.value; continue; }
+    // «نسبة» لها معنى فقط بالعد التفريقي للكريات البيضاء (مطلق مقابل %).
+    // أما HCT فوحدته % أصلاً وهو قيمة مطلقة — لولا هذا الشرط لسقط بخانة
+    // النِسَب واختفى من النتيجة رغم وصوله سليماً من الجهاز.
+    if ((r.isPercent || t.isPercent) && DIFFERENTIAL.has(r.id)) {
+      if (percents[r.id] === undefined) percents[r.id] = t.value;
+      continue;
+    }
     if (values[r.id] === undefined) values[r.id] = scaleValue(r.id, t.value, t.units);
   }
   return { values, percents, unknown, patientHint: msg.patientHint };
