@@ -97,14 +97,27 @@ function idleFramer() {
 function autoFramer() {
   let inner = null;
   let sniff = [];
+  /**
+   * اختيار النمط لا يجوز أن يُحسم ببايت شارد. أجهزة كثيرة (مثل Mindray BC
+   * على الشبكة) ترسل «نبضة» بايت واحد كل ثوانٍ لتقول «أنا حي» — لو قفلنا
+   * النمط عليها لظلّ المستقبل ينتظر تغليفاً لا يجيء، وتُرمى النتيجة الحقيقية
+   * بصمت. لذلك نطلب محتوى كافياً بعد العلامة قبل الحسم.
+   */
+  const pick = () => {
+    const vt = sniff.indexOf(0x0b);
+    if (vt >= 0 && sniff.length - vt > 8) return mllpFramer();
+    const stx = sniff.indexOf(0x02);
+    if (stx >= 0 && sniff.length - stx > 4) return astmFramer();
+    if (sniff.length > 512) return idleFramer();
+    return null;
+  };
   return {
     push(chunk) {
       if (!inner) {
         for (const b of chunk) sniff.push(b);
-        if (sniff.includes(0x0b)) inner = mllpFramer();
-        else if (sniff.includes(0x02)) inner = astmFramer();
-        else if (sniff.length > 256) inner = idleFramer();
+        inner = pick();
         if (inner) { const seed = sniff; sniff = []; return inner.push(seed); }
+        if (sniff.length > 4096) sniff = sniff.slice(-4096); // لا تتضخم بلا حد
         return [];
       }
       return inner.push(chunk);
@@ -169,6 +182,9 @@ function loadConfig() {
     serialPath: d.serialPath,
     baudRate: Number(d.baudRate || 9600),
     idleMs: Number(d.idleMs || 1500),
+    // "debug": true بملف الإعداد يطبع كل دفعة واصلة (حجمها وأول بايتاتها) —
+    // يختصر تشخيص أي جهاز جديد من ساعات إلى دقائق.
+    debug: !!(d.debug ?? file.debug),
   }));
   const bad = devices.find((d) => !d.token || String(d.token).length < 16);
   if (bad) { console.error(`✗ جهاز «${bad.name}» بلا رمز صالح. حمّل ملف الإعداد من جديد.`); process.exit(1); }
@@ -196,19 +212,41 @@ async function forward(dev, raw) {
   }
 }
 
+/** أقل حجم يُعتبر «نتيجة حقيقية» بشبكة الأمان — أصغر منه نبضة أو ضجيج. */
+const MIN_RAW_BYTES = 40;
+
 function makeReader(dev, writeBack) {
   const framer = framerFor(dev.framing);
-  const onMsg = (raw) => { if (raw && raw.trim()) void forward(dev, raw); };
+  let emitted = 0;
+  let raw = []; // نسخة خام لكل ما وصل منذ آخر إرسال — شبكة الأمان
+  const onMsg = (msg) => { if (msg && msg.trim()) { emitted++; void forward(dev, msg); } };
   let idle;
-  const arm = () => { clearTimeout(idle); idle = setTimeout(() => { for (const f of framer.flush()) onMsg(f); }, dev.idleMs); };
+  /**
+   * عند سكون الخط: أفرغ المُغلِّف. وإذا لم يخرج منه شيء رغم وصول بيانات
+   * معتبرة، أرسل الخام كما هو بدل أن يضيع بصمت — المحرك السحابي يفهم
+   * HL7/ASTM/نص، فالخام أفضل ألف مرة من لا شيء. هذا ما يمنع «الجهاز أرسل
+   * ولا شيء وصل» نهائياً.
+   */
+  const settle = () => {
+    const before = emitted;
+    for (const f of framer.flush()) onMsg(f);
+    if (emitted === before && raw.length >= MIN_RAW_BYTES) {
+      log(`↯ [${dev.name}] بيانات بلا تغليف معروف (${raw.length} بايت) — نرسلها خاماً.`);
+      onMsg(dec(raw));
+    }
+    raw = [];
+  };
+  const arm = () => { clearTimeout(idle); idle = setTimeout(settle, dev.idleMs); };
   return {
     feed(chunk) {
       const ack = ackBytesFor(chunk);
       if (ack && writeBack) { try { writeBack(ack); } catch { /* best effort */ } }
+      for (const b of chunk) raw.push(b);
+      if (dev.debug) log(`· [${dev.name}] وصل ${chunk.length} بايت: ${Buffer.from(chunk).subarray(0, 16).toString("hex")}`);
       for (const f of framer.push(chunk)) onMsg(f);
       arm();
     },
-    end() { clearTimeout(idle); for (const f of framer.flush()) onMsg(f); },
+    end() { clearTimeout(idle); settle(); },
   };
 }
 
