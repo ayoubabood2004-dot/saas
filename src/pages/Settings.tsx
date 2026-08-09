@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Settings as SettingsIcon, RotateCcw, Check, Volume2, VolumeX, Plus, Trash2, Pill, PawPrint, Stethoscope, Tag, FolderPlus, BadgePercent, IdCard, Mail, UserCog, Image as ImageIcon, Upload, Facebook, Instagram, Building2, Printer, Type, LogOut , Slice, ChevronDown, Radio, Copy, Download, Cable, Send, MousePointerClick } from "lucide-react";
+import { Settings as SettingsIcon, RotateCcw, Check, Volume2, VolumeX, Plus, Trash2, Pill, PawPrint, Stethoscope, Tag, FolderPlus, BadgePercent, IdCard, Mail, UserCog, Image as ImageIcon, Upload, Facebook, Instagram, Building2, Printer, Type, LogOut , Slice, ChevronDown, Radio, Copy, Download, Cable, Send } from "lucide-react";
 import type { LabDeviceLink } from "@/types";
 import { supabaseUrl, supabaseAnonKey } from "@/lib/supabase";
-import labBridgeAgentSource from "@/assets/lab-bridge.agent.mjs?raw";
+import { makeZip } from "@/lib/zip";
+import labBridgeAppSource from "@/assets/lab-bridge.app.mjs?raw";
 import type { Species, Service, ServiceCategory, ServiceCatalog, Product } from "@/types";
 import { useAuth } from "@/contexts/AuthContext";
 import { usePermissions } from "@/hooks/usePermissions";
@@ -1146,9 +1147,27 @@ function ClinicVaccinations() {
 }
 
 /* ============================ Lab device bridge (الجسر الشبكي) ============================
- * ربط أجهزة المختبر عبر الشبكة: الجهاز بغرفة، السستم بغرفة ثانية. برنامج «مُستقبِل»
- * صغير قرب الجهاز يقرأ نتائجه ويرسلها للسحابة برمز سري، وتظهر بصندوق المختبر لتُربط
- * بالحيوان. هذي البطاقة تولّد الرمز، تحمّل ملف الإعداد، وتلغي الأجهزة. */
+ * ربط أجهزة المختبر عبر الشبكة: الجهاز بغرفة، السستم بغرفة ثانية. تطبيق صغير
+ * قرب الجهاز يقرأ نتائجه ويرسلها للسحابة برمز سري، وتظهر بصندوق المختبر لتُربط
+ * بالحيوان. هذي البطاقة تولّد الرمز، تحمّل حزمة التطبيق، وتلغي الأجهزة. */
+const README_TXT = (win: boolean) => [
+  "ربط جهاز المختبر بـ doctorVet",
+  "==============================",
+  "",
+  "١) ثبّت Node.js مرة وحدة من nodejs.org (النسخة الخضراء LTS).",
+  win
+    ? "٢) دبل-كلك على «start-lab». إذا طلع تحذير ويندوز: More info ← Run anyway."
+    : "٢) كلك يمين على «شغّل-المختبر» ← Open ← Open. (أول مرة فقط، بعدها دبل-كلك يكفي.)",
+  "٣) راح تنفتح صفحة عربية بالمتصفح. اضغط «ابحث عن الجهاز في الشبكة».",
+  "٤) اضغط «اربط» جنب جهازك، وخلاص — النتائج تدخل السستم لحالها.",
+  "",
+  "ملاحظات:",
+  "• اترك النافذة السوداء مفتوحة أثناء الدوام. تسكيرها يوقف الاستقبال.",
+  "• التطبيق مقترن بعيادتك مسبقاً — ما يحتاج أي رمز أو إعداد يدوي.",
+  "• إذا ما لقى الجهاز: تأكد أنه مشغّل وموصول بنفس الراوتر بكيبل الشبكة.",
+  "",
+].join("\r\n");
+
 function LabDevicesCard() {
   const toast = useToast();
   const [links, setLinks] = useState<LabDeviceLink[]>([]);
@@ -1208,8 +1227,7 @@ function LabDevicesCard() {
     void navigator.clipboard?.writeText(token).then(() => { setCopied(true); playTap(); window.setTimeout(() => setCopied(false), 1500); }).catch(() => {});
   };
 
-  const saveBlob = (content: string, filename: string, type: string) => {
-    const blob = new Blob([content], { type });
+  const saveFile = (blob: Blob, filename: string) => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url; a.download = filename;
@@ -1218,81 +1236,74 @@ function LabDevicesCard() {
     playTap();
   };
 
-  /** ملف إعداد المُستقبِل — كل الي يحتاجه البرنامج الصغير حتى يوصل للسحابة. */
-  const downloadConfig = (link: LabDeviceLink) => {
-    const cfg = {
+  const isWindows = typeof navigator !== "undefined" && /win/i.test(navigator.userAgent || (navigator as unknown as { platform?: string }).platform || "");
+
+  /** اسم ملف إنجليزي آمن لكل جهاز — حتى تتعايش عدة أجهزة بمجلد واحد. */
+  const appFileName = (link: LabDeviceLink) => {
+    const slug = link.id.replace(/[^a-zA-Z0-9]/g, "").slice(0, 6).toLowerCase() || "lab";
+    return `doctorvet-lab-${slug}.mjs`;
+  };
+
+  const launcherFor = (file: string) =>
+    isWindows
+      ? [
+        "@echo off",
+        "chcp 65001 >nul",
+        'cd /d "%~dp0"',
+        "where node >nul 2>nul",
+        "if errorlevel 1 (",
+        "  echo Node.js is not installed. Install it from nodejs.org then run this again.",
+        "  pause & exit /b 1",
+        ")",
+        "echo Starting doctorVet lab app - keep this window open.",
+        `node ${file}`,
+        "pause",
+        "",
+      ].join("\r\n")
+      : [
+        "#!/bin/bash",
+        "# مُشغّل تطبيق المختبر — دبل-كلك يفتح التطبيق بالمتصفح.",
+        'cd "$(dirname "$0")" || exit 1',
+        "if ! command -v node >/dev/null 2>&1; then",
+        '  echo "✗ Node.js مو مثبّت. ثبّته من nodejs.org ثم أعد المحاولة."',
+        '  read -n 1 -s -r -p "اضغط أي زر للإغلاق..."; exit 1',
+        "fi",
+        'echo "▶ تشغيل تطبيق المختبر — لا تسكّر هذه النافذة."',
+        `node ${file}`,
+        'read -n 1 -s -r -p "توقّف التطبيق. اضغط أي زر للإغلاق..."',
+        "",
+      ].join("\n");
+
+  /**
+   * حزمة الجهاز: التطبيق + ملف التشغيل بأرشيف واحد.
+   *
+   * التطبيق يجيء مقترناً مسبقاً بالعيادة (الرابط والمفتاح والرمز مزروعة داخله)،
+   * فالطبيب ما ينسخ رمزاً ولا يحرّر JSON ولا يفتح ترمنل. وسبب الأرشيف أن
+   * المتصفح ما يكدر ينزّل ملفاً بصلاحية تنفيذ — وداخل ZIP نخزنها فيبقى
+   * ملف التشغيل قابلاً للدبل-كلك على الماك.
+   */
+  const downloadKit = (link: LabDeviceLink) => {
+    const pairing = {
       url: supabaseUrl || "https://YOUR-PROJECT.supabase.co",
       anonKey: supabaseAnonKey || "YOUR_SUPABASE_ANON_KEY",
       token: link.token,
       device: link.name,
-      // الوضع الافتراضي: البرنامج يستمع، والجهاز يرسل له عبر الشبكة (LAN).
-      mode: "tcp-listen",
-      host: "0.0.0.0",
-      port: 9100,
-      framing: "auto",
-      baudRate: 9600,
     };
-    saveBlob(JSON.stringify(cfg, null, 2), "lab-bridge.config.json", "application/json");
-  };
-
-  /** إعداد صندوق واحد لكل الأجهزة معاً — devices[] بمنافذ متتابعة (9100, 9101…). */
-  const downloadAllConfig = (links: LabDeviceLink[]) => {
-    const cfg = {
-      url: supabaseUrl || "https://YOUR-PROJECT.supabase.co",
-      anonKey: supabaseAnonKey || "YOUR_SUPABASE_ANON_KEY",
-      devices: links.map((l, i) => ({
-        name: l.name, token: l.token,
-        mode: "tcp-listen", host: "0.0.0.0", port: 9100 + i, framing: "auto",
-      })),
-    };
-    saveBlob(JSON.stringify(cfg, null, 2), "lab-bridge.config.json", "application/json");
-    toast.toast({ tone: "info", title: "نزّل إعداد كل الأجهزة", description: "صندوق واحد يستقبل كل أجهزتك — كل جهاز على منفذه (9100، 9101…)." });
-  };
-
-  /** برنامج المُستقبِل نفسه — ملف واحد ذاتي الاكتفاء، يشتغل بـ node lab-bridge.mjs. */
-  const downloadAgent = () => {
-    saveBlob(labBridgeAgentSource, "lab-bridge.mjs", "text/javascript");
-    toast.toast({ tone: "info", title: "نزّل «lab-bridge.mjs»", description: "حطّه بمجلد واحد مع ملف الإعداد، وشغّل: node lab-bridge.mjs" });
-  };
-
-  const isWindows = typeof navigator !== "undefined" && /win/i.test(navigator.userAgent || (navigator as unknown as { platform?: string }).platform || "");
-  const MAC_LAUNCHER = [
-    "#!/bin/bash",
-    "# مُشغّل جسر المختبر — دبل-كلك يشغّل المُستقبِل بلا كتابة أوامر.",
-    'cd "$(dirname "$0")" || exit 1',
-    'if ! command -v node >/dev/null 2>&1; then',
-    '  echo "✗ Node.js مو مثبّت. ثبّته من nodejs.org ثم أعد المحاولة."',
-    '  read -n 1 -s -r -p "اضغط أي زر للإغلاق..."; exit 1',
-    "fi",
-    'echo "▶ تشغيل مُستقبِل المختبر — لا تسكّر هذه النافذة."',
-    "node lab-bridge.mjs",
-    'read -n 1 -s -r -p "توقّف المُستقبِل. اضغط أي زر للإغلاق..."',
-    "",
-  ].join("\n");
-  const WIN_LAUNCHER = [
-    "@echo off",
-    "chcp 65001 >nul",
-    'cd /d "%~dp0"',
-    "where node >nul 2>nul",
-    "if errorlevel 1 (",
-    "  echo Node.js is not installed. Install it from nodejs.org then retry.",
-    "  pause & exit /b 1",
-    ")",
-    "echo Starting lab receiver - keep this window open.",
-    "node lab-bridge.mjs",
-    "pause",
-    "",
-  ].join("\r\n");
-
-  /** ملف تشغيل بضغطتين — دبل-كلك يشغّل المُستقبِل بلا Terminal. */
-  const downloadLauncher = () => {
-    if (isWindows) {
-      saveBlob(WIN_LAUNCHER, "start-lab-bridge.bat", "application/bat");
-      toast.toast({ tone: "info", title: "نزّل ملف التشغيل", description: "حطّه بنفس مجلد البرنامج، ودبل-كلك عليه لتشغيل المُستقبِل." });
-    } else {
-      saveBlob(MAC_LAUNCHER, "start-lab-bridge.command", "application/x-sh");
-      toast.toast({ tone: "info", title: "نزّل ملف التشغيل (ماك)", description: "أول مرة فقط: افتح Terminal واكتب chmod +x ثم اسحب الملف عليه واضغط Enter. بعدها دبل-كلك يكفي." });
-    }
+    const file = appFileName(link);
+    const app = labBridgeAppSource.replace("/*@pairing*/ null", JSON.stringify(pairing));
+    const zip = makeZip([
+      { name: file, content: app },
+      isWindows
+        ? { name: "start-lab.bat", content: launcherFor(file) }
+        : { name: "شغّل-المختبر.command", content: launcherFor(file), executable: true },
+      { name: "اقرأني.txt", content: README_TXT(isWindows) },
+    ]);
+    saveFile(zip, "doctorvet-lab.zip");
+    toast.toast({
+      tone: "info",
+      title: "نزّلت حزمة الربط",
+      description: isWindows ? "فك الضغط، وشغّل «start-lab»." : "فك الضغط، وكلك يمين على «شغّل-المختبر» ← Open.",
+    });
   };
 
   /** رسالة تجريبية: نمرّر رسالة HL7 نموذجية عبر نفس مسار الاستقبال — تظهر بصندوق المختبر. */
@@ -1319,8 +1330,8 @@ function LabDevicesCard() {
         <h2 className="font-bold text-ink">ربط أجهزة المختبر عبر الشبكة</h2>
       </div>
       <p className="mb-4 text-xs leading-relaxed text-ink-subtle">
-        الجهاز بغرفة والسستم بغرفة ثانية؟ أضف جهاز من تحت، حمّل <b>برنامج المُستقبِل</b> + <b>ملف الإعداد</b>، وشغّلهم على أي حاسوب قرب الجهاز —
-        كل نتيجة يطلعها الجهاز راح توصل تلقائياً لصندوق المختبر داخل السستم، وتربطها بالحيوان بضغطة. بلا كتابة ولا واير طويل.
+        الجهاز بغرفة والسستم بغرفة ثانية؟ أضف جهاز من تحت وحمّل <b>تطبيق الربط</b> — تطبيق صغير بواجهة عربية، يدوّر على الجهاز بشبكة العيادة
+        ويربطه بنفسه. بلا ترمنل ولا إعدادات ولا نسخ رموز. بعدها كل نتيجة يطلعها الجهاز توصل لصندوق المختبر هنا، وتربطها بالحيوان بضغطة.
       </p>
 
       {/* الأجهزة المربوطة */}
@@ -1335,9 +1346,7 @@ function LabDevicesCard() {
               </span>
               <div className="ms-auto flex items-center gap-1.5">
                 <button type="button" onClick={() => sendTest(l)} className="inline-flex items-center gap-1 rounded-full bg-surface-2 px-2.5 py-1.5 text-2xs font-bold text-ink-muted transition hover:text-ink" title="رسالة تجريبية"><Send size={13} /> تجربة</button>
-                <button type="button" onClick={() => downloadConfig(l)} className="inline-flex items-center gap-1 rounded-full bg-surface-2 px-2.5 py-1.5 text-2xs font-bold text-ink-muted transition hover:text-ink"><Download size={13} /> ملف الإعداد</button>
-                <button type="button" onClick={downloadAgent} className="inline-flex items-center gap-1 rounded-full bg-surface-2 px-2.5 py-1.5 text-2xs font-bold text-ink-muted transition hover:text-ink"><Download size={13} /> البرنامج</button>
-                <button type="button" onClick={downloadLauncher} className="inline-flex items-center gap-1 rounded-full bg-surface-2 px-2.5 py-1.5 text-2xs font-bold text-ink-muted transition hover:text-ink"><MousePointerClick size={13} /> التشغيل</button>
+                <button type="button" onClick={() => downloadKit(l)} className="inline-flex items-center gap-1 rounded-full bg-teal-600 px-2.5 py-1.5 text-2xs font-bold text-white transition hover:bg-teal-700"><Download size={13} /> حمّل التطبيق</button>
                 {confirmRevoke === l.id ? (
                   <button type="button" onClick={() => void revoke(l.id)}
                     className="inline-flex items-center gap-1 rounded-full bg-danger-600 px-2.5 py-1.5 text-2xs font-extrabold text-white transition hover:bg-danger-700"
@@ -1351,9 +1360,9 @@ function LabDevicesCard() {
             </div>
           ))}
           {active.length >= 2 && (
-            <button type="button" onClick={() => downloadAllConfig(active)} className="flex w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed border-teal-400 bg-teal-50/60 p-2.5 text-xs font-extrabold text-teal-700 transition hover:bg-teal-100/60 dark:border-teal-500/50 dark:bg-teal-500/10 dark:text-teal-300">
-              <Download size={15} /> إعداد صندوق واحد لكل الأجهزة ({formatNum(active.length)}) — CBC + كيمياء + غيرها
-            </button>
+            <p className="rounded-xl border border-dashed border-line p-2.5 text-2xs leading-relaxed text-ink-subtle">
+              عندك {formatNum(active.length)} أجهزة؟ حمّل تطبيق كل جهاز بمجلد لحاله وشغّلهم سوا — كل واحد يفتح صفحته ويشتغل بالتوازي.
+            </p>
           )}
         </div>
       )}
@@ -1361,31 +1370,30 @@ function LabDevicesCard() {
       {/* رمز الجهاز المضاف حديثاً — يُعرض مرة، مع خطوات التشغيل */}
       {fresh && (
         <div className="mb-4 space-y-3 rounded-2xl border border-teal-300 bg-teal-50/60 p-3 dark:border-teal-500/40 dark:bg-teal-500/10">
-          <p className="text-2xs font-extrabold text-teal-800 dark:text-teal-200">✓ انضاف «{fresh.name}». احفظ ملف الإعداد — يحتوي الرمز السري:</p>
-          <div className="flex items-center gap-2 rounded-xl bg-surface-1 p-2">
-            <code className="flex-1 overflow-x-auto whitespace-nowrap text-2xs font-black text-ink" dir="ltr">{fresh.token}</code>
-            <button type="button" onClick={() => copyToken(fresh.token)} className="inline-flex items-center gap-1 rounded-full bg-teal-600 px-2.5 py-1.5 text-2xs font-bold text-white transition hover:bg-teal-700">
-              {copied ? <Check size={13} /> : <Copy size={13} />}{copied ? "اننسخ" : "انسخ"}
-            </button>
-          </div>
-          <div className="grid gap-2 sm:grid-cols-3">
-            <button type="button" onClick={downloadAgent} className="flex items-center justify-center gap-2 rounded-xl border-2 border-teal-500 bg-teal-600 p-3 text-sm font-extrabold text-white transition hover:bg-teal-700">
-              <Download size={16} /> البرنامج
-            </button>
-            <button type="button" onClick={() => downloadConfig(fresh)} className="flex items-center justify-center gap-2 rounded-xl border-2 border-dashed border-teal-400 bg-teal-50/60 p-3 text-sm font-extrabold text-teal-700 transition hover:bg-teal-100/60 dark:border-teal-500/50 dark:bg-teal-500/10 dark:text-teal-300">
-              <Download size={16} /> الإعداد
-            </button>
-            <button type="button" onClick={downloadLauncher} className="flex items-center justify-center gap-2 rounded-xl border-2 border-dashed border-teal-400 bg-teal-50/60 p-3 text-sm font-extrabold text-teal-700 transition hover:bg-teal-100/60 dark:border-teal-500/50 dark:bg-teal-500/10 dark:text-teal-300">
-              <MousePointerClick size={16} /> ملف التشغيل
-            </button>
-          </div>
+          <p className="text-2xs font-extrabold text-teal-800 dark:text-teal-200">✓ انضاف «{fresh.name}». حمّل تطبيق الربط — يجيء مقترناً بعيادتك، ما يحتاج أي إعداد:</p>
+          <button type="button" onClick={() => downloadKit(fresh)} className="flex w-full items-center justify-center gap-2 rounded-xl border-2 border-teal-500 bg-teal-600 p-3.5 text-sm font-extrabold text-white transition hover:bg-teal-700">
+            <Download size={17} /> حمّل تطبيق الربط {isWindows ? "(ويندوز)" : "(ماك)"}
+          </button>
           <ol className="list-decimal space-y-1 ps-5 text-2xs leading-relaxed text-ink-muted">
             <li>ثبّت <b>Node.js</b> على حاسوب قرب الجهاز مرة وحدة (تحميل مجاني من <code dir="ltr">nodejs.org</code>).</li>
-            <li>حمّل الملفات الثلاثة فوك وحطهم كلهم <b>بمجلد واحد</b> (باسم إنجليزي بلا مسافات).</li>
-            <li><b>دبل-كلك على «ملف التشغيل»</b> — يشغّل المُستقبِل بلا كتابة أي أمر. {isWindows ? null : <span>(على الماك أول مرة فقط: <code dir="ltr">chmod +x</code> ثم اسحب الملف على Terminal واضغط Enter.)</span>}</li>
-            <li>بإعدادات الجهاز (LIS/Host)، حط عنوان حاسوب المُستقبِل والمنفذ <code dir="ltr">9100</code>.</li>
-            <li>شغّل تحليل — راح يوصل لصندوق المختبر هنا. جرّب «تجربة» للتأكد الحين.</li>
+            <li><b>فُك ضغط</b> الملف المنزّل (دبل-كلك عليه).</li>
+            <li>
+              {isWindows
+                ? <span><b>دبل-كلك على «start-lab»</b>. إذا طلع تحذير ويندوز: More info ← Run anyway.</span>
+                : <span><b>كلك يمين على «شغّل-المختبر» ← Open ← Open</b> (أول مرة فقط، بعدها دبل-كلك يكفي).</span>}
+            </li>
+            <li>راح تنفتح صفحة عربية — اضغط <b>«ابحث عن الجهاز في الشبكة»</b> وبعدين <b>«اربط»</b> جنب جهازك.</li>
+            <li>خلص. شغّل تحليل بالجهاز، والنتيجة توصل لصندوق المختبر هنا لحالها.</li>
           </ol>
+          <details className="text-2xs text-ink-subtle">
+            <summary className="cursor-pointer font-bold">الرمز السري للجهاز (للحالات المتقدمة فقط)</summary>
+            <div className="mt-2 flex items-center gap-2 rounded-xl bg-surface-1 p-2">
+              <code className="flex-1 overflow-x-auto whitespace-nowrap text-2xs font-black text-ink" dir="ltr">{fresh.token}</code>
+              <button type="button" onClick={() => copyToken(fresh.token)} className="inline-flex items-center gap-1 rounded-full bg-teal-600 px-2.5 py-1.5 text-2xs font-bold text-white transition hover:bg-teal-700">
+                {copied ? <Check size={13} /> : <Copy size={13} />}{copied ? "اننسخ" : "انسخ"}
+              </button>
+            </div>
+          </details>
         </div>
       )}
 
