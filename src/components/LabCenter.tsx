@@ -1185,13 +1185,26 @@ export function LabsTab({ pet, results, canEdit, doctor, onChanged }: {
           <div className="mt-2 space-y-1.5">
             {inbox.slice(0, 4).map((m) => {
               const peek = readAnalyzerMessage(m.raw, getActiveClinicId());
+              // الجهاز قد يرسل عدة عينات بضغطة واحدة (كل الأعمدة المحددة بجدول
+              // المراجعة). بلا بصمة مميزة تبدو الصفوف متطابقة والطبيب يخمّن
+              // أيها عينته — فنعرض رقم العينة ولمحة من أهم القيم.
+              const vitals = (["wbc", "hgb", "plt"] as const)
+                .filter((k) => peek.values[k] !== undefined)
+                .map((k) => `${k.toUpperCase()} ${formatNum(peek.values[k])}`)
+                .join(" · ");
+              const empty = peek.count > 0 && Object.values(peek.values).every((v) => v === 0);
               return (
                 <div key={m.id} className="flex flex-wrap items-center gap-2 rounded-xl bg-surface-1 px-2.5 py-2">
                   <Inbox size={15} className="text-teal-600 dark:text-teal-400" />
-                  <span className="text-2xs font-bold text-ink">{m.device_name || "جهاز المختبر"}</span>
+                  <span className="text-2xs font-bold text-ink">
+                    {peek.patientHint ? `عينة ${peek.patientHint}` : (m.device_name || "جهاز المختبر")}
+                  </span>
                   <span className="text-2xs text-ink-subtle">
                     {peek.count > 0 ? `${formatNum(peek.count)} قيمة (${peek.protocol.toUpperCase()})` : "رسالة"} · {new Date(m.received_at).toLocaleTimeString("ar", { hour: "2-digit", minute: "2-digit" })}
                   </span>
+                  {empty
+                    ? <span className="rounded-full bg-warn-50 px-2 py-0.5 text-2xs font-bold text-warn-700 dark:bg-warn-500/15 dark:text-warn-200">كل القيم أصفار — عينة فاضية غالباً</span>
+                    : vitals && <span className="rounded-full bg-surface-2 px-2 py-0.5 text-2xs font-semibold tabular-nums text-ink-muted">{vitals}</span>}
                   <div className="ms-auto flex items-center gap-1.5">
                     <button type="button" onClick={() => acceptInboxItem(m)} className="rounded-full bg-teal-600 px-3 py-1.5 text-2xs font-extrabold text-white transition hover:bg-teal-700 active:scale-95">
                       استقبال لـ {pet.name}
