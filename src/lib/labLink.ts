@@ -108,6 +108,10 @@ const IGNORE = new Set([
   "704-7", "706-2", "26444-0", "30180-4",  // Basophils (abs/%)
   "30525-0", "29463-7", "8302-2",          // العمر / الوزن / الطول — بيانات مريض لا فحوص
   "58410-2", "57021-8", "69742-3",         // عناوين لوحات CBC (لا قيم)
+  "32207-3",                               // PDW بكود LOINC
+  // أكواد Mindray الداخلية لبيانات الهيستوغرام (تتكرر لكل مدرج: بيض/حمر/صفائح)
+  // وليست معايير سريرية — بلا تجاهلها تظهر للطبيب ١٢ «كوداً مجهولاً» كل نتيجة.
+  "10002", "10028", "10030", "10001", "10003", "10029", "10031",
 ]);
 
 /** Build the reverse lookup once (code → canonical id). */
@@ -276,6 +280,11 @@ function scaleValue(id: string, value: number, units?: string): number {
   if (id === "rbc" && value > 1000) return value / 1e6;
   // HGB sometimes reported in g/L (e.g. 150) rather than g/dL (15).
   if (id === "hgb" && (u.includes("g/l") || value > 30)) return value / 10;
+  // MCHC كذلك: أجهزة كثيرة (Mindray وغيرها) ترسلها g/L — 374 g/L = 37.4 g/dL.
+  // بلا التحويل تظهر «مرتفعة جداً» مقابل مدى 30–36 وتُفزع الطبيب بلا سبب.
+  if (id === "mchc" && (u.includes("g/l") || value > 100)) return Math.round(value) / 10;
+  // HCT يُرسَل أحياناً كنسبة عشرية (0.44) بدل نسبة مئوية (44).
+  if (id === "hct" && value > 0 && value <= 1) return Math.round(value * 1000) / 10;
   // Glucose/BUN/etc mmol/L → mg/dL only if the unit clearly says mmol (leave otherwise).
   if (id === "glu" && u.includes("mmol")) return Math.round(value * 18);
   if (id === "bun" && u.includes("mmol")) return Math.round(value * 2.8);
