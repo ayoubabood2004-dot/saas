@@ -215,11 +215,33 @@ async function forward(dev, raw) {
 /** أقل حجم يُعتبر «نتيجة حقيقية» بشبكة الأمان — أصغر منه نبضة أو ضجيج. */
 const MIN_RAW_BYTES = 40;
 
+/** هل يبدأ هذا الجزء رسالة جديدة (ترويسة HL7 أو ASTM)؟ */
+const startsNewMessage = (s) => /^\s*(MSH\||H\|)/.test(s);
+
 function makeReader(dev, writeBack) {
   const framer = framerFor(dev.framing);
   let emitted = 0;
-  let raw = []; // نسخة خام لكل ما وصل منذ آخر إرسال — شبكة الأمان
-  const onMsg = (msg) => { if (msg && msg.trim()) { emitted++; void forward(dev, msg); } };
+  let raw = [];      // نسخة خام لكل ما وصل منذ آخر إرسال — شبكة الأمان
+  let pending = [];  // أجزاء وصلت وتنتظر التجميع قبل الإرسال
+  /**
+   * تجميع الأجزاء قبل الإرسال. أجهزة مثل Mindray ترسل العينة الواحدة على
+   * كتل متتابعة: كتلة الأرقام ثم كتلة لكل مدرّج (بيضاء/حمراء/صفائح). لو
+   * أرسلنا كل كتلة وحدها لظهرت العينة الواحدة كثلاث نتائج ناقصة بالصندوق
+   * وحار الطبيب أيها نتيجته. القاعدة: جزء يبدأ بترويسة جديدة (MSH/H) يفتح
+   * رسالة مستقلة، وما عداه يُلحق بسابقه — فتبقى العينات المنفصلة منفصلة.
+   */
+  const flushPending = () => {
+    if (!pending.length) return;
+    const groups = [];
+    for (const part of pending) {
+      if (!groups.length || startsNewMessage(part)) groups.push([part]);
+      else groups[groups.length - 1].push(part);
+    }
+    pending = [];
+    for (const g of groups) send(g.join("\r"));
+  };
+  const send = (msg) => { if (msg && msg.trim()) { emitted++; void forward(dev, msg); } };
+  const onMsg = (msg) => { if (msg && msg.trim()) pending.push(msg); };
   let idle;
   /**
    * عند سكون الخط: أفرغ المُغلِّف. وإذا لم يخرج منه شيء رغم وصول بيانات
@@ -228,16 +250,16 @@ function makeReader(dev, writeBack) {
    * ولا شيء وصل» نهائياً.
    */
   const settle = () => {
-    const before = emitted;
     // مخرجات flush هي «بقايا» غير مؤطّرة — نطبّق عليها الحد الأدنى حتى لا
     // تتحول نبضة الجهاز (حرف أو حرفان كل ثوانٍ) إلى رسائل فارغة تغرق صندوق
     // المختبر. الأطر المكتملة (من push) تمر بلا هذا الشرط لأنها موثوقة.
     for (const f of framer.flush()) { if (f.trim().length >= MIN_RAW_BYTES) onMsg(f); }
-    if (emitted === before && raw.length >= MIN_RAW_BYTES) {
+    if (!pending.length && raw.length >= MIN_RAW_BYTES) {
       log(`↯ [${dev.name}] بيانات بلا تغليف معروف (${raw.length} بايت) — نرسلها خاماً.`);
       onMsg(dec(raw));
     }
     raw = [];
+    flushPending();
   };
   const arm = () => { clearTimeout(idle); idle = setTimeout(settle, dev.idleMs); };
   return {
