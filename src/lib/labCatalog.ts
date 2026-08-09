@@ -44,18 +44,37 @@ export const labFlag = (value: number, lo?: number, hi?: number): LabFlag => {
 
 /* ------------------------------- Parameters ------------------------------- */
 // Hematology (CBC + differential)
+// الترتيب يحاكي ورقة الجهاز المطبوعة (Mindray BC-20 Vet وأمثاله): التعداد
+// الأبيض ثم التفريق (عدداً ثم نسبةً)، ثم خط الكريات الحمر ودلائلها، ثم
+// الصفائح ودلائلها — فيقرأ الطبيب الشاشة بنفس تسلسل الورقة التي بيده.
 const HEMATOLOGY: LabParam[] = [
   { id: "wbc", label: "كريات بيضاء", abbr: "WBC", unit: "10³/µL", min: 0, max: 60, step: 0.1, ranges: { dog: [6, 17], cat: [5.5, 19.5] } },
-  { id: "rbc", label: "كريات حمراء", abbr: "RBC", unit: "10⁶/µL", min: 0, max: 15, step: 0.1, ranges: { dog: [5.5, 8.5], cat: [5, 10] } },
-  { id: "hgb", label: "هيموغلوبين", abbr: "HGB", unit: "g/dL", min: 0, max: 25, step: 0.1, ranges: { dog: [12, 18], cat: [8, 15] } },
-  { id: "hct", label: "هيماتوكريت (PCV)", abbr: "HCT", unit: "%", min: 0, max: 75, step: 1, ranges: { dog: [37, 55], cat: [30, 45] } },
-  { id: "plt", label: "صفائح دموية", abbr: "PLT", unit: "10³/µL", min: 0, max: 1000, step: 5, ranges: { dog: [200, 500], cat: [300, 700] } },
-  { id: "mcv", label: "متوسط حجم الكرية", abbr: "MCV", unit: "fL", min: 20, max: 100, step: 1, ranges: { dog: [60, 77], cat: [39, 55] } },
-  { id: "mchc", label: "تركيز الخضاب الوسطي", abbr: "MCHC", unit: "g/dL", min: 20, max: 45, step: 0.1, ranges: { dog: [32, 36], cat: [30, 36] } },
+  // التفريق — عدداً مطلقاً
   { id: "neut", label: "العدلات", abbr: "NEU", unit: "10³/µL", min: 0, max: 30, step: 0.1, ranges: { dog: [3, 11.5], cat: [2.5, 12.5] } },
   { id: "lymph", label: "اللمفاويات", abbr: "LYM", unit: "10³/µL", min: 0, max: 15, step: 0.1, ranges: { dog: [1, 4.8], cat: [1.5, 7] } },
   { id: "mono", label: "الوحيدات", abbr: "MONO", unit: "10³/µL", min: 0, max: 4, step: 0.1, ranges: { dog: [0.15, 1.35], cat: [0, 0.85] } },
   { id: "eos", label: "الحمضات", abbr: "EOS", unit: "10³/µL", min: 0, max: 5, step: 0.1, ranges: { dog: [0.1, 1.25], cat: [0, 1.5] } },
+  { id: "baso", label: "القعدات", abbr: "BASO", unit: "10³/µL", min: 0, max: 2, step: 0.01, ranges: { dog: [0, 0.1], cat: [0, 0.1] } },
+  // التفريق — نسبةً مئوية (يطبعها الجهاز جنب العدد المطلق)
+  { id: "neutp", label: "العدلات ٪", abbr: "NEU%", unit: "%", min: 0, max: 100, step: 0.1, ranges: { dog: [60, 77], cat: [35, 75] } },
+  { id: "lymphp", label: "اللمفاويات ٪", abbr: "LYM%", unit: "%", min: 0, max: 100, step: 0.1, ranges: { dog: [12, 30], cat: [20, 55] } },
+  { id: "monop", label: "الوحيدات ٪", abbr: "MON%", unit: "%", min: 0, max: 100, step: 0.1, ranges: { dog: [3, 10], cat: [1, 4] } },
+  { id: "eosp", label: "الحمضات ٪", abbr: "EOS%", unit: "%", min: 0, max: 100, step: 0.1, ranges: { dog: [2, 10], cat: [2, 12] } },
+  { id: "basop", label: "القعدات ٪", abbr: "BAS%", unit: "%", min: 0, max: 100, step: 0.1, ranges: { dog: [0, 1], cat: [0, 1] } },
+  // خط الكريات الحمر ودلائلها
+  { id: "rbc", label: "كريات حمراء", abbr: "RBC", unit: "10⁶/µL", min: 0, max: 15, step: 0.1, ranges: { dog: [5.5, 8.5], cat: [5, 10] } },
+  { id: "hgb", label: "هيموغلوبين", abbr: "HGB", unit: "g/dL", min: 0, max: 25, step: 0.1, ranges: { dog: [12, 18], cat: [8, 15] } },
+  { id: "hct", label: "هيماتوكريت (PCV)", abbr: "HCT", unit: "%", min: 0, max: 75, step: 1, ranges: { dog: [37, 55], cat: [30, 45] } },
+  { id: "mcv", label: "متوسط حجم الكرية", abbr: "MCV", unit: "fL", min: 20, max: 100, step: 1, ranges: { dog: [60, 77], cat: [39, 55] } },
+  { id: "mch", label: "متوسط خضاب الكرية", abbr: "MCH", unit: "pg", min: 5, max: 40, step: 0.1, ranges: { dog: [19.5, 24.5], cat: [13, 17] } },
+  { id: "mchc", label: "تركيز الخضاب الوسطي", abbr: "MCHC", unit: "g/dL", min: 20, max: 45, step: 0.1, ranges: { dog: [32, 36], cat: [30, 36] } },
+  { id: "rdw", label: "تفاوت حجم الكريات", abbr: "RDW-CV", unit: "%", min: 5, max: 40, step: 0.1, ranges: { dog: [12, 17.5], cat: [14, 18] } },
+  { id: "rdwsd", label: "تفاوت حجم الكريات (SD)", abbr: "RDW-SD", unit: "fL", min: 10, max: 100, step: 0.1, ranges: { dog: [33, 47], cat: [30, 45] } },
+  // خط الصفائح ودلائلها
+  { id: "plt", label: "صفائح دموية", abbr: "PLT", unit: "10³/µL", min: 0, max: 1000, step: 5, ranges: { dog: [200, 500], cat: [300, 700] } },
+  { id: "mpv", label: "متوسط حجم الصفيحة", abbr: "MPV", unit: "fL", min: 3, max: 30, step: 0.1, ranges: { dog: [8.7, 13.2], cat: [12, 17.4] } },
+  { id: "pdw", label: "تفاوت حجم الصفائح", abbr: "PDW", unit: "fL", min: 5, max: 30, step: 0.1, ranges: { dog: [9, 19], cat: [9, 19] } },
+  { id: "pct", label: "نسبة حجم الصفائح", abbr: "PCT", unit: "%", min: 0, max: 3, step: 0.01, ranges: { dog: [0.14, 0.46], cat: [0.17, 0.86] } },
 ];
 
 // Clinical chemistry

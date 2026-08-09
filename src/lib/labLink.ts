@@ -48,7 +48,14 @@ const DICT: Record<string, string[]> = {
   hgb:  ["HGB", "HB", "HG", "HGB#", "HAEMOGLOBIN", "HEMOGLOBIN", "718-7", "30313-1", "30350-3"],
   hct:  ["HCT", "PCV", "HCT#", "HAEMATOCRIT", "HEMATOCRIT", "4544-3", "20570-8", "31100-1"],
   mcv:  ["MCV", "787-2", "30428-7"],
+  mch:  ["MCH", "785-6", "28539-5"],
   mchc: ["MCHC", "786-4", "28540-3"],
+  rdw:  ["RDW", "RDW-CV", "RDWCV", "RDW CV", "788-0", "30385-9"],
+  rdwsd:["RDW-SD", "RDWSD", "RDW SD", "21000-5"],
+  mpv:  ["MPV", "32623-1", "776-5"],
+  pdw:  ["PDW", "32207-3", "51637-1"],
+  pct:  ["PCT", "PLATELETCRIT", "PLCT", "10002"],
+  baso: ["BASO", "BA", "BA#", "BASO#", "BASOPHIL", "BASOPHILS", "704-7", "26444-0", "30180-4"],
   plt:  ["PLT", "PLT#", "PLATELET", "PLATELETS", "THROMBOCYTE", "THROMBOCYTES", "THR", "777-3", "26515-7"],
   neut: ["NEUT", "NEUT#", "NEU", "NE", "NE#", "GRAN", "GRAN#", "GRA", "GRA#", "GR", "GR#", "GRANULOCYTE", "GRANULOCYTES", "NEUTROPHIL", "NEUTROPHILS", "SEG", "751-8", "26499-4", "753-4"],
   lymph:["LYMPH", "LYM", "LY", "LYM#", "LY#", "LYMPH#", "LYMPHOCYTE", "LYMPHOCYTES", "LYMPHO", "731-0", "26474-7", "732-8"],
@@ -81,37 +88,35 @@ const DICT: Record<string, string[]> = {
 /** Codes that are DIFFERENTIAL PERCENTAGES (not absolute counts) — routed to
  *  the same canonical id but tagged isPercent so the caller won't store them as
  *  the absolute value. */
+/** رمز النسبة → معرّف معيار النسبة المستقل (neutp/lymphp/…) لا معيار العدد
+ *  المطلق. النسبة والعدد كلاهما يُطبَعان بورقة الجهاز، فلكلٍّ خانته ونطاقه. */
 const PERCENT_CODES: Record<string, string> = {
-  "LYMPH%": "lymph", "LYM%": "lymph", "LY%": "lymph",
-  "NEUT%": "neut", "NEU%": "neut", "NE%": "neut", "GRAN%": "neut", "GRA%": "neut", "GR%": "neut", "SEG%": "neut",
-  "MONO%": "mono", "MON%": "mono", "MO%": "mono", "MID%": "mono", "MXD%": "mono",
-  "EOS%": "eos", "EO%": "eos",
+  "LYMPH%": "lymphp", "LYM%": "lymphp", "LY%": "lymphp",
+  "NEUT%": "neutp", "NEU%": "neutp", "NE%": "neutp", "GRAN%": "neutp", "GRA%": "neutp", "GR%": "neutp", "SEG%": "neutp",
+  "MONO%": "monop", "MON%": "monop", "MO%": "monop", "MID%": "monop", "MXD%": "monop",
+  "EOS%": "eosp", "EO%": "eosp",
+  "BASO%": "basop", "BA%": "basop", "BAS%": "basop",
   // أكواد LOINC للنِسَب التفريقية — نفس المعنى بلغة الأجهزة الحديثة.
-  "736-9": "lymph", "26478-8": "lymph",
-  "770-8": "neut", "23761-0": "neut", "26511-6": "neut",
-  "5905-5": "mono", "26485-3": "mono",
-  "713-8": "eos", "26450-7": "eos",
+  "736-9": "lymphp", "26478-8": "lymphp",
+  "770-8": "neutp", "23761-0": "neutp", "26511-6": "neutp",
+  "5905-5": "monop", "26485-3": "monop",
+  "713-8": "eosp", "26450-7": "eosp",
+  "706-2": "basop", "30180-4": "basop",
 };
 
-/** المعايير التي لها صيغتان: عدد مطلق ونسبة مئوية من الكريات البيضاء. */
-const DIFFERENTIAL = new Set(["neut", "lymph", "mono", "eos"]);
+/** العدد المطلق ↔ نسبته: يُستعمل لتحويل قيمة وسمها الجهاز «٪» إلى خانتها. */
+const PCT_OF: Record<string, string> = { neut: "neutp", lymph: "lymphp", mono: "monop", eos: "eosp", baso: "basop" };
 
 /** Codes we deliberately ignore (not in our canonical set) — silences noise
  *  like RDW/MCH/MPV/PDW rather than surfacing them as "unknown". */
+// ما يبقى مُتجاهَلاً: حقول ليست فحوصاً سريرية أصلاً، أو معايير بحثية لا
+// تُطبَع على ورقة العيادة. كل ما يظهر على الورقة صار له معيار حقيقي أعلاه.
 const IGNORE = new Set([
-  "RDW", "RDW-SD", "RDW-CV", "MCH", "MPV", "PDW", "PCT", "P-LCR", "P-LCC", "NRBC", "RET", "IG", "BASO", "BA", "BA#", "BA%", "ATL", "AL",
-  // مقابلاتها بأكواد LOINC + حقول ليست فحوصاً أصلاً (عمر المريض مثلاً) —
-  // بدونها تظهر للطبيب كـ«أكواد مجهولة» ويُطلب منه تعليمها بلا فائدة.
-  "788-0", "21000-5", "30385-9",           // RDW-CV / RDW-SD
-  "785-6", "28539-5",                      // MCH
-  "32623-1", "776-5",                      // MPV / PDW
-  "704-7", "706-2", "26444-0", "30180-4",  // Basophils (abs/%)
+  "P-LCR", "P-LCC", "NRBC", "RET", "IG", "ATL", "AL",
   "30525-0", "29463-7", "8302-2",          // العمر / الوزن / الطول — بيانات مريض لا فحوص
   "58410-2", "57021-8", "69742-3",         // عناوين لوحات CBC (لا قيم)
-  "32207-3",                               // PDW بكود LOINC
-  // أكواد Mindray الداخلية لبيانات الهيستوغرام (تتكرر لكل مدرج: بيض/حمر/صفائح)
-  // وليست معايير سريرية — بلا تجاهلها تظهر للطبيب ١٢ «كوداً مجهولاً» كل نتيجة.
-  "10002", "10028", "10030", "10001", "10003", "10029", "10031",
+  // أكواد Mindray الداخلية لحدود المدرّجات (تتكرر لكل مدرج: بيض/حمر/صفائح).
+  "10028", "10030", "10001", "10003", "10029", "10031",
 ]);
 
 /** Build the reverse lookup once (code → canonical id). */
@@ -305,14 +310,16 @@ export function normalize(msg: ParsedMessage, clinicId?: string): NormalizedRead
       if (!IGNORE.has(n) && !/%$/.test(t.code)) unknown.push({ code: t.code.trim(), value: t.value, units: t.units });
       continue;
     }
-    // «نسبة» لها معنى فقط بالعد التفريقي للكريات البيضاء (مطلق مقابل %).
-    // أما HCT فوحدته % أصلاً وهو قيمة مطلقة — لولا هذا الشرط لسقط بخانة
-    // النِسَب واختفى من النتيجة رغم وصوله سليماً من الجهاز.
-    if ((r.isPercent || t.isPercent) && DIFFERENTIAL.has(r.id)) {
-      if (percents[r.id] === undefined) percents[r.id] = t.value;
-      continue;
-    }
-    if (values[r.id] === undefined) values[r.id] = scaleValue(r.id, t.value, t.units);
+    // قيمة وسمها الجهاز «٪» لمعيار تفريقي (NEUT بوحدة %) تُحوَّل إلى خانة
+    // النسبة المستقلة. أما HCT فوحدته % أصلاً وهو قيمة مطلقة — لولا حصر
+    // التحويل بالتفريق لسقط بخانة أخرى واختفى رغم وصوله سليماً.
+    let id = r.id;
+    if ((r.isPercent || t.isPercent) && PCT_OF[id]) id = PCT_OF[id];
+    // النِسَب تُسجَّل قيماً كاملة (لها معيارها ونطاقها بالكتالوج) وتُنسخ إلى
+    // خريطة percents للتوافق مع أي مستهلك قديم.
+    if (values[id] === undefined) values[id] = scaleValue(id, t.value, t.units);
+    const base = Object.keys(PCT_OF).find((k) => PCT_OF[k] === id);
+    if (base && percents[base] === undefined) percents[base] = t.value;
   }
   return { values, percents, unknown, patientHint: msg.patientHint };
 }
