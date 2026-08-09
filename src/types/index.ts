@@ -507,6 +507,10 @@ export interface Product {
   units_per_box?: number | null;
   /** Price of a single sub-unit (used when selling by the sub-unit). */
   sub_unit_price?: number | null;
+  /** معروض بالمتجر الإلكتروني العام (0095). الافتراضي: مخفي. */
+  store_visible?: boolean;
+  /** وصف تسويقي قصير يظهر تحت الاسم ببطاقة المتجر. */
+  store_desc?: string | null;
   created_at: string;
 }
 
@@ -996,4 +1000,72 @@ export interface DemoDB {
   deviceInbox?: LabDeviceInbox[];
   featureRequests?: FeatureRequest[];
   generatedBarcodes?: GeneratedBarcode[];
+  storeProfile?: StoreProfile | null;
+  storeOrders?: StoreOrder[];
+}
+
+/* ----------------------------- المتجر الإلكتروني ----------------------------- */
+
+/** هوية متجر العيادة العام: الرابط والإعدادات (صف واحد لكل عيادة). */
+export interface StoreProfile {
+  clinic_id?: string | null;
+  /** المقطع الأخير من الرابط العام /s/<slug> — حروف إنكليزية صغيرة/أرقام/شرطات. */
+  slug: string;
+  enabled: boolean;
+  bio?: string | null;
+  delivery_fee: number;
+  min_order: number;
+  /** رقم واتساب استلام الطلبات (يرجع لهاتف العيادة إذا فارغ). */
+  whatsapp?: string | null;
+  updated_at?: string;
+}
+
+/** بند داخل طلب متجر — لقطة مجمّدة لحظة الطلب (الاسم والسعر من القاعدة). */
+export interface StoreOrderItem { product_id: string; name: string; qty: number; price: number; total: number }
+
+export type StoreOrderStatus = "new" | "accepted" | "rejected" | "cancelled";
+
+/** طلب زبون من المتجر العام. القبول اليدوي هو الي يولد الفاتورة ويسحب المخزون. */
+export interface StoreOrder {
+  id: string;
+  clinic_id?: string | null;
+  /** رقم قصير للتخاطب مع الزبون (SO-3F9A2C). */
+  order_no: string;
+  customer_name: string;
+  customer_phone: string;
+  address?: string | null;
+  note?: string | null;
+  items: StoreOrderItem[];
+  subtotal: number;
+  delivery_fee: number;
+  total: number;
+  status: StoreOrderStatus;
+  /** فاتورة القبول (إن قُبل) — سحب المخزون صار عبرها. */
+  invoice_id?: string | null;
+  decided_at?: string | null;
+  created_at: string;
+}
+
+/** بطاقة المتجر كما يراها الزائر المجهول (مخرجات store_front الآمنة فقط). */
+export interface StoreFrontInfo {
+  name: string;
+  logo_url: string | null;
+  phone: string | null;
+  whatsapp: string | null;
+  facebook: string | null;
+  instagram: string | null;
+  bio: string | null;
+  delivery_fee: number;
+  min_order: number;
+}
+
+/** منتج بعين الزائر: أعمدة العرض فقط — «متوفر» boolean والكمية سر داخلي. */
+export interface StoreCatalogItem {
+  id: string;
+  name: string;
+  category: string | null;
+  subcategory: string | null;
+  price: number;
+  descr: string | null;
+  available: boolean;
 }

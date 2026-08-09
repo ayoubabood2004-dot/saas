@@ -17,6 +17,7 @@ import {
   ArrowLeftRight,
   Boxes,
   Store,
+  ShoppingBag,
   MessageCircle,
   BellRing,
   Briefcase,
@@ -30,6 +31,7 @@ import {
 import { useAuth } from "@/contexts/AuthContext";
 import { usePermissions } from "@/hooks/usePermissions";
 import { useBookingRequestCount } from "@/lib/bookingRequests";
+import { useStoreOrderCount } from "@/lib/storeOrdersLive";
 import { useSubscription } from "@/lib/subscription";
 import { useEntitlements } from "@/lib/entitlements";
 import { formatNum } from "@/lib/utils";
@@ -85,6 +87,7 @@ export function Sidebar() {
     { to: "/records", icon: ClipboardList, label: t("records.title") },
     { to: "/inventory", icon: Boxes, label: t("nav.inventory", "Inventory"), show: can("manageInventory") },
     { to: "/retail", icon: Store, label: t("nav.retail", "Retail & Sales"), show: can("processSales") && has("pos") },
+    { to: "/store", icon: ShoppingBag, label: t("nav.store", "المتجر الإلكتروني"), show: can("processSales") && has("store") },
     { to: "/reports", icon: BarChart3, label: t("nav.reports", "التقارير"), show: can("viewReports") && has("reports") },
     {
       to: "/campaigns", icon: MessageCircle, label: t("nav.campaigns", "WhatsApp Campaigns"), show: has("whatsapp"),
@@ -104,6 +107,8 @@ export function Sidebar() {
   const [openGroups, setOpenGroups] = useState<Set<string>>(new Set());
   // عدّاد حي لطلبات الحجز الجديدة (زبائن) — نفس المجس المشترك مال الجرس.
   const bookingReqs = useBookingRequestCount();
+  // عدّاد حي لطلبات المتجر الجديدة — يشتغل فقط لما ميزة المتجر متاحة.
+  const storeOrders = useStoreOrderCount(has("store") && can("processSales"));
   const toggleGroup = (key: string) => setOpenGroups((s) => { const n = new Set(s); if (n.has(key)) n.delete(key); else n.add(key); return n; });
   const isActive = (to: string, exact?: boolean) =>
     exact ? location.pathname === "/" : location.pathname === to || location.pathname.startsWith(to + "/");
@@ -208,6 +213,12 @@ export function Sidebar() {
               {(item.to === "/reception" || item.to === "/bookings") && bookingReqs > 0 && (
                 <span className="relative z-10 grid h-5 min-w-5 place-items-center rounded-full bg-danger-500 px-1.5 text-2xs font-bold text-white shadow-soft animate-pulse">
                   {bookingReqs}
+                </span>
+              )}
+              {/* عدّاد طلبات المتجر الجديدة */}
+              {item.to === "/store" && storeOrders > 0 && (
+                <span className="relative z-10 grid h-5 min-w-5 place-items-center rounded-full bg-danger-500 px-1.5 text-2xs font-bold text-white shadow-soft animate-pulse">
+                  {storeOrders}
                 </span>
               )}
             </Link>

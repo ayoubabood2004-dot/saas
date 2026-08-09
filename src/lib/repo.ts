@@ -4,7 +4,9 @@
 import { loadDB, saveDB } from "./demoStore";
 import { supabase } from "./supabase";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, AppointmentStatus, ClinicInfo, PublicStaff, DailyNote, TreatmentEntry, Admission, Branch, Reminder, Product, Company, CompanySection, Purchase, PurchaseItem, PurchasePayment, PurchaseDraftLine, PurchaseMeta, Courier, DeliveryOrder, PetMovement, DemoDB, Invoice, InvoiceItem, CheckoutItem, SaleMeta, Customer, DiscountType, PaymentMethod, PaymentSplit, WhatsAppMessage, AuditEntry, LoginEvent, PetNote, Expense, ClinicVisit , Surgery, LabResult, LabDeviceLink, LabDeviceInbox, LabStatusValue, PetProblem, CareEntry, FeatureRequest, GeneratedBarcode } from "@/types";
+import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, AppointmentStatus, ClinicInfo, PublicStaff, DailyNote, TreatmentEntry, Admission, Branch, Reminder, Product, Company, CompanySection, Purchase, PurchaseItem, PurchasePayment, PurchaseDraftLine, PurchaseMeta, Courier, DeliveryOrder, PetMovement, DemoDB, Invoice, InvoiceItem, CheckoutItem, SaleMeta, Customer, DiscountType, PaymentMethod, PaymentSplit, WhatsAppMessage, AuditEntry, LoginEvent, PetNote, Expense, ClinicVisit , Surgery, LabResult, LabDeviceLink, LabDeviceInbox, LabStatusValue, PetProblem, CareEntry, FeatureRequest, GeneratedBarcode, StoreProfile, StoreOrder, StoreOrderItem, StoreFrontInfo, StoreCatalogItem } from "@/types";
+import { isValidSlug, normalizeSlug, demoOrderNo } from "./storeLib";
+import { getClinicName, getClinicLogo, getClinicSocials } from "./settings";
 import { uid, uuid, ageMonths, localISO } from "./utils";
 import { phoneKey } from "./phone";
 import { loadOwners } from "./owners";
@@ -1061,6 +1063,114 @@ const demoRepo = {
     return fresh;
   },
 
+  /* ---------------- المتجر الإلكتروني (0095) ----------------
+   * جهة العيادة: هوية المتجر + صندوق الطلبات وقراراته.
+   * الواجهة العامة: ثلاث دوال يستعملها الزائر بلا حساب — مرايا حرفية
+   * لدوال RPC السحابية (نفس التحققات، نفس أكواد الأخطاء) حتى الوضع
+   * التجريبي يتصرف مثل الإنتاج واحد لواحد. */
+  async getStoreProfile(): Promise<StoreProfile | null> {
+    return loadDB().storeProfile ?? null;
+  },
+  async saveStoreProfile(p: Omit<StoreProfile, "updated_at">): Promise<StoreProfile> {
+    if (!isValidSlug(p.slug)) throw new Error("slug_invalid");
+    const db = loadDB();
+    const prof: StoreProfile = { ...(db.storeProfile ?? {}), ...p, updated_at: new Date().toISOString() };
+    db.storeProfile = prof;
+    saveDB(db);
+    return prof;
+  },
+  /** هل الرابط متاح؟ (بالتجريبي عيادة واحدة — يكفي أن تكون الصيغة سليمة.) */
+  async checkStoreSlug(slug: string): Promise<boolean> {
+    return isValidSlug(normalizeSlug(slug));
+  },
+  async listStoreOrders(limit = 300): Promise<StoreOrder[]> {
+    return (loadDB().storeOrders ?? [])
+      .slice()
+      .sort((a, b) => b.created_at.localeCompare(a.created_at))
+      .slice(0, limit);
+  },
+  async updateStoreOrder(id: string, patch: Partial<Pick<StoreOrder, "status" | "invoice_id" | "decided_at">>): Promise<void> {
+    const db = loadDB();
+    const o = (db.storeOrders ?? []).find((x) => x.id === id);
+    if (o) { Object.assign(o, patch); saveDB(db); }
+  },
+
+  /* ---- الواجهة العامة (الزائر) ---- */
+  async storeFrontPublic(slug: string): Promise<StoreFrontInfo | null> {
+    const db = loadDB();
+    const sp = db.storeProfile;
+    if (!sp?.enabled || sp.slug !== normalizeSlug(slug)) return null;
+    const socials = getClinicSocials();
+    return {
+      name: getClinicName() || "عيادة بيطرية",
+      logo_url: getClinicLogo(),
+      phone: sp.whatsapp ?? null,
+      whatsapp: sp.whatsapp ?? null,
+      facebook: socials.facebook || null,
+      instagram: socials.instagram || null,
+      bio: sp.bio ?? null,
+      delivery_fee: sp.delivery_fee,
+      min_order: sp.min_order,
+    };
+  },
+  async storeCatalogPublic(slug: string): Promise<StoreCatalogItem[]> {
+    const db = loadDB();
+    const sp = db.storeProfile;
+    if (!sp?.enabled || sp.slug !== normalizeSlug(slug)) return [];
+    const poolOf = (p: Product) => (db.companySections ?? []).find((s) => s.id === p.section_id)?.pooled_stock ?? 0;
+    return (db.products ?? [])
+      .filter((p) => p.store_visible)
+      .sort((a, b) => (a.category ?? "z").localeCompare(b.category ?? "z") || a.name.localeCompare(b.name))
+      .slice(0, 500)
+      .map((p) => ({
+        id: p.id, name: p.name, category: p.category ?? null, subcategory: p.subcategory ?? null,
+        price: p.sell_price, descr: p.store_desc ?? null,
+        available: p.stock > 0 || poolOf(p) > 0,
+      }));
+  },
+  async placeStoreOrder(
+    slug: string,
+    info: { name: string; phone: string; address?: string; note?: string },
+    items: { product_id: string; qty: number }[],
+  ): Promise<{ ok: boolean; error?: string; order_no?: string; total?: number; min_order?: number }> {
+    const db = loadDB();
+    const sp = db.storeProfile;
+    if (!sp?.enabled || sp.slug !== normalizeSlug(slug)) return { ok: false, error: "closed" };
+    const name = (info.name ?? "").trim();
+    if (name.length < 2 || name.length > 80) return { ok: false, error: "bad_name" };
+    const digits = (info.phone ?? "").replace(/\D/g, "");
+    if (digits.length < 8 || digits.length > 15) return { ok: false, error: "bad_phone" };
+    if ((info.address ?? "").length > 300 || (info.note ?? "").length > 500) return { ok: false, error: "bad_input" };
+    if (!Array.isArray(items) || items.length < 1 || items.length > 30) return { ok: false, error: "bad_items" };
+    // مضاد الإغراق — مرآة حدود السيرفر (10 لكل رقم / 300 للعيادة باليوم).
+    const dayAgo = Date.now() - 24 * 3600 * 1000;
+    const recent = (db.storeOrders ?? []).filter((o) => new Date(o.created_at).getTime() > dayAgo);
+    if (recent.filter((o) => o.customer_phone.replace(/\D/g, "") === digits).length >= 10) return { ok: false, error: "rate_limited" };
+    if (recent.length >= 300) return { ok: false, error: "rate_limited" };
+    // البنود: المنتج لازم منشور، والسعر يُقرأ من القاعدة الآن ويتجمّد.
+    const lines: StoreOrderItem[] = [];
+    for (const it of items) {
+      const qty = Math.floor(it.qty);
+      if (!Number.isFinite(qty) || qty < 1 || qty > 99) return { ok: false, error: "bad_items" };
+      const p = (db.products ?? []).find((x) => x.id === it.product_id && x.store_visible);
+      if (!p) return { ok: false, error: "bad_items" };
+      lines.push({ product_id: p.id, name: p.name, qty, price: p.sell_price, total: Math.round(p.sell_price * qty * 100) / 100 });
+    }
+    const subtotal = Math.round(lines.reduce((s, l) => s + l.total, 0) * 100) / 100;
+    if (sp.min_order > 0 && subtotal < sp.min_order) return { ok: false, error: "min_order", min_order: sp.min_order };
+    const total = Math.round((subtotal + sp.delivery_fee) * 100) / 100;
+    const order: StoreOrder = {
+      id: uid("so"), order_no: demoOrderNo(),
+      customer_name: name, customer_phone: (info.phone ?? "").trim(),
+      address: (info.address ?? "").trim() || null, note: (info.note ?? "").trim() || null,
+      items: lines, subtotal, delivery_fee: sp.delivery_fee, total,
+      status: "new", invoice_id: null, decided_at: null, created_at: new Date().toISOString(),
+    };
+    (db.storeOrders ??= []).unshift(order);
+    saveDB(db);
+    return { ok: true, order_no: order.order_no, total };
+  },
+
   /* ---------------- Companies (الشركات) — inventory grouping ---------------- */
   async listCompanies(_clinicId?: string): Promise<Company[]> {
     return (loadDB().companies ?? []).slice().sort((a, b) => a.name.localeCompare(b.name));
@@ -1456,6 +1566,9 @@ const DEMO_ACTIVITY_MAP: Record<string, { entity: string; action: "INSERT" | "UP
   updateFeatureRequest: { entity: "feature_requests", action: "UPDATE" },
   addGeneratedBarcodes: { entity: "generated_barcodes", action: "INSERT" },
   updateGeneratedBarcode: { entity: "generated_barcodes", action: "UPDATE" },
+  saveStoreProfile: { entity: "store_profiles", action: "UPDATE" },
+  updateStoreOrder: { entity: "store_orders", action: "UPDATE" },
+  placeStoreOrder: { entity: "store_orders", action: "INSERT" },
   deleteProblem: { entity: "pet_problems", action: "DELETE" },
   addClinicVisit: { entity: "clinic_visits", action: "INSERT" },
   updateClinicVisit: { entity: "clinic_visits", action: "UPDATE" },
@@ -2141,6 +2254,69 @@ const supabaseRepo: typeof demoRepo = {
       await sbc().from("generated_barcodes").upsert(payload, { onConflict: "clinic_id,barcode", ignoreDuplicates: true }).select(),
     );
   },
+
+  /* ---------------- المتجر الإلكتروني (0095) ---------------- */
+  async getStoreProfile() {
+    return maybe<StoreProfile>(await sbc().from("store_profiles").select("*").maybeSingle()) ?? null;
+  },
+  async saveStoreProfile(p) {
+    // clinic_id يُختم من default العمود (auth_clinic) والصف مفتاحه clinic_id.
+    const { clinic_id, ...rest } = p as StoreProfile;
+    void clinic_id;
+    const res = await sbc().from("store_profiles")
+      .upsert({ ...rest, slug: normalizeSlug(p.slug), updated_at: new Date().toISOString() }, { onConflict: "clinic_id" })
+      .select().single();
+    if (res.error) {
+      // قيد slug الفريد → رسالة مفهومة بدل نص Postgres الخام.
+      if (/store_profiles_slug_unique|duplicate key/i.test(res.error.message)) throw new Error("slug_taken");
+      if (/store_slug_format|violates check/i.test(res.error.message)) throw new Error("slug_invalid");
+      throw new Error(res.error.message);
+    }
+    return res.data as StoreProfile;
+  },
+  async checkStoreSlug(slug) {
+    if (!isValidSlug(normalizeSlug(slug))) return false;
+    const { data, error } = await sbc().rpc("store_slug_available", { p_slug: normalizeSlug(slug) });
+    if (error) throw new Error(error.message);
+    return !!data;
+  },
+  async listStoreOrders(limit = 300) {
+    return listOf<StoreOrder>(
+      await sbc().from("store_orders").select("*").order("created_at", { ascending: false }).limit(limit),
+    );
+  },
+  async updateStoreOrder(id, patch) {
+    ok(await sbc().from("store_orders").update(patch).eq("id", id));
+  },
+  async storeFrontPublic(slug) {
+    const { data, error } = await sbc().rpc("store_front", { p_slug: slug });
+    if (error) throw new Error(error.message);
+    const d = data as { ok?: boolean } & StoreFrontInfo & { error?: string };
+    if (!d?.ok) return null;
+    return {
+      name: d.name, logo_url: d.logo_url ?? null, phone: d.phone ?? null, whatsapp: d.whatsapp ?? null,
+      facebook: d.facebook ?? null, instagram: d.instagram ?? null, bio: d.bio ?? null,
+      delivery_fee: Number(d.delivery_fee) || 0, min_order: Number(d.min_order) || 0,
+    };
+  },
+  async storeCatalogPublic(slug) {
+    const { data, error } = await sbc().rpc("store_catalog", { p_slug: slug });
+    if (error) throw new Error(error.message);
+    return ((data ?? []) as StoreCatalogItem[]).map((r) => ({ ...r, price: Number(r.price) || 0 }));
+  },
+  async placeStoreOrder(slug, info, items) {
+    const { data, error } = await sbc().rpc("store_place_order", {
+      p_slug: slug,
+      p_name: info.name,
+      p_phone: info.phone,
+      p_address: info.address ?? "",
+      p_note: info.note ?? "",
+      p_items: items,
+    });
+    if (error) throw new Error(error.message);
+    return (data ?? { ok: false, error: "unknown" }) as { ok: boolean; error?: string; order_no?: string; total?: number; min_order?: number };
+  },
+
   async listCompanies(clinicId) {
     let q = sbc().from("companies").select("*").order("name", { ascending: true });
     if (clinicId) q = q.eq("clinic_id", clinicId);

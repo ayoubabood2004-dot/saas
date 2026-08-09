@@ -16,6 +16,7 @@ const importers: Record<string, Importer> = {
   "/records": () => import("@/pages/ClinicRecords"),
   "/inventory": () => import("@/pages/Inventory"),
   "/retail": () => import("@/pages/RetailSales"),
+  "/store": () => import("@/pages/ClinicStore"),
   "/reports": () => import("@/pages/AnalyticsHub"),
   "/campaigns": () => import("@/pages/WhatsAppCampaigns"),
   "/staff": () => import("@/pages/StaffManagement"),
