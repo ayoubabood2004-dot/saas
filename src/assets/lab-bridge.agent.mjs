@@ -229,7 +229,10 @@ function makeReader(dev, writeBack) {
    */
   const settle = () => {
     const before = emitted;
-    for (const f of framer.flush()) onMsg(f);
+    // مخرجات flush هي «بقايا» غير مؤطّرة — نطبّق عليها الحد الأدنى حتى لا
+    // تتحول نبضة الجهاز (حرف أو حرفان كل ثوانٍ) إلى رسائل فارغة تغرق صندوق
+    // المختبر. الأطر المكتملة (من push) تمر بلا هذا الشرط لأنها موثوقة.
+    for (const f of framer.flush()) { if (f.trim().length >= MIN_RAW_BYTES) onMsg(f); }
     if (emitted === before && raw.length >= MIN_RAW_BYTES) {
       log(`↯ [${dev.name}] بيانات بلا تغليف معروف (${raw.length} بايت) — نرسلها خاماً.`);
       onMsg(dec(raw));
