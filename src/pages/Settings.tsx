@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Settings as SettingsIcon, RotateCcw, Check, Volume2, VolumeX, Plus, Trash2, Pill, PawPrint, Stethoscope, Tag, FolderPlus, BadgePercent, IdCard, Mail, UserCog, Image as ImageIcon, Upload, Facebook, Instagram, Building2, Printer, Type, LogOut , Slice, ChevronDown, Radio, Copy, Download, Cable, Send, MousePointerClick } from "lucide-react";
 import type { LabDeviceLink } from "@/types";
@@ -1174,9 +1174,34 @@ function LabDevicesCard() {
     } finally { setBusy(false); }
   };
 
+  /**
+   * الإلغاء خطوتان عمداً: الزر ملاصق لأزرار التنزيل، وضغطة خطأ واحدة كانت
+   * تقطع اتصال جهاز المختبر نهائياً بلا إنذار — والعيادة تكتشفها فقط حين
+   * ترفض السحابة النتائج بـ«invalid device token». الضغطة الأولى تطلب
+   * التأكيد وتتراجع وحدها بعد أربع ثوانٍ.
+   */
+  const [confirmRevoke, setConfirmRevoke] = useState<string | null>(null);
+  const revokeTimer = useRef<number | null>(null);
+  useEffect(() => () => { if (revokeTimer.current) window.clearTimeout(revokeTimer.current); }, []);
+
+  const askRevoke = (id: string) => {
+    playTap();
+    setConfirmRevoke(id);
+    if (revokeTimer.current) window.clearTimeout(revokeTimer.current);
+    revokeTimer.current = window.setTimeout(() => setConfirmRevoke(null), 4000);
+  };
+
   const revoke = async (id: string) => {
-    try { await repo.revokeDeviceLink(id); playTap(); if (fresh?.id === id) setFresh(null); load(); }
-    catch { toast.error("تعذّر الإلغاء"); }
+    if (confirmRevoke !== id) { askRevoke(id); return; }
+    if (revokeTimer.current) window.clearTimeout(revokeTimer.current);
+    setConfirmRevoke(null);
+    try {
+      await repo.revokeDeviceLink(id);
+      playTap();
+      if (fresh?.id === id) setFresh(null);
+      load();
+      toast.toast({ tone: "info", title: "انلغى ربط الجهاز", description: "المُستقبِل ما راح يرسل بعد الآن — أضف جهازاً جديداً واستبدل الرمز بملف الإعداد." });
+    } catch { toast.error("تعذّر الإلغاء"); }
   };
 
   const copyToken = (token: string) => {
@@ -1313,7 +1338,15 @@ function LabDevicesCard() {
                 <button type="button" onClick={() => downloadConfig(l)} className="inline-flex items-center gap-1 rounded-full bg-surface-2 px-2.5 py-1.5 text-2xs font-bold text-ink-muted transition hover:text-ink"><Download size={13} /> ملف الإعداد</button>
                 <button type="button" onClick={downloadAgent} className="inline-flex items-center gap-1 rounded-full bg-surface-2 px-2.5 py-1.5 text-2xs font-bold text-ink-muted transition hover:text-ink"><Download size={13} /> البرنامج</button>
                 <button type="button" onClick={downloadLauncher} className="inline-flex items-center gap-1 rounded-full bg-surface-2 px-2.5 py-1.5 text-2xs font-bold text-ink-muted transition hover:text-ink"><MousePointerClick size={13} /> التشغيل</button>
-                <button type="button" onClick={() => revoke(l.id)} className="grid h-7 w-7 place-items-center rounded-full text-ink-subtle transition hover:text-danger-600" title="إلغاء"><Trash2 size={14} /></button>
+                {confirmRevoke === l.id ? (
+                  <button type="button" onClick={() => void revoke(l.id)}
+                    className="inline-flex items-center gap-1 rounded-full bg-danger-600 px-2.5 py-1.5 text-2xs font-extrabold text-white transition hover:bg-danger-700"
+                    title="اضغط مرة ثانية لتأكيد إلغاء الربط">
+                    <Trash2 size={13} /> تأكيد الإلغاء؟
+                  </button>
+                ) : (
+                  <button type="button" onClick={() => void revoke(l.id)} className="grid h-7 w-7 place-items-center rounded-full text-ink-subtle transition hover:text-danger-600" title="إلغاء الربط (يحتاج تأكيداً)"><Trash2 size={14} /></button>
+                )}
               </div>
             </div>
           ))}
