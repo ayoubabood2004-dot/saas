@@ -1150,21 +1150,30 @@ function ClinicVaccinations() {
  * ربط أجهزة المختبر عبر الشبكة: الجهاز بغرفة، السستم بغرفة ثانية. تطبيق صغير
  * قرب الجهاز يقرأ نتائجه ويرسلها للسحابة برمز سري، وتظهر بصندوق المختبر لتُربط
  * بالحيوان. هذي البطاقة تولّد الرمز، تحمّل حزمة التطبيق، وتلغي الأجهزة. */
-const README_TXT = (win: boolean) => [
+const README_TXT = () => [
   "ربط جهاز المختبر بـ doctorVet",
   "==============================",
   "",
-  "١) ثبّت Node.js مرة وحدة من nodejs.org (النسخة الخضراء LTS).",
-  win
-    ? "٢) دبل-كلك على «start-lab». إذا طلع تحذير ويندوز: More info ← Run anyway."
-    : "٢) كلك يمين على «شغّل-المختبر» ← Open ← Open. (أول مرة فقط، بعدها دبل-كلك يكفي.)",
-  "٣) راح تنفتح صفحة عربية بالمتصفح. اضغط «ابحث عن الجهاز في الشبكة».",
-  "٤) اضغط «اربط» جنب جهازك، وخلاص — النتائج تدخل السستم لحالها.",
+  "مهم: فُك ضغط هذا المجلد أولاً (كلك يمين ← Extract All).",
+  "التشغيل من داخل المجلد المضغوط لا يعمل.",
+  "",
+  "١) ثبّت Node.js مرة واحدة من nodejs.org — اضغط الزر الأخضر (LTS).",
+  "",
+  "٢) شغّل الملف الذي يناسب حاسوبك:",
+  "     • ويندوز →  دبل-كلك على «تشغيل على ويندوز»",
+  "                 إذا ظهر تحذير أزرق: More info ← Run anyway",
+  "     • ماك    →  كلك يمين على «تشغيل على ماك» ← Open ← Open",
+  "                 (أول مرة فقط، بعدها دبل-كلك يكفي)",
+  "",
+  "٣) ستفتح صفحة عربية في المتصفح. اتبع الخطوات الأربع فيها.",
+  "",
+  "٤) خلاص — النتائج تدخل السستم لحالها.",
   "",
   "ملاحظات:",
   "• اترك النافذة السوداء مفتوحة أثناء الدوام. تسكيرها يوقف الاستقبال.",
-  "• التطبيق مقترن بعيادتك مسبقاً — ما يحتاج أي رمز أو إعداد يدوي.",
-  "• إذا ما لقى الجهاز: تأكد أنه مشغّل وموصول بنفس الراوتر بكيبل الشبكة.",
+  "• التطبيق مقترن بعيادتك مسبقاً — لا يحتاج أي رمز أو إعداد يدوي.",
+  "• إذا لم يجد الجهاز: تأكد أنه مشغّل وموصول بنفس الراوتر بكيبل الشبكة.",
+  "• مجلد program يحتوي محرّك البرنامج — لا تحذفه ولا تنقله.",
   "",
 ].join("\r\n");
 
@@ -1236,7 +1245,8 @@ function LabDevicesCard() {
     playTap();
   };
 
-  const isWindows = typeof navigator !== "undefined" && /win/i.test(navigator.userAgent || (navigator as unknown as { platform?: string }).platform || "");
+  /* لا نخمّن نظام التشغيل من المتصفح: الطبيب قد يحمّل الحزمة من الماك
+     ليشغّلها على حاسوب ويندوز قرب الجهاز. الحزمة تحمل المُشغّلين معاً. */
 
   /** اسم ملف إنجليزي آمن لكل جهاز — حتى تتعايش عدة أجهزة بمجلد واحد. */
   const appFileName = (link: LabDeviceLink) => {
@@ -1244,43 +1254,56 @@ function LabDevicesCard() {
     return `doctorvet-lab-${slug}.mjs`;
   };
 
-  const launcherFor = (file: string) =>
-    isWindows
-      ? [
-        "@echo off",
-        "chcp 65001 >nul",
-        'cd /d "%~dp0"',
-        "where node >nul 2>nul",
-        "if errorlevel 1 (",
-        "  echo Node.js is not installed. Install it from nodejs.org then run this again.",
-        "  pause & exit /b 1",
-        ")",
-        "echo Starting doctorVet lab app - keep this window open.",
-        `node ${file}`,
-        "pause",
-        "",
-      ].join("\r\n")
-      : [
-        "#!/bin/bash",
-        "# مُشغّل تطبيق المختبر — دبل-كلك يفتح التطبيق بالمتصفح.",
-        'cd "$(dirname "$0")" || exit 1',
-        "if ! command -v node >/dev/null 2>&1; then",
-        '  echo "✗ Node.js مو مثبّت. ثبّته من nodejs.org ثم أعد المحاولة."',
-        '  read -n 1 -s -r -p "اضغط أي زر للإغلاق..."; exit 1',
-        "fi",
-        'echo "▶ تشغيل تطبيق المختبر — لا تسكّر هذه النافذة."',
-        `node ${file}`,
-        'read -n 1 -s -r -p "توقّف التطبيق. اضغط أي زر للإغلاق..."',
-        "",
-      ].join("\n");
+  /** مسار المحرك داخل الأرشيف — بمجلد فرعي حتى يبقى الجذر فيه ما يُضغط عليه فقط. */
+  const ENGINE_DIR = "program";
+
+  const winLauncher = (file: string) => [
+    "@echo off",
+    "chcp 65001 >nul",
+    'cd /d "%~dp0"',
+    "where node >nul 2>nul",
+    "if errorlevel 1 (",
+    "  echo.",
+    "  echo   Node.js is not installed.",
+    "  echo   Download it from nodejs.org ^(the green LTS button^), install, then run this again.",
+    "  echo.",
+    "  pause & exit /b 1",
+    ")",
+    "echo.",
+    "echo   Starting the doctorVet lab app...",
+    "echo   Your browser will open. KEEP THIS WINDOW OPEN while the clinic is working.",
+    "echo.",
+    `node "${ENGINE_DIR}\\${file}"`,
+    "pause",
+    "",
+  ].join("\r\n");
+
+  const macLauncher = (file: string) => [
+    "#!/bin/bash",
+    "# مُشغّل تطبيق المختبر — دبل-كلك يفتح التطبيق بالمتصفح.",
+    'cd "$(dirname "$0")" || exit 1',
+    "if ! command -v node >/dev/null 2>&1; then",
+    '  echo "✗ Node.js مو مثبّت. ثبّته من nodejs.org (الزر الأخضر LTS) ثم أعد المحاولة."',
+    '  read -n 1 -s -r -p "اضغط أي زر للإغلاق..."; exit 1',
+    "fi",
+    'echo "▶ تشغيل تطبيق المختبر — راح ينفتح المتصفح. لا تسكّر هذه النافذة."',
+    `node "${ENGINE_DIR}/${file}"`,
+    'read -n 1 -s -r -p "توقّف التطبيق. اضغط أي زر للإغلاق..."',
+    "",
+  ].join("\n");
 
   /**
-   * حزمة الجهاز: التطبيق + ملف التشغيل بأرشيف واحد.
+   * حزمة الجهاز: المحرك + مُشغّل لكل نظام، بأرشيف واحد.
    *
    * التطبيق يجيء مقترناً مسبقاً بالعيادة (الرابط والمفتاح والرمز مزروعة داخله)،
-   * فالطبيب ما ينسخ رمزاً ولا يحرّر JSON ولا يفتح ترمنل. وسبب الأرشيف أن
-   * المتصفح ما يكدر ينزّل ملفاً بصلاحية تنفيذ — وداخل ZIP نخزنها فيبقى
-   * ملف التشغيل قابلاً للدبل-كلك على الماك.
+   * فالطبيب ما ينسخ رمزاً ولا يحرّر JSON ولا يفتح ترمنل.
+   *
+   * لماذا أرشيف؟ لأن المتصفح ما يكدر ينزّل ملفاً بصلاحية تنفيذ — وداخل ZIP
+   * نخزنها فيبقى مُشغّل الماك قابلاً للدبل-كلك.
+   *
+   * ولماذا المُشغّلان معاً؟ التخمين من المتصفح كان يخطئ: طبيب يفتح السستم على
+   * الماك ويريد تشغيل الجهاز على حاسوب ويندوز، فتنزله نسخة الماك ولا يلقى شيئاً
+   * يشتغل. الملفان معاً بضعة مئات بايت، والاسم يقول أيهما له.
    */
   const downloadKit = (link: LabDeviceLink) => {
     const pairing = {
@@ -1293,17 +1316,16 @@ function LabDevicesCard() {
     const file = appFileName(link);
     const app = labBridgeAppSource.replace("/*@pairing*/ null", JSON.stringify(pairing));
     const zip = makeZip([
-      { name: file, content: app },
-      isWindows
-        ? { name: "start-lab.bat", content: launcherFor(file) }
-        : { name: "شغّل-المختبر.command", content: launcherFor(file), executable: true },
-      { name: "اقرأني.txt", content: README_TXT(isWindows) },
+      { name: "تشغيل على ويندوز.bat", content: winLauncher(file) },
+      { name: "تشغيل على ماك.command", content: macLauncher(file), executable: true },
+      { name: "اقرأني أولاً.txt", content: README_TXT() },
+      { name: `${ENGINE_DIR}/${file}`, content: app },
     ]);
     saveFile(zip, "doctorvet-lab.zip");
     toast.toast({
       tone: "info",
       title: "نزّلت حزمة الربط",
-      description: isWindows ? "فك الضغط، وشغّل «start-lab»." : "فك الضغط، وكلك يمين على «شغّل-المختبر» ← Open.",
+      description: "فك الضغط، وافتح ملف التشغيل الي يناسب نظامك — ويندوز أو ماك.",
     });
   };
 
@@ -1373,19 +1395,22 @@ function LabDevicesCard() {
         <div className="mb-4 space-y-3 rounded-2xl border border-teal-300 bg-teal-50/60 p-3 dark:border-teal-500/40 dark:bg-teal-500/10">
           <p className="text-2xs font-extrabold text-teal-800 dark:text-teal-200">✓ انضاف «{fresh.name}». حمّل تطبيق الربط — يجيء مقترناً بعيادتك، ما يحتاج أي إعداد:</p>
           <button type="button" onClick={() => downloadKit(fresh)} className="flex w-full items-center justify-center gap-2 rounded-xl border-2 border-teal-500 bg-teal-600 p-3.5 text-sm font-extrabold text-white transition hover:bg-teal-700">
-            <Download size={17} /> حمّل تطبيق الربط {isWindows ? "(ويندوز)" : "(ماك)"}
+            <Download size={17} /> حمّل تطبيق الربط
           </button>
           <ol className="list-decimal space-y-1 ps-5 text-2xs leading-relaxed text-ink-muted">
-            <li>ثبّت <b>Node.js</b> على حاسوب قرب الجهاز مرة وحدة (تحميل مجاني من <code dir="ltr">nodejs.org</code>).</li>
-            <li><b>فُك ضغط</b> الملف المنزّل (دبل-كلك عليه).</li>
+            <li>ثبّت <b>Node.js</b> على حاسوب قرب الجهاز مرة وحدة (تحميل مجاني من <code dir="ltr">nodejs.org</code> — الزر الأخضر LTS).</li>
+            <li><b>فُك ضغط</b> الملف المنزّل — كلك يمين ← <span dir="ltr">Extract All</span>. التشغيل من داخل المضغوط ما يشتغل.</li>
             <li>
-              {isWindows
-                ? <span><b>دبل-كلك على «start-lab»</b>. إذا طلع تحذير ويندوز: More info ← Run anyway.</span>
-                : <span><b>كلك يمين على «شغّل-المختبر» ← Open ← Open</b> (أول مرة فقط، بعدها دبل-كلك يكفي).</span>}
+              افتح ملف التشغيل الي يناسب حاسوبك:{" "}
+              <b>«تشغيل على ويندوز»</b> (إذا طلع تحذير أزرق: <span dir="ltr">More info ← Run anyway</span>){" "}
+              أو <b>«تشغيل على ماك»</b> (كلك يمين ← <span dir="ltr">Open ← Open</span>، أول مرة فقط).
             </li>
-            <li>راح تنفتح صفحة عربية — اضغط <b>«ابحث عن الجهاز في الشبكة»</b> وبعدين <b>«اربط»</b> جنب جهازك.</li>
+            <li>راح تنفتح صفحة عربية بأربع خطوات — عبّي اسم الجهاز، واختر <b>«دوّر على الجهاز تلقائياً»</b>.</li>
             <li>خلص. شغّل تحليل بالجهاز، والنتيجة توصل لصندوق المختبر هنا لحالها.</li>
           </ol>
+          <p className="rounded-xl bg-surface-1 p-2 text-2xs leading-relaxed text-ink-subtle">
+            الحزمة بيها ملفّا تشغيل (ويندوز وماك) + ملف «اقرأني» + مجلد <code dir="ltr">program</code> فيه محرّك البرنامج — لا تحذفه.
+          </p>
           <details className="text-2xs text-ink-subtle">
             <summary className="cursor-pointer font-bold">الرمز السري للجهاز (للحالات المتقدمة فقط)</summary>
             <div className="mt-2 flex items-center gap-2 rounded-xl bg-surface-1 p-2">
