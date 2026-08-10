@@ -159,13 +159,15 @@ const MICRO_TYPES = [
   { id: "micro_other", label: "فحص آخر", emoji: "📋" },
 ];
 
-export function LabEntry({ pet, visitId, doctor, onSaved, onClose, fulfill, prefill }: {
+export function LabEntry({ pet, visitId, doctor, onSaved, onClose, fulfill, prefill, fulfillPick }: {
   pet: Pet; visitId?: string | null; doctor?: string | null;
   onSaved: () => void; onClose: () => void;
   /** طلب «بانتظار النتائج» (بيع من المبيعات): النتيجة الجديدة تحل محله وترث فوترته وزيارته. */
   fulfill?: LabResult | null;
   /** رسالة جهاز واردة من الصندوق: تُقرأ فوراً وتتعبّى بوضع الأرقام لهذا الحيوان. */
   prefill?: { raw: string } | null;
+  /** الطلبات المفتوحة لهذا الحيوان + المختار منها — يظهر بشريط فوق الحقول. */
+  fulfillPick?: { target: LabResult | null; options: LabResult[]; onPick: (r: LabResult | null) => void } | null;
 }) {
   const toast = useToast();
   const [mode, setMode] = useState<EntryMode | null>(null);
@@ -364,8 +366,10 @@ export function LabEntry({ pet, visitId, doctor, onSaved, onClose, fulfill, pref
       const named = mode === "numbers" ? nameFromGroups((values ?? []).map((v) => v.id)) : null;
       await repo.addLabResult({
         pet_id: pet.id, visit_id: fulfill?.visit_id ?? visitId ?? null,
-        panel_id: mode === "numbers" ? named!.panel_id : mode === "snap" ? "snap" : microType.id,
-        panel_label: mode === "numbers" ? named!.panel_label : mode === "snap" ? `فحص سريع — ${snap?.label ?? ""}` : microType.label,
+        // نتيجة تُكمل طلباً مباعاً تحتفظ بهويّته — هو ما اشتراه الزبون وما يبحث
+        // عنه الطبيب بالسجل. التسمية من مجموعات القيم للنتائج الجديدة فقط.
+        panel_id: mode === "numbers" ? (fulfill?.panel_id ?? named!.panel_id) : mode === "snap" ? "snap" : microType.id,
+        panel_label: mode === "numbers" ? (fulfill?.panel_label ?? named!.panel_label) : mode === "snap" ? `فحص سريع — ${snap?.label ?? ""}` : microType.label,
         kind: mode === "numbers" ? "numeric" : mode === "snap" ? "snap" : "descriptive",
         values,
         snap_test_id: mode === "snap" ? snapTest : null,
@@ -484,6 +488,44 @@ export function LabEntry({ pet, visitId, doctor, onSaved, onClose, fulfill, pref
             <p className="rounded-xl bg-success-50 px-3 py-2 text-2xs font-bold text-success-700 dark:bg-success-500/10 dark:text-success-300">
               ✓ {prefill ? "استلمنا من الجهاز" : "آخر استلام"}: {formatNum(lastRead.count)} قيمة{lastRead.protocol ? ` بلغة ${lastRead.protocol}` : ""}. راجع القيم تحت واضغط حفظ.
             </p>
+          )}
+
+          {/* أي طلب مفتوح ستُكمله هذه النتيجة — يُعرض صراحةً لأن الخطأ هنا خطأ
+              فوترة: نتيجة تُحفظ منفصلة تترك الطلب المباع معلّقاً بلا نتائج. */}
+          {fulfillPick && (fulfillPick.target || fulfillPick.options.length > 0) && (
+            <div className={cn("rounded-2xl border p-3", fulfillPick.target
+              ? "border-brand-300 bg-brand-50/70 dark:border-brand-500/40 dark:bg-brand-500/10"
+              : "border-warn-300 bg-warn-50/70 dark:border-warn-500/40 dark:bg-warn-500/10")}>
+              {fulfillPick.target ? (
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-2xs font-extrabold text-brand-800 dark:text-brand-200">
+                    ✓ هذي النتائج راح تُسجَّل على الطلب «{fulfillPick.target.panel_label}»
+                    {fulfillPick.target.billed ? " — المفوتر" : ""} وتكمّل مراحله.
+                  </span>
+                  {fulfillPick.options.length > 0 && (
+                    <button type="button" onClick={() => fulfillPick.onPick(null)}
+                      className="ms-auto rounded-full bg-surface-1 px-2.5 py-1 text-2xs font-bold text-ink-muted transition hover:text-ink">
+                      تسجيلها منفصلة بدل ذلك
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <p className="text-2xs font-extrabold text-warn-800 dark:text-warn-200">
+                    عندك {formatNum(fulfillPick.options.length)} تحاليل مفتوحة لهذا الحيوان — على أيها نسجّل النتائج؟
+                  </p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {fulfillPick.options.map((o) => (
+                      <button key={o.id} type="button" onClick={() => fulfillPick.onPick(o)}
+                        className="rounded-full border border-brand-300 bg-surface-1 px-2.5 py-1 text-2xs font-bold text-brand-700 transition hover:bg-brand-50 dark:border-brand-500/40 dark:text-brand-300">
+                        {o.panel_label}{o.billed ? " · مفوتر" : ""}
+                      </button>
+                    ))}
+                    <span className="self-center text-2xs text-ink-subtle">أو اتركها بلا اختيار لتُسجَّل نتيجة جديدة منفصلة.</span>
+                  </div>
+                </div>
+              )}
+            </div>
           )}
 
           {/* تعليم الأكواد المجهولة — يُسأل مرة واحدة ويُحفظ للأبد لكل أجهزة العيادة */}
@@ -1128,9 +1170,25 @@ export function LabsTab({ pet, results, canEdit, doctor, onChanged }: {
     setInbox((list) => list.filter((x) => x.id !== m.id));
     void repo.markInboxHandled(m.id, "dismissed").catch(() => {});
   };
+  /** طلبات هذا الحيوان التي ما زالت تنتظر نتائج — مطلوب/عينة مسحوبة/قيد التشغيل.
+   *  «بانتظار الاعتماد» ليست منها: نتائجها مسجّلة أصلاً. */
+  const awaitingOrders = useMemo(
+    () => results.filter((r) => ["ordered", "collected", "running"].includes(statusOf(r))),
+    [results],
+  );
+
+  /**
+   * ربط رسالة الجهاز بالحالة.
+   *
+   * كانت تفتح الشاشة بلا هدف، فتُحفظ النتائج كتحليل جديد «بانتظار الاعتماد»
+   * غير مفوتر، ويبقى الطلب المباع معلّقاً بمراحله بلا نتائج — يعني الطبيب
+   * يفوتر مرة ويسجّل مرتين. الآن نربطها بالطلب المفتوح تلقائياً؛ وإذا كانت
+   * الطلبات أكثر من واحد لا نخمّن، بل نعرضها ليختار (الخطأ هنا خطأ فوترة).
+   */
   const acceptInboxItem = (m: LabDeviceInbox) => {
     playTap();
     setAcceptInbox(m);
+    setFulfillTarget(awaitingOrders.length === 1 ? awaitingOrders[0] : null);
     setEntryOpen(true);
   };
 
@@ -1345,6 +1403,7 @@ export function LabsTab({ pet, results, canEdit, doctor, onChanged }: {
         <LabEntry
           pet={pet} doctor={doctor} fulfill={fulfillTarget}
           prefill={acceptInbox ? { raw: acceptInbox.raw } : null}
+          fulfillPick={acceptInbox ? { target: fulfillTarget, options: awaitingOrders, onPick: setFulfillTarget } : null}
           onSaved={() => {
             // النتيجة انحفظت — علّم رسالة الجهاز «مستقبَلة» وشيلها من الصندوق.
             if (acceptInbox) {
