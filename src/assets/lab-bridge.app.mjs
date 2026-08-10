@@ -16,10 +16,10 @@
 import http from "node:http";
 import net from "node:net";
 import os from "node:os";
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 
 /* ============================ الاقتران المسبق ============================
  * يُحقن عند التنزيل من إعدادات السستم: رابط السحابة ومفتاحها ورمز الجهاز.
@@ -233,6 +233,92 @@ function hostIps() {
     for (const ni of list || []) if (ni.family === "IPv4" && !ni.internal) out.push(ni.address);
   }
   return out;
+}
+
+/* ========================= التشغيل التلقائي مع الحاسوب =========================
+ * العيادة تحتاجه شغّالاً دائماً، والطبيب ما يتذكر يشغّله كل صباح. نستعمل ما
+ * يوفّره كل نظام بنفسه — بلا خدمات ولا صلاحيات مدير ولا برامج طرف ثالث:
+ *   · ويندوز: ملف بمجلد Startup يشتغل عند تسجيل الدخول، وفيه حلقة تعيد
+ *     التشغيل بعد ٥ ثوانٍ لو توقّف المحرك لأي سبب.
+ *   · ماك: LaunchAgent بمجلد المستخدم. KeepAlive تعطينا إعادة التشغيل مجاناً.
+ * كلاهما داخل مجلد المستخدم — يُلغى بحذف ملف واحد، ولا يمس النظام. */
+const ENGINE_PATH = fileURLToPath(import.meta.url);
+const AGENT_LABEL = "vet.doctorvet.lab";
+
+function autostartFile() {
+  if (process.platform === "win32") {
+    return join(os.homedir(), "AppData", "Roaming", "Microsoft", "Windows", "Start Menu", "Programs", "Startup", "doctorvet-lab.cmd");
+  }
+  if (process.platform === "darwin") {
+    return join(os.homedir(), "Library", "LaunchAgents", `${AGENT_LABEL}.plist`);
+  }
+  return null; // أنظمة أخرى: الميزة تُخفى بالواجهة
+}
+
+const xml = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+function autostartBody() {
+  if (process.platform === "win32") {
+    return [
+      "@echo off",
+      "chcp 65001 >nul",
+      "title doctorVet Lab",
+      "rem أنشأه تطبيق doctorVet — احذف هذا الملف لإيقاف التشغيل التلقائي.",
+      ":loop",
+      `node "${ENGINE_PATH}"`,
+      "timeout /t 5 /nobreak >nul",
+      "goto loop",
+      "",
+    ].join("\r\n");
+  }
+  return [
+    '<?xml version="1.0" encoding="UTF-8"?>',
+    '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">',
+    '<plist version="1.0"><dict>',
+    `  <key>Label</key><string>${AGENT_LABEL}</string>`,
+    "  <key>ProgramArguments</key><array>",
+    `    <string>${xml(process.execPath)}</string>`,
+    `    <string>${xml(ENGINE_PATH)}</string>`,
+    "  </array>",
+    `  <key>WorkingDirectory</key><string>${xml(HERE)}</string>`,
+    "  <key>RunAtLoad</key><true/>",
+    "  <key>KeepAlive</key><true/>",
+    "</dict></plist>",
+    "",
+  ].join("\n");
+}
+
+function autostartOn() {
+  const f = autostartFile();
+  if (!f) return false;
+  try { return readFileSync(f, "utf8").includes(ENGINE_PATH); } catch { return false; }
+}
+
+function setAutostart(enable) {
+  const f = autostartFile();
+  if (!f) return { ok: false, error: "نظام التشغيل هذا غير مدعوم." };
+  try {
+    if (enable) {
+      mkdirSync(dirname(f), { recursive: true });
+      writeFileSync(f, autostartBody(), "utf8");
+      // على الماك يجب تحميل الوكيل ليعمل الآن لا بعد إعادة التشغيل فقط.
+      if (process.platform === "darwin") launchctl(["load", "-w", f]);
+      log("ok", "انفعّل التشغيل التلقائي مع الحاسوب.");
+    } else {
+      if (process.platform === "darwin") launchctl(["unload", "-w", f]);
+      rmSync(f, { force: true });
+      log("info", "انلغى التشغيل التلقائي.");
+    }
+    return { ok: true, enabled: enable };
+  } catch (e) {
+    log("err", `تعذّر تغيير التشغيل التلقائي: ${e.message}`);
+    return { ok: false, error: e.message };
+  }
+}
+
+/** أفضل جهد — فشل launchctl لا يبطل كتابة الملف (يشتغل بعد إعادة التشغيل). */
+function launchctl(args) {
+  try { spawnSync("launchctl", args, { stdio: "ignore" }); } catch { /* ignore */ }
 }
 
 /* =============================== الإرسال للسحابة =============================== */
@@ -568,6 +654,12 @@ const HTML = String.raw`<!doctype html>
   .log .ok{color:#4ade80}.log .err{color:#f87171}.log .info{color:#94a3b8}
   .log .empty{color:#5b6b8a}
   .note{font-size:12px;color:var(--muted);margin-top:13px;line-height:1.75}
+  .auto{display:flex;align-items:center;gap:13px;margin-top:14px;padding:13px 15px;
+        border:1.5px solid var(--line);border-radius:15px;background:#fff}
+  .auto.on{border-color:#a7f3d0;background:var(--ok-tint)}
+  .auto b{display:block;font-size:13.5px;font-weight:800}
+  .auto.on b{color:#15803d}
+  .auto small{display:block;font-size:11.5px;color:var(--muted);line-height:1.6;margin-top:2px}
   .banner{display:flex;gap:11px;align-items:flex-start;background:var(--warn-tint);border:1.5px solid #fde68a;
           border-radius:14px;padding:13px 15px;font-size:12.5px;color:#92400e;line-height:1.7}
   .foot{text-align:center;font-size:11.5px;color:var(--faint);margin-top:20px}
@@ -910,7 +1002,26 @@ function viewDashboard() {
   row.appendChild(edit);
   b.appendChild(row);
 
-  b.appendChild(h('<p class="note">اترك هذا التطبيق شغّالاً أثناء دوام العيادة — النتيجة تدخل السستم لحظة خروجها من الجهاز.</p>'));
+  if (S.autostartSupported) {
+    const on = !!S.autostart;
+    const row2 = h('<div class="auto' + (on ? ' on' : '') + '"></div>');
+    row2.appendChild(h('<div style="flex:1"><b>' + (on ? '✓ يشتغل تلقائياً مع الحاسوب' : 'شغّله تلقائياً مع الحاسوب') + '</b>'
+      + '<small>' + (on
+        ? 'ما تحتاج تشغّله كل صباح، ولو توقّف يرجع لحاله. (لو نقلت مجلد البرنامج، أطفئ الخيار وفعّله من جديد.)'
+        : 'يبدأ لحاله عند تشغيل الحاسوب، ويعيد المحاولة لو توقّف — مناسب لحاسوب المختبر.') + '</small></div>'));
+    const sw = h('<button class="' + (on ? 'ghost' : 'primary') + '" style="flex:0 0 auto">' + (on ? 'إلغاء' : 'فعّل') + '</button>');
+    sw.onclick = async () => {
+      sw.disabled = true; sw.textContent = '...';
+      const r = await api('/api/autostart', { enable: !on });
+      if (!r.ok) alert('تعذّر: ' + (r.error || 'خطأ غير معروف'));
+      refresh();
+    };
+    row2.appendChild(sw);
+    b.appendChild(row2);
+  }
+
+  b.appendChild(h('<p class="note">اترك هذا التطبيق شغّالاً أثناء دوام العيادة — النتيجة تدخل السستم لحظة خروجها من الجهاز.'
+    + ' تكدر تسكّر صفحة المتصفح بأمان، بس لا تسكّر النافذة السوداء.</p>'));
   card.appendChild(b);
   return card;
 }
@@ -969,6 +1080,8 @@ const ui = http.createServer(async (req, res) => {
       host: conn?.host || "",
       port: conn?.port || "",
       hostIps: hostIps(),
+      autostartSupported: !!autostartFile(),
+      autostart: autostartOn(),
       address: conn ? (conn.mode === "tcp-listen" ? `المنفذ ${conn.port}` : `${conn.host}:${conn.port}`) : "—",
       sent: state.sent,
       lastAt: state.lastAt ? new Date(state.lastAt).toLocaleTimeString("ar-IQ", { hour: "2-digit", minute: "2-digit" }) : null,
@@ -999,6 +1112,10 @@ const ui = http.createServer(async (req, res) => {
       "OBX|3|NM|PLT^Platelets||320|10^3/uL|200-500|N",
     ].join("\r") + "\r");
     return json(res, { ok: state.sent > before });
+  }
+  if (url === "/api/autostart" && req.method === "POST") {
+    const b = await readBody(req);
+    return json(res, setAutostart(!!b.enable));
   }
   if (url === "/api/start" && req.method === "POST") { startBridge(); return json(res, { ok: true }); }
   if (url === "/api/stop" && req.method === "POST") { stopBridge(); log("info", "أوقفنا الاستقبال."); return json(res, { ok: true }); }
