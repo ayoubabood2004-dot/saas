@@ -4,8 +4,9 @@
 import { loadDB, saveDB } from "./demoStore";
 import { supabase } from "./supabase";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, AppointmentStatus, ClinicInfo, PublicStaff, DailyNote, TreatmentEntry, Admission, Branch, Reminder, Product, Company, CompanySection, Purchase, PurchaseItem, PurchasePayment, PurchaseDraftLine, PurchaseMeta, Courier, DeliveryOrder, PetMovement, DemoDB, Invoice, InvoiceItem, CheckoutItem, SaleMeta, Customer, DiscountType, PaymentMethod, PaymentSplit, WhatsAppMessage, AuditEntry, LoginEvent, PetNote, Expense, ClinicVisit , Surgery, LabResult, LabDeviceLink, LabDeviceInbox, LabStatusValue, PetProblem, CareEntry, FeatureRequest, GeneratedBarcode, StoreProfile, StoreOrder, StoreOrderItem, StoreFrontInfo, StoreCatalogItem } from "@/types";
+import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, AppointmentStatus, ClinicInfo, PublicStaff, DailyNote, TreatmentEntry, Admission, Branch, Reminder, Product, Company, CompanySection, Purchase, PurchaseItem, PurchasePayment, PurchaseDraftLine, PurchaseMeta, Courier, DeliveryOrder, PetMovement, DemoDB, Invoice, InvoiceItem, CheckoutItem, SaleMeta, Customer, DiscountType, PaymentMethod, PaymentSplit, WhatsAppMessage, AuditEntry, LoginEvent, PetNote, Expense, ClinicVisit , Surgery, LabResult, LabDeviceLink, LabDeviceInbox, LabStatusValue, PetProblem, CareEntry, FeatureRequest, GeneratedBarcode, StoreProfile, StoreOrder, StoreOrderItem, StoreFrontInfo, StoreCatalogItem, Journey, JourneyEvent, JourneyKind, JourneyStage, JourneyPublicView } from "@/types";
 import { isValidSlug, normalizeSlug, demoOrderNo } from "./storeLib";
+import { journeyToken, OWNER_REACTIONS } from "./journey";
 import { getClinicName, getClinicLogo, getClinicSocials } from "./settings";
 import { uid, uuid, ageMonths, localISO } from "./utils";
 import { phoneKey } from "./phone";
@@ -1095,6 +1096,103 @@ const demoRepo = {
     if (o) { Object.assign(o, patch); saveDB(db); }
   },
 
+  /* ---- رحلة الحيوان بالعيادة (متتبّع المالك) ---- */
+  async getActiveJourney(petId: string): Promise<Journey | null> {
+    return (loadDB().journeys ?? []).find((j) => j.pet_id === petId && j.status === "active") ?? null;
+  },
+  async listJourneyEvents(journeyId: string): Promise<JourneyEvent[]> {
+    return (loadDB().journeyEvents ?? [])
+      .filter((e) => e.journey_id === journeyId)
+      .sort((a, b) => a.created_at.localeCompare(b.created_at));
+  },
+  async createJourney(petId: string, kind: JourneyKind, createdByName?: string | null): Promise<Journey> {
+    const db = loadDB();
+    // رحلة نشطة واحدة لكل حيوان — الموجودة تُعاد بدل إنشاء ثانية بالغلط.
+    const existing = (db.journeys ?? []).find((j) => j.pet_id === petId && j.status === "active");
+    if (existing) return existing;
+    const now = new Date().toISOString();
+    const j: Journey = {
+      id: uid("jr"), clinic_id: null, pet_id: petId, kind,
+      stage: "arrived", status: "active", token: journeyToken(),
+      started_at: now, closed_at: null, last_seen_at: null, silent: false,
+    };
+    (db.journeys ??= []).unshift(j);
+    (db.journeyEvents ??= []).push({
+      id: uid("je"), journey_id: j.id, clinic_id: null, kind: "stage",
+      stage: "arrived", created_by_name: createdByName ?? demoActorName(), created_at: now,
+    });
+    saveDB(db);
+    return j;
+  },
+  async advanceJourney(journeyId: string, stage: JourneyStage, createdByName?: string | null): Promise<void> {
+    const db = loadDB();
+    const j = (db.journeys ?? []).find((x) => x.id === journeyId);
+    if (!j || j.status !== "active") return;
+    j.stage = stage;
+    (db.journeyEvents ??= []).push({
+      id: uid("je"), journey_id: journeyId, clinic_id: null, kind: "stage",
+      stage, created_by_name: createdByName ?? demoActorName(), created_at: new Date().toISOString(),
+    });
+    saveDB(db);
+  },
+  async addJourneyNote(journeyId: string, input: { body?: string; photo?: string }, createdByName?: string | null): Promise<void> {
+    const db = loadDB();
+    if (!(db.journeys ?? []).some((x) => x.id === journeyId && x.status === "active")) return;
+    (db.journeyEvents ??= []).push({
+      id: uid("je"), journey_id: journeyId, clinic_id: null,
+      kind: input.photo ? "photo" : "message",
+      body: input.body?.slice(0, 500) || null, photo: input.photo ?? null,
+      created_by_name: createdByName ?? demoActorName(), created_at: new Date().toISOString(),
+    });
+    saveDB(db);
+  },
+  /**
+   * إغلاق الرحلة. `silent` هو صمّام الأخبار الصعبة: الرابط يموت فوراً وما
+   * ينضاف أي حدث — لأن الوفاة والتدهور طريقهما الهاتف حصراً، لا الإشعارات.
+   */
+  async closeJourney(journeyId: string, opts?: { silent?: boolean }): Promise<void> {
+    const db = loadDB();
+    const j = (db.journeys ?? []).find((x) => x.id === journeyId);
+    if (!j) return;
+    j.status = "closed";
+    j.closed_at = new Date().toISOString();
+    if (opts?.silent) j.silent = true;
+    saveDB(db);
+  },
+  /** الصفحة العامة — مرآة track_journey: نفس القصّ، ولا معلومة طبية. */
+  async trackJourneyPublic(token: string): Promise<JourneyPublicView | null> {
+    const db = loadDB();
+    const t = token.trim().toUpperCase();
+    const j = (db.journeys ?? []).find((x) => x.token === t);
+    if (!j || j.silent) return null;
+    if (j.status === "closed" && j.closed_at && Date.now() - new Date(j.closed_at).getTime() > 48 * 3600_000) return null;
+    j.last_seen_at = new Date().toISOString();
+    saveDB(db);
+    const pet = db.pets.find((p) => p.id === j.pet_id);
+    return {
+      pet_name: pet?.name ?? "حبيبك",
+      clinic_name: getClinicName() || "العيادة",
+      clinic_phone: null,
+      kind: j.kind, stage: j.stage, status: j.status, started_at: j.started_at,
+      events: (db.journeyEvents ?? [])
+        .filter((e) => e.journey_id === j.id)
+        .sort((a, b) => a.created_at.localeCompare(b.created_at))
+        .map((e) => ({ id: e.id, kind: e.kind, stage: e.stage, body: e.body, photo: e.photo, reaction: e.reaction, created_at: e.created_at })),
+    };
+  },
+  async reactJourneyPublic(token: string, eventId: string, emoji: string): Promise<boolean> {
+    if (!(OWNER_REACTIONS as readonly string[]).includes(emoji)) return false;
+    const db = loadDB();
+    const t = token.trim().toUpperCase();
+    const j = (db.journeys ?? []).find((x) => x.token === t && !x.silent);
+    if (!j) return false;
+    const e = (db.journeyEvents ?? []).find((x) => x.id === eventId && x.journey_id === j.id && x.kind !== "stage");
+    if (!e) return false;
+    e.reaction = emoji;
+    saveDB(db);
+    return true;
+  },
+
   /* ---- الواجهة العامة (الزائر) ---- */
   async storeFrontPublic(slug: string): Promise<StoreFrontInfo | null> {
     const db = loadDB();
@@ -1558,6 +1656,10 @@ const DEMO_ACTIVITY_MAP: Record<string, { entity: string; action: "INSERT" | "UP
   deleteLabResult: { entity: "lab_results", action: "DELETE" },
   advanceLabStatus: { entity: "lab_results", action: "UPDATE" },
   createDeviceLink: { entity: "lab_device_links", action: "INSERT" },
+  createJourney: { entity: "journeys", action: "INSERT" },
+  advanceJourney: { entity: "journeys", action: "UPDATE" },
+  addJourneyNote: { entity: "journey_events", action: "INSERT" },
+  closeJourney: { entity: "journeys", action: "UPDATE" },
   revokeDeviceLink: { entity: "lab_device_links", action: "UPDATE" },
   addCareEntry: { entity: "care_entries", action: "INSERT" },
   deleteCareEntry: { entity: "care_entries", action: "DELETE" },
@@ -2313,6 +2415,63 @@ const supabaseRepo: typeof demoRepo = {
   async updateStoreOrder(id, patch) {
     ok(await sbc().from("store_orders").update(patch).eq("id", id));
   },
+  /* ---- رحلة الحيوان بالعيادة ---- */
+  async getActiveJourney(petId) {
+    return maybe<Journey>(await sbc().from("journeys").select("*").eq("pet_id", petId).eq("status", "active").maybeSingle()) ?? null;
+  },
+  async listJourneyEvents(journeyId) {
+    return listOf<JourneyEvent>(await sbc().from("journey_events").select("*").eq("journey_id", journeyId).order("created_at", { ascending: true }));
+  },
+  async createJourney(petId, kind, createdByName) {
+    const clinicId = getActiveClinicId();
+    // فهرس «رحلة نشطة واحدة» بالقاعدة يمنع التكرار — نعيد الموجودة بدل الفشل.
+    const existing = maybe<Journey>(await sbc().from("journeys").select("*").eq("pet_id", petId).eq("status", "active").maybeSingle());
+    if (existing) return existing;
+    const j = need<Journey>(await sbc().from("journeys").insert({
+      clinic_id: clinicId, pet_id: petId, kind, stage: "arrived", token: journeyToken(),
+    }).select().single());
+    ok(await sbc().from("journey_events").insert({
+      journey_id: j.id, clinic_id: clinicId, kind: "stage", stage: "arrived", created_by_name: createdByName ?? null,
+    }));
+    return j;
+  },
+  async advanceJourney(journeyId, stage, createdByName) {
+    const clinicId = getActiveClinicId();
+    ok(await sbc().from("journeys").update({ stage }).eq("id", journeyId).eq("status", "active"));
+    ok(await sbc().from("journey_events").insert({
+      journey_id: journeyId, clinic_id: clinicId, kind: "stage", stage, created_by_name: createdByName ?? null,
+    }));
+  },
+  async addJourneyNote(journeyId, input, createdByName) {
+    ok(await sbc().from("journey_events").insert({
+      journey_id: journeyId, clinic_id: getActiveClinicId(),
+      kind: input.photo ? "photo" : "message",
+      body: input.body?.slice(0, 500) || null, photo: input.photo ?? null,
+      created_by_name: createdByName ?? null,
+    }));
+  },
+  async closeJourney(journeyId, opts) {
+    ok(await sbc().from("journeys").update({
+      status: "closed", closed_at: new Date().toISOString(), ...(opts?.silent ? { silent: true } : {}),
+    }).eq("id", journeyId));
+  },
+  async trackJourneyPublic(token) {
+    const { data, error } = await sbc().rpc("track_journey", { p_token: token });
+    if (error) throw new Error(error.message);
+    const d = data as { ok?: boolean } & JourneyPublicView;
+    if (!d?.ok) return null;
+    return {
+      pet_name: d.pet_name, clinic_name: d.clinic_name, clinic_phone: d.clinic_phone ?? null,
+      kind: d.kind, stage: d.stage, status: d.status, started_at: d.started_at,
+      events: d.events ?? [],
+    };
+  },
+  async reactJourneyPublic(token, eventId, emoji) {
+    const { data, error } = await sbc().rpc("react_journey", { p_token: token, p_event: eventId, p_emoji: emoji });
+    if (error) return false;
+    return !!(data as { ok?: boolean })?.ok;
+  },
+
   async storeFrontPublic(slug) {
     const { data, error } = await sbc().rpc("store_front", { p_slug: slug });
     if (error) throw new Error(error.message);

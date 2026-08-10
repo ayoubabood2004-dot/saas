@@ -1002,6 +1002,68 @@ export interface DemoDB {
   generatedBarcodes?: GeneratedBarcode[];
   storeProfile?: StoreProfile | null;
   storeOrders?: StoreOrder[];
+  journeys?: Journey[];
+  journeyEvents?: JourneyEvent[];
+}
+
+/* ----------------------------- رحلة الحيوان بالعيادة ----------------------------- */
+
+/** نوع الرحلة يحدد مراحلها — الكتلوك في lib/journey.ts. */
+export type JourneyKind = "checkup" | "surgery" | "grooming" | "labs" | "boarding";
+export type JourneyStage =
+  | "arrived" | "waiting" | "with_doctor" | "done" | "ready"
+  | "prep" | "in_surgery" | "out_ok" | "recovery"
+  | "grooming" | "drying"
+  | "sampled" | "processing" | "reviewed"
+  | "settled";
+
+/**
+ * رحلة واحدة نشطة لكل حيوان: من الاستلام حتى التسليم. المالك يتابعها برابط
+ * عام برمز — بلا تسجيل دخول — والرابط يموت بعد ٤٨ ساعة من الإغلاق.
+ * `last_seen_at` يخبر الطبيب أن المالك شاف آخر تحديث (يمنع اتصالات «شنو صار؟»).
+ */
+export interface Journey {
+  id: string;
+  clinic_id?: string | null;
+  pet_id: string;
+  kind: JourneyKind;
+  stage: JourneyStage;
+  status: "active" | "closed";
+  token: string;
+  started_at: string;
+  closed_at?: string | null;
+  last_seen_at?: string | null;
+  /** إغلاق صامت (نتيجة صعبة): لا حدث «جاهز» ولا أي إشعار — الهاتف فقط. */
+  silent?: boolean;
+  created_by?: string | null;
+}
+
+/** حدث بسجل الرحلة — السجل لا يُعدَّل: التسلسل الزمني هو الأحداث نفسها. */
+export interface JourneyEvent {
+  id: string;
+  journey_id: string;
+  clinic_id?: string | null;
+  kind: "stage" | "message" | "photo";
+  stage?: JourneyStage | null;
+  body?: string | null;
+  /** صورة مطمئنة صغيرة (data URL مضغوطة) — تُعرض للمالك مباشرة. */
+  photo?: string | null;
+  /** رد المالك بإيموجي — آخر رد يغلب. لا نص، لا دردشة. */
+  reaction?: string | null;
+  created_by_name?: string | null;
+  created_at: string;
+}
+
+/** ما تعيده صفحة التتبّع العامة — مقصوصة بعناية: ولا معلومة طبية. */
+export interface JourneyPublicView {
+  pet_name: string;
+  clinic_name: string;
+  clinic_phone?: string | null;
+  kind: JourneyKind;
+  stage: JourneyStage;
+  status: "active" | "closed";
+  started_at: string;
+  events: Pick<JourneyEvent, "id" | "kind" | "stage" | "body" | "photo" | "reaction" | "created_at">[];
 }
 
 /* ----------------------------- المتجر الإلكتروني ----------------------------- */

@@ -43,6 +43,7 @@ const Subscribe = lazy(() => import("@/pages/Subscribe").then((m) => ({ default:
 const AdminBilling = lazy(() => import("@/pages/AdminBilling").then((m) => ({ default: m.AdminBilling })));
 const ClinicStore = lazy(() => import("@/pages/ClinicStore").then((m) => ({ default: m.ClinicStore })));
 const Storefront = lazy(() => import("@/pages/Storefront").then((m) => ({ default: m.Storefront })));
+const TrackJourney = lazy(() => import("@/pages/TrackJourney").then((m) => ({ default: m.TrackJourney })));
 
 function FullScreenLoader() {
   return (
@@ -173,7 +174,7 @@ function Shell() {
 
   // الستور العام (/s/…) صفحة زبون قائمة بذاتها — بلا سايدبار ولا توب-بار حتى
   // لو فتحها كادر مسجّل، لأنها تعرض كما يراها الزبون تماماً.
-  const isPublicStore = location.pathname.startsWith("/s/");
+  const isPublicStore = location.pathname.startsWith("/s/") || location.pathname.startsWith("/t/");
   const showChrome = !!user && location.pathname !== "/login" && !isPublicStore;
   const staff = !!user && (user.role === "admin" || user.role === "doctor" || user.role === "reception");
 
@@ -205,6 +206,7 @@ function Shell() {
             <Route path="/store" element={<Protected><ClinicOnly><FeatureGate feature="store"><ClinicStore /></FeatureGate></ClinicOnly></Protected>} />
             {/* الستور العام — صفحة الزبون بلا تسجيل، خارج كل الحُرّاس عمداً */}
             <Route path="/s/:slug" element={<Storefront />} />
+            <Route path="/t/:token" element={<TrackJourney />} />
             <Route path="/campaigns" element={<Protected><ClinicOnly><FeatureGate feature="whatsapp"><WhatsAppCampaigns /></FeatureGate></ClinicOnly></Protected>} />
             <Route path="/reminders" element={<Protected><ClinicOnly><FeatureGate feature="whatsapp"><RemindersHub /></FeatureGate></ClinicOnly></Protected>} />
             <Route path="/bookings" element={<Protected><ClinicOnly><BookingsHub /></ClinicOnly></Protected>} />
