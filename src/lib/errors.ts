@@ -26,11 +26,22 @@ export function isTimeoutError(e: unknown): boolean {
   return !!e && typeof e === "object" && (e as { name?: string }).name === TIMEOUT_NAME;
 }
 
+/** فشل شبكي: الطلب ما وصل السيرفر أصلاً (نت مقطوع، DNS، وكيل يرفض، CORS).
+ *  supabase-js يغلّفه بنص «TypeError: Failed to fetch» — تقني، إنجليزي،
+ *  وكان يظهر للطبيب كما هو مرتين (عنواناً ووصفاً). */
+export function isNetworkError(e: unknown): boolean {
+  const m = ((e && typeof e === "object" ? (e as { message?: string }).message : "") ?? "").toLowerCase();
+  return /failed to fetch|networkerror|network error|fetch failed|load failed|err_network|err_internet/.test(m);
+}
+
 /** Map a thrown DB/network error to a short, human-readable message for a toast. */
 export function describeDbError(e: unknown, t: TFunction): string {
   const err = (e && typeof e === "object" ? e : {}) as { name?: string; code?: string; message?: string };
   if (err.name === TIMEOUT_NAME) {
     return t("errors.timeout", "The request timed out — check your connection and try again.");
+  }
+  if (isNetworkError(e)) {
+    return t("errors.network", "ما وصلنا للسيرفر — تأكد من الإنترنت وحاول من جديد. لو تكررت: جرّب بيانات الموبايل، وتأكد أن ساعة الحاسوب صحيحة.");
   }
   switch (err.code) {
     case "23505": // unique_violation — duplicate cage, phone, serial, etc.

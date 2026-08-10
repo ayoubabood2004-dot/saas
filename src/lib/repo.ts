@@ -1653,6 +1653,25 @@ function listOf<T>(res: { data: unknown; error: { message: string } | null }): T
   if (res.error) { console.error("[supabase]", res.error.message); return []; }
   return (res.data ?? []) as T[];
 }
+
+/**
+ * استعلام .in() على دفعات بدل مصفوفة واحدة غير محدودة.
+ *
+ * PostgREST يمرّر قائمة المعرفات داخل رابط الطلب، وكل uuid يستهلك ~٣٩ حرفاً
+ * بعد الترميز. عيادة بـ٢٠٠+ حيوان تتجاوز حدود طول الرابط عند الوكيل الأمامي،
+ * والرفض يرجع بلا ترويسات CORS فيظهر للطبيب «TypeError: Failed to fetch»
+ * الغامضة — يعني الشاشة تعمل بالعيادة الصغيرة وتنكسر لمّا تكبر. مئة معرف
+ * لكل دفعة ≈ ٤KB، بهامش مريح تحت أي حد شائع.
+ */
+const IN_CHUNK = 100;
+async function inChunks<T>(ids: string[], query: (chunk: string[]) => Promise<T[]>): Promise<T[]> {
+  if (ids.length <= IN_CHUNK) return ids.length === 0 ? [] : query(ids);
+  const out: T[] = [];
+  for (let i = 0; i < ids.length; i += IN_CHUNK) {
+    out.push(...await query(ids.slice(i, i + IN_CHUNK)));
+  }
+  return out;
+}
 function maybe<T>(res: { data: unknown; error: { message: string } | null }): T | undefined {
   if (res.error) { console.error("[supabase]", res.error.message); return undefined; }
   return (res.data ?? undefined) as T | undefined;
@@ -1720,8 +1739,7 @@ const supabaseRepo: typeof demoRepo = {
     return maybe<Pet>(await sbc().from("pets").select("*").eq("passport_token", token.trim().toUpperCase()).maybeSingle());
   },
   async getPetsByIds(ids) {
-    if (ids.length === 0) return [];
-    return listOf<Pet>(await sbc().from("pets").select("*").in("id", ids));
+    return inChunks(ids, async (c) => listOf<Pet>(await sbc().from("pets").select("*").in("id", c)));
   },
   async getPetBySerial(serial) {
     return maybe<Pet>(await sbc().from("pets").select("*").eq("serial", serial.trim()).maybeSingle());
@@ -1797,8 +1815,7 @@ const supabaseRepo: typeof demoRepo = {
     return listOf<Vaccination>(await sbc().from("vaccinations").select("*").eq("pet_id", petId));
   },
   async listAllVaccinations(petIds) {
-    if (petIds.length === 0) return [];
-    return listOf<Vaccination>(await sbc().from("vaccinations").select("*").in("pet_id", petIds));
+    return inChunks(petIds, async (c) => listOf<Vaccination>(await sbc().from("vaccinations").select("*").in("pet_id", c)));
   },
   async addVaccination(input) {
     return need<Vaccination>(await sbc().from("vaccinations").insert(input).select().single());
@@ -1810,8 +1827,7 @@ const supabaseRepo: typeof demoRepo = {
     return listOf<MedicalVisit>(await sbc().from("medical_visits").select("*").eq("pet_id", petId).order("visit_date", { ascending: false }));
   },
   async listAllVisits(petIds) {
-    if (petIds.length === 0) return [];
-    return listOf<MedicalVisit>(await sbc().from("medical_visits").select("*").in("pet_id", petIds).order("visit_date", { ascending: false }));
+    return inChunks(petIds, async (c) => listOf<MedicalVisit>(await sbc().from("medical_visits").select("*").in("pet_id", c).order("visit_date", { ascending: false })));
   },
   async listClinicVisits(clinicId) {
     let q = sbc().from("medical_visits").select("*").order("visit_date", { ascending: false }).limit(5000);
@@ -1979,8 +1995,7 @@ const supabaseRepo: typeof demoRepo = {
     return withSignedMedia(items);
   },
   async listAllMedia(petIds) {
-    if (petIds.length === 0) return [];
-    const items = listOf<MediaItem>(await sbc().from("media_items").select("*").in("pet_id", petIds));
+    const items = await inChunks(petIds, async (c) => listOf<MediaItem>(await sbc().from("media_items").select("*").in("pet_id", c)));
     return withSignedMedia(items);
   },
   async addMedia(input) {
@@ -2108,8 +2123,7 @@ const supabaseRepo: typeof demoRepo = {
     return listOf<TreatmentEntry>(await sbc().from("treatment_entries").select("*").eq("pet_id", petId).order("day", { ascending: true }).order("time", { ascending: true }));
   },
   async listAllTreatments(petIds) {
-    if (petIds.length === 0) return [];
-    return listOf<TreatmentEntry>(await sbc().from("treatment_entries").select("*").in("pet_id", petIds));
+    return inChunks(petIds, async (c) => listOf<TreatmentEntry>(await sbc().from("treatment_entries").select("*").in("pet_id", c)));
   },
   async listClinicTreatments(clinicId, day) {
     let q = sbc().from("treatment_entries").select("*").order("day", { ascending: false }).limit(5000);
