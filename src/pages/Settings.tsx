@@ -1288,6 +1288,7 @@ function LabDevicesCard() {
       anonKey: supabaseAnonKey || "YOUR_SUPABASE_ANON_KEY",
       token: link.token,
       device: link.name,
+      clinic: getClinicName(), // يظهر بترويسة التطبيق: «مربوط بـ …»
     };
     const file = appFileName(link);
     const app = labBridgeAppSource.replace("/*@pairing*/ null", JSON.stringify(pairing));
