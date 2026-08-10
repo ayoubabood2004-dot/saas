@@ -21,7 +21,7 @@ import {
 } from "@/lib/labStatus";
 import { repo } from "@/lib/repo";
 import {
-  LAB_PARAMS, LAB_GROUPS, nameFromGroups, labParamById, labRange, labFlag,
+  LAB_PARAMS, LAB_GROUPS, nameFromGroups, labParamById, labParamIndex, labRange, labFlag,
   snapTestsFor, snapTestById, type LabFlag,
 } from "@/lib/labCatalog";
 import { readLabImageFull } from "@/lib/labOcr";
@@ -33,7 +33,7 @@ import { Modal } from "@/components/Modal";
 import { Button, useToast } from "@/components/ui";
 import { prepareUpload } from "@/lib/image";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
-import { cn, formatNum, formatDate } from "@/lib/utils";
+import { cn, formatNum, formatDec, formatDate } from "@/lib/utils";
 import { waNumber } from "@/lib/phone";
 import { getDialCode, getClinicName, getClinicLogo } from "@/lib/settings";
 import { openLabPrint } from "@/lib/labPrint";
@@ -234,13 +234,16 @@ export function LabEntry({ pet, visitId, doctor, onSaved, onClose, fulfill, pref
     } finally { setOcrBusy(false); }
   };
 
-  /** Snap a value to a parameter's step, as a CLEAN decimal string (no float drift). */
-  const snapStr = (id: string, v: number): string => {
-    const p = labParamById(id);
-    if (!p) return String(v);
-    const dec = p.step < 1 ? (String(p.step).split(".")[1]?.length ?? 1) : 0;
-    return Number((Math.round(v / p.step) * p.step).toFixed(dec)).toString();
-  };
+  /**
+   * قيمة الجهاز كما أرسلها — بلا أي تقريب.
+   *
+   * كانت هذه الدالة تُلصق الرقم بـ`step` المعرّف للإدخال اليدوي، فتُفسد ما
+   * قرأه الجهاز: HCT خطوته ١ فتصير 30.8 ← 31، وPLT خطوته ٥، وAMYL/LIPA ١٠.
+   * الخطوة مقياس لأزرار الزيادة والنقصان، لا لقيمة قادمة من جهاز معاير.
+   * نقصّ فقط ذيل الفاصلة العائمة (0.30000000000000004 ← 0.3).
+   */
+  const exactStr = (_id: string, v: number): string =>
+    Number.isFinite(v) ? String(Number(v.toPrecision(12))) : "";
 
   /** طبّق قراءة الجهاز على الحقول — نفس مسار OCR: الأرقام تتعبّى والأحكام تُمسح. */
   const applyReading = (read: NormalizedReading) => {
@@ -248,7 +251,7 @@ export function LabEntry({ pet, visitId, doctor, onSaved, onClose, fulfill, pref
     if (entries.length) {
       setVals((m) => {
         const next = { ...m };
-        for (const [id, v] of entries) next[id] = snapStr(id, v);
+        for (const [id, v] of entries) next[id] = exactStr(id, v);
         return next;
       });
       setQuals((q) => { const next = { ...q }; for (const [id] of entries) delete next[id]; return next; });
@@ -300,7 +303,7 @@ export function LabEntry({ pet, visitId, doctor, onSaved, onClose, fulfill, pref
   /** علّم الجهاز: كود مجهول = أي فحص. يُحفظ للأبد ويُطبّق على القيمة الحالية. */
   const teachUnknown = (u: { code: string; value: number; units?: string }, canonicalId: string) => {
     learnCode(u.code, canonicalId, getActiveClinicId());
-    setVals((m) => ({ ...m, [canonicalId]: snapStr(canonicalId, u.value) }));
+    setVals((m) => ({ ...m, [canonicalId]: exactStr(canonicalId, u.value) }));
     setQuals((q) => { const n = { ...q }; delete n[canonicalId]; return n; });
     setUnknownCodes((list) => list.filter((x) => x.code !== u.code));
     playTap();
@@ -328,6 +331,9 @@ export function LabEntry({ pet, visitId, doctor, onSaved, onClose, fulfill, pref
       const [lo, hi] = labRange(p, pet.species);
       out.push({ id: pid, label: p.label, abbr: p.abbr, unit: p.unit, low: lo, high: hi, flag, qualitative: true });
     }
+    // ترتيب الكتلوك (ترتيب ورقة الجهاز) لا ترتيب وصول الرسالة — يُخزَّن مرتّباً
+    // فتقرأه كل الشاشات والتقارير بنفس التسلسل الذي اعتاده الطبيب.
+    out.sort((a, b) => labParamIndex(a.id) - labParamIndex(b.id));
     for (const r of freeRows) {
       if (!r.label.trim() || r.value.trim() === "" || !Number.isFinite(Number(r.value))) continue;
       const v = Number(r.value);
@@ -486,7 +492,7 @@ export function LabEntry({ pet, visitId, doctor, onSaved, onClose, fulfill, pref
               <p className="text-2xs font-extrabold text-warn-800 dark:text-warn-200">🎓 الجهاز أرسل أكواد ما يعرفها السستم — علّمه مرة وحدة ويحفظها للأبد:</p>
               {unknownCodes.map((u) => (
                 <div key={u.code} className="flex flex-wrap items-center gap-2">
-                  <span className="rounded-lg bg-surface-1 px-2 py-1 text-xs font-black text-ink" dir="ltr">{u.code} = {formatNum(u.value)}{u.units ? ` ${u.units}` : ""}</span>
+                  <span className="rounded-lg bg-surface-1 px-2 py-1 text-xs font-black text-ink" dir="ltr">{u.code} = {formatDec(u.value)}{u.units ? ` ${u.units}` : ""}</span>
                   <span className="text-2xs text-ink-muted">→ يعني:</span>
                   <select
                     defaultValue=""
@@ -542,11 +548,11 @@ export function LabEntry({ pet, visitId, doctor, onSaved, onClose, fulfill, pref
                   <button type="button" onClick={() => { playTap(); setOpenParam(open ? null : p.id); }} className="flex w-full items-center gap-2.5 p-3 text-start">
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-bold text-ink"><span dir="ltr">{p.abbr}</span> · {p.label}</p>
-                      <p className="text-2xs tabular-nums text-ink-subtle" dir="ltr">{formatNum(lo)}–{formatNum(hi)} {p.unit}</p>
+                      <p className="text-2xs tabular-nums text-ink-subtle" dir="ltr">{formatDec(lo)}–{formatDec(hi)} {p.unit}</p>
                     </div>
                     {num !== null && Number.isFinite(num) && (
                       <span className={cn("rounded-xl px-2.5 py-1 text-base font-extrabold tabular-nums", FLAG_CHIP[flag ?? "normal"])} dir="ltr">
-                        {formatNum(num)}{flag && flag !== "normal" ? ` ${ARROW5[flag]}` : ""}
+                        {formatDec(num)}{flag && flag !== "normal" ? ` ${ARROW5[flag]}` : ""}
                       </span>
                     )}
                   </button>
@@ -592,9 +598,9 @@ export function LabEntry({ pet, visitId, doctor, onSaved, onClose, fulfill, pref
                           style={{ background: `linear-gradient(90deg, #7dd3fc 0%, #7dd3fc ${loPct}%, #86efac ${loPct}%, #86efac ${hiPct}%, #fca5a5 ${hiPct}%, #fca5a5 100%)` }}
                         />
                         <div className="mt-1 flex justify-between text-[10px] font-bold tabular-nums text-ink-subtle">
-                          <span>{formatNum(p.min)}</span>
-                          <span className="text-success-600">{formatNum(lo)} — {formatNum(hi)} طبيعي</span>
-                          <span>{formatNum(p.max)}</span>
+                          <span>{formatDec(p.min)}</span>
+                          <span className="text-success-600">{formatDec(lo)} — {formatDec(hi)} طبيعي</span>
+                          <span>{formatDec(p.max)}</span>
                         </div>
                       </div>
                       <div className="flex items-center justify-between">
@@ -751,7 +757,7 @@ function TrendTable({ results }: { results: LabResult[] }) {
                     <td key={c.id} className="px-1.5 py-1.5 text-center">
                       {v ? (
                         <span className={cn("inline-block min-w-[52px] rounded-lg px-1.5 py-1 text-xs font-extrabold tabular-nums", FLAG_CELL[v.flag])} dir="ltr">
-                          {v.value !== undefined ? `${formatNum(v.value)}${v.flag !== "normal" ? ` ${ARROW5[v.flag]}` : ""}` : ARROW5[v.flag]}
+                          {v.value !== undefined ? `${formatDec(v.value)}${v.flag !== "normal" ? ` ${ARROW5[v.flag]}` : ""}` : ARROW5[v.flag]}
                         </span>
                       ) : <span className="text-ink-subtle/40">—</span>}
                     </td>
@@ -774,9 +780,9 @@ function waResultMessage(pet: Pet, r: LabResult): string {
   const lines: string[] = [`مرحباً ${(pet.owner_name ?? "").trim() || ""} 🌟`, `نتائج فحص «${r.panel_label}» لـ${pet.name} بتاريخ ${formatDate(r.taken_at, "ar")}:`];
   if (r.kind === "numeric" && r.values?.length) {
     for (const v of r.values) {
-      const range = v.value !== undefined && v.low !== undefined && v.high !== undefined ? ` (الطبيعي ${formatNum(v.low)}–${formatNum(v.high)})` : "";
+      const range = v.value !== undefined && v.low !== undefined && v.high !== undefined ? ` (الطبيعي ${formatDec(v.low)}–${formatDec(v.high)})` : "";
       const mark = ` ${LABEL5[v.flag]} ${ARROW5[v.flag]}`;
-      const num = v.value !== undefined ? `${formatNum(v.value)} ${v.unit}` : "";
+      const num = v.value !== undefined ? `${formatDec(v.value)} ${v.unit}` : "";
       lines.push(`• ${v.abbr ?? v.label}: ${num}${mark}${range}`);
     }
   }
@@ -784,6 +790,53 @@ function waResultMessage(pet: Pet, r: LabResult): string {
   if (r.notes) lines.push(`ملاحظات الطبيب: ${r.notes}`);
   lines.push(`مع تمنياتنا بالسلامة لـ${pet.name} — ${clinic} 🐾`);
   return lines.join("\n");
+}
+
+/**
+ * ورقة النتائج — نفس تخطيط الورقة التي يسحبها الطبيب من طابعة الجهاز:
+ * رمز الفحص، ثم القيمة، ثم الوحدة، ثم النطاق الطبيعي من–إلى.
+ *
+ * الشرائح المتناثرة السابقة كانت تخفي النطاق داخل tooltip، والطبيب معتاد أن
+ * يقرأ النتيجة وحدّها الطبيعي جنبها في سطر واحد. والترتيب هنا ترتيب الكتلوك
+ * (ترتيب الطباعة) لا ترتيب وصول الرسالة — فالورقة تقرأ نفسها كل مرة.
+ */
+function ResultSheet({ values }: { values: LabValue[] }) {
+  const rows = useMemo(
+    () => [...values].sort((a, b) => labParamIndex(a.id) - labParamIndex(b.id)),
+    [values],
+  );
+  return (
+    <div className="mt-3 overflow-x-auto rounded-xl border border-line">
+      <table className="w-full border-collapse text-xs">
+        <thead>
+          <tr className="bg-surface-2 text-2xs text-ink-subtle">
+            <th className="px-2.5 py-1.5 text-start font-bold">الفحص</th>
+            <th className="px-2 py-1.5 text-end font-bold">النتيجة</th>
+            <th className="px-2 py-1.5 text-start font-bold">الوحدة</th>
+            <th className="px-2.5 py-1.5 text-end font-bold">النطاق الطبيعي</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((v) => (
+            <tr key={v.id} className={cn("border-t border-line/70", v.flag !== "normal" && FLAG_CELL[v.flag])}>
+              <td className="whitespace-nowrap px-2.5 py-1.5">
+                <span className="font-black" dir="ltr">{v.abbr ?? v.id}</span>
+                {v.label && <span className="ms-1.5 text-ink-subtle">{v.label}</span>}
+              </td>
+              <td className="whitespace-nowrap px-2 py-1.5 text-end font-black tabular-nums" dir="ltr">
+                {v.value !== undefined ? formatDec(v.value) : LABEL5[v.flag]}
+                {v.flag !== "normal" && <span className="ms-1">{ARROW5[v.flag]}</span>}
+              </td>
+              <td className="whitespace-nowrap px-2 py-1.5 text-2xs text-ink-subtle" dir="ltr">{v.unit}</td>
+              <td className="whitespace-nowrap px-2.5 py-1.5 text-end tabular-nums text-2xs text-ink-subtle" dir="ltr">
+                {v.low !== undefined && v.high !== undefined ? `${formatDec(v.low)} – ${formatDec(v.high)}` : "—"}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
 }
 
 function ResultCard({ r, pet, prior, canEdit, onDelete, onToggleBilled, onBill, onPrint, onFulfill, onAdvance, onTogglePriority }: {
@@ -931,17 +984,7 @@ function ResultCard({ r, pet, prior, canEdit, onDelete, onToggleBilled, onBill, 
         </>
       )}
 
-      {r.kind === "numeric" && (r.values?.length ?? 0) > 0 && (
-        <div className="mt-3 flex flex-wrap gap-1.5">
-          {(r.values ?? []).map((v) => (
-            <span key={v.id} className={cn("inline-flex items-baseline gap-1 rounded-xl px-2 py-1 text-xs font-bold tabular-nums", FLAG_CHIP[v.flag])} dir="ltr" title={`${v.label ?? v.id}${v.low !== undefined && v.high !== undefined ? ` · النطاق ${formatNum(v.low)}–${formatNum(v.high)}` : ""}`}>
-              <span className="font-black">{v.abbr ?? v.label}</span>
-              {v.value !== undefined ? <>{formatNum(v.value)}{v.unit ? <span className="text-[9px] opacity-70">{v.unit}</span> : null}</> : <span>{LABEL5[v.flag]}</span>}
-              {v.flag !== "normal" && <span>{ARROW5[v.flag]}</span>}
-            </span>
-          ))}
-        </div>
-      )}
+      {r.kind === "numeric" && (r.values?.length ?? 0) > 0 && <ResultSheet values={r.values ?? []} />}
 
       {interp && <InterpretationPanel insights={interp.insights} />}
 
@@ -1190,7 +1233,7 @@ export function LabsTab({ pet, results, canEdit, doctor, onChanged }: {
               // أيها عينته — فنعرض رقم العينة ولمحة من أهم القيم.
               const vitals = (["wbc", "hgb", "plt"] as const)
                 .filter((k) => peek.values[k] !== undefined)
-                .map((k) => `${k.toUpperCase()} ${formatNum(peek.values[k])}`)
+                .map((k) => `${k.toUpperCase()} ${formatDec(peek.values[k])}`)
                 .join(" · ");
               const empty = peek.count > 0 && Object.values(peek.values).every((v) => v === 0);
               return (
@@ -1393,7 +1436,7 @@ function CompareView({ results }: { results: LabResult[] }) {
                     <td className="px-3 py-2 font-bold text-ink">{row.label}</td>
                     {[row.a, row.b].map((v, i) => (
                       <td key={i} className="px-2 py-2 text-center">
-                        {v ? <span className={cn("inline-block min-w-[56px] rounded-lg px-1.5 py-1 text-xs font-extrabold tabular-nums", FLAG_CELL[v.flag])} dir="ltr">{v.value !== undefined ? `${formatNum(v.value)}${v.flag !== "normal" ? ` ${ARROW5[v.flag]}` : ""}` : ARROW5[v.flag]}</span> : <span className="text-ink-subtle/40">—</span>}
+                        {v ? <span className={cn("inline-block min-w-[56px] rounded-lg px-1.5 py-1 text-xs font-extrabold tabular-nums", FLAG_CELL[v.flag])} dir="ltr">{v.value !== undefined ? `${formatDec(v.value)}${v.flag !== "normal" ? ` ${ARROW5[v.flag]}` : ""}` : ARROW5[v.flag]}</span> : <span className="text-ink-subtle/40">—</span>}
                       </td>
                     ))}
                     <td className="px-2 py-2 text-center">

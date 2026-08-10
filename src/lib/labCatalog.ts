@@ -110,6 +110,13 @@ const URINALYSIS: LabParam[] = [
 export const LAB_PARAMS: LabParam[] = [...HEMATOLOGY, ...CHEMISTRY, ...URINALYSIS];
 export const labParamById = (id: string): LabParam | undefined => LAB_PARAMS.find((p) => p.id === id);
 
+/** ترتيب المعيار كما تطبعه ورقة الجهاز — يبقي العرض ثابتاً مهما كان ترتيب الإرسال.
+ *  ما ليس بالكتلوك (فحص حر) يذهب للآخر. */
+export const labParamIndex = (id: string): number => {
+  const i = LAB_PARAMS.findIndex((p) => p.id === id);
+  return i < 0 ? LAB_PARAMS.length : i;
+};
+
 /* --------------------------------- Panels --------------------------------- */
 export type PanelKind = "numeric" | "snap" | "descriptive";
 

@@ -24,7 +24,7 @@ import type { ChartFlags } from "@/lib/problems";
 import { repo } from "@/lib/repo";
 import { prepareUpload } from "@/lib/image";
 import { Button, useToast } from "@/components/ui";
-import { formatNum, normalizeAr, cn } from "@/lib/utils";
+import { formatNum, normalizeAr, cn, formatDec } from "@/lib/utils";
 import { playTap, playSuccess, playWarning, playStepDone } from "@/lib/sounds";
 
 /** How often a treatment is given — drives the dose-count math. */
@@ -387,7 +387,7 @@ export function TreatmentPlan({
     for (const d of redFlags) lines.push(`❗ ${d.name}: ${d.redFlag}`);
     if (notes.trim()) lines.push(`✎ ملاحظات الطبيب: ${notes.trim()}`);
     if (filledRows.length) {
-      lines.push(`💊 خطة العلاج${weight ? ` (الوزن ${formatNum(weight)} كغ)` : ""}:`);
+      lines.push(`💊 خطة العلاج${weight ? ` (الوزن ${formatDec(weight)} كغ)` : ""}:`);
       for (const r of filledRows) {
         const freq = FREQS.find((f) => f.id === r.freq)?.label ?? "";
         const doses = dosesOf(r);
@@ -395,7 +395,7 @@ export function TreatmentPlan({
         const parts = [
           r.name.trim(),
           dt || null,
-          r.mgPerKg && weight ? `(${formatNum(r.mgPerKg)} mg/kg)` : null,
+          r.mgPerKg && weight ? `(${formatDec(r.mgPerKg)} mg/kg)` : null,
           routeLabel(r.route) || null,
           freq,
           r.freq === "prn" ? null : `لمدة ${formatNum(r.days)} يوم`,
@@ -1229,7 +1229,7 @@ function CaseSummaryRail({
               </span>
             </RailItem>
           )}
-          {weight && <RailItem label="وزن الحيوان"><span className="text-lg font-black text-violet-600 dark:text-violet-300">{formatNum(weight)}</span> <span className="text-2xs text-ink-subtle">كغ · مصدر حساب الجرعات</span></RailItem>}
+          {weight && <RailItem label="وزن الحيوان"><span className="text-lg font-black text-violet-600 dark:text-violet-300">{formatDec(weight)}</span> <span className="text-2xs text-ink-subtle">كغ · مصدر حساب الجرعات</span></RailItem>}
         </>
       )}
     </div>

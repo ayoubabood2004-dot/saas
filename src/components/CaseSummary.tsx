@@ -6,7 +6,7 @@ import {
 import type { Pet, PetProblem, TreatmentEntry, LabResult, WeightLog } from "@/types";
 import { repo } from "@/lib/repo";
 import { CATEGORY_TONE, CATEGORY_LABEL } from "@/lib/problems";
-import { formatDate, formatNum, cn } from "@/lib/utils";
+import { formatDate, formatNum, formatDec, cn } from "@/lib/utils";
 import { playTap } from "@/lib/sounds";
 
 /** Distinct drugs the patient is actually on right now (a dose still pending). */
@@ -92,7 +92,7 @@ export function CaseSummary({ pet, problems, treatments, labs, todayISO, default
               activeProblems.length ? `${formatNum(activeProblems.length)} مشكلة نشطة` : null,
               meds.length ? `${formatNum(meds.length)} دواء حالي` : null,
               lastLab ? `آخر تحليل ${formatDate(lastLab.r.taken_at, "ar")}` : null,
-              weight.latest !== null ? `${formatNum(weight.latest)} كغ` : null,
+              weight.latest !== null ? `${formatDec(weight.latest)} كغ` : null,
             ].filter(Boolean).join(" · ") || "ما في تفاصيل مسجّلة بعد"}
           </span>
         </span>
@@ -152,14 +152,14 @@ export function CaseSummary({ pet, problems, treatments, labs, todayISO, default
           {/* Weight */}
           <Panel icon={Scale} title="الوزن" empty={weight.latest === null} emptyText="ما في وزن مسجّل">
             <div className="flex items-baseline gap-1.5">
-              <span className="text-2xl font-black tabular-nums text-ink">{weight.latest !== null ? formatNum(weight.latest) : "—"}</span>
+              <span className="text-2xl font-black tabular-nums text-ink">{weight.latest !== null ? formatDec(weight.latest) : "—"}</span>
               <span className="text-2xs font-bold text-ink-subtle">كغ</span>
             </div>
             <div className={cn("mt-0.5 inline-flex items-center gap-1 text-2xs font-extrabold",
               weight.delta === null || Math.abs(weight.delta) < 0.05 ? "text-ink-subtle"
                 : weight.delta > 0 ? "text-success-600 dark:text-success-400" : "text-warn-600 dark:text-warn-300")}>
               <TrendIcon size={12} />
-              {weight.delta === null ? "ما في مقارنة" : Math.abs(weight.delta) < 0.05 ? "ثابت" : `${weight.delta > 0 ? "+" : "−"}${formatNum(Math.abs(Math.round(weight.delta * 10) / 10))} كغ`}
+              {weight.delta === null ? "ما في مقارنة" : Math.abs(weight.delta) < 0.05 ? "ثابت" : `${weight.delta > 0 ? "+" : "−"}${formatDec(Math.abs(Math.round(weight.delta * 10) / 10))} كغ`}
             </div>
             {weight.at && <div className="text-[10px] text-ink-subtle">{formatDate(weight.at, "ar")}</div>}
           </Panel>

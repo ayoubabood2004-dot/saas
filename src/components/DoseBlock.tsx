@@ -7,7 +7,7 @@ import {
 } from "@/lib/vetFormulary";
 import type { Species } from "@/types";
 import type { ChartFlags } from "@/lib/problems";
-import { formatNum, cn } from "@/lib/utils";
+import { formatNum, cn, formatDec } from "@/lib/utils";
 import { playTap } from "@/lib/sounds";
 
 /** The slice of a plan row this block reads and writes. */
@@ -171,7 +171,7 @@ export function DoseBlock({
               <span className="text-2xs font-bold text-ink-subtle">mg/kg</span>
               {calc ? (
                 <>
-                  <span className="font-black text-violet-500">× {formatNum(weightKg!)} كغ =</span>
+                  <span className="font-black text-violet-500">× {formatDec(weightKg!)} كغ =</span>
                   <span className="rounded-lg bg-violet-600 px-3 py-1.5 text-base font-extrabold text-white">{formatNum(round2(calc.mg))} mg</span>
                 </>
               ) : !weightKg ? (

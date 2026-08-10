@@ -6,7 +6,7 @@ import {
 import type { Pet, PetProblem } from "@/types";
 import { PetAvatar } from "@/components/PetAvatar";
 import { CATEGORY_TONE } from "@/lib/problems";
-import { ageFromDOB, formatNum, formatDate, cn } from "@/lib/utils";
+import { ageFromDOB, formatNum, formatDate, cn, formatDec } from "@/lib/utils";
 import { playTap } from "@/lib/sounds";
 
 /**
@@ -87,7 +87,7 @@ export function VisitBanner({
         {weightKg ? (
           <span className="inline-flex items-center gap-1 rounded-lg bg-violet-50 px-2.5 py-1.5 dark:bg-violet-500/10">
             <Scale size={13} className="text-violet-600 dark:text-violet-300" />
-            <span className="text-sm font-black tabular-nums text-ink">{formatNum(weightKg)}</span>
+            <span className="text-sm font-black tabular-nums text-ink">{formatDec(weightKg)}</span>
             <span className="text-2xs font-bold text-ink-subtle">كغ</span>
           </span>
         ) : null}

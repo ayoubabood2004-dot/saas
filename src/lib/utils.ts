@@ -23,6 +23,16 @@ export function formatNum(n: number): string {
   return numFmt.format(Number.isFinite(n) ? n : 0);
 }
 
+// أرقام القياس تحتفظ بكسورها. formatNum يقصّها لأنه مخصّص للأعداد والمبالغ —
+// واستعماله على قياس يكذب على الطبيب: WBC 12.4 تظهر 12، ومدى الوحيدات
+// 0.15–1.35 يظهر 0–1، ووزن 4.5 كغ يظهر 5 وهو أساس حساب الجرعة.
+const decFmt = new Intl.NumberFormat("en-US", { maximumFractionDigits: 3 });
+
+/** Format a measurement, keeping its decimals — 30.8 → "30.8", 0.15 → "0.15". */
+export function formatDec(n: number): string {
+  return decFmt.format(Number.isFinite(n) ? n : 0);
+}
+
 /** Format an amount as Iraqi Dinar — e.g. 25000 → "25,000 د.ع". */
 export function money(n: number): string {
   return `${formatNum(n)} ${currencySymbol()}`;
