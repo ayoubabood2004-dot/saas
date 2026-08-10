@@ -1273,10 +1273,35 @@ function LabDevicesCard() {
   /** مسار المحرك داخل الأرشيف — بمجلد فرعي حتى يبقى الجذر فيه ما يُضغط عليه فقط. */
   const ENGINE_DIR = "program";
 
+  /*
+   * الحارس الأول: تشغيل الملف من داخل الأرشيف مباشرة (دبل-كلك داخل WinRAR)
+   * يفكّ ضغط هذا الملف وحده إلى مجلد مؤقت ويترك مجلد program داخل الأرشيف —
+   * فينهار node برسالة MODULE_NOT_FOUND مخيفة. نمسكها ونقول للطبيب ماذا يفعل.
+   * الرسائل بالإنجليزية عمداً: نافذة cmd القديمة تعرض العربية معكوسة ومقطّعة.
+   */
   const winLauncher = (file: string) => [
     "@echo off",
     "chcp 65001 >nul",
+    "title doctorVet Lab",
     'cd /d "%~dp0"',
+    `if not exist "${ENGINE_DIR}\\${file}" (`,
+    "  echo.",
+    "  echo   ==========================================================",
+    "  echo     STOP - the program folder is missing.",
+    "  echo   ==========================================================",
+    "  echo.",
+    "  echo   You are running this from INSIDE the zip file.",
+    "  echo   Windows only unpacked this one file, not the whole folder.",
+    "  echo.",
+    "  echo   HOW TO FIX:",
+    "  echo     1. Close this window.",
+    "  echo     2. Right-click the downloaded zip file.",
+    "  echo     3. Choose  Extract All  (or Extract To).",
+    "  echo     4. Open the NEW folder that appears.",
+    "  echo     5. Double-click this file again from there.",
+    "  echo.",
+    "  pause & exit /b 1",
+    ")",
     "where node >nul 2>nul",
     "if errorlevel 1 (",
     "  echo.",
@@ -1290,14 +1315,27 @@ function LabDevicesCard() {
     "echo   Your browser will open. KEEP THIS WINDOW OPEN while the clinic is working.",
     "echo.",
     `node "${ENGINE_DIR}\\${file}"`,
+    "echo.",
+    "echo   The app has stopped.",
     "pause",
     "",
   ].join("\r\n");
 
+  /* الترمنل على الماك يعرض العربية سليمة، فالرسائل هنا عربية. */
   const macLauncher = (file: string) => [
     "#!/bin/bash",
     "# مُشغّل تطبيق المختبر — دبل-كلك يفتح التطبيق بالمتصفح.",
     'cd "$(dirname "$0")" || exit 1',
+    `if [ ! -f "${ENGINE_DIR}/${file}" ]; then`,
+    '  echo ""',
+    '  echo "  ✗ مجلد program مو موجود جنب هذا الملف."',
+    '  echo ""',
+    '  echo "  غالباً شغّلت الملف من داخل الأرشيف المضغوط مباشرة."',
+    '  echo "  فُك ضغط الملف المنزّل كاملاً أول (دبل-كلك عليه)،"',
+    '  echo "  بعدها افتح المجلد الجديد وشغّل هذا الملف من هناك."',
+    '  echo ""',
+    '  read -n 1 -s -r -p "اضغط أي زر للإغلاق..."; exit 1',
+    "fi",
     "if ! command -v node >/dev/null 2>&1; then",
     '  echo "✗ Node.js مو مثبّت. ثبّته من nodejs.org (الزر الأخضر LTS) ثم أعد المحاولة."',
     '  read -n 1 -s -r -p "اضغط أي زر للإغلاق..."; exit 1',
@@ -1415,7 +1453,12 @@ function LabDevicesCard() {
           </button>
           <ol className="list-decimal space-y-1 ps-5 text-2xs leading-relaxed text-ink-muted">
             <li>ثبّت <b>Node.js</b> على حاسوب قرب الجهاز مرة وحدة (تحميل مجاني من <code dir="ltr">nodejs.org</code> — الزر الأخضر LTS).</li>
-            <li><b>فُك ضغط</b> الملف المنزّل — كلك يمين ← <span dir="ltr">Extract All</span>. التشغيل من داخل المضغوط ما يشتغل.</li>
+            <li>
+              <b className="text-danger-600">فُك ضغط الملف المنزّل أولاً</b> — كلك يمين ←{" "}
+              <span dir="ltr">Extract All</span> (أو <span dir="ltr">Extract To</span> بـWinRAR)، وافتح المجلد الجديد.
+              <br />
+              <b>لا تضغط على ملف التشغيل وهو داخل المضغوط</b> — راح يطلع خطأ، لأن ويندوز يفكّ ملفاً واحداً بس ويترك الباقي.
+            </li>
             <li>
               دبل-كلك على ملف التشغيل الي يناسب حاسوبك — <b>«تشغيل على ويندوز»</b> أو <b>«تشغيل على ماك»</b>.
               النظام راح يرفضه أول مرة لأنه منزّل من الإنترنت، وهذا طبيعي:
