@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import type { Pet, ClinicVisit, PetNote, TreatmentEntry, LabResult, PetProblem } from "@/types";
 import { LastLabsStrip, LabEntry } from "@/components/LabCenter";
+import { JourneyCard } from "@/components/JourneyCard";
 import { labParamById, labRange } from "@/lib/labCatalog";
 import { repo } from "@/lib/repo";
 import { useAuth } from "@/contexts/AuthContext";
@@ -477,6 +478,14 @@ export default function VisitPage() {
       {ended && visit.summary && (
         <div className="mb-3 flex items-start gap-2 rounded-xl border border-success-200 bg-success-50 p-3 text-sm text-success-800 dark:border-success-500/30 dark:bg-success-500/10 dark:text-success-200">
           <CheckCircle2 size={17} className="mt-0.5 shrink-0" /><div><b className="font-extrabold">تم إنهاء العلاج</b> — {visit.summary}</div>
+        </div>
+      )}
+
+      {/* رحلة الحيوان — تأسيسها ومتابعتها من داخل طبلة الزيارة: الطبيب يتحكّم
+          بالمراحل والطمأنات، والمالك يتابع برابط عام. للكادر فقط. */}
+      {user?.role !== "owner" && (
+        <div className="mt-1">
+          <JourneyCard pet={pet} doctor={user?.full_name} />
         </div>
       )}
 

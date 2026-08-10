@@ -13,7 +13,6 @@ import {
 import { AnimatePresence, motion } from "framer-motion";
 import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, TreatmentEntry, Admission, FoodType, DietPlan, Appointment, Reminder, MedicalAssessment, PatientCondition, Species, Sex, PetNote, ClinicVisit, PetMovement, LabResult } from "@/types";
 import { VisitsPanel } from "@/components/VisitsPanel";
-import { JourneyCard } from "@/components/JourneyCard";
 import { SpeciesPicker, SexPicker, AgeInput, BreedPicker, ColorPicker } from "@/components/PetFields";
 import { repo } from "@/lib/repo";
 import { getCached, setCached } from "@/lib/swrCache";
@@ -474,10 +473,6 @@ export function PetPassport() {
           </div>
         )}
       </section>
-
-      {/* رحلة الحيوان — تحكّم الطبيب بالمراحل والطمأنات، والمالك يتابع برابط عام.
-          للكادر فقط: المالك عنده صفحة التتبّع، مو أزرار التحكم. */}
-      {!isOwner && canEditClinical && <JourneyCard pet={pet} doctor={user?.full_name} />}
 
       {/* Where is this animal inside the clinic RIGHT NOW — reads and writes the
           same shared ops store as the التقويم الرئيسي, so both stay in lockstep. */}
