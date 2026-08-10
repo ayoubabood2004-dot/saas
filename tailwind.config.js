@@ -96,9 +96,9 @@ export default {
         canvas: "rgb(var(--surface) / <alpha-value>)",
       },
       fontFamily: {
-        sans: ["Inter", "Alexandria", "system-ui", "sans-serif"],
-        display: ["'Plus Jakarta Sans'", "Inter", "Alexandria", "system-ui", "sans-serif"],
-        arabic: ["Alexandria", "Inter", "sans-serif"],
+        sans: ["Inter", "'IBM Plex Sans Arabic'", "system-ui", "sans-serif"],
+        display: ["'Plus Jakarta Sans'", "Inter", "'IBM Plex Sans Arabic'", "system-ui", "sans-serif"],
+        arabic: ["'IBM Plex Sans Arabic'", "Inter", "sans-serif"],
         // خط مراسلات عادي (مثل تطبيقات الشات) — لبالونات المساعد، مو خط العرض
         chat: ["-apple-system", "'Segoe UI'", "system-ui", "Tahoma", "'Helvetica Neue'", "sans-serif"],
       },

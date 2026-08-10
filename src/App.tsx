@@ -11,7 +11,8 @@ import { SubscriptionGate } from "@/components/SubscriptionGate";
 import { FeatureGate } from "@/components/FeatureGate";
 import { Assistant } from "@/components/Assistant";
 import { useSubscription } from "@/lib/subscription";
-import { Spinner } from "@/components/ui";
+import { Spinner, useToast } from "@/components/ui";
+import { repo } from "@/lib/repo";
 
 // Route-level code splitting — each page is its own chunk.
 const Login = lazy(() => import("@/pages/Login").then((m) => ({ default: m.Login })));
@@ -90,6 +91,41 @@ function DemoBanner() {
       doctorVet · Demo mode
     </div>
   );
+}
+
+/** أعمال منزلية صامتة تركض مرة عند فتح جلسة كادر:
+ *  ١. تحذير امتلاء مساحة التجربة — saveDB يعلن الحدث لمّا localStorage يرفض
+ *     الكتابة؛ بلا هذا التوست كان المستخدم التجريبي يفقد بياناته بصمت.
+ *  ٢. تنظيف سجل الحركات (احتفاظ ٣٠ يوماً) — كان يركض فقط عند فتح صفحة السجل،
+ *     فعيادة لا تفتحها لا يُنظَّف سجلها أبداً. هنا يركض مرة كل يوم كحد أقصى. */
+function Housekeeping() {
+  const toast = useToast();
+  const { user } = useAuth();
+  const warned = useRef(false);
+
+  useEffect(() => {
+    const onQuotaFull = () => {
+      if (warned.current) return;
+      warned.current = true;
+      toast.error("مساحة التجربة امتلأت", "آخر تغيير ما انحفظ — احذف صوراً أو بيانات قديمة، أو اشترك لتخزين سحابي بلا حدود.");
+    };
+    window.addEventListener("vp:demo-quota-full", onQuotaFull);
+    return () => window.removeEventListener("vp:demo-quota-full", onQuotaFull);
+  }, [toast]);
+
+  const staff = !!user && (user.role === "admin" || user.role === "doctor" || user.role === "reception");
+  useEffect(() => {
+    if (!staff) return;
+    const KEY = "vp_audit_purged_at";
+    try {
+      const last = Number(localStorage.getItem(KEY) || 0);
+      if (Date.now() - last < 86_400_000) return;
+      localStorage.setItem(KEY, String(Date.now()));
+    } catch { /* بلا localStorage نكتفي بمرة لكل تحميل صفحة */ }
+    void repo.purgeAuditLog().catch(() => {});
+  }, [staff]);
+
+  return null;
 }
 
 /* "Leave clinic" moved into Settings → "عضوية العيادة" (deliberate, confirmed
@@ -226,6 +262,7 @@ export default function App() {
     <ErrorBoundary scope="app">
       <AuthProvider>
         <BrowserRouter>
+          <Housekeeping />
           <Shell />
         </BrowserRouter>
       </AuthProvider>

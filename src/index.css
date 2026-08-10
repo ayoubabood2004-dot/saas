@@ -1,4 +1,5 @@
-@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@500;600;700;800&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap");
+/* الخطوط تُحمَّل من <link> واحد في index.html — @import هنا كان يحمّلها مرة
+ * ثانية ويؤخر أول رسم لأن المتصفح لا يجلبها إلا بعد تحليل كل الـCSS. */
 @import "./styles/tokens.css";
 
 @tailwind base;

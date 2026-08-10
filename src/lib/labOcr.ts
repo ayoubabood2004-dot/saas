@@ -81,10 +81,19 @@ export function parseCbcFromText(text: string): Record<string, number> {
   return out;
 }
 
+/* المحرك وملفات اللغة مستضافة عندنا (public/tesseract/) لا من CDN خارجي:
+ * سياسة CSP بالإنتاج تمنع jsdelivr وتمنع الـblob workers، فالمسارات الافتراضية
+ * كانت تفشل بصمت. المسار المحلي يشتغل تحت `worker-src 'self'` بلا استثناءات. */
+const TESS_OPTS = {
+  workerPath: "/tesseract/worker.min.js",
+  corePath: "/tesseract",
+  langPath: "/tesseract/lang",
+} as const;
+
 /** Run OCR on an image (data URL / URL / File) and return the parsed CBC values. */
 export async function readLabImage(src: string | File): Promise<{ values: Record<string, number>; text: string }> {
   const Tesseract = (await import("tesseract.js")).default;
-  const { data } = await Tesseract.recognize(src, "eng");
+  const { data } = await Tesseract.recognize(src, "eng", TESS_OPTS);
   const text = data?.text ?? "";
   return { values: parseCbcFromText(text), text };
 }
@@ -147,7 +156,7 @@ export function parseLabFromText(text: string, params: OcrParam[]): Record<strin
 /** OCR an analyser slip and pull every catalog value we can recognise. */
 export async function readLabImageFull(src: string | File, params: OcrParam[]): Promise<{ values: Record<string, number>; text: string }> {
   const Tesseract = (await import("tesseract.js")).default;
-  const { data } = await Tesseract.recognize(src, "eng");
+  const { data } = await Tesseract.recognize(src, "eng", TESS_OPTS);
   const text = data?.text ?? "";
   return { values: parseLabFromText(text, params), text };
 }

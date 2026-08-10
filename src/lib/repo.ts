@@ -1113,15 +1113,16 @@ const demoRepo = {
       min_order: sp.min_order,
     };
   },
-  async storeCatalogPublic(slug: string): Promise<StoreCatalogItem[]> {
+  async storeCatalogPublic(slug: string, limit = 60, offset = 0): Promise<StoreCatalogItem[]> {
     const db = loadDB();
     const sp = db.storeProfile;
     if (!sp?.enabled || sp.slug !== normalizeSlug(slug)) return [];
     const poolOf = (p: Product) => (db.companySections ?? []).find((s) => s.id === p.section_id)?.pooled_stock ?? 0;
+    const cap = Math.min(Math.max(limit, 1), 100); // نفس سقف السيرفر
     return (db.products ?? [])
       .filter((p) => p.store_visible)
       .sort((a, b) => (a.category ?? "z").localeCompare(b.category ?? "z") || a.name.localeCompare(b.name))
-      .slice(0, 500)
+      .slice(Math.max(offset, 0), Math.max(offset, 0) + cap)
       .map((p) => ({
         id: p.id, name: p.name, category: p.category ?? null, subcategory: p.subcategory ?? null,
         price: p.sell_price, descr: p.store_desc ?? null,
@@ -1768,6 +1769,16 @@ const supabaseRepo: typeof demoRepo = {
     return maybe<Pet>(await sbc().from("pets").update(patch).eq("id", petId).select().maybeSingle());
   },
   async deletePet(petId) {
+    // ملفات التخزين لا تلحقها الـcascade — صفوف media_items تنحذف مع الحيوان
+    // لكن ملفات الأشعة/الـPDF كانت تبقى بالباكت للأبد (بيانات مرضى + كلفة).
+    // نحذفها أولاً، بأفضل جهد: فشل التنظيف ما يمنع حذف الحيوان نفسه.
+    try {
+      const rows = listOf<{ url: string }>(await sbc().from("media_items").select("url").eq("pet_id", petId));
+      const paths = rows.map((r) => r.url).filter(isStoragePath);
+      for (let i = 0; i < paths.length; i += 50) {
+        await sbc().storage.from(MEDIA_BUCKET).remove(paths.slice(i, i + 50));
+      }
+    } catch { /* best effort — the DB delete below is the operation that matters */ }
     // Dependent rows (visits, vaccinations, treatments, media, weights, admissions)
     // are removed by the schema's `on delete cascade` foreign keys.
     ok(await sbc().from("pets").delete().eq("id", petId));
@@ -2299,10 +2310,12 @@ const supabaseRepo: typeof demoRepo = {
       delivery_fee: Number(d.delivery_fee) || 0, min_order: Number(d.min_order) || 0,
     };
   },
-  async storeCatalogPublic(slug) {
-    const { data, error } = await sbc().rpc("store_catalog", { p_slug: slug });
-    if (error) throw new Error(error.message);
-    return ((data ?? []) as StoreCatalogItem[]).map((r) => ({ ...r, price: Number(r.price) || 0 }));
+  async storeCatalogPublic(slug, limit = 60, offset = 0) {
+    // ما قبل 0096 الدالة بوسيطة واحدة — نعيد النداء بلا صفحات بدل صفحة فارغة.
+    let res = await sbc().rpc("store_catalog", { p_slug: slug, p_limit: limit, p_offset: offset });
+    if (res.error && offset === 0) res = await sbc().rpc("store_catalog", { p_slug: slug });
+    if (res.error) throw new Error(res.error.message);
+    return ((res.data ?? []) as StoreCatalogItem[]).map((r) => ({ ...r, price: Number(r.price) || 0 }));
   },
   async placeStoreOrder(slug, info, items) {
     const { data, error } = await sbc().rpc("store_place_order", {

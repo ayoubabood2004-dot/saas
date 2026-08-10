@@ -354,7 +354,10 @@ export function saveDB(db: DemoDB) {
   try {
     localStorage.setItem(KEY, JSON.stringify(db));
   } catch {
-    /* ignore */
+    // حصة localStorage امتلأت (~5MB) — الكتابة ضاعت فعلاً. البلع الصامت كان
+    // يخلي المستخدم التجريبي (غالباً عيادة تقيّم قبل الاشتراك) يفقد بياناته
+    // بلا أي إشارة. نعلن الحدث، وApp تعرض التحذير مرة واحدة.
+    try { window.dispatchEvent(new CustomEvent("vp:demo-quota-full")); } catch { /* non-browser context */ }
   }
 }
 

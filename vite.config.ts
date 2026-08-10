@@ -25,6 +25,9 @@ export default defineConfig({
         ],
       },
       workbox: {
+        // محرك OCR (~10MB) يُحمَّل عند الطلب فقط — إدراجه بالتثبيت المسبق يخلي
+        // تنصيب الـPWA ينزّل ٨ أضعاف حجم التطبيق على موبايل ببيانات محدودة.
+        globIgnores: ["**/tesseract/**"],
         runtimeCaching: [
           {
             // Cache Supabase storage objects (patient photos) only. Bounded by a

@@ -56,20 +56,40 @@ export function Storefront() {
   const [cart, setCart] = useState<CartLine[]>(() => loadCart(slug));
   const [sheet, setSheet] = useState<"none" | "cart" | "checkout">("none");
   const [placed, setPlaced] = useState<{ order_no: string; total: number } | null>(null);
+  // الكاتلوج يتحمّل بصفحات (٦٠ بالطلب): أول رسم خفيف على موبايل بطيء،
+  // و«عرض المزيد» يجيب الباقي. hasMore = آخر صفحة رجعت ممتلئة.
+  const PAGE = 60;
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
 
   useEffect(() => {
     let alive = true;
     (async () => {
       try {
-        const [f, c] = await Promise.all([repo.storeFrontPublic(slug), repo.storeCatalogPublic(slug)]);
+        const [f, c] = await Promise.all([repo.storeFrontPublic(slug), repo.storeCatalogPublic(slug, PAGE, 0)]);
         if (!alive) return;
         if (!f) { setState("closed"); return; }
-        setFront(f); setCatalog(c); setState("open");
+        setFront(f); setCatalog(c); setHasMore(c.length === PAGE); setState("open");
         document.title = `${f.name} — المتجر`;
       } catch { if (alive) setState("closed"); }
     })();
     return () => { alive = false; };
   }, [slug]);
+
+  const loadMore = async () => {
+    if (loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const more = await repo.storeCatalogPublic(slug, PAGE, catalog.length);
+      // إزالة أي تكرار دفاعياً (منتج انضاف بين الصفحتين يزحزح الترتيب).
+      setCatalog((cur) => {
+        const seen = new Set(cur.map((x) => x.id));
+        return [...cur, ...more.filter((x) => !seen.has(x.id))];
+      });
+      setHasMore(more.length === PAGE);
+    } catch { setHasMore(false); }
+    finally { setLoadingMore(false); }
+  };
 
   useEffect(() => { saveCart(slug, cart); }, [slug, cart]);
 
@@ -277,6 +297,12 @@ export function Storefront() {
               );
             })}
           </div>
+        )}
+        {hasMore && (
+          <button onClick={() => void loadMore()} disabled={loadingMore}
+            className="mt-4 w-full rounded-2xl border border-line bg-surface-1 py-3 text-sm font-bold text-ink-muted transition hover:text-ink disabled:opacity-50">
+            {loadingMore ? "جاري التحميل…" : "عرض المزيد من المنتجات"}
+          </button>
         )}
         <p className="mt-8 flex items-center justify-center gap-1.5 text-2xs text-ink-subtle"><PawPrint size={12} /> متجر مقدَّم من doctorVet</p>
       </main>
