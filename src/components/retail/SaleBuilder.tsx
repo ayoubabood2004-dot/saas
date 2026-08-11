@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { AnimatePresence, motion } from "framer-motion";
 import {
-  Search, Barcode, Plus, Minus, Trash2, ShoppingCart, User, Phone, Tag, Percent,
+  Search, Barcode, Plus, Minus, Trash2, ShoppingCart, User, Phone, Tag, Percent, BadgePercent,
   Banknote, CreditCard, ArrowLeftRight, CheckCircle2, Printer, Sparkles, TrendingUp, Package, PawPrint, X,
   Stethoscope, Pencil, Pill, Syringe, CalendarClock, Wallet, StickyNote, Bike, UserCheck, AlertTriangle,
 } from "lucide-react";
@@ -21,11 +21,11 @@ import { MedSaleForm } from "./MedSaleForm";
 import { CashierSelect } from "@/components/MedicalEntry";
 import { useInvoicePrinter } from "./usePrintInvoice";
 import { invoiceNo, openInvoicePrint, type PrintFormat } from "@/lib/invoicePrint";
-import { getPreSalePrint, getResizableCart, getClinicLogo, getClinicSocials, getClinicName, getDeliveryZones } from "@/lib/settings";
+import { getPreSalePrint, getResizableCart, getClinicLogo, getClinicSocials, getClinicName, getDeliveryZones, getQtyPromos, type QtyPromo } from "@/lib/settings";
 import { branchStore } from "@/lib/branchStore";
 import { persistMedicalEntries } from "@/lib/medSync";
 import type { MedicalDraft } from "@/components/MedicalEntry";
-import { cn, money, currencySymbol } from "@/lib/utils";
+import { cn, money, currencySymbol, formatNum } from "@/lib/utils";
 import { dueOf, paidOf } from "@/lib/debt";
 import { withTimeout, describeDbError } from "@/lib/errors";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
@@ -113,6 +113,8 @@ interface SaleDraft {
   cart: Line[]; name: string; phone: string; salePets: SalePet[];
   notes?: string;
   discountType: DiscountType; discountValue: string; finalOverride: number | null; cashierId: string | null;
+  /** عروض الكمية المفعّلة يدوياً بالزر الأحمر — lineId → ruleId. */
+  qtyPromoOn?: Record<string, string>;
 }
 const saleDraftKey = (clinicId?: string) => `vp_sale_draft_${clinicId ?? "default"}`;
 function loadSaleDraft(clinicId?: string): SaleDraft | null {
@@ -335,6 +337,9 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
   const [catalog] = useState<ServiceCatalog>(() => getServiceCatalog());
   // Doctor-defined Mix & Match offers (clinic-scoped). Loaded once per sale session.
   const [promoRules] = useState(() => getPromoRules());
+  // عروض الكمية «كل N قطع خصم X» — التطبيق يدوي بالزر الأحمر بجانب السطر.
+  const [qtyRules] = useState<QtyPromo[]>(() => getQtyPromos().filter((r) => r.active));
+  const [qtyPromoOn, setQtyPromoOn] = useState<Record<string, string>>(draft0?.qtyPromoOn ?? {});
   const [query, setQuery] = useState("");
   const [name, setName] = useState(draft0?.name ?? "");
   const [phone, setPhone] = useState(draft0?.phone ?? "");
@@ -479,7 +484,11 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
   const setPrice = (id: string, price: number) =>
     setCart((c) => c.map((l) => (l.id === id ? { ...l, unit_price: Math.max(0, Math.round(price * 100) / 100) } : l)));
 
-  const removeLine = (id: string) => setCart((c) => c.filter((l) => l.id !== id));
+  const removeLine = (id: string) => {
+    setCart((c) => c.filter((l) => l.id !== id));
+    // سطر انحذف → عرضه المفعّل يروح وياه (لا يبقى بالمسودة).
+    setQtyPromoOn((m) => { if (!(id in m)) return m; const n = { ...m }; delete n[id]; return n; });
+  };
 
   useBarcodeScanner(async (code) => {
     if (done) return;
@@ -534,10 +543,28 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
   const units = cart.reduce((s, l) => s + l.qty, 0);
   // Dynamic Mix & Match offers, evaluated against the live cart.
   const { applied: promos, totalDiscount: promoDiscount } = useMemo(() => computePromotions(cart, promoRules), [cart, promoRules]);
+
+  // ---- عروض الكمية «كل N قطع خصم X» — يدوية بالزر الأحمر ---------------------
+  // قاعدة المنتج المحدد تغلب قاعدة «أي منتج»؛ القطع = علب كاملة (بيع المفرد
+  // بالحبة/الشريط خارج العرض عمداً حتى لا تُحسب ٣ حبات كثلاث قطع).
+  const qtyRuleFor = (l: Line): QtyPromo | null => {
+    if (l.kind !== "product" || l.saleUnit === "sub") return null;
+    return qtyRules.find((r) => r.productId && r.productId === l.product_id)
+      ?? qtyRules.find((r) => !r.productId)
+      ?? null;
+  };
+  /** خصم السطر المفعّل: مجموعات مكتملة × مقدار الخصم — يتمدد مع الكمية حياً. */
+  const lineQtyOff = (l: Line): number => {
+    const rule = qtyRuleFor(l);
+    if (!rule || qtyPromoOn[l.id] !== rule.id || l.qty < rule.qty) return 0;
+    return Math.min(l.qty * l.unit_price, Math.floor(l.qty / rule.qty) * rule.off);
+  };
+  const qtyOffTotal = round2(cart.reduce((s, l) => s + lineQtyOff(l), 0));
+
   // Manual (percent/fixed) discount entered at the till, on top of any promotions.
   const manualDiscountAmt = resolveDiscount(subtotal, discountType, Number(discountValue) || 0);
   // Auto total = subtotal minus promotions + manual discount (clamped to the subtotal).
-  const autoTotal = Math.max(0, subtotal - Math.min(subtotal, promoDiscount + manualDiscountAmt));
+  const autoTotal = Math.max(0, subtotal - Math.min(subtotal, promoDiscount + qtyOffTotal + manualDiscountAmt));
   // A cashier-pinned final price IS the total — it may sit BELOW the subtotal (a discount)
   // or ABOVE it (a markup / rounding-up / service fee). The gap shows as a discount or surcharge.
   const total = finalOverride != null ? Math.max(0, finalOverride) : autoTotal;
@@ -564,8 +591,8 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
   // entry still starts clean (see draft0's load guard); this only saves what the
   // sale currently holds.
   useEffect(() => {
-    saveSaleDraft(clinicId, { cart, name, phone, salePets, notes: saleNotes, discountType, discountValue, finalOverride, cashierId });
-  }, [clinicId, cart, name, phone, salePets, saleNotes, discountType, discountValue, finalOverride, cashierId]);
+    saveSaleDraft(clinicId, { cart, name, phone, salePets, notes: saleNotes, discountType, discountValue, finalOverride, cashierId, qtyPromoOn });
+  }, [clinicId, cart, name, phone, salePets, saleNotes, discountType, discountValue, finalOverride, cashierId, qtyPromoOn]);
 
   // ---- Payment: full, split, partial (credit), or over-tendered (change due) ----
   const isSplit = payments.length > 1;
@@ -700,6 +727,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
     clearSaleDraft(clinicId);
     setCart([]); setQuery(""); setDiscountValue(""); setFinalOverride(null); setEditingTotal(false);
     setDiscountType("percent"); setPayments([{ method: "cash", amount: 0 }]); setPaidEdited(false); setPartialMode(false); setDone(null); setLastPrints(0);
+    setQtyPromoOn({});
     setCashierId(null); setBrowseTab("products"); setSaleNotes("");
     setDeliveryOn(false); setDCourierId(""); setDZone(""); setDAddress(""); setDFee(""); setDFeeToClinic(false);
     // Preserve the patient/customer bridge across "New sale" so repeated per-patient
@@ -1377,6 +1405,34 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
                             : t("pos.each", "each")}
                         </span>
                       </div>
+                      {/* عرض الكمية: السطر وصل للعدد → زر أحمر صغير يطبّق الخصم
+                          بضغطة (وضغطة ثانية تلغيه). القرار بيد الكاشير دائماً. */}
+                      {(() => {
+                        const rule = qtyRuleFor(l);
+                        if (!rule || l.qty < rule.qty) return null;
+                        const off = Math.min(l.qty * l.unit_price, Math.floor(l.qty / rule.qty) * rule.off);
+                        if (off <= 0) return null;
+                        const on = qtyPromoOn[l.id] === rule.id;
+                        return on ? (
+                          <button
+                            type="button"
+                            onClick={() => { playTap(); setQtyPromoOn((m) => { const n = { ...m }; delete n[l.id]; return n; }); }}
+                            title={t("retail.qtyPromoUndo", "إلغاء خصم العرض")}
+                            className="mt-1 inline-flex items-center gap-1 rounded-full bg-success-100 px-2 py-0.5 text-2xs font-black text-success-700 transition hover:bg-success-200 dark:bg-success-500/20 dark:text-success-300"
+                          >
+                            <BadgePercent size={11} /> {t("retail.qtyPromoOn", { n: money(off), defaultValue: "عرض مفعّل −{{n}}" })} <X size={10} />
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => { playSuccess(); setFinalOverride(null); setQtyPromoOn((m) => ({ ...m, [l.id]: rule.id })); }}
+                            title={t("retail.qtyPromoHint", { q: formatNum(rule.qty), n: money(rule.off), defaultValue: "كل {{q}} قطع خصم {{n}}" })}
+                            className="mt-1 inline-flex items-center gap-1 rounded-full bg-danger-600 px-2 py-0.5 text-2xs font-black text-white shadow-soft transition hover:bg-danger-700 active:scale-95"
+                          >
+                            <BadgePercent size={11} /> {t("retail.qtyPromoBtn", { n: money(off), defaultValue: "خصم −{{n}}" })}
+                          </button>
+                        );
+                      })()}
                       {/* Sale unit — sell the whole box or a single sub-unit (fractional stock) */}
                       {l.kind === "product" && l.hasSubUnit && (
                         <div className="mt-1 inline-flex items-center gap-0.5 rounded-lg border border-line p-0.5">
@@ -1647,6 +1703,12 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
                     <span className="shrink-0 tabular-nums">-{money(p.discount)}</span>
                   </div>
                 ))}
+                {qtyOffTotal > 0 && (
+                  <div className="flex items-center justify-between text-success-600">
+                    <span className="flex items-center gap-1.5 truncate"><BadgePercent size={13} className="shrink-0" />{t("retail.qtyPromoRow", "خصم عرض الكمية")}</span>
+                    <span className="shrink-0 tabular-nums">-{money(qtyOffTotal)}</span>
+                  </div>
+                )}
                 {manualDiscountAmt > 0 && <div className="flex items-center justify-between text-success-600"><span>{t("retail.discount", "Discount")}</span><span className="tabular-nums">-{money(manualDiscountAmt)}</span></div>}
               </>
             )}

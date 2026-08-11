@@ -140,8 +140,8 @@ export function clearPetRanges(petId: string) {
 export const DEFAULT_DIAL_CODE = "+964"; // Iraq
 
 export interface ClinicSocials { facebook: string; instagram: string }
-interface ClinicPrefs { dial_code: string; logo_url: string | null; social_facebook: string; social_instagram: string; clinic_name: string; pre_sale_print: boolean; override_enabled: boolean; resizable_cart: boolean; font_scale_enabled: boolean; override_pin_mirror: string | null; delivery_zones: string | null }
-const DEFAULT_PREFS: ClinicPrefs = { dial_code: DEFAULT_DIAL_CODE, logo_url: null, social_facebook: "", social_instagram: "", clinic_name: "", pre_sale_print: false, override_enabled: false, resizable_cart: false, font_scale_enabled: false, override_pin_mirror: null, delivery_zones: null };
+interface ClinicPrefs { dial_code: string; logo_url: string | null; social_facebook: string; social_instagram: string; clinic_name: string; pre_sale_print: boolean; override_enabled: boolean; resizable_cart: boolean; font_scale_enabled: boolean; override_pin_mirror: string | null; delivery_zones: string | null; qty_promos: string | null }
+const DEFAULT_PREFS: ClinicPrefs = { dial_code: DEFAULT_DIAL_CODE, logo_url: null, social_facebook: "", social_instagram: "", clinic_name: "", pre_sale_print: false, override_enabled: false, resizable_cart: false, font_scale_enabled: false, override_pin_mirror: null, delivery_zones: null, qty_promos: null };
 
 const prefsKey = () => `vp_clinic_prefs_${getActiveClinicId()}`;
 const legacyDialKey = () => `vp_dial_code_${getActiveClinicId()}`;
@@ -231,6 +231,7 @@ export async function hydrateClinicPrefs(): Promise<void> {
         // «?? local» عمداً — سحابة بلا العمود/بلا قيمة لا تمسح مرآة موجودة أبداً.
         override_pin_mirror: d.override_pin_mirror ?? local.override_pin_mirror,
         delivery_zones: d.delivery_zones ?? local.delivery_zones,
+        qty_promos: d.qty_promos ?? local.qty_promos,
       };
     } else {
       // No row yet → migrate any local prefs up (or seed the default dial code).
@@ -251,6 +252,7 @@ export async function hydrateClinicPrefs(): Promise<void> {
       if (local.font_scale_enabled) boolPatch.font_scale_enabled = true;
       if (local.override_pin_mirror) boolPatch.override_pin_mirror = local.override_pin_mirror;
       if (local.delivery_zones) boolPatch.delivery_zones = local.delivery_zones;
+      if (local.qty_promos) boolPatch.qty_promos = local.qty_promos;
       if (Object.keys(boolPatch).length) setPendingPrefs({ ...readPendingPrefs(), ...boolPatch });
     }
     // Unconfirmed pref writes (e.g. a toggle flipped before its column's
@@ -394,4 +396,43 @@ export function setDeliveryZones(zones: DeliveryZone[]) {
     .map((z) => ({ name: z.name.trim(), fee: Math.max(0, Number(z.fee) || 0) }))
     .filter((z) => z.name);
   patchPrefs({ delivery_zones: clean.length ? JSON.stringify(clean) : null }, "delivery-zones-set");
+}
+
+/* ---- عروض الكمية (0100) — «كل N قطع خصم X». قاعدة على منتج محدد
+ * (productId) أو أي منتج (productId=null). التطبيق بشاشة البيع يدوي:
+ * زر أحمر يظهر بجانب السطر الذي بلغ العدد، والكاشير يقرر. ---- */
+export interface QtyPromo {
+  id: string;
+  /** المنتج الهدف — null = أي منتج (كل سطر يُقيَّم لوحده). */
+  productId: string | null;
+  productName: string | null;
+  /** كل كم قطعة من نفس السطر. */
+  qty: number;
+  /** مقدار الخصم لكل مجموعة مكتملة. */
+  off: number;
+  active: boolean;
+}
+
+export function getQtyPromos(): QtyPromo[] {
+  try {
+    const raw = prefs().qty_promos;
+    if (!raw) return [];
+    const arr = JSON.parse(raw) as unknown;
+    if (!Array.isArray(arr)) return [];
+    return arr
+      .filter((z): z is Record<string, unknown> => !!z && typeof z === "object")
+      .map((z) => ({
+        id: String(z.id ?? ""),
+        productId: z.productId ? String(z.productId) : null,
+        productName: z.productName ? String(z.productName) : null,
+        qty: Math.max(2, Math.floor(Number(z.qty) || 0)),
+        off: Math.max(0, Number(z.off) || 0),
+        active: z.active !== false,
+      }))
+      .filter((z) => z.id && z.qty >= 2 && z.off > 0);
+  } catch { return []; }
+}
+
+export function setQtyPromos(rules: QtyPromo[]) {
+  patchPrefs({ qty_promos: rules.length ? JSON.stringify(rules) : null }, "qty-promos-set");
 }

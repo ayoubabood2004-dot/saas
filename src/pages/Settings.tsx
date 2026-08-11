@@ -11,16 +11,16 @@ import { usePermissions } from "@/hooks/usePermissions";
 import { branchStore, useBranchState } from "@/lib/branchStore";
 import { repo } from "@/lib/repo";
 import { Combobox } from "@/components/Combobox";
-import { cn, currencySymbol , formatNum } from "@/lib/utils";
+import { cn, currencySymbol , formatNum, uuid, money } from "@/lib/utils";
 import { getPromoRules, addPromoRule, togglePromoRule, removePromoRule, subcategoriesOf, type PromoRule } from "@/lib/promotions";
 import { getServiceCatalog, addServiceCategory, removeServiceCategory, addService, updateService, removeService } from "@/lib/services";
 import { DEFAULT_RANGES, VITAL_KEYS, CBC_KEYS, rangeFor, type VitalKey } from "@/lib/vitals";
 
 const ALL_KEYS: VitalKey[] = [...VITAL_KEYS, ...CBC_KEYS];
-import { setVitalOverride, clearVitalOverrides, getDialCode, setDialCode, getClinicLogo, setClinicLogo, getClinicSocials, setClinicSocials, getClinicName, setClinicName, getPreSalePrint, setPreSalePrint, getResizableCart, setResizableCart, getFontScaleEnabled, setFontScaleEnabled, getDeliveryZones, setDeliveryZones, type DeliveryZone } from "@/lib/settings";
+import { setVitalOverride, clearVitalOverrides, getDialCode, setDialCode, getClinicLogo, setClinicLogo, getClinicSocials, setClinicSocials, getClinicName, setClinicName, getPreSalePrint, setPreSalePrint, getResizableCart, setResizableCart, getFontScaleEnabled, setFontScaleEnabled, getDeliveryZones, setDeliveryZones, type DeliveryZone, getQtyPromos, setQtyPromos, type QtyPromo } from "@/lib/settings";
 import { FONT_SCALES, getFontScale, setFontScale, applyFontScale, getCrispMode, setCrispMode, type FontScaleId } from "@/lib/fontScale";
 import { SURGERY_CATALOG, isSurgeryCategoryName } from "@/lib/surgeryCatalog";
-import { prepareUpload } from "@/lib/image";
+import { prepareLogo } from "@/lib/image";
 import { isSoundEnabled, setSoundEnabled, playSuccess, playTap, playWarning } from "@/lib/sounds";
 import { getClinicMeds, addClinicMed, removeClinicMed, allMedTypes, allMedicationNames, BUILTIN_MEDICATIONS, type ClinicMed } from "@/lib/meds";
 import { getClinicVaccines, addClinicVaccine, removeClinicVaccine, BUILTIN_VACCINES, type ClinicVaccine } from "@/lib/vaccines";
@@ -163,6 +163,7 @@ export function Settings() {
       {canSettings && <ServiceSettings />}
       {canSettings && <LabDevicesCard />}
       {canSettings && <PromotionsManager clinicId={user?.clinic_id ?? user?.id} />}
+      {canSettings && <QtyPromosCard clinicId={user?.clinic_id ?? user?.id} />}
       <ClinicMedications />
       <ClinicVaccinations />
       <ClinicBreeds />
@@ -393,8 +394,9 @@ function ClinicIdentity() {
     if (!f) return;
     setBusy(true);
     try {
-      // Compress to a small square-ish logo; store the data-URL (same as avatars).
-      const prepared = await prepareUpload(f, { maxDim: 400, quality: 0.9 });
+      // مسار الشعار الخاص: يحفظ الشفافية (PNG)، يفرّغ الخلفية الموحّدة من
+      // الحواف، ولا يلمس لوجو مفرّغاً أصلاً — prepareUpload (JPEG) كان يسطّحه.
+      const prepared = await prepareLogo(f, { maxDim: 400 });
       setClinicLogo(prepared.dataUrl);
       setLogo(prepared.dataUrl);
       playSuccess();
@@ -425,17 +427,26 @@ function ClinicIdentity() {
         <p className="text-xs text-ink-subtle mt-1">{t("settings.clinicNameHint", "يظهر في ترويسة الفاتورة ونماذج الإقرار ورسائل واتساب بدل اسم الموقع.")}</p>
       </div>
 
-      {/* Logo */}
+      {/* Logo — معاينة على رقعة شطرنج حتى تبين الشفافية الفعلية */}
       <div className="flex items-center gap-4">
-        <div className="grid h-20 w-20 shrink-0 place-items-center overflow-hidden rounded-2xl border border-line bg-surface-2">
+        <div
+          className="grid h-20 w-20 shrink-0 place-items-center overflow-hidden rounded-2xl border border-line"
+          style={logo ? {
+            backgroundImage: "linear-gradient(45deg, rgba(148,163,184,.25) 25%, transparent 25%, transparent 75%, rgba(148,163,184,.25) 75%), linear-gradient(45deg, rgba(148,163,184,.25) 25%, transparent 25%, transparent 75%, rgba(148,163,184,.25) 75%)",
+            backgroundSize: "14px 14px", backgroundPosition: "0 0, 7px 7px",
+          } : undefined}
+        >
           {logo ? <img src={logo} alt="logo" className="h-full w-full object-contain" /> : <ImageIcon size={26} className="text-ink-subtle/50" />}
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <label className="btn-secondary cursor-pointer text-sm">
-            <Upload size={15} /> {logo ? t("settings.changeLogo", "تغيير الشعار") : t("settings.uploadLogo", "رفع شعار")}
-            <input type="file" accept="image/*" className="hidden" onChange={onPick} disabled={busy} />
-          </label>
-          {logo && <button onClick={removeLogo} className="chip bg-surface-2 text-xs font-semibold text-danger-600 hover:bg-danger-50"><Trash2 size={14} /> {t("common.remove", "إزالة")}</button>}
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="btn-secondary cursor-pointer text-sm">
+              <Upload size={15} /> {busy ? t("settings.logoBusy", "جارٍ التفريغ…") : logo ? t("settings.changeLogo", "تغيير الشعار") : t("settings.uploadLogo", "رفع شعار")}
+              <input type="file" accept="image/*" className="hidden" onChange={onPick} disabled={busy} />
+            </label>
+            {logo && <button onClick={removeLogo} className="chip bg-surface-2 text-xs font-semibold text-danger-600 hover:bg-danger-50"><Trash2 size={14} /> {t("common.remove", "إزالة")}</button>}
+          </div>
+          <p className="mt-1.5 text-2xs text-ink-subtle">{t("settings.logoCutHint", "الخلفية البيضاء/الموحّدة تنفرغ تلقائياً، واللوجو المفرّغ أصلاً يُحفَظ كما هو بلا أي تعديل.")}</p>
         </div>
       </div>
 
@@ -612,6 +623,82 @@ function DeliveryZonesCard() {
                 <Trash2 size={12} />
               </button>
             </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* -------- عروض الكمية — «كل N قطع خصم X» بزر أحمر يدوي بشاشة البيع -------- */
+function QtyPromosCard({ clinicId }: { clinicId?: string }) {
+  const { t } = useTranslation();
+  const { can } = usePermissions();
+  const [rules, setRules] = useState<QtyPromo[]>(getQtyPromos());
+  const [products, setProducts] = useState<Product[]>([]);
+  const [prodName, setProdName] = useState("");
+  const [qty, setQty] = useState("3");
+  const [off, setOff] = useState("");
+  const [flash, setFlash] = useState<string | null>(null);
+
+  useEffect(() => { repo.listProducts(clinicId).then(setProducts).catch(() => setProducts([])); }, [clinicId]);
+
+  if (!can("manageSettings")) return null;
+
+  const commit = (next: QtyPromo[]) => { setRules(next); setQtyPromos(next); };
+
+  const add = () => {
+    const q = Math.floor(Number(qty) || 0);
+    const o = Math.max(0, Number(off) || 0);
+    if (q < 2 || o <= 0) { playWarning(); setFlash(t("promos.qtyBadInput", "العدد لازم يكون ٢ فأكثر ومقدار الخصم أكبر من صفر.")); return; }
+    const typed = prodName.trim();
+    const match = typed ? products.find((p) => p.name.trim() === typed) ?? null : null;
+    if (typed && !match) { playWarning(); setFlash(t("promos.qtyNoProduct", "اختر منتجاً من القائمة، أو اترك الخانة فارغة ليشمل العرض كل المنتجات.")); return; }
+    commit([...rules, { id: uuid(), productId: match?.id ?? null, productName: match?.name ?? null, qty: q, off: o, active: true }]);
+    setProdName(""); setQty("3"); setOff(""); setFlash(null);
+    playSuccess();
+  };
+  const toggle = (id: string) => { commit(rules.map((r) => (r.id === id ? { ...r, active: !r.active } : r))); playTap(); };
+  const remove = (id: string) => { commit(rules.filter((r) => r.id !== id)); playTap(); };
+
+  return (
+    <div className="card p-5 mb-4">
+      <h2 className="font-bold text-ink mb-1 flex items-center gap-2"><BadgePercent size={18} className="text-danger-600" /> {t("promos.qtyTitle", "عروض الكمية")}</h2>
+      <p className="text-xs text-ink-subtle mb-4">{t("promos.qtyHint", "«كل ٣ قطع خصم ١٬٠٠٠» — حدد العدد ومقدار الخصم، على منتج معيّن أو كل المنتجات. الخصم ما ينطبق لحاله: بشاشة البيع يظهر زر أحمر صغير بجانب السطر الذي وصل للعدد، وأنت تقرر بضغطة.")}</p>
+
+      <div className="grid gap-3 sm:grid-cols-[1fr,110px,130px,auto] sm:items-end">
+        <div>
+          <label className="label">{t("promos.qtyProduct", "المنتج (اتركه فارغاً = كل المنتجات)")}</label>
+          <Combobox value={prodName} onChange={setProdName} options={products.map((p) => p.name)} placeholder={t("promos.qtyProductPh", "كل المنتجات")} />
+        </div>
+        <div>
+          <label className="label">{t("promos.qtyEvery", "كل كم قطعة")}</label>
+          <input type="number" inputMode="numeric" min="2" step="1" className="input py-2" value={qty} onChange={(e) => setQty(e.target.value)} placeholder="3" />
+        </div>
+        <div>
+          <label className="label">{t("promos.qtyOff", "مقدار الخصم")}</label>
+          <input type="number" inputMode="numeric" min="0" step="250" className="input py-2" value={off} onChange={(e) => setOff(e.target.value)} placeholder="1000" />
+        </div>
+        <Button leftIcon={<Plus size={15} />} onClick={add}>{t("common.add", "إضافة")}</Button>
+      </div>
+      {flash && <p className="mt-2 text-xs font-semibold text-danger-600">{flash}</p>}
+
+      {rules.length === 0 ? (
+        <p className="mt-3 rounded-xl bg-surface-2 p-3 text-center text-sm text-ink-subtle">{t("promos.qtyEmpty", "ما مضافة عروض كمية بعد.")}</p>
+      ) : (
+        <div className="mt-3 space-y-1.5">
+          {rules.map((r) => (
+            <div key={r.id} className={cn("flex flex-wrap items-center gap-2.5 rounded-xl border border-line bg-surface-1 p-2.5", !r.active && "opacity-55")}>
+              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-danger-50 text-danger-600 dark:bg-danger-500/15"><BadgePercent size={16} /></span>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-bold text-ink">{r.productName ?? t("promos.qtyAllProducts", "كل المنتجات")}</p>
+                <p className="text-2xs text-ink-subtle">{t("promos.qtyRuleLine", { q: formatNum(r.qty), n: money(r.off), defaultValue: "كل {{q}} قطع → خصم {{n}}" })}</p>
+              </div>
+              <button onClick={() => toggle(r.id)} className={cn("chip text-2xs font-bold", r.active ? "bg-success-50 text-success-700 dark:bg-success-500/15 dark:text-success-300" : "bg-surface-2 text-ink-subtle")}>
+                {r.active ? t("promos.active", "فعّال") : t("promos.paused", "موقوف")}
+              </button>
+              <button onClick={() => remove(r.id)} aria-label={t("common.delete", "حذف")} className="grid h-8 w-8 place-items-center rounded-lg text-ink-subtle transition hover:bg-danger-50 hover:text-danger-600"><Trash2 size={14} /></button>
+            </div>
           ))}
         </div>
       )}
