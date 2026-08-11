@@ -21,7 +21,7 @@ import { MedSaleForm } from "./MedSaleForm";
 import { CashierSelect } from "@/components/MedicalEntry";
 import { useInvoicePrinter } from "./usePrintInvoice";
 import { invoiceNo, openInvoicePrint, type PrintFormat } from "@/lib/invoicePrint";
-import { getPreSalePrint, getResizableCart, getClinicLogo, getClinicSocials, getClinicName } from "@/lib/settings";
+import { getPreSalePrint, getResizableCart, getClinicLogo, getClinicSocials, getClinicName, getDeliveryZones } from "@/lib/settings";
 import { branchStore } from "@/lib/branchStore";
 import { persistMedicalEntries } from "@/lib/medSync";
 import type { MedicalDraft } from "@/components/MedicalEntry";
@@ -377,6 +377,9 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
   const [deliveryOn, setDeliveryOn] = useState(false);
   const [dCouriers, setDCouriers] = useState<Courier[] | null>(null); // null = not loaded yet
   const [dCourierId, setDCourierId] = useState("");
+  // منطقة التوصيل — من قائمة العيادة (الإعدادات ← مناطق التوصيل). اختيار
+  // المنطقة يملأ الأجرة تلقائياً (وتبقى قابلة للتعديل) وينحفظ على الطلب.
+  const [dZone, setDZone] = useState("");
   const [dAddress, setDAddress] = useState("");
   const [dFee, setDFee] = useState("");
   const [dFeeToClinic, setDFeeToClinic] = useState(false);
@@ -698,7 +701,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
     setCart([]); setQuery(""); setDiscountValue(""); setFinalOverride(null); setEditingTotal(false);
     setDiscountType("percent"); setPayments([{ method: "cash", amount: 0 }]); setPaidEdited(false); setPartialMode(false); setDone(null); setLastPrints(0);
     setCashierId(null); setBrowseTab("products"); setSaleNotes("");
-    setDeliveryOn(false); setDCourierId(""); setDAddress(""); setDFee(""); setDFeeToClinic(false);
+    setDeliveryOn(false); setDCourierId(""); setDZone(""); setDAddress(""); setDFee(""); setDFeeToClinic(false);
     // Preserve the patient/customer bridge across "New sale" so repeated per-patient
     // sales keep syncing into the same animal's record; clear it for a plain walk-in.
     if (prefill) {
@@ -868,6 +871,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
             courier_id: dCourierId || null,
             customer_name: name.trim() || null,
             customer_phone: phone.trim() || null,
+            zone: dZone || null,
             address: dAddress.trim() || null,
             note: null,
             delivery_fee: deliveryFee,
@@ -1486,7 +1490,31 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
                   <option value="">{t("retail.deliveryNoCourier", "اختيار السائق لاحقاً (يبقى قيد التجهيز)")}</option>
                   {(dCouriers ?? []).filter((c) => c.active).map((c) => <option key={c.id} value={c.id}>{c.name}{c.phone ? ` — ${c.phone}` : ""}</option>)}
                 </select>
-                <input className="input h-9 text-sm" value={dAddress} onChange={(e) => setDAddress(e.target.value)} placeholder={t("retail.deliveryAddressPh", "العنوان: المنطقة، أقرب نقطة دالة…")} />
+                {/* لوين طالع الطلب؟ — مناطق العيادة، واختيار المنطقة يملأ أجرتها تلقائياً */}
+                {getDeliveryZones().length > 0 && (
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="text-2xs font-bold text-ink-muted">{t("retail.deliveryZone", "المنطقة:")}</span>
+                    {getDeliveryZones().map((z) => {
+                      const active = dZone === z.name;
+                      return (
+                        <button key={z.name} type="button"
+                          onClick={() => {
+                            playTap();
+                            if (active) { setDZone(""); return; }
+                            setDZone(z.name);
+                            if (z.fee > 0) setDFee(String(Math.round(z.fee)));
+                          }}
+                          className={cn("rounded-full border px-2.5 py-1 text-2xs font-bold transition",
+                            active
+                              ? "border-sky-500 bg-sky-600 text-white shadow-soft"
+                              : "border-sky-200 bg-surface-1 text-ink-muted hover:border-sky-400 hover:text-sky-700 dark:border-sky-500/30")}>
+                          {z.name}{z.fee > 0 ? ` · ${money(z.fee)}` : ""}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+                <input className="input h-9 text-sm" value={dAddress} onChange={(e) => setDAddress(e.target.value)} placeholder={t("retail.deliveryAddressPh", "العنوان: أقرب نقطة دالة…")} />
                 <div className="flex items-center gap-2">
                   <input type="number" min="0" step="1" inputMode="numeric" className="input h-9 w-28 px-2 py-0 text-end text-sm font-bold tabular-nums" value={dFee} onChange={(e) => setDFee(e.target.value)} placeholder="0" />
                   <span className="text-xs font-semibold text-ink-muted">{t("retail.deliveryFee", "أجرة التوصيل")}</span>

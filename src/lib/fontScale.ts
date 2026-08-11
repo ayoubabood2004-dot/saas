@@ -71,3 +71,34 @@ export function applyFontScale(): void {
   if (pct === 100) document.documentElement.style.removeProperty("font-size");
   else document.documentElement.style.fontSize = `${pct}%`;
 }
+
+/* ============================================================================
+ * وضع الوضوح (crisp mode) — للشاشات الصغيرة/الضعيفة البكسلات.
+ *
+ * على شاشات 1x القديمة يظهر الخط رفيعاً ومبكسلاً لأن التنعيم العالمي
+ * antialiased يلغي الرسم تحت-البكسلي. هذا الوضع (فئة `crisp` على <html>):
+ *   · يرجّع subpixel-antialiased فتُرسم الحروف بحواف أحدّ وأثخن؛
+ *   · يثخّن الحروف بظل مجهري بلون النص نفسه (لا يغيّر أي تخطيط)؛
+ *   · يغمّق النصوص الرمادية الباهتة (ink-muted/subtle) فتبين على أي شاشة.
+ * تفضيل لهذا الجهاز فقط — شاشة قوية بنفس العيادة ما تتأثر.
+ * ==========================================================================*/
+const CRISP_KEY = "vp_crisp_screen";
+
+export function getCrispMode(): boolean {
+  try { return localStorage.getItem(CRISP_KEY) === "1"; } catch { return false; }
+}
+
+export function setCrispMode(on: boolean): void {
+  try {
+    if (on) localStorage.setItem(CRISP_KEY, "1");
+    else localStorage.removeItem(CRISP_KEY);
+  } catch { /* ignore */ }
+  applyCrispMode();
+}
+
+/** Stamp/remove the `crisp` class on <html>. Idempotent — safe at boot and on
+ *  every Settings change; the CSS lives in index.css under `html.crisp`. */
+export function applyCrispMode(): void {
+  if (typeof document === "undefined") return;
+  document.documentElement.classList.toggle("crisp", getCrispMode());
+}

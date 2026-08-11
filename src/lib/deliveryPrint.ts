@@ -21,6 +21,7 @@ export function buildDeliverySlipHTML(order: DeliveryOrder, courier: Courier | n
   const row = (k: string, v: string) => rows.push(`<div class="r"><span class="k">${k}</span><span class="v">${v}</span></div>`);
   row("الزبون", esc(order.customer_name || "—"));
   if (order.customer_phone) row("الهاتف", `<bdo dir="ltr">${esc(order.customer_phone)}</bdo>`);
+  if (order.zone) row("المنطقة", esc(order.zone));
   if (order.address) row("العنوان", esc(order.address));
   if (courier) row("السائق", esc(courier.name) + (courier.phone ? ` — <bdo dir="ltr">${esc(courier.phone)}</bdo>` : ""));
   if (order.note) row("ملاحظة", esc(order.note));

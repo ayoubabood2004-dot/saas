@@ -10,7 +10,7 @@ import "./index.css";
 import { emitGlobalToast } from "./lib/globalToast";
 import { pruneStaleStorage } from "./lib/demoStore";
 import { installDigitNormalizer } from "./lib/digits";
-import { applyFontScale } from "./lib/fontScale";
+import { applyFontScale, applyCrispMode } from "./lib/fontScale";
 
 // Western numerals everywhere: typing or pasting Arabic-Indic digits into ANY
 // input converts them to 0-9 on the fly — no data is ever lost to a digit-shape
@@ -26,6 +26,8 @@ pruneStaleStorage();
 // local prefs mirror answers synchronously, so there's no size flash. Re-applied
 // after the clinic config hydrates in case the enable flag changed remotely.
 applyFontScale();
+// وضع الوضوح للشاشات الضعيفة — تفضيل هذا الجهاز، يُطبَّق قبل أول رسم.
+applyCrispMode();
 // الملاءمة التلقائية تتبع تغيّر حجم النافذة (تكبير/استعادة) عندما لا يوجد اختيار محفوظ.
 {
   let t: number | undefined;

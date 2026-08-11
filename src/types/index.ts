@@ -844,6 +844,8 @@ export interface DeliveryOrder {
   branch_id?: string | null;
   customer_name?: string | null;
   customer_phone?: string | null;
+  /** منطقة التوصيل المختارة من قائمة العيادة (0099) — لوين طالع الطلب. */
+  zone?: string | null;
   address?: string | null;
   note?: string | null;
   /** Collected from the customer at the door ON TOP of the goods total. */

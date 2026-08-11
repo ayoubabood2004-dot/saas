@@ -143,6 +143,7 @@ export function DeliveryPanel({ invoices, clinicId, onChanged }: { invoices: Inv
     !ql ||
     (o.customer_name ?? "").toLowerCase().includes(ql) ||
     (o.customer_phone ?? "").includes(ql) ||
+    (o.zone ?? "").toLowerCase().includes(ql) ||
     (o.address ?? "").toLowerCase().includes(ql) ||
     (courierOf(o.courier_id)?.name ?? "").toLowerCase().includes(ql);
 
@@ -335,6 +336,7 @@ function OrderCard({ o, no, courier, busy, actions }: { o: DeliveryOrder; no: st
       </div>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-ink-muted">
         {o.customer_phone && <span className="flex items-center gap-1"><Phone size={12} /> <bdo dir="ltr">{o.customer_phone}</bdo></span>}
+        {o.zone && <span className="rounded-full bg-sky-100 px-2 py-0.5 text-2xs font-bold text-sky-700 dark:bg-sky-500/15 dark:text-sky-300">📍 {o.zone}</span>}
         {o.address && <span className="flex min-w-0 items-center gap-1"><MapPin size={12} className="shrink-0" /> <span className="truncate">{o.address}</span></span>}
         <span className="flex items-center gap-1 text-ink-subtle"><Clock size={11} /> {timeAgo(o.dispatched_at ?? o.created_at)}</span>
       </div>

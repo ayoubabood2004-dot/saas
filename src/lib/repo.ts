@@ -2603,9 +2603,18 @@ const supabaseRepo: typeof demoRepo = {
   },
   async createDeliveryOrder(input) {
     // Omit a null branch_id so a pre-0071 database (no column yet) keeps working.
-    const { branch_id, ...rest } = input;
-    const row = branch_id ? { ...rest, branch_id } : rest;
-    return need<DeliveryOrder>(await sbc().from("delivery_orders").insert(row).select().single());
+    const { branch_id, zone, ...rest } = input;
+    const row: Record<string, unknown> = { ...rest };
+    if (branch_id) row.branch_id = branch_id;
+    if (zone) row.zone = zone;
+    const first = await sbc().from("delivery_orders").insert(row).select().single();
+    // قاعدة قبل هجرة 0099 (بلا عمود zone): نعيد الإدخال بدون المنطقة بدل ما
+    // يضيع طلب التوصيل كله — الفاتورة محفوظة أصلاً والطلب أهم من الحقل.
+    if (first.error && zone && /zone/i.test(first.error.message ?? "")) {
+      delete row.zone;
+      return need<DeliveryOrder>(await sbc().from("delivery_orders").insert(row).select().single());
+    }
+    return need<DeliveryOrder>(first);
   },
   async updateDeliveryOrder(id, patch) {
     return maybe<DeliveryOrder>(await sbc().from("delivery_orders").update(patch).eq("id", id).select().maybeSingle());

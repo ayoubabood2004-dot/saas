@@ -140,8 +140,8 @@ export function clearPetRanges(petId: string) {
 export const DEFAULT_DIAL_CODE = "+964"; // Iraq
 
 export interface ClinicSocials { facebook: string; instagram: string }
-interface ClinicPrefs { dial_code: string; logo_url: string | null; social_facebook: string; social_instagram: string; clinic_name: string; pre_sale_print: boolean; override_enabled: boolean; resizable_cart: boolean; font_scale_enabled: boolean; override_pin_mirror: string | null }
-const DEFAULT_PREFS: ClinicPrefs = { dial_code: DEFAULT_DIAL_CODE, logo_url: null, social_facebook: "", social_instagram: "", clinic_name: "", pre_sale_print: false, override_enabled: false, resizable_cart: false, font_scale_enabled: false, override_pin_mirror: null };
+interface ClinicPrefs { dial_code: string; logo_url: string | null; social_facebook: string; social_instagram: string; clinic_name: string; pre_sale_print: boolean; override_enabled: boolean; resizable_cart: boolean; font_scale_enabled: boolean; override_pin_mirror: string | null; delivery_zones: string | null }
+const DEFAULT_PREFS: ClinicPrefs = { dial_code: DEFAULT_DIAL_CODE, logo_url: null, social_facebook: "", social_instagram: "", clinic_name: "", pre_sale_print: false, override_enabled: false, resizable_cart: false, font_scale_enabled: false, override_pin_mirror: null, delivery_zones: null };
 
 const prefsKey = () => `vp_clinic_prefs_${getActiveClinicId()}`;
 const legacyDialKey = () => `vp_dial_code_${getActiveClinicId()}`;
@@ -230,6 +230,7 @@ export async function hydrateClinicPrefs(): Promise<void> {
         // مرآة رمز المدير السحابية (0093): جهاز جديد كلياً يستلم الرمز من هنا.
         // «?? local» عمداً — سحابة بلا العمود/بلا قيمة لا تمسح مرآة موجودة أبداً.
         override_pin_mirror: d.override_pin_mirror ?? local.override_pin_mirror,
+        delivery_zones: d.delivery_zones ?? local.delivery_zones,
       };
     } else {
       // No row yet → migrate any local prefs up (or seed the default dial code).
@@ -249,6 +250,7 @@ export async function hydrateClinicPrefs(): Promise<void> {
       if (local.resizable_cart) boolPatch.resizable_cart = true;
       if (local.font_scale_enabled) boolPatch.font_scale_enabled = true;
       if (local.override_pin_mirror) boolPatch.override_pin_mirror = local.override_pin_mirror;
+      if (local.delivery_zones) boolPatch.delivery_zones = local.delivery_zones;
       if (Object.keys(boolPatch).length) setPendingPrefs({ ...readPendingPrefs(), ...boolPatch });
     }
     // Unconfirmed pref writes (e.g. a toggle flipped before its column's
@@ -366,4 +368,30 @@ export function getFontScaleEnabled(): boolean {
 }
 export function setFontScaleEnabled(v: boolean) {
   patchPrefs({ font_scale_enabled: v }, "font-scale-enabled-set");
+}
+
+/* ---- مناطق التوصيل (0099) — قائمة عيادية: اسم المنطقة + أجرة اختيارية.
+ * تُخزَّن كنص JSON داخل clinic_prefs فتتزامن عبر الأجهزة بنفس آلية
+ * التفضيلات (مرآة محلية + معلّق قبل الهجرة)، والكاشير يختار منها عند البيع
+ * بالتوصيل فتنملي الأجرة تلقائياً. ---- */
+export interface DeliveryZone { name: string; fee: number }
+
+export function getDeliveryZones(): DeliveryZone[] {
+  try {
+    const raw = prefs().delivery_zones;
+    if (!raw) return [];
+    const arr = JSON.parse(raw) as unknown;
+    if (!Array.isArray(arr)) return [];
+    return arr
+      .filter((z): z is { name?: unknown; fee?: unknown } => !!z && typeof z === "object")
+      .map((z) => ({ name: String(z.name ?? "").trim(), fee: Math.max(0, Number(z.fee) || 0) }))
+      .filter((z) => z.name);
+  } catch { return []; }
+}
+
+export function setDeliveryZones(zones: DeliveryZone[]) {
+  const clean = zones
+    .map((z) => ({ name: z.name.trim(), fee: Math.max(0, Number(z.fee) || 0) }))
+    .filter((z) => z.name);
+  patchPrefs({ delivery_zones: clean.length ? JSON.stringify(clean) : null }, "delivery-zones-set");
 }

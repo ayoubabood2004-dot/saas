@@ -17,8 +17,8 @@ import { getServiceCatalog, addServiceCategory, removeServiceCategory, addServic
 import { DEFAULT_RANGES, VITAL_KEYS, CBC_KEYS, rangeFor, type VitalKey } from "@/lib/vitals";
 
 const ALL_KEYS: VitalKey[] = [...VITAL_KEYS, ...CBC_KEYS];
-import { setVitalOverride, clearVitalOverrides, getDialCode, setDialCode, getClinicLogo, setClinicLogo, getClinicSocials, setClinicSocials, getClinicName, setClinicName, getPreSalePrint, setPreSalePrint, getResizableCart, setResizableCart, getFontScaleEnabled, setFontScaleEnabled } from "@/lib/settings";
-import { FONT_SCALES, getFontScale, setFontScale, applyFontScale, type FontScaleId } from "@/lib/fontScale";
+import { setVitalOverride, clearVitalOverrides, getDialCode, setDialCode, getClinicLogo, setClinicLogo, getClinicSocials, setClinicSocials, getClinicName, setClinicName, getPreSalePrint, setPreSalePrint, getResizableCart, setResizableCart, getFontScaleEnabled, setFontScaleEnabled, getDeliveryZones, setDeliveryZones, type DeliveryZone } from "@/lib/settings";
+import { FONT_SCALES, getFontScale, setFontScale, applyFontScale, getCrispMode, setCrispMode, type FontScaleId } from "@/lib/fontScale";
 import { SURGERY_CATALOG, isSurgeryCategoryName } from "@/lib/surgeryCatalog";
 import { prepareUpload } from "@/lib/image";
 import { isSoundEnabled, setSoundEnabled, playSuccess, playTap, playWarning } from "@/lib/sounds";
@@ -156,6 +156,7 @@ export function Settings() {
       {canSettings && <ClinicIdentity />}
       {canSettings && <ManagerOverrideCard />}
       {canSettings && <CashierOptions />}
+      {canSettings && <DeliveryZonesCard />}
       {canSettings && <FontScaleOptions />}
       <ClinicMembership />
       {canSettings && <BranchesManager />}
@@ -563,14 +564,77 @@ function ClinicMembership() {
   );
 }
 
+/* ------- مناطق التوصيل — قائمة عيادية: اسم + أجرة تنملي تلقائياً بالبيع ------- */
+function DeliveryZonesCard() {
+  const { t } = useTranslation();
+  const { can } = usePermissions();
+  const [zones, setZones] = useState<DeliveryZone[]>(getDeliveryZones());
+  const [name, setName] = useState("");
+  const [fee, setFee] = useState("");
+
+  if (!can("manageSettings")) return null;
+
+  const add = () => {
+    const n = name.trim();
+    if (!n) return;
+    if (zones.some((z) => z.name === n)) { playWarning(); return; }
+    const next = [...zones, { name: n, fee: Math.max(0, Number(fee) || 0) }];
+    setZones(next);
+    setDeliveryZones(next);
+    setName(""); setFee("");
+    playSuccess();
+  };
+  const remove = (n: string) => {
+    const next = zones.filter((z) => z.name !== n);
+    setZones(next);
+    setDeliveryZones(next);
+    playTap();
+  };
+
+  return (
+    <div className="card p-5 mb-4">
+      <h2 className="font-bold text-ink mb-1 flex items-center gap-2"><Send size={18} className="text-sky-600" /> {t("settings.deliveryZones", "مناطق التوصيل")}</h2>
+      <p className="text-xs text-ink-subtle mb-4">{t("settings.deliveryZonesHint", "عرّف مناطق التوصيل مالتك مرة وحدة — عند البيع بالتوصيل يختار الكاشير المنطقة بضغطة، فتنملي أجرة التوصيل تلقائياً وتظهر المنطقة على الطلب وبوصل السائق المطبوع.")}</p>
+      <div className="flex gap-2">
+        <input className="input h-11 flex-1" value={name} onChange={(e) => setName(e.target.value)} placeholder={t("settings.deliveryZoneNamePh", "اسم المنطقة — مثال: المنصور")} onKeyDown={(e) => { if (e.key === "Enter") add(); }} />
+        <input className="input h-11 w-32 text-end tabular-nums" type="number" min="0" step="250" inputMode="numeric" value={fee} onChange={(e) => setFee(e.target.value)} placeholder={t("settings.deliveryZoneFeePh", "الأجرة (اختياري)")} onKeyDown={(e) => { if (e.key === "Enter") add(); }} />
+        <Button leftIcon={<Plus size={15} />} disabled={!name.trim()} onClick={add}>{t("common.add", "إضافة")}</Button>
+      </div>
+      {zones.length === 0 ? (
+        <p className="mt-3 rounded-xl bg-surface-2 p-3 text-center text-sm text-ink-subtle">{t("settings.deliveryZonesEmpty", "ما مضافة مناطق بعد — أضف أول منطقة من الأعلى.")}</p>
+      ) : (
+        <div className="mt-3 flex flex-wrap gap-2">
+          {zones.map((z) => (
+            <span key={z.name} className="inline-flex items-center gap-1.5 rounded-full border border-sky-200 bg-sky-50 py-1 pe-1 ps-3 text-sm font-bold text-sky-800 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-200">
+              📍 {z.name}
+              {z.fee > 0 && <span className="text-2xs font-semibold text-sky-600 tabular-nums dark:text-sky-300">{formatNum(z.fee)} {currencySymbol()}</span>}
+              <button onClick={() => remove(z.name)} aria-label={t("common.delete", "حذف")} className="grid h-6 w-6 place-items-center rounded-full text-sky-500 transition hover:bg-danger-50 hover:text-danger-600">
+                <Trash2 size={12} />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ------------- UI font scale (حجم الخط) — opt-in, per-device size ---------- */
 function FontScaleOptions() {
   const { t } = useTranslation();
   const { can } = usePermissions();
   const [enabled, setEnabled] = useState(getFontScaleEnabled());
   const [scale, setScale] = useState<FontScaleId>(getFontScale());
+  const [crisp, setCrisp] = useState(getCrispMode());
 
   if (!can("manageSettings")) return null;
+
+  const toggleCrisp = () => {
+    const next = !crisp;
+    setCrisp(next);
+    setCrispMode(next); // ينطبق فوراً على كل الواجهة — تفضيل هذا الجهاز فقط
+    if (next) playSuccess(); else playTap();
+  };
 
   const toggle = () => {
     const next = !enabled;
@@ -599,7 +663,7 @@ function FontScaleOptions() {
 
   return (
     <div className="card p-5 mb-4">
-      <h2 className="font-bold text-ink mb-1 flex items-center gap-2"><Type size={18} className="text-brand-600" /> {t("settings.fontScale", "حجم الخط")}</h2>
+      <h2 className="font-bold text-ink mb-1 flex items-center gap-2"><Type size={18} className="text-brand-600" /> {t("settings.fontScale2", "حجم الخط ووضوح الشاشة")}</h2>
       <p className="text-xs text-ink-subtle mb-4">{t("settings.fontScaleSectionHint", "للشاشات الصغيرة أو النظر المجهد — كل النصوص والمسافات تكبر بتناسق كامل دون أن يختل أي تخطيط.")}</p>
       <CashierToggle
         label={t("settings.fontScaleToggle", "تفعيل تغيير حجم الخط")}
@@ -638,6 +702,22 @@ function FontScaleOptions() {
           </p>
         </div>
       )}
+
+      {/* وضع الوضوح — للشاشات الصغيرة/الضعيفة البكسلات. مستقل عن حجم الخط
+          ودائم الظهور: هذا علاج عرض لهذا الجهاز، مو تفضيل عيادة. */}
+      <div className="mt-4 border-t border-line pt-4">
+        <CashierToggle
+          label={t("settings.crispToggle", "وضوح أعلى للشاشات الضعيفة")}
+          hint={t("settings.crispToggleHint", "إذا كان الكلام يطلع مبكسل أو باهت وغير مبين على شاشتك — فعّل هذا الخيار: الحروف تُرسم أحدّ وأثخن والنصوص الرمادية تصير أغمق. يُحفَظ على هذا الجهاز فقط، والشاشات القوية بالعيادة ما تتأثر.")}
+          checked={crisp}
+          onToggle={toggleCrisp}
+        />
+        {crisp && (
+          <p className="mt-3 rounded-xl bg-surface-2 px-3 py-2 text-sm text-ink-muted">
+            {t("settings.crispPreview", "معاينة حيّة: هذا النص وكل الواجهة صاروا أوضح وأثخن هسة. إذا شاشتك أصلاً قوية ما راح تلاحظ فرقاً كبيراً — والأفضل إبقاؤه مطفياً عليها.")}
+          </p>
+        )}
+      </div>
     </div>
   );
 }
