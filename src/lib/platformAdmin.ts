@@ -95,6 +95,18 @@ export interface AdminClinic {
   members: number;
   status: SubStatus;
   daysLeft: number; // remaining days of the current window (paid or trial)
+  /** أرقام الاستعمال — null إذا الخادم لسه ما شغّل هجرة 0101 (لا نعرض أصفاراً كاذبة). */
+  usage: ClinicUsage | null;
+}
+
+/** كم استعملت العيادة النظام فعلاً — الفرق بين مشترِك ومستخدِم. */
+export interface ClinicUsage {
+  cases: number;        // كل الحالات منذ اليوم الأول
+  cases30: number;      // المفتوحة بآخر ٣٠ يوم
+  cases7: number;       // بآخر ٧ أيام
+  patients: number;     // مرضى فعليون (pet_id مميّز داخل الحالات)
+  invoices: number;     // فواتير البيع
+  lastActivity: string | null; // آخر حالة أو فاتورة
 }
 
 const DAY = 86400000;
@@ -129,18 +141,34 @@ export async function adminListClinics(): Promise<AdminClinic[]> {
       currentPeriodEnd: (r.current_period_end as string) ?? null,
       wasSubscriber: !!r.was_subscriber,
       members: Number(r.members ?? 0),
+      // خادم قبل هجرة 0101 ما يرجّع هذي الأعمدة أصلاً — نميّز «ما نعرف» عن
+      // «صفر»، فلا تظهر عيادة نشيطة وكأنها ميتة.
+      usage: r.cases === undefined ? null : {
+        cases: Number(r.cases ?? 0),
+        cases30: Number(r.cases_30 ?? 0),
+        cases7: Number(r.cases_7 ?? 0),
+        patients: Number(r.patients ?? 0),
+        invoices: Number(r.invoices ?? 0),
+        lastActivity: (r.last_activity as string) ?? null,
+      },
       ...classify({ trial_ends_at: (r.trial_ends_at as string) ?? null, current_period_end: (r.current_period_end as string) ?? null, was_subscriber: !!r.was_subscriber }),
     }));
   }
-  // Demo: a small sample so the console is explorable offline.
+  // Demo: a small sample so the console is explorable offline — بأرقام استعمال
+  // مختلفة عمداً: نشيطة، وخاملة رغم اشتراكها، وواحدة ما بدأت.
   const now = Date.now();
+  const use = (cases: number, cases30: number, cases7: number, patients: number, invoices: number, lastDays: number | null): ClinicUsage => ({
+    cases, cases30, cases7, patients, invoices,
+    lastActivity: lastDays === null ? null : new Date(now - lastDays * DAY).toISOString(),
+  });
   const mk = (name: string, email: string, patch: Partial<AdminClinic>): AdminClinic => ({
     clinicId: email, clinicName: name, email, plan: null, period: null, trialEndsAt: new Date(now + 10 * DAY).toISOString(),
-    currentPeriodEnd: null, wasSubscriber: false, members: 3, status: "trialing", daysLeft: 10, ...patch,
+    currentPeriodEnd: null, wasSubscriber: false, members: 3, status: "trialing", daysLeft: 10,
+    usage: use(0, 0, 0, 0, 0, null), ...patch,
   });
   return [
-    mk("عيادة السلام", "salam@clinic.com", { ...classify({ trial_ends_at: new Date(now + 10 * DAY).toISOString(), current_period_end: null, was_subscriber: false }) }),
-    mk("عيادة الرحمة", "rahma@clinic.com", { plan: "super", period: "annual", currentPeriodEnd: new Date(now + 300 * DAY).toISOString(), wasSubscriber: true, ...classify({ trial_ends_at: null, current_period_end: new Date(now + 300 * DAY).toISOString(), was_subscriber: true }) }),
-    mk("عيادة النور", "noor@clinic.com", { wasSubscriber: true, currentPeriodEnd: new Date(now - 5 * DAY).toISOString(), ...classify({ trial_ends_at: null, current_period_end: new Date(now - 5 * DAY).toISOString(), was_subscriber: true }) }),
+    mk("عيادة الرحمة", "rahma@clinic.com", { plan: "super", period: "annual", currentPeriodEnd: new Date(now + 300 * DAY).toISOString(), wasSubscriber: true, members: 7, usage: use(412, 38, 11, 176, 305, 0), ...classify({ trial_ends_at: null, current_period_end: new Date(now + 300 * DAY).toISOString(), was_subscriber: true }) }),
+    mk("عيادة السلام", "salam@clinic.com", { usage: use(23, 9, 4, 15, 12, 2), ...classify({ trial_ends_at: new Date(now + 10 * DAY).toISOString(), current_period_end: null, was_subscriber: false }) }),
+    mk("عيادة النور", "noor@clinic.com", { wasSubscriber: true, currentPeriodEnd: new Date(now - 5 * DAY).toISOString(), usage: use(96, 0, 0, 54, 71, 63), ...classify({ trial_ends_at: null, current_period_end: new Date(now - 5 * DAY).toISOString(), was_subscriber: true }) }),
   ];
 }

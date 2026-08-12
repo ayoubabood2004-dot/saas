@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ShieldCheck, Coins, Wallet, ArrowLeft, Lock, Building2, RefreshCw, Users, Sparkles, XCircle, Lightbulb, Check } from "lucide-react";
+import { ShieldCheck, Coins, Wallet, ArrowLeft, Lock, Building2, RefreshCw, Users, Sparkles, XCircle, Lightbulb, Check, Stethoscope, PawPrint, Receipt, Activity, AlertTriangle } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { isPlatformAdmin, getUsdRate, setUsdRate, adminActivate, adminGrantTrial, adminCancelSubscription, adminListClinics, type AdminClinic } from "@/lib/platformAdmin";
 import { PLANS, usdToIqd, priceUsd, type BillingPeriod, type PlanId } from "@/lib/plans";
@@ -16,6 +16,38 @@ const STATUS_META: Record<string, { label: string; tone: "success" | "brand" | "
   expired: { label: "منتهي", tone: "warn" },
   locked: { label: "مقفل", tone: "danger" },
 };
+
+/** «قبل ٣ أيام» بدل تاريخ خام — المشغّل يريد يعرف بُعد النبض، لا اليوم بالضبط. */
+function sinceLabel(iso: string | null): string {
+  if (!iso) return "ما بدأت";
+  const mins = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
+  if (mins < 60) return "قبل شوية";
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `قبل ${formatNum(hrs)} ساعة`;
+  const days = Math.floor(hrs / 24);
+  if (days === 1) return "أمس";
+  if (days < 30) return `قبل ${formatNum(days)} يوم`;
+  const months = Math.floor(days / 30);
+  return months < 12 ? `قبل ${formatNum(months)} شهر` : `قبل ${formatNum(Math.floor(months / 12))} سنة`;
+}
+
+/** رقم واحد مع أيقونته — الصف يُقرأ بلمحة بدل ما يُفكّ. */
+function Stat({ icon, value, label, tone }: { icon: React.ReactNode; value: number; label: string; tone?: string }) {
+  return (
+    <span className={cn("inline-flex items-center gap-1 whitespace-nowrap", tone ?? "text-ink-muted")} title={label}>
+      {icon}
+      <b className="tabular-nums text-ink">{formatNum(value)}</b>
+      <span className="text-2xs">{label}</span>
+    </span>
+  );
+}
+
+type SortKey = "cases" | "recent" | "name";
+const SORTS: { id: SortKey; label: string }[] = [
+  { id: "cases", label: "الأكثر حالات" },
+  { id: "recent", label: "آخر نشاط" },
+  { id: "name", label: "بالاسم" },
+];
 
 /**
  * Platform-operator console: adjust the USD→IQD rate and manually activate a
@@ -35,6 +67,7 @@ export function AdminBilling() {
   const [actBusy, setActBusy] = useState(false);
   const [clinics, setClinics] = useState<AdminClinic[]>([]);
   const [clinicsBusy, setClinicsBusy] = useState(true);
+  const [sortBy, setSortBy] = useState<SortKey>("cases");
 
   const loadClinics = async () => {
     setClinicsBusy(true);
@@ -115,6 +148,27 @@ export function AdminBilling() {
 
   const selectedUsd = priceUsd(PLANS.find((p) => p.id === plan)!, period);
 
+  /* ---- الاستعمال: الحصيلة والترتيب ---- */
+  // خادم قبل هجرة 0101 يرجّع usage=null — نقولها صراحةً بدل ما نعرض أصفاراً.
+  const usageMissing = clinics.length > 0 && clinics.every((c) => c.usage === null);
+  const totals = clinics.reduce(
+    (a, c) => ({
+      cases: a.cases + (c.usage?.cases ?? 0),
+      cases30: a.cases30 + (c.usage?.cases30 ?? 0),
+      patients: a.patients + (c.usage?.patients ?? 0),
+      live: a.live + ((c.usage?.cases30 ?? 0) > 0 ? 1 : 0),
+    }),
+    { cases: 0, cases30: 0, patients: 0, live: 0 },
+  );
+  const sortedClinics = [...clinics].sort((a, b) => {
+    if (sortBy === "cases") return (b.usage?.cases ?? 0) - (a.usage?.cases ?? 0);
+    if (sortBy === "recent") {
+      const t = (c: AdminClinic) => (c.usage?.lastActivity ? new Date(c.usage.lastActivity).getTime() : 0);
+      return t(b) - t(a);
+    }
+    return (a.clinicName || a.email || "").localeCompare(b.clinicName || b.email || "", "ar");
+  });
+
   /* ---- طلبات الدكاترة: صندوق الأفكار الي يرفعه المساعد من كل العيادات ---- */
   const [requests, setRequests] = useState<FeatureRequest[]>([]);
   const [reqBusy, setReqBusy] = useState(true);
@@ -173,23 +227,79 @@ export function AdminBilling() {
           </div>
           <button onClick={() => { playTap(); void loadClinics(); }} aria-label="تحديث" className="grid h-9 w-9 place-items-center rounded-full text-ink-muted transition hover:bg-surface-2 hover:text-ink"><RefreshCw size={16} /></button>
         </div>
+
+        {/* حصيلة المنصّة: الرقم الي يجاوب «شكد ينشتغل عليه فعلاً؟» بلمحة */}
+        {!clinicsBusy && clinics.length > 0 && (
+          usageMissing ? (
+            <div className="mb-3 flex items-start gap-2 rounded-2xl border border-warn-200 bg-warn-50 p-3 text-2xs leading-relaxed text-warn-800 dark:border-warn-500/30 dark:bg-warn-500/10 dark:text-warn-200">
+              <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+              <span>أرقام الاستعمال ما توصل لأن هجرة <b>0101_admin_usage</b> لسه ما تشغّلت على قاعدة البيانات. شغّلها وأعد التحديث — الاشتراكات تشتغل عادي بدونها.</span>
+            </div>
+          ) : (
+            <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+              {[
+                { icon: <Stethoscope size={14} />, v: totals.cases, l: "حالة بالمجموع" },
+                { icon: <Activity size={14} />, v: totals.cases30, l: "حالة بآخر ٣٠ يوم" },
+                { icon: <PawPrint size={14} />, v: totals.patients, l: "مريض" },
+                { icon: <Building2 size={14} />, v: totals.live, l: "عيادة شغّالة" },
+              ].map((s) => (
+                <div key={s.l} className="rounded-2xl bg-surface-2 px-3 py-2.5">
+                  <div className="flex items-center gap-1 text-ink-subtle">{s.icon}<span className="text-2xs font-semibold">{s.l}</span></div>
+                  <div className="font-display text-xl font-extrabold tabular-nums text-ink">{formatNum(s.v)}</div>
+                </div>
+              ))}
+            </div>
+          )
+        )}
+
+        {/* الترتيب: الأكثر حالات أولاً — لأن هذا سؤال المشغّل الأول */}
+        {!clinicsBusy && clinics.length > 1 && (
+          <div className="mb-2.5 flex items-center gap-1">
+            <span className="text-2xs font-semibold text-ink-subtle">رتّب:</span>
+            {SORTS.map((s) => (
+              <button key={s.id} type="button" onClick={() => { playTap(); setSortBy(s.id); }}
+                className={cn("rounded-full px-2.5 py-1 text-2xs font-bold transition", sortBy === s.id ? "bg-ink text-surface-1" : "bg-surface-2 text-ink-muted hover:text-ink")}>
+                {s.label}
+              </button>
+            ))}
+          </div>
+        )}
+
         {clinicsBusy ? (
           <div className="space-y-2">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-14 rounded-2xl" />)}</div>
         ) : clinics.length === 0 ? (
           <p className="py-6 text-center text-sm text-ink-subtle">لا توجد عيادات بعد.</p>
         ) : (
           <div className="space-y-2">
-            {clinics.map((c) => {
+            {sortedClinics.map((c) => {
               const meta = STATUS_META[c.status] ?? STATUS_META.trialing;
               const planName = PLANS.find((p) => p.id === c.plan)?.name;
+              const u = c.usage;
+              // عيادة عمرها ما فتحت حالة ≠ عيادة اشتغلت وهدّت. الأولى «ما بدأت»
+              // (مشكلة تأهيل)، والثانية «خاملة» (خطر انسحاب) — وتحتاجان ردّين مختلفين.
+              const dormant = !!u && u.cases > 0 && u.cases30 === 0;
+              const neverStarted = !!u && u.cases === 0;
               return (
                 <div key={c.clinicId} className="flex flex-wrap items-center gap-3 rounded-2xl border border-line bg-surface-1 p-3">
                   <div className="min-w-0 flex-1">
-                    <p className="truncate font-semibold text-ink">{c.clinicName || c.email || "—"}</p>
+                    <p className="flex items-center gap-1.5 truncate font-semibold text-ink">
+                      {c.clinicName || c.email || "—"}
+                      {neverStarted && <span className="shrink-0 rounded-full bg-surface-2 px-1.5 py-0.5 text-[10px] font-extrabold text-ink-subtle">ما بدأت</span>}
+                      {dormant && <span className="shrink-0 rounded-full bg-warn-50 px-1.5 py-0.5 text-[10px] font-extrabold text-warn-700 dark:bg-warn-500/15 dark:text-warn-300">خاملة</span>}
+                    </p>
                     <p className="flex items-center gap-2 truncate text-xs text-ink-muted">
                       {c.email && <span dir="ltr" className="truncate">{c.email}</span>}
                       <span className="inline-flex items-center gap-0.5"><Users size={11} /> {formatNum(c.members)}</span>
                     </p>
+                    {u && (
+                      <p className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-xs">
+                        <Stat icon={<Stethoscope size={12} />} value={u.cases} label="حالة" tone="text-brand-600 dark:text-brand-400" />
+                        <Stat icon={<Activity size={12} />} value={u.cases30} label="بـ٣٠ يوم" />
+                        <Stat icon={<PawPrint size={12} />} value={u.patients} label="مريض" />
+                        <Stat icon={<Receipt size={12} />} value={u.invoices} label="فاتورة" />
+                        <span className="text-2xs text-ink-subtle">· آخر نشاط {sinceLabel(u.lastActivity)}</span>
+                      </p>
+                    )}
                   </div>
                   <div className="flex flex-col items-end gap-0.5">
                     <Badge tone={meta.tone}>{meta.label}{planName && c.status === "active" ? ` · ${planName}` : ""}</Badge>
