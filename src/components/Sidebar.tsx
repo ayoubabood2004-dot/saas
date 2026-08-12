@@ -10,11 +10,7 @@ import {
   ScanLine,
   Settings as SettingsIcon,
   History,
-  PawPrint,
   Search,
-  LogOut,
-  Languages,
-  ArrowLeftRight,
   Boxes,
   Store,
   ShoppingBag,
@@ -25,7 +21,6 @@ import {
   Slice,
   ChevronDown,
   Sparkles,
-  Crown,
   ArrowLeft,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
@@ -35,13 +30,10 @@ import { useStoreOrderCount } from "@/lib/storeOrdersLive";
 import { useSubscription } from "@/lib/subscription";
 import { useEntitlements } from "@/lib/entitlements";
 import { formatNum } from "@/lib/utils";
-import { setLang, type Lang } from "@/i18n";
-import { QuickZoomBar } from "@/components/QuickZoom";
 import { playTap } from "@/lib/sounds";
 import { prefetchHandlers, prefetchAllIdle } from "@/lib/routePrefetch";
 import { warmDataIdle } from "@/lib/prefetchData";
-import { ThemeToggle, Tooltip } from "@/components/ui";
-import { OverrideCorner } from "@/components/ManagerOverride";
+import { AccountMenu } from "@/components/AccountMenu";
 import { Logo } from "@/components/Logo";
 import { BranchSwitcher } from "@/components/BranchSwitcher";
 import { useCommandPalette } from "./CommandPaletteProvider";
@@ -49,14 +41,12 @@ import { cn } from "@/lib/utils";
 
 /** Desktop navigation rail with profile card (ref img 1). Hidden below lg. */
 export function Sidebar() {
-  const { t, i18n } = useTranslation();
-  const { user, signOut, roles, activeRole, switchRole } = useAuth();
-  const navigate = useNavigate();
+  const { t } = useTranslation();
+  const { user } = useAuth();
   const location = useLocation();
   const palette = useCommandPalette();
   const { can } = usePermissions();
   const { has } = useEntitlements();
-  const otherRole = activeRole === "clinic" ? "owner" : "clinic";
 
   // Once idle after first paint, eagerly warm EVERY route's JS chunk AND the
   // data snapshots for the heavy screens — so any navigation is "click → already
@@ -112,17 +102,6 @@ export function Sidebar() {
   const toggleGroup = (key: string) => setOpenGroups((s) => { const n = new Set(s); if (n.has(key)) n.delete(key); else n.add(key); return n; });
   const isActive = (to: string, exact?: boolean) =>
     exact ? location.pathname === "/" : location.pathname === to || location.pathname.startsWith(to + "/");
-
-  const initials = (user?.full_name || "")
-    .replace(/^Dr\.?\s*/i, "")
-    .split(" ")
-    .map((w) => w[0])
-    .slice(0, 2)
-    .join("")
-    .toUpperCase();
-
-  const roleLabel =
-    user?.role === "admin" ? t("role.admin", "Clinic") : user?.role === "reception" ? t("role.reception", "Reception") : t("role.doctor", "Veterinarian");
 
   return (
     <aside className="fixed inset-y-0 start-0 z-40 hidden w-64 flex-col border-e border-line bg-surface-1 p-4 no-print lg:flex">
@@ -226,57 +205,11 @@ export function Sidebar() {
         })}
       </nav>
 
-      {/* Subscription status — always visible so paying is one tap away. */}
+      {/* ذيل الشريط — صف حساب واحد يفتح قائمة فيها الاشتراك والتكبير واللغة
+          والمظهر وقفل الجهاز وتبديل الدور والخروج ورقم النسخة. الاشتراك يأخذ
+          كارتاً بارزاً فوقه فقط عندما يطلب فعلاً (تجربة/منتهٍ). */}
       <SubscriptionNavCard />
-
-      {/* Profile card + actions */}
-      <div className="mt-2">
-        <div className="flex items-center gap-3 rounded-2xl border border-line bg-surface-2 p-3">
-          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-brand-grad font-display text-sm font-bold text-white shadow-soft">
-            {initials || <PawPrint size={18} />}
-          </span>
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-semibold text-ink">{user?.full_name}</p>
-            <p className="truncate text-xs text-ink-subtle">{roleLabel}</p>
-          </div>
-        </div>
-        <QuickZoomBar />
-        <div className="mt-2 flex items-center gap-1">
-          <Tooltip label={i18n.language === "ar" ? "English" : "العربية"}>
-            <button
-              onClick={() => { setLang((i18n.language === "ar" ? "en" : "ar") as Lang); playTap(); }}
-              className="grid h-10 w-10 place-items-center rounded-full text-ink-muted transition hover:bg-surface-1 hover:text-ink"
-            >
-              <Languages size={18} />
-            </button>
-          </Tooltip>
-          <ThemeToggle />
-          <OverrideCorner />
-          {roles.length > 1 && (
-            <Tooltip label={t("role.switchTo", { role: t(`role.${otherRole}`), defaultValue: "Switch to {{role}}" })}>
-              <button
-                onClick={() => { switchRole(); navigate("/"); }}
-                className="grid h-10 w-10 place-items-center rounded-full text-ink-muted transition hover:bg-brand-50 hover:text-brand-600"
-              >
-                <ArrowLeftRight size={18} />
-              </button>
-            </Tooltip>
-          )}
-          <div className="flex-1" />
-          <Tooltip label={t("nav.logout")}>
-            <button
-              onClick={() => { signOut(); }}
-              className="grid h-10 w-10 place-items-center rounded-full text-ink-muted transition hover:bg-danger-50 hover:text-danger-600"
-            >
-              <LogOut size={18} />
-            </button>
-          </Tooltip>
-        </div>
-        {/* ختم النسخة — يتغير مع كل نشر: إذا التاريخ قديم، الجهاز على نسخة قديمة */}
-        <p className="mt-2 text-center text-[10px] tabular-nums text-ink-subtle/60" dir="ltr">
-          v{new Date(__BUILD_AT__).toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}
-        </p>
-      </div>
+      <AccountMenu />
     </aside>
   );
 }
@@ -289,7 +222,7 @@ export function Sidebar() {
  */
 function SubscriptionNavCard() {
   const navigate = useNavigate();
-  const { status, trialDaysLeft, periodDaysLeft } = useSubscription();
+  const { status, trialDaysLeft } = useSubscription();
 
   if (status === "trialing") {
     return (
@@ -323,21 +256,8 @@ function SubscriptionNavCard() {
     );
   }
 
-  if (status === "active") {
-    return (
-      <button
-        onClick={() => { playTap(); navigate("/subscribe"); }}
-        className="mt-3 flex w-full items-center gap-2.5 rounded-2xl border border-line bg-surface-2 p-3 text-start transition hover:bg-surface-3"
-      >
-        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-success-50 text-success-600 dark:bg-success-500/15"><Crown size={17} /></span>
-        <span className="min-w-0 flex-1">
-          <span className="block text-sm font-bold text-ink">اشتراكك فعّال</span>
-          <span className="block text-2xs text-ink-subtle">باقي {formatNum(periodDaysLeft)} يوم</span>
-        </span>
-      </button>
-    );
-  }
-
+  // اشتراك فعّال = لا شيء مطلوب منك، فلا يستحق مساحة دائمة: نقطة خضراء على
+  // الأفاتار وسطر داخل قائمة الحساب يكفيان (قاعدة «المساحة للفعل لا للحالة»).
   return null;
 }
 

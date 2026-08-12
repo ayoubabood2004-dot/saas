@@ -25,7 +25,13 @@ const mmss = (msLeft: number) => {
  *  · key icon → PIN pad → 10-minute manager session;
  *  · while unlocked: an amber countdown chip that re-locks on click.
  * ------------------------------------------------------------------------- */
-export function OverrideCorner({ compact = false }: { compact?: boolean }) {
+export function OverrideCorner({ compact = false, variant = "icon", onDone }: {
+  compact?: boolean;
+  /** "icon" = زر دائري بصف الأدوات · "menu" = سطر كامل داخل قائمة الحساب. */
+  variant?: "icon" | "menu";
+  /** يُنادى قبل مغادرة الصفحة — تغلق به القائمة الحاضنة. */
+  onDone?: () => void;
+}) {
   const { t } = useTranslation();
   const { user } = useAuth();
   const ov = useOverride();
@@ -46,23 +52,37 @@ export function OverrideCorner({ compact = false }: { compact?: boolean }) {
   // إلا بالتعطيل الصريح (الذي يمسح علم الوجود بعد التحقق بالرمز نفسه).
   if (!user || !staff || (!getOverrideEnabled() && !pinExistsSync())) return null;
   const baseRole = appRoleToStaffRole(user.role);
+  // صف داخل قائمة الحساب: نفس الأزرار بمظهر سطر مُعنوَن (بلا Tooltip — القائمة
+  // نفسها هي التسمية).
+  const menuRow = "flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-bold text-ink transition-colors hover:bg-surface-2";
   // A manager on their own UNLOCKED device has nothing to *unlock* — but the
   // manager-direction of the feature is to LOCK this device into the reception
   // view. So instead of hiding (which reads as "the key vanished"), surface a
   // lock control right here; once locked, the key below reappears to unlock.
-  if (!ov.active && !ov.deviceLocked && baseRole === "manager") return <ManagerLockButton compact={compact} />;
+  if (!ov.active && !ov.deviceLocked && baseRole === "manager") return <ManagerLockButton compact={compact} variant={variant} onDone={onDone} />;
 
   if (ov.active) {
+    const left = mmss((ov.until ?? 0) - Date.now());
+    const relock = () => { playTap(); onDone?.(); lockNow(); navigate("/"); };
+    if (variant === "menu") {
+      return (
+        <button role="menuitem" onClick={relock} data-override="chip" className={menuRow}>
+          <Unlock size={17} className="shrink-0 text-warn-600" />
+          {t("override.relock", "قفل وضع المدير الآن")}
+          <span className="ms-auto text-2xs font-extrabold tabular-nums text-warn-700 dark:text-warn-300" dir="ltr">{left}</span>
+        </button>
+      );
+    }
     return (
       <Tooltip label={t("override.relock", "قفل وضع المدير الآن")}>
         <button
-          onClick={() => { playTap(); lockNow(); navigate("/"); }}
+          onClick={relock}
           aria-label={t("override.relock", "قفل وضع المدير الآن")}
           data-override="chip"
           className="flex h-10 items-center gap-1.5 rounded-full bg-warn-50 px-3 text-xs font-bold tabular-nums text-warn-700 transition hover:bg-warn-100 dark:bg-warn-500/15 dark:text-warn-300"
         >
           <Unlock size={14} />
-          {mmss((ov.until ?? 0) - Date.now())}
+          {left}
         </button>
       </Tooltip>
     );
@@ -70,26 +90,35 @@ export function OverrideCorner({ compact = false }: { compact?: boolean }) {
 
   return (
     <>
-      <Tooltip label={t("override.open", "وضع المدير")}>
-        <button
-          onClick={() => { playTap(); setOpen(true); }}
-          aria-label={t("override.open", "وضع المدير")}
-          data-override="key"
-          className={cn(
-            "grid place-items-center rounded-full text-ink-muted transition hover:bg-surface-1 hover:text-ink",
-            compact ? "h-11 w-11" : "h-10 w-10",
-          )}
-        >
-          <KeyRound size={18} />
+      {variant === "menu" ? (
+        <button role="menuitem" onClick={() => { playTap(); setOpen(true); }} data-override="key" className={menuRow}>
+          <KeyRound size={17} className="shrink-0 text-ink-muted" />
+          {t("override.open", "وضع المدير")}
         </button>
-      </Tooltip>
-      <PinModal open={open} onClose={() => setOpen(false)} />
+      ) : (
+        <Tooltip label={t("override.open", "وضع المدير")}>
+          <button
+            onClick={() => { playTap(); setOpen(true); }}
+            aria-label={t("override.open", "وضع المدير")}
+            data-override="key"
+            className={cn(
+              "grid place-items-center rounded-full text-ink-muted transition hover:bg-surface-1 hover:text-ink",
+              compact ? "h-11 w-11" : "h-10 w-10",
+            )}
+          >
+            <KeyRound size={18} />
+          </button>
+        </Tooltip>
+      )}
+      <PinModal open={open} onClose={() => { setOpen(false); onDone?.(); }} />
     </>
   );
 }
 
 /* ------- Manager-direction: lock THIS device into the reception view ------ */
-function ManagerLockButton({ compact = false }: { compact?: boolean }) {
+function ManagerLockButton({ compact = false, variant = "icon", onDone }: {
+  compact?: boolean; variant?: "icon" | "menu"; onDone?: () => void;
+}) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
@@ -99,23 +128,35 @@ function ManagerLockButton({ compact = false }: { compact?: boolean }) {
   useEffect(() => { void hasOverridePin().then(setPinSet); }, []);
   useEffect(() => { if (!open) setConfirm(false); }, [open]);
 
-  const doLock = () => { playSuccess(); setDeviceLocked(true); setOpen(false); navigate("/"); };
+  const doLock = () => { playSuccess(); setDeviceLocked(true); setOpen(false); onDone?.(); navigate("/"); };
 
   return (
     <>
-      <Tooltip label={t("override.lockDeviceShort", "قفل الجهاز بواجهة الاستقبال")}>
+      {variant === "menu" ? (
         <button
+          role="menuitem"
           onClick={() => { playTap(); setOpen(true); }}
-          aria-label={t("override.lockDeviceShort", "قفل الجهاز بواجهة الاستقبال")}
           data-override="lock"
-          className={cn(
-            "grid place-items-center rounded-full text-ink-muted transition hover:bg-surface-1 hover:text-ink",
-            compact ? "h-11 w-11" : "h-10 w-10",
-          )}
+          className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-bold text-ink transition-colors hover:bg-surface-2"
         >
-          <Lock size={18} />
+          <Lock size={17} className="shrink-0 text-ink-muted" />
+          {t("override.lockDeviceShort", "قفل الجهاز بواجهة الاستقبال")}
         </button>
-      </Tooltip>
+      ) : (
+        <Tooltip label={t("override.lockDeviceShort", "قفل الجهاز بواجهة الاستقبال")}>
+          <button
+            onClick={() => { playTap(); setOpen(true); }}
+            aria-label={t("override.lockDeviceShort", "قفل الجهاز بواجهة الاستقبال")}
+            data-override="lock"
+            className={cn(
+              "grid place-items-center rounded-full text-ink-muted transition hover:bg-surface-1 hover:text-ink",
+              compact ? "h-11 w-11" : "h-10 w-10",
+            )}
+          >
+            <Lock size={18} />
+          </button>
+        </Tooltip>
+      )}
 
       <Modal open={open} onClose={() => setOpen(false)} title={t("override.lockTitle", "قفل الجهاز بواجهة الاستقبال")}>
         <div className="mx-auto max-w-sm text-center">
