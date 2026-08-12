@@ -811,7 +811,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
       status: "paid", created_at: new Date().toISOString(),
     };
     const socials = getClinicSocials();
-    const ok = openInvoicePrint(draft, draftItems, {
+    const ok = await openInvoicePrint(draft, draftItems, {
       clinicName: getClinicName() || user?.full_name || "doctorVet",
       clinicPhone: user?.phone ?? null,
       brand: "doctorVet",

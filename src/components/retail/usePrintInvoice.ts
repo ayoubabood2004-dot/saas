@@ -32,7 +32,7 @@ export function useInvoicePrinter() {
     // البائع يُطبع باسمه — يُحل من كاش الكادر؛ فشل الحل ما يمنع الطباعة.
     const sellerName = await resolveStaffName(invoice.staff_id).catch(() => null);
     const socials = getClinicSocials();
-    const ok = openInvoicePrint({ ...invoice, print_count: printNo }, items ?? [], {
+    const ok = await openInvoicePrint({ ...invoice, print_count: printNo }, items ?? [], {
       clinicName: getClinicName() || user?.full_name || "doctorVet",
       clinicPhone: user?.phone ?? null,
       brand: "doctorVet",

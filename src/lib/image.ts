@@ -246,6 +246,54 @@ export async function prepareLogo(file: File, opts: { maxDim?: number } = {}): P
   }
 }
 
+/* ============================================================================
+ * تحويل الشعار لأبيض/أسود صافٍ — لطابعة الإيصالات الحرارية.
+ *
+ * الطابعة الحرارية ثنائية فعلياً: البكسل إمّا يُحرق (أسود) أو لا (فراغ). فأي
+ * شعار رمادي فاتح أو ملوّن «يختفي» عند الطباعة رغم ظهوره بالمعاينة — وهذا
+ * سبب عدم طباعة اللوجو أصلاً. هنا نحسم القرار بأنفسنا قبل الإرسال:
+ *   · نصغّره لعرض رأس الطباعة (٥٧٦ نقطة لـ٨٠مم) فلا يتشوّه بالتحجيم؛
+ *   · الشفاف يصير أبيض (فراغ)؛
+ *   · كل بكسل: إما أسود صافٍ أو أبيض صافٍ حسب عتبة تُحسب من الصورة نفسها
+ *     (متوسط رمادي المحتوى) — فالشعار الفاتح كله ما ينمسح والغامق ما يتطمّس.
+ * ==========================================================================*/
+export async function toThermalMono(dataUrl: string, opts: { maxWidth?: number } = {}): Promise<string> {
+  if (typeof document === "undefined") return dataUrl;
+  const maxWidth = opts.maxWidth ?? 384; // نقاط رأس الطباعة لعرض الشعار المعتاد
+  const img = await loadImage(dataUrl);
+  const scale = Math.min(1, maxWidth / (img.width || 1));
+  const w = Math.max(1, Math.round(img.width * scale));
+  const h = Math.max(1, Math.round(img.height * scale));
+
+  const canvas = document.createElement("canvas");
+  canvas.width = w; canvas.height = h;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  if (!ctx) return dataUrl;
+  // خلفية بيضاء أولاً: الشفافية بالطابعة = ورق فارغ، لا أسود.
+  ctx.fillStyle = "#fff";
+  ctx.fillRect(0, 0, w, h);
+  ctx.drawImage(img, 0, 0, w, h);
+
+  const data = ctx.getImageData(0, 0, w, h);
+  const px = data.data;
+  // عتبة من الصورة: متوسط رمادي البكسلات غير البيضاء، مرفوعة قليلاً حتى
+  // تُحسب الأطراف الفاتحة حبراً بدل ما تضيع.
+  let sum = 0, n = 0;
+  for (let i = 0; i < px.length; i += 4) {
+    const g = 0.299 * px[i] + 0.587 * px[i + 1] + 0.114 * px[i + 2];
+    if (g < 245) { sum += g; n++; }
+  }
+  const threshold = n ? Math.min(225, sum / n + 42) : 128;
+  for (let i = 0; i < px.length; i += 4) {
+    const g = 0.299 * px[i] + 0.587 * px[i + 1] + 0.114 * px[i + 2];
+    const ink = g < threshold ? 0 : 255;
+    px[i] = px[i + 1] = px[i + 2] = ink;
+    px[i + 3] = 255;
+  }
+  ctx.putImageData(data, 0, 0);
+  return canvas.toDataURL("image/png");
+}
+
 export async function prepareUpload(
   file: File,
   opts: { maxDim?: number; quality?: number } = {},
