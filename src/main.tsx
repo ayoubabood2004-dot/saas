@@ -46,6 +46,15 @@ window.addEventListener("unhandledrejection", (e) => {
   const reason = e?.reason as { message?: string; name?: string } | undefined;
   const msg = reason?.message || String(reason ?? "");
   if (/abort|cancel/i.test(msg) || reason?.name === "AbortError") return;
+  // اشتراك منتهٍ: رفض مقصود لا عطل — رسالة تشرح السبب بدل «صار خطأ ما».
+  if (reason?.name === "ReadOnlyError" || msg === "READ_ONLY") {
+    emitGlobalToast({
+      tone: "warn",
+      title: i18next.t("errors.readOnlyTitle", { defaultValue: "الاشتراك منتهٍ — قراءة فقط" }) as string,
+      description: i18next.t("errors.readOnly", { defaultValue: "الإضافة والتعديل متوقفان حتى تجديد الاشتراك. بياناتك كلها محفوظة وتقدر تشوفها وتطبعها." }) as string,
+    });
+    return;
+  }
   const now = Date.now();
   if (now - lastNetToast < 3000) return;
   lastNetToast = now;

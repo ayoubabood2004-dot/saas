@@ -2736,12 +2736,53 @@ export class ReadOnlyError extends Error {
   constructor() { super("READ_ONLY"); this.name = "ReadOnlyError"; }
 }
 
-const WRITE_RE = /^(add|create|update|delete|settle|checkout|save|remove|discharge|refund|set|record|invalidate|cancel|apply|restock|move|assign|activate|bulk|import|deduct|upsert|toggle|advance|ingest|revoke)/i;
+/**
+ * قائمة السماح — لا قائمة المنع.
+ *
+ * كانت البوابة تمنع الأسماء التي تبدأ ببادئات كتابة معروفة، فتسرّبت منها
+ * عمليات حقيقية لأن أسماءها لا تبدأ بواحدة منها: `retailCheckout` (إتمام بيع
+ * كامل!) و`uploadMedia` و`closeJourney` و`markInboxHandled` و`claimPet`…
+ * والأخطر أن كل دالة جديدة تُضاف مستقبلاً تتسرّب افتراضياً.
+ *
+ * القاعدة انقلبت: في وضع القراءة فقط كل شيء ممنوع إلا ما يُعلَن هنا قراءةً
+ * صريحة. الخطأ الآن يميل للأمان — دالة جديدة تُمنع حتى تُراجَع، بدل أن تمرّ
+ * وتكتب على عيادة منتهي اشتراكها.
+ */
+const READ_ONLY_ALLOWED = new Set<string>([
+  // --- كل القراءات (مولَّدة من دوال الريبو نفسها، فلا تسقط واحدة سهواً) ---
+  "getActiveJourney", "getClinicVisit", "getDailyNote", "getPet", "getPetBySerial",
+  "getPetByToken", "getPetsByIds", "getPetsByOwnerEmail", "getProductByBarcode",
+  "getSharedPetsByOwnerId", "getStoreProfile", "listAdmissions", "listAdmissionsForPet",
+  "listAllInvoiceItems", "listAllMedia", "listAllPets", "listAllSurgeries", "listAllTreatments",
+  "listAllVaccinations", "listAllVisits", "listAppointmentsForDay", "listAppointmentsForOwner",
+  "listAppointmentsForPet", "listAppointmentsInRange", "listAuditLog", "listBookingRequests",
+  "listBookingsForDay", "listBranches", "listCareEntries", "listClinicDirectory",
+  "listClinicLabResults", "listClinicStaffPublic", "listClinicTreatments", "listClinicVisits",
+  "listClinicVisitsForPet", "listCompanies", "listCompanySections", "listCouriers",
+  "listDeliveryOrders", "listDeviceInbox", "listDeviceLinks", "listDoctorBusySlots",
+  "listEndedClinicVisits", "listExpenses", "listFeatureRequests", "listGeneratedBarcodes",
+  "listInvoiceItems", "listInvoices", "listJourneyEvents", "listLabResults", "listLoginEvents",
+  "listMedia", "listOpenClinicVisits", "listPetMovements", "listPetNotes", "listPets",
+  "listProblems", "listProducts", "listPurchaseItems", "listPurchasePayments", "listPurchases",
+  "listReminders", "listStoreOrders", "listSurgeries", "listTreatments", "listVaccinations",
+  "listVisits", "listWaiting", "listWeights", "listWhatsAppLog", "searchCustomers",
+  // --- استعلامات مساعدة لا تكتب ---
+  "checkStoreSlug", "slotTaken", "supportsBulkGroup", "supportsSupplierLedger",
+  "adminListFeatureRequests",
+  // --- واجهات الزبون العامة (تعمل خارج جلسة العيادة) ---
+  "storeFrontPublic", "storeCatalogPublic", "placeStoreOrder", "trackJourneyPublic",
+  "reactJourneyPublic", "claimPet", "claimPetsByPhone",
+  // --- سجلات تشغيلية لا تمثّل إدخال بيانات (وحجبها يكسر الدخول) ---
+  "logLogin", "logClientEvent",
+]);
+
+/** يُستعمل بالاختبارات وبالتشخيص: هل هذه الدالة مسموحة بوضع القراءة فقط؟ */
+export const isReadAllowed = (name: string): boolean => READ_ONLY_ALLOWED.has(name);
 
 export const repo: typeof demoRepo = new Proxy(baseRepo, {
   get(target, prop, receiver) {
     const value = Reflect.get(target, prop, receiver);
-    if (typeof value === "function" && typeof prop === "string" && WRITE_RE.test(prop)) {
+    if (typeof value === "function" && typeof prop === "string" && !READ_ONLY_ALLOWED.has(prop)) {
       return (...args: unknown[]) => {
         if (readOnlyChecker()) return Promise.reject(new ReadOnlyError());
         return (value as (...a: unknown[]) => unknown).apply(target, args);

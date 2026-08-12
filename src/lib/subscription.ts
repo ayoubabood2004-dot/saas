@@ -17,7 +17,7 @@
 // ============================================================================
 import { useSyncExternalStore } from "react";
 import { getActiveClinicId } from "./clinics";
-import { sb } from "./clinicSync";
+import { sb, registerConfigReadOnlyChecker } from "./clinicSync";
 import { supabaseUrl, isSupabaseConfigured } from "./supabase";
 import { registerReadOnlyChecker } from "./repo";
 import { TRIAL_DAYS, type BillingPeriod, type PlanId } from "./plans";
@@ -218,6 +218,8 @@ export function isBlockedNow(): boolean {
 
 // Wire the repo write-guard to the live subscription state (see repo.ts).
 registerReadOnlyChecker(isReadOnlyNow);
+// نفس القاعدة على كتابات إعدادات العيادة التي لا تمرّ بـrepo.
+registerConfigReadOnlyChecker(isReadOnlyNow);
 
 /* --------------------------- server integration -------------------------- */
 /**

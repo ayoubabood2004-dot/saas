@@ -37,6 +37,10 @@ export function isNetworkError(e: unknown): boolean {
 /** Map a thrown DB/network error to a short, human-readable message for a toast. */
 export function describeDbError(e: unknown, t: TFunction): string {
   const err = (e && typeof e === "object" ? e : {}) as { name?: string; code?: string; message?: string };
+  // اشتراك منتهٍ: العملية رُفضت بقصد — الرسالة تشرح السبب والحل، لا «خطأ».
+  if (err.name === "ReadOnlyError" || err.message === "READ_ONLY") {
+    return t("errors.readOnly", "انتهى اشتراك العيادة — الحساب بوضع القراءة فقط. تقدر تشوف وتطبع كل بياناتك، بس الإضافة والتعديل يحتاجان تجديد الاشتراك.");
+  }
   if (err.name === TIMEOUT_NAME) {
     return t("errors.timeout", "The request timed out — check your connection and try again.");
   }

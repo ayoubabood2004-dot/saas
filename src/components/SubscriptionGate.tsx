@@ -25,6 +25,18 @@ export function SubscriptionGate({ children }: { children: ReactNode }) {
     return <Navigate to="/subscribe" replace />;
   }
 
+  // شاشات الإنشاء بوضع القراءة فقط: نوقفها عند الباب بدل ما يملأ الطبيب
+  // نموذجاً كاملاً ثم يُرفض بالحفظ. المنع الحقيقي بطبقة البيانات — هذا احترام
+  // لوقته.
+  if (access === "readonly" && CREATE_ROUTES.some((r) => location.pathname.startsWith(r))) {
+    return (
+      <>
+        <ReadOnlyBanner />
+        <LockedCreateNotice />
+      </>
+    );
+  }
+
   return (
     <>
       {access === "readonly" && location.pathname !== "/subscribe" && <ReadOnlyBanner />}
@@ -33,6 +45,39 @@ export function SubscriptionGate({ children }: { children: ReactNode }) {
       )}
       {children}
     </>
+  );
+}
+
+/** المسارات التي وظيفتها إنشاء سجل جديد — تُقفل كلياً بوضع القراءة فقط. */
+const CREATE_ROUTES = ["/new-case"];
+
+function LockedCreateNotice() {
+  const navigate = useNavigate();
+  return (
+    <div className="mx-auto grid max-w-md place-items-center px-4 py-20 text-center">
+      <span className="mb-4 grid h-16 w-16 place-items-center rounded-3xl bg-warn-50 text-warn-600 dark:bg-warn-500/15">
+        <Lock size={28} />
+      </span>
+      <h1 className="text-lg font-extrabold text-ink">ما تكدر تفتح حالة جديدة</h1>
+      <p className="mt-2 text-sm leading-relaxed text-ink-muted">
+        انتهى اشتراك العيادة، فالإضافة والتعديل متوقفان. كل بياناتك وحالاتك السابقة محفوظة
+        وتقدر تشوفها وتطبعها — ويرجع كل شيء طبيعياً لحظة التجديد.
+      </p>
+      <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
+        <button
+          onClick={() => navigate("/subscribe")}
+          className="inline-flex items-center gap-1.5 rounded-full bg-warn-600 px-5 py-2.5 text-sm font-extrabold text-white shadow-soft transition hover:bg-warn-700"
+        >
+          <Lock size={15} /> جدّد الاشتراك
+        </button>
+        <button
+          onClick={() => navigate(-1)}
+          className="rounded-full border border-line px-5 py-2.5 text-sm font-bold text-ink-muted transition hover:border-line-strong hover:text-ink"
+        >
+          رجوع
+        </button>
+      </div>
+    </div>
   );
 }
 

@@ -17,6 +17,14 @@ import { emitGlobalToast } from "./globalToast";
 /** The Supabase client when a real backend is configured, else null (demo mode). */
 export const sb = () => supabase;
 
+/* وضع القراءة فقط (انتهاء الاشتراك) يمرّ من هنا أيضاً: كتابات إعدادات العيادة
+ * (الخدمات، العروض، السلالات، الأدوية، التطعيمات، معدلات القراءات، التفضيلات)
+ * لا تمرّ بـrepo، فبدون هذا الفحص كانت تصل السحابة رغم انتهاء الاشتراك.
+ * يُسجَّل الفاحص من subscription.ts، وافتراضه «اسمح» فلا يقفل شيء بالخطأ. */
+let readOnlyChecker: () => boolean = () => false;
+export function registerConfigReadOnlyChecker(fn: () => boolean) { readOnlyChecker = fn; }
+export const isConfigReadOnly = (): boolean => readOnlyChecker();
+
 /** Fire a Supabase write in the background. The optimistic local update already
  *  happened; if the cloud copy fails we warn the user but keep their data. */
 export function cloudWrite(
@@ -24,6 +32,7 @@ export function cloudWrite(
   ctx: string,
 ): void {
   if (!supabase) return; // demo / offline → localStorage is the source of truth
+  if (readOnlyChecker()) return; // اشتراك منتهٍ — لا تعديل على إعدادات العيادة
   let warned = false;
   const fail = (msg: string) => {
     if (warned) return;
