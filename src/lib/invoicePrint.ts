@@ -172,6 +172,16 @@ export function buildInvoiceHTML(invoice: Invoice, items: InvoiceItem[], opts: I
   const wmm = thermal ? getReceiptWidth() : 0;
   const page = thermal ? `@page { size: ${wmm}mm auto; margin: 0; }` : "@page { size: A4; margin: 0; }";
 
+  /* الإيصال يُصمَّم على العرض المضبوط لا يُقصّ عليه: كل مقاس يُشتقّ من العرض
+   * نفسه — الحواشي والخط والشعار والـQR — فورق ٥٨مم يطلع إيصالاً متناسقاً
+   * مصمَّماً له، لا نسخة ٧٢مم مبتورة. النسبة مقيَّدة بحدّين حتى لا يصغر الخط
+   * تحت حدّ القراءة على الحراري ولا يتضخم على الورق العريض. */
+  const ratio = Math.min(1.08, Math.max(0.84, wmm / 72));
+  const fs = (px: number) => `${Math.round(px * ratio * 10) / 10}px`;
+  const padX = wmm <= 62 ? 2 : 3;            // مم — الورق الضيق يحتاج حاشية أنحف
+  const logoMm = Math.min(24, Math.round(wmm * 0.34));
+  const qrMm = Math.min(21, Math.round(wmm * 0.3));
+
   // Two visual themes share the same markup; CSS differs by format.
   const css = thermal
     ? `
@@ -189,57 +199,57 @@ export function buildInvoiceHTML(invoice: Invoice, items: InvoiceItem[], opts: I
     * { box-sizing: border-box; }
     html, body { margin: 0; padding: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; color-adjust: exact; }
     body {
-      width: ${wmm}mm; max-width: ${wmm}mm; overflow-x: hidden; padding: 4mm 3mm 0; color: #000; background: #fff;
+      width: ${wmm}mm; max-width: ${wmm}mm; overflow-x: hidden; padding: 4mm ${padX}mm 0; color: #000; background: #fff;
       font-family: "Segoe UI", "Noto Sans Arabic", "Tahoma", system-ui, sans-serif;
-      font-size: 11.5px; line-height: 1.5;
+      font-size: ${fs(11.5)}; line-height: 1.5;
       font-variant-numeric: tabular-nums; -webkit-font-smoothing: none;
     }
     .head { text-align: center; }
-    .head img.logo { display: block; margin: 0 auto 3px; width: 24mm; max-height: 24mm; object-fit: contain; }
-    .brand { font-size: 8.5px; font-weight: 700; letter-spacing: 3px; text-transform: uppercase; }
-    .clinic { font-size: 17px; font-weight: 800; letter-spacing: -.2px; margin-top: 1px; }
-    .contact { font-size: 10.5px; margin-top: 2px; }
+    .head img.logo { display: block; margin: 0 auto 3px; width: ${logoMm}mm; max-height: ${logoMm}mm; object-fit: contain; }
+    .brand { font-size: ${fs(8.5)}; font-weight: 700; letter-spacing: 3px; text-transform: uppercase; }
+    .clinic { font-size: ${fs(17)}; font-weight: 800; letter-spacing: -.2px; margin-top: 1px; }
+    .contact { font-size: ${fs(10.5)}; margin-top: 2px; }
     .chip { display: inline-block; margin-top: 6px; border: 1.3px solid #000; border-radius: 999px;
-            padding: 1.5px 12px; font-size: 10px; font-weight: 800; letter-spacing: 2px; }
+            padding: 1.5px 12px; font-size: ${fs(10)}; font-weight: 800; letter-spacing: 2px; }
     .rule { border-top: 1px dashed #000; margin: 7px 0; }
     .rule.solid { border-top: 1.4px solid #000; }
 
     /* بيانات الإيصال — شبكة تسمية/قيمة مضغوطة تقرأ بلمحة */
-    .meta { display: grid; grid-template-columns: auto 1fr; gap: 1px 10px; font-size: 10.5px; }
+    .meta { display: grid; grid-template-columns: auto 1fr; gap: 1px 10px; font-size: ${fs(10.5)}; }
     .meta .k { font-weight: 400; }
     .meta .v { font-weight: 700; text-align: end; }
 
     /* البنود */
     .item { padding: 5px 0; border-bottom: 1px dotted #000; }
     .item:last-child { border-bottom: 0; }
-    .item .n { font-weight: 700; font-size: 11.5px; word-break: break-word; }
-    .item .bc { font-size: 8px; letter-spacing: .6px; margin-top: 1px; }
+    .item .n { font-weight: 700; font-size: ${fs(11.5)}; word-break: break-word; }
+    .item .bc { font-size: ${fs(8)}; letter-spacing: .6px; margin-top: 1px; }
     .item .l { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-top: 2px; }
-    .item .q { font-size: 10.5px; }
-    .item .a { font-size: 12px; font-weight: 800; white-space: nowrap; }
+    .item .q { font-size: ${fs(10.5)}; }
+    .item .a { font-size: ${fs(12)}; font-weight: 800; white-space: nowrap; }
 
     /* المجاميع + شريط الإجمالي (حدود مزدوجة — تطبع بلا رسومات خلفية) */
     .sum { margin-top: 6px; }
-    .sum .r { display: flex; justify-content: space-between; padding: 1.5px 0; font-size: 11px; }
+    .sum .r { display: flex; justify-content: space-between; padding: 1.5px 0; font-size: ${fs(11)}; }
     .grand { display: flex; justify-content: space-between; align-items: baseline;
              border-top: 2.2px solid #000; border-bottom: 2.2px solid #000;
              padding: 6px 0; margin-top: 6px; }
-    .grand .lbl { font-size: 12.5px; font-weight: 800; letter-spacing: .5px; }
-    .grand .val { font-size: 18px; font-weight: 800; }
-    .pay { font-size: 10.5px; margin-top: 4px; display: flex; justify-content: space-between; }
+    .grand .lbl { font-size: ${fs(12.5)}; font-weight: 800; letter-spacing: .5px; }
+    .grand .val { font-size: ${fs(18)}; font-weight: 800; }
+    .pay { font-size: ${fs(10.5)}; margin-top: 4px; display: flex; justify-content: space-between; }
 
-    .note { margin-top: 7px; border: 1px solid #000; padding: 5px 6px; font-size: 10px; line-height: 1.5; white-space: pre-wrap; }
-    .badge { text-align: center; font-weight: 800; border: 1.6px solid #000; padding: 3px; margin: 6px 0; letter-spacing: 2px; font-size: 11px; }
+    .note { margin-top: 7px; border: 1px solid #000; padding: 5px 6px; font-size: ${fs(10)}; line-height: 1.5; white-space: pre-wrap; }
+    .badge { text-align: center; font-weight: 800; border: 1.6px solid #000; padding: 3px; margin: 6px 0; letter-spacing: 2px; font-size: ${fs(11)}; }
 
     /* الذيل */
     .foot { text-align: center; margin-top: 9px; }
-    .thanks { font-size: 11px; font-weight: 700; }
+    .thanks { font-size: ${fs(11)}; font-weight: 700; }
     .qr { margin-top: 7px; }
-    .qr img { width: 21mm; height: 21mm; display: block; margin: 0 auto; image-rendering: pixelated; }
-    .qr .cap { font-size: 8.5px; margin-top: 2px; letter-spacing: .3px; }
-    .social { font-size: 9.5px; margin-top: 5px; }
-    .site { font-size: 9px; margin-top: 2px; letter-spacing: 1px; }
-    .prints { font-size: 8.5px; margin-top: 4px; }
+    .qr img { width: ${qrMm}mm; height: ${qrMm}mm; display: block; margin: 0 auto; image-rendering: pixelated; }
+    .qr .cap { font-size: ${fs(8.5)}; margin-top: 2px; letter-spacing: .3px; }
+    .social { font-size: ${fs(9.5)}; margin-top: 5px; }
+    .site { font-size: ${fs(9)}; margin-top: 2px; letter-spacing: 1px; }
+    .prints { font-size: ${fs(8.5)}; margin-top: 4px; }
 
     /* مسافة التغذية — الفرق بين إيصال يُقص كاملاً وإيصال يتمزّق آخر سطر منه.
        ورقة فارغة تُدفع خارج الطابعة فتصل نهاية النص لما بعد شفرة القص. */
@@ -248,7 +258,7 @@ export function buildInvoiceHTML(invoice: Invoice, items: InvoiceItem[], opts: I
        محتوى — فبقي آخر سطر داخل الجهاز ويتمزّق. الآن التغذية أسطرٌ حقيقية
        (مسافة غير قابلة للكسر بكل سطر) لا يستطيع السائق حذفها، يسبقها خط
        منقّط يدلّ على موضع القص. */
-    .cutline { text-align: center; font-size: 9px; letter-spacing: 2px; margin-top: 8px; }
+    .cutline { text-align: center; font-size: ${fs(9)}; letter-spacing: 2px; margin-top: 8px; }
     .feed { font-size: 9px; line-height: 5.5mm; }
     `
     : `
