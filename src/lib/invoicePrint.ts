@@ -164,7 +164,11 @@ export function buildInvoiceHTML(invoice: Invoice, items: InvoiceItem[], opts: I
   const thermal = opts.format === "thermal";
   // margin:0 makes Chrome/Edge DROP the browser's own header/footer (date, the
   // "about:blank" URL, page numbers); the page padding is restored on .sheet/body.
-  const page = thermal ? "@page { size: 80mm auto; margin: 0; }" : "@page { size: A4; margin: 0; }";
+  // عرض الورق ٨٠مم، لكن عرض الطباعة الفعلي لرأس الطابعة ٧٢مم (٥٧٦ نقطة).
+  // إعطاء المتصفح ٨٠مم يجعل السائق يقصّ الفائض — وبمستند عربي يقع القصّ على
+  // اليسار حيث المبالغ (طلعت «000» بدل «15,000»). نطابق عرض الصفحة مع منطقة
+  // الطباعة فلا يبقى للسائق ما يقصّه ولا يزيحه.
+  const page = thermal ? "@page { size: 72mm auto; margin: 0; }" : "@page { size: A4; margin: 0; }";
 
   // Two visual themes share the same markup; CSS differs by format.
   const css = thermal
@@ -183,7 +187,7 @@ export function buildInvoiceHTML(invoice: Invoice, items: InvoiceItem[], opts: I
     * { box-sizing: border-box; }
     html, body { margin: 0; padding: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; color-adjust: exact; }
     body {
-      width: 80mm; padding: 4mm 4.5mm 0; color: #000; background: #fff;
+      width: 72mm; max-width: 72mm; overflow-x: hidden; padding: 4mm 3mm 0; color: #000; background: #fff;
       font-family: "Segoe UI", "Noto Sans Arabic", "Tahoma", system-ui, sans-serif;
       font-size: 11.5px; line-height: 1.5;
       font-variant-numeric: tabular-nums; -webkit-font-smoothing: none;
@@ -237,7 +241,13 @@ export function buildInvoiceHTML(invoice: Invoice, items: InvoiceItem[], opts: I
 
     /* مسافة التغذية — الفرق بين إيصال يُقص كاملاً وإيصال يتمزّق آخر سطر منه.
        ورقة فارغة تُدفع خارج الطابعة فتصل نهاية النص لما بعد شفرة القص. */
-    .feed { height: 24mm; }
+    /* خط القص + التغذية.
+       الفراغ «الفارغ» (div بارتفاع فقط) كان يُقصّ من سائق الطابعة لأنه بلا
+       محتوى — فبقي آخر سطر داخل الجهاز ويتمزّق. الآن التغذية أسطرٌ حقيقية
+       (مسافة غير قابلة للكسر بكل سطر) لا يستطيع السائق حذفها، يسبقها خط
+       منقّط يدلّ على موضع القص. */
+    .cutline { text-align: center; font-size: 9px; letter-spacing: 2px; margin-top: 8px; }
+    .feed { font-size: 9px; line-height: 5.5mm; }
     `
     : `
     * { box-sizing: border-box; }
@@ -354,7 +364,8 @@ export function buildInvoiceHTML(invoice: Invoice, items: InvoiceItem[], opts: I
       ${opts.printNo && opts.printNo > 1 ? `<div class="prints">${s.printNo} #${ltr(String(opts.printNo))}</div>` : ""}
     </div>
 
-    <div class="feed"></div>
+    <div class="cutline">— — — — — — — — — —</div>
+    <div class="feed">${"&nbsp;<br/>".repeat(5)}&nbsp;</div>
     `
     : `
     ${logo ? `<div class="watermark"><img src="${logo}" alt=""/></div>` : ""}
