@@ -1,5 +1,6 @@
 import type { Invoice, InvoiceItem } from "@/types";
 import { siteHost } from "@/lib/appUrl";
+import { getReceiptWidth } from "@/lib/printer";
 
 export type PrintFormat = "a4" | "thermal";
 
@@ -164,11 +165,12 @@ export function buildInvoiceHTML(invoice: Invoice, items: InvoiceItem[], opts: I
   const thermal = opts.format === "thermal";
   // margin:0 makes Chrome/Edge DROP the browser's own header/footer (date, the
   // "about:blank" URL, page numbers); the page padding is restored on .sheet/body.
-  // عرض الورق ٨٠مم، لكن عرض الطباعة الفعلي لرأس الطابعة ٧٢مم (٥٧٦ نقطة).
-  // إعطاء المتصفح ٨٠مم يجعل السائق يقصّ الفائض — وبمستند عربي يقع القصّ على
-  // اليسار حيث المبالغ (طلعت «000» بدل «15,000»). نطابق عرض الصفحة مع منطقة
-  // الطباعة فلا يبقى للسائق ما يقصّه ولا يزيحه.
-  const page = thermal ? "@page { size: 72mm auto; margin: 0; }" : "@page { size: A4; margin: 0; }";
+  // «٨٠مم» اسم الورق لا عرض الطباعة: رأس الطابعة يطبع نقاطاً محدودة والسائق
+  // يضيف هامشاً، فأي زيادة بعرض المستند تنلف على الجهة الثانية («نصف الكلام
+  // هنا والنصف هناك») أو تُقصّ. العرض صار قابلاً للضبط لكل جهاز بعد قياسه
+  // بشريط القياس من الإعدادات — بدل رقم مخمَّن يصلح لطابعة ويكسر أخرى.
+  const wmm = thermal ? getReceiptWidth() : 0;
+  const page = thermal ? `@page { size: ${wmm}mm auto; margin: 0; }` : "@page { size: A4; margin: 0; }";
 
   // Two visual themes share the same markup; CSS differs by format.
   const css = thermal
@@ -187,7 +189,7 @@ export function buildInvoiceHTML(invoice: Invoice, items: InvoiceItem[], opts: I
     * { box-sizing: border-box; }
     html, body { margin: 0; padding: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; color-adjust: exact; }
     body {
-      width: 72mm; max-width: 72mm; overflow-x: hidden; padding: 4mm 3mm 0; color: #000; background: #fff;
+      width: ${wmm}mm; max-width: ${wmm}mm; overflow-x: hidden; padding: 4mm 3mm 0; color: #000; background: #fff;
       font-family: "Segoe UI", "Noto Sans Arabic", "Tahoma", system-ui, sans-serif;
       font-size: 11.5px; line-height: 1.5;
       font-variant-numeric: tabular-nums; -webkit-font-smoothing: none;

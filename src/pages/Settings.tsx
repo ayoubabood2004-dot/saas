@@ -19,6 +19,7 @@ import { DEFAULT_RANGES, VITAL_KEYS, CBC_KEYS, rangeFor, type VitalKey } from "@
 const ALL_KEYS: VitalKey[] = [...VITAL_KEYS, ...CBC_KEYS];
 import { setVitalOverride, clearVitalOverrides, getDialCode, setDialCode, getClinicLogo, setClinicLogo, getClinicSocials, setClinicSocials, getClinicName, setClinicName, getPreSalePrint, setPreSalePrint, getResizableCart, setResizableCart, getFontScaleEnabled, setFontScaleEnabled, getDeliveryZones, setDeliveryZones, type DeliveryZone, getQtyPromos, setQtyPromos, type QtyPromo } from "@/lib/settings";
 import { FONT_SCALES, getFontScale, setFontScale, applyFontScale, getCrispMode, setCrispMode, type FontScaleId } from "@/lib/fontScale";
+import { RECEIPT_WIDTHS, getReceiptWidth, setReceiptWidth, openReceiptCalibration } from "@/lib/printer";
 import { SURGERY_CATALOG, isSurgeryCategoryName } from "@/lib/surgeryCatalog";
 import { prepareLogo } from "@/lib/image";
 import { isSoundEnabled, setSoundEnabled, playSuccess, playTap, playWarning } from "@/lib/sounds";
@@ -157,6 +158,7 @@ export function Settings() {
       {canSettings && <ManagerOverrideCard />}
       {canSettings && <CashierOptions />}
       {canSettings && <DeliveryZonesCard />}
+      {canSettings && <ThermalPrinterCard />}
       {canSettings && <FontScaleOptions />}
       <ClinicMembership />
       {canSettings && <BranchesManager />}
@@ -626,6 +628,51 @@ function DeliveryZonesCard() {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+/* ---- الطابعة الحرارية: عرض الإيصال + شريط قياس يحدّده بطبعة واحدة ---- */
+function ThermalPrinterCard() {
+  const { t } = useTranslation();
+  const toast = useToast();
+  const { can } = usePermissions();
+  const [w, setW] = useState(getReceiptWidth());
+
+  if (!can("manageSettings")) return null;
+
+  const pick = (mm: number) => { setW(mm); setReceiptWidth(mm); playTap(); };
+
+  return (
+    <div className="card p-5 mb-4">
+      <h2 className="font-bold text-ink mb-1 flex items-center gap-2"><Printer size={18} className="text-brand-600" /> {t("settings.thermal", "الطابعة الحرارية")}</h2>
+      <p className="text-xs text-ink-subtle mb-4">
+        {t("settings.thermalHint", "«٨٠مم» اسم الورق مو عرض الطباعة — كل موديل يطبع عرضاً مختلفاً قليلاً. إذا طلع الإيصال «نصف الكلام هنا والنصف بالجهة الثانية» أو مقصوصاً، فعرض المستند أكبر من طابعتك: اطبع شريط القياس وحدّد العرض الصحيح مرة وحدة.")}
+      </p>
+
+      <Button variant="secondary" leftIcon={<Printer size={15} />} onClick={() => {
+        playTap();
+        if (!openReceiptCalibration()) toast.error(t("retail.popupBlocked", "اسمح بالنوافذ المنبثقة للطباعة"));
+      }}>
+        {t("settings.thermalCalibrate", "اطبع شريط القياس")}
+      </Button>
+
+      <div className="mt-4 border-t border-line pt-4">
+        <label className="label">{t("settings.thermalWidth", "عرض الإيصال (يُحفَظ لهذا الجهاز)")}</label>
+        <div className="flex flex-wrap gap-2">
+          {RECEIPT_WIDTHS.map((mm) => (
+            <button key={mm} type="button" onClick={() => pick(mm)} aria-pressed={w === mm}
+              className={cn("rounded-xl border px-3.5 py-2 text-sm font-black tabular-nums transition",
+                w === mm ? "border-brand-500 bg-brand-50 text-brand-700 shadow-soft dark:bg-brand-500/15 dark:text-brand-300"
+                  : "border-line bg-surface-1 text-ink-muted hover:border-brand-300")}>
+              {formatNum(mm)} <span className="text-2xs font-bold">mm</span>
+            </button>
+          ))}
+        </div>
+        <p className="mt-2 text-2xs text-ink-subtle">
+          {t("settings.thermalWidthHint", "اختر أطول عمود طُبع بشريط القياس خطاً واحداً نظيفاً بلا أثر بالجهة الثانية. الشائع: ٧٢مم لورق ٨٠مم، و٥٨مم للطابعات الصغيرة.")}
+        </p>
+      </div>
     </div>
   );
 }
