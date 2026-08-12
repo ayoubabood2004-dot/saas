@@ -48,14 +48,21 @@ export function AccountMenu() {
   const [, bumpZoom] = useState(0);
   const wrapRef = useRef<HTMLDivElement>(null);
 
-  /* إغلاق بالضغط خارج القائمة أو بمفتاح Esc — سلوك القوائم القياسي. */
+  /* إغلاق بالضغط خارج القائمة أو بمفتاح Esc — سلوك القوائم القياسي.
+   *
+   * استثناء واجب: النوافذ (Modal) تُرسَم بجذر الصفحة عبر بوابة، لكنها شجرياً
+   * أبناء هذه القائمة. فأي ضغطة داخلها تبدو «خارج القائمة» فتُغلقها — وإغلاق
+   * القائمة يفكّ النافذة معها. هذا ما كان يخفي لوحة رمز المدير عند أول رقم.
+   * القاعدة: ما دام في نافذة مفتوحة، القائمة لا تُغلق بضغطة ولا بـEsc — النافذة
+   * هي صاحبة التحكّم، وإغلاقها يرجّع السلوك الطبيعي. */
   useEffect(() => {
     if (!open) return;
+    const dialogOpen = () => !!document.querySelector('[role="dialog"][aria-modal="true"]');
     const onDown = (e: MouseEvent) => {
+      if (dialogOpen()) return;
       if (!wrapRef.current?.contains(e.target as Node)) setOpen(false);
     };
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
-    // capture: نافذة الرمز السري تفتح فوق القائمة — نغلق قبل ما تبتلع الضغطة.
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape" && !dialogOpen()) setOpen(false); };
     document.addEventListener("mousedown", onDown);
     document.addEventListener("keydown", onKey);
     return () => { document.removeEventListener("mousedown", onDown); document.removeEventListener("keydown", onKey); };

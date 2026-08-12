@@ -110,7 +110,9 @@ export function OverrideCorner({ compact = false, variant = "icon", onDone }: {
           </button>
         </Tooltip>
       )}
-      <PinModal open={open} onClose={() => { setOpen(false); onDone?.(); }} />
+      {/* الإلغاء يغلق اللوحة فقط ويترك القائمة مفتوحة (يقدر يعيد المحاولة)؛
+          الفتح الناجح يغلق القائمة لأنها أدّت غرضها. */}
+      <PinModal open={open} onClose={() => setOpen(false)} onUnlocked={onDone} />
     </>
   );
 }
@@ -185,7 +187,12 @@ function ManagerLockButton({ compact = false, variant = "icon", onDone }: {
 }
 
 /* ------------------------------- PIN pad -------------------------------- */
-function PinModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+function PinModal({ open, onClose, onUnlocked }: {
+  open: boolean;
+  onClose: () => void;
+  /** يُنادى عند الفتح الناجح فقط — الإلغاء لا يغلق القائمة الحاضنة. */
+  onUnlocked?: () => void;
+}) {
   const { t } = useTranslation();
   const [pin, setPin] = useState("");
   const [busy, setBusy] = useState(false);
@@ -204,6 +211,7 @@ function PinModal({ open, onClose }: { open: boolean; onClose: () => void }) {
     setBusy(false);
     if (res.ok) {
       playSuccess();
+      onUnlocked?.();
       onClose();
       return;
     }
