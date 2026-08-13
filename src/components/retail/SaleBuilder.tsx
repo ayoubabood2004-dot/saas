@@ -10,7 +10,7 @@ import type { Product, Invoice, InvoiceItem, CheckoutItem, SaleMeta, PaymentMeth
 import { repo, resolveDiscount } from "@/lib/repo";
 import { matchStaffToUser, resolveStaffName } from "@/lib/staffNames";
 import { phoneDigits } from "@/lib/phone";
-import { getServiceCatalog } from "@/lib/services";
+import { getServiceCatalog, findServiceByBarcode } from "@/lib/services";
 import { computePromotions, getPromoRules } from "@/lib/promotions";
 import { useBarcodeScanner } from "@/hooks/useBarcodeScanner";
 import { useAuth } from "@/contexts/AuthContext";
@@ -51,6 +51,9 @@ interface Line {
    *  ONE invoice, and each med line syncs into ITS OWN pet's medical record. */
   petId?: string | null;
   petName?: string | null;
+  /** معرّف الخدمة بالكتالوج — تحتاجه عروض الخدمات لتعرف السطر أي خدمة هو
+   *  (id السطر نصّ مركّب، وأسطر المختبر تحمل شكلاً آخر). */
+  serviceId?: string | null;
   /** خدمة من تصنيف "عمليات/جراحة" — تُسجَّل كعملية باسمها مهما اختلفت اللهجة. */
   surgeryCat?: boolean;
   /** مرجع عملية من «مكتبة العمليات» — تعريف قاطع للنوع مهما تغيّر الاسم. */
@@ -114,7 +117,8 @@ interface SaleDraft {
   notes?: string;
   discountType: DiscountType; discountValue: string; finalOverride: number | null; cashierId: string | null;
   /** عروض الكمية المفعّلة يدوياً بالزر الأحمر — lineId → ruleId. */
-  qtyPromoOn?: Record<string, string>;
+  /** العروض المفعّلة — بمعرّف القاعدة (كانت بمعرّف السطر قبل 0102). */
+  promoOn?: string[];
 }
 const saleDraftKey = (clinicId?: string) => `vp_sale_draft_${clinicId ?? "default"}`;
 function loadSaleDraft(clinicId?: string): SaleDraft | null {
@@ -339,7 +343,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
   const [promoRules] = useState(() => getPromoRules());
   // عروض الكمية «كل N قطع خصم X» — التطبيق يدوي بالزر الأحمر بجانب السطر.
   const [qtyRules] = useState<QtyPromo[]>(() => getQtyPromos().filter((r) => r.active));
-  const [qtyPromoOn, setQtyPromoOn] = useState<Record<string, string>>(draft0?.qtyPromoOn ?? {});
+  const [promoOn, setPromoOn] = useState<string[]>(draft0?.promoOn ?? []);
   const [query, setQuery] = useState("");
   const [name, setName] = useState(draft0?.name ?? "");
   const [phone, setPhone] = useState(draft0?.phone ?? "");
@@ -464,7 +468,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
   const addService = (s: Service) => {
     // الخدمة تُنسب للحيوان النشط — خدمة "عملية" تسجَّل تلقائياً في طبلته عند الإتمام.
     const catName = catalog.categories.find((c) => c.id === s.category_id)?.name ?? null;
-    bump(`s:${s.id}`, () => ({ id: `s:${s.id}`, kind: "service", name: s.name, barcode: null, unit_price: s.price, unit_cost: 0, qty: 1, stock: null, product_id: null, subcategory: null, petId: activePet?.id ?? null, petName: activePet?.name ?? null, surgeryCat: isSurgeryCategoryName(catName), surgeryRef: s.surgery_ref ?? null }));
+    bump(`s:${s.id}`, () => ({ id: `s:${s.id}`, kind: "service", name: s.name, barcode: null, unit_price: s.price, unit_cost: 0, qty: 1, stock: null, product_id: null, subcategory: null, serviceId: s.id, petId: activePet?.id ?? null, petName: activePet?.name ?? null, surgeryCat: isSurgeryCategoryName(catName), surgeryRef: s.surgery_ref ?? null }));
   };
 
   // A medication/vaccine from the "الأدوية" tab — a priced cart line carrying the full
@@ -487,16 +491,29 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
   const removeLine = (id: string) => {
     setCart((c) => c.filter((l) => l.id !== id));
     // سطر انحذف → عرضه المفعّل يروح وياه (لا يبقى بالمسودة).
-    setQtyPromoOn((m) => { if (!(id in m)) return m; const n = { ...m }; delete n[id]; return n; });
+    // السطر انحذف → أي عرض ما عاد مؤهلاً ينطفئ لوحده بإعادة الحساب أدناه.
   };
 
   useBarcodeScanner(async (code) => {
     if (done) return;
     const product = await repo.getProductByBarcode(code, clinicId);
-    if (!product) { playWarning(); toast.error(t("pos.notFound", "No product matches that barcode"), code); return; }
-    playSuccess();
-    addProduct(product);
-    setQuery(""); // clear any scanned digits that landed in the focused search box
+    if (product) {
+      playSuccess();
+      addProduct(product);
+      setQuery(""); // clear any scanned digits that landed in the focused search box
+      return;
+    }
+    // ما طابق منتجاً → جرّب الخدمات: العيادة تصنع باركود لخدماتها المتكررة
+    // (فحص عام، CBC…) وتطبعه بنفسها، فتنباع بمسحة بدل تنقّل بين التصنيفات.
+    const svc = findServiceByBarcode(code);
+    if (svc) {
+      playSuccess();
+      addService(svc);
+      setQuery("");
+      return;
+    }
+    playWarning();
+    toast.error(t("pos.notFoundAny", "ماكو منتج ولا خدمة بهذا الباركود"), code);
   });
 
   // The bridge: a doctor clicked "Sell items" inside an animal record. Auto-fill the
@@ -530,7 +547,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
       setCart((c) => c.some((l) => l.id === lineId) ? c : [...c, {
         id: lineId, kind: "service", name: best ? best.s.name : label, barcode: null,
         unit_price: best ? best.s.price : 0, unit_cost: 0,
-        qty: 1, stock: null, product_id: null, subcategory: null,
+        qty: 1, stock: null, product_id: null, subcategory: null, serviceId: best ? best.s.id : null,
         petId: prefill.petId ?? null, petName: prefill.pet || null, surgeryCat: false, surgeryRef: null,
       }]);
     }
@@ -544,22 +561,55 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
   // Dynamic Mix & Match offers, evaluated against the live cart.
   const { applied: promos, totalDiscount: promoDiscount } = useMemo(() => computePromotions(cart, promoRules), [cart, promoRules]);
 
-  // ---- عروض الكمية «كل N قطع خصم X» — يدوية بالزر الأحمر ---------------------
-  // قاعدة المنتج المحدد تغلب قاعدة «أي منتج»؛ القطع = علب كاملة (بيع المفرد
-  // بالحبة/الشريط خارج العرض عمداً حتى لا تُحسب ٣ حبات كثلاث قطع).
-  const qtyRuleFor = (l: Line): QtyPromo | null => {
-    if (l.kind !== "product" || l.saleUnit === "sub") return null;
-    return qtyRules.find((r) => r.productId && r.productId === l.product_id)
-      ?? qtyRules.find((r) => !r.productId)
-      ?? null;
+  // ---- عروض الكمية — تُحسب **مجمّعة** عبر كل الأسطر المشمولة ------------------
+  // الفكرة الجوهرية: الزبون الي أخذ ثلاث قطع من ثلاثة أصناف مختلفة دفع ثمن
+  // ثلاث قطع، فيستحق العرض تماماً مثل من أخذ ثلاثاً من صنف واحد. الحساب القديم
+  // (سطر لوحده) كان يفوّت هذي الحالة كلياً.
+  // القطع = علب كاملة: بيع المفرد بالحبة/الشريط خارج العرض عمداً حتى لا تُحسب
+  // ثلاث حبات كثلاث قطع.
+  const promoLines = (r: QtyPromo): Line[] => cart.filter((l) => {
+    if (r.kind === "service") return l.kind === "service" && (!r.ids.length || (l.serviceId ? r.ids.includes(l.serviceId) : false));
+    if (l.kind !== "product" || l.saleUnit === "sub") return false;
+    return !r.ids.length || (l.product_id ? r.ids.includes(l.product_id) : false);
+  });
+
+  /** ما الذي يعطيه هذا العرض على السلة الحالية؟ null = غير مؤهل بعد. */
+  const promoHit = (r: QtyPromo): { off: number; groups: number; lines: Line[]; units: number } | null => {
+    const lines = promoLines(r);
+    const units = lines.reduce((n, l) => n + l.qty, 0);
+    const groups = Math.floor(units / r.qty);
+    if (groups < 1) return null;
+    const pooled = lines.reduce((n, l) => n + l.qty * l.unit_price, 0);
+    let off: number;
+    if (r.mode === "bundle") {
+      // «أي ٣ بـس»: المجموعة تأخذ أغلى القطع (وهذا ما يتوقعه الزبون ويفعله
+      // السوق). نفرد الأسطر لقطع مفردة حتى يصح الاختيار عبر أصناف مختلفة.
+      const each: number[] = [];
+      for (const l of lines) for (let i = 0; i < l.qty; i++) each.push(l.unit_price);
+      each.sort((a, b) => b - a);
+      const covered = each.slice(0, groups * r.qty).reduce((a, b) => a + b, 0);
+      off = covered - groups * r.bundlePrice;
+    } else {
+      off = groups * r.off;
+    }
+    off = Math.min(pooled, Math.max(0, round2(off)));
+    if (off <= 0) return null;
+    return { off, groups, lines, units };
   };
-  /** خصم السطر المفعّل: مجموعات مكتملة × مقدار الخصم — يتمدد مع الكمية حياً. */
-  const lineQtyOff = (l: Line): number => {
-    const rule = qtyRuleFor(l);
-    if (!rule || qtyPromoOn[l.id] !== rule.id || l.qty < rule.qty) return 0;
-    return Math.min(l.qty * l.unit_price, Math.floor(l.qty / rule.qty) * rule.off);
+
+  /** كل العروض المؤهلة الآن — مع خصم كل واحد. */
+  const promoHits = useMemo(
+    () => qtyRules.map((r) => ({ rule: r, hit: promoHit(r) })).filter((x): x is { rule: QtyPromo; hit: NonNullable<ReturnType<typeof promoHit>> } => !!x.hit),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [cart, qtyRules],
+  );
+  const qtyOffTotal = round2(promoHits.filter((x) => promoOn.includes(x.rule.id)).reduce((n, x) => n + x.hit.off, 0));
+  const togglePromo = (id: string) => {
+    setPromoOn((cur) => {
+      if (cur.includes(id)) { playTap(); return cur.filter((x) => x !== id); }
+      playSuccess(); setFinalOverride(null); return [...cur, id];
+    });
   };
-  const qtyOffTotal = round2(cart.reduce((s, l) => s + lineQtyOff(l), 0));
 
   // Manual (percent/fixed) discount entered at the till, on top of any promotions.
   const manualDiscountAmt = resolveDiscount(subtotal, discountType, Number(discountValue) || 0);
@@ -591,8 +641,8 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
   // entry still starts clean (see draft0's load guard); this only saves what the
   // sale currently holds.
   useEffect(() => {
-    saveSaleDraft(clinicId, { cart, name, phone, salePets, notes: saleNotes, discountType, discountValue, finalOverride, cashierId, qtyPromoOn });
-  }, [clinicId, cart, name, phone, salePets, saleNotes, discountType, discountValue, finalOverride, cashierId, qtyPromoOn]);
+    saveSaleDraft(clinicId, { cart, name, phone, salePets, notes: saleNotes, discountType, discountValue, finalOverride, cashierId, promoOn });
+  }, [clinicId, cart, name, phone, salePets, saleNotes, discountType, discountValue, finalOverride, cashierId, promoOn]);
 
   // ---- Payment: full, split, partial (credit), or over-tendered (change due) ----
   const isSplit = payments.length > 1;
@@ -727,7 +777,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
     clearSaleDraft(clinicId);
     setCart([]); setQuery(""); setDiscountValue(""); setFinalOverride(null); setEditingTotal(false);
     setDiscountType("percent"); setPayments([{ method: "cash", amount: 0 }]); setPaidEdited(false); setPartialMode(false); setDone(null); setLastPrints(0);
-    setQtyPromoOn({});
+    setPromoOn([]);
     setCashierId(null); setBrowseTab("products"); setSaleNotes("");
     setDeliveryOn(false); setDCourierId(""); setDZone(""); setDAddress(""); setDFee(""); setDFeeToClinic(false);
     // Preserve the patient/customer bridge across "New sale" so repeated per-patient
@@ -1405,31 +1455,32 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
                             : t("pos.each", "each")}
                         </span>
                       </div>
-                      {/* عرض الكمية: السطر وصل للعدد → زر أحمر صغير يطبّق الخصم
-                          بضغطة (وضغطة ثانية تلغيه). القرار بيد الكاشير دائماً. */}
+                      {/* عرض الكمية: الزر الأحمر يبقى بجانب السطر عندما يكون
+                          العرض على هذا السطر وحده — وهذا هو الشكل المألوف.
+                          العروض المجمّعة (عدة أصناف) مكانها الشريط فوق الحساب،
+                          لأن خصماً واحداً موزّعاً على ثلاثة أسطر لا يصح أن يظهر
+                          ثلاث مرات. */}
                       {(() => {
-                        const rule = qtyRuleFor(l);
-                        if (!rule || l.qty < rule.qty) return null;
-                        const off = Math.min(l.qty * l.unit_price, Math.floor(l.qty / rule.qty) * rule.off);
-                        if (off <= 0) return null;
-                        const on = qtyPromoOn[l.id] === rule.id;
+                        const x = promoHits.find((h) => h.hit.lines.length === 1 && h.hit.lines[0].id === l.id);
+                        if (!x) return null;
+                        const on = promoOn.includes(x.rule.id);
                         return on ? (
                           <button
                             type="button"
-                            onClick={() => { playTap(); setQtyPromoOn((m) => { const n = { ...m }; delete n[l.id]; return n; }); }}
+                            onClick={() => togglePromo(x.rule.id)}
                             title={t("retail.qtyPromoUndo", "إلغاء خصم العرض")}
                             className="mt-1 inline-flex items-center gap-1 rounded-full bg-success-100 px-2 py-0.5 text-2xs font-black text-success-700 transition hover:bg-success-200 dark:bg-success-500/20 dark:text-success-300"
                           >
-                            <BadgePercent size={11} /> {t("retail.qtyPromoOn", { n: money(off), defaultValue: "عرض مفعّل −{{n}}" })} <X size={10} />
+                            <BadgePercent size={11} /> {t("retail.qtyPromoOn", { n: money(x.hit.off), defaultValue: "عرض مفعّل −{{n}}" })} <X size={10} />
                           </button>
                         ) : (
                           <button
                             type="button"
-                            onClick={() => { playSuccess(); setFinalOverride(null); setQtyPromoOn((m) => ({ ...m, [l.id]: rule.id })); }}
-                            title={t("retail.qtyPromoHint", { q: formatNum(rule.qty), n: money(rule.off), defaultValue: "كل {{q}} قطع خصم {{n}}" })}
+                            onClick={() => togglePromo(x.rule.id)}
+                            title={x.rule.name || t("retail.qtyPromoHint", { q: formatNum(x.rule.qty), n: money(x.hit.off), defaultValue: "كل {{q}} قطع خصم {{n}}" })}
                             className="mt-1 inline-flex items-center gap-1 rounded-full bg-danger-600 px-2 py-0.5 text-2xs font-black text-white shadow-soft transition hover:bg-danger-700 active:scale-95"
                           >
-                            <BadgePercent size={11} /> {t("retail.qtyPromoBtn", { n: money(off), defaultValue: "خصم −{{n}}" })}
+                            <BadgePercent size={11} /> {t("retail.qtyPromoBtn", { n: money(x.hit.off), defaultValue: "خصم −{{n}}" })}
                           </button>
                         );
                       })()}
@@ -1674,6 +1725,44 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
               </div>
             )}
           </div>
+
+          {/* شريط العروض المجمّعة: عرض واحد يشمل عدة أسطر لا مكان له بجانب سطر
+              بعينه — فيظهر هنا فوق الحساب، ويقول بالضبط شنو تحقق وشكد يوفّر. */}
+          {promoHits.some((x) => x.hit.lines.length > 1) && (
+            <div className="mb-2 space-y-1.5 rounded-2xl border border-danger-200 bg-danger-50/60 p-2.5 dark:border-danger-500/25 dark:bg-danger-500/10">
+              <p className="flex items-center gap-1.5 text-2xs font-black text-danger-700 dark:text-danger-300">
+                <BadgePercent size={12} /> {t("retail.promoStrip", "عروض متاحة على هذي السلة")}
+              </p>
+              {promoHits.filter((x) => x.hit.lines.length > 1).map(({ rule, hit }) => {
+                const on = promoOn.includes(rule.id);
+                return (
+                  <button
+                    key={rule.id}
+                    type="button"
+                    onClick={() => togglePromo(rule.id)}
+                    className={cn(
+                      "flex w-full items-center gap-2 rounded-xl px-2.5 py-1.5 text-start transition active:scale-[0.99]",
+                      on ? "bg-success-100 text-success-800 dark:bg-success-500/20 dark:text-success-200" : "bg-danger-600 text-white shadow-soft hover:bg-danger-700",
+                    )}
+                  >
+                    <BadgePercent size={13} className="shrink-0" />
+                    <span className="min-w-0 flex-1 truncate text-2xs font-black">
+                      {rule.name || (rule.mode === "bundle"
+                        ? t("retail.promoBundleLbl", { q: formatNum(rule.qty), defaultValue: "أي {{q}} بسعر العرض" })
+                        : t("retail.promoOffLbl", { q: formatNum(rule.qty), defaultValue: "كل {{q}} خصم" }))}
+                      <span className="ms-1.5 font-bold opacity-80">
+                        {t("retail.promoUnits", { n: formatNum(hit.units), defaultValue: "({{n}} بالسلة)" })}
+                      </span>
+                    </span>
+                    <span className="shrink-0 text-2xs font-black tabular-nums">
+                      {on ? t("retail.promoApplied", { n: money(hit.off), defaultValue: "مفعّل −{{n}}" }) : `−${money(hit.off)}`}
+                    </span>
+                    {on && <X size={11} className="shrink-0" />}
+                  </button>
+                );
+              })}
+            </div>
+          )}
 
           {/* Totals */}
           <div className="space-y-1 border-t border-line pt-3 text-sm">

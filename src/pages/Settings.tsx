@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Settings as SettingsIcon, RotateCcw, Check, Volume2, VolumeX, Plus, Trash2, Pill, PawPrint, Stethoscope, Tag, FolderPlus, BadgePercent, IdCard, Mail, UserCog, Image as ImageIcon, Upload, Facebook, Instagram, Building2, Printer, Type, LogOut , Slice, ChevronDown, Radio, Copy, Download, Cable, Send } from "lucide-react";
+import { Settings as SettingsIcon, RotateCcw, Check, Volume2, VolumeX, Plus, Trash2, Pill, PawPrint, Stethoscope, Tag, FolderPlus, BadgePercent, IdCard, Mail, UserCog, Image as ImageIcon, Upload, Facebook, Instagram, Building2, Printer, Type, LogOut , Slice, ChevronDown, Radio, Copy, Download, Cable, Send, Barcode, Search, Package } from "lucide-react";
 import type { LabDeviceLink } from "@/types";
 import { supabaseUrl, supabaseAnonKey } from "@/lib/supabase";
 import { makeZip } from "@/lib/zip";
@@ -13,11 +13,11 @@ import { repo } from "@/lib/repo";
 import { Combobox } from "@/components/Combobox";
 import { cn, currencySymbol , formatNum, uuid, money } from "@/lib/utils";
 import { getPromoRules, addPromoRule, togglePromoRule, removePromoRule, subcategoriesOf, type PromoRule } from "@/lib/promotions";
-import { getServiceCatalog, addServiceCategory, removeServiceCategory, addService, updateService, removeService } from "@/lib/services";
+import { getServiceCatalog, addServiceCategory, removeServiceCategory, addService, updateService, removeService, serviceBarcodeTaken } from "@/lib/services";
 import { DEFAULT_RANGES, VITAL_KEYS, CBC_KEYS, rangeFor, type VitalKey } from "@/lib/vitals";
 
 const ALL_KEYS: VitalKey[] = [...VITAL_KEYS, ...CBC_KEYS];
-import { setVitalOverride, clearVitalOverrides, getDialCode, setDialCode, getClinicLogo, setClinicLogo, getClinicSocials, setClinicSocials, getClinicName, setClinicName, getPreSalePrint, setPreSalePrint, getResizableCart, setResizableCart, getFontScaleEnabled, setFontScaleEnabled, getDeliveryZones, setDeliveryZones, type DeliveryZone, getQtyPromos, setQtyPromos, type QtyPromo } from "@/lib/settings";
+import { setVitalOverride, clearVitalOverrides, getDialCode, setDialCode, getClinicLogo, setClinicLogo, getClinicSocials, setClinicSocials, getClinicName, setClinicName, getPreSalePrint, setPreSalePrint, getResizableCart, setResizableCart, getFontScaleEnabled, setFontScaleEnabled, getDeliveryZones, setDeliveryZones, type DeliveryZone, getQtyPromos, setQtyPromos, promoTargetLabel, type QtyPromo, type PromoKind, type PromoMode } from "@/lib/settings";
 import { FONT_SCALES, getFontScale, setFontScale, applyFontScale, getCrispMode, setCrispMode, type FontScaleId } from "@/lib/fontScale";
 import { RECEIPT_WIDTHS, getReceiptWidth, setReceiptWidth, openReceiptCalibration } from "@/lib/printer";
 import { SURGERY_CATALOG, isSurgeryCategoryName } from "@/lib/surgeryCatalog";
@@ -29,7 +29,7 @@ import { getClinicBreeds, addClinicBreed, removeClinicBreed } from "@/lib/breeds
 import { SpeciesPicker } from "@/components/PetFields";
 import { PhoneInput } from "@/components/PhoneInput";
 import { ManagerOverrideCard } from "@/components/ManagerOverride";
-import { Button, useToast } from "@/components/ui";
+import { Button, Dialog, useToast } from "@/components/ui";
 
 export function Settings() {
   const { t } = useTranslation();
@@ -678,68 +678,157 @@ function ThermalPrinterCard() {
 }
 
 /* -------- عروض الكمية — «كل N قطع خصم X» بزر أحمر يدوي بشاشة البيع -------- */
+/* ---- عروض الكمية (0100، ووُسّعت بـ0102) --------------------------------------
+ * ثلاثة أشياء تفرّقها عن النسخة الأولى:
+ *   ١) الاختيار بشبكة مربّعات داخل نافذة واسعة، لا خانة نص واحدة — العيادة
+ *      عندها مئة منتج، والكتابة الحرفية كانت أبطأ من التصفّح وأكثر خطأً.
+ *   ٢) اختيار متعدد: العرض ينطبق على **مجموع** المشمولين، فثلاث قطع من ثلاثة
+ *      أصناف مختلفة تُكمل المجموعة تماماً كثلاث قطع من صنف واحد.
+ *   ٣) الخدمات تنضم للعروض، ولها وضع «سعر المجموعة»: ثلاث خدمات بسعر جديد
+ *      بدل خصم مبلغ — وهذا هو الشكل الطبيعي لباقات العيادات.
+ * -------------------------------------------------------------------------- */
 function QtyPromosCard({ clinicId }: { clinicId?: string }) {
   const { t } = useTranslation();
   const { can } = usePermissions();
   const [rules, setRules] = useState<QtyPromo[]>(getQtyPromos());
   const [products, setProducts] = useState<Product[]>([]);
-  const [prodName, setProdName] = useState("");
+  const [catalog, setCatalog] = useState<ServiceCatalog>(() => getServiceCatalog());
+  const [picking, setPicking] = useState(false);
+
+  // مسودّة العرض الجاري بناؤه
+  const [kind, setKind] = useState<PromoKind>("product");
+  const [ids, setIds] = useState<string[]>([]);
   const [qty, setQty] = useState("3");
+  const [mode, setMode] = useState<PromoMode>("off");
   const [off, setOff] = useState("");
+  const [bundle, setBundle] = useState("");
+  const [promoName, setPromoName] = useState("");
   const [flash, setFlash] = useState<string | null>(null);
 
   useEffect(() => { repo.listProducts(clinicId).then(setProducts).catch(() => setProducts([])); }, [clinicId]);
+  useEffect(() => { setCatalog(getServiceCatalog()); }, [picking]);
 
   if (!can("manageSettings")) return null;
 
   const commit = (next: QtyPromo[]) => { setRules(next); setQtyPromos(next); };
 
+  /** الأصناف المتاحة للاختيار حسب النوع — اسم + سعر، شكل موحّد للشبكة. */
+  const pool: { id: string; name: string; price: number; sub: string | null }[] =
+    kind === "service"
+      ? catalog.services.map((s) => ({ id: s.id, name: s.name, price: s.price, sub: catalog.categories.find((c) => c.id === s.category_id)?.name ?? null }))
+      : products.map((p) => ({ id: p.id, name: p.name, price: p.sell_price ?? 0, sub: p.subcategory ?? null }));
+
+  const switchKind = (k: PromoKind) => { if (k === kind) return; playTap(); setKind(k); setIds([]); setFlash(null); };
+
   const add = () => {
     const q = Math.floor(Number(qty) || 0);
+    if (q < 2) { playWarning(); setFlash(t("promos.qtyBadCount", "العدد لازم يكون ٢ فأكثر.")); return; }
     const o = Math.max(0, Number(off) || 0);
-    if (q < 2 || o <= 0) { playWarning(); setFlash(t("promos.qtyBadInput", "العدد لازم يكون ٢ فأكثر ومقدار الخصم أكبر من صفر.")); return; }
-    const typed = prodName.trim();
-    const match = typed ? products.find((p) => p.name.trim() === typed) ?? null : null;
-    if (typed && !match) { playWarning(); setFlash(t("promos.qtyNoProduct", "اختر منتجاً من القائمة، أو اترك الخانة فارغة ليشمل العرض كل المنتجات.")); return; }
-    commit([...rules, { id: uuid(), productId: match?.id ?? null, productName: match?.name ?? null, qty: q, off: o, active: true }]);
-    setProdName(""); setQty("3"); setOff(""); setFlash(null);
+    const b = Math.max(0, Number(bundle) || 0);
+    if (mode === "off" && o <= 0) { playWarning(); setFlash(t("promos.qtyBadOff", "حدد مقدار خصم أكبر من صفر.")); return; }
+    if (mode === "bundle" && b <= 0) { playWarning(); setFlash(t("promos.qtyBadBundle", "حدد سعر المجموعة.")); return; }
+    // عرض «سعر المجموعة» على كل الأصناف بلا تحديد يعني سعراً واحداً لأي ثلاثة
+    // مهما اختلفت أسعارها — وهذا يخسّر العيادة بلا ما تنتبه.
+    if (mode === "bundle" && ids.length === 0) { playWarning(); setFlash(t("promos.qtyBundleNeedsPick", "سعر المجموعة يحتاج تحديد الأصناف — «كل الأصناف» بسعر واحد يخسّرك.")); return; }
+    const names = ids.map((id) => pool.find((x) => x.id === id)?.name).filter((x): x is string => !!x);
+    commit([...rules, {
+      id: uuid(), name: promoName.trim() || null, kind, ids: [...ids], names,
+      qty: q, mode, off: mode === "off" ? o : 0, bundlePrice: mode === "bundle" ? b : 0, active: true,
+    }]);
+    setIds([]); setQty("3"); setOff(""); setBundle(""); setPromoName(""); setFlash(null);
     playSuccess();
   };
   const toggle = (id: string) => { commit(rules.map((r) => (r.id === id ? { ...r, active: !r.active } : r))); playTap(); };
   const remove = (id: string) => { commit(rules.filter((r) => r.id !== id)); playTap(); };
 
+  const pickedLabel = ids.length === 0
+    ? (kind === "service" ? t("promos.allServices", "كل الخدمات") : t("promos.qtyAllProducts", "كل المنتجات"))
+    : ids.length === 1
+      ? (pool.find((x) => x.id === ids[0])?.name ?? "—")
+      : t("promos.pickedN", { n: formatNum(ids.length), defaultValue: "{{n}} أصناف مختارة" });
+
   return (
     <div className="card p-5 mb-4">
       <h2 className="font-bold text-ink mb-1 flex items-center gap-2"><BadgePercent size={18} className="text-danger-600" /> {t("promos.qtyTitle", "عروض الكمية")}</h2>
-      <p className="text-xs text-ink-subtle mb-4">{t("promos.qtyHint", "«كل ٣ قطع خصم ١٬٠٠٠» — حدد العدد ومقدار الخصم، على منتج معيّن أو كل المنتجات. الخصم ما ينطبق لحاله: بشاشة البيع يظهر زر أحمر صغير بجانب السطر الذي وصل للعدد، وأنت تقرر بضغطة.")}</p>
+      <p className="text-xs text-ink-subtle mb-4">{t("promos.qtyHint2", "«كل ٣ خصم ١٬٠٠٠» أو «٣ خدمات بـ٥٠٬٠٠٠». تكدر تحدد أكثر من صنف سوية — وقتها العدد يُحسب مجمّعاً، فثلاث قطع من ثلاثة أصناف مختلفة تكمّل المجموعة. الخصم ما ينطبق لحاله: بشاشة البيع يظهر زر أحمر وأنت تقرر.")}</p>
 
-      <div className="grid gap-3 sm:grid-cols-[1fr,110px,130px,auto] sm:items-end">
+      {/* منتجات أم خدمات */}
+      <div className="mb-3 inline-flex items-center gap-1 rounded-full border border-line bg-surface-2 p-1">
+        {([["product", t("promos.kindProducts", "منتجات"), <Package key="p" size={14} />], ["service", t("promos.kindServices", "خدمات"), <Stethoscope key="s" size={14} />]] as const).map(([k, label, icon]) => (
+          <button key={k} type="button" onClick={() => switchKind(k as PromoKind)}
+            className={cn("inline-flex items-center gap-1.5 rounded-full px-4 py-1.5 text-xs font-bold transition", kind === k ? "bg-brand-600 text-white shadow-soft" : "text-ink-muted hover:text-ink")}>
+            {icon} {label}
+          </button>
+        ))}
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-[1fr,110px] sm:items-end">
         <div>
-          <label className="label">{t("promos.qtyProduct", "المنتج (اتركه فارغاً = كل المنتجات)")}</label>
-          <Combobox value={prodName} onChange={setProdName} options={products.map((p) => p.name)} placeholder={t("promos.qtyProductPh", "كل المنتجات")} />
+          <label className="label">{t("promos.qtyTargets", "الأصناف المشمولة")}</label>
+          <button type="button" onClick={() => { playTap(); setPicking(true); }}
+            className="flex w-full items-center gap-2 rounded-2xl border border-line bg-surface-1 px-3 py-2.5 text-start text-sm font-semibold text-ink transition hover:border-brand-400">
+            <Search size={15} className="shrink-0 text-ink-subtle" />
+            <span className="min-w-0 flex-1 truncate">{pickedLabel}</span>
+            <span className="shrink-0 text-2xs font-bold text-brand-600">{t("promos.choose", "اختيار")}</span>
+          </button>
         </div>
         <div>
-          <label className="label">{t("promos.qtyEvery", "كل كم قطعة")}</label>
+          <label className="label">{t("promos.qtyEvery2", "كل كم")}</label>
           <input type="number" inputMode="numeric" min="2" step="1" className="input py-2" value={qty} onChange={(e) => setQty(e.target.value)} placeholder="3" />
         </div>
+      </div>
+
+      {/* المكافأة: خصم مبلغ أم سعر جديد للمجموعة */}
+      <div className="mt-3 grid gap-3 sm:grid-cols-[auto,1fr,auto] sm:items-end">
         <div>
-          <label className="label">{t("promos.qtyOff", "مقدار الخصم")}</label>
-          <input type="number" inputMode="numeric" min="0" step="250" className="input py-2" value={off} onChange={(e) => setOff(e.target.value)} placeholder="1000" />
+          <label className="label">{t("promos.reward", "المكافأة")}</label>
+          <div className="inline-flex items-center gap-1 rounded-full border border-line bg-surface-2 p-1">
+            {([["off", t("promos.modeOff", "خصم مبلغ")], ["bundle", t("promos.modeBundle", "سعر المجموعة")]] as const).map(([m, label]) => (
+              <button key={m} type="button" onClick={() => { playTap(); setMode(m as PromoMode); setFlash(null); }}
+                className={cn("rounded-full px-3.5 py-1.5 text-xs font-bold transition", mode === m ? "bg-danger-600 text-white shadow-soft" : "text-ink-muted hover:text-ink")}>
+                {label}
+              </button>
+            ))}
+          </div>
         </div>
+        {mode === "off" ? (
+          <div>
+            <label className="label">{t("promos.qtyOff", "مقدار الخصم")}</label>
+            <input type="number" inputMode="numeric" min="0" step="250" className="input py-2" value={off} onChange={(e) => setOff(e.target.value)} placeholder="1000" />
+          </div>
+        ) : (
+          <div>
+            <label className="label">{t("promos.bundlePrice", "سعر المجموعة كاملة")}</label>
+            <input type="number" inputMode="numeric" min="0" step="1000" className="input py-2" value={bundle} onChange={(e) => setBundle(e.target.value)} placeholder="50000" />
+          </div>
+        )}
         <Button leftIcon={<Plus size={15} />} onClick={add}>{t("common.add", "إضافة")}</Button>
       </div>
+
+      <div className="mt-3">
+        <label className="label">{t("promos.nameOpt", "اسم العرض (اختياري)")}</label>
+        <input className="input py-2" value={promoName} onChange={(e) => setPromoName(e.target.value)} placeholder={t("promos.namePh", "عرض الشامبو")} />
+      </div>
+
       {flash && <p className="mt-2 text-xs font-semibold text-danger-600">{flash}</p>}
 
       {rules.length === 0 ? (
         <p className="mt-3 rounded-xl bg-surface-2 p-3 text-center text-sm text-ink-subtle">{t("promos.qtyEmpty", "ما مضافة عروض كمية بعد.")}</p>
       ) : (
-        <div className="mt-3 space-y-1.5">
+        <div className="mt-4 space-y-1.5">
           {rules.map((r) => (
             <div key={r.id} className={cn("flex flex-wrap items-center gap-2.5 rounded-xl border border-line bg-surface-1 p-2.5", !r.active && "opacity-55")}>
-              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-danger-50 text-danger-600 dark:bg-danger-500/15"><BadgePercent size={16} /></span>
+              <span className={cn("grid h-9 w-9 shrink-0 place-items-center rounded-xl", r.kind === "service" ? "bg-brand-50 text-brand-600 dark:bg-brand-500/15" : "bg-danger-50 text-danger-600 dark:bg-danger-500/15")}>
+                {r.kind === "service" ? <Stethoscope size={16} /> : <BadgePercent size={16} />}
+              </span>
               <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-bold text-ink">{r.productName ?? t("promos.qtyAllProducts", "كل المنتجات")}</p>
-                <p className="text-2xs text-ink-subtle">{t("promos.qtyRuleLine", { q: formatNum(r.qty), n: money(r.off), defaultValue: "كل {{q}} قطع → خصم {{n}}" })}</p>
+                <p className="truncate text-sm font-bold text-ink">{r.name || promoTargetLabel(r)}</p>
+                <p className="truncate text-2xs text-ink-subtle">
+                  {r.mode === "bundle"
+                    ? t("promos.ruleLineBundle", { q: formatNum(r.qty), n: money(r.bundlePrice), defaultValue: "أي {{q}} → بـ{{n}}" })
+                    : t("promos.qtyRuleLine2", { q: formatNum(r.qty), n: money(r.off), defaultValue: "كل {{q}} → خصم {{n}}" })}
+                  {" · "}{promoTargetLabel(r)}
+                </p>
               </div>
               <button onClick={() => toggle(r.id)} className={cn("chip text-2xs font-bold", r.active ? "bg-success-50 text-success-700 dark:bg-success-500/15 dark:text-success-300" : "bg-surface-2 text-ink-subtle")}>
                 {r.active ? t("promos.active", "فعّال") : t("promos.paused", "موقوف")}
@@ -749,7 +838,117 @@ function QtyPromosCard({ clinicId }: { clinicId?: string }) {
           ))}
         </div>
       )}
+
+      <PromoPicker
+        open={picking}
+        onClose={() => setPicking(false)}
+        kind={kind}
+        pool={pool}
+        selected={ids}
+        onChange={setIds}
+      />
     </div>
+  );
+}
+
+/* شاشة الاختيار: واسعة، بشبكة مربّعات وبحث حيّ. الاختيار المتعدد هو الأصل هنا —
+ * لذلك المربّع كله زر، وعلامة الصح تظهر بزاويته، ومجموع المختار ثابت بالأسفل. */
+function PromoPicker({ open, onClose, kind, pool, selected, onChange }: {
+  open: boolean; onClose: () => void; kind: PromoKind;
+  pool: { id: string; name: string; price: number; sub: string | null }[];
+  selected: string[]; onChange: (ids: string[]) => void;
+}) {
+  const { t } = useTranslation();
+  const [q, setQ] = useState("");
+  const [group, setGroup] = useState<string | null>(null);
+
+  const groups = Array.from(new Set(pool.map((p) => p.sub).filter((x): x is string => !!x))).sort((a, b) => a.localeCompare(b, "ar"));
+  const ql = q.trim().toLowerCase();
+  const shown = pool.filter((p) => (!group || p.sub === group) && (!ql || p.name.toLowerCase().includes(ql)));
+  const has = (id: string) => selected.includes(id);
+  const flip = (id: string) => { playTap(); onChange(has(id) ? selected.filter((x) => x !== id) : [...selected, id]); };
+
+  return (
+    <Dialog
+      open={open}
+      onClose={onClose}
+      size="xl"
+      title={kind === "service" ? t("promos.pickServices", "اختر الخدمات") : t("promos.pickProducts", "اختر المنتجات")}
+      description={t("promos.pickHint", "اختر صنفاً واحداً، أو عدّة أصناف يشتغل عليهم العرض مجمّعاً. بلا اختيار = كل الأصناف.")}
+      footer={
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-xs font-bold text-ink-muted">
+            {selected.length === 0
+              ? t("promos.pickedNone", "بلا تحديد — كل الأصناف")
+              : t("promos.pickedCount", { n: formatNum(selected.length), defaultValue: "{{n}} مختار" })}
+          </span>
+          <div className="flex items-center gap-2">
+            {selected.length > 0 && (
+              <button onClick={() => { playTap(); onChange([]); }} className="rounded-full border border-line px-4 py-2 text-xs font-bold text-ink-muted transition hover:text-ink">
+                {t("promos.clearPick", "مسح التحديد")}
+              </button>
+            )}
+            <Button onClick={() => { playSuccess(); onClose(); }} leftIcon={<Check size={15} />}>{t("common.done", "تم")}</Button>
+          </div>
+        </div>
+      }
+    >
+      <div className="sticky top-0 z-10 -mx-6 mb-3 bg-surface-1/95 px-6 pb-3 backdrop-blur">
+        <div className="relative">
+          <Search size={16} className="pointer-events-none absolute end-3 top-1/2 -translate-y-1/2 text-ink-subtle" />
+          <input autoFocus className="input py-2.5 pe-9" value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("promos.search", "دوّر بالاسم…")} />
+        </div>
+        {groups.length > 0 && (
+          <div className="mt-2 flex flex-wrap items-center gap-1">
+            <button onClick={() => { playTap(); setGroup(null); }}
+              className={cn("rounded-full px-2.5 py-1 text-2xs font-bold transition", !group ? "bg-ink text-surface-1" : "bg-surface-2 text-ink-muted hover:text-ink")}>
+              {t("promos.allGroups", "الكل")}
+            </button>
+            {groups.map((g) => (
+              <button key={g} onClick={() => { playTap(); setGroup(g === group ? null : g); }}
+                className={cn("rounded-full px-2.5 py-1 text-2xs font-bold transition", group === g ? "bg-ink text-surface-1" : "bg-surface-2 text-ink-muted hover:text-ink")}>
+                {g}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {shown.length === 0 ? (
+        <p className="py-10 text-center text-sm text-ink-subtle">{t("promos.pickEmpty", "ماكو أصناف بهذا البحث.")}</p>
+      ) : (
+        // كثافة مقصودة: مربّعات ~١٥٠بك تخلي عشرين صنفاً بالشاشة بلا سكرول —
+        // مربّعات ضخمة تعني تنقّلاً أكثر، وهذا عكس الغاية من الشبكة.
+        <div className="grid grid-cols-3 gap-2.5 pb-2 sm:grid-cols-4 lg:grid-cols-6">
+          {shown.map((p) => {
+            const on = has(p.id);
+            return (
+              <button
+                key={p.id}
+                type="button"
+                onClick={() => flip(p.id)}
+                aria-pressed={on}
+                className={cn(
+                  "relative flex aspect-square flex-col justify-between rounded-2xl border p-3 text-start transition",
+                  on
+                    ? "border-brand-500 bg-brand-50 shadow-soft dark:bg-brand-500/15"
+                    : "border-line bg-surface-1 hover:border-brand-300 hover:bg-surface-2",
+                )}
+              >
+                <span className={cn("grid h-8 w-8 place-items-center rounded-xl", on ? "bg-brand-600 text-white" : "bg-surface-2 text-ink-subtle")}>
+                  {on ? <Check size={16} /> : kind === "service" ? <Stethoscope size={15} /> : <Package size={15} />}
+                </span>
+                <span className="min-w-0">
+                  <span className="line-clamp-2 text-xs font-extrabold leading-snug text-ink">{p.name}</span>
+                  {p.sub && <span className="mt-0.5 block truncate text-[10px] text-ink-subtle">{p.sub}</span>}
+                  <span className="mt-1 block text-xs font-bold tabular-nums text-brand-700 dark:text-brand-300">{money(p.price)}</span>
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </Dialog>
   );
 }
 
@@ -1235,12 +1434,20 @@ function CategoryBlock({ cat, services, onChanged }: { cat: ServiceCategory; ser
   const { t } = useTranslation();
   const [name, setName] = useState("");
   const [price, setPrice] = useState("");
+  const [code, setCode] = useState("");
+  const [err, setErr] = useState<string | null>(null);
 
   const add = () => {
     if (!name.trim()) return;
-    addService(cat.id, name, Number(price) || 0);
+    // رمز مكرر يعني مسحة واحدة تنزّل خدمتين — نرفضه بالباب بدل ما ينكشف بالكاشير.
+    if (code.trim() && serviceBarcodeTaken(code)) {
+      playWarning();
+      setErr(t("services.barcodeTaken", "هذا الباركود مستعمل لخدمة ثانية."));
+      return;
+    }
+    addService(cat.id, name, Number(price) || 0, null, code);
     playSuccess();
-    setName(""); setPrice("");
+    setName(""); setPrice(""); setCode(""); setErr(null);
     onChanged();
   };
 
@@ -1273,6 +1480,22 @@ function CategoryBlock({ cat, services, onChanged }: { cat: ServiceCategory; ser
                 />
                 <span className="text-2xs text-ink-subtle">{currencySymbol()}</span>
               </div>
+              {/* باركود الخدمة: العيادة تطبعه بنفسها، ومسحه بالكاشير ينزّل الخدمة فوراً. */}
+              <div className="flex items-center gap-1">
+                <Barcode size={13} className="shrink-0 text-ink-subtle" />
+                <input
+                  dir="ltr" inputMode="numeric" defaultValue={s.barcode ?? ""}
+                  placeholder={t("services.barcodePh", "باركود")}
+                  onBlur={(e) => {
+                    const v = e.target.value.trim();
+                    if ((s.barcode ?? "") === v) return;
+                    if (v && serviceBarcodeTaken(v, s.id)) { playWarning(); e.target.value = s.barcode ?? ""; return; }
+                    updateService(s.id, { barcode: v }); playTap(); onChanged();
+                  }}
+                  onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+                  className="w-28 rounded-lg border border-line bg-surface-1 px-2 py-1 text-center text-xs font-semibold tabular-nums text-ink outline-none focus:border-brand-400"
+                />
+              </div>
               <button onClick={() => { removeService(s.id); playTap(); onChanged(); }} aria-label={t("common.delete", "Delete")} className="grid h-7 w-7 place-items-center rounded-full text-ink-subtle transition hover:bg-danger-50 hover:text-danger-600"><Trash2 size={13} /></button>
             </div>
           ))}
@@ -1287,8 +1510,12 @@ function CategoryBlock({ cat, services, onChanged }: { cat: ServiceCategory; ser
         <div className="w-24">
           <input type="number" min="0" step="1" inputMode="numeric" className="input py-2 text-end" value={price} onChange={(e) => setPrice(e.target.value)} onKeyDown={(e) => e.key === "Enter" && add()} placeholder={t("services.price", "Price")} />
         </div>
+        <div className="w-28">
+          <input dir="ltr" inputMode="numeric" className="input py-2 text-center" value={code} onChange={(e) => { setCode(e.target.value); setErr(null); }} onKeyDown={(e) => e.key === "Enter" && add()} placeholder={t("services.barcodePh", "باركود")} />
+        </div>
         <button className="btn-secondary py-2.5" onClick={add}><Plus size={16} /></button>
       </div>
+      {err && <p className="mt-1.5 text-2xs font-bold text-danger-600">{err}</p>}
     </div>
   );
 }

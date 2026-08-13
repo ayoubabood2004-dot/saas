@@ -68,9 +68,11 @@ async function pushCatalog(c: ServiceCatalog) {
   if (!client) return;
   if (c.categories.length) await client.from("clinic_service_categories").insert(c.categories.map((x) => ({ id: x.id, name: x.name })));
   if (c.services.length) {
-    const withRef = c.services.map((s) => ({ id: s.id, category_id: s.category_id, name: s.name, price: s.price, surgery_ref: s.surgery_ref ?? null }));
+    const withRef = c.services.map((s) => ({ id: s.id, category_id: s.category_id, name: s.name, price: s.price, surgery_ref: s.surgery_ref ?? null, barcode: s.barcode ?? null }));
     const r = await client.from("clinic_services").insert(withRef as never[]);
-    if (r.error && /surgery_ref/i.test(r.error.message)) await client.from("clinic_services").insert(c.services.map((s) => ({ id: s.id, category_id: s.category_id, name: s.name, price: s.price })) as never[]);
+    // قبل 0074/0102 قد يغيب surgery_ref أو barcode — أعد المحاولة بالأعمدة
+    // الأساسية بدل ما يضيع الكتالوج كله بسبب عمود واحد.
+    if (r.error && /surgery_ref|barcode/i.test(r.error.message)) await client.from("clinic_services").insert(c.services.map((s) => ({ id: s.id, category_id: s.category_id, name: s.name, price: s.price })) as never[]);
   }
 }
 
@@ -80,9 +82,12 @@ export async function hydrateServices(): Promise<void> {
   try {
     let [cats, svcs] = await Promise.all([
       client.from("clinic_service_categories").select("id,name").order("created_at"),
-      client.from("clinic_services").select("id,category_id,name,price,surgery_ref").order("created_at"),
+      client.from("clinic_services").select("id,category_id,name,price,surgery_ref,barcode").order("created_at"),
     ]);
-    // قبل 0074: العمود غير موجود → أعد الجلب بدونه بدلاً من فقدان المزامنة كلها.
+    // قبل 0074/0102: العمود غير موجود → أعد الجلب بدونه بدلاً من فقدان المزامنة كلها.
+    if (svcs.error && /barcode/i.test(svcs.error.message)) {
+      svcs = (await client.from("clinic_services").select("id,category_id,name,price,surgery_ref").order("created_at")) as unknown as typeof svcs;
+    }
     if (svcs.error && /surgery_ref/i.test(svcs.error.message)) {
       svcs = (await client.from("clinic_services").select("id,category_id,name,price").order("created_at")) as unknown as typeof svcs;
     }
@@ -90,7 +95,7 @@ export async function hydrateServices(): Promise<void> {
     if (svcs.error) throw svcs.error;
     let next: ServiceCatalog = {
       categories: (cats.data ?? []).map((c) => ({ id: c.id as string, name: c.name as string })),
-      services: (svcs.data ?? []).map((s) => ({ id: s.id as string, category_id: s.category_id as string, name: s.name as string, price: Number(s.price), surgery_ref: (s as { surgery_ref?: string | null }).surgery_ref ?? null })),
+      services: (svcs.data ?? []).map((s) => ({ id: s.id as string, category_id: s.category_id as string, name: s.name as string, price: Number(s.price), surgery_ref: (s as { surgery_ref?: string | null }).surgery_ref ?? null, barcode: (s as { barcode?: string | null }).barcode ?? null })),
     };
     // First run on a live backend → migrate existing local data (or seed) up.
     if (next.categories.length === 0 && next.services.length === 0) {
@@ -130,24 +135,50 @@ export function removeServiceCategory(id: string) {
   cloudWrite(() => sb()!.from("clinic_service_categories").delete().eq("id", id), "service-category-del");
 }
 
-export function addService(categoryId: string, name: string, price: number, surgeryRef?: string | null): Service | null {
+export function addService(categoryId: string, name: string, price: number, surgeryRef?: string | null, barcode?: string | null): Service | null {
   const clean = name.trim();
   if (!clean) return null;
   const c = getServiceCatalog();
-  const svc: Service = { id: uuid(), category_id: categoryId, name: clean, price: Math.max(0, Math.round(price * 100) / 100) || 0, surgery_ref: surgeryRef ?? null };
+  const code = cleanBarcode(barcode);
+  const svc: Service = { id: uuid(), category_id: categoryId, name: clean, price: Math.max(0, Math.round(price * 100) / 100) || 0, surgery_ref: surgeryRef ?? null, barcode: code };
   commit({ ...c, services: [...c.services, svc] });
   cloudWrite(async () => {
     const base: Record<string, unknown> = { id: svc.id, category_id: svc.category_id, name: svc.name, price: svc.price };
-    // قبل ترحيل 0074 لا يوجد عمود surgery_ref — أعد المحاولة بدونه كي لا تضيع الخدمة.
-    const row: Record<string, unknown> = svc.surgery_ref ? { ...base, surgery_ref: svc.surgery_ref } : base;
+    // قبل ترحيلي 0074/0102 لا يوجد surgery_ref ولا barcode — أعد المحاولة
+    // بالأعمدة الأساسية كي لا تضيع الخدمة بسبب عمود لم يُرحّل بعد.
+    const row: Record<string, unknown> = { ...base };
+    if (svc.surgery_ref) row.surgery_ref = svc.surgery_ref;
+    if (svc.barcode) row.barcode = svc.barcode;
     const r = await sb()!.from("clinic_services").insert(row as never);
-    if (r.error && /surgery_ref/i.test(r.error.message)) return sb()!.from("clinic_services").insert(base as never);
+    if (r.error && /surgery_ref|barcode/i.test(r.error.message)) return sb()!.from("clinic_services").insert(base as never);
     return r;
   }, "service-add");
   return svc;
 }
 
-export function updateService(id: string, patch: Partial<Pick<Service, "name" | "price" | "category_id">>) {
+/** الباركود نصّي دائماً: قد يبدأ بصفر، والرقمنة تبتلع الصفر البادئ فيتحوّل
+ *  الرمز لرمز آخر. نُبقي الأرقام والحروف فقط، وفاضي ⇒ null (لا سلسلة فارغة،
+ *  حتى لا تتصادم خدمتان «بلا باركود» على الفهرس الفريد). */
+function cleanBarcode(v: string | null | undefined): string | null {
+  const s = (v ?? "").trim().replace(/[^0-9A-Za-z-]/g, "");
+  return s || null;
+}
+
+/** خدمة برمز معيّن — يستعملها الكاشير عند مسح باركود لا يطابق أي منتج. */
+export function findServiceByBarcode(code: string): Service | null {
+  const want = cleanBarcode(code);
+  if (!want) return null;
+  return getServiceCatalog().services.find((s) => s.barcode && s.barcode === want) ?? null;
+}
+
+/** هل هذا الرمز مستعمل من خدمة ثانية؟ (منع التصادم قبل الحفظ) */
+export function serviceBarcodeTaken(code: string, exceptId?: string): boolean {
+  const want = cleanBarcode(code);
+  if (!want) return false;
+  return getServiceCatalog().services.some((s) => s.id !== exceptId && s.barcode === want);
+}
+
+export function updateService(id: string, patch: Partial<Pick<Service, "name" | "price" | "category_id" | "barcode">>) {
   const c = getServiceCatalog();
   const s = c.services.find((x) => x.id === id);
   if (!s) return;
@@ -156,9 +187,16 @@ export function updateService(id: string, patch: Partial<Pick<Service, "name" | 
     name: patch.name !== undefined ? (patch.name.trim() || s.name) : s.name,
     price: patch.price !== undefined ? (Math.max(0, Math.round(patch.price * 100) / 100) || 0) : s.price,
     category_id: patch.category_id ?? s.category_id,
+    barcode: patch.barcode !== undefined ? cleanBarcode(patch.barcode) : (s.barcode ?? null),
   };
   commit({ ...c, services: c.services.map((x) => (x.id === id ? next : x)) });
-  cloudWrite(() => sb()!.from("clinic_services").update({ name: next.name, price: next.price, category_id: next.category_id }).eq("id", id), "service-update");
+  cloudWrite(async () => {
+    const base = { name: next.name, price: next.price, category_id: next.category_id };
+    const r = await sb()!.from("clinic_services").update({ ...base, barcode: next.barcode }).eq("id", id);
+    // قبل 0102 لا يوجد عمود barcode — احفظ الباقي بدل ما يفشل التعديل كله.
+    if (r.error && /barcode/i.test(r.error.message)) return sb()!.from("clinic_services").update(base).eq("id", id);
+    return r;
+  }, "service-update");
 }
 
 export function removeService(id: string) {

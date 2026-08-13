@@ -899,6 +899,9 @@ export interface ServiceCategory { id: string; name: string }
 /** A billable non-barcode service with a default price (overridable per sale). */
 export interface Service {
   id: string; category_id: string; name: string; price: number;
+  /** باركود تصنعه العيادة بنفسها للخدمة (0102): مسحه بالكاشير ينزّلها بالسلة
+   *  فوراً، فالخدمات المتكررة تنباع بمسحة بدل تنقّل بين التصنيفات. */
+  barcode?: string | null;
   /** مرجع لعملية من الكتالوج الجراحي (الاسم العلمي) — خدمة أُنشئت من «مكتبة
    *  العمليات»: تبقى معروفة النوع بدقة حتى لو غيّر الطبيب اسمها أو سعرها. */
   surgery_ref?: string | null;

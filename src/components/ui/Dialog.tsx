@@ -13,11 +13,12 @@ export interface DialogProps {
   children?: ReactNode;
   footer?: ReactNode;
   /** max width */
-  size?: "sm" | "md" | "lg";
+  size?: "sm" | "md" | "lg" | "xl";
   hideClose?: boolean;
 }
 
-const widths = { sm: "max-w-sm", md: "max-w-lg", lg: "max-w-2xl" };
+// xl: شاشة اختيار فيها شبكة مربّعات — تحتاج عرضاً حقيقياً لا عمودين.
+const widths = { sm: "max-w-sm", md: "max-w-lg", lg: "max-w-2xl", xl: "max-w-5xl" };
 
 export function Dialog({ open, onClose, title, description, children, footer, size = "md", hideClose }: DialogProps) {
   useEffect(() => {

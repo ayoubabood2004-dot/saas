@@ -398,19 +398,45 @@ export function setDeliveryZones(zones: DeliveryZone[]) {
   patchPrefs({ delivery_zones: clean.length ? JSON.stringify(clean) : null }, "delivery-zones-set");
 }
 
-/* ---- عروض الكمية (0100) — «كل N قطع خصم X». قاعدة على منتج محدد
- * (productId) أو أي منتج (productId=null). التطبيق بشاشة البيع يدوي:
- * زر أحمر يظهر بجانب السطر الذي بلغ العدد، والكاشير يقرر. ---- */
+/* ---- عروض الكمية (0100، ووُسّعت بـ0102) ------------------------------------
+ * «كل N خصم X» — والقاعدة تحسب **مجمّعة** عبر كل الأصناف المشمولة، لا سطراً
+ * سطراً. هذا هو الفرق الجوهري: عرض على ثلاثة شامبوهات مختلفة يتحقق بشامبو من
+ * كل نوع، لأن الزبون دفع ثمن ثلاث قطع فعلاً — الحساب القديم (سطر لوحده) كان
+ * يفوّت هذي الحالة تماماً.
+ *
+ *   kind  — منتجات أو خدمات (الخدمات تنضم بـ0102: «ثلاث خدمات بسعر واحد»)
+ *   ids   — المشمولون؛ فاضية = كل أصناف هذا النوع
+ *   mode  — off: خصم مبلغ لكل مجموعة مكتملة · bundle: سعر جديد للمجموعة كاملة
+ *
+ * التطبيق بشاشة البيع يبقى يدوياً: زر أحمر، والكاشير يقرر. ------------------ */
+export type PromoKind = "product" | "service";
+export type PromoMode = "off" | "bundle";
+
 export interface QtyPromo {
   id: string;
-  /** المنتج الهدف — null = أي منتج (كل سطر يُقيَّم لوحده). */
-  productId: string | null;
-  productName: string | null;
-  /** كل كم قطعة من نفس السطر. */
+  /** اسم اختياري يظهر بشاشة البيع («عرض الشامبو»). */
+  name: string | null;
+  kind: PromoKind;
+  /** معرّفات الأصناف المشمولة — فاضية = كل أصناف هذا النوع. */
+  ids: string[];
+  /** لقطة أسماء وقت الإنشاء: العرض يبقى مفهوماً حتى لو انحذف صنف. */
+  names: string[];
+  /** كل كم قطعة/خدمة (مجموع الكميات عبر المشمولين). */
   qty: number;
-  /** مقدار الخصم لكل مجموعة مكتملة. */
+  mode: PromoMode;
+  /** mode=off — مقدار الخصم لكل مجموعة مكتملة. */
   off: number;
+  /** mode=bundle — السعر الجديد للمجموعة كاملة. */
+  bundlePrice: number;
   active: boolean;
+}
+
+/** وصف الهدف بالعربي — يُستعمل بالإعدادات وبشاشة البيع. */
+export function promoTargetLabel(r: QtyPromo): string {
+  const all = r.kind === "service" ? "كل الخدمات" : "كل المنتجات";
+  if (!r.ids.length) return all;
+  if (r.ids.length === 1) return r.names[0] || all;
+  return `${r.names.length || r.ids.length} ${r.kind === "service" ? "خدمات" : "منتجات"} مختارة`;
 }
 
 export function getQtyPromos(): QtyPromo[] {
@@ -421,15 +447,29 @@ export function getQtyPromos(): QtyPromo[] {
     if (!Array.isArray(arr)) return [];
     return arr
       .filter((z): z is Record<string, unknown> => !!z && typeof z === "object")
-      .map((z) => ({
-        id: String(z.id ?? ""),
-        productId: z.productId ? String(z.productId) : null,
-        productName: z.productName ? String(z.productName) : null,
-        qty: Math.max(2, Math.floor(Number(z.qty) || 0)),
-        off: Math.max(0, Number(z.off) || 0),
-        active: z.active !== false,
-      }))
-      .filter((z) => z.id && z.qty >= 2 && z.off > 0);
+      .map((z) => {
+        // توافق خلفي: قواعد محفوظة بالشكل القديم (productId/productName مفردين)
+        // تُقرأ كقاعدة منتجات بهدف واحد — بلا فقدان ولا هجرة يدوية.
+        const legacyId = z.productId ? String(z.productId) : null;
+        const legacyName = z.productName ? String(z.productName) : null;
+        const ids = Array.isArray(z.ids) ? z.ids.map(String).filter(Boolean) : (legacyId ? [legacyId] : []);
+        const names = Array.isArray(z.names) ? z.names.map(String).filter(Boolean) : (legacyName ? [legacyName] : []);
+        const mode: PromoMode = z.mode === "bundle" ? "bundle" : "off";
+        return {
+          id: String(z.id ?? ""),
+          name: z.name ? String(z.name) : null,
+          kind: (z.kind === "service" ? "service" : "product") as PromoKind,
+          ids,
+          names,
+          qty: Math.max(2, Math.floor(Number(z.qty) || 0)),
+          mode,
+          off: Math.max(0, Number(z.off) || 0),
+          bundlePrice: Math.max(0, Number(z.bundlePrice) || 0),
+          active: z.active !== false,
+        };
+      })
+      // العرض بلا مكافأة لا معنى له — نسقطه بدل ما يظهر زر خصم بصفر.
+      .filter((z) => z.id && z.qty >= 2 && (z.mode === "bundle" ? z.bundlePrice > 0 : z.off > 0));
   } catch { return []; }
 }
 
