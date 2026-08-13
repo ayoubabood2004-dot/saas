@@ -140,8 +140,8 @@ export function clearPetRanges(petId: string) {
 export const DEFAULT_DIAL_CODE = "+964"; // Iraq
 
 export interface ClinicSocials { facebook: string; instagram: string }
-interface ClinicPrefs { dial_code: string; logo_url: string | null; social_facebook: string; social_instagram: string; clinic_name: string; pre_sale_print: boolean; override_enabled: boolean; resizable_cart: boolean; font_scale_enabled: boolean; override_pin_mirror: string | null; delivery_zones: string | null; qty_promos: string | null }
-const DEFAULT_PREFS: ClinicPrefs = { dial_code: DEFAULT_DIAL_CODE, logo_url: null, social_facebook: "", social_instagram: "", clinic_name: "", pre_sale_print: false, override_enabled: false, resizable_cart: false, font_scale_enabled: false, override_pin_mirror: null, delivery_zones: null, qty_promos: null };
+interface ClinicPrefs { dial_code: string; logo_url: string | null; social_facebook: string; social_instagram: string; clinic_name: string; pre_sale_print: boolean; override_enabled: boolean; resizable_cart: boolean; font_scale_enabled: boolean; override_pin_mirror: string | null; delivery_zones: string | null; qty_promos: string | null; catalog_share: boolean }
+const DEFAULT_PREFS: ClinicPrefs = { dial_code: DEFAULT_DIAL_CODE, logo_url: null, social_facebook: "", social_instagram: "", clinic_name: "", pre_sale_print: false, override_enabled: false, resizable_cart: false, font_scale_enabled: false, override_pin_mirror: null, delivery_zones: null, qty_promos: null, catalog_share: false };
 
 const prefsKey = () => `vp_clinic_prefs_${getActiveClinicId()}`;
 const legacyDialKey = () => `vp_dial_code_${getActiveClinicId()}`;
@@ -232,6 +232,7 @@ export async function hydrateClinicPrefs(): Promise<void> {
         override_pin_mirror: d.override_pin_mirror ?? local.override_pin_mirror,
         delivery_zones: d.delivery_zones ?? local.delivery_zones,
         qty_promos: d.qty_promos ?? local.qty_promos,
+        catalog_share: typeof d.catalog_share === "boolean" ? d.catalog_share : local.catalog_share,
       };
     } else {
       // No row yet → migrate any local prefs up (or seed the default dial code).
@@ -253,6 +254,7 @@ export async function hydrateClinicPrefs(): Promise<void> {
       if (local.override_pin_mirror) boolPatch.override_pin_mirror = local.override_pin_mirror;
       if (local.delivery_zones) boolPatch.delivery_zones = local.delivery_zones;
       if (local.qty_promos) boolPatch.qty_promos = local.qty_promos;
+      if (local.catalog_share) boolPatch.catalog_share = true;
       if (Object.keys(boolPatch).length) setPendingPrefs({ ...readPendingPrefs(), ...boolPatch });
     }
     // Unconfirmed pref writes (e.g. a toggle flipped before its column's
@@ -475,4 +477,14 @@ export function getQtyPromos(): QtyPromo[] {
 
 export function setQtyPromos(rules: QtyPromo[]) {
   patchPrefs({ qty_promos: rules.length ? JSON.stringify(rules) : null }, "qty-promos-set");
+}
+
+/* ---- الكتالوج المشترك (0103) — مشاركة منتجات هذي العيادة مع بقية العيادات.
+ * مطفأ افتراضياً وبقرار صريح: يشمل سعر الشراء، وهو سرّ تجاري. الاستفادة من
+ * الكتالوج لا تتطلب تفعيله — لو ربطناهما لصار ابتزازاً لا اختياراً. ---- */
+export function getCatalogShare(): boolean {
+  return prefs().catalog_share === true;
+}
+export function setCatalogShare(on: boolean) {
+  patchPrefs({ catalog_share: on }, "catalog-share-set");
 }

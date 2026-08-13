@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Settings as SettingsIcon, RotateCcw, Check, Volume2, VolumeX, Plus, Trash2, Pill, PawPrint, Stethoscope, Tag, FolderPlus, BadgePercent, IdCard, Mail, UserCog, Image as ImageIcon, Upload, Facebook, Instagram, Building2, Printer, Type, LogOut , Slice, ChevronDown, Radio, Copy, Download, Cable, Send, Barcode, Search, Package } from "lucide-react";
+import { Settings as SettingsIcon, RotateCcw, Check, Volume2, VolumeX, Plus, Trash2, Pill, PawPrint, Stethoscope, Tag, FolderPlus, BadgePercent, IdCard, Mail, UserCog, Image as ImageIcon, Upload, Facebook, Instagram, Building2, Printer, Type, LogOut , Slice, ChevronDown, Radio, Copy, Download, Cable, Send, Barcode, Search, Package, Share2, ShieldAlert } from "lucide-react";
 import type { LabDeviceLink } from "@/types";
 import { supabaseUrl, supabaseAnonKey } from "@/lib/supabase";
 import { makeZip } from "@/lib/zip";
@@ -17,9 +17,10 @@ import { getServiceCatalog, addServiceCategory, removeServiceCategory, addServic
 import { DEFAULT_RANGES, VITAL_KEYS, CBC_KEYS, rangeFor, type VitalKey } from "@/lib/vitals";
 
 const ALL_KEYS: VitalKey[] = [...VITAL_KEYS, ...CBC_KEYS];
-import { setVitalOverride, clearVitalOverrides, getDialCode, setDialCode, getClinicLogo, setClinicLogo, getClinicSocials, setClinicSocials, getClinicName, setClinicName, getPreSalePrint, setPreSalePrint, getResizableCart, setResizableCart, getFontScaleEnabled, setFontScaleEnabled, getDeliveryZones, setDeliveryZones, type DeliveryZone, getQtyPromos, setQtyPromos, promoTargetLabel, type QtyPromo, type PromoKind, type PromoMode } from "@/lib/settings";
+import { setVitalOverride, clearVitalOverrides, getDialCode, setDialCode, getClinicLogo, setClinicLogo, getClinicSocials, setClinicSocials, getClinicName, setClinicName, getPreSalePrint, setPreSalePrint, getResizableCart, setResizableCart, getFontScaleEnabled, setFontScaleEnabled, getDeliveryZones, setDeliveryZones, type DeliveryZone, getQtyPromos, setQtyPromos, promoTargetLabel, getCatalogShare, setCatalogShare, type QtyPromo, type PromoKind, type PromoMode } from "@/lib/settings";
 import { FONT_SCALES, getFontScale, setFontScale, applyFontScale, getCrispMode, setCrispMode, type FontScaleId } from "@/lib/fontScale";
 import { RECEIPT_WIDTHS, getReceiptWidth, setReceiptWidth, openReceiptCalibration } from "@/lib/printer";
+import { catalogStats } from "@/lib/catalog";
 import { SURGERY_CATALOG, isSurgeryCategoryName } from "@/lib/surgeryCatalog";
 import { prepareLogo } from "@/lib/image";
 import { isSoundEnabled, setSoundEnabled, playSuccess, playTap, playWarning } from "@/lib/sounds";
@@ -166,6 +167,7 @@ export function Settings() {
       {canSettings && <LabDevicesCard />}
       {canSettings && <PromotionsManager clinicId={user?.clinic_id ?? user?.id} />}
       {canSettings && <QtyPromosCard clinicId={user?.clinic_id ?? user?.id} />}
+      {canSettings && <SharedCatalogCard />}
       <ClinicMedications />
       <ClinicVaccinations />
       <ClinicBreeds />
@@ -847,6 +849,77 @@ function QtyPromosCard({ clinicId }: { clinicId?: string }) {
         selected={ids}
         onChange={setIds}
       />
+    </div>
+  );
+}
+
+/* ---- الكتالوج المشترك (0103) -------------------------------------------------
+ * الاستفادة مجانية وبلا شرط: أي عيادة تمسح باركوداً مجهولاً يجيها الاسم
+ * والأسعار المرجعية. المساهمة وحدها اختيارية — ومطفأة افتراضياً لأنها تشمل
+ * **سعر الشراء**، وهو سرّ تجاري. لذلك النص يسمّي بالحرف كل حقل يخرج من
+ * العيادة: موافقة غامضة ليست موافقة.
+ * ------------------------------------------------------------------------- */
+function SharedCatalogCard() {
+  const { can } = usePermissions();
+  const [on, setOn] = useState(getCatalogShare());
+  const [stats, setStats] = useState<{ barcodes: number; clinics: number } | null>(null);
+
+  useEffect(() => { void catalogStats().then(setStats).catch(() => setStats(null)); }, [on]);
+
+  if (!can("manageSettings")) return null;
+
+  const toggle = () => {
+    const next = !on;
+    setOn(next);
+    setCatalogShare(next);
+    if (next) playSuccess(); else playTap();
+  };
+
+  return (
+    <div className="card mb-4 p-5">
+      <h2 className="mb-1 flex items-center gap-2 font-bold text-ink">
+        <Share2 size={18} className="text-brand-600" /> الكتالوج المشترك
+      </h2>
+      <p className="mb-4 text-xs leading-relaxed text-ink-subtle">
+        كتالوج باركودات تبنيه العيادات سوية. تمسح باركوداً ما تعرفه فينزل اسمه وأسعاره
+        المرجعية جاهزة بدل ما تكتب مئة منتج بالإيد.
+        {stats && stats.barcodes > 0 && (
+          <> فيه حالياً <b className="text-ink">{formatNum(stats.barcodes)}</b> باركود من{" "}
+            <b className="text-ink">{formatNum(stats.clinics)}</b> عيادة.</>
+        )}
+      </p>
+
+      {/* القراءة مجانية دائماً — نقولها صراحةً حتى ما يظن أحد أن المفتاح شرط */}
+      <div className="mb-3 flex items-start gap-2 rounded-2xl bg-success-50 p-3 text-2xs leading-relaxed text-success-800 dark:bg-success-500/10 dark:text-success-200">
+        <Check size={14} className="mt-0.5 shrink-0" />
+        <span>الاستفادة من الكتالوج شغّالة عندك <b>بلا أي شرط</b> — حتى لو المفتاح تحت مطفي.</span>
+      </div>
+
+      <div className="flex items-center justify-between gap-3 rounded-2xl border border-line p-3">
+        <span className="min-w-0 flex-1">
+          <span className="block text-sm font-bold text-ink">شارك منتجات عيادتي بالكتالوج</span>
+          <span className="block text-2xs text-ink-subtle">ساهم حتى تكبر القاعدة للجميع.</span>
+        </span>
+        <button type="button" role="switch" aria-checked={on} aria-label="شارك منتجات عيادتي بالكتالوج"
+          onClick={toggle}
+          className={cn("relative h-6 w-11 shrink-0 rounded-full transition", on ? "bg-brand-600" : "bg-surface-3 dark:bg-surface-2")}>
+          <span className={cn("absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all", on ? "start-[1.375rem]" : "start-0.5")} />
+        </button>
+      </div>
+
+      {/* الإفصاح الكامل — بالحرف، لا بالعموم */}
+      <div className="mt-3 flex items-start gap-2 rounded-2xl border border-warn-200 bg-warn-50 p-3 text-2xs leading-relaxed text-warn-800 dark:border-warn-500/30 dark:bg-warn-500/10 dark:text-warn-200">
+        <ShieldAlert size={14} className="mt-0.5 shrink-0" />
+        <span>
+          إذا فعّلته، يخرج من عيادتك لكل منتج عنده باركود: <b>الباركود</b> و<b>اسم المنتج</b> و
+          <b>سعر البيع</b> و<b>سعر الشراء</b>.
+          <br />
+          <b>سعر الشراء هو كلفتك من المجهّز</b> — فكّر بيها قبل التفعيل.
+          <br />
+          يخرج مجهول الهوية: اسم عيادتك لا يظهر أبداً، والأرقام تُعرض كوسيط بين كل
+          المساهمين لا كسعرك أنت. وأي وقت تطفيه يتوقف كل شيء.
+        </span>
+      </div>
     </div>
   );
 }

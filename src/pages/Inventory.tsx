@@ -5,7 +5,7 @@ import { getCached, setCached } from "@/lib/swrCache";
 import {
   Barcode, Package, Trash2, Search, Building2, Plus, ChevronLeft, ArrowRight, ArrowLeft,
   TrendingUp, AlertTriangle, CalendarClock, Pencil, PackagePlus, Boxes, Layers, Wallet, ShoppingBag, FolderTree, ScanBarcode,
-  Check, ListPlus, Printer, Copy,
+  Check, ListPlus, Printer, Copy, Sparkles,
 } from "lucide-react";
 import type { Product, ProductCategory, Company, CompanySection } from "@/types";
 import { PurchasesTab, PurchaseBuilderModal } from "@/components/inventory/Purchases";
@@ -22,6 +22,7 @@ import { cn, formatDate, money } from "@/lib/utils";
 import { withTimeout, describeDbError } from "@/lib/errors";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
 import { openStockReport } from "@/lib/stockReportPrint";
+import { catalogLookup, type CatalogHit } from "@/lib/catalog";
 import { staggerContainer, staggerItem } from "@/lib/motion";
 
 const LOW_STOCK = 5;
@@ -945,6 +946,15 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
                 placeholder={t("pos.scanOrType", "Scan or type…")}
               />
             </div>
+            <CatalogSuggestion barcode={f.barcode} nameFilled={!!f.name.trim()} onUse={(hit) => {
+              // اقتراح لا حفظ: القيم تنزل بالنموذج ليراجعها الطبيب ويعدّلها.
+              set({
+                name: f.name.trim() || hit.name,
+                sell_price: f.sell_price.trim() || String(hit.sell_price || ""),
+                purchase_price: f.purchase_price.trim() || String(hit.purchase_price || ""),
+              });
+              playSuccess();
+            }} />
           </div>
           <div>
             <label className="label">{t("pos.name", "Product name")}</label>
@@ -1189,6 +1199,56 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
         </div>
       </div>
     </Modal>
+  );
+}
+
+
+/* ---- اقتراح الكتالوج المشترك (0103) ------------------------------------------
+ * باركود لا تعرفه العيادة قد يكون معروفاً عند غيرها. نبحث بعد سكون قصير (حتى
+ * لا نستعلم على كل حرف أثناء الكتابة) ونعرض بطاقة اقتراح — بضغطة واحدة تنزل
+ * القيم بالنموذج. اقتراح لا حفظ: الطبيب يراجع ويعدّل قبل الحفظ دائماً.
+ * وnull بهدوء لو الترحيل ما شُغّل أو ماكو خادم — الميزة إضافة لا شرط.
+ * -------------------------------------------------------------------------- */
+function CatalogSuggestion({ barcode, nameFilled, onUse }: {
+  barcode: string; nameFilled: boolean; onUse: (hit: CatalogHit) => void;
+}) {
+  const [hit, setHit] = useState<CatalogHit | null>(null);
+  const [used, setUsed] = useState(false);
+
+  useEffect(() => {
+    const code = barcode.trim();
+    setUsed(false);
+    if (code.length < 6) { setHit(null); return; }
+    let alive = true;
+    const id = window.setTimeout(() => {
+      void catalogLookup(code).then((h) => { if (alive) setHit(h); }).catch(() => { if (alive) setHit(null); });
+    }, 450);
+    return () => { alive = false; window.clearTimeout(id); };
+  }, [barcode]);
+
+  // لا نزاحم طبيباً كتب الاسم بنفسه: الاقتراح للفراغ لا للتصحيح.
+  if (!hit || used || nameFilled) return null;
+
+  return (
+    <button
+      type="button"
+      onClick={() => { onUse(hit); setUsed(true); }}
+      className="mt-2 flex w-full items-start gap-2.5 rounded-2xl border border-brand-300 bg-brand-50 p-3 text-start transition hover:bg-brand-100 dark:border-brand-500/30 dark:bg-brand-500/10"
+    >
+      <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-brand-600 text-white"><Sparkles size={16} /></span>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-sm font-extrabold text-ink">{hit.name}</span>
+        <span className="block text-2xs text-ink-muted">
+          بيع {money(hit.sell_price)} · شراء {money(hit.purchase_price)}
+        </span>
+        <span className="mt-0.5 block text-2xs text-ink-subtle">
+          {/* مصدر واحد ليس «سعر السوق» — نقول العدد بدل ما نوهم بثقة ليست موجودة */}
+          من الكتالوج المشترك · {hit.contributors === 1 ? "عيادة واحدة" : `${hit.contributors} عيادات`}
+          {hit.name_variants && hit.name_variants > 1 ? ` · ${hit.name_variants} تسميات مختلفة` : ""}
+          {" — اضغط للتعبئة"}
+        </span>
+      </span>
+    </button>
   );
 }
 
