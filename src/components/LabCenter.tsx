@@ -13,6 +13,7 @@
 //     value (world-class rule: never re-judge old results by new references).
 // ============================================================================
 import { useEffect, useMemo, useRef, useState } from "react";
+import { assertWaQuota, quotaMessage, invalidateQuota } from "@/lib/quotas";
 import { FlaskConical, Plus, Camera, Trash2, Receipt, ChevronDown, AlertTriangle, CheckCircle2, MessageCircle, Printer, ShoppingCart, ArrowRightLeft, Brain, ShieldAlert, ShieldCheck, Activity, Cable, Cpu, X, Inbox, Radio, ClipboardList, TestTube2, BadgeCheck, Ban, Clock, Zap } from "lucide-react";
 import type { Pet, LabResult, LabValue, LabValueFlag, LabDeviceInbox, LabStatusValue } from "@/types";
 import {
@@ -887,6 +888,7 @@ function ResultCard({ r, pet, prior, canEdit, onDelete, onToggleBilled, onBill, 
   onAdvance: (r: LabResult, to: LabStatusValue) => void; onTogglePriority: (r: LabResult) => void;
 }) {
   const [openPhoto, setOpenPhoto] = useState(false);
+  const toast = useToast();
   const abnormal = (r.values ?? []).filter((v) => v.flag !== "normal");
   const positive = r.snap_result === "positive";
   const interp = useMemo(() => (r.kind === "numeric" && (r.values?.length ?? 0) > 0 ? interpretResult(r, prior, pet.species) : null), [r, prior, pet.species]);
@@ -899,10 +901,15 @@ function ResultCard({ r, pet, prior, canEdit, onDelete, onToggleBilled, onBill, 
   const next = nextStatus(st);
   const tat = tatMinutes(r, nowISO);
   const waNum = pet.owner_phone ? waNumber(pet.owner_phone, getDialCode()) : "";
-  const sendWa = () => {
+  const sendWa = async () => {
     if (!waNum) return;
     playTap();
+    // حصة الرسائل (0104): الفحص لازم يسبق فتح الرابط — بعده الرسالة راحت
+    // وما ينفع تراجع.
+    try { await assertWaQuota(); }
+    catch (e) { playWarning(); toast.error(quotaMessage(e) ?? "تعذّر الإرسال"); return; }
     window.open(`https://wa.me/${waNum}?text=${encodeURIComponent(waResultMessage(pet, r))}`, "_blank", "noopener,noreferrer");
+    invalidateQuota();
     void repo.logWhatsApp({ pet_id: pet.id, owner_name: pet.owner_name ?? null, owner_phone: pet.owner_phone ?? null, reminder_type: "lab_result" }).catch(() => {});
   };
   return (

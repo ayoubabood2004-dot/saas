@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { hydratePlanPrices } from "@/lib/platformAdmin";
 import type { Profile, Role, AccountRole } from "@/types";
 import { isSupabaseConfigured, supabase } from "@/lib/supabase";
 import { withTimeout } from "@/lib/errors";
@@ -335,6 +336,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (resolvedActive === "clinic") {
       const key = getActiveClinicId();
       if (key !== hydratedFor()) void hydrateClinicConfig(key).then(applyFontScale);
+      // الأسعار الحيّة (0104) — تُجلب مرة، وتسقط بصمت للافتراضي قبل الترحيل.
+      void hydratePlanPrices();
     }
     // Cloud subscription mirror: key it to THIS clinic workspace and refresh the
     // server truth on every sign-in/account switch — never off a stale shared key.

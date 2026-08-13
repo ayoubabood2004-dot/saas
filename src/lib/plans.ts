@@ -89,9 +89,32 @@ export function planById(id: string): Plan | undefined {
   return PLANS.find((p) => p.id === id);
 }
 
+/* ---- تسعير حيّ (0104) ------------------------------------------------------
+ * الأسعار أعلاه هي الافتراض، لكن المشغّل يعدّلها من لوحة المنصّة بلا نشر نسخة.
+ * القيم الحيّة تُجلب مرة عند الإقلاع (plan_prices) وتُخزَّن هنا، فتبقى الدوال
+ * أدناه متزامنة كما هي وتبقى كل مواضع الاستدعاء بلا تغيير. ------------------ */
+type PriceOverride = { monthlyUsd: number; annualUsd: number };
+const livePrices: Partial<Record<PlanId, PriceOverride>> = {};
+
+/** يُستدعى بعد جلب plan_prices من الخادم. */
+export function setLivePrices(rows: { plan: string; monthly_usd: number; annual_usd: number }[]) {
+  for (const r of rows) {
+    const id = r.plan as PlanId;
+    if (!PLANS.some((p) => p.id === id)) continue;
+    const m = Number(r.monthly_usd), a = Number(r.annual_usd);
+    if (m > 0 && a > 0) livePrices[id] = { monthlyUsd: m, annualUsd: a };
+  }
+}
+
+/** السعر المعروض لباقة: الحيّ إن وُجد، وإلا الافتراضي بالكود. */
+export function planPrice(plan: Plan): PriceOverride {
+  return livePrices[plan.id] ?? { monthlyUsd: plan.monthlyUsd, annualUsd: plan.annualUsd };
+}
+
 /** The USD price for a plan on the chosen billing period. */
 export function priceUsd(plan: Plan, period: BillingPeriod): number {
-  return period === "annual" ? plan.annualUsd : plan.monthlyUsd;
+  const p = planPrice(plan);
+  return period === "annual" ? p.annualUsd : p.monthlyUsd;
 }
 
 /** Convert a USD price to a whole-dinar amount (Wayl requires IQD ≥ 1000). */

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { assertWaQuota, quotaMessage, invalidateQuota } from "@/lib/quotas";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { motion } from "framer-motion";
@@ -16,7 +17,7 @@ import { Button, useToast, Skeleton } from "@/components/ui";
 import { cn, formatDate } from "@/lib/utils";
 import { getDialCode, getClinicName } from "@/lib/settings";
 import { waNumber } from "@/lib/phone";
-import { playTap, playSuccess } from "@/lib/sounds";
+import { playTap, playSuccess, playWarning } from "@/lib/sounds";
 import { staggerContainer, staggerItem } from "@/lib/motion";
 
 /* ============================================================================
@@ -306,7 +307,7 @@ export function RemindersHub() {
   }, [shown]);
 
   /** رسالة واتساب جاهزة حسب نوع التذكير. */
-  const sendWA = (r: Row) => {
+  const sendWA = async (r: Row) => {
     const num = waNumber(r.phone, dial);
     if (!num) return;
     const clinic = getClinicName() || "عيادتنا";
@@ -318,9 +319,14 @@ export function RemindersHub() {
             : r.kind === "appointment" ? `مرحباً ${r.ownerName || ""} 🌟\nنذكّركم بموعد ${r.petName} (${r.detail}) بتاريخ ${dateTxt}${r.time ? ` الساعة ${r.time}` : ""}.\nبانتظاركم — ${clinic} 🐾`
               : r.kind === "birthday" ? `مرحباً ${r.ownerName || ""} 🎂\nكل عام و${r.petName} بألف خير! ${r.detail}\nمع أطيب التمنيات — ${clinic} 🐾`
                 : `مرحباً ${r.ownerName || ""} 🌟\nتذكير من ${clinic}: ${r.detail} — ${dateTxt}.\n🐾`;
+    // حصة الرسائل (0104): الفحص لازم يسبق فتح الرابط — بعده الرسالة راحت
+    // وما ينفع تراجع.
+    try { await assertWaQuota(); }
+    catch (e) { playWarning(); toast.error(quotaMessage(e) ?? "تعذّر الإرسال"); return; }
     window.open(`https://wa.me/${num}?text=${encodeURIComponent(msg)}`, "_blank", "noopener,noreferrer");
     playTap();
     saveSent({ ...sentMap, [r.id]: r.date });
+    invalidateQuota();
     void repo.logWhatsApp({ pet_id: r.petId ?? null, owner_name: r.ownerName || null, owner_phone: r.phone || null, reminder_type: r.kind }).catch(() => {});
   };
 

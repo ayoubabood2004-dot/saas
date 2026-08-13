@@ -41,6 +41,13 @@ export function describeDbError(e: unknown, t: TFunction): string {
   if (err.name === "ReadOnlyError" || err.message === "READ_ONLY") {
     return t("errors.readOnly", "انتهى اشتراك العيادة — الحساب بوضع القراءة فقط. تقدر تشوف وتطبع كل بياناتك، بس الإضافة والتعديل يحتاجان تجديد الاشتراك.");
   }
+  // حصص الاشتراك (0104): رفض مقصود من مشغّل القاعدة — نشرح الحد والحل.
+  if (typeof err.message === "string" && err.message.includes("pet_limit_reached")) {
+    return t("errors.petQuota", "وصلت حد الحيوانات المسموح بهذا الاشتراك. راجع مزوّد الخدمة لرفع الحد.");
+  }
+  if (err.name === "QuotaError") {
+    return t("errors.quota", "وصلت حد هذا الاشتراك. راجع مزوّد الخدمة لرفع الحد.");
+  }
   if (err.name === TIMEOUT_NAME) {
     return t("errors.timeout", "The request timed out — check your connection and try again.");
   }
@@ -68,6 +75,13 @@ export function describeUploadError(e: unknown, t: TFunction): string {
   const err = (e && typeof e === "object" ? e : {}) as { name?: string; maxMb?: number; message?: string };
   if (err.name === "FileTooLargeError") {
     return t("errors.fileTooLarge", "File is too large (max {{mb}} MB). Try a smaller image.", { mb: err.maxMb ?? 25 });
+  }
+  // حصص الاشتراك (0104): رفض مقصود من مشغّل القاعدة — نشرح الحد والحل.
+  if (typeof err.message === "string" && err.message.includes("pet_limit_reached")) {
+    return t("errors.petQuota", "وصلت حد الحيوانات المسموح بهذا الاشتراك. راجع مزوّد الخدمة لرفع الحد.");
+  }
+  if (err.name === "QuotaError") {
+    return t("errors.quota", "وصلت حد هذا الاشتراك. راجع مزوّد الخدمة لرفع الحد.");
   }
   if (err.name === TIMEOUT_NAME) {
     return t("errors.timeout", "The request timed out — check your connection and try again.");

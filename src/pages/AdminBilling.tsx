@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ShieldCheck, Coins, Wallet, ArrowLeft, Lock, Building2, RefreshCw, Users, Sparkles, XCircle, Lightbulb, Check, Stethoscope, PawPrint, Receipt, Activity, AlertTriangle } from "lucide-react";
+import { ShieldCheck, Coins, Wallet, ArrowLeft, Lock, Building2, RefreshCw, Users, Sparkles, XCircle, Lightbulb, Check, Stethoscope, PawPrint, Receipt, Activity, AlertTriangle, Tag, MessageCircle, CalendarDays } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
-import { isPlatformAdmin, getUsdRate, setUsdRate, adminActivate, adminGrantTrial, adminCancelSubscription, adminListClinics, type AdminClinic } from "@/lib/platformAdmin";
-import { PLANS, usdToIqd, priceUsd, type BillingPeriod, type PlanId } from "@/lib/plans";
+import { isPlatformAdmin, getUsdRate, setUsdRate, adminActivate, adminGrantTrial, adminCancelSubscription, adminListClinics, adminSetPlanPrice, adminActivateDays, adminSetLimits, hydratePlanPrices, type AdminClinic } from "@/lib/platformAdmin";
+import { PLANS, usdToIqd, priceUsd, planPrice, type BillingPeriod, type PlanId } from "@/lib/plans";
 import { repo } from "@/lib/repo";
 import type { FeatureRequest } from "@/types";
 import { Button, Badge, Skeleton, useToast } from "@/components/ui";
@@ -42,6 +42,26 @@ function Stat({ icon, value, label, tone }: { icon: React.ReactNode; value: numb
   );
 }
 
+
+/** حصة واحدة: مستهلَك/سقف + شريط يحمرّ عند الاقتراب — المشغّل يشوف من وصل
+ *  الحد قبل ما تتصل العيادة تشتكي. */
+function QuotaPill({ icon, used, limit, label }: { icon: React.ReactNode; used: number; limit: number | null; label: string }) {
+  if (limit == null) return null;
+  const pct = limit > 0 ? Math.min(100, Math.round((used / limit) * 100)) : 100;
+  const tone = pct >= 100 ? "text-danger-600" : pct >= 80 ? "text-warn-600" : "text-ink-muted";
+  const bar = pct >= 100 ? "bg-danger-500" : pct >= 80 ? "bg-warn-500" : "bg-brand-500";
+  return (
+    <span className={cn("inline-flex items-center gap-1 whitespace-nowrap", tone)} title={`${label}: ${used}/${limit}`}>
+      {icon}
+      <b className="tabular-nums">{formatNum(used)}<span className="opacity-60">/{formatNum(limit)}</span></b>
+      <span className="text-[10px]">{label}</span>
+      <span className="inline-block h-1 w-8 overflow-hidden rounded-full bg-surface-2 align-middle">
+        <span className={cn("block h-full rounded-full", bar)} style={{ width: `${pct}%` }} />
+      </span>
+    </span>
+  );
+}
+
 type SortKey = "cases" | "recent" | "name";
 const SORTS: { id: SortKey; label: string }[] = [
   { id: "cases", label: "الأكثر حالات" },
@@ -65,6 +85,13 @@ export function AdminBilling() {
   const [plan, setPlan] = useState<PlanId>("super");
   const [period, setPeriod] = useState<BillingPeriod>("annual");
   const [actBusy, setActBusy] = useState(false);
+  // وحدة المدّة: باقة جاهزة (شهر/سنة) أو عدد أيام حر — والحصص اختيارية.
+  const [byDays, setByDays] = useState(false);
+  const [days, setDays] = useState("30");
+  const [petCap, setPetCap] = useState("");
+  const [waCap, setWaCap] = useState("");
+  const [prices, setPrices] = useState<Record<string, { m: string; a: string }>>({});
+  const [priceBusy, setPriceBusy] = useState<string | null>(null);
   const [clinics, setClinics] = useState<AdminClinic[]>([]);
   const [clinicsBusy, setClinicsBusy] = useState(true);
   const [sortBy, setSortBy] = useState<SortKey>("cases");
@@ -76,7 +103,17 @@ export function AdminBilling() {
     finally { setClinicsBusy(false); }
   };
 
-  useEffect(() => { void getUsdRate().then((r) => setRate(String(r))); void loadClinics(); }, []);
+  useEffect(() => {
+    void getUsdRate().then((r) => setRate(String(r)));
+    void loadClinics();
+    // اجلب الأسعار الحيّة ثم اعرضها بالحقول
+    void hydratePlanPrices().then(() => {
+      setPrices(Object.fromEntries(PLANS.map((p) => {
+        const pr = planPrice(p);
+        return [p.id, { m: String(pr.monthlyUsd), a: String(pr.annualUsd) }];
+      })));
+    });
+  }, []);
 
   const pickClinic = (c: AdminClinic) => {
     playTap();
@@ -137,16 +174,46 @@ export function AdminBilling() {
     if (!email.trim()) { toast.error("أدخل بريد العيادة"); return; }
     setActBusy(true);
     try {
-      await adminActivate(email, plan, period);
-      playSuccess();
-      toast.success("تم التفعيل يدوياً", `${PLANS.find((p) => p.id === plan)?.name} · ${period === "annual" ? "سنوي" : "شهري"}`);
+      const pet = petCap.trim() === "" ? null : Math.max(0, Math.floor(Number(petCap) || 0));
+      const wa = waCap.trim() === "" ? null : Math.max(0, Math.floor(Number(waCap) || 0));
+      if (byDays) {
+        const d = Math.floor(Number(days) || 0);
+        if (d < 1) { playWarning(); toast.error("عدد الأيام لازم يكون ١ فأكثر"); setActBusy(false); return; }
+        await adminActivateDays(email, plan, d, pet, wa);
+        playSuccess();
+        toast.success("تم التفعيل يدوياً", `${PLANS.find((p) => p.id === plan)?.name} · ${formatNum(d)} يوم`);
+      } else {
+        await adminActivate(email, plan, period);
+        // الباقة الجاهزة ما تمرّ بالحصص — نضبطها بنداء منفصل إن حُددت
+        if (pet !== null || wa !== null) await adminSetLimits(email, pet, wa);
+        playSuccess();
+        toast.success("تم التفعيل يدوياً", `${PLANS.find((p) => p.id === plan)?.name} · ${period === "annual" ? "سنوي" : "شهري"}`);
+      }
       setEmail("");
       void loadClinics();
     } catch (e) { playWarning(); toast.error("تعذّر التفعيل", e instanceof Error ? e.message : undefined); }
     finally { setActBusy(false); }
   };
 
-  const selectedUsd = priceUsd(PLANS.find((p) => p.id === plan)!, period);
+  const savePrice = async (id: PlanId) => {
+    const v = prices[id];
+    const m = Number(v?.m), a = Number(v?.a);
+    if (!(m > 0) || !(a > 0)) { playWarning(); toast.error("سعر غير صالح"); return; }
+    setPriceBusy(id);
+    try {
+      await adminSetPlanPrice(id, m, a);
+      playSuccess();
+      toast.success("تم تحديث السعر", `${PLANS.find((p) => p.id === id)?.name} · $${m}/شهر`);
+    } catch (e) { playWarning(); toast.error("تعذّر الحفظ", e instanceof Error ? e.message : undefined); }
+    finally { setPriceBusy(null); }
+  };
+
+  // بوضع الأيام المبلغ يُحسب بالتناسب من السعر الشهري — عرض سعر السنة على
+  // تفعيل ١٠ أيام رقم كاذب يضلّل المندوب عند التحصيل.
+  const selectedPlan = PLANS.find((p) => p.id === plan)!;
+  const selectedUsd = byDays
+    ? Math.round((planPrice(selectedPlan).monthlyUsd / 30) * Math.max(0, Math.floor(Number(days) || 0)) * 100) / 100
+    : priceUsd(selectedPlan, period);
 
   /* ---- الاستعمال: الحصيلة والترتيب ---- */
   // خادم قبل هجرة 0101 يرجّع usage=null — نقولها صراحةً بدل ما نعرض أصفاراً.
@@ -300,6 +367,12 @@ export function AdminBilling() {
                         <span className="text-2xs text-ink-subtle">· آخر نشاط {sinceLabel(u.lastActivity)}</span>
                       </p>
                     )}
+                    {(c.petLimit != null || c.waLimit != null) && (
+                      <p className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-2xs">
+                        <QuotaPill icon={<PawPrint size={11} />} used={c.petsUsed} limit={c.petLimit} label="حيوان" />
+                        <QuotaPill icon={<MessageCircle size={11} />} used={c.waUsed} limit={c.waLimit} label="رسالة" />
+                      </p>
+                    )}
                   </div>
                   <div className="flex flex-col items-end gap-0.5">
                     <Badge tone={meta.tone}>{meta.label}{planName && c.status === "active" ? ` · ${planName}` : ""}</Badge>
@@ -323,6 +396,39 @@ export function AdminBilling() {
             })}
           </div>
         )}
+      </section>
+
+      {/* Plan pricing — live, no redeploy */}
+      <section className="mb-5 rounded-3xl border border-line bg-surface-1 p-5 shadow-card">
+        <div className="mb-1 flex items-center gap-2">
+          <span className="grid h-9 w-9 place-items-center rounded-xl bg-brand-50 text-brand-600 dark:bg-brand-500/15"><Tag size={18} /></span>
+          <h2 className="font-display font-bold text-ink">أسعار الباقات</h2>
+        </div>
+        <p className="mb-4 text-sm text-ink-muted">بالدولار. التغيير يظهر فوراً بصفحة الباقات وبالفواتير الجديدة — بلا نشر نسخة.</p>
+        <div className="space-y-2">
+          {PLANS.map((p) => {
+            const v = prices[p.id] ?? { m: "", a: "" };
+            const setV = (patch: Partial<{ m: string; a: string }>) =>
+              setPrices((s0) => ({ ...s0, [p.id]: { ...(s0[p.id] ?? { m: "", a: "" }), ...patch } }));
+            return (
+              <div key={p.id} className="flex flex-wrap items-end gap-2.5 rounded-2xl border border-line p-3">
+                <span className="min-w-24 flex-1 text-sm font-bold text-ink">{p.name}</span>
+                <label className="text-2xs font-semibold text-ink-subtle">
+                  شهري ($)
+                  <input inputMode="decimal" dir="ltr" className="input mt-0.5 w-24 py-1.5 text-center"
+                    value={v.m} onChange={(e) => setV({ m: e.target.value.replace(/[^\d.]/g, "") })} />
+                </label>
+                <label className="text-2xs font-semibold text-ink-subtle">
+                  سنوي ($)
+                  <input inputMode="decimal" dir="ltr" className="input mt-0.5 w-24 py-1.5 text-center"
+                    value={v.a} onChange={(e) => setV({ a: e.target.value.replace(/[^\d.]/g, "") })} />
+                </label>
+                <span className="text-2xs text-ink-subtle">≈ {money(usdToIqd(Number(v.m) || 0, Number(rate) || undefined))}/شهر</span>
+                <Button size="sm" loading={priceBusy === p.id} onClick={() => savePrice(p.id)}>حفظ</Button>
+              </div>
+            );
+          })}
+        </div>
       </section>
 
       {/* Exchange rate */}
@@ -364,13 +470,55 @@ export function AdminBilling() {
         </div>
 
         <label className="label mt-3">المدّة</label>
-        <div className="inline-flex items-center gap-1 rounded-full border border-line bg-surface-2 p-1">
-          <button onClick={() => setPeriod("monthly")} className={cn("rounded-full px-5 py-2 text-sm font-bold transition", period === "monthly" ? "bg-brand-600 text-white shadow-soft" : "text-ink-muted")}>شهري</button>
-          <button onClick={() => setPeriod("annual")} className={cn("rounded-full px-5 py-2 text-sm font-bold transition", period === "annual" ? "bg-brand-600 text-white shadow-soft" : "text-ink-muted")}>سنوي</button>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="inline-flex items-center gap-1 rounded-full border border-line bg-surface-2 p-1">
+            <button onClick={() => { playTap(); setByDays(false); setPeriod("monthly"); }} className={cn("rounded-full px-5 py-2 text-sm font-bold transition", !byDays && period === "monthly" ? "bg-brand-600 text-white shadow-soft" : "text-ink-muted")}>شهري</button>
+            <button onClick={() => { playTap(); setByDays(false); setPeriod("annual"); }} className={cn("rounded-full px-5 py-2 text-sm font-bold transition", !byDays && period === "annual" ? "bg-brand-600 text-white shadow-soft" : "text-ink-muted")}>سنوي</button>
+            <button onClick={() => { playTap(); setByDays(true); }} className={cn("inline-flex items-center gap-1.5 rounded-full px-5 py-2 text-sm font-bold transition", byDays ? "bg-brand-600 text-white shadow-soft" : "text-ink-muted")}>
+              <CalendarDays size={14} /> بالأيام
+            </button>
+          </div>
+          {byDays && (
+            <span className="inline-flex items-center gap-1.5">
+              <input type="number" inputMode="numeric" min="1" step="1" dir="ltr"
+                className="input w-24 py-2 text-center" value={days}
+                onChange={(e) => setDays(e.target.value)} placeholder="30" />
+              <span className="text-sm font-semibold text-ink-subtle">يوم</span>
+              {[7, 10, 15, 30, 45, 90].map((d) => (
+                <button key={d} type="button" onClick={() => { playTap(); setDays(String(d)); }}
+                  className={cn("rounded-full px-2.5 py-1 text-2xs font-bold transition", days === String(d) ? "bg-ink text-surface-1" : "bg-surface-2 text-ink-muted hover:text-ink")}>{d}</button>
+              ))}
+            </span>
+          )}
+        </div>
+
+        {/* حصص هذا الاشتراك — فاضي = بلا حد */}
+        <label className="label mt-4">حصص هذا الاشتراك <span className="font-normal text-ink-subtle">(اتركها فاضية = بلا حد)</span></label>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="flex items-center gap-2 rounded-2xl border border-line p-3">
+            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-brand-50 text-brand-600 dark:bg-brand-500/15"><PawPrint size={16} /></span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-xs font-bold text-ink">حد الحيوانات</span>
+              <span className="block text-2xs text-ink-subtle">كم حيوان يضيف خلال الاشتراك</span>
+            </span>
+            <input type="number" inputMode="numeric" min="0" step="10" dir="ltr"
+              className="input w-24 py-1.5 text-center" value={petCap}
+              onChange={(e) => setPetCap(e.target.value)} placeholder="∞" />
+          </div>
+          <div className="flex items-center gap-2 rounded-2xl border border-line p-3">
+            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-success-50 text-success-600 dark:bg-success-500/15"><MessageCircle size={16} /></span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-xs font-bold text-ink">حد رسائل الواتساب</span>
+              <span className="block text-2xs text-ink-subtle">كم رسالة يرسل خلال الاشتراك</span>
+            </span>
+            <input type="number" inputMode="numeric" min="0" step="50" dir="ltr"
+              className="input w-24 py-1.5 text-center" value={waCap}
+              onChange={(e) => setWaCap(e.target.value)} placeholder="∞" />
+          </div>
         </div>
 
         <div className="mt-4 flex items-center justify-between gap-3 rounded-2xl bg-surface-2 px-4 py-3">
-          <span className="text-sm text-ink-muted">المبلغ المكافئ</span>
+          <span className="text-sm text-ink-muted">المبلغ المكافئ{byDays ? " (بالتناسب)" : ""}</span>
           <span className="font-display font-bold tabular-nums text-ink">${selectedUsd} · ≈ {money(usdToIqd(selectedUsd, Number(rate) || undefined))}</span>
         </div>
 

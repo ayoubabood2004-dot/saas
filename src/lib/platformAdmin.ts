@@ -5,7 +5,7 @@
 // ============================================================================
 import { sb } from "./clinicSync";
 import { activateSubscription, statusOf, _debugSetState, type SubStatus } from "./subscription";
-import { DEFAULT_USD_RATE, periodMonths, type BillingPeriod, type PlanId } from "./plans";
+import { DEFAULT_USD_RATE, periodMonths, setLivePrices, type BillingPeriod, type PlanId } from "./plans";
 
 /** Operator accounts. EDIT to add/rotate — must match is_platform_admin() in SQL. */
 export const PLATFORM_ADMIN_EMAILS = ["ayoubabood2004@gmail.com"];
@@ -93,6 +93,11 @@ export interface AdminClinic {
   currentPeriodEnd: string | null;
   wasSubscriber: boolean;
   members: number;
+  /** حصص الاشتراك (0104) — null = بلا حد. */
+  petLimit: number | null;
+  petsUsed: number;
+  waLimit: number | null;
+  waUsed: number;
   status: SubStatus;
   daysLeft: number; // remaining days of the current window (paid or trial)
   /** أرقام الاستعمال — null إذا الخادم لسه ما شغّل هجرة 0101 (لا نعرض أصفاراً كاذبة). */
@@ -141,6 +146,10 @@ export async function adminListClinics(): Promise<AdminClinic[]> {
       currentPeriodEnd: (r.current_period_end as string) ?? null,
       wasSubscriber: !!r.was_subscriber,
       members: Number(r.members ?? 0),
+      petLimit: r.pet_limit == null ? null : Number(r.pet_limit),
+      petsUsed: Number(r.pets_used ?? 0),
+      waLimit: r.wa_limit == null ? null : Number(r.wa_limit),
+      waUsed: Number(r.wa_used ?? 0),
       // خادم قبل هجرة 0101 ما يرجّع هذي الأعمدة أصلاً — نميّز «ما نعرف» عن
       // «صفر»، فلا تظهر عيادة نشيطة وكأنها ميتة.
       usage: r.cases === undefined ? null : {
@@ -164,11 +173,60 @@ export async function adminListClinics(): Promise<AdminClinic[]> {
   const mk = (name: string, email: string, patch: Partial<AdminClinic>): AdminClinic => ({
     clinicId: email, clinicName: name, email, plan: null, period: null, trialEndsAt: new Date(now + 10 * DAY).toISOString(),
     currentPeriodEnd: null, wasSubscriber: false, members: 3, status: "trialing", daysLeft: 10,
+    petLimit: null, petsUsed: 0, waLimit: null, waUsed: 0,
     usage: use(0, 0, 0, 0, 0, null), ...patch,
   });
   return [
-    mk("عيادة الرحمة", "rahma@clinic.com", { plan: "super", period: "annual", currentPeriodEnd: new Date(now + 300 * DAY).toISOString(), wasSubscriber: true, members: 7, usage: use(412, 38, 11, 176, 305, 0), ...classify({ trial_ends_at: null, current_period_end: new Date(now + 300 * DAY).toISOString(), was_subscriber: true }) }),
-    mk("عيادة السلام", "salam@clinic.com", { usage: use(23, 9, 4, 15, 12, 2), ...classify({ trial_ends_at: new Date(now + 10 * DAY).toISOString(), current_period_end: null, was_subscriber: false }) }),
+    mk("عيادة الرحمة", "rahma@clinic.com", { plan: "super", period: "annual", currentPeriodEnd: new Date(now + 300 * DAY).toISOString(), wasSubscriber: true, members: 7, petLimit: 500, petsUsed: 176, waLimit: 2000, waUsed: 1310, usage: use(412, 38, 11, 176, 305, 0), ...classify({ trial_ends_at: null, current_period_end: new Date(now + 300 * DAY).toISOString(), was_subscriber: true }) }),
+    mk("عيادة السلام", "salam@clinic.com", { petLimit: 20, petsUsed: 15, waLimit: 100, waUsed: 96, usage: use(23, 9, 4, 15, 12, 2), ...classify({ trial_ends_at: new Date(now + 10 * DAY).toISOString(), current_period_end: null, was_subscriber: false }) }),
     mk("عيادة النور", "noor@clinic.com", { wasSubscriber: true, currentPeriodEnd: new Date(now - 5 * DAY).toISOString(), usage: use(96, 0, 0, 54, 71, 63), ...classify({ trial_ends_at: null, current_period_end: new Date(now - 5 * DAY).toISOString(), was_subscriber: true }) }),
   ];
+}
+
+/* ---------------- التسعير الحيّ + الاشتراك بالأيام + الحصص (0104) --------- */
+
+/** اجلب الأسعار الحيّة وطبّقها على وحدة الباقات. يُنادى عند الإقلاع. */
+export async function hydratePlanPrices(): Promise<void> {
+  const client = sb();
+  if (!client) return; // ديمو → الأسعار المكتوبة بالكود هي المرجع
+  try {
+    const { data, error } = await client.from("plan_prices").select("plan,monthly_usd,annual_usd");
+    if (error || !Array.isArray(data)) return; // قبل 0104 → الافتراضي
+    setLivePrices(data as { plan: string; monthly_usd: number; annual_usd: number }[]);
+  } catch { /* الشبكة → الافتراضي */ }
+}
+
+/** Admin: عدّل سعر باقة (شهري وسنوي) بلا نشر نسخة جديدة. */
+export async function adminSetPlanPrice(plan: PlanId, monthlyUsd: number, annualUsd: number): Promise<void> {
+  const client = sb();
+  if (!client) throw new Error("no_backend");
+  const { error } = await client.rpc("admin_set_plan_price", {
+    p_plan: plan, p_monthly: monthlyUsd, p_annual: annualUsd,
+  });
+  if (error) throw new Error(error.message);
+  await hydratePlanPrices(); // اعكسه فوراً على الواجهة
+}
+
+/** Admin: فعّل اشتراكاً بعدد أيام محدد، مع حصص اختيارية (null = بلا حد). */
+export async function adminActivateDays(
+  email: string, plan: PlanId, days: number,
+  petLimit: number | null, waLimit: number | null,
+): Promise<void> {
+  const client = sb();
+  if (!client) { activateSubscription(plan, days >= 365 ? "annual" : "monthly", Math.max(1, Math.round(days / 30))); return; }
+  const { error } = await client.rpc("admin_activate_days", {
+    p_email: email.trim(), p_plan: plan, p_days: days,
+    p_pet_limit: petLimit, p_wa_limit: waLimit,
+  });
+  if (error) throw new Error(error.message);
+}
+
+/** Admin: عدّل الحصص وحدها بلا لمس مدّة الاشتراك. */
+export async function adminSetLimits(email: string, petLimit: number | null, waLimit: number | null): Promise<void> {
+  const client = sb();
+  if (!client) return; // ديمو — ماكو حصص
+  const { error } = await client.rpc("admin_set_limits", {
+    p_email: email.trim(), p_pet_limit: petLimit, p_wa_limit: waLimit,
+  });
+  if (error) throw new Error(error.message);
 }
