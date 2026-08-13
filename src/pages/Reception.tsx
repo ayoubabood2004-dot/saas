@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { sendWhatsApp, quotaMessage } from "@/lib/quotas";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import {
@@ -88,7 +89,10 @@ function openWhatsApp(phone: string | null | undefined, message: string) {
   const num = waNumber(phone ?? "", getDialCode());
   if (!num) return;
   playTap();
-  window.open(`https://wa.me/${num}?text=${encodeURIComponent(message)}`, "_blank", "noopener,noreferrer");
+  // الحصة تُفحص داخل sendWhatsApp — والرفض يُعرض للمستخدم بلا ما نكسر النداء
+  // المتزامن الي تستعمله الأزرار هنا.
+  void sendWhatsApp({ phone: num, text: message, ownerPhone: phone ?? null, kind: "manual" })
+    .catch((e) => { const m = quotaMessage(e); if (m) window.alert(m); });
 }
 
 /** Is the treatment cycle's next dose due now? Never completed → due immediately;

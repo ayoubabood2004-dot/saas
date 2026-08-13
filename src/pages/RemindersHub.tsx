@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { assertWaQuota, quotaMessage, invalidateQuota } from "@/lib/quotas";
+import { sendWhatsApp, quotaMessage } from "@/lib/quotas";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { motion } from "framer-motion";
@@ -319,15 +319,9 @@ export function RemindersHub() {
             : r.kind === "appointment" ? `مرحباً ${r.ownerName || ""} 🌟\nنذكّركم بموعد ${r.petName} (${r.detail}) بتاريخ ${dateTxt}${r.time ? ` الساعة ${r.time}` : ""}.\nبانتظاركم — ${clinic} 🐾`
               : r.kind === "birthday" ? `مرحباً ${r.ownerName || ""} 🎂\nكل عام و${r.petName} بألف خير! ${r.detail}\nمع أطيب التمنيات — ${clinic} 🐾`
                 : `مرحباً ${r.ownerName || ""} 🌟\nتذكير من ${clinic}: ${r.detail} — ${dateTxt}.\n🐾`;
-    // حصة الرسائل (0104): الفحص لازم يسبق فتح الرابط — بعده الرسالة راحت
-    // وما ينفع تراجع.
-    try { await assertWaQuota(); }
-    catch (e) { playWarning(); toast.error(quotaMessage(e) ?? "تعذّر الإرسال"); return; }
-    window.open(`https://wa.me/${num}?text=${encodeURIComponent(msg)}`, "_blank", "noopener,noreferrer");
-    playTap();
-    saveSent({ ...sentMap, [r.id]: r.date });
-    invalidateQuota();
-    void repo.logWhatsApp({ pet_id: r.petId ?? null, owner_name: r.ownerName || null, owner_phone: r.phone || null, reminder_type: r.kind }).catch(() => {});
+    try {
+      await sendWhatsApp({ phone: num, text: msg, petId: r.petId ?? null, ownerName: r.ownerName || null, ownerPhone: r.phone || null, kind: r.kind });
+    } catch (e) { playWarning(); toast.error(quotaMessage(e) ?? "تعذّر الإرسال"); return; }
   };
 
   const KIND_CHIPS: { id: Kind | "all"; label: string; icon: typeof Syringe }[] = [

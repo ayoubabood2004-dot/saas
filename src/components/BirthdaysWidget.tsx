@@ -1,4 +1,6 @@
 import { useMemo } from "react";
+import { sendWhatsApp, quotaMessage } from "@/lib/quotas";
+const alertQuota = (e: unknown) => { const m = quotaMessage(e); if (m) window.alert(m); };
 import { useTranslation } from "react-i18next";
 import { Gift, MessageCircle } from "lucide-react";
 import type { Pet } from "@/types";
@@ -44,14 +46,16 @@ export function BirthdaysWidget({ pets }: { pets: Pet[] }) {
   // Open WhatsApp with a pre-filled Arabic greeting. Build the international
   // number via the clinic dial code (same helper as Campaigns) so a nationally
   // stored number like 07xx… becomes a valid 9647xx… link.
-  const greet = (pet: Pet) => {
+  const greet = async (pet: Pet) => {
     playTap();
     if (!(pet.owner_phone ?? "").trim()) return;
     const num = waNumber(pet.owner_phone ?? "", getDialCode());
     if (!num) return;
     const clinic = getClinicName() || t("app.name", "doctorVet");
     const msg = t("dash.birthdays.greeting", { name: pet.name, clinic, defaultValue: "Happy birthday {{name}}! 🐾🎉" });
-    window.open(`https://wa.me/${num}?text=${encodeURIComponent(msg)}`, "_blank", "noopener,noreferrer");
+    try {
+      await sendWhatsApp({ phone: num, text: msg, petId: pet.id, ownerName: pet.owner_name ?? null, ownerPhone: pet.owner_phone ?? null, kind: "birthday" });
+    } catch (e) { alertQuota(e); }
   };
 
   return (

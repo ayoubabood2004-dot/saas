@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { sendWhatsApp, quotaMessage } from "@/lib/quotas";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import {
@@ -382,11 +383,13 @@ export function Charts() {
   };
 
   /** رسالة واتساب لصاحب حيوان منقطع — تذكير لطيف يرجّعه. */
-  const nudgeOwner = (pet: Pet | undefined, remaining: number) => {
+  const nudgeOwner = async (pet: Pet | undefined, remaining: number) => {
     if (!pet?.owner_phone) return;
     playTap();
     const msg = `مرحباً ${pet.owner_name ?? ""} 👋\nنحب نطمئن على ${pet.name} — باقي ${remaining > 0 ? `${remaining} جرعة من خطة علاجه` : "متابعة علاجه"} عند ${getClinicName() || "العيادة"}. إكمال العلاج مهم لشفائه الكامل 🐾\nننتظركم، وإذا في أي ظرف خبرونا نرتبلكم موعد ثاني.`;
-    window.open(`https://wa.me/${waNumber(pet.owner_phone, getDialCode())}?text=${encodeURIComponent(msg)}`, "_blank");
+    try {
+      await sendWhatsApp({ phone: waNumber(pet.owner_phone, getDialCode()), text: msg, petId: pet.id, ownerName: pet.owner_name ?? null, ownerPhone: pet.owner_phone, kind: "followup" });
+    } catch (e) { const m = quotaMessage(e); if (m) window.alert(m); }
   };
 
   const regCounts: Record<RegistryKey, number> = useMemo(() => ({

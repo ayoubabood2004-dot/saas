@@ -13,7 +13,7 @@
 //     value (world-class rule: never re-judge old results by new references).
 // ============================================================================
 import { useEffect, useMemo, useRef, useState } from "react";
-import { assertWaQuota, quotaMessage, invalidateQuota } from "@/lib/quotas";
+import { sendWhatsApp, quotaMessage } from "@/lib/quotas";
 import { FlaskConical, Plus, Camera, Trash2, Receipt, ChevronDown, AlertTriangle, CheckCircle2, MessageCircle, Printer, ShoppingCart, ArrowRightLeft, Brain, ShieldAlert, ShieldCheck, Activity, Cable, Cpu, X, Inbox, Radio, ClipboardList, TestTube2, BadgeCheck, Ban, Clock, Zap } from "lucide-react";
 import type { Pet, LabResult, LabValue, LabValueFlag, LabDeviceInbox, LabStatusValue } from "@/types";
 import {
@@ -904,13 +904,9 @@ function ResultCard({ r, pet, prior, canEdit, onDelete, onToggleBilled, onBill, 
   const sendWa = async () => {
     if (!waNum) return;
     playTap();
-    // حصة الرسائل (0104): الفحص لازم يسبق فتح الرابط — بعده الرسالة راحت
-    // وما ينفع تراجع.
-    try { await assertWaQuota(); }
-    catch (e) { playWarning(); toast.error(quotaMessage(e) ?? "تعذّر الإرسال"); return; }
-    window.open(`https://wa.me/${waNum}?text=${encodeURIComponent(waResultMessage(pet, r))}`, "_blank", "noopener,noreferrer");
-    invalidateQuota();
-    void repo.logWhatsApp({ pet_id: pet.id, owner_name: pet.owner_name ?? null, owner_phone: pet.owner_phone ?? null, reminder_type: "lab_result" }).catch(() => {});
+    try {
+      await sendWhatsApp({ phone: waNum, text: waResultMessage(pet, r), petId: pet.id, ownerName: pet.owner_name ?? null, ownerPhone: pet.owner_phone ?? null, kind: "lab_result" });
+    } catch (e) { playWarning(); toast.error(quotaMessage(e) ?? "تعذّر الإرسال"); return; }
   };
   return (
     <div className={cn("card p-4",

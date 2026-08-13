@@ -11,6 +11,7 @@
 //                 الحد الأدنى، ولوحة مشاركة الرابط (نسخ/فتح/واتساب/بايو).
 // ============================================================================
 import { useEffect, useMemo, useRef, useState } from "react";
+import { sendWhatsApp, quotaMessage } from "@/lib/quotas";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   ShoppingBag, Inbox, Boxes, Settings2, Check, X, Phone, MessageCircle, MapPin,
@@ -232,8 +233,13 @@ function OrdersTab({ orders, products, profile, clinicId, reload, goSettings }: 
     }
   };
 
-  const waLink = (o: StoreOrder, msg: string) =>
-    `https://wa.me/${waNumber(o.customer_phone, getDialCode())}?text=${encodeURIComponent(msg)}`;
+  // الإرسال يمرّ بنقطة الاختناق: تفحص حصة الرسائل وتسجّلها. الرابط المباشر
+  // كان يتخطّى الاثنين، فالعدّاد ما يشوف رسائل المتجر أصلاً.
+  const waSend = (o: StoreOrder, msg: string) => {
+    playTap();
+    void sendWhatsApp({ phone: waNumber(o.customer_phone, getDialCode()), text: msg, ownerName: o.customer_name ?? null, ownerPhone: o.customer_phone ?? null, kind: "store" })
+      .catch((e) => { const m = quotaMessage(e); if (m) toast.error(m); });
+  };
 
   if (orders === null) {
     return <div className="space-y-3">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-28 rounded-2xl" />)}</div>;
@@ -322,11 +328,10 @@ function OrdersTab({ orders, products, profile, clinicId, reload, goSettings }: 
                   <Button size="sm" variant="outline" onClick={() => { playTap(); setConfirmReject(o); }} disabled={busy === o.id} leftIcon={<X size={15} />}>
                     رفض
                   </Button>
-                  <a href={waLink(o, `مرحباً ${o.customer_name} 🌟 وصلنا طلبك ${o.order_no} من متجرنا وراح نأكده ونجهزه هسة. المجموع ${money(o.total)} — الدفع عند الاستلام.`)}
-                    target="_blank" rel="noreferrer"
+                  <button type="button" onClick={() => waSend(o, `مرحباً ${o.customer_name} 🌟 وصلنا طلبك ${o.order_no} من متجرنا وراح نأكده ونجهزه هسة. المجموع ${money(o.total)} — الدفع عند الاستلام.`)}
                     className="inline-flex items-center gap-1.5 rounded-xl border border-line px-3 py-2 text-xs font-bold text-success-700 transition hover:bg-success-50 dark:text-success-300 dark:hover:bg-success-500/10">
                     <MessageCircle size={14} /> واتساب
-                  </a>
+                  </button>
                   <a href={`tel:${o.customer_phone}`} className="inline-flex items-center gap-1.5 rounded-xl border border-line px-3 py-2 text-xs font-bold text-ink-muted transition hover:bg-surface-2">
                     <Phone size={14} /> اتصال
                   </a>
@@ -357,11 +362,11 @@ function OrdersTab({ orders, products, profile, clinicId, reload, goSettings }: 
                   <p className="text-2xs text-ink-subtle">{formatDate(o.created_at, "ar")} · {formatNum(o.items.length)} بند</p>
                 </div>
                 {o.status === "rejected" && (
-                  <a href={waLink(o, `مرحباً ${o.customer_name} 🙏 نعتذر — ما كدرنا نلبي طلبك ${o.order_no} حالياً. تشرفنا بأي طلب ثاني.`)}
-                    target="_blank" rel="noreferrer" title="اعتذار واتساب"
+                  <button type="button" onClick={() => waSend(o, `مرحباً ${o.customer_name} 🙏 نعتذر — ما كدرنا نلبي طلبك ${o.order_no} حالياً. تشرفنا بأي طلب ثاني.`)}
+                    title="اعتذار واتساب"
                     className="grid h-8 w-8 place-items-center rounded-lg border border-line text-success-600 transition hover:bg-success-50 dark:hover:bg-success-500/10">
                     <MessageCircle size={15} />
-                  </a>
+                  </button>
                 )}
                 <p className="w-24 shrink-0 text-end font-display text-sm font-bold tabular-nums text-ink">{money(o.total)}</p>
               </div>

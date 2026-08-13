@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { sendWhatsApp, quotaMessage, type WaSend } from "@/lib/quotas";
 import { useTranslation } from "react-i18next";
 import { BellRing, Check, X, Phone, MessageCircle, CalendarClock, Stethoscope } from "lucide-react";
 import type { Appointment, Pet } from "@/types";
@@ -63,7 +64,9 @@ export function BookingRequests() {
     }
   };
 
-  const waHref = (a: Appointment): string | null => {
+  // زوج (رقم/نص) بدل رابط جاهز: الإرسال يمرّ بنقطة الاختناق التي تفحص
+  // الحصة وتسجّل الرسالة — الرابط المباشر كان يتخطّى الاثنين.
+  const waHref = (a: Appointment): WaSend | null => {
     const phone = pets[a.pet_id]?.owner_phone;
     if (!phone) return null;
     const when = `${new Date(a.scheduled_at).toLocaleDateString(i18n.language === "ar" ? dateLocale() : "en-US", { weekday: "long", day: "numeric", month: "long" })} ${formatTime(a.scheduled_at, i18n.language)}`;
@@ -74,7 +77,7 @@ export function BookingRequests() {
       clinic: getClinicName(),
       defaultValue: "مرحباً {{owner}} 🌟 تم تأكيد موعد {{pet}} — {{when}} في {{clinic}}. بانتظاركم!",
     });
-    return `https://wa.me/${waNumber(phone, getDialCode())}?text=${encodeURIComponent(msg)}`;
+    return { phone: waNumber(phone, getDialCode()), text: msg, petId: a.pet_id, ownerName: pets[a.pet_id]?.owner_name ?? null, ownerPhone: phone, kind: "booking" };
   };
 
   if (requests.length === 0) return null;
@@ -119,10 +122,10 @@ export function BookingRequests() {
                   </a>
                 )}
                 {wa && (
-                  <a href={wa} target="_blank" rel="noreferrer" onClick={() => playTap()} title={t("bookReq.waTitle", "إبلاغ الزبون واتساب")}
+                  <button type="button" onClick={() => { playTap(); void sendWhatsApp(wa).catch((e) => { const m = quotaMessage(e); if (m) window.alert(m); }); }} title={t("bookReq.waTitle", "إبلاغ الزبون واتساب")}
                      className="grid h-9 w-9 place-items-center rounded-xl bg-success-500 text-white shadow-soft transition hover:bg-success-600">
                     <MessageCircle size={15} />
-                  </a>
+                  </button>
                 )}
                 <button
                   onClick={() => decide(a, "cancelled")}

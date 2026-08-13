@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { sendWhatsApp, quotaMessage, type WaSend } from "@/lib/quotas";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
@@ -193,7 +194,9 @@ export function BookingsHub() {
     }
   };
 
-  const waHref = (a: Appointment): string | null => {
+  // زوج (رقم/نص) بدل رابط جاهز: الإرسال يمرّ بنقطة الاختناق التي تفحص
+  // الحصة وتسجّل الرسالة — الرابط المباشر كان يتخطّى الاثنين.
+  const waHref = (a: Appointment): WaSend | null => {
     const phone = pets[a.pet_id]?.owner_phone;
     if (!phone) return null;
     const when = `${new Date(a.scheduled_at).toLocaleDateString(i18n.language === "ar" ? dateLocale() : "en-US", { weekday: "long", day: "numeric", month: "long" })} ${formatTime(a.scheduled_at, i18n.language)}`;
@@ -201,7 +204,7 @@ export function BookingsHub() {
       owner: pets[a.pet_id]?.owner_name ?? "", pet: pets[a.pet_id]?.name ?? "", when, clinic: getClinicName(),
       defaultValue: "مرحباً {{owner}} 🌟 تم تأكيد موعد {{pet}} — {{when}} في {{clinic}}. بانتظاركم!",
     });
-    return `https://wa.me/${waNumber(phone, getDialCode())}?text=${encodeURIComponent(msg)}`;
+    return { phone: waNumber(phone, getDialCode()), text: msg, petId: a.pet_id, ownerName: pets[a.pet_id]?.owner_name ?? null, ownerPhone: phone, kind: "booking" };
   };
 
   const lang = i18n.language === "ar" ? dateLocale() : "en-US";
@@ -478,10 +481,10 @@ export function BookingsHub() {
                                 </a>
                               )}
                               {wa && a.status !== "cancelled" && a.status !== "no_show" && (
-                                <a href={wa} target="_blank" rel="noreferrer" onClick={() => playTap()} title={t("bookReq.waTitle", "إبلاغ الزبون واتساب")}
+                                <button type="button" onClick={() => { playTap(); void sendWhatsApp(wa).catch((e) => { const m = quotaMessage(e); if (m) window.alert(m); }); }} title={t("bookReq.waTitle", "إبلاغ الزبون واتساب")}
                                    className="grid h-9 w-9 place-items-center rounded-xl bg-success-500 text-white shadow-soft transition hover:bg-success-600">
                                   <MessageCircle size={15} />
-                                </a>
+                                </button>
                               )}
                               {a.status === "requested" && (
                                 <>

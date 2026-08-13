@@ -89,3 +89,51 @@ export function quotaMessage(e: unknown): string | null {
   }
   return null;
 }
+
+/* ============================================================================
+ * نقطة الإرسال الوحيدة — كل رسالة واتساب من العيادة تمرّ من هنا.
+ *
+ * الحراسات المتفرقة كانت تغطي ثلاثة مواضع من تسعة، والستة الباقية ما تسجّل
+ * الرسالة أصلاً — فالعدّاد نفسه كان يكذب: عيادة ترسل من الاستقبال مئة رسالة
+ * ويبقى صفراً. نقطة واحدة تحلّ الاثنين: تفحص الحصة، تفتح الرابط، ثم تسجّل.
+ *
+ * الترتيب مقصود: الفحص **قبل** الفتح (بعده الرسالة راحت)، والتسجيل **بعده**
+ * (لا نعدّ رسالة ما انفتحت).
+ * ========================================================================== */
+export interface WaSend {
+  /** الرقم بصيغة wa.me (أرقام فقط). فاضي = رابط مشاركة بلا مستلم. */
+  phone: string;
+  text?: string;
+  petId?: string | null;
+  ownerName?: string | null;
+  ownerPhone?: string | null;
+  /** نوع التذكير للسجل: 'birthday' | 'vaccine' | 'booking' | 'manual'… */
+  kind?: string | null;
+}
+
+/**
+ * أرسل رسالة واتساب من العيادة. ترمي QuotaError إذا الحصة انتهت — نادِها
+ * داخل try واعرض quotaMessage(e).
+ *
+ * ملاحظة: هذي للرسائل التي **ترسلها العيادة**. روابط «تواصل معنا» بصفحة
+ * المتجر أو لوحة الزبون لا تمرّ من هنا: الزبون هو المرسِل، وعدّها على حصة
+ * العيادة خطأ محاسبي.
+ */
+export async function sendWhatsApp(m: WaSend): Promise<void> {
+  await assertWaQuota();
+  const url = m.phone
+    ? `https://wa.me/${m.phone}${m.text ? `?text=${encodeURIComponent(m.text)}` : ""}`
+    : `https://wa.me/${m.text ? `?text=${encodeURIComponent(m.text)}` : ""}`;
+  window.open(url, "_blank", "noopener,noreferrer");
+  invalidateQuota();
+  // التسجيل تابع لا شرط: لو فشل، الرسالة راحت فعلاً ولا نُفشل العملية.
+  try {
+    const { repo } = await import("./repo");
+    await repo.logWhatsApp({
+      pet_id: m.petId ?? null,
+      owner_name: m.ownerName ?? null,
+      owner_phone: m.ownerPhone ?? null,
+      reminder_type: m.kind ?? "manual",
+    });
+  } catch { /* السجل ثانوي */ }
+}

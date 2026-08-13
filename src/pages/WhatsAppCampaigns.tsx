@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { assertWaQuota, quotaMessage, invalidateQuota } from "@/lib/quotas";
+import { sendWhatsApp, quotaMessage } from "@/lib/quotas";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import {
@@ -223,22 +223,17 @@ export function WhatsAppCampaigns() {
     const petNames = group.pets.map((p) => p.name).join(" و "); // Arabic "and"
     const text = renderMessage(message, group.ownerName, petNames);
     const num = waNumber(group.phone, dial);
-    // حصة الرسائل (0104): الفحص لازم يسبق فتح الرابط — بعده الرسالة راحت
-    // وما ينفع تراجع.
-    try { await assertWaQuota(); }
-    catch (e) { playTap(); toast.error(quotaMessage(e) ?? "تعذّر الإرسال"); return; }
-    window.open(`https://wa.me/${num}?text=${encodeURIComponent(text)}`, "_blank", "noopener,noreferrer");
-    playTap();
+    try {
+      await sendWhatsApp({
+        phone: num, text,
+        petId: group.pets[0]?.id ?? null,
+        ownerName: group.ownerName || null,
+        ownerPhone: group.phone || null,
+        kind: segment === "all" ? "manual" : segment,
+      });
+    } catch (e) { playTap(); toast.error(quotaMessage(e) ?? "تعذّر الإرسال"); return; }
     setSent((s) => new Set(s).add(group.key));
-    // Record the send (shared history + "last contacted"); fire-and-forget.
     const nowISO = new Date().toISOString();
-    invalidateQuota();
-    void repo.logWhatsApp({
-      pet_id: group.pets[0]?.id ?? null,
-      owner_name: group.ownerName || null,
-      owner_phone: group.phone || null,
-      reminder_type: segment === "all" ? "manual" : segment,
-    }).catch(() => { /* non-blocking: the message already opened */ });
     setWaLog((prev) => [{ id: `wa-${group.key}-${nowISO}`, owner_phone: group.phone, owner_name: group.ownerName, sent_at: nowISO, reminder_type: segment }, ...prev]);
   };
 
