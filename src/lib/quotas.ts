@@ -88,14 +88,16 @@ export async function assertWaQuota(count = 1): Promise<void> {
 /** رسالة عربية للحصة المنتهية. */
 export function quotaMessage(e: unknown): string | null {
   const err = (e && typeof e === "object" ? e : {}) as { name?: string; kind?: string; limit?: number; message?: string };
+  // الرقم لا يُذكر بقصد: حدود الاشتراك معلومة تخصّ مشغّل المنصّة، والعيادة
+  // تُوجَّه للمراجعة لا تُطلَع على سقفها.
   if (err.name === "QuotaError") {
     return err.kind === "pets"
-      ? `وصلت حد الحيوانات لهذا الاشتراك (${err.limit}). راجع مزوّد الخدمة لرفع الحد.`
-      : `وصلت حد رسائل الواتساب لهذا الاشتراك (${err.limit}). راجع مزوّد الخدمة لرفع الحد.`;
+      ? "ما تكدر تضيف حيوانات إضافية حالياً. راجع مزوّد الخدمة."
+      : "ما تكدر ترسل رسائل إضافية حالياً. راجع مزوّد الخدمة.";
   }
   // رسالة مشغّل القاعدة عند تجاوز حد الحيوانات.
   if (typeof err.message === "string" && err.message.includes("pet_limit_reached")) {
-    return "وصلت حد الحيوانات المسموح بهذا الاشتراك. راجع مزوّد الخدمة لرفع الحد.";
+    return "ما تكدر تضيف حيوانات إضافية حالياً. راجع مزوّد الخدمة.";
   }
   return null;
 }

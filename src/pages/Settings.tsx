@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Settings as SettingsIcon, RotateCcw, Check, Volume2, VolumeX, Plus, Trash2, Pill, PawPrint, Stethoscope, Tag, FolderPlus, BadgePercent, IdCard, Mail, UserCog, Image as ImageIcon, Upload, Facebook, Instagram, Building2, Printer, Type, LogOut , Slice, ChevronDown, Radio, Copy, Download, Cable, Send, Barcode, Search, Package, Share2, ShieldAlert, MessageCircle, Gauge, CalendarClock } from "lucide-react";
+import { Settings as SettingsIcon, RotateCcw, Check, Volume2, VolumeX, Plus, Trash2, Pill, PawPrint, Stethoscope, Tag, FolderPlus, BadgePercent, IdCard, Mail, UserCog, Image as ImageIcon, Upload, Facebook, Instagram, Building2, Printer, Type, LogOut , Slice, ChevronDown, Radio, Copy, Download, Cable, Send, Barcode, Search, Package, Share2, ShieldAlert } from "lucide-react";
 import type { LabDeviceLink } from "@/types";
 import { supabaseUrl, supabaseAnonKey } from "@/lib/supabase";
 import { makeZip } from "@/lib/zip";
@@ -11,7 +11,7 @@ import { usePermissions } from "@/hooks/usePermissions";
 import { branchStore, useBranchState } from "@/lib/branchStore";
 import { repo } from "@/lib/repo";
 import { Combobox } from "@/components/Combobox";
-import { cn, currencySymbol , formatNum, uuid, money, formatDate } from "@/lib/utils";
+import { cn, currencySymbol , formatNum, uuid, money } from "@/lib/utils";
 import { getPromoRules, addPromoRule, togglePromoRule, removePromoRule, subcategoriesOf, type PromoRule } from "@/lib/promotions";
 import { getServiceCatalog, addServiceCategory, removeServiceCategory, addService, updateService, removeService, serviceBarcodeTaken } from "@/lib/services";
 import { DEFAULT_RANGES, VITAL_KEYS, CBC_KEYS, rangeFor, type VitalKey } from "@/lib/vitals";
@@ -21,7 +21,6 @@ import { setVitalOverride, clearVitalOverrides, getDialCode, setDialCode, getCli
 import { FONT_SCALES, getFontScale, setFontScale, applyFontScale, getCrispMode, setCrispMode, type FontScaleId } from "@/lib/fontScale";
 import { RECEIPT_WIDTHS, getReceiptWidth, setReceiptWidth, openReceiptCalibration } from "@/lib/printer";
 import { catalogStats } from "@/lib/catalog";
-import { fetchQuota, type QuotaUsage } from "@/lib/quotas";
 import { SURGERY_CATALOG, isSurgeryCategoryName } from "@/lib/surgeryCatalog";
 import { prepareLogo } from "@/lib/image";
 import { isSoundEnabled, setSoundEnabled, playSuccess, playTap, playWarning } from "@/lib/sounds";
@@ -168,7 +167,6 @@ export function Settings() {
       {canSettings && <LabDevicesCard />}
       {canSettings && <PromotionsManager clinicId={user?.clinic_id ?? user?.id} />}
       {canSettings && <QtyPromosCard clinicId={user?.clinic_id ?? user?.id} />}
-      {canSettings && <QuotaCard />}
       {canSettings && <SharedCatalogCard />}
       <ClinicMedications />
       <ClinicVaccinations />
@@ -860,67 +858,6 @@ function QtyPromosCard({ clinicId }: { clinicId?: string }) {
  * تختفي كلياً إذا ما أكو حدود (وهو حال أغلب العيادات) — لا نزحم الإعدادات
  * بشيء لا يخص المستخدم.
  * -------------------------------------------------------------------------- */
-/** كم يوم للتجديد — سالب يعني مرّ التاريخ (لا يحدث عملياً). */
-function daysTo(iso: string): number {
-  return Math.ceil((new Date(iso).getTime() - Date.now()) / 86400000);
-}
-
-function QuotaCard() {
-  const { can } = usePermissions();
-  const [q, setQ] = useState<QuotaUsage | null>(null);
-
-  useEffect(() => { void fetchQuota(true).then(setQ).catch(() => setQ(null)); }, []);
-
-  if (!can("manageSettings")) return null;
-  if (!q || (q.petLimit == null && q.waLimit == null)) return null; // بلا حدود → لا بطاقة
-
-  const Row = ({ icon, label, used, limit }: { icon: React.ReactNode; label: string; used: number; limit: number | null }) => {
-    if (limit == null) return null;
-    const pct = limit > 0 ? Math.min(100, Math.round((used / limit) * 100)) : 100;
-    const left = Math.max(0, limit - used);
-    const bar = pct >= 100 ? "bg-danger-500" : pct >= 80 ? "bg-warn-500" : "bg-brand-500";
-    return (
-      <div className="rounded-2xl border border-line p-3">
-        <div className="mb-1.5 flex items-center gap-2">
-          <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-surface-2 text-ink-muted">{icon}</span>
-          <span className="min-w-0 flex-1 text-sm font-bold text-ink">{label}</span>
-          <span className="shrink-0 text-sm font-extrabold tabular-nums text-ink">
-            {formatNum(used)}<span className="text-ink-subtle">/{formatNum(limit)}</span>
-          </span>
-        </div>
-        <span className="block h-1.5 overflow-hidden rounded-full bg-surface-2">
-          <span className={cn("block h-full rounded-full transition-all", bar)} style={{ width: `${pct}%` }} />
-        </span>
-        <p className={cn("mt-1.5 text-2xs font-semibold", left === 0 ? "text-danger-600" : pct >= 80 ? "text-warn-600" : "text-ink-subtle")}>
-          {left === 0 ? "خلصت حصة هذا الشهر — تتجدد تلقائياً، أو راجع مزوّد الخدمة لرفع الحد" : `باقي ${formatNum(left)} هذا الشهر`}
-        </p>
-      </div>
-    );
-  };
-
-  return (
-    <div className="card mb-4 p-5">
-      <h2 className="mb-1 flex items-center gap-2 font-bold text-ink">
-        <Gauge size={18} className="text-brand-600" /> حصتك هذا الشهر
-      </h2>
-      <p className="mb-3 text-xs leading-relaxed text-ink-subtle">
-        تتجدد تلقائياً مع بداية كل شهر. الي ما تستهلكه ما يتراكم للشهر الجاي.
-        <b className="text-ink-muted"> ولا شي ينحذف</b> — حيواناتك ورسائلك المرسلة كلها محفوظة، الي يتصفّر هو العدّاد بس.
-      </p>
-      {q.periodEnd && (
-        <p className="mb-3 inline-flex items-center gap-1.5 rounded-full bg-surface-2 px-3 py-1.5 text-2xs font-bold text-ink-muted">
-          <CalendarClock size={13} /> يتجدد بتاريخ {formatDate(q.periodEnd, "ar")}
-          {daysTo(q.periodEnd) >= 0 && <span className="text-ink-subtle">· باقي {formatNum(daysTo(q.periodEnd))} يوم</span>}
-        </p>
-      )}
-      <div className="grid gap-3 sm:grid-cols-2">
-        <Row icon={<PawPrint size={15} />} label="حيوانات هذا الشهر" used={q.petsUsed} limit={q.petLimit} />
-        <Row icon={<MessageCircle size={15} />} label="رسائل هذا الشهر" used={q.waUsed} limit={q.waLimit} />
-      </div>
-    </div>
-  );
-}
-
 /* ---- الكتالوج المشترك (0103) -------------------------------------------------
  * الاستفادة مجانية وبلا شرط: أي عيادة تمسح باركوداً مجهولاً يجيها الاسم
  * والأسعار المرجعية. المساهمة وحدها اختيارية — ومطفأة افتراضياً لأنها تشمل

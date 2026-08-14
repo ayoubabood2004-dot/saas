@@ -43,10 +43,10 @@ export function describeDbError(e: unknown, t: TFunction): string {
   }
   // حصص الاشتراك (0104): رفض مقصود من مشغّل القاعدة — نشرح الحد والحل.
   if (typeof err.message === "string" && err.message.includes("pet_limit_reached")) {
-    return t("errors.petQuota", "وصلت حد الحيوانات المسموح بهذا الاشتراك. راجع مزوّد الخدمة لرفع الحد.");
+    return t("errors.petQuota", "ما تكدر تضيف حيوانات إضافية حالياً. راجع مزوّد الخدمة.");
   }
   if (err.name === "QuotaError") {
-    return t("errors.quota", "وصلت حد هذا الاشتراك. راجع مزوّد الخدمة لرفع الحد.");
+    return t("errors.quota", "ما تكدر تكمّل هذي العملية حالياً. راجع مزوّد الخدمة.");
   }
   if (err.name === TIMEOUT_NAME) {
     return t("errors.timeout", "The request timed out — check your connection and try again.");
@@ -78,10 +78,10 @@ export function describeUploadError(e: unknown, t: TFunction): string {
   }
   // حصص الاشتراك (0104): رفض مقصود من مشغّل القاعدة — نشرح الحد والحل.
   if (typeof err.message === "string" && err.message.includes("pet_limit_reached")) {
-    return t("errors.petQuota", "وصلت حد الحيوانات المسموح بهذا الاشتراك. راجع مزوّد الخدمة لرفع الحد.");
+    return t("errors.petQuota", "ما تكدر تضيف حيوانات إضافية حالياً. راجع مزوّد الخدمة.");
   }
   if (err.name === "QuotaError") {
-    return t("errors.quota", "وصلت حد هذا الاشتراك. راجع مزوّد الخدمة لرفع الحد.");
+    return t("errors.quota", "ما تكدر تكمّل هذي العملية حالياً. راجع مزوّد الخدمة.");
   }
   if (err.name === TIMEOUT_NAME) {
     return t("errors.timeout", "The request timed out — check your connection and try again.");
