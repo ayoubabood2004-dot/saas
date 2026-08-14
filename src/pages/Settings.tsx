@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Settings as SettingsIcon, RotateCcw, Check, Volume2, VolumeX, Plus, Trash2, Pill, PawPrint, Stethoscope, Tag, FolderPlus, BadgePercent, IdCard, Mail, UserCog, Image as ImageIcon, Upload, Facebook, Instagram, Building2, Printer, Type, LogOut , Slice, ChevronDown, Radio, Copy, Download, Cable, Send, Barcode, Search, Package, Share2, ShieldAlert, MessageCircle, Gauge } from "lucide-react";
+import { Settings as SettingsIcon, RotateCcw, Check, Volume2, VolumeX, Plus, Trash2, Pill, PawPrint, Stethoscope, Tag, FolderPlus, BadgePercent, IdCard, Mail, UserCog, Image as ImageIcon, Upload, Facebook, Instagram, Building2, Printer, Type, LogOut , Slice, ChevronDown, Radio, Copy, Download, Cable, Send, Barcode, Search, Package, Share2, ShieldAlert, MessageCircle, Gauge, CalendarClock } from "lucide-react";
 import type { LabDeviceLink } from "@/types";
 import { supabaseUrl, supabaseAnonKey } from "@/lib/supabase";
 import { makeZip } from "@/lib/zip";
@@ -11,7 +11,7 @@ import { usePermissions } from "@/hooks/usePermissions";
 import { branchStore, useBranchState } from "@/lib/branchStore";
 import { repo } from "@/lib/repo";
 import { Combobox } from "@/components/Combobox";
-import { cn, currencySymbol , formatNum, uuid, money } from "@/lib/utils";
+import { cn, currencySymbol , formatNum, uuid, money, formatDate } from "@/lib/utils";
 import { getPromoRules, addPromoRule, togglePromoRule, removePromoRule, subcategoriesOf, type PromoRule } from "@/lib/promotions";
 import { getServiceCatalog, addServiceCategory, removeServiceCategory, addService, updateService, removeService, serviceBarcodeTaken } from "@/lib/services";
 import { DEFAULT_RANGES, VITAL_KEYS, CBC_KEYS, rangeFor, type VitalKey } from "@/lib/vitals";
@@ -860,6 +860,11 @@ function QtyPromosCard({ clinicId }: { clinicId?: string }) {
  * تختفي كلياً إذا ما أكو حدود (وهو حال أغلب العيادات) — لا نزحم الإعدادات
  * بشيء لا يخص المستخدم.
  * -------------------------------------------------------------------------- */
+/** كم يوم للتجديد — سالب يعني مرّ التاريخ (لا يحدث عملياً). */
+function daysTo(iso: string): number {
+  return Math.ceil((new Date(iso).getTime() - Date.now()) / 86400000);
+}
+
 function QuotaCard() {
   const { can } = usePermissions();
   const [q, setQ] = useState<QuotaUsage | null>(null);
@@ -887,7 +892,7 @@ function QuotaCard() {
           <span className={cn("block h-full rounded-full transition-all", bar)} style={{ width: `${pct}%` }} />
         </span>
         <p className={cn("mt-1.5 text-2xs font-semibold", left === 0 ? "text-danger-600" : pct >= 80 ? "text-warn-600" : "text-ink-subtle")}>
-          {left === 0 ? "وصلت الحد — راجع مزوّد الخدمة لرفعه" : `باقي ${formatNum(left)}`}
+          {left === 0 ? "خلصت حصة هذا الشهر — تتجدد تلقائياً، أو راجع مزوّد الخدمة لرفع الحد" : `باقي ${formatNum(left)} هذا الشهر`}
         </p>
       </div>
     );
@@ -896,14 +901,21 @@ function QuotaCard() {
   return (
     <div className="card mb-4 p-5">
       <h2 className="mb-1 flex items-center gap-2 font-bold text-ink">
-        <Gauge size={18} className="text-brand-600" /> حصص اشتراكك
+        <Gauge size={18} className="text-brand-600" /> حصتك هذا الشهر
       </h2>
-      <p className="mb-4 text-xs text-ink-subtle">
-        محسوبة من بداية اشتراكك الحالي — التجديد يبدأ عدّاً جديداً.
+      <p className="mb-3 text-xs leading-relaxed text-ink-subtle">
+        تتجدد تلقائياً مع بداية كل شهر. الي ما تستهلكه ما يتراكم للشهر الجاي.
+        <b className="text-ink-muted"> ولا شي ينحذف</b> — حيواناتك ورسائلك المرسلة كلها محفوظة، الي يتصفّر هو العدّاد بس.
       </p>
+      {q.periodEnd && (
+        <p className="mb-3 inline-flex items-center gap-1.5 rounded-full bg-surface-2 px-3 py-1.5 text-2xs font-bold text-ink-muted">
+          <CalendarClock size={13} /> يتجدد بتاريخ {formatDate(q.periodEnd, "ar")}
+          {daysTo(q.periodEnd) >= 0 && <span className="text-ink-subtle">· باقي {formatNum(daysTo(q.periodEnd))} يوم</span>}
+        </p>
+      )}
       <div className="grid gap-3 sm:grid-cols-2">
-        <Row icon={<PawPrint size={15} />} label="الحيوانات المضافة" used={q.petsUsed} limit={q.petLimit} />
-        <Row icon={<MessageCircle size={15} />} label="رسائل الواتساب" used={q.waUsed} limit={q.waLimit} />
+        <Row icon={<PawPrint size={15} />} label="حيوانات هذا الشهر" used={q.petsUsed} limit={q.petLimit} />
+        <Row icon={<MessageCircle size={15} />} label="رسائل هذا الشهر" used={q.waUsed} limit={q.waLimit} />
       </div>
     </div>
   );

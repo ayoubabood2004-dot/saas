@@ -51,7 +51,7 @@ function QuotaPill({ icon, used, limit, label }: { icon: React.ReactNode; used: 
   const tone = pct >= 100 ? "text-danger-600" : pct >= 80 ? "text-warn-600" : "text-ink-muted";
   const bar = pct >= 100 ? "bg-danger-500" : pct >= 80 ? "bg-warn-500" : "bg-brand-500";
   return (
-    <span className={cn("inline-flex items-center gap-1 whitespace-nowrap", tone)} title={`${label}: ${used}/${limit}`}>
+    <span className={cn("inline-flex items-center gap-1 whitespace-nowrap", tone)} title={`${label} هذا الشهر: ${used}/${limit}`}>
       {icon}
       <b className="tabular-nums">{formatNum(used)}<span className="opacity-60">/{formatNum(limit)}</span></b>
       <span className="text-[10px]">{label}</span>
@@ -371,6 +371,9 @@ export function AdminBilling() {
                       <p className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-2xs">
                         <QuotaPill icon={<PawPrint size={11} />} used={c.petsUsed} limit={c.petLimit} label="حيوان" />
                         <QuotaPill icon={<MessageCircle size={11} />} used={c.waUsed} limit={c.waLimit} label="رسالة" />
+                        {c.quotaPeriodEnd && (
+                          <span className="text-[10px] text-ink-subtle">· يتصفّر {formatDate(c.quotaPeriodEnd, "ar")}</span>
+                        )}
                       </p>
                     )}
                   </div>
@@ -493,13 +496,16 @@ export function AdminBilling() {
         </div>
 
         {/* حصص هذا الاشتراك — فاضي = بلا حد */}
-        <label className="label mt-4">حصص هذا الاشتراك <span className="font-normal text-ink-subtle">(اتركها فاضية = بلا حد)</span></label>
+        <label className="label mt-4">الحصة الشهرية <span className="font-normal text-ink-subtle">(اتركها فاضية = بلا حد)</span></label>
+        <p className="-mt-1 mb-2 text-2xs leading-relaxed text-ink-subtle">
+          تتجدد تلقائياً مع بداية كل شهر من تاريخ التفعيل. غير المستهلَك لا يتراكم، ولا شيء يُحذف من بيانات العيادة.
+        </p>
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="flex items-center gap-2 rounded-2xl border border-line p-3">
             <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-brand-50 text-brand-600 dark:bg-brand-500/15"><PawPrint size={16} /></span>
             <span className="min-w-0 flex-1">
-              <span className="block text-xs font-bold text-ink">حد الحيوانات</span>
-              <span className="block text-2xs text-ink-subtle">كم حيوان يضيف خلال الاشتراك</span>
+              <span className="block text-xs font-bold text-ink">حيوانات بالشهر</span>
+              <span className="block text-2xs text-ink-subtle">كم حيوان يضيف كل شهر</span>
             </span>
             <input type="number" inputMode="numeric" min="0" step="10" dir="ltr"
               className="input w-24 py-1.5 text-center" value={petCap}
@@ -508,8 +514,8 @@ export function AdminBilling() {
           <div className="flex items-center gap-2 rounded-2xl border border-line p-3">
             <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-success-50 text-success-600 dark:bg-success-500/15"><MessageCircle size={16} /></span>
             <span className="min-w-0 flex-1">
-              <span className="block text-xs font-bold text-ink">حد رسائل الواتساب</span>
-              <span className="block text-2xs text-ink-subtle">كم رسالة يرسل خلال الاشتراك</span>
+              <span className="block text-xs font-bold text-ink">رسائل بالشهر</span>
+              <span className="block text-2xs text-ink-subtle">كم رسالة يرسل كل شهر</span>
             </span>
             <input type="number" inputMode="numeric" min="0" step="50" dir="ltr"
               className="input w-24 py-1.5 text-center" value={waCap}

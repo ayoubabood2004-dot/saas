@@ -1,7 +1,11 @@
 // ============================================================================
-// حصص الاشتراك (0104) — كم حيوان تقدر العيادة تضيف، وكم رسالة واتساب ترسل،
-// **خلال الاشتراك الحالي**. يحددهما مشغّل المنصّة لكل عيادة؛ null = بلا حد
-// (وهو الافتراضي، فالعيادات القائمة لا يتغير عليها شيء).
+// حصص الاشتراك (0104، وصارت شهرية بـ0105) — كم حيوان تقدر العيادة تضيف وكم
+// رسالة واتساب ترسل **بالشهر الواحد**. يحددهما مشغّل المنصّة لكل عيادة؛
+// null = بلا حد (وهو الافتراضي، فالعيادات القائمة لا يتغير عليها شيء).
+//
+// التجديد شهري تلقائي كنموذج الاشتراكات المعروف: مع دخول كل شهر يتصفّر
+// العدّاد، وغير المستهلَك يسقط ولا يتراكم. ولا شيء يُحذف من البيانات إطلاقاً —
+// الحيوانات والرسائل تبقى بسجلها كاملة، والذي يتغير هو نافذة العدّ فقط.
 //
 // أين يُفرض كلٌّ منهما — وليسا متماثلين:
 //   • الحيوانات: مفروض بمشغّل قاعدة البيانات (trigger). الفحص هنا للعرض
@@ -17,7 +21,11 @@ export interface QuotaUsage {
   petsUsed: number;
   waLimit: number | null;
   waUsed: number;
+  /** بداية الاشتراك (ثابتة). */
   quotaStart: string | null;
+  /** بداية شهر الحصة الجاري ونهايته — العدّاد يتصفّر عند periodEnd. */
+  periodStart: string | null;
+  periodEnd: string | null;
 }
 
 let cache: QuotaUsage | null = null;
@@ -40,6 +48,8 @@ export async function fetchQuota(force = false): Promise<QuotaUsage | null> {
       waLimit: row.wa_limit == null ? null : Number(row.wa_limit),
       waUsed: Number(row.wa_used) || 0,
       quotaStart: (row.quota_start as string) ?? null,
+      periodStart: (row.period_start as string) ?? null,
+      periodEnd: (row.period_end as string) ?? null,
     };
     at = Date.now();
     return cache;

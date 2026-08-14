@@ -98,6 +98,8 @@ export interface AdminClinic {
   petsUsed: number;
   waLimit: number | null;
   waUsed: number;
+  /** متى يتصفّر عدّاد الشهر (0105). */
+  quotaPeriodEnd: string | null;
   status: SubStatus;
   daysLeft: number; // remaining days of the current window (paid or trial)
   /** أرقام الاستعمال — null إذا الخادم لسه ما شغّل هجرة 0101 (لا نعرض أصفاراً كاذبة). */
@@ -150,6 +152,7 @@ export async function adminListClinics(): Promise<AdminClinic[]> {
       petsUsed: Number(r.pets_used ?? 0),
       waLimit: r.wa_limit == null ? null : Number(r.wa_limit),
       waUsed: Number(r.wa_used ?? 0),
+      quotaPeriodEnd: (r.quota_period_end as string) ?? null,
       // خادم قبل هجرة 0101 ما يرجّع هذي الأعمدة أصلاً — نميّز «ما نعرف» عن
       // «صفر»، فلا تظهر عيادة نشيطة وكأنها ميتة.
       usage: r.cases === undefined ? null : {
@@ -173,7 +176,7 @@ export async function adminListClinics(): Promise<AdminClinic[]> {
   const mk = (name: string, email: string, patch: Partial<AdminClinic>): AdminClinic => ({
     clinicId: email, clinicName: name, email, plan: null, period: null, trialEndsAt: new Date(now + 10 * DAY).toISOString(),
     currentPeriodEnd: null, wasSubscriber: false, members: 3, status: "trialing", daysLeft: 10,
-    petLimit: null, petsUsed: 0, waLimit: null, waUsed: 0,
+    petLimit: null, petsUsed: 0, waLimit: null, waUsed: 0, quotaPeriodEnd: null,
     usage: use(0, 0, 0, 0, 0, null), ...patch,
   });
   return [
