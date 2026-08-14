@@ -43,11 +43,12 @@ import { TreatmentPlan } from "@/components/TreatmentPlan";
 import { ClinicalRecordCard } from "@/components/ClinicalRecordCard";
 import { parseClinical } from "@/lib/clinicalRecord";
 import { ConsentForms } from "@/components/ConsentForms";
+import { PetReminderModal } from "@/components/PetReminder";
 import { addClinicMed, medicationDisplay } from "@/lib/meds";
 import { breedLabel } from "@/lib/breeds";
 import { vaccineScientific } from "@/lib/vaccines";
 import { useAuth } from "@/contexts/AuthContext";
-import { Stethoscope, SlidersHorizontal, ShoppingCart, FlaskConical } from "lucide-react";
+import { Stethoscope, SlidersHorizontal, ShoppingCart, FlaskConical, AlarmClockPlus } from "lucide-react";
 import { LabsTab } from "@/components/LabCenter";
 import { RangesEditor } from "@/components/RangesEditor";
 
@@ -273,6 +274,7 @@ export function PetPassport() {
   const isOwner = user?.role === "owner";
   const [medOpen, setMedOpen] = useState(false);
   const [consentOpen, setConsentOpen] = useState(false);
+  const [reminderOpen, setReminderOpen] = useState(false);
 
   const Back = i18n.dir() === "rtl" ? ArrowRight : ArrowLeft;
 
@@ -417,6 +419,14 @@ export function PetPassport() {
             </Button>
             <Button
               size="sm"
+              variant="ghost"
+              leftIcon={<AlarmClockPlus size={16} />}
+              onClick={() => { playTap(); setReminderOpen(true); }}
+            >
+              {t("petrem.btn", "إضافة تذكير")}
+            </Button>
+            <Button
+              size="sm"
               leftIcon={<ShoppingCart size={16} />}
               onClick={() => {
                 playTap();
@@ -443,6 +453,9 @@ export function PetPassport() {
 
       {/* Legal consent forms (operation / anesthesia / treatment) — bilingual, printable */}
       <ConsentForms open={consentOpen} onClose={() => setConsentOpen(false)} pet={pet} />
+
+      {/* تذكير حر لهذا الحيوان — يُخزَّن بجدول التذكيرات نفسه فيظهر هنا وبمركز التذكيرات */}
+      <PetReminderModal open={reminderOpen} onClose={() => setReminderOpen(false)} pet={pet} onSaved={reload} />
 
       {isOwner && (
         <div className="mb-6 rounded-2xl bg-sky-50 px-4 py-2.5 text-sm text-sky-700 dark:bg-sky-500/10 dark:text-sky-300">{t("passport.ownerViewOnly")}</div>
