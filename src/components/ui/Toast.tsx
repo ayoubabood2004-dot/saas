@@ -12,6 +12,8 @@ type ToastCtx = {
   toast: (t: { tone?: ToastTone; title: string; description?: string }) => void;
   success: (title: string, description?: string) => void;
   error: (title: string, description?: string) => void;
+  /** نجاح جزئي أو تحذير — ليس فشلاً، فلا يصح تلوينه أحمر ولا أخضر. */
+  warn: (title: string, description?: string) => void;
 };
 
 const Ctx = createContext<ToastCtx | null>(null);
@@ -46,6 +48,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     toast,
     success: (title, description) => toast({ tone: "success", title, description }),
     error: (title, description) => toast({ tone: "error", title, description }),
+    warn: (title, description) => toast({ tone: "warn", title, description }),
   };
 
   return (

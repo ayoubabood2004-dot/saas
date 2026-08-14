@@ -170,28 +170,69 @@ export function AdminBilling() {
     finally { setRateBusy(false); }
   };
 
+  /** هل الخطأ سببه أن الدالة غير موجودة بالخادم (الهجرة ما شُغّلت بعد)؟ */
+  const isMissingFn = (e: unknown) =>
+    /does not exist|could not find the function|schema cache|pgrst202/i.test(
+      e instanceof Error ? e.message : String(e ?? ""),
+    );
+
   const activate = async () => {
     if (!email.trim()) { toast.error("أدخل بريد العيادة"); return; }
     setActBusy(true);
+    // نتتبّع ما نجح فعلاً: التفعيل عملية مالية، وقول «فشل» عن عملية نجحت
+    // يغري المشغّل بإعادة المحاولة فيُمدَّد اشتراك العيادة مرتين بدفعة واحدة.
+    let activated = false;
     try {
       const pet = petCap.trim() === "" ? null : Math.max(0, Math.floor(Number(petCap) || 0));
       const wa = waCap.trim() === "" ? null : Math.max(0, Math.floor(Number(waCap) || 0));
+      const planName = PLANS.find((p) => p.id === plan)?.name;
+
       if (byDays) {
         const d = Math.floor(Number(days) || 0);
         if (d < 1) { playWarning(); toast.error("عدد الأيام لازم يكون ١ فأكثر"); setActBusy(false); return; }
+        // التفعيل بالأيام يضبط الحصص بنفس النداء — إما ينجح الكل أو لا شيء.
         await adminActivateDays(email, plan, d, pet, wa);
+        activated = true;
         playSuccess();
-        toast.success("تم التفعيل يدوياً", `${PLANS.find((p) => p.id === plan)?.name} · ${formatNum(d)} يوم`);
+        toast.success("تم التفعيل يدوياً", `${planName} · ${formatNum(d)} يوم`);
       } else {
         await adminActivate(email, plan, period);
-        // الباقة الجاهزة ما تمرّ بالحصص — نضبطها بنداء منفصل إن حُددت
-        if (pet !== null || wa !== null) await adminSetLimits(email, pet, wa);
-        playSuccess();
-        toast.success("تم التفعيل يدوياً", `${PLANS.find((p) => p.id === plan)?.name} · ${period === "annual" ? "سنوي" : "شهري"}`);
+        activated = true;
+        const label = `${planName} · ${period === "annual" ? "سنوي" : "شهري"}`;
+        if (pet !== null || wa !== null) {
+          try {
+            await adminSetLimits(email, pet, wa);
+            playSuccess();
+            toast.success("تم التفعيل يدوياً", `${label} · الحصص انضبطت`);
+          } catch (e) {
+            // الاشتراك انفعّل فعلاً — نقولها صراحةً ونمنع إعادة المحاولة.
+            playWarning();
+            toast.warn(
+              "تم التفعيل — بس الحصص ما انضبطت",
+              isMissingFn(e)
+                ? `${label}. شغّل هجرة 0104 على قاعدة البيانات ثم اضبط الحصص من جديد. لا تعيد التفعيل — الاشتراك انفعّل.`
+                : `${label}. لا تعيد التفعيل — الاشتراك انفعّل. جرّب ضبط الحصص لاحقاً.`,
+            );
+          }
+        } else {
+          playSuccess();
+          toast.success("تم التفعيل يدوياً", label);
+        }
       }
       setEmail("");
       void loadClinics();
-    } catch (e) { playWarning(); toast.error("تعذّر التفعيل", e instanceof Error ? e.message : undefined); }
+    } catch (e) {
+      playWarning();
+      const detail = e instanceof Error ? e.message : undefined;
+      if (activated) {
+        toast.warn("تم التفعيل — بس صار خطأ بعده", `لا تعيد التفعيل. ${detail ?? ""}`);
+        void loadClinics();
+      } else if (isMissingFn(e)) {
+        toast.error("الخادم ما عنده هذي الميزة بعد", "شغّل هجرة 0104 (والتفعيل بالأيام يحتاجها) ثم أعد المحاولة.");
+      } else {
+        toast.error("تعذّر التفعيل", detail);
+      }
+    }
     finally { setActBusy(false); }
   };
 
