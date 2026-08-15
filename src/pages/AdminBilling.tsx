@@ -4,6 +4,7 @@ import { ShieldCheck, Coins, Wallet, ArrowLeft, Lock, Building2, RefreshCw, User
 import { useAuth } from "@/contexts/AuthContext";
 import { isPlatformAdmin, getUsdRate, setUsdRate, adminActivate, adminGrantTrial, adminCancelSubscription, adminListClinics, adminSetPlanPrice, adminActivateDays, adminSetLimits, hydratePlanPrices, type AdminClinic } from "@/lib/platformAdmin";
 import { PLANS, usdToIqd, priceUsd, planPrice, type BillingPeriod, type PlanId } from "@/lib/plans";
+import { MarketInsights } from "@/components/admin/MarketInsights";
 import { repo } from "@/lib/repo";
 import type { FeatureRequest } from "@/types";
 import { Button, Badge, Skeleton, useToast } from "@/components/ui";
@@ -441,6 +442,9 @@ export function AdminBilling() {
           </div>
         )}
       </section>
+
+      {/* حركة السوق قبل التسعير: الأرقام تسبق القرار لا العكس */}
+      <MarketInsights />
 
       {/* Plan pricing — live, no redeploy */}
       <section className="mb-5 rounded-3xl border border-line bg-surface-1 p-5 shadow-card">
