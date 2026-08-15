@@ -28,7 +28,7 @@ const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 
 export type DropHint = "idle" | "candidate" | "hot" | "blocked";
 
-export function CageUnit({ spec, position, dropHint, dragActive, ghost, arrivedRef, onHoverChange, onCardDown }: {
+export function CageUnit({ spec, position, dropHint, dragActive, ghost, arrivedRef, onHoverChange, onCardDown, neon, selected, showCard = true, onTap }: {
   spec: CageSpec;
   position: [number, number, number];
   dropHint: DropHint;
@@ -38,6 +38,14 @@ export function CageUnit({ spec, position, dropHint, dragActive, ghost, arrivedR
   onHoverChange: (code: string | null) => void;
   /** بداية إيماءة على البطاقة — الأب يقرر: حركة قصيرة = تفاصيل، طويلة = سحب. */
   onCardDown: (code: string, e: { clientX: number; clientY: number }) => void;
+  /** ليد مخصّص من وضع البناء — هوية القفص وهو فاضٍ (المشغول يلبس لون راقده). */
+  neon?: string;
+  /** محدّد بوضع البناء — توهّج أبيض ثابت فوق أي حالة. */
+  selected?: boolean;
+  /** بطاقة المريض تُرسم بوضع الإدارة فقط. */
+  showCard?: boolean;
+  /** نقرة قصيرة على جسم القفص (فرق حركة < ٦ بكسل) — تحديد أو فتح ملف. */
+  onTap?: (code: string) => void;
 }) {
   const [hover, setHover] = useState(false);
   const [imgFail, setImgFail] = useState(false);
@@ -48,7 +56,7 @@ export function CageUnit({ spec, position, dropHint, dragActive, ghost, arrivedR
 
   const status = statusOfCage(spec);
   const occupied = !!spec.occupant;
-  const baseColor = NEON[status];
+  const baseColor = occupied ? NEON[status] : neon ?? NEON.free;
 
   // خامة إطار النيون — واحدة لكل الأضلاع، تُدار يدوياً وتُتلف عند الفك.
   const rimMat = useMemo(() => new MeshStandardMaterial({ color: baseColor, emissive: baseColor, emissiveIntensity: 1.6, toneMapped: false }),
@@ -60,8 +68,9 @@ export function CageUnit({ spec, position, dropHint, dragActive, ghost, arrivedR
     const k = Math.min(1, dt * 7.5);
     const g = grp.current, shell = shellMat.current, l = glow.current;
 
-    const colorTarget = dropHint === "blocked" ? DANGER : dropHint === "hot" ? HOT : baseColor;
+    const colorTarget = selected ? "#ffffff" : dropHint === "blocked" ? DANGER : dropHint === "hot" ? HOT : baseColor;
     let intensity =
+      selected ? 3.2 + Math.sin(state.clock.elapsedTime * 6) * 0.4 :
       dropHint === "hot" ? 4.0 :
       dropHint === "blocked" ? 1.8 :
       dropHint === "candidate" ? 1.5 + Math.sin(state.clock.elapsedTime * 5) * 0.5 :
@@ -92,7 +101,8 @@ export function CageUnit({ spec, position, dropHint, dragActive, ghost, arrivedR
   return (
     <group ref={grp} position={position}
       onPointerOver={(e) => { e.stopPropagation(); setHover(true); onHoverChange(spec.code); if (!dragActive) document.body.style.cursor = "pointer"; }}
-      onPointerOut={() => { setHover(false); onHoverChange(null); if (!dragActive) document.body.style.cursor = ""; }}>
+      onPointerOut={() => { setHover(false); onHoverChange(null); if (!dragActive) document.body.style.cursor = ""; }}
+      onClick={(e) => { if (e.delta < 6 && onTap) { e.stopPropagation(); onTap(spec.code); } }}>
 
       {/* القاعدة — ترفع الحظيرة وتعطيها ثقل المعدّات الحقيقية */}
       <RoundedBox args={[CAGE_W + 0.16, 0.14, CAGE_D + 0.16]} radius={0.04} position={[0, -CAGE_H / 2 - 0.07, 0]} castShadow receiveShadow>
@@ -192,7 +202,7 @@ export function CageUnit({ spec, position, dropHint, dragActive, ghost, arrivedR
       </Html>
 
       {/* بطاقة المريض فوق الحظيرة — ضغطة قصيرة تفاصيل، وسحبة تنقله */}
-      {spec.occupant && (
+      {spec.occupant && showCard && (
         <Html center position={[0, topY + 0.55, 0]} zIndexRange={[40, 0]}
           style={{ pointerEvents: dragActive || ghost ? "none" : "auto" }}>
           <div data-occ-of={spec.code}
