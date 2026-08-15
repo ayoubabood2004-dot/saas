@@ -25,9 +25,10 @@ export default defineConfig({
         ],
       },
       workbox: {
-        // محرك OCR (~10MB) يُحمَّل عند الطلب فقط — إدراجه بالتثبيت المسبق يخلي
-        // تنصيب الـPWA ينزّل ٨ أضعاف حجم التطبيق على موبايل ببيانات محدودة.
-        globIgnores: ["**/tesseract/**"],
+        // محرك OCR (~10MB) ومشهد الأقفاص المجسّم (three.js ~1MB) يُحمَّلان عند
+        // الطلب فقط — إدراجهما بالتثبيت المسبق يخلي تنصيب الـPWA ينزّل أضعاف
+        // حجم التطبيق على موبايل ببيانات محدودة.
+        globIgnores: ["**/tesseract/**", "**/Cage3DDemo-*.js"],
         runtimeCaching: [
           {
             // Cache Supabase storage objects (patient photos) only. Bounded by a

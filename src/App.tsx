@@ -44,6 +44,8 @@ const AdminBilling = lazy(() => import("@/pages/AdminBilling").then((m) => ({ de
 const ClinicStore = lazy(() => import("@/pages/ClinicStore").then((m) => ({ default: m.ClinicStore })));
 const Storefront = lazy(() => import("@/pages/Storefront").then((m) => ({ default: m.Storefront })));
 const TrackJourney = lazy(() => import("@/pages/TrackJourney").then((m) => ({ default: m.TrackJourney })));
+// العرض المجسّم للأقفاص — كسول عمداً: three.js (~150KB) لا يُحمَّل إلا عند فتح الصفحة.
+const Cage3DDemo = lazy(() => import("@/components/cage3d/Cage3DDemo"));
 
 function FullScreenLoader() {
   return (
@@ -197,6 +199,7 @@ function Shell() {
             <Route path="/scan" element={<Protected><ScanChart /></Protected>} />
             <Route path="/reception" element={<Protected><Reception /></Protected>} />
             <Route path="/charts" element={<Protected><ClinicOnly><Charts /></ClinicOnly></Protected>} />
+            <Route path="/cage3d" element={<Protected><ClinicOnly><Cage3DDemo /></ClinicOnly></Protected>} />
             <Route path="/surgeries" element={<Protected><ClinicOnly><SurgeriesHub /></ClinicOnly></Protected>} />
             <Route path="/consult/:petId" element={<Protected><Consultation /></Protected>} />
             <Route path="/records" element={<Protected><ClinicRecords /></Protected>} />
