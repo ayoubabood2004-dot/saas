@@ -502,6 +502,13 @@ export function CageMap() {
             </>
           )}
           <div className="ms-auto flex items-center gap-2">
+            {!wall && (
+              <button type="button" onClick={() => { playTap(); navigate("/cage3d"); }}
+                className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-brand-300 bg-brand-50 px-3 text-xs font-extrabold text-brand-700 transition hover:bg-brand-100 dark:border-brand-500/40 dark:bg-brand-500/10 dark:text-brand-300"
+                title="غرفة الأقفاص كمنشأة مجسّمة: بناء الغرف بالسحب، ونقل المرضى بين الأقفاص">
+                <Boxes size={13} /> العرض ثلاثي الأبعاد
+              </button>
+            )}
             {canEdit && !wall && (
               <button type="button" onClick={() => { playTap(); setEditorOpen(true); }}
                 className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-line bg-surface-1 px-3 text-xs font-extrabold text-ink-muted transition hover:border-brand-300 hover:text-ink">
