@@ -5,7 +5,7 @@ import { useTranslation } from "react-i18next";
 import {
   Stethoscope, BedDouble, HeartPulse, ClipboardList, Pill, AlertTriangle,
   CheckCircle2, Clock, Loader2, Search, LayoutGrid, ChevronLeft, Slice,
-  Archive, DoorOpen, BarChart3, RotateCcw, MessageCircle, FileText, HeartCrack, Pencil, Check,
+  Archive, DoorOpen, BarChart3, RotateCcw, MessageCircle, FileText, HeartCrack, Pencil, Check, Boxes,
 } from "lucide-react";
 import type { Admission, ClinicVisit, MedicalVisit, Pet, PatientCondition, TreatmentEntry , Surgery } from "@/types";
 import { repo } from "@/lib/repo";
@@ -13,6 +13,7 @@ import { getCached, setCached } from "@/lib/swrCache";
 import { PetAvatar } from "@/components/PetAvatar";
 import { opsStore } from "@/lib/opsStore";
 import { TreatmentBoard } from "@/components/TreatmentBoard";
+import { CageMap } from "@/components/CageMap";
 import { taskStatus } from "@/lib/treatmentSchedule";
 import { syncDoseCycleForPet } from "@/lib/doseCycle";
 import { OUTCOMES } from "@/lib/clinicalKnowledge";
@@ -39,11 +40,12 @@ const BUCKETS: { key: BucketKey; label: string; icon: typeof Stethoscope; tint: 
  * وبعد ما يخلص العلاج، الطبلة تغادر السجلات النشطة: إما «سكشن الحالات»
  * (انتهت بنتيجة) أو «المنقطعون» (صاحبها ما رجع يكمل). و«التقارير» تحكي
  * وضع كل هذا بالأرقام وبالجُمل. */
-type RegistryKey = "daily" | "careBoarding" | "other" | "cases" | "deceased" | "lost" | "reports";
+type RegistryKey = "daily" | "careBoarding" | "other" | "cages" | "cases" | "deceased" | "lost" | "reports";
 const REGISTRIES: { key: RegistryKey; label: string; icon: typeof Stethoscope }[] = [
   { key: "daily", label: "سجل الطبلات اليومية", icon: Stethoscope },
   { key: "careBoarding", label: "سجل الفندقة العلاجية", icon: HeartPulse },
   { key: "other", label: "الفندقة والزيارات", icon: BedDouble },
+  { key: "cages", label: "خريطة الأقفاص", icon: Boxes },
   { key: "cases", label: "سكشن الحالات", icon: Archive },
   { key: "deceased", label: "سجل المتوفين", icon: HeartCrack },
   { key: "lost", label: "المنقطعون", icon: DoorOpen },
@@ -396,11 +398,13 @@ export function Charts() {
     daily: charts.filter((c) => c.bucket === "daily").length,
     careBoarding: charts.filter((c) => c.bucket === "careBoarding").length,
     other: charts.filter((c) => c.bucket === "boarding" || c.bucket === "visit").length,
+    // خريطة الأقفاص تَعُدّ الحيوانات الراقدة داخل أقفاص فعلاً (رقود نشط + رمز قفص).
+    cages: ops.admissions.filter((a) => a.status !== "discharged" && (a.cage ?? "").trim() !== "").length,
     cases: casesList.length,
     deceased: deceasedList.length,
     lost: lostList.length + stalled.length,
     reports: 0,
-  }), [charts, casesList, deceasedList, lostList, stalled]);
+  }), [charts, ops.admissions, casesList, deceasedList, lostList, stalled]);
 
   /** الدلاء المعروضة بالسجل النشط الحالي. */
   const activeBuckets = reg === "daily" || reg === "careBoarding" || reg === "other" ? REG_BUCKETS[reg] : [];
@@ -504,7 +508,9 @@ export function Charts() {
       )}
 
       {/* Body */}
-      {reg === "cases" ? (
+      {reg === "cages" ? (
+        <CageMap />
+      ) : reg === "cases" ? (
         <CasesSection cases={casesList} pets={pets} lang={lang} txForVisit={txForVisit}
           onOpen={(v) => { playTap(); navigate(`/pet/${v.pet_id}/visit/${v.id}`); }} />
       ) : reg === "deceased" ? (

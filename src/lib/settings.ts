@@ -140,8 +140,8 @@ export function clearPetRanges(petId: string) {
 export const DEFAULT_DIAL_CODE = "+964"; // Iraq
 
 export interface ClinicSocials { facebook: string; instagram: string }
-interface ClinicPrefs { dial_code: string; logo_url: string | null; social_facebook: string; social_instagram: string; clinic_name: string; pre_sale_print: boolean; override_enabled: boolean; resizable_cart: boolean; font_scale_enabled: boolean; override_pin_mirror: string | null; delivery_zones: string | null; qty_promos: string | null; catalog_share: boolean }
-const DEFAULT_PREFS: ClinicPrefs = { dial_code: DEFAULT_DIAL_CODE, logo_url: null, social_facebook: "", social_instagram: "", clinic_name: "", pre_sale_print: false, override_enabled: false, resizable_cart: false, font_scale_enabled: false, override_pin_mirror: null, delivery_zones: null, qty_promos: null, catalog_share: false };
+interface ClinicPrefs { dial_code: string; logo_url: string | null; social_facebook: string; social_instagram: string; clinic_name: string; pre_sale_print: boolean; override_enabled: boolean; resizable_cart: boolean; font_scale_enabled: boolean; override_pin_mirror: string | null; delivery_zones: string | null; qty_promos: string | null; catalog_share: boolean; cage_layout: string | null }
+const DEFAULT_PREFS: ClinicPrefs = { dial_code: DEFAULT_DIAL_CODE, logo_url: null, social_facebook: "", social_instagram: "", clinic_name: "", pre_sale_print: false, override_enabled: false, resizable_cart: false, font_scale_enabled: false, override_pin_mirror: null, delivery_zones: null, qty_promos: null, catalog_share: false, cage_layout: null };
 
 const prefsKey = () => `vp_clinic_prefs_${getActiveClinicId()}`;
 const legacyDialKey = () => `vp_dial_code_${getActiveClinicId()}`;
@@ -233,6 +233,7 @@ export async function hydrateClinicPrefs(): Promise<void> {
         delivery_zones: d.delivery_zones ?? local.delivery_zones,
         qty_promos: d.qty_promos ?? local.qty_promos,
         catalog_share: typeof d.catalog_share === "boolean" ? d.catalog_share : local.catalog_share,
+        cage_layout: d.cage_layout ?? local.cage_layout,
       };
     } else {
       // No row yet → migrate any local prefs up (or seed the default dial code).
@@ -255,6 +256,7 @@ export async function hydrateClinicPrefs(): Promise<void> {
       if (local.delivery_zones) boolPatch.delivery_zones = local.delivery_zones;
       if (local.qty_promos) boolPatch.qty_promos = local.qty_promos;
       if (local.catalog_share) boolPatch.catalog_share = true;
+      if (local.cage_layout) boolPatch.cage_layout = local.cage_layout;
       if (Object.keys(boolPatch).length) setPendingPrefs({ ...readPendingPrefs(), ...boolPatch });
     }
     // Unconfirmed pref writes (e.g. a toggle flipped before its column's
@@ -487,4 +489,37 @@ export function getCatalogShare(): boolean {
 }
 export function setCatalogShare(on: boolean) {
   patchPrefs({ catalog_share: on }, "catalog-share-set");
+}
+
+/* ---- تخطيط الأقفاص (0107) — غرف العيادة وأقفاصها، لخريطة الأقفاص المرئية.
+ * رموز الأقفاص نص حر (نفس حقل admission.cage القائم منذ البداية)، فالخريطة
+ * تلتقي مع بيانات الرقود الموجودة بلا أي هجرة بيانات. ---- */
+export interface CageRoom {
+  id: string;
+  name: string;
+  cages: string[];
+}
+
+export function getCageLayout(): CageRoom[] {
+  try {
+    const raw = prefs().cage_layout;
+    if (!raw) return [];
+    const arr = JSON.parse(raw) as unknown;
+    if (!Array.isArray(arr)) return [];
+    return arr
+      .filter((r): r is Record<string, unknown> => !!r && typeof r === "object")
+      .map((r) => ({
+        id: String(r.id ?? ""),
+        name: String(r.name ?? "").trim(),
+        cages: Array.isArray(r.cages) ? r.cages.map((c) => String(c).trim()).filter(Boolean) : [],
+      }))
+      .filter((r) => r.id && r.name);
+  } catch { return []; }
+}
+
+export function setCageLayout(rooms: CageRoom[]) {
+  const clean = rooms
+    .map((r) => ({ id: r.id, name: r.name.trim(), cages: r.cages.map((c) => c.trim()).filter(Boolean) }))
+    .filter((r) => r.name);
+  patchPrefs({ cage_layout: clean.length ? JSON.stringify(clean) : null }, "cage-layout-set");
 }
