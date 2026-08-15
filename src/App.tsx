@@ -44,8 +44,23 @@ const AdminBilling = lazy(() => import("@/pages/AdminBilling").then((m) => ({ de
 const ClinicStore = lazy(() => import("@/pages/ClinicStore").then((m) => ({ default: m.ClinicStore })));
 const Storefront = lazy(() => import("@/pages/Storefront").then((m) => ({ default: m.Storefront })));
 const TrackJourney = lazy(() => import("@/pages/TrackJourney").then((m) => ({ default: m.TrackJourney })));
-// العرض المجسّم للأقفاص — كسول عمداً: three.js (~150KB) لا يُحمَّل إلا عند فتح الصفحة.
-const Cage3DDemo = lazy(() => import("@/components/cage3d/Cage3DDemo"));
+// العرض المجسّم للأقفاص — كسول عمداً: three.js لا يُحمَّل إلا عند فتح الصفحة.
+// مع تعافٍ ذاتي: بعد كل دبلوي يتغيّر هاش الملف، وجهاز ماسك صفحة قديمة يطلب
+// الهاش القديم المحذوف فيفشل التحميل («حدث خطأ ما»). نكتشف الفشل ونحدّث
+// الصفحة مرة واحدة لتجيب النسخة الجديدة — وحارس sessionStorage يمنع أي
+// دوّامة تحديث لو كان الفشل لسبب آخر (يظهر الخطأ الحقيقي حينها).
+const Cage3DDemo = lazy(() =>
+  import("@/components/cage3d/Cage3DDemo")
+    .then((m) => { sessionStorage.removeItem("vp_c3d_retry"); return m; })
+    .catch((e) => {
+      if (!sessionStorage.getItem("vp_c3d_retry")) {
+        sessionStorage.setItem("vp_c3d_retry", "1");
+        window.location.reload();
+        return new Promise<never>(() => {});
+      }
+      throw e;
+    }),
+);
 
 function FullScreenLoader() {
   return (

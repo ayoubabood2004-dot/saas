@@ -378,6 +378,15 @@ function Scene({ s, drag, hoverCage, arrivedRef, setHoverCage, onCardDown, onRet
 const WEEK_LETTERS = ["س", "ح", "ن", "ث", "ر", "خ", "ج"];
 const todayIdx = () => (new Date().getDay() + 1) % 7;
 
+/** هل الجهاز يدعم WebGL؟ جهاز بلا دعم كان ينهار على حدود الخطأ العامة —
+ *  الأفضل شاشة صريحة ترجّعه لخريطة الأقفاص المسطّحة اللي تشتغل بكل جهاز. */
+function webglOK(): boolean {
+  try {
+    const c = document.createElement("canvas");
+    return !!(c.getContext("webgl2") || c.getContext("webgl"));
+  } catch { return false; }
+}
+
 const glass = (extra?: React.CSSProperties): React.CSSProperties => ({
   background: NIGHT.glassPanel, border: "1px solid #16324a", backdropFilter: "blur(10px)", ...extra,
 });
@@ -390,6 +399,7 @@ export default function Cage3DDemo({ openMedicalRecord }: {
   const { can } = usePermissions();
   const s = useCageStudio();
   const build = s.mode === "build";
+  const [glSupported] = useState(webglOK);
 
   const [drag, setDrag] = useState<DragState | null>(null);
   const [hoverCage, setHoverCage] = useState<string | null>(null);
@@ -500,6 +510,25 @@ export default function Cage3DDemo({ openMedicalRecord }: {
     // نقطة ربط المرحلة ٤: occ.petId → navigate(`/pet/${petId}?tab=timeline`)
     say(`ملف ${occ.name} الطبي يرتبط بسجل الحيوان الحقيقي بعد ربط البيانات`);
   };
+
+  if (!glSupported) {
+    return (
+      <div className="fixed inset-0 z-50 grid place-items-center p-6" style={{ background: NIGHT.bg }} dir="rtl">
+        <div className="w-80 rounded-2xl p-5 text-center" style={glass()}>
+          <p className="text-3xl">🐾</p>
+          <h1 className="mt-2 text-sm font-black" style={{ color: NIGHT.ink }}>جهازك ما يدعم العرض المجسّم</h1>
+          <p className="mt-1.5 text-xs font-bold leading-relaxed" style={{ color: "#8fa8bd" }}>
+            المتصفح على هذا الجهاز ما يوفّر WebGL. خريطة الأقفاص المسطّحة تعطيك نفس الإدارة
+            الكاملة (سحب، تبادل، تسجيل النقلات) وتشتغل على كل الأجهزة.
+          </p>
+          <button type="button" onClick={() => navigate("/charts")}
+            className="mt-4 h-9 w-full rounded-lg text-xs font-black" style={{ background: "#22d3ee", color: "#04222b" }}>
+            فتح خريطة الأقفاص
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   const stays = s.cages.filter((c) => s.occupants[c.code]);
   const detail = !build && detailFor ? s.cages.find((c) => c.code === detailFor) : null;
