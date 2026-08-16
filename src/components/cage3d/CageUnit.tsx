@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useFrame } from "@react-three/fiber";
-import { RoundedBox, Text, Html } from "@react-three/drei";
+import { RoundedBox, Html } from "@react-three/drei";
 import { Color, MeshStandardMaterial } from "three";
 import type { Group, PointLight } from "three";
 import { speciesPhoto } from "@/lib/petPhotos";
-import { NEON, NIGHT, DANGER, HOT, DIGIT_FONT, KIND_AR, statusOfCage, type CageSpec } from "./neon";
+import { NEON, NIGHT, DANGER, HOT, KIND_AR, statusOfCage, type CageSpec } from "./neon";
 
 /* ============================================================================
  * CageUnit — حظيرة بيطرية واقعية مفتوحة السقف: قاعدة معدنية، أربعة قوائم
@@ -172,10 +172,16 @@ export function CageUnit({ spec, position, dropHint, dragActive, ghost, arrivedR
       <RoundedBox args={[0.52, 0.2, 0.03]} radius={0.02} position={[0, -CAGE_H / 2 + LOWER_H / 2 + 0.02, CAGE_D / 2 + 0.012]}>
         <meshStandardMaterial color={NIGHT.plate} metalness={0.8} roughness={0.35} />
       </RoundedBox>
-      <Text font={DIGIT_FONT} fontSize={0.12} position={[0, -CAGE_H / 2 + LOWER_H / 2 + 0.02, CAGE_D / 2 + 0.032]}
-        color={NIGHT.plateInk} anchorX="center" anchorY="middle">
-        {spec.code}
-      </Text>
+      {/* الرقم «محفور» بلوحة معدنية — بعنصر DOM لا بنص مجسّم: نص drei المجسّم
+       *  يجلب ملف خط ويحلّله داخل Web Worker، وأي تعثّر بذلك (شبكة، متصفح
+       *  متشدّد) كان يعلّق المشهد كله خلف شاشة التحميل. هذا يرسم فوراً دائماً. */}
+      <Html center position={[0, -CAGE_H / 2 + LOWER_H / 2 + 0.02, CAGE_D / 2 + 0.03]}
+        zIndexRange={[30, 0]} style={{ pointerEvents: "none" }}>
+        <span style={{
+          fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: 11, fontWeight: 800,
+          letterSpacing: 1, color: NIGHT.plateInk, textShadow: "0 1px 0 #0008", whiteSpace: "nowrap",
+        }}>{spec.code}</span>
+      </Html>
 
       {/* ضوء الحالة داخل الحظيرة — يصبغ الفرشة والزجاج بلون الراقد */}
       <pointLight ref={glow} color={baseColor} intensity={occupied ? 1.0 : 0.3} distance={2.6} position={[0, 0.25, 0.2]} />

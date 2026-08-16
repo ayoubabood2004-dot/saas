@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { OrthographicCamera, ContactShadows, Html, Grid as DreiGrid } from "@react-three/drei";
@@ -539,9 +539,13 @@ export default function Cage3DDemo({ openMedicalRecord }: {
   return (
     <div className="fixed inset-0 z-50" style={{ background: NIGHT.bg }} dir="rtl">
       <Canvas shadows dpr={[1, 2]}>
-        <Scene s={s} drag={drag} hoverCage={hoverCage} arrivedRef={arrivedRef}
-          setHoverCage={setHoverCage} onCardDown={onCardDown}
-          onReturned={() => setDrag(null)} onTapCage={onTapCage} />
+        {/* حاجز تعليق داخلي: أي مورد داخل المشهد يتأخر (نسيج، صورة) يبقى تعليقه
+         *  محبوساً هنا بدل أن يُخفي الصفحة كلها خلف شاشة التحميل. */}
+        <Suspense fallback={null}>
+          <Scene s={s} drag={drag} hoverCage={hoverCage} arrivedRef={arrivedRef}
+            setHoverCage={setHoverCage} onCardDown={onCardDown}
+            onReturned={() => setDrag(null)} onTapCage={onTapCage} />
+        </Suspense>
       </Canvas>
 
       {/* العنوان + مبدّل الوضعين + رجوع */}

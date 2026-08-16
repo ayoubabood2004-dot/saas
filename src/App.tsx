@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useRef, type ReactNode } from "react";
+import { lazy, Suspense, useEffect, useRef, useState, type ReactNode } from "react";
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { isAppHost } from "@/lib/appUrl";
@@ -61,17 +61,46 @@ function FullScreenLoader() {
 }
 
 /** المشهد المجسّم ملف ثقيل (three.js) يُنزَّل عند أول فتح فقط. دوّارة صامتة
- *  هنا تبدو «معلّقة» — فنقول للطبيب صراحةً شنو يصير وكم يتوقع. */
+ *  هنا تبدو «معلّقة» — فنقول للطبيب صراحةً شنو يصير، وإذا طال الانتظار فوق
+ *  ١٢ ثانية نعطيه مخرجاً واضحاً بدل ما يبقى محبوساً بشاشة تحميل أبدية. */
 function Cage3DLoading() {
+  const [stuck, setStuck] = useState(false);
+  useEffect(() => {
+    const t = setTimeout(() => setStuck(true), 12000);
+    return () => clearTimeout(t);
+  }, []);
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center" style={{ background: "#0a0910" }} dir="rtl">
-      <div className="text-center">
-        <Spinner size={30} />
-        <p className="mt-3 text-sm font-black" style={{ color: "#9fdcef" }}>نجهّز العرض المجسّم…</p>
-        <p className="mt-1 text-[11px] font-bold" style={{ color: "#64809c" }}>
-          أول فتح ينزّل المشهد مرة واحدة — بعدها يفتح فوراً
-        </p>
-      </div>
+    <div className="fixed inset-0 z-50 grid place-items-center p-6" style={{ background: "#0a0910" }} dir="rtl">
+      {stuck ? (
+        <div className="w-80 rounded-2xl p-5 text-center"
+          style={{ background: "#0e1a2ecc", border: "1px solid #16324a" }}>
+          <p className="text-3xl">🐾</p>
+          <h1 className="mt-2 text-sm font-black" style={{ color: "#eaf6ff" }}>ما كدرنا نفتح العرض المجسّم</h1>
+          <p className="mt-1.5 text-xs font-bold leading-relaxed" style={{ color: "#8fa8bd" }}>
+            المشهد ثقيل وقد لا يكمل تحميله على كل جهاز أو شبكة. خريطة الأقفاص المسطّحة
+            تعطيك نفس الإدارة كاملة (سحب، تبادل، تسجيل النقلات) وتفتح فوراً.
+          </p>
+          <div className="mt-4 grid gap-2">
+            <a href="/charts" className="grid h-9 place-items-center rounded-lg text-xs font-black"
+              style={{ background: "#22d3ee", color: "#04222b" }}>
+              فتح خريطة الأقفاص
+            </a>
+            <button type="button" onClick={() => window.location.reload()}
+              className="h-9 rounded-lg text-xs font-extrabold"
+              style={{ background: "#12253a", color: "#9fdcef", border: "1px solid #164e63" }}>
+              إعادة المحاولة
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="text-center">
+          <Spinner size={30} />
+          <p className="mt-3 text-sm font-black" style={{ color: "#9fdcef" }}>نجهّز العرض المجسّم…</p>
+          <p className="mt-1 text-[11px] font-bold" style={{ color: "#64809c" }}>
+            أول فتح ينزّل المشهد مرة واحدة — بعدها يفتح فوراً
+          </p>
+        </div>
+      )}
     </div>
   );
 }
