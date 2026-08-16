@@ -13,59 +13,65 @@ import { Assistant } from "@/components/Assistant";
 import { useSubscription } from "@/lib/subscription";
 import { Spinner, useToast } from "@/components/ui";
 import { repo } from "@/lib/repo";
+import { retryImport } from "@/lib/appUpdate";
+
+/** كل صفحة كسولة تمر من هنا: لو فشل تحميلها لأن الجهاز ماسك قشرة قديمة بعد
+ *  نشر جديد، يُمسح المخبأ وتُجلب النسخة الجديدة تلقائياً — مرة واحدة. */
+const page: typeof lazy = (load) => lazy(() => retryImport(load));
 
 // Route-level code splitting — each page is its own chunk.
-const Login = lazy(() => import("@/pages/Login").then((m) => ({ default: m.Login })));
-const Dashboard = lazy(() => import("@/pages/Dashboard").then((m) => ({ default: m.Dashboard })));
-const OwnerDashboard = lazy(() => import("@/pages/OwnerDashboard").then((m) => ({ default: m.OwnerDashboard })));
-const PetPassport = lazy(() => import("@/pages/PetPassport").then((m) => ({ default: m.PetPassport })));
-const VisitPage = lazy(() => import("@/pages/VisitPage"));
-const ScanChart = lazy(() => import("@/pages/ScanChart").then((m) => ({ default: m.ScanChart })));
-const BookingWizard = lazy(() => import("@/pages/BookingWizard").then((m) => ({ default: m.BookingWizard })));
-const Reception = lazy(() => import("@/pages/Reception").then((m) => ({ default: m.Reception })));
-const Consultation = lazy(() => import("@/pages/Consultation").then((m) => ({ default: m.Consultation })));
-const Settings = lazy(() => import("@/pages/Settings").then((m) => ({ default: m.Settings })));
-const ActivityLog = lazy(() => import("@/pages/ActivityLog").then((m) => ({ default: m.ActivityLog })));
-const ClinicRecords = lazy(() => import("@/pages/ClinicRecords").then((m) => ({ default: m.ClinicRecords })));
-const Charts = lazy(() => import("@/pages/Charts").then((m) => ({ default: m.Charts })));
-const SurgeriesHub = lazy(() => import("@/pages/SurgeriesHub").then((m) => ({ default: m.SurgeriesHub })));
-const NewCase = lazy(() => import("@/pages/NewCase").then((m) => ({ default: m.NewCase })));
-const Inventory = lazy(() => import("@/pages/Inventory").then((m) => ({ default: m.Inventory })));
-const RetailSales = lazy(() => import("@/pages/RetailSales").then((m) => ({ default: m.RetailSales })));
-const WhatsAppCampaigns = lazy(() => import("@/pages/WhatsAppCampaigns").then((m) => ({ default: m.WhatsAppCampaigns })));
-const RemindersHub = lazy(() => import("@/pages/RemindersHub").then((m) => ({ default: m.RemindersHub })));
-const BookingsHub = lazy(() => import("@/pages/BookingsHub").then((m) => ({ default: m.BookingsHub })));
-const StaffManagement = lazy(() => import("@/pages/StaffManagement").then((m) => ({ default: m.StaffManagement })));
-const AnalyticsHub = lazy(() => import("@/pages/AnalyticsHub").then((m) => ({ default: m.AnalyticsHub })));
-const JoinClinic = lazy(() => import("@/pages/JoinClinic").then((m) => ({ default: m.JoinClinic })));
-const Landing = lazy(() => import("@/pages/Landing").then((m) => ({ default: m.Landing })));
-const Subscribe = lazy(() => import("@/pages/Subscribe").then((m) => ({ default: m.Subscribe })));
-const AdminBilling = lazy(() => import("@/pages/AdminBilling").then((m) => ({ default: m.AdminBilling })));
-const ClinicStore = lazy(() => import("@/pages/ClinicStore").then((m) => ({ default: m.ClinicStore })));
-const Storefront = lazy(() => import("@/pages/Storefront").then((m) => ({ default: m.Storefront })));
-const TrackJourney = lazy(() => import("@/pages/TrackJourney").then((m) => ({ default: m.TrackJourney })));
+const Login = page(() => import("@/pages/Login").then((m) => ({ default: m.Login })));
+const Dashboard = page(() => import("@/pages/Dashboard").then((m) => ({ default: m.Dashboard })));
+const OwnerDashboard = page(() => import("@/pages/OwnerDashboard").then((m) => ({ default: m.OwnerDashboard })));
+const PetPassport = page(() => import("@/pages/PetPassport").then((m) => ({ default: m.PetPassport })));
+const VisitPage = page(() => import("@/pages/VisitPage"));
+const ScanChart = page(() => import("@/pages/ScanChart").then((m) => ({ default: m.ScanChart })));
+const BookingWizard = page(() => import("@/pages/BookingWizard").then((m) => ({ default: m.BookingWizard })));
+const Reception = page(() => import("@/pages/Reception").then((m) => ({ default: m.Reception })));
+const Consultation = page(() => import("@/pages/Consultation").then((m) => ({ default: m.Consultation })));
+const Settings = page(() => import("@/pages/Settings").then((m) => ({ default: m.Settings })));
+const ActivityLog = page(() => import("@/pages/ActivityLog").then((m) => ({ default: m.ActivityLog })));
+const ClinicRecords = page(() => import("@/pages/ClinicRecords").then((m) => ({ default: m.ClinicRecords })));
+const Charts = page(() => import("@/pages/Charts").then((m) => ({ default: m.Charts })));
+const SurgeriesHub = page(() => import("@/pages/SurgeriesHub").then((m) => ({ default: m.SurgeriesHub })));
+const NewCase = page(() => import("@/pages/NewCase").then((m) => ({ default: m.NewCase })));
+const Inventory = page(() => import("@/pages/Inventory").then((m) => ({ default: m.Inventory })));
+const RetailSales = page(() => import("@/pages/RetailSales").then((m) => ({ default: m.RetailSales })));
+const WhatsAppCampaigns = page(() => import("@/pages/WhatsAppCampaigns").then((m) => ({ default: m.WhatsAppCampaigns })));
+const RemindersHub = page(() => import("@/pages/RemindersHub").then((m) => ({ default: m.RemindersHub })));
+const BookingsHub = page(() => import("@/pages/BookingsHub").then((m) => ({ default: m.BookingsHub })));
+const StaffManagement = page(() => import("@/pages/StaffManagement").then((m) => ({ default: m.StaffManagement })));
+const AnalyticsHub = page(() => import("@/pages/AnalyticsHub").then((m) => ({ default: m.AnalyticsHub })));
+const JoinClinic = page(() => import("@/pages/JoinClinic").then((m) => ({ default: m.JoinClinic })));
+const Landing = page(() => import("@/pages/Landing").then((m) => ({ default: m.Landing })));
+const Subscribe = page(() => import("@/pages/Subscribe").then((m) => ({ default: m.Subscribe })));
+const AdminBilling = page(() => import("@/pages/AdminBilling").then((m) => ({ default: m.AdminBilling })));
+const ClinicStore = page(() => import("@/pages/ClinicStore").then((m) => ({ default: m.ClinicStore })));
+const Storefront = page(() => import("@/pages/Storefront").then((m) => ({ default: m.Storefront })));
+const TrackJourney = page(() => import("@/pages/TrackJourney").then((m) => ({ default: m.TrackJourney })));
 // العرض المجسّم للأقفاص — كسول عمداً: three.js لا يُحمَّل إلا عند فتح الصفحة.
-// مع تعافٍ ذاتي: بعد كل دبلوي يتغيّر هاش الملف، وجهاز ماسك صفحة قديمة يطلب
-// الهاش القديم المحذوف فيفشل التحميل («حدث خطأ ما»). نكتشف الفشل ونحدّث
-// الصفحة مرة واحدة لتجيب النسخة الجديدة — وحارس sessionStorage يمنع أي
-// دوّامة تحديث لو كان الفشل لسبب آخر (يظهر الخطأ الحقيقي حينها).
-const Cage3DDemo = lazy(() =>
-  import("@/components/cage3d/Cage3DDemo")
-    .then((m) => { sessionStorage.removeItem("vp_c3d_retry"); return m; })
-    .catch((e) => {
-      if (!sessionStorage.getItem("vp_c3d_retry")) {
-        sessionStorage.setItem("vp_c3d_retry", "1");
-        window.location.reload();
-        return new Promise<never>(() => {});
-      }
-      throw e;
-    }),
-);
+const Cage3DDemo = page(() => import("@/components/cage3d/Cage3DDemo"));
 
 function FullScreenLoader() {
   return (
     <div className="grid min-h-[60vh] place-items-center">
       <Spinner size={32} />
+    </div>
+  );
+}
+
+/** المشهد المجسّم ملف ثقيل (three.js) يُنزَّل عند أول فتح فقط. دوّارة صامتة
+ *  هنا تبدو «معلّقة» — فنقول للطبيب صراحةً شنو يصير وكم يتوقع. */
+function Cage3DLoading() {
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center" style={{ background: "#0a0910" }} dir="rtl">
+      <div className="text-center">
+        <Spinner size={30} />
+        <p className="mt-3 text-sm font-black" style={{ color: "#9fdcef" }}>نجهّز العرض المجسّم…</p>
+        <p className="mt-1 text-[11px] font-bold" style={{ color: "#64809c" }}>
+          أول فتح ينزّل المشهد مرة واحدة — بعدها يفتح فوراً
+        </p>
+      </div>
     </div>
   );
 }
@@ -214,7 +220,7 @@ function Shell() {
             <Route path="/scan" element={<Protected><ScanChart /></Protected>} />
             <Route path="/reception" element={<Protected><Reception /></Protected>} />
             <Route path="/charts" element={<Protected><ClinicOnly><Charts /></ClinicOnly></Protected>} />
-            <Route path="/cage3d" element={<Protected><ClinicOnly><Cage3DDemo /></ClinicOnly></Protected>} />
+            <Route path="/cage3d" element={<Protected><ClinicOnly><Suspense fallback={<Cage3DLoading />}><Cage3DDemo /></Suspense></ClinicOnly></Protected>} />
             <Route path="/surgeries" element={<Protected><ClinicOnly><SurgeriesHub /></ClinicOnly></Protected>} />
             <Route path="/consult/:petId" element={<Protected><Consultation /></Protected>} />
             <Route path="/records" element={<Protected><ClinicRecords /></Protected>} />

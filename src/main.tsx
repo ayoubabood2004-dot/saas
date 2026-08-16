@@ -11,6 +11,7 @@ import { emitGlobalToast } from "./lib/globalToast";
 import { pruneStaleStorage } from "./lib/demoStore";
 import { installDigitNormalizer } from "./lib/digits";
 import { applyFontScale, applyCrispMode } from "./lib/fontScale";
+import { recoverFromStaleShell } from "./lib/appUpdate";
 
 // Western numerals everywhere: typing or pasting Arabic-Indic digits into ANY
 // input converts them to 0-9 on the fly — no data is ever lost to a digit-shape
@@ -85,19 +86,14 @@ window.addEventListener("unhandledrejection", (e) => {
   void registration;
 }
 
-// After a new deploy, a tab that was opened on the previous build may still
-// reference old hashed chunk URLs that no longer exist on the server. Vite fires
-// `vite:preloadError` when a dynamic import fails to load — recover by reloading
-// once (the fresh index.html points at the new chunk URLs). Throttle to one
-// reload per 10s so a genuinely-missing chunk can't cause a reload loop.
-window.addEventListener("vite:preloadError", () => {
-  const at = "vp_chunk_reload_at";
-  const last = Number(sessionStorage.getItem(at) || 0);
-  if (Date.now() - last > 10000) {
-    sessionStorage.setItem(at, String(Date.now()));
-    window.location.reload();
-  }
-});
+// After a new deploy, a device still holding the previous build asks for hashed
+// chunk URLs that no longer exist on the server. Reloading alone does NOT fix it
+// on an installed PWA: the service worker keeps serving the same cached shell,
+// so the same dead URLs are requested again (measured: a stuck spinner for 12s+
+// before the worker happened to update). Clear the shell caches, drop the
+// worker, then reload — main.tsx re-registers it immediately after boot, so
+// offline support returns on its own. Guarded to one attempt per 30s.
+window.addEventListener("vite:preloadError", () => { void recoverFromStaleShell(); });
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
