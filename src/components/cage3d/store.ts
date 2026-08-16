@@ -1,52 +1,50 @@
 import { useSyncExternalStore } from "react";
-import type { Occupant } from "./neon";
+import { getCageLayout, setCageLayout } from "@/lib/settings";
 
 /* ============================================================================
- * cage3dStore — عقل الاستوديو المجسّم: وضعان فوق حالة واحدة.
+ * cage3dStore — طبقة «التخطيط» فقط: الغرف ومواقع الأقفاص على الشبكة.
  *
- * نفس فلسفة opsStore بالسستم (مخزن وحدة نمطية + مشتركون — بلا مكتبة ستيت
- * خارجية) لكن بواجهة useSyncExternalStore، فأي مكوّن يقرأ لقطة متزامنة
- * ويُعاد رسمه عند كل تحوّل.
+ * المرضى ليسوا هنا: يجيون من opsStore الحقيقي (نفس مصدر التقويم الرئيسي) —
+ * القفص بالمشهد يُسكنه الرقود النشط الذي يحمل رمزه بحقل admission.cage،
+ * فالمشهد المجسّم وخريطة 2D والتقويم كلهم حقيقة واحدة.
  *
- * النموذج شبكي: العالم مقسوم خلايا مربعة (CELL وحدة عالمية)، الغرفة مستطيل
- * خلايا {x,z,w,d}، والقفص يسكن خلية واحدة داخل غرفة. هذا ما يجعل «البناء»
- * قابلاً للتفكير: السحب يلتقط لخلية، والتحقق «هل الخلية داخل غرفة وفاضية؟»
- * سؤال حسابي بسيط، والقواطع تُشتق اشتقاقاً من حدود الغرف (بلا رسم يدوي).
+ * التزامن مع بقية السستم:
+ *   • كل تعديل تخطيط هنا يُعكس فوراً إلى clinic_prefs.cage_layout (نفس ما
+ *     تقرأه خريطة 2D بالطبلات) — مصدر واحد للغرف والرموز.
+ *   • adoptCodes: أي رمز قفص موجود على رقود نشط (أو مرسوم بخريطة 2D) وغير
+ *     موجود هنا يُتبنّى تلقائياً بخلية فاضية — ما في حيوان يختفي أبداً.
  *
- * المثابرة: localStorage (مسودة الاستوديو) — والحدود load/save مصمّمة حتى
- * تتبدّل بالمرحلة ٤ إلى clinic_prefs.cage_layout + opsStore بلا لمس البقية.
+ * المواقع الشبكية (خاصية 3D الوحيدة) تُحفظ محلياً بـlocalStorage.
  * ==========================================================================*/
 
 export const CELL = 2.4;
 export type Mode = "manage" | "build";
 
-/** ألوان النيون المتاحة لتخصيص ليد القفص بوضع البناء. */
 export const LED_CHOICES = ["#22d3ee", "#fb923c", "#f43f5e", "#4ade80", "#a78bfa", "#e2e8f0"] as const;
 
 export interface Room3D {
   id: string;
   name: string;
-  x: number; z: number; // خلية الزاوية (شمال-غرب)
-  w: number; d: number; // بالأقفاص (خلايا)
+  x: number; z: number;
+  w: number; d: number;
 }
 
 export interface CagePlacement {
   code: string;
-  x: number; z: number;   // خلية عالمية
-  color?: string;         // ليد مخصّص — يظهر لما يكون القفص فاضياً
+  x: number; z: number;
+  color?: string;
 }
 
 interface StudioState {
   mode: Mode;
   rooms: Room3D[];
   cages: CagePlacement[];
-  occupants: Record<string, Occupant | null>; // بالكود — عينة حتى ربط المرحلة ٤
-  selected: string | null;                    // قفص محدّد بوضع البناء
+  selected: string | null;
 }
 
-const LS_KEY = "vp_cage3d_studio_v1";
+const LS_KEY = "vp_cage3d_layout_v2";
+const norm = (c: string) => c.trim().toLowerCase();
 
-/** بذرة أول تشغيل: غرفة إقامة ٣×٢ بالأقفاص والمرضى المعتادين. */
 function seed(): StudioState {
   return {
     mode: "manage",
@@ -55,14 +53,6 @@ function seed(): StudioState {
       { code: "101", x: 0, z: 0 }, { code: "102", x: 1, z: 0 }, { code: "103", x: 2, z: 0 },
       { code: "104", x: 0, z: 1 }, { code: "105", x: 1, z: 1 }, { code: "106", x: 2, z: 1 },
     ],
-    occupants: {
-      "101": { name: "بيلا", species: "cat", emoji: "🐱", status: "boarding", days: 3 },
-      "102": { name: "لولو", species: "bird", emoji: "🦜", status: "care", days: 1 },
-      "103": null,
-      "104": { name: "مشمش", species: "rabbit", emoji: "🐰", status: "careBoarding", days: 2 },
-      "105": null,
-      "106": { name: "روكي", species: "dog", emoji: "🐶", status: "boarding", days: 5 },
-    },
     selected: null,
   };
 }
@@ -80,11 +70,25 @@ function load(): StudioState {
 let state: StudioState = load();
 const listeners = new Set<() => void>();
 
-function commit(next: Partial<StudioState>) {
+/** عكس التخطيط لخريطة 2D (clinic_prefs.cage_layout) — مصدر واحد للغرف. */
+function mirrorToPrefs() {
+  try {
+    setCageLayout(state.rooms.map((r) => ({
+      id: r.id,
+      name: r.name,
+      cages: state.cages
+        .filter((c) => c.x >= r.x && c.x < r.x + r.w && c.z >= r.z && c.z < r.z + r.d)
+        .map((c) => c.code),
+    })));
+  } catch { /* بيئة بلا تفضيلات (اختبارات) — التخطيط المحلي يبقى صحيحاً */ }
+}
+
+function commit(next: Partial<StudioState>, touchesLayout = false) {
   state = { ...state, ...next };
   try {
     localStorage.setItem(LS_KEY, JSON.stringify({ ...state, mode: "manage", selected: null }));
-  } catch { /* مساحة ممتلئة؟ المسودة بالذاكرة تبقى صحيحة */ }
+  } catch { /* مساحة ممتلئة؟ الحالة بالذاكرة تبقى صحيحة */ }
+  if (touchesLayout) mirrorToPrefs();
   listeners.forEach((fn) => fn());
 }
 
@@ -96,11 +100,9 @@ export const roomAt = (s: StudioState, x: number, z: number): Room3D | null =>
 export const cageAt = (s: StudioState, x: number, z: number): CagePlacement | null =>
   s.cages.find((c) => c.x === x && c.z === z) ?? null;
 
-/** خلية صالحة لقفص جديد = داخل غرفة، وفاضية. */
 export const cellFree = (s: StudioState, x: number, z: number): boolean =>
   !!roomAt(s, x, z) && !cageAt(s, x, z);
 
-/** حدود العالم بالخلايا — منها يتمركز المشهد وتتكيف الكاميرا. */
 export function bounds(s: StudioState) {
   if (!s.rooms.length) return { minX: 0, minZ: 0, maxX: 3, maxZ: 2 };
   const minX = Math.min(...s.rooms.map((r) => r.x));
@@ -110,34 +112,26 @@ export function bounds(s: StudioState) {
   return { minX, minZ, maxX, maxZ };
 }
 
-/** خلية شبكية → مركزها بالعالم (المشهد متمركز حول أصل الرسم). */
 export function cellWorld(s: StudioState, x: number, z: number): [number, number] {
   const b = bounds(s);
   const cx = (b.minX + b.maxX) / 2, cz = (b.minZ + b.maxZ) / 2;
   return [(x + 0.5 - cx) * CELL, (z + 0.5 - cz) * CELL];
 }
 
-/** زاوية شبكية (حدود خلايا) → العالم — للقواطع. */
 export function cornerWorld(s: StudioState, x: number, z: number): [number, number] {
   const b = bounds(s);
   const cx = (b.minX + b.maxX) / 2, cz = (b.minZ + b.maxZ) / 2;
   return [(x - cx) * CELL, (z - cz) * CELL];
 }
 
-/** رقم تلقائي للقفص الجديد: أساس الغرفة (101، 201…) وأول رقم غير محجوز. */
 export function nextCode(s: StudioState, room: Room3D): string {
   const base = (s.rooms.indexOf(room) + 1) * 100;
-  const used = new Set(s.cages.map((c) => c.code));
+  const used = new Set(s.cages.map((c) => norm(c.code)));
   for (let i = 1; i < 100; i++) if (!used.has(String(base + i))) return String(base + i);
   return String(base + Math.floor(Math.random() * 900) + 100);
 }
 
-/* ---------------------- خوارزمية القواطع التلقائية ----------------------
- * الفكرة: كل غرفة تساهم بأضلاع محيطها كقطع بطول خلية واحدة، بمفتاح موحّد
- * للقطعة. الضلع المشترك بين غرفتين متلاصقتين يُضاف مرتين بنفس المفتاح →
- * يبقى قاطعاً واحداً مشتركاً (بدون جدارين متراكبين). ثم يُفتح باب لكل
- * غرفة: تُحذف القطعة الوسطى من ضلعها الأمامي (جهة الكاميرا، z الأكبر).
- * الناتج قائمة قطع {من، إلى} جاهزة للرسم كزجاج عيادات حديث. ------------- */
+/* ---------------------- خوارزمية القواطع التلقائية ---------------------- */
 export interface WallSeg { x1: number; z1: number; x2: number; z2: number }
 
 export function buildPartitions(rooms: Room3D[]): WallSeg[] {
@@ -148,21 +142,23 @@ export function buildPartitions(rooms: Room3D[]): WallSeg[] {
 
   for (const r of rooms) {
     for (let i = 0; i < r.w; i++) {
-      add(r.x + i, r.z, r.x + i + 1, r.z);                 // الضلع الخلفي
-      add(r.x + i, r.z + r.d, r.x + i + 1, r.z + r.d);     // الأمامي
+      add(r.x + i, r.z, r.x + i + 1, r.z);
+      add(r.x + i, r.z + r.d, r.x + i + 1, r.z + r.d);
     }
     for (let j = 0; j < r.d; j++) {
-      add(r.x, r.z + j, r.x, r.z + j + 1);                 // الغربي
-      add(r.x + r.w, r.z + j, r.x + r.w, r.z + j + 1);     // الشرقي
+      add(r.x, r.z + j, r.x, r.z + j + 1);
+      add(r.x + r.w, r.z + j, r.x + r.w, r.z + j + 1);
     }
   }
-  // باب كل غرفة: القطعة الوسطى من الضلع الأمامي
   for (const r of rooms) {
     const doorX = r.x + Math.floor(r.w / 2);
     segs.delete(key(doorX, r.z + r.d, doorX + 1, r.z + r.d));
   }
   return [...segs.values()];
 }
+
+/** خلية الباب لكل غرفة — للافتة المعلّقة فوقه. */
+export const doorCell = (r: Room3D): [number, number] => [r.x + Math.floor(r.w / 2), r.z + r.d];
 
 /* -------------------------------- الأفعال -------------------------------- */
 
@@ -176,7 +172,6 @@ export const cageStudio = {
   setMode(mode: Mode) { commit({ mode, selected: null }); },
   select(code: string | null) { commit({ selected: code }); },
 
-  /** غرفة جديدة تُصفّ تلقائياً يمين المخطط الحالي وبينهما ممر خلية. */
   addRoom(name: string, w: number, d: number) {
     const b = bounds(state);
     const room: Room3D = {
@@ -185,68 +180,114 @@ export const cageStudio = {
       x: state.rooms.length ? b.maxX + 1 : 0, z: 0,
       w: Math.max(1, Math.min(5, w)), d: Math.max(1, Math.min(4, d)),
     };
-    commit({ rooms: [...state.rooms, room] });
+    commit({ rooms: [...state.rooms, room] }, true);
     return room;
   },
 
-  /** حذف غرفة يحذف أقفاصها — ومرضاها يرجعون «بلا قفص» (لا يُفقد أحد). */
+  updateRoom(id: string, patch: { name?: string }) {
+    commit({ rooms: state.rooms.map((r) => (r.id === id ? { ...r, ...patch, name: (patch.name ?? r.name).trim() || r.name } : r)) }, true);
+  },
+
+  /** حذف غرفة يحذف أقفاصها من التخطيط — المرضى لا يُمسّون (رموزهم تُتبنّى لاحقاً). */
   removeRoom(id: string) {
     const room = state.rooms.find((r) => r.id === id);
     if (!room) return;
-    const inside = state.cages.filter((c) => roomAt(state, c.x, c.z)?.id === id);
-    const codes = new Set(inside.map((c) => c.code));
-    const occupants = { ...state.occupants };
-    for (const c of codes) delete occupants[c];
+    const inside = new Set(state.cages
+      .filter((c) => c.x >= room.x && c.x < room.x + room.w && c.z >= room.z && c.z < room.z + room.d)
+      .map((c) => c.code));
     commit({
       rooms: state.rooms.filter((r) => r.id !== id),
-      cages: state.cages.filter((c) => !codes.has(c.code)),
-      occupants,
-      selected: state.selected && codes.has(state.selected) ? null : state.selected,
-    });
+      cages: state.cages.filter((c) => !inside.has(c.code)),
+      selected: state.selected && inside.has(state.selected) ? null : state.selected,
+    }, true);
   },
 
-  /** إسقاط قفص جديد على خلية — يرفض بهدوء إذا الخلية خارج غرفة أو مشغولة. */
-  placeCage(x: number, z: number): CagePlacement | null {
+  placeCage(x: number, z: number, code?: string): CagePlacement | null {
     if (!cellFree(state, x, z)) return null;
     const room = roomAt(state, x, z)!;
-    const cage: CagePlacement = { code: nextCode(state, room), x, z };
-    commit({ cages: [...state.cages, cage], occupants: { ...state.occupants, [cage.code]: null }, selected: cage.code });
+    const c = code?.trim() || nextCode(state, room);
+    if (state.cages.some((k) => norm(k.code) === norm(c))) return null;
+    const cage: CagePlacement = { code: c, x, z };
+    commit({ cages: [...state.cages, cage], selected: cage.code }, true);
     return cage;
   },
 
-  /** تخصيص قفص (الرقم / لون الليد). تغيير الرقم يرفض التكرار. */
+  /** تغيير رقم/لون القفص — التكرار يُرفض. (مزامنة رقود الساكن مسؤولية المكوّن.) */
   updateCage(code: string, patch: { code?: string; color?: string }): boolean {
     const next = patch.code?.trim();
-    if (next && next !== code && state.cages.some((c) => c.code === next)) return false;
-    const cages = state.cages.map((c) => (c.code === code ? { ...c, ...patch, code: next || c.code } : c));
-    const occupants = { ...state.occupants };
-    if (next && next !== code) {
-      occupants[next] = occupants[code] ?? null;
-      delete occupants[code];
-    }
-    commit({ cages, occupants, selected: next || state.selected });
+    if (next && norm(next) !== norm(code) && state.cages.some((c) => norm(c.code) === norm(next))) return false;
+    commit({
+      cages: state.cages.map((c) => (c.code === code ? { ...c, ...patch, code: next || c.code } : c)),
+      selected: next || state.selected,
+    }, true);
     return true;
   },
 
   removeCage(code: string) {
-    const occupants = { ...state.occupants };
-    delete occupants[code];
     commit({
       cages: state.cages.filter((c) => c.code !== code),
-      occupants,
       selected: state.selected === code ? null : state.selected,
+    }, true);
+  },
+
+  /** ترقيم غرفة كاملة تلقائياً من أساس (مثال ٢٠١، ٢٠٢…) بترتيب الصفوف.
+   *  يرجع أزواج (قديم → جديد) حتى يزامن المكوّن رقود السكان. */
+  renumberRoom(roomId: string, base: number): Array<{ from: string; to: string }> {
+    const room = state.rooms.find((r) => r.id === roomId);
+    if (!room || !Number.isFinite(base)) return [];
+    const inside = state.cages
+      .filter((c) => c.x >= room.x && c.x < room.x + room.w && c.z >= room.z && c.z < room.z + room.d)
+      .sort((a, b) => (a.z - b.z) || (a.x - b.x));
+    const outside = new Set(state.cages.filter((c) => !inside.includes(c)).map((c) => norm(c.code)));
+    const changes: Array<{ from: string; to: string }> = [];
+    let n = Math.max(1, Math.floor(base));
+    const cages = state.cages.map((c) => {
+      if (!inside.includes(c)) return c;
+      while (outside.has(String(n))) n++;
+      const to = String(n++);
+      if (to !== c.code) changes.push({ from: c.code, to });
+      return { ...c, code: to };
     });
+    commit({ cages, selected: null }, true);
+    return changes;
   },
 
-  /** نقل مريض بين قفصين (وضع الإدارة) — الهدف لازم يكون فاضياً. */
-  moveOccupant(from: string, to: string): boolean {
-    const occ = state.occupants[from];
-    if (!occ || state.occupants[to]) return false;
-    commit({ occupants: { ...state.occupants, [from]: null, [to]: occ } });
-    return true;
+  /** تبنّي رموز موجودة بالسستم (رقود نشطة أو خريطة 2D) وغير مرسومة هنا:
+   *  تُغرز بأول خلايا فاضية، وإن ضاقت الغرف تُبنى «غرفة غير مصنّفة» تسعها. */
+  adoptCodes(codes: string[]) {
+    const known = new Set(state.cages.map((c) => norm(c.code)));
+    const todo = [...new Set(codes.map((c) => c.trim()).filter(Boolean))].filter((c) => !known.has(norm(c)));
+    if (!todo.length) return;
+    let rooms = state.rooms;
+    const cages = [...state.cages];
+    const free: Array<[number, number]> = [];
+    const collectFree = () => {
+      free.length = 0;
+      for (const r of rooms) for (let j = 0; j < r.d; j++) for (let i = 0; i < r.w; i++) {
+        const x = r.x + i, z = r.z + j;
+        if (!cages.some((c) => c.x === x && c.z === z)) free.push([x, z]);
+      }
+    };
+    collectFree();
+    if (free.length < todo.length) {
+      const need = todo.length - free.length;
+      const w = Math.min(4, Math.max(1, need)), d = Math.ceil(need / w);
+      const b = rooms.length
+        ? { maxX: Math.max(...rooms.map((r) => r.x + r.w)) }
+        : { maxX: -1 };
+      rooms = [...rooms, {
+        id: `r${Date.now().toString(36)}`, name: "غير مصنّفة",
+        x: b.maxX + 1, z: 0, w, d,
+      }];
+      collectFree();
+    }
+    todo.forEach((code, i) => {
+      const cell = free[i];
+      if (cell) cages.push({ code, x: cell[0], z: cell[1] });
+    });
+    commit({ rooms, cages }, true);
   },
 
-  /** لإعادة ضبط العرض التجريبي (تستعملها الفحوصات). */
   reset() {
     try { localStorage.removeItem(LS_KEY); } catch { /* لا شيء */ }
     state = seed();
@@ -254,7 +295,11 @@ export const cageStudio = {
   },
 };
 
-/** لقطة متزامنة للمكوّنات — إعادة رسم عند كل commit. */
+/** عند أول تشغيل: اكتساب غرف خريطة 2D المرسومة سابقاً (رموز فقط). */
+export function codesFromPrefs(): string[] {
+  try { return getCageLayout().flatMap((r) => r.cages); } catch { return []; }
+}
+
 export function useCageStudio(): StudioState {
   return useSyncExternalStore(cageStudio.subscribe, cageStudio.get);
 }

@@ -4,37 +4,34 @@ import { Canvas, useFrame } from "@react-three/fiber";
 import { OrthographicCamera, ContactShadows, Html, Grid as DreiGrid } from "@react-three/drei";
 import { CanvasTexture, Plane, RepeatWrapping, Vector2, Vector3 } from "three";
 import type { Group, Mesh, MeshBasicMaterial, MeshStandardMaterial } from "three";
-import { ChevronRight, Hammer, ClipboardList, Move, Plus, Trash2, X, FileText } from "lucide-react";
+import { ChevronRight, Hammer, ClipboardList, Move, Plus, Search, Trash2, X, FileText, UserPlus } from "lucide-react";
 import { CageUnit, CAGE_W, CAGE_D, type DropHint } from "./CageUnit";
-import { NEON, NIGHT, KIND_AR, SPECIES_AR, type Occupant } from "./neon";
+import { NEON, NIGHT, KIND_AR, SPECIES_AR, SPECIES_EMOJI, type Occupant } from "./neon";
 import {
   CELL, LED_CHOICES, cageStudio, useCageStudio, cageAt, cellFree, bounds,
-  cellWorld, cornerWorld, buildPartitions, type Room3D,
+  cellWorld, cornerWorld, buildPartitions, doorCell, codesFromPrefs, type Room3D,
 } from "./store";
+import { opsStore } from "@/lib/opsStore";
+import { statusOf } from "@/lib/opsStatus";
+import { repo } from "@/lib/repo";
+import type { Admission } from "@/types";
 import { speciesPhoto } from "@/lib/petPhotos";
-import { formatNum } from "@/lib/utils";
+import { formatNum, localISO } from "@/lib/utils";
 import { usePermissions } from "@/hooks/usePermissions";
+import { useAuth } from "@/contexts/AuthContext";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
 
 /* ============================================================================
- * استوديو الأقفاص — وضعان فوق حالة واحدة (cage3dStore)، مصمَّم للمس أولاً:
+ * استوديو الأقفاص — على البيانات الحقيقية:
  *
- *   الإدارة اليومية — النقل بضغطتين: اضغط بطاقة المريض (تنحمل)، ثم اضغط
- *   القفص الجديد — انتهى. الأقفاص المتاحة تنبض «تعال»، والمشغول يرفض
- *   بوضوح. السحب المتواصل يبقى يشتغل لمن يحبه (بالماوس أو باللمس)،
- *   وتفاصيل المريض بضغط جسم القفص، ومنها «فتح الملف الطبي» و«نقله».
- *
- *   وضع البناء — اضغط أي خلية فاضية داخل غرفة = قفص جديد فوراً (الخلايا
- *   الفاضية مرسومة بوسائد خضراء واضحة)، واضغط قفصاً لتخصيص رقمه ولون
- *   ليده. الغرف بالاسم والأبعاد، والقواطع الزجاجية تتولّد وحدها.
- *
- * درسا اللمس الجوهريان:
- *   ١. عنصر DOM يستلم pointerdown «يأسر» بقية أحداث اللمسة (implicit pointer
- *      capture)، فمشهد R3F لا يرى موضع الإصبع أثناء سحبة بدأت من بطاقة —
- *      وكانت البطاقة تطير لموضع قديم. نتتبّع المؤشر بأنفسنا (lastPtr من
- *      window) ونسقطه على الكاميرا يدوياً كل إطار.
- *   ٢. «التحويم» غير موجود على اللمس، فلا يصح أن يعتمد الإفلات عليه —
- *      هدف الإفلات يُحسب من موضع الإصبع نفسه (dragOver) كل إطار.
+ * المرضى من opsStore (نفس مصدر التقويم الرئيسي): القفص يُسكنه الرقود النشط
+ * الذي يحمل رمزه بحقل admission.cage، وكل نقلة = opsStore.patch → تنحفظ
+ * بالسيرفر وتتسجّل برحلة الحيوان (cage_changed) وتظهر فوراً بالتقويم
+ * وخريطة 2D. «الملف الطبي» يفتح سجل الحيوان الفعلي، و«إسكان حيوان» يبحث
+ * بسجلاتك ويحطه بقفص بضغطتين. التخطيط يُعكس لخريطة 2D (clinic_prefs)،
+ * وأي رمز قفص موجود بالسستم وغير مرسوم هنا يُتبنّى تلقائياً — لا يختفي
+ * حيوان أبداً. النقل بضغطتين، والبناء بضغطة خلية، ولافتة كل غرفة معلّقة
+ * فوق بابها (وبوضع البناء ضغطها يفتح لوحتها: اسم، ترقيم تلقائي، حذف).
  * ==========================================================================*/
 
 const FLY_Y = 1.5;
@@ -42,7 +39,6 @@ const REST_Y = 1.2;
 const WALL_H = 1.65;
 
 interface DragState {
-  from: string;
   occ: Occupant;
   fromPos: [number, number, number];
   phase: "drag" | "return";
@@ -51,16 +47,19 @@ interface DragState {
 /* refs عابرة للحدود DOM ⇄ Canvas بلا رندر */
 const placing = { current: false };
 const ghostCell = { current: null as null | { x: number; z: number; valid: boolean } };
-/** آخر موضع مؤشر/إصبع على الشاشة — المصدر الوحيد لموقع السحب داخل المشهد. */
 const lastPtr = { x: 0, y: 0 };
-/** القفص الواقع تحت الإصبع أثناء السحب — يُحسب من lastPtr داخل المشهد كل إطار. */
 const dragOver = { current: null as string | null };
 
-/** إحداثيات شاشة → إحداثيات كاميرا معيارية (NDC) لكانفس المشهد. */
 function ptrNDC(el: HTMLCanvasElement, out: Vector2): Vector2 {
   const r = el.getBoundingClientRect();
   return out.set(((lastPtr.x - r.left) / r.width) * 2 - 1, -(((lastPtr.y - r.top) / r.height) * 2 - 1));
 }
+
+const norm = (c?: string | null) => (c ?? "").trim().toLowerCase();
+const dayNo = (iso?: string) => {
+  const t = new Date((iso ?? "") + "T00:00:00").getTime();
+  return Number.isNaN(t) ? 1 : Math.max(1, Math.floor((Date.now() - t) / 86400000) + 1);
+};
 
 const LEGEND: { label: string; c: string }[] = [
   { label: "فندقة", c: NEON.boarding },
@@ -69,7 +68,6 @@ const LEGEND: { label: string; c: string }[] = [
   { label: "متاح", c: NEON.free },
 ];
 
-/** أرضية خشب مولّدة برمجياً — ألواح بعروق، صفر أصول خارجية. */
 function makeWoodTexture(): CanvasTexture {
   const c = document.createElement("canvas");
   c.width = c.height = 512;
@@ -112,7 +110,6 @@ function HexCluster({ position, rotation, color }: {
   );
 }
 
-/* ── القواطع الزجاجية المتولّدة تلقائياً من حدود الغرف ─────────────────── */
 function Partitions({ rooms, s }: { rooms: Room3D[]; s: ReturnType<typeof cageStudio.get> }) {
   const segs = useMemo(() => buildPartitions(rooms), [rooms]);
   return (
@@ -146,39 +143,53 @@ function Partitions({ rooms, s }: { rooms: Room3D[]; s: ReturnType<typeof cageSt
   );
 }
 
-/* ── أرضيات الغرف وأسماؤها (وحذفها بوضع البناء) ────────────────────────── */
-function RoomFloors({ s, build }: { s: ReturnType<typeof cageStudio.get>; build: boolean }) {
+/* ── أرضيات الغرف + لافتة كل غرفة معلّقة فوق بابها ─────────────────────── */
+function RoomFloors({ s, build, occCount, onEditRoom }: {
+  s: ReturnType<typeof cageStudio.get>;
+  build: boolean;
+  occCount: (r: Room3D) => number;
+  onEditRoom: (id: string) => void;
+}) {
   return (
     <>
       {s.rooms.map((r) => {
         const [wx, wz] = cornerWorld(s, r.x, r.z);
         const w = r.w * CELL, d = r.d * CELL;
+        const [dx, dz] = doorCell(r);
+        const [doorWX, doorWZ] = cornerWorld(s, dx, dz);
         return (
           <group key={r.id}>
             <mesh rotation={[-Math.PI / 2, 0, 0]} position={[wx + w / 2, -0.07, wz + d / 2]} receiveShadow>
               <planeGeometry args={[w - 0.12, d - 0.12]} />
               <meshStandardMaterial color="#10192b" transparent opacity={0.5} roughness={0.9} />
             </mesh>
-            {/* بطاقة الاسم شفافة للضغطات كلها — كانت تبلع ضغطات الخلايا الواقعة
-             *  تحتها (حاجز خفي)؛ زر الحذف وحده يستقبل الضغط. */}
-            <Html center position={[wx + w / 2, 0.12, wz + 0.18]} zIndexRange={[32, 0]}
-              style={{ pointerEvents: "none" }}>
-              <div data-room3d={r.name} style={{
-                direction: "rtl", display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap",
-                background: "#0c1626d9", border: "1px solid #16324a", borderRadius: 9, padding: "3px 8px",
-              }}>
-                <b style={{ color: "#9fdcef", fontSize: 11, fontWeight: 800 }}>{r.name}</b>
-                <i style={{ color: "#64809c", fontSize: 9, fontStyle: "normal" }}>{formatNum(r.w)}×{formatNum(r.d)}</i>
-                {build && (
-                  <button type="button" title="حذف الغرفة"
-                    onPointerDown={(e) => e.stopPropagation()}
-                    onClick={(e) => { e.stopPropagation(); playTap(); cageStudio.removeRoom(r.id); }}
-                    style={{ color: "#f87171", display: "grid", padding: 4, pointerEvents: "auto" }}>
-                    <Trash2 size={12} />
-                  </button>
-                )}
-              </div>
-            </Html>
+            {/* اللافتة فوق الباب: قائمتان + لوح — والاسم عليها ببطاقة واضحة */}
+            <group position={[doorWX + CELL / 2, 0, doorWZ]}>
+              <mesh position={[0, WALL_H + 0.14, 0]}>
+                <boxGeometry args={[CELL - 0.5, 0.34, 0.06]} />
+                <meshStandardMaterial color={NIGHT.plate} metalness={0.7} roughness={0.35} />
+              </mesh>
+              <mesh position={[0, WALL_H - 0.02, 0]}>
+                <boxGeometry args={[CELL - 0.44, 0.045, 0.05]} />
+                <meshStandardMaterial color="#22d3ee" emissive="#22d3ee" emissiveIntensity={1.4} toneMapped={false} />
+              </mesh>
+              <Html center position={[0, WALL_H + 0.14, 0.06]} zIndexRange={[33, 0]}
+                style={{ pointerEvents: build ? "auto" : "none" }}>
+                <button type="button" data-sign3d={r.name}
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onClick={(e) => { e.stopPropagation(); if (build) { playTap(); onEditRoom(r.id); } }}
+                  style={{
+                    direction: "rtl", display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap",
+                    background: "#0d1b2ef2", border: "1px solid #2a6076", borderRadius: 8, padding: "4px 12px",
+                    boxShadow: "0 0 14px #22d3ee33", cursor: build ? "pointer" : "default",
+                  }}>
+                  <b style={{ color: "#d8f6ff", fontSize: 12.5, fontWeight: 800 }}>{r.name}</b>
+                  <i style={{ color: "#5f88a5", fontSize: 10, fontStyle: "normal", fontWeight: 700 }}>
+                    {formatNum(occCount(r))} 🐾
+                  </i>
+                </button>
+              </Html>
+            </group>
           </group>
         );
       })}
@@ -186,7 +197,6 @@ function RoomFloors({ s, build }: { s: ReturnType<typeof cageStudio.get>; build:
   );
 }
 
-/* ── وسائد الخلايا الفاضية (وضع البناء): ضغطة واحدة = قفص جديد ─────────── */
 function CellPads({ s, onPick }: {
   s: ReturnType<typeof cageStudio.get>;
   onPick: (x: number, z: number) => void;
@@ -207,7 +217,6 @@ function CellPads({ s, onPick }: {
             <meshStandardMaterial color="#4ade80" transparent opacity={0.22}
               emissive="#4ade80" emissiveIntensity={0.7} />
           </mesh>
-          {/* مرساة للاختبارات + تلميح «+» مرئي بوسط الوسادة */}
           <Html center position={[wx, 0.02, wz]} zIndexRange={[28, 0]} style={{ pointerEvents: "none" }}>
             <span data-cell3d={`${x},${z}`} style={{ color: "#4ade80cc", fontSize: 22, fontWeight: 800, textShadow: "0 0 8px #4ade8088" }}>+</span>
           </Html>
@@ -218,7 +227,6 @@ function CellPads({ s, onPick }: {
   return <>{pads}</>;
 }
 
-/* ── شبح القفص الجديد أثناء السحب من اللوح ─────────────────────────────── */
 function GhostCage({ s }: { s: ReturnType<typeof cageStudio.get> }) {
   const grp = useRef<Group>(null);
   const mat = useRef<MeshStandardMaterial>(null);
@@ -230,7 +238,6 @@ function GhostCage({ s }: { s: ReturnType<typeof cageStudio.get> }) {
     const g = grp.current;
     if (!g) return;
     if (!placing.current) { g.visible = false; ghostCell.current = null; return; }
-    // موضع الإصبع/المؤشر من تتبّعنا نحن — لا من R3F (اللمس لا يصل للكانفس)
     st.raycaster.setFromCamera(ptrNDC(st.gl.domElement, ndc), st.camera);
     if (!st.raycaster.ray.intersectPlane(floor, hit)) return;
     const b = bounds(s);
@@ -256,7 +263,6 @@ function GhostCage({ s }: { s: ReturnType<typeof cageStudio.get> }) {
   );
 }
 
-/* ── البطاقة الطائرة (سحب المرضى) — تتبع الإصبع الحقيقي كل إطار ────────── */
 function DragAvatar({ drag, s, onReturned }: {
   drag: DragState;
   s: ReturnType<typeof cageStudio.get>;
@@ -278,7 +284,6 @@ function DragAvatar({ drag, s, onReturned }: {
       state.raycaster.setFromCamera(ptrNDC(state.gl.domElement, ndc), state.camera);
       if (state.raycaster.ray.intersectPlane(floor, hit)) {
         target.set(hit.x, FLY_Y, hit.z);
-        // القفص الواقع تحت الإصبع الآن — هدف الإفلات الفعلي (يشتغل بلا تحويم)
         const b = bounds(s);
         const cx = (b.minX + b.maxX) / 2, cz = (b.minZ + b.maxZ) / 2;
         const gx = Math.floor(hit.x / CELL + cx), gz = Math.floor(hit.z / CELL + cz);
@@ -308,10 +313,10 @@ function DragAvatar({ drag, s, onReturned }: {
             boxShadow: `0 0 26px ${color}88, 0 10px 24px #000a`,
             transform: "rotate(-3deg) scale(1.08)", cursor: "grabbing",
           }}>
-            {imgFail ? (
+            {imgFail || !drag.occ.photoUrl ? (
               <span style={{ fontSize: 22, filter: `drop-shadow(0 0 8px ${color})` }}>{drag.occ.emoji}</span>
             ) : (
-              <img src={speciesPhoto(drag.occ.species, 64)} alt="" onError={() => setImgFail(true)}
+              <img src={drag.occ.photoUrl} alt="" onError={() => setImgFail(true)}
                 style={{ width: 32, height: 32, objectFit: "cover", borderRadius: 9, border: `1px solid ${color}` }} />
             )}
             <span style={{ display: "grid", lineHeight: 1.25 }}>
@@ -330,10 +335,11 @@ function DragAvatar({ drag, s, onReturned }: {
   );
 }
 
-function Scene({ s, drag, carrying, hoverCage, arrivedRef, setHoverCage, onCardDown, onReturned, onTapCage, onPickCell }: {
+function Scene({ s, occOf, drag, carrySource, hoverCage, arrivedRef, setHoverCage, onCardDown, onReturned, onTapCage, onPickCell, onEditRoom }: {
   s: ReturnType<typeof cageStudio.get>;
+  occOf: (code: string) => Occupant | null;
   drag: DragState | null;
-  carrying: string | null;
+  carrySource: string | null;      // رمز قفص المحمول (إن كان له قفص)
   hoverCage: string | null;
   arrivedRef: React.MutableRefObject<Map<string, number>>;
   setHoverCage: (c: string | null) => void;
@@ -341,6 +347,7 @@ function Scene({ s, drag, carrying, hoverCage, arrivedRef, setHoverCage, onCardD
   onReturned: () => void;
   onTapCage: (code: string) => void;
   onPickCell: (x: number, z: number) => void;
+  onEditRoom: (id: string) => void;
 }) {
   const wood = useMemo(makeWoodTexture, []);
   useEffect(() => () => wood.dispose(), [wood]);
@@ -352,15 +359,17 @@ function Scene({ s, drag, carrying, hoverCage, arrivedRef, setHoverCage, onCardD
   const [wminX, wminZ] = cornerWorld(s, b.minX, b.minZ);
   const wallZ = wminZ - 1.7, wallX = wminX - 1.7;
 
-  // النقل النشط = سحب متواصل أو حَمل بضغطة — نفس لغة الضوء للاثنين
-  const activeFrom = !build ? (drag?.phase === "drag" ? drag.from : carrying) : null;
+  const moveActive = !build && (drag?.phase === "drag" || carrySource !== null || !!drag);
   const hintFor = (code: string): DropHint => {
-    if (!activeFrom) return "idle";
-    const occ = s.occupants[code];
-    if (code === activeFrom) return "candidate";
+    if (build || !moveActive) return "idle";
+    const occ = occOf(code);
+    if (code === carrySource || (drag && dragOver.current === code && !occ)) return occ ? "candidate" : "hot";
     if (code === hoverCage && drag) return occ ? "blocked" : "hot";
     return occ ? "idle" : "candidate";
   };
+
+  const occCount = (r: Room3D) =>
+    s.cages.filter((c) => c.x >= r.x && c.x < r.x + r.w && c.z >= r.z && c.z < r.z + r.d && occOf(c.code)).length;
 
   return (
     <>
@@ -381,7 +390,6 @@ function Scene({ s, drag, carrying, hoverCage, arrivedRef, setHoverCage, onCardD
         <meshStandardMaterial map={wood} roughness={0.8} metalness={0.05} />
       </mesh>
 
-      {/* الجدران تتبع حدود المخطط وتلتقيان كزاوية غرفة حقيقية (حرف L) */}
       <mesh position={[wallX + 20, 1.9, wallZ]}>
         <planeGeometry args={[40, 4]} />
         <meshStandardMaterial color={NIGHT.wall} roughness={0.9} />
@@ -408,21 +416,22 @@ function Scene({ s, drag, carrying, hoverCage, arrivedRef, setHoverCage, onCardD
           fadeDistance={30} fadeStrength={1.4} followCamera={false} />
       )}
 
-      <RoomFloors s={s} build={build} />
+      <RoomFloors s={s} build={build} occCount={occCount} onEditRoom={onEditRoom} />
       <Partitions rooms={s.rooms} s={s} />
       {build && <CellPads s={s} onPick={onPickCell} />}
 
       {s.cages.map((c) => {
         const [wx, wz] = cellWorld(s, c.x, c.z);
+        const occ = occOf(c.code);
         return (
           <CageUnit key={c.code}
-            spec={{ code: c.code, occupant: s.occupants[c.code] ?? null }}
+            spec={{ code: c.code, occupant: occ }}
             position={[wx, 0.525, wz]}
             dropHint={hintFor(c.code)}
             dragActive={!!drag || build}
-            ghost={drag?.from === c.code || carrying === c.code}
+            ghost={(drag?.occ.admId ?? null) === occ?.admId && !!occ || carrySource === c.code}
             neon={c.color}
-            selected={(build && s.selected === c.code) || carrying === c.code}
+            selected={(build && s.selected === c.code) || carrySource === c.code}
             showCard={!build}
             arrivedRef={arrivedRef}
             onHoverChange={setHoverCage}
@@ -446,8 +455,6 @@ const glass = (extra?: React.CSSProperties): React.CSSProperties => ({
   background: NIGHT.glassPanel, border: "1px solid #16324a", backdropFilter: "blur(10px)", ...extra,
 });
 
-/** هل الجهاز يدعم WebGL؟ جهاز بلا دعم كان ينهار على حدود الخطأ العامة —
- *  الأفضل شاشة صريحة ترجّعه لخريطة الأقفاص المسطّحة اللي تشتغل بكل جهاز. */
 function webglOK(): boolean {
   try {
     const c = document.createElement("canvas");
@@ -455,43 +462,41 @@ function webglOK(): boolean {
   } catch { return false; }
 }
 
-export default function Cage3DDemo({ openMedicalRecord }: {
-  /** فتح الملف الطبي للمريض — المرحلة ٤ تمرّر دالة تنقل لسجل الحيوان الحقيقي. */
-  openMedicalRecord?: (occ: Occupant) => void;
-}) {
+export default function Cage3DDemo() {
   const navigate = useNavigate();
   const { can } = usePermissions();
+  const { user } = useAuth();
   const s = useCageStudio();
   const build = s.mode === "build";
   const [glSupported] = useState(webglOK);
+  const clinicId = user?.clinic_id ?? user?.id;
+
+  /* المرضى الحقيقيون — نفس مخزن التقويم الرئيسي */
+  const [ops, setOps] = useState(() => opsStore.get());
+  useEffect(() => {
+    const unsub = opsStore.subscribe(() => setOps(opsStore.get()));
+    void opsStore.hydrate(clinicId).catch(() => {});
+    return unsub;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const [drag, setDrag] = useState<DragState | null>(null);
-  /** «الحَمل»: مريض منحمل بضغطة، بانتظار ضغطة القفص الهدف. */
-  const [carrying, setCarrying] = useState<string | null>(null);
+  const [carrying, setCarrying] = useState<Occupant | null>(null);
   const [hoverCage, setHoverCage] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [detailFor, setDetailFor] = useState<string | null>(null);
   const [roomDialog, setRoomDialog] = useState(false);
+  const [roomEdit, setRoomEdit] = useState<string | null>(null);
   const [roomName, setRoomName] = useState("");
   const [roomW, setRoomW] = useState(3);
   const [roomD, setRoomD] = useState(2);
+  const [renumBase, setRenumBase] = useState("");
   const [codeDraft, setCodeDraft] = useState("");
+  const [picker, setPicker] = useState(false);
+  const [pickQ, setPickQ] = useState("");
   const arrivedRef = useRef(new Map<string, number>());
   const noteTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const cagesRef = useRef(s);
-  cagesRef.current = s;
   const pending = useRef<{ code: string; x: number; y: number } | null>(null);
-
-  const positions = useMemo(() => {
-    const m = new Map<string, [number, number, number]>();
-    s.cages.forEach((c) => {
-      const [wx, wz] = cellWorld(s, c.x, c.z);
-      m.set(c.code, [wx, 0.525, wz]);
-    });
-    return m;
-  }, [s]);
-  const positionsRef = useRef(positions);
-  positionsRef.current = positions;
 
   const say = (msg: string) => {
     setNote(msg);
@@ -499,25 +504,81 @@ export default function Cage3DDemo({ openMedicalRecord }: {
     noteTimer.current = setTimeout(() => setNote(null), 2600);
   };
 
-  /** النقل الفعلي — نفس البوابة للضغطتين وللسحب. يرجع true عند النجاح. */
-  const tryMove = (from: string, to: string): boolean => {
-    const st = cagesRef.current;
-    const occ = st.occupants[from];
-    if (!occ || to === from) return false;
-    if (st.occupants[to]) {
+  /* اشتقاق الرقود النشطة → راقد لكل رمز قفص */
+  const makeOcc = (a: Admission): Occupant => {
+    const p = ops.pets[a.pet_id];
+    const st = statusOf(a);
+    return {
+      admId: a.id,
+      petId: a.pet_id,
+      name: p?.name ?? "حيوان",
+      speciesAr: p ? (SPECIES_AR[p.species] ?? "حيوان") : "حيوان",
+      photoUrl: p ? (p.photo_url || speciesPhoto(p.species, 128)) : null,
+      emoji: p ? (SPECIES_EMOJI[p.species] ?? "🐾") : "🐾",
+      status: st === "done" ? "boarding" : st,
+      days: dayNo(a.admitted_on),
+    };
+  };
+  const actives = useMemo(() => ops.admissions.filter((a) => a.status !== "discharged"), [ops.admissions]);
+  const occByCage = useMemo(() => {
+    const m = new Map<string, Occupant>();
+    for (const a of actives) {
+      const k = norm(a.cage);
+      if (!k || m.has(k)) continue;
+      m.set(k, makeOcc(a));
+    }
+    return m;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [actives, ops.pets]);
+  const occOf = (code: string) => occByCage.get(norm(code)) ?? null;
+  const carrySource = useMemo(() => {
+    if (!carrying) return null;
+    const a = actives.find((x) => x.id === carrying.admId);
+    const k = norm(a?.cage);
+    return k ? s.cages.find((c) => norm(c.code) === k)?.code ?? null : null;
+  }, [carrying, actives, s.cages]);
+
+  /* التبنّي: رموز على رقود نشطة أو بخريطة 2D وغير مرسومة هنا → تُغرز تلقائياً */
+  useEffect(() => {
+    if (!ops.hydrated) return;
+    const codes = [
+      ...actives.map((a) => (a.cage ?? "").trim()).filter(Boolean),
+      ...codesFromPrefs(),
+    ];
+    if (codes.length) cageStudio.adoptCodes(codes);
+  }, [ops.hydrated, actives]);
+
+  const positions = useMemo(() => {
+    const m = new Map<string, [number, number, number]>();
+    s.cages.forEach((c) => {
+      const [wx, wz] = cellWorld(s, c.x, c.z);
+      m.set(norm(c.code), [wx, 0.525, wz]);
+    });
+    return m;
+  }, [s]);
+  const positionsRef = useRef(positions);
+  positionsRef.current = positions;
+  const occRef = useRef(occByCage);
+  occRef.current = occByCage;
+
+  /** النقل الفعلي: opsStore.patch → السيرفر + رحلة الحيوان + كل الشاشات. */
+  const tryMove = (occ: Occupant, toCode: string): boolean => {
+    const sitting = occRef.current.get(norm(toCode));
+    if (sitting && sitting.admId !== occ.admId) {
       playWarning();
-      say(`القفص ${to} مشغول — اختر قفصاً فاضياً`);
+      say(`القفص ${toCode} مشغول — اختر قفصاً فاضياً`);
       return false;
     }
-    if (!cageStudio.moveOccupant(from, to)) return false;
-    playSuccess();
-    arrivedRef.current.set(to, performance.now());
-    say(`انتقل ${occ.name} إلى القفص ${to}`);
+    if (sitting?.admId === occ.admId) return false;
+    playTap();
+    arrivedRef.current.set(toCode, performance.now());
+    opsStore.patch(occ.admId, { cage: toCode })
+      .then(() => { playSuccess(); say(`انتقل ${occ.name} إلى القفص ${toCode}`); })
+      .catch(() => { playWarning(); say("تعذّر حفظ النقلة — حاول مجدداً"); });
     return true;
   };
 
-  /* تتبّع المؤشر عالمياً + تفكيك «ضغطة أم سحبة» على بطاقة المريض.
-   * عتبة اللمس أوسع (١٤ بكسل) — الإصبع يرتجف أكثر من الماوس. */
+  /* تتبّع المؤشر + تفكيك «ضغطة أم سحبة» على بطاقة المريض */
   const onCardDown = (code: string, e: { clientX: number; clientY: number }) => {
     lastPtr.x = e.clientX; lastPtr.y = e.clientY;
     if (drag || build) return;
@@ -531,24 +592,23 @@ export default function Cage3DDemo({ openMedicalRecord }: {
       const threshold = e.pointerType === "touch" ? 14 : 8;
       if (!p || Math.hypot(e.clientX - p.x, e.clientY - p.y) <= threshold) return;
       pending.current = null;
-      const st = cagesRef.current;
-      const occ = st.occupants[p.code];
-      const pos = positionsRef.current.get(p.code);
+      const occ = occRef.current.get(norm(p.code));
+      const pos = positionsRef.current.get(norm(p.code));
       if (!occ || !pos) return;
       playTap();
       setDetailFor(null);
       setCarrying(null);
       document.body.style.cursor = "grabbing";
-      setDrag({ from: p.code, occ, fromPos: pos, phase: "drag" });
+      setDrag({ occ, fromPos: pos, phase: "drag" });
     };
     const up = () => {
       const p = pending.current;
       pending.current = null;
       if (!p) return;
-      // ضغطة قصيرة على البطاقة = حمل المريض (أو إنزاله لو كان محمولاً)
       playTap();
       setDetailFor(null);
-      setCarrying((c) => (c === p.code ? null : p.code));
+      const occ = occRef.current.get(norm(p.code));
+      if (occ) setCarrying((c) => (c?.admId === occ.admId ? null : occ));
     };
     window.addEventListener("pointerdown", track, true);
     window.addEventListener("pointermove", mv, true);
@@ -560,15 +620,14 @@ export default function Cage3DDemo({ openMedicalRecord }: {
     };
   }, [drag, build]);
 
-  /* إفلات السحب المتواصل — الهدف من موضع الإصبع (dragOver) لا من التحويم */
+  /* إفلات السحب المتواصل — الهدف من موضع الإصبع (dragOver) */
   useEffect(() => {
     if (!drag || drag.phase !== "drag") return;
     const up = () => {
       document.body.style.cursor = "";
       const over = dragOver.current ?? hoverCage;
       dragOver.current = null;
-      const target = over && over !== drag.from ? over : null;
-      if (target && tryMove(drag.from, target)) {
+      if (over && tryMove(drag.occ, over)) {
         setDrag(null);
       } else {
         setDrag((d) => (d ? { ...d, phase: "return" } : null));
@@ -579,7 +638,7 @@ export default function Cage3DDemo({ openMedicalRecord }: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [drag, hoverCage]);
 
-  /* إفلات «قفص جديد» المسحوب من اللوح (وضع البناء) */
+  /* إفلات «قفص جديد» المسحوب من اللوح */
   useEffect(() => {
     if (!build) return;
     const up = () => {
@@ -598,12 +657,10 @@ export default function Cage3DDemo({ openMedicalRecord }: {
     return () => window.removeEventListener("pointerup", up);
   }, [build]);
 
-  /* لو انحذف المحمول أو تغيّر الوضع — أنزله بهدوء */
   useEffect(() => {
-    if (carrying && (build || !s.occupants[carrying])) setCarrying(null);
-  }, [carrying, build, s]);
+    if (carrying && build) setCarrying(null);
+  }, [carrying, build]);
 
-  /* ضغطة خلية فاضية بوضع البناء = قفص جديد فوراً */
   const onPickCell = (x: number, z: number) => {
     const cage = cageStudio.placeCage(x, z);
     if (cage) {
@@ -613,7 +670,6 @@ export default function Cage3DDemo({ openMedicalRecord }: {
     }
   };
 
-  /* ضغطة جسم القفص: بناء = تخصيص · إدارة + حمل = إنزال بالهدف · إدارة = تفاصيل */
   const onTapCage = (code: string) => {
     playTap();
     if (build) {
@@ -622,18 +678,93 @@ export default function Cage3DDemo({ openMedicalRecord }: {
       return;
     }
     if (carrying) {
-      if (code === carrying) { setCarrying(null); return; }
+      if (carrySource && norm(carrySource) === norm(code)) { setCarrying(null); return; }
       if (tryMove(carrying, code)) setCarrying(null);
       return;
     }
-    if (s.occupants[code]) setDetailFor((d) => (d === code ? null : code));
+    if (occOf(code)) setDetailFor((d) => (d === code ? null : code));
+  };
+
+  /** تغيير رقم قفص — مع مزامنة رقود ساكنه إن وُجد حتى لا ينقطع الربط. */
+  const commitRename = (oldCode: string, newCode: string) => {
+    const next = newCode.trim();
+    if (!next || next === oldCode) return;
+    const occ = occRef.current.get(norm(oldCode));
+    if (!cageStudio.updateCage(oldCode, { code: next })) {
+      playWarning();
+      say("الرقم مستعمل بقفص ثاني");
+      setCodeDraft(oldCode);
+      return;
+    }
+    playSuccess();
+    say("انحفظ رقم القفص");
+    if (occ) void opsStore.patch(occ.admId, { cage: next }).catch(() => {});
+  };
+
+  const renumber = (roomId: string) => {
+    const base = Number(renumBase);
+    if (!Number.isFinite(base) || base < 1) { playWarning(); say("اكتب رقم البداية — مثال ١٠١"); return; }
+    const changes = cageStudio.renumberRoom(roomId, base);
+    for (const ch of changes) {
+      const occ = occRef.current.get(norm(ch.from));
+      if (occ) void opsStore.patch(occ.admId, { cage: ch.to }).catch(() => {});
+    }
+    playSuccess();
+    say(`ترقّمت ${formatNum(changes.length)} أقفاص تلقائياً`);
   };
 
   const openRecord = (occ: Occupant) => {
     playTap();
-    if (openMedicalRecord) { openMedicalRecord(occ); return; }
-    // نقطة ربط المرحلة ٤: occ.petId → navigate(`/pet/${petId}?tab=timeline`)
-    say(`ملف ${occ.name} الطبي يرتبط بسجل الحيوان الحقيقي بعد ربط البيانات`);
+    navigate(`/pet/${occ.petId}?tab=timeline`);
+  };
+
+  /* «إسكان حيوان»: بحث بسجلاتك — رقود بلا قفص يُحمل مباشرة، وبلا رقود يُرقد أولاً */
+  const unassigned = useMemo(
+    () => actives.filter((a) => !norm(a.cage) || !s.cages.some((c) => norm(c.code) === norm(a.cage))),
+    [actives, s.cages],
+  );
+  const pickRows = useMemo(() => {
+    const q = pickQ.trim().toLowerCase();
+    const admitted = new Set(actives.map((a) => a.pet_id));
+    const rows: Array<{ pet: NonNullable<typeof ops.pets[string]>; adm: Admission | null }> = [];
+    for (const a of actives) {
+      const p = ops.pets[a.pet_id];
+      if (p) rows.push({ pet: p, adm: a });
+    }
+    for (const p of Object.values(ops.pets)) if (!admitted.has(p.id)) rows.push({ pet: p, adm: null });
+    const f = q
+      ? rows.filter(({ pet }) =>
+          pet.name?.toLowerCase().includes(q) || pet.owner_name?.toLowerCase().includes(q) || (pet.serial ?? "").includes(q))
+      : rows;
+    // بلا قفص أولاً، ثم بلا رقود، ثم البقية
+    return f.sort((a, b) => {
+      const ka = a.adm ? (norm(a.adm.cage) ? 2 : 0) : 1;
+      const kb = b.adm ? (norm(b.adm.cage) ? 2 : 0) : 1;
+      return ka - kb;
+    }).slice(0, 8);
+  }, [pickQ, actives, ops.pets]);
+
+  const pickPet = async (pet: { id: string; name: string; species: Parameters<typeof speciesPhoto>[0] }, adm: Admission | null, kind?: Admission["kind"]) => {
+    playTap();
+    setPicker(false);
+    setPickQ("");
+    if (adm) {
+      setCarrying(makeOcc(adm));
+      say(`اضغط القفص اللي تريد تحط ${pet.name} بيه`);
+      return;
+    }
+    try {
+      const created = await repo.addAdmission({
+        pet_id: pet.id, kind: kind ?? "boarding", status: "active",
+        admitted_on: localISO(), cage: "",
+      });
+      await opsStore.hydrate(clinicId);
+      setCarrying(makeOcc(created));
+      say(`انفتح رقود ${pet.name} — اضغط القفص اللي تريده`);
+    } catch {
+      playWarning();
+      say("تعذّر فتح الرقود — حاول مجدداً");
+    }
   };
 
   if (!glSupported) {
@@ -643,8 +774,7 @@ export default function Cage3DDemo({ openMedicalRecord }: {
           <p className="text-3xl">🐾</p>
           <h1 className="mt-2 text-sm font-black" style={{ color: NIGHT.ink }}>جهازك ما يدعم العرض المجسّم</h1>
           <p className="mt-1.5 text-xs font-bold leading-relaxed" style={{ color: "#8fa8bd" }}>
-            المتصفح على هذا الجهاز ما يوفّر WebGL. خريطة الأقفاص المسطّحة تعطيك نفس الإدارة
-            الكاملة (سحب، تبادل، تسجيل النقلات) وتشتغل على كل الأجهزة.
+            خريطة الأقفاص المسطّحة تعطيك نفس الإدارة الكاملة وتشتغل على كل الأجهزة.
           </p>
           <button type="button" onClick={() => navigate("/charts")}
             className="mt-4 h-9 w-full rounded-lg text-xs font-black" style={{ background: "#22d3ee", color: "#04222b" }}>
@@ -655,21 +785,20 @@ export default function Cage3DDemo({ openMedicalRecord }: {
     );
   }
 
-  const stays = s.cages.filter((c) => s.occupants[c.code]);
-  const detail = !build && detailFor ? s.cages.find((c) => c.code === detailFor) : null;
-  const detailOcc = detail ? s.occupants[detail.code] : null;
+  const stays = s.cages.filter((c) => occOf(c.code));
+  const detailOcc = !build && detailFor ? occOf(detailFor) : null;
   const selCage = build && s.selected ? s.cages.find((c) => c.code === s.selected) : null;
-  const carriedOcc = carrying ? s.occupants[carrying] : null;
+  const editRoom = roomEdit ? s.rooms.find((r) => r.id === roomEdit) : null;
   const canBuild = can("manageSettings");
 
   return (
     <div className="fixed inset-0 z-50" style={{ background: NIGHT.bg }} dir="rtl">
       <Canvas shadows dpr={[1, 2]}>
-        {/* حاجز تعليق داخلي: أي مورد داخل المشهد يتأخر يبقى تعليقه محبوساً هنا */}
         <Suspense fallback={null}>
-          <Scene s={s} drag={drag} carrying={carrying} hoverCage={hoverCage} arrivedRef={arrivedRef}
-            setHoverCage={setHoverCage} onCardDown={onCardDown}
-            onReturned={() => setDrag(null)} onTapCage={onTapCage} onPickCell={onPickCell} />
+          <Scene s={s} occOf={occOf} drag={drag} carrySource={carrySource} hoverCage={hoverCage}
+            arrivedRef={arrivedRef} setHoverCage={setHoverCage} onCardDown={onCardDown}
+            onReturned={() => setDrag(null)} onTapCage={onTapCage} onPickCell={onPickCell}
+            onEditRoom={(id) => { setRoomEdit(id); setRenumBase(""); }} />
         </Suspense>
       </Canvas>
 
@@ -679,8 +808,8 @@ export default function Cage3DDemo({ openMedicalRecord }: {
           <h1 className="text-lg font-black" style={{ color: NIGHT.ink }}>لوحة تحكم الأقفاص المتقدمة — عيادة doctorVet</h1>
           <p className="mt-0.5 text-xs font-bold" style={{ color: "#8fa8bd" }}>
             {build
-              ? "وضع البناء: اضغط أي خلية خضراء فاضية = قفص جديد · اضغط القفص لتخصيص رقمه ولونه · «غرفة جديدة» تضيف غرفة"
-              : "اضغط بطاقة المريض ثم اضغط القفص الجديد — انتهى · اضغط جسم القفص لتفاصيل المريض وملفه"}
+              ? "وضع البناء: اضغط خلية خضراء = قفص جديد · اضغط القفص لرقمه ولونه · اضغط لافتة الغرفة لاسمها وترقيمها"
+              : "اضغط بطاقة المريض ثم القفص الجديد — انتهى · اضغط جسم القفص لتفاصيله وملفه الطبي"}
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
@@ -691,7 +820,7 @@ export default function Cage3DDemo({ openMedicalRecord }: {
                 style={!build ? { background: "#22d3ee", color: "#04222b" } : { color: "#7c95ab" }}>
                 <ClipboardList size={12} /> الإدارة اليومية
               </button>
-              <button type="button" onClick={() => { playTap(); setDetailFor(null); setDrag(null); setCarrying(null); cageStudio.setMode("build"); }}
+              <button type="button" onClick={() => { playTap(); setDetailFor(null); setDrag(null); setCarrying(null); setPicker(false); cageStudio.setMode("build"); }}
                 className="inline-flex h-8 items-center gap-1 rounded-full px-3 text-[11px] font-extrabold transition"
                 style={build ? { background: "#fb923c", color: "#3b1a04" } : { color: "#7c95ab" }}>
                 <Hammer size={12} /> وضع البناء
@@ -706,7 +835,7 @@ export default function Cage3DDemo({ openMedicalRecord }: {
         </div>
       </div>
 
-      {/* وضع الإدارة: لوحة المنامات الزجاجية */}
+      {/* لوحة المنامات — من الرقود الحقيقية */}
       {!build && (
         <div data-panel3d className="pointer-events-none absolute top-20 start-4 hidden w-56 rounded-2xl p-3 sm:start-6 sm:block" style={glass()}>
           <div className="mb-2 flex items-center justify-between">
@@ -724,34 +853,110 @@ export default function Cage3DDemo({ openMedicalRecord }: {
             ))}
           </div>
           <div className="space-y-1.5">
-            {stays.map((c) => (
-              <div key={c.code} className="flex items-center gap-2 rounded-lg px-2 py-1.5" style={{ background: "#0c192bcc" }}>
-                <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: NEON[s.occupants[c.code]!.status], boxShadow: `0 0 7px ${NEON[s.occupants[c.code]!.status]}` }} />
-                <span className="min-w-0 flex-1 truncate text-[11px] font-extrabold" style={{ color: NIGHT.ink }}>{s.occupants[c.code]!.name}</span>
-                <span className="shrink-0 text-[10px] font-bold" style={{ color: "#64809c" }}>
-                  {KIND_AR[s.occupants[c.code]!.status]} · قفص {c.code}
-                </span>
-              </div>
-            ))}
+            {stays.map((c) => {
+              const o = occOf(c.code)!;
+              return (
+                <div key={c.code} className="flex items-center gap-2 rounded-lg px-2 py-1.5" style={{ background: "#0c192bcc" }}>
+                  <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: NEON[o.status], boxShadow: `0 0 7px ${NEON[o.status]}` }} />
+                  <span className="min-w-0 flex-1 truncate text-[11px] font-extrabold" style={{ color: NIGHT.ink }}>{o.name}</span>
+                  <span className="shrink-0 text-[10px] font-bold" style={{ color: "#64809c" }}>
+                    {KIND_AR[o.status]} · قفص {c.code}
+                  </span>
+                </div>
+              );
+            })}
             {stays.length === 0 && <p className="text-[10px] font-bold" style={{ color: "#64809c" }}>ما في منامات حالياً.</p>}
           </div>
+          {unassigned.length > 0 && (
+            <p className="mt-2 text-[10px] font-bold" style={{ color: "#f0b26b" }}>
+              {formatNum(unassigned.length)} حيوان راقد بلا قفص — «إسكان حيوان» تحت 👇
+            </p>
+          )}
         </div>
       )}
 
-      {/* شريط الحَمل: المريض منحمل — وين ننقله؟ */}
-      {carriedOcc && (
+      {/* شريط الحَمل */}
+      {carrying && !build && (
         <div data-move3d className="absolute inset-x-0 bottom-16 flex justify-center px-4">
           <div className="flex items-center gap-3 rounded-2xl py-2 pe-2 ps-4"
-            style={{ ...glass(), border: `1px solid ${NEON[carriedOcc.status]}66`, boxShadow: `0 0 24px ${NEON[carriedOcc.status]}33` }}>
-            <Move size={15} style={{ color: NEON[carriedOcc.status] }} />
+            style={{ ...glass(), border: `1px solid ${NEON[carrying.status]}66`, boxShadow: `0 0 24px ${NEON[carrying.status]}33` }}>
+            <Move size={15} style={{ color: NEON[carrying.status] }} />
             <span className="text-xs font-extrabold" style={{ color: NIGHT.ink }}>
-              وين ننقل {carriedOcc.name}؟ <span style={{ color: "#8fa8bd" }}>اضغط أي قفص ينبض</span>
+              وين ننقل {carrying.name}؟ <span style={{ color: "#8fa8bd" }}>اضغط أي قفص ينبض</span>
             </span>
             <button type="button" onClick={() => { playTap(); setCarrying(null); }}
               className="h-8 rounded-xl px-3 text-[11px] font-extrabold"
               style={{ background: "#12253a", color: "#9fdcef", border: "1px solid #164e63" }}>
               إلغاء
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* زر «إسكان حيوان» — بحث بسجلاتك وحطّه بقفص */}
+      {!build && !carrying && (
+        <button type="button" data-pick3d
+          onClick={() => { playTap(); setPicker(true); setPickQ(""); }}
+          className="absolute bottom-16 end-4 inline-flex h-11 items-center gap-2 rounded-2xl px-4 text-xs font-black sm:end-6"
+          style={{ background: "#22d3ee", color: "#04222b", boxShadow: "0 0 24px #22d3ee55" }}>
+          <UserPlus size={15} /> إسكان حيوان
+        </button>
+      )}
+
+      {/* حوار الإسكان */}
+      {picker && (
+        <div className="absolute inset-0 z-10 grid place-items-center p-4" style={{ background: "#00000088" }}
+          onClick={() => setPicker(false)}>
+          <div data-picker3d className="w-full max-w-sm rounded-2xl p-4" style={glass()} onClick={(e) => e.stopPropagation()}>
+            <div className="mb-2 flex items-center justify-between">
+              <h2 className="text-sm font-black" style={{ color: NIGHT.ink }}>إسكان حيوان بقفص</h2>
+              <button type="button" onClick={() => setPicker(false)} className="p-1" style={{ color: "#64809c" }}><X size={15} /></button>
+            </div>
+            <div className="relative mb-2">
+              <Search size={14} className="pointer-events-none absolute inset-y-0 my-auto ms-2.5" style={{ color: "#64809c" }} />
+              <input autoFocus value={pickQ} onChange={(e) => setPickQ(e.target.value)} placeholder="ابحث بالاسم أو صاحب الحيوان أو الرقم…"
+                className="h-10 w-full rounded-lg ps-8 pe-2.5 text-xs font-bold"
+                style={{ background: "#0c192b", color: NIGHT.ink, border: "1px solid #16324a" }} />
+            </div>
+            <div className="space-y-1.5" style={{ maxHeight: 300, overflowY: "auto" }}>
+              {pickRows.map(({ pet, adm }) => {
+                const caged = adm && norm(adm.cage) && s.cages.some((c) => norm(c.code) === norm(adm.cage));
+                return (
+                  <div key={pet.id} className="rounded-xl p-2" style={{ background: "#0c192bcc" }}>
+                    <div className="flex items-center gap-2.5">
+                      <img src={pet.photo_url || speciesPhoto(pet.species, 64)} alt=""
+                        className="h-9 w-9 rounded-lg object-cover" style={{ border: "1px solid #16324a" }} />
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-xs font-extrabold" style={{ color: NIGHT.ink }}>{pet.name}</p>
+                        <p className="text-[10px] font-bold" style={{ color: adm ? (caged ? "#64809c" : "#f0b26b") : "#7c95ab" }}>
+                          {adm ? (caged ? `بقفص ${adm.cage}` : "راقد بلا قفص") : "ما عنده رقود مفتوح"}
+                        </p>
+                      </div>
+                      {adm ? (
+                        <button type="button" onClick={() => void pickPet(pet, adm)}
+                          className="h-8 shrink-0 rounded-lg px-3 text-[11px] font-extrabold"
+                          style={{ background: "#22d3ee", color: "#04222b" }}>
+                          {caged ? "انقله" : "أسكنه"}
+                        </button>
+                      ) : (
+                        <div className="flex shrink-0 gap-1">
+                          {(["treatment", "boarding", "treatment_boarding"] as const).map((k) => (
+                            <button key={k} type="button" onClick={() => void pickPet(pet, null, k)}
+                              className="h-8 rounded-lg px-2 text-[10px] font-extrabold"
+                              style={{ background: "#12253a", color: "#9fdcef", border: "1px solid #164e63" }}>
+                              {k === "treatment" ? "علاج" : k === "boarding" ? "فندقة" : "فندقة علاجية"}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+              {pickRows.length === 0 && (
+                <p className="py-4 text-center text-[11px] font-bold" style={{ color: "#64809c" }}>ما لقينا نتيجة — جرّب اسماً آخر.</p>
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -778,28 +983,19 @@ export default function Cage3DDemo({ openMedicalRecord }: {
         </div>
       )}
 
-      {/* وضع البناء: لوح خصائص القفص المحدّد */}
+      {/* وضع البناء: لوح خصائص القفص — الرقم يُحفظ وحده (Enter أو مغادرة الحقل) */}
       {selCage && (
         <div data-props3d className="absolute top-20 start-4 w-56 rounded-2xl p-3 sm:start-6" style={glass()}>
           <div className="mb-2 flex items-center justify-between">
             <h2 className="text-xs font-black" style={{ color: NIGHT.ink }}>خصائص القفص</h2>
             <button type="button" onClick={() => cageStudio.select(null)} className="p-1" style={{ color: "#64809c" }}><X size={14} /></button>
           </div>
-          <label className="mb-1 block text-[10px] font-bold" style={{ color: "#64809c" }}>رقم القفص</label>
-          <div className="mb-3 flex gap-1.5">
-            <input value={codeDraft} onChange={(e) => setCodeDraft(e.target.value)}
-              className="h-9 w-full rounded-lg px-2 text-xs font-black tabular-nums"
-              style={{ background: "#0c192b", color: NIGHT.ink, border: "1px solid #16324a", direction: "ltr", textAlign: "center" }} />
-            <button type="button"
-              onClick={() => {
-                if (cageStudio.updateCage(selCage.code, { code: codeDraft })) { playSuccess(); say("انحفظ رقم القفص"); }
-                else { playWarning(); say("الرقم مستعمل بقفص ثاني"); }
-              }}
-              className="h-9 shrink-0 rounded-lg px-2.5 text-[11px] font-extrabold"
-              style={{ background: "#22d3ee", color: "#04222b" }}>
-              حفظ
-            </button>
-          </div>
+          <label className="mb-1 block text-[10px] font-bold" style={{ color: "#64809c" }}>رقم القفص — يُحفظ وحده</label>
+          <input value={codeDraft} onChange={(e) => setCodeDraft(e.target.value)}
+            onBlur={() => commitRename(selCage.code, codeDraft)}
+            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); commitRename(selCage.code, codeDraft); } }}
+            className="mb-3 h-10 w-full rounded-lg px-2 text-sm font-black tabular-nums"
+            style={{ background: "#0c192b", color: NIGHT.ink, border: "1px solid #16324a", direction: "ltr", textAlign: "center" }} />
           <label className="mb-1 block text-[10px] font-bold" style={{ color: "#64809c" }}>لون الليد (وهو فاضٍ)</label>
           <div className="mb-3 flex gap-1.5">
             {LED_CHOICES.map((c) => (
@@ -816,6 +1012,39 @@ export default function Cage3DDemo({ openMedicalRecord }: {
             className="inline-flex h-9 w-full items-center justify-center gap-1 rounded-lg text-[11px] font-extrabold"
             style={{ background: "#2b1214", color: "#f87171", border: "1px solid #7f1d1d55" }}>
             <Trash2 size={12} /> حذف القفص
+          </button>
+        </div>
+      )}
+
+      {/* وضع البناء: لوحة الغرفة (من لافتة بابها): اسم + ترقيم تلقائي + حذف */}
+      {editRoom && build && (
+        <div data-roomedit3d className="absolute top-20 end-4 w-60 rounded-2xl p-3 sm:end-6" style={glass()}>
+          <div className="mb-2 flex items-center justify-between">
+            <h2 className="text-xs font-black" style={{ color: NIGHT.ink }}>لوحة الغرفة</h2>
+            <button type="button" onClick={() => setRoomEdit(null)} className="p-1" style={{ color: "#64809c" }}><X size={14} /></button>
+          </div>
+          <label className="mb-1 block text-[10px] font-bold" style={{ color: "#64809c" }}>اسم الغرفة — يُحفظ وأنت تكتب</label>
+          <input value={editRoom.name}
+            onChange={(e) => cageStudio.updateRoom(editRoom.id, { name: e.target.value })}
+            className="mb-3 h-10 w-full rounded-lg px-2.5 text-xs font-bold"
+            style={{ background: "#0c192b", color: NIGHT.ink, border: "1px solid #16324a" }} />
+          <label className="mb-1 block text-[10px] font-bold" style={{ color: "#64809c" }}>ترقيم كل أقفاصها تلقائياً</label>
+          <div className="mb-3 flex gap-1.5">
+            <input value={renumBase} onChange={(e) => setRenumBase(e.target.value.replace(/\D/g, ""))}
+              inputMode="numeric" placeholder="يبدأ من — مثال 101"
+              className="h-10 w-full rounded-lg px-2 text-xs font-black tabular-nums"
+              style={{ background: "#0c192b", color: NIGHT.ink, border: "1px solid #16324a", direction: "ltr", textAlign: "center" }} />
+            <button type="button" onClick={() => renumber(editRoom.id)}
+              className="h-10 shrink-0 rounded-lg px-3 text-[11px] font-extrabold"
+              style={{ background: "#22d3ee", color: "#04222b" }}>
+              رقّم
+            </button>
+          </div>
+          <button type="button"
+            onClick={() => { playTap(); cageStudio.removeRoom(editRoom.id); setRoomEdit(null); say("انحذفت الغرفة — مرضاها ما ينمسّون"); }}
+            className="inline-flex h-9 w-full items-center justify-center gap-1 rounded-lg text-[11px] font-extrabold"
+            style={{ background: "#2b1214", color: "#f87171", border: "1px solid #7f1d1d55" }}>
+            <Trash2 size={12} /> حذف الغرفة
           </button>
         </div>
       )}
@@ -862,25 +1091,29 @@ export default function Cage3DDemo({ openMedicalRecord }: {
         </div>
       )}
 
-      {/* وضع الإدارة: تفاصيل المريض + فتح الملف الطبي + نقله */}
-      {detail && detailOcc && (
+      {/* تفاصيل المريض + الملف الطبي الحقيقي + نقله */}
+      {detailOcc && detailFor && (
         <div data-detail3d className="absolute bottom-24 start-4 w-60 rounded-2xl p-3 sm:start-6"
           style={{ ...glass(), border: `1px solid ${NEON[detailOcc.status]}55` }}>
           <button type="button" onClick={() => setDetailFor(null)} className="absolute end-2 top-2 p-1" style={{ color: "#64809c" }}>
             <X size={14} />
           </button>
           <div className="flex items-center gap-3">
-            <img src={speciesPhoto(detailOcc.species, 96)} alt={detailOcc.name}
-              className="h-14 w-14 rounded-xl object-cover"
-              style={{ border: `2px solid ${NEON[detailOcc.status]}aa` }} />
+            {detailOcc.photoUrl ? (
+              <img src={detailOcc.photoUrl} alt={detailOcc.name}
+                className="h-14 w-14 rounded-xl object-cover"
+                style={{ border: `2px solid ${NEON[detailOcc.status]}aa` }} />
+            ) : (
+              <span className="grid h-14 w-14 place-items-center rounded-xl text-3xl" style={{ background: "#0c192b" }}>{detailOcc.emoji}</span>
+            )}
             <div className="min-w-0">
               <p className="text-sm font-black" style={{ color: NIGHT.ink }}>
-                {detailOcc.name} <span className="text-[10px] font-bold" style={{ color: "#64809c" }}>· {SPECIES_AR[detailOcc.species] ?? ""}</span>
+                {detailOcc.name} <span className="text-[10px] font-bold" style={{ color: "#64809c" }}>· {detailOcc.speciesAr}</span>
               </p>
               <p className="mt-0.5 text-[11px] font-extrabold" style={{ color: NEON[detailOcc.status] }}>
                 {KIND_AR[detailOcc.status]} — اليوم {formatNum(detailOcc.days)}
               </p>
-              <p className="mt-0.5 text-[10px] font-bold" style={{ color: "#64809c" }}>القفص {detail.code}</p>
+              <p className="mt-0.5 text-[10px] font-bold" style={{ color: "#64809c" }}>القفص {detailFor}</p>
             </div>
           </div>
           <div className="mt-2.5 grid grid-cols-2 gap-1.5">
@@ -890,7 +1123,7 @@ export default function Cage3DDemo({ openMedicalRecord }: {
               <FileText size={12} /> الملف الطبي
             </button>
             <button type="button" data-movebtn3d
-              onClick={() => { playTap(); setDetailFor(null); setCarrying(detail.code); }}
+              onClick={() => { playTap(); setDetailFor(null); setCarrying(detailOcc); }}
               className="inline-flex h-9 items-center justify-center gap-1 rounded-lg text-[11px] font-extrabold"
               style={{ background: NEON[detailOcc.status], color: "#04121b" }}>
               <Move size={12} /> نقله لقفص آخر
@@ -910,7 +1143,7 @@ export default function Cage3DDemo({ openMedicalRecord }: {
         )}
       </div>
 
-      {!build && !carriedOcc && (
+      {!build && !carrying && (
         <div className="pointer-events-none absolute inset-x-0 bottom-0 flex flex-wrap items-center gap-3 p-4 sm:p-6">
           {LEGEND.map((l) => (
             <span key={l.label} className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-bold"

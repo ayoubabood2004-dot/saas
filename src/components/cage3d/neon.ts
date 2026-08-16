@@ -43,13 +43,17 @@ export const NIGHT = {
 /** خط الأرقام — ملف محلي (Orbitron, رخصة OFL) حتى ما نعتمد على الشبكة أبداً. */
 export const DIGIT_FONT = "/fonts/Orbitron-Bold.ttf";
 
-/** الراقد: مريض بحالة تشغيلية — الحالة والصورة والأيام تسافر معه عند النقل. */
+/** الراقد كما يراه المشهد — مشتق من رقود حقيقي نشط بـopsStore (نفس مصدر
+ *  التقويم الرئيسي): النقل يعدّل admission.cage فيتسجّل برحلة الحيوان. */
 export interface Occupant {
+  admId: string;
+  petId: string;
   name: string;
-  species: Species;
-  emoji: string; // احتياط لما تفشل صورة النوع (بلا شبكة)
+  speciesAr: string;
+  photoUrl: string | null; // صورة المريض المرفوعة أو صورة نوعه
+  emoji: string;           // احتياط أخير بلا شبكة
   status: Exclude<CageStatus3D, "free">;
-  days: number;  // «اليوم N» من الرقود
+  days: number;
 }
 
 export interface CageSpec {
@@ -64,15 +68,9 @@ export const KIND_AR: Record<Exclude<CageStatus3D, "free">, string> = {
 };
 
 export const SPECIES_AR: Partial<Record<Species, string>> = {
-  cat: "قطة", dog: "كلب", bird: "طائر", rabbit: "أرنب",
+  cat: "قطة", dog: "كلب", bird: "طائر", rabbit: "أرنب", horse: "حصان", cow: "بقرة", other: "حيوان",
 };
 
-/** عيّنة العرض: أربعة مرضى وقفصان متاحان لاستعراض السحب واللوحات. */
-export const SAMPLE_CAGES: CageSpec[] = [
-  { code: "101", occupant: { name: "بيلا", species: "cat", emoji: "🐱", status: "boarding", days: 3 } },
-  { code: "102", occupant: { name: "لولو", species: "bird", emoji: "🦜", status: "care", days: 1 } },
-  { code: "103", occupant: null },
-  { code: "104", occupant: { name: "مشمش", species: "rabbit", emoji: "🐰", status: "careBoarding", days: 2 } },
-  { code: "105", occupant: null },
-  { code: "106", occupant: { name: "روكي", species: "dog", emoji: "🐶", status: "boarding", days: 5 } },
-];
+export const SPECIES_EMOJI: Partial<Record<Species, string>> = {
+  cat: "🐱", dog: "🐶", bird: "🦜", rabbit: "🐰", horse: "🐴", cow: "🐮",
+};

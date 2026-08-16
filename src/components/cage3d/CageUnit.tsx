@@ -3,7 +3,6 @@ import { useFrame } from "@react-three/fiber";
 import { RoundedBox, Html } from "@react-three/drei";
 import { Color, MeshStandardMaterial } from "three";
 import type { Group, PointLight } from "three";
-import { speciesPhoto } from "@/lib/petPhotos";
 import { NEON, NIGHT, DANGER, HOT, KIND_AR, statusOfCage, type CageSpec } from "./neon";
 
 /* ============================================================================
@@ -50,6 +49,7 @@ export function CageUnit({ spec, position, dropHint, dragActive, ghost, arrivedR
   const [hover, setHover] = useState(false);
   const [imgFail, setImgFail] = useState(false);
   const grp = useRef<Group>(null);
+  const haloMat = useRef<MeshStandardMaterial>(null);
   const shellMat = useRef<MeshStandardMaterial>(null);
   const glow = useRef<PointLight>(null);
   const tmp = useMemo(() => new Color(), []);
@@ -93,6 +93,15 @@ export function CageUnit({ spec, position, dropHint, dragActive, ghost, arrivedR
       l.color.lerp(tmp.set(colorTarget), k);
     }
     if (g) g.position.y = lerp(g.position.y, hover || dropHint === "hot" ? position[1] + 0.06 : position[1], k);
+    // هالة الاستجابة الأرضية: تظهر بنعومة عند التحويم وتتنفّس مع الزمن
+    const halo = haloMat.current;
+    if (halo) {
+      const on = hover || dropHint === "hot";
+      const breathe = 0.55 + Math.sin(state.clock.elapsedTime * 4) * 0.15;
+      halo.opacity = lerp(halo.opacity, on ? breathe : 0, k);
+      halo.emissive.lerp(tmp.set(colorTarget), k);
+      halo.color.lerp(tmp.set(colorTarget), k);
+    }
   });
 
   const topY = CAGE_H / 2;
@@ -189,10 +198,10 @@ export function CageUnit({ spec, position, dropHint, dragActive, ghost, arrivedR
       {/* المريض بصورته الحقيقية واقفاً على الفرشة (إيموجي احتياطاً بلا شبكة) */}
       {spec.occupant && !ghost && (
         <Html center position={[0, -CAGE_H / 2 + 0.42, 0.05]} zIndexRange={[35, 0]} style={{ pointerEvents: "none" }}>
-          {imgFail ? (
+          {imgFail || !spec.occupant.photoUrl ? (
             <span style={{ fontSize: 40, filter: `drop-shadow(0 0 10px ${baseColor})` }}>{spec.occupant.emoji}</span>
           ) : (
-            <img src={speciesPhoto(spec.occupant.species, 128)} alt={spec.occupant.name}
+            <img src={spec.occupant.photoUrl ?? ""} alt={spec.occupant.name}
               onError={() => setImgFail(true)}
               style={{
                 width: 62, height: 62, objectFit: "cover", borderRadius: 14,
@@ -221,10 +230,10 @@ export function CageUnit({ spec, position, dropHint, dragActive, ghost, arrivedR
               boxShadow: `0 0 16px ${baseColor}40`,
               opacity: ghost ? 0.28 : 1, transition: "opacity .18s ease",
             }}>
-            {imgFail ? (
+            {imgFail || !spec.occupant.photoUrl ? (
               <span style={{ fontSize: 20, filter: `drop-shadow(0 0 6px ${baseColor})` }}>{spec.occupant.emoji}</span>
             ) : (
-              <img src={speciesPhoto(spec.occupant.species, 64)} alt="" onError={() => setImgFail(true)}
+              <img src={spec.occupant.photoUrl ?? ""} alt="" onError={() => setImgFail(true)}
                 style={{ width: 28, height: 28, objectFit: "cover", borderRadius: 8, border: `1px solid ${baseColor}88`, pointerEvents: "none" }} />
             )}
             <span style={{ display: "grid", lineHeight: 1.25 }}>
