@@ -190,3 +190,172 @@ export function openPurchasePrint(purchase: Purchase, items: PurchaseItem[], opt
   w.document.close();
   return true;
 }
+
+/* ============================================================================
+ * كشف حساب شركة — كل ما اشترته العيادة من مورّد واحد بورقة A4 أنيقة:
+ * تجميعة البضاعة (كل صنف بكمياته الكلية وآخر كلفة وإجماليه) ثم جدول
+ * الفواتير واحدة واحدة، ثم الإجمالي/المسدَّد/المتبقّي. نفس هوية فاتورة
+ * الشراء (شعار وسط، ووترمارك، ألوان) حتى تطلع أوراق العيادة عائلة واحدة.
+ * ==========================================================================*/
+
+export interface CompanyStatementData {
+  companyName: string;
+  supplier?: string | null;
+  supplierPhone?: string | null;
+  note?: string | null;
+  invoices: Purchase[];
+  /** سطور كل فاتورة (بنفس ترتيب invoices أو بالمعرف) — للتجميعة. */
+  itemsByPurchase: Map<string, PurchaseItem[]>;
+}
+
+export function buildCompanyStatementHTML(data: CompanyStatementData, opts: PurchasePrintOptions): string {
+  const WEBSITE = siteHost();
+  const ar = opts.lang.startsWith("ar");
+  const dir = ar ? "rtl" : "ltr";
+  const cur = ` ${esc(opts.currency ?? "د.ع")}`;
+  const money = (n: number) => `${fmt(n)}${cur}`;
+  const brand = esc(opts.brand || "doctorVet");
+  const L = {
+    doc: ar ? "كشف حساب شركة" : "SUPPLIER STATEMENT",
+    sub: ar ? "سجل المشتريات من المورّد" : "Purchases from supplier",
+    company: ar ? "الشركة" : "Company",
+    rep: ar ? "المندوب" : "Rep",
+    period: ar ? "الفترة" : "Period",
+    invoices: ar ? "عدد الفواتير" : "Invoices",
+    goods: ar ? "البضاعة المشتراة من الشركة" : "Goods purchased",
+    item: ar ? "الصنف" : "Item",
+    qty: ar ? "الكمية الكلية" : "Total qty",
+    lastCost: ar ? "آخر سعر شراء" : "Last cost",
+    amount: ar ? "الإجمالي" : "Amount",
+    invList: ar ? "الفواتير" : "Invoices",
+    date: ar ? "التاريخ" : "Date",
+    no: ar ? "الرقم" : "No.",
+    units: ar ? "القطع" : "Units",
+    paid: ar ? "المسدَّد" : "Paid",
+    due: ar ? "المتبقّي" : "Due",
+    grand: ar ? "إجمالي المشتريات" : "Grand total",
+    totalPaid: ar ? "إجمالي المسدَّد" : "Total paid",
+    totalDue: ar ? "الدين المتبقّي" : "Balance due",
+    settled: ar ? "مسدَّدة" : "Settled",
+  };
+
+  const invs = [...data.invoices].sort((a, b) => (a.purchased_at || "").localeCompare(b.purchased_at || ""));
+  const first = invs[0]?.purchased_at, last = invs[invs.length - 1]?.purchased_at;
+  const d = (iso?: string) => (iso ? new Date(iso).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) : "—");
+
+  // تجميعة البضاعة: نفس المنتج عبر كل الفواتير = صف واحد بكمياته وإجماليه
+  type Agg = { name: string; barcode: string | null; qty: number; amount: number; lastCost: number; lastAt: string };
+  const agg = new Map<string, Agg>();
+  for (const p of invs) {
+    for (const it of data.itemsByPurchase.get(p.id) ?? []) {
+      const key = it.product_id ?? (it.barcode ? `b:${it.barcode}` : `n:${it.name.trim().toLowerCase()}`);
+      let a = agg.get(key);
+      if (!a) { a = { name: it.name, barcode: it.barcode ?? null, qty: 0, amount: 0, lastCost: it.purchase_price, lastAt: "" }; agg.set(key, a); }
+      a.qty += it.qty;
+      a.amount += it.qty * it.purchase_price;
+      const at = p.purchased_at || p.created_at || "";
+      if (at >= a.lastAt) { a.lastAt = at; a.lastCost = it.purchase_price; a.name = it.name; }
+    }
+  }
+  const goods = [...agg.values()].sort((a, b) => b.amount - a.amount);
+  const totalUnits = goods.reduce((s, a) => s + a.qty, 0);
+  const grand = invs.reduce((s, p) => s + p.total, 0);
+  const paid = invs.reduce((s, p) => s + (p.amount_paid ?? p.total), 0);
+  const due = Math.max(0, grand - paid);
+
+  const goodsRows = goods.map((a) => `
+    <tr><td class="i-name">${esc(a.name)}${a.barcode ? `<span class="i-bc" dir="ltr">${esc(a.barcode)}</span>` : ""}</td>
+    <td class="i-num">${fmt(a.qty)}</td><td class="i-num">${money(a.lastCost)}</td><td class="i-num i-amt">${money(a.amount)}</td></tr>`).join("");
+
+  const invRows = invs.map((p) => {
+    const pd = p.amount_paid ?? p.total;
+    const dd = Math.max(0, p.total - pd);
+    return `<tr><td>${d(p.purchased_at)}</td>
+      <td dir="ltr">${esc(purchaseNo(p.id))}${p.reference ? ` <span class="i-bc">#${esc(p.reference)}</span>` : ""}</td>
+      <td class="i-num">${fmt(p.item_count)}</td><td class="i-num">${money(p.total)}</td>
+      <td class="i-num">${money(pd)}</td>
+      <td class="i-num" style="${dd > 0 ? "color:#b91c1c;font-weight:700" : "color:#15803d"}">${dd > 0 ? money(dd) : "✓"}</td></tr>`;
+  }).join("");
+
+  const css = `
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; color: #0f172a; font-size: 12.5px; line-height: 1.5; padding: 14mm 13mm; position: relative; }
+    .sheet { max-width: 730px; margin: 0 auto; position: relative; z-index: 1; }
+    .watermark { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; z-index: 0; pointer-events: none; overflow: hidden; }
+    .watermark img { width: 92%; max-width: 660px; filter: grayscale(100%); opacity: 0.1; transform: scale(1.85); }
+    .top { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 16px; border-bottom: 3px solid #1266d8; padding-bottom: 14px; }
+    .brand { font-size: 11px; font-weight: 800; letter-spacing: 2px; text-transform: uppercase; color: #1266d8; }
+    .clinic { font-size: 20px; font-weight: 800; color: #0b1220; }
+    .muted { color: #64748b; font-size: 11.5px; }
+    .logo-mid { text-align: center; } .logo-mid img { max-height: 100px; max-width: 220px; object-fit: contain; }
+    .doc-title { font-size: 22px; font-weight: 800; color: #1266d8; text-align: end; }
+    .grid { display: flex; justify-content: space-between; gap: 20px; margin: 16px 0 6px; }
+    .grid h4 { margin: 0 0 3px; font-size: 10px; text-transform: uppercase; letter-spacing: .6px; color: #94a3b8; }
+    .grid .v { font-weight: 700; }
+    h3.sec { margin: 18px 0 4px; font-size: 13px; color: #1266d8; border-inline-start: 4px solid #1266d8; padding-inline-start: 8px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 6px; }
+    thead th { background: #f1f5f9; color: #475569; font-size: 10.5px; text-transform: uppercase; letter-spacing: .4px; text-align: start; padding: 7px 10px; }
+    thead th.i-num { text-align: end; }
+    tbody td { padding: 7px 10px; border-bottom: 1px solid #e8edf3; }
+    .i-num { text-align: end; white-space: nowrap; } .i-amt { font-weight: 700; }
+    .i-name { font-weight: 600; } .i-bc { display: block; font-size: 9.5px; color: #94a3b8; font-family: ui-monospace, monospace; font-weight: 400; }
+    .totals { margin-top: 14px; margin-inline-start: auto; width: 300px; }
+    .totals .row { display: flex; justify-content: space-between; padding: 4px 0; color: #475569; }
+    .totals .grand { font-size: 17px; font-weight: 800; color: #0b1220; border-top: 2px solid #0b1220; margin-top: 5px; padding-top: 7px; }
+    .totals .due { color: #b91c1c; font-weight: 700; } .totals .ok { color: #15803d; font-weight: 700; }
+    .foot { margin-top: 24px; text-align: center; color: #64748b; border-top: 1px solid #e8edf3; padding-top: 12px; font-size: 11px; }
+    tr, table { page-break-inside: avoid; }`;
+
+  const logo = opts.logoUrl ? `<img src="${esc(opts.logoUrl)}" alt=""/>` : `<div class="doc-title" style="text-align:center">${brand}</div>`;
+  const body = `
+    ${opts.logoUrl ? `<div class="watermark"><img src="${esc(opts.logoUrl)}" alt=""/></div>` : ""}
+    <div class="sheet">
+      <div class="top">
+        <div><div class="brand">${brand}</div><div class="clinic">${esc(opts.clinicName)}</div>
+          ${opts.clinicPhone ? `<div class="muted" dir="ltr">${esc(opts.clinicPhone)}</div>` : ""}</div>
+        <div class="logo-mid">${logo}</div>
+        <div><div class="doc-title">${L.doc}</div><div class="muted" style="text-align:end">${L.sub}</div></div>
+      </div>
+      <div class="grid">
+        <div><h4>${L.company}</h4><div class="v" style="font-size:16px">${esc(data.companyName)}</div>
+          ${data.supplier ? `<div class="muted">${L.rep}: ${esc(data.supplier)}${data.supplierPhone ? ` · <span dir="ltr">${esc(data.supplierPhone)}</span>` : ""}</div>` : ""}
+          ${data.note ? `<div class="muted">${esc(data.note)}</div>` : ""}</div>
+        <div style="text-align:end"><h4>${L.period}</h4><div class="v">${d(first)} — ${d(last)}</div>
+          <div class="muted">${L.invoices}: ${fmt(invs.length)} · ${L.units}: ${fmt(totalUnits)}</div></div>
+      </div>
+
+      <h3 class="sec">${L.goods}</h3>
+      <table><thead><tr><th>${L.item}</th><th class="i-num">${L.qty}</th><th class="i-num">${L.lastCost}</th><th class="i-num">${L.amount}</th></tr></thead>
+      <tbody>${goodsRows}</tbody></table>
+
+      <h3 class="sec">${L.invList}</h3>
+      <table><thead><tr><th>${L.date}</th><th>${L.no}</th><th class="i-num">${L.units}</th><th class="i-num">${L.amount}</th><th class="i-num">${L.paid}</th><th class="i-num">${L.due}</th></tr></thead>
+      <tbody>${invRows}</tbody></table>
+
+      <div class="totals">
+        <div class="row grand"><span>${L.grand}</span><span>${money(grand)}</span></div>
+        <div class="row"><span>${L.totalPaid}</span><span>${money(paid)}</span></div>
+        <div class="row ${due > 0 ? "due" : "ok"}"><span>${L.totalDue}</span><span>${due > 0 ? money(due) : L.settled}</span></div>
+      </div>
+
+      <div class="foot">${esc(opts.clinicName)} · ${WEBSITE}</div>
+    </div>`;
+
+  return `<!doctype html><html lang="${esc(opts.lang)}" dir="${dir}"><head><meta charset="utf-8"/>
+    <title>${esc(data.companyName)}</title>
+    <style>@page { size: A4; margin: 0; } ${css}</style></head>
+    <body>${body}
+    <script>window.addEventListener('load',function(){setTimeout(function(){window.focus();window.print();},120);});window.addEventListener('afterprint',function(){setTimeout(function(){window.close();},200);});</script>
+    </body></html>`;
+}
+
+export function openCompanyStatementPrint(data: CompanyStatementData, opts: PurchasePrintOptions): boolean {
+  const html = buildCompanyStatementHTML(data, opts);
+  const w = window.open("", "_blank", "width=860,height=940");
+  if (!w) return false;
+  w.document.open();
+  w.document.write(html);
+  w.document.close();
+  return true;
+}

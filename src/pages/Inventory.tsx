@@ -290,7 +290,7 @@ export function Inventory() {
       ) : view === "companies" ? (
         <CompaniesTab products={products} companies={companies} sections={sections} clinicId={clinicId} onChanged={load} />
       ) : view === "ledger" ? (
-        <SupplierLedgerTab companies={companies} clinicId={clinicId} />
+        <SupplierLedgerTab companies={companies} clinicId={clinicId} products={products} />
       ) : view === "barcodes" ? (
         <BarcodeStudio products={products} onChanged={load} />
       ) : (

@@ -5,7 +5,7 @@ import {
   Building2, Search, ChevronDown, Wallet, HandCoins, ShoppingBag, CalendarClock,
   UserRound, Phone, AlertTriangle, Copy, Check, BookOpen, PackageCheck,
 } from "lucide-react";
-import type { Purchase, Company, PaymentMethod } from "@/types";
+import type { Purchase, Company, PaymentMethod, Product, PurchaseItem } from "@/types";
 import { repo } from "@/lib/repo";
 import { Modal } from "@/components/Modal";
 import { Button, Badge, useToast, Skeleton } from "@/components/ui";
@@ -14,6 +14,8 @@ import { withTimeout, describeDbError } from "@/lib/errors";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
 import { staggerContainer, staggerItem } from "@/lib/motion";
 import { PurchaseDetailModal } from "./Purchases";
+import { CompanyStatementModal, type StatementGroup } from "./CompanyStatement";
+import { FileText } from "lucide-react";
 import ledgerSQL from "../../../supabase/migrations/0076_supplier_ledger.sql?raw";
 
 /** دين فاتورة واحدة — قديمة بلا amount_paid تُعتبر مدفوعة كاملة. */
@@ -44,7 +46,7 @@ type Filter = "all" | "debt" | "settled";
  * شكد اشتريت من كل شركة، شكد سدّدت، شكد باقي عليك، مع فواتيرها وبضاعتها
  * واسم المورّد، وتسديد الدين فاتورةً أو دفعةً واحدة على مستوى الشركة.
  * ========================================================================== */
-export function SupplierLedgerTab({ companies, clinicId }: { companies: Company[]; clinicId?: string }) {
+export function SupplierLedgerTab({ companies, clinicId, products = [] }: { companies: Company[]; clinicId?: string; products?: Product[] }) {
   const { t, i18n } = useTranslation();
   const toast = useToast();
   const [purchases, setPurchases] = useState<Purchase[]>([]);
@@ -54,6 +56,9 @@ export function SupplierLedgerTab({ companies, clinicId }: { companies: Company[
   const [openKeys, setOpenKeys] = useState<Set<string>>(new Set());
   const [viewing, setViewing] = useState<Purchase | null>(null);
   const [settleGroup, setSettleGroup] = useState<CompanyGroup | null>(null);
+  const [statementGroup, setStatementGroup] = useState<CompanyGroup | null>(null);
+  /** فواتير قديمة سُجّلت بلا شركة → نُسبت لشركتها من منتجات سطورها. */
+  const [inferred, setInferred] = useState<Map<string, { id: string; name: string }>>(new Map());
   // null = لم يُفحص بعد · false = ترحيل 0076 ناقص (التسديد واسم المورّد معطَّلان)
   const [ledgerOk, setLedgerOk] = useState<boolean | null>(null);
   const [checkBusy, setCheckBusy] = useState(false);
@@ -74,6 +79,36 @@ export function SupplierLedgerTab({ companies, clinicId }: { companies: Company[
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  /* نسب الفواتير القديمة المسجّلة بلا شركة: نقرأ سطورها، فإذا كانت كل
+   * منتجاتها المعروفة تتبع شركة واحدة تُنسب الفاتورة لها (بالعرض فقط —
+   * لا نلمس البيانات المخزونة، والنسب يظهر بشارة صريحة على الفاتورة). */
+  useEffect(() => {
+    const orphans = purchases.filter((p) => !p.company_id && !(p.company_name ?? "").trim());
+    if (!orphans.length || !products.length) return;
+    const companyOfProduct = new Map(products.filter((x) => x.company_id).map((x) => [x.id, x.company_id!]));
+    const nameOfCompany = new Map(companies.map((c) => [c.id, c.name]));
+    let alive = true;
+    (async () => {
+      const found = new Map<string, { id: string; name: string }>();
+      for (let i = 0; i < orphans.length; i += 6) {
+        const chunk = orphans.slice(i, i + 6);
+        const rows = await Promise.all(chunk.map((p) => repo.listPurchaseItems(p.id).catch(() => [] as PurchaseItem[])));
+        chunk.forEach((p, j) => {
+          const cids = new Set(rows[j].map((it) => (it.product_id ? companyOfProduct.get(it.product_id) : undefined)).filter(Boolean) as string[]);
+          if (cids.size === 1) {
+            const cid = [...cids][0];
+            const nm = nameOfCompany.get(cid);
+            if (nm) found.set(p.id, { id: cid, name: nm });
+          }
+        });
+        if (!alive) return;
+      }
+      if (alive && found.size) setInferred(found);
+    })();
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [purchases, products, companies]);
+
   const noteOf = useMemo(() => {
     const m = new Map(companies.map((c) => [c.id, c.note ?? null]));
     return (id?: string | null) => (id ? m.get(id) ?? null : null);
@@ -83,13 +118,16 @@ export function SupplierLedgerTab({ companies, clinicId }: { companies: Company[
   const groups = useMemo<CompanyGroup[]>(() => {
     const m = new Map<string, CompanyGroup>();
     for (const p of purchases) {
-      const key = p.company_id ?? (p.company_name?.trim() ? `n:${p.company_name.trim().toLowerCase()}` : "none");
+      const inf = inferred.get(p.id);
+      const effId = p.company_id ?? inf?.id ?? null;
+      const effName = p.company_name?.trim() || inf?.name || "";
+      const key = effId ?? (effName ? `n:${effName.toLowerCase()}` : "none");
       let g = m.get(key);
       if (!g) {
         g = {
           key,
-          name: p.company_name?.trim() || t("purchase.noCompany", "بدون شركة"),
-          note: noteOf(p.company_id),
+          name: effName || t("purchase.noCompany", "بدون شركة"),
+          note: noteOf(effId),
           invoices: [], total: 0, paid: 0, due: 0, lastAt: "", supplier: null, supplierPhone: null, supplierAt: "",
         };
         m.set(key, g);
@@ -104,7 +142,7 @@ export function SupplierLedgerTab({ companies, clinicId }: { companies: Company[
       if (p.supplier_name && at > g.supplierAt) { g.supplier = p.supplier_name; g.supplierPhone = p.supplier_phone ?? null; g.supplierAt = at; }
     }
     return [...m.values()].sort((a, b) => (b.due - a.due) || b.lastAt.localeCompare(a.lastAt));
-  }, [purchases, noteOf, t]);
+  }, [purchases, inferred, noteOf, t]);
 
   const totals = useMemo(() => ({
     total: groups.reduce((s, g) => s + g.total, 0),
@@ -223,6 +261,10 @@ export function SupplierLedgerTab({ companies, clinicId }: { companies: Company[
 
                 {open && (
                   <div className="border-t border-line bg-surface-2/30 p-3">
+                    <Button size="sm" variant="secondary" className="mb-2.5 w-full sm:w-auto sm:me-2" leftIcon={<FileText size={15} />}
+                      data-stmtbtn onClick={() => { playTap(); setStatementGroup(g); }}>
+                      {t("purchase.companyStatement", "كشف الشركة — البضاعة والفواتير والطباعة")}
+                    </Button>
                     {g.due > 0 && ledgerOk && (
                       <Button size="sm" className="mb-2.5 w-full sm:w-auto" leftIcon={<HandCoins size={15} />} onClick={() => { playTap(); setSettleGroup(g); }}>
                         {t("purchase.settleCompany", { v: money(g.due), defaultValue: "تسديد دين الشركة ({{v}})" })}
@@ -239,6 +281,7 @@ export function SupplierLedgerTab({ companies, clinicId }: { companies: Company[
                                 {formatDate(p.purchased_at, i18n.language)}
                                 {p.reference && <span className="chip bg-surface-2 font-mono text-2xs text-ink-muted">#{p.reference}</span>}
                                 {p.supplier_name && <span className="flex items-center gap-1 font-normal text-ink-subtle"><UserRound size={10} /> {p.supplier_name}</span>}
+                                {inferred.has(p.id) && <span className="chip bg-warn-100 text-2xs text-warn-700 dark:bg-warn-500/20 dark:text-warn-300">{t("purchase.inferred", "نُسبت من منتجاتها")}</span>}
                               </p>
                               <p className="flex items-center gap-1 text-2xs text-ink-subtle"><PackageCheck size={10} /> {t("purchase.units", { n: p.item_count, defaultValue: "{{n}} قطعة" })} · {t("purchase.tapForGoods", "اضغط لعرض البضاعة والتسديد")}</p>
                             </div>
@@ -261,6 +304,8 @@ export function SupplierLedgerTab({ companies, clinicId }: { companies: Company[
       )}
 
       <PurchaseDetailModal purchase={viewing} onClose={() => setViewing(null)} onChanged={() => void load()} />
+      <CompanyStatementModal group={statementGroup as StatementGroup | null} onClose={() => setStatementGroup(null)}
+        onOpenInvoice={(p) => { setStatementGroup(null); setViewing(p); }} />
       <CompanySettleModal group={settleGroup} onClose={() => setSettleGroup(null)} onSettled={() => { setSettleGroup(null); void load(); }} />
     </div>
   );
