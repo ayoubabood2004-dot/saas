@@ -6,7 +6,7 @@ import { CanvasTexture, MOUSE, Plane, RepeatWrapping, TOUCH, Vector2, Vector3 } 
 import type { Group, Mesh, MeshBasicMaterial, MeshStandardMaterial } from "three";
 import { ChevronRight, Hammer, ClipboardList, Maximize, Minus, Move, Plus, Search, Trash2, X, FileText, UserPlus } from "lucide-react";
 import { CageUnit, CAGE_W, CAGE_D, type DropHint } from "./CageUnit";
-import { NEON, NIGHT, KIND_AR, SPECIES_AR, SPECIES_EMOJI, type Occupant } from "./neon";
+import { DF, NEON, NIGHT, KIND_AR, SPECIES_AR, SPECIES_EMOJI, type Occupant } from "./neon";
 import {
   CELL, LED_CHOICES, cageStudio, useCageStudio, cageAt, cellFree, bounds,
   cellWorld, cornerWorld, buildPartitions, doorCell, codesFromPrefs, type Room3D,
@@ -185,13 +185,14 @@ function Partitions({ rooms, s }: { rooms: Room3D[]; s: ReturnType<typeof cageSt
   );
 }
 
-/* ── أرضيات الغرف + لافتة كل غرفة معلّقة فوق بابها ─────────────────────── */
+/* ── أرضيات الغرف + باب حقيقي بعضادتين وساكف تعلوه لافتة الاسم ──────────── */
 function RoomFloors({ s, build, occCount, onEditRoom }: {
   s: ReturnType<typeof cageStudio.get>;
   build: boolean;
   occCount: (r: Room3D) => number;
   onEditRoom: (id: string) => void;
 }) {
+  const signW = Math.min(CELL - 0.2, 2.15);
   return (
     <>
       {s.rooms.map((r) => {
@@ -205,29 +206,46 @@ function RoomFloors({ s, build, occCount, onEditRoom }: {
               <planeGeometry args={[w - 0.12, d - 0.12]} />
               <meshStandardMaterial color="#10192b" transparent opacity={0.5} roughness={0.9} />
             </mesh>
-            {/* اللافتة فوق الباب: قائمتان + لوح — والاسم عليها ببطاقة واضحة */}
+            {/* الباب على حدّ الغرفة الأمامي: عضادتان + ساكف، واللافتة مركّبة
+                على الساكف والاسم مكتوب عليها مباشرة — لا شيء يطفو بالفضاء */}
             <group position={[doorWX + CELL / 2, 0, doorWZ]}>
-              <mesh position={[0, WALL_H + 0.14, 0]}>
-                <boxGeometry args={[CELL - 0.5, 0.34, 0.06]} />
+              {[-(CELL / 2 - 0.06), CELL / 2 - 0.06].map((o, i) => (
+                <mesh key={i} position={[o, WALL_H / 2 - 0.09, 0]} castShadow>
+                  <boxGeometry args={[0.11, WALL_H, 0.11]} />
+                  <meshStandardMaterial color={NIGHT.shell} metalness={0.75} roughness={0.3} />
+                </mesh>
+              ))}
+              <mesh position={[0, WALL_H - 0.14, 0]}>
+                <boxGeometry args={[CELL, 0.1, 0.13]} />
+                <meshStandardMaterial color={NIGHT.shell} metalness={0.75} roughness={0.3} />
+              </mesh>
+              {/* اللافتة: لوح معدني بحافة نيون سفلية */}
+              <mesh position={[0, WALL_H + 0.16, 0]} castShadow>
+                <boxGeometry args={[signW, 0.5, 0.09]} />
                 <meshStandardMaterial color={NIGHT.plate} metalness={0.7} roughness={0.35} />
               </mesh>
-              <mesh position={[0, WALL_H - 0.02, 0]}>
-                <boxGeometry args={[CELL - 0.44, 0.045, 0.05]} />
-                <meshStandardMaterial color="#22d3ee" emissive="#22d3ee" emissiveIntensity={1.4} toneMapped={false} />
+              <mesh position={[0, WALL_H - 0.085, 0.02]}>
+                <boxGeometry args={[signW, 0.04, 0.06]} />
+                <meshStandardMaterial color="#22d3ee" emissive="#22d3ee" emissiveIntensity={1.5} toneMapped={false} />
               </mesh>
-              <Html center position={[0, WALL_H + 0.14, 0.06]} zIndexRange={[33, 0]}
+              {/* الاسم «مطبوع» على اللوح — بلا خلفية ولا إطار، يتحجّم مع الكاميرا */}
+              <Html center position={[0, WALL_H + 0.16, 0.07]} distanceFactor={DF} zIndexRange={[16, 0]}
                 style={{ pointerEvents: build ? "auto" : "none" }}>
                 <button type="button" data-sign3d={r.name}
                   onPointerDown={(e) => e.stopPropagation()}
                   onClick={(e) => { e.stopPropagation(); if (build) { playTap(); onEditRoom(r.id); } }}
                   style={{
-                    direction: "rtl", display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap",
-                    background: "#0d1b2ef2", border: "1px solid #2a6076", borderRadius: 8, padding: "4px 12px",
-                    boxShadow: "0 0 14px #22d3ee33", cursor: build ? "pointer" : "default",
+                    direction: "rtl", display: "grid", justifyItems: "center", lineHeight: 1.15,
+                    background: "transparent", border: "none", padding: 0,
+                    cursor: build ? "pointer" : "default", whiteSpace: "nowrap",
                   }}>
-                  <b style={{ color: "#d8f6ff", fontSize: 12.5, fontWeight: 800 }}>{r.name}</b>
-                  <i style={{ color: "#5f88a5", fontSize: 10, fontStyle: "normal", fontWeight: 700 }}>
-                    {formatNum(occCount(r))} 🐾
+                  <b style={{
+                    color: "#eaf9ff", fontSize: 15.5, fontWeight: 900, letterSpacing: 0.3,
+                    maxWidth: 104, overflow: "hidden", textOverflow: "ellipsis",
+                    textShadow: "0 1px 2px #000c, 0 0 10px #22d3ee44",
+                  }}>{r.name}</b>
+                  <i style={{ color: "#7fb6cf", fontSize: 9, fontStyle: "normal", fontWeight: 800 }}>
+                    {formatNum(occCount(r))} 🐾{build ? " · اضغط للتعديل" : ""}
                   </i>
                 </button>
               </Html>
@@ -259,9 +277,22 @@ function CellPads({ s, onPick }: {
             <meshStandardMaterial color="#4ade80" transparent opacity={0.22}
               emissive="#4ade80" emissiveIntensity={0.7} />
           </mesh>
-          <Html center position={[wx, 0.02, wz]} zIndexRange={[28, 0]} style={{ pointerEvents: "none" }}>
-            <span data-cell3d={`${x},${z}`} style={{ color: "#4ade80cc", fontSize: 22, fontWeight: 800, textShadow: "0 0 8px #4ade8088" }}>+</span>
-          </Html>
+          {/* علامة «+» مجسّمة بدل لوحة DOM: كل خلية فاضية كانت لوحة DOM تُحسب
+              كل إطار — بغرفة كبيرة صارت عشرات وهي أصل اللاق بوضع البناء */}
+          <mesh position={[wx, 0.0, wz]}>
+            <boxGeometry args={[0.6, 0.05, 0.12]} />
+            <meshStandardMaterial color="#4ade80" emissive="#4ade80" emissiveIntensity={1.2} toneMapped={false} />
+          </mesh>
+          <mesh position={[wx, 0.0, wz]}>
+            <boxGeometry args={[0.12, 0.05, 0.6]} />
+            <meshStandardMaterial color="#4ade80" emissive="#4ade80" emissiveIntensity={1.2} toneMapped={false} />
+          </mesh>
+          {/* مرساة اختبارات — ببيئة التطوير فقط، ولا لوحة DOM واحدة بالإنتاج */}
+          {import.meta.env.DEV && (
+            <Html center position={[wx, 0.02, wz]} zIndexRange={[8, 0]} style={{ pointerEvents: "none" }}>
+              <span data-cell3d={`${x},${z}`} style={{ width: 1, height: 1, display: "block" }} />
+            </Html>
+          )}
         </group>,
       );
     }
@@ -347,7 +378,7 @@ function DragAvatar({ drag, s, onReturned }: {
   return (
     <>
       <group ref={grp} position={[drag.fromPos[0], REST_Y, drag.fromPos[2]]}>
-        <Html center zIndexRange={[45, 0]} style={{ pointerEvents: "none" }}>
+        <Html center zIndexRange={[24, 0]} style={{ pointerEvents: "none" }}>
           <div style={{
             direction: "rtl", display: "flex", alignItems: "center", gap: 8,
             padding: "7px 12px", borderRadius: 13, whiteSpace: "nowrap",
@@ -499,7 +530,10 @@ function Scene({ s, occOf, drag, carrySource, hoverCage, arrivedRef, camZoom, ct
       {build && <GhostCage s={s} />}
       {drag && !build && <DragAvatar drag={drag} s={s} onReturned={onReturned} />}
 
-      <ContactShadows position={[0, -0.08, 0]} opacity={0.5} scale={26} blur={2.4} far={3.5} color="#241505" />
+      {/* ظل ملامسة يُخبز مرة واحدة لكل تخطيط (المفتاح يعيد الخبز عند التغيير) —
+          كان يُعاد رسمه كل إطار ويستنزف معالج رسوميات الآيباد بلا داعٍ */}
+      <ContactShadows key={`${s.rooms.length}-${s.cages.length}`} frames={1}
+        position={[0, -0.08, 0]} opacity={0.5} scale={26} blur={2.4} far={3.5} color="#241505" />
     </>
   );
 }
@@ -940,7 +974,7 @@ export default function Cage3DDemo() {
       </Canvas>
 
       {/* العنوان + مبدّل الوضعين + رجوع */}
-      <div className="pointer-events-none absolute inset-x-0 top-0 flex items-start justify-between gap-3 p-4 sm:p-6">
+      <div className="pointer-events-none absolute inset-x-0 top-0 z-30 flex items-start justify-between gap-3 p-4 sm:p-6">
         <div className="min-w-0">
           <h1 className="text-lg font-black" style={{ color: NIGHT.ink }}>لوحة تحكم الأقفاص المتقدمة — عيادة doctorVet</h1>
           <p className="mt-0.5 text-xs font-bold" style={{ color: "#8fa8bd" }}>
@@ -974,7 +1008,7 @@ export default function Cage3DDemo() {
 
       {/* لوحة المنامات — من الرقود الحقيقية + «وين الحيوان؟»: اضغط سطراً يلمع قفصه */}
       {!build && (
-        <div data-panel3d className="pointer-events-auto absolute top-20 start-4 hidden w-56 rounded-2xl p-3 sm:start-6 sm:block" style={glass()}>
+        <div data-panel3d className="pointer-events-auto absolute top-20 start-4 z-30 hidden w-56 rounded-2xl p-3 sm:start-6 sm:block" style={glass()}>
           <div className="mb-2 flex items-center justify-between">
             <h2 className="text-xs font-black" style={{ color: NIGHT.ink }}>المنامات الحالية</h2>
             <span className="rounded-full px-1.5 text-[10px] font-black tabular-nums" style={{ background: "#12253a", color: "#7dd3fc" }}>
@@ -1036,7 +1070,7 @@ export default function Cage3DDemo() {
 
       {/* شريط الحَمل */}
       {carrying && !build && (
-        <div data-move3d className="absolute inset-x-0 bottom-16 flex justify-center px-4">
+        <div data-move3d className="absolute inset-x-0 bottom-16 z-30 flex justify-center px-4">
           <div className="flex items-center gap-3 rounded-2xl py-2 pe-2 ps-4"
             style={{ ...glass(), border: `1px solid ${NEON[carrying.status]}66`, boxShadow: `0 0 24px ${NEON[carrying.status]}33` }}>
             <Move size={15} style={{ color: NEON[carrying.status] }} />
@@ -1053,7 +1087,7 @@ export default function Cage3DDemo() {
       )}
 
       {/* أزرار الكاميرا — تكبير/تصغير/رجوع للمنظر الكامل (لغير المتعوّد على القرصة) */}
-      <div className="absolute end-4 top-1/2 flex -translate-y-1/2 flex-col gap-1.5 sm:end-6">
+      <div className="absolute end-4 top-1/2 z-30 flex -translate-y-1/2 flex-col gap-1.5 sm:end-6">
         <button type="button" data-zin3d onClick={() => zoomBy(1.35)} aria-label="تكبير"
           className="grid h-10 w-10 place-items-center rounded-xl transition active:scale-95"
           style={{ ...glass(), color: "#9fdcef" }}>
@@ -1075,7 +1109,7 @@ export default function Cage3DDemo() {
       {!build && !carrying && (
         <button type="button" data-pick3d
           onClick={() => { playTap(); setPicker(true); setPickQ(""); }}
-          className="absolute bottom-16 end-4 inline-flex h-11 items-center gap-2 rounded-2xl px-4 text-xs font-black sm:end-6"
+          className="absolute bottom-16 end-4 z-30 inline-flex h-11 items-center gap-2 rounded-2xl px-4 text-xs font-black sm:end-6"
           style={{ background: "#22d3ee", color: "#04222b", boxShadow: "0 0 24px #22d3ee55" }}>
           <UserPlus size={15} /> إسكان حيوان
         </button>
@@ -1083,7 +1117,7 @@ export default function Cage3DDemo() {
 
       {/* حوار الإسكان */}
       {picker && (
-        <div className="absolute inset-0 z-10 grid place-items-center p-4" style={{ background: "#00000088" }}
+        <div className="absolute inset-0 z-40 grid place-items-center p-4" style={{ background: "#00000088" }}
           onClick={() => setPicker(false)}>
           <div data-picker3d className="w-full max-w-sm rounded-2xl p-4" style={glass()} onClick={(e) => e.stopPropagation()}>
             <div className="mb-2 flex items-center justify-between">
@@ -1141,7 +1175,7 @@ export default function Cage3DDemo() {
 
       {/* وضع البناء: لوح الأدوات */}
       {build && (
-        <div data-builder3d className="absolute bottom-16 start-1/2 flex -translate-x-1/2 items-center gap-2 rounded-2xl p-2"
+        <div data-builder3d className="absolute bottom-16 start-1/2 z-30 flex -translate-x-1/2 items-center gap-2 rounded-2xl p-2"
           style={{ ...glass(), insetInlineStart: "50%", transform: "translateX(50%)" }}>
           <div data-newcage
             onPointerDown={(e) => { e.preventDefault(); lastPtr.x = e.clientX; lastPtr.y = e.clientY; playTap(); placing.current = true; document.body.style.cursor = "copy"; }}
@@ -1163,7 +1197,7 @@ export default function Cage3DDemo() {
 
       {/* وضع البناء: لوح خصائص القفص — الرقم يُحفظ وحده (Enter أو مغادرة الحقل) */}
       {selCage && (
-        <div data-props3d className="absolute top-20 start-4 w-56 rounded-2xl p-3 sm:start-6" style={glass()}>
+        <div data-props3d className="absolute top-20 start-4 z-30 w-56 rounded-2xl p-3 sm:start-6" style={glass()}>
           <div className="mb-2 flex items-center justify-between">
             <h2 className="text-xs font-black" style={{ color: NIGHT.ink }}>خصائص القفص</h2>
             <button type="button" onClick={() => cageStudio.select(null)} className="p-1" style={{ color: "#64809c" }}><X size={14} /></button>
@@ -1196,7 +1230,7 @@ export default function Cage3DDemo() {
 
       {/* وضع البناء: لوحة الغرفة (من لافتة بابها): اسم + ترقيم تلقائي + حذف */}
       {editRoom && build && (
-        <div data-roomedit3d className="absolute top-20 end-4 w-60 rounded-2xl p-3 sm:end-6" style={glass()}>
+        <div data-roomedit3d className="absolute top-20 end-4 z-30 w-60 rounded-2xl p-3 sm:end-6" style={glass()}>
           <div className="mb-2 flex items-center justify-between">
             <h2 className="text-xs font-black" style={{ color: NIGHT.ink }}>لوحة الغرفة</h2>
             <button type="button" onClick={() => setRoomEdit(null)} className="p-1" style={{ color: "#64809c" }}><X size={14} /></button>
@@ -1218,6 +1252,15 @@ export default function Cage3DDemo() {
               رقّم
             </button>
           </div>
+          <label className="mb-1 block text-[10px] font-bold" style={{ color: "#64809c" }}>لون ليد كل أقفاصها — دفعة وحدة</label>
+          <div data-paint3d className="mb-3 flex gap-1.5">
+            {LED_CHOICES.map((c) => (
+              <button key={c} type="button"
+                onClick={() => { playTap(); const n = cageStudio.paintRoom(editRoom.id, c); say(n ? `انصبغ ليد ${formatNum(n)} قفص` : "ما بيها أقفاص بعد"); }}
+                className="h-8 w-8 rounded-full transition active:scale-90"
+                style={{ background: c, boxShadow: `0 0 10px ${c}` }} />
+            ))}
+          </div>
           <button type="button"
             onClick={() => { playTap(); cageStudio.removeRoom(editRoom.id); setRoomEdit(null); say("انحذفت الغرفة — مرضاها ما ينمسّون"); }}
             className="inline-flex h-9 w-full items-center justify-center gap-1 rounded-lg text-[11px] font-extrabold"
@@ -1229,7 +1272,7 @@ export default function Cage3DDemo() {
 
       {/* حوار غرفة جديدة */}
       {roomDialog && (
-        <div className="absolute inset-0 z-10 grid place-items-center" style={{ background: "#00000088" }}
+        <div className="absolute inset-0 z-40 grid place-items-center" style={{ background: "#00000088" }}
           onClick={() => setRoomDialog(false)}>
           <div data-roomdlg className="w-72 rounded-2xl p-4" style={glass()} onClick={(e) => e.stopPropagation()}>
             <h2 className="mb-3 text-sm font-black" style={{ color: NIGHT.ink }}>غرفة جديدة</h2>
@@ -1271,7 +1314,7 @@ export default function Cage3DDemo() {
 
       {/* تفاصيل المريض + الملف الطبي الحقيقي + نقله */}
       {detailOcc && detailFor && (
-        <div data-detail3d className="absolute bottom-24 start-4 w-60 rounded-2xl p-3 sm:start-6"
+        <div data-detail3d className="absolute bottom-24 start-4 z-30 w-60 rounded-2xl p-3 sm:start-6"
           style={{ ...glass(), border: `1px solid ${NEON[detailOcc.status]}55` }}>
           <button type="button" onClick={() => setDetailFor(null)} className="absolute end-2 top-2 p-1" style={{ color: "#64809c" }}>
             <X size={14} />
@@ -1311,7 +1354,7 @@ export default function Cage3DDemo() {
       )}
 
       {/* إشعار النقلة */}
-      <div className="pointer-events-none absolute inset-x-0 bottom-28 flex justify-center px-4"
+      <div className="pointer-events-none absolute inset-x-0 bottom-28 z-40 flex justify-center px-4"
         style={{ opacity: note ? 1 : 0, transform: `translateY(${note ? 0 : 8}px)`, transition: "all .25s ease" }}>
         {note && (
           <span data-note3d className="rounded-full px-4 py-2 text-xs font-extrabold"
@@ -1322,7 +1365,7 @@ export default function Cage3DDemo() {
       </div>
 
       {!build && !carrying && (
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 flex flex-wrap items-center gap-3 p-4 sm:p-6">
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 z-30 flex flex-wrap items-center gap-3 p-4 sm:p-6">
           {LEGEND.map((l) => (
             <span key={l.label} className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-bold"
               style={{ background: "#0e1a2eeb", color: "#c8dbea", border: "1px solid #16324a" }}>
@@ -1334,7 +1377,7 @@ export default function Cage3DDemo() {
 
       {/* الجولة التعريفية — ثلاث فقاعات، مرة واحدة لكل جهاز */}
       {tour !== null && (
-        <div className="absolute inset-0 z-20 grid place-items-center p-4" style={{ background: "#000000a6" }}
+        <div className="absolute inset-0 z-50 grid place-items-center p-4" style={{ background: "#000000a6" }}
           onClick={endTour}>
           <div data-tour3d className="w-full max-w-xs rounded-2xl p-5 text-center" style={glass()} onClick={(e) => e.stopPropagation()}>
             <p className="text-4xl">{TOUR[tour].emoji}</p>

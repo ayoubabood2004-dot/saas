@@ -3,7 +3,7 @@ import { useFrame } from "@react-three/fiber";
 import { RoundedBox, Html } from "@react-three/drei";
 import { Color, MeshStandardMaterial } from "three";
 import type { Group, PointLight } from "three";
-import { NEON, NIGHT, DANGER, DOSE, HOT, KIND_AR, statusOfCage, type CageSpec } from "./neon";
+import { DF, NEON, NIGHT, DANGER, DOSE, HOT, KIND_AR, statusOfCage, type CageSpec } from "./neon";
 
 /* ============================================================================
  * CageUnit — حظيرة بيطرية واقعية مفتوحة السقف: قاعدة معدنية، أربعة قوائم
@@ -187,12 +187,12 @@ export function CageUnit({ spec, position, dropHint, dragActive, ghost, arrivedR
       <RoundedBox args={[0.52, 0.2, 0.03]} radius={0.02} position={[0, -CAGE_H / 2 + LOWER_H / 2 + 0.02, CAGE_D / 2 + 0.012]}>
         <meshStandardMaterial color={NIGHT.plate} metalness={0.8} roughness={0.35} />
       </RoundedBox>
-      {/* الرقم «محفور» بلوحة معدنية — بعنصر DOM لا بنص مجسّم: نص drei المجسّم
-       *  يجلب ملف خط ويحلّله داخل Web Worker، وأي تعثّر بذلك (شبكة، متصفح
-       *  متشدّد) كان يعلّق المشهد كله خلف شاشة التحميل. هذا يرسم فوراً دائماً. */}
+      {/* الرقم «محفور» بلوحة معدنية — بعنصر DOM لا بنص مجسّم (نص drei يجلب خطاً
+       *  بـWorker وتعثّره كان يعلّق المشهد). distanceFactor يكبّره مع الكاميرا.
+       *  نفس العنصر يحمل مرساة الاختبارات data-cage3d — لوحة DOM أقل لكل قفص. */}
       <Html center position={[0, -CAGE_H / 2 + LOWER_H / 2 + 0.02, CAGE_D / 2 + 0.03]}
-        zIndexRange={[30, 0]} style={{ pointerEvents: "none" }}>
-        <span style={{
+        distanceFactor={DF} zIndexRange={[10, 0]} style={{ pointerEvents: "none" }}>
+        <span data-cage3d={spec.code} style={{
           fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: 11, fontWeight: 800,
           letterSpacing: 1, color: NIGHT.plateInk, textShadow: "0 1px 0 #0008", whiteSpace: "nowrap",
         }}>{spec.code}</span>
@@ -201,50 +201,32 @@ export function CageUnit({ spec, position, dropHint, dragActive, ghost, arrivedR
       {/* ضوء الحالة داخل الحظيرة — يصبغ الفرشة والزجاج بلون الراقد */}
       <pointLight ref={glow} color={baseColor} intensity={occupied ? 1.0 : 0.3} distance={2.6} position={[0, 0.25, 0.2]} />
 
-      {/* المريض بصورته الحقيقية واقفاً على الفرشة (إيموجي احتياطاً بلا شبكة) */}
-      {spec.occupant && !ghost && (
-        <Html center position={[0, -CAGE_H / 2 + 0.42, 0.05]} zIndexRange={[35, 0]} style={{ pointerEvents: "none" }}>
-          {imgFail || !spec.occupant.photoUrl ? (
-            <span style={{ fontSize: 40, filter: `drop-shadow(0 0 10px ${baseColor})` }}>{spec.occupant.emoji}</span>
-          ) : (
-            <img src={spec.occupant.photoUrl ?? ""} alt={spec.occupant.name}
-              onError={() => setImgFail(true)}
-              style={{
-                width: 62, height: 62, objectFit: "cover", borderRadius: 14,
-                border: `2px solid ${baseColor}aa`, boxShadow: `0 6px 18px #000b, 0 0 14px ${baseColor}55`,
-              }} />
-          )}
-        </Html>
-      )}
-
-      {/* مرساة إحداثيات للاختبارات الآلية — بلا أي أثر بصري */}
-      <Html center position={[0, 0, 0]} style={{ pointerEvents: "none" }} zIndexRange={[30, 0]}>
-        <span data-cage3d={spec.code} style={{ width: 1, height: 1, display: "block" }} />
-      </Html>
-
-      {/* بطاقة المريض فوق الحظيرة — ضغطة قصيرة تفاصيل، وسحبة تنقله */}
+      {/* بطاقة الساكن «المعلّقة» على واجهة القفص العلوية — صورة واسم وحالة
+       *  بلوحة DOM واحدة ملتصقة بالقفص (لا بطاقة عائمة بالفضاء): يبين فوراً
+       *  منو بأي قفص، وتكبر وتصغر مع الكاميرا فلا تتكدّس عند الإبعاد.
+       *  ضغطة قصيرة = حمل/تفاصيل، وسحبة = نقل (نفس منطق البطاقة القديمة). */}
       {spec.occupant && showCard && (
-        <Html center position={[0, topY + 0.55, 0]} zIndexRange={[40, 0]}
+        <Html center position={[0, topY + 0.32, CAGE_D * 0.2]} distanceFactor={DF} zIndexRange={[20, 0]}
           style={{ pointerEvents: dragActive || ghost ? "none" : "auto" }}>
           <div data-occ-of={spec.code}
             onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); onCardDown(spec.code, e); }}
             style={{
-              direction: "rtl", display: "flex", alignItems: "center", gap: 8,
-              padding: "6px 10px", borderRadius: 12, cursor: "grab", touchAction: "none",
+              direction: "rtl", display: "flex", alignItems: "center", gap: 7,
+              padding: "5px 9px", borderRadius: 11, cursor: "grab", touchAction: "none",
               userSelect: "none", whiteSpace: "nowrap",
-              background: "#0c1626f0", border: `1px solid ${baseColor}66`,
-              boxShadow: `0 0 16px ${baseColor}40`,
+              background: "#0c1626f2", border: `1.5px solid ${baseColor}`,
+              boxShadow: `0 0 14px ${baseColor}55, 0 6px 14px #0009`,
               opacity: ghost ? 0.28 : 1, transition: "opacity .18s ease",
             }}>
             {imgFail || !spec.occupant.photoUrl ? (
-              <span style={{ fontSize: 20, filter: `drop-shadow(0 0 6px ${baseColor})` }}>{spec.occupant.emoji}</span>
+              <span style={{ fontSize: 22, filter: `drop-shadow(0 0 6px ${baseColor})` }}>{spec.occupant.emoji}</span>
             ) : (
               <img src={spec.occupant.photoUrl ?? ""} alt="" onError={() => setImgFail(true)}
-                style={{ width: 28, height: 28, objectFit: "cover", borderRadius: 8, border: `1px solid ${baseColor}88`, pointerEvents: "none" }} />
+                style={{ width: 30, height: 30, objectFit: "cover", borderRadius: 8, border: `1px solid ${baseColor}88`, pointerEvents: "none" }} />
             )}
-            <span style={{ display: "grid", lineHeight: 1.25 }}>
+            <span style={{ display: "grid", lineHeight: 1.2 }}>
               <b style={{ color: NIGHT.ink, fontSize: 12.5, fontWeight: 800 }}>{spec.occupant.name}</b>
-              <i style={{ color: baseColor, fontSize: 10, fontStyle: "normal", fontWeight: 700 }}>{KIND_AR[spec.occupant.status]}</i>
+              <i style={{ color: baseColor, fontSize: 9.5, fontStyle: "normal", fontWeight: 700 }}>{KIND_AR[spec.occupant.status]}</i>
             </span>
             {spec.occupant.doseDue && (
               <span data-dose3d style={{

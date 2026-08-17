@@ -70,17 +70,24 @@ function load(): StudioState {
 let state: StudioState = load();
 const listeners = new Set<() => void>();
 
-/** عكس التخطيط لخريطة 2D (clinic_prefs.cage_layout) — مصدر واحد للغرف. */
+/** عكس التخطيط لخريطة 2D (clinic_prefs.cage_layout) — مصدر واحد للغرف.
+ *  مؤجَّل ٤٠٠م.ث: جلسة بناء سريعة (قفص قفص قفص…) تكتب مرة واحدة بدل رفعة
+ *  شبكة لكل ضغطة — هذا كان أكبر مصدر «لاق» بإضافة الأقفاص على الآيباد. */
+let mirrorT: ReturnType<typeof setTimeout> | null = null;
 function mirrorToPrefs() {
-  try {
-    setCageLayout(state.rooms.map((r) => ({
-      id: r.id,
-      name: r.name,
-      cages: state.cages
-        .filter((c) => c.x >= r.x && c.x < r.x + r.w && c.z >= r.z && c.z < r.z + r.d)
-        .map((c) => c.code),
-    })));
-  } catch { /* بيئة بلا تفضيلات (اختبارات) — التخطيط المحلي يبقى صحيحاً */ }
+  if (mirrorT) clearTimeout(mirrorT);
+  mirrorT = setTimeout(() => {
+    mirrorT = null;
+    try {
+      setCageLayout(state.rooms.map((r) => ({
+        id: r.id,
+        name: r.name,
+        cages: state.cages
+          .filter((c) => c.x >= r.x && c.x < r.x + r.w && c.z >= r.z && c.z < r.z + r.d)
+          .map((c) => c.code),
+      })));
+    } catch { /* بيئة بلا تفضيلات (اختبارات) — التخطيط المحلي يبقى صحيحاً */ }
+  }, 400);
 }
 
 function commit(next: Partial<StudioState>, touchesLayout = false) {
@@ -228,6 +235,17 @@ export const cageStudio = {
       cages: state.cages.filter((c) => c.code !== code),
       selected: state.selected === code ? null : state.selected,
     }, true);
+  },
+
+  /** صبغ ليد كل أقفاص غرفة بلون واحد دفعة وحدة — بدل قفص قفص. */
+  paintRoom(roomId: string, color: string): number {
+    const room = state.rooms.find((r) => r.id === roomId);
+    if (!room) return 0;
+    const inRoom = (c: CagePlacement) =>
+      c.x >= room.x && c.x < room.x + room.w && c.z >= room.z && c.z < room.z + room.d;
+    const n = state.cages.filter(inRoom).length;
+    if (n) commit({ cages: state.cages.map((c) => (inRoom(c) ? { ...c, color } : c)) });
+    return n;
   },
 
   /** ترقيم غرفة كاملة تلقائياً من أساس (مثال ٢٠١، ٢٠٢…) بترتيب الصفوف.

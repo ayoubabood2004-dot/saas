@@ -61,6 +61,11 @@ export interface Occupant {
 /** كهرماني «جرعة مستحقّة» — وميض القفص الذي حان موعد علاج ساكنه. */
 export const DOSE = "#f59e0b";
 
+/** مقياس لوحات DOM داخل المشهد (drei Html distanceFactor): تكبير الكاميرا
+ *  يكبّر اللوحات ويصغّرها مع المشهد نفسه — فلا تتكدّس الأسماء فوق بعضها
+ *  عند الإبعاد. scale = zoom × DF ⇒ حجم طبيعي عند zoom ≈ 55. */
+export const DF = 1 / 55;
+
 export interface CageSpec {
   code: string;
   occupant?: Occupant | null;
