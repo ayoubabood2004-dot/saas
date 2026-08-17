@@ -19,10 +19,9 @@ import { DF, NEON, NIGHT, DANGER, DOSE, HOT, KIND_AR, statusOfCage, type CageSpe
  * يلوّنها ويشدّها معاً بالـlerp كل إطار — لا شيء يومض فجأة.
  * ==========================================================================*/
 
-export const CAGE_W = 1.7, CAGE_H = 1.0, CAGE_D = 1.5;
+export const CAGE_W = 2.0, CAGE_H = 1.12, CAGE_D = 1.75;
 const POST = 0.06;           // سماكة القوائم
-const LOWER_H = 0.4;         // اللوح المعدني السفلي
-const BARS = 7;
+const LOWER_H = 0.3;         // اللوح المعدني السفلي — منخفض ليتّسع الزجاج
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 
 export type DropHint = "idle" | "candidate" | "hot" | "blocked";
@@ -147,6 +146,13 @@ export function CageUnit({ spec, position, dropHint, dragActive, ghost, arrivedR
         <meshStandardMaterial color={NIGHT.plinth} metalness={0.6} roughness={0.4} />
       </RoundedBox>
 
+      {/* هالة الاستجابة الأرضية — تتوهّج بنعومة عند التحويم وعند الاستهداف */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -CAGE_H / 2 - 0.135, 0]}>
+        <ringGeometry args={[1.16, 1.46, 48]} />
+        <meshStandardMaterial ref={haloMat} color={NEON.free} emissive={NEON.free} emissiveIntensity={1.2}
+          toneMapped={false} transparent opacity={0} depthWrite={false} />
+      </mesh>
+
       {/* أرضية الحظيرة + الفرشة المبطّنة (وسادة بخياطة وسطية) */}
       <mesh position={[0, -CAGE_H / 2 + 0.02, 0]} rotation={[-Math.PI / 2, 0, 0]}>
         <planeGeometry args={[innerW, innerD]} />
@@ -190,21 +196,41 @@ export function CageUnit({ spec, position, dropHint, dragActive, ghost, arrivedR
           </group>
         ))}
 
-      {/* البوابة الأمامية: قضبان سفلية + زجاج فوقها + مقبض */}
-      {Array.from({ length: BARS }, (_, i) => (
-        <mesh key={i} position={[-(innerW - 0.2) / 2 + (i * (innerW - 0.2)) / (BARS - 1), -CAGE_H / 2 + LOWER_H / 2 + 0.02, CAGE_D / 2 - 0.02]} castShadow>
-          <cylinderGeometry args={[0.02, 0.02, LOWER_H, 10]} />
-          <meshStandardMaterial color={NIGHT.bars} metalness={0.65} roughness={0.3} />
+      {/* الباب الزجاجي الأمامي — إطار ستانلس رفيع ومقبض وفتحات تهوية سفلية:
+       *  كبينة عيادة حديثة، لا قضبان سجن. */}
+      <group position={[0, 0, CAGE_D / 2 - 0.02]}>
+        <mesh position={[0, 0.02, 0]}>
+          <planeGeometry args={[innerW - 0.16, CAGE_H - 0.22]} />
+          <meshStandardMaterial color="#cfeefb" transparent opacity={0.15} roughness={0.05} metalness={0.08} depthWrite={false} />
         </mesh>
-      ))}
-      <mesh position={[0, -CAGE_H / 2 + LOWER_H + 0.03, CAGE_D / 2 - 0.02]}>
-        <boxGeometry args={[innerW, 0.035, 0.035]} />
-        <meshStandardMaterial color={NIGHT.shell} metalness={0.75} roughness={0.3} />
-      </mesh>
-      <mesh position={[0, LOWER_H / 2 - 0.06, CAGE_D / 2 - 0.015]}>
-        <planeGeometry args={[innerW, CAGE_H - LOWER_H - 0.1]} />
-        <meshStandardMaterial color="#bfe9f5" transparent opacity={0.13} roughness={0.1} metalness={0.1} depthWrite={false} />
-      </mesh>
+        {/* إطار الباب */}
+        {[-(innerW - 0.16) / 2, (innerW - 0.16) / 2].map((o, i) => (
+          <mesh key={i} position={[o, 0.02, 0.006]} castShadow>
+            <boxGeometry args={[0.045, CAGE_H - 0.18, 0.032]} />
+            <meshStandardMaterial color={NIGHT.bars} metalness={0.8} roughness={0.25} />
+          </mesh>
+        ))}
+        {[(CAGE_H - 0.2) / 2, -(CAGE_H - 0.2) / 2].map((y, i) => (
+          <mesh key={i} position={[0, 0.02 + y, 0.006]}>
+            <boxGeometry args={[innerW - 0.13, 0.045, 0.032]} />
+            <meshStandardMaterial color={NIGHT.bars} metalness={0.8} roughness={0.25} />
+          </mesh>
+        ))}
+        {/* المقبض الستانلس */}
+        <mesh position={[innerW / 2 - 0.2, 0.06, 0.035]}>
+          <cylinderGeometry args={[0.022, 0.022, 0.3, 10]} />
+          <meshStandardMaterial color="#c9d5e0" metalness={0.9} roughness={0.18} />
+        </mesh>
+        {/* فتحات تهوية سفلية على جانبي لوحة الرقم */}
+        {[-innerW * 0.28, innerW * 0.28].flatMap((x) =>
+          [0, 1, 2].map((i) => (
+            <mesh key={`${x}-${i}`} position={[x, -CAGE_H / 2 + 0.13 + i * 0.055, 0.006]}>
+              <boxGeometry args={[innerW * 0.26, 0.016, 0.02]} />
+              <meshStandardMaterial color={NIGHT.bars} metalness={0.7} roughness={0.3} />
+            </mesh>
+          )),
+        )}
+      </group>
 
       {/* لوحة الرقم «المحفورة» على الواجهة */}
       <RoundedBox args={[0.52, 0.2, 0.03]} radius={0.02} position={[0, -CAGE_H / 2 + LOWER_H / 2 + 0.02, CAGE_D / 2 + 0.012]}>

@@ -257,7 +257,7 @@ function RoomFloors({ s, occCount }: {
           <group key={r.id}>
             <mesh rotation={[-Math.PI / 2, 0, 0]} position={[wx + w / 2, -0.07, wz + d / 2]} receiveShadow>
               <planeGeometry args={[w - 0.12, d - 0.12]} />
-              <meshStandardMaterial color="#10192b" transparent opacity={0.5} roughness={0.9} />
+              <meshStandardMaterial color="#22344c" transparent opacity={0.62} roughness={0.85} />
             </mesh>
             {/* الباب على حدّ الغرفة الأمامي: عضادتان + ساكف، وفوقه لافتة
                 احترافية بطبقتين (ستيل خلفي بارز + لوح أمامي داكن بزوايا
@@ -496,7 +496,7 @@ function Scene({ s, occOf, drag, carrySource, hoverCage, arrivedRef, camZoom, ct
   return (
     <>
       <color attach="background" args={[NIGHT.bg]} />
-      <fog attach="fog" args={[NIGHT.bg, 28, 52]} />
+      <fog attach="fog" args={[NIGHT.bg, 36, 68]} />
       <EnvLight />
       <OrthographicCamera makeDefault position={[12, 12, 12]} zoom={camZoom} near={0.1} far={80} />
       {/* تحكم الكاميرا: قرصة بأصبعين تكبّر، وسحب الأرضية (إصبع أو فأرة) يحرّك،
@@ -523,34 +523,34 @@ function Scene({ s, occOf, drag, carrySource, hoverCage, arrivedRef, camZoom, ct
       <pointLight color="#ffb066" position={[-4.5, 3, -4.5]} intensity={0.55} distance={16} />
 
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.09, 0]} receiveShadow>
-        <planeGeometry args={[40, 40]} />
+        <planeGeometry args={[60, 60]} />
         <meshStandardMaterial map={wood} roughness={0.8} metalness={0.05} />
       </mesh>
 
-      <mesh position={[wallX + 20, 1.9, wallZ]}>
-        <planeGeometry args={[40, 4]} />
+      <mesh position={[wallX + 30, 1.9, wallZ]}>
+        <planeGeometry args={[60, 4]} />
         <meshStandardMaterial color={NIGHT.wall} roughness={0.9} />
       </mesh>
-      <mesh position={[wallX, 1.9, wallZ + 20]} rotation={[0, Math.PI / 2, 0]}>
-        <planeGeometry args={[40, 4]} />
+      <mesh position={[wallX, 1.9, wallZ + 30]} rotation={[0, Math.PI / 2, 0]}>
+        <planeGeometry args={[60, 4]} />
         <meshStandardMaterial color={NIGHT.wall} roughness={0.9} />
       </mesh>
-      <mesh position={[wallX + 20, 3.88, wallZ + 0.02]}>
-        <boxGeometry args={[40, 0.05, 0.05]} />
+      <mesh position={[wallX + 30, 3.88, wallZ + 0.02]}>
+        <boxGeometry args={[60, 0.05, 0.05]} />
         <meshStandardMaterial color={NIGHT.wallEdge} emissive={NIGHT.wallEdge} emissiveIntensity={1.8} toneMapped={false} />
       </mesh>
-      <mesh position={[wallX + 0.02, 3.88, wallZ + 20]} rotation={[0, Math.PI / 2, 0]}>
-        <boxGeometry args={[40, 0.05, 0.05]} />
+      <mesh position={[wallX + 0.02, 3.88, wallZ + 30]} rotation={[0, Math.PI / 2, 0]}>
+        <boxGeometry args={[60, 0.05, 0.05]} />
         <meshStandardMaterial color={NIGHT.wallEdge} emissive={NIGHT.wallEdge} emissiveIntensity={1.8} toneMapped={false} />
       </mesh>
       <HexCluster position={[wallX + 0.05, 2.35, wminZ + 1.6]} rotation={[0, Math.PI / 2, 0]} color="#ff9e4d" />
       <HexCluster position={[wminX + 3.2, 2.3, wallZ + 0.05]} rotation={[0, 0, 0]} color="#22d3ee" />
 
       {build && (
-        <DreiGrid position={[0, -0.06, 0]} args={[40, 40]}
+        <DreiGrid position={[0, -0.06, 0]} args={[60, 60]}
           cellSize={CELL} cellThickness={1} cellColor="#1d4356"
           sectionSize={CELL * 4} sectionThickness={1.3} sectionColor="#2a6076"
-          fadeDistance={30} fadeStrength={1.4} followCamera={false} />
+          fadeDistance={44} fadeStrength={1.4} followCamera={false} />
       )}
 
       <RoomFloors s={s} occCount={occCount} />
@@ -583,7 +583,7 @@ function Scene({ s, occOf, drag, carrySource, hoverCage, arrivedRef, camZoom, ct
       {/* ظل ملامسة يُخبز مرة واحدة لكل تخطيط (المفتاح يعيد الخبز عند التغيير) —
           كان يُعاد رسمه كل إطار ويستنزف معالج رسوميات الآيباد بلا داعٍ */}
       <ContactShadows key={`${s.rooms.length}-${s.cages.length}`} frames={1}
-        position={[0, -0.08, 0]} opacity={0.5} scale={26} blur={2.4} far={3.5} color="#241505" />
+        position={[0, -0.08, 0]} opacity={0.5} scale={36} blur={2.4} far={3.5} color="#241505" />
     </>
   );
 }
@@ -670,7 +670,8 @@ export default function Cage3DDemo() {
   const camZoom = useMemo(() => {
     const b = bounds(s);
     const span = Math.max(b.maxX - b.minX, (b.maxZ - b.minZ) * 1.4) * CELL;
-    return Math.max(44, Math.min(92, 660 / Math.max(span, 7)));
+    // الحد الأدنى ٢٦ (لا ٤٤): التخطيطات الواسعة تنلمّ كاملة بالشاشة بدل ما تنقص
+    return Math.max(26, Math.min(92, 660 / Math.max(span, 7)));
   }, [s]);
   const zoomBy = (f: number) => {
     playTap();

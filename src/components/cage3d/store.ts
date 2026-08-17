@@ -17,7 +17,8 @@ import { getCageLayout, setCageLayout } from "@/lib/settings";
  * المواقع الشبكية (خاصية 3D الوحيدة) تُحفظ محلياً بـlocalStorage.
  * ==========================================================================*/
 
-export const CELL = 2.4;
+/** حجم خلية الشبكة — متباعد عمداً: هواء واسع بين الأقفاص فلا تتكدّس. */
+export const CELL = 3.0;
 export type Mode = "manage" | "build";
 
 export const LED_CHOICES = ["#22d3ee", "#fb923c", "#f43f5e", "#4ade80", "#a78bfa", "#e2e8f0"] as const;
