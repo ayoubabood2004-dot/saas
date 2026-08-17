@@ -1,8 +1,9 @@
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Canvas, useFrame } from "@react-three/fiber";
-import { OrthographicCamera, ContactShadows, Html, Grid as DreiGrid, MapControls } from "@react-three/drei";
-import { CanvasTexture, MOUSE, Plane, RepeatWrapping, TOUCH, Vector2, Vector3 } from "three";
+import { Canvas, useFrame, useThree } from "@react-three/fiber";
+import { OrthographicCamera, ContactShadows, Html, Grid as DreiGrid, MapControls, RoundedBox } from "@react-three/drei";
+import { CanvasTexture, MOUSE, Plane, PMREMGenerator, RepeatWrapping, TOUCH, Vector2, Vector3 } from "three";
+import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import type { Group, Mesh, MeshBasicMaterial, MeshStandardMaterial } from "three";
 import { ChevronRight, Hammer, ClipboardList, Maximize, Minus, Move, Plus, Search, Trash2, X, FileText, UserPlus } from "lucide-react";
 import { CageUnit, CAGE_W, CAGE_D, type DropHint } from "./CageUnit";
@@ -152,6 +153,9 @@ function HexCluster({ position, rotation, color }: {
   );
 }
 
+/** جدران الغرف بلغة الأقفاص نفسها: إزارة أرضية + لوح معدني سفلي صلب + زجاج
+ *  فوقه + مدّة علوية — ترتكز على الأرض فعلاً بدل ألواح زجاج طائفة بالفراغ. */
+const WALL_LOWER = 0.52;
 function Partitions({ rooms, s }: { rooms: Room3D[]; s: ReturnType<typeof cageStudio.get> }) {
   const segs = useMemo(() => buildPartitions(rooms), [rooms]);
   return (
@@ -164,17 +168,29 @@ function Partitions({ rooms, s }: { rooms: Room3D[]; s: ReturnType<typeof cageSt
         const horizontal = g.z1 === g.z2;
         return (
           <group key={`${g.x1},${g.z1}-${g.x2},${g.z2}`} position={[cx, 0, cz]} rotation={[0, horizontal ? 0 : Math.PI / 2, 0]}>
-            <mesh position={[0, WALL_H / 2 - 0.09, 0]}>
-              <boxGeometry args={[len, WALL_H, 0.045]} />
-              <meshStandardMaterial color="#bfe9f5" transparent opacity={0.13} roughness={0.08} metalness={0.1} depthWrite={false} />
+            {/* الإزارة — تربط الجدار بالأرضية */}
+            <mesh position={[0, 0.015, 0]} receiveShadow>
+              <boxGeometry args={[len + 0.04, 0.17, 0.12]} />
+              <meshStandardMaterial color={NIGHT.plinth} metalness={0.55} roughness={0.5} />
             </mesh>
+            {/* اللوح المعدني السفلي الصلب */}
+            <mesh position={[0, WALL_LOWER / 2 + 0.05, 0]} castShadow>
+              <boxGeometry args={[len, WALL_LOWER, 0.07]} />
+              <meshStandardMaterial color={NIGHT.shell} metalness={0.7} roughness={0.38} />
+            </mesh>
+            {/* الزجاج العلوي */}
+            <mesh position={[0, (WALL_LOWER + 0.1 + WALL_H - 0.12) / 2, 0]}>
+              <boxGeometry args={[len - 0.02, WALL_H - WALL_LOWER - 0.22, 0.04]} />
+              <meshStandardMaterial color="#bfe9f5" transparent opacity={0.16} roughness={0.08} metalness={0.1} depthWrite={false} />
+            </mesh>
+            {/* المدّة العلوية */}
             <mesh position={[0, WALL_H - 0.09, 0]}>
-              <boxGeometry args={[len + 0.06, 0.06, 0.08]} />
+              <boxGeometry args={[len + 0.06, 0.07, 0.1]} />
               <meshStandardMaterial color={NIGHT.shell} metalness={0.8} roughness={0.3} />
             </mesh>
             {[-len / 2, len / 2].map((o, i) => (
-              <mesh key={i} position={[o, WALL_H / 2 - 0.09, 0]}>
-                <boxGeometry args={[0.09, WALL_H, 0.09]} />
+              <mesh key={i} position={[o, WALL_H / 2 - 0.05, 0]} castShadow>
+                <boxGeometry args={[0.1, WALL_H, 0.1]} />
                 <meshStandardMaterial color={NIGHT.shell} metalness={0.75} roughness={0.35} />
               </mesh>
             ))}
@@ -190,7 +206,7 @@ function RoomFloors({ s, occCount }: {
   s: ReturnType<typeof cageStudio.get>;
   occCount: (r: Room3D) => number;
 }) {
-  const signW = Math.min(CELL - 0.2, 2.15);
+  const signW = Math.min(CELL - 0.1, 2.3);
   return (
     <>
       {s.rooms.map((r) => {
@@ -204,42 +220,62 @@ function RoomFloors({ s, occCount }: {
               <planeGeometry args={[w - 0.12, d - 0.12]} />
               <meshStandardMaterial color="#10192b" transparent opacity={0.5} roughness={0.9} />
             </mesh>
-            {/* الباب على حدّ الغرفة الأمامي: عضادتان + ساكف، واللافتة مركّبة
-                على الساكف والاسم مكتوب عليها مباشرة — لا شيء يطفو بالفضاء */}
+            {/* الباب على حدّ الغرفة الأمامي: عضادتان + ساكف، وفوقه لافتة
+                احترافية بطبقتين (ستيل خلفي بارز + لوح أمامي داكن بزوايا
+                دائرية) مثبّتة بمسندين على الساكف — لافتة حقيقية لا نص طائف */}
             <group position={[doorWX + CELL / 2, 0, doorWZ]}>
               {[-(CELL / 2 - 0.06), CELL / 2 - 0.06].map((o, i) => (
-                <mesh key={i} position={[o, WALL_H / 2 - 0.09, 0]} castShadow>
-                  <boxGeometry args={[0.11, WALL_H, 0.11]} />
+                <mesh key={i} position={[o, WALL_H / 2 - 0.05, 0]} castShadow>
+                  <boxGeometry args={[0.12, WALL_H + 0.08, 0.12]} />
                   <meshStandardMaterial color={NIGHT.shell} metalness={0.75} roughness={0.3} />
                 </mesh>
               ))}
-              <mesh position={[0, WALL_H - 0.14, 0]}>
-                <boxGeometry args={[CELL, 0.1, 0.13]} />
+              {/* الساكف */}
+              <mesh position={[0, WALL_H - 0.1, 0]} castShadow>
+                <boxGeometry args={[CELL, 0.12, 0.14]} />
                 <meshStandardMaterial color={NIGHT.shell} metalness={0.75} roughness={0.3} />
               </mesh>
-              {/* اللافتة: لوح معدني بحافة نيون سفلية */}
-              <mesh position={[0, WALL_H + 0.16, 0]} castShadow>
-                <boxGeometry args={[signW, 0.5, 0.09]} />
-                <meshStandardMaterial color={NIGHT.plate} metalness={0.7} roughness={0.35} />
-              </mesh>
-              <mesh position={[0, WALL_H - 0.085, 0.02]}>
-                <boxGeometry args={[signW, 0.04, 0.06]} />
-                <meshStandardMaterial color="#22d3ee" emissive="#22d3ee" emissiveIntensity={1.5} toneMapped={false} />
-              </mesh>
-              {/* الاسم «مطبوع» على اللوح — عرض فقط (بلا ضغط): اللافتة تُسقَط
-                  فوق خلايا الغرفة على الشاشة، ولو كانت قابلة للضغط لسرقت
-                  ضغطات بناء الأقفاص وراها — التعديل من أزرار ✏️ باللوح السفلي */}
-              <Html center position={[0, WALL_H + 0.16, 0.07]} distanceFactor={DF} zIndexRange={[16, 0]}
+              {/* مسندا تثبيت اللافتة على الساكف */}
+              {[-signW / 3, signW / 3].map((o, i) => (
+                <mesh key={i} position={[o, WALL_H + 0.02, 0]}>
+                  <cylinderGeometry args={[0.028, 0.028, 0.34, 10]} />
+                  <meshStandardMaterial color="#8d9aa8" metalness={0.9} roughness={0.25} />
+                </mesh>
+              ))}
+              {/* الطبقة الخلفية: ستيل مصقول أعرض قليلاً وبإزاحة — مثل اللافتات الفندقية */}
+              <RoundedBox args={[signW + 0.26, 0.66, 0.05]} radius={0.06} position={[0.06, WALL_H + 0.33, -0.05]} castShadow>
+                <meshStandardMaterial color="#cfd9e2" metalness={0.85} roughness={0.18} />
+              </RoundedBox>
+              {/* اللوح الأمامي الداكن بزوايا دائرية */}
+              <RoundedBox args={[signW, 0.56, 0.1]} radius={0.08} position={[0, WALL_H + 0.29, 0.02]} castShadow>
+                <meshStandardMaterial color="#3f4a57" metalness={0.45} roughness={0.4} />
+              </RoundedBox>
+              {/* إضاءة خفيفة تغسل اللافتة حتى تُقرأ ليلاً */}
+              <pointLight color="#dfeeff" intensity={0.5} distance={2.2} position={[0, WALL_H + 0.4, 0.7]} />
+              {/* الاسم «مطبوع» على مستوى اللوح: مصفوفة CSS تطابق إسقاط وجه
+                  اللوح بالإيزومترك (محور x يميل ٣٠° لليمين-تحت والرأسي يبقى
+                  رأسياً) فتميل الحروف مع اللافتة كأنها بارزة عليها فعلاً.
+                  عرض فقط (بلا ضغط) حتى لا يسرق ضغطات البناء وراه — التعديل
+                  من أزرار ✏️ باللوح السفلي */}
+              <Html center position={[0, WALL_H + 0.33, 0.085]} distanceFactor={DF} zIndexRange={[16, 0]}
                 style={{ pointerEvents: "none" }}>
                 <span data-sign3d={r.name}
-                  style={{ direction: "rtl", display: "grid", justifyItems: "center", lineHeight: 1.15, whiteSpace: "nowrap" }}>
+                  style={{
+                    direction: "rtl", display: "grid", justifyItems: "center", lineHeight: 1.2,
+                    whiteSpace: "nowrap", pointerEvents: "none",
+                    transform: "matrix(0.707, 0.408, 0, 0.816, 0, 0)",
+                  }}>
                   <b style={{
-                    color: "#eaf9ff", fontSize: 15.5, fontWeight: 900, letterSpacing: 0.3,
-                    maxWidth: 104, overflow: "hidden", textOverflow: "ellipsis",
-                    textShadow: "0 1px 2px #000c, 0 0 10px #22d3ee44",
+                    color: "#f6fafd", fontSize: 15, fontWeight: 900, letterSpacing: 0.4,
+                    maxWidth: 152, overflow: "hidden", textOverflow: "ellipsis",
+                    fontFamily: "system-ui, -apple-system, 'Segoe UI', sans-serif",
+                    textShadow: "0 -1px 0 #ffffff33, 0 1.5px 1px #00000090, 0 3px 5px #00000070",
                   }}>{r.name}</b>
-                  <i style={{ color: "#7fb6cf", fontSize: 9, fontStyle: "normal", fontWeight: 800 }}>
-                    {formatNum(occCount(r))} 🐾
+                  <i style={{
+                    color: "#b9c6d2", fontSize: 8.5, fontStyle: "normal", fontWeight: 800, letterSpacing: 1.2,
+                    borderTop: "1px solid #ffffff26", paddingTop: 2, marginTop: 1,
+                  }}>
+                    🐾 {formatNum(occCount(r))}
                   </i>
                 </span>
               </Html>
@@ -441,6 +477,7 @@ function Scene({ s, occOf, drag, carrySource, hoverCage, arrivedRef, camZoom, ct
     <>
       <color attach="background" args={[NIGHT.bg]} />
       <fog attach="fog" args={[NIGHT.bg, 28, 52]} />
+      <EnvLight />
       <OrthographicCamera makeDefault position={[12, 12, 12]} zoom={camZoom} near={0.1} far={80} />
       {/* تحكم الكاميرا: قرصة بأصبعين تكبّر، وسحب الأرضية (إصبع أو فأرة) يحرّك،
           والدوران معطّل حتى تبقى الزاوية الإيزومترية ثابتة. سحب بطاقات المرضى
@@ -537,6 +574,26 @@ const todayIdx = () => (new Date().getDay() + 1) % 7;
 const glass = (extra?: React.CSSProperties): React.CSSProperties => ({
   background: NIGHT.glassPanel, border: "1px solid #16324a", backdropFilter: "blur(10px)", ...extra,
 });
+
+/** خريطة بيئة محلية (بلا شبكة): المعادن بلا بيئة تعكس سواداً — هذي تخلي
+ *  ستيل اللافتات وألواح الجدران وأُطر الأقفاص تلمع كمعدن حقيقي، بشدة
+ *  مخفّضة حتى يبقى مزاج الليل. */
+function EnvLight() {
+  const gl = useThree((st) => st.gl);
+  const scene = useThree((st) => st.scene);
+  useEffect(() => {
+    const pmrem = new PMREMGenerator(gl);
+    const env = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+    scene.environment = env;
+    scene.environmentIntensity = 0.42;
+    return () => {
+      scene.environment = null;
+      env.dispose();
+      pmrem.dispose();
+    };
+  }, [gl, scene]);
+  return null;
+}
 
 function webglOK(): boolean {
   try {
