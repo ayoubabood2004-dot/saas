@@ -12,6 +12,7 @@ import {
   ClipboardList,
   ArrowRight,
   Activity,
+  Box,
   Lightbulb,
   RotateCw,
   WifiOff,
@@ -24,6 +25,8 @@ import {
 } from "lucide-react";
 import type { Appointment, Pet, Admission, Species, Reminder, Invoice, Product } from "@/types";
 import { repo } from "@/lib/repo";
+import { statusOf } from "@/lib/opsStatus";
+import { cageStudio, codesFromPrefs } from "@/components/cage3d/store";
 import { useAuth } from "@/contexts/AuthContext";
 import { formatTime, dateLocale, formatNum } from "@/lib/utils";
 import { playTap } from "@/lib/sounds";
@@ -53,6 +56,14 @@ const SPECIES_COLOR: Record<Species, string> = {
 // Tip of the day — bilingual (title + body keys resolved through i18n so the
 // advice reads in the user's language, not hardcoded English).
 const TIPS = ["coldChain", "painScore", "weightFirst", "triageColour", "ownerClarity"] as const;
+
+// ألوان نقاط الأقفاص — نفس دلالات أعمدة الاستقبال (علاج/فندقة علاجية/فندقة).
+const CAGE_DOT: Record<string, string> = {
+  care: "#f59e0b",
+  careBoarding: "#f43f5e",
+  boarding: "#0ea5e9",
+  done: "#10b981",
+};
 
 export function Dashboard() {
   const { t, i18n } = useTranslation();
@@ -155,6 +166,33 @@ export function Dashboard() {
   const casesDoneCount = activeCases.filter(cycleDone).length;
   const pctCases = activeCases.length ? casesDoneCount / activeCases.length : 0;
   const pctBoard = Math.min(boarding.length / 12, 1);
+
+  // بطاقة غرفة الأقفاص الحية: كل قفص نقطة بلون ساكنه (نفس ألوان الاستقبال).
+  // الرموز = تخطيط الغرفة المجسّمة ∪ خريطة 2D (clinic_prefs) ∪ أقفاص الرقود
+  // النشطة — فما يظهر عدد أقل من الواقع على أي جهاز.
+  const cage = useMemo(() => {
+    const normC = (c?: string | null) => (c ?? "").trim().toLowerCase();
+    const act = admissions.filter((a) => a.status === "active");
+    const occ = new Map<string, Admission>();
+    for (const a of act) {
+      const k = normC(a.cage);
+      if (k && !occ.has(k)) occ.set(k, a);
+    }
+    let codes: string[] = [];
+    try { codes = cageStudio.get().cages.map((c) => c.code); } catch { codes = []; }
+    const seen = new Set(codes.map(normC));
+    const extras = [...codesFromPrefs(), ...act.map((a) => (a.cage ?? "").trim()).filter(Boolean)];
+    for (const c of extras) {
+      const k = normC(c);
+      if (!seen.has(k)) { seen.add(k); codes.push(c); }
+    }
+    const dots = codes.map((c) => {
+      const a = occ.get(normC(c));
+      return { code: c, st: a ? statusOf(a) : null };
+    });
+    return { dots, occupied: dots.filter((d) => d.st).length, total: dots.length };
+  }, [admissions]);
+  const doseDueNow = activeCases.filter((a) => !cycleDone(a)).length;
 
   // Low-stock: any product at/below its reorder level (its own min_stock, else 5).
   const LOW_STOCK = 5;
@@ -374,6 +412,55 @@ export function Dashboard() {
 
         {/* Right rail: today's progress + upcoming + reminders + birthdays + tip */}
         <div className="space-y-6">
+          {/* غرفة الأقفاص الحية — الإشغال الآن بنقاط ملوّنة، وضغطة تفتح المشهد المجسّم */}
+          <Card padded data-cagecard>
+            <div className="mb-3 flex items-center justify-between">
+              <CardTitle>{t("dash.cageRoom", "غرفة الأقفاص")}</CardTitle>
+              <Button variant="ghost" size="sm" rightIcon={<ArrowRight size={15} />} onClick={() => { playTap(); navigate("/cage3d"); }}>
+                {t("dash.cageOpen", "افتحها")}
+              </Button>
+            </div>
+            {loading ? (
+              <Skeleton className="h-20 rounded-2xl" />
+            ) : cage.total === 0 ? (
+              <button
+                onClick={() => { playTap(); navigate("/cage3d"); }}
+                className="flex w-full items-center gap-3 rounded-2xl border border-dashed border-line p-4 text-start transition hover:border-brand-300 hover:bg-surface-2"
+              >
+                <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-brand-50 text-brand-600 dark:bg-brand-500/15"><Box size={19} /></span>
+                <span className="text-sm font-semibold text-ink-muted">{t("dash.cageEmpty", "ارسم غرف عيادتك وأقفاصها بدقائق — اضغط للبدء.")}</span>
+              </button>
+            ) : (
+              <button onClick={() => { playTap(); navigate("/cage3d"); }} className="w-full rounded-2xl text-start transition hover:bg-surface-2">
+                <p className="flex items-baseline gap-1.5">
+                  <span className="font-display text-2xl font-extrabold tabular-nums text-ink">{formatNum(cage.occupied)}</span>
+                  <span className="text-sm font-bold tabular-nums text-ink-subtle">/ {formatNum(cage.total)}</span>
+                  <span className="text-sm font-semibold text-ink-muted">{t("dash.cageBusy", "قفص مشغول الآن")}</span>
+                </p>
+                <div data-cagedots className="mt-2.5 flex flex-wrap gap-1.5">
+                  {cage.dots.slice(0, 36).map((d) => (
+                    <span
+                      key={d.code}
+                      title={d.code}
+                      className="h-3 w-3 rounded-full"
+                      style={d.st
+                        ? { background: CAGE_DOT[d.st], boxShadow: `0 0 6px ${CAGE_DOT[d.st]}88` }
+                        : { border: "1.5px solid #94a3b866" }}
+                    />
+                  ))}
+                  {cage.dots.length > 36 && (
+                    <span className="text-2xs font-bold text-ink-subtle">+{formatNum(cage.dots.length - 36)}</span>
+                  )}
+                </div>
+                {doseDueNow > 0 && (
+                  <p className="mt-2.5 text-xs font-bold text-warn-700 dark:text-warn-300">
+                    💉 {t("dash.cageDoses", { n: formatNum(doseDueNow), defaultValue: "{{n}} جرعة مستحقّة الآن — أقفاصها تومض بالغرفة" })}
+                  </p>
+                )}
+              </button>
+            )}
+          </Card>
+
           <Card padded>
             <div className="mb-3 flex items-center justify-between">
               <CardTitle>{t("dash.reorderSoon", "Reorder soon")}</CardTitle>

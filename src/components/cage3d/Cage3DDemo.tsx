@@ -61,6 +61,32 @@ const dayNo = (iso?: string) => {
   return Number.isNaN(t) ? 1 : Math.max(1, Math.floor((Date.now() - t) / 86400000) + 1);
 };
 
+/** جرعة العلاج مستحقّة؟ — نفس معادلة لوحات الاستقبال (ما انكملت اليوم أو مرّت
+ *  نافذة الدورة cycle_hours). الفندقة الصِرفة ما عندها جرعات. */
+const doseDueOf = (a: Admission): boolean => {
+  if (a.status !== "active" || (a.kind !== "treatment" && a.kind !== "treatment_boarding")) return false;
+  if (!a.last_completed_at) return true;
+  const cyc = a.cycle_hours && a.cycle_hours > 0 ? a.cycle_hours : 24;
+  return Date.now() >= new Date(a.last_completed_at).getTime() + cyc * 3600000;
+};
+
+/** خطوات الجولة التعريفية — تُعرض مرة واحدة لكل جهاز عند أول فتح. */
+const TOUR_KEY = "vp_cage3d_tour_v1";
+const TOUR: { emoji: string; title: string; body: string }[] = [
+  {
+    emoji: "🐾", title: "النقل بضغطتين",
+    body: "اضغط بطاقة الحيوان فوق قفصه، بعدين اضغط القفص الجديد — ينتقل فوراً، وينحفظ بالسيرفر ويظهر بالتقويم الرئيسي وبرحلة الحيوان.",
+  },
+  {
+    emoji: "📋", title: "كل شيء عن الساكن",
+    body: "اضغط جسم القفص: تشوف تفاصيل الحيوان وتفتح ملفه الطبي وتنقله. والقفص اللي يومض كهرماني 💉 يعني موعد جرعة ساكنه حان.",
+  },
+  {
+    emoji: "🔎", title: "وين الحيوان؟",
+    body: "بلوحة «المنامات» اكتب اسم الحيوان واضغط سطره — قفصه يلمع لك بالمشهد. وزر «إسكان حيوان» يجيب أي حيوان من سجلاتك ويحطه بقفص بضغطتين.",
+  },
+];
+
 const LEGEND: { label: string; c: string }[] = [
   { label: "فندقة", c: NEON.boarding },
   { label: "علاج", c: NEON.care },
@@ -494,9 +520,40 @@ export default function Cage3DDemo() {
   const [codeDraft, setCodeDraft] = useState("");
   const [picker, setPicker] = useState(false);
   const [pickQ, setPickQ] = useState("");
+  const [findQ, setFindQ] = useState("");
+  /* الجولة التعريفية — مرة واحدة لكل جهاز؛ رقم الخطوة أو null بعد إنهائها */
+  const [tour, setTour] = useState<number | null>(() => {
+    try { return localStorage.getItem(TOUR_KEY) ? null : 0; } catch { return null; }
+  });
   const arrivedRef = useRef(new Map<string, number>());
   const noteTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pulseTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const pending = useRef<{ code: string; x: number; y: number } | null>(null);
+  useEffect(() => () => { if (pulseTimer.current) clearInterval(pulseTimer.current); }, []);
+
+  const endTour = () => {
+    try { localStorage.setItem(TOUR_KEY, "1"); } catch { /* خصوصية متشددة — ما نكسر الشاشة */ }
+    setTour(null);
+  };
+
+  /** «وين الحيوان؟» — يخلي قفصه يلمع بالمشهد ٤ ثوانٍ (نبض متجدد كل نصف ثانية). */
+  const locate = (code: string, name: string) => {
+    playTap();
+    setCarrying(null);
+    setDetailFor(null);
+    if (pulseTimer.current) clearInterval(pulseTimer.current);
+    const until = performance.now() + 4200;
+    arrivedRef.current.set(code, performance.now());
+    pulseTimer.current = setInterval(() => {
+      if (performance.now() > until) {
+        if (pulseTimer.current) clearInterval(pulseTimer.current);
+        pulseTimer.current = null;
+        return;
+      }
+      arrivedRef.current.set(code, performance.now());
+    }, 480);
+    say(`${name} هنا — القفص ${code} يلمع لك`);
+  };
 
   const say = (msg: string) => {
     setNote(msg);
@@ -517,9 +574,16 @@ export default function Cage3DDemo() {
       emoji: p ? (SPECIES_EMOJI[p.species] ?? "🐾") : "🐾",
       status: st === "done" ? "boarding" : st,
       days: dayNo(a.admitted_on),
+      doseDue: doseDueOf(a),
     };
   };
   const actives = useMemo(() => ops.admissions.filter((a) => a.status !== "discharged"), [ops.admissions]);
+  /* دقّاقة كل دقيقة — حتى ينطفئ/يشتعل وميض «جرعة مستحقّة» بلا تحديث يدوي */
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setTick((v) => v + 1), 60000);
+    return () => clearInterval(id);
+  }, []);
   const occByCage = useMemo(() => {
     const m = new Map<string, Occupant>();
     for (const a of actives) {
@@ -529,7 +593,7 @@ export default function Cage3DDemo() {
     }
     return m;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [actives, ops.pets]);
+  }, [actives, ops.pets, tick]);
   const occOf = (code: string) => occByCage.get(norm(code)) ?? null;
   const carrySource = useMemo(() => {
     if (!carrying) return null;
@@ -786,6 +850,13 @@ export default function Cage3DDemo() {
   }
 
   const stays = s.cages.filter((c) => occOf(c.code));
+  /* «وين الحيوان؟» — ترشيح المنامات والراقدين بلا قفص باسم الحيوان */
+  const fq = findQ.trim().toLowerCase();
+  const staysShown = fq ? stays.filter((c) => occOf(c.code)!.name.toLowerCase().includes(fq)) : stays;
+  const unassignedShown = unassigned.flatMap((a) => {
+    const p = ops.pets[a.pet_id];
+    return p && (!fq || p.name.toLowerCase().includes(fq)) ? [{ a, p }] : [];
+  });
   const detailOcc = !build && detailFor ? occOf(detailFor) : null;
   const selCage = build && s.selected ? s.cages.find((c) => c.code === s.selected) : null;
   const editRoom = roomEdit ? s.rooms.find((r) => r.id === roomEdit) : null;
@@ -835,14 +906,21 @@ export default function Cage3DDemo() {
         </div>
       </div>
 
-      {/* لوحة المنامات — من الرقود الحقيقية */}
+      {/* لوحة المنامات — من الرقود الحقيقية + «وين الحيوان؟»: اضغط سطراً يلمع قفصه */}
       {!build && (
-        <div data-panel3d className="pointer-events-none absolute top-20 start-4 hidden w-56 rounded-2xl p-3 sm:start-6 sm:block" style={glass()}>
+        <div data-panel3d className="pointer-events-auto absolute top-20 start-4 hidden w-56 rounded-2xl p-3 sm:start-6 sm:block" style={glass()}>
           <div className="mb-2 flex items-center justify-between">
             <h2 className="text-xs font-black" style={{ color: NIGHT.ink }}>المنامات الحالية</h2>
             <span className="rounded-full px-1.5 text-[10px] font-black tabular-nums" style={{ background: "#12253a", color: "#7dd3fc" }}>
               {formatNum(stays.length)}
             </span>
+          </div>
+          <div className="relative mb-2">
+            <Search size={12} className="pointer-events-none absolute inset-y-0 my-auto ms-2" style={{ color: "#64809c" }} />
+            <input value={findQ} onChange={(e) => setFindQ(e.target.value)} data-find3d
+              placeholder="وين الحيوان؟ اكتب اسمه…"
+              className="h-8 w-full rounded-lg ps-7 pe-2 text-[11px] font-bold"
+              style={{ background: "#0c192b", color: NIGHT.ink, border: "1px solid #16324a" }} />
           </div>
           <div className="mb-2 flex justify-between px-0.5">
             {WEEK_LETTERS.map((l, i) => (
@@ -852,26 +930,41 @@ export default function Cage3DDemo() {
               </span>
             ))}
           </div>
-          <div className="space-y-1.5">
-            {stays.map((c) => {
+          <div className="space-y-1.5" style={{ maxHeight: "38vh", overflowY: "auto" }}>
+            {staysShown.map((c) => {
               const o = occOf(c.code)!;
               return (
-                <div key={c.code} className="flex items-center gap-2 rounded-lg px-2 py-1.5" style={{ background: "#0c192bcc" }}>
+                <button key={c.code} type="button" data-stay3d={c.code}
+                  onClick={() => locate(c.code, o.name)}
+                  className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-start transition hover:brightness-125"
+                  style={{ background: "#0c192bcc" }}>
                   <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: NEON[o.status], boxShadow: `0 0 7px ${NEON[o.status]}` }} />
-                  <span className="min-w-0 flex-1 truncate text-[11px] font-extrabold" style={{ color: NIGHT.ink }}>{o.name}</span>
+                  <span className="min-w-0 flex-1 truncate text-[11px] font-extrabold" style={{ color: NIGHT.ink }}>
+                    {o.name}{o.doseDue ? " 💉" : ""}
+                  </span>
                   <span className="shrink-0 text-[10px] font-bold" style={{ color: "#64809c" }}>
                     {KIND_AR[o.status]} · قفص {c.code}
                   </span>
-                </div>
+                </button>
               );
             })}
-            {stays.length === 0 && <p className="text-[10px] font-bold" style={{ color: "#64809c" }}>ما في منامات حالياً.</p>}
+            {/* الراقدون بلا قفص — ضغطة تحملهم للإسكان فوراً */}
+            {unassignedShown.map(({ a, p }) => (
+              <button key={a.id} type="button"
+                onClick={() => { playTap(); setCarrying(makeOcc(a)); say(`اضغط القفص اللي تريد تحط ${p.name} بيه`); }}
+                className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-start transition hover:brightness-125"
+                style={{ background: "#1d160ccc", border: "1px solid #7c520d55" }}>
+                <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: "#f0b26b", boxShadow: "0 0 7px #f0b26b" }} />
+                <span className="min-w-0 flex-1 truncate text-[11px] font-extrabold" style={{ color: NIGHT.ink }}>{p.name}</span>
+                <span className="shrink-0 text-[10px] font-bold" style={{ color: "#f0b26b" }}>بلا قفص — أسكنه</span>
+              </button>
+            ))}
+            {staysShown.length === 0 && unassignedShown.length === 0 && (
+              <p className="text-[10px] font-bold" style={{ color: "#64809c" }}>
+                {findQ.trim() ? "ما لقيناه بالمنامات — جرّب «إسكان حيوان» تحت." : "ما في منامات حالياً."}
+              </p>
+            )}
           </div>
-          {unassigned.length > 0 && (
-            <p className="mt-2 text-[10px] font-bold" style={{ color: "#f0b26b" }}>
-              {formatNum(unassigned.length)} حيوان راقد بلا قفص — «إسكان حيوان» تحت 👇
-            </p>
-          )}
         </div>
       )}
 
@@ -1151,6 +1244,34 @@ export default function Cage3DDemo() {
               <span className="h-2 w-2 rounded-full" style={{ background: l.c, boxShadow: `0 0 8px ${l.c}` }} /> {l.label}
             </span>
           ))}
+        </div>
+      )}
+
+      {/* الجولة التعريفية — ثلاث فقاعات، مرة واحدة لكل جهاز */}
+      {tour !== null && (
+        <div className="absolute inset-0 z-20 grid place-items-center p-4" style={{ background: "#000000a6" }}
+          onClick={endTour}>
+          <div data-tour3d className="w-full max-w-xs rounded-2xl p-5 text-center" style={glass()} onClick={(e) => e.stopPropagation()}>
+            <p className="text-4xl">{TOUR[tour].emoji}</p>
+            <h2 className="mt-2 text-sm font-black" style={{ color: NIGHT.ink }}>{TOUR[tour].title}</h2>
+            <p className="mt-1.5 text-xs font-bold leading-relaxed" style={{ color: "#8fa8bd" }}>{TOUR[tour].body}</p>
+            <div className="mt-3 flex items-center justify-center gap-1.5">
+              {TOUR.map((_, i) => (
+                <span key={i} className="h-1.5 rounded-full transition-all"
+                  style={{ width: i === tour ? 18 : 6, background: i === tour ? "#22d3ee" : "#2a4a63" }} />
+              ))}
+            </div>
+            <button type="button" data-tournext
+              onClick={() => { playTap(); if (tour + 1 < TOUR.length) setTour(tour + 1); else endTour(); }}
+              className="mt-4 h-10 w-full rounded-lg text-xs font-black"
+              style={{ background: "#22d3ee", color: "#04222b" }}>
+              {tour + 1 < TOUR.length ? "التالي" : "يلّا نبدي 🚀"}
+            </button>
+            <button type="button" onClick={() => { playTap(); endTour(); }}
+              className="mt-1.5 h-8 w-full rounded-lg text-[11px] font-extrabold" style={{ color: "#64809c" }}>
+              تخطّي الشرح
+            </button>
+          </div>
         </div>
       )}
     </div>

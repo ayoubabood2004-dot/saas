@@ -3,7 +3,7 @@ import { useFrame } from "@react-three/fiber";
 import { RoundedBox, Html } from "@react-three/drei";
 import { Color, MeshStandardMaterial } from "three";
 import type { Group, PointLight } from "three";
-import { NEON, NIGHT, DANGER, HOT, KIND_AR, statusOfCage, type CageSpec } from "./neon";
+import { NEON, NIGHT, DANGER, DOSE, HOT, KIND_AR, statusOfCage, type CageSpec } from "./neon";
 
 /* ============================================================================
  * CageUnit — حظيرة بيطرية واقعية مفتوحة السقف: قاعدة معدنية، أربعة قوائم
@@ -68,13 +68,19 @@ export function CageUnit({ spec, position, dropHint, dragActive, ghost, arrivedR
     const k = Math.min(1, dt * 7.5);
     const g = grp.current, shell = shellMat.current, l = glow.current;
 
-    const colorTarget = selected ? "#ffffff" : dropHint === "blocked" ? DANGER : dropHint === "hot" ? HOT : baseColor;
+    let colorTarget = selected ? "#ffffff" : dropHint === "blocked" ? DANGER : dropHint === "hot" ? HOT : baseColor;
     let intensity =
       selected ? 3.2 + Math.sin(state.clock.elapsedTime * 6) * 0.4 :
       dropHint === "hot" ? 4.0 :
       dropHint === "blocked" ? 1.8 :
       dropHint === "candidate" ? 1.5 + Math.sin(state.clock.elapsedTime * 5) * 0.5 :
       hover ? 3.0 : occupied ? 1.7 : 0.65;
+    // جرعة مستحقّة: بوضع السكون يتناوب الإطار بين لون الساكن والكهرماني —
+    // نداء «تعال أعطِ الدواء» يُقرأ من آخر الممر (الـlerp يحوّله لنبض ناعم).
+    if (spec.occupant?.doseDue && !selected && dropHint === "idle" && !hover) {
+      const w = Math.sin(state.clock.elapsedTime * 3.4);
+      if (w > 0) { colorTarget = DOSE; intensity = 2.8; }
+    }
     const arrived = arrivedRef.current.get(spec.code);
     if (arrived != null) {
       const age = (performance.now() - arrived) / 1000;
@@ -240,6 +246,12 @@ export function CageUnit({ spec, position, dropHint, dragActive, ghost, arrivedR
               <b style={{ color: NIGHT.ink, fontSize: 12.5, fontWeight: 800 }}>{spec.occupant.name}</b>
               <i style={{ color: baseColor, fontSize: 10, fontStyle: "normal", fontWeight: 700 }}>{KIND_AR[spec.occupant.status]}</i>
             </span>
+            {spec.occupant.doseDue && (
+              <span data-dose3d style={{
+                fontSize: 9.5, fontWeight: 800, color: "#3b2503", background: DOSE,
+                borderRadius: 7, padding: "2px 6px", boxShadow: `0 0 10px ${DOSE}aa`,
+              }}>💉 جرعة</span>
+            )}
           </div>
         </Html>
       )}

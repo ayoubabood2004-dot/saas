@@ -54,7 +54,12 @@ export interface Occupant {
   emoji: string;           // احتياط أخير بلا شبكة
   status: Exclude<CageStatus3D, "free">;
   days: number;
+  /** موعد جرعته حان (علاجيّات فقط): القفص يومض كهرماني حتى تُعطى. */
+  doseDue?: boolean;
 }
+
+/** كهرماني «جرعة مستحقّة» — وميض القفص الذي حان موعد علاج ساكنه. */
+export const DOSE = "#f59e0b";
 
 export interface CageSpec {
   code: string;

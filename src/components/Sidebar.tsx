@@ -7,6 +7,7 @@ import {
   CalendarCheck2,
   ClipboardList,
   LayoutGrid,
+  Box,
   ScanLine,
   Settings as SettingsIcon,
   History,
@@ -74,6 +75,8 @@ export function Sidebar() {
         { to: "/surgeries", icon: Slice, label: t("nav.surgeries", "العمليات") },
       ],
     },
+    // غرفة الأقفاص المجسّمة — رابط مباشر حتى ما تضل مخبّأة داخل الطبلات.
+    { to: "/cage3d", icon: Box, label: t("nav.cageRoom", "غرفة الأقفاص") },
     { to: "/records", icon: ClipboardList, label: t("records.title") },
     { to: "/inventory", icon: Boxes, label: t("nav.inventory", "Inventory"), show: can("manageInventory") },
     { to: "/retail", icon: Store, label: t("nav.retail", "Retail & Sales"), show: can("processSales") && has("pos") },
