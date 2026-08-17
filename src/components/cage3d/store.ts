@@ -215,7 +215,9 @@ export const cageStudio = {
     const c = code?.trim() || nextCode(state, room);
     if (state.cages.some((k) => norm(k.code) === norm(c))) return null;
     const cage: CagePlacement = { code: c, x, z };
-    commit({ cages: [...state.cages, cage], selected: cage.code }, true);
+    // بلا تحديد تلقائي: لوح الخصائص كان ينفتح بعد كل إضافة ويغطي الخلايا
+    // المجاورة فيقطع البناء السريع — التخصيص بضغطة متعمّدة على القفص.
+    commit({ cages: [...state.cages, cage] }, true);
     return cage;
   },
 

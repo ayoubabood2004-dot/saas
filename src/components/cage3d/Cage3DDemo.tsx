@@ -186,11 +186,9 @@ function Partitions({ rooms, s }: { rooms: Room3D[]; s: ReturnType<typeof cageSt
 }
 
 /* ── أرضيات الغرف + باب حقيقي بعضادتين وساكف تعلوه لافتة الاسم ──────────── */
-function RoomFloors({ s, build, occCount, onEditRoom }: {
+function RoomFloors({ s, occCount }: {
   s: ReturnType<typeof cageStudio.get>;
-  build: boolean;
   occCount: (r: Room3D) => number;
-  onEditRoom: (id: string) => void;
 }) {
   const signW = Math.min(CELL - 0.2, 2.15);
   return (
@@ -228,26 +226,22 @@ function RoomFloors({ s, build, occCount, onEditRoom }: {
                 <boxGeometry args={[signW, 0.04, 0.06]} />
                 <meshStandardMaterial color="#22d3ee" emissive="#22d3ee" emissiveIntensity={1.5} toneMapped={false} />
               </mesh>
-              {/* الاسم «مطبوع» على اللوح — بلا خلفية ولا إطار، يتحجّم مع الكاميرا */}
+              {/* الاسم «مطبوع» على اللوح — عرض فقط (بلا ضغط): اللافتة تُسقَط
+                  فوق خلايا الغرفة على الشاشة، ولو كانت قابلة للضغط لسرقت
+                  ضغطات بناء الأقفاص وراها — التعديل من أزرار ✏️ باللوح السفلي */}
               <Html center position={[0, WALL_H + 0.16, 0.07]} distanceFactor={DF} zIndexRange={[16, 0]}
-                style={{ pointerEvents: build ? "auto" : "none" }}>
-                <button type="button" data-sign3d={r.name}
-                  onPointerDown={(e) => e.stopPropagation()}
-                  onClick={(e) => { e.stopPropagation(); if (build) { playTap(); onEditRoom(r.id); } }}
-                  style={{
-                    direction: "rtl", display: "grid", justifyItems: "center", lineHeight: 1.15,
-                    background: "transparent", border: "none", padding: 0,
-                    cursor: build ? "pointer" : "default", whiteSpace: "nowrap",
-                  }}>
+                style={{ pointerEvents: "none" }}>
+                <span data-sign3d={r.name}
+                  style={{ direction: "rtl", display: "grid", justifyItems: "center", lineHeight: 1.15, whiteSpace: "nowrap" }}>
                   <b style={{
                     color: "#eaf9ff", fontSize: 15.5, fontWeight: 900, letterSpacing: 0.3,
                     maxWidth: 104, overflow: "hidden", textOverflow: "ellipsis",
                     textShadow: "0 1px 2px #000c, 0 0 10px #22d3ee44",
                   }}>{r.name}</b>
                   <i style={{ color: "#7fb6cf", fontSize: 9, fontStyle: "normal", fontWeight: 800 }}>
-                    {formatNum(occCount(r))} 🐾{build ? " · اضغط للتعديل" : ""}
+                    {formatNum(occCount(r))} 🐾
                   </i>
-                </button>
+                </span>
               </Html>
             </group>
           </group>
@@ -408,7 +402,7 @@ function DragAvatar({ drag, s, onReturned }: {
   );
 }
 
-function Scene({ s, occOf, drag, carrySource, hoverCage, arrivedRef, camZoom, ctlRef, setHoverCage, onCardDown, onReturned, onTapCage, onPickCell, onEditRoom }: {
+function Scene({ s, occOf, drag, carrySource, hoverCage, arrivedRef, camZoom, ctlRef, setHoverCage, onCardDown, onReturned, onTapCage, onPickCell }: {
   s: ReturnType<typeof cageStudio.get>;
   occOf: (code: string) => Occupant | null;
   drag: DragState | null;
@@ -422,7 +416,6 @@ function Scene({ s, occOf, drag, carrySource, hoverCage, arrivedRef, camZoom, ct
   onReturned: () => void;
   onTapCage: (code: string) => void;
   onPickCell: (x: number, z: number) => void;
-  onEditRoom: (id: string) => void;
 }) {
   const wood = useMemo(makeWoodTexture, []);
   useEffect(() => () => wood.dispose(), [wood]);
@@ -503,7 +496,7 @@ function Scene({ s, occOf, drag, carrySource, hoverCage, arrivedRef, camZoom, ct
           fadeDistance={30} fadeStrength={1.4} followCamera={false} />
       )}
 
-      <RoomFloors s={s} build={build} occCount={occCount} onEditRoom={onEditRoom} />
+      <RoomFloors s={s} occCount={occCount} />
       <Partitions rooms={s.rooms} s={s} />
       {build && <CellPads s={s} onPick={onPickCell} />}
 
@@ -829,8 +822,7 @@ export default function Cage3DDemo() {
     const cage = cageStudio.placeCage(x, z);
     if (cage) {
       playSuccess();
-      setCodeDraft(cage.code);
-      say(`انضاف القفص ${cage.code} — رقمه ولونه بلوح الخصائص`);
+      say(`انضاف القفص ${cage.code} — كمّل بناء، ورقمه ولونه بضغطة عليه`);
     }
   };
 
@@ -968,8 +960,7 @@ export default function Cage3DDemo() {
         <Suspense fallback={null}>
           <Scene s={s} occOf={occOf} drag={drag} carrySource={carrySource} hoverCage={hoverCage}
             arrivedRef={arrivedRef} camZoom={camZoom} ctlRef={ctlRef} setHoverCage={setHoverCage} onCardDown={onCardDown}
-            onReturned={() => setDrag(null)} onTapCage={onTapCage} onPickCell={onPickCell}
-            onEditRoom={(id) => { setRoomEdit(id); setRenumBase(""); }} />
+            onReturned={() => setDrag(null)} onTapCage={onTapCage} onPickCell={onPickCell} />
         </Suspense>
       </Canvas>
 
@@ -979,7 +970,7 @@ export default function Cage3DDemo() {
           <h1 className="text-lg font-black" style={{ color: NIGHT.ink }}>لوحة تحكم الأقفاص المتقدمة — عيادة doctorVet</h1>
           <p className="mt-0.5 text-xs font-bold" style={{ color: "#8fa8bd" }}>
             {build
-              ? "وضع البناء: اضغط خلية خضراء = قفص جديد · اضغط القفص لرقمه ولونه · اضغط لافتة الغرفة لاسمها وترقيمها"
+              ? "وضع البناء: اضغط خلية خضراء = قفص جديد · اضغط القفص لرقمه ولونه · وعدّل أي غرفة من أزرار ✏️ تحت"
               : "اضغط بطاقة المريض ثم القفص الجديد — انتهى · اضغط جسم القفص لتفاصيله · كبّر بأصبعين واسحب الأرضية تتحرك"}
           </p>
         </div>
@@ -1185,10 +1176,23 @@ export default function Cage3DDemo() {
             <span className="text-[11px] font-extrabold">قفص جديد — اضغط خلية خضراء أو اسحبني</span>
           </div>
           <button type="button" onClick={() => { playTap(); setRoomName(""); setRoomDialog(true); }}
-            className="inline-flex h-9 items-center gap-1.5 rounded-xl px-3 text-[11px] font-extrabold"
+            className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-xl px-3 text-[11px] font-extrabold"
             style={{ background: "#12253a", color: "#9fdcef", border: "1px solid #164e63" }}>
             <Plus size={13} /> غرفة جديدة
           </button>
+          {/* تعديل الغرف من هنا (اسم، ترقيم، لون، حذف) — لا من لافتاتها */}
+          <div className="flex items-center gap-1.5 overflow-x-auto" style={{ maxWidth: "38vw" }}>
+            {s.rooms.map((r) => (
+              <button key={r.id} type="button" data-roomchip={r.name}
+                onClick={() => { playTap(); setRoomEdit(r.id); setRenumBase(""); }}
+                className="inline-flex h-9 shrink-0 items-center gap-1 rounded-xl px-2.5 text-[11px] font-extrabold"
+                style={roomEdit === r.id
+                  ? { background: "#22d3ee", color: "#04222b" }
+                  : { background: "#12253a", color: "#9fdcef", border: "1px solid #164e63" }}>
+                ✏️ {r.name}
+              </button>
+            ))}
+          </div>
           <span className="px-1 text-[10px] font-bold" style={{ color: "#64809c" }}>
             {formatNum(s.rooms.length)} غرف · {formatNum(s.cages.length)} قفص
           </span>
