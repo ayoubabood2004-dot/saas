@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useFrame } from "@react-three/fiber";
 import { RoundedBox, Html } from "@react-three/drei";
-import { Color, MeshStandardMaterial } from "three";
+import { CanvasTexture, Color, MeshStandardMaterial } from "three";
 import type { Group, PointLight } from "three";
 import { DF, NEON, NIGHT, DANGER, DOSE, HOT, KIND_AR, statusOfCage, type CageSpec } from "./neon";
 
@@ -63,6 +63,29 @@ export function CageUnit({ spec, position, dropHint, dragActive, ghost, arrivedR
     // eslint-disable-next-line react-hooks/exhaustive-deps
     []);
   useEffect(() => () => rimMat.dispose(), [rimMat]);
+
+  // نسيج رقم القفص — يُرسم بالكانفس مرة لكل رمز (خط النظام، فوري، بلا شبكة)
+  const codeTex = useMemo(() => {
+    const c = document.createElement("canvas");
+    c.width = 256;
+    c.height = 96;
+    const g = c.getContext("2d")!;
+    g.clearRect(0, 0, 256, 96);
+    g.textAlign = "center";
+    g.textBaseline = "middle";
+    g.font = "800 52px ui-monospace, SFMono-Regular, Menlo, monospace";
+    let code = spec.code;
+    while (g.measureText(code).width > 236 && code.length > 2) code = code.slice(0, -1);
+    g.shadowColor = "#000000aa";
+    g.shadowOffsetY = 2;
+    g.shadowBlur = 2;
+    g.fillStyle = NIGHT.plateInk;
+    g.fillText(code, 128, 50);
+    const t = new CanvasTexture(c);
+    t.anisotropy = 8;
+    return t;
+  }, [spec.code]);
+  useEffect(() => () => codeTex.dispose(), [codeTex]);
 
   useFrame((state, dt) => {
     const k = Math.min(1, dt * 7.5);
@@ -187,16 +210,20 @@ export function CageUnit({ spec, position, dropHint, dragActive, ghost, arrivedR
       <RoundedBox args={[0.52, 0.2, 0.03]} radius={0.02} position={[0, -CAGE_H / 2 + LOWER_H / 2 + 0.02, CAGE_D / 2 + 0.012]}>
         <meshStandardMaterial color={NIGHT.plate} metalness={0.8} roughness={0.35} />
       </RoundedBox>
-      {/* الرقم «محفور» بلوحة معدنية — بعنصر DOM لا بنص مجسّم (نص drei يجلب خطاً
-       *  بـWorker وتعثّره كان يعلّق المشهد). distanceFactor يكبّره مع الكاميرا.
-       *  نفس العنصر يحمل مرساة الاختبارات data-cage3d — لوحة DOM أقل لكل قفص. */}
-      <Html center position={[0, -CAGE_H / 2 + LOWER_H / 2 + 0.02, CAGE_D / 2 + 0.03]}
-        distanceFactor={DF} zIndexRange={[10, 0]} style={{ pointerEvents: "none" }}>
-        <span data-cage3d={spec.code} style={{
-          fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: 11, fontWeight: 800,
-          letterSpacing: 1, color: NIGHT.plateInk, textShadow: "0 1px 0 #0008", whiteSpace: "nowrap",
-        }}>{spec.code}</span>
-      </Html>
+      {/* الرقم داخل خامة اللوحة نفسها (نسيج canvas): جزء فيزيائي من القفص
+       *  يميل وينحجب معه — لا نص DOM طائف ولا نص مجسّم يجلب خطاً بـWorker
+       *  (تعثّره كان يعلّق المشهد). وبالإنتاج: صفر عناصر DOM للقفص الفاضي. */}
+      <mesh position={[0, -CAGE_H / 2 + LOWER_H / 2 + 0.02, CAGE_D / 2 + 0.03]}>
+        <planeGeometry args={[0.48, 0.18]} />
+        <meshBasicMaterial map={codeTex} transparent toneMapped={false} />
+      </mesh>
+      {/* مرساة اختبارات غير مرئية — ببيئة التطوير فقط */}
+      {import.meta.env.DEV && (
+        <Html center position={[0, -CAGE_H / 2 + LOWER_H / 2 + 0.02, CAGE_D / 2 + 0.035]}
+          zIndexRange={[10, 0]} style={{ pointerEvents: "none" }}>
+          <span data-cage3d={spec.code} style={{ width: 12, height: 8, display: "block" }} />
+        </Html>
+      )}
 
       {/* ضوء الحالة داخل الحظيرة — يصبغ الفرشة والزجاج بلون الراقد */}
       <pointLight ref={glow} color={baseColor} intensity={occupied ? 1.0 : 0.3} distance={2.6} position={[0, 0.25, 0.2]} />

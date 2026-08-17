@@ -7,7 +7,7 @@ import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment
 import type { Group, Mesh, MeshBasicMaterial, MeshStandardMaterial } from "three";
 import { ChevronRight, Hammer, ClipboardList, Maximize, Minus, Move, Plus, Search, Trash2, X, FileText, UserPlus } from "lucide-react";
 import { CageUnit, CAGE_W, CAGE_D, type DropHint } from "./CageUnit";
-import { DF, NEON, NIGHT, KIND_AR, SPECIES_AR, SPECIES_EMOJI, type Occupant } from "./neon";
+import { NEON, NIGHT, KIND_AR, SPECIES_AR, SPECIES_EMOJI, type Occupant } from "./neon";
 import {
   CELL, LED_CHOICES, cageStudio, useCageStudio, cageAt, cellFree, bounds,
   cellWorld, cornerWorld, buildPartitions, doorCell, codesFromPrefs, type Room3D,
@@ -201,6 +201,45 @@ function Partitions({ rooms, s }: { rooms: Room3D[]; s: ReturnType<typeof cageSt
   );
 }
 
+/** وجه اللافتة: الاسم مرسوم داخل خامة اللوح نفسها (نسيج canvas) — جزء
+ *  فيزيائي من اللافتة يميل وينحجب معها بدقة مطلقة، لا نص DOM طائف.
+ *  كانفس النص يرسم فوراً بخط النظام — بلا جلب خطوط ولا Worker. */
+function SignFace({ name, countLabel, w }: { name: string; countLabel: string; w: number }) {
+  const tex = useMemo(() => {
+    const c = document.createElement("canvas");
+    c.width = 512; c.height = 144;
+    const g = c.getContext("2d")!;
+    g.clearRect(0, 0, 512, 144);
+    g.textAlign = "center";
+    g.textBaseline = "middle";
+    g.direction = "rtl";
+    g.font = "900 56px system-ui, -apple-system, 'Segoe UI', 'Noto Sans Arabic', sans-serif";
+    let nm = name.trim() || "غرفة";
+    while (g.measureText(nm).width > 470 && nm.length > 2) nm = nm.slice(0, -1);
+    if (nm !== name.trim() && nm.length < name.trim().length) nm += "…";
+    g.shadowColor = "#000000cc";
+    g.shadowBlur = 5;
+    g.shadowOffsetY = 3;
+    g.fillStyle = "#f7fbfe";
+    g.fillText(nm, 256, 56);
+    g.shadowBlur = 0;
+    g.shadowOffsetY = 0;
+    g.fillStyle = "#bcc9d5";
+    g.font = "800 28px system-ui, -apple-system, 'Segoe UI', sans-serif";
+    g.fillText(countLabel, 256, 118);
+    const t = new CanvasTexture(c);
+    t.anisotropy = 8;
+    return t;
+  }, [name, countLabel]);
+  useEffect(() => () => tex.dispose(), [tex]);
+  return (
+    <mesh position={[0, WALL_H + 0.29, 0.073]}>
+      <planeGeometry args={[w, w * (144 / 512)]} />
+      <meshBasicMaterial map={tex} transparent toneMapped={false} />
+    </mesh>
+  );
+}
+
 /* ── أرضيات الغرف + باب حقيقي بعضادتين وساكف تعلوه لافتة الاسم ──────────── */
 function RoomFloors({ s, occCount }: {
   s: ReturnType<typeof cageStudio.get>;
@@ -252,33 +291,14 @@ function RoomFloors({ s, occCount }: {
               </RoundedBox>
               {/* إضاءة خفيفة تغسل اللافتة حتى تُقرأ ليلاً */}
               <pointLight color="#dfeeff" intensity={0.5} distance={2.2} position={[0, WALL_H + 0.4, 0.7]} />
-              {/* الاسم «مطبوع» على مستوى اللوح: مصفوفة CSS تطابق إسقاط وجه
-                  اللوح بالإيزومترك (محور x يميل ٣٠° لليمين-تحت والرأسي يبقى
-                  رأسياً) فتميل الحروف مع اللافتة كأنها بارزة عليها فعلاً.
-                  عرض فقط (بلا ضغط) حتى لا يسرق ضغطات البناء وراه — التعديل
-                  من أزرار ✏️ باللوح السفلي */}
-              <Html center position={[0, WALL_H + 0.33, 0.085]} distanceFactor={DF} zIndexRange={[16, 0]}
-                style={{ pointerEvents: "none" }}>
-                <span data-sign3d={r.name}
-                  style={{
-                    direction: "rtl", display: "grid", justifyItems: "center", lineHeight: 1.2,
-                    whiteSpace: "nowrap", pointerEvents: "none",
-                    transform: "matrix(0.707, 0.408, 0, 0.816, 0, 0)",
-                  }}>
-                  <b style={{
-                    color: "#f6fafd", fontSize: 15, fontWeight: 900, letterSpacing: 0.4,
-                    maxWidth: 152, overflow: "hidden", textOverflow: "ellipsis",
-                    fontFamily: "system-ui, -apple-system, 'Segoe UI', sans-serif",
-                    textShadow: "0 -1px 0 #ffffff33, 0 1.5px 1px #00000090, 0 3px 5px #00000070",
-                  }}>{r.name}</b>
-                  <i style={{
-                    color: "#b9c6d2", fontSize: 8.5, fontStyle: "normal", fontWeight: 800, letterSpacing: 1.2,
-                    borderTop: "1px solid #ffffff26", paddingTop: 2, marginTop: 1,
-                  }}>
-                    🐾 {formatNum(occCount(r))}
-                  </i>
-                </span>
-              </Html>
+              {/* الاسم داخل خامة اللوح نفسها — انظر SignFace */}
+              <SignFace name={r.name} countLabel={`🐾 ${formatNum(occCount(r))}`} w={signW - 0.12} />
+              {/* مرساة اختبارات غير مرئية — ببيئة التطوير فقط */}
+              {import.meta.env.DEV && (
+                <Html center position={[0, WALL_H + 0.29, 0.09]} zIndexRange={[8, 0]} style={{ pointerEvents: "none" }}>
+                  <span data-sign3d={r.name} style={{ width: 1, height: 1, display: "block" }} />
+                </Html>
+              )}
             </group>
           </group>
         );
