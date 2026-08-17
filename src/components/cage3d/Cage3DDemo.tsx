@@ -1,10 +1,10 @@
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Canvas, useFrame } from "@react-three/fiber";
-import { OrthographicCamera, ContactShadows, Html, Grid as DreiGrid } from "@react-three/drei";
-import { CanvasTexture, Plane, RepeatWrapping, Vector2, Vector3 } from "three";
+import { OrthographicCamera, ContactShadows, Html, Grid as DreiGrid, MapControls } from "@react-three/drei";
+import { CanvasTexture, MOUSE, Plane, RepeatWrapping, TOUCH, Vector2, Vector3 } from "three";
 import type { Group, Mesh, MeshBasicMaterial, MeshStandardMaterial } from "three";
-import { ChevronRight, Hammer, ClipboardList, Move, Plus, Search, Trash2, X, FileText, UserPlus } from "lucide-react";
+import { ChevronRight, Hammer, ClipboardList, Maximize, Minus, Move, Plus, Search, Trash2, X, FileText, UserPlus } from "lucide-react";
 import { CageUnit, CAGE_W, CAGE_D, type DropHint } from "./CageUnit";
 import { NEON, NIGHT, KIND_AR, SPECIES_AR, SPECIES_EMOJI, type Occupant } from "./neon";
 import {
@@ -70,8 +70,9 @@ const doseDueOf = (a: Admission): boolean => {
   return Date.now() >= new Date(a.last_completed_at).getTime() + cyc * 3600000;
 };
 
-/** خطوات الجولة التعريفية — تُعرض مرة واحدة لكل جهاز عند أول فتح. */
-const TOUR_KEY = "vp_cage3d_tour_v1";
+/** خطوات الجولة التعريفية — تُعرض مرة واحدة لكل جهاز عند أول فتح.
+ *  v2: انضافت خطوة الكاميرا (تكبير وتحريك) فتنعرض مرة جديدة لمن شاف v1. */
+const TOUR_KEY = "vp_cage3d_tour_v2";
 const TOUR: { emoji: string; title: string; body: string }[] = [
   {
     emoji: "🐾", title: "النقل بضغطتين",
@@ -82,10 +83,25 @@ const TOUR: { emoji: string; title: string; body: string }[] = [
     body: "اضغط جسم القفص: تشوف تفاصيل الحيوان وتفتح ملفه الطبي وتنقله. والقفص اللي يومض كهرماني 💉 يعني موعد جرعة ساكنه حان.",
   },
   {
+    emoji: "🤏", title: "كبّر وتحرّك براحتك",
+    body: "قرّب وبعّد بأصبعين (أو بعجلة الفأرة)، واسحب الأرضية بإصبع واحد حتى تتحرك بالمكان. وأزرار ＋ − ⛶ على الجنب — زر ⛶ يرجّعك للمنظر الكامل بضغطة.",
+  },
+  {
     emoji: "🔎", title: "وين الحيوان؟",
     body: "بلوحة «المنامات» اكتب اسم الحيوان واضغط سطره — قفصه يلمع لك بالمشهد. وزر «إسكان حيوان» يجيب أي حيوان من سجلاتك ويحطه بقفص بضغطتين.",
   },
 ];
+
+/** حدود تكبير الكاميرا — أوسع من نطاق الملاءمة التلقائية (44–92) بهامش مريح. */
+const ZOOM_MIN = 20, ZOOM_MAX = 200;
+
+/** واجهة التحكم بالكاميرا التي نحتاجها من MapControls — بنيوية حتى لا نستورد
+ *  أنواع three-stdlib مباشرة. */
+interface CamCtl {
+  target: Vector3;
+  object: { position: Vector3; zoom: number; updateProjectionMatrix: () => void };
+  update: () => void;
+}
 
 const LEGEND: { label: string; c: string }[] = [
   { label: "فندقة", c: NEON.boarding },
@@ -361,13 +377,15 @@ function DragAvatar({ drag, s, onReturned }: {
   );
 }
 
-function Scene({ s, occOf, drag, carrySource, hoverCage, arrivedRef, setHoverCage, onCardDown, onReturned, onTapCage, onPickCell, onEditRoom }: {
+function Scene({ s, occOf, drag, carrySource, hoverCage, arrivedRef, camZoom, ctlRef, setHoverCage, onCardDown, onReturned, onTapCage, onPickCell, onEditRoom }: {
   s: ReturnType<typeof cageStudio.get>;
   occOf: (code: string) => Occupant | null;
   drag: DragState | null;
   carrySource: string | null;      // رمز قفص المحمول (إن كان له قفص)
   hoverCage: string | null;
   arrivedRef: React.MutableRefObject<Map<string, number>>;
+  camZoom: number;                 // ملاءمة تلقائية — يبقى بيد المستخدم بعد أول قرصة
+  ctlRef: React.MutableRefObject<CamCtl | null>;
   setHoverCage: (c: string | null) => void;
   onCardDown: (code: string, e: { clientX: number; clientY: number }) => void;
   onReturned: () => void;
@@ -380,8 +398,6 @@ function Scene({ s, occOf, drag, carrySource, hoverCage, arrivedRef, setHoverCag
   const build = s.mode === "build";
 
   const b = bounds(s);
-  const span = Math.max(b.maxX - b.minX, (b.maxZ - b.minZ) * 1.4) * CELL;
-  const zoom = Math.max(44, Math.min(92, 660 / Math.max(span, 7)));
   const [wminX, wminZ] = cornerWorld(s, b.minX, b.minZ);
   const wallZ = wminZ - 1.7, wallX = wminX - 1.7;
 
@@ -401,8 +417,22 @@ function Scene({ s, occOf, drag, carrySource, hoverCage, arrivedRef, setHoverCag
     <>
       <color attach="background" args={[NIGHT.bg]} />
       <fog attach="fog" args={[NIGHT.bg, 28, 52]} />
-      <OrthographicCamera makeDefault position={[12, 12, 12]} zoom={zoom} near={0.1} far={80}
-        onUpdate={(c) => c.lookAt(0, 0.35, 0)} />
+      <OrthographicCamera makeDefault position={[12, 12, 12]} zoom={camZoom} near={0.1} far={80} />
+      {/* تحكم الكاميرا: قرصة بأصبعين تكبّر، وسحب الأرضية (إصبع أو فأرة) يحرّك،
+          والدوران معطّل حتى تبقى الزاوية الإيزومترية ثابتة. سحب بطاقات المرضى
+          ما يتأثر — أحداثها تُلتقط على عنصر DOM فلا تصل للكانفس أصلاً. */}
+      <MapControls
+        makeDefault
+        enableRotate={false}
+        enableDamping
+        dampingFactor={0.14}
+        minZoom={ZOOM_MIN}
+        maxZoom={ZOOM_MAX}
+        target={[0, 0.35, 0]}
+        touches={{ ONE: TOUCH.PAN, TWO: TOUCH.DOLLY_PAN }}
+        mouseButtons={{ LEFT: MOUSE.PAN, MIDDLE: MOUSE.DOLLY, RIGHT: MOUSE.PAN }}
+        ref={(v: unknown) => { ctlRef.current = v as CamCtl | null; }}
+      />
 
       <ambientLight intensity={0.55} />
       <directionalLight color="#ffe9d2" position={[6, 11, 4]} intensity={1.1} castShadow
@@ -530,6 +560,42 @@ export default function Cage3DDemo() {
   const pulseTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const pending = useRef<{ code: string; x: number; y: number } | null>(null);
   useEffect(() => () => { if (pulseTimer.current) clearInterval(pulseTimer.current); }, []);
+
+  /* الكاميرا: ملاءمة تلقائية على التخطيط + أزرار تكبير/تصغير/توسيط */
+  const ctlRef = useRef<CamCtl | null>(null);
+  const camZoom = useMemo(() => {
+    const b = bounds(s);
+    const span = Math.max(b.maxX - b.minX, (b.maxZ - b.minZ) * 1.4) * CELL;
+    return Math.max(44, Math.min(92, 660 / Math.max(span, 7)));
+  }, [s]);
+  const zoomBy = (f: number) => {
+    playTap();
+    const c = ctlRef.current;
+    if (!c) return;
+    c.object.zoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, c.object.zoom * f));
+    c.object.updateProjectionMatrix();
+    c.update();
+  };
+  /** رجوع للمنظر الكامل: وسط المشهد + ملاءمة التخطيط الحالي (لا حالة لحظة الفتح). */
+  const resetCam = () => {
+    playTap();
+    const c = ctlRef.current;
+    if (!c) return;
+    c.target.set(0, 0.35, 0);
+    c.object.position.set(12, 12, 12);
+    c.object.zoom = camZoom;
+    c.object.updateProjectionMatrix();
+    c.update();
+  };
+  /* مجس للاختبارات الآلية (بيئة التطوير فقط) — يقرأ حالة الكاميرا الفعلية */
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    (window as unknown as Record<string, unknown>).__cageCam = () => {
+      const c = ctlRef.current;
+      return c ? { zoom: c.object.zoom, tx: c.target.x, tz: c.target.z } : null;
+    };
+    return () => { delete (window as unknown as Record<string, unknown>).__cageCam; };
+  }, []);
 
   const endTour = () => {
     try { localStorage.setItem(TOUR_KEY, "1"); } catch { /* خصوصية متشددة — ما نكسر الشاشة */ }
@@ -867,7 +933,7 @@ export default function Cage3DDemo() {
       <Canvas shadows dpr={[1, 2]}>
         <Suspense fallback={null}>
           <Scene s={s} occOf={occOf} drag={drag} carrySource={carrySource} hoverCage={hoverCage}
-            arrivedRef={arrivedRef} setHoverCage={setHoverCage} onCardDown={onCardDown}
+            arrivedRef={arrivedRef} camZoom={camZoom} ctlRef={ctlRef} setHoverCage={setHoverCage} onCardDown={onCardDown}
             onReturned={() => setDrag(null)} onTapCage={onTapCage} onPickCell={onPickCell}
             onEditRoom={(id) => { setRoomEdit(id); setRenumBase(""); }} />
         </Suspense>
@@ -880,7 +946,7 @@ export default function Cage3DDemo() {
           <p className="mt-0.5 text-xs font-bold" style={{ color: "#8fa8bd" }}>
             {build
               ? "وضع البناء: اضغط خلية خضراء = قفص جديد · اضغط القفص لرقمه ولونه · اضغط لافتة الغرفة لاسمها وترقيمها"
-              : "اضغط بطاقة المريض ثم القفص الجديد — انتهى · اضغط جسم القفص لتفاصيله وملفه الطبي"}
+              : "اضغط بطاقة المريض ثم القفص الجديد — انتهى · اضغط جسم القفص لتفاصيله · كبّر بأصبعين واسحب الأرضية تتحرك"}
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
@@ -985,6 +1051,25 @@ export default function Cage3DDemo() {
           </div>
         </div>
       )}
+
+      {/* أزرار الكاميرا — تكبير/تصغير/رجوع للمنظر الكامل (لغير المتعوّد على القرصة) */}
+      <div className="absolute end-4 top-1/2 flex -translate-y-1/2 flex-col gap-1.5 sm:end-6">
+        <button type="button" data-zin3d onClick={() => zoomBy(1.35)} aria-label="تكبير"
+          className="grid h-10 w-10 place-items-center rounded-xl transition active:scale-95"
+          style={{ ...glass(), color: "#9fdcef" }}>
+          <Plus size={17} />
+        </button>
+        <button type="button" data-zout3d onClick={() => zoomBy(1 / 1.35)} aria-label="تصغير"
+          className="grid h-10 w-10 place-items-center rounded-xl transition active:scale-95"
+          style={{ ...glass(), color: "#9fdcef" }}>
+          <Minus size={17} />
+        </button>
+        <button type="button" data-zfit3d onClick={resetCam} aria-label="المنظر الكامل"
+          className="grid h-10 w-10 place-items-center rounded-xl transition active:scale-95"
+          style={{ ...glass(), color: "#9fdcef" }}>
+          <Maximize size={16} />
+        </button>
+      </div>
 
       {/* زر «إسكان حيوان» — بحث بسجلاتك وحطّه بقفص */}
       {!build && !carrying && (
