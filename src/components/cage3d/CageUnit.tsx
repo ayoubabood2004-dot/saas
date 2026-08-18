@@ -47,6 +47,10 @@ export function CageUnit({ spec, position, dropHint, dragActive, ghost, arrivedR
 }) {
   const [hover, setHover] = useState(false);
   const [imgFail, setImgFail] = useState(false);
+  /** التكبير الدلالي: 0 = بعيد (ميدالية فقط)، 1 = قريب (ميدالية + اسم).
+   *  يُشتق من تكبير الكاميرا كل إطار ويُحدَّث فقط عند عبور العتبة. */
+  const [near, setNear] = useState(false);
+  const nearRef = useRef(false);
   const grp = useRef<Group>(null);
   const haloMat = useRef<MeshStandardMaterial>(null);
   const shellMat = useRef<MeshStandardMaterial>(null);
@@ -89,6 +93,14 @@ export function CageUnit({ spec, position, dropHint, dragActive, ghost, arrivedR
   useFrame((state, dt) => {
     const k = Math.min(1, dt * 7.5);
     const g = grp.current, shell = shellMat.current, l = glow.current;
+
+    // عتبة التكبير الدلالي — مع تخلفية صغيرة حتى ما يرفرف الاسم عند الحد
+    const zoom = (state.camera as unknown as { zoom?: number }).zoom ?? 60;
+    const wantNear = nearRef.current ? zoom > 44 : zoom >= 50;
+    if (wantNear !== nearRef.current) {
+      nearRef.current = wantNear;
+      setNear(wantNear);
+    }
 
     let colorTarget = selected ? "#ffffff" : dropHint === "blocked" ? DANGER : dropHint === "hot" ? HOT : baseColor;
     let intensity =
@@ -254,38 +266,67 @@ export function CageUnit({ spec, position, dropHint, dragActive, ghost, arrivedR
       {/* ضوء الحالة داخل الحظيرة — يصبغ الفرشة والزجاج بلون الراقد */}
       <pointLight ref={glow} color={baseColor} intensity={occupied ? 1.0 : 0.3} distance={2.6} position={[0, 0.25, 0.2]} />
 
-      {/* بطاقة الساكن «المعلّقة» على واجهة القفص العلوية — صورة واسم وحالة
-       *  بلوحة DOM واحدة ملتصقة بالقفص (لا بطاقة عائمة بالفضاء): يبين فوراً
-       *  منو بأي قفص، وتكبر وتصغر مع الكاميرا فلا تتكدّس عند الإبعاد.
-       *  ضغطة قصيرة = حمل/تفاصيل، وسحبة = نقل (نفس منطق البطاقة القديمة). */}
+      {/* ميدالية الساكن — تكبيرٌ دلالي مثل الخرائط:
+       *    بعيد → ميدالية مدوّرة صغيرة (صورة بحلقة بلون الحالة + نقطة جرعة)
+       *    قريب → ينضاف فص الاسم تحتها
+       *    تحويم → البطاقة الكاملة (الاسم + النوع) مرفوعة فوق الكل
+       *  فما تتكدّس البطاقات فوق بعضها بالمنظر البعيد مهما كثر النزلاء.
+       *  نفس الإيماءات: ضغطة = حمل/تفاصيل، سحبة = نقل. */}
       {spec.occupant && showCard && (
-        <Html center position={[0, topY + 0.32, CAGE_D * 0.2]} distanceFactor={DF} zIndexRange={[20, 0]}
+        <Html center position={[0, topY + 0.3, CAGE_D * 0.18]} distanceFactor={DF}
+          zIndexRange={hover ? [24, 0] : [20, 0]}
           style={{ pointerEvents: dragActive || ghost ? "none" : "auto" }}>
           <div data-occ-of={spec.code}
             onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); onCardDown(spec.code, e); }}
+            onPointerEnter={() => { setHover(true); onHoverChange(spec.code); }}
+            onPointerLeave={() => { setHover(false); onHoverChange(null); }}
             style={{
-              direction: "rtl", display: "flex", alignItems: "center", gap: 7,
-              padding: "5px 9px", borderRadius: 11, cursor: "grab", touchAction: "none",
-              userSelect: "none", whiteSpace: "nowrap",
-              background: "#0c1626f2", border: `1.5px solid ${baseColor}`,
-              boxShadow: `0 0 14px ${baseColor}55, 0 6px 14px #0009`,
+              direction: "rtl", display: "grid", justifyItems: "center", rowGap: 4,
+              cursor: "grab", touchAction: "none", userSelect: "none",
               opacity: ghost ? 0.28 : 1, transition: "opacity .18s ease",
             }}>
-            {imgFail || !spec.occupant.photoUrl ? (
-              <span style={{ fontSize: 22, filter: `drop-shadow(0 0 6px ${baseColor})` }}>{spec.occupant.emoji}</span>
-            ) : (
-              <img src={spec.occupant.photoUrl ?? ""} alt="" onError={() => setImgFail(true)}
-                style={{ width: 30, height: 30, objectFit: "cover", borderRadius: 8, border: `1px solid ${baseColor}88`, pointerEvents: "none" }} />
-            )}
-            <span style={{ display: "grid", lineHeight: 1.2 }}>
-              <b style={{ color: NIGHT.ink, fontSize: 12.5, fontWeight: 800 }}>{spec.occupant.name}</b>
-              <i style={{ color: baseColor, fontSize: 9.5, fontStyle: "normal", fontWeight: 700 }}>{KIND_AR[spec.occupant.status]}</i>
+            {/* الميدالية */}
+            <span style={{ position: "relative", width: 46, height: 46, display: "block" }}>
+              {imgFail || !spec.occupant.photoUrl ? (
+                <span style={{
+                  display: "grid", placeItems: "center", width: 46, height: 46, fontSize: 24,
+                  borderRadius: "50%", background: "#0c1626f2",
+                  border: `3px solid ${baseColor}`, boxShadow: `0 0 14px ${baseColor}88, 0 6px 14px #000a`,
+                }}>{spec.occupant.emoji}</span>
+              ) : (
+                <img src={spec.occupant.photoUrl ?? ""} alt="" onError={() => setImgFail(true)}
+                  style={{
+                    width: 46, height: 46, objectFit: "cover", borderRadius: "50%",
+                    border: `3px solid ${baseColor}`, background: "#0c1626",
+                    boxShadow: `0 0 14px ${baseColor}88, 0 6px 14px #000a`,
+                    pointerEvents: "none", display: "block",
+                  }} />
+              )}
+              {spec.occupant.doseDue && (
+                <span data-dose3d title="جرعة مستحقّة" style={{
+                  position: "absolute", top: -3, insetInlineEnd: -5,
+                  width: 17, height: 17, borderRadius: "50%", background: DOSE,
+                  border: "2px solid #241503", boxShadow: `0 0 10px ${DOSE}cc`,
+                  display: "grid", placeItems: "center", fontSize: 9, lineHeight: 1,
+                }}>💉</span>
+              )}
             </span>
-            {spec.occupant.doseDue && (
-              <span data-dose3d style={{
-                fontSize: 9.5, fontWeight: 800, color: "#3b2503", background: DOSE,
-                borderRadius: 7, padding: "2px 6px", boxShadow: `0 0 10px ${DOSE}aa`,
-              }}>💉 جرعة</span>
+            {/* فص الاسم — بالقرب أو عند التحويم */}
+            {(near || hover) && (
+              <b style={{
+                background: "#0c1626f2", border: `1.5px solid ${baseColor}`,
+                borderRadius: 9, padding: "2px 9px", whiteSpace: "nowrap",
+                maxWidth: 116, overflow: "hidden", textOverflow: "ellipsis",
+                color: NIGHT.ink, fontSize: 12.5, fontWeight: 800,
+                boxShadow: `0 0 12px ${baseColor}44, 0 5px 12px #0009`,
+              }}>{spec.occupant.name}</b>
+            )}
+            {/* النوع — عند التحويم فقط */}
+            {hover && !dragActive && (
+              <i style={{
+                background: "#0c1626e8", borderRadius: 7, padding: "1px 7px",
+                color: baseColor, fontSize: 10, fontStyle: "normal", fontWeight: 800, whiteSpace: "nowrap",
+              }}>{KIND_AR[spec.occupant.status]}</i>
             )}
           </div>
         </Html>

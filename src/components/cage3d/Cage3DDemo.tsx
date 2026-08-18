@@ -670,8 +670,9 @@ export default function Cage3DDemo() {
   const camZoom = useMemo(() => {
     const b = bounds(s);
     const span = Math.max(b.maxX - b.minX, (b.maxZ - b.minZ) * 1.4) * CELL;
-    // الحد الأدنى ٢٦ (لا ٤٤): التخطيطات الواسعة تنلمّ كاملة بالشاشة بدل ما تنقص
-    return Math.max(26, Math.min(92, 660 / Math.max(span, 7)));
+    // إطار افتتاحي أقرب وأفخم: أرضية ٣٢ حتى ما ينكمش المشهد هواي مع الغرف
+    // الكثيرة — الباقي يوصله الدكتور بالسحب، و⛶ يرجّعه دائماً
+    return Math.max(32, Math.min(92, 700 / Math.max(span, 7)));
   }, [s]);
   const zoomBy = (f: number) => {
     playTap();
