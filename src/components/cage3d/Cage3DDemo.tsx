@@ -207,34 +207,34 @@ function Partitions({ rooms, s }: { rooms: Room3D[]; s: ReturnType<typeof cageSt
 function SignFace({ name, countLabel, w }: { name: string; countLabel: string; w: number }) {
   const tex = useMemo(() => {
     const c = document.createElement("canvas");
-    c.width = 512; c.height = 144;
+    c.width = 640; c.height = 150;
     const g = c.getContext("2d")!;
-    g.clearRect(0, 0, 512, 144);
+    g.clearRect(0, 0, 640, 150);
     g.textAlign = "center";
     g.textBaseline = "middle";
     g.direction = "rtl";
-    g.font = "900 56px system-ui, -apple-system, 'Segoe UI', 'Noto Sans Arabic', sans-serif";
+    g.font = "900 64px system-ui, -apple-system, 'Segoe UI', 'Noto Sans Arabic', sans-serif";
     let nm = name.trim() || "غرفة";
-    while (g.measureText(nm).width > 470 && nm.length > 2) nm = nm.slice(0, -1);
+    while (g.measureText(nm).width > 590 && nm.length > 2) nm = nm.slice(0, -1);
     if (nm !== name.trim() && nm.length < name.trim().length) nm += "…";
     g.shadowColor = "#000000cc";
     g.shadowBlur = 5;
     g.shadowOffsetY = 3;
     g.fillStyle = "#f7fbfe";
-    g.fillText(nm, 256, 56);
+    g.fillText(nm, 320, 58);
     g.shadowBlur = 0;
     g.shadowOffsetY = 0;
-    g.fillStyle = "#bcc9d5";
-    g.font = "800 28px system-ui, -apple-system, 'Segoe UI', sans-serif";
-    g.fillText(countLabel, 256, 118);
+    g.fillStyle = "#c3d0dc";
+    g.font = "800 30px system-ui, -apple-system, 'Segoe UI', sans-serif";
+    g.fillText(countLabel, 320, 124);
     const t = new CanvasTexture(c);
     t.anisotropy = 8;
     return t;
   }, [name, countLabel]);
   useEffect(() => () => tex.dispose(), [tex]);
   return (
-    <mesh position={[0, WALL_H + 0.29, 0.073]}>
-      <planeGeometry args={[w, w * (144 / 512)]} />
+    <mesh position={[0, WALL_H + 0.33, 0.073]}>
+      <planeGeometry args={[w, w * (150 / 640)]} />
       <meshBasicMaterial map={tex} transparent toneMapped={false} />
     </mesh>
   );
@@ -245,7 +245,7 @@ function RoomFloors({ s, occCount }: {
   s: ReturnType<typeof cageStudio.get>;
   occCount: (r: Room3D) => number;
 }) {
-  const signW = Math.min(CELL - 0.1, 2.3);
+  const signW = Math.min(CELL - 0.1, 2.85);
   return (
     <>
       {s.rooms.map((r) => {
@@ -282,11 +282,11 @@ function RoomFloors({ s, occCount }: {
                 </mesh>
               ))}
               {/* الطبقة الخلفية: ستيل مصقول أعرض قليلاً وبإزاحة — مثل اللافتات الفندقية */}
-              <RoundedBox args={[signW + 0.26, 0.66, 0.05]} radius={0.06} position={[0.06, WALL_H + 0.33, -0.05]} castShadow>
+              <RoundedBox args={[signW + 0.26, 0.78, 0.05]} radius={0.06} position={[0.06, WALL_H + 0.37, -0.05]} castShadow>
                 <meshStandardMaterial color="#cfd9e2" metalness={0.85} roughness={0.18} />
               </RoundedBox>
               {/* اللوح الأمامي الداكن بزوايا دائرية */}
-              <RoundedBox args={[signW, 0.56, 0.1]} radius={0.08} position={[0, WALL_H + 0.29, 0.02]} castShadow>
+              <RoundedBox args={[signW, 0.68, 0.1]} radius={0.08} position={[0, WALL_H + 0.33, 0.02]} castShadow>
                 <meshStandardMaterial color="#3f4a57" metalness={0.45} roughness={0.4} />
               </RoundedBox>
               {/* إضاءة خفيفة تغسل اللافتة حتى تُقرأ ليلاً */}
@@ -670,9 +670,9 @@ export default function Cage3DDemo() {
   const camZoom = useMemo(() => {
     const b = bounds(s);
     const span = Math.max(b.maxX - b.minX, (b.maxZ - b.minZ) * 1.4) * CELL;
-    // إطار افتتاحي أقرب وأفخم: أرضية ٣٢ حتى ما ينكمش المشهد هواي مع الغرف
-    // الكثيرة — الباقي يوصله الدكتور بالسحب، و⛶ يرجّعه دائماً
-    return Math.max(32, Math.min(92, 700 / Math.max(span, 7)));
+    // إطار افتتاحي مقرَّب: أرضية ٤٢ فالأقفاص والأسماء تفتح بحجم مقروء
+    // مباشرةً — الغرف البعيدة يوصلها الدكتور بالسحب، و⛶ يرجّعه دائماً
+    return Math.max(42, Math.min(92, 700 / Math.max(span, 7)));
   }, [s]);
   const zoomBy = (f: number) => {
     playTap();

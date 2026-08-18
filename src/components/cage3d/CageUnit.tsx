@@ -79,7 +79,7 @@ export function CageUnit({ spec, position, dropHint, dragActive, ghost, arrivedR
     g.clearRect(0, 0, 256, 96);
     g.textAlign = "center";
     g.textBaseline = "middle";
-    g.font = "800 52px ui-monospace, SFMono-Regular, Menlo, monospace";
+    g.font = "800 62px ui-monospace, SFMono-Regular, Menlo, monospace";
     let code = spec.code;
     while (g.measureText(code).width > 236 && code.length > 2) code = code.slice(0, -1);
     g.shadowColor = "#000000aa";
@@ -99,7 +99,7 @@ export function CageUnit({ spec, position, dropHint, dragActive, ghost, arrivedR
 
     // عتبة التكبير الدلالي — مع تخلفية صغيرة حتى ما يرفرف الاسم عند الحد
     const zoom = (state.camera as unknown as { zoom?: number }).zoom ?? 60;
-    const wantNear = nearRef.current ? zoom > 44 : zoom >= 50;
+    const wantNear = nearRef.current ? zoom > 36 : zoom >= 42;
     if (wantNear !== nearRef.current) {
       nearRef.current = wantNear;
       setNear(wantNear);
@@ -256,14 +256,14 @@ export function CageUnit({ spec, position, dropHint, dragActive, ghost, arrivedR
       </group>
 
       {/* لوحة الرقم «المحفورة» على الواجهة */}
-      <RoundedBox args={[0.52, 0.2, 0.03]} radius={0.02} position={[0, -CAGE_H / 2 + LOWER_H / 2 + 0.02, CAGE_D / 2 + 0.012]}>
+      <RoundedBox args={[0.68, 0.27, 0.03]} radius={0.025} position={[0, -CAGE_H / 2 + LOWER_H / 2 + 0.04, CAGE_D / 2 + 0.012]}>
         <meshStandardMaterial color={NIGHT.plate} metalness={0.8} roughness={0.35} />
       </RoundedBox>
       {/* الرقم داخل خامة اللوحة نفسها (نسيج canvas): جزء فيزيائي من القفص
        *  يميل وينحجب معه — لا نص DOM طائف ولا نص مجسّم يجلب خطاً بـWorker
        *  (تعثّره كان يعلّق المشهد). وبالإنتاج: صفر عناصر DOM للقفص الفاضي. */}
-      <mesh position={[0, -CAGE_H / 2 + LOWER_H / 2 + 0.02, CAGE_D / 2 + 0.03]}>
-        <planeGeometry args={[0.48, 0.18]} />
+      <mesh position={[0, -CAGE_H / 2 + LOWER_H / 2 + 0.04, CAGE_D / 2 + 0.03]}>
+        <planeGeometry args={[0.63, 0.236]} />
         <meshBasicMaterial map={codeTex} transparent toneMapped={false} />
       </mesh>
       {/* مرساة اختبارات غير مرئية — ببيئة التطوير فقط */}
@@ -297,28 +297,28 @@ export function CageUnit({ spec, position, dropHint, dragActive, ghost, arrivedR
               opacity: ghost ? 0.28 : 1, transition: "opacity .18s ease",
             }}>
             {/* الميدالية */}
-            <span style={{ position: "relative", width: 46, height: 46, display: "block" }}>
+            <span style={{ position: "relative", width: 56, height: 56, display: "block" }}>
               {imgFail || !spec.occupant.photoUrl ? (
                 <span style={{
-                  display: "grid", placeItems: "center", width: 46, height: 46, fontSize: 24,
+                  display: "grid", placeItems: "center", width: 56, height: 56, fontSize: 29,
                   borderRadius: "50%", background: "#0c1626f2",
-                  border: `3px solid ${baseColor}`, boxShadow: `0 0 14px ${baseColor}88, 0 6px 14px #000a`,
+                  border: `3.5px solid ${baseColor}`, boxShadow: `0 0 16px ${baseColor}88, 0 6px 14px #000a`,
                 }}>{spec.occupant.emoji}</span>
               ) : (
                 <img src={spec.occupant.photoUrl ?? ""} alt="" onError={() => setImgFail(true)}
                   style={{
-                    width: 46, height: 46, objectFit: "cover", borderRadius: "50%",
-                    border: `3px solid ${baseColor}`, background: "#0c1626",
-                    boxShadow: `0 0 14px ${baseColor}88, 0 6px 14px #000a`,
+                    width: 56, height: 56, objectFit: "cover", borderRadius: "50%",
+                    border: `3.5px solid ${baseColor}`, background: "#0c1626",
+                    boxShadow: `0 0 16px ${baseColor}88, 0 6px 14px #000a`,
                     pointerEvents: "none", display: "block",
                   }} />
               )}
               {spec.occupant.doseDue && (
                 <span data-dose3d title="جرعة مستحقّة" style={{
                   position: "absolute", top: -3, insetInlineEnd: -5,
-                  width: 17, height: 17, borderRadius: "50%", background: DOSE,
-                  border: "2px solid #241503", boxShadow: `0 0 10px ${DOSE}cc`,
-                  display: "grid", placeItems: "center", fontSize: 9, lineHeight: 1,
+                  width: 21, height: 21, borderRadius: "50%", background: DOSE,
+                  border: "2px solid #241503", boxShadow: `0 0 12px ${DOSE}cc`,
+                  display: "grid", placeItems: "center", fontSize: 11, lineHeight: 1,
                 }}>💉</span>
               )}
             </span>
@@ -326,9 +326,9 @@ export function CageUnit({ spec, position, dropHint, dragActive, ghost, arrivedR
             {(near || hover) && (
               <b style={{
                 background: "#0c1626f2", border: `1.5px solid ${baseColor}`,
-                borderRadius: 9, padding: "2px 9px", whiteSpace: "nowrap",
-                maxWidth: 116, overflow: "hidden", textOverflow: "ellipsis",
-                color: NIGHT.ink, fontSize: 12.5, fontWeight: 800,
+                borderRadius: 10, padding: "3px 11px", whiteSpace: "nowrap",
+                maxWidth: 128, overflow: "hidden", textOverflow: "ellipsis",
+                color: NIGHT.ink, fontSize: 14.5, fontWeight: 800,
                 boxShadow: `0 0 12px ${baseColor}44, 0 5px 12px #0009`,
               }}>{spec.occupant.name}</b>
             )}
@@ -336,7 +336,7 @@ export function CageUnit({ spec, position, dropHint, dragActive, ghost, arrivedR
             {hover && !dragActive && (
               <i style={{
                 background: "#0c1626e8", borderRadius: 7, padding: "1px 7px",
-                color: baseColor, fontSize: 10, fontStyle: "normal", fontWeight: 800, whiteSpace: "nowrap",
+                color: baseColor, fontSize: 11.5, fontStyle: "normal", fontWeight: 800, whiteSpace: "nowrap",
               }}>{KIND_AR[spec.occupant.status]}</i>
             )}
           </div>

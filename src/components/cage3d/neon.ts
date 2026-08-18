@@ -63,8 +63,8 @@ export const DOSE = "#f59e0b";
 
 /** مقياس لوحات DOM داخل المشهد (drei Html distanceFactor): تكبير الكاميرا
  *  يكبّر اللوحات ويصغّرها مع المشهد نفسه — فلا تتكدّس الأسماء فوق بعضها
- *  عند الإبعاد. scale = zoom × DF ⇒ حجم طبيعي عند zoom ≈ 55. */
-export const DF = 1 / 55;
+ *  عند الإبعاد. scale = zoom × DF ⇒ حجم طبيعي عند zoom ≈ 46. */
+export const DF = 1 / 46;
 
 export interface CageSpec {
   code: string;
