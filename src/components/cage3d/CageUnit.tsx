@@ -99,7 +99,7 @@ export function CageUnit({ spec, position, dropHint, dragActive, ghost, arrivedR
 
     // عتبة التكبير الدلالي — مع تخلفية صغيرة حتى ما يرفرف الاسم عند الحد
     const zoom = (state.camera as unknown as { zoom?: number }).zoom ?? 60;
-    const wantNear = nearRef.current ? zoom > 36 : zoom >= 42;
+    const wantNear = nearRef.current ? zoom > 36 : zoom >= 41;
     if (wantNear !== nearRef.current) {
       nearRef.current = wantNear;
       setNear(wantNear);
@@ -284,7 +284,7 @@ export function CageUnit({ spec, position, dropHint, dragActive, ghost, arrivedR
        *  فما تتكدّس البطاقات فوق بعضها بالمنظر البعيد مهما كثر النزلاء.
        *  نفس الإيماءات: ضغطة = حمل/تفاصيل، سحبة = نقل. */}
       {spec.occupant && showCard && (
-        <Html center position={[0, topY + 0.3, CAGE_D * 0.18]} distanceFactor={DF}
+        <Html center position={[0, topY + 0.52, CAGE_D * 0.16]} distanceFactor={DF}
           zIndexRange={hover ? [24, 0] : [20, 0]}
           style={{ pointerEvents: dragActive || ghost ? "none" : "auto" }}>
           <div data-occ-of={spec.code}
