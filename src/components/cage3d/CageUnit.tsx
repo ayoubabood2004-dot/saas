@@ -51,6 +51,9 @@ export function CageUnit({ spec, position, dropHint, dragActive, ghost, arrivedR
    *  يُشتق من تكبير الكاميرا كل إطار ويُحدَّث فقط عند عبور العتبة. */
   const [near, setNear] = useState(false);
   const nearRef = useRef(false);
+  const hoverRef = useRef(false);
+  const lastZoomRef = useRef(0);
+  const setHov = (v: boolean) => { hoverRef.current = v; setHover(v); };
   const grp = useRef<Group>(null);
   const haloMat = useRef<MeshStandardMaterial>(null);
   const shellMat = useRef<MeshStandardMaterial>(null);
@@ -101,6 +104,14 @@ export function CageUnit({ spec, position, dropHint, dragActive, ghost, arrivedR
       nearRef.current = wantNear;
       setNear(wantNear);
     }
+    // المتصفح ما يعيد حساب hover لما يتحرك المشهد تحت مؤشر ساكن — فأي حركة
+    // كاميرا ملموسة تلغي التحويم حتى لا يعلق الاسم/الهالة على قفص بعيد
+    if (hoverRef.current && Math.abs(zoom - lastZoomRef.current) > 1.2) {
+      setHov(false);
+      onHoverChange(null);
+      if (!dragActive) document.body.style.cursor = "";
+    }
+    lastZoomRef.current = zoom;
 
     let colorTarget = selected ? "#ffffff" : dropHint === "blocked" ? DANGER : dropHint === "hot" ? HOT : baseColor;
     let intensity =
@@ -149,8 +160,8 @@ export function CageUnit({ spec, position, dropHint, dragActive, ghost, arrivedR
 
   return (
     <group ref={grp} position={position}
-      onPointerOver={(e) => { e.stopPropagation(); setHover(true); onHoverChange(spec.code); if (!dragActive) document.body.style.cursor = "pointer"; }}
-      onPointerOut={() => { setHover(false); onHoverChange(null); if (!dragActive) document.body.style.cursor = ""; }}
+      onPointerOver={(e) => { e.stopPropagation(); setHov(true); onHoverChange(spec.code); if (!dragActive) document.body.style.cursor = "pointer"; }}
+      onPointerOut={() => { setHov(false); onHoverChange(null); if (!dragActive) document.body.style.cursor = ""; }}
       onClick={(e) => { if (e.delta < 6 && onTap) { e.stopPropagation(); onTap(spec.code); } }}>
 
       {/* القاعدة — ترفع الحظيرة وتعطيها ثقل المعدّات الحقيقية */}
@@ -278,8 +289,8 @@ export function CageUnit({ spec, position, dropHint, dragActive, ghost, arrivedR
           style={{ pointerEvents: dragActive || ghost ? "none" : "auto" }}>
           <div data-occ-of={spec.code}
             onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); onCardDown(spec.code, e); }}
-            onPointerEnter={() => { setHover(true); onHoverChange(spec.code); }}
-            onPointerLeave={() => { setHover(false); onHoverChange(null); }}
+            onPointerEnter={() => { setHov(true); onHoverChange(spec.code); }}
+            onPointerLeave={() => { setHov(false); onHoverChange(null); }}
             style={{
               direction: "rtl", display: "grid", justifyItems: "center", rowGap: 4,
               cursor: "grab", touchAction: "none", userSelect: "none",
