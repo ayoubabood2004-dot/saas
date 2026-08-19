@@ -1,5 +1,6 @@
 import type { Purchase, PurchaseItem } from "@/types";
 import { siteHost } from "@/lib/appUrl";
+import { currencySymbol } from "@/lib/utils";
 
 export interface PurchasePrintOptions {
   clinicName: string;
@@ -53,7 +54,7 @@ const IG_ICON = `<svg width="13" height="13" viewBox="0 0 24 24" aria-hidden="tr
 export function buildPurchaseHTML(purchase: Purchase, items: PurchaseItem[], opts: PurchasePrintOptions): string {
   const s = strings(opts.lang);
   const brand = esc(opts.brand || "doctorVet");
-  const cur = ` ${esc(opts.currency ?? "د.ع")}`;
+  const cur = ` ${esc(opts.currency ?? currencySymbol())}`;
   const money = (n: number) => `${fmt(n)}${cur}`;
   const created = new Date(purchase.purchased_at || purchase.created_at);
   const dateStr = created.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
@@ -212,7 +213,7 @@ export function buildCompanyStatementHTML(data: CompanyStatementData, opts: Purc
   const WEBSITE = siteHost();
   const ar = opts.lang.startsWith("ar");
   const dir = ar ? "rtl" : "ltr";
-  const cur = ` ${esc(opts.currency ?? "د.ع")}`;
+  const cur = ` ${esc(opts.currency ?? currencySymbol())}`;
   const money = (n: number) => `${fmt(n)}${cur}`;
   const brand = esc(opts.brand || "doctorVet");
   const L = {

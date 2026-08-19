@@ -7,6 +7,7 @@ import { setActiveClinicId, clearActiveClinic, getActiveClinicId, type ClinicAcc
 import { hydrateClinicConfig, hydratedFor } from "@/lib/clinicConfig";
 import { setSubscriptionScope, syncSubscriptionFromServer } from "@/lib/subscription";
 import { applyFontScale } from "@/lib/fontScale";
+import { seedClinicLocale } from "@/lib/settings";
 import { leaveClinic as apiLeaveClinic } from "@/lib/invites";
 import { startPresenceBeat } from "@/lib/presence";
 import { repo } from "@/lib/repo";
@@ -16,7 +17,16 @@ import type { OwnerAccount } from "@/lib/owners";
 interface SignupExtra {
   phone?: string;
   city?: string;
+  /** دولة العيادة المختارة عند التسجيل (ISO2) — منها تُشتق عملة النظام. */
+  country?: string;
+  /** عملة الدولة (ISO 4217) — تُبذر في تفضيلات العيادة بعد أول دخول. */
+  currency?: string;
 }
+
+/** الدولة/العملة المختارتان عند التسجيل تُحفظان محلياً لحين أول دخول فعلي
+ *  (التأكيد قد يصير بتبويب آخر) — وبيانات الحساب (user_metadata) احتياط لو
+ *  كان أول دخول من جهاز مختلف تماماً. */
+const PENDING_LOCALE_KEY = "vp_pending_locale";
 
 /** Raw record loaded from the backend before an active role is resolved. */
 interface RawProfile {
@@ -348,6 +358,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [resolvedActive, raw]);
 
+  // بذر عملة العيادة: الدولة المختارة عند التسجيل (محلياً أو من بيانات الحساب)
+  // تُثبَّت في تفضيلات العيادة أول ما يدخل فعلاً — ولا تلمس عيادة سبق واختارت.
+  useEffect(() => {
+    if (resolvedActive !== "clinic" || !raw) return;
+    void (async () => {
+      try {
+        let pend: { country?: string | null; currency?: string | null } | null = null;
+        try { pend = JSON.parse(localStorage.getItem(PENDING_LOCALE_KEY) ?? "null") as typeof pend; } catch { /* ignore */ }
+        if (!pend && isSupabaseConfigured && supabase) {
+          // getSession قراءة محلية (بلا شبكة) — البيانات الوصفية تحمل الدولة
+          // حتى لو صار أول دخول من جهاز غير جهاز التسجيل.
+          const { data } = await supabase.auth.getSession();
+          const meta = (data.session?.user?.user_metadata ?? {}) as { country?: string | null; currency?: string | null };
+          if (meta.country || meta.currency) pend = { country: meta.country, currency: meta.currency };
+        }
+        if (pend) {
+          seedClinicLocale(pend.country, pend.currency);
+          try { localStorage.removeItem(PENDING_LOCALE_KEY); } catch { /* ignore */ }
+        }
+      } catch { /* non-blocking */ }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resolvedActive, raw?.id]);
+
   // Live presence heartbeat (منو فاتح السستم الآن) — beats once a minute while a
   // clinic user has the app open, so إدارة الكادر shows who's online right now.
   useEffect(() => {
@@ -416,9 +450,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { data, error } = await supabase.auth.signUp({
       email: email.trim(),
       password,
-      options: { data: { full_name: fullName.trim(), role, phone: extra?.phone || null, city: extra?.city || null }, emailRedirectTo },
+      options: { data: { full_name: fullName.trim(), role, phone: extra?.phone || null, city: extra?.city || null, country: extra?.country || null, currency: extra?.currency || null }, emailRedirectTo },
     });
     if (error) return { error: error.message };
+    // الدولة المختارة تُحفظ لحين أول دخول (بعد تأكيد الإيميل) فتُبذر عملة العيادة.
+    if (extra?.country || extra?.currency) {
+      try { localStorage.setItem(PENDING_LOCALE_KEY, JSON.stringify({ country: extra.country ?? null, currency: extra.currency ?? null })); } catch { /* ignore */ }
+    }
     // Enumeration protection: an existing confirmed email returns a user with no
     // identities and sends no code. Surface that so the UI can route to "sign in
     // and add this role" instead of failing with a duplicate-email error.

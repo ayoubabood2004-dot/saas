@@ -3,12 +3,13 @@ import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import {
   CalendarDays, ClipboardList, Store, BarChart3, Stethoscope, HeartPulse,
   Syringe, MessageCircle, Boxes, Building2, ShieldCheck, Check, Plus, Sparkles,
-  Bell, Wallet, ArrowLeft, Star, Menu, X, TrendingUp, Cake,
+  Bell, Wallet, ArrowLeft, Star, Menu, X, TrendingUp, Cake, Globe,
 } from "lucide-react";
 import { Logo, LogoMark } from "@/components/Logo";
 import { appUrl, appHostLabel } from "@/lib/appUrl";
-import { cn } from "@/lib/utils";
+import { cn, formatNum, formatDec } from "@/lib/utils";
 import { PLANS } from "@/lib/plans";
+import { CURRENCIES, currencyInfo, guessCountry, fetchLiveRates, usdTo } from "@/lib/currency";
 
 /* ============================================================================
  * Landing — the public marketing page on the ROOT domain. Arabic-first, RTL,
@@ -125,7 +126,7 @@ function Hero() {
             initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, delay: 0.12 }}
             className="mx-auto mt-5 max-w-xl text-lg leading-relaxed text-ink-muted lg:mx-0"
           >
-            سجل طبي موحّد، تقويم تشغيلي، مخزون وكاشير، حملات واتساب، وتعدد فروع — بواجهة عربية بسيطة وسلسة، تشتغل بالدينار وبلا أي خبرة تقنية.
+            سجل طبي موحّد، تقويم تشغيلي، مخزون وكاشير، حملات واتساب، وتعدد فروع — بواجهة عربية بسيطة وسلسة، تشتغل بعملتك المحلية وبلا أي خبرة تقنية.
           </motion.p>
           <motion.div
             initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, delay: 0.19 }}
@@ -142,7 +143,7 @@ function Hero() {
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.6, delay: 0.28 }}
             className="mt-7 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-sm font-semibold text-ink-subtle lg:justify-start"
           >
-            {["واتساب مدمج", "تعدد فروع", "يعمل بالدينار", "بلا خبرة تقنية"].map((f) => (
+            {["واتساب مدمج", "تعدد فروع", "يعمل بعملتك المحلية", "بلا خبرة تقنية"].map((f) => (
               <span key={f} className="inline-flex items-center gap-1.5"><Check size={15} className="text-success-600" /> {f}</span>
             ))}
           </motion.div>
@@ -534,8 +535,38 @@ function Features() {
  *  so any serious clinic gravitates to it. 14-day free trial of the full Super.
  *  Plans come from the shared src/lib/plans.ts — one source of truth with the
  *  in-app subscription/billing system. */
+/** عملة الزائر: أينما كان بالعالم يشوف الأسعار بعملته المحلية تلقائياً —
+ *  التخمين من لغة متصفحه/منطقته الزمنية، والتحويل بسعر صرف حي (يُجلب مرة
+ *  ويُخزَّن يوماً؛ جدول ثابت يغطي لو ما وصلت الشبكة). ?cur=SAR يفرضها،
+ *  واختياره اليدوي من القائمة يُحفظ لزياراته القادمة. */
+function useVisitorCurrency() {
+  const [cur, setCurState] = useState<string>(() => {
+    try {
+      const q = new URLSearchParams(window.location.search).get("cur")?.toUpperCase();
+      if (q && CURRENCIES[q]) return q;
+      const saved = localStorage.getItem("vp_landing_cur");
+      if (saved && CURRENCIES[saved]) return saved;
+    } catch { /* ignore */ }
+    return guessCountry()?.cur ?? "USD";
+  });
+  const [live, setLive] = useState<Record<string, number> | null>(null);
+  useEffect(() => { void fetchLiveRates().then(setLive).catch(() => {}); }, []);
+  const setCur = (c: string) => {
+    setCurState(c);
+    try { localStorage.setItem("vp_landing_cur", c); } catch { /* ignore */ }
+  };
+  const fmt = (usd: number) => {
+    if (cur === "USD") return `$${formatNum(usd)}`;
+    const info = currencyInfo(cur);
+    const v = usdTo(usd, cur, live);
+    return `${info.frac ? formatDec(v) : formatNum(v)} ${info.symAr}`;
+  };
+  return { cur, setCur, fmt, isUsd: cur === "USD" };
+}
+
 function Pricing() {
   const [annual, setAnnual] = useState(true);
+  const fx = useVisitorCurrency();
   return (
     <section id="pricing" className="border-t border-line bg-surface-2/30 py-20">
       <div className="mx-auto max-w-6xl px-4 sm:px-6">
@@ -549,6 +580,22 @@ function Pricing() {
             <button onClick={() => setAnnual(false)} className={cn("rounded-full px-5 py-2 text-sm font-bold transition", !annual ? "bg-brand-600 text-white shadow-soft" : "text-ink-muted")}>شهري</button>
             <button onClick={() => setAnnual(true)} className={cn("rounded-full px-5 py-2 text-sm font-bold transition", annual ? "bg-brand-600 text-white shadow-soft" : "text-ink-muted")}>سنوي</button>
           </div>
+
+          {/* عملة الزائر — مكتشَفة تلقائياً وقابلة للتبديل */}
+          <div className="mt-4 flex items-center justify-center gap-2">
+            <Globe size={15} className="text-ink-subtle" />
+            <select
+              data-cur-select
+              value={fx.cur}
+              onChange={(e) => fx.setCur(e.target.value)}
+              className="rounded-full border border-line bg-surface-1 px-3.5 py-1.5 text-sm font-bold text-ink shadow-card outline-none transition hover:border-brand-300"
+            >
+              {Object.values(CURRENCIES).map((c) => (
+                <option key={c.code} value={c.code}>{c.nameAr} ({c.symAr})</option>
+              ))}
+            </select>
+          </div>
+          <p className="mt-2 text-2xs text-ink-subtle">الأسعار تُعرض بعملتك المحلية تلقائياً حسب موقعك</p>
         </motion.div>
 
         <div className="mt-12 grid items-stretch gap-5 lg:grid-cols-3">
@@ -565,14 +612,28 @@ function Pricing() {
               {t.popular && <span className="absolute -top-3 start-1/2 -translate-x-1/2 rounded-full bg-brand-600 px-3.5 py-1 text-2xs font-extrabold text-white shadow-soft">👑 الأكثر تكاملاً</span>}
               <p className="font-display text-lg font-extrabold text-ink">{t.name}</p>
               <p className="text-2xs font-semibold text-ink-subtle">{t.tag}</p>
-              <div className="mt-4 flex items-end gap-1">
+              <div className="mt-4 flex flex-wrap items-end gap-1">
                 <AnimatePresence mode="popLayout">
-                  <motion.span key={annual ? "y" : "m"} initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 8 }} transition={{ duration: 0.2 }} className="font-display text-4xl font-extrabold tracking-tighter2 text-ink">
-                    ${annual ? t.annualUsd : t.monthlyUsd}
+                  <motion.span
+                    key={(annual ? "y" : "m") + fx.cur}
+                    initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 8 }} transition={{ duration: 0.2 }}
+                    data-price3x
+                    className={cn(
+                      "font-display font-extrabold tracking-tighter2 text-ink",
+                      // الدينار/الليرة السنوية أرقام طويلة — نصغّر قليلاً حتى لا تنكسر البطاقة
+                      fx.fmt(annual ? t.annualUsd : t.monthlyUsd).length > 11 ? "text-2xl leading-9" : "text-4xl",
+                    )}
+                  >
+                    {fx.fmt(annual ? t.annualUsd : t.monthlyUsd)}
                   </motion.span>
                 </AnimatePresence>
                 <span className="mb-1 text-sm font-semibold text-ink-subtle">/ {annual ? "سنة" : "شهر"}</span>
               </div>
+              {!fx.isUsd && (
+                <p className="mt-1 text-2xs font-semibold text-ink-subtle" dir="ltr">
+                  = ${formatNum(annual ? t.annualUsd : t.monthlyUsd)} USD
+                </p>
+              )}
               <ul className="mt-5 flex-1 space-y-2.5">
                 {t.feats.map((f) => (
                   <li key={f} className="flex items-start gap-2 text-sm text-ink-muted">
@@ -612,7 +673,11 @@ function Pricing() {
           </div>
         </motion.div>
 
-        <p className="mt-6 text-center text-2xs text-ink-subtle">الدفع بالدينار بالسعر المكافئ · زين كاش · فاست باي · Qi · كاش عبر مندوب</p>
+        <p className="mt-6 text-center text-2xs text-ink-subtle">
+          {fx.cur === "IQD"
+            ? "الدفع بالدينار بالسعر المكافئ · زين كاش · فاست باي · Qi · كاش عبر مندوب"
+            : "الأسعار معروضة بعملتك المحلية بشكل تقريبي حسب سعر الصرف — والدفع بالدولار أو بما يعادله"}
+        </p>
       </div>
     </section>
   );

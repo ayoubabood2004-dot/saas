@@ -17,7 +17,8 @@ import { getServiceCatalog, addServiceCategory, removeServiceCategory, addServic
 import { DEFAULT_RANGES, VITAL_KEYS, CBC_KEYS, rangeFor, type VitalKey } from "@/lib/vitals";
 
 const ALL_KEYS: VitalKey[] = [...VITAL_KEYS, ...CBC_KEYS];
-import { setVitalOverride, clearVitalOverrides, getDialCode, setDialCode, getClinicLogo, setClinicLogo, getClinicSocials, setClinicSocials, getClinicName, setClinicName, getPreSalePrint, setPreSalePrint, getResizableCart, setResizableCart, getFontScaleEnabled, setFontScaleEnabled, getDeliveryZones, setDeliveryZones, type DeliveryZone, getQtyPromos, setQtyPromos, promoTargetLabel, getCatalogShare, setCatalogShare, type QtyPromo, type PromoKind, type PromoMode } from "@/lib/settings";
+import { setVitalOverride, clearVitalOverrides, getDialCode, setDialCode, getClinicLogo, setClinicLogo, getClinicSocials, setClinicSocials, getClinicName, setClinicName, getPreSalePrint, setPreSalePrint, getResizableCart, setResizableCart, getFontScaleEnabled, setFontScaleEnabled, getDeliveryZones, setDeliveryZones, type DeliveryZone, getQtyPromos, setQtyPromos, promoTargetLabel, getCatalogShare, setCatalogShare, type QtyPromo, type PromoKind, type PromoMode, getCurrencyCode, setCurrencyCode } from "@/lib/settings";
+import { CURRENCIES } from "@/lib/currency";
 import { FONT_SCALES, getFontScale, setFontScale, applyFontScale, getCrispMode, setCrispMode, type FontScaleId } from "@/lib/fontScale";
 import { RECEIPT_WIDTHS, getReceiptWidth, setReceiptWidth, openReceiptCalibration } from "@/lib/printer";
 import { catalogStats } from "@/lib/catalog";
@@ -47,6 +48,7 @@ export function Settings() {
   const [savedFlash, setSavedFlash] = useState(false);
   const [sound, setSound] = useState(isSoundEnabled());
   const [dialCode, setDial] = useState(getDialCode());
+  const [currency, setCurrencyState] = useState(getCurrencyCode());
 
   function readDraft(sp: Species): Record<VitalKey, { min: string; max: string }> {
     const out = {} as Record<VitalKey, { min: string; max: string }>;
@@ -192,6 +194,22 @@ export function Settings() {
           />
           <p className="text-xs text-ink-subtle mt-1.5">{t("settings.dialCodeHint")}</p>
         </div>
+        {canSettings && (
+          <div className="border-t border-line pt-4 mt-4">
+            <label className="label">{t("settings.currency", "عملة العيادة")}</label>
+            <select
+              data-currency-select
+              className="input w-64"
+              value={currency}
+              onChange={(e) => { setCurrencyCode(e.target.value); setCurrencyState(e.target.value); playSuccess(); }}
+            >
+              {Object.values(CURRENCIES).map((c) => (
+                <option key={c.code} value={c.code}>{c.nameAr} ({c.symAr})</option>
+              ))}
+            </select>
+            <p className="text-xs text-ink-subtle mt-1.5">{t("settings.currencyHint", "كل المبالغ بالنظام (الكاشير، الفواتير، التقارير…) تُعرض بهذه العملة. الأرقام المخزّنة لا تتغيّر — يتغيّر الرمز فقط.")}</p>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -1489,7 +1507,7 @@ function SurgeryLibrary({ catalog, onChanged }: { catalog: ServiceCatalog; onCha
                               onBlur={(e) => setPrice(ref, Number(e.target.value) || 0)}
                               onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
                             />
-                            <span className="text-2xs font-bold text-ink-subtle">د.ع</span>
+                            <span className="text-2xs font-bold text-ink-subtle">{currencySymbol()}</span>
                           </span>
                         )}
                       </div>

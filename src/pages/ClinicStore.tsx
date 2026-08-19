@@ -31,7 +31,7 @@ import { getDialCode } from "@/lib/settings";
 import { withTimeout } from "@/lib/errors";
 import { playTap, playSuccess, playWarning, playAchievement } from "@/lib/sounds";
 import { Button, Badge, Skeleton, useToast } from "@/components/ui";
-import { cn, money, formatNum, formatDate } from "@/lib/utils";
+import { cn, money, formatNum, formatDate, currencySymbol } from "@/lib/utils";
 
 type Tab = "orders" | "catalog" | "settings";
 
@@ -655,11 +655,11 @@ function SettingsTab({ profile, products, onSaved }: {
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="mb-1 block text-xs font-bold text-ink-muted">أجرة التوصيل (د.ع)</label>
+              <label className="mb-1 block text-xs font-bold text-ink-muted">أجرة التوصيل ({currencySymbol()})</label>
               <input type="number" inputMode="numeric" min={0} value={fee} onChange={(e) => setFee(e.target.value)} placeholder="0 = مجاني" className="input" />
             </div>
             <div>
-              <label className="mb-1 block text-xs font-bold text-ink-muted">الحد الأدنى للطلب (د.ع)</label>
+              <label className="mb-1 block text-xs font-bold text-ink-muted">الحد الأدنى للطلب ({currencySymbol()})</label>
               <input type="number" inputMode="numeric" min={0} value={minOrder} onChange={(e) => setMinOrder(e.target.value)} placeholder="0 = بلا حد" className="input" />
             </div>
           </div>

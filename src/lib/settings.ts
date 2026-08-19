@@ -2,6 +2,7 @@ import type { Species } from "@/types";
 import type { VitalKey } from "./vitals";
 import { getActiveClinicId } from "./clinics";
 import { sb, cloudWrite, registerHydrator, registerReset } from "./clinicSync";
+import { setActiveCurrency, countryByCode } from "./currency";
 
 // Doctor-customizable overrides for the medical reading (vital) normal ranges.
 // Persisted locally; merged over the built-in defaults by vitals.rangeFor().
@@ -140,8 +141,8 @@ export function clearPetRanges(petId: string) {
 export const DEFAULT_DIAL_CODE = "+964"; // Iraq
 
 export interface ClinicSocials { facebook: string; instagram: string }
-interface ClinicPrefs { dial_code: string; logo_url: string | null; social_facebook: string; social_instagram: string; clinic_name: string; pre_sale_print: boolean; override_enabled: boolean; resizable_cart: boolean; font_scale_enabled: boolean; override_pin_mirror: string | null; delivery_zones: string | null; qty_promos: string | null; catalog_share: boolean; cage_layout: string | null }
-const DEFAULT_PREFS: ClinicPrefs = { dial_code: DEFAULT_DIAL_CODE, logo_url: null, social_facebook: "", social_instagram: "", clinic_name: "", pre_sale_print: false, override_enabled: false, resizable_cart: false, font_scale_enabled: false, override_pin_mirror: null, delivery_zones: null, qty_promos: null, catalog_share: false, cage_layout: null };
+interface ClinicPrefs { dial_code: string; logo_url: string | null; social_facebook: string; social_instagram: string; clinic_name: string; pre_sale_print: boolean; override_enabled: boolean; resizable_cart: boolean; font_scale_enabled: boolean; override_pin_mirror: string | null; delivery_zones: string | null; qty_promos: string | null; catalog_share: boolean; cage_layout: string | null; currency: string | null; country: string | null }
+const DEFAULT_PREFS: ClinicPrefs = { dial_code: DEFAULT_DIAL_CODE, logo_url: null, social_facebook: "", social_instagram: "", clinic_name: "", pre_sale_print: false, override_enabled: false, resizable_cart: false, font_scale_enabled: false, override_pin_mirror: null, delivery_zones: null, qty_promos: null, catalog_share: false, cage_layout: null, currency: null, country: null };
 
 const prefsKey = () => `vp_clinic_prefs_${getActiveClinicId()}`;
 const legacyDialKey = () => `vp_dial_code_${getActiveClinicId()}`;
@@ -175,6 +176,9 @@ function readPrefsLocal(): ClinicPrefs {
 function savePrefsLocal(p: ClinicPrefs) {
   prefsCache = p;
   try { localStorage.setItem(prefsKey(), JSON.stringify(p)); } catch { /* ignore */ }
+  // العملة النشطة تعيش في currency.ts (حتى لا يستورد utils.ts هذا الملف) —
+  // نزامنها هنا عند كل حفظ فتبقى money() صادقة دائماً.
+  setActiveCurrency(p.currency);
 }
 
 function prefs(): ClinicPrefs {
@@ -206,7 +210,7 @@ function clearPendingPrefKeys(keys: string[]) {
 
 export async function hydrateClinicPrefs(): Promise<void> {
   const client = sb();
-  if (!client) { prefsCache = readPrefsLocal(); return; }
+  if (!client) { prefsCache = readPrefsLocal(); setActiveCurrency(prefsCache.currency); return; }
   try {
     // select("*") tolerates any schema age: columns a pre-migration database
     // doesn't have yet simply aren't in the payload, and the mapping below
@@ -234,6 +238,8 @@ export async function hydrateClinicPrefs(): Promise<void> {
         qty_promos: d.qty_promos ?? local.qty_promos,
         catalog_share: typeof d.catalog_share === "boolean" ? d.catalog_share : local.catalog_share,
         cage_layout: d.cage_layout ?? local.cage_layout,
+        currency: d.currency ?? local.currency,
+        country: d.country ?? local.country,
       };
     } else {
       // No row yet → migrate any local prefs up (or seed the default dial code).
@@ -257,6 +263,8 @@ export async function hydrateClinicPrefs(): Promise<void> {
       if (local.qty_promos) boolPatch.qty_promos = local.qty_promos;
       if (local.catalog_share) boolPatch.catalog_share = true;
       if (local.cage_layout) boolPatch.cage_layout = local.cage_layout;
+      if (local.currency) boolPatch.currency = local.currency;
+      if (local.country) boolPatch.country = local.country;
       if (Object.keys(boolPatch).length) setPendingPrefs({ ...readPendingPrefs(), ...boolPatch });
     }
     // Unconfirmed pref writes (e.g. a toggle flipped before its column's
@@ -273,6 +281,7 @@ export async function hydrateClinicPrefs(): Promise<void> {
     savePrefsLocal(prefsCache);
   } catch {
     prefsCache = readPrefsLocal();
+    setActiveCurrency(prefsCache.currency);
   }
 }
 registerHydrator(hydrateClinicPrefs);
@@ -301,6 +310,34 @@ export function setDialCode(code: string) {
   const clean = code.trim() || DEFAULT_DIAL_CODE;
   const normalized = clean.startsWith("+") ? clean : `+${clean.replace(/\D/g, "")}`;
   patchPrefs({ dial_code: normalized }, "dial-code-set");
+}
+
+/* ---- عملة العيادة (0108) — تُشتق من الدولة المختارة عند إنشاء الحساب ------
+ * وتتزامن سحابياً كبقية التفضيلات، فكل أجهزة العيادة تعرض نفس العملة.
+ * currencySymbol()/money() في utils.ts يقرآنها عبر currency.ts. ---- */
+export function getCurrencyCode(): string {
+  return (prefs().currency || "IQD").toUpperCase();
+}
+export function setCurrencyCode(code: string) {
+  patchPrefs({ currency: code.trim().toUpperCase() || null }, "currency-set");
+}
+export function getClinicCountry(): string | null {
+  return prefs().country;
+}
+
+/** بذر عملة العيادة مرة واحدة بعد أول دخول: الدولة المختارة عند التسجيل تصل
+ *  هنا (من الذاكرة المحلية أو من بيانات الحساب) فتُثبَّت العملة ورمز الاتصال —
+ *  ولا تلمس شيئاً لو سبق للعيادة أن اختارت عملة. */
+export function seedClinicLocale(countryCode?: string | null, currency?: string | null) {
+  const cur = prefs();
+  if (cur.currency) return; // العيادة محسومة العملة — لا نغيّر قرارها
+  const c = countryCode ? countryByCode(countryCode) : undefined;
+  const code = (currency || c?.cur || "").toUpperCase();
+  if (!code) return;
+  const patch: Partial<ClinicPrefs> = { currency: code, country: c?.code ?? countryCode ?? null };
+  // رمز الاتصال يتبع الدولة فقط إذا ما زال على افتراضه العراقي.
+  if (c && c.dial.length > 1 && cur.dial_code === DEFAULT_DIAL_CODE) patch.dial_code = c.dial;
+  patchPrefs(patch, "locale-seed");
 }
 
 /** Clinic logo as a data-URL (null when none). Shown on printed invoices. */

@@ -1,6 +1,7 @@
 import i18next from "i18next";
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
+import { currencyInfo, getActiveCurrency } from "./currency";
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -9,8 +10,13 @@ export function cn(...inputs: ClassValue[]) {
 /** Iraqi Dinar currency symbol. */
 export const IQD = "د.ع";
 
-/** Currency symbol that follows the UI language — د.ع in Arabic, IQD in English. */
-export const currencySymbol = () => (i18next.language === "ar" ? "د.ع" : "IQD");
+/** رمز عملة العيادة النشطة — بالعربي رمزها المختصر («د.ع»، «ر.س») وبالإنجليزي
+ *  كودها الدولي (IQD, SAR). العملة تُشتق من دولة العيادة المختارة عند إنشاء
+ *  الحساب وتُعدَّل من الإعدادات — فالنظام كله يعمل داخلياً بعملة العيادة. */
+export const currencySymbol = () => {
+  const c = currencyInfo(getActiveCurrency());
+  return i18next.language === "ar" ? c.symAr : c.code;
+};
 
 
 
@@ -33,9 +39,12 @@ export function formatDec(n: number): string {
   return decFmt.format(Number.isFinite(n) ? n : 0);
 }
 
-/** Format an amount as Iraqi Dinar — e.g. 25000 → "25,000 د.ع". */
+/** Format an amount in the clinic's currency — e.g. 25000 → "25,000 د.ع".
+ *  عملات الأجزاء (د.ك، د.ب، ر.ع…) تحتفظ بكسورها لأن «9.5 دينار كويتي» مبلغ
+ *  حقيقي؛ تقريبه لـ9 يكذب على الكاشير. */
 export function money(n: number): string {
-  return `${formatNum(n)} ${currencySymbol()}`;
+  const frac = currencyInfo(getActiveCurrency()).frac;
+  return `${frac ? formatDec(n) : formatNum(n)} ${currencySymbol()}`;
 }
 
 export function uid(prefix = "id"): string {

@@ -2,13 +2,15 @@ import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Check, Crown, Sparkles, Clock, ShieldCheck, Wallet, AlertTriangle, ArrowDown } from "lucide-react";
 import { PLANS, priceUsd, periodMonths, usdToIqd, DEFAULT_USD_RATE, TRIAL_DAYS, type BillingPeriod } from "@/lib/plans";
+import { getCurrencyCode } from "@/lib/settings";
+import { currencyInfo, usdTo, fetchLiveRates, rateFor } from "@/lib/currency";
 import { useSubscription, activateSubscription, createPaymentLink, syncSubscriptionFromServer } from "@/lib/subscription";
 import { sb } from "@/lib/clinicSync";
 import { isPlatformAdmin } from "@/lib/platformAdmin";
 import { useAuth } from "@/contexts/AuthContext";
 import { useNavigate } from "react-router-dom";
 import { Button, useToast } from "@/components/ui";
-import { money, formatNum, cn } from "@/lib/utils";
+import { money, formatNum, formatDec, cn } from "@/lib/utils";
 import { playSuccess, playTap, playWarning } from "@/lib/sounds";
 
 /**
@@ -27,6 +29,20 @@ export function Subscribe() {
   const [busy, setBusy] = useState<string | null>(null);
   const period: BillingPeriod = annual ? "annual" : "monthly";
   const plansRef = useRef<HTMLDivElement>(null);
+
+  // عملة العيادة (من دولتها المختارة عند التسجيل): المكافئ المعروض بجانب
+  // السعر الدولاري يتبعها — عيادة سعودية تشوف ريالات لا دنانير.
+  const clinicCur = getCurrencyCode();
+  const curInfo = currencyInfo(clinicCur);
+  const [live, setLive] = useState<Record<string, number> | null>(null);
+  useEffect(() => { if (clinicCur !== "IQD") void fetchLiveRates().then(setLive).catch(() => {}); }, [clinicCur]);
+  /** المكافئ المحلي لسعر دولاري: الدينار عبر سعر المنصّة (نفس ما يُدفع عبر
+   *  Wayl)، وبقية العملات بسعر الصرف الحي/الثابت. */
+  const localEq = (usd: number) => {
+    if (clinicCur === "IQD") return money(usdToIqd(usd));
+    const v = usdTo(usd, clinicCur, live);
+    return `${curInfo.frac ? formatDec(v) : formatNum(v)} ${curInfo.symAr}`;
+  };
 
   const scrollToPlans = () => {
     playTap();
@@ -81,7 +97,9 @@ export function Subscribe() {
           خطة تكبر مع عيادتك
         </h1>
         <p className="mt-3 text-lg text-ink-muted">
-          أسعار واضحة بالدولار، تُدفع بالدينار بالسعر المكافئ. بدّل أو ألغِ متى ما تحب.
+          {clinicCur === "IQD"
+            ? "أسعار واضحة بالدولار، تُدفع بالدينار بالسعر المكافئ. بدّل أو ألغِ متى ما تحب."
+            : `أسعار واضحة بالدولار، وبجانبها المكافئ التقريبي بالـ${curInfo.nameAr}. بدّل أو ألغِ متى ما تحب.`}
         </p>
       </div>
 
@@ -117,7 +135,6 @@ export function Subscribe() {
       <div ref={plansRef} className="mt-8 grid items-stretch gap-5 lg:grid-cols-3">
         {PLANS.map((p, i) => {
           const usd = priceUsd(p, period);
-          const iqd = usdToIqd(usd);
           const isCurrent = status === "active" && sub.plan === p.id;
           return (
             <motion.div
@@ -162,7 +179,7 @@ export function Subscribe() {
                 <span className="mb-1.5 text-sm font-semibold text-ink-subtle">/ {annual ? "سنة" : "شهر"}</span>
               </div>
               <p className="mt-2 inline-flex w-fit items-center gap-1 rounded-lg bg-surface-2 px-2.5 py-1 text-xs font-medium text-ink-muted">
-                ≈ {money(iqd)} بالدينار
+                ≈ {localEq(usd)} {clinicCur === "IQD" ? "بالدينار" : `بالـ${curInfo.nameAr}`}
               </p>
 
               {/* CTA */}
@@ -206,7 +223,7 @@ export function Subscribe() {
       <div className="mt-6 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-2xs font-medium text-ink-subtle">
         <span className="inline-flex items-center gap-1.5"><ShieldCheck size={14} className="text-success-600" /> دفع آمن عبر Wayl</span>
         <span className="opacity-40">•</span>
-        <span>$1 = {formatNum(DEFAULT_USD_RATE)} دينار</span>
+        <span>$1 ≈ {clinicCur === "IQD" ? `${formatNum(DEFAULT_USD_RATE)} دينار` : `${formatDec(rateFor(clinicCur, live))} ${curInfo.symAr}`}</span>
         <span className="opacity-40">•</span>
         <span>زين كاش · فاست باي · Qi</span>
         <span className="opacity-40">•</span>

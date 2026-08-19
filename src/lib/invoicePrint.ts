@@ -1,6 +1,7 @@
 import type { Invoice, InvoiceItem } from "@/types";
 import { siteHost } from "@/lib/appUrl";
 import { getReceiptWidth } from "@/lib/printer";
+import { currencySymbol } from "@/lib/utils";
 
 export type PrintFormat = "a4" | "thermal";
 
@@ -82,7 +83,7 @@ export function buildInvoiceHTML(invoice: Invoice, items: InvoiceItem[], opts: I
   const s = strings(opts.lang);
   const brand = esc(opts.brand || "doctorVet");
   // Default to Iraqi Dinar; caller may override with another label.
-  const cur = ` ${esc(opts.currency ?? "د.ع")}`;
+  const cur = ` ${esc(opts.currency ?? currencySymbol())}`;
   const money = (n: number) => ltr(`${fmt(n)}${cur}`);
   /** مبلغ سالب (خصم) — الإشارة تبقى يسار الرقم داخل المستند العربي. */
   const moneyNeg = (n: number) => ltr(`−${fmt(n)}${cur}`);

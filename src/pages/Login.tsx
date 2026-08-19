@@ -31,6 +31,9 @@ import { Button, Input, Label, Segmented, Card, ThemeToggle, SuccessDialog, useT
 import { staggerContainer, staggerItem } from "@/lib/motion";
 import { HERO_PHOTO } from "@/lib/petPhotos";
 import { isSupabaseConfigured, supabase } from "@/lib/supabase";
+import { COUNTRIES, countryByCode, currencyInfo } from "@/lib/currency";
+import { seedClinicLocale } from "@/lib/settings";
+import { setActiveClinicId } from "@/lib/clinics";
 import { PhoneInput } from "@/components/PhoneInput";
 import { LogoMark } from "@/components/Logo";
 import type { Role } from "@/types";
@@ -203,6 +206,27 @@ function phoneDigitsLen(v: string): number {
   return v.replace(/\D/g, "").replace(/^0+/, "").length;
 }
 
+/** اختيار دولة العيادة عند التسجيل — منها تُشتق عملة النظام كله (د.ع، ر.س، …).
+ *  أول حقل بالنموذج عمداً: القرار الأول قبل أي بيانات. */
+function CountrySelect({ value, onChange, t }: { value: string; onChange: (v: string) => void; t: TFunction }) {
+  const cur = countryByCode(value)?.cur ?? "IQD";
+  return (
+    <div>
+      <label className="label">{t("auth.country", "دولة العيادة")}</label>
+      <select data-country className="input" value={value} onChange={(e) => onChange(e.target.value)}>
+        {COUNTRIES.map((c) => (
+          <option key={c.code} value={c.code}>
+            {c.flag} {c.nameAr}
+          </option>
+        ))}
+      </select>
+      <p className="mt-1 text-2xs text-ink-subtle">
+        {t("auth.countryHint", { cur: currencyInfo(cur).nameAr, defaultValue: "سيعمل نظامك بالـ{{cur}} — وتقدر تغيّر العملة لاحقاً من الإعدادات." })}
+      </p>
+    </div>
+  );
+}
+
 /** Live Supabase auth — sign in / sign up (+ phone, clinic city), email-code verification,
  *  and forgot/reset password. Shown when VITE_SUPABASE_* are configured. */
 function SupabaseAuthCard() {
@@ -231,6 +255,7 @@ function SupabaseAuthCard() {
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [city, setCity] = useState("");
+  const [country, setCountry] = useState("IQ");
   const [password, setPassword] = useState("");
   const [newPw, setNewPw] = useState("");
   const [showPw, setShowPw] = useState(false);
@@ -240,6 +265,34 @@ function SupabaseAuthCard() {
 
   const clear = () => { setError(null); setInfo(null); };
   const emailOk = (v: string) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v.trim());
+
+  // شاشة «أكّد بريدك» ما تنتظر المستخدم يرجع يسجّل بنفسه: ما دامت مفتوحة
+  // والاعتماديات بالذاكرة، نحاول الدخول تلقائياً — محاولة فورية كلما رجع
+  // التركيز للتبويب (لحظة رجوعه من الإيميل) + نبضة كل ١٢ ثانية (تحت حدود
+  // معدّل Supabase). أول ما يتأكد الحساب تنجح المحاولة ويدخل مباشرة.
+  useEffect(() => {
+    if (view !== "sent" || !password || !emailOk(email)) return;
+    let stopped = false, attempting = false, tries = 0;
+    const attempt = async () => {
+      if (stopped || attempting || tries >= 75) return; // ٧٥ نبضة ≈ ربع ساعة ثم نتوقف
+      attempting = true; tries++;
+      try {
+        const res = await signInEmail(email, password);
+        if (!res.error && !stopped) { playSuccess(); navigate("/"); }
+      } catch { /* لسّه غير مؤكد — نحاول لاحقاً */ } finally { attempting = false; }
+    };
+    const iv = setInterval(() => void attempt(), 12000);
+    const onFocus = () => { if (document.visibilityState !== "hidden") void attempt(); };
+    document.addEventListener("visibilitychange", onFocus);
+    window.addEventListener("focus", onFocus);
+    return () => {
+      stopped = true;
+      clearInterval(iv);
+      document.removeEventListener("visibilitychange", onFocus);
+      window.removeEventListener("focus", onFocus);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view]);
   // Owner sign-in method — phone-first; email remains for existing accounts.
   const [method, setMethod] = useState<"phone" | "email">("phone");
 
@@ -270,7 +323,8 @@ function SupabaseAuthCard() {
       if (mode === "signup") {
         if (!name.trim()) { setError(t("auth.nameRequired", "Please enter your name.")); return; }
         const role: Role = portal === "clinic" ? "admin" : "owner";
-        const res = await signUpEmail(email, password, name, role, { phone, city });
+        const co = portal === "clinic" ? countryByCode(country) : undefined;
+        const res = await signUpEmail(email, password, name, role, { phone, city, country: co?.code, currency: co?.cur });
         if (res.error) { setError(res.error); return; }
         if (res.alreadyExists) {
           // Existing account → switch to sign-in and append this role after login
@@ -469,6 +523,15 @@ function SupabaseAuthCard() {
                   <p className="mt-1 break-all font-semibold text-ink">{email}</p>
                   <p className="mt-3 text-sm text-ink-muted">{t("auth.checkEmailHint", "Open it to activate your account — you'll be signed in automatically.")}</p>
                 </div>
+                {/* المراقبة الحيّة: نجرّب الدخول تلقائياً — فور ما يؤكد من بريده
+                    يدخل النظام مباشرة بلا رجعة لنموذج تسجيل الدخول. */}
+                <div data-autologin className="mx-auto flex w-fit items-center gap-2 rounded-full border border-brand-200/60 bg-brand-50 px-4 py-2 text-xs font-semibold text-brand-700 dark:border-brand-500/25 dark:bg-brand-500/10 dark:text-brand-300">
+                  <span className="relative flex h-2.5 w-2.5">
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-brand-400 opacity-60" />
+                    <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-brand-500" />
+                  </span>
+                  {t("auth.waitingConfirm", "بانتظار تأكيدك… ستدخل تلقائياً فور الضغط على الرابط")}
+                </div>
                 {msg}
                 <div className="rounded-2xl border border-line bg-surface-2 px-4 py-3 text-xs text-ink-subtle">{t("auth.checkSpam", "Can't find it? Check your spam or promotions folder.")}</div>
                 <div className="space-y-2.5 pt-1">
@@ -525,6 +588,7 @@ function SupabaseAuthCard() {
                 <motion.form variants={staggerItem} onSubmit={submitAuth} className="space-y-3">
                   {mode === "signup" && (
                     <>
+                      {portal === "clinic" && <CountrySelect value={country} onChange={setCountry} t={t} />}
                       <div>
                         <label className="label">{portal === "clinic" ? t("auth.clinicName", "Clinic name") : t("auth.fullName", "Full name")}</label>
                         <input className="input" value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" />
@@ -587,6 +651,7 @@ function DemoLogin() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [city, setCity] = useState("");
+  const [country, setCountry] = useState("IQ");
   const [phone, setPhone] = useState("");
   const [license, setLicense] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -676,6 +741,10 @@ function DemoLogin() {
       const res = registerClinic({ name, email, password, city, phone, license });
       if (!res.ok) { setError(t("auth.emailTaken")); return; }
       signInClinic(res.clinic);
+      // بذر عملة الدولة فوراً (الوضع التجريبي بلا تأكيد بريد): نثبّت العيادة
+      // النشطة أولاً حتى يكتب البذر على مفتاح تفضيلاتها الصحيح.
+      setActiveClinicId(res.clinic.id);
+      seedClinicLocale(country);
       setWelcome({ name, to: "/reception" });
     } else {
       const clinic = authenticateClinic(email, password);
@@ -815,6 +884,7 @@ function DemoLogin() {
                     <PhoneOtpCard t={t} send={demoSendOtp} verify={demoVerifyOtp} />
                   ) : (
                   <div className="space-y-3">
+                    {mode === "register" && !isOwner && <CountrySelect value={country} onChange={setCountry} t={t} />}
                     {mode === "register" && (
                       <div>
                         <Label>{isOwner ? t("auth.fullName") : t("auth.clinicName")}</Label>
