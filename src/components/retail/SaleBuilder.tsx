@@ -1233,10 +1233,13 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
         (cartResize.gridRef as React.MutableRefObject<HTMLDivElement | null>).current = el;
       }}
       className={cn(
-        "grid gap-4 lg:grid-cols-[1fr,380px]",
-        // التصميم (أ): ثلاث مناطق ثابتة — الصفحة نفسها لا تمرّر أبداً؛ تمرّ
-        // الشبكة والسلة داخلياً فيبقى البحث والإجمالي وزر الإتمام بمكانهم.
-        posV2 && "min-h-0",
+        "grid gap-4",
+        // السلة هي بطل الشاشة لا الشبكة: على الضيّقة تحتل النصف السفلي ثابتةً
+        // مفتوحةً (لا شريط مطويّ)، وعلى الواسعة عموداً بـ٤٠٪ من العرض بخطٍّ
+        // كبير مقروء من وقفة الكاشير. الشبكة تخدم السلة لا العكس.
+        posV2
+          ? "min-h-0 grid-rows-[minmax(0,1fr),minmax(0,52%)] lg:grid-rows-1 lg:grid-cols-[minmax(0,1fr),clamp(420px,40%,620px)]"
+          : "lg:grid-cols-[1fr,380px]",
       )}
       // Opt-in resizable cart: on lg+ the cart column takes the dragged width
       // (live CSS var while dragging — see useCartResize).
@@ -1509,34 +1512,42 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
         "card relative flex flex-col p-0",
         posV2
           ? cn("min-h-0 lg:h-full lg:max-h-none", cartSheet
-              ? "fixed inset-x-2 bottom-2 top-14 z-40 max-h-none overflow-hidden shadow-raised lg:static lg:inset-auto lg:z-auto lg:shadow-none"
-              : "hidden lg:flex")
+              && "fixed inset-x-2 bottom-2 top-14 z-40 max-h-none overflow-hidden shadow-raised lg:static lg:inset-auto lg:z-auto lg:shadow-none")
           : "max-h-[78vh] lg:sticky lg:top-4",
       )}>
         {cartResize.active && <CartResizeHandle dragging={cartResize.dragging} width={cartResize.width} handleProps={cartResize.handleProps} />}
-        <div className="flex items-center justify-between border-b border-line p-4">
-          <span className="flex items-center gap-2 font-display font-bold text-ink"><ShoppingCart size={18} /> {t("retail.cart", "Cart")} {units > 0 && <span className="chip bg-brand-50 text-2xs text-brand-700 dark:bg-brand-500/15 dark:text-brand-300">{units}</span>}</span>
+        <div className={cn("flex items-center justify-between border-b border-line", posV2 ? "px-4 py-3" : "p-4")}>
+          <span className={cn("flex items-center gap-2 font-display font-bold text-ink", posV2 && "text-lg")}>
+            <ShoppingCart size={posV2 ? 22 : 18} /> {t("retail.cart", "Cart")}
+            {units > 0 && <span className={cn("chip bg-brand-600 font-black text-white", posV2 ? "text-xs" : "text-2xs bg-brand-50 text-brand-700 dark:bg-brand-500/15 dark:text-brand-300")}>{units}</span>}
+          </span>
           <span className="flex items-center gap-2">
             {cart.length > 0 && <button onClick={() => { playTap(); setCart([]); }} className="text-xs text-ink-subtle transition hover:text-danger-600">{t("common.clear", "Clear")}</button>}
             {posV2 && (
-              <button onClick={() => { playTap(); setCartSheet(false); }} className="grid h-9 w-9 place-items-center rounded-xl bg-surface-2 text-ink-muted transition hover:bg-surface-3 lg:hidden" aria-label={t("common.close", "إغلاق")}>
-                <ChevronDown size={18} />
+              // تكبير السلة لملء الشاشة (خصم · طرق دفع · تفاصيل)، والرجوع للنصف.
+              <button
+                data-cartexpand
+                onClick={() => { playTap(); setCartSheet(!cartSheet); }}
+                className="grid h-10 w-10 place-items-center rounded-xl bg-surface-2 text-ink-muted transition hover:bg-surface-3 lg:hidden"
+                aria-label={cartSheet ? t("common.close", "إغلاق") : t("retail.expandCart", "تكبير السلة")}
+              >
+                {cartSheet ? <ChevronDown size={20} /> : <ChevronUp size={20} />}
               </button>
             )}
           </span>
         </div>
 
-        <div className="flex-1 overflow-auto p-2">
+        <div className={cn("flex-1 overflow-auto", posV2 ? "min-h-[9.5rem] basis-40 p-2.5" : "p-2")}>
           {cart.length === 0 ? (
-            <div className="grid h-40 place-items-center px-6 text-center text-sm text-ink-subtle">{t("retail.cartEmpty", "Add products to start a sale.")}</div>
+            <div className={cn("grid place-items-center px-6 text-center text-ink-subtle", posV2 ? "h-full min-h-[8rem] text-base" : "h-40 text-sm")}>{t("retail.cartEmpty", "Add products to start a sale.")}</div>
           ) : (
-            <div className="space-y-1.5">
+            <div className={cn(posV2 ? "space-y-2" : "space-y-1.5")}>
               <AnimatePresence initial={false}>
                 {cart.map((l) => (
                   <motion.div key={l.id} layout initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }}
-                    className={cn("flex items-center gap-2 rounded-2xl border p-2.5", flash === l.id ? "border-brand-400 bg-brand-50 dark:bg-brand-500/15" : "border-line bg-surface-1")}>
+                    className={cn("flex items-center rounded-2xl border", posV2 ? "gap-2.5 p-3" : "gap-2 p-2.5", flash === l.id ? "border-brand-400 bg-brand-50 dark:bg-brand-500/15" : "border-line bg-surface-1")}>
                     <div className="min-w-0 flex-1">
-                      <p className="flex items-center gap-1.5 truncate text-sm font-semibold text-ink">
+                      <p className={cn("flex items-center gap-1.5 truncate font-bold text-ink", posV2 ? "text-base leading-snug" : "text-sm font-semibold")}>
                         {l.name}
                         {l.kind === "service" && <span className="chip shrink-0 bg-brand-50 text-2xs font-medium text-brand-700 dark:bg-brand-500/15 dark:text-brand-300">{t("retail.service", "Service")}</span>}
                         {l.kind === "med" && (
@@ -1557,7 +1568,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
                             : <>{l.med.family} · {l.med.dosage}</>}
                         </p>
                       )}
-                      <div className="mt-0.5 flex items-center gap-1 text-xs text-ink-subtle">
+                      <div className={cn("mt-0.5 flex items-center gap-1 text-ink-subtle", posV2 ? "text-sm" : "text-xs")}>
                         <PriceEdit value={l.unit_price} onChange={(v) => setPrice(l.id, v)} />
                         <span>
                           {l.kind === "product" && l.hasSubUnit
@@ -1625,8 +1636,8 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
                       <span className={cn("text-center font-bold tabular-nums text-ink", posV2 ? "w-8 text-base" : "w-6 text-sm")}>{l.qty}</span>
                       <button data-qtyplus onClick={() => { playTap(); if (l.qty < unitCap(l)) setQty(l.id, l.qty + 1); else { playWarning(); toast.error(t("retail.maxStock", "No more in stock")); } }} className={cn("grid place-items-center rounded-lg bg-surface-2 text-ink-muted transition hover:bg-surface-3", posV2 ? "h-11 w-11" : "h-7 w-7")}><Plus size={posV2 ? 18 : 14} /></button>
                     </div>
-                    <span className="w-16 text-end text-sm font-bold tabular-nums text-ink">{money(l.qty * l.unit_price)}</span>
-                    <button onClick={() => removeLine(l.id)} aria-label={t("common.delete", "Remove")} className="grid h-7 w-7 place-items-center rounded-lg text-ink-subtle transition hover:bg-danger-50 hover:text-danger-600"><Trash2 size={14} /></button>
+                    <span className={cn("text-end font-extrabold tabular-nums text-ink", posV2 ? "w-24 text-lg" : "w-16 text-sm font-bold")}>{money(l.qty * l.unit_price)}</span>
+                    <button onClick={() => removeLine(l.id)} aria-label={t("common.delete", "Remove")} className={cn("grid place-items-center rounded-lg text-ink-subtle transition hover:bg-danger-50 hover:text-danger-600", posV2 ? "h-11 w-11" : "h-7 w-7")}><Trash2 size={posV2 ? 17 : 14} /></button>
                   </motion.div>
                 ))}
               </AnimatePresence>
@@ -1635,9 +1646,10 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
         </div>
 
         {/* Discount + payment + totals */}
-        <div className="border-t border-line p-4 space-y-3">
-          {/* Discount */}
-          <div className="flex items-center gap-2">
+        <div className={cn("border-t border-line", posV2 ? "shrink-0 space-y-2 p-3" : "p-4 space-y-3")}>
+          {/* Discount — يظهر بالشاشات الواسعة دائماً، وبالضيّقة عند تكبير السلة:
+              نصف الشاشة السفلي مخصّص لما يشتريه الزبون فعلاً لا لأدوات نادرة. */}
+          <div className={cn("items-center gap-2", posV2 && !cartSheet ? "hidden lg:flex" : "flex")}>
             <span className="flex items-center gap-1 text-xs font-semibold text-ink-muted"><Tag size={13} /> {t("retail.discount", "Discount")}</span>
             <div className="ms-auto flex items-center gap-1.5">
               <div className="flex overflow-hidden rounded-lg border border-line">
@@ -1649,7 +1661,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
           </div>
 
           {/* Payment — full, split across methods, or partial (credit / دفع آجل) */}
-          <div className="space-y-1.5">
+          <div className={cn("space-y-1.5", posV2 && !cartSheet && "hidden lg:block")}>
             <div className="flex items-center justify-between">
               <span className="flex items-center gap-1.5 text-xs font-semibold text-ink-muted">
                 <Wallet size={13} /> {t("retail.payment", "الدفع")}
@@ -1878,7 +1890,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
 
           {/* Totals */}
           <div className="space-y-1 border-t border-line pt-3 text-sm">
-            <div className="flex items-center justify-between text-ink-muted"><span>{t("retail.subtotal", "Subtotal")}</span><span className="tabular-nums">{money(subtotal)}</span></div>
+            <div className={cn("items-center justify-between text-ink-muted", posV2 && !cartSheet ? "hidden lg:flex" : "flex")}><span>{t("retail.subtotal", "Subtotal")}</span><span className="tabular-nums">{money(subtotal)}</span></div>
             {finalOverride != null ? (
               /* Manual final price → a derived discount OR a surcharge (markup) line. */
               <>
@@ -1913,8 +1925,8 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
                 {manualDiscountAmt > 0 && <div className="flex items-center justify-between text-success-600"><span>{t("retail.discount", "Discount")}</span><span className="tabular-nums">-{money(manualDiscountAmt)}</span></div>}
               </>
             )}
-            <div className="flex items-center justify-between">
-              <span className="font-display font-bold text-ink">{t("retail.total", "Total")}</span>
+            <div className={cn("flex items-center justify-between", posV2 && "pt-1")}>
+              <span className={cn("font-display font-bold text-ink", posV2 && "text-lg")}>{t("retail.total", "Total")}</span>
               {editingTotal ? (
                 <div className="flex items-center gap-1">
                   <span className="text-2xs font-bold text-ink-subtle">{currencySymbol()}</span>
@@ -1929,9 +1941,9 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
               ) : (
                 <button
                   type="button" onClick={beginEditTotal} title={t("retail.editTotal", "تعديل السعر النهائي")}
-                  className="inline-flex items-center gap-1.5 rounded-lg px-1.5 font-display text-xl font-extrabold tabular-nums text-ink underline decoration-dotted decoration-brand-400 underline-offset-4 transition hover:bg-brand-50 dark:hover:bg-brand-500/15"
+                  className={cn("inline-flex items-center gap-1.5 rounded-lg px-1.5 font-display font-extrabold tabular-nums text-ink underline decoration-dotted decoration-brand-400 underline-offset-4 transition hover:bg-brand-50 dark:hover:bg-brand-500/15", posV2 ? "text-3xl" : "text-xl")}
                 >
-                  {money(total)} <Pencil size={13} className="text-ink-subtle" />
+                  {money(total)} <Pencil size={posV2 ? 15 : 13} className="text-ink-subtle" />
                 </button>
               )}
             </div>
@@ -1947,11 +1959,11 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
                 <span className="tabular-nums">+{money(deliveryFee)} = <b>{money(effTotal)}</b></span>
               </div>
             )}
-            <div className="flex items-center justify-end gap-1 text-2xs text-success-600"><TrendingUp size={11} /> {t("retail.profit", "Profit")} {money(profit)}</div>
+            <div className={cn("items-center justify-end gap-1 text-2xs text-success-600", posV2 && !cartSheet ? "hidden lg:flex" : "flex")}><TrendingUp size={11} /> {t("retail.profit", "Profit")} {money(profit)}</div>
           </div>
 
           {preSaleEnabled && (
-            <div className="grid grid-cols-2 gap-2">
+            <div className={cn("grid-cols-2 gap-2", posV2 && !cartSheet ? "hidden lg:grid" : "grid")}>
               <Button variant="secondary" size="sm" disabled={cart.length === 0} leftIcon={<Printer size={15} />} onClick={() => printPreSale("a4")} data-presale="a4">
                 {t("retail.preSaleA4", "فاتورة أولية A4")}
               </Button>
@@ -1988,54 +2000,8 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
         </div>
       </div>
 
-      {/* ─── شريط السلة الملتصق — الإصلاح الأهم ─────────────────────────────
-          على كل عرض دون 1024px كانت السلة تنزل أسفل شبكة المنتجات كاملة (تبدأ
-          عند 1573px بينما شاشة الآيباد العمودي 1180px)، فيبيع الكاشير «أعمى»:
-          يضيف صنفاً ولا يرى تأكيداً. هذا الشريط يضمن أن العدد والإجمالي وزر
-          الإتمام لا تغادر الشاشة أبداً، وضغطة واحدة تفتح السلة كاملة. */}
-      {posV2 && !cartSheet && (
-        <div
-          className="fixed inset-x-0 bottom-0 z-40 border-t border-line bg-surface-1/95 p-2.5 shadow-raised backdrop-blur lg:hidden"
-          // فسحة الحافة السفلية بأجهزة iOS (مؤشّر الصفحة الرئيسية) حتى لا
-          // يقع زر الإتمام تحت إصبع النظام.
-          style={{ paddingBottom: "calc(0.625rem + env(safe-area-inset-bottom))" }}
-        >
-          <div className="mx-auto flex max-w-3xl items-center gap-2.5">
-            <button
-              type="button" data-cartbar
-              onClick={() => { playTap(); setCartSheet(true); }}
-              className="flex min-w-0 flex-1 items-center gap-2.5 rounded-xl px-2 py-1.5 text-start transition hover:bg-surface-2"
-            >
-              <span className="relative grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-brand-50 text-brand-600 dark:bg-brand-500/15 dark:text-brand-300">
-                <ShoppingCart size={20} />
-                {units > 0 && (
-                  <motion.span
-                    key={units} initial={{ scale: 0.5 }} animate={{ scale: 1 }} transition={{ type: "spring", stiffness: 500, damping: 18 }}
-                    className="absolute -top-1 -end-1 grid h-5 min-w-[1.25rem] place-items-center rounded-full bg-brand-600 px-1 text-2xs font-black text-white"
-                  >{units}</motion.span>
-                )}
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-2xs font-bold text-ink-muted">
-                  {cart.length === 0
-                    ? t("retail.cartEmptyShort", "السلة فارغة")
-                    : t("retail.nItems", { n: formatNum(units), defaultValue: "{{n}} صنف بالسلة" })}
-                </span>
-                <motion.span key={total} initial={{ opacity: 0.4 }} animate={{ opacity: 1 }} className="block font-display text-lg font-extrabold tabular-nums leading-tight text-ink">
-                  {money(effTotal)}
-                </motion.span>
-              </span>
-              <ChevronUp size={18} className="shrink-0 text-ink-subtle" />
-            </button>
-            <Button
-              size="lg" className="shrink-0" disabled={cart.length === 0 || needsDebtName} loading={busy}
-              onClick={checkout} leftIcon={deliveryOn ? <Bike size={18} /> : <CheckCircle2 size={18} />}
-            >
-              {t("retail.complete", "إصدار الفاتورة")}
-            </Button>
-          </div>
-        </div>
-      )}
+      {/* لا شريط سلة مطويّ بعد اليوم: السلة نفسها هي نصف الشاشة السفلي وتبقى
+          مفتوحة بأصنافها وإجماليها وزر إتمامها — «الأساسي هو السلة». */}
       {/* ظِل خلف لوح السلة المفتوح */}
       {posV2 && cartSheet && (
         <button
