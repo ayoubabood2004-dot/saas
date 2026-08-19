@@ -26,7 +26,7 @@ create table if not exists plan_prices (
 insert into plan_prices (plan, monthly_usd, annual_usd) values
   ('basic',    30, 360),
   ('advanced', 55, 660),
-  ('super',    78, 936)
+  ('super',   100, 1000)
 on conflict (plan) do nothing;
 
 alter table plan_prices enable row level security;

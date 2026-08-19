@@ -634,6 +634,11 @@ function Pricing() {
                   = ${formatNum(annual ? t.annualUsd : t.monthlyUsd)} USD
                 </p>
               )}
+              {annual && t.annualUsd < t.monthlyUsd * 12 && (
+                <p className="mt-1 w-fit rounded-full bg-success-50 px-2.5 py-0.5 text-2xs font-extrabold text-success-700 dark:bg-success-500/15 dark:text-success-300">
+                  🎁 شهران مجاناً مقارنة بالشهري
+                </p>
+              )}
               <ul className="mt-5 flex-1 space-y-2.5">
                 {t.feats.map((f) => (
                   <li key={f} className="flex items-start gap-2 text-sm text-ink-muted">

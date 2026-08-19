@@ -5,8 +5,8 @@
 // Prices are defined in USD. The clinic is charged the equivalent amount in
 // Iraqi Dinar (IQD) through Wayl, converted at a configurable rate (the Iraqi
 // market rate drifts, so the owner can update it from the admin panel rather
-// than it being locked to a hard-coded number). Annual = 12 × monthly — no
-// discount.
+// than it being locked to a hard-coded number). Annual = 12 × monthly for the
+// lower tiers; السوبر annual is a flat $1000 (two months free).
 // ============================================================================
 
 export type PlanId = "basic" | "advanced" | "super";
@@ -61,8 +61,10 @@ export const PLANS: Plan[] = [
     id: "super",
     name: "السوبر",
     tag: "كل شيء — للعيادة المتكاملة",
-    monthlyUsd: 78,
-    annualUsd: annualUsdFor(78),
+    // الاشتراك الكامل: ١٠٠$ شهرياً، والسنوي ألف دولار صافية (شهران مجاناً) —
+    // الباقة الوحيدة التي يكسر سنويّها قاعدة «١٢ × الشهري».
+    monthlyUsd: 100,
+    annualUsd: 1000,
     popular: true,
     feats: [
       "كل ما في المطورة",

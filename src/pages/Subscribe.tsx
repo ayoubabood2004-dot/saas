@@ -181,6 +181,11 @@ export function Subscribe() {
               <p className="mt-2 inline-flex w-fit items-center gap-1 rounded-lg bg-surface-2 px-2.5 py-1 text-xs font-medium text-ink-muted">
                 ≈ {localEq(usd)} {clinicCur === "IQD" ? "بالدينار" : `بالـ${curInfo.nameAr}`}
               </p>
+              {annual && priceUsd(p, "annual") < priceUsd(p, "monthly") * 12 && (
+                <p className="mt-2 w-fit rounded-full bg-success-50 px-2.5 py-1 text-2xs font-extrabold text-success-700 dark:bg-success-500/15 dark:text-success-300">
+                  🎁 شهران مجاناً مقارنة بالشهري
+                </p>
+              )}
 
               {/* CTA */}
               <Button
