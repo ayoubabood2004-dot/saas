@@ -225,6 +225,7 @@ export function Sidebar() {
  */
 function SubscriptionNavCard() {
   const navigate = useNavigate();
+  const { t } = useTranslation();
   const { status, trialDaysLeft } = useSubscription();
 
   if (status === "trialing") {
@@ -235,8 +236,8 @@ function SubscriptionNavCard() {
       >
         <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-white/20"><Sparkles size={17} /></span>
         <span className="min-w-0 flex-1">
-          <span className="block text-sm font-bold">اشترك الآن</span>
-          <span className="block text-2xs text-white/85">تجربة مجانية · باقي {formatNum(trialDaysLeft)} يوم</span>
+          <span className="block text-sm font-bold">{t("sub.subscribeNow", "اشترك الآن")}</span>
+          <span className="block text-2xs text-white/85">{t("sub.trialLeft", { n: formatNum(trialDaysLeft), defaultValue: "تجربة مجانية · باقي {{n}} يوم" })}</span>
         </span>
         <ArrowLeft size={16} className="shrink-0 text-white/80" />
       </button>
@@ -251,8 +252,8 @@ function SubscriptionNavCard() {
       >
         <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-warn-500/20"><Sparkles size={17} /></span>
         <span className="min-w-0 flex-1">
-          <span className="block text-sm font-bold">انتهى الاشتراك</span>
-          <span className="block text-2xs opacity-80">جدّد للمتابعة</span>
+          <span className="block text-sm font-bold">{t("sub.expired", "انتهى الاشتراك")}</span>
+          <span className="block text-2xs opacity-80">{t("sub.renew", "جدّد للمتابعة")}</span>
         </span>
         <ArrowLeft size={16} className="shrink-0 opacity-70" />
       </button>

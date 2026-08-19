@@ -75,7 +75,10 @@
     "reports": "Reports & Analytics",
     "staff": "Staff Management",
     "activity": "Activity log",
-    "subscribe": "Subscription"
+    "subscribe": "Subscription",
+    "store": "Online Store",
+    "campaignsChild": "Campaigns",
+    "reminders": "Reminders"
   },
   "campaigns": {
     "title": "WhatsApp Campaigns",
@@ -695,7 +698,9 @@
     "bulkPartial": "Added {{done}}, {{failed}} failed — the remaining lines are ready to retry",
     "bulkDupBarcode": "Barcode {{code}} is repeated in the list",
     "bulkBarcodeExists": "Barcode {{code}} already belongs to \"{{name}}\" — use a purchase invoice to restock it",
-    "stockReport": "Print stock report"
+    "stockReport": "Print stock report",
+    "tabLedger": "Debts & Invoices",
+    "tabBarcodes": "Barcode generator"
   },
   "role": {
     "admin": "Clinic",
@@ -1462,7 +1467,11 @@
     "stockHealthy": "Stock levels look healthy 👍",
     "outOfStock": "Out",
     "unitsLeft": "{{n}} left",
-    "andMore": "and {{n}} more"
+    "andMore": "and {{n}} more",
+    "cageRoom": "Cage room",
+    "cageOpen": "Open it",
+    "cageBusy": "cages occupied now",
+    "cageDoses": "{{n}} doses due now — their cages are blinking in the room"
   },
   "snapshot": {
     "vaccinated": "Vaccinated",
@@ -1799,7 +1808,9 @@
     "discharge": "Discharge",
     "todayMeds": "{{n}} meds today",
     "admissions": "Admissions",
-    "grpRecent": "Recent"
+    "grpRecent": "Recent",
+    "addPet": "Add pet",
+    "addPetHint": "Add a new pet for this owner"
   },
   "meds": {
     "title": "Clinic medications",
@@ -2161,14 +2172,23 @@
       "netCashLabel": "Net cash (cash collected − cash withdrawn)",
       "confirmDel": "Confirm delete?",
       "methodLabel": "Withdrawal method",
-      "method": { "cash": "Cash", "card": "Card", "bank": "Bank transfer" },
+      "method": {
+        "cash": "Cash",
+        "card": "Card",
+        "bank": "Bank transfer"
+      },
       "methodHintCash": "Taken from drawer cash — deducted from net cash.",
       "methodHintOther": "Outside the drawer — not deducted from net cash."
     },
     "zWithdrawals": "Cash withdrawals from drawer",
     "zWithdrawalsNonCash": "Card / bank withdrawals (outside drawer)",
     "zNetCash": "Net cash in drawer",
-    "dayNav": { "prev": "Previous day", "next": "Next day", "jumpToday": "Back to today", "range": "Range view" }
+    "dayNav": {
+      "prev": "Previous day",
+      "next": "Next day",
+      "jumpToday": "Back to today",
+      "range": "Range view"
+    }
   },
   "act": {
     "title": "Activity log",
@@ -2362,5 +2382,11 @@
     "contactProgress": "Contacted {{sent}} of {{due}} due today",
     "sentShort": "Sent",
     "sendShort": "Remind"
+  },
+  "sub": {
+    "subscribeNow": "Subscribe now",
+    "trialLeft": "Free trial · {{n}} days left",
+    "expired": "Subscription expired",
+    "renew": "Renew to continue"
   }
 }
