@@ -13,6 +13,8 @@
 //     value (world-class rule: never re-judge old results by new references).
 // ============================================================================
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
 import { sendWhatsApp, quotaMessage } from "@/lib/quotas";
 import { FlaskConical, Plus, Camera, Trash2, Receipt, ChevronDown, AlertTriangle, CheckCircle2, MessageCircle, Printer, ShoppingCart, ArrowRightLeft, Brain, ShieldAlert, ShieldCheck, Activity, Cable, Cpu, X, Inbox, Radio, ClipboardList, TestTube2, BadgeCheck, Ban, Clock, Zap } from "lucide-react";
 import type { Pet, LabResult, LabValue, LabValueFlag, LabDeviceInbox, LabStatusValue } from "@/types";
@@ -57,6 +59,9 @@ const FLAG_CELL: Record<LabValueFlag, string> = {
 /** Five-step verdict scale (بلا أرقام) — the arrows the doctor taps. */
 const ARROW5: Record<LabValueFlag, string> = { very_low: "↓↓", low: "↓", normal: "✓", high: "↑", very_high: "↑↑" };
 const LABEL5: Record<LabValueFlag, string> = { very_low: "منخفض جداً", low: "منخفض", normal: "طبيعي", high: "مرتفع", very_high: "مرتفع جداً" };
+/** Translation keys for LABEL5 — the Arabic above stays the inline default at every call site. */
+const LABEL5_KEY: Record<LabValueFlag, string> = { very_low: "lab.flagVeryLow", low: "lab.flagLow", normal: "lab.flagNormal", high: "lab.flagHigh", very_high: "lab.flagVeryHigh" };
+const label5 = (t: TFunction, f: LabValueFlag): string => t(LABEL5_KEY[f], LABEL5[f]);
 const SCALE5: LabValueFlag[] = ["very_low", "low", "normal", "high", "very_high"];
 /** Ordinal distance from normal — drives the before/after verdict for mixed entries. */
 const FLAG_ORD: Record<LabValueFlag, number> = { very_low: 2, low: 1, normal: 0, high: 1, very_high: 2 };
@@ -111,10 +116,10 @@ function LabTimeline({ r }: { r: LabResult }) {
 }
 
 /** Severity ribbon styling — one glanceable state (طبيعي / انتبه / حرج). */
-const SEV_META: Record<Severity, { label: string; icon: typeof ShieldCheck; cls: string }> = {
-  normal: { label: "الحالة مطمئنة", icon: ShieldCheck, cls: "border-success-200 bg-success-50 text-success-800 dark:border-success-500/30 dark:bg-success-500/10 dark:text-success-200" },
-  attention: { label: "تحتاج انتباه", icon: Activity, cls: "border-warn-200 bg-warn-50 text-warn-800 dark:border-warn-500/30 dark:bg-warn-500/10 dark:text-warn-200" },
-  critical: { label: "حالة حرجة — راجعها فوراً", icon: ShieldAlert, cls: "border-danger-300 bg-danger-50 text-danger-800 dark:border-danger-500/40 dark:bg-danger-500/10 dark:text-danger-200" },
+const SEV_META: Record<Severity, { key: string; label: string; icon: typeof ShieldCheck; cls: string }> = {
+  normal: { key: "lab.sevNormal", label: "الحالة مطمئنة", icon: ShieldCheck, cls: "border-success-200 bg-success-50 text-success-800 dark:border-success-500/30 dark:bg-success-500/10 dark:text-success-200" },
+  attention: { key: "lab.sevAttention", label: "تحتاج انتباه", icon: Activity, cls: "border-warn-200 bg-warn-50 text-warn-800 dark:border-warn-500/30 dark:bg-warn-500/10 dark:text-warn-200" },
+  critical: { key: "lab.sevCritical", label: "حالة حرجة — راجعها فوراً", icon: ShieldAlert, cls: "border-danger-300 bg-danger-50 text-danger-800 dark:border-danger-500/40 dark:bg-danger-500/10 dark:text-danger-200" },
 };
 const INSIGHT_TONE: Record<Insight["tone"], string> = {
   critical: "border-s-4 border-danger-500 bg-danger-50/70 text-danger-900 dark:bg-danger-500/10 dark:text-danger-100",
@@ -125,13 +130,14 @@ const INSIGHT_TONE: Record<Insight["tone"], string> = {
 
 /** «قارئ النتائج» — DecisionIQ-style interpretation block for a numeric result. */
 function InterpretationPanel({ insights }: { insights: Insight[] }) {
+  const { t } = useTranslation();
   if (!insights.length) return null;
   return (
     <div className="mt-3 rounded-2xl border border-brand-200 bg-gradient-to-br from-brand-50/80 to-sky-50/60 p-3 dark:border-brand-500/30 dark:from-brand-500/10 dark:to-sky-500/5">
       <div className="mb-2 flex items-center gap-1.5">
         <span className="grid h-6 w-6 place-items-center rounded-lg bg-brand-600 text-white"><Brain size={13} /></span>
-        <span className="text-xs font-extrabold text-brand-800 dark:text-brand-200">قراءة السستم الذكية</span>
-        <span className="chip bg-brand-100 text-[10px] font-bold text-brand-700 dark:bg-brand-500/20 dark:text-brand-300">تفسير مساعد — القرار للطبيب</span>
+        <span className="text-xs font-extrabold text-brand-800 dark:text-brand-200">{t("lab.smartRead", "قراءة السستم الذكية")}</span>
+        <span className="chip bg-brand-100 text-[10px] font-bold text-brand-700 dark:bg-brand-500/20 dark:text-brand-300">{t("lab.assistDisclaimer", "تفسير مساعد — القرار للطبيب")}</span>
       </div>
       <div className="space-y-1.5">
         {insights.map((ins) => (
@@ -152,12 +158,13 @@ function InterpretationPanel({ insights }: { insights: Insight[] }) {
 
 type EntryMode = "numbers" | "snap" | "micro";
 
+// `label` is the stored panel_label (data — stays Arabic); `key` translates the on-screen text.
 const MICRO_TYPES = [
-  { id: "fecal", label: "فحص البراز", emoji: "🔬" },
-  { id: "skin", label: "كشط جلد / فطريات", emoji: "🧫" },
-  { id: "cytology", label: "خلايا / خزعة", emoji: "🔍" },
-  { id: "culture", label: "زراعة وحساسية", emoji: "🧬" },
-  { id: "micro_other", label: "فحص آخر", emoji: "📋" },
+  { id: "fecal", key: "lab.microFecal", label: "فحص البراز", emoji: "🔬" },
+  { id: "skin", key: "lab.microSkin", label: "كشط جلد / فطريات", emoji: "🧫" },
+  { id: "cytology", key: "lab.microCytology", label: "خلايا / خزعة", emoji: "🔍" },
+  { id: "culture", key: "lab.microCulture", label: "زراعة وحساسية", emoji: "🧬" },
+  { id: "micro_other", key: "lab.microOther", label: "فحص آخر", emoji: "📋" },
 ];
 
 export function LabEntry({ pet, visitId, doctor, onSaved, onClose, fulfill, prefill, fulfillPick }: {
@@ -170,6 +177,7 @@ export function LabEntry({ pet, visitId, doctor, onSaved, onClose, fulfill, pref
   /** الطلبات المفتوحة لهذا الحيوان + المختار منها — يظهر بشريط فوق الحقول. */
   fulfillPick?: { target: LabResult | null; options: LabResult[]; onPick: (r: LabResult | null) => void } | null;
 }) {
+  const { t } = useTranslation();
   const toast = useToast();
   const [mode, setMode] = useState<EntryMode | null>(null);
   const [group, setGroup] = useState("blood");   // active value-group filter
@@ -201,7 +209,7 @@ export function LabEntry({ pet, visitId, doctor, onSaved, onClose, fulfill, pref
     try {
       const prep = await prepareUpload(f, { maxDim: 1280, quality: 0.72 });
       setPhoto(prep.dataUrl);
-    } catch { playWarning(); toast.error("تعذّر تجهيز الصورة"); }
+    } catch { playWarning(); toast.error(t("lab.imagePrepFailed", "تعذّر تجهيز الصورة")); }
   };
 
   const ocrRef = useRef<HTMLInputElement>(null);
@@ -226,14 +234,14 @@ export function LabEntry({ pet, visitId, doctor, onSaved, onClose, fulfill, pref
           return next;
         });
         playSuccess();
-        toast.success(`قرأنا ${formatNum(n)} قيمة من الصورة — راجعها وعدّل اللي يحتاج`);
+        toast.success(t("lab.ocrReadOk", { n: formatNum(n), defaultValue: "قرأنا {{n}} قيمة من الصورة — راجعها وعدّل اللي يحتاج" }));
       } else {
         playWarning();
-        toast.toast({ tone: "info", title: "ما كدرنا نقرأ أرقام واضحة", description: "الصورة انحفظت مع النتيجة — قرّب الكاميرا على الأرقام وحاول مرة ثانية، أو عبّي يدوياً." });
+        toast.toast({ tone: "info", title: t("lab.ocrNoDigitsTitle", "ما كدرنا نقرأ أرقام واضحة"), description: t("lab.ocrNoDigitsDesc", "الصورة انحفظت مع النتيجة — قرّب الكاميرا على الأرقام وحاول مرة ثانية، أو عبّي يدوياً.") });
       }
     } catch {
       playWarning();
-      toast.error("تعذّرت قراءة الصورة");
+      toast.error(t("lab.ocrFailed", "تعذّرت قراءة الصورة"));
     } finally { setOcrBusy(false); }
   };
 
@@ -276,7 +284,7 @@ export function LabEntry({ pet, visitId, doctor, onSaved, onClose, fulfill, pref
 
   /** اربط الجهاز عبر المنفذ التسلسلي؛ كل رسالة كاملة تُقرأ وتُعبّى فوراً. */
   const connectDevice = async () => {
-    if (!serialSupported()) { toast.error("هذا المتصفح ما يدعم الربط المباشر — استخدم Chrome على الكمبيوتر، أو صوّر الورقة."); return; }
+    if (!serialSupported()) { toast.error(t("lab.serialUnsupported", "هذا المتصفح ما يدعم الربط المباشر — استخدم Chrome على الكمبيوتر، أو صوّر الورقة.")); return; }
     if (serial) { await serial.close().catch(() => {}); setSerial(null); setSerialStatus("idle"); return; }
     setSerialStatus("connecting");
     try {
@@ -289,17 +297,17 @@ export function LabEntry({ pet, visitId, doctor, onSaved, onClose, fulfill, pref
           applyReading(read);
           setLastRead({ count: read.count, protocol: read.protocol.toUpperCase() });
           playSuccess();
-          toast.success(`استلمنا ${formatNum(read.count)} قيمة من الجهاز (${read.protocol.toUpperCase()}) — راجعها واحفظ`);
+          toast.success(t("lab.serialReceived", { n: formatNum(read.count), p: read.protocol.toUpperCase(), defaultValue: "استلمنا {{n}} قيمة من الجهاز ({{p}}) — راجعها واحفظ" }));
         },
         onStatus: (st) => { if (st === "error") { setSerialStatus("error"); } if (st === "closed") { setSerialStatus("idle"); setSerial(null); } },
       });
       setSerial(session);
       setSerialStatus("listening");
-      toast.toast({ tone: "info", title: "الجهاز مربوط — شغّل التحليل والنتائج راح تدخل بروحها" });
+      toast.toast({ tone: "info", title: t("lab.serialConnected", "الجهاز مربوط — شغّل التحليل والنتائج راح تدخل بروحها") });
     } catch (e) {
       setSerialStatus("idle");
       const msg = e instanceof Error ? e.message : "";
-      if (!/cancel|no port|gesture/i.test(msg)) toast.error("تعذّر الربط بالجهاز", msg);
+      if (!/cancel|no port|gesture/i.test(msg)) toast.error(t("lab.serialFailed", "تعذّر الربط بالجهاز"), msg);
     }
   };
 
@@ -392,25 +400,25 @@ export function LabEntry({ pet, visitId, doctor, onSaved, onClose, fulfill, pref
       // النتيجة الحقيقية حلت محل بطاقة «بانتظار النتائج» — نشيل البطاقة المؤقتة.
       if (fulfill) await repo.deleteLabResult(fulfill.id).catch(() => {});
       playSuccess();
-      toast.success("انحفظت النتيجة بسجل المختبر");
+      toast.success(t("lab.saved", "انحفظت النتيجة بسجل المختبر"));
       onSaved();
       onClose();
     } catch (e) {
       playWarning();
-      toast.error("تعذّر حفظ النتيجة", e instanceof Error ? e.message : undefined);
+      toast.error(t("lab.saveFailed", "تعذّر حفظ النتيجة"), e instanceof Error ? e.message : undefined);
     } finally { setBusy(false); }
   };
 
   /* ---- Step 1: one question, three big answers ---- */
   if (!mode) {
     const MODES: { id: EntryMode; emoji: string; title: string; sub: string }[] = [
-      { id: "numbers", emoji: "🩸", title: "أرقام تحاليل", sub: "دم، كيمياء، بول — اكتب الأرقام اللي بورقة الجهاز وبس" },
-      { id: "snap", emoji: "⚡", title: "فحص سريع", sub: "بارفو، ديستمبر، FeLV… النتيجة إيجابي أو سلبي" },
-      { id: "micro", emoji: "🔬", title: "مجهر / زراعة", sub: "براز، كشط جلد، خلايا — وصف وصورة" },
+      { id: "numbers", emoji: "🩸", title: t("lab.modeNumbers", "أرقام تحاليل"), sub: t("lab.modeNumbersSub", "دم، كيمياء، بول — اكتب الأرقام اللي بورقة الجهاز وبس") },
+      { id: "snap", emoji: "⚡", title: t("lab.modeSnap", "فحص سريع"), sub: t("lab.modeSnapSub", "بارفو، ديستمبر، FeLV… النتيجة إيجابي أو سلبي") },
+      { id: "micro", emoji: "🔬", title: t("lab.modeMicro", "مجهر / زراعة"), sub: t("lab.modeMicroSub", "براز، كشط جلد، خلايا — وصف وصورة") },
     ];
     return (
       <div>
-        <p className="mb-3 text-sm font-bold text-ink-muted">شنو سويت للحيوان؟</p>
+        <p className="mb-3 text-sm font-bold text-ink-muted">{t("lab.whatDidYouDo", "شنو سويت للحيوان؟")}</p>
         <div className="grid gap-2.5 sm:grid-cols-3">
           {MODES.map((m) => (
             <button
@@ -432,13 +440,13 @@ export function LabEntry({ pet, visitId, doctor, onSaved, onClose, fulfill, pref
   const header = (
     <div className="flex flex-wrap items-center gap-2">
       <button type="button" onClick={() => { playTap(); setMode(null); setQ(""); }} className="chip bg-surface-2 text-2xs font-bold text-ink-muted transition hover:text-ink">
-        ← رجوع
+        {t("lab.back", "← رجوع")}
       </button>
       <span className="text-base font-extrabold text-ink">
-        {mode === "numbers" ? "🩸 أرقام التحاليل" : mode === "snap" ? "⚡ فحص سريع" : `🔬 ${microType.label}`}
+        {mode === "numbers" ? t("lab.numbersTitle", "🩸 أرقام التحاليل") : mode === "snap" ? t("lab.snapTitle", "⚡ فحص سريع") : `🔬 ${t(microType.key, microType.label)}`}
       </span>
       <label className="ms-auto flex items-center gap-1.5 text-xs text-ink-subtle">
-        التاريخ
+        {t("lab.date", "التاريخ")}
         <input type="date" dir="ltr" value={takenAt} onChange={(e) => e.target.value && setTakenAt(e.target.value)} className="input h-8 py-0 text-sm [color-scheme:light] dark:[color-scheme:dark]" />
       </label>
     </div>
@@ -464,7 +472,7 @@ export function LabEntry({ pet, visitId, doctor, onSaved, onClose, fulfill, pref
             onClick={() => { playTap(); ocrRef.current?.click(); }}
             className="flex w-full items-center justify-center gap-2.5 rounded-2xl border-2 border-dashed border-brand-400 bg-brand-50/60 p-4 text-base font-extrabold text-brand-700 transition hover:bg-brand-100/60 active:scale-[.99] disabled:opacity-60 dark:border-brand-500/50 dark:bg-brand-500/10 dark:text-brand-300"
           >
-            {ocrBusy ? "📸 دنقرأ الأرقام من الصورة…" : "📸 صوّر ورقة الجهاز — الأرقام تتعبى بروحها"}
+            {ocrBusy ? t("lab.ocrReading", "📸 دنقرأ الأرقام من الصورة…") : t("lab.ocrButton", "📸 صوّر ورقة الجهاز — الأرقام تتعبى بروحها")}
           </button>
           <input ref={ocrRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => { void ocrPick(e.target.files?.[0]); e.target.value = ""; }} />
 
@@ -480,14 +488,14 @@ export function LabEntry({ pet, visitId, doctor, onSaved, onClose, fulfill, pref
                   : "border-dashed border-teal-400 bg-teal-50/60 text-teal-700 hover:bg-teal-100/60 dark:border-teal-500/50 dark:bg-teal-500/10 dark:text-teal-300",
               )}
             >
-              {serialStatus === "connecting" ? <><Cpu size={18} className="animate-pulse" /> دنربط الجهاز…</>
-                : serial ? <><Cable size={18} /> الجهاز مربوط — شغّل التحليل (اضغط لفصله)</>
-                  : <><Cable size={18} /> اربط جهاز المختبر مباشرة — القراءة تلقائية</>}
+              {serialStatus === "connecting" ? <><Cpu size={18} className="animate-pulse" /> {t("lab.serialConnecting", "دنربط الجهاز…")}</>
+                : serial ? <><Cable size={18} /> {t("lab.serialConnectedBtn", "الجهاز مربوط — شغّل التحليل (اضغط لفصله)")}</>
+                  : <><Cable size={18} /> {t("lab.serialConnectBtn", "اربط جهاز المختبر مباشرة — القراءة تلقائية")}</>}
             </button>
           )}
           {lastRead && lastRead.count > 0 && (
             <p className="rounded-xl bg-success-50 px-3 py-2 text-2xs font-bold text-success-700 dark:bg-success-500/10 dark:text-success-300">
-              ✓ {prefill ? "استلمنا من الجهاز" : "آخر استلام"}: {formatNum(lastRead.count)} قيمة{lastRead.protocol ? ` بلغة ${lastRead.protocol}` : ""}. راجع القيم تحت واضغط حفظ.
+              ✓ {prefill ? t("lab.receivedFromDevice", "استلمنا من الجهاز") : t("lab.lastReceived", "آخر استلام")}: {t("lab.nValues", { n: formatNum(lastRead.count), defaultValue: "{{n}} قيمة" })}{lastRead.protocol ? ` ${t("lab.viaProtocol", { p: lastRead.protocol, defaultValue: "بلغة {{p}}" })}` : ""}. {t("lab.reviewBelowSave", "راجع القيم تحت واضغط حفظ.")}
             </p>
           )}
 
@@ -500,29 +508,32 @@ export function LabEntry({ pet, visitId, doctor, onSaved, onClose, fulfill, pref
               {fulfillPick.target ? (
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="text-2xs font-extrabold text-brand-800 dark:text-brand-200">
-                    ✓ هذي النتائج راح تُسجَّل على الطلب «{fulfillPick.target.panel_label}»
-                    {fulfillPick.target.billed ? " — المفوتر" : ""} وتكمّل مراحله.
+                    {t("lab.fulfillTo", {
+                      p: fulfillPick.target.panel_label,
+                      billed: fulfillPick.target.billed ? t("lab.billedSuffix", " — المفوتر") : "",
+                      defaultValue: "✓ هذي النتائج راح تُسجَّل على الطلب «{{p}}»{{billed}} وتكمّل مراحله.",
+                    })}
                   </span>
                   {fulfillPick.options.length > 0 && (
                     <button type="button" onClick={() => fulfillPick.onPick(null)}
                       className="ms-auto rounded-full bg-surface-1 px-2.5 py-1 text-2xs font-bold text-ink-muted transition hover:text-ink">
-                      تسجيلها منفصلة بدل ذلك
+                      {t("lab.recordSeparately", "تسجيلها منفصلة بدل ذلك")}
                     </button>
                   )}
                 </div>
               ) : (
                 <div className="space-y-2">
                   <p className="text-2xs font-extrabold text-warn-800 dark:text-warn-200">
-                    عندك {formatNum(fulfillPick.options.length)} تحاليل مفتوحة لهذا الحيوان — على أيها نسجّل النتائج؟
+                    {t("lab.openOrdersPrompt", { n: formatNum(fulfillPick.options.length), defaultValue: "عندك {{n}} تحاليل مفتوحة لهذا الحيوان — على أيها نسجّل النتائج؟" })}
                   </p>
                   <div className="flex flex-wrap gap-1.5">
                     {fulfillPick.options.map((o) => (
                       <button key={o.id} type="button" onClick={() => fulfillPick.onPick(o)}
                         className="rounded-full border border-brand-300 bg-surface-1 px-2.5 py-1 text-2xs font-bold text-brand-700 transition hover:bg-brand-50 dark:border-brand-500/40 dark:text-brand-300">
-                        {o.panel_label}{o.billed ? " · مفوتر" : ""}
+                        {o.panel_label}{o.billed ? ` · ${t("lab.billed", "مفوتر")}` : ""}
                       </button>
                     ))}
-                    <span className="self-center text-2xs text-ink-subtle">أو اتركها بلا اختيار لتُسجَّل نتيجة جديدة منفصلة.</span>
+                    <span className="self-center text-2xs text-ink-subtle">{t("lab.orLeaveSeparate", "أو اتركها بلا اختيار لتُسجَّل نتيجة جديدة منفصلة.")}</span>
                   </div>
                 </div>
               )}
@@ -532,17 +543,17 @@ export function LabEntry({ pet, visitId, doctor, onSaved, onClose, fulfill, pref
           {/* تعليم الأكواد المجهولة — يُسأل مرة واحدة ويُحفظ للأبد لكل أجهزة العيادة */}
           {unknownCodes.length > 0 && (
             <div className="space-y-2 rounded-2xl border border-warn-300 bg-warn-50/60 p-3 dark:border-warn-500/40 dark:bg-warn-500/10">
-              <p className="text-2xs font-extrabold text-warn-800 dark:text-warn-200">🎓 الجهاز أرسل أكواد ما يعرفها السستم — علّمه مرة وحدة ويحفظها للأبد:</p>
+              <p className="text-2xs font-extrabold text-warn-800 dark:text-warn-200">{t("lab.teachTitle", "🎓 الجهاز أرسل أكواد ما يعرفها السستم — علّمه مرة وحدة ويحفظها للأبد:")}</p>
               {unknownCodes.map((u) => (
                 <div key={u.code} className="flex flex-wrap items-center gap-2">
                   <span className="rounded-lg bg-surface-1 px-2 py-1 text-xs font-black text-ink" dir="ltr">{u.code} = {formatDec(u.value)}{u.units ? ` ${u.units}` : ""}</span>
-                  <span className="text-2xs text-ink-muted">→ يعني:</span>
+                  <span className="text-2xs text-ink-muted">{t("lab.means", "→ يعني:")}</span>
                   <select
                     defaultValue=""
                     onChange={(e) => { if (e.target.value) teachUnknown(u, e.target.value); }}
                     className="input h-8 flex-1 py-0 text-xs"
                   >
-                    <option value="" disabled>اختر الفحص المقابل…</option>
+                    <option value="" disabled>{t("lab.pickParam", "اختر الفحص المقابل…")}</option>
                     {LAB_PARAMS.map((p) => <option key={p.id} value={p.id}>{p.abbr} · {p.label}</option>)}
                   </select>
                   <button type="button" onClick={() => setUnknownCodes((list) => list.filter((x) => x.code !== u.code))} className="grid h-7 w-7 place-items-center rounded-full text-ink-subtle transition hover:text-danger-600"><X size={14} /></button>
@@ -552,7 +563,7 @@ export function LabEntry({ pet, visitId, doctor, onSaved, onClose, fulfill, pref
           )}
 
           <p className="rounded-xl bg-brand-50/60 px-3 py-2 text-2xs font-semibold leading-relaxed text-brand-800 dark:bg-brand-500/10 dark:text-brand-200">
-            أو اضغط الأسهم كدام كل فحص للحكم السريع (↓↓ ↓ ✓ ↑ ↑↑) بلا أرقام — ومن تريد الدقة اضغط اسم الفحص واكتب الرقم.
+            {t("lab.quickJudgeHint", "أو اضغط الأسهم كدام كل فحص للحكم السريع (↓↓ ↓ ✓ ↑ ↑↑) بلا أرقام — ومن تريد الدقة اضغط اسم الفحص واكتب الرقم.")}
           </p>
           <div className="flex flex-wrap items-center gap-1.5">
             {LAB_GROUPS.map((g) => {
@@ -567,7 +578,7 @@ export function LabEntry({ pet, visitId, doctor, onSaved, onClose, fulfill, pref
               );
             })}
             <div className="relative ms-auto">
-              <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="دوّر على فحص… (ALT، سكر…)" className="input h-9 w-44 py-0 pe-3 text-sm" />
+              <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("lab.searchPh", "دوّر على فحص… (ALT، سكر…)")} className="input h-9 w-44 py-0 pe-3 text-sm" />
             </div>
           </div>
 
@@ -605,7 +616,7 @@ export function LabEntry({ pet, visitId, doctor, onSaved, onClose, fulfill, pref
                       {SCALE5.map((f5) => (
                         <button
                           key={f5} type="button"
-                          title={LABEL5[f5]}
+                          title={label5(t, f5)}
                           onClick={() => { playTap(); setQuals((q) => q[p.id] === f5 ? (() => { const n = { ...q }; delete n[p.id]; return n; })() : { ...q, [p.id]: f5 }); }}
                           className={cn(
                             "grid h-10 flex-1 place-items-center rounded-xl text-sm font-black transition active:scale-95",
@@ -615,7 +626,7 @@ export function LabEntry({ pet, visitId, doctor, onSaved, onClose, fulfill, pref
                           {ARROW5[f5]}
                         </button>
                       ))}
-                      {quals[p.id] && <span className={cn("ms-1 whitespace-nowrap rounded-lg px-2 py-1 text-2xs font-black", FLAG_CHIP[quals[p.id]])}>{LABEL5[quals[p.id]]}</span>}
+                      {quals[p.id] && <span className={cn("ms-1 whitespace-nowrap rounded-lg px-2 py-1 text-2xs font-black", FLAG_CHIP[quals[p.id]])}>{label5(t, quals[p.id])}</span>}
                     </div>
                   )}
 
@@ -642,13 +653,13 @@ export function LabEntry({ pet, visitId, doctor, onSaved, onClose, fulfill, pref
                         />
                         <div className="mt-1 flex justify-between text-[10px] font-bold tabular-nums text-ink-subtle">
                           <span>{formatDec(p.min)}</span>
-                          <span className="text-success-600">{formatDec(lo)} — {formatDec(hi)} طبيعي</span>
+                          <span className="text-success-600">{formatDec(lo)} — {formatDec(hi)} {t("lab.flagNormal", "طبيعي")}</span>
                           <span>{formatDec(p.max)}</span>
                         </div>
                       </div>
                       <div className="flex items-center justify-between">
                         {raw.trim() !== "" ? (
-                          <button type="button" onClick={() => { playTap(); setVals((m) => { const n = { ...m }; delete n[p.id]; return n; }); }} className="chip bg-surface-2 text-2xs font-bold text-ink-muted transition hover:text-danger-600">مسح القيمة</button>
+                          <button type="button" onClick={() => { playTap(); setVals((m) => { const n = { ...m }; delete n[p.id]; return n; }); }} className="chip bg-surface-2 text-2xs font-bold text-ink-muted transition hover:text-danger-600">{t("lab.clearValue", "مسح القيمة")}</button>
                         ) : <span />}
                         <button
                           type="button"
@@ -660,7 +671,7 @@ export function LabEntry({ pet, visitId, doctor, onSaved, onClose, fulfill, pref
                           }}
                           className="rounded-full bg-brand-600 px-4 py-1.5 text-sm font-bold text-white shadow-soft transition hover:bg-brand-700 active:scale-95"
                         >
-                          {visibleParams.findIndex((x) => x.id === p.id) < visibleParams.length - 1 ? "الفحص التالي ←" : "تم ✓"}
+                          {visibleParams.findIndex((x) => x.id === p.id) < visibleParams.length - 1 ? t("lab.nextParam", "الفحص التالي ←") : t("lab.done", "تم ✓")}
                         </button>
                       </div>
                     </div>
@@ -668,23 +679,23 @@ export function LabEntry({ pet, visitId, doctor, onSaved, onClose, fulfill, pref
                 </div>
               );
             })}
-            {visibleParams.length === 0 && <p className="col-span-full py-4 text-center text-sm text-ink-subtle">ماكو فحص بهذا الاسم — ضيفه تحت كـ«فحص مو موجود».</p>}
+            {visibleParams.length === 0 && <p className="col-span-full py-4 text-center text-sm text-ink-subtle">{t("lab.noParamMatch", "ماكو فحص بهذا الاسم — ضيفه تحت كـ«فحص مو موجود».")}</p>}
           </div>
 
           {/* Anything the catalog doesn't have */}
           <div className="space-y-2">
             {freeRows.map((r, i) => (
               <div key={i} className="grid grid-cols-2 gap-2 rounded-2xl border border-dashed border-line bg-surface-1 p-2.5 sm:grid-cols-[1fr,90px,80px,80px,80px,auto] sm:items-center">
-                <input value={r.label} onChange={(e) => setFreeRows((rs) => rs.map((x, j) => j === i ? { ...x, label: e.target.value } : x))} placeholder="اسم الفحص" className="input h-9 py-0 text-sm font-bold col-span-2 sm:col-span-1" />
-                <input value={r.value} onChange={(e) => setFreeRows((rs) => rs.map((x, j) => j === i ? { ...x, value: e.target.value } : x))} type="number" dir="ltr" placeholder="القيمة" className="input h-9 px-2 py-0 text-center text-sm font-extrabold tabular-nums" />
-                <input value={r.unit} onChange={(e) => setFreeRows((rs) => rs.map((x, j) => j === i ? { ...x, unit: e.target.value } : x))} dir="ltr" placeholder="الوحدة" className="input h-9 px-2 py-0 text-center text-sm" />
-                <input value={r.low} onChange={(e) => setFreeRows((rs) => rs.map((x, j) => j === i ? { ...x, low: e.target.value } : x))} type="number" dir="ltr" placeholder="من" className="input h-9 px-2 py-0 text-center text-sm tabular-nums" />
-                <input value={r.high} onChange={(e) => setFreeRows((rs) => rs.map((x, j) => j === i ? { ...x, high: e.target.value } : x))} type="number" dir="ltr" placeholder="إلى" className="input h-9 px-2 py-0 text-center text-sm tabular-nums" />
+                <input value={r.label} onChange={(e) => setFreeRows((rs) => rs.map((x, j) => j === i ? { ...x, label: e.target.value } : x))} placeholder={t("lab.paramName", "اسم الفحص")} className="input h-9 py-0 text-sm font-bold col-span-2 sm:col-span-1" />
+                <input value={r.value} onChange={(e) => setFreeRows((rs) => rs.map((x, j) => j === i ? { ...x, value: e.target.value } : x))} type="number" dir="ltr" placeholder={t("lab.value", "القيمة")} className="input h-9 px-2 py-0 text-center text-sm font-extrabold tabular-nums" />
+                <input value={r.unit} onChange={(e) => setFreeRows((rs) => rs.map((x, j) => j === i ? { ...x, unit: e.target.value } : x))} dir="ltr" placeholder={t("lab.unit", "الوحدة")} className="input h-9 px-2 py-0 text-center text-sm" />
+                <input value={r.low} onChange={(e) => setFreeRows((rs) => rs.map((x, j) => j === i ? { ...x, low: e.target.value } : x))} type="number" dir="ltr" placeholder={t("lab.rangeFrom", "من")} className="input h-9 px-2 py-0 text-center text-sm tabular-nums" />
+                <input value={r.high} onChange={(e) => setFreeRows((rs) => rs.map((x, j) => j === i ? { ...x, high: e.target.value } : x))} type="number" dir="ltr" placeholder={t("lab.rangeTo", "إلى")} className="input h-9 px-2 py-0 text-center text-sm tabular-nums" />
                 <button type="button" onClick={() => setFreeRows((rs) => rs.filter((_, j) => j !== i))} className="grid h-8 w-8 place-items-center rounded-full text-ink-subtle transition hover:bg-danger-50 hover:text-danger-600"><Trash2 size={14} /></button>
               </div>
             ))}
             <button type="button" onClick={() => setFreeRows((rs) => [...rs, { label: "", value: "", unit: "", low: "", high: "" }])} className="chip bg-surface-2 text-2xs font-bold text-ink-muted transition hover:text-ink">
-              <Plus size={12} /> فحص مو موجود بالقائمة
+              <Plus size={12} /> {t("lab.addCustomTest", "فحص مو موجود بالقائمة")}
             </button>
           </div>
         </>
@@ -692,7 +703,7 @@ export function LabEntry({ pet, visitId, doctor, onSaved, onClose, fulfill, pref
 
       {mode === "snap" && (
         <div className="space-y-3">
-          <p className="text-2xs font-semibold text-ink-subtle">شنو الفحص؟</p>
+          <p className="text-2xs font-semibold text-ink-subtle">{t("lab.whichTest", "شنو الفحص؟")}</p>
           <div className="flex flex-wrap gap-1.5">
             {snapTestsFor(pet.species).map((s) => (
               <button key={s.id} type="button" onClick={() => { playTap(); setSnapTest(s.id); }}
@@ -705,11 +716,11 @@ export function LabEntry({ pet, visitId, doctor, onSaved, onClose, fulfill, pref
             <div className="grid grid-cols-2 gap-2.5">
               <button type="button" onClick={() => { playTap(); setSnapResult("negative"); }}
                 className={cn("flex items-center justify-center gap-2 rounded-2xl border-2 p-4 text-base font-extrabold transition", snapResult === "negative" ? "border-success-500 bg-success-50 text-success-700 dark:bg-success-500/15 dark:text-success-300" : "border-line bg-surface-1 text-ink-muted hover:border-success-300")}>
-                <CheckCircle2 size={20} /> سلبي
+                <CheckCircle2 size={20} /> {t("lab.negative", "سلبي")}
               </button>
               <button type="button" onClick={() => { playTap(); setSnapResult("positive"); }}
                 className={cn("flex items-center justify-center gap-2 rounded-2xl border-2 p-4 text-base font-extrabold transition", snapResult === "positive" ? "border-danger-500 bg-danger-50 text-danger-700 dark:bg-danger-500/15 dark:text-danger-300" : "border-line bg-surface-1 text-ink-muted hover:border-danger-300")}>
-                <AlertTriangle size={20} /> إيجابي
+                <AlertTriangle size={20} /> {t("lab.positive", "إيجابي")}
               </button>
             </div>
           )}
@@ -721,7 +732,7 @@ export function LabEntry({ pet, visitId, doctor, onSaved, onClose, fulfill, pref
           {MICRO_TYPES.map((m) => (
             <button key={m.id} type="button" onClick={() => { playTap(); setMicroType(m); }}
               className={cn("rounded-full px-3.5 py-1.5 text-sm font-semibold transition", microType.id === m.id ? "bg-brand-600 text-white shadow-soft" : "bg-surface-2 text-ink-muted hover:text-ink")}>
-              {m.emoji} {m.label}
+              {m.emoji} {t(m.key, m.label)}
             </button>
           ))}
         </div>
@@ -730,23 +741,23 @@ export function LabEntry({ pet, visitId, doctor, onSaved, onClose, fulfill, pref
       {/* Notes + photo — every mode gets them. */}
       <div className="space-y-2">
         <textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)}
-          placeholder={mode === "micro" ? "النتيجة والملاحظات (ما شوهد بالمجهر، البكتيريا والمضاد الفعال…)" : "ملاحظات إضافية (اختياري)"}
+          placeholder={mode === "micro" ? t("lab.microNotesPh", "النتيجة والملاحظات (ما شوهد بالمجهر، البكتيريا والمضاد الفعال…)") : t("lab.notesPh", "ملاحظات إضافية (اختياري)")}
           className="input min-h-[64px] w-full resize-y text-sm leading-relaxed" />
         <div className="flex items-center gap-2">
           <input ref={fileRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => { void pickPhoto(e.target.files?.[0]); e.target.value = ""; }} />
           <button type="button" onClick={() => fileRef.current?.click()} className="chip bg-surface-2 text-2xs font-bold text-ink-muted transition hover:text-ink">
-            <Camera size={13} /> {photo ? "تغيير الصورة" : "صوّر ورقة الجهاز / الشريحة"}
+            <Camera size={13} /> {photo ? t("lab.changePhoto", "تغيير الصورة") : t("lab.takePhoto", "صوّر ورقة الجهاز / الشريحة")}
           </button>
           {photo && <img src={photo} alt="lab" className="h-12 w-12 rounded-xl border border-line object-cover" />}
-          {photo && <button type="button" onClick={() => setPhoto(null)} className="text-2xs font-bold text-danger-600">إزالة</button>}
+          {photo && <button type="button" onClick={() => setPhoto(null)} className="text-2xs font-bold text-danger-600">{t("lab.removePhoto", "إزالة")}</button>}
         </div>
       </div>
 
       <div className="flex items-center justify-between border-t border-line pt-3">
         <span className="text-2xs font-bold text-ink-subtle">
-          {mode === "numbers" && filledCount > 0 ? `${formatNum(filledCount)} قيمة جاهزة للحفظ` : ""}
+          {mode === "numbers" && filledCount > 0 ? t("lab.readyToSave", { n: formatNum(filledCount), defaultValue: "{{n}} قيمة جاهزة للحفظ" }) : ""}
         </span>
-        <Button onClick={save} loading={busy} disabled={!canSave} leftIcon={<FlaskConical size={16} />}>حفظ النتيجة</Button>
+        <Button onClick={save} loading={busy} disabled={!canSave} leftIcon={<FlaskConical size={16} />}>{t("lab.saveResult", "حفظ النتيجة")}</Button>
       </div>
     </div>
   );
@@ -755,6 +766,7 @@ export function LabEntry({ pet, visitId, doctor, onSaved, onClose, fulfill, pref
 /* ================================ Trend table ================================ */
 
 function TrendTable({ results }: { results: LabResult[] }) {
+  const { t } = useTranslation();
   // Numeric results only, oldest→newest columns, capped to the last 6 dates.
   const numeric = useMemo(
     () => results.filter((r) => r.kind === "numeric" && (r.values?.length ?? 0) > 0).slice().sort((a, b) => a.taken_at.localeCompare(b.taken_at)),
@@ -772,14 +784,14 @@ function TrendTable({ results }: { results: LabResult[] }) {
     <div className="card overflow-hidden p-0">
       <div className="flex items-center gap-2 border-b border-line px-4 py-3">
         <span className="grid h-8 w-8 place-items-center rounded-xl bg-brand-100 text-brand-700 dark:bg-brand-500/20 dark:text-brand-300"><FlaskConical size={15} /></span>
-        <h3 className="font-display text-sm font-extrabold text-ink">تطور القيم عبر الزمن</h3>
-        <span className="ms-auto text-2xs text-ink-subtle">آخر {formatNum(cols.length)} تحاليل</span>
+        <h3 className="font-display text-sm font-extrabold text-ink">{t("lab.trendTitle", "تطور القيم عبر الزمن")}</h3>
+        <span className="ms-auto text-2xs text-ink-subtle">{t("lab.lastNTests", { n: formatNum(cols.length), defaultValue: "آخر {{n}} تحاليل" })}</span>
       </div>
       <div className="overflow-x-auto">
         <table className="w-full min-w-[520px] text-sm">
           <thead>
             <tr className="border-b border-line bg-surface-2/60 text-2xs text-ink-muted">
-              <th className="px-3 py-2 text-start font-bold">الفحص</th>
+              <th className="px-3 py-2 text-start font-bold">{t("lab.test", "الفحص")}</th>
               {cols.map((c) => (
                 <th key={c.id} className="px-2 py-2 text-center font-bold tabular-nums" dir="ltr">
                   {new Date(c.taken_at).toLocaleDateString("en-GB", { day: "2-digit", month: "short" })}
@@ -818,20 +830,23 @@ function TrendTable({ results }: { results: LabResult[] }) {
 /* ================================ Result card ================================ */
 
 /** Compose the owner-facing WhatsApp summary of one result — clear Arabic, no jargon. */
-function waResultMessage(pet: Pet, r: LabResult): string {
-  const clinic = getClinicName() || "عيادتنا";
-  const lines: string[] = [`مرحباً ${(pet.owner_name ?? "").trim() || ""} 🌟`, `نتائج فحص «${r.panel_label}» لـ${pet.name} بتاريخ ${formatDate(r.taken_at, "ar")}:`];
+function waResultMessage(pet: Pet, r: LabResult, t: TFunction): string {
+  const clinic = getClinicName() || t("lab.ourClinic", "عيادتنا");
+  const lines: string[] = [
+    t("lab.waGreeting", { name: (pet.owner_name ?? "").trim() || "", defaultValue: "مرحباً {{name}} 🌟" }),
+    t("lab.waIntro", { panel: r.panel_label, pet: pet.name, date: formatDate(r.taken_at, "ar"), defaultValue: "نتائج فحص «{{panel}}» لـ{{pet}} بتاريخ {{date}}:" }),
+  ];
   if (r.kind === "numeric" && r.values?.length) {
     for (const v of r.values) {
-      const range = v.value !== undefined && v.low !== undefined && v.high !== undefined ? ` (الطبيعي ${formatDec(v.low)}–${formatDec(v.high)})` : "";
-      const mark = ` ${LABEL5[v.flag]} ${ARROW5[v.flag]}`;
+      const range = v.value !== undefined && v.low !== undefined && v.high !== undefined ? t("lab.waNormalRange", { lo: formatDec(v.low), hi: formatDec(v.high), defaultValue: " (الطبيعي {{lo}}–{{hi}})" }) : "";
+      const mark = ` ${label5(t, v.flag)} ${ARROW5[v.flag]}`;
       const num = v.value !== undefined ? `${formatDec(v.value)} ${v.unit}` : "";
       lines.push(`• ${v.abbr ?? v.label}: ${num}${mark}${range}`);
     }
   }
-  if (r.kind === "snap") lines.push(r.snap_result === "positive" ? "النتيجة: إيجابية ⚠ — يرجى مراجعة العيادة." : "النتيجة: سلبية ✓");
-  if (r.notes) lines.push(`ملاحظات الطبيب: ${r.notes}`);
-  lines.push(`مع تمنياتنا بالسلامة لـ${pet.name} — ${clinic} 🐾`);
+  if (r.kind === "snap") lines.push(r.snap_result === "positive" ? t("lab.waPositive", "النتيجة: إيجابية ⚠ — يرجى مراجعة العيادة.") : t("lab.waNegative", "النتيجة: سلبية ✓"));
+  if (r.notes) lines.push(t("lab.waDoctorNotes", { notes: r.notes, defaultValue: "ملاحظات الطبيب: {{notes}}" }));
+  lines.push(t("lab.waFooter", { pet: pet.name, clinic, defaultValue: "مع تمنياتنا بالسلامة لـ{{pet}} — {{clinic}} 🐾" }));
   return lines.join("\n");
 }
 
@@ -844,6 +859,7 @@ function waResultMessage(pet: Pet, r: LabResult): string {
  * (ترتيب الطباعة) لا ترتيب وصول الرسالة — فالورقة تقرأ نفسها كل مرة.
  */
 function ResultSheet({ values }: { values: LabValue[] }) {
+  const { t } = useTranslation();
   const rows = useMemo(
     () => [...values].sort((a, b) => labParamIndex(a.id) - labParamIndex(b.id)),
     [values],
@@ -853,10 +869,10 @@ function ResultSheet({ values }: { values: LabValue[] }) {
       <table className="w-full border-collapse text-xs">
         <thead>
           <tr className="bg-surface-2 text-2xs text-ink-subtle">
-            <th className="px-2.5 py-1.5 text-start font-bold">الفحص</th>
-            <th className="px-2 py-1.5 text-end font-bold">النتيجة</th>
-            <th className="px-2 py-1.5 text-start font-bold">الوحدة</th>
-            <th className="px-2.5 py-1.5 text-end font-bold">النطاق الطبيعي</th>
+            <th className="px-2.5 py-1.5 text-start font-bold">{t("lab.test", "الفحص")}</th>
+            <th className="px-2 py-1.5 text-end font-bold">{t("lab.result", "النتيجة")}</th>
+            <th className="px-2 py-1.5 text-start font-bold">{t("lab.unit", "الوحدة")}</th>
+            <th className="px-2.5 py-1.5 text-end font-bold">{t("lab.refRange", "النطاق الطبيعي")}</th>
           </tr>
         </thead>
         <tbody>
@@ -867,7 +883,7 @@ function ResultSheet({ values }: { values: LabValue[] }) {
                 {v.label && <span className="ms-1.5 text-ink-subtle">{v.label}</span>}
               </td>
               <td className="whitespace-nowrap px-2 py-1.5 text-end font-black tabular-nums" dir="ltr">
-                {v.value !== undefined ? formatDec(v.value) : LABEL5[v.flag]}
+                {v.value !== undefined ? formatDec(v.value) : label5(t, v.flag)}
                 {v.flag !== "normal" && <span className="ms-1">{ARROW5[v.flag]}</span>}
               </td>
               <td className="whitespace-nowrap px-2 py-1.5 text-2xs text-ink-subtle" dir="ltr">{v.unit}</td>
@@ -887,6 +903,7 @@ function ResultCard({ r, pet, prior, canEdit, onDelete, onToggleBilled, onBill, 
   onBill: (r: LabResult) => void; onPrint: (r: LabResult) => void; onFulfill: (r: LabResult) => void;
   onAdvance: (r: LabResult, to: LabStatusValue) => void; onTogglePriority: (r: LabResult) => void;
 }) {
+  const { t } = useTranslation();
   const [openPhoto, setOpenPhoto] = useState(false);
   const toast = useToast();
   const abnormal = (r.values ?? []).filter((v) => v.flag !== "normal");
@@ -905,8 +922,8 @@ function ResultCard({ r, pet, prior, canEdit, onDelete, onToggleBilled, onBill, 
     if (!waNum) return;
     playTap();
     try {
-      await sendWhatsApp({ phone: waNum, text: waResultMessage(pet, r), petId: pet.id, ownerName: pet.owner_name ?? null, ownerPhone: pet.owner_phone ?? null, kind: "lab_result" });
-    } catch (e) { playWarning(); toast.error(quotaMessage(e) ?? "تعذّر الإرسال"); return; }
+      await sendWhatsApp({ phone: waNum, text: waResultMessage(pet, r, t), petId: pet.id, ownerName: pet.owner_name ?? null, ownerPhone: pet.owner_phone ?? null, kind: "lab_result" });
+    } catch (e) { playWarning(); toast.error(quotaMessage(e) ?? t("lab.sendFailed", "تعذّر الإرسال")); return; }
   };
   return (
     <div className={cn("card p-4",
@@ -927,40 +944,40 @@ function ResultCard({ r, pet, prior, canEdit, onDelete, onToggleBilled, onBill, 
           </p>
         </div>
         {urgent && (
-          <span className="inline-flex items-center gap-1 rounded-full bg-danger-100 px-2 py-1 text-2xs font-black text-danger-700 dark:bg-danger-500/20 dark:text-danger-300"><Zap size={11} /> عاجل</span>
+          <span className="inline-flex items-center gap-1 rounded-full bg-danger-100 px-2 py-1 text-2xs font-black text-danger-700 dark:bg-danger-500/20 dark:text-danger-300"><Zap size={11} /> {t("lab.urgent", "عاجل")}</span>
         )}
         <StatusPill status={st} />
         {/* حارس الإيراد: نتيجة فيها محتوى وما انفوترت — لا تفوتك فلوس تحليل سويته */}
         {!r.billed && st !== "ordered" && ((r.values?.length ?? 0) > 0 || !!r.snap_result || !!(r.notes && r.notes.trim())) && (
-          <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-1 text-2xs font-black text-amber-800 dark:bg-amber-500/20 dark:text-amber-200"><Receipt size={11} /> غير مفوترة</span>
+          <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-1 text-2xs font-black text-amber-800 dark:bg-amber-500/20 dark:text-amber-200"><Receipt size={11} /> {t("lab.unbilled", "غير مفوترة")}</span>
         )}
         {r.kind === "numeric" && (r.values?.length ?? 0) > 0 && (
           <span className={cn("chip text-2xs font-bold", abnormal.length ? "bg-warn-50 text-warn-700 dark:bg-warn-500/15 dark:text-warn-300" : "bg-success-50 text-success-700 dark:bg-success-500/15 dark:text-success-300")}>
-            {abnormal.length ? `${formatNum(abnormal.length)} خارج الطبيعي` : "كل القيم طبيعية ✓"}
+            {abnormal.length ? t("lab.nAbnormal", { n: formatNum(abnormal.length), defaultValue: "{{n}} خارج الطبيعي" }) : t("lab.allNormal", "كل القيم طبيعية ✓")}
           </span>
         )}
         {interp && interp.severity.level !== "normal" && (
           <span className={cn("chip text-2xs font-black", interp.severity.level === "critical" ? "bg-danger-100 text-danger-700 dark:bg-danger-500/20 dark:text-danger-300" : "bg-warn-100 text-warn-700 dark:bg-warn-500/20 dark:text-warn-300")}>
-            {interp.severity.level === "critical" ? "⚠ حرج" : "انتبه"}
+            {interp.severity.level === "critical" ? t("lab.criticalChip", "⚠ حرج") : t("lab.attentionChip", "انتبه")}
           </span>
         )}
         {r.kind === "snap" && r.snap_result && (
           <span className={cn("chip text-2xs font-black", positive ? "bg-danger-100 text-danger-700 dark:bg-danger-500/20 dark:text-danger-300" : "bg-success-100 text-success-700 dark:bg-success-500/20 dark:text-success-300")}>
-            {positive ? "⚠ إيجابي" : "سلبي ✓"}
+            {positive ? t("lab.positiveChip", "⚠ إيجابي") : t("lab.negativeChip", "سلبي ✓")}
           </span>
         )}
         {canEdit && !r.billed && (
           <button
             type="button" onClick={() => onBill(r)}
-            title="فوترة بالمبيعات — التحليل ينزل بالسلة جاهزاً"
+            title={t("lab.billTitle", "فوترة بالمبيعات — التحليل ينزل بالسلة جاهزاً")}
             className="inline-flex h-8 items-center gap-1 rounded-full bg-brand-50 px-2.5 text-2xs font-bold text-brand-700 transition hover:bg-brand-100 dark:bg-brand-500/15 dark:text-brand-300"
           >
-            <ShoppingCart size={13} /> فوترة
+            <ShoppingCart size={13} /> {t("lab.bill", "فوترة")}
           </button>
         )}
         <button
           type="button" onClick={() => onPrint(r)}
-          title="طباعة تقرير هذه النتيجة"
+          title={t("lab.printTitle", "طباعة تقرير هذه النتيجة")}
           className="grid h-8 w-8 place-items-center rounded-full text-ink-subtle transition hover:bg-surface-2 hover:text-ink"
         >
           <Printer size={15} />
@@ -968,7 +985,7 @@ function ResultCard({ r, pet, prior, canEdit, onDelete, onToggleBilled, onBill, 
         {canEdit && waNum && (
           <button
             type="button" onClick={sendWa}
-            title="إرسال النتيجة للمربي واتساب"
+            title={t("lab.waTitle", "إرسال النتيجة للمربي واتساب")}
             className="grid h-8 w-8 place-items-center rounded-full text-ink-subtle transition hover:bg-success-50 hover:text-success-600"
           >
             <MessageCircle size={15} />
@@ -977,7 +994,7 @@ function ResultCard({ r, pet, prior, canEdit, onDelete, onToggleBilled, onBill, 
         {canEdit && (
           <button
             type="button" onClick={() => onToggleBilled(r)}
-            title={r.billed ? "محسوبة بالفاتورة — اضغط للإلغاء" : "علّمها محسوبة بالفاتورة"}
+            title={r.billed ? t("lab.billedToggleOn", "محسوبة بالفاتورة — اضغط للإلغاء") : t("lab.billedToggleOff", "علّمها محسوبة بالفاتورة")}
             className={cn("grid h-8 w-8 place-items-center rounded-full transition", r.billed ? "bg-success-50 text-success-600 dark:bg-success-500/15 dark:text-success-300" : "text-ink-subtle hover:bg-surface-2 hover:text-ink")}
           >
             <Receipt size={15} />
@@ -995,7 +1012,7 @@ function ResultCard({ r, pet, prior, canEdit, onDelete, onToggleBilled, onBill, 
         <>
           {overdue && (
             <p className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-danger-50 px-2.5 py-1.5 text-2xs font-black text-danger-700 dark:bg-danger-500/15 dark:text-danger-300">
-              <AlertTriangle size={13} /> {urgent ? "عاجل ومتأخر" : "متأخر"} — {formatDuration(tat)} بلا نتيجة
+              <AlertTriangle size={13} /> {urgent ? t("lab.urgentOverdue", "عاجل ومتأخر") : t("lab.overdue", "متأخر")} — {t("lab.noResultFor", { d: formatDuration(tat), defaultValue: "{{d}} بلا نتيجة" })}
             </p>
           )}
           <LabTimeline r={r} />
@@ -1014,15 +1031,15 @@ function ResultCard({ r, pet, prior, canEdit, onDelete, onToggleBilled, onBill, 
               )}
               {(st === "ordered" || st === "collected") && (
                 <button type="button" onClick={() => { playTap(); onFulfill(r); }} className="text-2xs font-bold text-teal-700 underline-offset-2 hover:underline dark:text-teal-300">
-                  سجّل النتيجة مباشرة
+                  {t("lab.recordNow", "سجّل النتيجة مباشرة")}
                 </button>
               )}
               <button
                 type="button" onClick={() => onTogglePriority(r)}
-                title={urgent ? "إرجاعه عادي" : "علّمه عاجل (STAT)"}
+                title={urgent ? t("lab.priorityToRoutine", "إرجاعه عادي") : t("lab.priorityToUrgent", "علّمه عاجل (STAT)")}
                 className={cn("ms-auto inline-flex h-8 items-center gap-1 rounded-full px-2.5 text-2xs font-bold transition", urgent ? "bg-danger-100 text-danger-700 dark:bg-danger-500/20 dark:text-danger-300" : "bg-surface-2 text-ink-subtle hover:text-ink")}
               >
-                <Zap size={12} /> {urgent ? "عاجل" : "عادي"}
+                <Zap size={12} /> {urgent ? t("lab.urgent", "عاجل") : t("lab.routine", "عادي")}
               </button>
             </div>
           )}
@@ -1037,7 +1054,7 @@ function ResultCard({ r, pet, prior, canEdit, onDelete, onToggleBilled, onBill, 
 
       {r.photo_url && (
         <button type="button" onClick={() => setOpenPhoto((o) => !o)} className="mt-2.5 block">
-          <img src={r.photo_url} alt="نتيجة المختبر" className={cn("rounded-xl border border-line object-cover transition", openPhoto ? "max-h-[520px]" : "h-20 w-28")} />
+          <img src={r.photo_url} alt={t("lab.photoAlt", "نتيجة المختبر")} className={cn("rounded-xl border border-line object-cover transition", openPhoto ? "max-h-[520px]" : "h-20 w-28")} />
         </button>
       )}
     </div>
@@ -1049,6 +1066,7 @@ function ResultCard({ r, pet, prior, canEdit, onDelete, onToggleBilled, onBill, 
  *  «بانتظار الاعتماد» — grouped by stage, urgent/overdue first. The lab tech
  *  opens any pet's lab tab and sees the whole queue; a tap jumps to the case. */
 function LabWorklist({ bumpKey, currentPetId, onAct }: { bumpKey: number; currentPetId: string; onAct: () => void }) {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [items, setItems] = useState<LabResult[]>([]);
   const [petName, setPetName] = useState<Record<string, string>>({});
@@ -1085,10 +1103,10 @@ function LabWorklist({ bumpKey, currentPetId, onAct }: { bumpKey: number; curren
     <div className="rounded-2xl border border-brand-200 bg-gradient-to-b from-brand-50/60 to-transparent p-3 dark:border-brand-500/30 dark:from-brand-500/10">
       <button type="button" onClick={() => setOpen((o) => !o)} className="flex w-full items-center gap-2">
         <span className="grid h-8 w-8 place-items-center rounded-full bg-brand-500/15 text-brand-700 dark:text-brand-300"><Activity size={16} /></span>
-        <span className="text-sm font-extrabold text-ink">طابور المختبر</span>
-        <span className="chip bg-brand-100 text-2xs font-black text-brand-700 dark:bg-brand-500/20 dark:text-brand-300">{formatNum(items.length)} قيد الفحص</span>
+        <span className="text-sm font-extrabold text-ink">{t("lab.worklist", "طابور المختبر")}</span>
+        <span className="chip bg-brand-100 text-2xs font-black text-brand-700 dark:bg-brand-500/20 dark:text-brand-300">{t("lab.nInProgress", { n: formatNum(items.length), defaultValue: "{{n}} قيد الفحص" })}</span>
         {overdueCount > 0 && (
-          <span className="inline-flex items-center gap-1 rounded-full bg-danger-100 px-2 py-1 text-2xs font-black text-danger-700 dark:bg-danger-500/20 dark:text-danger-300"><AlertTriangle size={11} /> {formatNum(overdueCount)} متأخر</span>
+          <span className="inline-flex items-center gap-1 rounded-full bg-danger-100 px-2 py-1 text-2xs font-black text-danger-700 dark:bg-danger-500/20 dark:text-danger-300"><AlertTriangle size={11} /> {t("lab.nOverdue", { n: formatNum(overdueCount), defaultValue: "{{n}} متأخر" })}</span>
         )}
         <ChevronDown size={16} className={cn("ms-auto text-ink-subtle transition", open && "rotate-180")} />
       </button>
@@ -1144,6 +1162,7 @@ function LabWorklist({ bumpKey, currentPetId, onAct }: { bumpKey: number; curren
 export function LabsTab({ pet, results, canEdit, doctor, onChanged }: {
   pet: Pet; results: LabResult[]; canEdit: boolean; doctor?: string | null; onChanged: () => void;
 }) {
+  const { t } = useTranslation();
   const toast = useToast();
   const navigate = useNavigate();
   const [entryOpen, setEntryOpen] = useState(false);
@@ -1198,11 +1217,11 @@ export function LabsTab({ pet, results, canEdit, doctor, onChanged }: {
   const printOpts = () => ({ clinicName: getClinicName() || "doctorVet", logoUrl: getClinicLogo() });
   const onPrint = (r: LabResult) => {
     playTap();
-    if (!openLabPrint(pet, [r], printOpts())) toast.error("المتصفح منع نافذة الطباعة — اسمح بالنوافذ المنبثقة");
+    if (!openLabPrint(pet, [r], printOpts())) toast.error(t("lab.popupBlocked", "المتصفح منع نافذة الطباعة — اسمح بالنوافذ المنبثقة"));
   };
   const printAll = () => {
     playTap();
-    if (!openLabPrint(pet, results, printOpts())) toast.error("المتصفح منع نافذة الطباعة — اسمح بالنوافذ المنبثقة");
+    if (!openLabPrint(pet, results, printOpts())) toast.error(t("lab.popupBlocked", "المتصفح منع نافذة الطباعة — اسمح بالنوافذ المنبثقة"));
   };
   /** فوترة: افتح المبيعات والبند جاهز بالسلة — عند إتمام البيع تتعلم النتيجة «مفوترة» بروحها. */
   const onBill = (r: LabResult) => {
@@ -1219,12 +1238,12 @@ export function LabsTab({ pet, results, canEdit, doctor, onChanged }: {
   const onDelete = (id: string) => {
     if (confirmDel !== id) {
       playTap(); setConfirmDel(id);
-      toast.toast({ tone: "info", title: "اضغط الحذف مرة ثانية للتأكيد" });
+      toast.toast({ tone: "info", title: t("lab.confirmDelete", "اضغط الحذف مرة ثانية للتأكيد") });
       window.setTimeout(() => setConfirmDel((c) => (c === id ? null : c)), 4000);
       return;
     }
     setConfirmDel(null);
-    void repo.deleteLabResult(id).then(() => { onChanged(); bumpWl(); }).catch(() => toast.error("تعذّر الحذف"));
+    void repo.deleteLabResult(id).then(() => { onChanged(); bumpWl(); }).catch(() => toast.error(t("lab.deleteFailed", "تعذّر الحذف")));
   };
   const onToggleBilled = (r: LabResult) => {
     playTap();
@@ -1239,10 +1258,10 @@ export function LabsTab({ pet, results, canEdit, doctor, onChanged }: {
         playSuccess();
         // حارس الإيراد: نتيجة اعتُمدت وما انفوترت → ذكّر الطبيب يفوترها بضغطة «فوترة».
         const hasContent = (r.values?.length ?? 0) > 0 || !!r.snap_result || !!(r.notes && r.notes.trim());
-        if (!r.billed && hasContent) toast.toast({ tone: "info", title: "انعتمدت النتيجة — لا تنسَ فوترتها", description: "اضغط «فوترة» بالبطاقة لإضافتها للمبيعات بسعر عيادتك." });
+        if (!r.billed && hasContent) toast.toast({ tone: "info", title: t("lab.verifiedRemember", "انعتمدت النتيجة — لا تنسَ فوترتها"), description: t("lab.verifiedRememberDesc", "اضغط «فوترة» بالبطاقة لإضافتها للمبيعات بسعر عيادتك.") });
       }
       onChanged(); bumpWl();
-    }).catch(() => toast.error("تعذّر تحديث الحالة"));
+    }).catch(() => toast.error(t("lab.statusUpdateFailed", "تعذّر تحديث الحالة")));
   };
   const onTogglePriority = (r: LabResult) => {
     playTap();
@@ -1282,9 +1301,9 @@ export function LabsTab({ pet, results, canEdit, doctor, onChanged }: {
               <span className="absolute -end-0.5 -top-0.5 h-2.5 w-2.5 animate-pulse rounded-full bg-teal-500" />
             </span>
             <span className="text-sm font-extrabold text-teal-800 dark:text-teal-200">
-              وصلتك {formatNum(inbox.length)} نتيجة من جهاز المختبر
+              {t("lab.inboxTitle", { n: formatNum(inbox.length), defaultValue: "وصلتك {{n}} نتيجة من جهاز المختبر" })}
             </span>
-            <span className="ms-auto text-2xs font-bold text-teal-700/70 dark:text-teal-300/70">اربطها بـ {pet.name}</span>
+            <span className="ms-auto text-2xs font-bold text-teal-700/70 dark:text-teal-300/70">{t("lab.linkToPet", { name: pet.name, defaultValue: "اربطها بـ {{name}}" })}</span>
           </div>
           <div className="mt-2 space-y-1.5">
             {inbox.slice(0, 4).map((m) => {
@@ -1301,24 +1320,24 @@ export function LabsTab({ pet, results, canEdit, doctor, onChanged }: {
                 <div key={m.id} className="flex flex-wrap items-center gap-2 rounded-xl bg-surface-1 px-2.5 py-2">
                   <Inbox size={15} className="text-teal-600 dark:text-teal-400" />
                   <span className="text-2xs font-bold text-ink">
-                    {peek.patientHint ? `عينة ${peek.patientHint}` : (m.device_name || "جهاز المختبر")}
+                    {peek.patientHint ? t("lab.sampleId", { id: peek.patientHint, defaultValue: "عينة {{id}}" }) : (m.device_name || t("lab.labDevice", "جهاز المختبر"))}
                   </span>
                   <span className="text-2xs text-ink-subtle">
-                    {peek.count > 0 ? `${formatNum(peek.count)} قيمة (${peek.protocol.toUpperCase()})` : "رسالة"} · {new Date(m.received_at).toLocaleTimeString("ar", { hour: "2-digit", minute: "2-digit" })}
+                    {peek.count > 0 ? t("lab.nValuesProto", { n: formatNum(peek.count), p: peek.protocol.toUpperCase(), defaultValue: "{{n}} قيمة ({{p}})" }) : t("lab.message", "رسالة")} · {new Date(m.received_at).toLocaleTimeString("ar", { hour: "2-digit", minute: "2-digit" })}
                   </span>
                   {empty
-                    ? <span className="rounded-full bg-warn-50 px-2 py-0.5 text-2xs font-bold text-warn-700 dark:bg-warn-500/15 dark:text-warn-200">كل القيم أصفار — عينة فاضية غالباً</span>
+                    ? <span className="rounded-full bg-warn-50 px-2 py-0.5 text-2xs font-bold text-warn-700 dark:bg-warn-500/15 dark:text-warn-200">{t("lab.allZeros", "كل القيم أصفار — عينة فاضية غالباً")}</span>
                     : vitals && <span className="rounded-full bg-surface-2 px-2 py-0.5 text-2xs font-semibold tabular-nums text-ink-muted">{vitals}</span>}
                   <div className="ms-auto flex items-center gap-1.5">
                     <button type="button" onClick={() => acceptInboxItem(m)} className="rounded-full bg-teal-600 px-3 py-1.5 text-2xs font-extrabold text-white transition hover:bg-teal-700 active:scale-95">
-                      استقبال لـ {pet.name}
+                      {t("lab.acceptFor", { name: pet.name, defaultValue: "استقبال لـ {{name}}" })}
                     </button>
-                    <button type="button" onClick={() => dismissInbox(m)} className="grid h-7 w-7 place-items-center rounded-full text-ink-subtle transition hover:text-danger-600" title="تجاهل"><X size={14} /></button>
+                    <button type="button" onClick={() => dismissInbox(m)} className="grid h-7 w-7 place-items-center rounded-full text-ink-subtle transition hover:text-danger-600" title={t("lab.dismiss", "تجاهل")}><X size={14} /></button>
                   </div>
                 </div>
               );
             })}
-            {inbox.length > 4 && <p className="ps-1 text-2xs font-bold text-teal-700/70 dark:text-teal-300/70">و{formatNum(inbox.length - 4)} غيرها…</p>}
+            {inbox.length > 4 && <p className="ps-1 text-2xs font-bold text-teal-700/70 dark:text-teal-300/70">{t("lab.nMore", { n: formatNum(inbox.length - 4), defaultValue: "و{{n}} غيرها…" })}</p>}
           </div>
         </div>
       )}
@@ -1331,8 +1350,8 @@ export function LabsTab({ pet, results, canEdit, doctor, onChanged }: {
           <div className={cn("rounded-2xl border p-3", meta.cls)}>
             <div className="flex items-center gap-2">
               <Icon size={20} />
-              <span className="text-sm font-extrabold">{meta.label}</span>
-              <span className="ms-auto text-2xs font-bold opacity-80">{formatNum(caseInterp.severity.abnormal)} قيمة خارج الطبيعي · آخر تحليل</span>
+              <span className="text-sm font-extrabold">{t(meta.key, meta.label)}</span>
+              <span className="ms-auto text-2xs font-bold opacity-80">{t("lab.nAbnormalValues", { n: formatNum(caseInterp.severity.abnormal), defaultValue: "{{n}} قيمة خارج الطبيعي" })} · {t("lab.latestTest", "آخر تحليل")}</span>
             </div>
             {caseInterp.critical.length > 0 && (
               <div className="mt-2 space-y-1">
@@ -1346,26 +1365,26 @@ export function LabsTab({ pet, results, canEdit, doctor, onChanged }: {
       })()}
 
       <div className="flex flex-wrap items-center gap-2">
-        <h2 className="font-display text-lg font-extrabold text-ink">🧪 المختبر</h2>
-        <span className="chip bg-surface-2 text-2xs font-bold text-ink-muted">{formatNum(results.length)} نتيجة</span>
+        <h2 className="font-display text-lg font-extrabold text-ink">{t("lab.title", "🧪 المختبر")}</h2>
+        <span className="chip bg-surface-2 text-2xs font-bold text-ink-muted">{t("lab.nResults", { n: formatNum(results.length), defaultValue: "{{n}} نتيجة" })}</span>
         {positives.length > 0 && (
           <span className="chip bg-danger-100 text-2xs font-black text-danger-700 dark:bg-danger-500/20 dark:text-danger-300">
-            {formatNum(positives.length)} فحص إيجابي
+            {t("lab.nPositiveTests", { n: formatNum(positives.length), defaultValue: "{{n}} فحص إيجابي" })}
           </span>
         )}
         <div className="ms-auto flex items-center gap-1.5">
           {numericCount >= 2 && (
             <button type="button" onClick={() => { playTap(); setCompareOpen(true); }} className="inline-flex items-center gap-1.5 rounded-full bg-surface-2 px-3.5 py-2 text-xs font-bold text-ink-muted transition hover:text-ink">
-              <ArrowRightLeft size={14} /> مقارنة
+              <ArrowRightLeft size={14} /> {t("lab.compare", "مقارنة")}
             </button>
           )}
           {results.length > 0 && (
             <button type="button" onClick={printAll} className="inline-flex items-center gap-1.5 rounded-full bg-surface-2 px-3.5 py-2 text-xs font-bold text-ink-muted transition hover:text-ink">
-              <Printer size={14} /> طباعة تقرير
+              <Printer size={14} /> {t("lab.printReport", "طباعة تقرير")}
             </button>
           )}
           {canEdit && (
-            <Button onClick={() => { playTap(); setEntryOpen(true); }} leftIcon={<Plus size={16} />}>تسجيل تحاليل</Button>
+            <Button onClick={() => { playTap(); setEntryOpen(true); }} leftIcon={<Plus size={16} />}>{t("lab.addResults", "تسجيل تحاليل")}</Button>
           )}
         </div>
       </div>
@@ -1375,9 +1394,9 @@ export function LabsTab({ pet, results, canEdit, doctor, onChanged }: {
       {results.length === 0 ? (
         <div className="card grid place-items-center py-12 text-center">
           <FlaskConical size={30} className="mb-2 text-ink-subtle/40" />
-          <p className="text-sm font-bold text-ink-muted">ماكو تحاليل مسجلة بعد</p>
+          <p className="text-sm font-bold text-ink-muted">{t("lab.emptyTitle", "ماكو تحاليل مسجلة بعد")}</p>
           <p className="mt-1 max-w-sm text-2xs leading-relaxed text-ink-subtle">
-            سجّل CBC، كيمياء، فحص سريع، أو أي تحليل — وكل نتيجة راح تظهر هنا وتدخل بجدول تطور القيم تلقائياً.
+            {t("lab.emptyHint", "سجّل CBC، كيمياء، فحص سريع، أو أي تحليل — وكل نتيجة راح تظهر هنا وتدخل بجدول تطور القيم تلقائياً.")}
           </p>
         </div>
       ) : (
@@ -1387,13 +1406,13 @@ export function LabsTab({ pet, results, canEdit, doctor, onChanged }: {
           ))}
           {results.length > shown && (
             <button type="button" onClick={() => setShown((n) => n + 8)} className="mx-auto flex items-center gap-1 rounded-full bg-surface-2 px-4 py-2 text-xs font-bold text-ink-muted transition hover:text-ink">
-              <ChevronDown size={14} /> عرض المزيد ({formatNum(results.length - shown)})
+              <ChevronDown size={14} /> {t("lab.showMore", { n: formatNum(results.length - shown), defaultValue: "عرض المزيد ({{n}})" })}
             </button>
           )}
         </div>
       )}
 
-      <Modal open={compareOpen} onClose={() => setCompareOpen(false)} size="wide" title={`مقارنة تحاليل — ${pet.name}`}>
+      <Modal open={compareOpen} onClose={() => setCompareOpen(false)} size="wide" title={t("lab.compareTitle", { name: pet.name, defaultValue: "مقارنة تحاليل — {{name}}" })}>
         <CompareView results={results} />
       </Modal>
 
@@ -1401,7 +1420,7 @@ export function LabsTab({ pet, results, canEdit, doctor, onChanged }: {
         open={entryOpen}
         onClose={() => { setEntryOpen(false); setFulfillTarget(null); setAcceptInbox(null); }}
         size="wide"
-        title={acceptInbox ? `استقبال نتائج الجهاز — ${pet.name}` : fulfillTarget ? `تسجيل نتائج «${fulfillTarget.panel_label}» — ${pet.name}` : `تسجيل تحاليل — ${pet.name}`}
+        title={acceptInbox ? t("lab.acceptDeviceTitle", { name: pet.name, defaultValue: "استقبال نتائج الجهاز — {{name}}" }) : fulfillTarget ? t("lab.fulfillTitle", { panel: fulfillTarget.panel_label, name: pet.name, defaultValue: "تسجيل نتائج «{{panel}}» — {{name}}" }) : t("lab.entryTitle", { name: pet.name, defaultValue: "تسجيل تحاليل — {{name}}" })}
       >
         <LabEntry
           pet={pet} doctor={doctor} fulfill={fulfillTarget}
@@ -1429,6 +1448,7 @@ export function LabsTab({ pet, results, canEdit, doctor, onChanged }: {
  *  DISTANCE FROM THE NORMAL BAND: moved closer (or into it) = تحسّن, moved
  *  further = تراجع — direction-aware, so a falling high value counts as better. */
 function CompareView({ results }: { results: LabResult[] }) {
+  const { t } = useTranslation();
   const numeric = useMemo(
     () => results.filter((r) => r.kind === "numeric" && (r.values?.length ?? 0) > 0).slice().sort((a, b) => a.taken_at.localeCompare(b.taken_at)),
     [results],
@@ -1437,7 +1457,7 @@ function CompareView({ results }: { results: LabResult[] }) {
   const [bId, setBId] = useState(() => numeric[numeric.length - 1]?.id ?? "");
   const A = numeric.find((r) => r.id === aId);
   const B = numeric.find((r) => r.id === bId);
-  if (numeric.length < 2) return <p className="py-6 text-center text-sm text-ink-subtle">تحتاج نتيجتين رقميتين على الأقل للمقارنة.</p>;
+  if (numeric.length < 2) return <p className="py-6 text-center text-sm text-ink-subtle">{t("lab.needTwo", "تحتاج نتيجتين رقميتين على الأقل للمقارنة.")}</p>;
 
   // مسافة القيمة عن النطاق. الحكم بلا رقم (أو المقارنة المختلطة) يُقاس بدرجته: جداً=2، عادي=1، طبيعي=0.
   const dist = (v: LabValue, other?: LabValue) => {
@@ -1464,7 +1484,7 @@ function CompareView({ results }: { results: LabResult[] }) {
       <div className="grid gap-3 sm:grid-cols-2">
         {(["a", "b"] as const).map((side) => (
           <div key={side}>
-            <p className="mb-1.5 text-2xs font-bold text-ink-muted">{side === "a" ? "قبل" : "بعد"}</p>
+            <p className="mb-1.5 text-2xs font-bold text-ink-muted">{side === "a" ? t("lab.before", "قبل") : t("lab.after", "بعد")}</p>
             <div className="flex flex-wrap gap-1.5">
               {numeric.map((r) => (
                 <button key={r.id} type="button" onClick={() => pick(r.id, side)}
@@ -1482,10 +1502,10 @@ function CompareView({ results }: { results: LabResult[] }) {
           <table className="w-full min-w-[460px] text-sm">
             <thead>
               <tr className="border-b border-line bg-surface-2/60 text-2xs text-ink-muted">
-                <th className="px-3 py-2 text-start font-bold">الفحص</th>
+                <th className="px-3 py-2 text-start font-bold">{t("lab.test", "الفحص")}</th>
                 <th className="px-2 py-2 text-center font-bold" dir="ltr">{new Date(A.taken_at).toLocaleDateString("en-GB", { day: "2-digit", month: "short" })}</th>
                 <th className="px-2 py-2 text-center font-bold" dir="ltr">{new Date(B.taken_at).toLocaleDateString("en-GB", { day: "2-digit", month: "short" })}</th>
-                <th className="px-2 py-2 text-center font-bold">الاتجاه</th>
+                <th className="px-2 py-2 text-center font-bold">{t("lab.direction", "الاتجاه")}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-line">
@@ -1502,9 +1522,9 @@ function CompareView({ results }: { results: LabResult[] }) {
                       </td>
                     ))}
                     <td className="px-2 py-2 text-center">
-                      {verdict === "up" && <span className="chip bg-success-50 text-2xs font-black text-success-700 dark:bg-success-500/15 dark:text-success-300">تحسّن ✓</span>}
-                      {verdict === "down" && <span className="chip bg-danger-50 text-2xs font-black text-danger-700 dark:bg-danger-500/15 dark:text-danger-300">تراجع !</span>}
-                      {verdict === "flat" && <span className="chip bg-surface-2 text-2xs font-bold text-ink-subtle">مستقر</span>}
+                      {verdict === "up" && <span className="chip bg-success-50 text-2xs font-black text-success-700 dark:bg-success-500/15 dark:text-success-300">{t("lab.improved", "تحسّن ✓")}</span>}
+                      {verdict === "down" && <span className="chip bg-danger-50 text-2xs font-black text-danger-700 dark:bg-danger-500/15 dark:text-danger-300">{t("lab.worsened", "تراجع !")}</span>}
+                      {verdict === "flat" && <span className="chip bg-surface-2 text-2xs font-bold text-ink-subtle">{t("lab.stable", "مستقر")}</span>}
                       {verdict === null && <span className="text-ink-subtle/40">—</span>}
                     </td>
                   </tr>
@@ -1514,7 +1534,7 @@ function CompareView({ results }: { results: LabResult[] }) {
           </table>
         </div>
       )}
-      <p className="text-2xs leading-relaxed text-ink-subtle">«تحسّن» = القيمة اقتربت من نطاقها الطبيعي أو دخلت فيه — حتى لو نزلت من رقم أعلى. المقارنة بمسافة القيمة عن النطاق، مو بمجرد صعودها ونزولها.</p>
+      <p className="text-2xs leading-relaxed text-ink-subtle">{t("lab.compareHint", "«تحسّن» = القيمة اقتربت من نطاقها الطبيعي أو دخلت فيه — حتى لو نزلت من رقم أعلى. المقارنة بمسافة القيمة عن النطاق، مو بمجرد صعودها ونزولها.")}</p>
     </div>
   );
 }
@@ -1523,6 +1543,7 @@ function CompareView({ results }: { results: LabResult[] }) {
 
 /** Compact «آخر تحاليل» summary for the visit page — glance, don't leave the case. */
 export function LastLabsStrip({ results, onOpen }: { results: LabResult[]; onOpen: () => void }) {
+  const { t } = useTranslation();
   if (!results.length) return null;
   const latest = results[0];
   const abnormal = (latest.values ?? []).filter((v) => v.flag !== "normal");
@@ -1534,11 +1555,11 @@ export function LastLabsStrip({ results, onOpen }: { results: LabResult[]; onOpe
     >
       <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-brand-100 text-brand-700 dark:bg-brand-500/20 dark:text-brand-300"><FlaskConical size={16} /></span>
       <div className="min-w-0 flex-1">
-        <p className="text-sm font-extrabold text-ink">آخر تحاليل: {latest.panel_label}</p>
+        <p className="text-sm font-extrabold text-ink">{t("lab.lastLabs", { panel: latest.panel_label, defaultValue: "آخر تحاليل: {{panel}}" })}</p>
         <p className="text-2xs text-ink-subtle" dir="auto">
           <span dir="ltr">{formatDate(latest.taken_at, "ar")}</span>
-          {latest.kind === "numeric" ? (abnormal.length ? ` · ${formatNum(abnormal.length)} قيمة خارج الطبيعي` : " · كل القيم طبيعية") : ""}
-          {latest.snap_result ? (latest.snap_result === "positive" ? " · إيجابي ⚠" : " · سلبي ✓") : ""}
+          {latest.kind === "numeric" ? (abnormal.length ? ` · ${t("lab.nAbnormalValues", { n: formatNum(abnormal.length), defaultValue: "{{n}} قيمة خارج الطبيعي" })}` : ` · ${t("lab.allValuesNormal", "كل القيم طبيعية")}`) : ""}
+          {latest.snap_result ? (latest.snap_result === "positive" ? ` · ${t("lab.positiveMark", "إيجابي ⚠")}` : ` · ${t("lab.negativeMark", "سلبي ✓")}`) : ""}
         </p>
       </div>
       {abnormal.slice(0, 3).map((v) => (
@@ -1548,10 +1569,10 @@ export function LastLabsStrip({ results, onOpen }: { results: LabResult[]; onOpe
       ))}
       {positives.length > 0 && (
         <span className="rounded-lg bg-danger-100 px-1.5 py-0.5 text-2xs font-black text-danger-700 dark:bg-danger-500/20 dark:text-danger-300">
-          +{formatNum(positives.length)} إيجابي
+          {t("lab.morePositive", { n: formatNum(positives.length), defaultValue: "+{{n}} إيجابي" })}
         </span>
       )}
-      <span className="text-2xs font-bold text-brand-600">فتح المختبر ←</span>
+      <span className="text-2xs font-bold text-brand-600">{t("lab.openLab", "فتح المختبر ←")}</span>
     </button>
   );
 }

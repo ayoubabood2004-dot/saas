@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { sendWhatsApp, quotaMessage } from "@/lib/quotas";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
 import {
   Stethoscope, BedDouble, HeartPulse, ClipboardList, Pill, AlertTriangle,
   CheckCircle2, Clock, Loader2, Search, LayoutGrid, ChevronLeft, Slice,
@@ -27,12 +28,19 @@ import { Modal } from "@/components/Modal";
 
 /* ── Bucket configuration ─────────────────────────────────────────────────── */
 type BucketKey = "daily" | "careBoarding" | "boarding" | "visit";
-const BUCKETS: { key: BucketKey; label: string; icon: typeof Stethoscope; tint: string; ring: string; badge: string }[] = [
-  { key: "daily", label: "الطبلات اليومية", icon: Stethoscope, tint: "text-amber-600 dark:text-amber-300", ring: "bg-amber-100 dark:bg-amber-500/15", badge: "bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-200" },
-  { key: "careBoarding", label: "طبلات الفندقة العلاجية", icon: HeartPulse, tint: "text-rose-600 dark:text-rose-300", ring: "bg-rose-100 dark:bg-rose-500/15", badge: "bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-200" },
-  { key: "boarding", label: "طبلات الفندقة", icon: BedDouble, tint: "text-sky-600 dark:text-sky-300", ring: "bg-sky-100 dark:bg-sky-500/15", badge: "bg-sky-100 text-sky-700 dark:bg-sky-500/20 dark:text-sky-200" },
-  { key: "visit", label: "طبلات الزيارة", icon: ClipboardList, tint: "text-brand-600 dark:text-brand-300", ring: "bg-brand-100 dark:bg-brand-500/15", badge: "bg-brand-100 text-brand-700 dark:bg-brand-500/20 dark:text-brand-300" },
+const BUCKETS: { key: BucketKey; icon: typeof Stethoscope; tint: string; ring: string; badge: string }[] = [
+  { key: "daily", icon: Stethoscope, tint: "text-amber-600 dark:text-amber-300", ring: "bg-amber-100 dark:bg-amber-500/15", badge: "bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-200" },
+  { key: "careBoarding", icon: HeartPulse, tint: "text-rose-600 dark:text-rose-300", ring: "bg-rose-100 dark:bg-rose-500/15", badge: "bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-200" },
+  { key: "boarding", icon: BedDouble, tint: "text-sky-600 dark:text-sky-300", ring: "bg-sky-100 dark:bg-sky-500/15", badge: "bg-sky-100 text-sky-700 dark:bg-sky-500/20 dark:text-sky-200" },
+  { key: "visit", icon: ClipboardList, tint: "text-brand-600 dark:text-brand-300", ring: "bg-brand-100 dark:bg-brand-500/15", badge: "bg-brand-100 text-brand-700 dark:bg-brand-500/20 dark:text-brand-300" },
 ];
+/** تسميات الدلاء — تُقرأ وقت الرسم حتى يتبدل النص مع تبديل اللغة. */
+const bucketLabel = (t: TFunction, key: BucketKey): string => ({
+  daily: t("charts.bucketDaily", "الطبلات اليومية"),
+  careBoarding: t("charts.bucketCareBoarding", "طبلات الفندقة العلاجية"),
+  boarding: t("charts.bucketBoarding", "طبلات الفندقة"),
+  visit: t("charts.bucketVisit", "طبلات الزيارة"),
+}[key]);
 
 /* ── السجلات: هيكلة الصفحة العليا ──────────────────────────────────────────
  * سجلا العلاج (اليومية + الفندقة العلاجية) هما اللذان يحملان جرعات — فكل
@@ -41,16 +49,27 @@ const BUCKETS: { key: BucketKey; label: string; icon: typeof Stethoscope; tint: 
  * (انتهت بنتيجة) أو «المنقطعون» (صاحبها ما رجع يكمل). و«التقارير» تحكي
  * وضع كل هذا بالأرقام وبالجُمل. */
 type RegistryKey = "daily" | "careBoarding" | "other" | "cages" | "cases" | "deceased" | "lost" | "reports";
-const REGISTRIES: { key: RegistryKey; label: string; icon: typeof Stethoscope }[] = [
-  { key: "daily", label: "سجل الطبلات اليومية", icon: Stethoscope },
-  { key: "careBoarding", label: "سجل الفندقة العلاجية", icon: HeartPulse },
-  { key: "other", label: "الفندقة والزيارات", icon: BedDouble },
-  { key: "cages", label: "خريطة الأقفاص", icon: Boxes },
-  { key: "cases", label: "سكشن الحالات", icon: Archive },
-  { key: "deceased", label: "سجل المتوفين", icon: HeartCrack },
-  { key: "lost", label: "المنقطعون", icon: DoorOpen },
-  { key: "reports", label: "التقارير", icon: BarChart3 },
+const REGISTRIES: { key: RegistryKey; icon: typeof Stethoscope }[] = [
+  { key: "daily", icon: Stethoscope },
+  { key: "careBoarding", icon: HeartPulse },
+  { key: "other", icon: BedDouble },
+  { key: "cages", icon: Boxes },
+  { key: "cases", icon: Archive },
+  { key: "deceased", icon: HeartCrack },
+  { key: "lost", icon: DoorOpen },
+  { key: "reports", icon: BarChart3 },
 ];
+/** تسميات السجلات — وقت الرسم أيضاً. */
+const registryLabel = (t: TFunction, key: RegistryKey): string => ({
+  daily: t("charts.regDaily", "سجل الطبلات اليومية"),
+  careBoarding: t("charts.regCareBoarding", "سجل الفندقة العلاجية"),
+  other: t("charts.regOther", "الفندقة والزيارات"),
+  cages: t("charts.regCages", "خريطة الأقفاص"),
+  cases: t("charts.regCases", "سكشن الحالات"),
+  deceased: t("charts.regDeceased", "سجل المتوفين"),
+  lost: t("charts.regLost", "المنقطعون"),
+  reports: t("charts.regReports", "التقارير"),
+}[key]);
 /** أي دلاء تعرضها كل سجلة نشطة. */
 const REG_BUCKETS: Record<"daily" | "careBoarding" | "other", BucketKey[]> = {
   daily: ["daily"],
@@ -63,13 +82,20 @@ const REG_BUCKETS: Record<"daily" | "careBoarding" | "other", BucketKey[]> = {
  * patient stays red even when every dose is on time, because the doses being
  * on time is not the thing you need to know about it. */
 type Acuity = "critical" | "overdue" | "due" | "stable" | "settled";
-const ACUITY: Record<Acuity, { label: string; stripe: string; card: string; dot: string }> = {
-  critical: { label: "حرجة", stripe: "bg-danger-500", card: "border-danger-300 dark:border-danger-500/40", dot: "bg-danger-500" },
-  overdue:  { label: "متأخّرة", stripe: "bg-danger-500", card: "border-danger-300 dark:border-danger-500/40", dot: "bg-danger-500" },
-  due:      { label: "مستحقّة", stripe: "bg-warn-500", card: "border-warn-300 dark:border-warn-500/40", dot: "bg-warn-500" },
-  stable:   { label: "مستقرّة", stripe: "bg-sky-400", card: "border-line-strong", dot: "bg-sky-400" },
-  settled:  { label: "اليوم مكتمل", stripe: "bg-teal-400", card: "border-teal-300 dark:border-teal-500/40", dot: "bg-teal-400" },
+const ACUITY: Record<Acuity, { stripe: string; card: string; dot: string }> = {
+  critical: { stripe: "bg-danger-500", card: "border-danger-300 dark:border-danger-500/40", dot: "bg-danger-500" },
+  overdue:  { stripe: "bg-danger-500", card: "border-danger-300 dark:border-danger-500/40", dot: "bg-danger-500" },
+  due:      { stripe: "bg-warn-500", card: "border-warn-300 dark:border-warn-500/40", dot: "bg-warn-500" },
+  stable:   { stripe: "bg-sky-400", card: "border-line-strong", dot: "bg-sky-400" },
+  settled:  { stripe: "bg-teal-400", card: "border-teal-300 dark:border-teal-500/40", dot: "bg-teal-400" },
 };
+const acuityLabel = (t: TFunction, k: Acuity): string => ({
+  critical: t("charts.acuityCritical", "حرجة"),
+  overdue: t("charts.acuityOverdue", "متأخّرة"),
+  due: t("charts.acuityDue", "مستحقّة"),
+  stable: t("charts.acuityStable", "مستقرّة"),
+  settled: t("charts.acuitySettled", "اليوم مكتمل"),
+}[k]);
 const ACUITY_RANK: Record<Acuity, number> = { critical: 0, overdue: 1, due: 2, stable: 3, settled: 4 };
 
 function acuityOf(c: Chart, txLoaded: boolean): Acuity {
@@ -81,7 +107,9 @@ function acuityOf(c: Chart, txLoaded: boolean): Acuity {
   return "stable";
 }
 
-const SPECIES_AR: Record<string, string> = { dog: "كلب", cat: "قطة", horse: "حصان", cow: "بقرة", bird: "طائر", rabbit: "أرنب", other: "أخرى" };
+const speciesLabel = (t: TFunction, species: string): string => (({
+  dog: t("charts.speciesDog", "كلب"), cat: t("charts.speciesCat", "قطة"), horse: t("charts.speciesHorse", "حصان"), cow: t("charts.speciesCow", "بقرة"), bird: t("charts.speciesBird", "طائر"), rabbit: t("charts.speciesRabbit", "أرنب"), other: t("charts.speciesOther", "أخرى"),
+} as Record<string, string>)[species] ?? species);
 // Default avatar: the species emoji (️ = VS16 forces a colour cat) on a soft tint —
 // self-contained, so it paints instantly with zero network requests.
 const SPECIES_EMOJI: Record<string, string> = { dog: "🐶", cat: "🐱️", horse: "🐴", cow: "🐄", bird: "🦜", rabbit: "🐰", other: "🐾" };
@@ -136,7 +164,7 @@ const dayNumber = (iso: string, todayISO: string) => {
 };
 
 export function Charts() {
-  const { i18n } = useTranslation();
+  const { t, i18n } = useTranslation();
   const lang = i18n.language;
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -284,7 +312,7 @@ export function Charts() {
     for (const v of visits) {
       if (admPetIds.has(v.pet_id)) continue;
       const pet = pets[v.pet_id];
-      const title = v.reason?.trim() || "زيارة";
+      const title = v.reason?.trim() || t("charts.visitFallback", "زيارة");
       if (!matchQ(pet, title)) continue;
       out.push({ id: `vis_${v.id}`, bucket: "visit", petId: v.pet_id, visitId: v.id, pet, title, since: v.opened_at, condition: conditionByPet.get(v.pet_id) ?? null, ...statusFrom(treatments.filter((t) => t.visit_id === v.id)) });
     }
@@ -294,7 +322,7 @@ export function Charts() {
       (b.overdue - a.overdue) || (b.dueToday - a.dueToday) || b.since.localeCompare(a.since));
     // `tick` is a dependency on purpose: overdue is now clock-based, so the counts
     // must be recomputed every minute, not only when the data changes.
-  }, [ops.admissions, visits, treatments, pets, openVisitByPet, conditionByPet, activeBranch, branches, query, todayISO, tick, txLoaded]);
+  }, [ops.admissions, visits, treatments, pets, openVisitByPet, conditionByPet, activeBranch, branches, query, todayISO, tick, txLoaded, t]);
 
   const dueNow = charts.filter((c) => c.dueToday > 0 || c.overdue > 0).length;
 
@@ -351,11 +379,11 @@ export function Charts() {
   /** علّم الطبلة منقطعة: تسكّر الزيارة بنتيجة «انقطع عن المراجعة» وتخرّج الإدخال. */
   const [lostBusy, setLostBusy] = useState<string | null>(null);
   const markLost = async (c: Chart, remaining: number) => {
-    if (!window.confirm(`تعلّم طبلة ${c.pet?.name ?? "الحيوان"} «منقطعة عن المراجعة»؟\nتنتقل لسكشن المنقطعين وتگدر ترجّعها إذا رجع صاحبها.`)) return;
+    if (!window.confirm(t("charts.confirmMarkLost", { name: c.pet?.name ?? t("charts.theAnimal", "الحيوان"), defaultValue: "تعلّم طبلة {{name}} «منقطعة عن المراجعة»؟\nتنتقل لسكشن المنقطعين وتگدر ترجّعها إذا رجع صاحبها." }))) return;
     playTap();
     setLostBusy(c.id);
     const now = new Date().toISOString();
-    const summary = `عُلّمت منقطعة عن المراجعة من سجل الطبلات — بقيت ${remaining} جرعة ما انعطت.`;
+    const summary = t("charts.lostSummary", { n: remaining, defaultValue: "عُلّمت منقطعة عن المراجعة من سجل الطبلات — بقيت {{n}} جرعة ما انعطت." });
     try {
       if (c.visitId) {
         await repo.updateClinicVisit(c.visitId, { status: "ended", ended_at: now, ended_by: user?.full_name ?? null, outcome: "lost_followup", summary });
@@ -388,7 +416,8 @@ export function Charts() {
   const nudgeOwner = async (pet: Pet | undefined, remaining: number) => {
     if (!pet?.owner_phone) return;
     playTap();
-    const msg = `مرحباً ${pet.owner_name ?? ""} 👋\nنحب نطمئن على ${pet.name} — باقي ${remaining > 0 ? `${remaining} جرعة من خطة علاجه` : "متابعة علاجه"} عند ${getClinicName() || "العيادة"}. إكمال العلاج مهم لشفائه الكامل 🐾\nننتظركم، وإذا في أي ظرف خبرونا نرتبلكم موعد ثاني.`;
+    const remainingTxt = remaining > 0 ? t("charts.waRemainingDoses", { n: remaining, defaultValue: "{{n}} جرعة من خطة علاجه" }) : t("charts.waFollowUpTx", "متابعة علاجه");
+    const msg = t("charts.waNudge", { owner: pet.owner_name ?? "", pet: pet.name, remaining: remainingTxt, clinic: getClinicName() || t("charts.theClinic", "العيادة"), defaultValue: "مرحباً {{owner}} 👋\nنحب نطمئن على {{pet}} — باقي {{remaining}} عند {{clinic}}. إكمال العلاج مهم لشفائه الكامل 🐾\nننتظركم، وإذا في أي ظرف خبرونا نرتبلكم موعد ثاني." });
     try {
       await sendWhatsApp({ phone: waNumber(pet.owner_phone, getDialCode()), text: msg, petId: pet.id, ownerName: pet.owner_name ?? null, ownerPhone: pet.owner_phone, kind: "followup" });
     } catch (e) { const m = quotaMessage(e); if (m) window.alert(m); }
@@ -458,21 +487,21 @@ export function Charts() {
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-brand-600 text-white shadow-card"><LayoutGrid size={22} /></span>
         <div className="min-w-0">
-          <h1 className="text-xl font-black text-ink">الطبلات</h1>
-          <p className="text-xs font-semibold text-ink-subtle">خطط العلاج للحيوانات الموجودة اليوم في العيادة — مرتّبة في مكان واحد.</p>
+          <h1 className="text-xl font-black text-ink">{t("charts.title", "الطبلات")}</h1>
+          <p className="text-xs font-semibold text-ink-subtle">{t("charts.subtitle", "خطط العلاج للحيوانات الموجودة اليوم في العيادة — مرتّبة في مكان واحد.")}</p>
         </div>
         <div className="ms-auto flex items-center gap-2">
           <span className="rounded-lg border border-line bg-surface-1 px-3 py-2 text-center">
             <span className="block text-lg font-black leading-none text-ink">{formatNum(charts.length)}</span>
-            <span className="text-[10px] font-bold text-ink-subtle">طبلة نشطة</span>
+            <span className="text-[10px] font-bold text-ink-subtle">{t("charts.activeCharts", "طبلة نشطة")}</span>
           </span>
           <span className={cn("rounded-lg border px-3 py-2 text-center", dueNow > 0 ? "border-warn-300 bg-warn-50 dark:border-warn-500/30 dark:bg-warn-500/10" : "border-line bg-surface-1")}>
             <span className={cn("block text-lg font-black leading-none", dueNow > 0 ? "text-warn-700 dark:text-warn-300" : "text-ink")}>{formatNum(dueNow)}</span>
-            <span className="text-[10px] font-bold text-ink-subtle">تحتاج متابعة</span>
+            <span className="text-[10px] font-bold text-ink-subtle">{t("charts.needFollowUp", "تحتاج متابعة")}</span>
           </span>
           <button onClick={() => { playTap(); setSurgOpen(true); }} className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-center transition hover:bg-rose-100 dark:border-rose-500/30 dark:bg-rose-500/10">
             <span className="block text-lg font-black leading-none text-rose-700 dark:text-rose-300">{formatNum(monthSurgeries.length)}</span>
-            <span className="text-[10px] font-bold text-ink-subtle">🔪 عمليات هذا الشهر</span>
+            <span className="text-[10px] font-bold text-ink-subtle">{t("charts.surgThisMonth", "🔪 عمليات هذا الشهر")}</span>
           </button>
         </div>
       </div>
@@ -480,7 +509,7 @@ export function Charts() {
       {/* السجلات — دورة حياة الطبلة كاملة بستة أبواب */}
       <div className="mb-4 flex flex-wrap gap-1.5">
         {REGISTRIES.map((r) => (
-          <FilterChip key={r.key} active={reg === r.key} label={r.label}
+          <FilterChip key={r.key} active={reg === r.key} label={registryLabel(t, r.key)}
             count={r.key === "reports" ? undefined : regCounts[r.key]}
             alert={r.key === "lost" && regCounts.lost > 0}
             icon={<r.icon size={13} />} onClick={() => { playTap(); setReg(r.key); }} />
@@ -492,16 +521,16 @@ export function Charts() {
         <div className="mb-4 flex flex-wrap items-center gap-2">
           <div className="relative min-w-[180px] flex-1 sm:max-w-xs">
             <Search size={15} className="pointer-events-none absolute inset-y-0 my-auto ms-3 text-ink-subtle" />
-            <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="ابحث باسم الحيوان أو التشخيص…" className="input h-10 w-full ps-9" />
+            <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("charts.searchPh", "ابحث باسم الحيوان أو التشخيص…")} className="input h-10 w-full ps-9" />
           </div>
           <div className="ms-auto inline-flex items-center gap-0.5 rounded-full border border-line bg-surface-2 p-0.5">
             <button type="button" onClick={() => { playTap(); setView("cards"); }}
               className={cn("inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-2xs font-bold transition", view === "cards" ? "bg-brand-600 text-white shadow-soft" : "text-ink-muted hover:text-ink")}>
-              <LayoutGrid size={13} /> بطاقات
+              <LayoutGrid size={13} /> {t("charts.viewCards", "بطاقات")}
             </button>
             <button type="button" onClick={() => { playTap(); setView("board"); }}
               className={cn("inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-2xs font-bold transition", view === "board" ? "bg-brand-600 text-white shadow-soft" : "text-ink-muted hover:text-ink")}>
-              <Clock size={13} /> الجرعات بالساعة
+              <Clock size={13} /> {t("charts.viewBoard", "الجرعات بالساعة")}
             </button>
           </div>
         </div>
@@ -533,29 +562,29 @@ export function Charts() {
         <ReportsSection charts={charts} treatments={treatments} txLoaded={txLoaded}
           cases={casesList} deceased={deceasedList} lost={lostList} stalled={stalled} pets={pets} todayISO={todayISO} lang={lang} txForVisit={txForVisit} />
       ) : booting ? (
-        <div className="py-16 text-center text-ink-subtle"><Loader2 className="mx-auto mb-2 animate-spin" /> جارٍ التحميل…</div>
+        <div className="py-16 text-center text-ink-subtle"><Loader2 className="mx-auto mb-2 animate-spin" /> {t("charts.loading", "جارٍ التحميل…")}</div>
       ) : activeCharts.length === 0 ? (
         <div className="rounded-xl border border-line bg-surface-1 p-10 text-center">
           <LayoutGrid size={40} className="mx-auto mb-3 text-ink-subtle" />
           <p className="text-sm font-bold text-ink">
-            {reg === "daily" ? "ماكو طبلات يومية نشطة" : reg === "careBoarding" ? "ماكو فندقة علاجية نشطة" : "ماكو فندقة أو زيارات مفتوحة"}
+            {reg === "daily" ? t("charts.emptyDaily", "ماكو طبلات يومية نشطة") : reg === "careBoarding" ? t("charts.emptyCareBoarding", "ماكو فندقة علاجية نشطة") : t("charts.emptyOther", "ماكو فندقة أو زيارات مفتوحة")}
           </p>
-          <p className="mt-1 text-xs text-ink-subtle">الطبلة تنفتح تلقائياً لما تدخّل حالة علاج — والمنتهية تلگيها بـ«سكشن الحالات».</p>
+          <p className="mt-1 text-xs text-ink-subtle">{t("charts.emptyHint", "الطبلة تنفتح تلقائياً لما تدخّل حالة علاج — والمنتهية تلگيها بـ«سكشن الحالات».")}</p>
         </div>
       ) : view === "cards" ? (
         <>
           {/* Colour key — a colour language nobody explained is just decoration */}
           <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-xl border border-line bg-surface-1 px-3 py-2">
-            <span className="text-2xs font-extrabold text-ink-muted">الفرز:</span>
+            <span className="text-2xs font-extrabold text-ink-muted">{t("charts.sortLegend", "الفرز:")}</span>
             {(Object.keys(ACUITY) as Acuity[]).map((k) => (
               <span key={k} className="inline-flex items-center gap-1.5 text-2xs font-bold text-ink-muted">
                 <span className={cn("h-2.5 w-2.5 rounded-full", ACUITY[k].dot)} aria-hidden />
-                {ACUITY[k].label}
+                {acuityLabel(t, k)}
               </span>
             ))}
             <span className="inline-flex items-center gap-1.5 text-2xs font-bold text-danger-600 dark:text-danger-300">
               <span className="h-2.5 w-2.5 animate-pulse-ring rounded-full bg-danger-500" aria-hidden />
-              يومض = جرعة متأخّرة
+              {t("charts.blinkLegend", "يومض = جرعة متأخّرة")}
             </span>
           </div>
 
@@ -567,7 +596,7 @@ export function Charts() {
                 <section key={b.key}>
                   <div className="mb-2 flex items-center gap-2">
                     <span className={cn("grid h-7 w-7 place-items-center rounded-lg", b.ring, b.tint)}><b.icon size={16} /></span>
-                    <h2 className="text-sm font-extrabold text-ink">{b.label}</h2>
+                    <h2 className="text-sm font-extrabold text-ink">{bucketLabel(t, b.key)}</h2>
                     <span className={cn("rounded-full px-2 py-0.5 text-2xs font-black", b.badge)}>{formatNum(items.length)}</span>
                   </div>
                   <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
@@ -590,9 +619,9 @@ export function Charts() {
       )}
 
       {/* سجل عمليات هذا الشهر */}
-      <Modal open={surgOpen} onClose={() => setSurgOpen(false)} title={`العمليات الجراحية — هذا الشهر (${formatNum(monthSurgeries.length)})`}>
+      <Modal open={surgOpen} onClose={() => setSurgOpen(false)} title={t("charts.surgModalTitle", { n: formatNum(monthSurgeries.length), defaultValue: "العمليات الجراحية — هذا الشهر ({{n}})" })}>
         {monthSurgeries.length === 0 ? (
-          <p className="rounded-xl bg-surface-2 px-3 py-6 text-center text-sm text-ink-muted">لا عمليات مسجلة هذا الشهر — تُسجل من داخل سجل الحالة بزر «تسجيل عملية».</p>
+          <p className="rounded-xl bg-surface-2 px-3 py-6 text-center text-sm text-ink-muted">{t("charts.surgEmpty", "لا عمليات مسجلة هذا الشهر — تُسجل من داخل سجل الحالة بزر «تسجيل عملية».")}</p>
         ) : (
           <div className="max-h-[60vh] space-y-2 overflow-y-auto">
             {monthSurgeries.map((x) => (
@@ -602,7 +631,7 @@ export function Charts() {
                   <span className="block truncate text-sm font-black text-ink">{x.name}</span>
                   <span className="block text-2xs font-bold text-ink-subtle">{pets[x.pet_id]?.name ?? "—"} · {formatDate(x.performed_at, lang)}{x.surgeon ? ` · ${x.surgeon}` : ""}</span>
                 </span>
-                {x.outcome === "success" && <span className="rounded-full bg-success-50 px-2 py-0.5 text-2xs font-black text-success-700 dark:bg-success-500/15 dark:text-success-300">ناجحة</span>}
+                {x.outcome === "success" && <span className="rounded-full bg-success-50 px-2 py-0.5 text-2xs font-black text-success-700 dark:bg-success-500/15 dark:text-success-300">{t("charts.surgSuccess", "ناجحة")}</span>}
               </button>
             ))}
           </div>
@@ -629,6 +658,7 @@ function FilterChip({ active, label, count, alert, icon, onClick }: { active: bo
 
 /* ── Chart card ───────────────────────────────────────────────────────────── */
 function ChartCard({ chart: c, lang, todayISO, txLoaded, busy, onOpen }: { chart: Chart; lang: string; todayISO: string; txLoaded: boolean; busy: boolean; onOpen: () => void }) {
+  const { t } = useTranslation();
   const day = dayNumber(c.since, todayISO);
   const acuity = acuityOf(c, txLoaded);
   const meta = ACUITY[acuity];
@@ -641,12 +671,12 @@ function ChartCard({ chart: c, lang, todayISO, txLoaded, busy, onOpen }: { chart
   const doneToday = txLoaded && c.todayTotal > 0 && c.dueToday === 0 && c.overdue === 0;
   const status = !txLoaded
     ? null
-    : c.overdue > 0 ? { cls: "bg-danger-50 text-danger-700 dark:bg-danger-500/15 dark:text-danger-300", icon: <AlertTriangle size={13} />, text: `${formatNum(c.overdue)} متأخّرة` }
-    : c.dueToday > 0 ? { cls: "bg-warn-50 text-warn-700 dark:bg-warn-500/15 dark:text-warn-300", icon: <Pill size={13} />, text: `${formatNum(c.dueToday)} مستحقّة اليوم` }
-    : doneToday ? { cls: "bg-teal-100 text-teal-700 dark:bg-teal-500/20 dark:text-teal-300", icon: <CheckCircle2 size={13} />, text: "تم علاج اليوم" }
-    : c.total > 0 && c.doneTotal === c.total ? { cls: "bg-success-50 text-success-700 dark:bg-success-500/15 dark:text-success-300", icon: <CheckCircle2 size={13} />, text: "مكتمل" }
-    : c.total > 0 ? { cls: "bg-surface-2 text-ink-muted", icon: <CheckCircle2 size={13} />, text: "لا جرعات اليوم" }
-    : { cls: "bg-surface-2 text-ink-subtle", icon: <ClipboardList size={13} />, text: "لا توجد خطة بعد" };
+    : c.overdue > 0 ? { cls: "bg-danger-50 text-danger-700 dark:bg-danger-500/15 dark:text-danger-300", icon: <AlertTriangle size={13} />, text: t("charts.nOverdue", { n: formatNum(c.overdue), defaultValue: "{{n}} متأخّرة" }) }
+    : c.dueToday > 0 ? { cls: "bg-warn-50 text-warn-700 dark:bg-warn-500/15 dark:text-warn-300", icon: <Pill size={13} />, text: t("charts.nDueToday", { n: formatNum(c.dueToday), defaultValue: "{{n}} مستحقّة اليوم" }) }
+    : doneToday ? { cls: "bg-teal-100 text-teal-700 dark:bg-teal-500/20 dark:text-teal-300", icon: <CheckCircle2 size={13} />, text: t("charts.doneToday", "تم علاج اليوم") }
+    : c.total > 0 && c.doneTotal === c.total ? { cls: "bg-success-50 text-success-700 dark:bg-success-500/15 dark:text-success-300", icon: <CheckCircle2 size={13} />, text: t("charts.planComplete", "مكتمل") }
+    : c.total > 0 ? { cls: "bg-surface-2 text-ink-muted", icon: <CheckCircle2 size={13} />, text: t("charts.noDosesToday", "لا جرعات اليوم") }
+    : { cls: "bg-surface-2 text-ink-subtle", icon: <ClipboardList size={13} />, text: t("charts.noPlanYet", "لا توجد خطة بعد") };
 
   return (
     <button type="button" onClick={onOpen} disabled={busy}
@@ -668,7 +698,7 @@ function ChartCard({ chart: c, lang, todayISO, txLoaded, busy, onOpen }: { chart
           <div className="flex items-center gap-1.5">
             <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", meta.dot)} aria-hidden />
             <span className="truncate text-2xs font-bold text-ink-subtle">
-              {c.condition === "critical" ? "حرجة · " : ""}{c.pet ? (SPECIES_AR[c.pet.species] ?? c.pet.species) : ""}{c.cage ? ` · قفص ${c.cage}` : ""}
+              {c.condition === "critical" ? `${t("charts.acuityCritical", "حرجة")} · ` : ""}{c.pet ? speciesLabel(t, c.pet.species) : ""}{c.cage ? ` · ${t("charts.cageN", { n: c.cage, defaultValue: "قفص {{n}}" })}` : ""}
             </span>
           </div>
         </div>
@@ -686,7 +716,7 @@ function ChartCard({ chart: c, lang, todayISO, txLoaded, busy, onOpen }: { chart
         {status
           ? <span className={cn("inline-flex items-center gap-1 rounded-md px-2 py-1 text-2xs font-black", status.cls)}>{status.icon} {status.text}</span>
           : <span className="h-[26px] w-24 animate-pulse rounded-md bg-surface-2" />}
-        <span className="inline-flex items-center gap-1 text-2xs font-bold text-ink-subtle"><Clock size={11} /> اليوم {formatNum(day)} · {formatDate(c.since, lang)}</span>
+        <span className="inline-flex items-center gap-1 text-2xs font-bold text-ink-subtle"><Clock size={11} /> {t("charts.dayN", { n: formatNum(day), defaultValue: "اليوم {{n}}" })} · {formatDate(c.since, lang)}</span>
       </div>
     </button>
   );
@@ -705,11 +735,11 @@ const durationDays = (from: string, to?: string | null) =>
   Math.max(1, Math.round((new Date(to ?? new Date().toISOString()).getTime() - new Date(from).getTime()) / 86400000) + 0);
 
 /** سطر جرعات الحالة: «انعطت ١٢ من ١٤ (٨٦٪)» — أو لا شيء إذا ما عندها خطة. */
-function doseSummary(tx: TreatmentEntry[]): string | null {
+function doseSummary(t: TFunction, tx: TreatmentEntry[]): string | null {
   if (!tx.length) return null;
-  const done = tx.filter((t) => t.administered_at).length;
+  const done = tx.filter((x) => x.administered_at).length;
   const pct = Math.round((done / tx.length) * 100);
-  return `انعطت ${formatNum(done)} من ${formatNum(tx.length)} جرعة (${formatNum(pct)}٪)`;
+  return t("charts.doseSummary", { done: formatNum(done), total: formatNum(tx.length), pct: formatNum(pct), defaultValue: "انعطت {{done}} من {{total}} جرعة ({{pct}}٪)" });
 }
 
 /* ── سكشن الحالات: الطبلات الي خلص علاجها وانسكّرت بنتيجة ────────────────── */
@@ -720,6 +750,7 @@ function CasesSection({ cases, pets, lang, txForVisit, onOpen }: {
   txForVisit: (visitId: string) => TreatmentEntry[];
   onOpen: (v: ClinicVisit) => void;
 }) {
+  const { t } = useTranslation();
   const [outcomeFilter, setOutcomeFilter] = useState<string>("all");
   const shown = outcomeFilter === "all" ? cases : cases.filter((v) => v.outcome === outcomeFilter);
   const outcomesHere = OUTCOMES.filter((o) => o.id !== "under_treatment" && o.id !== "lost_followup" && cases.some((v) => v.outcome === o.id));
@@ -727,8 +758,8 @@ function CasesSection({ cases, pets, lang, txForVisit, onOpen }: {
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-1.5">
-        <span className="text-2xs font-extrabold text-ink-muted">النتيجة:</span>
-        <FilterChip active={outcomeFilter === "all"} label="الكل" count={cases.length} onClick={() => { playTap(); setOutcomeFilter("all"); }} />
+        <span className="text-2xs font-extrabold text-ink-muted">{t("charts.outcomeFilter", "النتيجة:")}</span>
+        <FilterChip active={outcomeFilter === "all"} label={t("charts.all", "الكل")} count={cases.length} onClick={() => { playTap(); setOutcomeFilter("all"); }} />
         {outcomesHere.map((o) => (
           <FilterChip key={o.id} active={outcomeFilter === o.id} label={`${o.emoji} ${o.label}`} count={cases.filter((v) => v.outcome === o.id).length}
             onClick={() => { playTap(); setOutcomeFilter(o.id); }} />
@@ -738,8 +769,8 @@ function CasesSection({ cases, pets, lang, txForVisit, onOpen }: {
       {shown.length === 0 ? (
         <div className="rounded-xl border border-line bg-surface-1 p-10 text-center">
           <Archive size={40} className="mx-auto mb-3 text-ink-subtle" />
-          <p className="text-sm font-bold text-ink">ماكو حالات منتهية بعد</p>
-          <p className="mt-1 text-xs text-ink-subtle">لما تنهي زيارة وتسجل نتيجتها (شُفي، مزمنة…) تنتقل الطبلة إلى هنا تلقائياً.</p>
+          <p className="text-sm font-bold text-ink">{t("charts.casesEmpty", "ماكو حالات منتهية بعد")}</p>
+          <p className="mt-1 text-xs text-ink-subtle">{t("charts.casesEmptyHint", "لما تنهي زيارة وتسجل نتيجتها (شُفي، مزمنة…) تنتقل الطبلة إلى هنا تلقائياً.")}</p>
         </div>
       ) : (
         <div className="space-y-2">
@@ -747,7 +778,7 @@ function CasesSection({ cases, pets, lang, txForVisit, onOpen }: {
             const pet = pets[v.pet_id];
             const o = outcomeMeta(v.outcome);
             const tx = txForVisit(v.id);
-            const ds = doseSummary(tx);
+            const ds = doseSummary(t, tx);
             const days = durationDays(v.opened_at, v.ended_at);
             return (
               <button key={v.id} type="button" onClick={() => onOpen(v)}
@@ -758,9 +789,9 @@ function CasesSection({ cases, pets, lang, txForVisit, onOpen }: {
                     <span className="text-sm font-black text-ink">{pet?.name ?? "—"}</span>
                     {o && <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-extrabold", OUTCOME_TONE_CLS[o.tone])}>{o.emoji} {o.label}</span>}
                   </span>
-                  <span className="block truncate text-2xs font-semibold text-ink-muted">{v.reason?.trim() || "بلا تشخيص مسجّل"}</span>
+                  <span className="block truncate text-2xs font-semibold text-ink-muted">{v.reason?.trim() || t("charts.noDiagnosis", "بلا تشخيص مسجّل")}</span>
                   <span className="block text-2xs text-ink-subtle">
-                    {formatDate(v.opened_at, lang)} ← {v.ended_at ? formatDate(v.ended_at, lang) : "—"} · مدة العلاج {formatNum(days)} يوم{ds ? ` · ${ds}` : ""}
+                    {formatDate(v.opened_at, lang)} ← {v.ended_at ? formatDate(v.ended_at, lang) : "—"} · {t("charts.txDurationDays", { n: formatNum(days), defaultValue: "مدة العلاج {{n}} يوم" })}{ds ? ` · ${ds}` : ""}
                   </span>
                   {v.summary?.trim() && <span className="mt-0.5 block truncate text-2xs text-ink-subtle">📝 {v.summary}</span>}
                 </span>
@@ -782,6 +813,7 @@ function DeceasedSection({ deceased, pets, lang, onOpen, onSaveCause }: {
   onOpen: (v: ClinicVisit) => void;
   onSaveCause: (v: ClinicVisit, cause: string) => Promise<void>;
 }) {
+  const { t } = useTranslation();
   const [editId, setEditId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
@@ -796,13 +828,13 @@ function DeceasedSection({ deceased, pets, lang, onOpen, onSaveCause }: {
   return (
     <div className="space-y-3">
       <p className="rounded-xl border border-line bg-surface-1 px-3 py-2 text-2xs font-semibold text-ink-subtle">
-        الحالات المنتهية بالوفاة 🕊️ — تنتقل هنا تلقائياً لما تُنهى الزيارة بنتيجة «متوفى». سبب الوفاة يُقرأ من ملاحظة الإغلاق، وتگدر تكتبه أو تعدّله من هنا مباشرة. الحيوان المتوفى تسكت عنه التهاني والتذكيرات تلقائياً بكل السستم.
+        {t("charts.deceasedIntro", "الحالات المنتهية بالوفاة 🕊️ — تنتقل هنا تلقائياً لما تُنهى الزيارة بنتيجة «متوفى». سبب الوفاة يُقرأ من ملاحظة الإغلاق، وتگدر تكتبه أو تعدّله من هنا مباشرة. الحيوان المتوفى تسكت عنه التهاني والتذكيرات تلقائياً بكل السستم.")}
       </p>
       {deceased.length === 0 ? (
         <div className="rounded-xl border border-line bg-surface-1 p-10 text-center">
           <HeartCrack size={40} className="mx-auto mb-3 text-ink-subtle" />
-          <p className="text-sm font-bold text-ink">ماكو وفيات مسجّلة</p>
-          <p className="mt-1 text-xs text-ink-subtle">نتمنى تضل هالصفحة فارغة دائماً 🤍</p>
+          <p className="text-sm font-bold text-ink">{t("charts.deceasedEmpty", "ماكو وفيات مسجّلة")}</p>
+          <p className="mt-1 text-xs text-ink-subtle">{t("charts.deceasedEmptyHint", "نتمنى تضل هالصفحة فارغة دائماً 🤍")}</p>
         </div>
       ) : (
         <div className="space-y-2">
@@ -817,17 +849,17 @@ function DeceasedSection({ deceased, pets, lang, onOpen, onSaveCause }: {
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-1.5">
                       <span className="text-sm font-black text-ink">{pet?.name ?? "—"}</span>
-                      <span className="rounded-full bg-danger-50 px-2 py-0.5 text-[10px] font-extrabold text-danger-700 dark:bg-danger-500/15 dark:text-danger-300">🕊️ متوفى</span>
-                      <span className="text-2xs text-ink-subtle">{pet ? SPECIES_AR[pet.species] ?? pet.species : ""}</span>
+                      <span className="rounded-full bg-danger-50 px-2 py-0.5 text-[10px] font-extrabold text-danger-700 dark:bg-danger-500/15 dark:text-danger-300">{t("charts.deceasedTag", "🕊️ متوفى")}</span>
+                      <span className="text-2xs text-ink-subtle">{pet ? speciesLabel(t, pet.species) : ""}</span>
                     </div>
-                    <div className="text-2xs font-semibold text-ink-muted">{v.reason?.trim() ? `التشخيص: ${v.reason}` : "بلا تشخيص مسجّل"}</div>
+                    <div className="text-2xs font-semibold text-ink-muted">{v.reason?.trim() ? t("charts.diagnosisIs", { dx: v.reason, defaultValue: "التشخيص: {{dx}}" }) : t("charts.noDiagnosis", "بلا تشخيص مسجّل")}</div>
                     <div className="text-2xs text-ink-subtle">
-                      دخل {formatDate(v.opened_at, lang)} · توفّى {v.ended_at ? formatDate(v.ended_at, lang) : "—"} · بعد {formatNum(days)} يوم علاج
-                      {v.ended_by ? ` · سجّلها ${v.ended_by}` : ""}
+                      {t("charts.deceasedTimeline", { admitted: formatDate(v.opened_at, lang), died: v.ended_at ? formatDate(v.ended_at, lang) : "—", n: formatNum(days), defaultValue: "دخل {{admitted}} · توفّى {{died}} · بعد {{n}} يوم علاج" })}
+                      {v.ended_by ? ` · ${t("charts.recordedBy", { name: v.ended_by, defaultValue: "سجّلها {{name}}" })}` : ""}
                     </div>
                   </div>
                   <button type="button" onClick={() => onOpen(v)}
-                    className="shrink-0 rounded-full border border-line bg-surface-1 px-3 py-1.5 text-2xs font-bold text-ink-muted transition hover:border-brand-300 hover:text-ink">السجل الكامل</button>
+                    className="shrink-0 rounded-full border border-line bg-surface-1 px-3 py-1.5 text-2xs font-bold text-ink-muted transition hover:border-brand-300 hover:text-ink">{t("charts.fullRecord", "السجل الكامل")}</button>
                 </div>
 
                 {/* سبب الوفاة — يُعرض دائماً، ويتحرر بضغطة */}
@@ -836,7 +868,7 @@ function DeceasedSection({ deceased, pets, lang, onOpen, onSaveCause }: {
                     <>
                       <input autoFocus value={draft} onChange={(e) => setDraft(e.target.value)}
                         onKeyDown={(e) => { if (e.key === "Enter") void save(v); if (e.key === "Escape") setEditId(null); }}
-                        placeholder="سبب الوفاة… (مثال: فشل كلوي حاد رغم المحاليل)"
+                        placeholder={t("charts.causePh", "سبب الوفاة… (مثال: فشل كلوي حاد رغم المحاليل)")}
                         className="input h-8 flex-1 text-2xs" />
                       <button type="button" onClick={() => void save(v)} disabled={busy}
                         className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-brand-600 text-white transition hover:bg-brand-700 disabled:opacity-50">
@@ -847,9 +879,9 @@ function DeceasedSection({ deceased, pets, lang, onOpen, onSaveCause }: {
                     <>
                       <span className={cn("min-w-0 flex-1 truncate rounded-lg px-2.5 py-1.5 text-2xs font-semibold",
                         v.summary?.trim() ? "bg-surface-2 text-ink" : "border border-dashed border-line text-ink-subtle")}>
-                        {v.summary?.trim() ? `سبب الوفاة: ${v.summary}` : "سبب الوفاة غير مسجّل — اضغط القلم لتوثيقه"}
+                        {v.summary?.trim() ? t("charts.causeIs", { cause: v.summary, defaultValue: "سبب الوفاة: {{cause}}" }) : t("charts.causeMissing", "سبب الوفاة غير مسجّل — اضغط القلم لتوثيقه")}
                       </span>
-                      <button type="button" onClick={() => { playTap(); setEditId(v.id); setDraft(v.summary ?? ""); }} title="تعديل سبب الوفاة"
+                      <button type="button" onClick={() => { playTap(); setEditId(v.id); setDraft(v.summary ?? ""); }} title={t("charts.editCause", "تعديل سبب الوفاة")}
                         className="grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-line text-ink-muted transition hover:border-brand-300 hover:text-ink">
                         <Pencil size={13} />
                       </button>
@@ -879,6 +911,7 @@ function LostSection({ stalled, lost, pets, lang, busyId, txForVisit, onMarkLost
   onOpenChart: (c: Chart) => void;
   onOpenVisit: (v: ClinicVisit) => void;
 }) {
+  const { t } = useTranslation();
   return (
     <div className="space-y-5">
       {/* المشتبه بانقطاعهم — بعدهم بالسجل النشط، والقرار للدكتور */}
@@ -886,10 +919,10 @@ function LostSection({ stalled, lost, pets, lang, busyId, txForVisit, onMarkLost
         <section>
           <div className="mb-2 flex items-center gap-2">
             <span className="grid h-7 w-7 place-items-center rounded-lg bg-warn-100 text-warn-600 dark:bg-warn-500/15 dark:text-warn-300"><AlertTriangle size={15} /></span>
-            <h2 className="text-sm font-extrabold text-ink">يبينون منقطعين — قرّر بيهم</h2>
+            <h2 className="text-sm font-extrabold text-ink">{t("charts.stalledTitle", "يبينون منقطعين — قرّر بيهم")}</h2>
             <span className="rounded-full bg-warn-100 px-2 py-0.5 text-2xs font-black text-warn-700 dark:bg-warn-500/20 dark:text-warn-300">{formatNum(stalled.length)}</span>
           </div>
-          <p className="mb-2 text-2xs text-ink-subtle">طبلات نشطة ما انعطت منها ولا جرعة من ٤٨ ساعة وأكثر وعليها جرعات متأخرة. ذكّر صاحبها بالواتساب، أو علّمها منقطعة فتنتقل لهذا السكشن رسمياً.</p>
+          <p className="mb-2 text-2xs text-ink-subtle">{t("charts.stalledHint", "طبلات نشطة ما انعطت منها ولا جرعة من ٤٨ ساعة وأكثر وعليها جرعات متأخرة. ذكّر صاحبها بالواتساب، أو علّمها منقطعة فتنتقل لهذا السكشن رسمياً.")}</p>
           <div className="space-y-2">
             {stalled.map(({ chart: c, lastGiven, remaining, sinceDays }) => (
               <div key={c.id} className="flex flex-wrap items-center gap-3 rounded-xl border border-warn-300 bg-warn-50/50 p-3 dark:border-warn-500/30 dark:bg-warn-500/5">
@@ -898,21 +931,21 @@ function LostSection({ stalled, lost, pets, lang, busyId, txForVisit, onMarkLost
                   <div className="text-sm font-black text-ink">{c.pet?.name ?? "—"}</div>
                   <div className="truncate text-2xs font-semibold text-ink-muted">{c.title}</div>
                   <div className="text-2xs font-bold text-warn-700 dark:text-warn-300">
-                    {lastGiven ? `آخر جرعة قبل ${formatNum(sinceDays)} يوم` : `ولا جرعة انعطت من ${formatNum(sinceDays)} يوم`} · باقي {formatNum(remaining)} جرعة
+                    {lastGiven ? t("charts.lastDoseNDays", { n: formatNum(sinceDays), defaultValue: "آخر جرعة قبل {{n}} يوم" }) : t("charts.noDoseSinceNDays", { n: formatNum(sinceDays), defaultValue: "ولا جرعة انعطت من {{n}} يوم" })} · {t("charts.remainingNDoses", { n: formatNum(remaining), defaultValue: "باقي {{n}} جرعة" })}
                   </div>
                 </div>
                 <div className="flex shrink-0 items-center gap-1.5">
                   {c.pet?.owner_phone && (
-                    <button type="button" onClick={() => onNudge(c.pet, remaining)} title="ذكّر صاحبه بالواتساب"
+                    <button type="button" onClick={() => onNudge(c.pet, remaining)} title={t("charts.nudgeTitle", "ذكّر صاحبه بالواتساب")}
                       className="inline-flex items-center gap-1 rounded-full bg-success-600 px-3 py-1.5 text-2xs font-extrabold text-white transition hover:bg-success-700">
-                      <MessageCircle size={12} /> ذكّر
+                      <MessageCircle size={12} /> {t("charts.nudge", "ذكّر")}
                     </button>
                   )}
                   <button type="button" onClick={() => onOpenChart(c)}
-                    className="rounded-full border border-line bg-surface-1 px-3 py-1.5 text-2xs font-bold text-ink-muted transition hover:border-brand-300 hover:text-ink">افتح الطبلة</button>
+                    className="rounded-full border border-line bg-surface-1 px-3 py-1.5 text-2xs font-bold text-ink-muted transition hover:border-brand-300 hover:text-ink">{t("charts.openChart", "افتح الطبلة")}</button>
                   <button type="button" onClick={() => onMarkLost(c, remaining)} disabled={busyId === c.id}
                     className="inline-flex items-center gap-1 rounded-full bg-warn-600 px-3 py-1.5 text-2xs font-extrabold text-white transition hover:bg-warn-700 disabled:opacity-50">
-                    {busyId === c.id ? <Loader2 size={12} className="animate-spin" /> : <DoorOpen size={12} />} علّمها منقطعة
+                    {busyId === c.id ? <Loader2 size={12} className="animate-spin" /> : <DoorOpen size={12} />} {t("charts.markLost", "علّمها منقطعة")}
                   </button>
                 </div>
               </div>
@@ -925,42 +958,42 @@ function LostSection({ stalled, lost, pets, lang, busyId, txForVisit, onMarkLost
       <section>
         <div className="mb-2 flex items-center gap-2">
           <span className="grid h-7 w-7 place-items-center rounded-lg bg-surface-2 text-ink-muted"><DoorOpen size={15} /></span>
-          <h2 className="text-sm font-extrabold text-ink">منقطعون عن المراجعة</h2>
+          <h2 className="text-sm font-extrabold text-ink">{t("charts.lostTitle", "منقطعون عن المراجعة")}</h2>
           <span className="rounded-full bg-surface-2 px-2 py-0.5 text-2xs font-black text-ink-subtle">{formatNum(lost.length)}</span>
         </div>
         {lost.length === 0 ? (
           <div className="rounded-xl border border-dashed border-line bg-surface-1 p-6 text-center text-xs text-ink-subtle">
-            ماكو حالات معلّمة منقطعة — وهذا خبر زين 🌟
+            {t("charts.lostEmpty", "ماكو حالات معلّمة منقطعة — وهذا خبر زين 🌟")}
           </div>
         ) : (
           <div className="space-y-2">
             {lost.map((v) => {
               const pet = pets[v.pet_id];
               const tx = txForVisit(v.id);
-              const remaining = tx.filter((t) => !t.administered_at).length;
-              const ds = doseSummary(tx);
+              const remaining = tx.filter((x) => !x.administered_at).length;
+              const ds = doseSummary(t, tx);
               return (
                 <div key={v.id} className="flex flex-wrap items-center gap-3 rounded-xl border border-line bg-surface-1 p-3 shadow-card">
                   <CardAvatar pet={pet} />
                   <div className="min-w-0 flex-1">
                     <div className="text-sm font-black text-ink">{pet?.name ?? "—"}</div>
-                    <div className="truncate text-2xs font-semibold text-ink-muted">{v.reason?.trim() || "بلا تشخيص مسجّل"}</div>
+                    <div className="truncate text-2xs font-semibold text-ink-muted">{v.reason?.trim() || t("charts.noDiagnosis", "بلا تشخيص مسجّل")}</div>
                     <div className="text-2xs text-ink-subtle">
-                      انقطع بتاريخ {v.ended_at ? formatDate(v.ended_at, lang) : "—"}{ds ? ` · ${ds}` : ""}{remaining > 0 ? ` · بقيت ${formatNum(remaining)} جرعة` : ""}
+                      {t("charts.lostOn", { d: v.ended_at ? formatDate(v.ended_at, lang) : "—", defaultValue: "انقطع بتاريخ {{d}}" })}{ds ? ` · ${ds}` : ""}{remaining > 0 ? ` · ${t("charts.dosesLeftN", { n: formatNum(remaining), defaultValue: "بقيت {{n}} جرعة" })}` : ""}
                     </div>
                   </div>
                   <div className="flex shrink-0 items-center gap-1.5">
                     {pet?.owner_phone && (
-                      <button type="button" onClick={() => onNudge(pet, remaining)} title="ذكّر صاحبه بالواتساب"
+                      <button type="button" onClick={() => onNudge(pet, remaining)} title={t("charts.nudgeTitle", "ذكّر صاحبه بالواتساب")}
                         className="inline-flex items-center gap-1 rounded-full bg-success-600 px-3 py-1.5 text-2xs font-extrabold text-white transition hover:bg-success-700">
-                        <MessageCircle size={12} /> ذكّر
+                        <MessageCircle size={12} /> {t("charts.nudge", "ذكّر")}
                       </button>
                     )}
                     <button type="button" onClick={() => onOpenVisit(v)}
-                      className="rounded-full border border-line bg-surface-1 px-3 py-1.5 text-2xs font-bold text-ink-muted transition hover:border-brand-300 hover:text-ink">السجل</button>
+                      className="rounded-full border border-line bg-surface-1 px-3 py-1.5 text-2xs font-bold text-ink-muted transition hover:border-brand-300 hover:text-ink">{t("charts.record", "السجل")}</button>
                     <button type="button" onClick={() => onRestore(v)} disabled={busyId === v.id}
                       className="inline-flex items-center gap-1 rounded-full bg-brand-600 px-3 py-1.5 text-2xs font-extrabold text-white transition hover:bg-brand-700 disabled:opacity-50">
-                      {busyId === v.id ? <Loader2 size={12} className="animate-spin" /> : <RotateCcw size={12} />} رجّعها نشطة
+                      {busyId === v.id ? <Loader2 size={12} className="animate-spin" /> : <RotateCcw size={12} />} {t("charts.restore", "رجّعها نشطة")}
                     </button>
                   </div>
                 </div>
@@ -987,6 +1020,7 @@ function ReportsSection({ charts, treatments, txLoaded, cases, deceased, lost, s
   lang: string;
   txForVisit: (visitId: string) => TreatmentEntry[];
 }) {
+  const { t } = useTranslation();
   const monthKey = todayISO.slice(0, 7);
   const treatingCharts = charts.filter((c) => c.bucket === "daily" || c.bucket === "careBoarding");
 
@@ -1019,22 +1053,22 @@ function ReportsSection({ charts, treatments, txLoaded, cases, deceased, lost, s
     const day = dayNumber(c.since, todayISO);
     const days = new Set(tx.map((t) => t.day)).size;
     const parts: string[] = [];
-    parts.push(`اليوم ${formatNum(day)}${days > 0 ? ` من خطة ${formatNum(days)} يوم` : ""}`);
+    parts.push(`${t("charts.dayN", { n: formatNum(day), defaultValue: "اليوم {{n}}" })}${days > 0 ? ` ${t("charts.ofPlanDays", { n: formatNum(days), defaultValue: "من خطة {{n}} يوم" })}` : ""}`);
     if (tx.length) {
-      const done = tx.filter((t) => t.administered_at).length;
-      parts.push(`انعطت ${formatNum(done)} من ${formatNum(tx.length)} جرعة (${formatNum(Math.round((done / tx.length) * 100))}٪)`);
-      if (c.overdue > 0) parts.push(`${formatNum(c.overdue)} متأخرة هسة`);
-      else if (c.dueToday > 0) parts.push(`${formatNum(c.dueToday)} مستحقة اليوم`);
-      else if (c.todayTotal > 0) parts.push("يومها مكتمل ✓");
-      const given = tx.filter((t) => t.administered_at).map((t) => t.administered_at!).sort();
+      const done = tx.filter((x) => x.administered_at).length;
+      parts.push(t("charts.doseSummary", { done: formatNum(done), total: formatNum(tx.length), pct: formatNum(Math.round((done / tx.length) * 100)), defaultValue: "انعطت {{done}} من {{total}} جرعة ({{pct}}٪)" }));
+      if (c.overdue > 0) parts.push(t("charts.rptOverdueNow", { n: formatNum(c.overdue), defaultValue: "{{n}} متأخرة هسة" }));
+      else if (c.dueToday > 0) parts.push(t("charts.rptDueToday", { n: formatNum(c.dueToday), defaultValue: "{{n}} مستحقة اليوم" }));
+      else if (c.todayTotal > 0) parts.push(t("charts.rptDayDone", "يومها مكتمل ✓"));
+      const given = tx.filter((x) => x.administered_at).map((x) => x.administered_at!).sort();
       const lastAt = given[given.length - 1];
       if (lastAt) {
         const h = Math.round((Date.now() - new Date(lastAt).getTime()) / 3600000);
-        parts.push(h < 1 ? "آخر جرعة قبل شوية" : h < 24 ? `آخر جرعة قبل ${formatNum(h)} ساعة` : `آخر جرعة قبل ${formatNum(Math.floor(h / 24))} يوم`);
-      } else parts.push("بعد ما انعطت ولا جرعة");
-    } else parts.push("بلا خطة علاج بعد");
-    if (c.condition === "critical") parts.push("⚠️ حالتها حرجة");
-    return parts.join("، ") + ".";
+        parts.push(h < 1 ? t("charts.lastDoseJustNow", "آخر جرعة قبل شوية") : h < 24 ? t("charts.lastDoseNHours", { n: formatNum(h), defaultValue: "آخر جرعة قبل {{n}} ساعة" }) : t("charts.lastDoseNDays", { n: formatNum(Math.floor(h / 24)), defaultValue: "آخر جرعة قبل {{n}} يوم" }));
+      } else parts.push(t("charts.noDoseYet", "بعد ما انعطت ولا جرعة"));
+    } else parts.push(t("charts.noTxPlanYet", "بلا خطة علاج بعد"));
+    if (c.condition === "critical") parts.push(t("charts.criticalFlag", "⚠️ حالتها حرجة"));
+    return parts.join(t("charts.listSep", "، ")) + ".";
   };
 
   const worstFirst = [...treatingCharts].sort((a, b) => (b.overdue - a.overdue) || (b.dueToday - a.dueToday));
@@ -1054,26 +1088,26 @@ function ReportsSection({ charts, treatments, txLoaded, cases, deceased, lost, s
     <div className="space-y-5">
       {/* الأرقام الكبيرة */}
       <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
-        <Kpi label="طبلة يومية نشطة" value={formatNum(charts.filter((c) => c.bucket === "daily").length)} />
-        <Kpi label="فندقة علاجية نشطة" value={formatNum(charts.filter((c) => c.bucket === "careBoarding").length)} />
-        <Kpi label="امتثال جرعات اليوم" value={todayPct === null ? "—" : `${formatNum(todayPct)}٪`} tone={todayPct !== null && todayPct < 60 ? "warn" : undefined} />
-        <Kpi label="جرعة متأخرة الآن" value={formatNum(overdueDoses)} tone={overdueDoses > 0 ? "danger" : "success"} />
-        <Kpi label="حالة انتهت هذا الشهر" value={formatNum(monthClosed.length)} />
-        <Kpi label="نسبة الشفاء (هذا الشهر)" value={recoveredPct === null ? "—" : `${formatNum(recoveredPct)}٪`} tone={recoveredPct !== null && recoveredPct >= 70 ? "success" : undefined} />
-        <Kpi label="وفيات هذا الشهر 🕊️" value={formatNum(monthDeceased.length)} tone={monthDeceased.length > 0 ? "danger" : "success"} />
-        <Kpi label="متوسط مدة العلاج" value={avgDays === null ? "—" : `${formatNum(avgDays)} يوم`} />
-        <Kpi label="منقطعون (كلي + مشتبه)" value={formatNum(lost.length + stalled.length)} tone={lost.length + stalled.length > 0 ? "warn" : "success"} />
+        <Kpi label={t("charts.kpiDaily", "طبلة يومية نشطة")} value={formatNum(charts.filter((c) => c.bucket === "daily").length)} />
+        <Kpi label={t("charts.kpiCareBoarding", "فندقة علاجية نشطة")} value={formatNum(charts.filter((c) => c.bucket === "careBoarding").length)} />
+        <Kpi label={t("charts.kpiTodayAdherence", "امتثال جرعات اليوم")} value={todayPct === null ? "—" : t("charts.pctValue", { n: formatNum(todayPct), defaultValue: "{{n}}٪" })} tone={todayPct !== null && todayPct < 60 ? "warn" : undefined} />
+        <Kpi label={t("charts.kpiOverdueNow", "جرعة متأخرة الآن")} value={formatNum(overdueDoses)} tone={overdueDoses > 0 ? "danger" : "success"} />
+        <Kpi label={t("charts.kpiClosedMonth", "حالة انتهت هذا الشهر")} value={formatNum(monthClosed.length)} />
+        <Kpi label={t("charts.kpiRecoveryRate", "نسبة الشفاء (هذا الشهر)")} value={recoveredPct === null ? "—" : t("charts.pctValue", { n: formatNum(recoveredPct), defaultValue: "{{n}}٪" })} tone={recoveredPct !== null && recoveredPct >= 70 ? "success" : undefined} />
+        <Kpi label={t("charts.kpiDeceasedMonth", "وفيات هذا الشهر 🕊️")} value={formatNum(monthDeceased.length)} tone={monthDeceased.length > 0 ? "danger" : "success"} />
+        <Kpi label={t("charts.kpiAvgDuration", "متوسط مدة العلاج")} value={avgDays === null ? "—" : t("charts.nDays", { n: formatNum(avgDays), defaultValue: "{{n}} يوم" })} />
+        <Kpi label={t("charts.kpiLostTotal", "منقطعون (كلي + مشتبه)")} value={formatNum(lost.length + stalled.length)} tone={lost.length + stalled.length > 0 ? "warn" : "success"} />
       </div>
 
       {/* وصف دقيق لكل طبلة نشطة — الأسوأ أولاً */}
       <section className="rounded-2xl border border-line bg-surface-1 p-4 shadow-card">
         <div className="mb-2 flex items-center gap-2">
           <span className="grid h-7 w-7 place-items-center rounded-lg bg-brand-100 text-brand-600 dark:bg-brand-500/15 dark:text-brand-300"><FileText size={15} /></span>
-          <h2 className="text-sm font-extrabold text-ink">وضع الطبلات النشطة — بالتفصيل</h2>
+          <h2 className="text-sm font-extrabold text-ink">{t("charts.rptActiveTitle", "وضع الطبلات النشطة — بالتفصيل")}</h2>
           {!txLoaded && <Loader2 size={13} className="animate-spin text-ink-subtle" />}
         </div>
         {treatingCharts.length === 0 ? (
-          <p className="py-4 text-center text-xs text-ink-subtle">ماكو طبلات علاجية نشطة حالياً.</p>
+          <p className="py-4 text-center text-xs text-ink-subtle">{t("charts.rptActiveEmpty", "ماكو طبلات علاجية نشطة حالياً.")}</p>
         ) : (
           <div className="divide-y divide-line/60">
             {worstFirst.map((c) => (
@@ -1081,7 +1115,7 @@ function ReportsSection({ charts, treatments, txLoaded, cases, deceased, lost, s
                 <span className={cn("mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full", ACUITY[acuityOf(c, txLoaded)].dot)} aria-hidden />
                 <div className="min-w-0 text-xs leading-relaxed">
                   <span className="font-black text-ink">{c.pet?.name ?? "—"}</span>
-                  <span className="text-ink-subtle"> ({c.pet ? SPECIES_AR[c.pet.species] ?? c.pet.species : "—"}{c.title !== "—" ? ` · ${c.title}` : ""})</span>
+                  <span className="text-ink-subtle"> ({c.pet ? speciesLabel(t, c.pet.species) : "—"}{c.title !== "—" ? ` · ${c.title}` : ""})</span>
                   <span className="font-semibold text-ink-muted"> — {describe(c)}</span>
                 </div>
               </div>
@@ -1094,48 +1128,48 @@ function ReportsSection({ charts, treatments, txLoaded, cases, deceased, lost, s
       <section className="rounded-2xl border border-line bg-surface-1 p-4 shadow-card">
         <div className="mb-2 flex items-center gap-2">
           <span className="grid h-7 w-7 place-items-center rounded-lg bg-warn-100 text-warn-600 dark:bg-warn-500/15 dark:text-warn-300"><DoorOpen size={15} /></span>
-          <h2 className="text-sm font-extrabold text-ink">المنقطعون والحالات المنتهية</h2>
+          <h2 className="text-sm font-extrabold text-ink">{t("charts.rptLostTitle", "المنقطعون والحالات المنتهية")}</h2>
         </div>
         <div className="space-y-1.5 text-xs leading-relaxed">
           {stalled.map(({ chart: c, remaining, sinceDays, lastGiven }) => (
             <p key={c.id} className="text-warn-700 dark:text-warn-300">
               <span className="font-black">{c.pet?.name ?? "—"}</span>
-              <span className="font-semibold"> — يبين منقطع: {lastGiven ? `آخر جرعة قبل ${formatNum(sinceDays)} يوم` : `ولا جرعة من ${formatNum(sinceDays)} يوم`}، باقي {formatNum(remaining)} جرعة ما انعطت.</span>
+              <span className="font-semibold"> — {t("charts.rptStalled", { last: lastGiven ? t("charts.lastDoseNDays", { n: formatNum(sinceDays), defaultValue: "آخر جرعة قبل {{n}} يوم" }) : t("charts.noDoseNDays", { n: formatNum(sinceDays), defaultValue: "ولا جرعة من {{n}} يوم" }), n: formatNum(remaining), defaultValue: "يبين منقطع: {{last}}، باقي {{n}} جرعة ما انعطت." })}</span>
             </p>
           ))}
           {lost.map((v) => {
             const tx = txForVisit(v.id);
-            const remaining = tx.filter((t) => !t.administered_at).length;
+            const remaining = tx.filter((x) => !x.administered_at).length;
             return (
               <p key={v.id} className="text-ink-muted">
                 <span className="font-black text-ink">{pets[v.pet_id]?.name ?? "—"}</span>
-                <span className="font-semibold"> — منقطع رسمياً من {v.ended_at ? formatDate(v.ended_at, lang) : "—"}{remaining > 0 ? `، وقف علاجه على ${formatNum(remaining)} جرعة متبقية` : ""}.</span>
+                <span className="font-semibold"> — {t("charts.rptLost", { d: v.ended_at ? formatDate(v.ended_at, lang) : "—", defaultValue: "منقطع رسمياً من {{d}}" })}{remaining > 0 ? t("charts.rptLostRemaining", { n: formatNum(remaining), defaultValue: "، وقف علاجه على {{n}} جرعة متبقية" }) : ""}.</span>
               </p>
             );
           })}
           {monthDeceased.map((v) => (
             <p key={v.id} className="text-danger-700 dark:text-danger-300">
               <span className="font-black">{pets[v.pet_id]?.name ?? "—"}</span>
-              <span className="font-semibold"> — توفّى 🕊️ بعد {formatNum(durationDays(v.opened_at, v.ended_at))} يوم علاج{v.summary?.trim() ? `، السبب: ${v.summary}` : "، سبب الوفاة غير مسجّل"}.</span>
+              <span className="font-semibold"> — {t("charts.rptDeceased", { n: formatNum(durationDays(v.opened_at, v.ended_at)), defaultValue: "توفّى 🕊️ بعد {{n}} يوم علاج" })}{v.summary?.trim() ? t("charts.rptCause", { cause: v.summary, defaultValue: "، السبب: {{cause}}" }) : t("charts.rptCauseMissing", "، سبب الوفاة غير مسجّل")}.</span>
             </p>
           ))}
           {monthCases.map((v) => {
             const o = outcomeMeta(v.outcome);
-            const ds = doseSummary(txForVisit(v.id));
+            const ds = doseSummary(t, txForVisit(v.id));
             return (
               <p key={v.id} className="text-ink-muted">
                 <span className="font-black text-ink">{pets[v.pet_id]?.name ?? "—"}</span>
-                <span className="font-semibold"> — انتهت {o ? `بـ«${o.label}» ${o.emoji}` : ""} بعد {formatNum(durationDays(v.opened_at, v.ended_at))} يوم علاج{ds ? ` (${ds})` : ""}.</span>
+                <span className="font-semibold"> — {t("charts.rptEnded", "انتهت")} {o ? t("charts.rptWithOutcome", { label: o.label, emoji: o.emoji, defaultValue: "بـ«{{label}}» {{emoji}}" }) : ""} {t("charts.rptAfterDays", { n: formatNum(durationDays(v.opened_at, v.ended_at)), defaultValue: "بعد {{n}} يوم علاج" })}{ds ? ` (${ds})` : ""}.</span>
               </p>
             );
           })}
           {stalled.length === 0 && lost.length === 0 && monthClosed.length === 0 && (
-            <p className="py-2 text-center text-ink-subtle">ماكو حركة منتهية أو منقطعة هذا الشهر بعد.</p>
+            <p className="py-2 text-center text-ink-subtle">{t("charts.rptEmpty", "ماكو حركة منتهية أو منقطعة هذا الشهر بعد.")}</p>
           )}
         </div>
         {monthAdherence !== null && (
           <p className="mt-3 rounded-xl bg-surface-2 px-3 py-2 text-2xs font-bold text-ink-muted">
-            معدل إنجاز جرعات الحالات المنتهية هذا الشهر: {formatNum(monthAdherence)}٪.
+            {t("charts.rptAdherence", { n: formatNum(monthAdherence), defaultValue: "معدل إنجاز جرعات الحالات المنتهية هذا الشهر: {{n}}٪." })}
           </p>
         )}
       </section>
