@@ -141,8 +141,8 @@ export function clearPetRanges(petId: string) {
 export const DEFAULT_DIAL_CODE = "+964"; // Iraq
 
 export interface ClinicSocials { facebook: string; instagram: string }
-interface ClinicPrefs { dial_code: string; logo_url: string | null; social_facebook: string; social_instagram: string; clinic_name: string; pre_sale_print: boolean; override_enabled: boolean; resizable_cart: boolean; font_scale_enabled: boolean; override_pin_mirror: string | null; delivery_zones: string | null; qty_promos: string | null; catalog_share: boolean; cage_layout: string | null; currency: string | null; country: string | null }
-const DEFAULT_PREFS: ClinicPrefs = { dial_code: DEFAULT_DIAL_CODE, logo_url: null, social_facebook: "", social_instagram: "", clinic_name: "", pre_sale_print: false, override_enabled: false, resizable_cart: false, font_scale_enabled: false, override_pin_mirror: null, delivery_zones: null, qty_promos: null, catalog_share: false, cage_layout: null, currency: null, country: null };
+interface ClinicPrefs { dial_code: string; logo_url: string | null; social_facebook: string; social_instagram: string; clinic_name: string; pre_sale_print: boolean; override_enabled: boolean; resizable_cart: boolean; font_scale_enabled: boolean; override_pin_mirror: string | null; delivery_zones: string | null; qty_promos: string | null; catalog_share: boolean; cage_layout: string | null; currency: string | null; country: string | null; pos_v2: boolean }
+const DEFAULT_PREFS: ClinicPrefs = { dial_code: DEFAULT_DIAL_CODE, logo_url: null, social_facebook: "", social_instagram: "", clinic_name: "", pre_sale_print: false, override_enabled: false, resizable_cart: false, font_scale_enabled: false, override_pin_mirror: null, delivery_zones: null, qty_promos: null, catalog_share: false, cage_layout: null, currency: null, country: null, pos_v2: false };
 
 const prefsKey = () => `vp_clinic_prefs_${getActiveClinicId()}`;
 const legacyDialKey = () => `vp_dial_code_${getActiveClinicId()}`;
@@ -240,6 +240,7 @@ export async function hydrateClinicPrefs(): Promise<void> {
         cage_layout: d.cage_layout ?? local.cage_layout,
         currency: d.currency ?? local.currency,
         country: d.country ?? local.country,
+        pos_v2: typeof d.pos_v2 === "boolean" ? d.pos_v2 : local.pos_v2,
       };
     } else {
       // No row yet → migrate any local prefs up (or seed the default dial code).
@@ -265,6 +266,7 @@ export async function hydrateClinicPrefs(): Promise<void> {
       if (local.cage_layout) boolPatch.cage_layout = local.cage_layout;
       if (local.currency) boolPatch.currency = local.currency;
       if (local.country) boolPatch.country = local.country;
+      if (local.pos_v2) boolPatch.pos_v2 = true;
       if (Object.keys(boolPatch).length) setPendingPrefs({ ...readPendingPrefs(), ...boolPatch });
     }
     // Unconfirmed pref writes (e.g. a toggle flipped before its column's
@@ -559,4 +561,15 @@ export function setCageLayout(rooms: CageRoom[]) {
     .map((r) => ({ id: r.id, name: r.name.trim(), cages: r.cages.map((c) => c.trim()).filter(Boolean) }))
     .filter((r) => r.name);
   patchPrefs({ cage_layout: clean.length ? JSON.stringify(clean) : null }, "cage-layout-set");
+}
+
+/* ---- شاشة البيع الجديدة (0109) — تفعيل اختياري لكل عيادة -------------------
+ * إعادة بناء شاشة الكاشير: سلة لا تغادر الشاشة أبداً، حقول اختيارية مطويّة،
+ * وشبكة منتجات تتنفّس مع عرض الجهاز. مطفأة افتراضياً: العيادة تجرّبها بقرارها
+ * وترجع بضغطة إن لم تعجبها — لا نغيّر أداة عمل يومية على أحد بلا إذنه. */
+export function getPosV2(): boolean {
+  return prefs().pos_v2 === true;
+}
+export function setPosV2(on: boolean) {
+  patchPrefs({ pos_v2: on }, "pos-v2-set");
 }

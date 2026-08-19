@@ -17,7 +17,7 @@ import { getServiceCatalog, addServiceCategory, removeServiceCategory, addServic
 import { DEFAULT_RANGES, VITAL_KEYS, CBC_KEYS, rangeFor, type VitalKey } from "@/lib/vitals";
 
 const ALL_KEYS: VitalKey[] = [...VITAL_KEYS, ...CBC_KEYS];
-import { setVitalOverride, clearVitalOverrides, getDialCode, setDialCode, getClinicLogo, setClinicLogo, getClinicSocials, setClinicSocials, getClinicName, setClinicName, getPreSalePrint, setPreSalePrint, getResizableCart, setResizableCart, getFontScaleEnabled, setFontScaleEnabled, getDeliveryZones, setDeliveryZones, type DeliveryZone, getQtyPromos, setQtyPromos, promoTargetLabel, getCatalogShare, setCatalogShare, type QtyPromo, type PromoKind, type PromoMode, getCurrencyCode, setCurrencyCode } from "@/lib/settings";
+import { setVitalOverride, clearVitalOverrides, getDialCode, setDialCode, getClinicLogo, setClinicLogo, getClinicSocials, setClinicSocials, getClinicName, setClinicName, getPreSalePrint, setPreSalePrint, getResizableCart, setResizableCart, getFontScaleEnabled, setFontScaleEnabled, getDeliveryZones, setDeliveryZones, type DeliveryZone, getQtyPromos, setQtyPromos, promoTargetLabel, getCatalogShare, setCatalogShare, type QtyPromo, type PromoKind, type PromoMode, getCurrencyCode, setCurrencyCode, getPosV2, setPosV2 } from "@/lib/settings";
 import { CURRENCIES } from "@/lib/currency";
 import { FONT_SCALES, getFontScale, setFontScale, applyFontScale, getCrispMode, setCrispMode, type FontScaleId } from "@/lib/fontScale";
 import { RECEIPT_WIDTHS, getReceiptWidth, setReceiptWidth, openReceiptCalibration } from "@/lib/printer";
@@ -509,6 +509,7 @@ function CashierOptions() {
   const { can } = usePermissions();
   const [preSale, setPreSale] = useState(getPreSalePrint());
   const [resizableCart, setResizableCartOn] = useState(getResizableCart());
+  const [posV2, setPosV2On] = useState(getPosV2());
 
   if (!can("manageSettings")) return null;
 
@@ -516,6 +517,14 @@ function CashierOptions() {
     const next = !preSale;
     setPreSale(next);
     setPreSalePrint(next);
+    if (next) playSuccess(); else playTap();
+  };
+  // شاشة البيع الجديدة: تبديلها يعيد تحميل الصفحة عمداً — الشاشة تُبنى
+  // بتخطيط مختلف كلياً، والتحميل النظيف أصدق من تبديل حيّ نصف مطبَّق.
+  const togglePosV2 = () => {
+    const next = !posV2;
+    setPosV2On(next);
+    setPosV2(next);
     if (next) playSuccess(); else playTap();
   };
   const toggleResizableCart = () => {
@@ -535,6 +544,13 @@ function CashierOptions() {
           hint={t("settings.preSalePrintHint", "يضيف زر طباعة «فاتورة أولية» داخل شاشة البيع ليطّلع الزبون على الحساب قبل الدفع — لا تُسجَّل كفاتورة ولا تُخصم من المخزون.")}
           checked={preSale}
           onToggle={togglePreSale}
+        />
+        <div className="border-t border-line" />
+        <CashierToggle
+          label={t("settings.posV2", "شاشة البيع الجديدة (تجريبية)")}
+          hint={t("settings.posV2Hint", "تخطيط جديد للكاشير: السلة والإجمالي وزر الإتمام لا تغادر الشاشة أبداً حتى على الأجهزة اللوحية، الحقول الاختيارية (العميل والبائع والملاحظات) تُطوى خلف أزرار، وشبكة المنتجات تعرض أعمدة أكثر كلما اتسعت الشاشة. جرّبها — وإن لم تعجبك أطفئها بضغطة وترجع الشاشة القديمة كما هي.")}
+          checked={posV2}
+          onToggle={togglePosV2}
         />
         <div className="border-t border-line" />
         <CashierToggle

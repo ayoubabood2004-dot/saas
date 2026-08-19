@@ -378,7 +378,11 @@
     "deliveryCollectPlusFee": "Customer pays {{n}} (incl. fee)",
     "deliveryPrepaidChip": "Prepaid {{n}}",
     "todayReceived": "Received today (actual)",
-    "receiptsOverTime": "Receipts over time — by actual collection day"
+    "receiptsOverTime": "Receipts over time — by actual collection day",
+    "addDetails": "Customer · seller · note",
+    "detailsFor": "Sale for {{name}} — edit details",
+    "cartEmptyShort": "Cart is empty",
+    "nItems": "{{n}} items in cart"
   },
   "promos": {
     "title": "Offers management",
@@ -767,7 +771,9 @@
     "leaveHint": "You lose access to the clinic's data and return to your own account. Rejoining needs a fresh invite from the manager.",
     "leaveBtn": "Leave clinic…",
     "leaveSure": "Sure? This takes effect immediately.",
-    "leaveConfirm": "Yes, leave the clinic"
+    "leaveConfirm": "Yes, leave the clinic",
+    "posV2": "New sales screen (beta)",
+    "posV2Hint": "A rebuilt cashier layout: the cart, total and checkout button never leave the screen — even on tablets. Optional fields (customer, seller, notes) fold behind buttons, and the product grid shows more columns as the screen gets wider. Try it — switch it off anytime and the old screen returns unchanged."
   },
   "auth": {
     "signIn": "Sign in",

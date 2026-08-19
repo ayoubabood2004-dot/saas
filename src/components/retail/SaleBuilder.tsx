@@ -5,6 +5,7 @@ import {
   Search, Barcode, Plus, Minus, Trash2, ShoppingCart, User, Phone, Tag, Percent, BadgePercent,
   Banknote, CreditCard, ArrowLeftRight, CheckCircle2, Printer, Sparkles, TrendingUp, Package, PawPrint, X,
   Stethoscope, Pencil, Pill, Syringe, CalendarClock, Wallet, StickyNote, Bike, UserCheck, AlertTriangle,
+  ChevronUp, ChevronDown,
 } from "lucide-react";
 import type { Product, Invoice, InvoiceItem, CheckoutItem, SaleMeta, PaymentMethod, PaymentSplit, DiscountType, Customer, Service, ServiceCatalog, Species, Pet, Courier } from "@/types";
 import { repo, resolveDiscount } from "@/lib/repo";
@@ -21,7 +22,7 @@ import { MedSaleForm } from "./MedSaleForm";
 import { CashierSelect } from "@/components/MedicalEntry";
 import { useInvoicePrinter } from "./usePrintInvoice";
 import { invoiceNo, openInvoicePrint, type PrintFormat } from "@/lib/invoicePrint";
-import { getPreSalePrint, getResizableCart, getClinicLogo, getClinicSocials, getClinicName, getDeliveryZones, getQtyPromos, type QtyPromo } from "@/lib/settings";
+import { getPreSalePrint, getResizableCart, getPosV2, getClinicLogo, getClinicSocials, getClinicName, getDeliveryZones, getQtyPromos, type QtyPromo } from "@/lib/settings";
 import { branchStore } from "@/lib/branchStore";
 import { persistMedicalEntries } from "@/lib/medSync";
 import type { MedicalDraft } from "@/components/MedicalEntry";
@@ -338,6 +339,19 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
 
   const [cart, setCart] = useState<Line[]>(draft0?.cart ?? []);
   const [browseTab, setBrowseTab] = useState<"products" | "services" | "meds">("products");
+  /* شاشة البيع الجديدة (0109) — تفعيل اختياري لكل عيادة. تُقرأ مرة عند الرسم:
+   * تبديلها من الإعدادات يعيد تحميل الصفحة، فلا حاجة لمراقبة حيّة. */
+  const posV2 = getPosV2();
+  /* الحقول الاختيارية (عميل · بائع · ملاحظة) مطويّة افتراضياً بالشاشة الجديدة:
+   * البيع النقدي السريع لا يحتاجها، وهي كانت تأكل ٣٧١px فوق شبكة المنتجات. */
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  /* لوح السلة على الشاشات الضيّقة — يُفتح من الشريط الملتصق بالأسفل. */
+  const [cartSheet, setCartSheet] = useState(false);
+  /* ارتفاع منطقة البيع يُقاس فعلياً من موضعها على الشاشة بدل تخمين ارتفاع
+   * الترويسة: أي تغيّر بالترويسة أو حجم الخط لا يعيد كسر التخطيط. */
+  const posRootRef = useRef<HTMLDivElement | null>(null);
+  const [posH, setPosH] = useState<string | undefined>(undefined);
+  const posTrim = useRef(0);
   const [catalog] = useState<ServiceCatalog>(() => getServiceCatalog());
   // Doctor-defined Mix & Match offers (clinic-scoped). Loaded once per sale session.
   const [promoRules] = useState(() => getPromoRules());
@@ -836,6 +850,48 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
   // invoice row is created, stock is untouched, and the page carries a loud
   // "فاتورة أولية" badge so it can never pass for a real receipt.
   const preSaleEnabled = getPreSalePrint();
+
+  useEffect(() => {
+    if (!posV2) return;
+    let raf = 0;
+    const calc = () => {
+      const el = posRootRef.current;
+      if (!el) return;
+      const top = el.getBoundingClientRect().top;
+      // فسحة سفلية: ١٦px على الواسعة، وارتفاع الشريط الملتصق على الضيّقة.
+      const gap = window.innerWidth < 1024 ? 96 : 16;
+      const h = Math.max(360, Math.round(window.innerHeight - top - gap - posTrim.current));
+      setPosH(`${h}px`);
+      // تصحيح ذاتي: هيكل التطبيق يضيف هوامش أسفل الصفحة (فسحة شريط تنقّل
+      // الموبايل مثلاً) لا يعرفها هذا المكوّن. بدل تخمينها نقيس الفائض بعد
+      // أول رسم ونطرحه — ويُحفظ بـposTrim فلا يتذبذب التخطيط عند إعادة القياس.
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => {
+        const over = document.documentElement.scrollHeight - window.innerHeight;
+        if (over > 2) { posTrim.current += over; setPosH(`${Math.max(360, h - over)}px`); }
+      });
+    };
+    calc();
+    window.addEventListener("resize", calc);
+    const ro = new ResizeObserver(calc);
+    ro.observe(document.documentElement);
+    return () => { cancelAnimationFrame(raf); window.removeEventListener("resize", calc); ro.disconnect(); };
+  }, [posV2]);
+
+  /* اختصارات الكاشير المحترف (الشاشة الجديدة): «/» للبحث و«F2» لإتمام البيع —
+   * الكاشير السريع لا يريد أن يترك لوحة المفاتيح لكل عملية. */
+  useEffect(() => {
+    if (!posV2) return;
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement | null;
+      const typing = !!el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable);
+      if (e.key === "/" && !typing) { e.preventDefault(); setBrowseTab("products"); searchRef.current?.focus(); return; }
+      if (e.key === "F2") { e.preventDefault(); if (cart.length > 0 && !needsDebtName && !busy) void checkout(); }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
+
   const printPreSale = async (format: PrintFormat) => {
     if (cart.length === 0) return;
     playTap();
@@ -1172,14 +1228,22 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
   // ---- Builder --------------------------------------------------------------
   return (
     <div
-      ref={cartResize.gridRef}
-      className="grid gap-4 lg:grid-cols-[1fr,380px]"
+      ref={(el) => {
+        posRootRef.current = el;
+        (cartResize.gridRef as React.MutableRefObject<HTMLDivElement | null>).current = el;
+      }}
+      className={cn(
+        "grid gap-4 lg:grid-cols-[1fr,380px]",
+        // التصميم (أ): ثلاث مناطق ثابتة — الصفحة نفسها لا تمرّر أبداً؛ تمرّ
+        // الشبكة والسلة داخلياً فيبقى البحث والإجمالي وزر الإتمام بمكانهم.
+        posV2 && "min-h-0",
+      )}
       // Opt-in resizable cart: on lg+ the cart column takes the dragged width
       // (live CSS var while dragging — see useCartResize).
-      style={cartResize.gridStyle}
+      style={posV2 ? { ...cartResize.gridStyle, height: posH } : cartResize.gridStyle}
     >
       {/* LEFT — customer + products/services */}
-      <div className="space-y-4">
+      <div className={cn(posV2 ? "flex min-h-0 flex-col gap-3" : "space-y-4")}>
         {/* Bridge context — which animal(s) this sale is for. Several of the owner's
             pets can be attached; the highlighted one receives new med/vaccine lines. */}
         {salePets.length > 0 && (
@@ -1264,9 +1328,32 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
             )}
           </motion.div>
         )}
+        {/* تفاصيل البيع الاختيارية — بالشاشة الجديدة سطر واحد يُفتح بضغطة بدل
+            بطاقة دائمة كانت تدفع شبكة المنتجات ٣٧١px للأسفل. */}
+        {posV2 && !detailsOpen && (
+          <button
+            type="button" data-saledetails
+            onClick={() => { playTap(); setDetailsOpen(true); }}
+            className="flex w-full shrink-0 items-center gap-2 rounded-2xl border border-dashed border-line-strong bg-surface-1 px-3.5 py-2 text-start text-xs font-bold text-ink-muted transition hover:border-brand-300 hover:text-ink"
+          >
+            <Plus size={14} className="shrink-0 text-brand-600" />
+            {name.trim()
+              ? t("retail.detailsFor", { name: name.trim(), defaultValue: "البيع لـ{{name}} — تعديل التفاصيل" })
+              : t("retail.addDetails", "عميل · بائع · ملاحظة")}
+            {saleNotes.trim() && <StickyNote size={12} className="text-brand-600" />}
+            {cashierId && <UserCheck size={12} className="text-success-600" />}
+          </button>
+        )}
         {/* Customer */}
-        <div className="card p-4">
-          <div className="mb-3 flex items-center gap-2 text-sm font-bold text-ink"><User size={16} /> {t("retail.customer", "Customer")} <span className="text-xs font-normal text-ink-subtle">· {t("retail.optional", "optional")}</span></div>
+        <div className={cn("card p-4", posV2 && "shrink-0", posV2 && !detailsOpen && "hidden")}>
+          <div className="mb-3 flex items-center gap-2 text-sm font-bold text-ink">
+            <User size={16} /> {t("retail.customer", "Customer")} <span className="text-xs font-normal text-ink-subtle">· {t("retail.optional", "optional")}</span>
+            {posV2 && (
+              <button type="button" onClick={() => { playTap(); setDetailsOpen(false); }} className="ms-auto grid h-7 w-7 place-items-center rounded-lg text-ink-subtle transition hover:bg-surface-2 hover:text-ink" aria-label={t("common.close", "إغلاق")}>
+                <X size={15} />
+              </button>
+            )}
+          </div>
           <div className="relative grid gap-2 sm:grid-cols-2">
             <div className="relative">
               <User size={15} className="pointer-events-none absolute top-1/2 -translate-y-1/2 text-ink-subtle ltr:left-3 rtl:right-3" />
@@ -1313,7 +1400,9 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
               <p className="mt-1 flex items-center gap-1 text-2xs text-success-600">
                 <CheckCircle2 size={11} className="shrink-0" /> {t("retail.sellerOnInvoice", "تنحسب الفاتورة لهذا الموظف وتطلع باسمه بالطباعة والتقارير.")}
               </p>
-            ) : (
+            ) : posV2 ? null : (
+              // تحذير دائم = تحذير مُهمَل. بالشاشة الجديدة ينتقل للحظة الإتمام
+              // داخل السلة، حيث يعني شيئاً فعلاً.
               <p className="mt-1 flex items-center gap-1 text-2xs font-semibold text-warn-600">
                 <AlertTriangle size={11} className="shrink-0" /> {t("retail.noSellerHint", "بلا بائع محدد — حدّد منو باع حتى تنحسب الفاتورة إله بالتقارير.")}
               </p>
@@ -1335,12 +1424,12 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
               placeholder={t("retail.saleNotesPh", "مثال: الحالة تحتاج مراجعة بعد أسبوع…")}
               className="input min-h-[2.5rem] resize-y py-2 text-sm leading-relaxed"
             />
-            <p className="mt-1 text-2xs text-ink-subtle">{t("retail.saleNotesHint", "تظهر داخل خانة الملاحظات في سجل الحيوان وعلى الفاتورة المطبوعة.")}</p>
+            {!posV2 && <p className="mt-1 text-2xs text-ink-subtle">{t("retail.saleNotesHint", "تظهر داخل خانة الملاحظات في سجل الحيوان وعلى الفاتورة المطبوعة.")}</p>}
           </div>
         </div>
 
         {/* Products | Services | Medications toggle */}
-        <div className="inline-flex w-full items-center gap-1 rounded-full border border-line bg-surface-2 p-1">
+        <div className={cn("inline-flex w-full items-center gap-1 rounded-full border border-line bg-surface-2 p-1", posV2 && "shrink-0")}>
           {([
             { v: "products", label: t("retail.products", "Products"), icon: <Package size={15} /> },
             { v: "services", label: t("retail.services", "Services"), icon: <Stethoscope size={15} /> },
@@ -1358,9 +1447,10 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
         </div>
 
         {browseTab === "products" ? (
-          <>
+          // منطقة التصفّح: البحث ثابت والشبكة وحدها تمرّر داخلياً (التصميم أ).
+          <div className={cn(posV2 ? "flex min-h-0 flex-1 flex-col gap-3" : "contents")}>
             {/* Product search + scan */}
-            <div className="relative">
+            <div className={cn("relative", posV2 && "shrink-0")}>
               <Search size={16} className="pointer-events-none absolute top-1/2 -translate-y-1/2 text-ink-subtle ltr:left-3 rtl:right-3" />
               <input ref={searchRef} className="input ltr:pl-9 rtl:pr-9" value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("retail.searchProducts", "Search or scan a product…")} />
               <span className="pointer-events-none absolute top-1/2 flex -translate-y-1/2 items-center gap-1 text-2xs text-ink-subtle ltr:right-3 rtl:left-3"><Barcode size={13} /> {t("retail.scanReady", "scan ready")}</span>
@@ -1373,7 +1463,12 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
                 {ql ? t("retail.noMatch", "No products match.") : t("retail.noProducts", "No products in inventory yet.")}
               </div>
             ) : (
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+              // الأعمدة تتنفّس: auto-fill بعرض بطاقة أدنى بدل عدد مثبّت — شاشة
+              // ١٦٠٠px تعرض ستة أعمدة بدل ثلاثة، والآيباد ثلاثة بدل اثنين.
+              <div
+                className={cn("grid gap-2", posV2 ? "min-h-0 flex-1 overflow-y-auto pb-1" : "grid-cols-2 sm:grid-cols-3")}
+                style={posV2 ? { gridTemplateColumns: "repeat(auto-fill, minmax(8rem, 1fr))", gridAutoRows: "min-content" } : undefined}
+              >
                 {shown.map((p) => {
                   // A sub-unit product is only "out" when not even one single can be sold.
                   // Pooled products are never "out" here — they sell from the section pool.
@@ -1400,7 +1495,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
                 })}
               </div>
             )}
-          </>
+          </div>
         ) : browseTab === "services" ? (
           <ServiceQuickSelect catalog={catalog} onPick={addService} flashId={flash} />
         ) : (
@@ -1408,12 +1503,27 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
         )}
       </div>
 
-      {/* RIGHT — cart */}
-      <div className="card relative flex max-h-[78vh] flex-col p-0 lg:sticky lg:top-4">
+      {/* RIGHT — cart. بالشاشة الجديدة: عمود كامل الارتفاع على الشاشات الواسعة،
+          ويُستبدل على الضيّقة بشريط ملتصق + لوح منزلق (لا يغادر الشاشة أبداً). */}
+      <div className={cn(
+        "card relative flex flex-col p-0",
+        posV2
+          ? cn("min-h-0 lg:h-full lg:max-h-none", cartSheet
+              ? "fixed inset-x-2 bottom-2 top-14 z-40 max-h-none overflow-hidden shadow-raised lg:static lg:inset-auto lg:z-auto lg:shadow-none"
+              : "hidden lg:flex")
+          : "max-h-[78vh] lg:sticky lg:top-4",
+      )}>
         {cartResize.active && <CartResizeHandle dragging={cartResize.dragging} width={cartResize.width} handleProps={cartResize.handleProps} />}
         <div className="flex items-center justify-between border-b border-line p-4">
           <span className="flex items-center gap-2 font-display font-bold text-ink"><ShoppingCart size={18} /> {t("retail.cart", "Cart")} {units > 0 && <span className="chip bg-brand-50 text-2xs text-brand-700 dark:bg-brand-500/15 dark:text-brand-300">{units}</span>}</span>
-          {cart.length > 0 && <button onClick={() => { playTap(); setCart([]); }} className="text-xs text-ink-subtle transition hover:text-danger-600">{t("common.clear", "Clear")}</button>}
+          <span className="flex items-center gap-2">
+            {cart.length > 0 && <button onClick={() => { playTap(); setCart([]); }} className="text-xs text-ink-subtle transition hover:text-danger-600">{t("common.clear", "Clear")}</button>}
+            {posV2 && (
+              <button onClick={() => { playTap(); setCartSheet(false); }} className="grid h-9 w-9 place-items-center rounded-xl bg-surface-2 text-ink-muted transition hover:bg-surface-3 lg:hidden" aria-label={t("common.close", "إغلاق")}>
+                <ChevronDown size={18} />
+              </button>
+            )}
+          </span>
         </div>
 
         <div className="flex-1 overflow-auto p-2">
@@ -1508,10 +1618,12 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
                         </div>
                       )}
                     </div>
+                    {/* أهداف لمس ١١×١١ (44px) بالشاشة الجديدة — معيار WCAG 2.5.5
+                        للأفعال الأساسية؛ ٧×٧ القديمة كانت تنتج تعديلات كمية بالغلط. */}
                     <div className="flex items-center gap-1">
-                      <button onClick={() => { playTap(); setQty(l.id, l.qty - 1); }} className="grid h-7 w-7 place-items-center rounded-lg bg-surface-2 text-ink-muted transition hover:bg-surface-3"><Minus size={14} /></button>
-                      <span className="w-6 text-center text-sm font-bold tabular-nums text-ink">{l.qty}</span>
-                      <button onClick={() => { playTap(); if (l.qty < unitCap(l)) setQty(l.id, l.qty + 1); else { playWarning(); toast.error(t("retail.maxStock", "No more in stock")); } }} className="grid h-7 w-7 place-items-center rounded-lg bg-surface-2 text-ink-muted transition hover:bg-surface-3"><Plus size={14} /></button>
+                      <button data-qtyminus onClick={() => { playTap(); setQty(l.id, l.qty - 1); }} className={cn("grid place-items-center rounded-lg bg-surface-2 text-ink-muted transition hover:bg-surface-3", posV2 ? "h-11 w-11" : "h-7 w-7")}><Minus size={posV2 ? 18 : 14} /></button>
+                      <span className={cn("text-center font-bold tabular-nums text-ink", posV2 ? "w-8 text-base" : "w-6 text-sm")}>{l.qty}</span>
+                      <button data-qtyplus onClick={() => { playTap(); if (l.qty < unitCap(l)) setQty(l.id, l.qty + 1); else { playWarning(); toast.error(t("retail.maxStock", "No more in stock")); } }} className={cn("grid place-items-center rounded-lg bg-surface-2 text-ink-muted transition hover:bg-surface-3", posV2 ? "h-11 w-11" : "h-7 w-7")}><Plus size={posV2 ? 18 : 14} /></button>
                     </div>
                     <span className="w-16 text-end text-sm font-bold tabular-nums text-ink">{money(l.qty * l.unit_price)}</span>
                     <button onClick={() => removeLine(l.id)} aria-label={t("common.delete", "Remove")} className="grid h-7 w-7 place-items-center rounded-lg text-ink-subtle transition hover:bg-danger-50 hover:text-danger-600"><Trash2 size={14} /></button>
@@ -1857,6 +1969,15 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
                   ? `${t("retail.complete", "إصدار الفاتورة")} · ${t("retail.changeDue", "الباقي")} ${money(change)}`
                   : `${t("retail.complete", "إصدار الفاتورة")} · ${money(total)}`}
           </Button>
+          {posV2 && !cashierId && cart.length > 0 && (
+            <button
+              type="button" data-noseller
+              onClick={() => { playTap(); setCartSheet(false); setDetailsOpen(true); }}
+              className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-warn-50 px-3 py-1.5 text-2xs font-bold text-warn-700 transition hover:bg-warn-100 dark:bg-warn-500/10 dark:text-warn-200"
+            >
+              <AlertTriangle size={12} className="shrink-0" /> {t("retail.noSellerHint", "بلا بائع محدد — حدّد منو باع حتى تنحسب الفاتورة إله بالتقارير.")}
+            </button>
+          )}
           {needsDebtName && (
             <p className="text-center text-2xs font-semibold text-danger-600">
               {deliveryOn
@@ -1866,6 +1987,63 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
           )}
         </div>
       </div>
+
+      {/* ─── شريط السلة الملتصق — الإصلاح الأهم ─────────────────────────────
+          على كل عرض دون 1024px كانت السلة تنزل أسفل شبكة المنتجات كاملة (تبدأ
+          عند 1573px بينما شاشة الآيباد العمودي 1180px)، فيبيع الكاشير «أعمى»:
+          يضيف صنفاً ولا يرى تأكيداً. هذا الشريط يضمن أن العدد والإجمالي وزر
+          الإتمام لا تغادر الشاشة أبداً، وضغطة واحدة تفتح السلة كاملة. */}
+      {posV2 && !cartSheet && (
+        <div
+          className="fixed inset-x-0 bottom-0 z-40 border-t border-line bg-surface-1/95 p-2.5 shadow-raised backdrop-blur lg:hidden"
+          // فسحة الحافة السفلية بأجهزة iOS (مؤشّر الصفحة الرئيسية) حتى لا
+          // يقع زر الإتمام تحت إصبع النظام.
+          style={{ paddingBottom: "calc(0.625rem + env(safe-area-inset-bottom))" }}
+        >
+          <div className="mx-auto flex max-w-3xl items-center gap-2.5">
+            <button
+              type="button" data-cartbar
+              onClick={() => { playTap(); setCartSheet(true); }}
+              className="flex min-w-0 flex-1 items-center gap-2.5 rounded-xl px-2 py-1.5 text-start transition hover:bg-surface-2"
+            >
+              <span className="relative grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-brand-50 text-brand-600 dark:bg-brand-500/15 dark:text-brand-300">
+                <ShoppingCart size={20} />
+                {units > 0 && (
+                  <motion.span
+                    key={units} initial={{ scale: 0.5 }} animate={{ scale: 1 }} transition={{ type: "spring", stiffness: 500, damping: 18 }}
+                    className="absolute -top-1 -end-1 grid h-5 min-w-[1.25rem] place-items-center rounded-full bg-brand-600 px-1 text-2xs font-black text-white"
+                  >{units}</motion.span>
+                )}
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-2xs font-bold text-ink-muted">
+                  {cart.length === 0
+                    ? t("retail.cartEmptyShort", "السلة فارغة")
+                    : t("retail.nItems", { n: formatNum(units), defaultValue: "{{n}} صنف بالسلة" })}
+                </span>
+                <motion.span key={total} initial={{ opacity: 0.4 }} animate={{ opacity: 1 }} className="block font-display text-lg font-extrabold tabular-nums leading-tight text-ink">
+                  {money(effTotal)}
+                </motion.span>
+              </span>
+              <ChevronUp size={18} className="shrink-0 text-ink-subtle" />
+            </button>
+            <Button
+              size="lg" className="shrink-0" disabled={cart.length === 0 || needsDebtName} loading={busy}
+              onClick={checkout} leftIcon={deliveryOn ? <Bike size={18} /> : <CheckCircle2 size={18} />}
+            >
+              {t("retail.complete", "إصدار الفاتورة")}
+            </Button>
+          </div>
+        </div>
+      )}
+      {/* ظِل خلف لوح السلة المفتوح */}
+      {posV2 && cartSheet && (
+        <button
+          type="button" aria-label={t("common.close", "إغلاق")}
+          onClick={() => setCartSheet(false)}
+          className="fixed inset-0 z-30 bg-ink/40 backdrop-blur-[1px] lg:hidden"
+        />
+      )}
     </div>
   );
 }

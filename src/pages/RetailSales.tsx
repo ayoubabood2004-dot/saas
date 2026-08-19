@@ -13,6 +13,7 @@ import { getCached, setCached, isFresh } from "@/lib/swrCache";
 import { loadRetailSnap, retailKey, type RetailSnap } from "@/lib/prefetchData";
 import { playTap } from "@/lib/sounds";
 import { SaleBuilder, type RetailPrefill } from "@/components/retail/SaleBuilder";
+import { getPosV2 } from "@/lib/settings";
 import { InvoicesPanel } from "@/components/retail/InvoicesPanel";
 import { DebtsPanel } from "@/components/retail/DebtsPanel";
 import { DeliveryPanel } from "@/components/retail/DeliveryPanel";
@@ -96,13 +97,17 @@ export function RetailSales() {
     { id: "reports", label: t("retail.reportsTab", "Reports"), icon: BarChart3 },
   ];
 
+  // شاشة البيع الجديدة تختصر ترويسة الصفحة أثناء البيع: كل بكسل فوق شبكة
+  // المنتجات يُدفع من رصيد الكاشير. الشرح يبقى بالتبويبات الأخرى.
+  const compactChrome = getPosV2() && tab === "sell";
+
   return (
-    <div className="mx-auto max-w-6xl px-4 py-6">
-      <div className="mb-5 flex items-center gap-3">
-        <span className="grid h-11 w-11 place-items-center rounded-2xl bg-brand-grad text-white shadow-soft"><Store size={24} /></span>
+    <div className={cn("mx-auto max-w-6xl px-4", compactChrome ? "py-3" : "py-6")}>
+      <div className={cn("flex items-center gap-3", compactChrome ? "mb-2.5" : "mb-5")}>
+        <span className={cn("grid place-items-center rounded-2xl bg-brand-grad text-white shadow-soft", compactChrome ? "h-9 w-9" : "h-11 w-11")}><Store size={compactChrome ? 19 : 24} /></span>
         <div>
-          <h1 className="font-display text-2xl font-extrabold text-ink">{t("retail.title", "Retail & Sales")}</h1>
-          <p className="text-sm text-ink-subtle">{t("retail.subtitle", "Walk-in sales, invoicing & receipts — for this clinic only.")}</p>
+          <h1 className={cn("font-display font-extrabold text-ink", compactChrome ? "text-lg" : "text-2xl")}>{t("retail.title", "Retail & Sales")}</h1>
+          {!compactChrome && <p className="text-sm text-ink-subtle">{t("retail.subtitle", "Walk-in sales, invoicing & receipts — for this clinic only.")}</p>}
         </div>
         {returnPet && (
           <button
@@ -117,10 +122,10 @@ export function RetailSales() {
         )}
       </div>
 
-      <div className="mb-4 flex gap-1 rounded-2xl border border-line bg-surface-1 p-1">
+      <div className={cn("flex gap-1 rounded-2xl border border-line bg-surface-1 p-1", compactChrome ? "mb-2.5" : "mb-4")}>
         {TABS.map(({ id, label, icon: Icon }) => (
           <button key={id} onClick={() => { playTap(); setTab(id); }}
-            className={cn("flex flex-1 items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-sm font-semibold transition",
+            className={cn("flex flex-1 items-center justify-center gap-2 rounded-xl px-3 text-sm font-semibold transition", compactChrome ? "py-1.5" : "py-2.5",
               tab === id ? "bg-brand-600 text-white shadow-soft" : "text-ink-muted hover:bg-surface-2 hover:text-ink")}>
             <Icon size={16} /> {label}
           </button>
