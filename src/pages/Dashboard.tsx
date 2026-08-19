@@ -274,7 +274,9 @@ export function Dashboard() {
               {dateLabel}
             </p>
             <h1 className="mt-1 font-display text-2xl font-extrabold tracking-tighter2 sm:text-3xl">
-              {greeting}{firstName ? `، ${firstName}` : ""} 👋
+              {/* الفاصلة تتبع اللغة: العربية «،» والإنجليزية «,» — فاصلة
+                  عربية داخل تحية إنجليزية كانت أوضح تسريب بالشاشة الأولى. */}
+              {greeting}{firstName ? `${t("dash.comma", "،")} ${firstName}` : ""} 👋
             </h1>
             <p className="mt-1 text-white/80">{user?.full_name}</p>
           </div>

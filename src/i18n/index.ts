@@ -56,4 +56,20 @@ export function setLang(lang: Lang) {
 
 applyDir(initialLang());
 
+/* لغة مخزَّنة غير مدمجة بالحزمة (أي لغة بمحمّل كسول) لا يعرفها i18next عند
+ * الإقلاع، فتُرسم الواجهة بالسقوط وتبقى كذلك حتى يبدّل المستخدم يدوياً.
+ * نحمّل حزمتها فوراً بعد التهيئة ونعيد ضبط اللغة، فمن يفتح النظام وقد اختار
+ * لغته سابقاً يراها من أول إطار — لا بعد نقرة. */
+void (async () => {
+  const info = localeInfo(initialLang());
+  if (!info.loader || i18n.hasResourceBundle(info.code, "translation")) return;
+  try {
+    const mod = await info.loader();
+    i18n.addResourceBundle(info.code, "translation", mod.default, true, true);
+    await i18n.changeLanguage(info.code); // يعيد الرسم بالحزمة المحمّلة
+  } catch {
+    /* تعذّر تحميل اللغة (شبكة/ملف) — السقوط يغطي الواجهة بلا انهيار */
+  }
+})();
+
 export default i18n;

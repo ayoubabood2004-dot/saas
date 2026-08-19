@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import {
@@ -41,24 +42,32 @@ const ROLE_TONE: Record<StaffRole, string> = {
   groomer: "bg-sky-50 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300",
 };
 
-/** Membership role (as stamped by presence_beat) → Arabic label. */
-const PRESENCE_ROLE_AR: Record<string, string> = { manager: "مدير", veterinarian: "طبيب", receptionist: "استقبال", groomer: "موظف" };
-const agoAr = (iso: string): string => {
+/** Membership role (as stamped by presence_beat) → localized label. */
+const presenceRoleLabel = (role: string | null | undefined, t: TFunction): string => {
+  switch (role) {
+    case "manager": return t("staff.roleManager", "مدير");
+    case "veterinarian": return t("staff.roleVet", "طبيب");
+    case "receptionist": return t("staff.roleReception", "استقبال");
+    case "groomer": return t("staff.roleStaffer", "موظف");
+    default: return role ?? "";
+  }
+};
+const agoLabel = (iso: string, t: TFunction): string => {
   const mins = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 60000));
-  if (mins < 1) return "الآن";
-  if (mins < 60) return `قبل ${mins} د`;
+  if (mins < 1) return t("staff.justNow", "الآن");
+  if (mins < 60) return t("staff.minsAgo", { n: mins, defaultValue: "قبل {{n}} د" });
   const h = Math.floor(mins / 60);
-  if (h < 24) return `قبل ${h} س`;
-  return `قبل ${Math.floor(h / 24)} يوم`;
+  if (h < 24) return t("staff.hoursAgo", { n: h, defaultValue: "قبل {{n}} س" });
+  return t("staff.daysAgo", { n: Math.floor(h / 24), defaultValue: "قبل {{n}} يوم" });
 };
 
 export function StaffManagement() {
-  const { i18n } = useTranslation();
+  const { t, i18n } = useTranslation();
   const toast = useToast();
   const { can } = usePermissions();
   const { restricted } = useOverride(); // locked device (no manager session) → view-only
   // Hidden lock: buttons look normal but silently ignore taps; after a few, a toast explains.
-  const lockedNudge = () => noteLockedTap(() => toast.toast({ tone: "info", title: "مقفل — يُفتح بوضع المدير" }));
+  const lockedNudge = () => noteLockedTap(() => toast.toast({ tone: "info", title: t("staff.lockedToast", "مقفل — يُفتح بوضع المدير") }));
   const guard = (fn: () => void) => { if (restricted) { lockedNudge(); return; } fn(); };
   // Synchronous cache seed — seeding inside the effect paints one skeleton
   // frame first (effects run after paint) = a fake loading intro on revisit.
@@ -103,9 +112,9 @@ export function StaffManagement() {
   const copyPresenceSQL = async () => {
     try {
       await navigator.clipboard.writeText(presenceSQL);
-      toast.success("انتسخ الأمر — الصقه في SQL Editor واضغط Run");
+      toast.success(t("staff.sqlCopied", "انتسخ الأمر — الصقه في SQL Editor واضغط Run"));
     } catch {
-      toast.error("تعذّر النسخ — ظلّل النص وانسخه يدوياً");
+      toast.error(t("staff.copyFailed", "تعذّر النسخ — ظلّل النص وانسخه يدوياً"));
     }
   };
   const recheckPresence = async () => {
@@ -114,19 +123,19 @@ export function StaffManagement() {
     try {
       const ok = await presenceBackendReady();
       setPresenceOk(ok);
-      if (ok) { playSuccess(); toast.success("تم التفعيل — حالة الاتصال ستظهر خلال دقيقة لكل من يفتح السستم"); }
-      else { playWarning(); toast.error("الترحيل ما زال ناقصاً", "نفّذ الأمر في Supabase → SQL Editor ثم أعد الفحص"); }
+      if (ok) { playSuccess(); toast.success(t("staff.presenceEnabled", "تم التفعيل — حالة الاتصال ستظهر خلال دقيقة لكل من يفتح السستم")); }
+      else { playWarning(); toast.error(t("staff.migrationMissing", "الترحيل ما زال ناقصاً"), t("staff.migrationMissingHint", "نفّذ الأمر في Supabase → SQL Editor ثم أعد الفحص")); }
     } finally {
       setCheckBusy(false);
     }
   };
 
-  const reload = () => listStaff().then((l) => { setCached("staff_roster", l); setStaff(l); }).catch(() => toast.error("تعذّر تحميل الكادر"));
+  const reload = () => listStaff().then((l) => { setCached("staff_roster", l); setStaff(l); }).catch(() => toast.error(t("staff.loadFailed", "تعذّر تحميل الكادر")));
   useEffect(() => {
     // فوري من الكاش + تحديث خفي
     const c = getCached<StaffMember[]>("staff_roster");
     if (c) { setStaff(c); setLoading(false); }
-    void listStaff().then((l) => { setCached("staff_roster", l); setStaff(l); }).catch(() => { if (!c) toast.error("تعذّر تحميل الكادر"); }).finally(() => setLoading(false));
+    void listStaff().then((l) => { setCached("staff_roster", l); setStaff(l); }).catch(() => { if (!c) toast.error(t("staff.loadFailed", "تعذّر تحميل الكادر")); }).finally(() => setLoading(false));
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // RBAC gate — only managers (clinic admins) reach this module.
@@ -134,8 +143,8 @@ export function StaffManagement() {
     return (
       <div className="mx-auto grid max-w-md place-items-center px-4 py-24 text-center">
         <span className="mb-3 grid h-14 w-14 place-items-center rounded-2xl bg-surface-2 text-ink-subtle"><Lock size={26} /></span>
-        <h1 className="font-display text-xl font-extrabold text-ink">صلاحية محدودة</h1>
-        <p className="mt-1 text-sm text-ink-muted">إدارة الكادر متاحة لمدير العيادة فقط.</p>
+        <h1 className="font-display text-xl font-extrabold text-ink">{t("staff.restrictedTitle", "صلاحية محدودة")}</h1>
+        <p className="mt-1 text-sm text-ink-muted">{t("staff.restrictedBody", "إدارة الكادر متاحة لمدير العيادة فقط.")}</p>
       </div>
     );
   }
@@ -150,7 +159,7 @@ export function StaffManagement() {
     setStaff((s) => s.filter((m) => m.id !== id));
     setDeleting(null);
     playTap();
-    deleteStaff(id).then(() => toast.success("تم حذف الموظف")).catch(() => { toast.error("تعذّر الحذف"); reload(); });
+    deleteStaff(id).then(() => toast.success(t("staff.deleted", "تم حذف الموظف"))).catch(() => { toast.error(t("staff.deleteFailed", "تعذّر الحذف")); reload(); });
   };
   // Optimistic suspend/activate.
   const onToggle = (m: StaffMember) => {
@@ -158,7 +167,7 @@ export function StaffManagement() {
     const next: StaffMember["status"] = m.status === "active" ? "suspended" : "active";
     setStaff((s) => s.map((x) => (x.id === m.id ? { ...x, status: next } : x)));
     playTap();
-    setStaffStatus(m.id, next).catch(() => { toast.error("تعذّر التحديث"); reload(); });
+    setStaffStatus(m.id, next).catch(() => { toast.error(t("staff.updateFailed", "تعذّر التحديث")); reload(); });
   };
   // Optimistic add/edit: reflect immediately, persist in the background.
   const onSaved = (m: StaffMember) => {
@@ -166,7 +175,7 @@ export function StaffManagement() {
     setStaff((s) => (s.some((x) => x.id === m.id) ? s.map((x) => (x.id === m.id ? m : x)) : [...s, m]));
     setEditing(null);
     playSuccess();
-    saveStaff(m).then(() => toast.success("تم حفظ الملف الوظيفي")).catch(() => { toast.error("تعذّر الحفظ"); reload(); });
+    saveStaff(m).then(() => toast.success(t("staff.saved", "تم حفظ الملف الوظيفي"))).catch(() => { toast.error(t("staff.saveFailed", "تعذّر الحفظ")); reload(); });
   };
 
   return (
@@ -174,25 +183,25 @@ export function StaffManagement() {
       <div className="mb-5 flex flex-wrap items-center gap-3">
         <span className="grid h-11 w-11 place-items-center rounded-2xl bg-brand-grad text-white shadow-soft"><Briefcase size={24} /></span>
         <div className="min-w-0">
-          <h1 className="font-display text-2xl font-extrabold text-ink">إدارة الكادر</h1>
-          <p className="text-sm text-ink-subtle">فريق العيادة وملفّاتهم الوظيفية وصلاحياتهم.</p>
+          <h1 className="font-display text-2xl font-extrabold text-ink">{t("staff.title", "إدارة الكادر")}</h1>
+          <p className="text-sm text-ink-subtle">{t("staff.subtitle", "فريق العيادة وملفّاتهم الوظيفية وصلاحياتهم.")}</p>
         </div>
         <div className="ms-auto flex items-center gap-2">
           <Button variant="secondary" leftIcon={<Send size={17} />} onClick={() => guard(() => { playTap(); setInvitesOpen(true); })}>
-            دعوة موظف
+            {t("staff.inviteStaff", "دعوة موظف")}
           </Button>
           <Button leftIcon={<UserPlus size={18} />} onClick={() => guard(() => { playTap(); setEditing(blankStaff()); })}>
-            إضافة موظف
+            {t("staff.addStaff", "إضافة موظف")}
           </Button>
         </div>
       </div>
 
       {/* KPIs */}
       <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Kpi icon={Users} label="إجمالي الكادر" value={String(staff.length)} />
-        <Kpi icon={BadgeCheck} label="نشط" value={String(active)} tone="success" />
-        <Kpi icon={PauseCircle} label="بانتظار الانضمام" value={String(pending)} tone="warn" />
-        <Kpi icon={Wifi} label="متصل الآن" value={String(onlineRows.length)} tone="success" />
+        <Kpi icon={Users} label={t("staff.kpiTotal", "إجمالي الكادر")} value={String(staff.length)} />
+        <Kpi icon={BadgeCheck} label={t("staff.active", "نشط")} value={String(active)} tone="success" />
+        <Kpi icon={PauseCircle} label={t("staff.pendingJoin", "بانتظار الانضمام")} value={String(pending)} tone="warn" />
+        <Kpi icon={Wifi} label={t("staff.onlineNow", "متصل الآن")} value={String(onlineRows.length)} tone="success" />
       </div>
 
       {/* ترحيل 0072 غير منفَّذ — الكل سيبدو «غير متصل» مهما فتحوا السستم */}
@@ -201,12 +210,12 @@ export function StaffManagement() {
           <div className="flex flex-wrap items-start gap-3">
             <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-warn-100 text-warn-700 dark:bg-warn-500/20 dark:text-warn-300"><AlertTriangle size={20} /></span>
             <div className="min-w-0 flex-1 space-y-1">
-              <p className="font-bold text-ink">حالة «متصل الآن» تحتاج تفعيلاً على قاعدة بياناتك</p>
-              <p className="text-sm leading-relaxed text-ink-muted">بدونه سيظهر كل الموظفين «غير متصلين» حتى وهم فاتحين السستم. اضغط «نسخ الأمر» ونفّذه مرة واحدة في Supabase ← SQL Editor ← Run، ثم «إعادة الفحص».</p>
+              <p className="font-bold text-ink">{t("staff.presenceSetupTitle", "حالة «متصل الآن» تحتاج تفعيلاً على قاعدة بياناتك")}</p>
+              <p className="text-sm leading-relaxed text-ink-muted">{t("staff.presenceSetupBody", "بدونه سيظهر كل الموظفين «غير متصلين» حتى وهم فاتحين السستم. اضغط «نسخ الأمر» ونفّذه مرة واحدة في Supabase ← SQL Editor ← Run، ثم «إعادة الفحص».")}</p>
             </div>
             <div className="flex w-full flex-wrap justify-end gap-2 sm:w-auto sm:flex-col sm:justify-start">
-              <Button size="sm" variant="secondary" leftIcon={<Copy size={14} />} onClick={() => { playTap(); void copyPresenceSQL(); }}>نسخ الأمر</Button>
-              <Button size="sm" loading={checkBusy} leftIcon={<Check size={14} />} onClick={() => { playTap(); void recheckPresence(); }}>إعادة الفحص</Button>
+              <Button size="sm" variant="secondary" leftIcon={<Copy size={14} />} onClick={() => { playTap(); void copyPresenceSQL(); }}>{t("staff.copySQL", "نسخ الأمر")}</Button>
+              <Button size="sm" loading={checkBusy} leftIcon={<Check size={14} />} onClick={() => { playTap(); void recheckPresence(); }}>{t("staff.recheck", "إعادة الفحص")}</Button>
             </div>
           </div>
         </div>
@@ -218,12 +227,12 @@ export function StaffManagement() {
           <span className="relative grid h-8 w-8 place-items-center rounded-xl bg-success-50 text-success-600 dark:bg-success-500/15 dark:text-success-300">
             <Wifi size={16} />
           </span>
-          المتواجدون الآن
+          {t("staff.presentNow", "المتواجدون الآن")}
           <span className="chip bg-success-50 text-2xs font-bold text-success-700 dark:bg-success-500/15 dark:text-success-300">{onlineRows.length}</span>
-          <span className="ms-auto text-2xs font-normal text-ink-subtle">يتحدّث تلقائياً كل ٣٠ ثانية</span>
+          <span className="ms-auto text-2xs font-normal text-ink-subtle">{t("staff.autoRefresh", "يتحدّث تلقائياً كل ٣٠ ثانية")}</span>
         </h3>
         {onlineRows.length === 0 ? (
-          <p className="text-sm text-ink-subtle">لا أحد فاتح السستم حالياً.</p>
+          <p className="text-sm text-ink-subtle">{t("staff.nobodyOnline", "لا أحد فاتح السستم حالياً.")}</p>
         ) : (
           <div className="flex flex-wrap gap-2">
             {onlineRows.map((r) => (
@@ -233,7 +242,7 @@ export function StaffManagement() {
                   <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-success-500" />
                 </span>
                 <span className="font-bold text-ink">{r.name || "—"}</span>
-                <span className="text-2xs text-ink-subtle">{PRESENCE_ROLE_AR[r.role ?? ""] ?? r.role ?? ""}</span>
+                <span className="text-2xs text-ink-subtle">{presenceRoleLabel(r.role, t)}</span>
               </span>
             ))}
           </div>
@@ -242,7 +251,7 @@ export function StaffManagement() {
         {presenceRows.some((r) => !isOnline(r)) && (
           <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 border-t border-line pt-2.5 text-2xs text-ink-subtle">
             {presenceRows.filter((r) => !isOnline(r)).slice(0, 8).map((r) => (
-              <span key={r.user_id} className="inline-flex items-center gap-1"><Clock size={11} /> {r.name || "—"} · آخر ظهور {agoAr(r.last_seen)}</span>
+              <span key={r.user_id} className="inline-flex items-center gap-1"><Clock size={11} /> {r.name || "—"} · {t("staff.lastSeen", { ago: agoLabel(r.last_seen, t), defaultValue: "آخر ظهور {{ago}}" })}</span>
             ))}
           </div>
         )}
@@ -255,7 +264,7 @@ export function StaffManagement() {
         </div>
       ) : staff.length === 0 ? (
         <div className="card grid place-items-center p-12 text-center text-sm text-ink-subtle">
-          <Users size={28} className="mb-2 opacity-40" /> لا يوجد موظفون بعد. أضِف أول عضو في الفريق.
+          <Users size={28} className="mb-2 opacity-40" /> {t("staff.emptyRoster", "لا يوجد موظفون بعد. أضِف أول عضو في الفريق.")}
         </div>
       ) : (
       <motion.div layout className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -281,7 +290,7 @@ export function StaffManagement() {
                   <p className="truncate font-display font-bold text-ink">{m.name || "—"}</p>
                   <p className="truncate text-xs text-ink-muted">{m.specialty || ROLE_LABEL[m.role]}</p>
                   {(() => { const p = presenceFor(m); return p && !isOnline(p)
-                    ? <p className="truncate text-2xs text-ink-subtle">آخر ظهور {agoAr(p.last_seen)}</p>
+                    ? <p className="truncate text-2xs text-ink-subtle">{t("staff.lastSeen", { ago: agoLabel(p.last_seen, t), defaultValue: "آخر ظهور {{ago}}" })}</p>
                     : null; })()}
                 </div>
               </div>

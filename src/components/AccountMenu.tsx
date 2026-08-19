@@ -24,7 +24,8 @@ import {
 import { useAuth } from "@/contexts/AuthContext";
 import { useSubscription } from "@/lib/subscription";
 import { useTheme } from "@/lib/theme";
-import { setLang, type Lang } from "@/i18n";
+import { setLang, localeInfo, type Lang } from "@/i18n";
+import { selectableLocales } from "@/i18n/registry";
 import { stepFontScale, canStepFontScale, getFontScale, FONT_SCALES } from "@/lib/fontScale";
 import { OverrideCorner } from "@/components/ManagerOverride";
 import { playTap } from "@/lib/sounds";
@@ -85,7 +86,9 @@ export function AccountMenu() {
 
   const otherRole = activeRole === "clinic" ? "owner" : "clinic";
   const pct = FONT_SCALES.find((s) => s.id === getFontScale())?.pct ?? 100;
-  const glyph = i18n.language === "ar" ? "أ" : "A";
+  const glyph = localeInfo(i18n.language).dir === "rtl" ? "أ" : "A";
+  // لغات المخزن المعروضة — التجريبية تظهر خلف فلاغ vp_lang_exp فقط.
+  const langs = selectableLocales();
   const zoom = (dir: 1 | -1) => { playTap(); stepFontScale(dir); bumpZoom((n) => n + 1); };
 
   const row = "flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-bold transition-colors";
@@ -148,16 +151,43 @@ export function AccountMenu() {
 
             <div className="my-1.5 h-px bg-line" />
 
-            {/* اللغة — الذيل يعرض الحالية، والضغط يبدّل */}
-            <button
-              role="menuitem"
-              onClick={() => { playTap(); setLang((i18n.language === "ar" ? "en" : "ar") as Lang); }}
-              className={cn(row, "text-ink hover:bg-surface-2")}
-            >
-              <Languages size={17} className="shrink-0 text-ink-muted" />
-              {t("nav.language", "اللغة")}
-              <span className={tail}>{i18n.language === "ar" ? "العربية" : "English"}</span>
-            </button>
+            {/* اللغة — بلغتين تبقى ضغطة تبديل واحدة (أسرع طريق)، ومع لغة
+                ثالثة فما فوق تصير قائمة اختيار حقيقية من سجل اللغات. كل لغة
+                تُعرض باسمها بلغتها — لا يُطلب من كردي أن يقرأ «Kurdish». */}
+            {langs.length <= 2 ? (
+              <button
+                role="menuitem"
+                onClick={() => { playTap(); setLang((langs.find((l) => l.code !== i18n.language)?.code ?? "en") as Lang); }}
+                className={cn(row, "text-ink hover:bg-surface-2")}
+              >
+                <Languages size={17} className="shrink-0 text-ink-muted" />
+                {t("nav.language", "اللغة")}
+                <span className={tail}>{localeInfo(i18n.language).native}</span>
+              </button>
+            ) : (
+              <div className="px-3 py-2">
+                <div className="flex items-center gap-3 text-sm font-bold text-ink">
+                  <Languages size={17} className="shrink-0 text-ink-muted" />
+                  {t("nav.language", "اللغة")}
+                </div>
+                <div className="mt-1.5 flex flex-wrap gap-1.5">
+                  {langs.map((l) => (
+                    <button
+                      key={l.code}
+                      role="menuitemradio"
+                      aria-checked={i18n.language === l.code}
+                      onClick={() => { playTap(); setLang(l.code as Lang); }}
+                      className={cn(
+                        "rounded-lg px-2.5 py-1 text-2xs font-bold transition-colors",
+                        i18n.language === l.code ? "bg-brand-600 text-white" : "bg-surface-2 text-ink-muted hover:bg-surface-3 hover:text-ink",
+                      )}
+                    >
+                      {l.native}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* المظهر */}
             <button

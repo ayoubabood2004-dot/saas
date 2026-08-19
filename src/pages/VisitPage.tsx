@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
 import {
   ArrowRight, Clock, Check, Plus, NotebookPen, ClipboardList,
   Loader2, Lock, CheckCircle2, Stethoscope, UserRound, RotateCcw, AlertTriangle,
@@ -52,13 +53,13 @@ const nowHHMM = () => { const d = new Date(); return `${pad(d.getHours())}:${pad
 const clockOf = (iso: string, lang: string) => new Date(iso).toLocaleTimeString(lang, { hour: "2-digit", minute: "2-digit" });
 
 /** Human age string ("٣ سنة و٤ أشهر" / "8 أشهر") — empty when DOB is unknown. */
-function ageText(dob?: string | null): string {
+function ageText(dob: string | null | undefined, t: TFunction): string {
   const a = ageFromDOB(dob);
   if (!a) return "";
   const parts: string[] = [];
-  if (a.years) parts.push(`${formatNum(a.years)} سنة`);
-  if (a.months) parts.push(`${formatNum(a.months)} شهر`);
-  return parts.join(" و") || "أقل من شهر";
+  if (a.years) parts.push(t("visit.ageYears", { n: formatNum(a.years), defaultValue: "{{n}} سنة" }));
+  if (a.months) parts.push(t("visit.ageMonths", { n: formatNum(a.months), defaultValue: "{{n}} شهر" }));
+  return parts.join(t("visit.ageJoiner", " و")) || t("visit.ageUnderMonth", "أقل من شهر");
 }
 
 /** Singular Arabic species name for a single patient ("كلب" — not the plural "كلاب"). */
@@ -67,11 +68,11 @@ const SPECIES_SINGULAR_AR: Record<string, string> = {
 };
 
 /** Brief diagnosis line from a clinical record ("داء البارفو (شديد) · و٢ آخر"). */
-function diagnosisText(rec: ClinicalRecord | null): string {
+function diagnosisText(rec: ClinicalRecord | null, t: TFunction): string {
   const dx = rec?.diagnoses ?? [];
   if (!dx.length) return "";
   const first = dx[0].disease;
-  return dx.length > 1 ? `${first} · و${formatNum(dx.length - 1)} آخر` : first;
+  return dx.length > 1 ? t("visit.dxMore", { first, n: formatNum(dx.length - 1), defaultValue: "{{first}} · و{{n}} آخر" }) : first;
 }
 
 /** Four-state dose status — the semantic system leading vet treatment sheets use. */
@@ -233,7 +234,9 @@ export default function VisitPage() {
   const isIllness = visit?.kind === "illness";
   // Singular species name for a single patient (Arabic uses a plural in the catalog).
   const speciesSingular = (species: string) =>
-    lang.startsWith("ar") ? SPECIES_SINGULAR_AR[species] ?? t(`pet.species.${species}`, species) : t(`pet.species.${species}`, species);
+    lang.startsWith("ar") && SPECIES_SINGULAR_AR[species]
+      ? t(`visit.species.${species}`, SPECIES_SINGULAR_AR[species])
+      : t(`pet.species.${species}`, species);
   const primary = clinicalNotes.length ? clinicalNotes[clinicalNotes.length - 1].record : null;
   const dxName = primary?.diagnoses?.[0]?.disease;
   const dxWarn = (primary?.redFlags?.length ?? 0) > 0 || (primary?.zoonotic?.length ?? 0) > 0 || (primary?.reportable?.length ?? 0) > 0;
@@ -294,12 +297,12 @@ export default function VisitPage() {
       celebrate();
       const nDrugs = record?.treatment?.length ?? 0;
       const nDoses = record?.treatment?.reduce((s, t) => s + (t.doses || 0), 0) ?? 0;
-      if (nDrugs > 0) toast.success("حُفظت الخطة 🎉", `${formatNum(nDrugs)} دواء · ${formatNum(nDoses)} جرعة مجدولة بالطبلة`);
-      else toast.success("حُفظ التشخيص");
+      if (nDrugs > 0) toast.success(t("visit.planSaved", "حُفظت الخطة 🎉"), t("visit.planSavedDetail", { drugs: formatNum(nDrugs), doses: formatNum(nDoses), defaultValue: "{{drugs}} دواء · {{doses}} جرعة مجدولة بالطبلة" }));
+      else toast.success(t("visit.dxSaved", "حُفظ التشخيص"));
       await reload();
     } catch (e) {
       playWarning();
-      toast.error("تعذّر الحفظ", e instanceof Error ? e.message : undefined);
+      toast.error(t("visit.saveFailed", "تعذّر الحفظ"), e instanceof Error ? e.message : undefined);
     } finally { setPlanBusy(false); }
   };
 
@@ -397,13 +400,13 @@ export default function VisitPage() {
           dayTime: [i === 0 ? formatDate(day, lang) : "", time].filter(Boolean).join(" — "),
           treatment: [tx.medication, tx.amount, tx.observations].filter(Boolean).join(" · "),
           doctor: tx.administered_by || tx.doctor || "",
-          notes: tx.administered_at ? "✓ أُعطيت" : "",
+          notes: tx.administered_at ? t("visit.givenMark", "✓ أُعطيت") : "",
         };
       }),
     );
     const socials = getClinicSocials();
     const ok = openTreatmentSheet({
-      clinicName: getClinicName() || user?.full_name || "عيادة بيطرية",
+      clinicName: getClinicName() || user?.full_name || t("visit.clinicFallback", "عيادة بيطرية"),
       clinicPhone: user?.phone ?? null,
       brand: "doctorVet",
       logoUrl: getClinicLogo(),
@@ -414,21 +417,21 @@ export default function VisitPage() {
         name: pet.name,
         species: speciesSingular(pet.species),
         sex: t(`pet.sex.${pet.sex}`, pet.sex),
-        age: ageText(pet.dob),
+        age: ageText(pet.dob, t),
       },
       date: formatDate(visit.opened_at, lang),
-      diagnosis: diagnosisText(primary),
+      diagnosis: diagnosisText(primary, t),
       clinicalTreatments: primary?.treatment?.map((m) => m.name).join("، ") ?? "",
       rows,
     });
-    if (!ok) toast.error("تعذّرت الطباعة", "اسمح بالنوافذ المنبثقة ثم أعد المحاولة.");
+    if (!ok) toast.error(t("visit.printFailed", "تعذّرت الطباعة"), t("visit.printFailedHint", "اسمح بالنوافذ المنبثقة ثم أعد المحاولة."));
   };
 
-  if (loading) return <div className="mx-auto max-w-3xl px-4 py-16 text-center text-ink-subtle"><Loader2 className="mx-auto mb-2 animate-spin" /> جارٍ التحميل…</div>;
+  if (loading) return <div className="mx-auto max-w-3xl px-4 py-16 text-center text-ink-subtle"><Loader2 className="mx-auto mb-2 animate-spin" /> {t("visit.loading", "جارٍ التحميل…")}</div>;
   if (!visit || !pet) return (
     <div className="mx-auto max-w-3xl px-4 py-16 text-center text-ink-subtle">
-      لم يتم العثور على الزيارة.
-      <div className="mt-4"><Button variant="secondary" onClick={() => navigate(-1)}>رجوع</Button></div>
+      {t("visit.notFound", "لم يتم العثور على الزيارة.")}
+      <div className="mt-4"><Button variant="secondary" onClick={() => navigate(-1)}>{t("visit.back", "رجوع")}</Button></div>
     </div>
   );
 
@@ -439,13 +442,13 @@ export default function VisitPage() {
           onClick={() => navigate(cameFromCharts ? "/charts" : `/pet/${petId}`)}
           className="inline-flex items-center gap-1.5 text-sm font-bold text-ink-muted transition hover:text-ink"
         >
-          <ArrowRight size={16} /> {cameFromCharts ? "رجوع إلى الطبلات" : `رجوع إلى ملف ${pet.name}`}
+          <ArrowRight size={16} /> {cameFromCharts ? t("visit.backToCharts", "رجوع إلى الطبلات") : t("visit.backToFile", { name: pet.name, defaultValue: "رجوع إلى ملف {{name}}" })}
         </button>
         <button
           onClick={() => navigate(`/pet/${petId}`)}
           className="ms-auto inline-flex items-center gap-1.5 rounded-lg border border-line bg-surface-1 px-3 py-1.5 text-xs font-extrabold text-ink-muted transition hover:border-brand-300 hover:text-brand-700"
         >
-          <FolderOpen size={14} /> ملف الحيوان الكامل
+          <FolderOpen size={14} /> {t("visit.fullFile", "ملف الحيوان الكامل")}
         </button>
       </div>
 
@@ -477,7 +480,7 @@ export default function VisitPage() {
 
       {ended && visit.summary && (
         <div className="mb-3 flex items-start gap-2 rounded-xl border border-success-200 bg-success-50 p-3 text-sm text-success-800 dark:border-success-500/30 dark:bg-success-500/10 dark:text-success-200">
-          <CheckCircle2 size={17} className="mt-0.5 shrink-0" /><div><b className="font-extrabold">تم إنهاء العلاج</b> — {visit.summary}</div>
+          <CheckCircle2 size={17} className="mt-0.5 shrink-0" /><div><b className="font-extrabold">{t("visit.treatmentEnded", "تم إنهاء العلاج")}</b> — {visit.summary}</div>
         </div>
       )}
 

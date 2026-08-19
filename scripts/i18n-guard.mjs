@@ -63,17 +63,37 @@ for (const lang of langFiles.slice(1)) {
 }
 
 /* ---- ٢) سقف النص الصلب لكل ملف ------------------------------------------- */
+/* عدّ الأسطر العربية التي تمثّل نصاً معروضاً — بتتبّع حالة التعليقات عبر
+ * الأسطر. بلا هذا التتبّع يُحسب أي سطر أوسط من تعليق كتليّ عربي (وهو نمط
+ * التوثيق السائد بهذا المشروع) نصاً مهرَّباً، فيصير الحارس مصدر إنذارات
+ * كاذبة — وحارس يكذب يُعطَّل، فيسقط الغرض كله. */
 function hardcodedCount(path) {
   const src = readFileSync(join(ROOT, path), "utf8");
   let n = 0;
+  let inBlock = false; // داخل /* … */ أو {/* … */}
   for (const line of src.split("\n")) {
-    const t = line.trim();
+    const wasInBlock = inBlock;
+    // تتبّع فتح/إغلاق التعليقات الكتلية على هذا السطر (يكفي للأنماط الواقعية).
+    let scan = line, opened = false;
+    for (;;) {
+      if (!inBlock) {
+        const i = scan.indexOf("/*");
+        if (i < 0) break;
+        inBlock = true; opened = true; scan = scan.slice(i + 2);
+      } else {
+        const j = scan.indexOf("*/");
+        if (j < 0) break;
+        inBlock = false; scan = scan.slice(j + 2);
+      }
+    }
     if (!AR.test(line)) continue;
-    // تعليقات (سطرية، كتلية، وJSX) — توثيق عربي مشروع لا نص واجهة مهرَّب.
+    if (wasInBlock) continue;             // سطر أوسط/أخير من تعليق كتلي
+    const t = line.trim();
     if (t.startsWith("//") || t.startsWith("*") || t.startsWith("/*") || t.startsWith("{/*")) continue;
-    // العربية بعد تعليق سطري ملحق بكود إنجليزي («const x = 1; // شرح») مشروعة أيضاً.
+    if (opened && !AR.test(line.slice(0, line.indexOf("/*")))) continue; // تعليق بدأ بهذا السطر والعربية داخله
+    // العربية بعد تعليق سطري ملحق بكود إنجليزي («const x = 1; // شرح») مشروعة.
     if (!AR.test(line.split("//")[0])) continue;
-    if (line.includes("t(")) continue; // نص افتراضي داخل الترجمة — مشروع
+    if (line.includes("t(")) continue;    // نص افتراضي داخل الترجمة — مشروع
     n++;
   }
   return n;
