@@ -4,6 +4,7 @@ import {
   AlertTriangle, ShieldAlert, Biohazard, Sparkles, ChevronLeft, ChevronRight, Crosshair,
   Droplets, Camera, Loader2, ImageIcon, Search, Scale, FileText, ClipboardList, ScanLine, History,
 } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { AnatomyMap, type AnatomyFocus } from "@/components/AnatomyMap";
 import { SymptomPicker, type QualifierMap } from "@/components/SymptomPicker";
 import { CbcPanel } from "@/components/CbcPanel";
@@ -27,23 +28,25 @@ import { Button, useToast } from "@/components/ui";
 import { formatNum, normalizeAr, cn, formatDec } from "@/lib/utils";
 import { playTap, playSuccess, playWarning, playStepDone } from "@/lib/sounds";
 
-/** How often a treatment is given — drives the dose-count math. */
-const FREQS: { id: string; label: string; short: string; perDay: number }[] = [
-  { id: "1", label: "مرة يومياً", short: "×١", perDay: 1 },
-  { id: "2", label: "مرتين يومياً", short: "×٢", perDay: 2 },
-  { id: "3", label: "٣ مرات", short: "×٣", perDay: 3 },
-  { id: "4", label: "٤ مرات", short: "×٤", perDay: 4 },
-  { id: "prn", label: "عند اللزوم", short: "PRN", perDay: 0 },
+/** How often a treatment is given — drives the dose-count math.
+ *  `label` is the canonical Arabic (kept for the persisted record text);
+ *  `key` is the i18n key used at render sites via t(key, label). */
+const FREQS: { id: string; key: string; label: string; short: string; perDay: number }[] = [
+  { id: "1", key: "tplan.freqDaily1", label: "مرة يومياً", short: "×١", perDay: 1 },
+  { id: "2", key: "tplan.freqDaily2", label: "مرتين يومياً", short: "×٢", perDay: 2 },
+  { id: "3", key: "tplan.freqDaily3", label: "٣ مرات", short: "×٣", perDay: 3 },
+  { id: "4", key: "tplan.freqDaily4", label: "٤ مرات", short: "×٤", perDay: 4 },
+  { id: "prn", key: "tplan.freqPrn", label: "عند اللزوم", short: "PRN", perDay: 0 },
 ];
 
-/** Route of administration — how the drug is given. */
-const ROUTES: { id: string; label: string }[] = [
-  { id: "oral", label: "فموي" },
-  { id: "sc", label: "تحت الجلد" },
-  { id: "im", label: "عضلي" },
-  { id: "iv", label: "وريدي" },
-  { id: "topical", label: "موضعي" },
-  { id: "eye_ear", label: "عين / أذن" },
+/** Route of administration — how the drug is given. Same key/label split as FREQS. */
+const ROUTES: { id: string; key: string; label: string }[] = [
+  { id: "oral", key: "tplan.routeOral", label: "فموي" },
+  { id: "sc", key: "tplan.routeSc", label: "تحت الجلد" },
+  { id: "im", key: "tplan.routeIm", label: "عضلي" },
+  { id: "iv", key: "tplan.routeIv", label: "وريدي" },
+  { id: "topical", key: "tplan.routeTopical", label: "موضعي" },
+  { id: "eye_ear", key: "tplan.routeEyeEar", label: "عين / أذن" },
 ];
 const routeLabel = (id?: string) => ROUTES.find((x) => x.id === id)?.label;
 
@@ -110,12 +113,12 @@ const allMeds = (): { name: string; type: string }[] => {
 };
 
 type StepId = "anatomy" | "symptoms" | "labs" | "diagnosis" | "treatment";
-const STEPS: { id: StepId; label: string; icon: typeof Activity }[] = [
-  { id: "anatomy", label: "التشريح", icon: Crosshair },
-  { id: "symptoms", label: "الأعراض", icon: Activity },
-  { id: "labs", label: "التحاليل", icon: Droplets },
-  { id: "diagnosis", label: "التشخيص", icon: Stethoscope },
-  { id: "treatment", label: "العلاج", icon: Pill },
+const STEPS: { id: StepId; key: string; label: string; icon: typeof Activity }[] = [
+  { id: "anatomy", key: "tplan.stepAnatomy", label: "التشريح", icon: Crosshair },
+  { id: "symptoms", key: "tplan.stepSymptoms", label: "الأعراض", icon: Activity },
+  { id: "labs", key: "tplan.stepLabs", label: "التحاليل", icon: Droplets },
+  { id: "diagnosis", key: "tplan.stepDiagnosis", label: "التشخيص", icon: Stethoscope },
+  { id: "treatment", key: "tplan.stepTreatment", label: "العلاج", icon: Pill },
 ];
 
 /**
@@ -147,6 +150,7 @@ export function TreatmentPlan({
   /** Fires with true while un-saved selections exist — parents guard their close. */
   onDirtyChange?: (dirty: boolean) => void;
 }) {
+  const { t } = useTranslation();
   const toast = useToast();
   const [step, setStep] = useState<StepId>("anatomy");
   const [focus, setFocus] = useState<AnatomyFocus | null>(null);
@@ -186,19 +190,19 @@ export function TreatmentPlan({
     const file = e.target.files?.[0];
     e.target.value = "";
     if (!file || photoBusy) return;
-    if (!petId) { toast.error("تعذّر إرفاق الصورة"); return; }
+    if (!petId) { toast.error(t("tplan.attachFail", "تعذّر إرفاق الصورة")); return; }
     setPhotoBusy(true);
     try {
       const prepared = await prepareUpload(file, { maxDim: 2400 });
       await repo.uploadMedia(petId, prepared, "lab", "تحليل CBC");
       setLabPhoto(prepared.dataUrl);
       playSuccess();
-      toast.success("أُضيفت صورة التحليل إلى المعرض");
+      toast.success(t("tplan.photoAdded", "أُضيفت صورة التحليل إلى المعرض"));
       onMediaAdded?.();
       void runOcr(prepared.dataUrl); // read the values off the slip (best-effort)
     } catch (err) {
       playWarning();
-      toast.error("تعذّر رفع الصورة", err instanceof Error ? err.message : undefined);
+      toast.error(t("tplan.uploadFail", "تعذّر رفع الصورة"), err instanceof Error ? err.message : undefined);
     } finally {
       setPhotoBusy(false);
     }
@@ -214,7 +218,7 @@ export function TreatmentPlan({
       if (n > 0) {
         setCbc((prev) => ({ ...prev, ...values })); // OCR fills/overrides matched values
         playSuccess();
-        toast.success(`تمّت قراءة ${formatNum(n)} قيمة من التحليل — راجعها قبل الحفظ`);
+        toast.success(t("tplan.ocrToast", { n: formatNum(n), defaultValue: "تمّت قراءة {{n}} قيمة من التحليل — راجعها قبل الحفظ" }));
       }
     } catch {
       setOcrCount(0);
@@ -511,7 +515,7 @@ export function TreatmentPlan({
                 {done[s.id] && !active ? "✓" : formatNum(i + 1)}
               </span>
               <Icon size={15} className="hidden sm:block" />
-              {s.label}
+              {t(s.key, s.label)}
               {stepCount[s.id] > 0 && (
                 <span className={cn("rounded-full px-1.5 py-0.5 text-[10px] font-extrabold tabular-nums", active ? "bg-white/25 text-white" : "bg-brand-100 text-brand-700 dark:bg-brand-500/20 dark:text-brand-300")}>
                   {formatNum(stepCount[s.id])}
@@ -531,7 +535,7 @@ export function TreatmentPlan({
           ))}
         </div>
         <span className="shrink-0 text-2xs font-extrabold tabular-nums text-ink-subtle">
-          {doneCount === STEPS.length ? "اكتملت كل الخطوات 🎉" : `اكتمل ${formatNum(doneCount)} من ${formatNum(STEPS.length)}`}
+          {doneCount === STEPS.length ? t("tplan.allSteps", "اكتملت كل الخطوات 🎉") : t("tplan.progress", { done: formatNum(doneCount), total: formatNum(STEPS.length), defaultValue: "اكتمل {{done}} من {{total}}" })}
         </span>
       </div>
 
@@ -540,18 +544,18 @@ export function TreatmentPlan({
         <div className="min-h-[320px]">
           {step === "anatomy" && (
             <section className="space-y-2">
-              <StepTitle icon={Crosshair} title="حدّد المنطقة التشريحية" hint="اختياري — يربط الحالة بالعضو أو العظم بالاسم العلمي، حسب نوع الحيوان." />
+              <StepTitle icon={Crosshair} title={t("tplan.anatomyTitle", "حدّد المنطقة التشريحية")} hint={t("tplan.anatomyHint", "اختياري — يربط الحالة بالعضو أو العظم بالاسم العلمي، حسب نوع الحيوان.")} />
               <AnatomyMap value={focus} onChange={setFocus} species={species} />
             </section>
           )}
 
           {step === "symptoms" && (
             <section className="space-y-3">
-              <StepTitle icon={Activity} title="العلامات السريرية المُلاحَظة" hint="اختر قالب الشكوى أو تصفّح المجموعات — واضغط «وصف» لتفصيل العرض." />
+              <StepTitle icon={Activity} title={t("tplan.symptomsTitle", "العلامات السريرية المُلاحَظة")} hint={t("tplan.symptomsHint", "اختر قالب الشكوى أو تصفّح المجموعات — واضغط «وصف» لتفصيل العرض.")} />
               {qualifierRedFlags.length > 0 && (
                 <div className="space-y-2">
                   {qualifierRedFlags.map((rf) => (
-                    <Banner key={`${rf.symptomId}-${rf.qualifierId}`} tone="danger" icon={AlertTriangle} title={`علامة حمراء — ${symptomLabel(rf.symptomId)}`}>{rf.warn}</Banner>
+                    <Banner key={`${rf.symptomId}-${rf.qualifierId}`} tone="danger" icon={AlertTriangle} title={t("tplan.redFlagSym", { s: symptomLabel(rf.symptomId), defaultValue: "علامة حمراء — {{s}}" })}>{rf.warn}</Banner>
                   ))}
                 </div>
               )}
@@ -567,38 +571,38 @@ export function TreatmentPlan({
 
           {step === "labs" && (
             <section className="space-y-3">
-              <StepTitle icon={Droplets} title="نتيجة التحليل — تحليل الدم (CBC)" hint="اسحب مؤشر كل قيمة يمين/يسار — يظهر الطبيعي والمرتفع والمنخفض فوراً حسب نوع الحيوان." />
+              <StepTitle icon={Droplets} title={t("tplan.labsTitle", "نتيجة التحليل — تحليل الدم (CBC)")} hint={t("tplan.labsHint", "اسحب مؤشر كل قيمة يمين/يسار — يظهر الطبيعي والمرتفع والمنخفض فوراً حسب نوع الحيوان.")} />
               <CbcPanel species={species} value={cbc} onChange={setCbc} />
               <div className="rounded-2xl border border-dashed border-line bg-surface-1 p-3">
                 <input ref={fileRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={onPickPhoto} />
                 {labPhoto ? (
                   <div className="space-y-2.5">
                     <div className="flex items-center gap-3">
-                      <img src={labPhoto} alt="صورة التحليل" className="h-16 w-16 rounded-xl border border-line object-cover" />
+                      <img src={labPhoto} alt={t("tplan.labPhotoAlt", "صورة التحليل")} className="h-16 w-16 rounded-xl border border-line object-cover" />
                       <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-1.5 text-xs font-bold text-success-700 dark:text-success-300"><ImageIcon size={14} /> أُضيفت إلى المعرض</div>
-                        <div className="text-2xs text-ink-subtle">صُنّفت كتحليل مخبري في صور الحالة</div>
+                        <div className="flex items-center gap-1.5 text-xs font-bold text-success-700 dark:text-success-300"><ImageIcon size={14} /> {t("tplan.addedToGallery", "أُضيفت إلى المعرض")}</div>
+                        <div className="text-2xs text-ink-subtle">{t("tplan.filedAsLab", "صُنّفت كتحليل مخبري في صور الحالة")}</div>
                       </div>
-                      <button type="button" onClick={() => { playTap(); fileRef.current?.click(); }} disabled={photoBusy || ocrBusy} className="rounded-full border border-line px-3 py-1.5 text-2xs font-bold text-ink-muted transition hover:border-brand-300">تغيير</button>
+                      <button type="button" onClick={() => { playTap(); fileRef.current?.click(); }} disabled={photoBusy || ocrBusy} className="rounded-full border border-line px-3 py-1.5 text-2xs font-bold text-ink-muted transition hover:border-brand-300">{t("tplan.change", "تغيير")}</button>
                     </div>
                     {/* Auto-read status */}
                     {ocrBusy ? (
                       <div className="flex items-center gap-2 rounded-xl bg-brand-50 px-3 py-2 text-xs font-bold text-brand-700 dark:bg-brand-500/10 dark:text-brand-300">
-                        <Loader2 size={14} className="animate-spin" /> جارٍ قراءة قيم التحليل من الصورة…
+                        <Loader2 size={14} className="animate-spin" /> {t("tplan.ocrReading", "جارٍ قراءة قيم التحليل من الصورة…")}
                       </div>
                     ) : ocrCount !== null && ocrCount > 0 ? (
                       <div className="flex items-center gap-2 rounded-xl bg-success-50 px-3 py-2 text-xs font-bold text-success-700 dark:bg-success-500/10 dark:text-success-300">
-                        <Check size={14} /> قُرئت {formatNum(ocrCount)} قيمة تلقائياً — راجع المؤشرات بالأعلى وعدّل عند اللزوم.
+                        <Check size={14} /> {t("tplan.ocrDone", { n: formatNum(ocrCount), defaultValue: "قُرئت {{n}} قيمة تلقائياً — راجع المؤشرات بالأعلى وعدّل عند اللزوم." })}
                       </div>
                     ) : ocrCount === 0 ? (
                       <button type="button" onClick={() => { playTap(); if (labPhoto) void runOcr(labPhoto); }}
                         className="flex w-full items-center justify-center gap-2 rounded-xl bg-surface-2 py-2 text-xs font-bold text-ink-muted transition hover:text-ink">
-                        <ScanLine size={14} /> تعذّرت القراءة التلقائية — أعِد المحاولة أو أدخل القيم يدوياً
+                        <ScanLine size={14} /> {t("tplan.ocrRetry", "تعذّرت القراءة التلقائية — أعِد المحاولة أو أدخل القيم يدوياً")}
                       </button>
                     ) : (
                       <button type="button" onClick={() => { playTap(); if (labPhoto) void runOcr(labPhoto); }}
                         className="flex w-full items-center justify-center gap-2 rounded-xl bg-brand-50 py-2 text-xs font-bold text-brand-700 transition hover:bg-brand-100 dark:bg-brand-500/10 dark:text-brand-300">
-                        <ScanLine size={14} /> اقرأ القيم من الصورة تلقائياً
+                        <ScanLine size={14} /> {t("tplan.ocrRun", "اقرأ القيم من الصورة تلقائياً")}
                       </button>
                     )}
                   </div>
@@ -606,7 +610,7 @@ export function TreatmentPlan({
                   <button type="button" onClick={() => { playTap(); fileRef.current?.click(); }} disabled={photoBusy || !petId}
                     className="flex w-full items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-bold text-brand-700 transition hover:bg-brand-50 disabled:opacity-50 dark:text-brand-300 dark:hover:bg-brand-500/10">
                     {photoBusy ? <Loader2 size={16} className="animate-spin" /> : <Camera size={16} />}
-                    {photoBusy ? "جارٍ الرفع…" : "صوّر ورقة التحليل — تُقرأ القيم تلقائياً"}
+                    {photoBusy ? t("tplan.uploading", "جارٍ الرفع…") : t("tplan.snapLab", "صوّر ورقة التحليل — تُقرأ القيم تلقائياً")}
                   </button>
                 )}
               </div>
@@ -651,8 +655,8 @@ export function TreatmentPlan({
         <div className="flex items-start gap-2 rounded-2xl border border-warn-200 bg-warn-50 p-3 text-xs dark:border-warn-500/30 dark:bg-warn-500/10">
           <AlertTriangle size={16} className="mt-0.5 shrink-0 text-warn-600 dark:text-warn-300" />
           <div className="min-w-0 leading-relaxed text-warn-800 dark:text-warn-200">
-            <div className="font-extrabold">في أدوية بدون جرعة: {doseless.map((r) => r.name.trim()).join("، ")}</div>
-            <div className="mt-0.5">رح تطلع للممرض بجدول الجرعات <span className="font-extrabold">بدون كمية</span>. ارجع كمّل الجرعة، أو اضغط «حفظ» مرة ثانية إذا هذا مقصود.</div>
+            <div className="font-extrabold">{t("tplan.doselessTitle", { list: doseless.map((r) => r.name.trim()).join("، "), defaultValue: "في أدوية بدون جرعة: {{list}}" })}</div>
+            <div className="mt-0.5">{t("tplan.doselessBody1", "رح تطلع للممرض بجدول الجرعات ")}<span className="font-extrabold">{t("tplan.doselessNoQty", "بدون كمية")}</span>{t("tplan.doselessBody2", ". ارجع كمّل الجرعة، أو اضغط «حفظ» مرة ثانية إذا هذا مقصود.")}</div>
           </div>
         </div>
       )}
@@ -660,16 +664,16 @@ export function TreatmentPlan({
       {/* Footer nav + save */}
       <div className="flex items-center gap-2 border-t border-line pt-3">
         <button type="button" onClick={() => go(-1)} disabled={stepIndex === 0} className="inline-flex items-center gap-1 rounded-full px-3 py-2 text-sm font-bold text-ink-muted transition hover:text-ink disabled:opacity-30">
-          <ChevronRight size={16} className="rtl:hidden" /><ChevronLeft size={16} className="ltr:hidden" /> السابق
+          <ChevronRight size={16} className="rtl:hidden" /><ChevronLeft size={16} className="ltr:hidden" /> {t("tplan.prev", "السابق")}
         </button>
-        <span className="hidden text-2xs font-semibold text-ink-subtle sm:block">Ctrl+Enter = {stepIndex < STEPS.length - 1 ? "التالي" : "حفظ"}</span>
+        <span className="hidden text-2xs font-semibold text-ink-subtle sm:block">Ctrl+Enter = {stepIndex < STEPS.length - 1 ? t("tplan.next", "التالي") : t("tplan.save", "حفظ")}</span>
         {stepIndex < STEPS.length - 1 ? (
           <Button className="ms-auto" rightIcon={<ChevronLeft size={16} className="rtl:block ltr:hidden" />} onClick={() => go(1)}>
-            التالي: {STEPS[stepIndex + 1].label}
+            {t("tplan.nextStep", { s: t(STEPS[stepIndex + 1].key, STEPS[stepIndex + 1].label), defaultValue: "التالي: {{s}}" })}
           </Button>
         ) : (
           <Button className="ms-auto" leftIcon={<Check size={18} />} disabled={!canSave} loading={busy} onClick={trySave}>
-            حفظ التشخيص وخطة العلاج
+            {t("tplan.saveAll", "حفظ التشخيص وخطة العلاج")}
           </Button>
         )}
       </div>
@@ -695,6 +699,7 @@ function DiagnosisStep({
   /** Browse opens on the case's own system (anatomy focus → top differential), not a fixed default. */
   initialSystem?: string;
 }) {
+  const { t } = useTranslation();
   const [sys, setSys] = useState<string>(
     (initialSystem && BODY_SYSTEMS.some((s) => s.id === initialSystem) ? initialSystem : undefined) ?? BODY_SYSTEMS[0]?.id ?? "digestive",
   );
@@ -722,12 +727,12 @@ function DiagnosisStep({
 
   return (
     <section className="space-y-4">
-      <StepTitle icon={Stethoscope} title="التشخيص — حسب نوع الحيوان" hint="مرشّحات مبنية على الأعراض، أو تصفّح حسب الجهاز — الأمراض المعروضة تخص هذا النوع فقط." />
+      <StepTitle icon={Stethoscope} title={t("tplan.dxTitle", "التشخيص — حسب نوع الحيوان")} hint={t("tplan.dxHint", "مرشّحات مبنية على الأعراض، أو تصفّح حسب الجهاز — الأمراض المعروضة تخص هذا النوع فقط.")} />
 
       {(zoonotic.length > 0 || reportable.length > 0 || redFlags.length > 0) && (
         <div className="space-y-2">
-          {reportable.length > 0 && <Banner tone="danger" icon={ShieldAlert} title="مرض واجب التبليغ">{reportable.map((d) => d.name).join("، ")} — بلّغ الجهات الصحية فوراً.</Banner>}
-          {zoonotic.length > 0 && <Banner tone="warn" icon={Biohazard} title="ينتقل للإنسان (Zoonotic)">{zoonotic.map((d) => d.name).join("، ")} — التزم إجراءات الحماية والنظافة.</Banner>}
+          {reportable.length > 0 && <Banner tone="danger" icon={ShieldAlert} title={t("tplan.reportableTitle", "مرض واجب التبليغ")}>{t("tplan.reportableMsg", { list: reportable.map((d) => d.name).join("، "), defaultValue: "{{list}} — بلّغ الجهات الصحية فوراً." })}</Banner>}
+          {zoonotic.length > 0 && <Banner tone="warn" icon={Biohazard} title={t("tplan.zoonoticTitle", "ينتقل للإنسان (Zoonotic)")}>{t("tplan.zoonoticMsg", { list: zoonotic.map((d) => d.name).join("، "), defaultValue: "{{list}} — التزم إجراءات الحماية والنظافة." })}</Banner>}
           {redFlags.map((d) => <Banner key={d.id} tone="danger" icon={AlertTriangle} title={d.name}>{d.redFlag}</Banner>)}
         </div>
       )}
@@ -735,7 +740,7 @@ function DiagnosisStep({
       {/* Differential candidates (species-filtered, symptom-ranked) */}
       {differential.length > 0 && (
         <div className="space-y-2">
-          <div className="text-2xs font-bold uppercase tracking-wide text-ink-subtle">مرشّحات حسب الأعراض</div>
+          <div className="text-2xs font-bold uppercase tracking-wide text-ink-subtle">{t("tplan.bySymptoms", "مرشّحات حسب الأعراض")}</div>
           <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
             {differential.map((d) => (
               <DiseaseCard key={d.id} d={d} picked={isDiseasePicked(d)} onToggle={() => toggleDisease(d)} onApply={() => applyProtocol(d)} pct={Math.round((d.score / topScore) * 100)} />
@@ -746,7 +751,7 @@ function DiagnosisStep({
 
       {/* Browse by system — species-filtered */}
       <div className="border-t border-line pt-3">
-        <div className="mb-2 text-2xs font-bold uppercase tracking-wide text-ink-subtle">تصفّح حسب الجهاز</div>
+        <div className="mb-2 text-2xs font-bold uppercase tracking-wide text-ink-subtle">{t("tplan.bySystem", "تصفّح حسب الجهاز")}</div>
         <div className="mb-3 flex flex-wrap gap-2">
           {BODY_SYSTEMS.map((s) => {
             const on = sys === s.id;
@@ -767,7 +772,7 @@ function DiagnosisStep({
           </div>
         ) : (
           <div className="rounded-2xl border border-dashed border-line bg-surface-1 p-3 text-center text-2xs text-ink-subtle">
-            لا أمراض مسجّلة لهذا الجهاز في هذا النوع — اكتب تشخيصاً يدوياً بالأسفل.
+            {t("tplan.noDiseases", "لا أمراض مسجّلة لهذا الجهاز في هذا النوع — اكتب تشخيصاً يدوياً بالأسفل.")}
           </div>
         )}
 
@@ -794,7 +799,7 @@ function DiagnosisStep({
               }
               if (e.key === "Escape") setQ("");
             }}
-            placeholder="ابحث عن أي تشخيص… (بكل الأجهزة، أو اكتبه يدوياً)"
+            placeholder={t("tplan.searchDx", "ابحث عن أي تشخيص… (بكل الأجهزة، أو اكتبه يدوياً)")}
             className="input h-10 w-full pe-9 text-sm" />
         </div>
         {q.trim() && (
@@ -809,7 +814,7 @@ function DiagnosisStep({
               </button>
             ))}
             <button type="button" onClick={() => addManual(q)} className="inline-flex items-center gap-1.5 rounded-full border border-dashed border-brand-400 bg-brand-50 px-3 py-1.5 text-xs font-bold text-brand-700 transition hover:bg-brand-100 dark:bg-brand-500/10 dark:text-brand-300">
-              <Plus size={13} /> إضافة «{q.trim()}» في {systemById(sys)?.name}
+              <Plus size={13} /> {t("tplan.addDx", { q: q.trim(), sys: systemById(sys)?.name, defaultValue: "إضافة «{{q}}» في {{sys}}" })}
             </button>
           </div>
         )}
@@ -817,14 +822,15 @@ function DiagnosisStep({
 
       {/* Doctor notes */}
       <div className="rounded-2xl border border-brand-200 bg-gradient-to-b from-brand-50/50 to-transparent p-3.5 dark:border-brand-500/25">
-        <div className="mb-2 flex items-center gap-1.5 text-sm font-extrabold text-brand-700 dark:text-brand-300"><FileText size={16} /> ملاحظات الطبيب السريرية</div>
-        <textarea rows={3} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="ملاحظاتك، الفحص السريري، الخطة، ما تنتظره…" className="input min-h-[84px] w-full resize-y text-sm leading-relaxed" />
+        <div className="mb-2 flex items-center gap-1.5 text-sm font-extrabold text-brand-700 dark:text-brand-300"><FileText size={16} /> {t("tplan.notesTitle", "ملاحظات الطبيب السريرية")}</div>
+        <textarea rows={3} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder={t("tplan.notesPh", "ملاحظاتك، الفحص السريري، الخطة، ما تنتظره…")} className="input min-h-[84px] w-full resize-y text-sm leading-relaxed" />
       </div>
     </section>
   );
 }
 
 function DiseaseCard({ d, picked, onToggle, onApply, pct }: { d: Disease & { match?: number }; picked: boolean; onToggle: () => void; onApply: () => void; pct?: number }) {
+  const { t } = useTranslation();
   return (
     <div className={cn("rounded-2xl border p-3 transition", picked ? "border-brand-500 bg-brand-50/70 dark:bg-brand-500/10" : "border-line bg-surface-1 hover:border-brand-300")}>
       <button type="button" onClick={onToggle} className="flex w-full items-start gap-2 text-start" aria-pressed={picked}>
@@ -837,10 +843,10 @@ function DiseaseCard({ d, picked, onToggle, onApply, pct }: { d: Disease & { mat
             {d.latin && <span className="text-2xs italic text-ink-subtle">{d.latin}</span>}
           </span>
           <span className="mt-1 flex flex-wrap items-center gap-1">
-            {d.protocol?.length ? <span className="rounded-md bg-brand-100 px-1.5 py-0.5 text-[10px] font-bold text-brand-700 dark:bg-brand-500/20 dark:text-brand-300">✦ بروتوكول ({formatNum(d.protocol.length)})</span> : null}
-            {d.zoonotic && <span className="rounded-md bg-warn-100 px-1.5 py-0.5 text-[10px] font-bold text-warn-700 dark:bg-warn-500/20 dark:text-warn-200">ينتقل للإنسان</span>}
-            {d.reportable && <span className="rounded-md bg-danger-50 px-1.5 py-0.5 text-[10px] font-bold text-danger-700 dark:bg-danger-500/15 dark:text-danger-300">تبليغ</span>}
-            {d.redFlag && <span className="rounded-md bg-danger-50 px-1.5 py-0.5 text-[10px] font-bold text-danger-700 dark:bg-danger-500/15 dark:text-danger-300">علامة حمراء</span>}
+            {d.protocol?.length ? <span className="rounded-md bg-brand-100 px-1.5 py-0.5 text-[10px] font-bold text-brand-700 dark:bg-brand-500/20 dark:text-brand-300">{t("tplan.protocolBadge", { n: formatNum(d.protocol.length), defaultValue: "✦ بروتوكول ({{n}})" })}</span> : null}
+            {d.zoonotic && <span className="rounded-md bg-warn-100 px-1.5 py-0.5 text-[10px] font-bold text-warn-700 dark:bg-warn-500/20 dark:text-warn-200">{t("tplan.zoonoticBadge", "ينتقل للإنسان")}</span>}
+            {d.reportable && <span className="rounded-md bg-danger-50 px-1.5 py-0.5 text-[10px] font-bold text-danger-700 dark:bg-danger-500/15 dark:text-danger-300">{t("tplan.reportableBadge", "تبليغ")}</span>}
+            {d.redFlag && <span className="rounded-md bg-danger-50 px-1.5 py-0.5 text-[10px] font-bold text-danger-700 dark:bg-danger-500/15 dark:text-danger-300">{t("tplan.redFlagBadge", "علامة حمراء")}</span>}
             {typeof pct === "number" && typeof d.match === "number" && (
               <span className="ms-auto inline-flex items-center gap-1 text-[10px] font-bold tabular-nums text-ink-subtle">
                 <span className="h-1.5 w-10 overflow-hidden rounded-full bg-surface-2"><span className="block h-full rounded-full bg-brand-500" style={{ width: `${pct}%` }} /></span>
@@ -851,7 +857,7 @@ function DiseaseCard({ d, picked, onToggle, onApply, pct }: { d: Disease & { mat
       </button>
       {d.protocol?.length ? (
         <button type="button" onClick={onApply} className="mt-2 inline-flex items-center gap-1 rounded-full border border-dashed border-brand-300 bg-brand-50 px-2.5 py-1 text-2xs font-bold text-brand-700 transition hover:bg-brand-100 dark:bg-brand-500/10 dark:text-brand-300">
-          <Sparkles size={12} /> أضِف بروتوكول العلاج
+          <Sparkles size={12} /> {t("tplan.applyProtocol", "أضِف بروتوكول العلاج")}
         </button>
       ) : null}
     </div>
@@ -882,6 +888,7 @@ function TreatmentStep({
   planDays: number;
   setAllDays: (d: number) => void;
 }) {
+  const { t } = useTranslation();
   // ONE writing surface: the drug-name field itself searches while the doctor
   // types. No separate search box to learn — write the name, pick a match (or
   // keep the free text and save it to the catalog forever).
@@ -895,10 +902,10 @@ function TreatmentStep({
     const seen = new Set(base.map((m) => m.name.toLowerCase()));
     const stockOnly = stockMeds
       .filter((p) => !seen.has(p.name.toLowerCase()))
-      .map((p) => ({ name: p.name, type: "من مخزون العيادة" }));
+      .map((p) => ({ name: p.name, type: t("tplan.stockType", "من مخزون العيادة") }));
     return [...stockOnly, ...base];
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stockMeds, medsVersion]);
+  }, [stockMeds, medsVersion, t]);
   // The search haystack folds Arabic orthography AND includes each drug's
   // monograph aliases — «اموكس» finds «Amoxicillin 250mg» because the formulary
   // knows it as أموكسيسيلين. Free-typed drugs lose the safety net, so the
@@ -947,13 +954,13 @@ function TreatmentStep({
 
   return (
     <section className="space-y-3">
-      <StepTitle icon={CalendarClock} title="خطة العلاج — متزامنة مع أدوية العيادة" hint="اكتب اسم الدواء بمكانه مباشرة — يبحث بالكتالوج وأنت تكتب، والجرعة تُحسب من الوزن تلقائياً." />
+      <StepTitle icon={CalendarClock} title={t("tplan.txTitle", "خطة العلاج — متزامنة مع أدوية العيادة")} hint={t("tplan.txHint", "اكتب اسم الدواء بمكانه مباشرة — يبحث بالكتالوج وأنت تكتب، والجرعة تُحسب من الوزن تلقائياً.")} />
 
       {/* Plan-wide safety sweep — the blocking findings, gathered above the fold */}
       {safety.some((s) => s.alerts.some((a) => a.blocking)) && (
         <div className="rounded-2xl border border-danger-300 bg-danger-50 p-3 dark:border-danger-500/40 dark:bg-danger-500/10">
           <div className="mb-2 flex items-center gap-1.5 text-2xs font-black text-danger-700 dark:text-danger-300">
-            <ShieldAlert size={14} /> أوقف — في خطر دوائي بهالخطة
+            <ShieldAlert size={14} /> {t("tplan.safetyStop", "أوقف — في خطر دوائي بهالخطة")}
           </div>
           <div className="space-y-1.5">
             {safety.flatMap((s) => s.alerts.filter((a) => a.blocking).map((a) => (
@@ -967,7 +974,7 @@ function TreatmentStep({
       {interactions.length > 0 && (
         <div className="space-y-2">
           {interactions.map((it, i) => (
-            <Banner key={i} tone={it.severity === "major" ? "danger" : "warn"} icon={AlertTriangle} title={`تداخل دوائي — ${it.a} + ${it.b}`}>{it.note}</Banner>
+            <Banner key={i} tone={it.severity === "major" ? "danger" : "warn"} icon={AlertTriangle} title={t("tplan.interactionTitle", { a: it.a, b: it.b, defaultValue: "تداخل دوائي — {{a}} + {{b}}" })}>{it.note}</Banner>
           ))}
         </div>
       )}
@@ -976,19 +983,19 @@ function TreatmentStep({
       <div className="flex items-center gap-2.5 rounded-2xl border border-violet-200 bg-violet-50 p-3 dark:border-violet-500/30 dark:bg-violet-500/10">
         <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-violet-100 text-violet-600 dark:bg-violet-500/20 dark:text-violet-300"><Scale size={17} /></span>
         <label className="flex items-center gap-2 text-sm font-bold text-ink">
-          وزن الحيوان
+          {t("tplan.weightLabel", "وزن الحيوان")}
           <input type="number" min={0} step="0.1" inputMode="decimal" value={weight === undefined ? "" : String(weight)}
             onChange={(e) => { const v = Number(e.target.value); setWeight(e.target.value === "" || Number.isNaN(v) || v <= 0 ? undefined : v); }}
             className="input h-9 w-24 px-2 py-0 text-center text-base font-extrabold tabular-nums" placeholder="—" />
-          كغ
+          {t("tplan.kg", "كغ")}
         </label>
-        <span className="text-2xs text-ink-subtle">{weight ? "تُحسب الجرعات تلقائياً بالوزن" : "أدخل الوزن لحساب الجرعات تلقائياً"}</span>
+        <span className="text-2xs text-ink-subtle">{weight ? t("tplan.weightAuto", "تُحسب الجرعات تلقائياً بالوزن") : t("tplan.weightPrompt", "أدخل الوزن لحساب الجرعات تلقائياً")}</span>
       </div>
 
       {/* Plan-wide course length — set once here, stamps every drug row. */}
       <div className="flex flex-wrap items-center gap-2.5 rounded-2xl border border-brand-200 bg-brand-50/70 p-3 dark:border-brand-500/25 dark:bg-brand-500/10">
         <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-brand-100 text-brand-600 dark:bg-brand-500/20 dark:text-brand-300"><CalendarClock size={17} /></span>
-        <span className="text-sm font-bold text-ink">مدة الخطة</span>
+        <span className="text-sm font-bold text-ink">{t("tplan.planDays", "مدة الخطة")}</span>
         <span className="inline-flex items-center gap-1">
           {[3, 5, 7, 10, 14].map((d) => (
             <button key={d} type="button" onClick={() => { playTap(); setAllDays(d); }}
@@ -1001,19 +1008,19 @@ function TreatmentStep({
           <input type="number" min={1} max={365} inputMode="numeric" value={planDays === 0 ? "" : String(planDays)}
             onChange={(e) => { const v = Math.max(0, Number(e.target.value) || 0); if (v > 0) setAllDays(v); }}
             className="input h-9 w-16 px-2 py-0 text-center text-sm font-bold tabular-nums" />
-          يوم
+          {t("tplan.day", "يوم")}
         </label>
-        <span className="text-2xs text-ink-subtle">تنطبق على كل الأدوية — وتكدر تعدّل أي دواء لوحده</span>
+        <span className="text-2xs text-ink-subtle">{t("tplan.planDaysHint", "تنطبق على كل الأدوية — وتكدر تعدّل أي دواء لوحده")}</span>
       </div>
 
       {/* Protocols of the diagnoses picked one step ago — applied from here, no back-trip */}
       {protocolDiseases.length > 0 && (
         <div className="flex flex-wrap items-center gap-1.5 rounded-2xl border border-brand-200 bg-brand-50/70 p-3 dark:border-brand-500/25 dark:bg-brand-500/10">
-          <span className="me-1 inline-flex items-center gap-1 text-2xs font-extrabold text-brand-700 dark:text-brand-300"><Sparkles size={13} /> بروتوكولات تشخيصاتك:</span>
+          <span className="me-1 inline-flex items-center gap-1 text-2xs font-extrabold text-brand-700 dark:text-brand-300"><Sparkles size={13} /> {t("tplan.yourProtocols", "بروتوكولات تشخيصاتك:")}</span>
           {protocolDiseases.map((d) => (
             <button key={d.id} type="button" onClick={() => applyProtocol(d)}
               className="inline-flex items-center gap-1 rounded-full border border-brand-300 bg-surface-1 px-3 py-1.5 text-xs font-bold text-brand-700 transition hover:bg-brand-100 dark:text-brand-300 dark:hover:bg-brand-500/15">
-              ✦ {d.name} ({formatNum(d.protocol!.length)} أدوية)
+              ✦ {d.name} {t("tplan.drugsCount", { n: formatNum(d.protocol!.length), defaultValue: "({{n}} أدوية)" })}
             </button>
           ))}
         </div>
@@ -1022,7 +1029,7 @@ function TreatmentStep({
       {/* The doctor's own habit — last drugs they prescribed on this device */}
       {recentPicks.length > 0 && (
         <div className="rounded-2xl border border-line bg-surface-2/60 p-3">
-          <div className="mb-2 flex items-center gap-1.5 text-2xs font-extrabold text-ink-muted"><History size={13} /> أدويتك الأخيرة — ضغطة وحدة</div>
+          <div className="mb-2 flex items-center gap-1.5 text-2xs font-extrabold text-ink-muted"><History size={13} /> {t("tplan.recentDrugs", "أدويتك الأخيرة — ضغطة وحدة")}</div>
           <div className="flex flex-wrap gap-1.5">
             {recentPicks.map((n) => (
               <button key={n} type="button" onClick={() => addDrug(n)}
@@ -1037,13 +1044,13 @@ function TreatmentStep({
       {/* In-stock quick picks */}
       {stockMeds.length > 0 && (
         <div className="rounded-2xl border border-success-100 bg-success-50 p-3 dark:border-success-500/25 dark:bg-success-500/10">
-          <div className="mb-2 flex items-center gap-1.5 text-2xs font-extrabold text-success-700 dark:text-success-300"><Check size={13} /> متوفّر بمخزون العيادة — اضغط للإضافة</div>
+          <div className="mb-2 flex items-center gap-1.5 text-2xs font-extrabold text-success-700 dark:text-success-300"><Check size={13} /> {t("tplan.inStock", "متوفّر بمخزون العيادة — اضغط للإضافة")}</div>
           <div className="flex flex-wrap gap-1.5">
             {stockMeds.slice(0, 16).map((p) => (
               <button key={p.id} type="button" onClick={() => addDrug(p.name)}
                 className="inline-flex items-center gap-1.5 rounded-full border border-success-200 bg-surface-1 px-3 py-1.5 text-xs font-bold text-ink transition hover:border-success-400 dark:border-success-500/30">
                 {p.name}
-                <span className="rounded-full bg-success-100 px-1.5 py-0.5 text-[10px] font-extrabold text-success-700 dark:bg-success-500/20 dark:text-success-300">{formatNum(p.stock)} متوفّر</span>
+                <span className="rounded-full bg-success-100 px-1.5 py-0.5 text-[10px] font-extrabold text-success-700 dark:bg-success-500/20 dark:text-success-300">{t("tplan.nAvailable", { n: formatNum(p.stock), defaultValue: "{{n}} متوفّر" })}</span>
               </button>
             ))}
           </div>
@@ -1061,11 +1068,13 @@ function TreatmentStep({
             ? calcDose({ mgPerKg: r.mgPerKg, weightKg: weight, strength: r.strength, solid: r.solid ?? matchMonograph(r.name)?.solid, freq: appFreqHours(r.freq) })
             : undefined;
           const doseDisplay = c
-            ? (c.mlRounded ? `${formatNum(c.mlRounded)} مل` : c.tabletsLabel && c.tablets ? c.tabletsLabel : `${formatNum(Math.round(c.mg * 100) / 100)} mg`)
+            ? (c.mlRounded ? t("tplan.ml", { n: formatNum(c.mlRounded), defaultValue: "{{n}} مل" }) : c.tabletsLabel && c.tablets ? c.tabletsLabel : `${formatNum(Math.round(c.mg * 100) / 100)} mg`)
             : r.dose.trim();
-          const freqLabel = FREQS.find((f) => f.id === r.freq)?.label ?? "";
+          const freqObj = FREQS.find((f) => f.id === r.freq);
+          const freqLabel = freqObj ? t(freqObj.key, freqObj.label) : "";
+          const routeObj = ROUTES.find((x) => x.id === r.route);
           const rx = r.name.trim()
-            ? [doseDisplay || null, routeLabel(r.route) || null, freqLabel, r.freq !== "prn" && r.days ? `لمدة ${formatNum(r.days)} يوم` : null, doses ? `${formatNum(doses)} جرعة` : null].filter(Boolean).join(" · ")
+            ? [doseDisplay || null, routeObj ? t(routeObj.key, routeObj.label) : null, freqLabel, r.freq !== "prn" && r.days ? t("tplan.forDays", { n: formatNum(r.days), defaultValue: "لمدة {{n}} يوم" }) : null, doses ? t("tplan.dosesCount", { n: formatNum(doses), defaultValue: "{{n}} جرعة" }) : null].filter(Boolean).join(" · ")
             : "";
           return (
             <div key={r.id} className="rounded-2xl border border-line bg-surface-1 shadow-soft">
@@ -1089,11 +1098,11 @@ function TreatmentStep({
                     }
                     if (e.key === "Escape" && box.open) { e.stopPropagation(); setBox({ rowId: null, open: false }); }
                   }}
-                  placeholder="اكتب اسم الدواء — يبحث بالكتالوج وأنت تكتب"
+                  placeholder={t("tplan.drugPh", "اكتب اسم الدواء — يبحث بالكتالوج وأنت تكتب")}
                   className="input h-9 flex-1 py-0 text-[15px] font-bold"
                 />
-                {stk && <span className="hidden shrink-0 rounded-lg bg-success-50 px-2 py-1 text-[10px] font-bold text-success-700 dark:bg-success-500/15 dark:text-success-300 sm:inline">✓ متوفّر · {formatNum(stk.stock)}</span>}
-                <button type="button" onClick={() => removeRow(r.id)} aria-label="إزالة" className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-ink-subtle transition hover:bg-danger-50 hover:text-danger-600"><X size={15} /></button>
+                {stk && <span className="hidden shrink-0 rounded-lg bg-success-50 px-2 py-1 text-[10px] font-bold text-success-700 dark:bg-success-500/15 dark:text-success-300 sm:inline">{t("tplan.inStockN", { n: formatNum(stk.stock), defaultValue: "✓ متوفّر · {{n}}" })}</span>}
+                <button type="button" onClick={() => removeRow(r.id)} aria-label={t("tplan.remove", "إزالة")} className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-ink-subtle transition hover:bg-danger-50 hover:text-danger-600"><X size={15} /></button>
 
                 {/* Live suggestions under the name field */}
                 {box.open && box.rowId === r.id && (matches.length > 0 || canSaveToCatalog) && (
@@ -1109,7 +1118,7 @@ function TreatmentStep({
                             {m.ar && <span className="ms-2 text-2xs font-semibold text-ink-subtle">{m.ar}</span>}
                           </span>
                           {i === 0 && <span className="rounded-md bg-brand-100 px-1.5 py-0.5 text-[10px] font-bold text-brand-700 dark:bg-brand-500/20 dark:text-brand-300">Enter ↵</span>}
-                          {mstk ? <span className="rounded-full bg-success-50 px-2 py-0.5 text-[10px] font-bold text-success-700 dark:bg-success-500/15 dark:text-success-300">✓ متوفّر</span> : null}
+                          {mstk ? <span className="rounded-full bg-success-50 px-2 py-0.5 text-[10px] font-bold text-success-700 dark:bg-success-500/15 dark:text-success-300">{t("tplan.inStockBadge", "✓ متوفّر")}</span> : null}
                           <span className="text-2xs text-ink-subtle">{m.type}</span>
                         </button>
                       );
@@ -1118,7 +1127,7 @@ function TreatmentStep({
                       <button type="button" onMouseDown={(e) => { e.preventDefault(); saveToCatalog(r.id); }}
                         className="flex w-full items-center gap-2 border-t border-dashed border-line px-3 py-2.5 text-start transition hover:bg-brand-50 dark:hover:bg-brand-500/10">
                         <Plus size={14} className="shrink-0 text-brand-600" />
-                        <span className="flex-1 text-sm font-bold text-brand-700 dark:text-brand-300">احفظ «{r.name.trim()}» بالكتالوج — يبقى للأبد</span>
+                        <span className="flex-1 text-sm font-bold text-brand-700 dark:text-brand-300">{t("tplan.saveToCatalog", { name: r.name.trim(), defaultValue: "احفظ «{{name}}» بالكتالوج — يبقى للأبد" })}</span>
                       </button>
                     )}
                   </div>
@@ -1146,10 +1155,10 @@ function TreatmentStep({
 
                 {/* Route of administration */}
                 <div className="flex flex-wrap items-center gap-1.5">
-                  <span className="text-2xs font-bold text-ink-subtle">طريقة الإعطاء:</span>
+                  <span className="text-2xs font-bold text-ink-subtle">{t("tplan.routeLabel", "طريقة الإعطاء:")}</span>
                   {ROUTES.map((rt) => (
                     <button key={rt.id} type="button" onClick={() => { playTap(); setRow(r.id, { route: r.route === rt.id ? undefined : rt.id }); }}
-                      className={cn("rounded-full border px-2.5 py-1 text-2xs font-bold transition", r.route === rt.id ? "border-brand-500 bg-brand-600 text-white shadow-soft" : "border-line bg-surface-2 text-ink-muted hover:border-brand-300")}>{rt.label}</button>
+                      className={cn("rounded-full border px-2.5 py-1 text-2xs font-bold transition", r.route === rt.id ? "border-brand-500 bg-brand-600 text-white shadow-soft" : "border-line bg-surface-2 text-ink-muted hover:border-brand-300")}>{t(rt.key, rt.label)}</button>
                   ))}
                 </div>
 
@@ -1158,18 +1167,18 @@ function TreatmentStep({
                   <div className="inline-flex flex-wrap items-center gap-1 rounded-full border border-line bg-surface-2 p-0.5">
                     {FREQS.map((f) => (
                       <button key={f.id} type="button" onClick={() => { playTap(); setRow(r.id, { freq: f.id }); }}
-                        className={cn("rounded-full px-2.5 py-1 text-2xs font-bold transition", r.freq === f.id ? "bg-brand-600 text-white shadow-soft" : "text-ink-muted hover:text-ink")}>{f.label}</button>
+                        className={cn("rounded-full px-2.5 py-1 text-2xs font-bold transition", r.freq === f.id ? "bg-brand-600 text-white shadow-soft" : "text-ink-muted hover:text-ink")}>{t(f.key, f.label)}</button>
                     ))}
                   </div>
                   {r.freq !== "prn" && (
                     <label className="inline-flex items-center gap-1.5 text-2xs font-semibold text-ink-muted">
-                      المدة
+                      {t("tplan.duration", "المدة")}
                       <input type="number" min={1} max={365} inputMode="numeric" value={r.days === 0 ? "" : String(r.days)} onChange={(e) => setRow(r.id, { days: Math.max(0, Number(e.target.value) || 0) })} className="input h-8 w-14 px-2 py-0 text-center text-sm font-bold tabular-nums" />
-                      يوم
-                      {r.days !== planDays && <span className="rounded-md bg-warn-50 px-1.5 py-0.5 text-[10px] font-bold text-warn-700 dark:bg-warn-500/15 dark:text-warn-300">مختلفة عن الخطة</span>}
+                      {t("tplan.day", "يوم")}
+                      {r.days !== planDays && <span className="rounded-md bg-warn-50 px-1.5 py-0.5 text-[10px] font-bold text-warn-700 dark:bg-warn-500/15 dark:text-warn-300">{t("tplan.differsFromPlan", "مختلفة عن الخطة")}</span>}
                     </label>
                   )}
-                  {doses > 0 && <span className="ms-auto inline-flex items-center gap-1 rounded-full bg-success-50 px-2.5 py-1 text-2xs font-bold text-success-700 dark:bg-success-500/15 dark:text-success-300">{formatNum(doses)} جرعة</span>}
+                  {doses > 0 && <span className="ms-auto inline-flex items-center gap-1 rounded-full bg-success-50 px-2.5 py-1 text-2xs font-bold text-success-700 dark:bg-success-500/15 dark:text-success-300">{t("tplan.dosesCount", { n: formatNum(doses), defaultValue: "{{n}} جرعة" })}</span>}
                 </div>
 
                 {/* Plain-language prescription line — the doctor reads the full instruction at a glance */}
@@ -1186,7 +1195,7 @@ function TreatmentStep({
         })}
       </div>
       <button type="button" onClick={() => addDrug("")} className="mt-1 inline-flex items-center gap-1.5 rounded-full border border-dashed border-brand-300 bg-brand-50 px-4 py-2 text-xs font-bold text-brand-700 transition hover:bg-brand-100 dark:bg-brand-500/10 dark:text-brand-300">
-        <Plus size={14} /> إضافة دواء / علاج يدوياً
+        <Plus size={14} /> {t("tplan.addDrug", "إضافة دواء / علاج يدوياً")}
       </button>
     </section>
   );
@@ -1201,35 +1210,36 @@ function CaseSummaryRail({
   diagnoses: Diagnosis[]; rows: PlanRow[]; doseText: (r: PlanRow) => string; dosesOf: (r: PlanRow) => number;
   weight?: number; notes: string; cbcCount: number;
 }) {
+  const { t } = useTranslation();
   const totalDoses = rows.reduce((s, r) => s + dosesOf(r), 0);
   const empty = !focus && !symptoms.length && !diagnoses.length && !rows.length && !notes.trim() && !cbcCount;
   return (
     <div className="sticky top-3 space-y-3.5 rounded-2xl border border-line bg-surface-2 p-4">
-      <h3 className="flex items-center gap-2 text-xs font-black uppercase tracking-wide text-brand-700 dark:text-brand-300"><ClipboardList size={15} /> ملخّص الحالة</h3>
+      <h3 className="flex items-center gap-2 text-xs font-black uppercase tracking-wide text-brand-700 dark:text-brand-300"><ClipboardList size={15} /> {t("tplan.summary", "ملخّص الحالة")}</h3>
       {empty ? (
-        <p className="text-2xs leading-relaxed text-ink-subtle">تُجمَّع الحالة هنا وأنت تعمل — التركيز، الأعراض، التشخيص، والخطة.</p>
+        <p className="text-2xs leading-relaxed text-ink-subtle">{t("tplan.summaryEmpty", "تُجمَّع الحالة هنا وأنت تعمل — التركيز، الأعراض، التشخيص، والخطة.")}</p>
       ) : (
         <>
-          {focus && <RailItem label="التركيز التشريحي"><span className="font-bold">{focus.structure ?? focus.region}</span>{focus.latin && <span className="text-ink-subtle"> · <i>{focus.latin}</i></span>}</RailItem>}
+          {focus && <RailItem label={t("tplan.railFocus", "التركيز التشريحي")}><span className="font-bold">{focus.structure ?? focus.region}</span>{focus.latin && <span className="text-ink-subtle"> · <i>{focus.latin}</i></span>}</RailItem>}
           {symptoms.length > 0 && (
-            <RailItem label={`الأعراض (${formatNum(symptoms.length)})`}>
+            <RailItem label={t("tplan.railSymptoms", { n: formatNum(symptoms.length), defaultValue: "الأعراض ({{n}})" })}>
               <span className="flex flex-wrap gap-1">
                 {symptoms.map((id) => { const s = qualSummary(id); return <span key={id} className="rounded-md border border-line bg-surface-1 px-1.5 py-0.5 text-2xs font-bold">{symptomLabel(id)}{s && <span className="font-semibold text-brand-600 dark:text-brand-300"> · {s}</span>}</span>; })}
               </span>
             </RailItem>
           )}
-          {cbcCount > 0 && <RailItem label="تحليل الدم"><span className="font-bold">CBC · {formatNum(cbcCount)} قيمة</span></RailItem>}
-          {diagnoses.length > 0 && <RailItem label="التشخيص"><span className="font-bold text-brand-700 dark:text-brand-300">{diagnoses.map((d) => d.disease).join("، ")}</span></RailItem>}
-          {notes.trim() && <RailItem label="ملاحظات الطبيب"><span className="line-clamp-2 text-ink-muted">{notes.trim()}</span></RailItem>}
+          {cbcCount > 0 && <RailItem label={t("tplan.railCbc", "تحليل الدم")}><span className="font-bold">{t("tplan.cbcValues", { n: formatNum(cbcCount), defaultValue: "CBC · {{n}} قيمة" })}</span></RailItem>}
+          {diagnoses.length > 0 && <RailItem label={t("tplan.railDx", "التشخيص")}><span className="font-bold text-brand-700 dark:text-brand-300">{diagnoses.map((d) => d.disease).join("، ")}</span></RailItem>}
+          {notes.trim() && <RailItem label={t("tplan.railNotes", "ملاحظات الطبيب")}><span className="line-clamp-2 text-ink-muted">{notes.trim()}</span></RailItem>}
           {rows.length > 0 && (
-            <RailItem label={`خطة العلاج (${formatNum(rows.length)})`}>
+            <RailItem label={t("tplan.railPlan", { n: formatNum(rows.length), defaultValue: "خطة العلاج ({{n}})" })}>
               <span className="block space-y-0.5">
                 {rows.map((r) => <span key={r.id} className="block text-2xs font-semibold">• {r.name.trim()} {doseText(r) && <span className="text-brand-600 dark:text-brand-300">{doseText(r)}</span>}</span>)}
-                {totalDoses > 0 && <span className="block pt-0.5 text-2xs font-bold text-success-700 dark:text-success-300">الإجمالي: {formatNum(totalDoses)} جرعة</span>}
+                {totalDoses > 0 && <span className="block pt-0.5 text-2xs font-bold text-success-700 dark:text-success-300">{t("tplan.totalDoses", { n: formatNum(totalDoses), defaultValue: "الإجمالي: {{n}} جرعة" })}</span>}
               </span>
             </RailItem>
           )}
-          {weight && <RailItem label="وزن الحيوان"><span className="text-lg font-black text-violet-600 dark:text-violet-300">{formatDec(weight)}</span> <span className="text-2xs text-ink-subtle">كغ · مصدر حساب الجرعات</span></RailItem>}
+          {weight && <RailItem label={t("tplan.weightLabel", "وزن الحيوان")}><span className="text-lg font-black text-violet-600 dark:text-violet-300">{formatDec(weight)}</span> <span className="text-2xs text-ink-subtle">{t("tplan.kgSource", "كغ · مصدر حساب الجرعات")}</span></RailItem>}
         </>
       )}
     </div>
