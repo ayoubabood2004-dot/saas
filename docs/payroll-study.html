@@ -1,0 +1,1055 @@
+<title>دفتر الرواتب</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=Noto+Kufi+Arabic:wght@500;700;800&display=swap" rel="stylesheet">
+
+<style>
+  /* ── الرموز: اللوح الفاتح كامل هنا، ثم يُعاد تعريفه مرّتين للداكن ───────── */
+  :root {
+    --paper:   #eef2f7;
+    --surface: #ffffff;
+    --sunk:    #e6ecf4;
+    --ink:     #0e1a27;
+    --ink-2:   #54677d;
+    --ink-3:   #7d8fa3;
+    --rule:    #cdd9e6;
+    --rule-2:  #dfe7f0;
+    --brand:   #1266d8;
+    --brand-w: #e7f0fd;
+    --earn:    #0b6b5f;
+    --earn-w:  #e2f2ef;
+    --deduct:  #a92a24;
+    --deduct-w:#fbeae9;
+    --warn:    #8a5a06;
+    --warn-w:  #fdf2dd;
+    --shadow:  0 1px 2px #0e1a2710, 0 8px 24px #0e1a270a;
+    --measure: 68ch;
+    --wide:    minmax(0, 1180px);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper:   #0a1119;
+      --surface: #0f1a25;
+      --sunk:    #0d1723;
+      --ink:     #e3edf7;
+      --ink-2:   #96a9be;
+      --ink-3:   #71889f;
+      --rule:    #1f3245;
+      --rule-2:  #182636;
+      --brand:   #5aa0fb;
+      --brand-w: #10243c;
+      --earn:    #46c6ac;
+      --earn-w:  #0d2620;
+      --deduct:  #f0776e;
+      --deduct-w:#2a1414;
+      --warn:    #e0ab52;
+      --warn-w:  #251c0c;
+      --shadow:  0 1px 2px #0006, 0 10px 30px #0004;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper:   #0a1119;
+    --surface: #0f1a25;
+    --sunk:    #0d1723;
+    --ink:     #e3edf7;
+    --ink-2:   #96a9be;
+    --ink-3:   #71889f;
+    --rule:    #1f3245;
+    --rule-2:  #182636;
+    --brand:   #5aa0fb;
+    --brand-w: #10243c;
+    --earn:    #46c6ac;
+    --earn-w:  #0d2620;
+    --deduct:  #f0776e;
+    --deduct-w:#2a1414;
+    --warn:    #e0ab52;
+    --warn-w:  #251c0c;
+    --shadow:  0 1px 2px #0006, 0 10px 30px #0004;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: "IBM Plex Sans Arabic", system-ui, sans-serif;
+    font-size: 16.5px;
+    line-height: 1.85;
+    direction: rtl;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  /* شبكة الدفتر: عمود قراءة واحد، وكتل تنكسر لعرض أوسع */
+  .doc {
+    display: grid;
+    grid-template-columns: [full-start] 1fr [wide-start] var(--wide) [read-start] var(--measure) [read-end] var(--wide) [wide-end] 1fr [full-end];
+    justify-content: center;
+    padding: 0 20px 96px;
+    row-gap: 0;
+  }
+  .doc > * { grid-column: read; min-width: 0; }
+  .break   { grid-column: wide; }
+
+  h1, h2, h3, h4 { font-family: "Noto Kufi Arabic", "IBM Plex Sans Arabic", sans-serif; text-wrap: balance; margin: 0; }
+
+  p { margin: 0 0 1.05em; }
+  a { color: var(--brand); text-underline-offset: 3px; }
+  a:focus-visible, button:focus-visible { outline: 2px solid var(--brand); outline-offset: 3px; border-radius: 4px; }
+  strong { font-weight: 700; color: var(--ink); }
+  code, .mono { font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 0.86em; direction: ltr; unicode-bidi: isolate; }
+  code { background: var(--sunk); border: 1px solid var(--rule-2); border-radius: 5px; padding: 1px 5px; }
+
+  /* ── الترويسة ─────────────────────────────────────────────────────────── */
+  .masthead { grid-column: wide; padding: 64px 0 0; }
+  .stamp {
+    display: inline-flex; align-items: center; gap: 10px;
+    font-family: "IBM Plex Mono", monospace; font-size: 11.5px; letter-spacing: .16em;
+    text-transform: uppercase; color: var(--ink-3);
+    border: 1px solid var(--rule); border-radius: 999px; padding: 5px 14px;
+    direction: ltr;
+  }
+  .stamp b { color: var(--brand); font-weight: 600; }
+  h1 {
+    font-size: clamp(34px, 6.2vw, 62px); font-weight: 800; line-height: 1.14;
+    letter-spacing: -0.02em; margin: 22px 0 0; max-width: 16ch;
+  }
+  .dek { font-size: clamp(17px, 2.4vw, 20px); color: var(--ink-2); max-width: 56ch; margin: 18px 0 0; line-height: 1.7; }
+  .byline {
+    margin-top: 30px; padding-top: 18px; border-top: 2px solid var(--ink);
+    display: flex; flex-wrap: wrap; gap: 8px 26px;
+    font-size: 13px; color: var(--ink-2);
+  }
+  .byline span { display: inline-flex; align-items: center; gap: 7px; }
+  .byline i { width: 5px; height: 5px; border-radius: 50%; background: var(--brand); font-style: normal; }
+
+  /* ── فهرس ──────────────────────────────────────────────────────────────── */
+  .toc { grid-column: wide; margin: 44px 0 8px; }
+  .toc ol {
+    list-style: none; margin: 0; padding: 0;
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(238px, 1fr)); gap: 0;
+    border-top: 1px solid var(--rule);
+  }
+  .toc li { border-bottom: 1px solid var(--rule); }
+  .toc a {
+    display: flex; align-items: baseline; gap: 11px; padding: 11px 4px;
+    text-decoration: none; color: var(--ink); font-size: 14.5px; line-height: 1.4;
+  }
+  .toc a:hover { color: var(--brand); }
+  .toc a b { font-family: "IBM Plex Mono", monospace; font-size: 11px; color: var(--ink-3); font-weight: 500; }
+
+  /* ── الأقسام ───────────────────────────────────────────────────────────── */
+  section { grid-column: read; padding-top: 62px; scroll-margin-top: 18px; }
+  .sec-head { grid-column: wide; display: flex; align-items: center; gap: 16px; margin-bottom: 26px; }
+  .sec-head .n {
+    font-family: "IBM Plex Mono", monospace; font-size: 12px; font-weight: 600;
+    color: var(--surface); background: var(--ink); border-radius: 5px;
+    padding: 3px 8px; flex: none; direction: ltr;
+  }
+  .sec-head h2 { font-size: clamp(22px, 3.4vw, 30px); font-weight: 700; letter-spacing: -0.015em; }
+  .sec-head .rule { flex: 1; height: 1px; background: var(--rule); }
+
+  h3 { font-size: 19px; font-weight: 700; margin: 38px 0 12px; }
+  h4 { font-size: 15.5px; font-weight: 700; margin: 26px 0 8px; color: var(--ink); }
+
+  .lede { font-size: 18.5px; line-height: 1.72; color: var(--ink); }
+  .muted { color: var(--ink-2); }
+  .small { font-size: 14px; line-height: 1.7; color: var(--ink-2); }
+
+  ul, ol { margin: 0 0 1.15em; padding-inline-start: 1.35em; }
+  li { margin-bottom: .5em; }
+  li::marker { color: var(--ink-3); }
+
+  /* ── كتل الدفتر ────────────────────────────────────────────────────────── */
+  .card {
+    background: var(--surface); border: 1px solid var(--rule);
+    border-radius: 12px; padding: 22px 24px; box-shadow: var(--shadow);
+    margin: 22px 0;
+  }
+  .card > :last-child { margin-bottom: 0; }
+  .card-h {
+    display: flex; align-items: center; gap: 9px; margin: 0 0 12px;
+    font-family: "Noto Kufi Arabic", sans-serif; font-size: 15px; font-weight: 700;
+  }
+  .tag {
+    font-family: "IBM Plex Mono", monospace; font-size: 10.5px; font-weight: 600;
+    letter-spacing: .08em; text-transform: uppercase; padding: 2px 7px; border-radius: 4px;
+    direction: ltr; flex: none;
+  }
+  .t-warn   { background: var(--warn-w);   color: var(--warn); }
+  .t-brand  { background: var(--brand-w);  color: var(--brand); }
+  .t-earn   { background: var(--earn-w);   color: var(--earn); }
+  .t-deduct { background: var(--deduct-w); color: var(--deduct); }
+
+  .trap { border-inline-start: 3px solid var(--deduct); background: var(--surface); }
+  .note { border-inline-start: 3px solid var(--brand); background: var(--surface); }
+  .cau  { border-inline-start: 3px solid var(--warn);  background: var(--surface); }
+
+  /* ── الجداول ───────────────────────────────────────────────────────────── */
+  .tw { overflow-x: auto; margin: 22px 0; border: 1px solid var(--rule); border-radius: 12px; background: var(--surface); box-shadow: var(--shadow); }
+  table { border-collapse: collapse; width: 100%; font-size: 14.3px; line-height: 1.6; }
+  thead th {
+    background: var(--sunk); text-align: start; font-weight: 600;
+    font-family: "IBM Plex Mono", monospace; font-size: 11px; letter-spacing: .07em;
+    text-transform: uppercase; color: var(--ink-2);
+    padding: 10px 14px; border-bottom: 1px solid var(--rule); white-space: nowrap;
+  }
+  tbody td { padding: 11px 14px; border-bottom: 1px solid var(--rule-2); vertical-align: top; }
+  tbody tr:last-child td { border-bottom: 0; }
+  td.num, th.num { font-family: "IBM Plex Mono", monospace; font-variant-numeric: tabular-nums; text-align: end; white-space: nowrap; direction: ltr; }
+  td.code { font-family: "IBM Plex Mono", monospace; font-size: 12.5px; color: var(--brand); white-space: nowrap; direction: ltr; }
+  .yes { color: var(--earn); font-weight: 600; }
+  .no  { color: var(--ink-3); }
+
+  /* ── قسيمة الراتب ──────────────────────────────────────────────────────── */
+  .slip {
+    background: var(--surface); border: 1px solid var(--ink); border-radius: 4px;
+    box-shadow: var(--shadow); margin: 26px 0; overflow: hidden;
+  }
+  .slip-top { padding: 18px 22px; border-bottom: 2px solid var(--ink); display: flex; flex-wrap: wrap; gap: 14px 30px; align-items: baseline; }
+  .slip-top h4 { margin: 0; font-size: 17px; }
+  .slip-meta { display: flex; flex-wrap: wrap; gap: 4px 22px; font-size: 12.5px; color: var(--ink-2); margin-inline-start: auto; }
+  .slip-meta b { font-family: "IBM Plex Mono", monospace; font-weight: 500; color: var(--ink); }
+  .slip-cols { display: grid; grid-template-columns: 1fr 1fr; }
+  .slip-cols > div { padding: 16px 22px; }
+  .slip-cols > div:first-child { border-inline-end: 1px solid var(--rule); }
+  .slip h5 {
+    margin: 0 0 10px; font-family: "IBM Plex Mono", monospace; font-size: 11px;
+    letter-spacing: .09em; text-transform: uppercase; font-weight: 600;
+  }
+  .slip .e h5 { color: var(--earn); }
+  .slip .d h5 { color: var(--deduct); }
+  .row { display: flex; justify-content: space-between; gap: 14px; padding: 5px 0; font-size: 14px; border-bottom: 1px dotted var(--rule); }
+  .row:last-of-type { border-bottom: 0; }
+  .row span { color: var(--ink-2); }
+  .row b { font-family: "IBM Plex Mono", monospace; font-variant-numeric: tabular-nums; font-weight: 500; color: var(--ink); direction: ltr; }
+  .row .why { display: block; font-size: 11.5px; color: var(--ink-3); line-height: 1.4; }
+  .sub { display: flex; justify-content: space-between; margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--ink); font-size: 14px; font-weight: 700; }
+  .sub b { font-family: "IBM Plex Mono", monospace; font-variant-numeric: tabular-nums; direction: ltr; }
+  .slip-net {
+    display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 10px;
+    padding: 15px 22px; background: var(--ink); color: var(--surface);
+  }
+  .slip-net span { font-family: "Noto Kufi Arabic", sans-serif; font-weight: 700; font-size: 15px; }
+  .slip-net b { font-family: "IBM Plex Mono", monospace; font-size: 24px; font-weight: 600; font-variant-numeric: tabular-nums; direction: ltr; }
+  .slip-foot { padding: 11px 22px; font-size: 12px; color: var(--ink-2); border-top: 1px solid var(--rule); background: var(--sunk); }
+
+  /* ── مخطط تدفّق السلفة ─────────────────────────────────────────────────── */
+  .flow { display: grid; gap: 12px; margin: 20px 0; }
+  .fstep { display: grid; grid-template-columns: auto 1fr; gap: 14px; align-items: start; }
+  .fdot {
+    width: 30px; height: 30px; border-radius: 8px; flex: none; display: grid; place-items: center;
+    font-family: "IBM Plex Mono", monospace; font-size: 12px; font-weight: 600;
+    background: var(--sunk); color: var(--ink-2); border: 1px solid var(--rule);
+  }
+  .fstep.ok  .fdot { background: var(--earn-w);   color: var(--earn);   border-color: var(--earn); }
+  .fstep.bad .fdot { background: var(--deduct-w); color: var(--deduct); border-color: var(--deduct); }
+  .fbody { border: 1px solid var(--rule); border-radius: 10px; padding: 12px 15px; background: var(--surface); }
+  .fbody b { display: block; font-family: "Noto Kufi Arabic", sans-serif; font-size: 14.5px; margin-bottom: 3px; }
+  .fbody p { margin: 0; font-size: 13.5px; color: var(--ink-2); line-height: 1.65; }
+
+  /* ── بطاقات القرارات ───────────────────────────────────────────────────── */
+  .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(268px, 1fr)); gap: 14px; margin: 22px 0; }
+  .qcard { background: var(--surface); border: 1px solid var(--rule); border-radius: 12px; padding: 17px 19px; box-shadow: var(--shadow); }
+  .qcard h4 { margin: 0 0 7px; font-size: 15px; }
+  .qcard p { margin: 0 0 9px; font-size: 13.6px; color: var(--ink-2); line-height: 1.65; }
+  .qcard .rec { font-size: 13px; color: var(--ink); border-top: 1px dashed var(--rule); padding-top: 9px; margin: 0; }
+  .qcard .rec b { color: var(--brand); }
+
+  /* ── SQL ───────────────────────────────────────────────────────────────── */
+  pre {
+    margin: 18px 0; padding: 16px 18px; overflow-x: auto;
+    background: var(--sunk); border: 1px solid var(--rule); border-radius: 10px;
+    direction: ltr; text-align: left;
+  }
+  pre code { background: none; border: 0; padding: 0; font-size: 12.7px; line-height: 1.72; color: var(--ink); }
+
+  /* ── المراحل ───────────────────────────────────────────────────────────── */
+  .phase { border: 1px solid var(--rule); border-radius: 12px; background: var(--surface); box-shadow: var(--shadow); margin: 16px 0; overflow: hidden; }
+  .phase-h { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 14px 20px; border-bottom: 1px solid var(--rule); }
+  .phase-h b { font-family: "Noto Kufi Arabic", sans-serif; font-size: 16px; }
+  .phase-h .when { margin-inline-start: auto; font-family: "IBM Plex Mono", monospace; font-size: 11.5px; color: var(--ink-2); }
+  .phase-b { padding: 15px 20px; }
+  .phase-b ul { margin: 0; }
+  .phase-b li { font-size: 14.3px; }
+
+  footer { grid-column: wide; margin-top: 78px; padding-top: 22px; border-top: 2px solid var(--ink); font-size: 13px; color: var(--ink-2); }
+
+  @media (max-width: 760px) {
+    body { font-size: 16px; }
+    .doc { padding: 0 16px 72px; }
+    .slip-cols { grid-template-columns: 1fr; }
+    .slip-cols > div:first-child { border-inline-end: 0; border-bottom: 1px solid var(--rule); }
+    .slip-meta { margin-inline-start: 0; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+</style>
+
+<div class="doc">
+
+  <header class="masthead">
+    <div class="stamp">doctorVet <b>·</b> PAYROLL <b>·</b> دراسة معمارية</div>
+    <h1>دفتر الرواتب</h1>
+    <p class="dek">
+      كيف تبني السستمات الكبيرة رواتب الموظفين: الأسماء والرواتب والسحوبات
+      والقطوعات وأسبابها — ولماذا الراتب في هذه السستمات ليس رقماً يُكتب، بل
+      حساباً يُشتقّ ويُجمَّد ويُرحَّل.
+    </p>
+    <div class="byline">
+      <span><i></i>مبنيّة على قراءة قاعدة doctorVet الحالية، لا على كلام عامّ</span>
+      <span><i></i>٢٠ آب ٢٠٢٦</span>
+      <span><i></i>دراسة قبل البناء — ما انكتب سطر كود بعد</span>
+    </div>
+  </header>
+
+  <nav class="toc" aria-label="فهرس الدراسة">
+    <ol>
+      <li><a href="#now"><b>01</b>وين نحن الآن فعلاً</a></li>
+      <li><a href="#principle"><b>02</b>المبدأ الحاكم</a></li>
+      <li><a href="#layers"><b>03</b>الطبقات السبع</a></li>
+      <li><a href="#elements"><b>04</b>كتالوج بنود الأجر</a></li>
+      <li><a href="#loans"><b>05</b>السلف والسحوبات</a></li>
+      <li><a href="#attendance"><b>06</b>الغياب والتأخير</a></li>
+      <li><a href="#commission"><b>07</b>النِسب والعمولات</a></li>
+      <li><a href="#leave"><b>08</b>الإجازات ونهاية الخدمة</a></li>
+      <li><a href="#governance"><b>09</b>من يحسب ومن يوافق</a></li>
+      <li><a href="#privacy"><b>10</b>الخصوصية</a></li>
+      <li><a href="#immutable"><b>11</b>التجميد والتصحيح</a></li>
+      <li><a href="#payment"><b>12</b>الدفع الفعلي والصندوق</a></li>
+      <li><a href="#slip"><b>13</b>القسيمة</a></li>
+      <li><a href="#reports"><b>14</b>التقارير</a></li>
+      <li><a href="#schema"><b>15</b>المخطط المقترح</a></li>
+      <li><a href="#phases"><b>16</b>المراحل</a></li>
+      <li><a href="#unknown"><b>17</b>ما لا أعرفه</a></li>
+      <li><a href="#decide"><b>18</b>قرارات تحتاج جوابك</a></li>
+    </ol>
+  </nav>
+
+  <section id="summary">
+    <div class="sec-head"><span class="n">TL;DR</span><h2>الخلاصة بأربع جُمَل</h2><div class="rule"></div></div>
+
+    <p class="lede">
+      طلبك — قائمة فيها أسماء الموظفين ورواتبهم وسحوباتهم وقطوعاتهم وأسبابها —
+      هو <strong>مخرَج</strong> السستم، مو بنيته. السستمات الكبيرة تبني تحت هذه
+      القائمة أربعة أشياء: <strong>كتالوج بنود</strong> (كل زيادة وكل قطع له رمز
+      وقاعدة حساب)، و<strong>دورة راتب</strong> لها حالات ومسار موافقة،
+      و<strong>قسيمة مجمّدة</strong> لا تتغيّر بعد الاعتماد، و<strong>ترحيل
+      محاسبي</strong> يوصل الفلوس لسجل المصروفات والصندوق بلا ازدواج.
+    </p>
+
+    <div class="card note">
+      <p class="card-h"><span class="tag t-brand">القرار</span> الشكل الموصى به لـ doctorVet</p>
+      <p class="small" style="margin-bottom:.6em">
+        صفحة «الرواتب» بثلاث تبويبات: <strong>الكادر ورواتبهم</strong> ·
+        <strong>دورة الشهر</strong> · <strong>السلف</strong>. تحتها سبعة جداول
+        جديدة، وكتابة عبر دوال <code>SECURITY DEFINER</code> فقط — لا كتابة مباشرة
+        من المتصفّح على أي جدول راتب، تماماً مثل ما تمرّ الفواتير من دالة
+        الدفع لا من إدراج مباشر.
+      </p>
+      <p class="small" style="margin:0">
+        والمرحلة الأولى وحدها — راتب أساسي + قطوعات بأسباب مصنّفة + سلف بأقساط +
+        قسيمة + ترحيل للمصروفات — تعطيك القائمة اللي طلبتها كاملة، وتنبني بلا
+        حضور وانصراف وبلا عمولات.
+      </p>
+    </div>
+
+    <p>
+      وثلاثة مطبّات تقتل أي نظام رواتب مبنيّ على عجل، وكلّها موجودة في طريقك:
+      <strong>ازدواج احتساب السلفة</strong> (§٥)، و<strong>تجميد القسيمة</strong>
+      (§١١)، و<strong>من يرى الرواتب</strong> (§١٠). البقية تفاصيل تنبني بالتدريج.
+    </p>
+  </section>
+
+  <section id="now">
+    <div class="sec-head"><span class="n">01</span><h2>وين نحن الآن فعلاً</h2><div class="rule"></div></div>
+
+    <p>
+      قرأت قاعدتك قبل ما أكتب حرف. هذا الي موجود اليوم بالضبط — لا أكثر:
+    </p>
+
+    <div class="tw">
+      <table>
+        <thead>
+          <tr><th>القطعة</th><th>الحالة اليوم</th><th>معناها للرواتب</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>staff</code></td>
+            <td>اسم، بريد، هاتف، دور، اختصاص، تاريخ مباشرة، حالة، نبذة</td>
+            <td><span class="no">ما بيه ولا حقل راتب.</span> الكادر سجلّ أسماء وصلاحيات، مو سجلّ توظيف</td>
+          </tr>
+          <tr>
+            <td><code>expenses</code></td>
+            <td>مبلغ، بيان، تصنيف حرّ، طريقة (نقد/بطاقة/بنك)، من سجّلها، متى انصرفت</td>
+            <td>الراتب اليوم = سطر واحد نصّه «رواتب». <strong>ما تعرف منو أخذ شكد ولا ليش</strong></td>
+          </tr>
+          <tr>
+            <td>سياسة <code>expenses</code></td>
+            <td>الإدراج والحذف للمدير فقط، <strong>وبلا سياسة تعديل</strong> — أي السجلّ يُضاف ولا يُعدَّل</td>
+            <td>أساس ممتاز: هذا بالضبط سلوك دفتر الأستاذ اللي يحتاجه الراتب</td>
+          </tr>
+          <tr>
+            <td>صافي النقد</td>
+            <td><code>المُحصّل نقداً − المسحوب نقداً</code></td>
+            <td>أي راتب يُدفع نقداً <strong>لازم</strong> يمرّ من هنا وإلا صار رقم الدرج كذب</td>
+          </tr>
+          <tr>
+            <td><code>invoices.staff_id</code></td>
+            <td>موجود — والتقارير تعرض أداء كل بائع</td>
+            <td>عمولة الكاشير على المبيعات <span class="yes">قابلة للحساب اليوم</span></td>
+          </tr>
+          <tr>
+            <td><code>MedicalVisit.doctor_name</code></td>
+            <td><strong>نصّ اسم</strong>، بلا معرّف موظف</td>
+            <td>عمولة الطبيب على الكشفيات <span class="no">غير قابلة للحساب</span> — تغيير الاسم يكسر السلسلة</td>
+          </tr>
+          <tr>
+            <td><code>Surgery.surgeon</code></td>
+            <td><strong>نصّ اسم</strong> كذلك</td>
+            <td>عمولة العمليات <span class="no">غير قابلة للحساب</span> — وهي أهم عمولة بالعيادة</td>
+          </tr>
+          <tr>
+            <td>الفروع · سجل الحركات · عملة العيادة</td>
+            <td>الثلاثة موجودة وشغّالة</td>
+            <td>تكلفة كل فرع، وتدقيق كل تغيير، والمبالغ بعملة العيادة — <span class="yes">جاهزة</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="card trap">
+      <p class="card-h"><span class="tag t-deduct">اكتشاف</span> عمولة الأطباء محجوبة ببنية البيانات لا بالبرمجة</p>
+      <p class="small" style="margin:0">
+        <code>doctor_name</code> و<code>surgeon</code> نصوص. يعني إذا طبيبان بنفس
+        الاسم، أو تبدّل اسم بالسجل، أو كتبه الموظف مرة «د. سارة» ومرة «سارة
+        منصور» — تنهار العمولة بصمت وتطلع أرقام غلط بلا ما يشتكي أحد. أي عمولة
+        طبية تحتاج <strong>أولاً</strong> إضافة <code>staff_id</code> على الزيارات
+        والعمليات، وربط قديم بالتخمين من الاسم <strong>مرة واحدة</strong> بمراجعة
+        بشرية. هذي مو تفصيلة — هذي شرط مسبق.
+      </p>
+    </div>
+  </section>
+
+  <section id="principle">
+    <div class="sec-head"><span class="n">02</span><h2>المبدأ الحاكم: الراتب ليس رقماً</h2><div class="rule"></div></div>
+
+    <p class="lede">
+      الغلط الأول اللي يسوّيه كل من يبني رواتب بسرعة: يضيف حقل
+      <code>salary</code> على جدول الموظفين ويخلص. بعد ثلاثة شهور يجي أول سؤال —
+      «شكد كان راتب علي بشهر نيسان قبل الزيادة؟» — وما بيه جواب، لأن الحقل
+      انكتب فوقه.
+    </p>
+
+    <p>
+      السستمات الكبيرة تعامل الراتب كـ<strong>حساب على فترة</strong>: تأخذ مدخلات
+      (أجر أساسي سارٍ بذلك التاريخ، أيام حضور، سلف قائمة، قرارات جزاء) وتنتج
+      <strong>وثيقة مجمّدة</strong>. وثلاث خصائص تميّز هذه الوثيقة:
+    </p>
+
+    <ul>
+      <li><strong>مشتقّة</strong> — كل رقم فيها له مصدر يُعرَض: «قطع ٣ أيام غياب × أجر اليوم ٢٥٬٠٠٠».</li>
+      <li><strong>مجمّدة</strong> — بعد الاعتماد ما تتغيّر ولو تغيّر كل شي حولها.</li>
+      <li><strong>قابلة لإعادة العرض</strong> — بعد سنتين تفتحها فتشوفها مثل ما كانت، مو محسوبة من جديد ببيانات اليوم.</li>
+    </ul>
+
+    <p>
+      وعليه: <strong>الراتب الأساسي نفسه ليس حقلاً بل صفّاً مؤرَّخاً</strong>.
+      زيادة الراتب = صفّ جديد ساري من تاريخ، والقديم يبقى. هذا وحده يجاوب على
+      «شكد كان راتبه وقتها» و«منو زاده ومتى» بلا أي جهد إضافي.
+    </p>
+  </section>
+
+  <section id="layers">
+    <div class="sec-head"><span class="n">03</span><h2>الطبقات السبع</h2><div class="rule"></div></div>
+
+    <p>
+      هذي البنية المشتركة بين SAP و Workday و Oracle و Odoo و Zoho و Gusto —
+      تختلف بالأسماء وتتّفق بالطبقات. رتّبتها بالترتيب الذي تجري به الفلوس فعلاً:
+    </p>
+
+    <div class="tw">
+      <table>
+        <thead>
+          <tr><th style="width:34px">#</th><th>الطبقة</th><th>شنو تخزّن</th><th>ليش منفصلة</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="num">1</td><td><strong>سجلّ التوظيف</strong></td><td>تاريخ المباشرة، نوع التعاقد، الفرع، القسم، المدير المباشر، تاريخ الإنهاء</td><td>الموظف ممكن يترك ويرجع؛ وحساب الدخول شي والتوظيف شي</td></tr>
+          <tr><td class="num">2</td><td><strong>هيكل الأجر</strong></td><td>الأساسي، البدلات الثابتة، أساس الحساب (شهري/يومي/بالساعة)، العملة</td><td>مؤرّخ بالإصدارات — الزيادة صفّ جديد لا تعديل</td></tr>
+          <tr><td class="num">3</td><td><strong>كتالوج البنود</strong></td><td>كل زيادة وكل قطع: رمز، إشارة، قاعدة حساب، هل يحتاج سبب، هل له سقف</td><td>القلب. يضاف بند جديد بلا تغيير مخطط ولا كود</td></tr>
+          <tr><td class="num">4</td><td><strong>مدخلات الفترة</strong></td><td>حضور وغياب، إجازات، عمولات محسوبة، بنود لمرّة واحدة</td><td>تتجمّع طول الشهر، وتُقفل بيوم القطع</td></tr>
+          <tr><td class="num">5</td><td><strong>دورة الراتب</strong></td><td>الفترة، الحالة، من حسب، من اعتمد، متى</td><td>الحالات هي مسار الموافقة — والاعتماد هو نقطة اللارجعة</td></tr>
+          <tr><td class="num">6</td><td><strong>القسيمة وسطورها</strong></td><td>لقطة مجمّدة: كل سطر ببنده وكميته وسعره ومبلغه وسببه ومرجعه</td><td>هي المستند القانوني بين العيادة والموظف</td></tr>
+          <tr><td class="num">7</td><td><strong>الترحيل والدفع</strong></td><td>مصروف الرواتب، المستحق غير المدفوع، ذمم السلف، واقعة الدفع</td><td>هنا تلتقي الرواتب بالصندوق وبتقارير الربح</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>دورة الراتب: خمس حالات، وواحدة منها بلا رجعة</h3>
+    <div class="flow">
+      <div class="fstep"><span class="fdot">١</span><div class="fbody"><b>مسوّدة</b><p>تُفتح الفترة. تُجمَع المدخلات: الحضور، السلف القائمة، قرارات الجزاء، العمولات. كل شي قابل للتعديل.</p></div></div>
+      <div class="fstep"><span class="fdot">٢</span><div class="fbody"><b>محسوبة</b><p>السستم يولّد قسيمة لكل موظف بسطورها. تُراجَع الأرقام، وأي غلط يُصلَّح بإعادة الحساب.</p></div></div>
+      <div class="fstep ok"><span class="fdot">٣</span><div class="fbody"><b>معتمدة — نقطة اللارجعة</b><p>يعتمدها صاحب الصلاحية. من هاي اللحظة القسائم <strong>تُجمَّد</strong>: لا تعديل ولا حذف. أي تصحيح بعدها يصير بسطر تسوية بالدورة الجاية أو بدورة تصحيحية.</p></div></div>
+      <div class="fstep"><span class="fdot">٤</span><div class="fbody"><b>مدفوعة</b><p>تُسجَّل واقعة الدفع لكل موظف (نقد من الدرج / حوالة / محفظة)، وتُرحَّل للمصروفات فينقص الصندوق.</p></div></div>
+      <div class="fstep"><span class="fdot">٥</span><div class="fbody"><b>مقفلة</b><p>الفترة تُقفل. ما تنفتح ثانية أبداً — التقارير تقرأ من القسائم المجمّدة لا من البيانات الحيّة.</p></div></div>
+    </div>
+  </section>
+
+  <section id="elements">
+    <div class="sec-head"><span class="n">04</span><h2>كتالوج بنود الأجر</h2><div class="rule"></div></div>
+
+    <p class="lede">
+      هذا الجدول هو جواب سؤالك «قطوعاتهم وأسبابها» بشكله الهندسي: القطع ليس نصّاً
+      حرّاً يكتبه الموظف، بل <strong>بنداً من كتالوج</strong> له رمز وقاعدة وسقف
+      ومرجع. النصّ الحرّ يبقى — بس كتفصيل تحت البند، لا بدلاً عنه.
+    </p>
+
+    <p>
+      ليش هذا مهم عملياً؟ لأن «قطع ٥٠٬٠٠٠ — سبب: تأخير» نصّاً ما ينفع بالتقارير:
+      ما تكدر تسأل «شكد صار مجموع قطوعات التأخير هالسنة؟» ولا «منو أكثر واحد
+      انقطع عليه جزاء؟» ولا تكدر تفرض «الجزاء ما يتجاوز حدّاً». بالبنود المصنّفة
+      كل هذي أسئلة سطر واحد.
+    </p>
+
+    <h3>الزيادات</h3>
+    <div class="tw">
+      <table>
+        <thead>
+          <tr><th>الرمز</th><th>البند</th><th>كيف يُحسب</th><th>مصدره</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="code">BASIC</td><td>الأجر الأساسي</td><td>ثابت شهري (أو أجر اليوم × أيام العمل)</td><td>هيكل الأجر الساري بذلك التاريخ</td></tr>
+          <tr><td class="code">TRANS</td><td>بدل نقل</td><td>ثابت شهري</td><td>بند متكرّر على الموظف</td></tr>
+          <tr><td class="code">HOUS</td><td>بدل سكن</td><td>ثابت أو نسبة من الأساسي</td><td>بند متكرّر</td></tr>
+          <tr><td class="code">ONCALL</td><td>بدل مناوبة / دوام ليلي</td><td>مبلغ × عدد المناوبات</td><td>مدخل الفترة</td></tr>
+          <tr><td class="code">OT</td><td>عمل إضافي</td><td>أجر الساعة × ساعات × معامل</td><td>الحضور (§٦)</td></tr>
+          <tr><td class="code">COMM</td><td>نسبة / عمولة</td><td>حسب خطة العمولة</td><td>محسوب من الفواتير والعمليات (§٧)</td></tr>
+          <tr><td class="code">BONUS</td><td>مكافأة</td><td>مبلغ يدوي</td><td>قرار المدير — يحتاج سبباً</td></tr>
+          <tr><td class="code">LEAVE_ENC</td><td>بدل إجازات غير مستهلكة</td><td>أجر اليوم × الأيام المتبقّية</td><td>رصيد الإجازات (§٨)</td></tr>
+          <tr><td class="code">RETRO</td><td>فرق أثر رجعي</td><td>الفرق عن فترات سابقة</td><td>زيادة راتب بمفعول رجعي</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>القطوعات</h3>
+    <div class="tw">
+      <table>
+        <thead>
+          <tr><th>الرمز</th><th>البند</th><th>كيف يُحسب</th><th>يحتاج سبباً</th><th>يحتاج مرجعاً</th><th>له سقف</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="code">ABS</td><td>غياب</td><td>أجر اليوم × أيام الغياب غير المبرّر</td><td class="no">آلي</td><td>سجل الحضور</td><td class="no">—</td></tr>
+          <tr><td class="code">LATE</td><td>تأخير</td><td>حسب قاعدة العيادة (دقائق ← مال)</td><td class="no">آلي</td><td>سجل الحضور</td><td>نعم — سقف شهري</td></tr>
+          <tr><td class="code">UNPAID</td><td>إجازة بلا راتب</td><td>أجر اليوم × الأيام</td><td class="no">آلي</td><td>طلب الإجازة</td><td class="no">—</td></tr>
+          <tr><td class="code">PEN</td><td>جزاء انضباطي</td><td>مبلغ يدوي</td><td class="yes">إلزامي</td><td>قرار موثّق + موافِق</td><td class="yes">نعم — الأهمّ</td></tr>
+          <tr><td class="code">LOAN</td><td>قسط سلفة</td><td>القسط المجدول</td><td class="no">آلي</td><td>عقد السلفة</td><td>نعم — سقف الاستقطاع</td></tr>
+          <tr><td class="code">ADV</td><td>سحب على حساب الشهر</td><td>كامل المسحوب</td><td class="no">آلي</td><td>واقعة السحب</td><td class="no">—</td></tr>
+          <tr><td class="code">SHORT</td><td>عجز صندوق</td><td>مبلغ يدوي</td><td class="yes">إلزامي</td><td>إغلاق الصندوق</td><td class="yes">نعم</td></tr>
+          <tr><td class="code">DMG</td><td>تلف أو كسر</td><td>مبلغ يدوي</td><td class="yes">إلزامي</td><td>محضر + موافِق</td><td class="yes">نعم</td></tr>
+          <tr><td class="code">SSC</td><td>حصّة الضمان</td><td>نسبة من الأساسي</td><td class="no">آلي</td><td>القانون</td><td class="no">—</td></tr>
+          <tr><td class="code">TAX</td><td>ضريبة الدخل</td><td>حسب الشرائح</td><td class="no">آلي</td><td>القانون</td><td class="no">—</td></tr>
+          <tr><td class="code">OTHER</td><td>استقطاع آخر</td><td>مبلغ يدوي</td><td class="yes">إلزامي</td><td>—</td><td class="yes">نعم</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="card cau">
+      <p class="card-h"><span class="tag t-warn">قاعدة</span> سقف الاستقطاع الكلّي</p>
+      <p class="small" style="margin:0">
+        أهم قاعدة بكل الجدول فوق: <strong>مجموع القطوعات ما يوصل بالصافي إلى صفر</strong>.
+        السستمات الكبيرة تفرض حدّاً — نسبة من صافي الأجر — وإذا تجاوزته
+        القطوعات، <strong>يُرحَّل الزائد للشهر الجاي</strong> بدل ما ياخذ الموظف
+        صفر ديناراً ويترك الشغل. وهذا حدّ قانوني بأغلب قوانين العمل لا مجرد
+        لطف. القاعدة تُفرض <strong>على الخادم</strong> — لأن حدّاً يُفرض
+        بالواجهة وحدها هو حدّ غير موجود.
+      </p>
+    </div>
+  </section>
+
+  <section id="loans">
+    <div class="sec-head"><span class="n">05</span><h2>السلف والسحوبات — أخطر جزء</h2><div class="rule"></div></div>
+
+    <p class="lede">
+      «السحوبات» بسؤالك تحتها شيئان مختلفان تماماً، وخلطهما هو الغلط الأكثر
+      شيوعاً بأنظمة الرواتب الصغيرة:
+    </p>
+
+    <div class="grid2">
+      <div class="qcard">
+        <h4>سحب على حساب الشهر</h4>
+        <p>الموظف ياخذ جزءاً من راتب <em>هذا</em> الشهر قبل موعده. بنهاية الشهر يُخصم كاملاً. ما يمتدّ لشهر ثاني.</p>
+        <p class="rec">محاسبياً: <b>دفعة مقدّمة من راتب مستحق</b></p>
+      </div>
+      <div class="qcard">
+        <h4>سلفة</h4>
+        <p>الموظف ياخذ مبلغاً أكبر من راتبه، يُسترجع على أقساط عبر عدّة شهور. يبقى برقبته رصيدٌ حتى بعد استلام راتبه كاملاً.</p>
+        <p class="rec">محاسبياً: <b>ذمّة على الموظف — أصل لا مصروف</b></p>
+      </div>
+    </div>
+
+    <div class="card trap">
+      <p class="card-h"><span class="tag t-deduct">المطبّ</span> ازدواج احتساب السلفة</p>
+      <p class="small">
+        تصوّر: راتب علي ٦٠٠٬٠٠٠ بالشهر. بشهر آذار أخذ سلفة ٣٠٠٬٠٠٠ تُسدَّد على
+        ثلاثة أقساط. الموظفة سجّلت السلفة مصروفاً («سلفة علي ٣٠٠٬٠٠٠»)، وبآخر
+        الشهر سجّلت الراتب مصروفاً («راتب علي ٦٠٠٬٠٠٠»).
+      </p>
+      <p class="small">
+        صار مصروف آذار <strong>٩٠٠٬٠٠٠</strong> — والحقيقة العيادة كلّفها علي
+        <strong>٦٠٠٬٠٠٠</strong> فقط. الـ٣٠٠ الزايدة <em>قرض</em> راجع، مو
+        كلفة. النتيجة: ربح آذار ينطلع أقل من حقيقته، وأرباح الشهور الجاية تنطلع
+        أعلى (لأن الأقساط تنخصم من راتب علي فيقلّ المصروف). <strong>تقريران غلط،
+        وما ينتبه أحد.</strong>
+      </p>
+      <p class="small" style="margin:0">
+        والأسوأ: بلا جدول سلف، ما تعرف شكد باقي على علي. تسأله، أو تدوّر بدفتر.
+      </p>
+    </div>
+
+    <h3>الطريق الصحيح</h3>
+    <div class="flow">
+      <div class="fstep ok"><span class="fdot">١</span><div class="fbody"><b>يوم صرف السلفة</b><p>تُسجَّل <strong>ذمّة</strong> على الموظف بمبلغها وجدول أقساطها. الفلوس تطلع من الدرج فعلاً — فالصندوق ينقص — لكنّها <strong>ما تُحتسب مصروف رواتب</strong>. هي أصل عند العيادة، لا كلفة.</p></div></div>
+      <div class="fstep ok"><span class="fdot">٢</span><div class="fbody"><b>كل شهر</b><p>يتولّد سطر <code>LOAN</code> بالقسيمة بمبلغ القسط تلقائياً، وينقص من رصيد الذمّة. الموظف يشوف بقسيمته: «قسط سلفة ١٠٠٬٠٠٠ — الباقي ٢٠٠٬٠٠٠».</p></div></div>
+      <div class="fstep ok"><span class="fdot">٣</span><div class="fbody"><b>مصروف الرواتب</b><p>يبقى <strong>٦٠٠٬٠٠٠ كل شهر</strong> — إجمالي الأجر، لا المدفوع نقداً. الفرق بين الإجمالي والمدفوع هو بالضبط ما ذهب لإطفاء الذمّة. الربح يطلع صحيح كل شهر.</p></div></div>
+    </div>
+
+    <h3>الحالات الحافّة اللي تكسر الأنظمة الجاهزة</h3>
+    <ul>
+      <li><strong>راتب لا يكفي للقسط</strong> — الشهر اللي فيه غياب طويل. القاعدة: يُخصم ما يسمح به السقف ويُرحَّل الباقي، لا أن يصير الصافي سالباً.</li>
+      <li><strong>تسديد مبكّر نقداً</strong> — الموظف رجّع الباقي بيده. يحتاج واقعة «تسديد» تنقص الذمّة وتزيد نقد الصندوق، بلا مرور على القسيمة.</li>
+      <li><strong>ترك العمل والذمّة قائمة</strong> — تُسوّى من المستحقات النهائية، وما يبقى يبقى ديناً موثّقاً. لازم يظهر بتقرير الذمم لا يضيع بحذف الموظف.</li>
+      <li><strong>تعديل الجدول</strong> — تأجيل قسط أو تصغيره. تعديل مؤرَّخ بموافقة، لا كتابة فوق الجدول.</li>
+      <li><strong>سلفتان بنفس الوقت</strong> — يجوز، بس مجموع أقساطهما يخضع لنفس السقف.</li>
+    </ul>
+  </section>
+
+  <section id="attendance">
+    <div class="sec-head"><span class="n">06</span><h2>الغياب والتأخير — من وين تجي الأرقام؟</h2><div class="rule"></div></div>
+
+    <p>
+      قطع الغياب سهل بالمعادلة وصعب بالمصدر. المعادلة
+      <code>أجر اليوم × أيام الغياب</code>. السؤال: منو يقول إنه غاب؟ ثلاثة
+      مصادر، وكل واحد له كلفته:
+    </p>
+
+    <div class="tw">
+      <table>
+        <thead><tr><th>المصدر</th><th>الكلفة</th><th>الدقّة</th><th>الرأي</th></tr></thead>
+        <tbody>
+          <tr><td><strong>إدخال شهري يدوي</strong> — المدير يكتب أيام غياب كل موظف</td><td>صفر</td><td>حسب أمانة المدير</td><td class="yes">ابدأ من هنا. يغطّي ٩٠٪ من العيادات</td></tr>
+          <tr><td><strong>حضور بالتطبيق</strong> — زرّ «دوام» بالموبايل</td><td>متوسطة</td><td>جيدة إذا انربطت بموقع أو شبكة العيادة</td><td>مرحلة ثانية. عندك أصلاً نبض حضور حيّ بالسستم</td></tr>
+          <tr><td><strong>جهاز بصمة</strong> — استيراد ملف</td><td>عالية (جهاز + استيراد + مطابقة)</td><td>الأعلى</td><td>للعيادات الكبيرة فقط، ولمّا يطلبونه هم</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="card cau">
+      <p class="card-h"><span class="tag t-warn">قرار يغيّر الفلوس</span> شنو هو «أجر اليوم»؟</p>
+      <p class="small" style="margin:0">
+        راتب ٦٠٠٬٠٠٠ بشهر فيه ٢٦ يوم عمل. أجر اليوم =
+        <code>600000 ÷ 30 = 20,000</code> لو قسمت على أيام الشهر، و
+        <code>600000 ÷ 26 = 23,077</code> لو قسمت على أيام العمل. فرق ١٥٪ على كل
+        يوم غياب. الاثنان مستعملان بالسوق. المطلوب: أن تختار العيادة قاعدتها
+        <strong>مرة واحدة</strong>، وأن <strong>تُطبع القاعدة على القسيمة نفسها</strong>
+        — لأن الموظف اللي ما يعرف كيف انحسب القطع يشك بالسستم كله، وهو محقّ.
+      </p>
+    </div>
+  </section>
+
+  <section id="commission">
+    <div class="sec-head"><span class="n">07</span><h2>النِسب والعمولات</h2><div class="rule"></div></div>
+
+    <p>
+      هذا الجزء الي يميّز رواتب العيادة عن رواتب أي محل. الطبيب ياخذ نسبة على
+      العمليات، والمجمّل على كل جلسة، والكاشير أحياناً على المبيعات. أشكال
+      القواعد المستعملة بالسستمات الكبيرة أربعة:
+    </p>
+
+    <div class="tw">
+      <table>
+        <thead><tr><th>الشكل</th><th>مثال</th><th>ملاحظة</th></tr></thead>
+        <tbody>
+          <tr><td>نسبة من الإيراد</td><td>١٠٪ من قيمة العمليات اللي سوّاها</td><td>الأبسط والأشيع — والأخطر لو الخصومات عالية</td></tr>
+          <tr><td>نسبة من الربح</td><td>٢٠٪ من ربح المبيعات اللي باعها</td><td>أعدل، ويحتاج كلفة الشراء — <span class="yes">موجودة عندك</span></td></tr>
+          <tr><td>مبلغ لكل وحدة</td><td>٥٬٠٠٠ عن كل جلسة تنظيف</td><td>الأوضح للموظف، ويمنع مشاكل الخصم</td></tr>
+          <tr><td>شرائح</td><td>٥٪ لحدّ ٥ مليون، و٨٪ فوقها</td><td>محفّز قوي، ويحتاج شرحاً بالقسيمة وإلا صار شكّاً</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="card trap">
+      <p class="card-h"><span class="tag t-deduct">المطبّ</span> عمولة على بيع بالدَّين</p>
+      <p class="small" style="margin:0">
+        الطبيب سوّى عملية بمليون على الحساب. تدفع له نسبته الآن أو لمّا يجي
+        الفلوس؟ لو دفعت الآن ورجع الزبون واسترجع، أو ما دفع أبداً — طلعت فلوس
+        العيادة وما رجعت. عندك أصلاً <strong>تمييز واضح بين المستحقّ والمُحصّل</strong>
+        بمنطق الديون، فالطريق الآمن: <strong>العمولة على المُحصّل</strong>، وتظهر
+        بقسيمة الشهر اللي انقبضت به الفلوس. البديل — على الفاتورة — يحتاج
+        <strong>سطر استرجاع عمولة</strong> عند الإرجاع أو التعثّر، وإلا انكسر
+        الحساب.
+      </p>
+    </div>
+
+    <p>
+      <strong>وشرط مسبق ما يتجاوَز:</strong> بلا <code>staff_id</code> حقيقي على
+      الزيارات والعمليات (§١) ما تنبني عمولة طبية أصلاً. عمولة الكاشير على
+      المبيعات تنبني اليوم بلا أي تغيير.
+    </p>
+  </section>
+
+  <section id="leave">
+    <div class="sec-head"><span class="n">08</span><h2>الإجازات ونهاية الخدمة</h2><div class="rule"></div></div>
+
+    <p>
+      الإجازات تدخل الراتب من ثلاثة أبواب، والثلاثة تصير مشاكل لو ما انبنت من
+      البداية:
+    </p>
+    <ul>
+      <li><strong>رصيد يتراكم</strong> — أيام تُكتسب كل شهر ويُستهلك منها. بلا رصيد محسوب، كل نقاش إجازة يصير من الذاكرة.</li>
+      <li><strong>إجازة بلا راتب</strong> — تتحوّل لقطع <code>UNPAID</code> تلقائياً.</li>
+      <li><strong>بدل الإجازات غير المستهلكة</strong> — تُدفع عند الترك أو آخر السنة حسب سياسة العيادة.</li>
+    </ul>
+    <p>
+      و<strong>مكافأة نهاية الخدمة</strong>: التزام يتراكم مع كل شهر خدمة. السستمات
+      الكبيرة تحسبه <strong>مخصّصاً شهرياً</strong> لا مفاجأةً يوم الترك — لأنه
+      لو ما انحسب، تطلع أرباح كل السنين أعلى من حقيقتها، وبعدين تنزل ضربة وحدة
+      يوم يترك موظف قديم.
+    </p>
+  </section>
+
+  <section id="governance">
+    <div class="sec-head"><span class="n">09</span><h2>من يحسب، من يوافق، من يدفع</h2><div class="rule"></div></div>
+
+    <p class="lede">
+      الرواتب أكبر بند مصروف بالعيادة وأسهل بند للاحتيال. لهذا كل سستم جدّي يفصل
+      الأدوار الثلاثة، والقاعدة الأولى فيها:
+      <strong>ما أحد يعتمد راتب نفسه.</strong>
+    </p>
+
+    <div class="tw">
+      <table>
+        <thead><tr><th>الصلاحية</th><th>منو</th><th>الحدّ</th></tr></thead>
+        <tbody>
+          <tr><td>تعديل هيكل أجر موظف</td><td>المالك، أو مدير بصلاحية صريحة</td><td>صفّ مؤرَّخ جديد، وما يشمل نفسه</td></tr>
+          <tr><td>حساب الدورة</td><td>المدير</td><td>ما يغيّر شي — يولّد أرقاماً فقط</td></tr>
+          <tr><td>إضافة قطع جزائي</td><td>المدير</td><td>سبب إلزامي + سقف مفروض على الخادم</td></tr>
+          <tr><td><strong>اعتماد الدورة</strong></td><td><strong>المالك حصراً</strong></td><td>لا رجعة — يُجمّد كل شي</td></tr>
+          <tr><td>تسجيل الدفع</td><td>المدير</td><td>بعد الاعتماد فقط</td></tr>
+          <tr><td>رؤية رواتب الآخرين</td><td>صلاحية مستقلّة</td><td>افتراضها: مطفأة (§١٠)</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p>
+      بعيادة صغيرة صاحبها هو مديرها، الفصل يصير شكلياً — وهذا مقبول: القيمة
+      وقتها بـ<strong>الأثر</strong>، أن كل تغيير راتب وكل جزاء يخلّف سطراً مؤرَّخاً
+      باسم من سوّاه. عندك سجلّ حركات شغّال يلتقط هذا مجاناً.
+    </p>
+  </section>
+
+  <section id="privacy">
+    <div class="sec-head"><span class="n">10</span><h2>الخصوصية — أخطر بيانات بالعيادة</h2><div class="rule"></div></div>
+
+    <p>
+      بيانات الرواتب أخطر من بيانات المرضى بمعيار واحد: تسريبها يفجّر العيادة من
+      داخلها بيوم واحد. موظفة استقبال شافت راتب زميلتها = مشكلة ما تنطفي.
+      والتصميم لازم يمنعها بالبناء لا بالانتباه:
+    </p>
+
+    <ul>
+      <li><strong>صلاحية مستقلّة</strong> — <code>viewPayroll</code> منفصلة عن «عرض الأرباح» ومطفأة افتراضياً لكل دور غير المدير.</li>
+      <li><strong>الموظف يشوف قسيمته وحده</strong> — سياسة على مستوى الصفّ تربط القسيمة بحساب صاحبها، مو ترشيح بالواجهة.</li>
+      <li><strong>المبالغ ما تتسرّب من الأبواب الجانبية</strong> — التقارير، التصدير، سجل الحركات. سجلّ الحركات خصوصاً: هو يلتقط الصفّ كاملاً بما فيه المبلغ، فيحتاج ترشيحاً عند القراءة لغير المخوّلين.</li>
+      <li><strong>سطر المصروف المرحَّل عامّ</strong> — «رواتب شهر ٨: ٤٬٢٠٠٬٠٠٠» يشوفه كل من يشوف المصروفات. الإجمالي مقبول؛ <strong>التفصيل لا يُرحَّل</strong>.</li>
+    </ul>
+  </section>
+
+  <section id="immutable">
+    <div class="sec-head"><span class="n">11</span><h2>التجميد والتصحيح</h2><div class="rule"></div></div>
+
+    <p>
+      بعد الاعتماد، القسيمة وثيقة. ثلاث نتائج عملية:
+    </p>
+    <ul>
+      <li><strong>تُخزَّن المبالغ لا تُحسب عند العرض.</strong> لو التقرير يعيد الحساب من البيانات الحيّة، يكفي أن يتغيّر راتب أساسي اليوم حتى تتغيّر قسيمة السنة الماضية. هذا يصير فعلاً بالأنظمة المبنية على عجل.</li>
+      <li><strong>تُخزَّن القاعدة مع النتيجة.</strong> القسيمة تحمل لقطتها: أساس أجر اليوم، نسبة العمولة، سقف الاستقطاع الساري وقتها. لأن السياسات تتغيّر.</li>
+      <li><strong>التصحيح بسطر جديد لا بممحاة.</strong> غلط انكشف بعد الاعتماد؟ سطر تسوية بالدورة الجاية يشير للقسيمة الأصلية — «تصحيح قطع غياب شهر ٧: +٢٥٬٠٠٠». الموظف يشوف شنو صار وليش.</li>
+    </ul>
+    <p class="small">
+      وهذي بالضبط فلسفة سجلّ مصروفاتك الحالي: يُضاف ولا يُعدَّل. الرواتب تمشي على
+      نفس المبدأ، بس بمستوى أعلى — المصروف يُحذف ويُعاد، والقسيمة المعتمدة لا
+      تُحذف أبداً.
+    </p>
+  </section>
+
+  <section id="payment">
+    <div class="sec-head"><span class="n">12</span><h2>الدفع الفعلي والصندوق</h2><div class="rule"></div></div>
+
+    <p>
+      هنا تلتقي الرواتب بالمال الحقيقي، وعندك قاعدة قائمة لازم تُحترم:
+      <strong>صافي النقد = المُحصّل نقداً − المسحوب نقداً</strong>. يعني أي راتب
+      يُدفع من الدرج <strong>لازم</strong> يظهر بسجل المصروفات، وإلا رقم الصندوق
+      اللي يطابقه الدكتور آخر اليوم صار كذباً.
+    </p>
+
+    <div class="tw">
+      <table>
+        <thead><tr><th>الواقعة</th><th>مصروف رواتب؟</th><th>ينقص الصندوق؟</th><th>يمسّ الذمم؟</th></tr></thead>
+        <tbody>
+          <tr><td>اعتماد الدورة</td><td class="yes">نعم — بالإجمالي</td><td class="no">لا</td><td class="no">لا</td></tr>
+          <tr><td>دفع راتب نقداً</td><td class="no">لا (انحسب بالاعتماد)</td><td class="yes">نعم</td><td class="no">لا</td></tr>
+          <tr><td>دفع راتب حوالة</td><td class="no">لا</td><td class="no">لا — خارج الدرج</td><td class="no">لا</td></tr>
+          <tr><td>صرف سلفة</td><td class="no"><strong>لا أبداً</strong></td><td class="yes">نعم</td><td class="yes">تزيد</td></tr>
+          <tr><td>خصم قسط بالقسيمة</td><td class="no">لا</td><td class="no">لا</td><td class="yes">تنقص</td></tr>
+          <tr><td>تسديد سلفة نقداً</td><td class="no">لا</td><td class="no">تزيد</td><td class="yes">تنقص</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p class="small">
+      الصفّ الأول والثاني هما لبّ الموضوع: <strong>الكلفة تُعترف عند الاعتماد،
+      والنقد ينقص عند الدفع</strong>. لو خلطتهما — سجّلت المصروف مرتين أو ما
+      سجّلته أصلاً — انكسر تقرير الربح أو انكسر الصندوق. واحد من الاثنين.
+    </p>
+  </section>
+
+  <section id="slip">
+    <div class="sec-head"><span class="n">13</span><h2>القسيمة</h2><div class="rule"></div></div>
+
+    <p>
+      هذي الوثيقة اللي يستلمها الموظف. كل رقم فيها يشرح نفسه — وهذا مو تجميل: هو
+      ما يمنع نصف نقاشات الرواتب قبل ما تبدأ.
+    </p>
+
+    <div class="slip break">
+      <div class="slip-top">
+        <h4>قسيمة راتب</h4>
+        <div class="slip-meta">
+          <span>الموظف <b>علي حسن</b></span>
+          <span>الفترة <b>2026-08</b></span>
+          <span>الفرع <b>المنصور</b></span>
+          <span>القسيمة <b>PS-2026-08-0007</b></span>
+        </div>
+      </div>
+      <div class="slip-cols">
+        <div class="e">
+          <h5>الزيادات</h5>
+          <div class="row"><span>الأجر الأساسي<i class="why">ساري من ٢٠٢٦-٠٥-٠١</i></span><b>600,000</b></div>
+          <div class="row"><span>بدل نقل</span><b>50,000</b></div>
+          <div class="row"><span>مناوبات ليلية<i class="why">٤ مناوبات × ١٥٬٠٠٠</i></span><b>60,000</b></div>
+          <div class="row"><span>نسبة مبيعات<i class="why">١٠٪ من ربح مُحصّل ٣٢٠٬٠٠٠</i></span><b>32,000</b></div>
+          <div class="sub"><span>إجمالي الأجر</span><b>742,000</b></div>
+        </div>
+        <div class="d">
+          <h5>القطوعات</h5>
+          <div class="row"><span>غياب<i class="why">يومان × أجر اليوم ٢٠٬٠٠٠ (الأساسي ÷ ٣٠)</i></span><b>−40,000</b></div>
+          <div class="row"><span>تأخير<i class="why">١٤٠ دقيقة تراكمية</i></span><b>−12,000</b></div>
+          <div class="row"><span>قسط سلفة<i class="why">القسط ٢ من ٣ · الباقي بعده ١٠٠٬٠٠٠</i></span><b>−100,000</b></div>
+          <div class="row"><span>جزاء انضباطي<i class="why">إنذار ٢٠٢٦-٠٨-٠٩ · اعتمده: المالك</i></span><b>−25,000</b></div>
+          <div class="sub"><span>إجمالي القطوعات</span><b>−177,000</b></div>
+        </div>
+      </div>
+      <div class="slip-net"><span>الصافي المستحق</span><b>565,000 IQD</b></div>
+      <div class="slip-foot">
+        دُفع نقداً من الصندوق · ٢٠٢٦-٠٩-٠١ · سجّلها: مدير العيادة —
+        اعتمد الدورة: المالك · ٢٠٢٦-٠٨-٣١
+      </div>
+    </div>
+
+    <p class="small">
+      لاحظ: كل قطع يحمل <strong>سببه ومرجعه ومن اعتمده</strong>، وقسط السلفة
+      يعرض <strong>الباقي بعده</strong>. وتوصيلها للموظف يمشي على ما عندك أصلاً:
+      طباعة حرارية، أو PDF، أو واتساب.
+    </p>
+  </section>
+
+  <section id="reports">
+    <div class="sec-head"><span class="n">14</span><h2>التقارير</h2><div class="rule"></div></div>
+    <ul>
+      <li><strong>كشف الرواتب</strong> — صفّ لكل موظف بالفترة: إجمالي، قطوعات، صافي، طريقة الدفع. هذي بالضبط القائمة اللي طلبتها.</li>
+      <li><strong>تكلفة الكادر مقابل الإيراد</strong> — الرواتب كنسبة من إيراد الشهر. أهم رقم إداري بالعيادة، ويتقارن بين الشهور والفروع.</li>
+      <li><strong>تحليل القطوعات</strong> — مجموع كل نوع قطع بالسنة. يكشف مشكلة انضباط قبل ما تصير أزمة.</li>
+      <li><strong>الذمم القائمة</strong> — شكد باقي على كل موظف من سلفه، ومتى يخلص.</li>
+      <li><strong>تراكمي الموظف</strong> — كل قسائمه بسنة، للمراجعة أو لإثبات دخل.</li>
+      <li><strong>تكلفة كل فرع</strong> — يعمل اليوم لأن الفروع موجودة.</li>
+    </ul>
+  </section>
+
+  <section id="schema">
+    <div class="sec-head"><span class="n">15</span><h2>المخطط المقترح</h2><div class="rule"></div></div>
+
+    <p>
+      سبعة جداول، بنفس أعراف قاعدتك: عزل بـ<code>clinic_id = auth_clinic()</code>،
+      وكتابة عبر دوال <code>SECURITY DEFINER</code> لا إدراج مباشر، وسجلّ حركات
+      على كل شي.
+    </p>
+
+<pre><code>-- ١) هيكل الأجر: مؤرَّخ بالإصدارات — الزيادة صفّ جديد لا تعديل
+staff_comp(id, clinic_id, staff_id, effective_from date,
+           base_amount numeric, pay_basis text,   -- monthly | daily | hourly
+           day_rate_basis text,                   -- calendar_30 | working_days
+           currency text, created_by, created_at)
+-- الصفّ الساري = الأحدث الذي effective_from <= تاريخ الفترة
+
+-- ٢) كتالوج البنود: يُزرع افتراضياً، وتضيف عليه العيادة
+pay_elements(id, clinic_id, code, name_ar, kind,  -- earning | deduction
+             calc text,                            -- fixed | percent | per_unit | manual
+             needs_reason bool, needs_ref bool, capped bool, active bool)
+
+-- ٣) البنود المتكرّرة على الموظف (بدل نقل، استقطاع ثابت…)
+staff_recurring(id, clinic_id, staff_id, element_id, amount,
+                from_date, to_date)
+
+-- ٤) الدورة: الحالة هي مسار الموافقة
+payroll_runs(id, clinic_id, period date, status text,  -- draft|calculated|
+             --                       approved|paid|closed
+             calculated_by, approved_by, approved_at, closed_at,
+             policy_snapshot jsonb)                    -- السياسات وقت الاعتماد
+
+-- ٥) القسيمة: المبالغ مخزّنة لا محسوبة عند العرض
+payslips(id, clinic_id, run_id, staff_id, branch_id,
+         gross numeric, deductions numeric, net numeric,
+         paid_at, pay_method, expense_id, locked bool)
+
+-- ٦) سطور القسيمة: هنا يسكن «سببها»
+payslip_lines(id, payslip_id, element_id, qty, rate, amount,
+              reason text,        -- النصّ الحرّ تحت البند لا بدلاً عنه
+              ref_kind text, ref_id uuid,   -- attendance|loan|invoice|incident
+              approved_by, approved_at)
+
+-- ٧) السلف: أصل لا مصروف
+staff_loans(id, clinic_id, staff_id, principal, installment,
+            remaining numeric, started_on, status,   -- active|settled|written_off
+            reason text, approved_by, cash_expense_id)
+staff_loan_events(id, loan_id, kind, amount, at, payslip_id)
+            -- kind: disbursed | installment | early_repay | adjusted | waived</code></pre>
+
+    <div class="card note">
+      <p class="card-h"><span class="tag t-brand">قاعدة بناء</span> لا كتابة مباشرة</p>
+      <p class="small" style="margin:0">
+        كل كتابة تمرّ من دالة: <code>payroll_calculate()</code> و
+        <code>payroll_approve()</code> و<code>payroll_pay()</code> و
+        <code>loan_disburse()</code>. السبب مو الأناقة: <strong>سقف الاستقطاع
+        وقاعدة «ما أحد يعتمد راتب نفسه» وتجميد القسيمة</strong> — ثلاثتها قواعد
+        ما تنفرض بسياسة صفوف، تنفرض بمنطق. وقاعدة تُفرض بالواجهة وحدها هي قاعدة
+        تنكسر بأول طلب مصنوع بيد.
+      </p>
+    </div>
+  </section>
+
+  <section id="phases">
+    <div class="sec-head"><span class="n">16</span><h2>المراحل</h2><div class="rule"></div></div>
+
+    <div class="phase">
+      <div class="phase-h"><span class="tag t-earn">١</span><b>الأساس — يجاوب طلبك كاملاً</b><span class="when">أول دفعة</span></div>
+      <div class="phase-b">
+        <ul>
+          <li>هيكل أجر مؤرَّخ لكل موظف (الأساسي + بدلات ثابتة)</li>
+          <li>دورة شهرية بحالاتها الخمس، والاعتماد يجمّد</li>
+          <li>قطوعات من كتالوج مصنّف بسبب إلزامي وسقف مفروض على الخادم</li>
+          <li>سلف بأقساط، بذمّة صحيحة ومنع الازدواج (§٥)</li>
+          <li>قسيمة تُطبع وتنرسل</li>
+          <li>ترحيل للمصروفات فيضبط الصندوق والربح</li>
+          <li>صلاحية <code>viewPayroll</code> مستقلّة ومطفأة افتراضياً</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="phase">
+      <div class="phase-h"><span class="tag t-brand">٢</span><b>الأتمتة</b><span class="when">بعد استقرار الأولى</span></div>
+      <div class="phase-b">
+        <ul>
+          <li>حضور بالتطبيق ← غياب وتأخير آلياً</li>
+          <li><code>staff_id</code> على الزيارات والعمليات، وربط القديم مرة واحدة بمراجعة</li>
+          <li>خطط العمولة (على المُحصّل) واسترجاعها عند الإرجاع</li>
+          <li>أرصدة الإجازات</li>
+          <li>القسيمة بالواتساب</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="phase">
+      <div class="phase-h"><span class="tag t-warn">٣</span><b>المؤسسي</b><span class="when">عند أول عيادة تطلبه</span></div>
+      <div class="phase-b">
+        <ul>
+          <li>مخصّص نهاية الخدمة الشهري</li>
+          <li>الضمان والضريبة (بعد §١٧)</li>
+          <li>ملف تحويل بنكي</li>
+          <li>مراكز كلفة للفروع والأقسام</li>
+          <li>استيراد جهاز البصمة</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section id="unknown">
+    <div class="sec-head"><span class="n">17</span><h2>ما لا أعرفه</h2><div class="rule"></div></div>
+
+    <div class="card cau">
+      <p class="card-h"><span class="tag t-warn">صراحة</span> أرقام ما راح أخمّنها</p>
+      <p class="small">
+        هذي بنود قانونية عراقية ما أثق بأرقامها من الذاكرة، وتخمينها بسستم يحسب
+        فلوس ناس أسوأ من تركها فارغة:
+      </p>
+      <ul class="small" style="margin-bottom:.6em">
+        <li>نِسب الضمان الاجتماعي — حصّة صاحب العمل وحصّة الموظف</li>
+        <li>شرائح ضريبة الدخل على الرواتب والإعفاءات</li>
+        <li>الحدّ القانوني الأعلى للاستقطاع من الأجر الشهري</li>
+        <li>معادلة مكافأة نهاية الخدمة</li>
+        <li>معاملات أجر العمل الإضافي والعطل</li>
+      </ul>
+      <p class="small" style="margin:0">
+        والحلّ الهندسي: هذي كلها <strong>بنود بالكتالوج بنسب قابلة للضبط</strong>،
+        مو أرقام مدفونة بالكود. تُثبَّت من محاسب عراقي وتنضبط بالإعدادات —
+        فيصير تغييرها لمّا يتغيّر القانون سطراً بشاشة لا هجرة قاعدة بيانات.
+      </p>
+    </div>
+  </section>
+
+  <section id="decide">
+    <div class="sec-head"><span class="n">18</span><h2>قرارات تحتاج جوابك</h2><div class="rule"></div></div>
+
+    <p>ستّة قرارات ما أكدر أقرّرها عنك، وكل واحد يغيّر البناء:</p>
+
+    <div class="grid2">
+      <div class="qcard">
+        <h4>١ · أجر اليوم</h4>
+        <p>الأساسي ÷ ٣٠، لو ÷ أيام العمل الفعلية؟ فرق ١٥٪ على كل يوم غياب.</p>
+        <p class="rec">رأيي: <b>÷ ٣٠</b> — أبسط للشرح، وقابل للتبديل بالإعدادات</p>
+      </div>
+      <div class="qcard">
+        <h4>٢ · العمولة</h4>
+        <p>على الفاتورة ساعة ما تنكتب، لو على الفلوس ساعة ما تنقبض؟</p>
+        <p class="rec">رأيي: <b>على المُحصّل</b> — ما يطلّع فلوس ما دخلت</p>
+      </div>
+      <div class="qcard">
+        <h4>٣ · منو يشوف الرواتب</h4>
+        <p>المالك وحده، لو مدير العيادة بعد؟ وشنو يشوف الموظف؟</p>
+        <p class="rec">رأيي: <b>المالك افتراضاً</b>، والمدير بمنح صريح، والموظف قسيمته وحدها</p>
+      </div>
+      <div class="qcard">
+        <h4>٤ · يوم القطع</h4>
+        <p>الشهر من ١ إلى ٣٠، لو من ٢٦ للـ٢٥؟ يحدّد أي غياب يدخل بأي شهر.</p>
+        <p class="rec">رأيي: <b>الشهر الميلادي</b> ما لم تطلب العيادة غيره</p>
+      </div>
+      <div class="qcard">
+        <h4>٥ · سقف الاستقطاع</h4>
+        <p>أقصى نسبة تُقتطع من الصافي بشهر واحد، والباقي يُرحَّل.</p>
+        <p class="rec">رأيي: ابدأ <b>٥٠٪ قابلة للضبط</b>، وتُثبَّت من محاسب</p>
+      </div>
+      <div class="qcard">
+        <h4>٦ · باقة أي اشتراك</h4>
+        <p>الرواتب بكل الباقات، لو من «المطوّرة» وفوق؟</p>
+        <p class="rec">رأيي: <b>المطوّرة فما فوق</b> — ميزة إدارية تخصّ العيادات ذات الكادر</p>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    دراسة معمارية لـ doctorVet · مبنيّة على قراءة <code>staff</code> و
+    <code>expenses</code> و<code>invoices</code> و<code>visits</code> و
+    <code>surgeries</code> و<code>branches</code> كما هي اليوم · لا كود بعد،
+    والبناء ينتظر جواب §١٨.
+  </footer>
+
+</div>
