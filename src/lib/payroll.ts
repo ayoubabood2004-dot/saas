@@ -18,8 +18,6 @@ export type ElementKind = "earning" | "deduction";
 export interface PayElement {
   code: string;
   kind: ElementKind;
-  /** عنوان البند. المفتاح `payroll.el.<code>` يترجمه؛ وهذا احتياطه. */
-  labelAr: string;
   /** سببٌ نصّي إلزامي — بندٌ تقديريّ بلا سبب هو نزاعٌ مؤجَّل. */
   needsReason: boolean;
   /**
@@ -41,27 +39,31 @@ export interface PayElement {
  */
 const DEDUCTION_PRIORITY = ["SSC", "TAX", "LOAN", "LATE", "SHORT", "DMG", "PEN", "OTHER"] as const;
 
-/** كتالوج المرحلة الأولى. يُبذَر بقاعدة البيانات، وهذي نسخته المرجعية. */
+/**
+ * كتالوج المرحلة الأولى — **بلا عناوين**. العنوان يسكن ملفات اللغات تحت
+ * `payroll.el.<code>` وحدها: عنوانٌ هنا وآخر هناك مصدران ينحرفان، وهذا
+ * الملف يجب أن يبقى نقيّاً بلا i18n حتى يُفحص بلا متصفّح.
+ */
 export const PAY_ELEMENTS: PayElement[] = [
   // الزيادات
-  { code: "BASIC",  kind: "earning",   labelAr: "الأجر الأساسي",           needsReason: false, capExempt: false, auto: true  },
-  { code: "ALLOW",  kind: "earning",   labelAr: "بدل ثابت",                 needsReason: false, capExempt: false, auto: false },
-  { code: "ONCALL", kind: "earning",   labelAr: "بدل مناوبة",               needsReason: false, capExempt: false, auto: false },
-  { code: "OT",     kind: "earning",   labelAr: "عمل إضافي",                needsReason: false, capExempt: false, auto: false },
-  { code: "BONUS",  kind: "earning",   labelAr: "مكافأة",                   needsReason: true,  capExempt: false, auto: false },
-  { code: "RETRO",  kind: "earning",   labelAr: "فرق أثر رجعي",             needsReason: true,  capExempt: false, auto: false },
+  { code: "BASIC", kind: "earning", needsReason: false, capExempt: false, auto: true  },
+  { code: "ALLOW", kind: "earning", needsReason: false, capExempt: false, auto: false },
+  { code: "ONCALL", kind: "earning", needsReason: false, capExempt: false, auto: false },
+  { code: "OT", kind: "earning", needsReason: false, capExempt: false, auto: false },
+  { code: "BONUS", kind: "earning", needsReason: true,  capExempt: false, auto: false },
+  { code: "RETRO", kind: "earning", needsReason: true,  capExempt: false, auto: false },
   // القطوعات
-  { code: "ABS",    kind: "deduction", labelAr: "غياب",                     needsReason: false, capExempt: true,  auto: false },
-  { code: "UNPAID", kind: "deduction", labelAr: "إجازة بلا راتب",           needsReason: false, capExempt: true,  auto: false },
-  { code: "ADV",    kind: "deduction", labelAr: "سحب على حساب الشهر",       needsReason: false, capExempt: true,  auto: true  },
-  { code: "SSC",    kind: "deduction", labelAr: "حصّة الضمان",              needsReason: false, capExempt: false, auto: false },
-  { code: "TAX",    kind: "deduction", labelAr: "ضريبة الدخل",              needsReason: false, capExempt: false, auto: false },
-  { code: "LOAN",   kind: "deduction", labelAr: "قسط سلفة",                 needsReason: false, capExempt: false, auto: true  },
-  { code: "LATE",   kind: "deduction", labelAr: "تأخير",                    needsReason: false, capExempt: false, auto: false },
-  { code: "SHORT",  kind: "deduction", labelAr: "عجز صندوق",                needsReason: true,  capExempt: false, auto: false },
-  { code: "DMG",    kind: "deduction", labelAr: "تلف أو كسر",               needsReason: true,  capExempt: false, auto: false },
-  { code: "PEN",    kind: "deduction", labelAr: "جزاء انضباطي",             needsReason: true,  capExempt: false, auto: false },
-  { code: "OTHER",  kind: "deduction", labelAr: "استقطاع آخر",              needsReason: true,  capExempt: false, auto: false },
+  { code: "ABS", kind: "deduction", needsReason: false, capExempt: true,  auto: false },
+  { code: "UNPAID", kind: "deduction", needsReason: false, capExempt: true,  auto: false },
+  { code: "ADV", kind: "deduction", needsReason: false, capExempt: true,  auto: true  },
+  { code: "SSC", kind: "deduction", needsReason: false, capExempt: false, auto: false },
+  { code: "TAX", kind: "deduction", needsReason: false, capExempt: false, auto: false },
+  { code: "LOAN", kind: "deduction", needsReason: false, capExempt: false, auto: true  },
+  { code: "LATE", kind: "deduction", needsReason: false, capExempt: false, auto: false },
+  { code: "SHORT", kind: "deduction", needsReason: true,  capExempt: false, auto: false },
+  { code: "DMG", kind: "deduction", needsReason: true,  capExempt: false, auto: false },
+  { code: "PEN", kind: "deduction", needsReason: true,  capExempt: false, auto: false },
+  { code: "OTHER", kind: "deduction", needsReason: true,  capExempt: false, auto: false },
 ];
 
 const BY_CODE = new Map(PAY_ELEMENTS.map((e) => [e.code, e]));

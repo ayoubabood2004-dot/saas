@@ -7,7 +7,8 @@
  * يشكّ بالسستم كلّه، وهو محقّ.
  * ==========================================================================*/
 import type { Payslip, PayslipLine, PayrollPolicyDTO } from "@/types";
-import { elementOf } from "./payroll";
+import i18n from "@/i18n";
+import { elLabelOf } from "./payrollLabels";
 
 export interface PayslipPrintOptions {
   clinicName: string;
@@ -34,16 +35,16 @@ const ltr = (s: string) => `<span dir="ltr" style="unicode-bidi:isolate">${s}</s
 function explain(l: PayslipLine, policy: PayrollPolicyDTO): string {
   const bits: string[] = [];
   if (l.qty != null && l.rate != null) {
-    const unit = l.code === "ABS" || l.code === "UNPAID" ? "يوم" : "وحدة";
+    const unit = i18n.t(l.code === "ABS" || l.code === "UNPAID" ? "payroll.unitDay" : "payroll.unitPiece");
     bits.push(`${fmt(l.qty)} ${unit} × ${ltr(fmt(l.rate))}`);
     if (l.code === "ABS" || l.code === "UNPAID") {
       bits.push(policy.dayRateBasis === "calendar_30"
-        ? "أجر اليوم = الأساسي ÷ ٣٠"
-        : `أجر اليوم = الأساسي ÷ ${fmt(policy.workingDays)} يوم عمل`);
+        ? i18n.t("payroll.dayRule30")
+        : i18n.t("payroll.dayRuleWork", { n: fmt(policy.workingDays) }));
     }
   }
   if (l.reason) bits.push(esc(l.reason));
-  if (l.deferred > 0) bits.push(`رُحِّل للشهر الجاي: ${ltr(fmt(l.deferred))}`);
+  if (l.deferred > 0) bits.push(i18n.t("payroll.carriedTo", { v: ltr(fmt(l.deferred)) }));
   return bits.join(" · ");
 }
 
@@ -52,7 +53,7 @@ export function buildPayslipHTML(
 ): string {
   const earn = lines.filter((l) => l.kind === "earning");
   const ded = lines.filter((l) => l.kind === "deduction");
-  const label = (code: string) => esc(elementOf(code)?.labelAr ?? code);
+  const label = (code: string) => esc(elLabelOf(code));
   const W = opts.thermal ? "80mm" : "210mm";
 
   const rows = (ls: PayslipLine[], sign: string) => ls.map((l) => `
@@ -65,7 +66,7 @@ export function buildPayslipHTML(
     </tr>`).join("");
 
   return `<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8">
-<title>قسيمة راتب — ${esc(slip.staff_name)}</title>
+<title>${esc(i18n.t("payroll.slipTitle"))} — ${esc(slip.staff_name)}</title>
 <style>
   @page { size: ${opts.thermal ? "80mm auto" : "A4"}; margin: ${opts.thermal ? "4mm" : "12mm"}; }
   * { box-sizing: border-box; }
@@ -98,33 +99,35 @@ export function buildPayslipHTML(
     ${opts.logoUrl ? `<img src="${esc(opts.logoUrl)}" alt="">` : ""}
     <div>
       <h1>${esc(opts.clinicName)}</h1>
-      <div class="sub">قسيمة راتب${opts.clinicPhone ? ` · ${esc(opts.clinicPhone)}` : ""}</div>
+      <div class="sub">${esc(i18n.t("payroll.slipTitle"))}${opts.clinicPhone ? ` · ${esc(opts.clinicPhone)}` : ""}</div>
     </div>
     <div class="no">
       <b>${esc(opts.slipNo)}</b>
-      ${esc(slip.staff_name)}<br>فترة ${ltr(esc(opts.period))}
+      ${esc(slip.staff_name)}<br>${esc(i18n.t("payroll.periodWord"))} ${ltr(esc(opts.period))}
     </div>
   </div>
 
-  <h2 class="e">الزيادات</h2>
+  <h2 class="e">${esc(i18n.t("payroll.earnings"))}</h2>
   <table>${rows(earn, "")}</table>
-  <div class="sum"><span>إجمالي الأجر</span><span>${ltr(fmt(slip.gross))}</span></div>
+  <div class="sum"><span>${esc(i18n.t("payroll.gross"))}</span><span>${ltr(fmt(slip.gross))}</span></div>
 
   ${ded.length ? `
-  <h2 class="d">القطوعات</h2>
+  <h2 class="d">${esc(i18n.t("payroll.deductions"))}</h2>
   <table>${rows(ded, "−")}</table>
-  <div class="sum"><span>إجمالي القطوعات</span><span>${ltr("−" + fmt(slip.deductions))}</span></div>` : ""}
+  <div class="sum"><span>${esc(i18n.t("payroll.dedTotal"))}</span><span>${ltr("−" + fmt(slip.deductions))}</span></div>` : ""}
 
-  <div class="net"><span>الصافي المستحق</span><b>${ltr(fmt(slip.net) + " " + esc(opts.currency))}</b></div>
+  <div class="net"><span>${esc(i18n.t("payroll.netDue"))}</span><b>${ltr(fmt(slip.net) + " " + esc(opts.currency))}</b></div>
 
   <div class="meta">
-    الأجر الأساسي الساري: ${ltr(fmt(slip.base_amount))} ·
-    سقف الاستقطاع: ${ltr(String(opts.policy.deductionCapPct))}٪
-    ${slip.deferred > 0 ? `<br><b>رُحِّل للشهر الجاي: ${ltr(fmt(slip.deferred))}</b> — لأن القطوعات تجاوزت السقف، فلا ينزل الصافي إلى صفر.` : ""}
-    ${slip.paid_at ? `<br>دُفع ${slip.pay_method === "cash" ? "نقداً من الصندوق" : slip.pay_method === "bank" ? "حوالة بنكية" : "محفظة"} · ${esc(new Date(slip.paid_at).toLocaleDateString("ar-IQ"))}` : "<br>لم يُدفع بعد."}
+    ${esc(i18n.t("payroll.baseInForce"))}: ${ltr(fmt(slip.base_amount))} ·
+    ${esc(i18n.t("payroll.capPctShort"))}: ${ltr(String(opts.policy.deductionCapPct))}٪
+    ${slip.deferred > 0 ? `<br><b>${esc(i18n.t("payroll.carriedTo", { v: fmt(slip.deferred) }))}</b> — ${esc(i18n.t("payroll.carriedWhy"))}` : ""}
+    ${slip.paid_at
+      ? `<br>${esc(i18n.t("payroll.paidVia", { m: i18n.t(`payroll.method_${slip.pay_method ?? "cash"}`) }))} · ${esc(new Date(slip.paid_at).toLocaleDateString(i18n.language === "ar" ? "ar-IQ" : "en-GB"))}`
+      : `<br>${esc(i18n.t("payroll.notPaidYet"))}`}
   </div>
 
-  <div class="sig"><div>توقيع المستلم</div><div>عن العيادة</div></div>
+  <div class="sig"><div>${esc(i18n.t("payroll.sigStaff"))}</div><div>${esc(i18n.t("payroll.sigClinic"))}</div></div>
 </body></html>`;
 }
 

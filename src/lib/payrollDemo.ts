@@ -10,6 +10,7 @@
 import { getActiveClinicId } from "./clinics";
 import { uid } from "./utils";
 import { DEFAULT_POLICY, normalizePolicy, elementOf } from "./payroll";
+import { salaryExpenseText, loanExpenseText, unnamedStaff } from "./payrollLabels";
 import type {
   PayrollPolicyDTO, StaffComp, StaffRecurring, PayrollRun, Payslip, PayslipLine,
   StaffLoan, StaffLoanEvent, PayslipDraft, PayMethod, Expense,
@@ -148,7 +149,7 @@ export function saveSlips(runId: string, drafts: PayslipDraft[]): { run: string;
 
     const slip: Payslip = {
       id: uid("slp"), clinic_id: null, run_id: runId, staff_id: d.staff_id,
-      staff_name: d.staff_name || "موظف", branch_id: d.branch_id ?? null,
+      staff_name: d.staff_name || unnamedStaff(), branch_id: d.branch_id ?? null,
       base_amount: d.base_amount ?? 0, gross, deductions: ded, deferred: defer,
       net: gross - ded, created_at: now(),
     };
@@ -214,7 +215,7 @@ export async function paySlip(slipId: string, method: PayMethod, sink: ExpenseSi
   if (slip.net > 0) {
     const e = await sink({
       clinic_id: null, amount: slip.net,
-      description: `راتب ${slip.staff_name} — ${run.period.slice(0, 7)}`,
+      description: salaryExpenseText(slip.staff_name, run.period.slice(0, 7)),
       category: "payroll", method: method === "cash" ? "cash" : "bank",
       staff_id: null, spent_at: now(),
     });
@@ -274,7 +275,7 @@ export async function disburseLoan(
   // الفلوس تخرج من الدرج فعلاً ⇒ مصروف. لكن بتصنيفٍ خاص لأنها **ذمّة لا
   // كلفة رواتب**، وعلى عمر السلفة تتساوى مع نقص الصوافي المدفوعة تماماً.
   const e = await sink({
-    clinic_id: null, amount: principal, description: `سلفة ${staffName}`,
+    clinic_id: null, amount: principal, description: loanExpenseText(staffName),
     category: "payroll_loan", method: method === "cash" ? "cash" : "bank",
     staff_id: null, spent_at: now(),
   });
