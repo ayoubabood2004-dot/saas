@@ -5,7 +5,7 @@ import {
   Search, Barcode, Plus, Minus, Trash2, ShoppingCart, User, Phone, Tag, Percent, BadgePercent,
   Banknote, CreditCard, ArrowLeftRight, CheckCircle2, Printer, Sparkles, TrendingUp, Package, PawPrint, X,
   Stethoscope, Pencil, Pill, Syringe, CalendarClock, Wallet, StickyNote, Bike, UserCheck, AlertTriangle,
-  ChevronUp, ChevronDown,
+  ChevronUp, ChevronDown, PanelLeftClose, PanelLeftOpen,
 } from "lucide-react";
 import type { Product, Invoice, InvoiceItem, CheckoutItem, SaleMeta, PaymentMethod, PaymentSplit, DiscountType, Customer, Service, ServiceCatalog, Species, Pet, Courier } from "@/types";
 import { repo, resolveDiscount } from "@/lib/repo";
@@ -24,6 +24,7 @@ import { useInvoicePrinter } from "./usePrintInvoice";
 import { invoiceNo, openInvoicePrint, type PrintFormat } from "@/lib/invoicePrint";
 import { getPreSalePrint, getResizableCart, getPosV2, getClinicLogo, getClinicSocials, getClinicName, getDeliveryZones, getQtyPromos, type QtyPromo } from "@/lib/settings";
 import { branchStore } from "@/lib/branchStore";
+import { useNavFolded, setNavFolded } from "@/lib/navFold";
 import { persistMedicalEntries } from "@/lib/medSync";
 import type { MedicalDraft } from "@/components/MedicalEntry";
 import { cn, money, currencySymbol, formatNum } from "@/lib/utils";
@@ -342,6 +343,8 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
   /* شاشة البيع الجديدة (0109) — تفعيل اختياري لكل عيادة. تُقرأ مرة عند الرسم:
    * تبديلها من الإعدادات يعيد تحميل الصفحة، فلا حاجة لمراقبة حيّة. */
   const posV2 = getPosV2();
+  /* وضع التركيز — الشريط المطويّ يوسّع السلة حيّاً (بلا إعادة تحميل). */
+  const navFolded = useNavFolded();
   /* الحقول الاختيارية (عميل · بائع · ملاحظة) مطويّة افتراضياً بالشاشة الجديدة:
    * البيع النقدي السريع لا يحتاجها، وهي كانت تأكل ٣٧١px فوق شبكة المنتجات. */
   const [detailsOpen, setDetailsOpen] = useState(false);
@@ -354,6 +357,13 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
    * وأزرار الكمية تصغر قليلاً) فترتفع سعة السلة من ٨ أصناف مرئية إلى ١٢+ —
    * «يشوف كل المنتجات الي يضيفهن شكد ما جانن». تبقى الأهداف فوق حدّ اللمس. */
   const denseCart = posV2 && cart.length > 7;
+  /* السلة العريضة تنقسم عمودين: العرض وحده لا يُظهر صنفاً واحداً إضافياً —
+   * الذي يُظهر الأصناف هو الارتفاع. فعند ٦٢٠px فأكثر يصير كل صفٍّ نصف عرض
+   * ويتضاعف عدد الأصناف المرئية فعلياً. القياس من العنصر نفسه لا من النافذة:
+   * السلة قابلة للسحب وعرضها ليس دالّة ثابتة بعرض الشاشة. */
+  const cartBoxRef = useRef<HTMLDivElement | null>(null);
+  const [cartW, setCartW] = useState(0);
+  const cartCols2 = posV2 && cartW >= 620 && cart.length > 6;
   /* ارتفاع منطقة البيع يُقاس فعلياً من موضعها على الشاشة بدل تخمين ارتفاع
    * الترويسة: أي تغيّر بالترويسة أو حجم الخط لا يعيد كسر التخطيط. */
   const posRootRef = useRef<HTMLDivElement | null>(null);
@@ -858,6 +868,15 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
   const preSaleEnabled = getPreSalePrint();
 
   useEffect(() => {
+    if (!posV2 || typeof ResizeObserver === "undefined") return;
+    const el = cartBoxRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver((entries) => setCartW(Math.round(entries[0].contentRect.width)));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [posV2]);
+
+  useEffect(() => {
     if (!posV2) return;
     /* الارتفاع يُشتقّ من الهندسة الفعلية: موضع المنطقة + الحشوات السفلية التي
      * يضيفها هيكل التطبيق وحاوية الصفحة. النسخة السابقة كانت تصحّح نفسها
@@ -1245,7 +1264,10 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
         // مفتوحةً (لا شريط مطويّ)، وعلى الواسعة عموداً بـ٤٠٪ من العرض بخطٍّ
         // كبير مقروء من وقفة الكاشير. الشبكة تخدم السلة لا العكس.
         posV2
-          ? cn("min-h-0 lg:grid-rows-1 lg:grid-cols-[minmax(0,1fr),clamp(460px,46%,720px)]",
+          ? cn("min-h-0 lg:grid-rows-1",
+              // وضع التركيز: الشريط مطويّ فالمساحة المتحرّرة تذهب كاملةً للسلة
+              // (٦٤٪ بدل ٤٦٪ وسقف ١٢٠٠px بدل ٧٢٠) — لا لهامشٍ فارغ.
+              navFolded ? "lg:grid-cols-[minmax(0,1fr),clamp(560px,64%,1200px)]" : "lg:grid-cols-[minmax(0,1fr),clamp(460px,46%,720px)]",
               // السلة الممتلئة تأخذ ثلثي الشاشة بالوضع العمودي؛ الشبكة تحتفظ
               // بحدّ أدنى يكفي صفّين. السقف الجامد ٥٢٪ كان يخنقها مهما امتلأت.
               denseCart ? "grid-rows-[minmax(9rem,1fr),minmax(0,68%)]" : "grid-rows-[minmax(0,1fr),minmax(0,52%)]")
@@ -1518,7 +1540,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
 
       {/* RIGHT — cart. بالشاشة الجديدة: عمود كامل الارتفاع على الشاشات الواسعة،
           ويُستبدل على الضيّقة بشريط ملتصق + لوح منزلق (لا يغادر الشاشة أبداً). */}
-      <div className={cn(
+      <div ref={cartBoxRef} className={cn(
         "card relative flex flex-col p-0",
         posV2
           ? cn("min-h-0 lg:h-full lg:max-h-none", cartSheet
@@ -1533,6 +1555,20 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
           </span>
           <span className="flex items-center gap-2">
             {cart.length > 0 && <button onClick={() => { playTap(); setCart([]); }} className="text-xs text-ink-subtle transition hover:text-danger-600">{t("common.clear", "Clear")}</button>}
+            {posV2 && (
+              /* طيّ شريط التنقّل من داخل الكاشير: الطبيب واقف بالبيع، وإرساله
+                 للإعدادات ليكسب مساحةً هو نفسه ما يجعله لا يكسبها أبداً. */
+              <button
+                data-navfoldpos
+                onClick={() => { playTap(); setNavFolded(!navFolded); }}
+                className="hidden h-10 w-10 place-items-center rounded-xl bg-surface-2 text-ink-muted transition hover:bg-surface-3 lg:grid"
+                aria-pressed={navFolded}
+                title={navFolded ? t("nav.unfold", "توسيع الشريط") : t("nav.fold", "طيّ الشريط — مساحة أكبر للشاشة")}
+                aria-label={navFolded ? t("nav.unfold", "توسيع الشريط") : t("nav.fold", "طيّ الشريط — مساحة أكبر للشاشة")}
+              >
+                {navFolded ? <PanelLeftOpen size={19} className="rtl:rotate-180" /> : <PanelLeftClose size={19} className="rtl:rotate-180" />}
+              </button>
+            )}
             {posV2 && (
               // تكبير السلة لملء الشاشة (خصم · طرق دفع · تفاصيل)، والرجوع للنصف.
               <button
@@ -1551,7 +1587,10 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
           {cart.length === 0 ? (
             <div className={cn("grid place-items-center px-6 text-center text-ink-subtle", posV2 ? "h-full min-h-[8rem] text-base" : "h-40 text-sm")}>{t("retail.cartEmpty", "Add products to start a sale.")}</div>
           ) : (
-            <div className={cn(denseCart ? "space-y-1" : "space-y-1.5")}>
+            <div className={cn(
+              cartCols2 ? "grid grid-cols-2 items-start" : "",
+              cartCols2 ? (denseCart ? "gap-1" : "gap-1.5") : (denseCart ? "space-y-1" : "space-y-1.5"),
+            )}>
               <AnimatePresence initial={false}>
                 {cart.map((l) => (
                   <motion.div key={l.id} layout initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }}

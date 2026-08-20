@@ -17,7 +17,7 @@ const BRANCH_DOTS = ["bg-brand-500", "bg-success-500", "bg-amber-500", "bg-rose-
  * the operational views and stamps new cases; "كل الفروع" shows everything
  * (the exact pre-branches behaviour). The choice is remembered per device.
  * ==========================================================================*/
-export function BranchSwitcher({ className, inline = false }: { className?: string; inline?: boolean }) {
+export function BranchSwitcher({ className, inline = false, compact = false }: { className?: string; inline?: boolean; compact?: boolean }) {
   const { t } = useTranslation();
   const { user } = useAuth();
   const clinicId = user?.clinic_id ?? user?.id;
@@ -60,11 +60,19 @@ export function BranchSwitcher({ className, inline = false }: { className?: stri
         onClick={() => { playTap(); setOpen((v) => !v); }}
         aria-expanded={open}
         aria-haspopup="listbox"
-        className="flex w-full items-center gap-2.5 rounded-2xl border border-line bg-surface-2 px-3.5 py-2.5 text-sm font-semibold text-ink transition hover:border-brand-300 dark:hover:border-brand-500/50"
+        title={compact ? label : undefined}
+        className={cn(
+          "flex w-full items-center rounded-2xl border border-line bg-surface-2 text-sm font-semibold text-ink transition hover:border-brand-300 dark:hover:border-brand-500/50",
+          // بالسكّة المطويّة: أيقونة وحدها — لكن التبديل يبقى موجوداً. إخفاء
+          // مبدّل الفروع كان سيجعل الطيّ يكلّف عيادةً متعدّدة الفروع وظيفةً كاملة.
+          compact ? "h-11 justify-center" : "gap-2.5 px-3.5 py-2.5",
+        )}
       >
         <Building2 size={17} className="shrink-0 text-brand-600 dark:text-brand-300" />
-        <span className="min-w-0 flex-1 truncate text-start">{label}</span>
-        <ChevronDown size={15} className={cn("shrink-0 text-ink-subtle transition-transform", open && "rotate-180")} />
+        {!compact && <>
+          <span className="min-w-0 flex-1 truncate text-start">{label}</span>
+          <ChevronDown size={15} className={cn("shrink-0 text-ink-subtle transition-transform", open && "rotate-180")} />
+        </>}
       </button>
 
       {open && (
@@ -74,7 +82,7 @@ export function BranchSwitcher({ className, inline = false }: { className?: stri
             "rounded-2xl border border-line bg-surface-1 p-1.5",
             // Inline mode flows in the layout (safe inside overflow-hidden menus,
             // e.g. the mobile drawer); default mode floats over the content.
-            inline ? "mt-2" : "absolute inset-x-0 top-full z-50 mt-2 overflow-hidden shadow-raised",
+            inline ? "mt-2" : cn("absolute top-full z-50 mt-2 overflow-hidden shadow-raised", compact ? "start-0 w-56" : "inset-x-0"),
           )}
         >
           <p className="px-2.5 pb-1 pt-1.5 text-2xs font-bold text-ink-subtle">{t("branches.switch", "التبديل بين الفروع")}</p>

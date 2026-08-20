@@ -79,7 +79,9 @@
     "store": "Online Store",
     "campaignsChild": "Campaigns",
     "reminders": "Reminders",
-    "surgeries": "Surgeries"
+    "surgeries": "Surgeries",
+    "fold": "Fold the sidebar — more room for the screen",
+    "unfold": "Expand the sidebar"
   },
   "campaigns": {
     "title": "WhatsApp Campaigns",

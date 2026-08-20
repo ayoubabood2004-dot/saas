@@ -6,6 +6,7 @@ import { Store, ShoppingCart, ReceiptText, BarChart3, HandCoins, Bike, PawPrint,
 import type { Product, Invoice, Species } from "@/types";
 import { useAuth } from "@/contexts/AuthContext";
 import { useEntitlements } from "@/lib/entitlements";
+import { useNavFolded } from "@/lib/navFold";
 import { Skeleton } from "@/components/ui";
 import { cn } from "@/lib/utils";
 import { withTimeout } from "@/lib/errors";
@@ -28,6 +29,7 @@ export function RetailSales() {
   const { t } = useTranslation();
   const { user } = useAuth();
   const { has } = useEntitlements();
+  const navFolded = useNavFolded();
   const clinicId = user?.clinic_id ?? user?.id; // shared workspace id (manager's id for staff)
   const [tab, setTab] = useState<Tab>("sell");
 
@@ -100,9 +102,13 @@ export function RetailSales() {
   // شاشة البيع الجديدة تختصر ترويسة الصفحة أثناء البيع: كل بكسل فوق شبكة
   // المنتجات يُدفع من رصيد الكاشير. الشرح يبقى بالتبويبات الأخرى.
   const compactChrome = getPosV2() && tab === "sell";
+  // وضع التركيز: طيّ الشريط بلا رفع سقف العرض (1152px) يعطي صفراً على شاشة
+  // المكتب — المساحة المتحرّرة تُهدر بهامشين. فالسقف يُرفع مع الطيّ، بشاشة
+  // البيع وحدها: بقية التبويبات جداولٌ يؤذيها العرض اللانهائي.
+  const wideSell = compactChrome && navFolded;
 
   return (
-    <div className={cn("mx-auto max-w-6xl px-4",
+    <div className={cn("mx-auto px-4", wideSell ? "max-w-none" : "max-w-6xl",
       // شاشة البيع تلغي فسحة شريط التنقّل السفلي (pb-20 بالهيكل): لا شيء
       // يشغلها هنا، وكانت تسرق ٨٠px من ارتفاع السلة على الأجهزة اللوحية.
       compactChrome ? "py-3 -mb-20 lg:mb-0" : "py-6")}>

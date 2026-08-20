@@ -38,7 +38,7 @@ const DOT: Record<string, string> = {
   expired: "bg-warn-500",
 };
 
-export function AccountMenu() {
+export function AccountMenu({ compact = false }: { compact?: boolean } = {}) {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const { user, signOut, roles, activeRole, switchRole } = useAuth();
@@ -105,7 +105,12 @@ export function AccountMenu() {
             transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
             role="menu"
             aria-label={t("nav.accountMenu", "قائمة الحساب")}
-            className="absolute bottom-full start-0 end-0 z-50 mb-2 origin-bottom rounded-2xl border border-line-strong bg-surface-1 p-1.5 shadow-raised"
+            className={cn(
+              "absolute bottom-full z-50 mb-2 origin-bottom rounded-2xl border border-line-strong bg-surface-1 p-1.5 shadow-raised",
+              // بالسكّة المطويّة الصفّ عرضه ٦٠px: لو ورثت القائمة عرضه لصارت
+              // شريطاً لا يُقرأ — فتُثبّت على عرضها الطبيعي وتنسدل بجانبه.
+              compact ? "start-0 w-64" : "start-0 end-0",
+            )}
           >
             {/* الاشتراك — تفاصيله هنا دائماً، وبارزاً بالشريط فقط لما يحتاج فعلاً */}
             <button
@@ -239,8 +244,10 @@ export function AccountMenu() {
         onClick={() => { playTap(); setOpen((v) => !v); }}
         aria-haspopup="menu"
         aria-expanded={open}
+        title={compact ? user.full_name : undefined}
         className={cn(
-          "flex w-full items-center gap-3 rounded-2xl border p-2.5 text-start transition",
+          "flex w-full items-center rounded-2xl border transition",
+          compact ? "justify-center p-1.5" : "gap-3 p-2.5 text-start",
           open ? "border-brand-400 bg-surface-1 ring-2 ring-brand-500/25" : "border-line bg-surface-1 hover:border-line-strong hover:bg-surface-2",
         )}
       >
@@ -252,14 +259,14 @@ export function AccountMenu() {
         </span>
         {/* dir="auto" ضروري: اسم لاتيني داخل واجهة عربية كان ينقصّ من بدايته
             («…rah Mansour») لأن نهاية النص المنطقية تقع يساراً. */}
-        <span className="min-w-0 flex-1">
+        {!compact && <span className="min-w-0 flex-1">
           <span dir="auto" className="block truncate text-sm font-bold text-ink">{user.full_name}</span>
           {/* الدور فقط — حالة الاشتراك تحملها النقطة وسطرُها داخل القائمة، فلا
               يطول السطر ولا ينقطع. */}
           <span className="block truncate text-2xs text-ink-subtle">{roleLabel}</span>
-        </span>
+        </span>}
         {/* القائمة تفتح للأعلى: السهم لفوق وهي مغلقة، وينقلب عند الفتح. */}
-        <ChevronUp size={16} className={cn("shrink-0 transition-transform", open ? "rotate-180 text-brand-600" : "text-ink-subtle")} />
+        {!compact && <ChevronUp size={16} className={cn("shrink-0 transition-transform", open ? "rotate-180 text-brand-600" : "text-ink-subtle")} />}
       </button>
     </div>
   );

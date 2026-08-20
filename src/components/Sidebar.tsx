@@ -23,6 +23,8 @@ import {
   ChevronDown,
   Sparkles,
   ArrowLeft,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { usePermissions } from "@/hooks/usePermissions";
@@ -38,6 +40,7 @@ import { AccountMenu } from "@/components/AccountMenu";
 import { Logo } from "@/components/Logo";
 import { BranchSwitcher } from "@/components/BranchSwitcher";
 import { useCommandPalette } from "./CommandPaletteProvider";
+import { useNavFolded, setNavFolded } from "@/lib/navFold";
 import { cn } from "@/lib/utils";
 
 /** Desktop navigation rail with profile card (ref img 1). Hidden below lg. */
@@ -48,6 +51,9 @@ export function Sidebar() {
   const palette = useCommandPalette();
   const { can } = usePermissions();
   const { has } = useEntitlements();
+  // وضع التركيز: الشريط يصير سكّة أيقونات ٧٦px فتتحرّر ١٨٠px للشاشة الواقفة
+  // عليها (الكاشير أساساً). التنقّل لا يُفقد — كل أيقونة تبقى بمكانها نفسه.
+  const folded = useNavFolded();
 
   // Once idle after first paint, eagerly warm EVERY route's JS chunk AND the
   // data snapshots for the heavy screens — so any navigation is "click → already
@@ -107,31 +113,75 @@ export function Sidebar() {
     exact ? location.pathname === "/" : location.pathname === to || location.pathname.startsWith(to + "/");
 
   return (
-    <aside className="fixed inset-y-0 start-0 z-40 hidden w-64 flex-col border-e border-line bg-surface-1 p-4 no-print lg:flex">
-      {/* Brand */}
-      <Link to="/" className="mb-5 flex items-center gap-2.5 px-2 font-display font-extrabold tracking-tighter2 text-ink">
-        <Logo size={40} />
-        <span className="text-lg">{t("app.name")}</span>
-      </Link>
+    <aside className={cn(
+      "fixed inset-y-0 start-0 z-40 hidden flex-col border-e border-line bg-surface-1 no-print lg:flex",
+      folded ? "w-[4.75rem] px-2 py-4" : "w-64 p-4",
+    )}>
+      {/* Brand + زر الطيّ */}
+      <div className={cn("mb-5 flex items-center", folded ? "flex-col gap-2" : "gap-2.5 px-2")}>
+        <Link to="/" className="flex min-w-0 items-center gap-2.5 font-display font-extrabold tracking-tighter2 text-ink">
+          <Logo size={folded ? 34 : 40} />
+          {!folded && <span className="truncate text-lg">{t("app.name")}</span>}
+        </Link>
+        <button
+          onClick={() => { playTap(); setNavFolded(!folded); }}
+          title={folded ? t("nav.unfold", "توسيع الشريط") : t("nav.fold", "طيّ الشريط — مساحة أكبر للشاشة")}
+          aria-label={folded ? t("nav.unfold", "توسيع الشريط") : t("nav.fold", "طيّ الشريط — مساحة أكبر للشاشة")}
+          aria-pressed={folded}
+          data-navfold
+          className={cn("grid h-9 w-9 shrink-0 place-items-center rounded-xl text-ink-subtle transition hover:bg-surface-2 hover:text-ink", !folded && "ms-auto")}
+        >
+          {folded ? <PanelLeftOpen size={18} className="rtl:rotate-180" /> : <PanelLeftClose size={18} className="rtl:rotate-180" />}
+        </button>
+      </div>
 
       {/* Search */}
       <button
         onClick={() => palette.open()}
-        className="flex items-center gap-2.5 rounded-2xl border border-line bg-surface-2 px-3.5 py-2.5 text-sm text-ink-subtle transition hover:text-ink"
+        title={folded ? t("nav.search", "Search") : undefined}
+        className={cn(
+          "flex items-center rounded-2xl border border-line bg-surface-2 text-sm text-ink-subtle transition hover:text-ink",
+          folded ? "h-11 justify-center" : "gap-2.5 px-3.5 py-2.5",
+        )}
       >
         <Search size={17} />
-        <span className="flex-1 text-start">{t("nav.search", "Search")}</span>
-        <kbd className="rounded-md border border-line bg-surface-1 px-1.5 text-2xs font-semibold">⌘K</kbd>
+        {!folded && <>
+          <span className="flex-1 text-start">{t("nav.search", "Search")}</span>
+          <kbd className="rounded-md border border-line bg-surface-1 px-1.5 text-2xs font-semibold">⌘K</kbd>
+        </>}
       </button>
 
       {/* Branch switcher — renders only when the clinic has 2+ branches. */}
-      <BranchSwitcher className="mt-3" />
+      <BranchSwitcher className="mt-3" compact={folded} />
 
       {/* Nav */}
       <nav className="mt-4 flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto overscroll-contain pe-0.5">
         {items.map((item) => {
           const Icon = item.icon;
           const active = isActive(item.to, item.exact);
+          // بالسكّة المطويّة: المجموعة تصير أيقونةً واحدة تفتح قسمها الأول —
+          // قائمةٌ منسدلة داخل ٧٦px ستكون عبثاً، والوجهة تبقى بضغطة واحدة.
+          const kidActive = "children" in item && item.children ? item.children.some((k) => isActive(k.to)) : false;
+          if (folded) {
+            const badge = (item.to === "/reception" || item.to === "/bookings") ? bookingReqs : item.to === "/store" ? storeOrders : 0;
+            return (
+              <Link
+                key={item.to} to={item.to} {...prefetchHandlers(item.to)} onClick={() => playTap()}
+                title={item.label} aria-label={item.label}
+                className={cn(
+                  "relative grid h-12 place-items-center rounded-2xl transition-colors",
+                  active || kidActive ? "bg-brand-50 text-brand-700 dark:bg-brand-500/15 dark:text-brand-200" : "text-ink-muted hover:bg-surface-2 hover:text-ink",
+                )}
+              >
+                <Icon size={21} />
+                {badge > 0 && (
+                  <span className="absolute end-1.5 top-1.5 grid h-4 min-w-4 place-items-center rounded-full bg-danger-500 px-1 text-[10px] font-bold text-white shadow-soft">
+                    {badge}
+                  </span>
+                )}
+              </Link>
+            );
+          }
           if ("children" in item && item.children) {
             const kids = item.children;
             const anyActive = kids.some((k) => isActive(k.to));
@@ -211,8 +261,8 @@ export function Sidebar() {
       {/* ذيل الشريط — صف حساب واحد يفتح قائمة فيها الاشتراك والتكبير واللغة
           والمظهر وقفل الجهاز وتبديل الدور والخروج ورقم النسخة. الاشتراك يأخذ
           كارتاً بارزاً فوقه فقط عندما يطلب فعلاً (تجربة/منتهٍ). */}
-      <SubscriptionNavCard />
-      <AccountMenu />
+      {!folded && <SubscriptionNavCard />}
+      <AccountMenu compact={folded} />
     </aside>
   );
 }

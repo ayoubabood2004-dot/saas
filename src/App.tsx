@@ -14,6 +14,7 @@ import { useSubscription } from "@/lib/subscription";
 import { Spinner, useToast } from "@/components/ui";
 import { repo } from "@/lib/repo";
 import { retryImport } from "@/lib/appUpdate";
+import { useNavFolded } from "@/lib/navFold";
 
 /** كل صفحة كسولة تمر من هنا: لو فشل تحميلها لأن الجهاز ماسك قشرة قديمة بعد
  *  نشر جديد، يُمسح المخبأ وتُجلب النسخة الجديدة تلقائياً — مرة واحدة. */
@@ -206,6 +207,12 @@ function HomeRoute() {
   return <Landing />;
 }
 
+/** حشوة المحتوى تتبع عرض الشريط لحظةً بلحظة — الطيّ يوسّع الصفحة بلا قفزة. */
+function ShellMain({ children }: { children: React.ReactNode }) {
+  const folded = useNavFolded();
+  return <div className={folded ? "lg:ps-[4.75rem]" : "lg:ps-64"}><SubscriptionGate>{children}</SubscriptionGate></div>;
+}
+
 function Shell() {
   const location = useLocation();
   const navigate = useNavigate();
@@ -297,7 +304,7 @@ function Shell() {
         <CommandPaletteProvider>
           <Sidebar />
           <TopBar mobileOnly />
-          <div className="lg:ps-64"><SubscriptionGate>{routes}</SubscriptionGate></div>
+          <ShellMain>{routes}</ShellMain>
         </CommandPaletteProvider>
         {/* المساعد الذكي — حاضر بكل شاشات كادر العيادة */}
         <Assistant />
