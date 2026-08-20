@@ -2008,7 +2008,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
               </Button>
             </div>
           )}
-          <Button className={cn("w-full", posV2 && "h-12 shrink-0")} size="lg" disabled={cart.length === 0 || needsDebtName} loading={busy} onClick={checkout} leftIcon={deliveryOn ? <Bike size={18} /> : <CheckCircle2 size={18} />}>
+          <Button className={cn("w-full", posV2 && "shrink-0")} style={posV2 ? { minHeight: 48 } : undefined} size="lg" disabled={cart.length === 0 || needsDebtName} loading={busy} onClick={checkout} leftIcon={deliveryOn ? <Bike size={18} /> : <CheckCircle2 size={18} />}>
             {deliveryOn
               ? `${t("retail.completeDelivery", "إرسال للتوصيل")} · ${t("retail.codShort", "يُحصَّل")} ${money(codAmount)}`
               : isCredit

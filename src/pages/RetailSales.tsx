@@ -102,7 +102,10 @@ export function RetailSales() {
   const compactChrome = getPosV2() && tab === "sell";
 
   return (
-    <div className={cn("mx-auto max-w-6xl px-4", compactChrome ? "py-3" : "py-6")}>
+    <div className={cn("mx-auto max-w-6xl px-4",
+      // شاشة البيع تلغي فسحة شريط التنقّل السفلي (pb-20 بالهيكل): لا شيء
+      // يشغلها هنا، وكانت تسرق ٨٠px من ارتفاع السلة على الأجهزة اللوحية.
+      compactChrome ? "py-3 -mb-20 lg:mb-0" : "py-6")}>
       <div className={cn("flex items-center gap-3", compactChrome ? "mb-2.5" : "mb-5")}>
         <span className={cn("grid place-items-center rounded-2xl bg-brand-grad text-white shadow-soft", compactChrome ? "h-9 w-9" : "h-11 w-11")}><Store size={compactChrome ? 19 : 24} /></span>
         <div>
