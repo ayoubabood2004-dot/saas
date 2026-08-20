@@ -105,12 +105,10 @@ export default async function handler(req: Request): Promise<Response> {
     const expected = (process.env.WA_VERIFY_TOKEN ?? "").trim();
     if (!expected) return text("not_configured", 500);
     if (mode === "subscribe" && safeEqual(token.trim(), expected)) return text(challenge, 200);
-    /* تشخيصٌ لا يسرّب السرّ: الطول، وبصمةٌ من ثماني خانات لتجزئة SHA-256.
-     * البصمة تُحسم بها المسألة: إن طابقت البصمةَ المعروفة فالمخزَّن صحيح
-     * والخلل بما كُتب في الرابط؛ وإن اختلفت فالمخزَّن نفسه قيمةٌ أخرى.
-     * استرجاع ٦٤ حرفاً عشوائياً من ٣٢ بت مستحيل عملياً. */
-    const fp = (await hmacHex("fp", expected)).slice(0, 8);
-    return text(`forbidden (stored length: ${expected.length}, fp: ${fp})`, 403);
+    /* الطول وحده يبقى: يميّز «القيمة مبتورة عند اللصق» من «قيمة أخرى تماماً»،
+     * وهو ما احتجناه فعلاً وقت الربط. البصمة التشخيصية أُزيلت بعد نجاح
+     * المصافحة — أثرٌ لا حاجة له لا يُترك مفتوحاً. */
+    return text(`forbidden (stored length: ${expected.length})`, 403);
   }
 
   if (req.method !== "POST") return text("method_not_allowed", 405);
