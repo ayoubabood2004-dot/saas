@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Settings as SettingsIcon, RotateCcw, Check, Volume2, VolumeX, Plus, Trash2, Pill, PawPrint, Stethoscope, Tag, FolderPlus, BadgePercent, IdCard, Mail, UserCog, Image as ImageIcon, Upload, Facebook, Instagram, Building2, Printer, Type, LogOut , Slice, ChevronDown, Radio, Copy, Download, Cable, Send, Barcode, Search, Package, Share2, ShieldAlert } from "lucide-react";
 import type { LabDeviceLink } from "@/types";
@@ -32,6 +32,125 @@ import { SpeciesPicker } from "@/components/PetFields";
 import { PhoneInput } from "@/components/PhoneInput";
 import { ManagerOverrideCard } from "@/components/ManagerOverride";
 import { Button, Dialog, useToast } from "@/components/ui";
+
+/* ============================================================================
+ * ترتيب صفحة الإعدادات
+ *
+ * الصفحة نمت إلى تسع عشرة بطاقة متلاصقة بلا فواصل، فصار إيجاد إعدادٍ واحد
+ * تمريراً أعمى. العلاج **أقسام معنونة داخل صفحة واحدة**، لا تبويبات: التبويب
+ * يفكّك البطاقات غير المعروضة من الـDOM، فيكسر بحث الصفحة على الآيباد (الطبيب
+ * يبحث عن قيمةٍ لا عن عنوان)، ويحوّل كل إعداد من نقرة صفر إلى نقرة وتخمين.
+ *
+ * والقسم يقيس أبناءه الفعليين في الـDOM بدل أن يعرف شروط الصلاحيات:
+ * بطاقةٌ حجبتها الصلاحية لا تترك عنصراً، فالقسم الفارغ يخفي نفسه ويسقط من
+ * شريط القفز تلقائياً. البديل — جدول يربط كل بطاقة بقسمها وشرطها — يعني شرطاً
+ * مكرّراً في مكانين، وهذا بالضبط ما ينحرف بصمت عند إضافة البطاقة القادمة.
+ * ==========================================================================*/
+
+type SecId = "clinic" | "selling" | "medical" | "me";
+
+const SECTIONS: { id: SecId; k: string; icon: React.ReactNode }[] = [
+  { id: "clinic",  k: "settings.secClinic",  icon: <Building2 size={15} /> },
+  { id: "selling", k: "settings.secSelling", icon: <BadgePercent size={15} /> },
+  { id: "medical", k: "settings.secMedical", icon: <Stethoscope size={15} /> },
+  { id: "me",      k: "settings.secMe",      icon: <UserCog size={15} /> },
+];
+
+function SettingsSection({ id, icon, title, onMeasure, children }: {
+  id: SecId;
+  icon: React.ReactNode;
+  title: string;
+  /** يُبلّغ الأب: هل بقي في القسم شيء بعد الصلاحيات؟ */
+  onMeasure: (id: SecId, filled: boolean) => void;
+  children: React.ReactNode;
+}) {
+  const body = useRef<HTMLDivElement>(null);
+  const [filled, setFilled] = useState(true);
+
+  // المراقب ضروري ولا يكفي القياس مرة: بطاقات تظهر متأخرةً بعد جلب بياناتها
+  // (عضوية عيادة أخرى مثلاً)، وحينها لا يُعاد تصيير القسم نفسه أصلاً.
+  useLayoutEffect(() => {
+    const el = body.current;
+    if (!el) return;
+    const measure = () => {
+      const on = el.childElementCount > 0;
+      setFilled(on);
+      onMeasure(id, on);
+    };
+    measure();
+    const mo = new MutationObserver(measure);
+    mo.observe(el, { childList: true });
+    return () => mo.disconnect();
+  }, [id, onMeasure]);
+
+  return (
+    // الهامش العلوي للقفز يجب أن يتجاوز شريط التطبيق اللاصق (٦٥ بكسل دون lg)،
+    // وإلا هبط عنوان القسم تحته واختفى تماماً عند كل نقرة قفز.
+    <section data-sec={id} data-secfilled={filled ? "1" : "0"} className={cn("scroll-mt-20 lg:scroll-mt-6", !filled && "hidden")}>
+      <div className="mb-3 flex items-center gap-2">
+        <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-surface-2 text-ink-muted">{icon}</span>
+        <h2 className="font-display text-[13px] font-extrabold uppercase tracking-wide text-ink-muted">{title}</h2>
+        <span className="h-px flex-1 bg-line" />
+      </div>
+      <div ref={body}>{children}</div>
+    </section>
+  );
+}
+
+/** شريط قفزٍ إلى الأقسام — لا يعرض إلا قسماً فيه بطاقة واحدة على الأقل. */
+function SectionNav({ items }: { items: { id: SecId; icon: React.ReactNode; label: string }[] }) {
+  const [active, setActive] = useState<SecId | null>(items[0]?.id ?? null);
+
+  useEffect(() => {
+    const seen = new Map<string, boolean>();
+    const io = new IntersectionObserver(
+      (entries) => {
+        for (const e of entries) seen.set(e.target.getAttribute("data-sec") ?? "", e.isIntersecting);
+        const first = items.find((s) => seen.get(s.id));
+        if (first) setActive(first.id);
+      },
+      // شريطٌ رفيع أعلى الشاشة: القسم «الفعّال» هو أول ما يعبره.
+      { rootMargin: "-8% 0px -80% 0px", threshold: 0 },
+    );
+    for (const s of items) {
+      const el = document.querySelector(`[data-sec="${s.id}"]`);
+      if (el) io.observe(el);
+    }
+    return () => io.disconnect();
+  }, [items]);
+
+  if (items.length < 2) return null;
+
+  return (
+    <div data-secnav className="mb-5 -mx-4 overflow-x-auto px-4 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      <div className="flex w-max gap-2">
+        {items.map((s) => (
+          <button
+            key={s.id}
+            type="button"
+            data-secjump={s.id}
+            data-secactive={active === s.id ? "1" : "0"}
+            onClick={() => {
+              const el = document.querySelector(`[data-sec="${s.id}"]`);
+              if (!el) return;
+              playTap();
+              el.scrollIntoView({ behavior: "smooth", block: "start" });
+            }}
+            className={cn(
+              "chip whitespace-nowrap transition",
+              active === s.id
+                ? "bg-brand-600 text-white shadow-soft"
+                : "bg-surface-2 text-ink-muted hover:text-ink",
+            )}
+          >
+            {s.icon}
+            {s.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 export function Settings() {
   const { t } = useTranslation();
@@ -93,110 +212,43 @@ export function Settings() {
     if (next) playTap();
   };
 
+  const [filled, setFilled] = useState<Partial<Record<SecId, boolean>>>({});
+  const measure = useCallback((id: SecId, on: boolean) => {
+    setFilled((m) => (m[id] === on ? m : { ...m, [id]: on }));
+  }, []);
+  const navItems = useMemo(
+    () => SECTIONS.filter((s) => filled[s.id] !== false).map((s) => ({ id: s.id, icon: s.icon, label: t(s.k) })),
+    [filled, t],
+  );
+
   return (
     <div className="mx-auto max-w-2xl px-4 py-6" key={version}>
       <div className="mb-1 flex items-center gap-2.5">
         <span className="grid h-10 w-10 place-items-center rounded-2xl bg-brand-grad text-white shadow-soft"><SettingsIcon size={20} /></span>
         <h1 className="font-display text-xl font-extrabold tracking-tighter2 text-ink">{t("settings.title")}</h1>
       </div>
-      <p className="mb-6 text-sm text-ink-muted">{t("settings.subtitle")}</p>
+      <p className="mb-4 text-sm text-ink-muted">{t("settings.subtitle")}</p>
 
-      <AccountInfo />
+      <SectionNav items={navItems} />
 
-      <div className="card p-5 mb-4">
-        <h2 className="font-bold text-ink mb-3">{t("settings.readingRanges")}</h2>
+      <SettingsSection id="clinic" icon={<Building2 size={15} />} title={t("settings.secClinic")} onMeasure={measure}>
+        {canSettings && <ClinicIdentity />}
+        {canSettings && <BranchesManager />}
+        {canSettings && <ManagerOverrideCard />}
+        <ClinicMembership />
+      </SettingsSection>
 
-        <label className="label">{t("settings.species")}</label>
-        <div className="mb-4">
-          <SpeciesPicker value={species} onChange={changeSpecies} />
-        </div>
-
-        {([["reading.vitals", VITAL_KEYS], ["reading.cbc", CBC_KEYS]] as const).map(([title, keys]) => (
-          <div key={title} className="mb-4">
-            <p className="text-xs font-bold text-ink-muted uppercase tracking-wide mb-2">{t(title)}</p>
-            <div className="space-y-3">
-              {keys.map((k) => {
-                const unit = DEFAULT_RANGES[species][k].unit;
-                return (
-                  <div key={k} className="flex items-center gap-3">
-                    <div className="w-28 shrink-0">
-                      <p className="text-sm font-medium text-ink leading-tight">{t(`reading.${k}`)}</p>
-                      <p className="text-[11px] text-ink-subtle">{unit}</p>
-                    </div>
-                    <div className="flex-1">
-                      <label className="text-[11px] text-ink-subtle">{t("settings.min")}</label>
-                      <input
-                        type="number" step="0.1" className="input py-2"
-                        value={draft[k].min}
-                        onChange={(e) => setDraft((d) => ({ ...d, [k]: { ...d[k], min: e.target.value } }))}
-                      />
-                    </div>
-                    <div className="flex-1">
-                      <label className="text-[11px] text-ink-subtle">{t("settings.max")}</label>
-                      <input
-                        type="number" step="0.1" className="input py-2"
-                        value={draft[k].max}
-                        onChange={(e) => setDraft((d) => ({ ...d, [k]: { ...d[k], max: e.target.value } }))}
-                      />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        ))}
-
-        <div className="mt-5 flex items-center gap-3">
-          <Button variant="ghost" size="sm" leftIcon={<RotateCcw size={16} />} onClick={reset}>{t("settings.reset")}</Button>
-          <Button className="flex-1" onClick={save}>{t("common.save")}</Button>
-        </div>
-        {savedFlash && (
-          <p className="text-sm text-brand-700 font-medium mt-3 flex items-center gap-1.5">
-            <Check size={16} /> {t("settings.saved")}
-          </p>
-        )}
-      </div>
-
-      {canSettings && <ClinicIdentity />}
-      {canSettings && <ManagerOverrideCard />}
-      {canSettings && <CashierOptions />}
-      {canSettings && <DeliveryZonesCard />}
-      {canSettings && <ThermalPrinterCard />}
-      {canSettings && <FontScaleOptions />}
-      <ClinicMembership />
-      {canSettings && <BranchesManager />}
-      {canSettings && <ServiceSettings />}
-      {canSettings && <LabDevicesCard />}
-      {canSettings && <PromotionsManager clinicId={user?.clinic_id ?? user?.id} />}
-      {canSettings && <QtyPromosCard clinicId={user?.clinic_id ?? user?.id} />}
-      {canSettings && <SharedCatalogCard />}
-      <ClinicMedications />
-      <ClinicVaccinations />
-      <ClinicBreeds />
-
-      <div className="card p-5">
-        <h2 className="font-bold text-ink mb-3">{t("settings.preferences")}</h2>
-        <div className="flex items-center justify-between mb-4">
-          <span className="text-ink">{t("settings.sound")}</span>
-          <button className={`chip ${sound ? "bg-brand-50 text-brand-700" : "bg-surface-2 text-ink-muted"}`} onClick={toggleSound}>
-            {sound ? <Volume2 size={16} /> : <VolumeX size={16} />}
-            {sound ? t("settings.soundOn") : t("settings.soundOff")}
-          </button>
-        </div>
-        <div className="border-t border-line pt-4">
-          <label className="label">{t("settings.dialCode")}</label>
-          <input
-            className="input w-40"
-            value={dialCode}
-            inputMode="tel"
-            onChange={(e) => setDial(e.target.value)}
-            onBlur={() => { setDialCode(dialCode); setDial(getDialCode()); playTap(); }}
-          />
-          <p className="text-xs text-ink-subtle mt-1.5">{t("settings.dialCodeHint")}</p>
-        </div>
+      <SettingsSection id="selling" icon={<BadgePercent size={15} />} title={t("settings.secSelling")} onMeasure={measure}>
+        {canSettings && <CashierOptions />}
+        {canSettings && <ServiceSettings />}
+        {canSettings && <PromotionsManager clinicId={user?.clinic_id ?? user?.id} />}
+        {canSettings && <QtyPromosCard clinicId={user?.clinic_id ?? user?.id} />}
+        {canSettings && <DeliveryZonesCard />}
+        {canSettings && <ThermalPrinterCard />}
+        {canSettings && <SharedCatalogCard />}
         {canSettings && (
-          <div className="border-t border-line pt-4 mt-4">
-            <label className="label">{t("settings.currency", "عملة العيادة")}</label>
+          <div className="card p-5 mb-4">
+            <h2 className="font-bold text-ink mb-3">{t("settings.currency", "عملة العيادة")}</h2>
             <select
               data-currency-select
               className="input w-64"
@@ -210,7 +262,95 @@ export function Settings() {
             <p className="text-xs text-ink-subtle mt-1.5">{t("settings.currencyHint", "كل المبالغ بالنظام (الكاشير، الفواتير، التقارير…) تُعرض بهذه العملة. الأرقام المخزّنة لا تتغيّر — يتغيّر الرمز فقط.")}</p>
           </div>
         )}
-      </div>
+      </SettingsSection>
+
+      <SettingsSection id="medical" icon={<Stethoscope size={15} />} title={t("settings.secMedical")} onMeasure={measure}>
+        <div className="card p-5 mb-4">
+          <h2 className="font-bold text-ink mb-3">{t("settings.readingRanges")}</h2>
+
+          <label className="label">{t("settings.species")}</label>
+          <div className="mb-4">
+            <SpeciesPicker value={species} onChange={changeSpecies} />
+          </div>
+
+          {([["reading.vitals", VITAL_KEYS], ["reading.cbc", CBC_KEYS]] as const).map(([title, keys]) => (
+            <div key={title} className="mb-4">
+              <p className="text-xs font-bold text-ink-muted uppercase tracking-wide mb-2">{t(title)}</p>
+              <div className="space-y-3">
+                {keys.map((k) => {
+                  const unit = DEFAULT_RANGES[species][k].unit;
+                  return (
+                    <div key={k} className="flex items-center gap-3">
+                      <div className="w-28 shrink-0">
+                        <p className="text-sm font-medium text-ink leading-tight">{t(`reading.${k}`)}</p>
+                        <p className="text-[11px] text-ink-subtle">{unit}</p>
+                      </div>
+                      <div className="flex-1">
+                        <label className="text-[11px] text-ink-subtle">{t("settings.min")}</label>
+                        <input
+                          type="number" step="0.1" className="input py-2"
+                          value={draft[k].min}
+                          onChange={(e) => setDraft((d) => ({ ...d, [k]: { ...d[k], min: e.target.value } }))}
+                        />
+                      </div>
+                      <div className="flex-1">
+                        <label className="text-[11px] text-ink-subtle">{t("settings.max")}</label>
+                        <input
+                          type="number" step="0.1" className="input py-2"
+                          value={draft[k].max}
+                          onChange={(e) => setDraft((d) => ({ ...d, [k]: { ...d[k], max: e.target.value } }))}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+
+          <div className="mt-5 flex items-center gap-3">
+            <Button variant="ghost" size="sm" leftIcon={<RotateCcw size={16} />} onClick={reset}>{t("settings.reset")}</Button>
+            <Button className="flex-1" onClick={save}>{t("common.save")}</Button>
+          </div>
+          {savedFlash && (
+            <p className="text-sm text-brand-700 font-medium mt-3 flex items-center gap-1.5">
+              <Check size={16} /> {t("settings.saved")}
+            </p>
+          )}
+        </div>
+
+        <ClinicMedications />
+        <ClinicVaccinations />
+        <ClinicBreeds />
+        {canSettings && <LabDevicesCard />}
+      </SettingsSection>
+
+      <SettingsSection id="me" icon={<UserCog size={15} />} title={t("settings.secMe")} onMeasure={measure}>
+        <AccountInfo />
+        {canSettings && <FontScaleOptions />}
+
+        <div className="card p-5 mb-4">
+          <h2 className="font-bold text-ink mb-3">{t("settings.preferences")}</h2>
+          <div className="flex items-center justify-between mb-4">
+            <span className="text-ink">{t("settings.sound")}</span>
+            <button className={`chip ${sound ? "bg-brand-50 text-brand-700" : "bg-surface-2 text-ink-muted"}`} onClick={toggleSound}>
+              {sound ? <Volume2 size={16} /> : <VolumeX size={16} />}
+              {sound ? t("settings.soundOn") : t("settings.soundOff")}
+            </button>
+          </div>
+          <div className="border-t border-line pt-4">
+            <label className="label">{t("settings.dialCode")}</label>
+            <input
+              className="input w-40"
+              value={dialCode}
+              inputMode="tel"
+              onChange={(e) => setDial(e.target.value)}
+              onBlur={() => { setDialCode(dialCode); setDial(getDialCode()); playTap(); }}
+            />
+            <p className="text-xs text-ink-subtle mt-1.5">{t("settings.dialCodeHint")}</p>
+          </div>
+        </div>
+      </SettingsSection>
     </div>
   );
 }
@@ -1954,7 +2094,7 @@ function LabDevicesCard() {
   const active = links.filter((l) => !l.revoked);
 
   return (
-    <div className="card p-5">
+    <div className="card p-5 mb-4">
       <div className="mb-1 flex items-center gap-2">
         <span className="grid h-9 w-9 place-items-center rounded-xl bg-teal-500/15 text-teal-600 dark:text-teal-400"><Radio size={18} /></span>
         <h2 className="font-bold text-ink">ربط أجهزة المختبر عبر الشبكة</h2>

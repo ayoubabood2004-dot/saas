@@ -776,7 +776,7 @@
   },
   "settings": {
     "title": "Doctor settings",
-    "subtitle": "Adjust the medical reading ranges used to flag values during examination.",
+    "subtitle": "Everything you configure for the clinic in one place, grouped so you can find a setting fast.",
     "readingRanges": "Medical reading ranges",
     "species": "Species",
     "min": "Min",
@@ -823,7 +823,11 @@
     "leaveSure": "Sure? This takes effect immediately.",
     "leaveConfirm": "Yes, leave the clinic",
     "posV2": "New sales screen (beta)",
-    "posV2Hint": "A rebuilt cashier layout: the cart, total and checkout button never leave the screen — even on tablets. Optional fields (customer, seller, notes) fold behind buttons, and the product grid shows more columns as the screen gets wider. Try it — switch it off anytime and the old screen returns unchanged."
+    "posV2Hint": "A rebuilt cashier layout: the cart, total and checkout button never leave the screen — even on tablets. Optional fields (customer, seller, notes) fold behind buttons, and the product grid shows more columns as the screen gets wider. Try it — switch it off anytime and the old screen returns unchanged.",
+    "secClinic": "Clinic",
+    "secSelling": "Selling & invoices",
+    "secMedical": "Medical & lab",
+    "secMe": "My account & this device"
   },
   "auth": {
     "signIn": "Sign in",
