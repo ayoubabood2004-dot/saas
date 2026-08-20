@@ -7,7 +7,8 @@ import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import type { BufferGeometry, Group, Mesh, MeshBasicMaterial, MeshStandardMaterial } from "three";
 import { ChevronRight, Hammer, ClipboardList, Maximize, Minus, Move, Plus, Search, Trash2, X, FileText, UserPlus } from "lucide-react";
-import { CageUnit, CAGE_W, CAGE_D, type DropHint } from "./CageUnit";
+import { CageUnit, CAGE_W, CAGE_H, CAGE_D, type DropHint } from "./CageUnit";
+import { LabelOverlay, LabelPositioner, type LabelSpec, type LabelNodes } from "./LabelLayer";
 import { NEON, NIGHT, KIND_AR, SPECIES_AR, SPECIES_EMOJI, type Occupant } from "./neon";
 import { useQuality, setTier, getTier, type Tier } from "./quality";
 import {
@@ -203,50 +204,8 @@ function Partitions({ rooms, s }: { rooms: Room3D[]; s: ReturnType<typeof cageSt
   );
 }
 
-/** وجه اللافتة: الاسم مرسوم داخل خامة اللوح نفسها (نسيج canvas) — جزء
- *  فيزيائي من اللافتة يميل وينحجب معها بدقة مطلقة، لا نص DOM طائف.
- *  كانفس النص يرسم فوراً بخط النظام — بلا جلب خطوط ولا Worker. */
-function SignFace({ name, countLabel, w }: { name: string; countLabel: string; w: number }) {
-  const tex = useMemo(() => {
-    const c = document.createElement("canvas");
-    c.width = 640; c.height = 150;
-    const g = c.getContext("2d")!;
-    g.clearRect(0, 0, 640, 150);
-    g.textAlign = "center";
-    g.textBaseline = "middle";
-    g.direction = "rtl";
-    g.font = "900 64px system-ui, -apple-system, 'Segoe UI', 'Noto Sans Arabic', sans-serif";
-    let nm = name.trim() || "غرفة";
-    while (g.measureText(nm).width > 590 && nm.length > 2) nm = nm.slice(0, -1);
-    if (nm !== name.trim() && nm.length < name.trim().length) nm += "…";
-    g.shadowColor = "#000000cc";
-    g.shadowBlur = 5;
-    g.shadowOffsetY = 3;
-    g.fillStyle = "#f7fbfe";
-    g.fillText(nm, 320, 58);
-    g.shadowBlur = 0;
-    g.shadowOffsetY = 0;
-    g.fillStyle = "#c3d0dc";
-    g.font = "800 30px system-ui, -apple-system, 'Segoe UI', sans-serif";
-    g.fillText(countLabel, 320, 124);
-    const t = new CanvasTexture(c);
-    t.anisotropy = 8;
-    return t;
-  }, [name, countLabel]);
-  useEffect(() => () => tex.dispose(), [tex]);
-  return (
-    <mesh position={[0, WALL_H + 0.33, 0.073]}>
-      <planeGeometry args={[w, w * (150 / 640)]} />
-      <meshBasicMaterial map={tex} transparent toneMapped={false} />
-    </mesh>
-  );
-}
-
 /* ── أرضيات الغرف + باب حقيقي بعضادتين وساكف تعلوه لافتة الاسم ──────────── */
-function RoomFloors({ s, occCount }: {
-  s: ReturnType<typeof cageStudio.get>;
-  occCount: (r: Room3D) => number;
-}) {
+function RoomFloors({ s }: { s: ReturnType<typeof cageStudio.get> }) {
   const signW = Math.min(CELL - 0.1, 2.85);
   return (
     <>
@@ -292,9 +251,9 @@ function RoomFloors({ s, occCount }: {
                 <meshStandardMaterial color="#3f4a57" metalness={0.45} roughness={0.4} />
               </RoundedBox>
               {/* إضاءة خفيفة تغسل اللافتة حتى تُقرأ ليلاً */}
-              <pointLight color="#dfeeff" intensity={0.5} distance={2.2} position={[0, WALL_H + 0.4, 0.7]} />
-              {/* الاسم داخل خامة اللوح نفسها — انظر SignFace */}
-              <SignFace name={r.name} countLabel={`🐾 ${formatNum(occCount(r))}`} w={signW - 0.12} />
+              {/* لوح اللافتة يبقى جسماً حقيقياً، أمّا الاسم فصار تسميةً بمساحة
+                  الشاشة تُرسم فوقه (LabelLayer): نصٌّ منسوجٌ بالجسم يتقلّص مع
+                  العالم فيصير ٦ بكسل عند التكبير الافتراضي — انظر دراسة المقروئية. */}
               {/* مرساة اختبارات غير مرئية — ببيئة التطوير فقط */}
               {import.meta.env.DEV && (
                 <Html center position={[0, WALL_H + 0.29, 0.09]} zIndexRange={[8, 0]} style={{ pointerEvents: "none" }}>
@@ -464,9 +423,12 @@ function DragAvatar({ drag, s, onReturned }: {
 
 /** مجس أداء للاختبارات (بيئة التطوير فقط): نداءات الرسم والمثلثات والأضواء
  *  أرقامٌ مستقلة عن قوة الجهاز — الحكم عليها أصدق من fps بمحاكي برمجي. */
+const sceneCamera: { current: import("three").Camera | null } = { current: null };
 function PerfProbe() {
   const gl = useThree((st) => st.gl);
   const scene = useThree((st) => st.scene);
+  const camera = useThree((st) => st.camera);
+  sceneCamera.current = camera;
   useEffect(() => {
     (window as unknown as Record<string, unknown>).__cagePerf = () => {
       let lights = 0, meshes = 0;
@@ -477,12 +439,30 @@ function PerfProbe() {
       });
       return { calls: gl.info.render.calls, triangles: gl.info.render.triangles, programs: gl.info.programs?.length ?? 0, lights, meshes };
     };
-    return () => { delete (window as unknown as Record<string, unknown>).__cagePerf; };
+    /** قياس المقروئية: يُسقط نقاطاً من العالم على الشاشة فنعرف بالبكسل الحقيقي
+     *  كم يبلغ ارتفاع رقم القفص واسم الغرفة — الحكم بالقياس لا بالانطباع. */
+    (window as unknown as Record<string, unknown>).__cageProject = (pts: [number, number, number][]) => {
+      const cam = (window as unknown as { __cageCamObj?: unknown }).__cageCamObj as { projectPoint?: unknown } | undefined;
+      void cam;
+      const v = new Vector3();
+      const el = gl.domElement;
+      const w = el.clientWidth, h = el.clientHeight;
+      const camera = (gl as unknown as { __c?: unknown }).__c;
+      void camera;
+      return pts.map(([x, y, z]) => {
+        v.set(x, y, z).project(sceneCamera.current!);
+        return [Math.round((v.x * 0.5 + 0.5) * w), Math.round((-v.y * 0.5 + 0.5) * h)];
+      });
+    };
+    return () => {
+      delete (window as unknown as Record<string, unknown>).__cagePerf;
+      delete (window as unknown as Record<string, unknown>).__cageProject;
+    };
   }, [gl, scene]);
   return null;
 }
 
-function Scene({ s, occOf, drag, carrySource, hoverCage, arrivedRef, camZoom, ctlRef, setHoverCage, onCardDown, onReturned, onTapCage, onPickCell }: {
+function Scene({ s, occOf, drag, carrySource, hoverCage, arrivedRef, camZoom, ctlRef, labels, labelNodes, setHoverCage, onCardDown, onReturned, onTapCage, onPickCell }: {
   s: ReturnType<typeof cageStudio.get>;
   occOf: (code: string) => Occupant | null;
   drag: DragState | null;
@@ -491,6 +471,8 @@ function Scene({ s, occOf, drag, carrySource, hoverCage, arrivedRef, camZoom, ct
   arrivedRef: React.MutableRefObject<Map<string, number>>;
   camZoom: number;                 // ملاءمة تلقائية — يبقى بيد المستخدم بعد أول قرصة
   ctlRef: React.MutableRefObject<CamCtl | null>;
+  labels: LabelSpec[];
+  labelNodes: LabelNodes;
   setHoverCage: (c: string | null) => void;
   onCardDown: (code: string, e: { clientX: number; clientY: number }) => void;
   onReturned: () => void;
@@ -519,8 +501,9 @@ function Scene({ s, occOf, drag, carrySource, hoverCage, arrivedRef, camZoom, ct
     return occ ? "idle" : "candidate";
   };
 
-  const occCount = (r: Room3D) =>
-    s.cages.filter((c) => c.x >= r.x && c.x < r.x + r.w && c.z >= r.z && c.z < r.z + r.d && occOf(c.code)).length;
+  const inRoom = (r: Room3D) => s.cages.filter((c) => c.x >= r.x && c.x < r.x + r.w && c.z >= r.z && c.z < r.z + r.d);
+  const occCount = (r: Room3D) => inRoom(r).filter((c) => occOf(c.code)).length;
+  void occCount;
 
   return (
     <>
@@ -589,7 +572,7 @@ function Scene({ s, occOf, drag, carrySource, hoverCage, arrivedRef, camZoom, ct
           fadeDistance={44} fadeStrength={1.4} followCamera={false} />
       )}
 
-      <RoomFloors s={s} occCount={occCount} />
+      <RoomFloors s={s} />
       <Partitions rooms={s.rooms} s={s} />
       {build && <CellPads s={s} onPick={onPickCell} />}
 
@@ -611,6 +594,8 @@ function Scene({ s, occOf, drag, carrySource, hoverCage, arrivedRef, camZoom, ct
             onTap={onTapCage} />
         );
       })}
+
+      <LabelPositioner labels={labels} nodes={labelNodes} hiddenFor={carrySource} />
 
       {build && <GhostCage s={s} />}
       {drag && !build && <DragAvatar drag={drag} s={s} onReturned={onReturned} />}
@@ -726,6 +711,10 @@ export default function Cage3DDemo() {
   }, [s]);
   const zoomBy = (f: number) => {
     playTap();
+    // نبضة إطارات: حلقة الرسم «عند الطلب» لا تُنعَش بضغطة زرٍّ خارج الكانفس،
+    // فكانت بطاقات النزلاء والتسميات **تتجمّد بمكانها القديم** عند التكبير
+    // بالأزرار بينما يتحرّك المشهد تحتها. اكتشفه قياس المقروئية.
+    poke();
     const c = ctlRef.current;
     if (!c) return;
     c.object.zoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, c.object.zoom * f));
@@ -735,6 +724,7 @@ export default function Cage3DDemo() {
   /** رجوع للمنظر الكامل: وسط المشهد + ملاءمة التخطيط الحالي (لا حالة لحظة الفتح). */
   const resetCam = () => {
     playTap();
+    poke();
     const c = ctlRef.current;
     if (!c) return;
     c.target.set(0, 0.35, 0);
@@ -1085,6 +1075,35 @@ export default function Cage3DDemo() {
     return p && (!fq || p.name.toLowerCase().includes(fq)) ? [{ a, p }] : [];
   });
   const detailOcc = !build && detailFor ? occOf(detailFor) : null;
+
+  /* تسميات بمساحة الشاشة — أسماء الغرف على لافتات أبوابها، وأرقام الأقفاص عند
+   * مقدّمة كل قفص (تحت بطاقة النزيل فلا تتزاحمان). الحجم بالبكسل ثابت فتُقرأ
+   * عند أي تكبير — انظر LabelLayer ودراسة المقروئية. */
+  const labelNodes: LabelNodes = useRef(new Map<string, HTMLDivElement | null>());
+  const labels: LabelSpec[] = useMemo(() => {
+    const out: LabelSpec[] = [];
+    for (const r of s.rooms) {
+      const inR = s.cages.filter((c) => c.x >= r.x && c.x < r.x + r.w && c.z >= r.z && c.z < r.z + r.d);
+      const [dx, dz] = doorCell(r);
+      const [doorWX, doorWZ] = cornerWorld(s, dx, dz);
+      out.push({
+        id: `room:${r.id}`, kind: "room", text: r.name,
+        sub: inR.length ? `${formatNum(inR.filter((c) => occOf(c.code)).length)}/${formatNum(inR.length)}` : undefined,
+        // ترتفع فوق اللافتة الفيزيائية: بالمنظر الإيزومتري تسقط التسمية
+        // المنخفضة **داخل** أرضية الغرفة فتحجب قفصاً. الارتفاع يخرجها للأمام.
+        world: [doorWX + CELL / 2, WALL_H + 1.35, doorWZ + 0.06],
+      });
+    }
+    for (const c of s.cages) {
+      const [wx, wz] = cellWorld(s, c.x, c.z);
+      out.push({
+        id: c.code, kind: "cage", text: c.code, occupied: !!occOf(c.code),
+        world: [wx, 0.525 - CAGE_H / 2 + 0.16, wz + CAGE_D / 2 + 0.2],
+      });
+    }
+    return out;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [s, occOf]);
   /* نبض الجرعة المستحقّة يحتاج إطارات مستمرة — لكنه نادر، فلا يُبقي الحلقة
    * دائرةً إلا وهو موجود فعلاً. */
   const anyDose = stays.some((c) => occOf(c.code)?.doseDue);
@@ -1104,10 +1123,12 @@ export default function Cage3DDemo() {
       >
         <Suspense fallback={null}>
           <Scene s={s} occOf={occOf} drag={drag} carrySource={carrySource} hoverCage={hoverCage}
-            arrivedRef={arrivedRef} camZoom={camZoom} ctlRef={ctlRef} setHoverCage={setHoverCage} onCardDown={onCardDown}
+            arrivedRef={arrivedRef} camZoom={camZoom} ctlRef={ctlRef} labels={labels} labelNodes={labelNodes}
+            setHoverCage={setHoverCage} onCardDown={onCardDown}
             onReturned={() => setDrag(null)} onTapCage={onTapCage} onPickCell={onPickCell} />
         </Suspense>
       </Canvas>
+      <LabelOverlay labels={labels} nodes={labelNodes} />
 
       {/* العنوان + مبدّل الوضعين + رجوع */}
       <div className="pointer-events-none absolute inset-x-0 top-0 z-30 flex items-start justify-between gap-3 p-4 sm:p-6">
