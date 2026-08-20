@@ -40,7 +40,7 @@ Vercel → Project → Settings → Environment Variables (بيئة **Production
 |---|---|
 | `WA_VERIFY_TOKEN` | ولّده أنت: `openssl rand -hex 32` |
 | `WA_APP_SECRET` | Meta App Dashboard → App Settings → Basic → App Secret → Show |
-| `SUPABASE_URL` | Supabase → Project Settings → API → Project URL |
+| `SUPABASE_URL` | اختياري — يُقرأ `VITE_SUPABASE_URL` الموجود أصلاً إن غاب |
 | `SUPABASE_SERVICE_ROLE_KEY` | Supabase → Project Settings → API → `service_role` |
 
 `SUPABASE_SERVICE_ROLE_KEY` **خادميّ بحت**. لا يصل المتصفّح: Vite لا يكشف إلا

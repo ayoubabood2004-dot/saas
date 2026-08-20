@@ -53,9 +53,15 @@ async function hmacHex(secret: string, raw: string): Promise<string> {
   return [...new Uint8Array(sig)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
+/** عنوان المشروع: نقبل VITE_SUPABASE_URL الموجود أصلاً بالنشر — فمتغيّرٌ أقل
+ *  يضيفه المشغّل يدوياً هو خطوةٌ أقل تُنسى. البادئة VITE_ تخصّ ما يُكشف
+ *  للمتصفّح، ولا تمنع الخادم من قراءته. */
+const sbUrl = () =>
+  (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "").trim().replace(/\/+$/, "");
+
 /** كتابة عبر PostgREST بمفتاح الخدمة — لا عميل ثقيل داخل حافة الشبكة. */
 async function sbInsert(table: string, rows: unknown, prefer = "return=minimal"): Promise<Response | null> {
-  const url = process.env.SUPABASE_URL;
+  const url = sbUrl();
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) return null;
   return fetch(`${url}/rest/v1/${table}`, {
@@ -69,7 +75,7 @@ async function sbInsert(table: string, rows: unknown, prefer = "return=minimal")
 }
 
 async function sbSelect(path: string): Promise<unknown[]> {
-  const url = process.env.SUPABASE_URL;
+  const url = sbUrl();
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) return [];
   const r = await fetch(`${url}/rest/v1/${path}`, {
