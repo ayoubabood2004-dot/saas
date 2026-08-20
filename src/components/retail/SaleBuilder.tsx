@@ -347,6 +347,13 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
   const [detailsOpen, setDetailsOpen] = useState(false);
   /* لوح السلة على الشاشات الضيّقة — يُفتح من الشريط الملتصق بالأسفل. */
   const [cartSheet, setCartSheet] = useState(false);
+  /* أدوات الدفع (خصم · طريقة دفع · فاتورة أولية) مطويّة: كانت تحتل ٣٢٤px من
+   * السلة بينما الأصناف ٢٨٥px — والبيع النقدي الغالب لا يلمسها إطلاقاً. */
+  const [payTools, setPayTools] = useState(false);
+  /* كثافة تكيّفية: مع تجاوز سبعة أصناف يرشّق السطر تلقائياً (سعر الوحدة يُخفى
+   * وأزرار الكمية تصغر قليلاً) فترتفع سعة السلة من ٨ أصناف مرئية إلى ١٢+ —
+   * «يشوف كل المنتجات الي يضيفهن شكد ما جانن». تبقى الأهداف فوق حدّ اللمس. */
+  const denseCart = posV2 && cart.length > 7;
   /* ارتفاع منطقة البيع يُقاس فعلياً من موضعها على الشاشة بدل تخمين ارتفاع
    * الترويسة: أي تغيّر بالترويسة أو حجم الخط لا يعيد كسر التخطيط. */
   const posRootRef = useRef<HTMLDivElement | null>(null);
@@ -1238,7 +1245,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
         // مفتوحةً (لا شريط مطويّ)، وعلى الواسعة عموداً بـ٤٠٪ من العرض بخطٍّ
         // كبير مقروء من وقفة الكاشير. الشبكة تخدم السلة لا العكس.
         posV2
-          ? "min-h-0 grid-rows-[minmax(0,1fr),minmax(0,52%)] lg:grid-rows-1 lg:grid-cols-[minmax(0,1fr),clamp(420px,40%,620px)]"
+          ? "min-h-0 grid-rows-[minmax(0,1fr),minmax(0,52%)] lg:grid-rows-1 lg:grid-cols-[minmax(0,1fr),clamp(460px,46%,720px)]"
           : "lg:grid-cols-[1fr,380px]",
       )}
       // Opt-in resizable cart: on lg+ the cart column takes the dragged width
@@ -1516,7 +1523,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
           : "max-h-[78vh] lg:sticky lg:top-4",
       )}>
         {cartResize.active && <CartResizeHandle dragging={cartResize.dragging} width={cartResize.width} handleProps={cartResize.handleProps} />}
-        <div className={cn("flex items-center justify-between border-b border-line", posV2 ? "px-4 py-3" : "p-4")}>
+        <div className={cn("flex items-center justify-between border-b border-line", posV2 ? "px-3.5 py-2" : "p-4")}>
           <span className={cn("flex items-center gap-2 font-display font-bold text-ink", posV2 && "text-lg")}>
             <ShoppingCart size={posV2 ? 22 : 18} /> {t("retail.cart", "Cart")}
             {units > 0 && <span className={cn("chip bg-brand-600 font-black text-white", posV2 ? "text-xs" : "text-2xs bg-brand-50 text-brand-700 dark:bg-brand-500/15 dark:text-brand-300")}>{units}</span>}
@@ -1537,17 +1544,17 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
           </span>
         </div>
 
-        <div className={cn("flex-1 overflow-auto", posV2 ? "min-h-[9.5rem] basis-40 p-2.5" : "p-2")}>
+        <div className={cn("flex-1 overflow-auto", posV2 ? "min-h-[9.5rem] basis-40 p-2" : "p-2")}>
           {cart.length === 0 ? (
             <div className={cn("grid place-items-center px-6 text-center text-ink-subtle", posV2 ? "h-full min-h-[8rem] text-base" : "h-40 text-sm")}>{t("retail.cartEmpty", "Add products to start a sale.")}</div>
           ) : (
-            <div className={cn(posV2 ? "space-y-2" : "space-y-1.5")}>
+            <div className={cn(denseCart ? "space-y-1" : "space-y-1.5")}>
               <AnimatePresence initial={false}>
                 {cart.map((l) => (
                   <motion.div key={l.id} layout initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }}
-                    className={cn("flex items-center rounded-2xl border", posV2 ? "gap-2.5 p-3" : "gap-2 p-2.5", flash === l.id ? "border-brand-400 bg-brand-50 dark:bg-brand-500/15" : "border-line bg-surface-1")}>
+                    className={cn("flex items-center rounded-2xl border", posV2 ? (denseCart ? "gap-1.5 px-2 py-1" : "gap-2 px-2.5 py-1.5") : "gap-2 p-2.5", flash === l.id ? "border-brand-400 bg-brand-50 dark:bg-brand-500/15" : "border-line bg-surface-1")}>
                     <div className="min-w-0 flex-1">
-                      <p className={cn("flex items-center gap-1.5 truncate font-bold text-ink", posV2 ? "text-base leading-snug" : "text-sm font-semibold")}>
+                      <p className={cn("flex items-center gap-1.5 truncate font-bold text-ink", posV2 ? "text-base leading-tight" : "text-sm font-semibold")}>
                         {l.name}
                         {l.kind === "service" && <span className="chip shrink-0 bg-brand-50 text-2xs font-medium text-brand-700 dark:bg-brand-500/15 dark:text-brand-300">{t("retail.service", "Service")}</span>}
                         {l.kind === "med" && (
@@ -1568,9 +1575,11 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
                             : <>{l.med.family} · {l.med.dosage}</>}
                         </p>
                       )}
-                      <div className={cn("mt-0.5 flex items-center gap-1 text-ink-subtle", posV2 ? "text-sm" : "text-xs")}>
+                      {/* سعر الوحدة بنفس سطر الاسم بالشاشة الجديدة: سطرٌ واحد
+                          للصنف يعني ضِعف عدد الأصناف المرئية بنفس المساحة. */}
+                      <div className={cn("items-center gap-1 text-xs text-ink-subtle", denseCart ? "hidden" : "flex", posV2 ? "-mt-0.5" : "mt-0.5")}>
                         <PriceEdit value={l.unit_price} onChange={(v) => setPrice(l.id, v)} />
-                        <span>
+                        <span className="truncate">
                           {l.kind === "product" && l.hasSubUnit
                             ? `/ ${l.saleUnit === "sub" ? (l.subUnitName || t("retail.unitSingle", "مفرد")) : t("retail.unitBox", "علبة")}`
                             : t("pos.each", "each")}
@@ -1632,12 +1641,14 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
                     {/* أهداف لمس ١١×١١ (44px) بالشاشة الجديدة — معيار WCAG 2.5.5
                         للأفعال الأساسية؛ ٧×٧ القديمة كانت تنتج تعديلات كمية بالغلط. */}
                     <div className="flex items-center gap-1">
-                      <button data-qtyminus onClick={() => { playTap(); setQty(l.id, l.qty - 1); }} className={cn("grid place-items-center rounded-lg bg-surface-2 text-ink-muted transition hover:bg-surface-3", posV2 ? "h-11 w-11" : "h-7 w-7")}><Minus size={posV2 ? 18 : 14} /></button>
+                      <button data-qtyminus onClick={() => { playTap(); setQty(l.id, l.qty - 1); }} className={cn("grid place-items-center rounded-lg bg-surface-2 text-ink-muted transition hover:bg-surface-3", posV2 ? (denseCart ? "h-9 w-9" : "h-11 w-11") : "h-7 w-7")}><Minus size={posV2 ? (denseCart ? 15 : 18) : 14} /></button>
                       <span className={cn("text-center font-bold tabular-nums text-ink", posV2 ? "w-8 text-base" : "w-6 text-sm")}>{l.qty}</span>
-                      <button data-qtyplus onClick={() => { playTap(); if (l.qty < unitCap(l)) setQty(l.id, l.qty + 1); else { playWarning(); toast.error(t("retail.maxStock", "No more in stock")); } }} className={cn("grid place-items-center rounded-lg bg-surface-2 text-ink-muted transition hover:bg-surface-3", posV2 ? "h-11 w-11" : "h-7 w-7")}><Plus size={posV2 ? 18 : 14} /></button>
+                      <button data-qtyplus onClick={() => { playTap(); if (l.qty < unitCap(l)) setQty(l.id, l.qty + 1); else { playWarning(); toast.error(t("retail.maxStock", "No more in stock")); } }} className={cn("grid place-items-center rounded-lg bg-surface-2 text-ink-muted transition hover:bg-surface-3", posV2 ? (denseCart ? "h-9 w-9" : "h-11 w-11") : "h-7 w-7")}><Plus size={posV2 ? (denseCart ? 15 : 18) : 14} /></button>
                     </div>
-                    <span className={cn("text-end font-extrabold tabular-nums text-ink", posV2 ? "w-24 text-lg" : "w-16 text-sm font-bold")}>{money(l.qty * l.unit_price)}</span>
-                    <button onClick={() => removeLine(l.id)} aria-label={t("common.delete", "Remove")} className={cn("grid place-items-center rounded-lg text-ink-subtle transition hover:bg-danger-50 hover:text-danger-600", posV2 ? "h-11 w-11" : "h-7 w-7")}><Trash2 size={posV2 ? 17 : 14} /></button>
+                    {/* whitespace-nowrap حاسم: «25,000 د.ع» كان يلتفّ سطرين داخل
+                        عرض ضيّق فيضخّم كل صفّ ١٨px — أي ثلاثة أصناف أقل بالشاشة. */}
+                    <span className={cn("shrink-0 whitespace-nowrap text-end font-extrabold tabular-nums text-ink", posV2 ? (denseCart ? "text-sm" : "text-base") : "w-16 text-sm font-bold")}>{money(l.qty * l.unit_price)}</span>
+                    <button onClick={() => removeLine(l.id)} aria-label={t("common.delete", "Remove")} className={cn("grid place-items-center rounded-lg text-ink-subtle transition hover:bg-danger-50 hover:text-danger-600", posV2 ? (denseCart ? "h-9 w-9" : "h-11 w-11") : "h-7 w-7")}><Trash2 size={posV2 ? (denseCart ? 15 : 17) : 14} /></button>
                   </motion.div>
                 ))}
               </AnimatePresence>
@@ -1647,9 +1658,31 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
 
         {/* Discount + payment + totals */}
         <div className={cn("border-t border-line", posV2 ? "shrink-0 space-y-2 p-3" : "p-4 space-y-3")}>
+          {/* شريط الأدوات: خصم · دفع · طباعة أولية — مطويّ افتراضياً حتى تبقى
+              المساحة للأصناف. ملخّصه يظهر بالسطر فلا تختفي معلومة مهمة. */}
+          {posV2 && (
+            <button
+              type="button" data-paytools
+              onClick={() => { playTap(); setPayTools((v) => !v); }}
+              className="flex w-full items-center gap-2 rounded-xl bg-surface-2 px-3 py-1.5 text-2xs font-bold text-ink-muted transition hover:bg-surface-3"
+            >
+              <Tag size={12} className="shrink-0" />
+              {manualDiscountAmt > 0
+                ? t("retail.toolsWithDiscount", { n: money(manualDiscountAmt), defaultValue: "خصم {{n}} · أدوات الدفع" })
+                : t("retail.tools", "الخصم وطرق الدفع")}
+              {isCredit && <span className="chip bg-warn-50 text-[10px] font-black text-warn-700 dark:bg-warn-500/15 dark:text-warn-200">{t("retail.creditShort", "آجل")}</span>}
+              {deliveryOn && <span className="chip bg-sky-50 text-[10px] font-black text-sky-700 dark:bg-sky-500/15 dark:text-sky-200">{t("retail.deliveryShort", "توصيل")}</span>}
+              {!cashierId && cart.length > 0 && (
+                <span data-nosellerchip className="chip bg-warn-50 text-[10px] font-black text-warn-700 dark:bg-warn-500/15 dark:text-warn-200">
+                  <AlertTriangle size={10} className="me-0.5 inline" />{t("retail.noSellerChip", "بلا بائع")}
+                </span>
+              )}
+              {payTools ? <ChevronDown size={14} className="ms-auto shrink-0" /> : <ChevronUp size={14} className="ms-auto shrink-0" />}
+            </button>
+          )}
           {/* Discount — يظهر بالشاشات الواسعة دائماً، وبالضيّقة عند تكبير السلة:
               نصف الشاشة السفلي مخصّص لما يشتريه الزبون فعلاً لا لأدوات نادرة. */}
-          <div className={cn("items-center gap-2", posV2 && !cartSheet ? "hidden lg:flex" : "flex")}>
+          <div className={cn("items-center gap-2", posV2 && !payTools ? "hidden" : "flex")}>
             <span className="flex items-center gap-1 text-xs font-semibold text-ink-muted"><Tag size={13} /> {t("retail.discount", "Discount")}</span>
             <div className="ms-auto flex items-center gap-1.5">
               <div className="flex overflow-hidden rounded-lg border border-line">
@@ -1661,7 +1694,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
           </div>
 
           {/* Payment — full, split across methods, or partial (credit / دفع آجل) */}
-          <div className={cn("space-y-1.5", posV2 && !cartSheet && "hidden lg:block")}>
+          <div className={cn("space-y-1.5", posV2 && !payTools && "hidden")}>
             <div className="flex items-center justify-between">
               <span className="flex items-center gap-1.5 text-xs font-semibold text-ink-muted">
                 <Wallet size={13} /> {t("retail.payment", "الدفع")}
@@ -1890,7 +1923,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
 
           {/* Totals */}
           <div className="space-y-1 border-t border-line pt-3 text-sm">
-            <div className={cn("items-center justify-between text-ink-muted", posV2 && !cartSheet ? "hidden lg:flex" : "flex")}><span>{t("retail.subtotal", "Subtotal")}</span><span className="tabular-nums">{money(subtotal)}</span></div>
+            <div className={cn("items-center justify-between text-ink-muted", posV2 && !payTools ? "hidden" : "flex")}><span>{t("retail.subtotal", "Subtotal")}</span><span className="tabular-nums">{money(subtotal)}</span></div>
             {finalOverride != null ? (
               /* Manual final price → a derived discount OR a surcharge (markup) line. */
               <>
@@ -1959,11 +1992,11 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
                 <span className="tabular-nums">+{money(deliveryFee)} = <b>{money(effTotal)}</b></span>
               </div>
             )}
-            <div className={cn("items-center justify-end gap-1 text-2xs text-success-600", posV2 && !cartSheet ? "hidden lg:flex" : "flex")}><TrendingUp size={11} /> {t("retail.profit", "Profit")} {money(profit)}</div>
+            <div className={cn("items-center justify-end gap-1 text-2xs text-success-600", posV2 && !payTools ? "hidden" : "flex")}><TrendingUp size={11} /> {t("retail.profit", "Profit")} {money(profit)}</div>
           </div>
 
           {preSaleEnabled && (
-            <div className={cn("grid-cols-2 gap-2", posV2 && !cartSheet ? "hidden lg:grid" : "grid")}>
+            <div className={cn("grid-cols-2 gap-2", posV2 && !payTools ? "hidden" : "grid")}>
               <Button variant="secondary" size="sm" disabled={cart.length === 0} leftIcon={<Printer size={15} />} onClick={() => printPreSale("a4")} data-presale="a4">
                 {t("retail.preSaleA4", "فاتورة أولية A4")}
               </Button>
@@ -1981,7 +2014,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
                   ? `${t("retail.complete", "إصدار الفاتورة")} · ${t("retail.changeDue", "الباقي")} ${money(change)}`
                   : `${t("retail.complete", "إصدار الفاتورة")} · ${money(total)}`}
           </Button>
-          {posV2 && !cashierId && cart.length > 0 && (
+          {posV2 && !cashierId && cart.length > 0 && payTools && (
             <button
               type="button" data-noseller
               onClick={() => { playTap(); setCartSheet(false); setDetailsOpen(true); }}

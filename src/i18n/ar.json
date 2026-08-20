@@ -382,7 +382,13 @@
     "addDetails": "عميل · بائع · ملاحظة",
     "detailsFor": "البيع لـ{{name}} — تعديل التفاصيل",
     "cartEmptyShort": "السلة فارغة",
-    "nItems": "{{n}} صنف بالسلة"
+    "nItems": "{{n}} صنف بالسلة",
+    "tools": "الخصم وطرق الدفع",
+    "toolsWithDiscount": "خصم {{n}} · أدوات الدفع",
+    "creditShort": "آجل",
+    "deliveryShort": "توصيل",
+    "expandCart": "تكبير السلة",
+    "noSellerChip": "بلا بائع"
   },
   "promos": {
     "title": "إدارة العروض",

@@ -112,7 +112,10 @@ function Protected({ children }: { children: ReactNode }) {
   // No enter animation on route content — a native-app feel: the moment you
   // click, the page is simply THERE at full opacity, not fading in. Combined
   // with preloaded chunks + a warm data cache, navigation has no perceptible load.
-  return <main className="pb-20">{children}</main>;
+  // pb-20 فسحة شريط التنقّل السفلي — وهو مخفي على الشاشات الواسعة، فالفسحة
+  // هناك ٨٠px مهدورة من كل صفحة (اكتشفها قياس شاشة البيع: السلة كانت تقف
+  // قبل حافة الشاشة بـ٨١px بلا سبب).
+  return <main className="pb-20 lg:pb-0">{children}</main>;
 }
 
 /** /login is for logged-OUT users only. If a session is already active — e.g. the

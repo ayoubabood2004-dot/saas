@@ -382,7 +382,13 @@
     "addDetails": "Customer · seller · note",
     "detailsFor": "Sale for {{name}} — edit details",
     "cartEmptyShort": "Cart is empty",
-    "nItems": "{{n}} items in cart"
+    "nItems": "{{n}} items in cart",
+    "tools": "Discount & payment",
+    "toolsWithDiscount": "{{n}} off · payment tools",
+    "creditShort": "Credit",
+    "deliveryShort": "Delivery",
+    "expandCart": "Expand cart",
+    "noSellerChip": "No seller"
   },
   "promos": {
     "title": "Offers management",
