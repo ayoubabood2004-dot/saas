@@ -466,6 +466,25 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
     return n;
   };
 
+  /* «اكتب الرقم وامسح» — بلا أي مفتاح تسليح.
+   * حقل البحث فيه رقم مجرّد (٢..٩٩٩) وقت المسح ⇒ الرقم كمية لا كلمة بحث.
+   *
+   * لماذا **عند المسح فقط** ولا يُطبَّق على ضغطة بطاقة المنتج: «رمل ٢٠ كغم»
+   * اسمٌ حقيقي، ومن يكتب ٢٠ ليبحث عنه ثم يضغط النتيجة يقصد صنفاً واحداً لا
+   * عشرين. أمّا من رفع الماسح فقد حسم أمره: الرقم الذي كتبه كمية. وللّمس
+   * مدخلُه الصريح (زر ×N) الذي يعمل على البطاقات أيضاً.
+   * والسقف ٩٩٩ يترك البحث بالباركود الرقمي الطويل يعمل كما هو. */
+  const queryMult = (): number | null => {
+    const m = /^(\d{1,3})$/.exec(query.trim());
+    if (!m) return null;
+    const n = Number(m[1]);
+    return n >= 2 ? n : null;
+  };
+  /** الكمية المطبَّقة على مسحة: المضاعِف الصريح أولاً، وإلا رقم حقل البحث.
+   *  القراءة هنا والاستهلاك بعد نجاح المطابقة — مسحةٌ لباركود مجهول يجب ألّا
+   *  تبتلع الرقم الذي كتبه الطبيب. */
+  const peekScanMult = (): number => mult ?? queryMult() ?? 1;
+
   // Add (or increment) a line; products are capped at their stock.
   // n = الكمية المضافة (١ افتراضاً، أو المضاعِف المعلّق). السطر الموجود **يجمع**
   // لا يُستبدل: هذا سلوك المسح المعتاد، ومخالفته تفاجئ الكاشير بصمت.
@@ -604,10 +623,12 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
 
   useBarcodeScanner(async (code) => {
     if (done) return;
+    const n = peekScanMult();
     const product = await repo.getProductByBarcode(code, clinicId);
     if (product) {
       playSuccess();
-      addProduct(product);
+      addProduct(product, n);
+      if (mult != null) setMult(null);
       setQuery(""); // clear any scanned digits that landed in the focused search box
       return;
     }
@@ -616,7 +637,8 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
     const svc = findServiceByBarcode(code);
     if (svc) {
       playSuccess();
-      addService(svc);
+      addService(svc, n);
+      if (mult != null) setMult(null);
       setQuery("");
       return;
     }
@@ -1596,6 +1618,20 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
                 ×{mult != null ? formatNum(mult) : ""}
               </button>
             </div>
+
+            {/* «اكتب الرقم وامسح»: الرقم المكتوب يُعلَن **قبل** المسح لا بعده —
+                الطبيب يقرأ ما سيحدث قبل أن يحدث، فلا مفاجأة بالفاتورة. */}
+            {mult == null && queryMult() != null && (
+              <div data-multhint className={cn(
+                "flex items-center gap-2 rounded-2xl border border-dashed border-brand-400 bg-brand-50/70 px-3.5 py-2 dark:border-brand-500/50 dark:bg-brand-500/10",
+                posV2 && "shrink-0",
+              )}>
+                <Barcode size={16} className="shrink-0 text-brand-600 dark:text-brand-300" />
+                <span className="text-xs font-bold text-brand-800 dark:text-brand-200">
+                  {t("retail.multFromQuery", { n: formatNum(queryMult() ?? 0), defaultValue: "امسح الباركود الآن — يُضاف ×{{n}} دفعة واحدة" })}
+                </span>
+              </div>
+            )}
 
             {/* شارة المضاعِف المعلّق — بارزة عمداً: لا يُنسى ولا يُلغى بالصدفة */}
             {mult != null && (

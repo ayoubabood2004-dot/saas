@@ -428,7 +428,8 @@
     "multPadDone": "Arm the quantity",
     "qtyPadTitle": "Item quantity",
     "qtyPadMax": "{{n}} available",
-    "qtyPadClamped": "Not enough stock — only {{n}} will be added"
+    "qtyPadClamped": "Not enough stock — only {{n}} will be added",
+    "multFromQuery": "Scan now — it is added ×{{n}} in one go"
   },
   "promos": {
     "title": "Offers management",

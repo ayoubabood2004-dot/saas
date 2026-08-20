@@ -428,7 +428,8 @@
     "multPadDone": "جهّز الكمية",
     "qtyPadTitle": "كمية الصنف",
     "qtyPadMax": "المتوفّر {{n}}",
-    "qtyPadClamped": "المخزون لا يكفي — ستُضاف {{n}} فقط"
+    "qtyPadClamped": "المخزون لا يكفي — ستُضاف {{n}} فقط",
+    "multFromQuery": "امسح الباركود الآن — يُضاف ×{{n}} دفعة واحدة"
   },
   "promos": {
     "title": "إدارة العروض",
