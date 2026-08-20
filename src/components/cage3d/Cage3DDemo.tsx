@@ -2,14 +2,16 @@ import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { OrthographicCamera, ContactShadows, Html, Grid as DreiGrid, MapControls, RoundedBox } from "@react-three/drei";
-import { CanvasTexture, MOUSE, Plane, PMREMGenerator, RepeatWrapping, TOUCH, Vector2, Vector3 } from "three";
+import { BoxGeometry, CanvasTexture, Matrix4, MOUSE, Plane, PMREMGenerator, RepeatWrapping, TOUCH, Vector2, Vector3 } from "three";
+import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
-import type { Group, Mesh, MeshBasicMaterial, MeshStandardMaterial } from "three";
+import type { BufferGeometry, Group, Mesh, MeshBasicMaterial, MeshStandardMaterial } from "three";
 import { ChevronRight, Hammer, ClipboardList, Maximize, Minus, Move, Plus, Search, Trash2, X, FileText, UserPlus } from "lucide-react";
 import { CageUnit, CAGE_W, CAGE_D, type DropHint } from "./CageUnit";
 import { NEON, NIGHT, KIND_AR, SPECIES_AR, SPECIES_EMOJI, type Occupant } from "./neon";
+import { useQuality, setTier, getTier, type Tier } from "./quality";
 import {
-  CELL, LED_CHOICES, cageStudio, useCageStudio, cageAt, cellFree, bounds,
+  CELL, cageStudio, useCageStudio, cageAt, cellFree, bounds,
   cellWorld, cornerWorld, buildPartitions, doorCell, codesFromPrefs, type Room3D,
 } from "./store";
 import { opsStore } from "@/lib/opsStore";
@@ -104,11 +106,10 @@ interface CamCtl {
   update: () => void;
 }
 
+/* الأسطورة لونان لا أربعة: «وين فاضي؟» هو السؤال الوحيد الذي يُسأل من بعيد. */
 const LEGEND: { label: string; c: string }[] = [
-  { label: "فندقة", c: NEON.boarding },
-  { label: "علاج", c: NEON.care },
-  { label: "فندقة علاجية", c: NEON.careBoarding },
-  { label: "متاح", c: NEON.free },
+  { label: "فاضٍ", c: NEON.free },
+  { label: "ممتلئ", c: NEON.boarding },
 ];
 
 function makeWoodTexture(): CanvasTexture {
@@ -137,66 +138,67 @@ function makeWoodTexture(): CanvasTexture {
   return t;
 }
 
-function HexCluster({ position, rotation, color }: {
-  position: [number, number, number]; rotation: [number, number, number]; color: string;
-}) {
-  const cells: [number, number][] = [[0, 0], [1.06, 0], [0.53, 0.92], [-0.53, 0.92], [1.59, 0.92], [0.53, -0.92], [-1.06, 0]];
-  return (
-    <group position={position} rotation={rotation}>
-      {cells.map(([x, y], i) => (
-        <mesh key={i} position={[x * 0.44, y * 0.44, 0]} rotation={[Math.PI / 2, 0, 0]}>
-          <cylinderGeometry args={[0.2, 0.2, 0.05, 6]} />
-          <meshStandardMaterial color={color} emissive={color} emissiveIntensity={i % 2 ? 1.1 : 1.7} toneMapped={false} />
-        </mesh>
-      ))}
-    </group>
-  );
-}
-
 /** جدران الغرف بلغة الأقفاص نفسها: إزارة أرضية + لوح معدني سفلي صلب + زجاج
  *  فوقه + مدّة علوية — ترتكز على الأرض فعلاً بدل ألواح زجاج طائفة بالفراغ. */
 const WALL_LOWER = 0.52;
 function Partitions({ rooms, s }: { rooms: Room3D[]; s: ReturnType<typeof cageStudio.get> }) {
+  const { low } = useQuality();
   const segs = useMemo(() => buildPartitions(rooms), [rooms]);
+  /* كل الجدران بثلاث شبكات لا ستٍّ لكل مقطع. غرفة ٤×٣ تعطي ١٤ مقطعاً — أي ٨٤
+   * شبكة و٨٤ نداء رسم في النسخة السابقة، وهي وحدها كانت تفوق كل الأقفاص.
+   * الدمج يتمّ عند تغيّر الغرف فقط، لا كل إطار. */
+  const merged = useMemo(() => {
+    const metal: BufferGeometry[] = [];
+    const glass: BufferGeometry[] = [];
+    const plinth: BufferGeometry[] = [];
+    const put = (arr: BufferGeometry[], g: BufferGeometry, x: number, y: number, z: number, ry: number) => {
+      const m = new Matrix4();
+      if (ry) m.makeRotationY(ry);
+      m.setPosition(x, y, z);
+      g.applyMatrix4(m);
+      arr.push(g);
+    };
+    for (const seg of segs) {
+      const [ax, az] = cornerWorld(s, seg.x1, seg.z1);
+      const [bx, bz] = cornerWorld(s, seg.x2, seg.z2);
+      const cx = (ax + bx) / 2, cz = (az + bz) / 2;
+      const len = Math.hypot(bx - ax, bz - az);
+      const ry = seg.z1 === seg.z2 ? 0 : Math.PI / 2;
+      put(plinth, new BoxGeometry(len + 0.04, 0.17, 0.12), cx, 0.015, cz, ry);
+      put(metal, new BoxGeometry(len, WALL_LOWER, 0.07), cx, WALL_LOWER / 2 + 0.05, cz, ry);
+      put(metal, new BoxGeometry(len + 0.06, 0.07, 0.1), cx, WALL_H - 0.09, cz, ry);
+      for (const o of [-len / 2, len / 2]) {
+        const px = ry ? cx : cx + o;
+        const pz = ry ? cz + o : cz;
+        put(metal, new BoxGeometry(0.1, WALL_H, 0.1), px, WALL_H / 2 - 0.05, pz, 0);
+      }
+      put(glass, new BoxGeometry(len - 0.02, WALL_H - WALL_LOWER - 0.22, 0.04), cx, (WALL_LOWER + 0.1 + WALL_H - 0.12) / 2, cz, ry);
+    }
+    return {
+      metal: metal.length ? mergeGeometries(metal) : null,
+      glass: glass.length ? mergeGeometries(glass) : null,
+      plinth: plinth.length ? mergeGeometries(plinth) : null,
+    };
+  }, [segs, s]);
+  useEffect(() => () => { merged.metal?.dispose(); merged.glass?.dispose(); merged.plinth?.dispose(); }, [merged]);
+
   return (
     <>
-      {segs.map((g) => {
-        const [ax, az] = cornerWorld(s, g.x1, g.z1);
-        const [bx, bz] = cornerWorld(s, g.x2, g.z2);
-        const cx = (ax + bx) / 2, cz = (az + bz) / 2;
-        const len = Math.hypot(bx - ax, bz - az);
-        const horizontal = g.z1 === g.z2;
-        return (
-          <group key={`${g.x1},${g.z1}-${g.x2},${g.z2}`} position={[cx, 0, cz]} rotation={[0, horizontal ? 0 : Math.PI / 2, 0]}>
-            {/* الإزارة — تربط الجدار بالأرضية */}
-            <mesh position={[0, 0.015, 0]} receiveShadow>
-              <boxGeometry args={[len + 0.04, 0.17, 0.12]} />
-              <meshStandardMaterial color={NIGHT.plinth} metalness={0.55} roughness={0.5} />
-            </mesh>
-            {/* اللوح المعدني السفلي الصلب */}
-            <mesh position={[0, WALL_LOWER / 2 + 0.05, 0]} castShadow>
-              <boxGeometry args={[len, WALL_LOWER, 0.07]} />
-              <meshStandardMaterial color={NIGHT.shell} metalness={0.7} roughness={0.38} />
-            </mesh>
-            {/* الزجاج العلوي */}
-            <mesh position={[0, (WALL_LOWER + 0.1 + WALL_H - 0.12) / 2, 0]}>
-              <boxGeometry args={[len - 0.02, WALL_H - WALL_LOWER - 0.22, 0.04]} />
-              <meshStandardMaterial color="#bfe9f5" transparent opacity={0.16} roughness={0.08} metalness={0.1} depthWrite={false} />
-            </mesh>
-            {/* المدّة العلوية */}
-            <mesh position={[0, WALL_H - 0.09, 0]}>
-              <boxGeometry args={[len + 0.06, 0.07, 0.1]} />
-              <meshStandardMaterial color={NIGHT.shell} metalness={0.8} roughness={0.3} />
-            </mesh>
-            {[-len / 2, len / 2].map((o, i) => (
-              <mesh key={i} position={[o, WALL_H / 2 - 0.05, 0]} castShadow>
-                <boxGeometry args={[0.1, WALL_H, 0.1]} />
-                <meshStandardMaterial color={NIGHT.shell} metalness={0.75} roughness={0.35} />
-              </mesh>
-            ))}
-          </group>
-        );
-      })}
+      {merged.plinth && (
+        <mesh geometry={merged.plinth} receiveShadow={!low}>
+          <meshStandardMaterial color="#26313f" metalness={0.25} roughness={0.6} />
+        </mesh>
+      )}
+      {merged.metal && (
+        <mesh geometry={merged.metal} castShadow={!low}>
+          <meshStandardMaterial color="#4a586c" metalness={0.32} roughness={0.46} />
+        </mesh>
+      )}
+      {!low && merged.glass && (
+        <mesh geometry={merged.glass}>
+          <meshStandardMaterial color="#bfe9f5" transparent opacity={0.16} roughness={0.08} metalness={0.1} depthWrite={false} />
+        </mesh>
+      )}
     </>
   );
 }
@@ -257,7 +259,7 @@ function RoomFloors({ s, occCount }: {
           <group key={r.id}>
             <mesh rotation={[-Math.PI / 2, 0, 0]} position={[wx + w / 2, -0.07, wz + d / 2]} receiveShadow>
               <planeGeometry args={[w - 0.12, d - 0.12]} />
-              <meshStandardMaterial color="#22344c" transparent opacity={0.62} roughness={0.85} />
+              <meshStandardMaterial color="#2c4463" transparent opacity={0.7} roughness={0.85} />
             </mesh>
             {/* الباب على حدّ الغرفة الأمامي: عضادتان + ساكف، وفوقه لافتة
                 احترافية بطبقتين (ستيل خلفي بارز + لوح أمامي داكن بزوايا
@@ -448,7 +450,9 @@ function DragAvatar({ drag, s, onReturned }: {
             </span>
           </div>
         </Html>
-        <pointLight color={color} intensity={1.2} distance={3.5} />
+        {/* بلا ضوء نقطي مع المحمول: إضافة ضوء أو حذفه تُجبر three على إعادة
+            ترجمة شادر كل خامة بالمشهد — أي تلعثمة مضمونة بالضبط عند بدء
+            السحب وعند نهايته، وهي أكثر لحظة يجب أن تكون فيها الحركة سلسة. */}
       </group>
       <mesh ref={ring} rotation={[-Math.PI / 2, 0, 0]} position={[drag.fromPos[0], 0.02, drag.fromPos[2]]}>
         <ringGeometry args={[0.34, 0.46, 40]} />
@@ -456,6 +460,26 @@ function DragAvatar({ drag, s, onReturned }: {
       </mesh>
     </>
   );
+}
+
+/** مجس أداء للاختبارات (بيئة التطوير فقط): نداءات الرسم والمثلثات والأضواء
+ *  أرقامٌ مستقلة عن قوة الجهاز — الحكم عليها أصدق من fps بمحاكي برمجي. */
+function PerfProbe() {
+  const gl = useThree((st) => st.gl);
+  const scene = useThree((st) => st.scene);
+  useEffect(() => {
+    (window as unknown as Record<string, unknown>).__cagePerf = () => {
+      let lights = 0, meshes = 0;
+      scene.traverse((o) => {
+        const any = o as unknown as { isLight?: boolean; isMesh?: boolean };
+        if (any.isLight) lights++;
+        if (any.isMesh) meshes++;
+      });
+      return { calls: gl.info.render.calls, triangles: gl.info.render.triangles, programs: gl.info.programs?.length ?? 0, lights, meshes };
+    };
+    return () => { delete (window as unknown as Record<string, unknown>).__cagePerf; };
+  }, [gl, scene]);
+  return null;
 }
 
 function Scene({ s, occOf, drag, carrySource, hoverCage, arrivedRef, camZoom, ctlRef, setHoverCage, onCardDown, onReturned, onTapCage, onPickCell }: {
@@ -473,6 +497,7 @@ function Scene({ s, occOf, drag, carrySource, hoverCage, arrivedRef, camZoom, ct
   onTapCage: (code: string) => void;
   onPickCell: (x: number, z: number) => void;
 }) {
+  const { low } = useQuality();
   const wood = useMemo(makeWoodTexture, []);
   useEffect(() => () => wood.dispose(), [wood]);
   const build = s.mode === "build";
@@ -480,6 +505,10 @@ function Scene({ s, occOf, drag, carrySource, hoverCage, arrivedRef, camZoom, ct
   const b = bounds(s);
   const [wminX, wminZ] = cornerWorld(s, b.minX, b.minZ);
   const wallZ = wminZ - 1.7, wallX = wminX - 1.7;
+  // طول كل جدار = امتداد التخطيط + هامش، فيبقى الجدار خلفيةً للغرف لا شريطاً
+  // يمتدّ للأفق.
+  const wallLenX = (b.maxX - b.minX) * CELL + 5.6;
+  const wallLenZ = (b.maxZ - b.minZ) * CELL + 5.6;
 
   const moveActive = !build && (drag?.phase === "drag" || carrySource !== null || !!drag);
   const hintFor = (code: string): DropHint => {
@@ -495,9 +524,10 @@ function Scene({ s, occOf, drag, carrySource, hoverCage, arrivedRef, camZoom, ct
 
   return (
     <>
+      {import.meta.env.DEV && <PerfProbe />}
       <color attach="background" args={[NIGHT.bg]} />
-      <fog attach="fog" args={[NIGHT.bg, 36, 68]} />
-      <EnvLight />
+      {!low && <fog attach="fog" args={[NIGHT.bg, 36, 68]} />}
+      {!low && <EnvLight />}
       <OrthographicCamera makeDefault position={[12, 12, 12]} zoom={camZoom} near={0.1} far={80} />
       {/* تحكم الكاميرا: قرصة بأصبعين تكبّر، وسحب الأرضية (إصبع أو فأرة) يحرّك،
           والدوران معطّل حتى تبقى الزاوية الإيزومترية ثابتة. سحب بطاقات المرضى
@@ -515,36 +545,42 @@ function Scene({ s, occOf, drag, carrySource, hoverCage, arrivedRef, camZoom, ct
         ref={(v: unknown) => { ctlRef.current = v as CamCtl | null; }}
       />
 
-      <ambientLight intensity={0.55} />
-      <directionalLight color="#ffe9d2" position={[6, 11, 4]} intensity={1.1} castShadow
-        shadow-mapSize-width={1024} shadow-mapSize-height={1024} />
-      <pointLight color="#22d3ee" position={[-8, 4.5, -5]} intensity={0.6} distance={30} />
-      <pointLight color="#f43f5e" position={[9, 4, 7]} intensity={0.4} distance={30} />
-      <pointLight color="#ffb066" position={[-4.5, 3, -4.5]} intensity={0.55} distance={16} />
+      {/* ضوءان اثنان للمشهد كله. كل ضوء إضافي يدخل حلقةَ شادر البكسل لكل مادة
+          مضاءة — والنسخة السابقة كانت تضيف ضوءاً نقطياً لكل قفص فتبلغ ٢١ ضوءاً
+          باثني عشر قفصاً؛ هذا وحده كان يخنق الأجهزة الضعيفة. */}
+      <ambientLight intensity={low ? 1.15 : 0.8} />
+      {/* ضوء نصف كروي — تدرّج سماء/أرض بكلفة شبه معدومة، يعوّض غياب خريطة
+          البيئة بالوضع الخفيف فما يخرج المعدن أسود. */}
+      <hemisphereLight color="#9fc6ff" groundColor="#3a2a1c" intensity={low ? 0.9 : 0.55} />
+      <directionalLight color="#ffe9d2" position={[6, 11, 4]} intensity={low ? 1.5 : 1.2}
+        castShadow={!low} shadow-mapSize-width={1024} shadow-mapSize-height={1024} />
 
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.09, 0]} receiveShadow>
-        <planeGeometry args={[60, 60]} />
-        <meshStandardMaterial map={wood} roughness={0.8} metalness={0.05} />
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.09, 0]} receiveShadow={!low}>
+        <planeGeometry args={[Math.max(24, wallLenX + 12), Math.max(24, wallLenZ + 12)]} />
+        {low
+          ? <meshBasicMaterial color="#3b2c1e" />
+          : <meshStandardMaterial map={wood} roughness={0.8} metalness={0.05} />}
       </mesh>
 
-      <mesh position={[wallX + 30, 1.9, wallZ]}>
-        <planeGeometry args={[60, 4]} />
-        <meshStandardMaterial color={NIGHT.wall} roughness={0.9} />
+      {/* جدارا المنشأة — بطول التخطيط لا ٦٠ وحدة: الجدار الممتد للأفق كان
+          يرسم إسفيناً أسود يقطع الشاشة قطرياً، وهو أول ما يُقرأ «تصميماً
+          مخربطاً» قبل أن تُرى الأقفاص أصلاً. */}
+      <mesh position={[wallX + wallLenX / 2, 1.9, wallZ]}>
+        <planeGeometry args={[wallLenX, 4]} />
+        <meshStandardMaterial color="#3c2f24" roughness={0.9} />
       </mesh>
-      <mesh position={[wallX, 1.9, wallZ + 30]} rotation={[0, Math.PI / 2, 0]}>
-        <planeGeometry args={[60, 4]} />
-        <meshStandardMaterial color={NIGHT.wall} roughness={0.9} />
+      <mesh position={[wallX, 1.9, wallZ + wallLenZ / 2]} rotation={[0, Math.PI / 2, 0]}>
+        <planeGeometry args={[wallLenZ, 4]} />
+        <meshStandardMaterial color="#33281f" roughness={0.9} />
       </mesh>
-      <mesh position={[wallX + 30, 3.88, wallZ + 0.02]}>
-        <boxGeometry args={[60, 0.05, 0.05]} />
-        <meshStandardMaterial color={NIGHT.wallEdge} emissive={NIGHT.wallEdge} emissiveIntensity={1.8} toneMapped={false} />
+      <mesh position={[wallX + wallLenX / 2, 3.88, wallZ + 0.02]}>
+        <boxGeometry args={[wallLenX, 0.05, 0.05]} />
+        <meshStandardMaterial color={NIGHT.wallEdge} emissive={NIGHT.wallEdge} emissiveIntensity={1.4} toneMapped={false} />
       </mesh>
-      <mesh position={[wallX + 0.02, 3.88, wallZ + 30]} rotation={[0, Math.PI / 2, 0]}>
-        <boxGeometry args={[60, 0.05, 0.05]} />
-        <meshStandardMaterial color={NIGHT.wallEdge} emissive={NIGHT.wallEdge} emissiveIntensity={1.8} toneMapped={false} />
+      <mesh position={[wallX + 0.02, 3.88, wallZ + wallLenZ / 2]} rotation={[0, Math.PI / 2, 0]}>
+        <boxGeometry args={[wallLenZ, 0.05, 0.05]} />
+        <meshStandardMaterial color={NIGHT.wallEdge} emissive={NIGHT.wallEdge} emissiveIntensity={1.4} toneMapped={false} />
       </mesh>
-      <HexCluster position={[wallX + 0.05, 2.35, wminZ + 1.6]} rotation={[0, Math.PI / 2, 0]} color="#ff9e4d" />
-      <HexCluster position={[wminX + 3.2, 2.3, wallZ + 0.05]} rotation={[0, 0, 0]} color="#22d3ee" />
 
       {build && (
         <DreiGrid position={[0, -0.06, 0]} args={[60, 60]}
@@ -567,7 +603,6 @@ function Scene({ s, occOf, drag, carrySource, hoverCage, arrivedRef, camZoom, ct
             dropHint={hintFor(c.code)}
             dragActive={!!drag || build}
             ghost={(drag?.occ.admId ?? null) === occ?.admId && !!occ || carrySource === c.code}
-            neon={c.color}
             selected={(build && s.selected === c.code) || carrySource === c.code}
             showCard={!build}
             arrivedRef={arrivedRef}
@@ -582,8 +617,10 @@ function Scene({ s, occOf, drag, carrySource, hoverCage, arrivedRef, camZoom, ct
 
       {/* ظل ملامسة يُخبز مرة واحدة لكل تخطيط (المفتاح يعيد الخبز عند التغيير) —
           كان يُعاد رسمه كل إطار ويستنزف معالج رسوميات الآيباد بلا داعٍ */}
-      <ContactShadows key={`${s.rooms.length}-${s.cages.length}`} frames={1}
-        position={[0, -0.08, 0]} opacity={0.5} scale={36} blur={2.4} far={3.5} color="#241505" />
+      {!low && (
+        <ContactShadows key={`${s.rooms.length}-${s.cages.length}`} frames={1}
+          position={[0, -0.08, 0]} opacity={0.5} scale={36} blur={2.4} far={3.5} color="#241505" />
+      )}
     </>
   );
 }
@@ -643,6 +680,19 @@ export default function Cage3DDemo() {
   const [drag, setDrag] = useState<DragState | null>(null);
   const [carrying, setCarrying] = useState<Occupant | null>(null);
   const [hoverCage, setHoverCage] = useState<string | null>(null);
+  /* حلقة الرسم عند الطلب: بالسكون لا يُرسم إطار واحد — لا حرارة ولا بطارية
+   * ولا معالج على جهاز ضعيف. تعود «دائمة» فقط وهناك ما يتحرك فعلاً: تفاعل
+   * كاميرا، سحب، تحويم، وضع بناء، أو نبض جرعة مستحقّة. */
+  const [interacting, setInteracting] = useState(false);
+  const idleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const poke = () => {
+    setInteracting(true);
+    if (idleTimer.current) clearTimeout(idleTimer.current);
+    // ٩٠٠ms بعد آخر لمسة: تكفي لتهدئة تخميد الكاميرا وحركة الوصول.
+    idleTimer.current = setTimeout(() => setInteracting(false), 900);
+  };
+  useEffect(() => () => { if (idleTimer.current) clearTimeout(idleTimer.current); }, []);
+  const { tier, low } = useQuality();
   const [note, setNote] = useState<string | null>(null);
   const [detailFor, setDetailFor] = useState<string | null>(null);
   const [roomDialog, setRoomDialog] = useState(false);
@@ -702,6 +752,12 @@ export default function Cage3DDemo() {
     };
     return () => { delete (window as unknown as Record<string, unknown>).__cageCam; };
   }, []);
+
+  /* أي تغيّر يمسّ المشهد يشغّل الإطارات ٩٠٠ms: الانتقالات اللونية تُحسب
+   * بالتدريج كل إطار، وبحلقة «عند الطلب» بلا هذه النبضة كان اللون يتجمّد
+   * بمنتصف الطريق بعد نقل حيوان — أزرق باهت لا هو أحمر ولا أزرق. */
+  useEffect(() => { poke(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ },
+    [s, ops, hoverCage, drag, carrying, detailFor]);
 
   const endTour = () => {
     try { localStorage.setItem(TOUR_KEY, "1"); } catch { /* خصوصية متشددة — ما نكسر الشاشة */ }
@@ -1029,13 +1085,23 @@ export default function Cage3DDemo() {
     return p && (!fq || p.name.toLowerCase().includes(fq)) ? [{ a, p }] : [];
   });
   const detailOcc = !build && detailFor ? occOf(detailFor) : null;
+  /* نبض الجرعة المستحقّة يحتاج إطارات مستمرة — لكنه نادر، فلا يُبقي الحلقة
+   * دائرةً إلا وهو موجود فعلاً. */
+  const anyDose = stays.some((c) => occOf(c.code)?.doseDue);
+  const liveFrames = interacting || !!drag || !!carrying || build || !!hoverCage || anyDose;
   const selCage = build && s.selected ? s.cages.find((c) => c.code === s.selected) : null;
   const editRoom = roomEdit ? s.rooms.find((r) => r.id === roomEdit) : null;
   const canBuild = can("manageSettings");
 
   return (
     <div className="fixed inset-0 z-50" style={{ background: NIGHT.bg }} dir="rtl">
-      <Canvas shadows dpr={[1, 2]}>
+      <Canvas
+        shadows={!low}
+        dpr={low ? 1 : [1, 1.75]}
+        gl={{ antialias: !low, powerPreference: "high-performance" }}
+        frameloop={liveFrames ? "always" : "demand"}
+        onPointerDown={poke} onWheel={poke}
+      >
         <Suspense fallback={null}>
           <Scene s={s} occOf={occOf} drag={drag} carrySource={carrySource} hoverCage={hoverCage}
             arrivedRef={arrivedRef} camZoom={camZoom} ctlRef={ctlRef} setHoverCage={setHoverCage} onCardDown={onCardDown}
@@ -1158,6 +1224,16 @@ export default function Cage3DDemo() {
 
       {/* أزرار الكاميرا — تكبير/تصغير/رجوع للمنظر الكامل (لغير المتعوّد على القرصة) */}
       <div className="absolute end-4 top-1/2 z-30 flex -translate-y-1/2 flex-col gap-1.5 sm:end-6">
+        {/* الجودة: تلقائي ← عالية ← خفيفة. الجهاز الضعيف يُكتشف وحده، والزر
+            موجود لأن الكشف التلقائي يخطئ أحياناً — والطبيب أدرى بجهازه. */}
+        <button type="button" data-q3d
+          onClick={() => { playTap(); const next: Tier = getTier() === "auto" ? "light" : getTier() === "light" ? "high" : "auto"; setTier(next); }}
+          aria-label="جودة العرض"
+          title={tier === "auto" ? "الجودة: تلقائي" : tier === "light" ? "الجودة: خفيفة (أسلس على الأجهزة الضعيفة)" : "الجودة: عالية"}
+          className="grid h-10 w-10 place-items-center rounded-xl text-[10px] font-black transition active:scale-95"
+          style={{ ...glass(), color: low ? "#f59e0b" : "#9fdcef" }}>
+          {tier === "auto" ? "تلقا" : tier === "light" ? "خفيف" : "عالي"}
+        </button>
         <button type="button" data-zin3d onClick={() => zoomBy(1.35)} aria-label="تكبير"
           className="grid h-10 w-10 place-items-center rounded-xl transition active:scale-95"
           style={{ ...glass(), color: "#9fdcef" }}>
@@ -1291,17 +1367,7 @@ export default function Cage3DDemo() {
             onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); commitRename(selCage.code, codeDraft); } }}
             className="mb-3 h-10 w-full rounded-lg px-2 text-sm font-black tabular-nums"
             style={{ background: "#0c192b", color: NIGHT.ink, border: "1px solid #16324a", direction: "ltr", textAlign: "center" }} />
-          <label className="mb-1 block text-[10px] font-bold" style={{ color: "#64809c" }}>لون الليد (وهو فاضٍ)</label>
-          <div className="mb-3 flex gap-1.5">
-            {LED_CHOICES.map((c) => (
-              <button key={c} type="button" onClick={() => { playTap(); cageStudio.updateCage(selCage.code, { color: c }); }}
-                className="h-8 w-8 rounded-full transition"
-                style={{
-                  background: c, boxShadow: `0 0 10px ${c}`,
-                  outline: (selCage.color ?? NEON.free) === c ? "2px solid #fff" : "none", outlineOffset: 2,
-                }} />
-            ))}
-          </div>
+          {/* لا مُنتقي ألوان: اللون صار معنى لا زينة — أحمر فاضٍ وأزرق ممتلئ. */}
           <button type="button"
             onClick={() => { playTap(); cageStudio.removeCage(selCage.code); say("انحذف القفص"); }}
             className="inline-flex h-9 w-full items-center justify-center gap-1 rounded-lg text-[11px] font-extrabold"
@@ -1334,15 +1400,6 @@ export default function Cage3DDemo() {
               style={{ background: "#22d3ee", color: "#04222b" }}>
               رقّم
             </button>
-          </div>
-          <label className="mb-1 block text-[10px] font-bold" style={{ color: "#64809c" }}>لون ليد كل أقفاصها — دفعة وحدة</label>
-          <div data-paint3d className="mb-3 flex gap-1.5">
-            {LED_CHOICES.map((c) => (
-              <button key={c} type="button"
-                onClick={() => { playTap(); const n = cageStudio.paintRoom(editRoom.id, c); say(n ? `انصبغ ليد ${formatNum(n)} قفص` : "ما بيها أقفاص بعد"); }}
-                className="h-8 w-8 rounded-full transition active:scale-90"
-                style={{ background: c, boxShadow: `0 0 10px ${c}` }} />
-            ))}
           </div>
           <button type="button"
             onClick={() => { playTap(); cageStudio.removeRoom(editRoom.id); setRoomEdit(null); say("انحذفت الغرفة — مرضاها ما ينمسّون"); }}
