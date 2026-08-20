@@ -358,7 +358,6 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
    * الترويسة: أي تغيّر بالترويسة أو حجم الخط لا يعيد كسر التخطيط. */
   const posRootRef = useRef<HTMLDivElement | null>(null);
   const [posH, setPosH] = useState<string | undefined>(undefined);
-  const posTrim = useRef(0);
   const [catalog] = useState<ServiceCatalog>(() => getServiceCatalog());
   // Doctor-defined Mix & Match offers (clinic-scoped). Loaded once per sale session.
   const [promoRules] = useState(() => getPromoRules());
@@ -860,28 +859,29 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
 
   useEffect(() => {
     if (!posV2) return;
-    let raf = 0;
+    /* الارتفاع يُشتقّ من الهندسة الفعلية: موضع المنطقة + الحشوات السفلية التي
+     * يضيفها هيكل التطبيق وحاوية الصفحة. النسخة السابقة كانت تصحّح نفسها
+     * بالتجربة وتُراكم الطرح، فتنهار الشاشة أحياناً (٣ من ٧ تشغيلات) وتترك
+     * ٤٣٠px فارغة — التحقّق الآلي على ست شاشات هو من كشف اللاحتمية. */
     const calc = () => {
       const el = posRootRef.current;
       if (!el) return;
+      const px = (v: string | undefined) => (v ? parseFloat(v) || 0 : 0);
       const top = el.getBoundingClientRect().top;
-      // فسحة سفلية: ١٦px على الواسعة، وارتفاع الشريط الملتصق على الضيّقة.
-      const gap = window.innerWidth < 1024 ? 96 : 16;
-      const h = Math.max(360, Math.round(window.innerHeight - top - gap - posTrim.current));
-      setPosH(`${h}px`);
-      // تصحيح ذاتي: هيكل التطبيق يضيف هوامش أسفل الصفحة (فسحة شريط تنقّل
-      // الموبايل مثلاً) لا يعرفها هذا المكوّن. بدل تخمينها نقيس الفائض بعد
-      // أول رسم ونطرحه — ويُحفظ بـposTrim فلا يتذبذب التخطيط عند إعادة القياس.
-      cancelAnimationFrame(raf);
-      raf = requestAnimationFrame(() => {
-        const over = document.documentElement.scrollHeight - window.innerHeight;
-        if (over > 2) { posTrim.current += over; setPosH(`${Math.max(360, h - over)}px`); }
-      });
+      let below = 0;
+      for (let n: HTMLElement | null = el; n && n !== document.body; n = n.parentElement) {
+        below += px(getComputedStyle(n).paddingBottom);
+        below += px(getComputedStyle(n).marginBottom);
+      }
+      const bar = window.innerWidth < 1024 ? 8 : 8; // فسحة بصرية أدنى
+      setPosH(`${Math.max(360, Math.round(window.innerHeight - top - below - bar))}px`);
     };
     calc();
+    const raf = requestAnimationFrame(calc);
     window.addEventListener("resize", calc);
     const ro = new ResizeObserver(calc);
     ro.observe(document.documentElement);
+    if (posRootRef.current?.parentElement) ro.observe(posRootRef.current.parentElement);
     return () => { cancelAnimationFrame(raf); window.removeEventListener("resize", calc); ro.disconnect(); };
   }, [posV2]);
 
@@ -1245,7 +1245,10 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
         // مفتوحةً (لا شريط مطويّ)، وعلى الواسعة عموداً بـ٤٠٪ من العرض بخطٍّ
         // كبير مقروء من وقفة الكاشير. الشبكة تخدم السلة لا العكس.
         posV2
-          ? "min-h-0 grid-rows-[minmax(0,1fr),minmax(0,52%)] lg:grid-rows-1 lg:grid-cols-[minmax(0,1fr),clamp(460px,46%,720px)]"
+          ? cn("min-h-0 lg:grid-rows-1 lg:grid-cols-[minmax(0,1fr),clamp(460px,46%,720px)]",
+              // السلة الممتلئة تأخذ ثلثي الشاشة بالوضع العمودي؛ الشبكة تحتفظ
+              // بحدّ أدنى يكفي صفّين. السقف الجامد ٥٢٪ كان يخنقها مهما امتلأت.
+              denseCart ? "grid-rows-[minmax(9rem,0.5fr),minmax(0,68%)]" : "grid-rows-[minmax(0,1fr),minmax(0,52%)]")
           : "lg:grid-cols-[1fr,380px]",
       )}
       // Opt-in resizable cart: on lg+ the cart column takes the dragged width
@@ -2005,7 +2008,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
               </Button>
             </div>
           )}
-          <Button className="w-full" size="lg" disabled={cart.length === 0 || needsDebtName} loading={busy} onClick={checkout} leftIcon={deliveryOn ? <Bike size={18} /> : <CheckCircle2 size={18} />}>
+          <Button className={cn("w-full", posV2 && "min-h-[3rem] shrink-0")} size="lg" disabled={cart.length === 0 || needsDebtName} loading={busy} onClick={checkout} leftIcon={deliveryOn ? <Bike size={18} /> : <CheckCircle2 size={18} />}>
             {deliveryOn
               ? `${t("retail.completeDelivery", "إرسال للتوصيل")} · ${t("retail.codShort", "يُحصَّل")} ${money(codAmount)}`
               : isCredit

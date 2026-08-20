@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import {
   Sparkles, X, Send, ArrowLeft, Loader2, Inbox, MessageCircleQuestion, Check, Clock, Ban, Hammer,
 } from "lucide-react";
@@ -85,6 +85,9 @@ const STATUS_META: Record<FeatureRequest["status"], { label: string; cls: string
 };
 
 export function Assistant() {
+  // شاشة البيع لها زر إتمام يمتدّ لأسفل الشاشة — نرفع زر المساعد فوقه.
+  const onSaleScreen = useLocation().pathname.startsWith("/retail");
+
   const { user } = useAuth();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
@@ -200,7 +203,12 @@ export function Assistant() {
           type="button"
           onClick={() => { playTap(); setOpen(true); setTimeout(() => inputRef.current?.focus(), 150); }}
           aria-label="مساعد doctorVet"
-          className="fixed bottom-20 left-4 z-40 grid h-14 w-14 place-items-center rounded-2xl bg-brand-grad text-white shadow-raised transition hover:scale-105 active:scale-95 lg:bottom-6"
+          className={cn(
+            "fixed bottom-20 left-4 z-40 grid h-14 w-14 place-items-center rounded-2xl bg-brand-grad text-white shadow-raised transition hover:scale-105 active:scale-95 lg:bottom-6",
+            // شاشة البيع: زر الإتمام يمتدّ لأسفل يسار السلة، وهذا الزر كان
+            // يغطّي ٣٨px منه فلا تُسجَّل الضغطة. يرتفع فوقه بدل أن يزاحمه.
+            onSaleScreen && "bottom-32 lg:bottom-24",
+          )}
         >
           <Sparkles size={24} />
         </button>
