@@ -481,9 +481,24 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
     return n >= 2 ? n : null;
   };
   /** الكمية المطبَّقة على مسحة: المضاعِف الصريح أولاً، وإلا رقم حقل البحث.
+   *
+   *  الماسح **يكتب داخل حقل البحث** حين يكون مركّزاً — وهذا هو الحال الطبيعي
+   *  بالكاشير. فالطبيب يكتب «٢٠» ثم يمسح، فيصير محتوى الحقل «209001» لا «٢٠»،
+   *  والنمط الرقمي المجرّد يفشل فتنزل قطعة واحدة. هذا بالضبط ما اشتكى منه.
+   *  العلاج: نقشّر رمز الباركود من ذيل الحقل، فما يتبقّى هو ما كتبه الإنسان.
+   *  (وإن كان الحقل غير مركّز فلا ذيل نقشّره، ويبقى المسار الأول صحيحاً.)
+   *
    *  القراءة هنا والاستهلاك بعد نجاح المطابقة — مسحةٌ لباركود مجهول يجب ألّا
    *  تبتلع الرقم الذي كتبه الطبيب. */
-  const peekScanMult = (): number => mult ?? queryMult() ?? 1;
+  const peekScanMult = (code: string): number => {
+    if (mult != null && mult >= 2) return Math.floor(mult);
+    const q = query.trim();
+    const bare = code.trim();
+    const typed = bare && q.endsWith(bare) ? q.slice(0, q.length - bare.length).trim() : q;
+    const m = /^(\d{1,3})$/.exec(typed);
+    const n = m ? Number(m[1]) : 0;
+    return n >= 2 ? n : 1;
+  };
 
   // Add (or increment) a line; products are capped at their stock.
   // n = الكمية المضافة (١ افتراضاً، أو المضاعِف المعلّق). السطر الموجود **يجمع**
@@ -623,7 +638,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
 
   useBarcodeScanner(async (code) => {
     if (done) return;
-    const n = peekScanMult();
+    const n = peekScanMult(code);
     const product = await repo.getProductByBarcode(code, clinicId);
     if (product) {
       playSuccess();
@@ -643,6 +658,9 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
       return;
     }
     playWarning();
+    // باركود مجهول: نقشّر رمزه من الحقل فقط — ما كتبه الطبيب (كمية أو بحث)
+    // يبقى بمكانه، ولا تتلوّث خانة البحث بأرقام مسحةٍ فاشلة.
+    setQuery((q) => (code && q.endsWith(code) ? q.slice(0, q.length - code.length) : q));
     toast.error(t("pos.notFoundAny", "ماكو منتج ولا خدمة بهذا الباركود"), code);
     // اللوحة مفتوحة = الأرقام تخصّها؛ مسحةٌ تدخل صنفاً خلف نافذة مفتوحة تربك.
   }, { disabled: multPad || !!qtyPadFor });

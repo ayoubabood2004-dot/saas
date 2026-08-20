@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   Search, Plus, Minus, Trash2, Undo2, AlertTriangle, Wallet, PackageOpen,
@@ -30,7 +30,9 @@ import { invoiceNo } from "@/lib/invoicePrint";
  *      قبل أن يرفضه السيرفر — الطبيب يرى الرقم المتاح لا رسالة خطأ غامضة.
  *   ٢) نقد الزبون لا يُمَس: المدفوع يبقى كما هو، ويُعاد حساب ما يستلمه السواق
  *      (= الإجمالي الجديد − المدفوع) ويُعرض بوضوح قبل الحفظ وبعده.
- *   ٣) لا تعديل بلا سبب مكتوب: السبب إلزامي ويُختم داخل الفاتورة نفسها.
+ *   ٣) السبب اختياري: إلزامه كان يوقف الطبيب عن تعديلٍ يريده الآن ويده على
+ *      الهاتف مع الزبون. سجل الحركات يلتقط الفعل نفسه دائماً، ومن أراد
+ *      التوثيق فأمامه اختصارٌ بضغطة — تسهيلٌ لا إجبار.
  *
  * والطلب الذي خرج فعلاً حالة خاصة: تحذير صريح + إشعار السواق بواتساب بعد
  * الحفظ، لأن التعديل الذي لا يصل للسواق قبل باب الزبون تعديلٌ فاشل.
@@ -73,10 +75,8 @@ export function DeliveryEditDialog({
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
   const [reason, setReason] = useState("");
-  const [reasonErr, setReasonErr] = useState(false);
   const [notify, setNotify] = useState(order.status === "out" && !!courier?.phone);
   const [saving, setSaving] = useState(false);
-  const reasonRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     let alive = true;
@@ -204,13 +204,6 @@ export function DeliveryEditDialog({
   /* ---- الحفظ --------------------------------------------------------------- */
   const save = async () => {
     if (saving) return;
-    if (!reason.trim()) {
-      setReasonErr(true);
-      playWarning();
-      reasonRef.current?.focus();
-      toast.error(t("retail.dEditReasonReq", "اكتب سبب التعديل — يُختم بالفاتورة ويظهر بسجل الحركات."));
-      return;
-    }
     if (!live.length) { playWarning(); toast.error(t("retail.dEditEmpty", "لا يمكن حفظ طلب بلا أصناف — استخدم «إلغاء الطلب» بدل ذلك.")); return; }
     if (shortages.length) { playWarning(); toast.error(t("retail.dEditStockShort", { name: shortages[0].name, n: formatNum(shortages[0].avail), defaultValue: "المتوفر من {{name}}: {{n}} فقط" })); return; }
 
@@ -227,7 +220,7 @@ export function DeliveryEditDialog({
         unit_label: r.unit_label,
         stock_qty: r.product_id ? r3(r.qty * r.perUnit) : 0,
       }));
-      const inv = await repo.editInvoiceLines(invoice.id, lines, reason.trim());
+      const inv = await repo.editInvoiceLines(invoice.id, lines, reason.trim() || null);
       playSuccess();
       toast.success(t("retail.dEditSaved", { n: money(Math.max(0, round2((Number(inv.total) || newTotal) - paid))), defaultValue: "تم التعديل — يستلم السائق {{n}}" }));
       // الإشعار بعد نجاح الحفظ فقط: رسالة عن تعديل لم يُحفظ أسوأ من لا رسالة.
@@ -401,13 +394,30 @@ export function DeliveryEditDialog({
               )}
             </div>
 
-            {/* السبب — إلزامي ويُختم بالفاتورة */}
+            {/* السبب — اختياري. الإلزام كان يوقف الطبيب عن تعديلٍ يريده الآن
+                ويده على الهاتف مع الزبون؛ وسجل الحركات يلتقط الفعل نفسه على
+                أي حال. من أراد التوثيق فأمامه ضغطة واحدة. */}
             <div>
-              <label className="mb-1 block text-xs font-bold text-ink">{t("retail.dEditReason", "سبب التعديل (إلزامي)")}</label>
-              <input ref={reasonRef} data-dreason className={cn("input", reasonErr && !reason.trim() && "border-danger-400")}
-                value={reason} onChange={(e) => { setReason(e.target.value); setReasonErr(false); }}
-                placeholder={t("retail.dEditReasonPh", "مثال: الزبون طلب إضافة كيس رمل بعد الاتصال")} />
-              <p className="mt-1 text-2xs text-ink-subtle">{t("retail.dEditReasonHint", "يُختم داخل الفاتورة ويظهر بطباعتها وبسجل الحركات.")}</p>
+              <label className="mb-1 block text-xs font-bold text-ink">{t("retail.dEditReason", "سبب التعديل (اختياري)")}</label>
+              <div className="mb-1.5 flex flex-wrap gap-1.5">
+                {[
+                  t("retail.dEditReasonQ1", "الزبون أضاف صنفاً"),
+                  t("retail.dEditReasonQ2", "الزبون غيّر الكمية"),
+                  t("retail.dEditReasonQ3", "الزبون ألغى صنفاً"),
+                  t("retail.dEditReasonQ4", "تصحيح غلط بالطلب"),
+                ].map((q) => (
+                  <button key={q} type="button" data-dreasonq
+                    onClick={() => { playTap(); setReason((r) => (r.trim() === q ? "" : q)); }}
+                    className={cn("rounded-xl px-2.5 py-1.5 text-2xs font-bold transition",
+                      reason.trim() === q ? "bg-brand-600 text-white" : "bg-surface-2 text-ink-muted hover:bg-surface-3")}>
+                    {q}
+                  </button>
+                ))}
+              </div>
+              <input data-dreason className="input"
+                value={reason} onChange={(e) => setReason(e.target.value)}
+                placeholder={t("retail.dEditReasonPh", "أو اكتب سبباً خاصاً — اختياري")} />
+              <p className="mt-1 text-2xs text-ink-subtle">{t("retail.dEditReasonHint", "إن كتبته يُختم داخل الفاتورة ويظهر بطباعتها. التعديل نفسه مسجَّل بسجل الحركات دائماً.")}</p>
             </div>
 
             {/* إبلاغ السائق */}

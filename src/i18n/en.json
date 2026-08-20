@@ -397,10 +397,9 @@
     "dEditNewCollect": "Courier now collects",
     "dEditPaidNote": "Paid {{n}} is untouched",
     "dEditOverpaid": "Paid more than the new total — {{n}} is owed back to the customer in cash.",
-    "dEditReason": "Reason for the change (required)",
-    "dEditReasonPh": "e.g. customer called and added a bag of litter",
-    "dEditReasonHint": "Stamped inside the invoice — it prints with it and shows in the activity log.",
-    "dEditReasonReq": "Write why — it is stamped on the invoice and shows in the activity log.",
+    "dEditReason": "Reason for the change (optional)",
+    "dEditReasonPh": "or type your own — optional",
+    "dEditReasonHint": "If written it is stamped on the invoice and prints with it. The change itself is always in the activity log.",
     "dEditNotify": "Notify {{name}} on WhatsApp after saving",
     "dEditSave": "Save changes",
     "dEditSaved": "Saved — the courier now collects {{n}}",
@@ -429,7 +428,11 @@
     "qtyPadTitle": "Item quantity",
     "qtyPadMax": "{{n}} available",
     "qtyPadClamped": "Not enough stock — only {{n}} will be added",
-    "multFromQuery": "Scan now — it is added ×{{n}} in one go"
+    "multFromQuery": "Scan now — it is added ×{{n}} in one go",
+    "dEditReasonQ1": "Customer added an item",
+    "dEditReasonQ2": "Customer changed the quantity",
+    "dEditReasonQ3": "Customer removed an item",
+    "dEditReasonQ4": "Fixing an order mistake"
   },
   "promos": {
     "title": "Offers management",
