@@ -13,7 +13,7 @@
 
 | الجزء | المكان | ينتشر كيف |
 |---|---|---|
-| نقطة الاستقبال | `api/wa-webhook.ts` | تلقائياً مع كل دفعة إلى `main` (Vercel) |
+| نقطة الاستقبال | `api/wa-webhook.ts` + إعادة توجيه `/wa-webhook` في `vercel.json` | تلقائياً مع كل دفعة إلى `main` (Vercel) |
 | الجداول | `supabase/migrations/0111_wa_cloud_api.sql` | لصق يدوي بمحرّر SQL |
 
 **تطبيق ميتا واحد للمنصّة كلها** — لا تطبيق لكل عيادة. وعليه: رمز تحقّق واحد،
@@ -50,21 +50,23 @@ Vercel → Project → Settings → Environment Variables (بيئة **Production
 
 ### ٣) اختبار المصافحة قبل لمس شاشة ميتا
 ```bash
-curl -i "https://doctorvet.vet/api/wa-webhook?hub.mode=subscribe&hub.verify_token=<TOKEN>&hub.challenge=ping123"
+curl -i "https://doctorvet.vet/wa-webhook?hub.mode=subscribe&hub.verify_token=<TOKEN>&hub.challenge=ping123"
 ```
 المتوقّع: `200` وجسم الرد **`ping123`** حرفياً — بلا أقواس ولا JSON ولا سطر جديد.
 
 وفحصٌ سالب يجب أن يفشل:
 ```bash
-curl -i "https://doctorvet.vet/api/wa-webhook?hub.mode=subscribe&hub.verify_token=wrong&hub.challenge=ping123"
+curl -i "https://doctorvet.vet/wa-webhook?hub.mode=subscribe&hub.verify_token=wrong&hub.challenge=ping123"
 ```
 المتوقّع: `403`.
 
-إن رجع HTML بدل `ping123` فمعناه أن المسار التُقط بإعادة التوجيه العامة في
-`vercel.json`؛ عندها يُضاف استثناء صريح للمسار.
+إن رجع HTML بدل `ping123` فتأكّد أن إعادة التوجيه `/wa-webhook` ما زالت
+**قبل** الالتقاط العام `/(.*)` في `vercel.json`. النداء المباشر على
+`/api/wa-webhook` **لا يعمل** — الالتقاط العام يبتلعه ويعيد `index.html`،
+وهذا سبب وجود سطر إعادة التوجيه الصريح.
 
 ### ٤) شاشة ميتا — تكوين Webhooks
-- **عنوان URL الاستدعاء**: `https://doctorvet.vet/api/wa-webhook`
+- **عنوان URL الاستدعاء**: `https://doctorvet.vet/wa-webhook`
 - **تحقق من الرمز**: قيمة `WA_VERIFY_TOKEN` نفسها
 - اضغط **تحقق واحفظ**
 - ثم **Webhook fields → Manage** → فعّل حقل **`messages`** (يجلب الرسائل
