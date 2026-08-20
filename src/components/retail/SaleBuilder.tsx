@@ -1248,7 +1248,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
           ? cn("min-h-0 lg:grid-rows-1 lg:grid-cols-[minmax(0,1fr),clamp(460px,46%,720px)]",
               // السلة الممتلئة تأخذ ثلثي الشاشة بالوضع العمودي؛ الشبكة تحتفظ
               // بحدّ أدنى يكفي صفّين. السقف الجامد ٥٢٪ كان يخنقها مهما امتلأت.
-              denseCart ? "grid-rows-[minmax(9rem,0.5fr),minmax(0,68%)]" : "grid-rows-[minmax(0,1fr),minmax(0,52%)]")
+              denseCart ? "grid-rows-[minmax(9rem,1fr),minmax(0,68%)]" : "grid-rows-[minmax(0,1fr),minmax(0,52%)]")
           : "lg:grid-cols-[1fr,380px]",
       )}
       // Opt-in resizable cart: on lg+ the cart column takes the dragged width
@@ -2008,7 +2008,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
               </Button>
             </div>
           )}
-          <Button className={cn("w-full", posV2 && "min-h-[3rem] shrink-0")} size="lg" disabled={cart.length === 0 || needsDebtName} loading={busy} onClick={checkout} leftIcon={deliveryOn ? <Bike size={18} /> : <CheckCircle2 size={18} />}>
+          <Button className={cn("w-full", posV2 && "h-12 shrink-0")} size="lg" disabled={cart.length === 0 || needsDebtName} loading={busy} onClick={checkout} leftIcon={deliveryOn ? <Bike size={18} /> : <CheckCircle2 size={18} />}>
             {deliveryOn
               ? `${t("retail.completeDelivery", "إرسال للتوصيل")} · ${t("retail.codShort", "يُحصَّل")} ${money(codAmount)}`
               : isCredit
