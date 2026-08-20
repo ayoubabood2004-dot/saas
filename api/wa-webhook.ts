@@ -98,10 +98,16 @@ export default async function handler(req: Request): Promise<Response> {
     const mode = url.searchParams.get("hub.mode");
     const token = url.searchParams.get("hub.verify_token") ?? "";
     const challenge = url.searchParams.get("hub.challenge") ?? "";
-    const expected = process.env.WA_VERIFY_TOKEN ?? "";
+    /* التشذيب مقصود: لصق القيمة بلوحة تحكّم النشر على جهاز لوحي يُلحق سطراً
+     * جديداً أو مسافة بلا أن يراها أحد — والقيمة تُخزَّن «حسّاسة» فلا يمكن
+     * قراءتها لاحقاً للتأكّد. مقارنةٌ حرفية هنا تعني فشلاً دائماً بلا سبب
+     * ظاهر، وهو أسوأ من خطأ صريح. */
+    const expected = (process.env.WA_VERIFY_TOKEN ?? "").trim();
     if (!expected) return text("not_configured", 500);
-    if (mode === "subscribe" && safeEqual(token, expected)) return text(challenge, 200);
-    return text("forbidden", 403);
+    if (mode === "subscribe" && safeEqual(token.trim(), expected)) return text(challenge, 200);
+    /* تشخيصٌ لا يسرّب السرّ: طول المخزَّن فقط، ولمن يعرف الطول المتوقّع أصلاً.
+     * ٦٤ ⇒ القيمة سليمة والخلل بالنسخ من الطرف الآخر؛ غيرها ⇒ اللصق بُتر. */
+    return text(`forbidden (stored length: ${expected.length})`, 403);
   }
 
   if (req.method !== "POST") return text("method_not_allowed", 405);
