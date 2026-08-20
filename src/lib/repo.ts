@@ -4,7 +4,7 @@
 import { loadDB, saveDB } from "./demoStore";
 import { supabase } from "./supabase";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, AppointmentStatus, ClinicInfo, PublicStaff, DailyNote, TreatmentEntry, Admission, Branch, Reminder, Product, Company, CompanySection, Purchase, PurchaseItem, PurchasePayment, PurchaseDraftLine, PurchaseMeta, Courier, DeliveryOrder, PetMovement, DemoDB, Invoice, InvoiceItem, CheckoutItem, SaleMeta, Customer, DiscountType, PaymentMethod, PaymentSplit, WhatsAppMessage, AuditEntry, LoginEvent, PetNote, Expense, ClinicVisit , Surgery, LabResult, LabDeviceLink, LabDeviceInbox, LabStatusValue, PetProblem, CareEntry, FeatureRequest, GeneratedBarcode, StoreProfile, StoreOrder, StoreOrderItem, StoreFrontInfo, StoreCatalogItem, Journey, JourneyEvent, JourneyKind, JourneyStage, JourneyPublicView } from "@/types";
+import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, AppointmentStatus, ClinicInfo, PublicStaff, DailyNote, TreatmentEntry, Admission, Branch, Reminder, Product, Company, CompanySection, Purchase, PurchaseItem, PurchasePayment, PurchaseDraftLine, PurchaseMeta, Courier, DeliveryOrder, PetMovement, DemoDB, Invoice, InvoiceItem, CheckoutItem, SaleMeta, Customer, DiscountType, PaymentMethod, PaymentSplit, WhatsAppMessage, AuditEntry, LoginEvent, PetNote, Expense, ClinicVisit , Surgery, LabResult, LabDeviceLink, LabDeviceInbox, LabStatusValue, PetProblem, CareEntry, FeatureRequest, GeneratedBarcode, StoreProfile, StoreOrder, StoreOrderItem, StoreFrontInfo, StoreCatalogItem, Journey, JourneyEvent, JourneyKind, JourneyStage, JourneyPublicView, EditLine } from "@/types";
 import { isValidSlug, normalizeSlug, demoOrderNo } from "./storeLib";
 import { journeyToken, OWNER_REACTIONS } from "./journey";
 import { getClinicName, getClinicLogo, getClinicSocials } from "./settings";
@@ -1530,6 +1530,94 @@ const demoRepo = {
   },
   /** Record a debt installment: add `amount` to what's been paid (never above the total),
    *  appending a payment leg. Once amount_paid reaches the total the sale is fully settled. */
+  /* ---- تعديل أصناف فاتورة قائمة (0110) — للطلبات التي تُعدَّل بعد إصدارها،
+   * وأشهر حالتها: زبون التوصيل يتصل بعد دقائق ليضيف صنفاً أو يغيّر كمية.
+   *
+   * القاعدة الحاكمة: **لا ينزلق مخزون ولا نقد**. لذلك التعديل يتم بعكس كامل
+   * ثم إعادة خصم — لا بتعديل تفاضلي هشّ:
+   *   ١) كل سطر قائم يُعاد للمخزون بنفس التقسيم الذي خرج به (حصّة القسم
+   *      المشترك تعود للقسم، والباقي لرصيد المنتج) عبر restockLocal نفسها.
+   *   ٢) تُحذف الأسطر القديمة وتُخصم الأسطر الجديدة بنفس منطق البيع تماماً
+   *      (المخزون المعروف أولاً ثم مخزون القسم).
+   *   ٣) المدفوع لا يُلمَس أبداً؛ يُعاد حساب الإجمالي والربح، ويُحدَّث المبلغ
+   *      المطلوب من السواق = الإجمالي الجديد − المدفوع.
+   * فاتورة مرتجعة لا تُعدَّل: سجلّها مغلق والطريق الصحيح إرجاعٌ جديد. ---- */
+  async editInvoiceLines(invoiceId: string, lines: EditLine[], note?: string | null): Promise<Invoice> {
+    const money2 = (n: number) => (Math.round(n * 100) / 100).toLocaleString("en-US");
+    const db = loadDB();
+    const inv = (db.invoices ?? []).find((x) => x.id === invoiceId);
+    if (!inv) throw new Error("invoice not found");
+    if (inv.status === "refunded") throw new Error("invoice refunded");
+    const clean = (lines ?? [])
+      .map((l) => ({ ...l, qty: Math.round((Number(l.qty) || 0) * 1000) / 1000, unit_price: Math.max(0, Number(l.unit_price) || 0), unit_cost: Math.max(0, Number(l.unit_cost) || 0) }))
+      .filter((l) => l.qty > 0);
+    if (!clean.length) throw new Error("empty invoice");
+
+    const oldTotal = Number(inv.total) || 0;
+    const before = (db.invoiceItems ?? []).filter((x) => x.invoice_id === invoiceId);
+    // ١) العكس الكامل — نفس دالة الإرجاع حرفياً فلا يختلف حسابان للمخزون أبداً.
+    for (const it of before) restockLocal(db, it);
+    db.invoiceItems = (db.invoiceItems ?? []).filter((x) => x.invoice_id !== invoiceId);
+
+    // ٢) إعادة الخصم بنفس منطق البيع (المعروف أولاً ثم القسم المشترك).
+    const r3 = (n: number) => Math.max(0, Math.round(n * 1000) / 1000);
+    const r2 = (n: number) => Math.round(n * 100) / 100;
+    for (const i of clean) {
+      const prev = i.id ? before.find((b) => b.id === i.id) : undefined;
+      // سطر قائم بكمية معدّلة: نسبة المخزون تتبع الكمية (بيع الأجزاء).
+      const perUnit = prev && prev.qty > 0 && prev.stock_qty != null ? prev.stock_qty / prev.qty : 1;
+      // الواجهة تمرّر المسحوب صراحةً للأسطر الجديدة ببيع الأجزاء؛ وإلا نستنتجه
+      // من نسبة السطر القديم — فلا ينزلق المخزون عند تغيير كمية حبّات.
+      const stockQty = i.stock_qty != null ? r3(i.stock_qty) : r3(i.qty * perUnit);
+      let fromPool = 0;
+      if (i.product_id) {
+        const p = (db.products ?? []).find((x) => x.id === i.product_id);
+        if (p) {
+          const avail = r3((p.stock || 0) + (p.section_id ? ((db.companySections ?? []).find((x) => x.id === p.section_id)?.pooled_stock ?? 0) : 0));
+          if (stockQty > avail + 0.0005) throw new Error(`not enough stock: ${i.name}`);
+          let rem = stockQty;
+          const fromStock = Math.min(rem, Math.max(0, p.stock || 0));
+          if (fromStock > 0) { p.stock = r3(p.stock - fromStock); rem -= fromStock; }
+          if (rem > 0 && p.section_id) {
+            const sec = (db.companySections ?? []).find((x) => x.id === p.section_id);
+            const pool = sec?.pooled_stock ?? 0;
+            if (sec && pool > 0) { fromPool = Math.min(rem, pool); sec.pooled_stock = r3(pool - fromPool); rem -= fromPool; }
+          }
+        }
+      }
+      db.invoiceItems.push({
+        id: i.id && prev ? i.id : uid("ii"), invoice_id: invoiceId, product_id: i.product_id ?? null,
+        name: i.name, barcode: i.barcode ?? null, qty: i.qty, unit_price: i.unit_price, unit_cost: i.unit_cost,
+        line_total: r2(i.qty * i.unit_price), stock_qty: stockQty, pooled_qty: fromPool, unit_label: i.unit_label ?? null,
+      });
+    }
+
+    // ٣) إعادة الحساب — الخصم ورسوم التوصيل كما هي، والمدفوع لا يُمَس.
+    const subtotal = r2(clean.reduce((s, l) => s + l.qty * l.unit_price, 0));
+    const cost = r2(clean.reduce((s, l) => s + l.qty * l.unit_cost, 0));
+    const discount = Math.max(0, Number(inv.discount) || 0);
+    // أجرة التوصيل ليست عموداً بالفاتورة بل سطراً داخلها («أجرة توصيل»)، فهي
+    // محسوبة ضمن المجموع الفرعي تلقائياً — ولا تُجمع مرتين.
+    inv.subtotal = subtotal;
+    inv.total = Math.max(0, r2(subtotal - discount));
+    inv.cost_total = cost;
+    inv.profit = r2(inv.total - cost);
+    inv.item_count = clean.reduce((n, l) => n + l.qty, 0);
+    const paid = inv.amount_paid != null ? inv.amount_paid : 0;
+    // المدفوع أكبر من الإجمالي الجديد (نقص أصناف بعد الدفع) → يبقى كما هو
+    // ويظهر كفائض للزبون؛ لا نتصرّف بنقد الزبون تلقائياً.
+    const cod = Math.max(0, r2(inv.total - paid));
+    // الطلب المستلم أو الراجع سجلٌّ مالي مغلق — لا يُعاد حساب مستحقّه.
+    const ord = (db.deliveryOrders ?? []).find((o) => o.invoice_id === invoiceId && (o.status === "preparing" || o.status === "out"));
+    if (ord) ord.cod_amount = cod;
+    // أثر المراجعة: سجل الحركات يلتقط الفعل آلياً (DEMO_ACTIVITY_MAP / محفّزات
+    // السيرفر)، وسببُ التعديل يُختم داخل الفاتورة نفسها فيبقى ملازماً لها
+    // ويظهر بطباعتها — تعديل مالٍ بلا سبب مكتوب بابُ سرقة.
+    const stamp = `تعديل ${new Date().toLocaleDateString("en-CA")}: ${before.length}→${clean.length} سطر · ${money2(oldTotal)} ← ${money2(inv.total)}${note ? ` · ${String(note).trim().slice(0, 120)}` : ""}`;
+    inv.notes = inv.notes ? `${inv.notes}\n${stamp}` : stamp;
+    saveDB(db);
+    return inv;
+  },
   async settleInvoice(invoiceId: string, amount: number, method: PaymentMethod = "cash"): Promise<Invoice | undefined> {
     const db = loadDB();
     const inv = (db.invoices ?? []).find((x) => x.id === invoiceId);
@@ -1705,6 +1793,7 @@ const DEMO_ACTIVITY_MAP: Record<string, { entity: string; action: "INSERT" | "UP
   checkout: { entity: "invoices", action: "INSERT" },
   retailCheckout: { entity: "invoices", action: "INSERT" },
   settleInvoice: { entity: "invoices", action: "UPDATE" },
+  editInvoiceLines: { entity: "invoices", action: "UPDATE" },
   refundInvoice: { entity: "invoices", action: "UPDATE" },
   setInvoicePaymentMethod: { entity: "invoices", action: "UPDATE" },
   setInvoicePaymentDetails: { entity: "invoices", action: "UPDATE" },
@@ -2639,6 +2728,11 @@ const supabaseRepo: typeof demoRepo = {
   },
   async deleteInvoice(invoiceId) {
     ok(await sbc().rpc("delete_invoice", { p_invoice: invoiceId }));
+  },
+  async editInvoiceLines(invoiceId, lines, note) {
+    // ذرّية على السيرفر: العكس والخصم وإعادة الحساب وتحديث مستحقّ السواق
+    // بمعاملة واحدة — انقطاع الشبكة لا يترك مخزوناً منقوصاً وفاتورة قديمة.
+    return need<Invoice>(await sbc().rpc("edit_invoice_lines", { p_invoice: invoiceId, p_lines: lines, p_note: note ?? null }));
   },
   async settleInvoice(invoiceId, amount, method = "cash") {
     // Atomic on the server: clamps to the outstanding balance, appends a payment leg.

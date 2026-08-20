@@ -70,7 +70,7 @@
   "src/lib/purchasePrint.ts": 38,
   "src/lib/quotas.ts": 3,
   "src/lib/reminders.ts": 1,
-  "src/lib/repo.ts": 4,
+  "src/lib/repo.ts": 5,
   "src/lib/serialLink.ts": 1,
   "src/lib/services.ts": 20,
   "src/lib/settings.ts": 2,

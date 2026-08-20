@@ -4,12 +4,14 @@ import { motion } from "framer-motion";
 import {
   Bike, Search, Phone, MapPin, Printer, CheckCircle2, Undo2, Send, Users,
   PackageOpen, Wallet, Clock, Plus, Pencil, Archive, X, HandCoins, ReceiptText,
+  PencilLine,
 } from "lucide-react";
 import type { Invoice, Courier, DeliveryOrder } from "@/types";
 import { repo } from "@/lib/repo";
 import { useBranchState, matchesBranch } from "@/lib/branchStore";
 import { useAuth } from "@/contexts/AuthContext";
 import { Modal } from "@/components/Modal";
+import { DeliveryEditDialog } from "./DeliveryEditDialog";
 import { Button, Badge, useToast } from "@/components/ui";
 import { openDeliverySlip } from "@/lib/deliveryPrint";
 import { invoiceNo } from "@/lib/invoicePrint";
@@ -60,6 +62,9 @@ export function DeliveryPanel({ invoices, clinicId, onChanged }: { invoices: Inv
   const [busyId, setBusyId] = useState<string | null>(null);
   const [couriersOpen, setCouriersOpen] = useState(false);
   const [assigning, setAssigning] = useState<DeliveryOrder | null>(null);
+  // التعديل بعد البيع: الزبون يتصل بعد دقائق ليضيف صنفاً. متاح للطلب قيد
+  // التجهيز أو بالطريق فقط — الطلب المستلم سجلٌّ مالي مغلق، وتعديله إرجاعٌ جديد.
+  const [editing, setEditing] = useState<DeliveryOrder | null>(null);
 
   const load = async () => {
     try {
@@ -127,6 +132,17 @@ export function DeliveryPanel({ invoices, clinicId, onChanged }: { invoices: Inv
       playWarning();
       toast.error(describeDbError(e, t), e instanceof Error ? e.message : undefined);
     } finally { setBusyId(null); }
+  };
+
+  /** فتح محرّر الأصناف — بلا الفاتورة نفسها لا معنى للتعديل، فنقولها صراحةً. */
+  const openEdit = (o: DeliveryOrder) => {
+    playTap();
+    if (!invoiceOf(o.invoice_id)) {
+      playWarning();
+      toast.error(t("retail.dEditNoInvoice", "تعذّر فتح فاتورة هذا الطلب — حدّث الصفحة وأعد المحاولة."));
+      return;
+    }
+    setEditing(o);
   };
 
   /** Bulk hand-over: the courier came back — settle EVERY order he carries. */
@@ -208,6 +224,7 @@ export function DeliveryPanel({ invoices, clinicId, onChanged }: { invoices: Inv
                     actions={
                       <>
                         <Button size="sm" leftIcon={<Send size={14} />} onClick={() => { playTap(); setAssigning(o); }}>{t("retail.deliveryDispatch", "إرسال مع سائق")}</Button>
+                        <Button size="sm" variant="secondary" leftIcon={<PencilLine size={14} />} onClick={() => openEdit(o)}>{t("retail.dEditBtn", "تعديل الطلب")}</Button>
                         <Button size="sm" variant="secondary" leftIcon={<Undo2 size={14} />} onClick={() => returnOrder(o)}>{t("retail.deliveryCancel", "إلغاء الطلب")}</Button>
                       </>
                     } />
@@ -245,6 +262,7 @@ export function DeliveryPanel({ invoices, clinicId, onChanged }: { invoices: Inv
                             actions={
                               <>
                                 <Button size="sm" leftIcon={<CheckCircle2 size={14} />} onClick={() => void deliver(o)}>{t("retail.deliveryReceived", "استلمنا الفلوس")}</Button>
+                                <Button size="sm" variant="secondary" leftIcon={<PencilLine size={14} />} onClick={() => openEdit(o)}>{t("retail.dEditBtn", "تعديل الطلب")}</Button>
                                 <Button size="sm" variant="secondary" leftIcon={<Undo2 size={14} />} onClick={() => void returnOrder(o)}>{t("retail.deliveryReturned", "الطلب رجع")}</Button>
                               </>
                             } />
@@ -300,6 +318,18 @@ export function DeliveryPanel({ invoices, clinicId, onChanged }: { invoices: Inv
             <Button variant="secondary" className="w-full" leftIcon={<Users size={15} />} onClick={() => { setAssigning(null); setCouriersOpen(true); }}>{t("retail.couriersBtn", "سجل السواق")}</Button>
           </div>
         </Modal>
+      )}
+
+      {/* تعديل أصناف طلب قائم — الفاتورة نفسها تُعدَّل ذرّياً بلا إرجاع وإعادة بيع */}
+      {editing && invoiceOf(editing.invoice_id) && (
+        <DeliveryEditDialog
+          order={editing}
+          invoice={invoiceOf(editing.invoice_id)!}
+          courier={courierOf(editing.courier_id)}
+          clinicId={clinicId}
+          onClose={() => setEditing(null)}
+          onSaved={() => { void load(); onChanged(); }}
+        />
       )}
 
       {/* Couriers registry */}

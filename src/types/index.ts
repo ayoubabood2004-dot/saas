@@ -813,6 +813,21 @@ export interface PetMovement {
   created_at: string;
 }
 
+/** سطر فاتورة بعد التعديل (0110): id موجود = سطر قائم يُعدَّل، غائب = سطر جديد.
+ *  تُستهلك من repo.editInvoiceLines التي تعكس المخزون ثم تعيد خصمه بدقة. */
+export interface EditLine {
+  id?: string;
+  product_id?: string | null;
+  name: string;
+  barcode?: string | null;
+  qty: number;
+  unit_price: number;
+  unit_cost: number;
+  unit_label?: string | null;
+  /** المسحوب من المخزون بمكافئ العلبة (٠٫٢٥ لخمس حبّات من علبة عشرين). غائب = يساوي الكمية. */
+  stock_qty?: number | null;
+}
+
 /* ---------------- Delivery (التوصيل — الدفع عند الاستلام) ---------------- */
 /** Lifecycle of a cash-on-delivery order:
  *  preparing (قيد التجهيز) → out (بالطريق) → delivered (مستلم) | returned (راجع). */
