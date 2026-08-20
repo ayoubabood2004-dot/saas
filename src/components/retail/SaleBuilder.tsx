@@ -18,6 +18,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useEntitlements } from "@/lib/entitlements";
 import { Button, useToast } from "@/components/ui";
 import { ServiceQuickSelect } from "./ServiceQuickSelect";
+import { QtyPad } from "./QtyPad";
 import { MedSaleForm } from "./MedSaleForm";
 import { CashierSelect } from "@/components/MedicalEntry";
 import { useInvoicePrinter } from "./usePrintInvoice";
@@ -439,6 +440,17 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
   }, []);
   const [busy, setBusy] = useState(false);
   const [flash, setFlash] = useState<string | null>(null);
+  /* ---- المضاعِف: «اكتب ٢٠ ثم امسح» -------------------------------------
+   * عشرون قطعة من صنف واحد كانت تكلّف عشرين مسحة أو عشرين ضغطة. المضاعِف
+   * يجعلها مسحةً واحدة. مبدآن يحكمانه:
+   *   • لا يُسلَّح بمجرّد كتابة أرقام أبداً — الماسح نفسه «يكتب» أرقاماً،
+   *     وحقل البحث كذلك. التسليح بفعلٍ صريح: «٢٠*» بالبحث، أو نجمة/× من
+   *     الكيبورد خارج الحقول، أو زر ×N باللمس.
+   *   • لا يبقى معلّقاً بصمت: شارة بارزة، وEsc يلغيه، ويُطفأ وحده بعد ١٥
+   *     ثانية — مضاعِفٌ منسيّ يعني فاتورةً غلط. */
+  const [mult, setMult] = useState<number | null>(null);
+  const [multPad, setMultPad] = useState(false);
+  const [qtyPadFor, setQtyPadFor] = useState<string | null>(null);
   const [done, setDone] = useState<{ invoice: Invoice; items: InvoiceItem[] } | null>(null);
   const [lastPrints, setLastPrints] = useState(0);
   // Opt-in resizable cart (Settings → خيارات الكاشير) — drag the cart edge on lg+.
@@ -446,20 +458,40 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
 
   const flashLine = (id: string) => { setFlash(id); setTimeout(() => setFlash((f) => (f === id ? null : f)), 600); };
 
+  /** استهلاك المضاعِف المعلّق: يُقرأ مرة واحدة ثم يعود لواحد فوراً — مضاعِف
+   *  يبقى بعد استعماله هو أخطر من عدم وجوده أصلاً. */
+  const takeMult = (): number => {
+    const n = mult && mult > 0 ? Math.floor(mult) : 1;
+    if (mult != null) setMult(null);
+    return n;
+  };
+
   // Add (or increment) a line; products are capped at their stock.
-  const bump = (id: string, factory: () => Line) => {
-    setCart((c) => {
-      const found = c.find((l) => l.id === id);
-      if (found) {
-        const cap = unitCap(found);
-        return c.map((l) => (l.id === id ? { ...l, qty: Math.min(l.qty + 1, cap) } : l));
-      }
-      return [...c, factory()];
-    });
+  // n = الكمية المضافة (١ افتراضاً، أو المضاعِف المعلّق). السطر الموجود **يجمع**
+  // لا يُستبدل: هذا سلوك المسح المعتاد، ومخالفته تفاجئ الكاشير بصمت.
+  const bump = (id: string, factory: () => Line, n = 1) => {
+    // القصّ يُحسب **قبل** التحديث لا داخله: مُحدِّث setCart يُنفَّذ لاحقاً عند
+    // إعادة الرسم، فقراءة نتيجته فوراً كانت تُسكِت رسالة «المتوفّر ١٧ فقط».
+    const existing = cart.find((l) => l.id === id);
+    const base = existing ?? factory();
+    const cap = unitCap(base);
+    const want = (existing?.qty ?? 0) + n;
+    setCart((c) => (c.some((l) => l.id === id)
+      // الحساب من الحالة الحيّة: مسحتان متلاحقتان لا تفقد إحداهما.
+      ? c.map((l) => (l.id === id ? { ...l, qty: Math.min(l.qty + n, unitCap(l)) } : l))
+      : [...c, { ...base, qty: Math.max(1, Math.min(n, cap)) }]));
+    // نغمة مختلفة للإضافة بالجملة: الأذن أسرع من العين وقت الزحمة، والفرق بين
+    // «واحدة» و«عشرين» يجب أن يُسمع لا أن يُقرأ.
+    if (n > 1) window.setTimeout(() => playTap(), 90);
+    // السقف يُبلَّغ ولا يُبتلع: «طلبت ٢٠ والمتوفّر ١٧» أوضح من رقمٍ يظهر ناقصاً.
+    if (n > 1 && Number.isFinite(cap) && want > cap) {
+      playWarning();
+      toast.error(t("retail.multClamped", { n: formatNum(cap), defaultValue: "المتوفّر {{n}} فقط — أُضيف المتاح" }));
+    }
     flashLine(id);
   };
 
-  const addProduct = (p: Product) =>
+  const addProduct = (p: Product, n = takeMult()) =>
     bump(`p:${p.id}`, () => {
       const hasSub = !!p.has_sub_unit && !!p.units_per_box && p.units_per_box > 0;
       const unitsPerBox = p.units_per_box ?? null;
@@ -479,7 +511,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
         boxPrice: p.sell_price, subPrice: p.sub_unit_price ?? null, boxCost: p.purchase_price,
         saleUnit: startSub ? "sub" : "box",
       };
-    });
+    }, n);
 
   // Switch a product line between selling a whole box and a single sub-unit. The price
   // and cost follow the unit (sub-cost = box cost ÷ units-per-box); qty re-clamps to the
@@ -495,10 +527,10 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
       return { ...next, qty: Math.min(Math.max(1, l.qty), Math.max(1, cap)) };
     }));
 
-  const addService = (s: Service) => {
+  const addService = (s: Service, n = takeMult()) => {
     // الخدمة تُنسب للحيوان النشط — خدمة "عملية" تسجَّل تلقائياً في طبلته عند الإتمام.
     const catName = catalog.categories.find((c) => c.id === s.category_id)?.name ?? null;
-    bump(`s:${s.id}`, () => ({ id: `s:${s.id}`, kind: "service", name: s.name, barcode: null, unit_price: s.price, unit_cost: 0, qty: 1, stock: null, product_id: null, subcategory: null, serviceId: s.id, petId: activePet?.id ?? null, petName: activePet?.name ?? null, surgeryCat: isSurgeryCategoryName(catName), surgeryRef: s.surgery_ref ?? null }));
+    bump(`s:${s.id}`, () => ({ id: `s:${s.id}`, kind: "service", name: s.name, barcode: null, unit_price: s.price, unit_cost: 0, qty: 1, stock: null, product_id: null, subcategory: null, serviceId: s.id, petId: activePet?.id ?? null, petName: activePet?.name ?? null, surgeryCat: isSurgeryCategoryName(catName), surgeryRef: s.surgery_ref ?? null }), n);
   };
 
   // A medication/vaccine from the "الأدوية" tab — a priced cart line carrying the full
@@ -524,6 +556,52 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
     // السطر انحذف → أي عرض ما عاد مؤهلاً ينطفئ لوحده بإعادة الحساب أدناه.
   };
 
+  /** تسليح المضاعِف — من الكيبورد أو من اللوحة اللمسية، بنفس الحارس. */
+  const armMult = (n: number) => {
+    const v = Math.floor(n);
+    if (!Number.isFinite(v) || v < 2) { setMult(null); return; }
+    playTap();
+    setMult(Math.min(v, 9999));
+  };
+
+  /* مضاعِف منسيّ = فاتورة غلط. يُطفأ وحده بعد ١٥ ثانية من التسليح. */
+  useEffect(() => {
+    if (mult == null) return;
+    const id = window.setTimeout(() => setMult(null), 15000);
+    return () => window.clearTimeout(id);
+  }, [mult]);
+
+  /* التسليح من الكيبورد خارج الحقول: أرقام ثم نجمة/×. الأرقام السريعة
+   * (< 25ms بينها) تُهمَل عمداً — تلك يد الماسح لا يد الإنسان. */
+  useEffect(() => {
+    if (done) return;
+    let buf = "";
+    let last = 0;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") { setMult((m) => (m == null ? m : null)); return; }
+      const el = document.activeElement as HTMLElement | null;
+      const inField = !!el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable);
+      if (inField || e.ctrlKey || e.metaKey || e.altKey) return;
+      const now = Date.now();
+      const gap = now - last;
+      last = now;
+      if (e.key >= "0" && e.key <= "9") {
+        if (gap < 25) { buf = ""; return; }   // دفقة ماسح
+        if (gap > 3000) buf = "";             // كتابة قديمة منسية
+        buf = (buf + e.key).slice(-4);
+        return;
+      }
+      if (e.key === "*" || e.key === "x" || e.key === "X" || e.key === "×") {
+        const n = Number(buf);
+        buf = "";
+        if (n >= 2) { e.preventDefault(); armMult(n); }
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [done]);
+
   useBarcodeScanner(async (code) => {
     if (done) return;
     const product = await repo.getProductByBarcode(code, clinicId);
@@ -544,7 +622,8 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
     }
     playWarning();
     toast.error(t("pos.notFoundAny", "ماكو منتج ولا خدمة بهذا الباركود"), code);
-  });
+    // اللوحة مفتوحة = الأرقام تخصّها؛ مسحةٌ تدخل صنفاً خلف نافذة مفتوحة تربك.
+  }, { disabled: multPad || !!qtyPadFor });
 
   // The bridge: a doctor clicked "Sell items" inside an animal record. Auto-fill the
   // customer, surface the pet context, and focus the scan field for a zero-click flow.
@@ -1484,12 +1563,55 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
         {browseTab === "products" ? (
           // منطقة التصفّح: البحث ثابت والشبكة وحدها تمرّر داخلياً (التصميم أ).
           <div className={cn(posV2 ? "flex min-h-0 flex-1 flex-col gap-3" : "contents")}>
-            {/* Product search + scan */}
-            <div className={cn("relative", posV2 && "shrink-0")}>
-              <Search size={16} className="pointer-events-none absolute top-1/2 -translate-y-1/2 text-ink-subtle ltr:left-3 rtl:right-3" />
-              <input ref={searchRef} className="input ltr:pl-9 rtl:pr-9" value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("retail.searchProducts", "Search or scan a product…")} />
-              <span className="pointer-events-none absolute top-1/2 flex -translate-y-1/2 items-center gap-1 text-2xs text-ink-subtle ltr:right-3 rtl:left-3"><Barcode size={13} /> {t("retail.scanReady", "scan ready")}</span>
+            {/* Product search + scan + مضاعِف الكمية */}
+            <div className={cn("flex items-center gap-2", posV2 && "shrink-0")}>
+              <div className="relative flex-1">
+                <Search size={16} className="pointer-events-none absolute top-1/2 -translate-y-1/2 text-ink-subtle ltr:left-3 rtl:right-3" />
+                <input
+                  ref={searchRef} data-possearch className="input ltr:pl-9 rtl:pr-9" value={query}
+                  onChange={(e) => {
+                    // «٢٠*» بحقل البحث = تسليح فوري. الطريق الأسرع لمن يده على
+                    // الكيبورد أصلاً، وبلا اختصارٍ خفيّ يحتاج تعليماً.
+                    const m = /^(\d{1,4})\s*[*xX×]$/.exec(e.target.value.trim());
+                    if (m) { armMult(Number(m[1])); setQuery(""); return; }
+                    setQuery(e.target.value);
+                  }}
+                  placeholder={t("retail.searchProducts", "Search or scan a product…")}
+                />
+                <span className="pointer-events-none absolute top-1/2 flex -translate-y-1/2 items-center gap-1 text-2xs text-ink-subtle ltr:right-3 rtl:left-3"><Barcode size={13} /> {t("retail.scanReady", "scan ready")}</span>
+              </div>
+              {/* المدخل اللمسي للمضاعِف — الآيباد بلا كيبورد لا يبقى بلا حلّ */}
+              <button
+                data-multpad type="button"
+                onClick={() => { playTap(); setMultPad(true); }}
+                title={t("retail.multBtn", "كمية بالجملة — اكتب العدد ثم امسح")}
+                aria-label={t("retail.multBtn", "كمية بالجملة — اكتب العدد ثم امسح")}
+                className={cn(
+                  "grid h-11 shrink-0 place-items-center rounded-2xl border font-display text-base font-extrabold tabular-nums transition",
+                  mult != null
+                    ? "border-brand-500 bg-brand-600 px-3 text-white shadow-soft"
+                    : "w-12 border-line bg-surface-2 text-ink-muted hover:border-brand-300 hover:text-brand-700",
+                )}
+              >
+                ×{mult != null ? formatNum(mult) : ""}
+              </button>
             </div>
+
+            {/* شارة المضاعِف المعلّق — بارزة عمداً: لا يُنسى ولا يُلغى بالصدفة */}
+            {mult != null && (
+              <button
+                data-multbadge type="button"
+                onClick={() => { playTap(); setMult(null); }}
+                className={cn(
+                  "flex items-center gap-2.5 rounded-2xl border-2 border-brand-400 bg-brand-50 px-3.5 py-2 text-start dark:border-brand-500/50 dark:bg-brand-500/15",
+                  posV2 && "shrink-0",
+                )}
+              >
+                <span className="font-display text-2xl font-extrabold tabular-nums text-brand-700 dark:text-brand-200">×{formatNum(mult)}</span>
+                <span className="min-w-0 flex-1 text-xs font-bold text-brand-800 dark:text-brand-200">{t("retail.multArmed", "امسح الباركود أو اضغط الصنف — تُضاف بهذه الكمية")}</span>
+                <X size={16} className="shrink-0 text-brand-700/70 dark:text-brand-300/70" />
+              </button>
+            )}
 
             {/* Product grid */}
             {shown.length === 0 ? (
@@ -1684,7 +1806,19 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
                         للأفعال الأساسية؛ ٧×٧ القديمة كانت تنتج تعديلات كمية بالغلط. */}
                     <div className="flex items-center gap-1">
                       <button data-qtyminus onClick={() => { playTap(); setQty(l.id, l.qty - 1); }} className={cn("grid place-items-center rounded-lg bg-surface-2 text-ink-muted transition hover:bg-surface-3", posV2 ? (denseCart ? "h-9 w-9" : "h-11 w-11") : "h-7 w-7")}><Minus size={posV2 ? (denseCart ? 15 : 18) : 14} /></button>
-                      <span className={cn("text-center font-bold tabular-nums text-ink", posV2 ? "w-8 text-base" : "w-6 text-sm")}>{l.qty}</span>
+                      {/* الرقم نفسه زر: ضغطة تفتح لوحة الأرقام فتُكتب ٢٠ مرة
+                          واحدة بدل عشرين ضغطة على «+». */}
+                      <button
+                        data-qtyopen type="button"
+                        onClick={() => { playTap(); setQtyPadFor(l.id); }}
+                        title={t("retail.qtyPadTitle", "كمية الصنف")}
+                        className={cn(
+                          "rounded-lg text-center font-bold tabular-nums text-ink transition hover:bg-surface-2",
+                          posV2 ? (denseCart ? "h-9 w-9 text-base" : "h-11 w-11 text-base") : "h-7 w-7 text-sm",
+                        )}
+                      >
+                        {formatNum(l.qty)}
+                      </button>
                       <button data-qtyplus onClick={() => { playTap(); if (l.qty < unitCap(l)) setQty(l.id, l.qty + 1); else { playWarning(); toast.error(t("retail.maxStock", "No more in stock")); } }} className={cn("grid place-items-center rounded-lg bg-surface-2 text-ink-muted transition hover:bg-surface-3", posV2 ? (denseCart ? "h-9 w-9" : "h-11 w-11") : "h-7 w-7")}><Plus size={posV2 ? (denseCart ? 15 : 18) : 14} /></button>
                     </div>
                     {/* whitespace-nowrap حاسم: «25,000 د.ع» كان يلتفّ سطرين داخل
@@ -2078,6 +2212,30 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
       {/* لا شريط سلة مطويّ بعد اليوم: السلة نفسها هي نصف الشاشة السفلي وتبقى
           مفتوحة بأصنافها وإجماليها وزر إتمامها — «الأساسي هو السلة». */}
       {/* ظِل خلف لوح السلة المفتوح */}
+      {/* لوحة كمية سطر قائم */}
+      {qtyPadFor && (() => {
+        const l = cart.find((x) => x.id === qtyPadFor);
+        if (!l) return null;
+        return (
+          <QtyPad
+            open title={t("retail.qtyPadTitle", "كمية الصنف")} hint={l.name}
+            initial={l.qty} max={unitCap(l)}
+            onClose={() => setQtyPadFor(null)}
+            onSubmit={(n) => { setQty(l.id, n); setQtyPadFor(null); playSuccess(); }}
+          />
+        );
+      })()}
+
+      {/* لوحة تسليح المضاعِف قبل المسح */}
+      <QtyPad
+        open={multPad}
+        title={t("retail.multPadTitle", "كمية بالجملة")}
+        hint={t("retail.multPadHint", "اكتب العدد، ثم امسح الباركود أو اضغط الصنف — يُضاف بهذه الكمية دفعة واحدة")}
+        submitLabel={t("retail.multPadDone", "جهّز الكمية")}
+        onClose={() => setMultPad(false)}
+        onSubmit={(n) => { armMult(n); setMultPad(false); }}
+      />
+
       {posV2 && cartSheet && (
         <button
           type="button" aria-label={t("common.close", "إغلاق")}

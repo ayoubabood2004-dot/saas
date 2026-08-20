@@ -40,7 +40,8 @@
     "retry": "إعادة المحاولة",
     "searchPh": "ابحث…",
     "noMatches": "لا توجد نتائج مطابقة",
-    "minutes": "دقيقة"
+    "minutes": "دقيقة",
+    "done": "تم"
   },
   "errors": {
     "title": "حدث خطأ ما",
@@ -418,7 +419,16 @@
     "creditShort": "آجل",
     "deliveryShort": "توصيل",
     "expandCart": "تكبير السلة",
-    "noSellerChip": "بلا بائع"
+    "noSellerChip": "بلا بائع",
+    "multBtn": "كمية بالجملة — اكتب العدد ثم امسح",
+    "multArmed": "امسح الباركود أو اضغط الصنف — تُضاف بهذه الكمية",
+    "multClamped": "المتوفّر {{n}} فقط — أُضيف المتاح",
+    "multPadTitle": "كمية بالجملة",
+    "multPadHint": "اكتب العدد، ثم امسح الباركود أو اضغط الصنف — يُضاف بهذه الكمية دفعة واحدة",
+    "multPadDone": "جهّز الكمية",
+    "qtyPadTitle": "كمية الصنف",
+    "qtyPadMax": "المتوفّر {{n}}",
+    "qtyPadClamped": "المخزون لا يكفي — ستُضاف {{n}} فقط"
   },
   "promos": {
     "title": "إدارة العروض",
