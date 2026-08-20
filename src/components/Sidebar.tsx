@@ -24,8 +24,7 @@ import {
   Sparkles,
   ArrowLeft,
   PanelLeftClose,
-  PanelLeftOpen,
-} from "lucide-react";
+  PanelLeftOpen, Wallet } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { usePermissions } from "@/hooks/usePermissions";
 import { useBookingRequestCount } from "@/lib/bookingRequests";
@@ -97,6 +96,7 @@ export function Sidebar() {
       ],
     },
     { to: "/staff", icon: Briefcase, label: t("nav.staff", "Staff Management"), show: can("manageStaff") },
+    { to: "/payroll", icon: Wallet, label: t("nav.payroll", "رواتب الكادر"), show: can("viewPayroll") && has("payroll") },
     { to: "/scan", icon: ScanLine, label: t("nav.scan") },
     { to: "/activity", icon: History, label: t("nav.activity", "سجل الحركات"), show: can("manageSettings") },
     { to: "/settings", icon: SettingsIcon, label: t("nav.settings"), show: can("manageSettings") },

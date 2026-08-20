@@ -5,6 +5,8 @@ import { loadDB, saveDB } from "./demoStore";
 import { supabase } from "./supabase";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, AppointmentStatus, ClinicInfo, PublicStaff, DailyNote, TreatmentEntry, Admission, Branch, Reminder, Product, Company, CompanySection, Purchase, PurchaseItem, PurchasePayment, PurchaseDraftLine, PurchaseMeta, Courier, DeliveryOrder, PetMovement, DemoDB, Invoice, InvoiceItem, CheckoutItem, SaleMeta, Customer, DiscountType, PaymentMethod, PaymentSplit, WhatsAppMessage, AuditEntry, LoginEvent, PetNote, Expense, ClinicVisit , Surgery, LabResult, LabDeviceLink, LabDeviceInbox, LabStatusValue, PetProblem, CareEntry, FeatureRequest, GeneratedBarcode, StoreProfile, StoreOrder, StoreOrderItem, StoreFrontInfo, StoreCatalogItem, Journey, JourneyEvent, JourneyKind, JourneyStage, JourneyPublicView, EditLine } from "@/types";
+import type { PayrollPolicyDTO, StaffComp, StaffRecurring, PayrollRun, Payslip, PayslipLine, StaffLoan, StaffLoanEvent, PayslipDraft, PayMethod } from "@/types";
+import * as PD from "./payrollDemo";
 import { isValidSlug, normalizeSlug, demoOrderNo } from "./storeLib";
 import { journeyToken, OWNER_REACTIONS } from "./journey";
 import { getClinicName, getClinicLogo, getClinicSocials } from "./settings";
@@ -180,6 +182,13 @@ function demoExpensesLoad(): Expense[] {
   return [];
 }
 function demoExpensesSave(list: Expense[]) { try { localStorage.setItem(DEMO_EXPENSES_KEY, JSON.stringify(list)); } catch { /* ignore */ } }
+/** تسجيل مصروف بالوضع التجريبي. مشتركٌ بين addExpense وترحيل الرواتب حتى
+ *  يمرّ خروج المال من مسلكٍ واحد مهما كان مصدره. */
+function demoAddExpense(input: Omit<Expense, "id" | "created_at">): Expense {
+  const e: Expense = { ...input, id: uid("exp"), clinic_id: null, created_at: new Date().toISOString() };
+  demoExpensesSave([e, ...demoExpensesLoad()]);
+  return e;
+}
 function demoAuditLoad(): AuditEntry[] {
   try { const r = localStorage.getItem(DEMO_AUDIT_KEY); if (r) return JSON.parse(r) as AuditEntry[]; } catch { /* ignore */ }
   return [];
@@ -1686,9 +1695,7 @@ const demoRepo = {
     return demoExpensesLoad().slice().sort((a, b) => b.spent_at.localeCompare(a.spent_at));
   },
   async addExpense(input: Omit<Expense, "id" | "created_at">): Promise<Expense> {
-    const e: Expense = { ...input, id: uid("exp"), clinic_id: null, created_at: new Date().toISOString() };
-    demoExpensesSave([e, ...demoExpensesLoad()]);
-    return e;
+    return demoAddExpense(input);
   },
   async deleteExpense(id: string): Promise<void> {
     const before = demoExpensesLoad();
@@ -1696,6 +1703,38 @@ const demoRepo = {
     demoExpensesSave(before.filter((x) => x.id !== id));
     if (row) demoAuditPush({ action: "DELETE", entity: "expenses", entity_id: id, details: row as unknown as Record<string, unknown> });
   },
+
+  /* ---- الرواتب (0112) — الوضع التجريبي يفرض حُرّاس الخادم نفسها ---- */
+  async getPayrollPolicy(): Promise<PayrollPolicyDTO> { return PD.getPolicy(); },
+  async setPayrollPolicy(p: PayrollPolicyDTO): Promise<PayrollPolicyDTO> { return PD.setPolicy(p); },
+  async listStaffComp(): Promise<StaffComp[]> { return PD.listComp(); },
+  async setStaffComp(staffId: string, from: string, base: number, note?: string | null): Promise<StaffComp> {
+    return PD.setComp(staffId, from, base, note);
+  },
+  async deleteStaffComp(id: string): Promise<void> { PD.deleteComp(id); },
+  async listStaffRecurring(): Promise<StaffRecurring[]> { return PD.listRecurring(); },
+  async addStaffRecurring(staffId: string, code: string, amount: number, note?: string | null): Promise<StaffRecurring> {
+    return PD.addRecurring(staffId, code, amount, note);
+  },
+  async deleteStaffRecurring(id: string): Promise<void> { PD.deleteRecurring(id); },
+  async listPayrollRuns(): Promise<PayrollRun[]> { return PD.listRuns(); },
+  async openPayrollRun(period: string): Promise<PayrollRun> { return PD.openRun(period); },
+  async savePayrollSlips(runId: string, slips: PayslipDraft[]): Promise<{ run: string; payslips: number }> {
+    return PD.saveSlips(runId, slips);
+  },
+  async listPayslips(runId?: string): Promise<Payslip[]> { return PD.listSlips(runId); },
+  async listPayslipLines(payslipIds?: string[]): Promise<PayslipLine[]> { return PD.listLines(payslipIds); },
+  async approvePayrollRun(runId: string): Promise<PayrollRun> { return PD.approveRun(runId); },
+  async payPayslip(slipId: string, method: PayMethod): Promise<Payslip> {
+    return PD.paySlip(slipId, method, async (e) => demoAddExpense(e));
+  },
+  async closePayrollRun(runId: string): Promise<PayrollRun> { return PD.closeRun(runId); },
+  async listStaffLoans(): Promise<StaffLoan[]> { return PD.listLoans(); },
+  async listLoanEvents(loanId?: string): Promise<StaffLoanEvent[]> { return PD.listLoanEvents(loanId); },
+  async disburseLoan(staffId: string, staffName: string, principal: number, installment: number, reason: string | null, method: PayMethod): Promise<StaffLoan> {
+    return PD.disburseLoan(staffId, staffName, principal, installment, reason, method, async (e) => demoAddExpense(e));
+  },
+  async writeOffLoan(loanId: string, note: string): Promise<StaffLoan> { return PD.writeOffLoan(loanId, note); },
 
   /** Log a WhatsApp message send (campaign history / "last contacted"). */
   async logWhatsApp(input: { pet_id?: string | null; owner_name?: string | null; owner_phone?: string | null; reminder_type?: string | null }): Promise<void> {
@@ -1764,6 +1803,16 @@ const DEMO_ACTIVITY_MAP: Record<string, { entity: string; action: "INSERT" | "UP
   addClinicVisit: { entity: "clinic_visits", action: "INSERT" },
   updateClinicVisit: { entity: "clinic_visits", action: "UPDATE" },
   addExpense: { entity: "expenses", action: "INSERT" },
+  setStaffComp: { entity: "staff_comp", action: "INSERT" },
+  deleteStaffComp: { entity: "staff_comp", action: "DELETE" },
+  openPayrollRun: { entity: "payroll_runs", action: "INSERT" },
+  savePayrollSlips: { entity: "payslips", action: "INSERT" },
+  approvePayrollRun: { entity: "payroll_runs", action: "UPDATE" },
+  payPayslip: { entity: "payslips", action: "UPDATE" },
+  closePayrollRun: { entity: "payroll_runs", action: "UPDATE" },
+  disburseLoan: { entity: "staff_loans", action: "INSERT" },
+  writeOffLoan: { entity: "staff_loans", action: "UPDATE" },
+  setPayrollPolicy: { entity: "payroll_settings", action: "UPDATE" },
   addMedia: { entity: "media_items", action: "INSERT" },
   addTreatment: { entity: "treatment_entries", action: "INSERT" },
   addTreatments: { entity: "treatment_entries", action: "INSERT" },
@@ -2783,6 +2832,116 @@ const supabaseRepo: typeof demoRepo = {
   async deleteExpense(id) {
     ok(await sbc().from("expenses").delete().eq("id", id));
   },
+
+  /* ---- الرواتب (0112) ----
+   * القراءة مباشرة (RLS تحصر: المدير يرى الكل، والموظف قسيمته وحدها).
+   * الكتابة **كلّها** عبر دوال SECURITY DEFINER: سقف الاستقطاع، ومنع اعتماد
+   * راتب النفس، والتجميد بعد الاعتماد — منطقٌ لا تعبّر عنه سياسة صفوف. */
+  async getPayrollPolicy() {
+    const { data, error } = await sbc().rpc("payroll_get_policy");
+    if (error) throw error;
+    return data as PayrollPolicyDTO;
+  },
+  async setPayrollPolicy(p) {
+    const { data, error } = await sbc().rpc("payroll_set_policy", {
+      p_basis: p.dayRateBasis, p_working_days: p.workingDays,
+      p_cap_pct: p.deductionCapPct, p_round_to: p.roundTo,
+    });
+    if (error) throw error;
+    return data as PayrollPolicyDTO;
+  },
+  async listStaffComp() {
+    return listOf<StaffComp>(await sbc().from("staff_comp").select("*").order("effective_from", { ascending: false }));
+  },
+  async setStaffComp(staffId, from, base, note) {
+    const { data, error } = await sbc().rpc("payroll_set_comp", {
+      p_staff: staffId, p_from: from, p_base: base, p_note: note ?? null,
+    });
+    if (error) throw error;
+    return data as StaffComp;
+  },
+  async deleteStaffComp(id) {
+    const { error } = await sbc().rpc("payroll_delete_comp", { p_id: id });
+    if (error) throw error;
+  },
+  async listStaffRecurring() {
+    return listOf<StaffRecurring>(await sbc().from("staff_recurring").select("*"));
+  },
+  async addStaffRecurring(staffId, code, amount, note) {
+    const { data, error } = await sbc().rpc("payroll_set_recurring", {
+      p_staff: staffId, p_code: code, p_amount: amount, p_note: note ?? null,
+    });
+    if (error) throw error;
+    return data as StaffRecurring;
+  },
+  async deleteStaffRecurring(id) {
+    const { error } = await sbc().rpc("payroll_delete_recurring", { p_id: id });
+    if (error) throw error;
+  },
+  async listPayrollRuns() {
+    return listOf<PayrollRun>(await sbc().from("payroll_runs").select("*").order("period", { ascending: false }));
+  },
+  async openPayrollRun(period) {
+    const { data, error } = await sbc().rpc("payroll_open_run", { p_period: period });
+    if (error) throw error;
+    return data as PayrollRun;
+  },
+  async savePayrollSlips(runId, slips) {
+    const { data, error } = await sbc().rpc("payroll_save_slips", { p_run: runId, p_slips: slips });
+    if (error) throw error;
+    return data as { run: string; payslips: number };
+  },
+  async listPayslips(runId) {
+    let q = sbc().from("payslips").select("*").order("staff_name");
+    if (runId) q = q.eq("run_id", runId);
+    return listOf<Payslip>(await q);
+  },
+  async listPayslipLines(payslipIds) {
+    let q = sbc().from("payslip_lines").select("*");
+    if (payslipIds) {
+      if (!payslipIds.length) return [];
+      q = q.in("payslip_id", payslipIds);
+    }
+    return listOf<PayslipLine>(await q);
+  },
+  async approvePayrollRun(runId) {
+    const { data, error } = await sbc().rpc("payroll_approve", { p_run: runId });
+    if (error) throw error;
+    return data as PayrollRun;
+  },
+  async payPayslip(slipId, method) {
+    const { data, error } = await sbc().rpc("payroll_pay_slip", { p_slip: slipId, p_method: method });
+    if (error) throw error;
+    return data as Payslip;
+  },
+  async closePayrollRun(runId) {
+    const { data, error } = await sbc().rpc("payroll_close_run", { p_run: runId });
+    if (error) throw error;
+    return data as PayrollRun;
+  },
+  async listStaffLoans() {
+    return listOf<StaffLoan>(await sbc().from("staff_loans").select("*").order("created_at", { ascending: false }));
+  },
+  async listLoanEvents(loanId) {
+    let q = sbc().from("staff_loan_events").select("*").order("at", { ascending: false });
+    if (loanId) q = q.eq("loan_id", loanId);
+    return listOf<StaffLoanEvent>(await q);
+  },
+  async disburseLoan(staffId, _staffName, principal, installment, reason, method) {
+    // الاسم يقرأه الخادم من صفّ الكادر لا من العميل — اسمٌ يرسله المتصفّح
+    // يجعل بيان المصروف قابلاً للتزوير.
+    const { data, error } = await sbc().rpc("payroll_disburse_loan", {
+      p_staff: staffId, p_principal: principal, p_installment: installment,
+      p_reason: reason, p_method: method,
+    });
+    if (error) throw error;
+    return data as StaffLoan;
+  },
+  async writeOffLoan(loanId, note) {
+    const { data, error } = await sbc().rpc("payroll_write_off_loan", { p_loan: loanId, p_note: note });
+    if (error) throw error;
+    return data as StaffLoan;
+  },
   async logWhatsApp(input) {
     ok(await sbc().from("wa_messages").insert(input));
   },
@@ -2860,6 +3019,9 @@ const READ_ONLY_ALLOWED = new Set<string>([
   "listProblems", "listProducts", "listPurchaseItems", "listPurchasePayments", "listPurchases",
   "listReminders", "listStoreOrders", "listSurgeries", "listTreatments", "listVaccinations",
   "listVisits", "listWaiting", "listWeights", "listWhatsAppLog", "searchCustomers",
+  // --- الرواتب: القراءة تبقى بالاشتراك المنتهي (الموظف يشوف قسيمته) ---
+  "getPayrollPolicy", "listStaffComp", "listStaffRecurring", "listPayrollRuns",
+  "listPayslips", "listPayslipLines", "listStaffLoans", "listLoanEvents",
   // --- استعلامات مساعدة لا تكتب ---
   "checkStoreSlug", "slotTaken", "supportsBulkGroup", "supportsSupplierLedger",
   "adminListFeatureRequests",

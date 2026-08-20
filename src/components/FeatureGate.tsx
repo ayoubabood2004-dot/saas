@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { Lock, Sparkles, ArrowLeft } from "lucide-react";
 import { useEntitlements, minPlanFor, FEATURE_LABEL, type Feature } from "@/lib/entitlements";
 import { planById } from "@/lib/plans";
@@ -13,6 +14,7 @@ import { playTap } from "@/lib/sounds";
  * direct-URL access too, since it lives inside the route element.
  */
 export function FeatureGate({ feature, children }: { feature: Feature; children: ReactNode }) {
+  const { t } = useTranslation();
   const { has } = useEntitlements();
   const navigate = useNavigate();
 
@@ -27,7 +29,7 @@ export function FeatureGate({ feature, children }: { feature: Feature; children:
         </span>
         <h1 className="font-display text-xl font-extrabold tracking-tight text-ink">هذه الميزة ليست ضمن باقتك</h1>
         <p className="mt-2 text-sm text-ink-muted">
-          <span className="font-semibold text-ink">{FEATURE_LABEL[feature]}</span> متوفّرة في باقة{" "}
+          <span className="font-semibold text-ink">{t(`features.${feature}`, FEATURE_LABEL[feature])}</span> متوفّرة في باقة{" "}
           <span className="font-bold text-brand-600 dark:text-brand-300">{plan?.name}</span> وما فوق.
         </p>
         <Button className="mt-6 w-full" size="lg" leftIcon={<Sparkles size={16} />} onClick={() => { playTap(); navigate("/subscribe"); }}>

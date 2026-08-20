@@ -392,6 +392,7 @@ function StaffDrawer({ member, dir, onClose, onSaved, onUploadError }: {
   onSaved: (m: StaffMember) => void;
   onUploadError: () => void;
 }) {
+  const { t } = useTranslation();
   const [draft, setDraft] = useState<StaffMember | null>(member);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -517,7 +518,7 @@ function StaffDrawer({ member, dir, onClose, onSaved, onUploadError }: {
                       return (
                         <li key={cap.id} className="flex items-center justify-between gap-3 py-2">
                           <span className="flex min-w-0 items-center gap-2 text-sm text-ink">
-                            <span className="truncate">{cap.label}</span>
+                            <span className="truncate">{t(`caps.${cap.id}`, cap.label)}</span>
                             {sensitive && (
                               <span title="صلاحية حسّاسة" className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-warn-50 px-1.5 py-0.5 text-2xs font-semibold text-warn-700 dark:bg-warn-500/15 dark:text-warn-300">
                                 <AlertTriangle size={10} /> حسّاسة
@@ -572,7 +573,7 @@ function StaffDrawer({ member, dir, onClose, onSaved, onUploadError }: {
               <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-warn-50 text-warn-600 dark:bg-warn-500/15 dark:text-warn-300"><AlertTriangle size={20} /></span>
               <div className="text-sm text-ink-muted">
                 <p className="font-semibold text-ink">أنت تمنح صلاحية حسّاسة لهذا الموظف. هل أنت متأكد؟</p>
-                {pendingSensitive && <p className="mt-1">الصلاحية: <span className="font-semibold text-ink">«{CAPABILITIES.find((c) => c.id === pendingSensitive)?.label}»</span></p>}
+                {pendingSensitive && <p className="mt-1">الصلاحية: <span className="font-semibold text-ink">«{t(`caps.${pendingSensitive}`, CAPABILITIES.find((c) => c.id === pendingSensitive)?.label ?? "")}»</span></p>}
                 <p className="mt-1 text-2xs text-ink-subtle">يمكنك التراجع في أي وقت من نفس القائمة.</p>
               </div>
             </div>

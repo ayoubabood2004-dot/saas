@@ -27,13 +27,14 @@ export type Feature =
   | "consent"       // نماذج الإقرار
   | "branding"      // مطبوعات بشعار العيادة
   | "finePerms"     // صلاحيات الموظفين الدقيقة
+  | "payroll"       // رواتب الكادر والسلف والقطوعات
   | "store";        // المتجر الإلكتروني العام للعيادة
 
 /** What each PAID plan unlocks. (basic = records/calendar/inventory only.) */
 const PLAN_FEATURES: Record<PlanId, Feature[]> = {
   basic: [],
-  advanced: ["pos", "reports"],
-  super: ["pos", "reports", "reportsExport", "debt", "whatsapp", "consent", "branding", "finePerms", "store"],
+  advanced: ["pos", "reports", "payroll"],
+  super: ["pos", "reports", "reportsExport", "debt", "whatsapp", "consent", "branding", "finePerms", "payroll", "store"],
 };
 
 /** Arabic label for a feature — used on the upgrade screen. */
@@ -46,6 +47,7 @@ export const FEATURE_LABEL: Record<Feature, string> = {
   consent: "نماذج الإقرار",
   branding: "مطبوعات بشعار عيادتك",
   finePerms: "صلاحيات الموظفين الدقيقة",
+  payroll: "Staff payroll",
   store: "المتجر الإلكتروني — ستور عام برابط خاص لعيادتك",
 };
 

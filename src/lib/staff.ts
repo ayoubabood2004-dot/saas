@@ -48,7 +48,7 @@ export const STAFF_ROLES: StaffRole[] = ["manager", "veterinarian", "receptionis
 export type Capability =
   | "manageStaff" | "manageSettings" | "viewReports" | "viewProfits"
   | "deleteInvoices" | "processSales" | "manageInventory" | "editMedical"
-  | "addPets" | "viewCalendar";
+  | "addPets" | "viewCalendar" | "viewPayroll";
 
 export const CAPABILITIES: { id: Capability; label: string }[] = [
   { id: "viewCalendar", label: "عرض التقويم والمواعيد" },
@@ -61,6 +61,9 @@ export const CAPABILITIES: { id: Capability; label: string }[] = [
   { id: "deleteInvoices", label: "حذف الفواتير نهائياً" },
   { id: "manageSettings", label: "تعديل إعدادات العيادة" },
   { id: "manageStaff", label: "إدارة الكادر والصلاحيات" },
+  // رواتب الكادر: أخطر بيانات بالعيادة — تسريبها يفجّرها من داخلها بيوم.
+  // مطفأة لكل دور غير المدير، ولا تُمنح إلا صراحةً.
+  { id: "viewPayroll", label: "Staff payroll & advances" },
 ];
 
 export const PERMISSIONS: Record<StaffRole, Capability[]> = {
@@ -72,7 +75,7 @@ export const PERMISSIONS: Record<StaffRole, Capability[]> = {
 
 /** High-risk capabilities that trigger a confirmation when granted to non-managers. */
 export const SENSITIVE_CAPS: ReadonlySet<Capability> = new Set<Capability>([
-  "viewProfits", "deleteInvoices", "manageStaff", "manageSettings",
+  "viewProfits", "deleteInvoices", "manageStaff", "manageSettings", "viewPayroll",
 ]);
 
 /** The base-role preset as a full capability → boolean map. */

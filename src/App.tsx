@@ -42,6 +42,7 @@ const WhatsAppCampaigns = page(() => import("@/pages/WhatsAppCampaigns").then((m
 const RemindersHub = page(() => import("@/pages/RemindersHub").then((m) => ({ default: m.RemindersHub })));
 const BookingsHub = page(() => import("@/pages/BookingsHub").then((m) => ({ default: m.BookingsHub })));
 const StaffManagement = page(() => import("@/pages/StaffManagement").then((m) => ({ default: m.StaffManagement })));
+const Payroll = page(() => import("@/pages/Payroll").then((m) => ({ default: m.Payroll })));
 const AnalyticsHub = page(() => import("@/pages/AnalyticsHub").then((m) => ({ default: m.AnalyticsHub })));
 const JoinClinic = page(() => import("@/pages/JoinClinic").then((m) => ({ default: m.JoinClinic })));
 const Landing = page(() => import("@/pages/Landing").then((m) => ({ default: m.Landing })));
@@ -274,6 +275,7 @@ function Shell() {
             <Route path="/reminders" element={<Protected><ClinicOnly><FeatureGate feature="whatsapp"><RemindersHub /></FeatureGate></ClinicOnly></Protected>} />
             <Route path="/bookings" element={<Protected><ClinicOnly><BookingsHub /></ClinicOnly></Protected>} />
             <Route path="/staff" element={<Protected><ClinicOnly><StaffManagement /></ClinicOnly></Protected>} />
+            <Route path="/payroll" element={<Protected><ClinicOnly><FeatureGate feature="payroll"><Payroll /></FeatureGate></ClinicOnly></Protected>} />
             <Route path="/reports" element={<Protected><ClinicOnly><FeatureGate feature="reports"><AnalyticsHub /></FeatureGate></ClinicOnly></Protected>} />
             <Route path="/activity" element={<Protected><ClinicOnly><ActivityLog /></ClinicOnly></Protected>} />
             <Route path="/settings" element={<Protected><Settings /></Protected>} />

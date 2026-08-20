@@ -1151,3 +1151,141 @@ export interface StoreCatalogItem {
   descr: string | null;
   available: boolean;
 }
+
+/* ── الرواتب (هجرة 0112) ───────────────────────────────────────────────────
+ * القسيمة **مبالغُها مخزّنة لا محسوبة عند العرض**: لو أُعيد اشتقاقها من
+ * البيانات الحيّة لغيّرت زيادةُ راتبٍ اليوم قسيمةَ السنة الماضية. ومنطق
+ * الحساب نفسه يسكن src/lib/payroll.ts دوالَّ نقيّة. */
+
+/** أساس أجر اليوم — قرار العيادة، ويُطبع على القسيمة. */
+export type PayrollDayRateBasis = "calendar_30" | "working_days";
+export type PayrollRunStatus = "draft" | "calculated" | "approved" | "paid" | "closed";
+export type PayMethod = "cash" | "bank" | "wallet";
+export type PayLineKind = "earning" | "deduction";
+export type LoanStatus = "active" | "settled" | "written_off";
+
+export interface PayrollPolicyDTO {
+  dayRateBasis: PayrollDayRateBasis;
+  workingDays: number;
+  deductionCapPct: number;
+  roundTo: number;
+}
+
+/** صفٌّ مؤرَّخ من هيكل الأجر — الزيادة صفّ جديد لا تعديل فوق القديم. */
+export interface StaffComp {
+  id: string;
+  clinic_id?: string | null;
+  staff_id: string;
+  effective_from: string;   // YYYY-MM-DD
+  base_amount: number;
+  note?: string | null;
+  created_by?: string | null;
+  created_at: string;
+}
+
+/** بدل أو استقطاع ثابت يتكرّر كل شهر بلا إعادة إدخال. */
+export interface StaffRecurring {
+  id: string;
+  clinic_id?: string | null;
+  staff_id: string;
+  code: string;
+  amount: number;
+  note?: string | null;
+  from_date: string;
+  to_date?: string | null;
+  created_at: string;
+}
+
+export interface PayrollRun {
+  id: string;
+  clinic_id?: string | null;
+  period: string;           // أول يوم بالشهر
+  status: PayrollRunStatus;
+  /** لقطة السياسة وقت الاعتماد — بدونها يتغيّر الماضي بتغيّر الإعدادات. */
+  policy?: PayrollPolicyDTO | null;
+  calculated_at?: string | null; calculated_by?: string | null;
+  approved_at?: string | null;   approved_by?: string | null;
+  paid_at?: string | null;
+  closed_at?: string | null;
+  note?: string | null;
+  created_at: string;
+}
+
+export interface Payslip {
+  id: string;
+  clinic_id?: string | null;
+  run_id: string;
+  staff_id: string;
+  /** الاسم لقطةً: حذف الموظف لا يمحو قسائمه من التاريخ. */
+  staff_name: string;
+  branch_id?: string | null;
+  base_amount: number;
+  gross: number;
+  deductions: number;
+  /** ما رحّله السقف إلى الشهر الجاي. */
+  deferred: number;
+  net: number;
+  paid_at?: string | null;
+  pay_method?: PayMethod | null;
+  expense_id?: string | null;
+  created_at: string;
+}
+
+export interface PayslipLine {
+  id: string;
+  clinic_id?: string | null;
+  payslip_id: string;
+  code: string;
+  kind: PayLineKind;
+  qty?: number | null;
+  rate?: number | null;
+  amount: number;
+  deferred: number;
+  /** النصّ الحرّ تحت البند لا بدلاً عنه. */
+  reason?: string | null;
+  ref_kind?: string | null;
+  ref_id?: string | null;
+  created_at: string;
+}
+
+/** سلفة: ذمّة على الموظف — أصلٌ عند العيادة لا كلفة رواتب. */
+export interface StaffLoan {
+  id: string;
+  clinic_id?: string | null;
+  staff_id: string;
+  principal: number;
+  installment: number;
+  remaining: number;
+  reason?: string | null;
+  status: LoanStatus;
+  started_on: string;
+  expense_id?: string | null;
+  created_by?: string | null;
+  created_at: string;
+}
+
+export interface StaffLoanEvent {
+  id: string;
+  clinic_id?: string | null;
+  loan_id: string;
+  kind: "disbursed" | "installment" | "written_off";
+  amount: number;
+  payslip_id?: string | null;
+  note?: string | null;
+  at: string;
+  created_by?: string | null;
+}
+
+/** ما يرسله العميل لحفظ دورة — الخادم يشتقّ الإجماليات من السطور لا يقرأها. */
+export interface PayslipDraft {
+  staff_id: string;
+  staff_name: string;
+  branch_id?: string | null;
+  base_amount: number;
+  lines: Array<{
+    code: string; kind: PayLineKind;
+    qty?: number | null; rate?: number | null;
+    amount: number; deferred?: number;
+    reason?: string | null; ref_kind?: string | null; ref_id?: string | null;
+  }>;
+}

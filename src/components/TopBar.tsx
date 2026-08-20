@@ -24,8 +24,7 @@ import {
   BarChart3,
   Sparkles,
   Slice,
-  Box,
-} from "lucide-react";
+  Box, Wallet } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { setLang, type Lang } from "@/i18n";
 import { useAuth } from "@/contexts/AuthContext";
@@ -101,6 +100,7 @@ export function TopBar({ mobileOnly = false, minimal = false }: { mobileOnly?: b
         { to: "/campaigns", icon: MessageCircle, label: t("nav.campaigns", "WhatsApp Campaigns"), show: has("whatsapp") },
         { to: "/reminders", icon: BellRing, label: t("nav.reminders", "التذكيرات"), show: has("whatsapp") },
         { to: "/staff", icon: Briefcase, label: t("nav.staff", "Staff Management"), show: can("manageStaff") },
+        { to: "/payroll", icon: Wallet, label: t("nav.payroll", "رواتب الكادر"), show: can("viewPayroll") && has("payroll") },
         { to: "/scan", icon: ScanLine, label: t("nav.scan") },
         { to: "/subscribe", icon: Sparkles, label: t("nav.subscribe", "الاشتراك") },
       ].filter((it) => it.show !== false)
