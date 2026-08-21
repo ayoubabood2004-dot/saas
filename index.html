@@ -18,16 +18,40 @@
     <meta property="og:site_name" content="doctorVet" />
     <meta property="og:title" content="doctorVet — your whole vet clinic in one place" />
     <meta property="og:description" content="One medical record, a live operations board, inventory and till, WhatsApp campaigns and multi-branch — in a simple interface that runs in your own currency." />
+    <!-- صورة المشاركة. بسوقٍ ينتشر بالواتساب من طبيبٍ لزميله، الرابط بلا
+         صورة يصل بطاقةً نصّية باهتة — والصورة تحتلّ مساحةً أكبر بالمحادثة.
+         الرابط مطلق عمداً: زاحفو المشاركة لا يحلّون المسارات النسبية. -->
+    <meta property="og:image" content="https://doctorvet.vet/og.jpg" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="doctorVet — veterinary clinic management" />
+    <meta property="og:url" content="https://doctorvet.vet/" />
     <meta property="og:locale" content="en_US" />
     <meta property="og:locale:alternate" content="ar_IQ" />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="doctorVet — your whole vet clinic in one place" />
     <meta name="twitter:description" content="One medical record, operations board, inventory and till, WhatsApp campaigns and multi-branch — in a simple interface that runs in your own currency." />
+    <meta name="twitter:image" content="https://doctorvet.vet/og.jpg" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <!-- كل خطوط التطبيق بطلب واحد هنا — لا @import داخل CSS (يؤخر أول رسم)،
          ولا عائلات احتياط ثقيلة لا تُستعمل. العربي: IBM Plex Sans Arabic فقط. -->
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@500;600;700;800&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <!-- اللاتيني وحده هنا. الخطّ العربي (IBM Plex Sans Arabic) **لا يُحمَّل
+         افتراضياً**: اللغة الافتراضية إنجليزية، وتنزيل عائلة عربية كاملة
+         بأربعة أوزان على صفحةٍ لا حرف عربي فيها هو ثقلٌ خالص بالمسار الحرج.
+         يُحقَن عند اختيار لغةٍ عربية الحرف — انظر ensureScriptFont في
+         src/i18n/index.ts. -->
+    <!-- **غير حاجب للرسم** عمداً. ورقة أنماط خارجية تُحجَب عليها الصفحة كلها
+         حتى تصل، وهذا ملفٌ من طرفٍ ثالث: زمنه خارج سيطرتنا وخارج مراقبتنا.
+         وقياسٌ على شبكة بطيئة أظهر شاشة الإقلاع نفسها — وهي HTML/CSS صرف
+         بُنيت لتُرسم فوراً — رهينةً بانتظاره.
+         الحيلة: media="print" يجعل المتصفّح يجلبه بلا حجب، وonload يعيده
+         إلى all فتُطبَّق الخطوط. والنتيجة: تُرسم الصفحة بخطّ النظام خلال
+         أجزاء من الثانية ثم تتبدّل الخطوط — وهذه هي مقايضة display=swap
+         نفسها، ممتدّةً من ملفّ الخطّ إلى ورقة الأنماط التي تصفه. -->
+    <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap" />
+    <link rel="stylesheet" media="print" onload="this.media='all'" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap" />
+    <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap" /></noscript>
 
     <!-- شاشة الإقلاع: HTML/CSS صرف بلا أي جافاسكربت، فتُرسم فوراً حتى قبل تحميل
          التطبيق. بدونها يشوف المستخدم صفحة بيضاء فارغة كل إقلاع بارد (وبعد أي

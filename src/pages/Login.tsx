@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import { useNavigate } from "react-router-dom";
@@ -23,6 +23,8 @@ import {
 import { motion } from "framer-motion";
 import { useAuth } from "@/contexts/AuthContext";
 import { setLang, type Lang } from "@/i18n";
+import { track } from "@/lib/track";
+import { LOCALES } from "@/i18n/registry";
 import { playScan, playTap, playSuccess } from "@/lib/sounds";
 import { describeAuthError } from "@/lib/errors";
 import { registerClinic, authenticateClinic, getClinicByEmail, setClinicPassword } from "@/lib/clinics";
@@ -31,7 +33,7 @@ import { Button, Input, Label, Segmented, Card, ThemeToggle, SuccessDialog, useT
 import { staggerContainer, staggerItem } from "@/lib/motion";
 import { HERO_PHOTO } from "@/lib/petPhotos";
 import { isSupabaseConfigured, supabase } from "@/lib/supabase";
-import { COUNTRIES, countryByCode, currencyInfo } from "@/lib/currency";
+import { COUNTRIES, countryByCode, countryName, currencyName } from "@/lib/currency";
 import { seedClinicLocale } from "@/lib/settings";
 import { setActiveClinicId } from "@/lib/clinics";
 import { PhoneInput } from "@/components/PhoneInput";
@@ -209,19 +211,30 @@ function phoneDigitsLen(v: string): number {
 /** اختيار دولة العيادة عند التسجيل — منها تُشتق عملة النظام كله (د.ع، ر.س، …).
  *  أول حقل بالنموذج عمداً: القرار الأول قبل أي بيانات. */
 function CountrySelect({ value, onChange, t }: { value: string; onChange: (v: string) => void; t: TFunction }) {
+  const { i18n } = useTranslation();
+  const lang = i18n.language;
   const cur = countryByCode(value)?.cur ?? "IQD";
+  // القائمة تُرتَّب بلغة القارئ كذلك، مع تثبيت العراق أولاً — سوقنا الأول.
+  const list = useMemo(() => {
+    const named = COUNTRIES.map((c) => ({ c, label: countryName(c, lang) }));
+    const coll = new Intl.Collator(lang);
+    return named.sort((a, b) =>
+      a.c.code === "IQ" ? -1 : b.c.code === "IQ" ? 1
+      : a.c.code === "XX" ? 1 : b.c.code === "XX" ? -1
+      : coll.compare(a.label, b.label));
+  }, [lang]);
   return (
     <div>
       <label className="label">{t("auth.country", "دولة العيادة")}</label>
       <select data-country className="input" value={value} onChange={(e) => onChange(e.target.value)}>
-        {COUNTRIES.map((c) => (
+        {list.map(({ c, label }) => (
           <option key={c.code} value={c.code}>
-            {c.flag} {c.nameAr}
+            {c.flag} {label}
           </option>
         ))}
       </select>
       <p className="mt-1 text-2xs text-ink-subtle">
-        {t("auth.countryHint", { cur: currencyInfo(cur).nameAr, defaultValue: "سيعمل نظامك بالـ{{cur}} — وتقدر تغيّر العملة لاحقاً من الإعدادات." })}
+        {t("auth.countryHint", { cur: currencyName(cur, lang), defaultValue: "سيعمل نظامك بالـ{{cur}} — وتقدر تغيّر العملة لاحقاً من الإعدادات." })}
       </p>
     </div>
   );
@@ -231,6 +244,12 @@ function CountrySelect({ value, onChange, t }: { value: string; onChange: (v: st
  *  and forgot/reset password. Shown when VITE_SUPABASE_* are configured. */
 function SupabaseAuthCard() {
   const { t, i18n } = useTranslation();
+  useUrlLang(i18n.language);
+  // بلوغُ هذه الشاشة بنيّة تسجيل عيادة هو دخول القمع — يُسجَّل مرّة.
+  useEffect(() => {
+    const it = urlIntent();
+    if (it.portal === "clinic") track("signup_start", { new: it.signup }, true);
+  }, []);
   const { signUpEmail, signInEmail, resendConfirmation, sendPhoneOtp, verifyPhoneOtp, resetPassword, updatePassword, addRole, recovery, user, loading } = useAuth();
   const navigate = useNavigate();
   const toast = useToast();
@@ -245,8 +264,11 @@ function SupabaseAuthCard() {
     if (isSupabaseConfigured && supabase) void supabase.auth.signOut({ scope: "local" }).catch(() => {});
   }, [loading, user]);
 
-  const [mode, setMode] = useState<"signin" | "signup">("signin");
-  const [portal, setPortal] = useState<Portal>("owner");
+  // النيّة تأتي من الرابط: من ضغط «ابدأ مجاناً» بصفحة الهبوط يصل وهو ينوي
+  // **فتح عيادة جديدة**، فإسقاطه على «دخول مالك» يجعله يبحث عن الطريق مرّة
+  // أخرى — وأكثر الناس لا يبحثون، يغادرون.
+  const [mode, setMode] = useState<"signin" | "signup">(() => (urlIntent().signup ? "signup" : "signin"));
+  const [portal, setPortal] = useState<Portal>(() => urlIntent().portal);
   // When an existing email tries to sign up for a second role, we route them to
   // sign in and append this role to their account afterwards.
   const [pendingRole, setPendingRole] = useState<Portal | null>(null);
@@ -325,6 +347,7 @@ function SupabaseAuthCard() {
         const role: Role = portal === "clinic" ? "admin" : "owner";
         const co = portal === "clinic" ? countryByCode(country) : undefined;
         const res = await signUpEmail(email, password, name, role, { phone, city, country: co?.code, currency: co?.cur });
+        if (!res.error && portal === "clinic") track("signup_done", { via: "supabase" });
         if (res.error) { setError(res.error); return; }
         if (res.alreadyExists) {
           // Existing account → switch to sign-in and append this role after login
@@ -585,7 +608,7 @@ function SupabaseAuthCard() {
                   </motion.div>
                 ) : (
                 <>
-                <motion.form variants={staggerItem} onSubmit={submitAuth} className="space-y-3">
+                <motion.form variants={staggerItem} onSubmit={submitAuth} className="space-y-3" data-authmode={mode} data-authportal={portal}>
                   {mode === "signup" && (
                     <>
                       {portal === "clinic" && <CountrySelect value={country} onChange={setCountry} t={t} />}
@@ -636,17 +659,55 @@ function SupabaseAuthCard() {
   );
 }
 
+/* ============================================================================
+ * نيّة الزائر القادمة بالرابط.
+ *
+ * صفحة الهبوط تبيع للعيادات، ونقرة زرّها إجابةٌ على «منو أنت؟». فسؤاله
+ * ثانيةً هنا خطوةٌ زائدة بالقمع، وكل خطوة زائدة تُفقد جزءاً ممّن وصل.
+ * والرابط يحمل كذلك لغته: نطاق التطبيق قد ينفصل يوماً عن النطاق الرئيسي،
+ * وحينها لا يعبر المخزن المحلي بينهما — فتُقرأ اللغة من الرابط لا منه.
+ * ==========================================================================*/
+function urlIntent(): { portal: Portal; signup: boolean } {
+  try {
+    const q = new URLSearchParams(window.location.search);
+    return {
+      portal: (q.get("as") || "").toLowerCase() === "clinic" ? "clinic" : "owner",
+      signup: q.get("new") === "1",
+    };
+  } catch {
+    return { portal: "owner", signup: false };
+  }
+}
+
+/** لغة الرابط تُطبَّق مرّة عند الوصول — ولا تُطبَّق إن كانت هي الحالية. */
+function useUrlLang(current: string) {
+  useEffect(() => {
+    try {
+      const want = (new URLSearchParams(window.location.search).get("lang") || "").toLowerCase();
+      if (want && want !== current && want in LOCALES) setLang(want as Lang);
+    } catch { /* بلا رابط صالح — تبقى اللغة المحفوظة */ }
+    // مرّة واحدة عند الوصول: تبديل المستخدم اليدوي بعدها لا يُلغى.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+}
+
 export function Login() {
   return isSupabaseConfigured ? <SupabaseAuthCard /> : <DemoLogin />;
 }
 
 function DemoLogin() {
   const { t, i18n } = useTranslation();
+  useUrlLang(i18n.language);
+  // بلوغُ هذه الشاشة بنيّة تسجيل عيادة هو دخول القمع — يُسجَّل مرّة.
+  useEffect(() => {
+    const it = urlIntent();
+    if (it.portal === "clinic") track("signup_start", { new: it.signup }, true);
+  }, []);
   const { signInDemo, signInClinic, signInOwner } = useAuth();
   const navigate = useNavigate();
 
-  const [portal, setPortal] = useState<Portal>("owner");
-  const [mode, setMode] = useState<"signin" | "register">("signin");
+  const [portal, setPortal] = useState<Portal>(() => urlIntent().portal);
+  const [mode, setMode] = useState<"signin" | "register">(() => (urlIntent().signup ? "register" : "signin"));
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -740,6 +801,7 @@ function DemoLogin() {
       if (!name.trim() || !email.trim() || !password) return;
       const res = registerClinic({ name, email, password, city, phone, license });
       if (!res.ok) { setError(t("auth.emailTaken")); return; }
+      track("signup_done", { via: "local" });
       signInClinic(res.clinic);
       // بذر عملة الدولة فوراً (الوضع التجريبي بلا تأكيد بريد): نثبّت العيادة
       // النشطة أولاً حتى يكتب البذر على مفتاح تفضيلاتها الصحيح.
@@ -883,7 +945,7 @@ function DemoLogin() {
                   {isOwner && method === "phone" ? (
                     <PhoneOtpCard t={t} send={demoSendOtp} verify={demoVerifyOtp} />
                   ) : (
-                  <div className="space-y-3">
+                  <div className="space-y-3" data-authmode={mode === "register" ? "signup" : "signin"} data-authportal={portal}>
                     {mode === "register" && !isOwner && <CountrySelect value={country} onChange={setCountry} t={t} />}
                     {mode === "register" && (
                       <div>

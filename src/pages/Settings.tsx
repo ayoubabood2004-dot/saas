@@ -18,7 +18,7 @@ import { DEFAULT_RANGES, VITAL_KEYS, CBC_KEYS, rangeFor, type VitalKey } from "@
 
 const ALL_KEYS: VitalKey[] = [...VITAL_KEYS, ...CBC_KEYS];
 import { setVitalOverride, clearVitalOverrides, getDialCode, setDialCode, getClinicLogo, setClinicLogo, getClinicSocials, setClinicSocials, getClinicName, setClinicName, getPreSalePrint, setPreSalePrint, getResizableCart, setResizableCart, getFontScaleEnabled, setFontScaleEnabled, getDeliveryZones, setDeliveryZones, type DeliveryZone, getQtyPromos, setQtyPromos, promoTargetLabel, getCatalogShare, setCatalogShare, type QtyPromo, type PromoKind, type PromoMode, getCurrencyCode, setCurrencyCode, getPosV2, setPosV2 } from "@/lib/settings";
-import { CURRENCIES } from "@/lib/currency";
+import { CURRENCIES, currencyName } from "@/lib/currency";
 import { FONT_SCALES, getFontScale, setFontScale, applyFontScale, getCrispMode, setCrispMode, type FontScaleId } from "@/lib/fontScale";
 import { RECEIPT_WIDTHS, getReceiptWidth, setReceiptWidth, openReceiptCalibration } from "@/lib/printer";
 import { catalogStats } from "@/lib/catalog";
@@ -153,7 +153,7 @@ function SectionNav({ items }: { items: { id: SecId; icon: React.ReactNode; labe
 }
 
 export function Settings() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { user } = useAuth();
   const { can } = usePermissions();
   const isStaff = user?.role !== "owner";
@@ -256,7 +256,7 @@ export function Settings() {
               onChange={(e) => { setCurrencyCode(e.target.value); setCurrencyState(e.target.value); playSuccess(); }}
             >
               {Object.values(CURRENCIES).map((c) => (
-                <option key={c.code} value={c.code}>{c.nameAr} ({c.symAr})</option>
+                <option key={c.code} value={c.code}>{currencyName(c.code, i18n.language)} ({c.symAr})</option>
               ))}
             </select>
             <p className="text-xs text-ink-subtle mt-1.5">{t("settings.currencyHint", "كل المبالغ بالنظام (الكاشير، الفواتير، التقارير…) تُعرض بهذه العملة. الأرقام المخزّنة لا تتغيّر — يتغيّر الرمز فقط.")}</p>

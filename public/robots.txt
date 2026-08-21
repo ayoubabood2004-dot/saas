@@ -1,0 +1,16 @@
+User-agent: *
+Allow: /
+
+# مساحات المستخدم المسجَّل: لا قيمة لفهرستها، وبعضها روابط خاصة بزبون بعينه.
+Disallow: /login
+Disallow: /reception
+Disallow: /retail
+Disallow: /reports
+Disallow: /settings
+Disallow: /payroll
+Disallow: /staff
+Disallow: /admin
+Disallow: /t/
+Disallow: /pet/
+
+Sitemap: https://doctorvet.vet/sitemap.xml

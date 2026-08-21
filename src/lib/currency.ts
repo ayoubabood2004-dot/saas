@@ -92,6 +92,41 @@ export const countryByCode = (code: string): CountryInfo | undefined =>
 export const currencyInfo = (code: string): CurrencyInfo =>
   CURRENCIES[code.toUpperCase()] ?? CURRENCIES.USD;
 
+/* ── الأسماء بلغة القارئ ────────────────────────────────────────────────────
+ * أسماء الدول والعملات أعلاه عربيةٌ فقط، وهي تظهر بأول حقلٍ يواجه من يفتح
+ * حساباً. فمن يقرأ الصفحة بالإنجليزية كان يرى «العراق» بقائمةٍ إنجليزية.
+ * والحلّ ليس جدول ترجمةٍ نصونه بأنفسنا: المتصفّح يحمل هذه الأسماء بكل لغةٍ
+ * أصلاً (Intl.DisplayNames) — فنسأله، ونرجع للعربية إن لم يعرف.
+ * (EU وXX ليستا رمزَي دولة، فتبقيان على أسمائهما المكتوبة.) */
+const nameCache = new Map<string, string>();
+
+function displayName(kind: "region" | "currency", code: string, lang: string, fallback: string): string {
+  const key = `${kind}:${code}:${lang}`;
+  const hit = nameCache.get(key);
+  if (hit) return hit;
+  let out = fallback;
+  try {
+    const dn = new Intl.DisplayNames([lang], { type: kind });
+    out = dn.of(code) || fallback;
+    // بعض الرموز يرجعها المتصفّح كما هي حين يجهلها — الاسم العربي أوضح حينها.
+    if (out === code) out = fallback;
+  } catch { /* لغةٌ أو رمزٌ لا يعرفه المتصفّح — الاحتياط قائم */ }
+  nameCache.set(key, out);
+  return out;
+}
+
+/** اسم الدولة بلغة الواجهة. */
+export function countryName(c: CountryInfo, lang: string): string {
+  if (c.code.length !== 2 || c.code === "EU" || c.code === "XX") return c.nameAr;
+  return displayName("region", c.code, lang, c.nameAr);
+}
+
+/** اسم العملة بلغة الواجهة («دينار عراقي» / «Iraqi Dinar»). */
+export function currencyName(code: string, lang: string): string {
+  const info = currencyInfo(code);
+  return displayName("currency", info.code, lang, info.nameAr);
+}
+
 /* ---------------- العملة النشطة (عملة العيادة الحالية) ----------------------
  * تُضبط من settings.ts عند كل hydration/تعديل. القراءة الأولى قبل أي ضبط
  * تلتقط مرآة تفضيلات العيادة من localStorage مباشرة (نفس مفاتيح settings.ts

@@ -63,6 +63,12 @@ export default defineConfig({
           charts: ["recharts"],
           supabase: ["@supabase/supabase-js"],
           i18n: ["i18next", "react-i18next"],
+          // clsx و tailwind-merge يستعملهما cn() **و**recharts معاً. وبلا
+          // تسميتهما هنا يهبطان داخل حزمة الرسوم (لأنها أول من طالبهما)،
+          // فتصير نقطة الدخول تستورد منها — أي أن ٤٣٤KB من مكتبة رسوم
+          // تُعلَن modulepreload على **كل** صفحة، ومنها صفحة الهبوط التي لا
+          // ترسم مخططاً واحداً. تسميتهما بحزمةٍ صغيرة تقطع هذا الخيط.
+          utils: ["clsx", "tailwind-merge"],
         },
       },
     },

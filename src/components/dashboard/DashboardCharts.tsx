@@ -4,7 +4,7 @@
 // chart in this one module lets the Dashboard lazy-load it AFTER paint — the page
 // renders instantly with skeletons and the charts stream in a beat later.
 import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
-import { HealthCurve, type CurvePoint } from "@/components/ui";
+import { HealthCurve, type CurvePoint } from "@/components/ui/HealthCurve";
 import type { Species } from "@/types";
 
 export function SpeciesDonut({ data, colors }: { data: { species: Species; value: number }[]; colors: Record<Species, string> }) {

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- صفحةٌ واحدة عامة اليوم. اللغتان محتوىً واحد بنفس الرابط (تُبدَّل
+     بالواجهة)، فتُعلَنان بـhreflang لا برابطين — وإلا فهرسهما جوجل نسختين
+     متكرّرتين. -->
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
+        xmlns:xhtml="http://www.w3.org/1999/xhtml">
+  <url>
+    <loc>https://doctorvet.vet/</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://doctorvet.vet/" />
+    <xhtml:link rel="alternate" hreflang="ar" href="https://doctorvet.vet/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://doctorvet.vet/" />
+    <changefreq>weekly</changefreq>
+    <priority>1.0</priority>
+  </url>
+</urlset>

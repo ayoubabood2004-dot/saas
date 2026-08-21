@@ -3260,7 +3260,9 @@
     "cta": {
       "h2": "Ready to run your clinic better?",
       "sub": "Start free today — setup takes minutes, and the whole team picks it up fast.",
-      "btn": "Start free"
+      "btn": "Start free",
+      "start": "Start free — 14 days",
+      "reassure": "No card · no commitment · your data stays yours, export it any time"
     },
     "footer": {
       "rights": "All rights reserved"

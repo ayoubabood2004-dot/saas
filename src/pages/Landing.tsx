@@ -9,10 +9,22 @@ import {
 import { Logo, LogoMark } from "@/components/Logo";
 import { LanguagePicker } from "@/components/LanguagePicker";
 import { localeInfo } from "@/i18n";
+import { track } from "@/lib/track";
+
+/* ============================================================================
+ * وجهة كل زرّ بالصفحة.
+ *
+ * النقرة وعدٌ، والشاشة التالية تفي به أو تنقضه. صفحةٌ تبيع للعيادات ثم تهبط
+ * بالزائر على سؤال «مالك حيوان أم عيادة؟» تسأله عمّا أجاب عنه بفعله قبل
+ * ثانيتين. فالرابط يحمل ثلاثة أشياء: أنه عيادة، وأنه قادمٌ ليسجّل لا ليدخل،
+ * وبأي لغة كان يقرأ — واللغة تُحمَل صراحةً لأن نطاق التطبيق قد ينفصل يوماً
+ * فلا يعبر معه المخزن المحلي.
+ * ==========================================================================*/
+const startHref = (lang: string) => appUrl(`/login?as=clinic&new=1&lang=${encodeURIComponent(lang)}`);
 import { appUrl, appHostLabel } from "@/lib/appUrl";
 import { cn, formatNum, formatDec } from "@/lib/utils";
 import { PLANS } from "@/lib/plans";
-import { CURRENCIES, currencyInfo, guessCountry, fetchLiveRates, usdTo } from "@/lib/currency";
+import { CURRENCIES, currencyInfo, currencyName, guessCountry, fetchLiveRates, usdTo } from "@/lib/currency";
 
 /* ============================================================================
  * Landing — the public marketing page on the ROOT domain. Theme-aware and built
@@ -38,6 +50,9 @@ export function Landing() {
     return () => { document.title = prev; };
   }, [t]);
 
+  // زيارةٌ واحدة تُسجَّل مرّة، مهما أُعيد التصيير أو بُدِّلت اللغة.
+  useEffect(() => { track("page_view", undefined, true); }, []);
+
   return (
     <div dir={dir} className="min-h-screen bg-surface-1 font-sans text-ink antialiased">
       <Nav />
@@ -53,7 +68,7 @@ export function Landing() {
 
 /* ----------------------------------------------------------------- Nav ---- */
 function Nav() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [open, setOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   useEffect(() => {
@@ -82,9 +97,9 @@ function Nav() {
         </nav>
         <div className="flex items-center gap-2">
           <LanguagePicker />
-          <a href={appUrl("/login")} className="hidden rounded-full px-4 py-2 text-sm font-semibold text-ink-muted transition hover:text-ink sm:block">{t("landing.nav.login", "تسجيل الدخول")}</a>
-          <a href={appUrl("/login")} className="inline-flex items-center gap-1.5 rounded-full bg-brand-600 px-4 py-2 text-sm font-bold text-white shadow-soft transition hover:bg-brand-700 hover:shadow-raised">
-            {t("landing.nav.start", "ابدأ مجاناً")} <ArrowLeft size={15} className="rtl:rotate-0 ltr:-scale-x-100" />
+          <a href={appUrl(`/login?lang=${i18n.language}`)} className="hidden rounded-full px-4 py-2 text-sm font-semibold text-ink-muted transition hover:text-ink sm:block">{t("landing.nav.login", "تسجيل الدخول")}</a>
+          <a href={startHref(i18n.language)} onClick={() => track("cta_click", { at: "nav" })} className="inline-flex items-center gap-1.5 rounded-full bg-brand-600 px-4 py-2 text-sm font-bold text-white shadow-soft transition hover:bg-brand-700 hover:shadow-raised">
+            {t("landing.cta.start")} <ArrowLeft size={15} className="rtl:rotate-0 ltr:-scale-x-100" />
           </a>
           <button onClick={() => setOpen((v) => !v)} className="grid h-10 w-10 place-items-center rounded-full text-ink-muted md:hidden" aria-label={t("landing.nav.menu", "القائمة")}>
             {open ? <X size={20} /> : <Menu size={20} />}
@@ -96,7 +111,7 @@ function Nav() {
           {links.map((l) => (
             <a key={l.href} href={l.href} onClick={() => setOpen(false)} className="block rounded-xl px-3 py-3 font-semibold text-ink hover:bg-surface-2">{l.label}</a>
           ))}
-          <a href={appUrl("/login")} className="block rounded-xl px-3 py-3 font-semibold text-brand-700 dark:text-brand-300">{t("landing.nav.login", "تسجيل الدخول")}</a>
+          <a href={appUrl(`/login?lang=${i18n.language}`)} className="block rounded-xl px-3 py-3 font-semibold text-brand-700 dark:text-brand-300">{t("landing.nav.login", "تسجيل الدخول")}</a>
         </div>
       )}
     </header>
@@ -112,7 +127,7 @@ const REVEAL = {
 };
 
 function Hero() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   return (
     <section id="top" className="relative overflow-hidden">
       {/* Ambient brand glow */}
@@ -147,13 +162,23 @@ function Hero() {
             initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, delay: 0.19 }}
             className="mt-8 flex flex-wrap items-center justify-center gap-3 lg:justify-start"
           >
-            <a href={appUrl("/login")} className="inline-flex items-center gap-2 rounded-full bg-brand-600 px-6 py-3.5 text-base font-bold text-white shadow-soft transition hover:bg-brand-700 hover:shadow-raised active:scale-[0.98]">
-              {t("landing.hero.cta", "ابدأ مجاناً")} <ArrowLeft size={18} className="ltr:-scale-x-100" />
+            <a href={startHref(i18n.language)} onClick={() => track("cta_click", { at: "hero" })} className="inline-flex items-center gap-2 rounded-full bg-brand-600 px-6 py-3.5 text-base font-bold text-white shadow-soft transition hover:bg-brand-700 hover:shadow-raised active:scale-[0.98]">
+              {t("landing.cta.start")} <ArrowLeft size={18} className="ltr:-scale-x-100" />
             </a>
             <a href="#features" className="inline-flex items-center gap-2 rounded-full border border-line-strong bg-surface-1 px-6 py-3.5 text-base font-bold text-ink transition hover:bg-surface-2">
               {t("landing.hero.seeFeatures", "شاهد المميزات")}
             </a>
           </motion.div>
+
+          {/* المتردّد لا يقول «غالي»، بل يفكّر «شنو أخسر لو ما نفع؟». الجواب
+              مكانه تحت الزرّ لا مدفوناً أسفل صفحة الأسعار. */}
+          <motion.p
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.6, delay: 0.24 }}
+            className="mt-3 text-sm font-semibold text-ink-subtle"
+            data-reassure
+          >
+            {t("landing.cta.reassure")}
+          </motion.p>
           <motion.div
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.6, delay: 0.28 }}
             className="mt-7 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-sm font-semibold text-ink-subtle lg:justify-start"
@@ -593,14 +618,8 @@ function useVisitorCurrency() {
 function Pricing() {
   const { t, i18n } = useTranslation();
   const [annual, setAnnual] = useState(true);
-  // اسم العملة بلغة الزائر من Intl — بلا جدول أسماء ثانٍ يُترجَم ويتقادم.
-  const curName = (code: string) => {
-    try {
-      const n = new Intl.DisplayNames([i18n.language], { type: "currency" }).of(code);
-      if (n && n !== code) return n;
-    } catch { /* المتصفّح لا يدعمها — نسقط للاسم العربي */ }
-    return CURRENCIES[code]?.nameAr ?? code;
-  };
+  // اسم العملة بلغة الزائر — المُعرَّف مرّةً واحدة بـlib/currency.
+  const curName = (code: string) => currencyName(code, i18n.language);
   const fx = useVisitorCurrency();
   return (
     <section id="pricing" className="border-t border-line bg-surface-2/30 py-20">
@@ -687,13 +706,13 @@ function Pricing() {
                 ))}
               </ul>
               <a
-                href={appUrl("/login")}
+                href={startHref(i18n.language)} onClick={() => track("cta_click", { at: "plan" })}
                 className={cn(
                   "mt-6 inline-flex items-center justify-center gap-1.5 rounded-full px-5 py-3 text-sm font-bold transition active:scale-[0.98]",
                   p.popular ? "bg-brand-600 text-white shadow-soft hover:bg-brand-700 hover:shadow-raised" : "border border-line-strong bg-surface-1 text-ink hover:bg-surface-2",
                 )}
               >
-                {t("landing.pricing.startNow")} <ArrowLeft size={15} className="ltr:-scale-x-100" />
+                {t("landing.cta.start")} <ArrowLeft size={15} className="ltr:-scale-x-100" />
               </a>
             </motion.div>
           ))}
@@ -707,8 +726,8 @@ function Pricing() {
               <p className="font-display text-xl font-extrabold text-ink">{t("landing.pricing.trialTitle")}</p>
               <p className="mt-1 text-sm text-ink-muted">{t("landing.pricing.trialBody")}</p>
             </div>
-            <a href={appUrl("/login")} className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-brand-600 px-6 py-3.5 text-sm font-extrabold text-white shadow-soft transition hover:bg-brand-700 hover:shadow-raised active:scale-[0.98]">
-              {t("landing.pricing.trialCta")} <ArrowLeft size={16} className="ltr:-scale-x-100" />
+            <a href={startHref(i18n.language)} onClick={() => track("cta_click", { at: "trial" })} className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-brand-600 px-6 py-3.5 text-sm font-extrabold text-white shadow-soft transition hover:bg-brand-700 hover:shadow-raised active:scale-[0.98]">
+              {t("landing.cta.start")} <ArrowLeft size={16} className="ltr:-scale-x-100" />
             </a>
           </div>
         </motion.div>
@@ -723,7 +742,7 @@ function Pricing() {
 
 /* ------------------------------------------------------------- Final CTA --- */
 function FinalCTA() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   return (
     <section className="mx-auto max-w-6xl px-4 py-20 sm:px-6">
       <motion.div
@@ -739,8 +758,8 @@ function FinalCTA() {
             {t("landing.cta.h2")}
           </h2>
           <p className="mx-auto mt-3 max-w-xl text-lg text-white/85">{t("landing.cta.sub")}</p>
-          <a href={appUrl("/login")} className="mt-8 inline-flex items-center gap-2 rounded-full bg-white px-7 py-3.5 text-base font-extrabold text-brand-700 shadow-soft transition hover:shadow-raised active:scale-[0.98]">
-            {t("landing.cta.btn")} <ArrowLeft size={18} className="ltr:-scale-x-100" />
+          <a href={startHref(i18n.language)} onClick={() => track("cta_click", { at: "final" })} className="mt-8 inline-flex items-center gap-2 rounded-full bg-white px-7 py-3.5 text-base font-extrabold text-brand-700 shadow-soft transition hover:shadow-raised active:scale-[0.98]">
+            {t("landing.cta.start")} <ArrowLeft size={18} className="ltr:-scale-x-100" />
           </a>
         </div>
       </motion.div>
@@ -750,7 +769,7 @@ function FinalCTA() {
 
 /* --------------------------------------------------------------- Footer ---- */
 function Footer() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   return (
     <footer className="border-t border-line bg-surface-2/40">
       <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 px-4 py-10 sm:flex-row sm:px-6">
@@ -758,7 +777,7 @@ function Footer() {
         <nav className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-sm font-semibold text-ink-muted">
           <a href="#features" className="hover:text-ink">{t("landing.nav.features")}</a>
           <a href="#pricing" className="hover:text-ink">{t("landing.nav.pricing")}</a>
-          <a href={appUrl("/login")} className="hover:text-ink">{t("landing.nav.login")}</a>
+          <a href={appUrl(`/login?lang=${i18n.language}`)} className="hover:text-ink">{t("landing.nav.login")}</a>
         </nav>
         <p className="text-2xs text-ink-subtle">© {new Date().getFullYear()} doctorVet · {t("landing.footer.rights")}</p>
       </div>
