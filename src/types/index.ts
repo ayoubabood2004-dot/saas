@@ -519,7 +519,10 @@ export type PaymentMethod = "cash" | "card" | "transfer";
  *  `at` is the ISO datetime the money was actually received; it is set on later debt
  *  installments (settlements) so the cash lands on the collection day, not the sale day.
  *  Absent on the original checkout legs (they fall back to the invoice's own date). */
-export interface PaymentSplit { method: PaymentMethod; amount: number; at?: string | null }
+/** ساقُ تحصيلٍ واحدة. **المبلغ السالب يعني تصحيح تحصيل** (قيدٌ عكسي، هجرة
+ *  0113): مالٌ سُجّل واصلاً ولم يصل، فيُعكَس من نفس الجيب الذي دخل منه.
+ *  والإشارة وحدها تميّزه — بلا عَلَمٍ إضافي يمكن أن يُنسى ضبطه. */
+export interface PaymentSplit { method: PaymentMethod; amount: number; at?: string | null; note?: string | null }
 /** Settlement state of a sale relative to its total. Derived from amount_paid vs total. */
 export type PaymentStatus = "paid" | "partial" | "unpaid";
 export type DiscountType = "percent" | "fixed";

@@ -433,7 +433,21 @@
     "dEditReasonQ1": "Customer added an item",
     "dEditReasonQ2": "Customer changed the quantity",
     "dEditReasonQ3": "Customer removed an item",
-    "dEditReasonQ4": "Fixing an order mistake"
+    "dEditReasonQ4": "Fixing an order mistake",
+    "receiptFix": "Receipt correction",
+    "receiptFixBtn": "Correct receipt — the money didn't all arrive",
+    "receiptFixTitle": "Receipt correction",
+    "receiptFixHint": "The invoice does not change: same lines, same total, same printed number. Only the amount received drops, and the rest becomes a debt on the customer in the debt ledger.",
+    "receiptFixNoCustomer": "This sale has no customer name — a debt needs an owner, so it can't be corrected.",
+    "receiptFixAmount": "How much never arrived?",
+    "receiptFixAll": "None of it arrived",
+    "receiptFixHalf": "Half arrived",
+    "receiptFixPaidNow": "Recorded as received now: {{v}}",
+    "receiptFixReason": "Reason",
+    "receiptFixReasonPh": "e.g. customer paid half, the rest is owed",
+    "receiptFixNewDue": "Debt on {{n}}",
+    "receiptFixSave": "Record the correction",
+    "receiptFixOk": "Correction recorded — the rest is now a debt on the customer"
   },
   "promos": {
     "title": "Offers management",
@@ -2251,7 +2265,8 @@
       "next": "Next day",
       "jumpToday": "Back to today",
       "range": "Range view"
-    }
+    },
+    "receiptFix": "Receipt correction"
   },
   "act": {
     "title": "Activity log",

@@ -26,8 +26,14 @@ export const paymentStatusOf = (inv: Invoice): PaymentStatus => {
 /** A sale is a live debt when it isn't refunded and still has a balance due. */
 export const isDebt = (inv: Invoice): boolean => (inv.status ?? "paid") !== "refunded" && dueOf(inv) > EPS;
 
-/** One actual money receipt: an amount that physically arrived, at a moment. */
-export interface Receipt { amount: number; at: string; method: string | null }
+/** One actual money receipt: an amount that physically arrived, at a moment.
+ *  A NEGATIVE amount is a receipt correction (0113): money booked as received
+ *  that never arrived. It must survive into the reports, because that is the
+ *  only way the drawer and the day both come back to the truth. */
+export interface Receipt { amount: number; at: string; method: string | null; note?: string | null }
+
+/** ساقٌ سالبة = تصحيح تحصيل. */
+export const isCorrectionLeg = (l: { amount?: number | null }): boolean => (l.amount ?? 0) < -EPS;
 
 /**
  * The CASH-BASIS view of a sale: when did money actually arrive, and how much.
@@ -47,7 +53,9 @@ export function receiptsOf(inv: Invoice): Receipt[] {
     const paid = paidOf(inv);
     return paid > EPS ? [{ amount: paid, at: inv.created_at, method: inv.payment_method ?? null }] : [];
   }
+  // الشرط بالمقدار لا بالإشارة: ترشيحٌ بـ`> 0` كان يُسقط سطر التصحيح بصمت،
+  // فيبقى المال المسجَّل خطأً محسوباً بالتقارير رغم عكسه على الفاتورة.
   return legs
-    .filter((l) => (l.amount ?? 0) > EPS)
-    .map((l) => ({ amount: l.amount, at: l.at ?? inv.created_at, method: l.method ?? null }));
+    .filter((l) => Math.abs(l.amount ?? 0) > EPS)
+    .map((l) => ({ amount: l.amount, at: l.at ?? inv.created_at, method: l.method ?? null, note: l.note ?? null }));
 }

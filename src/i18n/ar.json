@@ -433,7 +433,21 @@
     "dEditReasonQ1": "الزبون أضاف صنفاً",
     "dEditReasonQ2": "الزبون غيّر الكمية",
     "dEditReasonQ3": "الزبون ألغى صنفاً",
-    "dEditReasonQ4": "تصحيح غلط بالطلب"
+    "dEditReasonQ4": "تصحيح غلط بالطلب",
+    "receiptFix": "تصحيح تحصيل",
+    "receiptFixBtn": "تصحيح تحصيل — المبلغ ما وصل كامل",
+    "receiptFixTitle": "تصحيح تحصيل",
+    "receiptFixHint": "الفاتورة ما تتغيّر: نفس البنود ونفس المجموع ونفس الرقم المطبوع. ينزل المدفوع بس، والباقي يصير ديناً على الزبون بسجل الديون.",
+    "receiptFixNoCustomer": "هذي البيعة بلا اسم زبون — والدين لازمه صاحب. ما ينفع تصحيحها.",
+    "receiptFixAmount": "شكد المبلغ الي ما وصل؟",
+    "receiptFixAll": "ما وصل ولا دينار",
+    "receiptFixHalf": "وصل النص",
+    "receiptFixPaidNow": "المسجَّل واصلاً الآن: {{v}}",
+    "receiptFixReason": "السبب",
+    "receiptFixReasonPh": "مثال: الزبون دفع النص وباقي عليه",
+    "receiptFixNewDue": "الدين على {{n}}",
+    "receiptFixSave": "سجّل التصحيح",
+    "receiptFixOk": "انسجّل التصحيح — والباقي صار ديناً على الزبون"
   },
   "promos": {
     "title": "إدارة العروض",
@@ -2251,7 +2265,8 @@
       "next": "اليوم التالي",
       "jumpToday": "الرجوع إلى اليوم",
       "range": "عرض فترة"
-    }
+    },
+    "receiptFix": "تصحيح تحصيل"
   },
   "act": {
     "title": "سجل الحركات",

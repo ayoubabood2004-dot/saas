@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Search, Receipt, User, Printer, RotateCcw, Trash2, TrendingUp, Banknote, CreditCard,
-  ArrowLeftRight, Package, AlertTriangle, CheckCircle2, Wallet, Pencil, Check, Loader2, Plus, X, StickyNote, UserCheck,
+  ArrowLeftRight, Package, AlertTriangle, CheckCircle2, Wallet, Pencil, Check, Loader2, Plus, X, StickyNote, UserCheck, Undo2,
 } from "lucide-react";
 import type { Invoice, InvoiceItem, PaymentMethod, PaymentSplit } from "@/types";
 import { repo } from "@/lib/repo";
@@ -156,6 +156,7 @@ export function InvoiceDetail({ invoice, onClose, onChanged, setOpen }: {
   const [payBusy, setPayBusy] = useState(false);
   const [editLegs, setEditLegs] = useState<PaymentSplit[] | null>(null);
   const [legsBusy, setLegsBusy] = useState(false);
+  const [fixOpen, setFixOpen] = useState(false);
   // اسم البائع (من كاش الكادر) — يظهر أعلى التفاصيل حتى يُعرف منو باعها.
   const [sellerName, setSellerName] = useState<string | null>(null);
   const staffId = invoice?.staff_id ?? null;
@@ -189,6 +190,12 @@ export function InvoiceDetail({ invoice, onClose, onChanged, setOpen }: {
   // Split payment: show each leg when more than one method settled the bill.
   const payLegs = (invoice.payment_details ?? []).filter((p) => p && p.method && Number(p.amount) > 0);
   const isSplit = payLegs.length > 1;
+  /** سطور التصحيح (السالبة) — تُعرَض وحدها ولا تدخل توزيع طرق الدفع. */
+  const fixLegs = (invoice.payment_details ?? []).filter((p) => p && Number(p.amount) < 0);
+  // التصحيح متاح للمدير وحده، على فاتورة حيّة، فيها مالٌ مسجَّل، وباسم زبون:
+  // الباقي بعده يصير ديناً، والدين بلا صاحبٍ مطلوبٌ لا مَدين له.
+  const customerOf = ((invoice.customer_name ?? "").trim() || (invoice.customer_phone ?? "").trim()) || null;
+  const canFixReceipt = can("deleteInvoices") && !refunded && paidOf(invoice) > 0;
 
   const refund = async () => {
     if (busy) return;
@@ -341,6 +348,23 @@ export function InvoiceDetail({ invoice, onClose, onChanged, setOpen }: {
               <div className="flex items-center justify-between font-bold text-warn-700 dark:text-warn-300"><span>{t("retail.remainingDue", "المبلغ المتبقي")}</span><span className="tabular-nums">{money(dueOf(invoice))}</span></div>
             </div>
           )}
+
+          {/* أثر التصحيح ظاهرٌ على الفاتورة نفسها: قيدٌ عكسيّ يُخفى هو قيدٌ
+              يعود ليصير سؤالاً بعد شهر. */}
+          {fixLegs.length > 0 && (
+            <div className="space-y-1 rounded-lg border border-danger-200 bg-danger-50/60 px-2.5 py-1.5 text-2xs dark:border-danger-500/30 dark:bg-danger-500/10" data-invfixes>
+              {fixLegs.map((l, i) => (
+                <div key={i} className="flex items-start justify-between gap-2">
+                  <span className="min-w-0 text-danger-700 dark:text-danger-300">
+                    <b>{t("retail.receiptFix", "تصحيح تحصيل")}</b>
+                    {l.note && <i className="block not-italic text-ink-subtle">{l.note}</i>}
+                    {l.at && <i className="block not-italic text-ink-subtle">{new Date(l.at).toLocaleString(i18n.language === "ar" ? "ar-IQ" : "en-GB")}</i>}
+                  </span>
+                  <span className="shrink-0 font-semibold tabular-nums text-danger-700 dark:text-danger-300">−{money(Math.abs(l.amount))}</span>
+                </div>
+              ))}
+            </div>
+          )}
           <div className="flex items-center justify-between text-xs text-ink-subtle">
             <span className="flex items-center gap-2">
               <span className="text-ink-subtle">{t("retail.payMethodLabel", "طريقة الدفع")}</span>
@@ -387,6 +411,12 @@ export function InvoiceDetail({ invoice, onClose, onChanged, setOpen }: {
           <Button variant="secondary" leftIcon={<Printer size={16} />} onClick={() => print(invoice, "a4", { items, onCounted: afterPrint })}>{t("retail.printA4", "Print A4")}</Button>
           <Button variant="secondary" leftIcon={<Printer size={16} />} onClick={() => print(invoice, "thermal", { items, onCounted: afterPrint })}>{t("retail.printReceipt", "Receipt 80mm")}</Button>
         </div>
+        {canFixReceipt && (
+          <Button variant="secondary" className="w-full" leftIcon={<Undo2 size={16} />} data-invfixopen
+            onClick={() => { playTap(); setFixOpen(true); }}>
+            {t("retail.receiptFixBtn", "تصحيح تحصيل — المبلغ ما وصل كامل")}
+          </Button>
+        )}
         <div className="flex items-center gap-2">
           {!refunded && (
             <Button variant="outline" className="flex-1" loading={busy === "refund"} leftIcon={<RotateCcw size={16} />} onClick={refund}>{t("retail.refund", "Refund")}</Button>
@@ -400,6 +430,114 @@ export function InvoiceDetail({ invoice, onClose, onChanged, setOpen }: {
         {!canDelete && !refunded && (
           <p className="flex items-center gap-1.5 text-2xs text-ink-subtle"><AlertTriangle size={12} /> {t("retail.deleteAdminOnly", "Only clinic admins can permanently delete invoices.")}</p>
         )}
+
+        {fixOpen && (
+          <ReceiptFixDialog
+            invoice={invoice}
+            customer={customerOf}
+            onClose={() => setFixOpen(false)}
+            onDone={(updated) => { setFixOpen(false); setOpen(updated); onChanged(); }}
+          />
+        )}
+      </div>
+    </Modal>
+  );
+}
+
+/* ============================================================================
+ * تصحيح التحصيل — قيدٌ عكسيّ لا تعديل.
+ *
+ * الفاتورة صحيحة: هي تقول ما بِيع وبأي سعر. الخطأ بسجلّ التحصيل وحده — مالٌ
+ * سُجّل واصلاً ولم يصل. فلا نلمس البنود ولا المجموع ولا رقم الفاتورة المطبوع
+ * بيد الزبون؛ نضيف سطر تحصيلٍ سالباً، فينزل المدفوع ويظهر الباقي ديناً على
+ * الزبون تلقائياً. أثرٌ يبقى، لا محوٌ يخفي.
+ * ==========================================================================*/
+function ReceiptFixDialog({ invoice, customer, onClose, onDone }: {
+  invoice: Invoice; customer: string | null;
+  onClose: () => void; onDone: (updated: Invoice) => void;
+}) {
+  const { t } = useTranslation();
+  const toast = useToast();
+  const paid = paidOf(invoice);
+  const [amount, setAmount] = useState("");
+  const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const cut = round2(Number(amount) || 0);
+  const valid = cut > 0 && cut <= paid && reason.trim().length >= 3 && !!customer;
+  const newPaid = round2(paid - cut);
+  const newDue = round2(invoice.total - newPaid);
+
+  const submit = async () => {
+    if (!valid || busy) return;
+    setBusy(true);
+    try {
+      const updated = await repo.correctInvoiceReceipt(invoice.id, cut, reason.trim());
+      playSuccess();
+      toast.success(t("retail.receiptFixOk", "انسجّل التصحيح — والباقي صار ديناً على الزبون"));
+      onDone(updated ?? invoice);
+    } catch (e) {
+      playWarning();
+      toast.error(describeDbError(e, t), e instanceof Error ? e.message : undefined);
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <Modal open onClose={onClose} title={t("retail.receiptFixTitle", "تصحيح تحصيل")}>
+      <div className="space-y-3.5 p-1">
+        <p className="rounded-xl bg-surface-2 p-2.5 text-2xs leading-relaxed text-ink-muted">
+          {t("retail.receiptFixHint", "الفاتورة ما تتغيّر: نفس البنود ونفس المجموع ونفس الرقم المطبوع. ينزل المدفوع بس، والباقي يصير ديناً على الزبون بسجل الديون.")}
+        </p>
+
+        {!customer && (
+          <p className="flex items-start gap-1.5 rounded-xl bg-warn-50 p-2.5 text-2xs text-warn-700 dark:bg-warn-500/10 dark:text-warn-300">
+            <AlertTriangle size={13} className="mt-0.5 shrink-0" />
+            {t("retail.receiptFixNoCustomer", "هذي البيعة بلا اسم زبون — والدين لازمه صاحب. ما ينفع تصحيحها.")}
+          </p>
+        )}
+
+        <div>
+          <label className="label">{t("retail.receiptFixAmount", "شكد المبلغ الي ما وصل؟")}</label>
+          <input className="input" inputMode="numeric" data-invfixamount autoFocus
+            value={amount} onChange={(e) => setAmount(e.target.value.replace(/[^\d.]/g, ""))}
+            placeholder={String(Math.round(paid / 2))} />
+          <div className="mt-1.5 flex flex-wrap gap-1.5">
+            {[0.5, 1].map((f) => (
+              <button key={f} type="button" data-invfixquick={f}
+                className="chip bg-surface-2 text-2xs text-ink-muted transition hover:text-ink"
+                onClick={() => { playTap(); setAmount(String(round2(paid * f))); }}>
+                {f === 1 ? t("retail.receiptFixAll", "ما وصل ولا دينار") : t("retail.receiptFixHalf", "وصل النص")}
+              </button>
+            ))}
+          </div>
+          <p className="mt-1.5 text-2xs text-ink-subtle">
+            {t("retail.receiptFixPaidNow", "المسجَّل واصلاً الآن: {{v}}", { v: money(paid) })}
+          </p>
+        </div>
+
+        <div>
+          <label className="label">{t("retail.receiptFixReason", "السبب")} <span className="text-danger-600">*</span></label>
+          <input className="input" value={reason} data-invfixreason
+            onChange={(e) => setReason(e.target.value)}
+            placeholder={t("retail.receiptFixReasonPh", "مثال: الزبون دفع النص وباقي عليه")} />
+        </div>
+
+        {cut > 0 && cut <= paid && (
+          <div className="space-y-1 rounded-xl border border-line bg-surface-2 p-2.5 text-xs" data-invfixpreview>
+            <div className="flex justify-between text-ink-muted">
+              <span>{t("retail.paidSoFar", "المدفوع")}</span>
+              <span className="tabular-nums">{money(paid)} → <b className="text-ink">{money(newPaid)}</b></span>
+            </div>
+            <div className="flex justify-between font-bold text-warn-700 dark:text-warn-300">
+              <span>{t("retail.receiptFixNewDue", "الدين على {{n}}", { n: customer ?? "—" })}</span>
+              <span className="tabular-nums">{money(newDue)}</span>
+            </div>
+          </div>
+        )}
+
+        <Button className="w-full" disabled={!valid} loading={busy} onClick={submit} data-invfixsave>
+          {t("retail.receiptFixSave", "سجّل التصحيح")}
+        </Button>
       </div>
     </Modal>
   );

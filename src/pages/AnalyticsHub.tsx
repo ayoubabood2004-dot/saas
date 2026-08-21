@@ -303,21 +303,27 @@ export function AnalyticsHub() {
   // back to the invoice date for the original checkout legs. This makes money collected
   // today from settling an OLD debt land in today's drawer & movements — not the sale day.
   const collectionsInRange = useMemo(() => {
-    const out: { inv: Invoice; method: PaymentMethod; amount: number; at: string; settlement: boolean }[] = [];
+    const out: { inv: Invoice; method: PaymentMethod; amount: number; at: string; settlement: boolean; correction: boolean; note: string | null }[] = [];
     for (const inv of invoices) {
       if ((inv.status ?? "paid") === "refunded") continue;
       const legs = inv.payment_details;
       if (Array.isArray(legs) && legs.length) {
         for (const p of legs) {
-          if (!p || !p.method || !(Number(p.amount) > 0)) continue;
+          // بالمقدار لا بالإشارة: ساقٌ سالبة هي **تصحيح تحصيل** (0113)، ولو
+          // أُسقطت هنا لبقي مالٌ لم يصل محسوباً بالصندوق وبإغلاق اليوم.
+          if (!p || !p.method || !(Math.abs(Number(p.amount)) > 0)) continue;
+          const amount = Number(p.amount);
           const at = p.at ?? inv.created_at;
           const tm = new Date(at).getTime();
-          if (tm >= lo && tm <= hi && tsOk(at)) out.push({ inv, method: p.method, amount: Number(p.amount), at, settlement: !!p.at });
+          if (tm >= lo && tm <= hi && tsOk(at)) out.push({
+            inv, method: p.method, amount, at,
+            settlement: !!p.at && amount > 0, correction: amount < 0, note: p.note ?? null,
+          });
         }
       } else if (inv.payment_method) {
         // Legacy single-method sale (no leg history): one implicit leg at the sale date.
         const tm = new Date(inv.created_at).getTime();
-        if (tm >= lo && tm <= hi && tsOk(inv.created_at)) out.push({ inv, method: inv.payment_method, amount: inv.total, at: inv.created_at, settlement: false });
+        if (tm >= lo && tm <= hi && tsOk(inv.created_at)) out.push({ inv, method: inv.payment_method, amount: inv.total, at: inv.created_at, settlement: false, correction: false, note: null });
       }
     }
     return out;
@@ -356,13 +362,17 @@ export function AnalyticsHub() {
   // (on the day the cash was received), so "حركات اليوم" shows a debt was settled today.
   // They carry no sales revenue/profit — the original sale was already booked on its day.
   const settlementRows = useMemo<LedgerRow[]>(() => collectionsInRange
-    .filter((c) => c.settlement)
+    .filter((c) => c.settlement || c.correction)
     .map((c, i) => ({
       kind: "settlement" as const,
-      id: `${c.inv.id}::settle::${c.at}::${i}`, ref: invoiceNo(c.inv.id), when: c.at, whenMs: new Date(c.at).getTime(),
+      id: `${c.inv.id}::${c.correction ? "fix" : "settle"}::${c.at}::${i}`,
+      ref: invoiceNo(c.inv.id), when: c.at, whenMs: new Date(c.at).getTime(),
       client: (c.inv.customer_name ?? "").trim() || t("rpt.walkIn", "عميل نقدي"),
       staff: "—",
-      items: t("rpt.debtSettlement", "تسديد دين"),
+      // التصحيح يُعرَض بسببه لا بعنوانٍ عام: صفٌّ سالب بلا سبب سؤالٌ مفتوح.
+      items: c.correction
+        ? `${t("rpt.receiptFix", "تصحيح تحصيل")}${c.note ? ` — ${c.note}` : ""}`
+        : t("rpt.debtSettlement", "تسديد دين"),
       method: t(`rpt.pay.${c.method}`, c.method),
       total: c.amount, discount: 0, profit: 0, refunded: false,
     })), [collectionsInRange, t]);

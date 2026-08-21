@@ -7,6 +7,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, AppointmentStatus, ClinicInfo, PublicStaff, DailyNote, TreatmentEntry, Admission, Branch, Reminder, Product, Company, CompanySection, Purchase, PurchaseItem, PurchasePayment, PurchaseDraftLine, PurchaseMeta, Courier, DeliveryOrder, PetMovement, DemoDB, Invoice, InvoiceItem, CheckoutItem, SaleMeta, Customer, DiscountType, PaymentMethod, PaymentSplit, WhatsAppMessage, AuditEntry, LoginEvent, PetNote, Expense, ClinicVisit , Surgery, LabResult, LabDeviceLink, LabDeviceInbox, LabStatusValue, PetProblem, CareEntry, FeatureRequest, GeneratedBarcode, StoreProfile, StoreOrder, StoreOrderItem, StoreFrontInfo, StoreCatalogItem, Journey, JourneyEvent, JourneyKind, JourneyStage, JourneyPublicView, EditLine } from "@/types";
 import type { PayrollPolicyDTO, StaffComp, StaffRecurring, PayrollRun, Payslip, PayslipLine, StaffLoan, StaffLoanEvent, PayslipDraft, PayMethod } from "@/types";
 import * as PD from "./payrollDemo";
+import { paidOf, round2 } from "./debt";
 import { isValidSlug, normalizeSlug, demoOrderNo } from "./storeLib";
 import { journeyToken, OWNER_REACTIONS } from "./journey";
 import { getClinicName, getClinicLogo, getClinicSocials } from "./settings";
@@ -1679,10 +1680,47 @@ const demoRepo = {
     if (inv.status === "refunded") throw new Error("invoice refunded");
     const clean = legs.filter((l) => l && l.method && Number(l.amount) > 0);
     if (clean.length) {
-      inv.payment_details = clean;
+      // سطور التصحيح (السالبة) تُحفظ كما هي: إعادة توزيع السِّيَق تخصّ ما
+      // وصل فعلاً، وإسقاطُ عكسٍ سابق هنا يعيد للفاتورة مالاً لم يصل.
+      const fixes = (inv.payment_details ?? []).filter((l) => Number(l.amount) < 0);
+      inv.payment_details = [...clean, ...fixes];
       inv.payment_method = clean.reduce((b, p) => (p.amount > b.amount ? p : b), clean[0]).method;
       saveDB(db);
     }
+    return inv;
+  },
+  /** تصحيح تحصيل (0113): مالٌ سُجّل واصلاً ولم يصل. الفاتورة لا تتغيّر —
+   *  يُضاف سطر تحصيلٍ سالب فينزل المدفوع ويظهر الباقي ديناً تلقائياً.
+   *  الحُرّاس هنا نسخة طبق الأصل من حُرّاس دالة الخادم: حارسٌ لا يوجد
+   *  بالوضع التجريبي هو حارسٌ لم يُفحص. */
+  async correctInvoiceReceipt(invoiceId: string, amount: number, reason: string, method?: PaymentMethod | null): Promise<Invoice | undefined> {
+    const db = loadDB();
+    const inv = (db.invoices ?? []).find((x) => x.id === invoiceId);
+    if (!inv) throw new Error("invoice not found");
+    if (inv.status === "refunded") throw new Error("invoice refunded");
+    if ((reason ?? "").trim().length < 3) throw new Error("reason required");
+    const who = (inv.customer_name ?? "").trim() || (inv.customer_phone ?? "").trim();
+    if (!who) throw new Error("customer required");
+    const cut = round2(Number(amount));
+    if (!(cut > 0)) throw new Error("bad amount");
+    if (cut > paidOf(inv)) throw new Error("above collected");
+
+    const legs = [...(inv.payment_details ?? [])];
+    const dominant = legs.filter((l) => l.amount > 0).sort((a, b) => b.amount - a.amount)[0]?.method;
+    const m = (method ?? dominant ?? inv.payment_method ?? "cash") as PaymentMethod;
+    // البيعة البسيطة تُخزَّن بلا سِيَق، والتقارير تشتقّ منها ساقاً ضمنية ما
+    // دامت المصفوفة فارغة. إضافةُ السالب فوق الفراغ تُسقط تلك الضمنية فيبقى
+    // سالبٌ وحده. نُثبّت الأصل صراحةً أولاً ثم نعكس عليه.
+    const posSum = round2(legs.filter((l) => l.amount > 0).reduce((s2, l) => s2 + l.amount, 0));
+    const wasPaid = paidOf(inv);
+    if (posSum < wasPaid) {
+      legs.push({ method: (inv.payment_method ?? m) as PaymentMethod, amount: round2(wasPaid - posSum), at: inv.created_at });
+    }
+    inv.payment_details = [...legs, { method: m, amount: -cut, at: new Date().toISOString(), note: reason.trim() }];
+    inv.amount_paid = Math.max(0, round2(wasPaid - cut));
+    const pos = inv.payment_details.filter((l) => l.amount > 0);
+    if (pos.length) inv.payment_method = pos.reduce((b, p) => (p.amount > b.amount ? p : b), pos[0]).method;
+    saveDB(db);
     return inv;
   },
   /** Distinct walk-in customers seen on past invoices, most-recent first. */
@@ -1842,6 +1880,7 @@ const DEMO_ACTIVITY_MAP: Record<string, { entity: string; action: "INSERT" | "UP
   checkout: { entity: "invoices", action: "INSERT" },
   retailCheckout: { entity: "invoices", action: "INSERT" },
   settleInvoice: { entity: "invoices", action: "UPDATE" },
+  correctInvoiceReceipt: { entity: "invoices", action: "UPDATE" },
   editInvoiceLines: { entity: "invoices", action: "UPDATE" },
   refundInvoice: { entity: "invoices", action: "UPDATE" },
   setInvoicePaymentMethod: { entity: "invoices", action: "UPDATE" },
@@ -2807,8 +2846,18 @@ const supabaseRepo: typeof demoRepo = {
     if (inv.status === "refunded") throw new Error("invoice refunded");
     const clean = (legs as PaymentSplit[]).filter((l) => l && l.method && Number(l.amount) > 0);
     if (!clean.length) return inv;
+    const fixes = (inv.payment_details ?? []).filter((l) => Number(l.amount) < 0);
     const dominant = clean.reduce((b, p) => (p.amount > b.amount ? p : b), clean[0]).method;
-    return need<Invoice>(await sbc().from("invoices").update({ payment_details: clean, payment_method: dominant }).eq("id", invoiceId).select().single());
+    return need<Invoice>(await sbc().from("invoices")
+      .update({ payment_details: [...clean, ...fixes], payment_method: dominant })
+      .eq("id", invoiceId).select().single());
+  },
+  async correctInvoiceReceipt(invoiceId, amount, reason, method) {
+    const { data, error } = await sbc().rpc("correct_invoice_receipt", {
+      p_invoice: invoiceId, p_amount: amount, p_reason: reason, p_method: method ?? null,
+    });
+    if (error) throw error;
+    return data as Invoice;
   },
   async searchCustomers(query, clinicId) {
     let q = sbc().from("invoices").select("customer_name,customer_phone,created_at").order("created_at", { ascending: false }).limit(300);

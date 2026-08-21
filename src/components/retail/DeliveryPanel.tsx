@@ -10,6 +10,7 @@ import type { Invoice, Courier, DeliveryOrder } from "@/types";
 import { repo } from "@/lib/repo";
 import { useBranchState, matchesBranch } from "@/lib/branchStore";
 import { useAuth } from "@/contexts/AuthContext";
+import { usePermissions } from "@/hooks/usePermissions";
 import { Modal } from "@/components/Modal";
 import { DeliveryEditDialog } from "./DeliveryEditDialog";
 import { Button, Badge, useToast } from "@/components/ui";
@@ -46,6 +47,9 @@ export function DeliveryPanel({ invoices, clinicId, onChanged }: { invoices: Inv
   const { t } = useTranslation();
   const toast = useToast();
   const { user } = useAuth();
+  // تعديل بنود الفاتورة صار للمدير على الخادم (0113) — والزرّ يتبعه، وإلا
+  // ضغطه الموظف فرجع بخطأ صلاحية بلا سبب مفهوم.
+  const canEditLines = usePermissions().can("deleteInvoices");
   // Branch lens (multi-branch clinics): the board shows the active branch's
   // orders plus unassigned ones — same rule as the Master calendar.
   const { branches, active: activeBranch } = useBranchState(user?.clinic_id ?? user?.id ?? clinicId);
@@ -224,7 +228,7 @@ export function DeliveryPanel({ invoices, clinicId, onChanged }: { invoices: Inv
                     actions={
                       <>
                         <Button size="sm" leftIcon={<Send size={14} />} onClick={() => { playTap(); setAssigning(o); }}>{t("retail.deliveryDispatch", "إرسال مع سائق")}</Button>
-                        <Button size="sm" variant="secondary" leftIcon={<PencilLine size={14} />} onClick={() => openEdit(o)}>{t("retail.dEditBtn", "تعديل الطلب")}</Button>
+                        {canEditLines && <Button size="sm" variant="secondary" leftIcon={<PencilLine size={14} />} onClick={() => openEdit(o)}>{t("retail.dEditBtn", "تعديل الطلب")}</Button>}
                         <Button size="sm" variant="secondary" leftIcon={<Undo2 size={14} />} onClick={() => returnOrder(o)}>{t("retail.deliveryCancel", "إلغاء الطلب")}</Button>
                       </>
                     } />
@@ -262,7 +266,7 @@ export function DeliveryPanel({ invoices, clinicId, onChanged }: { invoices: Inv
                             actions={
                               <>
                                 <Button size="sm" leftIcon={<CheckCircle2 size={14} />} onClick={() => void deliver(o)}>{t("retail.deliveryReceived", "استلمنا الفلوس")}</Button>
-                                <Button size="sm" variant="secondary" leftIcon={<PencilLine size={14} />} onClick={() => openEdit(o)}>{t("retail.dEditBtn", "تعديل الطلب")}</Button>
+                                {canEditLines && <Button size="sm" variant="secondary" leftIcon={<PencilLine size={14} />} onClick={() => openEdit(o)}>{t("retail.dEditBtn", "تعديل الطلب")}</Button>}
                                 <Button size="sm" variant="secondary" leftIcon={<Undo2 size={14} />} onClick={() => void returnOrder(o)}>{t("retail.deliveryReturned", "الطلب رجع")}</Button>
                               </>
                             } />
