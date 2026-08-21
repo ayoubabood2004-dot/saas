@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import {
   CalendarDays, ClipboardList, Store, BarChart3, Stethoscope, HeartPulse,
@@ -6,28 +7,39 @@ import {
   Bell, Wallet, ArrowLeft, Star, Menu, X, TrendingUp, Cake, Globe,
 } from "lucide-react";
 import { Logo, LogoMark } from "@/components/Logo";
+import { LanguagePicker } from "@/components/LanguagePicker";
+import { localeInfo } from "@/i18n";
 import { appUrl, appHostLabel } from "@/lib/appUrl";
 import { cn, formatNum, formatDec } from "@/lib/utils";
 import { PLANS } from "@/lib/plans";
 import { CURRENCIES, currencyInfo, guessCountry, fetchLiveRates, usdTo } from "@/lib/currency";
 
 /* ============================================================================
- * Landing — the public marketing page on the ROOT domain. Arabic-first, RTL,
- * theme-aware, and built entirely from the app's own design system so it reads
- * as one product. The centrepiece is a LIVE, clickable app window: switch
- * screens, add items to a real cart, open a case — a hands-on feel, not a
- * screenshot. Everything is self-contained (no external images).
+ * Landing — the public marketing page on the ROOT domain. Theme-aware and built
+ * entirely from the app's own design system so it reads as one product. The
+ * centrepiece is a LIVE, clickable app window: switch screens, add items to a
+ * real cart, open a case — a hands-on feel, not a screenshot. Everything is
+ * self-contained (no external images).
+ *
+ * ── اللغة ─────────────────────────────────────────────────────────────────
+ * الصفحة **مترجَمة بالكامل**، والافتراضي الإنجليزية: زائر لا يعرف المنتج بعد
+ * قد يأتي من أي مكان، ومبدّل اللغة بالأعلى يخدمه من أول شاشة. والاتجاه يُشتقّ
+ * من سجل اللغات لا يُثبَّت بالكود — فأي لغة RTL تُضاف تنقلب لها الصفحة من
+ * سطرها بالسجل، بلا شرطٍ مبعثر هنا.
  * ==========================================================================*/
 
 export function Landing() {
+  const { t, i18n } = useTranslation();
+  const dir = localeInfo(i18n.language).dir;
+
   useEffect(() => {
     const prev = document.title;
-    document.title = "doctorVet — منظومة إدارة العيادات البيطرية";
+    document.title = t("landing.title", "doctorVet");
     return () => { document.title = prev; };
-  }, []);
+  }, [t]);
 
   return (
-    <div dir="rtl" className="min-h-screen bg-surface-1 font-sans text-ink antialiased">
+    <div dir={dir} className="min-h-screen bg-surface-1 font-sans text-ink antialiased">
       <Nav />
       <Hero />
       <Marquee />
@@ -41,6 +53,7 @@ export function Landing() {
 
 /* ----------------------------------------------------------------- Nav ---- */
 function Nav() {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   useEffect(() => {
@@ -50,8 +63,8 @@ function Nav() {
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
   const links = [
-    { href: "#features", label: "المميزات" },
-    { href: "#pricing", label: "الأسعار" },
+    { href: "#features", label: t("landing.nav.features", "المميزات") },
+    { href: "#pricing", label: t("landing.nav.pricing", "الأسعار") },
   ];
   return (
     <header className={cn(
@@ -68,11 +81,12 @@ function Nav() {
           ))}
         </nav>
         <div className="flex items-center gap-2">
-          <a href={appUrl("/login")} className="hidden rounded-full px-4 py-2 text-sm font-semibold text-ink-muted transition hover:text-ink sm:block">تسجيل الدخول</a>
+          <LanguagePicker />
+          <a href={appUrl("/login")} className="hidden rounded-full px-4 py-2 text-sm font-semibold text-ink-muted transition hover:text-ink sm:block">{t("landing.nav.login", "تسجيل الدخول")}</a>
           <a href={appUrl("/login")} className="inline-flex items-center gap-1.5 rounded-full bg-brand-600 px-4 py-2 text-sm font-bold text-white shadow-soft transition hover:bg-brand-700 hover:shadow-raised">
-            ابدأ مجاناً <ArrowLeft size={15} />
+            {t("landing.nav.start", "ابدأ مجاناً")} <ArrowLeft size={15} className="rtl:rotate-0 ltr:-scale-x-100" />
           </a>
-          <button onClick={() => setOpen((v) => !v)} className="grid h-10 w-10 place-items-center rounded-full text-ink-muted md:hidden" aria-label="القائمة">
+          <button onClick={() => setOpen((v) => !v)} className="grid h-10 w-10 place-items-center rounded-full text-ink-muted md:hidden" aria-label={t("landing.nav.menu", "القائمة")}>
             {open ? <X size={20} /> : <Menu size={20} />}
           </button>
         </div>
@@ -82,7 +96,7 @@ function Nav() {
           {links.map((l) => (
             <a key={l.href} href={l.href} onClick={() => setOpen(false)} className="block rounded-xl px-3 py-3 font-semibold text-ink hover:bg-surface-2">{l.label}</a>
           ))}
-          <a href={appUrl("/login")} className="block rounded-xl px-3 py-3 font-semibold text-brand-700 dark:text-brand-300">تسجيل الدخول</a>
+          <a href={appUrl("/login")} className="block rounded-xl px-3 py-3 font-semibold text-brand-700 dark:text-brand-300">{t("landing.nav.login", "تسجيل الدخول")}</a>
         </div>
       )}
     </header>
@@ -98,6 +112,7 @@ const REVEAL = {
 };
 
 function Hero() {
+  const { t } = useTranslation();
   return (
     <section id="top" className="relative overflow-hidden">
       {/* Ambient brand glow */}
@@ -113,37 +128,37 @@ function Hero() {
             initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}
             className="inline-flex items-center gap-2 rounded-full border border-line bg-surface-1 px-3.5 py-1.5 text-xs font-bold text-brand-700 shadow-card dark:text-brand-300"
           >
-            <Sparkles size={14} /> منظومة إدارة العيادات البيطرية
+            <Sparkles size={14} /> {t("landing.hero.badge", "منظومة إدارة العيادات البيطرية")}
           </motion.span>
           <motion.h1
             initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, delay: 0.05 }}
             className="mt-5 text-balance font-display text-4xl font-extrabold leading-[1.1] tracking-tighter2 sm:text-5xl lg:text-6xl"
           >
-            عيادتك البيطرية كاملة،
-            <span className="bg-gradient-to-l from-brand-600 to-sky-400 bg-clip-text text-transparent"> بمكان واحد.</span>
+            {t("landing.hero.h1a", "عيادتك البيطرية كاملة،")}
+            <span className="bg-gradient-to-l from-brand-600 to-sky-400 bg-clip-text text-transparent">{t("landing.hero.h1b", " بمكان واحد.")}</span>
           </motion.h1>
           <motion.p
             initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, delay: 0.12 }}
             className="mx-auto mt-5 max-w-xl text-lg leading-relaxed text-ink-muted lg:mx-0"
           >
-            سجل طبي موحّد، تقويم تشغيلي، مخزون وكاشير، حملات واتساب، وتعدد فروع — بواجهة عربية بسيطة وسلسة، تشتغل بعملتك المحلية وبلا أي خبرة تقنية.
+            {t("landing.hero.sub")}
           </motion.p>
           <motion.div
             initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, delay: 0.19 }}
             className="mt-8 flex flex-wrap items-center justify-center gap-3 lg:justify-start"
           >
             <a href={appUrl("/login")} className="inline-flex items-center gap-2 rounded-full bg-brand-600 px-6 py-3.5 text-base font-bold text-white shadow-soft transition hover:bg-brand-700 hover:shadow-raised active:scale-[0.98]">
-              ابدأ مجاناً — 14 يوم <ArrowLeft size={18} />
+              {t("landing.hero.cta", "ابدأ مجاناً")} <ArrowLeft size={18} className="ltr:-scale-x-100" />
             </a>
             <a href="#features" className="inline-flex items-center gap-2 rounded-full border border-line-strong bg-surface-1 px-6 py-3.5 text-base font-bold text-ink transition hover:bg-surface-2">
-              شاهد المميزات
+              {t("landing.hero.seeFeatures", "شاهد المميزات")}
             </a>
           </motion.div>
           <motion.div
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.6, delay: 0.28 }}
             className="mt-7 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-sm font-semibold text-ink-subtle lg:justify-start"
           >
-            {["واتساب مدمج", "تعدد فروع", "يعمل بعملتك المحلية", "بلا خبرة تقنية"].map((f) => (
+            {[t("landing.hero.perk1"), t("landing.hero.perk2"), t("landing.hero.perk3"), t("landing.hero.perk4")].map((f) => (
               <span key={f} className="inline-flex items-center gap-1.5"><Check size={15} className="text-success-600" /> {f}</span>
             ))}
           </motion.div>
@@ -163,14 +178,15 @@ function Hero() {
 
 /* ------------------------------------------------- Interactive app window -- */
 type ScreenKey = "board" | "record" | "pos" | "reports";
-const SCREENS: { key: ScreenKey; label: string; icon: typeof CalendarDays }[] = [
-  { key: "board", label: "التقويم", icon: CalendarDays },
-  { key: "record", label: "الطبلة", icon: ClipboardList },
-  { key: "pos", label: "الكاشير", icon: Store },
-  { key: "reports", label: "التقارير", icon: BarChart3 },
+const SCREENS: { key: ScreenKey; icon: typeof CalendarDays }[] = [
+  { key: "board", icon: CalendarDays },
+  { key: "record", icon: ClipboardList },
+  { key: "pos", icon: Store },
+  { key: "reports", icon: BarChart3 },
 ];
 
 function AppShowcase() {
+  const { t } = useTranslation();
   const [screen, setScreen] = useState<ScreenKey>("board");
   const [touched, setTouched] = useState(false);
   const reduce = useReducedMotion();
@@ -221,7 +237,7 @@ function AppShowcase() {
                   )}
                 >
                   <Icon size={18} className="shrink-0" />
-                  <span className="hidden sm:inline">{s.label}</span>
+                  <span className="hidden sm:inline">{t(`landing.demo.${s.key}`)}</span>
                 </button>
               );
             })}
@@ -250,7 +266,7 @@ function AppShowcase() {
 
       {/* Hint chip */}
       <div className="mt-3 flex items-center justify-center gap-1.5 text-2xs font-semibold text-ink-subtle">
-        <Sparkles size={13} className="text-brand-500" /> جرّبه بنفسك — اضغط على الأقسام والعناصر
+        <Sparkles size={13} className="text-brand-500" /> {t("landing.demo.hint")}
       </div>
     </div>
   );
@@ -258,30 +274,34 @@ function AppShowcase() {
 
 /* ---- Screen: operational board (click a case → detail popover) ---- */
 const BOARD_STATUS = {
-  care: { label: "رعاية طبية", dot: "bg-amber-500", chip: "bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-200", av: "bg-amber-100 text-amber-700" },
-  boarding: { label: "فندقة", dot: "bg-sky-500", chip: "bg-sky-100 text-sky-700 dark:bg-sky-500/20 dark:text-sky-200", av: "bg-sky-100 text-sky-700" },
-  done: { label: "غادرت", dot: "bg-success-500", chip: "bg-success-100 text-success-700 dark:bg-success-500/20 dark:text-success-200", av: "bg-success-100 text-success-700" },
+  care: { key: "stCare", dot: "bg-amber-500", chip: "bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-200", av: "bg-amber-100 text-amber-700" },
+  boarding: { key: "stBoarding", dot: "bg-sky-500", chip: "bg-sky-100 text-sky-700 dark:bg-sky-500/20 dark:text-sky-200", av: "bg-sky-100 text-sky-700" },
+  done: { key: "stDone", dot: "bg-success-500", chip: "bg-success-100 text-success-700 dark:bg-success-500/20 dark:text-success-200", av: "bg-success-100 text-success-700" },
 } as const;
 type BoardStatus = keyof typeof BOARD_STATUS;
-const BOARD_CASES: { id: string; name: string; owner: string; status: BoardStatus; meta: string }[] = [
-  { id: "c1", name: "ريكس", owner: "أحمد سالم", status: "care", meta: "اليوم 3" },
-  { id: "c2", name: "لونا", owner: "سارة كريم", status: "care", meta: "اليوم 1" },
-  { id: "c3", name: "مشمش", owner: "علي حسن", status: "boarding", meta: "قفص A2 · اليوم 5" },
-  { id: "c4", name: "بوبي", owner: "نور محمد", status: "done", meta: "غادر اليوم" },
+/** الحالات المعروضة — أسماؤها وأصحابها مفاتيح ترجمة لا نصوص: العرض التوضيحي
+ *  يجب أن يُقرأ بلغة الزائر، وإلا صار برهاناً على أن المنتج بلغة واحدة. */
+const BOARD_CASES: { id: string; status: BoardStatus }[] = [
+  { id: "c1", status: "care" },
+  { id: "c2", status: "care" },
+  { id: "c3", status: "boarding" },
+  { id: "c4", status: "done" },
 ];
 
 function BoardScreen() {
+  const { t } = useTranslation();
   const [sel, setSel] = useState<string | null>("c1");
   const cols: { key: BoardStatus; title: string }[] = [
-    { key: "care", title: "رعاية طبية" },
-    { key: "boarding", title: "الفندقة" },
-    { key: "done", title: "مكتملة" },
+    { key: "care", title: t("landing.board.colCare") },
+    { key: "boarding", title: t("landing.board.colBoarding") },
+    { key: "done", title: t("landing.board.colDone") },
   ];
+  const nameOf = (id: string) => t(`landing.board.${id}`);
   return (
     <div>
       <div className="mb-3 flex items-center justify-between">
-        <h3 className="font-display text-sm font-extrabold">التقويم الرئيسي</h3>
-        <span className="inline-flex items-center gap-1 rounded-full bg-brand-50 px-2.5 py-1 text-2xs font-bold text-brand-700 dark:bg-brand-500/15 dark:text-brand-300"><Bell size={11} /> اليوم 3 · متأخر 1</span>
+        <h3 className="font-display text-sm font-extrabold">{t("landing.board.title")}</h3>
+        <span className="inline-flex items-center gap-1 rounded-full bg-brand-50 px-2.5 py-1 text-2xs font-bold text-brand-700 dark:bg-brand-500/15 dark:text-brand-300"><Bell size={11} /> {t("landing.board.bell")}</span>
       </div>
       <div className="grid grid-cols-3 gap-2">
         {cols.map((col) => (
@@ -300,9 +320,9 @@ function BoardScreen() {
                       active ? "border-brand-400 shadow-card ring-2 ring-brand-400/40" : "border-line hover:border-brand-200",
                     )}
                   >
-                    <span className={cn("grid h-6 w-6 shrink-0 place-items-center rounded-full text-2xs font-extrabold", m.av)}>{c.name.slice(0, 1)}</span>
+                    <span className={cn("grid h-6 w-6 shrink-0 place-items-center rounded-full text-2xs font-extrabold", m.av)}>{nameOf(c.id).slice(0, 1)}</span>
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-2xs font-bold text-ink">{c.name}</span>
+                      <span className="block truncate text-2xs font-bold text-ink">{nameOf(c.id)}</span>
                     </span>
                     <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", m.dot)} />
                   </button>
@@ -326,16 +346,16 @@ function BoardScreen() {
               className="mt-2.5 rounded-xl border border-line bg-surface-1 p-2.5 shadow-card"
             >
               <div className="flex items-center gap-2.5">
-                <span className={cn("grid h-9 w-9 shrink-0 place-items-center rounded-full text-sm font-extrabold", m.av)}>{c.name.slice(0, 1)}</span>
+                <span className={cn("grid h-9 w-9 shrink-0 place-items-center rounded-full text-sm font-extrabold", m.av)}>{nameOf(c.id).slice(0, 1)}</span>
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-bold text-ink">{c.name}</p>
-                  <p className="truncate text-2xs text-ink-muted">{c.owner} · {c.meta}</p>
+                  <p className="truncate text-sm font-bold text-ink">{nameOf(c.id)}</p>
+                  <p className="truncate text-2xs text-ink-muted">{t(`landing.board.${c.id}o`)} · {t(`landing.board.${c.id}m`)}</p>
                 </div>
-                <span className={cn("chip shrink-0 text-2xs font-semibold", m.chip)}>{m.label}</span>
+                <span className={cn("chip shrink-0 text-2xs font-semibold", m.chip)}>{t(`landing.board.${m.key}`)}</span>
               </div>
               <div className="mt-2 flex gap-1.5">
-                <span className="inline-flex flex-1 items-center justify-center gap-1 rounded-lg bg-success-100 py-1.5 text-2xs font-bold text-success-700 dark:bg-success-500/20 dark:text-success-300"><MessageCircle size={12} /> واتساب</span>
-                <span className="inline-flex flex-1 items-center justify-center gap-1 rounded-lg bg-brand-600 py-1.5 text-2xs font-bold text-white"><ClipboardList size={12} /> فتح الطبلة</span>
+                <span className="inline-flex flex-1 items-center justify-center gap-1 rounded-lg bg-success-100 py-1.5 text-2xs font-bold text-success-700 dark:bg-success-500/20 dark:text-success-300"><MessageCircle size={12} /> {t("landing.board.wa")}</span>
+                <span className="inline-flex flex-1 items-center justify-center gap-1 rounded-lg bg-brand-600 py-1.5 text-2xs font-bold text-white"><ClipboardList size={12} /> {t("landing.board.openCase")}</span>
               </div>
             </motion.div>
           );
@@ -347,24 +367,25 @@ function BoardScreen() {
 
 /* ---- Screen: unified medical record (الطبلة) ---- */
 function RecordScreen() {
+  const { t } = useTranslation();
   const rows = [
-    { icon: Syringe, tint: "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300", title: "تطعيم رباعي", meta: "أُعطي اليوم · د. سارة" },
-    { icon: HeartPulse, tint: "bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-300", title: "فحص وعلاج", meta: "حرارة 38.6 · مضاد حيوي" },
-    { icon: Cake, tint: "bg-pink-100 text-pink-700 dark:bg-pink-500/20 dark:text-pink-300", title: "عيد ميلاد قريب", meta: "بعد 4 أيام 🎂" },
+    { icon: Syringe, tint: "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300", title: t("landing.record.r1"), meta: t("landing.record.r1m") },
+    { icon: HeartPulse, tint: "bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-300", title: t("landing.record.r2"), meta: t("landing.record.r2m") },
+    { icon: Cake, tint: "bg-pink-100 text-pink-700 dark:bg-pink-500/20 dark:text-pink-300", title: t("landing.record.r3"), meta: t("landing.record.r3m") },
   ];
   return (
     <div>
       <div className="mb-3 flex items-center gap-2.5 rounded-xl bg-gradient-to-l from-brand-500/10 to-transparent p-2.5">
         <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-brand-100 text-xl dark:bg-brand-500/20">🐕</span>
         <div>
-          <p className="font-display text-sm font-extrabold text-ink">ريكس</p>
-          <p className="text-2xs text-ink-muted">كلب · جيرمن شيبرد · 3 سنوات</p>
+          <p className="font-display text-sm font-extrabold text-ink">{t("landing.record.pet")}</p>
+          <p className="text-2xs text-ink-muted">{t("landing.record.breed")}</p>
         </div>
-        <span className="ms-auto inline-flex items-center gap-1 rounded-full bg-surface-1 px-2 py-1 text-2xs font-bold text-brand-700 dark:text-brand-300"><ShieldCheck size={11} /> جواز موحّد</span>
+        <span className="ms-auto inline-flex items-center gap-1 rounded-full bg-surface-1 px-2 py-1 text-2xs font-bold text-brand-700 dark:text-brand-300"><ShieldCheck size={11} /> {t("landing.record.passport")}</span>
       </div>
       <div className="mb-2 flex gap-1.5">
-        {["الخط الزمني", "التطعيمات", "الملاحظات"].map((t, i) => (
-          <span key={t} className={cn("rounded-lg px-2.5 py-1 text-2xs font-bold", i === 0 ? "bg-brand-600 text-white" : "bg-surface-2 text-ink-muted")}>{t}</span>
+        {[t("landing.record.tab1"), t("landing.record.tab2"), t("landing.record.tab3")].map((label, i) => (
+          <span key={label} className={cn("rounded-lg px-2.5 py-1 text-2xs font-bold", i === 0 ? "bg-brand-600 text-white" : "bg-surface-2 text-ink-muted")}>{label}</span>
         ))}
       </div>
       <div className="space-y-1.5">
@@ -387,12 +408,13 @@ function RecordScreen() {
 
 /* ---- Screen: POS — click products, watch the cart total update (real!) ---- */
 const POS_PRODUCTS = [
-  { id: "p1", name: "رويال كانين 4كغ", price: 32 },
-  { id: "p2", name: "فرونت لاين (بيبيت)", price: 12 },
-  { id: "p3", name: "درونتال (حبة)", price: 4 },
-  { id: "p4", name: "شامبو طبي", price: 9 },
+  { id: "p1", price: 32 },
+  { id: "p2", price: 12 },
+  { id: "p3", price: 4 },
+  { id: "p4", price: 9 },
 ];
 function PosScreen() {
+  const { t } = useTranslation();
   const [cart, setCart] = useState<Record<string, number>>({ p1: 1 });
   const add = (id: string) => setCart((c) => ({ ...c, [id]: (c[id] ?? 0) + 1 }));
   const items = Object.entries(cart).filter(([, q]) => q > 0);
@@ -400,7 +422,7 @@ function PosScreen() {
   const count = items.reduce((s, [, q]) => s + q, 0);
   return (
     <div>
-      <h3 className="mb-2.5 font-display text-sm font-extrabold">نقطة البيع</h3>
+      <h3 className="mb-2.5 font-display text-sm font-extrabold">{t("landing.pos.title")}</h3>
       <div className="grid grid-cols-2 gap-2">
         {POS_PRODUCTS.map((p) => (
           <button
@@ -409,14 +431,14 @@ function PosScreen() {
             className="group flex flex-col items-start rounded-xl border border-line bg-surface-1 p-2.5 text-start transition hover:border-brand-300 hover:shadow-card active:scale-[0.97]"
           >
             <span className="grid h-8 w-8 place-items-center rounded-lg bg-brand-50 text-brand-600 transition group-hover:bg-brand-100 dark:bg-brand-500/15 dark:text-brand-300"><Plus size={16} /></span>
-            <span className="mt-1.5 line-clamp-1 text-2xs font-bold text-ink">{p.name}</span>
+            <span className="mt-1.5 line-clamp-1 text-2xs font-bold text-ink">{t(`landing.pos.${p.id}`)}</span>
             <span className="text-2xs font-bold text-brand-600 dark:text-brand-300">${p.price}</span>
           </button>
         ))}
       </div>
       <motion.div layout className="mt-2.5 rounded-xl border border-line bg-surface-2/50 p-2.5">
         <div className="flex items-center justify-between text-2xs font-semibold text-ink-muted">
-          <span className="inline-flex items-center gap-1"><Store size={13} /> السلة ({count})</span>
+          <span className="inline-flex items-center gap-1"><Store size={13} /> {t("landing.pos.cart", { n: count })}</span>
           <AnimatePresence mode="popLayout">
             <motion.span key={total} initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 6 }} className="font-display text-base font-extrabold text-ink">
               ${total}
@@ -424,7 +446,7 @@ function PosScreen() {
           </AnimatePresence>
         </div>
         <div className="mt-2 inline-flex w-full items-center justify-center gap-1.5 rounded-lg bg-brand-600 py-2 text-2xs font-bold text-white">
-          <Wallet size={13} /> إتمام البيع
+          <Wallet size={13} /> {t("landing.pos.checkout")}
         </div>
       </motion.div>
     </div>
@@ -433,15 +455,16 @@ function PosScreen() {
 
 /* ---- Screen: reports — animated bars ---- */
 function ReportsScreen() {
+  const { t } = useTranslation();
   const bars = [40, 62, 48, 78, 55, 90, 70];
-  const days = ["س", "ح", "ن", "ث", "ر", "خ", "ج"];
+  const days = [1, 2, 3, 4, 5, 6, 7].map((n) => t(`landing.reports.d${n}`));
   return (
     <div>
       <div className="mb-2.5 grid grid-cols-3 gap-2">
         {[
-          { k: "إيراد اليوم", v: "$1,420", i: Wallet, t: "text-success-600" },
-          { k: "حالات", v: "31", i: Stethoscope, t: "text-brand-600" },
-          { k: "نمو", v: "٪18+", i: TrendingUp, t: "text-accent-600" },
+          { k: t("landing.reports.revToday"), v: "$1,420", i: Wallet, t: "text-success-600" },
+          { k: t("landing.reports.cases"), v: "31", i: Stethoscope, t: "text-brand-600" },
+          { k: t("landing.reports.growth"), v: "+18%", i: TrendingUp, t: "text-accent-600" },
         ].map((s) => {
           const Icon = s.i;
           return (
@@ -454,7 +477,7 @@ function ReportsScreen() {
         })}
       </div>
       <div className="rounded-xl border border-line bg-surface-1 p-3">
-        <p className="mb-2 text-2xs font-bold text-ink-muted">إيراد الأسبوع</p>
+        <p className="mb-2 text-2xs font-bold text-ink-muted">{t("landing.reports.weekRev")}</p>
         <div className="flex h-28 items-end justify-between gap-1.5">
           {bars.map((h, i) => (
             <div key={i} className="flex flex-1 flex-col items-center gap-1">
@@ -475,7 +498,8 @@ function ReportsScreen() {
 
 /* -------------------------------------------------------------- Marquee ---- */
 function Marquee() {
-  const items = ["سجل طبي موحّد", "تقويم تشغيلي", "مخزون وكاشير", "الديون والدفع الآجل", "حملات واتساب", "تقارير وتحليلات", "تعدد فروع", "صلاحيات الفريق"];
+  const { t } = useTranslation();
+  const items = [1, 2, 3, 4, 5, 6, 7, 8].map((n) => t(`landing.marquee.m${n}`));
   return (
     <div className="border-y border-line bg-surface-2/40 py-3">
       <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-center gap-x-6 gap-y-2 px-4 text-sm font-bold text-ink-subtle">
@@ -488,24 +512,26 @@ function Marquee() {
 }
 
 /* ------------------------------------------------------------- Features ---- */
+/** الأيقونة واللون هنا، والنصّ بملفات اللغات — بيانات العرض لا تحمل نصّاً. */
 const FEATURES = [
-  { icon: CalendarDays, title: "التقويم التشغيلي", body: "تابع الحالات الحية والفندقة والتذكيرات بلوحة واحدة، واسحب لتغيير الحالة.", tint: "text-brand-600 bg-brand-50 dark:bg-brand-500/15" },
-  { icon: ClipboardList, title: "السجل الطبي الموحّد", body: "جواز واحد لكل حيوان: تطعيمات، علاجات، وملاحظات عبر كل الزيارات.", tint: "text-rose-600 bg-rose-50 dark:bg-rose-500/15" },
-  { icon: Store, title: "مخزون وكاشير", body: "بيع بالتجزئة أو بالأجزاء، خصم مخزون تلقائي، وفواتير أنيقة.", tint: "text-emerald-600 bg-emerald-50 dark:bg-emerald-500/15" },
-  { icon: Wallet, title: "الديون والدفع الآجل", body: "تابع المتبقّي على كل عميل وسدّده لاحقاً — بلا دفتر ورقي.", tint: "text-amber-600 bg-amber-50 dark:bg-amber-500/15" },
-  { icon: MessageCircle, title: "حملات واتساب", body: "ذكّر الملاّك بالتطعيمات والمواعيد برسالة واحدة بلمسة.", tint: "text-green-600 bg-green-50 dark:bg-green-500/15" },
-  { icon: BarChart3, title: "تقارير وتحليلات", body: "إيرادات، أداء الموظفين، وأكثر — بتقارير جاهزة للطباعة و Excel.", tint: "text-indigo-600 bg-indigo-50 dark:bg-indigo-500/15" },
-  { icon: Building2, title: "تعدد الفروع", body: "أدِر كل فروعك من حساب واحد — سجل مشترك وعمليات منفصلة.", tint: "text-sky-600 bg-sky-50 dark:bg-sky-500/15" },
-  { icon: ShieldCheck, title: "صلاحيات دقيقة", body: "أنت تحدد شنو يشوف ويسوي كل موظف — أمان وخصوصية تامة.", tint: "text-violet-600 bg-violet-50 dark:bg-violet-500/15" },
+  { icon: CalendarDays, tint: "text-brand-600 bg-brand-50 dark:bg-brand-500/15" },
+  { icon: ClipboardList, tint: "text-rose-600 bg-rose-50 dark:bg-rose-500/15" },
+  { icon: Store, tint: "text-emerald-600 bg-emerald-50 dark:bg-emerald-500/15" },
+  { icon: Wallet, tint: "text-amber-600 bg-amber-50 dark:bg-amber-500/15" },
+  { icon: MessageCircle, tint: "text-green-600 bg-green-50 dark:bg-green-500/15" },
+  { icon: BarChart3, tint: "text-indigo-600 bg-indigo-50 dark:bg-indigo-500/15" },
+  { icon: Building2, tint: "text-sky-600 bg-sky-50 dark:bg-sky-500/15" },
+  { icon: ShieldCheck, tint: "text-violet-600 bg-violet-50 dark:bg-violet-500/15" },
 ];
 
 function Features() {
+  const { t } = useTranslation();
   return (
     <section id="features" className="mx-auto max-w-6xl px-4 py-20 sm:px-6">
       <motion.div {...REVEAL} className="mx-auto max-w-2xl text-center">
-        <span className="inline-flex items-center gap-2 rounded-full bg-brand-50 px-3.5 py-1.5 text-xs font-bold text-brand-700 dark:bg-brand-500/15 dark:text-brand-300"><Boxes size={14} /> كل شي بمكان واحد</span>
-        <h2 className="mt-4 text-balance font-display text-3xl font-extrabold tracking-tighter2 sm:text-4xl">كل ما تحتاجه عيادتك — بلا تعقيد</h2>
-        <p className="mt-3 text-lg text-ink-muted">أدوات احترافية بواجهة بسيطة، مصمّمة للعقل البشري.</p>
+        <span className="inline-flex items-center gap-2 rounded-full bg-brand-50 px-3.5 py-1.5 text-xs font-bold text-brand-700 dark:bg-brand-500/15 dark:text-brand-300"><Boxes size={14} /> {t("landing.features.badge")}</span>
+        <h2 className="mt-4 text-balance font-display text-3xl font-extrabold tracking-tighter2 sm:text-4xl">{t("landing.features.h2")}</h2>
+        <p className="mt-3 text-lg text-ink-muted">{t("landing.features.sub")}</p>
       </motion.div>
 
       <div className="mt-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -513,14 +539,14 @@ function Features() {
           const Icon = f.icon;
           return (
             <motion.div
-              key={f.title}
+              key={i}
               initial={{ opacity: 0, y: 22 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, margin: "-40px" }}
               transition={{ duration: 0.5, delay: (i % 4) * 0.07, ease: [0.16, 1, 0.3, 1] }}
               className="group rounded-2xl border border-line bg-surface-1 p-5 shadow-card transition hover:-translate-y-1 hover:border-brand-200 hover:shadow-raised"
             >
               <span className={cn("grid h-11 w-11 place-items-center rounded-2xl transition group-hover:scale-110", f.tint)}><Icon size={21} /></span>
-              <h3 className="mt-4 font-display text-base font-extrabold text-ink">{f.title}</h3>
-              <p className="mt-1.5 text-sm leading-relaxed text-ink-muted">{f.body}</p>
+              <h3 className="mt-4 font-display text-base font-extrabold text-ink">{t(`landing.features.f${i + 1}t`)}</h3>
+              <p className="mt-1.5 text-sm leading-relaxed text-ink-muted">{t(`landing.features.f${i + 1}b`)}</p>
             </motion.div>
           );
         })}
@@ -565,20 +591,29 @@ function useVisitorCurrency() {
 }
 
 function Pricing() {
+  const { t, i18n } = useTranslation();
   const [annual, setAnnual] = useState(true);
+  // اسم العملة بلغة الزائر من Intl — بلا جدول أسماء ثانٍ يُترجَم ويتقادم.
+  const curName = (code: string) => {
+    try {
+      const n = new Intl.DisplayNames([i18n.language], { type: "currency" }).of(code);
+      if (n && n !== code) return n;
+    } catch { /* المتصفّح لا يدعمها — نسقط للاسم العربي */ }
+    return CURRENCIES[code]?.nameAr ?? code;
+  };
   const fx = useVisitorCurrency();
   return (
     <section id="pricing" className="border-t border-line bg-surface-2/30 py-20">
       <div className="mx-auto max-w-6xl px-4 sm:px-6">
         <motion.div {...REVEAL} className="mx-auto max-w-2xl text-center">
-          <span className="inline-flex items-center gap-2 rounded-full bg-brand-50 px-3.5 py-1.5 text-xs font-bold text-brand-700 dark:bg-brand-500/15 dark:text-brand-300"><Star size={14} /> أسعار عادلة</span>
-          <h2 className="mt-4 font-display text-3xl font-extrabold tracking-tighter2 sm:text-4xl">اختر باقتك</h2>
-          <p className="mt-3 text-lg text-ink-muted">أسعار واضحة وعادلة — وتجربة مجانية بالكامل بلا أي التزام.</p>
+          <span className="inline-flex items-center gap-2 rounded-full bg-brand-50 px-3.5 py-1.5 text-xs font-bold text-brand-700 dark:bg-brand-500/15 dark:text-brand-300"><Star size={14} /> {t("landing.pricing.badge")}</span>
+          <h2 className="mt-4 font-display text-3xl font-extrabold tracking-tighter2 sm:text-4xl">{t("landing.pricing.h2")}</h2>
+          <p className="mt-3 text-lg text-ink-muted">{t("landing.pricing.sub")}</p>
 
           {/* Monthly / annual toggle */}
           <div className="mt-6 inline-flex items-center gap-1 rounded-full border border-line bg-surface-1 p-1">
-            <button onClick={() => setAnnual(false)} className={cn("rounded-full px-5 py-2 text-sm font-bold transition", !annual ? "bg-brand-600 text-white shadow-soft" : "text-ink-muted")}>شهري</button>
-            <button onClick={() => setAnnual(true)} className={cn("rounded-full px-5 py-2 text-sm font-bold transition", annual ? "bg-brand-600 text-white shadow-soft" : "text-ink-muted")}>سنوي</button>
+            <button onClick={() => setAnnual(false)} className={cn("rounded-full px-5 py-2 text-sm font-bold transition", !annual ? "bg-brand-600 text-white shadow-soft" : "text-ink-muted")}>{t("landing.pricing.monthly")}</button>
+            <button onClick={() => setAnnual(true)} className={cn("rounded-full px-5 py-2 text-sm font-bold transition", annual ? "bg-brand-600 text-white shadow-soft" : "text-ink-muted")}>{t("landing.pricing.annual")}</button>
           </div>
 
           {/* عملة الزائر — مكتشَفة تلقائياً وقابلة للتبديل */}
@@ -591,61 +626,61 @@ function Pricing() {
               className="rounded-full border border-line bg-surface-1 px-3.5 py-1.5 text-sm font-bold text-ink shadow-card outline-none transition hover:border-brand-300"
             >
               {Object.values(CURRENCIES).map((c) => (
-                <option key={c.code} value={c.code}>{c.nameAr} ({c.symAr})</option>
+                <option key={c.code} value={c.code}>{curName(c.code)} ({c.code})</option>
               ))}
             </select>
           </div>
-          <p className="mt-2 text-2xs text-ink-subtle">الأسعار تُعرض بعملتك المحلية تلقائياً حسب موقعك</p>
+          <p className="mt-2 text-2xs text-ink-subtle">{t("landing.pricing.curHint")}</p>
         </motion.div>
 
         <div className="mt-12 grid items-stretch gap-5 lg:grid-cols-3">
-          {PLANS.map((t, i) => (
+          {PLANS.map((p, i) => (
             <motion.div
-              key={t.name}
+              key={p.id}
               initial={{ opacity: 0, y: 24 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, margin: "-40px" }}
               transition={{ duration: 0.5, delay: i * 0.08, ease: [0.16, 1, 0.3, 1] }}
               className={cn(
                 "relative flex flex-col rounded-3xl border p-6 shadow-card transition hover:shadow-raised",
-                t.popular ? "border-brand-300 bg-surface-1 ring-1 ring-brand-200 lg:-translate-y-3 dark:border-brand-500/40 dark:ring-brand-500/20" : "border-line bg-surface-1",
+                p.popular ? "border-brand-300 bg-surface-1 ring-1 ring-brand-200 lg:-translate-y-3 dark:border-brand-500/40 dark:ring-brand-500/20" : "border-line bg-surface-1",
               )}
             >
-              {t.popular && <span className="absolute -top-3 start-1/2 -translate-x-1/2 rounded-full bg-brand-600 px-3.5 py-1 text-2xs font-extrabold text-white shadow-soft">👑 الأكثر تكاملاً</span>}
-              <p className="font-display text-lg font-extrabold text-ink">{t.name}</p>
-              <p className="text-2xs font-semibold text-ink-subtle">{t.tag}</p>
+              {p.popular && <span className="absolute -top-3 start-1/2 -translate-x-1/2 rounded-full bg-brand-600 px-3.5 py-1 text-2xs font-extrabold text-white shadow-soft">{t("landing.pricing.mostComplete")}</span>}
+              <p className="font-display text-lg font-extrabold text-ink">{t(`plans.${p.id}.name`, p.name)}</p>
+              <p className="text-2xs font-semibold text-ink-subtle">{t(`plans.${p.id}.tag`, p.tag)}</p>
               <div className="mt-4 flex flex-wrap items-end gap-1">
                 <AnimatePresence mode="popLayout">
                   <motion.span
-                    key={(annual ? "y" : "m") + fx.cur}
+                    key={(annual ? "y" : "m") + fx.cur + p.id}
                     initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 8 }} transition={{ duration: 0.2 }}
                     data-price3x
                     className={cn(
                       "font-display font-extrabold tracking-tighter2 text-ink",
                       // الدينار/الليرة السنوية أرقام طويلة — نصغّر قليلاً حتى لا تنكسر البطاقة
-                      fx.fmt(annual ? t.annualUsd : t.monthlyUsd).length > 11 ? "text-2xl leading-9" : "text-4xl",
+                      fx.fmt(annual ? p.annualUsd : p.monthlyUsd).length > 11 ? "text-2xl leading-9" : "text-4xl",
                     )}
                   >
-                    {fx.fmt(annual ? t.annualUsd : t.monthlyUsd)}
+                    {fx.fmt(annual ? p.annualUsd : p.monthlyUsd)}
                   </motion.span>
                 </AnimatePresence>
-                <span className="mb-1 text-sm font-semibold text-ink-subtle">/ {annual ? "سنة" : "شهر"}</span>
+                <span className="mb-1 text-sm font-semibold text-ink-subtle">/ {annual ? t("landing.pricing.perYear") : t("landing.pricing.perMonth")}</span>
               </div>
               {!fx.isUsd && (
                 <p className="mt-1 text-2xs font-semibold text-ink-subtle" dir="ltr">
-                  = ${formatNum(annual ? t.annualUsd : t.monthlyUsd)} USD
+                  = ${formatNum(annual ? p.annualUsd : p.monthlyUsd)} USD
                 </p>
               )}
-              {annual && t.annualUsd < t.monthlyUsd * 12 && (
+              {annual && p.annualUsd < p.monthlyUsd * 12 && (
                 <p className="mt-1 w-fit rounded-full bg-success-50 px-2.5 py-0.5 text-2xs font-extrabold text-success-700 dark:bg-success-500/15 dark:text-success-300">
-                  🎁 شهران مجاناً مقارنة بالشهري
+                  {t("landing.pricing.twoFree")}
                 </p>
               )}
               <ul className="mt-5 flex-1 space-y-2.5">
-                {t.feats.map((f) => (
+                {(t(`plans.${p.id}.feats`, { returnObjects: true, defaultValue: p.feats }) as string[]).map((f) => (
                   <li key={f} className="flex items-start gap-2 text-sm text-ink-muted">
                     <Check size={17} className="mt-0.5 shrink-0 text-success-600" /> {f}
                   </li>
                 ))}
-                {t.missing.map((f) => (
+                {(t(`plans.${p.id}.missing`, { returnObjects: true, defaultValue: p.missing }) as string[]).map((f) => (
                   <li key={f} className="flex items-start gap-2 text-sm text-ink-subtle/70">
                     <X size={17} className="mt-0.5 shrink-0 text-ink-subtle/50" /> {f}
                   </li>
@@ -655,10 +690,10 @@ function Pricing() {
                 href={appUrl("/login")}
                 className={cn(
                   "mt-6 inline-flex items-center justify-center gap-1.5 rounded-full px-5 py-3 text-sm font-bold transition active:scale-[0.98]",
-                  t.popular ? "bg-brand-600 text-white shadow-soft hover:bg-brand-700 hover:shadow-raised" : "border border-line-strong bg-surface-1 text-ink hover:bg-surface-2",
+                  p.popular ? "bg-brand-600 text-white shadow-soft hover:bg-brand-700 hover:shadow-raised" : "border border-line-strong bg-surface-1 text-ink hover:bg-surface-2",
                 )}
               >
-                ابدأ الآن <ArrowLeft size={15} />
+                {t("landing.pricing.startNow")} <ArrowLeft size={15} className="ltr:-scale-x-100" />
               </a>
             </motion.div>
           ))}
@@ -669,19 +704,17 @@ function Pricing() {
           <div className="flex flex-col items-center gap-4 p-6 text-center sm:flex-row sm:p-7 sm:text-start">
             <span className="grid h-14 w-14 shrink-0 place-items-center rounded-2xl bg-brand-grad text-white shadow-soft"><Sparkles size={26} /></span>
             <div className="flex-1">
-              <p className="font-display text-xl font-extrabold text-ink">جرّب السوبر كاملة 14 يوماً — مجاناً</p>
-              <p className="mt-1 text-sm text-ink-muted">كل الميزات مفتوحة (البيع بالدين، الواتساب، التقارير الكاملة…) — بلا بطاقة، وبلا أي التزام.</p>
+              <p className="font-display text-xl font-extrabold text-ink">{t("landing.pricing.trialTitle")}</p>
+              <p className="mt-1 text-sm text-ink-muted">{t("landing.pricing.trialBody")}</p>
             </div>
             <a href={appUrl("/login")} className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-brand-600 px-6 py-3.5 text-sm font-extrabold text-white shadow-soft transition hover:bg-brand-700 hover:shadow-raised active:scale-[0.98]">
-              ابدأ التجربة المجانية <ArrowLeft size={16} />
+              {t("landing.pricing.trialCta")} <ArrowLeft size={16} className="ltr:-scale-x-100" />
             </a>
           </div>
         </motion.div>
 
         <p className="mt-6 text-center text-2xs text-ink-subtle">
-          {fx.cur === "IQD"
-            ? "الدفع بالدينار بالسعر المكافئ · زين كاش · فاست باي · Qi · كاش عبر مندوب"
-            : "الأسعار معروضة بعملتك المحلية بشكل تقريبي حسب سعر الصرف — والدفع بالدولار أو بما يعادله"}
+          {fx.cur === "IQD" ? t("landing.pricing.payNoteIQD") : t("landing.pricing.payNoteOther")}
         </p>
       </div>
     </section>
@@ -690,6 +723,7 @@ function Pricing() {
 
 /* ------------------------------------------------------------- Final CTA --- */
 function FinalCTA() {
+  const { t } = useTranslation();
   return (
     <section className="mx-auto max-w-6xl px-4 py-20 sm:px-6">
       <motion.div
@@ -702,11 +736,11 @@ function FinalCTA() {
         </div>
         <div className="relative">
           <h2 className="mx-auto max-w-2xl text-balance font-display text-3xl font-extrabold tracking-tighter2 text-white sm:text-4xl">
-            جاهز تدير عيادتك بشكل أفضل؟
+            {t("landing.cta.h2")}
           </h2>
-          <p className="mx-auto mt-3 max-w-xl text-lg text-white/85">ابدأ مجاناً اليوم — الإعداد دقائق، والفريق كله يتعلمها بسرعة.</p>
+          <p className="mx-auto mt-3 max-w-xl text-lg text-white/85">{t("landing.cta.sub")}</p>
           <a href={appUrl("/login")} className="mt-8 inline-flex items-center gap-2 rounded-full bg-white px-7 py-3.5 text-base font-extrabold text-brand-700 shadow-soft transition hover:shadow-raised active:scale-[0.98]">
-            ابدأ مجاناً <ArrowLeft size={18} />
+            {t("landing.cta.btn")} <ArrowLeft size={18} className="ltr:-scale-x-100" />
           </a>
         </div>
       </motion.div>
@@ -716,16 +750,17 @@ function FinalCTA() {
 
 /* --------------------------------------------------------------- Footer ---- */
 function Footer() {
+  const { t } = useTranslation();
   return (
     <footer className="border-t border-line bg-surface-2/40">
       <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 px-4 py-10 sm:flex-row sm:px-6">
         <a href="#top" className="flex items-center gap-2.5 font-display text-lg font-extrabold tracking-tighter2"><Logo size={34} /> doctorVet</a>
         <nav className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-sm font-semibold text-ink-muted">
-          <a href="#features" className="hover:text-ink">المميزات</a>
-          <a href="#pricing" className="hover:text-ink">الأسعار</a>
-          <a href={appUrl("/login")} className="hover:text-ink">تسجيل الدخول</a>
+          <a href="#features" className="hover:text-ink">{t("landing.nav.features")}</a>
+          <a href="#pricing" className="hover:text-ink">{t("landing.nav.pricing")}</a>
+          <a href={appUrl("/login")} className="hover:text-ink">{t("landing.nav.login")}</a>
         </nav>
-        <p className="text-2xs text-ink-subtle">© {new Date().getFullYear()} doctorVet · جميع الحقوق محفوظة</p>
+        <p className="text-2xs text-ink-subtle">© {new Date().getFullYear()} doctorVet · {t("landing.footer.rights")}</p>
       </div>
     </footer>
   );

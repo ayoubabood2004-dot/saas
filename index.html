@@ -5,19 +5,24 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="theme-color" content="#1266d8" />
-    <meta name="description" content="doctorVet — منظومة إدارة العيادات البيطرية: سجل طبي موحّد، تقويم تشغيلي، مخزون وكاشير، حملات واتساب، وتعدد فروع. واجهة عربية بسيطة تعمل بالدينار." />
+    <!-- الوسوم الثابتة إنجليزية لأن اللغة الافتراضية إنجليزية: الزاحف ومعاينة
+         الرابط بالواتساب يقرآن هذا الرأس قبل أن يشتغل أي جافاسكربت، فوسمٌ
+         عربي فوق مستند lang="en" تناقضٌ يفهرَس. العربية تبقى لغةً بديلة
+         معلنة بـog:locale:alternate، وتظهر فعلياً بمجرد اختيارها. -->
+    <meta name="description" content="doctorVet — veterinary clinic management: one medical record, a live operations board, inventory and till, WhatsApp campaigns and multi-branch. A simple interface that runs in your own currency." />
     <meta name="apple-mobile-web-app-title" content="doctorVet" />
-    <title>doctorVet — منظومة إدارة العيادات البيطرية</title>
+    <title>doctorVet — Veterinary clinic management</title>
 
     <!-- Social share (Open Graph + Twitter) -->
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="doctorVet" />
-    <meta property="og:title" content="doctorVet — عيادتك البيطرية كاملة بمكان واحد" />
-    <meta property="og:description" content="سجل طبي موحّد، تقويم تشغيلي، مخزون وكاشير، حملات واتساب، وتعدد فروع — بواجهة عربية بسيطة تعمل بالدينار." />
-    <meta property="og:locale" content="ar_IQ" />
+    <meta property="og:title" content="doctorVet — your whole vet clinic in one place" />
+    <meta property="og:description" content="One medical record, a live operations board, inventory and till, WhatsApp campaigns and multi-branch — in a simple interface that runs in your own currency." />
+    <meta property="og:locale" content="en_US" />
+    <meta property="og:locale:alternate" content="ar_IQ" />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="doctorVet — عيادتك البيطرية كاملة بمكان واحد" />
-    <meta name="twitter:description" content="سجل طبي موحّد، تقويم تشغيلي، مخزون وكاشير، حملات واتساب، وتعدد فروع — بواجهة عربية بسيطة." />
+    <meta name="twitter:title" content="doctorVet — your whole vet clinic in one place" />
+    <meta name="twitter:description" content="One medical record, operations board, inventory and till, WhatsApp campaigns and multi-branch — in a simple interface that runs in your own currency." />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <!-- كل خطوط التطبيق بطلب واحد هنا — لا @import داخل CSS (يؤخر أول رسم)،

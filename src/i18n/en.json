@@ -3118,5 +3118,203 @@
     "finePerms": "Fine-grained staff permissions",
     "payroll": "Staff payroll — salaries, advances and deductions",
     "store": "Online store — a public shop on your clinic's own link"
+  },
+  "landing": {
+    "title": "doctorVet — Veterinary clinic management",
+    "langLabel": "Language",
+    "nav": {
+      "features": "Features",
+      "pricing": "Pricing",
+      "login": "Sign in",
+      "start": "Start free",
+      "menu": "Menu"
+    },
+    "hero": {
+      "badge": "Veterinary clinic management",
+      "h1a": "Your whole vet clinic,",
+      "h1b": " in one place.",
+      "sub": "One medical record, a live operations board, inventory and till, WhatsApp campaigns, and multi-branch — in a simple interface that runs in your own currency, with no technical background needed.",
+      "cta": "Start free — 14 days",
+      "seeFeatures": "See the features",
+      "perk1": "WhatsApp built in",
+      "perk2": "Multi-branch",
+      "perk3": "Runs in your currency",
+      "perk4": "No tech skills needed"
+    },
+    "demo": {
+      "hint": "Try it yourself — click the sections and the items",
+      "board": "Board",
+      "record": "Record",
+      "pos": "Till",
+      "reports": "Reports"
+    },
+    "board": {
+      "title": "Operations board",
+      "bell": "3 today · 1 overdue",
+      "colCare": "In care",
+      "colBoarding": "Boarding",
+      "colDone": "Completed",
+      "stCare": "In care",
+      "stBoarding": "Boarding",
+      "stDone": "Discharged",
+      "wa": "WhatsApp",
+      "openCase": "Open record",
+      "c1": "Rex",
+      "c1o": "Ahmed Salem",
+      "c1m": "Day 3",
+      "c2": "Luna",
+      "c2o": "Sara Kareem",
+      "c2m": "Day 1",
+      "c3": "Coco",
+      "c3o": "Ali Hasan",
+      "c3m": "Cage A2 · Day 5",
+      "c4": "Bobby",
+      "c4o": "Noor Mohammed",
+      "c4m": "Left today"
+    },
+    "record": {
+      "pet": "Rex",
+      "breed": "Dog · German Shepherd · 3 years",
+      "passport": "One passport",
+      "tab1": "Timeline",
+      "tab2": "Vaccines",
+      "tab3": "Notes",
+      "r1": "DHPP vaccine",
+      "r1m": "Given today · Dr. Sara",
+      "r2": "Exam & treatment",
+      "r2m": "Temp 38.6 · antibiotic",
+      "r3": "Birthday coming up",
+      "r3m": "In 4 days 🎂"
+    },
+    "pos": {
+      "title": "Point of sale",
+      "cart": "Cart ({{n}})",
+      "checkout": "Complete sale",
+      "p1": "Royal Canin 4kg",
+      "p2": "Frontline (pipette)",
+      "p3": "Drontal (tablet)",
+      "p4": "Medicated shampoo"
+    },
+    "reports": {
+      "revToday": "Revenue today",
+      "cases": "Cases",
+      "growth": "Growth",
+      "weekRev": "Revenue this week",
+      "d1": "Sa",
+      "d2": "Su",
+      "d3": "Mo",
+      "d4": "Tu",
+      "d5": "We",
+      "d6": "Th",
+      "d7": "Fr"
+    },
+    "marquee": {
+      "m1": "One medical record",
+      "m2": "Operations board",
+      "m3": "Inventory & till",
+      "m4": "Credit & instalments",
+      "m5": "WhatsApp campaigns",
+      "m6": "Reports & analytics",
+      "m7": "Multi-branch",
+      "m8": "Team permissions"
+    },
+    "features": {
+      "badge": "Everything in one place",
+      "h2": "Everything your clinic needs — without the complexity",
+      "sub": "Professional tools behind a simple interface, designed for how people actually think.",
+      "f1t": "Operations board",
+      "f1b": "Follow live cases, boarding and reminders on one board, and drag to change status.",
+      "f2t": "One medical record",
+      "f2b": "A single passport per animal: vaccines, treatments and notes across every visit.",
+      "f3t": "Inventory & till",
+      "f3b": "Sell whole or by the piece, deduct stock automatically, and print clean invoices.",
+      "f4t": "Credit & instalments",
+      "f4b": "Track what each customer still owes and settle it later — no paper notebook.",
+      "f5t": "WhatsApp campaigns",
+      "f5b": "Remind owners about vaccines and appointments with one tap.",
+      "f6t": "Reports & analytics",
+      "f6b": "Revenue, staff performance and more — ready to print or export to Excel.",
+      "f7t": "Multi-branch",
+      "f7b": "Run every branch from one account — shared records, separate operations.",
+      "f8t": "Fine-grained permissions",
+      "f8b": "You decide what each staff member sees and does — full safety and privacy."
+    },
+    "pricing": {
+      "badge": "Fair pricing",
+      "h2": "Choose your plan",
+      "sub": "Clear, fair pricing — and a full free trial with no commitment.",
+      "monthly": "Monthly",
+      "annual": "Annual",
+      "curHint": "Prices are shown in your local currency automatically, based on where you are",
+      "perYear": "year",
+      "perMonth": "month",
+      "mostComplete": "👑 Most complete",
+      "twoFree": "🎁 Two months free vs monthly",
+      "startNow": "Start now",
+      "trialTitle": "Try the full Super plan for 14 days — free",
+      "trialBody": "Every feature unlocked (credit sales, WhatsApp, full reports…) — no card, no commitment.",
+      "trialCta": "Start the free trial",
+      "payNoteIQD": "Pay in dinar at the equivalent rate · ZainCash · FastPay · Qi · cash via a rep",
+      "payNoteOther": "Prices are shown in your local currency as an approximation at the current exchange rate — payment is in USD or its equivalent"
+    },
+    "cta": {
+      "h2": "Ready to run your clinic better?",
+      "sub": "Start free today — setup takes minutes, and the whole team picks it up fast.",
+      "btn": "Start free"
+    },
+    "footer": {
+      "rights": "All rights reserved"
+    }
+  },
+  "plans": {
+    "basic": {
+      "name": "Basic",
+      "tag": "Get your clinic on the books — for small clinics",
+      "feats": [
+        "Animal records and the full medical file",
+        "Basic calendar and reminders",
+        "Inventory — products and quantities",
+        "5GB media storage",
+        "2 users"
+      ],
+      "missing": [
+        "Till, sales and invoices",
+        "Reports",
+        "WhatsApp campaigns"
+      ]
+    },
+    "advanced": {
+      "name": "Advanced",
+      "tag": "Your clinic started selling — for mid-size clinics",
+      "feats": [
+        "Everything in Basic",
+        "Full till + A4 and thermal invoices",
+        "Split selling (tablet / strip / ml)",
+        "Basic reports: day, week and month",
+        "25GB media storage",
+        "4 users"
+      ],
+      "missing": [
+        "Credit sales and the debt ledger",
+        "Excel export and report printing",
+        "WhatsApp campaigns"
+      ]
+    },
+    "super": {
+      "name": "Super",
+      "tag": "Everything — for the complete clinic",
+      "feats": [
+        "Everything in Advanced",
+        "Online store — a public shop on your clinic's own link",
+        "Credit sales + debt ledger + partial payment",
+        "Full reports and analytics + Excel and printing",
+        "WhatsApp campaigns and automatic reminders",
+        "Consent forms + printouts with your clinic's logo",
+        "Fine-grained staff permissions",
+        "100GB media storage",
+        "10 users + priority support and training"
+      ],
+      "missing": []
+    }
   }
 }
