@@ -1698,7 +1698,6 @@ const demoRepo = {
     const inv = (db.invoices ?? []).find((x) => x.id === invoiceId);
     if (!inv) throw new Error("invoice not found");
     if (inv.status === "refunded") throw new Error("invoice refunded");
-    if ((reason ?? "").trim().length < 3) throw new Error("reason required");
     const who = (inv.customer_name ?? "").trim() || (inv.customer_phone ?? "").trim();
     if (!who) throw new Error("customer required");
     const cut = round2(Number(amount));
@@ -1716,7 +1715,9 @@ const demoRepo = {
     if (posSum < wasPaid) {
       legs.push({ method: (inv.payment_method ?? m) as PaymentMethod, amount: round2(wasPaid - posSum), at: inv.created_at });
     }
-    inv.payment_details = [...legs, { method: m, amount: -cut, at: new Date().toISOString(), note: reason.trim() }];
+    // السبب اختياري — ويُكتَب مفتاحاً حين يوجد وحده (كما بدالّة الخادم).
+    const why = (reason ?? "").trim();
+    inv.payment_details = [...legs, { method: m, amount: -cut, at: new Date().toISOString(), ...(why ? { note: why } : {}) }];
     inv.amount_paid = Math.max(0, round2(wasPaid - cut));
     const pos = inv.payment_details.filter((l) => l.amount > 0);
     if (pos.length) inv.payment_method = pos.reduce((b, p) => (p.amount > b.amount ? p : b), pos[0]).method;

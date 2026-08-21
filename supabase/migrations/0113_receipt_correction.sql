@@ -53,8 +53,10 @@ begin
   if not found then raise exception 'invoice not found'; end if;
   if v_inv.status = 'refunded' then raise exception 'invoice refunded'; end if;
 
-  -- سببٌ إلزامي: قيدٌ عكسيّ بلا سبب هو بابٌ للتهرّب لا أثرٌ للمراجعة.
-  if length(coalesce(btrim(p_reason), '')) < 3 then raise exception 'reason required'; end if;
+  -- السبب **مستحبٌّ لا إلزامي**. جرّبنا إلزامه فكانت النتيجة أن يُكتب حرفٌ
+  -- عشوائيّ لتجاوز الحقل — وسببٌ مزيّف أسوأ من لا سبب: يبدو أثراً وهو ليس
+  -- أثراً. والأثر الحقيقي محفوظ بلا سبب أصلاً: مَن، ومتى، وكم، وأي جيب.
+  -- فيُكتَب حين يُكتَب، ويُترك حين يُترك.
 
   -- الباقي يصير ديناً، والدين يحتاج صاحباً. بيعةٌ بلا زبون لا يُلاحَق دينها،
   -- فالتصحيح عليها يخلق مطلوباً بلا مَدين — ونرفضه بدل أن ننتجه.
@@ -88,12 +90,16 @@ begin
   end if;
 
   v_details := v_details
-    || jsonb_build_object(
+    || (jsonb_build_object(
          'method', v_method,
          -- الإشارة السالبة هي ما يميّز التصحيح: لا حاجة لعَلَمٍ إضافي.
          'amount', -v_cut,
-         'at', to_char(now() at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
-         'note', btrim(p_reason));
+         'at', to_char(now() at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))
+       -- السبب يُضاف مفتاحاً حين يوجد وحده: مفتاحٌ فارغ يُعرَض شرطةً خاوية
+       -- بكل تقرير يقرأه.
+       || case when length(coalesce(btrim(p_reason), '')) > 0
+               then jsonb_build_object('note', btrim(p_reason))
+               else '{}'::jsonb end);
 
   update invoices
      set amount_paid     = greatest(0, v_inv.amount_paid - v_cut),
@@ -148,6 +154,8 @@ end $$;
 --   -- كمدير، على فاتورة باسم زبون:
 --   select amount_paid, total from invoices where id = '<INV>';
 --   select correct_invoice_receipt('<INV>', 50000, 'الزبون دفع النص بس');
+--   -- وبلا سبب (السبب اختياري):
+--   select correct_invoice_receipt('<INV>', 50000, null);
 --   select amount_paid, total - amount_paid as due from invoices where id = '<INV>';
 --   select jsonb_pretty(payment_details) from invoices where id = '<INV>';
 --   -- كغير مدير: الاستدعاء نفسه يرفع not allowed.

@@ -65,6 +65,11 @@ export function describeDbError(e: unknown, t: TFunction): string {
     case "42501": // RLS / insufficient_privilege
     case "PGRST301":
       return t("errors.unauthorized", "Your session may have expired. Sign in again and retry.");
+    // PGRST202: الواجهة تنادي دالّةً غير موجودة بالقاعدة — أي أن هجرةً لم
+    // تُطبَّق بعد. الرسالة الخام إنجليزية وتذكر اسم الدالة، وهي بلا معنى لمن
+    // يقف على الشاشة. الميزة **اختيارية بطبيعتها**: ما عداها يعمل كما هو.
+    case "PGRST202":
+      return t("errors.featureNotInstalled", "هذي الميزة لسّه ما مفعّلة على قاعدة بياناتك — تحتاج تحديث من مزوّد الخدمة. باقي النظام يشتغل عادي.");
   }
   if (typeof err.message === "string" && err.message.trim()) return err.message;
   return t("errors.database", "Database error. Please try again.");

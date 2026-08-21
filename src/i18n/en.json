@@ -17,6 +17,7 @@
     "f3Body": "You decide what each clinic can see. Always."
   },
   "common": {
+    "optional": "(optional)",
     "save": "Save",
     "cancel": "Cancel",
     "clear": "Clear",
@@ -45,6 +46,7 @@
   },
   "errors": {
     "title": "Something went wrong",
+    "featureNotInstalled": "This feature isn't enabled on your database yet — it needs an update from your provider. The rest of the system works normally.",
     "body": "An unexpected error interrupted this screen. Your data is safe — try reloading.",
     "reload": "Reload",
     "home": "Go to start",
@@ -445,6 +447,9 @@
     "receiptFixPaidNow": "Recorded as received now: {{v}}",
     "receiptFixReason": "Reason",
     "receiptFixReasonPh": "e.g. customer paid half, the rest is owed",
+    "receiptFixWhyPartial": "Paid part, rest is owed",
+    "receiptFixWhyLater": "Will pay later",
+    "receiptFixWhyMistake": "Recorded by mistake",
     "receiptFixNewDue": "Debt on {{n}}",
     "receiptFixSave": "Record the correction",
     "receiptFixOk": "Correction recorded — the rest is now a debt on the customer"

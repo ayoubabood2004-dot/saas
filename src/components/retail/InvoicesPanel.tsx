@@ -464,7 +464,9 @@ function ReceiptFixDialog({ invoice, customer, onClose, onDone }: {
   const [busy, setBusy] = useState(false);
 
   const cut = round2(Number(amount) || 0);
-  const valid = cut > 0 && cut <= paid && reason.trim().length >= 3 && !!customer;
+  // السبب **لا يدخل بشرط الصحّة**: إلزامه كان ينتج سبباً مزيّفاً (حرفٌ عشوائي
+  // لتجاوز الحقل) — وهو أسوأ من فراغ، لأنه يبدو أثراً وليس أثراً.
+  const valid = cut > 0 && cut <= paid && !!customer;
   const newPaid = round2(paid - cut);
   const newDue = round2(invoice.total - newPaid);
 
@@ -516,10 +518,29 @@ function ReceiptFixDialog({ invoice, customer, onClose, onDone }: {
         </div>
 
         <div>
-          <label className="label">{t("retail.receiptFixReason", "السبب")} <span className="text-danger-600">*</span></label>
+          <label className="label">
+            {t("retail.receiptFixReason", "السبب")}{" "}
+            <span className="text-2xs font-normal text-ink-subtle">{t("common.optional", "(اختياري)")}</span>
+          </label>
           <input className="input" value={reason} data-invfixreason
             onChange={(e) => setReason(e.target.value)}
             placeholder={t("retail.receiptFixReasonPh", "مثال: الزبون دفع النص وباقي عليه")} />
+          {/* أسبابٌ جاهزة بلمسة: أسهل من الكتابة، فيُكتب السبب الحقيقي بدل أن
+              يُتجاوَز الحقل. والحقل يبقى مفتوحاً لمن عنده تفصيلٌ آخر. */}
+          <div className="mt-1.5 flex flex-wrap gap-1.5">
+            {[
+              t("retail.receiptFixWhyPartial", "دفع جزء وباقي عليه"),
+              t("retail.receiptFixWhyLater", "راح يدفع لاحقاً"),
+              t("retail.receiptFixWhyMistake", "غلط بالتسجيل"),
+            ].map((why) => (
+              <button key={why} type="button" data-invfixwhy={why}
+                className={cn("chip text-2xs transition",
+                  reason.trim() === why ? "bg-brand-600 text-white" : "bg-surface-2 text-ink-muted hover:text-ink")}
+                onClick={() => { playTap(); setReason(reason.trim() === why ? "" : why); }}>
+                {why}
+              </button>
+            ))}
+          </div>
         </div>
 
         {cut > 0 && cut <= paid && (
