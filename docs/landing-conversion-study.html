@@ -1,0 +1,782 @@
+<title>لماذا لا تبيع صفحتك</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@600;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+<style>
+  :root {
+    --paper:   #eef0f3;
+    --card:    #ffffff;
+    --sunk:    #e5e8ec;
+    --ink:     #10161d;
+    --ink-2:   #5a6672;
+    --ink-3:   #8b96a2;
+    --rule:    #ccd2da;
+    --rule-2:  #e0e5ea;
+    --alarm:   #c2410c;
+    --alarm-w: #fdf0e7;
+    --good:    #0f766e;
+    --good-w:  #e4f2f0;
+    --cool:    #1f4e79;
+    --cool-w:  #e8eff6;
+    --shadow:  0 1px 2px #10161d0f, 0 10px 28px #10161d0a;
+    --read:    66ch;
+    --wide:    minmax(0, 1120px);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #0b0f14; --card: #131a22; --sunk: #101820;
+      --ink: #e6ecf2; --ink-2: #98a5b2; --ink-3: #6f7d8b;
+      --rule: #23303c; --rule-2: #1a242e;
+      --alarm: #fb923c; --alarm-w: #2a1710;
+      --good: #4cc7b6; --good-w: #0c241f;
+      --cool: #7db3e0; --cool-w: #10202e;
+      --shadow: 0 1px 2px #0007, 0 12px 32px #0005;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #0b0f14; --card: #131a22; --sunk: #101820;
+    --ink: #e6ecf2; --ink-2: #98a5b2; --ink-3: #6f7d8b;
+    --rule: #23303c; --rule-2: #1a242e;
+    --alarm: #fb923c; --alarm-w: #2a1710;
+    --good: #4cc7b6; --good-w: #0c241f;
+    --cool: #7db3e0; --cool-w: #10202e;
+    --shadow: 0 1px 2px #0007, 0 12px 32px #0005;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--paper); color: var(--ink);
+    font-family: "IBM Plex Sans Arabic", system-ui, sans-serif;
+    font-size: 16.5px; line-height: 1.85; direction: rtl;
+    -webkit-text-size-adjust: 100%;
+  }
+  .doc {
+    display: grid;
+    grid-template-columns: [full-start] 1fr [wide-start] var(--wide) [read-start] var(--read) [read-end] var(--wide) [wide-end] 1fr [full-end];
+    justify-content: center; padding: 0 20px 100px;
+  }
+  .doc > * { grid-column: read; min-width: 0; }
+  .break { grid-column: wide; }
+
+  h1, h2, h3, h4 { font-family: "Cairo", "IBM Plex Sans Arabic", sans-serif; text-wrap: balance; margin: 0; }
+  p { margin: 0 0 1.05em; }
+  a { color: var(--cool); }
+  a:focus-visible, button:focus-visible { outline: 2px solid var(--cool); outline-offset: 3px; }
+  strong { font-weight: 700; }
+  code, .mono { font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: .86em; direction: ltr; unicode-bidi: isolate; }
+  code { background: var(--sunk); border: 1px solid var(--rule-2); border-radius: 5px; padding: 1px 5px; }
+
+  /* ── ترويسة ────────────────────────────────────────────────────────── */
+  .mast { grid-column: wide; padding: 60px 0 0; }
+  .kicker {
+    display: inline-flex; align-items: center; gap: 9px;
+    font-family: "IBM Plex Mono", monospace; font-size: 11px; letter-spacing: .18em;
+    text-transform: uppercase; color: var(--ink-3);
+    border: 1px solid var(--rule); border-radius: 3px; padding: 5px 12px; direction: ltr;
+  }
+  h1 { font-size: clamp(36px, 7vw, 74px); font-weight: 900; line-height: 1.05; letter-spacing: -0.03em; margin: 22px 0 0; max-width: 15ch; }
+  .dek { font-size: clamp(17px, 2.3vw, 20px); color: var(--ink-2); max-width: 54ch; margin: 20px 0 0; line-height: 1.7; }
+  .stampline { margin-top: 28px; padding-top: 16px; border-top: 3px solid var(--ink); display: flex; flex-wrap: wrap; gap: 6px 24px; font-size: 13px; color: var(--ink-2); }
+
+  /* ── لوحة القراءات ─────────────────────────────────────────────────── */
+  .gauges { grid-column: wide; display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; margin: 40px 0 0; }
+  .gauge { background: var(--card); border: 1px solid var(--rule); border-radius: 10px; padding: 16px 18px; box-shadow: var(--shadow); }
+  .gauge .lbl { font-size: 12px; font-weight: 600; color: var(--ink-2); line-height: 1.5; }
+  .gauge .val { font-family: "IBM Plex Mono", monospace; font-size: 34px; font-weight: 600; line-height: 1.15; margin-top: 8px; direction: ltr; text-align: start; font-variant-numeric: tabular-nums; }
+  .gauge .foot { font-size: 11.5px; color: var(--ink-3); margin-top: 4px; line-height: 1.5; }
+  .g-alarm .val { color: var(--alarm); }
+  .g-cool  .val { color: var(--cool); }
+  .g-zero  .val { color: var(--ink-3); }
+
+  /* ── فهرس ──────────────────────────────────────────────────────────── */
+  .toc { grid-column: wide; margin: 44px 0 0; }
+  .toc ol { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); border-top: 1px solid var(--rule); }
+  .toc li { border-bottom: 1px solid var(--rule); }
+  .toc a { display: flex; gap: 11px; align-items: baseline; padding: 11px 4px; text-decoration: none; color: var(--ink); font-size: 14.5px; }
+  .toc a:hover { color: var(--alarm); }
+  .toc b { font-family: "IBM Plex Mono", monospace; font-size: 11px; color: var(--ink-3); font-weight: 500; }
+
+  /* ── أقسام ─────────────────────────────────────────────────────────── */
+  section { grid-column: read; padding-top: 66px; scroll-margin-top: 16px; }
+  .head { grid-column: wide; display: flex; align-items: baseline; gap: 14px; margin-bottom: 24px; }
+  .head .n { font-family: "IBM Plex Mono", monospace; font-size: 12px; font-weight: 600; color: var(--card); background: var(--ink); border-radius: 3px; padding: 3px 8px; flex: none; direction: ltr; }
+  .head h2 { font-size: clamp(23px, 3.6vw, 32px); font-weight: 800; letter-spacing: -0.02em; }
+  .head .rule { flex: 1; height: 2px; background: var(--rule); align-self: center; }
+  h3 { font-size: 19px; font-weight: 800; margin: 36px 0 11px; }
+  h4 { font-size: 15.5px; font-weight: 700; margin: 24px 0 7px; }
+  .lede { font-size: 18.5px; line-height: 1.72; }
+  .small { font-size: 14px; line-height: 1.7; color: var(--ink-2); }
+  ul, ol { margin: 0 0 1.15em; padding-inline-start: 1.35em; }
+  li { margin-bottom: .5em; }
+  li::marker { color: var(--ink-3); }
+
+  /* ── بطاقات ────────────────────────────────────────────────────────── */
+  .card { background: var(--card); border: 1px solid var(--rule); border-radius: 10px; padding: 20px 22px; box-shadow: var(--shadow); margin: 22px 0; }
+  .card > :last-child { margin-bottom: 0; }
+  .card-h { display: flex; align-items: center; gap: 9px; margin: 0 0 11px; font-family: "Cairo", sans-serif; font-size: 15.5px; font-weight: 800; }
+  .tag { font-family: "IBM Plex Mono", monospace; font-size: 10.5px; font-weight: 600; letter-spacing: .07em; text-transform: uppercase; padding: 2px 7px; border-radius: 3px; direction: ltr; flex: none; }
+  .t-alarm { background: var(--alarm-w); color: var(--alarm); }
+  .t-good  { background: var(--good-w);  color: var(--good); }
+  .t-cool  { background: var(--cool-w);  color: var(--cool); }
+  .alarm { border-inline-start: 4px solid var(--alarm); }
+  .good  { border-inline-start: 4px solid var(--good); }
+  .cool  { border-inline-start: 4px solid var(--cool); }
+
+  /* ── جداول ─────────────────────────────────────────────────────────── */
+  .tw { overflow-x: auto; margin: 22px 0; border: 1px solid var(--rule); border-radius: 10px; background: var(--card); box-shadow: var(--shadow); }
+  table { border-collapse: collapse; width: 100%; font-size: 14.3px; line-height: 1.6; }
+  thead th { background: var(--sunk); text-align: start; font-family: "IBM Plex Mono", monospace; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; font-weight: 600; color: var(--ink-2); padding: 10px 14px; border-bottom: 1px solid var(--rule); white-space: nowrap; }
+  tbody td { padding: 11px 14px; border-bottom: 1px solid var(--rule-2); vertical-align: top; }
+  tbody tr:last-child td { border-bottom: 0; }
+  td.num { font-family: "IBM Plex Mono", monospace; font-variant-numeric: tabular-nums; text-align: end; white-space: nowrap; direction: ltr; }
+  .bad { color: var(--alarm); font-weight: 600; }
+  .ok  { color: var(--good); font-weight: 600; }
+  .dim { color: var(--ink-3); }
+
+  /* ── شريط القياس (السرعة) ──────────────────────────────────────────── */
+  .bars { margin: 24px 0; display: grid; gap: 12px; }
+  .bar-row { display: grid; grid-template-columns: 10.5rem 1fr; gap: 12px; align-items: center; }
+  .bar-lbl { font-size: 13px; font-weight: 600; line-height: 1.4; }
+  .bar-lbl i { display: block; font-style: normal; font-size: 11px; color: var(--ink-3); }
+  .bar-track { position: relative; height: 30px; background: var(--sunk); border: 1px solid var(--rule-2); border-radius: 4px; overflow: hidden; }
+  .bar-fill { position: absolute; inset-block: 0; inset-inline-start: 0; border-radius: 3px; display: flex; align-items: center; padding-inline: 8px; }
+  .bar-fill span { font-family: "IBM Plex Mono", monospace; font-size: 12px; font-weight: 600; color: #fff; white-space: nowrap; direction: ltr; }
+  .f-good { background: var(--good); }
+  .f-alarm { background: var(--alarm); }
+  .f-mid { background: #b45309; }
+  .bar-note { font-size: 12px; color: var(--ink-3); margin-top: 2px; }
+
+  /* ── القمع ─────────────────────────────────────────────────────────── */
+  .funnel { display: grid; gap: 8px; margin: 22px 0; }
+  .fstep { display: grid; grid-template-columns: auto 1fr; gap: 13px; align-items: start; }
+  .fdot { width: 28px; height: 28px; border-radius: 4px; display: grid; place-items: center; font-family: "IBM Plex Mono", monospace; font-size: 12px; font-weight: 600; background: var(--sunk); color: var(--ink-2); border: 1px solid var(--rule); flex: none; }
+  .fstep.leak .fdot { background: var(--alarm-w); color: var(--alarm); border-color: var(--alarm); }
+  .fbody { border: 1px solid var(--rule); border-radius: 8px; padding: 11px 14px; background: var(--card); }
+  .fbody b { display: block; font-family: "Cairo", sans-serif; font-size: 14.5px; margin-bottom: 2px; }
+  .fbody p { margin: 0; font-size: 13.5px; color: var(--ink-2); line-height: 1.65; }
+  .fbody .leaktag { display: inline-block; margin-top: 6px; font-size: 11.5px; font-weight: 700; color: var(--alarm); }
+
+  /* ── قبل/بعد ───────────────────────────────────────────────────────── */
+  .ba { display: grid; grid-template-columns: 1fr 1fr; gap: 0; border: 1px solid var(--rule); border-radius: 10px; overflow: hidden; margin: 20px 0; background: var(--card); box-shadow: var(--shadow); }
+  .ba > div { padding: 15px 17px; }
+  .ba > div:first-child { border-inline-end: 1px solid var(--rule); background: var(--sunk); }
+  .ba h5 { margin: 0 0 8px; font-family: "IBM Plex Mono", monospace; font-size: 10.5px; letter-spacing: .09em; text-transform: uppercase; font-weight: 600; }
+  .ba .b h5 { color: var(--ink-3); }
+  .ba .a h5 { color: var(--good); }
+  .ba p { margin: 0; font-size: 14px; line-height: 1.65; }
+
+  /* ── شبكة بطاقات ───────────────────────────────────────────────────── */
+  .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(255px, 1fr)); gap: 13px; margin: 22px 0; }
+  .qc { background: var(--card); border: 1px solid var(--rule); border-radius: 10px; padding: 16px 18px; box-shadow: var(--shadow); }
+  .qc h4 { margin: 0 0 6px; font-size: 15px; }
+  .qc p { margin: 0 0 8px; font-size: 13.6px; color: var(--ink-2); line-height: 1.65; }
+  .qc .rec { font-size: 13px; border-top: 1px dashed var(--rule); padding-top: 8px; margin: 0; color: var(--ink); }
+  .qc .rec b { color: var(--good); }
+
+  /* ── موجات التنفيذ ─────────────────────────────────────────────────── */
+  .wave { border: 1px solid var(--rule); border-radius: 10px; background: var(--card); box-shadow: var(--shadow); margin: 15px 0; overflow: hidden; }
+  .wave-h { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 13px 19px; border-bottom: 1px solid var(--rule); }
+  .wave-h b { font-family: "Cairo", sans-serif; font-size: 16px; }
+  .wave-h .eff { margin-inline-start: auto; font-family: "IBM Plex Mono", monospace; font-size: 11.5px; color: var(--ink-2); }
+  .wave-b { padding: 14px 19px; }
+  .wave-b ul { margin: 0; }
+  .wave-b li { font-size: 14.2px; }
+
+  footer { grid-column: wide; margin-top: 76px; padding-top: 20px; border-top: 3px solid var(--ink); font-size: 13px; color: var(--ink-2); }
+
+  @media (max-width: 720px) {
+    .doc { padding: 0 16px 76px; }
+    .ba { grid-template-columns: 1fr; }
+    .ba > div:first-child { border-inline-end: 0; border-bottom: 1px solid var(--rule); }
+    .bar-row { grid-template-columns: 1fr; gap: 5px; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+</style>
+
+<div class="doc">
+
+  <header class="mast">
+    <div class="kicker">doctorVet <span>·</span> CONVERSION AUDIT</div>
+    <h1>لماذا لا تبيع صفحتك</h1>
+    <p class="dek">
+      دراسة تحويل مبنيّة على <strong>قياس صفحتك أنت</strong> بهاتفٍ حقيقي على شبكةٍ
+      حقيقية — لا على نصائح تسويق عامة. النتيجة: مشكلتك ليست بالكلام المكتوب،
+      وأول عائقٍ يقف أمام كل دينار ليس في الصفحة أصلاً.
+    </p>
+    <div class="stampline">
+      <span>قياس ٢١ آب ٢٠٢٦ · بناء الإنتاج</span>
+      <span>موبايل ٣٩٠×٨٤٤ · ١٫٦ ميغابت · معالج ×٤ أبطأ</span>
+      <span>دراسة قبل البناء — ما انكتب سطر كود</span>
+    </div>
+  </header>
+
+  <div class="gauges">
+    <div class="gauge g-alarm">
+      <p class="lbl">حتى يظهر أول شيء على الشاشة</p>
+      <p class="val">12.9s</p>
+      <p class="foot">الحدّ الجيد عالمياً ≤ 2.5 ثانية</p>
+    </div>
+    <div class="gauge g-alarm">
+      <p class="lbl">حتى يظهر العنوان الرئيسي</p>
+      <p class="val">15.1s</p>
+      <p class="foot">شاشة بيضاء فارغة قبله</p>
+    </div>
+    <div class="gauge g-cool">
+      <p class="lbl">حجم التحميل لصفحة تسويقية</p>
+      <p class="val">1.7MB</p>
+      <p class="foot">١٩ طلباً قبل أول رسم</p>
+    </div>
+    <div class="gauge g-zero">
+      <p class="lbl">أدوات قياس على الصفحة</p>
+      <p class="val">0</p>
+      <p class="foot">لا تعرف كم زائراً ولا أين يهربون</p>
+    </div>
+  </div>
+
+  <nav class="toc" aria-label="فهرس">
+    <ol>
+      <li><a href="#order"><b>00</b>قانون الترتيب</a></li>
+      <li><a href="#speed"><b>01</b>خمس عشرة ثانية</a></li>
+      <li><a href="#funnel"><b>02</b>القمع بعد النقرة</a></li>
+      <li><a href="#trust"><b>03</b>الثقة — القيد الحاكم</a></li>
+      <li><a href="#risk"><b>04</b>إزالة المخاطرة</a></li>
+      <li><a href="#price"><b>05</b>التسعير كأداة إقناع</a></li>
+      <li><a href="#objections"><b>06</b>الاعتراضات الستّة</a></li>
+      <li><a href="#copy"><b>07</b>النصّ الذي يبيع</a></li>
+      <li><a href="#whatsapp"><b>08</b>الواتساب قناةً أولى</a></li>
+      <li><a href="#measure"><b>09</b>ما لا يُقاس لا يتحسّن</a></li>
+      <li><a href="#waves"><b>10</b>خطة على ثلاث موجات</a></li>
+      <li><a href="#unknown"><b>11</b>ما لا أعرفه</a></li>
+    </ol>
+  </nav>
+
+  <section id="summary">
+    <div class="head"><span class="n">TL;DR</span><h2>الخلاصة</h2><div class="rule"></div></div>
+
+    <p class="lede">
+      صفحتك مصمَّمة جيداً ونصّها معقول. ومع ذلك لن ترفع مبيعاتها بتغيير كلمة
+      واحدة — لأن العائق الأول ليس ما تقوله الصفحة، بل أن <strong>الزائر لا
+      يراها</strong>: على هاتفٍ متوسط بشبكة ٤G عادية يقف أمام شاشة بيضاء
+      <strong>ثلاث عشرة ثانية</strong> قبل أن يظهر حرف.
+    </p>
+
+    <div class="card alarm">
+      <p class="card-h"><span class="tag t-alarm">القيد</span> الترتيب الصحيح للمعالجة</p>
+      <p class="small" style="margin:0">
+        السرعة ← ثم القمع بعد النقرة ← ثم الثقة ← ثم النصّ ← ثم السعر — وفوقها
+        كلّها <strong>القياس</strong>. أغلب من يريد «رفع التحويل» يبدأ من النصّ
+        لأنه الأرخص والأظهر، فلا يتغيّر شيء: كتابةٌ ممتازة على صفحةٍ لا تُرى
+        ليست كتابة، وصفحةٌ مقنعة تنتهي بقمعٍ مثقوب لا تبيع.
+      </p>
+    </div>
+
+    <p>
+      وثلاثة ثقوبٍ أخرى قِسْتُها بنفسي: النقرة على «ابدأ مجاناً» تهبط بالزائر
+      على سؤالٍ لم يسأله («مالك حيوان أم عيادة؟»)، والصفحة <strong>خالية تماماً
+      من أي دليل بشري</strong> (لا شهادة عميل ولا اسم عيادة واحدة)، ولا وجود
+      لأي أداة قياس — فأنت اليوم لا تعرف عدد زوّارك ولا أين يتسرّبون، وبلا هذا
+      كل تحسينٍ تخمين.
+    </p>
+  </section>
+
+  <section id="order">
+    <div class="head"><span class="n">00</span><h2>قانون الترتيب</h2><div class="rule"></div></div>
+
+    <p>
+      البيع من صفحة هبوط سلسلةٌ متتابعة، وكل حلقة فيها تضرب ما بعدها. لهذا
+      ترتيب المعالجة ليس ذوقاً:
+    </p>
+
+    <div class="tw break">
+      <table>
+        <thead><tr><th>الحلقة</th><th>السؤال الذي تجيب عنه</th><th>حالتك اليوم</th></tr></thead>
+        <tbody>
+          <tr><td><strong>١ · السرعة</strong></td><td>هل رآها أصلاً؟</td><td class="bad">١٥ ثانية حتى العنوان</td></tr>
+          <tr><td><strong>٢ · القمع</strong></td><td>هل أوصلته النقرة لما وعدته؟</td><td class="bad">تهبط على سؤال منفصل</td></tr>
+          <tr><td><strong>٣ · الثقة</strong></td><td>هل يصدّق أن هذا حقيقي؟</td><td class="bad">صفر دليل بشري</td></tr>
+          <tr><td><strong>٤ · إزالة المخاطرة</strong></td><td>ماذا يخسر لو جرّب؟</td><td class="dim">موجود لكنه مدفون</td></tr>
+          <tr><td><strong>٥ · النصّ</strong></td><td>هل فهم ما سيكسبه؟</td><td class="dim">وصفٌ لا نتيجة</td></tr>
+          <tr><td><strong>٦ · السعر</strong></td><td>هل الاختيار سهل؟</td><td class="dim">السنوي بلا سبب</td></tr>
+          <tr><td><strong>٧ · القياس</strong></td><td>هل تعرف أين تخسره؟</td><td class="bad">لا شيء</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p class="small">
+      لاحظ أن الأحمر في الحلقات ١ و٢ و٣ — وهي الثلاث الأولى. تحسين النصّ
+      والسعر قبلها إنفاقُ جهدٍ على حلقةٍ لا يصلها أحد.
+    </p>
+  </section>
+
+  <section id="speed">
+    <div class="head"><span class="n">01</span><h2>خمس عشرة ثانية</h2><div class="rule"></div></div>
+
+    <p class="lede">
+      قِسْتُ بناء الإنتاج على محاكاة هاتفٍ متوسط (معالج أبطأ بأربع مرّات) وشبكة
+      ١٫٦ ميغابت — وهذا ليس تشاؤماً بل واقع أغلب زوّارك.
+    </p>
+
+    <div class="bars break">
+      <div class="bar-row">
+        <div class="bar-lbl">الحدّ «الجيد» عالمياً<i>معيار Core Web Vitals</i></div>
+        <div><div class="bar-track"><div class="bar-fill f-good" style="width:16.5%"><span>2.5s</span></div></div></div>
+      </div>
+      <div class="bar-row">
+        <div class="bar-lbl">أول حرف يظهر عندك<i>First Contentful Paint</i></div>
+        <div><div class="bar-track"><div class="bar-fill f-mid" style="width:85%"><span>12.9s</span></div></div></div>
+      </div>
+      <div class="bar-row">
+        <div class="bar-lbl">العنوان الرئيسي يظهر<i>Largest Contentful Paint</i></div>
+        <div><div class="bar-track"><div class="bar-fill f-alarm" style="width:100%"><span>15.1s</span></div></div></div>
+      </div>
+    </div>
+
+    <p>
+      خمس عشرة ثانية أمام شاشةٍ بيضاء. جرّبها بنفسك: عُدّ إلى خمسة عشر ببطء
+      وأنت تنظر إلى فراغ. أحدٌ لا ينتظر — وهذا يقع <strong>قبل</strong> أن يقرأ
+      كلمةً من عرضك.
+    </p>
+
+    <h3>السبب — مقيسٌ لا مخمَّن</h3>
+    <p>
+      صفحتك التسويقية ليست صفحة تسويقية بل <strong>هي التطبيق كلّه</strong>:
+      نفس الحزمة، نفس المسار. الزائر الذي جاء ليقرأ عنواناً ينزّل السستم:
+    </p>
+
+    <div class="tw break">
+      <table>
+        <thead><tr><th>ما يُنزَّل قبل أول رسم</th><th class="num">الحجم</th><th>هل تحتاجه صفحة الهبوط؟</th></tr></thead>
+        <tbody>
+          <tr><td><code>index.js</code> — نواة التطبيق</td><td class="num">608KB</td><td>جزء صغير منه فقط</td></tr>
+          <tr><td><code>charts.js</code> — مكتبة الرسوم البيانية</td><td class="num bad">428KB</td><td class="bad">لا. الصفحة لا ترسم مخططاً واحداً</td></tr>
+          <tr><td><code>supabase.js</code> — عميل قاعدة البيانات</td><td class="num bad">208KB</td><td class="bad">لا. زائر مجهول لا يقرأ قاعدة</td></tr>
+          <tr><td><code>motion.js</code> — محرّك الحركة</td><td class="num">—</td><td>جزئياً</td></tr>
+          <tr><td>ثلاث عائلات خطوط × ٤ أوزان</td><td class="num">—</td><td class="bad">خطّ عربي كامل بصفحةٍ إنجليزية</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p class="small">
+      و<code>charts</code> و<code>supabase</code> ليسا محمَّلين بالصدفة: هما
+      مُعلَنان <code>modulepreload</code> برأس الصفحة، أي أن المتصفّح يُؤمَر
+      صراحةً بجلبهما بأولوية عالية قبل أن يرسم شيئاً.
+    </p>
+
+    <div class="card cool">
+      <p class="card-h"><span class="tag t-cool">ما تفعله البراندات</span> فصل الموقع عن التطبيق</p>
+      <p class="small" style="margin:0">
+        القاعدة الشائعة عند شركات البرمجيات الكبرى: <strong>صفحة التسويق تُبنى
+        وتُخدَّم منفصلةً عن التطبيق</strong> — صفحةً ثابتة (HTML مُولَّد مسبقاً)
+        تصل بالكامل بأقل من ثانية، والتطبيق خلف نطاقٍ فرعي بحزمته الثقيلة.
+        السبب ليس الأناقة: الزائر المجهول والمستخدم المسجَّل لهما احتياجان
+        مختلفان تماماً، وخدمتهما بحزمةٍ واحدة تجعل الأثقل منهما يحكم الأخف.
+      </p>
+    </div>
+
+    <h3>ثلاثة مسارات، مرتّبة بالجهد</h3>
+    <div class="grid2">
+      <div class="qc">
+        <h4>أ · تنظيف المسار الحرج</h4>
+        <p>حذف <code>modulepreload</code> للرسوم وقاعدة البيانات، وتحميل الخطّ العربي عند اختيار العربية فقط.</p>
+        <p class="rec">الجهد: <b>ساعات</b> · الأثر: كبير وفوري</p>
+      </div>
+      <div class="qc">
+        <h4>ب · توليد الصفحة مسبقاً</h4>
+        <p>الصفحة تُصدَّر HTML كاملاً وقت البناء، فتُقرأ قبل أن يعمل أي جافاسكربت. والتفاعل يأتي بعدها.</p>
+        <p class="rec">الجهد: <b>أيام</b> · الأثر: يقارب الحدّ العالمي</p>
+      </div>
+      <div class="qc">
+        <h4>ج · فصلٌ كامل</h4>
+        <p>موقع تسويقي مستقلّ على النطاق الرئيسي، والتطبيق على <code>app.</code> — كما تفعل الشركات الكبرى.</p>
+        <p class="rec">الجهد: <b>أسابيع</b> · يُؤجَّل حتى يستحقّ</p>
+      </div>
+    </div>
+
+    <p>
+      رأيي: <strong>ابدأ بـ(أ) فوراً</strong>. هي ساعات عمل وتزيل أثقل نصف من
+      المسار الحرج، ثم قِس ثانيةً قبل أن تقرّر (ب).
+    </p>
+  </section>
+
+  <section id="funnel">
+    <div class="head"><span class="n">02</span><h2>القمع بعد النقرة</h2><div class="rule"></div></div>
+
+    <p class="lede">
+      النقرة وعدٌ، والشاشة التالية إمّا تفي به أو تنقضه. تتبّعت المسار كاملاً
+      من صفحتك:
+    </p>
+
+    <div class="funnel break">
+      <div class="fstep"><span class="fdot">١</span><div class="fbody"><b>الزائر يصل</b><p>يرى صفحة تبيع منظومة إدارة عيادات بيطرية. الرسالة واضحة: هذا للعيادات.</p></div></div>
+      <div class="fstep leak"><span class="fdot">٢</span><div class="fbody"><b>يضغط «ابدأ مجاناً»</b><p>يهبط على شاشة تسأله: <strong>«مالك حيوان» أم «عيادة»؟</strong></p><span class="leaktag">◂ ثقب: سؤالٌ أجاب عنه بنقرته قبل ثانيتين</span></div></div>
+      <div class="fstep leak"><span class="fdot">٣</span><div class="fbody"><b>ويرى واجهةً بلغةٍ ثانية</b><p>الصفحة كانت بلغته، وشاشة الدخول تعرض مبدّلاً منفصلاً — فيشكّ أنه غادر الموقع.</p><span class="leaktag">◂ ثقب: انقطاع السياق</span></div></div>
+      <div class="fstep"><span class="fdot">٤</span><div class="fbody"><b>يختار «عيادة» ويكمل</b><p>من ينجو من الخطوتين يصل هنا — والباقون رجعوا.</p></div></div>
+    </div>
+
+    <div class="ba break">
+      <div class="b"><h5>اليوم</h5><p>«ابدأ مجاناً» ← شاشة عامة ← «أنت منو؟» ← تسجيل عيادة</p></div>
+      <div class="a"><h5>المفروض</h5><p>«ابدأ مجاناً» ← <strong>تسجيل عيادة مباشرة</strong>، بنفس اللغة، وبعنوانٍ يكمل الوعد: «١٤ يوماً مجاناً — بلا بطاقة»</p></div>
+    </div>
+
+    <p>
+      المبدأ الحاكم عند البراندات: <strong>لا تسأل سؤالاً أجاب عنه المستخدم
+      بفعله.</strong> النقرة على زرٍّ في صفحة تبيع للعيادات هي إجابة. ونقل هذا
+      السياق تقنياً سطرٌ واحد — الرابط يحمل وجهته، والشاشة تفتح عليها مباشرة.
+    </p>
+
+    <div class="card alarm">
+      <p class="card-h"><span class="tag t-alarm">قاعدة</span> كل خطوة تُحذف تُشترى بمال</p>
+      <p class="small" style="margin:0">
+        القاعدة العملية بأي قمع: احسب الخطوات من النقرة إلى «داخل السستم».
+        عندك اليوم <strong>ثلاث</strong> — يمكن أن تصير <strong>واحدة</strong>.
+        وكل خطوة زائدة تُفقدك جزءاً من الزوّار الذين دفعتَ لتصلهم.
+      </p>
+    </div>
+  </section>
+
+  <section id="trust">
+    <div class="head"><span class="n">03</span><h2>الثقة — القيد الحاكم</h2><div class="rule"></div></div>
+
+    <p class="lede">
+      هذا أكبر فراغٍ بصفحتك، وهو غالباً القيد الحقيقي على مبيعاتك بعد السرعة.
+      فحصت الصفحة عن كل إشارة ثقة معروفة:
+    </p>
+
+    <div class="tw break">
+      <table>
+        <thead><tr><th>إشارة الثقة</th><th>عندك</th><th>لماذا تهمّ هنا بالذات</th></tr></thead>
+        <tbody>
+          <tr><td>شهادة عميل باسمه</td><td class="bad">غير موجودة</td><td>الطبيب يشتري ما جرّبه زميلٌ يعرفه، لا ما قرأ عنه</td></tr>
+          <tr><td>اسم عيادة واحدة تستخدمه</td><td class="bad">غير موجود</td><td>«منو غيري يستعمله؟» أول سؤال</td></tr>
+          <tr><td>رقم حقيقي (كم عيادة / كم فاتورة)</td><td class="bad">غير موجود</td><td>الرقم دليل حياة</td></tr>
+          <tr><td>وجه إنسان — أنت أو الفريق</td><td class="bad">غير موجود</td><td>منتج بلا وجه يبدو كموقعٍ يغلق غداً</td></tr>
+          <tr><td>سياسة استرجاع</td><td class="bad">غير موجودة</td><td>تحوّل «شراء» إلى «تجربة»</td></tr>
+          <tr><td>أسئلة شائعة</td><td class="bad">غير موجودة</td><td>الاعتراض بلا جواب يصير رفضاً صامتاً</td></tr>
+          <tr><td>صورة مشاركة للرابط <code>og:image</code></td><td class="bad">غير موجودة</td><td>رابطك بالواتساب يظهر بلا صورة — كأنه ميّت</td></tr>
+          <tr><td>ذكر النسخ الاحتياطي والخصوصية</td><td class="ok">موجود</td><td>جيّد — لكنه بجملةٍ عابرة لا قسمٍ مطمئن</td></tr>
+          <tr><td>عرض حيّ قابل للنقر</td><td class="ok">ممتاز</td><td>أقوى ما بصفحتك، ومهدور خلف ١٥ ثانية انتظار</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>سُلَّم الأدلة — من الأقوى للأضعف</h3>
+    <ol>
+      <li><strong>طبيب باسمه وصورته واسم عيادته</strong> يقول جملةً محدّدة: «قلّلت وقت إغلاق الصندوق من ساعة إلى عشر دقائق».</li>
+      <li><strong>رقمٌ يخصّه</strong>: «١٢ عيادة · ٤٠ ألف فاتورة» — إن كان صحيحاً.</li>
+      <li><strong>لقطة حقيقية</strong> من عيادةٍ تعمل (بإذنها).</li>
+      <li>شعارات وشارات عامة — الأضعف، ويكاد يُهمَل.</li>
+    </ol>
+
+    <div class="card alarm">
+      <p class="card-h"><span class="tag t-alarm">تحذير</span> لا تصنع دليلاً غير موجود</p>
+      <p class="small" style="margin:0">
+        شهادةٌ مؤلَّفة أو رقمٌ منفوخ ينكشف بسوقٍ صغير يعرف بعضه — والانكشاف
+        يقتل ما تبنيه. عندك عيادةٌ واحدة حقيقية؟ <strong>واحدة باسمها أقوى من
+        عشرٍ مخترَعة.</strong> ولو لم تكن عندك بعد، فالبديل الصادق: اعرض
+        <strong>نفسك</strong> — من بنى هذا ولماذا — فوجهٌ حقيقي أقوى من
+        شهادةٍ كاذبة.
+      </p>
+    </div>
+  </section>
+
+  <section id="risk">
+    <div class="head"><span class="n">04</span><h2>إزالة المخاطرة</h2><div class="rule"></div></div>
+
+    <p>
+      المتردّد لا يقول «غالي»، بل يفكّر «شنو أخسر لو طلع ما ينفع؟». وكل عرضٍ
+      ناجح يجيب على هذا قبل أن يُسأل. عندك الجواب موجود لكنه <strong>مدفون</strong>:
+      «بلا بطاقة، وبلا أي التزام» مكتوبةٌ بسطرٍ صغير داخل صندوق التجربة أسفل
+      الأسعار، بينما مكانها <strong>تحت الزرّ الرئيسي مباشرة</strong>.
+    </p>
+
+    <div class="ba break">
+      <div class="b"><h5>الزرّ اليوم</h5><p>«ابدأ مجاناً — ١٤ يوم»<br><span class="dim">ولا شيء تحته</span></p></div>
+      <div class="a"><h5>الزرّ مع إزالة المخاطرة</h5><p>«ابدأ مجاناً — ١٤ يوم»<br><strong>بلا بطاقة · بلا التزام · بياناتك تبقى لك وتصدّرها متى شئت</strong></p></div>
+    </div>
+
+    <h3>ما ينقص فعلاً</h3>
+    <ul>
+      <li><strong>ماذا يحدث بعد الأربعة عشر يوماً؟</strong> الصفحة لا تقول. الغموض هنا يمنع البدء أصلاً — قُلها صراحةً: «لا يُسحب منك شيء، ويبقى ما أدخلته».</li>
+      <li><strong>ملكية البيانات.</strong> «بياناتك لك، تصدّرها Excel متى شئت وتغادر» — وعدٌ يزيل أكبر خوفٍ عند من يُدخِل سجلات عيادته.</li>
+      <li><strong>الإلغاء.</strong> بجملةٍ واحدة: «توقف متى شئت، بلا مكالمة ولا مبرّر».</li>
+      <li><strong>الإعداد.</strong> بسوقٍ يخاف التقنية، «نُعدّها لك ونُدخل بياناتك» تزيل عائقاً أكبر من السعر.</li>
+    </ul>
+  </section>
+
+  <section id="price">
+    <div class="head"><span class="n">05</span><h2>التسعير كأداة إقناع</h2><div class="rule"></div></div>
+
+    <p>
+      عرض الأسعار بعملة الزائر تلقائياً قرارٌ ممتاز عندك — قليلٌ من المنافسين
+      يفعلها. لكن بالجدول عيبٌ يقتل الخيار السنوي:
+    </p>
+
+    <div class="tw break">
+      <table>
+        <thead><tr><th>الباقة</th><th class="num">شهري</th><th class="num">سنوي</th><th class="num">١٢× الشهري</th><th>سبب اختيار السنوي</th></tr></thead>
+        <tbody>
+          <tr><td>العادية</td><td class="num">$30</td><td class="num">$360</td><td class="num">$360</td><td class="bad">لا يوجد — نفس المبلغ بلا أي مقابل</td></tr>
+          <tr><td>المطورة</td><td class="num">$55</td><td class="num">$660</td><td class="num">$660</td><td class="bad">لا يوجد</td></tr>
+          <tr><td>السوبر</td><td class="num">$100</td><td class="num">$1000</td><td class="num">$1200</td><td class="ok">شهران مجاناً — واضح ومقنع</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p>
+      والصفحة تفتح على <strong>«سنوي» مختاراً افتراضياً</strong>. فأول رقمٍ
+      يراه الزائر بالعادية <code>$360</code> بدل <code>$30</code> — رقمٌ أكبر
+      اثني عشر ضعفاً بلا أي فائدة مقابله. هذا يضخّم الصدمة السعرية ويعطي صفراً.
+    </p>
+
+    <div class="grid2">
+      <div class="qc">
+        <h4>أعطِ السنوي سبباً</h4>
+        <p>شهرٌ أو شهران مجاناً بكل الباقات لا بالسوبر وحدها. الخصم يشتري منك تدفّقاً نقدياً مقدَّماً والتزاماً أطول.</p>
+        <p class="rec">أو <b>افتح على الشهري</b> إن أبقيت التسعير كما هو</p>
+      </div>
+      <div class="qc">
+        <h4>اربط السعر بقيمةٍ لا بميزات</h4>
+        <p>«$55 شهرياً» رقمٌ مجرّد. «$55 — أقلّ من ثمن كيسي طعام» يجعله محسوساً بعالم الطبيب نفسه.</p>
+        <p class="rec">القياس بمرجع الزبون لا بمرجعك</p>
+      </div>
+      <div class="qc">
+        <h4>وجّه للباقة المقصودة</h4>
+        <p>«الأكثر تكاملاً» على السوبر جيّد. الأقوى: أضف تحت كل باقة <strong>لمن هي</strong> بجملةٍ واحدة تحسم التردّد.</p>
+        <p class="rec">«عيادة بطبيب واحد» / «عيادة بفرعين وكادر»</p>
+      </div>
+      <div class="qc">
+        <h4>اجعل الحدود مفهومة</h4>
+        <p>«مستخدمان» و«٥GB» لغة مهندسين. الطبيب يفكّر بعدد الموظفين وعدد الصور.</p>
+        <p class="rec">«يكفي طبيب وموظفة استقبال»</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="objections">
+    <div class="head"><span class="n">06</span><h2>الاعتراضات الستّة</h2><div class="rule"></div></div>
+
+    <p class="lede">
+      صفحةٌ بلا قسم أسئلة تترك كل اعتراضٍ بلا جواب — والاعتراض الذي لا يُجاب
+      لا يُقال، بل يُغلق التبويب. هذه الستّة هي ما يدور فعلاً برأس طبيبٍ عراقي
+      أمام عرضك:
+    </p>
+
+    <div class="tw break">
+      <table>
+        <thead><tr><th>ما يفكّر به</th><th>الجواب الذي يجب أن يقرأه</th></tr></thead>
+        <tbody>
+          <tr><td>«بياناتي تضيع لو وقع الموقع»</td><td>نسخ احتياطي مستمر + تصدير Excel بيدك متى شئت. بياناتك ملكك لا رهينة.</td></tr>
+          <tr><td>«اني ما أعرف كومبيوتر»</td><td>عربية وبسيطة، ونُعدّها لك وندرّب كادرك. وأكثر ما تستعمله من الهاتف.</td></tr>
+          <tr><td>«موظفتي ما راح تتعلمها»</td><td>الاستقبال يستعمل ثلاث شاشات فقط — والتدريب عليها نصف ساعة.</td></tr>
+          <tr><td>«شنو أسوي إذا انقطع الإنترنت؟»</td><td>جوابٌ صريح عمّا يعمل بلا شبكة وما لا يعمل. الغموض هنا أسوأ من قيدٍ معلن.</td></tr>
+          <tr><td>«شلون أدفع؟ ماعندي فيزا»</td><td>زين كاش · فاست باي · Qi · نقداً عبر مندوب. <strong>هذه موجودة عندك ومخبّأة بسطرٍ رمادي أسفل الصفحة.</strong></td></tr>
+          <tr><td>«شنو لو ما عجبني بعد شهرين؟»</td><td>توقف متى شئت، وخُذ بياناتك معك. بلا مكالمة ولا عقد.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p class="small">
+      لاحظ الخامس: طرق الدفع المحلية <strong>أقوى ورقة ثقةٍ تملكها</strong> —
+      لأنها تقول «نحن من هنا ونفهم سوقك» — وهي اليوم بأصغر خطٍّ وأبهت لونٍ
+      بالصفحة كلّها، تحت الأسعار حيث لا يصلها إلا من نزل إلى آخرها.
+    </p>
+  </section>
+
+  <section id="copy">
+    <div class="head"><span class="n">07</span><h2>النصّ الذي يبيع</h2><div class="rule"></div></div>
+
+    <p>
+      نصّك ليس سيئاً — لكنه <strong>يصف المنتج بدل أن يَعِد بنتيجة</strong>.
+      وهذا أشيع خطأ بصفحات البرمجيات:
+    </p>
+
+    <div class="ba break">
+      <div class="b"><h5>عنوانك اليوم</h5><p>«عيادتك البيطرية كاملة، بمكان واحد.»<br><span class="dim">وصفٌ للمنتج. صحيح، لكنه لا يَعِد بشيء.</span></p></div>
+      <div class="a"><h5>اختبار «وبعدين؟»</h5><p>اقرأ العنوان ثم اسأل «وبعدين؟». إن لم يكن للجواب <strong>قيمة يشعر بها الطبيب</strong>، فالعنوان يصف ولا يبيع.</p></div>
+    </div>
+
+    <h3>ثلاث صياغات — لتختبرها لا لتتبنّاها</h3>
+    <ul>
+      <li><strong>وعدٌ بالنتيجة:</strong> «اعرف أرباح عيادتك اليوم — قبل ما تسكّر الباب.»</li>
+      <li><strong>إزالة ألمٍ محدّد:</strong> «خلّص دفتر الديون والفواتير الورقية. كل شي بمكان واحد ويّا واتساب مدمج.»</li>
+      <li><strong>مقارنة بالحال القائم:</strong> «عيادتك اليوم بدفتر وواتساب وذاكرة. خلّيها بسستم واحد.»</li>
+    </ul>
+
+    <div class="card cool">
+      <p class="card-h"><span class="tag t-cool">قاعدة</span> المحدّد يبيع، والعام يُنسى</p>
+      <p class="small" style="margin:0">
+        «أدوات احترافية بواجهة بسيطة» جملةٌ تصلح لأي منتج بالعالم — وما يصلح
+        لكل شيء لا يميّز شيئاً. استبدلها بما لا يستطيع منافسك قوله: «تشتغل
+        بالدينار، وتذكّر الزبون بالتطعيم على الواتساب، وتحسب الديون الورقية».
+      </p>
+    </div>
+
+    <h3>وتفصيلٌ صغير مقيس</h3>
+    <p class="small">
+      بصفحتك <strong>تسع دعوات للفعل بخمس صياغات مختلفة</strong> («ابدأ
+      مجاناً» / «ابدأ مجاناً — ١٤ يوم» / «ابدأ الآن» / «ابدأ التجربة
+      المجانية» / «شاهد المميزات»). القاعدة: <strong>طلبٌ واحد بصيغةٍ
+      واحدة</strong> يتكرّر. تعدّد الصياغات يجعل الزائر يظنّها أفعالاً مختلفة
+      فيتردّد بأيّها يضغط.
+    </p>
+  </section>
+
+  <section id="whatsapp">
+    <div class="head"><span class="n">08</span><h2>الواتساب قناةً أولى</h2><div class="rule"></div></div>
+
+    <p>
+      بسوقك، الرابط لا يُكتشَف بجوجل بل <strong>يُرسَل بالواتساب</strong> من
+      طبيبٍ لزميله. وهذا يجعل عيباً واحداً أغلى مما يبدو:
+    </p>
+
+    <div class="card alarm">
+      <p class="card-h"><span class="tag t-alarm">مقيس</span> رابطك يصل بلا صورة</p>
+      <p class="small" style="margin:0">
+        لا وجود لوسم <code>og:image</code> بصفحتك. فحين يُرسل الرابط بالواتساب
+        تظهر بطاقةٌ نصّية باهتة بلا صورة — بينما بطاقةٌ بصورةٍ واضحة تحتلّ
+        مساحةً أكبر بالمحادثة وتُنقَر أكثر بكثير. <strong>إصلاحه صورة واحدة
+        وسطر واحد بالرأس</strong>، وأثره يمسّ كل رابطٍ يُشارَك من اليوم فصاعداً.
+      </p>
+    </div>
+
+    <h3>وزرّ «كلّمنا بالواتساب»</h3>
+    <p>
+      لمنتجٍ بهذا السعر وبهذا السوق، جزءٌ معتبر من المشترين <strong>لا يريد
+      التسجيل، يريد أن يسأل</strong>. زرٌّ ثانوي دائم — لا نافذة دردشة ثقيلة،
+      بل رابط <code>wa.me</code> بسيط — يلتقط هؤلاء بدل أن يخسرهم. وأنت تملك
+      البنية أصلاً.
+    </p>
+    <p class="small">
+      ويُضاف إليه ما هو غائب تماماً: <strong>ملف <code>robots.txt</code> وخريطة
+      موقع</strong> — لا وجود لأيّهما، فأنت غير مهيّأ لجوجل أصلاً.
+    </p>
+  </section>
+
+  <section id="measure">
+    <div class="head"><span class="n">09</span><h2>ما لا يُقاس لا يتحسّن</h2><div class="rule"></div></div>
+
+    <p class="lede">
+      أهمّ نتيجة بهذه الدراسة قد تكون هذه: <strong>لا توجد أي أداة قياس على
+      صفحتك</strong>. لا عدّاد زوّار، ولا تتبّع نقرات، ولا شيء.
+    </p>
+
+    <p>
+      عندك <code>logClientEvent</code> بالسستم، لكنها تكتب عبر جلسةٍ مسجَّلة
+      داخل عيادة — أي أنها <strong>لا ترى الزائر المجهول إطلاقاً</strong>، وهو
+      بالضبط من نتحدّث عنه. النتيجة العملية: لا تستطيع اليوم الإجابة على
+      «كم زائراً؟» ولا «كم ضغط الزرّ؟» ولا «أين ينسحبون؟».
+    </p>
+
+    <div class="tw break">
+      <table>
+        <thead><tr><th>الحدث</th><th>يجيب على</th></tr></thead>
+        <tbody>
+          <tr><td><code>page_view</code></td><td>كم زائراً، ومن أين جاؤوا</td></tr>
+          <tr><td><code>cta_click</code></td><td>كم أقنعتهم الصفحة (وأي زرٍّ يعمل)</td></tr>
+          <tr><td><code>signup_start</code></td><td>كم نجا من القمع بعد النقرة</td></tr>
+          <tr><td><code>signup_done</code></td><td>كم حساباً وُلد فعلاً</td></tr>
+          <tr><td><code>trial_to_paid</code></td><td>الرقم الوحيد الذي يعني مالاً</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="card cool">
+      <p class="card-h"><span class="tag t-cool">صراحة</span> الاختبار المقارن (A/B) ليس لك الآن</p>
+      <p class="small" style="margin:0">
+        اختبار نسختين يحتاج زوّاراً بالآلاف ليعطي نتيجةً ذات معنى؛ ودونهم
+        تقرأ ضجيجاً وتظنّه إشارة. بمرحلتك، ما يفيد فعلاً: <strong>خمس مكالمات
+        مع أطباء حقيقيين</strong> تعرض عليهم الصفحة وتصمت وتسمع أين يتوقّفون.
+        خمس مكالمات ستكشف أكثر ممّا يكشفه أي اختبار مقارن بحجم زياراتك اليوم.
+      </p>
+    </div>
+  </section>
+
+  <section id="waves">
+    <div class="head"><span class="n">10</span><h2>خطة على ثلاث موجات</h2><div class="rule"></div></div>
+
+    <div class="wave">
+      <div class="wave-h"><span class="tag t-alarm">١</span><b>ارفع الحجب — قبل أي شيء آخر</b><span class="eff">ساعات إلى يومين</span></div>
+      <div class="wave-b">
+        <ul>
+          <li>حذف <code>modulepreload</code> للرسوم وقاعدة البيانات من المسار الحرج</li>
+          <li>الخطّ العربي يُحمَّل عند اختيار العربية فقط</li>
+          <li>«ابدأ مجاناً» ← تسجيل عيادة مباشرة، بنفس اللغة</li>
+          <li>إضافة <code>og:image</code> — فيصير كل رابطٍ يُشارَك حيّاً</li>
+          <li>«بلا بطاقة · بلا التزام» تحت الزرّ الرئيسي</li>
+          <li>توحيد صيغة الزرّ إلى واحدة</li>
+          <li>تركيب قياسٍ للزائر المجهول + الأحداث الخمسة</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="wave">
+      <div class="wave-h"><span class="tag t-cool">٢</span><b>اصنع الثقة وأجب الاعتراضات</b><span class="eff">أسبوع، بعد أول عيادة حقيقية</span></div>
+      <div class="wave-b">
+        <ul>
+          <li>شهادة طبيبٍ واحد باسمه وعيادته — واحدة صادقة تكفي</li>
+          <li>قسم أسئلة شائعة يجيب الاعتراضات الستّة</li>
+          <li>طرق الدفع المحلية تصعد لمكانٍ ظاهر — لا سطراً رمادياً بالأسفل</li>
+          <li>«ماذا بعد الأربعة عشر يوماً» و«بياناتك لك» صراحةً</li>
+          <li>زرّ «كلّمنا بالواتساب» ثانوياً ودائماً</li>
+          <li><code>robots.txt</code> وخريطة موقع</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="wave">
+      <div class="wave-h"><span class="tag t-good">٣</span><b>حسّن العرض نفسه</b><span class="eff">بعد أن يصير عندك رقم تقيس عليه</span></div>
+      <div class="wave-b">
+        <ul>
+          <li>إعطاء السنوي سبباً (شهر أو شهران مجاناً) أو الفتح على الشهري</li>
+          <li>«لمن هذه الباقة» تحت كل بطاقة</li>
+          <li>تجربة عناوين تَعِد بنتيجة بدل الوصف</li>
+          <li>توليد الصفحة مسبقاً إن لم تكفِ الموجة الأولى</li>
+          <li>الحدود بلغة الطبيب لا بلغة المهندس</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="card good">
+      <p class="card-h"><span class="tag t-good">الأثر</span> لماذا هذا الترتيب</p>
+      <p class="small" style="margin:0">
+        الموجة الأولى كلّها عملٌ تقني بلا قرارات تسويقية، وأثرها يمسّ
+        <strong>كل زائر</strong> لا شريحةً منه — وأغلبها ساعات. والموجة الثانية
+        تنتظر عيادةً حقيقية لأن الثقة لا تُصنَع بلا مصدر. والثالثة تنتظر القياس
+        لأنك بدونه تبدّل أشياء ولا تعرف أنفعت أم ضرّت.
+      </p>
+    </div>
+  </section>
+
+  <section id="unknown">
+    <div class="head"><span class="n">11</span><h2>ما لا أعرفه</h2><div class="rule"></div></div>
+
+    <div class="card alarm">
+      <p class="card-h"><span class="tag t-alarm">حدود هذه الدراسة</span></p>
+      <p class="small">
+        كل ما فوق مبنيّ على <strong>قياس عيوبٍ ملموسة</strong> بصفحتك، لا على
+        حساب قمعٍ حقيقي — لأن أرقام القمع غير موجودة أصلاً (§٩). وهذا يعني
+        تحديداً أنني لا أعرف:
+      </p>
+      <ul class="small" style="margin-bottom:.6em">
+        <li>كم زائراً يصلك شهرياً، ومن أي مصدر</li>
+        <li>نسبة التحويل الحالية من زائر إلى تجربة، ومن تجربة إلى مشترك</li>
+        <li>كم يكلّفك الزائر الواحد إن كنت تدفع لتصله</li>
+        <li>أين يتوقّف الناس فعلاً — كل ما فوق استنتاجٌ من عيبٍ مقيس لا من سلوكٍ مرصود</li>
+      </ul>
+      <p class="small" style="margin:0">
+        ولهذا لم أكتب بهذه الدراسة أي نسبة تحسّنٍ متوقَّعة: أرقام «يزيد التحويل
+        كذا بالمئة» تُنقَل بين المقالات بلا مصدر، ووضعها هنا يعطيك ثقةً زائفة
+        بقرارٍ لم يُقَس. الموجة الأولى تُبرَّر بأنها <strong>إصلاح أعطال
+        مقيسة</strong> — والأرقام تأتي بعد أن يصير عندك ما يُقاس.
+      </p>
+    </div>
+  </section>
+
+  <footer>
+    دراسة تحويل لصفحة هبوط doctorVet · القياسات من بناء الإنتاج على موبايل
+    مُقيَّد الشبكة والمعالج · لا كود بعد، والبناء ينتظر قرارك على ترتيب الموجات.
+  </footer>
+
+</div>
