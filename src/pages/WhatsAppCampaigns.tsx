@@ -8,7 +8,7 @@ import {
 import type { Pet, Species, Vaccination, MedicalVisit, WhatsAppMessage } from "@/types";
 import type { CampaignPrefill, ReminderType } from "@/lib/reminders";
 import { computeReminderRows } from "@/lib/reminders";
-import { waVariants, pickVariantIndex, type WaPool } from "@/lib/waTemplates";
+import { waVariants, pickVariantIndex, WA_TOKENS, type WaPool } from "@/lib/waTemplates";
 import { Dices } from "lucide-react";
 import { repo } from "@/lib/repo";
 import { getCached, setCached } from "@/lib/swrCache";
@@ -20,11 +20,12 @@ import { getDialCode, getClinicName } from "@/lib/settings";
 import { phoneDigits, waNumber } from "@/lib/phone";
 import { playTap } from "@/lib/sounds";
 
-const VAR_OWNER = "{{اسم_المالك}}";
-const VAR_PET = "{{اسم_الحيوان}}";
+// مصدرٌ واحد للرموز في lib/waTemplates — نسختان تتباعدان بأول تعديل.
+const VAR_OWNER = WA_TOKENS.owner;
+const VAR_PET = WA_TOKENS.pet;
 // The clinic's own registered name (Settings → clinic name). Fixed per clinic,
 // so it's substituted into the template up-front rather than per recipient.
-const VAR_CLINIC = "{{اسم_العيادة}}";
+const VAR_CLINIC = WA_TOKENS.clinic;
 
 type SpeciesFilter = "all" | Species;
 /** Smart audience segments (CRM targeting). */

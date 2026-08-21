@@ -10,3 +10,8 @@ dist-ssr
 *.tsbuildinfo
 .claude/settings.local.json
 dist-sbtest/
+
+# وثائق خاصة لا تدخل المستودع: المستودع **عام**، وعقودٌ ومسوّدات قانونية
+# لا محلّ لها فيه. نسخها الحيّة أرتفاكتات على claude.ai + ملفات PDF بيد
+# المالك. ولا هي جزءاً من البناء أصلاً (dist ما بيه docs).
+private/

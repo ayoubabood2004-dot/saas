@@ -33,6 +33,10 @@ const CONTENT_FILES = new Set([
   "src/lib/dialcodes.ts",         // أسماء الدول (تُستبدل بـCLDR لاحقاً)
   "src/lib/governorates.ts",      // المحافظات العراقية
   "src/pages/AdminBilling.tsx",   // لوحة المنصّة — للمشغّل وحده، عربية عمداً
+  // رموز قوالب الرسائل ({{اسم_المالك}}…): ليست نصاً معروضاً بل **معرّفات**
+  // يجب أن تطابق حرفياً ما بداخل نصوص waMsgs، وتُعرض للطبيب رقاقاتٍ يدسّها
+  // بيده. ترجمتها تكسر الاستبدال، فعربيتها بنيةٌ لا نصّ.
+  "src/lib/waTemplates.ts",
 ]);
 
 const AR = /[؀-ۿ]/;
@@ -99,7 +103,11 @@ function hardcodedCount(path) {
   return n;
 }
 
-const files = execSync("git ls-files 'src/**/*.ts' 'src/**/*.tsx'", { cwd: ROOT, encoding: "utf8" })
+/* المتعقَّب **والجديد غير المُضاف بعد** معاً. الاقتصار على المتعقَّب كان يجعل
+ * ملفاً جديداً يفلت من الفحص، فيمرّ البناء محلياً ثم يسقط بناء الإنتاج بعد
+ * أول commit — وقع هذا مرّتين. --others يضمّ الجديد، و--exclude-standard
+ * يحترم .gitignore فلا يزحف على dist ولا node_modules. */
+const files = execSync("git ls-files --cached --others --exclude-standard 'src/**/*.ts' 'src/**/*.tsx'", { cwd: ROOT, encoding: "utf8" })
   .split("\n").filter((f) => f && !f.startsWith("src/i18n/") && !f.endsWith(".d.ts"));
 
 const counts = {};
