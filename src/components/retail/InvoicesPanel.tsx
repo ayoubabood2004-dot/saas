@@ -14,6 +14,7 @@ import { Button, Badge, useToast, Skeleton } from "@/components/ui";
 import { useInvoicePrinter } from "./usePrintInvoice";
 import { invoiceNo } from "@/lib/invoicePrint";
 import { cn, formatDate, money, dateLocale } from "@/lib/utils";
+import { displayCustomerName } from "@/lib/customerName";
 import { dueOf, paidOf, isDebt, paymentStatusOf, round2 } from "@/lib/debt";
 import { describeDbError } from "@/lib/errors";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
@@ -106,7 +107,7 @@ export function InvoicesPanel({ invoices, onChanged }: { invoices: Invoice[]; cl
                 </span>
                 <div className="min-w-0 flex-1">
                   <p className="flex items-center gap-2 truncate text-sm font-semibold text-ink">
-                    {inv.customer_name || t("retail.walkIn", "Walk-in")}
+                    {displayCustomerName(inv.customer_name) || t("retail.walkIn", "Walk-in")}
                     <span className="font-mono text-2xs font-normal text-ink-subtle">{invoiceNo(inv.id)}</span>
                   </p>
                   <div className="flex flex-wrap items-center gap-x-2 text-xs text-ink-subtle">
@@ -278,7 +279,7 @@ export function InvoiceDetail({ invoice, onClose, onChanged, setOpen }: {
         <div className="flex items-start justify-between gap-3">
           <div>
             <p className="flex items-center gap-2 font-display text-lg font-bold text-ink">
-              <User size={17} className="text-ink-subtle" /> {invoice.customer_name || t("retail.walkIn", "Walk-in customer")}
+              <User size={17} className="text-ink-subtle" /> {displayCustomerName(invoice.customer_name) || t("retail.walkIn", "Walk-in customer")}
             </p>
             {invoice.customer_phone && <p className="text-sm text-ink-subtle">{invoice.customer_phone}</p>}
             <p className="mt-0.5 text-xs text-ink-subtle">

@@ -6,9 +6,11 @@ import { motion } from "framer-motion";
 import {
   BellRing, Syringe, Bug, Slice, CalendarDays, Cake, AlarmClock, Search,
   MessageCircle, Plus, AlertTriangle, CheckCircle2, Sun, CalendarClock,
+  Dices, Send, UserCheck, UserX, Undo2, ExternalLink,
 } from "lucide-react";
 import { getCached, setCached } from "@/lib/swrCache";
-import type { Pet, Vaccination, Surgery, Appointment, Reminder, EventCategory } from "@/types";
+import { waVariants, pickVariantIndex, renderWaTemplate, type WaPool } from "@/lib/waTemplates";
+import type { Pet, Vaccination, Surgery, Appointment, Reminder, EventCategory, MedicalVisit, WhatsAppMessage } from "@/types";
 import { repo } from "@/lib/repo";
 import { PetAvatar } from "@/components/PetAvatar";
 import { useAuth } from "@/contexts/AuthContext";
@@ -32,6 +34,28 @@ import { staggerContainer, staggerItem } from "@/lib/motion";
 type Kind = "vaccine" | "deworming" | "surgery" | "appointment" | "manual" | "birthday";
 type TimeFilter = "all" | "overdue" | "today" | "week" | "month";
 
+/* ── دورة حياة التذكير ──────────────────────────────────────────────────────
+ * active  : لم يُرسَل بعد — هنا وحدها يصحّ الأحمر والعدّ «متأخر».
+ * sent    : أُرسلت الرسالة — خرج من الأحمر وينتظر أثر صاحبه.
+ * arrived : جاء صاحبه — يُستدلّ عليه من السستم نفسه لا من ضغطة زر:
+ *           اللقاح أُعطي، أو الحيوان زار العيادة بعد موعد المتابعة، أو
+ *           الحجز اكتمل. (وللدكتور تثبيته يدوياً حين يعرف ما لا يعرفه السستم.)
+ * missed  : أُرسلت ومضت مهلة السماح بعد الموعد ولم يظهر أثر — «ما جاء».
+ * الأولوية عند التعارض: تثبيت الدكتور اليدوي > استدلال السستم > حالة الإرسال.
+ * ------------------------------------------------------------------------ */
+type LifeStatus = "active" | "sent" | "arrived" | "missed";
+/** أيام السماح بعد الموعد قبل أن يُعدّ صاحب التذكير «ما جاء». */
+const GRACE_DAYS = 3;
+/** نافذة مطابقة سجل الواتساب بالموعد — رسالة لنفس الحيوان ونفس النوع ضمنها تُعدّ إرسالاً له. */
+const LOG_MATCH_DAYS = 21;
+/** أقدم ما يُعرض بقسمَي «جاؤوا/ما جاؤوا» — التاريخ الأبعد صار أرشيفاً لا شغلاً. */
+const OUTCOME_KEEP_DAYS = 120;
+
+const POOL_OF: Record<Kind, WaPool> = {
+  vaccine: "rem.vaccine", deworming: "rem.deworming", surgery: "rem.surgery",
+  appointment: "rem.appointment", manual: "rem.manual", birthday: "rem.birthday",
+};
+
 interface Row {
   id: string;
   kind: Kind;
@@ -45,7 +69,16 @@ interface Row {
   detail: string;
   /** أيام من اليوم: سالب = متأخر، 0 = اليوم. */
   inDays: number;
+  /** إشارة وصولٍ من السستم نفسه (تاريخ الإعطاء/الزيارة/إتمام الحجز). */
+  autoArrivedAt?: string | null;
+  /** إشارة غيابٍ من السستم (حجز مُلغى/لم يحضر). */
+  autoMissed?: boolean;
+  /** المرجع الحقيقي للتذكير اليدوي — يلزم زرّ «تم». */
+  manualId?: string | null;
 }
+
+/** صف مُقيَّم: الصف + حالته بدورة الحياة + متى أُرسل. */
+interface Judged { row: Row; st: LifeStatus; sentAt: string | null }
 
 const DEWORM_RE = /deworm|ديدان|دود/i;
 
@@ -112,17 +145,23 @@ export function RemindersHub() {
 
   // Synchronous cache seed — effects run AFTER paint, so seeding there flashes
   // one skeleton frame on every revisit (the "loading intro" the doctor sees).
-  const seed = getCached<{ p: Pet[]; vax: Vaccination[]; srg: Surgery[]; appts: Appointment[]; rems: Reminder[] }>(`remhub_${user?.clinic_id ?? user?.id ?? ""}`);
+  type Seed = { p: Pet[]; vax: Vaccination[]; srg: Surgery[]; appts: Appointment[]; rems: Reminder[]; vis?: MedicalVisit[]; log?: WhatsAppMessage[] };
+  const seed = getCached<Seed>(`remhub_${user?.clinic_id ?? user?.id ?? ""}`);
   const [pets, setPets] = useState<Pet[]>(seed?.p ?? []);
   const [vaccinations, setVaccinations] = useState<Vaccination[]>(seed?.vax ?? []);
   const [surgeries, setSurgeries] = useState<Surgery[]>(seed?.srg ?? []);
   const [appointments, setAppointments] = useState<Appointment[]>(seed?.appts ?? []);
   const [manual, setManual] = useState<Reminder[]>(seed?.rems ?? []);
+  const [visits, setVisits] = useState<MedicalVisit[]>(seed?.vis ?? []);
+  const [waLog, setWaLog] = useState<WhatsAppMessage[]>(seed?.log ?? []);
   const [loading, setLoading] = useState(!seed);
   const [kind, setKind] = useState<Kind | "all">("all");
   const [timeF, setTimeF] = useState<TimeFilter>("all");
+  const [view, setView] = useState<LifeStatus>("active");
   const [q, setQ] = useState("");
   const [adding, setAdding] = useState(false);
+  /** حوار الإرسال — المعاينة والتحرير وتبديل النسخة قبل أي واتساب. */
+  const [sendRow, setSendRow] = useState<Row | null>(null);
   // «أُرسلت» محفوظة بالجهاز: المعرف ← تاريخ الاستحقاق الذي أُرسلت له، فتنمسح
   // العلامة تلقائياً عندما يتجدد الموعد (تذكير متكرر أو جرعة جديدة).
   const [sentMap, setSentMap] = useState<Record<string, string>>(() => {
@@ -132,36 +171,51 @@ export function RemindersHub() {
     setSentMap(m);
     try { localStorage.setItem("vp_rem_sent", JSON.stringify(m)); } catch { /* ignore */ }
   };
-  const isSent = (r: Row) => sentMap[r.id] === r.date;
-  const unmarkSent = (r: Row) => {
-    const m = { ...sentMap };
-    delete m[r.id];
-    saveSent(m);
-    toast.success(t("rem.resendReady", "أُلغيت العلامة — تقدر ترسل التذكير من جديد"));
+  /** تثبيت الدكتور اليدوي: id ← { الحالة، تاريخ الاستحقاق الذي تخصّه }.
+   *  مربوطة بتاريخ الاستحقاق عمداً: يتجدد الموعد فيسقط التثبيت القديم وحده. */
+  const [outcomeMap, setOutcomeMap] = useState<Record<string, { s: "arrived" | "missed"; d: string }>>(() => {
+    try { return JSON.parse(localStorage.getItem("vp_rem_outcome") || "{}") as Record<string, { s: "arrived" | "missed"; d: string }>; } catch { return {}; }
+  });
+  const saveOutcome = (m: Record<string, { s: "arrived" | "missed"; d: string }>) => {
+    setOutcomeMap(m);
+    try { localStorage.setItem("vp_rem_outcome", JSON.stringify(m)); } catch { /* ignore */ }
   };
+  const setOutcome = (r: Row, st: "arrived" | "missed" | null) => {
+    playTap();
+    const m = { ...outcomeMap };
+    if (st === null) delete m[r.id]; else m[r.id] = { s: st, d: r.date };
+    saveOutcome(m);
+    // التذكير اليدوي «تمّ» فعلاً — يُطفأ بالمخزن أيضاً حتى لا يعود على جهاز آخر.
+    if (st === "arrived" && r.manualId) void repo.updateReminder(r.manualId, { enabled: false }).catch(() => { /* التثبيت المحلي يكفي */ });
+  };
+
 
   const remKey = `remhub_${user?.clinic_id ?? user?.id ?? ""}`;
   const load = async () => {
     try {
       const p = await repo.listAllPets(user?.clinic_id ?? user?.id);
       const ids = p.map((x) => x.id);
-      const from = isoDay(startOfToday());
+      // النطاق يرجع 60 يوماً للوراء أيضاً: الحكم على «جاء/ما جاء» يحتاج الماضي القريب.
+      const from = isoDay(new Date(Date.now() - 60 * 86400000));
       const to = isoDay(new Date(Date.now() + 60 * 86400000));
-      const [vax, srg, appts, rems] = await Promise.all([
+      const [vax, srg, appts, rems, vis, log] = await Promise.all([
         repo.listAllVaccinations(ids),
         repo.listAllSurgeries().catch(() => [] as Surgery[]),
         repo.listAppointmentsInRange(from, to).catch(() => [] as Appointment[]),
         repo.listReminders().catch(() => [] as Reminder[]),
+        // الزيارات دليل الوصول لمتابعات العمليات؛ والسجل يجعل «أُرسلت» مشتركة بين الأجهزة.
+        repo.listAllVisits(ids).catch(() => [] as MedicalVisit[]),
+        repo.listWhatsAppLog().catch(() => [] as WhatsAppMessage[]),
       ]);
-      setCached(remKey, { p, vax, srg, appts, rems });
-      setPets(p); setVaccinations(vax); setSurgeries(srg); setAppointments(appts); setManual(rems);
+      setCached(remKey, { p, vax, srg, appts, rems, vis, log });
+      setPets(p); setVaccinations(vax); setSurgeries(srg); setAppointments(appts); setManual(rems); setVisits(vis); setWaLog(log);
     } catch { /* empty state covers it */ }
     finally { setLoading(false); }
   };
   useEffect(() => {
     // فوري من الكاش + تحديث خفي
-    const c = getCached<{ p: Pet[]; vax: Vaccination[]; srg: Surgery[]; appts: Appointment[]; rems: Reminder[] }>(remKey);
-    if (c) { setPets(c.p); setVaccinations(c.vax); setSurgeries(c.srg); setAppointments(c.appts); setManual(c.rems); setLoading(false); }
+    const c = getCached<Seed>(remKey);
+    if (c) { setPets(c.p); setVaccinations(c.vax); setSurgeries(c.srg); setAppointments(c.appts); setManual(c.rems); setVisits(c.vis ?? []); setWaLog(c.log ?? []); setLoading(false); }
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.clinic_id, user?.id]);
@@ -178,39 +232,53 @@ export function RemindersHub() {
     };
 
     // 💉 اللقاحات والديدان المجدولة — كل موعد مهما بَعُد، والمتأخر يبقى ظاهراً.
+    // والمُعطى منها لا يُهمَل بعد اليوم: إعطاء الجرعة هو **دليل السستم** أن
+    // صاحب التذكير جاء فعلاً — فيدخل الصف بدلالة وصولٍ تلقائية.
     for (const v of vaccinations) {
-      if (v.status === "administered" || !v.due_date) continue;
+      if (!v.due_date) continue;
       const pet = petById.get(v.pet_id);
       if (!pet) continue;
       const inDays = daysFromToday(v.due_date);
       if (inDays === null) continue;
+      const given = v.status === "administered";
+      if (given && inDays < -OUTCOME_KEEP_DAYS) continue; // أرشيف قديم
       push({
         id: `vax-${v.id}`, kind: DEWORM_RE.test(v.name) ? "deworming" : "vaccine",
         date: v.due_date.slice(0, 10), petId: pet.id, petName: pet.name,
         ownerName: pet.owner_name ?? "", phone: (pet.owner_phone ?? "").trim(),
         detail: v.name, inDays,
+        autoArrivedAt: given ? (v.administered_at ?? v.due_date).slice(0, 10) : null,
       });
     }
 
     // 🔪 متابعات العمليات (شيل خيوط / مراجعة) — تبقى حتى لو تأخرت.
+    // دليل الوصول هنا: أي زيارة سُجّلت للحيوان بيوم المتابعة أو بعده —
+    // فالحضور يُسجَّل زيارةً بالسستم، والسستم يشهد بنفسه.
     for (const s of surgeries) {
       if (!s.followup_on) continue;
       const inDays = daysFromToday(s.followup_on);
-      if (inDays === null || inDays < -60) continue;
+      if (inDays === null || inDays < -OUTCOME_KEEP_DAYS) continue;
       const bits = petBits(s.pet_id);
       if (!bits.petName) continue;
+      const fday = s.followup_on.slice(0, 10);
+      const visitAfter = visits.find((v) => v.pet_id === s.pet_id && v.visit_date.slice(0, 10) >= fday);
       push({
-        id: `srg-${s.id}`, kind: "surgery", date: s.followup_on.slice(0, 10),
+        id: `srg-${s.id}`, kind: "surgery", date: fday,
         petId: s.pet_id, ...bits,
         detail: `متابعة: ${s.name.split("(")[0].trim()}`, inDays,
+        autoArrivedAt: visitAfter ? visitAfter.visit_date.slice(0, 10) : null,
       });
     }
 
-    // 📅 مواعيد الحجز القادمة (المؤكدة والمطلوبة).
+    // 📅 مواعيد الحجز — والحكم من حالة الحجز نفسها: اكتمل/دخل = جاء،
+    // «لم يحضر» أو أُلغي = ما جاء؛ والقادم المفتوح يبقى تذكيراً حياً.
     for (const a of appointments) {
-      if (a.status !== "requested" && a.status !== "confirmed") continue;
       const inDays = daysFromToday(a.scheduled_at);
-      if (inDays === null || inDays < 0) continue;
+      if (inDays === null) continue;
+      const open = a.status === "requested" || a.status === "confirmed";
+      if (open && inDays < 0) continue;            // حجز فات بلا حسم — لوحة الاستقبال شأنها
+      if (!open && inDays >= 0) continue;          // مُلغى قادم — لا يُذكَّر به
+      const came = a.status === "done" || a.status === "checked_in" || a.status === "in_room";
       const bits = petBits(a.pet_id);
       const at = new Date(a.scheduled_at);
       push({
@@ -218,6 +286,8 @@ export function RemindersHub() {
         time: `${String(at.getHours()).padStart(2, "0")}:${String(at.getMinutes()).padStart(2, "0")}`,
         petId: a.pet_id, ...bits,
         detail: `${SERVICE_LABELS[a.service] ?? a.service}${a.doctor_name ? ` · ${a.doctor_name}` : ""}`, inDays,
+        autoArrivedAt: came ? a.scheduled_at.slice(0, 10) : null,
+        autoMissed: a.status === "no_show" || a.status === "cancelled",
       });
     }
 
@@ -230,7 +300,7 @@ export function RemindersHub() {
       if (inDays === null || inDays < -90) continue;
       const bits = petBits(r.pet_id);
       push({
-        id: `rem-${r.id}`, kind: "manual", date: due, time: r.time || null,
+        id: `rem-${r.id}`, manualId: r.id, kind: "manual", date: due, time: r.time || null,
         petId: r.pet_id ?? null, petName: bits.petName || r.pet_name || "",
         ownerName: bits.ownerName, phone: bits.phone,
         detail: `${r.title}${r.recurring && r.recurring !== "none" ? ` · ${r.recurring === "daily" ? "يومي" : r.recurring === "weekly" ? "أسبوعي" : "شهري"}` : ""} (${CATEGORY_LABELS[r.category] ?? r.category})`,
@@ -256,38 +326,102 @@ export function RemindersHub() {
     }
 
     return rows.sort((a, b) => (a.inDays - b.inDays) || a.petName.localeCompare(b.petName));
-  }, [vaccinations, surgeries, appointments, manual, pets, petById]);
+  }, [vaccinations, surgeries, appointments, manual, pets, petById, visits]);
 
+  /** «أُرسلت» عابرة للأجهزة: العلامة المحلية أو سجل الواتساب المخزَّن —
+   *  رسالة لنفس الحيوان بنفس النوع ضمن نافذة الموعد تُحسب إرسالاً له. */
+  const sentInfoOf = useMemo(() => {
+    const byPetKind = new Map<string, string[]>();
+    for (const w of waLog) {
+      if (!w.pet_id || !w.reminder_type) continue;
+      const k = `${w.pet_id}|${w.reminder_type}`;
+      const arr = byPetKind.get(k) ?? [];
+      arr.push(w.sent_at.slice(0, 10));
+      byPetKind.set(k, arr);
+    }
+    // السجل لا يعرف أي تذكيرٍ بعينه خصّته الرسالة — يعرف الحيوان والنوع فقط.
+    // فإن كان للحيوان **أكثر من تذكير واحد** من نفس النوع، صار الاستدلال
+    // التباساً: رسالة «لقاح السعار» كانت تُعلّم اللقاح الرباعي مُرسلاً معها.
+    // نقصر المطابقة على الحالة غير الملتبسة (تذكير واحد للنوع)، والبقية
+    // تعتمد العلامة المحلية الدقيقة المسجّلة لحظة الإرسال.
+    const rowCount = new Map<string, number>();
+    for (const r of allRows) {
+      if (!r.petId) continue;
+      const k = `${r.petId}|${r.kind}`;
+      rowCount.set(k, (rowCount.get(k) ?? 0) + 1);
+    }
+    return (r: Row): string | null => {
+      if (sentMap[r.id] === r.date) return sentMap[`${r.id}#at`] ?? r.date;
+      if (!r.petId) return null;
+      if ((rowCount.get(`${r.petId}|${r.kind}`) ?? 0) > 1) return null;
+      const days = byPetKind.get(`${r.petId}|${r.kind}`) ?? [];
+      const lo = isoDay(new Date(new Date(r.date + "T00:00:00").getTime() - LOG_MATCH_DAYS * 86400000));
+      const hi = isoDay(new Date(new Date(r.date + "T00:00:00").getTime() + LOG_MATCH_DAYS * 86400000));
+      const hit = days.filter((d) => d >= lo && d <= hi).sort();
+      return hit.length ? hit[hit.length - 1] : null;
+    };
+  }, [waLog, sentMap, allRows]);
+
+  /** الحكم النهائي لكل صف — تثبيت الدكتور أولاً، ثم شهادة السستم، ثم الإرسال. */
+  const judged = useMemo<Judged[]>(() => allRows.map((r) => {
+    const sentAt = sentInfoOf(r);
+    const ov = outcomeMap[r.id];
+    if (ov && ov.d === r.date) return { row: r, st: ov.s, sentAt };
+    if (r.autoArrivedAt) return { row: r, st: "arrived", sentAt };
+    if (r.autoMissed) return { row: r, st: "missed", sentAt };
+    // أعياد الميلاد لا «حضور» لها — تُرسل التهنئة وتبقى مُرسلة وكفى.
+    // مهلة السماح تُعدّ من **يوم الإرسال** لا من الموعد: تذكيرٌ متأخر أُرسل
+    // اليوم يعطي صاحبه أيام السماح كاملةً ليجيء، لا يُحكم عليه بالغياب فوراً.
+    const sentAgo = sentAt ? (daysFromToday(sentAt) ?? 0) : 0;
+    if (sentAt && r.kind !== "birthday" && r.inDays < -GRACE_DAYS && sentAgo <= -GRACE_DAYS) return { row: r, st: "missed", sentAt };
+    if (sentAt) return { row: r, st: "sent", sentAt };
+    return { row: r, st: "active", sentAt: null };
+  }), [allRows, sentInfoOf, outcomeMap]);
+
+  const byStatus = useMemo(() => ({
+    active: judged.filter((j) => j.st === "active"),
+    sent: judged.filter((j) => j.st === "sent"),
+    arrived: judged.filter((j) => j.st === "arrived"),
+    missed: judged.filter((j) => j.st === "missed"),
+  }), [judged]);
+
+  const activeRows = useMemo(() => byStatus.active.map((j) => j.row), [byStatus]);
+
+  // الأرقام الحمر من «قيد المتابعة» وحدها: ما أُرسل خرج من العدّ — هذا هو
+  // الإصلاح الذي طُلب: الرسالة انبعثت فلا يبقى التذكير أحمر يصرخ «متأخر».
   const kpis = useMemo(() => ({
-    overdue: allRows.filter((r) => r.inDays < 0).length,
-    today: allRows.filter((r) => r.inDays === 0).length,
-    week: allRows.filter((r) => r.inDays >= 0 && r.inDays <= 7).length,
-    total: allRows.length,
-  }), [allRows]);
+    overdue: activeRows.filter((r) => r.inDays < 0).length,
+    today: activeRows.filter((r) => r.inDays === 0).length,
+    week: activeRows.filter((r) => r.inDays >= 0 && r.inDays <= 7).length,
+    total: activeRows.length,
+  }), [activeRows]);
 
   /** عدّاد لكل نوع — يظهر على چيبات الفلترة فيعرف الدكتور وين الشغل بلمحة. */
+  const viewRows = useMemo(() => byStatus[view], [byStatus, view]);
   const kindCounts = useMemo(() => {
     const m: Partial<Record<Kind, number>> = {};
-    for (const r of allRows) m[r.kind] = (m[r.kind] ?? 0) + 1;
+    for (const j of viewRows) m[j.row.kind] = (m[j.row.kind] ?? 0) + 1;
     return m;
-  }, [allRows]);
+  }, [viewRows]);
 
   /** إنجاز التواصل: من المستحق اليوم/المتأخر وله هاتف — كم واحد انبعثله فعلاً؟ */
   const contact = useMemo(() => {
-    const due = allRows.filter((r) => r.inDays <= 0 && r.phone);
-    const sent = due.filter((r) => sentMap[r.id] === r.date);
-    return { due: due.length, sent: sent.length };
-  }, [allRows, sentMap]);
+    const pool = judged.filter((j) => (j.st === "active" || j.st === "sent") && j.row.inDays <= 0 && j.row.phone);
+    return { due: pool.length, sent: pool.filter((j) => j.st === "sent").length };
+  }, [judged]);
 
   const ql = q.trim().toLowerCase();
-  const shown = allRows
-    .filter((r) => (kind === "all" ? true : r.kind === kind))
-    .filter((r) => timeF === "all" ? true
-      : timeF === "overdue" ? r.inDays < 0
-        : timeF === "today" ? r.inDays === 0
-          : timeF === "week" ? r.inDays >= 0 && r.inDays <= 7
-            : r.inDays >= 0 && r.inDays <= 30)
-    .filter((r) => !ql || r.petName.toLowerCase().includes(ql) || r.ownerName.toLowerCase().includes(ql) || r.phone.includes(ql) || r.detail.toLowerCase().includes(ql));
+  const shownJ = viewRows
+    .filter((j) => (kind === "all" ? true : j.row.kind === kind))
+    .filter((j) => view !== "active" || (timeF === "all" ? true
+      : timeF === "overdue" ? j.row.inDays < 0
+        : timeF === "today" ? j.row.inDays === 0
+          : timeF === "week" ? j.row.inDays >= 0 && j.row.inDays <= 7
+            : j.row.inDays >= 0 && j.row.inDays <= 30))
+    .filter((j) => !ql || j.row.petName.toLowerCase().includes(ql) || j.row.ownerName.toLowerCase().includes(ql) || j.row.phone.includes(ql) || j.row.detail.toLowerCase().includes(ql));
+  // الأقسام المحسومة تُقرأ من الأحدث للأقدم — آخر ما جرى أولاً.
+  const shown = view === "active" ? shownJ.map((j) => j.row) : [];
+  const flatJ = view === "active" ? [] : shownJ.slice().sort((x, y) => y.row.date.localeCompare(x.row.date));
 
   /** تبويب زمني: متأخر ← اليوم ← غداً ← هذا الأسبوع ← هذا الشهر ← لاحقاً. */
   const buckets = useMemo(() => {
@@ -306,22 +440,20 @@ export function RemindersHub() {
     return def.filter((b) => b.rows.length > 0);
   }, [shown]);
 
-  /** رسالة واتساب جاهزة حسب نوع التذكير. */
-  const sendWA = async (r: Row) => {
+  /** الإرسال الفعلي — يناديه حوار المعاينة بعد ما يرى الدكتور النص ويرضاه. */
+  const doSend = async (r: Row, text: string) => {
     const num = waNumber(r.phone, dial);
-    if (!num) return;
-    const clinic = getClinicName() || "عيادتنا";
-    const dateTxt = formatDate(r.date, i18n.language);
-    const msg =
-      r.kind === "vaccine" ? `مرحباً ${r.ownerName || ""} 🌟\nنذكّركم بموعد لقاح «${r.detail}» لـ${r.petName} بتاريخ ${dateTxt}.\nبانتظاركم — ${clinic} 🐾`
-        : r.kind === "deworming" ? `مرحباً ${r.ownerName || ""} 🌟\nحان موعد جرعة الديدان (${r.detail}) لـ${r.petName} بتاريخ ${dateTxt}.\nبانتظاركم — ${clinic} 🐾`
-          : r.kind === "surgery" ? `مرحباً ${r.ownerName || ""} 🌟\nنذكّركم بموعد ${r.detail} لـ${r.petName} بتاريخ ${dateTxt}.\nسلامة ${r.petName} تهمّنا — ${clinic} 🐾`
-            : r.kind === "appointment" ? `مرحباً ${r.ownerName || ""} 🌟\nنذكّركم بموعد ${r.petName} (${r.detail}) بتاريخ ${dateTxt}${r.time ? ` الساعة ${r.time}` : ""}.\nبانتظاركم — ${clinic} 🐾`
-              : r.kind === "birthday" ? `مرحباً ${r.ownerName || ""} 🎂\nكل عام و${r.petName} بألف خير! ${r.detail}\nمع أطيب التمنيات — ${clinic} 🐾`
-                : `مرحباً ${r.ownerName || ""} 🌟\nتذكير من ${clinic}: ${r.detail} — ${dateTxt}.\n🐾`;
+    if (!num) return false;
     try {
-      await sendWhatsApp({ phone: num, text: msg, petId: r.petId ?? null, ownerName: r.ownerName || null, ownerPhone: r.phone || null, kind: r.kind });
-    } catch (e) { playWarning(); toast.error(quotaMessage(e) ?? "تعذّر الإرسال"); return; }
+      await sendWhatsApp({ phone: num, text, petId: r.petId ?? null, ownerName: r.ownerName || null, ownerPhone: r.phone || null, kind: r.kind });
+    } catch (e) { playWarning(); toast.error(quotaMessage(e) ?? "تعذّر الإرسال"); return false; }
+    // العلامة تُسجَّل فوراً — هذا ما يُخرج التذكير من الأحمر وينقله إلى «أُرسلت».
+    saveSent({ ...sentMap, [r.id]: r.date, [`${r.id}#at`]: isoDay(new Date()) });
+    // ومرآةً محلية بسجل الواتساب حتى تتحدث «أُرسلت» بلا انتظار إعادة تحميل.
+    setWaLog((prev) => [{ id: `local-${r.id}-${Date.now()}`, pet_id: r.petId ?? null, owner_name: r.ownerName || null, owner_phone: r.phone || null, reminder_type: r.kind, sent_at: new Date().toISOString() }, ...prev]);
+    playSuccess();
+    toast.success(t("rem.sentMoved", "أُرسلت — انتقل التذكير إلى قسم «أُرسلت»"));
+    return true;
   };
 
   const KIND_CHIPS: { id: Kind | "all"; label: string; icon: typeof Syringe }[] = [
@@ -353,6 +485,31 @@ export function RemindersHub() {
         <Button leftIcon={<Plus size={16} />} onClick={() => { playTap(); setAdding(true); }}>{t("rem.add", "إضافة تذكير")}</Button>
       </div>
 
+      {/* شريط دورة الحياة: متابعة ← أُرسلت ← جاؤوا / ما جاؤوا.
+          هذا هو «التناغم» المطلوب: التذكير يتنقل بين الأقسام من أدلة السستم
+          نفسه (لقاح أُعطي، زيارة سُجّلت، حجز اكتمل) لا من ضغطات يدوية. */}
+      <div className="mb-4 flex gap-1 overflow-x-auto rounded-2xl border border-line bg-surface-1 p-1 [scrollbar-width:none]" data-remtabs role="tablist">
+        {([
+          { id: "active", label: t("rem.tabActive", "قيد المتابعة"), icon: BellRing, n: byStatus.active.length, tone: "" },
+          { id: "sent", label: t("rem.tabSent", "أُرسلت"), icon: Send, n: byStatus.sent.length, tone: "text-[#128C4A] dark:text-[#4ade80]" },
+          { id: "arrived", label: t("rem.tabArrived", "جاؤوا"), icon: UserCheck, n: byStatus.arrived.length, tone: "text-success-600 dark:text-success-400" },
+          { id: "missed", label: t("rem.tabMissed", "ما جاؤوا"), icon: UserX, n: byStatus.missed.length, tone: "text-danger-600 dark:text-danger-400" },
+        ] as { id: LifeStatus; label: string; icon: typeof Send; n: number; tone: string }[]).map((tb) => {
+          const TIcon = tb.icon;
+          const active = view === tb.id;
+          return (
+            <button key={tb.id} role="tab" aria-selected={active} data-remtab={tb.id}
+              onClick={() => { playTap(); setView(tb.id); setKind("all"); }}
+              className={cn("inline-flex flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-xl px-3 py-2 text-xs font-bold transition",
+                active ? "bg-brand-600 text-white shadow-soft" : cn("text-ink-muted hover:bg-surface-2 hover:text-ink", tb.tone))}>
+              <TIcon size={14} /> {tb.label}
+              <span className={cn("grid h-4.5 min-w-4.5 place-items-center rounded-full px-1 text-2xs font-extrabold tabular-nums", active ? "bg-white/25" : "bg-surface-2")}>{tb.n}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {view === "active" && (<>
       {/* بطاقات الملخص المدرّجة — ضغطة وحدة = تصفية (إحصاء وفلترة بنفس المكان) */}
       <motion.div variants={staggerContainer} initial="initial" animate="animate" className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
         {SEGMENTS.map((s) => {
@@ -400,6 +557,8 @@ export function RemindersHub() {
         </div>
       )}
 
+      </>)}
+
       {/* صف واحد: نوع التذكير + بحث */}
       <div className="mb-4 flex flex-wrap items-center gap-1.5">
         {KIND_CHIPS.map((c) => {
@@ -423,6 +582,107 @@ export function RemindersHub() {
 
       {loading ? (
         <div className="space-y-3">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-20 rounded-2xl" />)}</div>
+      ) : view !== "active" ? (
+        flatJ.length === 0 ? (
+          <div className="card flex flex-col items-center gap-3 p-12 text-center" data-remempty={view}>
+            <span className={cn("grid h-14 w-14 place-items-center rounded-2xl",
+              view === "missed" ? "bg-danger-50 text-danger-500 dark:bg-danger-500/15" : "bg-success-50 text-success-500 dark:bg-success-500/15")}>
+              {view === "sent" ? <Send size={26} /> : view === "arrived" ? <UserCheck size={26} /> : <UserX size={26} />}
+            </span>
+            <p className="font-bold text-ink">
+              {view === "sent" ? t("rem.emptySent", "لا رسائل بانتظار الرد — كل ما أُرسل حُسم")
+                : view === "arrived" ? t("rem.emptyArrived", "بعدُ ما وصل أحد — أول قادمٍ يظهر هنا تلقائياً")
+                  : t("rem.emptyMissed", "لا متخلفين 🎉 — كل من ذُكِّر جاء أو ما زال بالانتظار")}
+            </p>
+            <p className="text-sm text-ink-subtle">
+              {view === "arrived"
+                ? t("rem.arrivedHint", "اللقاح المُعطى، والزيارة المسجَّلة بعد المتابعة، والحجز المكتمل — كلها تنقل التذكير هنا من نفسها.")
+                : t("rem.lifecycleHint", "التذكير يتنقّل بين الأقسام تلقائياً من واقع السستم — والدكتور يقدر يثبّت الحالة بيده متى ما عرف أكثر.")}
+            </p>
+          </div>
+        ) : (
+          <motion.div variants={staggerContainer} initial="initial" animate="animate" className="overflow-hidden rounded-2xl border border-line bg-surface-1 shadow-soft" data-remflat={view}>
+            {flatJ.map((j, i) => {
+              const r = j.row;
+              const M = KIND_META[r.kind];
+              const MIcon = M.icon;
+              const pet = r.petId ? petById.get(r.petId) : undefined;
+              const ov = outcomeMap[r.id];
+              const manualOv = !!ov && ov.d === r.date;
+              return (
+                <motion.div key={r.id} variants={staggerItem}
+                  onClick={() => { if (r.petId) { playTap(); navigate(`/pet/${r.petId}`); } }}
+                  className={cn("group flex flex-wrap items-center gap-3 border-s-4 px-3.5 py-3 transition sm:flex-nowrap",
+                    view === "arrived" ? "border-s-success-500" : view === "missed" ? "border-s-danger-500" : "border-s-[#25D366]",
+                    i > 0 && "border-t border-t-line", r.petId && "cursor-pointer hover:bg-surface-2/50")}>
+                  {pet ? (
+                    <span className="relative shrink-0">
+                      <PetAvatar pet={pet} size={40} photoFallback />
+                      <span className={cn("absolute -bottom-1 -end-1 grid h-5 w-5 place-items-center rounded-full border-2 border-surface-1", M.tile)} title={M.label}><MIcon size={11} /></span>
+                    </span>
+                  ) : (
+                    <span className={cn("grid h-10 w-10 shrink-0 place-items-center rounded-xl", M.tile)} title={M.label}><MIcon size={18} /></span>
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-bold text-ink">
+                      {r.kind !== "manual" && r.petName
+                        ? <>{r.petName} <span className="font-semibold text-ink-muted">— {r.detail}</span></>
+                        : r.detail}
+                    </p>
+                    <p className="truncate text-2xs text-ink-subtle">
+                      {r.ownerName && <>{r.ownerName} · </>}
+                      {formatDate(r.date, i18n.language)}
+                      {view === "sent" && j.sentAt && <> · {t("rem.sentOn", "أُرسل")} {formatDate(j.sentAt, i18n.language)}</>}
+                      {view === "arrived" && <> · {manualOv ? t("rem.byDoctor", "ثبّتها الدكتور") : r.autoArrivedAt ? `${t("rem.cameOn", "جاء")} ${formatDate(r.autoArrivedAt, i18n.language)}` : t("rem.came", "جاء")}</>}
+                      {view === "missed" && <> · {manualOv ? t("rem.byDoctor", "ثبّتها الدكتور") : t("rem.graceOver", "مضت مهلة السماح بلا أثر")}</>}
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-1.5">
+                    {view === "sent" && (<>
+                      <button onClick={(e) => { e.stopPropagation(); setOutcome(r, "arrived"); }} data-remcame={r.id}
+                        title={t("rem.markCame", "جاء صاحبه — انقله لقسم «جاؤوا»")}
+                        className="inline-flex h-8 items-center gap-1 rounded-lg bg-success-50 px-2 text-2xs font-bold text-success-700 transition hover:bg-success-100 dark:bg-success-500/15 dark:text-success-300">
+                        <UserCheck size={14} /> {t("rem.cameBtn", "جاء")}
+                      </button>
+                      <button onClick={(e) => { e.stopPropagation(); setOutcome(r, "missed"); }} data-remmiss={r.id}
+                        title={t("rem.markMissed", "ما جاء — انقله لقسم «ما جاؤوا»")}
+                        className="inline-flex h-8 items-center gap-1 rounded-lg bg-danger-50 px-2 text-2xs font-bold text-danger-700 transition hover:bg-danger-100 dark:bg-danger-500/15 dark:text-danger-300">
+                        <UserX size={14} /> {t("rem.missBtn", "ما جاء")}
+                      </button>
+                      {r.phone && (
+                        <button onClick={(e) => { e.stopPropagation(); playTap(); setSendRow(r); }}
+                          title={t("rem.resend", "إعادة الإرسال")}
+                          className="inline-flex h-8 items-center gap-1 rounded-lg bg-surface-2 px-2 text-2xs font-bold text-ink-muted transition hover:text-ink">
+                          <MessageCircle size={14} />
+                        </button>
+                      )}
+                    </>)}
+                    {view === "missed" && (<>
+                      {r.phone && (
+                        <button onClick={(e) => { e.stopPropagation(); playTap(); setSendRow(r); }} data-remresend={r.id}
+                          className="inline-flex h-8 items-center gap-1 rounded-lg bg-[#25D366] px-2.5 text-2xs font-bold text-white shadow-soft transition hover:bg-[#1fb959]">
+                          <MessageCircle size={14} /> {t("rem.remindAgain", "ذكّر مجدداً")}
+                        </button>
+                      )}
+                      <button onClick={(e) => { e.stopPropagation(); setOutcome(r, "arrived"); }}
+                        title={t("rem.markCame", "جاء صاحبه — انقله لقسم «جاؤوا»")}
+                        className="inline-flex h-8 items-center gap-1 rounded-lg bg-success-50 px-2 text-2xs font-bold text-success-700 transition hover:bg-success-100 dark:bg-success-500/15 dark:text-success-300">
+                        <UserCheck size={14} /> {t("rem.cameBtn", "جاء")}
+                      </button>
+                    </>)}
+                    {manualOv && (
+                      <button onClick={(e) => { e.stopPropagation(); setOutcome(r, null); }}
+                        title={t("rem.undoOutcome", "تراجع عن التثبيت اليدوي")}
+                        className="inline-flex h-8 items-center gap-1 rounded-lg bg-surface-2 px-2 text-2xs font-bold text-ink-muted transition hover:text-ink">
+                        <Undo2 size={14} />
+                      </button>
+                    )}
+                  </div>
+                </motion.div>
+              );
+            })}
+          </motion.div>
+        )
       ) : buckets.length === 0 ? (
         <div className="card flex flex-col items-center gap-3 p-12 text-center">
           <span className="grid h-14 w-14 place-items-center rounded-2xl bg-success-50 text-success-500 dark:bg-success-500/15"><CheckCircle2 size={26} /></span>
@@ -444,7 +704,6 @@ export function RemindersHub() {
                 {b.rows.map((r, i) => {
                   const M = KIND_META[r.kind];
                   const MIcon = M.icon;
-                  const done = isSent(r);
                   const pet = r.petId ? petById.get(r.petId) : undefined;
                   const openFile = () => { if (r.petId) { playTap(); navigate(`/pet/${r.petId}`); } };
                   return (
@@ -489,19 +748,14 @@ export function RemindersHub() {
                             : "bg-surface-2 text-ink-muted")}>
                         {relLabel(r.inDays)}
                       </span>
-                      {r.phone && (done ? (
-                        /* أُرسلت ✓ — والضغط عليها يلغيها إذا الرسالة ما وصلت، فيرجع زر الإرسال */
-                        <button onClick={(e) => { e.stopPropagation(); playTap(); unmarkSent(r); }}
-                          title={t("rem.sentToggle", "أُرسلت ✓ — اضغط إذا ما وصلت الرسالة لتعيد إرسالها")}
-                          className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-xl bg-success-500 px-2.5 text-xs font-bold text-white shadow-soft transition hover:bg-success-600">
-                          <CheckCircle2 size={16} /> <span className="hidden sm:inline">{t("rem.sentShort", "أُرسلت")}</span>
-                        </button>
-                      ) : (
-                        <button onClick={(e) => { e.stopPropagation(); sendWA(r); }} title={t("rem.sendWA", "إرسال تذكير واتساب")}
+                      {r.phone && (
+                        /* يفتح معاينةً قابلة للتحرير — لا قفز أعمى للواتساب بعد اليوم */
+                        <button onClick={(e) => { e.stopPropagation(); playTap(); setSendRow(r); }} title={t("rem.sendWA", "إرسال تذكير واتساب")}
+                          data-remsend={r.id}
                           className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-xl bg-[#25D366] px-2.5 text-xs font-bold text-white shadow-soft transition hover:bg-[#1fb959]">
                           <MessageCircle size={16} /> <span className="hidden sm:inline">{t("rem.sendShort", "ذكّر")}</span>
                         </button>
-                      ))}
+                      )}
                     </motion.div>
                   );
                 })}
@@ -512,6 +766,18 @@ export function RemindersHub() {
       )}
 
       <AddReminderModal open={adding} pets={pets} onClose={() => setAdding(false)} onSaved={() => { setAdding(false); playSuccess(); toast.success(t("rem.added", "أُضيف التذكير")); void load(); }} />
+      {sendRow && (
+        <WaSendDialog
+          row={sendRow}
+          onClose={() => setSendRow(null)}
+          onSend={async (text) => { const ok = await doSend(sendRow, text); if (ok) setSendRow(null); }}
+          onOpenCampaigns={() => {
+            playTap();
+            const rt = sendRow.kind === "birthday" ? "birthday" : sendRow.kind === "deworming" ? "deworming" : "vaccine";
+            navigate("/campaigns", sendRow.petId ? { state: { targetPetId: sendRow.petId, targetPetName: sendRow.petName, targetOwnerName: sendRow.ownerName, reminderType: rt } } : undefined);
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -592,6 +858,84 @@ function AddReminderModal({ open, pets, onClose, onSaved }: { open: boolean; pet
           </div>
         </div>
         <Button className="w-full" size="lg" loading={busy} leftIcon={<Plus size={16} />} onClick={save}>{t("rem.saveBtn", "حفظ التذكير")}</Button>
+      </div>
+    </Modal>
+  );
+}
+
+/* ============================================================================
+ * حوار الإرسال — يرى الدكتور الرسالة ويحررها **قبل** أي واتساب.
+ *
+ * لماذا: القفز المباشر لواتساب برسالة واحدة مقولبة كان يهمّش دور الحملات
+ * ويجعل كل رسائل العيادة نسخة واحدة متطابقة — وهي أوضح بصمة سبام تلتقطها
+ * فلاتر واتساب. هنا: عشر صياغات تُنتقى شبه عشوائياً (ثابتة لنفس التذكير
+ * بنفس اليوم)، وزرّ نردٍ يقلّب بينها، والنص مفتوح للتحرير الحر.
+ * ==========================================================================*/
+function WaSendDialog({ row, onClose, onSend, onOpenCampaigns }: {
+  row: Row;
+  onClose: () => void;
+  onSend: (text: string) => Promise<void> | void;
+  onOpenCampaigns: () => void;
+}) {
+  const { t, i18n } = useTranslation();
+  const variants = waVariants(POOL_OF[row.kind]);
+  const params = useMemo(() => ({
+    owner: row.ownerName || "",
+    pet: row.petName || "",
+    clinic: getClinicName() || t("app.name", "doctorVet"),
+    detail: row.detail,
+    date: formatDate(row.date, i18n.language),
+    time: row.time ? ` ${t("rem.atHour", "الساعة")} ${row.time}` : "",
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [row, i18n.language]);
+  // البذرة = التذكير + يومه: نفس التذكير يعطي نفس النسخة حتى يقلّبها الدكتور بنفسه.
+  const [idx, setIdx] = useState(() => pickVariantIndex(`${row.id}|${row.date}`, Math.max(1, variants.length)));
+  const [text, setText] = useState(() => renderWaTemplate(variants[idx] ?? "", params));
+  const [busy, setBusy] = useState(false);
+
+  const roll = () => {
+    playTap();
+    const next = variants.length ? (idx + 1) % variants.length : 0;
+    setIdx(next);
+    setText(renderWaTemplate(variants[next] ?? "", params));
+  };
+
+  return (
+    <Modal open onClose={onClose} title={t("rem.sendTitle", "تذكير واتساب")}>
+      <div className="space-y-3" data-remdialog>
+        {/* لمن نرسل — حتى لا تروح رسالة لغير صاحبها */}
+        <div className="flex items-center gap-2.5 rounded-xl bg-surface-2 p-2.5">
+          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-[#25D366]/15 text-[#128C4A] dark:text-[#4ade80]"><MessageCircle size={17} /></span>
+          <div className="min-w-0 flex-1 text-sm">
+            <p className="truncate font-bold text-ink">{row.ownerName || t("rem.noName", "بلا اسم")}{row.petName ? ` · ${row.petName}` : ""}</p>
+            <p className="truncate text-2xs text-ink-subtle" dir="ltr">{row.phone}</p>
+          </div>
+          <span className="chip shrink-0 bg-surface-1 text-2xs font-bold text-ink-muted">{KIND_META[row.kind].label}</span>
+        </div>
+
+        {/* النسخة الحالية + نرد التبديل — كل ضغطة صياغة مختلفة */}
+        <div className="flex items-center justify-between gap-2">
+          <label className="label m-0">{t("rem.msgLabel", "نص الرسالة")}</label>
+          <button type="button" onClick={roll} data-remroll
+            className="inline-flex items-center gap-1.5 rounded-full bg-brand-50 px-3 py-1.5 text-xs font-bold text-brand-700 transition hover:bg-brand-100 dark:bg-brand-500/15 dark:text-brand-300">
+            <Dices size={14} /> {t("rem.otherVariant", "صياغة أخرى")}
+            <span className="tabular-nums text-2xs font-extrabold text-brand-600/70 dark:text-brand-300/70" data-remvariant>{variants.length ? `${idx + 1}/${variants.length}` : ""}</span>
+          </button>
+        </div>
+        <textarea className="input min-h-[150px] leading-relaxed" value={text} data-remtext
+          onChange={(e) => setText(e.target.value)} />
+
+        <Button className="w-full" size="lg" loading={busy} leftIcon={<Send size={16} />} data-remconfirm
+          disabled={!text.trim()}
+          onClick={async () => { if (busy) return; setBusy(true); try { await onSend(text.trim()); } finally { setBusy(false); } }}>
+          {t("rem.confirmSend", "إرسال عبر واتساب")}
+        </Button>
+
+        {/* الجسر لقسم الحملات — لمن يريد استهدافاً أوسع أو قوالب محفوظة */}
+        <button type="button" onClick={onOpenCampaigns}
+          className="flex w-full items-center justify-center gap-1.5 pt-1 text-xs font-semibold text-brand-600 hover:underline dark:text-brand-300">
+          <ExternalLink size={13} /> {t("rem.openCampaigns", "فتح بحملات الواتساب — استهداف أوسع وقوالب")}
+        </button>
       </div>
     </Modal>
   );

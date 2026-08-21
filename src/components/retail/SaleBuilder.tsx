@@ -29,6 +29,7 @@ import { useNavFolded, setNavFolded } from "@/lib/navFold";
 import { persistMedicalEntries } from "@/lib/medSync";
 import type { MedicalDraft } from "@/components/MedicalEntry";
 import { cn, money, currencySymbol, formatNum } from "@/lib/utils";
+import { splitCustomerField } from "@/lib/customerName";
 import { dueOf, paidOf } from "@/lib/debt";
 import { withTimeout, describeDbError } from "@/lib/errors";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
@@ -1121,9 +1122,13 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
       const primary: PaymentMethod | null = legs.length ? legs.reduce((best, p) => (p.amount > best.amount ? p : best), legs[0]).method : null;
       // Every attached patient goes on the invoice (prints under "الحيوان: …").
       const petNames = Array.from(new Set(salePets.map((p) => p.name.trim()).filter(Boolean)));
+      // اسمٌ أُلصق به رقم طويل (هاتف/بطاقة) يُفصل قبل الحفظ: النص للاسم
+      // والرقم لخانة الهاتف إن كانت فارغة — فلا يتلوث دفتر الديون بأسماء
+      // بذيولٍ رقمية.
+      const cust = splitCustomerField(name);
       const meta: SaleMeta = {
-        customer_name: name.trim() || null,
-        customer_phone: phone.trim() || null,
+        customer_name: cust.name || null,
+        customer_phone: phone.trim() || cust.phone || null,
         pet_name: petNames.length ? petNames.join(" + ") : null,
         // The client computes the authoritative final price (promotions + manual discount
         // + any manual final-price override, which may be a markup); the server records it.
@@ -1148,8 +1153,8 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
             invoice_id: invoice.id,
             branch_id: branchStore.branchForWrite(),
             courier_id: dCourierId || null,
-            customer_name: name.trim() || null,
-            customer_phone: phone.trim() || null,
+            customer_name: cust.name || null,
+            customer_phone: phone.trim() || cust.phone || null,
             zone: dZone || null,
             address: dAddress.trim() || null,
             note: null,

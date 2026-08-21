@@ -14,6 +14,7 @@ import { InvoiceDetail } from "@/components/retail/InvoicesPanel";
 import { invoiceNo } from "@/lib/invoicePrint";
 import { phoneDigits } from "@/lib/phone";
 import { cn, formatDate, formatNum, money } from "@/lib/utils";
+import { displayCustomerName } from "@/lib/customerName";
 import { describeDbError } from "@/lib/errors";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
 import { staggerContainer, staggerItem } from "@/lib/motion";
@@ -88,7 +89,8 @@ export function DebtsPanel({ invoices, clinicId, onChanged, onOpenDelivery }: { 
     if (!deliveryReady) return [];
     for (const inv of invoices.filter((i) => isDebt(i) && !activeDelivery.has(i.id))) {
       const phone = (inv.customer_phone ?? "").trim() || null;
-      const name = (inv.customer_name ?? "").trim();
+      // الاسم يُعرض ويُجمَّع نظيفاً من أي ذيل رقمي التصق به يوم البيع.
+      const name = displayCustomerName(inv.customer_name);
       // A stable identity: phone wins; else a named customer; else this one anonymous sale.
       const key = phone ? `p:${phoneDigits(phone)}` : name ? `n:${name.toLowerCase()}` : `i:${inv.id}`;
       const g = map.get(key) ?? { key, name, phone, debts: [], total: 0, paid: 0, due: 0, oldest: inv.created_at };
@@ -353,7 +355,7 @@ function SettleModal({ invoice, onClose, onSettled }: { invoice: Invoice | null;
       {invoice && (
         <div className="space-y-4">
           <div className="rounded-xl bg-surface-2 p-3 text-sm">
-            <div className="flex items-center gap-2 font-semibold text-ink"><User size={14} /> {invoice.customer_name || t("retail.walkIn", "عميل نقدي")}</div>
+            <div className="flex items-center gap-2 font-semibold text-ink"><User size={14} /> {displayCustomerName(invoice.customer_name) || t("retail.walkIn", "عميل نقدي")}</div>
             <div className="mt-2 space-y-1">
               <div className="flex items-center justify-between text-ink-muted"><span>{t("retail.grandTotal", "إجمالي الفاتورة")}</span><span className="tabular-nums">{money(invoice.total)}</span></div>
               <div className="flex items-center justify-between text-ink-muted"><span>{t("retail.paidSoFar", "المدفوع")}</span><span className="tabular-nums text-success-600">{money(paidOf(invoice))}</span></div>

@@ -25,6 +25,7 @@ import { usePermissions } from "@/hooks/usePermissions";
 import { useOverride, noteLockedTap } from "@/lib/managerOverride";
 import { useToast, Skeleton, Button } from "@/components/ui";
 import { money, formatNum, cn, dateLocale } from "@/lib/utils";
+import { displayCustomerName } from "@/lib/customerName";
 import { dueOf, isDebt, paidOf } from "@/lib/debt";
 import { invoiceNo } from "@/lib/invoicePrint";
 import { getClinicName } from "@/lib/settings";
@@ -351,7 +352,7 @@ export function AnalyticsHub() {
     return {
       kind: "sale" as const,
       id: inv.id, ref: invoiceNo(inv.id), when: inv.created_at, whenMs: new Date(inv.created_at).getTime(),
-      client: (inv.customer_name ?? "").trim() || t("rpt.walkIn", "عميل نقدي"),
+      client: displayCustomerName(inv.customer_name) || t("rpt.walkIn", "عميل نقدي"),
       staff: (inv.staff_id && staffById.get(inv.staff_id)) || "—",
       items: summary, method,
       total: inv.total, discount: inv.discount ?? 0, profit: inv.profit ?? 0, refunded,
@@ -367,7 +368,7 @@ export function AnalyticsHub() {
       kind: "settlement" as const,
       id: `${c.inv.id}::${c.correction ? "fix" : "settle"}::${c.at}::${i}`,
       ref: invoiceNo(c.inv.id), when: c.at, whenMs: new Date(c.at).getTime(),
-      client: (c.inv.customer_name ?? "").trim() || t("rpt.walkIn", "عميل نقدي"),
+      client: displayCustomerName(c.inv.customer_name) || t("rpt.walkIn", "عميل نقدي"),
       staff: "—",
       // التصحيح يُعرَض بسببه لا بعنوانٍ عام: صفٌّ سالب بلا سبب سؤالٌ مفتوح.
       items: c.correction
@@ -530,7 +531,7 @@ export function AnalyticsHub() {
       const ck = ((inv.customer_phone ?? "").trim() || (inv.customer_name ?? "").trim()).toLowerCase();
       if (ck) a.customers.add(ck);
       for (const leg of paymentsOf(inv)) if (a.payMix[leg.method] !== undefined) a.payMix[leg.method] += leg.amount;
-      if (!a.biggest || inv.total > a.biggest.total) a.biggest = { total: inv.total, client: (inv.customer_name ?? "").trim() || t("rpt.walkIn", "عميل نقدي"), when: inv.created_at };
+      if (!a.biggest || inv.total > a.biggest.total) a.biggest = { total: inv.total, client: displayCustomerName(inv.customer_name) || t("rpt.walkIn", "عميل نقدي"), when: inv.created_at };
       for (const it of itemsByInvoice.get(inv.id) ?? []) {
         const e = a.itemAgg.get(it.name) ?? { name: it.name, qty: 0, revenue: 0 };
         e.qty += it.qty; e.revenue += it.line_total;
@@ -637,7 +638,7 @@ export function AnalyticsHub() {
     const m = new Map<string, { name: string; phone: string; total: number; visits: number }>();
     for (const i of paid) {
       const phone = (i.customer_phone ?? "").trim();
-      const name = (i.customer_name ?? "").trim();
+      const name = displayCustomerName(i.customer_name);
       if (!phone && !name) continue; // skip anonymous walk-ins
       const key = (phone || name).toLowerCase();
       const cur = m.get(key) ?? { name: name || t("rpt.clientFallback", "عميل"), phone, total: 0, visits: 0 };

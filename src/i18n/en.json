@@ -1,4 +1,130 @@
 {
+  "waMsgs": {
+    "rem": {
+      "vaccine": [
+        "Hello {{اسم_المالك}} 🌟\nA reminder: {{اسم_الحيوان}}'s “{{التفصيل}}” vaccine is due on {{التاريخ}}.\nSee you soon — {{اسم_العيادة}} 🐾",
+        "Hi {{اسم_المالك}} 🙌\n{{اسم_الحيوان}}'s vaccine ({{التفصيل}}) is coming up on {{التاريخ}}.\nWe'd love to see you — {{اسم_العيادة}}",
+        "Hello {{اسم_المالك}} 💙\n{{اسم_الحيوان}}'s health matters to us: “{{التفصيل}}” is due on {{التاريخ}}.\n{{اسم_العيادة}} 🐾",
+        "Greetings {{اسم_المالك}} 🌿\nA gentle reminder of {{اسم_الحيوان}}'s “{{التفصيل}}” dose on {{التاريخ}}.\nSee you soon — {{اسم_العيادة}}",
+        "Hi {{اسم_المالك}} 👋\n{{اسم_الحيوان}} has a vaccine appointment ({{التفصيل}}) on {{التاريخ}} — don't miss it 😊\n{{اسم_العيادة}} 🐾",
+        "Hello {{اسم_المالك}} 🌷\nIt's time for {{اسم_الحيوان}}'s “{{التفصيل}}” vaccine. Due: {{التاريخ}}.\nBest regards, {{اسم_العيادة}}",
+        "Dear {{اسم_المالك}} 💉\nJust a note: {{اسم_الحيوان}}'s “{{التفصيل}}” vaccine is due on {{التاريخ}}.\nSee you soon — {{اسم_العيادة}} 🐾",
+        "Good day {{اسم_المالك}} ✨\n{{اسم_الحيوان}}'s vaccination ({{التفصيل}}) is near — {{التاريخ}}.\nBook your visit, {{اسم_العيادة}}",
+        "Hello {{اسم_المالك}} 🐾\nTo keep {{اسم_الحيوان}} protected, “{{التفصيل}}” is due on {{التاريخ}}.\n{{اسم_العيادة}}",
+        "Hi {{اسم_المالك}} 😊\n{{اسم_الحيوان}}'s vaccine schedule says: “{{التفصيل}}” on {{التاريخ}}.\nAnytime — {{اسم_العيادة}} 💙"
+      ],
+      "deworming": [
+        "Hello {{اسم_المالك}} 🌟\n{{اسم_الحيوان}}'s deworming dose ({{التفصيل}}) is due on {{التاريخ}}.\nSee you soon — {{اسم_العيادة}} 🐾",
+        "Hi {{اسم_المالك}} 🙌\n{{اسم_الحيوان}}'s deworming ({{التفصيل}}) is due on {{التاريخ}}.\nWe'd love to see you — {{اسم_العيادة}}",
+        "Hello {{اسم_المالك}} 💙\nA friendly note: {{اسم_الحيوان}} needs the “{{التفصيل}}” dose on {{التاريخ}}.\n{{اسم_العيادة}} 🐛",
+        "Greetings {{اسم_المالك}} 🌿\n{{اسم_الحيوان}}'s “{{التفصيل}}” dose is coming up — {{التاريخ}}.\nSee you soon, {{اسم_العيادة}}",
+        "Hi {{اسم_المالك}} 👋\nDon't forget {{اسم_الحيوان}}'s deworming ({{التفصيل}}) on {{التاريخ}} 😊\n{{اسم_العيادة}} 🐾",
+        "Hello {{اسم_المالك}} 🌷\n{{اسم_الحيوان}}'s protection continues with “{{التفصيل}}” — due {{التاريخ}}.\nBest regards, {{اسم_العيادة}}",
+        "Dear {{اسم_المالك}} 💊\nA reminder of {{اسم_الحيوان}}'s deworming dose “{{التفصيل}}” on {{التاريخ}}.\nSee you soon — {{اسم_العيادة}}",
+        "Good day {{اسم_المالك}} ✨\n{{اسم_الحيوان}}'s dose ({{التفصيل}}) is due — {{التاريخ}}.\nBook a visit, {{اسم_العيادة}} 🐾",
+        "Hello {{اسم_المالك}} 🐛\nFor {{اسم_الحيوان}}'s health: “{{التفصيل}}” is due on {{التاريخ}}.\n{{اسم_العيادة}}",
+        "Hi {{اسم_المالك}} 😊\n{{اسم_الحيوان}}'s preventive schedule says: “{{التفصيل}}” on {{التاريخ}}.\nSee you — {{اسم_العيادة}} 💙"
+      ],
+      "surgery": [
+        "Hello {{اسم_المالك}} 🌟\nA reminder of {{اسم_الحيوان}}'s {{التفصيل}} on {{التاريخ}}.\n{{اسم_الحيوان}}'s recovery matters — {{اسم_العيادة}} 🐾",
+        "Hi {{اسم_المالك}} 🙌\n{{اسم_الحيوان}}'s check-up ({{التفصيل}}) is on {{التاريخ}}.\nLet's make sure all is well — {{اسم_العيادة}}",
+        "Hello {{اسم_المالك}} 💙\nPost-surgery follow-up for {{اسم_الحيوان}} ({{التفصيل}}) on {{التاريخ}}.\n{{اسم_العيادة}}",
+        "Greetings {{اسم_المالك}} 🌿\n{{اسم_الحيوان}}'s {{التفصيل}} is due {{التاريخ}} — this visit completes the recovery.\n{{اسم_العيادة}} 🐾",
+        "Hi {{اسم_المالك}} 👋\nDon't forget {{اسم_الحيوان}}'s appointment: {{التفصيل}} on {{التاريخ}} 😊\n{{اسم_العيادة}}",
+        "Hello {{اسم_المالك}} 🌷\n{{اسم_الحيوان}}'s follow-up ({{التفصيل}}) is set for {{التاريخ}}.\nBest regards, {{اسم_العيادة}} 🐾",
+        "Dear {{اسم_المالك}} 🩺\nWe'd like to check on {{اسم_الحيوان}} — {{التفصيل}} on {{التاريخ}}.\nSee you soon, {{اسم_العيادة}}",
+        "Good day {{اسم_المالك}} ✨\n{{اسم_الحيوان}}'s check-up ({{التفصيل}}) is near — {{التاريخ}}.\n{{اسم_العيادة}} 🐾",
+        "Hello {{اسم_المالك}} 🐾\n{{اسم_الحيوان}}'s full recovery needs this visit: {{التفصيل}} — {{التاريخ}}.\n{{اسم_العيادة}}",
+        "Hi {{اسم_المالك}} 😊\nA reminder of {{اسم_الحيوان}}'s visit: {{التفصيل}} on {{التاريخ}}.\nSee you — {{اسم_العيادة}} 💙"
+      ],
+      "appointment": [
+        "Hello {{اسم_المالك}} 🌟\nA reminder of {{اسم_الحيوان}}'s appointment ({{التفصيل}}) on {{التاريخ}}{{الوقت}}.\nSee you soon — {{اسم_العيادة}} 🐾",
+        "Hi {{اسم_المالك}} 🙌\n{{اسم_الحيوان}}'s next appointment: {{التفصيل}} — {{التاريخ}}{{الوقت}}.\nWe'd love to see you, {{اسم_العيادة}}",
+        "Hello {{اسم_المالك}} 💙\nConfirming {{اسم_الحيوان}}'s appointment ({{التفصيل}}) on {{التاريخ}}{{الوقت}}.\n{{اسم_العيادة}} 🐾",
+        "Greetings {{اسم_المالك}} 🌿\nYour booking for {{اسم_الحيوان}} ({{التفصيل}}) on {{التاريخ}}{{الوقت}} — see you then.\n{{اسم_العيادة}}",
+        "Hi {{اسم_المالك}} 👋\nDon't forget {{اسم_الحيوان}}'s appointment ({{التفصيل}}) — {{التاريخ}}{{الوقت}} 😊\n{{اسم_العيادة}}",
+        "Hello {{اسم_المالك}} 🌷\n{{اسم_الحيوان}}'s appointment ({{التفصيل}}) is set for {{التاريخ}}{{الوقت}}.\nBest regards, {{اسم_العيادة}} 🐾",
+        "Dear {{اسم_المالك}} 📅\nA reminder of {{اسم_الحيوان}}'s visit: {{التفصيل}} on {{التاريخ}}{{الوقت}}.\nSee you soon — {{اسم_العيادة}}",
+        "Good day {{اسم_المالك}} ✨\n{{اسم_الحيوان}}'s appointment ({{التفصيل}}) is near — {{التاريخ}}{{الوقت}}.\n{{اسم_العيادة}} 🐾",
+        "Hello {{اسم_المالك}} 🐾\nWe look forward to seeing {{اسم_الحيوان}} ({{التفصيل}}) on {{التاريخ}}{{الوقت}}.\n{{اسم_العيادة}}",
+        "Hi {{اسم_المالك}} 😊\nQuick reminder of {{اسم_الحيوان}}'s appointment: {{التفصيل}} — {{التاريخ}}{{الوقت}}.\nSee you, {{اسم_العيادة}} 💙"
+      ],
+      "manual": [
+        "Hello {{اسم_المالك}} 🌟\nA reminder from {{اسم_العيادة}}: {{التفصيل}} — {{التاريخ}}.\n🐾",
+        "Hi {{اسم_المالك}} 🙌\nJust a note: {{التفصيل}} on {{التاريخ}}.\n{{اسم_العيادة}}",
+        "Hello {{اسم_المالك}} 💙\nA friendly reminder from {{اسم_العيادة}}: {{التفصيل}} — {{التاريخ}}.",
+        "Greetings {{اسم_المالك}} 🌿\n{{التفصيل}} — due {{التاريخ}}.\nBest regards, {{اسم_العيادة}}",
+        "Hi {{اسم_المالك}} 👋\nDon't forget: {{التفصيل}} on {{التاريخ}} 😊\n{{اسم_العيادة}}",
+        "Hello {{اسم_المالك}} 🌷\nReminding you of {{التفصيل}} on {{التاريخ}}.\n{{اسم_العيادة}} 🐾",
+        "Dear {{اسم_المالك}} 📌\nA note from {{اسم_العيادة}}: {{التفصيل}} — {{التاريخ}}.",
+        "Good day {{اسم_المالك}} ✨\nReminder: {{التفصيل}} — {{التاريخ}}.\n{{اسم_العيادة}}",
+        "Hello {{اسم_المالك}} 🐾\nFrom {{اسم_العيادة}}: {{التفصيل}} on {{التاريخ}}.",
+        "Hi {{اسم_المالك}} 😊\nQuick reminder: {{التفصيل}} — {{التاريخ}}.\n{{اسم_العيادة}} 💙"
+      ],
+      "birthday": [
+        "Hello {{اسم_المالك}} 🎂\nHappy birthday to {{اسم_الحيوان}}! {{التفصيل}}\nBest wishes — {{اسم_العيادة}} 🐾",
+        "Hi {{اسم_المالك}} 🎉\nIt's {{اسم_الحيوان}}'s birthday today! {{التفصيل}}\nWishing a long, healthy life — {{اسم_العيادة}}",
+        "Hello {{اسم_المالك}} 🥳\n{{اسم_الحيوان}} is growing up strong! {{التفصيل}}\nWarmest wishes from {{اسم_العيادة}} 🐾",
+        "Greetings {{اسم_المالك}} 🎈\nHappy birthday, {{اسم_الحيوان}}! {{التفصيل}}\n{{اسم_العيادة}}",
+        "Hello {{اسم_المالك}} 🎁\nA special day: {{اسم_الحيوان}}'s birthday! {{التفصيل}}\nCongratulations — {{اسم_العيادة}} 🐾",
+        "Hi {{اسم_المالك}} 🌟\n{{اسم_الحيوان}} has a special day today 🎂 {{التفصيل}}\nBest regards, {{اسم_العيادة}}",
+        "Dear {{اسم_المالك}} 🎊\nWe share your joy on {{اسم_الحيوان}}'s birthday! {{التفصيل}}\n{{اسم_العيادة}} 🐾",
+        "Good day {{اسم_المالك}} ✨\nMany happy returns for {{اسم_الحيوان}}! {{التفصيل}}\n{{اسم_العيادة}}",
+        "Hello {{اسم_المالك}} 🐾\nIt's {{اسم_الحيوان}}'s birthday — {{التفصيل}}\nBest wishes from {{اسم_العيادة}} 🎂",
+        "Hi {{اسم_المالك}} 😊\n{{اسم_الحيوان}} is blowing out a new candle! {{التفصيل}}\nWarm congratulations — {{اسم_العيادة}} 🎉"
+      ]
+    },
+    "camp": {
+      "birthday": [
+        "Hello {{اسم_المالك}}! 🎉 {{اسم_العيادة}} clinic wishes {{اسم_الحيوان}} a very happy birthday! 🐾",
+        "Happy birthday to {{اسم_الحيوان}}, {{اسم_المالك}} 🎂 Best wishes from {{اسم_العيادة}}!",
+        "Hi {{اسم_المالك}} 🥳 It's {{اسم_الحيوان}}'s birthday — wishing health and a long life. {{اسم_العيادة}} 🐾",
+        "A special day! 🎈 {{اسم_الحيوان}} turns a year older — congratulations {{اسم_المالك}}. Regards, {{اسم_العيادة}}",
+        "Hello {{اسم_المالك}} 🎁 We share the joy of {{اسم_الحيوان}}'s birthday! {{اسم_العيادة}} 🐾",
+        "Congratulations {{اسم_المالك}} 🎊 {{اسم_الحيوان}} blows out a new candle today! {{اسم_العيادة}}",
+        "Hi {{اسم_المالك}} 🌟 Happy birthday to {{اسم_الحيوان}}! All the best — {{اسم_العيادة}} 🐾",
+        "Hello {{اسم_المالك}} 🎂 A lovely occasion today: {{اسم_الحيوان}}'s birthday! Best wishes from {{اسم_العيادة}}",
+        "Good day {{اسم_المالك}} ✨ Many happy returns for {{اسم_الحيوان}}! The {{اسم_العيادة}} team 🐾",
+        "Hi {{اسم_المالك}} 😊 It's {{اسم_الحيوان}}'s birthday — may it be full of play! {{اسم_العيادة}} 🎉"
+      ],
+      "vaccine": [
+        "Hello {{اسم_المالك}}, a reminder from {{اسم_العيادة}} clinic: {{اسم_الحيوان}}'s vaccination is due. Please contact us to book a visit. 🐾",
+        "Hi {{اسم_المالك}} 🙌 {{اسم_الحيوان}}'s vaccine is due — book your visit at {{اسم_العيادة}}.",
+        "Hello {{اسم_المالك}} 💙 {{اسم_الحيوان}}'s protection starts with a vaccine — it's due now. {{اسم_العيادة}} 🐾",
+        "Greetings {{اسم_المالك}} 💉 A reminder of {{اسم_الحيوان}}'s due vaccination. Contact {{اسم_العيادة}} to arrange a visit.",
+        "Hi {{اسم_المالك}} 👋 Don't forget {{اسم_الحيوان}}'s vaccination 😊 {{اسم_العيادة}} awaits you.",
+        "Hello {{اسم_المالك}} 🌷 {{اسم_الحيوان}}'s vaccine schedule needs a visit soon — {{اسم_العيادة}} 🐾",
+        "Dear {{اسم_المالك}} ✨ {{اسم_الحيوان}}'s protection is completed by the next dose. Book at {{اسم_العيادة}}.",
+        "Good day {{اسم_المالك}} 🐾 {{اسم_الحيوان}}'s vaccination is due — we'd be glad to see you at {{اسم_العيادة}}.",
+        "Hello {{اسم_المالك}} 😊 {{اسم_الحيوان}}'s health is our priority: the vaccine is due soon. {{اسم_العيادة}}",
+        "Hi {{اسم_المالك}} 🌟 Keep {{اسم_الحيوان}}'s immunity strong — the vaccine awaits at {{اسم_العيادة}} 💪🐾"
+      ],
+      "deworming": [
+        "Hello {{اسم_المالك}}, a friendly reminder from {{اسم_العيادة}} clinic: {{اسم_الحيوان}}'s deworming dose is due. Please contact us to arrange it. 🐛",
+        "Hi {{اسم_المالك}} 🙌 {{اسم_الحيوان}}'s deworming dose is due — {{اسم_العيادة}} awaits you.",
+        "Hello {{اسم_المالك}} 💙 {{اسم_الحيوان}}'s deworming is due around now. Contact {{اسم_العيادة}} 🐾",
+        "Greetings {{اسم_المالك}} 💊 A reminder of {{اسم_الحيوان}}'s routine deworming dose. {{اسم_العيادة}} clinic",
+        "Hi {{اسم_المالك}} 👋 Don't forget {{اسم_الحيوان}}'s dose 😊 Book your visit at {{اسم_العيادة}}.",
+        "Hello {{اسم_المالك}} 🌷 {{اسم_الحيوان}}'s preventive schedule needs a deworming dose soon — {{اسم_العيادة}} 🐾",
+        "Dear {{اسم_المالك}} ✨ {{اسم_الحيوان}}'s comfort is completed by the routine dose. See you at {{اسم_العيادة}}.",
+        "Good day {{اسم_المالك}} 🐾 {{اسم_الحيوان}}'s deworming is due — glad to see you, {{اسم_العيادة}}.",
+        "Hello {{اسم_المالك}} 😊 {{اسم_الحيوان}}'s tummy health matters: the dose is due soon. {{اسم_العيادة}} 🐛",
+        "Hi {{اسم_المالك}} 🌟 Keep {{اسم_الحيوان}} comfortable — the routine dose awaits at {{اسم_العيادة}}."
+      ],
+      "offer": [
+        "Hello {{اسم_المالك}}! 🎁 {{اسم_العيادة}} clinic has a special offer for you and {{اسم_الحيوان}}. Contact us for details.",
+        "Hi {{اسم_المالك}} 🌟 A special deal awaits {{اسم_الحيوان}} at {{اسم_العيادة}} — ask us for details!",
+        "Hello {{اسم_المالك}} 🎉 Special discounts for our loyal clients — {{اسم_الحيوان}} deserves it! {{اسم_العيادة}}",
+        "Greetings {{اسم_المالك}} 💙 We prepared an exclusive offer for {{اسم_الحيوان}}. Contact {{اسم_العيادة}} 🐾",
+        "Hi {{اسم_المالك}} 👋 A great chance for {{اسم_الحيوان}} this period — a special offer from {{اسم_العيادة}} 😊",
+        "Hello {{اسم_المالك}} 🎁 Our new offers are here! {{اسم_الحيوان}} is first in line — {{اسم_العيادة}}",
+        "Dear {{اسم_المالك}} ✨ For a limited time: a special offer on our services for {{اسم_الحيوان}}. {{اسم_العيادة}} 🐾",
+        "Good day {{اسم_المالك}} 🌷 We love rewarding our clients — a special deal awaits {{اسم_الحيوان}} at {{اسم_العيادة}}.",
+        "Hello {{اسم_المالك}} 😊 Good news: a new offer that fits {{اسم_الحيوان}}! Details at {{اسم_العيادة}} 🎉",
+        "Hi {{اسم_المالك}} 🐾 Treat {{اسم_الحيوان}} with our special offer — ask the {{اسم_العيادة}} team today!"
+      ]
+    }
+  },
   "app": {
     "name": "doctorVet",
     "tagline": "One passport. Every clinic.",

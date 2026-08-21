@@ -8,6 +8,8 @@ import {
 import type { Pet, Species, Vaccination, MedicalVisit, WhatsAppMessage } from "@/types";
 import type { CampaignPrefill, ReminderType } from "@/lib/reminders";
 import { computeReminderRows } from "@/lib/reminders";
+import { waVariants, pickVariantIndex, type WaPool } from "@/lib/waTemplates";
+import { Dices } from "lucide-react";
 import { repo } from "@/lib/repo";
 import { getCached, setCached } from "@/lib/swrCache";
 import { useAuth } from "@/contexts/AuthContext";
@@ -127,13 +129,33 @@ export function WhatsAppCampaigns() {
   const clinicName = getClinicName() || t("app.name", "doctorVet");
   const withClinic = (s: string) => s.split(VAR_CLINIC).join(clinicName);
 
-  // Default, ready-to-use Arabic templates.
+  /* القوالب الأربعة صارت **مجموعات من عشر صياغات** لكل قالب (waMsgs.camp.*):
+   * الضغط على القالب ينتقي صياغةً بذرتُها تاريخ اليوم — نفس اليوم نفس النسخة
+   * (لا تتقافز أمام العين)، ويومٌ جديد يبدّلها من نفسه. وزرّ النرد يقلّب
+   * بينها بإرادة الدكتور. الهدف: رسائل العيادة لا تتطابق حرفياً عبر الأيام،
+   * فتبتعد عن بصمة السبام التي تسبّب الحظر. */
+  const CAMP_POOL: Record<string, WaPool> = { birthday: "camp.birthday", vaccine: "camp.vaccine", deworming: "camp.deworming", offer: "camp.offer" };
+  const [activeTpl, setActiveTpl] = useState<string | null>(null);
+  const [variantIdx, setVariantIdx] = useState(0);
+  const tplVariants = activeTpl ? waVariants(CAMP_POOL[activeTpl]) : [];
+  const applyVariant = (tplId: string, i: number) => {
+    const pool = waVariants(CAMP_POOL[tplId]);
+    if (!pool.length) return;
+    const k = ((i % pool.length) + pool.length) % pool.length;
+    setActiveTpl(tplId); setVariantIdx(k);
+    setMessage(withClinic(pool[k]));
+  };
+  const pickTemplate = (tplId: string) => {
+    playTap();
+    applyVariant(tplId, pickVariantIndex(`${tplId}|${new Date().toISOString().slice(0, 10)}`, waVariants(CAMP_POOL[tplId]).length || 1));
+  };
   const templates = useMemo(() => [
-    { id: "birthday", icon: Gift, label: t("campaigns.tplBirthday", "Birthday greeting"), text: withClinic(t("campaigns.msgBirthday", `Hello ${VAR_OWNER}! 🎉`)) },
-    { id: "vaccine", icon: Syringe, label: t("campaigns.tplVaccine", "Vaccination reminder"), text: withClinic(t("campaigns.msgVaccine", `Hello ${VAR_OWNER}`)) },
-    { id: "deworming", icon: Bug, label: t("campaigns.tplDeworming", "Deworming reminder"), text: withClinic(t("campaigns.msgDeworming", `Hello ${VAR_OWNER}`)) },
-    { id: "offer", icon: Tag, label: t("campaigns.tplOffer", "General offer"), text: withClinic(t("campaigns.msgOffer", `Hello ${VAR_OWNER}`)) },
-  ], [t, clinicName]);
+    { id: "birthday", icon: Gift, label: t("campaigns.tplBirthday", "Birthday greeting") },
+    { id: "vaccine", icon: Syringe, label: t("campaigns.tplVaccine", "Vaccination reminder") },
+    { id: "deworming", icon: Bug, label: t("campaigns.tplDeworming", "Deworming reminder") },
+    { id: "offer", icon: Tag, label: t("campaigns.tplOffer", "General offer") },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  ], [t]);
 
   // Map a reminder type (from the dashboard Reminders widget) to its draft template.
   const TEMPLATE_FOR: Record<ReminderType, string> = { birthday: "birthday", vaccine: "vaccine", deworming: "deworming" };
@@ -145,8 +167,8 @@ export function WhatsAppCampaigns() {
     if (!prefill?.targetPetId || prefillApplied.current) return;
     prefillApplied.current = true;
     setSelected(new Set([prefill.targetPetId]));
-    const tpl = templates.find((x) => x.id === TEMPLATE_FOR[prefill.reminderType]);
-    if (tpl) setMessage(tpl.text);
+    const tplId = TEMPLATE_FOR[prefill.reminderType];
+    if (tplId) pickTemplate(tplId);
     // Surface this client in the audience list, then drop the router state so a
     // refresh or back-navigation doesn't silently re-apply it.
     if (prefill.targetPetName) setQuery(prefill.targetPetName);
@@ -264,16 +286,26 @@ export function WhatsAppCampaigns() {
             <h2 className="mb-1 flex items-center gap-2 font-bold text-ink"><Tag size={18} className="text-brand-600" /> {t("campaigns.templates", "Templates")}</h2>
             <p className="mb-3 text-xs text-ink-subtle">{t("campaigns.templateHint", "Pick a template or write your own. Tap a variable to insert it.")}</p>
 
-            <div className="mb-3 flex flex-wrap gap-2">
+            <div className="mb-3 flex flex-wrap items-center gap-2">
               {templates.map((tpl) => {
                 const Icon = tpl.icon;
+                const on = activeTpl === tpl.id;
                 return (
-                  <button key={tpl.id} onClick={() => { playTap(); setMessage(tpl.text); }}
-                    className="inline-flex items-center gap-1.5 rounded-2xl border border-line bg-surface-1 px-3 py-1.5 text-sm font-medium text-ink-muted transition hover:border-brand-300 hover:text-brand-600">
+                  <button key={tpl.id} onClick={() => pickTemplate(tpl.id)} data-camptpl={tpl.id}
+                    className={cn("inline-flex items-center gap-1.5 rounded-2xl border px-3 py-1.5 text-sm font-medium transition",
+                      on ? "border-brand-400 bg-brand-50 text-brand-700 dark:bg-brand-500/15 dark:text-brand-300" : "border-line bg-surface-1 text-ink-muted hover:border-brand-300 hover:text-brand-600")}>
                     <Icon size={15} /> {tpl.label}
                   </button>
                 );
               })}
+              {activeTpl && tplVariants.length > 1 && (
+                <button onClick={() => { playTap(); applyVariant(activeTpl, variantIdx + 1); }} data-camproll
+                  title={t("campaigns.otherVariant", "صياغة أخرى لنفس القالب — تنويع الرسائل يبعد شبهة السبام")}
+                  className="inline-flex items-center gap-1.5 rounded-full bg-brand-600 px-3 py-1.5 text-xs font-bold text-white shadow-soft transition hover:bg-brand-700">
+                  <Dices size={14} /> {t("campaigns.variantBtn", "صياغة أخرى")}
+                  <span className="tabular-nums text-2xs font-extrabold opacity-80" data-campvariant>{variantIdx + 1}/{tplVariants.length}</span>
+                </button>
+              )}
             </div>
 
             {/* Variable badges */}
