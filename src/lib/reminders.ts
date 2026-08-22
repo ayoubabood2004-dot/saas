@@ -14,6 +14,17 @@ export interface CampaignPrefill {
   targetPetName?: string;
   targetOwnerName?: string;
   reminderType: ReminderType;
+  /* ── ما يأتي من مركز التذكيرات (لا من ودجة اللوحة) ──────────────────────
+   * التذكير يعرف ما لا تعرفه الحملات: أي لقاحٍ بعينه، وأي تاريخ، وأي ساعة.
+   * فيصوغ نصّه كاملاً ويسلّمه جاهزاً بدل أن تخمّنه الحملات من قالبٍ عام. */
+  /** النص المصاغ من نسخة عشوائية بمكتبة waMsgs، بقيمه مصبوبةً فيه. */
+  message?: string;
+  /** معرّف صف التذكير — تُعلَّم به «أُرسلت» عند الرجوع من الحملات. */
+  reminderRowId?: string;
+  /** تاريخ استحقاق التذكير (yyyy-mm-dd) — مفتاح علامة «أُرسلت». */
+  reminderDate?: string;
+  /** صنف التذكير كما يسجّله سجل الواتساب (vaccine/surgery/appointment…). */
+  reminderKind?: string;
 }
 
 /** One actionable reminder row shown in the widget. */

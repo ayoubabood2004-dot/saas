@@ -8,6 +8,7 @@ import {
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import type { BufferGeometry, Group } from "three";
 import { DF, NEON, NIGHT, DANGER, DOSE, HOT, KIND_AR, statusOfCage, type CageSpec } from "./neon";
+import { CELL } from "./store";
 import { lowTier } from "./quality";
 
 /* ============================================================================
@@ -33,9 +34,15 @@ import { lowTier } from "./quality";
  * (اللون الأحمر صار هوية «فاضٍ»، فما عاد يصلح إشارةَ منع.)
  * ==========================================================================*/
 
-export const CAGE_W = 2.0, CAGE_H = 1.12, CAGE_D = 1.75;
-const POST = 0.06;           // سماكة القوائم
-const LOWER_H = 0.3;         // اللوح المعدني السفلي — منخفض ليتّسع الزجاج
+/* أبعاد القفص. كُبِّرت (٢٫٠×١٫١٢×١٫٧٥ ← ٢٫٤٥×١٫٢٨×٢٫٠٥) مع توسيع خطوة
+ * الشبكة CELL معها، فيكبر الجسم **وتتّسع الفجوة بين قفصٍ وجاره** معاً: تكبيرٌ
+ * بلا توسيع يُنتج جداراً متلاصقاً، وتوسيعٌ بلا تكبير يُنتج أقفاصاً مجهرية
+ * بأرضٍ فارغة. النسبة بينهما هي ما يجعل النظر مريحاً. */
+export const CAGE_W = 2.45, CAGE_H = 1.28, CAGE_D = 2.05;
+const POST = 0.07;           // سماكة القوائم — تتبع كِبَر الجسم
+/* اللوح المعدني السفلي. رُفع (٠٫٣ ← ٠٫٤٦) ليتّسع للوحة رقمٍ كبيرة: اللوحة
+ * تسكنه، فسقفُ ارتفاعها هو ارتفاعه. */
+const LOWER_H = 0.46;
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 /** استثناء من التصويب — شبكة زينة لا تُختبر بالشعاع. */
 const noHit = () => null;
@@ -100,23 +107,31 @@ const GEO_RIM = mergeGeometries([
   at(new BoxGeometry(0.045, 0.045, CAGE_D), -CAGE_W / 2 + POST / 2, CAGE_H / 2, 0),
 ])!;
 
-const PLATE_Y = -CAGE_H / 2 + LOWER_H / 2 + 0.04;
-const GEO_PLATE = new BoxGeometry(0.68, 0.27, 0.03);
-GEO_PLATE.translate(0, PLATE_Y, CAGE_D / 2 + 0.012);
-const GEO_CODE = new PlaneGeometry(0.63, 0.236);
-GEO_CODE.translate(0, PLATE_Y, CAGE_D / 2 + 0.03);
+/* لوحة الرقم — «كلوحة كبيرة على القفص» لا شارةً صغيرة.
+ * أبعادها **مشتقّة** من القفص لا مكتوبة أرقاماً حرّة: أي تكبيرٍ للقفص لاحقاً
+ * تتبعه اللوحة بنفس النسبة، فيبقى التناغم بلا صيانة. عرضها ٧٢٪ من عرض
+ * الواجهة، وارتفاعها ٨٠٪ من اللوح السفلي الذي تسكنه. */
+const PLATE_Y = -CAGE_H / 2 + LOWER_H / 2 + 0.03;
+const PLATE_W = CAGE_W * 0.72;      // ١٫٧٦ وحدة (كانت ٠٫٦٨)
+const PLATE_H = LOWER_H * 0.80;     // ٠٫٣٧ وحدة (كانت ٠٫٢٧)
+const GEO_PLATE = new BoxGeometry(PLATE_W, PLATE_H, 0.035);
+GEO_PLATE.translate(0, PLATE_Y, CAGE_D / 2 + 0.014);
+const GEO_CODE = new PlaneGeometry(PLATE_W - 0.06, PLATE_H - 0.05);
+GEO_CODE.translate(0, PLATE_Y, CAGE_D / 2 + 0.034);
 /** بساط أرضي غير مرئي تحت القفص — يلتقط الضغطات التي تقع على أرضه أو حول
  *  قاعدته. بلا شيءٍ أرضي كان الشعاع يمرّ بين القوائم فيسقط بلا هدف، والطبيب
  *  يظنّ ضغطته لم تُسجَّل. صندوقٌ مصمت بدله لا يصلح: بمنظر إيزومتري يحجب صندوقُ
  *  القفص الأمامي قفصَ الخلف فتذهب الضغطة للجار الغلط. */
-/* بعرض خلية الشبكة بالضبط (٣ وحدات): يغطّي كل ما يخصّ القفص ولا يتعدّى على
- * جاره — فما تذهب ضغطةٌ لقفصٍ غير الذي قصده الطبيب. */
-const GEO_PAD = new PlaneGeometry(2.98, 2.98);
+/* بعرض خلية الشبكة بالضبط: يغطّي كل ما يخصّ القفص ولا يتعدّى على جاره —
+ * فما تذهب ضغطةٌ لقفصٍ غير الذي قصده الطبيب. ويُشتقّ من CELL لا يُكتب رقماً:
+ * كان مثبّتاً على ٢٫٩٨ (أي CELL = ٣)، فتوسيعُ الخطوة كان سيترك بين الأقفاص
+ * شريطاً ميتاً لا يستجيب للمس. */
+const GEO_PAD = new PlaneGeometry(CELL - 0.02, CELL - 0.02);
 GEO_PAD.rotateX(-Math.PI / 2);
 GEO_PAD.translate(0, -CAGE_H / 2 - 0.13, 0);
 
 /** هالة الأرض — تُركّب فقط للقفص المحوَّم عليه أو المستهدَف، لا لكل قفص. */
-const GEO_HALO = new RingGeometry(1.16, 1.46, 32);
+const GEO_HALO = new RingGeometry(CELL * 0.385, CELL * 0.485, 32);
 GEO_HALO.rotateX(-Math.PI / 2);
 GEO_HALO.translate(0, -CAGE_H / 2 - 0.135, 0);
 
@@ -130,7 +145,13 @@ const MAT_METAL = new MeshStandardMaterial({ color: "#4a586c", metalness: 0.35, 
 const MAT_GLASS = new MeshStandardMaterial({
   color: "#bfe9f5", transparent: true, opacity: 0.13, roughness: 0.1, metalness: 0.1, depthWrite: false, side: 2,
 });
-const MAT_PLATE = new MeshStandardMaterial({ color: "#33445a", metalness: 0.3, roughness: 0.5 });
+/* لوحة الرقم لا تعتمد على إضاءة المشهد وحدها: بغرفةٍ ليلية معتمة عمداً كانت
+ * تغرق مع الجسم فيختفي الرقم. إضاءةٌ ذاتية خفيفة تُبقيها مقروءة أياً كان
+ * موضعها من الضوء — وهي ما يجعلها «لافتة» لا مجرّد لوحٍ معدني. */
+const MAT_PLATE = new MeshStandardMaterial({
+  color: "#41556f", metalness: 0.2, roughness: 0.42,
+  emissive: new Color("#16202c"), emissiveIntensity: 1,
+});
 
 export function CageUnit({ spec, position, dropHint, dragActive, ghost, arrivedRef, onHoverChange, onCardDown, selected, showCard = true, onTap }: {
   spec: CageSpec;
@@ -173,23 +194,32 @@ export function CageUnit({ spec, position, dropHint, dragActive, ghost, arrivedR
 
   // نسيج رقم القفص — يُرسم بالكانفس مرة لكل رمز (خط النظام، فوري، بلا شبكة)
   const codeMat = useMemo(() => {
+    /* دقة النسيج تضاعفت (٢٥٦×٩٦ ← ٥١٢×١٦٠) واللوحة كبرت معها: نسيجٌ صغير
+     * ممدود على لوحٍ كبير يُقرأ ضبابياً، والحدّة هنا نصف المقروئية. */
+    const W = 512, H = 160;
     const c = document.createElement("canvas");
-    c.width = 256;
-    c.height = 96;
+    c.width = W;
+    c.height = H;
     const g = c.getContext("2d")!;
-    g.clearRect(0, 0, 256, 96);
+    g.clearRect(0, 0, W, H);
     g.textAlign = "center";
     g.textBaseline = "middle";
-    g.font = "800 62px ui-monospace, SFMono-Regular, Menlo, monospace";
+    g.font = "900 116px ui-monospace, SFMono-Regular, Menlo, monospace";
     let code = spec.code;
-    while (g.measureText(code).width > 236 && code.length > 2) code = code.slice(0, -1);
-    g.shadowColor = "#000000aa";
-    g.shadowOffsetY = 2;
-    g.shadowBlur = 2;
+    while (g.measureText(code).width > W - 40 && code.length > 2) code = code.slice(0, -1);
+    // هالةٌ فاتحة خلف الحرف ثم الحرف فوقها: يفصل الرقمَ عن معدن اللوحة فلا
+    // يذوب فيه عند أي زاوية إضاءة.
+    g.shadowColor = "#7fd4ffaa";
+    g.shadowOffsetY = 0;
+    g.shadowBlur = 14;
     g.fillStyle = NIGHT.plateInk;
-    g.fillText(code, 128, 50);
+    g.fillText(code, W / 2, H / 2 + 4);
+    g.shadowColor = "#000000cc";
+    g.shadowOffsetY = 3;
+    g.shadowBlur = 3;
+    g.fillText(code, W / 2, H / 2 + 4);
     const t = new CanvasTexture(c);
-    t.anisotropy = 4;
+    t.anisotropy = 8;
     return new MeshBasicMaterial({ map: t, transparent: true, toneMapped: false });
   }, [spec.code]);
   useEffect(() => () => { codeMat.map?.dispose(); codeMat.dispose(); }, [codeMat]);

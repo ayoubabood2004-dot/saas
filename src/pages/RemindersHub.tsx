@@ -1,15 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
-import { sendWhatsApp, quotaMessage } from "@/lib/quotas";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { motion } from "framer-motion";
 import {
   BellRing, Syringe, Bug, Slice, CalendarDays, Cake, AlarmClock, Search,
   MessageCircle, Plus, AlertTriangle, CheckCircle2, Sun, CalendarClock,
-  Dices, Send, UserCheck, UserX, Undo2, ExternalLink,
+  Send, UserCheck, UserX, Undo2,
 } from "lucide-react";
 import { getCached, setCached } from "@/lib/swrCache";
 import { waVariants, pickVariantIndex, renderWaTemplate, type WaPool } from "@/lib/waTemplates";
+import type { CampaignPrefill, ReminderType } from "@/lib/reminders";
 import type { Pet, Vaccination, Surgery, Appointment, Reminder, EventCategory, MedicalVisit, WhatsAppMessage } from "@/types";
 import { repo } from "@/lib/repo";
 import { PetAvatar } from "@/components/PetAvatar";
@@ -17,9 +17,8 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Modal } from "@/components/Modal";
 import { Button, useToast, Skeleton } from "@/components/ui";
 import { cn, formatDate } from "@/lib/utils";
-import { getDialCode, getClinicName } from "@/lib/settings";
-import { waNumber } from "@/lib/phone";
-import { playTap, playSuccess, playWarning } from "@/lib/sounds";
+import { getClinicName } from "@/lib/settings";
+import { playTap, playSuccess } from "@/lib/sounds";
 import { staggerContainer, staggerItem } from "@/lib/motion";
 
 /* ============================================================================
@@ -141,7 +140,6 @@ export function RemindersHub() {
   const { user } = useAuth();
   const toast = useToast();
   const navigate = useNavigate();
-  const dial = getDialCode();
 
   // Synchronous cache seed — effects run AFTER paint, so seeding there flashes
   // one skeleton frame on every revisit (the "loading intro" the doctor sees).
@@ -160,8 +158,9 @@ export function RemindersHub() {
   const [view, setView] = useState<LifeStatus>("active");
   const [q, setQ] = useState("");
   const [adding, setAdding] = useState(false);
-  /** حوار الإرسال — المعاينة والتحرير وتبديل النسخة قبل أي واتساب. */
-  const [sendRow, setSendRow] = useState<Row | null>(null);
+  /* لا حوار هنا بعد اليوم. «ذكّر» يفتح **صفحة الحملات** حاملاً معه الزبون
+   * والنصّ مصاغاً — فالمعاينة والتحرير وتبديل النسخة والإرسال كلها تجري
+   * بمكانٍ واحد بُني لها، بدل نافذةٍ صغيرة تكرّرها ناقصةً. */
   // «أُرسلت» محفوظة بالجهاز: المعرف ← تاريخ الاستحقاق الذي أُرسلت له، فتنمسح
   // العلامة تلقائياً عندما يتجدد الموعد (تذكير متكرر أو جرعة جديدة).
   const [sentMap, setSentMap] = useState<Record<string, string>>(() => {
@@ -440,21 +439,49 @@ export function RemindersHub() {
     return def.filter((b) => b.rows.length > 0);
   }, [shown]);
 
-  /** الإرسال الفعلي — يناديه حوار المعاينة بعد ما يرى الدكتور النص ويرضاه. */
-  const doSend = async (r: Row, text: string) => {
-    const num = waNumber(r.phone, dial);
-    if (!num) return false;
-    try {
-      await sendWhatsApp({ phone: num, text, petId: r.petId ?? null, ownerName: r.ownerName || null, ownerPhone: r.phone || null, kind: r.kind });
-    } catch (e) { playWarning(); toast.error(quotaMessage(e) ?? "تعذّر الإرسال"); return false; }
-    // العلامة تُسجَّل فوراً — هذا ما يُخرج التذكير من الأحمر وينقله إلى «أُرسلت».
-    saveSent({ ...sentMap, [r.id]: r.date, [`${r.id}#at`]: isoDay(new Date()) });
-    // ومرآةً محلية بسجل الواتساب حتى تتحدث «أُرسلت» بلا انتظار إعادة تحميل.
-    setWaLog((prev) => [{ id: `local-${r.id}-${Date.now()}`, pet_id: r.petId ?? null, owner_name: r.ownerName || null, owner_phone: r.phone || null, reminder_type: r.kind, sent_at: new Date().toISOString() }, ...prev]);
-    playSuccess();
-    toast.success(t("rem.sentMoved", "أُرسلت — انتقل التذكير إلى قسم «أُرسلت»"));
-    return true;
+  /**
+   * «ذكّر» → صفحة الحملات، بالزبون محدَّداً والنصّ مصاغاً.
+   *
+   * النصّ يُصاغ هنا لا هناك: التذكير وحده يعرف أي لقاحٍ بعينه وأي تاريخ وأي
+   * ساعة — والحملات تعرف الجمهور والإرسال. فيُسلَّم الجاهز ويُكمَّل هناك.
+   * والنسخة تُنتقى شبه عشوائياً من عشر صياغات ببذرةٍ ثابتة لليوم، ويقلّبها
+   * زرّ النرد بصفحة الحملات.
+   */
+  const openInCampaigns = (r: Row) => {
+    playTap();
+    const variants = waVariants(POOL_OF[r.kind]);
+    const idx = pickVariantIndex(`${r.id}|${r.date}`, Math.max(1, variants.length));
+    const message = renderWaTemplate(variants[idx] ?? "", {
+      owner: r.ownerName || "",
+      pet: r.petName || "",
+      clinic: getClinicName() || t("app.name", "doctorVet"),
+      detail: r.detail,
+      date: formatDate(r.date, i18n.language),
+      time: r.time ? ` ${t("rem.atHour", "الساعة")} ${r.time}` : "",
+    });
+    const reminderType: ReminderType = r.kind === "birthday" ? "birthday" : r.kind === "deworming" ? "deworming" : "vaccine";
+    const prefill: CampaignPrefill = {
+      targetPetId: r.petId ?? "", targetPetName: r.petName, targetOwnerName: r.ownerName,
+      reminderType, message, reminderRowId: r.id, reminderDate: r.date, reminderKind: r.kind,
+    };
+    navigate("/campaigns", { state: prefill });
   };
+
+  /* الرجوع من الحملات بعد إرسالٍ فعلي: تُعلَّم «أُرسلت» فينتقل التذكير من
+   * الأحمر إلى قسمه. الحملات تكتب العلامة بمخزن الجهاز قبل أن تعيدنا. */
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem("vp_rem_justsent");
+      if (!raw) return;
+      sessionStorage.removeItem("vp_rem_justsent");
+      const { id, date } = JSON.parse(raw) as { id: string; date: string };
+      if (!id || !date) return;
+      saveSent({ ...sentMap, [id]: date, [`${id}#at`]: isoDay(new Date()) });
+      playSuccess();
+      toast.success(t("rem.sentMoved", "أُرسلت — انتقل التذكير إلى قسم «أُرسلت»"));
+    } catch { /* بلا مخزن جلسة — العلامة تأتي من سجل الواتساب بالتحميل التالي */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading]);
 
   const KIND_CHIPS: { id: Kind | "all"; label: string; icon: typeof Syringe }[] = [
     { id: "all", label: "الكل", icon: BellRing },
@@ -650,7 +677,7 @@ export function RemindersHub() {
                         <UserX size={14} /> {t("rem.missBtn", "ما جاء")}
                       </button>
                       {r.phone && (
-                        <button onClick={(e) => { e.stopPropagation(); playTap(); setSendRow(r); }}
+                        <button onClick={(e) => { e.stopPropagation(); openInCampaigns(r); }}
                           title={t("rem.resend", "إعادة الإرسال")}
                           className="inline-flex h-8 items-center gap-1 rounded-lg bg-surface-2 px-2 text-2xs font-bold text-ink-muted transition hover:text-ink">
                           <MessageCircle size={14} />
@@ -659,7 +686,7 @@ export function RemindersHub() {
                     </>)}
                     {view === "missed" && (<>
                       {r.phone && (
-                        <button onClick={(e) => { e.stopPropagation(); playTap(); setSendRow(r); }} data-remresend={r.id}
+                        <button onClick={(e) => { e.stopPropagation(); openInCampaigns(r); }} data-remresend={r.id}
                           className="inline-flex h-8 items-center gap-1 rounded-lg bg-[#25D366] px-2.5 text-2xs font-bold text-white shadow-soft transition hover:bg-[#1fb959]">
                           <MessageCircle size={14} /> {t("rem.remindAgain", "ذكّر مجدداً")}
                         </button>
@@ -750,7 +777,7 @@ export function RemindersHub() {
                       </span>
                       {r.phone && (
                         /* يفتح معاينةً قابلة للتحرير — لا قفز أعمى للواتساب بعد اليوم */
-                        <button onClick={(e) => { e.stopPropagation(); playTap(); setSendRow(r); }} title={t("rem.sendWA", "إرسال تذكير واتساب")}
+                        <button onClick={(e) => { e.stopPropagation(); openInCampaigns(r); }} title={t("rem.sendWA", "إرسال تذكير واتساب")}
                           data-remsend={r.id}
                           className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-xl bg-[#25D366] px-2.5 text-xs font-bold text-white shadow-soft transition hover:bg-[#1fb959]">
                           <MessageCircle size={16} /> <span className="hidden sm:inline">{t("rem.sendShort", "ذكّر")}</span>
@@ -766,18 +793,7 @@ export function RemindersHub() {
       )}
 
       <AddReminderModal open={adding} pets={pets} onClose={() => setAdding(false)} onSaved={() => { setAdding(false); playSuccess(); toast.success(t("rem.added", "أُضيف التذكير")); void load(); }} />
-      {sendRow && (
-        <WaSendDialog
-          row={sendRow}
-          onClose={() => setSendRow(null)}
-          onSend={async (text) => { const ok = await doSend(sendRow, text); if (ok) setSendRow(null); }}
-          onOpenCampaigns={() => {
-            playTap();
-            const rt = sendRow.kind === "birthday" ? "birthday" : sendRow.kind === "deworming" ? "deworming" : "vaccine";
-            navigate("/campaigns", sendRow.petId ? { state: { targetPetId: sendRow.petId, targetPetName: sendRow.petName, targetOwnerName: sendRow.ownerName, reminderType: rt } } : undefined);
-          }}
-        />
-      )}
+
     </div>
   );
 }
@@ -858,84 +874,6 @@ function AddReminderModal({ open, pets, onClose, onSaved }: { open: boolean; pet
           </div>
         </div>
         <Button className="w-full" size="lg" loading={busy} leftIcon={<Plus size={16} />} onClick={save}>{t("rem.saveBtn", "حفظ التذكير")}</Button>
-      </div>
-    </Modal>
-  );
-}
-
-/* ============================================================================
- * حوار الإرسال — يرى الدكتور الرسالة ويحررها **قبل** أي واتساب.
- *
- * لماذا: القفز المباشر لواتساب برسالة واحدة مقولبة كان يهمّش دور الحملات
- * ويجعل كل رسائل العيادة نسخة واحدة متطابقة — وهي أوضح بصمة سبام تلتقطها
- * فلاتر واتساب. هنا: عشر صياغات تُنتقى شبه عشوائياً (ثابتة لنفس التذكير
- * بنفس اليوم)، وزرّ نردٍ يقلّب بينها، والنص مفتوح للتحرير الحر.
- * ==========================================================================*/
-function WaSendDialog({ row, onClose, onSend, onOpenCampaigns }: {
-  row: Row;
-  onClose: () => void;
-  onSend: (text: string) => Promise<void> | void;
-  onOpenCampaigns: () => void;
-}) {
-  const { t, i18n } = useTranslation();
-  const variants = waVariants(POOL_OF[row.kind]);
-  const params = useMemo(() => ({
-    owner: row.ownerName || "",
-    pet: row.petName || "",
-    clinic: getClinicName() || t("app.name", "doctorVet"),
-    detail: row.detail,
-    date: formatDate(row.date, i18n.language),
-    time: row.time ? ` ${t("rem.atHour", "الساعة")} ${row.time}` : "",
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [row, i18n.language]);
-  // البذرة = التذكير + يومه: نفس التذكير يعطي نفس النسخة حتى يقلّبها الدكتور بنفسه.
-  const [idx, setIdx] = useState(() => pickVariantIndex(`${row.id}|${row.date}`, Math.max(1, variants.length)));
-  const [text, setText] = useState(() => renderWaTemplate(variants[idx] ?? "", params));
-  const [busy, setBusy] = useState(false);
-
-  const roll = () => {
-    playTap();
-    const next = variants.length ? (idx + 1) % variants.length : 0;
-    setIdx(next);
-    setText(renderWaTemplate(variants[next] ?? "", params));
-  };
-
-  return (
-    <Modal open onClose={onClose} title={t("rem.sendTitle", "تذكير واتساب")}>
-      <div className="space-y-3" data-remdialog>
-        {/* لمن نرسل — حتى لا تروح رسالة لغير صاحبها */}
-        <div className="flex items-center gap-2.5 rounded-xl bg-surface-2 p-2.5">
-          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-[#25D366]/15 text-[#128C4A] dark:text-[#4ade80]"><MessageCircle size={17} /></span>
-          <div className="min-w-0 flex-1 text-sm">
-            <p className="truncate font-bold text-ink">{row.ownerName || t("rem.noName", "بلا اسم")}{row.petName ? ` · ${row.petName}` : ""}</p>
-            <p className="truncate text-2xs text-ink-subtle" dir="ltr">{row.phone}</p>
-          </div>
-          <span className="chip shrink-0 bg-surface-1 text-2xs font-bold text-ink-muted">{KIND_META[row.kind].label}</span>
-        </div>
-
-        {/* النسخة الحالية + نرد التبديل — كل ضغطة صياغة مختلفة */}
-        <div className="flex items-center justify-between gap-2">
-          <label className="label m-0">{t("rem.msgLabel", "نص الرسالة")}</label>
-          <button type="button" onClick={roll} data-remroll
-            className="inline-flex items-center gap-1.5 rounded-full bg-brand-50 px-3 py-1.5 text-xs font-bold text-brand-700 transition hover:bg-brand-100 dark:bg-brand-500/15 dark:text-brand-300">
-            <Dices size={14} /> {t("rem.otherVariant", "صياغة أخرى")}
-            <span className="tabular-nums text-2xs font-extrabold text-brand-600/70 dark:text-brand-300/70" data-remvariant>{variants.length ? `${idx + 1}/${variants.length}` : ""}</span>
-          </button>
-        </div>
-        <textarea className="input min-h-[150px] leading-relaxed" value={text} data-remtext
-          onChange={(e) => setText(e.target.value)} />
-
-        <Button className="w-full" size="lg" loading={busy} leftIcon={<Send size={16} />} data-remconfirm
-          disabled={!text.trim()}
-          onClick={async () => { if (busy) return; setBusy(true); try { await onSend(text.trim()); } finally { setBusy(false); } }}>
-          {t("rem.confirmSend", "إرسال عبر واتساب")}
-        </Button>
-
-        {/* الجسر لقسم الحملات — لمن يريد استهدافاً أوسع أو قوالب محفوظة */}
-        <button type="button" onClick={onOpenCampaigns}
-          className="flex w-full items-center justify-center gap-1.5 pt-1 text-xs font-semibold text-brand-600 hover:underline dark:text-brand-300">
-          <ExternalLink size={13} /> {t("rem.openCampaigns", "فتح بحملات الواتساب — استهداف أوسع وقوالب")}
-        </button>
       </div>
     </Modal>
   );

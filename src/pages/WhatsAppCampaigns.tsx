@@ -161,15 +161,27 @@ export function WhatsAppCampaigns() {
   // Map a reminder type (from the dashboard Reminders widget) to its draft template.
   const TEMPLATE_FOR: Record<ReminderType, string> = { birthday: "birthday", vaccine: "vaccine", deworming: "deworming" };
 
-  // Incoming "تجهيز الإرسال" from the Reminders widget: pre-select the client and
-  // draft the message, so the doctor can review/edit and send from the queue.
+  /* الوارد من مركز التذكيرات أو من ودجة اللوحة: يُحدَّد الزبون ويُصاغ النص.
+   * والفرق بين المصدرين مقصود: ودجة اللوحة ترسل صنفاً عاماً فنختار له قالباً،
+   * أما مركز التذكيرات فيرسل **النص كاملاً** بلقاحه وتاريخه وساعته — وهو ما
+   * لا تعرفه الحملات — فنأخذه كما جاء ونترك للطبيب تحريره وتبديل صياغته. */
+  const [fromReminder, setFromReminder] = useState<{ id: string; date: string } | null>(null);
   useEffect(() => {
     const prefill = location.state as CampaignPrefill | null;
     if (!prefill?.targetPetId || prefillApplied.current) return;
     prefillApplied.current = true;
     setSelected(new Set([prefill.targetPetId]));
-    const tplId = TEMPLATE_FOR[prefill.reminderType];
-    if (tplId) pickTemplate(tplId);
+    if (prefill.message) {
+      setMessage(prefill.message);
+      // القالب يُبرَز ليعمل زرّ «صياغة أخرى» على المجموعة الصحيحة.
+      setActiveTpl(TEMPLATE_FOR[prefill.reminderType] ?? null);
+    } else {
+      const tplId = TEMPLATE_FOR[prefill.reminderType];
+      if (tplId) pickTemplate(tplId);
+    }
+    if (prefill.reminderRowId && prefill.reminderDate) {
+      setFromReminder({ id: prefill.reminderRowId, date: prefill.reminderDate });
+    }
     // Surface this client in the audience list, then drop the router state so a
     // refresh or back-navigation doesn't silently re-apply it.
     if (prefill.targetPetName) setQuery(prefill.targetPetName);
@@ -256,6 +268,11 @@ export function WhatsAppCampaigns() {
       });
     } catch (e) { playTap(); toast.error(quotaMessage(e) ?? "تعذّر الإرسال"); return; }
     setSent((s) => new Set(s).add(group.key));
+    // جئنا من تذكير؟ نترك له علامةً بمخزن الجلسة، فيقرأها مركز التذكيرات عند
+    // الرجوع وينقل التذكير من الأحمر إلى «أُرسلت» بلا انتظار مزامنة السجل.
+    if (fromReminder) {
+      try { sessionStorage.setItem("vp_rem_justsent", JSON.stringify(fromReminder)); } catch { /* بلا مخزن — السجل يغطّي */ }
+    }
     const nowISO = new Date().toISOString();
     setWaLog((prev) => [{ id: `wa-${group.key}-${nowISO}`, owner_phone: group.phone, owner_name: group.ownerName, sent_at: nowISO, reminder_type: segment }, ...prev]);
   };

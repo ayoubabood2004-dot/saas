@@ -1098,7 +1098,9 @@ export default function Cage3DDemo() {
       const [wx, wz] = cellWorld(s, c.x, c.z);
       out.push({
         id: c.code, kind: "cage", text: c.code, occupied: !!occOf(c.code),
-        world: [wx, 0.525 - CAGE_H / 2 + 0.16, wz + CAGE_D / 2 + 0.2],
+        // مرساةٌ على **واجهة اللوحة** لا فوق القفص: الرقم يُقرأ لوحةً مثبّتة
+        // على القفص، لا شارةً سابحة بجواره لا يُعرف لأيّها تعود.
+        world: [wx, 0.525 - CAGE_H / 2 + 0.30, wz + CAGE_D / 2 + 0.10],
       });
     }
     return out;

@@ -47,7 +47,10 @@ export interface LabelSpec {
 /** عتبات التكبير الدلالي — مقيسة على المشهد الحقيقي لا مخمّنة. */
 export const LOD_CAGE_ZOOM = 30;   // دونها: أسماء الغرف وحدها
 
-const PAD = 3;      // هامش حول صندوق التسمية عند فحص التصادم
+/* هامشُ التصادم. صغُر (٣ ← ١) بعدما كبرت اللوحات: بالهامش القديم صارت
+ * لوحتان متجاورتان «متصادمتين» وإحداهما تُخفى، فيبقى قفصٌ بلا رقمٍ مقروء —
+ * وهو أسوأ من تقاربٍ بصري بمقدار بكسلين. */
+const PAD = 1;
 const cmp = (a: Placed, b: Placed) => a.pri - b.pri;
 
 interface Placed { pri: number; x: number; y: number; w: number; h: number; i: number }
@@ -75,10 +78,13 @@ export function LabelOverlay({ labels, nodes }: { labels: LabelSpec[]; nodes: La
                 padding: "5px 12px", boxShadow: "0 6px 18px #0009",
               }
               : {
-                background: "#0b1725f2",
-                border: `2px solid ${l.occupied ? OCCUPIED : FREE}`,
-                borderRadius: 9, padding: "2px 8px",
-                boxShadow: `0 0 10px ${(l.occupied ? OCCUPIED : FREE)}55, 0 3px 8px #0009`,
+                /* لوحةُ رقمٍ لا رقاقة: أعرض وأعلى وأمتنُ حرفاً، بزوايا شبه
+                 * قائمة وحافةٍ مضيئة بلون الحالة — فتُقرأ من بعيدٍ لافتةً
+                 * معلّقة على القفص، لا فقاعةً صغيرة تسبح بجواره. */
+                background: "linear-gradient(#12263bf7, #0a1725f7)",
+                border: `2.5px solid ${l.occupied ? OCCUPIED : FREE}`,
+                borderRadius: 7, padding: "5px 13px", minWidth: 46, textAlign: "center",
+                boxShadow: `0 0 16px ${(l.occupied ? OCCUPIED : FREE)}66, inset 0 1px 0 #ffffff1f, 0 4px 12px #000a`,
               }),
           }}
         >
@@ -89,8 +95,9 @@ export function LabelOverlay({ labels, nodes }: { labels: LabelSpec[]; nodes: La
             </span>
           ) : (
             <b style={{
-              color: NIGHT.ink, fontSize: 13, fontWeight: 900,
-              fontVariantNumeric: "tabular-nums", letterSpacing: 0.2,
+              color: NIGHT.ink, fontSize: 19, fontWeight: 900, lineHeight: 1.05,
+              fontVariantNumeric: "tabular-nums", letterSpacing: 0.6,
+              textShadow: "0 1px 3px #000c",
             }}>{l.text}</b>
           )}
         </div>
@@ -145,12 +152,25 @@ export function LabelPositioner({ labels, nodes, hiddenFor }: {
       const prev = node.style.display;
       if (prev === "none") node.style.display = "";
       const w = node.offsetWidth || 40, h = node.offsetHeight || 18;
-      const x = sx - w / 2, y = sy - h / 2;
-      const hit = boxes.some((b) =>
+      const clash = (x: number, y: number) => boxes.some((b) =>
         x < b.x + b.w + PAD && x + w + PAD > b.x && y < b.y + b.h + PAD && y + h + PAD > b.y);
-      if (hit) { node.style.display = "none"; continue; }
-      boxes.push({ pri: o.pri, x, y, w, h, i: o.i });
-      node.style.transform = `translate3d(${Math.round(x)}px, ${Math.round(y)}px, 0)`;
+
+      /* المتصادم **يُزحزح قبل أن يُخفى**. الإخفاء كان يترك أقفاصاً بلا رقمٍ
+       * مقروء كلما جاورتها تسميةُ غرفة — وقفصٌ بلا رقم يُفقد الغرضَ كلّه.
+       * فنجرّب مواضع بديلة قريبة بالترتيب (فوق، تحت، يمين، يسار، ثم أقطار)،
+       * وأول موضعٍ خالٍ يفوز. ولا نُخفي إلا إذا امتلأ الجوار كلّه فعلاً. */
+      const bx = sx - w / 2, by = sy - h / 2;
+      const dy = h + PAD + 3, dx = w * 0.62 + PAD;
+      const spots: Array<[number, number]> = l.kind === "cage"
+        ? [[0, 0], [0, -dy], [0, dy], [dx, 0], [-dx, 0], [dx, -dy], [-dx, -dy], [dx, dy], [-dx, dy]]
+        : [[0, 0]];
+      let px = bx, py = by, placed = false;
+      for (const [ox, oy] of spots) {
+        if (!clash(bx + ox, by + oy)) { px = bx + ox; py = by + oy; placed = true; break; }
+      }
+      if (!placed) { node.style.display = "none"; continue; }
+      boxes.push({ pri: o.pri, x: px, y: py, w, h, i: o.i });
+      node.style.transform = `translate3d(${Math.round(px)}px, ${Math.round(py)}px, 0)`;
     }
   });
 
