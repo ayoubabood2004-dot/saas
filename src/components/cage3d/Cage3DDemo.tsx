@@ -13,7 +13,7 @@ import { NEON, NIGHT, KIND_AR, SPECIES_AR, SPECIES_EMOJI, type Occupant } from "
 import { useQuality, setTier, getTier, type Tier } from "./quality";
 import {
   CELL, cageStudio, useCageStudio, cageAt, cellFree, bounds,
-  cellWorld, cornerWorld, buildPartitions, doorCell, codesFromPrefs, type Room3D,
+  cellWorld, cornerWorld, buildPartitions, codesFromPrefs, type Room3D,
 } from "./store";
 import { opsStore } from "@/lib/opsStore";
 import { statusOf } from "@/lib/opsStatus";
@@ -42,6 +42,13 @@ import i18n from "@/i18n";
 const FLY_Y = 1.5;
 const REST_Y = 1.2;
 const WALL_H = 1.65;
+/* إزاحة الكاميرا عن هدفها — شبه أمامية لا معينٌ قطري (نسق الصورة المرجعية):
+ * انحرافٌ أفقي ~١٤° فقط عن مواجهة الأبواب، فتمتد صفوف الأقفاص **أفقياً
+ * بعرض الشاشة** وتصعد الصفوف الخلفية فوقها درجاً واضحاً، ولوحات الأرقام
+ * تقابل العين تقريباً. الارتفاع يُبقي ميل نظرٍ ~٣٣° فيُرى جوف القفص
+ * وساكنه. إزاحةٌ لا موقفٌ مطلق: الهدف يتحرك لمركز الغرفة الرئيسية،
+ * والكاميرا تتبعه بالفرق نفسه فتثبت الزاوية مهما تغيّر التخطيط. */
+const CAM_OFF: [number, number, number] = [3.4, 8.85, 13.6];
 
 interface DragState {
   occ: Occupant;
@@ -97,7 +104,7 @@ const TOUR: { emoji: string; title: string; body: string }[] = [
   },
 ];
 
-/** حدود تكبير الكاميرا — أوسع من نطاق الملاءمة التلقائية (44–92) بهامش مريح. */
+/** حدود تكبير الكاميرا — أوسع من نطاق الملاءمة التلقائية (66–150) بهامش مريح. */
 const ZOOM_MIN = 20, ZOOM_MAX = 200;
 
 /** واجهة التحكم بالكاميرا التي نحتاجها من MapControls — بنيوية حتى لا نستورد
@@ -207,57 +214,46 @@ function Partitions({ rooms, s }: { rooms: Room3D[]; s: ReturnType<typeof cageSt
 
 /* ── أرضيات الغرف + باب حقيقي بعضادتين وساكف تعلوه لافتة الاسم ──────────── */
 function RoomFloors({ s }: { s: ReturnType<typeof cageStudio.get> }) {
-  const signW = Math.min(CELL - 0.1, 2.85);
+  /* لافتة الباب صُغّرت ورُفعت: بالكاميرا شبه الأمامية صار اللوح الكبير
+   * يُسقَط فوق واجهة قفص الصف الأمامي فيحجب لوحة رقمه — لوحٌ أنحف أعلى
+   * الساكف يقرأه الداخل ولا يغطّي شيئاً. */
+  const signW = Math.min(CELL - 0.9, 2.1);
   return (
     <>
       {s.rooms.map((r) => {
         const [wx, wz] = cornerWorld(s, r.x, r.z);
         const w = r.w * CELL, d = r.d * CELL;
-        const [dx, dz] = doorCell(r);
-        const [doorWX, doorWZ] = cornerWorld(s, dx, dz);
         return (
           <group key={r.id}>
             <mesh rotation={[-Math.PI / 2, 0, 0]} position={[wx + w / 2, -0.07, wz + d / 2]} receiveShadow>
               <planeGeometry args={[w - 0.12, d - 0.12]} />
               <meshStandardMaterial color="#cfd7e0" transparent opacity={0.85} roughness={0.8} />
             </mesh>
-            {/* الباب على حدّ الغرفة الأمامي: عضادتان + ساكف، وفوقه لافتة
-                احترافية بطبقتين (ستيل خلفي بارز + لوح أمامي داكن بزوايا
-                دائرية) مثبّتة بمسندين على الساكف — لافتة حقيقية لا نص طائف */}
-            <group position={[doorWX + CELL / 2, 0, doorWZ]}>
-              {[-(CELL / 2 - 0.06), CELL / 2 - 0.06].map((o, i) => (
-                <mesh key={i} position={[o, WALL_H / 2 - 0.05, 0]} castShadow>
-                  <boxGeometry args={[0.12, WALL_H + 0.08, 0.12]} />
-                  <meshStandardMaterial color="#c9d2dc" metalness={0.6} roughness={0.3} />
-                </mesh>
-              ))}
-              {/* الساكف */}
-              <mesh position={[0, WALL_H - 0.1, 0]} castShadow>
-                <boxGeometry args={[CELL, 0.12, 0.14]} />
-                <meshStandardMaterial color="#c9d2dc" metalness={0.6} roughness={0.3} />
-              </mesh>
-              {/* مسندا تثبيت اللافتة على الساكف */}
+            {/* لافتة الغرفة على سياجها **الخلفي** لا على باب أمامي: بالكاميرا
+                شبه الأمامية كان لوح الباب يُسقَط فوق واجهة قفصٍ بالصف الأمامي
+                فيحجب لوحة رقمه. الآن تطفو فوق الصف الأخير كلافتة قسمٍ فندقية
+                معلّقة بقائمين على السياج — تُقرأ من بعيد ولا تغطي شيئاً. */}
+            <group position={[wx + w / 2, 0, wz + 0.04]}>
               {[-signW / 3, signW / 3].map((o, i) => (
-                <mesh key={i} position={[o, WALL_H + 0.02, 0]}>
-                  <cylinderGeometry args={[0.028, 0.028, 0.34, 10]} />
+                <mesh key={i} position={[o, WALL_H + 0.28, 0]}>
+                  <cylinderGeometry args={[0.028, 0.028, 0.8, 10]} />
                   <meshStandardMaterial color="#8d9aa8" metalness={0.9} roughness={0.25} />
                 </mesh>
               ))}
               {/* الطبقة الخلفية: ستيل مصقول أعرض قليلاً وبإزاحة — مثل اللافتات الفندقية */}
-              <RoundedBox args={[signW + 0.26, 0.78, 0.05]} radius={0.06} position={[0.06, WALL_H + 0.37, -0.05]} castShadow>
+              <RoundedBox args={[signW + 0.2, 0.56, 0.05]} radius={0.06} position={[0.05, WALL_H + 0.75, -0.05]} castShadow>
                 <meshStandardMaterial color="#e6ebf0" metalness={0.7} roughness={0.22} />
               </RoundedBox>
               {/* اللوح الأمامي الداكن بزوايا دائرية */}
-              <RoundedBox args={[signW, 0.68, 0.1]} radius={0.08} position={[0, WALL_H + 0.33, 0.02]} castShadow>
+              <RoundedBox args={[signW, 0.46, 0.1]} radius={0.08} position={[0, WALL_H + 0.72, 0.02]} castShadow>
                 <meshStandardMaterial color="#5d6a78" metalness={0.4} roughness={0.4} />
               </RoundedBox>
-              {/* إضاءة خفيفة تغسل اللافتة حتى تُقرأ ليلاً */}
               {/* لوح اللافتة يبقى جسماً حقيقياً، أمّا الاسم فصار تسميةً بمساحة
                   الشاشة تُرسم فوقه (LabelLayer): نصٌّ منسوجٌ بالجسم يتقلّص مع
                   العالم فيصير ٦ بكسل عند التكبير الافتراضي — انظر دراسة المقروئية. */}
               {/* مرساة اختبارات غير مرئية — ببيئة التطوير فقط */}
               {import.meta.env.DEV && (
-                <Html center position={[0, WALL_H + 0.29, 0.09]} zIndexRange={[8, 0]} style={{ pointerEvents: "none" }}>
+                <Html center position={[0, WALL_H + 0.72, 0.09]} zIndexRange={[8, 0]} style={{ pointerEvents: "none" }}>
                   <span data-sign3d={r.name} style={{ width: 1, height: 1, display: "block" }} />
                 </Html>
               )}
@@ -463,7 +459,7 @@ function PerfProbe() {
   return null;
 }
 
-function Scene({ s, occOf, drag, carrySource, hoverCage, arrivedRef, camZoom, ctlRef, labels, labelNodes, setHoverCage, onCardDown, onReturned, onTapCage, onPickCell }: {
+function Scene({ s, occOf, drag, carrySource, hoverCage, arrivedRef, camZoom, camTarget, ctlRef, labels, labelNodes, setHoverCage, onCardDown, onReturned, onTapCage, onPickCell }: {
   s: ReturnType<typeof cageStudio.get>;
   occOf: (code: string) => Occupant | null;
   drag: DragState | null;
@@ -471,6 +467,7 @@ function Scene({ s, occOf, drag, carrySource, hoverCage, arrivedRef, camZoom, ct
   hoverCage: string | null;
   arrivedRef: React.MutableRefObject<Map<string, number>>;
   camZoom: number;                 // ملاءمة تلقائية — يبقى بيد المستخدم بعد أول قرصة
+  camTarget: [number, number, number]; // مركز الافتتاح — الغرفة الرئيسية
   ctlRef: React.MutableRefObject<CamCtl | null>;
   labels: LabelSpec[];
   labelNodes: LabelNodes;
@@ -513,7 +510,9 @@ function Scene({ s, occOf, drag, carrySource, hoverCage, arrivedRef, camZoom, ct
       <color attach="background" args={["#efe9df"]} />
       {!low && <fog attach="fog" args={["#efe9df", 40, 78]} />}
       {!low && <EnvLight />}
-      <OrthographicCamera makeDefault position={[12, 12, 12]} zoom={camZoom} near={0.1} far={80} />
+      <OrthographicCamera makeDefault
+        position={[camTarget[0] + CAM_OFF[0], camTarget[1] + CAM_OFF[1], camTarget[2] + CAM_OFF[2]]}
+        zoom={camZoom} near={0.1} far={80} />
       {/* تحكم الكاميرا: قرصة بأصبعين تكبّر، وسحب الأرضية (إصبع أو فأرة) يحرّك،
           والدوران معطّل حتى تبقى الزاوية الإيزومترية ثابتة. سحب بطاقات المرضى
           ما يتأثر — أحداثها تُلتقط على عنصر DOM فلا تصل للكانفس أصلاً. */}
@@ -524,7 +523,7 @@ function Scene({ s, occOf, drag, carrySource, hoverCage, arrivedRef, camZoom, ct
         dampingFactor={0.14}
         minZoom={ZOOM_MIN}
         maxZoom={ZOOM_MAX}
-        target={[0, 0.35, 0]}
+        target={camTarget}
         touches={{ ONE: TOUCH.PAN, TWO: TOUCH.DOLLY_PAN }}
         mouseButtons={{ LEFT: MOUSE.PAN, MIDDLE: MOUSE.DOLLY, RIGHT: MOUSE.PAN }}
         ref={(v: unknown) => { ctlRef.current = v as CamCtl | null; }}
@@ -702,19 +701,29 @@ export default function Cage3DDemo({ onBoard }: { onBoard?: () => void } = {}) {
   const pending = useRef<{ code: string; x: number; y: number } | null>(null);
   useEffect(() => () => { if (pulseTimer.current) clearInterval(pulseTimer.current); }, []);
 
-  /* الكاميرا: ملاءمة تلقائية على التخطيط + أزرار تكبير/تصغير/توسيط */
+  /* الكاميرا: الافتتاح متوسّطٌ على **أكبر غرفة** لا على مركز التخطيط كله
+   * (نسق الصورة المرجعية: صفُّ الغرفة يملأ عرض الشاشة). بغرفتين متباعدتين
+   * كان مركز التخطيط فراغاً بينهما، فتُفتتح الشاشة على أرضٍ خالية والغرفتان
+   * مقصوصتان على الحافتين. −١٫٢ بالعمق تدفع الغرفة قليلاً نحو أسفل الشاشة
+   * فلا يبتلع ممرُّ الأرضية الأمامي نصفَ المنظر. */
   const ctlRef = useRef<CamCtl | null>(null);
+  const primaryRoom = useMemo(
+    () => (s.rooms.length ? s.rooms.reduce((a, b) => (b.w * b.d > a.w * a.d ? b : a)) : null),
+    [s]);
+  const camTarget = useMemo<[number, number, number]>(() => {
+    if (!primaryRoom) return [0, 0.35, 0];
+    const [wx, wz] = cornerWorld(s, primaryRoom.x, primaryRoom.z);
+    return [wx + (primaryRoom.w * CELL) / 2, 0.35, wz + (primaryRoom.d * CELL) / 2 - 2.2];
+  }, [s, primaryRoom]);
   const camZoom = useMemo(() => {
-    const b = bounds(s);
-    const span = Math.max(b.maxX - b.minX, (b.maxZ - b.minZ) * 1.4) * CELL;
-    /* الإطار الافتتاحي **قُرِّب**. وهنا مربط الفرس: بملاءمةٍ تُشتقّ من مدى
-     * الغرفة، تكبيرُ الأقفاص وحده لا يُرى — تكبر الغرفة فتتراجع الكاميرا
-     * بالقدر نفسه ويعود كل شيء كما كان. فالحجم المرئي يُصنع هنا: الثابت
-     * ٧٠٠ ← ٩٠٠ والأرضية ٤٢ ← ٥٢. والفارغ حول الغرفة كان يبتلع نصف
-     * الشاشة، فصار للأقفاص. والغرف البعيدة يبلغها الدكتور بالسحب، و⛶
-     * يرجّع المنظر الكامل متى شاء. */
-    return Math.max(52, Math.min(130, 900 / Math.max(span, 7)));
-  }, [s]);
+    const span = (primaryRoom ? Math.max(primaryRoom.w, primaryRoom.d * 0.9) : 4) * CELL;
+    /* الإطار الافتتاحي **قريب عمداً** (نسق الصورة المرجعية: صفُّ الغرفة
+     * الرئيسية يملأ العرض). الحجم المرئي يُصنع هنا لا بأبعاد القفص:
+     * بملاءمةٍ تُشتقّ من مدى الغرفة، تكبيرُ الأبعاد وحدها لا يُرى.
+     * الأرضية ٧٢ تعني أن الغرفة العريضة **لا تُصغَّر لتدخل كلها بالشاشة**
+     * — الأقفاص تبقى كبيرة، والبعيد يُبلغ بالسحب، و⛶ يرجّع للافتتاح. */
+    return Math.max(72, Math.min(96, 1350 / Math.max(span, 6)));
+  }, [primaryRoom]);
   const zoomBy = (f: number) => {
     playTap();
     // نبضة إطارات: حلقة الرسم «عند الطلب» لا تُنعَش بضغطة زرٍّ خارج الكانفس،
@@ -727,14 +736,14 @@ export default function Cage3DDemo({ onBoard }: { onBoard?: () => void } = {}) {
     c.object.updateProjectionMatrix();
     c.update();
   };
-  /** رجوع للمنظر الكامل: وسط المشهد + ملاءمة التخطيط الحالي (لا حالة لحظة الفتح). */
+  /** رجوع لمنظر الافتتاح: مركز الغرفة الرئيسية + ملاءمة التخطيط الحالي. */
   const resetCam = () => {
     playTap();
     poke();
     const c = ctlRef.current;
     if (!c) return;
-    c.target.set(0, 0.35, 0);
-    c.object.position.set(12, 12, 12);
+    c.target.set(camTarget[0], camTarget[1], camTarget[2]);
+    c.object.position.set(camTarget[0] + CAM_OFF[0], camTarget[1] + CAM_OFF[1], camTarget[2] + CAM_OFF[2]);
     c.object.zoom = camZoom;
     c.object.updateProjectionMatrix();
     c.update();
@@ -1090,14 +1099,13 @@ export default function Cage3DDemo({ onBoard }: { onBoard?: () => void } = {}) {
     const out: LabelSpec[] = [];
     for (const r of s.rooms) {
       const inR = s.cages.filter((c) => c.x >= r.x && c.x < r.x + r.w && c.z >= r.z && c.z < r.z + r.d);
-      const [dx, dz] = doorCell(r);
-      const [doorWX, doorWZ] = cornerWorld(s, dx, dz);
+      const [wx, wz] = cornerWorld(s, r.x, r.z);
       out.push({
         id: `room:${r.id}`, kind: "room", text: r.name,
         sub: inR.length ? `${formatNum(inR.filter((c) => occOf(c.code)).length)}/${formatNum(inR.length)}` : undefined,
-        // ترتفع فوق اللافتة الفيزيائية: بالمنظر الإيزومتري تسقط التسمية
-        // المنخفضة **داخل** أرضية الغرفة فتحجب قفصاً. الارتفاع يخرجها للأمام.
-        world: [doorWX + CELL / 2, WALL_H + 1.35, doorWZ + 0.06],
+        // على مركز لوح السياج الخلفي نفسه — فتُقرأ التسميةُ نصَّ اللافتة
+        // الفيزيائية لا رقاقةً سابحة فوقها.
+        world: [wx + (r.w * CELL) / 2, WALL_H + 0.72, wz + 0.15],
       });
     }
     /* لا أرقام عائمة بعد اليوم: رقم القفص لافتةٌ مرسومة على جسمه نفسه
@@ -1124,7 +1132,7 @@ export default function Cage3DDemo({ onBoard }: { onBoard?: () => void } = {}) {
       >
         <Suspense fallback={null}>
           <Scene s={s} occOf={occOf} drag={drag} carrySource={carrySource} hoverCage={hoverCage}
-            arrivedRef={arrivedRef} camZoom={camZoom} ctlRef={ctlRef} labels={labels} labelNodes={labelNodes}
+            arrivedRef={arrivedRef} camZoom={camZoom} camTarget={camTarget} ctlRef={ctlRef} labels={labels} labelNodes={labelNodes}
             setHoverCage={setHoverCage} onCardDown={onCardDown}
             onReturned={() => setDrag(null)} onTapCage={onTapCage} onPickCell={onPickCell} />
         </Suspense>
