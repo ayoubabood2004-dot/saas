@@ -28,7 +28,7 @@ const importers: Record<string, Importer> = {
   "/bookings": () => import("@/pages/BookingsHub"),
   "/reminders": () => import("@/pages/RemindersHub"),
   "/charts": () => import("@/pages/Charts"),
-  "/cage3d": () => import("@/components/cage3d/Cage3DDemo"),
+  "/cage3d": () => import("@/components/cages/CageBoard"),
   "/activity": () => import("@/pages/ActivityLog"),
   // Not nav links, but the hottest click-through targets — warm them too so
   // opening a pet file or a visit sheet never waits on a JS chunk.

@@ -237,6 +237,21 @@ export const cageStudio = {
     return true;
   },
 
+  /** إضافة قفص لغرفةٍ بعينها بلا اختيار خلية: أول خلية فاضية تُشغَل، وإن
+   *  امتلأت الغرفة تتعمّق صفاً — فاللوحة المسطّحة لا تسأل الطبيب «وين أحطه؟». */
+  addCageAuto(roomId: string): CagePlacement | null {
+    let room = state.rooms.find((r) => r.id === roomId);
+    if (!room) return null;
+    for (let j = 0; j < room.d; j++) for (let i = 0; i < room.w; i++) {
+      const x = room.x + i, z = room.z + j;
+      if (!cageAt(state, x, z)) return this.placeCage(x, z);
+    }
+    const grown = { ...room, d: room.d + 1 };
+    commit({ rooms: state.rooms.map((r) => (r.id === roomId ? grown : r)) }, true);
+    room = grown;
+    return this.placeCage(room.x, room.z + room.d - 1);
+  },
+
   removeCage(code: string) {
     commit({
       cages: state.cages.filter((c) => c.code !== code),
