@@ -7,7 +7,7 @@ import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import type { BufferGeometry, Group, Mesh, MeshBasicMaterial, MeshStandardMaterial } from "three";
 import { ChevronRight, Hammer, ClipboardList, Maximize, Minus, Move, Plus, Search, Trash2, X, FileText, UserPlus } from "lucide-react";
-import { CageUnit, CAGE_W, CAGE_D, type DropHint } from "./CageUnit";
+import { CageUnit, CAGE_W, CAGE_D, CAGE_H, BASE_Y, type DropHint } from "./CageUnit";
 import { LabelOverlay, LabelPositioner, type LabelSpec, type LabelNodes } from "./LabelLayer";
 import { NEON, NIGHT, KIND_AR, SPECIES_AR, SPECIES_EMOJI, type Occupant } from "./neon";
 import { useQuality, setTier, getTier, type Tier } from "./quality";
@@ -39,16 +39,20 @@ import i18n from "@/i18n";
  * فوق بابها (وبوضع البناء ضغطها يفتح لوحتها: اسم، ترقيم تلقائي، حذف).
  * ==========================================================================*/
 
-const FLY_Y = 1.5;
-const REST_Y = 1.2;
-const WALL_H = 1.65;
-/* إزاحة الكاميرا عن هدفها — شبه أمامية لا معينٌ قطري (نسق الصورة المرجعية):
- * انحرافٌ أفقي ~١٤° فقط عن مواجهة الأبواب، فتمتد صفوف الأقفاص **أفقياً
- * بعرض الشاشة** وتصعد الصفوف الخلفية فوقها درجاً واضحاً، ولوحات الأرقام
- * تقابل العين تقريباً. الارتفاع يُبقي ميل نظرٍ ~٣٣° فيُرى جوف القفص
- * وساكنه. إزاحةٌ لا موقفٌ مطلق: الهدف يتحرك لمركز الغرفة الرئيسية،
- * والكاميرا تتبعه بالفرق نفسه فتثبت الزاوية مهما تغيّر التخطيط. */
-const CAM_OFF: [number, number, number] = [3.4, 8.85, 13.6];
+const FLY_Y = 2.4;
+const REST_Y = 2.0;
+const WALL_H = 0.95;
+/* ارتفاع لافتة الغرفة — مستقلٌّ عن الإزارة عمداً: الإزارة انخفضت لتكشف
+ * الأقفاص، واللافتة يجب أن تبقى **فوق سقوف الأقفاص** حتى تُقرأ من بعيد. */
+const SIGN_TOP = BASE_Y + CAGE_H / 2 + 0.75;
+/* إزاحة الكاميرا عن هدفها — **آيزومترك حقيقي** كالصورة المرجعية: الإزاحة
+ * متساوية على المحاور الثلاثة، أي اتجاه نظرٍ (١،١،١). هذا بالضبط ما يجعل
+ * محاور العالم الثلاثة تُسقَط على الشاشة بزوايا ١٢٠° متساوية، فتنحدر أضلاع
+ * القفص الأفقية ٣٠° عن الأفق ويقف ركنه مواجهاً للناظر — لا زاوية «قريبة من
+ * الإيزومترية» بل هي نفسها. أيّ اختلافٍ بين x وz يكسر تساوي الزوايا فوراً.
+ * وهي إزاحةٌ لا موقفٌ مطلق: الهدف يتحرك لمركز الغرفة الرئيسية والكاميرا
+ * تتبعه بالفرق نفسه، فتثبت الزاوية مهما تغيّر التخطيط. */
+const CAM_OFF: [number, number, number] = [14, 14, 14];
 
 interface DragState {
   occ: Occupant;
@@ -127,7 +131,7 @@ function makeWoodTexture(): CanvasTexture {
   const g = c.getContext("2d")!;
   const plankH = 64;
   for (let y = 0; y < 512; y += plankH) {
-    g.fillStyle = `hsl(${26 + Math.random() * 6}, ${42 + Math.random() * 8}%, ${46 + Math.random() * 8}%)`;
+    g.fillStyle = `hsl(${28 + Math.random() * 5}, ${22 + Math.random() * 6}%, ${58 + Math.random() * 7}%)`;
     g.fillRect(0, y, 512, plankH);
     for (let i = 0; i < 34; i++) {
       g.strokeStyle = `rgba(0,0,0,${0.05 + Math.random() * 0.08})`;
@@ -147,9 +151,11 @@ function makeWoodTexture(): CanvasTexture {
   return t;
 }
 
-/** جدران الغرف بلغة الأقفاص نفسها: إزارة أرضية + لوح معدني سفلي صلب + زجاج
- *  فوقه + مدّة علوية — ترتكز على الأرض فعلاً بدل ألواح زجاج طائفة بالفراغ. */
-const WALL_LOWER = 0.52;
+/** حدود الغرف صارت **إزارةً منخفضة** لا جداراً: إزارة أرضية + لوح معدني
+ *  قصير + مدّة علوية، بلا زجاج. جدارٌ بعلوّ القفص كان يقف بين الناظر وبين
+ *  الصف الأمامي فيقطع أضلاعه — والمطلوب وضوحُ الصورة المرجعية قبل أي شيء.
+ *  الإزارة تكفي لتقول «هذه الغرفة» وهي أوطأ من أن تحجب. */
+const WALL_LOWER = 0.62;
 function Partitions({ rooms, s }: { rooms: Room3D[]; s: ReturnType<typeof cageStudio.get> }) {
   const { low } = useQuality();
   const segs = useMemo(() => buildPartitions(rooms), [rooms]);
@@ -158,7 +164,6 @@ function Partitions({ rooms, s }: { rooms: Room3D[]; s: ReturnType<typeof cageSt
    * الدمج يتمّ عند تغيّر الغرف فقط، لا كل إطار. */
   const merged = useMemo(() => {
     const metal: BufferGeometry[] = [];
-    const glass: BufferGeometry[] = [];
     const plinth: BufferGeometry[] = [];
     const put = (arr: BufferGeometry[], g: BufferGeometry, x: number, y: number, z: number, ry: number) => {
       const m = new Matrix4();
@@ -181,15 +186,13 @@ function Partitions({ rooms, s }: { rooms: Room3D[]; s: ReturnType<typeof cageSt
         const pz = ry ? cz + o : cz;
         put(metal, new BoxGeometry(0.1, WALL_H, 0.1), px, WALL_H / 2 - 0.05, pz, 0);
       }
-      put(glass, new BoxGeometry(len - 0.02, WALL_H - WALL_LOWER - 0.22, 0.04), cx, (WALL_LOWER + 0.1 + WALL_H - 0.12) / 2, cz, ry);
     }
     return {
       metal: metal.length ? mergeGeometries(metal) : null,
-      glass: glass.length ? mergeGeometries(glass) : null,
       plinth: plinth.length ? mergeGeometries(plinth) : null,
     };
   }, [segs, s]);
-  useEffect(() => () => { merged.metal?.dispose(); merged.glass?.dispose(); merged.plinth?.dispose(); }, [merged]);
+  useEffect(() => () => { merged.metal?.dispose(); merged.plinth?.dispose(); }, [merged]);
 
   return (
     <>
@@ -203,11 +206,6 @@ function Partitions({ rooms, s }: { rooms: Room3D[]; s: ReturnType<typeof cageSt
           <meshStandardMaterial color="#dbe1e9" metalness={0.4} roughness={0.32} />
         </mesh>
       )}
-      {!low && merged.glass && (
-        <mesh geometry={merged.glass}>
-          <meshStandardMaterial color="#eef4f9" transparent opacity={0.22} roughness={0.15} metalness={0.1} depthWrite={false} />
-        </mesh>
-      )}
     </>
   );
 }
@@ -217,7 +215,7 @@ function RoomFloors({ s }: { s: ReturnType<typeof cageStudio.get> }) {
   /* لافتة الباب صُغّرت ورُفعت: بالكاميرا شبه الأمامية صار اللوح الكبير
    * يُسقَط فوق واجهة قفص الصف الأمامي فيحجب لوحة رقمه — لوحٌ أنحف أعلى
    * الساكف يقرأه الداخل ولا يغطّي شيئاً. */
-  const signW = Math.min(CELL - 0.9, 2.1);
+  const signW = Math.min(CELL * 0.42, 2.7);
   return (
     <>
       {s.rooms.map((r) => {
@@ -233,19 +231,19 @@ function RoomFloors({ s }: { s: ReturnType<typeof cageStudio.get> }) {
                 شبه الأمامية كان لوح الباب يُسقَط فوق واجهة قفصٍ بالصف الأمامي
                 فيحجب لوحة رقمه. الآن تطفو فوق الصف الأخير كلافتة قسمٍ فندقية
                 معلّقة بقائمين على السياج — تُقرأ من بعيد ولا تغطي شيئاً. */}
-            <group position={[wx + w / 2, 0, wz + 0.04]}>
+            <group position={[wx + w / 2, 0, wz + 0.55]}>
               {[-signW / 3, signW / 3].map((o, i) => (
-                <mesh key={i} position={[o, WALL_H + 0.28, 0]}>
-                  <cylinderGeometry args={[0.028, 0.028, 0.8, 10]} />
+                <mesh key={i} position={[o, SIGN_TOP / 2, 0]}>
+                  <cylinderGeometry args={[0.03, 0.03, SIGN_TOP, 10]} />
                   <meshStandardMaterial color="#8d9aa8" metalness={0.9} roughness={0.25} />
                 </mesh>
               ))}
               {/* الطبقة الخلفية: ستيل مصقول أعرض قليلاً وبإزاحة — مثل اللافتات الفندقية */}
-              <RoundedBox args={[signW + 0.2, 0.56, 0.05]} radius={0.06} position={[0.05, WALL_H + 0.75, -0.05]} castShadow>
+              <RoundedBox args={[signW + 0.16, 0.6, 0.05]} radius={0.06} position={[0, SIGN_TOP, -0.06]} castShadow>
                 <meshStandardMaterial color="#e6ebf0" metalness={0.7} roughness={0.22} />
               </RoundedBox>
               {/* اللوح الأمامي الداكن بزوايا دائرية */}
-              <RoundedBox args={[signW, 0.46, 0.1]} radius={0.08} position={[0, WALL_H + 0.72, 0.02]} castShadow>
+              <RoundedBox args={[signW, 0.52, 0.1]} radius={0.08} position={[0, SIGN_TOP, 0.02]} castShadow>
                 <meshStandardMaterial color="#5d6a78" metalness={0.4} roughness={0.4} />
               </RoundedBox>
               {/* لوح اللافتة يبقى جسماً حقيقياً، أمّا الاسم فصار تسميةً بمساحة
@@ -253,7 +251,7 @@ function RoomFloors({ s }: { s: ReturnType<typeof cageStudio.get> }) {
                   العالم فيصير ٦ بكسل عند التكبير الافتراضي — انظر دراسة المقروئية. */}
               {/* مرساة اختبارات غير مرئية — ببيئة التطوير فقط */}
               {import.meta.env.DEV && (
-                <Html center position={[0, WALL_H + 0.72, 0.09]} zIndexRange={[8, 0]} style={{ pointerEvents: "none" }}>
+                <Html center position={[0, SIGN_TOP, 0.09]} zIndexRange={[8, 0]} style={{ left: 0, top: 0, pointerEvents: "none" }}>
                   <span data-sign3d={r.name} style={{ width: 1, height: 1, display: "block" }} />
                 </Html>
               )}
@@ -281,7 +279,7 @@ function CellPads({ s, onPick }: {
             onClick={(e) => { if (e.delta < 10) { e.stopPropagation(); onPick(x, z); } }}
             onPointerOver={(e) => { e.stopPropagation(); document.body.style.cursor = "copy"; }}
             onPointerOut={() => { document.body.style.cursor = ""; }}>
-            <planeGeometry args={[CELL - 0.45, CELL - 0.45]} />
+            <planeGeometry args={[CAGE_W + 0.5, CAGE_D + 0.5]} />
             <meshStandardMaterial color="#4ade80" transparent opacity={0.22}
               emissive="#4ade80" emissiveIntensity={0.7} />
           </mesh>
@@ -297,7 +295,7 @@ function CellPads({ s, onPick }: {
           </mesh>
           {/* مرساة اختبارات — ببيئة التطوير فقط، ولا لوحة DOM واحدة بالإنتاج */}
           {import.meta.env.DEV && (
-            <Html center position={[wx, 0.02, wz]} zIndexRange={[8, 0]} style={{ pointerEvents: "none" }}>
+            <Html center position={[wx, 0.02, wz]} zIndexRange={[8, 0]} style={{ left: 0, top: 0, pointerEvents: "none" }}>
               <span data-cell3d={`${x},${z}`} style={{ width: 1, height: 1, display: "block" }} />
             </Html>
           )}
@@ -328,7 +326,7 @@ function GhostCage({ s }: { s: ReturnType<typeof cageStudio.get> }) {
     ghostCell.current = { x, z, valid };
     const [wx, wz] = cellWorld(s, x, z);
     g.visible = true;
-    g.position.set(wx, 0.42, wz);
+    g.position.set(wx, BASE_Y, wz);
     const c = valid ? "#4ade80" : "#ef4444";
     mat.current?.color.set(c);
     mat.current?.emissive.set(c);
@@ -337,7 +335,7 @@ function GhostCage({ s }: { s: ReturnType<typeof cageStudio.get> }) {
   return (
     <group ref={grp} visible={false}>
       <mesh>
-        <boxGeometry args={[CAGE_W, 0.9, CAGE_D]} />
+        <boxGeometry args={[CAGE_W, CAGE_H, CAGE_D]} />
         <meshStandardMaterial ref={mat} color="#4ade80" emissive="#4ade80" emissiveIntensity={0.7} transparent opacity={0.3} />
       </mesh>
     </group>
@@ -386,7 +384,7 @@ function DragAvatar({ drag, s, onReturned }: {
   return (
     <>
       <group ref={grp} position={[drag.fromPos[0], REST_Y, drag.fromPos[2]]}>
-        <Html center zIndexRange={[24, 0]} style={{ pointerEvents: "none" }}>
+        <Html center zIndexRange={[24, 0]} style={{ left: 0, top: 0, pointerEvents: "none" }}>
           <div style={{
             direction: "rtl", display: "flex", alignItems: "center", gap: 8,
             padding: "7px 12px", borderRadius: 13, whiteSpace: "nowrap",
@@ -508,7 +506,7 @@ function Scene({ s, occOf, drag, carrySource, hoverCage, arrivedRef, camZoom, ca
       {import.meta.env.DEV && <PerfProbe />}
       {/* نهارٌ هادئ: خلفية عاجية دافئة بدل الليل — الوضوح قبل الإبهار */}
       <color attach="background" args={["#efe9df"]} />
-      {!low && <fog attach="fog" args={["#efe9df", 40, 78]} />}
+      {!low && <fog attach="fog" args={["#efe9df", 66, 128]} />}
       {!low && <EnvLight />}
       <OrthographicCamera makeDefault
         position={[camTarget[0] + CAM_OFF[0], camTarget[1] + CAM_OFF[1], camTarget[2] + CAM_OFF[2]]}
@@ -583,7 +581,7 @@ function Scene({ s, occOf, drag, carrySource, hoverCage, arrivedRef, camZoom, ca
         return (
           <CageUnit key={c.code}
             spec={{ code: c.code, occupant: occ }}
-            position={[wx, 0.525, wz]}
+            position={[wx, BASE_Y, wz]}
             dropHint={hintFor(c.code)}
             dragActive={!!drag || build}
             ghost={(drag?.occ.admId ?? null) === occ?.admId && !!occ || carrySource === c.code}
@@ -605,7 +603,7 @@ function Scene({ s, occOf, drag, carrySource, hoverCage, arrivedRef, camZoom, ca
           كان يُعاد رسمه كل إطار ويستنزف معالج رسوميات الآيباد بلا داعٍ */}
       {!low && (
         <ContactShadows key={`${s.rooms.length}-${s.cages.length}`} frames={1}
-          position={[0, -0.08, 0]} opacity={0.32} scale={36} blur={2.6} far={3.5} color="#5a4630" />
+          position={[0, -0.08, 0]} opacity={0.32} scale={58} blur={2.6} far={4.2} color="#5a4630" />
       )}
     </>
   );
@@ -711,18 +709,20 @@ export default function Cage3DDemo({ onBoard }: { onBoard?: () => void } = {}) {
     () => (s.rooms.length ? s.rooms.reduce((a, b) => (b.w * b.d > a.w * a.d ? b : a)) : null),
     [s]);
   const camTarget = useMemo<[number, number, number]>(() => {
-    if (!primaryRoom) return [0, 0.35, 0];
+    if (!primaryRoom) return [0, CAGE_H * 0.35, 0];
     const [wx, wz] = cornerWorld(s, primaryRoom.x, primaryRoom.z);
-    return [wx + (primaryRoom.w * CELL) / 2, 0.35, wz + (primaryRoom.d * CELL) / 2 - 2.2];
+    return [wx + (primaryRoom.w * CELL) / 2, CAGE_H * 0.35, wz + (primaryRoom.d * CELL) / 2];
   }, [s, primaryRoom]);
   const camZoom = useMemo(() => {
-    const span = (primaryRoom ? Math.max(primaryRoom.w, primaryRoom.d * 0.9) : 4) * CELL;
-    /* الإطار الافتتاحي **قريب عمداً** (نسق الصورة المرجعية: صفُّ الغرفة
-     * الرئيسية يملأ العرض). الحجم المرئي يُصنع هنا لا بأبعاد القفص:
-     * بملاءمةٍ تُشتقّ من مدى الغرفة، تكبيرُ الأبعاد وحدها لا يُرى.
-     * الأرضية ٧٢ تعني أن الغرفة العريضة **لا تُصغَّر لتدخل كلها بالشاشة**
-     * — الأقفاص تبقى كبيرة، والبعيد يُبلغ بالسحب، و⛶ يرجّع للافتتاح. */
-    return Math.max(72, Math.min(96, 1350 / Math.max(span, 6)));
+    /* الملاءمة تُحسب بمقاس **الشاشة** لا بمقاس العالم: بإسقاطٍ آيزومتري
+     * تُسقَط غرفةٌ عمقها D وعرضها W على معينٍ عرضه (W+D)/√2 — فالغرفة
+     * الطويلة الضيقة تحتاج التصغير نفسه الذي تحتاجه المربعة بالمساحة
+     * ذاتها. القسمة على الجذر هي كل الفرق بين ملاءمةٍ صحيحة وأخرى تقطع
+     * الغرفة من حافتها. والأرضية ٤٦ تُبقي القفص كبيراً بالتخطيطات
+     * الواسعة: لا تُصغَّر الغرفة لتدخل كلها، بل يُبلغ بعيدُها بالسحب. */
+    const w = primaryRoom ? primaryRoom.w : 3, d = primaryRoom ? primaryRoom.d : 2;
+    const screenSpan = ((w + d) * CELL) / Math.SQRT2;
+    return Math.max(46, Math.min(88, 1080 / Math.max(screenSpan, 8)));
   }, [primaryRoom]);
   const zoomBy = (f: number) => {
     playTap();
@@ -849,7 +849,7 @@ export default function Cage3DDemo({ onBoard }: { onBoard?: () => void } = {}) {
     const m = new Map<string, [number, number, number]>();
     s.cages.forEach((c) => {
       const [wx, wz] = cellWorld(s, c.x, c.z);
-      m.set(norm(c.code), [wx, 0.525, wz]);
+      m.set(norm(c.code), [wx, BASE_Y, wz]);
     });
     return m;
   }, [s]);
@@ -1105,7 +1105,7 @@ export default function Cage3DDemo({ onBoard }: { onBoard?: () => void } = {}) {
         sub: inR.length ? `${formatNum(inR.filter((c) => occOf(c.code)).length)}/${formatNum(inR.length)}` : undefined,
         // على مركز لوح السياج الخلفي نفسه — فتُقرأ التسميةُ نصَّ اللافتة
         // الفيزيائية لا رقاقةً سابحة فوقها.
-        world: [wx + (r.w * CELL) / 2, WALL_H + 0.72, wz + 0.15],
+        world: [wx + (r.w * CELL) / 2, SIGN_TOP, wz + 0.62],
       });
     }
     /* لا أرقام عائمة بعد اليوم: رقم القفص لافتةٌ مرسومة على جسمه نفسه
