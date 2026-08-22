@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useFrame } from "@react-three/fiber";
 import { Html } from "@react-three/drei";
 import {
-  BoxGeometry, CanvasTexture, Color, Matrix4, MeshBasicMaterial, MeshStandardMaterial,
+  BoxGeometry, CanvasTexture, Color, CylinderGeometry, Matrix4, MeshBasicMaterial, MeshStandardMaterial,
   PlaneGeometry, RingGeometry,
 } from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
@@ -38,7 +38,11 @@ import { lowTier } from "./quality";
  * الشبكة CELL معها، فيكبر الجسم **وتتّسع الفجوة بين قفصٍ وجاره** معاً: تكبيرٌ
  * بلا توسيع يُنتج جداراً متلاصقاً، وتوسيعٌ بلا تكبير يُنتج أقفاصاً مجهرية
  * بأرضٍ فارغة. النسبة بينهما هي ما يجعل النظر مريحاً. */
-export const CAGE_W = 2.45, CAGE_H = 1.28, CAGE_D = 2.05;
+/* القفص يشغل الآن ٧٣٪ من عرض خليته (كان ٦٦٪) — يكبر الجسم وتبقى فجوةٌ
+ * حقيقية بينه وبين جاره. والتكبير الظاهري الحقيقي يأتي من الكاميرا لا من
+ * الأرقام: بملاءمةٍ تلقائية تُشتقّ من مدى الغرفة، مضاعفةُ كل الأبعاد معاً
+ * لا تغيّر شيئاً على الشاشة — تكبر الغرفة فتتراجع الكاميرا بالقدر نفسه. */
+export const CAGE_W = 2.95, CAGE_H = 1.62, CAGE_D = 2.55;
 const POST = 0.07;           // سماكة القوائم — تتبع كِبَر الجسم
 /* اللوح المعدني السفلي. رُفع (٠٫٣ ← ٠٫٤٦) ليتّسع للوحة رقمٍ كبيرة: اللوحة
  * تسكنه، فسقفُ ارتفاعها هو ارتفاعه. */
@@ -107,17 +111,36 @@ const GEO_RIM = mergeGeometries([
   at(new BoxGeometry(0.045, 0.045, CAGE_D), -CAGE_W / 2 + POST / 2, CAGE_H / 2, 0),
 ])!;
 
-/* لوحة الرقم — «كلوحة كبيرة على القفص» لا شارةً صغيرة.
- * أبعادها **مشتقّة** من القفص لا مكتوبة أرقاماً حرّة: أي تكبيرٍ للقفص لاحقاً
- * تتبعه اللوحة بنفس النسبة، فيبقى التناغم بلا صيانة. عرضها ٧٢٪ من عرض
- * الواجهة، وارتفاعها ٨٠٪ من اللوح السفلي الذي تسكنه. */
-const PLATE_Y = -CAGE_H / 2 + LOWER_H / 2 + 0.03;
-const PLATE_W = CAGE_W * 0.72;      // ١٫٧٦ وحدة (كانت ٠٫٦٨)
-const PLATE_H = LOWER_H * 0.80;     // ٠٫٣٧ وحدة (كانت ٠٫٢٧)
-const GEO_PLATE = new BoxGeometry(PLATE_W, PLATE_H, 0.035);
-GEO_PLATE.translate(0, PLATE_Y, CAGE_D / 2 + 0.014);
-const GEO_CODE = new PlaneGeometry(PLATE_W - 0.06, PLATE_H - 0.05);
-GEO_CODE.translate(0, PLATE_Y, CAGE_D / 2 + 0.034);
+/* ── لافتة الباب ──────────────────────────────────────────────────────────
+ * لافتةٌ واقعية مركّبة على الباب، لا رقماً مطبوعاً على المعدن: إطارٌ خارجي
+ * غائر، ووجهٌ فاتح ناتئ عنه، ومسماران يثبّتانه — فتُقرأ العين ثلاثَ طبقات
+ * فتفهمها لوحةً معلّقة. الأبعاد كلها **مشتقّة** من القفص فتكبر معه.
+ * ------------------------------------------------------------------------ */
+/** ارتفاع اللافتة من قاع القفص — يُصدَّر لتُرسي عليه طبقةُ التسميات. */
+export const PLATE_Y_REL = LOWER_H / 2 + 0.02;
+const PLATE_Y = -CAGE_H / 2 + PLATE_Y_REL;
+/* نسبة اللافتة (عرض:ارتفاع ≈ ٢٫٩) **تطابق نسبة نسيجها** عمداً: كانت اللافتة
+ * ٥٫٢:١ والنسيج ٣٫٢:١، فيُمطّ الرقم عرضاً وينسحق ارتفاعاً حتى يصير خيطاً.
+ * ولافتةٌ بهذه النسبة أشبه بلافتات الأقفاص الحقيقية أصلاً — لا شريطاً ممتداً. */
+const SIGN_W = CAGE_W * 0.44;
+const SIGN_H = LOWER_H * 0.86;
+const FACE_Z = CAGE_D / 2;
+/** الإطار الغائر — أوسع قليلاً من الوجه فيبدو حاضناً له. */
+const GEO_SIGN_BEZEL = new BoxGeometry(SIGN_W + 0.10, SIGN_H + 0.10, 0.05);
+GEO_SIGN_BEZEL.translate(0, PLATE_Y, FACE_Z + 0.012);
+/** وجه اللافتة — ناتئ عن الإطار فيمسكه الضوء بحافةٍ ظاهرة. */
+const GEO_PLATE = new BoxGeometry(SIGN_W, SIGN_H, 0.04);
+GEO_PLATE.translate(0, PLATE_Y, FACE_Z + 0.040);
+const GEO_CODE = new PlaneGeometry(SIGN_W - 0.05, SIGN_H - 0.05);
+GEO_CODE.translate(0, PLATE_Y, FACE_Z + 0.062);
+/** مسمارا التثبيت — أسطوانتان صغيرتان على يمين اللافتة ويسارها. */
+const screw = (x: number) => {
+  const g = new CylinderGeometry(0.028, 0.028, 0.03, 10);
+  g.rotateX(Math.PI / 2);
+  g.translate(x, PLATE_Y, FACE_Z + 0.052);
+  return g;
+};
+const GEO_SCREWS = mergeGeometries([screw(-(SIGN_W / 2 + 0.032)), screw(SIGN_W / 2 + 0.032)])!;
 /** بساط أرضي غير مرئي تحت القفص — يلتقط الضغطات التي تقع على أرضه أو حول
  *  قاعدته. بلا شيءٍ أرضي كان الشعاع يمرّ بين القوائم فيسقط بلا هدف، والطبيب
  *  يظنّ ضغطته لم تُسجَّل. صندوقٌ مصمت بدله لا يصلح: بمنظر إيزومتري يحجب صندوقُ
@@ -148,9 +171,15 @@ const MAT_GLASS = new MeshStandardMaterial({
 /* لوحة الرقم لا تعتمد على إضاءة المشهد وحدها: بغرفةٍ ليلية معتمة عمداً كانت
  * تغرق مع الجسم فيختفي الرقم. إضاءةٌ ذاتية خفيفة تُبقيها مقروءة أياً كان
  * موضعها من الضوء — وهي ما يجعلها «لافتة» لا مجرّد لوحٍ معدني. */
+/** الإطار: معدنٌ داكن يبتلع الضوء فيبرز الوجه فوقه. */
+const MAT_BEZEL = new MeshStandardMaterial({ color: "#1b2531", metalness: 0.45, roughness: 0.55 });
+/** المسامير: معدنٌ فاتح لامع — تفصيلةٌ صغيرة تُقنع العين أن اللافتة مركّبة. */
+const MAT_SCREW = new MeshStandardMaterial({ color: "#93a6bd", metalness: 0.8, roughness: 0.3 });
+/* وجه اللافتة **فاتح**: بغرفةٍ ليلية، لوحةٌ داكنة بحبرٍ فاتح تذوب بالجسم؛
+ * ووجهٌ ناصع بحبرٍ داكن يقفز للعين كما تفعل لافتات العيادات الحقيقية. */
 const MAT_PLATE = new MeshStandardMaterial({
-  color: "#41556f", metalness: 0.2, roughness: 0.42,
-  emissive: new Color("#16202c"), emissiveIntensity: 1,
+  color: NIGHT.plate, metalness: 0.05, roughness: 0.55,
+  emissive: new Color("#4a5a6e"), emissiveIntensity: 0.22,
 });
 
 export function CageUnit({ spec, position, dropHint, dragActive, ghost, arrivedRef, onHoverChange, onCardDown, selected, showCard = true, onTap }: {
@@ -196,7 +225,7 @@ export function CageUnit({ spec, position, dropHint, dragActive, ghost, arrivedR
   const codeMat = useMemo(() => {
     /* دقة النسيج تضاعفت (٢٥٦×٩٦ ← ٥١٢×١٦٠) واللوحة كبرت معها: نسيجٌ صغير
      * ممدود على لوحٍ كبير يُقرأ ضبابياً، والحدّة هنا نصف المقروئية. */
-    const W = 512, H = 160;
+    const W = 464, H = 160;
     const c = document.createElement("canvas");
     c.width = W;
     c.height = H;
@@ -204,20 +233,15 @@ export function CageUnit({ spec, position, dropHint, dragActive, ghost, arrivedR
     g.clearRect(0, 0, W, H);
     g.textAlign = "center";
     g.textBaseline = "middle";
-    g.font = "900 116px ui-monospace, SFMono-Regular, Menlo, monospace";
+    g.font = "900 124px ui-monospace, SFMono-Regular, Menlo, monospace";
     let code = spec.code;
-    while (g.measureText(code).width > W - 40 && code.length > 2) code = code.slice(0, -1);
-    // هالةٌ فاتحة خلف الحرف ثم الحرف فوقها: يفصل الرقمَ عن معدن اللوحة فلا
-    // يذوب فيه عند أي زاوية إضاءة.
-    g.shadowColor = "#7fd4ffaa";
-    g.shadowOffsetY = 0;
-    g.shadowBlur = 14;
+    while (g.measureText(code).width > W - 34 && code.length > 2) code = code.slice(0, -1);
+    // حبرٌ داكن محفور: ظلٌّ فاتح خفيف أسفله يوحي بالغور داخل المعدن.
+    g.shadowColor = "#ffffff66";
+    g.shadowOffsetY = 2;
+    g.shadowBlur = 1;
     g.fillStyle = NIGHT.plateInk;
-    g.fillText(code, W / 2, H / 2 + 4);
-    g.shadowColor = "#000000cc";
-    g.shadowOffsetY = 3;
-    g.shadowBlur = 3;
-    g.fillText(code, W / 2, H / 2 + 4);
+    g.fillText(code, W / 2, H / 2 + 3);
     const t = new CanvasTexture(c);
     t.anisotropy = 8;
     return new MeshBasicMaterial({ map: t, transparent: true, toneMapped: false });
@@ -293,8 +317,6 @@ export function CageUnit({ spec, position, dropHint, dragActive, ghost, arrivedR
       && Math.abs(rimMat.emissiveIntensity - intensity) < 0.01
       && (!g || Math.abs(g.position.y - targetY) < 0.001)) settled.current = true;
   });
-
-  const topY = CAGE_H / 2;
   const showHalo = hover || dropHint === "hot";
 
   return (
@@ -317,6 +339,8 @@ export function CageUnit({ spec, position, dropHint, dragActive, ghost, arrivedR
       {!lowTier() && <mesh geometry={GEO_GLASS} material={MAT_GLASS} raycast={noHit} />}
       {/* لوحة الرقم ورقمها */}
       <mesh geometry={GEO_PLATE} material={MAT_PLATE} />
+      <mesh geometry={GEO_SIGN_BEZEL} material={MAT_BEZEL} raycast={noHit} />
+      <mesh geometry={GEO_SCREWS} material={MAT_SCREW} raycast={noHit} />
       <mesh geometry={GEO_CODE} material={codeMat} raycast={noHit} />
 
       {/* هالة الاستجابة الأرضية — تُركّب عند الحاجة فقط */}
@@ -341,7 +365,10 @@ export function CageUnit({ spec, position, dropHint, dragActive, ghost, arrivedR
        *    تحويم → البطاقة الكاملة (الاسم + النوع) مرفوعة فوق الكل
        *  فما تتكدّس البطاقات فوق بعضها بالمنظر البعيد مهما كثر النزلاء. */}
       {spec.occupant && showCard && (
-        <Html center position={[0, topY + 0.52, CAGE_D * 0.16]} distanceFactor={DF}
+        /* البطاقة تسكن **جوف القفص** لا فوقه: كانت تطفو أعلاه فتُقرأ شارةً
+         * سابحة لا يُعرف لأي قفصٍ تعود، والآن يقف الحيوان داخل قفصه كما هو
+         * بالواقع. وكِبَرُ القفص هو ما أتاح ذلك — بالحجم القديم ما كانت تسع. */
+        <Html center position={[0, CAGE_H * 0.14, CAGE_D * 0.02]} distanceFactor={DF}
           zIndexRange={hover ? [24, 0] : [20, 0]}
           style={{ pointerEvents: dragActive || ghost ? "none" : "auto" }}>
           <div data-occ-of={spec.code}
@@ -354,7 +381,7 @@ export function CageUnit({ spec, position, dropHint, dragActive, ghost, arrivedR
               opacity: ghost ? 0.28 : 1, transition: "opacity .18s ease",
             }}>
             {/* الميدالية */}
-            <span style={{ position: "relative", width: 56, height: 56, display: "block" }}>
+            <span style={{ position: "relative", width: 46, height: 46, display: "block" }}>
               {imgFail || !spec.occupant.photoUrl ? (
                 <span style={{
                   display: "grid", placeItems: "center", width: 56, height: 56, fontSize: 29,
@@ -385,7 +412,7 @@ export function CageUnit({ spec, position, dropHint, dragActive, ghost, arrivedR
                 background: "#0c1626f2", border: `1.5px solid ${baseColor}`,
                 borderRadius: 10, padding: "3px 11px", whiteSpace: "nowrap",
                 maxWidth: 128, overflow: "hidden", textOverflow: "ellipsis",
-                color: NIGHT.ink, fontSize: 14.5, fontWeight: 800,
+                color: NIGHT.ink, fontSize: 13, fontWeight: 800,
                 boxShadow: `0 0 12px ${baseColor}44, 0 5px 12px #0009`,
               }}>{spec.occupant.name}</b>
             )}

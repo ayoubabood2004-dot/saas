@@ -7,7 +7,7 @@ import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import type { BufferGeometry, Group, Mesh, MeshBasicMaterial, MeshStandardMaterial } from "three";
 import { ChevronRight, Hammer, ClipboardList, Maximize, Minus, Move, Plus, Search, Trash2, X, FileText, UserPlus } from "lucide-react";
-import { CageUnit, CAGE_W, CAGE_H, CAGE_D, type DropHint } from "./CageUnit";
+import { CageUnit, CAGE_W, CAGE_H, CAGE_D, PLATE_Y_REL, type DropHint } from "./CageUnit";
 import { LabelOverlay, LabelPositioner, type LabelSpec, type LabelNodes } from "./LabelLayer";
 import { NEON, NIGHT, KIND_AR, SPECIES_AR, SPECIES_EMOJI, type Occupant } from "./neon";
 import { useQuality, setTier, getTier, type Tier } from "./quality";
@@ -705,9 +705,13 @@ export default function Cage3DDemo() {
   const camZoom = useMemo(() => {
     const b = bounds(s);
     const span = Math.max(b.maxX - b.minX, (b.maxZ - b.minZ) * 1.4) * CELL;
-    // إطار افتتاحي مقرَّب: أرضية ٤٢ فالأقفاص والأسماء تفتح بحجم مقروء
-    // مباشرةً — الغرف البعيدة يوصلها الدكتور بالسحب، و⛶ يرجّعه دائماً
-    return Math.max(42, Math.min(92, 700 / Math.max(span, 7)));
+    /* الإطار الافتتاحي **قُرِّب**. وهنا مربط الفرس: بملاءمةٍ تُشتقّ من مدى
+     * الغرفة، تكبيرُ الأقفاص وحده لا يُرى — تكبر الغرفة فتتراجع الكاميرا
+     * بالقدر نفسه ويعود كل شيء كما كان. فالحجم المرئي يُصنع هنا: الثابت
+     * ٧٠٠ ← ٩٠٠ والأرضية ٤٢ ← ٥٢. والفارغ حول الغرفة كان يبتلع نصف
+     * الشاشة، فصار للأقفاص. والغرف البعيدة يبلغها الدكتور بالسحب، و⛶
+     * يرجّع المنظر الكامل متى شاء. */
+    return Math.max(52, Math.min(130, 900 / Math.max(span, 7)));
   }, [s]);
   const zoomBy = (f: number) => {
     playTap();
@@ -1098,9 +1102,10 @@ export default function Cage3DDemo() {
       const [wx, wz] = cellWorld(s, c.x, c.z);
       out.push({
         id: c.code, kind: "cage", text: c.code, occupied: !!occOf(c.code),
-        // مرساةٌ على **واجهة اللوحة** لا فوق القفص: الرقم يُقرأ لوحةً مثبّتة
-        // على القفص، لا شارةً سابحة بجواره لا يُعرف لأيّها تعود.
-        world: [wx, 0.525 - CAGE_H / 2 + 0.30, wz + CAGE_D / 2 + 0.10],
+        /* مرساةٌ على **لافتة الباب** بالضبط (نفس ارتفاع اللافتة المجسّمة):
+         * الرقم يُقرأ لافتةً مثبّتة على الباب لا شارةً سابحة. وانخفاضُه إلى
+         * الباب يُخلي جوف القفص لساكنه — كانا يتراكبان فيُحجب اسم الحيوان. */
+        world: [wx, 0.525 - CAGE_H / 2 + PLATE_Y_REL, wz + CAGE_D / 2 + 0.14],
       });
     }
     return out;
