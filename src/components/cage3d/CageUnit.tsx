@@ -2,13 +2,18 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useFrame } from "@react-three/fiber";
 import { Html } from "@react-three/drei";
 import {
-  BoxGeometry, CanvasTexture, Color, Matrix4, MeshBasicMaterial, MeshStandardMaterial,
-  PlaneGeometry, RepeatWrapping, RingGeometry,
+  BoxGeometry, BufferAttribute, CanvasTexture, Color, Matrix4, MeshBasicMaterial,
+  MeshPhongMaterial, PlaneGeometry, RepeatWrapping, RingGeometry,
 } from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import type { BufferGeometry, Group } from "three";
 import { NEON, NIGHT, DANGER, DOSE, HOT, KIND_AR, statusOfCage, type CageSpec } from "./neon";
-import { lowTier } from "./quality";
+/* ملاحظة: ما عاد للقفص فرعٌ «خفيف» يُسقط أجزاءه.
+ * كان الشبك يُسقَط على الأجهزة الضعيفة — فيخسر أضعفُ جهازٍ **هويةَ الشكل
+ * نفسها**. بعد الدمج (نداءان للقفص كله) وخامة فونج وإسقاطِ خرائط الظل
+ * وخريطة البيئة، صار المشهد الكامل أرخصَ من «الخفيف» القديم، فما بقي شيءٌ
+ * يستحقّ الإسقاط. الفروق الباقية بين المستويين تُدار بالمشهد (Cage3DDemo):
+ * كثافة البكسل، وتنعيم الحواف، وظلّ الملامسة. */
 
 /* ============================================================================
  * CageUnit — قفصٌ حديدي مغلق على نسق الصورة المرجعية:
@@ -75,17 +80,35 @@ const at = (g: BufferGeometry, x: number, y: number, z: number, ry = 0): BufferG
   return g;
 };
 
-/** القاعدة: صبّةٌ سفلية عريضة + شفةٌ أضيق فوقها + صينية الأرضية داخل الإطار.
- *  الطبقتان تصنعان الحرف المشطوف الذي يميّز قاعدة الصورة بلا هندسة مشطوفة. */
-const GEO_PLINTH = mergeGeometries([
-  at(new BoxGeometry(CAGE_W + 0.36, PLINTH_H * 0.5, CAGE_D + 0.36), 0, -HH - PLINTH_H * 0.75, 0),
-  at(new BoxGeometry(CAGE_W + 0.12, PLINTH_H * 0.5, CAGE_D + 0.12), 0, -HH - PLINTH_H * 0.25, 0),
-  at(new BoxGeometry(CAGE_W - TUBE, 0.05, CAGE_D - TUBE), 0, -HH + 0.025, 0),
-])!;
+/* ألوان الجسم — تُخبز في **ألوان الرؤوس** لا في خاماتٍ منفصلة.
+ * لماذا: القاعدة أغمق من الإطار (تُقرأ ثِقلاً تحته)، والصينية أغمق منهما
+ * (تعطي الساكنَ خلفيةً يُقرأ عليها). ثلاثةُ ألوانٍ كانت تعني ثلاث خامات =
+ * ثلاثة نداءات رسم لكل قفص. بلونِ رأسٍ واحدٍ مخبوز يصير الجسمُ كلّه شبكةً
+ * واحدة وخامةً واحدة ونداءً واحداً — بلا أي تنازل عن التدرّج. */
+const C_FRAME = "#edf3f9";   // فولاذ الإطار: أنصع شيء بالمشهد بعد اللافتة
+const C_PLINTH = "#a9b5c2";  // القاعدة: أغمق فتُثبِّت القفص على الأرض
+const C_TRAY = "#c2ccd7";    // صينية الأرضية
 
-/** الإطار كله بشبكة واحدة: ٤ قوائم + مدّة علوية + مدّة سفلية + عضادتا الباب
- *  ومقبضه. أنابيبُ مربعة المقطع كما بالصورة — لا اسطوانات (أرخص وأقرب). */
-const GEO_FRAME = mergeGeometries([
+/** يخبز لوناً ثابتاً في رؤوس الشكل — الخطوة التي تسمح بدمج قطعٍ مختلفة
+ *  الألوان في شبكةٍ واحدة. (three يحوّل sRGB→خطّي عند إنشاء Color، فالقيم
+ *  المكتوبة هنا بالفضاء العامل الصحيح.) */
+const tint = (g: BufferGeometry, hex: string): BufferGeometry => {
+  const c = new Color(hex);
+  const n = g.attributes.position.count;
+  const arr = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) { arr[i * 3] = c.r; arr[i * 3 + 1] = c.g; arr[i * 3 + 2] = c.b; }
+  g.setAttribute("color", new BufferAttribute(arr, 3));
+  return g;
+};
+
+/** جسم القفص كلّه بشبكةٍ واحدة: قاعدة (صبّتان + صينية) + إطار (٤ قوائم
+ *  و٨ مدّات وعضادتا الباب وساكفه ومقبضه). */
+const GEO_BODY = mergeGeometries([
+  // القاعدة المصبوبة: صبّةٌ عريضة + شفةٌ أضيق = حرفٌ مشطوف بلا هندسة مشطوفة
+  tint(at(new BoxGeometry(CAGE_W + 0.36, PLINTH_H * 0.5, CAGE_D + 0.36), 0, -HH - PLINTH_H * 0.75, 0), C_PLINTH),
+  tint(at(new BoxGeometry(CAGE_W + 0.12, PLINTH_H * 0.5, CAGE_D + 0.12), 0, -HH - PLINTH_H * 0.25, 0), C_PLINTH),
+  tint(at(new BoxGeometry(CAGE_W - TUBE, 0.05, CAGE_D - TUBE), 0, -HH + 0.025, 0), C_TRAY),
+  ...[
   // القوائم الأربعة
   ...([[-1, -1], [1, -1], [-1, 1], [1, 1]] as const).map(([sx, sz]) =>
     at(new BoxGeometry(TUBE, CAGE_H, TUBE), sx * (HW - TUBE / 2), 0, sz * (HD - TUBE / 2))),
@@ -102,21 +125,31 @@ const GEO_FRAME = mergeGeometries([
   at(new BoxGeometry(HW * 1.24, TUBE * 0.8, TUBE * 0.8), 0, HH * 0.52, HD - TUBE * 0.45),
   // المقبض
   at(new BoxGeometry(0.05, 0.34, 0.05), HW * 0.46, -HH * 0.12, HD + 0.03),
+  ].map((g) => tint(g, C_FRAME)),
 ])!;
 
-/** شبك الجهات الأربع بشبكةٍ واحدة (يقع داخل الإطار بقليل فلا يتداخل معه). */
+/** يخبز مقياس تكرار النسيج في **إحداثيات الرؤوس** بدل خاصية repeat بالخامة.
+ *  هذه هي الحيلة التي تسمح بدمج الجدران الأربعة والسقف — بكثافةِ شبكٍ مختلفة
+ *  للسقف — في شبكةٍ واحدة بخامةٍ واحدة: repeat خاصيةُ خامة، فلو اختلفت لزم
+ *  خامتان ونداءان؛ أمّا الإحداثيات فخاصيةُ شكل، تُدمَج معه. */
+const uvScale = (g: BufferGeometry, sx: number, sy: number): BufferGeometry => {
+  const uv = g.attributes.uv as BufferAttribute;
+  for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * sx, uv.getY(i) * sy);
+  return g;
+};
+
+/** الشبك كله — الجدران الأربعة **والسقف** — بشبكةٍ واحدة وخامةٍ واحدة. */
 const INSET = TUBE * 0.55;
-const GEO_MESH = mergeGeometries([
-  at(new PlaneGeometry(CAGE_W - TUBE, CAGE_H - TUBE), 0, 0, HD - INSET),
-  at(new PlaneGeometry(CAGE_W - TUBE, CAGE_H - TUBE), 0, 0, -HD + INSET),
-  at(new PlaneGeometry(CAGE_D - TUBE, CAGE_H - TUBE), HW - INSET, 0, 0, Math.PI / 2),
-  at(new PlaneGeometry(CAGE_D - TUBE, CAGE_H - TUBE), -HW + INSET, 0, 0, Math.PI / 2),
+const roof = new PlaneGeometry(CAGE_W - TUBE, CAGE_D - TUBE);
+roof.rotateX(-Math.PI / 2);
+roof.translate(0, HH - INSET, 0);
+const GEO_SCREEN = mergeGeometries([
+  uvScale(at(new PlaneGeometry(CAGE_W - TUBE, CAGE_H - TUBE), 0, 0, HD - INSET), 1.8, 1.35),
+  uvScale(at(new PlaneGeometry(CAGE_W - TUBE, CAGE_H - TUBE), 0, 0, -HD + INSET), 1.8, 1.35),
+  uvScale(at(new PlaneGeometry(CAGE_D - TUBE, CAGE_H - TUBE), HW - INSET, 0, 0, Math.PI / 2), 1.8, 1.35),
+  uvScale(at(new PlaneGeometry(CAGE_D - TUBE, CAGE_H - TUBE), -HW + INSET, 0, 0, Math.PI / 2), 1.8, 1.35),
+  uvScale(roof, 1.9, 1.9),
 ])!;
-
-/** السقف الشبكي — الفرق الجوهري عن النسخة السابقة: القفص مغلقٌ تماماً. */
-const GEO_ROOF = new PlaneGeometry(CAGE_W - TUBE, CAGE_D - TUBE);
-GEO_ROOF.rotateX(-Math.PI / 2);
-GEO_ROOF.translate(0, HH - INSET, 0);
 
 /** طوق الحالة — شريطٌ رفيع يدور على شفة القاعدة، هو حاملُ اللون الوحيد. */
 const GEO_RIM = mergeGeometries([
@@ -130,7 +163,10 @@ const GEO_RIM = mergeGeometries([
  * لوحٌ **فاتح** برقمٍ داكن — عكس النسخة السابقة تماماً. بالصورة اللافتة هي
  * الشيء الوحيد المضيء على هيكلٍ رمادي، فتقفز للعين بلا أي توهّج صناعي.
  * تُرسم كلها داخل نسيجٍ واحد على لوحٍ شفاف: حوافُّ مدوّرة حقيقية بلا هندسة. */
-const SIGN_TEX_W = 380, SIGN_TEX_H = 216;
+/* مقاس نسيج اللافتة: نسيجٌ لكل قفص (الرقم يختلف)، فذاكرته تُضرب بعدد
+ * الأقفاص. ٢٨٨×١٦٤ تكفي حِدّةً عند أقصى تكبير وتوفّر ~٤٥٪ من ذاكرة كل
+ * لافتة مقارنةً بـ٣٨٠×٢١٦. */
+const SIGN_TEX_W = 288, SIGN_TEX_H = 164;
 const SIGN_W = CAGE_W * 0.4;
 const SIGN_H = SIGN_W * (SIGN_TEX_H / SIGN_TEX_W);
 /** ارتفاع مركز اللافتة من قاع الإطار — للاختبارات والتوثيق. */
@@ -139,12 +175,13 @@ const PLATE_Y = PLATE_Y_REL - HH;
 const GEO_SIGN = new PlaneGeometry(SIGN_W, SIGN_H);
 GEO_SIGN.translate(0, PLATE_Y, HD + 0.055);
 
-/** بساط الالتقاط الأرضي — يغطي مسقط القفص وهامشاً حوله فقط.
- *  بعد أن صارت الفجوة بحجم قفصٍ كامل، ما عاد يصحّ أن يمتدّ البساط لكل الخلية:
- *  ضغطةٌ على فراغٍ بعيدٍ عن أي قفص يجب أن تبقى ضغطةَ فراغ. */
-const GEO_PAD = new PlaneGeometry(CAGE_W + 0.7, CAGE_D + 0.7);
-GEO_PAD.rotateX(-Math.PI / 2);
-GEO_PAD.translate(0, -HH - PLINTH_H + 0.02, 0);
+/** هدف اللمس: **صندوقٌ غير مرئي بحجم القفص** لا بساطٌ أرضي.
+ *  البساط المسطّح كان يلتقط ما يقع على مسقط القفص فقط، فالضغطة على أعلى
+ *  القفص — وهو أكثرُ ما تقع عليه العين بمنظرٍ إيزومتري — كانت تمرّ بين
+ *  الأسلاك وتضيع. الصندوق يجعل مساحةَ اللمس **ظِلَّ القفص على الشاشة
+ *  بالضبط**. ولأنه غير مرئي فكلفته صفر بالرسم: شكلٌ واحد يُختبر بالشعاع. */
+const GEO_HIT = new BoxGeometry(CAGE_W + 0.36, CAGE_H + PLINTH_H, CAGE_D + 0.36);
+GEO_HIT.translate(0, -PLINTH_H / 2, 0);
 
 /** هالة الأرض — تُركّب فقط للقفص المحوَّم عليه أو المستهدَف. */
 const GEO_HALO = new RingGeometry(CAGE_W * 0.76, CAGE_W * 0.93, 40);
@@ -152,9 +189,15 @@ GEO_HALO.rotateX(-Math.PI / 2);
 GEO_HALO.translate(0, -HH - PLINTH_H + 0.015, 0);
 
 /* ── خامات مشتركة — واحدة لكل مادة بالمشهد كله ──────────────────────────── */
-/** الفولاذ المصقول: قاعدةٌ أغمق قليلاً من الإطار فتُقرأ ثِقلاً تحت الهيكل. */
-const MAT_PLINTH = new MeshStandardMaterial({ color: "#aeb6bf", metalness: 0.55, roughness: 0.45 });
-const MAT_FRAME = new MeshStandardMaterial({ color: "#d3d9e0", metalness: 0.7, roughness: 0.28 });
+/** فونج لا فيزيائية (Standard): المشهد أسلوبيٌّ إيزومتري لا عرضٌ واقعي.
+ *  خامة PBR تحسب توزيعاً مجهرياً وانعكاسَ بيئةٍ لكل بكسل — كلفةٌ تُدفَع على
+ *  كل شاشةٍ ضعيفة مقابل فرقٍ لا يكاد يُرى على فولاذٍ مصقولٍ بلون واحد.
+ *  فونج تعطي البريق نفسه بلمعةٍ مرآوية صريحة وبجزءٍ من الكلفة، **وتُغني عن
+ *  خريطة البيئة كلياً** (وكانت هي سببَ الرمادِ الغبِر: معدنٌ بلا بيئةٍ
+ *  كافية يعكس عتمة). */
+const MAT_BODY = new MeshPhongMaterial({
+  vertexColors: true, specular: "#ffffff", shininess: 64, reflectivity: 0.3,
+});
 
 /** نسيج الشبك: قضبانٌ فولاذية متعامدة — تُرسم بحافةٍ داكنة وقلبٍ فاتح، فتبدو
  *  أسلاكاً مستديرة لها سُمك لا خطوطاً مسطّحة. الفراغ بينها شفافٌ يُقصّ حاداً
@@ -169,9 +212,12 @@ function makeBarTexture(step: number, bar: number): CanvasTexture {
     for (let i = 0; i <= S; i += step) {
       const grad = vertical ? g.createLinearGradient(i - bar / 2, 0, i + bar / 2, 0)
         : g.createLinearGradient(0, i - bar / 2, 0, i + bar / 2);
-      grad.addColorStop(0, "#59636f");
-      grad.addColorStop(0.38, "#dfe6ec");
-      grad.addColorStop(1, "#6d7986");
+      /* حافّةٌ فاتحة لا داكنة: الحوافُّ الداكنة تمتزج — عند التصغير — بلونٍ
+       * رماديٍّ متوسط يجعل القفصَ يبدو **مغبَّراً**. سلكٌ فاتحُ القلب هادئُ
+       * الحافة يبقى سلكاً مهما صَغُر. */
+      grad.addColorStop(0, "#8593a2");
+      grad.addColorStop(0.4, "#f7fafd");
+      grad.addColorStop(1, "#94a2b0");
       g.fillStyle = grad;
       if (vertical) g.fillRect(i - bar / 2, 0, bar, S);
       else g.fillRect(0, i - bar / 2, S, bar);
@@ -184,19 +230,13 @@ function makeBarTexture(step: number, bar: number): CanvasTexture {
   t.anisotropy = 8;
   return t;
 }
-/* كثافة الشبك تُحاكي الصورة: ~٩ خانات بالعرض و~٧ بالارتفاع على الجوانب،
- * وشبكةٌ أنعم قليلاً على السقف. الأكثفُ من ذلك يتحوّل — عند التصغير — إلى
- * رمادٍ صلب يبتلع الأسلاك، والأقلُّ يفقد القفصَ هويّته. */
-const TEX_MESH = makeBarTexture(52, 12);
-TEX_MESH.repeat.set(1.8, 1.35);
-const TEX_ROOF = makeBarTexture(38, 10);
-TEX_ROOF.repeat.set(1.9, 1.9);
-const meshMat = (map: CanvasTexture) => new MeshStandardMaterial({
-  map, transparent: true, alphaTest: 0.32, side: 2,
-  color: "#c9d1d9", metalness: 0.5, roughness: 0.4,
+/* نسيجٌ واحد للجدران والسقف معاً — الكثافة تُخبز بالإحداثيات (uvScale)
+ * لا بـrepeat، فالسقف أنعم من الجدران بلا خامةٍ ثانية. */
+const TEX_SCREEN = makeBarTexture(52, 12);
+const MAT_SCREEN = new MeshPhongMaterial({
+  map: TEX_SCREEN, transparent: true, alphaTest: 0.34, side: 2,
+  color: "#eaf0f6", specular: "#dde7f0", shininess: 40,
 });
-const MAT_MESH = meshMat(TEX_MESH);
-const MAT_ROOF = meshMat(TEX_ROOF);
 
 export function CageUnit({ spec, position, dropHint, dragActive, ghost, arrivedRef, onHoverChange, onCardDown, selected, showCard = true, onTap }: {
   spec: CageSpec;
@@ -224,7 +264,7 @@ export function CageUnit({ spec, position, dropHint, dragActive, ghost, arrivedR
   const lastZoomRef = useRef(0);
   const setHov = (v: boolean) => { hoverRef.current = v; setHover(v); };
   const grp = useRef<Group>(null);
-  const haloMat = useRef<MeshStandardMaterial>(null);
+  const haloMat = useRef<MeshBasicMaterial>(null);
   const tmp = useMemo(() => new Color(), []);
 
   const status = statusOfCage(spec);
@@ -232,14 +272,14 @@ export function CageUnit({ spec, position, dropHint, dragActive, ghost, arrivedR
   const baseColor = occupied ? NEON[status] : NEON.free;
 
   // خامة طوق الحالة — الوحيدة الفريدة لكل قفص، تُدار يدوياً وتُتلف عند الفك.
-  const rimMat = useMemo(() => new MeshStandardMaterial({ color: baseColor, emissive: baseColor, emissiveIntensity: 1.6, toneMapped: false }),
+  const rimMat = useMemo(() => new MeshPhongMaterial({ color: baseColor, emissive: baseColor, emissiveIntensity: 1.6, toneMapped: false }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     []);
   useEffect(() => () => rimMat.dispose(), [rimMat]);
 
   // اللافتة كاملةً كنسيج: لوحٌ فاتح مدوّر + حدٌّ رمادي + مسماران + رقم داكن
   const codeMat = useMemo(() => {
-    const W = SIGN_TEX_W, H = SIGN_TEX_H, R = 18;
+    const W = SIGN_TEX_W, H = SIGN_TEX_H, R = 14;
     const c = document.createElement("canvas");
     c.width = W;
     c.height = H;
@@ -258,37 +298,37 @@ export function CageUnit({ spec, position, dropHint, dragActive, ghost, arrivedR
     g.shadowColor = "#0b0f1466";
     g.shadowOffsetY = 6;
     g.shadowBlur = 12;
-    rr(10, 10, W - 20, H - 20, R);
-    const face = g.createLinearGradient(0, 10, 0, H - 10);
+    rr(8, 8, W - 16, H - 16, R);
+    const face = g.createLinearGradient(0, 8, 0, H - 8);
     face.addColorStop(0, "#fbfaf6");
     face.addColorStop(1, "#dfe0da");
     g.fillStyle = face;
     g.fill();
     g.shadowColor = "transparent";
     // حدّان: خارجيٌّ رمادي وداخليٌّ رفيع — حافة اللوح المعدنية المطويّة
-    rr(10, 10, W - 20, H - 20, R);
-    g.strokeStyle = "#8b939c";
-    g.lineWidth = 4;
+    rr(8, 8, W - 16, H - 16, R);
+    g.strokeStyle = "#7f8791";
+    g.lineWidth = 3.5;
     g.stroke();
-    rr(20, 20, W - 40, H - 40, R * 0.7);
+    rr(15, 15, W - 30, H - 30, R * 0.7);
     g.strokeStyle = "#b9bdb6";
-    g.lineWidth = 2;
+    g.lineWidth = 1.5;
     g.stroke();
     // مسمارا تثبيت
-    for (const x of [34, W - 34]) {
+    for (const x of [26, W - 26]) {
       g.beginPath();
-      g.arc(x, H / 2, 7, 0, Math.PI * 2);
+      g.arc(x, H / 2, 5.5, 0, Math.PI * 2);
       g.fillStyle = "#9aa2ab";
       g.fill();
     }
     // الرقم الداكن — قلب اللافتة
     g.textAlign = "center";
     g.textBaseline = "middle";
-    g.font = "800 112px ui-monospace, SFMono-Regular, Menlo, monospace";
+    g.font = "800 86px ui-monospace, SFMono-Regular, Menlo, monospace";
     let code = spec.code;
-    while (g.measureText(code).width > W - 110 && code.length > 2) code = code.slice(0, -1);
+    while (g.measureText(code).width > W - 84 && code.length > 2) code = code.slice(0, -1);
     g.fillStyle = "#242a31";
-    g.fillText(code, W / 2, H / 2 + 5);
+    g.fillText(code, W / 2, H / 2 + 4);
     const t = new CanvasTexture(c);
     t.anisotropy = 8;
     return new MeshBasicMaterial({ map: t, transparent: true, toneMapped: false });
@@ -356,7 +396,6 @@ export function CageUnit({ spec, position, dropHint, dragActive, ghost, arrivedR
       const on = hover || dropHint === "hot";
       const breathe = 0.55 + Math.sin(state.clock.elapsedTime * 4) * 0.15;
       halo.opacity = lerp(halo.opacity, on ? breathe : 0, k);
-      halo.emissive.lerp(tmp, k);
       halo.color.lerp(tmp, k);
     }
     // استقرّ كل شيء ⇒ توقّف عن الحساب حتى يتغيّر شيء فعلاً
@@ -365,7 +404,6 @@ export function CageUnit({ spec, position, dropHint, dragActive, ghost, arrivedR
       && (!g || Math.abs(g.position.y - targetY) < 0.001)) settled.current = true;
   });
   const showHalo = hover || dropHint === "hot";
-  const low = lowTier();
 
   return (
     <group ref={grp} position={position}
@@ -373,15 +411,12 @@ export function CageUnit({ spec, position, dropHint, dragActive, ghost, arrivedR
       onPointerOut={() => { setHov(false); onHoverChange(null); if (!dragActive) document.body.style.cursor = ""; }}
       onClick={(e) => { if (e.delta < 6 && onTap) { e.stopPropagation(); onTap(spec.code); } }}>
 
-      {/* بساط الالتقاط الأرضي — غير مرئي، بلا كلفة رسم */}
-      <mesh geometry={GEO_PAD} visible={false} />
-      {/* القاعدة المصبوبة + صينية الأرضية */}
-      <mesh geometry={GEO_PLINTH} material={MAT_PLINTH} castShadow={!low} receiveShadow={!low} />
-      {/* إطار الأنابيب كاملاً */}
-      <mesh geometry={GEO_FRAME} material={MAT_FRAME} castShadow={!low} />
-      {/* الشبك: الجهات الأربع ثم السقف المغلق — هوية الشكل، تبقى بكل الأجهزة */}
-      <mesh geometry={GEO_MESH} material={MAT_MESH} raycast={noHit} />
-      <mesh geometry={GEO_ROOF} material={MAT_ROOF} raycast={noHit} />
+      {/* هدف اللمس — غير مرئي، بلا كلفة رسم */}
+      <mesh geometry={GEO_HIT} visible={false} />
+      {/* الجسم كله (قاعدة + صينية + إطار) بنداءٍ واحد */}
+      <mesh geometry={GEO_BODY} material={MAT_BODY} raycast={noHit} />
+      {/* الشبك كله (جدرانٌ أربعة + سقف) بنداءٍ واحد */}
+      <mesh geometry={GEO_SCREEN} material={MAT_SCREEN} raycast={noHit} />
       {/* طوق الحالة على شفة القاعدة — حاملُ اللون الوحيد */}
       <mesh geometry={GEO_RIM} material={rimMat} raycast={noHit} />
       {/* اللافتة — نسيجٌ واحد بكل تفاصيلها */}
@@ -390,8 +425,9 @@ export function CageUnit({ spec, position, dropHint, dragActive, ghost, arrivedR
       {/* هالة الاستجابة الأرضية — تُركّب عند الحاجة فقط */}
       {showHalo && (
         <mesh geometry={GEO_HALO} raycast={noHit}>
-          <meshStandardMaterial ref={haloMat} color={baseColor} emissive={baseColor} emissiveIntensity={1.2}
-            toneMapped={false} transparent opacity={0} depthWrite={false} />
+          {/* هالةٌ مسطّحة لا تحتاج إضاءة — أرخص خامة بالمكتبة */}
+          <meshBasicMaterial ref={haloMat} color={baseColor} toneMapped={false}
+            transparent opacity={0} depthWrite={false} />
         </mesh>
       )}
 

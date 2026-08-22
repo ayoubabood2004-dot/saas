@@ -2,9 +2,8 @@ import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { OrthographicCamera, ContactShadows, Html, Grid as DreiGrid, MapControls, RoundedBox } from "@react-three/drei";
-import { BoxGeometry, CanvasTexture, Matrix4, MOUSE, Plane, PMREMGenerator, RepeatWrapping, TOUCH, Vector2, Vector3 } from "three";
+import { BoxGeometry, CanvasTexture, Matrix4, MOUSE, Plane, RepeatWrapping, TOUCH, Vector2, Vector3 } from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
-import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import type { BufferGeometry, Group, Mesh, MeshBasicMaterial, MeshStandardMaterial } from "three";
 import { ChevronRight, Hammer, ClipboardList, Maximize, Minus, Move, Plus, Search, Trash2, X, FileText, UserPlus } from "lucide-react";
 import { CageUnit, CAGE_W, CAGE_D, CAGE_H, BASE_Y, type DropHint } from "./CageUnit";
@@ -157,7 +156,6 @@ function makeWoodTexture(): CanvasTexture {
  *  الإزارة تكفي لتقول «هذه الغرفة» وهي أوطأ من أن تحجب. */
 const WALL_LOWER = 0.62;
 function Partitions({ rooms, s }: { rooms: Room3D[]; s: ReturnType<typeof cageStudio.get> }) {
-  const { low } = useQuality();
   const segs = useMemo(() => buildPartitions(rooms), [rooms]);
   /* كل الجدران بثلاث شبكات لا ستٍّ لكل مقطع. غرفة ٤×٣ تعطي ١٤ مقطعاً — أي ٨٤
    * شبكة و٨٤ نداء رسم في النسخة السابقة، وهي وحدها كانت تفوق كل الأقفاص.
@@ -197,13 +195,13 @@ function Partitions({ rooms, s }: { rooms: Room3D[]; s: ReturnType<typeof cageSt
   return (
     <>
       {merged.plinth && (
-        <mesh geometry={merged.plinth} receiveShadow={!low}>
-          <meshStandardMaterial color="#c4ccd6" metalness={0.2} roughness={0.5} />
+        <mesh geometry={merged.plinth}>
+          <meshLambertMaterial color="#8496a7" />
         </mesh>
       )}
       {merged.metal && (
-        <mesh geometry={merged.metal} castShadow={!low}>
-          <meshStandardMaterial color="#dbe1e9" metalness={0.4} roughness={0.32} />
+        <mesh geometry={merged.metal}>
+          <meshPhongMaterial color="#dfe6ee" specular="#ffffff" shininess={50} />
         </mesh>
       )}
     </>
@@ -223,9 +221,13 @@ function RoomFloors({ s }: { s: ReturnType<typeof cageStudio.get> }) {
         const w = r.w * CELL, d = r.d * CELL;
         return (
           <group key={r.id}>
-            <mesh rotation={[-Math.PI / 2, 0, 0]} position={[wx + w / 2, -0.07, wz + d / 2]} receiveShadow>
+            {/* أرضية الغرفة **أغمق من الأقفاص وأبرد من الخشب**: هي الطبقة
+                الوسطى بالتدرّج القيمي (خشبٌ دافئ ← أرضيةٌ باردة ← فولاذٌ
+                ناصع)، وهي ما يجعل صمتَ الأقفاص البيضاء يقفز للعين. كانت
+                فاتحةً بلون الأقفاص نفسه تقريباً فتذوب حدودها فيها. */}
+            <mesh rotation={[-Math.PI / 2, 0, 0]} position={[wx + w / 2, -0.07, wz + d / 2]}>
               <planeGeometry args={[w - 0.12, d - 0.12]} />
-              <meshStandardMaterial color="#cfd7e0" transparent opacity={0.85} roughness={0.8} />
+              <meshLambertMaterial color="#a9b8c6" />
             </mesh>
             {/* لافتة الغرفة على سياجها **الخلفي** لا على باب أمامي: بالكاميرا
                 شبه الأمامية كان لوح الباب يُسقَط فوق واجهة قفصٍ بالصف الأمامي
@@ -234,17 +236,15 @@ function RoomFloors({ s }: { s: ReturnType<typeof cageStudio.get> }) {
             <group position={[wx + w / 2, 0, wz + 0.55]}>
               {[-signW / 3, signW / 3].map((o, i) => (
                 <mesh key={i} position={[o, SIGN_TOP / 2, 0]}>
-                  <cylinderGeometry args={[0.03, 0.03, SIGN_TOP, 10]} />
-                  <meshStandardMaterial color="#8d9aa8" metalness={0.9} roughness={0.25} />
+                  <cylinderGeometry args={[0.03, 0.03, SIGN_TOP, 8]} />
+                  <meshLambertMaterial color="#7d8b99" />
                 </mesh>
               ))}
-              {/* الطبقة الخلفية: ستيل مصقول أعرض قليلاً وبإزاحة — مثل اللافتات الفندقية */}
-              <RoundedBox args={[signW + 0.16, 0.6, 0.05]} radius={0.06} position={[0, SIGN_TOP, -0.06]} castShadow>
-                <meshStandardMaterial color="#e6ebf0" metalness={0.7} roughness={0.22} />
-              </RoundedBox>
-              {/* اللوح الأمامي الداكن بزوايا دائرية */}
-              <RoundedBox args={[signW, 0.52, 0.1]} radius={0.08} position={[0, SIGN_TOP, 0.02]} castShadow>
-                <meshStandardMaterial color="#5d6a78" metalness={0.4} roughness={0.4} />
+              {/* لوحٌ واحد لا طبقتان: الطبقة الفولاذية الخلفية كانت تنزّ من
+                  خلف التسمية بالمنظر المائل فتُقرأ خطأً بالرسم، وكانت نداءَ
+                  رسمٍ إضافياً لكل غرفة. */}
+              <RoundedBox args={[signW, 0.52, 0.1]} radius={0.08} position={[0, SIGN_TOP, 0.02]}>
+                <meshPhongMaterial color="#46525f" specular="#8f9daa" shininess={40} />
               </RoundedBox>
               {/* لوح اللافتة يبقى جسماً حقيقياً، أمّا الاسم فصار تسميةً بمساحة
                   الشاشة تُرسم فوقه (LabelLayer): نصٌّ منسوجٌ بالجسم يتقلّص مع
@@ -504,10 +504,10 @@ function Scene({ s, occOf, drag, carrySource, hoverCage, arrivedRef, camZoom, ca
   return (
     <>
       {import.meta.env.DEV && <PerfProbe />}
-      {/* نهارٌ هادئ: خلفية عاجية دافئة بدل الليل — الوضوح قبل الإبهار */}
-      <color attach="background" args={["#efe9df"]} />
-      {!low && <fog attach="fog" args={["#efe9df", 66, 128]} />}
-      {!low && <EnvLight />}
+      {/* نهارٌ هادئ: خلفية عاجية دافئة بدل الليل — الوضوح قبل الإبهار.
+          ولا ضباب: كان يغسل الأقفاص البعيدة برمادٍ فاتح فتبدو **مغبَّرة**،
+          ويكلّف حسابَ عمقٍ لكل بكسل. المدى هنا لا يحتاج تلاشياً أصلاً. */}
+      <color attach="background" args={["#f1ece3"]} />
       <OrthographicCamera makeDefault
         position={[camTarget[0] + CAM_OFF[0], camTarget[1] + CAM_OFF[1], camTarget[2] + CAM_OFF[2]]}
         zoom={camZoom} near={0.1} far={80} />
@@ -527,21 +527,28 @@ function Scene({ s, occOf, drag, carrySource, hoverCage, arrivedRef, camZoom, ca
         ref={(v: unknown) => { ctlRef.current = v as CamCtl | null; }}
       />
 
-      {/* ضوءان اثنان للمشهد كله. كل ضوء إضافي يدخل حلقةَ شادر البكسل لكل مادة
-          مضاءة — والنسخة السابقة كانت تضيف ضوءاً نقطياً لكل قفص فتبلغ ٢١ ضوءاً
-          باثني عشر قفصاً؛ هذا وحده كان يخنق الأجهزة الضعيفة. */}
-      <ambientLight intensity={low ? 1.35 : 1.05} />
-      {/* ضوء نصف كروي — تدرّج سماء/أرض بكلفة شبه معدومة، يعوّض غياب خريطة
-          البيئة بالوضع الخفيف فما يخرج المعدن أسود. */}
-      <hemisphereLight color="#ffffff" groundColor="#b9a488" intensity={low ? 0.8 : 0.55} />
-      <directionalLight color="#fff6e8" position={[6, 11, 4]} intensity={low ? 1.35 : 1.1}
-        castShadow={!low} shadow-mapSize-width={1024} shadow-mapSize-height={1024} />
+      {/* ثلاثة أضواء بلا خريطة ظلٍّ واحدة.
+          التوازن هو المقصود: الإضاءة المحيطية المرتفعة (١٫٠٥) كانت تُسطّح
+          كل سطحٍ على القيمة نفسها، فالأنبوب والقائم والقاعدة تصير لطخةً
+          رمادية واحدة — وهو جوهرُ الإحساس بالغُبار. خفضناها ورفعنا الضوء
+          الموجَّه، فصار لكل وجهٍ من وجوه القفص قيمةٌ مختلفة: الوجه العلوي
+          أنصع، والجانبي أوسط، والداخلي أعمق. الشكل يُقرأ من التدرّج لا من
+          الخطوط. */}
+      {/* لا ضوءَ محيطياً منفصلاً: الضوء نصف الكروي **هو** ضوءٌ محيطي بتدرّج
+          (سماءٌ باردة فوق، أرضٌ دافئة تحت). جمعُهما كان يعني ضوءين بالشادر
+          مقابل ما يؤدّيه واحد — وبإسقاط المسطّح منهما يكسب المشهد تدرّجاً
+          أيضاً: أسطح القفص العلوية تميل للأزرق والسفلية للدفء. */}
+      <hemisphereLight color="#f2f8ff" groundColor="#cbb89d" intensity={1.15} />
+      <directionalLight color="#fffaf1" position={[7, 12, 5]} intensity={1.55} />
+      {/* ضوء ملء بارد من الجهة المقابلة — يفصل حافة القفص عن الخلفية
+          (rim light) بلا أي كلفة ظلال */}
+      <directionalLight color="#dfeaf7" position={[-8, 5, -6]} intensity={0.5} />
 
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.09, 0]} receiveShadow={!low}>
         <planeGeometry args={[Math.max(24, wallLenX + 12), Math.max(24, wallLenZ + 12)]} />
-        {low
-          ? <meshBasicMaterial color="#b28a5c" />
-          : <meshStandardMaterial map={wood} roughness={0.8} metalness={0.05} />}
+        {/* لامبرت لا Standard: أرضيةٌ مطفأة تماماً لا تحتاج حساب انعكاس
+            مرآوي — وهي أكبر سطحٍ بالمشهد، فكلفتها تُضرب بكل بكسلٍ فيه. */}
+        {low ? <meshBasicMaterial color="#cdb694" /> : <meshLambertMaterial map={wood} />}
       </mesh>
 
       {/* جدارا المنشأة — بطول التخطيط لا ٦٠ وحدة: الجدار الممتد للأفق كان
@@ -549,19 +556,19 @@ function Scene({ s, occOf, drag, carrySource, hoverCage, arrivedRef, camZoom, ca
           مخربطاً» قبل أن تُرى الأقفاص أصلاً. */}
       <mesh position={[wallX + wallLenX / 2, 1.9, wallZ]}>
         <planeGeometry args={[wallLenX, 4]} />
-        <meshStandardMaterial color="#e2d8c9" roughness={0.9} />
+        <meshLambertMaterial color="#e7ded1" />
       </mesh>
       <mesh position={[wallX, 1.9, wallZ + wallLenZ / 2]} rotation={[0, Math.PI / 2, 0]}>
         <planeGeometry args={[wallLenZ, 4]} />
-        <meshStandardMaterial color="#d9cfc0" roughness={0.9} />
+        <meshLambertMaterial color="#ded4c5" />
       </mesh>
       <mesh position={[wallX + wallLenX / 2, 3.88, wallZ + 0.02]}>
         <boxGeometry args={[wallLenX, 0.05, 0.05]} />
-        <meshStandardMaterial color="#b7ab93" roughness={0.6} />
+        <meshLambertMaterial color="#bdb098" />
       </mesh>
       <mesh position={[wallX + 0.02, 3.88, wallZ + wallLenZ / 2]} rotation={[0, Math.PI / 2, 0]}>
         <boxGeometry args={[wallLenZ, 0.05, 0.05]} />
-        <meshStandardMaterial color="#b7ab93" roughness={0.6} />
+        <meshLambertMaterial color="#bdb098" />
       </mesh>
 
       {build && (
@@ -601,9 +608,14 @@ function Scene({ s, occOf, drag, carrySource, hoverCage, arrivedRef, camZoom, ca
 
       {/* ظل ملامسة يُخبز مرة واحدة لكل تخطيط (المفتاح يعيد الخبز عند التغيير) —
           كان يُعاد رسمه كل إطار ويستنزف معالج رسوميات الآيباد بلا داعٍ */}
+      {/* ظلُّ الملامسة صار **مصدرَ التأريض الوحيد** بعد إسقاط خرائط الظل:
+          يُخبز مرة واحدة لكل تخطيط (frames=1) فكلفته لحظةٌ عند الفتح لا
+          كلَّ إطار، بينما كانت خريطةُ الظلّ الموجَّه تُعيد رسم المشهد كاملاً
+          مرةً ثانية **بكل إطار**. والفرق البصري لا يكاد يُرى: الفجوة بحجم
+          قفصٍ كامل تعني أن لا قفصَ يُظلّل جاره أصلاً. */}
       {!low && (
         <ContactShadows key={`${s.rooms.length}-${s.cages.length}`} frames={1}
-          position={[0, -0.08, 0]} opacity={0.32} scale={58} blur={2.6} far={4.2} color="#5a4630" />
+          position={[0, -0.075, 0]} opacity={0.42} scale={58} blur={2.2} far={3.4} color="#4a5a6a" />
       )}
     </>
   );
@@ -615,26 +627,6 @@ const todayIdx = () => (new Date().getDay() + 1) % 7;
 const glass = (extra?: React.CSSProperties): React.CSSProperties => ({
   background: NIGHT.glassPanel, border: "1px solid #16324a", backdropFilter: "blur(10px)", ...extra,
 });
-
-/** خريطة بيئة محلية (بلا شبكة): المعادن بلا بيئة تعكس سواداً — هذي تخلي
- *  ستيل اللافتات وألواح الجدران وأُطر الأقفاص تلمع كمعدن حقيقي، بشدة
- *  مخفّضة حتى يبقى مزاج الليل. */
-function EnvLight() {
-  const gl = useThree((st) => st.gl);
-  const scene = useThree((st) => st.scene);
-  useEffect(() => {
-    const pmrem = new PMREMGenerator(gl);
-    const env = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-    scene.environment = env;
-    scene.environmentIntensity = 0.42;
-    return () => {
-      scene.environment = null;
-      env.dispose();
-      pmrem.dispose();
-    };
-  }, [gl, scene]);
-  return null;
-}
 
 function webglOK(): boolean {
   try {
@@ -1124,8 +1116,11 @@ export default function Cage3DDemo({ onBoard }: { onBoard?: () => void } = {}) {
   return (
     <div className="fixed inset-0 z-50" style={{ background: NIGHT.bg }} dir="rtl">
       <Canvas
-        shadows={!low}
-        dpr={low ? 1 : [1, 1.75]}
+        /* بلا خرائط ظل بالمشهد كله: أُسقط تمريرُ الظلّ من أساسه.
+           وكثافة البكسل تُحدّ عند ١٫٦ — فوقها تتضاعف البكسلات بلا فرقٍ
+           تراه العين على شاشة الآيباد، وهي أغلى مقايضةٍ بالمشهد كله. */
+        shadows={false}
+        dpr={low ? 1 : [1, 1.6]}
         gl={{ antialias: !low, powerPreference: "high-performance" }}
         frameloop={liveFrames ? "always" : "demand"}
         onPointerDown={poke} onWheel={poke}
