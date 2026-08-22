@@ -76,6 +76,33 @@ const dayNo = (iso?: string) => {
   return Number.isNaN(t) ? 1 : Math.max(1, Math.floor((Date.now() - t) / 86400000) + 1);
 };
 
+const sexLabel = (sex: string): string | undefined =>
+  sex === "male" ? i18n.t("pet.male", "ذكر")
+    : sex === "female" ? i18n.t("pet.female", "أنثى")
+      : undefined;
+
+/** عمرٌ مختصرٌ للبطاقة: «٣ سنوات» أو «٧ أشهر» — أخشنُ من عمر الملف الطبي
+ *  عمداً. البطاقة تُقرأ بلمحة، و«٣ سنوات و٢ شهر و١٤ يوماً» تُقرأ بجهد. */
+const ageShort = (dob?: string | null): string | undefined => {
+  if (!dob) return undefined;
+  const t = new Date(dob + "T00:00:00").getTime();
+  if (Number.isNaN(t)) return undefined;
+  const months = Math.max(0, Math.floor((Date.now() - t) / 2629800000));
+  /* صِيَغ العدد العربية صريحةٌ هنا لا بجمع i18next: العربية تميّز المفرد
+   * والمثنّى والجمع، و«١ سنوات» تُقرأ خطأً مطبعياً يقدح بثقة الطبيب بكل ما
+   * حوله على الشاشة. ثلاثُ صيغٍ تكفي وتُقرأ صحيحةً دائماً. */
+  if (months < 1) return i18n.t("pet.ageUnderMonth", "أقل من شهر");
+  if (months < 12) {
+    const w = months === 1 ? i18n.t("pet.month1", "شهر")
+      : months === 2 ? i18n.t("pet.month2", "شهران") : i18n.t("pet.monthN", "أشهر");
+    return months <= 2 ? w : `${formatNum(months)} ${w}`;
+  }
+  const y = Math.floor(months / 12);
+  const w = y === 1 ? i18n.t("pet.year1", "سنة")
+    : y === 2 ? i18n.t("pet.year2", "سنتان") : i18n.t("pet.yearN", "سنوات");
+  return y <= 2 ? w : `${formatNum(y)} ${w}`;
+};
+
 /** جرعة العلاج مستحقّة؟ — نفس معادلة لوحات الاستقبال (ما انكملت اليوم أو مرّت
  *  نافذة الدورة cycle_hours). الفندقة الصِرفة ما عندها جرعات. */
 const doseDueOf = (a: Admission): boolean => {
@@ -119,9 +146,9 @@ interface CamCtl {
 }
 
 /* الأسطورة لونان لا أربعة: «وين فاضي؟» هو السؤال الوحيد الذي يُسأل من بعيد. */
-const LEGEND: { label: string; c: string }[] = [
-  { label: "فاضٍ", c: NEON.free },
-  { label: "ممتلئ", c: NEON.boarding },
+const LEGEND: { label: () => string; c: string }[] = [
+  { label: () => i18n.t("cages.legendFree", "فاضٍ — متاح للإسكان"), c: NEON.free },
+  { label: () => i18n.t("cages.legendBusy", "مشغول — فيه حيوان"), c: NEON.boarding },
 ];
 
 function makeWoodTexture(): CanvasTexture {
@@ -457,6 +484,20 @@ function PerfProbe() {
   return null;
 }
 
+/** إعادة رسمٍ عند تغيّر مقاس الكانفس.
+ *
+ *  حلقة الرسم «عند الطلب» (frameloop=demand) لا ترسم إلا إذا طُلب منها —
+ *  وتغيّرُ المقاس ليس طلباً. فحين يتّسع الكانفس (دوران الآيباد، طيُّ الشريط
+ *  الجانبي، ظهور لوحة المفاتيح ثم اختفاؤها) يكبر مخزنُ الرسم ويبقى الجزءُ
+ *  الجديد **بلا رسمٍ أصلاً** — شريطٌ فارغ يكشف خلفية الصفحة تحته حتى يلمس
+ *  المستخدم المشهد. سطرٌ واحد يطلب إطاراً عند كل تغيّر مقاس فيختفي. */
+function RepaintOnResize() {
+  const size = useThree((st) => st.size);
+  const invalidate = useThree((st) => st.invalidate);
+  useEffect(() => { invalidate(); }, [size.width, size.height, invalidate]);
+  return null;
+}
+
 function Scene({ s, occOf, drag, carrySource, hoverCage, arrivedRef, camZoom, camTarget, ctlRef, labels, labelNodes, setHoverCage, onCardDown, onReturned, onTapCage, onPickCell }: {
   s: ReturnType<typeof cageStudio.get>;
   occOf: (code: string) => Occupant | null;
@@ -504,6 +545,7 @@ function Scene({ s, occOf, drag, carrySource, hoverCage, arrivedRef, camZoom, ca
   return (
     <>
       {import.meta.env.DEV && <PerfProbe />}
+      <RepaintOnResize />
       {/* نهارٌ هادئ: خلفية عاجية دافئة بدل الليل — الوضوح قبل الإبهار.
           ولا ضباب: كان يغسل الأقفاص البعيدة برمادٍ فاتح فتبدو **مغبَّرة**،
           ويكلّف حسابَ عمقٍ لكل بكسل. المدى هنا لا يحتاج تلاشياً أصلاً. */}
@@ -800,6 +842,11 @@ export default function Cage3DDemo({ onBoard }: { onBoard?: () => void } = {}) {
       status: st === "done" ? "boarding" : st,
       days: dayNo(a.admitted_on),
       doseDue: doseDueOf(a),
+      ownerName: p?.owner_name || undefined,
+      ownerPhone: p?.owner_phone || undefined,
+      breed: p?.breed || undefined,
+      sexAr: p ? sexLabel(p.sex) : undefined,
+      ageAr: ageShort(p?.dob),
     };
   };
   const actives = useMemo(() => ops.admissions.filter((a) => a.status !== "discharged"), [ops.admissions]);
@@ -1508,8 +1555,32 @@ export default function Cage3DDemo({ onBoard }: { onBoard?: () => void } = {}) {
                 {KIND_AR[detailOcc.status]} — اليوم {formatNum(detailOcc.days)}
               </p>
               <p className="mt-0.5 text-[10px] font-bold" style={{ color: "#64809c" }}>القفص {detailFor}</p>
+              {[detailOcc.breed, detailOcc.sexAr, detailOcc.ageAr].filter(Boolean).length > 0 && (
+                <p className="mt-0.5 truncate text-[10px] font-bold" style={{ color: "#8fb0cc" }}>
+                  {[detailOcc.breed, detailOcc.sexAr, detailOcc.ageAr].filter(Boolean).join(" · ")}
+                </p>
+              )}
             </div>
           </div>
+          {/* المالك — أوّلُ ما يُسأل عنه بعد الحيوان نفسه */}
+          {(detailOcc.ownerName || detailOcc.ownerPhone) && (
+            <div className="mt-2 rounded-lg px-2 py-1.5" style={{ background: "#0b1a2b", border: "1px solid #16324a" }}>
+              <div className="flex items-baseline justify-between gap-2">
+                <span className="text-[10px] font-bold" style={{ color: "#6f8ba6" }}>{i18n.t("cages.owner", "المالك")}</span>
+                <span className="truncate text-[11px] font-extrabold" style={{ color: NIGHT.ink }}>
+                  {detailOcc.ownerName ?? "—"}
+                </span>
+              </div>
+              {detailOcc.ownerPhone && (
+                <div className="mt-0.5 flex items-baseline justify-between gap-2">
+                  <span className="text-[10px] font-bold" style={{ color: "#6f8ba6" }}>{i18n.t("cages.phone", "الهاتف")}</span>
+                  <span className="truncate text-[11px] font-extrabold" style={{ color: NIGHT.ink }} dir="ltr">
+                    {detailOcc.ownerPhone}
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
           <div className="mt-2.5 grid grid-cols-2 gap-1.5">
             <button type="button" data-record3d onClick={() => openRecord(detailOcc)}
               className="inline-flex h-9 items-center justify-center gap-1 rounded-lg text-[11px] font-extrabold"
@@ -1540,9 +1611,9 @@ export default function Cage3DDemo({ onBoard }: { onBoard?: () => void } = {}) {
       {!build && !carrying && (
         <div className="pointer-events-none absolute inset-x-0 bottom-0 z-30 flex flex-wrap items-center gap-3 p-4 sm:p-6">
           {LEGEND.map((l) => (
-            <span key={l.label} className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-bold"
+            <span key={l.c} className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-bold"
               style={{ background: "#0e1a2eeb", color: "#c8dbea", border: "1px solid #16324a" }}>
-              <span className="h-2 w-2 rounded-full" style={{ background: l.c, boxShadow: `0 0 8px ${l.c}` }} /> {l.label}
+              <span className="h-2 w-2 rounded-full" style={{ background: l.c, boxShadow: `0 0 8px ${l.c}` }} /> {l.label()}
             </span>
           ))}
         </div>

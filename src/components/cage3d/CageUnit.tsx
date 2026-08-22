@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useFrame } from "@react-three/fiber";
 import { Html } from "@react-three/drei";
 import {
@@ -7,7 +7,22 @@ import {
 } from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import type { BufferGeometry, Group } from "three";
-import { NEON, NIGHT, DANGER, DOSE, HOT, KIND_AR, statusOfCage, type CageSpec } from "./neon";
+import { NEON, NIGHT, DANGER, DOSE, FREE, HOT, KIND_AR, OCCUPIED, statusOfCage, type CageSpec, type Occupant } from "./neon";
+import { formatNum } from "@/lib/utils";
+import i18n from "@/i18n";
+
+/* نصوص البطاقة عبر i18n مباشرةً (لا useTranslation): هذه مكوّناتٌ صغيرة
+ * تُركَّب داخل مشهدٍ ثلاثي الأبعاد بكثرة، وربطُ كلٍّ منها بمراقب تغيّر اللغة
+ * يعيد تركيبها جميعاً بلا داعٍ — واللغة لا تتبدّل والطبيب واقفٌ بالغرفة. */
+const T = {
+  free: () => i18n.t("cages.freeShort", "فاضٍ"),
+  owner: () => i18n.t("cages.owner", "المالك"),
+  phone: () => i18n.t("cages.phone", "الهاتف"),
+  cage: () => i18n.t("cages.cage", "القفص"),
+  doseNow: () => i18n.t("cages.doseNow", "جرعة مستحقّة الآن"),
+  hint: () => i18n.t("cages.cardHint", "اضغط للملف الطبي · اسحب لنقله"),
+  dayN: (n: string) => i18n.t("cages.dayN", { n, defaultValue: "اليوم {{n}}" }),
+};
 /* ملاحظة: ما عاد للقفص فرعٌ «خفيف» يُسقط أجزاءه.
  * كان الشبك يُسقَط على الأجهزة الضعيفة — فيخسر أضعفُ جهازٍ **هويةَ الشكل
  * نفسها**. بعد الدمج (نداءان للقفص كله) وخامة فونج وإسقاطِ خرائط الظل
@@ -191,7 +206,7 @@ const GEO_HIT = new BoxGeometry(CAGE_W + 0.36, CAGE_H + PLINTH_H, CAGE_D + 0.36)
 GEO_HIT.translate(0, -PLINTH_H / 2, 0);
 
 /** هالة الأرض — تُركّب فقط للقفص المحوَّم عليه أو المستهدَف. */
-const GEO_HALO = new RingGeometry(CAGE_W * 0.76, CAGE_W * 0.93, 40);
+const GEO_HALO = new RingGeometry(CAGE_W * 0.56, CAGE_W * 0.64, 40);
 GEO_HALO.rotateX(-Math.PI / 2);
 GEO_HALO.translate(0, -HH - PLINTH_H + 0.015, 0);
 
@@ -245,6 +260,107 @@ const MAT_SCREEN = new MeshPhongMaterial({
   color: "#aebfd0", specular: "#ffffff", shininess: 60,
 });
 
+/** سطرٌ من سطور البطاقة: عنوانٌ خافت وقيمةٌ واضحة. يُحذف السطر كلّه إن
+ *  غابت قيمته — بطاقةٌ بحقولٍ فارغة أسوأ من بطاقةٍ أقصر. */
+function Row({ label, value }: { label: string; value?: string }) {
+  if (!value) return null;
+  return (
+    <div style={{ display: "flex", gap: 8, alignItems: "baseline", justifyContent: "space-between" }}>
+      <span style={{ color: "#6f8ba6", fontSize: 10.5, fontWeight: 700, flex: "0 0 auto" }}>{label}</span>
+      <span style={{
+        color: NIGHT.ink, fontSize: 11.5, fontWeight: 800, textAlign: "start",
+        overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", direction: "rtl",
+      }}>{value}</span>
+    </div>
+  );
+}
+
+/* ============================================================================
+ * OccupantCard — «مَن الساكن هنا؟» بلا فتح ملف.
+ *
+ * تنمو من الميدالية نفسها (تكبيرٌ من ٠٫٨ + انزلاقٌ لأعلى) فتُقرأ **امتداداً
+ * لها** لا لوحةً هبطت من مكانٍ آخر — وهذا ما يجعل الطبيب يربطها بالقفص الذي
+ * أشّر عليه فوراً حتى لو كانت الغرفة مزدحمة. وتُرسى فوق الميدالية لا تحتها:
+ * أسفل القفص لافتةُ رقمه، وحجبُها يُفقد السياق كلّه.
+ * ==========================================================================*/
+function OccupantCard({ occ, code, color }: { occ: Occupant; code: string; color: string }) {
+  /* تصحيحٌ أفقي يبقي البطاقة داخل الشاشة.
+   * البطاقة تُرسى على قفصها، وقفصٌ عند حافة الشاشة يدفعها خارجها — فلا
+   * تُقرأ، وأسوأ: تُنشئ فيضاناً أفقياً يزحزح المشهد كلّه. فنقيس موضعها بعد
+   * التركيب ونزيحها للداخل بالقدر اللازم فقط — تبقى ملتصقةً بقفصها ما دامت
+   * تسع، ولا تخرج أبداً. */
+  const box = useRef<HTMLDivElement>(null);
+  const [dx, setDx] = useState(0);
+  useLayoutEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const pad = 12;
+    const over = Math.max(0, r.right + pad - window.innerWidth);
+    const under = Math.max(0, pad - r.left);
+    if (over > 0) setDx(-over);
+    else if (under > 0) setDx(under);
+  }, [code]);
+  const kindLine = `${KIND_AR[occ.status]} — ${T.dayN(formatNum(occ.days))}`;
+  const traits = [occ.speciesAr, occ.breed, occ.sexAr, occ.ageAr].filter(Boolean).join(" · ");
+  return (
+    <div ref={box} data-occcard={code} style={{
+      position: "absolute", bottom: "calc(100% + 10px)", left: `calc(50% + ${dx}px)`,
+      width: 226, padding: "10px 12px 9px", borderRadius: 14, textAlign: "start",
+      background: "#081320f7", border: `1.5px solid ${color}`,
+      boxShadow: `0 0 22px ${color}44, 0 14px 34px #000b`,
+      /* بلا backdrop-filter: الترشيح الخلفي يُجبر المتصفّح على التقاط ما
+       * خلف البطاقة لكل إطار — وما خلفها كانفس WebGL. كلفةٌ حقيقية على
+       * الآيباد مقابل ضبابٍ لا يُرى أصلاً فوق خلفيةٍ معتمة ٩٧٪. */
+      cursor: "default",
+      animation: "vpCageCardIn .17s cubic-bezier(.2,.9,.3,1.15) both",
+    }}>
+      <p style={{ color: NIGHT.ink, fontSize: 15, fontWeight: 900, lineHeight: 1.2, margin: 0 }}>{occ.name}</p>
+      {traits && <p style={{ color: "#8fb0cc", fontSize: 11, fontWeight: 700, margin: "2px 0 0" }}>{traits}</p>}
+      <p style={{ color, fontSize: 11.5, fontWeight: 900, margin: "6px 0 0" }}>{kindLine}</p>
+      <div style={{ height: 1, background: "#173049", margin: "8px 0 7px" }} />
+      <div style={{ display: "grid", rowGap: 4 }}>
+        <Row label={T.owner()} value={occ.ownerName} />
+        <Row label={T.phone()} value={occ.ownerPhone} />
+        <Row label={T.cage()} value={code} />
+      </div>
+      {occ.doseDue && (
+        <p style={{
+          margin: "8px 0 0", padding: "4px 8px", borderRadius: 8, textAlign: "center",
+          background: `${DOSE}22`, border: `1px solid ${DOSE}77`,
+          color: DOSE, fontSize: 11, fontWeight: 900,
+        }}>💉 {T.doseNow()}</p>
+      )}
+      <p style={{ margin: "8px 0 0", color: "#5b7d9a", fontSize: 10, fontWeight: 700, textAlign: "center" }}>
+        {T.hint()}
+      </p>
+    </div>
+  );
+}
+
+/** شارة «فاضٍ» — تُرسم بمركز كل قفصٍ خالٍ، تماماً حيث تقف ميدالية الساكن.
+ *
+ *  هذه هي الإجابة على «يميّز بلا تفكير»: مركزُ كل قفصٍ يحمل شيئاً واحداً لا
+ *  ثالثَ له — صورةُ حيوانٍ أو شارةٌ خضراء. فالعين لا تبحث عن فرقٍ بين
+ *  درجتَي رمادي ولا تحسب أطواقاً مضيئة؛ تمسح الغرفة مسحاً واحداً فتعرف. */
+function FreeBadge({ code }: { code: string }) {
+  return (
+    <span data-freebadge={code} style={{
+      display: "inline-flex", alignItems: "center", gap: 5,
+      padding: "5px 12px 5px 9px", borderRadius: 999,
+      background: "#071a10ef", border: `2px solid ${FREE}`,
+      boxShadow: `0 0 14px ${FREE}66, 0 6px 14px #0009`,
+      color: "#c9f9dd", fontSize: 12.5, fontWeight: 900, whiteSpace: "nowrap",
+    }}>
+      <span style={{
+        width: 9, height: 9, borderRadius: "50%", background: FREE,
+        boxShadow: `0 0 8px ${FREE}`, flex: "0 0 auto",
+      }} />
+      {T.free()}
+    </span>
+  );
+}
+
 export function CageUnit({ spec, position, dropHint, dragActive, ghost, arrivedRef, onHoverChange, onCardDown, selected, showCard = true, onTap }: {
   spec: CageSpec;
   position: [number, number, number];
@@ -284,7 +400,10 @@ export function CageUnit({ spec, position, dropHint, dragActive, ghost, arrivedR
     []);
   useEffect(() => () => rimMat.dispose(), [rimMat]);
 
-  // اللافتة كاملةً كنسيج: لوحٌ فاتح مدوّر + حدٌّ رمادي + مسماران + رقم داكن
+  /* اللافتة كاملةً كنسيج: لوحٌ فاتح مدوّر + مسماران + رقم داكن + **شريط
+   * حالةٍ مصمت أسفلها**. الشريط هنا لا كشبكةٍ ثالثة: اللافتة نسيجٌ فريدٌ
+   * لكل قفصٍ أصلاً (الرقم يختلف)، فرسمُ شريطٍ داخله يكلّف صفراً بالرسم —
+   * ويعطي أوضحَ إشارةٍ ممكنة، لأن اللافتة هي أكبرُ ما تقع عليه العين. */
   const codeMat = useMemo(() => {
     const W = SIGN_TEX_W, H = SIGN_TEX_H, R = 20;
     const c = document.createElement("canvas");
@@ -336,10 +455,17 @@ export function CageUnit({ spec, position, dropHint, dragActive, ghost, arrivedR
     while (g.measureText(code).width > W - 96 && code.length > 2) code = code.slice(0, -1);
     g.fillStyle = "#12171c";
     g.fillText(code, W / 2, H / 2 + 6);
+    // شريط الحالة: أخضرُ متاح أو أزرقُ مشغول، بعرض اللافتة أسفلها
+    g.save();
+    rr(8, 8, W - 16, H - 16, R);
+    g.clip();
+    g.fillStyle = occupied ? OCCUPIED : FREE;
+    g.fillRect(8, H - 44, W - 16, 36);
+    g.restore();
     const t = new CanvasTexture(c);
     t.anisotropy = 8;
     return new MeshBasicMaterial({ map: t, transparent: true, toneMapped: false });
-  }, [spec.code]);
+  }, [spec.code, occupied]);
   useEffect(() => () => { codeMat.map?.dispose(); codeMat.dispose(); }, [codeMat]);
 
   /** الحالة الساكنة = لا شيء يتحرك: نخرج من حلقة الإطار مبكراً بدل حساب
@@ -371,7 +497,7 @@ export function CageUnit({ spec, position, dropHint, dragActive, ghost, arrivedR
     if (settled.current && !animating) return;
 
     let colorTarget = selected ? "#ffffff"
-      : dropHint === "blocked" ? "#64748b"   // مطفأ رمادي = «مو هنا»
+      : dropHint === "blocked" ? DANGER      // أحمر = «مو هنا»
         : dropHint === "hot" || dropHint === "candidate" ? HOT
           : baseColor;
     let intensity =
@@ -401,7 +527,7 @@ export function CageUnit({ spec, position, dropHint, dragActive, ghost, arrivedR
     const halo = haloMat.current;
     if (halo) {
       const on = hover || dropHint === "hot";
-      const breathe = 0.55 + Math.sin(state.clock.elapsedTime * 4) * 0.15;
+      const breathe = 0.4 + Math.sin(state.clock.elapsedTime * 4) * 0.12;
       halo.opacity = lerp(halo.opacity, on ? breathe : 0, k);
       halo.color.lerp(tmp, k);
     }
@@ -411,6 +537,9 @@ export function CageUnit({ spec, position, dropHint, dragActive, ghost, arrivedR
       && (!g || Math.abs(g.position.y - targetY) < 0.001)) settled.current = true;
   });
   const showHalo = hover || dropHint === "hot";
+  /* البطاقة الموسّعة تُفتح بالتأشير فقط، وتُغلق أثناء السحب أو البناء: أثناء
+   * نقل حيوانٍ تكون العين على «وين أحطه» لا على «من هذا». */
+  const showFull = hover && !dragActive && !ghost && showCard;
 
   return (
     <group ref={grp} position={position}
@@ -443,6 +572,20 @@ export function CageUnit({ spec, position, dropHint, dragActive, ghost, arrivedR
         <Html center position={[0, PLATE_Y, HD + 0.06]}
           zIndexRange={[10, 0]} style={{ ...HTML_ANCHOR, pointerEvents: "none" }}>
           <span data-cage3d={spec.code} style={{ width: 12, height: 8, display: "block" }} />
+        </Html>
+      )}
+
+      {/* القفص الخالي: شارةٌ خضراء بمركزه — نفس موضع ميدالية الساكن تماماً */}
+      {!spec.occupant && showCard && (
+        <Html center position={[0, -HH * 0.05, 0]} zIndexRange={[16, 0]}
+          style={{ ...HTML_ANCHOR, pointerEvents: "none" }}>
+          <span style={{
+            display: "block", direction: "rtl", userSelect: "none",
+            transform: `scale(${near ? 1 : 0.8})`, transformOrigin: "center",
+            transition: "transform .18s ease",
+          }}>
+            <FreeBadge code={spec.code} />
+          </span>
         </Html>
       )}
 
@@ -498,8 +641,8 @@ export function CageUnit({ spec, position, dropHint, dragActive, ghost, arrivedR
                 }}>💉</span>
               )}
             </span>
-            {/* فص الاسم — بالقرب أو عند التحويم */}
-            {(near || hover) && (
+            {/* فص الاسم — بالقرب، ويختفي حين تفتح البطاقة الموسّعة مكانه */}
+            {near && !showFull && (
               <b style={{
                 background: "#0c1626f2", border: `1.5px solid ${baseColor}`,
                 borderRadius: 10, padding: "3px 11px", whiteSpace: "nowrap",
@@ -508,13 +651,8 @@ export function CageUnit({ spec, position, dropHint, dragActive, ghost, arrivedR
                 boxShadow: `0 0 12px ${baseColor}44, 0 5px 12px #0009`,
               }}>{spec.occupant.name}</b>
             )}
-            {/* النوع — عند التحويم فقط */}
-            {hover && !dragActive && (
-              <i style={{
-                background: "#0c1626e8", borderRadius: 7, padding: "1px 7px",
-                color: baseColor, fontSize: 11.5, fontStyle: "normal", fontWeight: 800, whiteSpace: "nowrap",
-              }}>{KIND_AR[spec.occupant.status]}</i>
-            )}
+            {/* البطاقة الموسّعة — تنمو من فوق الميدالية عند التأشير */}
+            {showFull && <OccupantCard occ={spec.occupant} code={spec.code} color={baseColor} />}
           </div>
         </Html>
       )}

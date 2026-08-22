@@ -251,6 +251,14 @@ html.crisp.dark {
 }
 .cbc-range:focus-visible::-webkit-slider-thumb { outline: 2px solid #2563eb; outline-offset: 2px; }
 
+/* بطاقة ساكن القفص بالمشهد المجسّم: تنمو من ميدالية الحيوان نفسها.
+   تُعرَّف هنا لا داخل المكوّن لأنّ @keyframes قاعدةٌ عامة لا تُكتب بخصائص
+   السطر — ومع تفضيل «تقليل الحركة» يبطلها البلوك أدناه تلقائياً. */
+@keyframes vpCageCardIn {
+  from { opacity: 0; transform: translate(-50%, 8px) scale(0.82); }
+  to   { opacity: 1; transform: translate(-50%, 0) scale(1); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
