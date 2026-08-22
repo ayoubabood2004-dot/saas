@@ -85,9 +85,14 @@ const at = (g: BufferGeometry, x: number, y: number, z: number, ry = 0): BufferG
  * (تعطي الساكنَ خلفيةً يُقرأ عليها). ثلاثةُ ألوانٍ كانت تعني ثلاث خامات =
  * ثلاثة نداءات رسم لكل قفص. بلونِ رأسٍ واحدٍ مخبوز يصير الجسمُ كلّه شبكةً
  * واحدة وخامةً واحدة ونداءً واحداً — بلا أي تنازل عن التدرّج. */
-const C_FRAME = "#edf3f9";   // فولاذ الإطار: أنصع شيء بالمشهد بعد اللافتة
-const C_PLINTH = "#a9b5c2";  // القاعدة: أغمق فتُثبِّت القفص على الأرض
-const C_TRAY = "#c2ccd7";    // صينية الأرضية
+/* المدى القيمي هو ما يصنع «المعدن». اللوحة السابقة كانت كلها بالربع الأفتح
+ * (إطارٌ ٩٣٪ وقاعدةٌ ٧١٪ وصينيةٌ ٨٠٪) — ثلاثُ درجاتٍ متلاصقة تُقرأ لوناً
+ * واحداً باهتاً مهما أضأتَها. الآن الفارق بين أفتحِ جزءٍ وأغمقه يقارب
+ * الضعف، فيُقرأ القفص جسماً مصنوعاً من معدنٍ له وجوهٌ وظِلال — وهو أيضاً
+ * أقربُ للصورة المرجعية: فولاذٌ **متوسّط** بلمعاتٍ بيضاء، لا أبيضُ كامل. */
+const C_FRAME = "#9fb2c6";   // فولاذ الإطار: متوسّط، واللمعةُ المرآوية ترفعه للنصوع
+const C_PLINTH = "#54657a";  // القاعدة: داكنة فتُثبِّت القفص على أرضه
+const C_TRAY = "#7a8da1";    // صينية الأرضية: أغمقها فيُقرأ الساكن عليها
 
 /** يخبز لوناً ثابتاً في رؤوس الشكل — الخطوة التي تسمح بدمج قطعٍ مختلفة
  *  الألوان في شبكةٍ واحدة. (three يحوّل sRGB→خطّي عند إنشاء Color، فالقيم
@@ -164,10 +169,12 @@ const GEO_RIM = mergeGeometries([
  * الشيء الوحيد المضيء على هيكلٍ رمادي، فتقفز للعين بلا أي توهّج صناعي.
  * تُرسم كلها داخل نسيجٍ واحد على لوحٍ شفاف: حوافُّ مدوّرة حقيقية بلا هندسة. */
 /* مقاس نسيج اللافتة: نسيجٌ لكل قفص (الرقم يختلف)، فذاكرته تُضرب بعدد
- * الأقفاص. ٢٨٨×١٦٤ تكفي حِدّةً عند أقصى تكبير وتوفّر ~٤٥٪ من ذاكرة كل
- * لافتة مقارنةً بـ٣٨٠×٢١٦. */
-const SIGN_TEX_W = 288, SIGN_TEX_H = 164;
-const SIGN_W = CAGE_W * 0.4;
+ * الأقفاص — لكنّ اللافتة هي **أهمُّ ما يُقرأ بالمشهد**، فتستحق بكسلاتها.
+ * ٣٨٤×٢١٦ تبقى حادّةً عند أقصى تكبير. */
+const SIGN_TEX_W = 384, SIGN_TEX_H = 216;
+/** عرض اللافتة = ٥٦٪ من عرض الباب (كان ٤٠٪): تملأ صدر القفص فيُقرأ رقمها
+ *  من آخر الغرفة بلا تكبير. أكبرُ من ذلك يزاحم ميدالية الساكن. */
+const SIGN_W = CAGE_W * 0.56;
 const SIGN_H = SIGN_W * (SIGN_TEX_H / SIGN_TEX_W);
 /** ارتفاع مركز اللافتة من قاع الإطار — للاختبارات والتوثيق. */
 export const PLATE_Y_REL = CAGE_H * 0.63;
@@ -196,7 +203,7 @@ GEO_HALO.translate(0, -HH - PLINTH_H + 0.015, 0);
  *  خريطة البيئة كلياً** (وكانت هي سببَ الرمادِ الغبِر: معدنٌ بلا بيئةٍ
  *  كافية يعكس عتمة). */
 const MAT_BODY = new MeshPhongMaterial({
-  vertexColors: true, specular: "#ffffff", shininess: 64, reflectivity: 0.3,
+  vertexColors: true, specular: "#ffffff", shininess: 90, reflectivity: 0.45,
 });
 
 /** نسيج الشبك: قضبانٌ فولاذية متعامدة — تُرسم بحافةٍ داكنة وقلبٍ فاتح، فتبدو
@@ -215,9 +222,9 @@ function makeBarTexture(step: number, bar: number): CanvasTexture {
       /* حافّةٌ فاتحة لا داكنة: الحوافُّ الداكنة تمتزج — عند التصغير — بلونٍ
        * رماديٍّ متوسط يجعل القفصَ يبدو **مغبَّراً**. سلكٌ فاتحُ القلب هادئُ
        * الحافة يبقى سلكاً مهما صَغُر. */
-      grad.addColorStop(0, "#8593a2");
-      grad.addColorStop(0.4, "#f7fafd");
-      grad.addColorStop(1, "#94a2b0");
+      grad.addColorStop(0, "#5d6d7e");
+      grad.addColorStop(0.4, "#eef4fa");
+      grad.addColorStop(1, "#6d7d8e");
       g.fillStyle = grad;
       if (vertical) g.fillRect(i - bar / 2, 0, bar, S);
       else g.fillRect(0, i - bar / 2, S, bar);
@@ -235,7 +242,7 @@ function makeBarTexture(step: number, bar: number): CanvasTexture {
 const TEX_SCREEN = makeBarTexture(52, 12);
 const MAT_SCREEN = new MeshPhongMaterial({
   map: TEX_SCREEN, transparent: true, alphaTest: 0.34, side: 2,
-  color: "#eaf0f6", specular: "#dde7f0", shininess: 40,
+  color: "#aebfd0", specular: "#ffffff", shininess: 60,
 });
 
 export function CageUnit({ spec, position, dropHint, dragActive, ghost, arrivedRef, onHoverChange, onCardDown, selected, showCard = true, onTap }: {
@@ -279,7 +286,7 @@ export function CageUnit({ spec, position, dropHint, dragActive, ghost, arrivedR
 
   // اللافتة كاملةً كنسيج: لوحٌ فاتح مدوّر + حدٌّ رمادي + مسماران + رقم داكن
   const codeMat = useMemo(() => {
-    const W = SIGN_TEX_W, H = SIGN_TEX_H, R = 14;
+    const W = SIGN_TEX_W, H = SIGN_TEX_H, R = 20;
     const c = document.createElement("canvas");
     c.width = W;
     c.height = H;
@@ -300,35 +307,35 @@ export function CageUnit({ spec, position, dropHint, dragActive, ghost, arrivedR
     g.shadowBlur = 12;
     rr(8, 8, W - 16, H - 16, R);
     const face = g.createLinearGradient(0, 8, 0, H - 8);
-    face.addColorStop(0, "#fbfaf6");
-    face.addColorStop(1, "#dfe0da");
+    face.addColorStop(0, "#ffffff");
+    face.addColorStop(1, "#eceee9");
     g.fillStyle = face;
     g.fill();
     g.shadowColor = "transparent";
     // حدّان: خارجيٌّ رمادي وداخليٌّ رفيع — حافة اللوح المعدنية المطويّة
     rr(8, 8, W - 16, H - 16, R);
-    g.strokeStyle = "#7f8791";
-    g.lineWidth = 3.5;
+    g.strokeStyle = "#5c6672";
+    g.lineWidth = 5;
     g.stroke();
-    rr(15, 15, W - 30, H - 30, R * 0.7);
-    g.strokeStyle = "#b9bdb6";
-    g.lineWidth = 1.5;
+    rr(18, 18, W - 36, H - 36, R * 0.7);
+    g.strokeStyle = "#aeb4ad";
+    g.lineWidth = 2;
     g.stroke();
     // مسمارا تثبيت
-    for (const x of [26, W - 26]) {
+    for (const x of [30, W - 30]) {
       g.beginPath();
-      g.arc(x, H / 2, 5.5, 0, Math.PI * 2);
+      g.arc(x, H / 2, 7, 0, Math.PI * 2);
       g.fillStyle = "#9aa2ab";
       g.fill();
     }
     // الرقم الداكن — قلب اللافتة
     g.textAlign = "center";
     g.textBaseline = "middle";
-    g.font = "800 86px ui-monospace, SFMono-Regular, Menlo, monospace";
+    g.font = "900 132px ui-monospace, SFMono-Regular, Menlo, monospace";
     let code = spec.code;
-    while (g.measureText(code).width > W - 84 && code.length > 2) code = code.slice(0, -1);
-    g.fillStyle = "#242a31";
-    g.fillText(code, W / 2, H / 2 + 4);
+    while (g.measureText(code).width > W - 96 && code.length > 2) code = code.slice(0, -1);
+    g.fillStyle = "#12171c";
+    g.fillText(code, W / 2, H / 2 + 6);
     const t = new CanvasTexture(c);
     t.anisotropy = 8;
     return new MeshBasicMaterial({ map: t, transparent: true, toneMapped: false });

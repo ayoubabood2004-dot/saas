@@ -196,7 +196,7 @@ function Partitions({ rooms, s }: { rooms: Room3D[]; s: ReturnType<typeof cageSt
     <>
       {merged.plinth && (
         <mesh geometry={merged.plinth}>
-          <meshLambertMaterial color="#8496a7" />
+          <meshLambertMaterial color="#7c8b9b" />
         </mesh>
       )}
       {merged.metal && (
@@ -227,7 +227,7 @@ function RoomFloors({ s }: { s: ReturnType<typeof cageStudio.get> }) {
                 فاتحةً بلون الأقفاص نفسه تقريباً فتذوب حدودها فيها. */}
             <mesh rotation={[-Math.PI / 2, 0, 0]} position={[wx + w / 2, -0.07, wz + d / 2]}>
               <planeGeometry args={[w - 0.12, d - 0.12]} />
-              <meshLambertMaterial color="#a9b8c6" />
+              <meshLambertMaterial color="#dde5ed" />
             </mesh>
             {/* لافتة الغرفة على سياجها **الخلفي** لا على باب أمامي: بالكاميرا
                 شبه الأمامية كان لوح الباب يُسقَط فوق واجهة قفصٍ بالصف الأمامي
@@ -538,8 +538,8 @@ function Scene({ s, occOf, drag, carrySource, hoverCage, arrivedRef, camZoom, ca
           (سماءٌ باردة فوق، أرضٌ دافئة تحت). جمعُهما كان يعني ضوءين بالشادر
           مقابل ما يؤدّيه واحد — وبإسقاط المسطّح منهما يكسب المشهد تدرّجاً
           أيضاً: أسطح القفص العلوية تميل للأزرق والسفلية للدفء. */}
-      <hemisphereLight color="#f2f8ff" groundColor="#cbb89d" intensity={1.15} />
-      <directionalLight color="#fffaf1" position={[7, 12, 5]} intensity={1.55} />
+      <hemisphereLight color="#f2f8ff" groundColor="#cbb89d" intensity={0.92} />
+      <directionalLight color="#fffaf1" position={[7, 12, 5]} intensity={1.75} />
       {/* ضوء ملء بارد من الجهة المقابلة — يفصل حافة القفص عن الخلفية
           (rim light) بلا أي كلفة ظلال */}
       <directionalLight color="#dfeaf7" position={[-8, 5, -6]} intensity={0.5} />
