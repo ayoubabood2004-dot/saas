@@ -12,6 +12,9 @@ import type { Admission, ClinicVisit, MedicalVisit, Pet, PatientCondition, Treat
 import { repo } from "@/lib/repo";
 import { getCached, setCached } from "@/lib/swrCache";
 import { PetAvatar } from "@/components/PetAvatar";
+/* لافتة الرقم نفسها التي تحملها بطاقة القفص — مكوّنٌ واحد لا نسختان
+ * متشابهتان: الشاشتان تتكلّمان لغةَ شكلٍ واحدة، وأيُّ تحسينٍ يصلهما معاً. */
+import { Nameplate } from "@/components/cages/CageCard";
 import { opsStore } from "@/lib/opsStore";
 import { TreatmentBoard } from "@/components/TreatmentBoard";
 import { CageMap } from "@/components/CageMap";
@@ -82,12 +85,17 @@ const REG_BUCKETS: Record<"daily" | "careBoarding" | "other", BucketKey[]> = {
  * patient stays red even when every dose is on time, because the doses being
  * on time is not the thing you need to know about it. */
 type Acuity = "critical" | "overdue" | "due" | "stable" | "settled";
-const ACUITY: Record<Acuity, { stripe: string; card: string; dot: string }> = {
-  critical: { stripe: "bg-danger-500", card: "border-danger-300 dark:border-danger-500/40", dot: "bg-danger-500" },
-  overdue:  { stripe: "bg-danger-500", card: "border-danger-300 dark:border-danger-500/40", dot: "bg-danger-500" },
-  due:      { stripe: "bg-warn-500", card: "border-warn-300 dark:border-warn-500/40", dot: "bg-warn-500" },
-  stable:   { stripe: "bg-sky-400", card: "border-line-strong", dot: "bg-sky-400" },
-  settled:  { stripe: "bg-teal-400", card: "border-teal-300 dark:border-teal-500/40", dot: "bg-teal-400" },
+const ACUITY: Record<Acuity, { stripe: string; card: string; dot: string; ring: string; chip: string }> = {
+  critical: { stripe: "bg-danger-500", card: "border-danger-300 dark:border-danger-500/40", dot: "bg-danger-500",
+    ring: "ring-danger-300 dark:ring-danger-500/50", chip: "bg-danger-50 text-danger-700 dark:bg-danger-500/15 dark:text-danger-300" },
+  overdue:  { stripe: "bg-danger-500", card: "border-danger-300 dark:border-danger-500/40", dot: "bg-danger-500",
+    ring: "ring-danger-300 dark:ring-danger-500/50", chip: "bg-danger-50 text-danger-700 dark:bg-danger-500/15 dark:text-danger-300" },
+  due:      { stripe: "bg-warn-500", card: "border-warn-300 dark:border-warn-500/40", dot: "bg-warn-500",
+    ring: "ring-warn-300 dark:ring-warn-500/50", chip: "bg-warn-50 text-warn-700 dark:bg-warn-500/15 dark:text-warn-300" },
+  stable:   { stripe: "bg-sky-400", card: "border-line-strong", dot: "bg-sky-400",
+    ring: "ring-sky-300 dark:ring-sky-500/40", chip: "bg-sky-50 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300" },
+  settled:  { stripe: "bg-teal-400", card: "border-teal-300 dark:border-teal-500/40", dot: "bg-teal-400",
+    ring: "ring-teal-300 dark:ring-teal-500/50", chip: "bg-teal-50 text-teal-700 dark:bg-teal-500/15 dark:text-teal-300" },
 };
 const acuityLabel = (t: TFunction, k: Acuity): string => ({
   critical: t("charts.acuityCritical", "حرجة"),
@@ -599,7 +607,10 @@ export function Charts() {
                     <h2 className="text-sm font-extrabold text-ink">{bucketLabel(t, b.key)}</h2>
                     <span className={cn("rounded-full px-2 py-0.5 text-2xs font-black", b.badge)}>{formatNum(items.length)}</span>
                   </div>
-                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
+                  {/* نفس شبكة لوحة الأقفاص: عرضٌ طبيعي للبطاقة بدل تمطيطها على أعمدة
+                      ثابتة، **وفرجةٌ رأسية واسعة** لأن لافتة الرقم تبرز فوق حافة
+                      البطاقة — بفرجةٍ ضيقة تصطدم بالبطاقة التي فوقها. */}
+                  <div className="grid gap-x-6 gap-y-9 pt-4 [grid-template-columns:repeat(auto-fill,minmax(230px,1fr))]">
                     {items.map((c) => <ChartCard key={c.id} chart={c} lang={lang} todayISO={todayISO} txLoaded={txLoaded} busy={opening === c.id} onOpen={() => void openChart(c)} />)}
                   </div>
                 </section>
@@ -678,46 +689,66 @@ function ChartCard({ chart: c, lang, todayISO, txLoaded, busy, onOpen }: { chart
     : c.total > 0 ? { cls: "bg-surface-2 text-ink-muted", icon: <CheckCircle2 size={13} />, text: t("charts.noDosesToday", "لا جرعات اليوم") }
     : { cls: "bg-surface-2 text-ink-subtle", icon: <ClipboardList size={13} />, text: t("charts.noPlanYet", "لا توجد خطة بعد") };
 
+  /* اللافتة تحمل رقم القفص إن كان الحيوان راقداً، وإلا يومَ الخطة. الفكرة
+   * واحدة بالحالتين: **هويةٌ قصيرة تُقرأ من بعيد** قبل أي تفصيل — تماماً
+   * كما تفعل لافتة القفص. وتوحيدُ المكوّن نفسه (لا نسخةٌ شبيهة) يضمن أن
+   * أيَّ تحسينٍ للافتة يصل الشاشتين معاً. */
+  const plate = c.cage
+    ? String(c.cage)
+    : t("charts.dayN", { n: formatNum(day), defaultValue: "اليوم {{n}}" });
+
   return (
     <button type="button" onClick={onOpen} disabled={busy}
       className={cn(
-        "group relative flex flex-col gap-2.5 overflow-hidden rounded-xl border p-3.5 ps-4 text-start shadow-card transition hover:shadow-lg disabled:opacity-60",
+        "group relative flex min-h-[248px] flex-col rounded-3xl border px-4 pb-4 pt-9 text-center shadow-soft transition hover:shadow-lg disabled:opacity-60",
         meta.card,
         doneToday
           ? "bg-teal-50/60 ring-1 ring-teal-300/60 hover:border-teal-400 dark:bg-teal-500/10 dark:ring-teal-500/30"
           : "bg-surface-1 hover:border-brand-300",
         blink && "animate-pulse-ring",
       )}>
-      {/* Acuity stripe — the colour you read from across the room */}
-      <span className={cn("absolute inset-y-0 start-0 w-1.5", meta.stripe)} aria-hidden />
+      {/* شريط القمة — حدّة الحالة تُلمح قبل أن تُقرأ */}
+      <span className={cn("absolute inset-x-8 top-0 h-1 rounded-b-full", meta.stripe)} aria-hidden />
+      <Nameplate code={plate} />
 
-      <div className="flex items-center gap-2.5">
-        <CardAvatar pet={c.pet} />
-        <div className="min-w-0 flex-1">
-          <div className="truncate text-sm font-black text-ink">{c.pet?.name ?? "—"}</div>
-          <div className="flex items-center gap-1.5">
-            <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", meta.dot)} aria-hidden />
-            <span className="truncate text-2xs font-bold text-ink-subtle">
-              {c.condition === "critical" ? `${t("charts.acuityCritical", "حرجة")} · ` : ""}{c.pet ? speciesLabel(t, c.pet.species) : ""}{c.cage ? ` · ${t("charts.cageN", { n: c.cage, defaultValue: "قفص {{n}}" })}` : ""}
-            </span>
-          </div>
+      <div className="flex flex-1 flex-col items-center justify-center gap-2">
+        <span className={cn("grid h-20 w-20 place-items-center overflow-hidden rounded-full bg-surface-2 ring-4", meta.ring)}>
+          {c.pet
+            ? <PetAvatar pet={c.pet} size={80} className="h-full w-full rounded-full" />
+            : <span className="text-4xl leading-none">{SPECIES_EMOJI.other}</span>}
+        </span>
+        <p className="max-w-full truncate font-display text-lg font-extrabold leading-tight text-ink">{c.pet?.name ?? "—"}</p>
+        {/* اليوم يُذكر هنا **فقط** حين تحمل اللافتة رقم قفصٍ بدلاً منه — وإلا
+            لتكرّر الرقم مرّتين على بطاقةٍ واحدة بلا فائدة. */}
+        <p className="text-xs text-ink-subtle">
+          {c.pet ? speciesLabel(t, c.pet.species) : ""}
+          {c.cage ? ` · ${t("charts.dayN", { n: formatNum(day), defaultValue: "اليوم {{n}}" })}` : ""}
+        </p>
+
+        <div className="flex flex-wrap items-center justify-center gap-1.5">
+          {c.condition === "critical" && (
+            <span className={cn("chip text-2xs font-black", ACUITY.critical.chip)}>{t("charts.acuityCritical", "حرجة")}</span>
+          )}
+          {status
+            ? <span className={cn("chip inline-flex items-center gap-1 text-2xs font-black", status.cls, blink && "animate-pulse")}>{status.icon} {status.text}</span>
+            : <span className="h-[24px] w-24 animate-pulse rounded-full bg-surface-2" />}
         </div>
-        {doneToday && !busy && (
-          <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-teal-500 text-white"><CheckCircle2 size={13} /></span>
-        )}
-        {busy ? <Loader2 size={16} className="shrink-0 animate-spin text-brand-600" /> : <ChevronLeft size={16} className="shrink-0 text-ink-subtle transition group-hover:text-brand-600 rtl:rotate-180" />}
+
+        {/* خطّة العلاج — سطرٌ خافت لا يزاحم الاسم، وهو ما يميّز طبلةً عن أخرى */}
+        <p className="line-clamp-2 max-w-full px-1 text-2xs font-semibold leading-snug text-ink-muted">{c.title}</p>
       </div>
 
-      <div className="line-clamp-2 min-h-[2.4em] rounded-lg bg-surface-2 px-2.5 py-1.5 text-xs font-semibold leading-snug text-ink-muted">
-        {c.title}
-      </div>
-
-      <div className="flex items-center justify-between gap-2">
-        {status
-          ? <span className={cn("inline-flex items-center gap-1 rounded-md px-2 py-1 text-2xs font-black", status.cls)}>{status.icon} {status.text}</span>
-          : <span className="h-[26px] w-24 animate-pulse rounded-md bg-surface-2" />}
-        <span className="inline-flex items-center gap-1 text-2xs font-bold text-ink-subtle"><Clock size={11} /> {t("charts.dayN", { n: formatNum(day), defaultValue: "اليوم {{n}}" })} · {formatDate(c.since, lang)}</span>
-      </div>
+      {/* الفعل ظاهرٌ دائماً — الآيباد ما عنده تحويم. عنصرُ زينةٍ لا زر:
+          البطاقة نفسها زرٌّ، وزرٌّ داخل زرٍّ تركيبٌ غير صالح. */}
+      <span className="mt-3 inline-flex h-9 items-center justify-center gap-1.5 rounded-xl bg-surface-2 text-xs font-bold text-ink-muted transition group-hover:bg-surface-3 group-hover:text-ink">
+        {busy
+          ? <Loader2 size={14} className="animate-spin text-brand-600" />
+          : <><ClipboardList size={14} /> {t("charts.openPlan", "افتح الخطة")}
+            <ChevronLeft size={13} className="text-ink-subtle rtl:rotate-180" /></>}
+      </span>
+      <span className="mt-1.5 inline-flex items-center justify-center gap-1 text-2xs font-bold text-ink-subtle">
+        <Clock size={10} /> {formatDate(c.since, lang)}
+      </span>
     </button>
   );
 }
