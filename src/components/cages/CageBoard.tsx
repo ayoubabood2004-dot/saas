@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { motion } from "framer-motion";
 import {
-  LayoutGrid, Search, UserPlus, Settings2, Plus, Trash2, Move, X, Syringe, BedDouble, DoorOpen, Check,
+  LayoutGrid, Search, UserPlus, Settings2, Plus, Trash2, Move, X, Syringe, BedDouble, DoorOpen, Check, Box, Loader2,
 } from "lucide-react";
 import { cageStudio, useCageStudio, codesFromPrefs, type Room3D, type CagePlacement } from "@/components/cage3d/store";
 import { SPECIES_AR, SPECIES_EMOJI, type Occupant } from "@/components/cage3d/neon";
@@ -49,6 +49,12 @@ const doseDueOf = (a: Admission): boolean => {
 };
 
 type Filter = "all" | "occupied" | "free" | "dose";
+
+/* المشهد المجسّم صار **خياراً** لا الافتراضي: يُحمَّل كسولاً عند اختياره
+ * فقط — عيادةٌ تكتفي بالبطاقات لا تنزّل three.js أبداً. والاختيار يُحفظ
+ * لكل جهاز: من يحب المجسّم يفتح عليه مباشرة بكل زيارة. */
+const VIEW_KEY = "vp_cage_view";
+const Cage3DScene = lazy(() => import("@/components/cage3d/Cage3DDemo"));
 
 export default function CageBoard() {
   const { t } = useTranslation();
@@ -115,6 +121,14 @@ export default function CageBoard() {
   const [editCage, setEditCage] = useState<string | null>(null);
   const [addRoomOpen, setAddRoomOpen] = useState(false);
   const canEdit = can("manageSettings");
+  const [view3d, setView3d] = useState(() => {
+    try { return localStorage.getItem(VIEW_KEY) === "3d"; } catch { return false; }
+  });
+  const switchView = (to3d: boolean) => {
+    playTap();
+    setView3d(to3d);
+    try { localStorage.setItem(VIEW_KEY, to3d ? "3d" : "board"); } catch { /* الخيار يبقى للجلسة */ }
+  };
 
   /* ── الغرف وأقفاصها بترتيبٍ ثابت ── */
   const rooms = useMemo(() => [...s.rooms].sort((a, b) => a.x - b.x), [s.rooms]);
@@ -191,6 +205,20 @@ export default function CageBoard() {
   };
 
   /* ============================== الواجهة ============================== */
+  if (view3d) {
+    return (
+      <Suspense fallback={
+        <div className="grid min-h-[70vh] place-items-center">
+          <div className="flex flex-col items-center gap-3 text-ink-subtle">
+            <Loader2 size={28} className="animate-spin" />
+            <p className="text-sm font-bold">{t("cages.loading3d", "جاري فتح الغرفة المجسّمة…")}</p>
+          </div>
+        </div>
+      }>
+        <Cage3DScene onBoard={() => switchView(false)} />
+      </Suspense>
+    );
+  }
   return (
     <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6">
       {/* الترويسة */}
@@ -200,6 +228,14 @@ export default function CageBoard() {
           <h1 className="font-display text-2xl font-extrabold text-ink">{t("nav.cageRoom", "غرفة الأقفاص")}</h1>
           <p className="text-sm text-ink-subtle">{t("cages.subtitle", "منو بكل قفص، ووين الفاضي — بلمحة وحدة.")}</p>
         </div>
+        <button
+          type="button" data-view3d
+          onClick={() => switchView(true)}
+          title={t("cages.to3dHint", "نفس الأقفاص والبيانات — بغرفةٍ مجسّمة تتمشى بيها")}
+          className="inline-flex h-10 items-center gap-1.5 rounded-2xl border border-line bg-surface-1 px-4 text-sm font-bold text-ink-muted transition hover:text-ink"
+        >
+          <Box size={16} /> {t("cages.to3d", "عرض مجسّم")}
+        </button>
         {canEdit && (
           <button
             type="button" data-cageedit

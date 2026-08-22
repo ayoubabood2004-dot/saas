@@ -2,8 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useFrame } from "@react-three/fiber";
 import { Html } from "@react-three/drei";
 import {
-  BoxGeometry, CanvasTexture, Color, CylinderGeometry, Matrix4, MeshBasicMaterial, MeshStandardMaterial,
-  PlaneGeometry, RingGeometry,
+  BoxGeometry, CanvasTexture, Color, Matrix4, MeshBasicMaterial, MeshStandardMaterial,
+  PlaneGeometry, RepeatWrapping, RingGeometry,
 } from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import type { BufferGeometry, Group } from "three";
@@ -111,36 +111,18 @@ const GEO_RIM = mergeGeometries([
   at(new BoxGeometry(0.045, 0.045, CAGE_D), -CAGE_W / 2 + POST / 2, CAGE_H / 2, 0),
 ])!;
 
-/* ── لافتة الباب ──────────────────────────────────────────────────────────
- * لافتةٌ واقعية مركّبة على الباب، لا رقماً مطبوعاً على المعدن: إطارٌ خارجي
- * غائر، ووجهٌ فاتح ناتئ عنه، ومسماران يثبّتانه — فتُقرأ العين ثلاثَ طبقات
- * فتفهمها لوحةً معلّقة. الأبعاد كلها **مشتقّة** من القفص فتكبر معه.
- * ------------------------------------------------------------------------ */
-/** ارتفاع اللافتة من قاع القفص — يُصدَّر لتُرسي عليه طبقةُ التسميات. */
-export const PLATE_Y_REL = LOWER_H / 2 + 0.02;
-const PLATE_Y = -CAGE_H / 2 + PLATE_Y_REL;
-/* نسبة اللافتة (عرض:ارتفاع ≈ ٢٫٩) **تطابق نسبة نسيجها** عمداً: كانت اللافتة
- * ٥٫٢:١ والنسيج ٣٫٢:١، فيُمطّ الرقم عرضاً وينسحق ارتفاعاً حتى يصير خيطاً.
- * ولافتةٌ بهذه النسبة أشبه بلافتات الأقفاص الحقيقية أصلاً — لا شريطاً ممتداً. */
-const SIGN_W = CAGE_W * 0.44;
-const SIGN_H = LOWER_H * 0.86;
+/* ── لافتة القفص (نسق الصورة المُلهِمة) ──────────────────────────────────
+ * لوحٌ داكن مدوّر الزوايا برقمٍ أبيض ومسمارَين، مثبّت على **أعلى واجهة
+ * القفص** — نفس لوحات اللوحة المسطّحة فتتكلم الواجهتان لغةً واحدة.
+ * تُرسم اللافتة كلها داخل نسيجٍ واحد على لوحٍ شفاف: زوايا مدوّرة حقيقية
+ * بلا هندسة إضافية، وحدّةُ نصٍّ كاملة. */
+export const PLATE_Y_REL = CAGE_H - 0.02; // من القاع: أعلى الواجهة
+const PLATE_Y = CAGE_H / 2 - 0.30;
+const SIGN_W = CAGE_W * 0.46;
+const SIGN_H = 0.44;
 const FACE_Z = CAGE_D / 2;
-/** الإطار الغائر — أوسع قليلاً من الوجه فيبدو حاضناً له. */
-const GEO_SIGN_BEZEL = new BoxGeometry(SIGN_W + 0.10, SIGN_H + 0.10, 0.05);
-GEO_SIGN_BEZEL.translate(0, PLATE_Y, FACE_Z + 0.012);
-/** وجه اللافتة — ناتئ عن الإطار فيمسكه الضوء بحافةٍ ظاهرة. */
-const GEO_PLATE = new BoxGeometry(SIGN_W, SIGN_H, 0.04);
-GEO_PLATE.translate(0, PLATE_Y, FACE_Z + 0.040);
-const GEO_CODE = new PlaneGeometry(SIGN_W - 0.05, SIGN_H - 0.05);
-GEO_CODE.translate(0, PLATE_Y, FACE_Z + 0.062);
-/** مسمارا التثبيت — أسطوانتان صغيرتان على يمين اللافتة ويسارها. */
-const screw = (x: number) => {
-  const g = new CylinderGeometry(0.028, 0.028, 0.03, 10);
-  g.rotateX(Math.PI / 2);
-  g.translate(x, PLATE_Y, FACE_Z + 0.052);
-  return g;
-};
-const GEO_SCREWS = mergeGeometries([screw(-(SIGN_W / 2 + 0.032)), screw(SIGN_W / 2 + 0.032)])!;
+const GEO_CODE = new PlaneGeometry(SIGN_W, SIGN_H);
+GEO_CODE.translate(0, PLATE_Y, FACE_Z + 0.045);
 /** بساط أرضي غير مرئي تحت القفص — يلتقط الضغطات التي تقع على أرضه أو حول
  *  قاعدته. بلا شيءٍ أرضي كان الشعاع يمرّ بين القوائم فيسقط بلا هدف، والطبيب
  *  يظنّ ضغطته لم تُسجَّل. صندوقٌ مصمت بدله لا يصلح: بمنظر إيزومتري يحجب صندوقُ
@@ -162,25 +144,37 @@ GEO_HALO.translate(0, -CAGE_H / 2 - 0.135, 0);
  * المعدنية منخفضة عمداً: المعدن بلا خريطة بيئة يعكس سواداً، والوضع الخفيف
  * يُسقط خريطة البيئة — فالنسخة السابقة كانت تُظلم المشهد كله على الجهاز الذي
  * يحتاج الوضوح أكثر من غيره. خشونة أعلى + معدنية أقل = معدنٌ مقروء بلا بيئة. */
-const MAT_BASE = new MeshStandardMaterial({ color: "#26313f", metalness: 0.25, roughness: 0.6 });
+/* التلبيسة النهارية (استلهام صورة المالك): قفصُ شبكٍ سلكي فاتح على قاعدةٍ
+ * رمادية هادئة — لا معدن ليلي داكن ولا زجاج. الوضوح من التباين الطبيعي:
+ * جسمٌ فاتح على خشبٍ دافئ، ولافتةٌ داكنة تقفز للعين. */
+const MAT_BASE = new MeshStandardMaterial({ color: "#cdd5de", metalness: 0.12, roughness: 0.6 });
 const MAT_CUSHION = new MeshStandardMaterial({ color: NIGHT.cushion, roughness: 0.9 });
-const MAT_METAL = new MeshStandardMaterial({ color: "#4a586c", metalness: 0.35, roughness: 0.45 });
-const MAT_GLASS = new MeshStandardMaterial({
-  color: "#bfe9f5", transparent: true, opacity: 0.13, roughness: 0.1, metalness: 0.1, depthWrite: false, side: 2,
+const MAT_METAL = new MeshStandardMaterial({ color: "#e3e8ee", metalness: 0.45, roughness: 0.32 });
+/* الشبك السلكي — جوهر شكل الصورة. نسيجُ شبكةٍ يُرسم مرة واحدة ويتكرر على
+ * ألواح «الزجاج» السابقة نفسها: أسلاكٌ رفيعة متعامدة بخانات صغيرة، شفافةٌ
+ * بين الأسلاك (alphaTest يقصّ الفراغ قصاً حاداً فلا وميض شفافية). */
+function makeMeshTexture(): CanvasTexture {
+  const c = document.createElement("canvas");
+  c.width = c.height = 128;
+  const g = c.getContext("2d")!;
+  g.clearRect(0, 0, 128, 128);
+  g.strokeStyle = "#55636f";
+  g.lineWidth = 9;
+  for (let i = 0; i <= 128; i += 64) {
+    g.beginPath(); g.moveTo(i, 0); g.lineTo(i, 128); g.stroke();
+    g.beginPath(); g.moveTo(0, i); g.lineTo(128, i); g.stroke();
+  }
+  const t = new CanvasTexture(c);
+  t.wrapS = t.wrapT = RepeatWrapping;
+  t.repeat.set(10, 5);
+  t.anisotropy = 4;
+  return t;
+}
+const MAT_MESH = new MeshStandardMaterial({
+  map: makeMeshTexture(), transparent: true, alphaTest: 0.25,
+  color: "#c3ccd6", metalness: 0.45, roughness: 0.4, side: 2,
 });
-/* لوحة الرقم لا تعتمد على إضاءة المشهد وحدها: بغرفةٍ ليلية معتمة عمداً كانت
- * تغرق مع الجسم فيختفي الرقم. إضاءةٌ ذاتية خفيفة تُبقيها مقروءة أياً كان
- * موضعها من الضوء — وهي ما يجعلها «لافتة» لا مجرّد لوحٍ معدني. */
-/** الإطار: معدنٌ داكن يبتلع الضوء فيبرز الوجه فوقه. */
-const MAT_BEZEL = new MeshStandardMaterial({ color: "#1b2531", metalness: 0.45, roughness: 0.55 });
-/** المسامير: معدنٌ فاتح لامع — تفصيلةٌ صغيرة تُقنع العين أن اللافتة مركّبة. */
-const MAT_SCREW = new MeshStandardMaterial({ color: "#93a6bd", metalness: 0.8, roughness: 0.3 });
-/* وجه اللافتة **فاتح**: بغرفةٍ ليلية، لوحةٌ داكنة بحبرٍ فاتح تذوب بالجسم؛
- * ووجهٌ ناصع بحبرٍ داكن يقفز للعين كما تفعل لافتات العيادات الحقيقية. */
-const MAT_PLATE = new MeshStandardMaterial({
-  color: NIGHT.plate, metalness: 0.05, roughness: 0.55,
-  emissive: new Color("#4a5a6e"), emissiveIntensity: 0.22,
-});
+
 
 export function CageUnit({ spec, position, dropHint, dragActive, ghost, arrivedRef, onHoverChange, onCardDown, selected, showCard = true, onTap }: {
   spec: CageSpec;
@@ -221,27 +215,51 @@ export function CageUnit({ spec, position, dropHint, dragActive, ghost, arrivedR
     []);
   useEffect(() => () => rimMat.dispose(), [rimMat]);
 
-  // نسيج رقم القفص — يُرسم بالكانفس مرة لكل رمز (خط النظام، فوري، بلا شبكة)
+  // لافتة القفص كاملةً كنسيج: لوح داكن مدوّر + حدّ فاتح + مسماران + رقم أبيض
   const codeMat = useMemo(() => {
-    /* دقة النسيج تضاعفت (٢٥٦×٩٦ ← ٥١٢×١٦٠) واللوحة كبرت معها: نسيجٌ صغير
-     * ممدود على لوحٍ كبير يُقرأ ضبابياً، والحدّة هنا نصف المقروئية. */
-    const W = 464, H = 160;
+    const W = 480, H = 176, R = 44;
     const c = document.createElement("canvas");
     c.width = W;
     c.height = H;
     const g = c.getContext("2d")!;
     g.clearRect(0, 0, W, H);
+    const rr = (x: number, y: number, w: number, h: number, r: number) => {
+      g.beginPath();
+      g.moveTo(x + r, y);
+      g.arcTo(x + w, y, x + w, y + h, r);
+      g.arcTo(x + w, y + h, x, y + h, r);
+      g.arcTo(x, y + h, x, y, r);
+      g.arcTo(x, y, x + w, y, r);
+      g.closePath();
+    };
+    // الجسم الداكن بظلٍّ ناعم يفصله عن الشبك خلفه
+    g.shadowColor = "#00000055";
+    g.shadowOffsetY = 5;
+    g.shadowBlur = 10;
+    rr(8, 8, W - 16, H - 16, R);
+    g.fillStyle = "#1f2a37";
+    g.fill();
+    g.shadowColor = "transparent";
+    // حدّ فاتح رفيع — حافة اللوح المعدنية
+    rr(8, 8, W - 16, H - 16, R);
+    g.strokeStyle = "#4c5a68";
+    g.lineWidth = 5;
+    g.stroke();
+    // مسمارا تثبيت
+    for (const x of [34, W - 34]) {
+      g.beginPath();
+      g.arc(x, H / 2, 8, 0, Math.PI * 2);
+      g.fillStyle = "#96a5b5";
+      g.fill();
+    }
+    // الرقم الأبيض
     g.textAlign = "center";
     g.textBaseline = "middle";
-    g.font = "900 124px ui-monospace, SFMono-Regular, Menlo, monospace";
+    g.font = "900 108px ui-monospace, SFMono-Regular, Menlo, monospace";
     let code = spec.code;
-    while (g.measureText(code).width > W - 34 && code.length > 2) code = code.slice(0, -1);
-    // حبرٌ داكن محفور: ظلٌّ فاتح خفيف أسفله يوحي بالغور داخل المعدن.
-    g.shadowColor = "#ffffff66";
-    g.shadowOffsetY = 2;
-    g.shadowBlur = 1;
-    g.fillStyle = NIGHT.plateInk;
-    g.fillText(code, W / 2, H / 2 + 3);
+    while (g.measureText(code).width > W - 130 && code.length > 2) code = code.slice(0, -1);
+    g.fillStyle = "#f5f9fd";
+    g.fillText(code, W / 2, H / 2 + 4);
     const t = new CanvasTexture(c);
     t.anisotropy = 8;
     return new MeshBasicMaterial({ map: t, transparent: true, toneMapped: false });
@@ -285,7 +303,7 @@ export function CageUnit({ spec, position, dropHint, dragActive, ghost, arrivedR
         dropHint === "hot" ? 4.0 :
           dropHint === "blocked" ? 0.25 :
             dropHint === "candidate" ? 1.3 + Math.sin(state.clock.elapsedTime * 5) * 0.45 :
-              hover ? 3.0 : occupied ? 2.1 : 1.1;
+              hover ? 2.4 : occupied ? 1.5 : 0.9;
     // جرعة مستحقّة: بوضع السكون يتناوب الإطار بين لون الساكن والكهرماني —
     // نداء «تعال أعطِ الدواء» يُقرأ من آخر الممر (الـlerp يحوّله لنبض ناعم).
     if (spec.occupant?.doseDue && !selected && dropHint === "idle" && !hover) {
@@ -335,12 +353,10 @@ export function CageUnit({ spec, position, dropHint, dragActive, ghost, arrivedR
       <mesh geometry={GEO_METAL} material={MAT_METAL} castShadow={!lowTier()} />
       {/* إطار الليد — لون الحالة */}
       <mesh geometry={GEO_RIM} material={rimMat} raycast={noHit} />
-      {/* الزجاج (الجانبان + الخلف + الباب) — بالوضع الخفيف يُسقط تماماً */}
-      {!lowTier() && <mesh geometry={GEO_GLASS} material={MAT_GLASS} raycast={noHit} />}
-      {/* لوحة الرقم ورقمها */}
-      <mesh geometry={GEO_PLATE} material={MAT_PLATE} />
-      <mesh geometry={GEO_SIGN_BEZEL} material={MAT_BEZEL} raycast={noHit} />
-      <mesh geometry={GEO_SCREWS} material={MAT_SCREW} raycast={noHit} />
+      {/* الشبك السلكي (الجانبان + الخلف + الباب) — روح شكل الصورة.
+          بالوضع الخفيف يُسقط كالزجاج سابقاً: الإطار والقاعدة يكفيان قراءةً. */}
+      {!lowTier() && <mesh geometry={GEO_GLASS} material={MAT_MESH} raycast={noHit} />}
+      {/* اللافتة — نسيجٌ واحد بكل تفاصيلها */}
       <mesh geometry={GEO_CODE} material={codeMat} raycast={noHit} />
 
       {/* هالة الاستجابة الأرضية — تُركّب عند الحاجة فقط */}
