@@ -1,13 +1,15 @@
-import { useMemo } from "react";
-import { Clock, AlertTriangle, CheckCircle2, Pill, Maximize2, Minimize2, CircleDot } from "lucide-react";
+import { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
+import { Clock, AlertTriangle, CheckCircle2, Maximize2, Minimize2, CircleDot, SkipForward } from "lucide-react";
 import type { Pet, TreatmentEntry } from "@/types";
 import { PetAvatar } from "@/components/PetAvatar";
 import {
   taskStatus, minutesLate, lateLabel, compareTasks, hourSlot, HHMM,
   type TaskStatus,
 } from "@/lib/treatmentSchedule";
+import { TASK_META, typeOf, routeShort } from "@/lib/flowsheet";
 import { formatNum, cn } from "@/lib/utils";
-import { playDoseGiven } from "@/lib/sounds";
+import { playDoseGiven, playTap } from "@/lib/sounds";
 
 /** A clock slot as shown on the board. The app is Western-numeral throughout (see formatNum). */
 const timeLabel = (hhmm: string) => (/^\d{1,2}:\d{2}$/.test(hhmm.trim()) ? hhmm.trim() : "بلا وقت");
@@ -46,11 +48,46 @@ export interface BoardTask {
   late: number;
 }
 
-/** One dose, as a tappable card. The whole row is the button — glove-friendly. */
-function TaskCard({ task, onGive, wall }: { task: BoardTask; onGive?: (t: TreatmentEntry) => void; wall: boolean }) {
+/**
+ * One task, as a tappable card.
+ *
+ * ── لماذا لم تعد كل مهمّةٍ «جرعة» ────────────────────────────────────────
+ * هذه اللوحة سبقت حقل `task_type`، فكانت تفترض أن كل صفٍّ دواء: أيقونة حبّة
+ * لكل شيء، وزرّ «أعطيت» لكل شيء. وبعد أن صارت الورقة تسجّل الحرارة والسوائل
+ * والتغذية، انقسم النظام على نفسه — الطبيب يقيس ٣٩٫٥ بالورقة، ثم يفتح اللوحة
+ * فيرى **دواءً اسمه «الحرارة»** بلا رقمها.
+ *
+ * فصارت اللوحة تقرأ النوع من المصدر نفسه الذي تقرأه الورقة (`typeOf`)،
+ * وتلبس رمزه (`glyph`) لا حبّةً لكل شيء. والأهمّ: المهمّة التي **لا تُنجَز
+ * إلا بقيمة** (`needsValue`) ما عاد يصحّ أن تُختَم بضغطة «أعطيت» — فقياسٌ
+ * بلا رقمٍ ليس قياساً، وختمُه يزيّف السجلّ. فتفتح حقلاً للرقم بدلها.
+ */
+function TaskCard({ task, onGive, onValue, wall }: {
+  task: BoardTask;
+  onGive?: (t: TreatmentEntry) => void;
+  onValue?: (t: TreatmentEntry, value: string) => void;
+  wall: boolean;
+}) {
+  const { t } = useTranslation();
   const { tx, pet, status, late } = task;
   const meta = STATUS_META[status];
   const done = status === "given";
+  const type = typeOf(tx);
+  const tm = TASK_META[type];
+  /** القياس يحتاج رقماً، ولا نملك مَن يستقبله إلا إذا مُرِّر `onValue`. */
+  const asksValue = tm.needsValue && !!onValue;
+  const [draft, setDraft] = useState("");
+  const [typing, setTyping] = useState(false);
+
+  const submit = () => {
+    const v = draft.trim();
+    if (!v || !onValue) return;
+    playDoseGiven();
+    onValue(tx, v);
+    setTyping(false);
+    setDraft("");
+  };
+
   return (
     <div className={cn("flex items-center gap-2.5 rounded-2xl border p-2.5 transition", meta.card, wall && "gap-4 p-4")}>
       {pet ? <PetAvatar pet={pet} size={wall ? 56 : 40} className="shrink-0 rounded-xl" />
@@ -59,15 +96,32 @@ function TaskCard({ task, onGive, wall }: { task: BoardTask; onGive?: (t: Treatm
       <div className="min-w-0 flex-1">
         <div className={cn("truncate font-extrabold text-ink", wall ? "text-2xl" : "text-sm")}>{pet?.name ?? "—"}</div>
         <div className={cn("flex flex-wrap items-center gap-x-2 gap-y-0.5 text-ink-muted", wall ? "text-lg" : "text-2xs")}>
-          <span className="inline-flex items-center gap-1 font-bold text-ink">
-            <Pill size={wall ? 18 : 12} className="shrink-0" /> {tx.medication}
+          <span className="inline-flex items-center gap-1 font-bold text-ink" data-tasktype={type}>
+            {/* الرمز نفسه الذي يحمله صدر الصف بالورقة — لغة شكلٍ واحدة لا لغتان */}
+            <span className={cn("shrink-0 font-black leading-none text-ink-muted", wall ? "text-xl" : "text-xs")} aria-label={tm.ar()}>{tm.glyph}</span>
+            {tx.medication}
           </span>
+          {tx.route && type === "drug" && (
+            <span className="rounded bg-surface-2 px-1.5 py-px font-bold text-ink-muted">{routeShort(tx.route)}</span>
+          )}
           {tx.amount?.trim() && <span className="font-semibold">{tx.amount}</span>}
           {tx.observations?.trim() && !wall && <span className="opacity-70">{tx.observations}</span>}
         </div>
         {status === "overdue" && (
           <div className={cn("mt-0.5 font-extrabold text-danger-600 dark:text-danger-300", wall ? "text-base" : "text-2xs")}>
             {lateLabel(late)}
+          </div>
+        )}
+        {/* القيمة المقيسة — هي **حصيلة** المهمّة، فإخفاؤها يُفرغها من معناها */}
+        {done && tx.result?.trim() && (
+          <div className={cn("mt-0.5 font-black tabular-nums text-success-700 dark:text-success-300", wall ? "text-xl" : "text-xs")} data-taskresult>
+            {tx.result}
+          </div>
+        )}
+        {/* «فاتت ولها سبب» حالةٌ ثالثة: لا مُنجَزة ولا مُهمَلة — والسبب يُقرأ */}
+        {!done && tx.missed_reason?.trim() && (
+          <div className={cn("mt-0.5 inline-flex items-center gap-1 font-bold text-warn-700 dark:text-warn-300", wall ? "text-base" : "text-2xs")} data-taskmissed>
+            <SkipForward size={wall ? 16 : 11} className="shrink-0" /> {tx.missed_reason}
           </div>
         )}
         {done && tx.administered_by && !wall && (
@@ -79,16 +133,47 @@ function TaskCard({ task, onGive, wall }: { task: BoardTask; onGive?: (t: Treatm
         <span className={cn("rounded-full px-2 py-0.5 font-extrabold", meta.chip, wall ? "text-base px-3 py-1" : "text-[10px]")}>
           {tx.time?.trim() ? timeLabel(tx.time) : meta.label}
         </span>
-        {!done && onGive && (
+
+        {!done && asksValue && typing && (
+          <div className="flex items-center gap-1">
+            <input
+              autoFocus
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") submit(); if (e.key === "Escape") setTyping(false); }}
+              inputMode="decimal"
+              placeholder={tm.valueHint?.()}
+              data-taskvalueinput
+              className={cn("rounded-xl border border-line bg-surface-1 px-2 text-center font-bold text-ink outline-none focus:border-brand-400",
+                wall ? "h-11 w-28 text-lg" : "h-8 w-20 text-2xs")}
+            />
+            <button type="button" onClick={submit} disabled={!draft.trim()} data-tasksave
+              className={cn("rounded-full bg-success-600 font-extrabold text-white shadow-soft transition hover:bg-success-700 active:scale-95 disabled:opacity-40",
+                wall ? "px-4 py-2.5 text-lg" : "px-2.5 py-1.5 text-2xs")}>
+              {t("board.saveValue", "حفظ")}
+            </button>
+          </div>
+        )}
+
+        {!done && asksValue && !typing && (
+          <button type="button" onClick={() => { playTap(); setTyping(true); }} data-taskrecord
+            className={cn("rounded-full bg-brand-600 font-extrabold text-white shadow-soft transition hover:bg-brand-700 active:scale-95",
+              wall ? "px-5 py-2.5 text-lg" : "px-3 py-1.5 text-2xs")}>
+            {t("board.recordValue", "سجّل القيمة")}
+          </button>
+        )}
+
+        {!done && !asksValue && onGive && (
           <button
             type="button"
             onClick={() => { playDoseGiven(); onGive(tx); }}
+            data-taskgive
             className={cn(
               "rounded-full bg-success-600 font-extrabold text-white shadow-soft transition hover:bg-success-700 active:scale-95",
               wall ? "px-5 py-2.5 text-lg" : "px-3 py-1.5 text-2xs",
             )}
           >
-            أعطيت
+            {type === "drug" ? t("board.given", "أعطيت") : t("board.done", "تمّت")}
           </button>
         )}
         {done && <CheckCircle2 size={wall ? 28 : 18} className="text-success-600 dark:text-success-400" />}
@@ -107,12 +192,14 @@ function TaskCard({ task, onGive, wall }: { task: BoardTask; onGive?: (t: Treatm
  * wall.
  */
 export function TreatmentBoard({
-  treatments, pets, todayISO, onGive, wall, onToggleWall,
+  treatments, pets, todayISO, onGive, onValue, wall, onToggleWall,
 }: {
   treatments: TreatmentEntry[];
   pets: Record<string, Pet>;
   todayISO: string;
   onGive: (t: TreatmentEntry) => void;
+  /** تسجيل مهمّةٍ بقيمة (حرارة، سوائل، تغذية). بدونه تُعرَض القيمة ولا تُدخَل. */
+  onValue?: (t: TreatmentEntry, value: string) => void;
   wall: boolean;
   onToggleWall: () => void;
 }) {
@@ -163,7 +250,7 @@ export function TreatmentBoard({
           <span className={cn("rounded-full bg-surface-2 px-2 py-0.5 tabular-nums", wall ? "text-lg" : "text-[10px]")}>{formatNum(items.length)}</span>
         </div>
         <div className={cn("grid gap-2", wall ? "grid-cols-1 gap-3 lg:grid-cols-2 2xl:grid-cols-3" : "grid-cols-1 xl:grid-cols-2")}>
-          {items.map((t) => <TaskCard key={t.tx.id} task={t} onGive={onGive} wall={wall} />)}
+          {items.map((t) => <TaskCard key={t.tx.id} task={t} onGive={onGive} onValue={onValue} wall={wall} />)}
         </div>
       </section>
     );

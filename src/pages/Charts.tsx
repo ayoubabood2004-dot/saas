@@ -342,18 +342,22 @@ export function Charts() {
   };
 
   /** One-tap give from the board — optimistic, so a busy round never waits on the network. */
-  const giveDose = useCallback(async (t: TreatmentEntry) => {
+  const giveDose = useCallback(async (tx: TreatmentEntry) => {
     const at = new Date().toISOString();
     const by = user?.full_name ?? undefined;
-    setTreatments((prev) => prev.map((x) => (x.id === t.id ? { ...x, administered_at: at, administered_by: by } : x)));
+    setTreatments((prev) => prev.map((x) => (x.id === tx.id ? { ...x, administered_at: at, administered_by: by } : x)));
     try {
-      await repo.setTreatmentGiven(t.id, true, by, at);
-      await syncDoseCycleForPet(t.pet_id);
-    } catch {
+      await repo.setTreatmentGiven(tx.id, true, by, at);
+      await syncDoseCycleForPet(tx.pet_id);
+    } catch (err) {
       // Put it back on the board — a dose that didn't save must not look given.
-      setTreatments((prev) => prev.map((x) => (x.id === t.id ? { ...x, administered_at: null, administered_by: undefined } : x)));
+      // والردّ وحده ما كان يكفي: الخانة ترجع بصمتٍ فيظنّ الطبيب أنه لم يضغط،
+      // فيضغط ثانيةً ويفشل ثانيةً. فالردّ يُقال الآن كما يُقال بالورقة.
+      setTreatments((prev) => prev.map((x) => (x.id === tx.id ? { ...x, administered_at: null, administered_by: undefined } : x)));
+      playWarning();
+      toast.error(t("charts.saveFailGive", "ما انحفظ الإعطاء — رجّعنا الخانة مثل ما كانت. أعِد المحاولة."), describeDbError(err, t));
     }
-  }, [user]);
+  }, [user, toast, t]);
 
   const charts = useMemo<Chart[]>(() => {
     const q = query.trim().toLowerCase();
@@ -989,6 +993,7 @@ export function Charts() {
           pets={pets}
           todayISO={todayISO}
           onGive={(t) => void giveDose(t)}
+          onValue={flowValue}
           wall={wall}
           onToggleWall={() => { playTap(); setWall((w) => !w); }}
         />

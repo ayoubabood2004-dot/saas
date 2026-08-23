@@ -346,7 +346,16 @@ export default function VisitPage() {
       for (const m of lastMeds) {
         // Keep each dose's clock slot — the extension repeats the day as scheduled,
         // it doesn't flatten it back into untimed rows.
-        rows.push({ pet_id: visit.pet_id, visit_id: visit.id, day, medication: m.medication, amount: m.amount, time: m.time, observations: m.observations, doctor: user?.full_name });
+        //
+        // ويُنقل معها **نوع المهمّة وطريق الإعطاء**: التمديد كان يكتب صفوفاً
+        // عاريةً من `task_type`، فينهار كل قياسٍ وكل سائلٍ إلى «دواء» (لأن
+        // غياب النوع يعني دواءً)، ويضيع «وريدي». يعني يومٌ فيه حرارةٌ وسوائل
+        // يُمدَّد فيصير ثلاثة أدوية — تزييفٌ صامت لخطّة العلاج.
+        rows.push({
+          pet_id: visit.pet_id, visit_id: visit.id, day, medication: m.medication,
+          amount: m.amount, time: m.time, observations: m.observations,
+          task_type: m.task_type, route: m.route, doctor: user?.full_name,
+        });
       }
     }
     await repo.addTreatments(rows); // دفعة وحدة
