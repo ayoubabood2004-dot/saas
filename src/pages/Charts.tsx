@@ -7,6 +7,7 @@ import {
   Stethoscope, BedDouble, HeartPulse, ClipboardList, Pill, AlertTriangle,
   CheckCircle2, Clock, Loader2, Search, LayoutGrid, TableProperties, ChevronLeft, Slice, Plus,
   Archive, DoorOpen, BarChart3, RotateCcw, MessageCircle, FileText, HeartCrack, Pencil, Check, Boxes,
+  ClipboardCheck,
 } from "lucide-react";
 import type { Admission, ClinicVisit, MedicalVisit, Pet, PatientCondition, TreatmentEntry , Surgery } from "@/types";
 import { repo } from "@/lib/repo";
@@ -15,6 +16,7 @@ import { PetAvatar } from "@/components/PetAvatar";
 import { Button, useToast } from "@/components/ui";
 import { Flowsheet, AddTaskSheet, type FlowPatient } from "@/components/Flowsheet";
 import { RoundMode } from "@/components/RoundMode";
+import { ProtocolSheet } from "@/components/ProtocolSheet";
 import { buildRound } from "@/lib/round";
 import type { GroupBy } from "@/lib/flowsheet";
 import { cageRoomOf, cageSortKey } from "@/lib/cageOrder";
@@ -243,6 +245,8 @@ export function Charts() {
   }, []);
   /** المريض المفتوحة له لوحة «مهمة جديدة». */
   const [addFor, setAddFor] = useState<string | null>(null);
+  /** المريض الذي فُتح له اختيار البروتوكول — منفصلٌ عن `addFor` فالورقتان مختلفتان. */
+  const [protoFor, setProtoFor] = useState<string | null>(null);
   /* المريض المعروض بورقة العلاج. `null` = الكل (السلوك القديم، بضغطةٍ واحدة).
    *
    * الشبكة محاورها المريض والساعة، فكلّما كثر المرضى ضاق كل شيء: عشرة صفوف
@@ -887,7 +891,14 @@ export function Charts() {
                     activeCharts.find((c) => c.petId === focusPet)?.title].filter(Boolean).join(" · ")}
                 </p>
               </div>
-              <Button size="sm" className="ms-auto" style={{ minHeight: 44 }}
+              {/* البروتوكول قبل «إضافة علاج»: الحالة الشائعة تُكتب بضغطة،
+                  والنادرة تُكتب يدوياً. فالأشيع يقف أولاً بمسار الإصبع. */}
+              <Button size="sm" variant="secondary" className="ms-auto" style={{ minHeight: 44 }}
+                data-protoopen leftIcon={<ClipboardCheck size={15} />}
+                onClick={() => { playTap(); setProtoFor(focusPet); }}>
+                {t("charts.protocol", "بروتوكول")}
+              </Button>
+              <Button size="sm" style={{ minHeight: 44 }}
                 leftIcon={<Plus size={15} />} onClick={() => { playTap(); setAddHour(null); setAddFor(focusPet); }}>
                 {t("charts.addOrder", "إضافة علاج")}
               </Button>
@@ -945,6 +956,16 @@ export function Charts() {
               species={pets[addFor]?.species}
               onClose={() => setAddFor(null)}
               onAdd={(rows) => { void flowAdd(addFor, rows); setAddFor(null); }}
+            />
+          )}
+
+          {protoFor && (
+            <ProtocolSheet
+              pet={pets[protoFor]}
+              petName={pets[protoFor]?.name ?? t("charts.theAnimal", "الحيوان")}
+              todayISO={todayISO}
+              onClose={() => setProtoFor(null)}
+              onApply={(rows) => { void flowAdd(protoFor, rows); setProtoFor(null); }}
             />
           )}
         </>
