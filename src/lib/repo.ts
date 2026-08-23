@@ -902,6 +902,30 @@ const demoRepo = {
     if (!tx) return;
     tx.administered_at = given ? (at || new Date().toISOString()) : null;
     tx.administered_by = given ? by : undefined;
+    if (given) tx.missed_reason = null;   // أُنجزت ⇒ ما عاد لها سببُ فوات
+    saveDB(db);
+  },
+
+  /** تسجيل مهمة **بقيمة**: حرارة، نسبة أكل، حجم سوائل، نتيجة فحص.
+   *  الدواء يُنجَز بعلامة، وهذه لا تُنجَز إلا بما قِيس فعلاً — فالقيمة جزءٌ
+   *  من الإنجاز لا ملحقٌ به. */
+  async setTreatmentResult(id: string, result: string, by?: string, at?: string): Promise<void> {
+    const db = loadDB();
+    const tx = db.treatments.find((t) => t.id === id);
+    if (!tx) return;
+    tx.result = result;
+    tx.administered_at = at || new Date().toISOString();
+    tx.administered_by = by;
+    tx.missed_reason = null;
+    saveDB(db);
+  },
+
+  /** توثيق فوات مهمة بسببها — تبقى غير مُنجَزة، لكنها ما عادت مجهولة. */
+  async setTreatmentMissed(id: string, reason: string | null): Promise<void> {
+    const db = loadDB();
+    const tx = db.treatments.find((t) => t.id === id);
+    if (!tx) return;
+    tx.missed_reason = reason;
     saveDB(db);
   },
 
@@ -1856,6 +1880,8 @@ const DEMO_ACTIVITY_MAP: Record<string, { entity: string; action: "INSERT" | "UP
   addTreatment: { entity: "treatment_entries", action: "INSERT" },
   addTreatments: { entity: "treatment_entries", action: "INSERT" },
   setTreatmentGiven: { entity: "treatment_entries", action: "UPDATE" },
+  setTreatmentResult: { entity: "treatment_entries", action: "UPDATE" },
+  setTreatmentMissed: { entity: "treatment_entries", action: "UPDATE" },
   deleteTreatment: { entity: "treatment_entries", action: "DELETE" },
   addAdmission: { entity: "admissions", action: "INSERT" },
   addSurgery: { entity: "surgeries", action: "INSERT" },
@@ -2442,7 +2468,13 @@ const supabaseRepo: typeof demoRepo = {
     ok(await sbc().from("surgeries").delete().eq("id", id));
   },
   async setTreatmentGiven(id, given, by, at) {
-    ok(await sbc().from("treatment_entries").update({ administered_at: given ? (at || new Date().toISOString()) : null, administered_by: given ? by : null }).eq("id", id));
+    ok(await sbc().from("treatment_entries").update({ administered_at: given ? (at || new Date().toISOString()) : null, administered_by: given ? by : null, ...(given ? { missed_reason: null } : {}) }).eq("id", id));
+  },
+  async setTreatmentResult(id, result, by, at) {
+    ok(await sbc().from("treatment_entries").update({ result, administered_at: at || new Date().toISOString(), administered_by: by ?? null, missed_reason: null }).eq("id", id));
+  },
+  async setTreatmentMissed(id, reason) {
+    ok(await sbc().from("treatment_entries").update({ missed_reason: reason }).eq("id", id));
   },
   async listAdmissions(clinicId) {
     // Newest case first — order by the precise created_at so cases opened on the same

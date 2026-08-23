@@ -316,6 +316,17 @@ export interface Appointment {
 }
 
 /** One row of an ongoing (multi-day) treatment sheet for an inpatient / continued course. */
+/** نوع المهمة على ورقة العلاج.
+ *
+ *  الطبلة ليست جدول أدوية: الحيوان الراقد يأكل ويبول وتُقاس حرارته وتجري
+ *  سوائله وتُغيَّر ضماداته. ولكل نوعٍ **طريقة إنجاز مختلفة**: الدواء يُنجَز
+ *  بعلامة، والعلامات الحيوية والتغذية تُنجَز **بقيمةٍ تُكتب** — وهذا هو سبب
+ *  وجود حقل result. */
+export type TaskType = "drug" | "fluid" | "vitals" | "feed" | "elim" | "nurse" | "lab";
+
+/** طريق الإعطاء — أحد «حقوق الدواء الخمسة». غيابه يعني أن المنفّذ يخمّن. */
+export type DoseRoute = "iv" | "im" | "sc" | "po" | "topical" | "inhaled";
+
 export interface TreatmentEntry {
   id: string;
   pet_id: string;
@@ -324,6 +335,14 @@ export interface TreatmentEntry {
   medication: string; // type of medication
   time: string; // scheduled time of administration, e.g. "08:00"
   amount: string; // dose / quantity, e.g. "1.4 ml" or "75 mg"
+  /** نوع المهمة. غيابه = دواء (كل الصفوف قبل هجرة 0115). */
+  task_type?: TaskType;
+  /** طريق الإعطاء — للأدوية والسوائل. */
+  route?: DoseRoute | null;
+  /** القيمة المسجَّلة عند الإنجاز: «٣٩٫٦» أو «٨٠٪» أو «٣٤٠ مل». */
+  result?: string | null;
+  /** لماذا فاتت — توثيقٌ يحمي العيادة ويُغني ورقة التسليم. */
+  missed_reason?: string | null;
   observations?: string; // daily note on the animal's condition
   /** Set when the dose has actually been administered (flowsheet done-state). */
   administered_at?: string | null; // ISO datetime

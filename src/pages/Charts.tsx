@@ -5,13 +5,16 @@ import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import {
   Stethoscope, BedDouble, HeartPulse, ClipboardList, Pill, AlertTriangle,
-  CheckCircle2, Clock, Loader2, Search, LayoutGrid, ChevronLeft, Slice,
+  CheckCircle2, Clock, Loader2, Search, LayoutGrid, TableProperties, ChevronLeft, Slice,
   Archive, DoorOpen, BarChart3, RotateCcw, MessageCircle, FileText, HeartCrack, Pencil, Check, Boxes,
 } from "lucide-react";
 import type { Admission, ClinicVisit, MedicalVisit, Pet, PatientCondition, TreatmentEntry , Surgery } from "@/types";
 import { repo } from "@/lib/repo";
 import { getCached, setCached } from "@/lib/swrCache";
 import { PetAvatar } from "@/components/PetAvatar";
+import { Flowsheet, AddTaskSheet, type FlowPatient } from "@/components/Flowsheet";
+import type { GroupBy } from "@/lib/flowsheet";
+import { cageRoomOf, cageSortKey } from "@/lib/cageOrder";
 /* لافتة الرقم نفسها التي تحملها بطاقة القفص — مكوّنٌ واحد لا نسختان
  * متشابهتان: الشاشتان تتكلّمان لغةَ شكلٍ واحدة، وأيُّ تحسينٍ يصلهما معاً. */
 import { Nameplate } from "@/components/cages/CageCard";
@@ -165,6 +168,13 @@ interface Chart {
   total: number;
 }
 
+/** العروض الثلاثة ومفاتيح حفظها. */
+type ChartView = "sheet" | "cards" | "board";
+const VIEW_KEY = "vp_charts_view";
+const GROUP_KEY = "vp_charts_group";
+/** "HH:MM" من ساعة الجهاز — يُحسب مرة كل دقيقة لا كل رسم. */
+const hhmm = (d = new Date()) => `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+
 const dayNumber = (iso: string, todayISO: string) => {
   const start = new Date(`${iso.slice(0, 10)}T00:00:00`).getTime();
   const now = new Date(`${todayISO}T00:00:00`).getTime();
@@ -180,11 +190,13 @@ export function Charts() {
   const todayISO = localISO();
 
   const [ops, setOps] = useState(() => opsStore.get());
+  /** "HH:MM" الحالية — تتبع نبضة الدقيقة أدناه، فخط «الآن» يزحف مع الساعة. */
+  const [nowHHMM, setNowHHMM] = useState(hhmm);
   // Minute tick — re-renders so the "اليوم مكتمل" aqua tint clears by itself the
   // moment the next dose comes due (e.g. the day rolls over to tomorrow's doses).
   const [tick, setTick] = useState(0);
   useEffect(() => {
-    const id = setInterval(() => setTick((n) => n + 1), 60000);
+    const id = setInterval(() => { setTick((n) => n + 1); setNowHHMM(hhmm()); }, 60000);
     return () => clearInterval(id);
   }, []);
   // Synchronous seed of the open visits — seeding only inside the effect paints
@@ -196,8 +208,36 @@ export function Charts() {
   /** السجل المفتوح — اليومية هي الافتراضية لأنها شغل الصبح الأول. */
   const [reg, setReg] = useState<RegistryKey>("daily");
   const [query, setQuery] = useState("");
-  /** "cards" = a card per patient · "board" = a task per dose, by the hour. */
-  const [view, setView] = useState<"cards" | "board">("cards");
+  /* ثلاثة عروض لنفس البيانات، والاختيار يخصّ الطبيب لا التطبيق:
+   *   sheet  = ورقة العلاج (مرضى × ساعات) — الأقرب لما يفعله بالجولة
+   *   cards  = بطاقة لكل مريض — «من عندي اليوم؟»
+   *   board  = مهمة لكل جرعة مرتّبةً بالتأخير — شاشة الجدار
+   * ويُحفظ اختياره: طبيبٌ فضّل البطاقات مرة لا يُعاد ترشيده كل صباح. */
+  const [view, setView] = useState<ChartView>(() => {
+    try {
+      const v = localStorage.getItem(VIEW_KEY);
+      return v === "cards" || v === "board" || v === "sheet" ? v : "sheet";
+    } catch { return "sheet"; }
+  });
+  const pickView = useCallback((v: ChartView) => {
+    playTap();
+    setView(v);
+    try { localStorage.setItem(VIEW_KEY, v); } catch { /* خصوصية متشددة — الاختيار يبقى للجلسة */ }
+  }, []);
+  /** المجموعة التي تُقسَّم بها ورقة العلاج — بيد الطبيب لا بخوارزمية ثابتة. */
+  const [grouping, setGrouping] = useState<GroupBy>(() => {
+    try {
+      const g = localStorage.getItem(GROUP_KEY);
+      return g === "cage" || g === "acuity" || g === "doctor" || g === "none" ? g : "cage";
+    } catch { return "cage"; }
+  });
+  const pickGroup = useCallback((g: GroupBy) => {
+    playTap();
+    setGrouping(g);
+    try { localStorage.setItem(GROUP_KEY, g); } catch { /* ignore */ }
+  }, []);
+  /** المريض المفتوحة له لوحة «مهمة جديدة». */
+  const [addFor, setAddFor] = useState<string | null>(null);
   const [wall, setWall] = useState(false);
 
   const { branches, active: activeBranch } = useBranchState(clinicId);
@@ -431,6 +471,38 @@ export function Charts() {
     } catch (e) { const m = quotaMessage(e); if (m) window.alert(m); }
   };
 
+  /* ── أفعال ورقة العلاج ────────────────────────────────────────────────
+   * كلها متفائلة: الجولة لا تنتظر الشبكة. الخانة تنقلب بمكانها فوراً
+   * والكتابة تلحقها — وهذا هو الفرق بين ورقة تُستعمل وأخرى تُهجَر. */
+  const patchTx = useCallback((id: string, patch: Partial<TreatmentEntry>) => {
+    setTreatments((cur) => cur.map((t) => (t.id === id ? { ...t, ...patch } : t)));
+  }, []);
+
+  const flowGive = useCallback((e: TreatmentEntry) => {
+    const at = new Date().toISOString();
+    patchTx(e.id, { administered_at: at, administered_by: user?.full_name ?? undefined, missed_reason: null });
+    repo.setTreatmentGiven(e.id, true, user?.full_name ?? undefined, at).catch(() => {});
+  }, [patchTx, user?.full_name]);
+
+  const flowValue = useCallback((e: TreatmentEntry, value: string) => {
+    const at = new Date().toISOString();
+    patchTx(e.id, { result: value, administered_at: at, administered_by: user?.full_name ?? undefined, missed_reason: null });
+    repo.setTreatmentResult(e.id, value, user?.full_name ?? undefined, at).catch(() => {});
+  }, [patchTx, user?.full_name]);
+
+  const flowMissed = useCallback((e: TreatmentEntry, reason: string | null) => {
+    patchTx(e.id, { missed_reason: reason });
+    repo.setTreatmentMissed(e.id, reason).catch(() => {});
+  }, [patchTx]);
+
+  const flowAdd = useCallback(async (petId: string, rows: Omit<TreatmentEntry, "id" | "created_at">[]) => {
+    const visitId = openVisitByPet.get(petId)?.id ?? null;
+    const full = rows.map((r) => ({ ...r, pet_id: petId, visit_id: visitId, doctor: user?.full_name ?? undefined }));
+    await repo.addTreatments(full).catch(() => {});
+    const tx = await repo.listAllTreatments([petId]).catch(() => [] as TreatmentEntry[]);
+    setTreatments((cur) => [...cur.filter((t) => t.pet_id !== petId), ...tx]);
+  }, [openVisitByPet, user?.full_name]);
+
   const regCounts: Record<RegistryKey, number> = useMemo(() => ({
     daily: charts.filter((c) => c.bucket === "daily").length,
     careBoarding: charts.filter((c) => c.bucket === "careBoarding").length,
@@ -454,6 +526,44 @@ export function Charts() {
     const shown = new Set(activeCharts.map((c) => c.petId));
     return treatments.filter((t) => shown.has(t.pet_id));
   }, [activeCharts, treatments]);
+
+  /* المرضى المعروضون بالورقة — مرتّبون حسب التجميع المختار. «حسب ترتيب
+   * الأقفاص» يقرأ التخطيط الذي رسمه الطبيب بغرفة الأقفاص نفسها. */
+  const flowPatients = useMemo<FlowPatient[]>(() => {
+    const list: FlowPatient[] = activeCharts.map((c) => ({
+      petId: c.petId,
+      pet: c.pet,
+      cage: c.cage ?? null,
+      room: cageRoomOf(c.cage) ?? null,
+      critical: acuityOf(c, txLoaded) === "critical" || acuityOf(c, txLoaded) === "overdue",
+      doctor: c.pet ? null : null,
+    }));
+    const byName = (a: FlowPatient, b: FlowPatient) => (a.pet?.name ?? "").localeCompare(b.pet?.name ?? "", "ar");
+    if (grouping === "cage") {
+      return list.sort((a, b) => cageSortKey(a.cage).localeCompare(cageSortKey(b.cage)) || byName(a, b));
+    }
+    if (grouping === "acuity") {
+      const rank = (p: FlowPatient) => {
+        const c = activeCharts.find((x) => x.petId === p.petId);
+        return c ? ACUITY_RANK[acuityOf(c, txLoaded)] : 9;
+      };
+      return list.sort((a, b) => rank(a) - rank(b) || byName(a, b));
+    }
+    return list.sort(byName);
+  }, [activeCharts, grouping, txLoaded]);
+
+  const flowGroupLabel = useMemo(() => {
+    if (grouping === "cage") {
+      return (p: FlowPatient) => p.room || t("flow.noRoom", "بلا قفص");
+    }
+    if (grouping === "acuity") {
+      return (p: FlowPatient) => {
+        const c = activeCharts.find((x) => x.petId === p.petId);
+        return c ? acuityLabel(t, acuityOf(c, txLoaded)) : "";
+      };
+    }
+    return undefined;
+  }, [grouping, activeCharts, txLoaded, t]);
 
   // Hand the visit page the data we already have so it paints instantly (no spinner).
   const go = (petId: string, visit: ClinicVisit) =>
@@ -532,11 +642,15 @@ export function Charts() {
             <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("charts.searchPh", "ابحث باسم الحيوان أو التشخيص…")} className="input h-10 w-full ps-9" />
           </div>
           <div className="ms-auto inline-flex items-center gap-0.5 rounded-full border border-line bg-surface-2 p-0.5">
-            <button type="button" onClick={() => { playTap(); setView("cards"); }}
+            <button type="button" data-view="sheet" onClick={() => pickView("sheet")}
+              className={cn("inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-2xs font-bold transition", view === "sheet" ? "bg-brand-600 text-white shadow-soft" : "text-ink-muted hover:text-ink")}>
+              <TableProperties size={13} /> {t("charts.viewSheet", "ورقة العلاج")}
+            </button>
+            <button type="button" data-view="cards" onClick={() => pickView("cards")}
               className={cn("inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-2xs font-bold transition", view === "cards" ? "bg-brand-600 text-white shadow-soft" : "text-ink-muted hover:text-ink")}>
               <LayoutGrid size={13} /> {t("charts.viewCards", "بطاقات")}
             </button>
-            <button type="button" onClick={() => { playTap(); setView("board"); }}
+            <button type="button" data-view="board" onClick={() => pickView("board")}
               className={cn("inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-2xs font-bold transition", view === "board" ? "bg-brand-600 text-white shadow-soft" : "text-ink-muted hover:text-ink")}>
               <Clock size={13} /> {t("charts.viewBoard", "الجرعات بالساعة")}
             </button>
@@ -579,6 +693,54 @@ export function Charts() {
           </p>
           <p className="mt-1 text-xs text-ink-subtle">{t("charts.emptyHint", "الطبلة تنفتح تلقائياً لما تدخّل حالة علاج — والمنتهية تلگيها بـ«سكشن الحالات».")}</p>
         </div>
+      ) : view === "sheet" ? (
+        <>
+          {/* شريط التجميع — التجميع خيار الطبيب لا قرار المبرمج.
+              و«حسب ترتيب الأقفاص» يقرأ التخطيط الذي رسمه بغرفة الأقفاص:
+              يمشي بالممر فتتقدّم الورقة معه. */}
+          <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-line bg-surface-1 px-3 py-2">
+            <span className="text-2xs font-extrabold text-ink-muted">{t("flow.groupBy", "الترتيب:")}</span>
+            {([
+              ["cage", t("flow.gCage", "حسب ترتيب الأقفاص")],
+              ["acuity", t("flow.gAcuity", "حسب الحدّة")],
+              ["none", t("flow.gNone", "بلا تجميع")],
+            ] as [GroupBy, string][]).map(([g, label]) => (
+              <button key={g} type="button" data-group={g} onClick={() => pickGroup(g)}
+                className={cn("rounded-full px-3 py-1 text-2xs font-bold transition",
+                  grouping === g ? "bg-ink text-surface-1" : "bg-surface-2 text-ink-muted hover:bg-surface-3")}>
+                {label}
+              </button>
+            ))}
+            <span className="ms-auto text-2xs font-bold text-ink-subtle">
+              {t("flow.rowsHint", "كل صفٍّ أمرٌ واحد — والخانة ساعة تنفيذه")}
+            </span>
+          </div>
+
+          <Flowsheet
+            patients={flowPatients}
+            entries={boardTreatments}
+            todayISO={todayISO}
+            nowHHMM={nowHHMM}
+            groupLabel={flowGroupLabel}
+            onGive={flowGive}
+            onValue={flowValue}
+            onMissed={flowMissed}
+            onAddTask={(petId) => setAddFor(petId)}
+            onOpenPet={(petId) => {
+              const c = activeCharts.find((x) => x.petId === petId);
+              if (c) void openChart(c);
+            }}
+          />
+
+          {addFor && (
+            <AddTaskSheet
+              petName={pets[addFor]?.name ?? t("charts.theAnimal", "الحيوان")}
+              todayISO={todayISO}
+              onClose={() => setAddFor(null)}
+              onAdd={(rows) => { void flowAdd(addFor, rows); setAddFor(null); }}
+            />
+          )}
+        </>
       ) : view === "cards" ? (
         <>
           {/* Colour key — a colour language nobody explained is just decoration */}
