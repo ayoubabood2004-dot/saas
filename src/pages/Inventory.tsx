@@ -5,7 +5,7 @@ import { getCached, setCached } from "@/lib/swrCache";
 import {
   Barcode, Package, Trash2, Search, Building2, Plus, ChevronLeft, ArrowRight, ArrowLeft,
   TrendingUp, AlertTriangle, CalendarClock, Pencil, PackagePlus, Boxes, Layers, Wallet, ShoppingBag, FolderTree, ScanBarcode,
-  Check, ListPlus, Printer, Copy, Sparkles,
+  Check, ListPlus, Printer, Copy, Sparkles, FileSpreadsheet,
 } from "lucide-react";
 import type { Product, ProductCategory, Company, CompanySection } from "@/types";
 import { PurchasesTab, PurchaseBuilderModal } from "@/components/inventory/Purchases";
@@ -22,6 +22,7 @@ import { cn, formatDate, money } from "@/lib/utils";
 import { withTimeout, describeDbError } from "@/lib/errors";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
 import { openStockReport } from "@/lib/stockReportPrint";
+import { exportStocktakeXlsx } from "@/lib/stockReportXlsx";
 import { catalogLookup, type CatalogHit } from "@/lib/catalog";
 import { staggerContainer, staggerItem } from "@/lib/motion";
 
@@ -115,6 +116,7 @@ export function Inventory() {
   // null = لم يُفحص بعد · false = ترحيل 0075 ناقص (المجموعات تسقط بصمت)
   const [groupsOk, setGroupsOk] = useState<boolean | null>(null);
   const [fixBusy, setFixBusy] = useState(false);
+  const [xlsxBusy, setXlsxBusy] = useState(false);
 
   const mounted = useRef(true);
   const invKey = `inv_${clinicId ?? "self"}`;
@@ -211,6 +213,23 @@ export function Inventory() {
     }
   };
 
+  /* تصدير الجرد إكسل. مكتبة الإكسل تُحمَّل عند الضغط لا مع الصفحة (‏~٩٠٠ك)،
+   * فتبقى شاشة المخزون خفيفة لمن لا يصدّر. والفشل يُقال صراحةً: ملفٌّ لم
+   * ينزل بصمت يجعل الطبيب يبدأ الجرد بورقةٍ ليست بيده. */
+  const exportXlsx = async () => {
+    if (xlsxBusy) return;
+    playTap();
+    setXlsxBusy(true);
+    try {
+      const name = await exportStocktakeXlsx(products, companies, sections);
+      toast.success(t("pos.stockXlsxDone", { name, defaultValue: "نُزّل {{name}}" }));
+    } catch (e) {
+      toast.error(t("pos.stockXlsxFail", "تعذّر تصدير ملف الجرد"), e instanceof Error ? e.message : undefined);
+    } finally {
+      if (mounted.current) setXlsxBusy(false);
+    }
+  };
+
   // Pooled products carry no per-barcode count (they sell from the section pool),
   // so a stock of 0 is expected — never flag them as low stock.
   const lowStock = products.filter((p) => !p.pooled && p.stock <= lowThreshold(p)).length;
@@ -224,11 +243,17 @@ export function Inventory() {
           <h1 className="font-display text-2xl font-extrabold text-ink">{t("pos.title", "Inventory")}</h1>
           <p className="text-sm text-ink-subtle">{t("pos.subtitle", "Stock, products & low-stock alerts — for this clinic only.")}</p>
         </div>
-        {/* Full printable stock-count sheet (تقرير جرد) — matches the on-screen value card. */}
+        {/* الجرد بمخرجين من حسابٍ واحد: ورقةٌ تُملأ بالقلم، وملفٌّ يحسب الفرق
+            بنفسه. كلاهما يقرأ `stocktake.ts` فلا يفترقان برقم. */}
         {!loading && products.length > 0 && (
-          <Button variant="secondary" leftIcon={<Printer size={16} />} onClick={() => { playTap(); openStockReport(products, companies, sections); }}>
-            {t("pos.stockReport", "طباعة تقرير جرد")}
-          </Button>
+          <>
+            <Button variant="secondary" leftIcon={<Printer size={16} />} onClick={() => { playTap(); openStockReport(products, companies, sections); }}>
+              {t("pos.stockReport", "طباعة تقرير جرد")}
+            </Button>
+            <Button data-xlsxbtn variant="secondary" loading={xlsxBusy} leftIcon={<FileSpreadsheet size={16} />} onClick={() => void exportXlsx()}>
+              {t("pos.stockXlsx", "تصدير جرد إكسل")}
+            </Button>
+          </>
         )}
       </div>
 

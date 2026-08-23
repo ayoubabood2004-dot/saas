@@ -21,6 +21,25 @@ export interface XlsxReport {
   summary?: { label: string; value: string | number }[];
 }
 
+/**
+ * اسم ملفٍ ينجو من التنزيل.
+ *
+ * قِيس على كروم: خاصية `download` بحروفٍ غير لاتينية **تُهمَل كلها**، فينزل
+ * الملف باسم "download" بلا امتداد — ويفتحه ويندوز بأي برنامج إلا إكسل.
+ * فالاسم يُنظَّف لاتينياً دائماً، والعنوان العربي مكانه داخل الملف حيث يُقرأ
+ * صحيحاً على كل نظام.
+ */
+export function asciiFileName(stem: string, fallback = "export"): string {
+  const clean = stem
+    .replace(/[\\/:*?"<>|]/g, " ")     // ممنوعةٌ بأسماء الملفات
+    .replace(/[^\x20-\x7E]/g, "")       // وما ليس لاتينياً يسقط لا يُبدَّل
+    .replace(/\s+/g, "-")
+    .replace(/-{2,}/g, "-")
+    .replace(/^[-.]+|[-.]+$/g, "")
+    .slice(0, 80);
+  return `${clean || fallback}.xlsx`;
+}
+
 const BORDER_SOFT = { style: "thin", color: { rgb: "E2E8F0" } };
 const BORDER_HEAD = { style: "thin", color: { rgb: "CBD5E1" } };
 
@@ -125,8 +144,10 @@ export async function exportReportXlsx(r: XlsxReport): Promise<void> {
   const blob = new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
+  a.style.display = "none";
+  document.body.appendChild(a);
   a.href = url;
-  a.download = r.fileName.endsWith(".xlsx") ? r.fileName : `${r.fileName}.xlsx`;
+  a.download = asciiFileName(r.fileName.replace(/\.xlsx$/i, ""), "report");
   a.click();
-  URL.revokeObjectURL(url);
+  setTimeout(() => { a.remove(); URL.revokeObjectURL(url); }, 4000);
 }

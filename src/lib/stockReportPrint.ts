@@ -8,19 +8,19 @@
 // end. Pooled (legacy) section stock appears as its own highlighted row and is
 // valued exactly like قيمة المخزون (average price of the section's barcodes),
 // so the report's totals always match the on-screen card.
+//
+// الحساب نفسه ليس هنا: هو في `stocktake.ts` يتقاسمه هذا المخرج ومخرج الإكسل.
+// وهذه الوحدة **تعرض** ما حُسب هناك ولا تحسب — فالورقتان لا تفترقان أبداً.
 // ============================================================================
 import type { Product, Company, CompanySection } from "@/types";
 import { getClinicName, getClinicLogo } from "./settings";
 import { money } from "./utils";
+import { buildStocktake, flagsText, type StocktakeLine } from "./stocktake";
 
 const esc = (s: string) =>
   s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
-const LOW_STOCK = 5;
-const lowThreshold = (p: Product) => (p.min_stock && p.min_stock > 0 ? p.min_stock : LOW_STOCK);
 const fmtQty = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(3).replace(/\.?0+$/, ""));
-
-interface Totals { count: number; units: number; cost: number; retail: number }
 
 export function buildStockReportHTML(products: Product[], companies: Company[], sections: CompanySection[]): string {
   const clinic = getClinicName() || "doctorVet";
@@ -29,70 +29,22 @@ export function buildStockReportHTML(products: Product[], companies: Company[], 
   const stamp = now.toLocaleDateString("ar-IQ", { weekday: "long", year: "numeric", month: "long", day: "numeric" }) +
     " · " + now.toLocaleTimeString("ar-IQ", { hour: "2-digit", minute: "2-digit" });
 
-  const today = new Date().toISOString().slice(0, 10);
-  const noteOf = (p: Product): string => {
-    const notes: string[] = [];
-    if (p.pooled) notes.push("مجمّع");
-    else if ((p.stock || 0) <= 0) notes.push("نافد");
-    else if ((p.stock || 0) <= lowThreshold(p)) notes.push("منخفض");
-    if (p.expiry_date) {
-      if (p.expiry_date.slice(0, 10) < today) notes.push("منتهي الصلاحية");
-      else {
-        const d = Math.floor((new Date(p.expiry_date).getTime() - now.getTime()) / 86400000);
-        if (d <= 30) notes.push("قرب الانتهاء");
-      }
-    }
-    return notes.join(" · ");
-  };
+  const take = buildStocktake(products, companies, sections, now);
 
-  let seq = 0;
-  const grand: Totals = { count: 0, units: 0, cost: 0, retail: 0 };
-  let pooledCostAll = 0, pooledRetailAll = 0;
-
-  const rowsFor = (list: Product[], sub: Totals): string =>
-    list.map((p) => {
-      seq += 1;
-      const qty = p.pooled ? 0 : (p.stock || 0);
-      const cost = qty * (p.purchase_price || 0);
-      const retail = qty * (p.sell_price || 0);
-      sub.count += 1; sub.units += qty; sub.cost += cost; sub.retail += retail;
-      grand.count += 1; grand.units += qty; grand.cost += cost; grand.retail += retail;
-      const note = noteOf(p);
-      return `<tr>
-        <td class="c">${seq}</td>
-        <td class="mono">${esc(p.barcode ?? "—")}</td>
-        <td class="name">${esc(p.name)}</td>
-        <td class="c">${money(p.purchase_price || 0)}</td>
-        <td class="c">${money(p.sell_price || 0)}</td>
-        <td class="c qty">${p.pooled ? "مجمّع" : fmtQty(qty)}</td>
-        <td class="c">${money(cost)}</td>
-        <td class="blank"></td>
-        <td class="blank"></td>
-        <td class="note">${esc(note)}</td>
-      </tr>`;
-    }).join("");
-
-  /** The pooled (undistributed) stock of a section as its own count line. */
-  const poolRow = (sec: CompanySection, inSec: Product[], sub: Totals): string => {
-    const pool = sec.pooled_stock || 0;
-    if (pool <= 0 || inSec.length === 0) return "";
-    const avgBuy = inSec.reduce((s, p) => s + (p.purchase_price || 0), 0) / inSec.length;
-    const avgSell = inSec.reduce((s, p) => s + (p.sell_price || 0), 0) / inSec.length;
-    const cost = pool * avgBuy;
-    sub.units += pool; sub.cost += cost;
-    grand.units += pool; grand.cost += cost; grand.retail += pool * avgSell;
-    pooledCostAll += cost; pooledRetailAll += pool * avgSell;
-    return `<tr class="pool">
-      <td class="c">—</td>
-      <td class="mono">—</td>
-      <td class="name">مخزون مجمّع للصنف (غير موزّع على الباركودات)</td>
-      <td class="c">≈${money(avgBuy)}</td>
-      <td class="c">≈${money(avgSell)}</td>
-      <td class="c qty">${fmtQty(pool)}</td>
-      <td class="c">≈${money(cost)}</td>
+  const rowFor = (l: StocktakeLine): string => {
+    const isPool = l.kind === "pool";
+    const approx = isPool ? "≈" : "";
+    return `<tr${isPool ? ' class="pool"' : ""}>
+      <td class="c">${isPool ? "—" : l.seq}</td>
+      <td class="mono">${esc(l.barcode ?? "—")}</td>
+      <td class="name">${esc(l.name)}</td>
+      <td class="c">${approx}${money(l.buy)}</td>
+      <td class="c">${approx}${money(l.sell)}</td>
+      <td class="c qty">${!isPool && l.flags.includes("pooled") ? "مجمّع" : fmtQty(l.systemQty)}</td>
+      <td class="c">${approx}${money(l.cost)}</td>
       <td class="blank"></td>
       <td class="blank"></td>
-      <td class="note">تقديري بمتوسط أسعار الصنف</td>
+      <td class="note">${esc(isPool ? "تقديري بمتوسط أسعار الصنف" : flagsText(l.flags))}</td>
     </tr>`;
   };
 
@@ -102,37 +54,14 @@ export function buildStockReportHTML(products: Product[], companies: Company[], 
     <th class="c wide">العدد الفعلي</th><th class="c wide">الفرق</th><th>ملاحظات</th>
   </tr></thead>`;
 
-  const groupBlock = (title: string, subtitle: string, body: string, sub: Totals): string => `
+  const blocks = take.groups.map((g) => `
     <section class="grp">
-      <div class="gh"><span class="gt">${esc(title)}</span>${subtitle ? `<span class="gs">${esc(subtitle)}</span>` : ""}
-        <span class="gsum">${sub.count} منتج · ${fmtQty(sub.units)} قطعة · ${money(sub.cost)}</span></div>
-      <table>${tableHead}<tbody>${body}</tbody></table>
-    </section>`;
+      <div class="gh"><span class="gt">${esc(g.companyName)}</span>${g.sectionName ? `<span class="gs">${esc(g.sectionName)}</span>` : ""}
+        <span class="gsum">${g.totals.products} منتج · ${fmtQty(g.totals.units)} قطعة · ${money(g.totals.cost)}</span></div>
+      <table>${tableHead}<tbody>${g.lines.map(rowFor).join("")}</tbody></table>
+    </section>`).join("");
 
-  const blocks: string[] = [];
-  const sorted = [...companies].sort((a, b) => a.name.localeCompare(b.name));
-  for (const co of sorted) {
-    const mine = products.filter((p) => p.company_id === co.id);
-    const coSections = sections.filter((s) => s.company_id === co.id).sort((a, b) => a.name.localeCompare(b.name));
-    if (mine.length === 0 && !coSections.some((s) => (s.pooled_stock || 0) > 0)) continue;
-    for (const sec of coSections) {
-      const inSec = mine.filter((p) => p.section_id === sec.id).sort((a, b) => a.name.localeCompare(b.name));
-      if (inSec.length === 0 && (sec.pooled_stock || 0) <= 0) continue;
-      const sub: Totals = { count: 0, units: 0, cost: 0, retail: 0 };
-      const body = rowsFor(inSec, sub) + poolRow(sec, inSec, sub);
-      blocks.push(groupBlock(co.name, sec.name, body, sub));
-    }
-    const loose = mine.filter((p) => !p.section_id).sort((a, b) => a.name.localeCompare(b.name));
-    if (loose.length) {
-      const sub: Totals = { count: 0, units: 0, cost: 0, retail: 0 };
-      blocks.push(groupBlock(co.name, "بدون صنف", rowsFor(loose, sub), sub));
-    }
-  }
-  const unfiled = products.filter((p) => !p.company_id).sort((a, b) => a.name.localeCompare(b.name));
-  if (unfiled.length) {
-    const sub: Totals = { count: 0, units: 0, cost: 0, retail: 0 };
-    blocks.push(groupBlock("بدون شركة", "", rowsFor(unfiled, sub), sub));
-  }
+  const { totals, pooled } = take;
 
   return `<!doctype html><html dir="rtl" lang="ar"><head><meta charset="utf-8"><title>تقرير جرد المخزون — ${esc(clinic)}</title>
 <style>
@@ -179,21 +108,21 @@ export function buildStockReportHTML(products: Product[], companies: Company[], 
   </div>
 
   <div class="kpis">
-    <div class="kpi"><b>${grand.count}</b><span>عدد المنتجات</span></div>
-    <div class="kpi"><b>${fmtQty(grand.units)}</b><span>إجمالي القطع (مع المجمّع)</span></div>
-    <div class="kpi"><b>${money(Math.round(grand.cost))}</b><span>رأس المال (شراء)</span></div>
-    <div class="kpi"><b>${money(Math.round(grand.retail))}</b><span>قيمة البيع</span></div>
-    <div class="kpi"><b>${money(Math.round(grand.retail - grand.cost))}</b><span>الربح المتوقع</span></div>
+    <div class="kpi"><b>${totals.products}</b><span>عدد المنتجات</span></div>
+    <div class="kpi"><b>${fmtQty(totals.units)}</b><span>إجمالي القطع (مع المجمّع)</span></div>
+    <div class="kpi"><b>${money(Math.round(totals.cost))}</b><span>رأس المال (شراء)</span></div>
+    <div class="kpi"><b>${money(Math.round(totals.retail))}</b><span>قيمة البيع</span></div>
+    <div class="kpi"><b>${money(Math.round(totals.retail - totals.cost))}</b><span>الربح المتوقع</span></div>
   </div>
 
-  ${blocks.join("")}
+  ${blocks}
 
   <div class="totals">
-    <div class="line"><span>عدد المنتجات</span><span>${grand.count}</span></div>
-    <div class="line"><span>إجمالي القطع (مع المخزون المجمّع)</span><span>${fmtQty(grand.units)}</span></div>
-    ${pooledCostAll > 0 ? `<div class="line"><span>منها تقديري (مخزون مجمّع)</span><span>≈${money(Math.round(pooledCostAll))} شراء · ≈${money(Math.round(pooledRetailAll))} بيع</span></div>` : ""}
-    <div class="line"><span>قيمة البيع الكاملة</span><span>${money(Math.round(grand.retail))}</span></div>
-    <div class="big"><span>رأس المال الكلي (شراء)</span><span>${money(Math.round(grand.cost))}</span></div>
+    <div class="line"><span>عدد المنتجات</span><span>${totals.products}</span></div>
+    <div class="line"><span>إجمالي القطع (مع المخزون المجمّع)</span><span>${fmtQty(totals.units)}</span></div>
+    ${pooled.cost > 0 ? `<div class="line"><span>منها تقديري (مخزون مجمّع)</span><span>≈${money(Math.round(pooled.cost))} شراء · ≈${money(Math.round(pooled.retail))} بيع</span></div>` : ""}
+    <div class="line"><span>قيمة البيع الكاملة</span><span>${money(Math.round(totals.retail))}</span></div>
+    <div class="big"><span>رأس المال الكلي (شراء)</span><span>${money(Math.round(totals.cost))}</span></div>
   </div>
 
   <div class="sig"><div>أمين المخزن</div><div>من قام بالجرد</div><div>مدير العيادة</div></div>

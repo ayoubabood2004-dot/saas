@@ -75,7 +75,7 @@
   "src/lib/services.ts": 20,
   "src/lib/settings.ts": 2,
   "src/lib/staff.ts": 20,
-  "src/lib/stockReportPrint.ts": 27,
+  "src/lib/stockReportPrint.ts": 18,
   "src/lib/storeLib.ts": 6,
   "src/lib/storeOrdersLive.ts": 2,
   "src/lib/treatmentSchedule.ts": 3,
