@@ -4,7 +4,7 @@ import { motion } from "framer-motion";
 import {
   Bike, Search, Phone, MapPin, Printer, CheckCircle2, Undo2, Send, Users,
   PackageOpen, Wallet, Clock, Plus, Pencil, Archive, X, HandCoins, ReceiptText,
-  PencilLine,
+  PencilLine, Repeat2,
 } from "lucide-react";
 import type { Invoice, Courier, DeliveryOrder } from "@/types";
 import { repo } from "@/lib/repo";
@@ -13,6 +13,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { usePermissions } from "@/hooks/usePermissions";
 import { Modal } from "@/components/Modal";
 import { DeliveryEditDialog } from "./DeliveryEditDialog";
+import { CourierSwapDialog } from "./CourierSwapDialog";
 import { Button, Badge, useToast } from "@/components/ui";
 import { openDeliverySlip } from "@/lib/deliveryPrint";
 import { invoiceNo } from "@/lib/invoicePrint";
@@ -69,6 +70,9 @@ export function DeliveryPanel({ invoices, clinicId, onChanged }: { invoices: Inv
   // التعديل بعد البيع: الزبون يتصل بعد دقائق ليضيف صنفاً. متاح للطلب قيد
   // التجهيز أو بالطريق فقط — الطلب المستلم سجلٌّ مالي مغلق، وتعديله إرجاعٌ جديد.
   const [editing, setEditing] = useState<DeliveryOrder | null>(null);
+  // تبديل السائق: ضغطة غلطٍ بقائمة أسماءٍ متجاورة كانت تكلّف إرجاع الطلب
+  // وإعادة بيعه. اسم الحامل ليس رقماً بالحساب، فيُبدَّل وحده بلا مساس بالمال.
+  const [swapping, setSwapping] = useState<DeliveryOrder | null>(null);
 
   const load = async () => {
     try {
@@ -266,6 +270,7 @@ export function DeliveryPanel({ invoices, clinicId, onChanged }: { invoices: Inv
                             actions={
                               <>
                                 <Button size="sm" leftIcon={<CheckCircle2 size={14} />} onClick={() => void deliver(o)}>{t("retail.deliveryReceived", "استلمنا الفلوس")}</Button>
+                                <Button size="sm" variant="secondary" data-cswapbtn leftIcon={<Repeat2 size={14} />} onClick={() => { playTap(); setSwapping(o); }}>{t("retail.swapBtn", "تبديل السائق")}</Button>
                                 {canEditLines && <Button size="sm" variant="secondary" leftIcon={<PencilLine size={14} />} onClick={() => openEdit(o)}>{t("retail.dEditBtn", "تعديل الطلب")}</Button>}
                                 <Button size="sm" variant="secondary" leftIcon={<Undo2 size={14} />} onClick={() => void returnOrder(o)}>{t("retail.deliveryReturned", "الطلب رجع")}</Button>
                               </>
@@ -332,6 +337,17 @@ export function DeliveryPanel({ invoices, clinicId, onChanged }: { invoices: Inv
           courier={courierOf(editing.courier_id)}
           clinicId={clinicId}
           onClose={() => setEditing(null)}
+          onSaved={() => { void load(); onChanged(); }}
+        />
+      )}
+
+      {/* تبديل سائق طلبٍ خرج — حقلٌ واحد يتغيّر، وما عداه إبلاغٌ وطباعة */}
+      {swapping && (
+        <CourierSwapDialog
+          order={swapping}
+          couriers={couriers}
+          current={courierOf(swapping.courier_id)}
+          onClose={() => setSwapping(null)}
           onSaved={() => { void load(); onChanged(); }}
         />
       )}
