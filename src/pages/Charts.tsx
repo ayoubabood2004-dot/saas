@@ -14,6 +14,8 @@ import { getCached, setCached } from "@/lib/swrCache";
 import { PetAvatar } from "@/components/PetAvatar";
 import { Button } from "@/components/ui";
 import { Flowsheet, AddTaskSheet, type FlowPatient } from "@/components/Flowsheet";
+import { RoundMode } from "@/components/RoundMode";
+import { buildRound } from "@/lib/round";
 import type { GroupBy } from "@/lib/flowsheet";
 import { cageRoomOf, cageSortKey } from "@/lib/cageOrder";
 /* لافتة الرقم نفسها التي تحملها بطاقة القفص — مكوّنٌ واحد لا نسختان
@@ -249,6 +251,9 @@ export function Charts() {
   const [focusPet, setFocusPet] = useState<string | null>(null);
   /** ساعةٌ مختارة من خانةٍ فارغة — تُملأ بلوحة الإضافة بدل أن يبحث عنها. */
   const [addHour, setAddHour] = useState<number | null>(null);
+  /* وضع الجولة — شاشةٌ كاملة تُفتح وتُغلق. الورقة تبقى تحتها كما هي، وكل ما
+   * سُجّل بالجولة يظهر عليها فور الخروج. */
+  const [roundOpen, setRoundOpen] = useState(false);
   const [wall, setWall] = useState(false);
 
   const { branches, active: activeBranch } = useBranchState(clinicId);
@@ -614,6 +619,13 @@ export function Charts() {
     /* eslint-disable-next-line react-hooks/exhaustive-deps */
   }, [flowPatients.map((p) => p.petId).join("|")]);
 
+  /** كم مهمّةً تنتظر الجولة الآن — يقرّر ظهور الزرّ ونصّه. */
+  const roundDue = useMemo(
+    () => buildRound(boardTreatments, (id) => pets[id], (id) => flowPatients.find((p) => p.petId === id)?.cage ?? null,
+      todayISO, nowHHMM).length,
+    [boardTreatments, pets, flowPatients, todayISO, nowHHMM],
+  );
+
   const sheetPatients = useMemo(
     () => (focusPet ? flowPatients.filter((p) => p.petId === focusPet) : flowPatients),
     [flowPatients, focusPet],
@@ -754,6 +766,26 @@ export function Charts() {
               والتبديل ضغطةٌ واحدة بلا رجوعٍ لشاشةٍ أخرى. وهذا فرقُ عيادةٍ
               فيها ثلاثة راقدين عن مستشفًى فيه ستّون: هناك تلزم لوحةٌ قائمة
               بذاتها، وهنا يكفي شريط. */}
+          {/* الجولة — الفعل الذي تُفتَح الشاشة من أجله.
+              الشبكة خريطةٌ تُقرأ، والجولة طريقٌ يُمشى: مهمّةٌ واحدة بملء
+              الشاشة بترتيب الأقفاص. وهي **فوق** الشريط لا داخله: أوّل ما
+              يقع عليه النظر أوّل ما يُفعَل. */}
+          {roundDue > 0 && (
+            <button type="button" data-roundopen onClick={() => { playTap(); setRoundOpen(true); }}
+              className="mb-3 flex w-full items-center gap-3 rounded-2xl bg-brand-600 px-4 py-3 text-start text-white shadow-soft transition hover:bg-brand-700 active:scale-[.995]">
+              <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-white/20">
+                <Stethoscope size={20} />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm font-black">{t("charts.startRound", "ابدأ الجولة")}</span>
+                <span className="block text-2xs text-white/80">
+                  {t("charts.roundCount", { n: formatNum(roundDue), defaultValue: "{{n}} مهمة تنتظر — واحدة بالشاشة بترتيب الأقفاص" })}
+                </span>
+              </span>
+              <ChevronLeft size={18} className="shrink-0 text-white/70 rtl:rotate-180" />
+            </button>
+          )}
+
           <div className="mb-3 flex flex-wrap items-center gap-1.5 rounded-2xl border border-line bg-surface-1 p-1.5">
             <button type="button" data-focuspet="all" onClick={() => { playTap(); setFocusPet(null); }}
               className={cn("rounded-xl px-3.5 text-xs font-bold transition",
@@ -910,6 +942,21 @@ export function Charts() {
           onGive={(t) => void giveDose(t)}
           wall={wall}
           onToggleWall={() => { playTap(); setWall((w) => !w); }}
+        />
+      )}
+
+      {/* وضع الجولة — شاشةٌ كاملة فوق كل شيء، تُغلق فترجع الورقة كما هي */}
+      {roundOpen && (
+        <RoundMode
+          entries={boardTreatments}
+          petOf={(id) => pets[id]}
+          cageOf={(id) => flowPatients.find((p) => p.petId === id)?.cage ?? null}
+          todayISO={todayISO}
+          nowHHMM={nowHHMM}
+          onGive={flowGive}
+          onValue={flowValue}
+          onMissed={(e, reason) => flowMissed(e, reason)}
+          onClose={() => { setRoundOpen(false); playTap(); }}
         />
       )}
 

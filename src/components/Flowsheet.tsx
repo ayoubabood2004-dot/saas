@@ -466,10 +466,14 @@ export function Flowsheet({
 
       {/* تسجيل قيمة */}
       {/* شريط التأكيد — يلي كل ضغطة، ويحمل ما لا يصحّ أن يكون مخفياً:
-          مَن أعطى ومتى، وطريقُ التراجع، وطريقُ «بل فاتت». */}
+          مَن أعطى ومتى، وطريقُ التراجع، وطريقُ «بل فاتت».
+          وهو **ملصقٌ بأسفل الشاشة** لا بأسفل الورقة: الورقة تطول فينزل معها
+          خارج المنظر، ثم قِسناه فوجدناه يقع تحت زرّ المساعد العائم فيبتلع
+          ضغطة «تراجع». فصار مكانه ثابتاً معلوماً، وفيه فسحةٌ تُخلي زرّ
+          المساعد (`pe-20`) فلا يتزاحمان أبداً. */}
       {confirm && (
         <div data-confirmbar
-          className={cn("mt-2 flex flex-wrap items-center gap-2 rounded-2xl border px-3 py-2.5",
+          className={cn("fixed inset-x-3 bottom-3 z-40 mx-auto flex max-w-3xl flex-wrap items-center gap-2 rounded-2xl border px-3 py-2.5 shadow-raised pe-20 sm:pe-3",
             confirm.justGiven
               ? "border-success-300 bg-success-50 dark:border-success-500/40 dark:bg-success-500/10"
               : "border-line bg-surface-2")}>
