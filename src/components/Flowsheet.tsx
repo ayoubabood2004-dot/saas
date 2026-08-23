@@ -869,7 +869,12 @@ export function AddTaskSheet({ petName, todayISO, presetHour, weightKg, species,
             playSuccess();
             onAdd(times.map((time) => ({
               pet_id: "", visit_id: null, day: todayISO, time,
-              medication: label.trim(), amount: amount.trim() || null,
+              // `amount` عمودٌ **not null** منذ الهجرة الأولى، يوم كان كل صفٍّ
+              // دواءً وللدواء كميةٌ دائماً. والورقة الجديدة تضيف مهامّ بلا
+              // كمية — حرارةٌ تُقاس، وإخراجٌ يُلاحَظ، وتمريضٌ يُنفَّذ. فكان
+              // إرسال `null` يُرفض بقيد القاعدة فتفشل الإضافة كلّها.
+              // والفراغ يفي بالقيد ويُقرأ فارغاً بالعرض (نصٌّ فارغ = لا شيء).
+              medication: label.trim(), amount: amount.trim(),
               task_type: type, route: route || null,
               observations: null, administered_at: null, administered_by: null,
             } as unknown as Omit<TreatmentEntry, "id" | "created_at">)));

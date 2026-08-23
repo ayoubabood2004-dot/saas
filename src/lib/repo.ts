@@ -2442,7 +2442,12 @@ const supabaseRepo: typeof demoRepo = {
   },
   async addTreatments(inputs) {
     if (inputs.length === 0) return;
-    ok(await sbc().from("treatment_entries").insert(inputs)); // دفعة وحدة — رحلة سيرفر واحدة
+    // `amount` و`medication` عمودان **not null** بالقاعدة منذ الهجرة الأولى.
+    // والحارس هنا لا بالنداء: أي مُنادٍ ينسى الكمية يُسقط الدفعة كلّها برفضٍ
+    // من القاعدة، والقيد لا يُقرأ من موضع النداء. فالتطبيع مرّةً واحدة عند
+    // البوّابة أضمن من تذكّره بكل موضع.
+    const rows = inputs.map((r) => ({ ...r, amount: r.amount ?? "", medication: r.medication ?? "" }));
+    ok(await sbc().from("treatment_entries").insert(rows)); // دفعة وحدة — رحلة سيرفر واحدة
   },
   async deleteTreatment(id) {
     ok(await sbc().from("treatment_entries").delete().eq("id", id));
