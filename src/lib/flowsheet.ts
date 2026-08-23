@@ -127,32 +127,45 @@ export const hourOf = (hhmm: string | undefined | null): number => Math.floor(to
 export const pad2 = (n: number): string => String(n).padStart(2, "0");
 
 /**
- * أعمدة الساعات التي تعرضها الورقة.
+ * أعمدة الساعات التي تعرضها الورقة — **الساعات التي فيها عمل فقط**.
  *
- * تُشتقّ من المهام نفسها لا من ساعات دوامٍ مفترضة: عيادة تعمل ٩–٥ لا تُعرَض
- * لها أعمدة الفجر، وعيادةٌ فيها مريضٌ على سوائل ليلية تُعرَض له. ويُضمَّن
- * **عمود الساعة الحالية دائماً** حتى لو خلا من مهمة — وإلا اختفى خط «الآن»
- * من ورقةٍ هادئة، وهو آخر ما يصحّ أن يختفي.
+ * كانت تُملأ الفجوات: خطةٌ من ٠٨:٠٠ إلى ٢١:٠٠ تُرسَم أربعة عشر عموداً، ستةٌ
+ * منها فيها جرعة وثمانيةٌ فراغ. وقِسنا ثمن ذلك: مئةٌ وخمسون بكسلاً خارج
+ * الشاشة تحتاج سحباً أفقياً — يدفعها فراغٌ لا يحمل معلومة.
+ *
+ * فصارت متفرّقة: ساعةٌ فيها مهمة تظهر، وما بينها يُطوى. والوقت لا يضيع لأن
+ * رأس كل عمود يحمل رقمه مكتوباً — والطبيب يقرأ الرقم لا يقيس المسافة.
+ * والفجوة المطويّة تُعلَّم بحدٍّ أغمق حتى لا تُقرأ ساعتان متباعدتان متجاورتين.
+ *
+ * ويُضمَّن **عمود الساعة الحالية دائماً** حتى لو خلا من مهمة — وإلا اختفى خط
+ * «الآن» من ورقةٍ هادئة، وهو آخر ما يصحّ أن يختفي.
  */
 export function hourColumns(entries: TreatmentEntry[], nowMin: number): number[] {
   const hrs = new Set<number>();
   for (const t of entries) hrs.add(hourOf(t.time));
   hrs.add(Math.floor(nowMin / 60));
   if (!hrs.size) return [8, 10, 12, 14, 16];
-  const lo = Math.min(...hrs), hi = Math.max(...hrs);
-  const out: number[] = [];
-  for (let h = lo; h <= hi; h++) out.push(h);
-  return out;
+  return [...hrs].sort((a, b) => a - b);
 }
 
-/** موضع خط «الآن» ككسرٍ من عرض الشبكة (0 = أول عمود، 1 = آخره).
- *  تُعاد null إذا وقع الآن خارج نطاق الأعمدة — فلا يُرسم خطٌّ كاذب. */
+/** هل بين هذا العمود وسابقه ساعاتٌ مطويّة؟ — لرسم حدٍّ يفصل الزمن المطوي. */
+export const isGapBefore = (cols: number[], i: number): boolean =>
+  i > 0 && cols[i] - cols[i - 1] > 1;
+
+/**
+ * موضع خط «الآن» ككسرٍ من عرض الشبكة (0 = أول عمود، 1 = آخره).
+ *
+ * الأعمدة متفرّقة لا متّصلة، فالموضع يُحسب **بترتيب العمود** لا بالزمن: لو
+ * حُسب بالزمن لوقع الخط بمنتصف فجوةٍ مطويّة، أي على عمودٍ ساعتُه غير ساعته.
+ */
 export function nowOffset(cols: number[], nowMin: number): number | null {
   if (!cols.length) return null;
-  const h = nowMin / 60;
-  const first = cols[0], last = cols[cols.length - 1];
-  if (h < first || h >= last + 1) return null;
-  return (h - first) / cols.length;
+  const h = Math.floor(nowMin / 60);
+  const i = cols.indexOf(h);
+  if (i >= 0) return (i + (nowMin % 60) / 60) / cols.length;
+  const before = cols.filter((c) => c < h).length;
+  if (before === 0 || before === cols.length) return null;   // الآن خارج نطاق الأعمدة
+  return before / cols.length;
 }
 
 /* ── تجميع الصفوف ───────────────────────────────────────────────────────── */

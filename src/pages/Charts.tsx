@@ -5,13 +5,14 @@ import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import {
   Stethoscope, BedDouble, HeartPulse, ClipboardList, Pill, AlertTriangle,
-  CheckCircle2, Clock, Loader2, Search, LayoutGrid, TableProperties, ChevronLeft, Slice,
+  CheckCircle2, Clock, Loader2, Search, LayoutGrid, TableProperties, ChevronLeft, Slice, Plus,
   Archive, DoorOpen, BarChart3, RotateCcw, MessageCircle, FileText, HeartCrack, Pencil, Check, Boxes,
 } from "lucide-react";
 import type { Admission, ClinicVisit, MedicalVisit, Pet, PatientCondition, TreatmentEntry , Surgery } from "@/types";
 import { repo } from "@/lib/repo";
 import { getCached, setCached } from "@/lib/swrCache";
 import { PetAvatar } from "@/components/PetAvatar";
+import { Button } from "@/components/ui";
 import { Flowsheet, AddTaskSheet, type FlowPatient } from "@/components/Flowsheet";
 import type { GroupBy } from "@/lib/flowsheet";
 import { cageRoomOf, cageSortKey } from "@/lib/cageOrder";
@@ -238,6 +239,16 @@ export function Charts() {
   }, []);
   /** المريض المفتوحة له لوحة «مهمة جديدة». */
   const [addFor, setAddFor] = useState<string | null>(null);
+  /* المريض المعروض بورقة العلاج. `null` = الكل (السلوك القديم، بضغطةٍ واحدة).
+   *
+   * الشبكة محاورها المريض والساعة، فكلّما كثر المرضى ضاق كل شيء: عشرة صفوف
+   * لأربعة مرضى تُخرج الورقة عن الشاشة عرضاً، وتُصغّر الخانة حتى لا تُصاب
+   * بإصبع. ومريضٌ واحد يعكس ذلك كلّه — الأعمدة تُشتقّ من مهامه وحده فتقلّ،
+   * والخانة تتنفّس. وهذا ما تفعله البرامج العالمية: لوحةٌ لكل المرضى تفتح
+   * **ورقة مريضٍ واحد**. */
+  const [focusPet, setFocusPet] = useState<string | null>(null);
+  /** ساعةٌ مختارة من خانةٍ فارغة — تُملأ بلوحة الإضافة بدل أن يبحث عنها. */
+  const [addHour, setAddHour] = useState<number | null>(null);
   const [wall, setWall] = useState(false);
 
   const { branches, active: activeBranch } = useBranchState(clinicId);
@@ -565,6 +576,42 @@ export function Charts() {
     return undefined;
   }, [grouping, activeCharts, txLoaded, t]);
 
+  /* عدّاد كل مريضٍ للشريط: كم فات وكم حان. هذا هو الرقم الذي يجعل التبديل
+   * بلا تفكير — الطبيب يرى أين ينتظره العمل قبل أن يفتح ورقة أحد. */
+  const petCounts = useMemo(() => {
+    const m = new Map<string, { overdue: number; due: number; total: number; done: number }>();
+    for (const p of flowPatients) m.set(p.petId, { overdue: 0, due: 0, total: 0, done: 0 });
+    for (const t of boardTreatments) {
+      if (t.day !== todayISO) continue;
+      const c = m.get(t.pet_id);
+      if (!c) continue;
+      c.total++;
+      if (t.administered_at) { c.done++; continue; }
+      const st = taskStatus(t, todayISO, nowHHMM);
+      if (st === "overdue") c.overdue++;
+      else if (st === "due") c.due++;
+    }
+    return m;
+  }, [flowPatients, boardTreatments, todayISO, nowHHMM]);
+
+  /* الافتراضي: أثقل مريضٍ تأخيراً. الطبيب يفتح الشاشة فيجد نفسه عند من
+   * ينتظره فعلاً، لا عند أول اسمٍ بالحروف. */
+  useEffect(() => {
+    if (focusPet && flowPatients.some((p) => p.petId === focusPet)) return;
+    if (!flowPatients.length) { if (focusPet) setFocusPet(null); return; }
+    const worst = [...flowPatients].sort((a, b) => {
+      const ca = petCounts.get(a.petId), cb = petCounts.get(b.petId);
+      return ((cb?.overdue ?? 0) - (ca?.overdue ?? 0)) || ((cb?.due ?? 0) - (ca?.due ?? 0));
+    })[0];
+    setFocusPet(worst.petId);
+    /* eslint-disable-next-line react-hooks/exhaustive-deps */
+  }, [flowPatients.map((p) => p.petId).join("|")]);
+
+  const sheetPatients = useMemo(
+    () => (focusPet ? flowPatients.filter((p) => p.petId === focusPet) : flowPatients),
+    [flowPatients, focusPet],
+  );
+
   // Hand the visit page the data we already have so it paints instantly (no spinner).
   const go = (petId: string, visit: ClinicVisit) =>
     navigate(`/pet/${petId}/visit/${visit.id}`, { state: { pet: pets[petId], visit, treatments: treatments.filter((t) => t.visit_id === visit.id), from: "charts" } });
@@ -695,9 +742,70 @@ export function Charts() {
         </div>
       ) : view === "sheet" ? (
         <>
-          {/* شريط التجميع — التجميع خيار الطبيب لا قرار المبرمج.
+          {/* شريط المرضى — لوحةُ الراقدين مصغَّرةً وفوق الورقة دائماً.
+              عليه ما يُغني عن فتح ورقة أحد: كم فات وكم حان عند كلٍّ منهم،
+              والتبديل ضغطةٌ واحدة بلا رجوعٍ لشاشةٍ أخرى. وهذا فرقُ عيادةٍ
+              فيها ثلاثة راقدين عن مستشفًى فيه ستّون: هناك تلزم لوحةٌ قائمة
+              بذاتها، وهنا يكفي شريط. */}
+          <div className="mb-3 flex flex-wrap items-center gap-1.5 rounded-2xl border border-line bg-surface-1 p-1.5">
+            <button type="button" data-focuspet="all" onClick={() => { playTap(); setFocusPet(null); }}
+              className={cn("rounded-xl px-3.5 text-xs font-bold transition",
+                focusPet === null ? "bg-ink text-surface-1" : "text-ink-muted hover:bg-surface-2")}
+              style={{ minHeight: 44 }}>
+              {t("charts.allPatients", "الكل")}
+            </button>
+            {flowPatients.map((p) => {
+              const c = petCounts.get(p.petId);
+              const on = focusPet === p.petId;
+              return (
+                <button key={p.petId} type="button" data-focuspet={p.petId}
+                  onClick={() => { playTap(); setFocusPet(p.petId); }}
+                  className={cn("flex items-center gap-2 rounded-xl px-2.5 transition",
+                    on ? "bg-brand-600 text-white shadow-soft" : "text-ink-muted hover:bg-surface-2")}
+                  style={{ minHeight: 44 }}>
+                  {p.pet && <PetAvatar pet={p.pet} size={26} className="shrink-0 rounded-lg" />}
+                  <span className="max-w-[9rem] truncate text-xs font-extrabold" dir="auto">{p.pet?.name ?? "—"}</span>
+                  {p.cage && (
+                    <span className={cn("rounded px-1 font-mono text-[10px] font-bold",
+                      on ? "bg-white/20" : "bg-surface-2 text-ink-subtle")}>{p.cage}</span>
+                  )}
+                  {c && c.overdue > 0 ? (
+                    <span className={cn("grid h-5 min-w-5 place-items-center rounded-full px-1 text-[11px] font-black tabular-nums",
+                      on ? "bg-white text-danger-700" : "bg-danger-500 text-white")}>{formatNum(c.overdue)}</span>
+                  ) : c && c.due > 0 ? (
+                    <span className={cn("grid h-5 min-w-5 place-items-center rounded-full px-1 text-[11px] font-black tabular-nums",
+                      on ? "bg-white text-warn-700" : "bg-warn-500 text-white")}>{formatNum(c.due)}</span>
+                  ) : c && c.total > 0 ? (
+                    <CheckCircle2 size={15} className={on ? "text-white/90" : "text-success-600"} />
+                  ) : null}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* عنوان المريض المركَّز وزرُّ إضافته — بديلُ شريطه داخل الورقة */}
+          {focusPet && sheetPatients[0] && (
+            <div className="mb-3 flex flex-wrap items-center gap-3 rounded-2xl border border-line bg-surface-1 px-4 py-3">
+              <div className="min-w-0">
+                <p className="truncate font-display text-lg font-extrabold leading-tight text-ink" dir="auto">
+                  {sheetPatients[0].pet?.name ?? "—"}
+                </p>
+                <p className="truncate text-2xs text-ink-subtle">
+                  {[sheetPatients[0].cage, sheetPatients[0].room,
+                    activeCharts.find((c) => c.petId === focusPet)?.title].filter(Boolean).join(" · ")}
+                </p>
+              </div>
+              <Button size="sm" className="ms-auto" style={{ minHeight: 44 }}
+                leftIcon={<Plus size={15} />} onClick={() => { playTap(); setAddHour(null); setAddFor(focusPet); }}>
+                {t("charts.addOrder", "إضافة علاج")}
+              </Button>
+            </div>
+          )}
+
+          {/* شريط التجميع — يظهر مع «الكل» وحده: مريضٌ واحد لا يُجمَّع.
               و«حسب ترتيب الأقفاص» يقرأ التخطيط الذي رسمه بغرفة الأقفاص:
               يمشي بالممر فتتقدّم الورقة معه. */}
+          {focusPet === null && (
           <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-line bg-surface-1 px-3 py-2">
             <span className="text-2xs font-extrabold text-ink-muted">{t("flow.groupBy", "الترتيب:")}</span>
             {([
@@ -715,17 +823,20 @@ export function Charts() {
               {t("flow.rowsHint", "كل صفٍّ أمرٌ واحد — والخانة ساعة تنفيذه")}
             </span>
           </div>
+          )}
 
           <Flowsheet
-            patients={flowPatients}
+            patients={sheetPatients}
             entries={boardTreatments}
             todayISO={todayISO}
             nowHHMM={nowHHMM}
-            groupLabel={flowGroupLabel}
+            groupLabel={focusPet === null ? flowGroupLabel : undefined}
+            focused={focusPet !== null}
             onGive={flowGive}
             onValue={flowValue}
             onMissed={flowMissed}
-            onAddTask={(petId) => setAddFor(petId)}
+            onAddTask={(petId) => { setAddHour(null); setAddFor(petId); }}
+            onAddAt={(petId, hour) => { setAddHour(hour); setAddFor(petId); }}
             onOpenPet={(petId) => {
               const c = activeCharts.find((x) => x.petId === petId);
               if (c) void openChart(c);
@@ -736,6 +847,9 @@ export function Charts() {
             <AddTaskSheet
               petName={pets[addFor]?.name ?? t("charts.theAnimal", "الحيوان")}
               todayISO={todayISO}
+              presetHour={addHour}
+              weightKg={pets[addFor]?.current_weight_kg ?? null}
+              species={pets[addFor]?.species}
               onClose={() => setAddFor(null)}
               onAdd={(rows) => { void flowAdd(addFor, rows); setAddFor(null); }}
             />

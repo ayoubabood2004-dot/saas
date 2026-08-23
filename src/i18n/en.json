@@ -3023,7 +3023,9 @@
     "rptWithOutcome": "as \"{{label}}\" {{emoji}}",
     "rptAfterDays": "after {{n}} days of treatment",
     "rptEmpty": "No closed or lost cases this month yet.",
-    "rptAdherence": "Dose completion rate for cases closed this month: {{n}}%."
+    "rptAdherence": "Dose completion rate for cases closed this month: {{n}}%.",
+    "allPatients": "All",
+    "addOrder": "Add treatment"
   },
   "staff": {
     "roleManager": "Manager",
@@ -3530,7 +3532,17 @@
     "mStock": "Drug out of stock",
     "mBusy": "Workload",
     "phRate": "5 mL/hr",
-    "phDose": "1 mL"
+    "phDose": "1 mL",
+    "drugName": "Drug name",
+    "drugPh": "Type the first letters — e.g. amox",
+    "kg": "kg",
+    "noWeight": "The animal's weight is not recorded — add it to the file so the dose is calculated for you.",
+    "mgkg": "mg/kg",
+    "doseCalc": "{{mgkg}} mg/kg × {{w}} kg = {{mg}} mg",
+    "doseMl": "{{n}} mL",
+    "doseTabs": "{{n}} tab",
+    "perTab": "{{n}} mg/tab",
+    "perMl": "{{n}} mg/mL"
   },
   "stock": {
     "fileName": "Stocktake",

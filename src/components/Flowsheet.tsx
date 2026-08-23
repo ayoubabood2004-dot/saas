@@ -1,17 +1,20 @@
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { AlertTriangle, Check, Plus, X } from "lucide-react";
-import type { Pet, TreatmentEntry, TaskType, DoseRoute } from "@/types";
-import { cn, formatNum } from "@/lib/utils";
+import { AlertTriangle, Check, Plus, X, ChevronDown } from "lucide-react";
+import type { Pet, Species, TreatmentEntry, TaskType, DoseRoute } from "@/types";
+import { cn, formatNum, formatDec } from "@/lib/utils";
 
 /** أرقام عربية-هندية لنصٍّ فيه أرقام (وقت مثل "08:00").
  *  formatNum يأخذ عدداً، والوقت نصٌّ بنقطتين — فيلزم تحويلٌ على الحروف. */
 import { PetAvatar } from "@/components/PetAvatar";
 import { playTap, playSuccess } from "@/lib/sounds";
-import { taskStatus } from "@/lib/treatmentSchedule";
+import {
+  searchDrugs, doseFor, calcDose, isBannedFor, FREQ_LABEL,
+  type Monograph, type Route,
+} from "@/lib/vetFormulary";
 import {
   TASK_META, TASK_TYPES, ROUTES, routeName, routeShort, MISS_REASONS,
-  typeOf, buildRows, cellState, hourColumns, nowOffset, petSummary, pad2, toMin,
+  typeOf, buildRows, cellState, hourColumns, isGapBefore, nowOffset, petSummary, pad2, toMin,
   type OrderRow,
 } from "@/lib/flowsheet";
 
@@ -37,8 +40,17 @@ import {
  * والطبيب يختار، ويُحفظ اختياره.
  * ==========================================================================*/
 
-const COL_W = 58;      // عرض عمود الساعة
-const LEAD_W = 250;    // عمود الأسماء والأوامر
+/* عرض عمود الساعة يتبع حجم الخانة لا العكس: الخانة أولاً هدفُ لمسٍ (٤٤ بكسل
+ * هي أصغر ما تصيبه إصبعٌ بثقة — وقِسنا القديمة ٢٤٫٥)، والعمود يتّسع لها. */
+const CELL = 44;
+const COL_W = CELL + 18;
+const LEAD_W = 208;    // عمود الأوامر
+
+/** طرق الدليل الدوائي ← طرق ورقة العلاج. الاتجاه المعاكس موجود بالدليل
+ *  (`APP_ROUTE`) لكنه بمعرّفات شاشة الخطة، وهذه معرّفاتنا نحن. */
+const APP_ROUTE_BACK: Partial<Record<Route, DoseRoute>> = {
+  PO: "po", IV: "iv", IM: "im", SC: "sc", topical: "topical",
+};
 
 export interface FlowPatient {
   petId: string;
@@ -58,19 +70,37 @@ type Editing =
   | null;
 
 /* ── خانة واحدة ─────────────────────────────────────────────────────────── */
-const Cell = memo(function Cell({ list, todayISO, now, alt, onTap, onLong }: {
+const Cell = memo(function Cell({ list, todayISO, now, alt, hour, gap, onTap, onLong, onAdd }: {
   list: TreatmentEntry[] | undefined;
   todayISO: string;
   now: string;
   alt: boolean;
+  hour: number;
+  /** بين هذا العمود وسابقه ساعاتٌ مطويّة — يُرسم حدٌّ أغمق. */
+  gap: boolean;
   onTap: (e: TreatmentEntry) => void;
   onLong: (e: TreatmentEntry) => void;
+  /** الخانة الفارغة تُنشئ جرعةً بساعتها — إن وُصل هذا النداء. */
+  onAdd?: (hour: number) => void;
 }) {
   const holdRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => () => { if (holdRef.current) clearTimeout(holdRef.current); }, []);
 
+  /* الفراغ ليس عدماً بل **مكاناً**: الضغط عليه يكتب جرعةً بساعته، فيُختار
+   * الوقت بموضع الإصبع لا بمنتقي وقتٍ يُفتح ويُغلق. و«+» باهتةٌ ظاهرةٌ
+   * دائماً — الآيباد بلا تحويم، وإيماءةٌ لا تُرى لا تُستعمل. */
   if (!list || !list.length) {
-    return <div className={cn("border-s border-line", alt && "bg-surface-2/40")} />;
+    return (
+      <div className={cn("grid place-items-center py-1.5", gap ? "border-s-2 border-line-strong" : "border-s border-line", alt && "bg-surface-2/40")}>
+        {onAdd ? (
+          <button type="button" data-addcell={hour} onClick={() => { playTap(); onAdd(hour); }}
+            style={{ height: CELL, width: CELL }}
+            className="grid place-items-center rounded-xl border border-dashed border-transparent text-line-strong opacity-35 transition hover:border-brand-400 hover:bg-brand-50 hover:text-brand-600 hover:opacity-100 dark:hover:bg-brand-500/10">
+            <Plus size={14} />
+          </button>
+        ) : <span style={{ height: CELL }} />}
+      </div>
+    );
   }
   const state = cellState(list, todayISO, now);
   /* ساعةٌ فيها جرعتان (٠٨:٠٠ و٠٨:٣٠) تُرسم خانةً واحدة — والضغطة يجب أن
@@ -92,13 +122,14 @@ const Cell = memo(function Cell({ list, todayISO, now, alt, onTap, onLong }: {
     onPointerLeave: () => { if (holdRef.current) { clearTimeout(holdRef.current); holdRef.current = null; } },
   });
 
-  const base = "grid h-7 min-w-7 place-items-center rounded-md text-2xs font-black tabular-nums transition active:scale-90";
+  const base = "grid place-items-center rounded-xl text-sm font-black tabular-nums transition active:scale-90";
   return (
-    <div className={cn("grid place-items-center border-s border-line py-1.5", alt && "bg-surface-2/40")}>
+    <div className={cn("grid place-items-center py-1.5", gap ? "border-s-2 border-line-strong" : "border-s border-line", alt && "bg-surface-2/40")}>
       <button
         type="button"
         data-cell={first.id}
         data-state={state}
+        style={{ height: CELL, minWidth: CELL }}
         title={`${first.time} · ${first.medication}${missed ? ` — ${missed.missed_reason}` : ""}`}
         {...press(() => onTap(first))}
         className={cn(
@@ -112,12 +143,12 @@ const Cell = memo(function Cell({ list, todayISO, now, alt, onTap, onLong }: {
         )}
       >
         {state === "given"
-          ? (shown ?? <Check size={13} strokeWidth={3.5} />)
+          ? (shown ?? <Check size={18} strokeWidth={3.5} />)
           : state === "overdue"
             ? (missed ? "—" : "!")
             : state === "due"
-              ? <span className="h-2 w-2 rounded-full bg-warn-500 motion-safe:animate-pulse" />
-              : <span className="h-1.5 w-1.5 rounded-full bg-line-strong" />}
+              ? <span className="h-2.5 w-2.5 rounded-full bg-warn-500 motion-safe:animate-pulse" />
+              : <span className="h-2 w-2 rounded-full bg-line-strong" />}
       </button>
       {list.length > 1 && (
         <span className="mt-0.5 text-[9px] font-bold tabular-nums text-ink-subtle">
@@ -130,7 +161,7 @@ const Cell = memo(function Cell({ list, todayISO, now, alt, onTap, onLong }: {
 
 /* ── الورقة ─────────────────────────────────────────────────────────────── */
 export function Flowsheet({
-  patients, entries, todayISO, nowHHMM, groupLabel, onGive, onValue, onMissed, onAddTask, onOpenPet,
+  patients, entries, todayISO, nowHHMM, groupLabel, focused, onGive, onValue, onMissed, onAddTask, onAddAt, onOpenPet,
 }: {
   patients: FlowPatient[];
   entries: TreatmentEntry[];
@@ -143,6 +174,10 @@ export function Flowsheet({
   onValue: (e: TreatmentEntry, value: string) => void;
   onMissed: (e: TreatmentEntry, reason: string | null) => void;
   onAddTask: (petId: string) => void;
+  /** ضغطُ خانةٍ فارغة: يفتح الإضافة بساعتها جاهزة. */
+  onAddAt?: (petId: string, hour: number) => void;
+  /** مريضٌ واحد معروض: اسمه فوق الورقة، فلا يُكرَّر شريطُه داخلها. */
+  focused?: boolean;
   onOpenPet: (petId: string) => void;
 }) {
   const { t } = useTranslation();
@@ -244,12 +279,13 @@ export function Flowsheet({
             <div className="sticky start-0 z-10 border-e border-line-strong bg-surface-1 px-3 py-2 text-2xs font-extrabold text-ink-subtle">
               {t("flow.leadHead", "المريض · الأمر")}
             </div>
-            {cols.map((h) => {
+            {cols.map((h, ci) => {
               const past = h < Math.floor(toMin(nowHHMM) / 60);
               const here = h === Math.floor(toMin(nowHHMM) / 60);
               return (
                 <div key={h} data-hourcol={h}
-                  className={cn("border-s border-line py-2 text-center text-2xs font-black tabular-nums",
+                  className={cn("py-2 text-center text-2xs font-black tabular-nums",
+                    isGapBefore(cols, ci) ? "border-s-2 border-line-strong" : "border-s border-line",
                     here ? "text-danger-600 dark:text-danger-300" : past ? "text-ink-subtle/50" : "text-ink-subtle")}>
                   {pad2(h)}
                 </div>
@@ -270,6 +306,7 @@ export function Flowsheet({
                   </div>
                 )}
 
+                {!focused && (<>
                 {/* شريط المريض */}
                 {/* شريط المريض. اسمُه وشارةُ تأخيره وزرُّ إضافته **كلها داخل
                     العمود اللاصق**: الورقة تمتدّ بعرض ساعات اليوم، فما يوضع
@@ -313,6 +350,7 @@ export function Flowsheet({
                   </div>
                   <div />
                 </div>
+                </>)}
 
                 {/* صفوف الأوامر */}
                 {rows.length === 0 ? (
@@ -346,7 +384,9 @@ export function Flowsheet({
                       </div>
                       {cols.map((h, ci) => (
                         <Cell key={h} list={row.byHour.get(h)} todayISO={todayISO} now={nowHHMM}
-                          alt={ci % 2 === 1} onTap={openCell} onLong={openMissed} />
+                          hour={h} alt={ci % 2 === 1} gap={isGapBefore(cols, ci)}
+                          onTap={openCell} onLong={openMissed}
+                          onAdd={onAddAt ? (hh) => onAddAt(p.petId, hh) : undefined} />
                       ))}
                     </div>
                   );
@@ -476,67 +516,190 @@ function MissedSheet({ entry, onClose, onPick }: {
 }
 
 /* ── إضافة مهمة ─────────────────────────────────────────────────────────── */
-export function AddTaskSheet({ petName, todayISO, onClose, onAdd }: {
+
+/**
+ * لوحة «مهمة جديدة» — الدواء يجلب جرعته بنفسه.
+ *
+ * ── ما الذي تغيّر ولماذا ─────────────────────────────────────────────────
+ * كانت اللوحة تسأل ستّ أسئلة: النوع (سبعة أزرار) والاسم والكمية والطريق
+ * وثماني خانات أوقات. والطبيب لا يفكّر هكذا: هو يفكّر بدواءٍ لحيوانٍ وزنه
+ * كذا، والباقي يعرفه الدليل الدوائي.
+ *
+ * والدليل موجودٌ بالمشروع من قبل (`vetFormulary.ts`): ثمانية وخمسون دواءً
+ * بنوافذ جرعاتٍ **لكل نوع حيوان** مصدرها Plumb's وBSAVA، ومعها محرّك يحوّل
+ * ملغم/كغ إلى **مل بتركيز القنينة الحقيقي**. كان يعمل بشاشة خطة العلاج
+ * وحدها؛ فوُصل هنا. فيكفي أن يكتب أول حروف الدواء: يختاره من القائمة، فتُملأ
+ * الجرعة والطريق والتكرار والأوقات — ويبقى كلُّ حقلٍ قابلاً للتعديل بيده.
+ *
+ * وما لا يُحسب لا يُدَّعى: بلا وزنٍ مسجَّل للحيوان لا تُعرض جرعةٌ محسوبة، بل
+ * يُقال إن الوزن ناقص. رقمٌ مخترَعٌ أخطر من خانةٍ فارغة.
+ */
+export function AddTaskSheet({ petName, todayISO, presetHour, weightKg, species, onClose, onAdd }: {
   petName: string;
   todayISO: string;
+  /** ساعةٌ جاءت من خانةٍ فارغة ضُغطت — تُملأ جاهزةً بدل البحث عنها. */
+  presetHour?: number | null;
+  weightKg?: number | null;
+  species?: Species | null;
   onClose: () => void;
   onAdd: (rows: Omit<TreatmentEntry, "id" | "created_at">[]) => void;
 }) {
   const { t } = useTranslation();
-  const [type, setType] = useState<TaskType>("vitals");
+  const [type, setType] = useState<TaskType>("drug");
   const [label, setLabel] = useState("");
   const [amount, setAmount] = useState("");
   const [route, setRoute] = useState<DoseRoute | "">("");
-  const [times, setTimes] = useState<string[]>(["10:00"]);
+  const [times, setTimes] = useState<string[]>(
+    presetHour != null ? [`${pad2(presetHour)}:00`] : ["10:00"],
+  );
+  const [picked, setPicked] = useState<Monograph | null>(null);
+  const [more, setMore] = useState(false);
+
+  /* الاقتراحات تظهر ما دام الطبيب يكتب ولم يختر بعد. اختياره يُغلقها — قائمةٌ
+   * تبقى مفتوحة فوق ما كتبه تحجب عنه ما فعل. */
+  const suggestions = useMemo(() => {
+    if (type !== "drug" || picked || label.trim().length < 2) return [];
+    return searchDrugs(label.trim(), 5);
+  }, [type, label, picked]);
+
+  /** الجرعة المحسوبة للدواء المختار — أو سببُ تعذّرها. */
+  const computed = useMemo(() => {
+    if (!picked) return null;
+    const sp: Species = species ?? "other";
+    const banned = isBannedFor(picked, sp);
+    if (banned) return { banned };
+    const win = doseFor(picked, sp);
+    if (!win) return { none: true };
+    if (!weightKg || weightKg <= 0) return { noWeight: true, win };
+    const strength = picked.strengths?.[0];
+    const calc = calcDose({
+      mgPerKg: win.typical, weightKg, strength, solid: picked.solid, freq: win.freq,
+    });
+    return { win, calc, strength };
+  }, [picked, species, weightKg]);
+
+  /** اختيار دواءٍ من الدليل: يملأ الاسم والجرعة والطريق والأوقات دفعةً واحدة. */
+  const pick = (d: Monograph) => {
+    playTap();
+    setPicked(d);
+    setLabel(d.en);
+    const sp: Species = species ?? "other";
+    const win = doseFor(d, sp);
+    if (!win) return;
+    const r = APP_ROUTE_BACK[win.routes[0]];
+    if (r) setRoute(r);
+    if (weightKg && weightKg > 0) {
+      const strength = d.strengths?.[0];
+      const c = calcDose({ mgPerKg: win.typical, weightKg, strength, solid: d.solid, freq: win.freq });
+      setAmount(c.tabletsLabel ? `${c.tabletsLabel} قرص` : c.mlRounded != null ? `${c.mlRounded} مل` : `${Math.round(c.mg * 100) / 100} ملغم`);
+    }
+    /* الأوقات تُشتقّ من تكرار الدليل ابتداءً من الساعة القادمة — لا يؤشّرها
+     * الطبيب بيده، وخانةٌ منسيّةٌ من ثمانٍ تعني جرعةً ضائعة. */
+    if (presetHour == null && win.freq > 0) {
+      const startH = new Date().getHours() + 1;
+      const out: string[] = [];
+      for (let h = startH; h < 24; h += win.freq) out.push(`${pad2(h)}:00`);
+      setTimes(out.length ? out : [`${pad2(Math.min(23, startH))}:00`]);
+    }
+  };
 
   /* الاسم الافتراضي يتبع النوع: «علامات حيوية» لا تحتاج كتابة اسم، والدواء
    * لا يصحّ بلا اسم. فالحقل يُملأ تلقائياً ويبقى قابلاً للتعديل. */
-  useEffect(() => { setLabel(TASK_META[type].ar()); }, [type]);
+  useEffect(() => {
+    if (type === "drug") { setLabel(""); setPicked(null); }
+    else { setLabel(TASK_META[type].ar()); setPicked(null); }
+  }, [type]);
 
   const toggleTime = (v: string) =>
     setTimes((cur) => (cur.includes(v) ? cur.filter((x) => x !== v) : [...cur, v].sort()));
 
   const SLOTS = ["08:00", "10:00", "12:00", "14:00", "16:00", "18:00", "20:00", "22:00"];
+  const allSlots = presetHour != null && !SLOTS.includes(`${pad2(presetHour)}:00`)
+    ? [...SLOTS, `${pad2(presetHour)}:00`].sort()
+    : SLOTS;
   const valid = label.trim().length > 0 && times.length > 0;
 
   return (
     <div className="fixed inset-0 z-50 grid place-items-end bg-ink/40 p-0 sm:place-items-center sm:p-4" onClick={onClose}>
       <div data-addtasksheet onClick={(e) => e.stopPropagation()}
-        className="max-h-[88vh] w-full overflow-y-auto rounded-t-3xl border border-line bg-surface-1 p-4 shadow-lg sm:max-w-md sm:rounded-3xl">
+        className="max-h-[88vh] w-full overflow-y-auto rounded-t-3xl border border-line bg-surface-1 p-4 shadow-lg sm:max-w-lg sm:rounded-3xl">
         <div className="mb-3 flex items-start justify-between gap-3">
           <div>
             <p className="text-sm font-black text-ink">{t("flow.newTask", "مهمة جديدة")}</p>
-            <p className="mt-0.5 text-2xs font-bold text-ink-subtle">{petName}</p>
+            <p className="mt-0.5 text-2xs font-bold text-ink-subtle">
+              {petName}{weightKg ? ` · ${formatDec(weightKg)} ${t("flow.kg", "كغ")}` : ""}
+            </p>
           </div>
-          <button type="button" onClick={onClose} className="p-1 text-ink-subtle"><X size={16} /></button>
+          <button type="button" onClick={onClose} aria-label={t("common.cancel", "إلغاء")}
+            className="grid shrink-0 place-items-center rounded-xl text-ink-subtle transition hover:bg-surface-2"
+            style={{ width: 44, height: 44 }}><X size={18} /></button>
         </div>
 
-        <label className="mb-1 block text-2xs font-bold text-ink-muted">{t("flow.taskType", "نوع المهمة")}</label>
-        <div className="mb-3 grid grid-cols-4 gap-1.5">
-          {TASK_TYPES.map((k) => (
-            <button key={k} type="button" data-tasktype={k} onClick={() => { playTap(); setType(k); }}
-              className={cn("rounded-xl px-1 py-2 text-center text-2xs font-bold transition",
-                type === k ? "bg-brand-600 text-white" : "bg-surface-2 text-ink-muted hover:bg-surface-3")}>
-              <span className="block text-sm leading-tight">{TASK_META[k].glyph}</span>
-              {TASK_META[k].ar()}
-            </button>
-          ))}
-        </div>
+        {/* الاسم — ومعه الدليل الدوائي حين يكون النوع دواءً */}
+        <label className="mb-1 block text-2xs font-bold text-ink-muted">
+          {type === "drug" ? t("flow.drugName", "اسم الدواء") : t("flow.taskName", "الاسم")}
+        </label>
+        <input value={label} data-taskname autoFocus
+          onChange={(e) => { setLabel(e.target.value); setPicked(null); }}
+          className="input w-full" style={{ minHeight: 48 }}
+          placeholder={type === "drug" ? t("flow.drugPh", "اكتب أول حروفه — مثلاً: amox") : TASK_META[type].ar()} />
 
-        <label className="mb-1 block text-2xs font-bold text-ink-muted">{t("flow.taskName", "الاسم")}</label>
-        <input value={label} onChange={(e) => setLabel(e.target.value)} data-taskname
-          className="input mb-3 w-full" placeholder={TASK_META[type].ar()} />
+        {suggestions.length > 0 && (
+          <div data-drughits className="mt-1.5 overflow-hidden rounded-2xl border border-line">
+            {suggestions.map((d) => {
+              const win = doseFor(d, species ?? "other");
+              return (
+                <button key={d.id} type="button" data-drughit={d.id} onClick={() => pick(d)}
+                  className="flex w-full items-center gap-2 border-b border-line px-3 py-2.5 text-start transition last:border-0 hover:bg-brand-50 dark:hover:bg-brand-500/10">
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-bold text-ink">{d.en}</span>
+                    <span className="block truncate text-2xs text-ink-subtle">
+                      {d.ar}{win ? ` · ${win.typical} ${t("flow.mgkg", "ملغم/كغ")} · ${FREQ_LABEL[win.freq]}` : ""}
+                    </span>
+                  </span>
+                  <Plus size={15} className="shrink-0 text-brand-600" />
+                </button>
+              );
+            })}
+          </div>
+        )}
 
-        <div className="mb-3 grid grid-cols-2 gap-2">
+        {/* ما حسبه الدليل — يُرى قبل الحفظ لا بعده */}
+        {computed?.banned && (
+          <p data-drugbanned className="mt-2 rounded-xl bg-danger-50 px-3 py-2 text-2xs font-bold text-danger-700 dark:bg-danger-500/15 dark:text-danger-300">
+            ⚠ {computed.banned}
+          </p>
+        )}
+        {computed?.noWeight && (
+          <p data-noweight className="mt-2 rounded-xl bg-warn-50 px-3 py-2 text-2xs font-bold text-warn-700 dark:bg-warn-500/15 dark:text-warn-300">
+            {t("flow.noWeight", "وزن الحيوان غير مسجَّل — سجّله بملفه لتُحسب الجرعة تلقائياً.")}
+          </p>
+        )}
+        {computed?.calc && computed.win && (
+          <p data-dosecalc className="mt-2 rounded-xl bg-success-50 px-3 py-2 text-2xs font-bold text-success-700 dark:bg-success-500/15 dark:text-success-300">
+            {t("flow.doseCalc", { mgkg: computed.win.typical, w: formatDec(weightKg ?? 0), mg: Math.round(computed.calc.mg * 100) / 100, defaultValue: "{{mgkg}} ملغم/كغ × {{w}} كغ = {{mg}} ملغم" })}
+            {computed.calc.mlRounded != null
+              ? ` ← ${t("flow.doseMl", { n: computed.calc.mlRounded, defaultValue: "{{n}} مل" })}` : ""}
+            {computed.calc.tabletsLabel
+              ? ` ← ${t("flow.doseTabs", { n: computed.calc.tabletsLabel, defaultValue: "{{n}} قرص" })}` : ""}
+            {computed.strength
+              ? ` (${computed.calc.tabletsLabel
+                  ? t("flow.perTab", { n: computed.strength, defaultValue: "{{n}} ملغم/قرص" })
+                  : t("flow.perMl", { n: computed.strength, defaultValue: "{{n}} ملغم/مل" })})` : ""}
+          </p>
+        )}
+
+        <div className="mt-3 grid gap-3 sm:grid-cols-[1fr,170px]">
           <div>
             <label className="mb-1 block text-2xs font-bold text-ink-muted">{t("flow.taskAmount", "الكمية / المعدّل")}</label>
             <input value={amount} onChange={(e) => setAmount(e.target.value)} data-taskamount
-              className="input w-full" placeholder={type === "fluid" ? t("flow.phRate", "5 مل/سا") : t("flow.phDose", "1 مل")} />
+              className="input w-full" style={{ minHeight: 48 }}
+              placeholder={type === "fluid" ? t("flow.phRate", "5 مل/سا") : t("flow.phDose", "1 مل")} />
           </div>
           <div>
             <label className="mb-1 block text-2xs font-bold text-ink-muted">{t("flow.taskRoute", "طريق الإعطاء")}</label>
             <select value={route} onChange={(e) => setRoute(e.target.value as DoseRoute | "")} data-taskroute
-              className="input w-full">
+              className="input w-full" style={{ minHeight: 48 }}>
               <option value="">{t("flow.routeNone", "—")}</option>
               {ROUTES.map((r) => (
                 <option key={r} value={r}>{routeName(r)}</option>
@@ -545,37 +708,53 @@ export function AddTaskSheet({ petName, todayISO, onClose, onAdd }: {
           </div>
         </div>
 
-        <label className="mb-1 block text-2xs font-bold text-ink-muted">{t("flow.taskTimes", "الأوقات اليوم")}</label>
-        <div className="mb-4 flex flex-wrap gap-1.5">
-          {SLOTS.map((s) => (
+        <label className="mb-1 mt-3 block text-2xs font-bold text-ink-muted">{t("flow.taskTimes", "الأوقات اليوم")}</label>
+        <div className="mb-3 flex flex-wrap gap-1.5">
+          {allSlots.map((s) => (
             <button key={s} type="button" data-taskslot={s} onClick={() => { playTap(); toggleTime(s); }}
-              className={cn("rounded-lg px-2.5 py-1.5 font-mono text-2xs font-bold transition",
-                times.includes(s) ? "bg-ink text-surface-1" : "bg-surface-2 text-ink-muted hover:bg-surface-3")}>
+              className={cn("rounded-xl px-3 font-mono text-xs font-bold transition",
+                times.includes(s) ? "bg-brand-600 text-white shadow-soft" : "bg-surface-2 text-ink-muted hover:bg-surface-3")}
+              style={{ minHeight: 44 }}>
               {s}
             </button>
           ))}
         </div>
 
+        {/* نوع المهمة — الدواء هو الغالب، وما عداه خلف طيّة */}
+        <button type="button" data-taskmore onClick={() => { playTap(); setMore((m) => !m); }}
+          className="mb-2 flex w-full items-center gap-1.5 rounded-xl px-1 py-2 text-2xs font-bold text-ink-subtle transition hover:text-ink">
+          <ChevronDown size={14} className={cn("transition", more && "rotate-180")} />
+          {t("flow.taskType", "نوع المهمة")} — {TASK_META[type].ar()}
+        </button>
+        {more && (
+          <div className="mb-3 grid grid-cols-4 gap-1.5">
+            {TASK_TYPES.map((k) => (
+              <button key={k} type="button" data-tasktype={k} onClick={() => { playTap(); setType(k); }}
+                className={cn("rounded-xl px-1 text-center text-2xs font-bold transition",
+                  type === k ? "bg-brand-600 text-white" : "bg-surface-2 text-ink-muted hover:bg-surface-3")}
+                style={{ minHeight: 48 }}>
+                <span className="block text-sm leading-tight">{TASK_META[k].glyph}</span>
+                {TASK_META[k].ar()}
+              </button>
+            ))}
+          </div>
+        )}
+
         <button type="button" data-addtasksave disabled={!valid}
           onClick={() => {
-            onAdd(times.map((time) => ({
-              pet_id: "", // يملؤه المستدعي
-              day: todayISO,
-              medication: label.trim(),
-              time,
-              amount: amount.trim(),
-              task_type: type,
-              route: route || null,
-            })));
+            if (!valid) return;
             playSuccess();
+            onAdd(times.map((time) => ({
+              pet_id: "", visit_id: null, day: todayISO, time,
+              medication: label.trim(), amount: amount.trim() || null,
+              task_type: type, route: route || null,
+              observations: null, administered_at: null, administered_by: null,
+            } as unknown as Omit<TreatmentEntry, "id" | "created_at">)));
           }}
-          className="btn btn-primary w-full disabled:opacity-50">
+          className="btn btn-primary w-full disabled:opacity-50" style={{ minHeight: 52 }}>
           {t("flow.addNTasks", { n: formatNum(times.length), defaultValue: "أضِف {{n}} مهمة" })}
         </button>
       </div>
     </div>
   );
 }
-
-/** حالة المهمة — يُعاد تصديره ليستعمله المستدعي بلا استيراد ثانٍ. */
-export { taskStatus };
