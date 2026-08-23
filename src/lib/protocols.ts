@@ -306,9 +306,13 @@ export function deleteStored(id: string) {
 /** كل البروتوكولات: ما بنته العيادة أولاً — فهو الأقرب لعملها. */
 export const allProtocols = (): Protocol[] => [...customProtocols(), ...PROTOCOLS];
 
+/** هل يخصّ هذا البروتوكولُ هذا النوع؟ */
+export const fitsSpecies = (p: Protocol, species: Species | undefined): boolean =>
+  !p.species.length || !species || p.species.includes(species);
+
 /** البروتوكولات التي تصلح لهذا النوع. */
 export const protocolsFor = (species: Species | undefined): Protocol[] =>
-  allProtocols().filter((p) => !p.species.length || !species || p.species.includes(species));
+  allProtocols().filter((p) => fitsSpecies(p, species));
 
 export const protocolById = (id: string): Protocol | undefined =>
   allProtocols().find((p) => p.id === id);

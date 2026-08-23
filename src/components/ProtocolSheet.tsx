@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { X, ChevronLeft, AlertTriangle, ShieldAlert, Trash2, Check, Plus, Pencil } from "lucide-react";
 import type { Pet, TreatmentEntry } from "@/types";
 import {
-  protocolsFor, buildDraft, draftAlerts, draftSummary,
+  protocolsFor, allProtocols, fitsSpecies, buildDraft, draftAlerts, draftSummary,
   isCustom, readStored, deleteStored,
   type Protocol, type StoredProtocol,
 } from "@/lib/protocols";
@@ -41,7 +41,22 @@ export function ProtocolSheet({ pet, petName, todayISO, onClose, onApply }: {
   /** يُبدَّل بعد كل حفظٍ أو حذف حتى تُقرأ القائمة من الإعدادات من جديد. */
   const [rev, setRev] = useState(0);
 
-  const list = useMemo(() => protocolsFor(pet?.species), [pet?.species, rev]);
+  /**
+   * القائمة **لا تُخفي شيئاً** — تُرتِّب فقط.
+   *
+   * كانت تُرشَّح بالنوع ترشيحاً قاطعاً، فمريضٌ ليس كلباً ولا قطاً يفتح شاشةً
+   * فارغة تماماً؛ والأسوأ أن بروتوكولاً يبنيه الطبيب لطائرٍ كان يُحفَظ بنوعٍ
+   * لا يطابقه فيختفي فور حفظه — «سوّيت إضافة وما لقيت البروتوكول».
+   *
+   * فصار ما يخصّ النوع أولاً، وما عداه أسفلَه تحت عنوانه: يُرى ويُستعمَل
+   * بقرار الطبيب. الترشيح الصامت يُخفي عملَ صاحبه، والترتيب يكفي.
+   */
+  const fit = useMemo(() => protocolsFor(pet?.species), [pet?.species, rev]);
+  const others = useMemo(
+    () => allProtocols().filter((p) => !fitsSpecies(p, pet?.species)),
+    [pet?.species, rev],
+  );
+  const list = fit;
   const draft = useMemo(
     () => (chosen ? buildDraft(chosen, pet, todayISO) : []),
     [chosen, pet, todayISO],
@@ -106,17 +121,18 @@ export function ProtocolSheet({ pet, petName, todayISO, onClose, onApply }: {
         {/* ── ١) اختيار البروتوكول ──────────────────────────────────────── */}
         {!chosen && (
           <div className="min-h-0 flex-1 overflow-y-auto p-3">
-            {!list.length && (
-              <p className="p-6 text-center text-2xs text-ink-muted">
-                {t("proto.noneForSpecies", "لا بروتوكولات جاهزة لهذا النوع بعد.")}
-              </p>
-            )}
             {/* بناء بروتوكول العيادة — أوّل الصفّ: الطبيب يبني ما يشبه عمله */}
             <button type="button" data-protonew onClick={() => { playTap(); setEditing("new"); }}
               className="mb-2 flex w-full items-center justify-center gap-2 rounded-2xl border border-dashed border-brand-300 bg-brand-50/50 p-3 text-2xs font-extrabold text-brand-700 transition hover:bg-brand-50 dark:bg-brand-500/10 dark:text-brand-300"
               style={{ minHeight: 52 }}>
               <Plus size={16} /> {t("proto.new", "بروتوكول جديد")}
             </button>
+
+            {!fit.length && (
+              <p data-protononefit className="mb-2 rounded-2xl bg-surface-2 px-3 py-2.5 text-center text-2xs font-bold text-ink-muted">
+                {t("proto.noneForSpecies", "ما في بروتوكول مخصّص لنوع هذا المريض — ابنِ واحداً، أو استعمل من الأسفل.")}
+              </p>
+            )}
 
             <div className="grid gap-2">
               {list.map((p) => {
@@ -162,6 +178,52 @@ export function ProtocolSheet({ pet, petName, todayISO, onClose, onApply }: {
                 );
               })}
             </div>
+
+            {/* أنواعٌ أخرى — تُعرَض ولا تُخفى: ما بناه الطبيب لا يختفي أبداً،
+                ويبقى القرارُ قرارَه إن شاء أن يستعمله على هذا المريض. */}
+            {others.length > 0 && (
+              <div className="mt-4">
+                <div className="mb-1.5 flex items-center gap-2 text-[10px] font-black text-ink-subtle">
+                  <span className="h-px flex-1 bg-line" />
+                  {t("proto.otherSpecies", "لأنواع أخرى")}
+                  <span className="h-px flex-1 bg-line" />
+                </div>
+                <div className="grid gap-2">
+                  {others.map((p) => (
+                    <div key={p.id} className="flex items-stretch gap-1 opacity-70">
+                      <button type="button" data-protopick={p.id} data-protoother
+                        onClick={() => { playTap(); setChosen(p); setDropped(new Set()); }}
+                        className="min-w-0 flex-1 rounded-2xl border border-dashed border-line bg-surface-1 p-3 text-start transition hover:border-brand-300 hover:opacity-100"
+                        style={{ minHeight: 56 }}>
+                        <div className="flex items-center gap-1.5">
+                          <span className="truncate text-sm font-extrabold text-ink">{p.name()}</span>
+                          {isCustom(p) && (
+                            <span className="shrink-0 rounded-full bg-brand-100 px-1.5 text-[10px] font-black text-brand-700 dark:bg-brand-500/20 dark:text-brand-300">
+                              {t("proto.mine", "عيادتي")}
+                            </span>
+                          )}
+                        </div>
+                        <div className="mt-0.5 text-2xs leading-snug text-ink-muted">{p.indication()}</div>
+                      </button>
+                      {isCustom(p) && (
+                        <div className="flex shrink-0 flex-col gap-1">
+                          <button type="button" data-protoedit={p.id}
+                            onClick={() => { playTap(); setEditing(readStored().find((s) => s.id === p.id) ?? "new"); }}
+                            className="grid w-11 flex-1 place-items-center rounded-xl border border-line text-ink-muted transition hover:border-brand-300 hover:text-brand-600">
+                            <Pencil size={15} />
+                          </button>
+                          <button type="button" data-protodelete={p.id}
+                            onClick={() => { playTap(); deleteStored(p.id); setRev((r) => r + 1); }}
+                            className="grid w-11 flex-1 place-items-center rounded-xl border border-line text-ink-subtle transition hover:border-danger-300 hover:text-danger-600">
+                            <Trash2 size={15} />
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -244,6 +306,7 @@ export function ProtocolSheet({ pet, petName, todayISO, onClose, onApply }: {
       {editing && (
         <ProtocolEditor
           initial={editing === "new" ? undefined : editing}
+          petSpecies={pet?.species}
           onClose={() => setEditing(null)}
           onSaved={() => { setEditing(null); setRev((r) => r + 1); }}
         />

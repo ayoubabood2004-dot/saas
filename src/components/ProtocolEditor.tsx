@@ -24,25 +24,37 @@ import { playTap, playSuccess } from "@/lib/sounds";
  * وكم يوماً. وهذا وحده ما يتكرّر بين حالةٍ وحالة.
  * ==========================================================================*/
 
-const SPECIES: { id: Species; label: () => string }[] = [
-  { id: "dog", label: () => "🐕" },
-  { id: "cat", label: () => "🐈" },
-  { id: "bird", label: () => "🐦" },
-  { id: "rabbit", label: () => "🐇" },
+/* كل ما يقبله النظام — لا الشائعَ وحده. النقصُ هنا يعني مريضاً لا يستطيع
+ * الطبيب أن يبني له بروتوكولاً أصلاً، ولا أن يرى لماذا. */
+const SPECIES: { id: Species; emoji: string }[] = [
+  { id: "dog", emoji: "🐕" },
+  { id: "cat", emoji: "🐈" },
+  { id: "bird", emoji: "🐦" },
+  { id: "rabbit", emoji: "🐇" },
+  { id: "horse", emoji: "🐎" },
+  { id: "cow", emoji: "🐄" },
+  { id: "other", emoji: "🐾" },
 ];
 
 const CARE_TYPES: Exclude<TaskType, "drug">[] = ["fluid", "vitals", "feed", "elim", "nurse", "lab"];
 
-export function ProtocolEditor({ initial, onClose, onSaved }: {
+export function ProtocolEditor({ initial, petSpecies, onClose, onSaved }: {
   /** بروتوكولٌ يُحرَّر — أو `undefined` لبناء واحدٍ جديد. */
   initial?: StoredProtocol;
+  /** نوع المريض المفتوح — البروتوكول الجديد يبدأ به. */
+  petSpecies?: Species;
   onClose: () => void;
   onSaved: () => void;
 }) {
   const { t } = useTranslation();
   const [name, setName] = useState(initial?.name ?? "");
   const [indication, setIndication] = useState(initial?.indication ?? "");
-  const [species, setSpecies] = useState<Species[]>(initial?.species ?? ["dog", "cat"]);
+  /* الافتراضي **نوع المريض الذي بين يديك** لا «كلب وقط» ثابتين: طبيبٌ يبني
+   * بروتوكولاً وهو واقفٌ عند طائرٍ كان يحفظه لكلبٍ وقط، فيختفي من أمامه فور
+   * حفظه — «سوّيت إضافة وما لقيت البروتوكول». */
+  const [species, setSpecies] = useState<Species[]>(
+    initial?.species ?? (petSpecies ? [petSpecies] : ["dog", "cat"]),
+  );
   const [days, setDays] = useState(initial?.days ?? 3);
   const [steps, setSteps] = useState<StoredStep[]>(initial?.steps ?? []);
   const [q, setQ] = useState("");
@@ -125,7 +137,7 @@ export function ProtocolEditor({ initial, onClose, onSaved }: {
                   onClick={() => { playTap(); setSpecies((cur) => on ? cur.filter((x) => x !== s.id) : [...cur, s.id]); }}
                   className={cn("grid h-11 w-11 place-items-center rounded-full border text-lg transition",
                     on ? "border-brand-500 bg-brand-50 dark:bg-brand-500/15" : "border-line bg-surface-2 opacity-50")}>
-                  {s.label()}
+                  {s.emoji}
                 </button>
               );
             })}
