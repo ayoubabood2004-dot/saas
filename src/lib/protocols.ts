@@ -33,8 +33,20 @@ import { getCareProtocolsRaw, setCareProtocolsRaw } from "./settings";
 /** بندٌ دوائي: يشير لمونوغراف بالدليل، والجرعةُ تُشتقّ عند التطبيق. */
 export interface DrugStep {
   kind: "drug";
-  /** معرّف الدواء بـ`FORMULARY`. */
+  /** معرّف الدواء بـ`FORMULARY` — أو فارغٌ لدواءٍ خارج الدليل. */
   drug: string;
+  /**
+   * دواءٌ **خارج الدليل**: اسمٌ كتبه الطبيب بيده وكميةٌ كتبها معه.
+   *
+   * الدليل ثمانيةٌ وخمسون دواءً، ورفُّ العيادة أوسع منه — وتركيبةٌ محلّية أو
+   * اسمٌ تجاري لا يعرفه الدليل كان يوقف بناء البروتوكول كلّه. فصار يُقبَل،
+   * بشرطٍ صريح: **لا جرعةَ محسوبة له**. الدليل لا يعرفه، فلا نافذةَ ولا وزنَ
+   * يُشتقّ منهما رقم — والطبيب يكتب الكمية بنفسه، ويراها كما كتبها.
+   */
+  label?: () => string;
+  amount?: () => string;
+  /** لدواءٍ خارج الدليل: كم مرّةً باليوم (المعروف تواتره من الدليل). */
+  perDay?: number;
   /** طريقٌ يُفضَّل — يُتجاهَل إن لم يدعمه المونوغراف لهذا النوع. */
   prefer?: Route;
   /** كم يوماً يستمرّ. الافتراضي مدّة البروتوكول. */
@@ -204,10 +216,12 @@ export const PROTOCOLS: Protocol[] = [
 
 export interface StoredStep {
   kind: "drug" | "care";
-  /** للدواء: معرّفه بالدليل. للرعاية: نوع المهمّة. */
+  /** للدواء: معرّفه بالدليل (أو فراغٌ لدواءٍ خارجه). للرعاية: نوع المهمّة. */
   ref: string;
-  /** اسمٌ معروض لبنود الرعاية — الدواء يأخذ اسمه من الدليل. */
+  /** اسمٌ معروض لبنود الرعاية وللدواء الخارج عن الدليل. */
   label?: string;
+  /** كميةٌ كتبها الطبيب — للدواء الخارج عن الدليل وحده. */
+  amount?: string;
   prefer?: Route;
   perDay?: number;
   days?: number;
@@ -242,7 +256,12 @@ export function inflate(s: StoredProtocol): Protocol {
     days: Math.max(1, Math.min(30, s.days || 1)),
     steps: (s.steps ?? []).map<ProtocolStep>((st) =>
       st.kind === "drug"
-        ? { kind: "drug", drug: st.ref, prefer: st.prefer, days: st.days }
+        ? {
+            kind: "drug", drug: st.ref, prefer: st.prefer, days: st.days,
+            label: st.label ? () => st.label as string : undefined,
+            amount: st.amount ? () => st.amount as string : undefined,
+            perDay: st.perDay,
+          }
         : {
             kind: "care", type: (st.ref as CareStep["type"]) || "nurse",
             label: () => st.label || st.ref, perDay: st.perDay ?? 1, days: st.days,
@@ -386,7 +405,30 @@ export function buildDraft(p: Protocol, pet: Pet | undefined, todayISO: string):
 
     if (step.kind === "drug") {
       const drug = DRUG_BY_ID.get(step.drug);
-      if (!drug) continue;
+
+      /* دواءٌ خارج الدليل: يُكتب كما كتبه الطبيب، بلا اشتقاقٍ ولا فحصِ نوع —
+       * ولا يُسقَط بصمت. إسقاطُه كان يعني بروتوكولاً ينقصه دواءٌ وضعه صاحبه
+       * فيه، وهذا أسوأ من أن يُكتب بكميةٍ كتبها بيده. */
+      if (!drug) {
+        const label = step.label?.().trim();
+        if (!label) continue;
+        const stepKey = `${p.id}-free-${label}`;
+        const times = spreadTimes(step.perDay ?? 1);
+        for (let d = 0; d < days; d++) {
+          for (const time of times) {
+            out.push({
+              key: `${stepKey}-${d}-${time}`, stepKey,
+              task_type: "drug", medication: label,
+              amount: step.amount?.() ?? "",
+              route: step.prefer ? (ROUTE_DOWN[step.prefer] ?? null) : null,
+              time, day: addDays(todayISO, d),
+              observations: step.note?.() ?? null,
+            });
+          }
+        }
+        continue;
+      }
+
       if (isBannedFor(drug, species)) continue;          // لا يُعرَض ما لن يُكتب
       const win = doseFor(drug, species);
       if (!win) continue;                                 // لا نافذةَ موثّقة لهذا النوع

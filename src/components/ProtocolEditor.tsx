@@ -55,6 +55,18 @@ export function ProtocolEditor({ initial, onClose, onSaved }: {
     setSteps((s) => (s.some((x) => x.kind === "drug" && x.ref === d.id) ? s : [...s, { kind: "drug", ref: d.id }]));
     setQ("");
   };
+
+  /** دواءٌ لا يعرفه الدليل — يُقبَل باسمه، وكميتُه تُكتب باليد. */
+  const addFreeDrug = () => {
+    const label = q.trim();
+    if (!label) return;
+    playTap();
+    setSteps((s) => [...s, { kind: "drug", ref: "", label, amount: "", perDay: 2 }]);
+    setQ("");
+  };
+
+  const setAmount = (i: number, v: string) =>
+    setSteps((s) => s.map((x, j) => (j === i ? { ...x, amount: v } : x)));
   const addCare = (type: Exclude<TaskType, "drug">) => {
     playTap();
     setSteps((s) => [...s, { kind: "care", ref: type, label: TASK_META[type].ar(), perDay: 3 }]);
@@ -144,6 +156,19 @@ export function ProtocolEditor({ initial, onClose, onSaved }: {
                 ))}
               </div>
             )}
+
+            {/* الدليل ثمانيةٌ وخمسون دواءً ورفُّ العيادة أوسع — فاسمٌ لا يعرفه
+                يُقبَل بدل أن يوقف البروتوكول، بشرط أن تُكتب كميته باليد. */}
+            {q.trim().length >= 2 && (
+              <button type="button" data-protofreedrug onClick={addFreeDrug}
+                className="mt-1.5 flex w-full items-center gap-2 rounded-xl border border-dashed border-line px-2.5 py-2 text-start text-ink-muted transition hover:border-brand-300 hover:text-ink"
+                style={{ minHeight: 44 }}>
+                <Plus size={14} className="shrink-0" />
+                <span className="min-w-0 flex-1 truncate text-2xs font-bold">
+                  {t("proto.freeDrug", { d: q.trim(), defaultValue: "أضِف «{{d}}» — دواء خارج الدليل، تكتب كميته بنفسك" })}
+                </span>
+              </button>
+            )}
             <div className="mt-1.5 flex flex-wrap gap-1">
               {CARE_TYPES.map((ct) => (
                 <button key={ct} type="button" data-protoaddcare={ct} onClick={() => addCare(ct)}
@@ -176,11 +201,21 @@ export function ProtocolEditor({ initial, onClose, onSaved }: {
                       {drug ? drug.ar : st.label || TASK_LABEL_FALLBACK(st.ref)}
                     </div>
                     <div className="text-[10px] text-ink-subtle">
-                      {st.kind === "drug"
-                        ? t("proto.doseAuto", "الجرعة تُحسب من الوزن عند التطبيق")
-                        : t("proto.timesDay", { n: formatNum(st.perDay ?? 1), defaultValue: "{{n}} مرات باليوم" })}
+                      {st.kind === "care"
+                        ? t("proto.timesDay", { n: formatNum(st.perDay ?? 1), defaultValue: "{{n}} مرات باليوم" })
+                        : drug
+                          ? t("proto.doseAuto", "الجرعة تُحسب من الوزن عند التطبيق")
+                          : t("proto.doseManual", "خارج الدليل — اكتب الكمية")}
                     </div>
                   </div>
+                  {/* الدواء الخارج عن الدليل يحمل كميته نصّاً: لا نافذةَ تُشتقّ منها */}
+                  {st.kind === "drug" && !drug && (
+                    <input value={st.amount ?? ""} data-protofreeamount
+                      onChange={(e) => setAmount(i, e.target.value)}
+                      placeholder={t("proto.amountPh", "الكمية")}
+                      className="w-24 shrink-0 rounded-lg border border-line bg-surface-1 px-2 text-center text-xs font-bold text-ink outline-none focus:border-brand-400"
+                      style={{ minHeight: 38 }} />
+                  )}
                   {st.kind === "care" && (
                     <input type="number" min={1} max={12} value={st.perDay ?? 1} data-protoperday
                       onChange={(e) => setPerDay(i, Number(e.target.value) || 1)}
@@ -198,6 +233,14 @@ export function ProtocolEditor({ initial, onClose, onSaved }: {
         </div>
 
         <div className="shrink-0 border-t border-line p-3">
+          {/* زرٌّ باهتٌ بلا سبب يُقرأ كعطل: «ضغطت وما انحفظ». فالناقص يُقال. */}
+          {!valid && (
+            <p data-protowhy className="mb-2 text-center text-2xs font-bold text-warn-700 dark:text-warn-300">
+              {!name.trim()
+                ? t("proto.needName", "اكتب اسم البروتوكول أولاً")
+                : t("proto.needSteps", "أضِف بنداً واحداً على الأقل — دواءً أو مهمّة رعاية")}
+            </p>
+          )}
           <button type="button" data-protosave disabled={!valid} onClick={save}
             className="btn btn-primary w-full disabled:opacity-50" style={{ minHeight: 52 }}>
             <Check size={17} /> {t("proto.save", "احفظ البروتوكول")}
