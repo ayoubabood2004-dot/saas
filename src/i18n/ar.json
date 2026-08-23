@@ -3542,7 +3542,12 @@
     "doseMl": "{{n}} مل",
     "doseTabs": "{{n}} قرص",
     "perTab": "{{n}} ملغم/قرص",
-    "perMl": "{{n}} ملغم/مل"
+    "perMl": "{{n}} ملغم/مل",
+    "givenAt": "أُعطيت {{at}} · {{by}}",
+    "byUnknown": "غير مسجَّل",
+    "wasDue": "موعدها {{at}}",
+    "undo": "تراجع",
+    "butMissed": "بل فاتت"
   },
   "stock": {
     "fileName": "جرد المخزون",

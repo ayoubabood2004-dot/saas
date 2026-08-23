@@ -3542,7 +3542,12 @@
     "doseMl": "{{n}} mL",
     "doseTabs": "{{n}} tab",
     "perTab": "{{n}} mg/tab",
-    "perMl": "{{n}} mg/mL"
+    "perMl": "{{n}} mg/mL",
+    "givenAt": "Given {{at}} · {{by}}",
+    "byUnknown": "not recorded",
+    "wasDue": "was due {{at}}",
+    "undo": "Undo",
+    "butMissed": "Actually missed"
   },
   "stock": {
     "fileName": "Stocktake",

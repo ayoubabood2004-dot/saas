@@ -495,6 +495,13 @@ export function Charts() {
     repo.setTreatmentGiven(e.id, true, user?.full_name ?? undefined, at).catch(() => {});
   }, [patchTx, user?.full_name]);
 
+  /** إلغاء تسجيلٍ تمّ: الجرعة ترجع معلّقةً، ويُمسح مَن أعطاها ومتى.
+   *  ضغطةٌ بالغلط تُصلَّح بضغطة — والبديل أن تبقى جرعةٌ مسجَّلةً ولم تُعطَ. */
+  const flowUndo = useCallback((e: TreatmentEntry) => {
+    patchTx(e.id, { administered_at: null, administered_by: undefined, result: null });
+    repo.setTreatmentGiven(e.id, false).catch(() => {});
+  }, [patchTx]);
+
   const flowValue = useCallback((e: TreatmentEntry, value: string) => {
     const at = new Date().toISOString();
     patchTx(e.id, { result: value, administered_at: at, administered_by: user?.full_name ?? undefined, missed_reason: null });
@@ -833,6 +840,7 @@ export function Charts() {
             groupLabel={focusPet === null ? flowGroupLabel : undefined}
             focused={focusPet !== null}
             onGive={flowGive}
+            onUndo={flowUndo}
             onValue={flowValue}
             onMissed={flowMissed}
             onAddTask={(petId) => { setAddHour(null); setAddFor(petId); }}

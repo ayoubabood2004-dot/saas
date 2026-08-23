@@ -1,6 +1,6 @@
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { AlertTriangle, Check, Plus, X, ChevronDown } from "lucide-react";
+import { AlertTriangle, Check, Plus, X, ChevronDown, RotateCcw } from "lucide-react";
 import type { Pet, Species, TreatmentEntry, TaskType, DoseRoute } from "@/types";
 import { cn, formatNum, formatDec } from "@/lib/utils";
 
@@ -48,6 +48,21 @@ const LEAD_W = 208;    // عمود الأوامر
 
 /** طرق الدليل الدوائي ← طرق ورقة العلاج. الاتجاه المعاكس موجود بالدليل
  *  (`APP_ROUTE`) لكنه بمعرّفات شاشة الخطة، وهذه معرّفاتنا نحن. */
+/** أوّل حرفين من اسم المُعطي — توقيعٌ يُقرأ داخل مربّعٍ من ٤٤ بكسل.
+ *  «Dr. Sarah Mansour» ← «SM» · «سارة منصور» ← «سم». */
+function initialsOf(name: string | null | undefined): string | null {
+  const parts = (name ?? "").replace(/^(د\.|دكتور|dr\.?)\s*/i, "").trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return null;
+  return (parts[0][0] + (parts[1]?.[0] ?? "")).toUpperCase();
+}
+
+/** «HH:MM» من طابعٍ زمني — للعرض بشريط التأكيد. */
+const hhmmOf = (iso: string | null | undefined): string => {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+};
+
 const APP_ROUTE_BACK: Partial<Record<Route, DoseRoute>> = {
   PO: "po", IV: "iv", IM: "im", SC: "sc", topical: "topical",
 };
@@ -70,7 +85,7 @@ type Editing =
   | null;
 
 /* ── خانة واحدة ─────────────────────────────────────────────────────────── */
-const Cell = memo(function Cell({ list, todayISO, now, alt, hour, gap, onTap, onLong, onAdd }: {
+const Cell = memo(function Cell({ list, todayISO, now, alt, hour, gap, sel, onTap, onAdd }: {
   list: TreatmentEntry[] | undefined;
   todayISO: string;
   now: string;
@@ -78,14 +93,12 @@ const Cell = memo(function Cell({ list, todayISO, now, alt, hour, gap, onTap, on
   hour: number;
   /** بين هذا العمود وسابقه ساعاتٌ مطويّة — يُرسم حدٌّ أغمق. */
   gap: boolean;
+  /** الخانة التي يتحدّث عنها شريط التأكيد الآن — تُحاط بحلقةٍ لتُربط به. */
+  sel: boolean;
   onTap: (e: TreatmentEntry) => void;
-  onLong: (e: TreatmentEntry) => void;
   /** الخانة الفارغة تُنشئ جرعةً بساعتها — إن وُصل هذا النداء. */
   onAdd?: (hour: number) => void;
 }) {
-  const holdRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => () => { if (holdRef.current) clearTimeout(holdRef.current); }, []);
-
   /* الفراغ ليس عدماً بل **مكاناً**: الضغط عليه يكتب جرعةً بساعته، فيُختار
    * الوقت بموضع الإصبع لا بمنتقي وقتٍ يُفتح ويُغلق. و«+» باهتةٌ ظاهرةٌ
    * دائماً — الآيباد بلا تحويم، وإيماءةٌ لا تُرى لا تُستعمل. */
@@ -113,14 +126,14 @@ const Cell = memo(function Cell({ list, todayISO, now, alt, hour, gap, onTap, on
   /* القيمة المسجَّلة تُعرَض بدل علامة الصح: قياسٌ بلا رقمه ليس قياساً. */
   const shown = list.find((t) => t.result)?.result;
 
-  const press = (fn: () => void) => ({
-    onPointerDown: () => {
-      if (holdRef.current) clearTimeout(holdRef.current);
-      holdRef.current = setTimeout(() => { holdRef.current = null; onLong(first); }, 550);
-    },
-    onPointerUp: () => { if (holdRef.current) { clearTimeout(holdRef.current); holdRef.current = null; fn(); } },
-    onPointerLeave: () => { if (holdRef.current) { clearTimeout(holdRef.current); holdRef.current = null; } },
-  });
+  /* الضغط المطوّل حُذف.
+   *
+   * كان الطريق الوحيد لـ«فاتت»: ضغطةٌ تُمسك ٥٥٠ms. وهي إيماءةٌ لا تُرى فلا
+   * تُكتشف، وتُلغى بأدنى حركة إصبع (`pointerleave`) — أي أنها تفشل على آيباد
+   * بيدٍ مشغولة أكثر مما تنجح. فصار للخانة فعلٌ واحد: ضغطة. و«فاتت»
+   * و«تراجع» انتقلا إلى شريط التأكيد الذي يظهر بعد الضغطة نفسها — حيث
+   * يحتاجهما الطبيب فعلاً، وحيث يراهما بلا أن يبحث.
+   */
 
   const base = "grid place-items-center rounded-xl text-sm font-black tabular-nums transition active:scale-90";
   return (
@@ -131,9 +144,10 @@ const Cell = memo(function Cell({ list, todayISO, now, alt, hour, gap, onTap, on
         data-state={state}
         style={{ height: CELL, minWidth: CELL }}
         title={`${first.time} · ${first.medication}${missed ? ` — ${missed.missed_reason}` : ""}`}
-        {...press(() => onTap(first))}
+        onClick={() => onTap(first)}
         className={cn(
           base,
+          sel && "ring-2 ring-brand-600 ring-offset-1 ring-offset-surface-1",
           state === "given" && "bg-success-50 px-1.5 text-success-700 ring-1 ring-success-300/70 dark:bg-success-500/15 dark:text-success-300 dark:ring-success-500/30",
           state === "overdue" && (missed
             ? "bg-surface-3 px-1.5 text-ink-subtle ring-1 ring-line-strong"
@@ -142,8 +156,11 @@ const Cell = memo(function Cell({ list, todayISO, now, alt, hour, gap, onTap, on
           state === "upcoming" && "border-2 border-dashed border-line-strong text-ink-subtle",
         )}
       >
+        {/* الخانة المُنجَزة تحمل **أحرف مَن أعطى** لا علامة صحٍّ مجهولة — كما
+            توقّع الممرّضة بمربّع الورقة الورقية. والقيمة تسبقها حين تكون
+            قياساً: «٣٩٫٦» أنفع من صحٍّ وأحرف. */}
         {state === "given"
-          ? (shown ?? <Check size={18} strokeWidth={3.5} />)
+          ? (shown ?? initialsOf(first.administered_by) ?? <Check size={18} strokeWidth={3.5} />)
           : state === "overdue"
             ? (missed ? "—" : "!")
             : state === "due"
@@ -161,7 +178,7 @@ const Cell = memo(function Cell({ list, todayISO, now, alt, hour, gap, onTap, on
 
 /* ── الورقة ─────────────────────────────────────────────────────────────── */
 export function Flowsheet({
-  patients, entries, todayISO, nowHHMM, groupLabel, focused, onGive, onValue, onMissed, onAddTask, onAddAt, onOpenPet,
+  patients, entries, todayISO, nowHHMM, groupLabel, focused, onGive, onUndo, onValue, onMissed, onAddTask, onAddAt, onOpenPet,
 }: {
   patients: FlowPatient[];
   entries: TreatmentEntry[];
@@ -171,6 +188,8 @@ export function Flowsheet({
   /** عنوان المجموعة الحالية (يظهر على شريط القسم). */
   groupLabel?: (p: FlowPatient) => string;
   onGive: (e: TreatmentEntry) => void;
+  /** إلغاء تسجيلٍ تمّ — الخانة ترجع معلّقة. */
+  onUndo: (e: TreatmentEntry) => void;
   onValue: (e: TreatmentEntry, value: string) => void;
   onMissed: (e: TreatmentEntry, reason: string | null) => void;
   onAddTask: (petId: string) => void;
@@ -182,6 +201,14 @@ export function Flowsheet({
 }) {
   const { t } = useTranslation();
   const [edit, setEdit] = useState<Editing>(null);
+  /* شريط التأكيد: يظهر بعد كل ضغطةٍ على خانة، ويحمل الأفعال النادرة —
+   * «تراجع» و«بل فاتت» — عند اللحظة التي يحتاجها الطبيب فيها بالضبط.
+   * وهو أيضاً ما يجعل التوثيق مرئياً: مَن أعطى ومتى، وهما مسجّلان بقاعدة
+   * البيانات من قبل لكن لم يكن لهما مكانٌ يُقرآن فيه. */
+  /* يُحفظ **المعرّف** لا نسخةُ الصف: الشريط يقرأ الصفَّ الحيّ من `entries`
+   * عند كل رسمة، فيعرض مَن أعطى ومتى كما حُفظا فعلاً — لا كما خمّنّاهما لحظة
+   * الضغط قبل أن تعود الكتابة. */
+  const [confirmId, setConfirmId] = useState<{ id: string; justGiven: boolean } | null>(null);
   const [draft, setDraft] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -202,6 +229,13 @@ export function Flowsheet({
     }
     return m;
   }, [patients, today]);
+
+  /** الصفّ الذي يتحدّث عنه الشريط — من البيانات الحيّة دائماً. */
+  const confirm = useMemo(() => {
+    if (!confirmId) return null;
+    const entry = today.find((e) => e.id === confirmId.id);
+    return entry ? { entry, justGiven: confirmId.justGiven } : null;
+  }, [confirmId, today]);
 
   const off = nowOffset(cols, toMin(nowHHMM));
   const gridW = LEAD_W + cols.length * COL_W;
@@ -253,17 +287,29 @@ export function Flowsheet({
 
   useEffect(() => { if (edit?.kind === "value") setTimeout(() => inputRef.current?.focus(), 30); }, [edit]);
 
+  /**
+   * ضغطة الخانة — فعلٌ واحد لا اثنان.
+   *
+   * المعلّقة تُعطى فوراً (وهو الفعل الغالب بالجولة، فلا يصحّ أن يكلّف ضغطتين)،
+   * والمُنجَزة **تُفتَح للمراجعة لا تُصمّ**: كانت `if (administered_at) return`
+   * تعني أن ضغطةً بالغلط لا تُراجَع أبداً — جرعةٌ تُسجَّل ولم تُعطَ، والوردية
+   * التالية تصدّقها. وهذا خطرٌ سريري لا إزعاج واجهة.
+   */
   const openCell = (e: TreatmentEntry) => {
+    playTap();
+    if (e.administered_at) { setConfirmId({ id: e.id, justGiven: false }); return; }
     const type = typeOf(e);
-    if (e.administered_at) return;               // المنجَز لا يُعاد فتحه بضغطة عابرة
-    playTap();
-    if (TASK_META[type].needsValue) { setDraft(e.result ?? ""); setEdit({ kind: "value", entry: e, type }); }
-    else { onGive(e); playSuccess(); }
+    if (TASK_META[type].needsValue) { setDraft(e.result ?? ""); setEdit({ kind: "value", entry: e, type }); return; }
+    onGive(e);
+    playSuccess();
+    setConfirmId({ id: e.id, justGiven: true });
   };
-  const openMissed = (e: TreatmentEntry) => {
-    if (e.administered_at) return;
+
+  /** التراجع: الخانة ترجع معلّقةً كما كانت، بلا سؤالٍ ولا حوار. */
+  const undo = (e: TreatmentEntry) => {
     playTap();
-    setEdit({ kind: "missed", entry: e });
+    onUndo(e);
+    setConfirmId(null);
   };
 
   if (!patients.length) return null;
@@ -385,7 +431,8 @@ export function Flowsheet({
                       {cols.map((h, ci) => (
                         <Cell key={h} list={row.byHour.get(h)} todayISO={todayISO} now={nowHHMM}
                           hour={h} alt={ci % 2 === 1} gap={isGapBefore(cols, ci)}
-                          onTap={openCell} onLong={openMissed}
+                          sel={!!confirm && !!row.byHour.get(h)?.some((x) => x.id === confirm.entry.id)}
+                          onTap={openCell}
                           onAdd={onAddAt ? (hh) => onAddAt(p.petId, hh) : undefined} />
                       ))}
                     </div>
@@ -418,6 +465,46 @@ export function Flowsheet({
       </div>
 
       {/* تسجيل قيمة */}
+      {/* شريط التأكيد — يلي كل ضغطة، ويحمل ما لا يصحّ أن يكون مخفياً:
+          مَن أعطى ومتى، وطريقُ التراجع، وطريقُ «بل فاتت». */}
+      {confirm && (
+        <div data-confirmbar
+          className={cn("mt-2 flex flex-wrap items-center gap-2 rounded-2xl border px-3 py-2.5",
+            confirm.justGiven
+              ? "border-success-300 bg-success-50 dark:border-success-500/40 dark:bg-success-500/10"
+              : "border-line bg-surface-2")}>
+          <span className={cn("grid h-8 w-8 shrink-0 place-items-center rounded-xl",
+            confirm.justGiven ? "bg-success-600 text-white" : "bg-surface-3 text-ink-muted")}>
+            <Check size={16} strokeWidth={3} />
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-xs font-black text-ink" dir="auto">
+              {confirm.entry.medication}
+              {confirm.entry.amount ? <span className="font-normal text-ink-muted"> · {confirm.entry.amount}</span> : null}
+            </p>
+            <p className="truncate text-2xs font-bold text-ink-subtle">
+              {t("flow.givenAt", { at: hhmmOf(confirm.entry.administered_at), by: confirm.entry.administered_by ?? t("flow.byUnknown", "غير مسجَّل"), defaultValue: "أُعطيت {{at}} · {{by}}" })}
+              {confirm.entry.time && hhmmOf(confirm.entry.administered_at) !== confirm.entry.time
+                ? ` · ${t("flow.wasDue", { at: confirm.entry.time, defaultValue: "موعدها {{at}}" })}` : ""}
+            </p>
+          </div>
+          <button type="button" data-undo onClick={() => undo(confirm.entry)}
+            className="flex items-center gap-1.5 rounded-xl bg-surface-1 px-3 text-2xs font-bold text-ink-muted ring-1 ring-line transition hover:text-danger-600 hover:ring-danger-300"
+            style={{ minHeight: 40 }}>
+            <RotateCcw size={14} /> {t("flow.undo", "تراجع")}
+          </button>
+          <button type="button" data-butmissed
+            onClick={() => { playTap(); onUndo(confirm.entry); setEdit({ kind: "missed", entry: confirm.entry }); setConfirmId(null); }}
+            className="flex items-center gap-1.5 rounded-xl bg-surface-1 px-3 text-2xs font-bold text-ink-muted ring-1 ring-line transition hover:text-warn-700 hover:ring-warn-300"
+            style={{ minHeight: 40 }}>
+            {t("flow.butMissed", "بل فاتت")}
+          </button>
+          <button type="button" data-closebar onClick={() => setConfirmId(null)} aria-label={t("common.close", "إغلاق")}
+            className="grid shrink-0 place-items-center rounded-xl text-ink-subtle transition hover:bg-surface-3"
+            style={{ width: 40, height: 40 }}><X size={16} /></button>
+        </div>
+      )}
+
       {edit?.kind === "value" && (
         <ValueSheet
           entry={edit.entry}
@@ -449,30 +536,62 @@ export function Flowsheet({
 }
 
 /* ── لوحة إدخال القيمة ──────────────────────────────────────────────────── */
+
+/** مفاتيح اللوحة — عشرة أرقام وفاصلةٌ ومحو. */
+const PAD = ["7", "8", "9", "4", "5", "6", "1", "2", "3", ".", "0", "⌫"];
+
+/**
+ * لوحة القيمة — بأرقامها الخاصة لا بكيبورد النظام.
+ *
+ * الحرارة والوزن ونسبة الأكل كلها أرقام، وفتحُ كيبورد الآيباد لها يقلب نصف
+ * الشاشة ويُخفي ما كان الطبيب ينظر إليه، ثم يحتاج ضغطةً لإغلاقه. ولوحةٌ من
+ * اثني عشر مفتاحاً بحجم ٥٦ بكسل أسرع وأدقّ — والإدخال يبقى داخل السياق.
+ * وحقل الكتابة باقٍ لمن أراد لوحة نظامه (المقاسات غير الرقمية مثل «بال/تغوّط»).
+ */
 function ValueSheet({ entry, hint, value, onChange, onCancel, onSave, inputRef }: {
   entry: TreatmentEntry; hint: string; value: string;
   onChange: (v: string) => void; onCancel: () => void; onSave: () => void;
   inputRef: React.RefObject<HTMLInputElement>;
 }) {
   const { t } = useTranslation();
+  const tapKey = (k: string) => {
+    playTap();
+    if (k === "⌫") { onChange(value.slice(0, -1)); return; }
+    if (k === "." && value.includes(".")) return;
+    onChange(value + k);
+  };
   return (
     <div className="fixed inset-0 z-50 grid place-items-end bg-ink/40 p-0 sm:place-items-center sm:p-4" onClick={onCancel}>
       <div data-valuesheet onClick={(e) => e.stopPropagation()}
         className="w-full rounded-t-3xl border border-line bg-surface-1 p-4 shadow-lg sm:max-w-sm sm:rounded-3xl">
         <div className="mb-3 flex items-start justify-between gap-3">
           <div>
-            <p className="text-sm font-black text-ink">{entry.medication}</p>
+            <p className="text-sm font-black text-ink" dir="auto">{entry.medication}</p>
             <p className="mt-0.5 font-mono text-2xs font-bold text-ink-subtle">{entry.time}</p>
           </div>
-          <button type="button" onClick={onCancel} className="p-1 text-ink-subtle"><X size={16} /></button>
+          <button type="button" onClick={onCancel} aria-label={t("common.cancel", "إلغاء")}
+            className="grid shrink-0 place-items-center rounded-xl text-ink-subtle transition hover:bg-surface-2"
+            style={{ width: 44, height: 44 }}><X size={18} /></button>
         </div>
         <label className="mb-1 block text-2xs font-bold text-ink-muted">{hint}</label>
         <input ref={inputRef} value={value} onChange={(e) => onChange(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter") onSave(); }}
           inputMode="decimal" data-valueinput
-          className="input w-full text-center font-mono text-lg font-black" />
+          className="input w-full text-center font-mono text-2xl font-black" style={{ minHeight: 60 }} />
+
+        <div data-numpad className="mt-3 grid grid-cols-3 gap-1.5">
+          {PAD.map((k) => (
+            <button key={k} type="button" data-padkey={k} onClick={() => tapKey(k)}
+              className={cn("grid place-items-center rounded-xl font-mono text-lg font-black transition active:scale-95",
+                k === "⌫" ? "bg-surface-3 text-ink-muted hover:bg-danger-50 hover:text-danger-600" : "bg-surface-2 text-ink hover:bg-surface-3")}
+              style={{ minHeight: 56 }}>
+              {k}
+            </button>
+          ))}
+        </div>
+
         <button type="button" data-valuesave onClick={onSave} disabled={!value.trim()}
-          className="btn btn-primary mt-3 w-full disabled:opacity-50">
+          className="btn btn-primary mt-3 w-full disabled:opacity-50" style={{ minHeight: 52 }}>
           {t("flow.saveValue", "سجّل")}
         </button>
       </div>
