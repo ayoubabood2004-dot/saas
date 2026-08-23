@@ -12,7 +12,7 @@ import type { Admission, ClinicVisit, MedicalVisit, Pet, PatientCondition, Treat
 import { repo } from "@/lib/repo";
 import { getCached, setCached } from "@/lib/swrCache";
 import { PetAvatar } from "@/components/PetAvatar";
-import { Button } from "@/components/ui";
+import { Button, useToast } from "@/components/ui";
 import { Flowsheet, AddTaskSheet, type FlowPatient } from "@/components/Flowsheet";
 import { RoundMode } from "@/components/RoundMode";
 import { buildRound } from "@/lib/round";
@@ -32,7 +32,8 @@ import { getDialCode, getClinicName } from "@/lib/settings";
 import { useAuth } from "@/contexts/AuthContext";
 import { useBranchState, matchesBranch } from "@/lib/branchStore";
 import { localISO, formatDate, formatNum, cn } from "@/lib/utils";
-import { playTap, playSuccess } from "@/lib/sounds";
+import { playTap, playSuccess, playWarning } from "@/lib/sounds";
+import { describeDbError } from "@/lib/errors";
 import { Modal } from "@/components/Modal";
 
 /* ── Bucket configuration ─────────────────────────────────────────────────── */
@@ -188,6 +189,7 @@ export function Charts() {
   const { t, i18n } = useTranslation();
   const lang = i18n.language;
   const navigate = useNavigate();
+  const toast = useToast();
   const { user } = useAuth();
   const clinicId = user?.clinic_id ?? user?.id ?? undefined;
   const todayISO = localISO();
@@ -494,37 +496,84 @@ export function Charts() {
     setTreatments((cur) => cur.map((t) => (t.id === id ? { ...t, ...patch } : t)));
   }, []);
 
+  /**
+   * تفاؤلٌ **بشرط**: لو فشلت الكتابة تُرَدّ الخانة ويُصرَخ.
+   *
+   * كانت كل هذه الأفعال تكتب `.catch(() => {})` — أي أن فشل الحفظ يُبتلع
+   * صامتاً بينما الشاشة تُظهر النجاح. وبنظامٍ طبيّ هذا أخطر من الفشل نفسه:
+   * الطبيب يرى الجرعة خضراء فيصدّق أنها سُجّلت، والوردية التالية تقرأ سجلاً
+   * لم يُكتب. وقد وقع هذا فعلاً — الهجرة ٠١١٥ كانت ناقصةً بقاعدة البيانات،
+   * فكانت كل إضافة مهمّة وكل قياس وكل سبب فوات **تفشل بلا أن يعلم أحد**.
+   *
+   * فصار كل فعلٍ يحمل نقيضه: يُطبَّق فوراً، وإن رفض الخادم رُدَّ إلى ما كان
+   * وظهرت رسالةٌ حمراء تقول **ما الذي لم يُحفظ**.
+   *
+   * والعنوان يقوله الفعلُ نفسه (`what`) لا مشغّلُ قاعدة البيانات: الطبيب
+   * يحتاج أن يعرف أن **الإعطاء** لم يُسجَّل وأن الخانة رجعت، لا أن يقرأ
+   * «duplicate key value violates…». والنص التقني يبقى بالسطر الثاني لمن
+   * يشخّص العطل.
+   */
+  const persist = useCallback(
+    (id: string, what: string, patch: Partial<TreatmentEntry>, before: Partial<TreatmentEntry>, write: () => Promise<unknown>) => {
+      patchTx(id, patch);
+      void write().catch((err) => {
+        patchTx(id, before);
+        playWarning();
+        toast.error(what, describeDbError(err, t));
+      });
+    },
+    [patchTx, toast, t],
+  );
+
   const flowGive = useCallback((e: TreatmentEntry) => {
     const at = new Date().toISOString();
-    patchTx(e.id, { administered_at: at, administered_by: user?.full_name ?? undefined, missed_reason: null });
-    repo.setTreatmentGiven(e.id, true, user?.full_name ?? undefined, at).catch(() => {});
-  }, [patchTx, user?.full_name]);
+    const by = user?.full_name ?? undefined;
+    persist(e.id, t("charts.saveFailGive", "ما انحفظ الإعطاء — رجّعنا الخانة مثل ما كانت. أعِد المحاولة."),
+      { administered_at: at, administered_by: by, missed_reason: null },
+      { administered_at: e.administered_at ?? null, administered_by: e.administered_by, missed_reason: e.missed_reason ?? null },
+      () => repo.setTreatmentGiven(e.id, true, by, at));
+  }, [persist, user?.full_name, t]);
 
   /** إلغاء تسجيلٍ تمّ: الجرعة ترجع معلّقةً، ويُمسح مَن أعطاها ومتى.
    *  ضغطةٌ بالغلط تُصلَّح بضغطة — والبديل أن تبقى جرعةٌ مسجَّلةً ولم تُعطَ. */
   const flowUndo = useCallback((e: TreatmentEntry) => {
-    patchTx(e.id, { administered_at: null, administered_by: undefined, result: null });
-    repo.setTreatmentGiven(e.id, false).catch(() => {});
-  }, [patchTx]);
+    persist(e.id, t("charts.saveFailUndo", "ما انحفظ التراجع — الجرعة باقية مسجَّلة كما هي. أعِد المحاولة."),
+      { administered_at: null, administered_by: undefined, result: null },
+      { administered_at: e.administered_at ?? null, administered_by: e.administered_by, result: e.result ?? null },
+      () => repo.setTreatmentGiven(e.id, false));
+  }, [persist, t]);
 
   const flowValue = useCallback((e: TreatmentEntry, value: string) => {
     const at = new Date().toISOString();
-    patchTx(e.id, { result: value, administered_at: at, administered_by: user?.full_name ?? undefined, missed_reason: null });
-    repo.setTreatmentResult(e.id, value, user?.full_name ?? undefined, at).catch(() => {});
-  }, [patchTx, user?.full_name]);
+    const by = user?.full_name ?? undefined;
+    persist(e.id, t("charts.saveFailValue", "ما انحفظت القيمة — أعِد إدخالها."),
+      { result: value, administered_at: at, administered_by: by, missed_reason: null },
+      { result: e.result ?? null, administered_at: e.administered_at ?? null, administered_by: e.administered_by, missed_reason: e.missed_reason ?? null },
+      () => repo.setTreatmentResult(e.id, value, by, at));
+  }, [persist, user?.full_name, t]);
 
   const flowMissed = useCallback((e: TreatmentEntry, reason: string | null) => {
-    patchTx(e.id, { missed_reason: reason });
-    repo.setTreatmentMissed(e.id, reason).catch(() => {});
-  }, [patchTx]);
+    persist(e.id, t("charts.saveFailMissed", "ما انحفظ سبب الفوات — أعِد المحاولة."),
+      { missed_reason: reason }, { missed_reason: e.missed_reason ?? null },
+      () => repo.setTreatmentMissed(e.id, reason));
+  }, [persist, t]);
 
+  /** إضافة أوامر: هنا لا يوجد «ردٌّ لما كان» — الصفوف لم تُنشأ بعد. فالفشل
+   *  يُقال صراحةً بدل أن تظهر أوامرُ ليس لها وجودٌ بقاعدة البيانات. */
   const flowAdd = useCallback(async (petId: string, rows: Omit<TreatmentEntry, "id" | "created_at">[]) => {
     const visitId = openVisitByPet.get(petId)?.id ?? null;
     const full = rows.map((r) => ({ ...r, pet_id: petId, visit_id: visitId, doctor: user?.full_name ?? undefined }));
-    await repo.addTreatments(full).catch(() => {});
+    try {
+      await repo.addTreatments(full);
+    } catch (err) {
+      playWarning();
+      toast.error(t("charts.saveFailAdd", "ما انضافت الأوامر — ما انحفظ ولا سطر. راجع الاتصال وأعِد المحاولة."), describeDbError(err, t));
+      return;
+    }
     const tx = await repo.listAllTreatments([petId]).catch(() => [] as TreatmentEntry[]);
-    setTreatments((cur) => [...cur.filter((t) => t.pet_id !== petId), ...tx]);
-  }, [openVisitByPet, user?.full_name]);
+    setTreatments((cur) => [...cur.filter((t2) => t2.pet_id !== petId), ...tx]);
+    playSuccess();
+  }, [openVisitByPet, user?.full_name, toast, t]);
 
   const regCounts: Record<RegistryKey, number> = useMemo(() => ({
     daily: charts.filter((c) => c.bucket === "daily").length,
