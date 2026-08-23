@@ -4,7 +4,8 @@ import {
   DRUG_BY_ID, doseFor, calcDose, isBannedFor, allergyHit,
   type Monograph, type Route, type DoseAlert,
 } from "./vetFormulary";
-import { pad2 } from "./flowsheet";
+import { pad2, TASK_META } from "./flowsheet";
+import { getCareProtocolsRaw, setCareProtocolsRaw } from "./settings";
 
 /* ============================================================================
  * protocols — «البروتوكولات الجاهزة»: حالةٌ شائعة تُكتب بضغطة بدل عشر.
@@ -192,11 +193,106 @@ export const PROTOCOLS: Protocol[] = [
   },
 ];
 
+/* ── بروتوكولات العيادة ────────────────────────────────────────────────────
+ * الثمانيةُ أعلاه مكتوبةٌ بالكود: مراجَعةٌ ومترجَمة وتصل كل عيادة. وما تبنيه
+ * العيادة لنفسها يُخزَّن بإعداداتها — ولا يمكن أن يكون دوالَّ ترجمة، فهو نصٌّ
+ * كتبه الطبيب بلغته. ولذلك شكلان: `Protocol` للمعروض، و`StoredProtocol`
+ * لما يُحفَظ ويُقرأ من JSON.
+ *
+ * والمخصَّص يحمل تركيبه نفسه — أسماء أدويةٍ من الدليل لا جرعاتٍ مجمَّدة —
+ * فتبقى القاعدة قائمةً: مصدرُ الرقم واحد.                                    */
+
+export interface StoredStep {
+  kind: "drug" | "care";
+  /** للدواء: معرّفه بالدليل. للرعاية: نوع المهمّة. */
+  ref: string;
+  /** اسمٌ معروض لبنود الرعاية — الدواء يأخذ اسمه من الدليل. */
+  label?: string;
+  prefer?: Route;
+  perDay?: number;
+  days?: number;
+}
+
+export interface StoredProtocol {
+  id: string;
+  name: string;
+  indication: string;
+  species: Species[];
+  days: number;
+  steps: StoredStep[];
+}
+
+/** اسمٌ احتياطي لبند رعايةٍ فقد تسميته — لا يُعرَض معرّفٌ خام للطبيب. */
+export const TASK_LABEL_FALLBACK = (ref: string): string => {
+  const tm = (TASK_META as Record<string, { ar: () => string } | undefined>)[ref];
+  return tm ? tm.ar() : ref;
+};
+
+const CUSTOM_PREFIX = "custom-";
+export const isCustom = (p: Protocol): boolean => p.id.startsWith(CUSTOM_PREFIX);
+export const newProtocolId = (): string => `${CUSTOM_PREFIX}${Math.random().toString(36).slice(2, 9)}`;
+
+/** المخزَّن → المعروض. النصوص تُلَفّ بدوالَّ ثابتة: لا ترجمة لما كتبه الطبيب. */
+export function inflate(s: StoredProtocol): Protocol {
+  return {
+    id: s.id,
+    name: () => s.name,
+    indication: () => s.indication,
+    species: s.species ?? [],
+    days: Math.max(1, Math.min(30, s.days || 1)),
+    steps: (s.steps ?? []).map<ProtocolStep>((st) =>
+      st.kind === "drug"
+        ? { kind: "drug", drug: st.ref, prefer: st.prefer, days: st.days }
+        : {
+            kind: "care", type: (st.ref as CareStep["type"]) || "nurse",
+            label: () => st.label || st.ref, perDay: st.perDay ?? 1, days: st.days,
+          }),
+  };
+}
+
+/** يقرأ بروتوكولات العيادة من الإعدادات — الفاسد يُتجاهَل لا يُسقط الباقي. */
+export function customProtocols(): Protocol[] {
+  try {
+    const raw = getCareProtocolsRaw();
+    if (!raw) return [];
+    const arr = JSON.parse(raw) as unknown;
+    if (!Array.isArray(arr)) return [];
+    return arr
+      .filter((x): x is StoredProtocol => !!x && typeof x === "object" && typeof (x as StoredProtocol).id === "string")
+      .filter((x) => (x.name ?? "").trim() && Array.isArray(x.steps) && x.steps.length > 0)
+      .map(inflate);
+  } catch { return []; }
+}
+
+export function readStored(): StoredProtocol[] {
+  try {
+    const raw = getCareProtocolsRaw();
+    const arr = raw ? (JSON.parse(raw) as unknown) : [];
+    return Array.isArray(arr) ? (arr as StoredProtocol[]) : [];
+  } catch { return []; }
+}
+
+/** يحفظ بروتوكولاً جديداً أو يستبدل واحداً بمعرّفه. */
+export function saveStored(p: StoredProtocol) {
+  const list = readStored().filter((x) => x.id !== p.id);
+  list.push(p);
+  setCareProtocolsRaw(JSON.stringify(list));
+}
+
+export function deleteStored(id: string) {
+  const list = readStored().filter((x) => x.id !== id);
+  setCareProtocolsRaw(list.length ? JSON.stringify(list) : null);
+}
+
+/** كل البروتوكولات: ما بنته العيادة أولاً — فهو الأقرب لعملها. */
+export const allProtocols = (): Protocol[] => [...customProtocols(), ...PROTOCOLS];
+
 /** البروتوكولات التي تصلح لهذا النوع. */
 export const protocolsFor = (species: Species | undefined): Protocol[] =>
-  PROTOCOLS.filter((p) => !p.species.length || !species || p.species.includes(species));
+  allProtocols().filter((p) => !p.species.length || !species || p.species.includes(species));
 
-export const protocolById = (id: string): Protocol | undefined => PROTOCOLS.find((p) => p.id === id);
+export const protocolById = (id: string): Protocol | undefined =>
+  allProtocols().find((p) => p.id === id);
 
 /* ── الأوقات ───────────────────────────────────────────────────────────────
  * تُوزَّع الجرعات على ساعات النهار بالتساوي ابتداءً من الثامنة. ومرّةٌ واحدة

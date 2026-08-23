@@ -141,8 +141,8 @@ export function clearPetRanges(petId: string) {
 export const DEFAULT_DIAL_CODE = "+964"; // Iraq
 
 export interface ClinicSocials { facebook: string; instagram: string }
-interface ClinicPrefs { dial_code: string; logo_url: string | null; social_facebook: string; social_instagram: string; clinic_name: string; pre_sale_print: boolean; override_enabled: boolean; resizable_cart: boolean; font_scale_enabled: boolean; override_pin_mirror: string | null; delivery_zones: string | null; qty_promos: string | null; catalog_share: boolean; cage_layout: string | null; currency: string | null; country: string | null; pos_v2: boolean }
-const DEFAULT_PREFS: ClinicPrefs = { dial_code: DEFAULT_DIAL_CODE, logo_url: null, social_facebook: "", social_instagram: "", clinic_name: "", pre_sale_print: false, override_enabled: false, resizable_cart: false, font_scale_enabled: false, override_pin_mirror: null, delivery_zones: null, qty_promos: null, catalog_share: false, cage_layout: null, currency: null, country: null, pos_v2: false };
+interface ClinicPrefs { dial_code: string; logo_url: string | null; social_facebook: string; social_instagram: string; clinic_name: string; pre_sale_print: boolean; override_enabled: boolean; resizable_cart: boolean; font_scale_enabled: boolean; override_pin_mirror: string | null; delivery_zones: string | null; qty_promos: string | null; catalog_share: boolean; cage_layout: string | null; care_protocols: string | null; currency: string | null; country: string | null; pos_v2: boolean }
+const DEFAULT_PREFS: ClinicPrefs = { dial_code: DEFAULT_DIAL_CODE, logo_url: null, social_facebook: "", social_instagram: "", clinic_name: "", pre_sale_print: false, override_enabled: false, resizable_cart: false, font_scale_enabled: false, override_pin_mirror: null, delivery_zones: null, qty_promos: null, catalog_share: false, cage_layout: null, care_protocols: null, currency: null, country: null, pos_v2: false };
 
 const prefsKey = () => `vp_clinic_prefs_${getActiveClinicId()}`;
 const legacyDialKey = () => `vp_dial_code_${getActiveClinicId()}`;
@@ -238,6 +238,7 @@ export async function hydrateClinicPrefs(): Promise<void> {
         qty_promos: d.qty_promos ?? local.qty_promos,
         catalog_share: typeof d.catalog_share === "boolean" ? d.catalog_share : local.catalog_share,
         cage_layout: d.cage_layout ?? local.cage_layout,
+        care_protocols: d.care_protocols ?? local.care_protocols,
         currency: d.currency ?? local.currency,
         country: d.country ?? local.country,
         pos_v2: typeof d.pos_v2 === "boolean" ? d.pos_v2 : local.pos_v2,
@@ -264,6 +265,7 @@ export async function hydrateClinicPrefs(): Promise<void> {
       if (local.qty_promos) boolPatch.qty_promos = local.qty_promos;
       if (local.catalog_share) boolPatch.catalog_share = true;
       if (local.cage_layout) boolPatch.cage_layout = local.cage_layout;
+      if (local.care_protocols) boolPatch.care_protocols = local.care_protocols;
       if (local.currency) boolPatch.currency = local.currency;
       if (local.country) boolPatch.country = local.country;
       if (local.pos_v2) boolPatch.pos_v2 = true;
@@ -554,6 +556,22 @@ export function getCageLayout(): CageRoom[] {
       }))
       .filter((r) => r.id && r.name);
   } catch { return []; }
+}
+
+/* ---- بروتوكولات العيادة (0116) --------------------------------------------
+ * تُخزَّن نصَّ JSON بعمودٍ واحد، كما `cage_layout` و`qty_promos` قبلها. والقراءة
+ * والكتابة خامٌّ هنا: تفسيرُ الشكل يخصّ `protocols.ts` وحده، فلا يعرف مخزنُ
+ * الإعدادات شيئاً عن الأدوية ولا يستورد الدليل الدوائي.
+ *
+ * وقيمة النمط أن العمود الناقص لا يعطّل شيئاً: `?? local` يُبقي ما بالجهاز،
+ * فالعيادة تبني بروتوكولاتها اليوم وتُطبَّق الهجرة متى تيسّر — وعندها تُرفَع
+ * لتصير مشتركةً بين كل الأجهزة والكادر. */
+export function getCareProtocolsRaw(): string | null {
+  return prefs().care_protocols;
+}
+
+export function setCareProtocolsRaw(json: string | null) {
+  patchPrefs({ care_protocols: json }, "care-protocols-set");
 }
 
 export function setCageLayout(rooms: CageRoom[]) {
