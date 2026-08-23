@@ -117,8 +117,20 @@ export function TopBar({ mobileOnly = false, minimal = false }: { mobileOnly?: b
             <span className="hidden text-lg sm:block">{t("app.name")}</span>
           </Link>
 
-          {/* Desktop nav */}
-          <nav className="hidden items-center gap-1 md:flex">
+          {/* Desktop nav.
+           *
+           * ── لماذا `lg` لا `md` ────────────────────────────────────────────
+           * هذا الشريط يُركَّب بحالتين: مع شريطٍ جانبي (`mobileOnly`) فيختفي هو
+           * عند `lg`، أو وحده بالشاشات العامة حيث `navItems` فارغة أصلاً. فهذه
+           * القائمة — أربعة عشر زرّاً بأيقونةٍ واسمٍ كامل، نحو ١٥٠٠ بكسل — ما
+           * كانت تظهر إلا بالشريط ما بين ٧٦٨ و١٠٢٣: النافذة الوحيدة التي يظهر
+           * فيها الرأس والقائمة معاً. وهناك كانت تدفع أزرار الأدوات **١١٩٤
+           * بكسلاً خارج الشاشة** وتفتح تمريراً أفقياً بكل صفحة.
+           *
+           * وهذه النافذة بالضبط هي **الآيباد طولياً** (٧٦٨ و٨٢٠) — أي جهاز
+           * العمل اليومي. فصارت `lg`: يتولّاها الشريط الجانبي فوق ذلك، وقائمة
+           * الجيب تحته، ولا تظهر بينهما قائمةٌ لا تتّسع لها الشاشة. */}
+          <nav className="hidden items-center gap-1 lg:flex">
             {navItems.map((item) => {
               const Icon = item.icon;
               const active = isActive(item.to);
@@ -222,9 +234,12 @@ export function TopBar({ mobileOnly = false, minimal = false }: { mobileOnly?: b
               </Tooltip>
             )}
 
-            {/* Mobile menu trigger */}
+            {/* Mobile menu trigger — يرافق القائمة أعلاه: يظهر حيثما غابت.
+             *  كان `md:hidden` بينما القائمة `md:flex`، فبين ٧٦٨ و١٠٢٣ اختفى
+             *  الزرّ ولم تتّسع القائمة — أي أن الآيباد الطولي بقي **بلا أي
+             *  وسيلة تنقّل**: لا قائمة تُقرأ ولا زرّ يفتحها. */}
             {staff && (
-              <button onClick={() => setMenuOpen((v) => !v)} className="grid h-11 w-11 place-items-center rounded-full text-ink-muted transition hover:bg-surface-2 md:hidden">
+              <button onClick={() => setMenuOpen((v) => !v)} className="grid h-11 w-11 place-items-center rounded-full text-ink-muted transition hover:bg-surface-2 lg:hidden">
                 {menuOpen ? <X size={20} /> : <Menu size={20} />}
               </button>
             )}
@@ -239,7 +254,7 @@ export function TopBar({ mobileOnly = false, minimal = false }: { mobileOnly?: b
               animate={{ height: "auto", opacity: 1 }}
               exit={{ height: 0, opacity: 0 }}
               transition={{ duration: 0.22 }}
-              className="overflow-hidden border-t border-line md:hidden"
+              className="overflow-hidden border-t border-line lg:hidden"
             >
               <nav className="mx-auto flex max-w-6xl flex-col gap-1 px-4 py-3">
                 {/* Branch switcher — mobile placement (renders only with 2+ branches). */}
