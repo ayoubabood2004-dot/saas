@@ -5,7 +5,7 @@ import { getCached, setCached } from "@/lib/swrCache";
 import {
   Barcode, Package, Trash2, Search, Building2, Plus, ChevronLeft, ArrowRight, ArrowLeft,
   TrendingUp, AlertTriangle, CalendarClock, Pencil, PackagePlus, Boxes, Layers, Wallet, ShoppingBag, FolderTree, ScanBarcode,
-  Check, ListPlus, Printer, Copy, Sparkles, FileSpreadsheet,
+  Check, ListPlus, Printer, Copy, Sparkles, FileSpreadsheet, Loader2,
 } from "lucide-react";
 import type { Product, ProductCategory, Company, CompanySection } from "@/types";
 import { PurchasesTab, PurchaseBuilderModal } from "@/components/inventory/Purchases";
@@ -1393,8 +1393,23 @@ function CompanyDetail({ company, products, companies, sections, clinicId, onBac
   const [editingSection, setEditingSection] = useState<CompanySection | null>(null);
   const [editing, setEditing] = useState<Product | null>(null);
   const [q, setQ] = useState("");
+  const [tidying, setTidying] = useState(false);
   // Which section is open (a section id, or the UNCAT bucket). null = sections overview.
   const [openSectionId, setOpenSectionId] = useState<string | null>(null);
+
+  /** دمج توائم «بدون صنف» بأصولها المصنَّفة — والنتيجة تُقال بالعدد. */
+  const runTidy = async () => {
+    if (tidying) return;
+    playTap(); setTidying(true);
+    try {
+      const r = await repo.tidyInventory();
+      playSuccess();
+      if (r.merged > 0) toast.success(t("pos.tidyDone", { n: r.merged, defaultValue: "رجعت {{n}} قطعة لمكانها" }), r.kept > 0 ? t("pos.tidyKept", { n: r.kept, defaultValue: "و{{n}} بقيت — ما إلها أصل مصنَّف تنضم إليه" }) : undefined);
+      else toast.success(t("pos.tidyNone", "ما في قطعة مكرّرة — «بدون صنف» كله قطع جديدة فعلاً"));
+      onChanged();
+    } catch (e) { playWarning(); toast.error(describeDbError(e, t), e instanceof Error ? e.message : undefined); }
+    finally { setTidying(false); }
+  };
 
   const Back = i18n.dir() === "rtl" ? ArrowRight : ArrowLeft;
   const mine = products.filter((p) => p.company_id === company.id);
@@ -1538,6 +1553,19 @@ function CompanyDetail({ company, products, companies, sections, clinicId, onBac
             />
           )}
         </motion.div>
+      )}
+
+      {/* فواتيرُ سابقةٌ خلقت توائمَ بـ«بدون صنف» رغم أن القطعة مصنَّفة؟ ضغطةٌ
+          تدمج كل توأمٍ بأصله: العددان يُجمعان والتاريخ يتبع الأصل. وما لا
+          أصلَ له يبقى مكانه — لا حذفَ أعمى. */}
+      {uncatProducts.length > 0 && !openSectionId && (
+        <button type="button" data-tidyinv disabled={tidying}
+          onClick={() => void runTidy()}
+          className="flex w-full items-center justify-center gap-2 rounded-2xl border border-dashed border-brand-300 bg-brand-50/50 px-4 py-3 text-2xs font-extrabold text-brand-700 transition hover:bg-brand-50 disabled:opacity-50 dark:bg-brand-500/10 dark:text-brand-300"
+          style={{ minHeight: 48 }}>
+          {tidying ? <Loader2 size={15} className="animate-spin" /> : <FolderTree size={15} />}
+          {t("pos.tidyUncat", "رجّع كل قطعة مكرّرة لمكانها — دمج «بدون صنف» بالأصناف")}
+        </button>
       )}
 
       {/* Edit company */}

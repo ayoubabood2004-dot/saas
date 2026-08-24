@@ -2,6 +2,17 @@
 // usable before a backend exists. Each method is async and isolated so a Supabase
 // implementation can be dropped in here without touching the UI.
 import { loadDB, saveDB } from "./demoStore";
+
+/* موحِّدا مطابقة المخزون — مرآةُ inv_norm_code/inv_norm_name على الخادم:
+ * قاعدتان تنحرفان تعني قطعةً تُطابَق محلياً وتتوأم سحابياً. */
+const invNormCode = (v: string | null | undefined): string =>
+  (v ?? "").replace(/\s+/g, "").replace(/[٠-٩]/g, (d) => String(d.charCodeAt(0) - 0x0660));
+const invNormName = (v: string | null | undefined): string =>
+  (v ?? "")
+    // أ/إ/آ→ا · ة→ه · ى→ي — بمهارب يونيكود: بنيةُ مطابقةٍ لا نصٌّ معروض.
+    .replace(/[\u0623\u0625\u0622]/g, "\u0627").replace(/\u0629/g, "\u0647").replace(/\u0649/g, "\u064A")
+    .replace(/[٠-٩]/g, (d) => String(d.charCodeAt(0) - 0x0660))
+    .replace(/\s+/g, " ").trim().toLowerCase();
 import { supabase } from "./supabase";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, AppointmentStatus, ClinicInfo, PublicStaff, DailyNote, TreatmentEntry, Admission, Branch, Reminder, Product, Company, CompanySection, Purchase, PurchaseItem, PurchasePayment, PurchaseDraftLine, PurchaseMeta, Courier, DeliveryOrder, PetMovement, DemoDB, Invoice, InvoiceItem, CheckoutItem, SaleMeta, Customer, DiscountType, PaymentMethod, PaymentSplit, WhatsAppMessage, AuditEntry, LoginEvent, PetNote, Expense, ClinicVisit , Surgery, LabResult, LabDeviceLink, LabDeviceInbox, LabStatusValue, PetProblem, CareEntry, FeatureRequest, GeneratedBarcode, StoreProfile, StoreOrder, StoreOrderItem, StoreFrontInfo, StoreCatalogItem, Journey, JourneyEvent, JourneyKind, JourneyStage, JourneyPublicView, EditLine } from "@/types";
@@ -1395,11 +1406,27 @@ const demoRepo = {
       const sell = round2(Number(l.sell_price) || 0);
       total += qty * cost;
       count += qty;
-      // Resolve a product: explicit id, else an existing barcode in stock.
+      // Resolve a product: explicit id → barcode **موحَّداً** → الاسم موحَّداً.
+      // ٥٣٩١ و5391 قطعةٌ واحدة، والقطعة المسجّلة بلا باركود تُشترى باسمها
+      // فتُرصَّد بمكانها وتتعلّم الباركود — لا توأمَ أعمى بـ«بدون صنف».
       let pid = l.product_id ?? null;
-      if (!pid && l.barcode) pid = db.products.find((p) => (p.barcode ?? "") === l.barcode)?.id ?? null;
+      const code = invNormCode(l.barcode);
+      if (!pid && code) {
+        pid = db.products
+          .filter((p) => invNormCode(p.barcode) === code && (p.barcode ?? "") !== "")
+          .sort((a, b) => Number(b.company_id === companyId) - Number(a.company_id === companyId)
+            || Number(b.section_id != null) - Number(a.section_id != null))[0]?.id ?? null;
+      }
+      const lname = invNormName(l.name);
+      if (!pid && lname.length >= 2 && lname !== "item") {
+        pid = db.products
+          .filter((p) => invNormName(p.name) === lname)
+          .sort((a, b) => Number(b.company_id === companyId) - Number(a.company_id === companyId)
+            || Number(b.section_id != null) - Number(a.section_id != null))[0]?.id ?? null;
+      }
       const existing = pid ? db.products.find((x) => x.id === pid) : undefined;
       if (existing) {
+        if (!existing.barcode && l.barcode?.trim()) existing.barcode = l.barcode.trim();
         existing.stock = round3((existing.stock || 0) + qty);
         // A received count makes this a TRACKED product — no longer part of the
         // section's unknown pool (the pool itself is deliberately left untouched).
@@ -1415,8 +1442,13 @@ const demoRepo = {
         if (!existing.company_id && companyId) existing.company_id = companyId;
         pid = existing.id;
       } else {
+        // صنف القطعة الجديدة — يُقبل فقط إن كان صنفاً حقيقياً لهذه الشركة.
+        const sec = l.section_id
+          ? (db.companySections ?? []).find((x) => x.id === l.section_id
+              && (!companyId || x.company_id === companyId))?.id ?? null
+          : null;
         const np: Product = {
-          id: uid("prod"), clinic_id: null, company_id: companyId,
+          id: uid("prod"), clinic_id: null, company_id: companyId, section_id: sec,
           barcode: l.barcode?.trim() || null, name: l.name?.trim() || "Item",
           category: l.category ?? null, subcategory: null,
           purchase_price: cost, sell_price: sell, stock: qty,
@@ -1476,6 +1508,36 @@ const demoRepo = {
     return p;
   },
   /** هل قاعدة البيانات تدعم دفتر ديون المورّدين (ترحيل 0076)؟ */
+  /** ترتيب «بدون صنف»: كل توأمٍ لقطعةٍ مصنَّفة يُدمج بأصله — العدد يُجمع،
+   *  والأصل يكسب الباركود إن كان بلا باركود، والتاريخ يتبع الأصل. */
+  async tidyInventory(): Promise<{ merged: number; kept: number }> {
+    const db = loadDB();
+    const items = db.purchaseItems ?? [];
+    const inv = db.invoiceItems ?? [];
+    let merged = 0, kept = 0;
+    for (const dup of [...(db.products ?? [])].filter((p) => !p.section_id)) {
+      const code = invNormCode(dup.barcode);
+      const name = invNormName(dup.name);
+      let target =
+        (code ? db.products.find((p) => p.id !== dup.id && p.section_id && invNormCode(p.barcode) === code && (p.barcode ?? "") !== "") : undefined)
+        ?? (name.length >= 2
+          ? db.products.find((p) => p.id !== dup.id && p.section_id
+              && (p.company_id ?? null) === (dup.company_id ?? null)
+              && invNormName(p.name) === name)
+          : undefined);
+      if (!target) { kept++; continue; }
+      target.stock = Math.max(0, (target.stock || 0) + Math.max(0, dup.stock || 0));
+      if (!target.barcode && dup.barcode) target.barcode = dup.barcode;
+      if (!target.expiry_date && dup.expiry_date) target.expiry_date = dup.expiry_date;
+      for (const it of items) if (it.product_id === dup.id) it.product_id = target.id;
+      for (const it of inv) if ((it as { product_id?: string | null }).product_id === dup.id) (it as { product_id?: string | null }).product_id = target.id;
+      db.products = db.products.filter((p) => p.id !== dup.id);
+      merged++;
+    }
+    saveDB(db);
+    return { merged, kept };
+  },
+
   async supportsSupplierLedger(): Promise<boolean> {
     return true;
   },
@@ -2778,6 +2840,12 @@ const supabaseRepo: typeof demoRepo = {
   },
   async settlePurchase(purchaseId, amount, method = "cash", note) {
     return need<Purchase>(await sbc().rpc("settle_purchase", { p_purchase: purchaseId, p_amount: amount, p_method: method, p_note: note ?? null }));
+  },
+  async tidyInventory() {
+    const r = await sbc().rpc("inventory_tidy_uncat");
+    if (r.error) throw r.error;
+    const d = (r.data ?? {}) as { merged?: number; kept?: number };
+    return { merged: Number(d.merged ?? 0), kept: Number(d.kept ?? 0) };
   },
   async supportsSupplierLedger() {
     try {

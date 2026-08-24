@@ -33,6 +33,8 @@ type Line = {
   key: string;
   product_id: string | null; // set when matched to an existing product
   barcode: string;
+  /** الصنف المختار للمنتج الجديد — فارغ = «بدون صنف». */
+  section_id: string;
   name: string;
   category: string;
   qty: string;
@@ -45,11 +47,17 @@ type Line = {
 
 let LINE_SEQ = 0;
 const blankLine = (patch: Partial<Line> = {}): Line => ({
-  key: `l${++LINE_SEQ}`, product_id: null, barcode: "", name: "", category: "",
+  key: `l${++LINE_SEQ}`, product_id: null, barcode: "", name: "", category: "", section_id: "",
   qty: "", purchase_price: "", sell_price: "", min_stock: "", expiry: "", ...patch,
 });
 
 /** Prefill a line from an existing product (a restock). */
+/** باركود موحَّد للمقارنة: الفراغات تُسقط والأرقام العربية-الهندية تُغرَّب.
+ *  ماسحٌ يكتب 5391 وقاعدةٌ خُزّن فيها ٥٣٩١ كانا لا يلتقيان — فتُخلق نسخةٌ
+ *  توأم بـ«بدون صنف» رغم أن القطعة موجودة ومصنّفة. */
+const normCode = (v: string | null | undefined): string =>
+  (v ?? "").replace(/\s+/g, "").replace(/[٠-٩]/g, (d) => String(d.charCodeAt(0) - 0x0660));
+
 const lineFromProduct = (p: Product, barcode: string): Line => blankLine({
   product_id: p.id, barcode: barcode || (p.barcode ?? ""), name: p.name,
   category: p.category ?? "", qty: "", purchase_price: String(p.purchase_price ?? ""),
@@ -377,8 +385,18 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
   const createdRef = useRef<Company[]>([]);
 
   const byBarcode = useMemo(() => {
+    // عند تساوي الباركود: القطعة المصنّفة تغلب توأمها الملوّث «بدون صنف»، وعند التعادل الأقدم
     const m = new Map<string, Product>();
-    for (const p of products) if (p.barcode) m.set(p.barcode, p);
+    for (const p of products) {
+      if (!p.barcode) continue;
+      const k = normCode(p.barcode);
+      const cur = m.get(k);
+      if (!cur) { m.set(k, p); continue; }
+      const better =
+        (!!p.section_id && !cur.section_id) ||
+        (!!p.section_id === !!cur.section_id && (p.created_at ?? "") < (cur.created_at ?? ""));
+      if (better) m.set(k, p);
+    }
     return m;
   }, [products]);
 
@@ -399,7 +417,7 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
 
   // When a barcode is typed into a line, auto-fill from an existing product.
   const onBarcode = (key: string, code: string) => {
-    const clean = code.replace(/\s/g, "");
+    const clean = normCode(code);
     const match = clean ? byBarcode.get(clean) : undefined;
     setLines((ls) => ls.map((l) => {
       if (l.key !== key) return l;
@@ -439,7 +457,7 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
   const scanAdd = () => {
     const raw = scan.trim();
     if (!raw) return;
-    const code = raw.replace(/\s/g, "");
+    const code = normCode(raw);
     // باركود أولاً، وإلا اسم: مطابقة تامة، أو مرشح وحيد لا لبس فيه.
     let match = byBarcode.get(code);
     if (!match) {
@@ -450,7 +468,7 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
     if (match) { addProductLine(match); return; }
     setLines((ls) => {
       // Merge into an existing line with the same barcode if present.
-      const existing = ls.find((l) => l.barcode === code && code);
+      const existing = ls.find((l) => normCode(l.barcode) === code && code);
       if (existing) return ls.map((l) => (l.key === existing.key ? { ...l, qty: String((Number(l.qty) || 0) + 1) } : l));
       // نص فيه حروف/مسافات = اسم منتج جديد؛ أرقام صرفة = باركود جديد.
       const looksBarcode = /^[0-9A-Za-z_-]+$/.test(raw);
@@ -467,10 +485,19 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
   /** اقتراحات حية وأنت تكتب بصندوق الإدخال — منتج موجود يظهر اسمه فوراً. */
   const scanSuggestions = useMemo(() => {
     const raw = scan.trim();
-    if (raw.length < 2 || byBarcode.get(raw.replace(/\s/g, ""))) return [];
+    if (raw.length < 2 || byBarcode.get(normCode(raw))) return [];
     return findByName(raw);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scan, nameIndex]);
+
+  /* أصناف الشركة المختارة — بها يُعرض منتقي الصنف للسطر الجديد، فتهبط
+   * القطعة الجديدة بمكانها من أول يوم بدل بطاقة «بدون صنف». */
+  const companySections = useMemo(() => {
+    const key = normKey(normName(company));
+    if (!key) return [] as CompanySection[];
+    const co = companies.find((c) => normKey(c.name) === key);
+    return co ? (sections ?? []).filter((x) => x.company_id === co.id) : [];
+  }, [company, companies, sections]);
 
   const validLines = lines.filter((l) => (l.name.trim() || l.barcode.trim()) && Number(l.qty) > 0);
   const total = validLines.reduce((s, l) => s + (Number(l.qty) || 0) * (Number(l.purchase_price) || 0), 0);
@@ -501,6 +528,7 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
         product_id: l.product_id,
         barcode: l.barcode.trim() || null,
         name: l.name.trim() || l.barcode.trim(),
+        section_id: l.section_id || null,
         category: (l.category || null) as ProductCategory | null,
         qty: Number(l.qty) || 0,
         purchase_price: Number(l.purchase_price) || 0,
@@ -701,6 +729,16 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
                       );
                     })()}
                   </div>
+                  {!matched && companySections.length > 0 && (
+                    <div className="sm:col-span-3">
+                      <label className="label text-2xs">{t("purchase.sectionIn", "الصنف داخل الشركة")}</label>
+                      <select className="input text-sm" data-linesection value={l.section_id}
+                        onChange={(e) => patchLine(l.key, { section_id: e.target.value })}>
+                        <option value="">{t("pos.uncategorized", "بدون صنف")}</option>
+                        {companySections.map((sec) => <option key={sec.id} value={sec.id}>{sec.name}</option>)}
+                      </select>
+                    </div>
+                  )}
                   <div className="sm:col-span-2">
                     <label className="label text-2xs">{t("pos.category", "الفئة")}</label>
                     <select className="input text-sm" value={l.category} onChange={(e) => patchLine(l.key, { category: e.target.value })}>

@@ -908,6 +908,8 @@ export interface PurchaseDraftLine {
   product_id?: string | null;
   barcode?: string | null;
   name: string;
+  /** الصنف داخل الشركة الذي يهبط فيه المنتج **الجديد** — المطابَق يبقى بمكانه. */
+  section_id?: string | null;
   category?: ProductCategory | null;
   qty: number;
   purchase_price: number;
