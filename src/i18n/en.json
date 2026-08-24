@@ -1,4 +1,18 @@
 {
+  "catalog": {
+    "title": "Starter catalog",
+    "emptyCta": "Or enable the starter catalog — companies and sections, ready in one tap",
+    "intro": "Veterinary-market companies with their sections and products — pick the ones you work with and they are built, organized, into your stock. Prices fill in from your first purchase invoice, and each item learns its barcode from its first scan. An existing company is completed, never duplicated.",
+    "pickedCount": "{{n}} of {{all}} selected",
+    "pickAll": "Select all",
+    "pickNone": "Clear all",
+    "merges": "exists — will be completed",
+    "preview": "Preview",
+    "applying": "Building {{name}}…",
+    "apply": "Enable selected ({{n}})",
+    "done": "Catalog enabled: {{n}} products in place",
+    "doneSub": "New companies: {{co}} · new sections: {{sec}} — items learn their barcodes from the first purchase invoice"
+  },
   "waMsgs": {
     "rem": {
       "vaccine": [
@@ -736,6 +750,13 @@
     "payMethod": "Payment method",
     "amountPaid": "Paid to supplier",
     "paidHint": "(blank = paid in full)",
+    "paidHintEdit": "(blank = keep the paid amount)",
+    "viewCompanies": "Companies",
+    "invCount": "{{n}} invoices",
+    "lastBuy": "last purchase {{d}}",
+    "shareOfSpend": "{{v}}% of your spend",
+    "editTitle": "Edit purchase invoice",
+    "saveEdit": "Save changes",
     "notes": "Notes",
     "itemsCount": "Items",
     "grandTotal": "Total",

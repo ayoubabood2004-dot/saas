@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import type { Product, ProductCategory, Company, CompanySection } from "@/types";
 import { PurchasesTab, PurchaseBuilderModal } from "@/components/inventory/Purchases";
+import { StarterCatalogModal } from "@/components/inventory/StarterCatalog";
 import { SupplierLedgerTab } from "@/components/inventory/SupplierLedger";
 import { BarcodeStudio } from "@/components/inventory/BarcodeStudio";
 import { repo } from "@/lib/repo";
@@ -1296,6 +1297,7 @@ function CompaniesTab({ products, companies, sections, clinicId, onChanged }: { 
   const { t } = useTranslation();
   const [q, setQ] = useState("");
   const [adding, setAdding] = useState(false);
+  const [catalogOpen, setCatalogOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   // Always derive the selected company from the live list so edits/reloads reflect.
@@ -1325,6 +1327,8 @@ function CompaniesTab({ products, companies, sections, clinicId, onChanged }: { 
           <Search size={16} className="pointer-events-none absolute top-1/2 -translate-y-1/2 text-ink-subtle ltr:left-3 rtl:right-3" />
           <input className="input ltr:pl-9 rtl:pr-9" value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("pos.searchCompanies", "ابحث عن شركة…")} />
         </div>
+        {/* الكتلوج الجاهز: شركات السوق بأصنافها — اختياري، دمجٌ لا استنساخ */}
+        <Button variant="secondary" data-catalogbtn leftIcon={<Sparkles size={16} />} onClick={() => { playTap(); setCatalogOpen(true); }}>{t("catalog.title", "الكتلوج الجاهز")}</Button>
         <Button leftIcon={<Plus size={16} />} onClick={() => { playTap(); setAdding(true); }}>{t("pos.addCompany", "أضف شركة")}</Button>
       </div>
 
@@ -1332,7 +1336,12 @@ function CompaniesTab({ products, companies, sections, clinicId, onChanged }: { 
         <div className="card flex flex-col items-center gap-3 p-10 text-center">
           <span className="grid h-14 w-14 place-items-center rounded-2xl bg-accent-50 text-accent-500 dark:bg-accent-500/15"><Building2 size={26} /></span>
           <p className="text-ink-subtle">{companies.length === 0 ? t("pos.noCompanies", "لا توجد شركات بعد. أنشئ أول شركة ثم أضف باركوداتها.") : t("pos.noCompanyMatch", "لا توجد شركة بهذا الاسم.")}</p>
-          {companies.length === 0 && <Button leftIcon={<Plus size={16} />} onClick={() => { playTap(); setAdding(true); }}>{t("pos.addCompany", "أضف شركة")}</Button>}
+          {companies.length === 0 && (
+            <div className="flex flex-wrap items-center justify-center gap-2">
+              <Button leftIcon={<Plus size={16} />} onClick={() => { playTap(); setAdding(true); }}>{t("pos.addCompany", "أضف شركة")}</Button>
+              <Button variant="secondary" leftIcon={<Sparkles size={16} />} onClick={() => { playTap(); setCatalogOpen(true); }}>{t("catalog.emptyCta", "أو فعّل الكتلوج الجاهز — شركات وأصناف مرتّبة بضغطة")}</Button>
+            </div>
+          )}
         </div>
       ) : (
         <motion.div variants={staggerContainer} initial="initial" animate="animate" className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -1365,6 +1374,15 @@ function CompaniesTab({ products, companies, sections, clinicId, onChanged }: { 
       )}
 
       <CompanyModal open={adding} company={null} companies={companies} clinicId={clinicId} onClose={() => setAdding(false)} onSaved={() => { setAdding(false); onChanged(); }} />
+      <StarterCatalogModal
+        open={catalogOpen}
+        companies={companies}
+        sections={sections}
+        products={products}
+        clinicId={clinicId}
+        onClose={() => setCatalogOpen(false)}
+        onApplied={() => { setCatalogOpen(false); onChanged(); }}
+      />
     </div>
   );
 }

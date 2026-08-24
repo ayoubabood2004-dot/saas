@@ -1480,6 +1480,100 @@ const demoRepo = {
     saveDB(db);
     return purchase;
   },
+  /** تعديل فاتورة شراء محفوظة: يُعكس أثر سطورها القديمة على المخزون ثم تُنزَّل
+   *  السطور الجديدة بنفس المطابقة الذكية — السطر غير المتغيّر أثره الصافي صفر.
+   *  المدفوع يبقى كما سُدِّد (مقصوصاً على الإجمالي الجديد). يطابق update_purchase RPC. */
+  async updatePurchase(purchaseId: string, lines: PurchaseDraftLine[], meta: PurchaseMeta): Promise<Purchase> {
+    const db = loadDB();
+    const purchase = (db.purchases ?? []).find((x) => x.id === purchaseId);
+    if (!purchase) throw new Error("purchase not found");
+    if (!lines.length) throw new Error("empty purchase");
+    const companyId = purchase.company_id ?? null;
+    const round3 = (n: number) => Math.max(0, Math.round(n * 1000) / 1000);
+    const round2 = (n: number) => Math.round((Number(n) || 0) * 100) / 100;
+    const minStock = (v: number | null | undefined) => (v != null && !Number.isNaN(Number(v)) ? Math.max(0, Math.round(Number(v))) : null);
+    // ١) اعكس السطور القديمة ثم أزلها
+    for (const it of (db.purchaseItems ?? []).filter((x) => x.purchase_id === purchaseId)) {
+      const p = it.product_id ? db.products.find((x) => x.id === it.product_id) : undefined;
+      if (p) p.stock = Math.max(0, round3((p.stock || 0) - (it.qty || 0)));
+    }
+    db.purchaseItems = (db.purchaseItems ?? []).filter((x) => x.purchase_id !== purchaseId);
+    // ٢) نزّل الجديدة — نفس مطابقة recordPurchase
+    const now = new Date().toISOString();
+    let total = 0, count = 0;
+    for (const l of lines) {
+      const qty = round3(Number(l.qty) || 0);
+      const cost = round2(Number(l.purchase_price) || 0);
+      const sell = round2(Number(l.sell_price) || 0);
+      total += qty * cost;
+      count += qty;
+      let pid = l.product_id ?? null;
+      const code = invNormCode(l.barcode);
+      if (!pid && code) {
+        pid = db.products
+          .filter((p) => invNormCode(p.barcode) === code && (p.barcode ?? "") !== "")
+          .sort((a, b) => Number(b.company_id === companyId) - Number(a.company_id === companyId)
+            || Number(b.section_id != null) - Number(a.section_id != null))[0]?.id ?? null;
+      }
+      const lname = invNormName(l.name);
+      if (!pid && lname.length >= 2 && lname !== "item") {
+        pid = db.products
+          .filter((p) => invNormName(p.name) === lname)
+          .sort((a, b) => Number(b.company_id === companyId) - Number(a.company_id === companyId)
+            || Number(b.section_id != null) - Number(a.section_id != null))[0]?.id ?? null;
+      }
+      const existing = pid ? db.products.find((x) => x.id === pid) : undefined;
+      if (existing) {
+        if (!existing.barcode && l.barcode?.trim()) existing.barcode = l.barcode.trim();
+        existing.stock = round3((existing.stock || 0) + qty);
+        existing.pooled = false;
+        if (cost > 0) existing.purchase_price = cost;
+        if (sell > 0) existing.sell_price = sell;
+        const ms = minStock(l.min_stock);
+        if (ms != null) existing.min_stock = ms;
+        if (l.expiry_date) existing.expiry_date = l.expiry_date;
+        if (l.category) existing.category = l.category;
+        if (!existing.company_id && companyId) existing.company_id = companyId;
+        pid = existing.id;
+      } else {
+        const sec = l.section_id
+          ? (db.companySections ?? []).find((x) => x.id === l.section_id
+              && (!companyId || x.company_id === companyId))?.id ?? null
+          : null;
+        const np: Product = {
+          id: uid("prod"), clinic_id: null, company_id: companyId, section_id: sec,
+          barcode: l.barcode?.trim() || null, name: l.name?.trim() || "Item",
+          category: l.category ?? null, subcategory: null,
+          purchase_price: cost, sell_price: sell, stock: qty,
+          min_stock: minStock(l.min_stock) ?? 0, expiry_date: l.expiry_date || null,
+          created_at: now,
+        };
+        db.products.push(np);
+        pid = np.id;
+      }
+      db.purchaseItems.push({
+        id: uid("pi"), purchase_id: purchaseId, clinic_id: null, product_id: pid,
+        barcode: l.barcode?.trim() || null, name: l.name?.trim() || "Item",
+        category: l.category ?? null, qty, purchase_price: cost, sell_price: sell, created_at: now,
+      });
+    }
+    // ٣) رأس الفاتورة — المدفوع الحقيقي يبقى مقصوصاً على الإجمالي الجديد
+    const totalR = round2(total);
+    const prevPaid = purchase.amount_paid != null ? purchase.amount_paid : purchase.total;
+    const paid = Math.max(0, Math.min(totalR, round2(meta.amount_paid != null ? meta.amount_paid : prevPaid)));
+    purchase.total = totalR;
+    purchase.item_count = Math.round(count);
+    purchase.amount_paid = paid;
+    purchase.status = paid >= totalR ? "paid" : paid <= 0 ? "unpaid" : "partial";
+    if (meta.reference?.trim()) purchase.reference = meta.reference.trim();
+    if (meta.payment_method) purchase.payment_method = meta.payment_method;
+    purchase.supplier_name = meta.supplier_name !== undefined ? (meta.supplier_name?.trim() || null) : purchase.supplier_name;
+    purchase.supplier_phone = meta.supplier_phone !== undefined ? (meta.supplier_phone?.trim() || null) : purchase.supplier_phone;
+    purchase.notes = meta.notes !== undefined ? (meta.notes?.trim() || null) : purchase.notes;
+    if (meta.purchased_at) purchase.purchased_at = meta.purchased_at;
+    saveDB(db);
+    return purchase;
+  },
   /** سجل تسديدات فاتورة شراء — كل دفعة انسدّت على دين المورّد. */
   async listPurchasePayments(purchaseId: string): Promise<PurchasePayment[]> {
     return (loadDB().purchasePayments ?? [])
@@ -1962,6 +2056,7 @@ const DEMO_ACTIVITY_MAP: Record<string, { entity: string; action: "INSERT" | "UP
   updateCompanySection: { entity: "company_sections", action: "UPDATE" },
   deleteCompanySection: { entity: "company_sections", action: "DELETE" },
   recordPurchase: { entity: "purchases", action: "INSERT" },
+  updatePurchase: { entity: "purchases", action: "UPDATE" },
   createCourier: { entity: "couriers", action: "INSERT" },
   updateCourier: { entity: "couriers", action: "UPDATE" },
   createDeliveryOrder: { entity: "delivery_orders", action: "INSERT" },
@@ -2827,6 +2922,10 @@ const supabaseRepo: typeof demoRepo = {
     // Atomic on the server: restock/create products + insert purchase & items.
     // قبل ترحيل 0076 يتجاهل الخادم supplier_name/supplier_phone بأمان.
     return need<Purchase>(await sbc().rpc("record_purchase", { p_lines: lines, p_meta: meta }));
+  },
+  async updatePurchase(purchaseId, lines, meta) {
+    // Atomic on the server: reverse old line stock, re-apply new lines, replace items.
+    return need<Purchase>(await sbc().rpc("update_purchase", { p_purchase: purchaseId, p_lines: lines, p_meta: meta }));
   },
   async listPurchasePayments(purchaseId) {
     // قبل ترحيل 0076 لا يوجد جدول purchase_payments — أعد قائمة فارغة.

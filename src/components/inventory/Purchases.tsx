@@ -4,7 +4,7 @@ import { motion } from "framer-motion";
 import {
   Barcode, Plus, Search, Building2, ShoppingBag, PackageCheck, Sparkles,
   Wallet, CalendarClock, X, ScanLine, FolderTree, SlidersHorizontal, ChevronDown,
-  UserRound, Phone, HandCoins,
+  UserRound, Phone, HandCoins, Pencil,
 } from "lucide-react";
 import type { Product, Company, CompanySection, Purchase, PurchaseItem, PurchasePayment, PurchaseDraftLine, PurchaseMeta, ProductCategory, PaymentMethod } from "@/types";
 import { repo } from "@/lib/repo";
@@ -75,9 +75,12 @@ export function PurchasesTab({ products, companies, sections, clinicId, onChange
   const [loading, setLoading] = useState(true);
   const [building, setBuilding] = useState(false);
   const [viewing, setViewing] = useState<Purchase | null>(null);
+  const [editing, setEditing] = useState<{ purchase: Purchase; items: PurchaseItem[] } | null>(null);
   const [q, setQ] = useState("");
-  /** «بطاقات» = القائمة المألوفة · «سجل الحركات» = أيام ← فواتير ← بضاعتها بالضبط. */
-  const [mode, setMode] = useState<"cards" | "log">("cards");
+  /** «شركات» = فاتورة كبيرة لكل شركة تتدرج تحتها فواتيرها (الافتراضي — به يُعرف
+   *  منين نشتري أكثر) · «بطاقات» = القائمة المسطّحة · «سجل الحركات» = أيام ← بضاعة. */
+  const [mode, setMode] = useState<"co" | "cards" | "log">("co");
+  const [openCo, setOpenCo] = useState<string | null>(null);
   const mounted = useRef(true);
 
   const load = async () => {
@@ -97,6 +100,26 @@ export function PurchasesTab({ products, companies, sections, clinicId, onChange
   const ql = q.trim().toLowerCase();
   const shown = ql ? purchases.filter((p) => (p.company_name ?? "").toLowerCase().includes(ql) || (p.reference ?? "").toLowerCase().includes(ql) || (p.supplier_name ?? "").toLowerCase().includes(ql)) : purchases;
 
+  /* «الفاتورة الكبيرة» لكل شركة: كل فواتيرها مجموعةً — الإجمالي والدين وعدد
+   * الفواتير وآخر شراء — مرتبةً بالأكثر شراءً، فيُعرف بالجرد منين نأخذ أكثر. */
+  const companyGroups = useMemo(() => {
+    const m = new Map<string, { name: string; rows: Purchase[]; total: number; due: number }>();
+    for (const p of shown) {
+      const key = p.company_id ?? normKey(p.company_name ?? "");
+      const g = m.get(key) ?? { name: p.company_name || "", rows: [], total: 0, due: 0 };
+      g.rows.push(p);
+      g.total += p.total || 0;
+      g.due += Math.max(0, (p.total || 0) - (p.amount_paid ?? p.total ?? 0));
+      if (!g.name && p.company_name) g.name = p.company_name;
+      m.set(key, g);
+    }
+    const all = [...m.entries()].map(([key, g]) => ({ key, ...g }));
+    const grand = all.reduce((s, g) => s + g.total, 0);
+    return all
+      .map((g) => ({ ...g, share: grand > 0 ? g.total / grand : 0 }))
+      .sort((a, b) => b.total - a.total);
+  }, [shown]);
+
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-2">
@@ -105,6 +128,10 @@ export function PurchasesTab({ products, companies, sections, clinicId, onChange
           <input className="input ltr:pl-9 rtl:pr-9" value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("purchase.search", "ابحث بالشركة أو رقم الفاتورة…")} />
         </div>
         <div className="inline-flex items-center gap-0.5 rounded-full border border-line bg-surface-2 p-0.5">
+          <button type="button" onClick={() => { playTap(); setMode("co"); }}
+            className={cn("rounded-full px-3 py-1.5 text-2xs font-bold transition", mode === "co" ? "bg-brand-600 text-white shadow-soft" : "text-ink-muted hover:text-ink")}>
+            {t("purchase.viewCompanies", "شركات")}
+          </button>
           <button type="button" onClick={() => { playTap(); setMode("cards"); }}
             className={cn("rounded-full px-3 py-1.5 text-2xs font-bold transition", mode === "cards" ? "bg-brand-600 text-white shadow-soft" : "text-ink-muted hover:text-ink")}>
             {t("purchase.viewCards", "بطاقات")}
@@ -127,30 +154,52 @@ export function PurchasesTab({ products, companies, sections, clinicId, onChange
         </div>
       ) : mode === "log" ? (
         <PurchaseLog purchases={shown} />
+      ) : mode === "co" ? (
+        <motion.div variants={staggerContainer} initial="initial" animate="animate" className="space-y-2">
+          {companyGroups.map((g) => {
+            const isOpen = openCo === g.key;
+            return (
+              <motion.div key={g.key} variants={staggerItem} className="card overflow-hidden p-0">
+                <button
+                  type="button"
+                  data-cogroup
+                  onClick={() => { playTap(); setOpenCo(isOpen ? null : g.key); }}
+                  className="flex w-full items-center gap-3 p-3.5 text-start transition hover:bg-surface-2/60"
+                >
+                  <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-brand-grad text-white shadow-soft"><Building2 size={20} /></span>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-bold text-ink">{g.name || t("purchase.noCompany", "بدون شركة")}</p>
+                    <div className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-xs text-ink-subtle">
+                      <span className="flex items-center gap-1"><ShoppingBag size={11} /> {t("purchase.invCount", { n: g.rows.length, defaultValue: "{{n}} فاتورة" })}</span>
+                      <span className="flex items-center gap-1"><CalendarClock size={11} /> {t("purchase.lastBuy", { d: formatDate(g.rows[0]?.purchased_at, i18n.language), defaultValue: "آخر شراء {{d}}" })}</span>
+                      <span className="tabular-nums">{t("purchase.shareOfSpend", { v: Math.round(g.share * 100), defaultValue: "{{v}}٪ من مشترياتك" })}</span>
+                    </div>
+                    {/* شريط الحصة: طوله = نصيب الشركة من كل صرف المشتريات */}
+                    <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-surface-2">
+                      <div className="h-full rounded-full bg-brand-500" style={{ width: `${Math.max(3, Math.round(g.share * 100))}%` }} />
+                    </div>
+                  </div>
+                  <div className="shrink-0 text-end">
+                    <p className="text-sm font-extrabold text-ink tabular-nums">{money(g.total)}</p>
+                    {g.due > 0 && <p className="text-xs font-bold text-danger-600 tabular-nums dark:text-danger-400">{t("purchase.dueShort", { v: money(g.due), defaultValue: "عليه {{v}}" })}</p>}
+                    <ChevronDown size={15} className={cn("ms-auto mt-0.5 text-ink-subtle transition", isOpen && "rotate-180")} />
+                  </div>
+                </button>
+                {isOpen && (
+                  <div className="space-y-2 border-t border-line bg-surface-2/40 p-2.5" data-cogroupbody>
+                    {g.rows.map((p) => <PurchaseRow key={p.id} p={p} onOpen={() => setViewing(p)} />)}
+                  </div>
+                )}
+              </motion.div>
+            );
+          })}
+        </motion.div>
       ) : (
         <motion.div variants={staggerContainer} initial="initial" animate="animate" className="space-y-2">
           {shown.map((p) => (
-            <motion.button key={p.id} variants={staggerItem} onClick={() => { playTap(); setViewing(p); }} className="card flex w-full items-center gap-3 p-3.5 text-start transition hover:shadow-raised">
-              <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-brand-grad text-white shadow-soft"><ShoppingBag size={20} /></span>
-              <div className="min-w-0 flex-1">
-                <p className="flex items-center gap-2 truncate text-sm font-bold text-ink">
-                  <Building2 size={13} className="shrink-0 text-ink-subtle" />
-                  {p.company_name || t("purchase.noCompany", "بدون شركة")}
-                  {p.reference && <span className="chip shrink-0 bg-surface-2 font-mono text-2xs text-ink-muted">#{p.reference}</span>}
-                </p>
-                <div className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-xs text-ink-subtle">
-                  <span className="flex items-center gap-1"><CalendarClock size={11} /> {formatDate(p.purchased_at, i18n.language)}</span>
-                  <span className="flex items-center gap-1"><PackageCheck size={11} /> {t("purchase.units", { n: p.item_count, defaultValue: "{{n}} قطعة" })}</span>
-                  {p.supplier_name && <span className="flex items-center gap-1"><UserRound size={11} /> {p.supplier_name}</span>}
-                </div>
-              </div>
-              <div className="text-end">
-                <p className="text-sm font-bold text-ink tabular-nums">{money(p.total)}</p>
-                {(() => { const d = Math.max(0, p.total - (p.amount_paid ?? p.total)); return d > 0
-                  ? <p className="text-xs font-bold text-danger-600 tabular-nums dark:text-danger-400">{t("purchase.dueShort", { v: money(d), defaultValue: "عليه {{v}}" })}</p>
-                  : <Badge tone={statusTone(p.status)}>{t(`purchase.status.${p.status ?? "paid"}`, p.status ?? "paid")}</Badge>; })()}
-              </div>
-            </motion.button>
+            <motion.div key={p.id} variants={staggerItem}>
+              <PurchaseRow p={p} onOpen={() => setViewing(p)} />
+            </motion.div>
           ))}
         </motion.div>
       )}
@@ -165,15 +214,59 @@ export function PurchasesTab({ products, companies, sections, clinicId, onChange
         onSaved={() => { setBuilding(false); void load(); onChanged(); }}
       />
 
-      <PurchaseDetailModal purchase={viewing} onClose={() => setViewing(null)} onChanged={() => { void load(); onChanged(); }} />
+      <PurchaseBuilderModal
+        open={!!editing}
+        products={products}
+        companies={companies}
+        sections={sections}
+        clinicId={clinicId}
+        editing={editing}
+        onClose={() => setEditing(null)}
+        onSaved={() => { setEditing(null); void load(); onChanged(); }}
+      />
+
+      <PurchaseDetailModal
+        purchase={viewing}
+        onClose={() => setViewing(null)}
+        onChanged={() => { void load(); onChanged(); }}
+        onEdit={(p, items) => { setViewing(null); setEditing({ purchase: p, items }); }}
+      />
     </div>
+  );
+}
+
+/** بطاقة فاتورة واحدة — تُستعمل بالقائمة المسطّحة وداخل فاتورة الشركة الكبيرة. */
+function PurchaseRow({ p, onOpen }: { p: Purchase; onOpen: () => void }) {
+  const { t, i18n } = useTranslation();
+  return (
+    <button type="button" onClick={() => { playTap(); onOpen(); }} className="card flex w-full items-center gap-3 p-3.5 text-start transition hover:shadow-raised">
+      <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-brand-grad text-white shadow-soft"><ShoppingBag size={20} /></span>
+      <div className="min-w-0 flex-1">
+        <p className="flex items-center gap-2 truncate text-sm font-bold text-ink">
+          <Building2 size={13} className="shrink-0 text-ink-subtle" />
+          {p.company_name || t("purchase.noCompany", "بدون شركة")}
+          {p.reference && <span className="chip shrink-0 bg-surface-2 font-mono text-2xs text-ink-muted">#{p.reference}</span>}
+        </p>
+        <div className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-xs text-ink-subtle">
+          <span className="flex items-center gap-1"><CalendarClock size={11} /> {formatDate(p.purchased_at, i18n.language)}</span>
+          <span className="flex items-center gap-1"><PackageCheck size={11} /> {t("purchase.units", { n: p.item_count, defaultValue: "{{n}} قطعة" })}</span>
+          {p.supplier_name && <span className="flex items-center gap-1"><UserRound size={11} /> {p.supplier_name}</span>}
+        </div>
+      </div>
+      <div className="text-end">
+        <p className="text-sm font-bold text-ink tabular-nums">{money(p.total)}</p>
+        {(() => { const d = Math.max(0, p.total - (p.amount_paid ?? p.total)); return d > 0
+          ? <p className="text-xs font-bold text-danger-600 tabular-nums dark:text-danger-400">{t("purchase.dueShort", { v: money(d), defaultValue: "عليه {{v}}" })}</p>
+          : <Badge tone={statusTone(p.status)}>{t(`purchase.status.${p.status ?? "paid"}`, p.status ?? "paid")}</Badge>; })()}
+      </div>
+    </button>
   );
 }
 
 /* ============================ Detail + print ============================ */
 /** فاتورة شراء كاملة: البضاعة + المورّد + سجل التسديدات + تسديد دفعة.
  *  Exported — «دفتر الديون» في المخزون يفتح نفس النافذة. */
-export function PurchaseDetailModal({ purchase: purchaseProp, onClose, onChanged }: { purchase: Purchase | null; onClose: () => void; onChanged?: () => void }) {
+export function PurchaseDetailModal({ purchase: purchaseProp, onClose, onChanged, onEdit }: { purchase: Purchase | null; onClose: () => void; onChanged?: () => void; onEdit?: (purchase: Purchase, items: PurchaseItem[]) => void }) {
   const { t, i18n } = useTranslation();
   const toast = useToast();
   const { user } = useAuth();
@@ -352,15 +445,27 @@ export function PurchaseDetailModal({ purchase: purchaseProp, onClose, onChanged
 
         {purchase.notes && <p className="rounded-xl border border-line bg-surface-1 p-3 text-sm text-ink-muted"><strong>{t("purchase.notes", "ملاحظات")}:</strong> {purchase.notes}</p>}
 
-        <Button className="w-full" leftIcon={<Printer size={16} />} onClick={print}>{t("purchase.print", "طباعة الفاتورة")}</Button>
+        <div className="flex flex-col gap-2 sm:flex-row">
+          {/* تعديل الفاتورة: نسيت سطراً؟ كمية غلط؟ — يفتح البنّاء بنفس السطور
+              والمخزون يتحرك بالفرق فقط عند الحفظ. */}
+          {onEdit && !loading && (
+            <Button variant="secondary" className="flex-1" data-editpurchase leftIcon={<Pencil size={16} />} onClick={() => { playTap(); onEdit(purchase, items); }}>
+              {t("purchase.editTitle", "تعديل فاتورة شراء")}
+            </Button>
+          )}
+          <Button className="flex-1" leftIcon={<Printer size={16} />} onClick={print}>{t("purchase.print", "طباعة الفاتورة")}</Button>
+        </div>
       </div>
     </Modal>
   );
 }
 
 /* ============================ Builder ============================ */
-export function PurchaseBuilderModal({ open, products, companies, sections, clinicId, defaultCompanyName, onClose, onSaved }: {
+/** وضعا عمل: فاتورة جديدة، أو **تعديل** فاتورة محفوظة (editing) — التعديل يستورد
+ *  سطورها، يثبّت شركتها، ويحفظ عبر updatePurchase فيتحرك المخزون بالفرق فقط. */
+export function PurchaseBuilderModal({ open, products, companies, sections, clinicId, defaultCompanyName, editing, onClose, onSaved }: {
   open: boolean; products: Product[]; companies: Company[]; sections?: CompanySection[]; clinicId?: string; defaultCompanyName?: string;
+  editing?: { purchase: Purchase; items: PurchaseItem[] } | null;
   onClose: () => void; onSaved: () => void;
 }) {
   const { t } = useTranslation();
@@ -403,14 +508,46 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
   useEffect(() => {
     if (!open) return;
     createdRef.current = [];
-    setCompany(defaultCompanyName ?? "");
-    setReference(""); setSupplierName(""); setSupplierPhone(""); setNotes(""); setPurchasedAt(localISO());
-    setPayMethod("cash"); setAmountPaid(""); setScan("");
-    setLines([blankLine()]);
+    if (editing) {
+      const p = editing.purchase;
+      setCompany(p.company_name ?? "");
+      setReference(p.reference ?? "");
+      setSupplierName(p.supplier_name ?? "");
+      setSupplierPhone(p.supplier_phone ?? "");
+      setNotes(p.notes ?? "");
+      setPurchasedAt((p.purchased_at ?? "").slice(0, 10) || localISO());
+      setPayMethod((p.payment_method as PaymentMethod) ?? "cash");
+      setAmountPaid(p.amount_paid != null ? String(p.amount_paid) : "");
+      setLines(editing.items.map((it) => blankLine({
+        product_id: it.product_id ?? null,
+        barcode: it.barcode ?? "",
+        name: it.name,
+        category: it.category ?? "",
+        qty: String(it.qty ?? ""),
+        purchase_price: it.purchase_price ? String(it.purchase_price) : "",
+        sell_price: it.sell_price ? String(it.sell_price) : "",
+      })));
+    } else {
+      setCompany(defaultCompanyName ?? "");
+      setReference(""); setSupplierName(""); setSupplierPhone(""); setNotes(""); setPurchasedAt(localISO());
+      setPayMethod("cash"); setAmountPaid("");
+      setLines([blankLine()]);
+    }
+    setScan("");
     setExpandedKeys(new Set());
     setTimeout(() => scanRef.current?.focus(), 90);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
+
+  /* بوضع التعديل: كمية السطر القديمة داخل المخزون أصلاً — قفزة المخزون تُحسب
+   * من الرصيد بعد عكسها، فلا يظهر رقم مضاعف مضلِّل. */
+  const origQty = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const it of editing?.items ?? []) {
+      if (it.product_id) m.set(it.product_id, (m.get(it.product_id) ?? 0) + (it.qty || 0));
+    }
+    return m;
+  }, [editing]);
 
   const patchLine = (key: string, patch: Partial<Line>) => setLines((ls) => ls.map((l) => (l.key === key ? { ...l, ...patch } : l)));
   const removeLine = (key: string) => setLines((ls) => (ls.length > 1 ? ls.filter((l) => l.key !== key) : ls));
@@ -522,7 +659,9 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
     setBusy(true);
     let createdCompany: Company | null = null;
     try {
-      const co = await resolveCompanyId();
+      const co = editing
+        ? { id: editing.purchase.company_id, created: null, name: editing.purchase.company_name ?? "" }
+        : await resolveCompanyId();
       createdCompany = co.created;
       const draft: PurchaseDraftLine[] = validLines.map((l) => ({
         product_id: l.product_id,
@@ -548,7 +687,8 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
         purchased_at: purchasedAt ? new Date(purchasedAt).toISOString() : undefined,
         staff_id: user?.id ?? null,
       };
-      await repo.recordPurchase(draft, meta);
+      if (editing) await repo.updatePurchase(editing.purchase.id, draft, meta);
+      else await repo.recordPurchase(draft, meta);
       playSuccess();
       onSaved();
     } catch (e) {
@@ -564,12 +704,16 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
   };
 
   return (
-    <Modal open={open} onClose={onClose} size="full" title={t("purchase.new", "فاتورة شراء")}>
+    <Modal open={open} onClose={onClose} size="full" title={editing ? `${t("purchase.editTitle", "تعديل فاتورة شراء")} · ${purchaseNo(editing.purchase.id)}` : t("purchase.new", "فاتورة شراء")}>
       <div className="space-y-4">
         {/* Supplier + reference + date */}
         <div className="grid gap-3 sm:grid-cols-3">
           <div className="sm:col-span-1">
             <label className="label flex items-center gap-1"><Building2 size={12} /> {t("pos.company", "الشركة")}</label>
+            {editing ? (
+              /* الفاتورة تبقى بشركتها — تغيير الشركة يعني فاتورة أخرى لا تعديلاً */
+              <input className="input" value={company || t("purchase.noCompany", "بدون شركة")} readOnly disabled />
+            ) : (
             <Combobox
               value={company}
               onChange={setCompany}
@@ -578,6 +722,7 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
               icon={<Building2 size={16} />}
               createLabel={(v) => t("pos.companyCreate", { value: v, defaultValue: `إنشاء شركة “${v}”` })}
             />
+            )}
           </div>
           <div>
             <label className="label">{t("purchase.reference", "رقم فاتورة المورّد")} <span className="font-normal text-ink-subtle">{t("pos.companyHint", "(اختياري)")}</span></label>
@@ -641,6 +786,7 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
               const coName = product.company_id ? companies.find((c) => c.id === product.company_id)?.name : undefined;
               const secName = product.section_id ? (sections ?? []).find((s) => s.id === product.section_id)?.name : undefined;
               const qtyN = Number(l.qty) || 0;
+              const baseStock = Math.max(0, (product.stock ?? 0) - (editing ? origQty.get(product.id) ?? 0 : 0));
               return (
                 <div key={l.key} className="rounded-2xl border border-success-200 bg-success-50/40 p-3 dark:border-success-500/25 dark:bg-success-500/5">
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
@@ -654,7 +800,7 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
                       <p className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-2xs text-ink-subtle">
                         {l.barcode && <span className="flex items-center gap-1 font-mono"><Barcode size={10} /> {l.barcode}</span>}
                         <span className="tabular-nums">
-                          {t("purchase.stockJump", { from: product.stock ?? 0, to: (product.stock ?? 0) + qtyN, defaultValue: "المخزون: {{from}} ← {{to}}" })}
+                          {t("purchase.stockJump", { from: baseStock, to: baseStock + qtyN, defaultValue: "المخزون: {{from}} ← {{to}}" })}
                         </span>
                         <span>{t("pos.buy", "شراء")} {money(Number(l.purchase_price) || 0)} · {t("pos.sell", "بيع")} {money(Number(l.sell_price) || 0)}</span>
                         {product.expiry_date && <span className="flex items-center gap-1"><CalendarClock size={10} /> {t("purchase.currentExpiry", { d: product.expiry_date.slice(0, 10), defaultValue: "الانتهاء الحالي {{d}}" })}</span>}
@@ -795,7 +941,7 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
             </div>
           </div>
           <div>
-            <label className="label flex items-center gap-1"><Wallet size={12} /> {t("purchase.amountPaid", "المدفوع للمورّد")} <span className="font-normal text-ink-subtle">{t("purchase.paidHint", "(فارغ = مدفوع كامل)")}</span></label>
+            <label className="label flex items-center gap-1"><Wallet size={12} /> {t("purchase.amountPaid", "المدفوع للمورّد")} <span className="font-normal text-ink-subtle">{editing ? t("purchase.paidHintEdit", "(فارغ = يبقى المدفوع كما هو)") : t("purchase.paidHint", "(فارغ = مدفوع كامل)")}</span></label>
             <input type="number" inputMode="numeric" min="0" step="1" className="input" value={amountPaid} onChange={(e) => setAmountPaid(e.target.value)} placeholder={money(total)} />
           </div>
           <div>
@@ -816,7 +962,7 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
             </div>
           </div>
           <Button size="lg" loading={busy} disabled={validLines.length === 0} leftIcon={<PackageCheck size={18} />} onClick={save}>
-            {t("purchase.save", "حفظ وتنزيل على المخزون")}
+            {editing ? t("purchase.saveEdit", "حفظ التعديلات") : t("purchase.save", "حفظ وتنزيل على المخزون")}
           </Button>
         </div>
       </div>
