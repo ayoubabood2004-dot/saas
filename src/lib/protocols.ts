@@ -101,6 +101,7 @@ export const PROTOCOLS: Protocol[] = [
       { kind: "drug", drug: "maropitant", prefer: "SC" },
       { kind: "drug", drug: "metronidazole", prefer: "PO" },
       { kind: "drug", drug: "famotidine", prefer: "SC" },
+      { kind: "care", type: "vitals", perDay: 3, label: () => i18n.t("obs.mentation", "الحالة العامة") },
       { kind: "care", type: "vitals", perDay: 3, label: () => i18n.t("proto.sTemp", "الحرارة") },
       { kind: "care", type: "feed", perDay: 3, label: () => i18n.t("proto.sFeed", "تغذية تدريجية") },
       { kind: "care", type: "elim", perDay: 3, label: () => i18n.t("proto.sElim", "متابعة الإخراج") },
@@ -120,6 +121,7 @@ export const PROTOCOLS: Protocol[] = [
       // المركّب — فتحت الجلد هو المدعوم فعلاً، لا افتراضاً يسقط عليه.
       { kind: "drug", drug: "amoxi-clav", prefer: "SC" },
       { kind: "drug", drug: "metronidazole", prefer: "IV" },
+      { kind: "care", type: "vitals", perDay: 6, label: () => i18n.t("obs.mentation", "الحالة العامة") },
       { kind: "care", type: "vitals", perDay: 6, label: () => i18n.t("proto.sTemp", "الحرارة") },
       { kind: "care", type: "elim", perDay: 6, label: () => i18n.t("proto.sElim", "متابعة الإخراج") },
       { kind: "care", type: "feed", perDay: 4, label: () => i18n.t("proto.sFeedSmall", "تغذية قليلة متكرّرة") },
@@ -135,6 +137,7 @@ export const PROTOCOLS: Protocol[] = [
       { kind: "drug", drug: "meloxicam", prefer: "SC" },
       { kind: "drug", drug: "tramadol", prefer: "PO" },
       { kind: "drug", drug: "amoxi-clav", prefer: "SC" },
+      { kind: "care", type: "vitals", perDay: 4, label: () => i18n.t("obs.mentation", "الحالة العامة") },
       { kind: "care", type: "vitals", perDay: 4, label: () => i18n.t("proto.sTemp", "الحرارة") },
       { kind: "care", type: "nurse", perDay: 2, label: () => i18n.t("proto.sWound", "فحص الجرح والضماد") },
       { kind: "care", type: "feed", perDay: 2, label: () => i18n.t("proto.sFeed", "تغذية تدريجية") },
@@ -164,6 +167,7 @@ export const PROTOCOLS: Protocol[] = [
       { kind: "care", type: "fluid", perDay: 6, route: "iv", label: () => i18n.t("proto.sFluidsIV", "سوائل وريدية") },
       { kind: "drug", drug: "buprenorphine", prefer: "IV" },
       { kind: "care", type: "elim", perDay: 6, label: () => i18n.t("proto.sUrine", "قياس البول المُخرَج"), amount: () => i18n.t("proto.sUrineAmt", "مل") },
+      { kind: "care", type: "vitals", perDay: 6, label: () => i18n.t("obs.mentation", "الحالة العامة") },
       { kind: "care", type: "vitals", perDay: 6, label: () => i18n.t("proto.sTemp", "الحرارة") },
       { kind: "care", type: "lab", perDay: 1, label: () => i18n.t("proto.sRenal", "كلى وشوارد") },
     ],
@@ -188,6 +192,7 @@ export const PROTOCOLS: Protocol[] = [
     days: 2,
     steps: [
       { kind: "care", type: "fluid", perDay: 6, route: "iv", label: () => i18n.t("proto.sFluidsIV", "سوائل وريدية") },
+      { kind: "care", type: "vitals", perDay: 6, label: () => i18n.t("obs.mentation", "الحالة العامة") },
       { kind: "care", type: "vitals", perDay: 6, label: () => i18n.t("proto.sTemp", "الحرارة") },
       { kind: "care", type: "elim", perDay: 4, label: () => i18n.t("proto.sElim", "متابعة الإخراج") },
     ],
@@ -318,16 +323,34 @@ export const protocolById = (id: string): Protocol | undefined =>
   allProtocols().find((p) => p.id === id);
 
 /* ── الأوقات ───────────────────────────────────────────────────────────────
- * تُوزَّع الجرعات على ساعات النهار بالتساوي ابتداءً من الثامنة. ومرّةٌ واحدة
- * باليوم تعني الثامنة صباحاً لا منتصف الليل — الجرعة تُعطى حين يوجد أحد. */
-const DAY_START = 8;
+ * تُوزَّع الأوامر داخل يوم عملٍ واقعي (٠٨:٠٠–٢٢:٠٠) لا على مدار الساعة.
+ *
+ * القسمة على أربعٍ وعشرين ساعة كانت تُوقع «ثلاث مرّاتٍ باليوم» على منتصف
+ * الليل — أمرٌ لن ينفّذه أحد بعيادةٍ بلا كادرٍ ليلي، فيتراكم «فات» ليس ذنبَ
+ * أحد. والفارقُ الدوائيّ بين ٨/١٦/٠٠ و٨/١٤/٢٠ مقبولٌ سريرياً وهو ما تعمله
+ * العيادات النهارية فعلاً — والأمرُ المنفَّذ خيرٌ من الأمثل المتروك. */
+const DAY_SLOTS: Record<number, number[]> = {
+  1: [8], 2: [8, 20], 3: [8, 14, 20], 4: [8, 12, 16, 20],
+  5: [8, 11, 14, 17, 20], 6: [8, 10, 12, 16, 18, 20],
+};
+
+/**
+ * أوقات **دواءٍ** من الدليل: التباعد الدوائي الحقيقي يُحترم — كل ٨ ساعاتٍ
+ * تعني كل ٨ ساعات، ولو وقعت واحدةٌ ليلاً. ضغطُ المسكّن إلى النهار كان يترك
+ * قطاً بعد انسدادٍ بلا تسكينٍ اثنتي عشرة ساعة — و«فاتت» الصادقة على جرعة
+ * الليل خيرٌ من فجوةِ ألمٍ مقصودة. فتحاتُ النهار للرعاية وحدها.
+ */
+export function drugTimes(freqHours: number): string[] {
+  if (!freqHours || freqHours <= 0) return ["08:00"];
+  const out: string[] = [];
+  for (let h = 8; h < 8 + 24; h += freqHours) out.push(`${pad2(h % 24)}:00`);
+  return out.sort();
+}
 
 export function spreadTimes(perDay: number): string[] {
   const n = Math.max(1, Math.min(12, Math.round(perDay)));
-  if (n === 1) return [`${pad2(DAY_START)}:00`];
-  const gap = 24 / n;
-  return Array.from({ length: n }, (_, i) => `${pad2(Math.round(DAY_START + i * gap) % 24)}:00`)
-    .sort();
+  const hrs = DAY_SLOTS[n] ?? Array.from({ length: n }, (_, i) => Math.round(8 + (i * 14) / (n - 1)));
+  return hrs.map((h) => `${pad2(Math.min(22, h))}:00`).sort();
 }
 
 /** طريق الدليل («SC») → طريق الورقة («sc»). ما لا يقابله شيء يُترك فارغاً. */
@@ -436,7 +459,7 @@ export function buildDraft(p: Protocol, pet: Pet | undefined, todayISO: string):
       if (isBannedFor(drug, species)) continue;          // لا يُعرَض ما لن يُكتب
       const win = doseFor(drug, species);
       if (!win) continue;                                 // لا نافذةَ موثّقة لهذا النوع
-      const times = spreadTimes(win.freq === 0 ? 1 : 24 / win.freq);
+      const times = win.freq === 0 ? ["08:00"] : drugTimes(win.freq);
       const amount = amountFor(drug, species, weight);
       const route = routeFor(drug, species, step.prefer);
       const stepKey = `${p.id}-drug-${step.drug}`;

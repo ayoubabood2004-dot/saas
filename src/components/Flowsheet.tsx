@@ -17,6 +17,12 @@ import {
   typeOf, buildRows, cellState, hourColumns, isGapBefore, nowOffset, petSummary, pad2, toMin,
   type OrderRow,
 } from "@/lib/flowsheet";
+import {
+  scaleFor, optionOfResult, toneOfResult, tempRange, parseNum, classifyNum, OBS_PRESETS,
+  type ObsScale, type ObsTone,
+} from "@/lib/observations";
+/* فتحات النهار نفسها التي توزّع بها البروتوكولات — جدولان كانا سينحرفان. */
+import { spreadTimes } from "@/lib/protocols";
 
 /* ============================================================================
  * Flowsheet — ورقة العلاج: مرضى في صفوف، ساعات في أعمدة.
@@ -81,11 +87,12 @@ export interface FlowPatient {
 
 type Editing =
   | { kind: "value"; entry: TreatmentEntry; type: TaskType }
+  | { kind: "obs"; entry: TreatmentEntry; scale: ObsScale }
   | { kind: "missed"; entry: TreatmentEntry }
   | null;
 
 /* ── خانة واحدة ─────────────────────────────────────────────────────────── */
-const Cell = memo(function Cell({ list, todayISO, now, alt, hour, gap, sel, onTap, onAdd }: {
+const Cell = memo(function Cell({ list, todayISO, now, alt, hour, gap, sel, onTap, onAdd, species, petId }: {
   list: TreatmentEntry[] | undefined;
   todayISO: string;
   now: string;
@@ -98,6 +105,9 @@ const Cell = memo(function Cell({ list, todayISO, now, alt, hour, gap, sel, onTa
   onTap: (e: TreatmentEntry) => void;
   /** الخانة الفارغة تُنشئ جرعةً بساعتها — إن وُصل هذا النداء. */
   onAdd?: (hour: number) => void;
+  /** لتصنيف الحرارة على مدى هذا النوع/الحيوان — لا مدى ثابت للجميع. */
+  species?: Species;
+  petId?: string;
 }) {
   /* الفراغ ليس عدماً بل **مكاناً**: الضغط عليه يكتب جرعةً بساعته، فيُختار
    * الوقت بموضع الإصبع لا بمنتقي وقتٍ يُفتح ويُغلق. و«+» باهتةٌ ظاهرةٌ
@@ -123,8 +133,13 @@ const Cell = memo(function Cell({ list, todayISO, now, alt, hour, gap, sel, onTa
   const first = list.find((t) => !t.administered_at) ?? list[0];
   const done = list.filter((t) => t.administered_at).length;
   const missed = list.find((t) => !t.administered_at && t.missed_reason);
-  /* القيمة المسجَّلة تُعرَض بدل علامة الصح: قياسٌ بلا رقمه ليس قياساً. */
-  const shown = list.find((t) => t.result)?.result;
+  /* القيمة المسجَّلة تُعرَض بدل علامة الصح: قياسٌ بلا رقمه ليس قياساً.
+   * والاختيار المعياري يُعرَض **بتسميته القصيرة وبلون درجته**: «رفض» حمراء
+   * و«كله» خضراء — فالشبكة تُقرأ من بعيدٍ خريطةَ حالةٍ لا جدولَ إنجاز. */
+  const resHolder = list.find((t) => t.result);
+  const resOpt = resHolder ? optionOfResult(resHolder) : null;
+  const tone: ObsTone | null = resHolder ? toneOfResult(resHolder, species, petId) : null;
+  const shown = resOpt ? resOpt.short() : resHolder?.result;
 
   /* الضغط المطوّل حُذف.
    *
@@ -143,12 +158,16 @@ const Cell = memo(function Cell({ list, todayISO, now, alt, hour, gap, sel, onTa
         data-cell={first.id}
         data-state={state}
         style={{ height: CELL, minWidth: CELL }}
-        title={`${first.time} · ${first.medication}${missed ? ` — ${missed.missed_reason}` : ""}`}
+        title={`${first.time} · ${first.medication}${resHolder?.result ? ` — ${resHolder.result}` : ""}${missed ? ` — ${missed.missed_reason}` : ""}`}
         onClick={() => onTap(first)}
         className={cn(
           base,
           sel && "ring-2 ring-brand-600 ring-offset-1 ring-offset-surface-1",
-          state === "given" && "bg-success-50 px-1.5 text-success-700 ring-1 ring-success-300/70 dark:bg-success-500/15 dark:text-success-300 dark:ring-success-500/30",
+          state === "given" && (!tone || tone === "good") && "bg-success-50 px-1.5 text-success-700 ring-1 ring-success-300/70 dark:bg-success-500/15 dark:text-success-300 dark:ring-success-500/30",
+          state === "given" && tone === "mid" && "bg-warn-50 px-1.5 text-warn-700 ring-1 ring-warn-400/70 dark:bg-warn-500/15 dark:text-warn-300 dark:ring-warn-500/30",
+          state === "given" && tone === "low" && "bg-orange-50 px-1.5 text-orange-700 ring-1 ring-orange-400/70 dark:bg-orange-500/15 dark:text-orange-300 dark:ring-orange-500/30",
+          state === "given" && tone === "crit" && "bg-danger-50 px-1.5 text-danger-700 ring-2 ring-danger-500 dark:bg-danger-500/15 dark:text-danger-300",
+          state === "given" && tone === "none" && "bg-surface-3 px-1.5 text-ink-muted ring-1 ring-line-strong",
           state === "overdue" && (missed
             ? "bg-surface-3 px-1.5 text-ink-subtle ring-1 ring-line-strong"
             : "bg-danger-500 px-1.5 text-white shadow-sm"),
@@ -160,7 +179,7 @@ const Cell = memo(function Cell({ list, todayISO, now, alt, hour, gap, sel, onTa
             توقّع الممرّضة بمربّع الورقة الورقية. والقيمة تسبقها حين تكون
             قياساً: «٣٩٫٦» أنفع من صحٍّ وأحرف. */}
         {state === "given"
-          ? (shown ?? initialsOf(first.administered_by) ?? <Check size={18} strokeWidth={3.5} />)
+          ? (shown ? <span className={cn(resOpt && "text-[11px] leading-none")}>{shown}</span> : initialsOf(first.administered_by) ?? <Check size={18} strokeWidth={3.5} />)
           : state === "overdue"
             ? (missed ? "—" : "!")
             : state === "due"
@@ -299,7 +318,14 @@ export function Flowsheet({
     playTap();
     if (e.administered_at) { setConfirmId({ id: e.id, justGiven: false }); return; }
     const type = typeOf(e);
-    if (TASK_META[type].needsValue) { setDraft(e.result ?? ""); setEdit({ kind: "value", entry: e, type }); return; }
+    if (TASK_META[type].needsValue) {
+      /* المتابعة ذات السُلَّم تُسجَّل **اختياراً لا كتابة**: ورقةُ خياراتٍ
+       * معيارية (زينة/متوسطة/…) بضغطةٍ واحدة. وما لا سُلَّمَ له — نتيجة
+       * مختبرٍ حرّة مثلاً — يبقى على لوحة الإدخال القديمة. */
+      const scale = scaleFor(e);
+      if (scale) { setEdit({ kind: "obs", entry: e, scale }); return; }
+      setDraft(e.result ?? ""); setEdit({ kind: "value", entry: e, type }); return;
+    }
     onGive(e);
     playSuccess();
     setConfirmId({ id: e.id, justGiven: true });
@@ -433,6 +459,7 @@ export function Flowsheet({
                           hour={h} alt={ci % 2 === 1} gap={isGapBefore(cols, ci)}
                           sel={!!confirm && !!row.byHour.get(h)?.some((x) => x.id === confirm.entry.id)}
                           onTap={openCell}
+                          species={p.pet?.species} petId={p.petId}
                           onAdd={onAddAt ? (hh) => onAddAt(p.petId, hh) : undefined} />
                       ))}
                     </div>
@@ -492,6 +519,24 @@ export function Flowsheet({
                 ? ` · ${t("flow.wasDue", { at: confirm.entry.time, defaultValue: "موعدها {{at}}" })}` : ""}
             </p>
           </div>
+          {/* قياسٌ مسجَّل يُصحَّح **بتسجيلٍ فوقه** لا بمحوه: «نصّه» بالغلط بدل
+              «رفض» كانت تُصلَّح بتراجعٍ يمحو ثم إعادة — ومحوُ قيمةٍ حرجة بضغطةٍ
+              خاطئة صمتاً أخطرُ من الغلط الأول. */}
+          {TASK_META[typeOf(confirm.entry)].needsValue && (
+            <button type="button" data-editvalue
+              onClick={() => {
+                playTap();
+                const en = confirm.entry;
+                const sc = scaleFor(en);
+                if (sc) setEdit({ kind: "obs", entry: en, scale: sc });
+                else { setDraft(en.result ?? ""); setEdit({ kind: "value", entry: en, type: typeOf(en) }); }
+                setConfirmId(null);
+              }}
+              className="flex items-center gap-1.5 rounded-xl bg-surface-1 px-3 text-2xs font-bold text-ink-muted ring-1 ring-line transition hover:text-brand-700 hover:ring-brand-300"
+              style={{ minHeight: 40 }}>
+              {t("flow.editValue", "عدّل القيمة")}
+            </button>
+          )}
           <button type="button" data-undo onClick={() => undo(confirm.entry)}
             className="flex items-center gap-1.5 rounded-xl bg-surface-1 px-3 text-2xs font-bold text-ink-muted ring-1 ring-line transition hover:text-danger-600 hover:ring-danger-300"
             style={{ minHeight: 40 }}>
@@ -507,6 +552,26 @@ export function Flowsheet({
             className="grid shrink-0 place-items-center rounded-xl text-ink-subtle transition hover:bg-surface-3"
             style={{ width: 40, height: 40 }}><X size={16} /></button>
         </div>
+      )}
+
+      {edit?.kind === "obs" && (
+        <ObsSheet
+          entry={edit.entry}
+          scale={edit.scale}
+          species={patients.find((p) => p.petId === edit.entry.pet_id)?.pet?.species}
+          petId={edit.entry.pet_id}
+          onCancel={() => setEdit(null)}
+          onPick={(v) => {
+            onValue(edit.entry, v);
+            playSuccess();
+            setEdit(null);
+          }}
+          onFree={() => {
+            playTap();
+            setDraft(edit.entry.result ?? "");
+            setEdit({ kind: "value", entry: edit.entry, type: typeOf(edit.entry) });
+          }}
+        />
       )}
 
       {edit?.kind === "value" && (
@@ -535,6 +600,137 @@ export function Flowsheet({
           onPick={(reason) => { onMissed(edit.entry, reason); playTap(); setEdit(null); }}
         />
       )}
+    </div>
+  );
+}
+
+/* ── ورقة الاختيار المعياري ─────────────────────────────────────────────── */
+
+/** نقطة درجةٍ ملوّنة — لغةُ لونٍ واحدة بين الورقة والخانات واليومية. */
+const TONE_DOT: Record<ObsTone, string> = {
+  good: "bg-success-500",
+  mid: "bg-warn-500",
+  low: "bg-orange-500",
+  crit: "bg-danger-500",
+  none: "bg-line-strong",
+};
+
+/**
+ * ObsSheet — المتابعة تُسجَّل اختياراً لا كتابة.
+ *
+ * ── لماذا لا لوحةَ مفاتيح ────────────────────────────────────────────────
+ * «الحيوان تعبان شوية» نصٌّ لا يُقارَن بين الأيام ولا يقرؤه طبيب الوردية
+ * التالية بالمعنى المقصود. والخيار المعياري («ضعيفة») يُقارَن ويُرسَم منحنى
+ * ويُطبَع بتقرير الخروج — وهو ضغطةٌ واحدة بقفّاز.
+ *
+ * فالورقة أزرارٌ كبيرة بنقطة لونٍ لكل درجة، والضغطة **تختار وتحفظ معاً** —
+ * لا زرَّ تأكيدٍ بعد الخيار، لأن التراجع موجودٌ أصلاً من شريط الخانة.
+ *
+ * ── والحرارة خيارٌ ورقمٌ معاً ────────────────────────────────────────────
+ * الرقم الدقيق له قيمة سريرية لا تعوّضها كلمة، لكن لوحة النظام تقلب نصف
+ * الشاشة. فشرائحُ قيمٍ جاهزة تُضبط بـ±٠٫١، ويُصنَّف الرقم لحظياً على مدى
+ * **هذا النوع وهذا الحيوان** (تخصيصات العيادة تسبق الافتراضي) فيتلوّن قبل
+ * الحفظ — والطبيب يرى الحكم وهو يختار.
+ */
+function ObsSheet({ entry, scale, species, petId, onCancel, onPick, onFree }: {
+  entry: TreatmentEntry;
+  scale: ObsScale;
+  species?: Species;
+  petId?: string;
+  onCancel: () => void;
+  onPick: (value: string) => void;
+  /** بابُ الخروج للقيمة الحرّة: «45 مل» بسطر السوائل ليس أحد الخيارات،
+   *  وحبسُ الطبيب بقائمةٍ لا تحمل قيمته يعني ضياعَ القيمة لا انضباطها. */
+  onFree: () => void;
+}) {
+  const { t } = useTranslation();
+  const [num, setNum] = useState<number | null>(() => parseNum(entry.result));
+  const numeric = scale.numeric;
+  const range = numeric ? tempRange(species, petId) : null;
+  const numTone: ObsTone | null = num !== null && range ? classifyNum(num, range) : null;
+  const bump = (d: number) => {
+    playTap();
+    setNum((n) => Math.round(((n ?? (range ? (range.min + range.max) / 2 : 38.5)) + d) * 10) / 10);
+  };
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-end bg-ink/40 p-0 sm:place-items-center sm:p-4" onClick={onCancel}>
+      <div data-obssheet={scale.id} onClick={(e) => e.stopPropagation()}
+        className="max-h-[88vh] w-full overflow-y-auto rounded-t-3xl border border-line bg-surface-1 p-4 shadow-lg sm:max-w-sm sm:rounded-3xl">
+        <div className="mb-3 flex items-start justify-between gap-3">
+          <div>
+            <p className="text-sm font-black text-ink" dir="auto">{entry.medication}</p>
+            <p className="mt-0.5 font-mono text-2xs font-bold text-ink-subtle">{entry.time} · {scale.name()}</p>
+          </div>
+          <button type="button" onClick={onCancel} aria-label={t("common.cancel", "إلغاء")}
+            className="grid shrink-0 place-items-center rounded-xl text-ink-subtle transition hover:bg-surface-2"
+            style={{ width: 44, height: 44 }}><X size={18} /></button>
+        </div>
+
+        <div className="grid gap-1.5">
+          {scale.options.map((op) => (
+            <button key={op.id} type="button" data-obsopt={op.id}
+              onClick={() => onPick(op.label())}
+              className={cn("flex items-center gap-3 rounded-xl border px-3 text-start transition active:scale-[.98]",
+                entry.result === op.label()
+                  ? "border-brand-500 bg-brand-50 ring-2 ring-brand-500/30 dark:bg-brand-500/10"
+                  : "border-line bg-surface-1 hover:border-brand-300 hover:bg-surface-2")}
+              style={{ minHeight: 54 }}>
+              <span className={cn("h-3 w-3 shrink-0 rounded-full", TONE_DOT[op.tone])} aria-hidden />
+              <span className="text-base font-extrabold text-ink">{op.label()}</span>
+              {op.hint && <span className="ms-auto text-[11px] leading-snug text-ink-subtle">{op.hint()}</span>}
+            </button>
+          ))}
+        </div>
+
+        {numeric && (
+          <>
+            <p className="mb-1.5 mt-4 text-2xs font-bold text-ink-muted">
+              {range
+                ? t("obs.orNumber", { min: formatDec(range.min), max: formatDec(range.max), defaultValue: "أو سجّل الرقم — الطبيعي {{min}}–{{max}}" })
+                : t("obs.orNumberNoSp", "أو سجّل الرقم — نوع الحيوان غير مسجَّل فلا مدى يُحكَم عليه")}
+            </p>
+            <div className="grid grid-cols-4 gap-1.5" data-obspresets>
+              {numeric.presets.map((n) => (
+                <button key={n} type="button" data-obsnum={n.toFixed(1)}
+                  onClick={() => { playTap(); setNum(n); }}
+                  className={cn("rounded-xl font-mono text-sm font-black transition active:scale-95",
+                    num === n ? "bg-brand-600 text-white shadow-soft" : "bg-surface-2 text-ink hover:bg-surface-3")}
+                  style={{ minHeight: 48 }}>
+                  {n.toFixed(1)}
+                </button>
+              ))}
+            </div>
+            <div className="mt-2 flex items-center gap-1.5">
+              <button type="button" data-obsminus onClick={() => bump(-numeric.step)}
+                className="grid place-items-center rounded-xl bg-surface-2 font-mono text-lg font-black text-ink transition hover:bg-surface-3 active:scale-95"
+                style={{ width: 52, height: 52 }}>−</button>
+              <div className={cn("grid flex-1 place-items-center rounded-xl font-mono text-2xl font-black tabular-nums ring-1",
+                numTone === "good" && "bg-success-50 text-success-700 ring-success-300/70 dark:bg-success-500/15 dark:text-success-300",
+                numTone === "low" && "bg-orange-50 text-orange-700 ring-orange-400/70 dark:bg-orange-500/15 dark:text-orange-300",
+                numTone === "crit" && "bg-danger-50 text-danger-700 ring-danger-400 dark:bg-danger-500/15 dark:text-danger-300",
+                numTone === null && "bg-surface-2 text-ink-subtle ring-line")}
+                data-obsnumval style={{ height: 52 }}>
+                {num !== null ? num.toFixed(1) : "—"}
+                <span className="sr-only">{numeric.unit()}</span>
+              </div>
+              <button type="button" data-obsplus onClick={() => bump(numeric.step)}
+                className="grid place-items-center rounded-xl bg-surface-2 font-mono text-lg font-black text-ink transition hover:bg-surface-3 active:scale-95"
+                style={{ width: 52, height: 52 }}>+</button>
+            </div>
+            <button type="button" data-obsnumsave disabled={num === null}
+              onClick={() => { if (num !== null) onPick(num.toFixed(1)); }}
+              className="btn btn-primary mt-2 w-full disabled:opacity-50" style={{ minHeight: 52 }}>
+              {t("obs.saveNum", "سجّل الرقم")}
+            </button>
+          </>
+        )}
+
+        <button type="button" data-obsfree onClick={onFree}
+          className="mt-3 w-full rounded-xl px-3 text-2xs font-bold text-ink-subtle transition hover:bg-surface-2 hover:text-ink"
+          style={{ minHeight: 44 }}>
+          {t("obs.freeValue", "قيمة أخرى — اكتبها بنفسك (مل، ٪، ملاحظة…)")}
+        </button>
+      </div>
     </div>
   );
 }
@@ -676,6 +872,9 @@ export function AddTaskSheet({ petName, todayISO, presetHour, weightKg, species,
     presetHour != null ? [`${pad2(presetHour)}:00`] : ["10:00"],
   );
   const [picked, setPicked] = useState<Monograph | null>(null);
+  /** مرآةُ الاسم للأثر أدناه — قراءةٌ حاضرة بلا إدخاله بالاعتماديات. */
+  const labelRef = useRef(label);
+  labelRef.current = label;
   const [more, setMore] = useState(false);
 
   /* الاقتراحات تظهر ما دام الطبيب يكتب ولم يختر بعد. اختياره يُغلقها — قائمةٌ
@@ -729,8 +928,15 @@ export function AddTaskSheet({ petName, todayISO, presetHour, weightKg, species,
   /* الاسم الافتراضي يتبع النوع: «علامات حيوية» لا تحتاج كتابة اسم، والدواء
    * لا يصحّ بلا اسم. فالحقل يُملأ تلقائياً ويبقى قابلاً للتعديل. */
   useEffect(() => {
-    if (type === "drug") { setLabel(""); setPicked(null); }
-    else { setLabel(TASK_META[type].ar()); setPicked(null); }
+    /* شريحة متابعةٍ جاهزة ضبطت النوعَ والاسمَ معاً — فلا يصحّ أن يدوس هذا
+     * الأثرُ اسمَها القانوني باسم النوع العامّ. والحكم **بالاسم نفسه** لا
+     * برايةٍ تُرفع وتُنسى: رايةُ ref بقيت مرفوعةً حين لم يتغيّر النوعُ أصلاً
+     * (شريحتا بولٍ وبراز كلتاهما elim) فأكلت أولَ تبديل نوعٍ حقيقيٍّ بعدها. */
+    setPicked(null);
+    const keep = OBS_PRESETS.some((p) => p.label() === labelRef.current && p.task_type === type);
+    if (keep) return;
+    if (type === "drug") setLabel("");
+    else setLabel(TASK_META[type].ar());
   }, [type]);
 
   const toggleTime = (v: string) =>
@@ -756,6 +962,26 @@ export function AddTaskSheet({ petName, todayISO, presetHour, weightKg, species,
           <button type="button" onClick={onClose} aria-label={t("common.cancel", "إلغاء")}
             className="grid shrink-0 place-items-center rounded-xl text-ink-subtle transition hover:bg-surface-2"
             style={{ width: 44, height: 44 }}><X size={18} /></button>
+        </div>
+
+        {/* المتابعات الجاهزة — ضغطةٌ تملأ النوع والاسم والأوقات معاً.
+            أسماؤها قانونية فتُصيب سُلَّمها دائماً، ويصير تسجيلها اختياراً. */}
+        <div className="mb-3 flex flex-wrap gap-1.5" data-obspresetrow>
+          {OBS_PRESETS.map((p) => (
+            <button key={p.scale} type="button" data-obspreset={p.scale}
+              onClick={() => {
+                playTap();
+                setType(p.task_type); setPicked(null); setLabel(p.label());
+                if (presetHour == null) setTimes(spreadTimes(p.perDay));
+              }}
+              className={cn("rounded-full border px-3 text-2xs font-bold transition",
+                label === p.label()
+                  ? "border-brand-500 bg-brand-50 text-brand-700 dark:bg-brand-500/15 dark:text-brand-300"
+                  : "border-line bg-surface-2 text-ink-muted hover:border-brand-300 hover:text-ink")}
+              style={{ minHeight: 40 }}>
+              {p.label()}
+            </button>
+          ))}
         </div>
 
         {/* الاسم — ومعه الدليل الدوائي حين يكون النوع دواءً */}

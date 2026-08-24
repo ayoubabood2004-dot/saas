@@ -7,6 +7,7 @@ import { PetAvatar } from "@/components/PetAvatar";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
 import { TASK_META, typeOf, routeName, MISS_REASONS } from "@/lib/flowsheet";
 import { buildRound, lateText, alertsFor, tally, type RoundStop, type RoundOutcome } from "@/lib/round";
+import { scaleFor, tempRange, parseNum, classifyNum, type ObsScale, type ObsTone } from "@/lib/observations";
 
 /* ============================================================================
  * RoundMode — الجولة: مهمّةٌ واحدة بملء الشاشة، ثم التي بعدها.
@@ -45,6 +46,8 @@ export function RoundMode({
   const [out, setOut] = useState<(RoundOutcome | null)[]>(() => stops.map(() => null));
   const [draft, setDraft] = useState("");
   const [asking, setAsking] = useState(false);   // لوحة أسباب الفوات
+  /** خرج الطبيب من سُلَّم الخيارات إلى الكتابة الحرّة — لهذه المحطّة وحدها. */
+  const [free, setFree] = useState(false);
   const [started, setStarted] = useState(false);
 
   const done = i >= stops.length;
@@ -62,6 +65,7 @@ export function RoundMode({
     setOut((cur) => cur.map((x, k) => (k === i ? r : x)));
     setDraft("");
     setAsking(false);
+    setFree(false);
     setI((k) => k + 1);
   };
 
@@ -134,6 +138,9 @@ export function RoundMode({
   const alerts = alertsFor(e, stop!.pet);
   const blocking = alerts.find((a) => a.blocking);
   const needsValue = meta.needsValue;
+  /* المتابعة ذات السُلَّم: أزرارُ اختيارٍ تُسجِّل وتتقدّم بضغطةٍ واحدة —
+   * أسرع حتى من الورقة، فاليد الثانية ممسكةٌ بالحيوان. */
+  const scale = needsValue ? scaleFor(e) : null;
 
   return (
     <Shell onClose={onClose} tag="roundcard">
@@ -210,8 +217,22 @@ export function RoundMode({
               </div>
             ))}
 
+            {/* المتابعة ذات السُلَّم: اختيارٌ يسجِّل ويتقدّم بضغطةٍ واحدة.
+                وما لا سُلَّمَ له يبقى على لوحة الأرقام القديمة. */}
+            {needsValue && !asking && scale && !free && (
+              <RoundObs
+                key={e.id}
+                scale={scale}
+                species={stop!.pet?.species}
+                petId={e.pet_id}
+                current={e.result}
+                onPick={(v) => { onValue(e, v); playSuccess(); advance("given"); }}
+                onFree={() => { playTap(); setFree(true); }}
+              />
+            )}
+
             {/* القياس يُكتب هنا — بلوحة أرقامٍ داخل البطاقة لا بكيبورد النظام */}
-            {needsValue && !asking && (
+            {needsValue && !asking && (!scale || free) && (
               <div className="mt-4">
                 <div data-roundreadout className={cn("mb-2.5 grid place-items-center rounded-2xl border-2 border-line-strong bg-surface-1 font-display text-3xl font-extrabold",
                   !draft && "text-base font-semibold text-ink-subtle")}
@@ -249,7 +270,9 @@ export function RoundMode({
             </div>
           ) : (
             <div className="grid gap-2 px-4 pb-4">
-              <button type="button" data-roundgive
+              {/* المهمّة ذات السُلَّم أزرارُها **هي** الفعل — زرٌّ أخضر إضافي
+                  تحتها كان سيسأل «سجّل ماذا؟» بلا جواب. */}
+              {(!scale || free) && <button type="button" data-roundgive
                 disabled={(needsValue && !draft.trim()) || !!blocking}
                 onClick={() => {
                   if (needsValue) { onValue(e, draft.trim()); } else { onGive(e); }
@@ -264,7 +287,7 @@ export function RoundMode({
                   : needsValue
                     ? (draft.trim() ? t("round.saveValue", { v: draft.trim(), defaultValue: "سجّل {{v}}" }) : t("round.typeFirst", "اكتب القياس أولاً"))
                     : t("round.give", "أُعطيت")}
-              </button>
+              </button>}
               <div className="grid grid-cols-2 gap-2">
                 <button type="button" data-roundmiss onClick={() => { playWarning(); setAsking(true); }}
                   className="rounded-xl border border-line bg-surface-2 text-sm font-bold text-ink-muted transition hover:border-warn-300 hover:bg-warn-50 hover:text-warn-700"
@@ -351,6 +374,107 @@ function NumPad({ onKey }: { onKey: (k: string) => void }) {
           {k}
         </button>
       ))}
+    </div>
+  );
+}
+
+/* ── متابعةٌ بسُلَّم — داخل بطاقة الجولة ─────────────────────────────────── */
+
+/** نقطة الدرجة — لغةُ اللون نفسها بالورقة والجولة واليومية. */
+const OBS_DOT: Record<ObsTone, string> = {
+  good: "bg-success-500",
+  mid: "bg-warn-500",
+  low: "bg-orange-500",
+  crit: "bg-danger-500",
+  none: "bg-line-strong",
+};
+
+/**
+ * أزرار الاختيار المعياري داخل البطاقة: الضغطة تسجِّل وتتقدّم للمحطّة
+ * التالية — لا زرَّ تأكيدٍ بعدها، فاليد الثانية ممسكةٌ بالحيوان.
+ * والحرارة تجمع الخيارين: كلمةً بضغطة، أو رقماً بشرائحَ جاهزةٍ تُضبط
+ * بـ±٠٫١ وتتلوّن لحظياً على مدى هذا النوع وهذا الحيوان.
+ */
+function RoundObs({ scale, species, petId, current, onPick, onFree }: {
+  scale: ObsScale;
+  species?: Pet["species"];
+  petId: string;
+  current?: string | null;
+  onPick: (v: string) => void;
+  /** بابُ الكتابة الحرّة — «45 مل» ليست أحد الخيارات ولا يصحّ ضياعها. */
+  onFree: () => void;
+}) {
+  const { t } = useTranslation();
+  const [num, setNum] = useState<number | null>(() => parseNum(current));
+  const numeric = scale.numeric;
+  const range = numeric ? tempRange(species, petId) : null;
+  const tone: ObsTone | null = num !== null && range ? classifyNum(num, range) : null;
+  const bump = (d: number) => {
+    playTap();
+    setNum((n) => Math.round(((n ?? (range ? (range.min + range.max) / 2 : 38.5)) + d) * 10) / 10);
+  };
+  return (
+    <div className="mt-4" data-roundobs={scale.id}>
+      <div className="grid gap-2">
+        {scale.options.map((op) => (
+          <button key={op.id} type="button" data-roundobsopt={op.id}
+            onClick={() => { playTap(); onPick(op.label()); }}
+            className="flex items-center gap-3 rounded-2xl border border-line bg-surface-1 px-4 text-start transition hover:border-brand-300 hover:bg-surface-2 active:scale-[.985]"
+            style={{ minHeight: 58 }}>
+            <span className={cn("h-3.5 w-3.5 shrink-0 rounded-full", OBS_DOT[op.tone])} aria-hidden />
+            <span className="text-lg font-black text-ink">{op.label()}</span>
+            {op.hint && <span className="ms-auto text-2xs leading-snug text-ink-subtle">{op.hint()}</span>}
+          </button>
+        ))}
+      </div>
+
+      {numeric && (
+        <>
+          <p className="mb-1.5 mt-3.5 text-2xs font-bold text-ink-muted">
+            {range
+              ? t("obs.orNumber", { min: formatDec(range.min), max: formatDec(range.max), defaultValue: "أو سجّل الرقم — الطبيعي {{min}}–{{max}}" })
+              : t("obs.orNumberNoSp", "أو سجّل الرقم — نوع الحيوان غير مسجَّل فلا مدى يُحكَم عليه")}
+          </p>
+          <div className="grid grid-cols-4 gap-1.5">
+            {numeric.presets.map((n) => (
+              <button key={n} type="button" data-roundobsnum={n.toFixed(1)}
+                onClick={() => { playTap(); setNum(n); }}
+                className={cn("rounded-xl font-mono text-sm font-black transition active:scale-95",
+                  num === n ? "bg-brand-600 text-white shadow-soft" : "bg-surface-2 text-ink hover:bg-surface-3")}
+                style={{ minHeight: 48 }}>
+                {n.toFixed(1)}
+              </button>
+            ))}
+          </div>
+          <div className="mt-2 flex items-center gap-1.5">
+            <button type="button" onClick={() => bump(-numeric.step)}
+              className="grid place-items-center rounded-xl bg-surface-2 font-mono text-lg font-black text-ink transition hover:bg-surface-3 active:scale-95"
+              style={{ width: 52, height: 52 }}>−</button>
+            <div data-roundobsval className={cn("grid flex-1 place-items-center rounded-xl font-mono text-2xl font-black tabular-nums ring-1",
+              tone === "good" && "bg-success-50 text-success-700 ring-success-300/70 dark:bg-success-500/15 dark:text-success-300",
+              tone === "low" && "bg-orange-50 text-orange-700 ring-orange-400/70 dark:bg-orange-500/15 dark:text-orange-300",
+              tone === "crit" && "bg-danger-50 text-danger-700 ring-danger-400 dark:bg-danger-500/15 dark:text-danger-300",
+              tone === null && "bg-surface-2 text-ink-subtle ring-line")}
+              style={{ height: 52 }}>
+              {num !== null ? num.toFixed(1) : "—"}
+            </div>
+            <button type="button" onClick={() => bump(numeric.step)}
+              className="grid place-items-center rounded-xl bg-surface-2 font-mono text-lg font-black text-ink transition hover:bg-surface-3 active:scale-95"
+              style={{ width: 52, height: 52 }}>+</button>
+          </div>
+          <button type="button" data-roundobssave disabled={num === null}
+            onClick={() => { if (num !== null) onPick(num.toFixed(1)); }}
+            className="btn btn-primary mt-2 w-full disabled:opacity-50" style={{ minHeight: 52 }}>
+            {t("obs.saveNum", "سجّل الرقم")}
+          </button>
+        </>
+      )}
+
+      <button type="button" data-roundobsfree onClick={onFree}
+        className="mt-3 w-full rounded-xl px-3 text-2xs font-bold text-ink-subtle transition hover:bg-surface-2 hover:text-ink"
+        style={{ minHeight: 44 }}>
+        {t("obs.freeValue", "قيمة أخرى — اكتبها بنفسك (مل، ٪، ملاحظة…)")}
+      </button>
     </div>
   );
 }

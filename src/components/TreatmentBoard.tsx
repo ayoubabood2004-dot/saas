@@ -8,6 +8,7 @@ import {
   type TaskStatus,
 } from "@/lib/treatmentSchedule";
 import { TASK_META, typeOf, routeShort } from "@/lib/flowsheet";
+import { toneOfResult } from "@/lib/observations";
 import { formatNum, cn } from "@/lib/utils";
 import { playDoseGiven, playTap } from "@/lib/sounds";
 
@@ -112,12 +113,22 @@ function TaskCard({ task, onGive, onValue, wall }: {
             {lateLabel(late)}
           </div>
         )}
-        {/* القيمة المقيسة — هي **حصيلة** المهمّة، فإخفاؤها يُفرغها من معناها */}
-        {done && tx.result?.trim() && (
-          <div className={cn("mt-0.5 font-black tabular-nums text-success-700 dark:text-success-300", wall ? "text-xl" : "text-xs")} data-taskresult>
-            {tx.result}
-          </div>
-        )}
+        {/* القيمة المقيسة — هي **حصيلة** المهمّة، فإخفاؤها يُفرغها من معناها.
+            وبلون **درجتها** لا أخضرَ النجاح: «ما بال» على شاشة الجدار بالأخضر
+            كان يطمئن الغرفة إلى انسدادٍ محتمل. */}
+        {done && tx.result?.trim() && (() => {
+          const rTone = toneOfResult(tx, pet?.species, tx.pet_id);
+          return (
+            <div data-taskresult className={cn("mt-0.5 font-black tabular-nums", wall ? "text-xl" : "text-xs",
+              (rTone === null || rTone === "good") && "text-success-700 dark:text-success-300",
+              rTone === "mid" && "text-warn-700 dark:text-warn-300",
+              rTone === "low" && "text-orange-700 dark:text-orange-300",
+              rTone === "crit" && "text-danger-700 dark:text-danger-300",
+              rTone === "none" && "text-ink-muted")}>
+              {tx.result}
+            </div>
+          );
+        })()}
         {/* «فاتت ولها سبب» حالةٌ ثالثة: لا مُنجَزة ولا مُهمَلة — والسبب يُقرأ */}
         {!done && tx.missed_reason?.trim() && (
           <div className={cn("mt-0.5 inline-flex items-center gap-1 font-bold text-warn-700 dark:text-warn-300", wall ? "text-base" : "text-2xs")} data-taskmissed>
