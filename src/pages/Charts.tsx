@@ -37,6 +37,7 @@ import { localISO, formatDate, formatNum, cn } from "@/lib/utils";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
 import { describeDbError } from "@/lib/errors";
 import { Modal } from "@/components/Modal";
+import { OpenBoardSheet, type OpenBoardDraft } from "@/components/OpenBoardSheet";
 
 /* ── Bucket configuration ─────────────────────────────────────────────────── */
 type BucketKey = "daily" | "careBoarding" | "boarding" | "visit";
@@ -709,6 +710,52 @@ export function Charts() {
     } finally { setOpening(null); }
   };
 
+  /* ── «فتح طبلة» — طبلة فارغة من هنا مباشرة: حيوان + حالة + أدوية ── */
+  const [obOpen, setObOpen] = useState(false);
+  const [obBusy, setObBusy] = useState(false);
+  const focusBoardOf = useCallback((petId: string) => {
+    const a = ops.admissions.find((x) => x.pet_id === petId && x.status !== "discharged");
+    setReg(a?.kind === "treatment_boarding" ? "careBoarding" : a?.kind === "boarding" ? "other" : "daily");
+    pickView("sheet");
+    setFocusPet(petId);
+    setObOpen(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ops.admissions]);
+  const createBoard = useCallback(async (d: OpenBoardDraft) => {
+    if (obBusy) return;
+    setObBusy(true);
+    try {
+      await repo.addAdmission({
+        pet_id: d.petId, kind: d.kind, status: "active",
+        admitted_on: todayISO, cage: d.cage, reason: d.reason || undefined, cycle_hours: 24,
+      });
+      /* الحالة تُسجَّل زيارةً طبية موجزة — نفس المصدر الذي يقرأه الفرز اللوني
+       * (حرجة = البطاقة حمراء فوراً). فشلُها لا يفشّل الطبلة نفسها. */
+      try {
+        const v = await repo.addVisit({
+          pet_id: d.petId, clinic_name: getClinicName() || "doctorVet",
+          doctor_name: user?.full_name ?? "—", visit_date: todayISO,
+          assessment: d.reason || t("charts.openBoard", "فتح طبلة"),
+          condition: d.condition,
+        });
+        setMedVisits((cur) => [v, ...cur]);
+      } catch { /* زينة الفرز فقط */ }
+      await opsStore.hydrate(clinicId);
+      setReg(d.kind === "treatment" ? "daily" : "careBoarding");
+      pickView("sheet");
+      setFocusPet(d.petId);
+      setObOpen(false);
+      playSuccess();
+      toast.success(t("charts.obDone", { name: pets[d.petId]?.name ?? "", defaultValue: "انفتحت طبلة {{name}} — حدّد أدويتها" }));
+      /* الأدوية فوراً: البروتوكولات تنفتح على الحيوان نفسه بلا أي ضغطة إضافية */
+      if (d.withProtocol) setProtoFor(d.petId);
+    } catch (e) {
+      playWarning();
+      toast.error(t("charts.obFail", "ما انفتحت الطبلة — أعد المحاولة."), describeDbError(e, t));
+    } finally { setObBusy(false); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [obBusy, todayISO, clinicId, user?.full_name, pets, toast, t]);
+
   // عمليات هذا الشهر — الجرّاح يشوف مباشرة كم عملية أجرى (0073).
   const [surgeries, setSurgeries] = useState<Surgery[]>([]);
   const [surgOpen, setSurgOpen] = useState(false);
@@ -744,6 +791,11 @@ export function Charts() {
             <span className="block text-lg font-black leading-none text-rose-700 dark:text-rose-300">{formatNum(monthSurgeries.length)}</span>
             <span className="text-[10px] font-bold text-ink-subtle">{t("charts.surgThisMonth", "🔪 عمليات هذا الشهر")}</span>
           </button>
+          {/* فتح طبلة فارغة من هنا مباشرة — بلا مرور بخطة التشخيص */}
+          <Button data-openboard style={{ minHeight: 44 }} leftIcon={<Plus size={16} />}
+            onClick={() => { playTap(); setObOpen(true); }}>
+            {t("charts.openBoard", "فتح طبلة")}
+          </Button>
         </div>
       </div>
 
@@ -815,6 +867,10 @@ export function Charts() {
             {reg === "daily" ? t("charts.emptyDaily", "ماكو طبلات يومية نشطة") : reg === "careBoarding" ? t("charts.emptyCareBoarding", "ماكو فندقة علاجية نشطة") : t("charts.emptyOther", "ماكو فندقة أو زيارات مفتوحة")}
           </p>
           <p className="mt-1 text-xs text-ink-subtle">{t("charts.emptyHint", "الطبلة تنفتح تلقائياً لما تدخّل حالة علاج — والمنتهية تلگيها بـ«سكشن الحالات».")}</p>
+          <Button className="mt-4" data-openboardempty leftIcon={<Plus size={16} />}
+            onClick={() => { playTap(); setObOpen(true); }}>
+            {t("charts.openBoard", "فتح طبلة")}
+          </Button>
         </div>
       ) : view === "sheet" ? (
         <>
@@ -1054,6 +1110,17 @@ export function Charts() {
           </div>
         )}
       </Modal>
+
+      {/* فتح طبلة — حيوان + نوع + حالة + تشخيص + قفص، ثم البروتوكولات فوراً */}
+      <OpenBoardSheet
+        open={obOpen}
+        pets={pets}
+        actives={ops.admissions}
+        busy={obBusy}
+        onClose={() => setObOpen(false)}
+        onCreate={(d) => void createBoard(d)}
+        onFocusExisting={focusBoardOf}
+      />
     </div>
   );
 }
