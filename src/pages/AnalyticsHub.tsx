@@ -14,7 +14,7 @@ import {
   Landmark, ShoppingBag,
 } from "lucide-react";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
-import type { Pet, Invoice, InvoiceItem, Product, MedicalVisit, PaymentMethod, Species, MediaItem, TreatmentEntry, AuditEntry, LoginEvent, Expense, ExpenseMethod, LabResult, Purchase } from "@/types";
+import type { Pet, Invoice, InvoiceItem, Product, ProductCategory, MedicalVisit, PaymentMethod, Species, MediaItem, TreatmentEntry, AuditEntry, LoginEvent, Expense, ExpenseMethod, LabResult, Purchase, PurchaseItem } from "@/types";
 import { PurchaseLog } from "@/components/inventory/PurchaseLog";
 import { type StaffMember } from "@/lib/staff";
 import { getCached, setCached, isFresh } from "@/lib/swrCache";
@@ -54,7 +54,7 @@ import { CustomersTab } from "@/components/reports/CustomerLedger";
  * ==========================================================================*/
 
 type RangeKey = "today" | "yesterday" | "week" | "month" | "lastMonth" | "custom";
-type TabKey = "overview" | "money" | "ledger" | "customers" | "staff" | "best" | "clinical" | "audit" | "expenses" | "purchases";
+type TabKey = "overview" | "money" | "ledger" | "customers" | "staff" | "best" | "categories" | "clinical" | "audit" | "expenses" | "purchases";
 
 /** One staff member's sales performance in the selected range. */
 interface StaffTopItem { name: string; qty: number; revenue: number }
@@ -750,12 +750,18 @@ export function AnalyticsHub() {
     void repo.logClientEvent("report.csv", {}); // activity trail
   };
 
-  /* ---- فواتير الشراء: تنجلب عند أول فتح للتبويب وتتصفى بفترة الصفحة ---- */
+  /* ---- فواتير الشراء: تنجلب عند أول فتح لتبويبيها وتتصفى بفترة الصفحة ---- */
   const [allPurchases, setAllPurchases] = useState<Purchase[] | null>(null);
   useEffect(() => {
-    if (tab !== "purchases" || allPurchases !== null) return;
+    if ((tab !== "purchases" && tab !== "categories") || allPurchases !== null) return;
     repo.listPurchases(user?.clinic_id ?? user?.id).then(setAllPurchases).catch(() => setAllPurchases([]));
   }, [tab, allPurchases, user]);
+  /* سطور الشراء كلها — تبويب التصنيفات يقارن بها المبيع بالمشترى صنفاً فصنفاً */
+  const [allPurchaseItems, setAllPurchaseItems] = useState<PurchaseItem[] | null>(null);
+  useEffect(() => {
+    if (tab !== "categories" || allPurchaseItems !== null) return;
+    repo.listAllPurchaseItems(user?.clinic_id ?? user?.id).then(setAllPurchaseItems).catch(() => setAllPurchaseItems([]));
+  }, [tab, allPurchaseItems, user]);
   const purchasesInRange = useMemo(() => (allPurchases ?? []).filter((p) => {
     const d = (p.purchased_at || p.created_at || "").slice(0, 10);
     return d >= from && d <= to;
@@ -768,6 +774,7 @@ export function AnalyticsHub() {
     { id: "customers", label: t("rpt.tab.customers", "سجل العملاء"), icon: BookUser },
     { id: "staff", label: t("rpt.tab.staff", "الموظفون"), icon: Users },
     { id: "best", label: t("rpt.tab.best", "الأفضل والمبيعات"), icon: Crown },
+    { id: "categories", label: t("rpt.tab.categories", "التصنيفات"), icon: Package },
     { id: "clinical", label: t("rpt.tab.clinical", "التقارير الطبية"), icon: Stethoscope },
     { id: "expenses", label: t("rpt.tab.expenses", "المصروفات والسحوبات"), icon: TrendingDown },
     { id: "purchases", label: t("rpt.tab.purchases", "فواتير الشراء"), icon: ShoppingBag },
@@ -971,6 +978,16 @@ export function AnalyticsHub() {
           {tab === "customers" && <CustomersTab invoices={invoices} items={items} inRange={invInRange} rangeLabel={rangeLabel} canProfit={canProfit} />}
           {tab === "staff" && <StaffSalesTab rows={staffSales} trend={staffTrend} canProfit={canProfit} rangeLabel={rangeLabel} />}
           {tab === "best" && <BestTab clients={topClients} services={topServices} movers={movers} species={speciesActivity} />}
+          {tab === "categories" && (
+            <CategoriesTab
+              items={itemsInRange}
+              products={products}
+              purchases={purchasesInRange}
+              purchaseItems={allPurchaseItems}
+              buyLoading={allPurchases === null || allPurchaseItems === null}
+              rangeLabel={rangeLabel}
+            />
+          )}
           {tab === "clinical" && <ClinicalTab labXray={labXray} meds={dispensedMeds} labStats={labStats} />}
           {tab === "expenses" && (
             <ExpensesTab
@@ -2468,6 +2485,284 @@ function Kpi({ icon: Icon, label, value, tone }: { icon: typeof BarChart3; label
 }
 
 const Empty = ({ text }: { text: string }) => <p className="py-8 text-center text-sm text-ink-subtle">{text}</p>;
+
+/* ============================================================================
+ * تبويب «التصنيفات» — شنو بايع بالضبط، فئةً ففئة وصنفاً فصنفاً.
+ *
+ * الجواب بثلاث طبقات: بطاقات الفئات (وين أغلب البيع؟) ← مخطط بيع/شراء لكل
+ * فئة (وين أغلب الصرف؟) ← جدول الأصناف بكل التفاصيل (كم قطعة، كم فاتورة،
+ * كم إيراد، متوسط السعر، الحصة، المشترى بالفترة، المخزون الحالي) بفرزٍ من
+ * أي عمود وبحثٍ وطباعةٍ وExcel عبر محرك التقارير الموحد. التاج للأعلى بيعاً
+ * والحلزون للأدنى بين المباعة — والصنف المشترى بلا أي بيع يظهر أيضاً.
+ * ==========================================================================*/
+type CatKey = ProductCategory | "services";
+const CAT_ORDER: CatKey[] = ["services", "medicine", "food", "accessories", "consumables", "other"];
+const CAT_COLOR: Record<CatKey, string> = {
+  services: "#f59e0b", medicine: "#2563eb", food: "#16a34a",
+  accessories: "#7c3aed", consumables: "#0891b2", other: "#64748b",
+};
+
+interface CatRow {
+  key: string; name: string; cat: CatKey; isService: boolean;
+  sold: number; revenue: number; invoiceIds: Set<string>;
+  bought: number; boughtCost: number; stock: number | null;
+}
+
+function CategoriesTab({ items, products, purchases, purchaseItems, buyLoading, rangeLabel }: {
+  items: InvoiceItem[]; products: Product[]; purchases: Purchase[];
+  purchaseItems: PurchaseItem[] | null; buyLoading: boolean; rangeLabel: string;
+}) {
+  const { t } = useTranslation();
+  const [cat, setCat] = useState<CatKey | null>(null);
+  const [q, setQ] = useState("");
+  const [sort, setSort] = useState<{ key: string; dir: "asc" | "desc" }>({ key: "sold", dir: "desc" });
+
+  const prodById = useMemo(() => new Map(products.map((p) => [p.id, p])), [products]);
+  const catLabel = (k: CatKey) => (k === "services" ? t("rpt.cat.services", "خدمات وفحوصات") : t(`pos.cat.${k}`, k));
+
+  /* سطور الشراء الواقعة ضمن فترة التقرير — بفواتيرها لا بتاريخ إنشائها */
+  const buyRows = useMemo(() => {
+    if (!purchaseItems) return [] as PurchaseItem[];
+    const ids = new Set(purchases.map((p) => p.id));
+    return purchaseItems.filter((x) => ids.has(x.purchase_id));
+  }, [purchaseItems, purchases]);
+
+  /* صف لكل صنف: البيع من سطور الفواتير، والشراء يُسقط على نفس الصف —
+   * والصنف المشترى بلا أي بيع يظهر صفاً بصفر مبيع (قصة مهمة بحد ذاتها). */
+  const rows = useMemo(() => {
+    const m = new Map<string, CatRow>();
+    const catOf = (it: InvoiceItem): CatKey => (it.product_id ? ((prodById.get(it.product_id)?.category ?? "other") as CatKey) : "services");
+    for (const it of items) {
+      const key = it.product_id ?? `n:${it.name.trim().toLowerCase()}`;
+      const c = catOf(it);
+      const r = m.get(key) ?? {
+        key, name: it.name, cat: c, isService: !it.product_id, sold: 0, revenue: 0,
+        invoiceIds: new Set<string>(), bought: 0, boughtCost: 0,
+        stock: it.product_id ? (prodById.get(it.product_id)?.stock ?? null) : null,
+      };
+      r.sold += it.qty; r.revenue += it.line_total; r.invoiceIds.add(it.invoice_id);
+      m.set(key, r);
+    }
+    for (const b of buyRows) {
+      const p = b.product_id ? prodById.get(b.product_id) : undefined;
+      const key = b.product_id ?? `n:${(b.name ?? "").trim().toLowerCase()}`;
+      const c = (p?.category ?? b.category ?? "other") as CatKey;
+      const r = m.get(key) ?? {
+        key, name: p?.name ?? b.name, cat: c, isService: false, sold: 0, revenue: 0,
+        invoiceIds: new Set<string>(), bought: 0, boughtCost: 0, stock: p?.stock ?? null,
+      };
+      r.bought += b.qty; r.boughtCost += b.qty * (b.purchase_price || 0);
+      m.set(key, r);
+    }
+    return [...m.values()];
+  }, [items, buyRows, prodById]);
+
+  /* ملخص كل فئة — للبطاقات والمخطط */
+  const cats = useMemo(() => {
+    const base = new Map<CatKey, { revenue: number; units: number; items: number; buyCost: number; buyUnits: number }>();
+    for (const k of CAT_ORDER) base.set(k, { revenue: 0, units: 0, items: 0, buyCost: 0, buyUnits: 0 });
+    for (const r of rows) {
+      const c = base.get(r.cat)!;
+      c.revenue += r.revenue; c.units += r.sold; if (r.sold > 0) c.items += 1;
+      c.buyCost += r.boughtCost; c.buyUnits += r.bought;
+    }
+    const grand = [...base.values()].reduce((s, c) => s + c.revenue, 0);
+    return CAT_ORDER
+      .map((k) => ({ key: k, label: catLabel(k), color: CAT_COLOR[k], ...base.get(k)!, share: grand > 0 ? base.get(k)!.revenue / grand : 0 }))
+      .filter((c) => c.revenue > 0 || c.buyCost > 0 || c.units > 0 || c.buyUnits > 0)
+      .sort((a, b) => b.revenue - a.revenue);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows, t]);
+
+  /* التصفية والفرز */
+  const ql = q.trim().toLowerCase();
+  const filtered = useMemo(() => {
+    let out = rows;
+    if (cat) out = out.filter((r) => r.cat === cat);
+    if (ql) out = out.filter((r) => r.name.toLowerCase().includes(ql));
+    const dir = sort.dir === "asc" ? 1 : -1;
+    const v = (r: CatRow): number =>
+      sort.key === "revenue" ? r.revenue
+      : sort.key === "invoices" ? r.invoiceIds.size
+      : sort.key === "avg" ? (r.sold > 0 ? r.revenue / r.sold : 0)
+      : sort.key === "bought" ? r.bought
+      : sort.key === "stock" ? (r.stock ?? -1)
+      : r.sold;
+    return [...out].sort((a, b) => (v(a) - v(b)) * dir || b.revenue - a.revenue);
+  }, [rows, cat, ql, sort]);
+
+  const filteredRevenue = filtered.reduce((s, r) => s + r.revenue, 0);
+  const filteredUnits = filtered.reduce((s, r) => s + r.sold, 0);
+  const soldRows = filtered.filter((r) => r.sold > 0);
+  const topRow = soldRows.length ? soldRows.reduce((b, r) => (r.sold > b.sold ? r : b), soldRows[0]) : null;
+  const lowRow = soldRows.length > 1 ? soldRows.reduce((b, r) => (r.sold < b.sold ? r : b), soldRows[0]) : null;
+  /* منتجات الفئة التي لم تبع أي قطعة بالفترة (من كل المخزن لا من الصفوف فقط) */
+  const soldKeys = useMemo(() => new Set(rows.filter((r) => r.sold > 0).map((r) => r.key)), [rows]);
+  const unsoldCount = useMemo(() =>
+    products.filter((p) => (cat ? ((p.category ?? "other") as CatKey) === cat : true) && !soldKeys.has(p.id)).length,
+  [products, soldKeys, cat]);
+
+  const chartData = cats.map((c) => ({ name: c.label, sell: Math.round(c.revenue), buy: Math.round(c.buyCost), color: c.color }));
+
+  const onSort = (key: string) => setSort((s) => ({ key, dir: s.key === key && s.dir === "desc" ? "asc" : "desc" }));
+
+  const columns: ReportColumn<CatRow>[] = [
+    {
+      key: "name", header: t("rpt.cat.item", "الصنف"), align: "start",
+      cell: (r) => (
+        <div className="flex flex-wrap items-center gap-1.5">
+          {topRow && r.key === topRow.key && <Trophy size={13} className="shrink-0 text-amber-500" />}
+          {lowRow && r.key === lowRow.key && <Snail size={13} className="shrink-0 text-ink-subtle" />}
+          <span className="font-semibold text-ink">{r.name}</span>
+          <span className="chip text-2xs font-semibold" style={{ backgroundColor: `${CAT_COLOR[r.cat]}1a`, color: CAT_COLOR[r.cat] }}>{catLabel(r.cat)}</span>
+          {r.sold === 0 && r.bought > 0 && <span className="chip bg-warn-50 text-2xs font-semibold text-warn-700 dark:bg-warn-500/15 dark:text-warn-300">{t("rpt.cat.boughtNotSold", "مشترى بلا بيع")}</span>}
+        </div>
+      ),
+      printCell: (r) => r.name, excelValue: (r) => r.name,
+    },
+    { key: "sold", header: t("rpt.cat.soldUnits", "القطع المباعة"), align: "end", sortKey: "sold", numeric: true,
+      cell: (r) => <b className="tabular-nums">{formatNum(r.sold)}</b>, excelValue: (r) => r.sold },
+    { key: "invoices", header: t("rpt.cat.invoices", "عدد الفواتير"), align: "end", sortKey: "invoices", numeric: true,
+      cell: (r) => <span className="tabular-nums text-ink-muted">{formatNum(r.invoiceIds.size)}</span>, excelValue: (r) => r.invoiceIds.size },
+    { key: "revenue", header: t("rpt.cat.revenue", "الإيراد"), align: "end", sortKey: "revenue", numeric: true,
+      cell: (r) => <b className="tabular-nums text-ink">{money(r.revenue)}</b>, excelValue: (r) => Math.round(r.revenue) },
+    { key: "avg", header: t("rpt.cat.avgPrice", "متوسط البيع"), align: "end", sortKey: "avg", numeric: true,
+      cell: (r) => <span className="tabular-nums text-ink-muted">{r.sold > 0 ? money(r.revenue / r.sold) : "—"}</span>,
+      excelValue: (r) => (r.sold > 0 ? Math.round(r.revenue / r.sold) : 0) },
+    { key: "share", header: t("rpt.cat.share", "الحصة"), align: "end",
+      cell: (r) => (
+        <div className="flex items-center justify-end gap-1.5">
+          <div className="h-1.5 w-14 overflow-hidden rounded-full bg-surface-2"><div className="h-full rounded-full bg-brand-500" style={{ width: `${pct(r.revenue, filteredRevenue || 1)}%` }} /></div>
+          <span className="w-9 text-end tabular-nums text-ink-muted">{pct(r.revenue, filteredRevenue || 1)}%</span>
+        </div>
+      ),
+      printCell: (r) => `${pct(r.revenue, filteredRevenue || 1)}%`, excelValue: (r) => `${pct(r.revenue, filteredRevenue || 1)}%` },
+    { key: "bought", header: t("rpt.cat.bought", "المشترى بالفترة"), align: "end", sortKey: "bought", numeric: true,
+      cell: (r) => (r.isService ? <span className="text-ink-subtle">—</span> : <span className="tabular-nums text-ink-muted">{formatNum(r.bought)}</span>),
+      excelValue: (r) => (r.isService ? "" : r.bought) },
+    { key: "stock", header: t("rpt.cat.stock", "المخزون الآن"), align: "end", sortKey: "stock", numeric: true,
+      cell: (r) => (r.stock == null ? <span className="text-ink-subtle">—</span> : <span className="tabular-nums text-ink-muted">{formatNum(r.stock)}</span>),
+      excelValue: (r) => (r.stock == null ? "" : r.stock) },
+  ];
+
+  return (
+    <div className="space-y-5">
+      {/* بطاقات الفئات — دوسة تصفّي كل الصفحة على الفئة */}
+      <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-6">
+        {cats.map((c) => {
+          const active = cat === c.key;
+          return (
+            <button
+              key={c.key}
+              type="button"
+              data-catcard={c.key}
+              onClick={() => { playTap(); setCat(active ? null : c.key); }}
+              className={cn("card space-y-1.5 p-3.5 text-start transition hover:shadow-raised",
+                active && "ring-2 ring-brand-500")}
+            >
+              <p className="flex items-center gap-1.5 text-2xs font-bold text-ink-muted">
+                <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: c.color }} /> {c.label}
+              </p>
+              <p className="font-display text-base font-extrabold tabular-nums text-ink">{money(c.revenue)}</p>
+              <p className="text-2xs text-ink-subtle tabular-nums">
+                {t("rpt.cat.cardMeta", { u: formatNum(c.units), n: formatNum(c.items), defaultValue: "{{u}} قطعة · {{n}} صنفاً" })} · {Math.round(c.share * 100)}%
+              </p>
+              <div className="h-1.5 overflow-hidden rounded-full bg-surface-2">
+                <div className="h-full rounded-full" style={{ width: `${Math.max(3, Math.round(c.share * 100))}%`, backgroundColor: c.color }} />
+              </div>
+            </button>
+          );
+        })}
+      </div>
+      {cats.length === 0 && <Empty text={t("rpt.cat.empty", "لا توجد مبيعات ولا مشتريات في هذه الفترة.")} />}
+
+      {/* وين المبيع والشراء الأكثر؟ — عمودان لكل فئة */}
+      {cats.length > 0 && (
+        <Panel title={t("rpt.cat.chartTitle", "البيع مقابل الشراء بكل فئة")} icon={BarChart3}>
+          {buyLoading && <p className="mb-2 text-2xs text-ink-subtle">{t("rpt.cat.buyLoading", "جاري تحميل جانب المشتريات…")}</p>}
+          <div dir="ltr" className="h-60">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={chartData} margin={{ top: 4, right: 8, left: 8, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--tw-line, #e5e7eb)" vertical={false} />
+                <XAxis dataKey="name" tick={{ fontSize: 11 }} interval={0} />
+                <YAxis tick={{ fontSize: 10 }} tickFormatter={(v: number) => formatNum(v)} width={52} />
+                <Tooltip formatter={(v: number, nm: string) => [money(v), nm]} />
+                <Legend />
+                {/* fill هنا لمربّع المفتاح — وألوان الفئات الفعلية من الخلايا */}
+                <Bar dataKey="sell" name={t("rpt.cat.sell", "مبيعات")} fill="#2563eb" radius={[6, 6, 0, 0]}>
+                  {chartData.map((c) => <Cell key={c.name} fill={c.color} />)}
+                </Bar>
+                <Bar dataKey="buy" name={t("rpt.cat.buy", "مشتريات")} fill="#94a3b8" radius={[6, 6, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </Panel>
+      )}
+
+      {/* الأعلى والأدنى وغير المباع — بلمحة */}
+      {(topRow || lowRow || unsoldCount > 0) && (
+        <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
+          {topRow && (
+            <div className="card flex items-center gap-3 p-3.5">
+              <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-amber-100 text-amber-600 dark:bg-amber-500/15 dark:text-amber-300"><Trophy size={18} /></span>
+              <div className="min-w-0">
+                <p className="text-2xs font-bold text-ink-subtle">{t("rpt.cat.topSeller", "الأكثر مبيعاً")}</p>
+                <p className="truncate text-sm font-bold text-ink">{topRow.name}</p>
+                <p className="text-2xs text-ink-subtle tabular-nums">{formatNum(topRow.sold)} {t("rpt.cat.unit", "قطعة")} · {money(topRow.revenue)}</p>
+              </div>
+            </div>
+          )}
+          {lowRow && lowRow.key !== topRow?.key && (
+            <div className="card flex items-center gap-3 p-3.5">
+              <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-surface-2 text-ink-muted"><Snail size={18} /></span>
+              <div className="min-w-0">
+                <p className="text-2xs font-bold text-ink-subtle">{t("rpt.cat.lowSeller", "الأقل مبيعاً (بين المباعة)")}</p>
+                <p className="truncate text-sm font-bold text-ink">{lowRow.name}</p>
+                <p className="text-2xs text-ink-subtle tabular-nums">{formatNum(lowRow.sold)} {t("rpt.cat.unit", "قطعة")} · {money(lowRow.revenue)}</p>
+              </div>
+            </div>
+          )}
+          {unsoldCount > 0 && (
+            <div className="card flex items-center gap-3 p-3.5">
+              <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-warn-50 text-warn-600 dark:bg-warn-500/15 dark:text-warn-300"><Package size={18} /></span>
+              <div className="min-w-0">
+                <p className="text-2xs font-bold text-ink-subtle">{t("rpt.cat.unsold", "منتجات بلا أي بيع بالفترة")}</p>
+                <p className="text-sm font-bold text-ink tabular-nums">{formatNum(unsoldCount)}</p>
+                <p className="text-2xs text-ink-subtle">{t("rpt.cat.unsoldHint", "راجعها — رأس مال واگف")}</p>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* الجدول التفصيلي — فرز من أي عمود، بحث، طباعة وExcel */}
+      <UniversalReportTable<CatRow>
+        title={cat ? t("rpt.cat.tableTitleCat", { c: catLabel(cat), defaultValue: "أصناف {{c}}" }) : t("rpt.cat.tableTitle", "كل الأصناف المباعة والمشتراة")}
+        clinicName={getClinicName() || undefined}
+        dateRangeLabel={rangeLabel}
+        columns={columns}
+        data={filtered}
+        rowKey={(r) => r.key}
+        sort={sort}
+        onSort={onSort}
+        exportFileName={`categories-${cat ?? "all"}`}
+        summaryMetrics={[
+          { label: t("rpt.cat.sumRevenue", "إجمالي الإيراد"), value: money(filteredRevenue) },
+          { label: t("rpt.cat.sumUnits", "القطع المباعة"), value: formatNum(filteredUnits) },
+          { label: t("rpt.cat.sumItems", "أصناف مباعة"), value: formatNum(soldRows.length) },
+          { label: t("rpt.cat.sumTop", "الأعلى"), value: topRow?.name ?? "—" },
+        ]}
+        toolbar={
+          <div className="relative max-w-xs flex-1">
+            <Search size={15} className="pointer-events-none absolute top-1/2 -translate-y-1/2 text-ink-subtle ltr:left-3 rtl:right-3" />
+            <input className="input ltr:pl-9 rtl:pr-9" value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("rpt.cat.search", "ابحث عن صنف…")} data-catsearch />
+          </div>
+        }
+        emptyText={t("rpt.cat.emptyTable", "لا أصناف مطابقة — غيّر الفئة أو البحث.")}
+      />
+    </div>
+  );
+}
 
 /* ---- تبويب فواتير الشراء: متى اشتريت وشنو بالضبط، ضمن فترة التقرير ---- */
 function PurchasesReportTab({ purchases, loading, rangeLabel }: { purchases: Purchase[]; loading: boolean; rangeLabel: string }) {

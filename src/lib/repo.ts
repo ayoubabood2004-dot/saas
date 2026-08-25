@@ -1386,6 +1386,10 @@ const demoRepo = {
   async listPurchaseItems(purchaseId: string): Promise<PurchaseItem[]> {
     return (loadDB().purchaseItems ?? []).filter((x) => x.purchase_id === purchaseId);
   },
+  /** كل سطور الشراء دفعة واحدة — تقرير التصنيفات يقارن المبيع بالمشترى. */
+  async listAllPurchaseItems(_clinicId?: string): Promise<PurchaseItem[]> {
+    return (loadDB().purchaseItems ?? []).slice();
+  },
   /** Bulk-receive stock from a company: restock existing barcodes (+ refresh
    *  prices), create new products for unknown barcodes, and save a purchase
    *  record. Mirrors the record_purchase RPC used on Supabase. */
@@ -2987,6 +2991,13 @@ const supabaseRepo: typeof demoRepo = {
   },
   async listPurchaseItems(purchaseId) {
     return listOf<PurchaseItem>(await sbc().from("purchase_items").select("*").eq("purchase_id", purchaseId));
+  },
+  async listAllPurchaseItems(clinicId) {
+    return allPages<PurchaseItem>(() => {
+      let q = sbc().from("purchase_items").select("*");
+      if (clinicId) q = q.eq("clinic_id", clinicId);
+      return q;
+    });
   },
   async recordPurchase(lines, meta) {
     // Atomic on the server: restock/create products + insert purchase & items.
