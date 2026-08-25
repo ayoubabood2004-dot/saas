@@ -1,4 +1,8 @@
 {
+  "outbox": {
+    "tip": "Saved on this device — uploads automatically when the connection returns. Tap to retry now",
+    "waiting": "Waiting for network: {{n}}"
+  },
   "catalog": {
     "title": "Starter catalog",
     "emptyCta": "Or enable the starter catalog — companies and sections, ready in one tap",

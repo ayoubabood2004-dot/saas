@@ -35,6 +35,7 @@ import { QuickZoom } from "@/components/QuickZoom";
 import { OverrideCorner } from "@/components/ManagerOverride";
 import { Logo } from "@/components/Logo";
 import { BranchSwitcher } from "@/components/BranchSwitcher";
+import { OutboxChip } from "@/components/OutboxChip";
 import { branchStore } from "@/lib/branchStore";
 import { useCommandPalette } from "@/components/CommandPaletteProvider";
 import { usePermissions } from "@/hooks/usePermissions";
@@ -158,6 +159,8 @@ export function TopBar({ mobileOnly = false, minimal = false }: { mobileOnly?: b
 
           {/* Actions */}
           <div className="flex items-center gap-0.5">
+            {/* كتابات محفوظة بالجهاز تنتظر النت — تظهر فقط عند وجودها */}
+            {staff && <OutboxChip />}
             {staff && (
               <Tooltip label="Search · ⌘K">
                 <button

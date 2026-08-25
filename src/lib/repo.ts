@@ -14,6 +14,7 @@ const invNormName = (v: string | null | undefined): string =>
     .replace(/[٠-٩]/g, (d) => String(d.charCodeAt(0) - 0x0660))
     .replace(/\s+/g, " ").trim().toLowerCase();
 import { supabase } from "./supabase";
+import { outboxEnqueue, isNetworkError } from "./outbox";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, AppointmentStatus, ClinicInfo, PublicStaff, DailyNote, TreatmentEntry, Admission, Branch, Reminder, Product, Company, CompanySection, Purchase, PurchaseItem, PurchasePayment, PurchaseDraftLine, PurchaseMeta, Courier, DeliveryOrder, PetMovement, DemoDB, Invoice, InvoiceItem, CheckoutItem, SaleMeta, Customer, DiscountType, PaymentMethod, PaymentSplit, WhatsAppMessage, AuditEntry, LoginEvent, PetNote, Expense, ClinicVisit , Surgery, LabResult, LabDeviceLink, LabDeviceInbox, LabStatusValue, PetProblem, CareEntry, FeatureRequest, GeneratedBarcode, StoreProfile, StoreOrder, StoreOrderItem, StoreFrontInfo, StoreCatalogItem, Journey, JourneyEvent, JourneyKind, JourneyStage, JourneyPublicView, EditLine } from "@/types";
 import type { PayrollPolicyDTO, StaffComp, StaffRecurring, PayrollRun, Payslip, PayslipLine, StaffLoan, StaffLoanEvent, PayslipDraft, PayMethod } from "@/types";
@@ -2135,6 +2136,30 @@ async function inChunks<T>(ids: string[], query: (chunk: string[]) => Promise<T[
   }
   return out;
 }
+/**
+ * كسر سقف الألف: PostgREST يقصّ أي استعلام على 1000 صف افتراضياً — بصمت.
+ *
+ * العيادة الكبيرة تتجاوز ألف منتج/فاتورة، فتظهر أول ألفٍ فقط (بترتيب
+ * الاستعلام) ويبدو ما بعدها «مختفياً»: الدكتور يضيف منتجاً ثم «ما يلگيه»،
+ * والبيع يرفض باركوداً موجوداً فعلاً لأنه خارج الألف المقروءة. هذا المساعد
+ * يسحب صفحات كاملة حتى النهاية، بترتيب ثابت (ترتيب الاستعلام + id كاسر
+ * تعادل) كي لا يتكرر صف بين صفحتين ولا يسقط.
+ */
+const PAGE_ROWS = 1000;
+async function allPages<T>(make: () => unknown): Promise<T[]> {
+  type Q = {
+    order: (c: string, o: { ascending: boolean }) => Q;
+    range: (a: number, b: number) => PromiseLike<{ data: unknown; error: { message: string } | null }>;
+  };
+  const out: T[] = [];
+  for (let from = 0; ; from += PAGE_ROWS) {
+    const r = await (make() as Q).order("id", { ascending: true }).range(from, from + PAGE_ROWS - 1);
+    if (r.error) { console.error("[supabase]", r.error.message); return out; }
+    const rows = (r.data ?? []) as T[];
+    out.push(...rows);
+    if (rows.length < PAGE_ROWS) return out;
+  }
+}
 function maybe<T>(res: { data: unknown; error: { message: string } | null }): T | undefined {
   if (res.error) { console.error("[supabase]", res.error.message); return undefined; }
   return (res.data ?? undefined) as T | undefined;
@@ -2188,9 +2213,11 @@ const supabaseRepo: typeof demoRepo = {
     return listOf<Pet>(await sbc().from("pets").select("*").eq("owner_id", ownerId));
   },
   async listAllPets(clinicId) {
-    let q = sbc().from("pets").select("*").order("created_at", { ascending: false });
-    if (clinicId) q = q.eq("clinic_id", clinicId);
-    return listOf<Pet>(await q);
+    return allPages<Pet>(() => {
+      let q = sbc().from("pets").select("*").order("created_at", { ascending: false });
+      if (clinicId) q = q.eq("clinic_id", clinicId);
+      return q;
+    });
   },
   async updateOwnerContact(ownerId, patch) {
     ok(await sbc().from("pets").update(patch).eq("owner_id", ownerId));
@@ -2278,7 +2305,7 @@ const supabaseRepo: typeof demoRepo = {
     return listOf<Vaccination>(await sbc().from("vaccinations").select("*").eq("pet_id", petId));
   },
   async listAllVaccinations(petIds) {
-    return inChunks(petIds, async (c) => listOf<Vaccination>(await sbc().from("vaccinations").select("*").in("pet_id", c)));
+    return inChunks(petIds, (c) => allPages<Vaccination>(() => sbc().from("vaccinations").select("*").in("pet_id", c)));
   },
   async addVaccination(input) {
     return need<Vaccination>(await sbc().from("vaccinations").insert(input).select().single());
@@ -2290,12 +2317,15 @@ const supabaseRepo: typeof demoRepo = {
     return listOf<MedicalVisit>(await sbc().from("medical_visits").select("*").eq("pet_id", petId).order("visit_date", { ascending: false }));
   },
   async listAllVisits(petIds) {
-    return inChunks(petIds, async (c) => listOf<MedicalVisit>(await sbc().from("medical_visits").select("*").in("pet_id", c).order("visit_date", { ascending: false })));
+    return inChunks(petIds, (c) => allPages<MedicalVisit>(() => sbc().from("medical_visits").select("*").in("pet_id", c).order("visit_date", { ascending: false })));
   },
   async listClinicVisits(clinicId) {
-    let q = sbc().from("medical_visits").select("*").order("visit_date", { ascending: false }).limit(5000);
-    if (clinicId) q = q.eq("clinic_id", clinicId);
-    return listOf<MedicalVisit>(await q);
+    // ملاحظة: حتى limit(5000) كان يُقصّ على 1000 من الخادم — الصفحات هي الحل.
+    return allPages<MedicalVisit>(() => {
+      let q = sbc().from("medical_visits").select("*").order("visit_date", { ascending: false });
+      if (clinicId) q = q.eq("clinic_id", clinicId);
+      return q;
+    });
   },
   async listCareEntries(petId, day) {
     let q = sbc().from("care_entries").select("*").eq("pet_id", petId).order("day", { ascending: true }).order("time", { ascending: true });
@@ -2394,9 +2424,12 @@ const supabaseRepo: typeof demoRepo = {
     ok(await sbc().from("lab_results").update({ priority }).eq("id", id));
   },
   async listClinicLabResults(clinicId) {
-    let q = sbc().from("lab_results").select("*").order("taken_at", { ascending: false }).limit(2000);
-    if (clinicId) q = q.eq("clinic_id", clinicId);
-    return listOf<LabResult>(await q);
+    // limit(2000) كان يُقصّ على 1000 من الخادم أصلاً — الصفحات تضمن الاثنين.
+    return allPages<LabResult>(() => {
+      let q = sbc().from("lab_results").select("*").order("taken_at", { ascending: false });
+      if (clinicId) q = q.eq("clinic_id", clinicId);
+      return q;
+    });
   },
   async deleteLabResult(id) {
     ok(await sbc().from("lab_results").delete().eq("id", id));
@@ -2458,7 +2491,7 @@ const supabaseRepo: typeof demoRepo = {
     return withSignedMedia(items);
   },
   async listAllMedia(petIds) {
-    const items = await inChunks(petIds, async (c) => listOf<MediaItem>(await sbc().from("media_items").select("*").in("pet_id", c)));
+    const items = await inChunks(petIds, (c) => allPages<MediaItem>(() => sbc().from("media_items").select("*").in("pet_id", c)));
     return withSignedMedia(items);
   },
   async addMedia(input) {
@@ -2500,8 +2533,8 @@ const supabaseRepo: typeof demoRepo = {
     );
   },
   async listAppointmentsInRange(startISO, endISO) {
-    return listOf<Appointment>(
-      await sbc().from("appointments").select("*").gte("scheduled_at", `${startISO.slice(0, 10)}T00:00:00`).lte("scheduled_at", `${endISO.slice(0, 10)}T23:59:59.999`).neq("status", "cancelled").order("scheduled_at", { ascending: true }),
+    return allPages<Appointment>(() =>
+      sbc().from("appointments").select("*").gte("scheduled_at", `${startISO.slice(0, 10)}T00:00:00`).lte("scheduled_at", `${endISO.slice(0, 10)}T23:59:59.999`).neq("status", "cancelled").order("scheduled_at", { ascending: true }),
     );
   },
   async listWaiting(doctorId) {
@@ -2586,13 +2619,16 @@ const supabaseRepo: typeof demoRepo = {
     return listOf<TreatmentEntry>(await sbc().from("treatment_entries").select("*").eq("pet_id", petId).order("day", { ascending: true }).order("time", { ascending: true }));
   },
   async listAllTreatments(petIds) {
-    return inChunks(petIds, async (c) => listOf<TreatmentEntry>(await sbc().from("treatment_entries").select("*").in("pet_id", c)));
+    return inChunks(petIds, (c) => allPages<TreatmentEntry>(() => sbc().from("treatment_entries").select("*").in("pet_id", c)));
   },
   async listClinicTreatments(clinicId, day) {
-    let q = sbc().from("treatment_entries").select("*").order("day", { ascending: false }).limit(5000);
-    if (clinicId) q = q.eq("clinic_id", clinicId);
-    if (day) q = q.eq("day", day);
-    return listOf<TreatmentEntry>(await q);
+    // limit(5000) كان يُقصّ على 1000 من الخادم — طبلات اليوم النشط تفوقها بسهولة.
+    return allPages<TreatmentEntry>(() => {
+      let q = sbc().from("treatment_entries").select("*").order("day", { ascending: false });
+      if (clinicId) q = q.eq("clinic_id", clinicId);
+      if (day) q = q.eq("day", day);
+      return q;
+    });
   },
   async addTreatment(input) {
     return need<TreatmentEntry>(await sbc().from("treatment_entries").insert(input).select().single());
@@ -2677,11 +2713,13 @@ const supabaseRepo: typeof demoRepo = {
     ok(await sbc().from("branches").update(patch).eq("id", id));
   },
   async listReminders(filter) {
-    let q = sbc().from("reminders").select("*");
-    if (filter && "ownerId" in filter) {
-      q = filter.ownerId == null ? q.is("owner_id", null) : q.eq("owner_id", filter.ownerId);
-    }
-    return listOf<Reminder>(await q.order("date", { ascending: true }));
+    return allPages<Reminder>(() => {
+      let q = sbc().from("reminders").select("*");
+      if (filter && "ownerId" in filter) {
+        q = filter.ownerId == null ? q.is("owner_id", null) : q.eq("owner_id", filter.ownerId);
+      }
+      return q.order("date", { ascending: true });
+    });
   },
   async addReminder(input) {
     return need<Reminder>(await sbc().from("reminders").insert(input).select().single());
@@ -2695,9 +2733,12 @@ const supabaseRepo: typeof demoRepo = {
 
   /* ---------------- Inventory & POS ---------------- */
   async listProducts(clinicId) {
-    let q = sbc().from("products").select("*").order("name", { ascending: true });
-    if (clinicId) q = q.eq("clinic_id", clinicId);
-    return listOf<Product>(await q);
+    // العيادة الكبيرة تتجاوز ألف منتج — بلا صفحات كان الجديد «يختفي» بعد الحد.
+    return allPages<Product>(() => {
+      let q = sbc().from("products").select("*").order("name", { ascending: true });
+      if (clinicId) q = q.eq("clinic_id", clinicId);
+      return q;
+    });
   },
   async supportsBulkGroup() {
     try {
@@ -2714,14 +2755,23 @@ const supabaseRepo: typeof demoRepo = {
     return maybe<Product>(await q.maybeSingle());
   },
   async createProduct(input) {
-    // قبل ترحيل 0075 لا يوجد عمود bulk_group — أعد المحاولة بدونه.
-    const r = await sbc().from("products").insert(input).select().single();
-    if (r.error && /bulk_group/i.test(r.error.message)) {
-      const { bulk_group, ...rest } = input as Record<string, unknown>;
-      void bulk_group;
-      return need<Product>(await sbc().from("products").insert(rest as never).select().single());
+    // المعرف يولد بالجهاز: فشل الشبكة يدخل صندوق الصادر ويُرفع لاحقاً بنفس
+    // المعرف (upsert متجاهل التكرار) — لا منتج يضيع ولا يزدوج بضعف النت.
+    const row = { id: uuid(), ...input };
+    try {
+      // قبل ترحيل 0075 لا يوجد عمود bulk_group — أعد المحاولة بدونه.
+      const r = await sbc().from("products").insert(row).select().single();
+      if (r.error && /bulk_group/i.test(r.error.message)) {
+        const { bulk_group, ...rest } = row as Record<string, unknown>;
+        void bulk_group;
+        return need<Product>(await sbc().from("products").insert(rest as never).select().single());
+      }
+      return need<Product>(r);
+    } catch (e) {
+      if (!isNetworkError(e)) throw e;
+      outboxEnqueue("products", row as Record<string, unknown> & { id: string });
+      return { ...row, created_at: new Date().toISOString() } as Product;
     }
-    return need<Product>(r);
   },
   async updateProduct(id, patch) {
     const r = await sbc().from("products").update(patch).eq("id", id).select().maybeSingle();
@@ -2738,8 +2788,8 @@ const supabaseRepo: typeof demoRepo = {
 
   /* ---------------- Companies (الشركات) ---------------- */
   async listGeneratedBarcodes() {
-    return listOf<GeneratedBarcode>(
-      await sbc().from("generated_barcodes").select("*").order("created_at", { ascending: false }).limit(2000),
+    return allPages<GeneratedBarcode>(() =>
+      sbc().from("generated_barcodes").select("*").order("created_at", { ascending: false }),
     );
   },
   async updateGeneratedBarcode(id, patch) {
@@ -2876,12 +2926,21 @@ const supabaseRepo: typeof demoRepo = {
   },
 
   async listCompanies(clinicId) {
-    let q = sbc().from("companies").select("*").order("name", { ascending: true });
-    if (clinicId) q = q.eq("clinic_id", clinicId);
-    return listOf<Company>(await q);
+    return allPages<Company>(() => {
+      let q = sbc().from("companies").select("*").order("name", { ascending: true });
+      if (clinicId) q = q.eq("clinic_id", clinicId);
+      return q;
+    });
   },
   async createCompany(input) {
-    return need<Company>(await sbc().from("companies").insert(input).select().single());
+    const row = { id: uuid(), ...input };
+    try {
+      return need<Company>(await sbc().from("companies").insert(row).select().single());
+    } catch (e) {
+      if (!isNetworkError(e)) throw e;
+      outboxEnqueue("companies", row as Record<string, unknown> & { id: string });
+      return { ...row, created_at: new Date().toISOString() } as Company;
+    }
   },
   async updateCompany(id, patch) {
     return maybe<Company>(await sbc().from("companies").update(patch).eq("id", id).select().maybeSingle());
@@ -2893,13 +2952,22 @@ const supabaseRepo: typeof demoRepo = {
 
   /* ---------------- Company sections (أصناف) ---------------- */
   async listCompanySections(companyId, clinicId) {
-    let q = sbc().from("company_sections").select("*").order("name", { ascending: true });
-    if (companyId) q = q.eq("company_id", companyId);
-    if (clinicId) q = q.eq("clinic_id", clinicId);
-    return listOf<CompanySection>(await q);
+    return allPages<CompanySection>(() => {
+      let q = sbc().from("company_sections").select("*").order("name", { ascending: true });
+      if (companyId) q = q.eq("company_id", companyId);
+      if (clinicId) q = q.eq("clinic_id", clinicId);
+      return q;
+    });
   },
   async createCompanySection(input) {
-    return need<CompanySection>(await sbc().from("company_sections").insert(input).select().single());
+    const row = { id: uuid(), ...input };
+    try {
+      return need<CompanySection>(await sbc().from("company_sections").insert(row).select().single());
+    } catch (e) {
+      if (!isNetworkError(e)) throw e;
+      outboxEnqueue("company_sections", row as Record<string, unknown> & { id: string });
+      return { ...row, created_at: new Date().toISOString() } as CompanySection;
+    }
   },
   async updateCompanySection(id, patch) {
     return maybe<CompanySection>(await sbc().from("company_sections").update(patch).eq("id", id).select().maybeSingle());
@@ -2911,9 +2979,11 @@ const supabaseRepo: typeof demoRepo = {
 
   /* ---------------- Purchases (المشتريات) ---------------- */
   async listPurchases(clinicId) {
-    let q = sbc().from("purchases").select("*").order("purchased_at", { ascending: false });
-    if (clinicId) q = q.eq("clinic_id", clinicId);
-    return listOf<Purchase>(await q);
+    return allPages<Purchase>(() => {
+      let q = sbc().from("purchases").select("*").order("purchased_at", { ascending: false });
+      if (clinicId) q = q.eq("clinic_id", clinicId);
+      return q;
+    });
   },
   async listPurchaseItems(purchaseId) {
     return listOf<PurchaseItem>(await sbc().from("purchase_items").select("*").eq("purchase_id", purchaseId));
@@ -2957,9 +3027,11 @@ const supabaseRepo: typeof demoRepo = {
   },
 
   async listInvoices(clinicId) {
-    let q = sbc().from("invoices").select("*").order("created_at", { ascending: false });
-    if (clinicId) q = q.eq("clinic_id", clinicId);
-    return listOf<Invoice>(await q);
+    return allPages<Invoice>(() => {
+      let q = sbc().from("invoices").select("*").order("created_at", { ascending: false });
+      if (clinicId) q = q.eq("clinic_id", clinicId);
+      return q;
+    });
   },
   async checkout(items) {
     // Atomic on the server (creates invoice + items, decrements stock, computes profit).
@@ -2979,9 +3051,11 @@ const supabaseRepo: typeof demoRepo = {
     return maybe<Courier>(await sbc().from("couriers").update(patch).eq("id", id).select().maybeSingle());
   },
   async listDeliveryOrders(clinicId) {
-    let q = sbc().from("delivery_orders").select("*").order("created_at", { ascending: false });
-    if (clinicId) q = q.eq("clinic_id", clinicId);
-    return listOf<DeliveryOrder>(await q);
+    return allPages<DeliveryOrder>(() => {
+      let q = sbc().from("delivery_orders").select("*").order("created_at", { ascending: false });
+      if (clinicId) q = q.eq("clinic_id", clinicId);
+      return q;
+    });
   },
   async createDeliveryOrder(input) {
     // Omit a null branch_id so a pre-0071 database (no column yet) keeps working.
@@ -3011,9 +3085,12 @@ const supabaseRepo: typeof demoRepo = {
     return listOf<InvoiceItem>(await sbc().from("invoice_items").select("*").eq("invoice_id", invoiceId));
   },
   async listAllInvoiceItems(clinicId) {
-    let q = sbc().from("invoice_items").select("*");
-    if (clinicId) q = q.eq("clinic_id", clinicId);
-    return listOf<InvoiceItem>(await q);
+    // أكبر جدول بالعيادة النشطة — بلا صفحات كانت التحليلات تحسب على أول ألف سطر فقط.
+    return allPages<InvoiceItem>(() => {
+      let q = sbc().from("invoice_items").select("*");
+      if (clinicId) q = q.eq("clinic_id", clinicId);
+      return q;
+    });
   },
   async refundInvoice(invoiceId) {
     // Server marks refunded + returns units to stock (idempotent).
@@ -3071,9 +3148,11 @@ const supabaseRepo: typeof demoRepo = {
     return dedupeCustomers(rows, query);
   },
   async listExpenses(clinicId) {
-    let q = sbc().from("expenses").select("*").order("spent_at", { ascending: false });
-    if (clinicId) q = q.eq("clinic_id", clinicId);
-    return listOf<Expense>(await q);
+    return allPages<Expense>(() => {
+      let q = sbc().from("expenses").select("*").order("spent_at", { ascending: false });
+      if (clinicId) q = q.eq("clinic_id", clinicId);
+      return q;
+    });
   },
   async addExpense(input) {
     // clinic_id + staff_id are stamped by the column defaults (auth_clinic() / auth.uid());

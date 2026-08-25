@@ -13,6 +13,7 @@ import { Assistant } from "@/components/Assistant";
 import { useSubscription } from "@/lib/subscription";
 import { Spinner, useToast } from "@/components/ui";
 import { repo } from "@/lib/repo";
+import { startOutbox } from "@/lib/outbox";
 import { retryImport } from "@/lib/appUpdate";
 import { useNavFolded } from "@/lib/navFold";
 
@@ -118,6 +119,9 @@ function Housekeeping() {
   const toast = useToast();
   const { user } = useAuth();
   const warned = useRef(false);
+
+  // صندوق الصادر: كتاباتٌ فشلت شبكياً تُرفع تلقائياً عند عودة النت وكل ٣٠ ثانية.
+  useEffect(() => { startOutbox(); }, []);
 
   useEffect(() => {
     const onQuotaFull = () => {
