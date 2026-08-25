@@ -120,6 +120,7 @@ export default function CageBoard() {
   const [picker, setPicker] = useState<{ targetCage: string | null } | null>(null);
   const [editCage, setEditCage] = useState<string | null>(null);
   const [addRoomOpen, setAddRoomOpen] = useState(false);
+  const [renumRoom, setRenumRoom] = useState<string | null>(null);
   const canEdit = can("manageSettings");
   const [view3d, setView3d] = useState(() => {
     try { return localStorage.getItem(VIEW_KEY) === "3d"; } catch { return false; }
@@ -132,10 +133,14 @@ export default function CageBoard() {
 
   /* ── الغرف وأقفاصها بترتيبٍ ثابت ── */
   const rooms = useMemo(() => [...s.rooms].sort((a, b) => a.x - b.x), [s.rooms]);
+  /* الأرضي قبل العلوي بكل خلية — فالقفصان المكدّسان يتجاوران باللوحة */
   const cagesOf = (r: Room3D): CagePlacement[] =>
     s.cages
       .filter((c) => c.x >= r.x && c.x < r.x + r.w && c.z >= r.z && c.z < r.z + r.d)
-      .sort((a, b) => (a.z - b.z) || (a.x - b.x));
+      .sort((a, b) => (a.z - b.z) || (a.x - b.x) || ((a.level ?? 0) - (b.level ?? 0)));
+  /** هل بخلية هذا القفص قفصٌ ثانٍ (مكدّسان فوق بعض)؟ */
+  const stackMate = (c: CagePlacement): boolean =>
+    s.cages.some((o) => o.code !== c.code && o.x === c.x && o.z === c.z);
 
   const totals = useMemo(() => {
     const total = s.cages.length;
@@ -314,6 +319,11 @@ export default function CageBoard() {
                       className="inline-flex h-8 items-center rounded-lg bg-surface-2 px-2.5 text-2xs font-bold text-ink-muted transition hover:text-ink">
                       {t("cages.rename", "تسمية")}
                     </button>
+                    <button type="button" data-renumroom={room.id}
+                      onClick={() => { playTap(); setRenumRoom(room.id); }}
+                      className="inline-flex h-8 items-center rounded-lg bg-surface-2 px-2.5 text-2xs font-bold text-ink-muted transition hover:text-ink">
+                      {t("cages.renumber", "ترقيم")}
+                    </button>
                     <button type="button"
                       onClick={() => {
                         playTap();
@@ -336,6 +346,7 @@ export default function CageBoard() {
                   <motion.div key={c.code} variants={staggerItem}>
                     <CageCard
                       code={c.code}
+                      level={stackMate(c) ? (c.level ?? 0) : undefined}
                       occ={occOf(c.code)}
                       carrying={!!carrying}
                       dimmed={!!ql && !matches(c)}
@@ -403,6 +414,14 @@ export default function CageBoard() {
       <CageEditModal
         code={editCage}
         occupied={!!(editCage && occOf(editCage))}
+        canStack={(() => {
+          const c = editCage ? s.cages.find((x) => x.code === editCage) : null;
+          return !!c && (c.level ?? 0) === 0 && !s.cages.some((o) => o.x === c.x && o.z === c.z && (o.level ?? 0) === 1);
+        })()}
+        onStack={(code) => {
+          const up = cageStudio.addUpper(code);
+          if (up) { playSuccess(); toast.success(t("cages.stacked", { code: up.code, defaultValue: "انركّب القفص {{code}} فوقه" })); }
+        }}
         onClose={() => setEditCage(null)}
         onRename={(from, to) => {
           if (!cageStudio.updateCage(from, { code: to })) {
@@ -419,6 +438,21 @@ export default function CageBoard() {
           if (occOf(code)) { playWarning(); toast.error(t("cages.cageOccupied", "بالقفص ساكن — انقله أولاً")); return; }
           cageStudio.removeCage(code);
           playSuccess();
+        }}
+      />
+
+      <RenumberModal
+        roomId={renumRoom}
+        onClose={() => setRenumRoom(null)}
+        onApply={(roomId, base, prefix) => {
+          const changes = cageStudio.renumberRoom(roomId, base, prefix);
+          for (const ch of changes) {
+            const o = occOf(ch.from);
+            if (o) void opsStore.patch(o.admId, { cage: ch.to }).catch(() => { /* التبنّي يصلحه */ });
+          }
+          playSuccess();
+          toast.success(t("cages.renumbered", { n: changes.length, defaultValue: "ترقّمت {{n}} أقفاص تلقائياً" }));
+          setRenumRoom(null);
         }}
       />
 
@@ -527,12 +561,15 @@ function AdmitPicker({ open, targetCage, onClose, actives, pets, cages, onPick }
   );
 }
 
-/** تعديل قفص واحد: تغيير رقمه (تُنقل معه إقامة ساكنه) أو حذفه إن كان فاضياً. */
-function CageEditModal({ code, occupied, onClose, onRename, onDelete }: {
+/** تعديل قفص واحد: رقمه (تُنقل معه إقامة ساكنه)، تركيب طابقٍ فوقه، أو حذفه. */
+function CageEditModal({ code, occupied, canStack, onClose, onRename, onStack, onDelete }: {
   code: string | null;
   occupied: boolean;
+  /** أرضيٌّ بلا قفصٍ فوقه — يقبل التكديس. */
+  canStack: boolean;
   onClose: () => void;
   onRename: (from: string, to: string) => boolean;
+  onStack: (code: string) => void;
   onDelete: (code: string) => void;
 }) {
   const { t } = useTranslation();
@@ -550,11 +587,56 @@ function CageEditModal({ code, occupied, onClose, onRename, onDelete }: {
         <Button className="w-full" onClick={() => { const to = val.trim(); if (!to || to === code) { onClose(); return; } if (onRename(code, to)) onClose(); }}>
           {t("common.save", "حفظ")}
         </Button>
+        {canStack && (
+          <button type="button" data-stackboard
+            onClick={() => { onStack(code); onClose(); }}
+            className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-success-50 py-2.5 text-sm font-bold text-success-700 transition hover:bg-success-100 dark:bg-success-500/15 dark:text-success-300">
+            <Plus size={15} /> {t("cages.addUpper", "ركّب قفصاً فوقه (طابق ثاني)")}
+          </button>
+        )}
         <button type="button"
           onClick={() => { if (occupied) { onDelete(code); return; } if (window.confirm(t("cages.confirmCageDelete", { code, defaultValue: "حذف القفص {{code}}؟" }))) { onDelete(code); onClose(); } }}
           className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-danger-50 py-2.5 text-sm font-bold text-danger-600 transition hover:bg-danger-100 dark:bg-danger-500/15 dark:text-danger-300">
           <Trash2 size={15} /> {t("cages.deleteCage", "حذف القفص")}
         </button>
+      </div>
+    </Modal>
+  );
+}
+
+/** ترقيم غرفة كاملة من اللوحة: بادئة اختيارية + رقم بداية — «أ-101، أ-102…». */
+function RenumberModal({ roomId, onClose, onApply }: {
+  roomId: string | null;
+  onClose: () => void;
+  onApply: (roomId: string, base: number, prefix: string) => void;
+}) {
+  const { t } = useTranslation();
+  const [base, setBase] = useState("101");
+  const [prefix, setPrefix] = useState("");
+  useEffect(() => { if (roomId) { setBase("101"); setPrefix(""); } }, [roomId]);
+  if (!roomId) return null;
+  const preview = `${prefix}${base || "101"} · ${prefix}${String(Number(base || "101") + 1)}…`;
+  return (
+    <Modal open onClose={onClose} title={t("cages.renumTitle", "ترقيم أقفاص الغرفة")}>
+      <div className="space-y-3">
+        <div className="grid grid-cols-3 gap-2">
+          <div>
+            <label className="label">{t("cages.prefix", "بادئة")} <span className="font-normal text-ink-subtle">{t("pos.companyHint", "(اختياري)")}</span></label>
+            <input className="input text-center font-black" value={prefix} onChange={(e) => setPrefix(e.target.value)} placeholder={t("cages.prefixPh", "بادئة (أ-)")} data-renumpfxb />
+          </div>
+          <div className="col-span-2">
+            <label className="label">{t("cages.startFrom", "يبدأ من")}</label>
+            <input className="input text-center font-mono font-black tabular-nums" inputMode="numeric" value={base}
+              onChange={(e) => setBase(e.target.value.replace(/\D/g, ""))} data-renumbase />
+          </div>
+        </div>
+        <p className="rounded-xl bg-surface-2 p-2.5 text-center text-sm font-bold text-ink-muted tabular-nums" data-renumpreview>
+          {t("cages.renumPreview", { v: preview, defaultValue: "ستصير: {{v}}" })}
+        </p>
+        <Button className="w-full" data-renumapply disabled={!base || Number(base) < 1}
+          onClick={() => onApply(roomId, Number(base), prefix)}>
+          {t("cages.renumDo", "رقّم الآن")}
+        </Button>
       </div>
     </Modal>
   );

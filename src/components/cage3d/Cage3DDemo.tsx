@@ -6,13 +6,13 @@ import { BoxGeometry, CanvasTexture, Matrix4, MOUSE, Plane, RepeatWrapping, TOUC
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import type { BufferGeometry, Group, Mesh, MeshBasicMaterial, MeshStandardMaterial } from "three";
 import { ChevronRight, Hammer, ClipboardList, Maximize, Minus, Move, Plus, Search, Trash2, X, FileText, UserPlus } from "lucide-react";
-import { CageUnit, CAGE_W, CAGE_D, CAGE_H, BASE_Y, type DropHint } from "./CageUnit";
+import { CageUnit, CAGE_W, CAGE_D, CAGE_H, BASE_Y, STACK_H, type DropHint } from "./CageUnit";
 import { LabelOverlay, LabelPositioner, type LabelSpec, type LabelNodes } from "./LabelLayer";
 import { NEON, NIGHT, KIND_AR, SPECIES_AR, SPECIES_EMOJI, type Occupant } from "./neon";
 import { useQuality, setTier, getTier, type Tier } from "./quality";
 import {
-  CELL, cageStudio, useCageStudio, cageAt, cellFree, bounds,
-  cellWorld, cornerWorld, buildPartitions, codesFromPrefs, type Room3D,
+  CELL, cageStudio, useCageStudio, cageAt, upperAt, cellFree, bounds,
+  cellWorld, cornerWorld, buildPartitions, doorSegment, codesFromPrefs, type Room3D, type DoorSide,
 } from "./store";
 import { opsStore } from "@/lib/opsStore";
 import { statusOf } from "@/lib/opsStatus";
@@ -256,6 +256,20 @@ function RoomFloors({ s }: { s: ReturnType<typeof cageStudio.get> }) {
               <planeGeometry args={[w - 0.12, d - 0.12]} />
               <meshLambertMaterial color="#dde5ed" />
             </mesh>
+            {/* عتبة الباب — ممسحةٌ كهرمانية بمقطع الجدار المفتوح: الدكتور يشوف
+                وين باب غرفته بالضبط، ويحرّكه من لوحة الغرفة بوضع البناء. */}
+            {(() => {
+              const seg = doorSegment(r);
+              const [ax, az] = cornerWorld(s, seg.x1, seg.z1);
+              const [bx, bz] = cornerWorld(s, seg.x2, seg.z2);
+              const horizontal = seg.z1 === seg.z2;
+              return (
+                <mesh rotation={[-Math.PI / 2, 0, 0]} position={[(ax + bx) / 2, -0.055, (az + bz) / 2]}>
+                  <planeGeometry args={horizontal ? [Math.abs(bx - ax) * 0.72, 1.0] : [1.0, Math.abs(bz - az) * 0.72]} />
+                  <meshStandardMaterial color="#f0b26b" emissive="#f0b26b" emissiveIntensity={0.35} transparent opacity={0.85} />
+                </mesh>
+              );
+            })()}
             {/* لافتة الغرفة على سياجها **الخلفي** لا على باب أمامي: بالكاميرا
                 شبه الأمامية كان لوح الباب يُسقَط فوق واجهة قفصٍ بالصف الأمامي
                 فيحجب لوحة رقمه. الآن تطفو فوق الصف الأخير كلافتة قسمٍ فندقية
@@ -630,7 +644,8 @@ function Scene({ s, occOf, drag, carrySource, hoverCage, arrivedRef, camZoom, ca
         return (
           <CageUnit key={c.code}
             spec={{ code: c.code, occupant: occ }}
-            position={[wx, BASE_Y, wz]}
+            ry={-((c.facing ?? 0) * Math.PI) / 2}
+            position={[wx, BASE_Y + (c.level ?? 0) * STACK_H, wz]}
             dropHint={hintFor(c.code)}
             dragActive={!!drag || build}
             ghost={(drag?.occ.admId ?? null) === occ?.admId && !!occ || carrySource === c.code}
@@ -719,6 +734,7 @@ export default function Cage3DDemo({ onBoard }: { onBoard?: () => void } = {}) {
   const [roomW, setRoomW] = useState(3);
   const [roomD, setRoomD] = useState(2);
   const [renumBase, setRenumBase] = useState("");
+  const [renumPrefix, setRenumPrefix] = useState("");
   const [codeDraft, setCodeDraft] = useState("");
   const [picker, setPicker] = useState(false);
   const [pickQ, setPickQ] = useState("");
@@ -888,7 +904,7 @@ export default function Cage3DDemo({ onBoard }: { onBoard?: () => void } = {}) {
     const m = new Map<string, [number, number, number]>();
     s.cages.forEach((c) => {
       const [wx, wz] = cellWorld(s, c.x, c.z);
-      m.set(norm(c.code), [wx, BASE_Y, wz]);
+      m.set(norm(c.code), [wx, BASE_Y + (c.level ?? 0) * STACK_H, wz]);
     });
     return m;
   }, [s]);
@@ -1039,7 +1055,7 @@ export default function Cage3DDemo({ onBoard }: { onBoard?: () => void } = {}) {
   const renumber = (roomId: string) => {
     const base = Number(renumBase);
     if (!Number.isFinite(base) || base < 1) { playWarning(); say("اكتب رقم البداية — مثال ١٠١"); return; }
-    const changes = cageStudio.renumberRoom(roomId, base);
+    const changes = cageStudio.renumberRoom(roomId, base, renumPrefix);
     for (const ch of changes) {
       const occ = occRef.current.get(norm(ch.from));
       if (occ) void opsStore.patch(occ.admId, { cage: ch.to }).catch(() => {});
@@ -1447,6 +1463,41 @@ export default function Cage3DDemo({ onBoard }: { onBoard?: () => void } = {}) {
             onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); commitRename(selCage.code, codeDraft); } }}
             className="mb-3 h-10 w-full rounded-lg px-2 text-sm font-black tabular-nums"
             style={{ background: "#0c192b", color: NIGHT.ink, border: "1px solid #16324a", direction: "ltr", textAlign: "center" }} />
+
+          {/* اتجاه باب القفص — ربع لفّة بكل ضغطة، والاسم يقول وين صار */}
+          <label className="mb-1 block text-[10px] font-bold" style={{ color: "#64809c" }}>{i18n.t("cages.doorDir", "اتجاه باب القفص")}</label>
+          <button type="button" data-rotcage
+            onClick={() => {
+              playTap();
+              const f = cageStudio.rotateCage(selCage.code);
+              const names = [i18n.t("cages.dirFront", "أمام"), i18n.t("cages.dirRight", "يمين"), i18n.t("cages.dirBack", "خلف"), i18n.t("cages.dirLeft", "يسار")];
+              say(i18n.t("cages.doorNow", { dir: names[f], defaultValue: "صار الباب لجهة: {{dir}}" }));
+            }}
+            className="mb-2 inline-flex h-9 w-full items-center justify-center gap-1.5 rounded-lg text-[11px] font-extrabold"
+            style={{ background: "#12253a", color: "#9fdcef", border: "1px solid #164e63" }}>
+            🔄 {[i18n.t("cages.dirFront", "أمام"), i18n.t("cages.dirRight", "يمين"), i18n.t("cages.dirBack", "خلف"), i18n.t("cages.dirLeft", "يسار")][selCage.facing ?? 0]} — {i18n.t("cages.rotQuarter", "دوّر ربع لفّة")}
+          </button>
+
+          {/* قفصان فوق بعض — يركّب طابقاً علوياً بنفس الخلية */}
+          {(selCage.level ?? 0) === 0 && !upperAt(s, selCage.x, selCage.z) && (
+            <button type="button" data-stackcage
+              onClick={() => {
+                playTap();
+                const up = cageStudio.addUpper(selCage.code);
+                if (up) { playSuccess(); say(i18n.t("cages.stacked", { code: up.code, defaultValue: "انركّب القفص {{code}} فوقه" })); }
+              }}
+              className="mb-2 inline-flex h-9 w-full items-center justify-center gap-1.5 rounded-lg text-[11px] font-extrabold"
+              style={{ background: "#122a1c", color: "#4ade80", border: "1px solid #14532d" }}>
+              <Plus size={12} /> {i18n.t("cages.addUpper", "ركّب قفصاً فوقه (طابق ثاني)")}
+            </button>
+          )}
+          {(selCage.level ?? 0) === 1 && (
+            <p className="mb-2 rounded-lg px-2 py-1.5 text-center text-[10px] font-extrabold"
+              style={{ background: "#12253a", color: "#f0b26b", border: "1px solid #7c520d55" }}>
+              ⬆ {i18n.t("cages.isUpper", "قفص علوي — مركّب فوق الأرضي بنفس الخلية")}
+            </p>
+          )}
+
           {/* لا مُنتقي ألوان: اللون صار معنى لا زينة — أحمر فاضٍ وأزرق ممتلئ. */}
           <button type="button"
             onClick={() => { playTap(); cageStudio.removeCage(selCage.code); say("انحذف القفص"); }}
@@ -1469,8 +1520,88 @@ export default function Cage3DDemo({ onBoard }: { onBoard?: () => void } = {}) {
             onChange={(e) => cageStudio.updateRoom(editRoom.id, { name: e.target.value })}
             className="mb-3 h-10 w-full rounded-lg px-2.5 text-xs font-bold"
             style={{ background: "#0c192b", color: NIGHT.ink, border: "1px solid #16324a" }} />
+
+          {/* حجم الغرفة — أزرار ± دقيقة قفصاً قفصاً، والرفض مُعلَّل بصوت */}
+          <label className="mb-1 block text-[10px] font-bold" style={{ color: "#64809c" }}>{i18n.t("cages.roomSize", "حجم الغرفة (أقفاص)")}</label>
+          <div className="mb-3 grid grid-cols-2 gap-1.5">
+            {([
+              { k: "w" as const, label: i18n.t("cages.roomW", "العرض"), val: editRoom.w },
+              { k: "d" as const, label: i18n.t("cages.roomD", "العمق"), val: editRoom.d },
+            ]).map((dim) => (
+              <div key={dim.k} className="flex items-center justify-between rounded-lg px-1.5 py-1"
+                style={{ background: "#0c192b", border: "1px solid #16324a" }}>
+                <button type="button" data-roomdim={`${dim.k}-`}
+                  onClick={() => {
+                    playTap();
+                    const r = cageStudio.resizeRoom(editRoom.id, dim.k === "w" ? editRoom.w - 1 : editRoom.w, dim.k === "d" ? editRoom.d - 1 : editRoom.d);
+                    if (!r.ok) { playWarning(); say(r.reason === "occupied" ? i18n.t("cages.shrinkBlocked", "بالمساحة المقصوصة أقفاص — احذفها أو انقلها أولاً") : i18n.t("cages.resizeOverlap", "ما في مجال — غرفة ثانية بالطريق")); }
+                  }}
+                  className="grid h-8 w-8 place-items-center rounded-md text-sm font-black" style={{ color: "#9fdcef" }}>−</button>
+                <span className="text-[11px] font-extrabold" style={{ color: NIGHT.ink }}>
+                  {dim.label} <b className="tabular-nums" style={{ color: "#22d3ee" }}>{formatNum(dim.val)}</b>
+                </span>
+                <button type="button" data-roomdim={`${dim.k}+`}
+                  onClick={() => {
+                    playTap();
+                    const r = cageStudio.resizeRoom(editRoom.id, dim.k === "w" ? editRoom.w + 1 : editRoom.w, dim.k === "d" ? editRoom.d + 1 : editRoom.d);
+                    if (!r.ok) { playWarning(); say(i18n.t("cages.resizeOverlap", "ما في مجال — غرفة ثانية بالطريق")); }
+                  }}
+                  className="grid h-8 w-8 place-items-center rounded-md text-sm font-black" style={{ color: "#9fdcef" }}>+</button>
+              </div>
+            ))}
+          </div>
+
+          {/* باب الغرفة — الجهة بضغطة، وموضعه على الجدار بأزرار ± */}
+          <label className="mb-1 block text-[10px] font-bold" style={{ color: "#64809c" }}>{i18n.t("cages.roomDoor", "باب الغرفة — العتبة الكهرمانية بالمشهد")}</label>
+          <div className="mb-1.5 grid grid-cols-4 gap-1">
+            {([
+              { side: "front" as DoorSide, label: i18n.t("cages.dirFront", "أمام") },
+              { side: "back" as DoorSide, label: i18n.t("cages.dirBack", "خلف") },
+              { side: "right" as DoorSide, label: i18n.t("cages.dirRight", "يمين") },
+              { side: "left" as DoorSide, label: i18n.t("cages.dirLeft", "يسار") },
+            ]).map((o) => {
+              const cur = editRoom.door?.side ?? "front";
+              const active = cur === o.side;
+              return (
+                <button key={o.side} type="button" data-doorside={o.side}
+                  onClick={() => {
+                    playTap();
+                    const span = o.side === "front" || o.side === "back" ? editRoom.w : editRoom.d;
+                    cageStudio.setRoomDoor(editRoom.id, o.side, Math.floor(span / 2));
+                  }}
+                  className="h-8 rounded-md text-[10px] font-extrabold transition"
+                  style={active ? { background: "#f0b26b", color: "#3b1a04" } : { background: "#12253a", color: "#9fdcef", border: "1px solid #164e63" }}>
+                  {o.label}
+                </button>
+              );
+            })}
+          </div>
+          {(() => {
+            const side = editRoom.door?.side ?? "front";
+            const span = side === "front" || side === "back" ? editRoom.w : editRoom.d;
+            const at = Math.min(editRoom.door?.at ?? Math.floor(editRoom.w / 2), span - 1);
+            return (
+              <div className="mb-3 flex items-center justify-between rounded-lg px-1.5 py-1"
+                style={{ background: "#0c192b", border: "1px solid #16324a" }}>
+                <button type="button" data-doorpos="-"
+                  onClick={() => { playTap(); cageStudio.setRoomDoor(editRoom.id, side, at - 1); }}
+                  className="grid h-8 w-8 place-items-center rounded-md text-sm font-black" style={{ color: "#9fdcef" }}>−</button>
+                <span className="text-[11px] font-extrabold" style={{ color: NIGHT.ink }}>
+                  {i18n.t("cages.doorAt", { n: formatNum(at + 1), all: formatNum(span), defaultValue: "الخلية {{n}} من {{all}}" })}
+                </span>
+                <button type="button" data-doorpos="+"
+                  onClick={() => { playTap(); cageStudio.setRoomDoor(editRoom.id, side, at + 1); }}
+                  className="grid h-8 w-8 place-items-center rounded-md text-sm font-black" style={{ color: "#9fdcef" }}>+</button>
+              </div>
+            );
+          })()}
+
           <label className="mb-1 block text-[10px] font-bold" style={{ color: "#64809c" }}>ترقيم كل أقفاصها تلقائياً</label>
           <div className="mb-3 flex gap-1.5">
+            <input value={renumPrefix} onChange={(e) => setRenumPrefix(e.target.value)}
+              placeholder={i18n.t("cages.prefixPh", "بادئة (أ-)")} data-renumpfx
+              className="h-10 w-20 shrink-0 rounded-lg px-2 text-xs font-black"
+              style={{ background: "#0c192b", color: NIGHT.ink, border: "1px solid #16324a", textAlign: "center" }} />
             <input value={renumBase} onChange={(e) => setRenumBase(e.target.value.replace(/\D/g, ""))}
               inputMode="numeric" placeholder="يبدأ من — مثال 101"
               className="h-10 w-full rounded-lg px-2 text-xs font-black tabular-nums"

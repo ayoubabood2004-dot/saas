@@ -45,7 +45,9 @@ export function Nameplate({ code, editable, onEdit }: { code: string; editable?:
         type="button"
         data-plate={code}
         disabled={!editable}
-        onClick={onEdit}
+        // stopPropagation: بلاها كانت الضغطة تتسرب لبطاقة القفص الفاضي تحتها
+        // فتفتح نافذة الإسكان خلف نافذة التعديل — نافذتان فوق بعض.
+        onClick={(e) => { e.stopPropagation(); onEdit?.(); }}
         className={cn(
           "pointer-events-auto relative rounded-lg border px-5 py-1 shadow-soft",
           "border-slate-300 bg-gradient-to-b from-white to-slate-200",
@@ -80,10 +82,12 @@ function OccupantAvatar({ occ, tone }: { occ: Occupant; tone: CageTone }) {
 }
 
 export const CageCard = memo(function CageCard({
-  code, occ, carrying, dimmed, highlighted, editable,
+  code, occ, carrying, dimmed, highlighted, editable, level,
   onTapFree, onOpenFile, onStartMove, onEditCage,
 }: {
   code: string;
+  /** يُمرَّر فقط حين تحمل الخلية قفصين فوق بعض: 0 أرضي · 1 علوي. */
+  level?: 0 | 1;
   occ: Occupant | null;
   /** وضع النقل نشط: الفاضي يصير هدفاً نابضاً، والممتلئ يخفت. */
   carrying: boolean;
@@ -122,6 +126,16 @@ export const CageCard = memo(function CageCard({
       {!free && <span className={cn("absolute inset-x-8 top-0 h-1 rounded-b-full", TONE[tone].bar)} />}
 
       <Nameplate code={code} editable={editable} onEdit={onEditCage} />
+
+      {/* قفصان فوق بعض: شارة الطابق تربط البطاقتين المتجاورتين بخليتهما */}
+      {level != null && (
+        <span data-cagelevel={level}
+          className={cn("absolute -top-2 start-2 z-10 rounded-full px-2 py-0.5 text-2xs font-extrabold shadow-soft",
+            level === 1 ? "bg-warn-100 text-warn-800 dark:bg-warn-500/25 dark:text-warn-200"
+              : "bg-surface-2 text-ink-muted")}>
+          {level === 1 ? t("cages.upper", "⬆ علوي") : t("cages.lower", "⬇ أرضي")}
+        </span>
+      )}
 
       {occ ? (
         <>

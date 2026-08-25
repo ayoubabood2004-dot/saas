@@ -1,4 +1,33 @@
 {
+  "cages": {
+    "doorDir": "Cage door direction",
+    "rotQuarter": "Rotate a quarter turn",
+    "doorNow": "Door now faces: {{dir}}",
+    "dirFront": "Front",
+    "dirBack": "Back",
+    "dirRight": "Right",
+    "dirLeft": "Left",
+    "addUpper": "Stack a cage on top (second level)",
+    "stacked": "Cage {{code}} stacked on top",
+    "isUpper": "Upper cage — stacked over the ground one in this cell",
+    "upper": "⬆ Upper",
+    "lower": "⬇ Ground",
+    "roomSize": "Room size (cages)",
+    "roomW": "Width",
+    "roomD": "Depth",
+    "shrinkBlocked": "Cages sit in the trimmed area — delete or move them first",
+    "resizeOverlap": "No space — another room is in the way",
+    "roomDoor": "Room door — the amber threshold in the scene",
+    "doorAt": "Cell {{n}} of {{all}}",
+    "renumber": "Renumber",
+    "renumTitle": "Renumber the room's cages",
+    "prefix": "Prefix",
+    "prefixPh": "Prefix (A-)",
+    "startFrom": "Start from",
+    "renumPreview": "Becomes: {{v}}",
+    "renumDo": "Renumber now",
+    "renumbered": "{{n}} cages renumbered automatically"
+  },
   "outbox": {
     "tip": "Saved on this device — uploads automatically when the connection returns. Tap to retry now",
     "waiting": "Waiting for network: {{n}}"

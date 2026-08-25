@@ -29,17 +29,27 @@ export type Mode = "manage" | "build";
 
 export const LED_CHOICES = ["#22d3ee", "#fb923c", "#f43f5e", "#4ade80", "#a78bfa", "#e2e8f0"] as const;
 
+/** جهة باب الغرفة: front = السياج الأمامي (z+d) وهو الافتراضي التاريخي. */
+export type DoorSide = "front" | "back" | "left" | "right";
+
 export interface Room3D {
   id: string;
   name: string;
   x: number; z: number;
   w: number; d: number;
+  /** موضع باب الغرفة: الجهة + الخلية على تلك الجهة (0..طولها-1).
+   *  غيابه = السلوك القديم (منتصف الواجهة الأمامية) فلا تنكسر تخطيطات محفوظة. */
+  door?: { side: DoorSide; at: number };
 }
 
 export interface CagePlacement {
   code: string;
   x: number; z: number;
   color?: string;
+  /** اتجاه باب القفص بأرباع لفّة: 0 أمام (الافتراضي) · 1 يمين · 2 خلف · 3 يسار. */
+  facing?: 0 | 1 | 2 | 3;
+  /** الطابق: 0 أرضي (الافتراضي) · 1 قفصٌ مركّب فوق الأرضي بنفس الخلية. */
+  level?: 0 | 1;
 }
 
 interface StudioState {
@@ -111,8 +121,11 @@ function commit(next: Partial<StudioState>, touchesLayout = false) {
 export const roomAt = (s: StudioState, x: number, z: number): Room3D | null =>
   s.rooms.find((r) => x >= r.x && x < r.x + r.w && z >= r.z && z < r.z + r.d) ?? null;
 
-export const cageAt = (s: StudioState, x: number, z: number): CagePlacement | null =>
-  s.cages.find((c) => c.x === x && c.z === z) ?? null;
+export const cageAt = (s: StudioState, x: number, z: number, level: 0 | 1 = 0): CagePlacement | null =>
+  s.cages.find((c) => c.x === x && c.z === z && (c.level ?? 0) === level) ?? null;
+
+/** القفص العلوي بالخلية — إن وُجد. */
+export const upperAt = (s: StudioState, x: number, z: number): CagePlacement | null => cageAt(s, x, z, 1);
 
 export const cellFree = (s: StudioState, x: number, z: number): boolean =>
   !!roomAt(s, x, z) && !cageAt(s, x, z);
@@ -165,14 +178,31 @@ export function buildPartitions(rooms: Room3D[]): WallSeg[] {
     }
   }
   for (const r of rooms) {
-    const doorX = r.x + Math.floor(r.w / 2);
-    segs.delete(key(doorX, r.z + r.d, doorX + 1, r.z + r.d));
+    const seg = doorSegment(r);
+    segs.delete(key(seg.x1, seg.z1, seg.x2, seg.z2));
   }
   return [...segs.values()];
 }
 
+/** مقطعُ الجدار الذي يفتحه باب الغرفة — من door المخزَّن، وإلا منتصف الواجهة
+ *  الأمامية (السلوك التاريخي، فتخطيطات ما قبل الميزة تبقى كما كانت). */
+export function doorSegment(r: Room3D): WallSeg {
+  const side = r.door?.side ?? "front";
+  const span = side === "front" || side === "back" ? r.w : r.d;
+  const at = Math.max(0, Math.min(span - 1, r.door?.at ?? Math.floor(r.w / 2)));
+  switch (side) {
+    case "front": return { x1: r.x + at, z1: r.z + r.d, x2: r.x + at + 1, z2: r.z + r.d };
+    case "back": return { x1: r.x + at, z1: r.z, x2: r.x + at + 1, z2: r.z };
+    case "left": return { x1: r.x, z1: r.z + at, x2: r.x, z2: r.z + at + 1 };
+    case "right": return { x1: r.x + r.w, z1: r.z + at, x2: r.x + r.w, z2: r.z + at + 1 };
+  }
+}
+
 /** خلية الباب لكل غرفة — للافتة المعلّقة فوقه. */
-export const doorCell = (r: Room3D): [number, number] => [r.x + Math.floor(r.w / 2), r.z + r.d];
+export const doorCell = (r: Room3D): [number, number] => {
+  const seg = doorSegment(r);
+  return [seg.x1, seg.z1];
+};
 
 /* -------------------------------- الأفعال -------------------------------- */
 
@@ -200,6 +230,43 @@ export const cageStudio = {
 
   updateRoom(id: string, patch: { name?: string }) {
     commit({ rooms: state.rooms.map((r) => (r.id === id ? { ...r, ...patch, name: (patch.name ?? r.name).trim() || r.name } : r)) }, true);
+  },
+
+  /** موضع باب الغرفة: جهةٌ وخلية على تلك الجهة — يُقصّ على طولها تلقائياً. */
+  setRoomDoor(id: string, side: DoorSide, at: number) {
+    commit({
+      rooms: state.rooms.map((r) => {
+        if (r.id !== id) return r;
+        const span = side === "front" || side === "back" ? r.w : r.d;
+        return { ...r, door: { side, at: Math.max(0, Math.min(span - 1, Math.floor(at))) } };
+      }),
+    }, true);
+  },
+
+  /** تحجيم الغرفة بدقةٍ قفصاً قفصاً. التكبير يُرفض إن داس غرفةً أخرى،
+   *  والتصغير يُرفض إن كان بالمساحة المقصوصة أقفاص — لا حذف صامت أبداً. */
+  resizeRoom(id: string, w: number, d: number): { ok: boolean; reason?: "occupied" | "overlap" | "bounds" } {
+    const room = state.rooms.find((r) => r.id === id);
+    if (!room) return { ok: false, reason: "bounds" };
+    const W = Math.max(1, Math.min(8, Math.floor(w)));
+    const D = Math.max(1, Math.min(6, Math.floor(d)));
+    if (W === room.w && D === room.d) return { ok: true };
+    const next = { ...room, w: W, d: D };
+    const overlaps = state.rooms.some((o) =>
+      o.id !== id
+      && next.x < o.x + o.w && next.x + next.w > o.x
+      && next.z < o.z + o.d && next.z + next.d > o.z);
+    if (overlaps) return { ok: false, reason: "overlap" };
+    const cut = state.cages.some((c) =>
+      c.x >= room.x && c.x < room.x + room.w && c.z >= room.z && c.z < room.z + room.d
+      && !(c.x >= next.x && c.x < next.x + next.w && c.z >= next.z && c.z < next.z + next.d));
+    if (cut) return { ok: false, reason: "occupied" };
+    // الباب يبقى على جدارٍ موجود: يُقصّ موضعه على الطول الجديد
+    const door = next.door
+      ? { ...next.door, at: Math.min(next.door.at, (next.door.side === "front" || next.door.side === "back" ? W : D) - 1) }
+      : undefined;
+    commit({ rooms: state.rooms.map((r) => (r.id === id ? { ...next, door } : r)) }, true);
+    return { ok: true };
   },
 
   /** حذف غرفة يحذف أقفاصها من التخطيط — المرضى لا يُمسّون (رموزهم تُتبنّى لاحقاً). */
@@ -255,10 +322,42 @@ export const cageStudio = {
   },
 
   removeCage(code: string) {
+    const gone = state.cages.find((c) => c.code === code);
+    let cages = state.cages.filter((c) => c.code !== code);
+    // حذف الأرضي وفوقه علوي؟ العلوي ينزل مكانه — لا قفص يطفو بالهواء.
+    if (gone && (gone.level ?? 0) === 0) {
+      cages = cages.map((c) =>
+        c.x === gone.x && c.z === gone.z && (c.level ?? 0) === 1 ? { ...c, level: 0 as const } : c);
+    }
     commit({
-      cages: state.cages.filter((c) => c.code !== code),
+      cages,
       selected: state.selected === code ? null : state.selected,
     }, true);
+  },
+
+  /** تدوير باب القفص ربع لفّة — 0 أمام ← 1 يمين ← 2 خلف ← 3 يسار. */
+  rotateCage(code: string): number {
+    let next = 0;
+    commit({
+      cages: state.cages.map((c) => {
+        if (c.code !== code) return c;
+        next = (((c.facing ?? 0) + 1) % 4);
+        return { ...c, facing: next as 0 | 1 | 2 | 3 };
+      }),
+    }, true);
+    return next;
+  },
+
+  /** تركيب قفصٍ علوي فوق قفصٍ أرضي بنفس الخلية — قفصان فوق بعض. */
+  addUpper(code: string): CagePlacement | null {
+    const base = state.cages.find((c) => c.code === code);
+    if (!base || (base.level ?? 0) !== 0) return null;
+    if (upperAt(state, base.x, base.z)) return null;
+    const room = roomAt(state, base.x, base.z);
+    const newCode = nextCode(state, room ?? state.rooms[0]);
+    const cage: CagePlacement = { code: newCode, x: base.x, z: base.z, level: 1, facing: base.facing };
+    commit({ cages: [...state.cages, cage] }, true);
+    return cage;
   },
 
   /** صبغ ليد كل أقفاص غرفة بلون واحد دفعة وحدة — بدل قفص قفص. */
@@ -272,21 +371,30 @@ export const cageStudio = {
     return n;
   },
 
-  /** ترقيم غرفة كاملة تلقائياً من أساس (مثال ٢٠١، ٢٠٢…) بترتيب الصفوف.
+  /** ترقيم غرفة كاملة تلقائياً من أساس (مثال ٢٠١، ٢٠٢…) بترتيب الصفوف —
+   *  الأرضي قبل العلوي بكل خلية، وببادئةٍ نصية اختيارية («أ-١»، «ع٢٠١»…).
    *  يرجع أزواج (قديم → جديد) حتى يزامن المكوّن رقود السكان. */
-  renumberRoom(roomId: string, base: number): Array<{ from: string; to: string }> {
+  renumberRoom(roomId: string, base: number, prefix = ""): Array<{ from: string; to: string }> {
     const room = state.rooms.find((r) => r.id === roomId);
     if (!room || !Number.isFinite(base)) return [];
+    const pfx = prefix.trim();
     const inside = state.cages
       .filter((c) => c.x >= room.x && c.x < room.x + room.w && c.z >= room.z && c.z < room.z + room.d)
-      .sort((a, b) => (a.z - b.z) || (a.x - b.x));
+      .sort((a, b) => (a.z - b.z) || (a.x - b.x) || ((a.level ?? 0) - (b.level ?? 0)));
     const outside = new Set(state.cages.filter((c) => !inside.includes(c)).map((c) => norm(c.code)));
     const changes: Array<{ from: string; to: string }> = [];
+    /* الأرقام تُخصَّص بترتيب `inside` **المفروز** (صفوف ← أعمدة ← طوابق)، لا
+     * بترتيب المصفوفة: القفص العلوي يُضاف آخرَ المصفوفة، وبترتيبها كان ياخذ
+     * آخرَ رقمٍ بدل الرقم الذي يلي أرضيَّه مباشرة. */
     let n = Math.max(1, Math.floor(base));
+    const assigned = new Map<CagePlacement, string>();
+    for (const c of inside) {
+      while (outside.has(norm(`${pfx}${n}`))) n++;
+      assigned.set(c, `${pfx}${n++}`);
+    }
     const cages = state.cages.map((c) => {
-      if (!inside.includes(c)) return c;
-      while (outside.has(String(n))) n++;
-      const to = String(n++);
+      const to = assigned.get(c);
+      if (!to) return c;
       if (to !== c.code) changes.push({ from: c.code, to });
       return { ...c, code: to };
     });

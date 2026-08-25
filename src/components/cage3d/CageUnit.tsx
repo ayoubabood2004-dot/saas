@@ -64,6 +64,8 @@ const T = {
 export const CAGE_W = 3.2, CAGE_D = 3.2, CAGE_H = 2.4;
 const TUBE = 0.085;            // مقطع أنبوب الإطار
 const PLINTH_H = 0.34;         // ارتفاع القاعدة المصبوبة
+/** خطوة الطابق العلوي: قفصٌ فوق قفصٍ يستقرّ قاعُ قاعدته على سقف الأرضي. */
+export const STACK_H = CAGE_H + PLINTH_H + 0.05;
 /** ارتفاع مركز القفص عن أرض المشهد — يُحسب فيستقرّ قاع القاعدة على الأرض
  *  بالضبط بدل رقمٍ مضبوطٍ بالعين يغوص أو يطفو كلما تغيّر المقاس. */
 export const BASE_Y = CAGE_H / 2 + PLINTH_H - 0.055;
@@ -361,7 +363,7 @@ function FreeBadge({ code }: { code: string }) {
   );
 }
 
-export function CageUnit({ spec, position, dropHint, dragActive, ghost, arrivedRef, onHoverChange, onCardDown, selected, showCard = true, onTap }: {
+export function CageUnit({ spec, position, dropHint, dragActive, ghost, arrivedRef, onHoverChange, onCardDown, selected, showCard = true, onTap, ry = 0 }: {
   spec: CageSpec;
   position: [number, number, number];
   dropHint: DropHint;
@@ -377,6 +379,8 @@ export function CageUnit({ spec, position, dropHint, dragActive, ghost, arrivedR
   showCard?: boolean;
   /** نقرة قصيرة على جسم القفص (فرق حركة < ٦ بكسل) — تحديد أو فتح ملف. */
   onTap?: (code: string) => void;
+  /** دوران القفص حول محوره — به يتّجه بابه ولافتتُه حيث يريد الدكتور. */
+  ry?: number;
 }) {
   const [hover, setHover] = useState(false);
   const [imgFail, setImgFail] = useState(false);
@@ -542,7 +546,7 @@ export function CageUnit({ spec, position, dropHint, dragActive, ghost, arrivedR
   const showFull = hover && !dragActive && !ghost && showCard;
 
   return (
-    <group ref={grp} position={position}
+    <group ref={grp} position={position} rotation={[0, ry, 0]}
       onPointerOver={(e) => { e.stopPropagation(); setHov(true); onHoverChange(spec.code); if (!dragActive) document.body.style.cursor = "pointer"; }}
       onPointerOut={() => { setHov(false); onHoverChange(null); if (!dragActive) document.body.style.cursor = ""; }}
       onClick={(e) => { if (e.delta < 6 && onTap) { e.stopPropagation(); onTap(spec.code); } }}>
