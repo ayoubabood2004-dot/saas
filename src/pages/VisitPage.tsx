@@ -8,7 +8,7 @@ import {
   Pill,
   Zap, Rows3, LayoutGrid, CalendarPlus, CalendarClock, FolderOpen, FlaskConical, Pencil,
 } from "lucide-react";
-import { toneOfResult } from "@/lib/observations";
+import { toneOfResult, scaleFor } from "@/lib/observations";
 import type { Pet, ClinicVisit, PetNote, TreatmentEntry, LabResult, PetProblem } from "@/types";
 import { LastLabsStrip, LabEntry } from "@/components/LabCenter";
 import { JourneyCard } from "@/components/JourneyCard";
@@ -884,13 +884,27 @@ function ExtendPlanModal({ open, lastDay, lang, medCount, onClose, onExtend }: {
  * one row per dose. Doctors used to the paper read it the same way; giving a dose
  * fills in the treating doctor + time just as they would write it by hand.
  */
-/** درجة المتابعة المسجَّلة → لون رقاقةِ يومياتها. */
-const OBS_TONE_CHIP: Record<string, string> = {
-  good: "bg-success-50 text-success-700 dark:bg-success-500/15 dark:text-success-300",
-  mid: "bg-warn-50 text-warn-700 dark:bg-warn-500/15 dark:text-warn-300",
-  low: "bg-orange-50 text-orange-700 dark:bg-orange-500/15 dark:text-orange-300",
-  crit: "bg-danger-50 text-danger-700 dark:bg-danger-500/15 dark:text-danger-300",
-  none: "bg-surface-2 text-ink-muted",
+/** درجة المتابعة المسجَّلة → كسوة بطاقتها: إطارٌ وأرضية وقيمة بلون الدرجة. */
+const OBS_TONE_CARD: Record<string, { card: string; value: string; badge: string }> = {
+  good: { card: "border-success-300 bg-success-50 dark:border-success-500/40 dark:bg-success-500/10", value: "text-success-700 dark:text-success-300", badge: "bg-success-500" },
+  mid: { card: "border-warn-300 bg-warn-50 dark:border-warn-500/40 dark:bg-warn-500/10", value: "text-warn-700 dark:text-warn-300", badge: "bg-warn-500" },
+  low: { card: "border-orange-300 bg-orange-50 dark:border-orange-500/40 dark:bg-orange-500/10", value: "text-orange-700 dark:text-orange-300", badge: "bg-orange-500" },
+  crit: { card: "border-danger-300 bg-danger-50 dark:border-danger-500/40 dark:bg-danger-500/10", value: "text-danger-700 dark:text-danger-300", badge: "bg-danger-500" },
+  none: { card: "border-line bg-surface-1", value: "text-ink-muted", badge: "bg-ink-subtle" },
+};
+
+/** شعارُ كل متابعة — بسلّمها المعياري (scaleFor) لا بمطابقة نصوص. */
+const OBS_EMOJI: Record<string, string> = {
+  temp: "🌡️", mentation: "❤️", appetite: "🍽️", stool: "💩", urine: "💧", fluids: "💉",
+};
+const obsEmoji = (o: TreatmentEntry): string => {
+  const s = scaleFor(o);
+  if (s && OBS_EMOJI[s.id]) return OBS_EMOJI[s.id];
+  if (o.task_type === "lab") return "🧪";
+  if (o.task_type === "feed") return "🍽️";
+  if (o.task_type === "elim") return "🚽";
+  if (o.task_type === "fluid") return "💉";
+  return "📋";
 };
 
 function TreatmentSheetTable({ dayGroups, todayISO, ended, lang, species, dayNotes, onGive, onEditDrug, onAddNote, onAddDrug, todayRowRef }: {
@@ -1008,28 +1022,45 @@ function TreatmentSheetTable({ dayGroups, todayISO, ended, lang, species, dayNot
             /* شريط يوميات اليوم: رقاقةٌ لكل متابعة بوقتها وقيمتها الملوّنة
              * بدرجتها — والمُنتظرةُ تُقال بهدوء «لم تسجّل بعد». */
             const obsStrip = obs.length > 0 && (
-              <tr key={`${day}-obs`} data-obsstrip={day} className={cn("border-t border-line bg-surface-2/50", meds.length === 0 && "border-t-2 border-line-strong")}>
-                <td colSpan={4} className="px-3 py-2.5">
+              <tr key={`${day}-obs`} data-obsstrip={day} className={cn("border-t border-line bg-surface-2/60", meds.length === 0 && "border-t-2 border-line-strong")}>
+                <td colSpan={4} className="px-3 py-3">
                   {meds.length === 0 && dayHead(day, isToday)}
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <span className="inline-flex items-center gap-1 text-xs font-extrabold text-ink-muted">
-                      <ClipboardList size={13} className="text-brand-600" /> {t("visit.obsDay", "متابعات اليوم")}
-                    </span>
-                    {obs.map((o) => {
-                      const tone = o.result ? (toneOfResult(o, species) ?? "none") : "none";
-                      return (
-                        <span key={o.id} className={cn("inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-2xs font-bold", OBS_TONE_CHIP[tone])}>
-                          {o.medication}
-                          {o.time && <span className="font-mono text-[10px] opacity-70 tabular-nums" dir="ltr">{o.time}</span>}
-                          {o.result
-                            ? <b>{o.result}</b>
-                            : <span className="font-semibold opacity-70">{t("visit.obsPending", "لم تسجّل بعد")}</span>}
-                        </span>
-                      );
-                    })}
+                  <div className="mb-2 flex items-center gap-2">
+                    <span className="grid h-7 w-7 place-items-center rounded-lg bg-brand-100 text-brand-700 dark:bg-brand-500/20 dark:text-brand-300"><ClipboardList size={15} /></span>
+                    <span className="text-sm font-black text-ink">{t("visit.obsDay", "متابعات اليوم")}</span>
+                    <span className="rounded-full bg-surface-1 px-2 py-0.5 text-2xs font-black text-ink-subtle tabular-nums">{formatNum(obs.length)}</span>
                     <span className="ms-auto hidden text-[10px] font-bold text-ink-subtle sm:inline">
                       {t("visit.obsWhere", "تُسجَّل قيمها من الشبكة أو الجولة")}
                     </span>
+                  </div>
+                  {/* بطاقةٌ لكل متابعة: شعارها، اسمها كبيراً، وقيمتها أكبر
+                      بلون درجتها — وغيرُ المسجَّلة بإطارٍ منقّط ينتظر بهدوء. */}
+                  <div className="grid gap-2 [grid-template-columns:repeat(auto-fill,minmax(215px,1fr))]">
+                    {obs.map((o) => {
+                      const tone = o.result ? (toneOfResult(o, species) ?? "none") : "none";
+                      const meta = OBS_TONE_CARD[tone];
+                      return (
+                        <div key={o.id} data-obscard={o.id}
+                          className={cn("flex items-center gap-2.5 rounded-xl border-2 px-3 py-2.5",
+                            meta.card, !o.result && "border-dashed")}>
+                          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-surface-1 text-xl shadow-soft">
+                            {obsEmoji(o)}
+                          </span>
+                          <div className="min-w-0 flex-1">
+                            <p className="flex flex-wrap items-center gap-x-1.5 text-sm font-extrabold leading-tight text-ink">
+                              {o.medication}
+                              {o.time && <span className="font-mono text-[10px] font-bold text-ink-subtle tabular-nums" dir="ltr">{o.time}</span>}
+                            </p>
+                            {o.result ? (
+                              <p className={cn("truncate text-base font-black leading-tight", meta.value)}>{o.result}</p>
+                            ) : (
+                              <p className="text-xs font-bold text-ink-subtle">{t("visit.obsPending", "لم تسجّل بعد")}</p>
+                            )}
+                          </div>
+                          {o.result && <span className={cn("h-2.5 w-2.5 shrink-0 rounded-full", meta.badge)} />}
+                        </div>
+                      );
+                    })}
                   </div>
                 </td>
               </tr>
