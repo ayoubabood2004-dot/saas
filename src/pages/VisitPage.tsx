@@ -6,8 +6,9 @@ import {
   ArrowRight, Clock, Check, Plus, NotebookPen, ClipboardList,
   Loader2, Lock, CheckCircle2, Stethoscope, UserRound, RotateCcw, AlertTriangle,
   Pill,
-  Zap, Rows3, LayoutGrid, CalendarPlus, CalendarClock, FolderOpen, FlaskConical,
+  Zap, Rows3, LayoutGrid, CalendarPlus, CalendarClock, FolderOpen, FlaskConical, Pencil,
 } from "lucide-react";
+import { toneOfResult } from "@/lib/observations";
 import type { Pet, ClinicVisit, PetNote, TreatmentEntry, LabResult, PetProblem } from "@/types";
 import { LastLabsStrip, LabEntry } from "@/components/LabCenter";
 import { JourneyCard } from "@/components/JourneyCard";
@@ -74,6 +75,14 @@ function diagnosisText(rec: ClinicalRecord | null, t: TFunction): string {
   const first = dx[0].disease;
   return dx.length > 1 ? t("visit.dxMore", { first, n: formatNum(dx.length - 1), defaultValue: "{{first}} · و{{n}} آخر" }) : first;
 }
+
+/** «تم العلاج» حقُّ الأدوية والسوائل وحدها. المتابعات (حرارة/أكل/إخراج/حالة
+ *  عامة…) ليست علاجاً «يُعطى» — قيمُها تُسجَّل بالشبكة، وهنا تُعرض ملاحظاتِ
+ *  يومٍ مرتّبةً لا صفوفَ جرعاتٍ تنتظر زراً. */
+const isGivable = (t: TreatmentEntry): boolean => {
+  const k = t.task_type ?? "drug";
+  return k === "drug" || k === "fluid";
+};
 
 /** Four-state dose status — the semantic system leading vet treatment sheets use. */
 type DoseStatus = "done" | "overdue" | "due" | "upcoming";
@@ -144,6 +153,8 @@ export default function VisitPage() {
   const [addDrugOpen, setAddDrugOpen] = useState(false);
   const [addDrugDay, setAddDrugDay] = useState<string>(() => localISO(new Date()));
   const [extendOpen, setExtendOpen] = useState(false);
+  /** صفُّ الدواء المفتوح للتعديل — قبل إعطائه، بمدى «اليوم» أو «الباقي كله». */
+  const [editTarget, setEditTarget] = useState<TreatmentEntry | null>(null);
   const [planView, setPlanView] = useState<"day" | "drug">("day");
 
   const reload = useCallback(async () => {
@@ -195,21 +206,24 @@ export default function VisitPage() {
   }, [notes]);
 
   const hasFlowsheet = treatments.length > 0;
-  const totalDoses = treatments.length;
-  const doneDoses = treatments.filter((t) => t.administered_at).length;
+  /* كل حسابات «الجرعات» تمشي على الأدوية والسوائل وحدها: العدّاد والالتزام
+   * و«إعطاء الكل» ما عاد يحسبون الحرارة والأكل جرعاتٍ تنتظر. */
+  const medRows = useMemo(() => treatments.filter(isGivable), [treatments]);
+  const totalDoses = medRows.length;
+  const doneDoses = medRows.filter((t) => t.administered_at).length;
   const remaining = totalDoses - doneDoses;
   const giveTarget = treatments.find((t) => t.id === giveId) ?? null;
 
   // ── Smart treatment intelligence — the numbers that drive the command panel ──
-  const todayDoses = useMemo(() => treatments.filter((t) => t.day === todayISO), [treatments, todayISO]);
+  const todayDoses = useMemo(() => medRows.filter((t) => t.day === todayISO), [medRows, todayISO]);
   const todayPending = useMemo(() => todayDoses.filter((t) => !t.administered_at), [todayDoses]);
   const overdueDoses = useMemo(
-    () => treatments.filter((t) => !t.administered_at && t.day < todayISO).sort((a, b) => a.day.localeCompare(b.day)),
-    [treatments, todayISO],
+    () => medRows.filter((t) => !t.administered_at && t.day < todayISO).sort((a, b) => a.day.localeCompare(b.day)),
+    [medRows, todayISO],
   );
   const nextDose = useMemo(
-    () => treatments.filter((t) => !t.administered_at && t.day > todayISO).sort((a, b) => a.day.localeCompare(b.day))[0] ?? null,
-    [treatments, todayISO],
+    () => medRows.filter((t) => !t.administered_at && t.day > todayISO).sort((a, b) => a.day.localeCompare(b.day))[0] ?? null,
+    [medRows, todayISO],
   );
   const adherence = totalDoses ? Math.round((doneDoses / totalDoses) * 100) : 0;
   const lastDay = dayGroups.length ? dayGroups[dayGroups.length - 1][0] : null;
@@ -219,7 +233,7 @@ export default function VisitPage() {
   // Group the flowsheet by medication — a clinical bird's-eye course view.
   const medCourses = useMemo(() => {
     const map = new Map<string, TreatmentEntry[]>();
-    for (const t of treatments) (map.get(t.medication) ?? map.set(t.medication, []).get(t.medication)!).push(t);
+    for (const t of medRows) (map.get(t.medication) ?? map.set(t.medication, []).get(t.medication)!).push(t);
     return [...map.entries()]
       .map(([name, rows]) => {
         const sorted = [...rows].sort((a, b) => a.day.localeCompare(b.day));
@@ -229,7 +243,7 @@ export default function VisitPage() {
         return { name, rows: sorted, total: sorted.length, given, overdueN, next, amount: sorted[0]?.amount ?? "", freq: sorted[0]?.observations ?? "" };
       })
       .sort((a, b) => a.name.localeCompare(b.name));
-  }, [treatments, todayISO]);
+  }, [medRows, todayISO]);
 
   const isIllness = visit?.kind === "illness";
   // Singular species name for a single patient (Arabic uses a plural in the catalog).
@@ -380,19 +394,55 @@ export default function VisitPage() {
     playSuccess(); setEndOpen(false); await reload();
   };
 
-  /* ---- Add a single ad-hoc medication for one day (بشكل مفرد) ---- */
+  /* ---- تعديل دواءٍ قبل إعطائه — لهذا اليوم وحده أو من يومه لنهاية الخطة ---- */
+  const editDrug = async (
+    orig: TreatmentEntry,
+    patch: { medication: string; amount: string; time: string; observations: string },
+    scope: "day" | "rest",
+  ) => {
+    const clean = {
+      medication: patch.medication.trim() || orig.medication,
+      amount: patch.amount.trim(),
+      observations: patch.observations.trim(),
+      // الوقت يدخل التعديل فقط إذا تغيّر فعلاً: تعميم وقتٍ واحد على كل جرعات
+      // اليوم كان سيطوي مواعيدها على بعضها بصمت.
+      ...(patch.time !== (orig.time ?? "") ? { time: patch.time } : {}),
+    };
+    /* الجرعات المعطاة تاريخٌ لا يُمسّ — التعديل يطال ما لم يُعطَ فقط. */
+    const targets = treatments.filter((x) =>
+      x.medication === orig.medication && !x.administered_at
+      && (scope === "day" ? x.day === orig.day : x.day >= orig.day));
+    await Promise.all(targets.map((x) => repo.updateTreatment(x.id, clean)));
+    if (visit) await syncDoseCycleForPet(visit.pet_id);
+    playSuccess();
+    toast.success(t("visit.drugEdited", { n: formatNum(targets.length), defaultValue: "تعدّلت {{n}} جرعة" }));
+    setEditTarget(null);
+    await reload();
+  };
+
+  /* ---- Add a single ad-hoc medication (بشكل مفرد) — لليوم أو لكل الأيام الباقية ---- */
   const openAddDrug = (day?: string) => { playTap(); setAddDrugDay(day ?? localISO(new Date())); setAddDrugOpen(true); };
-  const addDrug = async (d: { day: string; medication: string; amount: string; freq: string; doctor: string; givenNow: boolean }) => {
+  const addDrug = async (d: { day: string; medication: string; amount: string; freq: string; doctor: string; givenNow: boolean; repeatRest: boolean }) => {
     if (!visit || !d.medication.trim()) return;
     const nowISO = new Date().toISOString();
     const by = d.doctor || (user?.full_name ?? undefined);
-    await repo.addTreatment({
-      pet_id: visit.pet_id, visit_id: visit.id, day: d.day,
+    const base = {
+      pet_id: visit.pet_id, visit_id: visit.id,
       medication: d.medication.trim(), amount: d.amount.trim(), time: "",
       observations: d.freq.trim(), doctor: by,
-      administered_at: d.givenNow ? nowISO : undefined,
-      administered_by: d.givenNow ? by : undefined,
-    });
+    };
+    /* «ولكل الأيام الباقية»: صفٌّ لكل يومٍ من يومه حتى آخر يوم بالخطة —
+     * و«أُعطي الآن» يختم جرعة يومه وحدها، فالبقية تبقى تنتظر أيامها. */
+    const endDay = d.repeatRest && lastDay && lastDay > d.day ? lastDay : d.day;
+    const rows: Parameters<typeof repo.addTreatments>[0] = [];
+    for (let day = d.day; day <= endDay; day = addDaysISO(`${day}T00:00:00`, 1)) {
+      rows.push({
+        ...base, day,
+        administered_at: d.givenNow && day === d.day ? nowISO : undefined,
+        administered_by: d.givenNow && day === d.day ? by : undefined,
+      });
+    }
+    await repo.addTreatments(rows);
     await syncDoseCycleForPet(visit.pet_id);
     playSuccess(); setAddDrugOpen(false); await reload();
   };
@@ -561,8 +611,10 @@ export default function VisitPage() {
           {planView === "day" ? (
             <TreatmentSheetTable
               dayGroups={dayGroups} todayISO={todayISO} ended={ended} lang={lang} dayNotes={dayNotes}
+              species={pet?.species}
               todayRowRef={todayRowRef}
               onGive={(tx) => { playTap(); setGiveId(tx.id); }}
+              onEditDrug={(tx) => { playTap(); setEditTarget(tx); }}
               onAddNote={(day) => { playTap(); setNoteText(""); setNoteDay(day); setNoteOpen(true); }}
               onAddDrug={openAddDrug}
             />
@@ -661,7 +713,16 @@ export default function VisitPage() {
       </Modal>
 
       {giveTarget && <GiveModal t={giveTarget} lang={lang} defaultDoctor={user?.full_name ?? ""} ended={ended} onClose={() => setGiveId(null)} onGive={giveDose} onUndo={undoDose} />}
-      <AddDrugModal open={addDrugOpen} day={addDrugDay} lang={lang} defaultDoctor={user?.full_name ?? ""} onClose={() => setAddDrugOpen(false)} onAdd={addDrug} />
+      <AddDrugModal open={addDrugOpen} day={addDrugDay} lang={lang} lastDay={lastDay} defaultDoctor={user?.full_name ?? ""} onClose={() => setAddDrugOpen(false)} onAdd={addDrug} />
+      {editTarget && (
+        <EditDrugModal
+          entry={editTarget}
+          treatments={treatments}
+          lang={lang}
+          onClose={() => setEditTarget(null)}
+          onSave={editDrug}
+        />
+      )}
       <ExtendPlanModal open={extendOpen} lastDay={lastDay} lang={lang} medCount={lastDay ? treatments.filter((t) => t.day === lastDay).length : 0} onClose={() => setExtendOpen(false)} onExtend={extendCourse} />
       <EndVisitModal open={endOpen} onClose={() => setEndOpen(false)} onEnd={endVisit} />
     </div>
@@ -800,7 +861,7 @@ function ExtendPlanModal({ open, lastDay, lang, medCount, onClose, onExtend }: {
   return (
     <Modal open={open} onClose={onClose} title="تمديد خطة العلاج">
       <div className="space-y-4">
-        <p className="text-sm text-ink-muted">تُكرَّر أدوية آخر يوم{medCount ? ` (${formatNum(medCount)} دواء)` : ""} لعدد إضافي من الأيام{lastDay ? <> بعد <b className="text-ink">{formatDate(lastDay, lang)}</b></> : ""}.</p>
+        <p className="text-sm text-ink-muted">تُكرَّر أوامر آخر يوم كما هي — أدويةً ومتابعاتٍ بأوقاتها{medCount ? ` (${formatNum(medCount)} أمراً)` : ""} — لعدد إضافي من الأيام{lastDay ? <> بعد <b className="text-ink">{formatDate(lastDay, lang)}</b></> : ""}.</p>
         <div className="flex flex-wrap gap-2">
           {[3, 5, 7, 14].map((d) => (
             <button key={d} type="button" onClick={() => setDays(d)} className={cn("rounded-lg border px-4 py-2 text-sm font-black transition", days === d ? "border-brand-500 bg-brand-50 text-brand-700 dark:bg-brand-500/15 dark:text-brand-300" : "border-line bg-surface-1 text-ink-muted hover:border-brand-300")}>{formatNum(d)} أيام</button>
@@ -823,13 +884,34 @@ function ExtendPlanModal({ open, lastDay, lang, medCount, onClose, onExtend }: {
  * one row per dose. Doctors used to the paper read it the same way; giving a dose
  * fills in the treating doctor + time just as they would write it by hand.
  */
-function TreatmentSheetTable({ dayGroups, todayISO, ended, lang, dayNotes, onGive, onAddNote, onAddDrug, todayRowRef }: {
+/** درجة المتابعة المسجَّلة → لون رقاقةِ يومياتها. */
+const OBS_TONE_CHIP: Record<string, string> = {
+  good: "bg-success-50 text-success-700 dark:bg-success-500/15 dark:text-success-300",
+  mid: "bg-warn-50 text-warn-700 dark:bg-warn-500/15 dark:text-warn-300",
+  low: "bg-orange-50 text-orange-700 dark:bg-orange-500/15 dark:text-orange-300",
+  crit: "bg-danger-50 text-danger-700 dark:bg-danger-500/15 dark:text-danger-300",
+  none: "bg-surface-2 text-ink-muted",
+};
+
+function TreatmentSheetTable({ dayGroups, todayISO, ended, lang, species, dayNotes, onGive, onEditDrug, onAddNote, onAddDrug, todayRowRef }: {
   dayGroups: [string, TreatmentEntry[]][]; todayISO: string; ended: boolean; lang: string;
+  species?: Pet["species"];
   dayNotes: Map<string, PetNote[]>;
-  onGive: (t: TreatmentEntry) => void; onAddNote: (day: string) => void; onAddDrug: (day: string) => void;
+  onGive: (t: TreatmentEntry) => void; onEditDrug: (t: TreatmentEntry) => void;
+  onAddNote: (day: string) => void; onAddDrug: (day: string) => void;
   todayRowRef?: React.Ref<HTMLTableRowElement>;
 }) {
+  const { t } = useTranslation();
+  // تُلتقط قبل map الصفوف: بارامتر الصف اسمه t تاريخياً فيحجب المترجم داخله.
+  const editLabel = t("visit.editDrug", "تعديل الدواء");
   const th = "border-b-2 border-line-strong bg-surface-2 px-3 py-2.5 text-start text-xs font-extrabold text-ink";
+  /** ترويسة اليوم — تُرسم بأول صف دواء، وإن كان اليوم متابعاتٍ صرفة فبشريطها. */
+  const dayHead = (day: string, isToday: boolean) => (
+    <div className="mb-1.5 flex items-center gap-1.5">
+      <span className="text-sm font-black text-ink">{formatDate(day, lang)}</span>
+      {isToday && <span className="rounded bg-brand-600 px-1.5 py-0.5 text-[9px] font-black text-white">اليوم</span>}
+    </div>
+  );
   return (
     <div className="overflow-x-auto rounded border border-line-strong shadow-card">
       <table className="w-full min-w-[620px] border-collapse">
@@ -845,7 +927,12 @@ function TreatmentSheetTable({ dayGroups, todayISO, ended, lang, dayNotes, onGiv
           {dayGroups.map(([day, rows]) => {
             const isToday = day === todayISO;
             const notes = dayNotes.get(day) ?? [];
-            return rows.map((t, idx) => {
+            /* «تم العلاج» للأدوية والسوائل وحدها — المتابعات تتجمع بشريط
+             * يومياتٍ واحدٍ أنيق أسفل اليوم، لا صفوفَ جرعاتٍ تنتظر زراً. */
+            const meds = rows.filter(isGivable);
+            const obs = rows.filter((r) => !isGivable(r))
+              .sort((a, b) => (a.time || "99").localeCompare(b.time || "99"));
+            const medRowsJsx = meds.map((t, idx) => {
               const st = doseStatus(t, todayISO);
               const m = STATUS_META[st];
               const first = idx === 0;
@@ -854,12 +941,7 @@ function TreatmentSheetTable({ dayGroups, todayISO, ended, lang, dayNotes, onGiv
                   className={cn(m.row, first ? "border-t-2 border-line-strong" : "border-t border-line")}>
                   {/* اليوم والساعة — the date shows once per day; each dose row differs only by its time */}
                   <td className="border-e border-line px-3 py-2.5 align-top">
-                    {first && (
-                      <div className="mb-1.5 flex items-center gap-1.5">
-                        <span className="text-sm font-black text-ink">{formatDate(day, lang)}</span>
-                        {isToday && <span className="rounded bg-brand-600 px-1.5 py-0.5 text-[9px] font-black text-white">اليوم</span>}
-                      </div>
-                    )}
+                    {first && dayHead(day, isToday)}
                     <div className="flex items-center gap-1.5">
                       <span className={cn("inline-block h-2.5 w-2.5 shrink-0 rounded-sm", m.bar)} />
                       <span className="text-xs font-bold tabular-nums text-ink-subtle" dir="ltr">
@@ -873,12 +955,24 @@ function TreatmentSheetTable({ dayGroups, todayISO, ended, lang, dayNotes, onGiv
                       </button>
                     )}
                   </td>
-                  {/* العلاج */}
+                  {/* العلاج — والقلم يعدّله ما دام لم يُعطَ */}
                   <td className="border-e border-line px-3 py-2.5 align-top">
-                    <div className="text-sm font-extrabold text-ink">{t.medication}</div>
-                    {[t.amount, t.observations].filter(Boolean).length > 0 && (
-                      <div className="mt-0.5 text-xs font-semibold text-ink-subtle">{[t.amount, t.observations].filter(Boolean).join(" · ")}</div>
-                    )}
+                    <div className="flex items-start gap-1.5">
+                      <div className="min-w-0 flex-1">
+                        <div className="text-sm font-extrabold text-ink">{t.medication}</div>
+                        {[t.amount, t.observations].filter(Boolean).length > 0 && (
+                          <div className="mt-0.5 text-xs font-semibold text-ink-subtle">{[t.amount, t.observations].filter(Boolean).join(" · ")}</div>
+                        )}
+                      </div>
+                      {!ended && !t.administered_at && (
+                        <button type="button" data-editdrug={t.id} onClick={() => onEditDrug(t)}
+                          title={editLabel}
+                          aria-label={editLabel}
+                          className="grid h-7 w-7 shrink-0 place-items-center rounded-lg text-ink-subtle transition hover:bg-surface-2 hover:text-brand-600">
+                          <Pencil size={13} />
+                        </button>
+                      )}
+                    </div>
                   </td>
                   {/* الطبيب المعالج */}
                   <td className="border-e border-line px-3 py-2.5 align-top">
@@ -911,6 +1005,36 @@ function TreatmentSheetTable({ dayGroups, todayISO, ended, lang, dayNotes, onGiv
                 </tr>
               );
             });
+            /* شريط يوميات اليوم: رقاقةٌ لكل متابعة بوقتها وقيمتها الملوّنة
+             * بدرجتها — والمُنتظرةُ تُقال بهدوء «لم تسجّل بعد». */
+            const obsStrip = obs.length > 0 && (
+              <tr key={`${day}-obs`} data-obsstrip={day} className={cn("border-t border-line bg-surface-2/50", meds.length === 0 && "border-t-2 border-line-strong")}>
+                <td colSpan={4} className="px-3 py-2.5">
+                  {meds.length === 0 && dayHead(day, isToday)}
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="inline-flex items-center gap-1 text-xs font-extrabold text-ink-muted">
+                      <ClipboardList size={13} className="text-brand-600" /> {t("visit.obsDay", "متابعات اليوم")}
+                    </span>
+                    {obs.map((o) => {
+                      const tone = o.result ? (toneOfResult(o, species) ?? "none") : "none";
+                      return (
+                        <span key={o.id} className={cn("inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-2xs font-bold", OBS_TONE_CHIP[tone])}>
+                          {o.medication}
+                          {o.time && <span className="font-mono text-[10px] opacity-70 tabular-nums" dir="ltr">{o.time}</span>}
+                          {o.result
+                            ? <b>{o.result}</b>
+                            : <span className="font-semibold opacity-70">{t("visit.obsPending", "لم تسجّل بعد")}</span>}
+                        </span>
+                      );
+                    })}
+                    <span className="ms-auto hidden text-[10px] font-bold text-ink-subtle sm:inline">
+                      {t("visit.obsWhere", "تُسجَّل قيمها من الشبكة أو الجولة")}
+                    </span>
+                  </div>
+                </td>
+              </tr>
+            );
+            return [...medRowsJsx, obsStrip];
           })}
         </tbody>
       </table>
@@ -964,26 +1088,111 @@ function GiveModal({ t, lang, defaultDoctor, ended, onClose, onGive, onUndo }: {
   );
 }
 
+/* ------------------------------ Edit-drug modal --------------------------- */
+/** تعديل دواءٍ قبل إعطائه: الاسم/الكمية/الوقت/التكرار، وبمدى يقرّره الدكتور —
+ *  هذا اليوم وحده، أو من هذا اليوم لنهاية الخطة. المعطى تاريخٌ لا يُمسّ. */
+function EditDrugModal({ entry, treatments, onClose, onSave }: {
+  entry: TreatmentEntry; treatments: TreatmentEntry[]; lang: string;
+  onClose: () => void;
+  onSave: (orig: TreatmentEntry, patch: { medication: string; amount: string; time: string; observations: string }, scope: "day" | "rest") => void | Promise<void>;
+}) {
+  const { t } = useTranslation();
+  const [med, setMed] = useState(entry.medication);
+  const [amount, setAmount] = useState(entry.amount ?? "");
+  const [time, setTime] = useState(entry.time ?? "");
+  const [freq, setFreq] = useState(entry.observations ?? "");
+  const [scope, setScope] = useState<"day" | "rest">("day");
+  const [busy, setBusy] = useState(false);
+
+  const counts = useMemo(() => {
+    const mine = treatments.filter((x) => x.medication === entry.medication && !x.administered_at);
+    return {
+      day: mine.filter((x) => x.day === entry.day).length,
+      rest: mine.filter((x) => x.day >= entry.day).length,
+    };
+  }, [treatments, entry]);
+
+  const submit = async () => {
+    if (busy || !med.trim()) return;
+    setBusy(true);
+    try { await onSave(entry, { medication: med, amount, time, observations: freq }, scope); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <Modal open onClose={onClose} title={t("visit.editDrugTitle", { name: entry.medication, defaultValue: "تعديل — {{name}}" })}>
+      <div className="space-y-3">
+        <div>
+          <div className="mb-1.5 flex items-center gap-1.5 text-xs font-bold text-ink-muted"><Pill size={13} /> {t("visit.drugName", "اسم الدواء")}</div>
+          <input value={med} onChange={(e) => setMed(e.target.value)} autoFocus className="input h-11 w-full text-base" data-editmed />
+        </div>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <div>
+            <div className="mb-1.5 text-xs font-bold text-ink-muted">{t("visit.doseAmount", "الجرعة / الكمية")}</div>
+            <input value={amount} onChange={(e) => setAmount(e.target.value)} className="input h-11 w-full" data-editamount />
+          </div>
+          <div>
+            <div className="mb-1.5 text-xs font-bold text-ink-muted">{t("visit.doseTime", "الوقت")}</div>
+            <input type="time" value={time} onChange={(e) => setTime(e.target.value)} dir="ltr" className="input h-11 w-full tabular-nums" data-edittime />
+          </div>
+          <div>
+            <div className="mb-1.5 text-xs font-bold text-ink-muted">{t("visit.doseFreq", "التكرار / ملاحظة")}</div>
+            <input value={freq} onChange={(e) => setFreq(e.target.value)} className="input h-11 w-full" data-editfreq />
+          </div>
+        </div>
+        {/* المدى — جوهر الميزة: ضغطة تقرّر «اليوم» أو «الباقي كله» */}
+        <div>
+          <div className="mb-1.5 text-xs font-bold text-ink-muted">{t("visit.editScope", "يشمل التعديل")}</div>
+          <div className="grid grid-cols-2 gap-2">
+            <button type="button" data-scope="day" onClick={() => { playTap(); setScope("day"); }}
+              className={cn("rounded-xl border-2 px-3 py-2.5 text-start transition", scope === "day" ? "border-brand-500 bg-brand-50 dark:bg-brand-500/10" : "border-line bg-surface-1 hover:border-brand-300")}>
+              <span className="block text-sm font-extrabold text-ink">{t("visit.scopeDay", "هذا اليوم فقط")}</span>
+              <span className="block text-2xs font-bold text-ink-subtle">{t("visit.scopeDayN", { n: formatNum(counts.day), defaultValue: "{{n}} جرعة غير معطاة" })}</span>
+            </button>
+            <button type="button" data-scope="rest" onClick={() => { playTap(); setScope("rest"); }}
+              className={cn("rounded-xl border-2 px-3 py-2.5 text-start transition", scope === "rest" ? "border-brand-500 bg-brand-50 dark:bg-brand-500/10" : "border-line bg-surface-1 hover:border-brand-300")}>
+              <span className="block text-sm font-extrabold text-ink">{t("visit.scopeRest", "من اليوم لنهاية الخطة")}</span>
+              <span className="block text-2xs font-bold text-ink-subtle">{t("visit.scopeRestN", { n: formatNum(counts.rest), defaultValue: "{{n}} جرعة غير معطاة" })}</span>
+            </button>
+          </div>
+          <p className="mt-1.5 text-2xs font-bold text-ink-subtle">{t("visit.editGivenSafe", "الجرعات المعطاة سابقاً تبقى كما سُجّلت — التعديل لا يمسّها.")}</p>
+        </div>
+        <Button size="lg" className="w-full" data-editsave leftIcon={<Check size={18} />} disabled={!med.trim()} loading={busy} onClick={submit}>
+          {t("visit.editApply", "حفظ التعديل")}
+        </Button>
+      </div>
+    </Modal>
+  );
+}
+
 /* ------------------------------ Add-drug modal ---------------------------- */
 /** Add a SINGLE ad-hoc medication for one day — for when the doctor decides to give
  *  an extra drug on the spot, without reopening the full diagnosis & plan. */
-function AddDrugModal({ open, day, defaultDoctor, onClose, onAdd }: {
-  open: boolean; day: string; lang: string; defaultDoctor: string;
+function AddDrugModal({ open, day, lastDay, defaultDoctor, onClose, onAdd }: {
+  open: boolean; day: string; lang: string; lastDay: string | null; defaultDoctor: string;
   onClose: () => void;
-  onAdd: (d: { day: string; medication: string; amount: string; freq: string; doctor: string; givenNow: boolean }) => void | Promise<void>;
+  onAdd: (d: { day: string; medication: string; amount: string; freq: string; doctor: string; givenNow: boolean; repeatRest: boolean }) => void | Promise<void>;
 }) {
+  const { t } = useTranslation();
   const [med, setMed] = useState("");
   const [amount, setAmount] = useState("");
   const [freq, setFreq] = useState("");
   const [doctor, setDoctor] = useState(defaultDoctor);
   const [d, setD] = useState(day);
   const [givenNow, setGivenNow] = useState(false);
+  const [repeatRest, setRepeatRest] = useState(false);
   const [busy, setBusy] = useState(false);
 
   // Reset the form each time the modal opens (for a fresh day/doctor).
   useEffect(() => {
-    if (open) { setMed(""); setAmount(""); setFreq(""); setDoctor(defaultDoctor); setD(day); setGivenNow(false); setBusy(false); }
+    if (open) { setMed(""); setAmount(""); setFreq(""); setDoctor(defaultDoctor); setD(day); setGivenNow(false); setRepeatRest(false); setBusy(false); }
   }, [open, day, defaultDoctor]);
+
+  /** كم يوماً يغطي التكرار حتى نهاية الخطة — للمعاينة على الخيار نفسه. */
+  const restDays = useMemo(() => {
+    if (!lastDay || lastDay <= d) return 0;
+    return Math.round((new Date(`${lastDay}T00:00:00`).getTime() - new Date(`${d}T00:00:00`).getTime()) / 86400000) + 1;
+  }, [lastDay, d]);
 
   // Drug-name suggestions: the built-in catalogue + the clinic's own medications.
   const drugNames = useMemo(() => {
@@ -996,7 +1205,7 @@ function AddDrugModal({ open, day, defaultDoctor, onClose, onAdd }: {
   const submit = async () => {
     if (!med.trim() || busy) return;
     setBusy(true);
-    try { await onAdd({ day: d, medication: med, amount, freq, doctor, givenNow }); }
+    try { await onAdd({ day: d, medication: med, amount, freq, doctor, givenNow, repeatRest }); }
     finally { setBusy(false); }
   };
 
@@ -1034,6 +1243,13 @@ function AddDrugModal({ open, day, defaultDoctor, onClose, onAdd }: {
           <input type="checkbox" checked={givenNow} onChange={(e) => setGivenNow(e.target.checked)} className="h-4 w-4 accent-success-600" />
           <Check size={15} className="text-success-600" /> تم إعطاؤه الآن (تسجيل الجرعة كمُعطاة)
         </label>
+        {/* «ولكل الأيام الباقية»: صف لكل يوم حتى نهاية الخطة — لا يوم واحد فقط */}
+        {restDays > 1 && (
+          <label className="flex cursor-pointer items-center gap-2 rounded border border-line bg-surface-2 px-3 py-2.5 text-sm font-bold text-ink">
+            <input type="checkbox" data-repeatrest checked={repeatRest} onChange={(e) => setRepeatRest(e.target.checked)} className="h-4 w-4 accent-brand-600" />
+            <CalendarPlus size={15} className="text-brand-600" /> {t("visit.repeatRest", { n: formatNum(restDays), defaultValue: "كرّره لكل الأيام الباقية بالخطة ({{n}} أيام)" })}
+          </label>
+        )}
         <Button size="lg" className="w-full" leftIcon={<Plus size={18} />} disabled={!med.trim()} loading={busy} onClick={submit}>
           إضافة الدواء
         </Button>

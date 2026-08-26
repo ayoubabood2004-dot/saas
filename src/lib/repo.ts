@@ -931,6 +931,15 @@ const demoRepo = {
     tx.missed_reason = null;
     saveDB(db);
   },
+  /** تعديل أمرٍ قبل إعطائه: الاسم/الكمية/الوقت/التكرار — به يصير «تعديل اليوم
+   *  أو كل الأيام الباقية» بلا هدمٍ وإعادة بناء. */
+  async updateTreatment(id: string, patch: Partial<Pick<TreatmentEntry, "medication" | "amount" | "time" | "observations" | "route">>): Promise<void> {
+    const db = loadDB();
+    const tx = db.treatments.find((t) => t.id === id);
+    if (!tx) return;
+    Object.assign(tx, patch);
+    saveDB(db);
+  },
 
   /** توثيق فوات مهمة بسببها — تبقى غير مُنجَزة، لكنها ما عادت مجهولة. */
   async setTreatmentMissed(id: string, reason: string | null): Promise<void> {
@@ -2042,6 +2051,7 @@ const DEMO_ACTIVITY_MAP: Record<string, { entity: string; action: "INSERT" | "UP
   addTreatments: { entity: "treatment_entries", action: "INSERT" },
   setTreatmentGiven: { entity: "treatment_entries", action: "UPDATE" },
   setTreatmentResult: { entity: "treatment_entries", action: "UPDATE" },
+  updateTreatment: { entity: "treatment_entries", action: "UPDATE" },
   setTreatmentMissed: { entity: "treatment_entries", action: "UPDATE" },
   deleteTreatment: { entity: "treatment_entries", action: "DELETE" },
   addAdmission: { entity: "admissions", action: "INSERT" },
@@ -2677,6 +2687,9 @@ const supabaseRepo: typeof demoRepo = {
   },
   async setTreatmentMissed(id, reason) {
     ok(await sbc().from("treatment_entries").update({ missed_reason: reason }).eq("id", id));
+  },
+  async updateTreatment(id, patch) {
+    ok(await sbc().from("treatment_entries").update(patch).eq("id", id));
   },
   async listAdmissions(clinicId) {
     // Newest case first — order by the precise created_at so cases opened on the same
