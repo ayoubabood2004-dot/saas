@@ -6,7 +6,7 @@ import {
   ArrowRight, Clock, Check, Plus, NotebookPen, ClipboardList,
   Loader2, Lock, CheckCircle2, Stethoscope, UserRound, RotateCcw, AlertTriangle,
   Pill,
-  Zap, Rows3, LayoutGrid, CalendarPlus, CalendarClock, FolderOpen, FlaskConical, Pencil,
+  Zap, Rows3, LayoutGrid, CalendarPlus, CalendarClock, FolderOpen, FlaskConical, Pencil, Printer,
 } from "lucide-react";
 import { toneOfResult, scaleFor } from "@/lib/observations";
 import type { Pet, ClinicVisit, PetNote, TreatmentEntry, LabResult, PetProblem } from "@/types";
@@ -625,6 +625,27 @@ export default function VisitPage() {
           )}
         </div>
       )}
+
+      {/* ── طباعة الطبلة — زرٌّ بارز ودائم ────────────────────────────────
+          كان موجوداً لكن مدفوناً داخل قسمٍ مطويّ باللافتة وبخطٍّ صغير، ويختفي
+          كلياً بعد إنهاء العلاج — وهو أكثر وقتٍ تُطلب فيه الورقة. فصار سطراً
+          قائماً بذاته يظهر دائماً: أثناء العلاج وبعده. */}
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <button
+          data-printsheet
+          onClick={printSheet}
+          disabled={!hasFlowsheet && !primary}
+          style={{ minHeight: 44 }}
+          className="inline-flex items-center gap-2 rounded-full border-2 border-brand-500 bg-brand-50 px-4 py-2.5 text-sm font-extrabold text-brand-700 transition hover:bg-brand-100 disabled:opacity-45 dark:bg-brand-500/15 dark:text-brand-300"
+        >
+          <Printer size={16} /> {t("visit.printSheet", "طباعة الطبلة")}
+        </button>
+        <span className="text-2xs font-semibold text-ink-subtle">
+          {hasFlowsheet || primary
+            ? t("visit.printSheetHint", "ورقة كاملة: بيانات الحيوان والتشخيص وكل الجرعات يوماً بيوم — تنطبع وتنعلّق على القفص.")
+            : t("visit.printSheetEmpty", "سجّل تشخيصاً أو أضف دواءً أولاً حتى تصير الطبلة قابلة للطباعة.")}
+        </span>
+      </div>
 
       {/* ── شريط الأزرار — نفس الترتيب المعتاد، بمظهر أهدأ ── */}
       {!ended && (
