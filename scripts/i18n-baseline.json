@@ -103,5 +103,6 @@
   "src/pages/SurgeriesHub.tsx": 22,
   "src/pages/TrackJourney.tsx": 12,
   "src/pages/VisitPage.tsx": 74,
-  "src/pages/WhatsAppCampaigns.tsx": 3
+  "src/pages/WhatsAppCampaigns.tsx": 3,
+  "src/lib/careReportPrint.ts": 43
 }

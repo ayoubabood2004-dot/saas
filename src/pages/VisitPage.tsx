@@ -6,7 +6,7 @@ import {
   ArrowRight, Clock, Check, Plus, NotebookPen, ClipboardList,
   Loader2, Lock, CheckCircle2, Stethoscope, UserRound, RotateCcw, AlertTriangle,
   Pill,
-  Zap, Rows3, LayoutGrid, CalendarPlus, CalendarClock, FolderOpen, FlaskConical, Pencil, Printer,
+  Zap, Rows3, LayoutGrid, CalendarPlus, CalendarClock, FolderOpen, FlaskConical, Pencil, Printer, FileText,
 } from "lucide-react";
 import { toneOfResult, scaleFor } from "@/lib/observations";
 import type { Pet, ClinicVisit, PetNote, TreatmentEntry, LabResult, PetProblem } from "@/types";
@@ -30,6 +30,7 @@ import { localISO, formatDate, formatNum, ageFromDOB, cn } from "@/lib/utils";
 import { getClinicName, getClinicLogo, getClinicSocials, getClockFormat } from "@/lib/settings";
 import { fmtClock } from "@/lib/clock";
 import { openTreatmentSheet, type SheetTreatmentRow } from "@/lib/treatmentSheetPrint";
+import { openCareReport } from "@/lib/careReportPrint";
 import { syncDoseCycleForPet } from "@/lib/doseCycle";
 import { doseTimesFor, perDayFrom } from "@/lib/treatmentSchedule";
 import { ProblemList } from "@/components/ProblemList";
@@ -488,6 +489,56 @@ export default function VisitPage() {
     if (!ok) toast.error(t("visit.printFailed", "تعذّرت الطباعة"), t("visit.printFailedHint", "اسمح بالنوافذ المنبثقة ثم أعد المحاولة."));
   };
 
+  /* ---- تقرير الحالة للزبون — سردٌ بلا أسماء أدوية (careReportPrint) ----
+   * ورقة الخطة أعلاه وثيقةٌ داخلية بأسماء الأدوية ومقاديرها. وهذا شيءٌ آخر:
+   * ورقةٌ تُسلَّم لصاحب الحيوان تحكي ما جرى وكيف نُفِّذت الرعاية — والأدوية
+   * تُعدّ ولا تُسمّى، لأن الوصفة قرارٌ طبيّ لا ورقةٌ تُحمل للصيدلية. */
+  const printCareReport = () => {
+    if (!pet || !visit) return;
+    playTap();
+    const socials = getClinicSocials();
+    // المتابعات = ما ليس دواءً ولا سائلاً، والمسجَّل منها وحده يُعدّ.
+    const obsAll = treatments.filter((x) => !isGivable(x));
+    const obsDone = obsAll.filter((x) => x.result != null && String(x.result).trim() !== "");
+    const kinds = [...new Set(obsDone.map((x) => x.medication?.trim()).filter(Boolean) as string[])];
+    const ok = openCareReport({
+      clinicName: getClinicName() || user?.full_name || t("visit.clinicFallback", "عيادة بيطرية"),
+      clinicPhone: user?.phone ?? null,
+      brand: "doctorVet",
+      logoUrl: getClinicLogo(),
+      facebook: socials.facebook || null,
+      instagram: socials.instagram || null,
+      lang,
+      pet: {
+        name: pet.name,
+        species: speciesSingular(pet.species),
+        sex: t(`pet.sex.${pet.sex}`, pet.sex),
+        age: ageText(pet.dob, t),
+      },
+      ownerName: pet.owner_name ?? null,
+      fileNo: pet.serial ?? null,
+      openedAt: formatDate(visit.opened_at, lang),
+      endedAt: visit.ended_at ? formatDate(visit.ended_at, lang) : null,
+      printedAt: formatDate(new Date().toISOString(), lang),
+      reason: visit.reason ?? null,
+      diagnosis: diagnosisText(primary, t) || null,
+      outcome: visit.outcome ? t(`outcome.${visit.outcome}`, visit.outcome) : null,
+      summary: visit.summary ?? null,
+      doctor: user?.full_name ?? null,
+      stats: {
+        days: dayGroups.length,
+        doses: totalDoses,
+        dosesGiven: doneDoses,
+        adherence,
+        observations: obsDone.length,
+        observationKinds: kinds,
+        labs: labs.length,
+        surgeries: [],
+      },
+    });
+    if (!ok) toast.error(t("visit.printFailed", "تعذّرت الطباعة"), t("visit.printFailedHint", "اسمح بالنوافذ المنبثقة ثم أعد المحاولة."));
+  };
+
   if (loading) return <div className="mx-auto max-w-3xl px-4 py-16 text-center text-ink-subtle"><Loader2 className="mx-auto mb-2 animate-spin" /> {t("visit.loading", "جارٍ التحميل…")}</div>;
   if (!visit || !pet) return (
     <div className="mx-auto max-w-3xl px-4 py-16 text-center text-ink-subtle">
@@ -640,9 +691,20 @@ export default function VisitPage() {
         >
           <Printer size={16} /> {t("visit.printSheet", "طباعة الطبلة")}
         </button>
+        {/* تقرير الزبون — ورقةٌ أخرى تماماً: سردٌ عن الحالة والرعاية بلا
+            أسماء أدوية، تُسلَّم لصاحب الحيوان. */}
+        <button
+          data-printreport
+          onClick={printCareReport}
+          disabled={!hasFlowsheet && !primary}
+          style={{ minHeight: 44 }}
+          className="inline-flex items-center gap-2 rounded-full border-2 border-teal-500 bg-teal-50 px-4 py-2.5 text-sm font-extrabold text-teal-700 transition hover:bg-teal-100 disabled:opacity-45 dark:bg-teal-500/15 dark:text-teal-300"
+        >
+          <FileText size={16} /> {t("visit.printReport", "تقرير للزبون")}
+        </button>
         <span className="text-2xs font-semibold text-ink-subtle">
           {hasFlowsheet || primary
-            ? t("visit.printSheetHint", "ورقة كاملة: بيانات الحيوان والتشخيص وكل الجرعات يوماً بيوم — تنطبع وتنعلّق على القفص.")
+            ? t("visit.printBothHint", "الطبلة: ورقة داخلية بكل الجرعات · التقرير: ورقة لصاحب الحيوان تحكي الحالة والرعاية بلا ذكر أسماء الأدوية.")
             : t("visit.printSheetEmpty", "سجّل تشخيصاً أو أضف دواءً أولاً حتى تصير الطبلة قابلة للطباعة.")}
         </span>
       </div>
