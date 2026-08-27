@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   Crown, Search, UserRound, Phone, CalendarClock, ShoppingBag, RotateCcw, Wallet,
-  Receipt, TrendingUp, BookUser, PackageCheck,
+  Receipt, TrendingUp, BookUser, PackageCheck, Pencil,
 } from "lucide-react";
 import type { Invoice, InvoiceItem } from "@/types";
 import { Modal } from "@/components/Modal";
@@ -10,6 +10,11 @@ import { cn, money, formatNum, formatDate } from "@/lib/utils";
 import { dueOf, paidOf } from "@/lib/debt";
 import { invoiceNo } from "@/lib/invoicePrint";
 import { playTap } from "@/lib/sounds";
+import { usePermissions } from "@/hooks/usePermissions";
+/* محرّر أسطر الفاتورة نفسه الذي يستعمله التوصيل (0110): عكسٌ كامل للمخزون ثم
+ * خصمٌ جديد بمعاملة سيرفر واحدة — فالتعديل من دفتر الزبون متزامن مع المخزون
+ * والأسعار حرفياً، لا نسخة ثانية من المنطق. */
+import { DeliveryEditDialog } from "@/components/retail/DeliveryEditDialog";
 
 /* ============================================================================
  * سجل العملاء (دفتر الزبائن) — تبويب داخل التقارير.
@@ -43,7 +48,7 @@ type CustomerRow = {
   due: number;
 };
 
-export function CustomersTab({ invoices, items, inRange, rangeLabel, canProfit }: {
+export function CustomersTab({ invoices, items, inRange, rangeLabel, canProfit, clinicId, onChanged }: {
   /** كل الفواتير (التاريخ الكامل) — يغذّي دفتر الزبون وديونه. */
   invoices: Invoice[];
   /** كل أسطر الفواتير — «شنو اشترى بالضبط». */
@@ -52,6 +57,9 @@ export function CustomersTab({ invoices, items, inRange, rangeLabel, canProfit }
   inRange: Invoice[];
   rangeLabel: string;
   canProfit: boolean;
+  clinicId?: string;
+  /** يُستدعى بعد تعديل فاتورة — التقارير تعيد الجلب فتصدق كل الأرقام. */
+  onChanged?: () => void;
 }) {
   const { t, i18n } = useTranslation();
   const [q, setQ] = useState("");
@@ -170,6 +178,8 @@ export function CustomersTab({ invoices, items, inRange, rangeLabel, canProfit }
         invoices={invoices}
         items={items}
         canProfit={canProfit}
+        clinicId={clinicId}
+        onChanged={onChanged}
         onClose={() => setOpenKey(null)}
       />
     </div>
@@ -199,10 +209,14 @@ function Kpi({ icon: Icon, tone, label, value, sub }: { icon: typeof Wallet; ton
  * دفتر الزبون — تاريخه الكامل (لا يتقيد بفترة التقارير): أرقامه الإجمالية،
  * أكثر شي يشتريه، وكل معاملة معاملة بحالتها (مدفوعة/عليها دين/مرجعة).
  * ==========================================================================*/
-function CustomerBookModal({ openKey, invoices, items, canProfit, onClose }: {
-  openKey: string | null; invoices: Invoice[]; items: InvoiceItem[]; canProfit: boolean; onClose: () => void;
+function CustomerBookModal({ openKey, invoices, items, canProfit, clinicId, onChanged, onClose }: {
+  openKey: string | null; invoices: Invoice[]; items: InvoiceItem[]; canProfit: boolean; clinicId?: string; onChanged?: () => void; onClose: () => void;
 }) {
   const { t, i18n } = useTranslation();
+  const { can } = usePermissions();
+  /* تعديل فاتورة من الدفتر — نفس صلاحية تصحيح الفواتير بشاشة المبيعات. */
+  const canEdit = can("deleteInvoices");
+  const [editInv, setEditInv] = useState<Invoice | null>(null);
 
   const book = useMemo(() => {
     if (!openKey) return null;
@@ -317,7 +331,9 @@ function CustomerBookModal({ openKey, invoices, items, canProfit, onClose }: {
                     <p className="flex flex-wrap items-center gap-x-2 text-xs font-bold text-ink">
                       {formatDate(inv.created_at, i18n.language)}
                       <span className="chip bg-surface-2 font-mono text-2xs text-ink-muted">{invoiceNo(inv.id)}</span>
-                      {refunded && <span className="chip bg-danger-100 text-2xs font-bold text-danger-700 dark:bg-danger-500/20 dark:text-danger-300">{t("rpt.cust.refunded", "مرجعة — رجع البضاعة")}</span>}
+                      {/* صياغة محايدة: الإرجاع قد يكون تصحيح غلط بالكاشير لا بضاعة
+                          رجعت فعلاً — الجملة القديمة كانت تتّهم الزبون بلا دليل. */}
+                      {refunded && <span className="chip bg-danger-100 text-2xs font-bold text-danger-700 dark:bg-danger-500/20 dark:text-danger-300">{t("rpt.cust.refunded", "مرجعة — أُلغيت واسترجع مخزونها")}</span>}
                       {!refunded && due > 0 && <span className="chip bg-warn-100 text-2xs font-bold text-warn-700 dark:bg-warn-500/20 dark:text-warn-300">{t("rpt.cust.dueChip", { v: money(due), defaultValue: "دين {{v}}" })}</span>}
                     </p>
                     <p className="truncate text-2xs text-ink-subtle">{summary}</p>
@@ -326,12 +342,37 @@ function CustomerBookModal({ openKey, invoices, items, canProfit, onClose }: {
                     <p className={cn("text-sm font-extrabold tabular-nums", refunded ? "text-danger-600 line-through dark:text-danger-400" : "text-ink")}>{money(inv.total)}</p>
                     {!refunded && due > 0 && <p className="text-2xs text-ink-subtle tabular-nums">{t("rpt.cust.paidOf", { v: money(paidOf(inv)), defaultValue: "دفع {{v}}" })}</p>}
                   </div>
+                  {/* تعديل الفاتورة: كمية غلط، صنف زايد، سعر غلط — يتصحّح هنا
+                      بمزامنة مخزون كاملة بدل «إرجاع» يلوّث سجل الزبون. */}
+                  {!refunded && canEdit && (
+                    <button
+                      type="button"
+                      data-custedit={inv.id}
+                      onClick={() => { playTap(); setEditInv(inv); }}
+                      title={t("rpt.cust.editInv", "تعديل الفاتورة — المخزون والأسعار تتزامن تلقائياً")}
+                      aria-label={t("rpt.cust.editInv", "تعديل الفاتورة — المخزون والأسعار تتزامن تلقائياً")}
+                      className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-surface-2 text-ink-muted transition hover:bg-brand-50 hover:text-brand-600 dark:hover:bg-brand-500/15"
+                    >
+                      <Pencil size={15} />
+                    </button>
+                  )}
                 </div>
               </div>
             );
           })}
         </div>
       </div>
+
+      {editInv && (
+        <DeliveryEditDialog
+          order={null}
+          invoice={editInv}
+          courier={null}
+          clinicId={clinicId}
+          onClose={() => setEditInv(null)}
+          onSaved={() => { setEditInv(null); onChanged?.(); }}
+        />
+      )}
     </Modal>
   );
 }

@@ -60,7 +60,9 @@ const r3 = (n: number) => Math.round(n * 1000) / 1000;
 export function DeliveryEditDialog({
   order, invoice, courier, clinicId, onClose, onSaved,
 }: {
-  order: DeliveryOrder;
+  /** طلب التوصيل — null = تعديل فاتورة عادية (من دفتر الزبون بالتقارير):
+   *  نفس المحرّر ونفس ذرّية 0110، بلا سواق ولا إشعارات توصيل. */
+  order: DeliveryOrder | null;
   invoice: Invoice;
   courier: Courier | null;
   clinicId?: string;
@@ -75,7 +77,7 @@ export function DeliveryEditDialog({
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
   const [reason, setReason] = useState("");
-  const [notify, setNotify] = useState(order.status === "out" && !!courier?.phone);
+  const [notify, setNotify] = useState(order?.status === "out" && !!courier?.phone);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -222,9 +224,10 @@ export function DeliveryEditDialog({
       }));
       const inv = await repo.editInvoiceLines(invoice.id, lines, reason.trim() || null);
       playSuccess();
-      toast.success(t("retail.dEditSaved", { n: money(Math.max(0, round2((Number(inv.total) || newTotal) - paid))), defaultValue: "تم التعديل — يستلم السائق {{n}}" }));
+      if (order) toast.success(t("retail.dEditSaved", { n: money(Math.max(0, round2((Number(inv.total) || newTotal) - paid))), defaultValue: "تم التعديل — يستلم السائق {{n}}" }));
+      else toast.success(t("retail.invEditSaved", { n: money(Number(inv.total) || newTotal), defaultValue: "تم تعديل الفاتورة — الإجمالي الجديد {{n}} والمخزون تزامن تلقائياً" }));
       // الإشعار بعد نجاح الحفظ فقط: رسالة عن تعديل لم يُحفظ أسوأ من لا رسالة.
-      if (notify && courier?.phone) {
+      if (order && notify && courier?.phone) {
         try {
           await sendWhatsApp({
             phone: waNumber(courier.phone, getDialCode()),
@@ -249,10 +252,10 @@ export function DeliveryEditDialog({
   };
 
   return (
-    <Modal open onClose={onClose} size="wide" title={t("retail.dEditTitle", "تعديل طلب التوصيل")}>
+    <Modal open onClose={onClose} size="wide" title={order ? t("retail.dEditTitle", "تعديل طلب التوصيل") : t("retail.invEditTitle", "تعديل الفاتورة")}>
       <div className="space-y-3.5" data-dedit>
         {/* الطلب خرج فعلاً — تحذير قبل أي ضغطة، لا بعدها */}
-        {order.status === "out" && (
+        {order?.status === "out" && (
           <div className="flex items-start gap-2.5 rounded-2xl border border-amber-300 bg-amber-50 p-3 text-sm dark:border-amber-500/40 dark:bg-amber-500/10">
             <ShieldAlert size={18} className="mt-0.5 shrink-0 text-amber-600" />
             <p className="text-amber-800 dark:text-amber-200">
@@ -383,7 +386,7 @@ export function DeliveryEditDialog({
               </div>
               <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5 border-t border-line pt-2 text-sm">
                 <span className="flex items-center gap-1.5 font-bold text-sky-700 dark:text-sky-300">
-                  <Wallet size={15} /> {t("retail.dEditNewCollect", "يستلم السائق الآن")} <b data-dnewcod className="tabular-nums">{money(newCod)}</b>
+                  <Wallet size={15} /> {order ? t("retail.dEditNewCollect", "يستلم السائق الآن") : t("retail.invEditRemaining", "الباقي على الزبون")} <b data-dnewcod className="tabular-nums">{money(newCod)}</b>
                 </span>
                 {paid > 0.005 && <span className="text-2xs text-ink-subtle">{t("retail.dEditPaidNote", { n: money(paid), defaultValue: "المدفوع {{n}} لا يتغيّر" })}</span>}
               </div>
@@ -421,7 +424,7 @@ export function DeliveryEditDialog({
             </div>
 
             {/* إبلاغ السائق */}
-            {order.status === "out" && courier?.phone && (
+            {order?.status === "out" && courier?.phone && (
               <label className="flex cursor-pointer items-center gap-2 rounded-2xl border border-line bg-surface-1 p-2.5 text-sm">
                 <input type="checkbox" checked={notify} onChange={(e) => setNotify(e.target.checked)} className="h-4 w-4 accent-sky-600" />
                 <Send size={14} className="text-sky-600" />

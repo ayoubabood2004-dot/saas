@@ -25,6 +25,10 @@ import { playTap, playSuccess, playWarning } from "@/lib/sounds";
 import { openStockReport } from "@/lib/stockReportPrint";
 import { exportStocktakeXlsx } from "@/lib/stockReportXlsx";
 import { catalogLookup, type CatalogHit } from "@/lib/catalog";
+/* وضع المدير: جهاز مقفل بلا جلسة مدير → أسعار الشراء والأرباح تختفي من
+ * المخزون كله (بطاقة القيمة، صفوف المنتجات، نموذج التعديل، وتبويبا
+ * المشتريات والديون يختفيان أصلاً). */
+import { useOverride } from "@/lib/managerOverride";
 import { staggerContainer, staggerItem } from "@/lib/motion";
 
 const LOW_STOCK = 5;
@@ -114,6 +118,11 @@ export function Inventory() {
   const [sections, setSections] = useState<CompanySection[]>(seed?.s ?? []);
   const [loading, setLoading] = useState(!seed);
   const [view, setView] = useState<View>("products");
+  const { restricted } = useOverride();
+  // جهاز مقفل وواقف على تبويب حساس؟ رجّعه للمنتجات فوراً.
+  useEffect(() => {
+    if (restricted && (view === "purchases" || view === "ledger")) setView("products");
+  }, [restricted, view]);
   // null = لم يُفحص بعد · false = ترحيل 0075 ناقص (المجموعات تسقط بصمت)
   const [groupsOk, setGroupsOk] = useState<boolean | null>(null);
   const [fixBusy, setFixBusy] = useState(false);
@@ -304,8 +313,8 @@ export function Inventory() {
       <div className="mb-4 inline-flex flex-wrap rounded-2xl bg-surface-2 p-1">
         <ViewTab active={view === "products"} icon={Package} label={t("pos.tabProducts", "المنتجات")} onClick={() => { playTap(); setView("products"); }} />
         <ViewTab active={view === "companies"} icon={Building2} label={t("pos.tabCompanies", "الشركات")} onClick={() => { playTap(); setView("companies"); }} />
-        <ViewTab active={view === "purchases"} icon={ShoppingBag} label={t("pos.tabPurchases", "المشتريات")} onClick={() => { playTap(); setView("purchases"); }} />
-        <ViewTab active={view === "ledger"} icon={Wallet} label={t("pos.tabLedger", "الديون والفواتير")} onClick={() => { playTap(); setView("ledger"); }} />
+        {!restricted && <ViewTab active={view === "purchases"} icon={ShoppingBag} label={t("pos.tabPurchases", "المشتريات")} onClick={() => { playTap(); setView("purchases"); }} />}
+        {!restricted && <ViewTab active={view === "ledger"} icon={Wallet} label={t("pos.tabLedger", "الديون والفواتير")} onClick={() => { playTap(); setView("ledger"); }} />}
         <ViewTab active={view === "barcodes"} icon={ScanBarcode} label={t("pos.tabBarcodes", "مولد الباركود")} onClick={() => { playTap(); setView("barcodes"); }} />
       </div>
 
@@ -385,6 +394,7 @@ function computeInventoryValue(products: Product[], sections: CompanySection[]) 
 }
 
 function InventoryValueCard({ products, sections }: { products: Product[]; sections: CompanySection[] }) {
+  const { restricted } = useOverride();
   const { t } = useTranslation();
   const v = useMemo(() => computeInventoryValue(products, sections), [products, sections]);
   return (
@@ -394,12 +404,12 @@ function InventoryValueCard({ products, sections }: { products: Product[]; secti
         <h3 className="text-sm font-bold text-ink">{t("pos.invValueTitle", "قيمة المخزون")}</h3>
         <span className="ms-auto text-2xs text-ink-subtle">{t("pos.invValueSub", "قيمة البضاعة الموجودة الآن")}</span>
       </div>
-      <div className="grid grid-cols-1 divide-y divide-line sm:grid-cols-3 sm:divide-x sm:divide-y-0 rtl:sm:divide-x-reverse">
-        <ValueCell label={t("pos.invValueCost", "رأس المال (شراء)")} value={money(Math.round(v.cost))} tone="ink" />
+      <div className={cn("grid grid-cols-1 divide-y divide-line sm:divide-x sm:divide-y-0 rtl:sm:divide-x-reverse", restricted ? "sm:grid-cols-1" : "sm:grid-cols-3")}>
+        {!restricted && <ValueCell label={t("pos.invValueCost", "رأس المال (شراء)")} value={money(Math.round(v.cost))} tone="ink" />}
         <ValueCell label={t("pos.invValueRetail", "قيمة البيع")} value={money(Math.round(v.retail))} tone="brand" />
-        <ValueCell label={t("pos.invValueProfit", "الربح المتوقع")} value={money(Math.round(v.profit))} tone="success" />
+        {!restricted && <ValueCell label={t("pos.invValueProfit", "الربح المتوقع")} value={money(Math.round(v.profit))} tone="success" />}
       </div>
-      {v.hasPooled && (
+      {v.hasPooled && !restricted && (
         <div className="flex items-center gap-1.5 border-t border-line bg-surface-2/50 px-5 py-2.5 text-xs text-ink-subtle">
           <Layers size={13} className="shrink-0 text-brand-500" />
           {t("pos.invValueEstimated", { cost: money(Math.round(v.pooledCost)), retail: money(Math.round(v.pooledRetail)), defaultValue: "منها تقديري (مخزون مجمّع): {{cost}} شراء · {{retail}} بيع" })}
@@ -422,6 +432,7 @@ function ValueCell({ label, value, tone }: { label: string; value: string; tone:
 /* ---------------- Shared product row ---------------- */
 function ProductRow({ p, companyName, sectionName, onEdit, onRemove }: { p: Product; companyName?: string; sectionName?: string; onEdit: () => void; onRemove: () => void }) {
   const { t, i18n } = useTranslation();
+  const { restricted } = useOverride();
   const exp = daysUntil(p.expiry_date);
   const expired = exp != null && exp < 0;
   const expiringSoon = exp != null && exp >= 0 && exp <= 30;
@@ -438,7 +449,7 @@ function ProductRow({ p, companyName, sectionName, onEdit, onRemove }: { p: Prod
         </p>
         <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-ink-subtle">
           {p.barcode && <span className="flex items-center gap-1 font-mono"><Barcode size={11} /> {p.barcode}</span>}
-          <span>{t("pos.buy", "Buy")} {money(p.purchase_price)}</span>
+          {!restricted && <span>{t("pos.buy", "Buy")} {money(p.purchase_price)}</span>}
           <span className="font-semibold text-ink-muted">{t("pos.sell", "Sell")} {money(p.sell_price)}</span>
           {p.expiry_date && (
             <span className={cn("flex items-center gap-1", expired ? "text-danger-600" : expiringSoon ? "text-warn-600" : "")}>
@@ -527,6 +538,7 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
 }) {
   const { t } = useTranslation();
   const toast = useToast();
+  const { restricted } = useOverride();
   const blank = { barcode: "", name: "", company: "", section: "", category: "", subcategory: "", purchase_price: "", sell_price: "", stock: "", min_stock: "", expiry_date: "", pooled: false, has_sub_unit: false, sub_unit_name: "", units_per_box: "", sub_unit_price: "" };
   const [f, setF] = useState(blank);
   const [busy, setBusy] = useState(false);
@@ -904,18 +916,21 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
     </div>
   );
   const priceFields = (
-    <div className="grid grid-cols-2 gap-3">
-      <div>
-        <label className="label">{t("pos.purchasePrice", "Purchase price")}</label>
-        <input type="number" inputMode="numeric" min="0" step="1" className="input" value={f.purchase_price} onChange={(e) => set({ purchase_price: e.target.value })} placeholder="0" />
-      </div>
+    <div className={cn("grid gap-3", restricted ? "grid-cols-1" : "grid-cols-2")}>
+      {/* جهاز مقفل: حقل الشراء يختفي — وقيمته المخزونة تبقى بحالها عند الحفظ. */}
+      {!restricted && (
+        <div>
+          <label className="label">{t("pos.purchasePrice", "Purchase price")}</label>
+          <input type="number" inputMode="numeric" min="0" step="1" className="input" value={f.purchase_price} onChange={(e) => set({ purchase_price: e.target.value })} placeholder="0" />
+        </div>
+      )}
       <div>
         <label className="label">{t("pos.sellPrice", "Sell price")}</label>
         <input type="number" inputMode="numeric" min="0" step="1" className="input" value={f.sell_price} onChange={(e) => set({ sell_price: e.target.value })} placeholder="0" />
       </div>
     </div>
   );
-  const profitStrip = hasPrices ? (
+  const profitStrip = hasPrices && !restricted ? (
     <div className={cn(
       "flex items-center justify-between rounded-xl px-3 py-2",
       profit > 0 ? "bg-success-50 text-success-700 dark:bg-success-500/15 dark:text-success-200"
@@ -1240,6 +1255,7 @@ function CatalogSuggestion({ barcode, nameFilled, onUse }: {
 }) {
   const [hit, setHit] = useState<CatalogHit | null>(null);
   const [used, setUsed] = useState(false);
+  const { restricted } = useOverride();
 
   useEffect(() => {
     const code = barcode.trim();
@@ -1265,7 +1281,7 @@ function CatalogSuggestion({ barcode, nameFilled, onUse }: {
       <span className="min-w-0 flex-1">
         <span className="block truncate text-sm font-extrabold text-ink">{hit.name}</span>
         <span className="block text-2xs text-ink-muted">
-          بيع {money(hit.sell_price)} · شراء {money(hit.purchase_price)}
+          بيع {money(hit.sell_price)}{restricted ? "" : ` · شراء ${money(hit.purchase_price)}`}
         </span>
         <span className="mt-0.5 block text-2xs text-ink-subtle">
           {/* مصدر واحد ليس «سعر السوق» — نقول العدد بدل ما نوهم بثقة ليست موجودة */}

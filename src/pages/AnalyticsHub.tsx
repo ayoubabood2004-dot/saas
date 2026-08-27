@@ -185,11 +185,14 @@ export function AnalyticsHub() {
   const [compareYesterday, setCompareYesterday] = useState(false);
 
   const [tab, setTab] = useState<TabKey>("overview");
+  /* تعديل فاتورة من دفتر الزبون يغيّر الأرقام كلها — نبضة تتجاوز طزاجة الكاش
+   * فيعاد الجلب فوراً وتصدق كل التبويبات. */
+  const [refreshTick, setRefreshTick] = useState(0);
 
   useEffect(() => {
     let alive = true;
     const clinicId = user?.clinic_id ?? user?.id;
-    if (isFresh(cacheKey, 20_000)) return; // fresh snapshot — skip the heavy refetch
+    if (refreshTick === 0 && isFresh(cacheKey, 20_000)) return; // fresh snapshot — skip the heavy refetch
     (async () => {
       try {
         // Fetch composition lives in prefetchData so the page and the idle warmer
@@ -204,7 +207,7 @@ export function AnalyticsHub() {
     })();
     return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.clinic_id, user?.id]);
+  }, [user?.clinic_id, user?.id, refreshTick]);
 
   // On a guarded (locked) device with no manager session, the reports are pinned
   // to TODAY — historical figures stay hidden until someone enters the PIN. The
@@ -975,7 +978,7 @@ export function AnalyticsHub() {
             />
           )}
           {tab === "ledger" && <LedgerTab rows={ledgerRows} canProfit={canProfit} loMs={lo} hiMs={hi} rangeLabel={rangeLabel} />}
-          {tab === "customers" && <CustomersTab invoices={invoices} items={items} inRange={invInRange} rangeLabel={rangeLabel} canProfit={canProfit} />}
+          {tab === "customers" && <CustomersTab invoices={invoices} items={items} inRange={invInRange} rangeLabel={rangeLabel} canProfit={canProfit} clinicId={user?.clinic_id ?? user?.id} onChanged={() => setRefreshTick((n) => n + 1)} />}
           {tab === "staff" && <StaffSalesTab rows={staffSales} trend={staffTrend} canProfit={canProfit} rangeLabel={rangeLabel} />}
           {tab === "best" && <BestTab clients={topClients} services={topServices} movers={movers} species={speciesActivity} />}
           {tab === "categories" && (

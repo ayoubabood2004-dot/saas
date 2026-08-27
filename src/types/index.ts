@@ -938,6 +938,9 @@ export interface ServiceCategory { id: string; name: string }
 /** A billable non-barcode service with a default price (overridable per sale). */
 export interface Service {
   id: string; category_id: string; name: string; price: number;
+  /** كلفة الخدمة الاختيارية (0120): مواد مستهلكة، أجور مختبر خارجي… —
+   *  تُخصم من سعرها بالفوترة فيصير ربح الخدمة حقيقياً بدل 100% دائماً. */
+  cost?: number | null;
   /** باركود تصنعه العيادة بنفسها للخدمة (0102): مسحه بالكاشير ينزّلها بالسلة
    *  فوراً، فالخدمات المتكررة تنباع بمسحة بدل تنقّل بين التصنيفات. */
   barcode?: string | null;

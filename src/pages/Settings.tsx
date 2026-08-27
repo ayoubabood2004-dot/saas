@@ -1844,6 +1844,7 @@ function CategoryBlock({ cat, services, onChanged }: { cat: ServiceCategory; ser
   const { t } = useTranslation();
   const [name, setName] = useState("");
   const [price, setPrice] = useState("");
+  const [cost, setCost] = useState("");
   const [code, setCode] = useState("");
   const [err, setErr] = useState<string | null>(null);
 
@@ -1855,9 +1856,9 @@ function CategoryBlock({ cat, services, onChanged }: { cat: ServiceCategory; ser
       setErr(t("services.barcodeTaken", "هذا الباركود مستعمل لخدمة ثانية."));
       return;
     }
-    addService(cat.id, name, Number(price) || 0, null, code);
+    addService(cat.id, name, Number(price) || 0, null, code, Number(cost) > 0 ? Number(cost) : null);
     playSuccess();
-    setName(""); setPrice(""); setCode(""); setErr(null);
+    setName(""); setPrice(""); setCost(""); setCode(""); setErr(null);
     onChanged();
   };
 
@@ -1890,6 +1891,19 @@ function CategoryBlock({ cat, services, onChanged }: { cat: ServiceCategory; ser
                 />
                 <span className="text-2xs text-ink-subtle">{currencySymbol()}</span>
               </div>
+              {/* كلفة الخدمة الاختيارية: مواد مستهلكة أو مختبر خارجي — فيصير
+                  الربح بالتقارير = السعر − الكلفة بدل 100% غير المنطقية. */}
+              <div className="flex items-center gap-1" title={t("services.costHint", "كلفة الخدمة (اختياري) — الربح بالتقارير يصير السعر ناقص الكلفة")}>
+                <span className="text-2xs font-bold text-ink-subtle">{t("services.costShort", "كلفة")}</span>
+                <input
+                  type="number" min="0" step="1" inputMode="numeric" data-svccost={s.id}
+                  defaultValue={s.cost ?? ""}
+                  placeholder="0"
+                  onBlur={(e) => { const v = Number(e.target.value); updateService(s.id, { cost: Number.isFinite(v) && v > 0 ? v : null }); onChanged(); }}
+                  onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+                  className="w-20 rounded-lg border border-line bg-surface-1 px-2 py-1 text-end text-sm font-semibold tabular-nums text-ink outline-none focus:border-brand-400"
+                />
+              </div>
               {/* باركود الخدمة: العيادة تطبعه بنفسها، ومسحه بالكاشير ينزّل الخدمة فوراً. */}
               <div className="flex items-center gap-1">
                 <Barcode size={13} className="shrink-0 text-ink-subtle" />
@@ -1919,6 +1933,9 @@ function CategoryBlock({ cat, services, onChanged }: { cat: ServiceCategory; ser
         </div>
         <div className="w-24">
           <input type="number" min="0" step="1" inputMode="numeric" className="input py-2 text-end" value={price} onChange={(e) => setPrice(e.target.value)} onKeyDown={(e) => e.key === "Enter" && add()} placeholder={t("services.price", "Price")} />
+        </div>
+        <div className="w-24">
+          <input type="number" min="0" step="1" inputMode="numeric" data-svccostnew className="input py-2 text-end" value={cost} onChange={(e) => setCost(e.target.value)} onKeyDown={(e) => e.key === "Enter" && add()} placeholder={t("services.costPh", "كلفة (اختياري)")} title={t("services.costHint", "كلفة الخدمة (اختياري) — الربح بالتقارير يصير السعر ناقص الكلفة")} />
         </div>
         <div className="w-28">
           <input dir="ltr" inputMode="numeric" className="input py-2 text-center" value={code} onChange={(e) => { setCode(e.target.value); setErr(null); }} onKeyDown={(e) => e.key === "Enter" && add()} placeholder={t("services.barcodePh", "باركود")} />

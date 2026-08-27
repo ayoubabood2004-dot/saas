@@ -584,7 +584,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
   const addService = (s: Service, n = takeMult()) => {
     // الخدمة تُنسب للحيوان النشط — خدمة "عملية" تسجَّل تلقائياً في طبلته عند الإتمام.
     const catName = catalog.categories.find((c) => c.id === s.category_id)?.name ?? null;
-    bump(`s:${s.id}`, () => ({ id: `s:${s.id}`, kind: "service", name: s.name, barcode: null, unit_price: s.price, unit_cost: 0, qty: 1, stock: null, product_id: null, subcategory: null, serviceId: s.id, petId: activePet?.id ?? null, petName: activePet?.name ?? null, surgeryCat: isSurgeryCategoryName(catName), surgeryRef: s.surgery_ref ?? null }), n);
+    bump(`s:${s.id}`, () => ({ id: `s:${s.id}`, kind: "service", name: s.name, barcode: null, unit_price: s.price, unit_cost: s.cost ?? 0, qty: 1, stock: null, product_id: null, subcategory: null, serviceId: s.id, petId: activePet?.id ?? null, petName: activePet?.name ?? null, surgeryCat: isSurgeryCategoryName(catName), surgeryRef: s.surgery_ref ?? null }), n);
   };
 
   // A medication/vaccine from the "الأدوية" tab — a priced cart line carrying the full
@@ -715,7 +715,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
       }
       setCart((c) => c.some((l) => l.id === lineId) ? c : [...c, {
         id: lineId, kind: "service", name: best ? best.s.name : label, barcode: null,
-        unit_price: best ? best.s.price : 0, unit_cost: 0,
+        unit_price: best ? best.s.price : 0, unit_cost: best?.s.cost ?? 0,
         qty: 1, stock: null, product_id: null, subcategory: null, serviceId: best ? best.s.id : null,
         petId: prefill.petId ?? null, petName: prefill.pet || null, surgeryCat: false, surgeryRef: null,
       }]);
