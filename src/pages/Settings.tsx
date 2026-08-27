@@ -844,7 +844,7 @@ function CashierOptions() {
         <div className="border-t border-line" />
         <CashierToggle
           label={t("settings.resizableCart", "سلة قابلة لتغيير الحجم")}
-          hint={t("settings.resizableCartHint", "على الشاشات الواسعة: اسحب حافة السلة بالماوس لتكبيرها أو تصغيرها كما يناسبك — العرض المفضّل يُحفَظ على هذا الجهاز، ونقرة مزدوجة على الحافة تُرجع الحجم الافتراضي.")}
+          hint={t("settings.resizableCartHint", "على الشاشات الواسعة: اسحب حافة السلة (أو استعمل زرّي + و− بأعلى السلة في الشاشة الجديدة) لتكبيرها أو تصغيرها كما يناسبك — العرض المفضّل يُحفَظ على هذا الجهاز، ونقرة مزدوجة على الحافة تُرجع الحجم الافتراضي.")}
           checked={resizableCart}
           onToggle={toggleResizableCart}
         />

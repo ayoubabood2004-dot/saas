@@ -147,13 +147,19 @@ const CART_W_MIN = 300;
 const CART_W_MAX = 720;
 const CART_W_KEY = "vp_cart_width";
 /** Keep the cart between its hard bounds AND leave the products pane usable.
- *  The viewport budget accounts for the app sidebar + page chrome (~700px total
- *  incl. a usable products pane), so the cart can never squeeze products out. */
+ *
+ *  The reserved budget for "sidebar + chrome + products" was a FLAT 700px —
+ *  correct on desktops, fatal on iPad landscape: at 1024px it capped the cart
+ *  to 324px, i.e. **below where it already was**, so dragging and the +/‑
+ *  buttons visibly did nothing and the feature read as broken. The reserve now
+ *  scales with the screen (45% of it, up to the old 700px), so the cart can
+ *  always reach ~55% of any lg viewport — v2's own layout goes to 64%. */
 function clampCartWidth(w: number): number {
-  const viewportCap = typeof window !== "undefined" ? Math.max(CART_W_MIN, window.innerWidth - 700) : CART_W_MAX;
+  const reserve = typeof window !== "undefined" ? Math.min(700, Math.round(window.innerWidth * 0.45)) : 0;
+  const viewportCap = typeof window !== "undefined" ? Math.max(CART_W_MIN, window.innerWidth - reserve) : CART_W_MAX;
   return Math.round(Math.min(CART_W_MAX, viewportCap, Math.max(CART_W_MIN, w)));
 }
-function loadCartWidth(): number {
+function loadCartWidth(fallback: number): number {
   // The stored PREFERENCE is bounded to the hard limits only — the viewport cap
   // is a display concern (gridStyle/apply clamp per paint), so a width chosen on
   // a big screen survives sessions spent on a smaller one.
@@ -161,7 +167,7 @@ function loadCartWidth(): number {
     const raw = Number(localStorage.getItem(CART_W_KEY));
     if (Number.isFinite(raw) && raw > 0) return Math.min(CART_W_MAX, Math.max(CART_W_MIN, Math.round(raw)));
   } catch { /* ignore */ }
-  return CART_W_DEFAULT;
+  return fallback;
 }
 function saveCartWidth(w: number): void {
   try { localStorage.setItem(CART_W_KEY, String(w)); } catch { /* ignore */ }
@@ -185,11 +191,11 @@ function useIsLg(): boolean {
  *  Perf: pointer moves write the width STRAIGHT to a CSS variable on the grid
  *  element (no React state) — the 1000+-node sale tree (and its framer-motion
  *  layout animations) re-renders only once, at drag end, not 60×/second. */
-function useCartResize(enabled: boolean) {
+function useCartResize(enabled: boolean, defaultW: number = CART_W_DEFAULT) {
   const { i18n } = useTranslation();
   const isLg = useIsLg();
   const gridRef = useRef<HTMLDivElement>(null);
-  const [width, setWidth] = useState(loadCartWidth); // committed PREFERENCE (persisted)
+  const [width, setWidth] = useState(() => loadCartWidth(defaultW)); // committed PREFERENCE (persisted)
   const [dragging, setDragging] = useState(false);
   const drag = useRef<{ id: number; startX: number; startW: number; moved: boolean } | null>(null);
   const widthPref = useRef(width); // ref mirror of the committed preference
@@ -281,7 +287,13 @@ function useCartResize(enabled: boolean) {
     // lands within a few ms of the second drag's pointerup — swallow only that,
     // so a genuine double-tap (no movement) still resets.
     if (Date.now() - dragEndAt.current < 150) return;
-    commit(CART_W_DEFAULT);
+    commit(clampCartWidth(defaultW));
+    playTap();
+  };
+  /** تكبير/تصغير بضغطة — للآيباد والأصابع: زرّان بترويسة السلة يوصلان لنفس
+   *  commit الذي يوصله السحب، فلا يعتمد تغيير الحجم على إصابة مقبضٍ رفيع. */
+  const nudge = (dir: 1 | -1) => {
+    commit(clampCartWidth(liveW.current + dir * 80));
     playTap();
   };
   const onKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
@@ -294,7 +306,7 @@ function useCartResize(enabled: boolean) {
   };
 
   return {
-    active, width, dragging, gridRef,
+    active, width, dragging, gridRef, nudge,
     // The grid reads the LIVE width from the CSS var; React re-seeds the var on
     // re-renders with the DISPLAY-clamped preference (never wider than the
     // current viewport allows, never persisted).
@@ -316,13 +328,15 @@ function CartResizeHandle({ dragging, width, handleProps }: { dragging: boolean;
       aria-valuenow={width}
       tabIndex={0}
       title={t("retail.cartResizeHint", "اسحب لتغيير عرض السلة — نقرة مزدوجة للإرجاع")}
-      className="group absolute -start-4 top-0 z-10 hidden h-full w-4 cursor-col-resize touch-none items-center justify-center outline-none lg:flex"
+      /* منطقة الإمساك ٢٨ بكسل — القديمة (١٦) كانت أضيق من إصبعٍ على آيباد،
+         فيسحب الطبيب «جنب» المقبض ولا يتغيّر شيء ويظن الميزة معطّلة. */
+      className="group absolute -start-5 top-0 z-10 hidden h-full w-7 cursor-col-resize touch-none items-center justify-center outline-none lg:flex"
       {...handleProps}
     >
       <span
         className={cn(
-          "h-14 w-1 rounded-full transition-all group-hover:h-20 group-hover:w-1.5 group-focus-visible:ring-2 group-focus-visible:ring-brand-400",
-          dragging ? "h-24 w-1.5 bg-brand-500" : "bg-line-strong group-hover:bg-brand-400",
+          "h-20 w-1.5 rounded-full transition-all group-hover:h-28 group-hover:w-2 group-focus-visible:ring-2 group-focus-visible:ring-brand-400",
+          dragging ? "h-32 w-2 bg-brand-500" : "bg-line-strong group-hover:bg-brand-400",
         )}
       />
     </div>
@@ -455,7 +469,12 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
   const [done, setDone] = useState<{ invoice: Invoice; items: InvoiceItem[] } | null>(null);
   const [lastPrints, setLastPrints] = useState(0);
   // Opt-in resizable cart (Settings → خيارات الكاشير) — drag the cart edge on lg+.
-  const cartResize = useCartResize(getResizableCart());
+  // بالشاشة المتطورة الافتراضي يطابق عرضها التصميمي (~46% من الشاشة) لا 380
+  // بكسل القديمة — تفعيل التحجيم ما ينبغي أن «يصغّر» سلة الكاشير المتطور.
+  const cartResize = useCartResize(
+    getResizableCart(),
+    posV2 && typeof window !== "undefined" ? Math.round(window.innerWidth * 0.46) : CART_W_DEFAULT,
+  );
 
   const flashLine = (id: string) => { setFlash(id); setTimeout(() => setFlash((f) => (f === id ? null : f)), 600); };
 
@@ -1736,6 +1755,30 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
           </span>
           <span className="flex items-center gap-2">
             {cart.length > 0 && <button onClick={() => { playTap(); setCart([]); }} className="text-xs text-ink-subtle transition hover:text-danger-600">{t("common.clear", "Clear")}</button>}
+            {posV2 && cartResize.active && (
+              /* تكبير/تصغير السلة بضغطة — البديل المضمون للسحب على الآيباد:
+                 نفس مسار الحفظ، فالعرض المختار يبقى محفوظاً بالجهاز. */
+              <span className="hidden items-center gap-1 lg:flex">
+                <button
+                  data-cartnarrow
+                  onClick={() => cartResize.nudge(-1)}
+                  className="grid h-10 w-10 place-items-center rounded-xl bg-surface-2 text-ink-muted transition hover:bg-surface-3"
+                  title={t("retail.cartNarrow", "تصغير السلة")}
+                  aria-label={t("retail.cartNarrow", "تصغير السلة")}
+                >
+                  <Minus size={18} />
+                </button>
+                <button
+                  data-cartwiden
+                  onClick={() => cartResize.nudge(1)}
+                  className="grid h-10 w-10 place-items-center rounded-xl bg-surface-2 text-ink-muted transition hover:bg-surface-3"
+                  title={t("retail.cartWiden", "تكبير السلة")}
+                  aria-label={t("retail.cartWiden", "تكبير السلة")}
+                >
+                  <Plus size={18} />
+                </button>
+              </span>
+            )}
             {posV2 && (
               /* طيّ شريط التنقّل من داخل الكاشير: الطبيب واقف بالبيع، وإرساله
                  للإعدادات ليكسب مساحةً هو نفسه ما يجعله لا يكسبها أبداً. */
