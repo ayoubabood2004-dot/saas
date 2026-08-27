@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { AnimatePresence, motion } from "framer-motion";
-import { Store, ShoppingCart, ReceiptText, BarChart3, HandCoins, Bike, PawPrint, ArrowRight, Wallet } from "lucide-react";
+import { Store, ShoppingCart, ReceiptText, BarChart3, HandCoins, Bike, PawPrint, ArrowRight, Wallet, RotateCcw } from "lucide-react";
 import type { Product, Invoice, Species } from "@/types";
 import { useAuth } from "@/contexts/AuthContext";
 import { useEntitlements } from "@/lib/entitlements";
@@ -20,8 +20,9 @@ import { InvoicesPanel } from "@/components/retail/InvoicesPanel";
 import { DebtsPanel } from "@/components/retail/DebtsPanel";
 import { DeliveryPanel } from "@/components/retail/DeliveryPanel";
 import { ReportsPanel } from "@/components/retail/ReportsPanel";
+import { ReturnsPanel } from "@/components/retail/ReturnsPanel";
 
-type Tab = "sell" | "invoices" | "debts" | "delivery" | "reports";
+type Tab = "sell" | "invoices" | "returns" | "debts" | "delivery" | "reports";
 
 /** Valid Species values — guards the `species` bridge param against tampered URLs. */
 const SPECIES_SET = new Set<string>(["dog", "cat", "horse", "cow", "bird", "rabbit", "other"]);
@@ -97,6 +98,7 @@ export function RetailSales() {
   const TABS: { id: Tab; label: string; icon: typeof Store }[] = [
     { id: "sell", label: t("retail.newSaleTab", "New sale"), icon: ShoppingCart },
     { id: "invoices", label: t("retail.invoicesTab", "Invoices"), icon: ReceiptText },
+    { id: "returns", label: t("retail.returnsTab", "المرتجع"), icon: RotateCcw },
     ...(has("debt") ? [{ id: "debts" as Tab, label: t("retail.debtsTab", "سجل الديون"), icon: HandCoins }] : []),
     ...(has("debt") ? [{ id: "delivery" as Tab, label: t("retail.deliveryTab", "التوصيل"), icon: Bike }] : []),
     { id: "reports", label: t("retail.reportsTab", "Reports"), icon: BarChart3 },
@@ -165,6 +167,8 @@ export function RetailSales() {
             <SaleBuilder products={products} clinicId={clinicId} onSold={load} prefill={prefill} />
           ) : tab === "invoices" ? (
             <InvoicesPanel invoices={invoices} clinicId={clinicId} onChanged={load} />
+          ) : tab === "returns" ? (
+            <ReturnsPanel invoices={invoices} onChanged={load} />
           ) : tab === "debts" ? (
             <DebtsPanel invoices={invoices} clinicId={clinicId} onChanged={load} onOpenDelivery={() => setTab("delivery")} />
           ) : tab === "delivery" ? (

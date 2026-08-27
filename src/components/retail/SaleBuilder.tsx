@@ -4,7 +4,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import {
   Search, Barcode, Plus, Minus, Trash2, ShoppingCart, User, Phone, Tag, Percent, BadgePercent,
   Banknote, CreditCard, ArrowLeftRight, CheckCircle2, Printer, Sparkles, TrendingUp, Package, PawPrint, X,
-  Stethoscope, Pencil, Pill, Syringe, CalendarClock, Wallet, StickyNote, Bike, UserCheck, AlertTriangle,
+  Stethoscope, Pencil, Pill, Syringe, CalendarClock, Wallet, StickyNote, Bike, UserCheck, AlertTriangle, Undo2,
   ChevronUp, ChevronDown, PanelLeftClose, PanelLeftOpen,
 } from "lucide-react";
 import type { Product, Invoice, InvoiceItem, CheckoutItem, SaleMeta, PaymentMethod, PaymentSplit, DiscountType, Customer, Service, ServiceCatalog, Species, Pet, Courier } from "@/types";
@@ -55,6 +55,10 @@ interface Line {
    *  ONE invoice, and each med line syncs into ITS OWN pet's medical record. */
   petId?: string | null;
   petName?: string | null;
+  /** سطر **راجع** (0122): الزبون رجّع هذي القطعة — قيمتها تُطرح من الحساب
+   *  والقطعة ترجع للمخزون بنفس الفاتورة. المفتاح `r:` يفصله عن سطر البيع
+   *  لنفس المنتج، فيقدر الكاشير يرجّع واحدة ويبيع ثنتين بعملية واحدة. */
+  ret?: boolean;
   /** معرّف الخدمة بالكتالوج — تحتاجه عروض الخدمات لتعرف السطر أي خدمة هو
    *  (id السطر نصّ مركّب، وأسطر المختبر تحمل شكلاً آخر). */
   serviceId?: string | null;
@@ -75,6 +79,9 @@ interface Line {
 /** A cart line's max quantity in its current sale unit, derived from the product's box
  *  stock. Sub-unit sales can go up to (boxes × units-per-box) singles. */
 const unitCap = (l: Line): number => {
+  // الراجع لا يقيّده المخزون: الزبون يرجّع ما اشتراه سابقاً، والرصيد الحالي
+  // لا علاقة له بكم قطعةً بيده.
+  if (l.ret) return Infinity;
   if (l.stock == null) return Infinity; // service / medication — uncapped
   if (l.saleUnit === "sub" && l.unitsPerBox && l.unitsPerBox > 0) return Math.floor(l.stock * l.unitsPerBox);
   return Math.floor(l.stock);
@@ -468,6 +475,8 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
   const [qtyPadFor, setQtyPadFor] = useState<string | null>(null);
   const [done, setDone] = useState<{ invoice: Invoice; items: InvoiceItem[] } | null>(null);
   const [lastPrints, setLastPrints] = useState(0);
+  /** وضع الراجع: كل باركود يُمسح وهو مُفعَّل ينزل سطراً سالباً. */
+  const [retMode, setRetMode] = useState(false);
   // Opt-in resizable cart (Settings → خيارات الكاشير) — drag the cart edge on lg+.
   // بالشاشة المتطورة الافتراضي يطابق عرضها التصميمي (~46% من الشاشة) لا 380
   // بكسل القديمة — تفعيل التحجيم ما ينبغي أن «يصغّر» سلة الكاشير المتطور.
@@ -545,8 +554,17 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
     flashLine(id);
   };
 
+  /** وضع «الراجع»: الباركود المدگوگ ينزل سطراً سالباً بدل سطر بيع. */
+  const addReturn = (p: Product, n = takeMult()) =>
+    bump(`r:${p.id}`, () => ({
+      id: `r:${p.id}`, kind: "product", name: p.name, barcode: p.barcode ?? null,
+      unit_price: p.sell_price, unit_cost: p.purchase_price,
+      qty: 1, stock: null, product_id: p.id, subcategory: p.subcategory ?? null,
+      ret: true,
+    }), n);
+
   const addProduct = (p: Product, n = takeMult()) =>
-    bump(`p:${p.id}`, () => {
+    retMode ? addReturn(p, n) : bump(`p:${p.id}`, () => {
       const hasSub = !!p.has_sub_unit && !!p.units_per_box && p.units_per_box > 0;
       const unitsPerBox = p.units_per_box ?? null;
       // No whole box left but singles remain → start the line on the sub-unit.
@@ -724,8 +742,17 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
     return () => window.clearTimeout(id);
   }, [prefill]);
 
-  const subtotal = cart.reduce((s, l) => s + l.qty * l.unit_price, 0);
-  const cost = cart.reduce((s, l) => s + l.qty * l.unit_cost, 0);
+  /* الحساب يقرأ الراجع سالباً: قيمة المشترى ناقص قيمة الراجع = ما يدفعه
+   * الزبون فعلاً. سطرٌ راجع بألف مع شراءٍ بخمسة ⇒ يدفع أربعة. */
+  const sign = (l: Line) => (l.ret ? -1 : 1);
+  const subtotal = cart.reduce((s, l) => s + sign(l) * l.qty * l.unit_price, 0);
+  const cost = cart.reduce((s, l) => s + sign(l) * l.qty * l.unit_cost, 0);
+  /** قيمة الراجع بالسلة (موجبة للعرض) وعدد أسطره. */
+  const retValue = cart.reduce((s, l) => s + (l.ret ? l.qty * l.unit_price : 0), 0);
+  const retLines = cart.filter((l) => l.ret).length;
+  /** الراجع أكبر من المشترى ⇒ نقدٌ يخرج، وهذا ليس بيعاً: يُمنع الحفظ هنا
+   *  ويُحوَّل الكاشير لتبويب «المرتجع» حيث يخرج المال بقيدٍ صحيح. */
+  const netNegative = subtotal < -0.005;
   const units = cart.reduce((s, l) => s + l.qty, 0);
   // Dynamic Mix & Match offers, evaluated against the live cart.
   const { applied: promos, totalDiscount: promoDiscount } = useMemo(() => computePromotions(cart, promoRules), [cart, promoRules]);
@@ -1066,8 +1093,10 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
     const multiPet = petNames.length > 1;
     const draftItems: InvoiceItem[] = cart.map((l) => ({
       id: `draft-${l.id}`, invoice_id: "draft", clinic_id: clinicId ?? null,
-      product_id: l.product_id, name: multiPet && l.petName ? `${l.name} — ${l.petName}` : l.name, barcode: l.barcode,
-      qty: l.qty, unit_price: l.unit_price, unit_cost: l.unit_cost, line_total: l.qty * l.unit_price,
+      product_id: l.product_id,
+      name: `${l.ret ? `${t("retail.retPrefix", "راجع")} — ` : ""}${multiPet && l.petName ? `${l.name} — ${l.petName}` : l.name}`,
+      barcode: l.barcode,
+      qty: sign(l) * l.qty, unit_price: l.unit_price, unit_cost: l.unit_cost, line_total: sign(l) * l.qty * l.unit_price,
       unit_label: l.kind === "product" && l.hasSubUnit ? (l.saleUnit === "sub" ? (l.subUnitName || t("retail.unitSingle")) : t("retail.unitBox")) : null,
     }));
     const draft: Invoice = {
@@ -1112,10 +1141,15 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
         const unit_label = l.kind === "product" && l.hasSubUnit
           ? (isSub ? (l.subUnitName || t("retail.unitSingle")) : t("retail.unitBox"))
           : null;
+        // سطر راجع ⇒ كميةٌ سالبة بالفاتورة وردٌّ للمخزون (0122). الاسم يحمل
+        // كلمة «راجع» فتقرأها الفاتورة المطبوعة والتقارير بلا أي تفسير.
+        const s = l.ret ? -1 : 1;
         return {
-          product_id: l.product_id, name: l.name, barcode: l.barcode,
-          qty: l.qty, unit_price: l.unit_price, unit_cost: l.unit_cost,
-          stock_qty, unit_label,
+          product_id: l.product_id,
+          name: l.ret ? `${t("retail.retPrefix", "راجع")} — ${l.name}` : l.name,
+          barcode: l.barcode,
+          qty: s * l.qty, unit_price: l.unit_price, unit_cost: l.unit_cost,
+          stock_qty: s * stock_qty, unit_label,
         };
       });
       // Delivery fee kept by the clinic → a real service line on the invoice, so
@@ -1205,8 +1239,10 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
       const multiPet = petNames.length > 1;
       const invItems: InvoiceItem[] = cart.map((l) => ({
         id: `tmp-${l.id}`, invoice_id: invoice.id, clinic_id: clinicId ?? null,
-        product_id: l.product_id, name: multiPet && l.petName ? `${l.name} — ${l.petName}` : l.name, barcode: l.barcode,
-        qty: l.qty, unit_price: l.unit_price, unit_cost: l.unit_cost, line_total: l.qty * l.unit_price,
+        product_id: l.product_id,
+        name: `${l.ret ? `${t("retail.retPrefix", "راجع")} — ` : ""}${multiPet && l.petName ? `${l.name} — ${l.petName}` : l.name}`,
+        barcode: l.barcode,
+        qty: sign(l) * l.qty, unit_price: l.unit_price, unit_cost: l.unit_cost, line_total: sign(l) * l.qty * l.unit_price,
         unit_label: l.kind === "product" && l.hasSubUnit ? (l.saleUnit === "sub" ? (l.subUnitName || t("retail.unitSingle")) : t("retail.unitBox")) : null,
       }));
       if (feeToClinic) {
@@ -1606,6 +1642,31 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
           </div>
         </div>
 
+        {/* وضع الراجع — زرٌّ واحد يقلب معنى كل باركود يُمسح بعده.
+            لونه كهرماني صارخ وشريطٌ يعلو الشاشة كلها حين يكون فعّالاً: كاشيرٌ
+            نسي أنه بوضع الراجع يبيع بالسالب، وهذا أسوأ من أي خطأٍ آخر. */}
+        <div className={cn("flex flex-wrap items-center gap-2", posV2 && "shrink-0")}>
+          <button
+            type="button"
+            data-retmode
+            aria-pressed={retMode}
+            onClick={() => { playTap(); setRetMode((v) => !v); }}
+            className={cn("inline-flex items-center gap-1.5 rounded-full border px-3.5 py-2 text-sm font-extrabold transition",
+              retMode
+                ? "border-amber-500 bg-amber-500 text-white shadow-soft"
+                : "border-line bg-surface-1 text-ink-muted hover:border-amber-300 hover:text-amber-700")}
+            style={{ minHeight: 40 }}
+          >
+            <Undo2 size={16} /> {t("retail.retMode", "راجع")}
+          </button>
+          {retMode && (
+            <span data-retmodebar className="flex flex-1 items-center gap-1.5 rounded-xl bg-amber-50 px-3 py-2 text-2xs font-bold text-amber-800 dark:bg-amber-500/15 dark:text-amber-200">
+              <AlertTriangle size={14} className="shrink-0" />
+              {t("retail.retModeOn", "وضع الراجع فعّال — كل باركود تمسحه ينزل بالسالب ويتقاص من حساب الزبون. اضغط «راجع» مرة ثانية للرجوع للبيع.")}
+            </span>
+          )}
+        </div>
+
         {/* Products | Services | Medications toggle */}
         <div className={cn("inline-flex w-full items-center gap-1 rounded-full border border-line bg-surface-2 p-1", posV2 && "shrink-0")}>
           {([
@@ -1818,9 +1879,12 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
               <AnimatePresence initial={false}>
                 {cart.map((l) => (
                   <motion.div key={l.id} layout initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }}
-                    className={cn("flex items-center rounded-2xl border", posV2 ? (denseCart ? "gap-1.5 px-2 py-1" : "gap-2 px-2.5 py-1.5") : "gap-2 p-2.5", flash === l.id ? "border-brand-400 bg-brand-50 dark:bg-brand-500/15" : "border-line bg-surface-1")}>
+                    className={cn("flex items-center rounded-2xl border", posV2 ? (denseCart ? "gap-1.5 px-2 py-1" : "gap-2 px-2.5 py-1.5") : "gap-2 p-2.5",
+                      l.ret ? "border-amber-400 bg-amber-50/70 dark:border-amber-500/40 dark:bg-amber-500/10"
+                        : flash === l.id ? "border-brand-400 bg-brand-50 dark:bg-brand-500/15" : "border-line bg-surface-1")}>
                     <div className="min-w-0 flex-1">
                       <p className={cn("flex items-center gap-1.5 truncate font-bold text-ink", posV2 ? "text-base leading-tight" : "text-sm font-semibold")}>
+                        {l.ret && <span data-retchip className="chip shrink-0 bg-amber-500 text-2xs font-black text-white"><Undo2 size={10} className="me-0.5 inline" />{t("retail.retChip", "راجع")}</span>}
                         {l.name}
                         {l.kind === "service" && <span className="chip shrink-0 bg-brand-50 text-2xs font-medium text-brand-700 dark:bg-brand-500/15 dark:text-brand-300">{t("retail.service", "Service")}</span>}
                         {l.kind === "med" && (
@@ -1925,7 +1989,10 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
                     </div>
                     {/* whitespace-nowrap حاسم: «25,000 د.ع» كان يلتفّ سطرين داخل
                         عرض ضيّق فيضخّم كل صفّ ١٨px — أي ثلاثة أصناف أقل بالشاشة. */}
-                    <span className={cn("shrink-0 whitespace-nowrap text-end font-extrabold tabular-nums text-ink", posV2 ? (denseCart ? "text-sm" : "text-base") : "w-16 text-sm font-bold")}>{money(l.qty * l.unit_price)}</span>
+                    <span data-linetotal={l.id} className={cn("shrink-0 whitespace-nowrap text-end font-extrabold tabular-nums", posV2 ? (denseCart ? "text-sm" : "text-base") : "w-16 text-sm font-bold",
+                      l.ret ? "text-amber-700 dark:text-amber-300" : "text-ink")}>
+                      {l.ret ? `− ${money(l.qty * l.unit_price)}` : money(l.qty * l.unit_price)}
+                    </span>
                     <button onClick={() => removeLine(l.id)} aria-label={t("common.delete", "Remove")} className={cn("grid place-items-center rounded-lg text-ink-subtle transition hover:bg-danger-50 hover:text-danger-600", posV2 ? (denseCart ? "h-9 w-9" : "h-11 w-11") : "h-7 w-7")}><Trash2 size={posV2 ? (denseCart ? 15 : 17) : 14} /></button>
                   </motion.div>
                 ))}
@@ -2283,7 +2350,19 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
               </Button>
             </div>
           )}
-          <Button className={cn("w-full", posV2 && "shrink-0")} style={posV2 ? { minHeight: 48 } : undefined} size="lg" disabled={cart.length === 0 || needsDebtName} loading={busy} onClick={checkout} leftIcon={deliveryOn ? <Bike size={18} /> : <CheckCircle2 size={18} />}>
+          {/* الراجع بالسلة — سطرٌ يقول ما الذي طُرح وكم صار يدفع فعلاً */}
+          {retLines > 0 && (
+            <div data-retsummary className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800 dark:bg-amber-500/15 dark:text-amber-200">
+              <span className="flex items-center gap-1.5"><Undo2 size={13} /> {t("retail.retInCart", { n: formatNum(retLines), defaultValue: "راجع ({{n}})" })}</span>
+              <span className="tabular-nums">− {money(retValue)}</span>
+            </div>
+          )}
+          {netNegative && (
+            <p data-retnegative className="rounded-xl bg-danger-50 px-3 py-2 text-center text-2xs font-bold text-danger-700 dark:bg-danger-500/15 dark:text-danger-300">
+              {t("retail.retNegative", "الراجع أكبر من المشترى — هذا إرجاع لا بيع: كمّل من تبويب «المرتجع» حتى يخرج النقد للزبون بقيدٍ صحيح.")}
+            </p>
+          )}
+          <Button className={cn("w-full", posV2 && "shrink-0")} style={posV2 ? { minHeight: 48 } : undefined} size="lg" disabled={cart.length === 0 || needsDebtName || netNegative} loading={busy} onClick={checkout} leftIcon={deliveryOn ? <Bike size={18} /> : <CheckCircle2 size={18} />}>
             {deliveryOn
               ? `${t("retail.completeDelivery", "إرسال للتوصيل")} · ${t("retail.codShort", "يُحصَّل")} ${money(codAmount)}`
               : isCredit

@@ -143,12 +143,34 @@ export function Reception() {
   // existed, or while on "كل الفروع", never vanish when a branch is picked. "كل
   // الفروع" — and every single-branch clinic — sees everything, exactly as before.
   const { branches, active: activeBranch } = useBranchState(clinicId);
-  const branchAdmissions = useMemo(
-    () => (activeBranch === "all" || branches.length < 2
+  /* المغادرون يغادرون التقويم أيضاً — بعد أسبوعين.
+   *
+   * حيوانٌ خرج من العيادة يبقى بعمود «مكتملة / غادرت» أسبوعين ليُراجَع
+   * ويُرجَّع بسحبةٍ لو رجع، ثم يختفي من **العرض** وحده: لا حذف ولا تعديل —
+   * سجل الحيوان وسجل زبونه وفواتيره وطبلاته كما هي حرفاً بحرف، وتظهر كلها
+   * بصفحة الحيوان وبالتقارير كما كانت. التقويم شاشة «مَن عندنا الآن»، ومَن
+   * غادر قبل أسبوعين لم يعد جواباً على هذا السؤال.
+   *
+   * والقياس من **تاريخ المغادرة** لا من تاريخ الدخول: رقودٌ طويل خرج أمس
+   * يبقى ظاهراً، وزيارةُ يومٍ خرجت قبل شهر تختفي. والصف الذي لا يحمل تاريخ
+   * مغادرة (بيانات قديمة) يبقى ظاهراً — لا نُخفي ما لا نعرف تاريخه. */
+  const DEPARTED_KEEP_DAYS = 14;
+  const departedCutoff = useMemo(() => {
+    const d = new Date(`${todayISO}T00:00:00`);
+    d.setDate(d.getDate() - DEPARTED_KEEP_DAYS);
+    return localISO(d);
+  }, [todayISO]);
+
+  const branchAdmissions = useMemo(() => {
+    const inBranch = activeBranch === "all" || branches.length < 2
       ? ops.admissions
-      : ops.admissions.filter((a) => matchesBranch(a.branch_id, activeBranch, branches))),
-    [ops.admissions, activeBranch, branches],
-  );
+      : ops.admissions.filter((a) => matchesBranch(a.branch_id, activeBranch, branches));
+    return inBranch.filter((a) => {
+      if (a.status !== "discharged") return true;
+      const left = (a.discharged_on ?? "").slice(0, 10);
+      return !left || left >= departedCutoff;
+    });
+  }, [ops.admissions, activeBranch, branches, departedCutoff]);
 
   // Find a specific animal instantly — by its name, serial / microchip number,
   // or the owner's name / phone. Filters every view (kanban, month, stats) live.

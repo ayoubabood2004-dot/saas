@@ -96,7 +96,11 @@ function createInvoiceLocal(items: CheckoutItem[], meta?: SaleMeta): Invoice {
     let fromPool = 0;
     if (i.product_id) {
       const p = db.products.find((x) => x.id === i.product_id);
-      if (p) {
+      // سطر راجع (كمية سالبة، 0122): القطعة ترجع لرصيد المنتج المعروف —
+      // نفس مسار دالّة السيرفر حرفياً فلا يختلف حسابان للمخزون.
+      if (p && stockQty < 0) {
+        p.stock = Math.round((p.stock + -stockQty) * 1000) / 1000;
+      } else if (p) {
         // Known-first: sell the product's own tracked stock, then fall back to
         // its section pool (the unknown legacy reserve). Round to 3 dp to avoid drift.
         let rem = stockQty;
@@ -1822,6 +1826,99 @@ const demoRepo = {
     saveDB(db);
     return inv;
   },
+  /** المرتجع (0121): إرجاع أصنافٍ محددة بكمياتها — المخزون يرجع بنفس تقسيمه
+   *  وقت البيع، الفاتورة يُعاد حسابها، والنقد الخارج فعلاً يُسجَّل سطراً
+   *  سالباً (نفس آلية تصحيح التحصيل). إرجاع الكل = refund كامل بدلالاته. */
+  async returnInvoiceItems(invoiceId: string, returns: { item_id: string; qty: number }[], method?: PaymentMethod | null, note?: string | null): Promise<Invoice> {
+    const money2 = (n: number) => (Math.round(n * 100) / 100).toLocaleString("en-US");
+    const r3 = (n: number) => Math.round(n * 1000) / 1000;
+    const r2 = (n: number) => Math.round(n * 100) / 100;
+    const db = loadDB();
+    const inv = (db.invoices ?? []).find((x) => x.id === invoiceId);
+    if (!inv) throw new Error("invoice not found");
+    if (inv.status === "refunded") throw new Error("invoice refunded");
+    const wanted = new Map((returns ?? []).filter((x) => x && x.qty > 0).map((x) => [x.item_id, r3(x.qty)]));
+    if (!wanted.size) throw new Error("nothing to return");
+    const items = (db.invoiceItems ?? []).filter((x) => x.invoice_id === invoiceId);
+
+    // إرجاع كامل؟ ⇒ نفس دلالات refundInvoice: استرجاع الكل وقلب الحالة فقط.
+    const full = items.length > 0 && items.every((it) => (wanted.get(it.id) ?? 0) + 0.0005 >= it.qty);
+    if (full) {
+      for (const it of items) restockLocal(db, it);
+      inv.status = "refunded";
+      inv.refunded_at = new Date().toISOString();
+      saveDB(db);
+      return inv;
+    }
+
+    for (const it of items) {
+      const retQty = Math.min(wanted.get(it.id) ?? 0, it.qty);
+      if (retQty <= 0) continue;
+      // المخزون بنسب البيع نفسها: المسحوب لكل وحدة، وحصة القسم نسبية.
+      if (it.product_id) {
+        const per = it.qty > 0 && it.stock_qty != null ? it.stock_qty / it.qty : 1;
+        const retStock = r3(retQty * per);
+        let retPool = r3((it.pooled_qty ?? 0) * (retQty / it.qty));
+        const p = (db.products ?? []).find((x) => x.id === it.product_id);
+        if (p) {
+          const sec = retPool > 0 && p.section_id ? (db.companySections ?? []).find((s) => s.id === p.section_id) : undefined;
+          if (sec) sec.pooled_stock = r3((sec.pooled_stock ?? 0) + retPool);
+          else retPool = 0;
+          p.stock = r3(p.stock + (retStock - retPool));
+        }
+        if (retQty + 0.0005 >= it.qty) {
+          db.invoiceItems = db.invoiceItems.filter((x) => x.id !== it.id);
+        } else {
+          it.qty = r3(it.qty - retQty);
+          it.line_total = r2(it.qty * it.unit_price);
+          if (it.stock_qty != null) it.stock_qty = r3(it.stock_qty - retStock);
+          if (it.pooled_qty != null) it.pooled_qty = r3(it.pooled_qty - retPool);
+        }
+      } else if (retQty + 0.0005 >= it.qty) {
+        db.invoiceItems = db.invoiceItems.filter((x) => x.id !== it.id);
+      } else {
+        it.qty = r3(it.qty - retQty);
+        it.line_total = r2(it.qty * it.unit_price);
+      }
+    }
+
+    // إعادة الحساب — الخصم الثابت يبقى كما هو.
+    const left = (db.invoiceItems ?? []).filter((x) => x.invoice_id === invoiceId);
+    const subtotal = r2(left.reduce((s, l) => s + l.line_total, 0));
+    const discount = Math.max(0, Number(inv.discount) || 0);
+    const oldTotal = Number(inv.total) || 0;
+    inv.subtotal = subtotal;
+    inv.total = Math.max(0, r2(subtotal - discount));
+    inv.cost_total = r2(left.reduce((s, l) => s + l.qty * l.unit_cost, 0));
+    inv.profit = r2(inv.total - inv.cost_total);
+    inv.item_count = left.reduce((n, l) => n + l.qty, 0);
+
+    // النقد الخارج فعلاً = المدفوع فوق الإجمالي الجديد. آجلة ⇒ الدين ينقص وحده.
+    const paid = inv.amount_paid != null ? inv.amount_paid : inv.total;
+    const back = Math.max(0, r2(paid - inv.total));
+    if (back > 0) {
+      const legs = [...(inv.payment_details ?? [])];
+      const dominant = legs.filter((l) => l.amount > 0).sort((a, b) => b.amount - a.amount)[0]?.method;
+      const m = (method ?? dominant ?? inv.payment_method ?? "cash") as PaymentMethod;
+      const posSum = r2(legs.filter((l) => l.amount > 0).reduce((s2, l) => s2 + l.amount, 0));
+      if (posSum < paid) legs.push({ method: (inv.payment_method ?? m) as PaymentMethod, amount: r2(paid - posSum), at: inv.created_at });
+      // ختم «مرتجع» بمهارب يونيكود: بياناتٌ تطابق ختم السيرفر حرفياً، لا نص واجهة.
+      const label = "\u0645\u0631\u062A\u062C\u0639" + (note?.trim() ? `: ${note.trim().slice(0, 100)}` : "");
+      legs.push({ method: m, amount: -back, at: new Date().toISOString(), note: label });
+      inv.payment_details = legs;
+      inv.amount_paid = Math.max(0, r2(paid - back));
+      const pos = legs.filter((l) => l.amount > 0);
+      if (pos.length) inv.payment_method = pos.reduce((b2, p2) => (p2.amount > b2.amount ? p2 : b2), pos[0]).method;
+    }
+
+    // «مرتجع … أُعيد نقداً …» بمهارب يونيكود — ختمٌ يطابق ختم دالّة السيرفر (0121).
+    const RET_WORD = "\u0645\u0631\u062A\u062C\u0639";
+    const BACK_WORDS = "\u0623\u064F\u0639\u064A\u062F \u0646\u0642\u062F\u0627\u064B";
+    const stamp = `${RET_WORD} ${new Date().toLocaleDateString("en-CA")}: ${money2(oldTotal)} ← ${money2(inv.total)}${back > 0 ? ` · ${BACK_WORDS} ${money2(back)}` : ""}${note?.trim() ? ` · ${note.trim().slice(0, 120)}` : ""}`;
+    inv.notes = inv.notes ? `${inv.notes}\n${stamp}` : stamp;
+    saveDB(db);
+    return inv;
+  },
   async settleInvoice(invoiceId: string, amount: number, method: PaymentMethod = "cash"): Promise<Invoice | undefined> {
     const db = loadDB();
     const inv = (db.invoices ?? []).find((x) => x.id === invoiceId);
@@ -2081,6 +2178,7 @@ const DEMO_ACTIVITY_MAP: Record<string, { entity: string; action: "INSERT" | "UP
   settleInvoice: { entity: "invoices", action: "UPDATE" },
   correctInvoiceReceipt: { entity: "invoices", action: "UPDATE" },
   editInvoiceLines: { entity: "invoices", action: "UPDATE" },
+  returnInvoiceItems: { entity: "invoices", action: "UPDATE" },
   refundInvoice: { entity: "invoices", action: "UPDATE" },
   setInvoicePaymentMethod: { entity: "invoices", action: "UPDATE" },
   setInvoicePaymentDetails: { entity: "invoices", action: "UPDATE" },
@@ -3127,6 +3225,10 @@ const supabaseRepo: typeof demoRepo = {
     // ذرّية على السيرفر: العكس والخصم وإعادة الحساب وتحديث مستحقّ السواق
     // بمعاملة واحدة — انقطاع الشبكة لا يترك مخزوناً منقوصاً وفاتورة قديمة.
     return need<Invoice>(await sbc().rpc("edit_invoice_lines", { p_invoice: invoiceId, p_lines: lines, p_note: note ?? null }));
+  },
+  async returnInvoiceItems(invoiceId, returns, method, note) {
+    // المرتجع ذرّي عالسيرفر (0121): مخزون + فاتورة + نقد بمعاملة واحدة.
+    return need<Invoice>(await sbc().rpc("return_invoice_items", { p_invoice: invoiceId, p_returns: returns, p_method: method ?? null, p_note: note ?? null }));
   },
   async settleInvoice(invoiceId, amount, method = "cash") {
     // Atomic on the server: clamps to the outstanding balance, appends a payment leg.
