@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { AnimatePresence, motion } from "framer-motion";
-import { Store, ShoppingCart, ReceiptText, BarChart3, HandCoins, Bike, PawPrint, ArrowRight } from "lucide-react";
+import { Store, ShoppingCart, ReceiptText, BarChart3, HandCoins, Bike, PawPrint, ArrowRight, Wallet } from "lucide-react";
 import type { Product, Invoice, Species } from "@/types";
 import { useAuth } from "@/contexts/AuthContext";
 import { useEntitlements } from "@/lib/entitlements";
@@ -14,7 +14,8 @@ import { getCached, setCached, isFresh } from "@/lib/swrCache";
 import { loadRetailSnap, retailKey, type RetailSnap } from "@/lib/prefetchData";
 import { playTap } from "@/lib/sounds";
 import { SaleBuilder, type RetailPrefill } from "@/components/retail/SaleBuilder";
-import { getPosV2 } from "@/lib/settings";
+import { getPosV2, getCashReconcile } from "@/lib/settings";
+import { CashReconcile } from "@/components/retail/CashReconcile";
 import { InvoicesPanel } from "@/components/retail/InvoicesPanel";
 import { DebtsPanel } from "@/components/retail/DebtsPanel";
 import { DeliveryPanel } from "@/components/retail/DeliveryPanel";
@@ -47,6 +48,8 @@ export function RetailSales() {
   const [params, setParams] = useSearchParams();
   const navigate = useNavigate();
   const [prefill, setPrefill] = useState<RetailPrefill | null>(null);
+  /* مطابقة الصندوق — خيار تفعيلي من الإعدادات (زر بنهاية كل دوام). */
+  const [cashRecOpen, setCashRecOpen] = useState(false);
   // من فتح المبيعات من سجل حيوان؟ نحفظ هويته حتى نرجّعه بضغطة بعد ما ننظّف الرابط.
   const [returnPet, setReturnPet] = useState<{ id: string; name: string } | null>(null);
   useEffect(() => {
@@ -118,6 +121,16 @@ export function RetailSales() {
           <h1 className={cn("font-display font-extrabold text-ink", compactChrome ? "text-lg" : "text-2xl")}>{t("retail.title", "Retail & Sales")}</h1>
           {!compactChrome && <p className="text-sm text-ink-subtle">{t("retail.subtitle", "Walk-in sales, invoicing & receipts — for this clinic only.")}</p>}
         </div>
+        {getCashReconcile() && (
+          <button
+            type="button"
+            data-cashrec-open
+            onClick={() => { playTap(); setCashRecOpen(true); }}
+            className={cn("inline-flex items-center gap-1.5 rounded-full border border-emerald-300 bg-emerald-50 px-3.5 py-2 text-xs font-extrabold text-emerald-700 transition hover:bg-emerald-100 active:scale-95 dark:border-emerald-500/40 dark:bg-emerald-500/15 dark:text-emerald-300", returnPet ? "" : "ms-auto")}
+          >
+            <Wallet size={15} /> {t("cashrec.openBtn", "مطابقة الصندوق")}
+          </button>
+        )}
         {returnPet && (
           <button
             type="button"
@@ -161,6 +174,8 @@ export function RetailSales() {
           )}
         </motion.div>
       </AnimatePresence>
+
+      <CashReconcile open={cashRecOpen} onClose={() => setCashRecOpen(false)} />
     </div>
   );
 }

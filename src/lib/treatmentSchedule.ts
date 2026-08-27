@@ -17,8 +17,12 @@
 // The doctor can always edit a time on the sheet.
 // ============================================================================
 import type { TreatmentEntry } from "@/types";
+import { getWorkHours, getDoseWindow } from "./settings";
 
-/** Clock slots by doses-per-day. Index 0 is unused (PRN has no schedule). */
+/** Clock slots by doses-per-day. Index 0 is unused (PRN has no schedule).
+ *  These are the FALLBACK for clinics that haven't set their work hours yet —
+ *  once a دوام is configured in Settings, doseTimesFor derives real times
+ *  from it instead (بداية الدوام، وسطه…) so the plan follows the clinic. */
 export const DOSE_TIMES: Record<number, string[]> = {
   1: ["10:00"],
   2: ["10:00", "20:00"],
@@ -26,10 +30,75 @@ export const DOSE_TIMES: Record<number, string[]> = {
   4: ["10:00", "14:00", "18:00", "22:00"],
 };
 
-/** The times a dose lands on for a given daily count — empty for PRN/unknown. */
+/* ---- التزامن مع دوام العيادة ----------------------------------------------
+ * نافذة الإعطاء = نافذة الدكتور المخصصة إن ثبّتها («يعطى من هاي الساعة لهاي
+ * الساعة»)، وإلا الدوام نفسه (الصباحي + المسائي معاً). الجرعات تتوزّع على
+ * **دقائق العمل الفعلية** بالتساوي: كل جرعة عند الكسر k/n من مجموع وقت
+ * الدوام. فمرّتان باليوم بدوامٍ واحد = بدايته ووسطه، وبدوامين = بداية كل
+ * دوام — وهو بالضبط ما يعيشه الطبيب، لا معادلة كتاب. */
+export interface Segment { from: number; to: number }
+
+const segMinutesOf = (hhmm: string): number | undefined => {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(hhmm.trim());
+  if (!m) return undefined;
+  return Number(m[1]) * 60 + Number(m[2]);
+};
+
+/** يبني مقاطعَ النافذة من دوامٍ ونافذةٍ معطيين — نقيّة، فتصلح لمعاينة
+ *  الإعدادات الحيّة قبل الحفظ كما تصلح للجدولة الفعلية. */
+export function segmentsFrom(wh: { am: { from: string; to: string } | null; pm: { from: string; to: string } | null }, dw: { mode: "auto" | "custom"; from?: string; to?: string }): Segment[] {
+  if (dw.mode === "custom" && dw.from && dw.to) {
+    const f = segMinutesOf(dw.from), t = segMinutesOf(dw.to);
+    if (f !== undefined && t !== undefined && t > f) return [{ from: f, to: t }];
+  }
+  const segs: Segment[] = [];
+  for (const s of [wh.am, wh.pm]) {
+    if (!s) continue;
+    const f = segMinutesOf(s.from), t = segMinutesOf(s.to);
+    if (f !== undefined && t !== undefined && t > f) segs.push({ from: f, to: t });
+  }
+  return segs.sort((a, b) => a.from - b.from);
+}
+
+/** نافذة الإعطاء مقاطعَ دقائق مرتّبة — فارغة حين لا دوام ولا نافذة مخصصة. */
+export function doseSegments(): Segment[] {
+  return segmentsFrom(getWorkHours(), getDoseWindow());
+}
+
+const toHHMM = (min: number) => `${String(Math.floor(min / 60)).padStart(2, "0")}:${String(min % 60).padStart(2, "0")}`;
+
+/** توزيع n جرعات على المقاطع بالتساوي — كل جرعة عند الكسر k/n من مجموع
+ *  دقائق العمل، بتقريبٍ لأقرب ربع ساعة داخل المقطع نفسه. */
+export function distributeDoses(segs: Segment[], n: number): string[] {
+  if (!segs.length || n < 1) return [];
+  const total = segs.reduce((s, g) => s + (g.to - g.from), 0);
+  const out: string[] = [];
+  for (let k = 0; k < n; k++) {
+    let pos = Math.floor((total * k) / n);
+    let abs = segs[segs.length - 1].to;
+    let seg = segs[segs.length - 1];
+    for (const g of segs) {
+      const len = g.to - g.from;
+      if (pos < len) { abs = g.from + pos; seg = g; break; }
+      pos -= len;
+    }
+    const rounded = Math.max(seg.from, Math.min(seg.to, Math.round(abs / 15) * 15));
+    const hhmm = toHHMM(rounded);
+    if (!out.includes(hhmm)) out.push(hhmm);
+  }
+  return out;
+}
+
+/** The times a dose lands on for a given daily count — empty for PRN/unknown.
+ *  Clinic work hours (or the custom dose window) drive the times when set;
+ *  the historical 10:00–22:00 slots remain the fallback. */
 export function doseTimesFor(perDay: number): string[] {
   if (!Number.isFinite(perDay) || perDay < 1) return [];
-  return DOSE_TIMES[Math.min(4, Math.round(perDay))] ?? DOSE_TIMES[1];
+  const n = Math.min(4, Math.round(perDay));
+  const segs = doseSegments();
+  if (!segs.length) return DOSE_TIMES[n] ?? DOSE_TIMES[1];
+  const out = distributeDoses(segs, n);
+  return out.length ? out : (DOSE_TIMES[n] ?? DOSE_TIMES[1]);
 }
 
 /**

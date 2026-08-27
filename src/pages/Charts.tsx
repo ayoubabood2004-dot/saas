@@ -5,8 +5,8 @@ import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import {
   Stethoscope, BedDouble, HeartPulse, ClipboardList, Pill, AlertTriangle,
-  CheckCircle2, Clock, Loader2, Search, LayoutGrid, TableProperties, ChevronLeft, Slice, Plus,
-  Archive, DoorOpen, BarChart3, RotateCcw, MessageCircle, FileText, HeartCrack, Pencil, Check, Boxes,
+  CheckCircle2, Clock, Loader2, Search, LayoutGrid, TableProperties, ChevronLeft, ChevronRight, Slice, Plus,
+  Archive, DoorOpen, BarChart3, RotateCcw, MessageCircle, FileText, HeartCrack, Pencil, Check,
   ClipboardCheck,
 } from "lucide-react";
 import type { Admission, ClinicVisit, MedicalVisit, Pet, PatientCondition, TreatmentEntry , Surgery } from "@/types";
@@ -25,7 +25,6 @@ import { cageRoomOf, cageSortKey } from "@/lib/cageOrder";
 import { Nameplate } from "@/components/cages/CageCard";
 import { opsStore } from "@/lib/opsStore";
 import { TreatmentBoard } from "@/components/TreatmentBoard";
-import { CageMap } from "@/components/CageMap";
 import { taskStatus } from "@/lib/treatmentSchedule";
 import { syncDoseCycleForPet } from "@/lib/doseCycle";
 import { OUTCOMES } from "@/lib/clinicalKnowledge";
@@ -55,18 +54,20 @@ const bucketLabel = (t: TFunction, key: BucketKey): string => ({
   visit: t("charts.bucketVisit", "طبلات الزيارة"),
 }[key]);
 
-/* ── السجلات: هيكلة الصفحة العليا ──────────────────────────────────────────
- * سجلا العلاج (اليومية + الفندقة العلاجية) هما اللذان يحملان جرعات — فكل
- * واحد سجل مستقل بواجهته. الفندقة العادية والزيارات (بلا علاجات) بسجل جانبي.
- * وبعد ما يخلص العلاج، الطبلة تغادر السجلات النشطة: إما «سكشن الحالات»
- * (انتهت بنتيجة) أو «المنقطعون» (صاحبها ما رجع يكمل). و«التقارير» تحكي
- * وضع كل هذا بالأرقام وبالجُمل. */
-type RegistryKey = "daily" | "careBoarding" | "other" | "cages" | "cases" | "deceased" | "lost" | "reports";
-const REGISTRIES: { key: RegistryKey; icon: typeof Stethoscope }[] = [
+/* ── السجلات: دفترٌ واقعي ─────────────────────────────────────────────────
+ * الطبلات دفتران لا غير: **اليومية** و**الفندقة العلاجية** — هما وحدهما مَن
+ * يحمل جرعات. الفندقة العادية والزيارات ما ينفتح لهم دفتر أصلاً (تُدار من
+ * الاستقبال)، وخريطة الأقفاص لها شاشتها المستقلة. والدفتران يعلوان الصفحة
+ * لسانين كبيرين كما دفترٌ حقيقي على الطاولة، وتحتهما «الأرشيف»: سكشن
+ * الحالات والمتوفون والمنقطعون والتقارير — صفحات آخر الدفتر. */
+type RegistryKey = "daily" | "careBoarding" | "cases" | "deceased" | "lost" | "reports";
+/** لسانا الدفتر الرئيسيان. */
+const BOOK_TABS: { key: RegistryKey; icon: typeof Stethoscope }[] = [
   { key: "daily", icon: Stethoscope },
   { key: "careBoarding", icon: HeartPulse },
-  { key: "other", icon: BedDouble },
-  { key: "cages", icon: Boxes },
+];
+/** صفحات الأرشيف — آخر الدفتر. */
+const ARCHIVE_TABS: { key: RegistryKey; icon: typeof Stethoscope }[] = [
   { key: "cases", icon: Archive },
   { key: "deceased", icon: HeartCrack },
   { key: "lost", icon: DoorOpen },
@@ -74,20 +75,17 @@ const REGISTRIES: { key: RegistryKey; icon: typeof Stethoscope }[] = [
 ];
 /** تسميات السجلات — وقت الرسم أيضاً. */
 const registryLabel = (t: TFunction, key: RegistryKey): string => ({
-  daily: t("charts.regDaily", "سجل الطبلات اليومية"),
-  careBoarding: t("charts.regCareBoarding", "سجل الفندقة العلاجية"),
-  other: t("charts.regOther", "الفندقة والزيارات"),
-  cages: t("charts.regCages", "خريطة الأقفاص"),
+  daily: t("charts.regDaily", "الطبلات اليومية"),
+  careBoarding: t("charts.regCareBoarding", "الفندقة العلاجية"),
   cases: t("charts.regCases", "سكشن الحالات"),
   deceased: t("charts.regDeceased", "سجل المتوفين"),
   lost: t("charts.regLost", "المنقطعون"),
   reports: t("charts.regReports", "التقارير"),
 }[key]);
 /** أي دلاء تعرضها كل سجلة نشطة. */
-const REG_BUCKETS: Record<"daily" | "careBoarding" | "other", BucketKey[]> = {
+const REG_BUCKETS: Record<"daily" | "careBoarding", BucketKey[]> = {
   daily: ["daily"],
   careBoarding: ["careBoarding"],
-  other: ["boarding", "visit"],
 };
 /* ── Triage acuity ─────────────────────────────────────────────────────────
  * One colour language for "how urgent is this patient", so the board can be
@@ -369,10 +367,10 @@ export function Charts() {
     const matchQ = (pet: Pet | undefined, title: string) =>
       !q || (pet?.name ?? "").toLowerCase().includes(q) || title.toLowerCase().includes(q);
 
+    // الفندقة العادية والزيارات ما ينفتح لهم دفتر — العلاجيان فقط هنا.
     const adm = ops.admissions.filter(
-      (a) => a.status === "active" && (activeBranch === "all" || branches.length < 2 || matchesBranch(a.branch_id, activeBranch, branches)),
+      (a) => a.status === "active" && a.kind !== "boarding" && (activeBranch === "all" || branches.length < 2 || matchesBranch(a.branch_id, activeBranch, branches)),
     );
-    const admPetIds = new Set(adm.map((a) => a.pet_id));
     const kindBucket: Record<Admission["kind"], BucketKey> = { treatment: "daily", treatment_boarding: "careBoarding", boarding: "boarding" };
 
     const out: Chart[] = [];
@@ -382,14 +380,6 @@ export function Charts() {
       if (!matchQ(pet, title)) continue;
       const visit = openVisitByPet.get(a.pet_id);
       out.push({ id: `adm_${a.id}`, bucket: kindBucket[a.kind], petId: a.pet_id, visitId: visit?.id, admissionId: a.id, pet, title, cage: a.cage, since: a.admitted_on, condition: conditionByPet.get(a.pet_id) ?? null, ...statusFrom(treatments.filter((t) => t.pet_id === a.pet_id)) });
-    }
-    // Standalone open visits — only for pets NOT already shown via an admission (no duplicates).
-    for (const v of visits) {
-      if (admPetIds.has(v.pet_id)) continue;
-      const pet = pets[v.pet_id];
-      const title = v.reason?.trim() || t("charts.visitFallback", "زيارة");
-      if (!matchQ(pet, title)) continue;
-      out.push({ id: `vis_${v.id}`, bucket: "visit", petId: v.pet_id, visitId: v.id, pet, title, since: v.opened_at, condition: conditionByPet.get(v.pet_id) ?? null, ...statusFrom(treatments.filter((t) => t.visit_id === v.id)) });
     }
     // Acuity leads the sort: the critical patient is the first thing you see.
     return out.sort((a, b) =>
@@ -587,17 +577,14 @@ export function Charts() {
   const regCounts: Record<RegistryKey, number> = useMemo(() => ({
     daily: charts.filter((c) => c.bucket === "daily").length,
     careBoarding: charts.filter((c) => c.bucket === "careBoarding").length,
-    other: charts.filter((c) => c.bucket === "boarding" || c.bucket === "visit").length,
-    // خريطة الأقفاص تَعُدّ الحيوانات الراقدة داخل أقفاص فعلاً (رقود نشط + رمز قفص).
-    cages: ops.admissions.filter((a) => a.status !== "discharged" && (a.cage ?? "").trim() !== "").length,
     cases: casesList.length,
     deceased: deceasedList.length,
     lost: lostList.length + stalled.length,
     reports: 0,
-  }), [charts, ops.admissions, casesList, deceasedList, lostList, stalled]);
+  }), [charts, casesList, deceasedList, lostList, stalled]);
 
   /** الدلاء المعروضة بالسجل النشط الحالي. */
-  const activeBuckets = reg === "daily" || reg === "careBoarding" || reg === "other" ? REG_BUCKETS[reg] : [];
+  const activeBuckets = reg === "daily" || reg === "careBoarding" ? REG_BUCKETS[reg] : [];
   const shownBuckets = BUCKETS.filter((b) => activeBuckets.includes(b.key));
   const activeCharts = useMemo(() => charts.filter((c) => activeBuckets.includes(c.bucket)), [charts, activeBuckets]);
 
@@ -715,7 +702,7 @@ export function Charts() {
   const [obBusy, setObBusy] = useState(false);
   const focusBoardOf = useCallback((petId: string) => {
     const a = ops.admissions.find((x) => x.pet_id === petId && x.status !== "discharged");
-    setReg(a?.kind === "treatment_boarding" ? "careBoarding" : a?.kind === "boarding" ? "other" : "daily");
+    setReg(a?.kind === "treatment_boarding" ? "careBoarding" : "daily");
     pickView("sheet");
     setFocusPet(petId);
     setObOpen(false);
@@ -799,14 +786,44 @@ export function Charts() {
         </div>
       </div>
 
-      {/* السجلات — دورة حياة الطبلة كاملة بستة أبواب */}
-      <div className="mb-4 flex flex-wrap gap-1.5">
-        {REGISTRIES.map((r) => (
-          <FilterChip key={r.key} active={reg === r.key} label={registryLabel(t, r.key)}
-            count={r.key === "reports" ? undefined : regCounts[r.key]}
-            alert={r.key === "lost" && regCounts.lost > 0}
-            icon={<r.icon size={13} />} onClick={() => { playTap(); setReg(r.key); }} />
-        ))}
+      {/* ── الدفتر ──────────────────────────────────────────────────────────
+          لسانان كبيران كدفترٍ حقيقي مفتوح على الطاولة: اليومية والفندقة
+          العلاجية. اللسان الفعّال يلتحم بصفحة الأرشيف تحته (حدّه السفلي
+          يذوب فيها) فيقرأ العين «هاي الصفحة المفتوحة» بلا شرح. وتحتهما
+          سطرُ فهرسٍ رفيع: صفحات آخر الدفتر — الحالات والمتوفون والمنقطعون
+          والتقارير. */}
+      <div className="mb-4" data-book>
+        <div className="flex gap-1.5 px-2">
+          {BOOK_TABS.map((r) => {
+            const on = reg === r.key;
+            return (
+              <button key={r.key} type="button" data-reg={r.key} onClick={() => { playTap(); setReg(r.key); }}
+                className={cn(
+                  "relative -mb-px flex flex-1 items-center justify-center gap-2 rounded-t-2xl border border-b-0 px-3 py-2.5 text-sm font-black transition sm:flex-none sm:min-w-[15rem]",
+                  on
+                    ? "z-10 border-line bg-surface-1 text-ink shadow-[0_-2px_8px_-4px_rgba(0,0,0,.12)]"
+                    : "border-transparent bg-surface-2/70 text-ink-muted hover:bg-surface-2 hover:text-ink",
+                )}>
+                <span className={cn("grid h-7 w-7 shrink-0 place-items-center rounded-lg",
+                  r.key === "daily" ? "bg-amber-100 text-amber-600 dark:bg-amber-500/15 dark:text-amber-300" : "bg-rose-100 text-rose-600 dark:bg-rose-500/15 dark:text-rose-300")}>
+                  <r.icon size={15} />
+                </span>
+                {registryLabel(t, r.key)}
+                <span className={cn("rounded-full px-1.5 text-[11px] font-black tabular-nums",
+                  on ? "bg-brand-600 text-white" : "bg-surface-3 text-ink-subtle")}>{formatNum(regCounts[r.key])}</span>
+              </button>
+            );
+          })}
+        </div>
+        <div className="flex flex-wrap items-center gap-1.5 rounded-2xl border border-line bg-surface-1 px-3 py-2">
+          <span className="me-1 text-2xs font-extrabold text-ink-subtle">{t("charts.bookArchive", "آخر الدفتر:")}</span>
+          {ARCHIVE_TABS.map((r) => (
+            <FilterChip key={r.key} active={reg === r.key} label={registryLabel(t, r.key)}
+              count={r.key === "reports" ? undefined : regCounts[r.key]}
+              alert={r.key === "lost" && regCounts.lost > 0}
+              icon={<r.icon size={13} />} onClick={() => { playTap(); setReg(r.key); }} />
+          ))}
+        </div>
       </div>
 
       {/* أدوات السجلات النشطة فقط: بحث + بطاقات/جرعات بالساعة */}
@@ -834,9 +851,7 @@ export function Charts() {
       )}
 
       {/* Body */}
-      {reg === "cages" ? (
-        <CageMap />
-      ) : reg === "cases" ? (
+      {reg === "cases" ? (
         <CasesSection cases={casesList} pets={pets} lang={lang} txForVisit={txForVisit}
           onOpen={(v) => { playTap(); navigate(`/pet/${v.pet_id}/visit/${v.id}`); }} />
       ) : reg === "deceased" ? (
@@ -864,7 +879,7 @@ export function Charts() {
         <div className="rounded-xl border border-line bg-surface-1 p-10 text-center">
           <LayoutGrid size={40} className="mx-auto mb-3 text-ink-subtle" />
           <p className="text-sm font-bold text-ink">
-            {reg === "daily" ? t("charts.emptyDaily", "ماكو طبلات يومية نشطة") : reg === "careBoarding" ? t("charts.emptyCareBoarding", "ماكو فندقة علاجية نشطة") : t("charts.emptyOther", "ماكو فندقة أو زيارات مفتوحة")}
+            {reg === "daily" ? t("charts.emptyDaily", "ماكو طبلات يومية نشطة") : t("charts.emptyCareBoarding", "ماكو فندقة علاجية نشطة")}
           </p>
           <p className="mt-1 text-xs text-ink-subtle">{t("charts.emptyHint", "الطبلة تنفتح تلقائياً لما تدخّل حالة علاج — والمنتهية تلگيها بـ«سكشن الحالات».")}</p>
           <Button className="mt-4" data-openboardempty leftIcon={<Plus size={16} />}
@@ -911,7 +926,14 @@ export function Charts() {
               const on = focusPet === p.petId;
               return (
                 <button key={p.petId} type="button" data-focuspet={p.petId}
-                  onClick={() => { playTap(); setFocusPet(p.petId); }}
+                  /* ضغطة أولى تركّز ورقته — وضغطة ثانية على المركَّز نفسه تفتح
+                     سجل طبلته مباشرة: «اضغط الحيوان يوديك لطبلته». */
+                  onClick={() => {
+                    playTap();
+                    if (on) { const c2 = activeCharts.find((x) => x.petId === p.petId); if (c2) void openChart(c2); return; }
+                    setFocusPet(p.petId);
+                  }}
+                  title={on ? t("charts.tapOpensBoard", "اضغط مرة ثانية لفتح سجل الطبلة") : (p.pet?.name ?? "")}
                   className={cn("flex items-center gap-2 rounded-xl px-2.5 transition",
                     on ? "bg-brand-600 text-white shadow-soft" : "text-ink-muted hover:bg-surface-2")}
                   style={{ minHeight: 44 }}>
@@ -930,15 +952,30 @@ export function Charts() {
                   ) : c && c.total > 0 ? (
                     <CheckCircle2 size={15} className={on ? "text-white/90" : "text-success-600"} />
                   ) : null}
+                  {on && <ChevronLeft size={13} className="shrink-0 text-white/80 rtl:rotate-180" />}
                 </button>
               );
             })}
           </div>
 
-          {/* عنوان المريض المركَّز وزرُّ إضافته — بديلُ شريطه داخل الورقة */}
+          {/* عنوان المريض المركَّز — رأسُ صفحةِ الدفتر: أسهمٌ تقلّب الحيوانات
+              كتقليب الورق، والاسم نفسه زرٌّ يفتح سجل الطبلة الكامل. */}
           {focusPet && sheetPatients[0] && (
-            <div className="mb-3 flex flex-wrap items-center gap-3 rounded-2xl border border-line bg-surface-1 px-4 py-3">
-              <div className="min-w-0">
+            <div className="mb-3 flex flex-wrap items-center gap-3 rounded-2xl border border-line bg-surface-1 px-3 py-3">
+              {flowPatients.length > 1 && (
+                <button type="button" data-petprev aria-label={t("charts.prevPet", "الحيوان السابق")}
+                  onClick={() => {
+                    playTap();
+                    const i = flowPatients.findIndex((p) => p.petId === focusPet);
+                    setFocusPet(flowPatients[(i - 1 + flowPatients.length) % flowPatients.length].petId);
+                  }}
+                  className="grid h-11 w-9 shrink-0 place-items-center rounded-xl border border-line bg-surface-2 text-ink-muted transition hover:bg-surface-3 hover:text-ink">
+                  <ChevronRight size={17} className="rtl:rotate-180" />
+                </button>
+              )}
+              <button type="button" data-openvisitpage className="min-w-0 flex-1 text-start"
+                title={t("charts.openBoardRecord", "افتح سجل الطبلة")}
+                onClick={() => { playTap(); const c = activeCharts.find((x) => x.petId === focusPet); if (c) void openChart(c); }}>
                 <p className="truncate font-display text-lg font-extrabold leading-tight text-ink" dir="auto">
                   {sheetPatients[0].pet?.name ?? "—"}
                 </p>
@@ -946,7 +983,23 @@ export function Charts() {
                   {[sheetPatients[0].cage, sheetPatients[0].room,
                     activeCharts.find((c) => c.petId === focusPet)?.title].filter(Boolean).join(" · ")}
                 </p>
-              </div>
+              </button>
+              {flowPatients.length > 1 && (
+                <button type="button" data-petnext aria-label={t("charts.nextPet", "الحيوان التالي")}
+                  onClick={() => {
+                    playTap();
+                    const i = flowPatients.findIndex((p) => p.petId === focusPet);
+                    setFocusPet(flowPatients[(i + 1) % flowPatients.length].petId);
+                  }}
+                  className="grid h-11 w-9 shrink-0 place-items-center rounded-xl border border-line bg-surface-2 text-ink-muted transition hover:bg-surface-3 hover:text-ink">
+                  <ChevronLeft size={17} className="rtl:rotate-180" />
+                </button>
+              )}
+              <Button size="sm" variant="secondary" style={{ minHeight: 44 }}
+                data-openboardrec leftIcon={<ClipboardList size={15} />}
+                onClick={() => { playTap(); const c = activeCharts.find((x) => x.petId === focusPet); if (c) void openChart(c); }}>
+                {t("charts.openBoardRecord", "سجل الطبلة")}
+              </Button>
               {/* البروتوكول قبل «إضافة علاج»: الحالة الشائعة تُكتب بضغطة،
                   والنادرة تُكتب يدوياً. فالأشيع يقف أولاً بمسار الإصبع. */}
               <Button size="sm" variant="secondary" className="ms-auto" style={{ minHeight: 44 }}

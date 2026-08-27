@@ -6,6 +6,7 @@ import {
 } from "./vetFormulary";
 import { pad2, TASK_META } from "./flowsheet";
 import { getCareProtocolsRaw, setCareProtocolsRaw } from "./settings";
+import { doseSegments, doseTimesFor } from "./treatmentSchedule";
 
 /* ============================================================================
  * protocols — «البروتوكولات الجاهزة»: حالةٌ شائعة تُكتب بضغطة بدل عشر.
@@ -349,6 +350,10 @@ export function drugTimes(freqHours: number): string[] {
 
 export function spreadTimes(perDay: number): string[] {
   const n = Math.max(1, Math.min(12, Math.round(perDay)));
+  // دوامٌ مضبوط بالإعدادات يقود الجرعات الاعتيادية (حتى ٤ باليوم): نفس أوقات
+  // خطة العلاج تماماً — جدولان بمصدرين كانا سينحرفان. فوق ٤ (سوائل على مدار
+  // الساعة…) يبقى التوزيع القديم لأن الدوام لا يسع أصلاً هذا التواتر.
+  if (n <= 4 && doseSegments().length) return doseTimesFor(n);
   const hrs = DAY_SLOTS[n] ?? Array.from({ length: n }, (_, i) => Math.round(8 + (i * 14) / (n - 1)));
   return hrs.map((h) => `${pad2(Math.min(22, h))}:00`).sort();
 }

@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { Check, X, SkipForward, Play, ArrowRight, AlertTriangle, Info, Stethoscope } from "lucide-react";
 import type { Pet, TreatmentEntry } from "@/types";
 import { cn, formatNum, formatDec } from "@/lib/utils";
+import { fmtClock } from "@/lib/clock";
 import { PetAvatar } from "@/components/PetAvatar";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
 import { TASK_META, typeOf, routeName, MISS_REASONS } from "@/lib/flowsheet";
@@ -186,7 +187,7 @@ export function RoundMode({
                 : "bg-warn-50 text-warn-700 ring-warn-300 dark:bg-warn-500/15 dark:text-warn-300")}>
               <span className={cn("h-2 w-2 rounded-full", stop!.lateMins > 0 ? "bg-danger-500" : "bg-warn-500")} />
               {lateText(stop!.lateMins)}
-              {e.time ? ` · ${t("round.dueAt", { at: e.time, defaultValue: "موعدها {{at}}" })}` : ""}
+              {e.time ? ` · ${t("round.dueAt", { at: fmtClock(e.time), defaultValue: "موعدها {{at}}" })}` : ""}
             </span>
 
             <h3 data-rounddrug className="font-display text-4xl font-extrabold leading-[1.15] tracking-tight text-ink" dir="auto">

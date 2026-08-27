@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Settings as SettingsIcon, RotateCcw, Check, Volume2, VolumeX, Plus, Trash2, Pill, PawPrint, Stethoscope, Tag, FolderPlus, BadgePercent, IdCard, Mail, UserCog, Image as ImageIcon, Upload, Facebook, Instagram, Building2, Printer, Type, LogOut , Slice, ChevronDown, Radio, Copy, Download, Cable, Send, Barcode, Search, Package, Share2, ShieldAlert } from "lucide-react";
+import { Settings as SettingsIcon, RotateCcw, Check, Volume2, VolumeX, Plus, Trash2, Pill, PawPrint, Stethoscope, Tag, FolderPlus, BadgePercent, IdCard, Mail, UserCog, Image as ImageIcon, Upload, Facebook, Instagram, Building2, Printer, Type, LogOut , Slice, ChevronDown, Radio, Copy, Download, Cable, Send, Barcode, Search, Package, Share2, ShieldAlert, Clock3, Sun, Moon } from "lucide-react";
 import type { LabDeviceLink } from "@/types";
 import { supabaseUrl, supabaseAnonKey } from "@/lib/supabase";
 import { makeZip } from "@/lib/zip";
@@ -17,7 +17,8 @@ import { getServiceCatalog, addServiceCategory, removeServiceCategory, addServic
 import { DEFAULT_RANGES, VITAL_KEYS, CBC_KEYS, rangeFor, type VitalKey } from "@/lib/vitals";
 
 const ALL_KEYS: VitalKey[] = [...VITAL_KEYS, ...CBC_KEYS];
-import { setVitalOverride, clearVitalOverrides, getDialCode, setDialCode, getClinicLogo, setClinicLogo, getClinicSocials, setClinicSocials, getClinicName, setClinicName, getPreSalePrint, setPreSalePrint, getResizableCart, setResizableCart, getFontScaleEnabled, setFontScaleEnabled, getDeliveryZones, setDeliveryZones, type DeliveryZone, getQtyPromos, setQtyPromos, promoTargetLabel, getCatalogShare, setCatalogShare, type QtyPromo, type PromoKind, type PromoMode, getCurrencyCode, setCurrencyCode, getPosV2, setPosV2 } from "@/lib/settings";
+import { setVitalOverride, clearVitalOverrides, getDialCode, setDialCode, getClinicLogo, setClinicLogo, getClinicSocials, setClinicSocials, getClinicName, setClinicName, getPreSalePrint, setPreSalePrint, getResizableCart, setResizableCart, getFontScaleEnabled, setFontScaleEnabled, getDeliveryZones, setDeliveryZones, type DeliveryZone, getQtyPromos, setQtyPromos, promoTargetLabel, getCatalogShare, setCatalogShare, type QtyPromo, type PromoKind, type PromoMode, getCurrencyCode, setCurrencyCode, getPosV2, setPosV2, getWorkHours, setWorkHours, getClockFormat, setClockFormat, type ClockFormat, getDoseWindow, setDoseWindow, getCashReconcile, setCashReconcile } from "@/lib/settings";
+import { segmentsFrom, distributeDoses } from "@/lib/treatmentSchedule";
 import { CURRENCIES, currencyName } from "@/lib/currency";
 import { FONT_SCALES, getFontScale, setFontScale, applyFontScale, getCrispMode, setCrispMode, type FontScaleId } from "@/lib/fontScale";
 import { RECEIPT_WIDTHS, getReceiptWidth, setReceiptWidth, openReceiptCalibration } from "@/lib/printer";
@@ -233,6 +234,7 @@ export function Settings() {
 
       <SettingsSection id="clinic" icon={<Building2 size={15} />} title={t("settings.secClinic")} onMeasure={measure}>
         {canSettings && <ClinicIdentity />}
+        {canSettings && <WorkHoursCard />}
         {canSettings && <BranchesManager />}
         {canSettings && <ManagerOverrideCard />}
         <ClinicMembership />
@@ -627,6 +629,146 @@ function ClinicIdentity() {
   );
 }
 
+/* ------------- دوام العيادة وصيغة الساعة ونافذة الأدوية (0119) ---------- */
+function WorkHoursCard() {
+  const { t } = useTranslation();
+  const saved = getWorkHours();
+  const [amOn, setAmOn] = useState(!!saved.am);
+  const [amFrom, setAmFrom] = useState(saved.am?.from ?? "09:00");
+  const [amTo, setAmTo] = useState(saved.am?.to ?? "14:00");
+  const [pmOn, setPmOn] = useState(!!saved.pm);
+  const [pmFrom, setPmFrom] = useState(saved.pm?.from ?? "16:00");
+  const [pmTo, setPmTo] = useState(saved.pm?.to ?? "21:00");
+  const [clock, setClock] = useState<ClockFormat>(getClockFormat());
+  const dwSaved = getDoseWindow();
+  const [dwMode, setDwMode] = useState<"auto" | "custom">(dwSaved.mode);
+  const [dwFrom, setDwFrom] = useState(dwSaved.from ?? "10:00");
+  const [dwTo, setDwTo] = useState(dwSaved.to ?? "20:00");
+  const [flash, setFlash] = useState(false);
+
+  /* المعاينة تُحسب من المسودّة نفسها — الدكتور يشوف أوقات الجرعات وهو يكتب،
+   * قبل أي حفظ، بنفس دالّة التوزيع التي ستستعملها خطة العلاج حرفياً. */
+  const draftWh = { am: amOn ? { from: amFrom, to: amTo } : null, pm: pmOn ? { from: pmFrom, to: pmTo } : null };
+  const draftDw = dwMode === "custom" ? { mode: "custom" as const, from: dwFrom, to: dwTo } : { mode: "auto" as const };
+  const segs = segmentsFrom(draftWh, draftDw);
+  const fmtDraft = (hhmm: string) => {
+    if (clock === "24") return hhmm;
+    const [h0, m0] = hhmm.split(":").map(Number);
+    const suffix = h0 >= 12 ? t("clock.pm", "م") : t("clock.am", "ص");
+    const h12 = h0 % 12 === 0 ? 12 : h0 % 12;
+    return `${h12}:${String(m0).padStart(2, "0")} ${suffix}`;
+  };
+
+  const pickClock = (f: ClockFormat) => { setClock(f); setClockFormat(f); playSuccess(); };
+  const save = () => {
+    setWorkHours(draftWh);
+    setDoseWindow(draftDw);
+    playSuccess();
+    setFlash(true);
+    setTimeout(() => setFlash(false), 2500);
+  };
+
+  const TimePair = ({ from, to, onFrom, onTo, idFrom, idTo }: { from: string; to: string; onFrom: (v: string) => void; onTo: (v: string) => void; idFrom: string; idTo: string }) => (
+    <div className="flex items-center gap-2">
+      <input type="time" data-testid={idFrom} className="input h-11 w-32 text-center font-bold tabular-nums" value={from} onChange={(e) => onFrom(e.target.value)} />
+      <span className="text-xs font-bold text-ink-subtle">{t("settings.whTo", "إلى")}</span>
+      <input type="time" data-testid={idTo} className="input h-11 w-32 text-center font-bold tabular-nums" value={to} onChange={(e) => onTo(e.target.value)} />
+    </div>
+  );
+
+  return (
+    <div className="card p-5 mb-4" data-workhours>
+      <h2 className="font-bold text-ink mb-1 flex items-center gap-2"><Clock3 size={18} className="text-brand-600" /> {t("settings.workHours", "دوام العيادة والوقت")}</h2>
+      <p className="text-xs text-ink-subtle mb-4">{t("settings.workHoursHint", "حدّد أوقات الدوام الرسمية — جرعات الأدوية (مرتين باليوم، ثلاث…) تتزامن معها تلقائياً: ببداية الدوام ووسطه بدل أوقات ثابتة، ومطابقة الصندوق تتقسّم عليها دواماً دواماً.")}</p>
+
+      <div className="space-y-4">
+        {/* الدوام الصباحي */}
+        <div className="rounded-2xl border border-line bg-surface-2/50 p-3.5">
+          <div className="mb-2.5 flex items-center justify-between gap-2">
+            <p className="flex items-center gap-1.5 text-sm font-black text-ink"><Sun size={15} className="text-amber-500" /> {t("settings.whAm", "الدوام الصباحي")}</p>
+            <button role="switch" aria-checked={amOn} data-wh-amon onClick={() => { setAmOn(!amOn); playTap(); }} aria-label={t("settings.whAm", "الدوام الصباحي")}>
+              <span className={cn("relative block h-6 w-11 rounded-full transition-colors", amOn ? "bg-brand-600" : "border border-line bg-surface-3")}>
+                <span className={cn("absolute start-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform", amOn && "translate-x-5 rtl:-translate-x-5")} />
+              </span>
+            </button>
+          </div>
+          {amOn && <TimePair from={amFrom} to={amTo} onFrom={setAmFrom} onTo={setAmTo} idFrom="wh-amfrom" idTo="wh-amto" />}
+        </div>
+
+        {/* الدوام المسائي — اختياري: عيادات كثيرة تشتغل دوامين */}
+        <div className="rounded-2xl border border-line bg-surface-2/50 p-3.5">
+          <div className="mb-2.5 flex items-center justify-between gap-2">
+            <p className="flex items-center gap-1.5 text-sm font-black text-ink"><Moon size={15} className="text-indigo-500" /> {t("settings.whPm", "الدوام المسائي")}</p>
+            <button role="switch" aria-checked={pmOn} data-wh-pmon onClick={() => { setPmOn(!pmOn); playTap(); }} aria-label={t("settings.whPm", "الدوام المسائي")}>
+              <span className={cn("relative block h-6 w-11 rounded-full transition-colors", pmOn ? "bg-brand-600" : "border border-line bg-surface-3")}>
+                <span className={cn("absolute start-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform", pmOn && "translate-x-5 rtl:-translate-x-5")} />
+              </span>
+            </button>
+          </div>
+          {pmOn ? <TimePair from={pmFrom} to={pmTo} onFrom={setPmFrom} onTo={setPmTo} idFrom="wh-pmfrom" idTo="wh-pmto" />
+            : <p className="text-2xs text-ink-subtle">{t("settings.whPmOff", "دوام واحد فقط — فعّله إذا العيادة تشتغل صباحي ومسائي.")}</p>}
+        </div>
+
+        {/* صيغة الساعة — تُحفظ فوراً، فهي عرضٌ لا جدولة */}
+        <div>
+          <p className="mb-1.5 text-sm font-bold text-ink">{t("settings.clockFormat", "صيغة عرض الساعة")}</p>
+          <div className="inline-flex items-center gap-0.5 rounded-full border border-line bg-surface-2 p-0.5">
+            <button type="button" data-clock12 onClick={() => pickClock("12")}
+              className={cn("rounded-full px-4 py-1.5 text-xs font-bold transition", clock === "12" ? "bg-brand-600 text-white shadow-soft" : "text-ink-muted hover:text-ink")}>
+              {t("settings.clock12", "١٢ ساعة (٩:٣٠ ص)")}
+            </button>
+            <button type="button" data-clock24 onClick={() => pickClock("24")}
+              className={cn("rounded-full px-4 py-1.5 text-xs font-bold transition", clock === "24" ? "bg-brand-600 text-white shadow-soft" : "text-ink-muted hover:text-ink")}>
+              {t("settings.clock24", "٢٤ ساعة (21:30)")}
+            </button>
+          </div>
+        </div>
+
+        {/* نافذة إعطاء الأدوية */}
+        <div>
+          <p className="mb-1 text-sm font-bold text-ink">{t("settings.doseWindow", "نافذة إعطاء الأدوية")}</p>
+          <p className="mb-2 text-2xs text-ink-subtle">{t("settings.doseWindowHint", "على أي مدى تتوزع جرعات اليوم؟ «حسب الدوام» يوزّعها على ساعات العمل نفسها، أو ثبّت بيدك: تعطى من ساعة معينة لساعة معينة.")}</p>
+          <div className="flex flex-wrap items-center gap-2">
+            <button type="button" data-dw-auto onClick={() => { setDwMode("auto"); playTap(); }}
+              className={cn("rounded-xl border px-3.5 py-2 text-xs font-bold transition", dwMode === "auto" ? "border-brand-500 bg-brand-50 text-brand-700 dark:bg-brand-500/15 dark:text-brand-300" : "border-line bg-surface-1 text-ink-muted")}>
+              {t("settings.dwAuto", "حسب الدوام تلقائياً")}
+            </button>
+            <button type="button" data-dw-custom onClick={() => { setDwMode("custom"); playTap(); }}
+              className={cn("rounded-xl border px-3.5 py-2 text-xs font-bold transition", dwMode === "custom" ? "border-brand-500 bg-brand-50 text-brand-700 dark:bg-brand-500/15 dark:text-brand-300" : "border-line bg-surface-1 text-ink-muted")}>
+              {t("settings.dwCustom", "من ساعة لساعة")}
+            </button>
+            {dwMode === "custom" && <TimePair from={dwFrom} to={dwTo} onFrom={setDwFrom} onTo={setDwTo} idFrom="dw-from" idTo="dw-to" />}
+          </div>
+        </div>
+
+        {/* معاينة حية: شلون راح تتوزع الجرعات فعلياً */}
+        <div className="rounded-2xl border border-brand-200 bg-brand-50/60 p-3.5 dark:border-brand-500/30 dark:bg-brand-500/10" data-dosepreview>
+          <p className="mb-2 text-xs font-black text-brand-700 dark:text-brand-300">{t("settings.dosePreview", "معاينة: أوقات الجرعات حسب هذا الدوام")}</p>
+          {segs.length === 0 ? (
+            <p className="text-2xs font-bold text-ink-muted">{t("settings.dosePreviewNone", "بلا دوام محدد — تبقى الأوقات الافتراضية (10:00 حتى 22:00).")}</p>
+          ) : (
+            <div className="space-y-1">
+              {[1, 2, 3, 4].map((n) => (
+                <p key={n} className="flex flex-wrap items-center gap-x-2 text-2xs font-bold text-ink">
+                  <span className="text-ink-muted">{t("settings.dosePerDay", { n: formatNum(n), defaultValue: "{{n}} باليوم:" })}</span>
+                  {distributeDoses(segs, n).map((x) => (
+                    <span key={x} className="rounded-lg bg-surface-1 px-2 py-0.5 tabular-nums shadow-sm">{fmtDraft(x)}</span>
+                  ))}
+                </p>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="flex items-center gap-3">
+          <Button data-wh-save onClick={save}>{t("common.save")}</Button>
+          {flash && <p className="flex items-center gap-1.5 text-sm font-medium text-brand-700"><Check size={16} /> {t("settings.saved")}</p>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ------------- Cashier options (opt-in POS extras) ---------- */
 function CashierToggle({ label, hint, checked, onToggle }: { label: string; hint: string; checked: boolean; onToggle: () => void }) {
   return (
@@ -650,6 +792,7 @@ function CashierOptions() {
   const [preSale, setPreSale] = useState(getPreSalePrint());
   const [resizableCart, setResizableCartOn] = useState(getResizableCart());
   const [posV2, setPosV2On] = useState(getPosV2());
+  const [cashRec, setCashRec] = useState(getCashReconcile());
 
   if (!can("manageSettings")) return null;
 
@@ -671,6 +814,12 @@ function CashierOptions() {
     const next = !resizableCart;
     setResizableCartOn(next);
     setResizableCart(next);
+    if (next) playSuccess(); else playTap();
+  };
+  const toggleCashRec = () => {
+    const next = !cashRec;
+    setCashRec(next);
+    setCashReconcile(next);
     if (next) playSuccess(); else playTap();
   };
 
@@ -699,6 +848,15 @@ function CashierOptions() {
           checked={resizableCart}
           onToggle={toggleResizableCart}
         />
+        <div className="border-t border-line" />
+        <div data-cashrec-toggle>
+          <CashierToggle
+            label={t("settings.cashReconcile", "مطابقة الصندوق اليومية")}
+            hint={t("settings.cashReconcileHint", "يضيف زر «مطابقة الصندوق» بشاشة المبيعات: بنهاية كل دوام تعدّ النقد الموجود فعلياً وتأكّد أنه مطابق للسستم — وإذا العيادة بدوامين، تأكيد للصباحي وتأكيد للمسائي، وتشوف مبيعات كل دوام على حدة.")}
+            checked={cashRec}
+            onToggle={toggleCashRec}
+          />
+        </div>
       </div>
     </div>
   );

@@ -27,7 +27,8 @@ import { MED_CATALOG, getClinicMeds } from "@/lib/meds";
 import { GlyphMark, glyphTone, glyphToneText } from "@/lib/clinicalIcons";
 import { visitKindMeta } from "@/lib/visits";
 import { localISO, formatDate, formatNum, ageFromDOB, cn } from "@/lib/utils";
-import { getClinicName, getClinicLogo, getClinicSocials } from "@/lib/settings";
+import { getClinicName, getClinicLogo, getClinicSocials, getClockFormat } from "@/lib/settings";
+import { fmtClock } from "@/lib/clock";
 import { openTreatmentSheet, type SheetTreatmentRow } from "@/lib/treatmentSheetPrint";
 import { syncDoseCycleForPet } from "@/lib/doseCycle";
 import { doseTimesFor, perDayFrom } from "@/lib/treatmentSchedule";
@@ -51,7 +52,8 @@ function parseDayNote(text: string): { day: string | null; body: string } {
 const addDaysISO = (iso: string, n: number) => localISO(new Date(new Date(iso).getTime() + n * 86400000));
 const pad = (n: number) => (n < 10 ? "0" : "") + n;
 const nowHHMM = () => { const d = new Date(); return `${pad(d.getHours())}:${pad(d.getMinutes())}`; };
-const clockOf = (iso: string, lang: string) => new Date(iso).toLocaleTimeString(lang, { hour: "2-digit", minute: "2-digit" });
+const clockOf = (iso: string, lang: string) =>
+  new Date(iso).toLocaleTimeString(lang, { hour: "2-digit", minute: "2-digit", hour12: getClockFormat() === "12" });
 
 /** Human age string ("٣ سنة و٤ أشهر" / "8 أشهر") — empty when DOB is unknown. */
 function ageText(dob: string | null | undefined, t: TFunction): string {
@@ -959,7 +961,7 @@ function TreatmentSheetTable({ dayGroups, todayISO, ended, lang, species, dayNot
                     <div className="flex items-center gap-1.5">
                       <span className={cn("inline-block h-2.5 w-2.5 shrink-0 rounded-sm", m.bar)} />
                       <span className="text-xs font-bold tabular-nums text-ink-subtle" dir="ltr">
-                        {t.administered_at ? clockOf(t.administered_at, lang) : (t.time || "—")}
+                        {t.administered_at ? clockOf(t.administered_at, lang) : (fmtClock(t.time) || "—")}
                       </span>
                     </div>
                     {first && !ended && (
@@ -1049,7 +1051,7 @@ function TreatmentSheetTable({ dayGroups, todayISO, ended, lang, species, dayNot
                           <div className="min-w-0 flex-1">
                             <p className="flex flex-wrap items-center gap-x-1.5 text-sm font-extrabold leading-tight text-ink">
                               {o.medication}
-                              {o.time && <span className="font-mono text-[10px] font-bold text-ink-subtle tabular-nums" dir="ltr">{o.time}</span>}
+                              {o.time && <span className="font-mono text-[10px] font-bold text-ink-subtle tabular-nums">{fmtClock(o.time)}</span>}
                             </p>
                             {o.result ? (
                               <p className={cn("truncate text-base font-black leading-tight", meta.value)}>{o.result}</p>

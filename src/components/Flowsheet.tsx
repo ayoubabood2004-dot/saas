@@ -23,6 +23,8 @@ import {
 } from "@/lib/observations";
 /* فتحات النهار نفسها التي توزّع بها البروتوكولات — جدولان كانا سينحرفان. */
 import { spreadTimes } from "@/lib/protocols";
+/* عرض الساعة بصيغة العيادة (١٢ ص/م أو ٢٤) — التخزين يبقى ٢٤ دائماً. */
+import { fmtClock, fmtHour } from "@/lib/clock";
 
 /* ============================================================================
  * Flowsheet — ورقة العلاج: مرضى في صفوف، ساعات في أعمدة.
@@ -158,7 +160,7 @@ const Cell = memo(function Cell({ list, todayISO, now, alt, hour, gap, sel, onTa
         data-cell={first.id}
         data-state={state}
         style={{ height: CELL, minWidth: CELL }}
-        title={`${first.time} · ${first.medication}${resHolder?.result ? ` — ${resHolder.result}` : ""}${missed ? ` — ${missed.missed_reason}` : ""}`}
+        title={`${fmtClock(first.time)} · ${first.medication}${resHolder?.result ? ` — ${resHolder.result}` : ""}${missed ? ` — ${missed.missed_reason}` : ""}`}
         onClick={() => onTap(first)}
         className={cn(
           base,
@@ -359,7 +361,7 @@ export function Flowsheet({
                   className={cn("py-2 text-center text-2xs font-black tabular-nums",
                     isGapBefore(cols, ci) ? "border-s-2 border-line-strong" : "border-s border-line",
                     here ? "text-danger-600 dark:text-danger-300" : past ? "text-ink-subtle/50" : "text-ink-subtle")}>
-                  {pad2(h)}
+                  {fmtHour(`${pad2(h)}:00`)}
                 </div>
               );
             })}
@@ -516,7 +518,7 @@ export function Flowsheet({
             <p className="truncate text-2xs font-bold text-ink-subtle">
               {t("flow.givenAt", { at: hhmmOf(confirm.entry.administered_at), by: confirm.entry.administered_by ?? t("flow.byUnknown", "غير مسجَّل"), defaultValue: "أُعطيت {{at}} · {{by}}" })}
               {confirm.entry.time && hhmmOf(confirm.entry.administered_at) !== confirm.entry.time
-                ? ` · ${t("flow.wasDue", { at: confirm.entry.time, defaultValue: "موعدها {{at}}" })}` : ""}
+                ? ` · ${t("flow.wasDue", { at: fmtClock(confirm.entry.time), defaultValue: "موعدها {{at}}" })}` : ""}
             </p>
           </div>
           {/* قياسٌ مسجَّل يُصحَّح **بتسجيلٍ فوقه** لا بمحوه: «نصّه» بالغلط بدل
@@ -659,7 +661,7 @@ function ObsSheet({ entry, scale, species, petId, onCancel, onPick, onFree }: {
         <div className="mb-3 flex items-start justify-between gap-3">
           <div>
             <p className="text-sm font-black text-ink" dir="auto">{entry.medication}</p>
-            <p className="mt-0.5 font-mono text-2xs font-bold text-ink-subtle">{entry.time} · {scale.name()}</p>
+            <p className="mt-0.5 font-mono text-2xs font-bold text-ink-subtle">{fmtClock(entry.time)} · {scale.name()}</p>
           </div>
           <button type="button" onClick={onCancel} aria-label={t("common.cancel", "إلغاء")}
             className="grid shrink-0 place-items-center rounded-xl text-ink-subtle transition hover:bg-surface-2"
@@ -767,7 +769,7 @@ function ValueSheet({ entry, hint, value, onChange, onCancel, onSave, inputRef }
         <div className="mb-3 flex items-start justify-between gap-3">
           <div>
             <p className="text-sm font-black text-ink" dir="auto">{entry.medication}</p>
-            <p className="mt-0.5 font-mono text-2xs font-bold text-ink-subtle">{entry.time}</p>
+            <p className="mt-0.5 font-mono text-2xs font-bold text-ink-subtle">{fmtClock(entry.time)}</p>
           </div>
           <button type="button" onClick={onCancel} aria-label={t("common.cancel", "إلغاء")}
             className="grid shrink-0 place-items-center rounded-xl text-ink-subtle transition hover:bg-surface-2"
@@ -813,7 +815,7 @@ function MissedSheet({ entry, onClose, onPick }: {
           <button type="button" onClick={onClose} className="p-1 text-ink-subtle"><X size={16} /></button>
         </div>
         <p className="mb-3 text-2xs text-ink-subtle">
-          {entry.medication} · <span className="font-mono">{entry.time}</span>
+          {entry.medication} · <span className="font-mono">{fmtClock(entry.time)}</span>
         </p>
         <div className="grid gap-1.5">
           {MISS_REASONS.map((r) => (

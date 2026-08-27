@@ -141,8 +141,8 @@ export function clearPetRanges(petId: string) {
 export const DEFAULT_DIAL_CODE = "+964"; // Iraq
 
 export interface ClinicSocials { facebook: string; instagram: string }
-interface ClinicPrefs { dial_code: string; logo_url: string | null; social_facebook: string; social_instagram: string; clinic_name: string; pre_sale_print: boolean; override_enabled: boolean; resizable_cart: boolean; font_scale_enabled: boolean; override_pin_mirror: string | null; delivery_zones: string | null; qty_promos: string | null; catalog_share: boolean; cage_layout: string | null; care_protocols: string | null; currency: string | null; country: string | null; pos_v2: boolean }
-const DEFAULT_PREFS: ClinicPrefs = { dial_code: DEFAULT_DIAL_CODE, logo_url: null, social_facebook: "", social_instagram: "", clinic_name: "", pre_sale_print: false, override_enabled: false, resizable_cart: false, font_scale_enabled: false, override_pin_mirror: null, delivery_zones: null, qty_promos: null, catalog_share: false, cage_layout: null, care_protocols: null, currency: null, country: null, pos_v2: false };
+interface ClinicPrefs { dial_code: string; logo_url: string | null; social_facebook: string; social_instagram: string; clinic_name: string; pre_sale_print: boolean; override_enabled: boolean; resizable_cart: boolean; font_scale_enabled: boolean; override_pin_mirror: string | null; delivery_zones: string | null; qty_promos: string | null; catalog_share: boolean; cage_layout: string | null; care_protocols: string | null; currency: string | null; country: string | null; pos_v2: boolean; work_hours: string | null; clock_format: string | null; dose_window: string | null; cash_reconcile: boolean; cash_confirms: string | null }
+const DEFAULT_PREFS: ClinicPrefs = { dial_code: DEFAULT_DIAL_CODE, logo_url: null, social_facebook: "", social_instagram: "", clinic_name: "", pre_sale_print: false, override_enabled: false, resizable_cart: false, font_scale_enabled: false, override_pin_mirror: null, delivery_zones: null, qty_promos: null, catalog_share: false, cage_layout: null, care_protocols: null, currency: null, country: null, pos_v2: false, work_hours: null, clock_format: null, dose_window: null, cash_reconcile: false, cash_confirms: null };
 
 const prefsKey = () => `vp_clinic_prefs_${getActiveClinicId()}`;
 const legacyDialKey = () => `vp_dial_code_${getActiveClinicId()}`;
@@ -242,6 +242,11 @@ export async function hydrateClinicPrefs(): Promise<void> {
         currency: d.currency ?? local.currency,
         country: d.country ?? local.country,
         pos_v2: typeof d.pos_v2 === "boolean" ? d.pos_v2 : local.pos_v2,
+        work_hours: d.work_hours ?? local.work_hours,
+        clock_format: d.clock_format ?? local.clock_format,
+        dose_window: d.dose_window ?? local.dose_window,
+        cash_reconcile: typeof d.cash_reconcile === "boolean" ? d.cash_reconcile : local.cash_reconcile,
+        cash_confirms: d.cash_confirms ?? local.cash_confirms,
       };
     } else {
       // No row yet → migrate any local prefs up (or seed the default dial code).
@@ -269,6 +274,11 @@ export async function hydrateClinicPrefs(): Promise<void> {
       if (local.currency) boolPatch.currency = local.currency;
       if (local.country) boolPatch.country = local.country;
       if (local.pos_v2) boolPatch.pos_v2 = true;
+      if (local.work_hours) boolPatch.work_hours = local.work_hours;
+      if (local.clock_format) boolPatch.clock_format = local.clock_format;
+      if (local.dose_window) boolPatch.dose_window = local.dose_window;
+      if (local.cash_reconcile) boolPatch.cash_reconcile = true;
+      if (local.cash_confirms) boolPatch.cash_confirms = local.cash_confirms;
       if (Object.keys(boolPatch).length) setPendingPrefs({ ...readPendingPrefs(), ...boolPatch });
     }
     // Unconfirmed pref writes (e.g. a toggle flipped before its column's
@@ -590,4 +600,116 @@ export function getPosV2(): boolean {
 }
 export function setPosV2(on: boolean) {
   patchPrefs({ pos_v2: on }, "pos-v2-set");
+}
+
+/* ---- دوام العيادة وصيغة الساعة (0119) --------------------------------------
+ * الدكتور يحدّد أوقات الدوام الرسمية (صباحي، ومسائي اختياري) فتتزامن معها
+ * جرعات الأدوية تلقائياً (treatmentSchedule.doseTimesFor) وتتقسّم عليها
+ * مطابقة الصندوق اليومية. الصيغة "HH:MM" بساعة ٢٤ داخلياً دائماً — العرض
+ * وحده يتبع صيغة ١٢/٢٤ المختارة. */
+export interface ShiftWindow { from: string; to: string }
+export interface WorkHours { am: ShiftWindow | null; pm: ShiftWindow | null }
+
+const HHMM_RE = /^([01]?\d|2[0-3]):[0-5]\d$/;
+const cleanShift = (s: unknown): ShiftWindow | null => {
+  if (!s || typeof s !== "object") return null;
+  const from = String((s as { from?: unknown }).from ?? "").trim();
+  const to = String((s as { to?: unknown }).to ?? "").trim();
+  if (!HHMM_RE.test(from) || !HHMM_RE.test(to) || from === to) return null;
+  return { from, to };
+};
+
+export function getWorkHours(): WorkHours {
+  try {
+    const raw = prefs().work_hours;
+    if (!raw) return { am: null, pm: null };
+    const o = JSON.parse(raw) as { am?: unknown; pm?: unknown };
+    return { am: cleanShift(o.am), pm: cleanShift(o.pm) };
+  } catch { return { am: null, pm: null }; }
+}
+
+export function setWorkHours(w: WorkHours) {
+  const clean: WorkHours = { am: cleanShift(w.am), pm: cleanShift(w.pm) };
+  patchPrefs({ work_hours: clean.am || clean.pm ? JSON.stringify(clean) : null }, "work-hours-set");
+}
+
+/** صيغة عرض الساعة: "12" (ص/م — الافتراضي بعياداتنا) أو "24". */
+export type ClockFormat = "12" | "24";
+export function getClockFormat(): ClockFormat {
+  return prefs().clock_format === "24" ? "24" : "12";
+}
+export function setClockFormat(f: ClockFormat) {
+  patchPrefs({ clock_format: f }, "clock-format-set");
+}
+
+/* ---- نافذة إعطاء الأدوية — «يعطى من هاي الساعة لهاي الساعة» ---------------
+ * auto: تُشتق من الدوام نفسه (بداية الصباحي → نهاية آخر دوام).
+ * custom: الدكتور يثبّت نافذة بيده، فتتوزّع الجرعات داخلها هي. */
+export interface DoseWindow { mode: "auto" | "custom"; from?: string; to?: string }
+
+export function getDoseWindow(): DoseWindow {
+  try {
+    const raw = prefs().dose_window;
+    if (!raw) return { mode: "auto" };
+    const o = JSON.parse(raw) as { mode?: unknown; from?: unknown; to?: unknown };
+    if (o.mode === "custom") {
+      const w = cleanShift({ from: o.from, to: o.to });
+      if (w) return { mode: "custom", from: w.from, to: w.to };
+    }
+    return { mode: "auto" };
+  } catch { return { mode: "auto" }; }
+}
+
+export function setDoseWindow(w: DoseWindow) {
+  const custom = w.mode === "custom" ? cleanShift({ from: w.from, to: w.to }) : null;
+  patchPrefs({ dose_window: custom ? JSON.stringify({ mode: "custom", ...custom }) : null }, "dose-window-set");
+}
+
+/* ---- مطابقة الصندوق اليومية (0119) -----------------------------------------
+ * خيار تفعيلي: زر «مطابقة الصندوق» بشاشة المبيعات — تأكيد نهائي بنهاية كل
+ * دوام أن النقد بالصندوق مطابق للسستم. التأكيدات سجل JSON صغير يتزامن مع
+ * بقية التفضيلات (آخر ١٢٠ تأكيداً تكفي لأشهر من العمل اليومي). */
+export function getCashReconcile(): boolean {
+  return prefs().cash_reconcile === true;
+}
+export function setCashReconcile(on: boolean) {
+  patchPrefs({ cash_reconcile: on }, "cash-reconcile-set");
+}
+
+export interface CashConfirm {
+  date: string;                 // "YYYY-MM-DD"
+  shift: "am" | "pm" | "day";   // أي دوام أُكّد — "day" حين لا دوامين
+  sales: number;                // مبيعات الدوام (إجمالي الفواتير)
+  expected: number;             // النقد المتوقع بالصندوق
+  counted: number;              // النقد المعدود فعلياً
+  by: string | null;            // مَن أكّد
+  at: string;                   // ISO وقت التأكيد
+}
+
+export function getCashConfirms(): CashConfirm[] {
+  try {
+    const raw = prefs().cash_confirms;
+    if (!raw) return [];
+    const arr = JSON.parse(raw) as unknown;
+    if (!Array.isArray(arr)) return [];
+    return arr
+      .filter((c): c is Record<string, unknown> => !!c && typeof c === "object")
+      .map((c) => ({
+        date: String(c.date ?? ""),
+        shift: (c.shift === "am" || c.shift === "pm" ? c.shift : "day") as CashConfirm["shift"],
+        sales: Number(c.sales) || 0,
+        expected: Number(c.expected) || 0,
+        counted: Number(c.counted) || 0,
+        by: c.by ? String(c.by) : null,
+        at: String(c.at ?? ""),
+      }))
+      .filter((c) => c.date);
+  } catch { return []; }
+}
+
+/** يضيف تأكيداً (أو يستبدل تأكيد نفس اليوم ونفس الدوام — إعادة العدّ تصحّح لا تكرّر). */
+export function addCashConfirm(c: CashConfirm) {
+  const rest = getCashConfirms().filter((x) => !(x.date === c.date && x.shift === c.shift));
+  const next = [c, ...rest].slice(0, 120);
+  patchPrefs({ cash_confirms: JSON.stringify(next) }, "cash-confirm-add");
 }

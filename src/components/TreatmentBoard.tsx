@@ -10,10 +10,11 @@ import {
 import { TASK_META, typeOf, routeShort } from "@/lib/flowsheet";
 import { toneOfResult } from "@/lib/observations";
 import { formatNum, cn } from "@/lib/utils";
+import { fmtClock } from "@/lib/clock";
 import { playDoseGiven, playTap } from "@/lib/sounds";
 
-/** A clock slot as shown on the board. The app is Western-numeral throughout (see formatNum). */
-const timeLabel = (hhmm: string) => (/^\d{1,2}:\d{2}$/.test(hhmm.trim()) ? hhmm.trim() : "بلا وقت");
+/** A clock slot as shown on the board — rendered in the clinic's 12/24 format. */
+const timeLabel = (hhmm: string) => (/^\d{1,2}:\d{2}$/.test(hhmm.trim()) ? fmtClock(hhmm.trim()) : "بلا وقت");
 
 const STATUS_META: Record<TaskStatus, { label: string; chip: string; card: string; dot: string }> = {
   overdue: {
