@@ -19,7 +19,7 @@ import { ExpiryInput } from "@/components/ExpiryInput";
 import { Combobox } from "@/components/Combobox";
 import { subcategoriesOf } from "@/lib/promotions";
 import { Button, Badge, useToast, Skeleton } from "@/components/ui";
-import { cn, formatDate, money } from "@/lib/utils";
+import { cn, formatDate, money, fmtKg } from "@/lib/utils";
 import { withTimeout, describeDbError } from "@/lib/errors";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
 import { openStockReport } from "@/lib/stockReportPrint";
@@ -35,12 +35,6 @@ const LOW_STOCK = 5;
 const daysUntil = (iso?: string | null) => (iso ? Math.floor((new Date(iso).getTime() - Date.now()) / 86400000) : null);
 /** A product's reorder level — its own min_stock if set, else the default. */
 const lowThreshold = (p: Product) => (p.min_stock && p.min_stock > 0 ? p.min_stock : LOW_STOCK);
-
-/** Format a weight in kilos: drop trailing zeros (2 → "2", 0.5 → "0.5", 1.25 → "1.25"). */
-const fmtKg = (kg: number) => {
-  const n = Math.round((Number(kg) || 0) * 1000) / 1000;
-  return Number.isInteger(n) ? String(n) : String(n).replace(/\.?0+$/, "");
-};
 
 /** Canonical company name: trim, collapse internal whitespace, NFC-normalize
  *  (so visually-identical Arabic/Latin names don't split into two companies). */

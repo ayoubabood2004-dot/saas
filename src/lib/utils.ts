@@ -39,6 +39,13 @@ export function formatDec(n: number): string {
   return decFmt.format(Number.isFinite(n) ? n : 0);
 }
 
+/** وزنٌ بالكيلو بلا أصفارٍ زائدة: 2 → "2"، 0.5 → "0.5"، 1.250 → "1.25".
+ *  دقّة الغرام (ثلاث خانات) هي دقّة المخزون نفسها، فلا يُعرض ما لا يُخزَّن. */
+export function fmtKg(kg: number): string {
+  const n = Math.round((Number(kg) || 0) * 1000) / 1000;
+  return Number.isInteger(n) ? String(n) : String(n).replace(/\.?0+$/, "");
+}
+
 /** Format an amount in the clinic's currency — e.g. 25000 → "25,000 د.ع".
  *  عملات الأجزاء (د.ك، د.ب، ر.ع…) تحتفظ بكسورها لأن «9.5 دينار كويتي» مبلغ
  *  حقيقي؛ تقريبه لـ9 يكذب على الكاشير. */

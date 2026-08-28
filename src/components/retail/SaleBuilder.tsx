@@ -19,6 +19,7 @@ import { useEntitlements } from "@/lib/entitlements";
 import { Button, useToast } from "@/components/ui";
 import { ServiceQuickSelect } from "./ServiceQuickSelect";
 import { QtyPad } from "./QtyPad";
+import { WeightPicker } from "./WeightPicker";
 import { MedSaleForm } from "./MedSaleForm";
 import { CashierSelect } from "@/components/MedicalEntry";
 import { useInvoicePrinter } from "./usePrintInvoice";
@@ -28,7 +29,7 @@ import { branchStore } from "@/lib/branchStore";
 import { useNavFolded, setNavFolded } from "@/lib/navFold";
 import { persistMedicalEntries } from "@/lib/medSync";
 import type { MedicalDraft } from "@/components/MedicalEntry";
-import { cn, money, currencySymbol, formatNum } from "@/lib/utils";
+import { cn, money, currencySymbol, formatNum, fmtKg } from "@/lib/utils";
 import { splitCustomerField } from "@/lib/customerName";
 import { dueOf, paidOf } from "@/lib/debt";
 import { withTimeout, describeDbError } from "@/lib/errors";
@@ -93,12 +94,6 @@ const unitCap = (l: Line): number => {
   if (l.byWeight) return l.stock;
   if (l.saleUnit === "sub" && l.unitsPerBox && l.unitsPerBox > 0) return Math.floor(l.stock * l.unitsPerBox);
   return Math.floor(l.stock);
-};
-
-/** Format a weight in kilos: drop trailing zeros (2 → "2", 0.5 → "0.5", 1.25 → "1.25"). */
-const fmtKg = (kg: number) => {
-  const n = Math.round((Number(kg) || 0) * 1000) / 1000;
-  return Number.isInteger(n) ? String(n) : String(n).replace(/\.?0+$/, "");
 };
 
 const PAY_OPTIONS: { value: PaymentMethod; icon: typeof Banknote; key: string; def: string }[] = [
@@ -583,15 +578,20 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
   // الكيلو فيُحسب السعر خطياً. المضاعِف لا معنى له هنا (الوزن يُختار بيده).
   const addWeightLine = (p: Product, kg: number, ret: boolean) => {
     const id = ret ? `r:${p.id}` : `p:${p.id}`;
+    const qty = Math.round(kg * 1000) / 1000;
     const line: Line = {
       id, kind: "product", name: p.name, barcode: p.barcode ?? null,
       unit_price: p.sell_price, unit_cost: p.purchase_price,
-      qty: Math.round(kg * 1000) / 1000, stock: ret || p.pooled ? null : p.stock,
+      qty, stock: ret || p.pooled ? null : p.stock,
       product_id: p.id, subcategory: p.subcategory ?? null,
       byWeight: true, perKgPrice: p.sell_price, perKgCost: p.purchase_price, ret: ret || undefined,
     };
     // الوزن يُستبدل لا يُجمَع: الكاشير يختار الوزن الكلّي، فإعادة الفتح تعدّله.
-    setCart((c) => (c.some((l) => l.id === id) ? c.map((l) => (l.id === id ? { ...l, ...line } : l)) : [...c, line]));
+    // لكن **سعر الكيلو المعدَّل بيد الكاشير يبقى**: تعديلُ الوزن لا يجوز أن
+    // يعيد السعر بهدوءٍ لسعر الكتلوج — تلك فلوسٌ تتغيّر بلا أن يطلبها أحد.
+    setCart((c) => (c.some((l) => l.id === id)
+      ? c.map((l) => (l.id === id ? { ...l, ...line, unit_price: l.unit_price, unit_cost: l.unit_cost } : l))
+      : [...c, line]));
     playSuccess();
     flashLine(id);
   };
@@ -736,7 +736,9 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
     setQuery((q) => (code && q.endsWith(code) ? q.slice(0, q.length - code.length) : q));
     toast.error(t("pos.notFoundAny", "ماكو منتج ولا خدمة بهذا الباركود"), code);
     // اللوحة مفتوحة = الأرقام تخصّها؛ مسحةٌ تدخل صنفاً خلف نافذة مفتوحة تربك.
-  }, { disabled: multPad || !!qtyPadFor });
+    // منتقي الوزن مثلها: مسحةٌ وهو مفتوح كانت تبدّل المنتج تحت يد الطبيب أو
+    // تنزل سطراً خلف الورقة بلا أن يراه.
+  }, { disabled: multPad || !!qtyPadFor || !!weightFor });
 
   // The bridge: a doctor clicked "Sell items" inside an animal record. Auto-fill the
   // customer, surface the pet context, and focus the scan field for a zero-click flow.
@@ -802,7 +804,10 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
   // ثلاث حبات كثلاث قطع.
   const promoLines = (r: QtyPromo): Line[] => cart.filter((l) => {
     if (r.kind === "service") return l.kind === "service" && (!r.ids.length || (l.serviceId ? r.ids.includes(l.serviceId) : false));
-    if (l.kind !== "product" || l.saleUnit === "sub") return false;
+    // سطر الوزن خارج العروض القِطعية عمداً: كميّته كيلواتٌ لا قطع، فـ«كل ٣
+    // قطع خصم» كانت تقرأ ٣ كغ دراي فود كأنها ثلاث قطع فتخصم بلا استحقاق —
+    // وتقرأ نصف كيلو كنصف قطعة. عرض الكتلة يكون بالسعر لا بالعدّ.
+    if (l.kind !== "product" || l.saleUnit === "sub" || l.byWeight) return false;
     return !r.ids.length || (l.product_id ? r.ids.includes(l.product_id) : false);
   });
 
@@ -2472,12 +2477,19 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
       {weightFor && (() => {
         const { p, ret } = weightFor;
         const lineId = ret ? `r:${p.id}` : `p:${p.id}`;
-        const current = cart.find((l) => l.id === lineId)?.qty ?? 0;
+        const line = cart.find((l) => l.id === lineId);
+        const current = line?.qty ?? 0;
+        // سعر الكيلو المعروض هو سعر السطر إن عدّله الكاشير — لا سعر الكتلوج،
+        // وإلا اختلفت أسعار المربّعات عن السعر الذي سيُحسب فعلاً.
+        const perKg = line?.byWeight ? line.unit_price : p.sell_price;
         // الراجع بلا سقف؛ المنتج المجمّع يخصم من مخزون القسم فلا سقف محلّي له.
         const stockKg = ret || p.pooled ? Infinity : (p.stock ?? 0);
         return (
+          // المفتاح يجبر إعادة التركيب عند تبديل المنتج: بلا هذا كانت مسوّدةُ
+          // منتجٍ سابق تبقى مسلَّحةً على منتجٍ جديد بسعرٍ ومخزونٍ مختلفَين.
           <WeightPicker
-            open name={p.name} perKg={p.sell_price} stockKg={stockKg} current={current} ret={ret}
+            key={lineId}
+            open name={p.name} perKg={perKg} stockKg={stockKg} current={current} ret={ret}
             onClose={() => setWeightFor(null)}
             onSubmit={(kg) => { addWeightLine(p, kg, ret); setWeightFor(null); }}
           />
@@ -2538,95 +2550,5 @@ function PriceEdit({ value, onChange }: { value: number; onChange: (v: number) =
     >
       {money(value)} <Pencil size={10} className="opacity-60" />
     </button>
-  );
-}
-
-/** منتقي الوزن (كتلة، 0124): الكاشير يختار وزناً فيُحسب السعر خطياً من سعر
- *  الكيلو — نصف كيلو نصفُ السعر، كيلوان ضعفان. رقاقاتٌ جاهزة (غرامات وكيلوات)
- *  وإدخالٌ حرّ، وحارسُ مخزون يمنع بيع أكثر من المتوفّر. */
-function WeightPicker({ open, name, perKg, stockKg, current, ret, onClose, onSubmit }: {
-  open: boolean; name: string; perKg: number; stockKg: number; current: number; ret: boolean;
-  onClose: () => void; onSubmit: (kg: number) => void;
-}) {
-  const { t } = useTranslation();
-  const [kg, setKg] = useState<string>(current > 0 ? fmtKg(current) : "");
-  useEffect(() => { if (open) setKg(current > 0 ? fmtKg(current) : ""); }, [open, current]);
-  const val = Math.round((Number(kg) || 0) * 1000) / 1000;
-  const capped = !ret && Number.isFinite(stockKg);
-  const over = capped && val > stockKg + 1e-9;
-  const price = Math.round(val * perKg);
-  const ok = val > 0 && !over;
-  // رقاقات جاهزة: غرامات ثم كيلوات — منطقية للواقع (دراي فود، رمل، لحوم).
-  const PRESETS_G = [100, 250, 500, 750];
-  const PRESETS_KG = [1, 1.5, 2, 3, 5];
-  if (!open) return null;
-  const chip = (kgVal: number) => {
-    const disabled = capped && kgVal > stockKg + 1e-9;
-    const active = Math.abs(val - kgVal) < 1e-9 && val > 0;
-    return (
-      <button
-        key={kgVal} type="button" disabled={disabled}
-        onClick={() => { playTap(); setKg(fmtKg(kgVal)); }}
-        className={cn("rounded-xl px-2 py-2 text-sm font-bold tabular-nums transition",
-          active ? "bg-brand-600 text-white"
-            : disabled ? "cursor-not-allowed bg-surface-2 text-ink-subtle/40"
-              : "bg-surface-2 text-ink hover:bg-surface-3")}
-      >
-        {kgVal < 1
-          ? t("retail.wGrams", { n: Math.round(kgVal * 1000), defaultValue: "{{n}} غ" })
-          : t("retail.wKg", { n: fmtKg(kgVal), defaultValue: "{{n}} كغ" })}
-      </button>
-    );
-  };
-  return (
-    <div className="fixed inset-0 z-[70] grid place-items-center bg-ink/50 p-4 backdrop-blur-[2px]" onClick={onClose}>
-      <div className="w-full max-w-sm rounded-3xl border border-line bg-surface-1 p-5 shadow-elevated" onClick={(e) => e.stopPropagation()}>
-        <div className="mb-3 flex items-center gap-2">
-          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300"><Scale size={20} /></span>
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-base font-bold text-ink">{name}</p>
-            <p className="text-xs text-ink-muted">
-              {t("retail.perKgPrice", { n: money(perKg), defaultValue: "سعر الكيلو {{n}}" })}
-              {ret ? ` · ${t("retail.retChip", "راجع")}` : ""}
-            </p>
-          </div>
-          <button type="button" onClick={onClose} aria-label={t("common.close", "إغلاق")} className="grid h-9 w-9 place-items-center rounded-full text-ink-subtle hover:bg-surface-2"><X size={18} /></button>
-        </div>
-
-        <div className="grid grid-cols-4 gap-1.5">{PRESETS_G.map((g) => chip(g / 1000))}</div>
-        <div className="mt-1.5 grid grid-cols-5 gap-1.5">{PRESETS_KG.map(chip)}</div>
-
-        <div className="mt-4">
-          <label className="label">{t("retail.customWeight", "وزن مخصّص (كيلو)")}</label>
-          <input
-            autoFocus type="number" inputMode="decimal" min="0" step="0.001" value={kg}
-            onChange={(e) => setKg(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter" && ok) onSubmit(val); }}
-            placeholder="0.000" className="input text-center text-lg font-bold tabular-nums"
-          />
-        </div>
-
-        {capped && (
-          <p className={cn("mt-2 text-center text-xs", over ? "font-bold text-danger-600" : "text-ink-subtle")}>
-            {over
-              ? t("retail.wOver", { n: fmtKg(stockKg), defaultValue: "المتوفّر {{n}} كغ فقط" })
-              : t("retail.wAvail", { n: fmtKg(stockKg), defaultValue: "المتوفّر: {{n}} كغ" })}
-          </p>
-        )}
-
-        <div className="mt-4 flex items-center justify-between rounded-2xl bg-surface-2 px-4 py-3">
-          <span className="text-sm font-semibold text-ink-muted">{t("retail.wTotal", "السعر")}</span>
-          <span className="text-2xl font-extrabold tabular-nums text-ink">{money(price)}</span>
-        </div>
-
-        <button
-          type="button" disabled={!ok} onClick={() => onSubmit(val)}
-          className={cn("mt-3 w-full rounded-2xl py-3 text-base font-extrabold transition",
-            ok ? "bg-brand-600 text-white hover:bg-brand-700 active:scale-[0.99]" : "cursor-not-allowed bg-surface-2 text-ink-subtle/50")}
-        >
-          {ret ? t("retail.wConfirmRet", "أضف الراجع") : t("retail.wConfirm", "أضف للسلة")}
-        </button>
-      </div>
-    </div>
   );
 }
