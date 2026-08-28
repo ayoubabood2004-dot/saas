@@ -8,7 +8,10 @@ import {
   Pill,
   Zap, Rows3, LayoutGrid, CalendarPlus, CalendarClock, FolderOpen, FlaskConical, Pencil, Printer, FileText,
 } from "lucide-react";
-import { toneOfResult, scaleFor } from "@/lib/observations";
+import { toneOfResult } from "@/lib/observations";
+import { CareIcon, careKindOf, type CareKind } from "@/components/CareIcon";
+import { ObsRecorder } from "@/components/Flowsheet";
+import { protocolMarksOf, isProtocolMark, type ProtocolMark } from "@/lib/protocolMark";
 import type { Pet, ClinicVisit, PetNote, TreatmentEntry, LabResult, PetProblem } from "@/types";
 import { LastLabsStrip, LabEntry } from "@/components/LabCenter";
 import { JourneyCard } from "@/components/JourneyCard";
@@ -79,13 +82,10 @@ function diagnosisText(rec: ClinicalRecord | null, t: TFunction): string {
   return dx.length > 1 ? t("visit.dxMore", { first, n: formatNum(dx.length - 1), defaultValue: "{{first}} · و{{n}} آخر" }) : first;
 }
 
-/** «تم العلاج» حقُّ الأدوية والسوائل وحدها. المتابعات (حرارة/أكل/إخراج/حالة
- *  عامة…) ليست علاجاً «يُعطى» — قيمُها تُسجَّل بالشبكة، وهنا تُعرض ملاحظاتِ
- *  يومٍ مرتّبةً لا صفوفَ جرعاتٍ تنتظر زراً. */
-const isGivable = (t: TreatmentEntry): boolean => {
-  const k = t.task_type ?? "drug";
-  return k === "drug" || k === "fluid";
-};
+/** «تم العلاج» حقُّ الأدوية وحدها. السوائلُ والمتابعات (حرارة/أكل/إخراج…)
+ *  رعايةُ يومٍ تُسجَّل من مصفوفة «رعاية اليوم» المقابلة لليوم بالجدول — لا
+ *  صفوفَ جرعاتٍ تنتظر زراً، فلا تتسجّل النتائج بمكانين. */
+const isGivable = (t: TreatmentEntry): boolean => (t.task_type ?? "drug") === "drug";
 
 /** Four-state dose status — the semantic system leading vet treatment sheets use. */
 type DoseStatus = "done" | "overdue" | "due" | "upcoming";
@@ -193,9 +193,19 @@ export default function VisitPage() {
 
   const clinicalNotes = useMemo(() => notes.map((n) => ({ n, ...parseClinical(n.note_text) })).filter((x) => x.record), [notes]);
   const generalNotes = useMemo(
-    () => notes.filter((n) => !parseClinical(n.note_text).record && !n.note_text.startsWith(DAY_MARK)),
+    () => notes.filter((n) => !parseClinical(n.note_text).record && !n.note_text.startsWith(DAY_MARK) && !isProtocolMark(n.note_text)),
     [notes],
   );
+
+  /* بروتوكولات هذه الزيارة (علامات ⟦P⟧): الأحدث يرسم الشريط، وملاحظاتُ
+   * بنودها كلِّها تُعرض بعمود الملاحظات بكسوة «من البروتوكول». */
+  const protoMarks = useMemo(() => protocolMarksOf(notes, visitId ?? null), [notes, visitId]);
+  const protoNotes = useMemo(() => {
+    const m: Record<string, string> = {};
+    for (const mk of protoMarks) for (const [med, note] of Object.entries(mk.notes)) if (!m[med]) m[med] = note;
+    return m;
+  }, [protoMarks]);
+  const activeProto = protoMarks[0] ?? null;
 
   const dayGroups = useMemo(() => {
     const map = new Map<string, TreatmentEntry[]>();
@@ -391,6 +401,20 @@ export default function VisitPage() {
     await repo.addPetNote({ pet_id: visit.pet_id, note_text: body, author_id: user?.id ?? null, author_name: user?.full_name ?? null, visit_id: visit.id });
     playSuccess(); await reload();
   };
+
+  /* ---- تسجيل خانة رعاية من المصفوفة — نفس ورقة الشبكة (ObsRecorder) ---- */
+  const [obsTarget, setObsTarget] = useState<TreatmentEntry | null>(null);
+  const saveObs = async (entry: TreatmentEntry, value: string) => {
+    try {
+      await repo.setTreatmentResult(entry.id, value, user?.full_name ?? undefined, new Date().toISOString());
+      playSuccess();
+    } catch (e) {
+      playWarning();
+      toast.error(t("visit.obsSaveFail", "ما انحفظت القيمة — أعد المحاولة."), e instanceof Error ? e.message : undefined);
+    }
+    setObsTarget(null);
+    await reload();
+  };
   const endVisit = async (outcome: string, summary: string) => {
     if (!visit) return;
     await repo.updateClinicVisit(visit.id, { status: "ended", ended_at: new Date().toISOString(), ended_by: user?.full_name ?? null, outcome, summary: summary.trim() || null });
@@ -499,7 +523,8 @@ export default function VisitPage() {
     const socials = getClinicSocials();
     // المتابعات = ما ليس دواءً ولا سائلاً، والمسجَّل منها وحده يُعدّ.
     const obsAll = treatments.filter((x) => !isGivable(x));
-    const obsDone = obsAll.filter((x) => x.result != null && String(x.result).trim() !== "");
+    // السائل المُعطى رعايةٌ منفَّذة وإن بلا قيمة مكتوبة — يُحسَب في التقرير.
+    const obsDone = obsAll.filter((x) => (x.result != null && String(x.result).trim() !== "") || x.administered_at);
     const kinds = [...new Set(obsDone.map((x) => x.medication?.trim()).filter(Boolean) as string[])];
     const ok = openCareReport({
       clinicName: getClinicName() || user?.full_name || t("visit.clinicFallback", "عيادة بيطرية"),
@@ -661,15 +686,19 @@ export default function VisitPage() {
               )}
             </div>
           </div>
+          {/* البروتوكول يبيّن نفسه فوق الطبلة — اسمه ويومه وتقدّمه وتحذيره */}
+          {activeProto && <ProtocolBand mark={activeProto} todayISO={todayISO} treatments={treatments} />}
           {planView === "day" ? (
             <TreatmentSheetTable
               dayGroups={dayGroups} todayISO={todayISO} ended={ended} lang={lang} dayNotes={dayNotes}
               species={pet?.species}
+              protoNotes={protoNotes}
               todayRowRef={todayRowRef}
               onGive={(tx) => { playTap(); setGiveId(tx.id); }}
               onEditDrug={(tx) => { playTap(); setEditTarget(tx); }}
               onAddNote={(day) => { playTap(); setNoteText(""); setNoteDay(day); setNoteOpen(true); }}
               onAddDrug={openAddDrug}
+              onRecordObs={(tx) => { playTap(); setObsTarget(tx); }}
             />
           ) : (
             <MedCourseView courses={medCourses} todayISO={todayISO} ended={ended} lang={lang} onGive={giveQuick} />
@@ -798,6 +827,14 @@ export default function VisitPage() {
       </Modal>
 
       {giveTarget && <GiveModal t={giveTarget} lang={lang} defaultDoctor={user?.full_name ?? ""} ended={ended} onClose={() => setGiveId(null)} onGive={giveDose} onUndo={undoDose} />}
+      {/* تسجيل خانة رعاية من المصفوفة — نفس ورقة الشبكة حرفياً */}
+      {obsTarget && (
+        <ObsRecorder
+          entry={obsTarget} species={pet.species} petId={pet.id}
+          onSave={(v) => { void saveObs(obsTarget, v); }}
+          onClose={() => setObsTarget(null)}
+        />
+      )}
       <AddDrugModal open={addDrugOpen} day={addDrugDay} lang={lang} lastDay={lastDay} defaultDoctor={user?.full_name ?? ""} onClose={() => setAddDrugOpen(false)} onAdd={addDrug} />
       {editTarget && (
         <EditDrugModal
@@ -969,102 +1006,129 @@ function ExtendPlanModal({ open, lastDay, lang, medCount, onClose, onExtend }: {
  * one row per dose. Doctors used to the paper read it the same way; giving a dose
  * fills in the treating doctor + time just as they would write it by hand.
  */
-/** درجة المتابعة المسجَّلة → كسوة بطاقتها: إطارٌ وأرضية وقيمة بلون الدرجة. */
-const OBS_TONE_CARD: Record<string, { card: string; value: string; badge: string }> = {
-  good: { card: "border-success-300 bg-success-50 dark:border-success-500/40 dark:bg-success-500/10", value: "text-success-700 dark:text-success-300", badge: "bg-success-500" },
-  mid: { card: "border-warn-300 bg-warn-50 dark:border-warn-500/40 dark:bg-warn-500/10", value: "text-warn-700 dark:text-warn-300", badge: "bg-warn-500" },
-  low: { card: "border-orange-300 bg-orange-50 dark:border-orange-500/40 dark:bg-orange-500/10", value: "text-orange-700 dark:text-orange-300", badge: "bg-orange-500" },
-  crit: { card: "border-danger-300 bg-danger-50 dark:border-danger-500/40 dark:bg-danger-500/10", value: "text-danger-700 dark:text-danger-300", badge: "bg-danger-500" },
-  none: { card: "border-line bg-surface-1", value: "text-ink-muted", badge: "bg-ink-subtle" },
+/** درجةُ خانة المصفوفة → كسوة رقاقتها: القيمة تلبس لون حكمها. */
+const CELL_TONE: Record<string, string> = {
+  good: "border-success-300 bg-success-50 text-success-700 dark:border-success-500/40 dark:bg-success-500/10 dark:text-success-300",
+  mid: "border-warn-300 bg-warn-50 text-warn-700 dark:border-warn-500/40 dark:bg-warn-500/10 dark:text-warn-300",
+  low: "border-orange-300 bg-orange-50 text-orange-700 dark:border-orange-500/40 dark:bg-orange-500/10 dark:text-orange-300",
+  crit: "border-danger-300 bg-danger-50 text-danger-700 dark:border-danger-500/40 dark:bg-danger-500/10 dark:text-danger-300",
+  none: "border-line-strong bg-surface-1 text-ink-muted",
 };
 
-/** شعارُ كل متابعة — بسلّمها المعياري (scaleFor) لا بمطابقة نصوص. */
-const OBS_EMOJI: Record<string, string> = {
-  temp: "🌡️", mentation: "❤️", appetite: "🍽️", stool: "💩", urine: "💧", fluids: "💉",
-};
-const obsEmoji = (o: TreatmentEntry): string => {
-  const s = scaleFor(o);
-  if (s && OBS_EMOJI[s.id]) return OBS_EMOJI[s.id];
-  if (o.task_type === "lab") return "🧪";
-  if (o.task_type === "feed") return "🍽️";
-  if (o.task_type === "elim") return "🚽";
-  if (o.task_type === "fluid") return "💉";
-  return "📋";
+/** ترتيب أسطر المصفوفة — سريريّ ثابت: الحيوية أولاً وينزل للمختبر. */
+const CARE_ORDER: Record<CareKind, number> = {
+  vitals: 0, mentation: 1, fluid: 2, feed: 3, elim: 4, urine: 5, nurse: 6, lab: 7, drug: 8, protocol: 9,
 };
 
-function TreatmentSheetTable({ dayGroups, todayISO, ended, lang, species, dayNotes, onGive, onEditDrug, onAddNote, onAddDrug, todayRowRef }: {
+function TreatmentSheetTable({ dayGroups, todayISO, ended, lang, species, dayNotes, protoNotes, onGive, onEditDrug, onAddNote, onAddDrug, onRecordObs, todayRowRef }: {
   dayGroups: [string, TreatmentEntry[]][]; todayISO: string; ended: boolean; lang: string;
   species?: Pet["species"];
   dayNotes: Map<string, PetNote[]>;
+  /** ملاحظاتُ بنود البروتوكول باسم الدواء — تُعرض بعمود الملاحظات بكسوةٍ زرقاء. */
+  protoNotes: Record<string, string>;
   onGive: (t: TreatmentEntry) => void; onEditDrug: (t: TreatmentEntry) => void;
   onAddNote: (day: string) => void; onAddDrug: (day: string) => void;
+  onRecordObs: (t: TreatmentEntry) => void;
   todayRowRef?: React.Ref<HTMLTableRowElement>;
 }) {
   const { t } = useTranslation();
-  // تُلتقط قبل map الصفوف: بارامتر الصف اسمه t تاريخياً فيحجب المترجم داخله.
-  const editLabel = t("visit.editDrug", "تعديل الدواء");
+  const editLabel = t("visit.editDrug", "\u062a\u0639\u062f\u064a\u0644 \u0627\u0644\u062f\u0648\u0627\u0621");
   const th = "border-b-2 border-line-strong bg-surface-2 px-3 py-2.5 text-start text-xs font-extrabold text-ink";
-  /** ترويسة اليوم — تُرسم بأول صف دواء، وإن كان اليوم متابعاتٍ صرفة فبشريطها. */
+  /** \u062a\u0631\u0648\u064a\u0633\u0629 \u0627\u0644\u064a\u0648\u0645 \u2014 \u062a\u064f\u0631\u0633\u0645 \u0628\u0623\u0648\u0644 \u0635\u0641 \u0628\u0627\u0644\u064a\u0648\u0645. */
   const dayHead = (day: string, isToday: boolean) => (
     <div className="mb-1.5 flex items-center gap-1.5">
       <span className="text-sm font-black text-ink">{formatDate(day, lang)}</span>
-      {isToday && <span className="rounded bg-brand-600 px-1.5 py-0.5 text-[9px] font-black text-white">اليوم</span>}
+      {isToday && <span className="rounded bg-brand-600 px-1.5 py-0.5 text-[9px] font-black text-white">{t("visit.todayChip", "\u0627\u0644\u064a\u0648\u0645")}</span>}
     </div>
   );
+  /** \u0645\u0644\u0627\u062d\u0638\u0629 \u0628\u0631\u0648\u062a\u0648\u0643\u0648\u0644 \u0644\u0635\u0641 \u062f\u0648\u0627\u0621 \u2014 \u0643\u0633\u0648\u0629 \u0632\u0631\u0642\u0627\u0621 \u062a\u0641\u0631\u0642\u0647\u0627 \u0639\u0646 \u0645\u0644\u0627\u062d\u0638\u0627\u062a \u0627\u0644\u064a\u062f. */
+  const protoNoteOf = (med: string): string | null => protoNotes[med] ?? null;
   return (
     <div className="overflow-x-auto rounded border border-line-strong shadow-card">
-      <table className="w-full min-w-[620px] border-collapse">
+      <table className="w-full min-w-[620px] border-collapse lg:min-w-[960px]">
         <thead>
           <tr>
-            <th className={cn(th, "w-[26%] border-e border-line")}>اليوم والساعة</th>
-            <th className={cn(th, "w-[36%] border-e border-line")}>العلاج</th>
-            <th className={cn(th, "w-[20%] border-e border-line")}>الطبيب المعالج</th>
-            <th className={cn(th, "w-[18%]")}>الملاحظات</th>
+            <th className={cn(th, "w-[24%] border-e border-line lg:w-[14%]")}>{t("visit.colDayTime", "\u0627\u0644\u064a\u0648\u0645 \u0648\u0627\u0644\u0633\u0627\u0639\u0629")}</th>
+            <th className={cn(th, "w-[34%] border-e border-line lg:w-[24%]")}>{t("visit.colTreatment", "\u0627\u0644\u0639\u0644\u0627\u062c")}</th>
+            <th className={cn(th, "w-[20%] border-e border-line lg:w-[14%]")}>{t("visit.colDoctor", "\u0627\u0644\u0637\u0628\u064a\u0628 \u0627\u0644\u0645\u0639\u0627\u0644\u062c")}</th>
+            <th className={cn(th, "w-[22%] lg:w-[18%] lg:border-e lg:border-line")}>{t("visit.colNotes", "\u0627\u0644\u0645\u0644\u0627\u062d\u0638\u0627\u062a")}</th>
+            {/* \u0639\u0645\u0648\u062f \u0627\u0644\u0631\u0639\u0627\u064a\u0629 \u2014 \u062f\u0627\u062e\u0644 \u0627\u0644\u0637\u0628\u0644\u0629\u060c \u0645\u0642\u0627\u0628\u0644 \u0643\u0644 \u064a\u0648\u0645. \u0628\u0627\u0644\u0634\u0627\u0634\u0629 \u0627\u0644\u0636\u064a\u0651\u0642\u0629 \u064a\u0646\u0632\u0644 \u062a\u062d\u062a \u064a\u0648\u0645\u0647 */}
+            <th className={cn(th, "hidden lg:table-cell lg:w-[30%]")}>{t("visit.colCare", "\u0631\u0639\u0627\u064a\u0629 \u0627\u0644\u064a\u0648\u0645")}</th>
           </tr>
         </thead>
         <tbody>
           {dayGroups.map(([day, rows]) => {
             const isToday = day === todayISO;
             const notes = dayNotes.get(day) ?? [];
-            /* «تم العلاج» للأدوية والسوائل وحدها — المتابعات تتجمع بشريط
-             * يومياتٍ واحدٍ أنيق أسفل اليوم، لا صفوفَ جرعاتٍ تنتظر زراً. */
+            /* \u00ab\u062a\u0645 \u0627\u0644\u0639\u0644\u0627\u062c\u00bb \u0644\u0644\u0623\u062f\u0648\u064a\u0629 \u0648\u062d\u062f\u0647\u0627 \u2014 \u0627\u0644\u0633\u0648\u0627\u0626\u0644 \u0648\u0627\u0644\u0645\u062a\u0627\u0628\u0639\u0627\u062a \u0631\u0639\u0627\u064a\u0629\u064c \u062a\u0633\u0643\u0646 \u0645\u0635\u0641\u0648\u0641\u0629\u064e \u064a\u0648\u0645\u0647\u0627 \u0627\u0644\u0645\u0642\u0627\u0628\u0644\u0629. */
             const meds = rows.filter(isGivable);
-            const obs = rows.filter((r) => !isGivable(r))
-              .sort((a, b) => (a.time || "99").localeCompare(b.time || "99"));
-            const medRowsJsx = meds.map((t, idx) => {
-              const st = doseStatus(t, todayISO);
+            const care = rows.filter((r) => !isGivable(r));
+            const careCell = care.length > 0 && (
+              <td className="hidden border-s-2 border-line-strong bg-surface-2/50 p-2 align-top lg:table-cell" rowSpan={Math.max(1, meds.length)} data-carecell={day}>
+                <CareMatrix rows={care} day={day} todayISO={todayISO} ended={ended} species={species}
+                  onCell={(x) => ((x.task_type ?? "") === "fluid" ? onGive(x) : onRecordObs(x))} />
+              </td>
+            );
+            const notesCell = (first: boolean, tx: TreatmentEntry) => {
+              const pNote = protoNoteOf(tx.medication);
+              return (
+                <td className={cn("border-line px-3 py-2.5 align-top", "lg:border-e")}>
+                  {tx.administered_at && (
+                    <div className="mb-1 flex items-center gap-1 text-xs font-bold text-success-700 dark:text-success-300"><Check size={12} className="shrink-0" /> {t("visit.givenShort", "\u0623\u064f\u0639\u0637\u064a\u062a")}</div>
+                  )}
+                  {pNote && (
+                    <div data-protonote className="mb-1 rounded-lg border border-brand-200 bg-brand-50 px-2 py-1 text-[11px] font-semibold leading-snug text-brand-800 dark:border-brand-500/40 dark:bg-brand-500/10 dark:text-brand-200">
+                      <span className="mb-0.5 flex items-center gap-1 text-[9px] font-black opacity-70"><CareIcon kind="protocol" size={10} /> {t("visit.fromProtocol", "\u0645\u0646 \u0627\u0644\u0628\u0631\u0648\u062a\u0648\u0643\u0648\u0644")}</span>
+                      {pNote}
+                    </div>
+                  )}
+                  {first && notes.map((n) => (
+                    <div key={n.id} className="flex items-start gap-1 text-xs leading-snug text-ink-muted"><NotebookPen size={11} className="mt-0.5 shrink-0 text-ink-subtle" /> {parseDayNote(n.note_text).body}</div>
+                  ))}
+                  {first && !ended && (
+                    <button type="button" onClick={() => onAddNote(day)}
+                      className="mt-1 inline-flex items-center gap-1 text-[11px] font-bold text-brand-600 transition hover:text-brand-700 dark:text-brand-300">
+                      <Plus size={11} /> {t("visit.addNoteBtn", "\u0645\u0644\u0627\u062d\u0638\u0629")}
+                    </button>
+                  )}
+                </td>
+              );
+            };
+            const medRowsJsx = meds.map((tx, idx) => {
+              const st = doseStatus(tx, todayISO);
               const m = STATUS_META[st];
               const first = idx === 0;
+              const pNote = protoNoteOf(tx.medication);
+              // \u0627\u0644\u062a\u0648\u062c\u064a\u0647 \u0627\u0644\u0645\u0623\u062e\u0648\u0630 \u0645\u0646 \u0627\u0644\u0628\u0631\u0648\u062a\u0648\u0643\u0648\u0644 \u064a\u064f\u0639\u0631\u0636 \u0628\u0639\u0645\u0648\u062f \u0627\u0644\u0645\u0644\u0627\u062d\u0638\u0627\u062a \u2014 \u0641\u0644\u0627 \u064a\u064f\u0643\u0631\u0651\u0631 \u062a\u062d\u062a \u0627\u0644\u0627\u0633\u0645.
+              const subBits = [tx.amount, tx.observations && tx.observations !== pNote ? tx.observations : null].filter(Boolean);
               return (
-                <tr key={t.id} ref={isToday && first ? todayRowRef : undefined}
+                <tr key={tx.id} ref={isToday && first ? todayRowRef : undefined}
                   className={cn(m.row, first ? "border-t-2 border-line-strong" : "border-t border-line")}>
-                  {/* اليوم والساعة — the date shows once per day; each dose row differs only by its time */}
                   <td className="border-e border-line px-3 py-2.5 align-top">
                     {first && dayHead(day, isToday)}
                     <div className="flex items-center gap-1.5">
                       <span className={cn("inline-block h-2.5 w-2.5 shrink-0 rounded-sm", m.bar)} />
                       <span className="text-xs font-bold tabular-nums text-ink-subtle" dir="ltr">
-                        {t.administered_at ? clockOf(t.administered_at, lang) : (fmtClock(t.time) || "—")}
+                        {tx.administered_at ? clockOf(tx.administered_at, lang) : (fmtClock(tx.time) || "\u2014")}
                       </span>
                     </div>
                     {first && !ended && (
                       <button type="button" onClick={() => onAddDrug(day)}
                         className="mt-1.5 inline-flex items-center gap-1 text-[11px] font-bold text-brand-600 transition hover:text-brand-700 dark:text-brand-300">
-                        <Plus size={11} /> دواء
+                        <Plus size={11} /> {t("visit.addDrugBtn", "\u062f\u0648\u0627\u0621")}
                       </button>
                     )}
                   </td>
-                  {/* العلاج — والقلم يعدّله ما دام لم يُعطَ */}
                   <td className="border-e border-line px-3 py-2.5 align-top">
                     <div className="flex items-start gap-1.5">
                       <div className="min-w-0 flex-1">
-                        <div className="text-sm font-extrabold text-ink">{t.medication}</div>
-                        {[t.amount, t.observations].filter(Boolean).length > 0 && (
-                          <div className="mt-0.5 text-xs font-semibold text-ink-subtle">{[t.amount, t.observations].filter(Boolean).join(" · ")}</div>
+                        <div className="text-sm font-extrabold text-ink">{tx.medication}</div>
+                        {subBits.length > 0 && (
+                          <div className="mt-0.5 text-xs font-semibold text-ink-subtle">{subBits.join(" \u00b7 ")}</div>
                         )}
                       </div>
-                      {!ended && !t.administered_at && (
-                        <button type="button" data-editdrug={t.id} onClick={() => onEditDrug(t)}
+                      {!ended && !tx.administered_at && (
+                        <button type="button" data-editdrug={tx.id} onClick={() => onEditDrug(tx)}
                           title={editLabel}
                           aria-label={editLabel}
                           className="grid h-7 w-7 shrink-0 place-items-center rounded-lg text-ink-subtle transition hover:bg-surface-2 hover:text-brand-600">
@@ -1073,87 +1137,223 @@ function TreatmentSheetTable({ dayGroups, todayISO, ended, lang, species, dayNot
                       )}
                     </div>
                   </td>
-                  {/* الطبيب المعالج */}
                   <td className="border-e border-line px-3 py-2.5 align-top">
-                    {t.administered_at ? (
-                      <span className="inline-flex items-center gap-1 text-sm font-bold text-ink"><UserRound size={13} className="shrink-0 text-ink-subtle" /> {t.administered_by || "—"}</span>
+                    {tx.administered_at ? (
+                      <span className="inline-flex items-center gap-1 text-sm font-bold text-ink"><UserRound size={13} className="shrink-0 text-ink-subtle" /> {tx.administered_by || "\u2014"}</span>
                     ) : ended ? (
-                      <span className="text-sm text-ink-subtle">—</span>
+                      <span className="text-sm text-ink-subtle">\u2014</span>
                     ) : (
-                      <button type="button" onClick={() => onGive(t)}
+                      <button type="button" onClick={() => onGive(tx)}
                         className="inline-flex items-center gap-1.5 rounded bg-brand-600 px-3 py-1.5 text-xs font-black text-white transition hover:bg-brand-700">
-                        <Check size={13} /> تم العلاج
+                        <Check size={13} /> {t("visit.giveBtn", "\u062a\u0645 \u0627\u0644\u0639\u0644\u0627\u062c")}
                       </button>
                     )}
                   </td>
-                  {/* الملاحظات */}
-                  <td className="px-3 py-2.5 align-top">
-                    {t.administered_at && (
-                      <div className="mb-1 flex items-center gap-1 text-xs font-bold text-success-700 dark:text-success-300"><Check size={12} className="shrink-0" /> أُعطيت</div>
-                    )}
-                    {first && notes.map((n) => (
-                      <div key={n.id} className="flex items-start gap-1 text-xs leading-snug text-ink-muted"><NotebookPen size={11} className="mt-0.5 shrink-0 text-ink-subtle" /> {parseDayNote(n.note_text).body}</div>
-                    ))}
-                    {first && !ended && (
-                      <button type="button" onClick={() => onAddNote(day)}
-                        className="mt-1 inline-flex items-center gap-1 text-[11px] font-bold text-brand-600 transition hover:text-brand-700 dark:text-brand-300">
-                        <Plus size={11} /> ملاحظة
-                      </button>
-                    )}
-                  </td>
+                  {notesCell(first, tx)}
+                  {first && careCell}
                 </tr>
               );
             });
-            /* شريط يوميات اليوم: رقاقةٌ لكل متابعة بوقتها وقيمتها الملوّنة
-             * بدرجتها — والمُنتظرةُ تُقال بهدوء «لم تسجّل بعد». */
-            const obsStrip = obs.length > 0 && (
-              <tr key={`${day}-obs`} data-obsstrip={day} className={cn("border-t border-line bg-surface-2/60", meds.length === 0 && "border-t-2 border-line-strong")}>
-                <td colSpan={4} className="px-3 py-3">
-                  {meds.length === 0 && dayHead(day, isToday)}
-                  <div className="mb-2 flex items-center gap-2">
-                    <span className="grid h-7 w-7 place-items-center rounded-lg bg-brand-100 text-brand-700 dark:bg-brand-500/20 dark:text-brand-300"><ClipboardList size={15} /></span>
-                    <span className="text-sm font-black text-ink">{t("visit.obsDay", "متابعات اليوم")}</span>
-                    <span className="rounded-full bg-surface-1 px-2 py-0.5 text-2xs font-black text-ink-subtle tabular-nums">{formatNum(obs.length)}</span>
-                    <span className="ms-auto hidden text-[10px] font-bold text-ink-subtle sm:inline">
-                      {t("visit.obsWhere", "تُسجَّل قيمها من الشبكة أو الجولة")}
-                    </span>
-                  </div>
-                  {/* بطاقةٌ لكل متابعة: شعارها، اسمها كبيراً، وقيمتها أكبر
-                      بلون درجتها — وغيرُ المسجَّلة بإطارٍ منقّط ينتظر بهدوء. */}
-                  <div className="grid gap-2 [grid-template-columns:repeat(auto-fill,minmax(215px,1fr))]">
-                    {obs.map((o) => {
-                      const tone = o.result ? (toneOfResult(o, species) ?? "none") : "none";
-                      const meta = OBS_TONE_CARD[tone];
-                      return (
-                        <div key={o.id} data-obscard={o.id}
-                          className={cn("flex items-center gap-2.5 rounded-xl border-2 px-3 py-2.5",
-                            meta.card, !o.result && "border-dashed")}>
-                          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-surface-1 text-xl shadow-soft">
-                            {obsEmoji(o)}
-                          </span>
-                          <div className="min-w-0 flex-1">
-                            <p className="flex flex-wrap items-center gap-x-1.5 text-sm font-extrabold leading-tight text-ink">
-                              {o.medication}
-                              {o.time && <span className="font-mono text-[10px] font-bold text-ink-subtle tabular-nums">{fmtClock(o.time)}</span>}
-                            </p>
-                            {o.result ? (
-                              <p className={cn("truncate text-base font-black leading-tight", meta.value)}>{o.result}</p>
-                            ) : (
-                              <p className="text-xs font-bold text-ink-subtle">{t("visit.obsPending", "لم تسجّل بعد")}</p>
-                            )}
-                          </div>
-                          {o.result && <span className={cn("h-2.5 w-2.5 shrink-0 rounded-full", meta.badge)} />}
-                        </div>
-                      );
-                    })}
-                  </div>
+            /* \u064a\u0648\u0645\u064c \u0628\u0644\u0627 \u0623\u062f\u0648\u064a\u0629: \u0635\u0641\u064c \u0648\u0627\u062d\u062f \u064a\u062d\u0645\u0644 \u062a\u0631\u0648\u064a\u0633\u062a\u0647 \u0648\u0645\u0642\u0627\u0628\u0644\u0647 \u0631\u0639\u0627\u064a\u062a\u0647 \u2014 \u0644\u0627 \u064a\u062e\u062a\u0641\u064a \u0627\u0644\u064a\u0648\u0645 \u0644\u0645\u062c\u0631\u062f \u0623\u0646 \u062f\u0648\u0627\u0621\u0647 \u0627\u0646\u062a\u0647\u0649. */
+            const emptyDayRow = meds.length === 0 && (
+              <tr key={`${day}-empty`} ref={isToday ? todayRowRef : undefined} className="border-t-2 border-line-strong">
+                <td className="border-e border-line px-3 py-2.5 align-top">
+                  {dayHead(day, isToday)}
+                  {!ended && (
+                    <button type="button" onClick={() => onAddDrug(day)}
+                      className="mt-1 inline-flex items-center gap-1 text-[11px] font-bold text-brand-600 transition hover:text-brand-700 dark:text-brand-300">
+                      <Plus size={11} /> {t("visit.addDrugBtn", "\u062f\u0648\u0627\u0621")}
+                    </button>
+                  )}
+                </td>
+                <td className="border-e border-line px-3 py-2.5 align-top text-xs font-semibold text-ink-subtle">{t("visit.noDrugsDay", "\u0644\u0627 \u0623\u062f\u0648\u064a\u0629 \u0647\u0630\u0627 \u0627\u0644\u064a\u0648\u0645")}</td>
+                <td className="border-e border-line px-3 py-2.5 align-top text-sm text-ink-subtle">\u2014</td>
+                <td className={cn("border-line px-3 py-2.5 align-top", "lg:border-e")}>
+                  {notes.map((n) => (
+                    <div key={n.id} className="flex items-start gap-1 text-xs leading-snug text-ink-muted"><NotebookPen size={11} className="mt-0.5 shrink-0 text-ink-subtle" /> {parseDayNote(n.note_text).body}</div>
+                  ))}
+                  {!ended && (
+                    <button type="button" onClick={() => onAddNote(day)}
+                      className="mt-1 inline-flex items-center gap-1 text-[11px] font-bold text-brand-600 transition hover:text-brand-700 dark:text-brand-300">
+                      <Plus size={11} /> {t("visit.addNoteBtn", "\u0645\u0644\u0627\u062d\u0638\u0629")}
+                    </button>
+                  )}
+                </td>
+                {careCell}
+              </tr>
+            );
+            /* \u0627\u0644\u0634\u0627\u0634\u0629 \u0627\u0644\u0636\u064a\u0651\u0642\u0629: \u0627\u0644\u0645\u0635\u0641\u0648\u0641\u0629 \u062a\u0646\u0632\u0644 \u062a\u062d\u062a \u064a\u0648\u0645\u0647\u0627 \u0647\u064a \u2014 \u0644\u0627 \u062a\u062d\u062a \u0627\u0644\u062c\u062f\u0648\u0644 \u0643\u0644\u0647. */
+            const mobileCareRow = care.length > 0 && (
+              <tr key={`${day}-care-m`} className="border-t border-line lg:hidden" data-carerow={day}>
+                <td colSpan={4} className="bg-surface-2/50 p-2">
+                  <CareMatrix rows={care} day={day} todayISO={todayISO} ended={ended} species={species}
+                    onCell={(x) => ((x.task_type ?? "") === "fluid" ? onGive(x) : onRecordObs(x))} />
                 </td>
               </tr>
             );
-            return [...medRowsJsx, obsStrip];
+            return [emptyDayRow, ...medRowsJsx, mobileCareRow];
           })}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+/* --------------------- \u0645\u0635\u0641\u0648\u0641\u0629 \u0631\u0639\u0627\u064a\u0629 \u0627\u0644\u064a\u0648\u0645 --------------------- */
+/**
+ * CareMatrix \u2014 \u0631\u0639\u0627\u064a\u0629 \u064a\u0648\u0645\u064d \u0648\u0627\u062d\u062f \u0645\u0635\u0641\u0648\u0641\u0629\u064b: \u0643\u0644 \u0633\u0637\u0631 \u0646\u0648\u0639\u064c (\u062d\u064a\u0648\u064a\u0629\u060c \u0633\u0648\u0627\u0626\u0644\u060c
+ * \u062a\u063a\u0630\u064a\u0629\u2026) \u0648\u0643\u0644 \u0639\u0645\u0648\u062f \u0648\u0642\u062a\u064c. \u0627\u0644\u0627\u0633\u0645 \u064a\u064f\u0643\u062a\u0628 \u0645\u0631\u0629\u064b \u0648\u0627\u0644\u0648\u0642\u062a \u0645\u0631\u0629\u064b\u060c \u0648\u0627\u0644\u062e\u0627\u0646\u0629 \u062a\u062d\u0645\u0644
+ * **\u0627\u0644\u0642\u064a\u0645\u0629 \u0646\u0641\u0633\u0647\u0627** \u0628\u0644\u0648\u0646 \u062d\u0643\u0645\u0647\u0627 \u2014 \u0644\u0627 \u00ab\u0644\u0645 \u062a\u0633\u062c\u0651\u0644 \u0628\u0639\u062f\u00bb \u062e\u0645\u0633\u0629 \u0639\u0634\u0631 \u0645\u0631\u0629.
+ * \u0627\u0644\u0636\u063a\u0637 \u0639\u0644\u0649 \u0627\u0644\u062e\u0627\u0646\u0629 \u064a\u0641\u062a\u062d \u0648\u0631\u0642\u0629 \u0627\u0644\u062a\u0633\u062c\u064a\u0644 \u0645\u0628\u0627\u0634\u0631\u0629 (\u0623\u0648 \u0646\u0627\u0641\u0630\u0629 \u0627\u0644\u0625\u0639\u0637\u0627\u0621 \u0644\u0644\u0633\u0648\u0627\u0626\u0644).
+ */
+function CareMatrix({ rows, day, todayISO, ended, species, onCell }: {
+  rows: TreatmentEntry[]; day: string; todayISO: string; ended: boolean;
+  species?: Pet["species"];
+  onCell: (t: TreatmentEntry) => void;
+}) {
+  const { t } = useTranslation();
+  const isToday = day === todayISO;
+  const now = nowHHMM();
+  // الأوقات المولَّدة مصفَّرة ("08:00") لكن المكتوبة باليد قد تجيء "8:00" —
+  // والمقارنة النصية بلا تصفيرٍ تقرأ "8" أكبر من "16". يُصفَّر قبل أي مقارنة.
+  const hm = (s: string): string => { const m = /^(\d{1,2}):(\d{2})/.exec(s.trim()); return m ? `${m[1].padStart(2, "0")}:${m[2]}` : s; };
+  const doneOf = (x: TreatmentEntry) => !!x.administered_at || (x.result != null && String(x.result).trim() !== "");
+  const groups = useMemo(() => {
+    const m = new Map<string, { name: string; kind: CareKind; cells: Map<string, TreatmentEntry> }>();
+    for (const x of rows) {
+      const name = x.medication || t("visit.careRow", "\u0631\u0639\u0627\u064a\u0629");
+      const g = m.get(name) ?? m.set(name, { name, kind: careKindOf(x), cells: new Map() }).get(name)!;
+      // \u0648\u0642\u062a\u0627\u0646 \u0645\u062a\u0637\u0627\u0628\u0642\u0627\u0646 \u0644\u0646\u0641\u0633 \u0627\u0644\u0627\u0633\u0645 \u0646\u0627\u062f\u0631\u2014 \u0627\u0644\u0623\u0648\u0644 \u064a\u0628\u0642\u0649.
+      if (!g.cells.has(x.time || "")) g.cells.set(x.time || "", x);
+    }
+    return [...m.values()].sort((a, b) => (CARE_ORDER[a.kind] - CARE_ORDER[b.kind]) || a.name.localeCompare(b.name));
+  }, [rows, t]);
+  const times = useMemo(
+    () => [...new Set(rows.map((x) => x.time || ""))].sort((a, b) => (a === "" ? "99:99" : hm(a)).localeCompare(b === "" ? "99:99" : hm(b))),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [rows],
+  );
+  const total = rows.length;
+  const done = rows.filter(doneOf).length;
+  return (
+    <div className="overflow-hidden rounded-lg border border-line bg-surface-1" data-caregrid={day}>
+      <div className="flex items-center gap-1.5 border-b border-line bg-surface-2 px-2 py-1.5">
+        <CareIcon kind="nurse" size={14} className="shrink-0 text-brand-600 dark:text-brand-300" />
+        <span className="text-[11px] font-black text-ink">{t("visit.careDay", "\u0631\u0639\u0627\u064a\u0629 \u0627\u0644\u064a\u0648\u0645")}</span>
+        <span className="ms-auto rounded-full border border-line bg-surface-1 px-1.5 text-[10px] font-black tabular-nums text-ink-subtle">{formatNum(done)}/{formatNum(total)}</span>
+      </div>
+      <table className="w-full border-collapse">
+        <thead>
+          <tr>
+            <th className="px-1.5 py-1 text-start text-[9px] font-bold text-ink-subtle" />
+            {times.map((tm) => (
+              <th key={tm || "-"} className="border-s border-line px-1 py-1 text-center text-[9.5px] font-black tabular-nums text-ink-subtle" dir="ltr">{tm ? fmtClock(tm) : "\u2014"}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {groups.map((g) => (
+            <tr key={g.name} className="border-t border-line">
+              <td className="max-w-[92px] px-1.5 py-1">
+                <span className="flex items-center gap-1 text-[10.5px] font-black leading-tight text-ink">
+                  <CareIcon kind={g.kind} size={15} className="shrink-0 text-ink-subtle" />
+                  <span className="truncate">{g.name}</span>
+                </span>
+              </td>
+              {times.map((tm) => {
+                const x = g.cells.get(tm);
+                if (!x) return <td key={tm || "-"} className="border-s border-line px-1 py-1 text-center text-[10px] text-ink-subtle/40">\u2014</td>;
+                const isDone = doneOf(x);
+                const fluid = (x.task_type ?? "") === "fluid";
+                const label = isDone
+                  ? (fluid ? ((x.amount ?? "").trim() || t("visit.doneCell", "\u062a\u0645\u0651")) : String(x.result ?? "").trim() || t("visit.doneCell", "\u062a\u0645\u0651"))
+                  : null;
+                const tone = isDone ? (fluid ? "good" : (toneOfResult(x, species) ?? "none")) : "none";
+                const due = isToday && !isDone && !!x.time && hm(x.time) <= now;
+                const cellCls = cn(
+                  "mx-auto flex min-h-[30px] w-full items-center justify-center rounded-md border px-1 text-[10.5px] font-black leading-tight tabular-nums transition",
+                  isDone ? CELL_TONE[tone] ?? CELL_TONE.none
+                    : due ? "border-brand-500 bg-brand-50 text-brand-700 shadow-[0_0_0_2px_rgba(88,159,251,.25)] dark:bg-brand-500/15 dark:text-brand-300"
+                      : "border-dashed border-line-strong bg-transparent text-ink-subtle/60",
+                  !ended && "hover:border-brand-400 active:scale-95",
+                );
+                const text = label ?? (due ? t("visit.dueNowCell", "\u0627\u0644\u0622\u0646") : "\u00b7");
+                return (
+                  <td key={tm || "-"} className="border-s border-line p-0.5 text-center">
+                    {ended ? (
+                      <span className={cellCls}>{label ?? "\u2014"}</span>
+                    ) : (
+                      <button type="button" data-carecellbtn={x.id} title={g.name} onClick={() => { playTap(); onCell(x); }} className={cellCls}>
+                        <span className="truncate">{text}</span>
+                      </button>
+                    )}
+                  </td>
+                );
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/* ------------------------- \u0634\u0631\u064a\u0637 \u0627\u0644\u0628\u0631\u0648\u062a\u0648\u0643\u0648\u0644 ------------------------- */
+/**
+ * ProtocolBand \u2014 \u0627\u0644\u0628\u0631\u0648\u062a\u0648\u0643\u0648\u0644 \u064a\u0628\u064a\u0651\u0646 \u0646\u0641\u0633\u0647 \u0641\u0648\u0642 \u0627\u0644\u0637\u0628\u0644\u0629: \u0627\u0633\u0645\u0647 \u0648\u0627\u0633\u062a\u0637\u0628\u0627\u0628\u0647\u060c
+ * \u00ab\u0627\u0644\u064a\u0648\u0645 \u0643\u0645 \u0645\u0646 \u0643\u0645\u00bb\u060c \u062a\u0642\u062f\u0651\u0645 \u0627\u0644\u064a\u0648\u0645 (\u0623\u062f\u0648\u064a\u0629/\u0631\u0639\u0627\u064a\u0629)\u060c \u0648\u062a\u062d\u0630\u064a\u0631\u0647 \u0627\u0644\u062f\u0627\u0626\u0645.
+ * \u064a\u0642\u0631\u0623 \u0644\u0642\u0637\u0629\u064e \u2e18P\u2e19 \u0644\u0627 \u0627\u0644\u0645\u0643\u062a\u0628\u0629 \u2014 \u0641\u0645\u0627 \u0637\u064f\u0628\u0651\u0642 \u0641\u0639\u0644\u0627\u064b \u0647\u0648 \u0645\u0627 \u064a\u064f\u0639\u0631\u0636.
+ */
+function ProtocolBand({ mark, todayISO, treatments }: { mark: ProtocolMark; todayISO: string; treatments: TreatmentEntry[] }) {
+  const { t } = useTranslation();
+  const dayDiff = Math.round((new Date(`${todayISO}T00:00:00`).getTime() - new Date(`${mark.start}T00:00:00`).getTime()) / 86400000);
+  const over = dayDiff >= mark.days;
+  const before = dayDiff < 0;
+  const dayIdx = Math.min(Math.max(dayDiff + 1, 1), mark.days);
+  const todays = treatments.filter((x) => x.day === todayISO);
+  const meds = todays.filter(isGivable);
+  const medsDone = meds.filter((x) => x.administered_at).length;
+  const care = todays.filter((x) => !isGivable(x));
+  const careDone = care.filter((x) => !!x.administered_at || (x.result != null && String(x.result).trim() !== "")).length;
+  const bar = (label: string, doneN: number, totalN: number) => (
+    <div className="min-w-[140px] flex-1">
+      <div className="mb-1 flex items-center justify-between text-[10.5px] font-black text-ink-subtle">
+        <span>{label}</span>
+        <span className="tabular-nums" dir="ltr">{formatNum(doneN)}/{formatNum(totalN)}</span>
+      </div>
+      <div className="h-1.5 overflow-hidden rounded-full bg-surface-3">
+        <div className={cn("h-full rounded-full", totalN > 0 && doneN >= totalN ? "bg-success-500" : "bg-brand-500")} style={{ width: totalN ? `${Math.round((doneN / totalN) * 100)}%` : "0%" }} />
+      </div>
+    </div>
+  );
+  return (
+    <div data-protoband className="mb-2 rounded-xl border border-brand-200 bg-gradient-to-br from-brand-50 to-surface-1 p-3 dark:border-brand-500/30 dark:from-brand-500/10 dark:to-surface-1">
+      <div className="flex flex-wrap items-center gap-2.5">
+        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-brand-600 text-white"><CareIcon kind="protocol" size={19} /></span>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-black text-ink">{mark.name}</p>
+          {mark.indication && <p className="truncate text-[11px] font-semibold text-ink-subtle">{mark.indication}</p>}
+        </div>
+        <span className="shrink-0 rounded-full border border-brand-200 bg-surface-1 px-2.5 py-1 text-[11px] font-black text-brand-700 dark:border-brand-500/40 dark:text-brand-300">
+          {over
+            ? t("visit.protoOver", "\u0645\u0646\u062a\u0647\u064d")
+            : before
+              ? t("visit.protoSoon", "\u064a\u0628\u062f\u0623 \u063a\u062f\u0627\u064b")
+              : t("visit.protoDay", { i: formatNum(dayIdx), n: formatNum(mark.days), defaultValue: "\u0627\u0644\u064a\u0648\u0645 {{i}} \u0645\u0646 {{n}}" })}
+        </span>
+      </div>
+      {!over && !before && (meds.length > 0 || care.length > 0) && (
+        <div className="mt-2.5 flex flex-wrap gap-3">
+          {meds.length > 0 && bar(t("visit.protoDrugs", "\u0623\u062f\u0648\u064a\u0629 \u0627\u0644\u064a\u0648\u0645"), medsDone, meds.length)}
+          {care.length > 0 && bar(t("visit.protoCare", "\u0631\u0639\u0627\u064a\u0629 \u0627\u0644\u064a\u0648\u0645"), careDone, care.length)}
+        </div>
+      )}
+      {mark.caution && (
+        <div className="mt-2.5 flex items-start gap-2 rounded-lg border border-warn-300 bg-warn-50 px-2.5 py-1.5 text-[11px] font-bold leading-snug text-warn-800 dark:border-warn-500/40 dark:bg-warn-500/10 dark:text-warn-200">
+          <AlertTriangle size={13} className="mt-0.5 shrink-0" />
+          <span>{mark.caution}</span>
+        </div>
+      )}
     </div>
   );
 }

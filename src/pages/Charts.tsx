@@ -17,6 +17,8 @@ import { Button, useToast } from "@/components/ui";
 import { Flowsheet, AddTaskSheet, type FlowPatient } from "@/components/Flowsheet";
 import { RoundMode } from "@/components/RoundMode";
 import { ProtocolSheet } from "@/components/ProtocolSheet";
+import type { Protocol } from "@/lib/protocols";
+import { encodeProtocolMark } from "@/lib/protocolMark";
 import { buildRound } from "@/lib/round";
 import type { GroupBy } from "@/lib/flowsheet";
 import { cageRoomOf, cageSortKey } from "@/lib/cageOrder";
@@ -559,7 +561,7 @@ export function Charts() {
 
   /** إضافة أوامر: هنا لا يوجد «ردٌّ لما كان» — الصفوف لم تُنشأ بعد. فالفشل
    *  يُقال صراحةً بدل أن تظهر أوامرُ ليس لها وجودٌ بقاعدة البيانات. */
-  const flowAdd = useCallback(async (petId: string, rows: Omit<TreatmentEntry, "id" | "created_at">[]) => {
+  const flowAdd = useCallback(async (petId: string, rows: Omit<TreatmentEntry, "id" | "created_at">[]): Promise<boolean> => {
     const visitId = openVisitByPet.get(petId)?.id ?? null;
     const full = rows.map((r) => ({ ...r, pet_id: petId, visit_id: visitId, doctor: user?.full_name ?? undefined }));
     try {
@@ -567,12 +569,40 @@ export function Charts() {
     } catch (err) {
       playWarning();
       toast.error(t("charts.saveFailAdd", "ما انضافت الأوامر — ما انحفظ ولا سطر. راجع الاتصال وأعِد المحاولة."), describeDbError(err, t));
-      return;
+      return false;
     }
     const tx = await repo.listAllTreatments([petId]).catch(() => [] as TreatmentEntry[]);
     setTreatments((cur) => [...cur.filter((t2) => t2.pet_id !== petId), ...tx]);
     playSuccess();
+    return true;
   }, [openVisitByPet, user?.full_name, toast, t]);
+
+  /** تطبيق بروتوكول: الصفوف أولاً، ثم علامةُ ⟦P⟧ — لقطةُ هويّته وملاحظاتِ
+   *  بنوده — كملاحظةِ حيوانٍ آلية تقرؤها الطبلة فترسم شريطَ البروتوكول.
+   *  فشلُ العلامة لا يُفشِل التطبيق: الشريط زينةٌ فوق صفوفٍ انحفظت. */
+  const flowApplyProtocol = useCallback(async (petId: string, rows: Omit<TreatmentEntry, "id" | "created_at">[], proto: Protocol) => {
+    const ok = await flowAdd(petId, rows);
+    if (!ok || rows.length === 0) return;
+    try {
+      const days = [...new Set(rows.map((r) => r.day))].sort();
+      const stepNotes: Record<string, string> = {};
+      for (const r of rows) {
+        const note = (r.observations ?? "").trim();
+        if (note && !stepNotes[r.medication]) stepNotes[r.medication] = note;
+      }
+      await repo.addPetNote({
+        pet_id: petId,
+        visit_id: openVisitByPet.get(petId)?.id ?? null,
+        note_text: encodeProtocolMark({
+          id: proto.id, name: proto.name(), indication: proto.indication(),
+          caution: proto.caution?.() ?? null,
+          start: days[0] ?? todayISO, days: Math.max(1, days.length),
+          notes: stepNotes,
+        }),
+        author_id: user?.id ?? null, author_name: user?.full_name ?? null,
+      });
+    } catch { /* الشريط لا يعطّل الخطة */ }
+  }, [flowAdd, openVisitByPet, todayISO, user?.id, user?.full_name]);
 
   const regCounts: Record<RegistryKey, number> = useMemo(() => ({
     daily: charts.filter((c) => c.bucket === "daily").length,
@@ -1074,7 +1104,7 @@ export function Charts() {
               petName={pets[protoFor]?.name ?? t("charts.theAnimal", "الحيوان")}
               todayISO={todayISO}
               onClose={() => setProtoFor(null)}
-              onApply={(rows) => { void flowAdd(protoFor, rows); setProtoFor(null); }}
+              onApply={(rows, proto) => { void flowApplyProtocol(protoFor, rows, proto); setProtoFor(null); }}
             />
           )}
         </>

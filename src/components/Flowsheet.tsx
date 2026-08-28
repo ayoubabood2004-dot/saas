@@ -801,6 +801,45 @@ function ValueSheet({ entry, hint, value, onChange, onCancel, onSave, inputRef }
   );
 }
 
+/**
+ * ObsRecorder — بابُ التسجيل الموحَّد لخانة رعايةٍ خارج الشبكة (مصفوفة
+ * «رعاية اليوم» بطبلة الزيارة): سُلَّمٌ معياري إن وُجد للصف، وإلا لوحةُ
+ * القيمة الحرّة — **نفس ورقتَي الشبكة حرفياً**، فالطبيب يرى أداةً واحدة
+ * أينما سجّل، والتصنيف اللوني يُحسب من المصدر نفسه.
+ */
+export function ObsRecorder({ entry, species, petId, onSave, onClose }: {
+  entry: TreatmentEntry;
+  species?: Species;
+  petId?: string;
+  onSave: (value: string) => void;
+  onClose: () => void;
+}) {
+  const scale = scaleFor(entry);
+  const [free, setFree] = useState(!scale);
+  const [draft, setDraft] = useState(entry.result ?? "");
+  const inputRef = useRef<HTMLInputElement>(null);
+  if (!free && scale) {
+    return (
+      <ObsSheet
+        entry={entry} scale={scale} species={species} petId={petId}
+        onCancel={onClose}
+        onPick={onSave}
+        onFree={() => { playTap(); setDraft(entry.result ?? ""); setFree(true); }}
+      />
+    );
+  }
+  return (
+    <ValueSheet
+      entry={entry}
+      hint={TASK_META[typeOf(entry)].valueHint?.() ?? ""}
+      value={draft} onChange={setDraft}
+      onCancel={onClose}
+      onSave={() => { const v = draft.trim(); if (v) onSave(v); }}
+      inputRef={inputRef}
+    />
+  );
+}
+
 /* ── لوحة سبب الفوات ────────────────────────────────────────────────────── */
 function MissedSheet({ entry, onClose, onPick }: {
   entry: TreatmentEntry; onClose: () => void; onPick: (reason: string | null) => void;

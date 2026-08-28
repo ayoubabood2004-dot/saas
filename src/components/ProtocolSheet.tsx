@@ -30,7 +30,9 @@ export function ProtocolSheet({ pet, petName, todayISO, onClose, onApply }: {
   petName: string;
   todayISO: string;
   onClose: () => void;
-  onApply: (rows: Omit<TreatmentEntry, "id" | "created_at">[]) => void;
+  /** البروتوكول المختار يُسلَّم مع صفوفه — ليلتقط المُطبِّق لقطةَ هويّته
+   *  (اسم/استطباب/تحذير) في علامة ⟦P⟧ فتعرف الطبلة أيَّ بروتوكولٍ يمشي عليها. */
+  onApply: (rows: Omit<TreatmentEntry, "id" | "created_at">[], proto: Protocol) => void;
 }) {
   const { t } = useTranslation();
   const [chosen, setChosen] = useState<Protocol | null>(null);
@@ -83,14 +85,14 @@ export function ProtocolSheet({ pet, petName, todayISO, onClose, onApply }: {
   const blocking = alerts.some((a) => a.blocking);
 
   const apply = () => {
-    if (!kept.length) return;
+    if (!kept.length || !chosen) return;
     playSuccess();
     onApply(kept.map((d) => ({
       pet_id: "", visit_id: null, day: d.day, time: d.time,
       medication: d.medication, amount: d.amount,
       task_type: d.task_type, route: d.route,
       observations: d.observations, administered_at: null, administered_by: null,
-    } as unknown as Omit<TreatmentEntry, "id" | "created_at">)));
+    } as unknown as Omit<TreatmentEntry, "id" | "created_at">)), chosen);
   };
 
   return (

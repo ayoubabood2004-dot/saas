@@ -9,6 +9,7 @@ import { cn, dateLocale } from "@/lib/utils";
 import { UniversalReportTable, type ReportColumn } from "@/components/reports/UniversalReportTable";
 import { ClinicalRecordCard } from "@/components/ClinicalRecordCard";
 import { parseClinical, type ClinicalRecord } from "@/lib/clinicalRecord";
+import { isProtocolMark } from "@/lib/protocolMark";
 
 /* ============================================================================
  * UnifiedMedicalRecord — "الطبلة" الطبية الموحّدة.
@@ -131,6 +132,8 @@ export function unifyMedicalEvents(
   }
 
   for (const n of notes) {
+    // علامات ⟦P⟧ بياناتُ آلة (بروتوكول الطبلة) — ليست حدثاً يُقرأ بالسجل.
+    if (isProtocolMark(n.note_text)) continue;
     const ts = isoTs(n.created_at);
     const { record, text } = parseClinical(n.note_text);
     events.push({

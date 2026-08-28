@@ -43,6 +43,7 @@ import { MedicalEntry, DoctorSelect, type MedicalDraft } from "@/components/Medi
 import { TreatmentPlan } from "@/components/TreatmentPlan";
 import { ClinicalRecordCard } from "@/components/ClinicalRecordCard";
 import { parseClinical } from "@/lib/clinicalRecord";
+import { isProtocolMark } from "@/lib/protocolMark";
 import { ConsentForms } from "@/components/ConsentForms";
 import { PetReminderModal } from "@/components/PetReminder";
 import { addClinicMed, medicationDisplay } from "@/lib/meds";
@@ -2455,8 +2456,9 @@ function NotesTab({ pet, notes, canEdit, onChanged }: { pet: Pet; notes: PetNote
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   // Optimistic local feed: seeded from the loaded notes, prepended instantly on add.
-  const [items, setItems] = useState<PetNote[]>(notes);
-  useEffect(() => { setItems(notes); }, [notes]);
+  // \u0639\u0644\u0627\u0645\u0627\u062a \u2e18P\u2e19 (\u0628\u0631\u0648\u062a\u0648\u0643\u0648\u0644 \u0627\u0644\u0637\u0628\u0644\u0629) \u0628\u064a\u0627\u0646\u0627\u062a\u064f \u0622\u0644\u0629 \u2014 \u0644\u0627 \u062a\u064f\u0639\u0631\u0636 \u0645\u0644\u0627\u062d\u0638\u0629\u064b.
+  const [items, setItems] = useState<PetNote[]>(() => notes.filter((n) => !isProtocolMark(n.note_text)));
+  useEffect(() => { setItems(notes.filter((n) => !isProtocolMark(n.note_text))); }, [notes]);
 
   const add = async () => {
     const body = text.trim();
@@ -2607,7 +2609,7 @@ function TimelineWorkspace({ pet, treatments, vaccinations, notes, admissions, i
     const items: FeedItem[] = [];
     for (const tx of treatments) items.push({ id: `t:${tx.id}`, ts: localTs(tx.day, tx.time).ts, kind: "treatment", tx });
     for (const v of vaccinations) { const { ts } = vaccinationTs(v); if (ts) items.push({ id: `v:${v.id}`, ts, kind: "vaccination", vax: v }); }
-    for (const n of notes) items.push({ id: `n:${n.id}`, ts: isoTs(n.created_at), kind: "note", note: n });
+    for (const n of notes) { if (isProtocolMark(n.note_text)) continue; items.push({ id: `n:${n.id}`, ts: isoTs(n.created_at), kind: "note", note: n }); }
     return items.sort((a, b) => b.ts - a.ts);
   }, [treatments, vaccinations, notes]);
 
