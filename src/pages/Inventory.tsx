@@ -5,7 +5,7 @@ import { getCached, setCached } from "@/lib/swrCache";
 import {
   Barcode, Package, Trash2, Search, Building2, Plus, ChevronLeft, ArrowRight, ArrowLeft,
   TrendingUp, AlertTriangle, CalendarClock, Pencil, PackagePlus, Boxes, Layers, Wallet, ShoppingBag, FolderTree, ScanBarcode,
-  Check, ListPlus, Printer, Copy, Sparkles, FileSpreadsheet, Loader2,
+  Check, ListPlus, Printer, Copy, Sparkles, FileSpreadsheet, Loader2, Scale,
 } from "lucide-react";
 import type { Product, ProductCategory, Company, CompanySection } from "@/types";
 import { PurchasesTab, PurchaseBuilderModal } from "@/components/inventory/Purchases";
@@ -35,6 +35,12 @@ const LOW_STOCK = 5;
 const daysUntil = (iso?: string | null) => (iso ? Math.floor((new Date(iso).getTime() - Date.now()) / 86400000) : null);
 /** A product's reorder level — its own min_stock if set, else the default. */
 const lowThreshold = (p: Product) => (p.min_stock && p.min_stock > 0 ? p.min_stock : LOW_STOCK);
+
+/** Format a weight in kilos: drop trailing zeros (2 → "2", 0.5 → "0.5", 1.25 → "1.25"). */
+const fmtKg = (kg: number) => {
+  const n = Math.round((Number(kg) || 0) * 1000) / 1000;
+  return Number.isInteger(n) ? String(n) : String(n).replace(/\.?0+$/, "");
+};
 
 /** Canonical company name: trim, collapse internal whitespace, NFC-normalize
  *  (so visually-identical Arabic/Latin names don't split into two companies). */
@@ -436,6 +442,9 @@ function ProductRow({ p, companyName, sectionName, onEdit, onRemove }: { p: Prod
   const exp = daysUntil(p.expiry_date);
   const expired = exp != null && exp < 0;
   const expiringSoon = exp != null && exp >= 0 && exp <= 30;
+  // يُباع بالوزن: السعر لكل كيلو والمخزون بالكيلو.
+  const byWeight = !!p.sold_by_weight;
+  const perKg = t("pos.perKg", "/كغ");
   return (
     <motion.div variants={staggerItem} className="card flex items-center gap-3 p-3">
       <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-surface-2 text-ink-subtle"><Package size={20} /></span>
@@ -449,8 +458,9 @@ function ProductRow({ p, companyName, sectionName, onEdit, onRemove }: { p: Prod
         </p>
         <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-ink-subtle">
           {p.barcode && <span className="flex items-center gap-1 font-mono"><Barcode size={11} /> {p.barcode}</span>}
-          {!restricted && <span>{t("pos.buy", "Buy")} {money(p.purchase_price)}</span>}
-          <span className="font-semibold text-ink-muted">{t("pos.sell", "Sell")} {money(p.sell_price)}</span>
+          {!restricted && <span>{t("pos.buy", "Buy")} {money(p.purchase_price)}{byWeight ? perKg : ""}</span>}
+          <span className="font-semibold text-ink-muted">{t("pos.sell", "Sell")} {money(p.sell_price)}{byWeight ? perKg : ""}</span>
+          {byWeight && <span className="chip shrink-0 bg-teal-50 text-2xs font-semibold text-teal-700 dark:bg-teal-500/15 dark:text-teal-200"><Scale size={11} /> {t("pos.byWeightChip", "بالوزن")}</span>}
           {p.expiry_date && (
             <span className={cn("flex items-center gap-1", expired ? "text-danger-600" : expiringSoon ? "text-warn-600" : "")}>
               <CalendarClock size={11} /> {formatDate(p.expiry_date, i18n.language)}
@@ -463,7 +473,9 @@ function ProductRow({ p, companyName, sectionName, onEdit, onRemove }: { p: Prod
         <Badge tone="brand"><Layers size={12} /> {t("pos.pooledItem", "مجمّع")}</Badge>
       ) : (
         <Badge tone={p.stock === 0 ? "danger" : p.stock <= lowThreshold(p) ? "warn" : "neutral"}>
-          {t("pos.qtyStock", { n: p.stock, defaultValue: "{{n}} in stock" })}
+          {byWeight
+            ? t("pos.qtyStockKg", { n: fmtKg(p.stock), defaultValue: "{{n}} كغ" })
+            : t("pos.qtyStock", { n: p.stock, defaultValue: "{{n}} in stock" })}
         </Badge>
       )}
       <button onClick={onEdit} aria-label={t("common.edit", "Edit")} className="grid h-9 w-9 place-items-center rounded-full text-ink-subtle transition hover:bg-brand-50 hover:text-brand-600"><Pencil size={16} /></button>
@@ -539,7 +551,7 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
   const { t } = useTranslation();
   const toast = useToast();
   const { restricted } = useOverride();
-  const blank = { barcode: "", name: "", company: "", section: "", category: "", subcategory: "", purchase_price: "", sell_price: "", stock: "", min_stock: "", expiry_date: "", pooled: false, has_sub_unit: false, sub_unit_name: "", units_per_box: "", sub_unit_price: "" };
+  const blank = { barcode: "", name: "", company: "", section: "", category: "", subcategory: "", purchase_price: "", sell_price: "", stock: "", min_stock: "", expiry_date: "", pooled: false, has_sub_unit: false, sub_unit_name: "", units_per_box: "", sub_unit_price: "", sold_by_weight: false };
   const [f, setF] = useState(blank);
   const [busy, setBusy] = useState(false);
   // Bulk mode (create-only): add several barcodes at once sharing price/category,
@@ -588,6 +600,7 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
         sub_unit_name: product.sub_unit_name ?? "",
         units_per_box: product.units_per_box ? String(product.units_per_box) : "",
         sub_unit_price: product.sub_unit_price != null ? String(product.sub_unit_price) : "",
+        sold_by_weight: !!product.sold_by_weight,
       });
     } else {
       setF({ ...blank, company: defaultCompanyName ?? "", section: defaultSectionName ?? "" });
@@ -619,6 +632,10 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
   const secOptions = typedCo ? sections.filter((s) => s.company_id === typedCo.id).map((s) => s.name) : [];
   // Pooled is only meaningful inside a section (it sells from the section pool).
   const pooledOn = f.pooled && !!f.section.trim();
+  // يُباع بالوزن: السعر لكل كيلو والمخزون بالكيلو — حصريّ مقابل الوحدات الفرعية.
+  const byWeight = !!f.sold_by_weight;
+  /** تفعيل «بالوزن» يطفئ الوحدات الفرعية (متناقضان: كتلة مستمرة مقابل قطع منفصلة). */
+  const toggleWeight = () => { playTap(); set({ sold_by_weight: !byWeight, ...(byWeight ? {} : { has_sub_unit: false }) }); };
 
   /** Resolve the typed company/section names → ids, creating either if needed.
    *  Returns what was created so a failed save can roll it back (no orphans). */
@@ -674,9 +691,11 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
   const save = async () => {
     if (!f.name.trim() || busy) return;
     // A sub-unit needs a positive units-per-box to be meaningful; otherwise it's off.
+    const byWeight = !!f.sold_by_weight;
+    // A sub-unit and "sold by weight" are mutually exclusive: weight forces sub-unit off.
     const unitsPerBox = Math.max(0, Number(f.units_per_box) || 0);
-    const subUnitOn = f.has_sub_unit && unitsPerBox > 0;
-    if (f.has_sub_unit && unitsPerBox <= 0) {
+    const subUnitOn = !byWeight && f.has_sub_unit && unitsPerBox > 0;
+    if (!byWeight && f.has_sub_unit && unitsPerBox <= 0) {
       toast.error(t("pos.subUnitNeedsCount", "أدخل عدد الوحدات في العلبة (أكبر من صفر)"));
       return;
     }
@@ -710,6 +729,7 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
         sub_unit_name: subUnitOn ? (f.sub_unit_name.trim() || "وحدة") : null,
         units_per_box: subUnitOn ? unitsPerBox : null,
         sub_unit_price: subUnitOn ? (Number(f.sub_unit_price) || 0) : null,
+        sold_by_weight: byWeight,
       };
       // Flipping an existing TRACKED product to pooled would drop its real count
       // to 0 — fold that stock into the section pool first so nothing is lost.
@@ -920,12 +940,12 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
       {/* جهاز مقفل: حقل الشراء يختفي — وقيمته المخزونة تبقى بحالها عند الحفظ. */}
       {!restricted && (
         <div>
-          <label className="label">{t("pos.purchasePrice", "Purchase price")}</label>
+          <label className="label">{byWeight ? t("pos.purchasePriceKg", "سعر شراء الكيلو") : t("pos.purchasePrice", "Purchase price")}</label>
           <input type="number" inputMode="numeric" min="0" step="1" className="input" value={f.purchase_price} onChange={(e) => set({ purchase_price: e.target.value })} placeholder="0" />
         </div>
       )}
       <div>
-        <label className="label">{t("pos.sellPrice", "Sell price")}</label>
+        <label className="label">{byWeight ? t("pos.sellPriceKg", "سعر بيع الكيلو") : t("pos.sellPrice", "Sell price")}</label>
         <input type="number" inputMode="numeric" min="0" step="1" className="input" value={f.sell_price} onChange={(e) => set({ sell_price: e.target.value })} placeholder="0" />
       </div>
     </div>
@@ -1014,14 +1034,29 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
           <div className={cn("grid gap-3", pooledOn ? "grid-cols-1" : "grid-cols-2")}>
             {!pooledOn && (
               <div>
-                <label className="label">{t("pos.stock", "Stock")}</label>
-                <input type="number" inputMode="numeric" min="0" step="1" className="input" value={f.stock} onChange={(e) => set({ stock: e.target.value })} placeholder="0" />
+                <label className="label">{byWeight ? t("pos.stockKg", "المخزون (كيلو)") : t("pos.stock", "Stock")}</label>
+                <input type="number" inputMode={byWeight ? "decimal" : "numeric"} min="0" step={byWeight ? "0.001" : "1"} className="input" value={f.stock} onChange={(e) => set({ stock: e.target.value })} placeholder="0" />
               </div>
             )}
             {minStockField}
           </div>
 
-          {/* Sub-unit (fractional) sales — sell the whole box or break it into singles */}
+          {/* البيع بالوزن (كتلة): سعر الكيلو، ويُختار الوزن عند البيع فيُحسب السعر خطياً */}
+          <div className={cn("rounded-xl border p-3", byWeight ? "border-amber-300 bg-amber-50/60 dark:border-amber-500/40 dark:bg-amber-500/10" : "border-line bg-surface-2/40")} data-weightcard>
+            <div className="flex items-center justify-between gap-3">
+              <span className="flex items-center gap-2 text-sm font-semibold text-ink">
+                <Scale size={16} className={byWeight ? "text-amber-600" : "text-brand-600"} /> {t("pos.weightToggle", "يُباع بالوزن (كتلة)")}
+              </span>
+              <button type="button" data-weighttoggle role="switch" aria-checked={byWeight} onClick={toggleWeight} className={switchCls(byWeight)}>
+                <span className={knobCls(byWeight)} />
+              </button>
+            </div>
+            <p className="mt-1 text-2xs text-ink-subtle">{t("pos.weightHint", "دراي فود، رمل، لحوم… السعر لكل كيلو، والمخزون بالكيلو. عند البيع تختار الوزن فالسعر يتحسّب: نص كيلو = نص السعر، كيلوين = ضعفين.")}</p>
+          </div>
+
+          {/* Sub-unit (fractional) sales — sell the whole box or break it into singles.
+              تختفي حين يكون المنتج «يُباع بالوزن»: النظامان متناقضان. */}
+          {!byWeight && (
           <div className="rounded-xl border border-line bg-surface-2/40 p-3">
             <div className="flex items-center justify-between gap-3">
               <span className="flex items-center gap-2 text-sm font-semibold text-ink">
@@ -1060,6 +1095,7 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
               </div>
             )}
           </div>
+          )}
 
           <div>
             <label className="label">{t("pos.expiry", "Expiry date")} <span className="font-normal text-ink-subtle">{t("pos.expiryHint", "(DD/MM/YYYY)")}</span></label>

@@ -526,6 +526,10 @@ export interface Product {
   units_per_box?: number | null;
   /** Price of a single sub-unit (used when selling by the sub-unit). */
   sub_unit_price?: number | null;
+  /** يُباع بالوزن (كتلة، 0124): `sell_price` سعرُ الكيلو الواحد، و`stock`
+   *  الرصيدُ بالكيلو. عند البيع يُختار الوزن فيُحسب السعر خطياً (نصف كيلو =
+   *  نصف السعر، كيلوان = ضعفان). حصريّ مقابل الوحدات الفرعية والمجمّع. */
+  sold_by_weight?: boolean;
   /** معروض بالمتجر الإلكتروني العام (0095). الافتراضي: مخفي. */
   store_visible?: boolean;
   /** وصف تسويقي قصير يظهر تحت الاسم ببطاقة المتجر. */

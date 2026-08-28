@@ -5,7 +5,7 @@ import {
   Search, Barcode, Plus, Minus, Trash2, ShoppingCart, User, Phone, Tag, Percent, BadgePercent,
   Banknote, CreditCard, ArrowLeftRight, CheckCircle2, Printer, Sparkles, TrendingUp, Package, PawPrint, X,
   Stethoscope, Pencil, Pill, Syringe, CalendarClock, Wallet, StickyNote, Bike, UserCheck, AlertTriangle, Undo2,
-  ChevronUp, ChevronDown, PanelLeftClose, PanelLeftOpen,
+  ChevronUp, ChevronDown, PanelLeftClose, PanelLeftOpen, Scale,
 } from "lucide-react";
 import type { Product, Invoice, InvoiceItem, CheckoutItem, SaleMeta, PaymentMethod, PaymentSplit, DiscountType, Customer, Service, ServiceCatalog, Species, Pet, Courier } from "@/types";
 import { repo, resolveDiscount } from "@/lib/repo";
@@ -74,6 +74,12 @@ interface Line {
   subPrice?: number | null;      // price of one sub-unit
   boxCost?: number;              // purchase price of one whole box
   saleUnit?: "box" | "sub";      // which unit this line is currently sold as
+  /** يُباع بالوزن (كتلة، 0124): `qty` هو الوزن بالكيلو (كسريّ)، و`unit_price`
+   *  سعرُ الكيلو الواحد. السعر يُحسب خطياً: نصف كيلو نصفُ السعر. المخزون كسريٌّ
+   *  بالكيلو. حصريّ مقابل الوحدات الفرعية. */
+  byWeight?: boolean;
+  perKgPrice?: number;           // price of one whole kilo (the catalog sell_price)
+  perKgCost?: number;            // purchase price of one kilo
 }
 
 /** A cart line's max quantity in its current sale unit, derived from the product's box
@@ -83,8 +89,16 @@ const unitCap = (l: Line): number => {
   // لا علاقة له بكم قطعةً بيده.
   if (l.ret) return Infinity;
   if (l.stock == null) return Infinity; // service / medication — uncapped
+  // بالوزن: الرصيد كسريٌّ بالكيلو والوزن كسريّ — لا تُقرِّب السقف للأسفل.
+  if (l.byWeight) return l.stock;
   if (l.saleUnit === "sub" && l.unitsPerBox && l.unitsPerBox > 0) return Math.floor(l.stock * l.unitsPerBox);
   return Math.floor(l.stock);
+};
+
+/** Format a weight in kilos: drop trailing zeros (2 → "2", 0.5 → "0.5", 1.25 → "1.25"). */
+const fmtKg = (kg: number) => {
+  const n = Math.round((Number(kg) || 0) * 1000) / 1000;
+  return Number.isInteger(n) ? String(n) : String(n).replace(/\.?0+$/, "");
 };
 
 const PAY_OPTIONS: { value: PaymentMethod; icon: typeof Banknote; key: string; def: string }[] = [
@@ -473,6 +487,8 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
   const [mult, setMult] = useState<number | null>(null);
   const [multPad, setMultPad] = useState(false);
   const [qtyPadFor, setQtyPadFor] = useState<string | null>(null);
+  /** منتقي الوزن مفتوح على منتج كتلة (0124): البيع أو الراجع يُختار بالكيلو. */
+  const [weightFor, setWeightFor] = useState<{ p: Product; ret: boolean } | null>(null);
   const [done, setDone] = useState<{ invoice: Invoice; items: InvoiceItem[] } | null>(null);
   const [lastPrints, setLastPrints] = useState(0);
   /** وضع الراجع: كل باركود يُمسح وهو مُفعَّل ينزل سطراً سالباً. */
@@ -563,8 +579,26 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
       ret: true,
     }), n);
 
-  const addProduct = (p: Product, n = takeMult()) =>
-    retMode ? addReturn(p, n) : bump(`p:${p.id}`, () => {
+  // منتج يُباع بالوزن (كتلة): لا يُضاف بمسحةٍ واحدة — يفتح منتقي الوزن ليُختار
+  // الكيلو فيُحسب السعر خطياً. المضاعِف لا معنى له هنا (الوزن يُختار بيده).
+  const addWeightLine = (p: Product, kg: number, ret: boolean) => {
+    const id = ret ? `r:${p.id}` : `p:${p.id}`;
+    const line: Line = {
+      id, kind: "product", name: p.name, barcode: p.barcode ?? null,
+      unit_price: p.sell_price, unit_cost: p.purchase_price,
+      qty: Math.round(kg * 1000) / 1000, stock: ret || p.pooled ? null : p.stock,
+      product_id: p.id, subcategory: p.subcategory ?? null,
+      byWeight: true, perKgPrice: p.sell_price, perKgCost: p.purchase_price, ret: ret || undefined,
+    };
+    // الوزن يُستبدل لا يُجمَع: الكاشير يختار الوزن الكلّي، فإعادة الفتح تعدّله.
+    setCart((c) => (c.some((l) => l.id === id) ? c.map((l) => (l.id === id ? { ...l, ...line } : l)) : [...c, line]));
+    playSuccess();
+    flashLine(id);
+  };
+
+  const addProduct = (p: Product, n = takeMult()) => {
+    if (p.sold_by_weight) { playTap(); setWeightFor({ p, ret: retMode }); return; }
+    return retMode ? addReturn(p, n) : bump(`p:${p.id}`, () => {
       const hasSub = !!p.has_sub_unit && !!p.units_per_box && p.units_per_box > 0;
       const unitsPerBox = p.units_per_box ?? null;
       // No whole box left but singles remain → start the line on the sub-unit.
@@ -584,6 +618,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
         saleUnit: startSub ? "sub" : "box",
       };
     }, n);
+  };
 
   // Switch a product line between selling a whole box and a single sub-unit. The price
   // and cost follow the unit (sub-cost = box cost ÷ units-per-box); qty re-clamps to the
@@ -753,7 +788,9 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
   /** الراجع أكبر من المشترى ⇒ نقدٌ يخرج، وهذا ليس بيعاً: يُمنع الحفظ هنا
    *  ويُحوَّل الكاشير لتبويب «المرتجع» حيث يخرج المال بقيدٍ صحيح. */
   const netNegative = subtotal < -0.005;
-  const units = cart.reduce((s, l) => s + l.qty, 0);
+  // عدّ الأصناف: سطر الوزن قطعةٌ واحدة (كيسٌ واحد)، لا نصفُ صنف — كسرُ الكيلو
+  // يخصّ السعر لا العدد.
+  const units = cart.reduce((s, l) => s + (l.byWeight ? 1 : l.qty), 0);
   // Dynamic Mix & Match offers, evaluated against the live cart.
   const { applied: promos, totalDiscount: promoDiscount } = useMemo(() => computePromotions(cart, promoRules), [cart, promoRules]);
 
@@ -1097,7 +1134,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
       name: `${l.ret ? `${t("retail.retPrefix", "راجع")} — ` : ""}${multiPet && l.petName ? `${l.name} — ${l.petName}` : l.name}`,
       barcode: l.barcode,
       qty: sign(l) * l.qty, unit_price: l.unit_price, unit_cost: l.unit_cost, line_total: sign(l) * l.qty * l.unit_price,
-      unit_label: l.kind === "product" && l.hasSubUnit ? (l.saleUnit === "sub" ? (l.subUnitName || t("retail.unitSingle")) : t("retail.unitBox")) : null,
+      unit_label: l.byWeight ? t("retail.unitKg", "كغ") : l.kind === "product" && l.hasSubUnit ? (l.saleUnit === "sub" ? (l.subUnitName || t("retail.unitSingle")) : t("retail.unitBox")) : null,
     }));
     const draft: Invoice = {
       id: "draft", clinic_id: clinicId ?? null,
@@ -1138,7 +1175,8 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
         const stock_qty = l.product_id == null ? 0
           : isSub ? Math.round((l.qty / (l.unitsPerBox as number)) * 1000) / 1000
           : l.qty;
-        const unit_label = l.kind === "product" && l.hasSubUnit
+        const unit_label = l.byWeight ? t("retail.unitKg", "كغ")
+          : l.kind === "product" && l.hasSubUnit
           ? (isSub ? (l.subUnitName || t("retail.unitSingle")) : t("retail.unitBox"))
           : null;
         // سطر راجع ⇒ كميةٌ سالبة بالفاتورة وردٌّ للمخزون (0122). الاسم يحمل
@@ -1243,7 +1281,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
         name: `${l.ret ? `${t("retail.retPrefix", "راجع")} — ` : ""}${multiPet && l.petName ? `${l.name} — ${l.petName}` : l.name}`,
         barcode: l.barcode,
         qty: sign(l) * l.qty, unit_price: l.unit_price, unit_cost: l.unit_cost, line_total: sign(l) * l.qty * l.unit_price,
-        unit_label: l.kind === "product" && l.hasSubUnit ? (l.saleUnit === "sub" ? (l.subUnitName || t("retail.unitSingle")) : t("retail.unitBox")) : null,
+        unit_label: l.byWeight ? t("retail.unitKg", "كغ") : l.kind === "product" && l.hasSubUnit ? (l.saleUnit === "sub" ? (l.subUnitName || t("retail.unitSingle")) : t("retail.unitBox")) : null,
       }));
       if (feeToClinic) {
         invItems.push({
@@ -1770,6 +1808,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
                   // Pooled products are never "out" here — they sell from the section pool.
                   const subAvail = !!p.has_sub_unit && !!p.units_per_box && p.units_per_box > 0;
                   const out = p.pooled ? false : subAvail ? p.stock * (p.units_per_box as number) < 1 : p.stock <= 0;
+                  const byWeight = !!p.sold_by_weight;
                   return (
                     <button
                       key={p.id} disabled={out} onClick={() => { playTap(); addProduct(p); }}
@@ -1780,11 +1819,11 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
                             : "border-line bg-surface-1 hover:border-brand-300 hover:bg-brand-50 dark:hover:bg-brand-500/10",
                       )}
                     >
-                      <span className="grid h-9 w-9 place-items-center rounded-xl bg-surface-2 text-ink-subtle group-hover:bg-white/60 dark:group-hover:bg-surface-1"><Package size={17} /></span>
+                      <span className="grid h-9 w-9 place-items-center rounded-xl bg-surface-2 text-ink-subtle group-hover:bg-white/60 dark:group-hover:bg-surface-1">{byWeight ? <Scale size={17} /> : <Package size={17} />}</span>
                       <span className="mt-2 line-clamp-2 min-h-[2.2rem] text-xs font-semibold leading-tight text-ink">{p.name}</span>
                       <span className="mt-1 flex items-center justify-between">
-                        <span className="text-sm font-bold text-ink tabular-nums">{money(p.sell_price)}</span>
-                        <span className={cn("text-2xs", out ? "text-danger-600" : "text-ink-subtle")}>{out ? t("retail.out", "out") : t("retail.nLeft", { n: p.stock, defaultValue: "{{n}} left" })}</span>
+                        <span className="text-sm font-bold text-ink tabular-nums">{money(p.sell_price)}{byWeight ? <span className="text-2xs font-medium text-ink-subtle">{t("retail.perKgShort", "/كغ")}</span> : ""}</span>
+                        <span className={cn("text-2xs", out ? "text-danger-600" : "text-ink-subtle")}>{out ? t("retail.out", "out") : byWeight ? t("retail.wKg", { n: fmtKg(p.stock), defaultValue: "{{n}} كغ" }) : t("retail.nLeft", { n: p.stock, defaultValue: "{{n}} left" })}</span>
                       </span>
                     </button>
                   );
@@ -1910,7 +1949,9 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
                       <div className={cn("items-center gap-1 text-xs text-ink-subtle", denseCart ? "hidden" : "flex", posV2 ? "-mt-0.5" : "mt-0.5")}>
                         <PriceEdit value={l.unit_price} onChange={(v) => setPrice(l.id, v)} />
                         <span className="truncate">
-                          {l.kind === "product" && l.hasSubUnit
+                          {l.byWeight
+                            ? t("retail.perKgShort", "/كغ")
+                            : l.kind === "product" && l.hasSubUnit
                             ? `/ ${l.saleUnit === "sub" ? (l.subUnitName || t("retail.unitSingle", "مفرد")) : t("retail.unitBox", "علبة")}`
                             : t("pos.each", "each")}
                         </span>
@@ -1970,6 +2011,25 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
                     </div>
                     {/* أهداف لمس ١١×١١ (44px) بالشاشة الجديدة — معيار WCAG 2.5.5
                         للأفعال الأساسية؛ ٧×٧ القديمة كانت تنتج تعديلات كمية بالغلط. */}
+                    {l.byWeight ? (
+                      // سطر بالوزن: لا عدّاد ±١ — ضغطة تفتح منتقي الوزن ليُعدَّل الكيلو.
+                      <button
+                        data-weightopen type="button"
+                        onClick={() => {
+                          playTap();
+                          const prod = products.find((x) => x.id === l.product_id);
+                          if (prod) setWeightFor({ p: prod, ret: !!l.ret });
+                        }}
+                        title={t("retail.weightEdit", "عدّل الوزن")}
+                        className={cn(
+                          "inline-flex items-center gap-1 rounded-lg bg-surface-2 px-2.5 font-bold tabular-nums text-ink transition hover:bg-surface-3",
+                          posV2 ? (denseCart ? "h-9 text-sm" : "h-11 text-base") : "h-7 text-sm",
+                        )}
+                      >
+                        <Scale size={posV2 ? (denseCart ? 14 : 16) : 13} className="shrink-0 opacity-70" />
+                        {t("retail.wKg", { n: fmtKg(l.qty), defaultValue: "{{n}} كغ" })}
+                      </button>
+                    ) : (
                     <div className="flex items-center gap-1">
                       <button data-qtyminus onClick={() => { playTap(); setQty(l.id, l.qty - 1); }} className={cn("grid place-items-center rounded-lg bg-surface-2 text-ink-muted transition hover:bg-surface-3", posV2 ? (denseCart ? "h-9 w-9" : "h-11 w-11") : "h-7 w-7")}><Minus size={posV2 ? (denseCart ? 15 : 18) : 14} /></button>
                       {/* الرقم نفسه زر: ضغطة تفتح لوحة الأرقام فتُكتب ٢٠ مرة
@@ -1987,6 +2047,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
                       </button>
                       <button data-qtyplus onClick={() => { playTap(); if (l.qty < unitCap(l)) setQty(l.id, l.qty + 1); else { playWarning(); toast.error(t("retail.maxStock", "No more in stock")); } }} className={cn("grid place-items-center rounded-lg bg-surface-2 text-ink-muted transition hover:bg-surface-3", posV2 ? (denseCart ? "h-9 w-9" : "h-11 w-11") : "h-7 w-7")}><Plus size={posV2 ? (denseCart ? 15 : 18) : 14} /></button>
                     </div>
+                    )}
                     {/* whitespace-nowrap حاسم: «25,000 د.ع» كان يلتفّ سطرين داخل
                         عرض ضيّق فيضخّم كل صفّ ١٨px — أي ثلاثة أصناف أقل بالشاشة. */}
                     <span data-linetotal={l.id} className={cn("shrink-0 whitespace-nowrap text-end font-extrabold tabular-nums", posV2 ? (denseCart ? "text-sm" : "text-base") : "w-16 text-sm font-bold",
@@ -2407,6 +2468,22 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
         );
       })()}
 
+      {/* منتقي الوزن (كتلة، 0124) */}
+      {weightFor && (() => {
+        const { p, ret } = weightFor;
+        const lineId = ret ? `r:${p.id}` : `p:${p.id}`;
+        const current = cart.find((l) => l.id === lineId)?.qty ?? 0;
+        // الراجع بلا سقف؛ المنتج المجمّع يخصم من مخزون القسم فلا سقف محلّي له.
+        const stockKg = ret || p.pooled ? Infinity : (p.stock ?? 0);
+        return (
+          <WeightPicker
+            open name={p.name} perKg={p.sell_price} stockKg={stockKg} current={current} ret={ret}
+            onClose={() => setWeightFor(null)}
+            onSubmit={(kg) => { addWeightLine(p, kg, ret); setWeightFor(null); }}
+          />
+        );
+      })()}
+
       {/* لوحة تسليح المضاعِف قبل المسح */}
       <QtyPad
         open={multPad}
@@ -2461,5 +2538,95 @@ function PriceEdit({ value, onChange }: { value: number; onChange: (v: number) =
     >
       {money(value)} <Pencil size={10} className="opacity-60" />
     </button>
+  );
+}
+
+/** منتقي الوزن (كتلة، 0124): الكاشير يختار وزناً فيُحسب السعر خطياً من سعر
+ *  الكيلو — نصف كيلو نصفُ السعر، كيلوان ضعفان. رقاقاتٌ جاهزة (غرامات وكيلوات)
+ *  وإدخالٌ حرّ، وحارسُ مخزون يمنع بيع أكثر من المتوفّر. */
+function WeightPicker({ open, name, perKg, stockKg, current, ret, onClose, onSubmit }: {
+  open: boolean; name: string; perKg: number; stockKg: number; current: number; ret: boolean;
+  onClose: () => void; onSubmit: (kg: number) => void;
+}) {
+  const { t } = useTranslation();
+  const [kg, setKg] = useState<string>(current > 0 ? fmtKg(current) : "");
+  useEffect(() => { if (open) setKg(current > 0 ? fmtKg(current) : ""); }, [open, current]);
+  const val = Math.round((Number(kg) || 0) * 1000) / 1000;
+  const capped = !ret && Number.isFinite(stockKg);
+  const over = capped && val > stockKg + 1e-9;
+  const price = Math.round(val * perKg);
+  const ok = val > 0 && !over;
+  // رقاقات جاهزة: غرامات ثم كيلوات — منطقية للواقع (دراي فود، رمل، لحوم).
+  const PRESETS_G = [100, 250, 500, 750];
+  const PRESETS_KG = [1, 1.5, 2, 3, 5];
+  if (!open) return null;
+  const chip = (kgVal: number) => {
+    const disabled = capped && kgVal > stockKg + 1e-9;
+    const active = Math.abs(val - kgVal) < 1e-9 && val > 0;
+    return (
+      <button
+        key={kgVal} type="button" disabled={disabled}
+        onClick={() => { playTap(); setKg(fmtKg(kgVal)); }}
+        className={cn("rounded-xl px-2 py-2 text-sm font-bold tabular-nums transition",
+          active ? "bg-brand-600 text-white"
+            : disabled ? "cursor-not-allowed bg-surface-2 text-ink-subtle/40"
+              : "bg-surface-2 text-ink hover:bg-surface-3")}
+      >
+        {kgVal < 1
+          ? t("retail.wGrams", { n: Math.round(kgVal * 1000), defaultValue: "{{n}} غ" })
+          : t("retail.wKg", { n: fmtKg(kgVal), defaultValue: "{{n}} كغ" })}
+      </button>
+    );
+  };
+  return (
+    <div className="fixed inset-0 z-[70] grid place-items-center bg-ink/50 p-4 backdrop-blur-[2px]" onClick={onClose}>
+      <div className="w-full max-w-sm rounded-3xl border border-line bg-surface-1 p-5 shadow-elevated" onClick={(e) => e.stopPropagation()}>
+        <div className="mb-3 flex items-center gap-2">
+          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300"><Scale size={20} /></span>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-base font-bold text-ink">{name}</p>
+            <p className="text-xs text-ink-muted">
+              {t("retail.perKgPrice", { n: money(perKg), defaultValue: "سعر الكيلو {{n}}" })}
+              {ret ? ` · ${t("retail.retChip", "راجع")}` : ""}
+            </p>
+          </div>
+          <button type="button" onClick={onClose} aria-label={t("common.close", "إغلاق")} className="grid h-9 w-9 place-items-center rounded-full text-ink-subtle hover:bg-surface-2"><X size={18} /></button>
+        </div>
+
+        <div className="grid grid-cols-4 gap-1.5">{PRESETS_G.map((g) => chip(g / 1000))}</div>
+        <div className="mt-1.5 grid grid-cols-5 gap-1.5">{PRESETS_KG.map(chip)}</div>
+
+        <div className="mt-4">
+          <label className="label">{t("retail.customWeight", "وزن مخصّص (كيلو)")}</label>
+          <input
+            autoFocus type="number" inputMode="decimal" min="0" step="0.001" value={kg}
+            onChange={(e) => setKg(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter" && ok) onSubmit(val); }}
+            placeholder="0.000" className="input text-center text-lg font-bold tabular-nums"
+          />
+        </div>
+
+        {capped && (
+          <p className={cn("mt-2 text-center text-xs", over ? "font-bold text-danger-600" : "text-ink-subtle")}>
+            {over
+              ? t("retail.wOver", { n: fmtKg(stockKg), defaultValue: "المتوفّر {{n}} كغ فقط" })
+              : t("retail.wAvail", { n: fmtKg(stockKg), defaultValue: "المتوفّر: {{n}} كغ" })}
+          </p>
+        )}
+
+        <div className="mt-4 flex items-center justify-between rounded-2xl bg-surface-2 px-4 py-3">
+          <span className="text-sm font-semibold text-ink-muted">{t("retail.wTotal", "السعر")}</span>
+          <span className="text-2xl font-extrabold tabular-nums text-ink">{money(price)}</span>
+        </div>
+
+        <button
+          type="button" disabled={!ok} onClick={() => onSubmit(val)}
+          className={cn("mt-3 w-full rounded-2xl py-3 text-base font-extrabold transition",
+            ok ? "bg-brand-600 text-white hover:bg-brand-700 active:scale-[0.99]" : "cursor-not-allowed bg-surface-2 text-ink-subtle/50")}
+        >
+          {ret ? t("retail.wConfirmRet", "أضف الراجع") : t("retail.wConfirm", "أضف للسلة")}
+        </button>
+      </div>
+    </div>
   );
 }

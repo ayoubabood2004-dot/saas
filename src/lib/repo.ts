@@ -2874,11 +2874,12 @@ const supabaseRepo: typeof demoRepo = {
     // المعرف (upsert متجاهل التكرار) — لا منتج يضيع ولا يزدوج بضعف النت.
     const row = { id: uuid(), ...input };
     try {
-      // قبل ترحيل 0075 لا يوجد عمود bulk_group — أعد المحاولة بدونه.
+      // قبل ترحيلي 0075/0124 قد يغيب bulk_group أو sold_by_weight — أعد
+      // المحاولة بدون العمود الناقص كي لا يفشل إنشاء المنتج كله.
       const r = await sbc().from("products").insert(row).select().single();
-      if (r.error && /bulk_group/i.test(r.error.message)) {
-        const { bulk_group, ...rest } = row as Record<string, unknown>;
-        void bulk_group;
+      if (r.error && /bulk_group|sold_by_weight/i.test(r.error.message)) {
+        const { bulk_group, sold_by_weight, ...rest } = row as Record<string, unknown>;
+        void bulk_group; void sold_by_weight;
         return need<Product>(await sbc().from("products").insert(rest as never).select().single());
       }
       return need<Product>(r);
@@ -2890,9 +2891,9 @@ const supabaseRepo: typeof demoRepo = {
   },
   async updateProduct(id, patch) {
     const r = await sbc().from("products").update(patch).eq("id", id).select().maybeSingle();
-    if (r.error && /bulk_group/i.test(r.error.message)) {
-      const { bulk_group, ...rest } = patch as Record<string, unknown>;
-      void bulk_group;
+    if (r.error && /bulk_group|sold_by_weight/i.test(r.error.message)) {
+      const { bulk_group, sold_by_weight, ...rest } = patch as Record<string, unknown>;
+      void bulk_group; void sold_by_weight;
       return maybe<Product>(await sbc().from("products").update(rest as never).eq("id", id).select().maybeSingle());
     }
     return maybe<Product>(r);
