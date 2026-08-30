@@ -36,8 +36,23 @@
 alter table invoice_items
   add column if not exists created_at timestamptz not null default now();
 
--- التعبئة الرجعية: تاريخ الفاتورة الأمّ. تُنفَّذ مرّةً — الشرط يمنع إعادتها
--- على صفٍّ عُبّئ سلفاً، فالهجرة تبقى قابلةً لإعادة التشغيل.
+-- الحارس يُرفَع للتعبئة وحدها ثم يعود.
+--
+-- السبب دَينُ بياناتٍ قديم: قيدُ الكميّة `not valid` منذ 0051. و`not valid`
+-- تعني «لا تفحص القائم»، لا «اقبله للأبد» — بوستغريس يفحص كل صفٍّ **يُعدَّل**.
+-- فصفوفٌ دخلت قبل 0051 بكميّةٍ صفر عاشت بسلام سنين، حتى يمرّ عليها أوّلُ
+-- `update` فيوقظ الفحص. وتعبئتُنا هي ذلك المارّ:
+--     new row … violates check constraint "invoice_items_nonneg"
+--
+-- ولا نحذف تلك الصفوف ولا نصلحها: بياناتُ عيادةٍ سُجّلت يوماً، ومجموعُها صفر
+-- فلا تفسد رقماً. تصحيحها قرارُ صاحبها لا قرارُ هجرة.
+--
+-- والنافذة آمنة: محرّر SQL يلفّ اللصقة بمعاملةٍ واحدة، فلو تعثّر أي شيء تراجع
+-- كلُّ شيء **بما فيه الرفع** — ولا يبقى الجدول بلا حارسٍ أبداً.
+alter table invoice_items drop constraint if exists invoice_items_nonneg;
+
+-- التعبئة الرجعية: تاريخ الفاتورة الأمّ. الشرط يمنع إعادتها على صفٍّ عُبّئ
+-- سلفاً، فالهجرة تبقى قابلةً لإعادة التشغيل.
 --
 -- على دفعات: `update` واحدٌ على جدولٍ كبير يمسك قفلاً طويلاً وينفخ سجلّ
 -- الكتابة. ألفُ صفّ بالدفعة تُنهي عملها بأجزاء ثانية وتُفرج بينها.
@@ -62,6 +77,19 @@ begin
     exit when n = 0;
     raise notice 'db: عُبّئ تاريخ % بند', n;
   end loop;
+end $$;
+
+-- الحارس يعود كما كان — نفس نصّ 0131 حرفاً بحرف.
+do $$ begin
+  alter table invoice_items
+    add constraint invoice_items_nonneg
+    check (
+      qty <> 0
+      and unit_price >= 0
+      and unit_cost  >= 0
+      and (stock_qty is null or stock_qty = 0 or sign(stock_qty) = sign(qty))
+    ) not valid;
+exception when duplicate_object then null;
 end $$;
 
 -- الفهرس الذي يجعل الفلترة قفزةً لا مسحاً.

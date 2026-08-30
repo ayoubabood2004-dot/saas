@@ -59,6 +59,20 @@ createdb -h $SOCK -p $PORT -U postgres $DB
 echo "▸ المخطّط الأساس…"
 $P -f "$HERE/harness.sql" >/dev/null
 
+# دَينُ بياناتٍ حقيقيّ من الإنتاج: صفٌّ قديم بكميّةٍ صفر، دخل قبل أن يوجد
+# أيّ حارس. يُزرع قبل الهجرات ليواجه التعبئة كما واجهها هناك.
+# الصفّ سبق الحارس بالإنتاج، فنرفع الحارس لحظةَ زرعه ثم نعيده `not valid`
+# — وهذا بالضبط ما وجدته التعبئة هناك: صفٌّ مخالف يعيش تحت حارسٍ لم يفحصه.
+$P -c "alter table invoice_items drop constraint if exists invoice_items_nonneg;
+       insert into invoices(id,clinic_id) values
+       ('cccccccc-0000-0000-0000-000000000001','11111111-1111-1111-1111-111111111111');
+       update invoices set created_at = now() - interval '120 days'
+        where id='cccccccc-0000-0000-0000-000000000001';
+       insert into invoice_items(invoice_id,clinic_id,name,qty,unit_price,unit_cost,line_total,stock_qty)
+       values ('cccccccc-0000-0000-0000-000000000001','11111111-1111-1111-1111-111111111111','zero-legacy',0,1250,750,0,0);
+       alter table invoice_items add constraint invoice_items_nonneg
+         check (qty > 0 and unit_price >= 0 and unit_cost >= 0 and coalesce(stock_qty,0) >= 0) not valid;" >/dev/null
+
 echo "▸ الهجرات…"
 for f in $WAVE; do
   printf '   %s\n' "$(basename "$f")"
@@ -168,8 +182,9 @@ chk "واسم الزبون معه" \
     "select (count(*)>0)::text from expenses where description like '%أبو علي%'" "true"
 chk "و«حوالة» تُترجم bank بالسحوبات" \
     "select distinct method from expenses where category='مرتجع'" "bank"
+# الإرجاع ما ينشئ فاتورة — نعدّ ما عدا الفواتير المزروعة للفحوص الأخرى
 chk "ولا تُخترع فاتورة" \
-    "select count(*)::text from invoices" "0"
+    "select count(*)::text from invoices where id not in ('bbbbbbbb-0000-0000-0000-000000000001','cccccccc-0000-0000-0000-000000000001')" "0"
 $P -c "create or replace function _rprobe() returns text language plpgsql as \$fn\$
 begin perform retail_return('[]'::jsonb, '{}'::jsonb); return 'NOT-GUARDED';
 exception when others then return 'guarded'; end \$fn\$;" >/dev/null
@@ -189,6 +204,13 @@ chk "وبعد التعبئة يرث تاريخ فاتورته" \
     "select (created_at < now() - interval '199 days')::text from invoice_items where name='old'" "true"
 chk "والفهرس الزمنيّ موجود" \
     "select count(*)::text from pg_indexes where indexname='invoice_items_clinic_created_idx'" "1"
+# الصفّ القديم بكميّة صفر: عبَرت التعبئة فوقه، وورث تاريخ فاتورته
+chk "الصفّ القديم (كميّة صفر) ما منع التعبئة" \
+    "select (created_at < now() - interval '119 days')::text from invoice_items where name='zero-legacy'" "true"
+chk "ولا انحذف ولا انتغيّر" \
+    "select qty::text from invoice_items where name='zero-legacy'" "0.000"
+chk "والحارس رجع بعد التعبئة" \
+    "select count(*)::text from pg_constraint where conname='invoice_items_nonneg'" "1"
 
 echo
 [ $fail -eq 0 ] && echo "✓ كل الفحوص عبرت" || { echo "✗ اكو فحصٌ فشل"; exit 1; }
