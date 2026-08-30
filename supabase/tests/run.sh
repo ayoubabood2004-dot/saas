@@ -22,7 +22,7 @@ DB=dvtest
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MIG="$HERE/../migrations"
 # الهجرات التي يغطّيها هذا المخطّط الأساس. زدها كل ما تنضاف موجة.
-WAVE="$MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql"
+WAVE="$MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql"
 
 command -v "$PGBIN/initdb" >/dev/null || { echo "ما لكيت بوستغريس بـ $PGBIN"; exit 1; }
 
@@ -174,6 +174,21 @@ $P -c "create or replace function _rprobe() returns text language plpgsql as \$f
 begin perform retail_return('[]'::jsonb, '{}'::jsonb); return 'NOT-GUARDED';
 exception when others then return 'guarded'; end \$fn\$;" >/dev/null
 chk "وسلّةٌ فارغة تُرفض" "select _rprobe()" "guarded"
+
+# 0133: البند يرث تاريخ فاتورته بالتعبئة الرجعية
+$P -c "insert into invoices(id,clinic_id) values
+       ('bbbbbbbb-0000-0000-0000-000000000001','11111111-1111-1111-1111-111111111111');
+       update invoices set created_at = now() - interval '200 days'
+        where id='bbbbbbbb-0000-0000-0000-000000000001';
+       insert into invoice_items(invoice_id,clinic_id,name,qty,unit_price,unit_cost,line_total,stock_qty)
+       values ('bbbbbbbb-0000-0000-0000-000000000001','11111111-1111-1111-1111-111111111111','old',1,100,50,100,1);" >/dev/null
+chk "بندٌ جديد يُختم باليوم" \
+    "select (created_at > now() - interval '1 day')::text from invoice_items where name='old'" "true"
+$P -f "$MIG/0133_invoice_items_dated.sql" >/dev/null 2>&1
+chk "وبعد التعبئة يرث تاريخ فاتورته" \
+    "select (created_at < now() - interval '199 days')::text from invoice_items where name='old'" "true"
+chk "والفهرس الزمنيّ موجود" \
+    "select count(*)::text from pg_indexes where indexname='invoice_items_clinic_created_idx'" "1"
 
 echo
 [ $fail -eq 0 ] && echo "✓ كل الفحوص عبرت" || { echo "✗ اكو فحصٌ فشل"; exit 1; }

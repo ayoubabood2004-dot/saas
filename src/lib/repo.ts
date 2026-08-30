@@ -1410,15 +1410,15 @@ const demoRepo = {
   },
 
   /* ---------------- Purchases (المشتريات) — restock from a company ---------------- */
-  async listPurchases(_clinicId?: string): Promise<Purchase[]> {
-    return (loadDB().purchases ?? []).slice().sort((a, b) => (b.purchased_at || "").localeCompare(a.purchased_at || ""));
+  async listPurchases(_clinicId?: string, range?: DateRange): Promise<Purchase[]> {
+    return within(loadDB().purchases ?? [], "purchased_at", range).sort((a, b) => (b.purchased_at || "").localeCompare(a.purchased_at || ""));
   },
   async listPurchaseItems(purchaseId: string): Promise<PurchaseItem[]> {
     return (loadDB().purchaseItems ?? []).filter((x) => x.purchase_id === purchaseId);
   },
   /** كل سطور الشراء دفعة واحدة — تقرير التصنيفات يقارن المبيع بالمشترى. */
-  async listAllPurchaseItems(_clinicId?: string): Promise<PurchaseItem[]> {
-    return (loadDB().purchaseItems ?? []).slice();
+  async listAllPurchaseItems(_clinicId?: string, range?: DateRange): Promise<PurchaseItem[]> {
+    return within(loadDB().purchaseItems ?? [], "created_at", range);
   },
   /** Bulk-receive stock from a company: restock existing barcodes (+ refresh
    *  prices), create new products for unknown barcodes, and save a purchase
@@ -1671,8 +1671,8 @@ const demoRepo = {
     return true;
   },
 
-  async listInvoices(_clinicId?: string): Promise<Invoice[]> {
-    return (loadDB().invoices ?? []).slice().sort((a, b) => b.created_at.localeCompare(a.created_at));
+  async listInvoices(_clinicId?: string, range?: DateRange): Promise<Invoice[]> {
+    return within(loadDB().invoices ?? [], "created_at", range).sort((a, b) => b.created_at.localeCompare(a.created_at));
   },
   async checkout(items: CheckoutItem[]): Promise<Invoice> {
     return createInvoiceLocal(items);
@@ -1761,8 +1761,17 @@ const demoRepo = {
   async listInvoiceItems(invoiceId: string): Promise<InvoiceItem[]> {
     return (loadDB().invoiceItems ?? []).filter((x) => x.invoice_id === invoiceId);
   },
-  async listAllInvoiceItems(_clinicId?: string): Promise<InvoiceItem[]> {
-    return (loadDB().invoiceItems ?? []).slice();
+  async listAllInvoiceItems(_clinicId?: string, range?: DateRange): Promise<InvoiceItem[]> {
+    // البنود التجريبية ما بيها تاريخ خاص، فترث تاريخ فاتورتها — نفس ما تفعله
+    // هجرة 0133 بالسحابة، حتى تتطابق النسختان بالنتيجة لا بالشكل وحده.
+    const db = loadDB();
+    const items = db.invoiceItems ?? [];
+    if (!range?.from && !range?.to) return items.slice();
+    const at = new Map((db.invoices ?? []).map((i) => [i.id, i.created_at]));
+    return items.filter((it) => {
+      const d = (it as { created_at?: string }).created_at ?? at.get(it.invoice_id) ?? "";
+      return (!range.from || d >= range.from) && (!range.to || d <= range.to);
+    });
   },
   async refundInvoice(invoiceId: string): Promise<Invoice | undefined> {
     const db = loadDB();
@@ -2074,8 +2083,8 @@ const demoRepo = {
   },
 
   /* ---- Cash expenses / withdrawals ledger ---- */
-  async listExpenses(_clinicId?: string): Promise<Expense[]> {
-    return demoExpensesLoad().slice().sort((a, b) => b.spent_at.localeCompare(a.spent_at));
+  async listExpenses(_clinicId?: string, range?: DateRange): Promise<Expense[]> {
+    return within(demoExpensesLoad(), "spent_at", range).sort((a, b) => b.spent_at.localeCompare(a.spent_at));
   },
   async addExpense(input: Omit<Expense, "id" | "created_at">): Promise<Expense> {
     return demoAddExpense(input);
@@ -2312,6 +2321,30 @@ async function inChunks<T>(ids: string[], query: (chunk: string[]) => Promise<T[
  * تعادل) كي لا يتكرر صف بين صفحتين ولا يسقط.
  */
 const PAGE_ROWS = 1000;
+
+/** مدى تاريخٍ اختياريّ للقراءات الثقيلة (ISO). حين يُمرَّر يُفلتَر **بالقاعدة**
+ *  بدل أن تنزل كل صفوف العيادة ثم يرمي المتصفح ما هو خارج المدى — الفلتر
+ *  نفسه، ومكانه هو ما تغيّر. */
+export interface DateRange { from?: string | null; to?: string | null }
+
+/** نظيرُ `inRange` بالوضع التجريبي: يصفّي مصفوفةً على عمودٍ زمنيّ. */
+function within<T>(rows: T[], col: string, r?: DateRange): T[] {
+  if (!r?.from && !r?.to) return rows.slice();
+  return rows.filter((x) => {
+    const d = String((x as Record<string, unknown>)[col] ?? "");
+    return (!r.from || d >= r.from) && (!r.to || d <= r.to);
+  });
+}
+
+/** يشدّ استعلاماً على عمودٍ زمنيّ بالمدى المطلوب. بلا مدى يمرّ كما هو، فتبقى
+ *  كل النداءات القائمة على سلوكها السابق حرفياً. */
+function inRange<T>(q: T, col: string, r?: DateRange): T {
+  const x = q as unknown as { gte(c: string, v: string): T; lte(c: string, v: string): T };
+  let out = q;
+  if (r?.from) out = x.gte(col, r.from);
+  if (r?.to) out = (out as unknown as typeof x).lte(col, r.to);
+  return out;
+}
 async function allPages<T>(make: () => unknown): Promise<T[]> {
   type Q = {
     order: (c: string, o: { ascending: boolean }) => Q;
@@ -3185,21 +3218,21 @@ const supabaseRepo: typeof demoRepo = {
   },
 
   /* ---------------- Purchases (المشتريات) ---------------- */
-  async listPurchases(clinicId) {
+  async listPurchases(clinicId, range) {
     return allPages<Purchase>(() => {
       let q = sbc().from("purchases").select("*").order("purchased_at", { ascending: false });
       if (clinicId) q = q.eq("clinic_id", clinicId);
-      return q;
+      return inRange(q, "purchased_at", range);
     });
   },
   async listPurchaseItems(purchaseId) {
     return listOf<PurchaseItem>(await sbc().from("purchase_items").select("*").eq("purchase_id", purchaseId));
   },
-  async listAllPurchaseItems(clinicId) {
+  async listAllPurchaseItems(clinicId, range) {
     return allPages<PurchaseItem>(() => {
       let q = sbc().from("purchase_items").select("*");
       if (clinicId) q = q.eq("clinic_id", clinicId);
-      return q;
+      return inRange(q, "created_at", range);
     });
   },
   async recordPurchase(lines, meta) {
@@ -3240,11 +3273,11 @@ const supabaseRepo: typeof demoRepo = {
     }
   },
 
-  async listInvoices(clinicId) {
+  async listInvoices(clinicId, range) {
     return allPages<Invoice>(() => {
       let q = sbc().from("invoices").select("*").order("created_at", { ascending: false });
       if (clinicId) q = q.eq("clinic_id", clinicId);
-      return q;
+      return inRange(q, "created_at", range);
     });
   },
   async checkout(items) {
@@ -3302,12 +3335,13 @@ const supabaseRepo: typeof demoRepo = {
   async listInvoiceItems(invoiceId) {
     return listOf<InvoiceItem>(await sbc().from("invoice_items").select("*").eq("invoice_id", invoiceId));
   },
-  async listAllInvoiceItems(clinicId) {
+  async listAllInvoiceItems(clinicId, range) {
     // أكبر جدول بالعيادة النشطة — بلا صفحات كانت التحليلات تحسب على أول ألف سطر فقط.
+    // ومع المدى (0133) تنزل صفوف الشهر لا صفوف العمر كله.
     return allPages<InvoiceItem>(() => {
       let q = sbc().from("invoice_items").select("*");
       if (clinicId) q = q.eq("clinic_id", clinicId);
-      return q;
+      return inRange(q, "created_at", range);
     });
   },
   async refundInvoice(invoiceId) {
@@ -3369,11 +3403,11 @@ const supabaseRepo: typeof demoRepo = {
     const rows = listOf<{ customer_name: string | null; customer_phone: string | null; created_at: string }>(await q);
     return dedupeCustomers(rows, query);
   },
-  async listExpenses(clinicId) {
+  async listExpenses(clinicId, range) {
     return allPages<Expense>(() => {
       let q = sbc().from("expenses").select("*").order("spent_at", { ascending: false });
       if (clinicId) q = q.eq("clinic_id", clinicId);
-      return q;
+      return inRange(q, "spent_at", range);
     });
   },
   async addExpense(input) {
