@@ -51,7 +51,7 @@ create unique index if not exists pets_serial_idx on pets(serial) where serial i
 create table if not exists clinics (id uuid primary key default gen_random_uuid());
 create table if not exists companies (id uuid primary key default gen_random_uuid());
 create table if not exists staff (id uuid primary key default gen_random_uuid(), clinic_id uuid);
-create table if not exists products (id uuid primary key default gen_random_uuid(), clinic_id uuid);
+create table if not exists products (id uuid primary key default gen_random_uuid(), clinic_id uuid, stock numeric(14,3) default 0);
 create table if not exists invoices (id uuid primary key default gen_random_uuid(), clinic_id uuid);
 create table if not exists medical_visits (id uuid primary key default gen_random_uuid(), pet_id uuid references pets(id), clinic_id uuid);
 create table if not exists appointments (id uuid primary key default gen_random_uuid(), clinic_id uuid references clinics(id), scheduled_at timestamptz);
@@ -88,6 +88,25 @@ do $ii$ begin
   alter table invoice_items add constraint invoice_items_nonneg
     check (qty > 0 and unit_price >= 0 and unit_cost >= 0 and coalesce(stock_qty,0) >= 0) not valid;
 exception when duplicate_object then null; end $ii$;
+
+create table if not exists expenses (
+  id uuid primary key default gen_random_uuid(),
+  clinic_id uuid not null default auth_clinic(),
+  amount numeric not null check (amount > 0),
+  description text not null, category text,
+  method text not null default 'cash' check (method in ('cash','card','bank')),
+  staff_id uuid default auth.uid(),
+  created_at timestamptz not null default now(),
+  spent_at timestamptz not null default now()
+);
+
+create or replace function credit_stock(p_product uuid, p_qty numeric, p_clinic uuid)
+returns void language plpgsql security definer set search_path = public as $cs$
+begin
+  if p_product is null or coalesce(p_qty,0) <= 0 then return; end if;
+  update products set stock = round(coalesce(stock,0) + p_qty, 3)
+   where id = p_product and clinic_id = p_clinic;
+end $cs$;
 
 create table if not exists audit_log (
   id bigint generated always as identity primary key,

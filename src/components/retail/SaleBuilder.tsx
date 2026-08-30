@@ -790,6 +790,11 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
   /** الراجع أكبر من المشترى ⇒ نقدٌ يخرج، وهذا ليس بيعاً: يُمنع الحفظ هنا
    *  ويُحوَّل الكاشير لتبويب «المرتجع» حيث يخرج المال بقيدٍ صحيح. */
   const netNegative = subtotal < -0.005;
+  /* إرجاعٌ خالص: كل سطرٍ بالسلة راجع، ولا شيء يُباع بالمقابل. هذا وحده يمرّ
+   * بمسار الإرجاع (0132)؛ أما السلة المختلطة السالبة فتبقى ممنوعة — بيعةٌ
+   * ونصفُ إرجاعٍ بقيدٍ واحد محاسبةٌ غامضة، ومكانها تبويب «المرتجع». */
+  const pureReturn = cart.length > 0 && cart.every((l) => l.ret);
+  const returnValue = round2(retValue);
   // عدّ الأصناف: سطر الوزن قطعةٌ واحدة (كيسٌ واحد)، لا نصفُ صنف — كسرُ الكيلو
   // يخصّ السعر لا العدد.
   const units = cart.reduce((s, l) => s + (l.byWeight ? 1 : l.qty), 0);
@@ -1167,6 +1172,40 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
     });
     if (!ok) { playWarning(); toast.error(t("retail.popupBlocked", "Allow pop-ups to print"), t("retail.popupBlockedHint", "Your browser blocked the print window — enable pop-ups for this site.")); }
     else void repo.logClientEvent("invoice.preprint", { total, items: cart.length, format }); // activity trail
+  };
+
+  /* الإرجاع الخالص — لا فاتورة. البضاعة ترجع للرصيد، والمال يُسجَّل سحباً
+   * منفصلاً لكل صنف (هجرة 0132). الذرّيّة على الخادم: يقعان معاً أو لا شيء. */
+  const doReturn = async () => {
+    if (!pureReturn || busy) return;
+    if (returnValue <= 0) { playWarning(); return; }
+    setBusy(true);
+    try {
+      const items: CheckoutItem[] = cart.map((l) => {
+        const isSub = l.kind === "product" && l.saleUnit === "sub" && !!l.unitsPerBox && l.unitsPerBox > 0;
+        const stock_qty = l.product_id == null ? 0
+          : isSub ? Math.round((l.qty / (l.unitsPerBox as number)) * 1000) / 1000
+          : l.qty;
+        return {
+          product_id: l.product_id, name: l.name, barcode: l.barcode,
+          qty: l.qty, unit_price: l.unit_price, unit_cost: l.unit_cost,
+          stock_qty, unit_label: l.byWeight ? t("retail.unitKg", "كغ") : null,
+        };
+      });
+      const cust = splitCustomerField(name);
+      const res = await withTimeout(repo.retailReturn(items, {
+        method: payments[0]?.method ?? "cash",
+        customer_name: cust.name || null,
+        note: saleNotes.trim() || null,
+      }), 12000);
+      playSuccess();
+      toast.success(t("retail.retDone", { amount: money(res.total), n: formatNum(res.lines), defaultValue: "انسجّل الإرجاع: {{n}} صنف رجع للمخزن، و{{amount}} انسحبت من الصندوق" }));
+      reset();
+      onSold();
+    } catch (e) {
+      playWarning();
+      toast.error(t("retail.retFailed", "ما انسجّل الإرجاع"), e instanceof Error ? e.message : undefined);
+    } finally { setBusy(false); }
   };
 
   const checkout = async () => {
@@ -2423,11 +2462,49 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
               <span className="tabular-nums">− {money(retValue)}</span>
             </div>
           )}
-          {netNegative && (
+          {/* إرجاعٌ خالص: السلة كلها راجع — فمسارٌ خاصٌّ بدل منعٍ أعمى.
+              المال يخرج سحباً بصنفه واسمه ووقته (0132)، ولا تُخترع فاتورة. */}
+          {pureReturn ? (
+            <div data-purereturn className="space-y-2 rounded-2xl border-2 border-warn-300 bg-warn-50 p-3 dark:border-warn-500/40 dark:bg-warn-500/10">
+              <div className="flex items-center justify-between gap-2">
+                <span className="flex items-center gap-1.5 text-sm font-black text-warn-800 dark:text-warn-200">
+                  <Undo2 size={15} /> {t("retail.pureReturn", "إرجاع للزبون")}
+                </span>
+                <span className="font-display text-xl font-black tabular-nums text-warn-800 dark:text-warn-200">{money(returnValue)}</span>
+              </div>
+              <p className="text-2xs font-bold text-warn-700 dark:text-warn-300">
+                {t("retail.pureReturnWhy", "البضاعة ترجع للمخزن، والمبلغ ينسجّل بالسحوبات باسم كل صنف ووقته.")}
+              </p>
+              {/* من وين تطلع الفلوس — نفس خيارات الدفع، فالصندوق يطابق */}
+              <div className="grid grid-cols-3 gap-1.5">
+                {PAY_OPTIONS.map((o) => {
+                  const on = (payments[0]?.method ?? "cash") === o.value;
+                  return (
+                    <button
+                      key={o.value} type="button" data-retmethod={o.value}
+                      onClick={() => { playTap(); setPayments([{ method: o.value, amount: 0 }]); }}
+                      className={cn("flex h-11 items-center justify-center gap-1.5 rounded-xl border-2 text-2xs font-extrabold transition",
+                        on ? "border-warn-500 bg-warn-100 text-warn-800 dark:bg-warn-500/25 dark:text-warn-100"
+                           : "border-line bg-surface-1 text-ink-muted hover:bg-surface-2")}
+                    >
+                      <o.icon size={14} /> {t(o.key, o.def)}
+                    </button>
+                  );
+                })}
+              </div>
+              <Button
+                className="w-full bg-warn-600 text-white hover:bg-warn-700" size="lg" data-doreturn
+                disabled={returnValue <= 0} loading={busy} onClick={doReturn} leftIcon={<Undo2 size={18} />}
+              >
+                {t("retail.confirmReturn", "تأكيد الإرجاع")} · {money(returnValue)}
+              </Button>
+            </div>
+          ) : netNegative && (
             <p data-retnegative className="rounded-xl bg-danger-50 px-3 py-2 text-center text-2xs font-bold text-danger-700 dark:bg-danger-500/15 dark:text-danger-300">
               {t("retail.retNegative", "الراجع أكبر من المشترى — هذا إرجاع لا بيع: كمّل من تبويب «المرتجع» حتى يخرج النقد للزبون بقيدٍ صحيح.")}
             </p>
           )}
+          {!pureReturn && (
           <Button className={cn("w-full", posV2 && "shrink-0")} style={posV2 ? { minHeight: 48 } : undefined} size="lg" disabled={cart.length === 0 || needsDebtName || netNegative} loading={busy} onClick={checkout} leftIcon={deliveryOn ? <Bike size={18} /> : <CheckCircle2 size={18} />}>
             {deliveryOn
               ? `${t("retail.completeDelivery", "إرسال للتوصيل")} · ${t("retail.codShort", "يُحصَّل")} ${money(codAmount)}`
@@ -2437,6 +2514,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
                   ? `${t("retail.complete", "إصدار الفاتورة")} · ${t("retail.changeDue", "الباقي")} ${money(change)}`
                   : `${t("retail.complete", "إصدار الفاتورة")} · ${money(total)}`}
           </Button>
+          )}
           {posV2 && !cashierId && cart.length > 0 && payTools && (
             <button
               type="button" data-noseller

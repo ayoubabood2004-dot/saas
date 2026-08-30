@@ -757,6 +757,24 @@ export interface CheckoutItem {
   unit_label?: string | null;
 }
 
+/** ما يرافق إرجاعاً خالصاً: طريقة خروج المال، والزبون والسبب اختياراً. */
+export interface ReturnMeta {
+  /** كما بشاشة البيع: cash / card / transfer — و«transfer» تُترجَم bank بالسحوبات. */
+  method?: PaymentMethod | ExpenseMethod | null;
+  customer_name?: string | null;
+  note?: string | null;
+}
+
+/** حصيلةُ إرجاعٍ خالص (0132): بضاعةٌ رجعت للمخزن ومالٌ خرج سحباً. */
+export interface RetailReturnResult {
+  /** مجموع ما خرج من الصندوق. */
+  total: number;
+  /** كم صنفاً رجع. */
+  lines: number;
+  /** الطريقة التي خرج بها المال (cash / card / bank). */
+  method: ExpenseMethod;
+}
+
 /* ---------------- Purchases (المشتريات — restocking from a company) ---------------- */
 /** A purchase/restock invoice: goods received FROM a supplier company. Saving one
  *  bulk-updates inventory (existing products get +stock & refreshed prices; new

@@ -16,7 +16,7 @@ const invNormName = (v: string | null | undefined): string =>
 import { supabase } from "./supabase";
 import { outboxEnqueue, isNetworkError } from "./outbox";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, AppointmentStatus, ClinicInfo, PublicStaff, DailyNote, TreatmentEntry, Admission, Branch, Reminder, Product, Company, CompanySection, Purchase, PurchaseItem, PurchasePayment, PurchaseDraftLine, PurchaseMeta, Courier, DeliveryOrder, PetMovement, DemoDB, Invoice, InvoiceItem, CheckoutItem, SaleMeta, Customer, DiscountType, PaymentMethod, PaymentSplit, WhatsAppMessage, AuditEntry, LoginEvent, PetNote, Expense, ClinicVisit , Surgery, LabResult, LabDeviceLink, LabDeviceInbox, LabStatusValue, PetProblem, CareEntry, FeatureRequest, GeneratedBarcode, StoreProfile, StoreOrder, StoreOrderItem, StoreFrontInfo, StoreCatalogItem, Journey, JourneyEvent, JourneyKind, JourneyStage, JourneyPublicView, EditLine } from "@/types";
+import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, AppointmentStatus, ClinicInfo, PublicStaff, DailyNote, TreatmentEntry, Admission, Branch, Reminder, Product, Company, CompanySection, Purchase, PurchaseItem, PurchasePayment, PurchaseDraftLine, PurchaseMeta, Courier, DeliveryOrder, PetMovement, DemoDB, Invoice, InvoiceItem, CheckoutItem, SaleMeta, Customer, DiscountType, PaymentMethod, PaymentSplit, WhatsAppMessage, AuditEntry, LoginEvent, PetNote, Expense, ExpenseMethod, ReturnMeta, RetailReturnResult, ClinicVisit , Surgery, LabResult, LabDeviceLink, LabDeviceInbox, LabStatusValue, PetProblem, CareEntry, FeatureRequest, GeneratedBarcode, StoreProfile, StoreOrder, StoreOrderItem, StoreFrontInfo, StoreCatalogItem, Journey, JourneyEvent, JourneyKind, JourneyStage, JourneyPublicView, EditLine } from "@/types";
 import type { PayrollPolicyDTO, StaffComp, StaffRecurring, PayrollRun, Payslip, PayslipLine, StaffLoan, StaffLoanEvent, PayslipDraft, PayMethod } from "@/types";
 import * as PD from "./payrollDemo";
 import { paidOf, round2 } from "./debt";
@@ -1722,6 +1722,42 @@ const demoRepo = {
   async retailCheckout(items: CheckoutItem[], meta: SaleMeta): Promise<Invoice> {
     return createInvoiceLocal(items, meta);
   },
+  /** إرجاعٌ خالص — مرآةُ `retail_return` (هجرة 0132) بنفس قواعدها حرفياً:
+   *  ما تُنشأ فاتورة، والبضاعة ترجع للرصيد، وسحبٌ منفصل لكل صنف. */
+  async retailReturn(items: CheckoutItem[], meta: ReturnMeta): Promise<RetailReturnResult> {
+    const method: ExpenseMethod = meta.method === "card" ? "card" : meta.method === "transfer" || meta.method === "bank" ? "bank" : "cash";
+    const db = loadDB();
+    let total = 0, lines = 0;
+    const at = new Date().toISOString();
+    for (const it of items) {
+      const qty = Math.abs(Number(it.qty) || 0);
+      if (qty === 0) continue;
+      const stockQty = Math.abs(Number(it.stock_qty ?? qty) || 0);
+      const price = Math.abs(Number(it.unit_price) || 0);
+      const amount = Math.round(qty * price * 100) / 100;
+
+      if (it.product_id) {
+        const p = db.products.find((x) => x.id === it.product_id);
+        if (p) p.stock = Math.round(((p.stock ?? 0) + stockQty) * 1000) / 1000;
+      }
+      if (amount > 0) {
+        const qtyTxt = qty === 1 ? "" : ` \u00d7 ${String(qty)}`;
+        const who = meta.customer_name?.trim() ? ` \u2014 ${meta.customer_name.trim()}` : "";
+        const note = meta.note?.trim() ? ` (${meta.note.trim()})` : "";
+        demoAddExpense({
+          amount,
+          description: `\u0631\u0627\u062c\u0639: ${it.name || "\u0635\u0646\u0641"}${qtyTxt}${who}${note}`,
+          category: "\u0645\u0631\u062a\u062c\u0639",
+          method, spent_at: at,
+        });
+        total += amount;
+      }
+      lines += 1;
+    }
+    if (lines === 0) throw new Error("no items");
+    saveDB(db);
+    return { total: Math.round(total * 100) / 100, lines, method };
+  },
   async listInvoiceItems(invoiceId: string): Promise<InvoiceItem[]> {
     return (loadDB().invoiceItems ?? []).filter((x) => x.invoice_id === invoiceId);
   },
@@ -2192,6 +2228,7 @@ const DEMO_ACTIVITY_MAP: Record<string, { entity: string; action: "INSERT" | "UP
   updateDeliveryOrder: { entity: "delivery_orders", action: "UPDATE" },
   checkout: { entity: "invoices", action: "INSERT" },
   retailCheckout: { entity: "invoices", action: "INSERT" },
+  retailReturn: { entity: "expenses", action: "INSERT" },
   settleInvoice: { entity: "invoices", action: "UPDATE" },
   correctInvoiceReceipt: { entity: "invoices", action: "UPDATE" },
   editInvoiceLines: { entity: "invoices", action: "UPDATE" },
@@ -3257,6 +3294,10 @@ const supabaseRepo: typeof demoRepo = {
   async retailCheckout(items, meta) {
     // Atomic on the server: invoice (+ customer/discount/payment) + items + stock.
     return need<Invoice>(await sbc().rpc("retail_checkout", { p_items: items, p_meta: meta }));
+  },
+  async retailReturn(items, meta) {
+    // ذرّيّة على الخادم: المخزون والسحوبات معاً أو لا شيء.
+    return need<RetailReturnResult>(await sbc().rpc("retail_return", { p_items: items, p_meta: meta }));
   },
   async listInvoiceItems(invoiceId) {
     return listOf<InvoiceItem>(await sbc().from("invoice_items").select("*").eq("invoice_id", invoiceId));

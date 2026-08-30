@@ -22,7 +22,7 @@ DB=dvtest
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MIG="$HERE/../migrations"
 # الهجرات التي يغطّيها هذا المخطّط الأساس. زدها كل ما تنضاف موجة.
-WAVE="$MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql"
+WAVE="$MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql"
 
 command -v "$PGBIN/initdb" >/dev/null || { echo "ما لكيت بوستغريس بـ $PGBIN"; exit 1; }
 
@@ -144,6 +144,36 @@ ins "insert into invoice_items(name,qty,unit_price,unit_cost,line_total,stock_qt
   && { printf '   ✗ %s\n' "قبل سعراً سالباً"; fail=1; } || printf '   ✓ %s\n' "ويرفض سعراً سالباً"
 ins "insert into invoice_items(name,qty,unit_price,unit_cost,line_total,stock_qty) values ('c',-1,1000,600,-1000,1);" \
   && { printf '   ✗ %s\n' "قبل تناقض الإشارة"; fail=1; } || printf '   ✓ %s\n' "ويرفض سطراً يبيع ويردّ بآنٍ واحد"
+
+# الإرجاع الخالص (0132): بضاعةٌ ترجع للرصيد، وسحبٌ لكل صنف — بلا فاتورة
+$P -c "insert into memberships(user_id,clinic_id,role,status) values
+       ('11111111-1111-1111-1111-111111111111','11111111-1111-1111-1111-111111111111','manager','active');" >/dev/null
+$P -c "insert into products(id,clinic_id,stock) values
+       ('aaaaaaaa-0000-0000-0000-000000000001','11111111-1111-1111-1111-111111111111',5);" >/dev/null
+$P -c "select set_config('request.jwt.claim.sub','11111111-1111-1111-1111-111111111111',false);
+       select retail_return(
+         '[{\"product_id\":\"aaaaaaaa-0000-0000-0000-000000000001\",\"name\":\"شامبو\",\"qty\":-2,\"unit_price\":1000,\"stock_qty\":-2},
+           {\"product_id\":null,\"name\":\"خدمة\",\"qty\":-1,\"unit_price\":500}]'::jsonb,
+         '{\"method\":\"transfer\",\"customer_name\":\"أبو علي\"}'::jsonb);" >/dev/null 2>&1
+
+chk "الإرجاع يرجّع البضاعة للرصيد (5 + 2)" \
+    "select stock::text from products where id='aaaaaaaa-0000-0000-0000-000000000001'" "7.000"
+chk "وسحبٌ منفصل لكل صنف" \
+    "select count(*)::text from expenses where category='مرتجع'" "2"
+chk "بالمبلغ الصحيح (2000 + 500)" \
+    "select sum(amount)::text from expenses where category='مرتجع'" "2500.00"
+chk "والوصف يحمل «راجع» واسم الصنف" \
+    "select (count(*)>0)::text from expenses where description like 'راجع: شامبو%'" "true"
+chk "واسم الزبون معه" \
+    "select (count(*)>0)::text from expenses where description like '%أبو علي%'" "true"
+chk "و«حوالة» تُترجم bank بالسحوبات" \
+    "select distinct method from expenses where category='مرتجع'" "bank"
+chk "ولا تُخترع فاتورة" \
+    "select count(*)::text from invoices" "0"
+$P -c "create or replace function _rprobe() returns text language plpgsql as \$fn\$
+begin perform retail_return('[]'::jsonb, '{}'::jsonb); return 'NOT-GUARDED';
+exception when others then return 'guarded'; end \$fn\$;" >/dev/null
+chk "وسلّةٌ فارغة تُرفض" "select _rprobe()" "guarded"
 
 echo
 [ $fail -eq 0 ] && echo "✓ كل الفحوص عبرت" || { echo "✗ اكو فحصٌ فشل"; exit 1; }

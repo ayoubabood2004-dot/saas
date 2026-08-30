@@ -12,6 +12,7 @@ import {
   ScrollText, Search, Eye, X, BadgePercent, SlidersHorizontal, ChevronDown,
   ChevronLeft, ChevronRight, LayoutDashboard, History, TrendingDown, Plus, BookUser,
   Landmark, ShoppingBag,
+  Undo2,
 } from "lucide-react";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
 import type { Pet, Invoice, InvoiceItem, Product, ProductCategory, MedicalVisit, PaymentMethod, Species, MediaItem, TreatmentEntry, AuditEntry, LoginEvent, Expense, ExpenseMethod, LabResult, Purchase, PurchaseItem } from "@/types";
@@ -82,6 +83,9 @@ interface StaffTrend { series: Array<Record<string, number | string>>; keys: { i
 /** Lab/imaging media kinds counted in the clinical report. */
 const CLINICAL_MEDIA_KINDS = ["lab", "xray", "ultrasound"] as const;
 
+/** تصنيف السحب الذي تكتبه هجرة 0132 لكل صنفٍ يرجع. سطرُ بيانات لا نصٌّ
+ *  معروض، فيُكتب هروباً حتى يبقى مطابقاً لما بالقاعدة حرفاً بحرف. */
+const RETURN_CATEGORY = "\u0645\u0631\u062a\u062c\u0639";
 const PIE = ["#2563eb", "#16a34a", "#f59e0b", "#db2777", "#0891b2", "#7c3aed", "#64748b"];
 const PAY_ICON: Record<PaymentMethod, typeof Banknote> = { cash: Banknote, card: CreditCard, transfer: ArrowLeftRight };
 
@@ -411,6 +415,12 @@ export function AnalyticsHub() {
     [expenses, lo, hi],
   );
   const expensesTotal = useMemo(() => expensesInRange.reduce((s, e) => s + e.amount, 0), [expensesInRange]);
+  /* المرتجعات سحبٌ من نوعٍ آخر: مالٌ خرج مقابل بضاعةٍ رجعت للرفّ، لا مصروفُ
+   * تشغيل. جمعُها مع الإيجار والرواتب يخفي رقماً يهمّ المدير وحده — كم رجع،
+   * وأي صنفٍ يرجع أكثر. فتُفرَز بتصنيفها الذي تكتبه 0132. */
+  const returnsInRange = useMemo(() => expensesInRange.filter((e) => e.category === RETURN_CATEGORY), [expensesInRange]);
+  const returnsTotal = useMemo(() => returnsInRange.reduce((s, e) => s + e.amount, 0), [returnsInRange]);
+  const returnsCount = returnsInRange.length;
   // Only CASH withdrawals leave the drawer — card/bank withdrawals come out of
   // those balances, so net cash on hand = cash collected − cash withdrawn.
   const cashExpensesTotal = useMemo(
@@ -975,6 +985,7 @@ export function AnalyticsHub() {
               revenue={revenue} categoryData={categoryData} staffPerf={staffPerf}
               canProfit={canProfit} yesterday={yesterday} isToday={preset === "today"} onExportCSV={exportCSV}
               expensesTotal={expensesTotal} cashExpensesTotal={cashExpensesTotal} netCash={netCash}
+              returnsTotal={returnsTotal} returnsCount={returnsCount}
             />
           )}
           {tab === "ledger" && <LedgerTab rows={ledgerRows} canProfit={canProfit} loMs={lo} hiMs={hi} rangeLabel={rangeLabel} />}
@@ -1154,7 +1165,7 @@ function CmpCell({ label, value, delta }: { label: string; value: string; delta:
   );
 }
 
-function MoneyTab({ z, receivables, series, paymentPie, revenue, categoryData, staffPerf, canProfit, yesterday, isToday, onExportCSV, expensesTotal, cashExpensesTotal, netCash }: {
+function MoneyTab({ z, receivables, series, paymentPie, revenue, categoryData, staffPerf, canProfit, yesterday, isToday, onExportCSV, expensesTotal, cashExpensesTotal, netCash, returnsTotal, returnsCount }: {
   z: ZReport; receivables: Invoice[]; series: Series; paymentPie: { name: string; value: number }[];
   revenue: RevenueSummary; categoryData: { name: string; value: number }[];
   staffPerf: { doctor: string; count: number }[];
@@ -1165,6 +1176,8 @@ function MoneyTab({ z, receivables, series, paymentPie, revenue, categoryData, s
   expensesTotal: number;
   cashExpensesTotal: number;
   netCash: number;
+  returnsTotal: number;
+  returnsCount: number;
 }) {
   const { t } = useTranslation();
   const methods: PaymentMethod[] = ["cash", "card", "transfer"];
@@ -1275,6 +1288,14 @@ function MoneyTab({ z, receivables, series, paymentPie, revenue, categoryData, s
               <div className="flex items-center justify-between rounded-xl border border-warn-200 bg-warn-50/60 p-3 text-sm dark:border-warn-500/30 dark:bg-warn-500/10">
                 <span className="font-semibold text-warn-700 dark:text-warn-300">{t("rpt.zWithdrawals", "السحوبات النقدية من الصندوق")}</span>
                 <span className="font-display font-bold tabular-nums text-warn-700 dark:text-warn-300">− {money(cashExpensesTotal)}</span>
+              </div>
+            )}
+            {returnsTotal > 0 && (
+              <div className="flex items-center justify-between rounded-xl border border-warn-200 bg-warn-50/60 p-3 text-sm dark:border-warn-500/30 dark:bg-warn-500/10">
+                <span className="flex items-center gap-1.5 font-semibold text-warn-700 dark:text-warn-300">
+                  <Undo2 size={14} /> {t("rpt.zReturns", { n: formatNum(returnsCount), defaultValue: "مرتجعات للزبائن ({{n}} صنف)" })}
+                </span>
+                <span className="font-display font-bold tabular-nums text-warn-700 dark:text-warn-300">− {money(returnsTotal)}</span>
               </div>
             )}
             {expensesTotal - cashExpensesTotal > 0 && (
