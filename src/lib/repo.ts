@@ -223,11 +223,28 @@ function demoAuditPush(e: Omit<AuditEntry, "id" | "created_at" | "actor">) {
   const entry: AuditEntry = { ...e, details, id: uid("au"), actor: null, created_at: new Date().toISOString() };
   try { localStorage.setItem(DEMO_AUDIT_KEY, JSON.stringify([entry, ...demoAuditLoad()].slice(0, 500))); } catch { /* ignore */ }
 }
-/** 30-day retention — the demo mirror of purge_activity_log(). */
+/** ما يمسّ مالاً أو مخزوناً — يعيش أطول لأنه دليلٌ يُسأل عنه بعد شهور،
+ *  لا ضجيجاً ينتهي بيومه. نفس قائمة هجرة 0129 حرفياً. */
+const AUDIT_MONEY_ENTITIES = new Set([
+  "invoices", "invoice_items",
+  "purchases", "purchase_items", "purchase_payments",
+  "expenses", "products",
+  "delivery_orders", "store_orders",
+]);
+
+/** احتفاظٌ بطبقتين — مرآة `purge_audit_log()` بالوضع التجريبي (هجرة 0129):
+ *  المال والمخزون سنة، وما عداهما تسعون يوماً. */
 function demoAuditPurge() {
-  const cutoff = Date.now() - 30 * 86400000;
+  const now = Date.now();
+  const noiseCut = now - 90 * 86400000;
+  const moneyCut = now - 365 * 86400000;
   try {
-    localStorage.setItem(DEMO_AUDIT_KEY, JSON.stringify(demoAuditLoad().filter((e) => new Date(e.created_at).getTime() >= cutoff)));
+    localStorage.setItem(DEMO_AUDIT_KEY, JSON.stringify(
+      demoAuditLoad().filter((e) => {
+        const at = new Date(e.created_at).getTime();
+        return at >= (AUDIT_MONEY_ENTITIES.has(e.entity ?? "") ? moneyCut : noiseCut);
+      }),
+    ));
   } catch { /* ignore */ }
 }
 function demoLoginLoad(): LoginEvent[] {

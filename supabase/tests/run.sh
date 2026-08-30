@@ -22,7 +22,7 @@ DB=dvtest
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MIG="$HERE/../migrations"
 # الهجرات التي يغطّيها هذا المخطّط الأساس. زدها كل ما تنضاف موجة.
-WAVE="$MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql"
+WAVE="$MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql"
 
 command -v "$PGBIN/initdb" >/dev/null || { echo "ما لكيت بوستغريس بـ $PGBIN"; exit 1; }
 
@@ -90,26 +90,39 @@ chk "ما بقي نداءٌ عارٍ بأي سياسة" \
 chk "ولا لفٌّ مزدوج" \
     "select count(*)::text from pg_policies where qual like '%SELECT ( SELECT%' or with_check like '%SELECT ( SELECT%'" "0"
 chk "الكنس ممنوع على authenticated" \
-    "select has_function_privilege('authenticated','public.purge_audit_log(int)','execute')::text" "false"
+    "select has_function_privilege('authenticated','public.purge_audit_log(int,int)','execute')::text" "false"
 chk "الكنس ممنوع على anon" \
-    "select has_function_privilege('anon','public.purge_audit_log(int)','execute')::text" "false"
+    "select has_function_privilege('anon','public.purge_audit_log(int,int)','execute')::text" "false"
 chk "نسخة الأمان ما تنقرأ من التطبيق" \
     "select has_table_privilege('authenticated','public.rls_policy_backup','select')::text" "false"
 chk "توليد الرقم مسموحٌ للمُدخِل" \
     "select has_function_privilege('authenticated','public.next_pet_serial()','execute')::text" "true"
 
 # الكنس: قديمٌ ينمسح وجديدٌ يبقى
-$P -c "insert into audit_log(clinic_id,action,created_at) select gen_random_uuid(),'X',now()-(g||' days')::interval from generate_series(1,60) g;" >/dev/null
-chk "الكنس يحذف الأقدم من ٣٠ يوماً فقط" \
-    "select (public.purge_audit_log(30) > 0)::text" "true"
-chk "وما يبقى شيءٌ أقدم من ٣٠ يوماً" \
-    "select count(*)::text from audit_log where created_at < now() - interval '30 days'" "0"
+# طبقتان: ضجيجٌ يوميّ عمره ٢٠٠ يوم، وأثرُ فواتير بنفس العمر
+$P -c "insert into audit_log(clinic_id,action,entity,created_at)
+       select gen_random_uuid(),'X','pets',      now()-(g||' days')::interval from generate_series(1,200) g;" >/dev/null
+$P -c "insert into audit_log(clinic_id,action,entity,created_at)
+       select gen_random_uuid(),'X','invoices',  now()-(g||' days')::interval from generate_series(1,200) g;" >/dev/null
+$P -c "insert into audit_log(clinic_id,action,entity,created_at)
+       select gen_random_uuid(),'X',null,        now()-(g||' days')::interval from generate_series(1,200) g;" >/dev/null
+
+chk "الكنس بطبقتين يحذف شيئاً" "select (public.purge_audit_log(90,365) > 0)::text" "true"
+chk "الحركة اليومية ما تتعدّى ٩٠ يوماً" \
+    "select count(*)::text from audit_log where entity='pets' and created_at < now() - interval '90 days'" "0"
+chk "وكيانٌ فارغ ينكنس هو الآخر" \
+    "select count(*)::text from audit_log where entity is null and created_at < now() - interval '90 days'" "0"
+chk "وأثرُ الفواتير يبقى كاملاً — ولا صفّ منه انحذف" \
+    "select count(*)::text from audit_log where entity='invoices'" "200"
+chk "ويُكنس بعد سنة لا قبلها" \
+    "select count(*)::text from audit_log where entity='invoices' and created_at < now() - interval '365 days'" "0"
+$P -c "create or replace function _probe(a int, b int) returns text language plpgsql as \$fn\$
+begin perform public.purge_audit_log(a, b); return 'NOT-GUARDED';
+exception when others then return 'guarded'; end \$fn\$;" >/dev/null
+chk "ويرفض مدّةَ مالٍ أقصر من الباقي" "select _probe(90,30)" "guarded"
 # المسبار يلزم يكون دالّةً: استدعاءٌ مباشر يرمي خطأً فيرجع psql فارغاً — وهو
 # نفس ما يرجّعه لو ما كان اكو حارس أصلاً، فيمرّ الفحص وهو ما فحص شيئاً.
-$P -c "create or replace function _guard_probe() returns text language plpgsql as \$fn\$
-begin perform public.purge_audit_log(1); return 'NOT-GUARDED';
-exception when others then return 'guarded'; end \$fn\$;" >/dev/null
-chk "ويرفض مدّةً خطرة" "select _guard_probe()" "guarded"
+chk "ويرفض مدّةً خطرة" "select _probe(1, 365)" "guarded"
 chk "والحارس ما سمح بحذف صفٍّ واحد" \
     "select (count(*) > 0)::text from audit_log" "true"
 

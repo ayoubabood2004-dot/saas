@@ -25,7 +25,9 @@ import { playTap } from "@/lib/sounds";
  * tamper-proof DB triggers (0018 + 0044) and read is manager-only via RLS; in
  * demo mode the repo mirrors the same rows locally.
  *
- * Retention: 30 days. Opening this page fires purge_activity_log() (and the
+ * Retention (0129): money & stock trails live a year, everything else 90 days —
+ * an invoice edit is evidence asked about months later; a page open is noise that
+ * dies with its day. Opening this page fires purge_activity_log() (and the
  * demo equivalent), so older rows are dropped and the trail never grows.
  * ==========================================================================*/
 
@@ -316,7 +318,7 @@ export function ActivityLog() {
           <p className="text-sm text-ink-subtle">{t("act.subtitle", "كل حركة صارت في العيادة — مَن قام بها ومتى.")}</p>
         </div>
         <span className="chip bg-warn-50 text-2xs font-semibold text-warn-700 dark:bg-warn-500/15 dark:text-warn-300">
-          <Clock size={12} className="me-1 inline" /> {t("act.retention", "يُحتفظ بآخر 30 يوماً فقط — الأقدم يُحذف تلقائياً")}
+          <Clock size={12} className="me-1 inline" /> {t("act.retention", "\u062d\u0631\u0643\u0627\u062a \u0627\u0644\u0645\u0627\u0644 \u0648\u0627\u0644\u0645\u062e\u0632\u0648\u0646 \u062a\u0628\u0642\u0649 \u0633\u0646\u0629 \u0643\u0627\u0645\u0644\u0629 \u2014 \u0648\u0628\u0627\u0642\u064a \u0627\u0644\u062d\u0631\u0643\u0627\u062a \u0669\u0660 \u064a\u0648\u0645\u0627\u064b\u060c \u062b\u0645 \u062a\u064f\u062d\u0630\u0641 \u062a\u0644\u0642\u0627\u0626\u064a\u0627\u064b")}
         </span>
       </div>
 

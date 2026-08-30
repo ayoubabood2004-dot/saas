@@ -2513,7 +2513,7 @@
   "act": {
     "title": "Activity log",
     "subtitle": "Everything that happened in the clinic — who did it and when.",
-    "retention": "Only the last 30 days are kept — older entries are deleted automatically",
+    "retention": "Money and stock activity is kept for a full year — everything else for 90 days, then deleted automatically",
     "noAccess": "The activity log is available to the clinic manager only.",
     "searchPh": "Search by action, staff or pet name…",
     "count": "{{n}} entries",
