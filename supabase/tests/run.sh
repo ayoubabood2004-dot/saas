@@ -22,7 +22,7 @@ DB=dvtest
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MIG="$HERE/../migrations"
 # الهجرات التي يغطّيها هذا المخطّط الأساس. زدها كل ما تنضاف موجة.
-WAVE="$MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql"
+WAVE="$MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql"
 
 command -v "$PGBIN/initdb" >/dev/null || { echo "ما لكيت بوستغريس بـ $PGBIN"; exit 1; }
 
@@ -211,6 +211,21 @@ chk "ولا انحذف ولا انتغيّر" \
     "select qty::text from invoice_items where name='zero-legacy'" "0.000"
 chk "والحارس رجع بعد التعبئة" \
     "select count(*)::text from pg_constraint where conname='invoice_items_nonneg'" "1"
+
+# 0134: ما بقي عمودٌ رقميّ بسقفٍ ضيّق، ومبلغٌ ضخم ينقبل
+chk "ما بقي عمود numeric تحت ٢٤ خانة" \
+    "select count(*)::text from information_schema.columns c
+      join information_schema.tables t on t.table_schema=c.table_schema and t.table_name=c.table_name and t.table_type='BASE TABLE'
+      where c.table_schema='public' and c.data_type='numeric'
+        and c.numeric_precision is not null and c.numeric_precision < 24" "0"
+ins "insert into invoice_items(name,qty,unit_price,unit_cost,line_total,stock_qty)
+     values ('ضخم',1,99999999999999999999.99,0,99999999999999999999.99,1);" \
+  && printf '   ✓ %s\n' "مبلغ ١٠٠ كوينتليون ينقبل (كان يُرفض عند ١٠ مليار)" \
+  || { printf '   ✗ %s\n' "المبلغ الضخم انرفض"; fail=1; }
+chk "والعرض المعتمِد رجع" \
+    "select count(*)::text from pg_views where viewname='shared_catalog_source'" "1"
+chk "وما ينقرأ من التطبيق" \
+    "select has_table_privilege('authenticated','public.shared_catalog_source','select')::text" "false"
 
 echo
 [ $fail -eq 0 ] && echo "✓ كل الفحوص عبرت" || { echo "✗ اكو فحصٌ فشل"; exit 1; }

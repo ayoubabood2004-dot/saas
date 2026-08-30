@@ -108,6 +108,19 @@ begin
    where id = p_product and clinic_id = p_clinic;
 end $cs$;
 
+create table if not exists clinic_prefs (
+  clinic_id uuid primary key, catalog_share boolean not null default false
+);
+alter table products add column if not exists barcode text;
+alter table products add column if not exists name text;
+alter table products add column if not exists sell_price numeric(12,2) default 0;
+alter table products add column if not exists purchase_price numeric(12,2) default 0;
+create or replace view shared_catalog_source as
+  select p.barcode, p.name, p.sell_price, p.purchase_price, p.clinic_id
+  from products p join clinic_prefs cp on cp.clinic_id = p.clinic_id
+  where cp.catalog_share = true and p.barcode is not null and p.barcode <> ''
+    and p.name is not null and btrim(p.name) <> '';
+
 create table if not exists audit_log (
   id bigint generated always as identity primary key,
   clinic_id uuid, actor uuid, action text, entity text, entity_id text,
