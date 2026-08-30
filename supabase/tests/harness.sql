@@ -77,6 +77,18 @@ create table if not exists payslip_lines (id uuid primary key default gen_random
 create table if not exists staff_loans (id uuid primary key default gen_random_uuid(), staff_id uuid references staff(id));
 create table if not exists staff_loan_events (id uuid primary key default gen_random_uuid(), clinic_id uuid);
 
+create table if not exists invoice_items (
+  id uuid primary key default gen_random_uuid(),
+  invoice_id uuid references invoices(id), clinic_id uuid, product_id uuid references products(id),
+  name text, barcode text, qty numeric(14,3), unit_price numeric(14,2), unit_cost numeric(14,2),
+  line_total numeric(14,2), stock_qty numeric(14,3), pooled_qty numeric(14,3), unit_label text
+);
+-- قيد 0051 كما هو بالإنتاج — تصلّحه 0131
+do $ii$ begin
+  alter table invoice_items add constraint invoice_items_nonneg
+    check (qty > 0 and unit_price >= 0 and unit_cost >= 0 and coalesce(stock_qty,0) >= 0) not valid;
+exception when duplicate_object then null; end $ii$;
+
 create table if not exists audit_log (
   id bigint generated always as identity primary key,
   clinic_id uuid, actor uuid, action text, entity text, entity_id text,
