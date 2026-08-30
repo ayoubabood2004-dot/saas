@@ -2382,8 +2382,45 @@ const supabaseRepo: typeof demoRepo = {
     return listOf<Pet>(await sbc().from("pets").select("*").eq("owner_id", ownerId).eq("shared_with_clinic", true));
   },
   async createPet(input) {
-    const serial = String(Math.floor(10000 + Math.random() * 90000));
-    return need<Pet>(await sbc().from("pets").insert({ ...input, serial }).select().single());
+    // الرقم التسلسلي تولّده القاعدة (هجرة 0126): `nextval` ذرّيّ ثم تحويلٌ
+    // تقابليّ، فالفرادة مضمونةٌ حسابياً لا احتمالياً. كان العميل يسحب رقماً
+    // عشوائياً سحبةً واحدة بلا إعادة، فيصطدم بفهرسٍ فريد وتضيع الحالة —
+    // ٠٫٧٩٪ اليوم، وترتفع مع كل حيوانٍ ينضاف.
+    //
+    // ما نمرّر `serial` أبداً: تمريره — ولو null — يلغي الـdefault ويرجّعنا
+    // للحفرة. والحذف صريحٌ هنا لأن `input` يجي من نداءاتٍ كثيرة.
+    const { serial: _ignored, ...clean } = input as typeof input & { serial?: string };
+    void _ignored;
+
+    // حزامٌ ثانٍ: نعيد المحاولة على **23505 وحدها** — خرق قيد الفرادة. أي
+    // خطأٍ غيره (شبكة، صلاحية، عمود ناقص) يُرمى فوراً: إعادة المحاولة عليه
+    // تخفي العطل وتكرّر الكتابة.
+    let pet: Pet | undefined;
+    for (let attempt = 0; ; attempt++) {
+      try { pet = need<Pet>(await sbc().from("pets").insert(clean).select().single()); break; }
+      catch (e) {
+        const code = (e as { code?: string }).code;
+        if (code !== "23505" || attempt >= 4) throw e;
+      }
+    }
+
+    // قاعدةٌ ما نزلت عليها هجرة 0126 بعد ما بيها default، فيطلع الرقم فارغاً —
+    // والفهرس الفريد يتجاهل NULL فما ينكشف الخلل بخطأ. والرقم هذا هو رقم ملفّ
+    // المريض: مطبوعٌ بالموافقات وبالسجلّ وبيه يُبحث. فنملأه من العميل حينها،
+    // بنفس حلقة التفادي، حتى تشتغل النسختان بأي ترتيبٍ نزلن به.
+    if (!pet.serial) {
+      for (let attempt = 0; attempt < 8; attempt++) {
+        const cand = String(Math.floor(10000 + Math.random() * 90000));
+        try {
+          const fixed = maybe<Pet>(await sbc().from("pets").update({ serial: cand }).eq("id", pet.id).select().maybeSingle());
+          if (fixed) return fixed;
+          break;
+        } catch (e) {
+          if ((e as { code?: string }).code !== "23505") break; // الحيوان انسجّل — الرقم تحسينٌ لا شرط
+        }
+      }
+    }
+    return pet;
   },
   async updatePet(petId, patch) {
     return maybe<Pet>(await sbc().from("pets").update(patch).eq("id", petId).select().maybeSingle());
