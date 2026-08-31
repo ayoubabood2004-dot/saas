@@ -22,7 +22,7 @@ DB=dvtest
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MIG="$HERE/../migrations"
 # الهجرات التي يغطّيها هذا المخطّط الأساس. زدها كل ما تنضاف موجة.
-WAVE="$MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql"
+WAVE="$MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql"
 
 command -v "$PGBIN/initdb" >/dev/null || { echo "ما لكيت بوستغريس بـ $PGBIN"; exit 1; }
 
@@ -333,6 +333,108 @@ $P -c "delete from audit_log where created_at < now() - interval '399 days';
        values (gen_random_uuid(),'X','invoices', now() - interval '400 days');" >/dev/null
 chk "وأثرُ المال يُحسب بنافذته هو (سنة لا ٩٠ يوم)" \
     "select (value > 30 and value < 40)::text from public.system_health() where metric='audit_purge_lag'" "true"
+
+# 0139: المُدقِّق يكتب الفرق لا اللقطة
+# نبني جدولاً بشكلِ منتَجٍ حقيقيّ (اسم + مخزون + عمودٌ ضخم كالشعار) وعليه
+# نفس مُدقِّق الإنتاج، فنقيس السلوك لا النيّة.
+$P -c "create table if not exists audit_probe (
+         id uuid primary key default gen_random_uuid(),
+         clinic_id uuid, name text, stock numeric(14,3), notes text, logo text);
+       drop trigger if exists audit_all on audit_probe;
+       create trigger audit_all after insert or update or delete on audit_probe
+         for each row execute function audit_change();
+       delete from audit_log where entity = 'audit_probe';" >/dev/null
+
+$P -c "insert into audit_probe(id, clinic_id, name, stock, notes)
+       values ('11111111-0000-0000-0000-0000000000aa',
+               '11111111-1111-1111-1111-111111111111','شامبو',10,'ملاحظة');" >/dev/null
+
+chk "الإضافة تُسجَّل" \
+    "select count(*)::text from audit_log where entity='audit_probe' and action='INSERT'" "1"
+chk "وتحمل الحقول التعريفية" \
+    "select (details ? 'name' and details ? 'stock')::text from audit_log where entity='audit_probe' and action='INSERT'" "true"
+chk "وما تحمل الحشو (ملاحظاتٌ ما تقرأها الشاشة)" \
+    "select (details ? 'notes')::text from audit_log where entity='audit_probe' and action='INSERT'" "false"
+chk "ولا تحمل __changed (ماكو ما قبلها)" \
+    "select (details ? '__changed')::text from audit_log where entity='audit_probe' and action='INSERT'" "false"
+
+# التعديل: الفرق صريح «كان ← صار»
+$P -c "update audit_probe set stock = 3 where id='11111111-0000-0000-0000-0000000000aa';" >/dev/null
+chk "التعديل يسجّل الفرق" \
+    "select (details->'__changed'->'stock'->>0)::numeric::text from audit_log where entity='audit_probe' and action='UPDATE'" "10.000"
+chk "وقيمتَه الجديدة معه" \
+    "select (details->'__changed'->'stock'->>1)::numeric::text from audit_log where entity='audit_probe' and action='UPDATE'" "3.000"
+chk "والاسم معه كي تسمّيه الشاشة" \
+    "select details->>'name' from audit_log where entity='audit_probe' and action='UPDATE'" "شامبو"
+chk "وما يسجّل حقلاً ما تغيّر" \
+    "select (details->'__changed' ? 'name')::text from audit_log where entity='audit_probe' and action='UPDATE'" "false"
+
+# حقلٌ خارج القائمة يتغيّر: الفرق يمسكه رغم أنه مو تعريفيّ
+$P -c "update audit_probe set notes = 'انتبه' where id='11111111-0000-0000-0000-0000000000aa';" >/dev/null
+chk "وحقلٌ خارج القائمة ينمسك بالفرق" \
+    "select (details->'__changed'->'notes'->>1) from audit_log where entity='audit_probe' and action='UPDATE' order by created_at desc limit 1" "انتبه"
+
+# القيم الضخمة: تُقلَّم بالتخزين، **ولا يخفي التقليمُ تغييراً**
+$P -c "update audit_probe set logo = repeat('A',5000) where id='11111111-0000-0000-0000-0000000000aa';" >/dev/null
+chk "القيمة الضخمة تنقلّم" \
+    "select (details->'__changed'->'logo'->>1 like '[large:%')::text from audit_log where entity='audit_probe' and action='UPDATE' order by created_at desc limit 1" "true"
+chk "والسطر يبقى صغيراً" \
+    "select (length(details::text) < 500)::text from audit_log where entity='audit_probe' and action='UPDATE' order by created_at desc limit 1" "true"
+# الفخّ: شعارٌ آخر بنفس الطول تماماً — التقليم يعطيه نفس العلامة، فلو قارنّا
+# المقلَّم لبدا «ما تغيّر». المقارنة على الأصل، فلازم ينمسك.
+$P -c "update audit_probe set logo = repeat('B',5000) where id='11111111-0000-0000-0000-0000000000aa';" >/dev/null
+chk "وتبديلُ ضخمٍ بضخمٍ بنفس الطول ما ينخفي" \
+    "select (details->'__changed' ? 'logo')::text from audit_log where entity='audit_probe' and action='UPDATE' order by created_at desc limit 1" "true"
+
+# الحذف: لقطةٌ كاملة — هذي النسخة الوحيدة
+$P -c "delete from audit_probe where id='11111111-0000-0000-0000-0000000000aa';" >/dev/null
+chk "الحذف يحفظ الصفّ كاملاً" \
+    "select (details ? 'name' and details ? 'notes' and details ? 'stock')::text from audit_log where entity='audit_probe' and action='DELETE'" "true"
+chk "وبقيمه الأخيرة" \
+    "select details->>'notes' from audit_log where entity='audit_probe' and action='DELETE'" "انتبه"
+
+# والحجم: هذا سببُ الشغل كلّه. نقيسه على صفٍّ بعرض فاتورةٍ حقيقية (٢٢ عموداً)
+# لا على جدولٍ ضيّق، وإلا بدا التوفير أقلّ مما هو. والحدّ حارسٌ دائم: لو زاد
+# أحدٌ قائمةَ الحقول التعريفية حتى صار السطر ثقيلاً، ينكسر الفحص.
+$P -c "alter table audit_probe
+         add column if not exists subtotal numeric(14,2),
+         add column if not exists discount numeric(14,2),
+         add column if not exists discount_type text,
+         add column if not exists amount_paid numeric(14,2),
+         add column if not exists cost_total numeric(14,2),
+         add column if not exists profit numeric(14,2),
+         add column if not exists item_count int,
+         add column if not exists customer_phone text,
+         add column if not exists payment_method text,
+         add column if not exists payment_details jsonb,
+         add column if not exists barcode text,
+         add column if not exists unit_label text,
+         add column if not exists created_at timestamptz default now(),
+         add column if not exists client_ref text;
+       delete from audit_log where entity = 'audit_probe';
+       insert into audit_probe(id, clinic_id, name, stock, notes, subtotal, discount,
+                               discount_type, amount_paid, cost_total, profit, item_count,
+                               customer_phone, payment_method, barcode, unit_label, client_ref)
+       values ('11111111-0000-0000-0000-0000000000bb',
+               '11111111-1111-1111-1111-111111111111','فاتورة عريضة',1,'ملاحظة طويلة نوعاً ما',
+               69750,6000,'fixed',63750,44895,18855,31,'07701234567','cash',
+               '6221033001234','علبة','s-mtgzh0td-o3yrwcqt');
+       update audit_probe set amount_paid = 60000 where id='11111111-0000-0000-0000-0000000000bb';" >/dev/null
+
+chk "سطرُ التعديل أصغر بمرّاتٍ من اللقطة الكاملة (٤ مرّات فأكثر)" \
+    "select (length(a.details::text) * 4 < length(to_jsonb(p)::text))::text
+       from audit_log a, audit_probe p
+      where a.entity='audit_probe' and a.action='UPDATE'
+        and p.id='11111111-0000-0000-0000-0000000000bb'" "true"
+chk "ومع ذلك يحمل الفرق كاملاً" \
+    "select (a.details->'__changed'->'amount_paid'->>0)::numeric::text
+       from audit_log a where a.entity='audit_probe' and a.action='UPDATE'" "63750.00"
+
+# والتدقيق ما يُفشل العملية أبداً — حتى لو انهار
+$P -c "create or replace function _audit_boom() returns trigger language plpgsql as \$fn\$
+begin raise exception 'boom'; end \$fn\$;" >/dev/null
+chk "ولا يزال المُدقِّق يبلع أخطاءه" \
+    "select (details is not null)::text from audit_log where entity='audit_probe' order by created_at desc limit 1" "true"
 
 echo
 [ $fail -eq 0 ] && echo "✓ كل الفحوص عبرت" || { echo "✗ اكو فحصٌ فشل"; exit 1; }

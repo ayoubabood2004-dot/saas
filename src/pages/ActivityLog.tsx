@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import {
   History, Search, PawPrint, Receipt, Pill, Syringe, Stethoscope, Package,
   Users, Trash2, NotebookPen, Image as ImageIcon, Building2, CalendarDays,
-  Scale, BellRing, Lock, Clock, KeyRound, LucideIcon,
+  Scale, BellRing, Lock, Clock, KeyRound, ArrowLeft, LucideIcon,
 } from "lucide-react";
 import type { AuditEntry, Pet } from "@/types";
 import { repo } from "@/lib/repo";
@@ -13,7 +13,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { usePermissions } from "@/hooks/usePermissions";
 import { useOverride } from "@/lib/managerOverride";
 import { Skeleton } from "@/components/ui";
-import { cn, money, formatNum, dateLocale } from "@/lib/utils";
+import { cn, money, formatNum, formatDec, dateLocale } from "@/lib/utils";
 import { playTap } from "@/lib/sounds";
 
 /* ============================================================================
@@ -32,6 +32,28 @@ import { playTap } from "@/lib/sounds";
  * ==========================================================================*/
 
 type Category = "all" | "medical" | "records" | "finance" | "inventory" | "team";
+
+/* ── «كان ← صار» ───────────────────────────────────────────────────────────
+ * منذ هجرة 0139 يكتب المُدقِّق الحقولَ التي تغيّرت فعلاً بمفتاح `__changed`
+ * بصيغة `[كان, صار]`. قبلها كان يخزّن لقطةً كاملة بلا فرق — فالأسطر القديمة
+ * ما بيها هذا المفتاح، وتُعرض كما كانت تُعرض تماماً. لا تحويل ولا تعبئة رجعية:
+ * الشكل الجديد يبدأ من لحظة النزول، والقديم يبقى مقروءاً كما هو. */
+
+/** ضجيجٌ يتغيّر مع كل تعديل ولا يقول شيئاً — يُخفى ولا يُخزَّن ناقصاً. */
+const CHANGE_NOISE = new Set(["updated_at", "created_at", "id", "clinic_id"]);
+
+interface FieldChange { key: string; from: unknown; to: unknown }
+
+function changesOf(e: AuditEntry): FieldChange[] {
+  const c = (e.details as Record<string, unknown> | null)?.["__changed"];
+  if (!c || typeof c !== "object" || Array.isArray(c)) return [];
+  const out: FieldChange[] = [];
+  for (const [key, v] of Object.entries(c as Record<string, unknown>)) {
+    if (CHANGE_NOISE.has(key) || !Array.isArray(v) || v.length !== 2) continue;
+    out.push({ key, from: v[0], to: v[1] });
+  }
+  return out;
+}
 
 const ENTITY_CATEGORY: Record<string, Exclude<Category, "all">> = {
   treatment_entries: "medical", vaccinations: "medical", medical_visits: "medical",
@@ -122,6 +144,18 @@ export function ActivityLog() {
     const m = new Map(pets.map((p) => [p.id, p.name]));
     return (id: unknown): string => (typeof id === "string" && m.get(id)) || t("act.aPet", "حيوان");
   }, [pets, t]);
+
+  /** قيمةٌ خامّ من القاعدة → نصٌّ قصير يُقرأ. الفراغ يُسمّى صراحةً كي لا
+   *  يبدو «تغيّر إلى لا شيء» فراغاً بالشاشة. */
+  const val = useMemo(() => (v: unknown): string => {
+    if (v === null || v === undefined) return t("act.chEmpty", "فارغ");
+    if (typeof v === "boolean") return v ? t("act.chYes", "نعم") : t("act.chNo", "لا");
+    if (typeof v === "number") return formatDec(v);
+    const sv = String(v);
+    // القيم الضخمة يستبدلها المُدقِّق بعلامةٍ محايدة (0139) — نترجمها هنا.
+    if (/^\[large:\d+\]$/.test(sv)) return t("act.chBig", "محتوى كبير");
+    return sv.length > 28 ? sv.slice(0, 28) + "…" : sv;
+  }, [t]);
 
   /** (entity, action, details) → readable line + icon + tone. */
   const render = useMemo(() => (e: AuditEntry): Rendered => {
@@ -363,6 +397,25 @@ export function ActivityLog() {
                       <span className={cn("grid h-10 w-10 shrink-0 place-items-center rounded-xl", toneCls(r.tone))}><Icon size={18} /></span>
                       <div className="min-w-0 flex-1">
                         <p className="text-sm font-semibold leading-snug text-ink">{r.text}</p>
+                        {/* الفرق حرفياً — هذا هو الي يجاوب «من شنو لشنو؟»، والسؤال
+                            الي ما كان يجاوبه السجل القديم مهما طال حفظُه. */}
+                        {changesOf(e).length > 0 && (
+                          <p className="mt-1 flex flex-wrap items-center gap-1">
+                            {changesOf(e).slice(0, 4).map((c) => (
+                              <span key={c.key} className="inline-flex items-center gap-1 rounded-lg bg-surface-2 px-1.5 py-0.5 text-[10px] text-ink-muted">
+                                <b className="font-semibold text-ink-subtle">{t(`act.f.${c.key}`, { defaultValue: c.key })}</b>
+                                <span className="tabular-nums line-through opacity-60">{val(c.from)}</span>
+                                <ArrowLeft size={9} className="shrink-0 rtl:rotate-180" />
+                                <span className="tabular-nums font-semibold text-ink">{val(c.to)}</span>
+                              </span>
+                            ))}
+                            {changesOf(e).length > 4 && (
+                              <span className="text-[10px] text-ink-subtle">
+                                {t("act.chMore", { n: formatNum(changesOf(e).length - 4), defaultValue: "و{{n}} غيرها" })}
+                              </span>
+                            )}
+                          </p>
+                        )}
                         <p className="mt-0.5 flex flex-wrap items-center gap-x-2 text-2xs text-ink-subtle">
                           <span className="inline-flex items-center gap-1 font-semibold text-ink-muted"><Users size={11} /> {actor}</span>
                           <span>·</span>
