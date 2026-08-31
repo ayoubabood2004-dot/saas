@@ -30,7 +30,9 @@
   },
   "outbox": {
     "tip": "Saved on this device — uploads automatically when the connection returns. Tap to retry now",
-    "waiting": "Waiting for network: {{n}}"
+    "waiting": "Waiting for network: {{n}}",
+    "stuck": "Stuck: {{n}}",
+    "stuckTip": "The database kept rejecting these, so they were kept, not deleted — saved on this device. Tap to retry"
   },
   "catalog": {
     "title": "Starter catalog",
@@ -647,7 +649,9 @@
     "swapWaOld": "Order #{{no}} ({{customer}}) is no longer yours — it went with {{other}}. No need to deliver it.",
     "swapUndo": "Or send it back to preparing — with no driver",
     "swapUndoConfirm": "Send the order back to preparing and take it off the driver? The invoice and stock are unchanged.",
-    "swapUndone": "Back to preparing — pick the right driver and dispatch it."
+    "swapUndone": "Back to preparing — pick the right driver and dispatch it.",
+    "saleRetrySafe": "The sale didn't go through — your cart is kept. Try again; it will not be recorded twice.",
+    "retRetrySafe": "The return didn't go through — your cart is kept. Try again; it will not be recorded twice."
   },
   "promos": {
     "title": "Offers management",

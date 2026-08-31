@@ -32,7 +32,7 @@ import type { MedicalDraft } from "@/components/MedicalEntry";
 import { cn, money, currencySymbol, formatNum, fmtKg } from "@/lib/utils";
 import { splitCustomerField } from "@/lib/customerName";
 import { dueOf, paidOf } from "@/lib/debt";
-import { withTimeout, describeDbError } from "@/lib/errors";
+import { withTimeout, describeDbError, isNetworkError, isTimeoutError } from "@/lib/errors";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
 import { matchSurgeryService, isSurgeryCategoryName, surgeryByRef, type SurgeryServiceMatch } from "@/lib/surgeryCatalog";
 
@@ -1219,7 +1219,14 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
       onSold();
     } catch (e) {
       playWarning();
-      toast.error(t("retail.retFailed", "ما انسجّل الإرجاع"), e instanceof Error ? e.message : undefined);
+      // ومهلةُ الواجهة تسبق طابورَ المستودع: النداء بعده طائر، فالإعادة هي
+      // الحلّ — ومأمونةٌ بمرجعها (0136)، فلا مخزونَ يُزاد مرّتين.
+      const unsure = isNetworkError(e) || isTimeoutError(e);
+      toast.error(
+        unsure ? t("retail.retRetrySafe", "ما وصل الإرجاع — السلّة محفوظة، جرّب مرّة ثانية. ما راح ينسجّل مرّتين")
+               : t("retail.retFailed", "ما انسجّل الإرجاع"),
+        e instanceof Error ? e.message : undefined,
+      );
     } finally { setBusy(false); }
   };
 
@@ -1475,7 +1482,19 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
       }
     } catch (e) {
       playWarning();
-      toast.error(describeDbError(e, t), e instanceof Error ? e.message : undefined);
+      /* البيعة ما تدخل الطابور — نتيجتُها يعتمد عليها ما بعدها (الوصل وطلب
+       * التوصيل والسجلّ الطبّي). فالتعويض إعادةُ محاولةٍ بيد الكاشير، وقد
+       * صارت مأمونة: السلّة باقية ومرجعُها ثابت، فالقاعدة تعرف الطلب المعاد
+       * (0135) وتُرجع نفس الفاتورة بدل أن تسجّل ثانيةً وتخصم المخزون مرّتين.
+       * ونقولها له صراحةً — خوفُه من الازدواج هو ما يجعله يتردّد. */
+      // والمهلة كالانقطاع سواء: كلتاهما تترك الكاشير لا يدري هل وصلت. بل
+      // المهلة أخطر — الخادم قد يكون سجّل فعلاً والجواب تأخّر.
+      const unsure = isNetworkError(e) || isTimeoutError(e);
+      toast.error(
+        unsure ? t("retail.saleRetrySafe", "ما وصلت البيعة — السلّة محفوظة، جرّب مرّة ثانية. ما راح تنسجّل مرّتين")
+            : describeDbError(e, t),
+        e instanceof Error ? e.message : undefined,
+      );
     } finally {
       setBusy(false);
     }

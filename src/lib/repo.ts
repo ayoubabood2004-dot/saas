@@ -14,7 +14,7 @@ const invNormName = (v: string | null | undefined): string =>
     .replace(/[٠-٩]/g, (d) => String(d.charCodeAt(0) - 0x0660))
     .replace(/\s+/g, " ").trim().toLowerCase();
 import { supabase } from "./supabase";
-import { outboxEnqueue, isNetworkError } from "./outbox";
+import { outboxEnqueue, outboxEnqueueRpc, isNetworkError } from "./outbox";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, AppointmentStatus, ClinicInfo, PublicStaff, DailyNote, TreatmentEntry, Admission, Branch, Reminder, Product, Company, CompanySection, Purchase, PurchaseItem, PurchasePayment, PurchaseDraftLine, PurchaseMeta, Courier, DeliveryOrder, PetMovement, DemoDB, Invoice, InvoiceItem, CheckoutItem, SaleMeta, Customer, DiscountType, PaymentMethod, PaymentSplit, WhatsAppMessage, AuditEntry, LoginEvent, PetNote, Expense, ExpenseMethod, ReturnMeta, RetailReturnResult, ClinicVisit , Surgery, LabResult, LabDeviceLink, LabDeviceInbox, LabStatusValue, PetProblem, CareEntry, FeatureRequest, GeneratedBarcode, StoreProfile, StoreOrder, StoreOrderItem, StoreFrontInfo, StoreCatalogItem, Journey, JourneyEvent, JourneyKind, JourneyStage, JourneyPublicView, EditLine } from "@/types";
 import type { PayrollPolicyDTO, StaffComp, StaffRecurring, PayrollRun, Payslip, PayslipLine, StaffLoan, StaffLoanEvent, PayslipDraft, PayMethod } from "@/types";
@@ -3009,7 +3009,7 @@ const supabaseRepo: typeof demoRepo = {
       return need<Product>(r);
     } catch (e) {
       if (!isNetworkError(e)) throw e;
-      outboxEnqueue("products", row as Record<string, unknown> & { id: string });
+      if (!outboxEnqueue("products", row as Record<string, unknown> & { id: string })) throw e;
       return { ...row, created_at: new Date().toISOString() } as Product;
     }
   },
@@ -3178,7 +3178,7 @@ const supabaseRepo: typeof demoRepo = {
       return need<Company>(await sbc().from("companies").insert(row).select().single());
     } catch (e) {
       if (!isNetworkError(e)) throw e;
-      outboxEnqueue("companies", row as Record<string, unknown> & { id: string });
+      if (!outboxEnqueue("companies", row as Record<string, unknown> & { id: string })) throw e;
       return { ...row, created_at: new Date().toISOString() } as Company;
     }
   },
@@ -3205,7 +3205,7 @@ const supabaseRepo: typeof demoRepo = {
       return need<CompanySection>(await sbc().from("company_sections").insert(row).select().single());
     } catch (e) {
       if (!isNetworkError(e)) throw e;
-      outboxEnqueue("company_sections", row as Record<string, unknown> & { id: string });
+      if (!outboxEnqueue("company_sections", row as Record<string, unknown> & { id: string })) throw e;
       return { ...row, created_at: new Date().toISOString() } as CompanySection;
     }
   },
@@ -3330,7 +3330,25 @@ const supabaseRepo: typeof demoRepo = {
   },
   async retailReturn(items, meta) {
     // ذرّيّة على الخادم: المخزون والسحوبات معاً أو لا شيء.
-    return need<RetailReturnResult>(await sbc().rpc("retail_return", { p_items: items, p_meta: meta }));
+    const args = { p_items: items, p_meta: meta };
+    try {
+      return need<RetailReturnResult>(await sbc().rpc("retail_return", args));
+    } catch (e) {
+      // بخلاف البيعة، الإرجاع ما يعتمد عليه شيءٌ بعده — نتيجتُه رسالةٌ وحسب.
+      // فيدخل الطابور بأمان (0136 يمنع ازدواجه بمرجعه)، ونُرجع حصيلةً
+      // محسوبةً محلياً كي يرى الكاشير نفس الأرقام التي ستنزل.
+      if (!isNetworkError(e)) throw e;
+      if (!outboxEnqueueRpc("retail_return", args as unknown as Record<string, unknown>)) throw e;
+      let total = 0, lines = 0;
+      for (const it of items) {
+        const qty = Math.abs(Number(it.qty) || 0);
+        if (qty === 0) continue;
+        total += Math.round(qty * Math.abs(Number(it.unit_price) || 0) * 100) / 100;
+        lines += 1;
+      }
+      const m = meta.method;
+      return { total, lines, method: m === "card" ? "card" : m === "transfer" || m === "bank" ? "bank" : "cash" };
+    }
   },
   async listInvoiceItems(invoiceId) {
     return listOf<InvoiceItem>(await sbc().from("invoice_items").select("*").eq("invoice_id", invoiceId));
@@ -3413,10 +3431,21 @@ const supabaseRepo: typeof demoRepo = {
   async addExpense(input) {
     // clinic_id + staff_id are stamped by the column defaults (auth_clinic() / auth.uid());
     // send only the explicit fields so a caller can never set another clinic's id.
-    return need<Expense>(await sbc().from("expenses").insert({
-      amount: input.amount, description: input.description,
+    //
+    // والمعرّف يولَد بالجهاز لا بالقاعدة: بهذا وحده يصير الرفعُ المؤجَّل
+    // متسامحاً مع التكرار، فسحبٌ سُجّل والنت واگع يدخل الطابور ولا يضيع —
+    // ولا ينكتب مرّتين لو كان الطلب الأول قد وصل وضاع جوابه.
+    const row = {
+      id: uuid(), amount: input.amount, description: input.description,
       category: input.category ?? null, method: input.method ?? "cash", spent_at: input.spent_at,
-    }).select().single());
+    };
+    try {
+      return need<Expense>(await sbc().from("expenses").insert(row).select().single());
+    } catch (e) {
+      if (!isNetworkError(e)) throw e;
+      if (!outboxEnqueue("expenses", row as Record<string, unknown> & { id: string })) throw e;
+      return { ...row, clinic_id: null, created_at: new Date().toISOString() } as Expense;
+    }
   },
   async deleteExpense(id) {
     ok(await sbc().from("expenses").delete().eq("id", id));
