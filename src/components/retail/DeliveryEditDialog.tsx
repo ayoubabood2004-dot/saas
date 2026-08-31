@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   Search, Plus, Minus, Trash2, Undo2, AlertTriangle, Wallet, PackageOpen,
-  ArrowLeft, Send, ShieldAlert,
+  ArrowLeft, Send, ShieldAlert, Bike,
 } from "lucide-react";
 import type { Invoice, InvoiceItem, DeliveryOrder, Courier, Product, CompanySection, EditLine } from "@/types";
 import { repo } from "@/lib/repo";
@@ -79,6 +79,11 @@ export function DeliveryEditDialog({
   const [reason, setReason] = useState("");
   const [notify, setNotify] = useState(order?.status === "out" && !!courier?.phone);
   const [saving, setSaving] = useState(false);
+  /* أجرة التوصيل: تُكتب عند إنشاء الطلب ثم ما كان لها مكانٌ يُعدَّل — والحاجة
+   * من الميدان أن الطبيب يقرّر بعد الاتصال أن يخفّضها أو يسقطها كلّها. وهي
+   * على الطلب لا على الفاتورة، فتُحفظ بنداءٍ مستقلّ عن تعديل الأصناف. */
+  const [fee, setFee] = useState(String(order?.delivery_fee ?? 0));
+  const [feeToClinic, setFeeToClinic] = useState(!!order?.fee_to_clinic);
 
   useEffect(() => {
     let alive = true;
@@ -127,6 +132,12 @@ export function DeliveryEditDialog({
   const diff = round2(newTotal - oldTotal);
   const newCod = Math.max(0, round2(newTotal - paid));
   const overpaid = Math.max(0, round2(paid - newTotal));
+  /* الأجرة: `fee_to_clinic` تعني أنها ضمن الإجمالي وتعود للعيادة، وإلا فهي
+   * فوقه ويقبضها السائق. فما يستلمه السائق يختلف بالحالتين. */
+  const feeNum = Math.max(0, round2(Number(fee.replace(/[^\d.]/g, "")) || 0));
+  const feeChanged = !!order && (Math.abs(feeNum - round2(Number(order.delivery_fee) || 0)) > 0.005
+    || feeToClinic !== !!order.fee_to_clinic);
+  const collectNow = round2(newCod + (feeToClinic ? 0 : feeNum));
 
   /* ---- حارس المخزون: الحاجة الإضافية لكل منتج مقابل المتاح فعلاً ------------ */
   const shortages = useMemo(() => {
@@ -223,7 +234,22 @@ export function DeliveryEditDialog({
         stock_qty: r.product_id ? r3(r.qty * r.perUnit) : 0,
       }));
       const inv = await repo.editInvoiceLines(invoice.id, lines, reason.trim() || null);
+
+      /* الأجرة على صفّ الطلب لا على الفاتورة، فتُحفظ بنداءٍ ثانٍ — **بعد** نجاح
+       * تعديل الأصناف: أجرةٌ تُحفظ ثم يفشل التعديل تترك الطلب بأرقامٍ لا تطابق
+       * فاتورته. وفشلُها وحدها لا يُبطل التعديل، فيُقال صراحةً بدل أن يُبلع. */
+      let feeFailed = false;
+      if (order && feeChanged) {
+        try {
+          await repo.updateDeliveryOrder(order.id, {
+            delivery_fee: feeNum,
+            fee_to_clinic: feeNum > 0 ? feeToClinic : false,
+          });
+        } catch { feeFailed = true; }
+      }
+
       playSuccess();
+      if (feeFailed) toast.error(t("retail.dFeeSaveFailed", "انحفظ تعديل الأصناف، بس الأجرة ما انحفظت — جرّبها مرّة ثانية"));
       if (order) toast.success(t("retail.dEditSaved", { n: money(Math.max(0, round2((Number(inv.total) || newTotal) - paid))), defaultValue: "تم التعديل — يستلم السائق {{n}}" }));
       else toast.success(t("retail.invEditSaved", { n: money(Number(inv.total) || newTotal), defaultValue: "تم تعديل الفاتورة — الإجمالي الجديد {{n}} والمخزون تزامن تلقائياً" }));
       // الإشعار بعد نجاح الحفظ فقط: رسالة عن تعديل لم يُحفظ أسوأ من لا رسالة.
@@ -372,6 +398,46 @@ export function DeliveryEditDialog({
               </div>
             )}
 
+            {/* أجرة التوصيل — تُعدَّل أو تُسقَط. للطلبات وحدها: الفاتورة العادية
+                بلا أجرة أصلاً. */}
+            {order && (
+              <div className="rounded-2xl border border-line bg-surface-1 p-3">
+                <div className="mb-2 flex items-center gap-1.5 text-sm font-bold text-ink">
+                  <Bike size={15} className="text-ink-muted" />
+                  {t("retail.dFeeTitle", "أجرة التوصيل")}
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <input
+                    inputMode="decimal" value={fee}
+                    onChange={(e) => setFee(e.target.value)}
+                    aria-label={t("retail.dFeeAmount", "مبلغ الأجرة")}
+                    className="input w-32 tabular-nums"
+                  />
+                  <button type="button" data-dfeefree
+                    onClick={() => { playTap(); setFee("0"); }}
+                    className={cn("chip text-2xs font-bold transition",
+                      feeNum === 0 ? "bg-success-100 text-success-700 dark:bg-success-500/20 dark:text-success-300"
+                        : "bg-surface-2 text-ink-muted hover:text-ink")}>
+                    {t("retail.dFeeFree", "توصيل مجاني")}
+                  </button>
+                  {feeNum > 0 && (
+                    <label className="flex cursor-pointer items-center gap-1.5 text-2xs font-semibold text-ink-muted">
+                      <input type="checkbox" checked={feeToClinic}
+                        onChange={(e) => { playTap(); setFeeToClinic(e.target.checked); }} />
+                      {t("retail.dFeeToClinic", "الأجرة للعيادة (ضمن الإجمالي)")}
+                    </label>
+                  )}
+                </div>
+                <p className="mt-1.5 text-2xs text-ink-subtle">
+                  {feeNum === 0
+                    ? t("retail.dFeeFreeNote", "بلا أجرة — الزبون يدفع ثمن البضاعة فقط.")
+                    : feeToClinic
+                      ? t("retail.dFeeClinicNote", "الأجرة محسوبة ضمن إجمالي الفاتورة، والسائق يسلّمها للعيادة.")
+                      : t("retail.dFeeCourierNote", { n: money(feeNum), defaultValue: "تُضاف {{n}} فوق الإجمالي ويقبضها السائق." })}
+                </p>
+              </div>
+            )}
+
             {/* الأثر المالي — الأرقام قبل الضغط لا بعده */}
             <div className="rounded-2xl border border-line bg-surface-2 p-3">
               <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-sm">
@@ -386,7 +452,7 @@ export function DeliveryEditDialog({
               </div>
               <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5 border-t border-line pt-2 text-sm">
                 <span className="flex items-center gap-1.5 font-bold text-sky-700 dark:text-sky-300">
-                  <Wallet size={15} /> {order ? t("retail.dEditNewCollect", "يستلم السائق الآن") : t("retail.invEditRemaining", "الباقي على الزبون")} <b data-dnewcod className="tabular-nums">{money(newCod)}</b>
+                  <Wallet size={15} /> {order ? t("retail.dEditNewCollect", "يستلم السائق الآن") : t("retail.invEditRemaining", "الباقي على الزبون")} <b data-dnewcod className="tabular-nums">{money(order ? collectNow : newCod)}</b>
                 </span>
                 {paid > 0.005 && <span className="text-2xs text-ink-subtle">{t("retail.dEditPaidNote", { n: money(paid), defaultValue: "المدفوع {{n}} لا يتغيّر" })}</span>}
               </div>

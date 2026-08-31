@@ -681,7 +681,15 @@
     "swapUndoConfirm": "Send the order back to preparing and take it off the driver? The invoice and stock are unchanged.",
     "swapUndone": "Back to preparing — pick the right driver and dispatch it.",
     "saleRetrySafe": "The sale didn't go through — your cart is kept. Try again; it will not be recorded twice.",
-    "retRetrySafe": "The return didn't go through — your cart is kept. Try again; it will not be recorded twice."
+    "retRetrySafe": "The return didn't go through — your cart is kept. Try again; it will not be recorded twice.",
+    "dFeeTitle": "Delivery fee",
+    "dFeeAmount": "Fee amount",
+    "dFeeFree": "Free delivery",
+    "dFeeToClinic": "Fee goes to the clinic (inside the total)",
+    "dFeeFreeNote": "No fee — the customer pays for the goods only.",
+    "dFeeClinicNote": "The fee is inside the invoice total, and the courier hands it to the clinic.",
+    "dFeeCourierNote": "{{n}} is added on top of the total and kept by the courier.",
+    "dFeeSaveFailed": "The item changes were saved, but the fee wasn't — please try again"
   },
   "promos": {
     "title": "Offers management",
