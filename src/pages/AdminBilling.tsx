@@ -5,6 +5,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { isPlatformAdmin, getUsdRate, setUsdRate, adminActivate, adminGrantTrial, adminCancelSubscription, adminListClinics, adminSetPlanPrice, adminActivateDays, adminSetLimits, hydratePlanPrices, type AdminClinic } from "@/lib/platformAdmin";
 import { PLANS, usdToIqd, priceUsd, planPrice, type BillingPeriod, type PlanId } from "@/lib/plans";
 import { MarketInsights } from "@/components/admin/MarketInsights";
+import { SystemHealth } from "@/components/admin/SystemHealth";
 import { repo } from "@/lib/repo";
 import type { FeatureRequest } from "@/types";
 import { Button, Badge, Skeleton, useToast } from "@/components/ui";
@@ -326,6 +327,9 @@ export function AdminBilling() {
           <p className="text-sm text-ink-muted">إدارة الاشتراكات وسعر الصرف — لمشغّل المنصّة.</p>
         </div>
       </div>
+
+      {/* أسقفُ المزوّد — قبل قائمة العيادات، لأنه الي يوقف الكل دفعةً واحدة */}
+      <SystemHealth />
 
       {/* Clinics list */}
       <section className="mb-5 rounded-3xl border border-line bg-surface-1 p-5 shadow-card">

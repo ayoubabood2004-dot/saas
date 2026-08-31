@@ -782,6 +782,18 @@ export interface RetailReturnResult {
   method: ExpenseMethod;
 }
 
+/** سطرٌ من `system_health()` (هجرة 0137): سقفٌ من أسقف المزوّد وما استُهلك منه.
+ *  `metric` معرّفٌ لاتينيّ ثابت — النصّ المعروض يُترجَم بالواجهة. */
+export interface HealthMetric {
+  metric: string;
+  value: number;
+  ceiling: number;
+  /** bytes | count | seconds | days — تحدّد كيف يُعرض الرقم. */
+  unit: "bytes" | "count" | "seconds" | "days" | string;
+  /** النسبة المئوية، بخانةٍ عشرية واحدة. */
+  pct: number;
+}
+
 /* ---------------- Purchases (المشتريات — restocking from a company) ---------------- */
 /** A purchase/restock invoice: goods received FROM a supplier company. Saving one
  *  bulk-updates inventory (existing products get +stock & refreshed prices; new

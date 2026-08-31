@@ -3823,5 +3823,25 @@
     "aAllergy": "Charted allergy — do not give {{d}}",
     "aCeiling": "Hard ceiling for this species — {{n}} mg/kg",
     "aWindow": "Documented range: {{min}}–{{max}} mg/kg · {{f}}"
+  },
+  "health": {
+    "title": "System ceilings",
+    "refresh": "Refresh",
+    "unavailable": "Ceiling figures aren't available — migration 0137 needs to run on the database.",
+    "hot": "{{n}} ceiling(s) close to full — act before they're reached.",
+    "mb": "{{n}} MB",
+    "gb": "{{n}} GB",
+    "sec": "{{n}}s",
+    "days": "{{n}} days",
+    "m": {
+      "db_size": "Database size against the plan",
+      "connections": "Open connections",
+      "longest_query": "Longest query running now",
+      "audit_log_size": "Audit log size",
+      "audit_purge_lag": "Audit purge lag (should be zero)",
+      "rpc_refs_purge_lag": "Call-reference purge lag (should be zero)",
+      "pet_serials": "Pet serial numbers used"
+    },
+    "pct": "{{n}}%"
   }
 }

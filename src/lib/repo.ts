@@ -16,7 +16,7 @@ const invNormName = (v: string | null | undefined): string =>
 import { supabase } from "./supabase";
 import { outboxEnqueue, outboxEnqueueRpc, isNetworkError } from "./outbox";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, AppointmentStatus, ClinicInfo, PublicStaff, DailyNote, TreatmentEntry, Admission, Branch, Reminder, Product, Company, CompanySection, Purchase, PurchaseItem, PurchasePayment, PurchaseDraftLine, PurchaseMeta, Courier, DeliveryOrder, PetMovement, DemoDB, Invoice, InvoiceItem, CheckoutItem, SaleMeta, Customer, DiscountType, PaymentMethod, PaymentSplit, WhatsAppMessage, AuditEntry, LoginEvent, PetNote, Expense, ExpenseMethod, ReturnMeta, RetailReturnResult, ClinicVisit , Surgery, LabResult, LabDeviceLink, LabDeviceInbox, LabStatusValue, PetProblem, CareEntry, FeatureRequest, GeneratedBarcode, StoreProfile, StoreOrder, StoreOrderItem, StoreFrontInfo, StoreCatalogItem, Journey, JourneyEvent, JourneyKind, JourneyStage, JourneyPublicView, EditLine } from "@/types";
+import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, AppointmentStatus, ClinicInfo, PublicStaff, DailyNote, TreatmentEntry, Admission, Branch, Reminder, Product, Company, CompanySection, Purchase, PurchaseItem, PurchasePayment, PurchaseDraftLine, PurchaseMeta, Courier, DeliveryOrder, PetMovement, DemoDB, Invoice, InvoiceItem, CheckoutItem, SaleMeta, Customer, DiscountType, PaymentMethod, PaymentSplit, WhatsAppMessage, AuditEntry, LoginEvent, PetNote, Expense, ExpenseMethod, ReturnMeta, RetailReturnResult, HealthMetric, ClinicVisit , Surgery, LabResult, LabDeviceLink, LabDeviceInbox, LabStatusValue, PetProblem, CareEntry, FeatureRequest, GeneratedBarcode, StoreProfile, StoreOrder, StoreOrderItem, StoreFrontInfo, StoreCatalogItem, Journey, JourneyEvent, JourneyKind, JourneyStage, JourneyPublicView, EditLine } from "@/types";
 import type { PayrollPolicyDTO, StaffComp, StaffRecurring, PayrollRun, Payslip, PayslipLine, StaffLoan, StaffLoanEvent, PayslipDraft, PayMethod } from "@/types";
 import * as PD from "./payrollDemo";
 import { paidOf, round2 } from "./debt";
@@ -539,6 +539,12 @@ const demoRepo = {
     const row = (db.featureRequests ?? []).find((r) => r.id === id);
     if (row) Object.assign(row, patch, { updated_at: new Date().toISOString() });
     saveDB(db);
+  },
+
+  /** Admin: أسقفُ المزوّد وما استُهلك منها (هجرة 0137). بالوضع التجريبي ماكو
+   *  خادمٌ ولا باقة، فالقائمة فارغة — واللوحة تخفي نفسها بدل ما تخترع أرقاماً. */
+  async systemHealth(): Promise<HealthMetric[]> {
+    return [];
   },
 
   /** Admin: كل الطلبات عبر كل العيادات — بالديمو نفس قائمة العيادة الوحيدة. */
@@ -2607,6 +2613,11 @@ const supabaseRepo: typeof demoRepo = {
   async updateFeatureRequest(id, patch) {
     ok(await sbc().from("feature_requests").update({ ...patch, updated_at: new Date().toISOString() }).eq("id", id));
   },
+  async systemHealth() {
+    // الحارس داخل الدالّة نفسها (is_platform_admin)، فغيرُ المشغّل يستلم رفضاً
+    // من الخادم لا قائمةً منقوصة.
+    return listOf<HealthMetric>(await sbc().rpc("system_health", {}));
+  },
   async adminListFeatureRequests() {
     // سياسة is_platform_admin() توسّع القراءة لكل العيادات لمشغّل المنصة.
     return listOf<FeatureRequest>(
@@ -3642,7 +3653,7 @@ const READ_ONLY_ALLOWED = new Set<string>([
   "listPayslips", "listPayslipLines", "listStaffLoans", "listLoanEvents",
   // --- استعلامات مساعدة لا تكتب ---
   "checkStoreSlug", "slotTaken", "supportsBulkGroup", "supportsSupplierLedger",
-  "adminListFeatureRequests",
+  "adminListFeatureRequests", "systemHealth",
   // --- واجهات الزبون العامة (تعمل خارج جلسة العيادة) ---
   "storeFrontPublic", "storeCatalogPublic", "placeStoreOrder", "trackJourneyPublic",
   "reactJourneyPublic", "claimPet", "claimPetsByPhone",

@@ -34,8 +34,14 @@ create or replace function is_clinic_staff() returns boolean
 language sql stable security definer set search_path = public as $$
   select exists (select 1 from profiles p where p.id = auth.uid() and p.role in ('doctor','reception','admin'));
 $$;
+-- مشغّلُ المنصّة: كاذبٌ افتراضاً كما بالإنتاج لغير المشغّل، ويُرفع بمفتاحٍ
+-- يملكه الفحص — كي نفحص الحارسَ **والطريقَ المسموح** كليهما. ومفتاحٌ بجدولٍ
+-- لا بإعدادِ جلسة: `set` يطبع وسمَه بمخرج psql فيلتصق بالنتيجة ويفسد المقارنة.
+create table if not exists _dvtest_flags (admin boolean not null default false);
+insert into _dvtest_flags (admin) select false where not exists (select 1 from _dvtest_flags);
 create or replace function is_platform_admin() returns boolean
-language sql stable security definer set search_path = public as $$ select false $$;
+language sql stable security definer set search_path = public as $$
+  select coalesce((select admin from _dvtest_flags limit 1), false) $$;
 create or replace function has_permission(cap text) returns boolean
 language sql stable security definer set search_path = public as $$ select true $$;
 

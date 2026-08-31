@@ -22,7 +22,7 @@ DB=dvtest
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MIG="$HERE/../migrations"
 # الهجرات التي يغطّيها هذا المخطّط الأساس. زدها كل ما تنضاف موجة.
-WAVE="$MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql"
+WAVE="$MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql"
 
 command -v "$PGBIN/initdb" >/dev/null || { echo "ما لكيت بوستغريس بـ $PGBIN"; exit 1; }
 
@@ -298,6 +298,41 @@ chk "والكنس ممنوع على authenticated" \
     "select has_function_privilege('authenticated','public.purge_rpc_refs(int)','execute')::text" "false"
 $P -c "update rpc_refs set created_at = now() - interval '30 days';" >/dev/null
 chk "والكنس يمسح القديم" "select (public.purge_rpc_refs(7) > 0)::text" "true"
+
+# 0137: الأسقف تُقاس — والحارس يمنع غيرَ المشغّل
+$P -c "create or replace function _hprobe() returns text language plpgsql as \$fn\$
+begin perform * from public.system_health(); return 'NOT-GUARDED';
+exception when others then return 'guarded'; end \$fn\$;" >/dev/null
+chk "غيرُ المشغّل ما يشوف الأسقف" "select _hprobe()" "guarded"
+chk "وممنوعة على anon" \
+    "select has_function_privilege('anon','public.system_health(int)','execute')::text" "false"
+
+# نرفع مفتاحَ المشغّل، فما بعده يُفحص من زاويته هو
+$P -c "update _dvtest_flags set admin = true;" >/dev/null
+chk "والمشغّل يشوف كل المقاييس" "select count(*)::text from public.system_health()" "7"
+chk "والنسبة محسوبة لا فارغة" \
+    "select (count(*) = 0)::text from public.system_health() where pct is null" "true"
+chk "وحجمُ القاعدة تحت سقف الباقة" \
+    "select (pct > 0 and pct < 100)::text from public.system_health() where metric='db_size'" "true"
+chk "والأقربُ للسقف يطلع أوّلاً" \
+    "select (max(pct) = (array_agg(pct))[1])::text from public.system_health()" "true"
+
+# نبضُ الكنس: صفرٌ وهو حيّ، ويصعد لحظةَ يموت. نزرع صفّاً تجاوز نافذته
+# ٣١٠ أيام (٤٠٠ - ٩٠) — وهذا بالضبط ما يبدو عليه جدولٌ توقّف ولا أحد يدري.
+chk "تأخّرُ الكنس صفرٌ والجدولة حيّة" \
+    "select (value = 0)::text from public.system_health() where metric='audit_purge_lag'" "true"
+$P -c "insert into audit_log(clinic_id,action,entity,created_at)
+       values (gen_random_uuid(),'X','pets', now() - interval '400 days');" >/dev/null
+chk "ويصعد لمّا يتوقّف الكنس" \
+    "select (value > 300)::text from public.system_health() where metric='audit_purge_lag'" "true"
+chk "فيتجاوز حدَّ الخطر بوضوح" \
+    "select (pct > 100)::text from public.system_health() where metric='audit_purge_lag'" "true"
+# ولا يُخدع بأثر المال: نافذتُه سنة، فصفٌّ عمره ٤٠٠ يوم متأخّرٌ ٣٥ لا ٣١٠
+$P -c "delete from audit_log where created_at < now() - interval '399 days';
+       insert into audit_log(clinic_id,action,entity,created_at)
+       values (gen_random_uuid(),'X','invoices', now() - interval '400 days');" >/dev/null
+chk "وأثرُ المال يُحسب بنافذته هو (سنة لا ٩٠ يوم)" \
+    "select (value > 30 and value < 40)::text from public.system_health() where metric='audit_purge_lag'" "true"
 
 echo
 [ $fail -eq 0 ] && echo "✓ كل الفحوص عبرت" || { echo "✗ اكو فحصٌ فشل"; exit 1; }
