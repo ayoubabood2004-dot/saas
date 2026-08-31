@@ -706,6 +706,10 @@ export interface SaleMeta {
   staff_id?: string | null;
   /** Free-text note the doctor/cashier attached at checkout. */
   notes?: string | null;
+  /** مرجعُ المحاولة (0135): يولّده الجهاز مرّةً لكل بيعة ويثبت عبر كل إعادة.
+   *  به تعرف القاعدة أن الطلب الثاني هو **نفس** البيعة لا بيعةً جديدة — فلا
+   *  فاتورةَ مكرّرة ولا خصمَ مخزونٍ مرّتين حين ينقطع النت بعد وصول الطلب. */
+  client_ref?: string | null;
 }
 
 /** A distinct retail customer, derived from past invoices for quick re-selection. */

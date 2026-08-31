@@ -22,7 +22,7 @@ DB=dvtest
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MIG="$HERE/../migrations"
 # الهجرات التي يغطّيها هذا المخطّط الأساس. زدها كل ما تنضاف موجة.
-WAVE="$MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql"
+WAVE="$MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql"
 
 command -v "$PGBIN/initdb" >/dev/null || { echo "ما لكيت بوستغريس بـ $PGBIN"; exit 1; }
 
@@ -81,7 +81,9 @@ for f in $WAVE; do
 done
 
 echo "▸ إعادة التنزيل (لازم بلا أثرٍ ثانٍ)…"
-for f in $WAVE; do $P -f "$f" >/dev/null 2>&1 || { echo "✗ ما انعادت"; exit 1; }; done
+for f in $WAVE; do
+  out=$($P -f "$f" 2>&1) || { echo "✗ ما انعادت: $(basename "$f")"; echo "$out" | tail -5; exit 1; }
+done
 
 fail=0
 chk() { # chk "الوصف" "استعلام" "المتوقّع"
@@ -230,6 +232,28 @@ chk "والعرض المعتمِد رجع" \
     "select count(*)::text from pg_views where viewname='shared_catalog_source'" "1"
 chk "وما ينقرأ من التطبيق" \
     "select has_table_privilege('authenticated','public.shared_catalog_source','select')::text" "false"
+
+# 0135: البيعة تُعاد بأمان — نفس المرجع لا يخلق فاتورةً ثانية
+out=$($P -c "insert into products(id,clinic_id,stock) values
+       ('dddddddd-0000-0000-0000-000000000001','11111111-1111-1111-1111-111111111111',10);" 2>&1) \
+  || { echo "زرع المنتج فشل: $out"; exit 1; }
+CART='[{"product_id":"dddddddd-0000-0000-0000-000000000001","name":"x","qty":2,"unit_price":1000,"unit_cost":600,"stock_qty":2}]'
+run3() { psql -h $SOCK -p $PORT -U postgres -d $DB -q -c "select set_config('request.jwt.claim.sub','11111111-1111-1111-1111-111111111111',false);
+  select retail_checkout('$CART'::jsonb, jsonb_build_object('client_ref','REF-1'));" >/dev/null 2>&1 || true; }
+run3; run3; run3
+chk "ثلاث محاولات بنفس المرجع = فاتورة واحدة" \
+    "select count(*)::text from invoices where client_ref='REF-1'" "1"
+chk "والمخزون انخصم مرّة واحدة (10-2)" \
+    "select stock::text from products where id='dddddddd-0000-0000-0000-000000000001'" "8.000"
+chk "وبنودها ما تكرّرت" \
+    "select count(*)::text from invoice_items where invoice_id=(select id from invoices where client_ref='REF-1')" "1"
+# وبلا مرجع: السلوك القديم كما هو — كل نداء فاتورة
+psql -h $SOCK -p $PORT -U postgres -d $DB -q -c "select set_config('request.jwt.claim.sub','11111111-1111-1111-1111-111111111111',false);
+  select retail_checkout('$CART'::jsonb, '{}'::jsonb);" >/dev/null 2>&1 || true
+psql -h $SOCK -p $PORT -U postgres -d $DB -q -c "select set_config('request.jwt.claim.sub','11111111-1111-1111-1111-111111111111',false);
+  select retail_checkout('$CART'::jsonb, '{}'::jsonb);" >/dev/null 2>&1 || true
+chk "وبلا مرجع يبقى السلوك القديم (فاتورتان)" \
+    "select count(*)::text from invoices where client_ref is null and subtotal=2000" "2"
 
 echo
 [ $fail -eq 0 ] && echo "✓ كل الفحوص عبرت" || { echo "✗ اكو فحصٌ فشل"; exit 1; }

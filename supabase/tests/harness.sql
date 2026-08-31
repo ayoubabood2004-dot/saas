@@ -108,6 +108,30 @@ begin
    where id = p_product and clinic_id = p_clinic;
 end $cs$;
 
+-- أعمدة الفاتورة كما بالإنتاج، حتى تشتغل retail_checkout الحقيقية عليها
+alter table invoices add column if not exists subtotal      numeric(14,2) not null default 0;
+alter table invoices add column if not exists discount      numeric(14,2) not null default 0;
+alter table invoices add column if not exists discount_type text;
+alter table invoices add column if not exists cost_total    numeric(12,2) not null default 0;
+alter table invoices add column if not exists profit        numeric(12,2) not null default 0;
+alter table invoices add column if not exists item_count    integer not null default 0;
+alter table invoices add column if not exists customer_name text;
+alter table invoices add column if not exists customer_phone text;
+alter table invoices add column if not exists pet_name      text;
+alter table invoices add column if not exists payment_method text;
+alter table invoices add column if not exists payment_details jsonb;
+alter table invoices add column if not exists staff_id      uuid;
+alter table invoices add column if not exists notes         text;
+alter table invoices add column if not exists status        text not null default 'paid';
+
+create or replace function deduct_stock_pooled(p_product uuid, p_qty numeric, p_clinic uuid)
+returns numeric language plpgsql security definer set search_path = public as $ds$
+begin
+  update products set stock = round(coalesce(stock,0) - p_qty, 3)
+   where id = p_product and clinic_id = p_clinic;
+  return 0;
+end $ds$;
+
 -- سياسةٌ تحرس مبالغ الفاتورة (نظير invoices_update بالإنتاج): غيرُ المدير
 -- لا يغيّر المبالغ. تعتمد على أعمدة numeric — فهي بالضبط ما منع التوسيع
 -- هناك، ولم يكن مختبرُنا يغطّيه.

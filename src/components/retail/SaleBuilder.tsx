@@ -484,6 +484,9 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
   const [qtyPadFor, setQtyPadFor] = useState<string | null>(null);
   /** منتقي الوزن مفتوح على منتج كتلة (0124): البيع أو الراجع يُختار بالكيلو. */
   const [weightFor, setWeightFor] = useState<{ p: Product; ret: boolean } | null>(null);
+  /* مرجعُ البيعة الجارية — يُنشأ عند أول محاولة ويُمسح عند التصفير. مرجعٌ لا
+   * حالة: تغيّره لا يعيد الرسم، وقيمته لازمة داخل المعالج لا بالعرض. */
+  const saleRefRef = useRef<string | null>(null);
   const [done, setDone] = useState<{ invoice: Invoice; items: InvoiceItem[] } | null>(null);
   const [lastPrints, setLastPrints] = useState(0);
   /** وضع الراجع: كل باركود يُمسح وهو مُفعَّل ينزل سطراً سالباً. */
@@ -1017,6 +1020,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
   const pickCustomer = (c: Customer) => { setName(c.name); setPhone(c.phone); setCustOpen(false); setCustMatches([]); playTap(); };
 
   const reset = () => {
+    saleRefRef.current = null;   // بيعةٌ جديدة ⇒ مرجعٌ جديد
     clearSaleDraft(clinicId);
     setCart([]); setQuery(""); setDiscountValue(""); setFinalOverride(null); setEditingTotal(false);
     setDiscountType("percent"); setPayments([{ method: "cash", amount: 0 }]); setPaidEdited(false); setPartialMode(false); setDone(null); setLastPrints(0);
@@ -1210,6 +1214,10 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
 
   const checkout = async () => {
     if (cart.length === 0 || busy) return;
+    /* مرجعُ هذه البيعة: يولَد مرّةً ويبقى عبر كل إعادةٍ للمحاولة. لو وصل
+     * الطلب الأول للخادم وضاع جوابه، تتعرّف القاعدة عليه (0135) فتُرجع
+     * الفاتورة نفسها بدل أن تسجّل ثانيةً وتخصم المخزون مرّتين. */
+    if (!saleRefRef.current) saleRefRef.current = `s-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
     setBusy(true);
     try {
       const items: CheckoutItem[] = cart.map((l) => {
@@ -1274,6 +1282,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
         amount_paid: paidToday,
         staff_id: cashierId,
         notes: saleNotes.trim() || null,
+        client_ref: saleRefRef.current,
       };
       const invoice = await withTimeout(repo.retailCheckout(items, meta), 12000);
       // Delivery order wrapping the invoice: stock is already deducted; the COD
