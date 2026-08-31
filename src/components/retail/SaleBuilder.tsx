@@ -1180,6 +1180,14 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
 
   /* الإرجاع الخالص — لا فاتورة. البضاعة ترجع للرصيد، والمال يُسجَّل سحباً
    * منفصلاً لكل صنف (هجرة 0132). الذرّيّة على الخادم: يقعان معاً أو لا شيء. */
+  /* مرجعُ هذه المحاولة: يولَد مرّةً ويبقى عبر كل إعادة، ولا يتبدّل إلا بـ
+   * `reset()` — أي بسلّةٍ جديدة. به تتعرّف القاعدة على الطلب المعاد فتُرجع
+   * ما سجّلته أوّل مرّة بدل أن تسجّل ثانيةً (0135 للبيع، 0136 للإرجاع). */
+  const ensureRef = () => {
+    if (!saleRefRef.current) saleRefRef.current = `s-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+    return saleRefRef.current;
+  };
+
   const doReturn = async () => {
     if (!pureReturn || busy) return;
     if (returnValue <= 0) { playWarning(); return; }
@@ -1197,10 +1205,13 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
         };
       });
       const cust = splitCustomerField(name);
+      /* ونفسُ حِرز البيعة للإرجاع (0136) — والخطر هنا أقسى: إعادةٌ بلا مرجع
+       * تزيد المخزون مرّتين وتسحب من الصندوق مرّتين. */
       const res = await withTimeout(repo.retailReturn(items, {
         method: payments[0]?.method ?? "cash",
         customer_name: cust.name || null,
         note: saleNotes.trim() || null,
+        client_ref: ensureRef(),
       }), 12000);
       playSuccess();
       toast.success(t("retail.retDone", { amount: money(res.total), n: formatNum(res.lines), defaultValue: "انسجّل الإرجاع: {{n}} صنف رجع للمخزن، و{{amount}} انسحبت من الصندوق" }));
@@ -1214,10 +1225,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
 
   const checkout = async () => {
     if (cart.length === 0 || busy) return;
-    /* مرجعُ هذه البيعة: يولَد مرّةً ويبقى عبر كل إعادةٍ للمحاولة. لو وصل
-     * الطلب الأول للخادم وضاع جوابه، تتعرّف القاعدة عليه (0135) فتُرجع
-     * الفاتورة نفسها بدل أن تسجّل ثانيةً وتخصم المخزون مرّتين. */
-    if (!saleRefRef.current) saleRefRef.current = `s-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+    ensureRef();
     setBusy(true);
     try {
       const items: CheckoutItem[] = cart.map((l) => {

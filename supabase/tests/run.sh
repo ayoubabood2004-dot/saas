@@ -22,7 +22,7 @@ DB=dvtest
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MIG="$HERE/../migrations"
 # الهجرات التي يغطّيها هذا المخطّط الأساس. زدها كل ما تنضاف موجة.
-WAVE="$MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql"
+WAVE="$MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql"
 
 command -v "$PGBIN/initdb" >/dev/null || { echo "ما لكيت بوستغريس بـ $PGBIN"; exit 1; }
 
@@ -40,6 +40,12 @@ run_pg() { if [ -n "$AS" ]; then $AS "$*"; else eval "$*"; fi; }
 
 echo "▸ عنقودٌ مؤقّت…"
 "$PGBIN/pg_ctl" -D "$PGDATA" stop -m immediate >/dev/null 2>&1 || true
+# وخادمٌ شارد من تشغيلةٍ سابقة انقطعت: `pg_ctl` ما يوصله لأن ملفّ رقمه راح
+# مع `rm -rf`، فيبقى حيّاً — ثم يموت بمنتصف فحوصنا **فيمسح مقبسنا معه**
+# (شُخّصت هذه: نصفُ الفحوص طلع فاشلاً وما بيه عطلٌ أصلاً). فنقتله بالاسم.
+pkill -9 -f "postgres .*-D $PGDATA" >/dev/null 2>&1 || true
+sleep 1
+rm -f "$SOCK/.s.PGSQL.$PORT" "$SOCK/.s.PGSQL.$PORT.lock"
 rm -rf "$PGDATA"; mkdir -p "$PGDATA"
 [ -n "$AS" ] && chown -R pgtest "$PGDATA"
 chmod 700 "$PGDATA"
@@ -254,6 +260,44 @@ psql -h $SOCK -p $PORT -U postgres -d $DB -q -c "select set_config('request.jwt.
   select retail_checkout('$CART'::jsonb, '{}'::jsonb);" >/dev/null 2>&1 || true
 chk "وبلا مرجع يبقى السلوك القديم (فاتورتان)" \
     "select count(*)::text from invoices where client_ref is null and subtotal=2000" "2"
+
+# 0136: والمرتجع كذلك — الخطر هنا أقسى: إعادةٌ تزيد المخزون وتصرف الخزنة مرّتين
+$P -c "insert into products(id,clinic_id,stock) values
+       ('eeeeeeee-0000-0000-0000-000000000001','11111111-1111-1111-1111-111111111111',3);" >/dev/null
+RCART='[{"product_id":"eeeeeeee-0000-0000-0000-000000000001","name":"مرجَّع","qty":-2,"unit_price":1500,"stock_qty":-2}]'
+ret3() { psql -h $SOCK -p $PORT -U postgres -d $DB -q -c "select set_config('request.jwt.claim.sub','11111111-1111-1111-1111-111111111111',false);
+  select retail_return('$RCART'::jsonb, jsonb_build_object('client_ref','RET-1'));" >/dev/null 2>&1 || true; }
+ret3; ret3; ret3
+chk "ثلاث محاولات بنفس المرجع = ائتمانُ مخزونٍ واحد (3 + 2)" \
+    "select stock::text from products where id='eeeeeeee-0000-0000-0000-000000000001'" "5.000"
+chk "وسحبٌ واحد لا ثلاثة" \
+    "select count(*)::text from expenses where description like 'راجع: مرجَّع%'" "1"
+chk "وبالمبلغ الصحيح مرّةً واحدة" \
+    "select sum(amount)::text from expenses where description like 'راجع: مرجَّع%'" "3000.00"
+chk "ومرجعٌ واحد انحفظ بنتيجته" \
+    "select (result->>'total')::text from rpc_refs where fn='retail_return' and client_ref='RET-1'" "3000.00"
+# وبلا مرجع: السلوك القديم كما هو — كل نداء إرجاعٌ مستقلّ
+psql -h $SOCK -p $PORT -U postgres -d $DB -q -c "select set_config('request.jwt.claim.sub','11111111-1111-1111-1111-111111111111',false);
+  select retail_return('$RCART'::jsonb, '{}'::jsonb);" >/dev/null 2>&1 || true
+psql -h $SOCK -p $PORT -U postgres -d $DB -q -c "select set_config('request.jwt.claim.sub','11111111-1111-1111-1111-111111111111',false);
+  select retail_return('$RCART'::jsonb, '{}'::jsonb);" >/dev/null 2>&1 || true
+chk "وبلا مرجع يبقى السلوك القديم (سحبان زيادة)" \
+    "select count(*)::text from expenses where description like 'راجع: مرجَّع%'" "3"
+chk "والمخزون معهما (5 + 2 + 2)" \
+    "select stock::text from products where id='eeeeeeee-0000-0000-0000-000000000001'" "9.000"
+# سلّةٌ فاشلة ما تحجز مرجعها: الحجز يتراجع مع الكتلة، فالإعادة تشتغل
+$P -c "create or replace function _fprobe() returns text language plpgsql as \$fn\$
+begin perform retail_return('[{\"name\":\"x\",\"qty\":0}]'::jsonb, jsonb_build_object('client_ref','RET-DEAD'));
+  return 'NOT-GUARDED'; exception when others then return 'guarded'; end \$fn\$;" >/dev/null
+chk "وإرجاعٌ فاشل يُرفض" "select _fprobe()" "guarded"
+chk "ولا يترك مرجعاً محجوزاً وراءه" \
+    "select count(*)::text from rpc_refs where client_ref='RET-DEAD'" "0"
+chk "وجدول المراجع ما ينكتب من التطبيق" \
+    "select has_table_privilege('authenticated','public.rpc_refs','insert')::text" "false"
+chk "والكنس ممنوع على authenticated" \
+    "select has_function_privilege('authenticated','public.purge_rpc_refs(int)','execute')::text" "false"
+$P -c "update rpc_refs set created_at = now() - interval '30 days';" >/dev/null
+chk "والكنس يمسح القديم" "select (public.purge_rpc_refs(7) > 0)::text" "true"
 
 echo
 [ $fail -eq 0 ] && echo "✓ كل الفحوص عبرت" || { echo "✗ اكو فحصٌ فشل"; exit 1; }

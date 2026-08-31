@@ -188,3 +188,12 @@ create policy profiles_self_insert on profiles for insert with check (id = auth.
 create policy invoices_perm on invoices for all
   using (clinic_id = auth_clinic() and has_permission('pos.sell'))
   with check (clinic_id = auth_clinic() and has_permission('pos.sell'));
+
+-- عيادةُ الفحوص موجودةٌ بـauth.users: بالإنتاج `clinic_id` هو معرّفُ مالكِ
+-- العيادة نفسه، وجداولٌ عدّة تشير إليه بمفتاحٍ أجنبيّ. المخطّط كان يزرع
+-- منتجاتٍ وعضوياتٍ بمعرّفٍ لا وجود له بالجدول الأصل — فمرّت لأن جداولها بلا
+-- مفتاح، حتى جاء جدولٌ بمفتاحٍ فانكشف النقص. نسدّه هنا لا بإسقاط المفتاح.
+insert into auth.users(id) values
+  ('11111111-1111-1111-1111-111111111111'),
+  ('22222222-2222-2222-2222-222222222222')
+on conflict do nothing;

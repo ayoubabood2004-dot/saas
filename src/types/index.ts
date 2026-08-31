@@ -767,6 +767,9 @@ export interface ReturnMeta {
   method?: PaymentMethod | ExpenseMethod | null;
   customer_name?: string | null;
   note?: string | null;
+  /** مرجعُ المحاولة (0136): إعادةٌ بنفس المرجع تُرجع نتيجةَ الأولى بلا أن
+   *  تزيد المخزون ثانيةً أو تسحب من الصندوق ثانية. */
+  client_ref?: string | null;
 }
 
 /** حصيلةُ إرجاعٍ خالص (0132): بضاعةٌ رجعت للمخزن ومالٌ خرج سحباً. */
