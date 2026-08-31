@@ -108,6 +108,20 @@ begin
    where id = p_product and clinic_id = p_clinic;
 end $cs$;
 
+-- سياسةٌ تحرس مبالغ الفاتورة (نظير invoices_update بالإنتاج): غيرُ المدير
+-- لا يغيّر المبالغ. تعتمد على أعمدة numeric — فهي بالضبط ما منع التوسيع
+-- هناك، ولم يكن مختبرُنا يغطّيه.
+alter table invoices add column if not exists total       numeric(12,2) not null default 0;
+alter table invoices add column if not exists amount_paid numeric(14,2) not null default 0;
+create policy invoices_update on invoices for update
+  using (clinic_id = (select auth_clinic()))
+  with check (
+    clinic_id = (select auth_clinic())
+    and ((select auth_role()) = 'manager'
+         or (not (total is distinct from (select i.total from invoices i where i.id = invoices.id))
+             and not (amount_paid is distinct from (select i.amount_paid from invoices i where i.id = invoices.id))))
+  );
+
 create table if not exists clinic_prefs (
   clinic_id uuid primary key, catalog_share boolean not null default false
 );

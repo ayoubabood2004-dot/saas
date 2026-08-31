@@ -222,6 +222,10 @@ ins "insert into invoice_items(name,qty,unit_price,unit_cost,line_total,stock_qt
      values ('ضخم',1,99999999999999999999.99,0,99999999999999999999.99,1);" \
   && printf '   ✓ %s\n' "مبلغ ١٠٠ كوينتليون ينقبل (كان يُرفض عند ١٠ مليار)" \
   || { printf '   ✗ %s\n' "المبلغ الضخم انرفض"; fail=1; }
+chk "والسياسة المعتمِدة رجعت" \
+    "select count(*)::text from pg_policies where tablename='invoices' and policyname='invoices_update'" "1"
+chk "وبنصّها كاملاً (تحرس المبالغ)" \
+    "select (with_check like '%amount_paid%' and with_check like '%auth_role%')::text from pg_policies where policyname='invoices_update'" "true"
 chk "والعرض المعتمِد رجع" \
     "select count(*)::text from pg_views where viewname='shared_catalog_source'" "1"
 chk "وما ينقرأ من التطبيق" \
