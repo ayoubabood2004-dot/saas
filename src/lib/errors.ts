@@ -34,9 +34,34 @@ export function isNetworkError(e: unknown): boolean {
   return /failed to fetch|networkerror|network error|fetch failed|load failed|err_network|err_internet/.test(m);
 }
 
+/* ── من اسم القيد إلى جملةٍ يفهمها صاحب العيادة ───────────────────────────
+ *
+ * القاعدة ترفض بجملةٍ إنجليزية تقنية:
+ *     new row for relation "expenses" violates check constraint "expenses_amount_check"
+ * وكانت تُترجم كلُّها إلى «بعض القيم غير صحيحة» — وهي أسوأ من الإنجليزية،
+ * لأنها ما تقول أي قيمة ولا أي حقل. فالموظّف يجرّب ويجرّب بلا دليل.
+ *
+ * والحلّ ليس ترجمة الجملة، بل الالتقاط بـ**اسم القيد**: اسمٌ ثابتٌ لا يتغيّر
+ * بتغيّر لغة الخادم ولا صيغته، فيصلح مفتاحاً. والنصّ نفسه يسكن ملفّات اللغة
+ * فيظهر بلغة المستخدم لا بلغةٍ واحدة مفروضة — وهذا ما يجعله صحيحاً لنظامٍ
+ * بثلاث لغات، لا مجرّد «تعريب».
+ *
+ * ولا نُغطّي القيود كلّها (٦٩ قيداً): أكثرها حرّاسُ قوائمَ يختارها البرنامج
+ * نفسه (status، kind، role)، فانكسارُها عطلٌ بالشِفرة لا خطأٌ من المستخدم،
+ * ورسالةٌ لطيفة له تخفي عطلاً يجب أن يُرى. المغطّى هو ما يبلغه إصبعُ إنسانٍ
+ * يكتب رقماً أو اسماً.
+ *
+ * وما لا مفتاحَ له يسقط للرسالة العامّة كما كان — فمفتاحٌ ناقص لا يُظهر
+ * أبداً اسمَ مفتاحٍ على شاشة طبيب. */
+function constraintOf(err: { message?: string; details?: string }): string | null {
+  const hay = `${err.message ?? ""} ${err.details ?? ""}`;
+  const m = /constraint "([^"]+)"/i.exec(hay);
+  return m ? m[1] : null;
+}
+
 /** Map a thrown DB/network error to a short, human-readable message for a toast. */
 export function describeDbError(e: unknown, t: TFunction): string {
-  const err = (e && typeof e === "object" ? e : {}) as { name?: string; code?: string; message?: string };
+  const err = (e && typeof e === "object" ? e : {}) as { name?: string; code?: string; message?: string; details?: string };
   // اشتراك منتهٍ: العملية رُفضت بقصد — الرسالة تشرح السبب والحل، لا «خطأ».
   if (err.name === "ReadOnlyError" || err.message === "READ_ONLY") {
     return t("errors.readOnly", "انتهى اشتراك العيادة — الحساب بوضع القراءة فقط. تقدر تشوف وتطبع كل بياناتك، بس الإضافة والتعديل يحتاجان تجديد الاشتراك.");
@@ -53,6 +78,13 @@ export function describeDbError(e: unknown, t: TFunction): string {
   }
   if (isNetworkError(e)) {
     return t("errors.network", "ما وصلنا للسيرفر — تأكد من الإنترنت وحاول من جديد. لو تكررت: جرّب بيانات الموبايل، وتأكد أن ساعة الحاسوب صحيحة.");
+  }
+  // اسمُ القيد أدقُّ من رمز الخطأ: يقول أي حقلٍ بالضبط، لا «قيمةٌ ما».
+  // فيُجرَّب قبل الرموز العامّة، ويسقط إليها إن لم يكن له نصّ.
+  const cname = constraintOf(err);
+  if (cname) {
+    const said = t(`errors.c.${cname}`, { defaultValue: "" });
+    if (said) return said;
   }
   switch (err.code) {
     case "23505": // unique_violation — duplicate cage, phone, serial, etc.

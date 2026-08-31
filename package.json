@@ -5,12 +5,13 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "node scripts/i18n-guard.mjs && node scripts/db-guard.mjs && node scripts/outbox-test.mjs && tsc -b && vite build",
+    "build": "node scripts/i18n-guard.mjs && node scripts/db-guard.mjs && node scripts/outbox-test.mjs && node scripts/errors-test.mjs && tsc -b && vite build",
     "preview": "vite preview",
-    "lint": "tsc -b --noEmit && node scripts/i18n-guard.mjs && node scripts/db-guard.mjs && node scripts/outbox-test.mjs",
+    "lint": "tsc -b --noEmit && node scripts/i18n-guard.mjs && node scripts/db-guard.mjs && node scripts/outbox-test.mjs && node scripts/errors-test.mjs",
     "i18n": "node scripts/i18n-guard.mjs",
     "db": "node scripts/db-guard.mjs",
-    "outbox": "node scripts/outbox-test.mjs"
+    "outbox": "node scripts/outbox-test.mjs",
+    "errors": "node scripts/errors-test.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
