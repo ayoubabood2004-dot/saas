@@ -2132,6 +2132,10 @@ const demoRepo = {
   async disburseLoan(staffId: string, staffName: string, principal: number, installment: number, reason: string | null, method: PayMethod): Promise<StaffLoan> {
     return PD.disburseLoan(staffId, staffName, principal, installment, reason, method, async (e) => demoAddExpense(e));
   },
+  /** سحبٌ على حساب الشهر: سلفةٌ قسطُها أصلُها، تُقطع كاملةً بأقرب قسيمة (0140). */
+  async disburseAdvance(staffId: string, staffName: string, amount: number, reason: string | null, method: PayMethod): Promise<StaffLoan> {
+    return PD.disburseLoan(staffId, staffName, amount, amount, reason, method, async (e) => demoAddExpense(e), "advance");
+  },
   async writeOffLoan(loanId: string, note: string): Promise<StaffLoan> { return PD.writeOffLoan(loanId, note); },
 
   /** Log a WhatsApp message send (campaign history / "last contacted"). */
@@ -2209,6 +2213,7 @@ const DEMO_ACTIVITY_MAP: Record<string, { entity: string; action: "INSERT" | "UP
   payPayslip: { entity: "payslips", action: "UPDATE" },
   closePayrollRun: { entity: "payroll_runs", action: "UPDATE" },
   disburseLoan: { entity: "staff_loans", action: "INSERT" },
+  disburseAdvance: { entity: "staff_loans", action: "INSERT" },
   writeOffLoan: { entity: "staff_loans", action: "UPDATE" },
   setPayrollPolicy: { entity: "payroll_settings", action: "UPDATE" },
   addMedia: { entity: "media_items", action: "INSERT" },
@@ -3562,6 +3567,13 @@ const supabaseRepo: typeof demoRepo = {
     const { data, error } = await sbc().rpc("payroll_disburse_loan", {
       p_staff: staffId, p_principal: principal, p_installment: installment,
       p_reason: reason, p_method: method,
+    });
+    if (error) throw error;
+    return data as StaffLoan;
+  },
+  async disburseAdvance(staffId, _staffName, amount, reason, method) {
+    const { data, error } = await sbc().rpc("payroll_disburse_advance", {
+      p_staff: staffId, p_amount: amount, p_reason: reason, p_method: method,
     });
     if (error) throw error;
     return data as StaffLoan;

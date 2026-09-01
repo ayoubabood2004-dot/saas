@@ -44,7 +44,10 @@ function explain(l: PayslipLine, policy: PayrollPolicyDTO): string {
     }
   }
   if (l.reason) bits.push(esc(l.reason));
-  if (l.deferred > 0) bits.push(i18n.t("payroll.carriedTo", { v: ltr(fmt(l.deferred)) }));
+  // باقي السحب ليس «ترحيلاً بسبب السقف»: هو ما لم يسعه راتبُ الشهر ويُقطع الجاي.
+  if (l.deferred > 0) {
+    bits.push(i18n.t(l.code === "ADV" ? "payroll.advCarried" : "payroll.carriedTo", { v: ltr(fmt(l.deferred)) }));
+  }
   return bits.join(" · ");
 }
 
@@ -53,6 +56,9 @@ export function buildPayslipHTML(
 ): string {
   const earn = lines.filter((l) => l.kind === "earning");
   const ded = lines.filter((l) => l.kind === "deduction");
+  // تفسيرُ المرحَّل يختلف بسببه: السقفُ للقطوعات، وضيقُ الراتب لباقي السحب.
+  const cappedDeferred = ded.filter((l) => l.code !== "ADV").reduce((s, l) => s + l.deferred, 0);
+  const advDeferred = ded.filter((l) => l.code === "ADV").reduce((s, l) => s + l.deferred, 0);
   const label = (code: string) => esc(elLabelOf(code));
   const W = opts.thermal ? "80mm" : "210mm";
 
@@ -121,7 +127,8 @@ export function buildPayslipHTML(
   <div class="meta">
     ${esc(i18n.t("payroll.baseInForce"))}: ${ltr(fmt(slip.base_amount))} ·
     ${esc(i18n.t("payroll.capPctShort"))}: ${ltr(String(opts.policy.deductionCapPct))}٪
-    ${slip.deferred > 0 ? `<br><b>${esc(i18n.t("payroll.carriedTo", { v: fmt(slip.deferred) }))}</b> — ${esc(i18n.t("payroll.carriedWhy"))}` : ""}
+    ${cappedDeferred > 0 ? `<br><b>${esc(i18n.t("payroll.carriedTo", { v: fmt(cappedDeferred) }))}</b> — ${esc(i18n.t("payroll.carriedWhy"))}` : ""}
+    ${advDeferred > 0 ? `<br><b>${esc(i18n.t("payroll.advCarried", { v: fmt(advDeferred) }))}</b>` : ""}
     ${slip.paid_at
       ? `<br>${esc(i18n.t("payroll.paidVia", { m: i18n.t(`payroll.method_${slip.pay_method ?? "cash"}`) }))} · ${esc(new Date(slip.paid_at).toLocaleDateString(i18n.language === "ar" ? "ar-IQ" : "en-GB"))}`
       : `<br>${esc(i18n.t("payroll.notPaidYet"))}`}

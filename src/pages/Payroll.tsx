@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import {
   Wallet, Users, HandCoins, Plus, Trash2, Printer, Check, Lock,
@@ -14,19 +14,19 @@ import { playSuccess, playTap, playWarning } from "@/lib/sounds";
 import { Button, Dialog, EmptyState, PageHeader, Segmented, useToast } from "@/components/ui";
 import { openPayslip, payslipNo } from "@/lib/payslipPrint";
 import {
-  PAY_ELEMENTS, elementOf, compAt, buildSlip, remainingAfter,
+  PAY_ELEMENTS, elementOf, compAt, buildSlip, remainingAfter, isAdvance,
   normalizePolicy, periodKey, periodEnd, periodLabel, isFrozen,
   type LineInput, type PayrollPolicy, type LoanRow,
 } from "@/lib/payroll";
 import type {
-  StaffComp, StaffRecurring, PayrollRun, Payslip, PayslipLine, StaffLoan, PayslipDraft, PayMethod,
+  StaffComp, StaffRecurring, PayrollRun, Payslip, PayslipLine, StaffLoan, PayslipDraft, PayMethod, PayLineKind,
 } from "@/types";
 
 /* ============================================================================
- * رواتب الكادر — المرحلة الأولى.
+ * رواتب الكادر.
  *
  * ثلاث تبويبات تتبع تسلسل العمل الحقيقي لا تصنيف البيانات: من يقبض وكم
- * (الكادر)، ثم شهر هذا الشهر (الدورة)، ثم ما برقبة الموظفين (السلف).
+ * (الكادر)، ثم شهر هذا الشهر (الدورة)، ثم ما برقبة الموظفين (السلف والسحوبات).
  *
  * والصفحة **لا تحسب شيئاً بنفسها**: كل رقم يخرج من src/lib/payroll.ts، وكل
  * كتابة تمرّ من repo إلى دالة خادم تتحقّق من الثوابت ثانيةً. فما تراه هنا عرضٌ
@@ -55,7 +55,7 @@ export function Payroll() {
   }
 
   return (
-    <div className="mx-auto max-w-5xl px-4 py-6">
+    <div className="mx-auto max-w-6xl px-4 py-6">
       <PageHeader
         icon={<Wallet size={20} />}
         title={t("payroll.title", "رواتب الكادر")}
@@ -78,7 +78,7 @@ export function Payroll() {
           options={[
             { value: "run", label: t("payroll.tabRun", "دورة الشهر"), icon: <CircleDollarSign size={15} /> },
             { value: "staff", label: t("payroll.tabStaff", "الكادر ورواتبهم"), icon: <Users size={15} /> },
-            { value: "loans", label: t("payroll.tabLoans", "السلف"), icon: <HandCoins size={15} /> },
+            { value: "loans", label: t("payroll.tabLoans", "السلف والسحوبات"), icon: <HandCoins size={15} /> },
           ]}
         />
       </div>
@@ -168,7 +168,7 @@ function PolicyDialog({ onClose }: { onClose: () => void }) {
 
 /* ── مشترك ────────────────────────────────────────────────────────────────── */
 
-/** الكادر + هيكل الأجر + الثابت + السلف: كل ما تحتاجه التبويبات الثلاث. */
+/** الكادر + هيكل الأجر + الثابت + السلف والسحوبات: كل ما تحتاجه التبويبات الثلاث. */
 function usePayrollData() {
   const [staff, setStaff] = useState<StaffMember[]>([]);
   const [comp, setComp] = useState<StaffComp[]>([]);
@@ -209,22 +209,27 @@ function useElLabel() {
  * إجابتهما بين بطاقات. فالشكل هنا ورقة حسابات: خطوطٌ كاملة، وصفوف مخطّطة،
  * وأرقام بخانات ثابتة تصطفّ فوق بعضها.
  *
- * وثلاثة تفاصيل تجعلها تعمل على آيباد لا على شاشة عريضة فقط: الرأس لاصقٌ
- * عمودياً، وعمود الاسم لاصقٌ أفقياً (فلا يضيع صاحب الرقم عند التمرير)،
- * وسطر المجاميع لاصقٌ بالأسفل — وهو ما يقابل «صفّ المجموع» بالإكسل. */
-const TH = "sticky top-0 z-20 border border-line/70 bg-surface-2 px-3 py-2 text-2xs font-bold tracking-wide text-ink-muted whitespace-nowrap";
-const TD = "border border-line/60 px-3 py-2 align-middle";
+ * وأربعة تفاصيل تجعلها تعمل على آيباد لا على شاشة عريضة فقط: الرأس لاصقٌ
+ * عمودياً (بطبقتين بكشف الدورة)، وعمود الاسم لاصقٌ من البداية وعمود الأزرار
+ * لاصقٌ من النهاية (فلا يضيع صاحب الرقم ولا زرُّه عند التمرير)، وسطر المجاميع
+ * لاصقٌ بالأسفل — وهو ما يقابل «صفّ المجموع» بالإكسل.
+ *
+ * الحدود من جهةٍ واحدة على جدولٍ `border-separate`: سفاري الآيباد يُسقط حدود
+ * الخلية اللاصقة بجدولٍ `border-collapse` لحظةَ التمرير، فيختفي شكل الشبكة.
+ * والخلفيات **معتمة** كلّها: خليةٌ لاصقة بخلفيةٍ شفّافة تكشف ما يمرّ تحتها. */
+const TH = "sticky top-0 z-20 border-b border-e border-line/70 bg-surface-2 px-3 py-2 text-2xs font-bold tracking-wide text-ink-muted whitespace-nowrap";
+const TD = "border-b border-e border-line/60 px-3 py-2 align-middle";
 const NUM = "text-end tabular-nums whitespace-nowrap";
-/** خلفية صريحة لكل صفّ: بدونها يصير العمود اللاصق شفّافاً فوق ما يمرّ تحته. */
-const TR = "bg-surface-1 even:bg-surface-2/40 hover:bg-brand-50/40 dark:hover:bg-brand-500/10";
-const STICKY = "sticky start-0 z-10 bg-inherit";
-const TF = "sticky bottom-0 z-20 border border-line/70 bg-surface-2 px-3 py-2 font-bold";
+const TR = "bg-surface-1 even:bg-surface-2 hover:bg-brand-50 dark:hover:bg-surface-3";
+const STICKY = "sticky start-0 z-10 bg-inherit border-e border-line-strong";
+const STICKY_END = "sticky end-0 z-10 bg-inherit border-s border-line-strong";
+const TF = "sticky bottom-0 z-20 border-t border-e border-line/70 bg-surface-2 px-3 py-2 font-bold";
 
 function Sheet({ minW, hook, children }: { minW: number; hook?: string; children: ReactNode }) {
   return (
     <div className="card overflow-hidden p-0" data-sheet={hook}>
-      <div className="max-h-[66vh] overflow-auto">
-        <table className="w-full border-collapse text-sm" style={{ minWidth: minW }}>{children}</table>
+      <div className="max-h-[66vh] overflow-auto supports-[height:100dvh]:max-h-[calc(100dvh-14rem)]">
+        <table className="w-full border-separate border-spacing-0 text-sm" style={{ minWidth: minW }}>{children}</table>
       </div>
     </div>
   );
@@ -244,6 +249,11 @@ function AmountInput({ value, onChange, placeholder, hook }: {
       onChange={(e) => onChange(e.target.value.replace(/[^\d.]/g, ""))}
     />
   );
+}
+
+/** مبلغٌ بإشارة سالبة معزولةٍ اتجاهياً: بلا العزل تنقلب الإشارة لآخر الرقم داخل RTL. */
+function Neg({ v }: { v: number }) {
+  return <span dir="ltr" className="[unicode-bidi:isolate]">−{formatNum(v)}</span>;
 }
 
 /* ── ١) الكادر ورواتبهم ──────────────────────────────────────────────────── */
@@ -271,7 +281,7 @@ function StaffPayTab() {
       <Sheet minW={820} hook="staff">
         <thead>
           <tr>
-            <th className={cn(TH, "z-30 text-start")}>{t("payroll.employee", "الموظف")}</th>
+            <th className={cn(TH, "start-0 z-30 text-start")}>{t("payroll.employee", "الموظف")}</th>
             <th className={cn(TH, "text-start")}>{t("payroll.role", "الدور")}</th>
             <th className={cn(TH, "text-end")}>{t("payroll.baseShort", "الأجر الأساسي")}</th>
             <th className={cn(TH, "text-start")}>{t("payroll.since", "ساري من")}</th>
@@ -284,7 +294,9 @@ function StaffPayTab() {
           {staff.map((s) => {
             const cur = compAt(rowsFor(s.id), today);
             const fixed = recurring.filter((r) => r.staff_id === s.id);
-            const loan = loans.find((l) => l.staff_id === s.id && l.status === "active");
+            const mine = loans.filter((l) => l.staff_id === s.id && l.status === "active");
+            const loan = mine.find((l) => !isAdvance(l));
+            const drawLeft = mine.filter(isAdvance).reduce((sum, l) => sum + l.remaining, 0);
             return (
               <tr key={s.id} className={TR} data-payrow={s.id}>
                 <td className={cn(TD, STICKY, "font-semibold text-ink")}>{s.name}</td>
@@ -310,8 +322,11 @@ function StaffPayTab() {
                     </div>
                   )}
                 </td>
-                <td className={cn(TD, NUM, loan ? "text-warn-700 dark:text-warn-300" : "text-ink-subtle")}>
+                <td className={cn(TD, NUM, loan || drawLeft > 0 ? "text-warn-700 dark:text-warn-300" : "text-ink-subtle")}>
                   {loan ? money(loan.remaining) : "—"}
+                  {drawLeft > 0 && (
+                    <span className="block text-2xs leading-tight text-ink-subtle">{t("payroll.drawLeft", "سحب باقي {{v}}", { v: money(drawLeft) })}</span>
+                  )}
                 </td>
                 <td className={cn(TD, "p-1")}>
                   <Button size="sm" variant="secondary" data-payedit={s.id} onClick={() => { playTap(); setEditing(s); }}>
@@ -458,6 +473,51 @@ const STATUS_TONE: Record<string, string> = {
   closed: "bg-surface-2 text-ink-subtle",
 };
 
+/* ── كشف الدورة: عمودٌ لكل بند ────────────────────────────────────────────
+ * الرأس بطبقتين مثل الإكسل: مجموعتا «الإضافات» و«القطوعات» فوق، وتحت كلٍّ
+ * منهما عمودٌ لكل بندٍ **ظهر هذا الشهر فعلاً** بترتيب الكتالوج — فلا تظهر
+ * ستّة عشر عموداً فارغاً، ولا يتبدّل ترتيبُ الأعمدة بين شهرٍ وآخر. و«السحب»
+ * و«قسط السلفة» عمودان دائمان **داخل** القطوعات، يليهما «المجموع» الذي
+ * يساوي حرفياً ما يخزّنه الخادم بالقسيمة وما يُطبع عليها — فيصير
+ * الإجمالي − المجموع = الصافي قابلاً للفحص بالعين على كل صف.
+ *
+ * الخلايا أرقامٌ صِرف بلا رمز عملة (يُذكر مرّةً بالشريط) وبلا إشارة سالبة
+ * داخل أعمدة القطوعات: الرأسُ واللونُ يقولانها، والإشارة تقلب اتجاهها بـRTL.
+ *
+ * وسطرٌ يُعدَّل قبل الحفظ يُعرض من المعاينة الحيّة ملوَّناً — فقطعٌ أو سحبٌ
+ * يُضاف يظهر بعموده فوراً، ويبقى ملوَّناً حتى تحفظه «إعادة الحساب». */
+
+/** ما تحتاجه الخلية من السطر — يقبل المحفوظ (PayslipLine) والمعاينة (ComputedLine) معاً. */
+type AnyLine = { code: string; kind: PayLineKind; amount: number; deferred: number; qty?: number | null; reason?: string | null; ref_id?: string | null };
+
+interface SheetRow {
+  sid: string; name: string; base: number; gross: number; ded: number; net: number; defer: number;
+  lines: AnyLine[]; slip: Payslip | null; dirty: boolean;
+}
+
+interface Agg { amount: number; deferred: number; qty: number; reasons: string[] }
+function aggOf(lines: AnyLine[], code: string): Agg {
+  const a: Agg = { amount: 0, deferred: 0, qty: 0, reasons: [] };
+  for (const l of lines) {
+    if (l.code !== code) continue;
+    a.amount += l.amount; a.deferred += l.deferred; a.qty += l.qty ?? 0;
+    if (l.reason) a.reasons.push(l.reason);
+  }
+  return a;
+}
+
+/** بصمةُ السطور: تختلف ⇐ المعاينة تختلف عن المحفوظ ⇐ الصفّ يحتاج إعادة حساب. */
+const sigOf = (lines: AnyLine[]): string =>
+  lines.map((l) => `${l.code}|${Number(l.amount)}|${l.qty == null ? "" : Number(l.qty)}|${l.ref_id ?? ""}`).sort().join(";");
+
+const TH1 = "sticky top-0 z-20 h-8 border-b border-e border-line/70 bg-surface-2 px-2 py-0 align-middle text-2xs font-bold tracking-wide text-ink-muted whitespace-nowrap leading-none";
+const TH2 = "sticky z-20 h-8 border-b border-e border-line/70 bg-surface-2 px-2 py-0 align-middle text-2xs font-semibold text-ink-muted whitespace-nowrap leading-none text-end min-w-[6rem]";
+const TDN = cn(TD, NUM, "text-xs");
+const DIRTY = "bg-warn-50 dark:bg-warn-500/10";
+const G_EARN = "bg-emerald-50 text-emerald-700 dark:bg-surface-3 dark:text-emerald-400";
+const G_DED = "bg-danger-50 text-danger-700 dark:bg-surface-3 dark:text-danger-400";
+const G_CASH = "bg-warn-50 dark:bg-surface-3";
+
 function RunTab() {
   const { t } = useTranslation();
   const toast = useToast();
@@ -465,6 +525,7 @@ function RunTab() {
   const { staff, comp, recurring, loans, policy, loading, reload } = usePayrollData();
 
   const elLabel = useElLabel();
+  const colLabel = (code: string) => t(`payroll.col.${code}`, code);
   const [period, setPeriod] = useState(() => periodKey(new Date()));
   const [runs, setRuns] = useState<PayrollRun[]>([]);
   const [slips, setSlips] = useState<Payslip[]>([]);
@@ -472,6 +533,7 @@ function RunTab() {
   const [manual, setManual] = useState<Record<string, LineInput[]>>({});
   const [busy, setBusy] = useState(false);
   const [addFor, setAddFor] = useState<StaffMember | null>(null);
+  const [drawFor, setDrawFor] = useState<StaffMember | null>(null);
   const [open, setOpen] = useState<string | null>(null);
 
   const run = useMemo(() => runs.find((r) => r.period === period) ?? null, [runs, period]);
@@ -506,6 +568,66 @@ function RunTab() {
     manual: manual[s.id] ?? [],
   }, policy)), [eligible, recurring, loans, manual, policy]);
 
+  /* مصدرُ كل صفّ: المجمَّدة من المحفوظ وحده؛ وغيرُها من المعاينة إن اختلفت
+   * عن المحفوظ (بندٌ معلّق، أو سحبٌ جديد، أو راتبٌ تغيّر) وإلا من المحفوظ.
+   * فما يُضاف يظهر بعموده فوراً بلا حفظٍ صامتٍ لشيء. */
+  const linesMissing = slips.length > 0 && lines.length === 0;
+  const rows = useMemo<SheetRow[]>(() => {
+    const saved = new Map(slips.map((p) => [p.staff_id, p]));
+    const fromSlip = (p: Payslip, dirty: boolean): SheetRow => ({
+      sid: p.staff_id, name: p.staff_name, base: p.base_amount, gross: p.gross, ded: p.deductions, net: p.net, defer: p.deferred,
+      lines: lines.filter((l) => l.payslip_id === p.id), slip: p, dirty,
+    });
+    if (frozen) return slips.map((p) => fromSlip(p, false));
+    const out: SheetRow[] = [];
+    const seen = new Set<string>();
+    for (const pv of preview) {
+      seen.add(pv.staff_id);
+      const p = saved.get(pv.staff_id);
+      const pending = (manual[pv.staff_id]?.length ?? 0) > 0;
+      const changed = !!p && !linesMissing && sigOf(lines.filter((l) => l.payslip_id === p.id)) !== sigOf(pv.lines);
+      const dirty = !p || pending || changed;
+      if (p && !dirty) { out.push(fromSlip(p, false)); continue; }
+      // بلا دورةٍ محفوظة أصلاً ما من شيءٍ نقارن به فلا تلوين؛ أما موظفٌ دخل
+      // الأهلية بعد الحساب فبلا قسيمة — وهذا بذاته يستوجب إعادة الحساب.
+      out.push({
+        sid: pv.staff_id, name: pv.staff_name, base: pv.base_amount,
+        gross: pv.computation.gross, ded: pv.computation.deductions, net: pv.computation.net, defer: pv.computation.deferred,
+        lines: pv.lines, slip: p ?? null, dirty: slips.length > 0 && dirty,
+      });
+    }
+    // قسيمةٌ محفوظة لموظفٍ خرج من الأهلية: تبقى ظاهرةً ومعلَّمة — إعادةُ الحساب ستُسقطها.
+    for (const p of slips) if (!seen.has(p.staff_id)) out.push(fromSlip(p, true));
+    return out;
+  }, [slips, lines, preview, manual, frozen, linesMissing]);
+
+  const dirtyCount = rows.filter((r) => r.dirty).length;
+
+  /** الأعمدة الفرعية: ما ظهر هذا الشهر فعلاً، بترتيب الكتالوج. */
+  const { E, D } = useMemo(() => {
+    const present = new Set<string>();
+    for (const r of rows) for (const l of r.lines) present.add(l.code);
+    return {
+      E: PAY_ELEMENTS.filter((e) => e.kind === "earning" && e.code !== "BASIC" && present.has(e.code)).map((e) => e.code),
+      D: PAY_ELEMENTS.filter((e) => e.kind === "deduction" && e.code !== "ADV" && e.code !== "LOAN" && present.has(e.code)).map((e) => e.code),
+    };
+  }, [rows]);
+  const colCount = E.length + D.length + 9;
+  const minW = 160 + 96 * (E.length + D.length + 6) + 80;
+
+  /* ارتفاعُ الطبقة الأولى يُقاس لا يُخمَّن: الطبقةُ الثانية تلتصق تحته بالضبط،
+   * وتخمينُه بصنفٍ ثابت يترك شقّاً تمرّ منه الصفوف على سفاري. */
+  const [tier1H, setTier1H] = useState(32);
+  const roRef = useRef<ResizeObserver | null>(null);
+  const measureTh = useCallback((el: HTMLTableCellElement | null) => {
+    roRef.current?.disconnect(); roRef.current = null;
+    if (!el) return;
+    const apply = () => setTier1H(Math.round(el.getBoundingClientRect().height));
+    apply();
+    if (typeof ResizeObserver !== "undefined") { roRef.current = new ResizeObserver(apply); roRef.current.observe(el); }
+  }, []);
+  const th2Style = { top: tier1H };
+
   const calculate = async () => {
     if (!eligible.length) { playWarning(); toast.error(t("payroll.noEligible", "ما أكو موظف براتب مثبَّت لهذا الشهر")); return; }
     setBusy(true);
@@ -521,6 +643,7 @@ function RunTab() {
         })),
       }));
       await repo.savePayrollSlips(r.id, drafts);
+      setManual({});
       playSuccess();
       toast.success(t("payroll.calculated", "انحسبت الدورة — راجعها قبل الاعتماد"));
       await loadRun();
@@ -574,13 +697,19 @@ function RunTab() {
     if (!ok) { playWarning(); toast.error(t("payroll.popupBlocked", "المتصفّح حجب نافذة الطباعة")); }
   };
 
-  const shown = slips.length ? slips : [];
-  const totals = useMemo(() => {
-    const src = shown.length ? shown.map((s) => ({ gross: s.gross, deductions: s.deductions, net: s.net }))
-      : preview.map((p) => ({ gross: p.computation.gross, deductions: p.computation.deductions, net: p.computation.net }));
-    return src.reduce((a, x) => ({ gross: a.gross + x.gross, deductions: a.deductions + x.deductions, net: a.net + x.net }),
-      { gross: 0, deductions: 0, net: 0 });
-  }, [shown, preview]);
+  /** ما يُعرض للسحب: صافيه المتوقّع، وأقصى ما يمكن قطعُه (الإجمالي − أيامٌ لم تُعمَل − سحوبٌ قائمة). */
+  const drawBounds = (sid: string) => {
+    const pv = preview.find((p) => p.staff_id === sid);
+    if (!pv) return undefined;
+    const c = pv.computation;
+    const unearned = c.lines.filter((l) => l.code === "ABS" || l.code === "UNPAID").reduce((s, l) => s + l.amount, 0);
+    const adv = c.lines.filter((l) => l.code === "ADV").reduce((s, l) => s + l.amount + l.deferred, 0);
+    return { net: c.net, maxCollectible: Math.max(0, c.gross - unearned - adv) };
+  };
+
+  const sum = (f: (r: SheetRow) => number) => rows.reduce((s, r) => s + f(r), 0);
+  const paidCount = rows.filter((r) => r.slip?.paid_at).length;
+  const savedCount = rows.filter((r) => r.slip).length;
 
   if (loading) return <p className="text-sm text-ink-muted">{t("common.loading", "…جاري التحميل")}</p>;
 
@@ -596,14 +725,17 @@ function RunTab() {
         <span className={cn("chip", STATUS_TONE[run?.status ?? "draft"])} data-payrunstatus={run?.status ?? "none"}>
           {run ? t(`payroll.st_${run.status}`) : t("payroll.notOpened", "ما انفتحت بعد")}
         </span>
+        <span className="chip bg-surface-2 text-2xs text-ink-subtle">{t("payroll.amountsIn", "المبالغ بـ{{c}}", { c: currencySymbol() })}</span>
         <div className="ms-auto flex flex-wrap gap-2">
           {!frozen && (
-            <Button size="sm" disabled={busy} leftIcon={<RotateCcw size={15} />} onClick={calculate} data-paycalc>
-              {run ? t("payroll.recalc", "إعادة الحساب") : t("payroll.calc", "احسب الدورة")}
+            <Button size="sm" disabled={busy} variant={dirtyCount > 0 ? "primary" : "secondary"} leftIcon={<RotateCcw size={15} />} onClick={calculate} data-paycalc>
+              {dirtyCount > 0 ? t("payroll.pendingN", "إعادة الحساب ({{n}})", { n: dirtyCount })
+                : run ? t("payroll.recalc", "إعادة الحساب") : t("payroll.calc", "احسب الدورة")}
             </Button>
           )}
           {run?.status === "calculated" && (
-            <Button size="sm" disabled={busy} leftIcon={<Check size={15} />} onClick={approve} data-payapprove>
+            <Button size="sm" disabled={busy || dirtyCount > 0} leftIcon={<Check size={15} />} onClick={approve} data-payapprove
+              title={dirtyCount > 0 ? t("payroll.recalcFirst", "أعد الحساب أول — أكو صفوف متغيّرة") : undefined}>
               {t("payroll.approve", "اعتماد")}
             </Button>
           )}
@@ -621,83 +753,137 @@ function RunTab() {
           {t("payroll.frozenHint", "الدورة معتمدة فالقسائم مجمّدة: ما تتعدّل ولا تُحذف. أي تصحيح يصير بسطر تسوية بدورة الشهر الجاي.")}
         </p>
       )}
+      {linesMissing && (
+        <p className="mb-3 flex items-start gap-2 rounded-2xl border border-warn-200 bg-warn-50 p-3 text-xs text-warn-700 dark:border-warn-500/30 dark:bg-warn-500/10 dark:text-warn-300">
+          <TriangleAlert size={14} className="mt-0.5 shrink-0" />
+          {t("payroll.linesMissing", "سطور القسائم ما انحمّلت — المجاميع صحيحة والتفاصيل ناقصة")}
+        </p>
+      )}
 
-      {!eligible.length ? (
+      {!rows.length ? (
         <EmptyState icon={<TriangleAlert size={26} />}
           title={t("payroll.noEligible", "ما أكو موظف براتب مثبَّت لهذا الشهر")}
           description={t("payroll.noEligibleHint", "روح لتبويب «الكادر ورواتبهم» وثبّت الأجر الأساسي — بلا أجرٍ ساري ما يدخل الموظف الدورة.")} />
       ) : (
-        <Sheet minW={900} hook="run">
+        <Sheet minW={minW} hook="run">
           <thead>
             <tr>
-              <th className={cn(TH, "z-30 text-start")}>{t("payroll.employee", "الموظف")}</th>
-              <th className={cn(TH, "text-end")}>{t("payroll.baseShort", "الأجر الأساسي")}</th>
-              <th className={cn(TH, "text-end")}>{t("payroll.gross", "إجمالي الأجور")}</th>
-              <th className={cn(TH, "text-end")}>{t("payroll.deductions", "القطوعات")}</th>
-              <th className={cn(TH, "text-end")}>{t("payroll.deferredShort", "مرحَّل")}</th>
-              <th className={cn(TH, "text-end")}>{t("payroll.net", "الصافي")}</th>
-              <th className={cn(TH, "text-start")}>{t("payroll.payState", "الدفع")}</th>
-              <th className={cn(TH, "w-px")}></th>
+              <th rowSpan={2} className={cn(TH1, "start-0 z-30 min-w-[10rem] text-start")}>{t("payroll.employee", "الموظف")}</th>
+              <th rowSpan={2} className={cn(TH1, "text-end")}>{t("payroll.col.BASIC", "الأساسي")}</th>
+              {E.length > 0 && (
+                <th colSpan={E.length} className={cn(TH1, G_EARN, "text-center")} data-paygroup="earn">{t("payroll.additions", "الإضافات")}</th>
+              )}
+              <th rowSpan={2} className={cn(TH1, "text-end font-bold text-ink")}>{t("payroll.gross", "إجمالي الأجور")}</th>
+              <th ref={measureTh} colSpan={D.length + 3} className={cn(TH1, G_DED, "text-center")} data-paygroup="ded">{t("payroll.deductions", "القطوعات")}</th>
+              <th rowSpan={2} className={cn(TH1, "text-end")}>{t("payroll.deferredShort", "مرحَّل")}</th>
+              <th rowSpan={2} className={cn(TH1, "text-end font-bold text-ink")}>{t("payroll.net", "الصافي")}</th>
+              <th rowSpan={2} className={cn(TH1, "end-0 z-30 w-px border-s border-line-strong")}></th>
+            </tr>
+            <tr>
+              {E.map((code) => (
+                <th key={code} style={th2Style} className={cn(TH2, "bg-emerald-50/60 dark:bg-surface-3")} data-paycol={code}>{colLabel(code)}</th>
+              ))}
+              {D.map((code) => (
+                <th key={code} style={th2Style} className={cn(TH2, "bg-danger-50/60 dark:bg-surface-3")} data-paycol={code}>{colLabel(code)}</th>
+              ))}
+              <th style={th2Style} className={cn(TH2, G_CASH)} data-paycol="ADV">{t("payroll.col.ADV", "سحب")}</th>
+              <th style={th2Style} className={cn(TH2, G_CASH)} data-paycol="LOAN">{t("payroll.col.LOAN", "قسط سلفة")}</th>
+              <th style={th2Style} className={cn(TH2, "font-bold text-ink")} data-paycol="dedsum">{t("payroll.grpSum", "المجموع")}</th>
             </tr>
           </thead>
           <tbody>
-            {(shown.length ? shown : preview).map((row) => {
-              const isSaved = "id" in row;
-              const slip = isSaved ? (row as Payslip) : null;
-              const pv = isSaved ? null : (row as (typeof preview)[number]);
-              const sid = slip?.staff_id ?? pv!.staff_id;
-              const name = slip?.staff_name ?? pv!.staff_name;
-              const base = slip?.base_amount ?? pv!.base_amount;
-              const gross = slip?.gross ?? pv!.computation.gross;
-              const ded = slip?.deductions ?? pv!.computation.deductions;
-              const net = slip?.net ?? pv!.computation.net;
-              const defer = slip?.deferred ?? pv!.computation.deferred;
-              const myLines = slip ? lines.filter((l) => l.payslip_id === slip.id) : pv!.lines;
+            {rows.map((row) => {
+              const { sid, name, slip, dirty } = row;
               const expanded = open === sid;
-              const pending = (manual[sid]?.length ?? 0) > 0;
+              const advA = aggOf(row.lines, "ADV"), loanA = aggOf(row.lines, "LOAN");
+              const cell = (code: string, tone: string) => {
+                const a = aggOf(row.lines, code);
+                const days = code === "ABS" || code === "UNPAID";
+                return (
+                  <td key={code} className={cn(TDN, dirty && DIRTY)} title={a.reasons.join(" · ") || undefined}>
+                    {a.amount > 0 || a.deferred > 0 ? (
+                      <>
+                        <span className={tone}>{formatNum(a.amount)}</span>
+                        {days && a.qty > 0 && <span className="block text-2xs leading-none text-ink-subtle">{t("payroll.daysN", "{{n}} يوم", { n: formatNum(a.qty) })}</span>}
+                        {a.deferred > 0 && <span className="block text-2xs leading-none text-warn-700 dark:text-warn-300">{t("payroll.deferredTo", "رُحِّل: {{v}}", { v: formatNum(a.deferred) })}</span>}
+                      </>
+                    ) : <span className="text-ink-subtle">—</span>}
+                  </td>
+                );
+              };
 
               return [
-                <tr key={sid} className={cn(TR, "cursor-pointer")} data-payslip={sid} data-paytoggle={sid}
+                <tr key={sid} className={cn(TR, "cursor-pointer")} data-payslip={sid} data-paytoggle={sid} data-paydirty={dirty || undefined}
                   onClick={() => { playTap(); setOpen(expanded ? null : sid); }}>
                   <td className={cn(TD, STICKY, "font-semibold text-ink")}>
                     <span className="flex items-center gap-1.5">
                       <ChevronDown size={13} className={cn("shrink-0 text-ink-subtle transition", expanded && "rotate-180")} />
-                      {name}
-                      {pending && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-warn-500" title={t("payroll.recalcNeeded", "اضغط «إعادة الحساب» حتى تنحفظ")} />}
+                      <span className="truncate" title={name}>{name}</span>
+                      {dirty && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-warn-500" title={t("payroll.recalcNeeded", "اضغط «إعادة الحساب» حتى تنحفظ")} />}
                     </span>
                   </td>
-                  <td className={cn(TD, NUM, "text-ink-muted")}>{money(base)}</td>
-                  <td className={cn(TD, NUM)}>{money(gross)}</td>
-                  <td className={cn(TD, NUM, ded > 0 && "text-danger-600 dark:text-danger-400")}>
-                    {ded > 0 ? `−${money(ded)}` : "—"}
-                  </td>
-                  <td className={cn(TD, NUM, defer > 0 ? "text-warn-700 dark:text-warn-300" : "text-ink-subtle")}>
-                    {defer > 0 ? money(defer) : "—"}
-                  </td>
-                  <td className={cn(TD, NUM, "font-bold text-ink")} data-paynet={sid}>{money(net)}</td>
-                  <td className={cn(TD, "text-2xs")}>
-                    {slip?.paid_at ? (
-                      <span className="chip bg-emerald-50 text-2xs text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300">
-                        <Check size={12} />{t("payroll.wasPaid", "مدفوع")}
-                      </span>
+                  <td className={cn(TDN, "text-ink-muted")}>{formatNum(row.base)}</td>
+                  {E.map((code) => cell(code, "text-emerald-700 dark:text-emerald-400"))}
+                  <td className={cn(TDN, "font-semibold text-ink", dirty && DIRTY)}>{formatNum(row.gross)}</td>
+                  {D.map((code) => cell(code, "text-danger-600 dark:text-danger-400"))}
+                  <td className={cn(TDN, dirty && DIRTY)} data-payadv={sid}>
+                    {advA.amount > 0 || advA.deferred > 0 ? (
+                      <>
+                        <span className="text-danger-600 dark:text-danger-400">{formatNum(advA.amount)}</span>
+                        {advA.deferred > 0 && <span className="block text-2xs leading-none text-warn-700 dark:text-warn-300">{t("payroll.advCarried", "الباقي {{v}} يُقطع الشهر الجاي", { v: formatNum(advA.deferred) })}</span>}
+                      </>
                     ) : <span className="text-ink-subtle">—</span>}
                   </td>
-                  <td className={cn(TD, "p-1")}>
-                    {slip && (
-                      <button className="grid h-8 w-8 place-items-center rounded-lg text-ink-muted transition hover:bg-surface-2 hover:text-ink"
-                        aria-label={t("payroll.print", "القسيمة")} data-payprint={sid}
-                        onClick={(e) => { e.stopPropagation(); printSlip(slip); }}>
-                        <Printer size={15} />
-                      </button>
+                  <td className={cn(TDN, dirty && DIRTY)}>
+                    {loanA.amount > 0 || loanA.deferred > 0 ? (
+                      <>
+                        <span className="text-danger-600 dark:text-danger-400">{formatNum(loanA.amount)}</span>
+                        {loanA.deferred > 0 && <span className="block text-2xs leading-none text-warn-700 dark:text-warn-300">{t("payroll.deferredTo", "رُحِّل: {{v}}", { v: formatNum(loanA.deferred) })}</span>}
+                      </>
+                    ) : <span className="text-ink-subtle">—</span>}
+                  </td>
+                  <td className={cn(TDN, "font-semibold", row.ded > 0 ? "text-danger-600 dark:text-danger-400" : "text-ink-subtle", dirty && DIRTY)}>
+                    {row.ded > 0 ? <Neg v={row.ded} /> : "—"}
+                  </td>
+                  <td className={cn(TDN, row.defer > 0 ? "text-warn-700 dark:text-warn-300" : "text-ink-subtle", dirty && DIRTY)}>
+                    {row.defer > 0 ? formatNum(row.defer) : "—"}
+                  </td>
+                  <td className={cn(TDN, "font-bold text-ink", dirty && DIRTY)} data-paynet={sid}>
+                    {formatNum(row.net)}
+                    {slip?.paid_at && (
+                      <span className="mt-0.5 block"><span className="chip bg-emerald-50 text-2xs text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300"><Check size={12} />{t("payroll.wasPaid", "مدفوع")}</span></span>
                     )}
+                  </td>
+                  <td className={cn(TD, STICKY_END, "p-1")}>
+                    <span className="flex gap-0.5">
+                      {!frozen && (
+                        <button className="grid h-8 w-8 place-items-center rounded-lg text-ink-muted transition hover:bg-surface-2 hover:text-ink"
+                          aria-label={t("payroll.addLine", "قطع أو زيادة")} title={t("payroll.addLine", "قطع أو زيادة")} data-payadd={sid}
+                          onClick={(e) => { e.stopPropagation(); playTap(); setAddFor(staff.find((s) => s.id === sid) ?? null); }}>
+                          <Plus size={15} />
+                        </button>
+                      )}
+                      <button className="grid h-8 w-8 place-items-center rounded-lg text-ink-muted transition hover:bg-surface-2 hover:text-ink"
+                        aria-label={t("payroll.draw", "سحب")} title={t("payroll.draw", "سحب")} data-paydraw={sid}
+                        onClick={(e) => { e.stopPropagation(); playTap(); setDrawFor(staff.find((s) => s.id === sid) ?? null); }}>
+                        <HandCoins size={15} />
+                      </button>
+                      {slip && (
+                        <button className="grid h-8 w-8 place-items-center rounded-lg text-ink-muted transition hover:bg-surface-2 hover:text-ink"
+                          aria-label={t("payroll.print", "القسيمة")} title={t("payroll.print", "القسيمة")} data-payprint={sid}
+                          onClick={(e) => { e.stopPropagation(); printSlip(slip); }}>
+                          <Printer size={15} />
+                        </button>
+                      )}
+                    </span>
                   </td>
                 </tr>,
 
                 expanded ? (
-                  <tr key={`${sid}-d`} className="bg-surface-2/70" data-paydetail={sid}>
-                    <td className={cn(TD, "p-0")} colSpan={8}>
+                  <tr key={`${sid}-d`} className="bg-surface-2" data-paydetail={sid}>
+                    <td className={cn(TD, "p-0")} colSpan={colCount}>
                       <div className="p-3">
-                        {/* كشفٌ داخل كشف: سطور القسيمة بنفس الشبكة */}
+                        {/* كشفٌ داخل كشف: سطور القسيمة واحداً واحداً — هنا يُرى سحبان بشهرٍ واحد منفصلَين */}
                         <table className="w-full border-collapse text-2xs">
                           <thead>
                             <tr>
@@ -710,20 +896,19 @@ function RunTab() {
                             </tr>
                           </thead>
                           <tbody>
-                            {myLines.map((l, i) => (
-                              <tr key={("id" in l ? l.id : `${l.code}-${i}`)} className="bg-surface-1 even:bg-surface-2/40">
+                            {row.lines.map((l, i) => (
+                              <tr key={`${l.code}-${l.ref_id ?? ""}-${i}`} className="bg-surface-1 even:bg-surface-2">
                                 <td className={cn(TD, "font-semibold text-ink")}>{elLabel(l.code)}</td>
                                 <td className={cn(TD, "text-ink-subtle")}>{l.reason ?? "—"}</td>
-                                <td className={cn(TD, NUM, "text-ink-muted")}>{l.qty != null ? l.qty : "—"}</td>
+                                <td className={cn(TD, NUM, "text-ink-muted")}>{l.qty != null ? formatNum(l.qty) : "—"}</td>
                                 <td className={cn(TD, NUM, "text-ink-muted")}>
-                                  {l.rate != null ? Math.round(l.rate).toLocaleString("en-US") : "—"}
+                                  {"rate" in l && (l as { rate?: number | null }).rate != null ? formatNum(Math.round((l as { rate: number }).rate)) : "—"}
                                 </td>
-                                <td className={cn(TD, NUM, "font-semibold",
-                                  l.kind === "earning" ? "text-ink" : "text-danger-600 dark:text-danger-400")}>
-                                  {l.kind === "earning" ? "" : "−"}{money(l.amount)}
+                                <td className={cn(TD, NUM, "font-semibold", l.kind === "earning" ? "text-ink" : "text-danger-600 dark:text-danger-400")}>
+                                  {l.kind === "earning" ? formatNum(l.amount) : <Neg v={l.amount} />}
                                 </td>
                                 <td className={cn(TD, NUM, l.deferred > 0 ? "text-warn-700 dark:text-warn-300" : "text-ink-subtle")}>
-                                  {l.deferred > 0 ? money(l.deferred) : "—"}
+                                  {l.deferred > 0 ? formatNum(l.deferred) : "—"}
                                 </td>
                               </tr>
                             ))}
@@ -731,12 +916,6 @@ function RunTab() {
                         </table>
 
                         <div className="mt-3 flex flex-wrap items-center gap-2">
-                          {!frozen && (
-                            <Button size="sm" variant="secondary" leftIcon={<Plus size={14} />} data-payadd={sid}
-                              onClick={() => setAddFor(staff.find((s) => s.id === sid) ?? null)}>
-                              {t("payroll.addLine", "قطع أو زيادة")}
-                            </Button>
-                          )}
                           {slip && !slip.paid_at && run?.status === "approved" && (
                             <>
                               <Button size="sm" leftIcon={<Banknote size={14} />} disabled={busy} data-paycash={sid}
@@ -745,7 +924,7 @@ function RunTab() {
                                 onClick={() => pay(slip, "bank")}>{t("payroll.payBank", "حوالة")}</Button>
                             </>
                           )}
-                          {!frozen && pending && (
+                          {!frozen && (manual[sid]?.length ?? 0) > 0 && (
                             <div className="flex flex-wrap items-center gap-1.5">
                               {manual[sid].map((m, i) => (
                                 <span key={i} className="chip bg-surface-1 text-2xs text-ink-muted">
@@ -755,10 +934,12 @@ function RunTab() {
                                   }))}><Trash2 size={12} /></button>
                                 </span>
                               ))}
-                              <span className="chip bg-warn-50 text-2xs text-warn-700 dark:bg-warn-500/15 dark:text-warn-300">
-                                {t("payroll.recalcNeeded", "اضغط «إعادة الحساب» حتى تنحفظ")}
-                              </span>
                             </div>
+                          )}
+                          {!frozen && dirty && (
+                            <span className="chip bg-warn-50 text-2xs text-warn-700 dark:bg-warn-500/15 dark:text-warn-300">
+                              {t("payroll.recalcNeeded", "اضغط «إعادة الحساب» حتى تنحفظ")}
+                            </span>
                           )}
                         </div>
                       </div>
@@ -770,15 +951,23 @@ function RunTab() {
           </tbody>
           <tfoot>
             <tr>
-              <td className={cn(TF, STICKY, "z-30 text-start")}>{t("payroll.total", "المجموع")}</td>
-              <td className={TF}></td>
-              <td className={cn(TF, NUM)}>{money(totals.gross)}</td>
-              <td className={cn(TF, NUM, "text-danger-600 dark:text-danger-400")}>
-                {totals.deductions > 0 ? `−${money(totals.deductions)}` : "—"}
+              <td className={cn(TF, STICKY, "z-30 text-start")}>
+                {t("payroll.total", "المجموع")}
+                <span className="block text-2xs font-normal text-ink-subtle">{t("payroll.headcount", "{{n}} موظف", { n: rows.length })}</span>
               </td>
-              <td className={TF}></td>
-              <td className={cn(TF, NUM, "text-brand-700 dark:text-brand-300")} data-paytotal="net">{money(totals.net)}</td>
-              <td className={TF} colSpan={2}></td>
+              <td className={cn(TF, NUM, "text-xs text-ink-muted")}>{formatNum(sum((r) => r.base))}</td>
+              {E.map((code) => <td key={code} className={cn(TF, NUM, "text-xs text-emerald-700 dark:text-emerald-400")}>{formatNum(sum((r) => aggOf(r.lines, code).amount))}</td>)}
+              <td className={cn(TF, NUM, "text-xs")}>{formatNum(sum((r) => r.gross))}</td>
+              {D.map((code) => <td key={code} className={cn(TF, NUM, "text-xs text-danger-600 dark:text-danger-400")}>{formatNum(sum((r) => aggOf(r.lines, code).amount))}</td>)}
+              <td className={cn(TF, NUM, "text-xs text-danger-600 dark:text-danger-400")}>{formatNum(sum((r) => aggOf(r.lines, "ADV").amount))}</td>
+              <td className={cn(TF, NUM, "text-xs text-danger-600 dark:text-danger-400")}>{formatNum(sum((r) => aggOf(r.lines, "LOAN").amount))}</td>
+              <td className={cn(TF, NUM, "text-xs text-danger-600 dark:text-danger-400")}>{sum((r) => r.ded) > 0 ? <Neg v={sum((r) => r.ded)} /> : "—"}</td>
+              <td className={cn(TF, NUM, "text-xs text-warn-700 dark:text-warn-300")}>{sum((r) => r.defer) > 0 ? formatNum(sum((r) => r.defer)) : "—"}</td>
+              <td className={cn(TF, NUM, "text-xs text-brand-700 dark:text-brand-300")} data-paytotal="net">
+                {formatNum(sum((r) => r.net))}
+                {savedCount > 0 && <span className="block text-2xs font-normal text-ink-subtle">{t("payroll.paidOf", "مدفوع {{p}} من {{n}}", { p: paidCount, n: savedCount })}</span>}
+              </td>
+              <td className={cn(TF, STICKY_END, "z-30 p-1")}></td>
             </tr>
           </tfoot>
         </Sheet>
@@ -793,6 +982,16 @@ function RunTab() {
             setAddFor(null);
             playTap();
           }}
+        />
+      )}
+
+      {drawFor && (
+        <WithdrawalDialog
+          member={drawFor}
+          bounds={drawBounds(drawFor.id)}
+          frozen={frozen}
+          onClose={() => setDrawFor(null)}
+          onDone={async () => { setDrawFor(null); toast.success(t("payroll.drawDone", "انسجّل السحب وانخصم من الصندوق")); await reload(); }}
         />
       )}
 
@@ -890,29 +1089,136 @@ function AddLineDialog({ member, onClose, onAdd }: {
   );
 }
 
-/* ── ٣) السلف ────────────────────────────────────────────────────────────── */
+/* ── السحب على حساب الشهر ────────────────────────────────────────────────────
+ * الفلوس تخرج من الدرج **الآن** (تُسجَّل مصروفاً لحظتَها) وتُقطع كاملةً من
+ * راتب هذا الشهر خارج سقف الاستقطاع. ما لا يسعه الراتب يبقى على السحب ويُقطع
+ * الشهر الجاي — فلا تفشل الدورة ولا يضيع دينار.
+ *
+ * حدّان: فوق **الأجر المستحقّ** (الإجمالي − أيامٌ لم تُعمَل − سحوبٌ قائمة)
+ * يُمنع — ما يمكن قطعُه لا يجوز صرفُه على أنه راتب؛ وفوق **الصافي المتوقّع**
+ * يُنبَّه فقط — الزائد يترحّل، وهو قرارُ المدير. */
+function WithdrawalDialog({ member, staffOptions, bounds, frozen, onClose, onDone }: {
+  member: StaffMember | null;
+  staffOptions?: StaffMember[];
+  bounds?: { net: number; maxCollectible: number };
+  frozen?: boolean;
+  onClose: () => void;
+  onDone: () => Promise<void>;
+}) {
+  const { t } = useTranslation();
+  const toast = useToast();
+  const [sid, setSid] = useState(member?.id ?? staffOptions?.[0]?.id ?? "");
+  const [amount, setAmount] = useState("");
+  const [reason, setReason] = useState("");
+  const [method, setMethod] = useState<PayMethod>("cash");
+  const [busy, setBusy] = useState(false);
+  const n = Number(amount);
+  const name = member?.name ?? staffOptions?.find((s) => s.id === sid)?.name ?? "";
+  const overGross = !!bounds && n > bounds.maxCollectible;
+  const overNet = !!bounds && !overGross && n > bounds.net;
+
+  const submit = async () => {
+    if (!sid) return;
+    if (!Number.isFinite(n) || n <= 0) { playWarning(); toast.error(t("payroll.badAmount", "المبلغ غير صحيح")); return; }
+    if (overGross) { playWarning(); toast.error(t("payroll.drawOverGross", "أكبر من أجره المستحقّ هذا الشهر — ما يمكن قطعه")); return; }
+    setBusy(true);
+    try {
+      await repo.disburseAdvance(sid, name, n, reason.trim() || null, method);
+      playSuccess();
+      await onDone();
+    } catch (e) { playWarning(); toast.error(String((e as Error).message ?? e)); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <Dialog open onClose={onClose} title={member ? t("payroll.drawTitle", "سحب على حساب راتب {{n}}", { n: member.name }) : t("payroll.draw", "سحب")}>
+      <div className="space-y-3">
+        {!member && staffOptions && (
+          <div>
+            <label className="label">{t("payroll.employee", "الموظف")}</label>
+            <select className="input" value={sid} onChange={(e) => setSid(e.target.value)} data-paydrawstaff>
+              {staffOptions.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+          </div>
+        )}
+        <p className="rounded-xl bg-surface-2 p-2.5 text-2xs leading-relaxed text-ink-muted">
+          {t("payroll.drawHint", "الفلوس تطلع من الصندوق الآن وتنقطع كاملة من راتب هذا الشهر — خارج سقف الاستقطاع.")}
+        </p>
+        <div>
+          <label className="label">{t("payroll.drawAmount", "المبلغ المسحوب")}</label>
+          <AmountInput value={amount} onChange={setAmount} placeholder={currencySymbol()} hook="draw" />
+          {bounds && (
+            <p className="mt-1.5 text-xs text-ink-subtle" data-paydrawnet>{t("payroll.drawNet", "صافيه المتوقّع هذا الشهر: {{v}}", { v: money(bounds.net) })}</p>
+          )}
+          {overGross && (
+            <p className="mt-1.5 text-xs font-semibold text-danger-600 dark:text-danger-400">{t("payroll.drawOverGross", "أكبر من أجره المستحقّ هذا الشهر — ما يمكن قطعه")}</p>
+          )}
+          {overNet && (
+            <p className="mt-1.5 text-xs font-semibold text-warn-700 dark:text-warn-300">{t("payroll.drawOverNet", "أكبر من صافيه — الزائد يترحّل للشهر الجاي")}</p>
+          )}
+          {frozen && (
+            <p className="mt-1.5 text-xs text-ink-muted">{t("payroll.drawFrozen", "دورة هذا الشهر معتمدة — ينقطع من دورة الشهر الجاي")}</p>
+          )}
+        </div>
+        <div>
+          <label className="label">{t("payroll.reason", "السبب")}</label>
+          <input className="input" value={reason} onChange={(e) => setReason(e.target.value)} data-paydrawreason
+            placeholder={t("payroll.reasonOpt", "اختياري")} />
+        </div>
+        <div>
+          <label className="label">{t("payroll.method", "من وين تطلع الفلوس")}</label>
+          <Segmented<PayMethod>
+            layoutId="draw-method" value={method} onChange={setMethod}
+            options={[
+              { value: "cash", label: t("payroll.cash", "نقد الصندوق") },
+              { value: "bank", label: t("payroll.bank", "حوالة") },
+            ]}
+          />
+        </div>
+        <Button className="w-full" disabled={busy || overGross} onClick={submit} data-paydrawsave>
+          {t("payroll.drawConfirm", "اصرف السحب")}
+        </Button>
+      </div>
+    </Dialog>
+  );
+}
+
+/* ── ٣) السلف والسحوبات ─────────────────────────────────────────────────── */
 
 function LoansTab() {
   const { t } = useTranslation();
   const toast = useToast();
   const { staff, loans, loading, reload } = usePayrollData();
   const [openNew, setOpenNew] = useState(false);
+  const [openDraw, setOpenDraw] = useState(false);
 
-  const active = loans.filter((l) => l.status === "active");
-  const done = loans.filter((l) => l.status !== "active");
-  const outstanding = active.reduce((s, l) => s + l.remaining, 0);
+  const real = loans.filter((l) => !isAdvance(l));
+  const draws = loans.filter(isAdvance);
+  const active = real.filter((l) => l.status === "active");
+  const done = real.filter((l) => l.status !== "active");
+  const outstandingLoans = active.reduce((s, l) => s + l.remaining, 0);
+  const outstandingDraws = draws.filter((l) => l.status === "active").reduce((s, l) => s + l.remaining, 0);
 
   return (
     <div data-payloans>
       <div className="card mb-4 flex flex-wrap items-center gap-3 p-4">
         <div>
           <p className="text-2xs font-semibold text-ink-muted">{t("payroll.outstanding", "الذمم القائمة")}</p>
-          <p className="font-display text-xl font-extrabold tabular-nums text-ink" data-payoutstanding>{money(outstanding)}</p>
+          <p className="font-display text-xl font-extrabold tabular-nums text-ink" data-payoutstanding>{money(outstandingLoans + outstandingDraws)}</p>
+          {outstandingDraws > 0 && (
+            <p className="text-2xs text-ink-subtle">{t("payroll.outstandingSplit", "سلف {{a}} · سحوبات {{b}}", { a: money(outstandingLoans), b: money(outstandingDraws) })}</p>
+          )}
         </div>
-        <Button size="sm" className="ms-auto" leftIcon={<Plus size={15} />} data-payloannew
-          onClick={() => { playTap(); setOpenNew(true); }}>
-          {t("payroll.newLoan", "صرف سلفة")}
-        </Button>
+        <div className="ms-auto flex flex-wrap gap-2">
+          <Button size="sm" variant="secondary" leftIcon={<HandCoins size={15} />} data-paydrawnew
+            disabled={!staff.length} onClick={() => { playTap(); setOpenDraw(true); }}>
+            {t("payroll.draw", "سحب")}
+          </Button>
+          <Button size="sm" leftIcon={<Plus size={15} />} data-payloannew
+            onClick={() => { playTap(); setOpenNew(true); }}>
+            {t("payroll.newLoan", "صرف سلفة")}
+          </Button>
+        </div>
       </div>
 
       <p className="mb-4 rounded-2xl border border-line bg-surface-2 p-3 text-xs leading-relaxed text-ink-muted">
@@ -924,34 +1230,74 @@ function LoansTab() {
           <EmptyState icon={<HandCoins size={26} />} title={t("payroll.noLoans", "ما أكو سلف")}
             description={t("payroll.noLoansHint", "لمّا تصرف سلفة تظهر هنا مع أقساطها والباقي منها.")} />
         ) : (
-          <Sheet minW={920} hook="loans">
-            <thead>
-              <tr>
-                <th className={cn(TH, "z-30 text-start")}>{t("payroll.employee", "الموظف")}</th>
-                <th className={cn(TH, "text-end")}>{t("payroll.principal", "الأصل")}</th>
-                <th className={cn(TH, "text-end")}>{t("payroll.installment", "القسط الشهري")}</th>
-                <th className={cn(TH, "text-end")}>{t("payroll.repaid", "المسدَّد")}</th>
-                <th className={cn(TH, "text-end")}>{t("payroll.remaining", "الباقي")}</th>
-                <th className={cn(TH, "text-start")}>{t("payroll.progress", "التقدّم")}</th>
-                <th className={cn(TH, "text-start")}>{t("payroll.reason", "السبب")}</th>
-                <th className={cn(TH, "text-start")}>{t("payroll.state", "الحالة")}</th>
-                <th className={cn(TH, "w-px")}></th>
-              </tr>
-            </thead>
-            <tbody>
-              {[...active, ...done].map((l) => (
-                <LoanRow key={l.id} loan={l} name={nameOf(staff, l.staff_id)} onChanged={reload} />
-              ))}
-            </tbody>
-            <tfoot>
-              <tr>
-                <td className={cn(TF, STICKY, "z-30 text-start")}>{t("payroll.outstanding", "الذمم القائمة")}</td>
-                <td className={TF} colSpan={3}></td>
-                <td className={cn(TF, NUM, "text-warn-700 dark:text-warn-300")}>{money(outstanding)}</td>
-                <td className={TF} colSpan={4}></td>
-              </tr>
-            </tfoot>
-          </Sheet>
+          <div className="space-y-5">
+            {real.length > 0 && (
+              <div>
+                {draws.length > 0 && <h3 className="mb-2 text-sm font-bold text-ink">{t("payroll.loansTitle", "السلف")}</h3>}
+                <Sheet minW={920} hook="loans">
+                  <thead>
+                    <tr>
+                      <th className={cn(TH, "start-0 z-30 text-start")}>{t("payroll.employee", "الموظف")}</th>
+                      <th className={cn(TH, "text-end")}>{t("payroll.principal", "الأصل")}</th>
+                      <th className={cn(TH, "text-end")}>{t("payroll.installment", "القسط الشهري")}</th>
+                      <th className={cn(TH, "text-end")}>{t("payroll.repaid", "المسدَّد")}</th>
+                      <th className={cn(TH, "text-end")}>{t("payroll.remaining", "الباقي")}</th>
+                      <th className={cn(TH, "text-start")}>{t("payroll.progress", "التقدّم")}</th>
+                      <th className={cn(TH, "text-start")}>{t("payroll.reason", "السبب")}</th>
+                      <th className={cn(TH, "text-start")}>{t("payroll.state", "الحالة")}</th>
+                      <th className={cn(TH, "w-px")}></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {[...active, ...done].map((l) => (
+                      <LoanRowView key={l.id} loan={l} name={nameOf(staff, l.staff_id)} onChanged={reload} />
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr>
+                      <td className={cn(TF, STICKY, "z-30 text-start")}>{t("payroll.outstanding", "الذمم القائمة")}</td>
+                      <td className={TF} colSpan={3}></td>
+                      <td className={cn(TF, NUM, "text-warn-700 dark:text-warn-300")}>{money(outstandingLoans)}</td>
+                      <td className={TF} colSpan={4}></td>
+                    </tr>
+                  </tfoot>
+                </Sheet>
+              </div>
+            )}
+
+            {draws.length > 0 && (
+              <div data-paydraws>
+                <h3 className="mb-2 text-sm font-bold text-ink">{t("payroll.drawsTitle", "السحوبات")}</h3>
+                <Sheet minW={760} hook="draws">
+                  <thead>
+                    <tr>
+                      <th className={cn(TH, "start-0 z-30 text-start")}>{t("payroll.employee", "الموظف")}</th>
+                      <th className={cn(TH, "text-start")}>{t("payroll.drawDate", "التاريخ")}</th>
+                      <th className={cn(TH, "text-end")}>{t("payroll.amount", "المبلغ")}</th>
+                      <th className={cn(TH, "text-end")}>{t("payroll.drawTakenCol", "المقطوع")}</th>
+                      <th className={cn(TH, "text-end")}>{t("payroll.remaining", "الباقي")}</th>
+                      <th className={cn(TH, "text-start")}>{t("payroll.reason", "السبب")}</th>
+                      <th className={cn(TH, "text-start")}>{t("payroll.state", "الحالة")}</th>
+                      <th className={cn(TH, "w-px")}></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {[...draws.filter((l) => l.status === "active"), ...draws.filter((l) => l.status !== "active")].map((l) => (
+                      <DrawRowView key={l.id} loan={l} name={nameOf(staff, l.staff_id)} onChanged={reload} />
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr>
+                      <td className={cn(TF, STICKY, "z-30 text-start")}>{t("payroll.total", "المجموع")}</td>
+                      <td className={TF} colSpan={3}></td>
+                      <td className={cn(TF, NUM, "text-warn-700 dark:text-warn-300")}>{money(outstandingDraws)}</td>
+                      <td className={TF} colSpan={3}></td>
+                    </tr>
+                  </tfoot>
+                </Sheet>
+              </div>
+            )}
+          </div>
         )}
 
       {openNew && (
@@ -961,15 +1307,53 @@ function LoansTab() {
           onDone={async () => { setOpenNew(false); toast.success(t("payroll.loanDone", "انصرفت السلفة وانسجّلت الذمّة")); await reload(); }}
         />
       )}
+      {openDraw && (
+        <WithdrawalDialog
+          member={null}
+          staffOptions={staff}
+          onClose={() => setOpenDraw(false)}
+          onDone={async () => { setOpenDraw(false); toast.success(t("payroll.drawDone", "انسجّل السحب وانخصم من الصندوق")); await reload(); }}
+        />
+      )}
     </div>
   );
 }
 
-function LoanRow({ loan, name, onChanged }: { loan: StaffLoan; name: string; onChanged: () => Promise<void> }) {
+/** زرّ الشطب وحواره — للسلفة والسحب معاً. الحوار داخل الخلية: <tr> لا يقبل إلا خلايا. */
+function WriteOffCell({ loan, title, onChanged }: { loan: StaffLoan; title: string; onChanged: () => Promise<void> }) {
   const { t } = useTranslation();
   const toast = useToast();
   const [wo, setWo] = useState(false);
   const [note, setNote] = useState("");
+  return (
+    <td className={cn(TD, "p-1")}>
+      {loan.status === "active" && (
+        <Button size="sm" variant="ghost" data-paywriteoff={loan.id}
+          onClick={() => { playTap(); setWo(true); }}>{t("payroll.writeOff", "شطب")}</Button>
+      )}
+      {wo && (
+        <Dialog open onClose={() => setWo(false)} title={title}>
+          <div className="space-y-3">
+            <p className="text-sm text-ink-muted">
+              {t("payroll.writeOffHint", "الشطب يوقف الأقساط ويخلّي الذمّة موثّقة بسببها. ما ينحذف شي من التاريخ.")}
+            </p>
+            <input className="input" value={note} data-paywonote onChange={(e) => setNote(e.target.value)}
+              placeholder={t("payroll.writeOffReason", "السبب — إلزامي")} />
+            <Button className="w-full" onClick={async () => {
+              try {
+                await repo.writeOffLoan(loan.id, note);
+                playSuccess(); setWo(false); await onChanged();
+              } catch (e) { playWarning(); toast.error(String((e as Error).message ?? e)); }
+            }}>{t("payroll.confirmWriteOff", "تأكيد الشطب")}</Button>
+          </div>
+        </Dialog>
+      )}
+    </td>
+  );
+}
+
+function LoanRowView({ loan, name, onChanged }: { loan: StaffLoan; name: string; onChanged: () => Promise<void> }) {
+  const { t } = useTranslation();
   const repaid = Math.max(0, loan.principal - loan.remaining);
   const pct = loan.principal > 0 ? Math.round((repaid / loan.principal) * 100) : 0;
   const stateLabel = loan.status === "active" ? t("payroll.active", "فعّالة")
@@ -1003,30 +1387,34 @@ function LoanRow({ loan, name, onChanged }: { loan: StaffLoan; name: string; onC
           ? "bg-warn-50 text-warn-700 dark:bg-warn-500/15 dark:text-warn-300"
           : "bg-surface-2 text-ink-muted")}>{stateLabel}</span>
       </td>
-      <td className={cn(TD, "p-1")}>
-        {loan.status === "active" && (
-          <Button size="sm" variant="ghost" data-paywriteoff={loan.id}
-            onClick={() => { playTap(); setWo(true); }}>{t("payroll.writeOff", "شطب")}</Button>
-        )}
-        {/* الحوار داخل الخلية لا شقيقاً للصفّ: <tr> لا يقبل إلا خلايا. */}
-        {wo && (
-          <Dialog open onClose={() => setWo(false)} title={t("payroll.writeOffTitle", "شطب السلفة")}>
-            <div className="space-y-3">
-              <p className="text-sm text-ink-muted">
-                {t("payroll.writeOffHint", "الشطب يوقف الأقساط ويخلّي الذمّة موثّقة بسببها. ما ينحذف شي من التاريخ.")}
-              </p>
-              <input className="input" value={note} data-paywonote onChange={(e) => setNote(e.target.value)}
-                placeholder={t("payroll.writeOffReason", "السبب — إلزامي")} />
-              <Button className="w-full" onClick={async () => {
-                try {
-                  await repo.writeOffLoan(loan.id, note);
-                  playSuccess(); setWo(false); await onChanged();
-                } catch (e) { playWarning(); toast.error(String((e as Error).message ?? e)); }
-              }}>{t("payroll.confirmWriteOff", "تأكيد الشطب")}</Button>
-            </div>
-          </Dialog>
-        )}
+      <WriteOffCell loan={loan} title={t("payroll.writeOffTitle", "شطب السلفة")} onChanged={onChanged} />
+    </tr>
+  );
+}
+
+function DrawRowView({ loan, name, onChanged }: { loan: StaffLoan; name: string; onChanged: () => Promise<void> }) {
+  const { t } = useTranslation();
+  const taken = Math.max(0, loan.principal - loan.remaining);
+  const stateLabel = loan.status === "active" ? t("payroll.drawPending", "ينقطع بالدورة الجاية")
+    : loan.status === "settled" ? t("payroll.drawTaken", "انقطع") : t("payroll.writtenOff", "مشطوبة");
+
+  return (
+    <tr className={cn(TR, loan.status !== "active" && "opacity-70")} data-paydraw-row={loan.id}>
+      <td className={cn(TD, STICKY, "font-semibold text-ink")}>{name}</td>
+      <td className={cn(TD, "text-2xs text-ink-muted")}>{loan.started_on}</td>
+      <td className={cn(TD, NUM)}>{money(loan.principal)}</td>
+      <td className={cn(TD, NUM, "text-emerald-700 dark:text-emerald-400")}>{taken > 0 ? money(taken) : "—"}</td>
+      <td className={cn(TD, NUM, "font-bold", loan.status === "active" && loan.remaining > 0 && "text-warn-700 dark:text-warn-300")} data-paydrawleft={loan.id}>
+        {money(loan.remaining)}
       </td>
+      <td className={cn(TD, "max-w-[14rem] truncate text-2xs text-ink-subtle")}>{loan.reason ?? "—"}</td>
+      <td className={cn(TD, "text-2xs")}>
+        <span className={cn("chip text-2xs", loan.status === "active"
+          ? "bg-warn-50 text-warn-700 dark:bg-warn-500/15 dark:text-warn-300"
+          : loan.status === "settled" ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300"
+          : "bg-surface-2 text-ink-muted")}>{stateLabel}</span>
+      </td>
+      <WriteOffCell loan={loan} title={t("payroll.writeOffDrawTitle", "شطب السحب")} onChanged={onChanged} />
     </tr>
   );
 }

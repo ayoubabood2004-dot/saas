@@ -1330,6 +1330,8 @@ export interface StaffLoan {
   expense_id?: string | null;
   created_by?: string | null;
   created_at: string;
+  /** «سلفة» بأقساط أو «سحب» على حساب الشهر (هجرة 0140). غيابه = سلفة. */
+  kind?: "loan" | "advance";
 }
 
 export interface StaffLoanEvent {

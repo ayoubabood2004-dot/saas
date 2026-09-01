@@ -9,8 +9,8 @@
  * ==========================================================================*/
 import { getActiveClinicId } from "./clinics";
 import { uid } from "./utils";
-import { DEFAULT_POLICY, normalizePolicy, elementOf } from "./payroll";
-import { salaryExpenseText, loanExpenseText, unnamedStaff } from "./payrollLabels";
+import { DEFAULT_POLICY, normalizePolicy, elementOf, isAdvance } from "./payroll";
+import { salaryExpenseText, loanExpenseText, drawExpenseText, unnamedStaff } from "./payrollLabels";
 import type {
   PayrollPolicyDTO, StaffComp, StaffRecurring, PayrollRun, Payslip, PayslipLine,
   StaffLoan, StaffLoanEvent, PayslipDraft, PayMethod, Expense,
@@ -179,13 +179,18 @@ export function approveRun(runId: string): PayrollRun {
   const slips = s.slips.filter((p) => p.run_id === runId);
   if (!slips.length) throw new Error("run has no payslips");
 
-  // خصم الأقساط يجري **عند الاعتماد وحده**: خصمُه من مسوّدةٍ تُحسب عشر مرّات
-  // يفني السلفة بلا أن يُدفع دينار.
+  // خصم الأقساط والسحوبات يجري **عند الاعتماد وحده**: خصمُه من مسوّدةٍ تُحسب
+  // عشر مرّات يفني السلفة بلا أن يُدفع دينار. والحرّاس الثلاثة نفس 0140:
+  // الصفّ لنفس الموظف، ونوعه يطابق رمز السطر، والمبلغ لا يتجاوز الباقي.
   const slipIds = new Set(slips.map((p) => p.id));
-  for (const l of s.lines.filter((x) => slipIds.has(x.payslip_id) && x.code === "LOAN" && x.amount > 0)) {
+  const staffOf = new Map(slips.map((p) => [p.id, p.staff_id]));
+  for (const l of s.lines.filter((x) => slipIds.has(x.payslip_id) && (x.code === "LOAN" || x.code === "ADV") && x.amount > 0)) {
     if (!l.ref_id) throw new Error("loan line without loan reference");
     const loan = s.loans.find((x) => x.id === l.ref_id && x.status === "active");
     if (!loan) throw new Error(`loan ${l.ref_id} is not active`);
+    if (loan.staff_id !== staffOf.get(l.payslip_id)) throw new Error(`loan ${l.ref_id} belongs to another employee`);
+    if (isAdvance(loan) !== (l.code === "ADV")) throw new Error(`line ${l.code} does not match loan kind ${loan.kind ?? "loan"}`);
+    if (l.amount > loan.remaining) throw new Error(`line collects more than remaining on ${l.ref_id}`);
     loan.remaining = Math.max(0, loan.remaining - l.amount);
     if (loan.remaining <= 0) loan.status = "settled";
     s.events.push({
@@ -267,16 +272,21 @@ export const listLoanEvents = (loanId?: string): StaffLoanEvent[] =>
 export async function disburseLoan(
   staffId: string, staffName: string, principal: number, installment: number,
   reason: string | null, method: PayMethod, sink: ExpenseSink,
+  kind: "loan" | "advance" = "loan",
 ): Promise<StaffLoan> {
   if (!(principal > 0)) throw new Error("bad principal");
   if (!(installment > 0)) throw new Error("bad installment");
   if (installment > principal) throw new Error("installment above principal");
+  // السحب يُقطع كاملاً بأقرب قسيمة: قسطُه أصلُه — نفس قيد 0140.
+  if (kind === "advance" && installment !== principal) throw new Error("advance installment must equal amount");
 
-  // الفلوس تخرج من الدرج فعلاً ⇒ مصروف. لكن بتصنيفٍ خاص لأنها **ذمّة لا
-  // كلفة رواتب**، وعلى عمر السلفة تتساوى مع نقص الصوافي المدفوعة تماماً.
+  // الفلوس تخرج من الدرج فعلاً ⇒ مصروف. السلفة **ذمّةٌ لا كلفة رواتب** فلها
+  // تصنيفها الخاص؛ أما السحب فراتبُ هذا الشهر دُفع مبكّراً فيدخل الرواتب —
+  // وبهذا يبقى مجموع «payroll» بالشهر = ما دُفع رواتباً فعلاً.
   const e = await sink({
-    clinic_id: null, amount: principal, description: loanExpenseText(staffName),
-    category: "payroll_loan", method: method === "cash" ? "cash" : "bank",
+    clinic_id: null, amount: principal,
+    description: kind === "advance" ? drawExpenseText(staffName, now().slice(0, 7)) : loanExpenseText(staffName),
+    category: kind === "advance" ? "payroll" : "payroll_loan", method: method === "cash" ? "cash" : "bank",
     staff_id: null, spent_at: now(),
   });
 
@@ -284,7 +294,7 @@ export async function disburseLoan(
   const loan: StaffLoan = {
     id: uid("lon"), clinic_id: null, staff_id: staffId, principal, installment,
     remaining: principal, reason: (reason ?? "").trim() || null, status: "active",
-    started_on: now().slice(0, 10), expense_id: e.id, created_at: now(),
+    started_on: now().slice(0, 10), expense_id: e.id, created_at: now(), kind,
   };
   s.loans.push(loan);
   s.events.push({ id: uid("lev"), clinic_id: null, loan_id: loan.id, kind: "disbursed", amount: principal, at: now() });

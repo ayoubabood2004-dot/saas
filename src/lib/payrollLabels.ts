@@ -19,5 +19,9 @@ export const salaryExpenseText = (name: string, period: string): string =>
 export const loanExpenseText = (name: string): string =>
   i18n.t("payroll.expLoan", { name });
 
+/** بيان مصروف السحب على حساب الراتب (يطابق ما يبنيه الخادم في 0140). */
+export const drawExpenseText = (name: string, period: string): string =>
+  i18n.t("payroll.expDraw", { name, period });
+
 /** اسمٌ احتياطي حين تصل قسيمة بلا اسم — لا يُترك فارغاً بالمستند. */
 export const unnamedStaff = (): string => i18n.t("payroll.unnamed", "موظف");

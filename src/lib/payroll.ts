@@ -161,7 +161,17 @@ export interface LoanRow {
   installment: number;
   remaining: number;
   status: "active" | "settled" | "written_off";
+  /**
+   * «سلفة» تُسترجع أقساطاً، أو «سحب» على حساب الشهر يُقطع كاملاً بأقرب قسيمة.
+   * غيابه = سلفة: صفوف ما قبل هجرة 0140 لا تحمل نوعاً.
+   */
+  kind?: "loan" | "advance";
+  /** تاريخ الصرف — يُطبع سبباً على سطر السحب كي يعرف الموظف أيّ سحبٍ قُطع. */
+  started_on?: string;
 }
+
+/** القاعدة الوحيدة لقراءة النوع (غيابه سلفة) — تُستعمل بالواجهة والمخزن التجريبي معاً. */
+export const isAdvance = (l: Pick<LoanRow, "kind">): boolean => l.kind === "advance";
 
 /** قسط هذا الشهر: القسط المجدول أو ما تبقّى — أيّهما أصغر. */
 export const dueInstallment = (l: LoanRow): number =>
@@ -258,6 +268,22 @@ export function computePayslip(inputs: LineInput[], base: number, policy: Payrol
   const gross = sum(resolved.filter((l) => l.kind === "earning").map((l) => l.amount));
 
   const deds = resolved.filter((l) => l.kind === "deduction");
+
+  // ── قصّ السحب ────────────────────────────────────────────────────────────
+  // السحب فلوسٌ خرجت من الدرج فعلاً فيُقطع كاملاً — لكن لا أكثر ممّا استُحقّ:
+  // الإجمالي ناقص أيامٍ لم تُعمَل. الزائد يبقى «باقياً» على السحب نفسه ويُقطع
+  // الشهر الجاي، ويُعرض هنا مرحَّلاً كي لا يختفي من القسيمة. والقصّ للسحب
+  // وحده: الغياب أجرٌ لم يُستحقّ أصلاً فلا معنى لقصّه، والسقف يحكم البقية.
+  // وسحبان بالشهر يُقطعان بترتيبهما — الأقدم أوّلاً.
+  const unearned = sum(deds.filter((l) => DAY_BASED.has(l.code)).map((l) => l.amount));
+  let advRoom = Math.max(0, gross - unearned);
+  for (const l of deds.filter((l) => l.code === "ADV")) {
+    const take = Math.min(l.amount, advRoom);
+    l.deferred = l.amount - take;
+    l.amount = take;
+    advRoom -= take;
+  }
+
   const exempt = deds.filter((l) => elementOf(l.code)!.capExempt);
   const capped = deds.filter((l) => !elementOf(l.code)!.capExempt);
 
@@ -278,7 +304,8 @@ export function computePayslip(inputs: LineInput[], base: number, policy: Payrol
   }
 
   const cappedApplied = sum(capped.map((l) => l.amount));
-  const deferred = sum(capped.map((l) => l.deferred));
+  // المرحَّل على كل سطور القطوعات — ومنها باقي السحب — ليطابق ما يخزّنه الخادم.
+  const deferred = sum(deds.map((l) => l.deferred));
   const deductions = exemptDeductions + cappedApplied;
 
   return {
@@ -331,8 +358,9 @@ export interface BuiltSlip {
 
 /**
  * تركيب قسيمة موظّف واحد. الترتيب مقصود: الأساسي، ثم الثابت، ثم اليدوي، ثم
- * أقساط السلف **آخراً** — لأنها الوحيدة التي تحمل مرجعاً إلزامياً، وتأخيرها
- * يجعل تعقّبها بالسطور أوضح.
+ * السحوبات، ثم أقساط السلف **آخراً** — فالاثنان وحدهما يحملان مرجعاً إلزامياً،
+ * وتأخيرهما يجعل تعقّبهما بالسطور أوضح. والسحب قبل القسط لأنه فلوسُ هذا الشهر
+ * نفسه فيتقدّم على دَينٍ أقدم.
  */
 export function buildSlip(inp: DraftInput, policy: PayrollPolicy): BuiltSlip {
   const lines: LineInput[] = [{ code: "BASIC", amount: inp.base }];
@@ -341,7 +369,11 @@ export function buildSlip(inp: DraftInput, policy: PayrollPolicy): BuiltSlip {
     lines.push({ code: r.code, amount: r.amount, reason: r.note ?? null });
   }
   lines.push(...inp.manual);
-  for (const l of inp.loans) {
+  for (const l of inp.loans.filter(isAdvance)) {
+    const due = dueInstallment(l);
+    if (due > 0) lines.push({ code: "ADV", amount: due, ref_kind: "advance", ref_id: l.id, reason: l.started_on ?? null });
+  }
+  for (const l of inp.loans.filter((x) => !isAdvance(x))) {
     const due = dueInstallment(l);
     if (due > 0) lines.push({ code: "LOAN", amount: due, ref_kind: "loan", ref_id: l.id });
   }

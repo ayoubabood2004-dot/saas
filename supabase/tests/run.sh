@@ -22,7 +22,7 @@ DB=dvtest
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MIG="$HERE/../migrations"
 # الهجرات التي يغطّيها هذا المخطّط الأساس. زدها كل ما تنضاف موجة.
-WAVE="$MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql"
+WAVE="$MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql"
 
 command -v "$PGBIN/initdb" >/dev/null || { echo "ما لكيت بوستغريس بـ $PGBIN"; exit 1; }
 
@@ -435,6 +435,32 @@ $P -c "create or replace function _audit_boom() returns trigger language plpgsql
 begin raise exception 'boom'; end \$fn\$;" >/dev/null
 chk "ولا يزال المُدقِّق يبلع أخطاءه" \
     "select (details is not null)::text from audit_log where entity='audit_probe' order by created_at desc limit 1" "true"
+
+# 0140: السحب على حساب الشهر — العمود والقيد والدالّة الجديدة، بلا ازدواج.
+# المخطّط هنا هيكلٌ لجداول الرواتب (0112 خارج الحزمة)، فنفحص الشكل لا السلوك؛
+# السلوك (القصّ والتسوية والحرّاس) مفحوصٌ على المنطق نفسه بـscripts/payroll-test.mjs.
+chk "عمودُ النوع انضاف على السلف" \
+    "select count(*)::text from information_schema.columns where table_schema='public' and table_name='staff_loans' and column_name='kind'" "1"
+chk "وافتراضُه سلفة — فكلُّ القائم سلف" \
+    "select column_default from information_schema.columns where table_schema='public' and table_name='staff_loans' and column_name='kind'" "'loan'::text"
+chk "وقيدُه موجود مرّةً واحدة رغم إعادة التنزيل" \
+    "select count(*)::text from pg_constraint where conname='staff_loans_kind_chk'" "1"
+ins "insert into staff_loans(kind) values ('advance');" \
+  && printf '   ✓ %s\n' "ويقبل «سحباً»" || { printf '   ✗ %s\n' "رفض «سحباً»"; fail=1; }
+ins "insert into staff_loans(kind) values ('x');" \
+  && { printf '   ✗ %s\n' "قبل نوعاً مجهولاً"; fail=1; } || printf '   ✓ %s\n' "ويرفض نوعاً مجهولاً"
+chk "ودالّةُ السحب بتوقيعٍ واحد لا نسختين" \
+    "select count(*)::text from pg_proc where proname='payroll_disburse_advance'" "1"
+chk "وممنوعة على anon" \
+    "select has_function_privilege('anon','public.payroll_disburse_advance(uuid,numeric,text,text)','execute')::text" "false"
+chk "ومسموحة للمصادَق" \
+    "select has_function_privilege('authenticated','public.payroll_disburse_advance(uuid,numeric,text,text)','execute')::text" "true"
+chk "ودالّةُ الاعتماد واحدة" \
+    "select count(*)::text from pg_proc where proname='payroll_approve'" "1"
+chk "وتسوّي السحب مع القسط" \
+    "select (prosrc like '%''LOAN'',''ADV''%')::text from pg_proc where proname='payroll_approve'" "true"
+chk "وبمسارٍ مثبَّت (definer-path)" \
+    "select (count(*) = 2)::text from pg_proc where proname in ('payroll_approve','payroll_disburse_advance') and 'search_path=public' = any(proconfig)" "true"
 
 echo
 [ $fail -eq 0 ] && echo "✓ كل الفحوص عبرت" || { echo "✗ اكو فحصٌ فشل"; exit 1; }
