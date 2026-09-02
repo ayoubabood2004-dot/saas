@@ -15,3 +15,13 @@ dist-sbtest/
 # لا محلّ لها فيه. نسخها الحيّة أرتفاكتات على claude.ai + ملفات PDF بيد
 # المالك. ولا هي جزءاً من البناء أصلاً (dist ما بيه docs).
 private/
+
+# خريطة graphify: الملفّ الثقيل والذاكرة المؤقّتة لا تدخلان المستودع.
+#   • graph.json محفوظٌ عمداً — ٢١٠ ألف سطر يضغطها git إلى ٣٠٠ كيلوبايت،
+#     وإعادةُ بنائه تكلّف دقائق (العنقدة بطيئة). فحفظُه أرخص من إعادته.
+#   • graph.html عارضٌ يُولَّد بأمرٍ واحد (`graphify cluster-only .`)، و٤٫٧
+#     ميغا بكل نسخةٍ عاملة ثمنٌ بلا مقابل.
+graphify-out/graph.html
+graphify-out/cache/
+graphify-out/cost.json
+graphify-out/.graphify_analysis.json
