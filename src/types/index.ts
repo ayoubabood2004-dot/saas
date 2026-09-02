@@ -500,6 +500,9 @@ export interface Product {
   /** Owning clinic (tenant isolation). */
   clinic_id?: string | null;
   barcode?: string | null;
+  /** رموزٌ إضافية يُعرَف بها نفس المنتج (هجرة 0141): رقمُ الرفّ اليدويّ إلى جانب
+   *  باركود المصنع، أو باركودُ عبوةٍ ثانية. المسحُ يقرأها كما يقرأ `barcode`. */
+  alt_codes?: string[] | null;
   name: string;
   category?: ProductCategory | null;
   /** The company/brand (شركة) this product belongs to — see `Company`. Optional. */

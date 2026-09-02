@@ -22,7 +22,7 @@ DB=dvtest
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MIG="$HERE/../migrations"
 # الهجرات التي يغطّيها هذا المخطّط الأساس. زدها كل ما تنضاف موجة.
-WAVE="$MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql"
+WAVE="$MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql"
 
 command -v "$PGBIN/initdb" >/dev/null || { echo "ما لكيت بوستغريس بـ $PGBIN"; exit 1; }
 
@@ -461,6 +461,54 @@ chk "وتسوّي السحب مع القسط" \
     "select (prosrc like '%''LOAN'',''ADV''%')::text from pg_proc where proname='payroll_approve'" "true"
 chk "وبمسارٍ مثبَّت (definer-path)" \
     "select (count(*) = 2)::text from pg_proc where proname in ('payroll_approve','payroll_disburse_advance') and 'search_path=public' = any(proconfig)" "true"
+
+# 0141: الباركود لا يضيّع المنتج.
+# نزرع الأمراض الثلاثة التي وجدناها بالإنتاج حرفياً — علامةُ اتجاهٍ مخفية،
+# وأرقامٌ شرقية، ومسافة — ونتأكّد أن التنظيف يشفيها بلا أن يدمج صفَّين.
+$P -c "insert into products(id,clinic_id,name,barcode) values
+       ('bbbb0000-0000-0000-0000-000000000001','11111111-1111-1111-1111-111111111111','مخفي',   E'‏8989'),
+       ('bbbb0000-0000-0000-0000-000000000002','11111111-1111-1111-1111-111111111111','شرقي',   '٢٣٨'),
+       ('bbbb0000-0000-0000-0000-000000000003','11111111-1111-1111-1111-111111111111','مسافة',  ' 247 '),
+       ('bbbb0000-0000-0000-0000-000000000004','11111111-1111-1111-1111-111111111111','سليم',   '6972748378670'),
+       -- زوجُ التصادم: النظيفُ محجوزٌ سلفاً، فالمريض لا يُلمس ولا يُدمج
+       ('bbbb0000-0000-0000-0000-000000000005','11111111-1111-1111-1111-111111111111','محجوز',  '555'),
+       ('bbbb0000-0000-0000-0000-000000000006','11111111-1111-1111-1111-111111111111','مصادم',  E'‏555');" >/dev/null
+$P -f "$MIG/0141_barcode_recovery.sql" >/dev/null 2>&1
+
+chk "علامةُ الاتجاه انشالت من الباركود" \
+    "select barcode from products where id='bbbb0000-0000-0000-0000-000000000001'" "8989"
+chk "والأرقام الشرقية انوحّدت" \
+    "select barcode from products where id='bbbb0000-0000-0000-0000-000000000002'" "238"
+chk "والمسافات انشالت" \
+    "select barcode from products where id='bbbb0000-0000-0000-0000-000000000003'" "247"
+chk "والسليم ما انتغيّر" \
+    "select barcode from products where id='bbbb0000-0000-0000-0000-000000000004'" "6972748378670"
+chk "وصفٌّ نظيفُه محجوزٌ لغيره ما انلمس — ولا انخلط منتجان" \
+    "select (barcode = E'‏555')::text from products where id='bbbb0000-0000-0000-0000-000000000006'" "true"
+
+chk "المسحُ يلقى المنتج برمزه الأساسي" \
+    "select name from public.product_by_code('8989')" "مخفي"
+$P -c "select public.attach_product_code('bbbb0000-0000-0000-0000-000000000004','999111');" >/dev/null
+chk "والرمزُ الإضافي انضاف" \
+    "select (alt_codes @> array['999111'])::text from products where id='bbbb0000-0000-0000-0000-000000000004'" "true"
+chk "والرمزُ الأساسي بقي كما هو — ما انمحى" \
+    "select barcode from products where id='bbbb0000-0000-0000-0000-000000000004'" "6972748378670"
+chk "والمسحُ يلقاه بالرمز الإضافي أيضاً" \
+    "select name from public.product_by_code('999111')" "سليم"
+$P -c "create or replace function _acode(p uuid, c text) returns text language plpgsql as \$fn\$
+begin perform public.attach_product_code(p, c); return 'NOT-GUARDED';
+exception when others then return 'guarded'; end \$fn\$;" >/dev/null
+chk "ورمزٌ مأخوذٌ لمنتجٍ آخر يُرفض" \
+    "select _acode('bbbb0000-0000-0000-0000-000000000001','999111')" "guarded"
+chk "ورمزٌ فارغ يُرفض" \
+    "select _acode('bbbb0000-0000-0000-0000-000000000001','  ')" "guarded"
+chk "وإعادةُ ربطِ نفس الرمز لنفس المنتج ما تكرّره" \
+    "select array_length(alt_codes,1)::text from products where id='bbbb0000-0000-0000-0000-000000000004'" "1"
+chk "ودالّتا 0141 ممنوعتان على anon" \
+    "select (has_function_privilege('anon','public.product_by_code(text)','execute')
+          or has_function_privilege('anon','public.attach_product_code(uuid,text)','execute'))::text" "false"
+chk "وفهرسُ الرموز الإضافية موجود" \
+    "select count(*)::text from pg_indexes where indexname='products_alt_codes_idx'" "1"
 
 echo
 [ $fail -eq 0 ] && echo "✓ كل الفحوص عبرت" || { echo "✗ اكو فحصٌ فشل"; exit 1; }

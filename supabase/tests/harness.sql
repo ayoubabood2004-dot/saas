@@ -57,7 +57,7 @@ create unique index if not exists pets_serial_idx on pets(serial) where serial i
 create table if not exists clinics (id uuid primary key default gen_random_uuid());
 create table if not exists companies (id uuid primary key default gen_random_uuid());
 create table if not exists staff (id uuid primary key default gen_random_uuid(), clinic_id uuid);
-create table if not exists products (id uuid primary key default gen_random_uuid(), clinic_id uuid, stock numeric(14,3) default 0);
+create table if not exists products (id uuid primary key default gen_random_uuid(), clinic_id uuid, stock numeric(14,3) default 0, name text, barcode text);
 create table if not exists invoices (id uuid primary key default gen_random_uuid(), clinic_id uuid, created_at timestamptz not null default now());
 create table if not exists medical_visits (id uuid primary key default gen_random_uuid(), pet_id uuid references pets(id), clinic_id uuid);
 create table if not exists appointments (id uuid primary key default gen_random_uuid(), clinic_id uuid references clinics(id), scheduled_at timestamptz);

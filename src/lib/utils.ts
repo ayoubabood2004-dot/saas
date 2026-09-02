@@ -2,6 +2,7 @@ import i18next from "i18next";
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
 import { currencyInfo, getActiveCurrency } from "./currency";
+import { normalizeDigits } from "./digits";
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -87,6 +88,31 @@ export function normalizeAr(s: string): string {
     .replace(/ؤ/g, "و")
     .replace(/\s+/g, "");
 }
+
+/**
+ * نصٌّ جاهزٌ للبحث: الإملاء العربي مطويٌّ **والأرقام موحَّدة**. فمن يكتب «٢٣٨»
+ * بلوحةٍ عربية يلقى «238»، ومن يكتب «خارجيه» يلقى «خارجية».
+ *
+ * والقاعدة الحاكمة: **الطرفان يمرّان من هنا** — ما يُكتب بالبحث وما هو مخزون.
+ * تطبيعُ طرفٍ واحد أسوأ من لا تطبيع، لأنه يفشل بصمتٍ ويبدو أنه يعمل.
+ */
+export const searchable = (s: string | null | undefined): string =>
+  normalizeAr(normalizeDigits(String(s ?? "")));
+
+/**
+ * تطبيع الباركود — قبل الحفظ وقبل المسح بنفس الدالّة.
+ *
+ * ثلاثةٌ تكسر المطابقة بصمت، وكلُّها موجودةٌ بقاعدة الإنتاج فعلاً:
+ *   • أرقامٌ شرقية (٢٣٨) تُكتب بلوحةٍ عربية بينما الماسح يُخرج (238)
+ *   • علامةُ اتجاهٍ غير مرئية تلتصق باللصق — عندنا صفٌّ باركودُه يبدو «8989»
+ *     بالشاشة وأوّلُ محرفٍ فيه علامةُ اتجاه، فلا يتطابق مع مسحةِ 8989 أبداً
+ *   • مسافةٌ طرفية من لصقٍ أو من ماسحٍ يُلحق فراغاً
+ */
+export const normalizeCode = (s: string | null | undefined): string =>
+  normalizeDigits(String(s ?? ""))
+    // علاماتُ الاتجاه والعرضِ الصفري: ZWSP/ZWNJ/ZWJ/LRM/RLM، والجيوب، والعوازل، وBOM
+    .replace(/[​-‏‪-‮⁦-⁩﻿]/g, "")
+    .replace(/\s+/g, "");
 
 export function ageFromDOB(dob?: string | null): { years: number; months: number } | null {
   if (!dob) return null;

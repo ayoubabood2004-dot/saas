@@ -19,7 +19,7 @@ import { ExpiryInput } from "@/components/ExpiryInput";
 import { Combobox } from "@/components/Combobox";
 import { subcategoriesOf } from "@/lib/promotions";
 import { Button, Badge, useToast, Skeleton } from "@/components/ui";
-import { cn, formatDate, money, fmtKg } from "@/lib/utils";
+import { cn, formatDate, money, fmtKg, searchable, normalizeCode } from "@/lib/utils";
 import { withTimeout, describeDbError } from "@/lib/errors";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
 import { openStockReport } from "@/lib/stockReportPrint";
@@ -491,9 +491,19 @@ function InventoryTab({ products, companies, sections, clinicId, onChanged }: { 
     return (id?: string | null) => (id ? m.get(id) : undefined);
   }, [companies]);
 
-  const ql = q.trim().toLowerCase();
+  /* نفس تطبيع شاشة البيع — والشاشتان لازم تتفقان. حين كانتا تبحثان حرفياً كان
+   * الطبيب يبحث بالبيع فلا يجد، فيتأكّد من المخزن فلا يجد كذلك، فيستنتج أن
+   * المادة غير مُدخَلة ويعيد إدخالها. شاشتان تكذبان بنفس الطريقة لا تكشف
+   * إحداهما الأخرى. */
+  const ql = q.trim();
+  const nq = searchable(ql);
+  const cq = normalizeCode(ql);
   const shown = ql
-    ? products.filter((p) => p.name.toLowerCase().includes(ql) || (p.barcode ?? "").includes(ql) || (companyName(p.company_id) ?? "").toLowerCase().includes(ql))
+    ? products.filter((p) =>
+      searchable(p.name).includes(nq)
+      || (!!cq && normalizeCode(p.barcode).includes(cq))
+      || (!!cq && (p.alt_codes ?? []).some((c) => normalizeCode(c).includes(cq)))
+      || searchable(companyName(p.company_id) ?? "").includes(nq))
     : products;
 
   const remove = async (p: Product) => {

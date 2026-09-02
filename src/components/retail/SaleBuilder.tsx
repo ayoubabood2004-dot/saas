@@ -16,7 +16,7 @@ import { computePromotions, getPromoRules } from "@/lib/promotions";
 import { useBarcodeScanner } from "@/hooks/useBarcodeScanner";
 import { useAuth } from "@/contexts/AuthContext";
 import { useEntitlements } from "@/lib/entitlements";
-import { Button, useToast } from "@/components/ui";
+import { Button, Dialog, useToast } from "@/components/ui";
 import { ServiceQuickSelect } from "./ServiceQuickSelect";
 import { QtyPad } from "./QtyPad";
 import { WeightPicker } from "./WeightPicker";
@@ -29,7 +29,7 @@ import { branchStore } from "@/lib/branchStore";
 import { useNavFolded, setNavFolded } from "@/lib/navFold";
 import { persistMedicalEntries } from "@/lib/medSync";
 import type { MedicalDraft } from "@/components/MedicalEntry";
-import { cn, money, currencySymbol, formatNum, fmtKg } from "@/lib/utils";
+import { cn, money, currencySymbol, formatNum, fmtKg, searchable, normalizeCode } from "@/lib/utils";
 import { splitCustomerField } from "@/lib/customerName";
 import { dueOf, paidOf } from "@/lib/debt";
 import { withTimeout, describeDbError, isNetworkError, isTimeoutError } from "@/lib/errors";
@@ -140,6 +140,10 @@ interface SaleDraft {
   /** العروض المفعّلة — بمعرّف القاعدة (كانت بمعرّف السطر قبل 0102). */
   promoOn?: string[];
 }
+/** أقصى ما تعرضه شبكةُ المنتجات دفعةً واحدة — للرسم لا للفلترة. ويُقال للطبيب
+ *  كم أُخفي، فلا تبدو مادةٌ خارج السقف وكأنها غير موجودة. */
+const POS_MAX = 60;
+
 const saleDraftKey = (clinicId?: string) => `vp_sale_draft_${clinicId ?? "default"}`;
 function loadSaleDraft(clinicId?: string): SaleDraft | null {
   try { const raw = localStorage.getItem(saleDraftKey(clinicId)); return raw ? (JSON.parse(raw) as SaleDraft) : null; } catch { return null; }
@@ -484,6 +488,8 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
   const [qtyPadFor, setQtyPadFor] = useState<string | null>(null);
   /** منتقي الوزن مفتوح على منتج كتلة (0124): البيع أو الراجع يُختار بالكيلو. */
   const [weightFor, setWeightFor] = useState<{ p: Product; ret: boolean } | null>(null);
+  /** رمزٌ مُسِح ولم يُطابق شيئاً — يُعرض ليُربط بمنتجٍ قائم بدل إعادة إدخاله. */
+  const [attachCode, setAttachCode] = useState<string | null>(null);
   /* مرجعُ البيعة الجارية — يُنشأ عند أول محاولة ويُمسح عند التصفير. مرجعٌ لا
    * حالة: تغيّره لا يعيد الرسم، وقيمته لازمة داخل المعالج لا بالعرض. */
   const saleRefRef = useRef<string | null>(null);
@@ -737,11 +743,14 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
     // باركود مجهول: نقشّر رمزه من الحقل فقط — ما كتبه الطبيب (كمية أو بحث)
     // يبقى بمكانه، ولا تتلوّث خانة البحث بأرقام مسحةٍ فاشلة.
     setQuery((q) => (code && q.endsWith(code) ? q.slice(0, q.length - code.length) : q));
-    toast.error(t("pos.notFoundAny", "ماكو منتج ولا خدمة بهذا الباركود"), code);
+    // ولا نكتفي بالرفض. أغلبُ المسحات الفاشلة ليست لمادةٍ جديدة، بل لمادةٍ
+    // مُدخَلةٍ برقم رفٍّ يدويّ ثم مُسِحَ باركودُ مصنعها لأول مرّة. فنعرض الربط:
+    // المادةُ تبقى بمكانها برصيدها وتاريخها، وينضاف الرمزُ الجديد إليها.
+    setAttachCode(normalizeCode(code));
     // اللوحة مفتوحة = الأرقام تخصّها؛ مسحةٌ تدخل صنفاً خلف نافذة مفتوحة تربك.
     // منتقي الوزن مثلها: مسحةٌ وهو مفتوح كانت تبدّل المنتج تحت يد الطبيب أو
     // تنزل سطراً خلف الورقة بلا أن يراه.
-  }, { disabled: multPad || !!qtyPadFor || !!weightFor });
+  }, { disabled: multPad || !!qtyPadFor || !!weightFor || !!attachCode });
 
   // The bridge: a doctor clicked "Sell items" inside an animal record. Auto-fill the
   // customer, surface the pet context, and focus the scan field for a zero-click flow.
@@ -1000,11 +1009,25 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
   };
   const clearFinalOverride = () => { playTap(); setFinalOverride(null); };
 
-  const ql = query.trim().toLowerCase();
-  const shown = useMemo(() => {
-    const base = ql ? products.filter((p) => p.name.toLowerCase().includes(ql) || (p.barcode ?? "").includes(ql)) : products;
-    return base.slice(0, 24);
-  }, [products, ql]);
+  /* البحث يمرّ من التطبيع — الطرفان. طبيبٌ يكتب «خارجيه» لازم يلقى «خارجية»،
+   * ومن يكتب «٢٣٨» بلوحةٍ عربية لازم يلقى «238». وبلا هذا يقول النظام «ماكو
+   * منتج» عن مادةٍ موجودةٍ برفّه، فيُعيد إدخالها — وهذي كانت شكوى أكبر عيادة.
+   * والرموزُ الإضافية تدخل البحث أيضاً: رقمُ الرفّ يلقى المنتجَ كما يلقاه
+   * باركودُ المصنع. */
+  const ql = query.trim();
+  const nq = searchable(ql);
+  const cq = normalizeCode(ql);
+  const { shown, hiddenCount } = useMemo(() => {
+    const base = ql
+      ? products.filter((p) =>
+        searchable(p.name).includes(nq)
+        || (!!cq && normalizeCode(p.barcode).includes(cq))
+        || (!!cq && (p.alt_codes ?? []).some((c) => normalizeCode(c).includes(cq))))
+      : products;
+    // السقف لسرعة الرسم — لكنه **يقول إنه سقف**. صمتُه كان يعني أن المادة
+    // بالصفّ الخامس والعشرين تبدو غير موجودة.
+    return { shown: base.slice(0, POS_MAX), hiddenCount: Math.max(0, base.length - POS_MAX) };
+  }, [products, ql, nq, cq]);
 
   // Existing-customer search (name or phone).
   const custTimer = useRef<number | null>(null);
@@ -1870,6 +1893,13 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
               </button>
             )}
 
+            {/* السقف يقول إنه سقف: صمتُه كان يجعل المادة خارجه تبدو غير موجودة. */}
+            {hiddenCount > 0 && (
+              <p className="mb-1.5 rounded-lg bg-surface-2 px-2.5 py-1.5 text-2xs text-ink-subtle">
+                {t("retail.moreHidden", "معروض {{n}} من {{total}} — ضيّق البحث حتى تشوف الباقي", { n: shown.length, total: shown.length + hiddenCount })}
+              </p>
+            )}
+
             {/* Product grid */}
             {shown.length === 0 ? (
               <div className="card grid place-items-center p-10 text-center text-sm text-ink-subtle">
@@ -2588,6 +2618,15 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
       })()}
 
       {/* منتقي الوزن (كتلة، 0124) */}
+      {attachCode && (
+        <AttachCodeDialog
+          code={attachCode}
+          products={products}
+          onClose={() => setAttachCode(null)}
+          onAttached={(p) => { setAttachCode(null); playSuccess(); addProduct(p); }}
+        />
+      )}
+
       {weightFor && (() => {
         const { p, ret } = weightFor;
         const lineId = ret ? `r:${p.id}` : `p:${p.id}`;
@@ -2664,5 +2703,91 @@ function PriceEdit({ value, onChange }: { value: number; onChange: (v: number) =
     >
       {money(value)} <Pencil size={10} className="opacity-60" />
     </button>
+  );
+}
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * ربطُ باركودٍ بمنتجٍ قائم — ما يوقف دورةَ إعادة الإدخال.
+ *
+ * الشكوى التي وُلد منها هذا الحوار: العيادة تُدخل المادة برقم رفٍّ يدويّ
+ * (247)، ثم تمسح باركود المصنع (6972748378670) بعد أيام فلا يتطابقان — فيقول
+ * النظام «غير موجود»، فتُعاد المادةُ من الصفر ويصير الرصيدُ نسختين.
+ *
+ * والعلاج ليس تحذيراً أفضل، بل **مخرجاً**: المسحةُ الفاشلة تعرض مخزنَ العيادة
+ * ليختار الطبيبُ المادة، فيُضاف الرمزُ إليها ويبقى رصيدُها وتاريخُها مكانَهما.
+ * ورمزُها الأساسي لا يُمحى — الرقمان يعملان بعدها معاً.
+ * ──────────────────────────────────────────────────────────────────────────*/
+function AttachCodeDialog({ code, products, onClose, onAttached }: {
+  code: string; products: Product[]; onClose: () => void; onAttached: (p: Product) => void;
+}) {
+  const { t } = useTranslation();
+  const toast = useToast();
+  const [q, setQ] = useState("");
+  const [busy, setBusy] = useState<string | null>(null);
+
+  const hits = useMemo(() => {
+    const nq = searchable(q);
+    const base = nq ? products.filter((p) => searchable(p.name).includes(nq)) : products;
+    return base.slice(0, 40);
+  }, [products, q]);
+
+  const attach = async (p: Product) => {
+    setBusy(p.id);
+    try {
+      const saved = await repo.attachProductCode(p.id, code);
+      toast.success(t("pos.codeAttached", "انربط الباركود بـ{{n}}", { n: p.name }));
+      onAttached(saved ?? p);
+    } catch (e) {
+      playWarning();
+      const m = String((e as Error).message ?? e);
+      toast.error(m.includes("another product")
+        ? t("pos.codeTaken", "هذا الباركود مربوط بمنتج ثاني")
+        : m);
+    } finally { setBusy(null); }
+  };
+
+  return (
+    <Dialog open onClose={onClose} title={t("pos.attachTitle", "باركود ما ينعرف")} size="lg">
+      <div className="space-y-3">
+        <div className="rounded-xl border border-warn-200 bg-warn-50 p-3 dark:border-warn-500/30 dark:bg-warn-500/10">
+          <p className="text-sm font-semibold text-warn-700 dark:text-warn-300">
+            {t("pos.attachHint", "إذا المادة موجودة بمخزنك بباركود ثاني أو برقم يدوي، اختارها من تحت — ينربط الباركود بيها ويبقى رصيدها كما هو. لا تعيد إدخالها.")}
+          </p>
+          <p className="mt-1.5 font-mono text-xs text-ink-muted" dir="ltr">{code}</p>
+        </div>
+
+        <input
+          autoFocus className="input" value={q} data-attachsearch
+          onChange={(e) => setQ(e.target.value)}
+          placeholder={t("pos.attachSearch", "دوّر بالاسم…")}
+        />
+
+        <div className="max-h-[46vh] space-y-1.5 overflow-y-auto">
+          {hits.length === 0 ? (
+            <p className="py-8 text-center text-sm text-ink-subtle">{t("retail.noMatch", "ماكو منتج مطابق")}</p>
+          ) : hits.map((p) => (
+            <button
+              key={p.id} type="button" disabled={!!busy} data-attachpick={p.id}
+              onClick={() => attach(p)}
+              className="flex w-full items-center gap-3 rounded-xl border border-line bg-surface-1 p-2.5 text-start transition hover:border-brand-400 hover:bg-brand-50 disabled:opacity-50 dark:hover:bg-brand-500/10"
+            >
+              <span className="min-w-0 flex-1">
+                <span className="block truncate font-semibold text-ink">{p.name}</span>
+                <span className="block font-mono text-2xs text-ink-subtle" dir="ltr">
+                  {p.barcode || "—"}{(p.alt_codes?.length ?? 0) > 0 ? ` +${p.alt_codes!.length}` : ""}
+                </span>
+              </span>
+              <span className="shrink-0 text-xs tabular-nums text-ink-muted">
+                {t("pos.stockN", "رصيد {{n}}", { n: formatNum(p.stock ?? 0) })}
+              </span>
+            </button>
+          ))}
+        </div>
+
+        <p className="text-2xs leading-relaxed text-ink-subtle">
+          {t("pos.attachFooter", "ما لكيتها؟ سكّر هالنافذة وأضفها منتجاً جديداً من المخزن.")}
+        </p>
+      </div>
+    </Dialog>
   );
 }

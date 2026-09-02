@@ -23,7 +23,7 @@ import { paidOf, round2 } from "./debt";
 import { isValidSlug, normalizeSlug, demoOrderNo } from "./storeLib";
 import { journeyToken, OWNER_REACTIONS } from "./journey";
 import { getClinicName, getClinicLogo, getClinicSocials } from "./settings";
-import { uid, uuid, ageMonths, localISO } from "./utils";
+import { uid, uuid, ageMonths, localISO, normalizeCode } from "./utils";
 import { phoneKey } from "./phone";
 import { loadOwners } from "./owners";
 import { loadClinics, getActiveClinicId } from "./clinics";
@@ -1097,8 +1097,30 @@ const demoRepo = {
     return true;
   },
   async getProductByBarcode(barcode: string, _clinicId?: string): Promise<Product | undefined> {
-    const code = barcode.trim();
-    return (loadDB().products ?? []).find((p) => (p.barcode ?? "") === code);
+    const code = normalizeCode(barcode);
+    if (!code) return undefined;
+    // الرمزُ الأساسي أو أيُّ رمزٍ إضافي — ونطبّع المخزون أيضاً، فصفٌّ قديم
+    // فيه محرفٌ غير مرئيّ يبقى قابلاً للمسح.
+    return (loadDB().products ?? []).find(
+      (p) => normalizeCode(p.barcode) === code || (p.alt_codes ?? []).some((c) => normalizeCode(c) === code),
+    );
+  },
+  /** يربط رمزاً بمنتجٍ قائم بدل إنشاء منتجٍ جديد — نظير attach_product_code. */
+  async attachProductCode(productId: string, code: string): Promise<Product> {
+    const c = normalizeCode(code);
+    if (!c) throw new Error("empty code");
+    const db = loadDB();
+    const taken = (db.products ?? []).find(
+      (p) => p.id !== productId && (normalizeCode(p.barcode) === c || (p.alt_codes ?? []).some((x) => normalizeCode(x) === c)),
+    );
+    if (taken) throw new Error("code already belongs to another product");
+    const p = (db.products ?? []).find((x) => x.id === productId);
+    if (!p) throw new Error("product not found");
+    if (normalizeCode(p.barcode) !== c && !(p.alt_codes ?? []).some((x) => normalizeCode(x) === c)) {
+      p.alt_codes = [...(p.alt_codes ?? []), c];
+      saveDB(db);
+    }
+    return p;
   },
   async createProduct(input: Omit<Product, "id" | "created_at">): Promise<Product> {
     const db = loadDB();
@@ -2214,6 +2236,7 @@ const DEMO_ACTIVITY_MAP: Record<string, { entity: string; action: "INSERT" | "UP
   closePayrollRun: { entity: "payroll_runs", action: "UPDATE" },
   disburseLoan: { entity: "staff_loans", action: "INSERT" },
   disburseAdvance: { entity: "staff_loans", action: "INSERT" },
+  attachProductCode: { entity: "products", action: "UPDATE" },
   writeOffLoan: { entity: "staff_loans", action: "UPDATE" },
   setPayrollPolicy: { entity: "payroll_settings", action: "UPDATE" },
   addMedia: { entity: "media_items", action: "INSERT" },
@@ -3005,14 +3028,37 @@ const supabaseRepo: typeof demoRepo = {
     }
   },
   async getProductByBarcode(barcode, clinicId) {
-    let q = sbc().from("products").select("*").eq("barcode", barcode.trim());
+    const code = normalizeCode(barcode);
+    if (!code) return undefined;
+    // دالّةُ القاعدة تقرأ `barcode` والرموزَ الإضافية معاً (0141)، وبصلاحية
+    // المُستدعي فسياساتُ الصفوف تحصرها بعيادته.
+    const r = await sbc().rpc("product_by_code", { p_code: code });
+    if (!r.error) {
+      const rows = (r.data ?? []) as Product[];
+      // صفّان = رمزٌ ملتبس. نرجّع الأوّل ونصرخ بالكونسول بدل ما نبلعه صامتين
+      // ونقول «غير موجود» — وهذا بالضبط ما كانت تفعله maybeSingle.
+      if (rows.length > 1) console.error("[pos] ambiguous code", code, rows.length);
+      return rows[0];
+    }
+    // القاعدةُ لم تنزل عليها 0141 بعد: نرجع للمسار القديم بدل أن يتعطّل المسح.
+    let q = sbc().from("products").select("*").eq("barcode", code).limit(2);
     if (clinicId) q = q.eq("clinic_id", clinicId);
-    return maybe<Product>(await q.maybeSingle());
+    const rows = listOf<Product>(await q);
+    if (rows.length > 1) console.error("[pos] ambiguous code", code, rows.length);
+    return rows[0];
+  },
+  async attachProductCode(productId, code) {
+    const c = normalizeCode(code);
+    if (!c) throw new Error("empty code");
+    const { data, error } = await sbc().rpc("attach_product_code", { p_product: productId, p_code: c });
+    if (error) throw error;
+    return data as Product;
   },
   async createProduct(input) {
     // المعرف يولد بالجهاز: فشل الشبكة يدخل صندوق الصادر ويُرفع لاحقاً بنفس
     // المعرف (upsert متجاهل التكرار) — لا منتج يضيع ولا يزدوج بضعف النت.
-    const row = { id: uuid(), ...input };
+    // والباركود يُطبَّع عند الحفظ بنفس دالّة المسح، وإلا خُزّن بشكلٍ لا يُمسح.
+    const row = { id: uuid(), ...input, barcode: normalizeCode(input.barcode) || null };
     try {
       // قبل ترحيلي 0075/0124 قد يغيب bulk_group أو sold_by_weight — أعد
       // المحاولة بدون العمود الناقص كي لا يفشل إنشاء المنتج كله.
@@ -3030,6 +3076,8 @@ const supabaseRepo: typeof demoRepo = {
     }
   },
   async updateProduct(id, patch) {
+    // نفس تطبيع الإنشاء — تعديلٌ يكتب باركوداً غيرَ مطبَّع يعيد المشكلة.
+    if ("barcode" in patch) patch = { ...patch, barcode: normalizeCode(patch.barcode) || null };
     const r = await sbc().from("products").update(patch).eq("id", id).select().maybeSingle();
     if (r.error && /bulk_group|sold_by_weight/i.test(r.error.message)) {
       const { bulk_group, sold_by_weight, ...rest } = patch as Record<string, unknown>;

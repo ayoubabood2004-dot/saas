@@ -689,7 +689,8 @@
     "dFeeFreeNote": "No fee — the customer pays for the goods only.",
     "dFeeClinicNote": "The fee is inside the invoice total, and the courier hands it to the clinic.",
     "dFeeCourierNote": "{{n}} is added on top of the total and kept by the courier.",
-    "dFeeSaveFailed": "The item changes were saved, but the fee wasn't — please try again"
+    "dFeeSaveFailed": "The item changes were saved, but the fee wasn't — please try again",
+    "moreHidden": "Showing {{n}} of {{total}} — narrow the search to see the rest"
   },
   "promos": {
     "title": "Offers management",
@@ -1022,7 +1023,14 @@
     "tabBarcodes": "Barcode generator",
     "stockXlsx": "Export stocktake (Excel)",
     "stockXlsxDone": "Downloaded {{name}}",
-    "stockXlsxFail": "Could not export the stocktake file"
+    "stockXlsxFail": "Could not export the stocktake file",
+    "attachTitle": "Unknown barcode",
+    "attachHint": "If this item is already in your inventory under another barcode or a hand-written code, pick it below — the barcode gets attached and its stock stays as it is. Do not add it again.",
+    "attachSearch": "Search by name…",
+    "attachFooter": "Not there? Close this and add it as a new product from Inventory.",
+    "codeAttached": "Barcode attached to {{n}}",
+    "codeTaken": "That barcode belongs to another product",
+    "stockN": "stock {{n}}"
   },
   "role": {
     "admin": "Clinic",
