@@ -1267,6 +1267,28 @@ export interface StaffRecurring {
   created_at: string;
 }
 
+/**
+ * بندٌ يدويّ لشهرٍ بعينه — قطعٌ أو زيادة. صفٌّ دائم لا حالةُ شاشة: إعادةُ حساب
+ * الدورة تقرأ هذي الصفوف وتبني منها، فتتراكم القطوعات بدل أن يمحو أحدُها الآخر.
+ * والتراجعُ يُقيَّد ولا يُحذف — النافذ منه هو (amount − reversed_amount).
+ */
+export interface PayrollAdjustment {
+  id: string;
+  clinic_id?: string | null;
+  staff_id: string;
+  period: string;           // أول يوم بالشهر
+  code: string;
+  amount: number;
+  qty?: number | null;
+  reason?: string | null;
+  reversed_amount: number;
+  reversed_qty: number;
+  reversed_at?: string | null;
+  reversed_reason?: string | null;
+  created_by?: string | null;
+  created_at: string;
+}
+
 export interface PayrollRun {
   id: string;
   clinic_id?: string | null;

@@ -22,7 +22,7 @@ DB=dvtest
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MIG="$HERE/../migrations"
 # الهجرات التي يغطّيها هذا المخطّط الأساس. زدها كل ما تنضاف موجة.
-WAVE="$MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql"
+WAVE="$MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql"
 
 command -v "$PGBIN/initdb" >/dev/null || { echo "ما لكيت بوستغريس بـ $PGBIN"; exit 1; }
 
@@ -509,6 +509,44 @@ chk "ودالّتا 0141 ممنوعتان على anon" \
           or has_function_privilege('anon','public.attach_product_code(uuid,text)','execute'))::text" "false"
 chk "وفهرسُ الرموز الإضافية موجود" \
     "select count(*)::text from pg_indexes where indexname='products_alt_codes_idx'" "1"
+
+# ── 0142: البند اليدوي صفٌّ يُتراكم ويُردّ، والتسليم يُفَكّ ────────────────
+# الشكوى كانت «بس قطع واحد باليوم». فهنا نتحقّق من البنية التي أنهتها: جدولٌ
+# بمفتاح (موظف، شهر)، وقيدٌ يمنع ردّاً فوق الأصل، ودوالٌّ ممنوعةٌ على anon.
+echo "▸ 0142: البنود اليدوية والتراجع"
+
+chk "جدولُ البنود موجود وعليه RLS" \
+    "select relrowsecurity::text from pg_class where relname='payroll_adjustments'" "true"
+chk "ولا سياسةَ كتابة عليه — كلُّ كتابةٍ من دالّة" \
+    "select count(*)::text from pg_policies where tablename='payroll_adjustments' and cmd<>'SELECT'" "0"
+chk "وفهرسُ مفتاحِ الموظف موجود (الحذف المتسلسل يبحث به)" \
+    "select count(*)::text from pg_indexes where indexname='payroll_adjustments_staff_idx'" "1"
+chk "وقيدُ «لا ردَّ فوق الأصل» مثبَّت" \
+    "select count(*)::text from pg_constraint where conname='payroll_adjustments_not_over_reversed'" "1"
+
+# القيد يُفحص بالقاعدة لا بالنيّة: ردٌّ أكبر من الأصل لازم يُرفض حتى لو تسلّل
+# إليه أحدٌ بـSQL مباشر — وإلا صار «الردّ» زيادةً على الراتب من حيث لا يُدرى.
+$P -c "insert into staff (id) values ('cccc0000-0000-0000-0000-00000000ad01') on conflict do nothing" >/dev/null 2>&1
+ins "insert into payroll_adjustments (clinic_id, staff_id, period, code, amount, reversed_amount)
+     values ('11111111-1111-1111-1111-111111111111','cccc0000-0000-0000-0000-00000000ad01','2026-09-01','PEN', 10000, 4000);" \
+  && printf '   ✓ %s\n' "ردٌّ جزئيٌّ دون الأصل ينقبل" || { printf '   ✗ %s\n' "رفض ردّاً جزئياً سليماً"; fail=1; }
+ins "insert into payroll_adjustments (clinic_id, staff_id, period, code, amount, reversed_amount)
+     values ('11111111-1111-1111-1111-111111111111','cccc0000-0000-0000-0000-00000000ad01','2026-09-01','PEN', 10000, 10001);" \
+  && { printf '   ✗ %s\n' "قبل ردّاً أكبر من الأصل"; fail=1; } || printf '   ✓ %s\n' "ويرفض ردّاً أكبر من الأصل"
+ins "insert into payroll_adjustments (clinic_id, staff_id, period, code, amount)
+     values ('11111111-1111-1111-1111-111111111111','cccc0000-0000-0000-0000-00000000ad01','2026-09-01','PEN', -1);" \
+  && { printf '   ✗ %s\n' "قبل مبلغاً سالباً"; fail=1; } || printf '   ✓ %s\n' "ويرفض مبلغاً سالباً"
+
+chk "ودوالُّ 0142 ممنوعةٌ على anon" \
+    "select (has_function_privilege('anon','public.payroll_add_adjustment(uuid,date,text,numeric,numeric,text)','execute')
+          or has_function_privilege('anon','public.payroll_reverse_adjustment(uuid,numeric,numeric,text)','execute')
+          or has_function_privilege('anon','public.payroll_unpay_slip(uuid)','execute'))::text" "false"
+chk "ومسارُ البحث مثبَّتٌ بكل دوالّ 0142" \
+    "select count(*)::text from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+      where n.nspname='public' and p.proname in
+        ('payroll_add_adjustment','payroll_delete_adjustment','payroll_reverse_adjustment',
+         'payroll_unpay_slip','payroll_period_frozen')
+        and not (coalesce(array_to_string(p.proconfig,','),'') like '%search_path%')" "0"
 
 echo
 [ $fail -eq 0 ] && echo "✓ كل الفحوص عبرت" || { echo "✗ اكو فحصٌ فشل"; exit 1; }

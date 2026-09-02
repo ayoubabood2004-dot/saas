@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { useTranslation } from "react-i18next";
 import {
   Wallet, Users, HandCoins, Plus, Trash2, Printer, Check, Lock,
-  CircleDollarSign, TriangleAlert, ChevronDown, RotateCcw, Banknote, SlidersHorizontal,
+  CircleDollarSign, TriangleAlert, ChevronDown, RotateCcw, Banknote, SlidersHorizontal, Undo2,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { usePermissions } from "@/hooks/usePermissions";
@@ -19,7 +19,7 @@ import {
   type LineInput, type PayrollPolicy, type LoanRow,
 } from "@/lib/payroll";
 import type {
-  StaffComp, StaffRecurring, PayrollRun, Payslip, PayslipLine, StaffLoan, PayslipDraft, PayMethod, PayLineKind,
+  StaffComp, StaffRecurring, PayrollAdjustment, PayrollRun, Payslip, PayslipLine, StaffLoan, PayslipDraft, PayMethod, PayLineKind,
 } from "@/types";
 
 /* ============================================================================
@@ -173,29 +173,34 @@ function usePayrollData() {
   const [staff, setStaff] = useState<StaffMember[]>([]);
   const [comp, setComp] = useState<StaffComp[]>([]);
   const [recurring, setRecurring] = useState<StaffRecurring[]>([]);
+  const [adjustments, setAdjustments] = useState<PayrollAdjustment[]>([]);
   const [loans, setLoans] = useState<StaffLoan[]>([]);
   const [policy, setPolicy] = useState<PayrollPolicy>(() => normalizePolicy(null));
   const [loading, setLoading] = useState(true);
 
   const reload = useCallback(async () => {
-    const [s, c, r, l, p] = await Promise.all([
+    const [s, c, r, a, l, p] = await Promise.all([
       listStaff().catch(() => [] as StaffMember[]),
       repo.listStaffComp().catch(() => [] as StaffComp[]),
       repo.listStaffRecurring().catch(() => [] as StaffRecurring[]),
+      repo.listPayrollAdjustments().catch(() => [] as PayrollAdjustment[]),
       repo.listStaffLoans().catch(() => [] as StaffLoan[]),
       repo.getPayrollPolicy().catch(() => null),
     ]);
     setStaff(s.filter((x) => x.status !== "suspended"));
-    setComp(c); setRecurring(r); setLoans(l);
+    setComp(c); setRecurring(r); setAdjustments(a); setLoans(l);
     setPolicy(normalizePolicy(p));
     setLoading(false);
   }, []);
 
   useEffect(() => { void reload(); }, [reload]);
-  return { staff, comp, recurring, loans, policy, loading, reload };
+  return { staff, comp, recurring, adjustments, loans, policy, loading, reload };
 }
 
 const nameOf = (staff: StaffMember[], id: string) => staff.find((s) => s.id === id)?.name ?? "—";
+
+/** أول يوم بالشهر — مفتاحُ الفترة كما تخزنه القاعدة، فيتطابق الطرفان. */
+const monthKey = (period: string) => `${period.slice(0, 7)}-01`;
 
 /** عنوان البند مترجَماً — واحتياطه عربية الكتالوج حتى لا يظهر رمزٌ خام أبداً. */
 function useElLabel() {
@@ -522,7 +527,7 @@ function RunTab() {
   const { t } = useTranslation();
   const toast = useToast();
   const { user } = useAuth();
-  const { staff, comp, recurring, loans, policy, loading, reload } = usePayrollData();
+  const { staff, comp, recurring, adjustments, loans, policy, loading, reload } = usePayrollData();
 
   const elLabel = useElLabel();
   const colLabel = (code: string) => t(`payroll.col.${code}`, code);
@@ -530,10 +535,37 @@ function RunTab() {
   const [runs, setRuns] = useState<PayrollRun[]>([]);
   const [slips, setSlips] = useState<Payslip[]>([]);
   const [lines, setLines] = useState<PayslipLine[]>([]);
-  const [manual, setManual] = useState<Record<string, LineInput[]>>({});
+  /* البنود اليدوية تُقرأ من القاعدة لا من الذاكرة (0142).
+   *
+   * كانت `useState` — تُضاف بند، يحفظها «احسب» ثم يمسح الذاكرة، وإعادةُ الحساب
+   * تبدأ بحذف القسائم وتبني من (راتب + ثوابت + سلف + ذاكرةٍ فارغة). فالقطعُ
+   * الأول يُمحى بلا صوت، ويبدو للعيادة أن السستم يقبل قطعاً واحداً لا أكثر.
+   * الآن كلُّ بندٍ صفٌّ بشهره: إعادةُ الحساب تقرأه فتتراكم القطوعات، وتُعطي
+   * الحلقةُ نفس النتيجة مهما تكرّرت.
+   *
+   * والنافذُ منه هو الباقي بعد الردّ — فبندٌ رُدّ نصفُه يُحسب نصفاً، ورُدّ كلُّه
+   * يسقط من الحساب ويبقى بالسجل. */
+  const manual = useMemo(() => {
+    const out: Record<string, LineInput[]> = {};
+    for (const a of adjustments) {
+      if (a.period !== monthKey(period)) continue;
+      const line = a.qty != null
+        ? { code: a.code, qty: a.qty - a.reversed_qty, reason: a.reason ?? null }
+        : { code: a.code, amount: a.amount - a.reversed_amount, reason: a.reason ?? null };
+      if ((line.qty ?? line.amount ?? 0) <= 0) continue;   // رُدّ كلُّه
+      (out[a.staff_id] ??= []).push(line);
+    }
+    return out;
+  }, [adjustments, period]);
+
+  /** بنودُ هذا الشهر لموظف — بما فيها المردودةُ كلياً، فالسجل يُقرأ لا يُخفى. */
+  const adjOf = useCallback(
+    (sid: string) => adjustments.filter((a) => a.staff_id === sid && a.period === monthKey(period)),
+    [adjustments, period]);
   const [busy, setBusy] = useState(false);
   const [addFor, setAddFor] = useState<StaffMember | null>(null);
   const [drawFor, setDrawFor] = useState<StaffMember | null>(null);
+  const [undoFor, setUndoFor] = useState<PayrollAdjustment | null>(null);
   const [open, setOpen] = useState<string | null>(null);
 
   const run = useMemo(() => runs.find((r) => r.period === period) ?? null, [runs, period]);
@@ -584,7 +616,7 @@ function RunTab() {
     for (const pv of preview) {
       seen.add(pv.staff_id);
       const p = saved.get(pv.staff_id);
-      const pending = (manual[pv.staff_id]?.length ?? 0) > 0;
+      const pending = false;   // البند صار صفّاً محفوظاً؛ اختلافُ البصمة وحده يُعلن الحاجة لإعادة الحساب
       const changed = !!p && !linesMissing && sigOf(lines.filter((l) => l.payslip_id === p.id)) !== sigOf(pv.lines);
       const dirty = !p || pending || changed;
       if (p && !dirty) { out.push(fromSlip(p, false)); continue; }
@@ -643,7 +675,6 @@ function RunTab() {
         })),
       }));
       await repo.savePayrollSlips(r.id, drafts);
-      setManual({});
       playSuccess();
       toast.success(t("payroll.calculated", "انحسبت الدورة — راجعها قبل الاعتماد"));
       await loadRun();
@@ -677,6 +708,22 @@ function RunTab() {
       await loadRun();
     } catch (e) { playWarning(); toast.error(String((e as Error).message ?? e)); }
     finally { setBusy(false); }
+  };
+
+  /** نقيضُ الدفع: يمحو مصروفَه ويرجع القسيمة «غير مدفوعة» والدورة «معتمدة». */
+  const unpay = async (slip: Payslip) => {
+    if (!window.confirm(t("payroll.undoPayConfirm", "ترجع التسليم؟ ينمحي مصروف الراتب ويرجع الصندوق كما كان."))) return;
+    setBusy(true);
+    try {
+      await repo.unpayPayslip(slip.id);
+      playSuccess();
+      toast.success(t("payroll.unpaid", "انفكّ التسليم وانمحى مصروفه"));
+      await loadRun();
+    } catch (e) {
+      playWarning();
+      const m = String((e as Error).message ?? e);
+      toast.error(m.includes("closed") ? t("payroll.runClosed", "الدورة مقفلة — ما تنفكّ") : m);
+    } finally { setBusy(false); }
   };
 
   const close = async () => {
@@ -924,16 +971,33 @@ function RunTab() {
                                 onClick={() => pay(slip, "bank")}>{t("payroll.payBank", "حوالة")}</Button>
                             </>
                           )}
-                          {!frozen && (manual[sid]?.length ?? 0) > 0 && (
+                          {/* ضغطةُ «تسليم» غلطاً كانت قيداً أبدياً. والفكُّ يمحو مصروفَها
+                              بعينه فيرجع الصندوق كما كان — والمقفلةُ وحدها لا تُفَكّ. */}
+                          {slip?.paid_at && run?.status !== "closed" && (
+                            <Button size="sm" variant="secondary" leftIcon={<Undo2 size={14} />} disabled={busy}
+                              data-payunpay={sid} onClick={() => unpay(slip)}>
+                              {t("payroll.undoPay", "تراجع عن التسليم")}
+                            </Button>
+                          )}
+                          {adjOf(sid).length > 0 && (
                             <div className="flex flex-wrap items-center gap-1.5">
-                              {manual[sid].map((m, i) => (
-                                <span key={i} className="chip bg-surface-1 text-2xs text-ink-muted">
-                                  {elLabel(m.code)}
-                                  <button aria-label={t("common.delete", "حذف")} onClick={() => setManual((s) => ({
-                                    ...s, [sid]: s[sid].filter((_, j) => j !== i),
-                                  }))}><Trash2 size={12} /></button>
-                                </span>
-                              ))}
+                              {adjOf(sid).map((a) => {
+                                const gone = (a.qty != null ? a.qty - a.reversed_qty : a.amount - a.reversed_amount) <= 0;
+                                const part = !gone && (a.reversed_amount > 0 || a.reversed_qty > 0);
+                                return (
+                                  <span key={a.id} className={cn("chip text-2xs", gone
+                                    ? "bg-surface-1 text-ink-subtle line-through"
+                                    : part ? "bg-warn-50 text-warn-700 dark:bg-warn-500/15 dark:text-warn-300"
+                                      : "bg-surface-1 text-ink-muted")}>
+                                    {elLabel(a.code)}
+                                    {!frozen && !gone && (
+                                      <button aria-label={t("payroll.undoLine", "تراجع عن البند")}
+                                        title={t("payroll.undoLine", "تراجع عن البند")}
+                                        onClick={() => { playTap(); setUndoFor(a); }}><Undo2 size={12} /></button>
+                                    )}
+                                  </span>
+                                );
+                              })}
                             </div>
                           )}
                           {!frozen && dirty && (
@@ -973,14 +1037,26 @@ function RunTab() {
         </Sheet>
       )}
 
+      {undoFor && (
+        <UndoLineDialog
+          adj={undoFor}
+          onClose={() => setUndoFor(null)}
+          onDone={async (msg) => { setUndoFor(null); toast.success(msg); await reload(); }}
+        />
+      )}
+
       {addFor && (
         <AddLineDialog
           member={addFor}
           onClose={() => setAddFor(null)}
-          onAdd={(line) => {
-            setManual((s) => ({ ...s, [addFor.id]: [...(s[addFor.id] ?? []), line] }));
-            setAddFor(null);
-            playTap();
+          onAdd={async (line) => {
+            try {
+              await repo.addPayrollAdjustment(
+                addFor.id, monthKey(period), line.code,
+                line.amount ?? 0, line.qty ?? null, line.reason ?? null);
+              setAddFor(null); playTap();
+              await reload();
+            } catch (e) { playWarning(); toast.error(String((e as Error).message ?? e)); }
           }}
         />
       )}
@@ -1004,8 +1080,93 @@ function RunTab() {
   );
 }
 
+/**
+ * التراجع عن بند — كلَّه أو بعضَه.
+ *
+ * لا يُحذف الأصل. قطعٌ وقع ثم رُدّ حقيقتان، ومحوُ إحداهما يترك موظفاً يسأل بعد
+ * ثلاثة أشهر «ليش انقطع مني؟» بلا جواب. فيبقى البند بمبلغه، ويُسجَّل معه ما
+ * رُدّ منه، والنافذُ هو الفرق — تقرأ القسيمة القصّة كاملةً.
+ */
+function UndoLineDialog({ adj, onClose, onDone }: {
+  adj: PayrollAdjustment; onClose: () => void; onDone: (msg: string) => Promise<void>;
+}) {
+  const { t } = useTranslation();
+  const toast = useToast();
+  const elLabel = useElLabel();
+  const byDays = adj.qty != null;
+  const left = byDays ? (adj.qty ?? 0) - adj.reversed_qty : adj.amount - adj.reversed_amount;
+  const [mode, setMode] = useState<"all" | "part">("all");
+  const [part, setPart] = useState("");
+  const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const submit = async () => {
+    let n: number | null = null;
+    if (mode === "part") {
+      n = Number(part);
+      if (!Number.isFinite(n) || n <= 0) { playWarning(); toast.error(t("payroll.badAmount", "المبلغ غير صحيح")); return; }
+      // الردُّ فوق الباقي ليس ردّاً بل زيادة — والخادم يرفضه، فنقوله هنا بوضوح.
+      if (n > left) { playWarning(); toast.error(t("payroll.undoOverLeft", "أكبر من الباقي — أقصى ما يُردّ {{v}}", { v: formatNum(left) })); return; }
+    }
+    setBusy(true);
+    try {
+      await repo.reversePayrollAdjustment(adj.id, byDays ? null : n, byDays ? n : null, reason.trim() || null);
+      playSuccess();
+      await onDone(mode === "all"
+        ? t("payroll.undoneAll", "انردّ البند كاملاً — أعد حساب الدورة حتى ينعكس")
+        : t("payroll.undonePart", "انردّ جزءٌ من البند — أعد حساب الدورة حتى ينعكس"));
+    } catch (e) {
+      playWarning(); toast.error(String((e as Error).message ?? e));
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <Dialog open onClose={onClose} title={t("payroll.undoLineTitle", "تراجع عن {{n}}", { n: elLabel(adj.code) })}>
+      <div className="space-y-3">
+        <p className="rounded-xl bg-surface-2 p-2.5 text-xs leading-relaxed text-ink-muted">
+          {byDays
+            ? t("payroll.undoLeftDays", "الباقي بلا ردّ: {{v}} يوم", { v: formatNum(left) })
+            : t("payroll.undoLeftAmount", "الباقي بلا ردّ: {{v}}", { v: formatNum(left) })}
+          {adj.reason && <span className="mt-1 block text-ink-subtle">{t("payroll.reason", "السبب")}: {adj.reason}</span>}
+        </p>
+
+        <div className="flex gap-2">
+          <button className={cn("flex-1 rounded-xl border px-3 py-2 text-sm transition",
+            mode === "all" ? "border-brand-600 bg-brand-50 font-semibold text-brand-700 dark:bg-brand-500/15 dark:text-brand-300" : "border-line text-ink-muted")}
+            data-payundoall onClick={() => { playTap(); setMode("all"); }}>
+            {t("payroll.undoAll", "ردّ كامل")}
+          </button>
+          <button className={cn("flex-1 rounded-xl border px-3 py-2 text-sm transition",
+            mode === "part" ? "border-brand-600 bg-brand-50 font-semibold text-brand-700 dark:bg-brand-500/15 dark:text-brand-300" : "border-line text-ink-muted")}
+            data-payundopart onClick={() => { playTap(); setMode("part"); }}>
+            {t("payroll.undoPart", "ردّ جزء")}
+          </button>
+        </div>
+
+        {mode === "part" && (
+          <div>
+            <label className="label">{byDays ? t("payroll.days", "عدد الأيام") : t("payroll.amount", "المبلغ")}</label>
+            <AmountInput value={part} onChange={setPart} hook="undopart" />
+          </div>
+        )}
+
+        <div>
+          <label className="label">{t("payroll.undoReason", "سبب التراجع")}</label>
+          <input className="input" value={reason} data-payundoreason
+            onChange={(e) => setReason(e.target.value)}
+            placeholder={t("payroll.reasonOpt", "اختياري")} />
+        </div>
+
+        <Button className="w-full" loading={busy} onClick={() => void submit()} data-payundodo>
+          {t("payroll.undoDo", "نفّذ التراجع")}
+        </Button>
+      </div>
+    </Dialog>
+  );
+}
+
 function AddLineDialog({ member, onClose, onAdd }: {
-  member: StaffMember; onClose: () => void; onAdd: (l: LineInput) => void;
+  member: StaffMember; onClose: () => void; onAdd: (l: LineInput) => void | Promise<void>;
 }) {
   const { t } = useTranslation();
   const toast = useToast();

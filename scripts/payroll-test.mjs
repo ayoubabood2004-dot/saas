@@ -201,5 +201,83 @@ const next = P.buildSlip({ staff: { id: "s1", name: "Ali" }, base: 600000, recur
   loans: D.listLoans().filter((l) => l.staff_id === "s1" && l.status === "active"), manual: [] }, POL);
 check("الشهر الجاي: بلا سطر سحب، ومع قسطٍ واحد", !next.lines.some((l) => l.code === "ADV") && next.lines.filter((l) => l.code === "LOAN").length === 1);
 
+/* ── البنود اليدوية (0142): تتراكم، تُردّ، والتسليم يُفَكّ ─────────────────
+ *
+ * هذي شكوى العيادة حرفياً: «بس قطع واحد باليوم مو أكثر». وسببُها أن البند كان
+ * يعيش بذاكرة الشاشة، فتمحوه أوّلُ إعادة حساب. فالفحص هنا يحرس الثابت الذي
+ * أصلحها: **إعادةُ الحساب تُعطي نفس النتيجة، والقطوعات تتراكم**.
+ * ------------------------------------------------------------------------*/
+console.log("▸ البنود اليدوية والتراجع (0142)");
+
+D.setComp("s2", "2026-01-01", 900000);
+const PER = "2026-09-01";
+const a_pen = D.addAdjustment("s2", PER, "PEN", 25000, null, "تأخير");
+D.addAdjustment("s2", PER, "DMG", 40000, null, "كسر");
+const a_abs = D.addAdjustment("s2", PER, "ABS", 0, 2, null);
+
+check("قطعان بنفس الشهر يتراكمان — ما يمحي أحدُهما الآخر", D.listAdjustments(PER).filter((a) => a.staff_id === "s2").length === 3);
+check("بندٌ بلا مقدارٍ يُرفض", await throwsWith(() => D.addAdjustment("s2", PER, "PEN", 0, null, null), "bad amount"));
+check("الشهرُ الآخر لا يختلط", D.listAdjustments("2026-10-01").length === 0);
+
+/** ما يبنيه الشهرُ من صفوفه — نفس ما تفعله الشاشة بالضبط. */
+const manualOf = (sid, per) => D.listAdjustments(per).filter((a) => a.staff_id === sid).map((a) => {
+  const l = a.qty != null
+    ? { code: a.code, qty: a.qty - a.reversed_qty, reason: a.reason }
+    : { code: a.code, amount: a.amount - a.reversed_amount, reason: a.reason };
+  return (l.qty ?? l.amount ?? 0) > 0 ? l : null;
+}).filter(Boolean);
+
+const build2 = () => P.buildSlip({ staff: { id: "s2", name: "Sara" }, base: 900000,
+  recurring: [], loans: [], manual: manualOf("s2", PER) }, POL);
+
+const b1 = build2();
+check("المعاينة تحمل القطعين والأيام", b1.lines.filter((l) => l.code === "PEN").length === 1
+  && b1.lines.filter((l) => l.code === "DMG").length === 1
+  && b1.lines.filter((l) => l.code === "ABS").length === 1);
+
+// الثابتُ الحاكم: الحساب مكرَّرٌ بلا أثر. كان يُنقص بنداً كلَّ مرّة.
+const run2 = D.openRun(PER);
+D.saveSlips(run2.id, [draft(b1, "s2", "Sara")]);
+const firstNet = D.listSlips(run2.id)[0].net;
+D.saveSlips(run2.id, [draft(build2(), "s2", "Sara")]);
+const again = D.listSlips(run2.id)[0];
+check("إعادةُ الحساب لا تُسقط بنداً — الصافي هو هو", again.net === firstNet);
+check("وسطورُها كاملةٌ بعد الإعادة", D.listLines([again.id]).filter((l) => ["PEN", "DMG", "ABS"].includes(l.code)).length === 3);
+
+// ردٌّ جزئي ثم كامل
+D.reverseAdjustment(a_pen.id, 10000, null, "تسوية");
+check("ردٌّ جزئي: النافذ ١٥٬٠٠٠ لا ٢٥٬٠٠٠", manualOf("s2", PER).find((l) => l.code === "PEN").amount === 15000);
+check("والأصلُ باقٍ بالسجل بمبلغه", D.listAdjustments(PER).find((a) => a.id === a_pen.id).amount === 25000);
+check("ردٌّ فوق الباقي يُقصّ عند الباقي", D.reverseAdjustment(a_pen.id, 999999).reversed_amount === 25000);
+check("وبعد الردّ الكامل يسقط من الحساب", !manualOf("s2", PER).some((l) => l.code === "PEN"));
+check("وردُّ ما رُدَّ كلُّه يُرفض", await throwsWith(() => D.reverseAdjustment(a_pen.id), "already reversed"));
+check("بندُ الأيام يُردّ بالأيام", D.reverseAdjustment(a_abs.id, null, 1).reversed_qty === 1
+  && manualOf("s2", PER).find((l) => l.code === "ABS").qty === 1);
+
+// الشهرُ المعتمد وثيقةٌ لا مسوّدة
+D.saveSlips(run2.id, [draft(build2(), "s2", "Sara")]);
+D.approveRun(run2.id);
+check("بعد الاعتماد: لا إضافة", await throwsWith(() => D.addAdjustment("s2", PER, "PEN", 5000), "period is frozen"));
+check("بعد الاعتماد: لا ردّ", await throwsWith(() => D.reverseAdjustment(a_abs.id, null, 1), "period is frozen"));
+check("بعد الاعتماد: لا حذف", await throwsWith(() => D.deleteAdjustment(a_abs.id), "period is frozen"));
+
+// فكّ التسليم: يمحو مصروفَه بعينه ويرجع الحال
+const slip2 = D.listSlips(run2.id)[0];
+const before = expenses.length;
+await D.paySlip(slip2.id, "cash", sink);
+const expId = D.listSlips(run2.id)[0].expense_id;
+check("تسليم: مصروفٌ واحدٌ انكتب والقسيمة مدفوعة", expenses.length === before + 1 && !!expId
+  && D.listRuns().find((r) => r.id === run2.id).status === "paid");
+await D.unpaySlip(slip2.id, async (id) => { const i = expenses.findIndex((e) => e.id === id); if (i >= 0) expenses.splice(i, 1); });
+const un = D.listSlips(run2.id)[0];
+check("فكّ: القسيمة رجعت غير مدفوعة وبلا مصروف", !un.paid_at && !un.pay_method && !un.expense_id);
+check("فكّ: المصروف انمحى بعينه — الصندوق كما كان", expenses.length === before && !expenses.some((e) => e.id === expId));
+check("فكّ: الدورة رجعت «معتمدة»", D.listRuns().find((r) => r.id === run2.id).status === "approved");
+check("فكّ ما لم يُدفع لا شيء (نقيضٌ متعادل)", (await D.unpaySlip(slip2.id, async () => {})).paid_at == null);
+
+await D.paySlip(slip2.id, "cash", sink);
+D.closeRun(run2.id);
+check("المقفلة لا تُفَكّ", await throwsWith(() => D.unpaySlip(slip2.id, async () => {}), "run is closed"));
+
 console.log(`\n${failures ? "✗" : "✓"} payroll-test: ${passes} نجحت، ${failures} فشلت`);
 process.exit(failures ? 1 : 0);

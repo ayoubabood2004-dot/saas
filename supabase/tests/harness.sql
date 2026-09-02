@@ -81,6 +81,24 @@ create table if not exists staff_recurring (id uuid primary key default gen_rand
 create table if not exists payslips (id uuid primary key default gen_random_uuid(), staff_id uuid references staff(id));
 create table if not exists payslip_lines (id uuid primary key default gen_random_uuid(), clinic_id uuid);
 create table if not exists staff_loans (id uuid primary key default gen_random_uuid(), staff_id uuid references staff(id));
+
+-- شكلُ ما تلمسه 0142: الدورةُ بحالتها وشهرها، والقسيمةُ بدفعها ومصروفها،
+-- ودالّتا الصلاحية من 0112. بدونها لا تنزل الهجرة أصلاً، وما لا ينزل لا يُفحص.
+alter table payroll_runs add column if not exists clinic_id uuid;
+alter table payroll_runs add column if not exists period    date;
+alter table payroll_runs add column if not exists status    text default 'draft';
+alter table payroll_runs add column if not exists paid_at   timestamptz;
+alter table payslips     add column if not exists clinic_id  uuid;
+alter table payslips     add column if not exists run_id     uuid references payroll_runs(id);
+alter table payslips     add column if not exists paid_at    timestamptz;
+alter table payslips     add column if not exists pay_method text;
+alter table payslips     add column if not exists expense_id uuid;
+
+create or replace function payroll_is_admin() returns boolean
+language sql stable as $$ select coalesce((select admin from _dvtest_flags limit 1), true) $$;
+
+create or replace function payroll_my_staff_ids() returns setof uuid
+language sql stable as $$ select id from staff where false $$;
 create table if not exists staff_loan_events (id uuid primary key default gen_random_uuid(), clinic_id uuid);
 
 create table if not exists invoice_items (

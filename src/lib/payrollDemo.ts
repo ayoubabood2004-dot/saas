@@ -13,13 +13,14 @@ import { DEFAULT_POLICY, normalizePolicy, elementOf, isAdvance } from "./payroll
 import { salaryExpenseText, loanExpenseText, drawExpenseText, unnamedStaff } from "./payrollLabels";
 import type {
   PayrollPolicyDTO, StaffComp, StaffRecurring, PayrollRun, Payslip, PayslipLine,
-  StaffLoan, StaffLoanEvent, PayslipDraft, PayMethod, Expense,
+  StaffLoan, StaffLoanEvent, PayslipDraft, PayMethod, Expense, PayrollAdjustment,
 } from "@/types";
 
 interface Store {
   policy: PayrollPolicyDTO;
   comp: StaffComp[];
   recurring: StaffRecurring[];
+  adjustments: PayrollAdjustment[];
   runs: PayrollRun[];
   slips: Payslip[];
   lines: PayslipLine[];
@@ -29,7 +30,7 @@ interface Store {
 
 const KEY = () => `vp_demo_payroll_${getActiveClinicId()}`;
 const EMPTY = (): Store => ({
-  policy: { ...DEFAULT_POLICY }, comp: [], recurring: [],
+  policy: { ...DEFAULT_POLICY }, comp: [], recurring: [], adjustments: [],
   runs: [], slips: [], lines: [], loans: [], events: [],
 });
 
@@ -48,6 +49,8 @@ const now = () => new Date().toISOString();
 
 /** يُحقن من repo.ts — تسجيل مصروفٍ بسجل العيادة (ما خرج من الدرج فعلاً). */
 export type ExpenseSink = (e: Omit<Expense, "id" | "created_at">) => Promise<Expense>;
+/** ونقيضُه — يُحقن كذلك، ليمحو فكُّ التسليم المصروفَ الذي كتبه التسليم. */
+export type ExpenseVoid = (id: string) => Promise<void>;
 
 /* ── السياسة ─────────────────────────────────────────────────────────────── */
 export const getPolicy = (): PayrollPolicyDTO => normalizePolicy(load().policy);
@@ -100,6 +103,77 @@ export function deleteRecurring(id: string): void {
   const s = load();
   s.recurring = s.recurring.filter((r) => r.id !== id);
   save(s);
+}
+
+/* ── البنود اليدوية (0142) ───────────────────────────────────────────────── */
+/* صفٌّ دائم لكل قطعٍ أو زيادة، مفتاحُه (الموظف، الشهر). قبلها كان البند يعيش
+ * بذاكرة الشاشة، فتمحوه أوّلُ إعادة حساب — قطعٌ يختفي بلا أن يعلم أحد. */
+
+const monthOf = (period: string): string => `${period.slice(0, 7)}-01`;
+
+/** هل شهرُ البند مجمَّد؟ بعد الاعتماد تصير القسيمة وثيقةً لا مسوّدة. */
+function periodFrozen(s: Store, period: string): boolean {
+  const p = monthOf(period);
+  return s.runs.some((r) => r.period === p && ["approved", "paid", "closed"].includes(r.status));
+}
+
+export const listAdjustments = (period?: string): PayrollAdjustment[] =>
+  load().adjustments.filter((a) => !period || a.period === monthOf(period))
+    .sort((a, b) => a.created_at.localeCompare(b.created_at));
+
+export function addAdjustment(
+  staffId: string, period: string, code: string,
+  amount?: number | null, qty?: number | null, reason?: string | null,
+): PayrollAdjustment {
+  const s = load();
+  const p = monthOf(period);
+  if (periodFrozen(s, p)) throw new Error("period is frozen");
+  // بندٌ بلا مقدار يمرّ صامتاً بالقسيمة فيبدو أنه طُبّق — وهو لم يُطبَّق.
+  if (!((qty ?? 0) > 0) && !((amount ?? 0) > 0)) throw new Error("bad amount");
+  const row: PayrollAdjustment = {
+    id: uid("adj"), clinic_id: null, staff_id: staffId, period: p, code,
+    amount: amount ?? 0, qty: qty ?? null, reason: reason?.trim() || null,
+    reversed_amount: 0, reversed_qty: 0, reversed_at: null, reversed_reason: null,
+    created_by: null, created_at: now(),
+  };
+  s.adjustments.push(row); save(s); return row;
+}
+
+export function deleteAdjustment(id: string): void {
+  const s = load();
+  const row = s.adjustments.find((a) => a.id === id);
+  if (!row) throw new Error("adjustment not found");
+  if (periodFrozen(s, row.period)) throw new Error("period is frozen");
+  s.adjustments = s.adjustments.filter((a) => a.id !== id);
+  save(s);
+}
+
+/** ردٌّ كامل (بلا مقدار) أو جزئيّ. الأصل يبقى ظاهراً — النافذ هو الفرق. */
+export function reverseAdjustment(
+  id: string, amount?: number | null, qty?: number | null, reason?: string | null,
+): PayrollAdjustment {
+  const s = load();
+  const row = s.adjustments.find((a) => a.id === id);
+  if (!row) throw new Error("adjustment not found");
+  if (periodFrozen(s, row.period)) throw new Error("period is frozen");
+
+  const leftAmt = row.amount - row.reversed_amount;
+  const leftQty = (row.qty ?? 0) - row.reversed_qty;
+  if (leftAmt <= 0 && leftQty <= 0) throw new Error("already reversed");
+
+  if (row.qty != null) {
+    const q = Math.min(qty ?? leftQty, leftQty);
+    if (!(q > 0)) throw new Error("bad amount");
+    row.reversed_qty += q;
+  } else {
+    const a = Math.min(amount ?? leftAmt, leftAmt);
+    if (!(a > 0)) throw new Error("bad amount");
+    row.reversed_amount += a;
+  }
+  row.reversed_at = now();
+  if (reason?.trim()) row.reversed_reason = reason.trim();
+  save(s);
+  return row;
 }
 
 /* ── الدورة ──────────────────────────────────────────────────────────────── */
@@ -238,6 +312,35 @@ export async function paySlip(slipId: string, method: PayMethod, sink: ExpenseSi
     const r = s2.runs.find((x) => x.id === slip2.run_id);
     if (r) { r.status = "paid"; r.paid_at = now(); }
   }
+  save(s2);
+  return slip2;
+}
+
+/**
+ * فكّ التسليم (0142): ضغطةُ «تسليم» غلطاً كانت قيداً أبدياً — تكتب مصروفاً
+ * وتختم القسيمة بلا نقيض. والفكُّ يمحو **ذاك** المصروف بعينه (بمعرّفه المخزون
+ * بالقسيمة، لا مصروفاً يشبهه)، ويرجع الدورة من «مدفوعة» إلى «معتمدة».
+ * والمقفلة لا تُفَكّ: القفل ختامٌ محاسبيّ لا ضغطةُ زر.
+ */
+export async function unpaySlip(slipId: string, voidExpense: ExpenseVoid): Promise<Payslip> {
+  const s = load();
+  const slip = s.slips.find((p) => p.id === slipId);
+  if (!slip) throw new Error("payslip not found");
+  if (!slip.paid_at) return slip;                      // نقيضٌ متعادل: فكُّ ما لم يُدفع لا شيء
+  const run = s.runs.find((r) => r.id === slip.run_id);
+  if (run?.status === "closed") throw new Error("run is closed");
+
+  const expenseId = slip.expense_id ?? null;
+  if (expenseId) await voidExpense(expenseId);
+
+  // إعادة القراءة بعد await — للسبب نفسه الذي بـpaySlip: الحوض كتب على المخزن.
+  const s2 = load();
+  const slip2 = s2.slips.find((p) => p.id === slipId)!;
+  slip2.paid_at = null;
+  slip2.pay_method = null;
+  slip2.expense_id = null;
+  const r2 = s2.runs.find((x) => x.id === slip2.run_id);
+  if (r2 && r2.status === "paid") { r2.status = "approved"; r2.paid_at = null; }
   save(s2);
   return slip2;
 }

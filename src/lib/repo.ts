@@ -17,7 +17,7 @@ import { supabase } from "./supabase";
 import { outboxEnqueue, outboxEnqueueRpc, isNetworkError } from "./outbox";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, AppointmentStatus, ClinicInfo, PublicStaff, DailyNote, TreatmentEntry, Admission, Branch, Reminder, Product, Company, CompanySection, Purchase, PurchaseItem, PurchasePayment, PurchaseDraftLine, PurchaseMeta, Courier, DeliveryOrder, PetMovement, DemoDB, Invoice, InvoiceItem, CheckoutItem, SaleMeta, Customer, DiscountType, PaymentMethod, PaymentSplit, WhatsAppMessage, AuditEntry, LoginEvent, PetNote, Expense, ExpenseMethod, ReturnMeta, RetailReturnResult, HealthMetric, ClinicVisit , Surgery, LabResult, LabDeviceLink, LabDeviceInbox, LabStatusValue, PetProblem, CareEntry, FeatureRequest, GeneratedBarcode, StoreProfile, StoreOrder, StoreOrderItem, StoreFrontInfo, StoreCatalogItem, Journey, JourneyEvent, JourneyKind, JourneyStage, JourneyPublicView, EditLine } from "@/types";
-import type { PayrollPolicyDTO, StaffComp, StaffRecurring, PayrollRun, Payslip, PayslipLine, StaffLoan, StaffLoanEvent, PayslipDraft, PayMethod } from "@/types";
+import type { PayrollPolicyDTO, StaffComp, StaffRecurring, PayrollAdjustment, PayrollRun, Payslip, PayslipLine, StaffLoan, StaffLoanEvent, PayslipDraft, PayMethod } from "@/types";
 import * as PD from "./payrollDemo";
 import { paidOf, round2 } from "./debt";
 import { isValidSlug, normalizeSlug, demoOrderNo } from "./storeLib";
@@ -2137,6 +2137,17 @@ const demoRepo = {
     return PD.addRecurring(staffId, code, amount, note);
   },
   async deleteStaffRecurring(id: string): Promise<void> { PD.deleteRecurring(id); },
+  async listPayrollAdjustments(period?: string): Promise<PayrollAdjustment[]> { return PD.listAdjustments(period); },
+  async addPayrollAdjustment(staffId: string, period: string, code: string, amount?: number | null, qty?: number | null, reason?: string | null): Promise<PayrollAdjustment> {
+    return PD.addAdjustment(staffId, period, code, amount, qty, reason);
+  },
+  async deletePayrollAdjustment(id: string): Promise<void> { PD.deleteAdjustment(id); },
+  async reversePayrollAdjustment(id: string, amount?: number | null, qty?: number | null, reason?: string | null): Promise<PayrollAdjustment> {
+    return PD.reverseAdjustment(id, amount, qty, reason);
+  },
+  async unpayPayslip(slipId: string): Promise<Payslip> {
+    return PD.unpaySlip(slipId, async (id) => { await this.deleteExpense(id); });
+  },
   async listPayrollRuns(): Promise<PayrollRun[]> { return PD.listRuns(); },
   async openPayrollRun(period: string): Promise<PayrollRun> { return PD.openRun(period); },
   async savePayrollSlips(runId: string, slips: PayslipDraft[]): Promise<{ run: string; payslips: number }> {
@@ -2233,6 +2244,10 @@ const DEMO_ACTIVITY_MAP: Record<string, { entity: string; action: "INSERT" | "UP
   savePayrollSlips: { entity: "payslips", action: "INSERT" },
   approvePayrollRun: { entity: "payroll_runs", action: "UPDATE" },
   payPayslip: { entity: "payslips", action: "UPDATE" },
+  unpayPayslip: { entity: "payslips", action: "UPDATE" },
+  addPayrollAdjustment: { entity: "payroll_adjustments", action: "INSERT" },
+  deletePayrollAdjustment: { entity: "payroll_adjustments", action: "DELETE" },
+  reversePayrollAdjustment: { entity: "payroll_adjustments", action: "UPDATE" },
   closePayrollRun: { entity: "payroll_runs", action: "UPDATE" },
   disburseLoan: { entity: "staff_loans", action: "INSERT" },
   disburseAdvance: { entity: "staff_loans", action: "INSERT" },
@@ -3574,6 +3589,35 @@ const supabaseRepo: typeof demoRepo = {
     const { error } = await sbc().rpc("payroll_delete_recurring", { p_id: id });
     if (error) throw error;
   },
+  async listPayrollAdjustments(period) {
+    let q = sbc().from("payroll_adjustments").select("*").order("created_at", { ascending: true });
+    if (period) q = q.eq("period", period);
+    return listOf<PayrollAdjustment>(await q);
+  },
+  async addPayrollAdjustment(staffId, period, code, amount, qty, reason) {
+    const { data, error } = await sbc().rpc("payroll_add_adjustment", {
+      p_staff: staffId, p_period: period, p_code: code,
+      p_amount: amount ?? 0, p_qty: qty ?? null, p_reason: reason ?? null,
+    });
+    if (error) throw error;
+    return data as PayrollAdjustment;
+  },
+  async deletePayrollAdjustment(id) {
+    const { error } = await sbc().rpc("payroll_delete_adjustment", { p_id: id });
+    if (error) throw error;
+  },
+  async reversePayrollAdjustment(id, amount, qty, reason) {
+    const { data, error } = await sbc().rpc("payroll_reverse_adjustment", {
+      p_id: id, p_amount: amount ?? null, p_qty: qty ?? null, p_reason: reason ?? null,
+    });
+    if (error) throw error;
+    return data as PayrollAdjustment;
+  },
+  async unpayPayslip(slipId) {
+    const { data, error } = await sbc().rpc("payroll_unpay_slip", { p_slip: slipId });
+    if (error) throw error;
+    return data as Payslip;
+  },
   async listPayrollRuns() {
     return listOf<PayrollRun>(await sbc().from("payroll_runs").select("*").order("period", { ascending: false }));
   },
@@ -3725,6 +3769,7 @@ const READ_ONLY_ALLOWED = new Set<string>([
   // --- الرواتب: القراءة تبقى بالاشتراك المنتهي (الموظف يشوف قسيمته) ---
   "getPayrollPolicy", "listStaffComp", "listStaffRecurring", "listPayrollRuns",
   "listPayslips", "listPayslipLines", "listStaffLoans", "listLoanEvents",
+  "listPayrollAdjustments",
   // --- استعلامات مساعدة لا تكتب ---
   "checkStoreSlug", "slotTaken", "supportsBulkGroup", "supportsSupplierLedger",
   "adminListFeatureRequests", "systemHealth",
