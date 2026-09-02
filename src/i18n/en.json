@@ -881,6 +881,7 @@
     "addProduct": "Add product",
     "editProduct": "Edit product",
     "noProducts": "No products yet. Add your first one.",
+    "loadFailed": "Couldn't load the inventory. This is a connection problem — nothing was lost. Retry before adding anything.",
     "buy": "Buy",
     "sell": "Sell",
     "expired": "expired",

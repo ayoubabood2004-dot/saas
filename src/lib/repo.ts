@@ -2385,12 +2385,26 @@ async function allPages<T>(make: () => unknown): Promise<T[]> {
     range: (a: number, b: number) => PromiseLike<{ data: unknown; error: { message: string } | null }>;
   };
   const out: T[] = [];
-  for (let from = 0; ; from += PAGE_ROWS) {
+  // نتقدّم بما **وصل** لا بما **طُلب**، ونتوقّف عند صفحةٍ فارغة لا عند صفحةٍ ناقصة.
+  //
+  // الشرط القديم كان `rows.length < PAGE_ROWS ⇒ انتهت البيانات`، وهو يفترض أن
+  // الخادم يعطي دائماً ما طُلب. لكن PostgREST عنده سقفُ صفوفٍ خاصٌّ به لكل طلب،
+  // فإن كان أقلّ من ألف رجعت الصفحةُ الأولى ناقصةً فظنّها الكودُ الأخيرة — فيتوقّف
+  // عند الحدّ ويصير **كلُّ ما بعده غيرَ موجود بنظر الشاشة**: يبحث الطبيب باسم
+  // منتجٍ ترتيبُه بالذيل فلا يلقاه، والمنتجاتُ الأخرى ظاهرةٌ أمامه فيستنتج أن
+  // مادّته لم تُدخَل، فيعيد إدخالها.
+  //
+  // والتقدّمُ بما وصل يجعل الحلقة صحيحةً مهما كان سقفُ الخادم — بلا أن نعرفه.
+  for (let from = 0; ;) {
     const r = await (make() as Q).order("id", { ascending: true }).range(from, from + PAGE_ROWS - 1);
-    if (r.error) { console.error("[supabase]", r.error.message); return out; }
+    // وفشلٌ يُرمى ولا يُبلع: كانت تُرجع ما جمعته — صفراً بالصفحة الأولى — فتقول
+    // الشاشة «ماكو منتجات» عن مخزنٍ عامر. قائمةٌ ناقصة أسوأ من خطأ: الخطأ يُرى
+    // ويُعاد، والنقصُ يُصدَّق.
+    if (r.error) throw new Error(r.error.message);
     const rows = (r.data ?? []) as T[];
     out.push(...rows);
-    if (rows.length < PAGE_ROWS) return out;
+    if (rows.length === 0) return out;
+    from += rows.length;
   }
 }
 function maybe<T>(res: { data: unknown; error: { message: string } | null }): T | undefined {

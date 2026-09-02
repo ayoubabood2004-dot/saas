@@ -7,7 +7,7 @@ import type { Product, Invoice, Species } from "@/types";
 import { useAuth } from "@/contexts/AuthContext";
 import { useEntitlements } from "@/lib/entitlements";
 import { useNavFolded } from "@/lib/navFold";
-import { Skeleton } from "@/components/ui";
+import { Skeleton, Button } from "@/components/ui";
 import { cn } from "@/lib/utils";
 import { withTimeout } from "@/lib/errors";
 import { getCached, setCached, isFresh } from "@/lib/swrCache";
@@ -42,6 +42,8 @@ export function RetailSales() {
   const [products, setProducts] = useState<Product[]>(seed?.products ?? []);
   const [invoices, setInvoices] = useState<Invoice[]>(seed?.invoices ?? []);
   const [loading, setLoading] = useState(!seed);
+  /** فشلَ آخرُ تحميل؟ الصندوقُ يقول ذلك بدل أن يعرض رفّاً فارغاً. */
+  const [failed, setFailed] = useState(false);
 
   // The "bridge": an animal record handed us a customer + pet via the URL. Capture it
   // into state (so it survives the URL cleanup + the initial data load), jump to the
@@ -81,8 +83,11 @@ export function RetailSales() {
       setProducts(snap.products);
       setInvoices(snap.invoices);
       setCached<RetailSnap>(cacheKey, snap);
+      setFailed(false);
     } catch {
-      /* a hung/failed query still clears the skeleton below */
+      // القائمةُ الناقصة أخطرُ من الخطأ الظاهر: الصندوقُ يمسح الباركود فلا يلقاه،
+      // فيستنتج البائع أن المادة غير مُدخَلة ويعيد إدخالها — ويصير للمادة رصيدان.
+      if (mounted.current) setFailed(true);
     } finally {
       if (mounted.current) setLoading(false);
     }
@@ -162,6 +167,12 @@ export function RetailSales() {
             <div className="grid gap-4 lg:grid-cols-[1fr,380px]">
               <div className="space-y-3">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-24 rounded-2xl" />)}</div>
               <Skeleton className="h-80 rounded-2xl" />
+            </div>
+          ) : failed ? (
+            /* يحلّ محلّ التبويب كلّه — فلا يُعرض فشلُ التحميل كرفٍّ فارغ. */
+            <div className="card space-y-4 p-10 text-center">
+              <p className="mx-auto max-w-md text-ink-subtle">{t("pos.loadFailed", "تعذّر تحميل المخزن. المشكلة بالاتصال ولا شيء ضاع — أعد المحاولة قبل أن تضيف أي مادة.")}</p>
+              <Button leftIcon={<RotateCcw size={16} />} onClick={() => { playTap(); setLoading(true); void load(); }}>{t("common.retry", "إعادة المحاولة")}</Button>
             </div>
           ) : tab === "sell" ? (
             <SaleBuilder products={products} clinicId={clinicId} onSold={load} prefill={prefill} />

@@ -5,7 +5,7 @@ import { getCached, setCached } from "@/lib/swrCache";
 import {
   Barcode, Package, Trash2, Search, Building2, Plus, ChevronLeft, ArrowRight, ArrowLeft,
   TrendingUp, AlertTriangle, CalendarClock, Pencil, PackagePlus, Boxes, Layers, Wallet, ShoppingBag, FolderTree, ScanBarcode,
-  Check, ListPlus, Printer, Copy, Sparkles, FileSpreadsheet, Loader2, Scale,
+  Check, ListPlus, Printer, Copy, Sparkles, FileSpreadsheet, Loader2, Scale, RefreshCw,
 } from "lucide-react";
 import type { Product, ProductCategory, Company, CompanySection } from "@/types";
 import { PurchasesTab, PurchaseBuilderModal } from "@/components/inventory/Purchases";
@@ -129,6 +129,8 @@ export function Inventory() {
   const [xlsxBusy, setXlsxBusy] = useState(false);
 
   const mounted = useRef(true);
+  /** فشلَ آخرُ تحميل؟ تُعرض حينها رسالةُ إعادةِ محاولة لا شاشةُ «فارغ». */
+  const [failed, setFailed] = useState(false);
   const invKey = `inv_${clinicId ?? "self"}`;
   const load = async () => {
     try {
@@ -142,8 +144,12 @@ export function Inventory() {
       setProducts(p);
       setCompanies(c);
       setSections(s);
+      setFailed(false);
     } catch {
-      /* a hung/failed query still clears the skeleton below */
+      // «فشل التحميل» ≠ «المخزن فارغ». بلعُ الخطأ هنا كان يعرض شاشةً تقول
+      // «ماكو منتجات» عن مخزنٍ فيه تسعمئة صنف — فأعادت عيادةٌ إدخال بضاعتها
+      // لأن النظام أخبرها أنها غير موجودة. الآن يُقال الفشلُ ويُعرض «أعد المحاولة».
+      if (mounted.current) setFailed(true);
     } finally {
       if (mounted.current) setLoading(false);
     }
@@ -320,6 +326,12 @@ export function Inventory() {
 
       {loading ? (
         <div className="space-y-3">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-20 rounded-2xl" />)}</div>
+      ) : failed ? (
+        /* يحلّ محلّ التبويب كلّه — فلا يمرّ فشلُ تحميلٍ من هنا ليُعرض كـ«ماكو منتجات». */
+        <div className="card space-y-4 p-10 text-center">
+          <p className="mx-auto max-w-md text-ink-subtle">{t("pos.loadFailed", "تعذّر تحميل المخزن. المشكلة بالاتصال ولا شيء ضاع — أعد المحاولة قبل أن تضيف أي مادة.")}</p>
+          <Button leftIcon={<RefreshCw size={16} />} onClick={() => { playTap(); setLoading(true); void load(); }}>{t("common.retry", "إعادة المحاولة")}</Button>
+        </div>
       ) : view === "products" ? (
         <InventoryTab products={products} companies={companies} sections={sections} clinicId={clinicId} onChanged={load} />
       ) : view === "companies" ? (
