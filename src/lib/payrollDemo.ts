@@ -279,6 +279,44 @@ export function approveRun(runId: string): PayrollRun {
   return run;
 }
 
+/**
+ * فكّ الاعتماد (0143) — الدورة ترجع «محسوبة» فتصير قابلةً للتعديل من جديد.
+ *
+ * والمهمّ ليس قلبَ الحالة بل **إرجاعُ ما خُصم**: الاعتماد ينقص أقساط السلف
+ * من أرصدتها ويطفئ ما بلغ الصفر. فمن يفكّه بالحالة وحدها يترك الموظف مديناً
+ * بقسطٍ سدّده. ولهذا نمشي على الأحداث لا على السطور — الحدثُ ما جرى فعلاً.
+ */
+export function unapproveRun(runId: string): PayrollRun {
+  const s = load();
+  const run = s.runs.find((r) => r.id === runId);
+  if (!run) throw new Error("run not found");
+  if (run.status === "closed") throw new Error("run is closed");
+
+  // الصرفُ قبل الحالة: صرفُ آخر قسيمةٍ يقلب الدورة «مدفوعة»، فتقديمُ فحص
+  // الحالة يعطي «ليست معتمدة» — صحيحةً وغيرَ دالّة. الرسالةُ لازم تقول ما يُفعل.
+  const slips = s.slips.filter((p) => p.run_id === runId);
+  const paid = slips.filter((p) => p.paid_at).length;
+  if (paid > 0) throw new Error(`run has ${paid} paid payslip(s) — undo the payment first`);
+
+  if (run.status !== "approved") throw new Error(`run is not approved (is ${run.status})`);
+
+  const slipIds = new Set(slips.map((p) => p.id));
+  for (const e of s.events.filter((x) => x.kind === "installment" && x.payslip_id && slipIds.has(x.payslip_id))) {
+    const loan = s.loans.find((l) => l.id === e.loan_id);
+    // المشطوبة لا تُحيا: شطبُها قرارٌ مستقلٌّ عن هذي الدورة.
+    if (loan && loan.status !== "written_off") {
+      loan.remaining += e.amount;
+      if (loan.status === "settled") loan.status = "active";
+    }
+  }
+  s.events = s.events.filter((x) => !(x.kind === "installment" && x.payslip_id && slipIds.has(x.payslip_id)));
+
+  run.status = "calculated";
+  run.approved_at = null;
+  save(s);
+  return run;
+}
+
 export async function paySlip(slipId: string, method: PayMethod, sink: ExpenseSink): Promise<Payslip> {
   const s = load();
   const slip = s.slips.find((p) => p.id === slipId);

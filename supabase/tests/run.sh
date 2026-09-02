@@ -22,7 +22,7 @@ DB=dvtest
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MIG="$HERE/../migrations"
 # الهجرات التي يغطّيها هذا المخطّط الأساس. زدها كل ما تنضاف موجة.
-WAVE="$MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql"
+WAVE="$MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql"
 
 command -v "$PGBIN/initdb" >/dev/null || { echo "ما لكيت بوستغريس بـ $PGBIN"; exit 1; }
 
@@ -547,6 +547,22 @@ chk "ومسارُ البحث مثبَّتٌ بكل دوالّ 0142" \
         ('payroll_add_adjustment','payroll_delete_adjustment','payroll_reverse_adjustment',
          'payroll_unpay_slip','payroll_period_frozen')
         and not (coalesce(array_to_string(p.proconfig,','),'') like '%search_path%')" "0"
+
+# ── 0143: فكّ الاعتماد ────────────────────────────────────────────────────
+# السلوك (إرجاع الأقساط لأرصدتها) مفحوصٌ على المنطق نفسه بـpayroll-test؛
+# وهنا نفحص ما لا يُفحص إلا على قاعدةٍ حقيقية: التنزيل والصلاحيات والمسار.
+echo "▸ 0143: فكّ الاعتماد"
+
+chk "دالّةُ الفكّ بتوقيعٍ واحد لا نسختين" \
+    "select count(*)::text from pg_proc where proname='payroll_unapprove_run'" "1"
+chk "وممنوعة على anon" \
+    "select has_function_privilege('anon','public.payroll_unapprove_run(uuid)','execute')::text" "false"
+chk "ومسموحة للمصادَق" \
+    "select has_function_privilege('authenticated','public.payroll_unapprove_run(uuid)','execute')::text" "true"
+chk "وبمسارٍ مثبَّت (definer-path)" \
+    "select count(*)::text from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+      where n.nspname='public' and p.proname='payroll_unapprove_run'
+        and coalesce(array_to_string(p.proconfig,','),'') like '%search_path%'" "1"
 
 echo
 [ $fail -eq 0 ] && echo "✓ كل الفحوص عبرت" || { echo "✗ اكو فحصٌ فشل"; exit 1; }

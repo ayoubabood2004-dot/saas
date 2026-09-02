@@ -2156,6 +2156,7 @@ const demoRepo = {
   async listPayslips(runId?: string): Promise<Payslip[]> { return PD.listSlips(runId); },
   async listPayslipLines(payslipIds?: string[]): Promise<PayslipLine[]> { return PD.listLines(payslipIds); },
   async approvePayrollRun(runId: string): Promise<PayrollRun> { return PD.approveRun(runId); },
+  async unapprovePayrollRun(runId: string): Promise<PayrollRun> { return PD.unapproveRun(runId); },
   async payPayslip(slipId: string, method: PayMethod): Promise<Payslip> {
     return PD.paySlip(slipId, method, async (e) => demoAddExpense(e));
   },
@@ -2243,6 +2244,7 @@ const DEMO_ACTIVITY_MAP: Record<string, { entity: string; action: "INSERT" | "UP
   openPayrollRun: { entity: "payroll_runs", action: "INSERT" },
   savePayrollSlips: { entity: "payslips", action: "INSERT" },
   approvePayrollRun: { entity: "payroll_runs", action: "UPDATE" },
+  unapprovePayrollRun: { entity: "payroll_runs", action: "UPDATE" },
   payPayslip: { entity: "payslips", action: "UPDATE" },
   unpayPayslip: { entity: "payslips", action: "UPDATE" },
   addPayrollAdjustment: { entity: "payroll_adjustments", action: "INSERT" },
@@ -3646,6 +3648,11 @@ const supabaseRepo: typeof demoRepo = {
   },
   async approvePayrollRun(runId) {
     const { data, error } = await sbc().rpc("payroll_approve", { p_run: runId });
+    if (error) throw error;
+    return data as PayrollRun;
+  },
+  async unapprovePayrollRun(runId) {
+    const { data, error } = await sbc().rpc("payroll_unapprove_run", { p_run: runId });
     if (error) throw error;
     return data as PayrollRun;
   },

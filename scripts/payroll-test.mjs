@@ -279,5 +279,60 @@ await D.paySlip(slip2.id, "cash", sink);
 D.closeRun(run2.id);
 check("المقفلة لا تُفَكّ", await throwsWith(() => D.unpaySlip(slip2.id, async () => {}), "run is closed"));
 
+/* ── فكّ الاعتماد (0143): الحالة ترجع، والذمّة ترجع معها ─────────────────
+ * الخطر هنا ليس بالحالة بل بالأرصدة: الاعتماد ينقص أقساط السلف، ففكٌّ يقلب
+ * الحالة وحدها يترك الموظف مديناً بقسطٍ سدّده. فالفحص يمسك الأرصدة لا الحالة.
+ * ------------------------------------------------------------------------*/
+console.log("▸ فكّ الاعتماد (0143)");
+
+D.setComp("s3", "2026-01-01", 700000);
+const L3 = await D.disburseLoan("s3", "Omar", 300000, 100000, null, "cash", sink);
+const A3 = await D.disburseLoan("s3", "Omar", 150000, 150000, null, "cash", sink, "advance");
+const PER3 = "2026-11-01";
+const run3 = D.openRun(PER3);
+const b3 = () => P.buildSlip({ staff: { id: "s3", name: "Omar" }, base: 700000, recurring: [],
+  loans: D.listLoans().filter((l) => l.staff_id === "s3" && l.status === "active"), manual: [] }, POL);
+D.saveSlips(run3.id, [draft(b3(), "s3", "Omar")]);
+D.approveRun(run3.id);
+
+const lend = (id) => D.listLoans().find((l) => l.id === id);
+check("اعتماد: القسط انخصم والسحب انطفأ", lend(L3.id).remaining === 200000 && lend(A3.id).status === "settled");
+check("وحدثا قسطٍ انكتبا", D.listLoanEvents(L3.id).filter((e) => e.kind === "installment").length === 1
+  && D.listLoanEvents(A3.id).filter((e) => e.kind === "installment").length === 1);
+
+check("فكٌّ لدورةٍ غير معتمدة يُرفض", await throwsWith(() => D.unapproveRun(D.openRun("2026-12-01").id), "not approved"));
+
+D.unapproveRun(run3.id);
+check("فكّ: الحالة رجعت «محسوبة» وبلا تاريخ اعتماد",
+  D.listRuns().find((r) => r.id === run3.id).status === "calculated"
+  && !D.listRuns().find((r) => r.id === run3.id).approved_at);
+check("فكّ: القسط رجع لرصيده — ٣٠٠٬٠٠٠ كما كان", lend(L3.id).remaining === 300000 && lend(L3.id).status === "active");
+check("فكّ: السحبُ المطفأ رجع فعّالاً بكامله", lend(A3.id).remaining === 150000 && lend(A3.id).status === "active");
+check("فكّ: أحداثُ الأقساط انمحت — ما تنعدّ مرّتين", D.listLoanEvents(L3.id).filter((e) => e.kind === "installment").length === 0
+  && D.listLoanEvents(A3.id).filter((e) => e.kind === "installment").length === 0);
+check("فكّ: حدثُ الصرف الأصلي ما انمَسّ", D.listLoanEvents(L3.id).some((e) => e.kind === "disbursed"));
+check("فكّ: القسائم باقية — الدورة تتعدّل لا تُمحى", D.listSlips(run3.id).length === 1);
+
+// والثابتُ الأهمّ: اعتمادٌ بعد فكٍّ يخصم مرّةً واحدة لا مرّتين.
+D.saveSlips(run3.id, [draft(b3(), "s3", "Omar")]);
+D.approveRun(run3.id);
+check("إعادةُ الاعتماد تخصم مرّةً واحدة لا مرّتين", lend(L3.id).remaining === 200000);
+check("وحدثُ قسطٍ واحد لا اثنان", D.listLoanEvents(L3.id).filter((e) => e.kind === "installment").length === 1);
+
+// وبنودُ الشهر تنفكّ من التجميد مع فكّ الاعتماد
+D.unapproveRun(run3.id);
+const a3 = D.addAdjustment("s3", PER3, "PEN", 5000, null, "بعد الفكّ");
+check("وبعد الفكّ يصير التعديل ممكناً من جديد", a3.id != null);
+
+// قسيمةٌ مصروفة تمنع الفكّ — الفلوس خرجت
+D.saveSlips(run3.id, [draft(b3(), "s3", "Omar")]);
+D.approveRun(run3.id);
+const s3slip = D.listSlips(run3.id)[0];
+await D.paySlip(s3slip.id, "cash", sink);
+check("قسيمةٌ مصروفة تمنع الفكّ", await throwsWith(() => D.unapproveRun(run3.id), "undo the payment first"));
+await D.unpaySlip(s3slip.id, async (id) => { const i = expenses.findIndex((e) => e.id === id); if (i >= 0) expenses.splice(i, 1); });
+check("وبعد فكّ التسليم يُقبل فكّ الاعتماد", D.unapproveRun(run3.id).status === "calculated");
+check("والرصيد رجع سليماً بعد الرحلة كلّها", lend(L3.id).remaining === 300000 && lend(A3.id).remaining === 150000);
+
 console.log(`\n${failures ? "✗" : "✓"} payroll-test: ${passes} نجحت، ${failures} فشلت`);
 process.exit(failures ? 1 : 0);

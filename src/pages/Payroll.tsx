@@ -710,6 +710,25 @@ function RunTab() {
     finally { setBusy(false); }
   };
 
+  /** نقيضُ الاعتماد: يرجّع أقساط السلف لأرصدتها ثم يرجع الدورة «محسوبة». */
+  const unapprove = async () => {
+    if (!run) return;
+    if (!window.confirm(t("payroll.unapproveConfirm", "تفكّ الاعتماد؟ ترجع الدورة قابلة للتعديل، وترجع أقساط السلف لأرصدتها."))) return;
+    setBusy(true);
+    try {
+      await repo.unapprovePayrollRun(run.id);
+      playSuccess();
+      toast.success(t("payroll.unapproved", "انفكّ الاعتماد — الدورة صارت قابلة للتعديل وأقساط السلف رجعت"));
+      await Promise.all([loadRun(), reload()]);
+    } catch (e) {
+      playWarning();
+      const m = String((e as Error).message ?? e);
+      toast.error(m.includes("paid payslip")
+        ? t("payroll.unapprovePaid", "أكو قسائم انصرفت — فكّ التسليم عنها أول")
+        : m.includes("closed") ? t("payroll.runClosed", "الدورة مقفلة — ما تنفكّ") : m);
+    } finally { setBusy(false); }
+  };
+
   /** نقيضُ الدفع: يمحو مصروفَه ويرجع القسيمة «غير مدفوعة» والدورة «معتمدة». */
   const unpay = async (slip: Payslip) => {
     if (!window.confirm(t("payroll.undoPayConfirm", "ترجع التسليم؟ ينمحي مصروف الراتب ويرجع الصندوق كما كان."))) return;
@@ -784,6 +803,14 @@ function RunTab() {
             <Button size="sm" disabled={busy || dirtyCount > 0} leftIcon={<Check size={15} />} onClick={approve} data-payapprove
               title={dirtyCount > 0 ? t("payroll.recalcFirst", "أعد الحساب أول — أكو صفوف متغيّرة") : undefined}>
               {t("payroll.approve", "اعتماد")}
+            </Button>
+          )}
+          {/* الاعتماد ينفكّ ما دامت ولا قسيمة انصرفت. مدفوعةٌ واحدة تكفي للمنع:
+              يُفَكّ التسليم أوّلاً ثم الاعتماد — خطوتان مقصودتان لا ضغطةٌ تمحو الكلّ. */}
+          {run?.status === "approved" && (
+            <Button size="sm" variant="secondary" disabled={busy} leftIcon={<Undo2 size={15} />}
+              onClick={unapprove} data-payunapprove>
+              {t("payroll.unapprove", "فكّ الاعتماد")}
             </Button>
           )}
           {run?.status === "paid" && (
