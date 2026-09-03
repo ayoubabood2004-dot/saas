@@ -82,6 +82,13 @@ create table if not exists payslips (id uuid primary key default gen_random_uuid
 create table if not exists payslip_lines (id uuid primary key default gen_random_uuid(), clinic_id uuid);
 create table if not exists staff_loans (id uuid primary key default gen_random_uuid(), staff_id uuid references staff(id));
 
+-- شكلُ ما تلمسه 0144 (دمج التوائم): أعمدةُ المنتج التي تُجمع أو تُقارَن، ومفاتيحُ
+-- الفواتير التي تُعاد إلى الأصل. بدونها لا يُفحص الدمج، وما لا يُفحص لا يُصدَّق.
+alter table products add column if not exists pooled      boolean not null default false;
+alter table products add column if not exists min_stock   numeric;
+alter table products add column if not exists expiry_date date;
+alter table purchase_items add column if not exists product_id uuid references products(id) on delete set null;
+
 -- شكلُ ما تلمسه 0142: الدورةُ بحالتها وشهرها، والقسيمةُ بدفعها ومصروفها،
 -- ودالّتا الصلاحية من 0112. بدونها لا تنزل الهجرة أصلاً، وما لا ينزل لا يُفحص.
 alter table payroll_runs add column if not exists clinic_id uuid;
@@ -107,6 +114,9 @@ create table if not exists invoice_items (
   name text, barcode text, qty numeric(14,3), unit_price numeric(14,2), unit_cost numeric(14,2),
   line_total numeric(14,2), stock_qty numeric(14,3), pooled_qty numeric(14,3), unit_label text
 );
+-- 0144: سطرُ الفاتورة يشير إلى منتجٍ — الدمج يعيده إلى الأصل قبل حذف النسخة.
+alter table invoice_items  add column if not exists product_id uuid references products(id) on delete set null;
+
 -- قيد 0051 كما هو بالإنتاج — تصلّحه 0131
 do $ii$ begin
   alter table invoice_items add constraint invoice_items_nonneg

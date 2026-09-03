@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { motion } from "framer-motion";
 import { getCached, setCached } from "@/lib/swrCache";
+import { findByCode, looksLikeShelfCode, twinsByName } from "@/lib/productCodes";
+import { Dialog } from "@/components/ui/Dialog";
 import {
   Barcode, Package, Trash2, Search, Building2, Plus, ChevronLeft, ArrowRight, ArrowLeft,
   TrendingUp, AlertTriangle, CalendarClock, Pencil, PackagePlus, Boxes, Layers, Wallet, ShoppingBag, FolderTree, ScanBarcode,
@@ -19,7 +21,7 @@ import { ExpiryInput } from "@/components/ExpiryInput";
 import { Combobox } from "@/components/Combobox";
 import { subcategoriesOf } from "@/lib/promotions";
 import { Button, Badge, useToast, Skeleton } from "@/components/ui";
-import { cn, formatDate, money, fmtKg, searchable, normalizeCode } from "@/lib/utils";
+import { cn, formatDate, money, fmtKg, searchable, normalizeCode, normalizeAr, formatNum } from "@/lib/utils";
 import { withTimeout, describeDbError } from "@/lib/errors";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
 import { openStockReport } from "@/lib/stockReportPrint";
@@ -553,16 +555,19 @@ function InventoryTab({ products, companies, sections, clinicId, onChanged }: { 
         subcategories={subcategoriesOf(products)} allProducts={products}
         onClose={() => { setAdding(false); setEditing(null); }}
         onSaved={() => { setAdding(false); setEditing(null); onChanged(); }}
+        onOpenExisting={(p) => { setAdding(false); setEditing(p); }}
       />
     </div>
   );
 }
 
-function ProductModal({ open, product, companies, sections, clinicId, subcategories, allProducts, defaultCompanyName, defaultSectionName, onClose, onSaved }: {
+function ProductModal({ open, product, companies, sections, clinicId, subcategories, allProducts, defaultCompanyName, defaultSectionName, onClose, onSaved, onOpenExisting }: {
   open: boolean; product: Product | null; companies: Company[]; sections: CompanySection[]; clinicId?: string; subcategories: string[];
-  /** Full product list — used to catch "this barcode already exists" mistakes in bulk mode. */
+  /** Full product list — used to catch "this barcode already exists" mistakes (single and bulk). */
   allProducts?: Product[];
   defaultCompanyName?: string; defaultSectionName?: string; onClose: () => void; onSaved: () => void;
+  /** «افتحه»: الباركود المكتوب على منتجٍ قائم — نفتح ذاك بدل أن نصنع توأماً. */
+  onOpenExisting?: (p: Product) => void;
 }) {
   const { t } = useTranslation();
   const toast = useToast();
@@ -589,6 +594,13 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
   const barcodeRef = useRef<HTMLInputElement>(null);
   const nameRef = useRef<HTMLInputElement>(null);
   const saveRef = useRef<HTMLButtonElement>(null);
+  /** الرمزُ المكتوب موجودٌ على منتجٍ آخر بالمخزن؟ من القائمة المحمَّلة — بلا شبكة، ويستثني المنتجَ المعدَّل نفسه. */
+  const ownHit = useMemo(() => findByCode(allProducts ?? [], f.barcode, product?.id), [allProducts, f.barcode, product?.id]);
+  /** توأمٌ بالاسم (لنموذج التعديل): يُعرض زرُّ الدمج حين يكون هناك ما يُدمَج به. */
+  const nameTwins = useMemo(
+    () => (product ? twinsByName(allProducts ?? [], product, normalizeAr) : []),
+    [allProducts, product]);
+  const [mergeOpen, setMergeOpen] = useState(false);
   // Companies/sections created inline during THIS modal session — merged into the
   // lookup so a retry after a failed save reuses the one just made (the props
   // lists only refresh after onSaved).
@@ -706,6 +718,14 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
 
   const save = async () => {
     if (!f.name.trim() || busy) return;
+    // الحارسُ الجذري: باركودٌ موجودٌ على منتجٍ آخر لا يُحفظ توأماً. كان الخادم
+    // يرفضه برسالةٍ عن «الأقفاص» فيُعاد الإدخال بلا باركود — والنتيجة صفّان
+    // لمادةٍ واحدة، رصيدُها مقسوم. الآن يُقال بالاسم، ويُفتح الأصل بضغطة.
+    if (ownHit) {
+      playWarning();
+      toast.error(t("pos.ownHitBlock", "هذا الباركود على المنتج \"{{name}}\" أصلاً — افتحه وزيد رصيده أو عدّله. ما انصنع توأم.", { name: ownHit.name }));
+      return;
+    }
     // A sub-unit needs a positive units-per-box to be meaningful; otherwise it's off.
     const byWeight = !!f.sold_by_weight;
     // A sub-unit and "sold by weight" are mutually exclusive: weight forces sub-unit off.
@@ -799,7 +819,10 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
     // A barcode that already belongs to a product would create a confusing twin —
     // restocks belong in a purchase invoice (فاتورة شراء), not here.
     const ownIds = new Set(rows.map((r) => r.productId).filter(Boolean));
-    const clash = allProducts?.find((p) => p.barcode && codes.includes(p.barcode) && !ownIds.has(p.id));
+    const ncodes = codes.map((c) => normalizeCode(c));
+    const clash = allProducts?.find((p) => !ownIds.has(p.id) && (
+      (p.barcode && ncodes.includes(normalizeCode(p.barcode)))
+      || (p.alt_codes ?? []).some((a) => ncodes.includes(normalizeCode(a)))));
     if (clash) {
       toast.error(t("pos.bulkBarcodeExists", { code: clash.barcode, name: clash.name, defaultValue: "الباركود {{code}} مستخدم مسبقاً للمنتج \"{{name}}\" — للإضافة على مخزونه استخدم فاتورة شراء" }));
       return;
@@ -1023,6 +1046,24 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
                 placeholder={t("pos.scanOrType", "Scan or type…")}
               />
             </div>
+            {/* الفحصُ الذي كان ناقصاً: مخزنُ **عيادتك** قبل الكتالوج. ٢٨١ منتجاً بأربع
+                عيادات رمزُه يدويّ، فيُعاد إدخالُ المادة لأن أحداً لم يقل «موجودة عندك».
+                يُعرض فوراً مع الكتابة أو المسح — والحفظُ يُمنع تحته (انظر save). */}
+            {ownHit && (
+              <div className="mt-2 flex flex-wrap items-center gap-2 rounded-xl border border-warn-300 bg-warn-50 p-2.5 text-xs text-warn-700 dark:border-warn-500/40 dark:bg-warn-500/10 dark:text-warn-300" data-ownhit={ownHit.id}>
+                <AlertTriangle size={14} className="shrink-0" />
+                <span className="flex-1">{t("pos.ownHit", "موجود عندك أصلاً: \"{{name}}\" — الرصيد {{stock}}", { name: ownHit.name, stock: formatNum(ownHit.stock ?? 0) })}</span>
+                {onOpenExisting && (
+                  <button className="rounded-lg bg-warn-600 px-2.5 py-1 text-2xs font-semibold text-white" data-ownhitopen
+                    onClick={() => { playTap(); onOpenExisting(ownHit); }}>{t("pos.ownHitOpen", "افتحه")}</button>
+                )}
+              </div>
+            )}
+            {!ownHit && looksLikeShelfCode(f.barcode) && (
+              <p className="mt-1.5 text-2xs leading-relaxed text-ink-subtle" data-shelfhint>
+                {t("pos.shelfCodeHint", "هذا يشبه رقم رفّ لا باركود مصنع. امسح باركود العلبة بعد — تكدر تخلّي الاثنين.")}
+              </p>
+            )}
             <CatalogSuggestion barcode={f.barcode} nameFilled={!!f.name.trim()} onUse={(hit) => {
               // اقتراح لا حفظ: القيم تنزل بالنموذج ليراجعها الطبيب ويعدّلها.
               set({
@@ -1286,9 +1327,29 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
             <Button size="lg" className="w-full sm:w-auto sm:min-w-56" disabled={validRows.length === 0} loading={busy} leftIcon={<ListPlus size={18} />} onClick={saveBulk}>
               {editGroup ? t("pos.bulkSaveEdit", { n: validRows.length, defaultValue: "حفظ المجموعة ({{n}})" }) : t("pos.bulkSave", { n: validRows.length, defaultValue: "أضف المنتجات ({{n}})" })}
             </Button>
-          ) : (
+          ) : (<>
+            {product && nameTwins.length > 0 && (
+              <p className="w-full text-2xs text-warn-700 dark:text-warn-300" data-twinhint>
+                {t("pos.mergeTwinHint", "أكو منتج ثاني بمخزنك بنفس الاسم — لو نفس المادة، ادمجهما بدل ما تخلّي اثنين.")}
+              </p>
+            )}
+            {product && !product.pooled && (
+              <Button variant="secondary" className="w-full sm:w-auto" leftIcon={<Layers size={16} />} data-mergeopen
+                onClick={() => { playTap(); setMergeOpen(true); }}>
+                {t("pos.mergeTitle", "دمج بمنتج ثاني")}
+              </Button>
+            )}
             <Button ref={saveRef} className="w-full sm:w-auto sm:min-w-56" disabled={!f.name.trim()} loading={busy} onClick={save}>{t("common.save", "Save")}</Button>
-          )}
+            {product && mergeOpen && (
+              <MergeDialog
+                drop={product}
+                candidates={(allProducts ?? []).filter((p) => p.id !== product.id && !p.pooled)}
+                suggested={nameTwins}
+                onClose={() => setMergeOpen(false)}
+                onMerged={() => { setMergeOpen(false); onSaved(); }}
+              />
+            )}
+          </>)}
         </div>
       </div>
     </Modal>
@@ -2153,5 +2214,78 @@ function AssignProductsModal({ open, company, companies, sections, products, def
         </div>
       </div>
     </Modal>
+  );
+}
+
+/**
+ * دمجُ توأمين — علاجُ ما تراكم من إعادة الإدخال.
+ *
+ * المنتج الحاليّ (drop) يُطوى في أصلٍ يختاره المستخدم (keep): الرصيد يُجمع،
+ * ورمزُ النسخة يصير رمزاً إضافياً للأصل فيلقاه الماسح غداً، وفواتيرُ البيع
+ * والشراء تعود للأصل. المرشَّحون بنفس الاسم يُعرضون أولاً؛ والبحثُ مطبَّع.
+ * والتأكيدُ يذكر الرقمين لأن الدمج لا يُرجَع.
+ */
+function MergeDialog({ drop, candidates, suggested, onClose, onMerged }: {
+  drop: Product; candidates: Product[]; suggested: Product[]; onClose: () => void; onMerged: () => void;
+}) {
+  const { t } = useTranslation();
+  const toast = useToast();
+  const [q, setQ] = useState("");
+  const [busy, setBusy] = useState(false);
+  const shown = useMemo(() => {
+    const nq = searchable(q);
+    const base = nq
+      ? candidates.filter((p) => searchable(p.name).includes(nq) || normalizeCode(p.barcode).includes(normalizeCode(q)))
+      : [...suggested, ...candidates.filter((p) => !suggested.some((s) => s.id === p.id))];
+    return base.slice(0, 40);
+  }, [candidates, suggested, q]);
+
+  const merge = async (keep: Product) => {
+    if (busy) return;
+    if (!window.confirm(t("pos.mergeConfirm", "تدمج \"{{drop}}\" بـ\"{{keep}}\"؟ الرصيد {{a}} + {{b}}. ما ينرجع.", {
+      drop: drop.name, keep: keep.name, a: formatNum(drop.stock ?? 0), b: formatNum(keep.stock ?? 0),
+    }))) return;
+    setBusy(true);
+    try {
+      const merged = await repo.mergeProducts(keep.id, drop.id);
+      playSuccess();
+      toast.success(t("pos.merged", "اندمج — الرصيد والتاريخ صارا على \"{{name}}\"", { name: merged.name }));
+      onMerged();
+    } catch (e) {
+      playWarning();
+      const m = String((e as Error).message ?? e);
+      toast.error(m.includes("itself") ? t("pos.mergeSelf", "ما ينفع تدمج المنتج بنفسه")
+        : m.includes("pooled") ? t("pos.mergePooled", "المنتجات المجمّعة ما تندمج")
+        : describeDbError(e, t), m);
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <Dialog open onClose={onClose} title={t("pos.mergeTitle", "دمج بمنتج ثاني")} size="lg">
+      <div className="space-y-3">
+        <p className="rounded-xl bg-surface-2 p-2.5 text-xs leading-relaxed text-ink-muted">
+          {t("pos.mergeHint", "الرصيد ينجمع، ورمز هذا المنتج يصير رمزاً إضافياً للأصل، وتاريخ بيعه ينتقل له. وبعدين تنحذف هذي النسخة.")}
+        </p>
+        <div className="relative">
+          <Search size={16} className="pointer-events-none absolute top-1/2 -translate-y-1/2 text-ink-subtle ltr:left-3 rtl:right-3" />
+          <input className="input ltr:pl-9 rtl:pr-9" value={q} onChange={(e) => setQ(e.target.value)} autoFocus data-mergesearch
+            placeholder={t("pos.mergeSearch", "ابحث عن المنتج الي تدمج بيه…")} />
+        </div>
+        <div className="max-h-80 space-y-1 overflow-y-auto">
+          {shown.map((p) => (
+            <button key={p.id} disabled={busy} data-mergeinto={p.id}
+              className="flex w-full items-center justify-between gap-3 rounded-xl border border-line px-3 py-2 text-start transition hover:bg-surface-2 disabled:opacity-50"
+              onClick={() => void merge(p)}>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm font-medium text-ink">{p.name}</span>
+                <span className="block truncate font-mono text-2xs text-ink-subtle">{p.barcode ?? "—"}</span>
+              </span>
+              <span className="shrink-0 text-xs text-ink-muted">{t("pos.stockN", "رصيد {{n}}", { n: formatNum(p.stock ?? 0) })}</span>
+            </button>
+          ))}
+          {shown.length === 0 && <p className="p-4 text-center text-xs text-ink-subtle">{t("common.noMatches", "No matches")}</p>}
+        </div>
+      </div>
+    </Dialog>
   );
 }

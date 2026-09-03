@@ -52,6 +52,12 @@ chk("وما ينخدع بـrelation قبله", /مبلغ السحب/.test(E.desc
 const dup = { code: "23505", message: 'duplicate key value violates unique constraint "clinic_notes_clinic_id_note_date_key"' };
 chk("وخرقُ الفريد كذلك", E.describeDbError(dup, t), at(ar, "errors.c.clinic_notes_clinic_id_note_date_key"));
 
+// الباركود المكرّر — كان يُترجم إلى جملةٍ عن «الأقفاص»، فيفهم المستخدم أن
+// الحفظ فشل ويعيد الإدخال بلا باركود. الآن يُقال بالاسم: «موجود على منتج ثاني».
+const dupBarcode = { code: "23505", message: 'duplicate key value violates unique constraint "products_clinic_barcode_idx"' };
+chk("الباركود المكرّر له جملته لا جملةُ الأقفاص", E.describeDbError(dupBarcode, t), at(ar, "errors.c.products_clinic_barcode_idx"));
+chk("وهي تذكر العيادة لا القفص", /بعيادتك|مخزن/.test(E.describeDbError(dupBarcode, t)) && !/قفص/.test(E.describeDbError(dupBarcode, t)), true);
+
 // وسطرُ الفاتورة — أهمّها، وهو الذي أوقف بيعةً حيّة يوم كُتب هذا
 const line = { code: "23514", message: 'new row for relation "invoice_items" violates check constraint "invoice_items_nonneg"' };
 chk("وسطرُ الفاتورة", E.describeDbError(line, t), at(ar, "errors.c.invoice_items_nonneg"));

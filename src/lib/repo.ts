@@ -1125,7 +1125,15 @@ const demoRepo = {
   async createProduct(input: Omit<Product, "id" | "created_at">): Promise<Product> {
     const db = loadDB();
     if (!db.products) db.products = [];
-    const p: Product = { ...input, id: uid("prod"), created_at: new Date().toISOString() };
+    // نفسُ قيدِ الخادم (products_clinic_barcode_idx) وبنفس صيغةِ خطئه، حتى
+    // يُترجمه describeDbError هنا كما هناك — وحتى يُفحص الحارس حيث يُفحص كلُّ شيء.
+    const code = normalizeCode(input.barcode) || null;
+    if (code && db.products.some((x) => normalizeCode(x.barcode) === code)) {
+      const e = new Error('duplicate key value violates unique constraint "products_clinic_barcode_idx"') as Error & { code: string };
+      e.code = "23505";
+      throw e;
+    }
+    const p: Product = { ...input, barcode: code, id: uid("prod"), created_at: new Date().toISOString() };
     db.products.push(p);
     saveDB(db);
     return p;
@@ -1142,6 +1150,30 @@ const demoRepo = {
     const db = loadDB();
     db.products = (db.products ?? []).filter((x) => x.id !== id);
     saveDB(db);
+  },
+  /** دمجُ توأمين (0144): الرصيد يُجمع، ورمزُ النسخة يصير إضافياً، والفواتير تعود للأصل. */
+  async mergeProducts(keepId: string, dropId: string): Promise<Product> {
+    if (keepId === dropId) throw new Error("cannot merge a product into itself");
+    const db = loadDB();
+    const keep = (db.products ?? []).find((x) => x.id === keepId);
+    const drop = (db.products ?? []).find((x) => x.id === dropId);
+    if (!keep) throw new Error("product to keep not found");
+    if (!drop) throw new Error("product to drop not found");
+    if (keep.pooled || drop.pooled) throw new Error("pooled products cannot be merged");
+    const codes = new Set(keep.alt_codes ?? []);
+    if (drop.barcode && drop.barcode !== keep.barcode) codes.add(drop.barcode);
+    for (const c of drop.alt_codes ?? []) if (c && c !== keep.barcode) codes.add(c);
+    // التاريخ يعود للأصل قبل الحذف — وإلا فقدت التقارير صنفَها.
+    for (const it of db.invoiceItems ?? []) if (it.product_id === dropId) it.product_id = keepId;
+    for (const it of db.purchaseItems ?? []) if (it.product_id === dropId) it.product_id = keepId;
+    for (const g of db.generatedBarcodes ?? []) if (g.product_id === dropId) g.product_id = keepId;
+    keep.stock = (keep.stock || 0) + (drop.stock || 0);
+    keep.alt_codes = Array.from(codes);
+    keep.min_stock = Math.max(keep.min_stock ?? 0, drop.min_stock ?? 0) || keep.min_stock;
+    if (!keep.expiry_date || (drop.expiry_date && drop.expiry_date > keep.expiry_date)) keep.expiry_date = drop.expiry_date ?? keep.expiry_date;
+    db.products = (db.products ?? []).filter((x) => x.id !== dropId);
+    saveDB(db);
+    return keep;
   },
 
   /* ---- سجل الباركودات المولدة (مولد الباركود الداخلي) ---- */
@@ -2254,6 +2286,7 @@ const DEMO_ACTIVITY_MAP: Record<string, { entity: string; action: "INSERT" | "UP
   disburseLoan: { entity: "staff_loans", action: "INSERT" },
   disburseAdvance: { entity: "staff_loans", action: "INSERT" },
   attachProductCode: { entity: "products", action: "UPDATE" },
+  mergeProducts: { entity: "products", action: "UPDATE" },
   writeOffLoan: { entity: "staff_loans", action: "UPDATE" },
   setPayrollPolicy: { entity: "payroll_settings", action: "UPDATE" },
   addMedia: { entity: "media_items", action: "INSERT" },
@@ -3119,6 +3152,11 @@ const supabaseRepo: typeof demoRepo = {
   },
   async deleteProduct(id) {
     ok(await sbc().from("products").delete().eq("id", id));
+  },
+  async mergeProducts(keepId, dropId) {
+    const { data, error } = await sbc().rpc("merge_products", { p_keep: keepId, p_drop: dropId });
+    if (error) throw error;
+    return data as Product;
   },
 
   /* ---------------- Companies (الشركات) ---------------- */

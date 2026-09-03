@@ -22,7 +22,7 @@ DB=dvtest
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MIG="$HERE/../migrations"
 # الهجرات التي يغطّيها هذا المخطّط الأساس. زدها كل ما تنضاف موجة.
-WAVE="$MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql"
+WAVE="$MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql"
 
 command -v "$PGBIN/initdb" >/dev/null || { echo "ما لكيت بوستغريس بـ $PGBIN"; exit 1; }
 
@@ -563,6 +563,48 @@ chk "وبمسارٍ مثبَّت (definer-path)" \
     "select count(*)::text from pg_proc p join pg_namespace n on n.oid=p.pronamespace
       where n.nspname='public' and p.proname='payroll_unapprove_run'
         and coalesce(array_to_string(p.proconfig,','),'') like '%search_path%'" "1"
+
+# ── 0144: دمج التوائم — الرصيد يُجمع، والرمز يلحق، والفواتير تعود للأصل ──
+# الشكوى بأكثر من عيادة: «ندخل المادة ونبيع، وبعدين ما نلقاها فنرجع ندخلها».
+# القياس: المادة موجودة تحت رمزٍ آخر. فالدمج يطوي النسخة في أصلها بلا فقد.
+echo "▸ 0144: دمج التوائم"
+
+$P -c "insert into products (id, clinic_id, name, barcode, stock, min_stock)
+       values ('dddd0000-0000-0000-0000-000000000001','11111111-1111-1111-1111-111111111111','سبري حشرات خارجية','247', 3, 5),
+              ('dddd0000-0000-0000-0000-000000000002','11111111-1111-1111-1111-111111111111','سبري حشرات خارجيه','6972748378670', 7, 2),
+              ('dddd0000-0000-0000-0000-000000000003','11111111-1111-1111-1111-111111111111','مجمّع','999', 1, null)
+       on conflict do nothing;
+       update products set pooled = true where id='dddd0000-0000-0000-0000-000000000003';
+       insert into invoice_items (name, qty, unit_price, unit_cost, line_total, stock_qty, product_id)
+       values ('x', 1, 1000, 600, 1000, 1, 'dddd0000-0000-0000-0000-000000000002');" >/dev/null 2>&1
+
+$P -c "create or replace function _merge_try(a uuid, b uuid) returns text language plpgsql as \$fn\$
+       begin perform merge_products(a, b); return 'merged';
+       exception when others then return 'guarded: ' || sqlerrm; end \$fn\$;" >/dev/null
+chk "دمجُ المنتج بنفسه يُرفض" \
+    "select left(_merge_try('dddd0000-0000-0000-0000-000000000001','dddd0000-0000-0000-0000-000000000001'), 7)" "guarded"
+chk "والمجمَّع (pooled) لا يُدمَج" \
+    "select left(_merge_try('dddd0000-0000-0000-0000-000000000001','dddd0000-0000-0000-0000-000000000003'), 7)" "guarded"
+chk "ودمجُ توأمين حقيقيين يمرّ" \
+    "select _merge_try('dddd0000-0000-0000-0000-000000000001','dddd0000-0000-0000-0000-000000000002')" "merged"
+chk "الرصيد انجمع: ٣ + ٧ = ١٠" \
+    "select (stock = 10)::text from products where id='dddd0000-0000-0000-0000-000000000001'" "true"
+chk "ورمزُ النسخة صار رمزاً إضافياً للأصل" \
+    "select (alt_codes @> array['6972748378670'])::text from products where id='dddd0000-0000-0000-0000-000000000001'" "true"
+chk "والرمزُ الأساسي للأصل ما انمسّ" \
+    "select barcode from products where id='dddd0000-0000-0000-0000-000000000001'" "247"
+chk "وحدُّ التنبيه أخذ الأعلى (٥ لا ٢)" \
+    "select min_stock::text from products where id='dddd0000-0000-0000-0000-000000000001'" "5"
+chk "وسطرُ الفاتورة رجع للأصل — ما صار بلا صنف" \
+    "select count(*)::text from invoice_items where product_id='dddd0000-0000-0000-0000-000000000001'" "1"
+chk "والنسخة انحذفت" \
+    "select count(*)::text from products where id='dddd0000-0000-0000-0000-000000000002'" "0"
+chk "والدالّة بصلاحية المُستدعي لا المُعرِّف (سياسات الصفوف تحكمها)" \
+    "select prosecdef::text from pg_proc where proname='merge_products'" "false"
+chk "وممنوعة على anon" \
+    "select has_function_privilege('anon','public.merge_products(uuid,uuid)','execute')::text" "false"
+chk "وبمسارٍ مثبَّت" \
+    "select (coalesce(array_to_string(proconfig,','),'') like '%search_path%')::text from pg_proc where proname='merge_products'" "true"
 
 echo
 [ $fail -eq 0 ] && echo "✓ كل الفحوص عبرت" || { echo "✗ اكو فحصٌ فشل"; exit 1; }
