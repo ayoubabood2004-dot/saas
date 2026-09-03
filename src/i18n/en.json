@@ -674,6 +674,8 @@
     "ledgerSettlements": "Collections",
     "ledgerNoSettlements": "Nothing collected yet.",
     "ledgerOrdersN": "{{n}} orders",
+    "reportLoadFailed": "Could not load the report. It is a connection problem and no figure is lost — try again.",
+    "computedInDb": "Figures are computed in the database over every invoice in the period — the screen downloads no rows",
     "multPadTitle": "Bulk quantity",
     "multPadHint": "Type the number, then scan the barcode or tap the item — it is added in one go",
     "multPadDone": "Arm the quantity",

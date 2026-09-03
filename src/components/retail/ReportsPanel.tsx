@@ -2,15 +2,26 @@ import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { motion } from "framer-motion";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from "recharts";
-import { Banknote, TrendingUp, Receipt, Crown, Package, Trophy, CalendarRange, UserCheck, Users } from "lucide-react";
-import type { Invoice, InvoiceItem } from "@/types";
+import { Banknote, TrendingUp, Receipt, Crown, Package, Trophy, CalendarRange, UserCheck, Users, RefreshCw } from "lucide-react";
+import type { ReceiptsDay, ReceiptsTotal, TopProductRow, StaffSalesRow } from "@/types";
 import { repo } from "@/lib/repo";
 import { staffNameMap } from "@/lib/staffNames";
-import { receiptsOf } from "@/lib/debt";
+import { Button } from "@/components/ui";
 import { cn, money, formatNum, dateLocale } from "@/lib/utils";
 import { playTap } from "@/lib/sounds";
 
-const isPaid = (i: Invoice) => (i.status ?? "paid") !== "refunded";
+/* ============================================================================
+ * تقارير شاشة البيع — القاعدةُ تجمع، والمتصفّح يعرض (0149).
+ *
+ * كانت هذه اللوحة تجيب كلَّ سطور الفواتير (أكبرُ جدولٍ بالعيادة) وكلَّ الفواتير
+ * لتجمعها بالمتصفّح. الآن تسأل أربعَ دوالّ ترجّع الأرقامَ جاهزة: المقبوضات باليوم،
+ * مجموعُ المدّة، الأكثرُ مبيعاً، والمبيعات حسب الموظف — بلا سطرٍ واحد.
+ *
+ * CASH BASIS كما كان: كلُّ رقمٍ يجمع مالاً وصل فعلاً، بتاريخ وصوله (قسطُ دينٍ يوم
+ * تحصيله، والتوصيلُ يوم تسليم السائق)، والربحُ يُنسب بنسبة ما وصل. المنطقُ نفسه
+ * بالقاعدة (receipt_legs) وفحصُ التطابق بالحزمة يثبت أنه يطابق receiptsOf فلساً بفلس.
+ * ==========================================================================*/
+
 // Compact axis labels for large Iraqi Dinar amounts (Western numerals): 1500000 → "1.5M".
 const compactNum = (v: number): string =>
   v >= 1e6 ? `${(v / 1e6).toLocaleString("en-US", { maximumFractionDigits: 1 })}M`
@@ -18,6 +29,7 @@ const compactNum = (v: number): string =>
       : formatNum(v);
 const localYMD = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 const startOfDay = (d: Date) => { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; };
+const endOfDay = (d: Date) => { const x = new Date(d); x.setHours(23, 59, 59, 999); return x; };
 const startOfWeek = (d: Date) => { const x = startOfDay(d); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return x; };
 
 type Period = "day" | "week" | "month" | "year";
@@ -49,99 +61,76 @@ function bucketKeyOf(d: Date, period: Period): string {
   return String(d.getFullYear());
 }
 
-export function ReportsPanel({ invoices, clinicId }: { invoices: Invoice[]; clinicId?: string }) {
+/** المنطقةُ الزمنية للجهاز — التجميعُ اليومي بالقاعدة يُجرى بها فتتطابق أيامُه مع أيام الطبيب. */
+const deviceTz = (): string => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Baghdad"; } catch { return "Asia/Baghdad"; } };
+
+export function ReportsPanel() {
   const { t, i18n } = useTranslation();
   const [period, setPeriod] = useState<Period>("day");
-  const [items, setItems] = useState<InvoiceItem[]>([]);
   // أسماء الكادر — لجدول «المبيعات حسب الموظف».
   const [staffById, setStaffById] = useState<Map<string, string>>(() => new Map());
-
-  useEffect(() => {
-    let alive = true;
-    repo.listAllInvoiceItems(clinicId).then((r) => { if (alive) setItems(r); }).catch(() => {});
-    void staffNameMap().then((m) => { if (alive) setStaffById(m); });
-    return () => { alive = false; };
-  }, [clinicId]);
-
-  // CASH BASIS: every figure below sums money that ACTUALLY arrived, dated by
-  // when it arrived — a debt installment counts on its collection day, a COD
-  // delivery counts when the courier handed the cash over, and an unpaid or
-  // on-the-road sale contributes nothing yet. Profit is allocated in proportion
-  // to what was received (half paid → half its profit so far).
-
-  // Fixed "today" KPIs.
-  const today = localYMD(new Date());
-  const { todayGross, todayNet } = useMemo(() => {
-    let g = 0, n = 0;
-    for (const inv of invoices) {
-      const total = inv.total > 0 ? inv.total : 0;
-      for (const r of receiptsOf(inv)) {
-        if (localYMD(new Date(r.at)) !== today) continue;
-        g += r.amount;
-        if (total > 0) n += inv.profit * (r.amount / total);
-      }
-    }
-    return { todayGross: Math.round(g * 100) / 100, todayNet: Math.round(n * 100) / 100 };
-  }, [invoices, today]);
+  const [daily, setDaily] = useState<ReceiptsDay[]>([]);
+  const [total, setTotal] = useState<ReceiptsTotal>({ gross: 0, net: 0, invoices: 0 });
+  const [top, setTop] = useState<TopProductRow[]>([]);
+  const [staffRows, setStaffRows] = useState<StaffSalesRow[]>([]);
+  const [invoiceCount, setInvoiceCount] = useState<number | null>(null);
+  const [loading, setLoading] = useState(true);
+  /** فشلَ الجلب؟ نقولها — لوحةٌ بأصفارٍ صامتة تكذب. */
+  const [failed, setFailed] = useState(false);
+  const [tick, setTick] = useState(0);
 
   const buckets = useMemo(() => buildBuckets(period, i18n.language), [period, i18n.language]);
   const periodStart = buckets[0]?.start ?? new Date(0);
+  const periodStartMs = periodStart.getTime();
 
-  // Chart data + period totals — receipts bucketed by their collection moment.
-  const { chart, pGross, pNet, pCount } = useMemo(() => {
+  useEffect(() => {
+    let alive = true;
+    setLoading(true); setFailed(false);
+    const range = { from: new Date(periodStartMs).toISOString(), to: endOfDay(new Date()).toISOString() };
+    Promise.all([
+      repo.reportReceiptsDaily(range, deviceTz()),
+      repo.reportReceiptsTotal(range),
+      repo.reportTopProducts(range, 5),
+      repo.reportStaff(range),
+      repo.countInvoices(),
+      staffNameMap().catch(() => new Map<string, string>()),
+    ]).then(([d, tot, tp, st, n, names]) => {
+      if (!alive) return;
+      setDaily(d); setTotal(tot); setTop(tp); setStaffRows(st); setInvoiceCount(n); setStaffById(names);
+    }).catch(() => { if (alive) setFailed(true); })
+      .finally(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
+  }, [periodStartMs, tick]);
+
+  // Fixed "today" KPIs — اليومُ المحليّ من صفوف الأيام.
+  const today = localYMD(new Date());
+  const todayRow = daily.find((d) => d.day === today);
+  const todayGross = todayRow?.gross ?? 0;
+  const todayNet = todayRow?.net ?? 0;
+
+  // Chart: أيامُ القاعدة تُجمع بالسلّة المطلوبة (يوم/أسبوع/شهر/سنة) — الأيام
+  // محليّة أصلاً (p_tz) فالسلّةُ تُقرأ من ظهر اليوم لتفادي حدود المناطق الزمنية.
+  const chart = useMemo(() => {
     const acc = new Map<string, { gross: number; net: number }>();
-    const paidInvoices = new Set<string>();
-    let pGross = 0, pNet = 0;
-    for (const inv of invoices) {
-      const total = inv.total > 0 ? inv.total : 0;
-      for (const r of receiptsOf(inv)) {
-        const d = new Date(r.at);
-        if (d < periodStart) continue;
-        const k = bucketKeyOf(d, period);
-        const cur = acc.get(k) ?? { gross: 0, net: 0 };
-        const net = total > 0 ? inv.profit * (r.amount / total) : 0;
-        cur.gross += r.amount; cur.net += net;
-        acc.set(k, cur);
-        pGross += r.amount; pNet += net;
-        paidInvoices.add(inv.id);
-      }
+    for (const d of daily) {
+      const k = bucketKeyOf(new Date(d.day + "T12:00:00"), period);
+      const cur = acc.get(k) ?? { gross: 0, net: 0 };
+      cur.gross += d.gross; cur.net += d.net; acc.set(k, cur);
     }
-    const chart = buckets.map((b) => ({ label: b.label, gross: Math.round((acc.get(b.key)?.gross ?? 0) * 100) / 100, net: Math.round((acc.get(b.key)?.net ?? 0) * 100) / 100 }));
-    return { chart, pGross: Math.round(pGross * 100) / 100, pNet: Math.round(pNet * 100) / 100, pCount: paidInvoices.size };
-  }, [invoices, buckets, period, periodStart]);
-
-  // Top products within the period (paid only).
-  const top = useMemo(() => {
-    const okIds = new Set(invoices.filter((i) => isPaid(i) && new Date(i.created_at) >= periodStart).map((i) => i.id));
-    const m = new Map<string, { name: string; qty: number; revenue: number }>();
-    for (const it of items) {
-      if (!okIds.has(it.invoice_id)) continue;
-      const key = it.product_id || it.name;
-      const cur = m.get(key) ?? { name: it.name, qty: 0, revenue: 0 };
-      cur.qty += it.qty; cur.revenue += it.line_total; m.set(key, cur);
-    }
-    return Array.from(m.values()).sort((a, b) => b.revenue - a.revenue).slice(0, 5);
-  }, [items, invoices, periodStart]);
+    return buckets.map((b) => ({ label: b.label, gross: Math.round((acc.get(b.key)?.gross ?? 0) * 100) / 100, net: Math.round((acc.get(b.key)?.net ?? 0) * 100) / 100 }));
+  }, [daily, buckets, period]);
+  const pGross = total.gross, pNet = total.net, pCount = total.invoices;
 
   // ---- المبيعات حسب الموظف (البائع) داخل الفترة المختارة ------------------
   // من باع شكد: عدد فواتير، إيراد، وربح لكل موظف مثبَّت على فواتيره — والفواتير
   // الي انباعت بلا تحديد بائع تنجمع بصف «غير محدد» حتى يبين حجمها ويقل مع الوقت.
-  const byStaff = useMemo(() => {
-    const m = new Map<string, { name: string; invoices: number; revenue: number; profit: number }>();
-    for (const inv of invoices) {
-      if (!isPaid(inv) || new Date(inv.created_at) < periodStart) continue;
-      const key = inv.staff_id || "__none";
-      const cur = m.get(key) ?? {
-        name: key === "__none" ? t("retail.noSeller", "غير محدد") : (staffById.get(key) ?? t("retail.noSeller", "غير محدد")),
-        invoices: 0, revenue: 0, profit: 0,
-      };
-      cur.invoices += 1; cur.revenue += inv.total; cur.profit += inv.profit ?? 0;
-      m.set(key, cur);
-    }
-    return Array.from(m.entries())
-      .map(([id, v]) => ({ id, ...v }))
-      .sort((a, b) => (a.id === "__none" ? 1 : b.id === "__none" ? -1 : b.revenue - a.revenue));
-  }, [invoices, periodStart, staffById, t]);
+  const byStaff = useMemo(() => staffRows
+    .map((s) => ({
+      id: s.staff_id ?? "__none",
+      name: s.staff_id ? (staffById.get(s.staff_id) ?? t("retail.noSeller", "غير محدد")) : t("retail.noSeller", "غير محدد"),
+      invoices: s.invoices, revenue: s.revenue, profit: s.profit,
+    }))
+    .sort((a, b) => (a.id === "__none" ? 1 : b.id === "__none" ? -1 : b.revenue - a.revenue)), [staffRows, staffById, t]);
   const maxStaffRev = Math.max(1, ...byStaff.map((s) => s.revenue));
 
   const maxRevenue = top[0]?.revenue ?? 1;
@@ -154,13 +143,22 @@ export function ReportsPanel({ invoices, clinicId }: { invoices: Invoice[]; clin
     { id: "year", label: t("retail.yearly", "Yearly") },
   ];
 
+  if (failed) {
+    return (
+      <div className="card space-y-4 p-10 text-center">
+        <p className="mx-auto max-w-md text-ink-subtle">{t("retail.reportLoadFailed", "تعذّر تحميل التقرير. المشكلة بالاتصال ولا رقم ضاع — أعد المحاولة.")}</p>
+        <Button leftIcon={<RefreshCw size={16} />} onClick={() => { playTap(); setTick((n) => n + 1); }}>{t("common.retry", "إعادة المحاولة")}</Button>
+      </div>
+    );
+  }
+
   return (
-    <div className="space-y-5">
+    <div className={cn("space-y-5", loading && "opacity-70 transition")} aria-busy={loading}>
       {/* Today KPIs */}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <KpiBig icon={Banknote} tone="brand" label={t("retail.todayReceived", "مقبوضات اليوم (فعلي)")} value={money(todayGross)} />
         <KpiBig icon={TrendingUp} tone="success" label={t("retail.todayNet", "Today's net profit")} value={money(todayNet)} />
-        <KpiBig icon={Receipt} tone="accent" label={t("retail.totalInvoices", "Total invoices")} value={String(invoices.length)} />
+        <KpiBig icon={Receipt} tone="accent" label={t("retail.totalInvoices", "Total invoices")} value={invoiceCount == null ? "…" : formatNum(invoiceCount)} />
       </div>
 
       {/* Period selector */}
@@ -210,6 +208,7 @@ export function ReportsPanel({ invoices, clinicId }: { invoices: Invoice[]; clin
           <Mini label={t("retail.net", "Net")} value={money(pNet)} tone="success" />
           <Mini label={t("retail.salesN", "Sales")} value={String(pCount)} />
         </div>
+        <p className="mt-2 text-center text-2xs text-ink-subtle">{t("retail.computedInDb", "الأرقام تُحسب بالقاعدة على كل فواتير الفترة — لا تنزّل الشاشة سطراً واحداً")}</p>
       </div>
 
       {/* المبيعات حسب الموظف — منو باع شكد بالفترة المختارة */}
@@ -259,7 +258,7 @@ export function ReportsPanel({ invoices, clinicId }: { invoices: Invoice[]; clin
         ) : (
           <div className="space-y-2.5">
             {top.map((p, i) => (
-              <motion.div key={p.name + i} initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.04 }} className="flex items-center gap-3">
+              <motion.div key={p.key} initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.04 }} className="flex items-center gap-3">
                 <span className={cn("grid h-8 w-8 shrink-0 place-items-center rounded-xl text-sm font-bold",
                   i === 0 ? "bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300" : "bg-surface-2 text-ink-muted")}>
                   {i === 0 ? <Crown size={16} /> : i + 1}
@@ -273,7 +272,7 @@ export function ReportsPanel({ invoices, clinicId }: { invoices: Invoice[]; clin
                     <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-surface-2">
                       <div className="h-full rounded-full bg-brand-grad" style={{ width: `${Math.max(6, (p.revenue / maxRevenue) * 100)}%` }} />
                     </div>
-                    <span className="shrink-0 text-2xs text-ink-subtle">{t("retail.unitsSold", { n: p.qty, defaultValue: "{{n}} sold" })}</span>
+                    <span className="shrink-0 text-2xs text-ink-subtle">{t("retail.unitsSold", { n: formatNum(p.qty), defaultValue: "{{n}} sold" })}</span>
                   </div>
                 </div>
               </motion.div>

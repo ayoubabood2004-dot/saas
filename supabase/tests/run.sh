@@ -22,7 +22,7 @@ DB=dvtest
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MIG="$HERE/../migrations"
 # الهجرات التي يغطّيها هذا المخطّط الأساس. زدها كل ما تنضاف موجة.
-WAVE="$MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql"
+WAVE="$MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql"
 
 command -v "$PGBIN/initdb" >/dev/null || { echo "ما لكيت بوستغريس بـ $PGBIN"; exit 1; }
 
@@ -804,6 +804,44 @@ chk "والدالّة بصلاحية المُعرِّف وبمسارٍ مثبَ�
     "select (prosecdef and coalesce(array_to_string(proconfig,','),'') like '%search_path%' and not has_function_privilege('anon','public.courier_settle(uuid,numeric,text,text)','execute'))::text from pg_proc where proname='courier_settle'" "true"
 chk "ونوعُ السائق مقيَّد بسائق/شركة" \
     "select count(*)::text from pg_constraint where conname='couriers_kind_chk'" "1"
+
+# ── 0149: التقارير تسأل القاعدة — تطابقٌ فلساً بفلس مع منطق الواجهة ─────────
+# ٣٢٠ فاتورةً بكل الأشكال (دفعة، مقسّمة، آجلة تُسدَّد لاحقاً، قديمة بلا أرجل،
+# مردودة، تصحيح سالب) يولّدها report-fixture.mjs ويحسب المتوقَّع بدوالّ الواجهة
+# نفسها؛ ثم تُقارَن مخرجات SQL بها. فلسٌ يفرق = فشل.
+echo "▸ 0149: تجميع التقارير بالقاعدة"
+FIX=$(mktemp -d)
+TZ=Asia/Baghdad node "$HERE/../../scripts/report-fixture.mjs" "$FIX" >/dev/null
+$P -f "$FIX/fixture.sql" >/dev/null
+$P -c "create or replace function _rpt(q text) returns json language plpgsql as \$fn\$
+       declare r json;
+       begin perform set_config('request.jwt.claim.sub','22222222-2222-2222-2222-222222222222',true);
+             execute 'select coalesce(json_agg(r), ''[]''::json) from (' || q || ') r' into r; return r; end \$fn\$;" >/dev/null
+rpt() { psql -h $SOCK -p $PORT -U postgres -d $DB -tAc "select _rpt(\$q\$$2\$q\$)" > "$FIX/$1.json"; }
+for R in month week all; do
+  FROM=$(node -e "console.log(JSON.parse(require('fs').readFileSync('$FIX/expected.json','utf8')).ranges.$R.from)")
+  TO=$(node -e "console.log(JSON.parse(require('fs').readFileSync('$FIX/expected.json','utf8')).ranges.$R.to)")
+  rpt "$R.daily"    "select day, gross, net, invoices from report_receipts_daily('$FROM','$TO','Asia/Baghdad')"
+  rpt "$R.total"    "select gross, net, invoices from report_receipts_total('$FROM','$TO')"
+  rpt "$R.top"      "select key, qty, revenue from report_top_products('$FROM','$TO', 5)"
+  rpt "$R.staff"    "select staff_id, invoices, revenue, profit from report_staff('$FROM','$TO')"
+  rpt "$R.touching" "select id from report_invoices('$FROM','$TO')"
+done
+rpt "cust.byPhone"        "select id from customer_invoices('07701234567', null)"
+rpt "cust.byEasternPhone" "select id from customer_invoices('٠٧٧٠٩٩٩٩٩٩٩', null)"
+rpt "cust.bySpacedPhone"  "select id from customer_invoices('0790 555 5555', null)"
+rpt "cust.byName"         "select id from customer_invoices(null, 'زبون بالاسم')"
+if node "$HERE/../../scripts/report-parity.mjs" "$FIX" | sed 's/^/ /'; then :; else fail=1; fi
+chk "الدوالّ بصلاحية المُستدعي (سياسات الصفوف تحكمها) وبمسارٍ مثبَّت" \
+    "select count(*)::text from pg_proc where proname in ('report_invoices','customer_invoices','receipt_legs','report_receipts_daily','report_receipts_total','report_top_products','report_staff')
+       and not prosecdef and coalesce(array_to_string(proconfig,','),'') like '%search_path%'" "7"
+chk "وممنوعة على anon" \
+    "select count(*)::text from pg_proc p where proname in ('report_invoices','report_receipts_daily','customer_invoices') and has_function_privilege('anon', p.oid, 'execute')" "0"
+chk "وفهرسُ الهاتف المطبَّع والمدّة موجودان" \
+    "select count(*)::text from pg_indexes where indexname in ('invoices_clinic_phone_idx','invoices_open_debt_idx')" "2"
+chk "وتاريخٌ مكسور بساق دفع لا يُسقط التقرير" \
+    "select (safe_ts('not-a-date') is null and safe_ts('2026-09-01T10:00:00Z') is not null)::text" "true"
+rm -rf "$FIX"
 
 echo
 [ $fail -eq 0 ] && echo "✓ كل الفحوص عبرت" || { echo "✗ اكو فحصٌ فشل"; exit 1; }

@@ -913,6 +913,13 @@ export interface Courier {
   created_at: string;
 }
 
+/* ---- التقارير (0149): مجاميعُ تحسبها القاعدة لا المتصفّح ---------------- */
+/** مقبوضاتُ يومٍ واحد (بتاريخ وصول المال لا تاريخ الفاتورة) والربحُ المنسوب إليها. */
+export interface ReceiptsDay { day: string; gross: number; net: number; invoices: number }
+export interface ReceiptsTotal { gross: number; net: number; invoices: number }
+export interface TopProductRow { key: string; name: string; qty: number; revenue: number }
+export interface StaffSalesRow { staff_id: string | null; invoices: number; revenue: number; profit: number }
+
 /** تحصيلٌ من شركة توصيل (0148): مبلغٌ وُزّع على طلباتها المسلَّمة الأقدم فالأقدم. */
 export interface CourierSettlement {
   id: string;

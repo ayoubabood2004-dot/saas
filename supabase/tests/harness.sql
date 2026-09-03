@@ -180,6 +180,7 @@ end $ds$;
 -- هناك، ولم يكن مختبرُنا يغطّيه.
 alter table invoices add column if not exists total       numeric(12,2) not null default 0;
 alter table invoices add column if not exists amount_paid numeric(14,2) not null default 0;
+alter table invoices add column if not exists refunded_at timestamptz;
 
 -- 0148: التوصيل (0069) كما بالإنتاج — سواق/شركات وطلبات، وتسديد الفاتورة (0061).
 create table if not exists couriers (

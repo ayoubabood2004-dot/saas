@@ -19,7 +19,7 @@ import type { Pet, Invoice, InvoiceItem, Product, ProductCategory, MedicalVisit,
 import { PurchaseLog } from "@/components/inventory/PurchaseLog";
 import { type StaffMember } from "@/lib/staff";
 import { getCached, setCached, isFresh } from "@/lib/swrCache";
-import { loadAnalyticsSnap, analyticsKey, type AnalyticsSnap } from "@/lib/prefetchData";
+import { loadAnalyticsSnap, analyticsKey, analyticsRange, defaultAnalyticsRange, type AnalyticsSnap } from "@/lib/prefetchData";
 import { repo } from "@/lib/repo";
 import { useAuth } from "@/contexts/AuthContext";
 import { usePermissions } from "@/hooks/usePermissions";
@@ -154,8 +154,9 @@ export function AnalyticsHub() {
 
   // Stale-while-revalidate: reports are the heaviest fetch — paint the last
   // snapshot instantly (seeded by the page's own load() or the idle warmer).
-  const cacheKey = analyticsKey(user?.clinic_id ?? user?.id);
-  const seed = getCached<AnalyticsSnap>(cacheKey);
+  // المفتاح يضمّ المدّة (0149): البذرة الأولى لقطةُ الشهر الحالي — نفس ما يسخّنه
+  // المحمّل الخلفي — والمفتاحُ الحيّ يُحسب أسفل من المدّة المختارة.
+  const seed = getCached<AnalyticsSnap>(analyticsKey(user?.clinic_id ?? user?.id, defaultAnalyticsRange()));
 
   const [loading, setLoading] = useState(!seed);
   const [pets, setPets] = useState<Pet[]>(seed?.pets ?? []);
@@ -193,25 +194,36 @@ export function AnalyticsHub() {
    * فيعاد الجلب فوراً وتصدق كل التبويبات. */
   const [refreshTick, setRefreshTick] = useState(0);
 
+  /* المدّةُ جزءٌ من الطلب (0149): كلُّ جدولٍ يُجلب بمدّته، فتغييرُ المدّة يعيد
+   * الجلب — بمهلةٍ قصيرة حتى لا تُطلق كتابةُ تاريخٍ مخصّص طلباً على كل رقم. */
+  const range = useMemo(() => analyticsRange(from, to), [from, to]);
+  const cacheKey = analyticsKey(user?.clinic_id ?? user?.id, range);
   useEffect(() => {
     let alive = true;
     const clinicId = user?.clinic_id ?? user?.id;
-    if (refreshTick === 0 && isFresh(cacheKey, 20_000)) return; // fresh snapshot — skip the heavy refetch
-    (async () => {
+    const apply = (s: AnalyticsSnap) => {
+      setPets(s.pets); setInvoices(s.invoices); setItems(s.items); setProducts(s.products);
+      setVisits(s.visits); setMedia(s.media); setTreatments(s.treatments); setStaff(s.staff); setAudit(s.audit); setLogins(s.logins); setExpenses(s.expenses); setLabs(s.labs ?? []);
+    };
+    // لقطةٌ محفوظة لهذه المدّة؟ تُرسم فوراً، وإن كانت طازجة لا نعيد الجلب.
+    const cached = getCached<AnalyticsSnap>(cacheKey);
+    if (cached) { apply(cached); setLoading(false); }
+    if (cached && refreshTick === 0 && isFresh(cacheKey, 20_000)) return;
+    if (!cached) setLoading(true);
+    const timer = setTimeout(async () => {
       try {
         // Fetch composition lives in prefetchData so the page and the idle warmer
         // stay identical. Populate every slice from the one snapshot.
-        const s = await loadAnalyticsSnap(clinicId);
+        const s = await loadAnalyticsSnap(clinicId, range);
         if (!alive) return;
-        setPets(s.pets); setInvoices(s.invoices); setItems(s.items); setProducts(s.products);
-        setVisits(s.visits); setMedia(s.media); setTreatments(s.treatments); setStaff(s.staff); setAudit(s.audit); setLogins(s.logins); setExpenses(s.expenses); setLabs(s.labs ?? []);
+        apply(s);
         setCached<AnalyticsSnap>(cacheKey, s);
       } catch { /* empty states cover it */ }
       finally { if (alive) setLoading(false); }
-    })();
-    return () => { alive = false; };
+    }, cached ? 0 : 250);
+    return () => { alive = false; clearTimeout(timer); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.clinic_id, user?.id, refreshTick]);
+  }, [user?.clinic_id, user?.id, refreshTick, cacheKey]);
 
   // On a guarded (locked) device with no manager session, the reports are pinned
   // to TODAY — historical figures stay hidden until someone enters the PIN. The
@@ -989,7 +1001,7 @@ export function AnalyticsHub() {
             />
           )}
           {tab === "ledger" && <LedgerTab rows={ledgerRows} canProfit={canProfit} loMs={lo} hiMs={hi} rangeLabel={rangeLabel} />}
-          {tab === "customers" && <CustomersTab invoices={invoices} items={items} inRange={invInRange} rangeLabel={rangeLabel} canProfit={canProfit} clinicId={user?.clinic_id ?? user?.id} onChanged={() => setRefreshTick((n) => n + 1)} />}
+          {tab === "customers" && <CustomersTab invoices={invoices} inRange={invInRange} rangeLabel={rangeLabel} canProfit={canProfit} clinicId={user?.clinic_id ?? user?.id} onChanged={() => setRefreshTick((n) => n + 1)} />}
           {tab === "staff" && <StaffSalesTab rows={staffSales} trend={staffTrend} canProfit={canProfit} rangeLabel={rangeLabel} />}
           {tab === "best" && <BestTab clients={topClients} services={topServices} movers={movers} species={speciesActivity} />}
           {tab === "categories" && (
