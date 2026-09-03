@@ -865,12 +865,10 @@ function CashierOptions() {
             فيعرف الطبيب أنها تخصّها ولا يبحث عنها بمكانٍ آخر. */}
         {posV2 && (
           <div data-posv2-options className="space-y-4 rounded-2xl border border-brand-200 bg-brand-50/40 p-4 dark:border-brand-500/30 dark:bg-brand-500/10">
-            <CashierToggle
-              label={t("settings.resizableCart", "سلة قابلة لتغيير الحجم")}
-              hint={t("settings.resizableCartHint", "على الشاشات الواسعة: اسحب حافة السلة (أو استعمل زرّي + و− بأعلى السلة في الشاشة الجديدة) لتكبيرها أو تصغيرها كما يناسبك — العرض المفضّل يُحفَظ على هذا الجهاز، ونقرة مزدوجة على الحافة تُرجع الحجم الافتراضي.")}
-              checked={resizableCart}
-              onToggle={toggleResizableCart}
-            />
+            {/* التحجيمُ بالشاشة الجديدة دائمٌ وبلا سقف — لا خيارَ يُفعَّل، بل مطبخُ تخصيصٍ داخل الشاشة. */}
+            <p className="text-xs leading-relaxed text-ink-muted" data-posresize-hint>
+              {t("settings.posResizeAlways", "The cart in the new screen is always resizable with no cap: drag its edge or use the customize button at the top of the cart (size, side, text size). Saved on this device.")}
+            </p>
             <div className="border-t border-brand-200/70 dark:border-brand-500/20" />
             <div data-poscompact-toggle>
               <CashierToggle

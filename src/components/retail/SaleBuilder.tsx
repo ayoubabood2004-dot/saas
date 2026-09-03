@@ -5,7 +5,7 @@ import {
   Search, Barcode, Plus, Minus, Trash2, ShoppingCart, User, Phone, Tag, Percent, BadgePercent,
   Banknote, CreditCard, ArrowLeftRight, CheckCircle2, Printer, Sparkles, TrendingUp, Package, PawPrint, X,
   Stethoscope, Pencil, Pill, Syringe, CalendarClock, Wallet, StickyNote, Bike, UserCheck, AlertTriangle, Undo2,
-  ChevronUp, ChevronDown, PanelLeftClose, PanelLeftOpen, Scale, RotateCcw, Building2,
+  ChevronUp, ChevronDown, PanelLeftClose, PanelLeftOpen, Scale, RotateCcw, Building2, SlidersHorizontal,
 } from "lucide-react";
 import type { Product, Invoice, InvoiceItem, CheckoutItem, SaleMeta, PaymentMethod, PaymentSplit, DiscountType, Customer, Service, ServiceCatalog, Species, Pet, Courier } from "@/types";
 import { repo, resolveDiscount } from "@/lib/repo";
@@ -27,6 +27,7 @@ import { invoiceNo, openInvoicePrint, type PrintFormat } from "@/lib/invoicePrin
 import { getPreSalePrint, getResizableCart, getPosV2, getPosCompact, getPosCustomerOpen, getClinicLogo, getClinicSocials, getClinicName, getDeliveryZones, getQtyPromos, type QtyPromo } from "@/lib/settings";
 import { branchStore } from "@/lib/branchStore";
 import { useNavFolded, setNavFolded } from "@/lib/navFold";
+import { loadPosLayout, savePosLayout, stepZoom, type PosLayout, type CartSide } from "@/lib/posLayout";
 import { persistMedicalEntries } from "@/lib/medSync";
 import type { MedicalDraft } from "@/components/MedicalEntry";
 import { cn, money, currencySymbol, formatNum, fmtKg, searchable, normalizeCode } from "@/lib/utils";
@@ -158,31 +159,26 @@ function saveSaleDraft(clinicId: string | undefined, d: SaleDraft): void {
 function clearSaleDraft(clinicId?: string): void { try { localStorage.removeItem(saleDraftKey(clinicId)); } catch { /* ignore */ } }
 
 /* --------------------- Resizable cart (سلة قابلة لتغيير الحجم) ---------------
- * Opt-in from Settings → خيارات الكاشير. On wide (lg+) screens the cart column
- * grows/shrinks by dragging the handle on its inner edge; the chosen width is a
- * per-device preference. Pointer events cover mouse + touch + pen; double-click
- * (or Home on the keyboard) resets to the default width. */
+ * الشاشةُ القديمة: خيارٌ بالإعدادات، عرضٌ بالبكسل محفوظٌ بالجهاز، وسقفٌ ٧٢٠.
+ * الشاشةُ الجديدة (posV2): التحجيمُ دائمٌ **وبلا سقف** — الطبيبُ يختار نسبةَ
+ * السلة من الشاشة كما يشاء (أكبرَ من المنتجات إن أراد)، وتُحفظ **نسبةً** لا
+ * بكسلاً: طيُّ الشريط الجانبي أو تدويرُ الجهاز يعيد توزيعَ المساحة بنفس النسبة
+ * فلا تبقى السلةُ صغيرةً وبجانبها فراغ. على الشاشات الضيّقة (السلة تحت
+ * المنتجات) نفسُ الشيء عمودياً: ارتفاعُ السلة بمقبضٍ على حافّتها العليا.
+ * الحدُّ الوحيد: ألّا يصير الطرفُ الآخر أضيقَ من إصبع. */
 const CART_W_DEFAULT = 380;
 const CART_W_MIN = 300;
 const CART_W_MAX = 720;
 const CART_W_KEY = "vp_cart_width";
-/** Keep the cart between its hard bounds AND leave the products pane usable.
- *
- *  The reserved budget for "sidebar + chrome + products" was a FLAT 700px —
- *  correct on desktops, fatal on iPad landscape: at 1024px it capped the cart
- *  to 324px, i.e. **below where it already was**, so dragging and the +/‑
- *  buttons visibly did nothing and the feature read as broken. The reserve now
- *  scales with the screen (45% of it, up to the old 700px), so the cart can
- *  always reach ~55% of any lg viewport — v2's own layout goes to 64%. */
+/** حدودُ الشاشة الجديدة بالبكسل — أصغرُ سلة/منتجات ما زالت صالحةً للّمس. */
+const V2_CART_MIN_W = 280, V2_PRODUCTS_MIN_W = 240, V2_CART_MIN_H = 180, V2_PRODUCTS_MIN_H = 150;
+/** (الشاشة القديمة) Keep the cart between its hard bounds AND leave the products pane usable. */
 function clampCartWidth(w: number): number {
   const reserve = typeof window !== "undefined" ? Math.min(700, Math.round(window.innerWidth * 0.45)) : 0;
   const viewportCap = typeof window !== "undefined" ? Math.max(CART_W_MIN, window.innerWidth - reserve) : CART_W_MAX;
   return Math.round(Math.min(CART_W_MAX, viewportCap, Math.max(CART_W_MIN, w)));
 }
 function loadCartWidth(fallback: number): number {
-  // The stored PREFERENCE is bounded to the hard limits only — the viewport cap
-  // is a display concern (gridStyle/apply clamp per paint), so a width chosen on
-  // a big screen survives sessions spent on a smaller one.
   try {
     const raw = Number(localStorage.getItem(CART_W_KEY));
     if (Number.isFinite(raw) && raw > 0) return Math.min(CART_W_MAX, Math.max(CART_W_MIN, Math.round(raw)));
@@ -193,7 +189,7 @@ function saveCartWidth(w: number): void {
   try { localStorage.setItem(CART_W_KEY, String(w)); } catch { /* ignore */ }
 }
 
-/** Reactive `min-width: 1024px` (Tailwind lg) — resizing only exists on wide screens. */
+/** Reactive `min-width: 1024px` (Tailwind lg). */
 function useIsLg(): boolean {
   const [isLg, setIsLg] = useState(() => typeof window !== "undefined" && window.matchMedia("(min-width: 1024px)").matches);
   useEffect(() => {
@@ -205,94 +201,130 @@ function useIsLg(): boolean {
   return isLg;
 }
 
-/** Drag state + handlers for the cart width. RTL-aware: dragging the handle
- *  toward the products pane always makes the cart wider.
- *
- *  Perf: pointer moves write the width STRAIGHT to a CSS variable on the grid
- *  element (no React state) — the 1000+-node sale tree (and its framer-motion
- *  layout animations) re-renders only once, at drag end, not 60×/second. */
-function useCartResize(enabled: boolean, defaultW: number = CART_W_DEFAULT) {
+type ResizeAxis = "x" | "y";
+interface CartResizeOpts {
+  enabled: boolean;
+  /** الشاشةُ الجديدة: نسبٌ بلا سقف وعلى المحورين؛ وإلا سلوكُ الشاشة القديمة كما هو. */
+  v2: boolean;
+  side: CartSide;
+  defaultW?: number;
+  /** الافتراضيُّ الذكي (يكبر مع طيّ الشريط) — يُستعمل حتى يختار الطبيب. */
+  defaultWFrac: number;
+  defaultHFrac: number;
+  layout: PosLayout;
+  saveLayout: (p: Partial<PosLayout>) => void;
+  /** أيُّ قيمةٍ تغيّرها يعني «أعد توزيع المساحة» (طيُّ الشريط). */
+  reflowKey?: unknown;
+}
+
+/** Drag state + handlers for the cart size.
+ *  Perf: pointer moves write the size STRAIGHT to a CSS variable on the grid
+ *  element (no React state) — the 1000+-node sale tree re-renders only once,
+ *  at drag end, not 60×/second. */
+function useCartResize(o: CartResizeOpts) {
   const { i18n } = useTranslation();
   const isLg = useIsLg();
+  const axis: ResizeAxis = isLg ? "x" : "y";
   const gridRef = useRef<HTMLDivElement>(null);
-  const [width, setWidth] = useState(() => loadCartWidth(defaultW)); // committed PREFERENCE (persisted)
-  const [dragging, setDragging] = useState(false);
-  const drag = useRef<{ id: number; startX: number; startW: number; moved: boolean } | null>(null);
-  const widthPref = useRef(width); // ref mirror of the committed preference
-  const liveW = useRef(width); // the width currently painted (display-clamped)
-  const dragEndAt = useRef(0); // suppress the dblclick fired by two quick drags
+  const active = o.enabled && (isLg || o.v2);
+  const varName = axis === "x" ? "--cart-w" : "--cart-h";
 
-  // While dragging: freeze text selection & keep the resize cursor everywhere.
+  const gridSize = (): number => {
+    const el = gridRef.current;
+    if (axis === "x") return el?.clientWidth || (typeof window !== "undefined" ? window.innerWidth : 1200);
+    return el?.clientHeight || (typeof window !== "undefined" ? Math.round(window.innerHeight * 0.8) : 800);
+  };
+  const clamp = (px: number): number => {
+    if (!o.v2) return clampCartWidth(px);
+    const g = gridSize();
+    const [lo, hi] = axis === "x"
+      ? [V2_CART_MIN_W, Math.max(V2_CART_MIN_W, g - V2_PRODUCTS_MIN_W)]
+      : [V2_CART_MIN_H, Math.max(V2_CART_MIN_H, g - V2_PRODUCTS_MIN_H)];
+    return Math.round(Math.min(hi, Math.max(lo, px)));
+  };
+  const defaultPx = (): number => {
+    if (!o.v2) return o.defaultW ?? CART_W_DEFAULT;
+    return Math.round((axis === "x" ? o.defaultWFrac : o.defaultHFrac) * gridSize());
+  };
+  /** التفضيلُ المحفوظ (أو الافتراضي) بالبكسل على المحور الحالي. */
+  const prefPx = (): number => {
+    if (!o.v2) return loadCartWidth(o.defaultW ?? CART_W_DEFAULT);
+    const f = axis === "x" ? o.layout.wFrac : o.layout.hFrac;
+    return f == null ? defaultPx() : Math.round(f * gridSize());
+  };
+
+  const [width, setWidth] = useState(() => prefPx());
+  const [dragging, setDragging] = useState(false);
+  const drag = useRef<{ id: number; start: number; startPx: number; moved: boolean } | null>(null);
+  const liveW = useRef(width);
+  const dragEndAt = useRef(0);
+
   useEffect(() => {
     if (!dragging) return;
     const prevSelect = document.body.style.userSelect;
     const prevCursor = document.body.style.cursor;
     document.body.style.userSelect = "none";
-    document.body.style.cursor = "col-resize";
+    document.body.style.cursor = axis === "x" ? "col-resize" : "row-resize";
     return () => {
       document.body.style.userSelect = prevSelect;
       document.body.style.cursor = prevCursor;
     };
-  }, [dragging]);
+  }, [dragging, axis]);
 
-  const active = enabled && isLg;
-
-  /** Paint a width now (CSS var, no re-render) and remember it. */
-  const apply = (w: number) => {
-    liveW.current = w;
-    gridRef.current?.style.setProperty("--cart-w", `${w}px`);
+  const apply = (px: number) => {
+    liveW.current = px;
+    gridRef.current?.style.setProperty(varName, `${px}px`);
   };
-  /** Commit = the user CHOSE this width: re-render with it + persist it. */
-  const commit = (w: number) => {
-    apply(w);
-    widthPref.current = w;
-    setWidth(w);
-    saveCartWidth(w);
+  const commit = (px: number) => {
+    apply(px);
+    setWidth(px);
+    if (!o.v2) { saveCartWidth(px); return; }
+    const g = gridSize();
+    if (g > 0) o.saveLayout(axis === "x" ? { wFrac: px / g } : { hFrac: px / g });
   };
 
-  // The handle can vanish MID-drag (window resized below lg, setting toggled):
-  // abandon the drag cleanly so the body cursor/selection unfreeze and the last
-  // painted width still gets persisted.
-  useEffect(() => {
-    if (active) return;
-    if (drag.current) {
-      drag.current = null;
-      setDragging(false);
-      setWidth(liveW.current);
-      saveCartWidth(liveW.current);
-    }
-  }, [active]);
-
-  // Window shrinks after the width was chosen → clamp the DISPLAYED width so
-  // the products pane never collapses — but never persist that clamp: the saved
-  // preference survives, and re-growing the window restores it automatically.
+  // أُعيد توزيعُ المساحة (طيُّ الشريط، تدوير، تغييرُ محور): أعد رسمَ النسبة —
+  // مرّةً الآن، ومرّةً بعد انتهاء حركة الشريط الجانبي (~٢٥٠ مللي ثانية).
   useEffect(() => {
     if (!active) return;
-    const onResize = () => {
-      if (drag.current) return; // live drags clamp per-move already
-      apply(clampCartWidth(widthPref.current));
-    };
-    window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
+    const re = () => { if (!drag.current) apply(clamp(prefPx())); };
+    re();
+    const raf = requestAnimationFrame(re);
+    const t = setTimeout(re, 280);
+    window.addEventListener("resize", re);
+    return () => { cancelAnimationFrame(raf); clearTimeout(t); window.removeEventListener("resize", re); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active, axis, o.reflowKey, o.side, o.layout.wFrac, o.layout.hFrac, o.defaultWFrac, o.defaultHFrac]);
+
+  // The handle can vanish MID-drag: abandon cleanly and keep the last size.
+  useEffect(() => {
+    if (active) return;
+    if (drag.current) { drag.current = null; setDragging(false); commit(liveW.current); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active]);
 
+  const pos = (e: React.PointerEvent) => (axis === "x" ? e.clientX : e.clientY);
+  /** اتجاهُ «التكبير»: أفقياً يعتمد على جهة السلة واتجاه اللغة؛ عمودياً السلةُ
+   *  تحت، فحافّتها العليا تصعد (−y) لتكبر. */
+  const growSign = (): 1 | -1 => {
+    if (axis === "y") return -1;
+    const rtl = i18n.dir() === "rtl";
+    return ((rtl ? 1 : -1) * (o.side === "end" ? 1 : -1)) as 1 | -1;
+  };
   const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (drag.current) return; // one pointer owns the drag — ignore extra touches
-    if (e.button !== 0 && e.pointerType === "mouse") return; // primary button only
+    if (drag.current) return;
+    if (e.button !== 0 && e.pointerType === "mouse") return;
     e.preventDefault();
     e.currentTarget.setPointerCapture(e.pointerId);
-    drag.current = { id: e.pointerId, startX: e.clientX, startW: liveW.current, moved: false };
+    drag.current = { id: e.pointerId, start: pos(e), startPx: liveW.current, moved: false };
     setDragging(true);
   };
   const onPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
     const d = drag.current;
     if (!d || e.pointerId !== d.id) return;
-    const delta = e.clientX - d.startX;
+    const delta = pos(e) - d.start;
     if (Math.abs(delta) > 3) d.moved = true;
-    // RTL: cart sits at the inline-end (left); its inner edge moves RIGHT (+x) to widen.
-    // LTR: mirrored — the inner edge moves LEFT (−x) to widen.
-    apply(clampCartWidth(d.startW + (i18n.dir() === "rtl" ? delta : -delta)));
+    apply(clamp(d.startPx + growSign() * delta));
   };
   const endDrag = (e: React.PointerEvent<HTMLDivElement>) => {
     const d = drag.current;
@@ -302,64 +334,139 @@ function useCartResize(enabled: boolean, defaultW: number = CART_W_DEFAULT) {
     setDragging(false);
     commit(liveW.current);
   };
+  /** الإرجاع للافتراضي الذكي — بالشاشة الجديدة يُمحى الاختيارُ فيرجع يكبر مع طيّ الشريط. */
   const reset = () => {
-    // Two quick REAL drags register as a double-click; that synthetic dblclick
-    // lands within a few ms of the second drag's pointerup — swallow only that,
-    // so a genuine double-tap (no movement) still resets.
     if (Date.now() - dragEndAt.current < 150) return;
-    commit(clampCartWidth(defaultW));
+    const px = clamp(defaultPx());
+    apply(px); setWidth(px);
+    if (!o.v2) saveCartWidth(px);
+    else o.saveLayout(axis === "x" ? { wFrac: null } : { hFrac: null });
     playTap();
   };
-  /** تكبير/تصغير بضغطة — للآيباد والأصابع: زرّان بترويسة السلة يوصلان لنفس
-   *  commit الذي يوصله السحب، فلا يعتمد تغيير الحجم على إصابة مقبضٍ رفيع. */
   const nudge = (dir: 1 | -1) => {
-    commit(clampCartWidth(liveW.current + dir * 80));
+    commit(clamp(liveW.current + dir * (axis === "x" ? 80 : 60)));
     playTap();
   };
   const onKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
-    // "Wider" is always the arrow pointing INTO the products pane.
-    const rtl = i18n.dir() === "rtl";
-    const nudge = (dir: 1 | -1) => commit(clampCartWidth(liveW.current + dir * 24));
-    if (e.key === "ArrowRight") { e.preventDefault(); nudge(rtl ? 1 : -1); }
-    else if (e.key === "ArrowLeft") { e.preventDefault(); nudge(rtl ? -1 : 1); }
-    else if (e.key === "Home") { e.preventDefault(); reset(); }
+    const step = (dir: 1 | -1) => commit(clamp(liveW.current + dir * 24));
+    if (axis === "x") {
+      const rtl = i18n.dir() === "rtl";
+      const intoProducts = o.side === "end" ? (rtl ? "ArrowRight" : "ArrowLeft") : (rtl ? "ArrowLeft" : "ArrowRight");
+      if (e.key === "ArrowRight" || e.key === "ArrowLeft") { e.preventDefault(); step(e.key === intoProducts ? 1 : -1); }
+    } else if (e.key === "ArrowUp" || e.key === "ArrowDown") { e.preventDefault(); step(e.key === "ArrowUp" ? 1 : -1); }
+    if (e.key === "Home") { e.preventDefault(); reset(); }
   };
 
+  const seed = active ? clamp(prefPx()) : 0;
+  const gridStyle: React.CSSProperties | undefined = !active ? undefined
+    : axis === "x"
+      ? ({ gridTemplateColumns: o.side === "start" ? "var(--cart-w) minmax(0,1fr)" : "minmax(0,1fr) var(--cart-w)", "--cart-w": `${seed}px` } as React.CSSProperties)
+      : ({ gridTemplateRows: "minmax(0,1fr) var(--cart-h)", "--cart-h": `${seed}px` } as React.CSSProperties);
+
   return {
-    active, width, dragging, gridRef, nudge,
-    // The grid reads the LIVE width from the CSS var; React re-seeds the var on
-    // re-renders with the DISPLAY-clamped preference (never wider than the
-    // current viewport allows, never persisted).
-    gridStyle: active ? ({ gridTemplateColumns: "minmax(0,1fr) var(--cart-w)", "--cart-w": `${clampCartWidth(width)}px` } as React.CSSProperties) : undefined,
+    active, axis, width, dragging, gridRef, nudge, reset, gridStyle,
     handleProps: { onPointerDown, onPointerMove, onPointerUp: endDrag, onPointerCancel: endDrag, onDoubleClick: reset, onKeyDown },
   };
 }
 
-/** The grab handle riding the cart's inner edge (inside the grid gap). */
-function CartResizeHandle({ dragging, width, handleProps }: { dragging: boolean; width: number; handleProps: React.HTMLAttributes<HTMLDivElement> }) {
+/** The grab handle riding the cart's inner edge (inside the grid gap) — أفقيٌّ
+ *  على الشاشات الواسعة، وعلى الحافّة العليا بالضيّقة. */
+function CartResizeHandle({ axis, side, dragging, width, handleProps }: {
+  axis: ResizeAxis; side: CartSide; dragging: boolean; width: number; handleProps: React.HTMLAttributes<HTMLDivElement>;
+}) {
   const { t } = useTranslation();
+  const horizontal = axis === "x";
   return (
     <div
       role="separator"
-      aria-orientation="vertical"
+      aria-orientation={horizontal ? "vertical" : "horizontal"}
       aria-label={t("retail.cartResize", "تغيير عرض السلة")}
-      aria-valuemin={CART_W_MIN}
-      aria-valuemax={CART_W_MAX}
       aria-valuenow={width}
       tabIndex={0}
       title={t("retail.cartResizeHint", "اسحب لتغيير عرض السلة — نقرة مزدوجة للإرجاع")}
-      /* منطقة الإمساك ٢٨ بكسل — القديمة (١٦) كانت أضيق من إصبعٍ على آيباد،
-         فيسحب الطبيب «جنب» المقبض ولا يتغيّر شيء ويظن الميزة معطّلة. */
-      className="group absolute -start-5 top-0 z-10 hidden h-full w-7 cursor-col-resize touch-none items-center justify-center outline-none lg:flex"
+      /* منطقة الإمساك ٢٨ بكسل — أوسع من إصبعٍ على آيباد. */
+      className={cn(
+        "group absolute z-10 touch-none items-center justify-center outline-none",
+        horizontal
+          ? cn("top-0 hidden h-full w-7 cursor-col-resize lg:flex", side === "end" ? "-start-5" : "-end-5")
+          : "inset-x-0 -top-4 flex h-7 w-full cursor-row-resize lg:hidden",
+      )}
       {...handleProps}
     >
       <span
         className={cn(
-          "h-20 w-1.5 rounded-full transition-all group-hover:h-28 group-hover:w-2 group-focus-visible:ring-2 group-focus-visible:ring-brand-400",
-          dragging ? "h-32 w-2 bg-brand-500" : "bg-line-strong group-hover:bg-brand-400",
+          "rounded-full transition-all group-focus-visible:ring-2 group-focus-visible:ring-brand-400",
+          horizontal ? "h-20 w-1.5 group-hover:h-28 group-hover:w-2" : "h-1.5 w-20 group-hover:h-2 group-hover:w-28",
+          dragging ? cn("bg-brand-500", horizontal ? "h-32 w-2" : "h-2 w-32") : "bg-line-strong group-hover:bg-brand-400",
         )}
       />
     </div>
+  );
+}
+
+/** مطبخُ التخصيص (posV2): حجمُ السلة، مكانُها، حجمُ خطّها، حجمُ المنتجات — كلُّه
+ *  بضغطاتٍ من ترويسة السلة، ويُحفظ على هذا الجهاز. */
+function PosLayoutMenu({ layout, onChange, axis, isLg, nudge, reset }: {
+  layout: PosLayout; onChange: (p: Partial<PosLayout>) => void; axis: ResizeAxis; isLg: boolean; nudge: (d: 1 | -1) => void; reset: () => void;
+}) {
+  const { t } = useTranslation();
+  const [open, setOpen] = useState(false);
+  const pct = (z: number) => `${Math.round(z * 100)}%`;
+  const Ico = ({ onClick, title, children, ...rest }: React.ButtonHTMLAttributes<HTMLButtonElement>) => (
+    <button type="button" onClick={onClick} title={title} aria-label={title} {...rest}
+      className="grid h-9 w-9 place-items-center rounded-lg bg-surface-2 text-ink-muted transition hover:bg-surface-3 hover:text-ink">{children}</button>
+  );
+  const Row = ({ label, children }: { label: string; children: React.ReactNode }) => (
+    <div className="flex items-center justify-between gap-2">
+      <span className="text-xs font-bold text-ink-muted">{label}</span>
+      <span className="flex items-center gap-1">{children}</span>
+    </div>
+  );
+  return (
+    <span className="relative">
+      <button type="button" data-poslayout onClick={() => { playTap(); setOpen((v) => !v); }} aria-expanded={open}
+        title={t("retail.layoutMenu", "Customize screen")} aria-label={t("retail.layoutMenu", "Customize screen")}
+        className={cn("grid h-10 w-10 place-items-center rounded-xl transition", open ? "bg-brand-600 text-white" : "bg-surface-2 text-ink-muted hover:bg-surface-3")}>
+        <SlidersHorizontal size={18} />
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
+          <div data-poslayoutpanel className="absolute end-0 top-full z-40 mt-1.5 w-72 space-y-3 rounded-2xl border border-line bg-surface-1 p-3 text-start shadow-raised">
+            <Row label={axis === "x" ? t("retail.layoutCartWidth", "Cart width") : t("retail.layoutCartHeight", "Cart height")}>
+              <Ico data-layoutnarrow onClick={() => nudge(-1)} title={t("retail.cartNarrow", "تصغير السلة")}><Minus size={15} /></Ico>
+              <Ico data-layoutwiden onClick={() => nudge(1)} title={t("retail.cartWiden", "تكبير السلة")}><Plus size={15} /></Ico>
+              <Ico onClick={reset} title={t("retail.layoutResetSize", "Default size")}><RotateCcw size={14} /></Ico>
+            </Row>
+            {isLg && (
+              <Row label={t("retail.layoutSide", "Cart position")}>
+                {(["start", "end"] as CartSide[]).map((s) => (
+                  <button key={s} type="button" data-layoutside={s} onClick={() => { playTap(); onChange({ side: s }); }}
+                    className={cn("rounded-lg px-2.5 py-1.5 text-xs font-bold transition", layout.side === s ? "bg-brand-600 text-white" : "bg-surface-2 text-ink-muted hover:text-ink")}>
+                    {s === "start" ? t("retail.layoutSideStart", "Left") : t("retail.layoutSideEnd", "Right")}
+                  </button>
+                ))}
+              </Row>
+            )}
+            <Row label={t("retail.layoutCartText", "Cart text size")}>
+              <Ico data-cartzoomdown onClick={() => { playTap(); onChange({ cartZoom: stepZoom(layout.cartZoom, -1) }); }} title="−"><Minus size={15} /></Ico>
+              <span className="w-11 text-center text-xs font-bold tabular-nums text-ink">{pct(layout.cartZoom)}</span>
+              <Ico data-cartzoomup onClick={() => { playTap(); onChange({ cartZoom: stepZoom(layout.cartZoom, 1) }); }} title="+"><Plus size={15} /></Ico>
+            </Row>
+            <Row label={t("retail.layoutGridText", "Products size")}>
+              <Ico data-gridzoomdown onClick={() => { playTap(); onChange({ gridZoom: stepZoom(layout.gridZoom, -1) }); }} title="−"><Minus size={15} /></Ico>
+              <span className="w-11 text-center text-xs font-bold tabular-nums text-ink">{pct(layout.gridZoom)}</span>
+              <Ico data-gridzoomup onClick={() => { playTap(); onChange({ gridZoom: stepZoom(layout.gridZoom, 1) }); }} title="+"><Plus size={15} /></Ico>
+            </Row>
+            <button type="button" data-layoutresetall
+              onClick={() => { playTap(); onChange({ side: "end", cartZoom: 1, gridZoom: 1, wFrac: null, hFrac: null }); reset(); setOpen(false); }}
+              className="w-full rounded-lg bg-surface-2 py-1.5 text-2xs font-bold text-ink-muted transition hover:text-ink">
+              {t("retail.layoutReset", "Reset layout")}
+            </button>
+          </div>
+        </>
+      )}
+    </span>
   );
 }
 
@@ -512,10 +619,20 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
   // Opt-in resizable cart (Settings → خيارات الكاشير) — drag the cart edge on lg+.
   // بالشاشة المتطورة الافتراضي يطابق عرضها التصميمي (~46% من الشاشة) لا 380
   // بكسل القديمة — تفعيل التحجيم ما ينبغي أن «يصغّر» سلة الكاشير المتطور.
-  const cartResize = useCartResize(
-    getResizableCart(),
-    posV2 && typeof window !== "undefined" ? Math.round(window.innerWidth * (compact ? 0.56 : 0.46)) : CART_W_DEFAULT,
-  );
+  /* تخصيصُ الشاشة (posV2): موضعُ السلة وحجمُ الخطوط ونسبةُ السلة — تفضيلاتُ هذا الجهاز. */
+  const [layout, setLayoutState] = useState<PosLayout>(() => loadPosLayout());
+  const saveLayout = (p: Partial<PosLayout>) => setLayoutState(savePosLayout(p));
+  const cartResize = useCartResize({
+    // بالشاشة الجديدة التحجيمُ دائمٌ وبلا سقف؛ القديمةُ تبقى خلف خيارها.
+    enabled: getResizableCart() || posV2,
+    v2: posV2,
+    side: posV2 ? layout.side : "end",
+    defaultW: CART_W_DEFAULT,
+    // الافتراضيُّ الذكي حتى يختار الطبيب: الشريطُ المطويّ يعطي السلةَ المساحةَ المتحرّرة.
+    defaultWFrac: navFolded ? (compact ? 0.72 : 0.64) : (compact ? 0.56 : 0.46),
+    defaultHFrac: denseCart ? 0.68 : 0.52,
+    layout, saveLayout, reflowKey: navFolded,
+  });
 
   const flashLine = (id: string) => { setFlash(id); setTimeout(() => setFlash((f) => (f === id ? null : f)), 600); };
 
@@ -1671,8 +1788,8 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
       // (live CSS var while dragging — see useCartResize).
       style={posV2 ? { ...cartResize.gridStyle, height: posH } : cartResize.gridStyle}
     >
-      {/* LEFT — customer + products/services */}
-      <div className={cn(posV2 ? cn("flex min-h-0 flex-col", compact ? "gap-2" : "gap-3") : "space-y-4")}>
+      {/* LEFT — customer + products/services (أو يميناً إن اختار الطبيب السلةَ بالبداية) */}
+      <div className={cn(posV2 ? cn("flex min-h-0 flex-col", compact ? "gap-2" : "gap-3") : "space-y-4", posV2 && layout.side === "start" && "lg:order-2")}>
         {/* Bridge context — which animal(s) this sale is for. Several of the owner's
             pets can be attached; the highlighted one receives new med/vaccine lines. */}
         {salePets.length > 0 && (
@@ -1992,7 +2109,10 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
               // والرصيدُ على خطٍّ واحد — ثلاثةُ أضعاف المنتجات بنفس الارتفاع.
               <div
                 className={cn(compact ? "flex flex-col gap-1" : "grid gap-2", posV2 ? "min-h-0 flex-1 overflow-y-auto pb-1" : "grid-cols-2 sm:grid-cols-3")}
-                style={posV2 && !compact ? { gridTemplateColumns: "repeat(auto-fill, minmax(8rem, 1fr))", gridAutoRows: "min-content" } : undefined}
+                style={posV2 ? ({
+                  ...(!compact ? { gridTemplateColumns: "repeat(auto-fill, minmax(8rem, 1fr))", gridAutoRows: "min-content" } : {}),
+                  ...(layout.gridZoom !== 1 ? { zoom: layout.gridZoom } : {}),
+                } as React.CSSProperties) : undefined}
               >
                 {shown.map((p) => {
                   // A sub-unit product is only "out" when not even one single can be sold.
@@ -2059,8 +2179,11 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
           ? cn("min-h-0 lg:h-full lg:max-h-none", cartSheet
               && "fixed inset-x-2 bottom-2 top-14 z-40 max-h-none overflow-hidden shadow-raised lg:static lg:inset-auto lg:z-auto lg:shadow-none")
           : "max-h-[78vh] lg:sticky lg:top-4",
+        posV2 && layout.side === "start" && "lg:order-1",
       )}>
-        {cartResize.active && <CartResizeHandle dragging={cartResize.dragging} width={cartResize.width} handleProps={cartResize.handleProps} />}
+        {cartResize.active && !(cartSheet && cartResize.axis === "y") && (
+          <CartResizeHandle axis={cartResize.axis} side={posV2 ? layout.side : "end"} dragging={cartResize.dragging} width={cartResize.width} handleProps={cartResize.handleProps} />
+        )}
         <div className={cn("flex items-center justify-between border-b border-line", posV2 ? "px-3.5 py-2" : "p-4")}>
           <span className={cn("flex items-center gap-2 font-display font-bold text-ink", posV2 && "text-lg")}>
             <ShoppingCart size={posV2 ? 22 : 18} /> {t("retail.cart", "Cart")}
@@ -2080,8 +2203,9 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
             {cart.length > 0 && <button onClick={() => { playTap(); setCart([]); }} className="text-xs text-ink-subtle transition hover:text-danger-600">{t("common.clear", "Clear")}</button>}
             {posV2 && cartResize.active && (
               /* تكبير/تصغير السلة بضغطة — البديل المضمون للسحب على الآيباد:
-                 نفس مسار الحفظ، فالعرض المختار يبقى محفوظاً بالجهاز. */
-              <span className="hidden items-center gap-1 lg:flex">
+                 نفس مسار الحفظ، فالحجم المختار يبقى محفوظاً بالجهاز. عرضاً على
+                 الواسعة وارتفاعاً على الضيّقة. */
+              <span className={cn("items-center gap-1", cartSheet ? "hidden lg:flex" : "flex")}>
                 <button
                   data-cartnarrow
                   onClick={() => cartResize.nudge(-1)}
@@ -2101,6 +2225,9 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
                   <Plus size={18} />
                 </button>
               </span>
+            )}
+            {posV2 && (
+              <PosLayoutMenu layout={layout} onChange={saveLayout} axis={cartResize.axis} isLg={cartResize.axis === "x"} nudge={cartResize.nudge} reset={cartResize.reset} />
             )}
             {posV2 && (
               /* طيّ شريط التنقّل من داخل الكاشير: الطبيب واقف بالبيع، وإرساله
@@ -2130,7 +2257,9 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
           </span>
         </div>
 
-        <div className={cn("flex-1 overflow-auto", posV2 ? "min-h-[9.5rem] basis-40 p-2" : "p-2")}>
+        <div className={cn("flex-1 overflow-auto", posV2 ? "min-h-[9.5rem] basis-40 p-2" : "p-2")}
+          /* حجمُ خطّ السلة من مطبخ التخصيص — zoom يكبّر السطرَ كلَّه (الاسم والأزرار) لا الخطَّ وحده. */
+          style={posV2 && layout.cartZoom !== 1 ? ({ zoom: layout.cartZoom } as React.CSSProperties) : undefined}>
           {cart.length === 0 ? (
             <div className={cn("grid place-items-center px-6 text-center text-ink-subtle", posV2 ? "h-full min-h-[8rem] text-base" : "h-40 text-sm")}>{t("retail.cartEmpty", "Add products to start a sale.")}</div>
           ) : (
