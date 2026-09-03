@@ -180,6 +180,35 @@ end $ds$;
 -- هناك، ولم يكن مختبرُنا يغطّيه.
 alter table invoices add column if not exists total       numeric(12,2) not null default 0;
 alter table invoices add column if not exists amount_paid numeric(14,2) not null default 0;
+
+-- 0148: التوصيل (0069) كما بالإنتاج — سواق/شركات وطلبات، وتسديد الفاتورة (0061).
+create table if not exists couriers (
+  id uuid primary key default gen_random_uuid(), clinic_id uuid not null references auth.users(id) default auth_clinic(),
+  name text not null, phone text, note text, active boolean not null default true, created_at timestamptz not null default now());
+create table if not exists delivery_orders (
+  id uuid primary key default gen_random_uuid(), clinic_id uuid not null references auth.users(id) default auth_clinic(),
+  invoice_id uuid not null references invoices(id) on delete cascade, courier_id uuid references couriers(id) on delete set null,
+  customer_name text, cod_amount numeric(14,2) not null default 0, prepaid numeric(14,2) not null default 0,
+  status text not null default 'preparing', created_at timestamptz not null default now(),
+  dispatched_at timestamptz, delivered_at timestamptz, returned_at timestamptz);
+create index if not exists delivery_orders_courier_idx on delivery_orders(courier_id);
+create or replace function settle_invoice(p_invoice uuid, p_amount numeric, p_method text default 'cash')
+returns invoices language plpgsql security definer set search_path = public as $$
+declare v_clinic uuid := auth_clinic(); v_inv invoices; v_add numeric(14,2); v_details jsonb;
+begin
+  if v_clinic is null then raise exception 'not authenticated'; end if;
+  select * into v_inv from invoices where id = p_invoice and clinic_id = v_clinic;
+  if not found then raise exception 'invoice not found'; end if;
+  if v_inv.status = 'refunded' then raise exception 'invoice refunded'; end if;
+  v_add := least(greatest(coalesce(p_amount, 0), 0), v_inv.total - v_inv.amount_paid);
+  if v_add > 0 then
+    v_details := coalesce(v_inv.payment_details, '[]'::jsonb)
+      || jsonb_build_object('method', coalesce(nullif(p_method, ''), 'cash'), 'amount', v_add, 'at', now());
+    update invoices set amount_paid = v_inv.amount_paid + v_add, payment_details = v_details
+     where id = p_invoice and clinic_id = v_clinic returning * into v_inv;
+  end if;
+  return v_inv;
+end $$;
 create policy invoices_update on invoices for update
   using (clinic_id = (select auth_clinic()))
   with check (

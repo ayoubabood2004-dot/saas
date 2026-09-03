@@ -5,7 +5,7 @@ import {
   Search, Barcode, Plus, Minus, Trash2, ShoppingCart, User, Phone, Tag, Percent, BadgePercent,
   Banknote, CreditCard, ArrowLeftRight, CheckCircle2, Printer, Sparkles, TrendingUp, Package, PawPrint, X,
   Stethoscope, Pencil, Pill, Syringe, CalendarClock, Wallet, StickyNote, Bike, UserCheck, AlertTriangle, Undo2,
-  ChevronUp, ChevronDown, PanelLeftClose, PanelLeftOpen, Scale,
+  ChevronUp, ChevronDown, PanelLeftClose, PanelLeftOpen, Scale, RotateCcw, Building2,
 } from "lucide-react";
 import type { Product, Invoice, InvoiceItem, CheckoutItem, SaleMeta, PaymentMethod, PaymentSplit, DiscountType, Customer, Service, ServiceCatalog, Species, Pet, Courier } from "@/types";
 import { repo, resolveDiscount } from "@/lib/repo";
@@ -24,7 +24,7 @@ import { MedSaleForm } from "./MedSaleForm";
 import { CashierSelect } from "@/components/MedicalEntry";
 import { useInvoicePrinter } from "./usePrintInvoice";
 import { invoiceNo, openInvoicePrint, type PrintFormat } from "@/lib/invoicePrint";
-import { getPreSalePrint, getResizableCart, getPosV2, getClinicLogo, getClinicSocials, getClinicName, getDeliveryZones, getQtyPromos, type QtyPromo } from "@/lib/settings";
+import { getPreSalePrint, getResizableCart, getPosV2, getPosCompact, getPosCustomerOpen, getClinicLogo, getClinicSocials, getClinicName, getDeliveryZones, getQtyPromos, type QtyPromo } from "@/lib/settings";
 import { branchStore } from "@/lib/branchStore";
 import { useNavFolded, setNavFolded } from "@/lib/navFold";
 import { persistMedicalEntries } from "@/lib/medSync";
@@ -379,11 +379,20 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
   /* شاشة البيع الجديدة (0109) — تفعيل اختياري لكل عيادة. تُقرأ مرة عند الرسم:
    * تبديلها من الإعدادات يعيد تحميل الصفحة، فلا حاجة لمراقبة حيّة. */
   const posV2 = getPosV2();
+  /* خيارا الشاشة المتطوّرة (0147): سطورٌ بدل مربّعات، وصندوقُ زبونٍ مفتوحٌ دائماً
+   * بسطرٍ نحيف. الشكوى: «المربّعات تاكل الشاشة على حساب السلة» بشاشاتٍ صغيرة. */
+  const compact = posV2 && getPosCompact();
+  const customerOpenPref = posV2 && getPosCustomerOpen();
   /* وضع التركيز — الشريط المطويّ يوسّع السلة حيّاً (بلا إعادة تحميل). */
   const navFolded = useNavFolded();
   /* الحقول الاختيارية (عميل · بائع · ملاحظة) مطويّة افتراضياً بالشاشة الجديدة:
    * البيع النقدي السريع لا يحتاجها، وهي كانت تأكل ٣٧١px فوق شبكة المنتجات. */
-  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [detailsOpen, setDetailsOpen] = useState(customerOpenPref);
+  /* الملاحظة بالصندوق النحيف تُفتح بضغطة — تبقى مفتوحةً إن كانت مكتوبة. */
+  const [notesOpen, setNotesOpen] = useState(false);
+  /* زرُّ التصفير ضغطه الطبيب: الزبونُ الآتي من سجل حيوانٍ لا يرجع بعده. */
+  const prefillOff = useRef(false);
+  const [resetAsk, setResetAsk] = useState(false);
   /* لوح السلة على الشاشات الضيّقة — يُفتح من الشريط الملتصق بالأسفل. */
   const [cartSheet, setCartSheet] = useState(false);
   /* أدوات الدفع (خصم · طريقة دفع · فاتورة أولية) مطويّة: كانت تحتل ٣٢٤px من
@@ -392,7 +401,8 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
   /* كثافة تكيّفية: مع تجاوز سبعة أصناف يرشّق السطر تلقائياً (سعر الوحدة يُخفى
    * وأزرار الكمية تصغر قليلاً) فترتفع سعة السلة من ٨ أصناف مرئية إلى ١٢+ —
    * «يشوف كل المنتجات الي يضيفهن شكد ما جانن». تبقى الأهداف فوق حدّ اللمس. */
-  const denseCart = posV2 && cart.length > 7;
+  // بالعرض المضغوط السلةُ أعرض وأصنافُها أكبر، فلا ترشق إلا بعد ١٢ صنفاً.
+  const denseCart = posV2 && cart.length > (compact ? 12 : 7);
   /* السلة العريضة تنقسم عمودين: العرض وحده لا يُظهر صنفاً واحداً إضافياً —
    * الذي يُظهر الأصناف هو الارتفاع. فعند ٦٢٠px فأكثر يصير كل صفٍّ نصف عرض
    * ويتضاعف عدد الأصناف المرئية فعلياً. القياس من العنصر نفسه لا من النافذة:
@@ -504,7 +514,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
   // بكسل القديمة — تفعيل التحجيم ما ينبغي أن «يصغّر» سلة الكاشير المتطور.
   const cartResize = useCartResize(
     getResizableCart(),
-    posV2 && typeof window !== "undefined" ? Math.round(window.innerWidth * 0.46) : CART_W_DEFAULT,
+    posV2 && typeof window !== "undefined" ? Math.round(window.innerWidth * (compact ? 0.56 : 0.46)) : CART_W_DEFAULT,
   );
 
   const flashLine = (id: string) => { setFlash(id); setTimeout(() => setFlash((f) => (f === id ? null : f)), 600); };
@@ -1064,13 +1074,31 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
     setDeliveryOn(false); setDCourierId(""); setDZone(""); setDAddress(""); setDFee(""); setDFeeToClinic(false);
     // Preserve the patient/customer bridge across "New sale" so repeated per-patient
     // sales keep syncing into the same animal's record; clear it for a plain walk-in.
-    if (prefill) {
+    if (prefill && !prefillOff.current) {
       setName(prefill.name || ""); setPhone(prefill.phone || "");
       setSalePets(prefill.pet ? [{ id: prefill.petId || null, name: prefill.pet, species: prefill.species || null }] : []);
     } else {
       setName(""); setPhone(""); setSalePets([]);
     }
     setActivePetIdx(0); setPetPickOpen(false); setPetPickQ("");
+  };
+
+  /* زرُّ التصفير (0147): «اسمُ زبونٍ باقٍ والدكتور ما يريد يبيع له». يمسح كلَّ
+   * شيءٍ على الشاشة — الزبون والحيوان والسلة والمسودة المحفوظة ووضعَ الراجع
+   * والمضاعِف — حتى الآتي من سجل حيوان. لو على الشاشة شيءٌ يُخسر، يسأل أوّلاً. */
+  const hardReset = () => {
+    prefillOff.current = true;
+    setRetMode(false); setMult(null); setAttachCode(null); setQtyPadFor(null); setWeightFor(null); setMultPad(false);
+    reset();
+    setName(""); setPhone(""); setSalePets([]); setCustMatches([]); setCustOpen(false);
+    setDetailsOpen(customerOpenPref); setNotesOpen(false); setPayTools(false); setCartSheet(false);
+    setResetAsk(false);
+    playSuccess();
+  };
+  const askReset = () => {
+    playTap();
+    const dirty = cart.length > 0 || !!name.trim() || !!phone.trim() || salePets.length > 0 || !!saleNotes.trim();
+    if (dirty) setResetAsk(true); else hardReset();
   };
 
   // ---- "+ حيوان آخر" — attach another of the clinic's patients to this sale ----
@@ -1594,6 +1622,26 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
   }
 
   // ---- Builder --------------------------------------------------------------
+  /* شريطُ الأقسام (منتجات · خدمات · أدوية): سطرٌ وحده، أو جنبَ زرّ الراجع بالعرض المضغوط. */
+  const browseToggle = (
+    <div className={cn("inline-flex items-center gap-1 rounded-full border border-line bg-surface-2 p-1", compact ? "min-w-0 flex-1" : "w-full", posV2 && "shrink-0")}>
+      {([
+        { v: "products", label: t("retail.products", "Products"), icon: <Package size={15} /> },
+        { v: "services", label: t("retail.services", "Services"), icon: <Stethoscope size={15} /> },
+        { v: "meds", label: t("retail.meds", "الأدوية"), icon: <Pill size={15} /> },
+      ] as const).map((o) => (
+        <button
+          key={o.v}
+          onClick={() => { playTap(); setBrowseTab(o.v); }}
+          className={cn("flex flex-1 items-center justify-center gap-1.5 rounded-full font-semibold transition",
+            compact ? "px-2.5 py-1.5 text-xs" : "px-4 py-2 text-sm",
+            browseTab === o.v ? "bg-brand-600 text-white shadow-soft" : "text-ink-muted hover:text-ink")}
+        >
+          {o.icon}{o.label}
+        </button>
+      ))}
+    </div>
+  );
   return (
     <div
       ref={(el) => {
@@ -1601,7 +1649,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
         (cartResize.gridRef as React.MutableRefObject<HTMLDivElement | null>).current = el;
       }}
       className={cn(
-        "grid gap-4",
+        "grid", posV2 && compact ? "gap-2.5" : "gap-4",
         // السلة هي بطل الشاشة لا الشبكة: على الضيّقة تحتل النصف السفلي ثابتةً
         // مفتوحةً (لا شريط مطويّ)، وعلى الواسعة عموداً بـ٤٠٪ من العرض بخطٍّ
         // كبير مقروء من وقفة الكاشير. الشبكة تخدم السلة لا العكس.
@@ -1609,7 +1657,11 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
           ? cn("min-h-0 lg:grid-rows-1",
               // وضع التركيز: الشريط مطويّ فالمساحة المتحرّرة تذهب كاملةً للسلة
               // (٦٤٪ بدل ٤٦٪ وسقف ١٢٠٠px بدل ٧٢٠) — لا لهامشٍ فارغ.
-              navFolded ? "lg:grid-cols-[minmax(0,1fr),clamp(560px,64%,1200px)]" : "lg:grid-cols-[minmax(0,1fr),clamp(460px,46%,720px)]",
+              // والعرضُ المضغوط (سطور) يعطي السلةَ عشرَ نقاطٍ فوق ذلك: السطورُ
+              // تكتفي بأقلّ، والسلةُ هي ما طلبه الطبيب «أوضح وأعمق».
+              navFolded
+                ? (compact ? "lg:grid-cols-[minmax(0,1fr),clamp(600px,72%,1400px)]" : "lg:grid-cols-[minmax(0,1fr),clamp(560px,64%,1200px)]")
+                : (compact ? "lg:grid-cols-[minmax(0,1fr),clamp(500px,56%,900px)]" : "lg:grid-cols-[minmax(0,1fr),clamp(460px,46%,720px)]"),
               // السلة الممتلئة تأخذ ثلثي الشاشة بالوضع العمودي؛ الشبكة تحتفظ
               // بحدّ أدنى يكفي صفّين. السقف الجامد ٥٢٪ كان يخنقها مهما امتلأت.
               denseCart ? "grid-rows-[minmax(9rem,1fr),minmax(0,68%)]" : "grid-rows-[minmax(0,1fr),minmax(0,52%)]")
@@ -1620,7 +1672,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
       style={posV2 ? { ...cartResize.gridStyle, height: posH } : cartResize.gridStyle}
     >
       {/* LEFT — customer + products/services */}
-      <div className={cn(posV2 ? "flex min-h-0 flex-col gap-3" : "space-y-4")}>
+      <div className={cn(posV2 ? cn("flex min-h-0 flex-col", compact ? "gap-2" : "gap-3") : "space-y-4")}>
         {/* Bridge context — which animal(s) this sale is for. Several of the owner's
             pets can be attached; the highlighted one receives new med/vaccine lines. */}
         {salePets.length > 0 && (
@@ -1707,7 +1759,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
         )}
         {/* تفاصيل البيع الاختيارية — بالشاشة الجديدة سطر واحد يُفتح بضغطة بدل
             بطاقة دائمة كانت تدفع شبكة المنتجات ٣٧١px للأسفل. */}
-        {posV2 && !detailsOpen && (
+        {posV2 && !detailsOpen && !customerOpenPref && (
           <button
             type="button" data-saledetails
             onClick={() => { playTap(); setDetailsOpen(true); }}
@@ -1721,9 +1773,11 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
             {cashierId && <UserCheck size={12} className="text-success-600" />}
           </button>
         )}
-        {/* Customer */}
-        <div className={cn("card p-4", posV2 && "shrink-0", posV2 && !detailsOpen && "hidden")}>
-          <div className="mb-3 flex items-center gap-2 text-sm font-bold text-ink">
+        {/* Customer — بالصندوق المفتوح دائماً (0147) سطرٌ نحيف: اسم · هاتف · بائع،
+            والملاحظة خلف زرٍّ صغير. لا ترويسة ولا طيّ: ما يحتاجه الكاشير كلَّ بيعة
+            يبقى أمامه بلا أن يأكل شبكة المنتجات. */}
+        <div data-custbox className={cn("card", customerOpenPref ? "p-2.5" : "p-4", posV2 && "shrink-0", posV2 && !detailsOpen && !customerOpenPref && "hidden")}>
+          <div className={cn("mb-3 flex items-center gap-2 text-sm font-bold text-ink", customerOpenPref && "hidden")}>
             <User size={16} /> {t("retail.customer", "Customer")} <span className="text-xs font-normal text-ink-subtle">· {t("retail.optional", "optional")}</span>
             {posV2 && (
               <button type="button" onClick={() => { playTap(); setDetailsOpen(false); }} className="ms-auto grid h-7 w-7 place-items-center rounded-lg text-ink-subtle transition hover:bg-surface-2 hover:text-ink" aria-label={t("common.close", "إغلاق")}>
@@ -1731,7 +1785,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
               </button>
             )}
           </div>
-          <div className="relative grid gap-2 sm:grid-cols-2">
+          <div className={cn("relative grid gap-2", customerOpenPref ? "sm:grid-cols-[1fr,1fr,minmax(10rem,0.8fr),auto]" : "sm:grid-cols-2")}>
             <div className="relative">
               <User size={15} className="pointer-events-none absolute top-1/2 -translate-y-1/2 text-ink-subtle ltr:left-3 rtl:right-3" />
               <input
@@ -1750,6 +1804,22 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
                 onBlur={() => setTimeout(() => setCustOpen(false), 150)}
               />
             </div>
+            {customerOpenPref && (
+              <>
+                <div data-slimcashier><CashierSelect value={cashierId} onChange={setCashierId} /></div>
+                <button
+                  type="button" data-notestoggle
+                  onClick={() => { playTap(); setNotesOpen((v) => !v); }}
+                  aria-pressed={notesOpen || !!saleNotes.trim()}
+                  title={t("retail.saleNotes", "ملاحظات الطبيب على الفاتورة")}
+                  className={cn("grid h-11 w-11 place-items-center rounded-2xl border transition",
+                    saleNotes.trim() ? "border-brand-400 bg-brand-50 text-brand-700 dark:bg-brand-500/15 dark:text-brand-300"
+                      : notesOpen ? "border-line-strong bg-surface-2 text-ink" : "border-line bg-surface-1 text-ink-subtle hover:text-ink")}
+                >
+                  <StickyNote size={17} />
+                </button>
+              </>
+            )}
             {custOpen && custMatches.length > 0 && (
               <div className="absolute top-full z-20 mt-1 w-full overflow-hidden rounded-2xl border border-line bg-surface-1 shadow-raised">
                 {custMatches.map((c, i) => (
@@ -1768,7 +1838,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
 
           {/* موظف المبيعات (البائع) — يتثبّت تلقائياً على المسجّل دخوله؛ يظهر
               بالفاتورة المطبوعة وسجل الفواتير وتقارير أداء الموظفين. */}
-          <div className="mt-3 border-t border-line pt-3">
+          <div className={cn("mt-3 border-t border-line pt-3", customerOpenPref && "hidden")}>
             <label className="mb-1.5 flex items-center gap-1.5 text-xs font-bold text-ink-muted">
               <UserCheck size={14} className="text-brand-600" /> {t("retail.cashier", "موظف المبيعات (البائع)")}
             </label>
@@ -1787,14 +1857,14 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
           </div>
 
           {/* Doctor's note on the invoice — surfaces in the pet's record. */}
-          <div className="mt-3 border-t border-line pt-3">
-            <label htmlFor="sale-notes" className="mb-1.5 flex items-center gap-1.5 text-xs font-bold text-ink-muted">
+          <div className={cn(customerOpenPref ? cn("mt-2", !notesOpen && !saleNotes.trim() && "hidden") : "mt-3 border-t border-line pt-3")}>
+            <label htmlFor="sale-notes" className={cn("mb-1.5 flex items-center gap-1.5 text-xs font-bold text-ink-muted", customerOpenPref && "hidden")}>
               <StickyNote size={14} className="text-brand-600" /> {t("retail.saleNotes", "ملاحظات الطبيب على الفاتورة")}
               <span className="text-2xs font-normal text-ink-subtle">· {t("retail.optional", "optional")}</span>
             </label>
             <textarea
               id="sale-notes"
-              rows={2}
+              rows={customerOpenPref ? 1 : 2}
               value={saleNotes}
               maxLength={500}
               onChange={(e) => setSaleNotes(e.target.value)}
@@ -1808,7 +1878,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
         {/* وضع الراجع — زرٌّ واحد يقلب معنى كل باركود يُمسح بعده.
             لونه كهرماني صارخ وشريطٌ يعلو الشاشة كلها حين يكون فعّالاً: كاشيرٌ
             نسي أنه بوضع الراجع يبيع بالسالب، وهذا أسوأ من أي خطأٍ آخر. */}
-        <div className={cn("flex flex-wrap items-center gap-2", posV2 && "shrink-0")}>
+        <div className={cn("flex items-center gap-2", compact ? "flex-nowrap" : "flex-wrap", posV2 && "shrink-0")}>
           <button
             type="button"
             data-retmode
@@ -1823,30 +1893,17 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
             <Undo2 size={16} /> {t("retail.retMode", "راجع")}
           </button>
           {retMode && (
-            <span data-retmodebar className="flex flex-1 items-center gap-1.5 rounded-xl bg-amber-50 px-3 py-2 text-2xs font-bold text-amber-800 dark:bg-amber-500/15 dark:text-amber-200">
+            <span data-retmodebar className={cn("flex flex-1 items-center gap-1.5 rounded-xl bg-amber-50 px-3 py-2 text-2xs font-bold text-amber-800 dark:bg-amber-500/15 dark:text-amber-200", compact && "min-w-0")}>
               <AlertTriangle size={14} className="shrink-0" />
-              {t("retail.retModeOn", "وضع الراجع فعّال — كل باركود تمسحه ينزل بالسالب ويتقاص من حساب الزبون. اضغط «راجع» مرة ثانية للرجوع للبيع.")}
+              <span className={cn(compact && "truncate")}>{t("retail.retModeOn", "وضع الراجع فعّال — كل باركود تمسحه ينزل بالسالب ويتقاص من حساب الزبون. اضغط «راجع» مرة ثانية للرجوع للبيع.")}</span>
             </span>
           )}
+          {/* بالعرض المضغوط شريطُ الأقسام يشارك زرَّ الراجع سطرَه — صفٌّ أقلّ فوق المنتجات */}
+          {compact && !retMode && browseToggle}
         </div>
 
         {/* Products | Services | Medications toggle */}
-        <div className={cn("inline-flex w-full items-center gap-1 rounded-full border border-line bg-surface-2 p-1", posV2 && "shrink-0")}>
-          {([
-            { v: "products", label: t("retail.products", "Products"), icon: <Package size={15} /> },
-            { v: "services", label: t("retail.services", "Services"), icon: <Stethoscope size={15} /> },
-            { v: "meds", label: t("retail.meds", "الأدوية"), icon: <Pill size={15} /> },
-          ] as const).map((o) => (
-            <button
-              key={o.v}
-              onClick={() => { playTap(); setBrowseTab(o.v); }}
-              className={cn("flex flex-1 items-center justify-center gap-1.5 rounded-full px-4 py-2 text-sm font-semibold transition",
-                browseTab === o.v ? "bg-brand-600 text-white shadow-soft" : "text-ink-muted hover:text-ink")}
-            >
-              {o.icon}{o.label}
-            </button>
-          ))}
-        </div>
+        {(!compact || retMode) && browseToggle}
 
         {browseTab === "products" ? (
           // منطقة التصفّح: البحث ثابت والشبكة وحدها تمرّر داخلياً (التصميم أ).
@@ -1931,9 +1988,11 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
             ) : (
               // الأعمدة تتنفّس: auto-fill بعرض بطاقة أدنى بدل عدد مثبّت — شاشة
               // ١٦٠٠px تعرض ستة أعمدة بدل ثلاثة، والآيباد ثلاثة بدل اثنين.
+              // وبالعرض المضغوط (0147) سطرٌ لكل منتج: الاسمُ كاملاً والسعرُ
+              // والرصيدُ على خطٍّ واحد — ثلاثةُ أضعاف المنتجات بنفس الارتفاع.
               <div
-                className={cn("grid gap-2", posV2 ? "min-h-0 flex-1 overflow-y-auto pb-1" : "grid-cols-2 sm:grid-cols-3")}
-                style={posV2 ? { gridTemplateColumns: "repeat(auto-fill, minmax(8rem, 1fr))", gridAutoRows: "min-content" } : undefined}
+                className={cn(compact ? "flex flex-col gap-1" : "grid gap-2", posV2 ? "min-h-0 flex-1 overflow-y-auto pb-1" : "grid-cols-2 sm:grid-cols-3")}
+                style={posV2 && !compact ? { gridTemplateColumns: "repeat(auto-fill, minmax(8rem, 1fr))", gridAutoRows: "min-content" } : undefined}
               >
                 {shown.map((p) => {
                   // A sub-unit product is only "out" when not even one single can be sold.
@@ -1941,6 +2000,28 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
                   const subAvail = !!p.has_sub_unit && !!p.units_per_box && p.units_per_box > 0;
                   const out = p.pooled ? false : subAvail ? p.stock * (p.units_per_box as number) < 1 : p.stock <= 0;
                   const byWeight = !!p.sold_by_weight;
+                  if (compact) {
+                    return (
+                      <button
+                        key={p.id} disabled={out} data-prodrow={p.id} onClick={() => { playTap(); addProduct(p); }}
+                        title={p.name}
+                        className={cn(
+                          "group flex shrink-0 items-center gap-2 rounded-xl border px-2.5 py-1.5 text-start transition",
+                          out ? "cursor-not-allowed border-line bg-surface-2 opacity-50"
+                            : flash === `p:${p.id}` ? "border-brand-400 bg-brand-50 dark:bg-brand-500/15"
+                              : "border-line bg-surface-1 hover:border-brand-300 hover:bg-brand-50 dark:hover:bg-brand-500/10",
+                        )}
+                      >
+                        <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-surface-2 text-ink-subtle">{byWeight ? <Scale size={14} /> : <Package size={14} />}</span>
+                        <span className="min-w-0 flex-1 truncate text-sm font-semibold text-ink">{p.name}</span>
+                        <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-2xs font-bold tabular-nums", out ? "bg-danger-50 text-danger-600 dark:bg-danger-500/15" : "bg-surface-2 text-ink-muted")}>
+                          {out ? t("retail.out", "out") : byWeight ? t("retail.wKg", { n: fmtKg(p.stock), defaultValue: "{{n}} كغ" }) : formatNum(p.stock)}
+                        </span>
+                        <span className="w-24 shrink-0 text-end text-sm font-bold tabular-nums text-ink">{money(p.sell_price)}{byWeight ? <span className="text-2xs font-medium text-ink-subtle">{t("retail.perKgShort", "/كغ")}</span> : ""}</span>
+                        <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-brand-600 text-white opacity-60 transition group-hover:opacity-100"><Plus size={13} /></span>
+                      </button>
+                    );
+                  }
                   return (
                     <button
                       key={p.id} disabled={out} onClick={() => { playTap(); addProduct(p); }}
@@ -1964,7 +2045,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
             )}
           </div>
         ) : browseTab === "services" ? (
-          <ServiceQuickSelect catalog={catalog} onPick={addService} flashId={flash} />
+          <ServiceQuickSelect catalog={catalog} onPick={addService} flashId={flash} compact={compact} />
         ) : (
           <MedSaleForm species={activePet?.species ?? undefined} onAddLine={addMedLine} petId={activePet?.id ?? null} petName={activePet?.name ?? null} />
         )}
@@ -1986,6 +2067,16 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
             {units > 0 && <span className={cn("chip bg-brand-600 font-black text-white", posV2 ? "text-xs" : "text-2xs bg-brand-50 text-brand-700 dark:bg-brand-500/15 dark:text-brand-300")}>{units}</span>}
           </span>
           <span className="flex items-center gap-2">
+            {/* تصفيرُ الشاشة (0147): زبونٌ باقٍ من بيعةٍ سابقة يروح بضغطة — هو والسلة والمسودة */}
+            <button
+              data-posreset type="button"
+              onClick={askReset}
+              title={t("retail.resetScreen", "بيع جديد — تصفير الشاشة (الزبون والسلة والمسودة)")}
+              aria-label={t("retail.resetScreen", "بيع جديد — تصفير الشاشة (الزبون والسلة والمسودة)")}
+              className={cn("grid place-items-center rounded-xl bg-surface-2 text-ink-muted transition hover:bg-danger-50 hover:text-danger-600", posV2 ? "h-10 w-10" : "h-8 w-8")}
+            >
+              <RotateCcw size={posV2 ? 18 : 15} />
+            </button>
             {cart.length > 0 && <button onClick={() => { playTap(); setCart([]); }} className="text-xs text-ink-subtle transition hover:text-danger-600">{t("common.clear", "Clear")}</button>}
             {posV2 && cartResize.active && (
               /* تكبير/تصغير السلة بضغطة — البديل المضمون للسحب على الآيباد:
@@ -2054,7 +2145,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
                       l.ret ? "border-amber-400 bg-amber-50/70 dark:border-amber-500/40 dark:bg-amber-500/10"
                         : flash === l.id ? "border-brand-400 bg-brand-50 dark:bg-brand-500/15" : "border-line bg-surface-1")}>
                     <div className="min-w-0 flex-1">
-                      <p className={cn("flex items-center gap-1.5 truncate font-bold text-ink", posV2 ? "text-base leading-tight" : "text-sm font-semibold")}>
+                      <p className={cn("flex items-center gap-1.5 truncate font-bold text-ink", posV2 ? (compact && !denseCart ? "text-lg leading-tight" : "text-base leading-tight") : "text-sm font-semibold")}>
                         {l.ret && <span data-retchip className="chip shrink-0 bg-amber-500 text-2xs font-black text-white"><Undo2 size={10} className="me-0.5 inline" />{t("retail.retChip", "راجع")}</span>}
                         {l.name}
                         {l.kind === "service" && <span className="chip shrink-0 bg-brand-50 text-2xs font-medium text-brand-700 dark:bg-brand-500/15 dark:text-brand-300">{t("retail.service", "Service")}</span>}
@@ -2290,8 +2381,15 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
                 </p>
                 <select className="input h-9 w-full py-0 text-sm" value={dCourierId} onChange={(e) => { playTap(); setDCourierId(e.target.value); }}>
                   <option value="">{t("retail.deliveryNoCourier", "اختيار السائق لاحقاً (يبقى قيد التجهيز)")}</option>
-                  {(dCouriers ?? []).filter((c) => c.active).map((c) => <option key={c.id} value={c.id}>{c.name}{c.phone ? ` — ${c.phone}` : ""}</option>)}
+                  {(dCouriers ?? []).filter((c) => c.active).map((c) => <option key={c.id} value={c.id}>{c.kind === "company" ? "🏢 " : ""}{c.name}{c.phone ? ` — ${c.phone}` : ""}</option>)}
                 </select>
+                {/* شركةُ توصيل (0148): الفلوس ما تدخل عند التسليم — تُحصَّل من الشركة لاحقاً */}
+                {(dCouriers ?? []).find((c) => c.id === dCourierId)?.kind === "company" && (
+                  <p data-dcompanyhint className="flex items-center gap-1.5 rounded-lg bg-surface-1/80 px-2.5 py-1.5 text-2xs font-semibold text-sky-800 dark:bg-surface-1/40 dark:text-sky-200">
+                    <Building2 size={13} className="shrink-0" />
+                    {t("retail.deliveryCompanyHint", "شركة توصيل: الطلب يُسجَّل «مسلَّم» لما يوصل للزبون، والفلوس تبقى بذمّة الشركة وتُحصَّل منها لاحقاً من تبويب التوصيل.")}
+                  </p>
+                )}
                 {/* لوين طالع الطلب؟ — مناطق العيادة، واختيار المنطقة يملأ أجرتها تلقائياً */}
                 {getDeliveryZones().length > 0 && (
                   <div className="flex flex-wrap items-center gap-1.5">
@@ -2698,6 +2796,17 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
             ))}
           </ul>
         </div>
+      </Dialog>
+
+      {/* تأكيدُ التصفير — فقط لو على الشاشة ما يُخسر */}
+      <Dialog open={resetAsk} onClose={() => setResetAsk(false)} title={t("retail.resetTitle", "تصفير الشاشة؟")} size="sm"
+        footer={<>
+          <Button variant="ghost" onClick={() => { playTap(); setResetAsk(false); }}>{t("common.cancel", "إلغاء")}</Button>
+          <Button variant="danger" data-posresetgo leftIcon={<RotateCcw size={16} />} onClick={hardReset}>{t("retail.resetGo", "صفّر وابدأ بيعة جديدة")}</Button>
+        </>}>
+        <p className="text-sm text-ink-muted">
+          {t("retail.resetHint", "تنمسح السلة واسم الزبون وهاتفه والحيوان والملاحظة والمسودة المحفوظة على هذا الجهاز. ما ينحفظ شي بالفواتير.")}
+        </p>
       </Dialog>
 
       {posV2 && cartSheet && (

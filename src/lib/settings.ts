@@ -141,8 +141,8 @@ export function clearPetRanges(petId: string) {
 export const DEFAULT_DIAL_CODE = "+964"; // Iraq
 
 export interface ClinicSocials { facebook: string; instagram: string }
-interface ClinicPrefs { dial_code: string; logo_url: string | null; social_facebook: string; social_instagram: string; clinic_name: string; pre_sale_print: boolean; override_enabled: boolean; resizable_cart: boolean; font_scale_enabled: boolean; override_pin_mirror: string | null; delivery_zones: string | null; qty_promos: string | null; catalog_share: boolean; cage_layout: string | null; care_protocols: string | null; currency: string | null; country: string | null; pos_v2: boolean; work_hours: string | null; clock_format: string | null; dose_window: string | null; cash_reconcile: boolean; cash_confirms: string | null }
-const DEFAULT_PREFS: ClinicPrefs = { dial_code: DEFAULT_DIAL_CODE, logo_url: null, social_facebook: "", social_instagram: "", clinic_name: "", pre_sale_print: false, override_enabled: false, resizable_cart: false, font_scale_enabled: false, override_pin_mirror: null, delivery_zones: null, qty_promos: null, catalog_share: false, cage_layout: null, care_protocols: null, currency: null, country: null, pos_v2: false, work_hours: null, clock_format: null, dose_window: null, cash_reconcile: false, cash_confirms: null };
+interface ClinicPrefs { dial_code: string; logo_url: string | null; social_facebook: string; social_instagram: string; clinic_name: string; pre_sale_print: boolean; override_enabled: boolean; resizable_cart: boolean; font_scale_enabled: boolean; override_pin_mirror: string | null; delivery_zones: string | null; qty_promos: string | null; catalog_share: boolean; cage_layout: string | null; care_protocols: string | null; currency: string | null; country: string | null; pos_v2: boolean; pos_compact: boolean; pos_customer_open: boolean; work_hours: string | null; clock_format: string | null; dose_window: string | null; cash_reconcile: boolean; cash_confirms: string | null }
+const DEFAULT_PREFS: ClinicPrefs = { dial_code: DEFAULT_DIAL_CODE, logo_url: null, social_facebook: "", social_instagram: "", clinic_name: "", pre_sale_print: false, override_enabled: false, resizable_cart: false, font_scale_enabled: false, override_pin_mirror: null, delivery_zones: null, qty_promos: null, catalog_share: false, cage_layout: null, care_protocols: null, currency: null, country: null, pos_v2: false, pos_compact: false, pos_customer_open: false, work_hours: null, clock_format: null, dose_window: null, cash_reconcile: false, cash_confirms: null };
 
 const prefsKey = () => `vp_clinic_prefs_${getActiveClinicId()}`;
 const legacyDialKey = () => `vp_dial_code_${getActiveClinicId()}`;
@@ -242,6 +242,8 @@ export async function hydrateClinicPrefs(): Promise<void> {
         currency: d.currency ?? local.currency,
         country: d.country ?? local.country,
         pos_v2: typeof d.pos_v2 === "boolean" ? d.pos_v2 : local.pos_v2,
+        pos_compact: typeof d.pos_compact === "boolean" ? d.pos_compact : local.pos_compact,
+        pos_customer_open: typeof d.pos_customer_open === "boolean" ? d.pos_customer_open : local.pos_customer_open,
         work_hours: d.work_hours ?? local.work_hours,
         clock_format: d.clock_format ?? local.clock_format,
         dose_window: d.dose_window ?? local.dose_window,
@@ -274,6 +276,8 @@ export async function hydrateClinicPrefs(): Promise<void> {
       if (local.currency) boolPatch.currency = local.currency;
       if (local.country) boolPatch.country = local.country;
       if (local.pos_v2) boolPatch.pos_v2 = true;
+      if (local.pos_compact) boolPatch.pos_compact = true;
+      if (local.pos_customer_open) boolPatch.pos_customer_open = true;
       if (local.work_hours) boolPatch.work_hours = local.work_hours;
       if (local.clock_format) boolPatch.clock_format = local.clock_format;
       if (local.dose_window) boolPatch.dose_window = local.dose_window;
@@ -600,6 +604,22 @@ export function getPosV2(): boolean {
 }
 export function setPosV2(on: boolean) {
   patchPrefs({ pos_v2: on }, "pos-v2-set");
+}
+/* خيارا الشاشة المتطوّرة (0147) — يعملان مع pos_v2 فقط:
+ *   • pos_compact: المنتجاتُ والخدماتُ سطورٌ لا مربّعات، فالسلّةُ تأخذ ما تحرّر.
+ *   • pos_customer_open: صندوقُ الزبون مفتوحٌ دائماً (سطرٌ واحد نحيف) بلا طيّ.
+ * الشكوى: «المربّعات تاكل الشاشة على حساب السلة» على شاشاتِ مكاتبَ صغيرة. */
+export function getPosCompact(): boolean {
+  return prefs().pos_compact === true;
+}
+export function setPosCompact(on: boolean) {
+  patchPrefs({ pos_compact: on }, "pos-compact-set");
+}
+export function getPosCustomerOpen(): boolean {
+  return prefs().pos_customer_open === true;
+}
+export function setPosCustomerOpen(on: boolean) {
+  patchPrefs({ pos_customer_open: on }, "pos-customer-open-set");
 }
 
 /* ---- دوام العيادة وصيغة الساعة (0119) --------------------------------------

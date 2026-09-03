@@ -906,8 +906,23 @@ export interface Courier {
   name: string;
   phone?: string | null;
   note?: string | null;   // company, vehicle, area…
+  /** سائقٌ يسلّم النقدَ فوراً، أو شركةٌ تحاسب لاحقاً (0148). الافتراضي سائق. */
+  kind?: "driver" | "company";
   /** Archived couriers stay on old orders but disappear from pickers. */
   active: boolean;
+  created_at: string;
+}
+
+/** تحصيلٌ من شركة توصيل (0148): مبلغٌ وُزّع على طلباتها المسلَّمة الأقدم فالأقدم. */
+export interface CourierSettlement {
+  id: string;
+  clinic_id?: string | null;
+  courier_id: string;
+  amount: number;
+  method: PaymentMethod;
+  note?: string | null;
+  allocations: { order_id: string; invoice_id: string; amount: number }[];
+  created_by?: string | null;
   created_at: string;
 }
 
@@ -943,6 +958,8 @@ export interface DeliveryOrder {
   dispatched_at?: string | null;
   delivered_at?: string | null;
   returned_at?: string | null;
+  /** متى وصل نقدُ هذا الطلب فعلاً (0148). فارغٌ = مسلَّمٌ للزبون وبذمّة الشركة. */
+  collected_at?: string | null;
 }
 
 /** One line from the purchase builder handed to the repo. `product_id` is set when
@@ -1081,6 +1098,7 @@ export interface DemoDB {
   purchasePayments?: PurchasePayment[];
   couriers?: Courier[];
   deliveryOrders?: DeliveryOrder[];
+  courierSettlements?: CourierSettlement[];
   petMovements?: PetMovement[];
   surgeries?: Surgery[];
   waMessages?: WhatsAppMessage[];

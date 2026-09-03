@@ -17,7 +17,7 @@ import { getServiceCatalog, addServiceCategory, removeServiceCategory, addServic
 import { DEFAULT_RANGES, VITAL_KEYS, CBC_KEYS, rangeFor, type VitalKey } from "@/lib/vitals";
 
 const ALL_KEYS: VitalKey[] = [...VITAL_KEYS, ...CBC_KEYS];
-import { setVitalOverride, clearVitalOverrides, getDialCode, setDialCode, getClinicLogo, setClinicLogo, getClinicSocials, setClinicSocials, getClinicName, setClinicName, getPreSalePrint, setPreSalePrint, getResizableCart, setResizableCart, getFontScaleEnabled, setFontScaleEnabled, getDeliveryZones, setDeliveryZones, type DeliveryZone, getQtyPromos, setQtyPromos, promoTargetLabel, getCatalogShare, setCatalogShare, type QtyPromo, type PromoKind, type PromoMode, getCurrencyCode, setCurrencyCode, getPosV2, setPosV2, getWorkHours, setWorkHours, getClockFormat, setClockFormat, type ClockFormat, getDoseWindow, setDoseWindow, getCashReconcile, setCashReconcile } from "@/lib/settings";
+import { setVitalOverride, clearVitalOverrides, getDialCode, setDialCode, getClinicLogo, setClinicLogo, getClinicSocials, setClinicSocials, getClinicName, setClinicName, getPreSalePrint, setPreSalePrint, getResizableCart, setResizableCart, getFontScaleEnabled, setFontScaleEnabled, getDeliveryZones, setDeliveryZones, type DeliveryZone, getQtyPromos, setQtyPromos, promoTargetLabel, getCatalogShare, setCatalogShare, type QtyPromo, type PromoKind, type PromoMode, getCurrencyCode, setCurrencyCode, getPosV2, setPosV2, getPosCompact, setPosCompact, getPosCustomerOpen, setPosCustomerOpen, getWorkHours, setWorkHours, getClockFormat, setClockFormat, type ClockFormat, getDoseWindow, setDoseWindow, getCashReconcile, setCashReconcile } from "@/lib/settings";
 import { segmentsFrom, distributeDoses } from "@/lib/treatmentSchedule";
 import { CURRENCIES, currencyName } from "@/lib/currency";
 import { FONT_SCALES, getFontScale, setFontScale, applyFontScale, getCrispMode, setCrispMode, type FontScaleId } from "@/lib/fontScale";
@@ -792,9 +792,22 @@ function CashierOptions() {
   const [preSale, setPreSale] = useState(getPreSalePrint());
   const [resizableCart, setResizableCartOn] = useState(getResizableCart());
   const [posV2, setPosV2On] = useState(getPosV2());
+  const [posCompact, setPosCompactOn] = useState(getPosCompact());
+  const [posCustOpen, setPosCustOpenOn] = useState(getPosCustomerOpen());
   const [cashRec, setCashRec] = useState(getCashReconcile());
 
   if (!can("manageSettings")) return null;
+
+  const togglePosCompact = () => {
+    const next = !posCompact;
+    setPosCompactOn(next); setPosCompact(next);
+    if (next) playSuccess(); else playTap();
+  };
+  const togglePosCustOpen = () => {
+    const next = !posCustOpen;
+    setPosCustOpenOn(next); setPosCustomerOpen(next);
+    if (next) playSuccess(); else playTap();
+  };
 
   const togglePreSale = () => {
     const next = !preSale;
@@ -841,13 +854,47 @@ function CashierOptions() {
           checked={posV2}
           onToggle={togglePosV2}
         />
-        <div className="border-t border-line" />
-        <CashierToggle
-          label={t("settings.resizableCart", "سلة قابلة لتغيير الحجم")}
-          hint={t("settings.resizableCartHint", "على الشاشات الواسعة: اسحب حافة السلة (أو استعمل زرّي + و− بأعلى السلة في الشاشة الجديدة) لتكبيرها أو تصغيرها كما يناسبك — العرض المفضّل يُحفَظ على هذا الجهاز، ونقرة مزدوجة على الحافة تُرجع الحجم الافتراضي.")}
-          checked={resizableCart}
-          onToggle={toggleResizableCart}
-        />
+        {/* خياراتُ الشاشة المتطوّرة تحتها مباشرةً (0147) — تظهر حين تُفعَّل،
+            فيعرف الطبيب أنها تخصّها ولا يبحث عنها بمكانٍ آخر. */}
+        {posV2 && (
+          <div data-posv2-options className="space-y-4 rounded-2xl border border-brand-200 bg-brand-50/40 p-4 dark:border-brand-500/30 dark:bg-brand-500/10">
+            <CashierToggle
+              label={t("settings.resizableCart", "سلة قابلة لتغيير الحجم")}
+              hint={t("settings.resizableCartHint", "على الشاشات الواسعة: اسحب حافة السلة (أو استعمل زرّي + و− بأعلى السلة في الشاشة الجديدة) لتكبيرها أو تصغيرها كما يناسبك — العرض المفضّل يُحفَظ على هذا الجهاز، ونقرة مزدوجة على الحافة تُرجع الحجم الافتراضي.")}
+              checked={resizableCart}
+              onToggle={toggleResizableCart}
+            />
+            <div className="border-t border-brand-200/70 dark:border-brand-500/20" />
+            <div data-poscompact-toggle>
+              <CashierToggle
+                label={t("settings.posCompact", "المنتجات والخدمات سطور بدل مربّعات")}
+                hint={t("settings.posCompactHint", "كل منتج سطر واحد واضح: الاسم كاملاً والسعر والرصيد. تشوف ثلاثة أضعاف المنتجات بنفس المساحة، والسلة تاخذ الباقي وتصير أصنافها أكبر وأوضح. مناسب لشاشات الحاسوب الصغيرة.")}
+                checked={posCompact}
+                onToggle={togglePosCompact}
+              />
+            </div>
+            <div className="border-t border-brand-200/70 dark:border-brand-500/20" />
+            <div data-poscustopen-toggle>
+              <CashierToggle
+                label={t("settings.posCustomerOpen", "صندوق الزبون يبقى مفتوحاً")}
+                hint={t("settings.posCustomerOpenHint", "بدل ما ينطوي خلف زر: اسم الزبون وهاتفه والبائع بسطر واحد نحيف فوق المنتجات دائماً، والملاحظة بضغطة.")}
+                checked={posCustOpen}
+                onToggle={togglePosCustOpen}
+              />
+            </div>
+          </div>
+        )}
+        {!posV2 && (
+          <>
+            <div className="border-t border-line" />
+            <CashierToggle
+              label={t("settings.resizableCart", "سلة قابلة لتغيير الحجم")}
+              hint={t("settings.resizableCartHint", "على الشاشات الواسعة: اسحب حافة السلة (أو استعمل زرّي + و− بأعلى السلة في الشاشة الجديدة) لتكبيرها أو تصغيرها كما يناسبك — العرض المفضّل يُحفَظ على هذا الجهاز، ونقرة مزدوجة على الحافة تُرجع الحجم الافتراضي.")}
+              checked={resizableCart}
+              onToggle={toggleResizableCart}
+            />
+          </>
+        )}
         <div className="border-t border-line" />
         <div data-cashrec-toggle>
           <CashierToggle

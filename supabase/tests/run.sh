@@ -22,7 +22,7 @@ DB=dvtest
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MIG="$HERE/../migrations"
 # الهجرات التي يغطّيها هذا المخطّط الأساس. زدها كل ما تنضاف موجة.
-WAVE="$MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql"
+WAVE="$MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql"
 
 command -v "$PGBIN/initdb" >/dev/null || { echo "ما لكيت بوستغريس بـ $PGBIN"; exit 1; }
 
@@ -744,6 +744,66 @@ chk "وممنوعة على anon" \
     "select (has_function_privilege('anon','public.merge_products(uuid,uuid)','execute') or has_function_privilege('anon','public.inventory_tidy_uncat()','execute'))::text" "false"
 chk "وما تراكم بالسلّة صفٌّ بلا صاحب" \
     "select count(*)::text from products_trash where clinic_id is null" "0"
+
+# ── 0147/0148: شركات التوصيل — ذمّةٌ تُحصَّل كاملةً أو على دفعات ─────────────
+# الشركة تسلّم الزبون اليوم وتحاسب بعد شهر: الطلب «مسلَّم» والمال ما زال بذمّتها.
+# التحصيل يوزّع المبلغ على الطلبات الأقدم فالأقدم عبر settle_invoice نفسها.
+echo "▸ 0148: شركات التوصيل"
+chk "خيارا الشاشة المتطوّرة (0147) موجودان" \
+    "select count(*)::text from information_schema.columns where table_name='clinic_prefs' and column_name in ('pos_compact','pos_customer_open')" "2"
+$P -c "$JWT
+       insert into couriers (id, clinic_id, name, kind) values
+         ('c0000000-0000-0000-0000-000000000001','11111111-1111-1111-1111-111111111111','شركة سريع','company'),
+         ('c0000000-0000-0000-0000-000000000002','11111111-1111-1111-1111-111111111111','أبو علي','driver')
+       on conflict do nothing;
+       insert into invoices (id, clinic_id, total, amount_paid, status) values
+         ('c1000000-0000-0000-0000-000000000001','11111111-1111-1111-1111-111111111111', 10000, 0, 'paid'),
+         ('c1000000-0000-0000-0000-000000000002','11111111-1111-1111-1111-111111111111', 5000, 0, 'paid'),
+         ('c1000000-0000-0000-0000-000000000003','11111111-1111-1111-1111-111111111111', 7000, 0, 'paid')
+       on conflict do nothing;
+       insert into delivery_orders (id, clinic_id, invoice_id, courier_id, cod_amount, status, delivered_at) values
+         ('c2000000-0000-0000-0000-000000000001','11111111-1111-1111-1111-111111111111','c1000000-0000-0000-0000-000000000001','c0000000-0000-0000-0000-000000000001',10000,'delivered', now() - interval '2 days'),
+         ('c2000000-0000-0000-0000-000000000002','11111111-1111-1111-1111-111111111111','c1000000-0000-0000-0000-000000000002','c0000000-0000-0000-0000-000000000001', 5000,'delivered', now() - interval '1 day'),
+         ('c2000000-0000-0000-0000-000000000003','11111111-1111-1111-1111-111111111111','c1000000-0000-0000-0000-000000000003','c0000000-0000-0000-0000-000000000002', 7000,'out', null)
+       on conflict do nothing;
+       create or replace function _cs_try(c uuid, amt numeric) returns text language plpgsql as \$fn\$
+       declare r jsonb;
+       begin perform set_config('request.jwt.claim.sub','11111111-1111-1111-1111-111111111111',true);
+             r := courier_settle(c, amt, 'cash', 'test'); return r::text;
+       exception when others then return 'guarded: ' || sqlerrm; end \$fn\$;
+       create or replace function _kind_try(k text) returns text language plpgsql as \$fn\$
+       begin insert into couriers (clinic_id, name, kind) values ('11111111-1111-1111-1111-111111111111', 'x', k); return 'ok';
+       exception when others then return 'guarded: ' || sqlerrm; end \$fn\$;" >/dev/null 2>&1
+chk "نوعٌ مجهول للسائق يُرفض" \
+    "select left(_kind_try('robot'), 7)" "guarded"
+chk "الذمّة قبل التحصيل ١٥٬٠٠٠ على طلبين" \
+    "select coalesce(sum(i.total - i.amount_paid),0)::text from delivery_orders d join invoices i on i.id=d.invoice_id where d.courier_id='c0000000-0000-0000-0000-000000000001' and d.status='delivered' and d.collected_at is null" "15000.00"
+chk "تحصيلٌ جزئي ١٢٬٠٠٠: يسدّد الأقدم كاملاً والثاني جزئياً" \
+    "select (r->>'settled')::numeric::int::text || '/' || (r->>'orders') || '/' || (r->>'remaining_owed')::numeric::int::text from (select _cs_try('c0000000-0000-0000-0000-000000000001', 12000)::jsonb r) s" "12000/2/3000"
+chk "الطلب الأقدم انختم محصَّلاً" \
+    "select (collected_at is not null)::text from delivery_orders where id='c2000000-0000-0000-0000-000000000001'" "true"
+chk "والثاني بقي بالذمّة برصيدٍ ٣٬٠٠٠" \
+    "select (d.collected_at is null and i.amount_paid = 2000)::text from delivery_orders d join invoices i on i.id=d.invoice_id where d.id='c2000000-0000-0000-0000-000000000002'" "true"
+chk "والمالُ دخل بختم وقتِ وصوله لا وقتِ الطلب" \
+    "select (jsonb_array_length(payment_details) = 1 and payment_details->0 ? 'at')::text from invoices where id='c1000000-0000-0000-0000-000000000001'" "true"
+chk "تحصيلٌ أكبر من الذمّة يُقصّ عليها ويقول كم فاض" \
+    "select (r->>'settled')::numeric::int::text || '/' || (r->>'unallocated')::numeric::int::text || '/' || (r->>'remaining_owed')::numeric::int::text from (select _cs_try('c0000000-0000-0000-0000-000000000001', 5000)::jsonb r) s" "3000/2000/0"
+chk "وسجلُّ التحصيلات فيه دفعتان بمبلغيهما الفعليين" \
+    "select string_agg(amount::int::text, ',' order by created_at) from courier_settlements where courier_id='c0000000-0000-0000-0000-000000000001'" "12000,3000"
+chk "وكلُّ دفعةٍ تعرف أيَّ الطلبات سدّدت" \
+    "select jsonb_array_length(allocations)::text from courier_settlements where courier_id='c0000000-0000-0000-0000-000000000001' order by created_at limit 1" "2"
+chk "ولا ذمّةَ باقية ⇒ تحصيلٌ ثالث يُرفض" \
+    "select left(_cs_try('c0000000-0000-0000-0000-000000000001', 100), 7)" "guarded"
+chk "وطلبُ السائق «بالطريق» لم يُمسّ" \
+    "select (amount_paid = 0)::text from invoices where id='c1000000-0000-0000-0000-000000000003'" "true"
+chk "ومبلغٌ سالب يُرفض" \
+    "select left(_cs_try('c0000000-0000-0000-0000-000000000001', -5), 7)" "guarded"
+chk "والسجلّ محميٌّ بسياسات الصفوف وبلا سياسة كتابة" \
+    "select ((select relrowsecurity from pg_class where relname='courier_settlements') and (select count(*) from pg_policies where tablename='courier_settlements' and cmd <> 'SELECT') = 0)::text" "true"
+chk "والدالّة بصلاحية المُعرِّف وبمسارٍ مثبَّت وممنوعة على anon" \
+    "select (prosecdef and coalesce(array_to_string(proconfig,','),'') like '%search_path%' and not has_function_privilege('anon','public.courier_settle(uuid,numeric,text,text)','execute'))::text from pg_proc where proname='courier_settle'" "true"
+chk "ونوعُ السائق مقيَّد بسائق/شركة" \
+    "select count(*)::text from pg_constraint where conname='couriers_kind_chk'" "1"
 
 echo
 [ $fail -eq 0 ] && echo "✓ كل الفحوص عبرت" || { echo "✗ اكو فحصٌ فشل"; exit 1; }

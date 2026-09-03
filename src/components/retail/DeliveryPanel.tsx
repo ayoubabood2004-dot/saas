@@ -4,9 +4,9 @@ import { motion } from "framer-motion";
 import {
   Bike, Search, Phone, MapPin, Printer, CheckCircle2, Undo2, Send, Users,
   PackageOpen, Wallet, Clock, Plus, Pencil, Archive, X, HandCoins, ReceiptText,
-  PencilLine, Repeat2,
+  PencilLine, Repeat2, Building2, Banknote, CreditCard, ArrowLeftRight, History,
 } from "lucide-react";
-import type { Invoice, Courier, DeliveryOrder } from "@/types";
+import type { Invoice, Courier, DeliveryOrder, CourierSettlement, PaymentMethod } from "@/types";
 import { repo } from "@/lib/repo";
 import { useBranchState, matchesBranch } from "@/lib/branchStore";
 import { useAuth } from "@/contexts/AuthContext";
@@ -18,7 +18,7 @@ import { Button, Badge, useToast } from "@/components/ui";
 import { openDeliverySlip } from "@/lib/deliveryPrint";
 import { invoiceNo } from "@/lib/invoicePrint";
 import { dueOf, round2 } from "@/lib/debt";
-import { cn, formatNum, money, localISO } from "@/lib/utils";
+import { cn, formatNum, money, localISO, formatDate, searchable } from "@/lib/utils";
 import { describeDbError } from "@/lib/errors";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
 import { staggerContainer, staggerItem } from "@/lib/motion";
@@ -34,6 +34,11 @@ import { staggerContainer, staggerItem } from "@/lib/motion";
  * tapped — that settles the wrapped invoice via the existing settle machinery
  * (stamped with the actual collection time). A returned order refunds the
  * invoice (pooled-stock-aware restock). No new money paths.
+ *
+ * شركاتُ التوصيل (0148): الشركةُ تسلّم الزبونَ اليوم وتحاسب بعد حين. فطلبُها
+ * يصير «مسلَّماً» بلا نقد، ويبقى مبلغُه **بذمّة الشركة** حتى يُحصَّل — كاملاً
+ * أو على دفعات — من بطاقتها هنا، والتحصيلُ يوزَّع على الطلبات الأقدم فالأقدم
+ * عبر نفس تسديد الفواتير (courier_settle).
  * ==========================================================================*/
 
 const timeAgo = (iso: string): string => {
@@ -44,8 +49,10 @@ const timeAgo = (iso: string): string => {
   return `${formatNum(Math.floor(h / 24))} يوم`;
 };
 
+const isCompany = (c?: Courier | null) => c?.kind === "company";
+
 export function DeliveryPanel({ invoices, clinicId, onChanged }: { invoices: Invoice[]; clinicId?: string; onChanged: () => void }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const toast = useToast();
   const { user } = useAuth();
   // تعديل بنود الفاتورة صار للمدير على الخادم (0113) — والزرّ يتبعه، وإلا
@@ -62,6 +69,7 @@ export function DeliveryPanel({ invoices, clinicId, onChanged }: { invoices: Inv
     [allOrders, activeBranch, branches],
   );
   const [couriers, setCouriers] = useState<Courier[]>([]);
+  const [settlements, setSettlements] = useState<CourierSettlement[]>([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -73,12 +81,17 @@ export function DeliveryPanel({ invoices, clinicId, onChanged }: { invoices: Inv
   // تبديل السائق: ضغطة غلطٍ بقائمة أسماءٍ متجاورة كانت تكلّف إرجاع الطلب
   // وإعادة بيعه. اسم الحامل ليس رقماً بالحساب، فيُبدَّل وحده بلا مساس بالمال.
   const [swapping, setSwapping] = useState<DeliveryOrder | null>(null);
+  /* شركات التوصيل: تحصيلٌ وسجلّ. */
+  const [collectFor, setCollectFor] = useState<Courier | null>(null);
+  const [ledgerFor, setLedgerFor] = useState<Courier | null>(null);
 
   const load = async () => {
     try {
       const [o, c] = await Promise.all([repo.listDeliveryOrders(clinicId), repo.listCouriers(clinicId)]);
       setAllOrders(o);
       setCouriers(c);
+      // سجلُّ التحصيلات: قاعدةٌ قبل 0148 ترجع خطأً — لا يُسقط اللوحة كلها.
+      try { setSettlements(await repo.listCourierSettlements()); } catch { setSettlements([]); }
     } catch { /* keep whatever we had */ }
     finally { setLoading(false); }
   };
@@ -90,20 +103,32 @@ export function DeliveryPanel({ invoices, clinicId, onChanged }: { invoices: Inv
   }, [invoices]);
   const courierOf = (id?: string | null) => (id ? couriers.find((c) => c.id === id) ?? null : null);
   const orderNo = (o: DeliveryOrder) => invoiceNo(o.invoice_id);
+  /** ما زال مبلغُ الطلب بذمّة حامله: مسلَّمٌ للزبون ولم يُحصَّل بعد. */
+  const uncollected = (o: DeliveryOrder) => o.status === "delivered" && !o.collected_at;
+  const orderDue = (o: DeliveryOrder) => { const inv = invoiceOf(o.invoice_id); return inv ? dueOf(inv) : o.cod_amount; };
 
   /* ---- The three money moves — all built on the proven invoice machinery ---- */
   const deliver = async (o: DeliveryOrder) => {
     if (busyId) return;
     setBusyId(o.id);
     try {
-      const inv = invoiceOf(o.invoice_id);
-      const due = inv ? dueOf(inv) : o.cod_amount;
-      // Settle FIRST (idempotent: due 0 → nothing to add), then flip the order —
-      // a failure in between leaves a re-tappable "out" order, never lost money.
-      if (due > 0.009) await repo.settleInvoice(o.invoice_id, due, "cash");
-      await repo.updateDeliveryOrder(o.id, { status: "delivered", delivered_at: new Date().toISOString() });
-      playSuccess();
-      toast.success(t("retail.deliveryDone", { n: money(o.cod_amount), defaultValue: "تم الاستلام — دخل {{n}} للصندوق" }));
+      const c = courierOf(o.courier_id);
+      const now = new Date().toISOString();
+      if (isCompany(c)) {
+        // شركة: وصل للزبون، والفلوس بذمّة الشركة — لا تسديد الآن.
+        await repo.updateDeliveryOrder(o.id, { status: "delivered", delivered_at: now, collected_at: null });
+        playSuccess();
+        toast.success(t("retail.deliveryDoneCompany", { n: money(o.cod_amount), name: c?.name ?? "", defaultValue: "وصل للزبون — {{n}} بذمّة {{name}} تُحصَّل لاحقاً" }));
+      } else {
+        const inv = invoiceOf(o.invoice_id);
+        const due = inv ? dueOf(inv) : o.cod_amount;
+        // Settle FIRST (idempotent: due 0 → nothing to add), then flip the order —
+        // a failure in between leaves a re-tappable "out" order, never lost money.
+        if (due > 0.009) await repo.settleInvoice(o.invoice_id, due, "cash");
+        await repo.updateDeliveryOrder(o.id, { status: "delivered", delivered_at: now, collected_at: now });
+        playSuccess();
+        toast.success(t("retail.deliveryDone", { n: money(o.cod_amount), defaultValue: "تم الاستلام — دخل {{n}} للصندوق" }));
+      }
       await load();
       onChanged();
     } catch (e) {
@@ -156,20 +181,24 @@ export function DeliveryPanel({ invoices, clinicId, onChanged }: { invoices: Inv
   /** Bulk hand-over: the courier came back — settle EVERY order he carries. */
   const settleCourier = async (courierId: string | null, list: DeliveryOrder[]) => {
     const sum = round2(list.reduce((s, o) => s + o.cod_amount, 0));
-    const cName = courierOf(courierId)?.name ?? t("retail.deliveryNoCourierShort", "بدون سائق");
-    if (!window.confirm(t("retail.deliverySettleAllConfirm", { name: cName, n: list.length, sum: money(sum), defaultValue: "استلام {{sum}} من {{name}} عن {{n}} طلبات وتسجيلها كلها مستلمة؟" }))) return;
+    const c = courierOf(courierId);
+    const cName = c?.name ?? t("retail.deliveryNoCourierShort", "بدون سائق");
+    const msg = isCompany(c)
+      ? t("retail.deliverAllCompanyConfirm", { name: cName, n: list.length, defaultValue: "تسجيل {{n}} طلبات مع {{name}} مسلَّمة للزبائن؟ المبالغ تبقى بذمّة الشركة حتى التحصيل." })
+      : t("retail.deliverySettleAllConfirm", { name: cName, n: list.length, sum: money(sum), defaultValue: "استلام {{sum}} من {{name}} عن {{n}} طلبات وتسجيلها كلها مستلمة؟" });
+    if (!window.confirm(msg)) return;
     for (const o of list) await deliver(o);
   };
 
   /* ---- Derived views ---- */
-  const ql = q.trim().toLowerCase();
+  const ql = searchable(q.trim());
   const match = (o: DeliveryOrder) =>
     !ql ||
-    (o.customer_name ?? "").toLowerCase().includes(ql) ||
-    (o.customer_phone ?? "").includes(ql) ||
-    (o.zone ?? "").toLowerCase().includes(ql) ||
-    (o.address ?? "").toLowerCase().includes(ql) ||
-    (courierOf(o.courier_id)?.name ?? "").toLowerCase().includes(ql);
+    searchable(o.customer_name ?? "").includes(ql) ||
+    (o.customer_phone ?? "").includes(q.trim()) ||
+    searchable(o.zone ?? "").includes(ql) ||
+    searchable(o.address ?? "").includes(ql) ||
+    searchable(courierOf(o.courier_id)?.name ?? "").includes(ql);
 
   const preparing = orders.filter((o) => o.status === "preparing" && match(o));
   const out = orders.filter((o) => o.status === "out" && match(o));
@@ -189,17 +218,33 @@ export function DeliveryPanel({ invoices, clinicId, onChanged }: { invoices: Inv
     return [...m.entries()];
   }, [out]);
 
+  /* شركاتُ التوصيل: كلُّ شركةٍ نشطة، أو مؤرشفة ما زال عليها ذمّة. */
+  const companies = useMemo(() => {
+    const rows = couriers.filter(isCompany).map((c) => {
+      const open = allOrders.filter((o) => o.courier_id === c.id && uncollected(o));
+      const owed = round2(open.reduce((s, o) => s + orderDue(o), 0));
+      const last = settlements.find((s) => s.courier_id === c.id) ?? null;
+      return { c, open, owed, last };
+    });
+    return rows.filter((r) => r.c.active || r.owed > 0.009).sort((a, b) => b.owed - a.owed);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [couriers, allOrders, settlements, invoices]);
+  const companiesOwed = round2(companies.reduce((s, r) => s + r.owed, 0));
+
   const inTransit = round2(out.reduce((s, o) => s + o.cod_amount, 0));
   const today = localISO();
-  const receivedToday = round2(orders.filter((o) => o.status === "delivered" && (o.delivered_at ?? "").slice(0, 10) === today).reduce((s, o) => s + o.cod_amount, 0));
+  const receivedToday = round2(orders.filter((o) => o.status === "delivered" && (o.collected_at ?? o.delivered_at ?? "").slice(0, 10) === today && !!(o.collected_at ?? true)).reduce((s, o) => s + o.cod_amount, 0));
   const returnedToday = orders.filter((o) => o.status === "returned" && (o.returned_at ?? "").slice(0, 10) === today).length;
 
   return (
     <div className="space-y-4">
       {/* KPIs */}
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div className={cn("grid grid-cols-2 gap-3", companies.length > 0 ? "lg:grid-cols-5" : "lg:grid-cols-4")}>
         <Kpi icon={PackageOpen} tone="bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300" label={t("retail.deliveryPreparing", "قيد التجهيز")} value={formatNum(preparing.length)} />
         <Kpi icon={Bike} tone="bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300" label={t("retail.deliveryInTransit", "فلوس بالطريق")} value={money(inTransit)} sub={t("retail.deliveryOutCount", { n: out.length, defaultValue: "{{n}} طلب بالطريق" })} />
+        {companies.length > 0 && (
+          <Kpi icon={Building2} tone="bg-violet-100 text-violet-700 dark:bg-violet-500/15 dark:text-violet-300" label={t("retail.companiesOwed", "بذمّة الشركات")} value={money(companiesOwed)} />
+        )}
         <Kpi icon={HandCoins} tone="bg-success-100 text-success-700 dark:bg-success-500/15 dark:text-success-300" label={t("retail.deliveryReceivedToday", "استُلم اليوم")} value={money(receivedToday)} />
         <Kpi icon={Undo2} tone="bg-danger-100 text-danger-700 dark:bg-danger-500/15 dark:text-danger-300" label={t("retail.deliveryReturnedToday", "راجع اليوم")} value={formatNum(returnedToday)} />
       </div>
@@ -212,6 +257,39 @@ export function DeliveryPanel({ invoices, clinicId, onChanged }: { invoices: Inv
         </div>
         <Button variant="secondary" leftIcon={<Users size={16} />} onClick={() => { playTap(); setCouriersOpen(true); }}>{t("retail.couriersBtn", "سجل السواق")}</Button>
       </div>
+
+      {/* شركات التوصيل — الذمّة والتحصيل والسجل */}
+      {companies.length > 0 && (
+        <section data-companies>
+          <h3 className="mb-2 flex items-center gap-2 text-sm font-extrabold text-ink"><Building2 size={16} className="text-violet-600" /> {t("retail.companiesTitle", "شركات التوصيل")}</h3>
+          <div className="grid gap-2.5 lg:grid-cols-2">
+            {companies.map(({ c, open, owed, last }) => (
+              <div key={c.id} data-company={c.id} className={cn("card space-y-2 p-3", !c.active && "opacity-70")}>
+                <div className="flex items-center gap-2.5">
+                  <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-violet-100 text-violet-700 dark:bg-violet-500/15 dark:text-violet-300"><Building2 size={18} /></span>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-bold text-ink">{c.name} {!c.active && <span className="text-2xs font-normal text-ink-subtle">({t("retail.courierArchived", "مؤرشف")})</span>}</p>
+                    {c.phone && <p className="text-2xs text-ink-subtle" dir="ltr">{c.phone}</p>}
+                  </div>
+                  <div className="text-end">
+                    <p className={cn("font-display text-lg font-extrabold tabular-nums", owed > 0.009 ? "text-violet-700 dark:text-violet-300" : "text-ink-subtle")}>{money(owed)}</p>
+                    <p className="text-2xs text-ink-subtle">{t("retail.companyOpenN", { n: open.length, defaultValue: "{{n}} طلب بالذمّة" })}</p>
+                  </div>
+                </div>
+                {last && (
+                  <p className="text-2xs text-ink-subtle">
+                    {t("retail.companyLast", { n: money(last.amount), when: formatDate(last.created_at, i18n.language), defaultValue: "آخر تحصيل {{n}} بتاريخ {{when}}" })}
+                  </p>
+                )}
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button size="sm" data-collectbtn disabled={owed <= 0.009} leftIcon={<HandCoins size={14} />} onClick={() => { playTap(); setCollectFor(c); }}>{t("retail.collectBtn", "تحصيل")}</Button>
+                  <Button size="sm" variant="secondary" data-ledgerbtn leftIcon={<History size={14} />} onClick={() => { playTap(); setLedgerFor(c); }}>{t("retail.ledgerBtn", "السجل")}</Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       {loading ? (
         <div className="card p-10 text-center text-ink-subtle">{t("common.loading", "جارٍ التحميل…")}</div>
@@ -248,19 +326,22 @@ export function DeliveryPanel({ invoices, clinicId, onChanged }: { invoices: Inv
               <div className="space-y-3">
                 {outByCourier.map(([cid, list]) => {
                   const c = courierOf(cid);
+                  const company = isCompany(c);
                   const sum = round2(list.reduce((s, o) => s + o.cod_amount, 0));
                   return (
-                    <div key={cid ?? "none"} className="overflow-hidden rounded-2xl border border-sky-200 dark:border-sky-500/30">
-                      <div className="flex flex-wrap items-center gap-2 bg-sky-50/70 px-3.5 py-2.5 dark:bg-sky-500/10">
-                        <span className="grid h-8 w-8 place-items-center rounded-xl bg-sky-600 text-white"><Bike size={16} /></span>
+                    <div key={cid ?? "none"} className={cn("overflow-hidden rounded-2xl border", company ? "border-violet-200 dark:border-violet-500/30" : "border-sky-200 dark:border-sky-500/30")}>
+                      <div className={cn("flex flex-wrap items-center gap-2 px-3.5 py-2.5", company ? "bg-violet-50/70 dark:bg-violet-500/10" : "bg-sky-50/70 dark:bg-sky-500/10")}>
+                        <span className={cn("grid h-8 w-8 place-items-center rounded-xl text-white", company ? "bg-violet-600" : "bg-sky-600")}>{company ? <Building2 size={16} /> : <Bike size={16} />}</span>
                         <div className="min-w-0">
                           <p className="truncate text-sm font-bold text-ink">{c?.name ?? t("retail.deliveryNoCourierShort", "بدون سائق")}</p>
                           {c?.phone && <p className="text-2xs text-ink-subtle" dir="ltr">{c.phone}</p>}
                         </div>
                         <div className="ms-auto flex items-center gap-2">
-                          <span className="text-sm font-bold tabular-nums text-sky-700 dark:text-sky-300">{money(sum)}</span>
+                          <span className={cn("text-sm font-bold tabular-nums", company ? "text-violet-700 dark:text-violet-300" : "text-sky-700 dark:text-sky-300")}>{money(sum)}</span>
                           <Button size="sm" leftIcon={<CheckCircle2 size={14} />} onClick={() => void settleCourier(cid, list)}>
-                            {t("retail.deliverySettleAll", { n: list.length, defaultValue: "استلام الكل ({{n}})" })}
+                            {company
+                              ? t("retail.deliverAllCompany", { n: list.length, defaultValue: "وصلت كلها للزبائن ({{n}})" })
+                              : t("retail.deliverySettleAll", { n: list.length, defaultValue: "استلام الكل ({{n}})" })}
                           </Button>
                         </div>
                       </div>
@@ -269,7 +350,9 @@ export function DeliveryPanel({ invoices, clinicId, onChanged }: { invoices: Inv
                           <OrderCard key={o.id} o={o} no={orderNo(o)} courier={c} busy={busyId === o.id}
                             actions={
                               <>
-                                <Button size="sm" leftIcon={<CheckCircle2 size={14} />} onClick={() => void deliver(o)}>{t("retail.deliveryReceived", "استلمنا الفلوس")}</Button>
+                                <Button size="sm" leftIcon={<CheckCircle2 size={14} />} onClick={() => void deliver(o)}>
+                                  {company ? t("retail.deliveredToCustomer", "وصل للزبون") : t("retail.deliveryReceived", "استلمنا الفلوس")}
+                                </Button>
                                 <Button size="sm" variant="secondary" data-cswapbtn leftIcon={<Repeat2 size={14} />} onClick={() => { playTap(); setSwapping(o); }}>{t("retail.swapBtn", "تبديل السائق")}</Button>
                                 {canEditLines && <Button size="sm" variant="secondary" leftIcon={<PencilLine size={14} />} onClick={() => openEdit(o)}>{t("retail.dEditBtn", "تعديل الطلب")}</Button>}
                                 <Button size="sm" variant="secondary" leftIcon={<Undo2 size={14} />} onClick={() => void returnOrder(o)}>{t("retail.deliveryReturned", "الطلب رجع")}</Button>
@@ -289,18 +372,23 @@ export function DeliveryPanel({ invoices, clinicId, onChanged }: { invoices: Inv
             <section>
               <h3 className="mb-2 flex items-center gap-2 text-sm font-extrabold text-ink"><ReceiptText size={16} className="text-ink-subtle" /> {t("retail.deliveryHistory", "آخر الطلبات المكتملة")}</h3>
               <div className="space-y-1.5">
-                {doneList.map((o) => (
-                  <div key={o.id} className="card flex flex-wrap items-center gap-2.5 p-2.5 text-sm">
-                    {o.status === "delivered"
-                      ? <Badge tone="success"><CheckCircle2 size={12} /> {t("retail.deliveryStatusDone", "مستلم")}</Badge>
-                      : <Badge tone="danger"><Undo2 size={12} /> {t("retail.deliveryStatusReturned", "راجع")}</Badge>}
-                    <span className="font-bold text-ink">{o.customer_name ?? "—"}</span>
-                    <span className="text-2xs text-ink-subtle">#{orderNo(o)}</span>
-                    {courierOf(o.courier_id) && <span className="text-2xs text-ink-subtle">🛵 {courierOf(o.courier_id)!.name}</span>}
-                    <span className="ms-auto font-bold tabular-nums text-ink-muted">{money(o.cod_amount)}</span>
-                    <span className="text-2xs text-ink-subtle"><Clock size={11} className="inline" /> {timeAgo(o.delivered_at ?? o.returned_at ?? o.created_at)}</span>
-                  </div>
-                ))}
+                {doneList.map((o) => {
+                  const c = courierOf(o.courier_id);
+                  return (
+                    <div key={o.id} className="card flex flex-wrap items-center gap-2.5 p-2.5 text-sm">
+                      {o.status === "delivered"
+                        ? (uncollected(o)
+                          ? <Badge tone="warn"><Building2 size={12} /> {t("retail.owedChip", "بذمّة الشركة")}</Badge>
+                          : <Badge tone="success"><CheckCircle2 size={12} /> {t("retail.deliveryStatusDone", "مستلم")}</Badge>)
+                        : <Badge tone="danger"><Undo2 size={12} /> {t("retail.deliveryStatusReturned", "راجع")}</Badge>}
+                      <span className="font-bold text-ink">{o.customer_name ?? "—"}</span>
+                      <span className="text-2xs text-ink-subtle">#{orderNo(o)}</span>
+                      {c && <span className="text-2xs text-ink-subtle">{isCompany(c) ? "🏢" : "🛵"} {c.name}</span>}
+                      <span className="ms-auto font-bold tabular-nums text-ink-muted">{money(o.cod_amount)}</span>
+                      <span className="text-2xs text-ink-subtle"><Clock size={11} className="inline" /> {timeAgo(o.delivered_at ?? o.returned_at ?? o.created_at)}</span>
+                    </div>
+                  );
+                })}
               </div>
             </section>
           )}
@@ -317,11 +405,12 @@ export function DeliveryPanel({ invoices, clinicId, onChanged }: { invoices: Inv
             {couriers.filter((c) => c.active).map((c) => (
               <button key={c.id} onClick={() => void dispatch(assigning, c.id)} disabled={busyId === assigning.id}
                 className="flex w-full items-center gap-3 rounded-2xl border border-line bg-surface-1 p-3 text-start transition hover:border-sky-300 hover:bg-surface-2">
-                <span className="grid h-10 w-10 place-items-center rounded-xl bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300"><Bike size={18} /></span>
+                <span className={cn("grid h-10 w-10 place-items-center rounded-xl", isCompany(c) ? "bg-violet-100 text-violet-700 dark:bg-violet-500/15 dark:text-violet-300" : "bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300")}>{isCompany(c) ? <Building2 size={18} /> : <Bike size={18} />}</span>
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-sm font-bold text-ink">{c.name}</span>
                   {c.phone && <span className="block text-xs text-ink-subtle" dir="ltr">{c.phone}</span>}
                 </span>
+                {isCompany(c) && <span className="chip bg-violet-100 text-2xs font-bold text-violet-700 dark:bg-violet-500/15 dark:text-violet-300">{t("retail.courierKindCompany", "شركة")}</span>}
               </button>
             ))}
             <Button variant="secondary" className="w-full" leftIcon={<Users size={15} />} onClick={() => { setAssigning(null); setCouriersOpen(true); }}>{t("retail.couriersBtn", "سجل السواق")}</Button>
@@ -352,6 +441,30 @@ export function DeliveryPanel({ invoices, clinicId, onChanged }: { invoices: Inv
         />
       )}
 
+      {/* تحصيلٌ من شركة — كامل أو جزئي */}
+      {collectFor && (
+        <CollectDialog
+          courier={collectFor}
+          owed={companies.find((r) => r.c.id === collectFor.id)?.owed ?? 0}
+          openCount={companies.find((r) => r.c.id === collectFor.id)?.open.length ?? 0}
+          onClose={() => setCollectFor(null)}
+          onDone={() => { setCollectFor(null); void load(); onChanged(); }}
+        />
+      )}
+
+      {/* سجلُّ الشركة — الطلبات بالذمّة والتحصيلات */}
+      {ledgerFor && (
+        <LedgerModal
+          courier={ledgerFor}
+          open={allOrders.filter((o) => o.courier_id === ledgerFor.id && uncollected(o))}
+          dueOfOrder={orderDue}
+          orderNo={orderNo}
+          settlements={settlements.filter((s) => s.courier_id === ledgerFor.id)}
+          onClose={() => setLedgerFor(null)}
+          onCollect={() => { const c = ledgerFor; setLedgerFor(null); setCollectFor(c); }}
+        />
+      )}
+
       {/* Couriers registry */}
       <CouriersModal open={couriersOpen} couriers={couriers} clinicId={clinicId} onClose={() => setCouriersOpen(false)} onChanged={load} />
     </div>
@@ -374,6 +487,7 @@ function Kpi({ icon: Icon, tone, label, value, sub }: { icon: typeof Bike; tone:
 function OrderCard({ o, no, courier, busy, actions }: { o: DeliveryOrder; no: string; courier: Courier | null; busy: boolean; actions: React.ReactNode }) {
   const { t } = useTranslation();
   const collect = round2(o.cod_amount + (o.fee_to_clinic ? 0 : o.delivery_fee));
+  const company = isCompany(courier);
   return (
     <motion.div variants={staggerItem} className={cn("card space-y-2 p-3", busy && "opacity-60")}>
       <div className="flex items-center gap-2">
@@ -391,12 +505,140 @@ function OrderCard({ o, no, courier, busy, actions }: { o: DeliveryOrder; no: st
         <span className="flex items-center gap-1 text-ink-subtle"><Clock size={11} /> {timeAgo(o.dispatched_at ?? o.created_at)}</span>
       </div>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl bg-surface-2 px-3 py-2 text-xs">
-        <span className="flex items-center gap-1 font-bold text-sky-700 dark:text-sky-300"><Wallet size={13} /> {t("retail.deliveryCourierOwes", "يُسلِّم السائق للعيادة")} {money(o.cod_amount)}</span>
+        <span className={cn("flex items-center gap-1 font-bold", company ? "text-violet-700 dark:text-violet-300" : "text-sky-700 dark:text-sky-300")}>
+          <Wallet size={13} /> {company ? t("retail.deliveryCompanyOwes", "بذمّة الشركة للعيادة") : t("retail.deliveryCourierOwes", "يُسلِّم السائق للعيادة")} {money(o.cod_amount)}
+        </span>
         {o.delivery_fee > 0 && !o.fee_to_clinic && <span className="text-ink-subtle">{t("retail.deliveryCollectPlusFee", { n: money(collect), defaultValue: "يُحصَّل من الزبون {{n}} (مع الأجرة)" })}</span>}
         {o.prepaid > 0 && <span className="text-success-600">{t("retail.deliveryPrepaidChip", { n: money(o.prepaid), defaultValue: "مقدّم {{n}}" })}</span>}
       </div>
       <div className="flex flex-wrap items-center gap-2">{actions}</div>
     </motion.div>
+  );
+}
+
+/** تحصيلٌ من شركة توصيل: المبلغ كاملاً أو جزءٌ منه، والطريقة، وملاحظة. */
+function CollectDialog({ courier, owed, openCount, onClose, onDone }: { courier: Courier; owed: number; openCount: number; onClose: () => void; onDone: () => void }) {
+  const { t } = useTranslation();
+  const toast = useToast();
+  const [amount, setAmount] = useState(String(Math.round(owed)));
+  const [method, setMethod] = useState<PaymentMethod>("cash");
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const n = Number(amount) || 0;
+  const partial = n > 0 && n < owed - 0.009;
+
+  const go = async () => {
+    if (busy || n <= 0) return;
+    setBusy(true);
+    try {
+      const r = await repo.settleCourier(courier.id, Math.min(n, owed), method, note);
+      playSuccess();
+      toast.success(
+        r.remaining_owed > 0.009
+          ? t("retail.collectDoneRemain", { n: money(r.settled), rest: money(r.remaining_owed), defaultValue: "انحصّل {{n}} — باقي بالذمّة {{rest}}" })
+          : t("retail.collectDone", { n: money(r.settled), defaultValue: "انحصّل {{n}} — الذمّة صارت صفر" }),
+        r.unallocated > 0.009 ? t("retail.collectOver", { n: money(r.unallocated), defaultValue: "{{n}} فوق الذمّة ما انسجّلت — الذمّة كانت أقل" }) : undefined,
+      );
+      onDone();
+    } catch (e) {
+      playWarning();
+      const m = String((e as Error).message ?? e);
+      toast.error(m.includes("nothing to collect") ? t("retail.collectNothing", "ماكو شي بالذمّة يتحصّل") : describeDbError(e, t), m);
+    } finally { setBusy(false); }
+  };
+
+  const methods: { v: PaymentMethod; icon: typeof Banknote; label: string }[] = [
+    { v: "cash", icon: Banknote, label: t("retail.payCash", "نقدي") },
+    { v: "card", icon: CreditCard, label: t("retail.payCard", "بطاقة ائتمان") },
+    { v: "transfer", icon: ArrowLeftRight, label: t("retail.payTransfer", "حوالة بنكية") },
+  ];
+
+  return (
+    <Modal open onClose={onClose} title={t("retail.collectTitle", { name: courier.name, defaultValue: "تحصيل من {{name}}" })}>
+      <div className="space-y-3">
+        <div className="flex items-center justify-between rounded-xl bg-violet-50 px-3 py-2 text-sm dark:bg-violet-500/10">
+          <span className="text-ink-muted">{t("retail.collectOwed", { n: openCount, defaultValue: "بالذمّة عن {{n}} طلب" })}</span>
+          <span className="font-display text-lg font-extrabold tabular-nums text-violet-700 dark:text-violet-300">{money(owed)}</span>
+        </div>
+        <div>
+          <label className="label">{t("retail.collectAmount", "المبلغ المستلم")}</label>
+          <div className="flex items-center gap-2">
+            <input type="number" min="0" step="1" inputMode="numeric" data-collectamount className="input flex-1 text-end text-lg font-bold tabular-nums" value={amount} onChange={(e) => setAmount(e.target.value)} />
+            <Button variant="secondary" size="sm" onClick={() => { playTap(); setAmount(String(Math.round(owed))); }}>{t("retail.collectAll", "كامل الذمّة")}</Button>
+          </div>
+          {partial && <p className="mt-1 text-2xs text-ink-subtle">{t("retail.collectPartialHint", "تحصيل جزئي — يسدّد الطلبات الأقدم أولاً، والباقي يبقى بالذمّة.")}</p>}
+          {n > owed + 0.009 && <p className="mt-1 text-2xs font-semibold text-warn-700">{t("retail.collectOverHint", "أكثر من الذمّة — ينسجّل مقدار الذمّة فقط.")}</p>}
+        </div>
+        <div className="grid grid-cols-3 gap-1.5">
+          {methods.map((m) => (
+            <button key={m.v} type="button" onClick={() => { playTap(); setMethod(m.v); }}
+              className={cn("flex items-center justify-center gap-1.5 rounded-xl border px-2 py-2 text-xs font-bold transition",
+                method === m.v ? "border-violet-500 bg-violet-600 text-white shadow-soft" : "border-line bg-surface-1 text-ink-muted hover:text-ink")}>
+              <m.icon size={14} /> {m.label}
+            </button>
+          ))}
+        </div>
+        <input className="input" value={note} onChange={(e) => setNote(e.target.value)} maxLength={200} placeholder={t("retail.collectNote", "ملاحظة (رقم الحوالة، اسم المندوب…)")} />
+        <Button className="w-full" size="lg" data-collectgo loading={busy} disabled={n <= 0 || owed <= 0.009} leftIcon={<HandCoins size={18} />} onClick={() => void go()}>
+          {t("retail.collectGo", { n: money(Math.min(n, owed)), defaultValue: "تسجيل تحصيل {{n}}" })}
+        </Button>
+      </div>
+    </Modal>
+  );
+}
+
+/** سجلُّ شركة: ما بالذمّة طلباً طلباً، وما حُصِّل دفعةً دفعة. */
+function LedgerModal({ courier, open, dueOfOrder, orderNo, settlements, onClose, onCollect }: {
+  courier: Courier; open: DeliveryOrder[]; dueOfOrder: (o: DeliveryOrder) => number; orderNo: (o: DeliveryOrder) => string;
+  settlements: CourierSettlement[]; onClose: () => void; onCollect: () => void;
+}) {
+  const { t, i18n } = useTranslation();
+  const owed = round2(open.reduce((s, o) => s + dueOfOrder(o), 0));
+  const sorted = open.slice().sort((a, b) => (a.delivered_at ?? a.created_at).localeCompare(b.delivered_at ?? b.created_at));
+  return (
+    <Modal open onClose={onClose} title={t("retail.ledgerTitle", { name: courier.name, defaultValue: "سجل {{name}}" })}>
+      <div className="space-y-4">
+        <div className="flex items-center justify-between rounded-xl bg-violet-50 px-3 py-2 dark:bg-violet-500/10">
+          <span className="text-sm text-ink-muted">{t("retail.companiesOwed", "بذمّة الشركات")}</span>
+          <span className="font-display text-lg font-extrabold tabular-nums text-violet-700 dark:text-violet-300">{money(owed)}</span>
+          {owed > 0.009 && <Button size="sm" leftIcon={<HandCoins size={14} />} onClick={onCollect}>{t("retail.collectBtn", "تحصيل")}</Button>}
+        </div>
+        <section>
+          <h4 className="mb-1.5 text-xs font-extrabold text-ink">{t("retail.ledgerOpen", "طلبات بالذمّة (الأقدم يُسدَّد أولاً)")}</h4>
+          {sorted.length === 0 ? (
+            <p className="rounded-xl bg-surface-2 p-3 text-center text-xs text-ink-subtle">{t("retail.ledgerNoOpen", "ماكو طلبات بالذمّة.")}</p>
+          ) : (
+            <div className="max-h-52 space-y-1 overflow-y-auto pe-1">
+              {sorted.map((o) => (
+                <div key={o.id} className="flex items-center gap-2 rounded-xl border border-line px-2.5 py-1.5 text-xs">
+                  <span className="min-w-0 flex-1 truncate font-semibold text-ink">{o.customer_name ?? "—"} <span className="font-normal text-ink-subtle">#{orderNo(o)}</span></span>
+                  <span className="text-2xs text-ink-subtle">{formatDate(o.delivered_at ?? o.created_at, i18n.language)}</span>
+                  <span className="shrink-0 font-bold tabular-nums text-violet-700 dark:text-violet-300">{money(dueOfOrder(o))}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+        <section>
+          <h4 className="mb-1.5 text-xs font-extrabold text-ink">{t("retail.ledgerSettlements", "التحصيلات")}</h4>
+          {settlements.length === 0 ? (
+            <p className="rounded-xl bg-surface-2 p-3 text-center text-xs text-ink-subtle">{t("retail.ledgerNoSettlements", "ما انحصّل شي بعد.")}</p>
+          ) : (
+            <div className="max-h-52 space-y-1 overflow-y-auto pe-1">
+              {settlements.map((s) => (
+                <div key={s.id} className="flex flex-wrap items-center gap-2 rounded-xl border border-line px-2.5 py-1.5 text-xs">
+                  <span className="font-bold tabular-nums text-success-700 dark:text-success-300">{money(s.amount)}</span>
+                  <span className="text-2xs text-ink-subtle">{t(`retail.pay${s.method === "cash" ? "Cash" : s.method === "card" ? "Card" : "Transfer"}`, s.method)}</span>
+                  <span className="text-2xs text-ink-subtle">{t("retail.ledgerOrdersN", { n: s.allocations.length, defaultValue: "{{n}} طلب" })}</span>
+                  {s.note && <span className="min-w-0 flex-1 truncate italic text-ink-muted">{s.note}</span>}
+                  <span className="ms-auto text-2xs text-ink-subtle">{formatDate(s.created_at, i18n.language)}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      </div>
+    </Modal>
   );
 }
 
@@ -406,20 +648,21 @@ function CouriersModal({ open, couriers, clinicId, onClose, onChanged }: { open:
   const toast = useToast();
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
+  const [kind, setKind] = useState<"driver" | "company">("driver");
   const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState<Courier | null>(null);
   const [showArchived, setShowArchived] = useState(false);
 
-  useEffect(() => { if (open) { setName(""); setPhone(""); setEditing(null); } }, [open]);
+  useEffect(() => { if (open) { setName(""); setPhone(""); setKind("driver"); setEditing(null); } }, [open]);
 
   const save = async () => {
     if (!name.trim() || busy) return;
     setBusy(true);
     try {
-      if (editing) await repo.updateCourier(editing.id, { name: name.trim(), phone: phone.trim() || null });
-      else await repo.createCourier({ name: name.trim(), phone: phone.trim() || null, note: null, active: true, clinic_id: clinicId ?? null });
+      if (editing) await repo.updateCourier(editing.id, { name: name.trim(), phone: phone.trim() || null, kind });
+      else await repo.createCourier({ name: name.trim(), phone: phone.trim() || null, note: null, kind, active: true, clinic_id: clinicId ?? null });
       playSuccess();
-      setName(""); setPhone(""); setEditing(null);
+      setName(""); setPhone(""); setKind("driver"); setEditing(null);
       onChanged();
     } catch (e) {
       playWarning();
@@ -435,15 +678,28 @@ function CouriersModal({ open, couriers, clinicId, onClose, onChanged }: { open:
   return (
     <Modal open={open} onClose={onClose} title={t("retail.couriersTitle", "سجل السواق")}>
       <div className="space-y-3">
+        {/* سائق أو شركة — الفرق كلُّه بالمال: السائق يسلّم فوراً، والشركة تحاسب لاحقاً */}
+        <div data-courierkind className="inline-flex w-full items-center gap-1 rounded-full border border-line bg-surface-2 p-1">
+          {([
+            { v: "driver", icon: Bike, label: t("retail.courierKindDriver", "سائق — يسلّم الفلوس فوراً") },
+            { v: "company", icon: Building2, label: t("retail.courierKindCompany", "شركة توصيل — تحاسب لاحقاً") },
+          ] as const).map((o) => (
+            <button key={o.v} type="button" onClick={() => { playTap(); setKind(o.v); }}
+              className={cn("flex flex-1 items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold transition",
+                kind === o.v ? (o.v === "company" ? "bg-violet-600 text-white shadow-soft" : "bg-sky-600 text-white shadow-soft") : "text-ink-muted hover:text-ink")}>
+              <o.icon size={14} /> {o.label}
+            </button>
+          ))}
+        </div>
         <div className="flex gap-2">
-          <input className="input flex-1" value={name} onChange={(e) => setName(e.target.value)} placeholder={t("retail.courierNamePh", "اسم السائق أو شركة التوصيل")} onKeyDown={(e) => { if (e.key === "Enter") void save(); }} />
+          <input className="input flex-1" value={name} onChange={(e) => setName(e.target.value)} placeholder={kind === "company" ? t("retail.companyNamePh", "اسم شركة التوصيل") : t("retail.courierNamePh", "اسم السائق أو شركة التوصيل")} onKeyDown={(e) => { if (e.key === "Enter") void save(); }} />
           <input className="input w-36" dir="ltr" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="07xx…" onKeyDown={(e) => { if (e.key === "Enter") void save(); }} />
           <Button loading={busy} disabled={!name.trim()} leftIcon={editing ? <Pencil size={15} /> : <Plus size={15} />} onClick={() => void save()}>
             {editing ? t("common.save", "حفظ") : t("common.add", "إضافة")}
           </Button>
         </div>
         {editing && (
-          <button onClick={() => { setEditing(null); setName(""); setPhone(""); }} className="text-2xs font-semibold text-ink-subtle underline">{t("retail.courierCancelEdit", "إلغاء التعديل")}</button>
+          <button onClick={() => { setEditing(null); setName(""); setPhone(""); setKind("driver"); }} className="text-2xs font-semibold text-ink-subtle underline">{t("retail.courierCancelEdit", "إلغاء التعديل")}</button>
         )}
         {shown.length === 0 ? (
           <p className="rounded-xl bg-surface-2 p-4 text-center text-sm text-ink-subtle">{t("retail.deliveryNoCouriersYet", "لا يوجد سواق بعد — أضفهم من «سجل السواق».")}</p>
@@ -451,12 +707,16 @@ function CouriersModal({ open, couriers, clinicId, onClose, onChanged }: { open:
           <div className="max-h-[46vh] space-y-1.5 overflow-y-auto pe-1">
             {shown.map((c) => (
               <div key={c.id} className={cn("flex items-center gap-2.5 rounded-xl border border-line bg-surface-1 p-2.5", !c.active && "opacity-60")}>
-                <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300"><Bike size={16} /></span>
+                <span className={cn("grid h-9 w-9 shrink-0 place-items-center rounded-xl", isCompany(c) ? "bg-violet-100 text-violet-700 dark:bg-violet-500/15 dark:text-violet-300" : "bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300")}>{isCompany(c) ? <Building2 size={16} /> : <Bike size={16} />}</span>
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-bold text-ink">{c.name} {!c.active && <span className="text-2xs font-normal text-ink-subtle">({t("retail.courierArchived", "مؤرشف")})</span>}</p>
+                  <p className="truncate text-sm font-bold text-ink">
+                    {c.name}
+                    {isCompany(c) && <span className="ms-1.5 rounded-full bg-violet-100 px-1.5 py-0.5 text-2xs font-bold text-violet-700 dark:bg-violet-500/15 dark:text-violet-300">{t("retail.courierKindCompany", "شركة توصيل — تحاسب لاحقاً").split(" — ")[0]}</span>}
+                    {!c.active && <span className="text-2xs font-normal text-ink-subtle"> ({t("retail.courierArchived", "مؤرشف")})</span>}
+                  </p>
                   {c.phone && <p className="text-2xs text-ink-subtle" dir="ltr">{c.phone}</p>}
                 </div>
-                <button onClick={() => { playTap(); setEditing(c); setName(c.name); setPhone(c.phone ?? ""); }} aria-label={t("common.edit", "تعديل")} className="grid h-8 w-8 place-items-center rounded-lg text-ink-subtle transition hover:bg-brand-50 hover:text-brand-600"><Pencil size={14} /></button>
+                <button onClick={() => { playTap(); setEditing(c); setName(c.name); setPhone(c.phone ?? ""); setKind(isCompany(c) ? "company" : "driver"); }} aria-label={t("common.edit", "تعديل")} className="grid h-8 w-8 place-items-center rounded-lg text-ink-subtle transition hover:bg-brand-50 hover:text-brand-600"><Pencil size={14} /></button>
                 {c.active
                   ? <button onClick={() => void setActive(c, false)} aria-label={t("retail.courierArchive", "أرشفة")} title={t("retail.courierArchive", "أرشفة")} className="grid h-8 w-8 place-items-center rounded-lg text-ink-subtle transition hover:bg-danger-50 hover:text-danger-600"><Archive size={14} /></button>
                   : <button onClick={() => void setActive(c, true)} aria-label={t("retail.courierRestore", "استرجاع")} className="grid h-8 w-8 place-items-center rounded-lg text-ink-subtle transition hover:bg-success-50 hover:text-success-600"><X size={14} className="rotate-45" /></button>}

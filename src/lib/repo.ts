@@ -17,7 +17,7 @@ import { supabase } from "./supabase";
 import { outboxEnqueue, outboxEnqueueRpc, isNetworkError } from "./outbox";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, AppointmentStatus, ClinicInfo, PublicStaff, DailyNote, TreatmentEntry, Admission, Branch, Reminder, Product, Company, CompanySection, Purchase, PurchaseItem, PurchasePayment, PurchaseDraftLine, PurchaseMeta, Courier, DeliveryOrder, PetMovement, DemoDB, Invoice, InvoiceItem, CheckoutItem, SaleMeta, Customer, DiscountType, PaymentMethod, PaymentSplit, WhatsAppMessage, AuditEntry, LoginEvent, PetNote, Expense, ExpenseMethod, ReturnMeta, RetailReturnResult, HealthMetric, ClinicVisit , Surgery, LabResult, LabDeviceLink, LabDeviceInbox, LabStatusValue, PetProblem, CareEntry, FeatureRequest, GeneratedBarcode, StoreProfile, StoreOrder, StoreOrderItem, StoreFrontInfo, StoreCatalogItem, Journey, JourneyEvent, JourneyKind, JourneyStage, JourneyPublicView, EditLine } from "@/types";
-import type { DeletedProduct } from "@/types";
+import type { DeletedProduct, CourierSettlement } from "@/types";
 import type { PayrollPolicyDTO, StaffComp, StaffRecurring, PayrollAdjustment, PayrollRun, Payslip, PayslipLine, StaffLoan, StaffLoanEvent, PayslipDraft, PayMethod } from "@/types";
 import * as PD from "./payrollDemo";
 import { paidOf, round2 } from "./debt";
@@ -1835,6 +1835,51 @@ const demoRepo = {
     saveDB(db);
     return o;
   },
+  async listCourierSettlements(courierId?: string): Promise<CourierSettlement[]> {
+    return (loadDB().courierSettlements ?? [])
+      .filter((s) => !courierId || s.courier_id === courierId)
+      .sort((a, b) => b.created_at.localeCompare(a.created_at));
+  },
+  /** تحصيلٌ من شركة توصيل (0148) — مرآةُ courier_settle: المبلغ يُوزَّع على طلباتها
+   *  المسلَّمة غير المحصَّلة الأقدمَ فالأقدم، بنفس منطق settleInvoice، ويُختم كلُّ
+   *  طلبٍ اكتمل تسديدُه. حارسٌ ليس هنا حارسٌ لم يُفحص. */
+  async settleCourier(courierId: string, amount: number, method: PaymentMethod = "cash", note?: string | null): Promise<{ settled: number; orders: number; unallocated: number; remaining_owed: number }> {
+    const r2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
+    const db = loadDB();
+    const c = (db.couriers ?? []).find((x) => x.id === courierId);
+    if (!c) throw new Error("courier not found");
+    let left = r2(Number(amount) || 0);
+    if (left <= 0) throw new Error("amount must be positive");
+    const now = new Date().toISOString();
+    const open = (db.deliveryOrders ?? [])
+      .filter((o) => o.courier_id === courierId && o.status === "delivered" && !o.collected_at)
+      .sort((a, b) => (a.delivered_at ?? a.created_at).localeCompare(b.delivered_at ?? b.created_at));
+    const allocations: CourierSettlement["allocations"] = [];
+    let paid = 0;
+    for (const o of open) {
+      const inv = (db.invoices ?? []).find((i) => i.id === o.invoice_id);
+      const was = inv ? (inv.amount_paid != null ? inv.amount_paid : inv.total) : 0;
+      const due = inv && inv.status !== "refunded" ? Math.max(0, r2(inv.total - was)) : 0;
+      if (!inv || due <= 0) { o.collected_at = now; continue; }
+      if (left <= 0) break;
+      const pay = Math.min(due, left);
+      inv.amount_paid = r2(was + pay);
+      const legs = [...(inv.payment_details ?? []), { method, amount: pay, at: now }];
+      inv.payment_details = legs;
+      inv.payment_method = legs.reduce((b, p) => (p.amount > b.amount ? p : b), legs[0]).method;
+      if (pay >= due - 0.005) o.collected_at = now;
+      allocations.push({ order_id: o.id, invoice_id: o.invoice_id, amount: pay });
+      left = r2(left - pay); paid = r2(paid + pay);
+    }
+    if (paid <= 0) throw new Error("nothing to collect");
+    if (!db.courierSettlements) db.courierSettlements = [];
+    db.courierSettlements.push({ id: uid("cst"), clinic_id: null, courier_id: courierId, amount: paid, method, note: note?.trim() || null, allocations, created_by: null, created_at: now });
+    const remaining = r2((db.deliveryOrders ?? [])
+      .filter((o) => o.courier_id === courierId && o.status === "delivered" && !o.collected_at)
+      .reduce((s, o) => { const inv = (db.invoices ?? []).find((i) => i.id === o.invoice_id); return s + (inv ? Math.max(0, r2(inv.total - (inv.amount_paid ?? inv.total))) : 0); }, 0));
+    saveDB(db);
+    return { settled: paid, orders: allocations.length, unallocated: left, remaining_owed: remaining };
+  },
 
   /* ---------------- Retail & advanced invoicing ---------------- */
   async retailCheckout(items: CheckoutItem[], meta: SaleMeta): Promise<Invoice> {
@@ -2378,6 +2423,7 @@ const DEMO_ACTIVITY_MAP: Record<string, { entity: string; action: "INSERT" | "UP
   updateCourier: { entity: "couriers", action: "UPDATE" },
   createDeliveryOrder: { entity: "delivery_orders", action: "INSERT" },
   updateDeliveryOrder: { entity: "delivery_orders", action: "UPDATE" },
+  settleCourier: { entity: "courier_settlements", action: "INSERT" },
   checkout: { entity: "invoices", action: "INSERT" },
   retailCheckout: { entity: "invoices", action: "INSERT" },
   retailReturn: { entity: "expenses", action: "INSERT" },
@@ -3501,7 +3547,13 @@ const supabaseRepo: typeof demoRepo = {
     return listOf<Courier>(await q);
   },
   async createCourier(input) {
-    return need<Courier>(await sbc().from("couriers").insert(input).select().single());
+    const r = await sbc().from("couriers").insert(input).select().single();
+    // قاعدة قبل 0148 (بلا عمود kind): السائق يُسجَّل بلا نوعه بدل ما يضيع.
+    if (r.error && /kind/i.test(r.error.message ?? "")) {
+      const { kind, ...rest } = input; void kind;
+      return need<Courier>(await sbc().from("couriers").insert(rest as never).select().single());
+    }
+    return need<Courier>(r);
   },
   async updateCourier(id, patch) {
     return maybe<Courier>(await sbc().from("couriers").update(patch).eq("id", id).select().maybeSingle());
@@ -3529,7 +3581,26 @@ const supabaseRepo: typeof demoRepo = {
     return need<DeliveryOrder>(first);
   },
   async updateDeliveryOrder(id, patch) {
-    return maybe<DeliveryOrder>(await sbc().from("delivery_orders").update(patch).eq("id", id).select().maybeSingle());
+    const r = await sbc().from("delivery_orders").update(patch).eq("id", id).select().maybeSingle();
+    // قاعدة قبل 0148 (بلا collected_at): الحالة تُحفظ بلا الختم بدل ما يفشل الاستلام.
+    if (r.error && "collected_at" in patch && /collected_at/i.test(r.error.message ?? "")) {
+      const { collected_at, ...rest } = patch; void collected_at;
+      return maybe<DeliveryOrder>(await sbc().from("delivery_orders").update(rest).eq("id", id).select().maybeSingle());
+    }
+    return maybe<DeliveryOrder>(r);
+  },
+  async listCourierSettlements(courierId) {
+    return allPages<CourierSettlement>(() => {
+      let q = sbc().from("courier_settlements").select("*").order("created_at", { ascending: false });
+      if (courierId) q = q.eq("courier_id", courierId);
+      return q;
+    });
+  },
+  async settleCourier(courierId, amount, method = "cash", note) {
+    const { data, error } = await sbc().rpc("courier_settle", { p_courier: courierId, p_amount: amount, p_method: method, p_note: note ?? null });
+    if (error) throw error;
+    const d = (data ?? {}) as Record<string, unknown>;
+    return { settled: Number(d.settled ?? 0), orders: Number(d.orders ?? 0), unallocated: Number(d.unallocated ?? 0), remaining_owed: Number(d.remaining_owed ?? 0) };
   },
 
   /* ---------------- Retail & advanced invoicing ---------------- */
@@ -3890,7 +3961,7 @@ const READ_ONLY_ALLOWED = new Set<string>([
   // --- الرواتب: القراءة تبقى بالاشتراك المنتهي (الموظف يشوف قسيمته) ---
   "getPayrollPolicy", "listStaffComp", "listStaffRecurring", "listPayrollRuns",
   "listPayslips", "listPayslipLines", "listStaffLoans", "listLoanEvents",
-  "listPayrollAdjustments", "listDeletedProducts", "productSaleLines",
+  "listPayrollAdjustments", "listDeletedProducts", "productSaleLines", "listCourierSettlements",
   // --- استعلامات مساعدة لا تكتب ---
   "checkStoreSlug", "slotTaken", "supportsBulkGroup", "supportsSupplierLedger",
   "adminListFeatureRequests", "systemHealth",
