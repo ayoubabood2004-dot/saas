@@ -1,7 +1,7 @@
 import type { Species } from "@/types";
 import type { VitalKey } from "./vitals";
 import { getActiveClinicId } from "./clinics";
-import { sb, cloudWrite, registerHydrator, registerReset } from "./clinicSync";
+import { sb, cloudWrite, registerHydrator, registerReset, seedOwnClinic } from "./clinicSync";
 import { setActiveCurrency, countryByCode } from "./currency";
 
 // Doctor-customizable overrides for the medical reading (vital) normal ranges.
@@ -60,7 +60,7 @@ export async function hydrateVitalOverrides(): Promise<void> {
           rows.push({ species: sp, vital_key: k, min_val: mm.min, max_val: mm.max });
         }
       }
-      if (rows.length) await client.from("clinic_vital_ranges").insert(rows);
+      if (rows.length) await seedOwnClinic(() => client.from("clinic_vital_ranges").insert(rows));
     }
     cache = o;
     try { localStorage.setItem(overridesKey(), JSON.stringify(o)); } catch { /* ignore */ }
@@ -255,10 +255,13 @@ export async function hydrateClinicPrefs(): Promise<void> {
       // No row yet → migrate any local prefs up (or seed the default dial code).
       const local = readPrefsLocal();
       prefsCache = local;
-      await client.from("clinic_prefs").upsert(
+      // بذرةُ صفٍّ جديد بأرض صاحبها وحدها (0153): `readPrefsLocal` يتبنّى القالبَ
+      // الوحيد بالجهاز حين يفرغ مفتاحُ العيادة — وهو ما يجعل شعارَ عيادةٍ واسمَها
+      // يهبطان بعيادةِ غيرها لو اختلف الخادمُ والمتصفّح على الهويّة.
+      await seedOwnClinic(() => client.from("clinic_prefs").upsert(
         { dial_code: local.dial_code, logo_url: local.logo_url, social_facebook: local.social_facebook, social_instagram: local.social_instagram, clinic_name: local.clinic_name },
         { onConflict: "clinic_id" },
-      );
+      ));
       // The seed payload can't carry the boolean opt-ins (one missing column
       // would fail the whole upsert on an un-migrated DB). Queue any that are
       // locally enabled as pending — the resync below pushes each patch
@@ -291,11 +294,12 @@ export async function hydrateClinicPrefs(): Promise<void> {
     const pending = readPendingPrefs();
     if (Object.keys(pending).length) {
       prefsCache = { ...prefsCache, ...pending };
-      cloudWrite(async () => {
+      // ولا تُدفع المعلّقاتُ إلا لعيادتها هي — التعليقُ باسم عيادةٍ لا يُصرف بأخرى.
+      void seedOwnClinic(async () => cloudWrite(async () => {
         const res = await client.from("clinic_prefs").upsert(pending, { onConflict: "clinic_id" });
         if (!res.error) clearPendingPrefKeys(Object.keys(pending));
         return res;
-      }, "prefs-pending-resync");
+      }, "prefs-pending-resync"));
     }
     savePrefsLocal(prefsCache);
   } catch {

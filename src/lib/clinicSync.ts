@@ -57,11 +57,48 @@ export function cloudWrite(
   }
 }
 
+/* ------------------------- بذرةٌ لا تُزرع بأرض غيرها -------------------------
+ * المُرطِّبات الثلاثة (السلالات، الأدوية، معدلات القراءات) ترفع بياناتِ الجهاز
+ * المحلية أوّلَ اتّصالٍ بالسحابة إن كان جدولُها السحابيّ فارغاً. صحيحٌ ما دام
+ * الطرفان يقصدان العيادةَ نفسها — ومقيسٌ على الإنتاج أنهما قد يختلفان:
+ * المتصفّح يقرأ مفتاحاً محلياً باسم عيادة، و`auth_clinic()` بالخادم صارت
+ * عيادةً أخرى (مشغّلُ المنصّة داخل، أو لحظةٌ قبل أن تستقرّ الجلسة). فانقلب
+ * «ارفعْ بياناتي» إلى «انسخْ بياناتي بعيادة غيري»: ثلاثةَ عشرَ صفّاً دخلت
+ * عيادةَ زبونٍ بعد ثانيتين من دخول المشغّل، بلا أن يلمس أحدٌ شيئاً.
+ *
+ * فالقاعدة: **القراءة لا تكتب إلا بيقين**. واليقينُ شرطان يسألهما الخادمُ
+ * نفسه: أن تكون عيادةُ الخادم هي عيادةُ المتصفّح، وألّا يكون المشغّلُ داخلاً.
+ * وأيُّ شكٍّ — نداءٌ فاشل، خادمٌ قبل الترحيل، اختلافُ معرّف — يعني: لا تزرع. */
+let seedGate: Promise<boolean> | null = null;
+
+/** يُنادى مرّةً لكل دورةِ ترطيب؛ يُصفَّر عند تبديل العيادة. */
+async function askSeedGate(): Promise<boolean> {
+  const client = sb();
+  if (!client) return false; // ديمو: لا سحابة تُزرع
+  try {
+    const { data, error } = await client.rpc("my_workspace");
+    if (error || !data || typeof data !== "object") return false;
+    const w = data as { clinic_id?: string | null; platform_acting?: string | null };
+    // مشغّلٌ داخلٌ عيادةً لا يزرع فيها شيئاً أبداً — ولو اتّفق المعرّفان.
+    if (w.platform_acting) return false;
+    const { getActiveClinicId } = await import("./clinics");
+    return !!w.clinic_id && w.clinic_id === getActiveClinicId();
+  } catch {
+    return false;
+  }
+}
+
+/** نفّذ بذرةَ الإعدادات **فقط** إن كانت أرضَ صاحبها. */
+export async function seedOwnClinic(run: () => PromiseLike<unknown>): Promise<void> {
+  seedGate ??= askSeedGate();
+  if (await seedGate) await run();
+}
+
 /* ----------------------------- Hydration ------------------------------------
  * Each config module registers a hydrate() that pulls its rows from Supabase
  * into the in-memory cache (and migrates any pre-existing local data up on the
- * first run). hydrateClinicConfig() runs them all once the active clinic is
- * known (see AuthContext). Safe to call repeatedly. */
+ * first run — guarded by seedOwnClinic). hydrateClinicConfig() runs them all
+ * once the active clinic is known (see AuthContext). Safe to call repeatedly. */
 const hydrators: Array<() => Promise<void>> = [];
 
 export function registerHydrator(fn: () => Promise<void>): void {
@@ -88,6 +125,7 @@ let lastHydrated = "";
 export async function hydrateClinicConfig(clinicKey: string): Promise<void> {
   if (clinicKey !== lastHydrated) resetClinicConfigCaches(); // dropped stale clinic data
   lastHydrated = clinicKey;
+  seedGate = null; // العيادةُ قد تكون تبدّلت — يُسأل الخادمُ من جديد
   await Promise.allSettled(hydrators.map((h) => h()));
 }
 

@@ -22,7 +22,7 @@ DB=dvtest
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MIG="$HERE/../migrations"
 # الهجرات التي يغطّيها هذا المخطّط الأساس. زدها كل ما تنضاف موجة.
-WAVE="$MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql"
+WAVE="$MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql"
 
 command -v "$PGBIN/initdb" >/dev/null || { echo "ما لكيت بوستغريس بـ $PGBIN"; exit 1; }
 
@@ -1002,6 +1002,28 @@ chk "دوالُّ الحركات بصلاحية المُستدعي (سياسةُ
 chk "وممنوعةٌ على anon" \
     "select count(*)::text from pg_proc p where proname in ('activity_summary','activity_page','activity_actors') and has_function_privilege('anon', p.oid, 'execute')" "0"
 $P -c "delete from audit_log where entity_id like 'act-%'; delete from login_events where email='a@b.c';" >/dev/null
+
+# ── 0153: الخادمُ يقول للمتصفّح «أنا داخلُ عيادةٍ» فيمتنع عن بذرِ إعداداته ──
+# مقيسٌ على الإنتاج: ثلاثةَ عشرَ صفَّ إعداداتٍ للمشغّل هبطت بعيادة زبونٍ بعد
+# ثانيتين من دخوله. البوّابةُ بالمتصفّح تسأل هذه الدالّة — فإن لم تقل الحقيقة
+# عادت الثغرة.
+echo "▸ 0153: my_workspace تقول إن المشغّل داخل"
+$P -c "update _dvtest_flags set admin = false; delete from platform_sessions;" >/dev/null
+chk "بلا مشغّلٍ داخل: المفتاح موجودٌ وفارغ" \
+    "select ((my_workspace() ? 'platform_acting') and my_workspace()->>'platform_acting' is null)::text
+       from (select set_config('request.jwt.claim.sub','$C1',true)) s" "true"
+$P -c "update _dvtest_flags set admin = true;" >/dev/null
+$P -c "select platform_enter('$C1'::uuid) from (select set_config('request.jwt.claim.sub','$ADM',true)) s;" >/dev/null
+chk "ومشغّلٌ داخلٌ: تقول أيَّ عيادةٍ هي (فتمتنع البذرة)" \
+    "select _pf('$ADM', 'select my_workspace()->>''platform_acting''')" "$C1"
+chk "  وعيادةُ العمل هي المدخولة لا حسابُه" \
+    "select _pf('$ADM', 'select my_workspace()->>''clinic_id''')" "$C1"
+chk "وطبيبٌ عاديّ لا يرى بها شيئاً (الدالّةُ لا تُسرّب)" \
+    "select _pf('$C2', 'select coalesce(my_workspace()->>''platform_acting'', ''none'')')" "none"
+$P -c "select platform_leave() from (select set_config('request.jwt.claim.sub','$ADM',true)) s;
+       update _dvtest_flags set admin = false; delete from platform_sessions;" >/dev/null
+chk "وبعد الخروج تعود فارغة" \
+    "select coalesce(_pf('$ADM', 'select my_workspace()->>''platform_acting'''), 'none')" "none"
 
 echo
 [ $fail -eq 0 ] && echo "✓ كل الفحوص عبرت" || { echo "✗ اكو فحصٌ فشل"; exit 1; }
