@@ -22,6 +22,8 @@ import { receiptsOf, dueOf } from "./debt";
 import { phoneDigits } from "./phone";
 import { searchable } from "./utils";
 import { invoiceNo } from "./invoicePrint";
+import { auditKind, activityBrief } from "./activityKinds";
+import type { ActivityQuery, ActivityRow, ActivitySummaryRow, ActivityActor } from "@/types";
 import type { PayrollPolicyDTO, StaffComp, StaffRecurring, PayrollAdjustment, PayrollRun, Payslip, PayslipLine, StaffLoan, StaffLoanEvent, PayslipDraft, PayMethod } from "@/types";
 import * as PD from "./payrollDemo";
 import { paidOf, round2 } from "./debt";
@@ -2436,6 +2438,41 @@ const demoRepo = {
   async logClientEvent(event: string, details?: Record<string, unknown>): Promise<void> {
     demoAuditPush({ action: "CLIENT", entity: "client", entity_id: null, details: { ...(details ?? {}), event } });
   },
+  /* ---- مركزُ الحركات (0152) — مرآةُ activity_summary/page/actors ----
+   * نفسُ التصنيف (auditKind) ونفسُ المختصر (activityBrief) ونفسُ المؤشّر. */
+  async activitySummary(from: string, to: string, bucket: "day" | "hour"): Promise<ActivitySummaryRow[]> {
+    const m = new Map<string, number>();
+    for (const r of demoActivityRows(from, to)) {
+      const d = new Date(r.created_at);
+      if (bucket === "hour") d.setMinutes(0, 0, 0); else d.setHours(0, 0, 0, 0);
+      const k = `${d.toISOString()}|${r.kind}`;
+      m.set(k, (m.get(k) ?? 0) + 1);
+    }
+    return [...m.entries()].map(([k, n]) => { const [bucketAt, kind] = k.split("|"); return { bucket: bucketAt, kind, n }; })
+      .sort((a, b) => a.bucket.localeCompare(b.bucket) || a.kind.localeCompare(b.kind));
+  },
+  async activityPage(s: ActivityQuery): Promise<ActivityRow[]> {
+    const nq = searchable(s.q ?? "");
+    const rows = demoActivityRows(s.from, s.to)
+      .filter((r) => (!s.kinds || s.kinds.includes(r.kind)) && (!s.actor || r.actor === s.actor)
+        && (!nq || searchable(JSON.stringify(r.brief ?? {})).includes(nq) || searchable(r.actor_name ?? "").includes(nq)))
+      .sort((a, b) => b.created_at.localeCompare(a.created_at) || b.src.localeCompare(a.src) || String(b.id).localeCompare(String(a.id)));
+    const start = s.before
+      ? rows.findIndex((r) => r.created_at < s.before! || (r.created_at === s.before && (r.src < (s.beforeSrc ?? "z") || (r.src === s.beforeSrc && String(r.id) < String(s.beforeId ?? "")))))
+      : 0;
+    const from = start < 0 ? rows.length : start;
+    return rows.slice(from, from + Math.min(Math.max(s.limit ?? 50, 1), 200));
+  },
+  async activityActors(from: string, to: string): Promise<ActivityActor[]> {
+    const m = new Map<string, ActivityActor>();
+    for (const r of demoActivityRows(from, to)) {
+      if (!r.actor && !r.actor_name) continue;
+      const key = r.actor ?? r.actor_name!;
+      const cur = m.get(key) ?? { actor: key, name: r.actor_name ?? key, n: 0 };
+      cur.n += 1; m.set(key, cur);
+    }
+    return [...m.values()].sort((a, b) => b.n - a.n);
+  },
   async listLoginEvents(_clinicId?: string, limit = 100): Promise<LoginEvent[]> {
     return demoLoginLoad().slice(0, limit);
   },
@@ -2622,6 +2659,29 @@ const PAGE_ROWS = 1000;
  *  بدل أن تنزل كل صفوف العيادة ثم يرمي المتصفح ما هو خارج المدى — الفلتر
  *  نفسه، ومكانه هو ما تغيّر. */
 export interface DateRange { from?: string | null; to?: string | null }
+
+/** المنطقةُ الزمنية للمتصفّح — الملخّصُ اليوميّ يُقطَّع عليها بالخادم. */
+function localTimeZone(): string {
+  try { return Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Baghdad"; } catch { return "Asia/Baghdad"; }
+}
+
+/** مرآةُ الاتحاد بـactivity_page للوضع التجريبي: التدقيقُ + الدخولُ، مصنَّفةً ومختصَرة. */
+function demoActivityRows(from: string, to: string): ActivityRow[] {
+  const inRange = (at: string) => at >= from && at < to;
+  const audit: ActivityRow[] = demoAuditLoad().filter((e) => inRange(e.created_at)).map((e) => ({
+    id: e.id, src: "a", created_at: e.created_at, actor: e.actor ?? null,
+    actor_name: (typeof e.details?.["__actor"] === "string" ? String(e.details["__actor"]) : null),
+    kind: auditKind(e.entity, e.action, e.details), action: e.action, entity: e.entity, entity_id: e.entity_id ?? null,
+    brief: activityBrief(e.details),
+  }));
+  const logins: ActivityRow[] = demoLoginLoad().filter((l) => inRange(l.created_at)).map((l) => ({
+    id: l.id, src: "l", created_at: l.created_at, actor: null,
+    actor_name: (l.name ?? "").trim() || (l.email ?? "").trim() || null,
+    kind: "login", action: "LOGIN", entity: "login", entity_id: null,
+    brief: { __actor: (l.name ?? "").trim() || (l.email ?? "").trim() || null },
+  }));
+  return [...audit, ...logins];
+}
 
 /** مرآةُ `invoice_matches` (0150) للوضع التجريبي: اسمٌ/هاتفٌ/رقمُ فاتورة بنفس التطبيع، وفلترُ الحالة. */
 function demoMatchingInvoices(s: InvoiceSearch): Invoice[] {
@@ -4080,6 +4140,23 @@ const supabaseRepo: typeof demoRepo = {
   async listLoginEvents(_clinicId, limit = 100) {
     return listOf<LoginEvent>(await sbc().from("login_events").select("*").order("created_at", { ascending: false }).limit(limit));
   },
+  async activitySummary(from, to, bucket) {
+    const { data, error } = await sbc().rpc("activity_summary", { p_from: from, p_to: to, p_tz: localTimeZone(), p_bucket: bucket });
+    if (error) throw error;
+    return ((data ?? []) as { bucket: string; kind: string; n: number }[]).map((r) => ({ bucket: r.bucket, kind: r.kind, n: Number(r.n) }));
+  },
+  async activityPage(s) {
+    // صفحةٌ واحدة بحدّها — لا allPages عمداً: الفكرةُ ألّا يُنزَّل السجلُّ كلُّه.
+    return listOf<ActivityRow>(await sbc().rpc("activity_page", {
+      p_from: s.from, p_to: s.to, p_kinds: s.kinds ?? null, p_actor: s.actor ?? null, p_q: s.q ?? null,
+      p_before: s.before ?? null, p_before_src: s.beforeSrc ?? null, p_before_id: s.beforeId ?? null, p_limit: s.limit ?? 50,
+    }));
+  },
+  async activityActors(from, to) {
+    const { data, error } = await sbc().rpc("activity_actors", { p_from: from, p_to: to });
+    if (error) throw error;
+    return ((data ?? []) as { actor: string; name: string; n: number }[]).map((r) => ({ actor: r.actor, name: r.name, n: Number(r.n) }));
+  },
   async logLogin(input) {
     // clinic_id/user_id are stamped by the column defaults (auth_clinic()/auth.uid()).
     ok(await sbc().from("login_events").insert({ email: input.email ?? null, name: input.name ?? null }));
@@ -4142,6 +4219,7 @@ const READ_ONLY_ALLOWED = new Set<string>([
   "listPayrollAdjustments", "listDeletedProducts", "productSaleLines", "listCourierSettlements",
   "listInvoicesTouching", "customerInvoices", "listInvoiceItemsFor", "reportReceiptsDaily", "reportReceiptsTotal",
   "reportTopProducts", "reportStaff", "countInvoices", "searchInvoices", "countInvoicesMatching", "openDebts",
+  "activitySummary", "activityPage", "activityActors",
   // --- استعلامات مساعدة لا تكتب ---
   "checkStoreSlug", "slotTaken", "supportsBulkGroup", "supportsSupplierLedger",
   "adminListFeatureRequests", "systemHealth",
