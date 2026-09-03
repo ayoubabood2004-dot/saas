@@ -23,6 +23,7 @@ import { playTap, playSuccess, playWarning } from "@/lib/sounds";
  *
  * الدخولُ يقلب الجلسةَ كلَّها إلى تلك العيادة (auth_clinic بالخادم) فتشتغل كلُّ
  * شاشات النظام بلا استثناء — لذا يُعاد تحميلُ الصفحة بعده، ويظهر شريطٌ ثابت.
+ * بالاتفاق مع العيادات: لا أثرَ للدخول عندها؛ السببُ يُحفظ بسجلّ المشغّل وحده.
  * ==========================================================================*/
 
 type Tab = "clinics" | "activity" | "logins";
@@ -42,12 +43,8 @@ function ago(iso: string | null): string {
 }
 const when = (iso: string) => new Date(iso).toLocaleString("ar-IQ", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" });
 
-const ACTION_AR: Record<string, string> = {
-  INSERT: "إضافة", UPDATE: "تعديل", DELETE: "حذف", PLATFORM_ENTER: "دخول مشغّل", PLATFORM_LEAVE: "خروج مشغّل",
-};
-const ACTION_TONE: Record<string, "success" | "warn" | "danger" | "brand" | "neutral"> = {
-  INSERT: "success", UPDATE: "warn", DELETE: "danger", PLATFORM_ENTER: "brand", PLATFORM_LEAVE: "brand",
-};
+const ACTION_AR: Record<string, string> = { INSERT: "إضافة", UPDATE: "تعديل", DELETE: "حذف" };
+const ACTION_TONE: Record<string, "success" | "warn" | "danger" | "neutral"> = { INSERT: "success", UPDATE: "warn", DELETE: "danger" };
 
 export function PlatformConsole() {
   const { user } = useAuth();
@@ -89,7 +86,7 @@ export function PlatformConsole() {
         <span className="grid h-11 w-11 place-items-center rounded-2xl bg-brand-grad text-white shadow-soft"><ShieldCheck size={24} /></span>
         <div className="min-w-0 flex-1">
           <h1 className="font-display text-2xl font-extrabold text-ink">لوحة المنصّة</h1>
-          <p className="text-sm text-ink-subtle">كل العيادات بنظرة — وادخل أيّها لتصلح ما يصعب على الطبيب. كل دخول يُسجَّل باسمك بسجلّ العيادة.</p>
+          <p className="text-sm text-ink-subtle">كل العيادات بنظرة — وادخل أيّها لتصلح ما يصعب على الطبيب.</p>
         </div>
         <Button variant="secondary" leftIcon={<CreditCard size={16} />} onClick={() => { playTap(); navigate("/admin"); }}>الاشتراكات والأسعار</Button>
       </div>
@@ -255,10 +252,10 @@ function ClinicsTab({ acting, onShowActivity }: { acting: string | null; onShowA
         <Modal open onClose={() => setTarget(null)} title={`الدخول إلى «${target.clinicName || target.email || "عيادة"}»`}>
           <div className="space-y-3.5">
             <p className="rounded-xl bg-warn-50 p-3 text-xs leading-relaxed text-warn-800 dark:bg-warn-500/10 dark:text-warn-200">
-              من هذه اللحظة تشتغل كل الشاشات ببيانات هذي العيادة وبصلاحية مدير، وكل حركة تُكتب باسمك بسجلّ حركاتها — والطبيب يشوف إنك دخلت ومتى وليش. اخرج من الشريط الأصفر لما تخلّص.
+              من هذه اللحظة تشتغل كل الشاشات ببيانات هذي العيادة وبصلاحية مدير. اخرج من الشريط الأصفر لما تخلّص.
             </p>
             <div>
-              <label className="label">سبب الدخول <span className="text-2xs font-normal text-ink-subtle">(يُكتب بسجلّ العيادة)</span></label>
+              <label className="label">سبب الدخول <span className="text-2xs font-normal text-ink-subtle">(لسجلّك أنت فقط — العيادة لا تراه)</span></label>
               <input className="input" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="مثال: الطبيب طلب تصحيح مخزون مادة" autoFocus data-preason />
               <div className="mt-1.5 flex flex-wrap gap-1.5">
                 {["طلب من الطبيب", "تصحيح مخزون", "تصحيح فاتورة", "إعداد النظام", "متابعة مشكلة"].map((r) => (
@@ -348,9 +345,7 @@ function ActivityTab() {
           {rows.map((r) => {
             const act = r.action ?? "";
             const d = r.details ?? {};
-            const summary = act === "PLATFORM_ENTER" || act === "PLATFORM_LEAVE"
-              ? [d.email, d.reason].filter(Boolean).join(" — ")
-              : Object.keys(d).length ? Object.keys(d).slice(0, 6).join("، ") : "";
+            const summary = Object.keys(d).length ? Object.keys(d).slice(0, 6).join("، ") : "";
             return (
               <div key={r.id} className="flex flex-wrap items-center gap-2 px-3 py-2 text-xs" data-pact={r.id}>
                 <span className="w-24 shrink-0 tabular-nums text-ink-subtle">{when(r.createdAt)}</span>

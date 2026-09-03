@@ -13,11 +13,10 @@
 -- العيادة بدور مدير، بلا مسارٍ ثانٍ يُنسى. ولا أثرَ على غير المشغّل: الشرطُ
 -- الأوّل `is_platform_admin()` (بريدُ الرمز) فصفُّ الجلسة وحده لا يمنح شيئاً.
 --
--- ── الشفافية ─────────────────────────────────────────────────────────────
--- كلُّ دخولٍ وخروجٍ يُكتب بسجلّ العيادة نفسها (audit_log: PLATFORM_ENTER/LEAVE)
--- وبـ`platform_session_log` الذي تقرأه العيادةُ عن نفسها — الطبيبُ يرى من دخل
--- ومتى ولماذا. والحركاتُ أثناء الدخول تُسجَّل بمعرّف المشغّل (auth.uid()) لا
--- بمعرّف الطبيب.
+-- ── الأثر ────────────────────────────────────────────────────────────────
+-- بالاتفاق مع العيادات الدخولُ طبيعيٌّ بلا أثرٍ عندها: لا سطرَ بسجلّ حركاتها،
+-- و`platform_session_log` يقرأه المشغّلُ وحده (سجلٌّ داخليّ لمن دخل أين ومتى).
+-- الحركاتُ أثناء الدخول تمرّ بمحفّزات التدقيق العادية بمعرّف المشغّل.
 --
 -- إضافيةٌ وتُعاد بلا أثرٍ ثانٍ. تُطبَّق بعد 0150.
 -- ============================================================================
@@ -44,9 +43,9 @@ create table if not exists platform_session_log (
 create index if not exists platform_session_log_clinic_idx on platform_session_log(acting_clinic, entered_at desc);
 alter table platform_session_log enable row level security;
 drop policy if exists platform_session_log_read on platform_session_log;
--- العيادةُ تقرأ ما يخصّها (من دخل عليها)، والمشغّلُ يقرأ الكلّ.
+-- المشغّلُ وحده يقرأه.
 create policy platform_session_log_read on platform_session_log for select
-  using (acting_clinic = (select auth_clinic()) or (select is_platform_admin()));
+  using ((select is_platform_admin()));
 
 -- ── ٢) العيادةُ التي يعمل بها المشغّلُ الآن (null لغيره ولمن لم يدخل) ─────
 create or replace function platform_acting_clinic() returns uuid
@@ -115,26 +114,20 @@ begin
     on conflict (admin_id) do update set acting_clinic = excluded.acting_clinic, reason = excluded.reason, started_at = now();
   insert into platform_session_log (admin_id, admin_email, acting_clinic, reason)
     values (auth.uid(), v_email, p_clinic, nullif(btrim(p_reason), ''));
-  insert into audit_log (clinic_id, actor, action, entity, entity_id, details)
-    values (p_clinic, auth.uid(), 'PLATFORM_ENTER', 'platform', auth.uid()::text,
-            jsonb_build_object('email', v_email, 'reason', nullif(btrim(p_reason), '')));
   return jsonb_build_object('ok', true, 'clinic_id', p_clinic, 'clinic_name', v_name);
 end $$;
 revoke all on function platform_enter(uuid, text) from public, anon;
 grant execute on function platform_enter(uuid, text) to authenticated;
 
 create or replace function platform_leave() returns jsonb
-language plpgsql volatile security definer set search_path = public, auth as $$
-declare v_clinic uuid; v_email text;
+language plpgsql volatile security definer set search_path = public as $$
+declare v_clinic uuid;
 begin
   if not is_platform_admin() then raise exception 'not_admin'; end if;
   select acting_clinic into v_clinic from platform_sessions where admin_id = auth.uid();
   if v_clinic is null then return jsonb_build_object('ok', true, 'was_acting', false); end if;
-  select u.email::text into v_email from auth.users u where u.id = auth.uid();
   delete from platform_sessions where admin_id = auth.uid();
   update platform_session_log set left_at = now() where admin_id = auth.uid() and left_at is null;
-  insert into audit_log (clinic_id, actor, action, entity, entity_id, details)
-    values (v_clinic, auth.uid(), 'PLATFORM_LEAVE', 'platform', auth.uid()::text, jsonb_build_object('email', v_email));
   return jsonb_build_object('ok', true, 'was_acting', true, 'clinic_id', v_clinic);
 end $$;
 revoke all on function platform_leave() from public, anon;

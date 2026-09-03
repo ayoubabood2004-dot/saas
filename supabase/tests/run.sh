@@ -921,9 +921,9 @@ chk "فتصير عيادتُه ١١١١" "select _pf('$ADM', 'select auth_clinic
 chk "وبدور مدير" \
     "select _pf('$ADM', 'select auth_role()') || '/' || _pf('$ADM', 'select auth_role_base()')" "manager/manager"
 chk "والسياقُ يقولها" "select _pf('$ADM', 'select platform_context()->>''acting''')" "$C1"
-chk "ودخولُه مكتوبٌ بسجلّ العيادة نفسها" \
-    "select count(*)::text from audit_log where clinic_id='$C1' and action='PLATFORM_ENTER' and actor='$ADM'" "1"
-chk "وبسجلّ الجلسات صفٌّ مفتوح بالسبب" \
+chk "ولا أثرَ بسجلّ حركات العيادة (بالاتفاق معها)" \
+    "select count(*)::text from audit_log where clinic_id='$C1' and entity='platform'" "0"
+chk "وبسجلّ الجلسات الداخلي صفٌّ مفتوح بالسبب" \
     "select count(*)::text from platform_session_log where admin_id='$ADM' and acting_clinic='$C1' and left_at is null and reason='فحص'" "1"
 chk "وعيادةٌ أخرى لا تتأثّر بجلسته" "select _pf('$C2', 'select auth_clinic()::text')" "$C2"
 chk "الانتقالُ إلى ٢٢٢٢ يقفل الأولى ويفتح الثانية" \
@@ -933,13 +933,18 @@ chk "  سجلّ: واحدةٌ مقفلة وواحدةٌ مفتوحة" \
 chk "والنبضُ يرى العيادتين" "select (count(*) >= 2)::text from platform_pulse()" "true"
 chk "وديونُ ٢٢٢٢ بالنبض = ما بالجدول" \
     "select ((select open_debt_count from platform_pulse() where clinic_id='$C2') = (select count(*) from invoices where clinic_id='$C2' and coalesce(status,'paid')<>'refunded' and coalesce(amount_paid,total) < total-0.01))::text" "true"
+$P -c "insert into audit_log (clinic_id, actor, action, entity, entity_id) values ('$C1', '$C1', 'UPDATE', 'products', 'x');" >/dev/null
 chk "والحركةُ عبر العيادات تُرى وتُفلتر بالعيادة" \
-    "select (count(*) >= 1)::text from platform_activity(50, '$C1') where action='PLATFORM_ENTER'" "true"
+    "select (count(*) >= 1)::text from platform_activity(50, '$C1') where entity='products' and clinic_id='$C1'" "true"
+chk "  وبلا فلتر لا تُخلط بعيادة ثانية" \
+    "select count(*)::text from platform_activity(500, '$C2') where clinic_id <> '$C2'" "0"
 chk "وسجلُّ الدخول يعمل" "select count(*)::text from platform_logins(10)" "0"
 chk "والخروجُ يعيده لنفسه" \
     "select _pf('$ADM', 'select (platform_leave()->>''was_acting'')') || '/' || _pf('$ADM', 'select auth_clinic()::text')" "true/$ADM"
-chk "  ولا جلسةَ مفتوحة، والخروجُ مكتوب" \
-    "select (select count(*) from platform_session_log where admin_id='$ADM' and left_at is null)::text || '/' || (select count(*) from audit_log where action='PLATFORM_LEAVE' and clinic_id='$C2')::text" "0/1"
+chk "  ولا جلسةَ مفتوحة بالسجلّ الداخلي، ولا أثرَ بسجلّ العيادة" \
+    "select (select count(*) from platform_session_log where admin_id='$ADM' and left_at is null)::text || '/' || (select count(*) from audit_log where entity='platform')::text" "0/0"
+chk "وسجلُّ الجلسات الداخلي للمشغّل وحده (سياسةٌ واحدة بلا شرط عيادة)" \
+    "select (count(*) = 1 and bool_and(qual not like '%auth_clinic%'))::text from pg_policies where tablename='platform_session_log'" "true"
 chk "دوالُّ المنصّة بصلاحية المُعرِّف وبمسارٍ مثبَّت" \
     "select count(*)::text from pg_proc where proname in ('platform_enter','platform_leave','platform_context','platform_pulse','platform_activity','platform_logins','platform_acting_clinic') and prosecdef and coalesce(array_to_string(proconfig,','),'') like '%search_path%'" "7"
 chk "وممنوعةٌ على anon" \
