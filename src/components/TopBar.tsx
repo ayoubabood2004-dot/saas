@@ -27,7 +27,9 @@ import {
   Box, Wallet } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { setLang, type Lang } from "@/i18n";
+import { ShieldCheck } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
+import { isPlatformAdmin } from "@/lib/platformAdmin";
 import { isSoundEnabled, setSoundEnabled, playTap } from "@/lib/sounds";
 import { prefetchHandlers, prefetchAllIdle } from "@/lib/routePrefetch";
 import { Tooltip, ThemeToggle } from "@/components/ui";
@@ -290,6 +292,11 @@ export function TopBar({ mobileOnly = false, minimal = false }: { mobileOnly?: b
                 {can("manageSettings") && (
                   <Link to="/settings" className="flex items-center gap-3 rounded-2xl px-3 py-3 text-ink hover:bg-surface-2">
                     <SettingsIcon size={18} /> {t("nav.settings")}
+                  </Link>
+                )}
+                {isPlatformAdmin(user?.email) && (
+                  <Link to="/platform" className="flex items-center gap-3 rounded-2xl px-3 py-3 text-ink hover:bg-surface-2">
+                    <ShieldCheck size={18} /> {t("nav.platform", "لوحة المنصّة")}
                   </Link>
                 )}
                 {roles.length > 1 && (

@@ -233,3 +233,114 @@ export async function adminSetLimits(email: string, petLimit: number | null, waL
   });
   if (error) throw new Error(error.message);
 }
+
+/* ======================================================================
+ * لوحةُ المنصّة (0151): الدخولُ إلى عيادةٍ بهويّة المشغّل، والنبضُ والحركةُ
+ * عبر كل العيادات. كلُّها دوالّ مُعرِّف يحرسها is_platform_admin() بالخادم —
+ * فحصُ البريد بالواجهة للإظهار فقط، لا للحماية.
+ * ====================================================================== */
+
+export interface PlatformContext {
+  /** معرّفُ العيادة التي يعمل بها المشغّلُ الآن — null خارج أي عيادة. */
+  acting: string | null;
+  clinicName: string | null;
+  since: string | null;
+  reason: string | null;
+}
+
+const NO_CONTEXT: PlatformContext = { acting: null, clinicName: null, since: null, reason: null };
+
+export async function platformContext(): Promise<PlatformContext> {
+  const client = sb();
+  if (!client) return NO_CONTEXT;
+  const { data, error } = await client.rpc("platform_context");
+  if (error) throw new Error(error.message);
+  const d = (data ?? {}) as Record<string, unknown>;
+  return {
+    acting: (d.acting as string) ?? null,
+    clinicName: (d.clinic_name as string) ?? null,
+    since: (d.since as string) ?? null,
+    reason: (d.reason as string) ?? null,
+  };
+}
+
+/** ادخل عيادةً: من هذه اللحظة كلُّ قراءةٍ وكتابةٍ تجري بحسابها وبدور مدير، باسمك. */
+export async function platformEnter(clinicId: string, reason?: string): Promise<{ clinicName: string | null }> {
+  const client = sb();
+  if (!client) throw new Error("no_backend");
+  const { data, error } = await client.rpc("platform_enter", { p_clinic: clinicId, p_reason: reason?.trim() || null });
+  if (error) throw new Error(error.message);
+  const d = (data ?? {}) as Record<string, unknown>;
+  return { clinicName: (d.clinic_name as string) ?? null };
+}
+
+export async function platformLeave(): Promise<void> {
+  const client = sb();
+  if (!client) return;
+  const { error } = await client.rpc("platform_leave");
+  if (error) throw new Error(error.message);
+}
+
+export interface ClinicPulse {
+  clinicId: string; clinicName: string | null; email: string | null;
+  plan: string | null; periodEnd: string | null; trialEnd: string | null;
+  members: number; onlineNow: number;
+  invoicesToday: number; salesToday: number; invoices7d: number; sales7d: number;
+  openDebtCount: number; openDebtTotal: number;
+  products: number; zeroStock: number; pendingDeliveries: number;
+  audit24h: number; lastLogin: string | null; lastInvoice: string | null; lastActivity: string | null;
+}
+
+export async function platformPulse(): Promise<ClinicPulse[]> {
+  const client = sb();
+  if (!client) return [];
+  const { data, error } = await client.rpc("platform_pulse");
+  if (error) throw new Error(error.message);
+  const n = (v: unknown) => Number(v ?? 0);
+  const s = (v: unknown) => (v == null ? null : String(v));
+  return ((data ?? []) as Record<string, unknown>[]).map((r) => ({
+    clinicId: String(r.clinic_id), clinicName: s(r.clinic_name), email: s(r.email),
+    plan: s(r.plan), periodEnd: s(r.period_end), trialEnd: s(r.trial_end),
+    members: n(r.members), onlineNow: n(r.online_now),
+    invoicesToday: n(r.invoices_today), salesToday: n(r.sales_today), invoices7d: n(r.invoices_7d), sales7d: n(r.sales_7d),
+    openDebtCount: n(r.open_debt_count), openDebtTotal: n(r.open_debt_total),
+    products: n(r.products), zeroStock: n(r.zero_stock), pendingDeliveries: n(r.pending_deliveries),
+    audit24h: n(r.audit_24h), lastLogin: s(r.last_login), lastInvoice: s(r.last_invoice), lastActivity: s(r.last_activity),
+  }));
+}
+
+export interface PlatformActivityRow {
+  id: number; clinicId: string | null; clinicName: string | null;
+  actor: string | null; actorName: string | null;
+  action: string | null; entity: string | null; entityId: string | null;
+  details: Record<string, unknown> | null; createdAt: string;
+}
+
+export async function platformActivity(limit = 100, clinicId?: string | null): Promise<PlatformActivityRow[]> {
+  const client = sb();
+  if (!client) return [];
+  const { data, error } = await client.rpc("platform_activity", { p_limit: limit, p_clinic: clinicId ?? null });
+  if (error) throw new Error(error.message);
+  const s = (v: unknown) => (v == null ? null : String(v));
+  return ((data ?? []) as Record<string, unknown>[]).map((r) => ({
+    id: Number(r.id), clinicId: s(r.clinic_id), clinicName: s(r.clinic_name),
+    actor: s(r.actor), actorName: s(r.actor_name),
+    action: s(r.action), entity: s(r.entity), entityId: s(r.entity_id),
+    details: (r.details as Record<string, unknown>) ?? null, createdAt: String(r.created_at),
+  }));
+}
+
+export interface PlatformLoginRow {
+  clinicId: string; clinicName: string | null; userId: string | null; email: string | null; name: string | null; createdAt: string;
+}
+
+export async function platformLogins(limit = 100): Promise<PlatformLoginRow[]> {
+  const client = sb();
+  if (!client) return [];
+  const { data, error } = await client.rpc("platform_logins", { p_limit: limit });
+  if (error) throw new Error(error.message);
+  const s = (v: unknown) => (v == null ? null : String(v));
+  return ((data ?? []) as Record<string, unknown>[]).map((r) => ({
+    clinicId: String(r.clinic_id), clinicName: s(r.clinic_name), userId: s(r.user_id), email: s(r.email), name: s(r.name), createdAt: String(r.created_at),
+  }));
+}

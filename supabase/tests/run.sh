@@ -22,7 +22,7 @@ DB=dvtest
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MIG="$HERE/../migrations"
 # الهجرات التي يغطّيها هذا المخطّط الأساس. زدها كل ما تنضاف موجة.
-WAVE="$MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql"
+WAVE="$MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql"
 
 command -v "$PGBIN/initdb" >/dev/null || { echo "ما لكيت بوستغريس بـ $PGBIN"; exit 1; }
 
@@ -893,6 +893,60 @@ chk "وفهرسُ الهاتف المطبَّع والمدّة موجودان" \
 chk "وتاريخٌ مكسور بساق دفع لا يُسقط التقرير" \
     "select (safe_ts('not-a-date') is null and safe_ts('2026-09-01T10:00:00Z') is not null)::text" "true"
 rm -rf "$FIX"
+
+# ── 0151: لوحةُ المنصّة — الدخولُ إلى عيادةٍ بهويّة المشغّل، بلا أثرٍ على غيره ──
+# مفتاحُ المشغّل بالحزمة عامّ (_dvtest_flags)، فالفحصُ يثبت: الحارسَ (غيرُ
+# المشغّل يُرفض، وصفُّ جلسةٍ مزروع لا يمنح شيئاً)، والطريقَ (auth_clinic/auth_role
+# تنقلب للعيادة المدخولة)، والأثرَ (سجلُّ العيادة وسجلُّ الجلسات)، والعزلَ (عيادةٌ
+# أخرى لا تتأثّر).
+echo "▸ 0151: لوحةُ المنصّة"
+ADM=33333333-3333-3333-3333-333333333333
+C1=11111111-1111-1111-1111-111111111111
+C2=22222222-2222-2222-2222-222222222222
+$P -c "create or replace function _pf(who uuid, q text) returns text language plpgsql as \$fn\$
+       declare r text; begin perform set_config('request.jwt.claim.sub', who::text, true); execute q into r; return r; end \$fn\$;
+       create or replace function _pf_try(who uuid, q text) returns text language plpgsql as \$fn\$
+       declare r text; begin perform set_config('request.jwt.claim.sub', who::text, true); execute q into r; return 'allowed';
+       exception when others then return 'guarded: ' || sqlerrm; end \$fn\$;
+       update _dvtest_flags set admin = false; delete from platform_sessions;" >/dev/null
+chk "غيرُ المشغّل لا يدخل عيادة" \
+    "select left(_pf_try('$ADM', 'select platform_enter(''$C1'')::text'), 7)" "guarded"
+$P -c "insert into platform_sessions(admin_id, acting_clinic) values ('$ADM','$C1') on conflict do nothing;" >/dev/null
+chk "وصفُّ جلسةٍ مزروعٌ بلا صفة مشغّل لا يمنح شيئاً" \
+    "select _pf('$ADM', 'select auth_clinic()::text')" "$ADM"
+$P -c "delete from platform_sessions; update _dvtest_flags set admin = true;" >/dev/null
+chk "المشغّلُ يدخل العيادة ١١١١" \
+    "select _pf('$ADM', 'select (platform_enter(''$C1'', ''فحص'')->>''ok'')')" "true"
+chk "فتصير عيادتُه ١١١١" "select _pf('$ADM', 'select auth_clinic()::text')" "$C1"
+chk "وبدور مدير" \
+    "select _pf('$ADM', 'select auth_role()') || '/' || _pf('$ADM', 'select auth_role_base()')" "manager/manager"
+chk "والسياقُ يقولها" "select _pf('$ADM', 'select platform_context()->>''acting''')" "$C1"
+chk "ودخولُه مكتوبٌ بسجلّ العيادة نفسها" \
+    "select count(*)::text from audit_log where clinic_id='$C1' and action='PLATFORM_ENTER' and actor='$ADM'" "1"
+chk "وبسجلّ الجلسات صفٌّ مفتوح بالسبب" \
+    "select count(*)::text from platform_session_log where admin_id='$ADM' and acting_clinic='$C1' and left_at is null and reason='فحص'" "1"
+chk "وعيادةٌ أخرى لا تتأثّر بجلسته" "select _pf('$C2', 'select auth_clinic()::text')" "$C2"
+chk "الانتقالُ إلى ٢٢٢٢ يقفل الأولى ويفتح الثانية" \
+    "select _pf('$ADM', 'select (platform_enter(''$C2'')->>''clinic_id'')')" "$C2"
+chk "  سجلّ: واحدةٌ مقفلة وواحدةٌ مفتوحة" \
+    "select count(*) filter (where left_at is not null)::text || '/' || count(*) filter (where left_at is null)::text from platform_session_log where admin_id='$ADM'" "1/1"
+chk "والنبضُ يرى العيادتين" "select (count(*) >= 2)::text from platform_pulse()" "true"
+chk "وديونُ ٢٢٢٢ بالنبض = ما بالجدول" \
+    "select ((select open_debt_count from platform_pulse() where clinic_id='$C2') = (select count(*) from invoices where clinic_id='$C2' and coalesce(status,'paid')<>'refunded' and coalesce(amount_paid,total) < total-0.01))::text" "true"
+chk "والحركةُ عبر العيادات تُرى وتُفلتر بالعيادة" \
+    "select (count(*) >= 1)::text from platform_activity(50, '$C1') where action='PLATFORM_ENTER'" "true"
+chk "وسجلُّ الدخول يعمل" "select count(*)::text from platform_logins(10)" "0"
+chk "والخروجُ يعيده لنفسه" \
+    "select _pf('$ADM', 'select (platform_leave()->>''was_acting'')') || '/' || _pf('$ADM', 'select auth_clinic()::text')" "true/$ADM"
+chk "  ولا جلسةَ مفتوحة، والخروجُ مكتوب" \
+    "select (select count(*) from platform_session_log where admin_id='$ADM' and left_at is null)::text || '/' || (select count(*) from audit_log where action='PLATFORM_LEAVE' and clinic_id='$C2')::text" "0/1"
+chk "دوالُّ المنصّة بصلاحية المُعرِّف وبمسارٍ مثبَّت" \
+    "select count(*)::text from pg_proc where proname in ('platform_enter','platform_leave','platform_context','platform_pulse','platform_activity','platform_logins','platform_acting_clinic') and prosecdef and coalesce(array_to_string(proconfig,','),'') like '%search_path%'" "7"
+chk "وممنوعةٌ على anon" \
+    "select count(*)::text from pg_proc p where proname in ('platform_enter','platform_pulse','platform_activity','platform_logins','platform_leave') and has_function_privilege('anon', p.oid, 'execute')" "0"
+chk "وجدولُ الجلسات محميٌّ بلا أي سياسة" \
+    "select ((select relrowsecurity from pg_class where relname='platform_sessions') and (select count(*) from pg_policies where tablename='platform_sessions')=0)::text" "true"
+$P -c "update _dvtest_flags set admin = false; delete from platform_sessions;" >/dev/null
 
 echo
 [ $fail -eq 0 ] && echo "✓ كل الفحوص عبرت" || { echo "✗ اكو فحصٌ فشل"; exit 1; }
