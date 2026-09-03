@@ -17,9 +17,11 @@ import { supabase } from "./supabase";
 import { outboxEnqueue, outboxEnqueueRpc, isNetworkError } from "./outbox";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, AppointmentStatus, ClinicInfo, PublicStaff, DailyNote, TreatmentEntry, Admission, Branch, Reminder, Product, Company, CompanySection, Purchase, PurchaseItem, PurchasePayment, PurchaseDraftLine, PurchaseMeta, Courier, DeliveryOrder, PetMovement, DemoDB, Invoice, InvoiceItem, CheckoutItem, SaleMeta, Customer, DiscountType, PaymentMethod, PaymentSplit, WhatsAppMessage, AuditEntry, LoginEvent, PetNote, Expense, ExpenseMethod, ReturnMeta, RetailReturnResult, HealthMetric, ClinicVisit , Surgery, LabResult, LabDeviceLink, LabDeviceInbox, LabStatusValue, PetProblem, CareEntry, FeatureRequest, GeneratedBarcode, StoreProfile, StoreOrder, StoreOrderItem, StoreFrontInfo, StoreCatalogItem, Journey, JourneyEvent, JourneyKind, JourneyStage, JourneyPublicView, EditLine } from "@/types";
-import type { DeletedProduct, CourierSettlement, ReceiptsDay, ReceiptsTotal, TopProductRow, StaffSalesRow } from "@/types";
+import type { DeletedProduct, CourierSettlement, ReceiptsDay, ReceiptsTotal, TopProductRow, StaffSalesRow, InvoiceSearch } from "@/types";
 import { receiptsOf, dueOf } from "./debt";
 import { phoneDigits } from "./phone";
+import { searchable } from "./utils";
+import { invoiceNo } from "./invoicePrint";
 import type { PayrollPolicyDTO, StaffComp, StaffRecurring, PayrollAdjustment, PayrollRun, Payslip, PayslipLine, StaffLoan, StaffLoanEvent, PayslipDraft, PayMethod } from "@/types";
 import * as PD from "./payrollDemo";
 import { paidOf, round2 } from "./debt";
@@ -2023,6 +2025,22 @@ const demoRepo = {
   async countInvoices(): Promise<number> {
     return (loadDB().invoices ?? []).length;
   },
+  /* ---- صفحاتُ الفواتير والبحث بالخادم (0150) — مرآةُ invoice_matches ----
+   * نفس التطبيع (searchable / phoneDigits / invoiceNo) على الطرفين. */
+  async searchInvoices(s: InvoiceSearch): Promise<Invoice[]> {
+    const rows = demoMatchingInvoices(s).sort((a, b) => b.created_at.localeCompare(a.created_at) || b.id.localeCompare(a.id));
+    const start = s.before ? rows.findIndex((i) => i.created_at < s.before! || (i.created_at === s.before && i.id < (s.beforeId ?? ""))) : 0;
+    const from = start < 0 ? rows.length : start;
+    return rows.slice(from, from + Math.min(Math.max(s.limit ?? 50, 1), 200));
+  },
+  async countInvoicesMatching(s: InvoiceSearch): Promise<number> {
+    return demoMatchingInvoices(s).length;
+  },
+  async openDebts(): Promise<Invoice[]> {
+    return (loadDB().invoices ?? [])
+      .filter((i) => (i.status ?? "paid") !== "refunded" && dueOf(i) > 0.01)
+      .sort((a, b) => b.created_at.localeCompare(a.created_at));
+  },
   async refundInvoice(invoiceId: string): Promise<Invoice | undefined> {
     const db = loadDB();
     const inv = (db.invoices ?? []).find((x) => x.id === invoiceId);
@@ -2602,6 +2620,22 @@ const PAGE_ROWS = 1000;
  *  بدل أن تنزل كل صفوف العيادة ثم يرمي المتصفح ما هو خارج المدى — الفلتر
  *  نفسه، ومكانه هو ما تغيّر. */
 export interface DateRange { from?: string | null; to?: string | null }
+
+/** مرآةُ `invoice_matches` (0150) للوضع التجريبي: اسمٌ/هاتفٌ/رقمُ فاتورة بنفس التطبيع، وفلترُ الحالة. */
+function demoMatchingInvoices(s: InvoiceSearch): Invoice[] {
+  const q = (s.q ?? "").trim();
+  const nq = searchable(q);
+  const pq = phoneDigits(q);
+  const noq = q.replace(/^inv-?/i, "").toUpperCase();
+  const status = s.status ?? "all";
+  return (loadDB().invoices ?? []).filter((i) => {
+    if (status !== "all" && (i.status ?? "paid") !== status) return false;
+    if (!nq) return true;
+    return searchable(i.customer_name).includes(nq)
+      || (!!pq && phoneDigits(i.customer_phone ?? "").includes(pq))
+      || (!!noq && invoiceNo(i.id).slice(4).includes(noq));
+  });
+}
 
 /** نظيرُ `inRange` بالوضع التجريبي: يصفّي مصفوفةً على عمودٍ زمنيّ. */
 function within<T>(rows: T[], col: string, r?: DateRange): T[] {
@@ -3768,6 +3802,21 @@ const supabaseRepo: typeof demoRepo = {
     if (error) throw error;
     return count ?? 0;
   },
+  async searchInvoices(s) {
+    // صفحةٌ واحدة بحدّها — لا allPages هنا عمداً: الصفحةُ هي الفكرة.
+    return listOf<Invoice>(await sbc().rpc("search_invoices", {
+      p_q: s.q ?? null, p_status: s.status ?? "all",
+      p_before: s.before ?? null, p_before_id: s.beforeId ?? null, p_limit: s.limit ?? 50,
+    }));
+  },
+  async countInvoicesMatching(s) {
+    const { data, error } = await sbc().rpc("count_invoices_matching", { p_q: s.q ?? null, p_status: s.status ?? "all" });
+    if (error) throw error;
+    return Number(data ?? 0);
+  },
+  async openDebts() {
+    return allPages<Invoice>(() => sbc().rpc("open_debts"));
+  },
   async refundInvoice(invoiceId) {
     // Server marks refunded + returns units to stock (idempotent).
     return need<Invoice>(await sbc().rpc("refund_invoice", { p_invoice: invoiceId }));
@@ -4089,7 +4138,7 @@ const READ_ONLY_ALLOWED = new Set<string>([
   "listPayslips", "listPayslipLines", "listStaffLoans", "listLoanEvents",
   "listPayrollAdjustments", "listDeletedProducts", "productSaleLines", "listCourierSettlements",
   "listInvoicesTouching", "customerInvoices", "listInvoiceItemsFor", "reportReceiptsDaily", "reportReceiptsTotal",
-  "reportTopProducts", "reportStaff", "countInvoices",
+  "reportTopProducts", "reportStaff", "countInvoices", "searchInvoices", "countInvoicesMatching", "openDebts",
   // --- استعلامات مساعدة لا تكتب ---
   "checkStoreSlug", "slotTaken", "supportsBulkGroup", "supportsSupplierLedger",
   "adminListFeatureRequests", "systemHealth",

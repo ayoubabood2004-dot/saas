@@ -25,6 +25,15 @@ const stubs = {
 };
 const built = await esbuild.build({ entryPoints: ["src/lib/debt.ts"], bundle: true, format: "esm", write: false, platform: "neutral", plugins: [stubs] });
 const { receiptsOf, dueOf } = await import("data:text/javascript;base64," + Buffer.from(built.outputFiles[0].text).toString("base64"));
+// (0150) تطبيعُ البحث كما بالواجهة **نفسها**: searchable للاسم وphoneDigits للهاتف —
+// حتى يُفحص أن search_norm/phone_digits بالقاعدة مرآةٌ صادقة لهما، لا تقريبٌ.
+const norm = await esbuild.build({
+  stdin: { contents: `export { searchable } from "./src/lib/utils"; export { phoneDigits } from "./src/lib/phone";`, resolveDir: process.cwd(), loader: "js" },
+  bundle: true, format: "esm", write: false, platform: "node", plugins: [stubs],
+});
+const { searchable, phoneDigits } = await import("data:text/javascript;base64," + Buffer.from(norm.outputFiles[0].text).toString("base64"));
+/** رقمُ الفاتورة كما تعرضه الواجهة (invoicePrint.invoiceNo): INV- + آخر ستّة أحرف. */
+const invoiceNo = (id) => "INV-" + id.replace(/[^a-zA-Z0-9]/g, "").slice(-6).toUpperCase();
 
 // ---- عشوائية حتمية ---------------------------------------------------------
 let seed = 20260903;
@@ -42,6 +51,8 @@ const q = (s) => (s == null ? "null" : `'${String(s).replace(/'/g, "''")}'`);
 // ---- البيانات ------------------------------------------------------------
 const products = Array.from({ length: 40 }, (_, i) => ({ id: uuid("aaaaaaaa", i + 1), name: `منتج ${i + 1}`, price: int(5, 60) * 250 }));
 const staff = [null, uuid("bbbbbbbb", 1), uuid("bbbbbbbb", 2), uuid("bbbbbbbb", 3), uuid("bbbbbbbb", 4)];
+// أسماءُ الكادر — البحثُ بالبائع (0150) يمرّ على جدول staff بنفس التطبيع.
+const STAFF_NAMES = { [staff[1]]: "د. أحمد", [staff[2]]: "نور الكاشير", [staff[3]]: "Ali", [staff[4]]: "مُصطفى" };
 const customers = [
   { phone: "07701234567", name: "أبو علي" }, { phone: "٠٧٧٠٩٩٩٩٩٩٩", name: "أم حسن" }, { phone: "07801111111", name: "" },
   { phone: "", name: "زبون بالاسم" }, { phone: "", name: "" }, { phone: "0790 555 5555", name: "سارة" },
@@ -98,6 +109,7 @@ for (let n = 1; n <= 320; n++) {
 
 // ---- SQL ----------------------------------------------------------------
 const sql = [];
+sql.push(`insert into staff (id, clinic_id, name) values\n${Object.entries(STAFF_NAMES).map(([id, name]) => `(${q(id)}, ${q(CLINIC)}, ${q(name)})`).join(",\n")} on conflict do nothing;`);
 sql.push(`insert into products (id, clinic_id, name, barcode, stock) values\n${products.map((p) => `(${q(p.id)}, ${q(CLINIC)}, ${q(p.name)}, ${q("RPT" + p.id.slice(-4))}, 100)`).join(",\n")} on conflict do nothing;`);
 sql.push(`insert into invoices (id, clinic_id, created_at, total, cost_total, profit, amount_paid, payment_details, status, refunded_at, staff_id, customer_phone, customer_name, item_count, payment_method) values\n${invoices.map((i) =>
   `(${q(i.id)}, ${q(CLINIC)}, ${q(i.created_at)}, ${i.total}, ${i.cost_total}, ${i.profit}, ${i.amount_paid}, ${i.payment_details == null ? "null" : q(JSON.stringify(i.payment_details)) + "::jsonb"}, ${q(i.status)}, ${q(i.refunded_at)}, ${q(i.staff_id)}, ${q(i.customer_phone)}, ${q(i.customer_name)}, ${i.item_count}, ${q(i.payment_method)})`).join(",\n")} on conflict do nothing;`);
@@ -162,6 +174,35 @@ expected.customers = {
   bySpacedPhone: { phone: "0790 555 5555", ids: invoices.filter((i) => digits(i.customer_phone) === "07905555555").map((i) => i.id).sort() },
   byName: { name: "زبون بالاسم", ids: invoices.filter((i) => !digits(i.customer_phone) && (i.customer_name ?? "").trim().toLowerCase() === "زبون بالاسم").map((i) => i.id).sort() },
 };
+// ---- (0150) الصفحات والبحث بالخادم — مرآةُ invoice_matches / search_invoices / open_debts ----
+// الترتيبُ ترتيبُ المؤشّر: الأحدث إنشاءً ثم المعرّف نزولاً. الدورانُ على كل الصفحات
+// بالمؤشّر لازم يعطي هذه القائمة بلا تكرارٍ ولا فقد.
+const byCursor = (a, b) => b.created_at.localeCompare(a.created_at) || b.id.localeCompare(a.id);
+const matches = (inv, qq, st) => {
+  if (st !== "all" && (inv.status ?? "paid") !== st) return false;
+  const nq = searchable(qq ?? "");
+  if (!nq) return true;
+  const pq = phoneDigits(qq ?? "");
+  const noq = String(qq ?? "").trim().replace(/^inv-?/i, "").toUpperCase();
+  return searchable(inv.customer_name).includes(nq)
+    || (!!pq && phoneDigits(inv.customer_phone ?? "").includes(pq))
+    || (!!noq && invoiceNo(inv.id).slice(4).includes(noq))
+    || (!!inv.staff_id && searchable(STAFF_NAMES[inv.staff_id]).includes(nq));
+};
+const SEARCHES = {
+  name:     { q: "ابو علي", status: "all" },        // «أبو علي» بلا همزة ومع مسافة — التطبيع على الطرفين
+  phone:    { q: "٧٧٠٩٩", status: "all" },          // جزءٌ من هاتف بأرقامٍ شرقية
+  invno:    { q: "inv-000057", status: "all" },     // رقمُ الفاتورة كما يُقرأ من الورقة، بأحرفٍ صغيرة
+  staff:    { q: "احمد", status: "all" },           // اسمُ البائع من جدول الكادر
+  refunded: { q: null, status: "refunded" },        // فلترُ الحالة وحده
+  paidName: { q: "سارة", status: "paid" },          // بحثٌ + فلتر
+};
+expected.pages = {
+  all: invoices.slice().sort(byCursor).map((i) => i.id),
+  searches: Object.fromEntries(Object.entries(SEARCHES).map(([k, s]) => [k, { ...s, ids: invoices.filter((i) => matches(i, s.q, s.status)).sort(byCursor).map((i) => i.id) }])),
+  openDebts: invoices.filter((i) => isPaid(i) && dueOf(i) > 0.01).map((i) => i.id).sort(),
+};
+for (const [k, s] of Object.entries(expected.pages.searches)) if (s.ids.length === 0 || s.ids.length === invoices.length) throw new Error(`search ${k} لا يميّز شيئاً (${s.ids.length})`);
 expected.ranges = RANGES;
 expected.counts = { invoices: invoices.length, items: items.length };
 fs.writeFileSync(path.join(outDir, "expected.json"), JSON.stringify(expected, null, 1));

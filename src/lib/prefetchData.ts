@@ -10,6 +10,7 @@ import { repo } from "@/lib/repo";
 import { listStaff, type StaffMember } from "@/lib/staff";
 import { getCached, setCached } from "@/lib/swrCache";
 import { localISO } from "@/lib/utils";
+import { getInvoicesPaged } from "@/lib/settings";
 import type { LabResult,
   Pet, Admission, TreatmentEntry, MedicalVisit, Product, Invoice, InvoiceItem, MediaItem, AuditEntry, LoginEvent, Expense,
 } from "@/types";
@@ -46,12 +47,17 @@ export type RetailSnap = { products: Product[]; invoices: Invoice[] };
 export const retailKey = (clinicId?: string | null) => `retail:${cid(clinicId)}`;
 export async function loadRetailSnap(clinicId?: string | null): Promise<RetailSnap> {
   const id = clinicId ?? undefined;
+  // «الأخيرُ يُعرض والقديمُ يُبحث» (0150): آخرُ ستّين يوماً + كلُّ الديون المفتوحة +
+  // ما رُدّ أو سُدّد بالمدّة — يكفي تبويباتَ الفواتير والديون والمرتجع والتوصيل،
+  // والبحثُ عن الأقدم يمرّ بالخادم. الطريقةُ القديمة (كلُّ الفواتير) تبقى خلف
+  // خيارٍ بالإعدادات لأسبوع المراقبة فقط.
+  const paged = getInvoicesPaged();
+  const recent = { from: new Date(Date.now() - 60 * 86400000).toISOString(), to: new Date(Date.now() + 86400000).toISOString() };
   const [products, invoices, sections] = await Promise.all([
     repo.listProducts(id),
-    // المرحلة ٢ من خطة التقارير (docs/reports-plan.md): تبويب الفواتير وسجل
-    // الديون والمرتجع والتوصيل يقرؤون هذه القائمة كلَّها ويبحثون فيها محلياً؛
-    // تقسيمُها صفحاتٍ مع بحثٍ بالخادم يرفع هذا الوسم.
-    repo.listInvoices(id), /* unbounded: تبويبات المبيعات تبحث محلياً — المرحلة ٢ تقسّمها صفحات */
+    paged
+      ? repo.listInvoicesTouching(recent)
+      : repo.listInvoices(id), /* unbounded: الطريقة القديمة خلف خيار invoices_paged=false — تُشال بعد أسبوع المراقبة */
     repo.listCompanySections(undefined, id).catch(() => []),
   ]);
   // For the TILL only, a product's sellable count = its own tracked stock PLUS its

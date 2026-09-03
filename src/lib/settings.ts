@@ -141,8 +141,8 @@ export function clearPetRanges(petId: string) {
 export const DEFAULT_DIAL_CODE = "+964"; // Iraq
 
 export interface ClinicSocials { facebook: string; instagram: string }
-interface ClinicPrefs { dial_code: string; logo_url: string | null; social_facebook: string; social_instagram: string; clinic_name: string; pre_sale_print: boolean; override_enabled: boolean; resizable_cart: boolean; font_scale_enabled: boolean; override_pin_mirror: string | null; delivery_zones: string | null; qty_promos: string | null; catalog_share: boolean; cage_layout: string | null; care_protocols: string | null; currency: string | null; country: string | null; pos_v2: boolean; pos_compact: boolean; pos_customer_open: boolean; work_hours: string | null; clock_format: string | null; dose_window: string | null; cash_reconcile: boolean; cash_confirms: string | null }
-const DEFAULT_PREFS: ClinicPrefs = { dial_code: DEFAULT_DIAL_CODE, logo_url: null, social_facebook: "", social_instagram: "", clinic_name: "", pre_sale_print: false, override_enabled: false, resizable_cart: false, font_scale_enabled: false, override_pin_mirror: null, delivery_zones: null, qty_promos: null, catalog_share: false, cage_layout: null, care_protocols: null, currency: null, country: null, pos_v2: false, pos_compact: false, pos_customer_open: false, work_hours: null, clock_format: null, dose_window: null, cash_reconcile: false, cash_confirms: null };
+interface ClinicPrefs { dial_code: string; logo_url: string | null; social_facebook: string; social_instagram: string; clinic_name: string; pre_sale_print: boolean; override_enabled: boolean; resizable_cart: boolean; font_scale_enabled: boolean; override_pin_mirror: string | null; delivery_zones: string | null; qty_promos: string | null; catalog_share: boolean; cage_layout: string | null; care_protocols: string | null; currency: string | null; country: string | null; pos_v2: boolean; pos_compact: boolean; pos_customer_open: boolean; invoices_paged: boolean; work_hours: string | null; clock_format: string | null; dose_window: string | null; cash_reconcile: boolean; cash_confirms: string | null }
+const DEFAULT_PREFS: ClinicPrefs = { dial_code: DEFAULT_DIAL_CODE, logo_url: null, social_facebook: "", social_instagram: "", clinic_name: "", pre_sale_print: false, override_enabled: false, resizable_cart: false, font_scale_enabled: false, override_pin_mirror: null, delivery_zones: null, qty_promos: null, catalog_share: false, cage_layout: null, care_protocols: null, currency: null, country: null, pos_v2: false, pos_compact: false, pos_customer_open: false, invoices_paged: true, work_hours: null, clock_format: null, dose_window: null, cash_reconcile: false, cash_confirms: null };
 
 const prefsKey = () => `vp_clinic_prefs_${getActiveClinicId()}`;
 const legacyDialKey = () => `vp_dial_code_${getActiveClinicId()}`;
@@ -244,6 +244,7 @@ export async function hydrateClinicPrefs(): Promise<void> {
         pos_v2: typeof d.pos_v2 === "boolean" ? d.pos_v2 : local.pos_v2,
         pos_compact: typeof d.pos_compact === "boolean" ? d.pos_compact : local.pos_compact,
         pos_customer_open: typeof d.pos_customer_open === "boolean" ? d.pos_customer_open : local.pos_customer_open,
+        invoices_paged: typeof d.invoices_paged === "boolean" ? d.invoices_paged : local.invoices_paged,
         work_hours: d.work_hours ?? local.work_hours,
         clock_format: d.clock_format ?? local.clock_format,
         dose_window: d.dose_window ?? local.dose_window,
@@ -614,6 +615,14 @@ export function getPosCompact(): boolean {
 }
 export function setPosCompact(on: boolean) {
   patchPrefs({ pos_compact: on }, "pos-compact-set");
+}
+/* قائمةُ الفواتير بصفحات وبحثٍ بالخادم (0150) — افتراضياً نعم. الإطفاءُ يرجّع
+ * الطريقةَ القديمة (كلُّ الفواتير بالذاكرة) لأسبوع المراقبة فقط. */
+export function getInvoicesPaged(): boolean {
+  return prefs().invoices_paged !== false;
+}
+export function setInvoicesPaged(on: boolean) {
+  patchPrefs({ invoices_paged: on }, "invoices-paged-set");
 }
 export function getPosCustomerOpen(): boolean {
   return prefs().pos_customer_open === true;

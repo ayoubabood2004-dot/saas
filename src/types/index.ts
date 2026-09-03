@@ -919,6 +919,14 @@ export interface ReceiptsDay { day: string; gross: number; net: number; invoices
 export interface ReceiptsTotal { gross: number; net: number; invoices: number }
 export interface TopProductRow { key: string; name: string; qty: number; revenue: number }
 export interface StaffSalesRow { staff_id: string | null; invoices: number; revenue: number; profit: number }
+/** بحثُ الفواتير بالخادم (0150): نصٌّ + حالةٌ + مؤشّرُ الصفحة (تاريخ ومعرّف آخر صفٍّ عُرض). */
+export interface InvoiceSearch {
+  q?: string | null;
+  status?: "all" | "paid" | "refunded";
+  before?: string | null;
+  beforeId?: string | null;
+  limit?: number;
+}
 
 /** تحصيلٌ من شركة توصيل (0148): مبلغٌ وُزّع على طلباتها المسلَّمة الأقدم فالأقدم. */
 export interface CourierSettlement {

@@ -58,5 +58,23 @@ for (const [name, c] of Object.entries(expected.customers)) {
   check(`دفتر الزبون ${name}: نفس فواتير الواجهة (${c.ids.length})`, !!got && same(got.map((r) => r.id).sort(), c.ids), got ? `SQL ${got.length}` : "ملف ناقص");
 }
 
+// (0150) الصفحات بالمؤشّر والبحث بالخادم
+if (expected.pages) {
+  const P = expected.pages;
+  const ids = (name) => { const g = load(name); return g && g[0] ? g[0].ids : null; };
+  const all = ids("pages.all.json");
+  check(`الصفحات: الدورانُ بالمؤشّر (٥٠ بالمرّة) يعطي كل الفواتير بلا تكرارٍ ولا فقد (${P.all.length})`, !!all && same(all, P.all),
+    all ? `SQL ${all.length} (${new Set(all).size} فريدة)` : "ملف ناقص");
+  for (const [k, s] of Object.entries(P.searches)) {
+    const got = ids(`search.${k}.json`);
+    check(`بحث ${k} («${s.q ?? "—"}»، ${s.status}): نفس نتائج الواجهة وبنفس الترتيب (${s.ids.length})`, !!got && same(got, s.ids),
+      got ? `SQL ${got.length}: ${JSON.stringify(got.slice(0, 3).map((x) => x.slice(-4)))} ≠ واجهة ${JSON.stringify(s.ids.slice(0, 3).map((x) => x.slice(-4)))}` : "ملف ناقص");
+    const n = load(`count.${k}.json`)?.[0]?.n;
+    check(`عدّاد ${k}: ${s.ids.length}`, n != null && Number(n) === s.ids.length, `SQL ${n}`);
+  }
+  const debts = load("open_debts.json");
+  check(`الديون المفتوحة: نفس فواتير الواجهة (${P.openDebts.length})`, !!debts && same(debts.map((r) => r.id).sort(), P.openDebts), debts ? `SQL ${debts.length}` : "ملف ناقص");
+}
+
 console.log(`\n${fails ? "✗" : "✓"} report-parity: ${passes} نجحت، ${fails} فشلت`);
 process.exit(fails ? 1 : 0);
