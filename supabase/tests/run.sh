@@ -22,7 +22,7 @@ DB=dvtest
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MIG="$HERE/../migrations"
 # الهجرات التي يغطّيها هذا المخطّط الأساس. زدها كل ما تنضاف موجة.
-WAVE="$MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql"
+WAVE="$MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql"
 
 command -v "$PGBIN/initdb" >/dev/null || { echo "ما لكيت بوستغريس بـ $PGBIN"; exit 1; }
 
@@ -605,6 +605,67 @@ chk "وممنوعة على anon" \
     "select has_function_privilege('anon','public.merge_products(uuid,uuid)','execute')::text" "false"
 chk "وبمسارٍ مثبَّت" \
     "select (coalesce(array_to_string(proconfig,','),'') like '%search_path%')::text from pg_proc where proname='merge_products'" "true"
+
+# ── 0145: الحذفُ طيٌّ لا محو — سلّةٌ واسترجاعٌ بنفس المعرّف والفواتير ──
+# القياس بعيادتين: المادة «اختفت كأنها ما كانت» لأنها حُذفت من الزرّ، والحذف
+# كان يمحو الصفَّ ويصفّر product_id بسطور الفواتير. هنا يُختبر أن الحذف يحفظ
+# الصورةَ والسطور، وأن الاسترجاع يعيدهما، وأن الاسترجاع الثاني يُرفض.
+echo "▸ 0145: سلّة المحذوفات"
+
+$P -c "insert into products (id, clinic_id, name, barcode, stock)
+       values ('eeee0000-0000-0000-0000-000000000001','11111111-1111-1111-1111-111111111111','دراي فود رويال','3182550711159', 4),
+              ('eeee0000-0000-0000-0000-000000000002','11111111-1111-1111-1111-111111111111','سانك تونا','854871008371', 99)
+       on conflict do nothing;
+       insert into invoice_items (id, name, qty, unit_price, unit_cost, line_total, stock_qty, product_id)
+       values ('eeee1111-0000-0000-0000-000000000001','x', 2, 1000, 600, 2000, 2, 'eeee0000-0000-0000-0000-000000000001');
+       insert into generated_barcodes (id, product_id) values ('eeee2222-0000-0000-0000-000000000001','eeee0000-0000-0000-0000-000000000001');" >/dev/null 2>&1
+
+$P -c "create or replace function _del_try(a uuid) returns text language plpgsql as \$fn\$
+       begin perform delete_product(a, 'test'); return 'deleted';
+       exception when others then return 'guarded: ' || sqlerrm; end \$fn\$;
+       create or replace function _restore_try(a uuid) returns text language plpgsql as \$fn\$
+       begin perform restore_product(a); return 'restored';
+       exception when others then return 'guarded: ' || sqlerrm; end \$fn\$;" >/dev/null
+chk "حذفُ معرّفٍ غير موجود يُرفض" \
+    "select left(_del_try('eeee0000-0000-0000-0000-0000000000ff'), 7)" "guarded"
+chk "والحذفُ يرجع كم انباع منه (٢)" \
+    "select ((delete_product('eeee0000-0000-0000-0000-000000000001', 'غلط')->>'sold_qty')::numeric = 2)::text" "true"
+chk "المنتج ما عاد بالمخزن" \
+    "select count(*)::text from products where id='eeee0000-0000-0000-0000-000000000001'" "0"
+chk "لكنه بالسلّة بصورته: الرصيد ٤ والسبب محفوظ" \
+    "select ((stock = 4) and reason = 'غلط' and row->>'name' = 'دراي فود رويال')::text from products_trash where id='eeee0000-0000-0000-0000-000000000001'" "true"
+chk "ومعرّفاتُ سطور الفاتورة والملصق محفوظة" \
+    "select (cardinality(invoice_item_ids) = 1 and cardinality(barcode_ids) = 1)::text from products_trash where id='eeee0000-0000-0000-0000-000000000001'" "true"
+chk "وسطرُ الفاتورة صار بلا صنف (set null) — كما كان يحصل بصمت" \
+    "select count(*)::text from invoice_items where id='eeee1111-0000-0000-0000-000000000001' and product_id is null" "1"
+chk "الاسترجاع يمرّ" \
+    "select _restore_try('eeee0000-0000-0000-0000-000000000001')" "restored"
+chk "ورجع بنفس المعرّف والباركود والرصيد" \
+    "select (barcode = '3182550711159' and stock = 4)::text from products where id='eeee0000-0000-0000-0000-000000000001'" "true"
+chk "وسطرُ الفاتورة رجع لصنفه — التقرير يستعيد اسمه" \
+    "select count(*)::text from invoice_items where id='eeee1111-0000-0000-0000-000000000001' and product_id='eeee0000-0000-0000-0000-000000000001'" "1"
+chk "والملصق كذلك" \
+    "select count(*)::text from generated_barcodes where id='eeee2222-0000-0000-0000-000000000001' and product_id='eeee0000-0000-0000-0000-000000000001'" "1"
+chk "والسلّة انفرغت منه" \
+    "select count(*)::text from products_trash where id='eeee0000-0000-0000-0000-000000000001'" "0"
+chk "واسترجاعٌ ثانٍ يُرفض" \
+    "select left(_restore_try('eeee0000-0000-0000-0000-000000000001'), 7)" "guarded"
+# الباركود انشغل أثناء الغياب: يرجع بلا باركود ولا يكسر القيد.
+$P -c "select delete_product('eeee0000-0000-0000-0000-000000000002', null);
+       insert into products (id, clinic_id, name, barcode, stock)
+       values ('eeee0000-0000-0000-0000-000000000003','11111111-1111-1111-1111-111111111111','سانك تونا (معاد)','854871008371', 1);" >/dev/null 2>&1
+chk "منتجٌ أُعيد إدخاله بنفس الباركود أثناء الغياب: الاسترجاع يمرّ" \
+    "select _restore_try('eeee0000-0000-0000-0000-000000000002')" "restored"
+chk "ويرجع بلا باركود بدل أن يكسر التفرّد" \
+    "select (barcode is null and stock = 99)::text from products where id='eeee0000-0000-0000-0000-000000000002'" "true"
+chk "السلّة محميّة بسياسات الصفوف" \
+    "select relrowsecurity::text from pg_class where relname='products_trash'" "true"
+chk "والدالّتان بصلاحية المُستدعي" \
+    "select count(*)::text from pg_proc where proname in ('delete_product','restore_product') and prosecdef" "0"
+chk "وممنوعتان على anon" \
+    "select (has_function_privilege('anon','public.delete_product(uuid,text)','execute') or has_function_privilege('anon','public.restore_product(uuid)','execute'))::text" "false"
+chk "وبمسارٍ مثبَّت" \
+    "select count(*)::text from pg_proc where proname in ('delete_product','restore_product') and coalesce(array_to_string(proconfig,','),'') like '%search_path%'" "2"
 
 echo
 [ $fail -eq 0 ] && echo "✓ كل الفحوص عبرت" || { echo "✗ اكو فحصٌ فشل"; exit 1; }

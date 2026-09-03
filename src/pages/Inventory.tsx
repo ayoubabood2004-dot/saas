@@ -7,9 +7,9 @@ import { Dialog } from "@/components/ui/Dialog";
 import {
   Barcode, Package, Trash2, Search, Building2, Plus, ChevronLeft, ArrowRight, ArrowLeft,
   TrendingUp, AlertTriangle, CalendarClock, Pencil, PackagePlus, Boxes, Layers, Wallet, ShoppingBag, FolderTree, ScanBarcode,
-  Check, ListPlus, Printer, Copy, Sparkles, FileSpreadsheet, Loader2, Scale, RefreshCw,
+  Check, ListPlus, Printer, Copy, Sparkles, FileSpreadsheet, Loader2, Scale, RefreshCw, RotateCcw,
 } from "lucide-react";
-import type { Product, ProductCategory, Company, CompanySection } from "@/types";
+import type { Product, ProductCategory, Company, CompanySection, DeletedProduct } from "@/types";
 import { PurchasesTab, PurchaseBuilderModal } from "@/components/inventory/Purchases";
 import { StarterCatalogModal } from "@/components/inventory/StarterCatalog";
 import { SupplierLedgerTab } from "@/components/inventory/SupplierLedger";
@@ -44,7 +44,7 @@ const normName = (s: string) => s.trim().replace(/\s+/g, " ").normalize("NFC");
 /** Case-insensitive match key for a company name. */
 const normKey = (s: string) => normName(s).toLowerCase();
 
-type View = "products" | "companies" | "purchases" | "ledger" | "barcodes";
+type View = "products" | "companies" | "purchases" | "ledger" | "barcodes" | "trash";
 
 /* --------------------------------------------------------------------------
  * مجموعات الدفعات (bulk_group)
@@ -324,6 +324,7 @@ export function Inventory() {
         {!restricted && <ViewTab active={view === "purchases"} icon={ShoppingBag} label={t("pos.tabPurchases", "المشتريات")} onClick={() => { playTap(); setView("purchases"); }} />}
         {!restricted && <ViewTab active={view === "ledger"} icon={Wallet} label={t("pos.tabLedger", "الديون والفواتير")} onClick={() => { playTap(); setView("ledger"); }} />}
         <ViewTab active={view === "barcodes"} icon={ScanBarcode} label={t("pos.tabBarcodes", "مولد الباركود")} onClick={() => { playTap(); setView("barcodes"); }} />
+        <ViewTab active={view === "trash"} icon={Trash2} label={t("pos.tabTrash", "المحذوفات")} onClick={() => { playTap(); setView("trash"); }} />
       </div>
 
       {loading ? (
@@ -342,6 +343,8 @@ export function Inventory() {
         <SupplierLedgerTab companies={companies} clinicId={clinicId} products={products} />
       ) : view === "barcodes" ? (
         <BarcodeStudio products={products} onChanged={load} />
+      ) : view === "trash" ? (
+        <TrashTab onChanged={load} />
       ) : (
         <PurchasesTab products={products} companies={companies} sections={sections} clinicId={clinicId} onChanged={load} />
       )}
@@ -495,7 +498,6 @@ function ProductRow({ p, companyName, sectionName, onEdit, onRemove }: { p: Prod
 /* ---------------- Products tab ---------------- */
 function InventoryTab({ products, companies, sections, clinicId, onChanged }: { products: Product[]; companies: Company[]; sections: CompanySection[]; clinicId?: string; onChanged: () => void }) {
   const { t } = useTranslation();
-  const toast = useToast();
   const [editing, setEditing] = useState<Product | null>(null);
   const [adding, setAdding] = useState(false);
   const [q, setQ] = useState("");
@@ -520,14 +522,11 @@ function InventoryTab({ products, companies, sections, clinicId, onChanged }: { 
       || searchable(companyName(p.company_id) ?? "").includes(nq))
     : products;
 
-  const remove = async (p: Product) => {
-    if (!window.confirm(t("pos.confirmDelete", { name: p.name, defaultValue: "Remove \"{{name}}\" from inventory?" }))) return;
-    try { await repo.deleteProduct(p.id); playSuccess(); onChanged(); }
-    catch (e) { toast.error(describeDbError(e, t), e instanceof Error ? e.message : undefined); }
-  };
+  const { askDelete: remove, deleteDialog } = useProductDelete(onChanged);
 
   return (
     <div className="space-y-4">
+      {deleteDialog}
       <div className="flex items-center gap-2">
         <div className="relative flex-1">
           <Search size={16} className="pointer-events-none absolute top-1/2 -translate-y-1/2 text-ink-subtle ltr:left-3 rtl:right-3" />
@@ -884,7 +883,7 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
       // صفوف حُذفت أثناء تعديل المجموعة → منتجاتها تُحذف فعلاً.
       if (editGroup) {
         for (const id of removedIds) {
-          try { await repo.deleteProduct(id); } catch { /* best effort */ }
+          try { await repo.deleteProduct(id, t("pos.bulkEditRemoved", "شيل من تعديل المجموعة")); } catch { /* best effort */ }
         }
       }
       if (failedIdx.length === 0) {
@@ -1569,11 +1568,7 @@ function CompanyDetail({ company, products, companies, sections, clinicId, onBac
   const shownSections = ql ? mySections.filter((sec) => sec.name.toLowerCase().includes(ql)) : mySections;
   const matchedProducts = ql ? mine.filter((p) => p.name.toLowerCase().includes(ql) || (p.barcode ?? "").includes(ql)) : [];
   const sectionNameOf = (id?: string | null) => (id ? mySections.find((x) => x.id === id)?.name : undefined);
-  const removeProduct = async (p: Product) => {
-    if (!window.confirm(t("pos.confirmDelete", { name: p.name, defaultValue: "Remove \"{{name}}\" from inventory?" }))) return;
-    try { await repo.deleteProduct(p.id); playSuccess(); onChanged(); }
-    catch (e) { toast.error(describeDbError(e, t), e instanceof Error ? e.message : undefined); }
-  };
+  const { askDelete: removeProduct, deleteDialog } = useProductDelete(onChanged);
 
   const pooledTotal = mySections.reduce((n, sec) => n + (sec.pooled_stock ?? 0), 0);
   const removeCompany = async () => {
@@ -1611,6 +1606,7 @@ function CompanyDetail({ company, products, companies, sections, clinicId, onBac
 
   return (
     <div className="space-y-4">
+      {deleteDialog}
       <button onClick={() => { playTap(); onBack(); }} className="inline-flex items-center gap-1.5 text-sm font-semibold text-ink-muted transition hover:text-brand-600">
         <Back size={16} /> {t("pos.backToCompanies", "كل الشركات")}
       </button>
@@ -1766,7 +1762,6 @@ function SectionProducts({ company, section, products, companies, sections, clin
   clinicId?: string; onBack: () => void; onEditSection?: () => void; onChanged: () => void; children?: ReactNode;
 }) {
   const { t, i18n } = useTranslation();
-  const toast = useToast();
   const [addingProduct, setAddingProduct] = useState(false);
   const [assigning, setAssigning] = useState(false);
   const [poolOpen, setPoolOpen] = useState(false);
@@ -1784,14 +1779,11 @@ function SectionProducts({ company, section, products, companies, sections, clin
   const trackedUnits = mine.reduce((n, p) => n + (p.pooled ? 0 : p.stock || 0), 0);
   const estTotal = pool + trackedUnits;
 
-  const removeProduct = async (p: Product) => {
-    if (!window.confirm(t("pos.confirmDelete", { name: p.name, defaultValue: "Remove \"{{name}}\" from inventory?" }))) return;
-    try { await repo.deleteProduct(p.id); playSuccess(); onChanged(); }
-    catch (e) { toast.error(describeDbError(e, t), e instanceof Error ? e.message : undefined); }
-  };
+  const { askDelete: removeProduct, deleteDialog } = useProductDelete(onChanged);
 
   return (
     <div className="space-y-4">
+      {deleteDialog}
       <button onClick={() => { playTap(); onBack(); }} className="inline-flex items-center gap-1.5 text-sm font-semibold text-ink-muted transition hover:text-brand-600">
         <Back size={16} /> {company.name}
       </button>
@@ -2287,5 +2279,150 @@ function MergeDialog({ drop, candidates, suggested, onClose, onMerged }: {
         </div>
       </div>
     </Dialog>
+  );
+}
+
+/* ============================================================================
+ * الحذف (0145) — حوارٌ صادق، وسلّةٌ يُرجَع منها.
+ *
+ * عيادتان أبلغتا عن مادةٍ «اختفت كأنها ما كانت» — وسجلُّ التدقيق يقول إنها
+ * حُذفت من زرّ الحذف على الحساب المشترك. لا أحدَ يتذكّر، لأن التأكيد كان نافذةَ
+ * متصفّحٍ عامّة تُقبل بلا قراءة، والحذفَ كان محواً نهائياً. الحوار هنا يذكر
+ * المنتجَ بالاسم ورصيدَه وكم فاتورةً بيع فيها، والحذفُ يطوي الصفَّ بالسلّة
+ * ليُستعاد بنفس معرّفه وفواتيره.
+ * ==========================================================================*/
+function useProductDelete(onChanged: () => void) {
+  const [target, setTarget] = useState<Product | null>(null);
+  const deleteDialog = target
+    ? <DeleteProductDialog p={target} onClose={() => setTarget(null)} onDeleted={() => { setTarget(null); onChanged(); }} />
+    : null;
+  return { askDelete: (p: Product) => setTarget(p), deleteDialog };
+}
+
+function DeleteProductDialog({ p, onClose, onDeleted }: { p: Product; onClose: () => void; onDeleted: () => void }) {
+  const { t } = useTranslation();
+  const toast = useToast();
+  const [sales, setSales] = useState<number | null>(null);
+  const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    let on = true;
+    repo.productSaleLines(p.id).then((n) => { if (on) setSales(n); }).catch(() => { if (on) setSales(-1); });
+    return () => { on = false; };
+  }, [p.id]);
+
+  const del = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await repo.deleteProduct(p.id, reason);
+      playSuccess();
+      toast.success(t("pos.deletedToTrash", "انحذف \"{{name}}\" — تلكاه بتبويب المحذوفات لو احتجته", { name: p.name }));
+      onDeleted();
+    } catch (e) {
+      playWarning();
+      toast.error(describeDbError(e, t), e instanceof Error ? e.message : undefined);
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <Dialog open onClose={onClose} title={t("pos.deleteTitle", "حذف منتج")} size="sm"
+      footer={<>
+        <Button variant="ghost" onClick={onClose} disabled={busy}>{t("common.cancel", "إلغاء")}</Button>
+        <Button variant="danger" loading={busy} leftIcon={<Trash2 size={16} />} onClick={() => void del()} data-deletego>
+          {t("pos.deleteGo", "احذف — يروح للمحذوفات")}
+        </Button>
+      </>}>
+      <div className="space-y-3">
+        <div className="rounded-xl border border-line bg-surface-2 p-3">
+          <p className="truncate text-base font-semibold text-ink">{p.name}</p>
+          <p className="font-mono text-2xs text-ink-subtle">{p.barcode ?? "—"}</p>
+          <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-ink-muted">
+            <span>{t("pos.deleteStock", "الرصيد الحالي")}: <b className="text-ink">{p.pooled ? "—" : formatNum(p.stock ?? 0)}</b></span>
+            {sales === null ? <span className="inline-flex items-center gap-1"><Loader2 size={12} className="animate-spin" /></span>
+              : sales > 0 ? <span className="font-semibold text-warn-700">{t("pos.deleteSold", "انباع بـ{{n}} فاتورة", { n: formatNum(sales) })}</span>
+              : sales === 0 ? <span>{t("pos.deleteSoldNone", "ما انباع منه ولا مرة")}</span>
+              : null}
+          </div>
+        </div>
+        <p className="text-xs leading-relaxed text-ink-muted">
+          {t("pos.deleteHint", "المنتج ينشال من المخزن ويروح لتبويب «المحذوفات» — تكدر ترجّعه من هناك بنفس رصيده وتاريخ بيعه.")}
+        </p>
+        <input className="input" value={reason} onChange={(e) => setReason(e.target.value)} maxLength={120}
+          placeholder={t("pos.deleteReason", "سبب الحذف (اختياري)")} />
+      </div>
+    </Dialog>
+  );
+}
+
+/** تبويب «المحذوفات»: كلُّ ما حُذف بصورته لحظة الحذف، وزرُّ استرجاع. */
+function TrashTab({ onChanged }: { onChanged: () => void }) {
+  const { t, i18n } = useTranslation();
+  const toast = useToast();
+  const [rows, setRows] = useState<DeletedProduct[] | null>(null);
+  const [failed, setFailed] = useState(false);
+  const [busy, setBusy] = useState<string | null>(null);
+  const load = async () => {
+    setFailed(false);
+    try { setRows(await withTimeout(repo.listDeletedProducts(), 15000)); }
+    catch { setFailed(true); }
+  };
+  useEffect(() => { void load(); }, []);
+
+  const restore = async (d: DeletedProduct) => {
+    if (busy) return;
+    setBusy(d.id);
+    try {
+      const p = await repo.restoreProduct(d.id);
+      playSuccess();
+      toast.success(t("pos.restored", "رجع \"{{name}}\" للمخزن", { name: p.name }));
+      // الباركود انشغل بمنتجٍ ثانٍ أثناء الغياب؟ رجع بلاه — وقُلها بصراحة.
+      if (d.row.barcode && !p.barcode) {
+        toast.warn(t("pos.restoredNoBarcode", "رجع بلا باركود — الباركود {{code}} صار على منتج ثاني. افتح التعديل واربطه أو ادمجهما.", { code: d.row.barcode }), p.name);
+      }
+      await load();
+      onChanged();
+    } catch (e) {
+      playWarning();
+      toast.error(describeDbError(e, t), e instanceof Error ? e.message : undefined);
+    } finally { setBusy(null); }
+  };
+
+  if (failed) {
+    return (
+      <div className="card space-y-4 p-10 text-center">
+        <p className="mx-auto max-w-md text-ink-subtle">{t("pos.loadFailed", "تعذّر تحميل المخزن. المشكلة بالاتصال ولا شيء ضاع — أعد المحاولة قبل أن تضيف أي مادة.")}</p>
+        <Button leftIcon={<RefreshCw size={16} />} onClick={() => { playTap(); void load(); }}>{t("common.retry", "إعادة المحاولة")}</Button>
+      </div>
+    );
+  }
+  if (rows === null) return <div className="space-y-3">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-16 rounded-2xl" />)}</div>;
+
+  return (
+    <div className="space-y-3">
+      <p className="rounded-xl bg-surface-2 p-2.5 text-xs leading-relaxed text-ink-muted">
+        {t("pos.trashHint", "كل منتج انحذف يوصل هنا بصورته لحظة الحذف. «استرجاع» يرجّعه للمخزن بنفس رصيده وفواتيره.")}
+      </p>
+      {rows.length === 0 ? (
+        <div className="card p-10 text-center text-ink-subtle">{t("pos.trashEmpty", "ماكو منتجات محذوفة.")}</div>
+      ) : rows.map((d) => (
+        <div key={d.id} className="card flex flex-wrap items-center gap-3 p-3" data-trashrow={d.id}>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-semibold text-ink">{d.row.name}</p>
+            <p className="font-mono text-2xs text-ink-subtle">{d.row.barcode ?? "—"}</p>
+            <p className="mt-1 flex flex-wrap gap-x-3 text-2xs text-ink-muted">
+              <span>{t("pos.trashDeletedAt", "انحذف {{when}}", { when: formatDate(d.deleted_at, i18n.language) })}</span>
+              <span>{t("pos.stockN", "رصيد {{n}}", { n: formatNum(d.stock ?? 0) })}</span>
+              {d.sold_qty > 0 && <span>{t("pos.trashSold", "مباع منه {{n}}", { n: formatNum(d.sold_qty) })}</span>}
+              {d.reason && <span className="italic">{d.reason}</span>}
+            </p>
+          </div>
+          <Button size="sm" variant="secondary" loading={busy === d.id} disabled={!!busy && busy !== d.id}
+            leftIcon={<RotateCcw size={14} />} onClick={() => void restore(d)}>
+            {t("pos.restoreProduct", "استرجاع")}
+          </Button>
+        </div>
+      ))}
+    </div>
   );
 }

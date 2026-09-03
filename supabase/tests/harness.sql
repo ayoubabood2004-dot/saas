@@ -70,7 +70,7 @@ create table if not exists purchase_payments (id uuid primary key default gen_ra
 create table if not exists lab_device_links (id uuid primary key default gen_random_uuid(), token text unique);
 create index if not exists lab_device_links_token_idx on lab_device_links(token);
 create table if not exists lab_device_inbox (id uuid primary key default gen_random_uuid(), link_id uuid references lab_device_links(id));
-create table if not exists generated_barcodes (id uuid primary key default gen_random_uuid(), product_id uuid references products(id));
+create table if not exists generated_barcodes (id uuid primary key default gen_random_uuid(), product_id uuid references products(id) on delete set null);
 create table if not exists store_orders (id uuid primary key default gen_random_uuid(), invoice_id uuid references invoices(id));
 create table if not exists journeys (id uuid primary key default gen_random_uuid(), pet_id uuid references pets(id), status text);
 create index if not exists journeys_pet_idx on journeys(pet_id) where status = 'active';

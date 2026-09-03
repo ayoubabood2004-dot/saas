@@ -17,6 +17,7 @@ import { supabase } from "./supabase";
 import { outboxEnqueue, outboxEnqueueRpc, isNetworkError } from "./outbox";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, AppointmentStatus, ClinicInfo, PublicStaff, DailyNote, TreatmentEntry, Admission, Branch, Reminder, Product, Company, CompanySection, Purchase, PurchaseItem, PurchasePayment, PurchaseDraftLine, PurchaseMeta, Courier, DeliveryOrder, PetMovement, DemoDB, Invoice, InvoiceItem, CheckoutItem, SaleMeta, Customer, DiscountType, PaymentMethod, PaymentSplit, WhatsAppMessage, AuditEntry, LoginEvent, PetNote, Expense, ExpenseMethod, ReturnMeta, RetailReturnResult, HealthMetric, ClinicVisit , Surgery, LabResult, LabDeviceLink, LabDeviceInbox, LabStatusValue, PetProblem, CareEntry, FeatureRequest, GeneratedBarcode, StoreProfile, StoreOrder, StoreOrderItem, StoreFrontInfo, StoreCatalogItem, Journey, JourneyEvent, JourneyKind, JourneyStage, JourneyPublicView, EditLine } from "@/types";
+import type { DeletedProduct } from "@/types";
 import type { PayrollPolicyDTO, StaffComp, StaffRecurring, PayrollAdjustment, PayrollRun, Payslip, PayslipLine, StaffLoan, StaffLoanEvent, PayslipDraft, PayMethod } from "@/types";
 import * as PD from "./payrollDemo";
 import { paidOf, round2 } from "./debt";
@@ -1146,10 +1147,49 @@ const demoRepo = {
     saveDB(db);
     return p;
   },
-  async deleteProduct(id: string): Promise<void> {
+  async deleteProduct(id: string, reason?: string | null): Promise<void> {
     const db = loadDB();
+    const p = (db.products ?? []).find((x) => x.id === id);
+    if (!p) throw new Error("product not found");
+    if (!db.productsTrash) db.productsTrash = [];
+    const sold = (db.invoiceItems ?? []).filter((i) => i.product_id === id && i.qty > 0).reduce((n, i) => n + i.qty, 0);
+    db.productsTrash = db.productsTrash.filter((t) => t.id !== id);
+    db.productsTrash.push({
+      id, clinic_id: null, row: { ...p }, sold_qty: sold, stock: p.stock || 0,
+      invoice_item_ids: (db.invoiceItems ?? []).filter((i) => i.product_id === id).map((i) => i.id),
+      purchase_item_ids: (db.purchaseItems ?? []).filter((i) => i.product_id === id).map((i) => i.id),
+      reason: reason?.trim() || null, deleted_by: null, deleted_at: new Date().toISOString(),
+    });
+    // السطور تفقد صنفها كما بالخادم (set null) — والاسترجاع يعيده.
+    for (const i of db.invoiceItems ?? []) if (i.product_id === id) i.product_id = null;
+    for (const i of db.purchaseItems ?? []) if (i.product_id === id) i.product_id = null;
     db.products = (db.products ?? []).filter((x) => x.id !== id);
     saveDB(db);
+  },
+  async listDeletedProducts(): Promise<DeletedProduct[]> {
+    return (loadDB().productsTrash ?? []).slice().sort((a, b) => b.deleted_at.localeCompare(a.deleted_at));
+  },
+  /** كم فاتورةً بيع فيها هذا المنتج — تُعرض قبل تأكيد الحذف لا بعده. */
+  async productSaleLines(id: string): Promise<number> {
+    return (loadDB().invoiceItems ?? []).filter((i) => i.product_id === id && i.qty > 0).length;
+  },
+  async restoreProduct(id: string): Promise<Product> {
+    const db = loadDB();
+    const t = (db.productsTrash ?? []).find((x) => x.id === id);
+    if (!t) throw new Error("not in trash");
+    if ((db.products ?? []).some((x) => x.id === id)) throw new Error("product already exists");
+    const row = { ...t.row };
+    // الباركود يبقى فريداً: لو أُعيد إدخاله أثناء الغياب نستعيد بلا باركود.
+    if (row.barcode && (db.products ?? []).some((x) => x.barcode === row.barcode)) row.barcode = null;
+    if (!db.products) db.products = [];
+    db.products.push(row);
+    // السطور التي كانت له — وما زالت بلا صنف — ترجع إليه بمعرّفاتها كما بالخادم.
+    const inv = new Set(t.invoice_item_ids ?? []), pur = new Set(t.purchase_item_ids ?? []);
+    for (const i of db.invoiceItems ?? []) if (i.product_id == null && inv.has(i.id)) i.product_id = id;
+    for (const i of db.purchaseItems ?? []) if (i.product_id == null && pur.has(i.id)) i.product_id = id;
+    db.productsTrash = (db.productsTrash ?? []).filter((x) => x.id !== id);
+    saveDB(db);
+    return row;
   },
   /** دمجُ توأمين (0144): الرصيد يُجمع، ورمزُ النسخة يصير إضافياً، والفواتير تعود للأصل. */
   async mergeProducts(keepId: string, dropId: string): Promise<Product> {
@@ -2307,6 +2347,7 @@ const DEMO_ACTIVITY_MAP: Record<string, { entity: string; action: "INSERT" | "UP
   createProduct: { entity: "products", action: "INSERT" },
   updateProduct: { entity: "products", action: "UPDATE" },
   deleteProduct: { entity: "products", action: "DELETE" },
+  restoreProduct: { entity: "products", action: "INSERT" },
   createCompany: { entity: "companies", action: "INSERT" },
   updateCompany: { entity: "companies", action: "UPDATE" },
   deleteCompany: { entity: "companies", action: "DELETE" },
@@ -3150,8 +3191,25 @@ const supabaseRepo: typeof demoRepo = {
     }
     return maybe<Product>(r);
   },
-  async deleteProduct(id) {
-    ok(await sbc().from("products").delete().eq("id", id));
+  async deleteProduct(id, reason) {
+    // طيٌّ لا محو (0145): الصفّ يُحفظ بالسلّة بصورته وسطورِ فواتيره، فيُستعاد
+    // بنفس معرّفه. الحذفُ المباشر كان يجعل المنتج «كأنه ما كان» — وقد كان.
+    const { error } = await sbc().rpc("delete_product", { p_id: id, p_reason: reason ?? null });
+    if (error) throw error;
+  },
+  async listDeletedProducts() {
+    return listOf<DeletedProduct>(await sbc().from("products_trash").select("*").order("deleted_at", { ascending: false }));
+  },
+  async productSaleLines(id) {
+    // عدٌّ لا صفوف — فلا يمسّه سقفُ الألف.
+    const { count, error } = await sbc().from("invoice_items").select("id", { count: "exact", head: true }).eq("product_id", id).gt("qty", 0);
+    if (error) throw error;
+    return count ?? 0;
+  },
+  async restoreProduct(id) {
+    const { data, error } = await sbc().rpc("restore_product", { p_id: id });
+    if (error) throw error;
+    return data as Product;
   },
   async mergeProducts(keepId, dropId) {
     const { data, error } = await sbc().rpc("merge_products", { p_keep: keepId, p_drop: dropId });
@@ -3814,7 +3872,7 @@ const READ_ONLY_ALLOWED = new Set<string>([
   // --- الرواتب: القراءة تبقى بالاشتراك المنتهي (الموظف يشوف قسيمته) ---
   "getPayrollPolicy", "listStaffComp", "listStaffRecurring", "listPayrollRuns",
   "listPayslips", "listPayslipLines", "listStaffLoans", "listLoanEvents",
-  "listPayrollAdjustments",
+  "listPayrollAdjustments", "listDeletedProducts", "productSaleLines",
   // --- استعلامات مساعدة لا تكتب ---
   "checkStoreSlug", "slotTaken", "supportsBulkGroup", "supportsSupplierLedger",
   "adminListFeatureRequests", "systemHealth",

@@ -1071,6 +1071,7 @@ export interface DemoDB {
   admissions: Admission[];
   reminders: Reminder[];
   products: Product[];
+  productsTrash?: DeletedProduct[];
   companies?: Company[];
   companySections?: CompanySection[];
   invoices: Invoice[];
@@ -1287,6 +1288,23 @@ export interface PayrollAdjustment {
   reversed_reason?: string | null;
   created_by?: string | null;
   created_at: string;
+}
+
+/**
+ * منتجٌ محذوف بالسلّة (0145): صورةُ الصفّ لحظةَ الحذف، ومَن حذف ولماذا، وكم
+ * انباع منه — لأن «اختفى كأنه ما كان» كان بالحقيقة حذفاً بلا سلّة.
+ */
+export interface DeletedProduct {
+  id: string;
+  clinic_id?: string | null;
+  row: Product;
+  invoice_item_ids?: string[];
+  purchase_item_ids?: string[];
+  sold_qty: number;
+  stock: number;
+  reason?: string | null;
+  deleted_by?: string | null;
+  deleted_at: string;
 }
 
 export interface PayrollRun {
