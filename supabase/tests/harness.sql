@@ -85,6 +85,15 @@ create table if not exists staff_loans (id uuid primary key default gen_random_u
 -- شكلُ ما تلمسه 0144 (دمج التوائم): أعمدةُ المنتج التي تُجمع أو تُقارَن، ومفاتيحُ
 -- الفواتير التي تُعاد إلى الأصل. بدونها لا يُفحص الدمج، وما لا يُفحص لا يُصدَّق.
 alter table products add column if not exists pooled      boolean not null default false;
+-- 0146: «رجّع كل قطعة لمكانها» (0117) يقرأ الصنفَ والشركة ويطبّع بدالّتي 0117.
+alter table products add column if not exists section_id  uuid;
+alter table products add column if not exists company_id  uuid;
+alter table products add column if not exists created_at  timestamptz not null default now();
+alter table generated_barcodes add column if not exists clinic_id uuid;
+create or replace function inv_norm_code(t text) returns text language sql immutable
+as $$ select regexp_replace(translate(coalesce(t,''), '٠١٢٣٤٥٦٧٨٩', '0123456789'), '\s', '', 'g') $$;
+create or replace function inv_norm_name(t text) returns text language sql immutable
+as $$ select lower(regexp_replace(coalesce(t,''), '\s+', '', 'g')) $$;
 alter table products add column if not exists min_stock   numeric;
 alter table products add column if not exists expiry_date date;
 alter table purchase_items add column if not exists product_id uuid references products(id) on delete set null;
@@ -110,7 +119,7 @@ create table if not exists staff_loan_events (id uuid primary key default gen_ra
 
 create table if not exists invoice_items (
   id uuid primary key default gen_random_uuid(),
-  invoice_id uuid references invoices(id), clinic_id uuid, product_id uuid references products(id),
+  invoice_id uuid references invoices(id), clinic_id uuid, product_id uuid references products(id) on delete set null,
   name text, barcode text, qty numeric(14,3), unit_price numeric(14,2), unit_cost numeric(14,2),
   line_total numeric(14,2), stock_qty numeric(14,3), pooled_qty numeric(14,3), unit_label text
 );

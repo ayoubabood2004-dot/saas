@@ -474,6 +474,8 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const [busy, setBusy] = useState(false);
+  /** سطورٌ تبيع الرصيدَ كلَّه بكميةٍ كبيرة — تُعرض للتأكيد قبل الحسم. */
+  const [bigSale, setBigSale] = useState<Line[] | null>(null);
   const [flash, setFlash] = useState<string | null>(null);
   /* ---- المضاعِف: «اكتب ٢٠ ثم امسح» -------------------------------------
    * عشرون قطعة من صنف واحد كانت تكلّف عشرين مسحة أو عشرين ضغطة. المضاعِف
@@ -723,6 +725,16 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
     const n = peekScanMult(code);
     const product = await repo.getProductByBarcode(code, clinicId);
     if (product) {
+      // رصيدٌ صفر: السكوتُ هنا هو ما جعل عيادةً تقول «المنتج اختفى» — البطاقة
+      // رمادية والمسحة لا تنزل شيئاً بلا كلمة. فنقولها: موجود، بس رصيده صفر.
+      const noStock = !retMode && !product.pooled && !product.sold_by_weight
+        && (product.has_sub_unit && product.units_per_box ? product.stock * product.units_per_box < 1 : (product.stock ?? 0) <= 0);
+      if (noStock) {
+        playWarning();
+        toast.error(t("retail.scanOutOfStock", "«{{name}}» موجود بس رصيده صفر — زيد رصيده من المخزن أو سجّل شراء حتى ينباع", { name: product.name }));
+        setQuery("");
+        return;
+      }
       playSuccess();
       addProduct(product, n);
       if (mult != null) setMult(null);
@@ -1253,8 +1265,18 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
     } finally { setBusy(false); }
   };
 
-  const checkout = async () => {
+  /* فاتورةٌ تبيع رفّاً كاملاً بضغطة: مقيسة — «اكتب ٤٧ وامسح» ثلاث مرّات بعد
+   * إدخال البضاعة بدقيقة، ١٧٠٬٠٠٠ نقدي بلا زبون ولا طباعة، والرصيد صار صفراً
+   * فقالت العيادة «المنتج اختفى». الكميةُ الكبيرة تُسمّى قبل أن تُحسم. */
+  const bigLines = (): Line[] => cart.filter((l) =>
+    l.kind === "product" && !l.ret && l.stock != null && l.qty >= 10 && l.qty >= unitCap(l));
+
+  const checkout = async (force = false) => {
     if (cart.length === 0 || busy) return;
+    if (force !== true) {
+      const big = bigLines();
+      if (big.length > 0) { playWarning(); setBigSale(big); return; }
+    }
     ensureRef();
     setBusy(true);
     try {
@@ -2571,7 +2593,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
             </p>
           )}
           {!pureReturn && (
-          <Button className={cn("w-full", posV2 && "shrink-0")} style={posV2 ? { minHeight: 48 } : undefined} size="lg" disabled={cart.length === 0 || needsDebtName || netNegative} loading={busy} onClick={checkout} leftIcon={deliveryOn ? <Bike size={18} /> : <CheckCircle2 size={18} />}>
+          <Button className={cn("w-full", posV2 && "shrink-0")} style={posV2 ? { minHeight: 48 } : undefined} size="lg" disabled={cart.length === 0 || needsDebtName || netNegative} loading={busy} onClick={() => void checkout()} leftIcon={deliveryOn ? <Bike size={18} /> : <CheckCircle2 size={18} />}>
             {deliveryOn
               ? `${t("retail.completeDelivery", "إرسال للتوصيل")} · ${t("retail.codShort", "يُحصَّل")} ${money(codAmount)}`
               : isCredit
@@ -2658,6 +2680,25 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
         onClose={() => setMultPad(false)}
         onSubmit={(n) => { armMult(n); setMultPad(false); }}
       />
+
+      {/* تأكيدُ بيع الرفّ كاملاً — الكمية تُسمّى بالاسم والعدد قبل الحسم */}
+      <Dialog open={!!bigSale} onClose={() => setBigSale(null)} title={t("retail.bigSaleTitle", "تبيع الرصيد كلّه؟")} size="sm"
+        footer={<>
+          <Button variant="ghost" onClick={() => { playTap(); setBigSale(null); }}>{t("retail.bigSaleBack", "ارجع للسلة")}</Button>
+          <Button variant="primary" data-bigsalego onClick={() => { playTap(); setBigSale(null); void checkout(true); }}>{t("retail.bigSaleGo", "نعم، بيع")}</Button>
+        </>}>
+        <div className="space-y-2">
+          <p className="text-sm text-ink-muted">{t("retail.bigSaleHint", "هذي الأصناف كميتها كبيرة وتساوي كل الرصيد. لو قصدك تسجّل بضاعة واصلة، مكانها «المشتريات» مو البيع.")}</p>
+          <ul className="space-y-1">
+            {(bigSale ?? []).map((l) => (
+              <li key={l.id} className="flex items-center justify-between gap-3 rounded-xl bg-surface-2 px-3 py-2 text-sm">
+                <span className="min-w-0 flex-1 truncate font-medium text-ink">{l.name}</span>
+                <span className="shrink-0 font-semibold text-warn-700">{t("retail.bigSaleQty", "{{n}} من {{stock}}", { n: formatNum(l.qty), stock: formatNum(l.stock ?? 0) })}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </Dialog>
 
       {posV2 && cartSheet && (
         <button

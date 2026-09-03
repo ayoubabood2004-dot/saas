@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { motion } from "framer-motion";
 import { getCached, setCached } from "@/lib/swrCache";
-import { findByCode, looksLikeShelfCode, twinsByName } from "@/lib/productCodes";
+import { findByCode, looksLikeShelfCode, twinsByName, nearCodeTwin } from "@/lib/productCodes";
 import { Dialog } from "@/components/ui/Dialog";
 import {
   Barcode, Package, Trash2, Search, Building2, Plus, ChevronLeft, ArrowRight, ArrowLeft,
@@ -595,6 +595,8 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
   const saveRef = useRef<HTMLButtonElement>(null);
   /** الرمزُ المكتوب موجودٌ على منتجٍ آخر بالمخزن؟ من القائمة المحمَّلة — بلا شبكة، ويستثني المنتجَ المعدَّل نفسه. */
   const ownHit = useMemo(() => findByCode(allProducts ?? [], f.barcode, product?.id), [allProducts, f.barcode, product?.id]);
+  /** رمزٌ يفرق بخانةٍ واحدة عن رمزِ منتجٍ قائم — ٢٢ زوجاً مقيساً بالإنتاج، رقمٌ علق قبل المسح أو ماسحٌ بلع خانة. */
+  const nearHit = useMemo(() => (ownHit ? undefined : nearCodeTwin(allProducts ?? [], f.barcode, product?.id)), [allProducts, f.barcode, product?.id, ownHit]);
   /** توأمٌ بالاسم (لنموذج التعديل): يُعرض زرُّ الدمج حين يكون هناك ما يُدمَج به. */
   const nameTwins = useMemo(
     () => (product ? twinsByName(allProducts ?? [], product, normalizeAr) : []),
@@ -866,7 +868,7 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
           const nm = explicit || lastName || `منتج ${r.barcode.trim()}`;
           const rowPayload = {
             ...shared,
-            barcode: r.barcode.trim() || null,
+            barcode: normalizeCode(r.barcode) || null,
             name: nm,
             stock: pooled ? 0 : Math.max(0, Math.round((Number(r.stock) || 0) * 1000) / 1000),
             expiry_date: r.expiry_date || null,
@@ -1055,6 +1057,16 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
                 {onOpenExisting && (
                   <button className="rounded-lg bg-warn-600 px-2.5 py-1 text-2xs font-semibold text-white" data-ownhitopen
                     onClick={() => { playTap(); onOpenExisting(ownHit); }}>{t("pos.ownHitOpen", "افتحه")}</button>
+                )}
+              </div>
+            )}
+            {nearHit && (
+              <div className="mt-2 flex flex-wrap items-center gap-2 rounded-xl border border-warn-300 bg-warn-50 p-2.5 text-xs text-warn-700 dark:border-warn-500/40 dark:bg-warn-500/10 dark:text-warn-300" data-nearhit={nearHit.id}>
+                <AlertTriangle size={14} className="shrink-0" />
+                <span className="flex-1">{t("pos.nearCode", "الرمز يفرق بخانة وحدة عن \"{{name}}\" ({{code}}) — نفس المادة؟ افتحه بدل ما تسوّي نسخة.", { name: nearHit.name, code: nearHit.barcode ?? "" })}</span>
+                {onOpenExisting && (
+                  <button className="rounded-lg bg-warn-600 px-2.5 py-1 text-2xs font-semibold text-white" data-nearhitopen
+                    onClick={() => { playTap(); onOpenExisting(nearHit); }}>{t("pos.ownHitOpen", "افتحه")}</button>
                 )}
               </div>
             )}
@@ -1564,9 +1576,12 @@ function CompanyDetail({ company, products, companies, sections, clinicId, onBac
   const s = statsFor(products, company.id);
 
   // Search WITHIN this company — matches section names AND product name/barcode.
-  const ql = q.trim().toLowerCase();
-  const shownSections = ql ? mySections.filter((sec) => sec.name.toLowerCase().includes(ql)) : mySections;
-  const matchedProducts = ql ? mine.filter((p) => p.name.toLowerCase().includes(ql) || (p.barcode ?? "").includes(ql)) : [];
+  // نفس تطبيع تبويب المنتجات وشاشة البيع — بحثٌ حرفيّ هنا كان يقول «ماكو»
+  // عن مادةٍ بالرفّ لأن «ة» كُتبت «ه» أو الرقم كُتب بالعربية.
+  const ql = searchable(q.trim());
+  const cq = normalizeCode(q);
+  const shownSections = ql ? mySections.filter((sec) => searchable(sec.name).includes(ql)) : mySections;
+  const matchedProducts = ql ? mine.filter((p) => searchable(p.name).includes(ql) || (!!cq && normalizeCode(p.barcode).includes(cq))) : [];
   const sectionNameOf = (id?: string | null) => (id ? mySections.find((x) => x.id === id)?.name : undefined);
   const { askDelete: removeProduct, deleteDialog } = useProductDelete(onChanged);
 
@@ -1772,8 +1787,9 @@ function SectionProducts({ company, section, products, companies, sections, clin
   const mine = section
     ? products.filter((p) => p.section_id === section.id)
     : products.filter((p) => p.company_id === company.id && !p.section_id);
-  const ql = q.trim().toLowerCase();
-  const shown = ql ? mine.filter((p) => p.name.toLowerCase().includes(ql) || (p.barcode ?? "").includes(ql)) : mine;
+  const ql = searchable(q.trim());
+  const cq = normalizeCode(q);
+  const shown = ql ? mine.filter((p) => searchable(p.name).includes(ql) || (!!cq && normalizeCode(p.barcode).includes(cq))) : mine;
   const title = section ? section.name : t("pos.uncategorized", "بدون صنف");
   const pool = section?.pooled_stock ?? 0;
   const trackedUnits = mine.reduce((n, p) => n + (p.pooled ? 0 : p.stock || 0), 0);
@@ -2414,6 +2430,7 @@ function TrashTab({ onChanged }: { onChanged: () => void }) {
               <span>{t("pos.trashDeletedAt", "انحذف {{when}}", { when: formatDate(d.deleted_at, i18n.language) })}</span>
               <span>{t("pos.stockN", "رصيد {{n}}", { n: formatNum(d.stock ?? 0) })}</span>
               {d.sold_qty > 0 && <span>{t("pos.trashSold", "مباع منه {{n}}", { n: formatNum(d.sold_qty) })}</span>}
+              {d.merged_into && <span className="font-semibold text-brand-600">{t("pos.trashMerged", "مدموج بمنتج ثاني — الاسترجاع يفكّ الدمج")}</span>}
               {d.reason && <span className="italic">{d.reason}</span>}
             </p>
           </div>

@@ -42,6 +42,31 @@ export function looksLikeShelfCode(code: string | null | undefined): boolean {
 }
 
 /**
+ * رمزٌ «قريب»: نفسُ رمزِ منتجٍ قائم بزيادة رقمٍ واحد بأوّله أو آخره، أو بنقصانه.
+ *
+ * مقيسٌ على الإنتاج: ٢٢ زوجاً بثلاث عيادات — `8711908384001` عند «مكافآت
+ * قطط» ثم `18711908384001` عند إعادة إدخالها (رقمٌ علق بالخانة قبل المسح)،
+ * و`8680542871133` ثم `868054287113` (الماسح بلع الرقم الأخير). النتيجة
+ * واحدة: العلبة تُمسح فيقول النظام «لا يوجد» والمادة موجودة برمزٍ يفرق بخانة.
+ * لا نمنع — قد يكون رمزاً حقيقياً مختلفاً — لكن نقولها قبل الحفظ.
+ * يُطبَّق على باركودات المصنع فقط (٨ خانات فأكثر)؛ أرقامُ الرفوف القصيرة
+ * (`1003` و`10030`) جيرانٌ بالطبيعة لا أخطاء.
+ */
+export function nearCodeTwin(products: readonly Product[], code: string | null | undefined, excludeId?: string | null): Product | undefined {
+  const c = normalizeCode(code);
+  if (c.length < 8) return undefined;
+  const near = (o: string): boolean => {
+    if (!o || o === c) return false;
+    if (o.length === c.length + 1) return o.slice(1) === c || o.slice(0, -1) === c;
+    if (o.length === c.length - 1 && o.length >= 8) return c.slice(1) === o || c.slice(0, -1) === o;
+    return false;
+  };
+  return products.find((p) =>
+    p.id !== excludeId
+    && (near(normalizeCode(p.barcode)) || (p.alt_codes ?? []).some((a) => near(normalizeCode(a)))));
+}
+
+/**
  * توأمٌ محتمل: نفسُ الاسم (مطبَّعاً) لمنتجٍ آخر بنفس المخزن. للدمج لا للمنع —
  * أسماءٌ متطابقة برموزٍ مختلفة قد تكون نكهاتٍ حقيقية لصنفٍ واحد.
  */

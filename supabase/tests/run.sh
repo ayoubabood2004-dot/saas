@@ -22,7 +22,7 @@ DB=dvtest
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MIG="$HERE/../migrations"
 # الهجرات التي يغطّيها هذا المخطّط الأساس. زدها كل ما تنضاف موجة.
-WAVE="$MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql"
+WAVE="$MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql"
 
 command -v "$PGBIN/initdb" >/dev/null || { echo "ما لكيت بوستغريس بـ $PGBIN"; exit 1; }
 
@@ -579,7 +579,8 @@ $P -c "insert into products (id, clinic_id, name, barcode, stock, min_stock)
        values ('x', 1, 1000, 600, 1000, 1, 'dddd0000-0000-0000-0000-000000000002');" >/dev/null 2>&1
 
 $P -c "create or replace function _merge_try(a uuid, b uuid) returns text language plpgsql as \$fn\$
-       begin perform merge_products(a, b); return 'merged';
+       begin perform set_config('request.jwt.claim.sub','11111111-1111-1111-1111-111111111111',true);
+             perform merge_products(a, b); return 'merged';
        exception when others then return 'guarded: ' || sqlerrm; end \$fn\$;" >/dev/null
 chk "دمجُ المنتج بنفسه يُرفض" \
     "select left(_merge_try('dddd0000-0000-0000-0000-000000000001','dddd0000-0000-0000-0000-000000000001'), 7)" "guarded"
@@ -599,8 +600,8 @@ chk "وسطرُ الفاتورة رجع للأصل — ما صار بلا صنف
     "select count(*)::text from invoice_items where product_id='dddd0000-0000-0000-0000-000000000001'" "1"
 chk "والنسخة انحذفت" \
     "select count(*)::text from products where id='dddd0000-0000-0000-0000-000000000002'" "0"
-chk "والدالّة بصلاحية المُستدعي لا المُعرِّف (سياسات الصفوف تحكمها)" \
-    "select prosecdef::text from pg_proc where proname='merge_products'" "false"
+chk "والدالّة بصلاحية المُعرِّف (0146: تكتب بالسلّة) وتفحص العيادة بنفسها" \
+    "select (prosecdef and prosrc like '%auth_clinic()%' and prosrc like '%clinic_id = v_clinic%')::text from pg_proc where proname='merge_products'" "true"
 chk "وممنوعة على anon" \
     "select has_function_privilege('anon','public.merge_products(uuid,uuid)','execute')::text" "false"
 chk "وبمسارٍ مثبَّت" \
@@ -621,15 +622,23 @@ $P -c "insert into products (id, clinic_id, name, barcode, stock)
        insert into generated_barcodes (id, product_id) values ('eeee2222-0000-0000-0000-000000000001','eeee0000-0000-0000-0000-000000000001');" >/dev/null 2>&1
 
 $P -c "create or replace function _del_try(a uuid) returns text language plpgsql as \$fn\$
+       begin perform set_config('request.jwt.claim.sub','11111111-1111-1111-1111-111111111111',true);
+             perform delete_product(a, 'test'); return 'deleted';
+       exception when others then return 'guarded: ' || sqlerrm; end \$fn\$;
+       create or replace function _del_noauth(a uuid) returns text language plpgsql as \$fn\$
        begin perform delete_product(a, 'test'); return 'deleted';
        exception when others then return 'guarded: ' || sqlerrm; end \$fn\$;
        create or replace function _restore_try(a uuid) returns text language plpgsql as \$fn\$
-       begin perform restore_product(a); return 'restored';
+       begin perform set_config('request.jwt.claim.sub','11111111-1111-1111-1111-111111111111',true);
+             perform restore_product(a); return 'restored';
        exception when others then return 'guarded: ' || sqlerrm; end \$fn\$;" >/dev/null
 chk "حذفُ معرّفٍ غير موجود يُرفض" \
     "select left(_del_try('eeee0000-0000-0000-0000-0000000000ff'), 7)" "guarded"
+chk "وبلا جلسةٍ لا حذف — الدالّة بصلاحية المُعرِّف فتفحص العيادة بنفسها" \
+    "select _del_noauth('eeee0000-0000-0000-0000-000000000001')" "guarded:notauthenticated"
 chk "والحذفُ يرجع كم انباع منه (٢)" \
-    "select ((delete_product('eeee0000-0000-0000-0000-000000000001', 'غلط')->>'sold_qty')::numeric = 2)::text" "true"
+    "select ((delete_product('eeee0000-0000-0000-0000-000000000001', 'غلط')->>'sold_qty')::numeric = 2)::text
+       from (select set_config('request.jwt.claim.sub','11111111-1111-1111-1111-111111111111',true)) s" "true"
 chk "المنتج ما عاد بالمخزن" \
     "select count(*)::text from products where id='eeee0000-0000-0000-0000-000000000001'" "0"
 chk "لكنه بالسلّة بصورته: الرصيد ٤ والسبب محفوظ" \
@@ -651,7 +660,8 @@ chk "والسلّة انفرغت منه" \
 chk "واسترجاعٌ ثانٍ يُرفض" \
     "select left(_restore_try('eeee0000-0000-0000-0000-000000000001'), 7)" "guarded"
 # الباركود انشغل أثناء الغياب: يرجع بلا باركود ولا يكسر القيد.
-$P -c "select delete_product('eeee0000-0000-0000-0000-000000000002', null);
+$P -c "select set_config('request.jwt.claim.sub','11111111-1111-1111-1111-111111111111',false);
+       select delete_product('eeee0000-0000-0000-0000-000000000002', null);
        insert into products (id, clinic_id, name, barcode, stock)
        values ('eeee0000-0000-0000-0000-000000000003','11111111-1111-1111-1111-111111111111','سانك تونا (معاد)','854871008371', 1);" >/dev/null 2>&1
 chk "منتجٌ أُعيد إدخاله بنفس الباركود أثناء الغياب: الاسترجاع يمرّ" \
@@ -660,12 +670,80 @@ chk "ويرجع بلا باركود بدل أن يكسر التفرّد" \
     "select (barcode is null and stock = 99)::text from products where id='eeee0000-0000-0000-0000-000000000002'" "true"
 chk "السلّة محميّة بسياسات الصفوف" \
     "select relrowsecurity::text from pg_class where relname='products_trash'" "true"
-chk "والدالّتان بصلاحية المُستدعي" \
-    "select count(*)::text from pg_proc where proname in ('delete_product','restore_product') and prosecdef" "0"
+chk "والدالّتان بصلاحية المُعرِّف (السلّة بلا سياسة كتابة) وتفحصان العيادة بنفسيهما" \
+    "select count(*)::text from pg_proc where proname in ('delete_product','restore_product') and prosecdef
+       and prosrc like '%auth_clinic()%' and prosrc like '%clinic_id = v_clinic%'" "2"
+chk "والسلّة ما عليها أي سياسة كتابة — كلُّ كتابةٍ من دالّة" \
+    "select count(*)::text from pg_policies where tablename='products_trash' and cmd <> 'SELECT'" "0"
 chk "وممنوعتان على anon" \
     "select (has_function_privilege('anon','public.delete_product(uuid,text)','execute') or has_function_privilege('anon','public.restore_product(uuid)','execute'))::text" "false"
 chk "وبمسارٍ مثبَّت" \
     "select count(*)::text from pg_proc where proname in ('delete_product','restore_product') and coalesce(array_to_string(proconfig,','),'') like '%search_path%'" "2"
+
+# ── 0146: لا يُفلت منتج — كلُّ طريقٍ يُخرج صفّاً يمرّ بالسلّة، والدمجُ يُفكّ ──
+# المراجعة العميقة وجدت ثلاثة طرقٍ تحذف بلا سلّة (دمج، ترتيب، حذف مباشر من
+# نسخةٍ قديمة). المحفّز يغطّيها كلّها، والدمجُ صار يُفكّ من تبويب المحذوفات.
+echo "▸ 0146: لا يُفلت منتج"
+JWT="select set_config('request.jwt.claim.sub','11111111-1111-1111-1111-111111111111',false);"
+
+$P -c "insert into products (id, clinic_id, name, barcode, stock, alt_codes) values
+         ('f0000000-0000-0000-0000-000000000001','11111111-1111-1111-1111-111111111111','توأم يُدمج','X100', 5, array['X101']),
+         ('f0000000-0000-0000-0000-000000000002','11111111-1111-1111-1111-111111111111','الأصل','X200', 10, '{}'),
+         ('f0000000-0000-0000-0000-000000000003','11111111-1111-1111-1111-111111111111','يُحذف مباشرة','X300', 7, '{}'),
+         ('f0000000-0000-0000-0000-000000000004','11111111-1111-1111-1111-111111111111','بلا صنف','X400', 2, '{}'),
+         ('f0000000-0000-0000-0000-000000000005','11111111-1111-1111-1111-111111111111','مصنّف', null, 3, '{}')
+       on conflict do nothing;
+       update products set section_id = 'aaaa0000-0000-0000-0000-00000000aaaa', name = 'بلا صنف' where id = 'f0000000-0000-0000-0000-000000000005';
+       insert into invoice_items (id, clinic_id, name, qty, unit_price, unit_cost, line_total, stock_qty, product_id) values
+         ('f1000000-0000-0000-0000-000000000001','11111111-1111-1111-1111-111111111111','x',1,1000,600,1000,1,'f0000000-0000-0000-0000-000000000001'),
+         ('f1000000-0000-0000-0000-000000000003','11111111-1111-1111-1111-111111111111','x',1,1000,600,1000,1,'f0000000-0000-0000-0000-000000000003'),
+         ('f1000000-0000-0000-0000-000000000004','11111111-1111-1111-1111-111111111111','x',1,1000,600,1000,1,'f0000000-0000-0000-0000-000000000004');" >/dev/null 2>&1
+
+chk "المحفّز واقفٌ على الجدول قبل الحذف" \
+    "select count(*)::text from pg_trigger where tgname='products_trash_guard' and not tgisinternal" "1"
+# ١) الدمج يصوّر ثم يُفكّ
+chk "الدمج يمرّ" \
+    "select _merge_try('f0000000-0000-0000-0000-000000000002','f0000000-0000-0000-0000-000000000001')" "merged"
+chk "والنسخة بالسلّة موسومةً بأصلها" \
+    "select (merged_into = 'f0000000-0000-0000-0000-000000000002' and cardinality(invoice_item_ids) = 1 and stock = 5)::text from products_trash where id='f0000000-0000-0000-0000-000000000001'" "true"
+chk "والأصل أخذ الرصيد والرمزين (١٠ + ٥)" \
+    "select (stock = 15 and alt_codes @> array['X100','X101'])::text from products where id='f0000000-0000-0000-0000-000000000002'" "true"
+chk "فكُّ الدمج يمرّ" \
+    "select _restore_try('f0000000-0000-0000-0000-000000000001')" "restored"
+chk "والأصل ردّ الرصيد والرمزين" \
+    "select (stock = 10 and not (alt_codes @> array['X100']) and not (alt_codes @> array['X101']))::text from products where id='f0000000-0000-0000-0000-000000000002'" "true"
+chk "والنسخة رجعت بباركودها ورصيدها" \
+    "select (barcode = 'X100' and stock = 5)::text from products where id='f0000000-0000-0000-0000-000000000001'" "true"
+chk "وسطرُ فاتورتها رجع إليها من الأصل" \
+    "select product_id::text from invoice_items where id='f1000000-0000-0000-0000-000000000001'" "f0000000-0000-0000-0000-000000000001"
+# ٢) حذفٌ مباشر من الجدول (نسخة قديمة / PostgREST) — المحفّز يمسكه
+$P -c "$JWT delete from products where id='f0000000-0000-0000-0000-000000000003';" >/dev/null 2>&1
+chk "حذفٌ مباشر بلا دالّة: الصفّ بالسلّة بسطوره" \
+    "select (cardinality(invoice_item_ids) = 1 and stock = 7 and merged_into is null)::text from products_trash where id='f0000000-0000-0000-0000-000000000003'" "true"
+chk "ويُسترجع" \
+    "select _restore_try('f0000000-0000-0000-0000-000000000003')" "restored"
+chk "بسطره" \
+    "select product_id::text from invoice_items where id='f1000000-0000-0000-0000-000000000003'" "f0000000-0000-0000-0000-000000000003"
+# ٣) «رجّع كل قطعة لمكانها» يصوّر ثم يُفكّ — التوأم بالاسم يعطي الأصلَ باركودَه ويستردّه
+chk "الترتيب يطوي التوأم بلا صنف في أصله المصنَّف" \
+    "select (inventory_tidy_uncat()->>'merged')::text from (select set_config('request.jwt.claim.sub','11111111-1111-1111-1111-111111111111',true)) s" "1"
+chk "والتوأم بالسلّة موسوماً بأصله وبأن الأصل كان بلا باركود" \
+    "select (merged_into = 'f0000000-0000-0000-0000-000000000005' and keep_barcode is null)::text from products_trash where id='f0000000-0000-0000-0000-000000000004'" "true"
+chk "والأصل ورث الباركود والرصيد (٣ + ٢)" \
+    "select (barcode = 'X400' and stock = 5)::text from products where id='f0000000-0000-0000-0000-000000000005'" "true"
+chk "فكُّ الترتيب يمرّ" \
+    "select _restore_try('f0000000-0000-0000-0000-000000000004')" "restored"
+chk "والأصل ردّ الباركود والرصيد" \
+    "select (barcode is null and stock = 3)::text from products where id='f0000000-0000-0000-0000-000000000005'" "true"
+chk "والتوأم رجع بباركوده وسطره" \
+    "select (p.barcode = 'X400' and p.stock = 2 and i.product_id = p.id)::text from products p join invoice_items i on i.id='f1000000-0000-0000-0000-000000000004' where p.id='f0000000-0000-0000-0000-000000000004'" "true"
+# ٤) الثوابت
+chk "الدوالّ الأربع بصلاحية المُعرِّف وبمسارٍ مثبَّت" \
+    "select count(*)::text from pg_proc where proname in ('delete_product','restore_product','merge_products','inventory_tidy_uncat','products_trash_capture') and prosecdef and coalesce(array_to_string(proconfig,','),'') like '%search_path%'" "5"
+chk "وممنوعة على anon" \
+    "select (has_function_privilege('anon','public.merge_products(uuid,uuid)','execute') or has_function_privilege('anon','public.inventory_tidy_uncat()','execute'))::text" "false"
+chk "وما تراكم بالسلّة صفٌّ بلا صاحب" \
+    "select count(*)::text from products_trash where clinic_id is null" "0"
 
 echo
 [ $fail -eq 0 ] && echo "✓ كل الفحوص عبرت" || { echo "✗ اكو فحصٌ فشل"; exit 1; }

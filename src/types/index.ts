@@ -1300,6 +1300,8 @@ export interface DeletedProduct {
   row: Product;
   invoice_item_ids?: string[];
   purchase_item_ids?: string[];
+  /** طُوي بدمجٍ في هذا الأصل (0146) — الاسترجاع يفكّ الدمج: يسترد رصيده ورمزه وسطوره. */
+  merged_into?: string | null;
   sold_qty: number;
   stock: number;
   reason?: string | null;

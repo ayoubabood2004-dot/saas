@@ -1179,14 +1179,22 @@ const demoRepo = {
     if (!t) throw new Error("not in trash");
     if ((db.products ?? []).some((x) => x.id === id)) throw new Error("product already exists");
     const row = { ...t.row };
+    // فكُّ الدمج (0146): الأصل يردّ الرصيدَ ورمزَ النسخة من رموزه الإضافية.
+    const keep = t.merged_into ? (db.products ?? []).find((x) => x.id === t.merged_into) : undefined;
+    if (keep) {
+      keep.stock = Math.max(0, (keep.stock || 0) - (t.stock || 0));
+      const drop = new Set([row.barcode, ...(row.alt_codes ?? [])].filter(Boolean));
+      keep.alt_codes = (keep.alt_codes ?? []).filter((c) => !drop.has(c));
+    }
     // الباركود يبقى فريداً: لو أُعيد إدخاله أثناء الغياب نستعيد بلا باركود.
     if (row.barcode && (db.products ?? []).some((x) => x.barcode === row.barcode)) row.barcode = null;
     if (!db.products) db.products = [];
     db.products.push(row);
-    // السطور التي كانت له — وما زالت بلا صنف — ترجع إليه بمعرّفاتها كما بالخادم.
+    // السطور التي كانت له ترجع إليه بمعرّفاتها كما بالخادم (بلا صنف، أو على الأصل المدموج فيه).
     const inv = new Set(t.invoice_item_ids ?? []), pur = new Set(t.purchase_item_ids ?? []);
-    for (const i of db.invoiceItems ?? []) if (i.product_id == null && inv.has(i.id)) i.product_id = id;
-    for (const i of db.purchaseItems ?? []) if (i.product_id == null && pur.has(i.id)) i.product_id = id;
+    const from = (pid: string | null | undefined) => pid == null || (!!t.merged_into && pid === t.merged_into);
+    for (const i of db.invoiceItems ?? []) if (from(i.product_id) && inv.has(i.id)) i.product_id = id;
+    for (const i of db.purchaseItems ?? []) if (from(i.product_id) && pur.has(i.id)) i.product_id = id;
     db.productsTrash = (db.productsTrash ?? []).filter((x) => x.id !== id);
     saveDB(db);
     return row;
@@ -1200,6 +1208,16 @@ const demoRepo = {
     if (!keep) throw new Error("product to keep not found");
     if (!drop) throw new Error("product to drop not found");
     if (keep.pooled || drop.pooled) throw new Error("pooled products cannot be merged");
+    // الصورةُ قبل الطيّ (0146): الاسترجاع يفكّ الدمج.
+    if (!db.productsTrash) db.productsTrash = [];
+    db.productsTrash = db.productsTrash.filter((t) => t.id !== dropId);
+    db.productsTrash.push({
+      id: dropId, clinic_id: null, row: { ...drop },
+      invoice_item_ids: (db.invoiceItems ?? []).filter((i) => i.product_id === dropId).map((i) => i.id),
+      purchase_item_ids: (db.purchaseItems ?? []).filter((i) => i.product_id === dropId).map((i) => i.id),
+      sold_qty: (db.invoiceItems ?? []).filter((i) => i.product_id === dropId && i.qty > 0).reduce((n, i) => n + i.qty, 0),
+      stock: drop.stock || 0, reason: null, deleted_by: null, deleted_at: new Date().toISOString(), merged_into: keepId,
+    });
     const codes = new Set(keep.alt_codes ?? []);
     if (drop.barcode && drop.barcode !== keep.barcode) codes.add(drop.barcode);
     for (const c of drop.alt_codes ?? []) if (c && c !== keep.barcode) codes.add(c);
@@ -3117,11 +3135,11 @@ const supabaseRepo: typeof demoRepo = {
   /* ---------------- Inventory & POS ---------------- */
   async listProducts(clinicId) {
     // العيادة الكبيرة تتجاوز ألف منتج — بلا صفحات كان الجديد «يختفي» بعد الحد.
-    return allPages<Product>(() => {
-      let q = sbc().from("products").select("*").order("name", { ascending: true });
-      if (clinicId) q = q.eq("clinic_id", clinicId);
-      return q;
-    });
+    // العيادةُ تحدّدها سياسةُ الصفوف بالخادم (auth_clinic) لا الواجهة: مرشّحٌ
+    // ثانٍ هنا بمعرّفٍ تحسبه الواجهة كان طريقاً لإخفاء منتجاتٍ لو اختلف
+    // الحسابان يوماً (عضويات متعدّدة). الخادم يرجع منتجات عيادتك ولا غيرها.
+    void clinicId;
+    return allPages<Product>(() => sbc().from("products").select("*").order("name", { ascending: true }));
   },
   async supportsBulkGroup() {
     try {
