@@ -197,7 +197,11 @@ const SEARCHES = {
   refunded: { q: null, status: "refunded" },        // فلترُ الحالة وحده
   paidName: { q: "سارة", status: "paid" },          // بحثٌ + فلتر
 };
+// نافذةٌ زمنية [since, before) كما ينزل تبويبُ الفواتير ١٥ يوماً بالمرّة.
+const WINDOW = { since: "2026-08-04T12:00:00+03:00", before: "2026-08-19T12:00:00+03:00" };
+const wLo = new Date(WINDOW.since).getTime(), wHi = new Date(WINDOW.before).getTime();
 expected.pages = {
+  window: { ...WINDOW, ids: invoices.filter((i) => { const c = new Date(i.created_at).getTime(); return c >= wLo && c < wHi; }).sort(byCursor).map((i) => i.id) },
   all: invoices.slice().sort(byCursor).map((i) => i.id),
   searches: Object.fromEntries(Object.entries(SEARCHES).map(([k, s]) => [k, { ...s, ids: invoices.filter((i) => matches(i, s.q, s.status)).sort(byCursor).map((i) => i.id) }])),
   openDebts: invoices.filter((i) => isPaid(i) && dueOf(i) > 0.01).map((i) => i.id).sort(),

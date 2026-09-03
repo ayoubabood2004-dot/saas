@@ -2028,7 +2028,9 @@ const demoRepo = {
   /* ---- صفحاتُ الفواتير والبحث بالخادم (0150) — مرآةُ invoice_matches ----
    * نفس التطبيع (searchable / phoneDigits / invoiceNo) على الطرفين. */
   async searchInvoices(s: InvoiceSearch): Promise<Invoice[]> {
-    const rows = demoMatchingInvoices(s).sort((a, b) => b.created_at.localeCompare(a.created_at) || b.id.localeCompare(a.id));
+    const rows = demoMatchingInvoices(s)
+      .filter((i) => !s.since || i.created_at >= s.since)
+      .sort((a, b) => b.created_at.localeCompare(a.created_at) || b.id.localeCompare(a.id));
     const start = s.before ? rows.findIndex((i) => i.created_at < s.before! || (i.created_at === s.before && i.id < (s.beforeId ?? ""))) : 0;
     const from = start < 0 ? rows.length : start;
     return rows.slice(from, from + Math.min(Math.max(s.limit ?? 50, 1), 200));
@@ -3807,6 +3809,7 @@ const supabaseRepo: typeof demoRepo = {
     return listOf<Invoice>(await sbc().rpc("search_invoices", {
       p_q: s.q ?? null, p_status: s.status ?? "all",
       p_before: s.before ?? null, p_before_id: s.beforeId ?? null, p_limit: s.limit ?? 50,
+      p_since: s.since ?? null,
     }));
   },
   async countInvoicesMatching(s) {

@@ -51,23 +51,26 @@ language sql stable security invoker set search_path = public as $$
      )
 $$;
 
-/** صفحةٌ من الفواتير: الأحدث فالأقدم، بمؤشّرٍ (created_at, id) لا برقم صفحة. */
+/** صفحةٌ من الفواتير: الأحدث فالأقدم، بمؤشّرٍ (created_at, id) لا برقم صفحة.
+ *  p_since يحدّ النافذة من الأسفل: الواجهةُ تعرض آخرَ ١٥ يوماً و«المزيد» ينزل
+ *  ١٥ يوماً أخرى [since, before)، وداخلَ النافذة المزدحمة يكمل المؤشّرُ نفسه. */
 create or replace function search_invoices(p_q text default null, p_status text default 'all',
                                            p_before timestamptz default null, p_before_id uuid default null,
-                                           p_limit int default 50)
+                                           p_limit int default 50, p_since timestamptz default null)
 returns setof invoices
 language sql stable security invoker set search_path = public as $$
   select i.*
     from invoices i
    where i.clinic_id = auth_clinic()
      and invoice_matches(i, p_q, p_status)
+     and (p_since is null or i.created_at >= p_since)
      and (p_before is null
           or (i.created_at, i.id) < (p_before, coalesce(p_before_id, '00000000-0000-0000-0000-000000000000'::uuid)))
    order by i.created_at desc, i.id desc
    limit least(greatest(coalesce(p_limit, 50), 1), 200)
 $$;
-revoke all on function search_invoices(text, text, timestamptz, uuid, int) from public, anon;
-grant execute on function search_invoices(text, text, timestamptz, uuid, int) to authenticated;
+revoke all on function search_invoices(text, text, timestamptz, uuid, int, timestamptz) from public, anon;
+grant execute on function search_invoices(text, text, timestamptz, uuid, int, timestamptz) to authenticated;
 
 /** كم فاتورةً تطابق — يُعرض «معروض ٥٠ من ١٬٥٠٨» فلا تُصدَّق قائمةٌ ناقصة. */
 create or replace function count_invoices_matching(p_q text default null, p_status text default 'all')

@@ -43,16 +43,18 @@ export async function loadRecordsSnap(clinicId?: string | null): Promise<Records
 }
 
 // ---- Retail & Sales (المبيعات) ----
+/** نافذةُ تبويب الفواتير بالأيام — نفسُها للّقطة وللنزول بـ«المزيد». */
+export const RECENT_DAYS = 15;
 export type RetailSnap = { products: Product[]; invoices: Invoice[] };
 export const retailKey = (clinicId?: string | null) => `retail:${cid(clinicId)}`;
 export async function loadRetailSnap(clinicId?: string | null): Promise<RetailSnap> {
   const id = clinicId ?? undefined;
-  // «الأخيرُ يُعرض والقديمُ يُبحث» (0150): آخرُ ستّين يوماً + كلُّ الديون المفتوحة +
-  // ما رُدّ أو سُدّد بالمدّة — يكفي تبويباتَ الفواتير والديون والمرتجع والتوصيل،
-  // والبحثُ عن الأقدم يمرّ بالخادم. الطريقةُ القديمة (كلُّ الفواتير) تبقى خلف
-  // خيارٍ بالإعدادات لأسبوع المراقبة فقط.
+  // «الأخيرُ يُعرض والقديمُ يُبحث» (0150): آخرُ ١٥ يوماً + **كلُّ** الديون المفتوحة
+  // مهما كان عمرها + ما رُدّ أو سُدّد بالمدّة — فالديونُ والتوصيلاتُ كاملةٌ دائماً،
+  // وتبويبُ الفواتير ينزل بالتاريخ ١٥ يوماً بكل «المزيد»، والبحثُ يمرّ بالخادم.
+  // الطريقةُ القديمة (كلُّ الفواتير) تبقى خلف خيارٍ بالإعدادات لأسبوع المراقبة فقط.
   const paged = getInvoicesPaged();
-  const recent = { from: new Date(Date.now() - 60 * 86400000).toISOString(), to: new Date(Date.now() + 86400000).toISOString() };
+  const recent = { from: new Date(Date.now() - RECENT_DAYS * 86400000).toISOString(), to: new Date(Date.now() + 86400000).toISOString() };
   const [products, invoices, sections] = await Promise.all([
     repo.listProducts(id),
     paged

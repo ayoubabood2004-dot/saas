@@ -72,6 +72,11 @@ if (expected.pages) {
     const n = load(`count.${k}.json`)?.[0]?.n;
     check(`عدّاد ${k}: ${s.ids.length}`, n != null && Number(n) === s.ids.length, `SQL ${n}`);
   }
+  if (P.window) {
+    const w = load("pages.window.json");
+    const got = w ? w.map((r) => r.id) : null;
+    check(`نافذةُ ١٥ يوماً [since, before): نفس فواتير الواجهة وبنفس الترتيب (${P.window.ids.length})`, !!got && same(got, P.window.ids), got ? `SQL ${got.length}` : "ملف ناقص");
+  }
   const debts = load("open_debts.json");
   check(`الديون المفتوحة: نفس فواتير الواجهة (${P.openDebts.length})`, !!debts && same(debts.map((r) => r.id).sort(), P.openDebts), debts ? `SQL ${debts.length}` : "ملف ناقص");
 }

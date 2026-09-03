@@ -861,11 +861,14 @@ for S in name phone invno staff refunded paidName; do
   ST=$(node -e "console.log(JSON.parse(require('fs').readFileSync('$FIX/expected.json','utf8')).pages.searches.$S.status)")
   rpt "count.$S" "select count_invoices_matching($Q, '$ST') as n"
 done
+rpt "pages.window"    "select id from search_invoices(null, 'all', '2026-08-19T12:00:00+03:00', null, 200, '2026-08-04T12:00:00+03:00')"
 rpt "open_debts" "select id from open_debts()"
 if node "$HERE/../../scripts/report-parity.mjs" "$FIX" | sed 's/^/ /'; then :; else fail=1; fi
 chk "0150: دوالُّ الصفحات بصلاحية المُستدعي وبمسارٍ مثبَّت" \
     "select count(*)::text from pg_proc where proname in ('search_invoices','count_invoices_matching','open_debts','invoice_matches')
        and not prosecdef and coalesce(array_to_string(proconfig,','),'') like '%search_path%'" "4"
+chk "وتوقيعٌ واحد لـsearch_invoices (لا نسخةٌ قديمة بخمسة معاملات تبقى)" \
+    "select count(*)::text from pg_proc where proname='search_invoices'" "1"
 chk "وممنوعة على anon" \
     "select count(*)::text from pg_proc p where proname in ('search_invoices','count_invoices_matching','open_debts') and has_function_privilege('anon', p.oid, 'execute')" "0"
 chk "وسقفُ الصفحة ٢٠٠ مهما طُلب (٣٢٠ بالعيادة)" \

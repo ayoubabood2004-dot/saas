@@ -926,6 +926,8 @@ export interface InvoiceSearch {
   before?: string | null;
   beforeId?: string | null;
   limit?: number;
+  /** حدُّ النافذة الأسفل (created_at >= since) — تبويبُ الفواتير ينزل ١٥ يوماً بالمرّة. */
+  since?: string | null;
 }
 
 /** تحصيلٌ من شركة توصيل (0148): مبلغٌ وُزّع على طلباتها المسلَّمة الأقدم فالأقدم. */
