@@ -4,7 +4,7 @@ import {
   History, Search, PawPrint, Receipt, Pill, Syringe, Stethoscope, Package,
   Users, Trash2, NotebookPen, Building2, CalendarDays,
   BellRing, Lock, Clock, KeyRound, ArrowLeft, LucideIcon, RotateCcw, Loader2,
-  ChevronDown, ChevronUp, Truck, Wallet, ShoppingBag, Printer, FileDown, Store, HandCoins,
+  ChevronDown, ChevronUp, ChevronRight, Truck, Wallet, ShoppingBag, Printer, FileDown, Store, HandCoins,
 } from "lucide-react";
 import type { ActivityRow, ActivitySummaryRow, ActivityActor } from "@/types";
 import { repo } from "@/lib/repo";
@@ -29,20 +29,35 @@ import { ACTIVITY_GROUPS, KIND_GROUP, NOISY_KINDS, type ActivityGroup, type Acti
  * Retention (0129): money & stock trails live a year, everything else 90 days.
  * ==========================================================================*/
 
-type Preset = "today" | "yesterday" | "7d" | "30d" | "custom";
+type Preset = "today" | "yesterday" | "7d" | "30d" | "month" | "lastMonth" | "custom";
 const PAGE = 50;
 const DAY = 86400000;
 
 const dayStart = (d: Date) => { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; };
 const presetRange = (p: Preset): { from: Date; to: Date } => {
-  const today = dayStart(new Date());
+  const now = new Date();
+  const today = dayStart(now);
+  const tomorrow = new Date(today.getTime() + DAY);
   if (p === "yesterday") return { from: new Date(today.getTime() - DAY), to: today };
-  if (p === "7d") return { from: new Date(today.getTime() - 6 * DAY), to: new Date(today.getTime() + DAY) };
-  if (p === "30d") return { from: new Date(today.getTime() - 29 * DAY), to: new Date(today.getTime() + DAY) };
-  return { from: today, to: new Date(today.getTime() + DAY) };
+  if (p === "7d") return { from: new Date(today.getTime() - 6 * DAY), to: tomorrow };
+  if (p === "30d") return { from: new Date(today.getTime() - 29 * DAY), to: tomorrow };
+  // الشهرُ الجاري ينتهي عند الغد لا عند أوّل الشهر القادم — أعمدةٌ لأيامٍ لم تأتِ بعد ليست خبراً.
+  if (p === "month") {
+    const first = new Date(now.getFullYear(), now.getMonth(), 1);
+    const next = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+    return { from: first, to: new Date(Math.min(next.getTime(), tomorrow.getTime())) };
+  }
+  if (p === "lastMonth") return { from: new Date(now.getFullYear(), now.getMonth() - 1, 1), to: new Date(now.getFullYear(), now.getMonth(), 1) };
+  return { from: today, to: tomorrow };
 };
 /** datetime-local ⇄ Date بلا تحويل منطقة. */
 const toLocalInput = (d: Date) => { const p = (n: number) => String(n).padStart(2, "0"); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`; };
+/** `type=date` ⇄ Date — يومٌ محليّ بلا انزلاقِ منطقةٍ زمنية. */
+const toDateInput = (d: Date) => toLocalInput(d).slice(0, 10);
+const fromDateInput = (s: string): Date | null => {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+  return m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : null;
+};
 
 /* ── «كان ← صار» ─────────────────────────────────────────────────────────── */
 const CHANGE_NOISE = new Set(["updated_at", "created_at", "id", "clinic_id"]);
@@ -199,6 +214,63 @@ export function ActivityLog() {
     const step = bucket === "day" ? DAY : 3600000;
     setCustom({ from: at, to: new Date(at.getTime() + step) });
     setPreset("custom");
+  };
+
+  /* ── التنقّل بالتاريخ ────────────────────────────────────────────────────
+   * سهمٌ ينقل النافذةَ بطولها هي: يومٌ يمشي يوماً، وأسبوعٌ أسبوعاً، وساعةٌ
+   * مكبّرةٌ ساعةً. والنقلُ **بالأيام** لا بالمللي ثانية حين تكون النافذةُ أياماً
+   * كاملة — وإلا انزلق حدُّ اليوم ساعةً عند تغيّر التوقيت الصيفي. */
+  const shiftBy = (dir: 1 | -1) => {
+    playTap();
+    const f = range.from;
+    // نافذةُ شهرٍ تمشي **شهراً** لا بطولها: «هذا الشهر» يوم الثالث طولُه ثلاثةُ
+    // أيام، فنقلُه بطوله يرجع بثلاثة أيام لا إلى آب — وهو ما لا يقصده أحد.
+    const monthWindow = f.getDate() === 1 && f.getHours() === 0 && f.getMinutes() === 0
+      && range.to > f && range.to <= new Date(f.getFullYear(), f.getMonth() + 1, 1);
+    if (monthWindow) {
+      const from = new Date(f.getFullYear(), f.getMonth() + dir, 1);
+      const end = new Date(f.getFullYear(), f.getMonth() + dir + 1, 1);
+      const tomorrow = new Date(dayStart(new Date()).getTime() + DAY);
+      setCustom({ from, to: new Date(Math.min(end.getTime(), tomorrow.getTime())) });
+      setPreset("custom");
+      return;
+    }
+    const len = range.to.getTime() - range.from.getTime();
+    const days = Math.round(len / DAY);
+    const from = new Date(f), to = new Date(range.to);
+    if (days >= 1 && Math.abs(len - days * DAY) < 1000) {
+      from.setDate(from.getDate() + dir * days);
+      to.setDate(to.getDate() + dir * days);
+    } else {
+      from.setTime(from.getTime() + dir * len);
+      to.setTime(to.getTime() + dir * len);
+    }
+    setCustom({ from, to });
+    setPreset("custom");
+  };
+  /** لا تقدّمَ إلى الغد: النافذةُ التي تتجاوز الآن لا تحمل خبراً. */
+  const canForward = range.to.getTime() <= Date.now();
+  /** اذهب ليومٍ بعينه — اليومُ كلُّه من نصف ليله إلى نصف الليل التالي. */
+  const jumpToDay = (s: string) => {
+    const d = fromDateInput(s);
+    if (!d) return;
+    playTap();
+    setCustom({ from: d, to: new Date(d.getTime() + DAY) });
+    setPreset("custom");
+  };
+  /** عنوانُ النافذة الحالية: «الأحد ٣٠ آب»، أو «٣٠ آب – ٥ أيلول»، أو يومٌ بساعاته. */
+  const rangeLabel = (): string => {
+    const lastMs = range.to.getTime() - 1;
+    const toIncl = new Date(lastMs);
+    const dOpts: Intl.DateTimeFormatOptions = { day: "numeric", month: "long" };
+    if (range.from.toDateString() === toIncl.toDateString()) {
+      const dayTxt = range.from.toLocaleDateString(dateLocale(), { weekday: "long", ...dOpts });
+      const wholeDay = range.from.getHours() === 0 && range.from.getMinutes() === 0 && range.to.getTime() - range.from.getTime() >= DAY - 1000;
+      if (wholeDay) return dayTxt;
+      const hr = (d: Date) => d.toLocaleTimeString(dateLocale(), { hour: "numeric", hour12: true });
+      return `${dayTxt} · ${hr(range.from)} – ${hr(range.to)}`;
+    }
+    return `${range.from.toLocaleDateString(dateLocale(), dOpts)} – ${toIncl.toLocaleDateString(dateLocale(), { ...dOpts, year: toIncl.getFullYear() === range.from.getFullYear() ? undefined : "numeric" })}`;
   };
   const toggleKind = (k: string) => {
     playTap();
@@ -357,7 +429,9 @@ export function ActivityLog() {
 
   const PRESETS: { id: Preset; label: string }[] = [
     { id: "today", label: t("act.rangeToday", "Today") }, { id: "yesterday", label: t("act.rangeYesterday", "Yesterday") },
-    { id: "7d", label: t("act.range7d", "7 days") }, { id: "30d", label: t("act.range30d", "30 days") }, { id: "custom", label: t("act.rangeCustom", "Custom") },
+    { id: "7d", label: t("act.range7d", "7 days") }, { id: "30d", label: t("act.range30d", "30 days") },
+    { id: "month", label: t("act.rangeMonth", "This month") }, { id: "lastMonth", label: t("act.rangeLastMonth", "Last month") },
+    { id: "custom", label: t("act.rangeCustom", "Custom") },
   ];
 
   return (
@@ -384,6 +458,25 @@ export function ActivityLog() {
           ))}
           <span className="ms-auto text-2xs text-ink-subtle">{summary ? t("act.total", { n: formatNum(counts.total), defaultValue: "{{n}} actions" }) : <Loader2 size={12} className="animate-spin" />}</span>
         </div>
+        {/* ── شريطُ التاريخ: سهمٌ للخلف، عنوانُ النافذة، سهمٌ للأمام، وقفزةٌ ليومٍ بعينه ── */}
+        {!restricted && (
+          <div className="flex flex-wrap items-center gap-2 rounded-xl bg-surface-2 p-1.5">
+            <button type="button" data-actprev onClick={() => shiftBy(-1)} title={t("act.prevPeriod", "Previous period")} aria-label={t("act.prevPeriod", "Previous period")}
+              className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-surface-1 text-ink-muted transition hover:text-ink">
+              <ChevronRight size={17} className="ltr:rotate-180" />
+            </button>
+            <span className="min-w-0 flex-1 truncate text-center text-sm font-extrabold text-ink" data-actlabel>{rangeLabel()}</span>
+            <button type="button" data-actnext disabled={!canForward} onClick={() => shiftBy(1)} title={t("act.nextPeriod", "Next period")} aria-label={t("act.nextPeriod", "Next period")}
+              className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-surface-1 text-ink-muted transition hover:text-ink disabled:opacity-40">
+              <ChevronRight size={17} className="rtl:rotate-180" />
+            </button>
+            <label className="flex items-center gap-1.5 text-2xs font-bold text-ink-muted">
+              <CalendarDays size={14} /> {t("act.jumpTo", "Go to date")}
+              <input type="date" className="input h-9 w-auto py-0 text-xs" value={toDateInput(range.from)} max={toDateInput(new Date())} data-actjump
+                onChange={(e) => jumpToDay(e.target.value)} />
+            </label>
+          </div>
+        )}
         {preset === "custom" && !restricted && (
           <div className="flex flex-wrap items-center gap-2 text-xs">
             <label className="flex items-center gap-1.5 text-ink-muted">{t("act.from", "From")}
@@ -394,6 +487,9 @@ export function ActivityLog() {
               <input type="datetime-local" className="input h-9 w-auto py-0 text-xs" value={toLocalInput(custom.to)} data-actto
                 onChange={(e) => { const d = new Date(e.target.value); if (!Number.isNaN(d.getTime())) setCustom((c) => ({ ...c, to: d })); }} />
             </label>
+            <button type="button" className="text-2xs font-bold text-brand-600" onClick={() => { playTap(); setPreset("today"); }} data-actbacktoday>
+              {t("act.backToToday", "Back to today")}
+            </button>
           </div>
         )}
 
