@@ -2,6 +2,8 @@ import { useEffect, type ReactNode } from "react";
 import { useLocation, useNavigate, Navigate } from "react-router-dom";
 import { Lock, Eye, Sparkles, ArrowLeft } from "lucide-react";
 import { useSubscription, syncSubscriptionFromServer } from "@/lib/subscription";
+import { useAuth } from "@/contexts/AuthContext";
+import { isPlatformAdmin } from "@/lib/platformAdmin";
 import { cn } from "@/lib/utils";
 
 /**
@@ -16,12 +18,15 @@ import { cn } from "@/lib/utils";
 export function SubscriptionGate({ children }: { children: ReactNode }) {
   const location = useLocation();
   const { access, status, trialDaysLeft } = useSubscription();
+  const { user } = useAuth();
+  // مشغّلُ المنصّة (0151) قد يدخل عيادةً مقفلةً ليصلح لها — البوّابةُ لا تطرده.
+  const operator = isPlatformAdmin(user?.email);
 
   useEffect(() => { void syncSubscriptionFromServer(); }, []);
 
   // Never-subscribed clinic: the system is hidden — only the subscribe screen
   // (and the platform-operator console) stay reachable.
-  if (access === "blocked" && location.pathname !== "/subscribe" && location.pathname !== "/admin") {
+  if (access === "blocked" && !operator && location.pathname !== "/subscribe" && location.pathname !== "/admin" && location.pathname !== "/platform") {
     return <Navigate to="/subscribe" replace />;
   }
 

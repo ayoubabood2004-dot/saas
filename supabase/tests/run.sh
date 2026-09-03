@@ -22,7 +22,7 @@ DB=dvtest
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MIG="$HERE/../migrations"
 # الهجرات التي يغطّيها هذا المخطّط الأساس. زدها كل ما تنضاف موجة.
-WAVE="$MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql"
+WAVE="$MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql"
 
 command -v "$PGBIN/initdb" >/dev/null || { echo "ما لكيت بوستغريس بـ $PGBIN"; exit 1; }
 
@@ -804,6 +804,154 @@ chk "والدالّة بصلاحية المُعرِّف وبمسارٍ مثبَ�
     "select (prosecdef and coalesce(array_to_string(proconfig,','),'') like '%search_path%' and not has_function_privilege('anon','public.courier_settle(uuid,numeric,text,text)','execute'))::text from pg_proc where proname='courier_settle'" "true"
 chk "ونوعُ السائق مقيَّد بسائق/شركة" \
     "select count(*)::text from pg_constraint where conname='couriers_kind_chk'" "1"
+
+# ── 0149: التقارير تسأل القاعدة — تطابقٌ فلساً بفلس مع منطق الواجهة ─────────
+# ٣٢٠ فاتورةً بكل الأشكال (دفعة، مقسّمة، آجلة تُسدَّد لاحقاً، قديمة بلا أرجل،
+# مردودة، تصحيح سالب) يولّدها report-fixture.mjs ويحسب المتوقَّع بدوالّ الواجهة
+# نفسها؛ ثم تُقارَن مخرجات SQL بها. فلسٌ يفرق = فشل.
+echo "▸ 0149: تجميع التقارير بالقاعدة"
+FIX=$(mktemp -d)
+TZ=Asia/Baghdad node "$HERE/../../scripts/report-fixture.mjs" "$FIX" >/dev/null
+$P -f "$FIX/fixture.sql" >/dev/null
+$P -c "create or replace function _rpt(q text) returns json language plpgsql as \$fn\$
+       declare r json;
+       begin perform set_config('request.jwt.claim.sub','22222222-2222-2222-2222-222222222222',true);
+             execute 'select coalesce(json_agg(r), ''[]''::json) from (' || q || ') r' into r; return r; end \$fn\$;" >/dev/null
+rpt() { psql -h $SOCK -p $PORT -U postgres -d $DB -tAc "select _rpt(\$q\$$2\$q\$)" > "$FIX/$1.json"; }
+for R in month week all; do
+  FROM=$(node -e "console.log(JSON.parse(require('fs').readFileSync('$FIX/expected.json','utf8')).ranges.$R.from)")
+  TO=$(node -e "console.log(JSON.parse(require('fs').readFileSync('$FIX/expected.json','utf8')).ranges.$R.to)")
+  rpt "$R.daily"    "select day, gross, net, invoices from report_receipts_daily('$FROM','$TO','Asia/Baghdad')"
+  rpt "$R.total"    "select gross, net, invoices from report_receipts_total('$FROM','$TO')"
+  rpt "$R.top"      "select key, qty, revenue from report_top_products('$FROM','$TO', 5)"
+  rpt "$R.staff"    "select staff_id, invoices, revenue, profit from report_staff('$FROM','$TO')"
+  rpt "$R.touching" "select id from report_invoices('$FROM','$TO')"
+done
+rpt "cust.byPhone"        "select id from customer_invoices('07701234567', null)"
+rpt "cust.byEasternPhone" "select id from customer_invoices('٠٧٧٠٩٩٩٩٩٩٩', null)"
+rpt "cust.bySpacedPhone"  "select id from customer_invoices('0790 555 5555', null)"
+rpt "cust.byName"         "select id from customer_invoices(null, 'زبون بالاسم')"
+
+# ── 0150: صفحاتٌ بالمؤشّر وبحثٌ بالخادم — نفس نتائج الواجهة وبنفس ترتيبها ────
+# `_pages` يدور كما تدور الواجهة على «المزيد»: صفحةٌ فصفحة بمؤشّر (created_at, id)
+# حتى تفرغ، ويرجع المعرّفات بترتيب وصولها — فيُفحص التكرارُ والفقدُ والترتيب معاً.
+echo "▸ 0150: صفحاتُ الفواتير والبحث بالخادم"
+$P -c "create or replace function _pages(p_q text, p_status text, p_limit int) returns json language plpgsql as \$fn\$
+       declare ids uuid[] := '{}'; page uuid[]; b_at timestamptz; b_id uuid; guard int := 0;
+       begin perform set_config('request.jwt.claim.sub','22222222-2222-2222-2222-222222222222',true);
+             loop
+               -- بترتيب وصول الصفوف من الدالّة نفسها (لا إعادة ترتيب) — الترتيبُ جزءٌ من الفحص.
+               select array_agg(s.id) into page from (select id from search_invoices(p_q, p_status, b_at, b_id, p_limit)) s;
+               exit when page is null or cardinality(page) = 0;
+               ids := ids || page;
+               select created_at, id into b_at, b_id from invoices where id = page[cardinality(page)];
+               guard := guard + 1; exit when guard > 100;
+             end loop;
+             return coalesce(array_to_json(ids), '[]'::json); end \$fn\$;" >/dev/null
+rpt "pages.all"       "select _pages(null, 'all', 50) as ids"
+rpt "search.name"     "select _pages('ابو علي', 'all', 50) as ids"
+rpt "search.phone"    "select _pages('٧٧٠٩٩', 'all', 50) as ids"
+rpt "search.invno"    "select _pages('inv-000057', 'all', 50) as ids"
+rpt "search.staff"    "select _pages('احمد', 'all', 50) as ids"
+rpt "search.refunded" "select _pages(null, 'refunded', 7) as ids"
+rpt "search.paidName" "select _pages('سارة', 'paid', 50) as ids"
+for S in name phone invno staff refunded paidName; do
+  # نفسُ الاستفسار والحالة من expected.json — لا نسخةٌ ثانية تنحرف عنه.
+  Q=$(node -e "const s=JSON.parse(require('fs').readFileSync('$FIX/expected.json','utf8')).pages.searches.$S; console.log(s.q==null?'null':\"'\"+s.q+\"'\")")
+  ST=$(node -e "console.log(JSON.parse(require('fs').readFileSync('$FIX/expected.json','utf8')).pages.searches.$S.status)")
+  rpt "count.$S" "select count_invoices_matching($Q, '$ST') as n"
+done
+rpt "pages.window"    "select id from search_invoices(null, 'all', '2026-08-19T12:00:00+03:00', null, 200, '2026-08-04T12:00:00+03:00')"
+rpt "open_debts" "select id from open_debts()"
+if node "$HERE/../../scripts/report-parity.mjs" "$FIX" | sed 's/^/ /'; then :; else fail=1; fi
+chk "0150: دوالُّ الصفحات بصلاحية المُستدعي وبمسارٍ مثبَّت" \
+    "select count(*)::text from pg_proc where proname in ('search_invoices','count_invoices_matching','open_debts','invoice_matches')
+       and not prosecdef and coalesce(array_to_string(proconfig,','),'') like '%search_path%'" "4"
+chk "وتوقيعٌ واحد لـsearch_invoices (لا نسخةٌ قديمة بخمسة معاملات تبقى)" \
+    "select count(*)::text from pg_proc where proname='search_invoices'" "1"
+chk "وممنوعة على anon" \
+    "select count(*)::text from pg_proc p where proname in ('search_invoices','count_invoices_matching','open_debts') and has_function_privilege('anon', p.oid, 'execute')" "0"
+chk "وسقفُ الصفحة ٢٠٠ مهما طُلب (٣٢٠ بالعيادة)" \
+    "select json_array_length(_rpt('select id from search_invoices(p_limit => 5000)'))::text" "200"
+$P -c "create or replace function _rpt_as(who uuid, q text) returns json language plpgsql as \$fn\$
+       declare r json;
+       begin perform set_config('request.jwt.claim.sub', who::text, true);
+             execute 'select coalesce(json_agg(r), ''[]''::json) from (' || q || ') r' into r; return r; end \$fn\$;" >/dev/null
+chk "وعيادةٌ أخرى لا ترى منها فاتورة (نفس البحث برقم فاتورةٍ موجودة)" \
+    "select json_array_length(_rpt_as('11111111-1111-1111-1111-111111111111', 'select id from search_invoices(''inv-000057'', ''all'', null, null, 50)'))::text" "0"
+chk "search_norm مرآةُ searchable: همزة/تاء/ياء/تشكيل/مسافة/أرقام شرقية" \
+    "select search_norm('أَبُو عَلِيّ — ٠٧٧٠ ةى')" "ابوعلي—0770هي"
+chk "وخيارُ الصفحات موجودٌ وافتراضيُّه نعم" \
+    "select column_default from information_schema.columns where table_name='clinic_prefs' and column_name='invoices_paged'" "true"
+chk "الدوالّ بصلاحية المُستدعي (سياسات الصفوف تحكمها) وبمسارٍ مثبَّت" \
+    "select count(*)::text from pg_proc where proname in ('report_invoices','customer_invoices','receipt_legs','report_receipts_daily','report_receipts_total','report_top_products','report_staff')
+       and not prosecdef and coalesce(array_to_string(proconfig,','),'') like '%search_path%'" "7"
+chk "وممنوعة على anon" \
+    "select count(*)::text from pg_proc p where proname in ('report_invoices','report_receipts_daily','customer_invoices') and has_function_privilege('anon', p.oid, 'execute')" "0"
+chk "وفهرسُ الهاتف المطبَّع والمدّة موجودان" \
+    "select count(*)::text from pg_indexes where indexname in ('invoices_clinic_phone_idx','invoices_open_debt_idx')" "2"
+chk "وتاريخٌ مكسور بساق دفع لا يُسقط التقرير" \
+    "select (safe_ts('not-a-date') is null and safe_ts('2026-09-01T10:00:00Z') is not null)::text" "true"
+rm -rf "$FIX"
+
+# ── 0151: لوحةُ المنصّة — الدخولُ إلى عيادةٍ بهويّة المشغّل، بلا أثرٍ على غيره ──
+# مفتاحُ المشغّل بالحزمة عامّ (_dvtest_flags)، فالفحصُ يثبت: الحارسَ (غيرُ
+# المشغّل يُرفض، وصفُّ جلسةٍ مزروع لا يمنح شيئاً)، والطريقَ (auth_clinic/auth_role
+# تنقلب للعيادة المدخولة)، والأثرَ (سجلُّ العيادة وسجلُّ الجلسات)، والعزلَ (عيادةٌ
+# أخرى لا تتأثّر).
+echo "▸ 0151: لوحةُ المنصّة"
+ADM=33333333-3333-3333-3333-333333333333
+C1=11111111-1111-1111-1111-111111111111
+C2=22222222-2222-2222-2222-222222222222
+$P -c "create or replace function _pf(who uuid, q text) returns text language plpgsql as \$fn\$
+       declare r text; begin perform set_config('request.jwt.claim.sub', who::text, true); execute q into r; return r; end \$fn\$;
+       create or replace function _pf_try(who uuid, q text) returns text language plpgsql as \$fn\$
+       declare r text; begin perform set_config('request.jwt.claim.sub', who::text, true); execute q into r; return 'allowed';
+       exception when others then return 'guarded: ' || sqlerrm; end \$fn\$;
+       update _dvtest_flags set admin = false; delete from platform_sessions;" >/dev/null
+chk "غيرُ المشغّل لا يدخل عيادة" \
+    "select left(_pf_try('$ADM', 'select platform_enter(''$C1'')::text'), 7)" "guarded"
+$P -c "insert into platform_sessions(admin_id, acting_clinic) values ('$ADM','$C1') on conflict do nothing;" >/dev/null
+chk "وصفُّ جلسةٍ مزروعٌ بلا صفة مشغّل لا يمنح شيئاً" \
+    "select _pf('$ADM', 'select auth_clinic()::text')" "$ADM"
+$P -c "delete from platform_sessions; update _dvtest_flags set admin = true;" >/dev/null
+chk "المشغّلُ يدخل العيادة ١١١١" \
+    "select _pf('$ADM', 'select (platform_enter(''$C1'', ''فحص'')->>''ok'')')" "true"
+chk "فتصير عيادتُه ١١١١" "select _pf('$ADM', 'select auth_clinic()::text')" "$C1"
+chk "وبدور مدير" \
+    "select _pf('$ADM', 'select auth_role()') || '/' || _pf('$ADM', 'select auth_role_base()')" "manager/manager"
+chk "والسياقُ يقولها" "select _pf('$ADM', 'select platform_context()->>''acting''')" "$C1"
+chk "ولا أثرَ بسجلّ حركات العيادة (بالاتفاق معها)" \
+    "select count(*)::text from audit_log where clinic_id='$C1' and entity='platform'" "0"
+chk "وبسجلّ الجلسات الداخلي صفٌّ مفتوح بالسبب" \
+    "select count(*)::text from platform_session_log where admin_id='$ADM' and acting_clinic='$C1' and left_at is null and reason='فحص'" "1"
+chk "وعيادةٌ أخرى لا تتأثّر بجلسته" "select _pf('$C2', 'select auth_clinic()::text')" "$C2"
+chk "الانتقالُ إلى ٢٢٢٢ يقفل الأولى ويفتح الثانية" \
+    "select _pf('$ADM', 'select (platform_enter(''$C2'')->>''clinic_id'')')" "$C2"
+chk "  سجلّ: واحدةٌ مقفلة وواحدةٌ مفتوحة" \
+    "select count(*) filter (where left_at is not null)::text || '/' || count(*) filter (where left_at is null)::text from platform_session_log where admin_id='$ADM'" "1/1"
+chk "والنبضُ يرى العيادتين" "select (count(*) >= 2)::text from platform_pulse()" "true"
+chk "وديونُ ٢٢٢٢ بالنبض = ما بالجدول" \
+    "select ((select open_debt_count from platform_pulse() where clinic_id='$C2') = (select count(*) from invoices where clinic_id='$C2' and coalesce(status,'paid')<>'refunded' and coalesce(amount_paid,total) < total-0.01))::text" "true"
+$P -c "insert into audit_log (clinic_id, actor, action, entity, entity_id) values ('$C1', '$C1', 'UPDATE', 'products', 'x');" >/dev/null
+chk "والحركةُ عبر العيادات تُرى وتُفلتر بالعيادة" \
+    "select (count(*) >= 1)::text from platform_activity(50, '$C1') where entity='products' and clinic_id='$C1'" "true"
+chk "  وبلا فلتر لا تُخلط بعيادة ثانية" \
+    "select count(*)::text from platform_activity(500, '$C2') where clinic_id <> '$C2'" "0"
+chk "وسجلُّ الدخول يعمل" "select count(*)::text from platform_logins(10)" "0"
+chk "والخروجُ يعيده لنفسه" \
+    "select _pf('$ADM', 'select (platform_leave()->>''was_acting'')') || '/' || _pf('$ADM', 'select auth_clinic()::text')" "true/$ADM"
+chk "  ولا جلسةَ مفتوحة بالسجلّ الداخلي، ولا أثرَ بسجلّ العيادة" \
+    "select (select count(*) from platform_session_log where admin_id='$ADM' and left_at is null)::text || '/' || (select count(*) from audit_log where entity='platform')::text" "0/0"
+chk "وسجلُّ الجلسات الداخلي للمشغّل وحده (سياسةٌ واحدة بلا شرط عيادة)" \
+    "select (count(*) = 1 and bool_and(qual not like '%auth_clinic%'))::text from pg_policies where tablename='platform_session_log'" "true"
+chk "دوالُّ المنصّة بصلاحية المُعرِّف وبمسارٍ مثبَّت" \
+    "select count(*)::text from pg_proc where proname in ('platform_enter','platform_leave','platform_context','platform_pulse','platform_activity','platform_logins','platform_acting_clinic') and prosecdef and coalesce(array_to_string(proconfig,','),'') like '%search_path%'" "7"
+chk "وممنوعةٌ على anon" \
+    "select count(*)::text from pg_proc p where proname in ('platform_enter','platform_pulse','platform_activity','platform_logins','platform_leave') and has_function_privilege('anon', p.oid, 'execute')" "0"
+chk "وجدولُ الجلسات محميٌّ بلا أي سياسة" \
+    "select ((select relrowsecurity from pg_class where relname='platform_sessions') and (select count(*) from pg_policies where tablename='platform_sessions')=0)::text" "true"
+$P -c "update _dvtest_flags set admin = false; delete from platform_sessions;" >/dev/null
 
 echo
 [ $fail -eq 0 ] && echo "✓ كل الفحوص عبرت" || { echo "✗ اكو فحصٌ فشل"; exit 1; }

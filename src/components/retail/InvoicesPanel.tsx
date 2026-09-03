@@ -7,6 +7,8 @@ import {
 } from "lucide-react";
 import type { Invoice, InvoiceItem, PaymentMethod, PaymentSplit } from "@/types";
 import { repo } from "@/lib/repo";
+import { getInvoicesPaged } from "@/lib/settings";
+import { RECENT_DAYS } from "@/lib/prefetchData";
 import { staffNameMap } from "@/lib/staffNames";
 import { usePermissions } from "@/hooks/usePermissions";
 import { Modal } from "@/components/Modal";
@@ -25,13 +27,140 @@ const PAY_KEY: Record<PaymentMethod, string> = { cash: "retail.payCash", card: "
 
 type StatusFilter = "all" | "paid" | "refunded";
 
+/** حجمُ صفحة البحث: خمسون تكفي شاشةً وتنزل بطلبٍ واحد صغير. */
+const PAGE = 50;
+/** سقفُ الصفّ الواحد بالخادم — نافذةُ ١٥ يوماً أكبرُ منه تُكمَل بالمؤشّر. */
+const WINDOW_LIMIT = 200;
+/** نوافذٌ فارغة تُقفَز بضغطةٍ واحدة (٢٤ × ١٥ يوماً = سنة). */
+const MAX_EMPTY_WINDOWS = 24;
+
+/** بدايةُ النافذة: بلا مرجعٍ = أوّلُ اليوم قبل ١٤ يوماً (١٥ يوماً باليوم)؛
+ *  بمرجعٍ = ١٥ يوماً قبله. بالوقت المحلّي حتى تقع الحدودُ على منتصف الليل. */
+function windowStart(fromISO: string | null): string {
+  const d = fromISO ? new Date(fromISO) : new Date();
+  if (fromISO) d.setDate(d.getDate() - RECENT_DAYS);
+  else { d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - (RECENT_DAYS - 1)); }
+  return d.toISOString();
+}
+
+/* ============================================================================
+ * «الأخيرُ يُعرض والقديمُ يُبحث» (0150).
+ *
+ * القائمةُ كانت تستقبل **كلَّ** فواتير العيادة وتبحث فيها بالمتصفّح. مع الخيار
+ * (invoices_paged، الافتراضيُّ نعم) تصير: صفحةٌ من خمسين بمؤشّرٍ (تاريخ + معرّف)
+ * و«المزيد» تجيب الأقدم، والبحثُ بالاسم/الهاتف/رقم الفاتورة/البائع يمرّ على
+ * **كل التاريخ** بالخادم بنفس تطبيع الواجهة. العدّادُ «معروض ٥٠ من ١٬٥٠٨» ظاهرٌ
+ * دائماً حتى لا تُصدَّق قائمةٌ ناقصة، وفشلُ الجلب يُقال بصوت لا يُعرض كفراغ.
+ * الطريقةُ القديمة (كلُّ الفواتير بالمتصفّح) باقيةٌ خلف الخيار لأسبوع المراقبة.
+ * ==========================================================================*/
 export function InvoicesPanel({ invoices, onChanged }: { invoices: Invoice[]; clinicId?: string; onChanged: () => void }) {
   const { t, i18n } = useTranslation();
   const { can } = usePermissions();
   const showProfit = can("viewProfits");
+  const paged = getInvoicesPaged();
   const [q, setQ] = useState("");
   const [status, setStatus] = useState<StatusFilter>("all");
   const [open, setOpen] = useState<Invoice | null>(null);
+
+  // ---- الوضعُ المُصفَّح: الصفوفُ من الخادم ----
+  // بلا بحث: **نافذةٌ زمنية** — آخرُ ١٥ يوماً، وكلُّ «المزيد» ينزل ١٥ يوماً أخرى
+  // [since, before). نافذةٌ مزدحمة (> ٢٠٠ فاتورة) يكملها المؤشّرُ نفسه قبل النزول،
+  // ونوافذُ فارغة (عطلة) تُقفَز حتى تظهر فواتير. مع بحث: لا نافذة — كلُّ التاريخ،
+  // ٥٠ بالمرّة بالمؤشّر. الرسمةُ الأولى من لقطة الصفحة حتى لا يظهر فراغ.
+  const windowed = paged && !q.trim();
+  const [rows, setRows] = useState<Invoice[]>(() => firstPaint(invoices, windowStart(null)));
+  const [total, setTotal] = useState<number | null>(null);
+  /** بدايةُ المدى المعروض (بلا بحث) — تنزل ١٥ يوماً بكل «المزيد». */
+  const [since, setSince] = useState<string | null>(null);
+  /** هل فرغت النافذةُ الحالية؟ لا: «المزيد» يكمل بالمؤشّر داخلها قبل أن ينزل. */
+  const [exhausted, setExhausted] = useState(true);
+  const [loading, setLoading] = useState(paged);
+  const [more, setMore] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const [tick, setTick] = useState(0);
+  const reqRef = useRef(0);
+  const refreshRef = useRef(false);
+  const rowsRef = useRef(rows); rowsRef.current = rows;
+  const sinceRef = useRef(since); sinceRef.current = since;
+
+  useEffect(() => {
+    if (!paged) return;
+    const my = ++reqRef.current;
+    const isRefresh = refreshRef.current; refreshRef.current = false;
+    // نفسُ الطلب مرّتين مع الكتابة يهدر الخادم؛ ٣٠٠ مللي ثانية تكفي لتُكمَل الكلمة.
+    const timer = setTimeout(async () => {
+      setLoading(true);
+      setFailed(false);
+      const search = { q: q.trim() || undefined, status };
+      // عند التحديث بعد تغييرٍ (ردّ، حذف) نُعيد المدى المعروض كلَّه — لا نطوي
+      // ما فتحه المستخدم إلى النافذة الأولى.
+      const from = windowed ? (isRefresh && sinceRef.current ? sinceRef.current : windowStart(null)) : null;
+      const limit = windowed ? WINDOW_LIMIT : Math.min(Math.max(isRefresh ? rowsRef.current.length : PAGE, PAGE), WINDOW_LIMIT);
+      try {
+        const [page, n] = await Promise.all([
+          repo.searchInvoices({ ...search, limit, since: from }),
+          repo.countInvoicesMatching(search),
+        ]);
+        if (my !== reqRef.current) return;
+        setRows(page);
+        setTotal(n);
+        setSince(from);
+        setExhausted(page.length < limit);
+      } catch {
+        if (my !== reqRef.current) return;
+        // قائمةٌ ناقصة أخطرُ من خطأ ظاهر: لا نُبقي صفوفاً قديمة تبدو كاملة.
+        setRows([]);
+        setTotal(null);
+        setFailed(true);
+      } finally {
+        if (my === reqRef.current) setLoading(false);
+      }
+    }, isRefresh ? 0 : 300);
+    return () => clearTimeout(timer);
+  }, [paged, windowed, q, status, tick]);
+
+  const loadMore = async () => {
+    if (!paged || more || loading || total == null) return;
+    const my = reqRef.current;
+    const cur = rowsRef.current;
+    const last = cur[cur.length - 1];
+    setMore(true);
+    try {
+      const search = { q: q.trim() || undefined, status };
+      let got: Invoice[] = [];
+      let nextSince = since, nextExhausted = exhausted;
+      if (!windowed) {
+        if (!last) return;
+        got = await repo.searchInvoices({ ...search, limit: PAGE, before: last.created_at, beforeId: last.id });
+      } else if (!exhausted && last) {
+        // النافذةُ الحالية ما فرغت: أكمل بالمؤشّر داخلها.
+        got = await repo.searchInvoices({ ...search, limit: WINDOW_LIMIT, since, before: last.created_at, beforeId: last.id });
+        nextExhausted = got.length < WINDOW_LIMIT;
+      } else {
+        // انزل ١٥ يوماً. عطلةٌ بلا فواتير تُقفَز — حتى سنةٍ كاملة بضغطةٍ واحدة.
+        let hi = since ?? windowStart(null);
+        for (let i = 0; i < MAX_EMPTY_WINDOWS && got.length === 0; i++) {
+          const lo = windowStart(hi);
+          got = await repo.searchInvoices({ ...search, limit: WINDOW_LIMIT, since: lo, before: hi });
+          nextSince = lo; hi = lo;
+        }
+        nextExhausted = got.length < WINDOW_LIMIT;
+      }
+      if (my !== reqRef.current) return;
+      // المؤشّرُ يضمن ألّا يتكرّر صفٌّ، والفلترُ بالمعرّف احتياطٌ إن دخلت فاتورةٌ بنفس اللحظة.
+      const seen = new Set(cur.map((r) => r.id));
+      setRows([...cur, ...got.filter((r) => !seen.has(r.id))]);
+      setSince(nextSince);
+      setExhausted(nextExhausted);
+    } catch {
+      // «المزيد» فشل: القائمةُ الحالية صحيحةٌ لكنها ناقصة — نقولها لا نُخفيها.
+      setFailed(true);
+    } finally { setMore(false); }
+  };
+
+  // تغييرٌ على فاتورة (ردّ، حذف، تسديد): نحدّث لقطةَ الصفحة **و**الصفوفَ المعروضة.
+  const changed = () => { onChanged(); if (paged) { refreshRef.current = true; setTick((n) => n + 1); } };
+  const hasMore = total != null && rows.length < total;
   // أسماء الكادر — حتى يبين البائع على كل فاتورة ويشتغل البحث باسمه.
   const [staffById, setStaffById] = useState<Map<string, string>>(() => new Map());
   useEffect(() => {
@@ -53,6 +182,8 @@ export function InvoicesPanel({ invoices, onChanged }: { invoices: Invoice[]; cl
   };
 
   const shown = useMemo(() => {
+    // بالوضع المُصفَّح الخادمُ فلتر ورتّب (الأحدث إنشاءً أوّلاً — ترتيبُ المؤشّر نفسه).
+    if (paged) return rows;
     const ql = q.trim().toLowerCase();
     return invoices
       .filter((inv) => {
@@ -64,7 +195,7 @@ export function InvoicesPanel({ invoices, onChanged }: { invoices: Invoice[]; cl
           || ((inv.staff_id && staffById.get(inv.staff_id)) ?? "").toLowerCase().includes(ql);
       })
       .sort((a, b) => lastActivity(b) - lastActivity(a));
-  }, [invoices, q, status, staffById]);
+  }, [paged, rows, invoices, q, status, staffById]);
 
   const FILTERS: { id: StatusFilter; label: string }[] = [
     { id: "all", label: t("retail.fAll", "All") },
@@ -89,10 +220,33 @@ export function InvoicesPanel({ invoices, onChanged }: { invoices: Invoice[]; cl
         </div>
       </div>
 
-      {shown.length === 0 ? (
+      {/* العدّاد: «معروض ٥٠ من ١٬٥٠٨» — القائمةُ المُصفَّحة تقول حجمها دائماً. */}
+      {paged && !failed && (
+        <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-ink-subtle" data-invcount>
+          <span className="flex items-center gap-1.5">
+            {loading && <Loader2 size={12} className="animate-spin" />}
+            {total != null && (windowed && since
+              ? t("retail.shownSince", { n: shown.length, total, date: formatDate(since, i18n.language), defaultValue: "Showing {{n}} of {{total}} invoices — since {{date}}" })
+              : t("retail.shownOfTotal", { n: shown.length, total, defaultValue: "Showing {{n}} of {{total}} invoices" }))}
+          </span>
+          {q.trim() && <span>{t("retail.searchAllHistory", "Search covers the whole history")}</span>}
+        </div>
+      )}
+
+      {paged && failed ? (
+        /* فشلُ الجلب يُقال بصوت — لا يُعرض فراغاً يُصدَّق. */
+        <div className="card space-y-3 p-8 text-center" data-invfailed>
+          <p className="mx-auto max-w-md text-sm text-ink-subtle">{t("retail.invoicesLoadFailed", "Could not load invoices. It is a connection problem and no invoice is lost — try again.")}</p>
+          <Button variant="secondary" leftIcon={<RotateCcw size={15} />} onClick={() => { playTap(); setTick((n) => n + 1); }}>{t("common.retry", "Retry")}</Button>
+        </div>
+      ) : shown.length === 0 ? (
         <div className="card grid place-items-center p-12 text-center text-ink-subtle">
           <Receipt size={30} className="mb-2 opacity-40" />
-          {invoices.length === 0 ? t("retail.noInvoices", "No invoices yet. Completed sales appear here.") : t("retail.noInvoiceMatch", "No invoices match your filters.")}
+          {paged && loading
+            ? <Loader2 size={18} className="animate-spin" />
+            : (paged ? total === 0 && !q.trim() && status === "all" : invoices.length === 0)
+              ? t("retail.noInvoices", "No invoices yet. Completed sales appear here.")
+              : t("retail.noInvoiceMatch", "No invoices match your filters.")}
         </div>
       ) : (
         <motion.div variants={staggerContainer} initial="initial" animate="animate" className="space-y-2">
@@ -138,9 +292,25 @@ export function InvoicesPanel({ invoices, onChanged }: { invoices: Invoice[]; cl
         </motion.div>
       )}
 
-      <InvoiceDetail invoice={open} onClose={() => setOpen(null)} onChanged={onChanged} setOpen={setOpen} />
+      {/* «المزيد»: الصفحةُ التالية بالمؤشّر — لا تكرارٌ ولا قفزٌ إن دخلت فاتورةٌ أثناء التصفّح. */}
+      {paged && !failed && hasMore && (
+        <Button variant="secondary" className="w-full" loading={more} data-invmore onClick={() => { playTap(); void loadMore(); }}>
+          {windowed && exhausted
+            ? t("retail.loadMoreDays", { d: RECENT_DAYS, defaultValue: "Show {{d}} more days" })
+            : t("retail.loadMore", "Load more")}
+        </Button>
+      )}
+
+      <InvoiceDetail invoice={open} onClose={() => setOpen(null)} onChanged={changed} setOpen={setOpen} />
     </div>
   );
+}
+
+/** الرسمةُ الأولى بالوضع المُصفَّح: فواتيرُ النافذة الأولى من لقطة الصفحة بترتيب الخادم نفسه. */
+function firstPaint(invoices: Invoice[], since: string): Invoice[] {
+  return invoices.filter((i) => i.created_at >= since)
+    .sort((a, b) => b.created_at.localeCompare(a.created_at) || b.id.localeCompare(a.id))
+    .slice(0, WINDOW_LIMIT);
 }
 
 export function InvoiceDetail({ invoice, onClose, onChanged, setOpen }: {

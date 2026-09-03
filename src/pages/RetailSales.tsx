@@ -185,7 +185,7 @@ export function RetailSales() {
           ) : tab === "delivery" ? (
             <DeliveryPanel invoices={invoices} clinicId={clinicId} onChanged={load} />
           ) : (
-            <ReportsPanel invoices={invoices} clinicId={clinicId} />
+            <ReportsPanel />
           )}
         </motion.div>
       </AnimatePresence>

@@ -17,7 +17,11 @@ import { supabase } from "./supabase";
 import { outboxEnqueue, outboxEnqueueRpc, isNetworkError } from "./outbox";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, AppointmentStatus, ClinicInfo, PublicStaff, DailyNote, TreatmentEntry, Admission, Branch, Reminder, Product, Company, CompanySection, Purchase, PurchaseItem, PurchasePayment, PurchaseDraftLine, PurchaseMeta, Courier, DeliveryOrder, PetMovement, DemoDB, Invoice, InvoiceItem, CheckoutItem, SaleMeta, Customer, DiscountType, PaymentMethod, PaymentSplit, WhatsAppMessage, AuditEntry, LoginEvent, PetNote, Expense, ExpenseMethod, ReturnMeta, RetailReturnResult, HealthMetric, ClinicVisit , Surgery, LabResult, LabDeviceLink, LabDeviceInbox, LabStatusValue, PetProblem, CareEntry, FeatureRequest, GeneratedBarcode, StoreProfile, StoreOrder, StoreOrderItem, StoreFrontInfo, StoreCatalogItem, Journey, JourneyEvent, JourneyKind, JourneyStage, JourneyPublicView, EditLine } from "@/types";
-import type { DeletedProduct, CourierSettlement } from "@/types";
+import type { DeletedProduct, CourierSettlement, ReceiptsDay, ReceiptsTotal, TopProductRow, StaffSalesRow, InvoiceSearch } from "@/types";
+import { receiptsOf, dueOf } from "./debt";
+import { phoneDigits } from "./phone";
+import { searchable } from "./utils";
+import { invoiceNo } from "./invoicePrint";
 import type { PayrollPolicyDTO, StaffComp, StaffRecurring, PayrollAdjustment, PayrollRun, Payslip, PayslipLine, StaffLoan, StaffLoanEvent, PayslipDraft, PayMethod } from "@/types";
 import * as PD from "./payrollDemo";
 import { paidOf, round2 } from "./debt";
@@ -468,8 +472,8 @@ const demoRepo = {
   },
 
   /** Every visit for the clinic in ONE query — see listClinicTreatments for why. */
-  async listClinicVisits(_clinicId?: string): Promise<MedicalVisit[]> {
-    return (loadDB().visits ?? []).slice().sort((a, b) => b.visit_date.localeCompare(a.visit_date));
+  async listClinicVisits(_clinicId?: string, range?: DateRange): Promise<MedicalVisit[]> {
+    return within(loadDB().visits ?? [], "visit_date", range).sort((a, b) => b.visit_date.localeCompare(a.visit_date));
   },
 
   /* ---- Care sheet: fluids, vitals, intake/output beside the doses ---- */
@@ -616,8 +620,8 @@ const demoRepo = {
     if (r) { r.billed = billed; saveDB(db); }
   },
   /** Clinic-wide lab results — feeds the clinical report (عدد التحاليل بالفترة). */
-  async listClinicLabResults(_clinicId?: string): Promise<LabResult[]> {
-    return (loadDB().labResults ?? []).slice().sort((a, b) => b.taken_at.localeCompare(a.taken_at));
+  async listClinicLabResults(_clinicId?: string, range?: DateRange): Promise<LabResult[]> {
+    return within(loadDB().labResults ?? [], "taken_at", range).sort((a, b) => b.taken_at.localeCompare(a.taken_at));
   },
   async deleteLabResult(id: string): Promise<void> {
     const db = loadDB();
@@ -714,9 +718,9 @@ const demoRepo = {
   },
 
   /** Media across a set of pets (clinic-wide) — for the Lab & X-Ray report. */
-  async listAllMedia(petIds: string[]): Promise<MediaItem[]> {
+  async listAllMedia(petIds: string[], range?: DateRange): Promise<MediaItem[]> {
     const ids = new Set(petIds);
-    return (loadDB().media ?? []).filter((m) => ids.has(m.pet_id));
+    return within((loadDB().media ?? []).filter((m) => ids.has(m.pet_id)), "created_at", range);
   },
 
   async addMedia(input: Omit<MediaItem, "id" | "created_at">): Promise<MediaItem> {
@@ -872,8 +876,8 @@ const demoRepo = {
    * pet-id variant sends every patient id in the URL, which grows without bound
    * as the clinic does. RLS already scopes rows to the clinic.
    */
-  async listClinicTreatments(_clinicId?: string, day?: string): Promise<TreatmentEntry[]> {
-    const all = loadDB().treatments ?? [];
+  async listClinicTreatments(_clinicId?: string, day?: string, range?: DateRange): Promise<TreatmentEntry[]> {
+    const all = within(loadDB().treatments ?? [], "day", range);
     return (day ? all.filter((t) => t.day === day) : all.slice())
       .sort((a, b) => (a.day === b.day ? a.time.localeCompare(b.time) : b.day.localeCompare(a.day)));
   },
@@ -1936,6 +1940,109 @@ const demoRepo = {
       return (!range.from || d >= range.from) && (!range.to || d <= range.to);
     });
   },
+  /* ---- التقارير (0149): مرايا دوالّ القاعدة بمنطق الواجهة نفسه ------------
+   * النسخة التجريبية تحسب بـreceiptsOf/dueOf — الدوالّ التي كانت الشاشات تحسب
+   * بها — فيتطابق ما يراه الطبيب هنا مع ما ترجّعه القاعدة (وفحصُ التطابق يثبته). */
+  async listInvoicesTouching(range: DateRange): Promise<Invoice[]> {
+    const lo = range.from ? new Date(range.from).getTime() : -Infinity;
+    const hi = range.to ? new Date(range.to).getTime() : Infinity;
+    const inR = (iso?: string | null) => { if (!iso) return false; const t = new Date(iso).getTime(); return t >= lo && t <= hi; };
+    return (loadDB().invoices ?? [])
+      .filter((i) => inR(i.created_at) || inR(i.refunded_at)
+        || ((i.status ?? "paid") !== "refunded" && dueOf(i) > 0.01)
+        || (i.payment_details ?? []).some((l) => !!l.at && inR(l.at)))
+      .sort((a, b) => b.created_at.localeCompare(a.created_at));
+  },
+  async customerInvoices(phone?: string | null, name?: string | null): Promise<Invoice[]> {
+    const pd = phoneDigits(phone ?? "");
+    const nm = (name ?? "").trim().toLowerCase();
+    return (loadDB().invoices ?? [])
+      .filter((i) => pd
+        ? phoneDigits(i.customer_phone ?? "") === pd
+        : (!!nm && !phoneDigits(i.customer_phone ?? "") && (i.customer_name ?? "").trim().toLowerCase() === nm))
+      .sort((a, b) => b.created_at.localeCompare(a.created_at));
+  },
+  async listInvoiceItemsFor(invoiceIds: string[]): Promise<InvoiceItem[]> {
+    const ids = new Set(invoiceIds);
+    return (loadDB().invoiceItems ?? []).filter((it) => ids.has(it.invoice_id));
+  },
+  async reportReceiptsDaily(range: DateRange, _tz?: string): Promise<ReceiptsDay[]> {
+    const lo = range.from ? new Date(range.from).getTime() : -Infinity;
+    const hi = range.to ? new Date(range.to).getTime() : Infinity;
+    const m = new Map<string, { gross: number; net: number; ids: Set<string> }>();
+    for (const inv of loadDB().invoices ?? []) {
+      const total = inv.total > 0 ? inv.total : 0;
+      for (const r of receiptsOf(inv)) {
+        const t = new Date(r.at).getTime();
+        if (t < lo || t > hi) continue;
+        const d = new Date(r.at);
+        const day = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+        const cur = m.get(day) ?? { gross: 0, net: 0, ids: new Set<string>() };
+        cur.gross += r.amount; cur.net += total > 0 ? inv.profit * (r.amount / total) : 0; cur.ids.add(inv.id);
+        m.set(day, cur);
+      }
+    }
+    const r2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
+    return [...m.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([day, v]) => ({ day, gross: r2(v.gross), net: r2(v.net), invoices: v.ids.size }));
+  },
+  async reportReceiptsTotal(range: DateRange): Promise<ReceiptsTotal> {
+    const days = await this.reportReceiptsDaily(range);
+    const lo = range.from ? new Date(range.from).getTime() : -Infinity;
+    const hi = range.to ? new Date(range.to).getTime() : Infinity;
+    const ids = new Set<string>();
+    for (const inv of loadDB().invoices ?? []) for (const r of receiptsOf(inv)) { const t = new Date(r.at).getTime(); if (t >= lo && t <= hi) ids.add(inv.id); }
+    const r2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
+    return { gross: r2(days.reduce((s, d) => s + d.gross, 0)), net: r2(days.reduce((s, d) => s + d.net, 0)), invoices: ids.size };
+  },
+  async reportTopProducts(range: DateRange, limit = 5): Promise<TopProductRow[]> {
+    const db = loadDB();
+    const lo = range.from ? new Date(range.from).getTime() : -Infinity;
+    const hi = range.to ? new Date(range.to).getTime() : Infinity;
+    const ok = new Set((db.invoices ?? []).filter((i) => (i.status ?? "paid") !== "refunded" && new Date(i.created_at).getTime() >= lo && new Date(i.created_at).getTime() <= hi).map((i) => i.id));
+    const m = new Map<string, TopProductRow>();
+    for (const it of db.invoiceItems ?? []) {
+      if (!ok.has(it.invoice_id)) continue;
+      const key = it.product_id || it.name;
+      const cur = m.get(key) ?? { key, name: it.name, qty: 0, revenue: 0 };
+      cur.qty += it.qty; cur.revenue += it.line_total; m.set(key, cur);
+    }
+    return [...m.values()].sort((a, b) => b.revenue - a.revenue).slice(0, limit);
+  },
+  async reportStaff(range: DateRange): Promise<StaffSalesRow[]> {
+    const lo = range.from ? new Date(range.from).getTime() : -Infinity;
+    const hi = range.to ? new Date(range.to).getTime() : Infinity;
+    const m = new Map<string, StaffSalesRow>();
+    for (const inv of loadDB().invoices ?? []) {
+      if ((inv.status ?? "paid") === "refunded") continue;
+      const t = new Date(inv.created_at).getTime();
+      if (t < lo || t > hi) continue;
+      const key = inv.staff_id ?? "";
+      const cur = m.get(key) ?? { staff_id: inv.staff_id ?? null, invoices: 0, revenue: 0, profit: 0 };
+      cur.invoices += 1; cur.revenue += inv.total; cur.profit += inv.profit ?? 0; m.set(key, cur);
+    }
+    return [...m.values()].sort((a, b) => b.revenue - a.revenue);
+  },
+  async countInvoices(): Promise<number> {
+    return (loadDB().invoices ?? []).length;
+  },
+  /* ---- صفحاتُ الفواتير والبحث بالخادم (0150) — مرآةُ invoice_matches ----
+   * نفس التطبيع (searchable / phoneDigits / invoiceNo) على الطرفين. */
+  async searchInvoices(s: InvoiceSearch): Promise<Invoice[]> {
+    const rows = demoMatchingInvoices(s)
+      .filter((i) => !s.since || i.created_at >= s.since)
+      .sort((a, b) => b.created_at.localeCompare(a.created_at) || b.id.localeCompare(a.id));
+    const start = s.before ? rows.findIndex((i) => i.created_at < s.before! || (i.created_at === s.before && i.id < (s.beforeId ?? ""))) : 0;
+    const from = start < 0 ? rows.length : start;
+    return rows.slice(from, from + Math.min(Math.max(s.limit ?? 50, 1), 200));
+  },
+  async countInvoicesMatching(s: InvoiceSearch): Promise<number> {
+    return demoMatchingInvoices(s).length;
+  },
+  async openDebts(): Promise<Invoice[]> {
+    return (loadDB().invoices ?? [])
+      .filter((i) => (i.status ?? "paid") !== "refunded" && dueOf(i) > 0.01)
+      .sort((a, b) => b.created_at.localeCompare(a.created_at));
+  },
   async refundInvoice(invoiceId: string): Promise<Invoice | undefined> {
     const db = loadDB();
     const inv = (db.invoices ?? []).find((x) => x.id === invoiceId);
@@ -2516,6 +2623,22 @@ const PAGE_ROWS = 1000;
  *  نفسه، ومكانه هو ما تغيّر. */
 export interface DateRange { from?: string | null; to?: string | null }
 
+/** مرآةُ `invoice_matches` (0150) للوضع التجريبي: اسمٌ/هاتفٌ/رقمُ فاتورة بنفس التطبيع، وفلترُ الحالة. */
+function demoMatchingInvoices(s: InvoiceSearch): Invoice[] {
+  const q = (s.q ?? "").trim();
+  const nq = searchable(q);
+  const pq = phoneDigits(q);
+  const noq = q.replace(/^inv-?/i, "").toUpperCase();
+  const status = s.status ?? "all";
+  return (loadDB().invoices ?? []).filter((i) => {
+    if (status !== "all" && (i.status ?? "paid") !== status) return false;
+    if (!nq) return true;
+    return searchable(i.customer_name).includes(nq)
+      || (!!pq && phoneDigits(i.customer_phone ?? "").includes(pq))
+      || (!!noq && invoiceNo(i.id).slice(4).includes(noq));
+  });
+}
+
 /** نظيرُ `inRange` بالوضع التجريبي: يصفّي مصفوفةً على عمودٍ زمنيّ. */
 function within<T>(rows: T[], col: string, r?: DateRange): T[] {
   if (!r?.from && !r?.to) return rows.slice();
@@ -2758,12 +2881,12 @@ const supabaseRepo: typeof demoRepo = {
   async listAllVisits(petIds) {
     return inChunks(petIds, (c) => allPages<MedicalVisit>(() => sbc().from("medical_visits").select("*").in("pet_id", c).order("visit_date", { ascending: false })));
   },
-  async listClinicVisits(clinicId) {
+  async listClinicVisits(clinicId, range) {
     // ملاحظة: حتى limit(5000) كان يُقصّ على 1000 من الخادم — الصفحات هي الحل.
     return allPages<MedicalVisit>(() => {
       let q = sbc().from("medical_visits").select("*").order("visit_date", { ascending: false });
       if (clinicId) q = q.eq("clinic_id", clinicId);
-      return q;
+      return inRange(q, "visit_date", range);
     });
   },
   async listCareEntries(petId, day) {
@@ -2867,12 +2990,12 @@ const supabaseRepo: typeof demoRepo = {
   async setLabPriority(id, priority) {
     ok(await sbc().from("lab_results").update({ priority }).eq("id", id));
   },
-  async listClinicLabResults(clinicId) {
+  async listClinicLabResults(clinicId, range) {
     // limit(2000) كان يُقصّ على 1000 من الخادم أصلاً — الصفحات تضمن الاثنين.
     return allPages<LabResult>(() => {
       let q = sbc().from("lab_results").select("*").order("taken_at", { ascending: false });
       if (clinicId) q = q.eq("clinic_id", clinicId);
-      return q;
+      return inRange(q, "taken_at", range);
     });
   },
   async deleteLabResult(id) {
@@ -2934,8 +3057,8 @@ const supabaseRepo: typeof demoRepo = {
     const items = listOf<MediaItem>(await sbc().from("media_items").select("*").eq("pet_id", petId).order("created_at", { ascending: false }));
     return withSignedMedia(items);
   },
-  async listAllMedia(petIds) {
-    const items = await inChunks(petIds, (c) => allPages<MediaItem>(() => sbc().from("media_items").select("*").in("pet_id", c)));
+  async listAllMedia(petIds, range) {
+    const items = await inChunks(petIds, (c) => allPages<MediaItem>(() => inRange(sbc().from("media_items").select("*").in("pet_id", c), "created_at", range)));
     return withSignedMedia(items);
   },
   async addMedia(input) {
@@ -3065,13 +3188,13 @@ const supabaseRepo: typeof demoRepo = {
   async listAllTreatments(petIds) {
     return inChunks(petIds, (c) => allPages<TreatmentEntry>(() => sbc().from("treatment_entries").select("*").in("pet_id", c)));
   },
-  async listClinicTreatments(clinicId, day) {
+  async listClinicTreatments(clinicId, day, range) {
     // limit(5000) كان يُقصّ على 1000 من الخادم — طبلات اليوم النشط تفوقها بسهولة.
     return allPages<TreatmentEntry>(() => {
       let q = sbc().from("treatment_entries").select("*").order("day", { ascending: false });
       if (clinicId) q = q.eq("clinic_id", clinicId);
       if (day) q = q.eq("day", day);
-      return q;
+      return inRange(q, "day", range);
     });
   },
   async addTreatment(input) {
@@ -3642,6 +3765,61 @@ const supabaseRepo: typeof demoRepo = {
       return inRange(q, "created_at", range);
     });
   },
+  /* ---- التقارير (0149): القاعدةُ تجمع، والمتصفّح يعرض ---------------------- */
+  async listInvoicesTouching(range) {
+    // setof عبر RPC يخضع لسقف الصفوف نفسه — فالصفحات هنا أيضاً.
+    return allPages<Invoice>(() => sbc().rpc("report_invoices", { p_from: range.from ?? "1970-01-01", p_to: range.to ?? "2999-01-01" }));
+  },
+  async customerInvoices(phone, name) {
+    return allPages<Invoice>(() => sbc().rpc("customer_invoices", { p_phone: phone ?? null, p_name: name ?? null }));
+  },
+  async listInvoiceItemsFor(invoiceIds) {
+    if (invoiceIds.length === 0) return [];
+    return inChunks(invoiceIds, (c) => allPages<InvoiceItem>(() => sbc().from("invoice_items").select("*").in("invoice_id", c)));
+  },
+  async reportReceiptsDaily(range, tz) {
+    const rows = listOf<{ day: string; gross: number | string; net: number | string; invoices: number }>(
+      await sbc().rpc("report_receipts_daily", { p_from: range.from ?? "1970-01-01", p_to: range.to ?? "2999-01-01", p_tz: tz ?? "Asia/Baghdad" }));
+    return rows.map((r) => ({ day: r.day, gross: Number(r.gross), net: Number(r.net), invoices: Number(r.invoices) }));
+  },
+  async reportReceiptsTotal(range) {
+    const rows = listOf<{ gross: number | string; net: number | string; invoices: number }>(
+      await sbc().rpc("report_receipts_total", { p_from: range.from ?? "1970-01-01", p_to: range.to ?? "2999-01-01" }));
+    const r = rows[0];
+    return { gross: Number(r?.gross ?? 0), net: Number(r?.net ?? 0), invoices: Number(r?.invoices ?? 0) };
+  },
+  async reportTopProducts(range, limit = 5) {
+    const rows = listOf<{ key: string; name: string; qty: number | string; revenue: number | string }>(
+      await sbc().rpc("report_top_products", { p_from: range.from ?? "1970-01-01", p_to: range.to ?? "2999-01-01", p_limit: limit }));
+    return rows.map((r) => ({ key: r.key, name: r.name, qty: Number(r.qty), revenue: Number(r.revenue) }));
+  },
+  async reportStaff(range) {
+    const rows = listOf<{ staff_id: string | null; invoices: number; revenue: number | string; profit: number | string }>(
+      await sbc().rpc("report_staff", { p_from: range.from ?? "1970-01-01", p_to: range.to ?? "2999-01-01" }));
+    return rows.map((r) => ({ staff_id: r.staff_id, invoices: Number(r.invoices), revenue: Number(r.revenue), profit: Number(r.profit) }));
+  },
+  async countInvoices() {
+    // عدٌّ لا صفوف — لا يمسّه سقفُ الألف.
+    const { count, error } = await sbc().from("invoices").select("id", { count: "exact", head: true });
+    if (error) throw error;
+    return count ?? 0;
+  },
+  async searchInvoices(s) {
+    // صفحةٌ واحدة بحدّها — لا allPages هنا عمداً: الصفحةُ هي الفكرة.
+    return listOf<Invoice>(await sbc().rpc("search_invoices", {
+      p_q: s.q ?? null, p_status: s.status ?? "all",
+      p_before: s.before ?? null, p_before_id: s.beforeId ?? null, p_limit: s.limit ?? 50,
+      p_since: s.since ?? null,
+    }));
+  },
+  async countInvoicesMatching(s) {
+    const { data, error } = await sbc().rpc("count_invoices_matching", { p_q: s.q ?? null, p_status: s.status ?? "all" });
+    if (error) throw error;
+    return Number(data ?? 0);
+  },
+  async openDebts() {
+    return allPages<Invoice>(() => sbc().rpc("open_debts"));
+  },
   async refundInvoice(invoiceId) {
     // Server marks refunded + returns units to stock (idempotent).
     return need<Invoice>(await sbc().rpc("refund_invoice", { p_invoice: invoiceId }));
@@ -3962,6 +4140,8 @@ const READ_ONLY_ALLOWED = new Set<string>([
   "getPayrollPolicy", "listStaffComp", "listStaffRecurring", "listPayrollRuns",
   "listPayslips", "listPayslipLines", "listStaffLoans", "listLoanEvents",
   "listPayrollAdjustments", "listDeletedProducts", "productSaleLines", "listCourierSettlements",
+  "listInvoicesTouching", "customerInvoices", "listInvoiceItemsFor", "reportReceiptsDaily", "reportReceiptsTotal",
+  "reportTopProducts", "reportStaff", "countInvoices", "searchInvoices", "countInvoicesMatching", "openDebts",
   // --- استعلامات مساعدة لا تكتب ---
   "checkStoreSlug", "slotTaken", "supportsBulkGroup", "supportsSupplierLedger",
   "adminListFeatureRequests", "systemHealth",

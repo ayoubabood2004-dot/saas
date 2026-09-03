@@ -2,10 +2,11 @@ import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   RotateCcw, Search, Receipt, Plus, Minus, Wallet, Banknote, CreditCard,
-  ArrowLeftRight, CheckCircle2, PackageOpen, AlertTriangle, ChevronRight,
+  ArrowLeftRight, CheckCircle2, PackageOpen, AlertTriangle, ChevronRight, Loader2,
 } from "lucide-react";
 import type { Invoice, InvoiceItem, PaymentMethod } from "@/types";
 import { repo } from "@/lib/repo";
+import { getInvoicesPaged } from "@/lib/settings";
 import { Button, useToast } from "@/components/ui";
 import { round2, paidOf, dueOf } from "@/lib/debt";
 import { cn, money, normalizeAr, formatNum, formatDate } from "@/lib/utils";
@@ -46,7 +47,7 @@ export function ReturnsPanel({ invoices, onChanged }: { invoices: Invoice[]; onC
 
   /** الفواتير المرشّحة: غير المرجعة، الأحدث أولاً، ويضيّقها البحث بالاسم
    *  أو الهاتف أو رقم الفاتورة. */
-  const candidates = useMemo(() => {
+  const localCandidates = useMemo(() => {
     const live = invoices.filter((i) => (i.status ?? "paid") !== "refunded");
     const s = normalizeAr(q.trim().toLowerCase());
     const list = !s ? live : live.filter((i) =>
@@ -55,6 +56,29 @@ export function ReturnsPanel({ invoices, onChanged }: { invoices: Invoice[]; onC
       || invoiceNo(i.id).toLowerCase().includes(q.trim().toLowerCase()));
     return list.slice(0, 12);
   }, [invoices, q]);
+
+  /* (0150) بالوضع المُصفَّح لقطةُ الصفحة آخرُ ١٥ يوماً فقط؛ زبونٌ يرجع بفاتورةِ
+   * شهرٍ لا يجدها المتصفّح — فالبحثُ المكتوب يمرّ بالخادم على كل التاريخ،
+   * وبلا بحثٍ تبقى القائمةُ المحلّية (الأحدث). */
+  const paged = getInvoicesPaged();
+  const serverQ = paged ? q.trim() : "";
+  const [remote, setRemote] = useState<Invoice[] | null>(null);
+  const [searching, setSearching] = useState(false);
+  const [searchFailed, setSearchFailed] = useState(false);
+  const [retry, setRetry] = useState(0);
+  useEffect(() => {
+    if (!serverQ) { setRemote(null); setSearching(false); setSearchFailed(false); return; }
+    let alive = true;
+    setSearching(true);
+    const timer = setTimeout(() => {
+      repo.searchInvoices({ q: serverQ, status: "paid", limit: 12 })
+        .then((r) => { if (alive) { setRemote(r); setSearchFailed(false); } })
+        .catch(() => { if (alive) { setRemote([]); setSearchFailed(true); } })
+        .finally(() => { if (alive) setSearching(false); });
+    }, 300);
+    return () => { alive = false; clearTimeout(timer); };
+  }, [serverQ, retry]);
+  const candidates = serverQ && remote ? remote : localCandidates;
 
   const pick = (inv: Invoice) => {
     playTap();
@@ -144,8 +168,19 @@ export function ReturnsPanel({ invoices, onChanged }: { invoices: Invoice[]; onC
               <input data-retsearch className="input ltr:pl-9 rtl:pr-9" value={q} onChange={(e) => setQ(e.target.value)}
                 placeholder={t("ret.searchPh", "دوّر الفاتورة — اسم الزبون، هاتفه، أو رقم الفاتورة…")} />
             </div>
+            {paged && (
+              <p className="flex items-center gap-1.5 text-2xs text-ink-subtle" data-rethint>
+                {searching && <Loader2 size={11} className="animate-spin" />}
+                {t("retail.retSearchServerHint", "Type a name, phone or invoice number — search covers the whole history")}
+              </p>
+            )}
             <div className="space-y-2">
-              {candidates.length === 0 ? (
+              {searchFailed && serverQ ? (
+                <div className="card flex flex-col items-center gap-2 p-8 text-center" data-retfailed>
+                  <p className="text-sm text-ink-subtle">{t("retail.invoicesLoadFailed", "Could not load invoices. It is a connection problem and no invoice is lost — try again.")}</p>
+                  <Button size="sm" variant="secondary" onClick={() => { playTap(); setRetry((n) => n + 1); }}>{t("common.retry", "Retry")}</Button>
+                </div>
+              ) : candidates.length === 0 ? (
                 <div className="card flex flex-col items-center gap-2 p-8 text-center">
                   <RotateCcw size={26} className="text-ink-subtle" />
                   <p className="text-sm text-ink-subtle">{t("ret.noInv", "ماكو فواتير مطابقة — المرجعة أصلاً ما تنعرض هنا.")}</p>

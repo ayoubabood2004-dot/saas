@@ -17,7 +17,7 @@ import { getServiceCatalog, addServiceCategory, removeServiceCategory, addServic
 import { DEFAULT_RANGES, VITAL_KEYS, CBC_KEYS, rangeFor, type VitalKey } from "@/lib/vitals";
 
 const ALL_KEYS: VitalKey[] = [...VITAL_KEYS, ...CBC_KEYS];
-import { setVitalOverride, clearVitalOverrides, getDialCode, setDialCode, getClinicLogo, setClinicLogo, getClinicSocials, setClinicSocials, getClinicName, setClinicName, getPreSalePrint, setPreSalePrint, getResizableCart, setResizableCart, getFontScaleEnabled, setFontScaleEnabled, getDeliveryZones, setDeliveryZones, type DeliveryZone, getQtyPromos, setQtyPromos, promoTargetLabel, getCatalogShare, setCatalogShare, type QtyPromo, type PromoKind, type PromoMode, getCurrencyCode, setCurrencyCode, getPosV2, setPosV2, getPosCompact, setPosCompact, getPosCustomerOpen, setPosCustomerOpen, getWorkHours, setWorkHours, getClockFormat, setClockFormat, type ClockFormat, getDoseWindow, setDoseWindow, getCashReconcile, setCashReconcile } from "@/lib/settings";
+import { setVitalOverride, clearVitalOverrides, getDialCode, setDialCode, getClinicLogo, setClinicLogo, getClinicSocials, setClinicSocials, getClinicName, setClinicName, getPreSalePrint, setPreSalePrint, getResizableCart, setResizableCart, getFontScaleEnabled, setFontScaleEnabled, getDeliveryZones, setDeliveryZones, type DeliveryZone, getQtyPromos, setQtyPromos, promoTargetLabel, getCatalogShare, setCatalogShare, type QtyPromo, type PromoKind, type PromoMode, getCurrencyCode, setCurrencyCode, getPosV2, setPosV2, getPosCompact, setPosCompact, getPosCustomerOpen, setPosCustomerOpen, getInvoicesPaged, setInvoicesPaged, getWorkHours, setWorkHours, getClockFormat, setClockFormat, type ClockFormat, getDoseWindow, setDoseWindow, getCashReconcile, setCashReconcile } from "@/lib/settings";
 import { segmentsFrom, distributeDoses } from "@/lib/treatmentSchedule";
 import { CURRENCIES, currencyName } from "@/lib/currency";
 import { FONT_SCALES, getFontScale, setFontScale, applyFontScale, getCrispMode, setCrispMode, type FontScaleId } from "@/lib/fontScale";
@@ -795,8 +795,15 @@ function CashierOptions() {
   const [posCompact, setPosCompactOn] = useState(getPosCompact());
   const [posCustOpen, setPosCustOpenOn] = useState(getPosCustomerOpen());
   const [cashRec, setCashRec] = useState(getCashReconcile());
+  const [paged, setPagedOn] = useState(getInvoicesPaged());
 
   if (!can("manageSettings")) return null;
+
+  const togglePaged = () => {
+    const next = !paged;
+    setPagedOn(next); setInvoicesPaged(next);
+    if (next) playSuccess(); else playTap();
+  };
 
   const togglePosCompact = () => {
     const next = !posCompact;
@@ -902,6 +909,15 @@ function CashierOptions() {
             hint={t("settings.cashReconcileHint", "يضيف زر «مطابقة الصندوق» بشاشة المبيعات: بنهاية كل دوام تعدّ النقد الموجود فعلياً وتأكّد أنه مطابق للسستم — وإذا العيادة بدوامين، تأكيد للصباحي وتأكيد للمسائي، وتشوف مبيعات كل دوام على حدة.")}
             checked={cashRec}
             onToggle={toggleCashRec}
+          />
+        </div>
+        <div className="border-t border-line" />
+        <div data-paged-toggle>
+          <CashierToggle
+            label={t("settings.invoicesPaged", "قائمة الفواتير بصفحات وبحث بكل التاريخ")}
+            hint={t("settings.invoicesPagedHint", "تبويب الفواتير يعرض آخر ٥٠ فاتورة وزر «المزيد»، والبحث بالاسم أو الهاتف أو رقم الفاتورة يمرّ على كل التاريخ بالخادم. أسرع بكثير على العيادات الي عندها آلاف الفواتير. أطفئه فقط لو احتجت الطريقة القديمة مؤقتاً.")}
+            checked={paged}
+            onToggle={togglePaged}
           />
         </div>
       </div>

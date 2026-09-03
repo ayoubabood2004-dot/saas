@@ -25,7 +25,9 @@ import {
   ArrowLeft,
   PanelLeftClose,
   PanelLeftOpen, Wallet } from "lucide-react";
+import { ShieldCheck } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
+import { isPlatformAdmin } from "@/lib/platformAdmin";
 import { usePermissions } from "@/hooks/usePermissions";
 import { useBookingRequestCount } from "@/lib/bookingRequests";
 import { useStoreOrderCount } from "@/lib/storeOrdersLive";
@@ -100,6 +102,8 @@ export function Sidebar() {
     { to: "/scan", icon: ScanLine, label: t("nav.scan") },
     { to: "/activity", icon: History, label: t("nav.activity", "سجل الحركات"), show: can("manageSettings") },
     { to: "/settings", icon: SettingsIcon, label: t("nav.settings"), show: can("manageSettings") },
+    // لوحةُ المنصّة (0151) — لمشغّل المنصّة وحده؛ الخادمُ يحرسها بنفسه أيضاً.
+    { to: "/platform", icon: ShieldCheck, label: t("nav.platform", "لوحة المنصّة"), show: isPlatformAdmin(user?.email) },
   ].filter((it) => it.show !== false);
 
   // فتح/غلق المجموعات المنسدلة — حالة مستقلة لكل مجموعة (الطبلات، الواتساب…).

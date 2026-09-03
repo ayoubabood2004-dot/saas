@@ -25,11 +25,13 @@ export function PetSalesWidget({ pet }: { pet: Pet }) {
 
   const load = useCallback(() => {
     if (!ownerKey) { setLoaded(true); return Promise.resolve(); }
-    return Promise.all([repo.listInvoices(), repo.listAllInvoiceItems()])
-      .then(([inv, it]) => { setInvoices(inv); setItems(it); })
+    // فواتيرُ هذا المالك وحده من الخادم (0149) — كانت تنزّل كلَّ فواتير العيادة
+    // وكلَّ سطورها لتلقى بينها فواتيرَ زبونٍ واحد.
+    return repo.customerInvoices(pet.owner_phone ?? "", null)
+      .then(async (inv) => { const it = await repo.listInvoiceItemsFor(inv.map((i) => i.id)); setInvoices(inv); setItems(it); })
       .catch(() => { /* empty state covers it */ })
       .finally(() => setLoaded(true));
-  }, [ownerKey]);
+  }, [ownerKey, pet.owner_phone]);
 
   useEffect(() => { let alive = true; void load().then(() => { if (!alive) return; }); return () => { alive = false; }; }, [load]);
 

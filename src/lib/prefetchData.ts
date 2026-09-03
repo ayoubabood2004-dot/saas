@@ -10,6 +10,7 @@ import { repo } from "@/lib/repo";
 import { listStaff, type StaffMember } from "@/lib/staff";
 import { getCached, setCached } from "@/lib/swrCache";
 import { localISO } from "@/lib/utils";
+import { getInvoicesPaged } from "@/lib/settings";
 import type { LabResult,
   Pet, Admission, TreatmentEntry, MedicalVisit, Product, Invoice, InvoiceItem, MediaItem, AuditEntry, LoginEvent, Expense,
 } from "@/types";
@@ -42,13 +43,23 @@ export async function loadRecordsSnap(clinicId?: string | null): Promise<Records
 }
 
 // ---- Retail & Sales (المبيعات) ----
+/** نافذةُ تبويب الفواتير بالأيام — نفسُها للّقطة وللنزول بـ«المزيد». */
+export const RECENT_DAYS = 15;
 export type RetailSnap = { products: Product[]; invoices: Invoice[] };
 export const retailKey = (clinicId?: string | null) => `retail:${cid(clinicId)}`;
 export async function loadRetailSnap(clinicId?: string | null): Promise<RetailSnap> {
   const id = clinicId ?? undefined;
+  // «الأخيرُ يُعرض والقديمُ يُبحث» (0150): آخرُ ١٥ يوماً + **كلُّ** الديون المفتوحة
+  // مهما كان عمرها + ما رُدّ أو سُدّد بالمدّة — فالديونُ والتوصيلاتُ كاملةٌ دائماً،
+  // وتبويبُ الفواتير ينزل بالتاريخ ١٥ يوماً بكل «المزيد»، والبحثُ يمرّ بالخادم.
+  // الطريقةُ القديمة (كلُّ الفواتير) تبقى خلف خيارٍ بالإعدادات لأسبوع المراقبة فقط.
+  const paged = getInvoicesPaged();
+  const recent = { from: new Date(Date.now() - RECENT_DAYS * 86400000).toISOString(), to: new Date(Date.now() + 86400000).toISOString() };
   const [products, invoices, sections] = await Promise.all([
     repo.listProducts(id),
-    repo.listInvoices(id),
+    paged
+      ? repo.listInvoicesTouching(recent)
+      : repo.listInvoices(id), /* unbounded: الطريقة القديمة خلف خيار invoices_paged=false — تُشال بعد أسبوع المراقبة */
     repo.listCompanySections(undefined, id).catch(() => []),
   ]);
   // For the TILL only, a product's sellable count = its own tracked stock PLUS its
@@ -64,31 +75,62 @@ export async function loadRetailSnap(clinicId?: string | null): Promise<RetailSn
 }
 
 // ---- Reports (التقارير) ----
+/* المدّةُ جزءٌ من الطلب (0149): الصفحة كانت تنزّل ١٢ جدولاً كاملاً ثم تفلتر على
+ * المدّة بالمتصفّح. الآن كلُّ جدولٍ يُطلب بمدّته، والمفتاحُ يضمّ المدّة فلا يُعاد
+ * استعمالُ لقطةِ شهرٍ لأسبوع. */
+export type AnalyticsRange = {
+  /** طابعا ISO (UTC) لبداية أوّل يومٍ محلي ونهاية آخر يوم — للأعمدة الزمنية الدقيقة. */
+  from: string; to: string;
+  /** اليومان المحليّان YYYY-MM-DD — للأعمدة اليومية (day / visit_date / spent_at). */
+  fromDay: string; toDay: string;
+};
+export function analyticsRange(fromDay: string, toDay: string): AnalyticsRange {
+  const lo = new Date(fromDay + "T00:00:00"); lo.setHours(0, 0, 0, 0);
+  const hi = new Date(toDay + "T00:00:00"); hi.setHours(23, 59, 59, 999);
+  return { from: lo.toISOString(), to: hi.toISOString(), fromDay, toDay };
+}
+export function defaultAnalyticsRange(): AnalyticsRange {
+  const now = new Date();
+  return analyticsRange(localISO(new Date(now.getFullYear(), now.getMonth(), 1)), localISO(now));
+}
+/** الأعمدةُ اليومية تُطلب بيومٍ زائد من الطرفين: الصفحةُ تفلتر بدقّة بنفسها، وما
+ *  يهمّ هنا أن لا يسقط صفٌّ على حدّ المنطقة الزمنية. */
+const shiftDay = (ymd: string, days: number) => { const d = new Date(ymd + "T12:00:00"); d.setDate(d.getDate() + days); return localISO(d); };
+const wideDays = (r: AnalyticsRange) => ({ from: shiftDay(r.fromDay, -1), to: shiftDay(r.toDay, 1) + "T23:59:59.999" });
+
 export type AnalyticsSnap = {
   pets: Pet[]; invoices: Invoice[]; items: InvoiceItem[]; products: Product[]; visits: MedicalVisit[];
   staff: StaffMember[]; media: MediaItem[]; treatments: TreatmentEntry[]; audit: AuditEntry[]; logins: LoginEvent[];
   expenses: Expense[]; labs: LabResult[];
 };
-export const analyticsKey = (clinicId?: string | null) => `analytics:${cid(clinicId)}`;
-export async function loadAnalyticsSnap(clinicId?: string | null): Promise<AnalyticsSnap> {
+export const analyticsKey = (clinicId: string | null | undefined, r: AnalyticsRange) => `analytics:${cid(clinicId)}:${r.from}:${r.to}`;
+export async function loadAnalyticsSnap(clinicId: string | null | undefined, r: AnalyticsRange): Promise<AnalyticsSnap> {
   const id = clinicId ?? undefined;
+  const exact = { from: r.from, to: r.to };
+  const wide = wideDays(r);
   const [pets, invoices, items, products] = await Promise.all([
-    repo.listAllPets(id), repo.listInvoices(id), repo.listAllInvoiceItems(id), repo.listProducts(id),
+    repo.listAllPets(id),
+    // الفواتير التي **يمكن** أن تطابق المدّة: أُنشئت فيها، أو رُدّت فيها، أو
+    // وصلت دفعةٌ منها فيها، أو عليها دينٌ مفتوح (الدينُ لا يتقيّد بالمدّة).
+    // منطقُ الصفحة كما هو — يفلتر بنفسه — والحجمُ وحده تغيّر.
+    repo.listInvoicesTouching(exact),
+    repo.listAllInvoiceItems(id, exact),
+    repo.listProducts(id),
   ]);
   const petIds = pets.map((p) => p.id);
   const [visits, media, treatments, staff, audit, logins, expenses, labs] = await Promise.all([
     // Clinic-scoped, not pet-id-scoped: the `in(petIds)` form puts every patient id
     // into the query URL, which eventually exceeds what the server will accept.
-    repo.listClinicVisits(id),
-    repo.listAllMedia(petIds).catch(() => [] as MediaItem[]),
-    repo.listClinicTreatments(id).catch(() => [] as TreatmentEntry[]),
+    repo.listClinicVisits(id, wide),
+    repo.listAllMedia(petIds, exact).catch(() => [] as MediaItem[]),
+    repo.listClinicTreatments(id, undefined, wide).catch(() => [] as TreatmentEntry[]),
     listStaff().catch(() => [] as StaffMember[]),
     repo.listAuditLog(id).catch(() => [] as AuditEntry[]),
     repo.listLoginEvents(id).catch(() => [] as LoginEvent[]),
     // Back-compat guard: the expenses table (migration 0052) may not exist yet.
-    repo.listExpenses(id).catch(() => [] as Expense[]),
+    repo.listExpenses(id, wide).catch(() => [] as Expense[]),
     // Back-compat guard: lab_results (migration 0086) may not exist yet.
-    repo.listClinicLabResults(id).catch(() => [] as LabResult[]),
+    repo.listClinicLabResults(id, exact).catch(() => [] as LabResult[]),
   ]);
   return { pets, invoices, items, products, visits, media, treatments, staff, audit, logins, expenses, labs };
 }
@@ -114,7 +156,8 @@ export function warmDataIdle(clinicId: string | null | undefined, what: WarmWhat
   const run = () => {
     if (what.records) warmOnce(recordsKey(clinicId), () => loadRecordsSnap(clinicId));
     if (what.retail) warmOnce(retailKey(clinicId), () => loadRetailSnap(clinicId));
-    if (what.analytics) warmOnce(analyticsKey(clinicId), () => loadAnalyticsSnap(clinicId));
+    // التقارير: شهرُ اليوم فقط — لا العمر كله لكل مستخدمٍ عند كل دخول.
+    if (what.analytics) { const r = defaultAnalyticsRange(); warmOnce(analyticsKey(clinicId, r), () => loadAnalyticsSnap(clinicId, r)); }
   };
   const ric = (window as unknown as { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => void }).requestIdleCallback;
   if (typeof ric === "function") ric(run, { timeout: 4000 });

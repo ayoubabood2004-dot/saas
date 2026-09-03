@@ -1,5 +1,6 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { repo } from "@/lib/repo";
 import {
   Crown, Search, UserRound, Phone, CalendarClock, ShoppingBag, RotateCcw, Wallet,
   Receipt, TrendingUp, BookUser, PackageCheck, Pencil,
@@ -48,11 +49,9 @@ type CustomerRow = {
   due: number;
 };
 
-export function CustomersTab({ invoices, items, inRange, rangeLabel, canProfit, clinicId, onChanged }: {
-  /** كل الفواتير (التاريخ الكامل) — يغذّي دفتر الزبون وديونه. */
+export function CustomersTab({ invoices, inRange, rangeLabel, canProfit, clinicId, onChanged }: {
+  /** الفواتير التي تطابق المدّة + كل الديون المفتوحة (0149) — تغذّي دين كل زبون. */
   invoices: Invoice[];
-  /** كل أسطر الفواتير — «شنو اشترى بالضبط». */
-  items: InvoiceItem[];
   /** فواتير الفترة المحددة — تغذّي الترتيب والأرقام أعلاه. */
   inRange: Invoice[];
   rangeLabel: string;
@@ -175,8 +174,6 @@ export function CustomersTab({ invoices, items, inRange, rangeLabel, canProfit, 
 
       <CustomerBookModal
         openKey={openKey}
-        invoices={invoices}
-        items={items}
         canProfit={canProfit}
         clinicId={clinicId}
         onChanged={onChanged}
@@ -209,14 +206,35 @@ function Kpi({ icon: Icon, tone, label, value, sub }: { icon: typeof Wallet; ton
  * دفتر الزبون — تاريخه الكامل (لا يتقيد بفترة التقارير): أرقامه الإجمالية،
  * أكثر شي يشتريه، وكل معاملة معاملة بحالتها (مدفوعة/عليها دين/مرجعة).
  * ==========================================================================*/
-function CustomerBookModal({ openKey, invoices, items, canProfit, clinicId, onChanged, onClose }: {
-  openKey: string | null; invoices: Invoice[]; items: InvoiceItem[]; canProfit: boolean; clinicId?: string; onChanged?: () => void; onClose: () => void;
+function CustomerBookModal({ openKey, canProfit, clinicId, onChanged, onClose }: {
+  openKey: string | null; canProfit: boolean; clinicId?: string; onChanged?: () => void; onClose: () => void;
 }) {
   const { t, i18n } = useTranslation();
   const { can } = usePermissions();
   /* تعديل فاتورة من الدفتر — نفس صلاحية تصحيح الفواتير بشاشة المبيعات. */
   const canEdit = can("deleteInvoices");
   const [editInv, setEditInv] = useState<Invoice | null>(null);
+
+  /* دفترُ الزبون تاريخُه **كامل** دائماً (0149): يُجلب من الخادم بمفتاح الزبون نفسه
+   * (الهاتف رقمياً وإلا الاسم) لا من لقطة الصفحة — التي صارت محدودةً بالمدّة.
+   * القائمةُ تتبع المدّة، والدفتر لا يتبعها: زبونٌ اشترى قبل سنة يظهر شراؤه. */
+  const [data, setData] = useState<{ key: string; invoices: Invoice[]; items: InvoiceItem[] } | null>(null);
+  const [failed, setFailed] = useState(false);
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    if (!openKey) { setData(null); return; }
+    let alive = true;
+    setFailed(false);
+    const phone = openKey.startsWith("p:") ? openKey.slice(2) : null;
+    const name = openKey.startsWith("n:") ? openKey.slice(2) : null;
+    repo.customerInvoices(phone, name)
+      .then(async (inv) => ({ inv, its: await repo.listInvoiceItemsFor(inv.map((i) => i.id)) }))
+      .then(({ inv, its }) => { if (alive) setData({ key: openKey, invoices: inv, items: its }); })
+      .catch(() => { if (alive) setFailed(true); });
+    return () => { alive = false; };
+  }, [openKey, tick]);
+  const invoices = data?.key === openKey ? data.invoices : [];
+  const items = data?.key === openKey ? data.items : [];
 
   const book = useMemo(() => {
     if (!openKey) return null;
@@ -263,10 +281,26 @@ function CustomerBookModal({ openKey, invoices, items, canProfit, clinicId, onCh
     };
   }, [openKey, invoices, items]);
 
-  if (!book) return null;
+  if (!openKey) return null;
+  if (!book) {
+    return (
+      <Modal open onClose={onClose} size="full" title={t("rpt.cust.bookLoading", "دفتر الزبون")}>
+        {failed ? (
+          <div className="space-y-3 p-6 text-center">
+            <p className="text-sm text-ink-subtle">{t("retail.reportLoadFailed", "تعذّر تحميل التقرير. المشكلة بالاتصال ولا رقم ضاع — أعد المحاولة.")}</p>
+            <button onClick={() => { playTap(); setTick((n) => n + 1); }} className="rounded-xl bg-brand-600 px-4 py-2 text-sm font-bold text-white">{t("common.retry", "إعادة المحاولة")}</button>
+          </div>
+        ) : data ? (
+          <p className="p-6 text-center text-sm text-ink-subtle">{t("rpt.cust.bookEmpty", "ماكو فواتير لهذا الزبون.")}</p>
+        ) : (
+          <div className="space-y-2 p-3">{Array.from({ length: 4 }).map((_, i) => <div key={i} className="h-12 animate-pulse rounded-xl bg-surface-2" />)}</div>
+        )}
+      </Modal>
+    );
+  }
 
   return (
-    <Modal open={!!openKey} onClose={onClose} size="full" title={t("rpt.cust.bookTitle", { name: book.name, defaultValue: "دفتر الزبون — {{name}}" })}>
+    <Modal open onClose={onClose} size="full" title={t("rpt.cust.bookTitle", { name: book.name, defaultValue: "دفتر الزبون — {{name}}" })}>
       <div className="space-y-4">
         {/* هوية الزبون */}
         <div className="flex flex-wrap items-center gap-3 rounded-2xl bg-surface-2 p-3.5">

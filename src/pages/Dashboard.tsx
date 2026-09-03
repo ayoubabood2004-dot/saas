@@ -105,7 +105,8 @@ export function Dashboard() {
         repo.listAdmissions(user?.clinic_id ?? user?.id),
         repo.listReminders({ ownerId: null }),
         repo.listAppointmentsInRange(days[0].toISOString(), days[6].toISOString()),
-        repo.listInvoices(user?.clinic_id ?? user?.id).catch(() => [] as Invoice[]),
+        // فواتيرُ الأسبوع فقط (0149): الرئيسية تعدّ مبيعات سبعة أيام، لا التاريخَ كله.
+        repo.listInvoices(user?.clinic_id ?? user?.id, { from: (() => { const d = new Date(days[0]); d.setHours(0, 0, 0, 0); return d.toISOString(); })() }).catch(() => [] as Invoice[]),
         repo.listProducts(user?.clinic_id ?? user?.id).catch(() => [] as Product[]),
       ]), 12000);
       if (!mounted.current) return; // unmounted mid-flight → drop the result

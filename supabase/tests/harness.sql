@@ -56,7 +56,7 @@ create unique index if not exists pets_serial_idx on pets(serial) where serial i
 
 create table if not exists clinics (id uuid primary key default gen_random_uuid());
 create table if not exists companies (id uuid primary key default gen_random_uuid());
-create table if not exists staff (id uuid primary key default gen_random_uuid(), clinic_id uuid);
+create table if not exists staff (id uuid primary key default gen_random_uuid(), clinic_id uuid, name text);
 create table if not exists products (id uuid primary key default gen_random_uuid(), clinic_id uuid, stock numeric(14,3) default 0, name text, barcode text);
 create table if not exists invoices (id uuid primary key default gen_random_uuid(), clinic_id uuid, created_at timestamptz not null default now());
 create table if not exists medical_visits (id uuid primary key default gen_random_uuid(), pet_id uuid references pets(id), clinic_id uuid);
@@ -180,6 +180,7 @@ end $ds$;
 -- هناك، ولم يكن مختبرُنا يغطّيه.
 alter table invoices add column if not exists total       numeric(12,2) not null default 0;
 alter table invoices add column if not exists amount_paid numeric(14,2) not null default 0;
+alter table invoices add column if not exists refunded_at timestamptz;
 
 -- 0148: التوصيل (0069) كما بالإنتاج — سواق/شركات وطلبات، وتسديد الفاتورة (0061).
 create table if not exists couriers (
@@ -269,3 +270,19 @@ insert into auth.users(id) values
   ('11111111-1111-1111-1111-111111111111'),
   ('22222222-2222-2222-2222-222222222222')
 on conflict do nothing;
+
+-- 0151: لوحةُ المنصّة — الجداولُ التي تقرأها platform_pulse/activity/logins كما بالإنتاج.
+alter table staff add column if not exists user_id uuid;
+alter table clinic_prefs add column if not exists clinic_name text;
+alter table staff_presence add column if not exists clinic_id uuid;
+alter table staff_presence add column if not exists last_seen timestamptz not null default now();
+create table if not exists staff_elevations (user_id uuid primary key, clinic_id uuid not null, until timestamptz not null);
+create table if not exists login_events (
+  id bigint generated always as identity primary key, clinic_id uuid not null, user_id uuid,
+  email text, name text, created_at timestamptz not null default now());
+create table if not exists subscriptions (
+  clinic_id uuid primary key, plan text, period text, trial_ends_at timestamptz,
+  current_period_end timestamptz, was_subscriber boolean not null default false);
+-- مشغّلُ الفحص — حسابٌ ثالث لا عيادةَ له.
+insert into auth.users(id) values ('33333333-3333-3333-3333-333333333333') on conflict do nothing;
+alter table auth.users add column if not exists email text;

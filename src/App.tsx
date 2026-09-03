@@ -8,6 +8,8 @@ import { CommandPaletteProvider } from "@/components/CommandPaletteProvider";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { RoleSelect } from "@/components/RoleSelect";
 import { SubscriptionGate } from "@/components/SubscriptionGate";
+import { PlatformBanner } from "@/components/PlatformBanner";
+import { isPlatformAdmin } from "@/lib/platformAdmin";
 import { FeatureGate } from "@/components/FeatureGate";
 import { Assistant } from "@/components/Assistant";
 import { useSubscription } from "@/lib/subscription";
@@ -49,6 +51,7 @@ const JoinClinic = page(() => import("@/pages/JoinClinic").then((m) => ({ defaul
 const Landing = page(() => import("@/pages/Landing").then((m) => ({ default: m.Landing })));
 const Subscribe = page(() => import("@/pages/Subscribe").then((m) => ({ default: m.Subscribe })));
 const AdminBilling = page(() => import("@/pages/AdminBilling").then((m) => ({ default: m.AdminBilling })));
+const PlatformConsole = page(() => import("@/pages/PlatformConsole").then((m) => ({ default: m.PlatformConsole })));
 const ClinicStore = page(() => import("@/pages/ClinicStore").then((m) => ({ default: m.ClinicStore })));
 const Storefront = page(() => import("@/pages/Storefront").then((m) => ({ default: m.Storefront })));
 const TrackJourney = page(() => import("@/pages/TrackJourney").then((m) => ({ default: m.TrackJourney })));
@@ -243,6 +246,7 @@ function Shell() {
             <Route path="/settings" element={<Protected><Settings /></Protected>} />
             <Route path="/subscribe" element={<Protected><Subscribe /></Protected>} />
             <Route path="/admin" element={<Protected><AdminBilling /></Protected>} />
+            <Route path="/platform" element={<Protected><PlatformConsole /></Protected>} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
       </Suspense>
@@ -254,7 +258,8 @@ function Shell() {
     // A clinic whose subscription never started (trial over, never paid) has the
     // whole app hidden — only the subscribe screen, no sidebar. The gate forces
     // the redirect; here we just drop the chrome so nothing else is reachable.
-    if (subAccess === "blocked") {
+    // مشغّلُ المنصّة الداخلُ عيادةً مقفلة يحتفظ بالشريط — دخل ليصلح لها.
+    if (subAccess === "blocked" && !isPlatformAdmin(user?.email)) {
       return (
         <div className="min-h-screen bg-surface">
           <TopBar minimal />
@@ -272,6 +277,7 @@ function Shell() {
         </CommandPaletteProvider>
         {/* المساعد الذكي — حاضر بكل شاشات كادر العيادة */}
         <Assistant />
+        <PlatformBanner />
         <DemoBanner />
       </div>
     );
@@ -281,6 +287,7 @@ function Shell() {
     <div className="min-h-screen bg-surface">
       {showChrome && <TopBar />}
       {routes}
+      {showChrome && <PlatformBanner />}
       {showChrome && <DemoBanner />}
     </div>
   );

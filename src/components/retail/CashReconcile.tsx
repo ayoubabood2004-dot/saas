@@ -83,7 +83,8 @@ export function CashReconcile({ open, onClose }: { open: boolean; onClose: () =>
     setLoading(true);
     setConfirms(getCashConfirms());
     Promise.all([
-      repo.listInvoices().catch(() => [] as Invoice[]),
+      // فواتيرُ اليوم فقط — الصندوقُ يطابق يوماً واحداً، لا التاريخَ كله (0149).
+      repo.listInvoices(undefined, { from: new Date(todayISO + "T00:00:00").toISOString() }).catch(() => [] as Invoice[]),
       repo.listExpenses().catch(() => [] as Expense[]),
     ]).then(([inv, exp]) => {
       setInvoices(inv.filter((i) => i.created_at.slice(0, 10) === todayISO && i.status !== "refunded"));
