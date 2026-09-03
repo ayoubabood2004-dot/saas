@@ -1041,6 +1041,34 @@ export interface AuditEntry {
   created_at: string;
 }
 
+/* ---- مركزُ الحركات (0152): القاعدةُ تصنّف وتجمع، والشاشةُ تعرض ---- */
+export interface ActivityQuery {
+  from: string; to: string;
+  /** null = كل الأنواع. */
+  kinds?: string[] | null;
+  actor?: string | null;
+  q?: string | null;
+  /** مؤشّرُ الصفحة التالية: آخرُ صفٍّ وصل. */
+  before?: string | null; beforeSrc?: string | null; beforeId?: number | null;
+  limit?: number;
+}
+export interface ActivityRow {
+  id: number | string;
+  /** a = سجلّ التدقيق، l = سجلّ الدخول. */
+  src: "a" | "l";
+  created_at: string;
+  actor: string | null;
+  actor_name: string | null;
+  kind: string;
+  action: string;
+  entity: string;
+  entity_id: string | null;
+  /** المختصر: الحقولُ التعريفية + أوّلُ تغييرات — لا الصفُّ كلُّه. */
+  brief: Record<string, unknown> | null;
+}
+export interface ActivitySummaryRow { bucket: string; kind: string; n: number }
+export interface ActivityActor { actor: string; name: string; n: number }
+
 /** A staff login event — for the Reports module's user-login audit trail. */
 export interface LoginEvent {
   id: number | string;

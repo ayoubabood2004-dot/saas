@@ -1,51 +1,54 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   History, Search, PawPrint, Receipt, Pill, Syringe, Stethoscope, Package,
-  Users, Trash2, NotebookPen, Image as ImageIcon, Building2, CalendarDays,
-  Scale, BellRing, Lock, Clock, KeyRound, ArrowLeft, LucideIcon,
+  Users, Trash2, NotebookPen, Building2, CalendarDays,
+  BellRing, Lock, Clock, KeyRound, ArrowLeft, LucideIcon, RotateCcw, Loader2,
+  ChevronDown, ChevronUp, Truck, Wallet, ShoppingBag, Printer, FileDown, Store, HandCoins,
 } from "lucide-react";
-import type { AuditEntry, Pet } from "@/types";
+import type { ActivityRow, ActivitySummaryRow, ActivityActor } from "@/types";
 import { repo } from "@/lib/repo";
-import { getCached, setCached } from "@/lib/swrCache";
 import { listStaff } from "@/lib/staff";
 import { useAuth } from "@/contexts/AuthContext";
 import { usePermissions } from "@/hooks/usePermissions";
 import { useOverride } from "@/lib/managerOverride";
-import { Skeleton } from "@/components/ui";
+import { Button, Skeleton } from "@/components/ui";
 import { cn, money, formatNum, formatDec, dateLocale } from "@/lib/utils";
 import { playTap } from "@/lib/sounds";
+import { ACTIVITY_GROUPS, KIND_GROUP, NOISY_KINDS, type ActivityGroup, type ActivityKind } from "@/lib/activityKinds";
 
 /* ============================================================================
- * Clinic activity log (سجل الحركات) — manager-only, above Settings in the nav.
+ * مركزُ الحركات (0152) — مدير العيادة يسأل «شنو صار» بالنوع والوقت.
  *
- * One chronological trail of EVERYTHING that happens in the clinic: who added
- * which pet, gave which dose, recorded which vaccine, made/updated which sale,
- * changed which product, moved which case… On Supabase the rows are written by
- * tamper-proof DB triggers (0018 + 0044) and read is manager-only via RLS; in
- * demo mode the repo mirrors the same rows locally.
+ * القاعدةُ تصنّف كلَّ سطرٍ إلى نوعٍ (بيع، مرتجع، إضافة منتج، تغيير مخزون،
+ * حذف…) وتجمع بالنوع واليوم/الساعة وتقلّب الصفحات بمؤشّر. الشاشةُ **تعرض**
+ * فقط: رسمٌ شريطيّ للمدّة، رقاقاتُ أنواعٍ بعدّادات تفلتر بضغطة، فلترُ موظف،
+ * بحثٌ بالخادم، و«المزيد» بلا تنزيل السجلّ كلّه. مختصرُ كل سطر (لا الصفُّ
+ * كلُّه) يكفي لتسميته و«كان ← صار».
  *
- * Retention (0129): money & stock trails live a year, everything else 90 days —
- * an invoice edit is evidence asked about months later; a page open is noise that
- * dies with its day. Opening this page fires purge_activity_log() (and the
- * demo equivalent), so older rows are dropped and the trail never grows.
+ * Retention (0129): money & stock trails live a year, everything else 90 days.
  * ==========================================================================*/
 
-type Category = "all" | "medical" | "records" | "finance" | "inventory" | "team";
+type Preset = "today" | "yesterday" | "7d" | "30d" | "custom";
+const PAGE = 50;
+const DAY = 86400000;
 
-/* ── «كان ← صار» ───────────────────────────────────────────────────────────
- * منذ هجرة 0139 يكتب المُدقِّق الحقولَ التي تغيّرت فعلاً بمفتاح `__changed`
- * بصيغة `[كان, صار]`. قبلها كان يخزّن لقطةً كاملة بلا فرق — فالأسطر القديمة
- * ما بيها هذا المفتاح، وتُعرض كما كانت تُعرض تماماً. لا تحويل ولا تعبئة رجعية:
- * الشكل الجديد يبدأ من لحظة النزول، والقديم يبقى مقروءاً كما هو. */
+const dayStart = (d: Date) => { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; };
+const presetRange = (p: Preset): { from: Date; to: Date } => {
+  const today = dayStart(new Date());
+  if (p === "yesterday") return { from: new Date(today.getTime() - DAY), to: today };
+  if (p === "7d") return { from: new Date(today.getTime() - 6 * DAY), to: new Date(today.getTime() + DAY) };
+  if (p === "30d") return { from: new Date(today.getTime() - 29 * DAY), to: new Date(today.getTime() + DAY) };
+  return { from: today, to: new Date(today.getTime() + DAY) };
+};
+/** datetime-local ⇄ Date بلا تحويل منطقة. */
+const toLocalInput = (d: Date) => { const p = (n: number) => String(n).padStart(2, "0"); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`; };
 
-/** ضجيجٌ يتغيّر مع كل تعديل ولا يقول شيئاً — يُخفى ولا يُخزَّن ناقصاً. */
+/* ── «كان ← صار» ─────────────────────────────────────────────────────────── */
 const CHANGE_NOISE = new Set(["updated_at", "created_at", "id", "clinic_id"]);
-
 interface FieldChange { key: string; from: unknown; to: unknown }
-
-function changesOf(e: AuditEntry): FieldChange[] {
-  const c = (e.details as Record<string, unknown> | null)?.["__changed"];
+function changesOf(brief: Record<string, unknown> | null | undefined): FieldChange[] {
+  const c = brief?.["__changed"];
   if (!c || typeof c !== "object" || Array.isArray(c)) return [];
   const out: FieldChange[] = [];
   for (const [key, v] of Object.entries(c as Record<string, unknown>)) {
@@ -54,15 +57,6 @@ function changesOf(e: AuditEntry): FieldChange[] {
   }
   return out;
 }
-
-const ENTITY_CATEGORY: Record<string, Exclude<Category, "all">> = {
-  treatment_entries: "medical", vaccinations: "medical", medical_visits: "medical",
-  pet_notes: "medical", media_items: "medical", weight_logs: "medical",
-  pets: "records", admissions: "records", reminders: "records", appointments: "records",
-  invoices: "finance",
-  products: "inventory",
-  staff: "team", memberships: "team", invites: "team", branches: "team",
-};
 
 const KIND_LABEL: Record<string, { key: string; def: string }> = {
   treatment: { key: "act.kindCare", def: "رعاية طبية" },
@@ -75,264 +69,283 @@ const MEDIA_LABEL: Record<string, { key: string; def: string }> = {
   ultrasound: { key: "rpt.media.ultrasound", def: "سونار / تصوير" },
 };
 
-interface Rendered { icon: LucideIcon; tone: string; text: string; category: Exclude<Category, "all"> }
+/** أيقونةُ كلّ نوع ولونُه — النوعُ يُحدَّد بالخادم، والشكلُ هنا. */
+const KIND_ICON: Record<ActivityKind, { icon: LucideIcon; tone: string }> = {
+  sale: { icon: Receipt, tone: "success" }, refund: { icon: Receipt, tone: "danger" }, payment: { icon: HandCoins, tone: "success" },
+  sale_edit: { icon: Receipt, tone: "muted" }, sale_delete: { icon: Trash2, tone: "danger" }, sale_line: { icon: Receipt, tone: "muted" },
+  print: { icon: Printer, tone: "muted" }, export: { icon: FileDown, tone: "muted" },
+  product_add: { icon: Package, tone: "brand" }, product_edit: { icon: Package, tone: "muted" }, stock: { icon: Package, tone: "warn" },
+  product_delete: { icon: Trash2, tone: "danger" }, inventory: { icon: Building2, tone: "muted" }, purchase: { icon: ShoppingBag, tone: "brand" },
+  supplier_pay: { icon: Wallet, tone: "success" }, expense: { icon: Wallet, tone: "warn" }, delivery: { icon: Truck, tone: "muted" },
+  pet: { icon: PawPrint, tone: "brand" }, case: { icon: Stethoscope, tone: "brand" }, dose: { icon: Pill, tone: "brand" }, vaccine: { icon: Syringe, tone: "success" },
+  medical: { icon: NotebookPen, tone: "muted" }, booking: { icon: CalendarDays, tone: "muted" }, message: { icon: BellRing, tone: "success" }, store: { icon: Store, tone: "brand" },
+  team: { icon: Users, tone: "muted" }, payroll: { icon: Wallet, tone: "muted" }, settings: { icon: Building2, tone: "muted" }, login: { icon: KeyRound, tone: "muted" },
+  override: { icon: KeyRound, tone: "warn" }, other: { icon: History, tone: "muted" },
+};
+const GROUP_BAR: Record<ActivityGroup, string> = { sales: "bg-success-500", stock: "bg-brand-500", care: "bg-warn-500", team: "bg-ink-subtle" };
+
+const toneCls = (tone: string) =>
+  tone === "success" ? "bg-success-50 text-success-600 dark:bg-success-500/15 dark:text-success-300"
+    : tone === "danger" ? "bg-danger-50 text-danger-600 dark:bg-danger-500/15 dark:text-danger-300"
+      : tone === "warn" ? "bg-warn-50 text-warn-600 dark:bg-warn-500/15 dark:text-warn-300"
+        : tone === "brand" ? "bg-brand-50 text-brand-600 dark:bg-brand-500/15 dark:text-brand-300"
+          : "bg-surface-2 text-ink-muted";
 
 export function ActivityLog() {
   const { t } = useTranslation();
   const { user } = useAuth();
   const { can } = usePermissions();
-  const { restricted } = useOverride(); // locked device (no manager session) → today only
-  const clinicId = user?.clinic_id ?? user?.id;
+  const { restricted } = useOverride(); // جهازٌ مقفل بلا جلسة مدير → اليوم فقط
 
-  // Seed synchronously from the last snapshot — seeding inside the effect paints
-  // one skeleton frame first (effects run AFTER paint), which reads as a loading
-  // intro on every revisit even though the data is already here.
-  const seed = getCached<{ rows: AuditEntry[]; pets: Pet[]; byUser: [string, string][]; byId: [string, string][] }>(`actlog_${clinicId ?? ""}`);
-  const [loading, setLoading] = useState(!seed);
-  const [rows, setRows] = useState<AuditEntry[]>(seed?.rows ?? []);
-  const [pets, setPets] = useState<Pet[]>(seed?.pets ?? []);
-  const [staffByUser, setStaffByUser] = useState<Map<string, string>>(() => new Map(seed?.byUser ?? []));
-  const [staffById, setStaffById] = useState<Map<string, string>>(() => new Map(seed?.byId ?? []));
+  const [preset, setPreset] = useState<Preset>("today");
+  const [custom, setCustom] = useState<{ from: Date; to: Date }>(() => presetRange("today"));
+  const range = useMemo(() => (restricted ? presetRange("today") : preset === "custom" ? custom : presetRange(preset)), [preset, custom, restricted]);
+  const from = range.from.toISOString(), to = range.to.toISOString();
+  const bucket: "day" | "hour" = range.to.getTime() - range.from.getTime() > 36 * 3600000 ? "day" : "hour";
+
+  const [kinds, setKinds] = useState<Set<string>>(() => new Set());
+  const [actor, setActor] = useState<string>("");
   const [q, setQ] = useState("");
-  const [cat, setCat] = useState<Category>("all");
-  const [shown, setShown] = useState(60);
+  const [qDeb, setQDeb] = useState("");
+  useEffect(() => { const id = setTimeout(() => setQDeb(q.trim()), 300); return () => clearTimeout(id); }, [q]);
+
+  const [summary, setSummary] = useState<ActivitySummaryRow[] | null>(null);
+  const [actors, setActors] = useState<ActivityActor[]>([]);
+  const [rows, setRows] = useState<ActivityRow[] | null>(null);
+  const [hasMore, setHasMore] = useState(false);
+  const [more, setMore] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const [tick, setTick] = useState(0);
+  const [staffById, setStaffById] = useState<Map<string, string>>(() => new Map());
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
+  const reqRef = useRef(0);
 
   useEffect(() => {
     let alive = true;
-    const key = `actlog_${clinicId ?? ""}`;
-    // فوري من الكاش + تحديث خفي
-    const c = getCached<{ rows: AuditEntry[]; pets: Pet[]; byUser: [string, string][]; byId: [string, string][] }>(key);
-    if (c) {
-      setRows(c.rows);
-      setPets(c.pets);
-      setStaffByUser(new Map(c.byUser));
-      setStaffById(new Map(c.byId));
-      setLoading(false);
-    }
-    (async () => {
-      // Retention first (fire-and-forget), then read the fresh window.
-      void repo.purgeAuditLog().catch(() => {});
-      try {
-        const [audit, logins, allPets, staff] = await Promise.all([
-          repo.listAuditLog(clinicId, 500),
-          repo.listLoginEvents(clinicId, 100).catch(() => []),
-          repo.listAllPets(clinicId).catch(() => [] as Pet[]),
-          listStaff().catch(() => []),
-        ]);
-        // Sign-ins join the same timeline as pseudo-entries (they live in their own table).
-        const loginRows: AuditEntry[] = logins.map((l) => ({
-          id: `login-${l.id}`, clinic_id: null, actor: null, action: "LOGIN", entity: "login", entity_id: null,
-          details: { __actor: (l.name ?? "").trim() || (l.email ?? "").trim() || null },
-          created_at: l.created_at,
-        }));
-        const merged = [...audit, ...loginRows].sort((a, b) => b.created_at.localeCompare(a.created_at));
-        const byUser: [string, string][] = staff.filter((s) => s.userId).map((s) => [s.userId as string, s.name]);
-        const byId: [string, string][] = staff.map((s) => [s.id, s.name]);
-        setCached(key, { rows: merged, pets: allPets, byUser, byId });
-        if (!alive) return;
-        setRows(merged);
-        setPets(allPets);
-        setStaffByUser(new Map(byUser));
-        setStaffById(new Map(byId));
-      } finally { if (alive) setLoading(false); }
-    })();
+    void repo.purgeAuditLog().catch(() => {});
+    listStaff().then((s) => { if (alive) setStaffById(new Map(s.map((x) => [x.id, x.name]))); }).catch(() => {});
     return () => { alive = false; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [clinicId]);
+  }, []);
 
-  const petName = useMemo(() => {
-    const m = new Map(pets.map((p) => [p.id, p.name]));
-    return (id: unknown): string => (typeof id === "string" && m.get(id)) || t("act.aPet", "حيوان");
-  }, [pets, t]);
+  /** الأنواعُ المرسَلة للخادم: اختيارُ الطبيب، وإلا الكلُّ عدا الضجيج. */
+  const kindsParam = useMemo(() => {
+    if (kinds.size > 0) return [...kinds];
+    return ACTIVITY_GROUPS.flatMap((g) => g.kinds).filter((k) => !NOISY_KINDS.includes(k));
+  }, [kinds]);
 
-  /** قيمةٌ خامّ من القاعدة → نصٌّ قصير يُقرأ. الفراغ يُسمّى صراحةً كي لا
-   *  يبدو «تغيّر إلى لا شيء» فراغاً بالشاشة. */
+  // الملخّصُ والموظفون: بالمدّة وحدها (الفلاترُ الأخرى تخصّ القائمة).
+  useEffect(() => {
+    let alive = true;
+    setSummary(null);
+    Promise.all([repo.activitySummary(from, to, bucket), repo.activityActors(from, to)])
+      .then(([s, a]) => { if (alive) { setSummary(s); setActors(a); } })
+      .catch(() => { if (alive) { setSummary([]); setActors([]); } });
+    return () => { alive = false; };
+  }, [from, to, bucket, tick]);
+
+  // القائمة: صفحةٌ أولى بكل تغييرٍ بالفلاتر.
+  useEffect(() => {
+    const my = ++reqRef.current;
+    setRows(null); setFailed(false); setExpanded(new Set());
+    repo.activityPage({ from, to, kinds: kindsParam, actor: actor || null, q: qDeb || null, limit: PAGE })
+      .then((r) => { if (my !== reqRef.current) return; setRows(r); setHasMore(r.length >= PAGE); })
+      .catch(() => { if (my !== reqRef.current) return; setRows([]); setFailed(true); });
+  }, [from, to, kindsParam, actor, qDeb, tick]);
+
+  const loadMore = async () => {
+    if (!rows || rows.length === 0 || more) return;
+    const last = rows[rows.length - 1];
+    const my = reqRef.current;
+    setMore(true);
+    try {
+      const page = await repo.activityPage({ from, to, kinds: kindsParam, actor: actor || null, q: qDeb || null, limit: PAGE,
+        before: last.created_at, beforeSrc: last.src, beforeId: typeof last.id === "number" ? last.id : null });
+      if (my !== reqRef.current) return;
+      const seen = new Set(rows.map((r) => `${r.src}${r.id}`));
+      setRows([...rows, ...page.filter((r) => !seen.has(`${r.src}${r.id}`))]);
+      setHasMore(page.length >= PAGE);
+    } catch { setFailed(true); } finally { setMore(false); }
+  };
+
+  /* ── الأرقام من الملخّص ── */
+  const counts = useMemo(() => {
+    const byKind = new Map<string, number>();
+    const byBucket = new Map<string, { total: number; groups: Record<ActivityGroup, number> }>();
+    for (const r of summary ?? []) {
+      byKind.set(r.kind, (byKind.get(r.kind) ?? 0) + r.n);
+      const g = KIND_GROUP[r.kind as ActivityKind] ?? "team";
+      const b = byBucket.get(r.bucket) ?? { total: 0, groups: { sales: 0, stock: 0, care: 0, team: 0 } };
+      b.total += r.n; b.groups[g] += r.n; byBucket.set(r.bucket, b);
+    }
+    const total = [...byKind.entries()].filter(([k]) => kindsParam.includes(k)).reduce((s, [, n]) => s + n, 0);
+    return { byKind, buckets: [...byBucket.entries()].sort(([a], [b]) => a.localeCompare(b)), total };
+  }, [summary, kindsParam]);
+
+  /** أعمدةُ الرسم: كلُّ يومٍ/ساعةٍ بالمدّة حتى الفارغ — الفراغُ خبرٌ أيضاً. */
+  const bars = useMemo(() => {
+    const out: { at: Date; total: number; groups: Record<ActivityGroup, number> }[] = [];
+    const step = bucket === "day" ? DAY : 3600000;
+    const byKey = new Map(counts.buckets.map(([k, v]) => [new Date(k).getTime(), v]));
+    for (let ms = range.from.getTime(); ms < range.to.getTime() && out.length < 240; ms += step) {
+      const v = byKey.get(ms);
+      out.push({ at: new Date(ms), total: v?.total ?? 0, groups: v?.groups ?? { sales: 0, stock: 0, care: 0, team: 0 } });
+    }
+    return out;
+  }, [counts.buckets, range, bucket]);
+  const barMax = Math.max(1, ...bars.map((b) => b.total));
+
+  const drill = (at: Date) => {
+    playTap();
+    const step = bucket === "day" ? DAY : 3600000;
+    setCustom({ from: at, to: new Date(at.getTime() + step) });
+    setPreset("custom");
+  };
+  const toggleKind = (k: string) => {
+    playTap();
+    setKinds((s) => { const n = new Set(s); if (n.has(k)) n.delete(k); else n.add(k); return n; });
+  };
+
+  /** قيمةٌ خامّ → نصٌّ قصير. */
   const val = useMemo(() => (v: unknown): string => {
     if (v === null || v === undefined) return t("act.chEmpty", "فارغ");
     if (typeof v === "boolean") return v ? t("act.chYes", "نعم") : t("act.chNo", "لا");
     if (typeof v === "number") return formatDec(v);
     const sv = String(v);
-    // القيم الضخمة يستبدلها المُدقِّق بعلامةٍ محايدة (0139) — نترجمها هنا.
     if (/^\[large:\d+\]$/.test(sv)) return t("act.chBig", "محتوى كبير");
     return sv.length > 28 ? sv.slice(0, 28) + "…" : sv;
   }, [t]);
 
-  /** (entity, action, details) → readable line + icon + tone. */
-  const render = useMemo(() => (e: AuditEntry): Rendered => {
-    const d = (e.details ?? {}) as Record<string, unknown>;
+  /** (entity, action, brief) → جملةٌ تُقرأ. نفسُ الجمل السابقة؛ المصدرُ مختصرٌ لا صفٌّ كامل. */
+  const render = useMemo(() => (r: ActivityRow): string => {
+    const d = (r.brief ?? {}) as Record<string, unknown>;
     const s = (k: string) => { const v = d[k]; return typeof v === "string" && v.trim() ? v.trim() : ""; };
-    const category = ENTITY_CATEGORY[e.entity] ?? "records";
-    const del = e.action === "DELETE";
-    const pn = () => s("pet_name") || petName(d["pet_id"]);
-
-    switch (e.entity) {
+    const del = r.action === "DELETE";
+    const pn = () => s("pet_name") || t("act.aPet", "حيوان");
+    switch (r.entity) {
       case "pets":
-        return del
-          ? { icon: Trash2, tone: "danger", category, text: t("act.petDel", { name: s("name"), defaultValue: "حذف الحيوان {{name}} نهائياً" }) }
-          : e.action === "INSERT"
-            ? { icon: PawPrint, tone: "brand", category, text: t("act.petAdd", { name: s("name"), defaultValue: "أضاف حيواناً جديداً: {{name}}" }) }
-            : { icon: PawPrint, tone: "muted", category, text: t("act.petUpd", { name: s("name"), defaultValue: "عدّل بيانات الحيوان {{name}}" }) };
+        return del ? t("act.petDel", { name: s("name"), defaultValue: "حذف الحيوان {{name}} نهائياً" })
+          : r.action === "INSERT" ? t("act.petAdd", { name: s("name"), defaultValue: "أضاف حيواناً جديداً: {{name}}" })
+            : t("act.petUpd", { name: s("name"), defaultValue: "عدّل بيانات الحيوان {{name}}" });
       case "admissions": {
         const kind = KIND_LABEL[s("kind")] ?? KIND_LABEL.treatment;
-        if (e.action === "INSERT") return { icon: Stethoscope, tone: "brand", category, text: t("act.admAdd", { pet: pn(), kind: t(kind.key, kind.def), defaultValue: "أدخل {{pet}} إلى العيادة — {{kind}}" }) };
+        if (r.action === "INSERT") return t("act.admAdd", { pet: pn(), kind: t(kind.key, kind.def), defaultValue: "أدخل {{pet}} إلى العيادة — {{kind}}" });
         const outcome = s("outcome");
-        if (outcome === "deceased") return { icon: Stethoscope, tone: "danger", category, text: t("act.admDeceased", { pet: pn(), defaultValue: "سجّل خروج {{pet}} — متوفى" }) };
-        if (outcome === "recovered") return { icon: Stethoscope, tone: "success", category, text: t("act.admRecovered", { pet: pn(), defaultValue: "سجّل خروج {{pet}} — عايش / تعافى" }) };
-        if (s("status") === "discharged") return { icon: Stethoscope, tone: "muted", category, text: t("act.admDischarge", { pet: pn(), defaultValue: "أخرج الحالة — {{pet}}" }) };
-        return { icon: Stethoscope, tone: "muted", category, text: t("act.admUpd", { pet: pn(), defaultValue: "حدّث حالة {{pet}} (نقل / تعديل)" }) };
+        if (outcome === "deceased") return t("act.admDeceased", { pet: pn(), defaultValue: "سجّل خروج {{pet}} — متوفى" });
+        if (outcome === "recovered") return t("act.admRecovered", { pet: pn(), defaultValue: "سجّل خروج {{pet}} — عايش / تعافى" });
+        if (s("status") === "discharged") return t("act.admDischarge", { pet: pn(), defaultValue: "أخرج الحالة — {{pet}}" });
+        return t("act.admUpd", { pet: pn(), defaultValue: "حدّث حالة {{pet}} (نقل / تعديل)" });
       }
+      case "clinic_visits":
+        return r.action === "INSERT" ? t("act.caseOpen", { pet: pn(), defaultValue: "فتح حالة — {{pet}}" })
+          : s("status") === "closed" || d["closed_at"] ? t("act.caseClose", { pet: pn(), defaultValue: "أغلق حالة — {{pet}}" })
+            : t("act.caseUpd", { pet: pn(), defaultValue: "حدّث حالة — {{pet}}" });
       case "treatment_entries": {
         const med = s("medication"); const amount = s("amount");
-        if (e.action === "INSERT") return { icon: Pill, tone: "brand", category, text: t("act.doseAdd", { med, amount, pet: pn(), defaultValue: "أضاف دواء: {{med}} ({{amount}}) لـ {{pet}}" }) };
-        if (del) return { icon: Trash2, tone: "danger", category, text: t("act.doseDel", { med, defaultValue: "حذف جرعة دواء: {{med}}" }) };
-        return d["administered_at"]
-          ? { icon: Pill, tone: "success", category, text: t("act.doseGiven", { med, pet: pn(), defaultValue: "أعطى جرعة {{med}} لـ {{pet}}" }) }
-          : { icon: Pill, tone: "muted", category, text: t("act.doseUpd", { med, defaultValue: "عدّل جرعة الدواء {{med}}" }) };
+        if (r.action === "INSERT") return t("act.doseAdd", { med, amount, pet: pn(), defaultValue: "أضاف دواء: {{med}} ({{amount}}) لـ {{pet}}" });
+        if (del) return t("act.doseDel", { med, defaultValue: "حذف جرعة دواء: {{med}}" });
+        return d["administered_at"] ? t("act.doseGiven", { med, pet: pn(), defaultValue: "أعطى جرعة {{med}} لـ {{pet}}" }) : t("act.doseUpd", { med, defaultValue: "عدّل جرعة الدواء {{med}}" });
       }
       case "vaccinations":
-        return e.action === "UPDATE"
-          ? { icon: Syringe, tone: "muted", category, text: t("act.vacUpd", { name: s("vaccine") || s("name"), defaultValue: "حدّث لقاح {{name}}" }) }
-          : { icon: Syringe, tone: "success", category, text: t("act.vacAdd", { name: s("vaccine") || s("name"), pet: pn(), defaultValue: "سجّل لقاح {{name}} لـ {{pet}}" }) };
-      case "medical_visits":
-        return { icon: Stethoscope, tone: "brand", category, text: t("act.visitAdd", { pet: pn(), doctor: s("doctor_name"), defaultValue: "أضاف استشارة لـ {{pet}} — {{doctor}}" }) };
-      case "pet_notes":
-        return { icon: NotebookPen, tone: "muted", category, text: t("act.noteAdd", { pet: pn(), defaultValue: "أضاف ملاحظة سريرية لـ {{pet}}" }) };
+        return r.action === "UPDATE" ? t("act.vacUpd", { name: s("vaccine") || s("name"), defaultValue: "حدّث لقاح {{name}}" })
+          : t("act.vacAdd", { name: s("vaccine") || s("name"), pet: pn(), defaultValue: "سجّل لقاح {{name}} لـ {{pet}}" });
+      case "medical_visits": return t("act.visitAdd", { pet: pn(), doctor: s("doctor_name"), defaultValue: "أضاف استشارة لـ {{pet}} — {{doctor}}" });
+      case "pet_notes": return t("act.noteAdd", { pet: pn(), defaultValue: "أضاف ملاحظة سريرية لـ {{pet}}" });
       case "media_items": {
         const kind = MEDIA_LABEL[s("kind")];
-        return { icon: ImageIcon, tone: "muted", category, text: t("act.mediaAdd", { kind: kind ? t(kind.key, kind.def) : t("act.mediaFile", "ملف / صورة"), pet: pn(), defaultValue: "رفع {{kind}} لـ {{pet}}" }) };
+        return t("act.mediaAdd", { kind: kind ? t(kind.key, kind.def) : t("act.mediaFile", "ملف / صورة"), pet: pn(), defaultValue: "رفع {{kind}} لـ {{pet}}" });
       }
-      case "weight_logs":
-        return { icon: Scale, tone: "muted", category, text: t("act.weightAdd", { pet: pn(), kg: formatNum(Number(d["weight_kg"]) || 0), defaultValue: "سجّل وزن {{pet}}: {{kg}} كغم" }) };
+      case "weight_logs": return t("act.weightAdd", { pet: pn(), kg: formatNum(Number(d["weight_kg"]) || 0), defaultValue: "سجّل وزن {{pet}}: {{kg}} كغم" });
+      case "lab_results": return t("act.labAdd", { name: s("test") || s("test_name") || s("name"), pet: pn(), defaultValue: "تحليل {{name}} — {{pet}}" });
       case "invoices": {
         const total = money(Number(d["total"]) || 0);
         const client = s("customer_name") || t("rpt.walkIn", "عميل نقدي");
-        if (e.action === "INSERT") return { icon: Receipt, tone: "success", category, text: t("act.invAdd", { total, client, defaultValue: "أنشأ فاتورة بمبلغ {{total}} — {{client}}" }) };
-        if (del) return { icon: Trash2, tone: "danger", category, text: t("act.invDel", { total, client, defaultValue: "حذف فاتورة {{total}} ({{client}}) نهائياً" }) };
-        if (s("status") === "refunded") return { icon: Receipt, tone: "danger", category, text: t("act.invRefund", { total, client, defaultValue: "أرجع فاتورة {{total}} — {{client}}" }) };
-        return { icon: Receipt, tone: "muted", category, text: t("act.invUpd", { total, client, defaultValue: "حدّث فاتورة {{client}} ({{total}}) — تسديد / تعديل" }) };
+        if (r.kind === "sale") return t("act.invAdd", { total, client, defaultValue: "أنشأ فاتورة بمبلغ {{total}} — {{client}}" });
+        if (r.kind === "sale_delete") return t("act.invDel", { total, client, defaultValue: "حذف فاتورة {{total}} ({{client}}) نهائياً" });
+        if (r.kind === "refund") return t("act.invRefund", { total, client, defaultValue: "أرجع فاتورة {{total}} — {{client}}" });
+        if (r.kind === "payment") return t("act.invPay", { total, client, defaultValue: "سدّد دين — {{client}} ({{total}})" });
+        return t("act.invUpd", { total, client, defaultValue: "حدّث فاتورة {{client}} ({{total}}) — تسديد / تعديل" });
       }
       case "products": {
         const name = s("name");
-        if (e.action === "INSERT") return { icon: Package, tone: "brand", category, text: t("act.prodAdd", { name, defaultValue: "أضاف منتجاً: {{name}}" }) };
-        if (del) return { icon: Trash2, tone: "danger", category, text: t("act.prodDel", { name, defaultValue: "حذف المنتج: {{name}}" }) };
-        return { icon: Package, tone: "muted", category, text: t("act.prodUpd", { name, stock: formatNum(Number(d["stock"]) || 0), defaultValue: "عدّل المنتج {{name}} (المخزون: {{stock}})" }) };
+        if (r.action === "INSERT") return t("act.prodAdd", { name, defaultValue: "أضاف منتجاً: {{name}}" });
+        if (del) return t("act.prodDel", { name, defaultValue: "حذف المنتج: {{name}}" });
+        return t("act.prodUpd", { name, stock: formatNum(Number(d["stock"]) || 0), defaultValue: "عدّل المنتج {{name}} (المخزون: {{stock}})" });
       }
-      case "branches":
-        return { icon: Building2, tone: "brand", category, text: t("act.branchAdd", { name: s("name"), defaultValue: "فرع: {{name}} (إضافة / تعديل)" }) };
-      case "reminders":
-        return { icon: BellRing, tone: "muted", category, text: t("act.reminderAdd", { title: s("title") || s("text"), defaultValue: "تذكير: {{title}}" }) };
-      case "appointments":
-        return { icon: CalendarDays, tone: "muted", category, text: t("act.apptAdd", { pet: pn(), defaultValue: "موعد لـ {{pet}} (حجز / تعديل)" }) };
+      case "branches": return t("act.branchAdd", { name: s("name"), defaultValue: "فرع: {{name}} (إضافة / تعديل)" });
+      case "reminders": return t("act.reminderAdd", { title: s("title") || s("text"), defaultValue: "تذكير: {{title}}" });
+      case "appointments": return t("act.apptAdd", { pet: pn(), defaultValue: "موعد لـ {{pet}} (حجز / تعديل)" });
       case "staff":
-        return del
-          ? { icon: Users, tone: "danger", category, text: t("act.staffDel", { name: s("name"), defaultValue: "أزال الموظف {{name}}" }) }
-          : e.action === "INSERT"
-            ? { icon: Users, tone: "brand", category, text: t("act.staffAdd", { name: s("name"), defaultValue: "أضاف موظفاً: {{name}}" }) }
-            : { icon: Users, tone: "muted", category, text: t("act.staffUpd", { name: s("name"), defaultValue: "عدّل بيانات / صلاحيات الموظف {{name}}" }) };
-      case "memberships": case "invites":
-        return { icon: Users, tone: "muted", category, text: t("act.accessChange", "تغيير في وصول الكادر (دعوة / عضوية)") };
+        return del ? t("act.staffDel", { name: s("name"), defaultValue: "أزال الموظف {{name}}" })
+          : r.action === "INSERT" ? t("act.staffAdd", { name: s("name"), defaultValue: "أضاف موظفاً: {{name}}" })
+            : t("act.staffUpd", { name: s("name"), defaultValue: "عدّل بيانات / صلاحيات الموظف {{name}}" });
+      case "memberships": case "invites": return t("act.accessChange", "تغيير في وصول الكادر (دعوة / عضوية)");
       case "invoice_items": {
         const qty = formatNum(Number(d["qty"]) || 0);
-        return { icon: Receipt, tone: "muted", category: "finance", text: t("act.itemSold", { name: s("name"), qty, total: money(Number(d["line_total"]) || 0), defaultValue: "باع: {{name}} ×{{qty}} — {{total}}" }) };
+        return t("act.itemSold", { name: s("name"), qty, total: money(Number(d["line_total"]) || 0), defaultValue: "باع: {{name}} ×{{qty}} — {{total}}" });
       }
-      case "wa_messages":
-        return { icon: BellRing, tone: "success", category: "records", text: t("act.waSend", { name: s("owner_name") || t("rpt.clientFallback", "عميل"), kind: s("reminder_type"), defaultValue: "أرسل رسالة واتساب — {{name}} ({{kind}})" }) };
-      case "clinics":
-        return { icon: Building2, tone: "muted", category: "team", text: t("act.clinicUpd", "عدّل بيانات / إعدادات العيادة") };
-      case "login":
-        return { icon: Users, tone: "muted", category: "team", text: t("act.login", "سجّل دخول إلى النظام") };
+      case "purchases": return t("act.purchaseAdd", { name: s("company_name") || s("name"), total: money(Number(d["total"]) || 0), defaultValue: "فاتورة شراء — {{name}} ({{total}})" });
+      case "purchase_items": return t("act.purchaseItem", { name: s("name"), qty: formatNum(Number(d["qty"]) || 0), defaultValue: "استلم: {{name}} ×{{qty}}" });
+      case "purchase_payments": return t("act.supplierPay", { amount: money(Number(d["amount"]) || 0), defaultValue: "دفع لمورّد {{amount}}" });
+      case "expenses": return t("act.expenseAdd", { amount: money(Number(d["amount"]) || 0), name: s("category") || s("note") || s("name"), defaultValue: "مصروف {{amount}} — {{name}}" });
+      case "delivery_orders": return t("act.deliveryUpd", { status: s("status"), name: s("customer_name"), defaultValue: "توصيل — {{name}} ({{status}})" });
+      case "couriers": return t("act.courierUpd", { name: s("name"), defaultValue: "سائق / شركة توصيل: {{name}}" });
+      case "courier_settlements": return t("act.courierSettle", { amount: money(Number(d["amount"]) || 0), defaultValue: "تحصيل من التوصيل {{amount}}" });
+      case "wa_messages": return t("act.waSend", { name: s("owner_name") || t("rpt.clientFallback", "عميل"), kind: s("reminder_type"), defaultValue: "أرسل رسالة واتساب — {{name}} ({{kind}})" });
+      case "clinics": return t("act.clinicUpd", "عدّل بيانات / إعدادات العيادة");
+      case "login": return t("act.login", "سجّل دخول إلى النظام");
       case "client": {
         const ev = s("event");
-        if (ev === "invoice.print") return { icon: Receipt, tone: "muted", category: "finance", text: t("act.invPrint", { ref: s("ref"), format: s("format") === "thermal" ? t("act.printThermal", "إيصال حراري") : "A4", defaultValue: "طبع الفاتورة {{ref}} ({{format}})" }) };
-        if (ev === "invoice.preprint") return { icon: Receipt, tone: "muted", category: "finance", text: t("act.invPreprint", { total: s("total"), defaultValue: "طبع فاتورة أولية (قبل البيع) بمبلغ {{total}}" }) };
-        if (ev === "report.excel") return { icon: Receipt, tone: "muted", category: "finance", text: t("act.reportExcel", { title: s("title"), defaultValue: "صدّر تقرير Excel — {{title}}" }) };
-        if (ev === "report.print") return { icon: Receipt, tone: "muted", category: "finance", text: t("act.reportPrint", { title: s("title"), defaultValue: "طبع تقرير — {{title}}" }) };
-        if (ev === "report.csv") return { icon: Receipt, tone: "muted", category: "finance", text: t("act.reportCsv", "صدّر ملف CSV من التقارير") };
-        if (ev === "consent.print") return { icon: NotebookPen, tone: "muted", category: "medical", text: t("act.consentPrint", { pet: s("pet"), defaultValue: "طبع نموذج إقرار — {{pet}}" }) };
-        if (ev === "override.unlock") return { icon: KeyRound, tone: "brand", category: "team", text: t("act.ovUnlock", "فتح وضع المدير بالرمز السري") };
-        if (ev === "override.fail") return { icon: KeyRound, tone: "danger", category: "team", text: t("act.ovFail", "أدخل رمزاً خاطئاً لوضع المدير") };
-        if (ev === "override.lock") return { icon: KeyRound, tone: "muted", category: "team", text: t("act.ovLock", "أقفل وضع المدير") };
-        if (ev === "override.devlock") return { icon: KeyRound, tone: "muted", category: "team", text: t("act.ovDevLock", "قفل هذا الجهاز بواجهة الاستقبال") };
-        if (ev === "override.devunlock") return { icon: KeyRound, tone: "muted", category: "team", text: t("act.ovDevUnlock", "ألغى قفل واجهة الاستقبال لهذا الجهاز") };
-        return { icon: History, tone: "muted", category: "team", text: ev || "client" };
+        if (ev === "invoice.print") return t("act.invPrint", { ref: s("ref"), format: s("format") === "thermal" ? t("act.printThermal", "إيصال حراري") : "A4", defaultValue: "طبع الفاتورة {{ref}} ({{format}})" });
+        if (ev === "invoice.preprint") return t("act.invPreprint", { total: s("total"), defaultValue: "طبع فاتورة أولية (قبل البيع) بمبلغ {{total}}" });
+        if (ev === "report.excel") return t("act.reportExcel", { title: s("title"), defaultValue: "صدّر تقرير Excel — {{title}}" });
+        if (ev === "report.print") return t("act.reportPrint", { title: s("title"), defaultValue: "طبع تقرير — {{title}}" });
+        if (ev === "report.csv") return t("act.reportCsv", "صدّر ملف CSV من التقارير");
+        if (ev === "consent.print") return t("act.consentPrint", { pet: s("pet"), defaultValue: "طبع نموذج إقرار — {{pet}}" });
+        if (ev === "override.unlock") return t("act.ovUnlock", "فتح وضع المدير بالرمز السري");
+        if (ev === "override.fail") return t("act.ovFail", "أدخل رمزاً خاطئاً لوضع المدير");
+        if (ev === "override.lock") return t("act.ovLock", "أقفل وضع المدير");
+        if (ev === "override.devlock") return t("act.ovDevLock", "قفل هذا الجهاز بواجهة الاستقبال");
+        if (ev === "override.devunlock") return t("act.ovDevUnlock", "ألغى قفل واجهة الاستقبال لهذا الجهاز");
+        return ev || "client";
       }
       default:
-        // Any clinic_* configuration table → a settings change.
-        if (e.entity.startsWith("clinic_")) {
-          return { icon: Building2, tone: "muted", category: "team", text: t("act.settingsChange", { name: s("name") || s("label") || e.entity.replace("clinic_", ""), defaultValue: "تعديل في إعدادات العيادة: {{name}}" }) };
-        }
-        return { icon: History, tone: "muted", category, text: `${e.action} — ${e.entity}` };
+        if (r.entity.startsWith("clinic_")) return t("act.settingsChange", { name: s("name") || s("label") || r.entity.replace("clinic_", ""), defaultValue: "تعديل في إعدادات العيادة: {{name}}" });
+        // نوعٌ معروف بلا جملةٍ خاصة: اسمُ النوع + ما يسمّي الصفّ.
+        return `${t(`act.kinds.${r.kind}`, r.kind)}${s("name") || s("title") ? ` — ${s("name") || s("title")}` : ""}`;
     }
-  }, [petName, t]);
+  }, [t]);
 
-  const actorOf = (e: AuditEntry): string => {
-    if (e.actor && staffByUser.get(e.actor)) return staffByUser.get(e.actor)!;
-    if (e.actor && user && e.actor === user.id) return user.full_name || t("act.manager", "مدير العيادة");
-    const d = e.details as Record<string, unknown> | null;
-    const a = d?.["__actor"];
-    if (typeof a === "string" && a.trim()) return a;
-    // Backfilled/old rows carry no auth actor — fall back to whoever the row itself
-    // names: the invoice's cashier, or the dose/visit's attending doctor.
+  const actorOf = (r: ActivityRow): string => {
+    if (r.actor_name) return r.actor_name;
+    if (r.actor && user && r.actor === user.id) return user.full_name || t("act.manager", "مدير العيادة");
+    const d = r.brief as Record<string, unknown> | null;
     const sid = d?.["staff_id"];
     if (typeof sid === "string" && staffById.get(sid)) return staffById.get(sid)!;
     const doc = d?.["doctor_name"] ?? d?.["doctor"];
     if (typeof doc === "string" && doc.trim()) return doc.trim();
-    return e.actor ? t("act.manager", "مدير العيادة") : t("act.system", "النظام");
+    return r.actor ? t("act.manager", "مدير العيادة") : t("act.system", "النظام");
   };
 
-  const CATS: { id: Category; label: string }[] = [
-    { id: "all", label: t("act.catAll", "الكل") },
-    { id: "medical", label: t("act.catMedical", "طبية") },
-    { id: "records", label: t("act.catRecords", "سجلات وحالات") },
-    { id: "finance", label: t("act.catFinance", "مالية") },
-    { id: "inventory", label: t("act.catInventory", "مخزون") },
-    { id: "team", label: t("act.catTeam", "كادر ونظام") },
-  ];
-
-  const enriched = useMemo(() => rows.map((e) => {
-    const r = render(e);
-    return { e, r, actor: actorOf(e), ms: new Date(e.created_at).getTime() };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [rows, render, staffByUser, staffById, user?.id]);
-
-  const filtered = useMemo(() => {
-    const ql = q.trim().toLowerCase();
-    // Guarded device with no manager session → only TODAY's activity is visible.
-    const todayStart = restricted ? new Date().setHours(0, 0, 0, 0) : 0;
-    return enriched.filter(({ r, actor, ms }) => {
-      if (restricted && ms < todayStart) return false;
-      if (cat !== "all" && r.category !== cat) return false;
-      if (ql && !r.text.toLowerCase().includes(ql) && !actor.toLowerCase().includes(ql)) return false;
-      return true;
-    });
-  }, [enriched, q, cat, restricted]);
-
-  // Group by calendar day — "اليوم", "أمس", then dated headers.
   const groups = useMemo(() => {
     const dayKey = (ms: number) => { const d = new Date(ms); return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`; };
-    const today = dayKey(Date.now());
-    const yest = dayKey(Date.now() - 86400000);
-    const out: { label: string; items: typeof filtered }[] = [];
-    for (const item of filtered.slice(0, shown)) {
-      const k = dayKey(item.ms);
+    const today = dayKey(Date.now()), yest = dayKey(Date.now() - DAY);
+    const out: { label: string; items: ActivityRow[] }[] = [];
+    for (const r of rows ?? []) {
+      const ms = new Date(r.created_at).getTime();
+      const k = dayKey(ms);
       const label = k === today ? t("act.today", "اليوم") : k === yest ? t("act.yesterday", "أمس")
-        : new Date(item.ms).toLocaleDateString(dateLocale(), { weekday: "long", day: "numeric", month: "long" });
+        : new Date(ms).toLocaleDateString(dateLocale(), { weekday: "long", day: "numeric", month: "long" });
       const last = out[out.length - 1];
-      if (last && last.label === label) last.items.push(item);
-      else out.push({ label, items: [item] });
+      if (last && last.label === label) last.items.push(r); else out.push({ label, items: [r] });
     }
     return out;
-  }, [filtered, shown, t]);
+  }, [rows, t]);
 
-  const toneCls = (tone: string) =>
-    tone === "success" ? "bg-success-50 text-success-600 dark:bg-success-500/15 dark:text-success-300"
-      : tone === "danger" ? "bg-danger-50 text-danger-600 dark:bg-danger-500/15 dark:text-danger-300"
-        : tone === "brand" ? "bg-brand-50 text-brand-600 dark:bg-brand-500/15 dark:text-brand-300"
-          : "bg-surface-2 text-ink-muted";
+  const timeOf = (iso: string) => new Date(iso).toLocaleTimeString(dateLocale(), { hour: "numeric", minute: "2-digit", hour12: true });
+  const barLabel = (d: Date) => bucket === "day"
+    ? d.toLocaleDateString(dateLocale(), { day: "numeric", month: "numeric" })
+    : d.toLocaleTimeString(dateLocale(), { hour: "numeric", hour12: true });
 
-  const timeOf = (ms: number) => new Date(ms).toLocaleTimeString(dateLocale(), { hour: "numeric", minute: "2-digit", hour12: true });
-
-  // Manager-only (matches the server RLS: audit_manager_read).
   if (!can("manageSettings")) {
     return (
       <div className="mx-auto grid max-w-md place-items-center px-4 py-20 text-center">
@@ -342,9 +355,13 @@ export function ActivityLog() {
     );
   }
 
+  const PRESETS: { id: Preset; label: string }[] = [
+    { id: "today", label: t("act.rangeToday", "Today") }, { id: "yesterday", label: t("act.rangeYesterday", "Yesterday") },
+    { id: "7d", label: t("act.range7d", "7 days") }, { id: "30d", label: t("act.range30d", "30 days") }, { id: "custom", label: t("act.rangeCustom", "Custom") },
+  ];
+
   return (
-    <div className="mx-auto max-w-4xl px-4 py-6">
-      {/* Header */}
+    <div className="mx-auto max-w-5xl px-4 py-6">
       <div className="mb-5 flex flex-wrap items-center gap-3">
         <span className="grid h-11 w-11 place-items-center rounded-2xl bg-brand-grad text-white shadow-soft"><History size={24} /></span>
         <div className="me-auto">
@@ -352,56 +369,135 @@ export function ActivityLog() {
           <p className="text-sm text-ink-subtle">{t("act.subtitle", "كل حركة صارت في العيادة — مَن قام بها ومتى.")}</p>
         </div>
         <span className="chip bg-warn-50 text-2xs font-semibold text-warn-700 dark:bg-warn-500/15 dark:text-warn-300">
-          <Clock size={12} className="me-1 inline" /> {t("act.retention", "\u062d\u0631\u0643\u0627\u062a \u0627\u0644\u0645\u0627\u0644 \u0648\u0627\u0644\u0645\u062e\u0632\u0648\u0646 \u062a\u0628\u0642\u0649 \u0633\u0646\u0629 \u0643\u0627\u0645\u0644\u0629 \u2014 \u0648\u0628\u0627\u0642\u064a \u0627\u0644\u062d\u0631\u0643\u0627\u062a \u0669\u0660 \u064a\u0648\u0645\u0627\u064b\u060c \u062b\u0645 \u062a\u064f\u062d\u0630\u0641 \u062a\u0644\u0642\u0627\u0626\u064a\u0627\u064b")}
+          <Clock size={12} className="me-1 inline" /> {t("act.retention", "حركات المال والمخزون تبقى سنة كاملة — وباقي الحركات ٩٠ يوماً، ثم تُحذف تلقائياً")}
         </span>
       </div>
 
-
-      {/* Search + category filter */}
-      <div className="mb-4 space-y-2.5 rounded-2xl border border-line bg-surface-1 p-3">
-        <div className="relative">
-          <Search size={16} className="pointer-events-none absolute top-1/2 -translate-y-1/2 text-ink-subtle ltr:left-3 rtl:right-3" />
-          <input className="input ltr:pl-9 rtl:pr-9" value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("act.searchPh", "ابحث بالحركة أو اسم الموظف أو الحيوان…")} />
-        </div>
-        <div className="flex flex-wrap gap-1.5">
-          {CATS.map((c) => (
-            <button key={c.id} onClick={() => { playTap(); setCat(c.id); }}
-              className={cn("rounded-full px-3.5 py-1.5 text-sm font-semibold transition", cat === c.id ? "bg-brand-600 text-white shadow-soft" : "bg-surface-2 text-ink-muted hover:text-ink")}>
-              {c.label}
+      {/* ── المدّة ── */}
+      <div className="mb-3 space-y-2.5 rounded-2xl border border-line bg-surface-1 p-3">
+        <div className="flex flex-wrap items-center gap-1.5">
+          {PRESETS.filter((p) => !restricted || p.id === "today").map((p) => (
+            <button key={p.id} data-actrange={p.id} onClick={() => { playTap(); setPreset(p.id); if (p.id === "custom") setCustom(presetRange("today")); }}
+              className={cn("rounded-full px-3.5 py-1.5 text-sm font-semibold transition", preset === p.id ? "bg-brand-600 text-white shadow-soft" : "bg-surface-2 text-ink-muted hover:text-ink")}>
+              {p.label}
             </button>
           ))}
-          <span className="ms-auto self-center text-2xs text-ink-subtle">{t("act.count", { n: formatNum(filtered.length), defaultValue: "{{n}} حركة" })}</span>
+          <span className="ms-auto text-2xs text-ink-subtle">{summary ? t("act.total", { n: formatNum(counts.total), defaultValue: "{{n}} actions" }) : <Loader2 size={12} className="animate-spin" />}</span>
+        </div>
+        {preset === "custom" && !restricted && (
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            <label className="flex items-center gap-1.5 text-ink-muted">{t("act.from", "From")}
+              <input type="datetime-local" className="input h-9 w-auto py-0 text-xs" value={toLocalInput(custom.from)} data-actfrom
+                onChange={(e) => { const d = new Date(e.target.value); if (!Number.isNaN(d.getTime())) setCustom((c) => ({ ...c, from: d })); }} />
+            </label>
+            <label className="flex items-center gap-1.5 text-ink-muted">{t("act.to", "To")}
+              <input type="datetime-local" className="input h-9 w-auto py-0 text-xs" value={toLocalInput(custom.to)} data-actto
+                onChange={(e) => { const d = new Date(e.target.value); if (!Number.isNaN(d.getTime())) setCustom((c) => ({ ...c, to: d })); }} />
+            </label>
+          </div>
+        )}
+
+        {/* ── الرسم: عمودٌ لكل يوم/ساعة، مكدَّسٌ بالمجموعة ── */}
+        <div>
+          <div className="mb-1 flex items-center justify-between text-2xs text-ink-subtle">
+            <span>{bucket === "day" ? t("act.perDay", "By day") : t("act.perHour", "By hour")}</span>
+            <span>{t("act.drillHint", "Tap a bar to zoom into it")}</span>
+          </div>
+          <div className="flex h-24 items-end gap-px overflow-x-auto rounded-xl bg-surface-2 px-1 pt-2" data-actchart>
+            {summary === null ? <Skeleton className="h-full w-full rounded-lg" /> : bars.map((b) => (
+              <button key={b.at.toISOString()} type="button" onClick={() => drill(b.at)} data-actbar={b.at.toISOString()}
+                title={`${barLabel(b.at)} · ${formatNum(b.total)}`}
+                className="group flex h-full min-w-[14px] flex-1 flex-col justify-end rounded-t-sm transition hover:bg-brand-50/60 dark:hover:bg-brand-500/10">
+                <span className="flex flex-col-reverse" style={{ height: `${Math.round((b.total / barMax) * 78)}%` }}>
+                  {ACTIVITY_GROUPS.map((g) => b.groups[g.id] > 0 && (
+                    <span key={g.id} className={cn("w-full", GROUP_BAR[g.id])} style={{ flexGrow: b.groups[g.id] }} />
+                  ))}
+                </span>
+                <span className="block truncate text-center text-[9px] leading-4 text-ink-subtle">{bars.length <= 31 || b.at.getHours() === 0 ? barLabel(b.at) : ""}</span>
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
-      {/* Timeline */}
-      {loading ? (
+      {/* ── الأنواع بعدّاداتها ── */}
+      <div className="mb-3 space-y-2 rounded-2xl border border-line bg-surface-1 p-3" data-actkinds>
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-bold text-ink-muted">{t("act.typesTitle", "What happened")}</span>
+          {kinds.size > 0 && <button className="text-2xs font-bold text-brand-600" onClick={() => { playTap(); setKinds(new Set()); }}>{t("act.catAll", "الكل")}</button>}
+        </div>
+        {ACTIVITY_GROUPS.map((g) => (
+          <div key={g.id} className="flex flex-wrap items-center gap-1.5">
+            <span className={cn("me-1 inline-block h-2.5 w-2.5 rounded-full", GROUP_BAR[g.id])} />
+            <span className="me-1 w-24 text-2xs font-bold text-ink-subtle">{t(`act.groups.${g.id}`, g.id)}</span>
+            {g.kinds.map((k) => {
+              const n = counts.byKind.get(k) ?? 0;
+              const on = kinds.has(k);
+              if (n === 0 && !on) return null;
+              return (
+                <button key={k} type="button" data-actkind={k} onClick={() => toggleKind(k)}
+                  className={cn("inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold transition",
+                    on ? "bg-brand-600 text-white" : "bg-surface-2 text-ink-muted hover:text-ink", NOISY_KINDS.includes(k) && !on && "opacity-60")}>
+                  {t(`act.kinds.${k}`, k)} <span className="tabular-nums opacity-80">{formatNum(n)}</span>
+                </button>
+              );
+            })}
+          </div>
+        ))}
+        {(counts.byKind.get("sale_line") ?? 0) > 0 && !kinds.has("sale_line") && (
+          <p className="text-2xs text-ink-subtle">{t("act.noiseHidden", "Invoice lines are hidden by default")}</p>
+        )}
+      </div>
+
+      {/* ── الموظف + البحث ── */}
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <div className="relative min-w-[220px] flex-1">
+          <Search size={16} className="pointer-events-none absolute top-1/2 -translate-y-1/2 text-ink-subtle ltr:left-3 rtl:right-3" />
+          <input className="input ltr:pl-9 rtl:pr-9" value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("act.searchPh", "ابحث بالحركة أو اسم الموظف أو الحيوان…")} data-actsearch />
+        </div>
+        <select className="input h-11 w-auto min-w-[160px]" value={actor} onChange={(e) => { playTap(); setActor(e.target.value); }} data-actactor>
+          <option value="">{t("act.allStaff", "All staff")}</option>
+          {actors.map((a) => <option key={a.actor} value={a.actor}>{a.name} ({formatNum(a.n)})</option>)}
+        </select>
+      </div>
+
+      {/* ── القائمة ── */}
+      {failed ? (
+        <div className="card space-y-3 p-8 text-center">
+          <p className="text-sm text-ink-subtle">{t("act.loadFailed", "Could not load the activity — try again.")}</p>
+          <Button variant="secondary" leftIcon={<RotateCcw size={15} />} onClick={() => { playTap(); setTick((n) => n + 1); }}>{t("common.retry", "Retry")}</Button>
+        </div>
+      ) : rows === null ? (
         <div className="space-y-2">{Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="h-16 rounded-2xl" />)}</div>
-      ) : filtered.length === 0 ? (
+      ) : rows.length === 0 ? (
         <div className="grid place-items-center rounded-2xl border border-line bg-surface-1 px-6 py-16 text-center">
           <History size={30} className="mb-2 text-ink-subtle/40" />
-          <p className="text-sm text-ink-subtle">{rows.length === 0 ? t("act.empty", "لا توجد حركات مسجّلة بعد — كل عملية جديدة ستظهر هنا فوراً.") : t("act.noMatch", "لا توجد حركات مطابقة لبحثك.")}</p>
+          <p className="text-sm text-ink-subtle">{counts.total === 0 && kinds.size === 0 && !qDeb && !actor ? t("act.empty", "لا توجد حركات مسجّلة بعد — كل عملية جديدة ستظهر هنا فوراً.") : t("act.noMatch", "لا توجد حركات مطابقة لبحثك.")}</p>
         </div>
       ) : (
         <div className="space-y-5">
           {groups.map((g) => (
             <div key={g.label}>
-              <h2 className="mb-2 flex items-center gap-2 text-xs font-extrabold uppercase tracking-wide text-ink-subtle">
-                <CalendarDays size={13} /> {g.label}
-              </h2>
+              <h2 className="mb-2 flex items-center gap-2 text-xs font-extrabold uppercase tracking-wide text-ink-subtle"><CalendarDays size={13} /> {g.label}</h2>
               <div className="space-y-1.5">
-                {g.items.map(({ e, r, actor, ms }) => {
-                  const Icon = r.icon;
+                {g.items.map((r) => {
+                  const meta = KIND_ICON[r.kind as ActivityKind] ?? KIND_ICON.other;
+                  const Icon = meta.icon;
+                  const ch = changesOf(r.brief);
+                  const key = `${r.src}${r.id}`;
+                  const open = expanded.has(key);
+                  const shownCh = open ? ch : ch.slice(0, 3);
                   return (
-                    <div key={String(e.id)} className="flex items-center gap-3 rounded-2xl border border-line bg-surface-1 p-3">
-                      <span className={cn("grid h-10 w-10 shrink-0 place-items-center rounded-xl", toneCls(r.tone))}><Icon size={18} /></span>
+                    <div key={key} data-actrow={r.kind} className="flex items-start gap-3 rounded-2xl border border-line bg-surface-1 p-3">
+                      <span className={cn("grid h-10 w-10 shrink-0 place-items-center rounded-xl", toneCls(meta.tone))}><Icon size={18} /></span>
                       <div className="min-w-0 flex-1">
-                        <p className="text-sm font-semibold leading-snug text-ink">{r.text}</p>
-                        {/* الفرق حرفياً — هذا هو الي يجاوب «من شنو لشنو؟»، والسؤال
-                            الي ما كان يجاوبه السجل القديم مهما طال حفظُه. */}
-                        {changesOf(e).length > 0 && (
+                        <p className="flex flex-wrap items-center gap-x-2 text-sm font-semibold leading-snug text-ink">
+                          <span className={cn("chip text-2xs font-bold", toneCls(meta.tone))}>{t(`act.kinds.${r.kind}`, r.kind)}</span>
+                          {render(r)}
+                        </p>
+                        {ch.length > 0 && (
                           <p className="mt-1 flex flex-wrap items-center gap-1">
-                            {changesOf(e).slice(0, 4).map((c) => (
+                            {shownCh.map((c) => (
                               <span key={c.key} className="inline-flex items-center gap-1 rounded-lg bg-surface-2 px-1.5 py-0.5 text-[10px] text-ink-muted">
                                 <b className="font-semibold text-ink-subtle">{t(`act.f.${c.key}`, { defaultValue: c.key })}</b>
                                 <span className="tabular-nums line-through opacity-60">{val(c.from)}</span>
@@ -409,17 +505,18 @@ export function ActivityLog() {
                                 <span className="tabular-nums font-semibold text-ink">{val(c.to)}</span>
                               </span>
                             ))}
-                            {changesOf(e).length > 4 && (
-                              <span className="text-[10px] text-ink-subtle">
-                                {t("act.chMore", { n: formatNum(changesOf(e).length - 4), defaultValue: "و{{n}} غيرها" })}
-                              </span>
+                            {ch.length > 3 && (
+                              <button type="button" className="inline-flex items-center gap-0.5 text-[10px] font-bold text-brand-600"
+                                onClick={() => { playTap(); setExpanded((s) => { const n = new Set(s); if (n.has(key)) n.delete(key); else n.add(key); return n; }); }}>
+                                {open ? <><ChevronUp size={10} /> {t("act.hideChanges", "Hide changes")}</> : <><ChevronDown size={10} /> {t("act.chMore", { n: formatNum(ch.length - 3), defaultValue: "و{{n}} غيرها" })}</>}
+                              </button>
                             )}
                           </p>
                         )}
                         <p className="mt-0.5 flex flex-wrap items-center gap-x-2 text-2xs text-ink-subtle">
-                          <span className="inline-flex items-center gap-1 font-semibold text-ink-muted"><Users size={11} /> {actor}</span>
+                          <span className="inline-flex items-center gap-1 font-semibold text-ink-muted"><Users size={11} /> {actorOf(r)}</span>
                           <span>·</span>
-                          <span dir="ltr">{timeOf(ms)}</span>
+                          <span dir="ltr">{timeOf(r.created_at)}</span>
                         </p>
                       </div>
                     </div>
@@ -428,11 +525,10 @@ export function ActivityLog() {
               </div>
             </div>
           ))}
-          {filtered.length > shown && (
-            <button onClick={() => { playTap(); setShown((n) => n + 60); }}
-              className="w-full rounded-2xl border border-line bg-surface-1 py-3 text-sm font-bold text-ink-muted transition hover:bg-surface-2 hover:text-ink">
-              {t("act.more", { n: formatNum(filtered.length - shown), defaultValue: "عرض المزيد ({{n}} متبقية)" })}
-            </button>
+          {hasMore && (
+            <Button variant="secondary" className="w-full" loading={more} onClick={() => { playTap(); void loadMore(); }} data-actmore>
+              {t("act.loadMore", "Load more")}
+            </Button>
           )}
         </div>
       )}

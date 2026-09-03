@@ -22,7 +22,7 @@ DB=dvtest
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MIG="$HERE/../migrations"
 # الهجرات التي يغطّيها هذا المخطّط الأساس. زدها كل ما تنضاف موجة.
-WAVE="$MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql"
+WAVE="$MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql"
 
 command -v "$PGBIN/initdb" >/dev/null || { echo "ما لكيت بوستغريس بـ $PGBIN"; exit 1; }
 
@@ -952,6 +952,56 @@ chk "وممنوعةٌ على anon" \
 chk "وجدولُ الجلسات محميٌّ بلا أي سياسة" \
     "select ((select relrowsecurity from pg_class where relname='platform_sessions') and (select count(*) from pg_policies where tablename='platform_sessions')=0)::text" "true"
 $P -c "update _dvtest_flags set admin = false; delete from platform_sessions;" >/dev/null
+
+# ── 0152: مركزُ الحركات — التصنيفُ والملخّصُ والصفحاتُ بالمؤشّر ─────────────
+# نفسُ حالات activity-cases.json التي يفحصها activity-kinds-test.mjs على
+# الواجهة تُفحص هنا على audit_kind() — فالمرآتان تتطابقان بالبناء لا بالوعد.
+echo "▸ 0152: مركزُ الحركات"
+CASES="$HERE/../../scripts/activity-cases.json"
+N=$(node -e "console.log(JSON.parse(require('fs').readFileSync('$CASES','utf8')).length)")
+for i in $(seq 0 $((N-1))); do
+  read -r E A K < <(node -e "const c=JSON.parse(require('fs').readFileSync('$CASES','utf8'))[$i]; console.log(c.entity, c.action, c.kind)")
+  D=$(node -e "const c=JSON.parse(require('fs').readFileSync('$CASES','utf8'))[$i]; console.log(JSON.stringify(c.details).replace(/'/g,\"''\"))")
+  chk "audit_kind: $E/$A → $K" "select audit_kind('$E', '$A', '$D'::jsonb)" "$K"
+done
+# بياناتٌ معلومة لعيادة ١١١١: ٣ بيعات أمس، مرتجعان اليوم، تغييرُ مخزون اليوم، دخولٌ اليوم.
+$P -c "delete from audit_log where clinic_id='$C1' and entity_id like 'act-%';
+       insert into audit_log (clinic_id, actor, action, entity, entity_id, details, created_at) values
+         ('$C1','$C1','INSERT','invoices','act-1','{\"total\":1000,\"customer_name\":\"ابو علي\"}', now() - interval '1 day'),
+         ('$C1','$C1','INSERT','invoices','act-2','{\"total\":2000,\"customer_name\":\"ام حسن\"}', now() - interval '1 day' + interval '1 minute'),
+         ('$C1','$C2','INSERT','invoices','act-3','{\"total\":3000,\"customer_name\":\"سارة\"}', now() - interval '1 day' + interval '2 hour'),
+         ('$C1','$C1','UPDATE','invoices','act-4','{\"total\":1000,\"__changed\":{\"status\":[\"paid\",\"refunded\"]}}', now() - interval '2 minute'),
+         ('$C1','$C1','UPDATE','invoices','act-5','{\"total\":2000,\"__changed\":{\"status\":[\"paid\",\"refunded\"]}}', now() - interval '1 minute'),
+         ('$C1','$C1','UPDATE','products','act-6','{\"name\":\"رويال\",\"logo\":\"$(printf 'x%.0s' $(seq 1 300))\",\"__changed\":{\"stock\":[5,3],\"updated_at\":[\"a\",\"b\"]}}', now());
+       insert into login_events (clinic_id, user_id, email, name, created_at) values ('$C1','$C1','a@b.c','مدير','$(date -u +%Y-%m-%dT%H:%M:%SZ)');" >/dev/null
+FROM3=$(date -u -d '3 days ago' +%Y-%m-%dT00:00:00Z); TO3=$(date -u -d 'tomorrow' +%Y-%m-%dT23:59:59Z)
+chk "الملخّص بالنوع: ٣ بيعات و٢ مرتجع و١ مخزون و١ دخول" \
+    "select _pf('$C1', 'select string_agg(kind||''=''||n, '','' order by kind) from (select kind, sum(n) n from activity_summary(''$FROM3'',''$TO3'',''UTC'',''day'') where kind in (''sale'',''refund'',''stock'',''login'') group by kind) s')" "login=1,refund=2,sale=3,stock=1"
+chk "  وبالساعة يوزّع على أدلّةٍ لا يخلطها" \
+    "select _pf('$C1', 'select (count(distinct bucket) >= 2)::text from activity_summary(''$FROM3'',''$TO3'',''UTC'',''hour'') where kind = ''sale''')" "true"
+chk "الصفحة بفلتر النوع: البيعات الثلاث وحدها بترتيب الأحدث" \
+    "select _pf('$C1', 'select string_agg(entity_id, '','') from activity_page(''$FROM3'',''$TO3'', array[''sale''])')" "act-3,act-2,act-1"
+chk "  والمؤشّر يكمل بلا تكرارٍ ولا فقد (٢ ثم ١)" \
+    "select _pf('$C1', 'with p1 as (select * from activity_page(''$FROM3'',''$TO3'', array[''sale''], null, null, null, null, null, 2)), l as (select * from p1 order by created_at, id limit 1) select (select string_agg(p1.entity_id, '','') from p1) || ''|'' || (select string_agg(n.entity_id, '','') from l, lateral activity_page(''$FROM3'',''$TO3'', array[''sale''], null, null, l.created_at, l.src, l.id, 2) n)')" "act-3,act-2|act-1"
+chk "  وفلترُ الموظف يعزل بيعةَ الحساب الثاني" \
+    "select _pf('$C1', 'select string_agg(entity_id, '','') from activity_page(''$FROM3'',''$TO3'', null, ''$C2'')')" "act-3"
+chk "  والبحثُ بالاسم بالتطبيع («أم حسن» بهمزة)" \
+    "select _pf('$C1', 'select string_agg(entity_id, '','') from activity_page(''$FROM3'',''$TO3'', null, null, ''أم حسن'')')" "act-2"
+chk "  والمختصرُ يُسقط القيمةَ الطويلة ويبقي الاسم والتغيير" \
+    "select _pf('$C1', 'select (brief ? ''name'' and not (brief ? ''logo'') and brief->''__changed'' ? ''stock'' and not (brief->''__changed'' ? ''updated_at''))::text from activity_page(''$FROM3'',''$TO3'', array[''stock''])')" "true"
+chk "  والدخولُ يدخل نفسَ القائمة من جدوله" \
+    "select _pf('$C1', 'select count(*)::text from activity_page(''$FROM3'',''$TO3'', array[''login''])')" "1"
+chk "والموظفون بعدّاداتهم (الحسابُ الثاني بيعةٌ واحدة، والأوّل خمسٌ فأكثر مع بقية الحزمة)" \
+    "select _pf('$C1', 'select ((select n from activity_actors(''$FROM3'',''$TO3'') where actor=''$C2'') = 1 and (select n from activity_actors(''$FROM3'',''$TO3'') where actor=''$C1'') >= 5)::text')" "true"
+chk "وعيادةٌ أخرى لا ترى منها سطراً" \
+    "select _pf('$C2', 'select count(*)::text from activity_page(''$FROM3'',''$TO3'') where entity_id like ''act-%''')" "0"
+chk "والمحفّزات الجديدة على كل جدولٍ موجود من القائمة" \
+    "select (count(*) filter (where to_regclass(t) is not null) = count(*) filter (where exists (select 1 from pg_trigger g join pg_class c on c.oid=g.tgrelid where c.relname=t and g.tgname='audit_all')))::text from unnest(array['clinic_visits','care_entries','lab_results','courier_settlements','payroll_adjustments','staff_recurring','staff_loan_events','pet_problems','pet_movements','journeys','clinic_notes','generated_barcodes','wa_accounts','lab_device_links']) t" "true"
+chk "دوالُّ الحركات بصلاحية المُستدعي (سياسةُ المدير تحكمها) وبمسارٍ مثبَّت" \
+    "select count(*)::text from pg_proc where proname in ('activity_summary','activity_page','activity_actors','audit_kind','activity_brief') and not prosecdef and coalesce(array_to_string(proconfig,','),'') like '%search_path%'" "5"
+chk "وممنوعةٌ على anon" \
+    "select count(*)::text from pg_proc p where proname in ('activity_summary','activity_page','activity_actors') and has_function_privilege('anon', p.oid, 'execute')" "0"
+$P -c "delete from audit_log where entity_id like 'act-%'; delete from login_events where email='a@b.c';" >/dev/null
 
 echo
 [ $fail -eq 0 ] && echo "✓ كل الفحوص عبرت" || { echo "✗ اكو فحصٌ فشل"; exit 1; }
