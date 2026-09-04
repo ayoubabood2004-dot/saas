@@ -86,10 +86,20 @@ check("والهجرةُ تنزله `not null default false`",
 /* ── ٤) الشاشة: ما بقي زرُّ إضافةٍ أو تعديلٍ بلا بوّابة ───────────────────*/
 console.log("▸ شاشةُ المخزن — كلُّ زرِّ إضافةٍ/تعديلٍ تحت البوّابة");
 const inv = fs.readFileSync("src/pages/Inventory.tsx", "utf8");
-check("ما بقيت إشارةٌ إلى `restricted` بالمخزن", !/\brestricted\b/.test(inv));
-check("والبوّابةُ تُقرأ من useOverride().stockLocked",
-  (inv.match(/stockLocked: locked/g) ?? []).length >= 5,
+check("البوّابةُ تُقرأ من useOverride().stockLocked بكل مواضع العمل",
+  (inv.match(/stockLocked: locked/g) ?? []).length >= 7,
   String((inv.match(/stockLocked: locked/g) ?? []).length));
+
+/* الأرقامُ الثلاثة الكبيرة (رأس المال · قيمة البيع · الربح المتوقَّع) هي
+ * الاستثناءُ الوحيد: المفتاحُ يفتح العملَ لا الإعلانَ عن مال العيادة. فبطاقةُ
+ * القيمة تتبع `restricted` نفسَه — ولو تسرّبت إلى `stockLocked` لانفتحت مع
+ * أوّل عيادةٍ تفعّل المفتاح، بلا أن يشتكي أحد. */
+const card = inv.slice(inv.indexOf("function InventoryValueCard"), inv.indexOf("function ValueCell"));
+check("بطاقةُ القيمة تقرأ `restricted` لا `stockLocked`",
+  /const \{ restricted \} = useOverride\(\)/.test(card) && !/stockLocked/.test(card));
+check("وتختفي كلُّها بوضع المدير (الثلاثةُ لا اثنان)",
+  /if \(restricted\) return null;/.test(card));
+check("فما بقي بها شرطٌ يخفي عموداً دون عمود", !/!locked &&/.test(card));
 // الأزرارُ الأربعةُ الحاسمة: إضافةُ منتج، تعديلُه، حذفُه، إضافةُ شركة.
 for (const [needle, why] of [
   ['{!locked && <Button leftIcon={<PackagePlus', "زرُّ «أضف منتجاً» تحت البوّابة"],
