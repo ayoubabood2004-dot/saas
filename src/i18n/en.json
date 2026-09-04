@@ -2672,7 +2672,19 @@
         "bank": "Bank transfer"
       },
       "methodHintCash": "Taken from drawer cash — deducted from net cash.",
-      "methodHintOther": "Outside the drawer — not deducted from net cash."
+      "methodHintOther": "Outside the drawer — not deducted from net cash.",
+      "viewList": "List",
+      "viewLedger": "Ledger",
+      "ledger": {
+        "title": "Withdrawals ledger",
+        "no": "Entry",
+        "running": "Running balance",
+        "closing": "Closing — total withdrawals",
+        "print": "Print the ledger",
+        "hint": "Ordered from the oldest day to the newest — every entry numbered with its running balance.",
+        "preparedBy": "Prepared by",
+        "approvedBy": "Approved by"
+      }
     },
     "zWithdrawals": "Cash withdrawals from drawer",
     "zWithdrawalsNonCash": "Card / bank withdrawals (outside drawer)",
