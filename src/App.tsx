@@ -55,6 +55,7 @@ const PlatformConsole = page(() => import("@/pages/PlatformConsole").then((m) =>
 const ClinicStore = page(() => import("@/pages/ClinicStore").then((m) => ({ default: m.ClinicStore })));
 const Storefront = page(() => import("@/pages/Storefront").then((m) => ({ default: m.Storefront })));
 const TrackJourney = page(() => import("@/pages/TrackJourney").then((m) => ({ default: m.TrackJourney })));
+const OwnerPortal = page(() => import("@/pages/OwnerPortal").then((m) => ({ default: m.OwnerPortal })));
 // لوحة الأقفاص المسطّحة — بطاقات على مخزن التخطيط نفسه، بلا three.js إطلاقاً:
 // حزمة المجسّم كاملة سقطت من البناء بسقوط استيرادها.
 const CageBoard = page(() => import("@/components/cages/CageBoard"));
@@ -202,7 +203,8 @@ function Shell() {
 
   // الستور العام (/s/…) صفحة زبون قائمة بذاتها — بلا سايدبار ولا توب-بار حتى
   // لو فتحها كادر مسجّل، لأنها تعرض كما يراها الزبون تماماً.
-  const isPublicStore = location.pathname.startsWith("/s/") || location.pathname.startsWith("/t/");
+  const isPublicStore = location.pathname.startsWith("/s/") || location.pathname.startsWith("/t/")
+    || location.pathname.startsWith("/p/");
   const showChrome = !!user && location.pathname !== "/login" && !isPublicStore;
   const staff = !!user && (user.role === "admin" || user.role === "doctor" || user.role === "reception");
 
@@ -236,6 +238,8 @@ function Shell() {
             {/* الستور العام — صفحة الزبون بلا تسجيل، خارج كل الحُرّاس عمداً */}
             <Route path="/s/:slug" element={<Storefront />} />
             <Route path="/t/:token" element={<TrackJourney />} />
+            {/* بوّابة المالك (0154) — عامّة كأختيها، خارج كل الحرّاس عمداً */}
+            <Route path="/p/:slug" element={<OwnerPortal />} />
             <Route path="/campaigns" element={<Protected><ClinicOnly><FeatureGate feature="whatsapp"><WhatsAppCampaigns /></FeatureGate></ClinicOnly></Protected>} />
             <Route path="/reminders" element={<Protected><ClinicOnly><FeatureGate feature="whatsapp"><RemindersHub /></FeatureGate></ClinicOnly></Protected>} />
             <Route path="/bookings" element={<Protected><ClinicOnly><BookingsHub /></ClinicOnly></Protected>} />

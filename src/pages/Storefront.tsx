@@ -10,7 +10,8 @@
 // موبايل أولاً — زوار البايو كلهم من التلفون.
 // ============================================================================
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   ShoppingCart, Plus, Minus, Search, MapPin, Phone, MessageCircle, X,
@@ -19,6 +20,7 @@ import {
 import type { StoreCatalogItem, StoreFrontInfo } from "@/types";
 import { repo } from "@/lib/repo";
 import { categoryLook, isValidCustomerPhone } from "@/lib/storeLib";
+import { preferArabicForVisitor } from "@/lib/portal";
 import { waNumber } from "@/lib/phone";
 import { celebrate } from "@/lib/celebrate";
 import { playTap, playSuccess, playWarning, playAchievement } from "@/lib/sounds";
@@ -48,6 +50,7 @@ const ERROR_MSG: Record<string, string> = {
 
 export function Storefront() {
   const { slug = "" } = useParams();
+  const { t } = useTranslation();
   const [state, setState] = useState<"loading" | "closed" | "open">("loading");
   const [front, setFront] = useState<StoreFrontInfo | null>(null);
   const [catalog, setCatalog] = useState<StoreCatalogItem[]>([]);
@@ -61,6 +64,11 @@ export function Storefront() {
   const PAGE = 60;
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
+
+  /* لغةُ الزائر: هذه الصفحة عربيةٌ صلبةٌ عمداً (زبائنُ عيادةٍ عراقية)، فلو
+   * بقيت لغةُ الواجهة على الإنكليزية الافتراضية لظهر كلُّ نصٍّ يمرّ من `t(`
+   * إنكليزياً وسط صفحةٍ عربية — وهذا ما حصل فعلاً لزرّ «شوف حيواناتي». */
+  useEffect(() => { preferArabicForVisitor(); }, []);
 
   useEffect(() => {
     let alive = true;
@@ -217,6 +225,20 @@ export function Storefront() {
             )}
           </span>
         </div>
+
+        {/* بابُ المالك (0154): الرابطُ العام نفسه يوصله لملفّ حيوانه — لا رابطَ
+            ثانٍ تدزّه العيادة، ولا حسابَ يُنشأ. زرٌّ واحد بأعلى الصفحة. */}
+        <Link to={`/p/${slug}`} onClick={() => playTap()}
+          className="relative mx-auto mt-4 flex max-w-3xl items-center justify-between gap-3 rounded-2xl bg-white/15 px-4 py-3 backdrop-blur transition hover:bg-white/25 active:scale-[0.99]">
+          <span className="flex items-center gap-2.5">
+            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-white/20"><PawPrint size={18} /></span>
+            <span className="min-w-0">
+              <span className="block text-sm font-extrabold leading-tight">{t("portal.cta", "شوف حيواناتي")}</span>
+              <span className="block text-2xs leading-tight text-white/80">{t("portal.ctaSub", "اللقاحات، العلاج، وحالته الآن")}</span>
+            </span>
+          </span>
+          <ArrowRight size={17} className="shrink-0 rotate-180" />
+        </Link>
       </header>
 
       {/* البحث والتصنيفات — لاصقة */}

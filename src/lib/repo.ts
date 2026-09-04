@@ -18,6 +18,7 @@ import { outboxEnqueue, outboxEnqueueRpc, isNetworkError } from "./outbox";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, AppointmentStatus, ClinicInfo, PublicStaff, DailyNote, TreatmentEntry, Admission, Branch, Reminder, Product, Company, CompanySection, Purchase, PurchaseItem, PurchasePayment, PurchaseDraftLine, PurchaseMeta, Courier, DeliveryOrder, PetMovement, DemoDB, Invoice, InvoiceItem, CheckoutItem, SaleMeta, Customer, DiscountType, PaymentMethod, PaymentSplit, WhatsAppMessage, AuditEntry, LoginEvent, PetNote, Expense, ExpenseMethod, ReturnMeta, RetailReturnResult, HealthMetric, ClinicVisit , Surgery, LabResult, LabDeviceLink, LabDeviceInbox, LabStatusValue, PetProblem, CareEntry, FeatureRequest, GeneratedBarcode, StoreProfile, StoreOrder, StoreOrderItem, StoreFrontInfo, StoreCatalogItem, Journey, JourneyEvent, JourneyKind, JourneyStage, JourneyPublicView, EditLine } from "@/types";
 import type { DeletedProduct, CourierSettlement, ReceiptsDay, ReceiptsTotal, TopProductRow, StaffSalesRow, InvoiceSearch } from "@/types";
+import type { PortalMe, PortalPetCard, PortalPetDetail, PortalAdmission, PortalJourney, PortalCodeRequest, PortalVerifyResult } from "@/types";
 import { receiptsOf, dueOf } from "./debt";
 import { phoneDigits } from "./phone";
 import { searchable } from "./utils";
@@ -259,6 +260,70 @@ function demoLoginLoad(): LoginEvent[] {
   return [];
 }
 function demoLoginSave(list: LoginEvent[]) { try { localStorage.setItem(DEMO_LOGIN_KEY, JSON.stringify(list)); } catch { /* ignore */ } }
+
+/* ---- بوّابة المالك (0154) — تخزينُ الوضع التجريبي ----
+ * بمفاتيح مستقلّة عن `DemoDB` عمداً: رفعُ رقم البذرة وسط جلسةِ تعديلٍ يسابق
+ * HMR فيُنشئ المفتاحَ الجديد بلا الحقول الجديدة ويثبت — مصيدةٌ وقعنا بيها
+ * قبلاً. والرموزُ والجلسات حالةُ جلسةٍ لا بذرةَ بيانات، فمحلُّها هنا أصلاً. */
+const DEMO_PORTAL_CODES_KEY = "vp_portal_codes";
+const DEMO_PORTAL_SESSIONS_KEY = "vp_portal_sessions";
+interface DemoPortalCode { code: string; expires: number; attempts: number }
+interface DemoPortalSession { slug: string; key: string; expires: string }
+
+function readPortalCodes(): Record<string, DemoPortalCode> {
+  try { const r = localStorage.getItem(DEMO_PORTAL_CODES_KEY); if (r) return JSON.parse(r) as Record<string, DemoPortalCode>; } catch { /* ignore */ }
+  return {};
+}
+function writePortalCodes(m: Record<string, DemoPortalCode>) {
+  try { localStorage.setItem(DEMO_PORTAL_CODES_KEY, JSON.stringify(m)); } catch { /* ignore */ }
+}
+function readPortalSessions(): Record<string, DemoPortalSession> {
+  try { const r = localStorage.getItem(DEMO_PORTAL_SESSIONS_KEY); if (r) return JSON.parse(r) as Record<string, DemoPortalSession>; } catch { /* ignore */ }
+  return {};
+}
+function writePortalSessions(m: Record<string, DemoPortalSession>) {
+  try { localStorage.setItem(DEMO_PORTAL_SESSIONS_KEY, JSON.stringify(m)); } catch { /* ignore */ }
+}
+/** الجلسةُ الحيّة وحدها — المنتهيةُ تُكنس عند أوّل لمسة. */
+function portalSession(token: string): DemoPortalSession | null {
+  const all = readPortalSessions();
+  const s = all[token];
+  if (!s) return null;
+  if (new Date(s.expires).getTime() <= Date.now()) {
+    delete all[token]; writePortalSessions(all);
+    return null;
+  }
+  return s;
+}
+/** الرقودُ المفتوح لحيوان — مرآةُ الاستعلام الفرعي بـportal_me. */
+function portalAdmissionOf(db: DemoDB, petId: string): PortalAdmission | null {
+  const a = (db.admissions ?? [])
+    .filter((x) => x.pet_id === petId && x.status === "active")
+    .sort((x, y) => String(y.admitted_on).localeCompare(String(x.admitted_on)))[0];
+  return a ? { kind: a.kind, since: a.admitted_on ?? null, reason: a.reason ?? null } : null;
+}
+/** الرحلةُ الحيّة غيرُ الصامتة — النوعُ معها لأن تسميةَ المرحلة تُقرأ به. */
+function portalJourneyOf(db: DemoDB, petId: string): PortalJourney | null {
+  const j = (db.journeys ?? []).find((x) => x.pet_id === petId && x.status === "active" && !x.silent);
+  return j ? { kind: j.kind, stage: j.stage } : null;
+}
+/** بطاقةُ الحيوان بقائمة «حيواناتي». */
+function portalCardOf(db: DemoDB, p: Pet): PortalPetCard {
+  const today = localISO();
+  const doses = (db.treatments ?? []).filter((t) => t.pet_id === p.id && t.day === today);
+  const nextVax = (db.vaccinations ?? [])
+    .filter((v) => v.pet_id === p.id && v.due_date && !v.administered_at)
+    .sort((a, b) => String(a.due_date).localeCompare(String(b.due_date)))[0];
+  return {
+    id: p.id, name: p.name, species: p.species ?? null, breed: p.breed ?? null,
+    sex: p.sex ?? null, dob: p.dob ?? null, photo_url: p.photo_url ?? null,
+    weight_kg: p.current_weight_kg ?? null,
+    admission: portalAdmissionOf(db, p.id),
+    journey: portalJourneyOf(db, p.id),
+    next_vaccine: nextVax ? { name: nextVax.name, due_date: nextVax.due_date ?? null } : null,
+    today: { total: doses.length, given: doses.filter((t) => !!t.administered_at).length },
+  };
+}
 
 // ---- Lab lifecycle (LIS) helpers, shared by demo + cloud repos. ----
 const LAB_STAGE_COL: Record<string, keyof LabResult> = {
@@ -1468,6 +1533,117 @@ const demoRepo = {
     (db.storeOrders ??= []).unshift(order);
     saveDB(db);
     return { ok: true, order_no: order.order_no, total };
+  },
+
+  /* ---- بوّابة المالك (0154) — مرآةُ دوالّ portal_* ----
+   * تفرض **نفس حرّاس الخادم** لا شكلَها فقط: ردٌّ موحَّد سواء كان الرقم مسجّلاً
+   * أو لا، وخمسُ محاولاتٍ ثم يُحرق الرمز، وعشرُ دقائق للصلاحية. لأن فحوصَ
+   * المنطق تجري على النسخة التجريبية — فحارسٌ ناقصٌ هنا حارسٌ لم يُفحص. */
+  async portalRequestCode(slug: string, phone: string): Promise<PortalCodeRequest> {
+    const db = loadDB();
+    const sp = db.storeProfile;
+    if (!sp || sp.slug !== normalizeSlug(slug)) return { ok: false, error: "closed" };
+    const key = phoneKey(phone);
+    if (!key || key.length < 8) return { ok: false, error: "bad_phone" };
+    const pets = db.pets.filter((p) => phoneKey(p.owner_phone ?? "") === key && !p.deceased);
+    // لا صاحبَ لهذا الرقم: نفس الرد بالضبط — الفرقُ يكشف زبائن العيادة.
+    if (pets.length === 0) return { ok: true };
+    const code = String(Math.floor(Math.random() * 1_000_000)).padStart(6, "0");
+    const codes = readPortalCodes();
+    codes[`${normalizeSlug(slug)}|${key}`] = { code, expires: Date.now() + 10 * 60_000, attempts: 0 };
+    writePortalCodes(codes);
+    // التجريبيّ هو وضعُ التجربة نفسه — لا مزوّدَ رسائل أصلاً بلا خادم.
+    return { ok: true, test_code: code };
+  },
+  async portalVerifyCode(slug: string, phone: string, code: string): Promise<PortalVerifyResult> {
+    const db = loadDB();
+    const sp = db.storeProfile;
+    if (!sp || sp.slug !== normalizeSlug(slug)) return { ok: false, error: "closed" };
+    const key = phoneKey(phone);
+    if (!key || key.length < 8) return { ok: false, error: "bad_code" };
+    const codes = readPortalCodes();
+    const id = `${normalizeSlug(slug)}|${key}`;
+    const row = codes[id];
+    // «ما موجود» و«منتهي» و«غلط» ترجع الرسالة نفسها — لا تفريقَ يفيد المخمِّن.
+    if (!row || row.expires <= Date.now()) { delete codes[id]; writePortalCodes(codes); return { ok: false, error: "bad_code" }; }
+    if (row.attempts >= 5) { delete codes[id]; writePortalCodes(codes); return { ok: false, error: "too_many" }; }
+    if (row.code !== (code ?? "").trim()) {
+      row.attempts += 1; writePortalCodes(codes);
+      return { ok: false, error: "bad_code" };
+    }
+    delete codes[id]; writePortalCodes(codes);
+    const token = uid("pt") + Math.random().toString(36).slice(2, 10);
+    const expires = new Date(Date.now() + 60 * 24 * 3600_000).toISOString();
+    const sessions = readPortalSessions();
+    sessions[token] = { slug: normalizeSlug(slug), key, expires };
+    writePortalSessions(sessions);
+    return { ok: true, token, expires_at: expires };
+  },
+  async portalMe(token: string): Promise<PortalMe | null> {
+    const s = portalSession(token);
+    if (!s) return null;
+    const db = loadDB();
+    const pets = db.pets
+      .filter((p) => phoneKey(p.owner_phone ?? "") === s.key && !p.deceased)
+      .sort((a, b) => a.name.localeCompare(b.name));
+    return {
+      clinic: {
+        // الفارغُ يعني «ما عندي اسم» — والواجهةُ تختار الكلمةَ البديلة بلغتها.
+        // اسمٌ افتراضيٌّ عربيٌّ هنا يظهر كما هو لمن يقرأ بالإنكليزية.
+        name: getClinicName() || "",
+        logo_url: getClinicLogo(),
+        phone: db.storeProfile?.whatsapp ?? null,
+        whatsapp: db.storeProfile?.whatsapp ?? null,
+        slug: db.storeProfile?.slug ?? null,
+      },
+      show_medical: true, // التجريبيّ يعرض كلّ شيء — لا قرارَ عيادةٍ محفوظاً هنا
+      pets: pets.map((p) => portalCardOf(db, p)),
+    };
+  },
+  async portalPet(token: string, petId: string): Promise<PortalPetDetail | null> {
+    const s = portalSession(token);
+    if (!s) return null;
+    const db = loadDB();
+    // الملكيةُ تُفحص هنا كما بالقاعدة: الرقمُ هو الحقّ، لا معرّفُ الحيوان وحده.
+    const p = db.pets.find((x) => x.id === petId && phoneKey(x.owner_phone ?? "") === s.key && !x.deceased);
+    if (!p) return null;
+    const today = localISO();
+    return {
+      pet: {
+        id: p.id, name: p.name, species: p.species ?? null, breed: p.breed ?? null,
+        sex: p.sex ?? null, dob: p.dob ?? null, color: p.color ?? null,
+        photo_url: p.photo_url ?? null, weight_kg: p.current_weight_kg ?? null,
+        serial: p.serial ?? null,
+      },
+      admission: portalAdmissionOf(db, p.id),
+      journey: portalJourneyOf(db, p.id),
+      today: (db.treatments ?? [])
+        .filter((t) => t.pet_id === p.id && t.day === today)
+        .sort((a, b) => (a.time ?? "").localeCompare(b.time ?? ""))
+        .map((t) => ({ id: t.id, label: t.medication ?? null, time: t.time ?? null, given: !!t.administered_at })),
+      vaccines: (db.vaccinations ?? [])
+        .filter((v) => v.pet_id === p.id)
+        .sort((a, b) => String(b.administered_at ?? b.due_date ?? "").localeCompare(String(a.administered_at ?? a.due_date ?? "")))
+        .map((v) => ({
+          id: v.id, name: v.name, due_date: v.due_date ?? null, administered_at: v.administered_at ?? null,
+          dose_number: v.dose_number ?? null, doses_total: v.doses_total ?? null,
+        })),
+      weights: (db.weightLogs ?? [])
+        .filter((w) => w.pet_id === p.id)
+        .sort((a, b) => String(b.measured_at).localeCompare(String(a.measured_at)))
+        .slice(0, 12).reverse()
+        .map((w) => ({ kg: w.weight_kg, at: w.measured_at })),
+      appointments: (db.appointments ?? [])
+        .filter((a) => a.pet_id === p.id && a.status !== "cancelled" && a.status !== "no_show"
+          && new Date(a.scheduled_at).getTime() > Date.now() - 24 * 3600_000)
+        .sort((a, b) => a.scheduled_at.localeCompare(b.scheduled_at))
+        .map((a) => ({ id: a.id, at: a.scheduled_at, status: a.status })),
+    };
+  },
+  async portalLogout(token: string): Promise<void> {
+    const sessions = readPortalSessions();
+    delete sessions[token];
+    writePortalSessions(sessions);
   },
 
   /* ---------------- Companies (الشركات) — inventory grouping ---------------- */
@@ -3603,6 +3779,47 @@ const supabaseRepo: typeof demoRepo = {
     return (data ?? { ok: false, error: "unknown" }) as { ok: boolean; error?: string; order_no?: string; total?: number; min_order?: number };
   },
 
+  /* ---- بوّابة المالك (0154) ----
+   * القصُّ كلُّه بالقاعدة: هذه الدوالّ تمرّر ولا تُقرّر. أيُّ ترشيحٍ يُكتب هنا
+   * بدل هناك يصير زينةً — من يملك المفتاح العلنيّ ينادي الدالّة بنفسه. */
+  async portalRequestCode(slug, phone) {
+    const { data, error } = await sbc().rpc("portal_request_code", { p_slug: slug, p_phone: phone });
+    if (error) throw new Error(error.message);
+    return (data ?? { ok: false, error: "unknown" }) as PortalCodeRequest;
+  },
+  async portalVerifyCode(slug, phone, code) {
+    const { data, error } = await sbc().rpc("portal_verify_code", { p_slug: slug, p_phone: phone, p_code: code });
+    if (error) throw new Error(error.message);
+    return (data ?? { ok: false, error: "unknown" }) as PortalVerifyResult;
+  },
+  async portalMe(token) {
+    const { data, error } = await sbc().rpc("portal_me", { p_token: token });
+    if (error) throw new Error(error.message);
+    const d = data as ({ ok?: boolean } & PortalMe) | null;
+    // جلسةٌ ماتت أو أُبطلت: null تعني «اطلب رمزاً من جديد» لا «صار خطأ».
+    if (!d?.ok) return null;
+    return { clinic: d.clinic, show_medical: !!d.show_medical, pets: d.pets ?? [] };
+  },
+  async portalPet(token, petId) {
+    const { data, error } = await sbc().rpc("portal_pet", { p_token: token, p_pet: petId });
+    if (error) throw new Error(error.message);
+    const d = data as ({ ok?: boolean } & PortalPetDetail) | null;
+    if (!d?.ok) return null;
+    return {
+      pet: d.pet,
+      admission: d.admission ?? null,
+      journey: d.journey ?? null,
+      today: d.today ?? [],
+      vaccines: d.vaccines ?? [],
+      weights: d.weights ?? [],
+      appointments: d.appointments ?? [],
+    };
+  },
+  async portalLogout(token) {
+    // الخروجُ لا يُفشِّل شيئاً: الرمزُ يُمحى محلياً على أي حال.
+    try { await sbc().rpc("portal_logout", { p_token: token }); } catch { /* تجاهل */ }
+  },
+
   async listCompanies(clinicId) {
     return allPages<Company>(() => {
       let q = sbc().from("companies").select("*").order("name", { ascending: true });
@@ -4226,6 +4443,9 @@ const READ_ONLY_ALLOWED = new Set<string>([
   // --- واجهات الزبون العامة (تعمل خارج جلسة العيادة) ---
   "storeFrontPublic", "storeCatalogPublic", "placeStoreOrder", "trackJourneyPublic",
   "reactJourneyPublic", "claimPet", "claimPetsByPhone",
+  // بوّابة المالك (0154): اشتراكُ العيادة شأنٌ بينها وبين المنصّة — وقفُ
+  // البوّابة يعاقب المراجعَ الذي لا ناقةَ له ولا جمل، ولا يضغط على العيادة.
+  "portalRequestCode", "portalVerifyCode", "portalMe", "portalPet", "portalLogout",
   // --- سجلات تشغيلية لا تمثّل إدخال بيانات (وحجبها يكسر الدخول) ---
   "logLogin", "logClientEvent",
 ]);
