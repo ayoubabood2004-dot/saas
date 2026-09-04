@@ -558,6 +558,8 @@ export type InvoiceStatus = "paid" | "refunded";
 export interface Invoice {
   id: string;
   clinic_id?: string | null;
+  /** تجزئة أو جملة (0156). غيابُه = تجزئة — كلُّ صفوف التاريخ كذلك. */
+  sale_kind?: SaleKind | null;
   /** Walk-in customer captured at sale time (retail module; optional). */
   customer_name?: string | null;
   customer_phone?: string | null;
@@ -690,6 +692,11 @@ export interface LabResult {
 export type LabStatusValue = "ordered" | "collected" | "running" | "resulted" | "verified" | "canceled";
 
 /** Sale-level metadata captured by the retail builder and sent to checkout. */
+/** نوعُ البيعة (0156). تجزئةٌ افتراضاً؛ والجملةُ تُعلَن حتى تُفرَّق بالتقارير —
+ *  بيعُ الجملة هامشُه صفرٌ أو قريبٌ منه بالتصميم، فبلا علامةٍ يقرأ التقريرُ
+ *  البيعةَ المتعمَّدة خسارةً. */
+export type SaleKind = "retail" | "wholesale";
+
 export interface SaleMeta {
   customer_name?: string | null;
   customer_phone?: string | null;
@@ -709,6 +716,8 @@ export interface SaleMeta {
   staff_id?: string | null;
   /** Free-text note the doctor/cashier attached at checkout. */
   notes?: string | null;
+  /** تجزئة أو جملة — تكتبها retail_checkout بنفس معاملة الفاتورة (0156). */
+  sale_kind?: SaleKind | null;
   /** مرجعُ المحاولة (0135): يولّده الجهاز مرّةً لكل بيعة ويثبت عبر كل إعادة.
    *  به تعرف القاعدة أن الطلب الثاني هو **نفس** البيعة لا بيعةً جديدة — فلا
    *  فاتورةَ مكرّرة ولا خصمَ مخزونٍ مرّتين حين ينقطع النت بعد وصول الطلب. */

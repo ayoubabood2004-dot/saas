@@ -5,7 +5,7 @@ import {
   Search, Barcode, Plus, Minus, Trash2, ShoppingCart, User, Phone, Tag, Percent, BadgePercent,
   Banknote, CreditCard, ArrowLeftRight, CheckCircle2, Printer, Sparkles, TrendingUp, Package, PawPrint, X,
   Stethoscope, Pencil, Pill, Syringe, CalendarClock, Wallet, StickyNote, Bike, UserCheck, AlertTriangle, Undo2,
-  ChevronUp, ChevronDown, PanelLeftClose, PanelLeftOpen, Scale, RotateCcw, Building2, SlidersHorizontal,
+  ChevronUp, ChevronDown, PanelLeftClose, PanelLeftOpen, Scale, RotateCcw, Building2, SlidersHorizontal, Layers,
 } from "lucide-react";
 import type { Product, Invoice, InvoiceItem, CheckoutItem, SaleMeta, PaymentMethod, PaymentSplit, DiscountType, Customer, Service, ServiceCatalog, Species, Pet, Courier } from "@/types";
 import { repo, resolveDiscount } from "@/lib/repo";
@@ -470,7 +470,7 @@ function PosLayoutMenu({ layout, onChange, axis, isLg, nudge, reset }: {
   );
 }
 
-export function SaleBuilder({ products, clinicId, onSold, prefill }: { products: Product[]; clinicId?: string; onSold: () => void; prefill?: RetailPrefill | null }) {
+export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = false }: { products: Product[]; clinicId?: string; onSold: () => void; prefill?: RetailPrefill | null; wholesale?: boolean }) {
   const { t, i18n } = useTranslation();
   const toast = useToast();
   const print = useInvoicePrinter();
@@ -478,8 +478,38 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
   const { has } = useEntitlements();
   const canDebt = has("debt"); // البيع بالدين — super plan only (full during trial)
 
+  /* ── البيع بالجملة (0156) ─────────────────────────────────────────────
+   * الفرقُ الوحيد: السطرُ **يبدأ** على سعر الشراء بدل سعر البيع. وبعدها هو
+   * سعرٌ عاديّ قابلٌ للتعديل — الطبيب يرفعه بيده فيصير هامشاً صغيراً، أو
+   * يتركه فيبيع بالكلفة. فلا وضعٌ ثانٍ للتسعير، إنما نقطةُ بدايةٍ ثانية.
+   *
+   * ومسوّدةُ الجملة بمفتاحٍ مستقلّ: المفتاحُ المشترك كان يعني أن مجرّدَ فتح
+   * شاشة الجملة يمحو سلّةَ تجزئةٍ معلّقةً لزبونٍ واقفٍ على الكاونتر. */
+  const draftScope = wholesale ? `${clinicId ?? "default"}:wholesale` : clinicId;
+
+  /** سعرُ البدء لهذا المنتج بالوضع الحالي. */
+  const listPrice = (p: Product) => (wholesale ? p.purchase_price : p.sell_price);
+  /** وسعرُ المفرد: بالجملة يُشتقّ من الكلفة ÷ عدد الحبّات، لا من سعر المفرد. */
+  const listSubPrice = (p: Product) => {
+    if (!wholesale) return p.sub_unit_price ?? 0;
+    const per = p.units_per_box ?? 0;
+    return per > 0 ? Math.round((p.purchase_price / per) * 100) / 100 : 0;
+  };
+  /* منتجٌ ما انكتبت كلفتُه أبداً كلفتُه صفر — وبيعُ الجملة يبيعه ببلاش بصمت،
+   * والقاعدةُ تقبله (حارسُها `unit_price >= 0` وحده). مقيسٌ على الإنتاج: ١٠٢
+   * منتجاً يُباع اليوم بسعرٍ حقيقيّ وكلفتُه صفر. فنمنعه ونقول السبب. */
+  const blockZeroCost = (p: Product): boolean => {
+    if (!wholesale || p.purchase_price > 0) return false;
+    playWarning();
+    toast.error(
+      t("retail.wholesale.noCost", "ما مكتوب سعر شراء لهذا المنتج"),
+      t("retail.wholesale.noCostHint", { name: p.name, defaultValue: "«{{name}}» راح ينباع بصفر. اكتب سعر شرائه بالمخزون أول." }),
+    );
+    return true;
+  };
+
   // Restore an unfinished walk-in sale (see SaleDraft). Read ONCE on mount.
-  const [draft0] = useState(() => (prefill ? null : loadSaleDraft(clinicId)));
+  const [draft0] = useState(() => (prefill ? null : loadSaleDraft(draftScope)));
 
   const [cart, setCart] = useState<Line[]>(draft0?.cart ?? []);
   const [browseTab, setBrowseTab] = useState<"products" | "services" | "meds">("products");
@@ -707,7 +737,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
   const addReturn = (p: Product, n = takeMult()) =>
     bump(`r:${p.id}`, () => ({
       id: `r:${p.id}`, kind: "product", name: p.name, barcode: p.barcode ?? null,
-      unit_price: p.sell_price, unit_cost: p.purchase_price,
+      unit_price: listPrice(p), unit_cost: p.purchase_price,
       qty: 1, stock: null, product_id: p.id, subcategory: p.subcategory ?? null,
       ret: true,
     }), n);
@@ -715,14 +745,15 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
   // منتج يُباع بالوزن (كتلة): لا يُضاف بمسحةٍ واحدة — يفتح منتقي الوزن ليُختار
   // الكيلو فيُحسب السعر خطياً. المضاعِف لا معنى له هنا (الوزن يُختار بيده).
   const addWeightLine = (p: Product, kg: number, ret: boolean) => {
+    if (blockZeroCost(p)) return;
     const id = ret ? `r:${p.id}` : `p:${p.id}`;
     const qty = Math.round(kg * 1000) / 1000;
     const line: Line = {
       id, kind: "product", name: p.name, barcode: p.barcode ?? null,
-      unit_price: p.sell_price, unit_cost: p.purchase_price,
+      unit_price: listPrice(p), unit_cost: p.purchase_price,
       qty, stock: ret || p.pooled ? null : p.stock,
       product_id: p.id, subcategory: p.subcategory ?? null,
-      byWeight: true, perKgPrice: p.sell_price, perKgCost: p.purchase_price, ret: ret || undefined,
+      byWeight: true, perKgPrice: listPrice(p), perKgCost: p.purchase_price, ret: ret || undefined,
     };
     // الوزن يُستبدل لا يُجمَع: الكاشير يختار الوزن الكلّي، فإعادة الفتح تعدّله.
     // لكن **سعر الكيلو المعدَّل بيد الكاشير يبقى**: تعديلُ الوزن لا يجوز أن
@@ -735,6 +766,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
   };
 
   const addProduct = (p: Product, n = takeMult()) => {
+    if (blockZeroCost(p)) return;
     if (p.sold_by_weight) { playTap(); setWeightFor({ p, ret: retMode }); return; }
     return retMode ? addReturn(p, n) : bump(`p:${p.id}`, () => {
       const hasSub = !!p.has_sub_unit && !!p.units_per_box && p.units_per_box > 0;
@@ -744,7 +776,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
       const subCost = hasSub && unitsPerBox ? Math.round((p.purchase_price / unitsPerBox) * 100) / 100 : 0;
       return {
         id: `p:${p.id}`, kind: "product", name: p.name, barcode: p.barcode ?? null,
-        unit_price: startSub ? (p.sub_unit_price ?? 0) : p.sell_price,
+        unit_price: startSub ? listSubPrice(p) : listPrice(p),
         unit_cost: startSub ? subCost : p.purchase_price,
         // A pooled (legacy, unknown-count) product sells from its section pool —
         // it has no own per-barcode count, so leave the cart line UNCAPPED (the
@@ -752,7 +784,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
         // is what collapsed a second scan to qty 0.
         qty: 1, stock: p.pooled ? null : p.stock, product_id: p.id, subcategory: p.subcategory ?? null,
         hasSubUnit: hasSub, subUnitName: p.sub_unit_name ?? null, unitsPerBox,
-        boxPrice: p.sell_price, subPrice: p.sub_unit_price ?? null, boxCost: p.purchase_price,
+        boxPrice: listPrice(p), subPrice: wholesale ? listSubPrice(p) : (p.sub_unit_price ?? null), boxCost: p.purchase_price,
         saleUnit: startSub ? "sub" : "box",
       };
     }, n);
@@ -1035,7 +1067,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
   // entry still starts clean (see draft0's load guard); this only saves what the
   // sale currently holds.
   useEffect(() => {
-    saveSaleDraft(clinicId, { cart, name, phone, salePets, notes: saleNotes, discountType, discountValue, finalOverride, cashierId, promoOn });
+    saveSaleDraft(draftScope, { cart, name, phone, salePets, notes: saleNotes, discountType, discountValue, finalOverride, cashierId, promoOn });
   }, [clinicId, cart, name, phone, salePets, saleNotes, discountType, discountValue, finalOverride, cashierId, promoOn]);
 
   // ---- Payment: full, split, partial (credit), or over-tendered (change due) ----
@@ -1183,7 +1215,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
 
   const reset = () => {
     saleRefRef.current = null;   // بيعةٌ جديدة ⇒ مرجعٌ جديد
-    clearSaleDraft(clinicId);
+    clearSaleDraft(draftScope);
     setCart([]); setQuery(""); setDiscountValue(""); setFinalOverride(null); setEditingTotal(false);
     setDiscountType("percent"); setPayments([{ method: "cash", amount: 0 }]); setPaidEdited(false); setPartialMode(false); setDone(null); setLastPrints(0);
     setPromoOn([]);
@@ -1488,6 +1520,8 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
         staff_id: cashierId,
         notes: saleNotes.trim() || null,
         client_ref: saleRefRef.current,
+        // العلامةُ تنزل بنفس معاملة الفاتورة (0156) — لا نداءٌ ثانٍ بعدها.
+        sale_kind: wholesale ? "wholesale" : "retail",
       };
       const invoice = await withTimeout(repo.retailCheckout(items, meta), 12000);
       // Delivery order wrapping the invoice: stock is already deducted; the COD
@@ -1553,7 +1587,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
       // sync runs AFTER, time-bounded and non-fatal, so its latency can never freeze
       // the receipt/print UI even if Supabase stalls mid-flow.
       setDone({ invoice, items: invItems });
-      clearSaleDraft(clinicId); // sale is final — drop the saved draft
+      clearSaleDraft(draftScope); // sale is final — drop the saved draft
       // بيع قادم من المختبر؟ علّم النتيجة «مفوترة» تلقائياً — الحلقة انغلقت.
       if (prefill?.labId) void repo.setLabBilled(prefill.labId, true).catch(() => {});
       // الاتجاه المعاكس: خدمة من تصنيف «المختبر» بيعت لحيوان معروف → سجل
@@ -1760,6 +1794,15 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
     </div>
   );
   return (
+    <>
+    {/* شريطٌ لا يُخطئه النظر: الكاشير لازم يعرف أن الأسعار الظاهرة كلفةٌ لا
+        سعرَ بيع — الخطأ هنا يبيع رفّاً كاملاً بالكلفة بلا أن ينتبه أحد. */}
+    {wholesale && (
+      <div className="mb-2.5 flex items-center gap-2 rounded-xl border border-warn-300 bg-warn-50 px-3 py-2 text-xs font-extrabold text-warn-800 dark:border-warn-500/40 dark:bg-warn-500/15 dark:text-warn-200">
+        <Layers size={15} className="shrink-0" />
+        {t("retail.wholesale.badge", "بيع بالجملة — السعر يبدي بسعر الشراء")}
+      </div>
+    )}
     <div
       ref={(el) => {
         posRootRef.current = el;
@@ -2137,7 +2180,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
                         <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-2xs font-bold tabular-nums", out ? "bg-danger-50 text-danger-600 dark:bg-danger-500/15" : "bg-surface-2 text-ink-muted")}>
                           {out ? t("retail.out", "out") : byWeight ? t("retail.wKg", { n: fmtKg(p.stock), defaultValue: "{{n}} كغ" }) : formatNum(p.stock)}
                         </span>
-                        <span className="w-24 shrink-0 text-end text-sm font-bold tabular-nums text-ink">{money(p.sell_price)}{byWeight ? <span className="text-2xs font-medium text-ink-subtle">{t("retail.perKgShort", "/كغ")}</span> : ""}</span>
+                        <span className="w-24 shrink-0 text-end text-sm font-bold tabular-nums text-ink">{money(listPrice(p))}{byWeight ? <span className="text-2xs font-medium text-ink-subtle">{t("retail.perKgShort", "/كغ")}</span> : ""}</span>
                         <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-brand-600 text-white opacity-60 transition group-hover:opacity-100"><Plus size={13} /></span>
                       </button>
                     );
@@ -2155,7 +2198,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
                       <span className="grid h-9 w-9 place-items-center rounded-xl bg-surface-2 text-ink-subtle group-hover:bg-white/60 dark:group-hover:bg-surface-1">{byWeight ? <Scale size={17} /> : <Package size={17} />}</span>
                       <span className="mt-2 line-clamp-2 min-h-[2.2rem] text-xs font-semibold leading-tight text-ink">{p.name}</span>
                       <span className="mt-1 flex items-center justify-between">
-                        <span className="text-sm font-bold text-ink tabular-nums">{money(p.sell_price)}{byWeight ? <span className="text-2xs font-medium text-ink-subtle">{t("retail.perKgShort", "/كغ")}</span> : ""}</span>
+                        <span className="text-sm font-bold text-ink tabular-nums">{money(listPrice(p))}{byWeight ? <span className="text-2xs font-medium text-ink-subtle">{t("retail.perKgShort", "/كغ")}</span> : ""}</span>
                         <span className={cn("text-2xs", out ? "text-danger-600" : "text-ink-subtle")}>{out ? t("retail.out", "out") : byWeight ? t("retail.wKg", { n: fmtKg(p.stock), defaultValue: "{{n}} كغ" }) : t("retail.nLeft", { n: p.stock, defaultValue: "{{n}} left" })}</span>
                       </span>
                     </button>
@@ -2946,6 +2989,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill }: { products:
         />
       )}
     </div>
+    </>
   );
 }
 
