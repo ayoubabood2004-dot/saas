@@ -13,6 +13,7 @@ import {
   ChevronLeft, ChevronRight, LayoutDashboard, History, TrendingDown, Plus, BookUser,
   Landmark, ShoppingBag,
   Undo2,
+  BookOpen,
 } from "lucide-react";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
 import type { Pet, Invoice, InvoiceItem, Product, ProductCategory, MedicalVisit, PaymentMethod, Species, MediaItem, TreatmentEntry, AuditEntry, LoginEvent, Expense, ExpenseMethod, LabResult, Purchase, PurchaseItem } from "@/types";
@@ -25,6 +26,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { usePermissions } from "@/hooks/usePermissions";
 import { useOverride, noteLockedTap } from "@/lib/managerOverride";
 import { useToast, Skeleton, Button } from "@/components/ui";
+import { WithdrawalsLedger } from "@/components/reports/WithdrawalsLedger";
 import { money, formatNum, cn, dateLocale } from "@/lib/utils";
 import { displayCustomerName } from "@/lib/customerName";
 import { dueOf, isDebt, paidOf } from "@/lib/debt";
@@ -1642,6 +1644,7 @@ function ExpensesTab({ rows, total, netCash, cashCollected, rangeLabel, canRecor
   const [description, setDescription] = useState("");
   const [category, setCategory] = useState("");
   const [method, setMethod] = useState<ExpenseMethod>("cash");
+  const [view, setView] = useState<"list" | "ledger">("list");
   const [spentAt, setSpentAt] = useState(() => localISO(new Date()));
   const [busy, setBusy] = useState(false);
   const [confirmDel, setConfirmDel] = useState<string | null>(null);
@@ -1780,7 +1783,29 @@ function ExpensesTab({ rows, total, netCash, cashCollected, rangeLabel, canRecor
         </div>
       )}
 
-      {/* Ledger list */}
+      {/* عرضان لنفس الصفوف: قائمةٌ تجيب «شنو انسحب؟»، ودفترٌ يجيب «شكد اليوم؟
+          وشكد وصلنا؟» — بترقيم قيدٍ ورصيدٍ متراكم وطباعةِ A4. */}
+      <div className="flex flex-wrap items-center gap-1.5">
+        {(["list", "ledger"] as const).map((v) => (
+          <button key={v} type="button" onClick={() => { playTap(); setView(v); }}
+            aria-pressed={view === v}
+            className={cn("inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-sm font-semibold transition",
+              view === v ? "bg-brand-600 text-white shadow-soft" : "bg-surface-2 text-ink-muted hover:text-ink")}>
+            {v === "list" ? <TrendingDown size={15} /> : <BookOpen size={15} />}
+            {v === "list" ? t("rpt.exp.viewList", "قائمة") : t("rpt.exp.viewLedger", "دفتر")}
+          </button>
+        ))}
+      </div>
+
+      {view === "ledger" ? (
+        <Panel title={t("rpt.exp.ledger.title", "دفتر السحوبات")} icon={BookOpen}>
+          <WithdrawalsLedger
+            rows={rows}
+            rangeLabel={rangeLabel}
+            methodLabel={(m) => t(`rpt.exp.method.${m}`, expenseMethodMeta(m).label)}
+          />
+        </Panel>
+      ) : (
       <Panel title={t("rpt.exp.list", "سجلّ المصروفات")} icon={TrendingDown}>
         {rows.length === 0 ? <Empty text={t("rpt.exp.empty", "لا توجد مصروفات في هذه الفترة.")} /> : (
           <ul className="divide-y divide-line">
@@ -1815,6 +1840,7 @@ function ExpensesTab({ rows, total, netCash, cashCollected, rangeLabel, canRecor
           </ul>
         )}
       </Panel>
+      )}
     </div>
   );
 }
