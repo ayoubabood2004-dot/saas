@@ -915,7 +915,29 @@
     "scanAddFast": "Scan the barcode and type the count only — a known product goes to its place (company, section & prices) automatically",
     "stockJump": "Stock: {{from}} → {{to}}",
     "editOptional": "Adjust prices (optional)",
-    "collapse": "Collapse"
+    "collapse": "Collapse",
+    "charge": {
+      "title": "Unbilled claims",
+      "add": "Add a claim",
+      "amount": "Amount",
+      "reason": "Reason",
+      "reasonPlaceholder": "e.g. freight, price difference, damaged goods…",
+      "date": "Date",
+      "note": "Note",
+      "optional": "Optional",
+      "save": "Record claim",
+      "hint": "Adds to the company debt only — no stock movement and no cost.",
+      "needAmount": "Enter a valid amount",
+      "added": "Claim recorded",
+      "saveFail": "Could not record the claim",
+      "delFail": "Could not delete",
+      "settled": "Settled",
+      "settle": "Mark settled",
+      "unsettle": "Reopen",
+      "confirmDel": "Confirm delete?",
+      "delete": "Delete",
+      "ofWhich": "{{v}} of it claims"
+    }
   },
   "pos": {
     "title": "Inventory",

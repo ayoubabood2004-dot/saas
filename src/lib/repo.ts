@@ -17,6 +17,7 @@ import { supabase } from "./supabase";
 import { outboxEnqueue, outboxEnqueueRpc, isNetworkError } from "./outbox";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, AppointmentStatus, ClinicInfo, PublicStaff, DailyNote, TreatmentEntry, Admission, Branch, Reminder, Product, Company, CompanySection, Purchase, PurchaseItem, PurchasePayment, PurchaseDraftLine, PurchaseMeta, Courier, DeliveryOrder, PetMovement, DemoDB, Invoice, InvoiceItem, CheckoutItem, SaleMeta, Customer, DiscountType, PaymentMethod, PaymentSplit, WhatsAppMessage, AuditEntry, LoginEvent, PetNote, Expense, ExpenseMethod, ReturnMeta, RetailReturnResult, HealthMetric, ClinicVisit , Surgery, LabResult, LabDeviceLink, LabDeviceInbox, LabStatusValue, PetProblem, CareEntry, FeatureRequest, GeneratedBarcode, StoreProfile, StoreOrder, StoreOrderItem, StoreFrontInfo, StoreCatalogItem, Journey, JourneyEvent, JourneyKind, JourneyStage, JourneyPublicView, EditLine } from "@/types";
+import type { CompanyCharge } from "@/types";
 import type { DeletedProduct, CourierSettlement, ReceiptsDay, ReceiptsTotal, TopProductRow, StaffSalesRow, InvoiceSearch } from "@/types";
 import type { PortalMe, PortalPetCard, PortalPetDetail, PortalAdmission, PortalJourney, PortalCodeRequest, PortalVerifyResult } from "@/types";
 import { receiptsOf, dueOf } from "./debt";
@@ -1909,6 +1910,52 @@ const demoRepo = {
     saveDB(db);
     return purchase;
   },
+  /* ---- مطالبات الشركات اليدوية (0155) ----
+   * ما تطلبه الشركةُ ولا فاتورةَ شراءٍ له. تُجمع على الدين وحده — لا مخزونَ
+   * يتحرّك ولا كلفةَ تُحتسب — ولذلك هي صفٌّ مستقلٌّ لا فاتورةٌ وهميّة. */
+  async listCompanyCharges(_clinicId?: string): Promise<CompanyCharge[]> {
+    return (loadDB().companyCharges ?? [])
+      .slice()
+      .sort((a, b) => (b.charged_at || "").localeCompare(a.charged_at || "")
+        || (b.created_at || "").localeCompare(a.created_at || ""));
+  },
+  async addCompanyCharge(input: {
+    company_id: string; amount: number; reason?: string | null;
+    note?: string | null; charged_at?: string | null;
+  }): Promise<CompanyCharge> {
+    const amt = Math.round((Number(input.amount) || 0) * 100) / 100;
+    // نفس حارس القاعدة: موجبٌ حصراً. المطالبةُ تزيد الدين، والتنقيصُ تسديد.
+    if (!(amt > 0)) throw new Error("amount must be greater than zero");
+    const db = loadDB();
+    if (!db.companyCharges) db.companyCharges = [];
+    const row: CompanyCharge = {
+      id: uid("cc"), clinic_id: null, company_id: input.company_id, amount: amt,
+      reason: input.reason?.trim() || null,
+      note: input.note?.trim() || null,
+      // اليومُ المحلّي لا UTC — مطالبةٌ تُقيَّد بعد التاسعة مساءً كانت تُكتب بالأمس.
+      charged_at: input.charged_at || localISO(),
+      settled_at: null, created_by: null, created_at: new Date().toISOString(),
+    };
+    db.companyCharges.push(row);
+    saveDB(db);
+    return row;
+  },
+  /** الطيُّ والفكّ: `settled_at` وحده يتبدّل — لا يُعاد كتابةُ مبلغٍ ولا تاريخ. */
+  async setCompanyChargeSettled(id: string, settled: boolean): Promise<CompanyCharge | undefined> {
+    const db = loadDB();
+    const row = (db.companyCharges ?? []).find((x) => x.id === id);
+    if (!row) return undefined;
+    row.settled_at = settled ? new Date().toISOString() : null;
+    saveDB(db);
+    return row;
+  },
+  /** الحذفُ للخطأ بالإدخال وحده — التسويةُ طيٌّ لا محو. */
+  async deleteCompanyCharge(id: string): Promise<void> {
+    const db = loadDB();
+    db.companyCharges = (db.companyCharges ?? []).filter((x) => x.id !== id);
+    saveDB(db);
+  },
+
   /** سجل تسديدات فاتورة شراء — كل دفعة انسدّت على دين المورّد. */
   async listPurchasePayments(purchaseId: string): Promise<PurchasePayment[]> {
     return (loadDB().purchasePayments ?? [])
@@ -3899,6 +3946,43 @@ const supabaseRepo: typeof demoRepo = {
     // Atomic on the server: reverse old line stock, re-apply new lines, replace items.
     return need<Purchase>(await sbc().rpc("update_purchase", { p_purchase: purchaseId, p_lines: lines, p_meta: meta }));
   },
+  /* ---- مطالبات الشركات اليدوية (0155) ---- */
+  async listCompanyCharges(clinicId) {
+    // قبل تطبيق 0155 لا يوجد الجدول: قائمةٌ فارغة تُبقي الدفتر يعمل بلا
+    // مطالبات، بدل أن تسقط الشاشةُ كلُّها على ميزةٍ إضافية لم تنزل بعد.
+    try {
+      let q = sbc().from("company_charges").select("*").order("charged_at", { ascending: false });
+      if (clinicId) q = q.eq("clinic_id", clinicId);
+      const r = await q;
+      if (r.error) return [];
+      return (r.data ?? []).map((x) => ({ ...x, amount: Number(x.amount) || 0 })) as CompanyCharge[];
+    } catch {
+      return [];
+    }
+  },
+  async addCompanyCharge(input) {
+    const amt = Math.round((Number(input.amount) || 0) * 100) / 100;
+    if (!(amt > 0)) throw new Error("amount must be greater than zero");
+    const row = need<CompanyCharge>(await sbc().from("company_charges").insert({
+      company_id: input.company_id,
+      amount: amt,
+      reason: input.reason?.trim() || null,
+      note: input.note?.trim() || null,
+      // نتركه للقاعدة حين لا يختاره الطبيب: افتراضُها يوم بغداد لا يوم الخادم.
+      ...(input.charged_at ? { charged_at: input.charged_at } : {}),
+    }).select().single());
+    return { ...row, amount: Number(row.amount) || 0 };
+  },
+  async setCompanyChargeSettled(id, settled) {
+    const row = need<CompanyCharge>(await sbc().from("company_charges")
+      .update({ settled_at: settled ? new Date().toISOString() : null })
+      .eq("id", id).select().single());
+    return { ...row, amount: Number(row.amount) || 0 };
+  },
+  async deleteCompanyCharge(id) {
+    ok(await sbc().from("company_charges").delete().eq("id", id));
+  },
+
   async listPurchasePayments(purchaseId) {
     // قبل ترحيل 0076 لا يوجد جدول purchase_payments — أعد قائمة فارغة.
     try {
@@ -4428,6 +4512,7 @@ const READ_ONLY_ALLOWED = new Set<string>([
   "listInvoiceItems", "listInvoices", "listJourneyEvents", "listLabResults", "listLoginEvents",
   "listMedia", "listOpenClinicVisits", "listPetMovements", "listPetNotes", "listPets",
   "listProblems", "listProducts", "listPurchaseItems", "listPurchasePayments", "listPurchases",
+  "listCompanyCharges",
   "listReminders", "listStoreOrders", "listSurgeries", "listTreatments", "listVaccinations",
   "listVisits", "listWaiting", "listWeights", "listWhatsAppLog", "searchCustomers",
   // --- الرواتب: القراءة تبقى بالاشتراك المنتهي (الموظف يشوف قسيمته) ---
