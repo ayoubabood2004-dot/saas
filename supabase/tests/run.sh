@@ -22,7 +22,7 @@ DB=dvtest
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MIG="$HERE/../migrations"
 # الهجرات التي يغطّيها هذا المخطّط الأساس. زدها كل ما تنضاف موجة.
-WAVE="$MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql"
+WAVE="$MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_rls_coverage.sql"
 
 command -v "$PGBIN/initdb" >/dev/null || { echo "ما لكيت بوستغريس بـ $PGBIN"; exit 1; }
 
@@ -115,6 +115,17 @@ chk "ولا شرطٌ تغيّر"          "select تغير_شرطها::text     
 chk "ولا دورٌ تبدّل"          "select تغيرت_صلاحياتها::text from public.verify_rls_equivalence()" "0"
 chk "ولا لفٌّ مزدوج" \
     "select count(*)::text from pg_policies where qual like '%SELECT ( SELECT%' or with_check like '%SELECT ( SELECT%'" "0"
+# التغطية (0152): كلُّ جدولٍ إمّا له سياسة أو حجبٌ مقصودٌ معلَن. جدولٌ جديد
+# يُنسى بلا RLS يفشّل هنا قبل أن يبلغ عيادةً حيّة.
+chk "ولا جدولَ بلا حارس" \
+    "select count(*)::text from public.verify_rls_coverage()" "0"
+# والفحصُ يقدر أن يفشل: نُطفئ RLS عن جدولٍ عمداً فيُمسَك، ثم نعيده.
+$P -c "alter table pets disable row level security;" >/dev/null
+chk "والفحصُ يمسك المطفأ" \
+    "select count(*)::text from public.verify_rls_coverage() where الجدول='pets'" "1"
+$P -c "alter table pets enable row level security;" >/dev/null
+chk "ورجع نظيفاً بعد الإعادة" \
+    "select count(*)::text from public.verify_rls_coverage()" "0"
 chk "الكنس ممنوع على authenticated" \
     "select has_function_privilege('authenticated','public.purge_audit_log(int,int)','execute')::text" "false"
 chk "الكنس ممنوع على anon" \
