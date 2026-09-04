@@ -14,7 +14,7 @@
  * بالمفاتيح — انظر دراسة «doctorVet بلغات العالم» §٢.
  * ==========================================================================*/
 import { readFileSync, writeFileSync, existsSync } from "fs";
-import { execSync } from "child_process";
+import { execFileSync } from "child_process";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 
@@ -112,8 +112,21 @@ function hardcodedCount(path) {
  * ملفاً جديداً يفلت من الفحص، فيمرّ البناء محلياً ثم يسقط بناء الإنتاج بعد
  * أول commit — وقع هذا مرّتين. --others يضمّ الجديد، و--exclude-standard
  * يحترم .gitignore فلا يزحف على dist ولا node_modules. */
-const files = execSync("git ls-files --cached --others --exclude-standard 'src/**/*.ts' 'src/**/*.tsx'", { cwd: ROOT, encoding: "utf8" })
+/* بلا صَدَفة: execSync يمرّ بـcmd.exe على ويندوز، وcmd لا يقشّر العلامات
+ * المفردة — فيصل git مسارٌ حرفيّ بعلامتيه لا يطابق شيئاً، فترجع
+ * القائمةُ صفراً. النتيجة كانت أسوأ من تعطّل الحارس: صفرُ ملفاتٍ يعني صفرَ
+ * نصوصٍ صلبة، فيظنّها الحارسُ «تحسّناً» ويكتب خطَّ الأساس `{}` — ثم يسقط بناءُ
+ * الإنتاج على لينكس لأن سقفَ كل ملفٍ صار صفراً. execFileSync لا يمرّ بصَدَفة
+ * أصلاً، فالمسارُ يصل git كما هو على النظامين. */
+const files = execFileSync("git", ["ls-files", "--cached", "--others", "--exclude-standard", "src/**/*.ts", "src/**/*.tsx"], { cwd: ROOT, encoding: "utf8" })
   .split("\n").filter((f) => f && !f.startsWith("src/i18n/") && !f.endsWith(".d.ts"));
+
+/* وحتى لو فشل الجردُ بطريقةٍ أخرى لم نتوقّعها: صفرُ ملفاتٍ ليس «نظافةً»، هو
+ * عطلُ أداة. نقولها ولا نكتب خطَّ أساسٍ فارغاً فوق الصحيح. */
+if (files.length === 0) {
+  console.error("✗ i18n-guard: لم يُجرَد أيُّ ملف مصدر — عطلٌ بالأداة لا نظافةٌ بالشِفرة. خطُّ الأساس لم يُمَسّ.");
+  process.exit(1);
+}
 
 const counts = {};
 for (const f of files) {

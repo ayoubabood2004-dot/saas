@@ -3247,9 +3247,17 @@ const supabaseRepo: typeof demoRepo = {
   async listAdmissions(clinicId) {
     // Newest case first — order by the precise created_at so cases opened on the same
     // day still sort by real entry order (the day-only admitted_on can't distinguish them).
-    let q = sbc().from("admissions").select("*").order("created_at", { ascending: false });
-    if (clinicId) q = q.eq("clinic_id", clinicId);
-    return listOf<Admission>(await q);
+    //
+    // بصفحات لا بنداءٍ واحد: سقفُ الخادم ألفُ صفّ، وكان النداءُ العاري يرجّع
+    // أحدثَ ألف **بصمت** فيسقط ما قبلها من نظر الشاشة كلِّها — لا سجلَّ حركةٍ
+    // ولا حالةً قديمة ولا حيواناً باقياً بقفصه من قبل الألف. قِيس على الإنتاج:
+    // أنشطُ عيادةٍ عند ٣٢٧ حالة تنمو ١٣٠ بالشهر، أي تبلغ الحدَّ بعد نحو خمسة
+    // أشهر — والعطلُ يبدأ يومَها بلا رسالةٍ ولا عَرَض.
+    return allPages<Admission>(() => {
+      let q = sbc().from("admissions").select("*").order("created_at", { ascending: false });
+      if (clinicId) q = q.eq("clinic_id", clinicId);
+      return q;
+    });
   },
   async listAdmissionsForPet(petId) {
     return listOf<Admission>(await sbc().from("admissions").select("*").eq("pet_id", petId).order("created_at", { ascending: false }));
