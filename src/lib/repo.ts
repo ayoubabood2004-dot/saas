@@ -2192,6 +2192,14 @@ const demoRepo = {
     const ids = new Set(invoiceIds);
     return (loadDB().invoiceItems ?? []).filter((it) => ids.has(it.invoice_id));
   },
+  /** فواتيرُ بمعرّفاتها — لكشفِ حاملٍ يمتدّ شهوراً.
+   *  لقطةُ الصفحة تحمل آخرَ خمسةَ عشرَ يوماً + الديونَ المفتوحة (0150)، فطلبٌ
+   *  **حُصِّل** قبل شهرين فاتورتُه ليست فيها. الكشفُ يمشي على معرّفاتِ طلباته
+   *  لا على اللقطة، وإلا عرض قائمةً ناقصةً تبدو تامّة. */
+  async listInvoicesByIds(invoiceIds: string[]): Promise<Invoice[]> {
+    const ids = new Set(invoiceIds);
+    return (loadDB().invoices ?? []).filter((i) => ids.has(i.id));
+  },
   async reportReceiptsDaily(range: DateRange, _tz?: string): Promise<ReceiptsDay[]> {
     const lo = range.from ? new Date(range.from).getTime() : -Infinity;
     const hi = range.to ? new Date(range.to).getTime() : Infinity;
@@ -4089,6 +4097,13 @@ const supabaseRepo: typeof demoRepo = {
     if (invoiceIds.length === 0) return [];
     return inChunks(invoiceIds, (c) => allPages<InvoiceItem>(() => sbc().from("invoice_items").select("*").in("invoice_id", c)));
   },
+  async listInvoicesByIds(invoiceIds) {
+    if (invoiceIds.length === 0) return [];
+    // مرآةُ listInvoiceItemsFor: دفعاتٌ بالمعرّفات (طولُ الرابط) وصفحاتٌ كاملة
+    // (سقفُ الألف صفّ). و`allPages` ترمي الخطأ ولا ترجع قائمةً جزئية — كشفُ
+    // تحصيلٍ ناقصٌ يبدو تامّاً أخطرُ من خطأٍ ظاهر.
+    return inChunks(invoiceIds, (c) => allPages<Invoice>(() => sbc().from("invoices").select("*").in("id", c)));
+  },
   async reportReceiptsDaily(range, tz) {
     const rows = listOf<{ day: string; gross: number | string; net: number | string; invoices: number }>(
       await sbc().rpc("report_receipts_daily", { p_from: range.from ?? "1970-01-01", p_to: range.to ?? "2999-01-01", p_tz: tz ?? "Asia/Baghdad" }));
@@ -4453,7 +4468,7 @@ const READ_ONLY_ALLOWED = new Set<string>([
   "getPayrollPolicy", "listStaffComp", "listStaffRecurring", "listPayrollRuns",
   "listPayslips", "listPayslipLines", "listStaffLoans", "listLoanEvents",
   "listPayrollAdjustments", "listDeletedProducts", "productSaleLines", "listCourierSettlements",
-  "listInvoicesTouching", "customerInvoices", "listInvoiceItemsFor", "reportReceiptsDaily", "reportReceiptsTotal",
+  "listInvoicesTouching", "customerInvoices", "listInvoiceItemsFor", "listInvoicesByIds", "reportReceiptsDaily", "reportReceiptsTotal",
   "reportTopProducts", "reportStaff", "countInvoices", "searchInvoices", "countInvoicesMatching", "openDebts",
   // --- استعلامات مساعدة لا تكتب ---
   "checkStoreSlug", "slotTaken", "supportsBulkGroup", "supportsSupplierLedger",

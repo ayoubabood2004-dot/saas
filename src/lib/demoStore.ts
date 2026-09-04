@@ -307,7 +307,9 @@ function seed(): DemoDB {
   // Delivery couriers (سجل السواق) — sample drivers for the التوصيل module.
   const couriers: Courier[] = [
     { id: uid("cur"), name: "كرار التوصيل", phone: "07701234567", note: "دراجة — الكرادة والمناطق القريبة", active: true, created_at: new Date().toISOString() },
-    { id: uid("cur"), name: "شركة سبيد لايت", phone: "07809876543", note: "توصيل لكل بغداد", active: true, created_at: new Date().toISOString() },
+    // شركةٌ لا سائق: `kind` كان ناقصاً فسقطت للافتراضيّ 'driver'، وقسمُ الشركات
+    // لا يظهر بالوضع التجريبيّ إطلاقاً — فالميزةُ لا تُجرَّب قبل أن تُنشر.
+    { id: uid("cur"), name: "شركة سبيد لايت", phone: "07809876543", kind: "company", note: "توصيل لكل بغداد — تُحاسَب كل شهر", active: true, created_at: new Date().toISOString() },
   ];
 
   // Sections (أصناف) inside a company — the middle level of Company → Section → Barcode.

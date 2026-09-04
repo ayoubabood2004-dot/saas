@@ -18,6 +18,8 @@ import { Button, Badge, useToast } from "@/components/ui";
 import { openDeliverySlip } from "@/lib/deliveryPrint";
 import { invoiceNo } from "@/lib/invoicePrint";
 import { dueOf, round2 } from "@/lib/debt";
+import { CourierLedger } from "./CourierLedger";
+import { companyOwed } from "@/lib/courierLedger";
 import { cn, formatNum, money, localISO, formatDate, searchable } from "@/lib/utils";
 import { describeDbError } from "@/lib/errors";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
@@ -84,6 +86,17 @@ export function DeliveryPanel({ invoices, clinicId, onChanged }: { invoices: Inv
   /* شركات التوصيل: تحصيلٌ وسجلّ. */
   const [collectFor, setCollectFor] = useState<Courier | null>(null);
   const [ledgerFor, setLedgerFor] = useState<Courier | null>(null);
+  /** قسمان: توصيلٌ بسائق، وتوصيلٌ بشركةٍ تُحاسَب لاحقاً. المالُ يتصرّف بشكلٍ
+   *  مختلفٍ تماماً بينهما — السائقُ يسلّم يومَه، والشركةُ تُحصَّل بعد شهور —
+   *  فخلطُهما بشاشةٍ واحدة كان يخفي أيَّهما ينتظر ماذا. الاختيارُ يُحفظ. */
+  const [sec, setSec] = useState<"drivers" | "companies">(() => {
+    try { return localStorage.getItem("vp_delivery_scope") === "companies" ? "companies" : "drivers"; }
+    catch { return "drivers"; }
+  });
+  const pickSec = (s: "drivers" | "companies") => {
+    setSec(s); playTap();
+    try { localStorage.setItem("vp_delivery_scope", s); } catch { /* وضعُ التصفّح الخاص */ }
+  };
 
   const load = async () => {
     try {
@@ -105,7 +118,6 @@ export function DeliveryPanel({ invoices, clinicId, onChanged }: { invoices: Inv
   const orderNo = (o: DeliveryOrder) => invoiceNo(o.invoice_id);
   /** ما زال مبلغُ الطلب بذمّة حامله: مسلَّمٌ للزبون ولم يُحصَّل بعد. */
   const uncollected = (o: DeliveryOrder) => o.status === "delivered" && !o.collected_at;
-  const orderDue = (o: DeliveryOrder) => { const inv = invoiceOf(o.invoice_id); return inv ? dueOf(inv) : o.cod_amount; };
 
   /* ---- The three money moves — all built on the proven invoice machinery ---- */
   const deliver = async (o: DeliveryOrder) => {
@@ -221,10 +233,14 @@ export function DeliveryPanel({ invoices, clinicId, onChanged }: { invoices: Inv
   /* شركاتُ التوصيل: كلُّ شركةٍ نشطة، أو مؤرشفة ما زال عليها ذمّة. */
   const companies = useMemo(() => {
     const rows = couriers.filter(isCompany).map((c) => {
-      const open = allOrders.filter((o) => o.courier_id === c.id && uncollected(o));
-      const owed = round2(open.reduce((s, o) => s + orderDue(o), 0));
+      const mine = allOrders.filter((o) => o.courier_id === c.id);
+      // مصدرٌ واحد للرقم: `companyOwed` مكتوبةٌ بمعادلة `courier_settle` حرفياً
+      // (تستثني الفاتورةَ المردودة وذمّةَ الصفر) — فما يُعرض هنا هو ما ستقبله
+      // القاعدةُ يومَ التحصيل، لا رقمٌ ثانٍ يخالفه أمام المندوب.
+      const { owed, openOrders } = companyOwed(mine, invoiceOf);
+      const open = mine.filter((o) => uncollected(o));
       const last = settlements.find((s) => s.courier_id === c.id) ?? null;
-      return { c, open, owed, last };
+      return { c, open, owed, openOrders, last };
     });
     return rows.filter((r) => r.c.active || r.owed > 0.009).sort((a, b) => b.owed - a.owed);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -233,7 +249,10 @@ export function DeliveryPanel({ invoices, clinicId, onChanged }: { invoices: Inv
 
   const inTransit = round2(out.reduce((s, o) => s + o.cod_amount, 0));
   const today = localISO();
-  const receivedToday = round2(orders.filter((o) => o.status === "delivered" && (o.collected_at ?? o.delivered_at ?? "").slice(0, 10) === today && !!(o.collected_at ?? true)).reduce((s, o) => s + o.cod_amount, 0));
+  // الشرطُ الأخير كان `!!(o.collected_at ?? true)` — و`null ?? true` يساوي
+  // `true`، فالحارسُ صادقٌ **دائماً**: طلبُ شركةٍ سُلّم اليوم ولم يُحصَّل بعد
+  // كان يُحسب ضمن «استُلم اليوم» وهو لم يُستلم. الصوابُ فحصُ الختم نفسِه.
+  const receivedToday = round2(orders.filter((o) => o.status === "delivered" && !!o.collected_at && (o.collected_at ?? "").slice(0, 10) === today).reduce((s, o) => s + o.cod_amount, 0));
   const returnedToday = orders.filter((o) => o.status === "returned" && (o.returned_at ?? "").slice(0, 10) === today).length;
 
   return (
@@ -258,12 +277,43 @@ export function DeliveryPanel({ invoices, clinicId, onChanged }: { invoices: Inv
         <Button variant="secondary" leftIcon={<Users size={16} />} onClick={() => { playTap(); setCouriersOpen(true); }}>{t("retail.couriersBtn", "سجل السواق")}</Button>
       </div>
 
+      {/* قسمان — لأن المال يتصرّف بشكلٍ مختلف: السائق يسلّم يومَه، والشركة تُحاسَب بعد فترة */}
+      <div className="flex items-center gap-1.5 rounded-2xl bg-surface-2 p-1" data-dsec={sec}>
+        <button type="button" data-dsec-drivers onClick={() => pickSec("drivers")}
+          className={cn("flex flex-1 items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-sm font-bold transition",
+            sec === "drivers" ? "bg-surface-1 text-ink shadow-soft" : "text-ink-muted hover:text-ink")}>
+          <Bike size={16} /> {t("retail.dSecDrivers", "توصيل بسائق")}
+          {out.length > 0 && <span className="chip bg-sky-100 text-2xs font-bold text-sky-700 dark:bg-sky-500/15 dark:text-sky-300">{formatNum(out.length)}</span>}
+        </button>
+        <button type="button" data-dsec-companies onClick={() => pickSec("companies")}
+          className={cn("flex flex-1 items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-sm font-bold transition",
+            sec === "companies" ? "bg-surface-1 text-ink shadow-soft" : "text-ink-muted hover:text-ink")}>
+          <Building2 size={16} /> {t("retail.dSecCompanies", "توصيل بشركة")}
+          {companiesOwed > 0.009 && <span className="chip bg-violet-100 text-2xs font-bold text-violet-700 dark:bg-violet-500/15 dark:text-violet-300">{money(companiesOwed)}</span>}
+        </button>
+      </div>
+
+      {/* طلبٌ قيد التجهيز لم يُسنَد بعد لسائقٍ ولا شركة — فلا يخصّ قسماً دون
+          الآخر. نقولها بقسم الشركات بدل أن يبدو أنه لا شغل. */}
+      {sec === "companies" && preparing.length > 0 && (
+        <p className="rounded-xl bg-amber-50 px-3 py-2 text-2xs text-amber-800 dark:bg-amber-500/10 dark:text-amber-200" data-dprep-hint>
+          {t("retail.dPreparingElsewhere", { n: preparing.length, defaultValue: "أكو {{n}} طلب قيد التجهيز بعده ما انسند لحامل — تلقاه بقسم «توصيل بسائق»." })}
+        </p>
+      )}
+
       {/* شركات التوصيل — الذمّة والتحصيل والسجل */}
-      {companies.length > 0 && (
+      {sec === "companies" && companies.length === 0 && (
+        <div className="card flex flex-col items-center gap-3 p-10 text-center">
+          <span className="grid h-14 w-14 place-items-center rounded-2xl bg-violet-50 text-violet-500 dark:bg-violet-500/15"><Building2 size={26} /></span>
+          <p className="max-w-md text-ink-subtle">{t("retail.dNoCompanies", "ماكو شركات توصيل بعد. ضيفها من «سجل السواق» واختار نوعها «شركة» — الشركة تُحاسَب بعد فترة، والسائق يسلّم يومه.")}</p>
+          <Button variant="secondary" leftIcon={<Users size={16} />} onClick={() => { playTap(); setCouriersOpen(true); }}>{t("retail.couriersBtn", "سجل السواق")}</Button>
+        </div>
+      )}
+      {sec === "companies" && companies.length > 0 && (
         <section data-companies>
           <h3 className="mb-2 flex items-center gap-2 text-sm font-extrabold text-ink"><Building2 size={16} className="text-violet-600" /> {t("retail.companiesTitle", "شركات التوصيل")}</h3>
           <div className="grid gap-2.5 lg:grid-cols-2">
-            {companies.map(({ c, open, owed, last }) => (
+            {companies.map(({ c, owed, openOrders, last }) => (
               <div key={c.id} data-company={c.id} className={cn("card space-y-2 p-3", !c.active && "opacity-70")}>
                 <div className="flex items-center gap-2.5">
                   <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-violet-100 text-violet-700 dark:bg-violet-500/15 dark:text-violet-300"><Building2 size={18} /></span>
@@ -273,7 +323,7 @@ export function DeliveryPanel({ invoices, clinicId, onChanged }: { invoices: Inv
                   </div>
                   <div className="text-end">
                     <p className={cn("font-display text-lg font-extrabold tabular-nums", owed > 0.009 ? "text-violet-700 dark:text-violet-300" : "text-ink-subtle")}>{money(owed)}</p>
-                    <p className="text-2xs text-ink-subtle">{t("retail.companyOpenN", { n: open.length, defaultValue: "{{n}} طلب بالذمّة" })}</p>
+                    <p className="text-2xs text-ink-subtle">{t("retail.companyOpenN", { n: openOrders, defaultValue: "{{n}} طلب بالذمّة" })}</p>
                   </div>
                 </div>
                 {last && (
@@ -291,7 +341,7 @@ export function DeliveryPanel({ invoices, clinicId, onChanged }: { invoices: Inv
         </section>
       )}
 
-      {loading ? (
+      {sec === "drivers" && (loading ? (
         <div className="card p-10 text-center text-ink-subtle">{t("common.loading", "جارٍ التحميل…")}</div>
       ) : orders.length === 0 ? (
         <div className="card flex flex-col items-center gap-3 p-10 text-center">
@@ -393,7 +443,7 @@ export function DeliveryPanel({ invoices, clinicId, onChanged }: { invoices: Inv
             </section>
           )}
         </div>
-      )}
+      ))}
 
       {/* Assign courier to a preparing order */}
       {assigning && (
@@ -454,11 +504,12 @@ export function DeliveryPanel({ invoices, clinicId, onChanged }: { invoices: Inv
 
       {/* سجلُّ الشركة — الطلبات بالذمّة والتحصيلات */}
       {ledgerFor && (
-        <LedgerModal
+        <CourierLedger
           courier={ledgerFor}
-          open={allOrders.filter((o) => o.courier_id === ledgerFor.id && uncollected(o))}
-          dueOfOrder={orderDue}
-          orderNo={orderNo}
+          /* تاريخُ الشركة كاملاً — لا المفلتَر بعدسة الفرع ولا «بالذمّة» وحدها:
+             الشركةُ تحاسب العيادة كلَّها، والمحاسبةُ تحتاج المحصَّلَ والراجعَ
+             معهما لا المطلوبَ وحده. */
+          orders={allOrders.filter((o) => o.courier_id === ledgerFor.id)}
           settlements={settlements.filter((s) => s.courier_id === ledgerFor.id)}
           onClose={() => setLedgerFor(null)}
           onCollect={() => { const c = ledgerFor; setLedgerFor(null); setCollectFor(c); }}
@@ -588,60 +639,6 @@ function CollectDialog({ courier, owed, openCount, onClose, onDone }: { courier:
 }
 
 /** سجلُّ شركة: ما بالذمّة طلباً طلباً، وما حُصِّل دفعةً دفعة. */
-function LedgerModal({ courier, open, dueOfOrder, orderNo, settlements, onClose, onCollect }: {
-  courier: Courier; open: DeliveryOrder[]; dueOfOrder: (o: DeliveryOrder) => number; orderNo: (o: DeliveryOrder) => string;
-  settlements: CourierSettlement[]; onClose: () => void; onCollect: () => void;
-}) {
-  const { t, i18n } = useTranslation();
-  const owed = round2(open.reduce((s, o) => s + dueOfOrder(o), 0));
-  const sorted = open.slice().sort((a, b) => (a.delivered_at ?? a.created_at).localeCompare(b.delivered_at ?? b.created_at));
-  return (
-    <Modal open onClose={onClose} title={t("retail.ledgerTitle", { name: courier.name, defaultValue: "سجل {{name}}" })}>
-      <div className="space-y-4">
-        <div className="flex items-center justify-between rounded-xl bg-violet-50 px-3 py-2 dark:bg-violet-500/10">
-          <span className="text-sm text-ink-muted">{t("retail.companiesOwed", "بذمّة الشركات")}</span>
-          <span className="font-display text-lg font-extrabold tabular-nums text-violet-700 dark:text-violet-300">{money(owed)}</span>
-          {owed > 0.009 && <Button size="sm" leftIcon={<HandCoins size={14} />} onClick={onCollect}>{t("retail.collectBtn", "تحصيل")}</Button>}
-        </div>
-        <section>
-          <h4 className="mb-1.5 text-xs font-extrabold text-ink">{t("retail.ledgerOpen", "طلبات بالذمّة (الأقدم يُسدَّد أولاً)")}</h4>
-          {sorted.length === 0 ? (
-            <p className="rounded-xl bg-surface-2 p-3 text-center text-xs text-ink-subtle">{t("retail.ledgerNoOpen", "ماكو طلبات بالذمّة.")}</p>
-          ) : (
-            <div className="max-h-52 space-y-1 overflow-y-auto pe-1">
-              {sorted.map((o) => (
-                <div key={o.id} className="flex items-center gap-2 rounded-xl border border-line px-2.5 py-1.5 text-xs">
-                  <span className="min-w-0 flex-1 truncate font-semibold text-ink">{o.customer_name ?? "—"} <span className="font-normal text-ink-subtle">#{orderNo(o)}</span></span>
-                  <span className="text-2xs text-ink-subtle">{formatDate(o.delivered_at ?? o.created_at, i18n.language)}</span>
-                  <span className="shrink-0 font-bold tabular-nums text-violet-700 dark:text-violet-300">{money(dueOfOrder(o))}</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
-        <section>
-          <h4 className="mb-1.5 text-xs font-extrabold text-ink">{t("retail.ledgerSettlements", "التحصيلات")}</h4>
-          {settlements.length === 0 ? (
-            <p className="rounded-xl bg-surface-2 p-3 text-center text-xs text-ink-subtle">{t("retail.ledgerNoSettlements", "ما انحصّل شي بعد.")}</p>
-          ) : (
-            <div className="max-h-52 space-y-1 overflow-y-auto pe-1">
-              {settlements.map((s) => (
-                <div key={s.id} className="flex flex-wrap items-center gap-2 rounded-xl border border-line px-2.5 py-1.5 text-xs">
-                  <span className="font-bold tabular-nums text-success-700 dark:text-success-300">{money(s.amount)}</span>
-                  <span className="text-2xs text-ink-subtle">{t(`retail.pay${s.method === "cash" ? "Cash" : s.method === "card" ? "Card" : "Transfer"}`, s.method)}</span>
-                  <span className="text-2xs text-ink-subtle">{t("retail.ledgerOrdersN", { n: s.allocations.length, defaultValue: "{{n}} طلب" })}</span>
-                  {s.note && <span className="min-w-0 flex-1 truncate italic text-ink-muted">{s.note}</span>}
-                  <span className="ms-auto text-2xs text-ink-subtle">{formatDate(s.created_at, i18n.language)}</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
-      </div>
-    </Modal>
-  );
-}
-
 /** سجل السواق — add / edit / archive the clinic's couriers. */
 function CouriersModal({ open, couriers, clinicId, onClose, onChanged }: { open: boolean; couriers: Courier[]; clinicId?: string; onClose: () => void; onChanged: () => void }) {
   const { t } = useTranslation();
