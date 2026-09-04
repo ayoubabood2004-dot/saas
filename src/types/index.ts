@@ -1259,6 +1259,112 @@ export interface StoreCatalogItem {
   available: boolean;
 }
 
+/* ── بوّابة المالك (هجرة 0154) ─────────────────────────────────────────────
+ * ما يراه صاحبُ الحيوان من رابط العيادة العام بعد أن يثبت رقمه. مرآةٌ لمخرجات
+ * `portal_me` و`portal_pet` — والقصُّ يجري **بالقاعدة** لا هنا: لا تشخيصَ ولا
+ * نتيجةَ تحليل ولا سعر. فما لا يوجد بهذه الأنواع لا يصل المتصفّح أصلاً. */
+
+/** حالةُ رقودٍ مفتوحة — أهمُّ سطرٍ يبحث عنه المالك. */
+export interface PortalAdmission {
+  kind: string;
+  since: string | null;
+  reason?: string | null;
+}
+
+/** جرعاتُ اليوم مختصرةً لبطاقة الحيوان. */
+export interface PortalTodayCount {
+  total: number;
+  given: number;
+}
+
+/** الرحلةُ الجارية داخل العيادة كما يراها المالك (0098). */
+export interface PortalJourney {
+  kind: string;
+  stage: string;
+}
+
+/** بطاقةُ حيوانٍ بقائمة «حيواناتي». */
+export interface PortalPetCard {
+  id: string;
+  name: string;
+  species: string | null;
+  breed: string | null;
+  sex: string | null;
+  dob: string | null;
+  photo_url: string | null;
+  weight_kg: number | null;
+  admission: PortalAdmission | null;
+  /** الرحلةُ الحيّة إن وُجدت (0098) — النوعُ معها لأن تسميةَ المرحلة تُقرأ به. */
+  journey: PortalJourney | null;
+  next_vaccine: { name: string; due_date: string | null } | null;
+  today: PortalTodayCount | null;
+}
+
+/** هويّةُ العيادة كما تظهر بالبوّابة. */
+export interface PortalClinic {
+  name: string;
+  logo_url: string | null;
+  phone: string | null;
+  whatsapp: string | null;
+  slug: string | null;
+}
+
+export interface PortalMe {
+  clinic: PortalClinic;
+  /** أسماءُ الأدوية تظهر أو لا — قرارُ العيادة (`portal_settings.show_medical`). */
+  show_medical: boolean;
+  pets: PortalPetCard[];
+}
+
+/** جرعةُ اليوم: الاسمُ يكون null حين تكون العيادةُ حاجبةً لأسماء الأدوية. */
+export interface PortalDose {
+  id: string;
+  label: string | null;
+  time: string | null;
+  given: boolean;
+}
+
+export interface PortalVaccine {
+  id: string;
+  name: string;
+  due_date: string | null;
+  administered_at: string | null;
+  dose_number: number | null;
+  doses_total: number | null;
+}
+
+export interface PortalWeight { kg: number; at: string }
+export interface PortalAppointment { id: string; at: string; status: string }
+
+export interface PortalPetDetail {
+  pet: {
+    id: string; name: string; species: string | null; breed: string | null;
+    sex: string | null; dob: string | null; color: string | null;
+    photo_url: string | null; weight_kg: number | null; serial: string | null;
+  };
+  admission: PortalAdmission | null;
+  journey: PortalJourney | null;
+  today: PortalDose[];
+  vaccines: PortalVaccine[];
+  weights: PortalWeight[];
+  appointments: PortalAppointment[];
+}
+
+/** نتيجةُ طلب الرمز. `test_code` لا يصل إلا بوضع التجربة (رايةُ المنصّة). */
+export interface PortalCodeRequest {
+  ok: boolean;
+  error?: string;
+  throttled?: boolean;
+  test_code?: string;
+}
+
+export interface PortalVerifyResult {
+  ok: boolean;
+  error?: string;
+  token?: string;
+  expires_at?: string;
+}
+
 /* ── الرواتب (هجرة 0112) ───────────────────────────────────────────────────
  * القسيمة **مبالغُها مخزّنة لا محسوبة عند العرض**: لو أُعيد اشتقاقها من
  * البيانات الحيّة لغيّرت زيادةُ راتبٍ اليوم قسيمةَ السنة الماضية. ومنطق
