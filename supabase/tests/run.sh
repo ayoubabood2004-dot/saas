@@ -22,7 +22,7 @@ DB=dvtest
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MIG="$HERE/../migrations"
 # الهجرات التي يغطّيها هذا المخطّط الأساس. زدها كل ما تنضاف موجة.
-WAVE="$MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql"
+WAVE="$MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql"
 
 command -v "$PGBIN/initdb" >/dev/null || { echo "ما لكيت بوستغريس بـ $PGBIN"; exit 1; }
 
@@ -1026,4 +1026,18 @@ chk "وبعد الخروج تعود فارغة" \
     "select coalesce(_pf('$ADM', 'select my_workspace()->>''platform_acting'''), 'none')" "none"
 
 echo
+# ── 0154: استثناءُ المخزن من وضع المدير — عمودٌ واحد، افتراضُه القفل ─────────
+# الخطرُ هنا افتراضٌ مقلوب: عمودٌ افتراضُه `true` يفتح مخازنَ كلِّ العيادات
+# القائمة بضربةٍ واحدة عند الترحيل. فيُفحص الافتراضُ نفسُه، لا وجودُ العمود.
+echo "▸ 0154: خيارُ تعديل المخزن بوضع المدير"
+chk "العمود موجودٌ ومنطقيّ وnot null" \
+    "select (data_type || '/' || is_nullable) from information_schema.columns
+      where table_schema='public' and table_name='clinic_prefs' and column_name='manager_mode_stock_edit'" "boolean/NO"
+chk "وافتراضُه false — القفلُ يشمل المخزن ما لم تختر العيادة غيرَه" \
+    "select column_default from information_schema.columns
+      where table_schema='public' and table_name='clinic_prefs' and column_name='manager_mode_stock_edit'" "false"
+$P -c "insert into clinic_prefs (clinic_id) values ('$C1'::uuid) on conflict (clinic_id) do nothing;" >/dev/null
+chk "وصفٌّ قائمٌ لم يُلمس: قيمتُه false لا null" \
+    "select manager_mode_stock_edit::text from clinic_prefs where clinic_id='$C1'::uuid" "false"
+
 [ $fail -eq 0 ] && echo "✓ كل الفحوص عبرت" || { echo "✗ اكو فحصٌ فشل"; exit 1; }

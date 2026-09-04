@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
-import { KeyRound, Lock, Unlock, Delete, MonitorSmartphone, ShieldCheck, CloudOff } from "lucide-react";
+import { KeyRound, Lock, Unlock, Delete, MonitorSmartphone, ShieldCheck, CloudOff, Package } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { appRoleToStaffRole } from "@/lib/staff";
-import { getOverrideEnabled, setOverrideEnabled } from "@/lib/settings";
+import { getOverrideEnabled, setOverrideEnabled, getStockEditInManagerMode, setStockEditInManagerMode } from "@/lib/settings";
 import {
   clearPinPresenceMarker, hasOverridePin, lockNow, overridePinScope, pinExistsSync,
   setDeviceLocked, setOverridePin, unlockWithPin, useOverride,
@@ -335,6 +335,13 @@ export function ManagerOverrideCard() {
   const [disarmErr, setDisarmErr] = useState<string | null>(null);
 
   const refreshScope = () => { void overridePinScope().then((s) => { setPinScope(s); setPinSet(s !== "none"); }); };
+  /* استثناءُ المخزن: مطفأٌ افتراضياً — القفلُ يشمل الإضافةَ والتعديلَ والأسعار. */
+  const [stockEdit, setStockEdit] = useState(getStockEditInManagerMode);
+  const toggleStockEdit = () => {
+    const v = !stockEdit;
+    setStockEdit(v); setStockEditInManagerMode(v);
+    v ? playWarning() : playSuccess();
+  };
   useEffect(refreshScope, []);
 
   // REAL managers only — a temporarily elevated receptionist must not see this.
@@ -459,6 +466,25 @@ export function ManagerOverrideCard() {
                 <span>{t("override.pinDeviceWarn", "رمزك محفوظ على هذا الجهاز ولن يختفي منه. لمزامنته تلقائياً على كل أجهزة العيادة (والحاسبة والموبايل)، فعّل التخزين السحابي ثم أعد حفظ الرمز هنا مرة واحدة.")}</span>
               </div>
             )}
+          </div>
+
+          {/* استثناءُ المخزن — تحت القفل مباشرةً لأنه يعدّله */}
+          <div className="mt-4 border-t border-line pt-4">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-sm font-bold text-ink flex items-center gap-1.5"><Package size={15} className="text-brand-600" /> {t("override.stockEdit", "اسمح بتعديل المخزن وأسعاره بوضع المدير")}</p>
+                <p className="text-xs text-ink-subtle mt-0.5">
+                  {stockEdit
+                    ? t("override.stockEditOn", "مفعّل: الجهاز المقفل يقدر يضيف منتجاً ويعدّله ويشوف أسعار الشراء. فعّله فقط إذا كنت أنت من يشتغل على هذا الجهاز.")
+                    : t("override.stockEditOff", "مطفأ (الأنصح): بوضع المدير تختفي أسعار الشراء وأزرار الإضافة والتعديل والحذف من المخزن — الموظف يبيع ولا يسعّر.")}
+                </p>
+              </div>
+              <button role="switch" aria-checked={stockEdit} onClick={toggleStockEdit} className="mt-0.5 shrink-0" aria-label={t("override.stockEdit", "اسمح بتعديل المخزن وأسعاره بوضع المدير")}>
+                <span className={cn("relative block h-6 w-11 rounded-full transition-colors", stockEdit ? "bg-warn-500" : "border border-line bg-surface-3")}>
+                  <span className={cn("absolute start-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform", stockEdit && "translate-x-5 rtl:-translate-x-5")} />
+                </span>
+              </button>
+            </div>
           </div>
 
           {/* device lock */}

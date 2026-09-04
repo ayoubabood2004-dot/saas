@@ -141,8 +141,8 @@ export function clearPetRanges(petId: string) {
 export const DEFAULT_DIAL_CODE = "+964"; // Iraq
 
 export interface ClinicSocials { facebook: string; instagram: string }
-interface ClinicPrefs { dial_code: string; logo_url: string | null; social_facebook: string; social_instagram: string; clinic_name: string; pre_sale_print: boolean; override_enabled: boolean; resizable_cart: boolean; font_scale_enabled: boolean; override_pin_mirror: string | null; delivery_zones: string | null; qty_promos: string | null; catalog_share: boolean; cage_layout: string | null; care_protocols: string | null; currency: string | null; country: string | null; pos_v2: boolean; pos_compact: boolean; pos_customer_open: boolean; invoices_paged: boolean; work_hours: string | null; clock_format: string | null; dose_window: string | null; cash_reconcile: boolean; cash_confirms: string | null }
-const DEFAULT_PREFS: ClinicPrefs = { dial_code: DEFAULT_DIAL_CODE, logo_url: null, social_facebook: "", social_instagram: "", clinic_name: "", pre_sale_print: false, override_enabled: false, resizable_cart: false, font_scale_enabled: false, override_pin_mirror: null, delivery_zones: null, qty_promos: null, catalog_share: false, cage_layout: null, care_protocols: null, currency: null, country: null, pos_v2: false, pos_compact: false, pos_customer_open: false, invoices_paged: true, work_hours: null, clock_format: null, dose_window: null, cash_reconcile: false, cash_confirms: null };
+interface ClinicPrefs { dial_code: string; logo_url: string | null; social_facebook: string; social_instagram: string; clinic_name: string; pre_sale_print: boolean; override_enabled: boolean; resizable_cart: boolean; font_scale_enabled: boolean; override_pin_mirror: string | null; delivery_zones: string | null; qty_promos: string | null; catalog_share: boolean; cage_layout: string | null; care_protocols: string | null; currency: string | null; country: string | null; pos_v2: boolean; pos_compact: boolean; pos_customer_open: boolean; invoices_paged: boolean; work_hours: string | null; clock_format: string | null; dose_window: string | null; cash_reconcile: boolean; cash_confirms: string | null; manager_mode_stock_edit: boolean }
+const DEFAULT_PREFS: ClinicPrefs = { dial_code: DEFAULT_DIAL_CODE, logo_url: null, social_facebook: "", social_instagram: "", clinic_name: "", pre_sale_print: false, override_enabled: false, resizable_cart: false, font_scale_enabled: false, override_pin_mirror: null, delivery_zones: null, qty_promos: null, catalog_share: false, cage_layout: null, care_protocols: null, currency: null, country: null, pos_v2: false, pos_compact: false, pos_customer_open: false, invoices_paged: true, work_hours: null, clock_format: null, dose_window: null, cash_reconcile: false, cash_confirms: null, manager_mode_stock_edit: false };
 
 const prefsKey = () => `vp_clinic_prefs_${getActiveClinicId()}`;
 const legacyDialKey = () => `vp_dial_code_${getActiveClinicId()}`;
@@ -250,6 +250,7 @@ export async function hydrateClinicPrefs(): Promise<void> {
         dose_window: d.dose_window ?? local.dose_window,
         cash_reconcile: typeof d.cash_reconcile === "boolean" ? d.cash_reconcile : local.cash_reconcile,
         cash_confirms: d.cash_confirms ?? local.cash_confirms,
+        manager_mode_stock_edit: typeof d.manager_mode_stock_edit === "boolean" ? d.manager_mode_stock_edit : local.manager_mode_stock_edit,
       };
     } else {
       // No row yet → migrate any local prefs up (or seed the default dial code).
@@ -287,6 +288,7 @@ export async function hydrateClinicPrefs(): Promise<void> {
       if (local.dose_window) boolPatch.dose_window = local.dose_window;
       if (local.cash_reconcile) boolPatch.cash_reconcile = true;
       if (local.cash_confirms) boolPatch.cash_confirms = local.cash_confirms;
+      if (local.manager_mode_stock_edit) boolPatch.manager_mode_stock_edit = true;
       if (Object.keys(boolPatch).length) setPendingPrefs({ ...readPendingPrefs(), ...boolPatch });
     }
     // Unconfirmed pref writes (e.g. a toggle flipped before its column's
@@ -404,6 +406,22 @@ export function getOverrideEnabled(): boolean {
 }
 export function setOverrideEnabled(v: boolean) {
   patchPrefs({ override_enabled: v }, "override-enabled-set");
+}
+
+/**
+ * استثناءُ المخزن من وضع المدير — خيارٌ اختياريّ، مطفأٌ افتراضياً.
+ *
+ * الأصل: جهازٌ مقفلٌ بواجهة الاستقبال (وضع المدير) يخفي أسعارَ الشراء
+ * والأرباح، ويمنع إضافةَ منتجٍ أو تعديلَه أو تعديلَ سعره — لأن من يقف على
+ * جهاز الاستقبال يبيع ولا يسعّر. لكن عياداتٍ يشتغل بها المالكُ نفسُه من
+ * الجهاز المقفل، فيصير المنعُ عائقاً لا حماية. فهذا المفتاح يعيد للمخزن
+ * تعديلَه وأسعارَه **حتى والجهازُ مقفول**، بقرارِ العيادة وحدها.
+ */
+export function getStockEditInManagerMode(): boolean {
+  return !!prefs().manager_mode_stock_edit;
+}
+export function setStockEditInManagerMode(v: boolean) {
+  patchPrefs({ manager_mode_stock_edit: v }, "manager-mode-stock-edit-set");
 }
 
 /* ---- مرآة رمز المدير السحابية — البيت الثالث للرمز (بعد bcrypt السيرفر

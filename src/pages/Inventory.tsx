@@ -120,11 +120,11 @@ export function Inventory() {
   const [sections, setSections] = useState<CompanySection[]>(seed?.s ?? []);
   const [loading, setLoading] = useState(!seed);
   const [view, setView] = useState<View>("products");
-  const { restricted } = useOverride();
+  const { stockLocked: locked } = useOverride();
   // جهاز مقفل وواقف على تبويب حساس؟ رجّعه للمنتجات فوراً.
   useEffect(() => {
-    if (restricted && (view === "purchases" || view === "ledger")) setView("products");
-  }, [restricted, view]);
+    if (locked && (view === "purchases" || view === "ledger" || view === "barcodes" || view === "trash")) setView("products");
+  }, [locked, view]);
   // null = لم يُفحص بعد · false = ترحيل 0075 ناقص (المجموعات تسقط بصمت)
   const [groupsOk, setGroupsOk] = useState<boolean | null>(null);
   const [fixBusy, setFixBusy] = useState(false);
@@ -321,10 +321,10 @@ export function Inventory() {
       <div className="mb-4 inline-flex flex-wrap rounded-2xl bg-surface-2 p-1">
         <ViewTab active={view === "products"} icon={Package} label={t("pos.tabProducts", "المنتجات")} onClick={() => { playTap(); setView("products"); }} />
         <ViewTab active={view === "companies"} icon={Building2} label={t("pos.tabCompanies", "الشركات")} onClick={() => { playTap(); setView("companies"); }} />
-        {!restricted && <ViewTab active={view === "purchases"} icon={ShoppingBag} label={t("pos.tabPurchases", "المشتريات")} onClick={() => { playTap(); setView("purchases"); }} />}
-        {!restricted && <ViewTab active={view === "ledger"} icon={Wallet} label={t("pos.tabLedger", "الديون والفواتير")} onClick={() => { playTap(); setView("ledger"); }} />}
-        <ViewTab active={view === "barcodes"} icon={ScanBarcode} label={t("pos.tabBarcodes", "مولد الباركود")} onClick={() => { playTap(); setView("barcodes"); }} />
-        <ViewTab active={view === "trash"} icon={Trash2} label={t("pos.tabTrash", "المحذوفات")} onClick={() => { playTap(); setView("trash"); }} />
+        {!locked && <ViewTab active={view === "purchases"} icon={ShoppingBag} label={t("pos.tabPurchases", "المشتريات")} onClick={() => { playTap(); setView("purchases"); }} />}
+        {!locked && <ViewTab active={view === "ledger"} icon={Wallet} label={t("pos.tabLedger", "الديون والفواتير")} onClick={() => { playTap(); setView("ledger"); }} />}
+        {!locked && <ViewTab active={view === "barcodes"} icon={ScanBarcode} label={t("pos.tabBarcodes", "مولد الباركود")} onClick={() => { playTap(); setView("barcodes"); }} />}
+        {!locked && <ViewTab active={view === "trash"} icon={Trash2} label={t("pos.tabTrash", "المحذوفات")} onClick={() => { playTap(); setView("trash"); }} />}
       </div>
 
       {loading ? (
@@ -411,7 +411,7 @@ function computeInventoryValue(products: Product[], sections: CompanySection[]) 
 }
 
 function InventoryValueCard({ products, sections }: { products: Product[]; sections: CompanySection[] }) {
-  const { restricted } = useOverride();
+  const { stockLocked: locked } = useOverride();
   const { t } = useTranslation();
   const v = useMemo(() => computeInventoryValue(products, sections), [products, sections]);
   return (
@@ -421,12 +421,12 @@ function InventoryValueCard({ products, sections }: { products: Product[]; secti
         <h3 className="text-sm font-bold text-ink">{t("pos.invValueTitle", "قيمة المخزون")}</h3>
         <span className="ms-auto text-2xs text-ink-subtle">{t("pos.invValueSub", "قيمة البضاعة الموجودة الآن")}</span>
       </div>
-      <div className={cn("grid grid-cols-1 divide-y divide-line sm:divide-x sm:divide-y-0 rtl:sm:divide-x-reverse", restricted ? "sm:grid-cols-1" : "sm:grid-cols-3")}>
-        {!restricted && <ValueCell label={t("pos.invValueCost", "رأس المال (شراء)")} value={money(Math.round(v.cost))} tone="ink" />}
+      <div className={cn("grid grid-cols-1 divide-y divide-line sm:divide-x sm:divide-y-0 rtl:sm:divide-x-reverse", locked ? "sm:grid-cols-1" : "sm:grid-cols-3")}>
+        {!locked && <ValueCell label={t("pos.invValueCost", "رأس المال (شراء)")} value={money(Math.round(v.cost))} tone="ink" />}
         <ValueCell label={t("pos.invValueRetail", "قيمة البيع")} value={money(Math.round(v.retail))} tone="brand" />
-        {!restricted && <ValueCell label={t("pos.invValueProfit", "الربح المتوقع")} value={money(Math.round(v.profit))} tone="success" />}
+        {!locked && <ValueCell label={t("pos.invValueProfit", "الربح المتوقع")} value={money(Math.round(v.profit))} tone="success" />}
       </div>
-      {v.hasPooled && !restricted && (
+      {v.hasPooled && !locked && (
         <div className="flex items-center gap-1.5 border-t border-line bg-surface-2/50 px-5 py-2.5 text-xs text-ink-subtle">
           <Layers size={13} className="shrink-0 text-brand-500" />
           {t("pos.invValueEstimated", { cost: money(Math.round(v.pooledCost)), retail: money(Math.round(v.pooledRetail)), defaultValue: "منها تقديري (مخزون مجمّع): {{cost}} شراء · {{retail}} بيع" })}
@@ -449,7 +449,7 @@ function ValueCell({ label, value, tone }: { label: string; value: string; tone:
 /* ---------------- Shared product row ---------------- */
 function ProductRow({ p, companyName, sectionName, onEdit, onRemove }: { p: Product; companyName?: string; sectionName?: string; onEdit: () => void; onRemove: () => void }) {
   const { t, i18n } = useTranslation();
-  const { restricted } = useOverride();
+  const { stockLocked: locked } = useOverride();
   const exp = daysUntil(p.expiry_date);
   const expired = exp != null && exp < 0;
   const expiringSoon = exp != null && exp >= 0 && exp <= 30;
@@ -469,7 +469,7 @@ function ProductRow({ p, companyName, sectionName, onEdit, onRemove }: { p: Prod
         </p>
         <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-ink-subtle">
           {p.barcode && <span className="flex items-center gap-1 font-mono"><Barcode size={11} /> {p.barcode}</span>}
-          {!restricted && <span>{t("pos.buy", "Buy")} {money(p.purchase_price)}{byWeight ? perKg : ""}</span>}
+          {!locked && <span>{t("pos.buy", "Buy")} {money(p.purchase_price)}{byWeight ? perKg : ""}</span>}
           <span className="font-semibold text-ink-muted">{t("pos.sell", "Sell")} {money(p.sell_price)}{byWeight ? perKg : ""}</span>
           {byWeight && <span className="chip shrink-0 bg-teal-50 text-2xs font-semibold text-teal-700 dark:bg-teal-500/15 dark:text-teal-200"><Scale size={11} /> {t("pos.byWeightChip", "بالوزن")}</span>}
           {p.expiry_date && (
@@ -489,8 +489,10 @@ function ProductRow({ p, companyName, sectionName, onEdit, onRemove }: { p: Prod
             : t("pos.qtyStock", { n: p.stock, defaultValue: "{{n}} in stock" })}
         </Badge>
       )}
-      <button onClick={onEdit} aria-label={t("common.edit", "Edit")} className="grid h-9 w-9 place-items-center rounded-full text-ink-subtle transition hover:bg-brand-50 hover:text-brand-600"><Pencil size={16} /></button>
-      <button onClick={onRemove} aria-label={t("common.delete", "Remove")} className="grid h-9 w-9 place-items-center rounded-full text-ink-subtle transition hover:bg-danger-50 hover:text-danger-600"><Trash2 size={16} /></button>
+      {/* التعديلُ والحذف يختفيان بوضع المدير — تعطيلٌ يترك زراً ميتاً يُضغط
+          ويُشتكى منه، والإخفاءُ يقول «ما إلك هذا» بلا كلام. */}
+      {!locked && <button onClick={onEdit} aria-label={t("common.edit", "Edit")} className="grid h-9 w-9 place-items-center rounded-full text-ink-subtle transition hover:bg-brand-50 hover:text-brand-600"><Pencil size={16} /></button>}
+      {!locked && <button onClick={onRemove} aria-label={t("common.delete", "Remove")} className="grid h-9 w-9 place-items-center rounded-full text-ink-subtle transition hover:bg-danger-50 hover:text-danger-600"><Trash2 size={16} /></button>}
     </motion.div>
   );
 }
@@ -523,6 +525,7 @@ function InventoryTab({ products, companies, sections, clinicId, onChanged }: { 
     : products;
 
   const { askDelete: remove, deleteDialog } = useProductDelete(onChanged);
+  const { stockLocked: locked } = useOverride();
 
   return (
     <div className="space-y-4">
@@ -532,7 +535,7 @@ function InventoryTab({ products, companies, sections, clinicId, onChanged }: { 
           <Search size={16} className="pointer-events-none absolute top-1/2 -translate-y-1/2 text-ink-subtle ltr:left-3 rtl:right-3" />
           <input className="input ltr:pl-9 rtl:pr-9" value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("pos.searchInv", "Search products…")} />
         </div>
-        <Button leftIcon={<PackagePlus size={16} />} onClick={() => { playTap(); setAdding(true); }}>{t("pos.addProduct", "Add product")}</Button>
+        {!locked && <Button leftIcon={<PackagePlus size={16} />} onClick={() => { playTap(); setAdding(true); }}>{t("pos.addProduct", "Add product")}</Button>}
       </div>
 
       {shown.length === 0 ? (
@@ -570,7 +573,7 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
 }) {
   const { t } = useTranslation();
   const toast = useToast();
-  const { restricted } = useOverride();
+  const { stockLocked: locked } = useOverride();
   const blank = { barcode: "", name: "", company: "", section: "", category: "", subcategory: "", purchase_price: "", sell_price: "", stock: "", min_stock: "", expiry_date: "", pooled: false, has_sub_unit: false, sub_unit_name: "", units_per_box: "", sub_unit_price: "", sold_by_weight: false };
   const [f, setF] = useState(blank);
   const [busy, setBusy] = useState(false);
@@ -976,9 +979,9 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
     </div>
   );
   const priceFields = (
-    <div className={cn("grid gap-3", restricted ? "grid-cols-1" : "grid-cols-2")}>
+    <div className={cn("grid gap-3", locked ? "grid-cols-1" : "grid-cols-2")}>
       {/* جهاز مقفل: حقل الشراء يختفي — وقيمته المخزونة تبقى بحالها عند الحفظ. */}
-      {!restricted && (
+      {!locked && (
         <div>
           <label className="label">{byWeight ? t("pos.purchasePriceKg", "سعر شراء الكيلو") : t("pos.purchasePrice", "Purchase price")}</label>
           <input type="number" inputMode="numeric" min="0" step="1" className="input" value={f.purchase_price} onChange={(e) => set({ purchase_price: e.target.value })} placeholder="0" />
@@ -990,7 +993,7 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
       </div>
     </div>
   );
-  const profitStrip = hasPrices && !restricted ? (
+  const profitStrip = hasPrices && !locked ? (
     <div className={cn(
       "flex items-center justify-between rounded-xl px-3 py-2",
       profit > 0 ? "bg-success-50 text-success-700 dark:bg-success-500/15 dark:text-success-200"
@@ -1379,7 +1382,7 @@ function CatalogSuggestion({ barcode, nameFilled, onUse }: {
 }) {
   const [hit, setHit] = useState<CatalogHit | null>(null);
   const [used, setUsed] = useState(false);
-  const { restricted } = useOverride();
+  const { stockLocked: locked } = useOverride();
 
   useEffect(() => {
     const code = barcode.trim();
@@ -1405,7 +1408,7 @@ function CatalogSuggestion({ barcode, nameFilled, onUse }: {
       <span className="min-w-0 flex-1">
         <span className="block truncate text-sm font-extrabold text-ink">{hit.name}</span>
         <span className="block text-2xs text-ink-muted">
-          بيع {money(hit.sell_price)}{restricted ? "" : ` · شراء ${money(hit.purchase_price)}`}
+          بيع {money(hit.sell_price)}{locked ? "" : ` · شراء ${money(hit.purchase_price)}`}
         </span>
         <span className="mt-0.5 block text-2xs text-ink-subtle">
           {/* مصدر واحد ليس «سعر السوق» — نقول العدد بدل ما نوهم بثقة ليست موجودة */}
@@ -1439,6 +1442,7 @@ function CompaniesTab({ products, companies, sections, clinicId, onChanged }: { 
   const [adding, setAdding] = useState(false);
   const [catalogOpen, setCatalogOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const { stockLocked: locked } = useOverride();
 
   // Always derive the selected company from the live list so edits/reloads reflect.
   const selected = selectedId ? companies.find((c) => c.id === selectedId) ?? null : null;
@@ -1468,8 +1472,8 @@ function CompaniesTab({ products, companies, sections, clinicId, onChanged }: { 
           <input className="input ltr:pl-9 rtl:pr-9" value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("pos.searchCompanies", "ابحث عن شركة…")} />
         </div>
         {/* الكتلوج الجاهز: شركات السوق بأصنافها — اختياري، دمجٌ لا استنساخ */}
-        <Button variant="secondary" data-catalogbtn leftIcon={<Sparkles size={16} />} onClick={() => { playTap(); setCatalogOpen(true); }}>{t("catalog.title", "الكتلوج الجاهز")}</Button>
-        <Button leftIcon={<Plus size={16} />} onClick={() => { playTap(); setAdding(true); }}>{t("pos.addCompany", "أضف شركة")}</Button>
+        {!locked && <Button variant="secondary" data-catalogbtn leftIcon={<Sparkles size={16} />} onClick={() => { playTap(); setCatalogOpen(true); }}>{t("catalog.title", "الكتلوج الجاهز")}</Button>}
+        {!locked && <Button leftIcon={<Plus size={16} />} onClick={() => { playTap(); setAdding(true); }}>{t("pos.addCompany", "أضف شركة")}</Button>}
       </div>
 
       {shown.length === 0 ? (
@@ -1478,8 +1482,8 @@ function CompaniesTab({ products, companies, sections, clinicId, onChanged }: { 
           <p className="text-ink-subtle">{companies.length === 0 ? t("pos.noCompanies", "لا توجد شركات بعد. أنشئ أول شركة ثم أضف باركوداتها.") : t("pos.noCompanyMatch", "لا توجد شركة بهذا الاسم.")}</p>
           {companies.length === 0 && (
             <div className="flex flex-wrap items-center justify-center gap-2">
-              <Button leftIcon={<Plus size={16} />} onClick={() => { playTap(); setAdding(true); }}>{t("pos.addCompany", "أضف شركة")}</Button>
-              <Button variant="secondary" leftIcon={<Sparkles size={16} />} onClick={() => { playTap(); setCatalogOpen(true); }}>{t("catalog.emptyCta", "أو فعّل الكتلوج الجاهز — شركات وأصناف مرتّبة بضغطة")}</Button>
+              {!locked && <Button leftIcon={<Plus size={16} />} onClick={() => { playTap(); setAdding(true); }}>{t("pos.addCompany", "أضف شركة")}</Button>}
+              {!locked && <Button variant="secondary" leftIcon={<Sparkles size={16} />} onClick={() => { playTap(); setCatalogOpen(true); }}>{t("catalog.emptyCta", "أو فعّل الكتلوج الجاهز — شركات وأصناف مرتّبة بضغطة")}</Button>}
             </div>
           )}
         </div>
@@ -1554,6 +1558,7 @@ function CompanyDetail({ company, products, companies, sections, clinicId, onBac
   const [tidying, setTidying] = useState(false);
   // Which section is open (a section id, or the UNCAT bucket). null = sections overview.
   const [openSectionId, setOpenSectionId] = useState<string | null>(null);
+  const { stockLocked: locked } = useOverride();
 
   /** دمج توائم «بدون صنف» بأصولها المصنَّفة — والنتيجة تُقال بالعدد. */
   const runTidy = async () => {
@@ -1640,10 +1645,12 @@ function CompanyDetail({ company, products, companies, sections, clinicId, onBac
             <span className="font-semibold text-ink-muted">{money(s.value)}</span>
           </div>
         </div>
-        <div className="flex items-center gap-1">
-          <button onClick={() => { playTap(); setEditingCo(true); }} aria-label={t("common.edit", "Edit")} className="grid h-9 w-9 place-items-center rounded-full text-ink-subtle transition hover:bg-brand-50 hover:text-brand-600"><Pencil size={16} /></button>
-          <button onClick={removeCompany} aria-label={t("common.delete", "Delete")} className="grid h-9 w-9 place-items-center rounded-full text-ink-subtle transition hover:bg-danger-50 hover:text-danger-600"><Trash2 size={16} /></button>
-        </div>
+        {!locked && (
+          <div className="flex items-center gap-1">
+            <button onClick={() => { playTap(); setEditingCo(true); }} aria-label={t("common.edit", "Edit")} className="grid h-9 w-9 place-items-center rounded-full text-ink-subtle transition hover:bg-brand-50 hover:text-brand-600"><Pencil size={16} /></button>
+            <button onClick={removeCompany} aria-label={t("common.delete", "Delete")} className="grid h-9 w-9 place-items-center rounded-full text-ink-subtle transition hover:bg-danger-50 hover:text-danger-600"><Trash2 size={16} /></button>
+          </div>
+        )}
       </div>
 
       {/* Search inside this company — finds sections AND barcodes */}
@@ -1654,11 +1661,13 @@ function CompanyDetail({ company, products, companies, sections, clinicId, onBac
 
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-sm font-semibold text-ink-muted">{ql ? t("pos.searchResults", "نتائج البحث") : t("pos.sections", "الأصناف")}</p>
-        <div className="flex items-center gap-2">
-          <Button size="sm" variant="secondary" leftIcon={<ListPlus size={15} />} onClick={() => { playTap(); setAssigning(true); }}>{t("pos.assignProducts", "إضافة منتجات")}</Button>
-          <Button size="sm" variant="secondary" leftIcon={<ShoppingBag size={15} />} onClick={() => { playTap(); setPurchasing(true); }}>{t("purchase.new", "فاتورة شراء")}</Button>
-          <Button size="sm" leftIcon={<Plus size={15} />} onClick={() => { playTap(); setAddingSection(true); }}>{t("pos.addSection", "أضف صنف")}</Button>
-        </div>
+        {!locked && (
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="secondary" leftIcon={<ListPlus size={15} />} onClick={() => { playTap(); setAssigning(true); }}>{t("pos.assignProducts", "إضافة منتجات")}</Button>
+            <Button size="sm" variant="secondary" leftIcon={<ShoppingBag size={15} />} onClick={() => { playTap(); setPurchasing(true); }}>{t("purchase.new", "فاتورة شراء")}</Button>
+            <Button size="sm" leftIcon={<Plus size={15} />} onClick={() => { playTap(); setAddingSection(true); }}>{t("pos.addSection", "أضف صنف")}</Button>
+          </div>
+        )}
       </div>
 
       {ql ? (
@@ -1669,7 +1678,7 @@ function CompanyDetail({ company, products, companies, sections, clinicId, onBac
               {shownSections.map((sec) => {
                 const base = statsBy(products, (p) => p.section_id === sec.id);
                 const st = { ...base, units: base.units + (sec.pooled_stock ?? 0) };
-                return <SectionCard key={sec.id} icon={FolderTree} title={sec.name} stats={st} onOpen={() => { playTap(); setOpenSectionId(sec.id); }} onEdit={() => { playTap(); setEditingSection(sec); }} />;
+                return <SectionCard key={sec.id} icon={FolderTree} title={sec.name} stats={st} onOpen={() => { playTap(); setOpenSectionId(sec.id); }} onEdit={locked ? undefined : () => { playTap(); setEditingSection(sec); }} />;
               })}
             </div>
           )}
@@ -1698,7 +1707,7 @@ function CompanyDetail({ company, products, companies, sections, clinicId, onBac
             // Section total units include the pooled (legacy) count.
             const st = { ...base, units: base.units + (sec.pooled_stock ?? 0) };
             return (
-              <SectionCard key={sec.id} icon={FolderTree} title={sec.name} stats={st} onOpen={() => { playTap(); setOpenSectionId(sec.id); }} onEdit={() => { playTap(); setEditingSection(sec); }} />
+              <SectionCard key={sec.id} icon={FolderTree} title={sec.name} stats={st} onOpen={() => { playTap(); setOpenSectionId(sec.id); }} onEdit={locked ? undefined : () => { playTap(); setEditingSection(sec); }} />
             );
           })}
           {uncatProducts.length > 0 && (
@@ -1716,7 +1725,7 @@ function CompanyDetail({ company, products, companies, sections, clinicId, onBac
       {/* فواتيرُ سابقةٌ خلقت توائمَ بـ«بدون صنف» رغم أن القطعة مصنَّفة؟ ضغطةٌ
           تدمج كل توأمٍ بأصله: العددان يُجمعان والتاريخ يتبع الأصل. وما لا
           أصلَ له يبقى مكانه — لا حذفَ أعمى. */}
-      {uncatProducts.length > 0 && !openSectionId && (
+      {uncatProducts.length > 0 && !openSectionId && !locked && (
         <button type="button" data-tidyinv disabled={tidying}
           onClick={() => void runTidy()}
           className="flex w-full items-center justify-center gap-2 rounded-2xl border border-dashed border-brand-300 bg-brand-50/50 px-4 py-3 text-2xs font-extrabold text-brand-700 transition hover:bg-brand-50 disabled:opacity-50 dark:bg-brand-500/10 dark:text-brand-300"

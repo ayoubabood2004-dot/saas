@@ -13,7 +13,7 @@
 import { useSyncExternalStore } from "react";
 import { sb } from "./clinicSync";
 import { getActiveClinicId } from "./clinics";
-import { getOverridePinMirror, setOverridePinMirror } from "./settings";
+import { getOverridePinMirror, setOverridePinMirror, getStockEditInManagerMode } from "./settings";
 import { repo } from "./repo";
 
 const SESSION_MS = 10 * 60 * 1000; // elevation lifetime
@@ -334,6 +334,21 @@ export function overrideRestricted(): boolean {
   return isDeviceLocked() && !overrideActive();
 }
 
+/**
+ * قفلُ المخزن — «وضع المدير» مطروحاً منه استثناءُ العيادة.
+ *
+ * `restricted` يحكم الشاشاتِ الحسّاسة كلَّها (التقارير، الكادر، سجلّ الحركات).
+ * أما المخزن فله بابٌ ثانٍ: العيادةُ قد تختار أن يبقى تعديلُه وأسعارُه مفتوحةً
+ * حتى والجهازُ مقفول (مالكٌ يشتغل من جهاز الاستقبال نفسه). فيُقرأ من هنا وحده
+ * لئلّا يتفرّق الحكمُ على ستّة مواضعَ بالشاشة فيختلف أحدُها عن البقية.
+ */
+export function stockLockedFrom(deviceLocked: boolean, elevated: boolean, allowEdit: boolean): boolean {
+  return deviceLocked && !elevated && !allowEdit;
+}
+export function stockLocked(): boolean {
+  return stockLockedFrom(isDeviceLocked(), overrideActive(), getStockEditInManagerMode());
+}
+
 // Hidden-lock feedback: locked controls look normal and silently ignore input;
 // only after several taps does a small toast reveal WHY nothing happened — so a
 // bystander can't tell at a glance which controls are guarded.
@@ -344,12 +359,12 @@ export function noteLockedTap(reveal: () => void, threshold = 5): void {
 }
 
 /* ------------------------------ React hook ------------------------------ */
-export function useOverride(): { active: boolean; until: number | null; deviceLocked: boolean; restricted: boolean } {
+export function useOverride(): { active: boolean; until: number | null; deviceLocked: boolean; restricted: boolean; stockLocked: boolean } {
   useSyncExternalStore(
     (cb) => { subs.add(cb); return () => subs.delete(cb); },
     () => version,
   );
-  return { active: overrideActive(), until: overrideUntil(), deviceLocked: isDeviceLocked(), restricted: overrideRestricted() };
+  return { active: overrideActive(), until: overrideUntil(), deviceLocked: isDeviceLocked(), restricted: overrideRestricted(), stockLocked: stockLocked() };
 }
 
 armExpiry(); // resume a countdown that survived a page reload
