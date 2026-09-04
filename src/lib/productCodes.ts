@@ -75,3 +75,27 @@ export function twinsByName(products: readonly Product[], p: Product, normalizeN
   if (!key) return [];
   return products.filter((o) => o.id !== p.id && normalizeName(o.name) === key);
 }
+
+/**
+ * نفسُ الفكرة لكن على **اسمٍ يُكتب الآن** لا على منتجٍ قائم — فحصُ الإدخال.
+ *
+ * الرمزُ محميّ: `findByCode` يمنع رمزاً مكرّراً و`nearCodeTwin` يحذّر من رمزٍ
+ * يفرق بخانة. لكن لا شيء كان ينظر إلى **الاسم**، وهذا هو الباب الذي دخلت منه
+ * كلُّ التوائم المقيسة: يُدخَل المنتجُ برقم الرفّ وهو قائمٌ بباركود المصنع،
+ * فيمرّ فحصُ الرمز بحقّ — الرمزُ جديدٌ فعلاً — ويصير للمادة الواحدة صفّان
+ * ورصيدان، فيقول أحدُهما «رصيده صفر» عن بضاعةٍ على الرفّ.
+ *
+ * والتطبيع على الطرفين لازم: «خارجية» و«خارجيه» حجبتا توأماً حقيقياً عن
+ * مطابقةٍ حرفية. الجوابُ الصحيح هنا ليس المنعَ بل العرض: هذا موجود، أتربط
+ * رمزك به أم هو منتجٌ غيره؟
+ */
+export function hitsByName(
+  products: readonly Product[],
+  name: string | null | undefined,
+  excludeId: string | null | undefined,
+  normalizeName: (s: string) => string,
+): Product[] {
+  const key = normalizeName((name ?? "").trim());
+  if (!key) return [];
+  return products.filter((o) => o.id !== excludeId && normalizeName(o.name) === key);
+}

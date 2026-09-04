@@ -38,7 +38,7 @@ const built = await esbuild.build({
   platform: "neutral", plugins: [stubs],
   alias: { "@/lib/utils": "./src/lib/utils.ts" },
 });
-const { findByCode, looksLikeShelfCode, twinsByName, nearCodeTwin } = await import(
+const { findByCode, looksLikeShelfCode, twinsByName, nearCodeTwin, hitsByName } = await import(
   "data:text/javascript;base64," + Buffer.from(built.outputFiles[0].text).toString("base64")
 );
 
@@ -73,6 +73,18 @@ const norm = (s) => String(s).replace(/[أإآ]/g, "ا").replace(/ة/g, "ه").re
 check("«خارجية» و«خارجيه» توأمان", twinsByName(inv, inv[1], norm).map((p) => p.id).join() === "e");
 check("والمنتج ليس توأمَ نفسه", !twinsByName(inv, inv[1], norm).some((p) => p.id === "b"));
 check("ومنتجٌ فريدُ الاسم بلا توائم", twinsByName(inv, inv[0], norm).length === 0);
+
+console.log("▸ hitsByName — اسمٌ يُكتب الآن يطابق منتجاً قائماً (فحصُ الإدخال)");
+// الحالةُ المقيسة بالإنتاج: «خارجية» بباركود مصنع، و«خارجيه» برقم رفّ —
+// حرفٌ واحد أخفى التوأم، فصار للمادة صفّان ورصيدان.
+check("«خارجيه» المكتوبة تلقى «خارجية» القائمة", hitsByName(inv, "سبري حشرات خارجيه", null, norm).map((p) => p.id).sort().join() === "b,e");
+check("والتطبيع على الطرفين: «خارجية» تلقى «خارجيه»", hitsByName(inv, "سبري حشرات خارجية", null, norm).map((p) => p.id).sort().join() === "b,e");
+check("والمسافاتُ الطرفية لا تمنع", hitsByName(inv, "  سبري حشرات خارجيه  ", null, norm).length === 2);
+check("واستثناءُ المنتج المعدَّل يشتغل", hitsByName(inv, "سبري حشرات خارجيه", "b", norm).map((p) => p.id).join() === "e");
+check("واسمٌ فريد لا يطابق شيئاً", hitsByName(inv, "شامبو قطط جديد", null, norm).length === 0);
+check("والفارغ لا يطابق شيئاً (وإلا طابق كلَّ منتج)", hitsByName(inv, "", null, norm).length === 0);
+check("والمسافاتُ وحدها فارغةٌ أيضاً", hitsByName(inv, "   ", null, norm).length === 0);
+check("و null لا يرمي", hitsByName(inv, null, null, norm).length === 0);
 
 console.log("▸ nearCodeTwin — رمزٌ يفرق بخانة عن رمزٍ قائم (حالات الإنتاج)");
 const inv2 = [

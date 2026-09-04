@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { motion } from "framer-motion";
 import { getCached, setCached } from "@/lib/swrCache";
-import { findByCode, looksLikeShelfCode, twinsByName, nearCodeTwin } from "@/lib/productCodes";
+import { findByCode, looksLikeShelfCode, twinsByName, nearCodeTwin, hitsByName } from "@/lib/productCodes";
 import { Dialog } from "@/components/ui/Dialog";
 import {
   Barcode, Package, Trash2, Search, Building2, Plus, ChevronLeft, ArrowRight, ArrowLeft,
@@ -601,6 +601,29 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
   const nameTwins = useMemo(
     () => (product ? twinsByName(allProducts ?? [], product, normalizeAr) : []),
     [allProducts, product]);
+  /** اسمٌ يُكتب الآن ويطابق منتجاً قائماً — وهذا هو بابُ التوائم الذي كان مفتوحاً.
+   *  يُعرض للإضافة وحدها (بالتعديل يتكفّل `nameTwins` بالدمج)، وبعد أن يمرّ فحصُ
+   *  الرمز: رمزٌ مكرّرٌ له رسالتُه، وهنا الرمزُ جديدٌ والاسمُ قديم. */
+  const nameHits = useMemo(
+    () => (product || ownHit ? [] : hitsByName(allProducts ?? [], f.name, null, normalizeAr).slice(0, 3)),
+    [allProducts, f.name, product, ownHit]);
+  const [attachBusy, setAttachBusy] = useState<string | null>(null);
+  /** يربط الرمزَ المكتوب بالمنتج القائم بدل صناعةِ توأم — نفسُ ما يفعله المسحُ
+   *  بشاشة البيع (`attach_product_code`)، ينقصه أن يُعرض هنا. */
+  const attachToExisting = async (target: Product) => {
+    const code = normalizeCode(f.barcode);
+    if (!code || attachBusy) return;
+    setAttachBusy(target.id);
+    try {
+      await withTimeout(repo.attachProductCode(target.id, code), 8000);
+      toast.success(t("pos.attachDone", "انربط الرمز بـ«{{name}}» ✓", { name: target.name }),
+        t("pos.attachDoneSub", "صار للمنتج رمزان — الملصق القديم والجديد الاثنين يشتغلون."));
+      onSaved();
+      onClose();
+    } catch (e) {
+      toast.error(t("pos.attachFail", "تعذّر ربط الرمز"), describeDbError(e, t));
+    } finally { setAttachBusy(null); }
+  };
   const [mergeOpen, setMergeOpen] = useState(false);
   // Companies/sections created inline during THIS modal session — merged into the
   // lookup so a retry after a failed save reuses the one just made (the props
@@ -1070,6 +1093,37 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
                 )}
               </div>
             )}
+            {/* اسمٌ قائمٌ برمزٍ جديد — البابُ الذي دخلت منه كلُّ التوائم المقيسة.
+                لا نمنع (قد تكون نكهةً ثانية)، بل نُري الموجودَ برصيده ونعرض
+                ربطَ الرمز به: منتجٌ واحدٌ برمزين هو الواقع، لا صفّان ورصيدان. */}
+            {nameHits.length > 0 && (
+              <div className="mt-2 space-y-1.5 rounded-xl border border-brand-300 bg-brand-50 p-2.5 dark:border-brand-500/40 dark:bg-brand-500/10" data-namehits={nameHits.length}>
+                <p className="text-2xs font-bold text-brand-700 dark:text-brand-300">
+                  {t("pos.nameHit", "عندك منتج بنفس الاسم — نفس المادة برمز ثاني؟")}
+                </p>
+                {nameHits.map((h) => (
+                  <div key={h.id} className="flex flex-wrap items-center gap-2 rounded-lg bg-surface-1 px-2.5 py-1.5 text-xs" data-namehit={h.id}>
+                    <span className="min-w-0 flex-1 truncate font-semibold text-ink">{h.name}</span>
+                    <span className="shrink-0 font-mono text-2xs text-ink-subtle" dir="ltr">{h.barcode || t("pos.noCode", "بلا رمز")}</span>
+                    <span className="shrink-0 text-2xs text-ink-muted">{t("pos.stockIs", "رصيد {{n}}", { n: formatNum(h.stock ?? 0) })}</span>
+                    {normalizeCode(f.barcode) && (
+                      <button type="button" disabled={!!attachBusy} data-nameattach={h.id}
+                        className="rounded-lg bg-brand-600 px-2.5 py-1 text-2xs font-semibold text-white disabled:opacity-50"
+                        onClick={() => { playTap(); void attachToExisting(h); }}>
+                        {attachBusy === h.id ? t("common.loading", "…") : t("pos.attachCode", "اربط الرمز بيه")}
+                      </button>
+                    )}
+                    {onOpenExisting && (
+                      <button type="button" className="rounded-lg border border-line px-2.5 py-1 text-2xs font-semibold text-ink"
+                        onClick={() => { playTap(); onOpenExisting(h); }}>{t("pos.ownHitOpen", "افتحه")}</button>
+                    )}
+                  </div>
+                ))}
+                <p className="text-2xs text-ink-subtle">
+                  {t("pos.nameHitHint", "لو منتج غير (نكهة أو حجم ثاني) كمّل عادي — بس ميّز الاسم حتى ما تتلخبط عليك بالبحث.")}
+                </p>
+              </div>
+            )}
             {!ownHit && looksLikeShelfCode(f.barcode) && (
               <p className="mt-1.5 text-2xs leading-relaxed text-ink-subtle" data-shelfhint>
                 {t("pos.shelfCodeHint", "هذا يشبه رقم رفّ لا باركود مصنع. امسح باركود العلبة بعد — تكدر تخلّي الاثنين.")}
@@ -1377,6 +1431,7 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
 function CatalogSuggestion({ barcode, nameFilled, onUse }: {
   barcode: string; nameFilled: boolean; onUse: (hit: CatalogHit) => void;
 }) {
+  const { t } = useTranslation();
   const [hit, setHit] = useState<CatalogHit | null>(null);
   const [used, setUsed] = useState(false);
   const { restricted } = useOverride();
@@ -1405,7 +1460,11 @@ function CatalogSuggestion({ barcode, nameFilled, onUse }: {
       <span className="min-w-0 flex-1">
         <span className="block truncate text-sm font-extrabold text-ink">{hit.name}</span>
         <span className="block text-2xs text-ink-muted">
-          بيع {money(hit.sell_price)}{restricted ? "" : ` · شراء ${money(hit.purchase_price)}`}
+          {/* سعرٌ محجوبٌ يُقال ولا يُعرض صفراً: الوسيطُ على مصدرٍ أو مصدرين هو
+              سعرُ عيادةٍ بعينها لا سعرُ سوق، فيُحجب حتى يبلغ العدد ثلاثة (0153). */}
+          {hit.sell_price == null
+            ? t("pos.catalogNoPrice", "الاسم فقط — الأسعار تظهر لمّا يصير وراها ٣ عيادات")
+            : <>بيع {money(hit.sell_price)}{restricted || hit.purchase_price == null ? "" : ` · شراء ${money(hit.purchase_price)}`}</>}
         </span>
         <span className="mt-0.5 block text-2xs text-ink-subtle">
           {/* مصدر واحد ليس «سعر السوق» — نقول العدد بدل ما نوهم بثقة ليست موجودة */}

@@ -14,22 +14,30 @@ import { sb } from "./clinicSync";
 export interface CatalogHit {
   barcode: string;
   name: string;
-  sell_price: number;
-  purchase_price: number;
+  /** null = محجوبٌ عمداً: المساهمون أقلُّ من الحدّ، فالوسيطُ سيكون سعرَ عيادةٍ
+   *  بعينها لا سعرَ سوق (0153). صفرٌ ليس نائباً عنه — «٠» رقمٌ يُصدَّق. */
+  sell_price: number | null;
+  purchase_price: number | null;
   /** كم عيادة وراء هذا الرقم — ١ يعني مصدراً واحداً، فخذه بحذر. */
   contributors: number;
   /** كم تسمية مختلفة لنفس الباركود (يظهر عند التعارض). */
   name_variants?: number;
 }
 
-const num = (v: unknown) => Math.max(0, Number(v) || 0);
+/** سعرٌ غائبٌ يبقى غائباً: `num()` القديمة كانت تقلب null إلى 0، فيقرأ الطبيبُ
+ *  «بيع ٠» على أنه سعر. التمييزُ بين «لا نعرف» و«صفر» شرطٌ لصدق العرض. */
+const priceOrNull = (v: unknown): number | null => {
+  if (v === null || v === undefined || v === "") return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? Math.max(0, n) : null;
+};
 
 function toHit(r: Record<string, unknown>): CatalogHit {
   return {
     barcode: String(r.barcode ?? ""),
     name: String(r.name ?? ""),
-    sell_price: num(r.sell_price),
-    purchase_price: num(r.purchase_price),
+    sell_price: priceOrNull(r.sell_price),
+    purchase_price: priceOrNull(r.purchase_price),
     contributors: Math.max(1, Number(r.contributors) || 1),
     name_variants: r.name_variants === undefined ? undefined : Number(r.name_variants) || 1,
   };

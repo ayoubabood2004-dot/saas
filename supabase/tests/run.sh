@@ -22,7 +22,7 @@ DB=dvtest
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MIG="$HERE/../migrations"
 # الهجرات التي يغطّيها هذا المخطّط الأساس. زدها كل ما تنضاف موجة.
-WAVE="$MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_rls_coverage.sql"
+WAVE="$MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_rls_coverage.sql $MIG/0153_catalog_privacy.sql"
 
 command -v "$PGBIN/initdb" >/dev/null || { echo "ما لكيت بوستغريس بـ $PGBIN"; exit 1; }
 
@@ -115,17 +115,55 @@ chk "ولا شرطٌ تغيّر"          "select تغير_شرطها::text     
 chk "ولا دورٌ تبدّل"          "select تغيرت_صلاحياتها::text from public.verify_rls_equivalence()" "0"
 chk "ولا لفٌّ مزدوج" \
     "select count(*)::text from pg_policies where qual like '%SELECT ( SELECT%' or with_check like '%SELECT ( SELECT%'" "0"
-# التغطية (0152): كلُّ جدولٍ إمّا له سياسة أو حجبٌ مقصودٌ معلَن. جدولٌ جديد
-# يُنسى بلا RLS يفشّل هنا قبل أن يبلغ عيادةً حيّة.
-chk "ولا جدولَ بلا حارس" \
-    "select count(*)::text from public.verify_rls_coverage()" "0"
-# والفحصُ يقدر أن يفشل: نُطفئ RLS عن جدولٍ عمداً فيُمسَك، ثم نعيده.
+# التغطية (0152). الحكمُ هنا على **سلوك الدالّة** لا على حصيلة المخطّط:
+# مخطّطُ الحزمة اصطناعيّ وفيه جداولُ سقّالةٍ بلا RLS عمداً، فحصيلةُ «صفر» تخصّ
+# الإنتاج لا هذا المعمل. فنفحص أنّ الدالّة **تُصنّف صحيحاً**: جدولٌ محميّ لا
+# يظهر، ونفسُه بعد إطفاء RLS يظهر، ثم يختفي بإعادته. وفحصٌ لا يقدر أن يفشل لا
+# يُثبت شيئاً — فالإطفاءُ المتعمَّد هو نصفُ الفحص.
+chk "الجدولُ المحميّ لا يظهر" \
+    "select count(*)::text from public.verify_rls_coverage() where الجدول='pets'" "0"
 $P -c "alter table pets disable row level security;" >/dev/null
-chk "والفحصُ يمسك المطفأ" \
+chk "والمطفأُ يُمسَك" \
     "select count(*)::text from public.verify_rls_coverage() where الجدول='pets'" "1"
 $P -c "alter table pets enable row level security;" >/dev/null
-chk "ورجع نظيفاً بعد الإعادة" \
-    "select count(*)::text from public.verify_rls_coverage()" "0"
+chk "ويختفي بإعادة الحارس" \
+    "select count(*)::text from public.verify_rls_coverage() where الجدول='pets'" "0"
+# والحجبُ المقصودُ الموثَّق لا يُبلَّغ عنه (وهو الفرق بين «منسيّ» و«مقصود»).
+$P -c "create table if not exists _cov_probe(id int); alter table _cov_probe enable row level security;" >/dev/null
+chk "حجبٌ بلا توثيقٍ يُبلَّغ" \
+    "select count(*)::text from public.verify_rls_coverage() where الجدول='_cov_probe'" "1"
+$P -c "comment on table _cov_probe is 'RLS-DENY-ALL-BY-DESIGN — فحص';" >/dev/null
+chk "وبالتوثيق يسكت" \
+    "select count(*)::text from public.verify_rls_coverage() where الجدول='_cov_probe'" "0"
+$P -c "drop table if exists _cov_probe;" >/dev/null
+
+# ── الكتالوج المشترك (0153): يعطي الاسمَ ولا يكشف كلفةَ عيادةٍ بعينها ──────
+# ثلاثُ عياداتٍ مشاركة، ورمزان: باركودُ مصنعٍ عند الثلاث، ورقمُ رفٍّ عند واحدة.
+$P -c "insert into clinic_prefs(clinic_id, catalog_share) values
+         ('c0000000-0000-0000-0000-000000000001',true),
+         ('c0000000-0000-0000-0000-000000000002',true),
+         ('c0000000-0000-0000-0000-000000000003',true)
+       on conflict (clinic_id) do update set catalog_share = true;
+       insert into products(clinic_id,name,barcode,sell_price,purchase_price) values
+         ('c0000000-0000-0000-0000-000000000001','دواء مشترك','6970967772736',5000,3000),
+         ('c0000000-0000-0000-0000-000000000002','دواء مشترك','6970967772736',5200,3100),
+         ('c0000000-0000-0000-0000-000000000003','دواء مشترك','6970967772736',4800,2900),
+         ('c0000000-0000-0000-0000-000000000001','دواء وحيد','8436611140873',9000,7000),
+         ('c0000000-0000-0000-0000-000000000001','رقم رفّ','247',1000,600);" >/dev/null
+chk "رقمُ الرفّ لا يدخل الكتالوج" \
+    "select count(*)::text from shared_catalog_source where barcode='247'" "0"
+chk "وباركودُ المصنع يدخل" \
+    "select count(*)::text from shared_catalog_source where barcode='6970967772736'" "3"
+chk "ثلاثةُ مساهمين ⇒ السعرُ يظهر" \
+    "select (sell_price is not null)::text from catalog_lookup('6970967772736')" "true"
+chk "ومساهمٌ واحد ⇒ السعرُ يُحجب" \
+    "select (sell_price is null and purchase_price is null)::text from catalog_lookup('8436611140873')" "true"
+chk "لكنّ الاسمَ يخرج على أيّ حال" \
+    "select name from catalog_lookup('8436611140873')" "دواءوحيد"
+chk "وعددُ المساهمين يُقال دائماً" \
+    "select contributors::text from catalog_lookup('8436611140873')" "1"
+chk "والبحثُ بالاسم يحجب مثلها" \
+    "select (sell_price is null)::text from catalog_search('وحيد',10)" "true"
 chk "الكنس ممنوع على authenticated" \
     "select has_function_privilege('authenticated','public.purge_audit_log(int,int)','execute')::text" "false"
 chk "الكنس ممنوع على anon" \

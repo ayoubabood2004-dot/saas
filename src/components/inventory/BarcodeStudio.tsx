@@ -24,7 +24,7 @@ import { playTap, playSuccess, playWarning } from "@/lib/sounds";
  *  · السجل يحفظ كل كود: لأي شيء، منو ولّده، ومتى — مع طباعة ملصقات.
  */
 export function BarcodeStudio({ products, onChanged }: { products: Product[]; onChanged: () => void }) {
-  const { i18n } = useTranslation();
+  const { t, i18n } = useTranslation();
   const lang = i18n.language;
   const { user } = useAuth();
   const toast = useToast();
@@ -32,6 +32,8 @@ export function BarcodeStudio({ products, onChanged }: { products: Product[]; on
   const [registry, setRegistry] = useState<GeneratedBarcode[] | null>(null);
   const [q, setQ] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
+  /** تقدّمُ الربط — الطبيبُ يرى أين وصل بدل زرٍّ صامتٍ يلفّ. */
+  const [step, setStep] = useState<{ done: number; total: number } | null>(null);
   const [batchCount, setBatchCount] = useState("10");
   const [batchLabel, setBatchLabel] = useState("");
   const [lastBatch, setLastBatch] = useState<GeneratedBarcode[]>([]);
@@ -69,7 +71,53 @@ export function BarcodeStudio({ products, onChanged }: { products: Product[]; on
   );
   const productById = useMemo(() => new Map(products.map((p) => [p.id, p])), [products]);
 
+  /**
+   * الرموزُ المحجوزةُ بلا ربط — «يتامى السجلّ».
+   *
+   * الحجزُ والربطُ عمليتان: صفوفُ السجلّ تُكتب بنداءٍ واحد، ثم يُكتب
+   * `products.barcode` لكلِّ منتجٍ على حدة. فانقطاعُ الشبكة بين الاثنين يترك
+   * رموزاً محجوزةً تحمل `product_id` بينما صاحبُها ما زال فارغاً — والملصقاتُ
+   * قد تكون طُبعت ولُصقت على الرفّ.
+   *
+   * والسجلُّ يحفظ صاحبَ كلِّ رمز، فالمعلومةُ موجودة ولم تضع؛ الناقصُ كان من
+   * يقرأها. توليدُ رمزٍ جديدٍ لمنتجٍ رمزُه محجوزٌ يقتل الورقَ المطبوع، فنتبنّى
+   * المحجوزَ أوّلاً ولا نولّد إلا لمن لا رمزَ له أصلاً.
+   */
+  const pendingFromRegistry = useMemo(() => {
+    const byId = new Map(products.map((p) => [p.id, p]));
+    const out: { product: Product; code: string }[] = [];
+    const seen = new Set<string>();
+    for (const g of registry ?? []) {
+      if (!g.product_id || seen.has(g.product_id)) continue;
+      const p = byId.get(g.product_id);
+      if (!p || p.barcode?.trim()) continue;   // لا صاحب، أو صاحبُه ارتبط فعلاً
+      seen.add(g.product_id);
+      out.push({ product: p, code: g.barcode });
+    }
+    return out;
+  }, [registry, products]);
+
   /* ------------------------- الأفعال ------------------------- */
+
+  /** ربطٌ بدفعاتٍ متوازية: أقصرُ زمناً من الطابور المتسلسل فأقلُّ عرضةً للانقطاع.
+   *  ونعدّ الناجحَ والفاشل بدل أن يقطع أوّلُ فشلٍ الباقي — الفاشلُ يبقى محجوزاً
+   *  بالسجلّ فتتبنّاه الفتحةُ القادمة. */
+  const LINK_CHUNK = 8;
+  const linkPairs = async (
+    pairs: { product: Product; code: string }[],
+    onStep: (done: number) => void,
+  ): Promise<{ ok: number; failed: number }> => {
+    let ok = 0, failed = 0;
+    for (let i = 0; i < pairs.length; i += LINK_CHUNK) {
+      const chunk = pairs.slice(i, i + LINK_CHUNK);
+      const res = await Promise.allSettled(
+        chunk.map((x) => repo.updateProduct(x.product.id, { barcode: x.code })),
+      );
+      for (const r of res) { if (r.status === "fulfilled") ok++; else failed++; }
+      onStep(ok + failed);
+    }
+    return { ok, failed };
+  };
 
   /** ولّد كوداً واربطه بمنتج محدد — عملية وحدة ذرّية من منظور المستخدم. */
   const generateForProduct = async (p: Product) => {
@@ -101,20 +149,75 @@ export function BarcodeStudio({ products, onChanged }: { products: Product[]; on
     if (busy || registry === null || noBarcode.length === 0) return;
     playTap();
     setBusy("__all__");
+    setStep({ done: 0, total: noBarcode.length });
     try {
-      const codes = generateBarcodes(noBarcode.length, takenSet(), startSeq());
-      const rows = noBarcode.map((p, i) => ({ barcode: codes[i], label: p.name, product_id: p.id, created_by: user?.full_name ?? null }));
-      const saved = await repo.addGeneratedBarcodes(rows);
-      for (let i = 0; i < noBarcode.length; i++) await repo.updateProduct(noBarcode[i].id, { barcode: codes[i] });
-      playSuccess();
-      toast.success(`انولد وانربط ${formatNum(noBarcode.length)} باركود ✓`);
-      setLastBatch(saved.length ? saved : rows.map((r) => ({ ...r, id: r.barcode, created_at: new Date().toISOString() })));
+      // ١) تبنَّ المحجوزَ قبل أن تولّد: منتجٌ رمزُه بالسجلّ يأخذه هو، لا رمزاً
+      //    جديداً — وإلا مات الملصقُ المطبوع بمحاولةٍ سابقة.
+      const adopted = new Map(pendingFromRegistry.map((x) => [x.product.id, x.code]));
+      const needNew = noBarcode.filter((p) => !adopted.has(p.id));
+
+      // ٢) احجز للباقين فقط.
+      const codes = generateBarcodes(needNew.length, takenSet(), startSeq());
+      const rows = needNew.map((p, i) => ({ barcode: codes[i], label: p.name, product_id: p.id, created_by: user?.full_name ?? null }));
+      const saved = rows.length ? await repo.addGeneratedBarcodes(rows) : [];
+
+      // ٣) اربط الاثنين معاً — المتبنّى والجديد.
+      const pairs = [
+        ...noBarcode.filter((p) => adopted.has(p.id)).map((p) => ({ product: p, code: adopted.get(p.id)! })),
+        ...needNew.map((p, i) => ({ product: p, code: codes[i] })),
+      ];
+      const { ok, failed } = await linkPairs(pairs, (n) => setStep({ done: n, total: pairs.length }));
+
+      if (failed > 0) {
+        // نقولها ولا نبلعها: الفاشلُ ما زال محجوزاً باسم صاحبه، فالفتحةُ
+        // القادمة تتبنّاه بنفس الرمز — لا رمزَ جديد ولا ورقٌ يموت.
+        playWarning();
+        toast.error(
+          t("bc.linkedPartial", "انربط {{ok}} من {{all}}", { ok: formatNum(ok), all: formatNum(pairs.length) }),
+          t("bc.linkedPartialSub", "{{n}} ما انربطوا — رموزهم محفوظة باسمهم، افتح الشاشة مرة ثانية حتى تكمل بنفس الرموز.", { n: formatNum(failed) }),
+        );
+      } else {
+        playSuccess();
+        toast.success(t("bc.linkedAll", "انولد وانربط {{n}} باركود ✓", { n: formatNum(ok) }),
+          adopted.size ? t("bc.adoptedSome", "منها {{n}} رمز محجوز من قبل — انتبنّى بدل ما ينولد جديد.", { n: formatNum(adopted.size) }) : undefined);
+      }
+      // قائمةُ الطباعة كاملةٌ دائماً: الإدراجُ قد يرجّع أقلَّ مما كُتب (سقفُ
+      // ألف صفّ بالردّ)، فلا نطبع ناقصاً — نبنيها من الصفوف التي أرسلناها.
+      const printable: GeneratedBarcode[] = saved.length === rows.length && rows.length > 0
+        ? saved
+        : rows.map((r) => ({ ...r, id: r.barcode, created_at: new Date().toISOString() } as GeneratedBarcode));
+      setLastBatch(printable);
       await load();
       onChanged();
     } catch (e) {
       playWarning();
       toast.error("تعذّر التوليد", e instanceof Error ? e.message : undefined);
-    } finally { setBusy(null); }
+    } finally { setBusy(null); setStep(null); }
+  };
+
+  /** تبنَّ المحجوزَ وحده — بلا توليدِ رمزٍ واحدٍ جديد. */
+  const adoptPending = async () => {
+    if (busy || pendingFromRegistry.length === 0) return;
+    playTap();
+    setBusy("__adopt__");
+    setStep({ done: 0, total: pendingFromRegistry.length });
+    try {
+      const { ok, failed } = await linkPairs(pendingFromRegistry, (n) => setStep({ done: n, total: pendingFromRegistry.length }));
+      if (failed > 0) {
+        playWarning();
+        toast.error(t("bc.linkedPartial", "انربط {{ok}} من {{all}}", { ok: formatNum(ok), all: formatNum(pendingFromRegistry.length) }),
+          t("bc.adoptRetry", "الباقي محفوظ — أعد المحاولة."));
+      } else {
+        playSuccess();
+        toast.success(t("bc.adoptDone", "انربط {{n}} رمز محجوز ✓", { n: formatNum(ok) }),
+          t("bc.adoptDoneSub", "الملصقات المطبوعة سابقاً ترجع تشتغل."));
+      }
+      await load();
+      onChanged();
+    } catch (e) {
+      playWarning();
+      toast.error(t("bc.linkFail", "تعذّر الربط"), e instanceof Error ? e.message : undefined);
+    } finally { setBusy(null); setStep(null); }
   };
 
   /** دفعة حرة بغرض مسمى — لبضاعة جاية أو ملصقات جاهزة بالدرج. */
@@ -217,6 +320,41 @@ export function BarcodeStudio({ products, onChanged }: { products: Product[]; on
           </div>
         ))}
       </div>
+
+      {/* رموزٌ محجوزةٌ بلا ربط — بقايا دفعةٍ انقطعت. تُتبنّى بنفس الرمز حتى
+          يبقى الملصقُ المطبوعُ صالحاً؛ توليدُ رمزٍ جديدٍ هنا يقتل الورق. */}
+      {pendingFromRegistry.length > 0 && (
+        <section className="rounded-2xl border border-danger-300 bg-danger-50/50 p-3.5 dark:border-danger-500/30 dark:bg-danger-500/10">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="grid h-9 w-9 place-items-center rounded-xl bg-danger-100 text-danger-600 dark:bg-danger-500/20 dark:text-danger-300"><Link2 size={17} /></span>
+            <div className="min-w-0 flex-1">
+              <h3 className="text-sm font-extrabold text-ink">
+                {t("bc.pendingTitle", "رموز محجوزة ما انربطت ({{n}})", { n: formatNum(pendingFromRegistry.length) })}
+              </h3>
+              <p className="text-2xs text-ink-subtle">
+                {t("bc.pendingHint", "دفعةٌ سابقة انقطعت بالنص: الرمز محجوزٌ باسم منتجه بالسجلّ، والمنتج لسه فارغ. اربطها بنفس الرموز — لو انولدت رموزٌ جديدة تموت الملصقات المطبوعة.")}
+              </p>
+            </div>
+            <Button size="sm" variant="secondary" loading={busy === "__adopt__"} leftIcon={<Link2 size={14} />} onClick={() => void adoptPending()}>
+              {t("bc.adoptBtn", "اربطها بنفس رموزها")}
+            </Button>
+          </div>
+        </section>
+      )}
+
+      {/* تقدّمُ الربط — رقمٌ يتحرّك بدل زرٍّ صامت */}
+      {step && step.total > 1 && (
+        <div className="rounded-2xl border border-line bg-surface-1 p-3">
+          <div className="mb-1.5 flex items-center justify-between text-2xs font-bold text-ink-muted">
+            <span>{t("bc.linking", "يربط الباركودات…")}</span>
+            <span className="tabular-nums">{formatNum(step.done)} / {formatNum(step.total)}</span>
+          </div>
+          <div className="h-1.5 overflow-hidden rounded-full bg-surface-3">
+            <div className="h-full rounded-full bg-brand-600 transition-[width] duration-200"
+                 style={{ width: `${Math.round((step.done / Math.max(1, step.total)) * 100)}%` }} />
+          </div>
+        </div>
+      )}
 
       {/* منتجات بلا باركود — أول شيء يشوفه، لأنه هو الشغل الفعلي */}
       {noBarcode.length > 0 && (
