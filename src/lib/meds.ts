@@ -1,7 +1,7 @@
 // Comprehensive veterinary medication catalogue, grouped by therapeutic type.
 // Doctors can extend the clinic's list at runtime (persisted) — see clinic-meds helpers.
 import { getActiveClinicId } from "./clinics";
-import { sb, cloudWrite, registerHydrator, registerReset } from "./clinicSync";
+import { sb, cloudWrite, registerHydrator, registerReset, seedOwnClinic } from "./clinicSync";
 
 export interface MedCategory {
   type: string;
@@ -120,7 +120,7 @@ export async function hydrateMeds(): Promise<void> {
     let next = (data ?? []).map((r) => ({ name: r.name as string, type: r.type as string }));
     const local = readLocal();
     if (next.length === 0) {
-      if (local.length) { await client.from("clinic_meds").insert(local); next = local; }
+      if (local.length) { await seedOwnClinic(() => client.from("clinic_meds").insert(local)); next = local; }
     } else if (local.length) {
       // Keep any local-only items (added optimistically; their cloud insert may be
       // pending or failed) so hydration never DROPS a just-added medication.

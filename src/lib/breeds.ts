@@ -1,6 +1,6 @@
 import type { Species } from "@/types";
 import { getActiveClinicId } from "./clinics";
-import { sb, cloudWrite, registerHydrator, registerReset } from "./clinicSync";
+import { sb, cloudWrite, registerHydrator, registerReset, seedOwnClinic } from "./clinicSync";
 
 /** Popular breeds per species. Doctors extend these per-clinic at runtime (Settings). */
 export const DEFAULT_BREEDS: Record<Species, string[]> = {
@@ -117,7 +117,7 @@ export async function hydrateBreeds(): Promise<void> {
     if ((data ?? []).length === 0) {
       const rows: { species: string; name: string }[] = [];
       for (const s of species) for (const n of readLocal(s)) { (grouped[s] ??= []).push(n); rows.push({ species: s, name: n }); }
-      if (rows.length) await client.from("clinic_breeds").insert(rows);
+      if (rows.length) await seedOwnClinic(() => client.from("clinic_breeds").insert(rows));
     }
     cache = grouped;
     for (const s of species) { try { localStorage.setItem(keyName(s), JSON.stringify(grouped[s] ?? [])); } catch { /* ignore */ } }

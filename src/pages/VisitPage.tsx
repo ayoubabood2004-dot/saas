@@ -212,6 +212,9 @@ export default function VisitPage() {
     for (const t of treatments) (map.get(t.day) ?? map.set(t.day, []).get(t.day)!).push(t);
     return [...map.entries()].sort((a, b) => a[0].localeCompare(b[0]));
   }, [treatments]);
+  /* الطبلةُ تُفتح مسطّرةً لا مطويّة: يومُ اليوم صفٌّ جاهزٌ بأعمدته حتى قبل
+   * أوّل دواء، فيرى الطبيبُ الورقةَ التي سيملؤها لا دعوةً تصفُ ورقةً غائبة.
+   * ولو كانت هناك خطةٌ فأيّامُها هي، بلا صفٍّ مصطنع. */
   const dayNotes = useMemo(() => {
     const map = new Map<string, PetNote[]>();
     for (const n of notes) { const { day } = parseDayNote(n.note_text); if (day) (map.get(day) ?? map.set(day, []).get(day)!).push(n); }
@@ -219,6 +222,10 @@ export default function VisitPage() {
   }, [notes]);
 
   const hasFlowsheet = treatments.length > 0;
+  /* الطبلةُ تُفتح مسطّرةً لا مطويّة: قبل أوّل دواءٍ يبقى الجدولُ بأعمدته
+   * الخمسة وصفُّ اليوم جاهزٌ فارغ — الطبيبُ يرى الورقةَ التي سيملؤها، لا
+   * دعوةً تصف ورقةً غائبة. ولو كانت هناك خطةٌ فأيّامُها هي بلا صفٍّ مصطنع. */
+  const planDays: [string, TreatmentEntry[]][] = dayGroups.length ? dayGroups : [[todayISO, []]];
   /* كل حسابات «الجرعات» تمشي على الأدوية والسوائل وحدها: العدّاد والالتزام
    * و«إعطاء الكل» ما عاد يحسبون الحرارة والأكل جرعاتٍ تنتظر. */
   const medRows = useMemo(() => treatments.filter(isGivable), [treatments]);
@@ -651,21 +658,8 @@ export default function VisitPage() {
         />
       )}
 
-      {/* ── دعوة البدء لمّا ما في خطة — بدل جدول فاضي ── */}
-      {!hasFlowsheet && !ended && (
-        <div className="mt-3 rounded-2xl border border-dashed border-brand-300 bg-brand-50/50 p-6 text-center dark:border-brand-500/30 dark:bg-brand-500/5">
-          <ClipboardList size={28} className="mx-auto mb-2 text-brand-500" />
-          <p className="text-sm font-extrabold text-ink">ما في خطة علاج بعد</p>
-          <p className="mt-1 text-2xs text-ink-muted">ابدأ بالتشخيص وخطة العلاج — الجرعات تتجدول تلقائياً بأوقاتها.</p>
-          <button onClick={() => { playTap(); setPlanOpen(true); }}
-            className="mt-3 inline-flex items-center gap-2 rounded-full bg-brand-600 px-5 py-2.5 text-sm font-extrabold text-white shadow-soft transition hover:bg-brand-700">
-            <ClipboardList size={15} /> التشخيص وخطة العلاج
-          </button>
-        </div>
-      )}
-
       {/* ── خطة العلاج — باليوم أو بالدواء، بمكانها المعتاد ── */}
-      {hasFlowsheet && (
+      {(hasFlowsheet || !ended) && (
         <div className="mt-3">
           <div className="mb-2 flex flex-wrap items-center gap-2">
             <h2 className="flex items-center gap-2 text-sm font-extrabold text-ink">
@@ -673,11 +667,13 @@ export default function VisitPage() {
               خطة العلاج
             </h2>
             <div className="ms-auto flex flex-wrap items-center gap-2">
-              <div className="inline-flex rounded-full border border-line bg-surface-2 p-0.5">
-                <ViewToggleBtn active={planView === "day"} icon={<Rows3 size={14} />} label="باليوم" onClick={() => { playTap(); setPlanView("day"); }} />
-                <ViewToggleBtn active={planView === "drug"} icon={<LayoutGrid size={14} />} label="بالدواء" onClick={() => { playTap(); setPlanView("drug"); }} />
-              </div>
-              {planView === "day" && (
+              {hasFlowsheet && (
+                <div className="inline-flex rounded-full border border-line bg-surface-2 p-0.5">
+                  <ViewToggleBtn active={planView === "day"} icon={<Rows3 size={14} />} label="باليوم" onClick={() => { playTap(); setPlanView("day"); }} />
+                  <ViewToggleBtn active={planView === "drug"} icon={<LayoutGrid size={14} />} label="بالدواء" onClick={() => { playTap(); setPlanView("drug"); }} />
+                </div>
+              )}
+              {hasFlowsheet && planView === "day" && (
                 <div className="hidden flex-wrap gap-x-3 gap-y-1 sm:flex">
                   {(["done", "due", "overdue", "upcoming"] as DoseStatus[]).map((st) => (
                     <span key={st} className="inline-flex items-center gap-1.5 text-[10px] font-extrabold text-ink-muted"><span className={cn("inline-block h-3 w-3 rounded-sm", STATUS_META[st].bar)} /> {STATUS_META[st].label}</span>
@@ -688,9 +684,9 @@ export default function VisitPage() {
           </div>
           {/* البروتوكول يبيّن نفسه فوق الطبلة — اسمه ويومه وتقدّمه وتحذيره */}
           {activeProto && <ProtocolBand mark={activeProto} todayISO={todayISO} treatments={treatments} />}
-          {planView === "day" ? (
+          {planView === "day" || !hasFlowsheet ? (
             <TreatmentSheetTable
-              dayGroups={dayGroups} todayISO={todayISO} ended={ended} lang={lang} dayNotes={dayNotes}
+              dayGroups={planDays} todayISO={todayISO} ended={ended} lang={lang} dayNotes={dayNotes}
               species={pet?.species}
               protoNotes={protoNotes}
               todayRowRef={todayRowRef}
@@ -1063,10 +1059,17 @@ function TreatmentSheetTable({ dayGroups, todayISO, ended, lang, species, dayNot
             /* \u00ab\u062a\u0645 \u0627\u0644\u0639\u0644\u0627\u062c\u00bb \u0644\u0644\u0623\u062f\u0648\u064a\u0629 \u0648\u062d\u062f\u0647\u0627 \u2014 \u0627\u0644\u0633\u0648\u0627\u0626\u0644 \u0648\u0627\u0644\u0645\u062a\u0627\u0628\u0639\u0627\u062a \u0631\u0639\u0627\u064a\u0629\u064c \u062a\u0633\u0643\u0646 \u0645\u0635\u0641\u0648\u0641\u0629\u064e \u064a\u0648\u0645\u0647\u0627 \u0627\u0644\u0645\u0642\u0627\u0628\u0644\u0629. */
             const meds = rows.filter(isGivable);
             const care = rows.filter((r) => !isGivable(r));
-            const careCell = care.length > 0 && (
+            /* خانةُ الرعاية تُرسم دائماً ولو فرغت: عمودٌ برأسٍ بلا خانةٍ تحته
+             * يجعل الجدولَ يتزحزح صفاً عن صفّ — والطبلةُ الفارغة أوّلُ من
+             * يُظهر ذلك، لأن كلَّ أيامها بلا رعاية. */
+            const careCell = (
               <td className="hidden border-s-2 border-line-strong bg-surface-2/50 p-2 align-top lg:table-cell" rowSpan={Math.max(1, meds.length)} data-carecell={day}>
-                <CareMatrix rows={care} day={day} todayISO={todayISO} ended={ended} species={species}
-                  onCell={(x) => ((x.task_type ?? "") === "fluid" ? onGive(x) : onRecordObs(x))} />
+                {care.length > 0 ? (
+                  <CareMatrix rows={care} day={day} todayISO={todayISO} ended={ended} species={species}
+                    onCell={(x) => ((x.task_type ?? "") === "fluid" ? onGive(x) : onRecordObs(x))} />
+                ) : (
+                  <span className="text-[11px] font-semibold text-ink-subtle">{t("visit.noCareDay", "\u0645\u0627 \u0641\u064a \u0631\u0639\u0627\u064a\u0629\u064c \u0645\u062c\u062f\u0648\u0644\u0629 \u0644\u0647\u0630\u0627 \u0627\u0644\u064a\u0648\u0645")}</span>
+                )}
               </td>
             );
             const notesCell = (first: boolean, tx: TreatmentEntry) => {
@@ -1141,7 +1144,7 @@ function TreatmentSheetTable({ dayGroups, todayISO, ended, lang, species, dayNot
                     {tx.administered_at ? (
                       <span className="inline-flex items-center gap-1 text-sm font-bold text-ink"><UserRound size={13} className="shrink-0 text-ink-subtle" /> {tx.administered_by || "\u2014"}</span>
                     ) : ended ? (
-                      <span className="text-sm text-ink-subtle">\u2014</span>
+                      <span className="text-sm text-ink-subtle">{"\u2014"}</span>
                     ) : (
                       <button type="button" onClick={() => onGive(tx)}
                         className="inline-flex items-center gap-1.5 rounded bg-brand-600 px-3 py-1.5 text-xs font-black text-white transition hover:bg-brand-700">
@@ -1167,7 +1170,7 @@ function TreatmentSheetTable({ dayGroups, todayISO, ended, lang, species, dayNot
                   )}
                 </td>
                 <td className="border-e border-line px-3 py-2.5 align-top text-xs font-semibold text-ink-subtle">{t("visit.noDrugsDay", "\u0644\u0627 \u0623\u062f\u0648\u064a\u0629 \u0647\u0630\u0627 \u0627\u0644\u064a\u0648\u0645")}</td>
-                <td className="border-e border-line px-3 py-2.5 align-top text-sm text-ink-subtle">\u2014</td>
+                <td className="border-e border-line px-3 py-2.5 align-top text-sm text-ink-subtle">{"\u2014"}</td>
                 <td className={cn("border-line px-3 py-2.5 align-top", "lg:border-e")}>
                   {notes.map((n) => (
                     <div key={n.id} className="flex items-start gap-1 text-xs leading-snug text-ink-muted"><NotebookPen size={11} className="mt-0.5 shrink-0 text-ink-subtle" /> {parseDayNote(n.note_text).body}</div>
@@ -1262,7 +1265,7 @@ function CareMatrix({ rows, day, todayISO, ended, species, onCell }: {
               </td>
               {times.map((tm) => {
                 const x = g.cells.get(tm);
-                if (!x) return <td key={tm || "-"} className="border-s border-line px-1 py-1 text-center text-[10px] text-ink-subtle/40">\u2014</td>;
+                if (!x) return <td key={tm || "-"} className="border-s border-line px-1 py-1 text-center text-[10px] text-ink-subtle/40">{"\u2014"}</td>;
                 const isDone = doneOf(x);
                 const fluid = (x.task_type ?? "") === "fluid";
                 const label = isDone
