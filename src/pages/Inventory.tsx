@@ -410,10 +410,20 @@ function computeInventoryValue(products: Product[], sections: CompanySection[]) 
   return { cost, retail, profit: retail - cost, pooledCost, pooledRetail, hasPooled: pooledCost > 0 || pooledRetail > 0 };
 }
 
+/**
+ * بطاقةُ «قيمة المخزون» — الأرقامُ الثلاثة الكبيرة.
+ *
+ * هذي وحدَها **لا يفتحها** المفتاحُ الاختياريّ. لأن ما يحتاجه من يشتغل على
+ * جهازٍ مقفول هو أن يضيف مادّةً ويعدّل سعرَها — لا أن تُعلَن أمامه رؤوسُ
+ * أموال العيادة وربحُها المتوقَّع بخطٍّ عريض يُقرأ من باب الغرفة. فالمفتاح
+ * يفتح العملَ، والبطاقةُ تتبع «وضع المدير» نفسَه بلا استثناء.
+ */
 function InventoryValueCard({ products, sections }: { products: Product[]; sections: CompanySection[] }) {
-  const { stockLocked: locked } = useOverride();
+  const { restricted } = useOverride();
   const { t } = useTranslation();
   const v = useMemo(() => computeInventoryValue(products, sections), [products, sections]);
+  // بوضع المدير تختفي البطاقةُ كلُّها — الثلاثةُ أرقامٍ لا اثنان منها.
+  if (restricted) return null;
   return (
     <div className="card mb-5 overflow-hidden p-0">
       <div className="flex items-center gap-2 border-b border-line px-5 py-3">
@@ -421,12 +431,12 @@ function InventoryValueCard({ products, sections }: { products: Product[]; secti
         <h3 className="text-sm font-bold text-ink">{t("pos.invValueTitle", "قيمة المخزون")}</h3>
         <span className="ms-auto text-2xs text-ink-subtle">{t("pos.invValueSub", "قيمة البضاعة الموجودة الآن")}</span>
       </div>
-      <div className={cn("grid grid-cols-1 divide-y divide-line sm:divide-x sm:divide-y-0 rtl:sm:divide-x-reverse", locked ? "sm:grid-cols-1" : "sm:grid-cols-3")}>
-        {!locked && <ValueCell label={t("pos.invValueCost", "رأس المال (شراء)")} value={money(Math.round(v.cost))} tone="ink" />}
+      <div className="grid grid-cols-1 divide-y divide-line sm:grid-cols-3 sm:divide-x sm:divide-y-0 rtl:sm:divide-x-reverse">
+        <ValueCell label={t("pos.invValueCost", "رأس المال (شراء)")} value={money(Math.round(v.cost))} tone="ink" />
         <ValueCell label={t("pos.invValueRetail", "قيمة البيع")} value={money(Math.round(v.retail))} tone="brand" />
-        {!locked && <ValueCell label={t("pos.invValueProfit", "الربح المتوقع")} value={money(Math.round(v.profit))} tone="success" />}
+        <ValueCell label={t("pos.invValueProfit", "الربح المتوقع")} value={money(Math.round(v.profit))} tone="success" />
       </div>
-      {v.hasPooled && !locked && (
+      {v.hasPooled && (
         <div className="flex items-center gap-1.5 border-t border-line bg-surface-2/50 px-5 py-2.5 text-xs text-ink-subtle">
           <Layers size={13} className="shrink-0 text-brand-500" />
           {t("pos.invValueEstimated", { cost: money(Math.round(v.pooledCost)), retail: money(Math.round(v.pooledRetail)), defaultValue: "منها تقديري (مخزون مجمّع): {{cost}} شراء · {{retail}} بيع" })}
