@@ -754,7 +754,12 @@
     "dFeeClinicNote": "The fee is inside the invoice total, and the courier hands it to the clinic.",
     "dFeeCourierNote": "{{n}} is added on top of the total and kept by the courier.",
     "dFeeSaveFailed": "The item changes were saved, but the fee wasn't — please try again",
-    "moreHidden": "Showing {{n}} of {{total}} — narrow the search to see the rest"
+    "moreHidden": "Showing {{n}} of {{total}} — narrow the search to see the rest",
+    "wholesale": {
+      "noCost": "This product has no purchase price",
+      "noCostHint": "“{{name}}” would sell for zero. Enter its purchase price in Inventory first.",
+      "badge": "Wholesale — starts at cost price"
+    }
   },
   "promos": {
     "title": "Offers management",
@@ -1148,7 +1153,8 @@
     "attachFooter": "Not there? Close this and add it as a new product from Inventory.",
     "codeAttached": "Barcode attached to {{n}}",
     "codeTaken": "That barcode belongs to another product",
-    "stockN": "stock {{n}}"
+    "stockN": "stock {{n}}",
+    "tabWholesale": "Wholesale"
   },
   "role": {
     "admin": "Clinic",

@@ -13,6 +13,8 @@ import type { Product, ProductCategory, Company, CompanySection, DeletedProduct 
 import { PurchasesTab, PurchaseBuilderModal } from "@/components/inventory/Purchases";
 import { StarterCatalogModal } from "@/components/inventory/StarterCatalog";
 import { SupplierLedgerTab } from "@/components/inventory/SupplierLedger";
+import { SaleBuilder } from "@/components/retail/SaleBuilder";
+import { useEntitlements } from "@/lib/entitlements";
 import { BarcodeStudio } from "@/components/inventory/BarcodeStudio";
 import { repo } from "@/lib/repo";
 import { useAuth } from "@/contexts/AuthContext";
@@ -44,7 +46,7 @@ const normName = (s: string) => s.trim().replace(/\s+/g, " ").normalize("NFC");
 /** Case-insensitive match key for a company name. */
 const normKey = (s: string) => normName(s).toLowerCase();
 
-type View = "products" | "companies" | "purchases" | "ledger" | "barcodes" | "trash";
+type View = "products" | "companies" | "purchases" | "ledger" | "barcodes" | "trash" | "wholesale";
 
 /* --------------------------------------------------------------------------
  * مجموعات الدفعات (bulk_group)
@@ -121,9 +123,13 @@ export function Inventory() {
   const [loading, setLoading] = useState(!seed);
   const [view, setView] = useState<View>("products");
   const { restricted } = useOverride();
+  // /inventory بلا FeatureGate بعكس /retail — فلو فُتحت شاشةُ بيعٍ هنا بلا فحص
+  // صارت الكاشيرُ متاحةً لعيادةٍ باقتُها لا تشملها.
+  const { has } = useEntitlements();
+  const canPos = has("pos");
   // جهاز مقفل وواقف على تبويب حساس؟ رجّعه للمنتجات فوراً.
   useEffect(() => {
-    if (restricted && (view === "purchases" || view === "ledger")) setView("products");
+    if (restricted && (view === "purchases" || view === "ledger" || view === "wholesale")) setView("products");
   }, [restricted, view]);
   // null = لم يُفحص بعد · false = ترحيل 0075 ناقص (المجموعات تسقط بصمت)
   const [groupsOk, setGroupsOk] = useState<boolean | null>(null);
@@ -323,6 +329,7 @@ export function Inventory() {
         <ViewTab active={view === "companies"} icon={Building2} label={t("pos.tabCompanies", "الشركات")} onClick={() => { playTap(); setView("companies"); }} />
         {!restricted && <ViewTab active={view === "purchases"} icon={ShoppingBag} label={t("pos.tabPurchases", "المشتريات")} onClick={() => { playTap(); setView("purchases"); }} />}
         {!restricted && <ViewTab active={view === "ledger"} icon={Wallet} label={t("pos.tabLedger", "الديون والفواتير")} onClick={() => { playTap(); setView("ledger"); }} />}
+        {!restricted && canPos && <ViewTab active={view === "wholesale"} icon={Layers} label={t("pos.tabWholesale", "البيع بالجملة")} onClick={() => { playTap(); setView("wholesale"); }} />}
         <ViewTab active={view === "barcodes"} icon={ScanBarcode} label={t("pos.tabBarcodes", "مولد الباركود")} onClick={() => { playTap(); setView("barcodes"); }} />
         <ViewTab active={view === "trash"} icon={Trash2} label={t("pos.tabTrash", "المحذوفات")} onClick={() => { playTap(); setView("trash"); }} />
       </div>
@@ -343,6 +350,9 @@ export function Inventory() {
         <SupplierLedgerTab companies={companies} clinicId={clinicId} products={products} />
       ) : view === "barcodes" ? (
         <BarcodeStudio products={products} onChanged={load} />
+      ) : view === "wholesale" ? (
+        // نفسُ شاشة البيع بكل تفاصيلها — الفرقُ أن السطر يبدأ على سعر الشراء.
+        <SaleBuilder products={products} clinicId={clinicId} onSold={load} wholesale />
       ) : view === "trash" ? (
         <TrashTab onChanged={load} />
       ) : (

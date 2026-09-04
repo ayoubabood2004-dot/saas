@@ -93,6 +93,9 @@ function createInvoiceLocal(items: CheckoutItem[], meta?: SaleMeta): Invoice {
     print_count: 0, status: "paid", refunded_at: null,
     staff_id: meta?.staff_id?.trim() || null,
     notes: meta?.notes?.trim() || null,
+    // نفسُ سقوطِ الخادم (0156): المجهولُ تجزئة — والنسخةُ التجريبية هي ما
+    // تجري عليه فحوصُ المنطق، فسلوكٌ ناقصٌ هنا سلوكٌ لم يُفحص.
+    sale_kind: meta?.sale_kind === "wholesale" ? "wholesale" : "retail",
     created_at: new Date().toISOString(),
   };
   db.invoices.push(invoice);
