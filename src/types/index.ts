@@ -843,6 +843,27 @@ export interface PurchasePayment {
   created_at: string;
 }
 
+/** مطالبةٌ يدويّةٌ من شركة بلا فاتورة شراء (هجرة 0155).
+ *
+ *  أجرةُ نقل، فرقُ سعرٍ اتُّفق عليه بعد التسليم، تالفٌ حُسب على العيادة، رصيدٌ
+ *  قديمٌ مُرحَّلٌ من دفترٍ ورقيّ. تُجمع على **الدين وحده** ولا تمسّ مخزوناً ولا
+ *  كلفةً ولا ربحاً — لأنها مالٌ بذمّةٍ بلا صنفٍ واحد. وكلُّ حقولها اختياريةٌ
+ *  إلا المبلغ: تُقيَّد لحظةَ سماعِها بالهاتف، واشتراطُ سببٍ مكتوبٍ يعني أن
+ *  تُترك غيرَ مقيَّدةٍ أصلاً. */
+export interface CompanyCharge {
+  id: string;
+  clinic_id?: string | null;
+  company_id: string;
+  amount: number;                 // > 0 — المطالبة تزيد الدين ولا تنقصه
+  reason?: string | null;         // اختياري
+  note?: string | null;           // اختياري
+  charged_at: string;             // YYYY-MM-DD — يفترض اليوم
+  /** تُطوى ولا تُحذف: «كم كانت تطلبنا وسدّدنا» سؤالٌ يُسأل بعد شهور. */
+  settled_at?: string | null;
+  created_by?: string | null;
+  created_at: string;
+}
+
 /** One received line of a purchase — a snapshot of what came in and at what cost. */
 export interface PurchaseItem {
   id: string;
@@ -1113,6 +1134,7 @@ export interface DemoDB {
   purchases?: Purchase[];
   purchaseItems?: PurchaseItem[];
   purchasePayments?: PurchasePayment[];
+  companyCharges?: CompanyCharge[];
   couriers?: Courier[];
   deliveryOrders?: DeliveryOrder[];
   courierSettlements?: CourierSettlement[];

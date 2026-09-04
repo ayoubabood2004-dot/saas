@@ -5,7 +5,7 @@ import {
   Building2, Search, ChevronDown, Wallet, HandCoins, ShoppingBag, CalendarClock,
   UserRound, Phone, AlertTriangle, Copy, Check, BookOpen, PackageCheck,
 } from "lucide-react";
-import type { Purchase, Company, PaymentMethod, Product, PurchaseItem } from "@/types";
+import type { Purchase, Company, PaymentMethod, Product, PurchaseItem, CompanyCharge } from "@/types";
 import { repo } from "@/lib/repo";
 import { Modal } from "@/components/Modal";
 import { Button, Badge, useToast, Skeleton } from "@/components/ui";
@@ -15,6 +15,7 @@ import { playTap, playSuccess, playWarning } from "@/lib/sounds";
 import { staggerContainer, staggerItem } from "@/lib/motion";
 import { PurchaseDetailModal } from "./Purchases";
 import { CompanyStatementModal, type StatementGroup } from "./CompanyStatement";
+import { CompanyChargesBlock, chargeOutstanding } from "./CompanyCharges";
 import { FileText } from "lucide-react";
 import ledgerSQL from "../../../supabase/migrations/0076_supplier_ledger.sql?raw";
 
@@ -30,7 +31,14 @@ type CompanyGroup = {
   invoices: Purchase[];
   total: number;
   paid: number;
+  /** دينُ الفواتير وحده — وهو ما يقبله تسديدُ الشركة (0076)، فلا تُخلط به
+   *  المطالباتُ اليدوية وإلا سمح المربّعُ بتسديد أكثر مما تدين به الفواتير. */
   due: number;
+  /** المطالباتُ اليدوية القائمة (0155) — دينٌ حقيقيّ بلا فاتورةٍ تُسدَّد. */
+  charges: CompanyCharge[];
+  chargesDue: number;
+  /** ما تطلبه الشركةُ كلَّه: دينُ الفواتير + المطالبات. هو الرقمُ المعروض. */
+  owed: number;
   lastAt: string;
   /** آخر مورّد/مندوب معروف لهذه الشركة (من أحدث فاتورة تحمل اسماً). */
   supplier: string | null;
@@ -50,6 +58,7 @@ export function SupplierLedgerTab({ companies, clinicId, products = [] }: { comp
   const { t, i18n } = useTranslation();
   const toast = useToast();
   const [purchases, setPurchases] = useState<Purchase[]>([]);
+  const [charges, setCharges] = useState<CompanyCharge[]>([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
@@ -71,9 +80,19 @@ export function SupplierLedgerTab({ companies, clinicId, products = [] }: { comp
     } catch { /* keep prior list */ }
     finally { if (mounted.current) setLoading(false); }
   };
+  /* المطالباتُ تُحمَّل على حدة ولا تُسقط الدفتر بفشلها: هي إضافةٌ على دينٍ
+   * أساسُه الفواتير، فلو تعثّر نداؤها (0155 لم تُطبَّق بعد مثلاً) يبقى الدفترُ
+   * يعمل بالفواتير وحدها بدل شاشةٍ فارغة. */
+  const loadCharges = async () => {
+    try {
+      const rows = await withTimeout(repo.listCompanyCharges(clinicId), 15000);
+      if (mounted.current) setCharges(rows);
+    } catch { /* الدفترُ يعمل بلا مطالبات */ }
+  };
   useEffect(() => {
     mounted.current = true;
     void load();
+    void loadCharges();
     void repo.supportsSupplierLedger().then((ok) => { if (mounted.current) setLedgerOk(ok); }).catch(() => {});
     return () => { mounted.current = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -128,7 +147,9 @@ export function SupplierLedgerTab({ companies, clinicId, products = [] }: { comp
           key,
           name: effName || t("purchase.noCompany", "بدون شركة"),
           note: noteOf(effId),
-          invoices: [], total: 0, paid: 0, due: 0, lastAt: "", supplier: null, supplierPhone: null, supplierAt: "",
+          invoices: [], total: 0, paid: 0, due: 0,
+          charges: [], chargesDue: 0, owed: 0,
+          lastAt: "", supplier: null, supplierPhone: null, supplierAt: "",
         };
         m.set(key, g);
       }
@@ -141,19 +162,44 @@ export function SupplierLedgerTab({ companies, clinicId, products = [] }: { comp
       const at = `${p.purchased_at || ""}|${p.created_at || ""}`;
       if (p.supplier_name && at > g.supplierAt) { g.supplier = p.supplier_name; g.supplierPhone = p.supplier_phone ?? null; g.supplierAt = at; }
     }
-    return [...m.values()].sort((a, b) => (b.due - a.due) || b.lastAt.localeCompare(a.lastAt));
-  }, [purchases, inferred, noteOf, t]);
+    /* المطالباتُ تُلحق بمجموعة شركتها. وشركةٌ لا فاتورةَ لها أصلاً وعليها
+     * مطالبةٌ تحتاج مجموعتَها الخاصة، وإلا اختفى دينُها من الدفتر كلِّه —
+     * وهذا بالضبط ما تُنشأ له المطالبةُ اليدوية: دينٌ بلا فاتورة. */
+    const nameOf = new Map(companies.map((c) => [c.id, c.name]));
+    for (const c of charges) {
+      let g = m.get(c.company_id);
+      if (!g) {
+        const nm = nameOf.get(c.company_id);
+        if (!nm) continue; // شركةٌ محذوفة — لا مكانَ لمطالبتها بالعرض
+        g = {
+          key: c.company_id, name: nm, note: noteOf(c.company_id),
+          invoices: [], total: 0, paid: 0, due: 0,
+          charges: [], chargesDue: 0, owed: 0,
+          lastAt: "", supplier: null, supplierPhone: null, supplierAt: "",
+        };
+        m.set(c.company_id, g);
+      }
+      g.charges.push(c);
+      g.chargesDue += chargeOutstanding(c);
+    }
+    for (const g of m.values()) g.owed = g.due + g.chargesDue;
+    return [...m.values()].sort((a, b) => (b.owed - a.owed) || b.lastAt.localeCompare(a.lastAt));
+  }, [purchases, charges, companies, inferred, noteOf, t]);
 
   const totals = useMemo(() => ({
     total: groups.reduce((s, g) => s + g.total, 0),
     paid: groups.reduce((s, g) => s + g.paid, 0),
-    due: groups.reduce((s, g) => s + g.due, 0),
-    debtors: groups.filter((g) => g.due > 0).length,
+    // الرقمُ الكبير بأعلى الشاشة يقول ما تطلبه الشركاتُ كلَّه — فواتيرَ ومطالبات.
+    due: groups.reduce((s, g) => s + g.owed, 0),
+    debtors: groups.filter((g) => g.owed > 0).length,
   }), [groups]);
+
+  /** معرّفاتُ الشركات القائمة — تفصل المجموعةَ ذاتَ الشركة عن مجموعةِ اسمٍ. */
+  const companyIds = useMemo(() => new Set(companies.map((c) => c.id)), [companies]);
 
   const ql = q.trim().toLowerCase();
   const shown = groups
-    .filter((g) => (filter === "debt" ? g.due > 0 : filter === "settled" ? g.due <= 0 : true))
+    .filter((g) => (filter === "debt" ? g.owed > 0 : filter === "settled" ? g.owed <= 0 : true))
     .filter((g) => !ql || g.name.toLowerCase().includes(ql) || (g.supplier ?? "").toLowerCase().includes(ql) || g.invoices.some((p) => (p.reference ?? "").toLowerCase().includes(ql) || (p.supplier_name ?? "").toLowerCase().includes(ql)));
 
   const copySql = async () => {
@@ -235,7 +281,7 @@ export function SupplierLedgerTab({ companies, clinicId, products = [] }: { comp
               <motion.div key={g.key} variants={staggerItem} className="card overflow-hidden">
                 {/* رأس الشركة — الاسم والمعلومات والأرقام الثلاثة */}
                 <button onClick={() => { playTap(); toggle(g.key); }} className="flex w-full flex-wrap items-center gap-3 p-4 text-start transition hover:bg-surface-2/50">
-                  <span className={cn("grid h-11 w-11 shrink-0 place-items-center rounded-2xl text-white shadow-soft", g.due > 0 ? "bg-danger-500" : "bg-brand-grad")}><Building2 size={20} /></span>
+                  <span className={cn("grid h-11 w-11 shrink-0 place-items-center rounded-2xl text-white shadow-soft", g.owed > 0 ? "bg-danger-500" : "bg-brand-grad")}><Building2 size={20} /></span>
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-extrabold text-ink">{g.name}</p>
                     <p className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-xs text-ink-subtle">
@@ -253,7 +299,14 @@ export function SupplierLedgerTab({ companies, clinicId, products = [] }: { comp
                     </div>
                     <div className="text-end">
                       <p className="text-2xs text-ink-subtle">{t("purchase.due", "المتبقّي")}</p>
-                      <p className={cn("text-base font-extrabold tabular-nums", g.due > 0 ? "text-danger-600 dark:text-danger-400" : "text-success-600 dark:text-success-400")}>{g.due > 0 ? money(g.due) : "✓"}</p>
+                      <p className={cn("text-base font-extrabold tabular-nums", g.owed > 0 ? "text-danger-600 dark:text-danger-400" : "text-success-600 dark:text-success-400")}>{g.owed > 0 ? money(g.owed) : "✓"}</p>
+                      {/* المطالباتُ تُذكر تحت الرقم: الطبيبُ يرى أن جزءاً من
+                          دينه ليس فواتيرَ، فلا يبحث عن فاتورةٍ لا وجودَ لها. */}
+                      {g.chargesDue > 0 && (
+                        <p className="text-2xs font-bold text-warn-700 dark:text-warn-300">
+                          {t("purchase.charge.ofWhich", { v: money(g.chargesDue), defaultValue: "منها {{v}} مطالبات" })}
+                        </p>
+                      )}
                     </div>
                     <ChevronDown size={17} className={cn("shrink-0 text-ink-subtle transition-transform", open && "rotate-180")} />
                   </div>
@@ -270,7 +323,18 @@ export function SupplierLedgerTab({ companies, clinicId, products = [] }: { comp
                         {t("purchase.settleCompany", { v: money(g.due), defaultValue: "تسديد دين الشركة ({{v}})" })}
                       </Button>
                     )}
-                    <div className="space-y-1.5">
+                    {/* المطالباتُ اليدوية — لشركةٍ معروفةٍ بمعرّفها وحدها.
+                        مجموعةٌ مفتاحُها اسمٌ (فاتورةٌ قديمة بلا شركة) لا صاحبَ
+                        لها تُعلَّق عليه مطالبة. */}
+                    {companyIds.has(g.key) && (
+                      <CompanyChargesBlock
+                        companyId={g.key}
+                        charges={g.charges}
+                        canEdit
+                        onChanged={loadCharges}
+                      />
+                    )}
+                    <div className="mt-2.5 space-y-1.5">
                       {g.invoices.map((p) => {
                         const d = dueOf(p);
                         return (
