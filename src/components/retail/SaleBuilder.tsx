@@ -31,6 +31,7 @@ import { loadPosLayout, savePosLayout, stepZoom, type PosLayout, type CartSide }
 import { persistMedicalEntries } from "@/lib/medSync";
 import type { MedicalDraft } from "@/components/MedicalEntry";
 import { cn, money, currencySymbol, formatNum, fmtKg, searchable, normalizeCode } from "@/lib/utils";
+import { looksLikeShelfCode } from "@/lib/productCodes";
 import { splitCustomerField } from "@/lib/customerName";
 import { dueOf, paidOf } from "@/lib/debt";
 import { withTimeout, describeDbError, isNetworkError, isTimeoutError } from "@/lib/errors";
@@ -3051,7 +3052,13 @@ function AttachCodeDialog({ code, products, onClose, onAttached }: {
   const hits = useMemo(() => {
     const nq = searchable(q);
     const base = nq ? products.filter((p) => searchable(p.name).includes(nq)) : products;
-    return base.slice(0, 40);
+    // المدخولُ برقم رفٍّ أوّلاً: مقيسٌ بعيادةٍ حيّة — ١٤٩ مادّةً برصيدٍ كلُّها بأرقام
+    // رفٍّ داخلية، وهي أفضلُ مبيعاتها. فمسحةُ علبةٍ فاشلة تقصد واحدةً منها بأغلب
+    // الأحيان، لا مادّةً جديدة. الأكثرُ رصيداً أعلى، لأنه الأكثرُ بيعاً ومسحاً.
+    const rank = (p: Product) => (p.barcode && looksLikeShelfCode(p.barcode) ? 0 : 1);
+    return base.slice()
+      .sort((a, b) => rank(a) - rank(b) || (b.stock ?? 0) - (a.stock ?? 0))
+      .slice(0, 40);
   }, [products, q]);
 
   const attach = async (p: Product) => {
@@ -3098,6 +3105,11 @@ function AttachCodeDialog({ code, products, onClose, onAttached }: {
                 <span className="block truncate font-semibold text-ink">{p.name}</span>
                 <span className="block font-mono text-2xs text-ink-subtle" dir="ltr">
                   {p.barcode || "—"}{(p.alt_codes?.length ?? 0) > 0 ? ` +${p.alt_codes!.length}` : ""}
+                  {p.barcode && looksLikeShelfCode(p.barcode) && (
+                    <span className="ms-2 rounded-full bg-warn-100 px-1.5 py-0.5 font-sans text-2xs font-bold text-warn-700 dark:bg-warn-500/15 dark:text-warn-300" dir="rtl">
+                      {t("pos.shelfCodeBadge", "رقم رفّ")}
+                    </span>
+                  )}
                 </span>
               </span>
               <span className="shrink-0 text-xs tabular-nums text-ink-muted">
