@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { AnimatePresence, motion } from "framer-motion";
 import {
@@ -31,7 +31,7 @@ import { loadPosLayout, savePosLayout, stepZoom, type PosLayout, type CartSide }
 import { persistMedicalEntries } from "@/lib/medSync";
 import type { MedicalDraft } from "@/components/MedicalEntry";
 import { cn, money, currencySymbol, formatNum, fmtKg, searchable, normalizeCode } from "@/lib/utils";
-import { looksLikeShelfCode, rescueScan } from "@/lib/productCodes";
+import { looksLikeShelfCode, rescueScan, matchTruncatedCode } from "@/lib/productCodes";
 import { splitCustomerField } from "@/lib/customerName";
 import { dueOf, paidOf } from "@/lib/debt";
 import { withTimeout, describeDbError, isNetworkError, isTimeoutError } from "@/lib/errors";
@@ -928,6 +928,19 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
       setQuery("");
       return;
     }
+    // مسحةٌ بلا رأسها: وصل ذيلُ الرمز فقط (رقمٌ أو رقمان ضاعا من أوّله) ويوجد
+    // بالمخزن منتجٌ واحدٌ ينتهي رمزُه به — فهو المقصود. طبقةُ دفاعٍ ثانية بعد
+    // `scanBuffer` لا بديلٌ عنها، ونقولها بصوت حتى لا تبدو المطابقةُ سحراً.
+    const cut = matchTruncatedCode(products, code);
+    if (cut) {
+      if (dialogWasOpen) setAttachCode(null);
+      playSuccess();
+      toast.success(t("retail.scanHealed", "الماسح بلع أوّل الباركود — طابقناه بـ«{{name}}»", { name: cut.name }));
+      addProduct(cut, n);
+      if (mult != null) setMult(null);
+      setQuery("");
+      return;
+    }
     playWarning();
     // باركود مجهول: نقشّر رمزه من الحقل فقط — ما كتبه الطبيب (كمية أو بحث)
     // يبقى بمكانه، ولا تتلوّث خانة البحث بأرقام مسحةٍ فاشلة.
@@ -1205,7 +1218,11 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
    * منتج» عن مادةٍ موجودةٍ برفّه، فيُعيد إدخالها — وهذي كانت شكوى أكبر عيادة.
    * والرموزُ الإضافية تدخل البحث أيضاً: رقمُ الرفّ يلقى المنتجَ كما يلقاه
    * باركودُ المصنع. */
-  const ql = query.trim();
+  // التصفيةُ على قيمةٍ مؤجَّلة: الحقلُ يستجيب فوراً، وتصفيةُ مئات المواد ورسمُها
+  // رسمٌ قابلٌ للمقاطعة. بلا هذا كان أوّلُ رقمٍ من المسحة يحبس الخيطَ بالرسم
+  // فتصل الضغطةُ التالية «متأخّرة» ويُقطع الرمز (ابن الهيثم، ٥ أيلول).
+  const deferredQuery = useDeferredValue(query);
+  const ql = deferredQuery.trim();
   const nq = searchable(ql);
   const cq = normalizeCode(ql);
   const { shown, hiddenCount } = useMemo(() => {
@@ -3068,6 +3085,11 @@ function AttachCodeDialog({ code, products, onClose, onAttached }: {
   const toast = useToast();
   const [q, setQ] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
+  /* خطوتان لا ضغطة: الربطُ كان يتمّ بضغطةٍ وحدة على صفٍّ بالقائمة، وأوّلُ صفٍّ
+   * ثابتٌ دائماً. مقيسٌ بعيادةٍ حيّة: باركودان أجنبيان انربطا بـ«amino acide»
+   * (أوّلُ صفٍّ أبجدياً) فصارت كلُّ مسحةٍ لهما تبيعها بالغلط — ولا شاشةَ تُظهر
+   * الربطَ ولا تفكّه. فالاختيارُ يعرض ما سيحدث بالاسم والرمز ويطلب تأكيداً. */
+  const [pick, setPick] = useState<Product | null>(null);
 
   const hits = useMemo(() => {
     const nq = searchable(q);
@@ -3108,6 +3130,27 @@ function AttachCodeDialog({ code, products, onClose, onAttached }: {
           <p data-attachcode className="font-mono text-base font-extrabold tabular-nums text-ink" dir="ltr">{code}</p>
         </div>
 
+        {pick ? (
+          <div className="rounded-xl border-2 border-brand-400 bg-brand-50 p-3 dark:bg-brand-500/10" data-attachconfirm={pick.id}>
+            <p className="text-sm font-bold text-ink">
+              {t("pos.attachConfirm", "تربط الباركود {{code}} بـ«{{name}}»؟ من هسة كل مسحة لهذا الباركود تنزّل هذي المادّة.", { code, name: pick.name })}
+            </p>
+            <p className="mt-1 font-mono text-2xs text-ink-subtle" dir="ltr">{pick.barcode || "—"} · {t("pos.stockN", "رصيد {{n}}", { n: formatNum(pick.stock ?? 0) })}</p>
+            {pick.barcode && !looksLikeShelfCode(pick.barcode) && (
+              <p className="mt-2 rounded-lg bg-danger-50 p-2 text-xs font-semibold text-danger-700 dark:bg-danger-500/10 dark:text-danger-300" data-attachhasean>
+                {t("pos.attachHasEan", "انتبه: «{{name}}» عندها باركود مصنع أصلاً ({{barcode}}). اربط بس إذا هذي نفس المادّة بعبوة ثانية — وإلا كل مسحة لهذا الباركود راح تبيع «{{name}}» بالغلط.", { name: pick.name, barcode: pick.barcode })}
+              </p>
+            )}
+            <div className="mt-3 flex gap-2">
+              <button type="button" disabled={!!busy} data-attachgo
+                className="rounded-xl bg-brand-600 px-4 py-2 text-sm font-bold text-white shadow-soft transition hover:bg-brand-700 disabled:opacity-50"
+                onClick={() => void attach(pick)}>{t("pos.attachConfirmBtn", "نعم، اربطه")}</button>
+              <button type="button" disabled={!!busy} data-attachback
+                className="rounded-xl border border-line bg-surface-1 px-4 py-2 text-sm font-semibold text-ink transition hover:bg-surface-2 disabled:opacity-50"
+                onClick={() => { playTap(); setPick(null); }}>{t("pos.attachBack", "لا، رجوع")}</button>
+            </div>
+          </div>
+        ) : (<>
         <input
           autoFocus className="input" value={q} data-attachsearch
           onChange={(e) => setQ(e.target.value)}
@@ -3120,7 +3163,7 @@ function AttachCodeDialog({ code, products, onClose, onAttached }: {
           ) : hits.map((p) => (
             <button
               key={p.id} type="button" disabled={!!busy} data-attachpick={p.id}
-              onClick={() => attach(p)}
+              onClick={() => { playTap(); setPick(p); }}
               className="flex w-full items-center gap-3 rounded-xl border border-line bg-surface-1 p-2.5 text-start transition hover:border-brand-400 hover:bg-brand-50 disabled:opacity-50 dark:hover:bg-brand-500/10"
             >
               <span className="min-w-0 flex-1">
@@ -3140,9 +3183,10 @@ function AttachCodeDialog({ code, products, onClose, onAttached }: {
             </button>
           ))}
         </div>
+        </>)}
 
         <p className="text-2xs leading-relaxed text-ink-subtle">
-          {t("pos.attachFooter", "ما لكيتها؟ سكّر هالنافذة وأضفها منتجاً جديداً من المخزن.")}
+          {t("pos.attachFooter", "المواد بشارة «رقم رفّ» هي الأرجح — مدخولة برقم داخلي ومسحة علبتها ما تلقاها. ولا تضيفها منتجاً جديداً إلا إذا تأكدت إنها مو موجودة.")}
         </p>
       </div>
     </Dialog>
