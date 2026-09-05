@@ -3011,6 +3011,15 @@ async function allPages<T>(make: () => unknown): Promise<T[]> {
     from += rows.length;
   }
 }
+/* تحديثٌ ردّته سياسةُ الصفوف يرجع **صفرَ صفوفٍ بلا خطأ** — فتقول الواجهةُ
+ * «تمّ» والطلبُ لم يتغيّر. هذا بالضبط ما بُلِّغ عنه بالتوصيل: «اختار السائق ما
+ * صار شي»، و«إشعارُ تحصيلٍ والطلبُ مكانه». الصمتُ هنا أخطرُ من الخطأ لأنه
+ * يُصدَّق. فصفٌّ غائبٌ بعد update = خطأٌ صريح بسببٍ مفهوم. */
+function assertUpdated<T>(row: T | undefined): T {
+  if (row === undefined) throw new Error("no_row_updated");
+  return row;
+}
+
 function maybe<T>(res: { data: unknown; error: { message: string } | null }): T | undefined {
   if (res.error) { console.error("[supabase]", res.error.message); return undefined; }
   return (res.data ?? undefined) as T | undefined;
@@ -4112,9 +4121,9 @@ const supabaseRepo: typeof demoRepo = {
     // قاعدة قبل 0148 (بلا collected_at): الحالة تُحفظ بلا الختم بدل ما يفشل الاستلام.
     if (r.error && "collected_at" in patch && /collected_at/i.test(r.error.message ?? "")) {
       const { collected_at, ...rest } = patch; void collected_at;
-      return maybe<DeliveryOrder>(await sbc().from("delivery_orders").update(rest).eq("id", id).select().maybeSingle());
+      return assertUpdated(maybe<DeliveryOrder>(await sbc().from("delivery_orders").update(rest).eq("id", id).select().maybeSingle()));
     }
-    return maybe<DeliveryOrder>(r);
+    return assertUpdated(maybe<DeliveryOrder>(r));
   },
   async listCourierSettlements(courierId) {
     return allPages<CourierSettlement>(() => {

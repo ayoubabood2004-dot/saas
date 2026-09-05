@@ -158,13 +158,18 @@ create trigger couriers_before_delete
 -- ويُجمَّد معه `courier_id` على طلبات الشركات: بدونه يُلتَفّ بخطوتين (بدّل
 -- الحاملَ إلى سائق، ثم اختم). ونقلُ ذمّةٍ من شركةٍ لأخرى قرارُ مالٍ أصلاً.
 drop policy if exists delivery_orders_write on delivery_orders;
-
+-- والثلاثُ التالية تُسقَط قبل إنشائها: الهجرةُ تُعاد بلا أثرٍ ثانٍ (قاعدةُ
+-- الحزمة)، و`create policy` بلا `drop … if exists` كان يفشّل الإعادةَ الثانية
+-- بـ«policy already exists» — أمسكه فحصُ الإعادة، لا القراءة.
+drop policy if exists delivery_orders_insert on delivery_orders;
 create policy delivery_orders_insert on delivery_orders
   for insert with check (clinic_id = (select auth_clinic()));
 
+drop policy if exists delivery_orders_delete on delivery_orders;
 create policy delivery_orders_delete on delivery_orders
   for delete using (clinic_id = (select auth_clinic()));
 
+drop policy if exists delivery_orders_update on delivery_orders;
 create policy delivery_orders_update on delivery_orders
   for update
   using (clinic_id = (select auth_clinic()))

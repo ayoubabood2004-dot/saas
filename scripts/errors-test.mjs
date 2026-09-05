@@ -100,6 +100,12 @@ const missing = keys.filter((k) => !known.has(k));
 chk("وكلُّها تقابل قيداً موجوداً", missing, []);
 chk("والعربي والإنجليزي متطابقان", Object.keys(at(en, "errors.c") ?? {}), keys);
 
+// تحديثٌ بلا صفّ (0157 واجهة): كان «نجاحاً» صامتاً بالتوصيل — اختار السائقَ فما
+// صار شي، وحصّل فبقي الطلبُ مكانه. صار خطأً مترجَماً يقول ماذا يفعل.
+const noRow = new Error("no_row_updated");
+chk("تحديثٌ لم يمسّ صفاً له جملتُه", E.describeDbError(noRow, t), at(ar, "errors.noRowUpdated"));
+chk("  وهي تقول «حدّث» لا «خطأ»", /حدّث الصفحة/.test(E.describeDbError(noRow, t)), true);
+
 console.log("");
 if (fail) { console.log("✗ اكو فحصٌ فشل"); process.exit(1); }
 console.log("✓ كل فحوص الرسائل عبرت");

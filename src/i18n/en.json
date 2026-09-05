@@ -266,7 +266,8 @@
       "staff_recurring_amount_check": "The monthly amount must be greater than zero.",
       "store_profiles_slug_unique": "That store link is taken — choose a different one.",
       "store_slug_format": "The store link accepts only lowercase letters, digits and hyphens (-), must start and end with a letter or digit, and be 3–30 characters long."
-    }
+    },
+    "noRowUpdated": "The change was not saved — the server did not find this order in your clinic, or refused it. Refresh and try again; if you entered a clinic from the platform console, make sure you are still in the same clinic."
   },
   "nav": {
     "dashboard": "Dashboard",

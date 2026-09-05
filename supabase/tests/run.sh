@@ -1040,4 +1040,36 @@ $P -c "insert into clinic_prefs (clinic_id) values ('$C1'::uuid) on conflict (cl
 chk "وصفٌّ قائمٌ لم يُلمس: قيمتُه false لا null" \
     "select manager_mode_stock_edit::text from clinic_prefs where clinic_id='$C1'::uuid" "false"
 
+# ── 0157: سجلُّ التوصيل لا يختفي، والتحصيلُ الغلط يُفَكّ لا يُزوَّر ────────────
+# نزلت على الإنتاج قبل واجهتها، فكانت بالحزمة بلا فحصٍ واحد — تُطبَّق مرّتين
+# وتسكت. هذي الأربعة تثبّت ما تعتمد عليه الواجهةُ الجديدة (قسمُ الشركات وفكُّ
+# التحصيل): السلّة، والحارسُ الذي يمنع غيرَ المدير من الفكّ، والسياسةُ التي
+# تجمّد طلبَ الشركة، والمحفّزُ الذي يصوّر الطلبَ قبل أن يأخذه التتالي.
+# (RLS نفسُها لا تُفحص هنا: الحزمةُ تجري كـsuperuser فتتجاوزها — انظر CLAUDE.md.)
+echo "▸ 0157: التوصيل لا يختفي والفكُّ للمدير وحده"
+RCP=77777777-7777-7777-7777-777777777777
+$P -c "insert into auth.users(id) values ('$RCP') on conflict do nothing;
+       insert into memberships(user_id,clinic_id,role,status) values ('$RCP','$C1','receptionist','active') on conflict do nothing;
+       insert into couriers(id,clinic_id,name,kind) values ('cccccccc-0157-4000-8000-000000000001','$C1','شركة الفحص','company') on conflict do nothing;
+       insert into invoices(id,clinic_id) values ('dddddddd-0157-4000-8000-000000000001','$C1') on conflict do nothing;
+       insert into delivery_orders(id,clinic_id,invoice_id,courier_id,status,cod_amount)
+         values ('eeeeeeee-0157-4000-8000-000000000001','$C1','dddddddd-0157-4000-8000-000000000001','cccccccc-0157-4000-8000-000000000001','delivered',5000)
+         on conflict do nothing;
+       update _dvtest_flags set admin = false; delete from platform_sessions;" >/dev/null
+chk "سلّةُ طلبات التوصيل موجودة" \
+    "select (to_regclass('public.delivery_orders_trash') is not null)::text" "true"
+chk "courier_unsettle مُعرِّفٌ ومسارُه مثبَّت" \
+    "select (prosecdef and coalesce(array_to_string(proconfig,','),'') like '%search_path%')::text from pg_proc where proname='courier_unsettle'" "true"
+chk "  وموظّفُ استقبالٍ لا يفكّ تحصيلاً (الحارسُ داخل الدالّة لا بالواجهة)" \
+    "select left(_pf_try('$RCP', 'select courier_unsettle(''00000000-0000-0000-0000-000000000000''::uuid)::text'), 18)" "guarded:forbidden"
+chk "  والمديرُ يمرّ من حارس الدور (فيقف عند «لا تحصيل بهذا المعرّف»)" \
+    "select (_pf_try('$C1', 'select courier_unsettle(''00000000-0000-0000-0000-000000000000''::uuid)::text') like '%settlement not found%')::text" "true"
+chk "سياسةُ التحديث تجمّد طلبَ الشركة لغير المدير" \
+    "select (with_check like '%company%' and with_check like '%collected_at%')::text from pg_policies where tablename='delivery_orders' and policyname='delivery_orders_update'" "true"
+$P -c "delete from delivery_orders where id = 'eeeeeeee-0157-4000-8000-000000000001';" >/dev/null
+chk "حذفُ طلبٍ يصوّره بالسلّة قبل أن يذهب (المحفّزُ لا الواجهة)" \
+    "select count(*)::text from delivery_orders_trash where id = 'eeeeeeee-0157-4000-8000-000000000001'" "1"
+chk "  والصورةُ تحمل مبلغَه وحاملَه" \
+    "select ((row->>'cod_amount')::numeric = 5000 and courier_id = 'cccccccc-0157-4000-8000-000000000001')::text from delivery_orders_trash where id = 'eeeeeeee-0157-4000-8000-000000000001'" "true"
+
 [ $fail -eq 0 ] && echo "✓ كل الفحوص عبرت" || { echo "✗ اكو فحصٌ فشل"; exit 1; }
