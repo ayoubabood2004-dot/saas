@@ -4121,8 +4121,13 @@ const supabaseRepo: typeof demoRepo = {
     // قاعدة قبل 0148 (بلا collected_at): الحالة تُحفظ بلا الختم بدل ما يفشل الاستلام.
     if (r.error && "collected_at" in patch && /collected_at/i.test(r.error.message ?? "")) {
       const { collected_at, ...rest } = patch; void collected_at;
-      return assertUpdated(maybe<DeliveryOrder>(await sbc().from("delivery_orders").update(rest).eq("id", id).select().maybeSingle()));
+      const r2 = await sbc().from("delivery_orders").update(rest).eq("id", id).select().maybeSingle();
+      if (r2.error) throw r2.error;
+      return assertUpdated(maybe<DeliveryOrder>(r2));
     }
+    // خطأُ الخادم يُرمى لا يُبلَع: `maybe()` كانت تطبعه بالكونسول وترجع «لا صفّ»،
+    // فقالت الواجهةُ «تم الاستلام» على 500 حقيقيّ (0159) والطلبُ باقٍ مكانه.
+    if (r.error) throw r.error;
     return assertUpdated(maybe<DeliveryOrder>(r));
   },
   async listCourierSettlements(courierId) {

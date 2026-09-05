@@ -106,6 +106,12 @@ const noRow = new Error("no_row_updated");
 chk("تحديثٌ لم يمسّ صفاً له جملتُه", E.describeDbError(noRow, t), at(ar, "errors.noRowUpdated"));
 chk("  وهي تقول «حدّث» لا «خطأ»", /حدّث الصفحة/.test(E.describeDbError(noRow, t)), true);
 
+// سياسةٌ تستعلم من جدولها (0159): الخادم يرجع 500 برمز 42P17 ونصٍّ إنكليزيٍّ
+// تقنيّ. كان يُبلَع ويظهر «تم»؛ فصار جملةً تقول «لن ينفع التكرار» وتحمل الرمز.
+const recur = { code: "42P17", message: 'infinite recursion detected in policy for relation "delivery_orders"' };
+chk("سياسةٌ متكرّرة تُقال بالاسم لا بالإنكليزي", E.describeDbError(recur, t), at(ar, "errors.policyRecursion"));
+chk("  وتحمل الرمزَ للدعم", /42P17/.test(E.describeDbError(recur, t)) && !/infinite recursion/.test(E.describeDbError(recur, t)), true);
+
 console.log("");
 if (fail) { console.log("✗ اكو فحصٌ فشل"); process.exit(1); }
 console.log("✓ كل فحوص الرسائل عبرت");

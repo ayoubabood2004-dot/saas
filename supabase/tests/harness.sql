@@ -193,6 +193,11 @@ create table if not exists delivery_orders (
   status text not null default 'preparing', created_at timestamptz not null default now(),
   dispatched_at timestamptz, delivered_at timestamptz, returned_at timestamptz);
 create index if not exists delivery_orders_courier_idx on delivery_orders(courier_id);
+-- كما بالإنتاج (0069): RLS مفعّلة. بلاها كانت سياساتُ 0157 تُنشأ بلا أثر، فمرّت
+-- سياسةٌ تستعلم من جدولها بالحزمة وأسقطت كلَّ تحديثٍ بالإنتاج (0159).
+alter table delivery_orders enable row level security;
+drop policy if exists delivery_orders_select on delivery_orders;
+create policy delivery_orders_select on delivery_orders for select using (clinic_id = auth_clinic());
 create or replace function settle_invoice(p_invoice uuid, p_amount numeric, p_method text default 'cash')
 returns invoices language plpgsql security definer set search_path = public as $$
 declare v_clinic uuid := auth_clinic(); v_inv invoices; v_add numeric(14,2); v_details jsonb;

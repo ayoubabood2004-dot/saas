@@ -79,6 +79,11 @@ export function describeDbError(e: unknown, t: TFunction): string {
   if (typeof err.message === "string" && err.message.includes("no_row_updated")) {
     return t("errors.noRowUpdated", "ما انحفظ التغيير — الخادم ما لكى الطلب ضمن عيادتك أو رفضه. حدّث الصفحة وأعد المحاولة؛ وإذا كنت داخلاً لعيادةٍ من لوحة المنصّة تأكد أنك بنفس العيادة.");
   }
+  // سياسةُ صفوفٍ تستعلم من جدولها (0159): خللُ إعداداتٍ بالقاعدة لا خطأُ مستخدم —
+  // يُقال بالاسم حتى لا يعيد الكاشير المحاولةَ عشر مرّات على شيءٍ لن ينجح.
+  if (err.code === "42P17") {
+    return t("errors.policyRecursion", "خللٌ بإعدادات القاعدة (سياسة الجدول) — التغيير ما انحفظ ولن ينحفظ بإعادة المحاولة. أبلغ الدعم بهذا النص: 42P17.");
+  }
   if (typeof err.message === "string" && err.message.includes("pet_limit_reached")) {
     return t("errors.petQuota", "ما تكدر تضيف حيوانات إضافية حالياً. راجع مزوّد الخدمة.");
   }
