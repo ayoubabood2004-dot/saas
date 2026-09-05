@@ -22,7 +22,7 @@ DB=dvtest
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MIG="$HERE/../migrations"
 # الهجرات التي يغطّيها هذا المخطّط الأساس. زدها كل ما تنضاف موجة.
-WAVE="$MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql"
+WAVE="$MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql"
 
 command -v "$PGBIN/initdb" >/dev/null || { echo "ما لكيت بوستغريس بـ $PGBIN"; exit 1; }
 
@@ -1112,5 +1112,35 @@ chk "  وعيادةٌ أخرى لا تمسّ الصفَّ (صفرُ صفوف —
     "select _rls_try('$C2', 'update delivery_orders set customer_name=''x'' where id=''eeeeeeee-0159-4000-8000-000000000001''')" "rows:0"
 chk "والسياسةُ ما تستعلم من جدولها" \
     "select (with_check not like '%delivery_orders d%' and qual not like '%delivery_orders d%')::text from pg_policies where tablename='delivery_orders' and policyname='delivery_orders_update'" "true"
+
+# ── 0162: ثلاثُ سياساتٍ أخرى كانت تستعلم من جدولها — الفواتير والإعدادات والملفّ ──
+# نفسُ الجذر ونفسُ الطريقة: بدور `authenticated` عبر `_rls_try`، فالسياسةُ تُعاد
+# كتابتُها كما بالإنتاج. قبل 0162 كانت كلُّ سطرٍ هنا يرجع guarded:42P17.
+echo "▸ 0162: التحديثُ المباشر يمرّ من RLS، والمجمَّدُ يُرفض بمحفّزٍ لا بسياسة"
+$P -c "insert into clinic_prefs(clinic_id, dial_code) values ('$C1','+964') on conflict (clinic_id) do nothing;
+       insert into profiles(id, full_name, email) values ('$RCP','موظّف الفحص','rcp@dvtest') on conflict (id) do nothing;
+       update _dvtest_flags set admin = false; delete from platform_sessions;" >/dev/null
+chk "موظّفُ استقبالٍ يعدّل ملاحظةَ فاتورةٍ (كان 42P17 على كلّ PATCH)" \
+    "select _rls_try('$RCP', 'update invoices set notes=''فحص'' where id=''dddddddd-0159-4000-8000-000000000001''')" "rows:1"
+chk "  ولا يغيّر مبلغَها — المحفّز يرفض بجملةٍ عربية" \
+    "select left(_rls_try('$RCP', 'update invoices set total=total+1 where id=''dddddddd-0159-4000-8000-000000000001'''), 13)" "guarded:P0001"
+chk "  ولا حالتَها" \
+    "select left(_rls_try('$RCP', 'update invoices set status=''refunded'' where id=''dddddddd-0159-4000-8000-000000000001'''), 13)" "guarded:P0001"
+chk "  والمديرُ يغيّر المبلغ" \
+    "select _rls_try('$C1', 'update invoices set discount=1 where id=''dddddddd-0159-4000-8000-000000000001''')" "rows:1"
+chk "  وعيادةٌ أخرى صفرُ صفوف" \
+    "select _rls_try('$C2', 'update invoices set notes=''x'' where id=''dddddddd-0159-4000-8000-000000000001''')" "rows:0"
+chk "الإعدادات: موظّفٌ يحفظ رمزَ الهاتف (كان 42P17 منذ 0161 — حفظُ الإعدادات كلُّه)" \
+    "select _rls_try('$RCP', 'update clinic_prefs set dial_code=''+965'' where clinic_id=''$C1''')" "rows:1"
+chk "  ولا يقلب مشاركةَ الكتالوج" \
+    "select left(_rls_try('$RCP', 'update clinic_prefs set catalog_share=true where clinic_id=''$C1'''), 13)" "guarded:P0001"
+chk "  والمديرُ يقلبها" \
+    "select _rls_try('$C1', 'update clinic_prefs set catalog_share=true where clinic_id=''$C1''')" "rows:1"
+chk "الملفّ الشخصيّ: الاسمُ يُعدَّل" \
+    "select _rls_try('$RCP', 'update profiles set full_name=''فحص'' where id=''$RCP''')" "rows:1"
+chk "  والبريدُ لا" \
+    "select left(_rls_try('$RCP', 'update profiles set email=''x@dvtest'' where id=''$RCP'''), 13)" "guarded:P0001"
+chk "ولا سياسةَ بالقاعدة كلّها تستعلم من جدولها (verify_no_self_ref_policies)" \
+    "select count(*)::text from verify_no_self_ref_policies()" "0"
 
 [ $fail -eq 0 ] && echo "✓ كل الفحوص عبرت" || { echo "✗ اكو فحصٌ فشل"; exit 1; }

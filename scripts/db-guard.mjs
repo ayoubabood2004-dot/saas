@@ -229,6 +229,13 @@ export function analyze(model) {
           findings.push({ rule: "rls-initplan", where: `${name}: ${p.name} → ${fn}()`, file: p.file });
         }
       }
+      // policy-self-ref: سياسةٌ تستعلم من الجدول الذي تحميه. بوستغريس يرفضها
+      // عند إعادة كتابة الاستعلام (42P17 infinite recursion) لكلّ طلبٍ بدورٍ
+      // عاديّ — والحزمةُ لا تراها لأنها superuser. مقيسٌ ثلاثَ مرّات بالإنتاج
+      // (0157 → 0159، ثم 0049/0051/0161 → 0162): تجميدُ الأعمدة يكون بمحفّز.
+      if (new RegExp(`\\bfrom\\s+(?:public\\.)?${name}\\b`, "i").test(bare)) {
+        findings.push({ rule: "policy-self-ref", where: `${name}: ${p.name}`, file: p.file });
+      }
     }
   }
   for (const f of model.funcs) {
