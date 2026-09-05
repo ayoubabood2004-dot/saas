@@ -971,6 +971,11 @@ export interface CourierSettlement {
   allocations: { order_id: string; invoice_id: string; amount: number }[];
   created_by?: string | null;
   created_at: string;
+  /** فُكَّ هذا التحصيل (0157): الصفُّ يبقى ويُوسَم، ولا يُحذف — فالدفترُ يقرأ
+   *  ما صار وما انفكّ معاً بدل أن يُقرأ كأن شيئاً لم يكن. */
+  reversed_at?: string | null;
+  reversed_by?: string | null;
+  reversed_reason?: string | null;
 }
 
 /** A cash-on-delivery order wrapping a retail invoice. The invoice is created by

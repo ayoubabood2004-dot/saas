@@ -8,9 +8,12 @@
 // الشركات يصير بعد فتراتٍ طويلة — فالكشفُ يمشي على **معرّفاتِ طلبات الشركة
 // نفسِها**: يجلب فواتيرَها وسطورَها عند الفتح، ويرمي الخطأ بدل قائمةٍ ناقصة.
 //
-// ── ولماذا قراءةٌ محضة ──────────────────────────────────────────────────────
-// لا حذفَ ولا تعديلَ لأيِّ سطرٍ هنا. الزرُّ الوحيد الذي يكتب هو «تحصيل»، وهو
-// يفتح نافذةَ التحصيل القائمة التي تنادي `courier_settle` بلا تغييرِ حرف.
+// ── وما الذي يكتب هنا ───────────────────────────────────────────────────────
+// **لا حذفَ إطلاقاً.** كتابتان فقط، كلتاهما عبر دالّةِ قاعدةٍ مُعرِّفة:
+//   • «تحصيل» → يفتح نافذةَ التحصيل القائمة (`courier_settle`، بلا تغييرِ حرف).
+//   • «فكّ التحصيل» → `courier_unsettle` (0157): يردّ المبلغَ ويعيد الطلبَ
+//     للذمّة، ويسِمُ صفَّ التحصيل مفكوكاً — ولا يمحوه. فتحصيلٌ سُجِّل بالغلط
+//     يُصحَّح بالفكّ لا بتزوير رقمٍ آخر يوازنه.
 // ============================================================================
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -18,8 +21,9 @@ import { Boxes, HandCoins, ListOrdered, RefreshCw, Undo2 } from "lucide-react";
 import type { Courier, CourierSettlement, DeliveryOrder, Invoice, InvoiceItem } from "@/types";
 import { repo } from "@/lib/repo";
 import { Modal } from "@/components/Modal";
-import { Button, Skeleton } from "@/components/ui";
-import { withTimeout } from "@/lib/errors";
+import { Button, Skeleton, useToast } from "@/components/ui";
+import { withTimeout, describeDbError } from "@/lib/errors";
+import { usePermissions } from "@/hooks/usePermissions";
 import { money, formatNum, formatDate, cn } from "@/lib/utils";
 import { invoiceNo } from "@/lib/invoicePrint";
 import { courierTotals, itemsFromInvoices, orderRows, type LedgerItemRow } from "@/lib/courierLedger";
@@ -35,6 +39,12 @@ export function CourierLedger({ courier, orders, settlements, onClose, onCollect
   onCollect: () => void;
 }) {
   const { t, i18n } = useTranslation();
+  const toast = useToast();
+  // فكُّ المال للمدير — نفسُ حارسِ حذف الفواتير وتعديل بنودها.
+  const canUnsettle = usePermissions().can("deleteInvoices");
+  const [unFor, setUnFor] = useState<CourierSettlement | null>(null);
+  const [unReason, setUnReason] = useState("");
+  const [unBusy, setUnBusy] = useState<string | null>(null);
   const [view, setView] = useState<View>("items");
   const [invoices, setInvoices] = useState<Invoice[] | null>(null);
   const [items, setItems] = useState<InvoiceItem[]>([]);
@@ -150,18 +160,64 @@ export function CourierLedger({ courier, orders, settlements, onClose, onCollect
             <Empty text={t("retail.ledgerNoSettlements", "ما انحصّل شي بعد.")} />
           ) : (
             <div className="max-h-40 space-y-1 overflow-y-auto pe-1">
-              {settlements.map((s) => (
-                <div key={s.id} className="flex flex-wrap items-center gap-2 rounded-xl border border-line px-2.5 py-1.5 text-xs">
-                  <span className="font-bold tabular-nums text-success-700 dark:text-success-300">{money(s.amount)}</span>
-                  <span className="text-2xs text-ink-subtle">{t(`retail.pay${s.method === "cash" ? "Cash" : s.method === "card" ? "Card" : "Transfer"}`, s.method)}</span>
-                  <span className="text-2xs text-ink-subtle">{t("retail.ledgerOrdersN", { n: s.allocations.length, defaultValue: "{{n}} طلب" })}</span>
-                  {s.note && <span className="min-w-0 flex-1 truncate italic text-ink-muted">{s.note}</span>}
-                  <span className="ms-auto text-2xs text-ink-subtle">{formatDate(s.created_at, i18n.language)}</span>
-                </div>
-              ))}
+              {settlements.map((s) => {
+                const off = !!s.reversed_at;
+                return (
+                  <div key={s.id} data-settlement={s.id}
+                    className={cn("flex flex-wrap items-center gap-2 rounded-xl border px-2.5 py-1.5 text-xs",
+                      off ? "border-line bg-surface-2 opacity-75" : "border-line")}>
+                    <span className={cn("font-bold tabular-nums",
+                      off ? "text-ink-subtle line-through" : "text-success-700 dark:text-success-300")}>{money(s.amount)}</span>
+                    <span className="text-2xs text-ink-subtle">{t(`retail.pay${s.method === "cash" ? "Cash" : s.method === "card" ? "Card" : "Transfer"}`, s.method)}</span>
+                    <span className="text-2xs text-ink-subtle">{t("retail.ledgerOrdersN", { n: s.allocations.length, defaultValue: "{{n}} طلب" })}</span>
+                    {off && (
+                      <span className="rounded-full bg-warn-50 px-2 py-0.5 text-2xs font-bold text-warn-700 dark:bg-warn-500/10 dark:text-warn-300">
+                        {t("retail.unsettled", "مفكوك")}{s.reversed_reason ? ` — ${s.reversed_reason}` : ""}
+                      </span>
+                    )}
+                    {s.note && <span className="min-w-0 flex-1 truncate italic text-ink-muted">{s.note}</span>}
+                    <span className="ms-auto text-2xs text-ink-subtle">{formatDate(s.created_at, i18n.language)}</span>
+                    {!off && canUnsettle && (
+                      <button type="button" data-unsettle={s.id} disabled={!!unBusy}
+                        onClick={() => setUnFor(s)}
+                        className="rounded-lg border border-warn-300 px-2 py-0.5 text-2xs font-bold text-warn-700 transition hover:bg-warn-50 disabled:opacity-50 dark:border-warn-500/40 dark:text-warn-300 dark:hover:bg-warn-500/10">
+                        {t("retail.unsettleBtn", "فكّ التحصيل")}
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           )}
         </section>
+
+        {/* تأكيدُ الفكّ — يقول بالضبط ماذا سيصير قبل أن يصير */}
+        {unFor && (
+          <div className="rounded-2xl border-2 border-warn-400 bg-warn-50 p-3 dark:border-warn-500/50 dark:bg-warn-500/10" data-unsettle-confirm>
+            <p className="mb-1 text-sm font-extrabold text-warn-800 dark:text-warn-200">
+              {t("retail.unsettleTitle", "فكّ تحصيل {{n}}؟", { n: money(unFor.amount) })}
+            </p>
+            <p className="mb-2 text-2xs leading-relaxed text-warn-800 dark:text-warn-200">
+              {t("retail.unsettleWhat", { n: unFor.allocations.length, defaultValue: "المبلغ يرجع دَيناً على {{n}} طلب، وترجع بذمّة الشركة. التحصيل ما ينحذف — يبقى بالسجل موسوماً «مفكوك» حتى يبقى التاريخ كامل." })}
+            </p>
+            <input className="input mb-2 text-xs" value={unReason} onChange={(e) => setUnReason(e.target.value)}
+              placeholder={t("retail.unsettleReasonPh", "السبب (اختياري) — مثلاً: انسجّل بالغلط")} />
+            <div className="flex flex-wrap gap-2">
+              <Button size="sm" loading={unBusy === unFor.id} onClick={async () => {
+                setUnBusy(unFor.id);
+                try {
+                  await withTimeout(repo.unsettleCourier(unFor.id, unReason), 12000);
+                  toast.success(t("retail.unsettleDone", "انفكّ التحصيل ✓"), t("retail.unsettleDoneSub", "المبلغ رجع بذمّة الشركة، والسجل محفوظ."));
+                  setUnFor(null); setUnReason("");
+                  void load();
+                } catch (e) {
+                  toast.error(t("retail.unsettleFail", "تعذّر فكّ التحصيل"), describeDbError(e, t));
+                } finally { setUnBusy(null); }
+              }}>{t("retail.unsettleConfirm", "إي، فكّه")}</Button>
+              <Button size="sm" variant="secondary" onClick={() => { setUnFor(null); setUnReason(""); }}>{t("common.cancel", "إلغاء")}</Button>
+            </div>
+          </div>
+        )}
 
         <p className="text-2xs leading-relaxed text-ink-subtle">
           {t("retail.ledgerFootnote", "الأسماء والأسعار مأخوذة من الفاتورة وقت البيع — فتبقى صحيحة حتى لو انعاد تسمية المنتج بعدين. والكشف يقرأ الحامل الحالي للطلب، فطلبٌ انتقل لشركة ثانية ينتقل كشفه معها.")}

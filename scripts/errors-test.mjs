@@ -58,6 +58,21 @@ const dupBarcode = { code: "23505", message: 'duplicate key value violates uniqu
 chk("الباركود المكرّر له جملته لا جملةُ الأقفاص", E.describeDbError(dupBarcode, t), at(ar, "errors.c.products_clinic_barcode_idx"));
 chk("وهي تذكر العيادة لا القفص", /بعيادتك|مخزن/.test(E.describeDbError(dupBarcode, t)) && !/قفص/.test(E.describeDbError(dupBarcode, t)), true);
 
+// رفضٌ مقصودٌ من دالّةِ قاعدةٍ يشرح نفسَه (0157): `raise … using hint` يضع الرمزَ
+// اللاتينيّ بـmessage والشرحَ العربيَّ بـhint. وبلا التقاطِ hint يقرأ المديرُ
+// «invoice_has_open_delivery» بالحرف — رسالةٌ لا تُفهم ولا تُعالَج.
+const blocked = {
+  code: "P0001",
+  message: "invoice_has_open_delivery",
+  hint: "هذه الفاتورة عليها طلبُ توصيلٍ لم يُحصَّل بعد. حصِّله أو أرجِعه أولاً.",
+};
+chk("رسالةُ المنع العربية توصل الشاشة", E.describeDbError(blocked, t), blocked.hint);
+chk("ولا يُعرض الرمزُ اللاتينيّ", /invoice_has_open_delivery/.test(E.describeDbError(blocked, t)), false);
+// وhint الإنكليزيُّ التقنيّ لأخطاء بوستغريس العامّة لا يُعرض: الشرطُ P0001 وحده.
+const pgHint = { code: "23503", message: "insert or update violates foreign key", hint: "Key is not present in table." };
+chk("وhint لخطأٍ عامٍّ لا يُعرض خاماً", /Key is not present/.test(E.describeDbError(pgHint, t)), false);
+chk("ورفضٌ بـP0001 بلا hint يسقط للسلوك القديم", typeof E.describeDbError({ code: "P0001", message: "boom" }, t), "string");
+
 // وسطرُ الفاتورة — أهمّها، وهو الذي أوقف بيعةً حيّة يوم كُتب هذا
 const line = { code: "23514", message: 'new row for relation "invoice_items" violates check constraint "invoice_items_nonneg"' };
 chk("وسطرُ الفاتورة", E.describeDbError(line, t), at(ar, "errors.c.invoice_items_nonneg"));
