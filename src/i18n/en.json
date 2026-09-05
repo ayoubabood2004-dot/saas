@@ -759,7 +759,8 @@
       "noCost": "This product has no purchase price",
       "noCostHint": "“{{name}}” would sell for zero. Enter its purchase price in Inventory first.",
       "badge": "Wholesale — starts at cost price"
-    }
+    },
+    "scanRescued": "“{{name}}” — matched as {{code}}"
   },
   "promos": {
     "title": "Offers management",
@@ -1165,7 +1166,8 @@
     "linkDone": "Linked “{{n}}” ✓",
     "linkFail": "Could not link",
     "stockN": "stock {{n}}",
-    "tabWholesale": "Wholesale"
+    "tabWholesale": "Wholesale",
+    "attachReceived": "Code as received from the scanner"
   },
   "role": {
     "admin": "Clinic",

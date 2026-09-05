@@ -75,3 +75,47 @@ export function twinsByName(products: readonly Product[], p: Product, normalizeN
   if (!key) return [];
   return products.filter((o) => o.id !== p.id && normalizeName(o.name) === key);
 }
+
+/* ── مسحةٌ لا تُطابق حرفياً — قبل أن نقول «ما ينعرف» ───────────────────────
+ * الماسحُ لوحةُ مفاتيح، وما يكتبه ليس دائماً ما طُبع على العلبة:
+ *   · بادئةُ رمزِ النظام AIM (`]E0`، `]C1`) إن كانت مفعّلةً بإعداد الماسح؛
+ *   · صفرٌ أوّلُ حين يُخرج الماسحُ EAN-13 بهيئة GTIN-14 (`0` + ١٣ رقماً)؛
+ *   · UPC-A (١٢ رقماً) مخزونٌ عندنا بهيئة EAN-13 بصفرٍ أوّل، أو العكس.
+ * فنجرّب هذه الصيغَ **بعد** فشلِ المطابقة الحرفية، وعلى مخزنِ العيادة المحمَّل
+ * فقط، ولا نقبل إلا مطابقةً واحدةً — اثنتان = التباس، فنُبقي النافذة.
+ * هذا ليس تطبيعاً على طرفٍ واحد (ذاك يفشل بصمت)؛ هو مسارُ نجدةٍ صريحٌ بعد
+ * المسار الأصليّ، وكلُّ صيغةٍ فيه مفحوصةٌ باسمها.
+ * ──────────────────────────────────────────────────────────────────────── */
+
+/** الصيغُ البديلة المعقولة لرمزٍ ممسوح، بلا الرمزِ نفسه. */
+export function scanVariants(code: string | null | undefined): string[] {
+  const raw = normalizeCode(code);
+  if (!raw) return [];
+  const out = new Set<string>();
+  // بادئةُ AIM: `]` + حرف + رقم — ثلاثةُ محارفٍ قبل الرمز الحقيقي.
+  const noAim = raw.replace(/^\][A-Za-z]\d/, "");
+  if (noAim !== raw) out.add(noAim);
+  const d = noAim;
+  if (/^\d+$/.test(d)) {
+    if (d.length === 14 && d.startsWith("0")) out.add(d.slice(1));          // GTIN-14 → EAN-13
+    if (d.length === 13 && d.startsWith("0")) out.add(d.slice(1));          // EAN-13 بصفر → UPC-A
+    if (d.length === 12) out.add("0" + d);                                   // UPC-A → EAN-13 مخزون بصفر
+    if (d.length === 8 && d.startsWith("0")) out.add(d.slice(1));           // EAN-8 بصفر
+  }
+  out.delete(raw);
+  return [...out];
+}
+
+/**
+ * نجدةُ المسحة: مطابقةٌ **واحدة** لصيغةٍ بديلة على مخزن العيادة، أو لا شيء.
+ * تُرجع المنتجَ والصيغةَ التي أصابت — فتُقال بصوت لا بصمت.
+ */
+export function rescueScan(products: readonly Product[], code: string | null | undefined): { product: Product; via: string } | undefined {
+  for (const v of scanVariants(code)) {
+    const hits = products.filter((p) =>
+      normalizeCode(p.barcode) === v || (p.alt_codes ?? []).some((a) => normalizeCode(a) === v));
+    if (hits.length === 1) return { product: hits[0], via: v };
+    if (hits.length > 1) return undefined; // التباس — النافذة أصدق من تخمين
+  }
+  return undefined;
+}
