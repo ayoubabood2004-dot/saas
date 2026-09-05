@@ -67,6 +67,27 @@ export function nearCodeTwin(products: readonly Product[], code: string | null |
 }
 
 /**
+ * مسحةٌ بلا رأسها: الرمزُ الواصل ذيلُ رمزٍ قائم ينقصه رقمٌ أو رقمان من أوّله.
+ *
+ * مقيسٌ على الإنتاج (ابن الهيثم، ٥ أيلول ٢٠٢٦): كلُّ مسحةٍ فاشلة باليوم ١١ أو
+ * ١٢ رقماً وكلُّ ناجحة ١٣، ونفسُ العلبة تنجح بعد ثوانٍ. السببُ بالمتصفّح
+ * (`scanBuffer.ts`)، لكن الدفاعَ لا يثق بطبقةٍ واحدة: لو وصل ذيلٌ فقط، ووُجد
+ * بالمخزن منتجٌ **واحدٌ لا غير** ينتهي رمزُه به، فهو المقصود. عشرةُ أرقامٍ
+ * فأكثر: ذيلٌ بهذا الطول لا يتكرّر بين رمزَين مختلفَين إلا نادراً، وعند التعدّد
+ * لا نخمّن — نُرجع لا شيء ويُعرض الاختيارُ على الإنسان.
+ */
+export function matchTruncatedCode(products: readonly Product[], code: string | null | undefined): Product | undefined {
+  const c = normalizeCode(code);
+  if (!/^[0-9]{10,}$/.test(c)) return undefined;
+  const tailOf = (o: string | null | undefined): boolean => {
+    const n = normalizeCode(o);
+    return n.length > c.length && n.length - c.length <= 2 && n.endsWith(c);
+  };
+  const hits = products.filter((p) => tailOf(p.barcode) || (p.alt_codes ?? []).some(tailOf));
+  return hits.length === 1 ? hits[0] : undefined;
+}
+
+/**
  * توأمٌ محتمل: نفسُ الاسم (مطبَّعاً) لمنتجٍ آخر بنفس المخزن. للدمج لا للمنع —
  * أسماءٌ متطابقة برموزٍ مختلفة قد تكون نكهاتٍ حقيقية لصنفٍ واحد.
  */

@@ -490,6 +490,13 @@ function ProductRow({ p, companyName, sectionName, onEdit, onRemove }: { p: Prod
         </p>
         <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-ink-subtle">
           {p.barcode && <span className="flex items-center gap-1 font-mono"><Barcode size={11} /> {p.barcode}</span>}
+          {/* الرموزُ الإضافية تُرى بالقائمة: ربطٌ غلط يُكتشف بالعين لا بالمسحة الغلط. */}
+          {(p.alt_codes?.length ?? 0) > 0 && (
+            <span className="chip shrink-0 bg-warn-50 font-mono text-2xs font-semibold text-warn-700 dark:bg-warn-500/15 dark:text-warn-300" dir="ltr" data-altcodes
+              title={t("pos.altChipHint", "رموز إضافية مربوطة — أي مسحة لها تنزّل هذي المادّة. افتح التعديل لفكّها")}>
+              +{p.alt_codes!.join(" · ")}
+            </span>
+          )}
           {!locked && <span>{t("pos.buy", "Buy")} {money(p.purchase_price)}{byWeight ? perKg : ""}</span>}
           <span className="font-semibold text-ink-muted">{t("pos.sell", "Sell")} {money(p.sell_price)}{byWeight ? perKg : ""}</span>
           {byWeight && <span className="chip shrink-0 bg-teal-50 text-2xs font-semibold text-teal-700 dark:bg-teal-500/15 dark:text-teal-200"><Scale size={11} /> {t("pos.byWeightChip", "بالوزن")}</span>}
@@ -578,17 +585,20 @@ function InventoryTab({ products, companies, sections, clinicId, onChanged }: { 
         subcategories={subcategoriesOf(products)} allProducts={products}
         onClose={() => { setAdding(false); setEditing(null); }}
         onSaved={() => { setAdding(false); setEditing(null); onChanged(); }}
+        onChanged={onChanged}
         onOpenExisting={(p) => { setAdding(false); setEditing(p); }}
       />
     </div>
   );
 }
 
-function ProductModal({ open, product, companies, sections, clinicId, subcategories, allProducts, defaultCompanyName, defaultSectionName, onClose, onSaved, onOpenExisting }: {
+function ProductModal({ open, product, companies, sections, clinicId, subcategories, allProducts, defaultCompanyName, defaultSectionName, onClose, onSaved, onChanged, onOpenExisting }: {
   open: boolean; product: Product | null; companies: Company[]; sections: CompanySection[]; clinicId?: string; subcategories: string[];
   /** Full product list — used to catch "this barcode already exists" mistakes (single and bulk). */
   allProducts?: Product[];
   defaultCompanyName?: string; defaultSectionName?: string; onClose: () => void; onSaved: () => void;
+  /** تحديثُ القائمة بلا إغلاق النافذة (فكُّ رمزٍ إضافي). يسقط إلى onSaved إن غاب. */
+  onChanged?: () => void;
   /** «افتحه»: الباركود المكتوب على منتجٍ قائم — نفتح ذاك بدل أن نصنع توأماً. */
   onOpenExisting?: (p: Product) => void;
 }) {
@@ -598,6 +608,9 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
   const blank = { barcode: "", name: "", company: "", section: "", category: "", subcategory: "", purchase_price: "", sell_price: "", stock: "", min_stock: "", expiry_date: "", pooled: false, has_sub_unit: false, sub_unit_name: "", units_per_box: "", sub_unit_price: "", sold_by_weight: false };
   const [f, setF] = useState(blank);
   const [busy, setBusy] = useState(false);
+  /** الرموزُ الإضافية المربوطة (0141): تُربط من نافذة الكاشير، ولم يكن لها وجهٌ
+   *  بأي شاشة ولا فكّ — فربطٌ غلط كان يبيع مادّةً بمسحة مادّةٍ أخرى إلى الأبد. */
+  const [altCodes, setAltCodes] = useState<string[]>([]);
   // Bulk mode (create-only): add several barcodes at once sharing price/category,
   // each row differing only in barcode, name, count and expiry. Surfaced on wide
   // screens (iPad/desktop); phone keeps the classic one-product layout.
@@ -632,6 +645,23 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
   const createdRef = useRef<Company[]>([]);
   const createdSecRef = useRef<CompanySection[]>([]);
 
+  /** فكُّ رمزٍ إضافي: تحديثٌ مباشر لا عبر الحفظ — حتى لا يُحفظ معه ما تغيّر بالنموذج بلا قصد. */
+  const detachCode = async (code: string) => {
+    if (!product) return;
+    const next = altCodes.filter((c) => c !== code);
+    setBusy(true);
+    try {
+      await repo.updateProduct(product.id, { alt_codes: next });
+      setAltCodes(next);
+      playSuccess();
+      toast.success(t("pos.altDetached", "انفكّ الرمز {{code}} عن «{{name}}» — مسحته ما تنزّلها بعد", { code, name: product.name }));
+      (onChanged ?? onSaved)();
+    } catch (e) {
+      playWarning();
+      toast.error(describeDbError(e, t), e instanceof Error ? e.message : undefined);
+    } finally { setBusy(false); }
+  };
+
   const companyNameOf = (id?: string | null) => (id ? companies.find((c) => c.id === id)?.name ?? "" : "");
   const sectionNameOf = (id?: string | null) => (id ? sections.find((s) => s.id === id)?.name ?? "" : "");
 
@@ -655,8 +685,10 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
         sub_unit_price: product.sub_unit_price != null ? String(product.sub_unit_price) : "",
         sold_by_weight: !!product.sold_by_weight,
       });
+      setAltCodes(product.alt_codes ?? []);
     } else {
       setF({ ...blank, company: defaultCompanyName ?? "", section: defaultSectionName ?? "" });
+      setAltCodes([]);
       setTimeout(() => barcodeRef.current?.focus(), 80);
     }
     setBulk(false);
@@ -1098,6 +1130,27 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
               <p className="mt-1.5 text-2xs leading-relaxed text-ink-subtle" data-shelfhint>
                 {t("pos.shelfCodeHint", "هذا يشبه رقم رفّ لا باركود مصنع. امسح باركود العلبة بعد — تكدر تخلّي الاثنين.")}
               </p>
+            )}
+            {/* الرموزُ الإضافية تُرى وتُفكّ من هنا. مقيسٌ بعيادةٍ حيّة: باركودان أجنبيان
+                انربطا بـ«amino acide» من نافذة الكاشير فصارت كلُّ مسحةٍ لهما تبيعها —
+                ولا شاشةَ كانت تُظهر الربطَ ولا تفكّه. */}
+            {product && altCodes.length > 0 && (
+              <div className="mt-2 rounded-xl border border-line bg-surface-2 p-2.5" data-altcodes>
+                <p className="mb-1.5 text-2xs font-bold text-ink-muted">
+                  {t("pos.altCodes", "رموز إضافية مربوطة بهذي المادّة — مسحتها بالكاشير تنزّلها:")}
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {altCodes.map((c) => (
+                    <span key={c} className="inline-flex items-center gap-1 rounded-full border border-line bg-surface-1 py-0.5 pe-1 ps-2.5 font-mono text-xs text-ink" dir="ltr">
+                      {c}
+                      <button type="button" disabled={busy} data-altdetach={c}
+                        className="grid h-5 w-5 place-items-center rounded-full text-ink-subtle transition hover:bg-danger-100 hover:text-danger-600 disabled:opacity-50 dark:hover:bg-danger-500/20"
+                        title={t("pos.altDetach", "فكّ هذا الرمز عن المادّة")} aria-label={t("pos.altDetach", "فكّ هذا الرمز عن المادّة")}
+                        onClick={() => { playTap(); void detachCode(c); }}>×</button>
+                    </span>
+                  ))}
+                </div>
+              </div>
             )}
             <CatalogSuggestion barcode={f.barcode} nameFilled={!!f.name.trim()} onUse={(hit) => {
               // اقتراح لا حفظ: القيم تنزل بالنموذج ليراجعها الطبيب ويعدّلها.
@@ -1760,7 +1813,7 @@ function CompanyDetail({ company, products, companies, sections, clinicId, onBac
       <CompanyModal open={editingCo} company={company} companies={companies} clinicId={clinicId} onClose={() => setEditingCo(false)} onSaved={() => { setEditingCo(false); onChanged(); }} />
 
       {/* Edit a product from the search results */}
-      <ProductModal open={!!editing} product={editing} companies={companies} sections={sections} clinicId={clinicId} subcategories={subcategoriesOf(products)} allProducts={products} defaultCompanyName={company.name} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); onChanged(); }} />
+      <ProductModal open={!!editing} product={editing} companies={companies} sections={sections} clinicId={clinicId} subcategories={subcategoriesOf(products)} allProducts={products} defaultCompanyName={company.name} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); onChanged(); }} onChanged={onChanged} />
 
       {/* Add / edit a section */}
       <SectionModal open={addingSection} company={company} section={null} sections={sections} clinicId={clinicId} onClose={() => setAddingSection(false)} onSaved={() => { setAddingSection(false); onChanged(); }} />
@@ -1896,6 +1949,7 @@ function SectionProducts({ company, section, products, companies, sections, clin
         defaultSectionName={section ? section.name : ""}
         onClose={() => { setAddingProduct(false); setEditing(null); }}
         onSaved={() => { setAddingProduct(false); setEditing(null); onChanged(); }}
+        onChanged={onChanged}
       />
       {section && <SetPoolModal open={poolOpen} section={section} onClose={() => setPoolOpen(false)} onSaved={() => { setPoolOpen(false); onChanged(); }} />}
 

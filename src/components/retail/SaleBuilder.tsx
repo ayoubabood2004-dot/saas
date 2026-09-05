@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { AnimatePresence, motion } from "framer-motion";
 import {
@@ -31,7 +31,7 @@ import { loadPosLayout, savePosLayout, stepZoom, type PosLayout, type CartSide }
 import { persistMedicalEntries } from "@/lib/medSync";
 import type { MedicalDraft } from "@/components/MedicalEntry";
 import { cn, money, currencySymbol, formatNum, fmtKg, searchable, normalizeCode } from "@/lib/utils";
-import { looksLikeShelfCode, rescueScan } from "@/lib/productCodes";
+import { rescueScan, matchTruncatedCode } from "@/lib/productCodes";
 import { splitCustomerField } from "@/lib/customerName";
 import { dueOf, paidOf } from "@/lib/debt";
 import { withTimeout, describeDbError, isNetworkError, isTimeoutError } from "@/lib/errors";
@@ -639,7 +639,6 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
   /** منتقي الوزن مفتوح على منتج كتلة (0124): البيع أو الراجع يُختار بالكيلو. */
   const [weightFor, setWeightFor] = useState<{ p: Product; ret: boolean } | null>(null);
   /** رمزٌ مُسِح ولم يُطابق شيئاً — يُعرض ليُربط بمنتجٍ قائم بدل إعادة إدخاله. */
-  const [attachCode, setAttachCode] = useState<string | null>(null);
   /* مرجعُ البيعة الجارية — يُنشأ عند أول محاولة ويُمسح عند التصفير. مرجعٌ لا
    * حالة: تغيّره لا يعيد الرسم، وقيمته لازمة داخل المعالج لا بالعرض. */
   const saleRefRef = useRef<string | null>(null);
@@ -883,13 +882,6 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
   useBarcodeScanner(async (code) => {
     if (done) return;
     const n = peekScanMult(code);
-    /* نافذةُ «باركود ما ينعرف» مفتوحة؟ المسحةُ الجديدة تُجرَّب لا تُبلَع.
-     * المقيس بعيادة ابن الهيثم: أوّلُ مسحةٍ لمادّةٍ برقم رفّ تفتح النافذة، ثم
-     * كلُّ مسحةٍ بعدها كانت تُهمَل (الخطّافُ معطَّل) وتكتب أرقامَها بخانة بحث
-     * النافذة فتقول «ماكو منتج مطابق» — فيرى الكاشير نفسَ النافذة مع كلِّ
-     * مادّة ويستنتج أن «أيَّ باركود ما يبيع». والحقيقةُ أن النافذةَ الأولى
-     * وحدَها هي التي فتحت، والباقي ابتلعته. */
-    const dialogWasOpen = !!attachCode;
     let product = await repo.getProductByBarcode(code, clinicId);
     if (!product) {
       // الرمزُ لا يطابق حرفياً — بادئةُ ماسحٍ أو صفرُ GTIN-14 أو UPC↔EAN:
@@ -901,7 +893,6 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
       }
     }
     if (product) {
-      if (dialogWasOpen) setAttachCode(null);
       // رصيدٌ صفر: السكوتُ هنا هو ما جعل عيادةً تقول «المنتج اختفى» — البطاقة
       // رمادية والمسحة لا تنزل شيئاً بلا كلمة. فنقولها: موجود، بس رصيده صفر.
       const noStock = !retMode && !product.pooled && !product.sold_by_weight
@@ -928,19 +919,29 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
       setQuery("");
       return;
     }
+    // مسحةٌ بلا رأسها: وصل ذيلُ الرمز فقط (رقمٌ أو رقمان ضاعا من أوّله) ويوجد
+    // بالمخزن منتجٌ واحدٌ ينتهي رمزُه به — فهو المقصود. طبقةُ دفاعٍ ثانية بعد
+    // `scanBuffer` لا بديلٌ عنها، ونقولها بصوت حتى لا تبدو المطابقةُ سحراً.
+    const cut = matchTruncatedCode(products, code);
+    if (cut) {
+      playSuccess();
+      toast.success(t("retail.scanHealed", "الماسح بلع أوّل الباركود — طابقناه بـ«{{name}}»", { name: cut.name }));
+      addProduct(cut, n);
+      if (mult != null) setMult(null);
+      setQuery("");
+      return;
+    }
     playWarning();
     // باركود مجهول: نقشّر رمزه من الحقل فقط — ما كتبه الطبيب (كمية أو بحث)
     // يبقى بمكانه، ولا تتلوّث خانة البحث بأرقام مسحةٍ فاشلة.
     setQuery((q) => (code && q.endsWith(code) ? q.slice(0, q.length - code.length) : q));
-    // ولا نكتفي بالرفض. أغلبُ المسحات الفاشلة ليست لمادةٍ جديدة، بل لمادةٍ
-    // مُدخَلةٍ برقم رفٍّ يدويّ ثم مُسِحَ باركودُ مصنعها لأول مرّة. فنعرض الربط:
-    // المادةُ تبقى بمكانها برصيدها وتاريخها، وينضاف الرمزُ الجديد إليها.
-    setAttachCode(normalizeCode(code));
+    // ونقولها بالرمز كما وصل، بلا نافذةِ «اربطه بمنتج قائم»: تلك النافذة أُلغيت
+    // بقرار المالك — مقيسٌ أن ما يصلها رموزُ موادٍّ **غيرِ مُدخَلة** أصلاً، فكان
+    // اختيارُ صفٍّ منها يربط باركوداً أجنبياً بمادّةٍ أخرى وتبيعها كلُّ مسحةٍ بعدها.
+    toast.error(t("retail.scanUnknown", "الباركود {{code}} مو موجود بمخزنك — إذا المادّة عندك أضفها من المخزون بهذا الباركود", { code: normalizeCode(code) }));
     // اللوحة مفتوحة = الأرقام تخصّها؛ مسحةٌ تدخل صنفاً خلف نافذة مفتوحة تربك.
     // منتقي الوزن مثلها: مسحةٌ وهو مفتوح كانت تبدّل المنتج تحت يد الطبيب أو
     // تنزل سطراً خلف الورقة بلا أن يراه.
-    // أما نافذةُ «باركود ما ينعرف» فلا تُعطِّل الخطّاف عمداً (انظر أعلى):
-    // مسحةٌ جديدة فوقها إمّا تبيع وتغلقها، أو تبدّل الرمزَ المعروض فيها.
   }, { disabled: multPad || !!qtyPadFor || !!weightFor });
 
   // The bridge: a doctor clicked "Sell items" inside an animal record. Auto-fill the
@@ -1205,7 +1206,11 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
    * منتج» عن مادةٍ موجودةٍ برفّه، فيُعيد إدخالها — وهذي كانت شكوى أكبر عيادة.
    * والرموزُ الإضافية تدخل البحث أيضاً: رقمُ الرفّ يلقى المنتجَ كما يلقاه
    * باركودُ المصنع. */
-  const ql = query.trim();
+  // التصفيةُ على قيمةٍ مؤجَّلة: الحقلُ يستجيب فوراً، وتصفيةُ مئات المواد ورسمُها
+  // رسمٌ قابلٌ للمقاطعة. بلا هذا كان أوّلُ رقمٍ من المسحة يحبس الخيطَ بالرسم
+  // فتصل الضغطةُ التالية «متأخّرة» ويُقطع الرمز (ابن الهيثم، ٥ أيلول).
+  const deferredQuery = useDeferredValue(query);
+  const ql = deferredQuery.trim();
   const nq = searchable(ql);
   const cq = normalizeCode(ql);
   const { shown, hiddenCount } = useMemo(() => {
@@ -1257,7 +1262,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
    * والمضاعِف — حتى الآتي من سجل حيوان. لو على الشاشة شيءٌ يُخسر، يسأل أوّلاً. */
   const hardReset = () => {
     prefillOff.current = true;
-    setRetMode(false); setMult(null); setAttachCode(null); setQtyPadFor(null); setWeightFor(null); setMultPad(false);
+    setRetMode(false); setMult(null); setQtyPadFor(null); setWeightFor(null); setMultPad(false);
     reset();
     setName(""); setPhone(""); setSalePets([]); setCustMatches([]); setCustOpen(false);
     setDetailsOpen(customerOpenPref); setNotesOpen(false); setPayTools(false); setCartSheet(false);
@@ -2930,16 +2935,6 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
       })()}
 
       {/* منتقي الوزن (كتلة، 0124) */}
-      {attachCode && (
-        <AttachCodeDialog
-          key={attachCode} /* رمزٌ جديد = نافذةٌ جديدة: خانةُ بحثها تبدأ فارغةً لا بأرقام المسحة السابقة */
-          code={attachCode}
-          products={products}
-          onClose={() => setAttachCode(null)}
-          onAttached={(p) => { setAttachCode(null); playSuccess(); addProduct(p); }}
-        />
-      )}
-
       {weightFor && (() => {
         const { p, ret } = weightFor;
         const lineId = ret ? `r:${p.id}` : `p:${p.id}`;
@@ -3050,101 +3045,3 @@ function PriceEdit({ value, onChange }: { value: number; onChange: (v: number) =
   );
 }
 
-/* ────────────────────────────────────────────────────────────────────────────
- * ربطُ باركودٍ بمنتجٍ قائم — ما يوقف دورةَ إعادة الإدخال.
- *
- * الشكوى التي وُلد منها هذا الحوار: العيادة تُدخل المادة برقم رفٍّ يدويّ
- * (247)، ثم تمسح باركود المصنع (6972748378670) بعد أيام فلا يتطابقان — فيقول
- * النظام «غير موجود»، فتُعاد المادةُ من الصفر ويصير الرصيدُ نسختين.
- *
- * والعلاج ليس تحذيراً أفضل، بل **مخرجاً**: المسحةُ الفاشلة تعرض مخزنَ العيادة
- * ليختار الطبيبُ المادة، فيُضاف الرمزُ إليها ويبقى رصيدُها وتاريخُها مكانَهما.
- * ورمزُها الأساسي لا يُمحى — الرقمان يعملان بعدها معاً.
- * ──────────────────────────────────────────────────────────────────────────*/
-function AttachCodeDialog({ code, products, onClose, onAttached }: {
-  code: string; products: Product[]; onClose: () => void; onAttached: (p: Product) => void;
-}) {
-  const { t } = useTranslation();
-  const toast = useToast();
-  const [q, setQ] = useState("");
-  const [busy, setBusy] = useState<string | null>(null);
-
-  const hits = useMemo(() => {
-    const nq = searchable(q);
-    const base = nq ? products.filter((p) => searchable(p.name).includes(nq)) : products;
-    // المدخولُ برقم رفٍّ أوّلاً: مقيسٌ بعيادةٍ حيّة — ١٤٩ مادّةً برصيدٍ كلُّها بأرقام
-    // رفٍّ داخلية، وهي أفضلُ مبيعاتها. فمسحةُ علبةٍ فاشلة تقصد واحدةً منها بأغلب
-    // الأحيان، لا مادّةً جديدة. الأكثرُ رصيداً أعلى، لأنه الأكثرُ بيعاً ومسحاً.
-    const rank = (p: Product) => (p.barcode && looksLikeShelfCode(p.barcode) ? 0 : 1);
-    return base.slice()
-      .sort((a, b) => rank(a) - rank(b) || (b.stock ?? 0) - (a.stock ?? 0))
-      .slice(0, 40);
-  }, [products, q]);
-
-  const attach = async (p: Product) => {
-    setBusy(p.id);
-    try {
-      const saved = await repo.attachProductCode(p.id, code);
-      toast.success(t("pos.codeAttached", "انربط الباركود بـ{{n}}", { n: p.name }));
-      onAttached(saved ?? p);
-    } catch (e) {
-      playWarning();
-      const m = String((e as Error).message ?? e);
-      toast.error(m.includes("another product")
-        ? t("pos.codeTaken", "هذا الباركود مربوط بمنتج ثاني")
-        : m);
-    } finally { setBusy(null); }
-  };
-
-  return (
-    <Dialog open onClose={onClose} title={t("pos.attachTitle", "باركود ما ينعرف")} size="lg">
-      <div className="space-y-3">
-        <div className="rounded-xl border border-warn-200 bg-warn-50 p-3 dark:border-warn-500/30 dark:bg-warn-500/10">
-          <p className="text-sm font-semibold text-warn-700 dark:text-warn-300">
-            {t("pos.attachHint", "إذا المادة موجودة بمخزنك بباركود ثاني أو برقم يدوي، اختارها من تحت — ينربط الباركود بيها ويبقى رصيدها كما هو. لا تعيد إدخالها.")}
-          </p>
-          {/* الرمزُ كما وصل من الماسح — بارزاً، لأن أوّلَ سؤالٍ عند البلاغ «شنو طلع بالنافذة؟» */}
-          <p className="mt-2 text-2xs font-bold text-ink-subtle">{t("pos.attachReceived", "الرمز الذي وصل من الماسح")}</p>
-          <p data-attachcode className="font-mono text-base font-extrabold tabular-nums text-ink" dir="ltr">{code}</p>
-        </div>
-
-        <input
-          autoFocus className="input" value={q} data-attachsearch
-          onChange={(e) => setQ(e.target.value)}
-          placeholder={t("pos.attachSearch", "دوّر بالاسم…")}
-        />
-
-        <div className="max-h-[46vh] space-y-1.5 overflow-y-auto">
-          {hits.length === 0 ? (
-            <p className="py-8 text-center text-sm text-ink-subtle">{t("retail.noMatch", "ماكو منتج مطابق")}</p>
-          ) : hits.map((p) => (
-            <button
-              key={p.id} type="button" disabled={!!busy} data-attachpick={p.id}
-              onClick={() => attach(p)}
-              className="flex w-full items-center gap-3 rounded-xl border border-line bg-surface-1 p-2.5 text-start transition hover:border-brand-400 hover:bg-brand-50 disabled:opacity-50 dark:hover:bg-brand-500/10"
-            >
-              <span className="min-w-0 flex-1">
-                <span className="block truncate font-semibold text-ink">{p.name}</span>
-                <span className="block font-mono text-2xs text-ink-subtle" dir="ltr">
-                  {p.barcode || "—"}{(p.alt_codes?.length ?? 0) > 0 ? ` +${p.alt_codes!.length}` : ""}
-                  {p.barcode && looksLikeShelfCode(p.barcode) && (
-                    <span className="ms-2 rounded-full bg-warn-100 px-1.5 py-0.5 font-sans text-2xs font-bold text-warn-700 dark:bg-warn-500/15 dark:text-warn-300" dir="rtl">
-                      {t("pos.shelfCodeBadge", "رقم رفّ")}
-                    </span>
-                  )}
-                </span>
-              </span>
-              <span className="shrink-0 text-xs tabular-nums text-ink-muted">
-                {t("pos.stockN", "رصيد {{n}}", { n: formatNum(p.stock ?? 0) })}
-              </span>
-            </button>
-          ))}
-        </div>
-
-        <p className="text-2xs leading-relaxed text-ink-subtle">
-          {t("pos.attachFooter", "ما لكيتها؟ سكّر هالنافذة وأضفها منتجاً جديداً من المخزن.")}
-        </p>
-      </div>
-    </Dialog>
-  );
-}
