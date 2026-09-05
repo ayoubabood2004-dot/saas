@@ -22,7 +22,7 @@ DB=dvtest
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MIG="$HERE/../migrations"
 # الهجرات التي يغطّيها هذا المخطّط الأساس. زدها كل ما تنضاف موجة.
-WAVE="$MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_rls_coverage.sql $MIG/0153_catalog_privacy.sql $MIG/0154_owner_portal.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql"
+WAVE="$MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0158_owner_portal.sql $MIG/0159_rls_coverage.sql $MIG/0160_catalog_privacy.sql"
 
 command -v "$PGBIN/initdb" >/dev/null || { echo "ما لكيت بوستغريس بـ $PGBIN"; exit 1; }
 
@@ -115,7 +115,7 @@ chk "ولا شرطٌ تغيّر"          "select تغير_شرطها::text     
 chk "ولا دورٌ تبدّل"          "select تغيرت_صلاحياتها::text from public.verify_rls_equivalence()" "0"
 chk "ولا لفٌّ مزدوج" \
     "select count(*)::text from pg_policies where qual like '%SELECT ( SELECT%' or with_check like '%SELECT ( SELECT%'" "0"
-# التغطية (0152). الحكمُ هنا على **سلوك الدالّة** لا على حصيلة المخطّط:
+# التغطية (0159). الحكمُ هنا على **سلوك الدالّة** لا على حصيلة المخطّط:
 # مخطّطُ الحزمة اصطناعيّ وفيه جداولُ سقّالةٍ بلا RLS عمداً، فحصيلةُ «صفر» تخصّ
 # الإنتاج لا هذا المعمل. فنفحص أنّ الدالّة **تُصنّف صحيحاً**: جدولٌ محميّ لا
 # يظهر، ونفسُه بعد إطفاء RLS يظهر، ثم يختفي بإعادته. وفحصٌ لا يقدر أن يفشل لا
@@ -137,7 +137,7 @@ chk "وبالتوثيق يسكت" \
     "select count(*)::text from public.verify_rls_coverage() where الجدول='_cov_probe'" "0"
 $P -c "drop table if exists _cov_probe;" >/dev/null
 
-# ── الكتالوج المشترك (0153): يعطي الاسمَ ولا يكشف كلفةَ عيادةٍ بعينها ──────
+# ── الكتالوج المشترك (0160): يعطي الاسمَ ولا يكشف كلفةَ عيادةٍ بعينها ──────
 # ثلاثُ عياداتٍ مشاركة، ورمزان: باركودُ مصنعٍ عند الثلاث، ورقمُ رفٍّ عند واحدة.
 $P -c "insert into clinic_prefs(clinic_id, catalog_share) values
          ('c0000000-0000-0000-0000-000000000001',true),

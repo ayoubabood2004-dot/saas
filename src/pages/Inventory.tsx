@@ -1471,7 +1471,7 @@ function CatalogSuggestion({ barcode, nameFilled, onUse }: {
         <span className="block truncate text-sm font-extrabold text-ink">{hit.name}</span>
         <span className="block text-2xs text-ink-muted">
           {/* سعرٌ محجوبٌ يُقال ولا يُعرض صفراً: الوسيطُ على مصدرٍ أو مصدرين هو
-              سعرُ عيادةٍ بعينها لا سعرُ سوق، فيُحجب حتى يبلغ العدد ثلاثة (0153). */}
+              سعرُ عيادةٍ بعينها لا سعرُ سوق، فيُحجب حتى يبلغ العدد ثلاثة (0160). */}
           {hit.sell_price == null
             ? t("pos.catalogNoPrice", "الاسم فقط — الأسعار تظهر لمّا يصير وراها ٣ عيادات")
             : <>بيع {money(hit.sell_price)}{restricted || hit.purchase_price == null ? "" : ` · شراء ${money(hit.purchase_price)}`}</>}

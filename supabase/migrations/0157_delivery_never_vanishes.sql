@@ -47,7 +47,7 @@ create table if not exists delivery_orders_trash (
 );
 alter table delivery_orders_trash enable row level security;
 -- بلا وسمِ `RLS-DENY-ALL-BY-DESIGN`: الجدولُ **له** سياسةُ قراءةٍ أدناه، فليس
--- محجوباً. والوسمُ يُسكت `verify_rls_coverage` (0152) عن الجدول للأبد — فلو
+-- محجوباً. والوسمُ يُسكت `verify_rls_coverage` (0159) عن الجدول للأبد — فلو
 -- أُسقطت سياسةُ القراءة يوماً لبقي الحارسُ صامتاً عن جدولٍ صار بلا حماية.
 comment on table delivery_orders_trash is
   'صورةُ طلبِ توصيلٍ خرج بأي طريق (تتالي حذفِ فاتورة، أو حذفٌ مباشر). تُقرأ '
