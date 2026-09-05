@@ -265,7 +265,7 @@ function demoLoginLoad(): LoginEvent[] {
 }
 function demoLoginSave(list: LoginEvent[]) { try { localStorage.setItem(DEMO_LOGIN_KEY, JSON.stringify(list)); } catch { /* ignore */ } }
 
-/* ---- بوّابة المالك (0154) — تخزينُ الوضع التجريبي ----
+/* ---- بوّابة المالك (0158) — تخزينُ الوضع التجريبي ----
  * بمفاتيح مستقلّة عن `DemoDB` عمداً: رفعُ رقم البذرة وسط جلسةِ تعديلٍ يسابق
  * HMR فيُنشئ المفتاحَ الجديد بلا الحقول الجديدة ويثبت — مصيدةٌ وقعنا بيها
  * قبلاً. والرموزُ والجلسات حالةُ جلسةٍ لا بذرةَ بيانات، فمحلُّها هنا أصلاً. */
@@ -1539,7 +1539,7 @@ const demoRepo = {
     return { ok: true, order_no: order.order_no, total };
   },
 
-  /* ---- بوّابة المالك (0154) — مرآةُ دوالّ portal_* ----
+  /* ---- بوّابة المالك (0158) — مرآةُ دوالّ portal_* ----
    * تفرض **نفس حرّاس الخادم** لا شكلَها فقط: ردٌّ موحَّد سواء كان الرقم مسجّلاً
    * أو لا، وخمسُ محاولاتٍ ثم يُحرق الرمز، وعشرُ دقائق للصلاحية. لأن فحوصَ
    * المنطق تجري على النسخة التجريبية — فحارسٌ ناقصٌ هنا حارسٌ لم يُفحص. */
@@ -3829,7 +3829,7 @@ const supabaseRepo: typeof demoRepo = {
     return (data ?? { ok: false, error: "unknown" }) as { ok: boolean; error?: string; order_no?: string; total?: number; min_order?: number };
   },
 
-  /* ---- بوّابة المالك (0154) ----
+  /* ---- بوّابة المالك (0158) ----
    * القصُّ كلُّه بالقاعدة: هذه الدوالّ تمرّر ولا تُقرّر. أيُّ ترشيحٍ يُكتب هنا
    * بدل هناك يصير زينةً — من يملك المفتاح العلنيّ ينادي الدالّة بنفسه. */
   async portalRequestCode(slug, phone) {
@@ -4531,7 +4531,7 @@ const READ_ONLY_ALLOWED = new Set<string>([
   // --- واجهات الزبون العامة (تعمل خارج جلسة العيادة) ---
   "storeFrontPublic", "storeCatalogPublic", "placeStoreOrder", "trackJourneyPublic",
   "reactJourneyPublic", "claimPet", "claimPetsByPhone",
-  // بوّابة المالك (0154): اشتراكُ العيادة شأنٌ بينها وبين المنصّة — وقفُ
+  // بوّابة المالك (0158): اشتراكُ العيادة شأنٌ بينها وبين المنصّة — وقفُ
   // البوّابة يعاقب المراجعَ الذي لا ناقةَ له ولا جمل، ولا يضغط على العيادة.
   "portalRequestCode", "portalVerifyCode", "portalMe", "portalPet", "portalLogout",
   // --- سجلات تشغيلية لا تمثّل إدخال بيانات (وحجبها يكسر الدخول) ---
