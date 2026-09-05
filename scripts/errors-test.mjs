@@ -58,6 +58,21 @@ const dupBarcode = { code: "23505", message: 'duplicate key value violates uniqu
 chk("الباركود المكرّر له جملته لا جملةُ الأقفاص", E.describeDbError(dupBarcode, t), at(ar, "errors.c.products_clinic_barcode_idx"));
 chk("وهي تذكر العيادة لا القفص", /بعيادتك|مخزن/.test(E.describeDbError(dupBarcode, t)) && !/قفص/.test(E.describeDbError(dupBarcode, t)), true);
 
+// رفضٌ مقصودٌ من دالّةِ قاعدةٍ يشرح نفسَه (0157): `raise … using hint` يضع الرمزَ
+// اللاتينيّ بـmessage والشرحَ العربيَّ بـhint. وبلا التقاطِ hint يقرأ المديرُ
+// «invoice_has_open_delivery» بالحرف — رسالةٌ لا تُفهم ولا تُعالَج.
+const blocked = {
+  code: "P0001",
+  message: "invoice_has_open_delivery",
+  hint: "هذه الفاتورة عليها طلبُ توصيلٍ لم يُحصَّل بعد. حصِّله أو أرجِعه أولاً.",
+};
+chk("رسالةُ المنع العربية توصل الشاشة", E.describeDbError(blocked, t), blocked.hint);
+chk("ولا يُعرض الرمزُ اللاتينيّ", /invoice_has_open_delivery/.test(E.describeDbError(blocked, t)), false);
+// وhint الإنكليزيُّ التقنيّ لأخطاء بوستغريس العامّة لا يُعرض: الشرطُ P0001 وحده.
+const pgHint = { code: "23503", message: "insert or update violates foreign key", hint: "Key is not present in table." };
+chk("وhint لخطأٍ عامٍّ لا يُعرض خاماً", /Key is not present/.test(E.describeDbError(pgHint, t)), false);
+chk("ورفضٌ بـP0001 بلا hint يسقط للسلوك القديم", typeof E.describeDbError({ code: "P0001", message: "boom" }, t), "string");
+
 // وسطرُ الفاتورة — أهمّها، وهو الذي أوقف بيعةً حيّة يوم كُتب هذا
 const line = { code: "23514", message: 'new row for relation "invoice_items" violates check constraint "invoice_items_nonneg"' };
 chk("وسطرُ الفاتورة", E.describeDbError(line, t), at(ar, "errors.c.invoice_items_nonneg"));
@@ -84,6 +99,18 @@ chk("أكو مفاتيح أصلاً", keys.length > 0, true);
 const missing = keys.filter((k) => !known.has(k));
 chk("وكلُّها تقابل قيداً موجوداً", missing, []);
 chk("والعربي والإنجليزي متطابقان", Object.keys(at(en, "errors.c") ?? {}), keys);
+
+// تحديثٌ بلا صفّ (0157 واجهة): كان «نجاحاً» صامتاً بالتوصيل — اختار السائقَ فما
+// صار شي، وحصّل فبقي الطلبُ مكانه. صار خطأً مترجَماً يقول ماذا يفعل.
+const noRow = new Error("no_row_updated");
+chk("تحديثٌ لم يمسّ صفاً له جملتُه", E.describeDbError(noRow, t), at(ar, "errors.noRowUpdated"));
+chk("  وهي تقول «حدّث» لا «خطأ»", /حدّث الصفحة/.test(E.describeDbError(noRow, t)), true);
+
+// سياسةٌ تستعلم من جدولها (0159): الخادم يرجع 500 برمز 42P17 ونصٍّ إنكليزيٍّ
+// تقنيّ. كان يُبلَع ويظهر «تم»؛ فصار جملةً تقول «لن ينفع التكرار» وتحمل الرمز.
+const recur = { code: "42P17", message: 'infinite recursion detected in policy for relation "delivery_orders"' };
+chk("سياسةٌ متكرّرة تُقال بالاسم لا بالإنكليزي", E.describeDbError(recur, t), at(ar, "errors.policyRecursion"));
+chk("  وتحمل الرمزَ للدعم", /42P17/.test(E.describeDbError(recur, t)) && !/infinite recursion/.test(E.describeDbError(recur, t)), true);
 
 console.log("");
 if (fail) { console.log("✗ اكو فحصٌ فشل"); process.exit(1); }

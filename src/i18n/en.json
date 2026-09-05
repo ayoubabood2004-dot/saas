@@ -266,7 +266,9 @@
       "staff_recurring_amount_check": "The monthly amount must be greater than zero.",
       "store_profiles_slug_unique": "That store link is taken — choose a different one.",
       "store_slug_format": "The store link accepts only lowercase letters, digits and hyphens (-), must start and end with a letter or digit, and be 3–30 characters long."
-    }
+    },
+    "noRowUpdated": "The change was not saved — the server did not find this order in your clinic, or refused it. Refresh and try again; if you entered a clinic from the platform console, make sure you are still in the same clinic.",
+    "policyRecursion": "Database configuration fault (table policy) — the change was not saved and retrying will not help. Report this code to support: 42P17."
   },
   "nav": {
     "dashboard": "Dashboard",
@@ -759,7 +761,8 @@
       "noCost": "This product has no purchase price",
       "noCostHint": "“{{name}}” would sell for zero. Enter its purchase price in Inventory first.",
       "badge": "Wholesale — starts at cost price"
-    }
+    },
+    "scanRescued": "“{{name}}” — matched as {{code}}"
   },
   "promos": {
     "title": "Offers management",
@@ -1150,11 +1153,23 @@
     "attachTitle": "Unknown barcode",
     "attachHint": "If this item is already in your inventory under another barcode or a hand-written code, pick it below — the barcode gets attached and its stock stays as it is. Do not add it again.",
     "attachSearch": "Search by name…",
-    "attachFooter": "Not there? Close this and add it as a new product from Inventory.",
+    "attachFooter": "Items tagged “shelf code” are the likely match — they were entered under an internal number, so scanning the box finds nothing. To stop this recurring for every customer: Inventory → Barcode studio → “Link box barcodes” and scan each box once. Only add a new product if you are sure it does not exist — adding creates a second copy with split stock.",
     "codeAttached": "Barcode attached to {{n}}",
     "codeTaken": "That barcode belongs to another product",
+    "shelfCodeBadge": "shelf code",
+    "linkBoxTitle": "Items under a shelf code — link the box barcode ({{n}})",
+    "linkBoxHint": "These items were entered under an internal number, so scanning their box at the register says “unknown”. Start linking and scan each item's box once — it gets two codes and both work.",
+    "linkStart": "Start linking by scan",
+    "linkStop": "Stop",
+    "linkNow": "Scan the box of:",
+    "linkSkip": "Skip — no barcode on it",
+    "linkAllDone": "Done — every item was linked or skipped ✓",
+    "linkNotBox": "That is a shelf code, not a box barcode — scan the code printed on the box itself.",
+    "linkDone": "Linked “{{n}}” ✓",
+    "linkFail": "Could not link",
     "stockN": "stock {{n}}",
-    "tabWholesale": "Wholesale"
+    "tabWholesale": "Wholesale",
+    "attachReceived": "Code as received from the scanner"
   },
   "role": {
     "admin": "Clinic",

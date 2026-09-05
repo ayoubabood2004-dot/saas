@@ -61,12 +61,29 @@ function constraintOf(err: { message?: string; details?: string }): string | nul
 
 /** Map a thrown DB/network error to a short, human-readable message for a toast. */
 export function describeDbError(e: unknown, t: TFunction): string {
-  const err = (e && typeof e === "object" ? e : {}) as { name?: string; code?: string; message?: string; details?: string };
+  const err = (e && typeof e === "object" ? e : {}) as { name?: string; code?: string; message?: string; details?: string; hint?: string };
+  // رفضٌ مقصودٌ من دالّةِ قاعدةٍ يشرح نفسَه: `raise … using hint = '…'` يضع
+  // الرمزَ اللاتينيّ بـmessage والشرحَ العربيَّ بـhint. وبلا هذا السطر يقرأ
+  // المديرُ «invoice_has_open_delivery» بالحرف — رسالةٌ لا تُفهم ولا تُعالَج.
+  // الشرطُ P0001 وحده: أخطاءُ بوستغريس العامّة hint فيها إنكليزيٌّ تقنيّ.
+  if (err.code === "P0001" && typeof err.hint === "string" && err.hint.trim()) {
+    return err.hint.trim();
+  }
   // اشتراك منتهٍ: العملية رُفضت بقصد — الرسالة تشرح السبب والحل، لا «خطأ».
   if (err.name === "ReadOnlyError" || err.message === "READ_ONLY") {
     return t("errors.readOnly", "انتهى اشتراك العيادة — الحساب بوضع القراءة فقط. تقدر تشوف وتطبع كل بياناتك، بس الإضافة والتعديل يحتاجان تجديد الاشتراك.");
   }
   // حصص الاشتراك (0104): رفض مقصود من مشغّل القاعدة — نشرح الحد والحل.
+  // تحديثٌ لم يمسّ صفاً (سياسةُ الصفوف ردّته، أو الصفُّ لعيادةٍ غير التي يقصدها
+  // الخادم): كان يمرّ «نجاحاً» صامتاً بالتوصيل — فصار خطأً باسمه (0157 واجهة).
+  if (typeof err.message === "string" && err.message.includes("no_row_updated")) {
+    return t("errors.noRowUpdated", "ما انحفظ التغيير — الخادم ما لكى الطلب ضمن عيادتك أو رفضه. حدّث الصفحة وأعد المحاولة؛ وإذا كنت داخلاً لعيادةٍ من لوحة المنصّة تأكد أنك بنفس العيادة.");
+  }
+  // سياسةُ صفوفٍ تستعلم من جدولها (0159): خللُ إعداداتٍ بالقاعدة لا خطأُ مستخدم —
+  // يُقال بالاسم حتى لا يعيد الكاشير المحاولةَ عشر مرّات على شيءٍ لن ينجح.
+  if (err.code === "42P17") {
+    return t("errors.policyRecursion", "خللٌ بإعدادات القاعدة (سياسة الجدول) — التغيير ما انحفظ ولن ينحفظ بإعادة المحاولة. أبلغ الدعم بهذا النص: 42P17.");
+  }
   if (typeof err.message === "string" && err.message.includes("pet_limit_reached")) {
     return t("errors.petQuota", "ما تكدر تضيف حيوانات إضافية حالياً. راجع مزوّد الخدمة.");
   }

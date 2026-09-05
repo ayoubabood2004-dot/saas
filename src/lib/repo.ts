@@ -2112,6 +2112,37 @@ const demoRepo = {
     saveDB(db);
     return { settled: paid, orders: allocations.length, unallocated: left, remaining_owed: remaining };
   },
+  /** فكُّ تحصيل — مرآةُ `courier_unsettle` (0157) بنفس قواعدها حرفياً:
+   *  يردّ المبالغ ويعيد الطلبات للذمّة ويسِمُ الصفَّ مفكوكاً، **ولا يحذف شيئاً**.
+   *  والعكسُ يُكتب ساقاً سالبةً لا مسحاً لساقٍ قديمة — فالفاتورةُ تحكي قصّتَها. */
+  async unsettleCourier(settlementId: string, reason?: string | null): Promise<CourierSettlement> {
+    const r2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
+    const db = loadDB();
+    const s = (db.courierSettlements ?? []).find((x) => x.id === settlementId);
+    if (!s) throw new Error("settlement not found");
+    if (s.reversed_at) throw new Error("already_reversed");
+    const now = new Date().toISOString();
+    for (const a of s.allocations ?? []) {
+      const inv = (db.invoices ?? []).find((i) => i.id === a.invoice_id);
+      if (inv && inv.status !== "refunded") {
+        // لا نردّ أكثر مما هو مدفوعٌ فعلاً — والنقصُ ليس فكّاً جزئياً صامتاً.
+        const back = Math.min(r2(a.amount), r2(inv.amount_paid ?? 0));
+        if (back < r2(a.amount) - 0.005) throw new Error("cannot_fully_reverse");
+        if (back > 0) {
+          inv.amount_paid = r2((inv.amount_paid ?? 0) - back);
+          inv.payment_details = [...(inv.payment_details ?? []),
+            { method: s.method, amount: -back, at: now, reversal_of: s.id,
+              ...(reason?.trim() ? { note: reason.trim() } : {}) }];
+        }
+      }
+      const o = (db.deliveryOrders ?? []).find((x) => x.id === a.order_id);
+      if (o) o.collected_at = null;   // يرجع بالذمّة — وهذا ما يعيده للكشف
+    }
+    s.reversed_at = now;
+    s.reversed_reason = (reason ?? "").trim() || null;
+    saveDB(db);
+    return s;
+  },
 
   /* ---------------- Retail & advanced invoicing ---------------- */
   async retailCheckout(items: CheckoutItem[], meta: SaleMeta): Promise<Invoice> {
@@ -2193,6 +2224,14 @@ const demoRepo = {
   async listInvoiceItemsFor(invoiceIds: string[]): Promise<InvoiceItem[]> {
     const ids = new Set(invoiceIds);
     return (loadDB().invoiceItems ?? []).filter((it) => ids.has(it.invoice_id));
+  },
+  /** فواتيرُ بمعرّفاتها — لكشفِ حاملٍ يمتدّ شهوراً.
+   *  لقطةُ الصفحة تحمل آخرَ خمسةَ عشرَ يوماً + الديونَ المفتوحة (0150)، فطلبٌ
+   *  **حُصِّل** قبل شهرين فاتورتُه ليست فيها. الكشفُ يمشي على معرّفاتِ طلباته
+   *  لا على اللقطة، وإلا عرض قائمةً ناقصةً تبدو تامّة. */
+  async listInvoicesByIds(invoiceIds: string[]): Promise<Invoice[]> {
+    const ids = new Set(invoiceIds);
+    return (loadDB().invoices ?? []).filter((i) => ids.has(i.id));
   },
   async reportReceiptsDaily(range: DateRange, _tz?: string): Promise<ReceiptsDay[]> {
     const lo = range.from ? new Date(range.from).getTime() : -Infinity;
@@ -2794,6 +2833,7 @@ const DEMO_ACTIVITY_MAP: Record<string, { entity: string; action: "INSERT" | "UP
   createDeliveryOrder: { entity: "delivery_orders", action: "INSERT" },
   updateDeliveryOrder: { entity: "delivery_orders", action: "UPDATE" },
   settleCourier: { entity: "courier_settlements", action: "INSERT" },
+  unsettleCourier: { entity: "courier_settlements", action: "UPDATE" },
   checkout: { entity: "invoices", action: "INSERT" },
   retailCheckout: { entity: "invoices", action: "INSERT" },
   retailReturn: { entity: "expenses", action: "INSERT" },
@@ -2971,6 +3011,15 @@ async function allPages<T>(make: () => unknown): Promise<T[]> {
     from += rows.length;
   }
 }
+/* تحديثٌ ردّته سياسةُ الصفوف يرجع **صفرَ صفوفٍ بلا خطأ** — فتقول الواجهةُ
+ * «تمّ» والطلبُ لم يتغيّر. هذا بالضبط ما بُلِّغ عنه بالتوصيل: «اختار السائق ما
+ * صار شي»، و«إشعارُ تحصيلٍ والطلبُ مكانه». الصمتُ هنا أخطرُ من الخطأ لأنه
+ * يُصدَّق. فصفٌّ غائبٌ بعد update = خطأٌ صريح بسببٍ مفهوم. */
+function assertUpdated<T>(row: T | undefined): T {
+  if (row === undefined) throw new Error("no_row_updated");
+  return row;
+}
+
 function maybe<T>(res: { data: unknown; error: { message: string } | null }): T | undefined {
   if (res.error) { console.error("[supabase]", res.error.message); return undefined; }
   return (res.data ?? undefined) as T | undefined;
@@ -4072,9 +4121,14 @@ const supabaseRepo: typeof demoRepo = {
     // قاعدة قبل 0148 (بلا collected_at): الحالة تُحفظ بلا الختم بدل ما يفشل الاستلام.
     if (r.error && "collected_at" in patch && /collected_at/i.test(r.error.message ?? "")) {
       const { collected_at, ...rest } = patch; void collected_at;
-      return maybe<DeliveryOrder>(await sbc().from("delivery_orders").update(rest).eq("id", id).select().maybeSingle());
+      const r2 = await sbc().from("delivery_orders").update(rest).eq("id", id).select().maybeSingle();
+      if (r2.error) throw r2.error;
+      return assertUpdated(maybe<DeliveryOrder>(r2));
     }
-    return maybe<DeliveryOrder>(r);
+    // خطأُ الخادم يُرمى لا يُبلَع: `maybe()` كانت تطبعه بالكونسول وترجع «لا صفّ»،
+    // فقالت الواجهةُ «تم الاستلام» على 500 حقيقيّ (0159) والطلبُ باقٍ مكانه.
+    if (r.error) throw r.error;
+    return assertUpdated(maybe<DeliveryOrder>(r));
   },
   async listCourierSettlements(courierId) {
     return allPages<CourierSettlement>(() => {
@@ -4088,6 +4142,9 @@ const supabaseRepo: typeof demoRepo = {
     if (error) throw error;
     const d = (data ?? {}) as Record<string, unknown>;
     return { settled: Number(d.settled ?? 0), orders: Number(d.orders ?? 0), unallocated: Number(d.unallocated ?? 0), remaining_owed: Number(d.remaining_owed ?? 0) };
+  },
+  async unsettleCourier(settlementId, reason) {
+    return need<CourierSettlement>(await sbc().rpc("courier_unsettle", { p_settlement: settlementId, p_reason: reason ?? null }));
   },
 
   /* ---------------- Retail & advanced invoicing ---------------- */
@@ -4140,6 +4197,13 @@ const supabaseRepo: typeof demoRepo = {
   async listInvoiceItemsFor(invoiceIds) {
     if (invoiceIds.length === 0) return [];
     return inChunks(invoiceIds, (c) => allPages<InvoiceItem>(() => sbc().from("invoice_items").select("*").in("invoice_id", c)));
+  },
+  async listInvoicesByIds(invoiceIds) {
+    if (invoiceIds.length === 0) return [];
+    // مرآةُ listInvoiceItemsFor: دفعاتٌ بالمعرّفات (طولُ الرابط) وصفحاتٌ كاملة
+    // (سقفُ الألف صفّ). و`allPages` ترمي الخطأ ولا ترجع قائمةً جزئية — كشفُ
+    // تحصيلٍ ناقصٌ يبدو تامّاً أخطرُ من خطأٍ ظاهر.
+    return inChunks(invoiceIds, (c) => allPages<Invoice>(() => sbc().from("invoices").select("*").in("id", c)));
   },
   async reportReceiptsDaily(range, tz) {
     const rows = listOf<{ day: string; gross: number | string; net: number | string; invoices: number }>(
@@ -4522,7 +4586,7 @@ const READ_ONLY_ALLOWED = new Set<string>([
   "getPayrollPolicy", "listStaffComp", "listStaffRecurring", "listPayrollRuns",
   "listPayslips", "listPayslipLines", "listStaffLoans", "listLoanEvents",
   "listPayrollAdjustments", "listDeletedProducts", "productSaleLines", "listCourierSettlements",
-  "listInvoicesTouching", "customerInvoices", "listInvoiceItemsFor", "reportReceiptsDaily", "reportReceiptsTotal",
+  "listInvoicesTouching", "customerInvoices", "listInvoiceItemsFor", "listInvoicesByIds", "reportReceiptsDaily", "reportReceiptsTotal",
   "reportTopProducts", "reportStaff", "countInvoices", "searchInvoices", "countInvoicesMatching", "openDebts",
   "activitySummary", "activityPage", "activityActors",
   // --- استعلامات مساعدة لا تكتب ---

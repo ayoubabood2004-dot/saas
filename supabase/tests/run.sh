@@ -22,7 +22,7 @@ DB=dvtest
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MIG="$HERE/../migrations"
 # الهجرات التي يغطّيها هذا المخطّط الأساس. زدها كل ما تنضاف موجة.
-WAVE="$MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql"
+WAVE="$MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql"
 
 command -v "$PGBIN/initdb" >/dev/null || { echo "ما لكيت بوستغريس بـ $PGBIN"; exit 1; }
 
@@ -1039,5 +1039,78 @@ chk "وافتراضُه false — القفلُ يشمل المخزن ما لم �
 $P -c "insert into clinic_prefs (clinic_id) values ('$C1'::uuid) on conflict (clinic_id) do nothing;" >/dev/null
 chk "وصفٌّ قائمٌ لم يُلمس: قيمتُه false لا null" \
     "select manager_mode_stock_edit::text from clinic_prefs where clinic_id='$C1'::uuid" "false"
+
+# ── 0157: سجلُّ التوصيل لا يختفي، والتحصيلُ الغلط يُفَكّ لا يُزوَّر ────────────
+# نزلت على الإنتاج قبل واجهتها، فكانت بالحزمة بلا فحصٍ واحد — تُطبَّق مرّتين
+# وتسكت. هذي الأربعة تثبّت ما تعتمد عليه الواجهةُ الجديدة (قسمُ الشركات وفكُّ
+# التحصيل): السلّة، والحارسُ الذي يمنع غيرَ المدير من الفكّ، والسياسةُ التي
+# تجمّد طلبَ الشركة، والمحفّزُ الذي يصوّر الطلبَ قبل أن يأخذه التتالي.
+# (RLS نفسُها لا تُفحص هنا: الحزمةُ تجري كـsuperuser فتتجاوزها — انظر CLAUDE.md.)
+echo "▸ 0157: التوصيل لا يختفي والفكُّ للمدير وحده"
+RCP=77777777-7777-7777-7777-777777777777
+$P -c "insert into auth.users(id) values ('$RCP') on conflict do nothing;
+       insert into memberships(user_id,clinic_id,role,status) values ('$RCP','$C1','receptionist','active') on conflict do nothing;
+       insert into couriers(id,clinic_id,name,kind) values ('cccccccc-0157-4000-8000-000000000001','$C1','شركة الفحص','company') on conflict do nothing;
+       insert into invoices(id,clinic_id) values ('dddddddd-0157-4000-8000-000000000001','$C1') on conflict do nothing;
+       insert into delivery_orders(id,clinic_id,invoice_id,courier_id,status,cod_amount)
+         values ('eeeeeeee-0157-4000-8000-000000000001','$C1','dddddddd-0157-4000-8000-000000000001','cccccccc-0157-4000-8000-000000000001','delivered',5000)
+         on conflict do nothing;
+       update _dvtest_flags set admin = false; delete from platform_sessions;" >/dev/null
+chk "سلّةُ طلبات التوصيل موجودة" \
+    "select (to_regclass('public.delivery_orders_trash') is not null)::text" "true"
+chk "courier_unsettle مُعرِّفٌ ومسارُه مثبَّت" \
+    "select (prosecdef and coalesce(array_to_string(proconfig,','),'') like '%search_path%')::text from pg_proc where proname='courier_unsettle'" "true"
+chk "  وموظّفُ استقبالٍ لا يفكّ تحصيلاً (الحارسُ داخل الدالّة لا بالواجهة)" \
+    "select left(_pf_try('$RCP', 'select courier_unsettle(''00000000-0000-0000-0000-000000000000''::uuid)::text'), 18)" "guarded:forbidden"
+chk "  والمديرُ يمرّ من حارس الدور (فيقف عند «لا تحصيل بهذا المعرّف»)" \
+    "select (_pf_try('$C1', 'select courier_unsettle(''00000000-0000-0000-0000-000000000000''::uuid)::text') like '%settlement not found%')::text" "true"
+chk "حارسُ طلب الشركة محفّزٌ (0159) لا سياسةٌ تستعلم من جدولها" \
+    "select (exists (select 1 from pg_trigger where tgname='delivery_orders_before_update_guard' and tgrelid='delivery_orders'::regclass)
+             and prosrc like '%company%' and prosrc like '%collected_at%')::text from pg_proc where proname='delivery_orders_guard_company'" "true"
+$P -c "delete from delivery_orders where id = 'eeeeeeee-0157-4000-8000-000000000001';" >/dev/null
+chk "حذفُ طلبٍ يصوّره بالسلّة قبل أن يذهب (المحفّزُ لا الواجهة)" \
+    "select count(*)::text from delivery_orders_trash where id = 'eeeeeeee-0157-4000-8000-000000000001'" "1"
+chk "  والصورةُ تحمل مبلغَه وحاملَه" \
+    "select ((row->>'cod_amount')::numeric = 5000 and courier_id = 'cccccccc-0157-4000-8000-000000000001')::text from delivery_orders_trash where id = 'eeeeeeee-0157-4000-8000-000000000001'" "true"
+
+# ── 0159: سياسةُ التحديث كانت تستعلم من جدولها فأسقطت كلَّ تحديثٍ بـ42P17 ──────
+# أوّلُ فحصٍ بالحزمة يمرّ من RLS فعلاً: `_rls_try` ينزل إلى دور `authenticated`
+# (nosuperuser) قبل التنفيذ، فتُعاد كتابةُ السياسات كما بالإنتاج. بدور superuser
+# كانت 0157 تمرّ مرّتين وتسكت — والإنتاج يرجع 500 على كلّ PATCH.
+echo "▸ 0159: تحديثُ التوصيل يمرّ من RLS بدورٍ عاديّ"
+$P -c "grant usage on schema public to authenticated;
+       grant select, insert, update, delete on all tables in schema public to authenticated;
+       grant usage, select on all sequences in schema public to authenticated;
+       grant execute on all functions in schema public to authenticated;
+       create or replace function _rls_try(who uuid, q text) returns text language plpgsql as \$fn\$
+       declare n int; begin
+         perform set_config('request.jwt.claim.sub', who::text, true);
+         set local role authenticated;
+         execute q; get diagnostics n = row_count;
+         reset role; return 'rows:' || n;
+       exception when others then return 'guarded:' || sqlstate || ':' || sqlerrm; end \$fn\$;
+       insert into couriers(id,clinic_id,name,kind) values ('cccccccc-0159-4000-8000-000000000001','$C1','سائق الفحص','driver') on conflict do nothing;
+       insert into invoices(id,clinic_id) values ('dddddddd-0159-4000-8000-000000000001','$C1'), ('dddddddd-0159-4000-8000-000000000002','$C1') on conflict do nothing;
+       insert into delivery_orders(id,clinic_id,invoice_id,courier_id,status,cod_amount) values
+         ('eeeeeeee-0159-4000-8000-000000000001','$C1','dddddddd-0159-4000-8000-000000000001',null,'preparing',3000),
+         ('eeeeeeee-0159-4000-8000-000000000002','$C1','dddddddd-0159-4000-8000-000000000002','cccccccc-0157-4000-8000-000000000001','delivered',5000)
+         on conflict do nothing;
+       update _dvtest_flags set admin = false; delete from platform_sessions;" >/dev/null
+chk "موظّفُ استقبالٍ يرسل طلباً مع سائق (كان 42P17 على كلّ تحديث)" \
+    "select _rls_try('$RCP', 'update delivery_orders set courier_id=''cccccccc-0159-4000-8000-000000000001'', status=''out'', dispatched_at=now() where id=''eeeeeeee-0159-4000-8000-000000000001''')" "rows:1"
+chk "  ويختم استلامَ نقد السائق" \
+    "select _rls_try('$RCP', 'update delivery_orders set status=''delivered'', delivered_at=now(), collected_at=now() where id=''eeeeeeee-0159-4000-8000-000000000001''')" "rows:1"
+chk "  ولا يختم تحصيلَ طلبِ شركة — المحفّز يرفض بجملةٍ عربية" \
+    "select left(_rls_try('$RCP', 'update delivery_orders set collected_at=now() where id=''eeeeeeee-0159-4000-8000-000000000002'''), 13)" "guarded:P0001"
+chk "  ولا يبدّل شركتَه بسائق (الالتفافُ بخطوتين)" \
+    "select left(_rls_try('$RCP', 'update delivery_orders set courier_id=''cccccccc-0159-4000-8000-000000000001'' where id=''eeeeeeee-0159-4000-8000-000000000002'''), 13)" "guarded:P0001"
+chk "  لكن يعدّل ملاحظةَ طلب الشركة (العمودان المحميّان وحدهما)" \
+    "select _rls_try('$RCP', 'update delivery_orders set customer_name=''فحص'' where id=''eeeeeeee-0159-4000-8000-000000000002''')" "rows:1"
+chk "  والمديرُ يختم تحصيلَ الشركة" \
+    "select _rls_try('$C1', 'update delivery_orders set collected_at=now() where id=''eeeeeeee-0159-4000-8000-000000000002''')" "rows:1"
+chk "  وعيادةٌ أخرى لا تمسّ الصفَّ (صفرُ صفوف — وهذا ما ترميه الواجهةُ خطأً الآن)" \
+    "select _rls_try('$C2', 'update delivery_orders set customer_name=''x'' where id=''eeeeeeee-0159-4000-8000-000000000001''')" "rows:0"
+chk "والسياسةُ ما تستعلم من جدولها" \
+    "select (with_check not like '%delivery_orders d%' and qual not like '%delivery_orders d%')::text from pg_policies where tablename='delivery_orders' and policyname='delivery_orders_update'" "true"
 
 [ $fail -eq 0 ] && echo "✓ كل الفحوص عبرت" || { echo "✗ اكو فحصٌ فشل"; exit 1; }

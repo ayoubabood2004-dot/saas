@@ -10,8 +10,10 @@ import { generateBarcodes, nextSeqFrom, ean13Svg, isValidEan13 } from "@/lib/bar
 import { getClinicName } from "@/lib/settings";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button, Badge, useToast, Skeleton } from "@/components/ui";
-import { formatNum, formatDate, cn } from "@/lib/utils";
+import { formatNum, formatDate, cn, normalizeCode } from "@/lib/utils";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
+import { looksLikeShelfCode } from "@/lib/productCodes";
+import { useBarcodeScanner } from "@/hooks/useBarcodeScanner";
 
 /**
  * استوديو الباركود — العيادة تولد باركوداتها الداخلية بنفسها.
@@ -24,7 +26,7 @@ import { playTap, playSuccess, playWarning } from "@/lib/sounds";
  *  · السجل يحفظ كل كود: لأي شيء، منو ولّده، ومتى — مع طباعة ملصقات.
  */
 export function BarcodeStudio({ products, onChanged }: { products: Product[]; onChanged: () => void }) {
-  const { i18n } = useTranslation();
+  const { t, i18n } = useTranslation();
   const lang = i18n.language;
   const { user } = useAuth();
   const toast = useToast();
@@ -68,6 +70,60 @@ export function BarcodeStudio({ products, onChanged }: { products: Product[]; on
     [products],
   );
   const productById = useMemo(() => new Map(products.map((p) => [p.id, p])), [products]);
+
+  /* ---------------- ربطُ باركود العلبة بالمواد المدخولة برقم رفّ ----------------
+   *
+   * المقيس بعيادةٍ حيّة: ١٦٥ مادّةً برقم رفٍّ داخليّ (٢٣١، ٩١٠٠، ١٠٠١…) منها ١٤٩
+   * برصيد — وهي أفضلُ مبيعاتها. فكلُّ مسحةٍ لعلبةٍ منها بالكاشير تقول «باركود ما
+   * ينعرف» بينما المادّةُ بالمخزن برصيدها، فتبدو المشكلةُ «أيَّ باركود».
+   *
+   * نافذةُ الربط بالكاشير تعالجها واحدةً واحدة وقتَ البيع. هنا نعالجها كلَّها
+   * دفعةً وحدة: العيادةُ تمرّ على رفّها وتمسح كلَّ علبةٍ مرّةً — الرمزُ يُضاف
+   * `alt_code` ويبقى رقمُ الرفّ، فيشتغل الاثنان. عشرون دقيقةً تُنهي المشكلة من
+   * جذرها بدل أن تتكرّر مع كلِّ زبون. */
+  const [linkMode, setLinkMode] = useState(false);
+  const [linkedIds, setLinkedIds] = useState<Set<string>>(new Set());
+  const [skippedIds, setSkippedIds] = useState<Set<string>>(new Set());
+  const shelfCoded = useMemo(
+    () => products
+      .filter((p) => p.barcode?.trim() && looksLikeShelfCode(p.barcode) && (p.stock ?? 0) > 0
+        // ما ارتبط بباركودِ مصنعٍ من قبل لا يُعاد عرضُه — فالشاشةُ تصحّ إعادتُها.
+        // إلا ما رُبط **بهذه الجلسة**: يبقى بالعدّ حتى يقرأ المستخدم «١٢ / ١٢ ✓»
+        // لا أن يختفي الصندوقُ كلُّه مع آخر مسحة.
+        && (linkedIds.has(p.id) || !(p.alt_codes ?? []).some((c) => c && !looksLikeShelfCode(c))))
+      .sort((a, b) => (b.stock ?? 0) - (a.stock ?? 0)),
+    [products, linkedIds],
+  );
+  const linkQueue = useMemo(
+    () => shelfCoded.filter((p) => !linkedIds.has(p.id) && !skippedIds.has(p.id)),
+    [shelfCoded, linkedIds, skippedIds]);
+  const linkCurrent: Product | undefined = linkQueue[0];
+
+  useBarcodeScanner(async (raw) => {
+    if (!linkMode || !linkCurrent || busy) return;
+    const code = normalizeCode(raw);
+    if (!code) return;
+    // مسحُ رقمِ رفٍّ آخر أو كتابتُه لا يربط شيئاً — المطلوبُ الرمزُ المطبوع على العلبة.
+    if (looksLikeShelfCode(code)) {
+      playWarning();
+      toast.error(t("pos.linkNotBox", "هذا رقم رفّ مو باركود علبة — امسح الرمز المطبوع على العلبة نفسها."));
+      return;
+    }
+    const target = linkCurrent;
+    setBusy(target.id);
+    try {
+      await repo.attachProductCode(target.id, code);
+      playSuccess();
+      toast.success(t("pos.linkDone", "انربط «{{n}}» ✓", { n: target.name }), code);
+      setLinkedIds((s) => new Set(s).add(target.id));
+      onChanged();
+    } catch (e) {
+      playWarning();
+      const m = String((e as Error).message ?? e);
+      if (m.includes("another product")) toast.error(t("pos.codeTaken", "هذا الباركود مربوط بمنتج ثاني"));
+      else toast.error(t("pos.linkFail", "تعذّر الربط"), m);
+    } finally { setBusy(null); }
+  }, { disabled: !linkMode });
 
   /* ------------------------- الأفعال ------------------------- */
 
@@ -217,6 +273,50 @@ export function BarcodeStudio({ products, onChanged }: { products: Product[]; on
           </div>
         ))}
       </div>
+
+      {/* مواد برقم رفّ — مسحةُ علبتها بالكاشير تفشل حتى يُربط باركودُ العلبة بها.
+          فوق «بلا باركود» لأنه الأكبرُ أثراً: هذي مواد تُباع كلَّ يوم. */}
+      {shelfCoded.length > 0 && (
+        <section className="rounded-2xl border border-danger-200 bg-danger-50/40 p-3.5 dark:border-danger-500/25 dark:bg-danger-500/5" data-linkbox>
+          <div className="mb-2 flex flex-wrap items-center gap-2">
+            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-danger-100 text-danger-600 dark:bg-danger-500/20 dark:text-danger-300"><ScanBarcode size={17} /></span>
+            <div className="min-w-0 flex-1">
+              <h3 className="text-sm font-extrabold text-ink">
+                {t("pos.linkBoxTitle", "مواد برقم رفّ — اربط باركود العلبة ({{n}})", { n: formatNum(linkQueue.length) })}
+              </h3>
+              <p className="text-2xs text-ink-subtle">
+                {t("pos.linkBoxHint", "هذي المواد مدخولة برقم داخلي، فمسحة علبتها بالكاشير تقول «ما ينعرف». شغّل الربط وامسح علبة كل مادة مرة وحدة — يصير لها رمزان ويشتغل الاثنان.")}
+              </p>
+            </div>
+            {!linkMode
+              ? <Button size="sm" leftIcon={<ScanBarcode size={14} />} onClick={() => { playTap(); setLinkMode(true); }}>{t("pos.linkStart", "ابدأ الربط بالمسح")}</Button>
+              : <Button size="sm" variant="secondary" onClick={() => { playTap(); setLinkMode(false); }}>{t("pos.linkStop", "إيقاف")}</Button>}
+          </div>
+          {linkMode && linkCurrent && (
+            <div className="rounded-xl border-2 border-brand-400 bg-surface-1 p-3" data-linkcurrent={linkCurrent.id}>
+              <p className="text-2xs font-bold text-brand-600 dark:text-brand-300">{t("pos.linkNow", "امسح علبة:")}</p>
+              <p className="text-lg font-extrabold text-ink">{linkCurrent.name}</p>
+              <p className="font-mono text-2xs text-ink-subtle" dir="ltr">
+                {linkCurrent.barcode} · {t("pos.stockN", "رصيد {{n}}", { n: formatNum(linkCurrent.stock ?? 0) })}
+              </p>
+              <div className="mt-2 flex items-center gap-2">
+                <Button size="sm" variant="secondary" disabled={!!busy}
+                  onClick={() => { playTap(); setSkippedIds((s) => new Set(s).add(linkCurrent.id)); }}>
+                  {t("pos.linkSkip", "تخطّي — ما عليها باركود")}
+                </Button>
+                <span className="ms-auto text-2xs tabular-nums text-ink-subtle">
+                  {formatNum(linkedIds.size)} / {formatNum(shelfCoded.length)}
+                </span>
+              </div>
+            </div>
+          )}
+          {linkMode && !linkCurrent && (
+            <p className="rounded-xl bg-success-50 p-3 text-center text-sm font-bold text-success-700 dark:bg-success-500/10 dark:text-success-300">
+              {t("pos.linkAllDone", "خلصت — كل المواد انربطت أو انتخطّت ✓")}
+            </p>
+          )}
+        </section>
+      )}
 
       {/* منتجات بلا باركود — أول شيء يشوفه، لأنه هو الشغل الفعلي */}
       {noBarcode.length > 0 && (

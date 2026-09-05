@@ -31,6 +31,7 @@ import { loadPosLayout, savePosLayout, stepZoom, type PosLayout, type CartSide }
 import { persistMedicalEntries } from "@/lib/medSync";
 import type { MedicalDraft } from "@/components/MedicalEntry";
 import { cn, money, currencySymbol, formatNum, fmtKg, searchable, normalizeCode } from "@/lib/utils";
+import { looksLikeShelfCode, rescueScan } from "@/lib/productCodes";
 import { splitCustomerField } from "@/lib/customerName";
 import { dueOf, paidOf } from "@/lib/debt";
 import { withTimeout, describeDbError, isNetworkError, isTimeoutError } from "@/lib/errors";
@@ -882,8 +883,25 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
   useBarcodeScanner(async (code) => {
     if (done) return;
     const n = peekScanMult(code);
-    const product = await repo.getProductByBarcode(code, clinicId);
+    /* نافذةُ «باركود ما ينعرف» مفتوحة؟ المسحةُ الجديدة تُجرَّب لا تُبلَع.
+     * المقيس بعيادة ابن الهيثم: أوّلُ مسحةٍ لمادّةٍ برقم رفّ تفتح النافذة، ثم
+     * كلُّ مسحةٍ بعدها كانت تُهمَل (الخطّافُ معطَّل) وتكتب أرقامَها بخانة بحث
+     * النافذة فتقول «ماكو منتج مطابق» — فيرى الكاشير نفسَ النافذة مع كلِّ
+     * مادّة ويستنتج أن «أيَّ باركود ما يبيع». والحقيقةُ أن النافذةَ الأولى
+     * وحدَها هي التي فتحت، والباقي ابتلعته. */
+    const dialogWasOpen = !!attachCode;
+    let product = await repo.getProductByBarcode(code, clinicId);
+    if (!product) {
+      // الرمزُ لا يطابق حرفياً — بادئةُ ماسحٍ أو صفرُ GTIN-14 أو UPC↔EAN:
+      // مطابقةٌ واحدةٌ على مخزن العيادة تكفي، وتُقال.
+      const r = rescueScan(products, code);
+      if (r) {
+        product = r.product;
+        toast.success(t("retail.scanRescued", { name: r.product.name, code: r.via, defaultValue: "«{{name}}» — طابق بصيغة {{code}}" }));
+      }
+    }
     if (product) {
+      if (dialogWasOpen) setAttachCode(null);
       // رصيدٌ صفر: السكوتُ هنا هو ما جعل عيادةً تقول «المنتج اختفى» — البطاقة
       // رمادية والمسحة لا تنزل شيئاً بلا كلمة. فنقولها: موجود، بس رصيده صفر.
       const noStock = !retMode && !product.pooled && !product.sold_by_weight
@@ -921,7 +939,9 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
     // اللوحة مفتوحة = الأرقام تخصّها؛ مسحةٌ تدخل صنفاً خلف نافذة مفتوحة تربك.
     // منتقي الوزن مثلها: مسحةٌ وهو مفتوح كانت تبدّل المنتج تحت يد الطبيب أو
     // تنزل سطراً خلف الورقة بلا أن يراه.
-  }, { disabled: multPad || !!qtyPadFor || !!weightFor || !!attachCode });
+    // أما نافذةُ «باركود ما ينعرف» فلا تُعطِّل الخطّاف عمداً (انظر أعلى):
+    // مسحةٌ جديدة فوقها إمّا تبيع وتغلقها، أو تبدّل الرمزَ المعروض فيها.
+  }, { disabled: multPad || !!qtyPadFor || !!weightFor });
 
   // The bridge: a doctor clicked "Sell items" inside an animal record. Auto-fill the
   // customer, surface the pet context, and focus the scan field for a zero-click flow.
@@ -2912,6 +2932,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
       {/* منتقي الوزن (كتلة، 0124) */}
       {attachCode && (
         <AttachCodeDialog
+          key={attachCode} /* رمزٌ جديد = نافذةٌ جديدة: خانةُ بحثها تبدأ فارغةً لا بأرقام المسحة السابقة */
           code={attachCode}
           products={products}
           onClose={() => setAttachCode(null)}
@@ -3051,7 +3072,13 @@ function AttachCodeDialog({ code, products, onClose, onAttached }: {
   const hits = useMemo(() => {
     const nq = searchable(q);
     const base = nq ? products.filter((p) => searchable(p.name).includes(nq)) : products;
-    return base.slice(0, 40);
+    // المدخولُ برقم رفٍّ أوّلاً: مقيسٌ بعيادةٍ حيّة — ١٤٩ مادّةً برصيدٍ كلُّها بأرقام
+    // رفٍّ داخلية، وهي أفضلُ مبيعاتها. فمسحةُ علبةٍ فاشلة تقصد واحدةً منها بأغلب
+    // الأحيان، لا مادّةً جديدة. الأكثرُ رصيداً أعلى، لأنه الأكثرُ بيعاً ومسحاً.
+    const rank = (p: Product) => (p.barcode && looksLikeShelfCode(p.barcode) ? 0 : 1);
+    return base.slice()
+      .sort((a, b) => rank(a) - rank(b) || (b.stock ?? 0) - (a.stock ?? 0))
+      .slice(0, 40);
   }, [products, q]);
 
   const attach = async (p: Product) => {
@@ -3076,7 +3103,9 @@ function AttachCodeDialog({ code, products, onClose, onAttached }: {
           <p className="text-sm font-semibold text-warn-700 dark:text-warn-300">
             {t("pos.attachHint", "إذا المادة موجودة بمخزنك بباركود ثاني أو برقم يدوي، اختارها من تحت — ينربط الباركود بيها ويبقى رصيدها كما هو. لا تعيد إدخالها.")}
           </p>
-          <p className="mt-1.5 font-mono text-xs text-ink-muted" dir="ltr">{code}</p>
+          {/* الرمزُ كما وصل من الماسح — بارزاً، لأن أوّلَ سؤالٍ عند البلاغ «شنو طلع بالنافذة؟» */}
+          <p className="mt-2 text-2xs font-bold text-ink-subtle">{t("pos.attachReceived", "الرمز الذي وصل من الماسح")}</p>
+          <p data-attachcode className="font-mono text-base font-extrabold tabular-nums text-ink" dir="ltr">{code}</p>
         </div>
 
         <input
@@ -3098,6 +3127,11 @@ function AttachCodeDialog({ code, products, onClose, onAttached }: {
                 <span className="block truncate font-semibold text-ink">{p.name}</span>
                 <span className="block font-mono text-2xs text-ink-subtle" dir="ltr">
                   {p.barcode || "—"}{(p.alt_codes?.length ?? 0) > 0 ? ` +${p.alt_codes!.length}` : ""}
+                  {p.barcode && looksLikeShelfCode(p.barcode) && (
+                    <span className="ms-2 rounded-full bg-warn-100 px-1.5 py-0.5 font-sans text-2xs font-bold text-warn-700 dark:bg-warn-500/15 dark:text-warn-300" dir="rtl">
+                      {t("pos.shelfCodeBadge", "رقم رفّ")}
+                    </span>
+                  )}
                 </span>
               </span>
               <span className="shrink-0 text-xs tabular-nums text-ink-muted">
