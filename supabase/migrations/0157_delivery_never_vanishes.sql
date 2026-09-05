@@ -73,10 +73,10 @@ begin
   values (old.id, old.clinic_id, to_jsonb(old), old.invoice_id, old.courier_id,
           case when old.collected_at is null and old.status = 'delivered'
                then 'حُذف وعليه ذمّةٌ غير محصَّلة' else null end)
-  on conflict (id) do update
-    set row = excluded.row, invoice_id = excluded.invoice_id,
-        courier_id = excluded.courier_id, reason = excluded.reason,
-        deleted_by = auth.uid(), deleted_at = now();
+  -- **أوّلُ صورةٍ هي الصورة.** الكتابةُ فوقها تجعل الشاهدَ قابلاً للتزوير:
+  -- يكفي أن يُنشئ أحدُهم طلباً بمعرّفِ صفٍّ بالسلّة ثم يحذفه، فتُداس الصورةُ
+  -- الأصلية بأخرى فارغة. وسلّةٌ تُزوَّر أسوأُ من غيابها لأنها تُصدَّق.
+  on conflict (id) do nothing;
   return old;
 end $$;
 
@@ -92,8 +92,19 @@ create or replace function invoices_block_delete_with_open_delivery()
 returns trigger language plpgsql security definer set search_path = public as $$
 declare v_n int;
 begin
-  select count(*) into v_n from delivery_orders d
-   where d.invoice_id = old.id and d.status = 'delivered' and d.collected_at is null;
+  -- الشرطُ **نفسُ** تعريف «بذمّة» بالنظام (`isOwed` بـsrc/lib/courierLedger.ts،
+  -- ومعادلةُ `courier_settle` بـ0148): مسلَّمٌ، غيرُ مختوم، فاتورتُه ليست
+  -- مردودة، والمتبقّي موجب. وشرطٌ من عندي أوسعُ منه يقفل فواتيرَ لا ذمّةَ
+  -- عليها: طلبٌ مدفوعٌ مقدَّماً بالكامل `collected_at` فيه فارغٌ بحقّ — لأنه
+  -- لا شيءَ يُحصَّل — فتُمنع فاتورتُه من الحذف للأبد بلا مخرج.
+  select count(*) into v_n
+    from delivery_orders d
+    join invoices i on i.id = d.invoice_id
+   where d.invoice_id = old.id
+     and d.status = 'delivered'
+     and d.collected_at is null
+     and i.status <> 'refunded'
+     and round(i.total - i.amount_paid, 2) > 0.009;
   if v_n > 0 then
     raise exception 'invoice_has_open_delivery'
       using hint = 'هذه الفاتورة عليها طلبُ توصيلٍ لم يُحصَّل بعد. حصِّله أو أرجِعه أولاً — حذفُها الآن يمحو المبلغَ المطلوب من الشركة.';
@@ -127,6 +138,53 @@ drop trigger if exists couriers_before_delete on couriers;
 create trigger couriers_before_delete
   before delete on couriers
   for each row execute function couriers_block_delete();
+
+-- ── ٣٫٥) ختمُ «محصَّل» لا يُكتب بالإيد على طلبِ شركة ──────────────────────
+-- `delivery_orders_write` (0069) كانت `for all` بفحصِ العيادة وحده: لا دورَ ولا
+-- عمودَ محميّ. وهي **الشاذّةُ** بين جداول مالِ التوصيل — `invoices` تُجمّد
+-- `amount_paid` لغير المدير، و`courier_settlements` قراءةٌ فقط، و`couriers`
+-- لمدير/طبيب. فأيُّ موظّفٍ كان يقدر بطلبٍ واحد:
+--
+--     PATCH /delivery_orders?id=eq.X   { "collected_at": "الآن" }
+--
+-- فيختفي الطلبُ من «المطلوب الآن» بلا أن يدخل ديناراً أيَّ فاتورة — وذمّةُ
+-- الشركة تُمحى بصمت. وبالعكس: يمسحه فيرجع الطلبُ بالذمّة بلا ردِّ المبلغ، أي
+-- يلتفّ على `courier_unsettle` وحارسِ المدير الذي فيها.
+--
+-- والتجميدُ الشامل ممنوع: بمسار **السائق** يختم الكاشيرُ العاديُّ هذا العمودَ
+-- بنفسه بعد أن يقبض النقد (`deliver()` بـDeliveryPanel) — وهو شغلُ كلِّ يوم.
+-- فالتجميدُ **مشروطٌ بنوع الحامل**: حرٌّ للسائق، ومقفلٌ للشركة.
+--
+-- ويُجمَّد معه `courier_id` على طلبات الشركات: بدونه يُلتَفّ بخطوتين (بدّل
+-- الحاملَ إلى سائق، ثم اختم). ونقلُ ذمّةٍ من شركةٍ لأخرى قرارُ مالٍ أصلاً.
+drop policy if exists delivery_orders_write on delivery_orders;
+
+create policy delivery_orders_insert on delivery_orders
+  for insert with check (clinic_id = (select auth_clinic()));
+
+create policy delivery_orders_delete on delivery_orders
+  for delete using (clinic_id = (select auth_clinic()));
+
+create policy delivery_orders_update on delivery_orders
+  for update
+  using (clinic_id = (select auth_clinic()))
+  with check (
+    clinic_id = (select auth_clinic())
+    and (
+      (select auth_role()) = 'manager'
+      -- طلبٌ ليس لشركة (سائق، أو بلا حامل بعد) → المسارُ اليوميّ كما هو.
+      or not exists (
+        select 1 from couriers c
+         where c.id = delivery_orders.courier_id and c.kind = 'company')
+      -- أو طلبُ شركةٍ لم يتغيّر فيه العمودان المحميّان.
+      or (
+        collected_at is not distinct from
+          (select d.collected_at from delivery_orders d where d.id = delivery_orders.id)
+        and courier_id is not distinct from
+          (select d.courier_id from delivery_orders d where d.id = delivery_orders.id)
+      )
+    )
+  );
 
 -- ── ٤) فكُّ التحصيل ───────────────────────────────────────────────────────
 alter table courier_settlements add column if not exists reversed_at     timestamptz;
