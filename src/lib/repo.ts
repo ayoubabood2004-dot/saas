@@ -2112,6 +2112,36 @@ const demoRepo = {
     saveDB(db);
     return { settled: paid, orders: allocations.length, unallocated: left, remaining_owed: remaining };
   },
+  /** فكُّ تحصيل — مرآةُ `courier_unsettle` (0157) بنفس قواعدها حرفياً:
+   *  يردّ المبالغ ويعيد الطلبات للذمّة ويسِمُ الصفَّ مفكوكاً، **ولا يحذف شيئاً**.
+   *  والعكسُ يُكتب ساقاً سالبةً لا مسحاً لساقٍ قديمة — فالفاتورةُ تحكي قصّتَها. */
+  async unsettleCourier(settlementId: string, reason?: string | null): Promise<CourierSettlement> {
+    const r2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
+    const db = loadDB();
+    const s = (db.courierSettlements ?? []).find((x) => x.id === settlementId);
+    if (!s) throw new Error("settlement not found");
+    if (s.reversed_at) throw new Error("already_reversed");
+    const now = new Date().toISOString();
+    for (const a of s.allocations ?? []) {
+      const inv = (db.invoices ?? []).find((i) => i.id === a.invoice_id);
+      if (inv && inv.status !== "refunded") {
+        // لا نردّ أكثر مما هو مدفوعٌ فعلاً — والنقصُ ليس فكّاً جزئياً صامتاً.
+        const back = Math.min(r2(a.amount), r2(inv.amount_paid ?? 0));
+        if (back < r2(a.amount) - 0.005) throw new Error("cannot_fully_reverse");
+        if (back > 0) {
+          inv.amount_paid = r2((inv.amount_paid ?? 0) - back);
+          inv.payment_details = [...(inv.payment_details ?? []),
+            { method: s.method, amount: -back, at: now, reversal_of: s.id }] as typeof inv.payment_details;
+        }
+      }
+      const o = (db.deliveryOrders ?? []).find((x) => x.id === a.order_id);
+      if (o) o.collected_at = null;   // يرجع بالذمّة — وهذا ما يعيده للكشف
+    }
+    s.reversed_at = now;
+    s.reversed_reason = (reason ?? "").trim() || null;
+    saveDB(db);
+    return s;
+  },
 
   /* ---------------- Retail & advanced invoicing ---------------- */
   async retailCheckout(items: CheckoutItem[], meta: SaleMeta): Promise<Invoice> {
@@ -2802,6 +2832,7 @@ const DEMO_ACTIVITY_MAP: Record<string, { entity: string; action: "INSERT" | "UP
   createDeliveryOrder: { entity: "delivery_orders", action: "INSERT" },
   updateDeliveryOrder: { entity: "delivery_orders", action: "UPDATE" },
   settleCourier: { entity: "courier_settlements", action: "INSERT" },
+  unsettleCourier: { entity: "courier_settlements", action: "UPDATE" },
   checkout: { entity: "invoices", action: "INSERT" },
   retailCheckout: { entity: "invoices", action: "INSERT" },
   retailReturn: { entity: "expenses", action: "INSERT" },
@@ -4096,6 +4127,9 @@ const supabaseRepo: typeof demoRepo = {
     if (error) throw error;
     const d = (data ?? {}) as Record<string, unknown>;
     return { settled: Number(d.settled ?? 0), orders: Number(d.orders ?? 0), unallocated: Number(d.unallocated ?? 0), remaining_owed: Number(d.remaining_owed ?? 0) };
+  },
+  async unsettleCourier(settlementId, reason) {
+    return need<CourierSettlement>(await sbc().rpc("courier_unsettle", { p_settlement: settlementId, p_reason: reason ?? null }));
   },
 
   /* ---------------- Retail & advanced invoicing ---------------- */
