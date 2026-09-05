@@ -548,7 +548,13 @@ export type PaymentMethod = "cash" | "card" | "transfer";
 /** ساقُ تحصيلٍ واحدة. **المبلغ السالب يعني تصحيح تحصيل** (قيدٌ عكسي، هجرة
  *  0113): مالٌ سُجّل واصلاً ولم يصل، فيُعكَس من نفس الجيب الذي دخل منه.
  *  والإشارة وحدها تميّزه — بلا عَلَمٍ إضافي يمكن أن يُنسى ضبطه. */
-export interface PaymentSplit { method: PaymentMethod; amount: number; at?: string | null; note?: string | null }
+export interface PaymentSplit {
+  method: PaymentMethod; amount: number; at?: string | null; note?: string | null;
+  /** ساقٌ سالبةٌ تعكس تحصيلَ حاملٍ فُكَّ (0157) — تحمل معرّفَ التحصيل المفكوك.
+   *  الطريقةُ تبقى طريقةَ التحصيل نفسِه حتى يُنقَص المالُ من جيبه الصحيح؛
+   *  هذا الحقلُ وحده هو ما يميّزها، لا صنفُ دفعٍ ثالث. */
+  reversal_of?: string | null;
+}
 /** Settlement state of a sale relative to its total. Derived from amount_paid vs total. */
 export type PaymentStatus = "paid" | "partial" | "unpaid";
 export type DiscountType = "percent" | "fixed";

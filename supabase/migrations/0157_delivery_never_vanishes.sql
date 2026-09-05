@@ -197,6 +197,11 @@ begin
                     'at', to_char(now() at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
                     'reversal_of', v_s.id
                   )
+               -- سببُ الفكّ إن كُتب: نصُّ المستخدم لا ثابتٌ مخترَع، ويُضاف حين
+               -- يوجد وحده فلا شرطةٌ خاوية بصفوف التقارير (نمطُ 0113).
+               || case when length(coalesce(btrim(p_reason), '')) > 0
+                       then jsonb_build_object('note', btrim(p_reason))
+                       else '{}'::jsonb end
        where id = v_inv.id and clinic_id = v_clinic;
     end if;
 

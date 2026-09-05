@@ -2131,7 +2131,8 @@ const demoRepo = {
         if (back > 0) {
           inv.amount_paid = r2((inv.amount_paid ?? 0) - back);
           inv.payment_details = [...(inv.payment_details ?? []),
-            { method: s.method, amount: -back, at: now, reversal_of: s.id }] as typeof inv.payment_details;
+            { method: s.method, amount: -back, at: now, reversal_of: s.id,
+              ...(reason?.trim() ? { note: reason.trim() } : {}) }];
         }
       }
       const o = (db.deliveryOrders ?? []).find((x) => x.id === a.order_id);
