@@ -1206,11 +1206,7 @@ const demoRepo = {
     // نفسُ قيدِ الخادم (products_clinic_barcode_idx) وبنفس صيغةِ خطئه، حتى
     // يُترجمه describeDbError هنا كما هناك — وحتى يُفحص الحارس حيث يُفحص كلُّ شيء.
     const code = normalizeCode(input.barcode) || null;
-    if (code && db.products.some((x) => matchCode(x.barcode) === matchCode(code))) {
-      const e = new Error('duplicate key value violates unique constraint "products_clinic_barcode_idx"') as Error & { code: string };
-      e.code = "23505";
-      throw e;
-    }
+    throwIfCodeTaken(db, code, null);
     const p: Product = { ...input, barcode: code, id: uid("prod"), created_at: new Date().toISOString() };
     db.products.push(p);
     saveDB(db);
@@ -1220,6 +1216,13 @@ const demoRepo = {
     const db = loadDB();
     const p = (db.products ?? []).find((x) => x.id === id);
     if (!p) return undefined;
+    // الخادمُ يطبّع الباركود عند الحفظ ويحرسه بالمحفّز (0167)؛ وهنا كان بلا
+    // أيّهما — فكان الفحصُ يمرّ على سلوكٍ لا وجودَ له بالإنتاج.
+    if ("barcode" in patch) {
+      const next = normalizeCode(patch.barcode) || null;
+      throwIfCodeTaken(db, next, id);
+      patch = { ...patch, barcode: next };
+    }
     Object.assign(p, patch);
     saveDB(db);
     return p;
@@ -2888,6 +2891,24 @@ const DEMO_ACTIVITY_MAP: Record<string, { entity: string; action: "INSERT" | "UP
 /** رمزٌ يصيب منتجَين: الكونسولُ لا يراه أحدٌ خلف الكاونتر. يُقال مرّةً لكل
  *  رمزٍ بالجلسة — تكرارُه مع كل مسحةٍ يصير ضجيجاً يُتجاهَل. والبيعُ يكمل على
  *  الأوّل بترتيبٍ حتميّ (0165)، فالتنبيهُ دعوةٌ لتنظيف المخزون لا حاجزٌ للبيع. */
+/** مرآةُ محفّز الخادم `products_no_twin_code` (0167): رمزٌ واحد لمنتجٍ واحد،
+ *  كشفاً متناظراً (الأساسيّ والإضافيّ) ومطبَّعاً، والصفُّ نفسُه مستثنى. ويرمي
+ *  بشكل الخادم — P0001 وhint عربيّ — لا بشكل 23505 القديم: فحصٌ على صيغةِ خطأٍ
+ *  لا تحدث بالإنتاج فحصٌ لغير الواقع. */
+function throwIfCodeTaken(db: DemoDB, code: string | null, selfId: string | null): void {
+  if (!code) return;
+  const c = matchCode(code);
+  if (!c) return;
+  const owner = (db.products ?? []).find((x) =>
+    x.id !== selfId
+    && (matchCode(x.barcode) === c || (x.alt_codes ?? []).some((a) => matchCode(a) === c)));
+  if (!owner) return;
+  const e = new Error("barcode_taken") as Error & { code: string; hint: string };
+  e.code = "P0001";
+  e.hint = i18next.t("pos.barcodeTakenHint", { name: owner.name, defaultValue: "هذا الباركود مستعمل عند «{{name}}». افتح المخزون وادمج المنتجَين أو غيّر رمزَ أحدهما." });
+  throw e;
+}
+
 const ambiguousSaid = new Set<string>();
 function sayAmbiguousCode(code: string, n: number): void {
   console.error("[pos] ambiguous code", code, n);

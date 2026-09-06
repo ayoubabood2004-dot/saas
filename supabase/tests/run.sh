@@ -22,7 +22,7 @@ DB=dvtest
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MIG="$HERE/../migrations"
 # الهجرات التي يغطّيها هذا المخطّط الأساس. زدها كل ما تنضاف موجة.
-WAVE="$MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql"
+WAVE="$MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql"
 
 command -v "$PGBIN/initdb" >/dev/null || { echo "ما لكيت بوستغريس بـ $PGBIN"; exit 1; }
 
@@ -571,7 +571,7 @@ echo "▸ 0144: دمج التوائم"
 
 $P -c "insert into products (id, clinic_id, name, barcode, stock, min_stock)
        values ('dddd0000-0000-0000-0000-000000000001','11111111-1111-1111-1111-111111111111','سبري حشرات خارجية','247', 3, 5),
-              ('dddd0000-0000-0000-0000-000000000002','11111111-1111-1111-1111-111111111111','سبري حشرات خارجيه','6972748378670', 7, 2),
+              ('dddd0000-0000-0000-0000-000000000002','11111111-1111-1111-1111-111111111111','سبري حشرات خارجيه','6972748378671', 7, 2),
               ('dddd0000-0000-0000-0000-000000000003','11111111-1111-1111-1111-111111111111','مجمّع','999', 1, null)
        on conflict do nothing;
        update products set pooled = true where id='dddd0000-0000-0000-0000-000000000003';
@@ -591,7 +591,7 @@ chk "ودمجُ توأمين حقيقيين يمرّ" \
 chk "الرصيد انجمع: ٣ + ٧ = ١٠" \
     "select (stock = 10)::text from products where id='dddd0000-0000-0000-0000-000000000001'" "true"
 chk "ورمزُ النسخة صار رمزاً إضافياً للأصل" \
-    "select (alt_codes @> array['6972748378670'])::text from products where id='dddd0000-0000-0000-0000-000000000001'" "true"
+    "select (alt_codes @> array['6972748378671'])::text from products where id='dddd0000-0000-0000-0000-000000000001'" "true"
 chk "والرمزُ الأساسي للأصل ما انمسّ" \
     "select barcode from products where id='dddd0000-0000-0000-0000-000000000001'" "247"
 chk "وحدُّ التنبيه أخذ الأعلى (٥ لا ٢)" \
@@ -1196,5 +1196,43 @@ chk "  ويطابق مطبَّعاً لا خامّاً وحده" \
     "select (prosrc like '%inv_norm_code(barcode) = inv_norm_code(p_code)%')::text from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='product_by_code'" "true"
 chk "والاستعادةُ ترشّح الرموزَ الإضافية المسروقة" \
     "select (prosrc like '%{alt_codes}%')::text from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='restore_product'" "true"
+
+
+# ── 0167: رمزٌ واحد لمنتجٍ واحد ──────────────────────────────────────────
+# سلوكيّ: الحزمةُ تعرف `products` و`inv_norm_code` (0164)، فالمحفّزُ يُجرَّب حقاً.
+echo "▸ 0167: حارسُ التوأم"
+$P -c "insert into products (id, clinic_id, name, barcode, stock, alt_codes) values
+         ('e7000000-0000-0000-0000-000000000001','11111111-1111-1111-1111-111111111111','صاحبُ الرمز','TW-100', 1, array['TW-ALT']),
+         ('e7000000-0000-0000-0000-000000000002','22222222-2222-2222-2222-222222222222','عيادةٌ أخرى','TW-100', 1, '{}')
+       on conflict do nothing;" >/dev/null 2>&1
+$P -c "create or replace function _twin_try(q text) returns text language plpgsql as \$fn\$
+       declare h text;
+       begin execute q; return 'accepted';
+       exception when others then get stacked diagnostics h = pg_exception_hint; return 'guarded:' || coalesce(h, sqlerrm); end \$fn\$;" >/dev/null
+chk "رمزٌ مأخوذ يُرفض، والرسالةُ تسمّي صاحبَه" \
+    "select (_twin_try('insert into products (clinic_id,name,barcode) values (''11111111-1111-1111-1111-111111111111'',''محاولة'',''TW-100'')') like 'guarded:%صاحبُ الرمز%')::text" "true"
+chk "والتوأمُ المطبَّع كذلك (علامةُ اتجاهٍ خفية)" \
+    "select (_twin_try('insert into products (clinic_id,name,barcode) values (''11111111-1111-1111-1111-111111111111'',''محاولة'',''' || chr(8206) || 'TW-100'')') like 'guarded:%')::text" "true"
+chk "ورمزٌ يملكه غيرُه كـalt_codes يُرفض (ما لا يراه الفهرسُ الفريد)" \
+    "select (_twin_try('insert into products (clinic_id,name,barcode) values (''11111111-1111-1111-1111-111111111111'',''محاولة'',''TW-ALT'')') like 'guarded:%')::text" "true"
+chk "وعيادةٌ أخرى بنفس الرمز تمرّ (العزلُ محفوظ)" \
+    "select count(*)::text from products where id='e7000000-0000-0000-0000-000000000002'" "1"
+chk "وتحديثُ الصفّ نفسِه برمزه لا يُرفض (إعفاءُ ما لم يتغيّر)" \
+    "select _twin_try('update products set barcode = ''TW-100'' where id = ''e7000000-0000-0000-0000-000000000001''')" "accepted"
+chk "ورمزٌ حرٌّ يُقبل" \
+    "select _twin_try('update products set barcode = ''TW-FREE'' where id = ''e7000000-0000-0000-0000-000000000001''')" "accepted"
+chk "المحفّزُ invoker لا definer" \
+    "select (not prosecdef)::text from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='products_no_twin_code'" "true"
+# ساكن: «رتّب المخزن» تحذف التوأم قبل أن تورّث رمزَه (وإلا خرقت الفهرسَ الفريد)
+chk "رتّبِ المخزن: الحذفُ قبل توريث الرمز" \
+    "select (strpos(prosrc,'delete from products where id = dup.id') < strpos(prosrc,'update products set stock = greatest(0, coalesce(stock,0)'))::text
+       from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='inventory_tidy_uncat'" "true"
+chk "والاستعادةُ تفحص alt_codes الغير قبل أن تعيد الباركود" \
+    "select (prosrc like '%unnest(coalesce(o.alt_codes%')::text from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='restore_product'" "true"
+# G11: attach_product_code بلا مستدعٍ من الواجهة — والصلاحياتُ تبقى محكومة
+chk "attach_product_code لا تُنادى بلا هويّة" \
+    "select has_function_privilege('anon','public.attach_product_code(uuid,text)','execute')::text" "false"
+chk "  وتبقى للمسجَّلين" \
+    "select has_function_privilege('authenticated','public.attach_product_code(uuid,text)','execute')::text" "true"
 
 [ $fail -eq 0 ] && echo "✓ كل الفحوص عبرت" || { echo "✗ اكو فحصٌ فشل"; exit 1; }

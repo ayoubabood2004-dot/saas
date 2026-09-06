@@ -1161,7 +1161,8 @@
     "stockN": "stock {{n}}",
     "tabWholesale": "Wholesale",
     "ambiguousCode": "Ambiguous code — check inventory",
-    "ambiguousCodeHint": "Code {{code}} is on more than one product. We sold the oldest; open Inventory and merge them or change one code."
+    "ambiguousCodeHint": "Code {{code}} is on more than one product. We sold the oldest; open Inventory and merge them or change one code.",
+    "barcodeTakenHint": "This barcode is used by “{{name}}”. Open Inventory and merge the two products, or change one of their codes."
   },
   "role": {
     "admin": "Clinic",
