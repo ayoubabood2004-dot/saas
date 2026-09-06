@@ -1159,7 +1159,9 @@
     "altDetached": "Code {{code}} unlinked from \"{{name}}\" — scanning it no longer adds this item",
     "altChipHint": "Extra linked codes — any scan of them adds this item. Open Edit to unlink",
     "stockN": "stock {{n}}",
-    "tabWholesale": "Wholesale"
+    "tabWholesale": "Wholesale",
+    "ambiguousCode": "Ambiguous code — check inventory",
+    "ambiguousCodeHint": "Code {{code}} is on more than one product. We sold the oldest; open Inventory and merge them or change one code."
   },
   "role": {
     "admin": "Clinic",

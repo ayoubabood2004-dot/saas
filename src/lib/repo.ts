@@ -23,6 +23,8 @@ import type { PortalMe, PortalPetCard, PortalPetDetail, PortalAdmission, PortalJ
 import { receiptsOf, dueOf } from "./debt";
 import { phoneDigits } from "./phone";
 import { searchable } from "./utils";
+import { emitGlobalToast } from "./globalToast";
+import i18next from "i18next";
 import { invoiceNo } from "./invoicePrint";
 import { auditKind, activityBrief } from "./activityKinds";
 import type { ActivityQuery, ActivityRow, ActivitySummaryRow, ActivityActor } from "@/types";
@@ -2883,6 +2885,21 @@ const DEMO_ACTIVITY_MAP: Record<string, { entity: string; action: "INSERT" | "UP
  * Live Supabase implementation — used automatically when VITE_SUPABASE_* are
  * set. The TS types already use snake_case, so DB rows map 1:1 (cast directly).
  * ==========================================================================*/
+/** رمزٌ يصيب منتجَين: الكونسولُ لا يراه أحدٌ خلف الكاونتر. يُقال مرّةً لكل
+ *  رمزٍ بالجلسة — تكرارُه مع كل مسحةٍ يصير ضجيجاً يُتجاهَل. والبيعُ يكمل على
+ *  الأوّل بترتيبٍ حتميّ (0165)، فالتنبيهُ دعوةٌ لتنظيف المخزون لا حاجزٌ للبيع. */
+const ambiguousSaid = new Set<string>();
+function sayAmbiguousCode(code: string, n: number): void {
+  console.error("[pos] ambiguous code", code, n);
+  if (ambiguousSaid.has(code)) return;
+  ambiguousSaid.add(code);
+  emitGlobalToast({
+    tone: "warn",
+    title: i18next.t("pos.ambiguousCode", "رمزٌ ملتبس — راجع المخزون"),
+    description: i18next.t("pos.ambiguousCodeHint", { code, defaultValue: "الرمز {{code}} على أكثر من منتج. بعنا الأقدم؛ افتح المخزون وادمجهما أو غيّر رمزَ أحدهما." }),
+  });
+}
+
 function sbc(): SupabaseClient {
   if (!supabase) throw new Error("[supabase] client is not configured");
   return supabase;
@@ -3680,7 +3697,7 @@ const supabaseRepo: typeof demoRepo = {
       const rows = (r.data ?? []) as Product[];
       // صفّان = رمزٌ ملتبس. نرجّع الأوّل ونصرخ بالكونسول بدل ما نبلعه صامتين
       // ونقول «غير موجود» — وهذا بالضبط ما كانت تفعله maybeSingle.
-      if (rows.length > 1) console.error("[pos] ambiguous code", code, rows.length);
+      if (rows.length > 1) sayAmbiguousCode(code, rows.length);
       return rows[0];
     }
     /* **فشلُ النداء ليس «غير موجود».** كان أيُّ خطأٍ يسقط للمسار القديم، وذاك
@@ -3699,7 +3716,7 @@ const supabaseRepo: typeof demoRepo = {
     const res = await q;
     if (res.error) throw res.error;   // ولا يُبلَع خطؤه فيصير «غير موجود»
     const rows = (res.data ?? []) as Product[];
-    if (rows.length > 1) console.error("[pos] ambiguous code", code, rows.length);
+    if (rows.length > 1) sayAmbiguousCode(code, rows.length);
     return rows[0];
   },
   async attachProductCode(productId, code) {
