@@ -3019,6 +3019,22 @@ function assertUpdated<T>(row: T | undefined): T {
   if (row === undefined) throw new Error("no_row_updated");
   return row;
 }
+/** تحديثٌ يُسمع صوتُه: خطأُ الخادم يُرمى، وصفرُ صفوفٍ يُرمى.
+ *
+ *  `maybe()` تصلح للقراءة («ما لقيت» جوابٌ مشروع)، وتكذب على الكتابة: تطبع
+ *  الخطأ بالكونسول وترجع «لا صفّ»، فتُغلق النافذةُ ويُصفَّق للحفظ ولا شيء حُفظ.
+ *  والصمتُ يُصدَّق: العيادةُ تعيد الإدخال أو تبيع بسعرٍ ظنّت أنها غيّرته. */
+function updated<T>(res: { data: unknown; error: { message: string; code?: string; details?: string; hint?: string } | null }): T {
+  if (res.error) {
+    const src = res.error;
+    const err = new Error(src.message) as Error & { code?: string; details?: string; hint?: string };
+    if (src.code) err.code = src.code;
+    if (src.details) err.details = src.details;
+    if (src.hint) err.hint = src.hint;
+    throw err;
+  }
+  return assertUpdated((res.data ?? undefined) as T | undefined);
+}
 
 function maybe<T>(res: { data: unknown; error: { message: string } | null }): T | undefined {
   if (res.error) { console.error("[supabase]", res.error.message); return undefined; }
@@ -3721,9 +3737,9 @@ const supabaseRepo: typeof demoRepo = {
     if (r.error && /bulk_group|sold_by_weight/i.test(r.error.message)) {
       const { bulk_group, sold_by_weight, ...rest } = patch as Record<string, unknown>;
       void bulk_group; void sold_by_weight;
-      return maybe<Product>(await sbc().from("products").update(rest as never).eq("id", id).select().maybeSingle());
+      return updated<Product>(await sbc().from("products").update(rest as never).eq("id", id).select().maybeSingle());
     }
-    return maybe<Product>(r);
+    return updated<Product>(r);
   },
   async deleteProduct(id, reason) {
     // طيٌّ لا محو (0145): الصفّ يُحفظ بالسلّة بصورته وسطورِ فواتيره، فيُستعاد
@@ -3949,7 +3965,7 @@ const supabaseRepo: typeof demoRepo = {
     }
   },
   async updateCompany(id, patch) {
-    return maybe<Company>(await sbc().from("companies").update(patch).eq("id", id).select().maybeSingle());
+    return updated<Company>(await sbc().from("companies").update(patch).eq("id", id).select().maybeSingle());
   },
   async deleteCompany(id) {
     // FK on products.company_id is ON DELETE SET NULL, so products survive.
@@ -3976,7 +3992,7 @@ const supabaseRepo: typeof demoRepo = {
     }
   },
   async updateCompanySection(id, patch) {
-    return maybe<CompanySection>(await sbc().from("company_sections").update(patch).eq("id", id).select().maybeSingle());
+    return updated<CompanySection>(await sbc().from("company_sections").update(patch).eq("id", id).select().maybeSingle());
   },
   async deleteCompanySection(id) {
     // FK on products.section_id is ON DELETE SET NULL, so products survive.
@@ -4110,7 +4126,7 @@ const supabaseRepo: typeof demoRepo = {
     return need<Courier>(r);
   },
   async updateCourier(id, patch) {
-    return maybe<Courier>(await sbc().from("couriers").update(patch).eq("id", id).select().maybeSingle());
+    return updated<Courier>(await sbc().from("couriers").update(patch).eq("id", id).select().maybeSingle());
   },
   async listDeliveryOrders(clinicId) {
     return allPages<DeliveryOrder>(() => {

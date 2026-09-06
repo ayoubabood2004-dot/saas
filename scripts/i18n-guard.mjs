@@ -57,11 +57,39 @@ function leafKeys(obj, prefix = "") {
   }
   return out;
 }
+/* مفتاحٌ مكرّرٌ داخل نفس الكائن: `JSON.parse` يأخذ الأخير بصمت ويرمي الأوّل.
+ * فمن يضيف نصّاً جديداً باسمٍ مستعمَل يراه «انحفظ» ويبقى النصُّ القديم معروضاً —
+ * ولا عدّادُ المفاتيح يتغيّر، فلا يمسكه فحصُ التكافؤ. مقيسٌ: أُضيف
+ * `errors.noRowUpdated` مرّتين بملفٍّ واحد فبقيت الرسالةُ الأولى مخفيّة.
+ * نمسحُ النصَّ الخام: كلُّ سطرِ مفتاحٍ بعمقه، ونشكو من اسمٍ تكرّر بنفس العمق
+ * تحت نفس الأب. */
+function duplicateKeys(raw) {
+  const dups = [];
+  const stack = [];           // أسماءُ الآباء
+  const seen = [new Set()];   // مفاتيحُ كلّ مستوى
+  for (const line of raw.split(/\r?\n/)) {
+    const s = line.trim();
+    const m = /^"((?:[^"\\]|\\.)*)"\s*:/.exec(s);
+    if (m) {
+      const key = m[1];
+      const here = seen[seen.length - 1];
+      if (here.has(key)) dups.push([...stack, key].join("."));
+      here.add(key);
+      if (/[[{]\s*$/.test(s)) { stack.push(key); seen.push(new Set()); }
+      continue;
+    }
+    if (/^[}\]],?$/.test(s) && seen.length > 1) { seen.pop(); stack.pop(); }
+  }
+  return dups;
+}
+
 const langFiles = ["en", "ar"]; // تكبر مع كل لغة تدخل المخزن
 const keySets = {};
 for (const lang of langFiles) {
-  const j = JSON.parse(readFileSync(join(ROOT, `src/i18n/${lang}.json`), "utf8"));
-  keySets[lang] = new Set(leafKeys(j));
+  const raw = readFileSync(join(ROOT, `src/i18n/${lang}.json`), "utf8");
+  const dups = duplicateKeys(raw);
+  if (dups.length) fail(`${lang}.json فيه ${dups.length} مفتاحاً مكرّراً (الأخير يطمس الأوّل بصمت): ${dups.slice(0, 8).join("، ")}${dups.length > 8 ? "…" : ""}`);
+  keySets[lang] = new Set(leafKeys(JSON.parse(raw)));
 }
 const base = keySets[langFiles[0]];
 for (const lang of langFiles.slice(1)) {
