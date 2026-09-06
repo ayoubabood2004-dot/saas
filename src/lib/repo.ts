@@ -3019,6 +3019,22 @@ function assertUpdated<T>(row: T | undefined): T {
   if (row === undefined) throw new Error("no_row_updated");
   return row;
 }
+/** تحديثٌ يُسمع صوتُه: خطأُ الخادم يُرمى، وصفرُ صفوفٍ يُرمى.
+ *
+ *  `maybe()` تصلح للقراءة («ما لقيت» جوابٌ مشروع)، وتكذب على الكتابة: تطبع
+ *  الخطأ بالكونسول وترجع «لا صفّ»، فتُغلق النافذةُ ويُصفَّق للحفظ ولا شيء حُفظ.
+ *  والصمتُ يُصدَّق: العيادةُ تعيد الإدخال أو تبيع بسعرٍ ظنّت أنها غيّرته. */
+function updated<T>(res: { data: unknown; error: { message: string; code?: string; details?: string; hint?: string } | null }): T {
+  if (res.error) {
+    const src = res.error;
+    const err = new Error(src.message) as Error & { code?: string; details?: string; hint?: string };
+    if (src.code) err.code = src.code;
+    if (src.details) err.details = src.details;
+    if (src.hint) err.hint = src.hint;
+    throw err;
+  }
+  return assertUpdated((res.data ?? undefined) as T | undefined);
+}
 
 function maybe<T>(res: { data: unknown; error: { message: string } | null }): T | undefined {
   if (res.error) { console.error("[supabase]", res.error.message); return undefined; }
@@ -3667,10 +3683,22 @@ const supabaseRepo: typeof demoRepo = {
       if (rows.length > 1) console.error("[pos] ambiguous code", code, rows.length);
       return rows[0];
     }
-    // القاعدةُ لم تنزل عليها 0141 بعد: نرجع للمسار القديم بدل أن يتعطّل المسح.
-    let q = sbc().from("products").select("*").eq("barcode", code).limit(2);
+    /* **فشلُ النداء ليس «غير موجود».** كان أيُّ خطأٍ يسقط للمسار القديم، وذاك
+     * يبلع خطأه بـ`listOf` ويرجع فارغاً — فتقول الشاشةُ «مو موجود بمخزنك» عن
+     * مادةٍ على الرفّ. وهذا نفسُ ما كلّف عياداتٍ إعادةَ إدخال بضاعتها.
+     * فالسقوطُ للمسار القديم لدالّةٍ **غير موجودة** وحدها (قاعدةٌ لم تنزل عليها
+     * 0141)، وما عداه يُرمى ليقول الكاشيرُ «ما وصل الخادم — أعد المسح». */
+    const missing = r.error.code === "PGRST202" || r.error.code === "42883"
+      || /product_by_code/i.test(r.error.message ?? "");
+    if (!missing) throw r.error;
+    // والمسارُ القديم يقرأ الرموزَ الإضافية أيضاً — وإلا فكلُّ مادةٍ لا تُلقى إلا
+    // برمزها الإضافيّ تصير «غير موجودة» عند أوّل قاعدةٍ بلا 0141.
+    let q = sbc().from("products").select("*")
+      .or(`barcode.eq.${code},alt_codes.cs.{${code}}`).limit(2);
     if (clinicId) q = q.eq("clinic_id", clinicId);
-    const rows = listOf<Product>(await q);
+    const res = await q;
+    if (res.error) throw res.error;   // ولا يُبلَع خطؤه فيصير «غير موجود»
+    const rows = (res.data ?? []) as Product[];
     if (rows.length > 1) console.error("[pos] ambiguous code", code, rows.length);
     return rows[0];
   },
@@ -3709,9 +3737,9 @@ const supabaseRepo: typeof demoRepo = {
     if (r.error && /bulk_group|sold_by_weight/i.test(r.error.message)) {
       const { bulk_group, sold_by_weight, ...rest } = patch as Record<string, unknown>;
       void bulk_group; void sold_by_weight;
-      return maybe<Product>(await sbc().from("products").update(rest as never).eq("id", id).select().maybeSingle());
+      return updated<Product>(await sbc().from("products").update(rest as never).eq("id", id).select().maybeSingle());
     }
-    return maybe<Product>(r);
+    return updated<Product>(r);
   },
   async deleteProduct(id, reason) {
     // طيٌّ لا محو (0145): الصفّ يُحفظ بالسلّة بصورته وسطورِ فواتيره، فيُستعاد
@@ -3937,7 +3965,7 @@ const supabaseRepo: typeof demoRepo = {
     }
   },
   async updateCompany(id, patch) {
-    return maybe<Company>(await sbc().from("companies").update(patch).eq("id", id).select().maybeSingle());
+    return updated<Company>(await sbc().from("companies").update(patch).eq("id", id).select().maybeSingle());
   },
   async deleteCompany(id) {
     // FK on products.company_id is ON DELETE SET NULL, so products survive.
@@ -3964,7 +3992,7 @@ const supabaseRepo: typeof demoRepo = {
     }
   },
   async updateCompanySection(id, patch) {
-    return maybe<CompanySection>(await sbc().from("company_sections").update(patch).eq("id", id).select().maybeSingle());
+    return updated<CompanySection>(await sbc().from("company_sections").update(patch).eq("id", id).select().maybeSingle());
   },
   async deleteCompanySection(id) {
     // FK on products.section_id is ON DELETE SET NULL, so products survive.
@@ -4080,7 +4108,13 @@ const supabaseRepo: typeof demoRepo = {
   async listCouriers(clinicId) {
     let q = sbc().from("couriers").select("*").order("name", { ascending: true });
     if (clinicId) q = q.eq("clinic_id", clinicId);
-    return listOf<Courier>(await q);
+    const r = await q;
+    /* **قائمةٌ فارغة هنا تقلب معنى المال.** الحاملُ يُعرف بنوعه: شركةٌ تُحاسَب
+     * لاحقاً، وسائقٌ يسلّم نقدَه اليوم. فقائمةٌ فارغة عن خطأٍ تجعل كلَّ طلبِ
+     * شركةٍ يبدو طلبَ سائق، وضغطةُ «استلمنا الفلوس» تسجّل تحصيلاً لم يحصل.
+     * الخطأُ يُرمى ليُعرض «أعد المحاولة» بدل لوحةٍ كاذبة (CLAUDE.md §٣). */
+    if (r.error) throw new Error(r.error.message);
+    return (r.data ?? []) as Courier[];
   },
   async createCourier(input) {
     const r = await sbc().from("couriers").insert(input).select().single();
@@ -4092,7 +4126,7 @@ const supabaseRepo: typeof demoRepo = {
     return need<Courier>(r);
   },
   async updateCourier(id, patch) {
-    return maybe<Courier>(await sbc().from("couriers").update(patch).eq("id", id).select().maybeSingle());
+    return updated<Courier>(await sbc().from("couriers").update(patch).eq("id", id).select().maybeSingle());
   },
   async listDeliveryOrders(clinicId) {
     return allPages<DeliveryOrder>(() => {

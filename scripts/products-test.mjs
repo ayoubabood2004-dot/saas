@@ -38,7 +38,7 @@ const built = await esbuild.build({
   platform: "neutral", plugins: [stubs],
   alias: { "@/lib/utils": "./src/lib/utils.ts" },
 });
-const { findByCode, looksLikeShelfCode, twinsByName, nearCodeTwin, scanVariants, rescueScan } = await import(
+const { findByCode, looksLikeShelfCode, twinsByName, nearCodeTwin, scanVariants, rescueScan, codeIndex } = await import(
   "data:text/javascript;base64," + Buffer.from(built.outputFiles[0].text).toString("base64")
 );
 
@@ -127,6 +127,37 @@ check("رمزٌ لا يشبه شيئاً → لا شيء", rescueScan(shelf, "99
 check("صيغةٌ تصيب منتجَين → لا شيء (لا نبيع بالتخمين)",
   rescueScan([P("d1", "١", "0111111111111"), P("d2", "٢", "0111111111111")], "111111111111") === undefined);
 check("  ونفسُ الصيغة بمنتجٍ واحد → تصيبه", rescueScan([P("d1", "١", "0111111111111")], "111111111111")?.product.id === "d1");
+
+/* ── فهرسُ الرموز: الأساسيّ والإضافيّ معاً، وقاعدةُ أولويةٍ تقرّر أين تُرصَّد
+ *    البضاعةُ الداخلة. شاشةُ المشتريات كانت تفهرس `barcode` وحده، فمسحُ باركود
+ *    المصنع على مادّةٍ رمزُها الأساسيّ رقمُ رفّ لا يلقاها فيُنشأ توأمٌ برصيدٍ
+ *    مقسوم — نفسُ دورةِ «المنتج اختفى» التي أُغلقت عند البيع. ──────────────*/
+console.log("▸ codeIndex — الشراءُ يلقى ما يلقاه الكاشير");
+{
+  const withAlt = P("s1", "سبري حشرات", "247", { alt_codes: ["6972748378670"] });
+  const plain = P("s2", "دراي فود", "8436611140873");
+  const idx = codeIndex([withAlt, plain]);
+  check("الرمزُ الأساسيّ يُفهرَس", idx.get("247")?.id === "s1");
+  check("والرمزُ الإضافيّ يُفهرَس مثله — هذا ما كان ناقصاً", idx.get("6972748378670")?.id === "s1");
+  check("والتطبيعُ يشمل الفهرس (أرقامٌ عربية)", codeIndex([P("s3", "x", "٢٤٧")]).get("247")?.id === "s3");
+  check("ورمزٌ لا يخصّ أحداً لا يُخترع", idx.get("999999") === undefined);
+}
+{
+  // رمزٌ هو باركودُ منتجٍ وإضافيٌّ لآخر: يخصّ صاحبَه الأصليّ مهما كان الترتيب.
+  const owner = P("o1", "صاحب الرمز", "6263188401289");
+  const borrower = P("b1", "مستعير", "555", { alt_codes: ["6263188401289"] });
+  check("الأساسيّ يغلب الإضافيّ", codeIndex([borrower, owner]).get("6263188401289")?.id === "o1");
+  check("  ولو جاء الأساسيُّ أوّلاً", codeIndex([owner, borrower]).get("6263188401289")?.id === "o1");
+}
+{
+  // وعند تساوي الأساسيَّين: المصنَّفُ يغلب «بدون صنف»، ثم الأقدم.
+  const bare = P("t1", "توأم بلا صنف", "777", { created_at: "2026-02-01" });
+  const filed = P("t2", "توأم مصنَّف", "777", { section_id: "sec", created_at: "2026-03-01" });
+  check("المصنَّفُ يغلب «بدون صنف»", codeIndex([bare, filed]).get("777")?.id === "t2");
+  const older = P("t3", "أقدم", "888", { created_at: "2026-01-01" });
+  const newer = P("t4", "أحدث", "888", { created_at: "2026-05-01" });
+  check("  وعند التعادل الأقدم", codeIndex([newer, older]).get("888")?.id === "t3");
+}
 
 console.log(`\n${fails ? "✗" : "✓"} products-test: ${passes} نجحت، ${fails} فشلت`);
 process.exit(fails ? 1 : 0);

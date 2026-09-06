@@ -49,7 +49,11 @@ const invs = [
   INV("i1", 10000, 0),                       // بالذمّة كاملاً
   INV("i2", 5000, 5000),                     // مدفوعٌ بالكامل ⇒ ذمّةُ صفر
   INV("i3", 8000, 0, "refunded"),            // مردودة ⇒ لا تُحصَّل
-  INV("i4", 7000, 2000),                     // محصَّلٌ لاحقاً
+  // محصَّلٌ لاحقاً — ومدفوعٌ **بالكامل**: `courier_settle` (0148) لا تختم
+  // `collected_at` إلا حين تُسدَّد الفاتورةُ كلُّها، فحالةُ «مختومٌ ومتبقّيه ٥٠٠٠»
+  // لا تصنعها القاعدةُ أبداً. الخطأُ الذي أخفاه هذا القالبُ سنةً: المجاميعُ
+  // كانت تُحسب من المتبقّي، فكلُّ ما حُصِّل يظهر صفراً.
+  INV("i4", 7000, 7000),
 ];
 const byId = (id) => invs.find((i) => i.id === id);
 
@@ -57,7 +61,7 @@ const orders = [
   ORD("o1", "i1"),                                                  // بالذمّة 10000
   ORD("o2", "i2"),                                                  // ذمّةُ صفر — لا يُعدّ
   ORD("o3", "i3"),                                                  // مردودة — لا تُعدّ
-  ORD("o4", "i4", { collected_at: "2026-07-01T12:00:00Z" }),        // انحصّل 5000
+  ORD("o4", "i4", { collected_at: "2026-07-01T12:00:00Z" }),        // انحصّل 7000
   ORD("o5", "i1", { status: "returned", returned_at: "2026-06-02T10:00:00Z" }), // راجع
   ORD("o6", "i1", { status: "out" }),                               // بالطريق — ليس مسلَّماً
 ];
@@ -87,8 +91,26 @@ const tot = courierTotals(orders, byId);
 check("التوصيلات المسلَّمة = 4", tot.deliveries === 4, `طلع ${tot.deliveries}`);
 check("والراجع = 1", tot.returned === 1, `طلع ${tot.returned}`);
 check("والمطلوبُ الآن يطابق companyOwed", tot.owedNow === owed.owed);
-check("والمحصَّلُ سابقاً = 5000", tot.collected === 5000, `طلع ${tot.collected}`);
+/* المحصَّلُ يُحسب من **المدفوع** لا من المتبقّي: الطلبُ المختومُ متبقّيه صفرٌ
+ * دائماً، فالحسابُ من المتبقّي كان يقول «انحصّل صفر» مهما حُصِّل. */
+check("والمحصَّلُ سابقاً = 7000 (المدفوعُ لا المتبقّي)", tot.collected === 7000, `طلع ${tot.collected}`);
+/* وقيمةُ البضاعة من الفاتورة كاملةً: ١٠٠٠٠ + ٥٠٠٠ + ٨٠٠٠ + ٧٠٠٠ = ٣٠٠٠٠.
+ * بالحساب القديم (المتبقّي + المقدَّم) كان المحصَّلُ والمدفوعُ يسقطان منها. */
+check("وقيمةُ البضاعة المسلَّمة = 30000 (لا تنقص كلّما حُصِّل)", tot.goodsOut === 30000, `طلع ${tot.goodsOut}`);
 check("ولا رقمَ NaN بأيِّ مجموع", Object.values(tot).every((v) => Number.isFinite(v)));
+
+/* المقدَّمُ لم يمرّ بيد الحامل: يدخل قيمةَ البضاعة ولا يُحسب عليه تحصيلاً. */
+const prepaidOrd = ORD("o8", "i8", { collected_at: "2026-07-02T12:00:00Z", prepaid: 3000 });
+const prepaidInv = INV("i8", 12000, 12000);
+const tp = courierTotals([prepaidOrd], (id) => (id === "i8" ? prepaidInv : undefined));
+check("طلبٌ مقدَّمُه 3000 من 12000: البضاعة 12000", tp.goodsOut === 12000, `طلع ${tp.goodsOut}`);
+check("  والمحصَّلُ منه 9000 لا 12000", tp.collected === 9000, `طلع ${tp.collected}`);
+
+/* وطلبٌ فاتورتُه غائبة يسقط للقطته: cod + المقدَّم. */
+const gone = ORD("o9", "gone", { collected_at: "2026-07-03T12:00:00Z", cod_amount: 4000, prepaid: 1000 });
+const tg = courierTotals([gone], () => undefined);
+check("فاتورةٌ غائبة: البضاعة = cod + المقدَّم = 5000", tg.goodsOut === 5000, `طلع ${tg.goodsOut}`);
+check("  والمحصَّل = cod = 4000", tg.collected === 4000, `طلع ${tg.collected}`);
 
 console.log("▸ itemsFromInvoices — لقطةُ الاسم والسعر لا حالتُهما اليوم");
 const IT = (invoice_id, name, barcode, qty, line_total, product_id = "p") =>

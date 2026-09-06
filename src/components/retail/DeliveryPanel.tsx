@@ -125,6 +125,13 @@ export function DeliveryPanel({ invoices, clinicId, onChanged }: { invoices: Inv
     setBusyId(o.id);
     try {
       const c = courierOf(o.courier_id);
+      /* حاملٌ مذكورٌ بالطلب ولا نعرفه = قائمةُ الحاملين ناقصة. ولا نخمّن: التخمينُ
+       * هنا يعني «سائق» فيسجَّل تحصيلٌ نقديّ عن شركةٍ لم تدفع. نقف ونقولها. */
+      if (o.courier_id && !c) {
+        playWarning();
+        toast.error(t("retail.courierUnknown", "ما قدرنا نقرأ بيانات الحامل — حدّث الصفحة قبل تسجيل الاستلام."));
+        return;
+      }
       const now = new Date().toISOString();
       if (isCompany(c)) {
         // شركة: وصل للزبون، والفلوس بذمّة الشركة — لا تسديد الآن.

@@ -47,6 +47,12 @@ type OutboxBase = {
   tries: number;
   /** آخر سببِ رفضٍ من القاعدة — يُعرض بالمعطّلات كي يُفهم لا كي يُخمَّن. */
   last_error?: string;
+  /** **هويّةُ من أنشأها.** الطابورُ يعيش بالجهاز لا بالحساب، والجهازُ يتبدّل
+   *  عليه أهلُه: كاشيرٌ يخرج وآخرُ يدخل بعيادةٍ ثانية، أو مشغّلُ المنصّة يترك
+   *  عيادةً ويدخل غيرها. وبلا ختمٍ كان النداءُ المؤجَّل يُنفَّذ بهويّة الداخل
+   *  الجديد: `auth_clinic()` عيادتُه هو، فيهبط مرتجعُ عيادةٍ ومصروفُها بدفتر
+   *  عيادةٍ أخرى — والأصليّةُ لا بضاعتَها رجعت ولا قيدَها سُجّل. */
+  who?: { user: string; clinic: string };
 };
 export type OutboxOp =
   | (OutboxBase & { kind: "insert"; table: OutboxTable; row: Record<string, unknown> })
@@ -111,11 +117,25 @@ export const isNetworkError = (e: unknown): boolean => {
 
 const schedule = () => { setTimeout(() => { void flushOutbox(); }, 4000); };
 
+/** هويّةُ هذه اللحظة: مَن الداخل، وبأيّ عيادةٍ يعمل. تُقرأ من التخزين مباشرةً
+ *  (بلا استيراد) كي لا يصير الطابورُ عقدةً بحلقةِ استيراد. غيابُها يعني «لا
+ *  أحد» — ولا نرفع شيئاً باسم لا أحد. */
+const whoNow = (): { user: string; clinic: string } | null => {
+  try {
+    const s = JSON.parse(localStorage.getItem("vp_session") || "null") as { raw?: { id?: string } } | null;
+    const user = s?.raw?.id;
+    if (!user) return null;
+    return { user, clinic: localStorage.getItem("vp_active_clinic") || "default" };
+  } catch { return null; }
+};
+const sameWho = (a: OutboxOp["who"], b: { user: string; clinic: string } | null): boolean =>
+  !!a && !!b && a.user === b.user && a.clinic === b.clinic;
+
 /** خزّن إدراجاً فشل شبكياً. يُرجع `false` لو ما ثبت — فارمِ الخطأ الأصلي حينها. */
 export function outboxEnqueue(table: OutboxTable, row: Record<string, unknown> & { id: string }): boolean {
   const ops = load();
   if (ops.some((o) => o.id === row.id)) return true;
-  ops.push({ kind: "insert", id: row.id, table, row, queued_at: new Date().toISOString(), tries: 0 });
+  ops.push({ kind: "insert", id: row.id, table, row, queued_at: new Date().toISOString(), tries: 0, who: whoNow() ?? undefined });
   const stored = save(ops);
   if (stored) schedule();
   return stored;
@@ -134,7 +154,7 @@ export function outboxEnqueueRpc(fn: OutboxRpcFn, args: Record<string, unknown>)
   const ops = load();
   const id = `${fn}:${ref}`;
   if (ops.some((o) => o.id === id)) return true;
-  ops.push({ kind: "rpc", id, fn, args, queued_at: new Date().toISOString(), tries: 0 });
+  ops.push({ kind: "rpc", id, fn, args, queued_at: new Date().toISOString(), tries: 0, who: whoNow() ?? undefined });
   const stored = save(ops);
   if (stored) schedule();
   return stored;
@@ -151,8 +171,22 @@ export async function flushOutbox(): Promise<{ sent: number; left: number; dead:
   if (ops.length === 0) return { sent: 0, left: 0, dead: dead.length };
   flushing = true;
   let sent = 0;
+  /* هويّةُ الجولة تُقرأ مرّةً: ما لم يُختم بها يبقى بالطابور بلا محاولة — لا
+   * يُرفع باسم غيره ولا يُحرق عدّادُه فينتهي بالمعطّلات. ينتظر أهلَه. */
+  const now = whoNow();
+  let skipped = 0;
   try {
     for (const op of [...ops]) {
+      if (!op.who) {
+        /* عمليةٌ من قبل الختم (نسخةٌ أقدم): لا نعرف صاحبَها فلا نرفعها باسم
+         * أحد. تُنقل للرفّ بحمولتها وسببها، ويقرّر بشرٌ استئنافَها — وهو ما
+         * يمنحها هويّتَه صراحةً. لا ضياعَ ولا رفعٌ أعمى. */
+        ops = ops.filter((o) => o.id !== op.id);
+        dead = [...dead.filter((d) => d.id !== op.id), { ...op, last_error: "queued by an older version — resume it to send it under your account" }];
+        save(ops, dead);
+        continue;
+      }
+      if (!sameWho(op.who, now)) { skipped++; continue; }
       try {
         if (op.kind === "rpc") {
           // آمنةُ الإعادة بمرجعها: نداءٌ ثانٍ بنفس المرجع يُرجع نتيجة الأول.
@@ -186,6 +220,7 @@ export async function flushOutbox(): Promise<{ sent: number; left: number; dead:
   } finally {
     flushing = false;
   }
+  if (skipped > 0) console.warn(`[outbox] ${skipped} op(s) belong to another account/clinic — left queued for them.`);
   return { sent, left: ops.length, dead: dead.length };
 }
 
@@ -195,7 +230,10 @@ export function outboxRevive(): number {
   if (dead.length === 0) return 0;
   const ops = load();
   const known = new Set(ops.map((o) => o.id));
-  for (const d of dead) if (!known.has(d.id)) ops.push({ ...d, tries: 0 });
+  // الاستئنافُ قرارُ بشرٍ حاضر، فيُختم باسمه: عمليةٌ بلا هويّة (من نسخةٍ أقدم)
+  // تأخذ هويّةَ من ضغط «استأنف»، ولا تُرفع باسم مجهول.
+  const now = whoNow() ?? undefined;
+  for (const d of dead) if (!known.has(d.id)) ops.push({ ...d, tries: 0, who: d.who ?? now });
   save(ops, []);
   schedule();
   return dead.length;

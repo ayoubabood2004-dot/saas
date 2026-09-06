@@ -67,6 +67,38 @@ export function nearCodeTwin(products: readonly Product[], code: string | null |
 }
 
 /**
+ * فهرسُ «رمزٌ → منتج» لمخزن العيادة — **الأساسيّ والإضافيّ معاً**.
+ *
+ * الشاشاتُ التي تبني فهرسَها بيدها كانت تفهرس `barcode` وحده، فمسحُ باركود
+ * المصنع على بضاعةٍ داخلة لا يلقى المادّةَ (رمزُها الأساسيّ رقمُ رفّ) فيُنشئ
+ * توأماً برصيدٍ مقسوم — نفسُ دورةِ «المنتج اختفى» التي أُغلقت عند البيع وبقيت
+ * مفتوحةً عند الشراء.
+ *
+ * وقاعدةُ الأولوية صريحةٌ لأنها تقرّر أين تُرصَّد البضاعة:
+ *  ١) الرمزُ الأساسيّ يغلب الإضافيّ — رمزٌ هو باركودُ منتجٍ وإضافيٌّ لآخر
+ *     يخصّ صاحبَه الأصليّ.
+ *  ٢) وعند التساوي: المصنَّفُ يغلب «بدون صنف»، ثم الأقدم.
+ */
+export function codeIndex(products: readonly Product[]): Map<string, Product> {
+  const m = new Map<string, Product>();
+  const fromAlt = new Set<string>();
+  const put = (raw: string | null | undefined, p: Product, alt: boolean): void => {
+    const k = normalizeCode(raw);
+    if (!k) return;
+    const cur = m.get(k);
+    if (!cur) { m.set(k, p); if (alt) fromAlt.add(k); return; }
+    if (!alt && fromAlt.has(k)) { m.set(k, p); fromAlt.delete(k); return; }
+    if (alt && !fromAlt.has(k)) return;
+    const better = (!!p.section_id && !cur.section_id)
+      || (!!p.section_id === !!cur.section_id && (p.created_at ?? "") < (cur.created_at ?? ""));
+    if (better) m.set(k, p);
+  };
+  for (const p of products) put(p.barcode, p, false);
+  for (const p of products) for (const c of p.alt_codes ?? []) put(c, p, true);
+  return m;
+}
+
+/**
  * مسحةٌ بلا رأسها: الرمزُ الواصل ذيلُ رمزٍ قائم ينقصه رقمٌ أو رقمان من أوّله.
  *
  * مقيسٌ على الإنتاج (ابن الهيثم، ٥ أيلول ٢٠٢٦): كلُّ مسحةٍ فاشلة باليوم ١١ أو

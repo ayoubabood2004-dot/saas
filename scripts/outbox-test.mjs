@@ -68,7 +68,15 @@ const chk = (label, got, want) => {
   if (g === w) console.log(`   ✓ ${label}`);
   else { console.log(`   ✗ ${label} — طلع «${g}» والمتوقّع «${w}»`); fail = 1; }
 };
-const reset = () => { mem.clear(); calls.length = 0; events.length = 0; shouts.length = 0; quotaFull = false; globalThis.__mode = "ok"; };
+/* هويّةُ الجهاز الآن — الطابورُ يختم بها ما يُنشأ، ويرفض رفعَ ما خُتم بغيرها. */
+const signIn = (user, clinic) => {
+  mem.set("vp_session", JSON.stringify({ raw: { id: user } }));
+  mem.set("vp_active_clinic", clinic);
+};
+const reset = () => {
+  mem.clear(); calls.length = 0; events.length = 0; shouts.length = 0; quotaFull = false; globalThis.__mode = "ok";
+  signIn("user-A", "clinic-A");
+};
 
 console.log("▸ صندوق الصادر…");
 
@@ -126,12 +134,37 @@ await ob.flushOutbox();
 chk("فشلُ الشبكة يُبقيها", ob.outboxCount(), 1);
 chk("وما يحتسب عليها محاولة", ob.outboxDeadCount(), 0);
 
-// ٨) والشكل القديم (بلا kind) يُقرأ إدراجاً — طابورُ جهازٍ لم يُحدَّث بعد
+// ٨) والشكل القديم (بلا kind) يُقرأ إدراجاً — طابورُ جهازٍ لم يُحدَّث بعد.
+//    لكنه بلا ختمِ هويّة، فلا يُرفع باسم الحاضر: يُنقل للرفّ ليقرّر بشر.
 reset();
 mem.set("vp_outbox_v1", JSON.stringify([{ id: "old1", table: "products", row: { id: "old1" }, queued_at: "x", tries: 0 }]));
 chk("طابورٌ قديم يُقرأ", ob.outboxCount(), 1);
 await ob.flushOutbox();
-chk("ويُرفع إدراجاً", [calls[0]?.kind, calls[0]?.table, ob.outboxCount()], ["insert", "products", 0]);
+chk("وما يُرفع باسم مجهول", [calls.length, ob.outboxCount(), ob.outboxDeadCount()], [0, 0, 1]);
+chk("بل ينتظر قرارَ بشرٍ بالرفّ", ob.outboxDead()[0].id, "old1");
+ob.outboxRevive();
+await ob.flushOutbox();
+chk("والاستئنافُ يمنحه هويّةَ من استأنفه فيُرفع", [calls[0]?.kind, calls[0]?.table, ob.outboxCount()], ["insert", "products", 0]);
+
+/* ٩) **هويّةُ صاحب العملية**: الطابورُ يعيش بالجهاز، والجهازُ يتبدّل عليه أهلُه.
+ *    عمليةٌ خُتمت بعيادةٍ لا تُرفع بهويّة الداخل بعدها — وإلا هبط مرتجعُ عيادةٍ
+ *    ومصروفُها بدفتر عيادةٍ أخرى. تنتظر أهلَها بلا أن يُحرق عدّادُها. */
+reset();
+ob.outboxEnqueue("expenses", { id: "x1", amount: 400000 });
+signIn("user-B", "clinic-B");               // كاشيرٌ ثانٍ بعيادةٍ ثانية على نفس الجهاز
+let rb = await ob.flushOutbox();
+chk("ما تُرفع بهويّة غير صاحبها", [rb.sent, calls.length], [0, 0]);
+chk("وتبقى بالطابور لا بالمعطّلات", [ob.outboxCount(), ob.outboxDeadCount()], [1, 0]);
+signIn("user-A", "clinic-A");               // رجع صاحبُها
+rb = await ob.flushOutbox();
+chk("وترتفع حين يعود أهلُها", [rb.sent, calls[0]?.row?.id, ob.outboxCount()], [1, "x1", 0]);
+
+// وتبديلُ العيادة وحدَه يكفي (مشغّلُ المنصّة يترك عيادةً ويدخل غيرها)
+reset();
+ob.outboxEnqueueRpc("retail_return", { p_items: [], p_meta: { client_ref: "r-1" } });
+signIn("user-A", "clinic-B");
+rb = await ob.flushOutbox();
+chk("تبديلُ العيادة بنفس المستخدم يمنع الرفع أيضاً", [rb.sent, ob.outboxCount()], [0, 1]);
 
 console.log("");
 if (fail) { console.log("✗ اكو فحصٌ فشل"); process.exit(1); }

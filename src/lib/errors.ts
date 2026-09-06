@@ -93,6 +93,12 @@ export function describeDbError(e: unknown, t: TFunction): string {
   if (err.name === TIMEOUT_NAME) {
     return t("errors.timeout", "The request timed out — check your connection and try again.");
   }
+  /* تحديثٌ لم يمسّ صفّاً: القاعدةُ ردّته بلا خطأ (سياسةُ صفوفٍ لا تسمح لدورك،
+   * أو الصفُّ حُذف من جهازٍ آخر). كان يُبلَع فتقول الشاشةُ «تمّ» ولا شيء تغيّر —
+   * والصمتُ يُصدَّق. فيُقال بوضوحٍ ما حدث وما العمل. */
+  if (err.message === "no_row_updated") {
+    return t("errors.noRowUpdated", "ما انحفظ التعديل — يمكن صلاحيتك ما تسمح بهذا التعديل، أو المادّة انحذفت أو تغيّرت من جهاز ثاني. حدّث الصفحة وجرّب مرّة ثانية.");
+  }
   if (isNetworkError(e)) {
     return t("errors.network", "ما وصلنا للسيرفر — تأكد من الإنترنت وحاول من جديد. لو تكررت: جرّب بيانات الموبايل، وتأكد أن ساعة الحاسوب صحيحة.");
   }

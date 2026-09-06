@@ -267,7 +267,7 @@
       "store_profiles_slug_unique": "That store link is taken — choose a different one.",
       "store_slug_format": "The store link accepts only lowercase letters, digits and hyphens (-), must start and end with a letter or digit, and be 3–30 characters long."
     },
-    "noRowUpdated": "The change was not saved — the server did not find this order in your clinic, or refused it. Refresh and try again; if you entered a clinic from the platform console, make sure you are still in the same clinic.",
+    "noRowUpdated": "The change was not saved — the server did not find this row in your clinic, or refused the edit (your role, or it was deleted/changed on another device). Refresh and try again; if you entered a clinic from the platform console, make sure you are still in the same clinic.",
     "policyRecursion": "Database configuration fault (table policy) — the change was not saved and retrying will not help. Report this code to support: 42P17."
   },
   "nav": {
@@ -644,6 +644,7 @@
     "multArmed": "Scan a barcode or tap an item — it is added with this quantity",
     "multClamped": "Only {{n}} in stock — added what was available",
     "scanOutOfStock": "\"{{name}}\" exists but its stock is zero — add stock in Inventory or record a purchase before selling it",
+    "scanOffline": "Could not reach the server — we cannot verify barcode {{code}}. Check the connection and scan again.",
     "scanHealed": "The scanner dropped the start of the barcode — matched it to \"{{name}}\"",
     "scanUnknown": "Barcode {{code}} is not in your inventory — if you stock this item, add it from Inventory under this barcode",
     "bigSaleTitle": "Sell the entire stock?",
@@ -657,6 +658,7 @@
     "resetHint": "Clears the cart, customer name and phone, the animal, the note and the draft saved on this device. Nothing is written to invoices.",
     "deliveryCompanyHint": "Delivery company: the order is marked delivered when it reaches the customer; the money stays owed by the company and is collected later from the Delivery tab.",
     "deliveryDoneCompany": "Delivered — {{n}} owed by {{name}}, to be collected later",
+    "courierUnknown": "Could not read the carrier's details — refresh the page before recording collection.",
     "deliverAllCompanyConfirm": "Mark {{n}} orders with {{name}} as delivered to the customers? The amounts stay owed by the company until collected.",
     "deliverAllCompany": "All delivered to customers ({{n}})",
     "deliveredToCustomer": "Delivered to customer",

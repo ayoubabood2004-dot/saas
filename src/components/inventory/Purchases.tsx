@@ -14,6 +14,7 @@ import { Combobox } from "@/components/Combobox";
 import { Button, Badge, useToast, Skeleton } from "@/components/ui";
 import { cn, money, formatDate, localISO, normalizeAr } from "@/lib/utils";
 import { withTimeout, describeDbError } from "@/lib/errors";
+import { codeIndex } from "@/lib/productCodes";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
 import { staggerContainer, staggerItem } from "@/lib/motion";
 import { openPurchasePrint, purchaseNo } from "@/lib/purchasePrint";
@@ -489,21 +490,11 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
   const scanRef = useRef<HTMLInputElement>(null);
   const createdRef = useRef<Company[]>([]);
 
-  const byBarcode = useMemo(() => {
-    // عند تساوي الباركود: القطعة المصنّفة تغلب توأمها الملوّث «بدون صنف»، وعند التعادل الأقدم
-    const m = new Map<string, Product>();
-    for (const p of products) {
-      if (!p.barcode) continue;
-      const k = normCode(p.barcode);
-      const cur = m.get(k);
-      if (!cur) { m.set(k, p); continue; }
-      const better =
-        (!!p.section_id && !cur.section_id) ||
-        (!!p.section_id === !!cur.section_id && (p.created_at ?? "") < (cur.created_at ?? ""));
-      if (better) m.set(k, p);
-    }
-    return m;
-  }, [products]);
+  /* الفهرسُ من `productCodes` لا مكتوباً هنا: الأساسيُّ والإضافيُّ معاً وبقاعدةِ
+   * أولويةٍ واحدة، مفحوصةٍ بـ`products-test`. مسحُ باركود المصنع على بضاعةٍ
+   * داخلة يلقى المادّةَ ولو كان رمزُها الأساسيّ رقمَ رفّ — فلا يُنشأ توأمٌ
+   * برصيدٍ مقسوم. */
+  const byBarcode = useMemo(() => codeIndex(products), [products]);
 
   useEffect(() => {
     if (!open) return;
