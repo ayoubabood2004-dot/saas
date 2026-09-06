@@ -2411,9 +2411,14 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
                             : <>{l.med.family} · {l.med.dosage}</>}
                         </p>
                       )}
-                      {/* سعر الوحدة بنفس سطر الاسم بالشاشة الجديدة: سطرٌ واحد
-                          للصنف يعني ضِعف عدد الأصناف المرئية بنفس المساحة. */}
-                      <div className={cn("items-center gap-1 text-xs text-ink-subtle", denseCart ? "hidden" : "flex", posV2 ? "-mt-0.5" : "mt-0.5")}>
+                      {/* سعرُ الوحدة (الرقمُ الأزرق القابلُ للتعديل) يبقى ظاهراً
+                          دائماً — حتى وقتَ امتلاء السلة. كان denseCart يُخفيه بعد
+                          ٧ أصناف (أو ١٢ بالوضع المضغوط) فيختفي «الرقمُ الأزرق»،
+                          ولا يبقى للطبيب طريقٌ يعدّل سعرَ صنفٍ بمفرده وقتَ زحمة
+                          السلة — تجزئةً كان أو جملةً (نفسُ PriceEdit). وإظهارُه لا
+                          يكلّف ارتفاعاً بالوضع المضغوط: عمودُ أزرارِ الكمية (h-9)
+                          أطولُ أصلاً من سطرِ الاسم+السعر، فالصفُّ لا يزيد. */}
+                      <div className={cn("flex items-center gap-1 text-xs text-ink-subtle", posV2 ? "-mt-0.5" : "mt-0.5")}>
                         <PriceEdit value={l.unit_price} onChange={(v) => setPrice(l.id, v)} />
                         <span className="truncate">
                           {l.byWeight
