@@ -12,7 +12,7 @@
  * بالرمز المطبَّع، فنعرض «موجود عندك» بدل أن نسمح بتوأم.
  * ==========================================================================*/
 import type { Product } from "@/types";
-import { normalizeCode } from "./utils";
+import { matchCode } from "./utils";
 
 /**
  * هل هذا الرمز موجودٌ على منتجٍ بالمخزن؟ يفحص الرمزَ الأساسي والرموزَ الإضافية،
@@ -20,11 +20,11 @@ import { normalizeCode } from "./utils";
  * `excludeId` لنموذج التعديل: المنتجُ لا يتعارض مع نفسه.
  */
 export function findByCode(products: readonly Product[], code: string | null | undefined, excludeId?: string | null): Product | undefined {
-  const c = normalizeCode(code);
+  const c = matchCode(code);
   if (!c) return undefined;
   return products.find((p) =>
     p.id !== excludeId
-    && (normalizeCode(p.barcode) === c || (p.alt_codes ?? []).some((a) => normalizeCode(a) === c)));
+    && (matchCode(p.barcode) === c || (p.alt_codes ?? []).some((a) => matchCode(a) === c)));
 }
 
 /**
@@ -37,7 +37,7 @@ export function findByCode(products: readonly Product[], code: string | null | u
  * عياداتٍ إعادةَ إدخالِ بضاعتها.
  */
 export function looksLikeShelfCode(code: string | null | undefined): boolean {
-  const c = normalizeCode(code);
+  const c = matchCode(code);
   return c.length > 0 && c.length < 8;
 }
 
@@ -53,7 +53,7 @@ export function looksLikeShelfCode(code: string | null | undefined): boolean {
  * (`1003` و`10030`) جيرانٌ بالطبيعة لا أخطاء.
  */
 export function nearCodeTwin(products: readonly Product[], code: string | null | undefined, excludeId?: string | null): Product | undefined {
-  const c = normalizeCode(code);
+  const c = matchCode(code);
   if (c.length < 8) return undefined;
   const near = (o: string): boolean => {
     if (!o || o === c) return false;
@@ -63,7 +63,7 @@ export function nearCodeTwin(products: readonly Product[], code: string | null |
   };
   return products.find((p) =>
     p.id !== excludeId
-    && (near(normalizeCode(p.barcode)) || (p.alt_codes ?? []).some((a) => near(normalizeCode(a)))));
+    && (near(matchCode(p.barcode)) || (p.alt_codes ?? []).some((a) => near(matchCode(a)))));
 }
 
 /**
@@ -83,7 +83,7 @@ export function codeIndex(products: readonly Product[]): Map<string, Product> {
   const m = new Map<string, Product>();
   const fromAlt = new Set<string>();
   const put = (raw: string | null | undefined, p: Product, alt: boolean): void => {
-    const k = normalizeCode(raw);
+    const k = matchCode(raw);
     if (!k) return;
     const cur = m.get(k);
     if (!cur) { m.set(k, p); if (alt) fromAlt.add(k); return; }
@@ -109,10 +109,10 @@ export function codeIndex(products: readonly Product[]): Map<string, Product> {
  * لا نخمّن — نُرجع لا شيء ويُعرض الاختيارُ على الإنسان.
  */
 export function matchTruncatedCode(products: readonly Product[], code: string | null | undefined): Product | undefined {
-  const c = normalizeCode(code);
+  const c = matchCode(code);
   if (!/^[0-9]{10,}$/.test(c)) return undefined;
   const tailOf = (o: string | null | undefined): boolean => {
-    const n = normalizeCode(o);
+    const n = matchCode(o);
     return n.length > c.length && n.length - c.length <= 2 && n.endsWith(c);
   };
   const hits = products.filter((p) => tailOf(p.barcode) || (p.alt_codes ?? []).some(tailOf));
@@ -142,7 +142,7 @@ export function twinsByName(products: readonly Product[], p: Product, normalizeN
 
 /** الصيغُ البديلة المعقولة لرمزٍ ممسوح، بلا الرمزِ نفسه. */
 export function scanVariants(code: string | null | undefined): string[] {
-  const raw = normalizeCode(code);
+  const raw = matchCode(code);
   if (!raw) return [];
   const out = new Set<string>();
   // بادئةُ AIM: `]` + حرف + رقم — ثلاثةُ محارفٍ قبل الرمز الحقيقي.
@@ -166,7 +166,7 @@ export function scanVariants(code: string | null | undefined): string[] {
 export function rescueScan(products: readonly Product[], code: string | null | undefined): { product: Product; via: string } | undefined {
   for (const v of scanVariants(code)) {
     const hits = products.filter((p) =>
-      normalizeCode(p.barcode) === v || (p.alt_codes ?? []).some((a) => normalizeCode(a) === v));
+      matchCode(p.barcode) === v || (p.alt_codes ?? []).some((a) => matchCode(a) === v));
     if (hits.length === 1) return { product: hits[0], via: v };
     if (hits.length > 1) return undefined; // التباس — النافذة أصدق من تخمين
   }

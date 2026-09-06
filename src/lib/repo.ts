@@ -32,7 +32,7 @@ import { paidOf, round2 } from "./debt";
 import { isValidSlug, normalizeSlug, demoOrderNo } from "./storeLib";
 import { journeyToken, OWNER_REACTIONS } from "./journey";
 import { getClinicName, getClinicLogo, getClinicSocials } from "./settings";
-import { uid, uuid, ageMonths, localISO, normalizeCode } from "./utils";
+import { uid, uuid, ageMonths, localISO, normalizeCode, matchCode } from "./utils";
 import { phoneKey } from "./phone";
 import { loadOwners } from "./owners";
 import { loadClinics, getActiveClinicId } from "./clinics";
@@ -1173,26 +1173,26 @@ const demoRepo = {
     return true;
   },
   async getProductByBarcode(barcode: string, _clinicId?: string): Promise<Product | undefined> {
-    const code = normalizeCode(barcode);
+    const code = matchCode(barcode);
     if (!code) return undefined;
     // الرمزُ الأساسي أو أيُّ رمزٍ إضافي — ونطبّع المخزون أيضاً، فصفٌّ قديم
     // فيه محرفٌ غير مرئيّ يبقى قابلاً للمسح.
     return (loadDB().products ?? []).find(
-      (p) => normalizeCode(p.barcode) === code || (p.alt_codes ?? []).some((c) => normalizeCode(c) === code),
+      (p) => matchCode(p.barcode) === code || (p.alt_codes ?? []).some((c) => matchCode(c) === code),
     );
   },
   /** يربط رمزاً بمنتجٍ قائم بدل إنشاء منتجٍ جديد — نظير attach_product_code. */
   async attachProductCode(productId: string, code: string): Promise<Product> {
-    const c = normalizeCode(code);
+    const c = matchCode(code);
     if (!c) throw new Error("empty code");
     const db = loadDB();
     const taken = (db.products ?? []).find(
-      (p) => p.id !== productId && (normalizeCode(p.barcode) === c || (p.alt_codes ?? []).some((x) => normalizeCode(x) === c)),
+      (p) => p.id !== productId && (matchCode(p.barcode) === c || (p.alt_codes ?? []).some((x) => matchCode(x) === c)),
     );
     if (taken) throw new Error("code already belongs to another product");
     const p = (db.products ?? []).find((x) => x.id === productId);
     if (!p) throw new Error("product not found");
-    if (normalizeCode(p.barcode) !== c && !(p.alt_codes ?? []).some((x) => normalizeCode(x) === c)) {
+    if (matchCode(p.barcode) !== c && !(p.alt_codes ?? []).some((x) => matchCode(x) === c)) {
       p.alt_codes = [...(p.alt_codes ?? []), c];
       saveDB(db);
     }
@@ -1204,7 +1204,7 @@ const demoRepo = {
     // نفسُ قيدِ الخادم (products_clinic_barcode_idx) وبنفس صيغةِ خطئه، حتى
     // يُترجمه describeDbError هنا كما هناك — وحتى يُفحص الحارس حيث يُفحص كلُّ شيء.
     const code = normalizeCode(input.barcode) || null;
-    if (code && db.products.some((x) => normalizeCode(x.barcode) === code)) {
+    if (code && db.products.some((x) => matchCode(x.barcode) === matchCode(code))) {
       const e = new Error('duplicate key value violates unique constraint "products_clinic_barcode_idx"') as Error & { code: string };
       e.code = "23505";
       throw e;
@@ -3671,7 +3671,7 @@ const supabaseRepo: typeof demoRepo = {
     }
   },
   async getProductByBarcode(barcode, clinicId) {
-    const code = normalizeCode(barcode);
+    const code = matchCode(barcode);
     if (!code) return undefined;
     // دالّةُ القاعدة تقرأ `barcode` والرموزَ الإضافية معاً (0141)، وبصلاحية
     // المُستدعي فسياساتُ الصفوف تحصرها بعيادته.
@@ -3703,7 +3703,7 @@ const supabaseRepo: typeof demoRepo = {
     return rows[0];
   },
   async attachProductCode(productId, code) {
-    const c = normalizeCode(code);
+    const c = matchCode(code);
     if (!c) throw new Error("empty code");
     const { data, error } = await sbc().rpc("attach_product_code", { p_product: productId, p_code: c });
     if (error) throw error;

@@ -114,6 +114,25 @@ export const normalizeCode = (s: string | null | undefined): string =>
     .replace(/[​-‏‪-‮⁦-⁩﻿]/g, "")
     .replace(/\s+/g, "");
 
+/**
+ * تطبيعُ **المطابقة** — `normalizeCode` وفوقها طيُّ حالة الأحرف.
+ *
+ * ولماذا دالّتان لا واحدة: `normalizeCode` تُنادى **عند الحفظ** أيضاً
+ * (`createProduct`)، فلو طَوَت الحالةَ لَحُفظ باركودُ `W90` بالمخزن `w90` —
+ * وهذي كتابةٌ فوق ما أدخله صاحبُ العيادة، ولا تُطابق حروفَ الملصق المطبوع.
+ * فالحفظُ يبقى كما مَسَحه الماسح، والطيُّ يجري **لحظةَ المطابقة وحدها**.
+ *
+ * ومرآتُها بالقاعدة `inv_norm_code` (هجرة 0164) — حرفاً بحرف، يفحصهما
+ * `scripts/code-norm-parity.mjs` على ملف قيمٍ واحد. تطبيعُ طرفٍ واحد أسوأ من
+ * لا تطبيع: يفشل بصمتٍ ويبدو أنه يعمل (CLAUDE.md §٣).
+ */
+export const matchCode = (s: string | null | undefined): string =>
+  // A–Z وحدها، لا `toLowerCase()`: تصغيرُ الحروف عمليةٌ تعتمد المحليّة، فـ
+  // `İ` التركية تنزل بجافاسكربت حرفين وببوستغريس حرفاً — واختلافٌ كهذا يكسر
+  // التكافؤ بحالةٍ نادرة يستحيل تتبّعها. والباركودات (Code39/Code128) لاتينية
+  // بالمواصفة، فطيُّ A–Z يغطّيها كلَّها ولا يترك للمحليّة بابا.
+  normalizeCode(s).replace(/[A-Z]/g, (c) => String.fromCharCode(c.charCodeAt(0) + 32));
+
 export function ageFromDOB(dob?: string | null): { years: number; months: number } | null {
   if (!dob) return null;
   const birth = new Date(dob);

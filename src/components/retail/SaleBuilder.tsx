@@ -30,7 +30,7 @@ import { useNavFolded, setNavFolded } from "@/lib/navFold";
 import { loadPosLayout, savePosLayout, stepZoom, type PosLayout, type CartSide } from "@/lib/posLayout";
 import { persistMedicalEntries } from "@/lib/medSync";
 import type { MedicalDraft } from "@/components/MedicalEntry";
-import { cn, money, currencySymbol, formatNum, fmtKg, searchable, normalizeCode } from "@/lib/utils";
+import { cn, money, currencySymbol, formatNum, fmtKg, searchable, matchCode, normalizeCode } from "@/lib/utils";
 import { findByCode, rescueScan, matchTruncatedCode } from "@/lib/productCodes";
 import { splitCustomerField } from "@/lib/customerName";
 import { dueOf, paidOf } from "@/lib/debt";
@@ -1245,13 +1245,13 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
   const deferredQuery = useDeferredValue(query);
   const ql = deferredQuery.trim();
   const nq = searchable(ql);
-  const cq = normalizeCode(ql);
+  const cq = matchCode(ql);
   const { shown, hiddenCount } = useMemo(() => {
     const base = ql
       ? products.filter((p) =>
         searchable(p.name).includes(nq)
-        || (!!cq && normalizeCode(p.barcode).includes(cq))
-        || (!!cq && (p.alt_codes ?? []).some((c) => normalizeCode(c).includes(cq))))
+        || (!!cq && matchCode(p.barcode).includes(cq))
+        || (!!cq && (p.alt_codes ?? []).some((c) => matchCode(c).includes(cq))))
       : products;
     // السقف لسرعة الرسم — لكنه **يقول إنه سقف**. صمتُه كان يعني أن المادة
     // بالصفّ الخامس والعشرين تبدو غير موجودة.
