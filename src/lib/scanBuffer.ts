@@ -58,10 +58,15 @@ export function createScanAssembler(opts: ScanOptions = {}): ScanAssembler {
         const g = gaps;
         reset();
         if (code.length < minLength) return null;
-        // ثلاثةُ أرباع الفجوات بسرعة الآلة = دفعةُ ماسح. الرُّبعُ المتبقّي يحتمل
-        // توقّفَ المتصفّح عن المعالجة وهو يرسم — لا أكثر.
+        // نصفُ الفجوات بسرعة الآلة = دفعةُ ماسح (لرمزٍ بطول باركود). الإنسانُ لا
+        // يكتب ستَّ فجواتٍ من اثنتَي عشرة دون ستّين ملّي ثانية — والنصفُ المتبقّي
+        // يحتمل توقّفَ متصفّحٍ بطيء عن المعالجة وهو يرسم. مقيسٌ بضغطٍ على ٣٠٠٠
+        // منتج: ربعُ الفجوات كان يُسقط ٥٪ من المسحات حين تتجمّع التوقّفات.
+        // والرموزُ القصيرة (رقمُ رفّ، بحثٌ من حرفين وEnter) تبقى على الرُّبع، لأن
+        // ضغطتين سريعتين من إنسانٍ تكفيان لتشبه دفعةً.
         const slow = g.filter((x) => x > interKeyMs).length;
-        return slow <= Math.floor(g.length / 4) ? code : null;
+        const tolerated = Math.floor(g.length / (code.length >= 8 ? 2 : 4));
+        return slow <= tolerated ? code : null;
       }
       if (key.length !== 1) return null;
       if (gap > pauseMs) reset();

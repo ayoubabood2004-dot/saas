@@ -179,6 +179,9 @@ function OrdersTab({ orders, products, profile, clinicId, reload, goSettings }: 
         amount_paid: 0, // COD — الفلوس تدخل عند التسليم عبر شاشة التوصيل
         staff_id: staffM?.id ?? null,
         notes: `طلب متجر ${o.order_no}${o.note ? ` — ${o.note}` : ""}`,
+        // مرجعٌ ثابت من الطلب نفسه (0135): قبولٌ أُعيد بعد مهلةٍ أو انقطاعٍ يرجع
+        // الفاتورةَ الأولى بدل أن يبيع البضاعةَ مرّتين ويُنقص المخزون مرّتين.
+        client_ref: `store-${o.id}`,
       };
       const invoice = await withTimeout(repo.retailCheckout(items, meta), 12000);
       try {

@@ -3667,10 +3667,22 @@ const supabaseRepo: typeof demoRepo = {
       if (rows.length > 1) console.error("[pos] ambiguous code", code, rows.length);
       return rows[0];
     }
-    // القاعدةُ لم تنزل عليها 0141 بعد: نرجع للمسار القديم بدل أن يتعطّل المسح.
-    let q = sbc().from("products").select("*").eq("barcode", code).limit(2);
+    /* **فشلُ النداء ليس «غير موجود».** كان أيُّ خطأٍ يسقط للمسار القديم، وذاك
+     * يبلع خطأه بـ`listOf` ويرجع فارغاً — فتقول الشاشةُ «مو موجود بمخزنك» عن
+     * مادةٍ على الرفّ. وهذا نفسُ ما كلّف عياداتٍ إعادةَ إدخال بضاعتها.
+     * فالسقوطُ للمسار القديم لدالّةٍ **غير موجودة** وحدها (قاعدةٌ لم تنزل عليها
+     * 0141)، وما عداه يُرمى ليقول الكاشيرُ «ما وصل الخادم — أعد المسح». */
+    const missing = r.error.code === "PGRST202" || r.error.code === "42883"
+      || /product_by_code/i.test(r.error.message ?? "");
+    if (!missing) throw r.error;
+    // والمسارُ القديم يقرأ الرموزَ الإضافية أيضاً — وإلا فكلُّ مادةٍ لا تُلقى إلا
+    // برمزها الإضافيّ تصير «غير موجودة» عند أوّل قاعدةٍ بلا 0141.
+    let q = sbc().from("products").select("*")
+      .or(`barcode.eq.${code},alt_codes.cs.{${code}}`).limit(2);
     if (clinicId) q = q.eq("clinic_id", clinicId);
-    const rows = listOf<Product>(await q);
+    const res = await q;
+    if (res.error) throw res.error;   // ولا يُبلَع خطؤه فيصير «غير موجود»
+    const rows = (res.data ?? []) as Product[];
     if (rows.length > 1) console.error("[pos] ambiguous code", code, rows.length);
     return rows[0];
   },
@@ -4080,7 +4092,13 @@ const supabaseRepo: typeof demoRepo = {
   async listCouriers(clinicId) {
     let q = sbc().from("couriers").select("*").order("name", { ascending: true });
     if (clinicId) q = q.eq("clinic_id", clinicId);
-    return listOf<Courier>(await q);
+    const r = await q;
+    /* **قائمةٌ فارغة هنا تقلب معنى المال.** الحاملُ يُعرف بنوعه: شركةٌ تُحاسَب
+     * لاحقاً، وسائقٌ يسلّم نقدَه اليوم. فقائمةٌ فارغة عن خطأٍ تجعل كلَّ طلبِ
+     * شركةٍ يبدو طلبَ سائق، وضغطةُ «استلمنا الفلوس» تسجّل تحصيلاً لم يحصل.
+     * الخطأُ يُرمى ليُعرض «أعد المحاولة» بدل لوحةٍ كاذبة (CLAUDE.md §٣). */
+    if (r.error) throw new Error(r.error.message);
+    return (r.data ?? []) as Courier[];
   },
   async createCourier(input) {
     const r = await sbc().from("couriers").insert(input).select().single();

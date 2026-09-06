@@ -31,7 +31,7 @@ import { loadPosLayout, savePosLayout, stepZoom, type PosLayout, type CartSide }
 import { persistMedicalEntries } from "@/lib/medSync";
 import type { MedicalDraft } from "@/components/MedicalEntry";
 import { cn, money, currencySymbol, formatNum, fmtKg, searchable, normalizeCode } from "@/lib/utils";
-import { rescueScan, matchTruncatedCode } from "@/lib/productCodes";
+import { findByCode, rescueScan, matchTruncatedCode } from "@/lib/productCodes";
 import { splitCustomerField } from "@/lib/customerName";
 import { dueOf, paidOf } from "@/lib/debt";
 import { withTimeout, describeDbError, isNetworkError, isTimeoutError } from "@/lib/errors";
@@ -141,6 +141,9 @@ interface SaleDraft {
   /** عروض الكمية المفعّلة يدوياً بالزر الأحمر — lineId → ruleId. */
   /** العروض المفعّلة — بمعرّف القاعدة (كانت بمعرّف السطر قبل 0102). */
   promoOn?: string[];
+  /** مرجعُ محاولة الإصدار (0135): يُحفظ مع المسودّة حتى لا يولَد مرجعٌ جديد بعد
+   *  مهلةٍ ثم تبديلِ تبويبٍ أو إعادةِ تحميل — فتُباع السلّةُ مرّتين. */
+  clientRef?: string | null;
 }
 /** أقصى ما تعرضه شبكةُ المنتجات دفعةً واحدة — للرسم لا للفلترة. ويُقال للطبيب
  *  كم أُخفي، فلا تبدو مادةٌ خارج السقف وكأنها غير موجودة. */
@@ -585,7 +588,9 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
   // adding/removing items afterwards shifts the final price by the SAME delta —
   // the doctor's discount amount stays fixed and a newly added item is charged
   // in full, instead of being silently swallowed by the frozen final price.
-  const prevSubtotalRef = useRef(0);
+  // يبدأ فارغاً لا صفراً: مسودّةٌ مستعادة تحمل سلّةً وسعراً نهائياً معاً، وبدايةٌ
+  // من صفر كانت تحسب المجموعَ كلَّه «إضافةً» فتضاعف الفاتورة عند كلّ رجوعٍ للتبويب.
+  const prevSubtotalRef = useRef<number | null>(null);
   // Payment allocation — one leg by default (full total), expandable into a split, or
   // reduced below the total to save the sale on credit (دفع آجل).
   const [payments, setPayments] = useState<PaymentSplit[]>([{ method: "cash", amount: 0 }]);
@@ -641,7 +646,9 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
   /** رمزٌ مُسِح ولم يُطابق شيئاً — يُعرض ليُربط بمنتجٍ قائم بدل إعادة إدخاله. */
   /* مرجعُ البيعة الجارية — يُنشأ عند أول محاولة ويُمسح عند التصفير. مرجعٌ لا
    * حالة: تغيّره لا يعيد الرسم، وقيمته لازمة داخل المعالج لا بالعرض. */
-  const saleRefRef = useRef<string | null>(null);
+  const saleRefRef = useRef<string | null>(draft0?.clientRef ?? null);
+  // مرآةُ المرجع بحالةٍ حتى تُحفظ مع المسودّة لحظةَ توليده (المرجعُ نفسُه لا يُعيد الرسم).
+  const [saleRefSaved, setSaleRefSaved] = useState<string | null>(draft0?.clientRef ?? null);
   const [done, setDone] = useState<{ invoice: Invoice; items: InvoiceItem[] } | null>(null);
   const [lastPrints, setLastPrints] = useState(0);
   /** وضع الراجع: كل باركود يُمسح وهو مُفعَّل ينزل سطراً سالباً. */
@@ -882,7 +889,25 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
   useBarcodeScanner(async (code) => {
     if (done) return;
     const n = peekScanMult(code);
-    let product = await repo.getProductByBarcode(code, clinicId);
+    /* القائمةُ المحمَّلة أوّلاً، والخادمُ بعدها.
+     *
+     * `products` بيدنا أصلاً ومعها الرموزُ الإضافية، و`findByCode` تطبّع الطرفين.
+     * فمسحةٌ لمادّةٍ بالمخزن تُجاب فوراً — بلا انتظار شبكةٍ، وبلا أن تتحوّل
+     * رعشةُ إنترنتٍ إلى «مو موجود بمخزنك» عن مادةٍ على الرفّ. والخادمُ يبقى
+     * المرجعَ لما لا تعرفه القائمة (مادّةٌ أُضيفت بجهازٍ آخر قبل قليل).
+     *
+     * وفشلُ الخادم يُقال فشلاً: `getProductByBarcode` ترمي الآن على خطأٍ حقيقيّ
+     * بدل أن ترجع «فارغاً»، فنميّز «ما وصلنا» عن «ما عندك». */
+    let product = findByCode(products, code);
+    let offline = false;
+    if (!product) {
+      try {
+        product = await withTimeout(repo.getProductByBarcode(code, clinicId), 6000);
+      } catch (e) {
+        offline = true;
+        console.error("[pos] scan lookup failed", e);
+      }
+    }
     if (!product) {
       // الرمزُ لا يطابق حرفياً — بادئةُ ماسحٍ أو صفرُ GTIN-14 أو UPC↔EAN:
       // مطابقةٌ واحدةٌ على مخزن العيادة تكفي، وتُقال.
@@ -935,6 +960,12 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
     // باركود مجهول: نقشّر رمزه من الحقل فقط — ما كتبه الطبيب (كمية أو بحث)
     // يبقى بمكانه، ولا تتلوّث خانة البحث بأرقام مسحةٍ فاشلة.
     setQuery((q) => (code && q.endsWith(code) ? q.slice(0, q.length - code.length) : q));
+    /* ما وصلنا الخادمَ = «ما نعرف»، لا «ما عندك». الفرقُ ليس لفظياً: الأولى
+     * تقول «أعد المسح»، والثانية تدفع العيادةَ لإعادة إدخال بضاعةٍ موجودة. */
+    if (offline) {
+      toast.error(t("retail.scanOffline", "ما وصلنا للخادم — ما نكدر نتأكد من الباركود {{code}}. تأكد من الإنترنت وأعد المسح.", { code: normalizeCode(code) }));
+      return;
+    }
     // ونقولها بالرمز كما وصل، بلا نافذةِ «اربطه بمنتج قائم»: تلك النافذة أُلغيت
     // بقرار المالك — مقيسٌ أن ما يصلها رموزُ موادٍّ **غيرِ مُدخَلة** أصلاً، فكان
     // اختيارُ صفٍّ منها يربط باركوداً أجنبياً بمادّةٍ أخرى وتبيعها كلُّ مسحةٍ بعدها.
@@ -1077,6 +1108,8 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
   useEffect(() => {
     const prev = prevSubtotalRef.current;
     prevSubtotalRef.current = subtotal;
+    // أوّلُ رسمٍ يثبّت المرساةَ فقط — لا فرقَ يُحسب على مسودّةٍ مستعادة.
+    if (prev == null) return;
     if (finalOverride == null || subtotal === prev) return;
     setFinalOverride((fo) => (fo == null ? null : Math.max(0, Math.round(fo + (subtotal - prev)))));
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1088,8 +1121,8 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
   // entry still starts clean (see draft0's load guard); this only saves what the
   // sale currently holds.
   useEffect(() => {
-    saveSaleDraft(draftScope, { cart, name, phone, salePets, notes: saleNotes, discountType, discountValue, finalOverride, cashierId, promoOn });
-  }, [clinicId, cart, name, phone, salePets, saleNotes, discountType, discountValue, finalOverride, cashierId, promoOn]);
+    saveSaleDraft(draftScope, { cart, name, phone, salePets, notes: saleNotes, discountType, discountValue, finalOverride, cashierId, promoOn, clientRef: saleRefSaved });
+  }, [clinicId, cart, name, phone, salePets, saleNotes, discountType, discountValue, finalOverride, cashierId, promoOn, saleRefSaved]);
 
   // ---- Payment: full, split, partial (credit), or over-tendered (change due) ----
   const isSplit = payments.length > 1;
@@ -1240,6 +1273,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
 
   const reset = () => {
     saleRefRef.current = null;   // بيعةٌ جديدة ⇒ مرجعٌ جديد
+    setSaleRefSaved(null);
     clearSaleDraft(draftScope);
     setCart([]); setQuery(""); setDiscountValue(""); setFinalOverride(null); setEditingTotal(false);
     setDiscountType("percent"); setPayments([{ method: "cash", amount: 0 }]); setPaidEdited(false); setPartialMode(false); setDone(null); setLastPrints(0);
@@ -1366,7 +1400,8 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
       const el = e.target as HTMLElement | null;
       const typing = !!el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable);
       if (e.key === "/" && !typing) { e.preventDefault(); setBrowseTab("products"); searchRef.current?.focus(); return; }
-      if (e.key === "F2") { e.preventDefault(); if (cart.length > 0 && !needsDebtName && !busy) void checkout(); }
+      // بعد إتمام البيع (شاشة الإيصال) لا يُعاد الإصدار بـF2 — كان يصنع طلبَ توصيلٍ ثانياً.
+      if (e.key === "F2") { e.preventDefault(); if (cart.length > 0 && !needsDebtName && !busy && !done) void checkout(); }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -1421,7 +1456,10 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
    * `reset()` — أي بسلّةٍ جديدة. به تتعرّف القاعدة على الطلب المعاد فتُرجع
    * ما سجّلته أوّل مرّة بدل أن تسجّل ثانيةً (0135 للبيع، 0136 للإرجاع). */
   const ensureRef = () => {
-    if (!saleRefRef.current) saleRefRef.current = `s-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+    if (!saleRefRef.current) {
+      saleRefRef.current = `s-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+      setSaleRefSaved(saleRefRef.current);
+    }
     return saleRefRef.current;
   };
 
@@ -1475,6 +1513,15 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
 
   const checkout = async (force = false) => {
     if (cart.length === 0 || busy) return;
+    // الحرّاسُ هنا لا على الزرّ وحده: F2 كان يصل هنا مباشرةً فيسجّل إرجاعاً خالصاً
+    // «بيعاً» بمجموعٍ صفر — البضاعة ترجع للمخزن والنقدُ يخرج للزبون بلا قيد.
+    if (pureReturn) { void doReturn(); return; }
+    if (netNegative) {
+      playWarning();
+      toast.error(t("retail.retNegative", "الراجع أكبر من المشترى — هذا إرجاع لا بيع: كمّل من تبويب «المرتجع» حتى يخرج النقد للزبون بقيدٍ صحيح."));
+      return;
+    }
+    if (needsDebtName) { playWarning(); return; }
     if (force !== true) {
       const big = bigLines();
       if (big.length > 0) { playWarning(); setBigSale(big); return; }

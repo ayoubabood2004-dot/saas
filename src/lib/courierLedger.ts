@@ -18,7 +18,7 @@
 // بلا متصفّح ولا React — وهذا شرطُ أن تُقاس فلساً بفلس مقابل `dueOf`.
 // ============================================================================
 import type { DeliveryOrder, Invoice, InvoiceItem } from "@/types";
-import { dueOf, round2 } from "./debt";
+import { dueOf, paidOf, round2 } from "./debt";
 
 /** فاتورةٌ بمعرّفها — الدالّاتُ هنا لا تعرف كيف تُجلب، تستلمها جاهزة. */
 export type InvoiceLookup = (id: string) => Invoice | undefined;
@@ -55,6 +55,26 @@ export function orderDue(o: DeliveryOrder, inv?: Invoice): number {
   return inv ? dueOf(inv) : round2(o.cod_amount ?? 0);
 }
 
+/** قيمةُ بضاعةِ الطلب — الفاتورةُ كاملةً لا المتبقّي منها.
+ *
+ * **المتبقّي ليس القيمة.** `courier_settle` (0148) لا تختم `collected_at` إلا
+ * حين تُسدَّد الفاتورةُ كاملةً (`v_pay >= v_due`)، فكلُّ طلبٍ محصَّلٍ متبقّيه صفر.
+ * فحسابُ القيمة من المتبقّي كان يمحو من الكشف كلَّ ما حُصِّل: الشركةُ التي
+ * سلّمت ٨٠ ألفاً وحُصِّل منها ٥٠ تظهر «قيمة البضاعة ٣٠». والأسوأ أن 0148
+ * ختمت الطلباتِ القديمةَ كلَّها بـ`collected_at`، فتاريخُ الشركة كلُّه يختفي. */
+export function orderGoods(o: DeliveryOrder, inv?: Invoice): number {
+  return inv ? round2(inv.total) : round2((o.cod_amount ?? 0) + (o.prepaid ?? 0));
+}
+
+/** ما وصل فعلاً من هذا الطلب — المدفوعُ ناقصَ ما دُفع مقدَّماً قبل خروجه.
+ *  (المقدَّمُ لم يمرّ بيد الحامل، فلا يُحسب عليه تحصيلاً.) */
+export function orderCollected(o: DeliveryOrder, inv?: Invoice): number {
+  if (!o.collected_at) return 0;
+  return inv
+    ? Math.max(0, round2(paidOf(inv) - (o.prepaid ?? 0)))
+    : round2(o.cod_amount ?? 0);
+}
+
 /** هل ما زال المبلغُ بذمّة الحامل؟ نفسُ شرط `courier_settle` (0148). */
 export function isOwed(o: DeliveryOrder, inv?: Invoice): boolean {
   if (o.status !== "delivered") return false;
@@ -89,8 +109,8 @@ export function courierTotals(orders: readonly DeliveryOrder[], invoiceById: Inv
     if (o.status !== "delivered") continue;
     deliveries++;
     const inv = invoiceById(o.invoice_id);
-    goodsOut += orderDue(o, inv) + round2(o.prepaid ?? 0);
-    if (o.collected_at) collected += orderDue(o, inv);
+    goodsOut += orderGoods(o, inv);
+    collected += orderCollected(o, inv);
   }
   const { openOrders, owed } = companyOwed(orders, invoiceById);
   return {
