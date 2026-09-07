@@ -282,9 +282,35 @@ create policy invoices_update on invoices for update
              and not (amount_paid is distinct from (select i.amount_paid from invoices i where i.id = invoices.id))))
   );
 
+/* تفضيلاتُ العيادة — بشكل الإنتاج لا بعمودَين.
+ * أعمدةُ 0147 و0150 و0154 تضيفها هجراتُها بـ`if not exists` فتبقى لها، وما
+ * عداها يأتي من هجراتٍ **خارج الموجة** فلا وجودَ له هنا إلا بهذا التعريف —
+ * وأوّلُ ما كشفه أوّلُ تشغيلٍ حقيقيّ: `column "dial_code" does not exist`
+ * تقتل الحزمةَ عند كتلة 0162. والأعمدةُ منقولةٌ من `information_schema`
+ * بالإنتاج، بأنواعها وافتراضاتها، لا من الذاكرة. */
 create table if not exists clinic_prefs (
   clinic_id uuid primary key, catalog_share boolean not null default false
 );
+alter table clinic_prefs add column if not exists dial_code           text not null default '+964';
+alter table clinic_prefs add column if not exists updated_at          timestamptz not null default now();
+alter table clinic_prefs add column if not exists logo_url            text;
+alter table clinic_prefs add column if not exists social_facebook     text;
+alter table clinic_prefs add column if not exists social_instagram    text;
+alter table clinic_prefs add column if not exists pre_sale_print      boolean not null default false;
+alter table clinic_prefs add column if not exists override_enabled    boolean not null default false;
+alter table clinic_prefs add column if not exists override_pin_mirror text;
+alter table clinic_prefs add column if not exists cage_layout         text;
+alter table clinic_prefs add column if not exists currency            text;
+alter table clinic_prefs add column if not exists country             text;
+alter table clinic_prefs add column if not exists pos_v2              boolean not null default false;
+alter table clinic_prefs add column if not exists care_protocols      text;
+alter table clinic_prefs add column if not exists work_hours          text;
+alter table clinic_prefs add column if not exists clock_format        text;
+alter table clinic_prefs add column if not exists dose_window         text;
+alter table clinic_prefs add column if not exists cash_reconcile      boolean not null default false;
+alter table clinic_prefs add column if not exists cash_confirms       text;
+alter table clinic_prefs add column if not exists delivery_zones      text;
+alter table clinic_prefs add column if not exists qty_promos          text;
 alter table products add column if not exists barcode text;
 alter table products add column if not exists name text;
 alter table products add column if not exists sell_price numeric(12,2) default 0;
