@@ -1162,7 +1162,11 @@
     "tabWholesale": "Wholesale",
     "ambiguousCode": "Ambiguous code — check inventory",
     "ambiguousCodeHint": "Code {{code}} is on more than one product. We sold the oldest; open Inventory and merge them or change one code.",
-    "barcodeTakenHint": "This barcode is used by “{{name}}”. Open Inventory and merge the two products, or change one of their codes."
+    "barcodeTakenHint": "This barcode is used by “{{name}}”. Open Inventory and merge the two products, or change one of their codes.",
+    "excelCode": "That is a mangled Excel format — the original number is lost",
+    "excelCodeHint": "Set the barcode column to “Text” in Excel and paste again. Damage example: 1.23E+12",
+    "excelCodeInline": "Mangled Excel format — set the column to “Text” in Excel and paste again. The original number cannot be recovered from this.",
+    "arabicCode": "The barcode contains Arabic letters — the keyboard was most likely Arabic while scanning. Switch the language and scan again."
   },
   "role": {
     "admin": "Clinic",

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { motion } from "framer-motion";
 import { getCached, setCached } from "@/lib/swrCache";
-import { findByCode, looksLikeShelfCode, twinsByName, nearCodeTwin } from "@/lib/productCodes";
+import { findByCode, looksLikeShelfCode, twinsByName, nearCodeTwin, excelArtifact, hasArabicLetters } from "@/lib/productCodes";
 import { Dialog } from "@/components/ui/Dialog";
 import {
   Barcode, Package, Trash2, Search, Building2, Plus, ChevronLeft, ArrowRight, ArrowLeft,
@@ -634,6 +634,11 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
   const ownHit = useMemo(() => findByCode(allProducts ?? [], f.barcode, product?.id), [allProducts, f.barcode, product?.id]);
   /** رمزٌ يفرق بخانةٍ واحدة عن رمزِ منتجٍ قائم — ٢٢ زوجاً مقيساً بالإنتاج، رقمٌ علق قبل المسح أو ماسحٌ بلع خانة. */
   const nearHit = useMemo(() => (ownHit ? undefined : nearCodeTwin(allProducts ?? [], f.barcode, product?.id)), [allProducts, f.barcode, product?.id, ownHit]);
+  /** شكلُ إكسل المشوّه (G8): الأصلُ **لا يُسترجع** من الصيغة العلمية، فيُمنع الحفظ. */
+  const excelHit = useMemo(() => excelArtifact(f.barcode), [f.barcode]);
+  /** حروفٌ عربية بالباركود (G7): الغالبُ أن الكيبورد كان عربياً وقت المسح.
+   *  تحذيرٌ لا منع — قد يكون رمزاً عربياً مقصوداً بعيادةٍ ترقّم رفوفَها بيدها. */
+  const arabicCode = useMemo(() => hasArabicLetters(f.barcode), [f.barcode]);
   /** توأمٌ بالاسم (لنموذج التعديل): يُعرض زرُّ الدمج حين يكون هناك ما يُدمَج به. */
   const nameTwins = useMemo(
     () => (product ? twinsByName(allProducts ?? [], product, normalizeAr) : []),
@@ -778,6 +783,14 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
     // الحارسُ الجذري: باركودٌ موجودٌ على منتجٍ آخر لا يُحفظ توأماً. كان الخادم
     // يرفضه برسالةٍ عن «الأقفاص» فيُعاد الإدخال بلا باركود — والنتيجة صفّان
     // لمادةٍ واحدة، رصيدُها مقسوم. الآن يُقال بالاسم، ويُفتح الأصل بضغطة.
+    if (excelHit) {
+      playWarning();
+      toast.error(
+        t("pos.excelCode", "هذا شكل إكسل مشوّه — الرقم الأصلي ضاع"),
+        t("pos.excelCodeHint", "رجّع عمود الباركود إلى «نص» بإكسل وأعد اللصق. مثال العطب: 1.23E+12"),
+      );
+      return;
+    }
     if (ownHit) {
       playWarning();
       toast.error(t("pos.ownHitBlock", "هذا الباركود على المنتج \"{{name}}\" أصلاً — افتحه وزيد رصيده أو عدّله. ما انصنع توأم.", { name: ownHit.name }));
@@ -1114,6 +1127,16 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
                   <button className="rounded-lg bg-warn-600 px-2.5 py-1 text-2xs font-semibold text-white" data-ownhitopen
                     onClick={() => { playTap(); onOpenExisting(ownHit); }}>{t("pos.ownHitOpen", "افتحه")}</button>
                 )}
+              </div>
+            )}
+            {excelHit && (
+              <div className="mt-2 flex items-center gap-2 rounded-xl border border-danger-300 bg-danger-50 p-2.5 text-xs text-danger-700 dark:border-danger-500/40 dark:bg-danger-500/10 dark:text-danger-300" data-excelhit={excelHit}>
+                <span className="flex-1">{t("pos.excelCodeInline", "شكل إكسل مشوّه — رجّع العمود إلى «نص» بإكسل وأعد اللصق. الرقم الأصلي ما ينسترجع من هذا الشكل.")}</span>
+              </div>
+            )}
+            {arabicCode && !excelHit && (
+              <div className="mt-2 flex items-center gap-2 rounded-xl border border-warn-300 bg-warn-50 p-2.5 text-xs text-warn-700 dark:border-warn-500/40 dark:bg-warn-500/10 dark:text-warn-300" data-arabiccode="1">
+                <span className="flex-1">{t("pos.arabicCode", "الباركود فيه أحرف عربية — الغالب الكيبورد كان عربياً وقت المسح. بدّل اللغة وأعد المسح.")}</span>
               </div>
             )}
             {nearHit && (

@@ -12,7 +12,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Modal } from "@/components/Modal";
 import { Combobox } from "@/components/Combobox";
 import { Button, Badge, useToast, Skeleton } from "@/components/ui";
-import { cn, money, formatDate, localISO, normalizeAr } from "@/lib/utils";
+import { cn, money, formatDate, localISO, normalizeAr, normalizeCode } from "@/lib/utils";
 import { withTimeout, describeDbError } from "@/lib/errors";
 import { codeIndex } from "@/lib/productCodes";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
@@ -656,7 +656,9 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
       createdCompany = co.created;
       const draft: PurchaseDraftLine[] = validLines.map((l) => ({
         product_id: l.product_id,
-        barcode: l.barcode.trim() || null,
+        // مطبَّعاً كما يحفظ createProduct (G12): المطابقةُ الخادمية تطبّع
+        // أصلاً، وهذا يصلح **المخزون** الجديد — القديمُ لا يُلمس.
+        barcode: normalizeCode(l.barcode) || null,
         name: l.name.trim() || l.barcode.trim(),
         section_id: l.section_id || null,
         category: (l.category || null) as ProductCategory | null,

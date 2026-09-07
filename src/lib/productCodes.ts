@@ -13,6 +13,7 @@
  * ==========================================================================*/
 import type { Product } from "@/types";
 import { matchCode } from "./utils";
+import { layoutFix as _layoutFix } from "./arabicLayout";
 
 /**
  * هل هذا الرمز موجودٌ على منتجٍ بالمخزن؟ يفحص الرمزَ الأساسي والرموزَ الإضافية،
@@ -140,6 +141,28 @@ export function twinsByName(products: readonly Product[], p: Product, normalizeN
  * المسار الأصليّ، وكلُّ صيغةٍ فيه مفحوصةٌ باسمها.
  * ──────────────────────────────────────────────────────────────────────── */
 
+/* مسخُ تخطيط الكيبورد العربي (G7): الخريطةُ **بياناتٌ لا نصٌّ معروض** فتسكن
+ * ملفَّها وحدها (src/lib/arabicLayout.ts) — وتُعاد تصديرُها هنا فلا يتغيّر
+ * نداؤها. انظر ذلك الملفّ للحالة المقيسة بالإنتاج. */
+export { layoutFix, hasArabicLetters } from "./arabicLayout";
+
+/* ── أشكالُ إكسل: الرقمُ الطويل يُفسَد لحظةَ اللصق ─────────────────────────
+ * إكسل يعامل الباركودَ رقماً، فيحوّل ثلاثةَ عشرَ رقماً إلى `1.23457E+12` أو
+ * يذيّلها `.0`. واللصقُ يخزّن الفاسدَ، فلا تطابقه مسحةٌ حقيقية أبداً — «ضياعُ»
+ * الرمز لحظةَ الإدخال. والأصلُ **لا يُسترجع** من الصيغة العلمية (الأرقامُ
+ * الوسطى ذهبت)، فلا نُصلح — نرفض ونقول للطبيب ماذا يفعل بإكسل.
+ * ولا نلمس `normalizeCode`: قدسيةُ البيانات، والكشفُ شأنُ نقاط الإدخال. */
+export type ExcelArtifact = "sci" | "trailing-zero";
+
+/** نوعُ عطبِ إكسل بالرمز، أو null إن كان سليماً. */
+export function excelArtifact(code: string | null | undefined): ExcelArtifact | null {
+  const s = String(code ?? "").trim();
+  if (!s) return null;
+  if (/^\d+(\.\d+)?[Ee][+-]?\d+$/.test(s)) return "sci";
+  if (/^\d{6,}\.0+$/.test(s)) return "trailing-zero";
+  return null;
+}
+
 /** الصيغُ البديلة المعقولة لرمزٍ ممسوح، بلا الرمزِ نفسه. */
 export function scanVariants(code: string | null | undefined): string[] {
   const raw = matchCode(code);
@@ -155,7 +178,12 @@ export function scanVariants(code: string | null | undefined): string[] {
     if (d.length === 12) out.add("0" + d);                                   // UPC-A → EAN-13 مخزون بصفر
     if (d.length === 8 && d.startsWith("0")) out.add(d.slice(1));           // EAN-8 بصفر
   }
+  // مسخُ تخطيطٍ عربيّ (G7): نجرّب النصَّ بعد عكسه. ويمرّ من قناة النجدة نفسها،
+  // فمطابقةٌ واحدةٌ أو لا شيء — ولا تخمينَ عند التعدّد.
+  const fixed = matchCode(_layoutFix(raw));
+  if (fixed) out.add(fixed);
   out.delete(raw);
+  out.delete("");
   return [...out];
 }
 

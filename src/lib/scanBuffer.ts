@@ -35,8 +35,9 @@ export interface ScanOptions {
 
 export interface ScanAssembler {
   /**
-   * تُغذَّى بكل ضغطة مع زمن وقوعها. ترجع الرمزَ عند Enter إن كانت الدفعةُ دفعةَ
-   * ماسح، وإلا `null`. المفاتيحُ غير المطبوعة (Shift، Tab…) تُهمَل.
+   * تُغذَّى بكل ضغطة مع زمن وقوعها. ترجع الرمزَ عند Enter **أو Tab** إن كانت
+   * الدفعةُ دفعةَ ماسح، وإلا `null`. وTab من إنسانٍ يتنقّل بين الحقول لا يصحّ
+   * دفعةً (فجواتُه بطيئة) فيمرّ كما كان. وبقيةُ المفاتيح غير المطبوعة تُهمَل.
    */
   feed(key: string, at: number): string | null;
   reset(): void;
@@ -53,11 +54,9 @@ export function createScanAssembler(opts: ScanOptions = {}): ScanAssembler {
     feed(key, at) {
       const gap = at - last;
       last = at;
-      if (key === "Enter") {
+      if (key === "Enter" || key === "Tab") {
         const code = buf.trim();
         const g = gaps;
-        reset();
-        if (code.length < minLength) return null;
         // نصفُ الفجوات بسرعة الآلة = دفعةُ ماسح (لرمزٍ بطول باركود). الإنسانُ لا
         // يكتب ستَّ فجواتٍ من اثنتَي عشرة دون ستّين ملّي ثانية — والنصفُ المتبقّي
         // يحتمل توقّفَ متصفّحٍ بطيء عن المعالجة وهو يرسم. مقيسٌ بضغطٍ على ٣٠٠٠
@@ -66,7 +65,18 @@ export function createScanAssembler(opts: ScanOptions = {}): ScanAssembler {
         // ضغطتين سريعتين من إنسانٍ تكفيان لتشبه دفعةً.
         const slow = g.filter((x) => x > interKeyMs).length;
         const tolerated = Math.floor(g.length / (code.length >= 8 ? 2 : 4));
-        return slow <= tolerated ? code : null;
+        const isScan = code.length >= minLength && slow <= tolerated;
+
+        // Enter مُنهٍ دائماً: يُفرغ المجمَّع سواء صحّت الدفعةُ أم لا.
+        if (key === "Enter") { reset(); return isScan ? code : null; }
+
+        // وTab مُنهٍ **للماسح وحده**. ماسحاتٌ كثيرة تُضبط من المصنع على Tab بدل
+        // Enter، وكان النظامُ يهملها كمفتاحٍ غير مطبوع — فلا تعمل مسحةٌ واحدة
+        // بتلك العيادة أبداً، وحدٌّ صامتٌ يمنع كلَّ باركوداتها.
+        // أما كتابةُ إنسانٍ ثم Tab للتنقّل بين الحقول فتبقى كما كانت حرفاً بحرف:
+        // فجواتُه بطيئة فلا تصحّ الدفعة، ولا نُفرغ المجمَّع، ولا نمنع التنقّل.
+        if (isScan) { reset(); return code; }
+        return null;
       }
       if (key.length !== 1) return null;
       if (gap > pauseMs) reset();

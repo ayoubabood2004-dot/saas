@@ -121,5 +121,25 @@ check("أرقامٌ عربية تُطبَّع قبل المطابقة", matchTru
 check("حروفٌ لا تُطابَق", matchTruncatedCode(inv, "abcdefghijk") === undefined);
 check("فارغٌ لا يُطابَق", matchTruncatedCode(inv, "") === undefined && matchTruncatedCode(inv, null) === undefined);
 
+
+/* ── G6: ماسحاتٌ فاصلُها Tab ──────────────────────────────────────────────
+ * ماسحاتٌ كثيرة تُضبط من المصنع على Tab بدل Enter، وكان المجمِّعُ يهملها
+ * كمفتاحٍ غير مطبوع — فلا تعمل مسحةٌ واحدة بتلك العيادة أبداً. وTab من إنسانٍ
+ * يتنقّل بين الحقول يبقى تنقّلاً: فجواتُه بطيئة فلا تصحّ دفعةً. */
+{
+  const runKeys = (text, gapMs, endKey) => {
+    const asm = createScanAssembler({});
+    let t = 1000;
+    for (const ch of text) { asm.feed(ch, t); t += gapMs; }
+    return asm.feed(endKey, t);
+  };
+  check("دفعةُ ماسحٍ + Tab تصل كاملة", runKeys("8680542871133", 15, "Tab") === "8680542871133");
+  check("  ومثلُها + Enter (بلا تغيير)", runKeys("8680542871133", 15, "Enter") === "8680542871133");
+  check("كتابةُ إنسانٍ + Tab لا تُلتقط (تنقّلٌ لا مسحة)", runKeys("abc", 300, "Tab") === null);
+  check("  ومثلُها + Enter", runKeys("abc", 300, "Enter") === null);
+  check("ورمزٌ أقصرُ من الحدّ + Tab لا يُلتقط", runKeys("ab", 15, "Tab") === null);
+  check("ودفعةٌ آلية قصيرة (رقمُ رفّ) + Tab تصل", runKeys("247", 15, "Tab") === "247");
+}
+
 console.log(`\n${fails ? "✗" : "✓"} scan-test: ${passes} نجحت، ${fails} فشلت`);
 process.exit(fails ? 1 : 0);

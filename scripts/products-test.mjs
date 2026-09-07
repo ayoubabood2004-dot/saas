@@ -38,7 +38,7 @@ const built = await esbuild.build({
   platform: "neutral", plugins: [stubs],
   alias: { "@/lib/utils": "./src/lib/utils.ts" },
 });
-const { findByCode, looksLikeShelfCode, twinsByName, nearCodeTwin, scanVariants, rescueScan, codeIndex } = await import(
+const { findByCode, looksLikeShelfCode, twinsByName, nearCodeTwin, scanVariants, rescueScan, codeIndex, layoutFix, excelArtifact, hasArabicLetters } = await import(
   "data:text/javascript;base64," + Buffer.from(built.outputFiles[0].text).toString("base64")
 );
 
@@ -157,6 +157,39 @@ console.log("▸ codeIndex — الشراءُ يلقى ما يلقاه الكا�
   const older = P("t3", "أقدم", "888", { created_at: "2026-01-01" });
   const newer = P("t4", "أحدث", "888", { created_at: "2026-05-01" });
   check("  وعند التعادل الأقدم", codeIndex([newer, older]).get("888")?.id === "t3");
+}
+
+{
+  // ── G7: مسخُ تخطيط الكيبورد العربي ──
+  // الحالةُ الحقيقية بالإنتاج: باركودٌ كلُّه حروفٌ عربية. بعكس التخطيط يقرأ
+  // رابطاً — أي أنه رمزُ QR مُسح والكيبوردُ عربي، ولم يكن باركوداً قطّ.
+  const mangled = "اففحس:ظظشلاهقخسفثزؤخةظمهىنس";
+  check("الرمزُ الممسوخ يرجع لاتينياً مفهوماً", layoutFix(mangled) === "https://abiroste.com/links");
+  check("  ويُعرف أن فيه عربية", hasArabicLetters(mangled) === true);
+  check("ولاتينيٌّ سليم لا يُمسّ", layoutFix("ABC123") === "");
+  check("ورقمٌ خالص لا يُمسّ", layoutFix("8680542871133") === "");
+  check("و«لا» محرفان من مفتاحٍ واحد (b) لا حرفان", layoutFix("لا") === "b");
+  check("والأرقامُ العربية ليست حروفاً (تصلحها normalizeDigits)", hasArabicLetters("٨٦٨٠") === false);
+
+  check("scanVariants تعرض الصيغةَ المصحّحة", scanVariants(mangled).includes("https://abiroste.com/links"));
+
+  const one = P("m1", "مادّة", "https://abiroste.com/links");
+  check("الممسوخُ يلقى صاحبَه الوحيد", rescueScan([one], mangled)?.product.id === "m1");
+  const twoA = P("m2", "أ", "https://abiroste.com/links");
+  const twoB = P("m3", "ب", null, { alt_codes: ["https://abiroste.com/links"] });
+  check("  وعند التعدّد لا شيء", rescueScan([twoA, twoB], mangled) === undefined);
+}
+{
+  // ── G8: أشكالُ إكسل — تُكشف لتُرفض، ولا تُصلَح (الأصلُ ضاع) ──
+  check("صيغةٌ علمية تُكشف", excelArtifact("1.23457E+12") === "sci");
+  check("  وبحرفٍ صغير كذلك", excelArtifact("1.23457e+12") === "sci");
+  check("  وبأسٍّ سالب", excelArtifact("1.2E-5") === "sci");
+  check("ذيلُ .0 على رقمٍ طويل يُكشف", excelArtifact("8681234567890.0") === "trailing-zero");
+  check("  و.00 كذلك", excelArtifact("8681234567890.00") === "trailing-zero");
+  check("وباركودٌ سليم لا يُكشف", excelArtifact("8680542871133") === null);
+  check("ورقمُ رفٍّ قصير لا يُكشف", excelArtifact("247") === null);
+  check("وسعرٌ بفاصلة ليس شكلَ إكسل (٥ خانات فأقلّ)", excelArtifact("1250.0") === null);
+  check("والفارغُ لا يُكشف", excelArtifact("") === null && excelArtifact(null) === null);
 }
 
 console.log(`\n${fails ? "✗" : "✓"} products-test: ${passes} نجحت، ${fails} فشلت`);
