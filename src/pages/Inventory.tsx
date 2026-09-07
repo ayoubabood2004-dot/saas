@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { motion } from "framer-motion";
 import { getCached, setCached } from "@/lib/swrCache";
-import { findByCode, looksLikeShelfCode, twinsByName, nearCodeTwin, excelArtifact, hasArabicLetters, codeMatcher } from "@/lib/productCodes";
+import { findByCode, looksLikeShelfCode, twinsByName, nearCodeTwin, excelArtifact, hasArabicLetters, looksLayoutMangled, codeMatcher } from "@/lib/productCodes";
 import { Dialog } from "@/components/ui/Dialog";
 import {
   Barcode, Package, Trash2, Search, Building2, Plus, ChevronLeft, ArrowRight, ArrowLeft,
@@ -878,6 +878,24 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
 
   const saveBulk = async () => {
     if (!validRows.length || busy) return;
+    // شكلُ إكسل يُردّ قبل الحفظ (G8) — والصفوفُ الجماعية هي **مسارُ اللصق من
+    // إكسل** بعينه الذي كُتب له الحارس: العيادةُ تجهّز جردَها بجدول وتلصقه هنا.
+    // والأصلُ لا يُسترجع من الصيغة العلمية، فلا نحفظ ونصلح لاحقاً.
+    const excelRow = validRows.find((r) => excelArtifact(r.barcode));
+    if (excelRow) {
+      toast.error(t("pos.excelCode", "هذا شكل إكسل مشوّه — الرقم الأصلي ضاع"),
+        t("pos.excelCodeRow", "الرمز {{code}} — رجّع عمود الباركود إلى «نص» بإكسل وأعد اللصق.", { code: excelRow.barcode }));
+      return;
+    }
+    // ومسحةٌ بكيبوردٍ عربيّ تُقال ولا تمنع (G7).
+    const mangledRow = validRows.find((r) => looksLayoutMangled(r.barcode));
+    if (mangledRow) {
+      toast.toast({
+        tone: "warn",
+        title: t("pos.arabicCode", "الباركود فيه أحرف عربية — الغالب الكيبورد كان عربياً وقت المسح. بدّل اللغة وأعد المسح."),
+        description: t("pos.arabicCodeReads", "بالعكس يقرأ: {{fix}}", { fix: looksLayoutMangled(mangledRow.barcode) }),
+      });
+    }
     // Duplicate barcodes typed twice in the form — almost certainly a mistake.
     // والمقارنةُ **مطبَّعة** كمقارنة القاعدة (محفّز 0167): صفّان بـ`W90` و`w90`،
     // أو بـ`٢٤٧` و`247`، رمزٌ واحد. وبلا التطبيع يمرّان من هنا ويرفض الخادمُ

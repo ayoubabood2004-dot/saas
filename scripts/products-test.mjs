@@ -38,7 +38,7 @@ const built = await esbuild.build({
   platform: "neutral", plugins: [stubs],
   alias: { "@/lib/utils": "./src/lib/utils.ts" },
 });
-const { findByCode, looksLikeShelfCode, twinsByName, nearCodeTwin, scanVariants, rescueScan, codeIndex, layoutFix, excelArtifact, hasArabicLetters, codeMatcher } = await import(
+const { findByCode, looksLikeShelfCode, twinsByName, nearCodeTwin, scanVariants, rescueScan, codeIndex, layoutFix, excelArtifact, hasArabicLetters, looksLayoutMangled, codeMatcher } = await import(
   "data:text/javascript;base64," + Buffer.from(built.outputFiles[0].text).toString("base64")
 );
 
@@ -212,6 +212,27 @@ console.log("▸ codeIndex — الشراءُ يلقى ما يلقاه الكا�
 }
 
 {
+  // ── G7 بحقلٍ يقبل الاسمَ والرمز: مسحةٌ ممسوخة لا كلمةٌ عربية ──
+  // تحذيرٌ يظهر على كلّ اسمٍ عربيّ يُعلَّم الناسُ تجاهلَه — وحارسٌ يُتجاهَل
+  // أسوأ من لا حارس. فهذي الحالاتُ هي حدُّ التمييز نفسُه.
+  // النصُّ الممسوخُ يُنسخ بالحرف من الإنتاج، فلا نكتب قراءتَه بيدٍ ثانية:
+  // أوّلُ صياغةٍ لهذا الفحص نسخت الرمزَ بحرفٍ زائد فادّعت عطلاً لا وجودَ له.
+  // الادّعاءُ هنا: يُكشف، وقراءتُه هي قراءةُ `layoutFix` نفسِها، وهي رابط.
+  const prodCase = "اففحس:ظظلاشلاهقخسفثزؤخةظمهىنس";
+  const read = looksLayoutMangled(prodCase);
+  check("الحالةُ المقيسة بالإنتاج تُكشف", read !== "" && read === layoutFix(prodCase), JSON.stringify(read));
+  check("  وقراءتُها رابطٌ لا كلام", /^https:\/\/\S+\/links$/.test(read), read);
+  check("و«رويال» اسمٌ لا مسحة", looksLayoutMangled("رويال") === "");
+  check("و«أموكسيسيلين» كذلك", looksLayoutMangled("أموكسيسيلين") === "");
+  check("واسمٌ طويلٌ بلا مسافةٍ يُعكس حروفاً صرفة لا يُنذَر عليه", looksLayoutMangled("مستشفيات") === "");
+  check("وكلمتان بمسافةٍ ليستا مسحة", looksLayoutMangled("رويال كانين للقطط") === "");
+  check("والقصيرُ لا يُنذَر عليه", looksLayoutMangled("يليب") === "");
+  check("ولاتينيٌّ سليم لا يُمسّ", looksLayoutMangled("8680542871133") === "");
+  check("ورمزٌ ممسوخٌ فيه أرقام يُكشف", looksLayoutMangled("خ12ز34ظ56ن") === "o12.34/56k");
+  check("والفارغُ لا ينكسر", looksLayoutMangled("") === "" && looksLayoutMangled(null) === "");
+}
+
+{
   // ── حارسُ الرجوع: بحثٌ بالرمز الأساسيّ وحده ممنوعٌ بالشاشات ──
   // الرجوعُ هنا صامت: الشاشةُ تعمل وتبدو صحيحة، وتكذب فقط على المنتجات التي
   // رمزُها الأساسيّ رقمُ رفّ. فالفحصُ نصّيّ لأن لا سبيلَ أرخص لكشفه.
@@ -220,15 +241,53 @@ console.log("▸ codeIndex — الشراءُ يلقى ما يلقاه الكا�
     const p = `${dir}/${f}`;
     return statSync(p).isDirectory() ? walk(p) : (/\.tsx?$/.test(p) ? [p] : []);
   });
+  // والنمطُ يشمل الصيغةَ الخامّة كذلك: `(p.barcode ?? "").includes(q)`. الصيغةُ
+  // الأولى مسكت المطبَّعَ وحده — وأفلتت منها الشاشةُ السابعة (نافذةُ تعديل طلب
+  // التوصيل) لأنها لم تكن تطبّع أصلاً. حارسٌ يمسك النسخةَ المهذّبة من العطل
+  // ويترك النسخةَ الخام يعطي طمأنينةً كاذبة.
+  const PATTERNS = [
+    /(?:match|normalize)Code\((?:\w+\.)?barcode\)\s*\.includes\(/,   // مطبَّعٌ بطرفٍ واحد
+    /\(\s*\w+\.barcode\s*\?\?\s*""\s*\)\s*\.includes\(/,             // خامٌّ بالطرفين
+    /\w+\.barcode\s*\|\|\s*""\s*\)?\s*\)\.includes\(/,
+  ];
   const bad = [];
   for (const f of walk("src")) {
     if (f.endsWith("lib/productCodes.ts")) continue;              // مصدرُ الحقيقة نفسه
     const src = readFileSync(f, "utf8");
     for (const [i, line] of src.split("\n").entries()) {
-      if (/(?:match|normalize)Code\((?:\w+\.)?barcode\)\s*\.includes\(/.test(line)) bad.push(`${f}:${i + 1}`);
+      // سطرُ تعليقٍ يقتبس العطلَ ليشرحه ليس عطلاً — وإلا لمنع الحارسُ توثيقَ
+      // ما يحرسه، فيُكتب بلا شرحٍ أو يُسكَت الحارس.
+      const t = line.trim();
+      if (t.startsWith("//") || t.startsWith("*") || t.startsWith("/*")) continue;
+      if (PATTERNS.some((re) => re.test(line))) bad.push(`${f}:${i + 1}`);
     }
   }
   check("لا شاشةَ تبحث بالرمز الأساسيّ وحده — استعمل codeMatcher", bad.length === 0, bad.join("، "));
+
+  // ولا مُطبِّعَ رموزٍ مكتوبٍ بيدٍ داخل شاشةٍ تطابق الرموز. هذا العطلُ عاش
+  // بـPurchases.tsx حتى الدفعة ٦: مُطبِّعٌ محلّيّ يشيل الفراغاتِ والأرقامَ
+  // العربية وحدها، يسأل فهرساً مبنيّاً بـ`matchCode` — فيفشل بصمت. والقاعدةُ
+  // التي تمنع عودتَه: من يستورد `productCodes` يستعمل تطبيعَها لا تطبيعَه.
+  const handRolled = [];
+  for (const f of walk("src")) {
+    const src = readFileSync(f, "utf8");
+    if (!src.includes("lib/productCodes")) continue;
+    for (const [i, line] of src.split("\n").entries()) {
+      if (/\[٠-٩\]\/g/.test(line)) handRolled.push(`${f}:${i + 1}`);
+    }
+  }
+  check("  ولا مُطبِّعَ رموزٍ محلّيّ بشاشةٍ تطابق الرموز", handRolled.length === 0, handRolled.join("، "));
+  // والحارسُ نفسُه يُقاس: نمطٌ لا يمسك ما وُجد فعلاً حارسٌ صوريّ.
+  const SHOULD_CATCH = [
+    '|| (!!cq && normalizeCode(p.barcode).includes(cq))',
+    '|| matchCode(p.barcode).includes(cq)',
+    '|| (p.barcode ?? "").includes(q.trim())',
+    'normalizeAr(p.name).includes(s) || (p.barcode ?? "").includes(q)',
+  ];
+  const SHOULD_PASS = ['matchCode(p.barcode) === c', 'nset.has(matchCode(p.barcode))', 'byCode(p)'];
+  check("  والحارسُ يمسك كلَّ الصيغ التي وُجدت فعلاً",
+    SHOULD_CATCH.every((s) => PATTERNS.some((re) => re.test(s))));
+  check("  ولا يمسك السليم", SHOULD_PASS.every((s) => !PATTERNS.some((re) => re.test(s))));
 }
 
 console.log(`\n${fails ? "✗" : "✓"} products-test: ${passes} نجحت، ${fails} فشلت`);

@@ -171,7 +171,7 @@ export function twinsByName(products: readonly Product[], p: Product, normalizeN
 /* مسخُ تخطيط الكيبورد العربي (G7): الخريطةُ **بياناتٌ لا نصٌّ معروض** فتسكن
  * ملفَّها وحدها (src/lib/arabicLayout.ts) — وتُعاد تصديرُها هنا فلا يتغيّر
  * نداؤها. انظر ذلك الملفّ للحالة المقيسة بالإنتاج. */
-export { layoutFix, hasArabicLetters } from "./arabicLayout";
+export { layoutFix, hasArabicLetters, looksLayoutMangled } from "./arabicLayout";
 
 /* ── أشكالُ إكسل: الرقمُ الطويل يُفسَد لحظةَ اللصق ─────────────────────────
  * إكسل يعامل الباركودَ رقماً، فيحوّل ثلاثةَ عشرَ رقماً إلى `1.23457E+12` أو

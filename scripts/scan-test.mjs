@@ -10,6 +10,7 @@
  *   node scripts/scan-test.mjs
  * ==========================================================================*/
 import esbuild from "esbuild";
+import { readFileSync } from "node:fs";
 
 let fails = 0, passes = 0;
 const check = (name, cond, detail = "") => {
@@ -139,6 +140,22 @@ check("فارغٌ لا يُطابَق", matchTruncatedCode(inv, "") === undefine
   check("  ومثلُها + Enter", runKeys("abc", 300, "Enter") === null);
   check("ورمزٌ أقصرُ من الحدّ + Tab لا يُلتقط", runKeys("ab", 15, "Tab") === null);
   check("ودفعةٌ آلية قصيرة (رقمُ رفّ) + Tab تصل", runKeys("247", 15, "Tab") === "247");
+}
+
+/* ── G6 بمكانه الثاني: صندوقُ مسح المشتريات ────────────────────────────────
+ * المجمِّعُ يقبل Tab منذ الدفعة ٤، لكنه كان مركَّباً بشاشة البيع وحدها
+ * (`useBarcodeScanner` بـSaleBuilder). وصندوقُ مسح المشتريات حقلٌ بمعالجٍ
+ * خاصٍّ كان يعرف Enter فقط — فالعيادةُ ذاتُ ماسح Tab تبيع ولا تستلم بضاعة:
+ * كلُّ مسحةٍ بفاتورة الشراء تضيع بلا سطرٍ وبلا رسالة، وهو حدٌّ صامتٌ آخر.
+ * الفحصُ نصّيّ لأن الوصلَ وصلُ JSX لا منطقٌ يُستدعى — والمنطقُ نفسُه مفحوصٌ أعلاه. */
+{
+  const src = readFileSync("src/components/inventory/Purchases.tsx", "utf8");
+  check("صندوقُ الشراء يغذّي المجمِّعَ بزمن الحدث لا بساعة الحائط",
+    /scanAsm\.current\.feed\(e\.key,\s*e\.timeStamp\)/.test(src));
+  check("  ويضيف على Tab إن قال المجمِّعُ «مسحة»",
+    /e\.key === "Tab" && scanned/.test(src));
+  check("  ويبني مجمِّعَه من المصدر الواحد لا بقاعدةٍ جديدة",
+    src.includes('createScanAssembler') && src.includes('from "@/lib/scanBuffer"'));
 }
 
 console.log(`\n${fails ? "✗" : "✓"} scan-test: ${passes} نجحت، ${fails} فشلت`);
