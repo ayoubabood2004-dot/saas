@@ -102,6 +102,8 @@ const seed = (products) => {
 const seeded = async (n) => (await repo.listProducts()).length === n;
 
 const P = (id, name, barcode, extra = {}) => ({ id, name, barcode, stock: 1, ...extra });
+/** هل يحمل هذا المنتجُ الرمزَ (أساسيّاً أو إضافياً)؟ — للعدّ بالفحوص. */
+const matchAll = (p, code) => p.barcode === code || (p.alt_codes ?? []).includes(code);
 
 console.log("▸ barcodeHealth — مرآةُ verify_barcode_health (0168)");
 {
@@ -164,6 +166,69 @@ console.log("\n▸ recordPurchase — مرآةُ مطابقة 0166 (الأساس
   const list = await repo.listProducts();
   check("والأساسيُّ يغلب الإضافيَّ عند التزاحم", list.find((p) => p.id === "own")?.stock === 5,
     JSON.stringify(list.map((p) => [p.id, p.stock])));
+}
+
+console.log("\n▸ restoreProduct — مرآةُ 0165/0167 (الاستعادةُ لا تسرق رمزاً)");
+{
+  // منتجٌ قائمٌ أخذ الرمزَ أثناء غياب المحذوف: أساسيّاً عنده، وإضافيّاً عند آخر.
+  seed([
+    P("live", "القائم", "TAKEN-1", { alt_codes: ["TAKEN-2"] }),
+    P("free", "حرّ", "OTHER"),
+  ]);
+  const db = JSON.parse(mem.get(DB_KEY));
+  db.productsTrash = [{
+    id: "old", clinic_id: null, sold_qty: 0, stock: 0, reason: null, deleted_by: null,
+    deleted_at: "2026-01-01T00:00:00.000Z", invoice_item_ids: [], purchase_item_ids: [],
+    row: { id: "old", name: "المستعاد", barcode: "TAKEN-1", stock: 0, alt_codes: ["TAKEN-2", "MINE-9"] },
+  }];
+  mem.set(DB_KEY, JSON.stringify(db));
+  const back = await repo.restoreProduct("old");
+  check("الباركودُ المأخوذ لا يُعاد", back.barcode === null, JSON.stringify(back.barcode));
+  check("والرمزُ الإضافيُّ الذي صار لغيره لا يُعاد", !(back.alt_codes ?? []).includes("TAKEN-2"));
+  check("  ورمزُه الذي ما زال حرّاً يبقى", (back.alt_codes ?? []).includes("MINE-9"), JSON.stringify(back.alt_codes));
+  check("ولا يُخلق توأمٌ بالمخزن", (await repo.listProducts()).filter((p) => matchAll(p, "TAKEN-1")).length === 1);
+}
+{
+  // والمقارنةُ مطبَّعة: رمزٌ يفرق بحالةِ حرفٍ أو بعلامةِ اتجاهٍ رمزٌ واحد.
+  seed([P("live", "القائم", "hb-500")]);
+  const db = JSON.parse(mem.get(DB_KEY));
+  db.productsTrash = [{
+    id: "old", clinic_id: null, sold_qty: 0, stock: 0, reason: null, deleted_by: null,
+    deleted_at: "2026-01-01T00:00:00.000Z", invoice_item_ids: [], purchase_item_ids: [],
+    row: { id: "old", name: "المستعاد", barcode: "HB-500", stock: 0, alt_codes: [] },
+  }];
+  mem.set(DB_KEY, JSON.stringify(db));
+  const back = await repo.restoreProduct("old");
+  check("مقارنةٌ مطبَّعة لا خامّة (HB-500 ↔ hb-500)", back.barcode === null, JSON.stringify(back.barcode));
+}
+
+console.log("\n▸ getProductByBarcode — حتميةُ الاستدعاء (مرآةُ ترتيب 0165)");
+{
+  const owner = P("owner", "صاحبُ الرمز", "9990001", { created_at: "2026-05-01" });
+  const borrower = P("borrower", "المستعير", "ZZZ", { alt_codes: ["9990001"], created_at: "2026-01-01" });
+  seed([borrower, owner]);                       // المستعيرُ أوّلاً بالترتيب
+  check("الأساسيُّ يغلب الإضافيَّ مهما كان ترتيبُ التحميل",
+    (await repo.getProductByBarcode("9990001"))?.id === "owner");
+  seed([owner, borrower]);
+  check("  ومقلوباً كذلك", (await repo.getProductByBarcode("9990001"))?.id === "owner");
+  const older = P("older", "الأقدم", "777", { created_at: "2026-01-01" });
+  const newer = P("newer", "الأحدث", "777", { created_at: "2026-05-01" });
+  seed([newer, older]);
+  check("وعند التعادل: الأقدم", (await repo.getProductByBarcode("777"))?.id === "older");
+}
+
+console.log("\n▸ tidyInventory — صورةٌ قبل الطيّ (مرآةُ محفّز 0146)");
+{
+  seed([
+    P("keeper", "دواء", "K-1", { section_id: "sec1", stock: 5 }),
+    P("dup", "دواء", null, { stock: 3 }),
+  ]);
+  const r = await repo.tidyInventory();
+  check("التوأمُ يُطوى", r.merged === 1, JSON.stringify(r));
+  check("  والرصيدُ يُجمع", (await repo.listProducts()).find((p) => p.id === "keeper")?.stock === 8);
+  const trash = await repo.listDeletedProducts();
+  check("والمطويُّ يدخل المحذوفات لا يختفي", trash.length === 1 && trash[0].id === "dup", JSON.stringify(trash.map((x) => x.id)));
+  check("  ومعه مرجعُ الدمج ليُفكّ", trash[0]?.merged_into === "keeper");
 }
 
 console.log(`\n${fails ? "✗" : "✓"} repo-demo-test: ${passes} نجحت، ${fails} فشلت`);

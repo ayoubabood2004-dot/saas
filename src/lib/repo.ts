@@ -31,6 +31,29 @@ const pickByPurchaseCode = <T extends { id: string; barcode?: string | null; alt
       || Number(b.section_id != null) - Number(a.section_id != null)
       || (a.created_at ?? "").localeCompare(b.created_at ?? ""))[0]?.id ?? null;
 };
+/**
+ * صورةُ صفٍّ يخرج من `products` — مرآةُ محفّز 0146: **أيُّ** صفٍّ يخرج بأيّ
+ * طريقٍ يُصوَّر، حذفاً كان أو دمجاً أو ترتيباً. وكان بالنسخة التجريبية ناسخان
+ * متطابقان تقريباً (الحذف والدمج) وطريقٌ ثالثٌ بلا صورةٍ أصلاً («رتّبِ المخزن»)
+ * — فما تطويه ثمّ يختفي بلا رجعة، بينما السحابةُ تحفظه ويُفكّ من المحذوفات.
+ * ونسخةٌ ثالثةٌ كانت ستصير رابعة، فصار للصورة موضعٌ واحد.
+ */
+function trashProduct(db: DemoDB, row: Product, extra: { reason?: string | null; merged_into?: string } = {}): void {
+  if (!db.productsTrash) db.productsTrash = [];
+  db.productsTrash = db.productsTrash.filter((t) => t.id !== row.id);
+  db.productsTrash.push({
+    id: row.id, clinic_id: null, row: { ...row },
+    invoice_item_ids: (db.invoiceItems ?? []).filter((i) => i.product_id === row.id).map((i) => i.id),
+    purchase_item_ids: (db.purchaseItems ?? []).filter((i) => i.product_id === row.id).map((i) => i.id),
+    sold_qty: (db.invoiceItems ?? []).filter((i) => i.product_id === row.id && i.qty > 0).reduce((n, i) => n + i.qty, 0),
+    stock: row.stock || 0,
+    reason: extra.reason?.trim() || null,
+    deleted_by: null,
+    deleted_at: new Date().toISOString(),
+    ...(extra.merged_into ? { merged_into: extra.merged_into } : {}),
+  });
+}
+
 const invNormName = (v: string | null | undefined): string =>
   (v ?? "")
     // أ/إ/آ→ا · ة→ه · ى→ي — بمهارب يونيكود: بنيةُ مطابقةٍ لا نصٌّ معروض.
@@ -1204,9 +1227,21 @@ const demoRepo = {
     if (!code) return undefined;
     // الرمزُ الأساسي أو أيُّ رمزٍ إضافي — ونطبّع المخزون أيضاً، فصفٌّ قديم
     // فيه محرفٌ غير مرئيّ يبقى قابلاً للمسح.
-    return (loadDB().products ?? []).find(
+    const hits = (loadDB().products ?? []).filter(
       (p) => matchCode(p.barcode) === code || (p.alt_codes ?? []).some((c) => matchCode(c) === code),
     );
+    /* مرآةُ ترتيب `product_by_code` (0165) — و`find` على ترتيب المصفوفة كانت
+     * تخالفه: تختار حاملَ الرمز **الإضافيّ** حيث يختار الخادمُ صاحبَه الأصيل.
+     * والترتيبُ ثلاثيّ: مطابقةٌ خامّةٌ للأساسيّ أوّلاً (رمزٌ مخزونٌ كما وصل)،
+     * ثم مطابقةٌ مطبَّعةٌ للأساسيّ، ثم الأقدم. حتميةُ الاختيار ثابتٌ لا تحسين:
+     * نفسُ المسحة تبيع نفسَ المنتج مهما تبدّل ترتيبُ التحميل. */
+    hits.sort((a, b) =>
+      Number(b.barcode === barcode) - Number(a.barcode === barcode)
+      || Number(matchCode(b.barcode) === code) - Number(matchCode(a.barcode) === code)
+      || (a.created_at ?? "").localeCompare(b.created_at ?? ""));
+    // وصفّان = رمزٌ ملتبس: يُقال بصوتٍ كما بالسحابة، لا يُبلَع.
+    if (hits.length > 1) sayAmbiguousCode(code, hits.length);
+    return hits[0];
   },
   /** يربط رمزاً بمنتجٍ قائم بدل إنشاء منتجٍ جديد — نظير attach_product_code. */
   async attachProductCode(productId: string, code: string): Promise<Product> {
@@ -1256,15 +1291,7 @@ const demoRepo = {
     const db = loadDB();
     const p = (db.products ?? []).find((x) => x.id === id);
     if (!p) throw new Error("product not found");
-    if (!db.productsTrash) db.productsTrash = [];
-    const sold = (db.invoiceItems ?? []).filter((i) => i.product_id === id && i.qty > 0).reduce((n, i) => n + i.qty, 0);
-    db.productsTrash = db.productsTrash.filter((t) => t.id !== id);
-    db.productsTrash.push({
-      id, clinic_id: null, row: { ...p }, sold_qty: sold, stock: p.stock || 0,
-      invoice_item_ids: (db.invoiceItems ?? []).filter((i) => i.product_id === id).map((i) => i.id),
-      purchase_item_ids: (db.purchaseItems ?? []).filter((i) => i.product_id === id).map((i) => i.id),
-      reason: reason?.trim() || null, deleted_by: null, deleted_at: new Date().toISOString(),
-    });
+    trashProduct(db, p, { reason });
     // السطور تفقد صنفها كما بالخادم (set null) — والاسترجاع يعيده.
     for (const i of db.invoiceItems ?? []) if (i.product_id === id) i.product_id = null;
     for (const i of db.purchaseItems ?? []) if (i.product_id === id) i.product_id = null;
@@ -1291,8 +1318,24 @@ const demoRepo = {
       const drop = new Set([row.barcode, ...(row.alt_codes ?? [])].filter(Boolean));
       keep.alt_codes = (keep.alt_codes ?? []).filter((c) => !drop.has(c));
     }
-    // الباركود يبقى فريداً: لو أُعيد إدخاله أثناء الغياب نستعيد بلا باركود.
-    if (row.barcode && (db.products ?? []).some((x) => x.barcode === row.barcode)) row.barcode = null;
+    /* مرآةُ 0165 و0167 — والانحرافُ هنا كان يصنع بالضبط ما تمنعه القاعدة:
+     *  ١) الرموزُ الإضافية التي **صارت لغيره** أثناء غيابه لا تُعاد. الصفُّ
+     *     المحفوظ بالسلّة صورةٌ من يومها، وقد يكون رمزٌ منها انتقل لمنتجٍ آخر
+     *     (بدمجٍ أو بإدخالٍ جديد) — فإعادتُه حرفياً **سرقةُ رمز**، ويصير رمزٌ
+     *     واحدٌ على منتجَين.
+     *  ٢) والمقارنةُ مطبَّعةٌ على الطرفين وتقرأ رموزَ الغير الإضافية كذلك، لا
+     *     `x.barcode === row.barcode` الخامّة: رمزٌ يفرق بعلامةِ اتجاهٍ خفية أو
+     *     بحالة حرفٍ كان يمرّ من هنا ويرفضه محفّزُ 0167 بالسحابة. */
+    const takenBy = (code: string | null | undefined): boolean => {
+      const c = matchCode(code);
+      if (!c) return false;
+      return (db.products ?? []).some((o) =>
+        o.id !== id && (matchCode(o.barcode) === c || (o.alt_codes ?? []).some((x) => matchCode(x) === c)));
+    };
+    const droppedAlts = (row.alt_codes ?? []).filter((c) => takenBy(c));
+    if (droppedAlts.length) row.alt_codes = (row.alt_codes ?? []).filter((c) => !takenBy(c));
+    const droppedBarcode = !!row.barcode && takenBy(row.barcode);
+    if (droppedBarcode) row.barcode = null;
     if (!db.products) db.products = [];
     db.products.push(row);
     // السطور التي كانت له ترجع إليه بمعرّفاتها كما بالخادم (بلا صنف، أو على الأصل المدموج فيه).
@@ -1314,15 +1357,7 @@ const demoRepo = {
     if (!drop) throw new Error("product to drop not found");
     if (keep.pooled || drop.pooled) throw new Error("pooled products cannot be merged");
     // الصورةُ قبل الطيّ (0146): الاسترجاع يفكّ الدمج.
-    if (!db.productsTrash) db.productsTrash = [];
-    db.productsTrash = db.productsTrash.filter((t) => t.id !== dropId);
-    db.productsTrash.push({
-      id: dropId, clinic_id: null, row: { ...drop },
-      invoice_item_ids: (db.invoiceItems ?? []).filter((i) => i.product_id === dropId).map((i) => i.id),
-      purchase_item_ids: (db.purchaseItems ?? []).filter((i) => i.product_id === dropId).map((i) => i.id),
-      sold_qty: (db.invoiceItems ?? []).filter((i) => i.product_id === dropId && i.qty > 0).reduce((n, i) => n + i.qty, 0),
-      stock: drop.stock || 0, reason: null, deleted_by: null, deleted_at: new Date().toISOString(), merged_into: keepId,
-    });
+    trashProduct(db, drop, { merged_into: keepId });
     const codes = new Set(keep.alt_codes ?? []);
     if (drop.barcode && drop.barcode !== keep.barcode) codes.add(drop.barcode);
     for (const c of drop.alt_codes ?? []) if (c && c !== keep.barcode) codes.add(c);
@@ -2073,11 +2108,17 @@ const demoRepo = {
               && invNormName(p.name) === name)
           : undefined);
       if (!target) { kept++; continue; }
+      // صورةُ الطيّ قبل الحذف (0146): «رتّبِ المخزن» طريقٌ ثالثٌ يخرج به صفٌّ
+      // من `products`، وكان يخرج هنا **بلا صورة** — فيختفي بلا رجعة بينما
+      // السحابةُ تحفظه ويُفكّ من تبويب المحذوفات.
+      trashProduct(db, dup, { merged_into: target.id });
       target.stock = Math.max(0, (target.stock || 0) + Math.max(0, dup.stock || 0));
       if (!target.barcode && dup.barcode) target.barcode = dup.barcode;
       if (!target.expiry_date && dup.expiry_date) target.expiry_date = dup.expiry_date;
       for (const it of items) if (it.product_id === dup.id) it.product_id = target.id;
       for (const it of inv) if ((it as { product_id?: string | null }).product_id === dup.id) (it as { product_id?: string | null }).product_id = target.id;
+      // والباركوداتُ المولَّدة تتبع الأصل كما بالدمج، لا تبقى معلّقةً على صفٍّ محذوف.
+      for (const g of db.generatedBarcodes ?? []) if (g.product_id === dup.id) g.product_id = target.id;
       db.products = db.products.filter((p) => p.id !== dup.id);
       merged++;
     }

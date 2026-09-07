@@ -998,11 +998,15 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
         setRows([...rows.filter((_, i) => failedIdx.includes(i)), { ...blankRow }]);
         if (done === 0) await rollbackGrouping(createdCompany, createdSection);
         playWarning();
+        /* الفشلُ الجزئيّ كان يُسقط **سببَ** الفشل: العنوانُ يقول «أُضيف ٣ وفشل
+         * ٢» والوصفُ يعرض `e.message` اللاتينيّ الخام — بينما الفشلُ الكامل
+         * يعرض الجملةَ العربية. فالطبيبُ يرى صفَّين راجعَين ولا يعرف لماذا،
+         * والسببُ عندنا. صار العددُ عنواناً والسببُ وصفاً. */
         toast.error(
           done > 0
             ? t("pos.bulkPartial", { done, failed: failedIdx.length, defaultValue: "أُضيف {{done}} وفشل {{failed}} — الصفوف المتبقية جاهزة لإعادة المحاولة" })
             : describeDbError(lastErr, t),
-          lastErr instanceof Error ? lastErr.message : undefined,
+          done > 0 ? describeDbError(lastErr, t) : (lastErr instanceof Error ? lastErr.message : undefined),
         );
       }
     } catch (e) {
@@ -2237,9 +2241,12 @@ function AssignProductsModal({ open, company, companies, sections, products, def
     setBusy(true);
     let done = 0;
     let failed = 0;
+    // كائنُ الخطأ كان لا يُلتقط أصلاً (`catch { failed++ }`)، فتقول الشاشةُ
+    // «تعذّرت إضافة ٢ منتج» ولا سبيلَ لمعرفة لماذا — لا بالشاشة ولا بالكونسول.
+    let lastErr: unknown = null;
     for (const id of ids) {
       try { await repo.updateProduct(id, { company_id: company.id, section_id: target || null }); done++; }
-      catch { failed++; }
+      catch (e) { failed++; lastErr = e; }
     }
     setBusy(false);
     if (done > 0) {
@@ -2248,7 +2255,8 @@ function AssignProductsModal({ open, company, companies, sections, products, def
     }
     if (failed > 0) {
       playWarning();
-      toast.error(t("pos.assignFailed", { n: failed, defaultValue: "تعذّرت إضافة {{n}} منتج" }));
+      toast.error(t("pos.assignFailed", { n: failed, defaultValue: "تعذّرت إضافة {{n}} منتج" }),
+        describeDbError(lastErr, t));
     }
     if (done > 0) onSaved(); // reloads + closes; keep open on total failure to retry
   };
@@ -2531,6 +2539,15 @@ function TrashTab({ onChanged }: { onChanged: () => void }) {
       // الباركود انشغل بمنتجٍ ثانٍ أثناء الغياب؟ رجع بلاه — وقُلها بصراحة.
       if (d.row.barcode && !p.barcode) {
         toast.warn(t("pos.restoredNoBarcode", "رجع بلا باركود — الباركود {{code}} صار على منتج ثاني. افتح التعديل واربطه أو ادمجهما.", { code: d.row.barcode }), p.name);
+      }
+      /* والرموزُ الإضافية كذلك: 0165 يُسقط منها ما صار لغيره — والواجهةُ كانت
+       * تسكت عنه تماماً. فيرجع المنتجُ ناقصَ رمزَين ولا يعرف صاحبُه، ثم تُمسح
+       * علبةٌ برمزٍ كان له فلا تُلقى: نفسُ دورة «اختفى» بابٍ آخر. والفرقُ الآن
+       * محسوبٌ من الصفّ الراجع نفسِه — المعلومةُ كانت متاحةً ومُهمَلة. */
+      const keptAlts = new Set((p.alt_codes ?? []).map((c) => matchCode(c)));
+      const lostAlts = (d.row.alt_codes ?? []).filter((c) => c && !keptAlts.has(matchCode(c)));
+      if (lostAlts.length) {
+        toast.warn(t("pos.restoredLostAlts", "رجع بلا {{n}} رمز إضافي — صارت لمنتجات ثانية: {{codes}}", { n: lostAlts.length, codes: lostAlts.join("، ") }), p.name);
       }
       await load();
       onChanged();

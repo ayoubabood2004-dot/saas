@@ -13,6 +13,7 @@ import { getClinicName } from "@/lib/settings";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button, Badge, useToast, Skeleton } from "@/components/ui";
 import { formatNum, formatDate, cn, matchCode } from "@/lib/utils";
+import { describeDbError } from "@/lib/errors";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
 
 /**
@@ -26,7 +27,12 @@ import { playTap, playSuccess, playWarning } from "@/lib/sounds";
  *  · السجل يحفظ كل كود: لأي شيء، منو ولّده، ومتى — مع طباعة ملصقات.
  */
 export function BarcodeStudio({ products, onChanged }: { products: Product[]; onChanged: () => void }) {
-  const { i18n } = useTranslation();
+  /* رسالةُ القاعدة العربية تصل هذه الشاشة ثم تُلقى: المصائدُ كانت تعرض
+   * `e.message` خامّاً، فيرى الطبيبُ «barcode_taken» بالحرف بدل «هذا الباركود
+   * مستعمل عند «كذا» — ادمج المنتجَين أو غيّر رمزَ أحدهما». والرسالةُ موجودةٌ
+   * بالـhint من محفّز 0167، و`describeDbError` تقرؤها — فالنقصُ كان ألّا
+   * تُستورَد أصلاً. ورسالةٌ تصل ولا تُعرض أسوأ من رسالةٍ لا تصل. */
+  const { t, i18n } = useTranslation();
   const lang = i18n.language;
   const { user } = useAuth();
   const toast = useToast();
@@ -94,7 +100,7 @@ export function BarcodeStudio({ products, onChanged }: { products: Product[]; on
       onChanged();
     } catch (e) {
       playWarning();
-      toast.error("تعذّر التوليد", e instanceof Error ? e.message : undefined);
+      toast.error(describeDbError(e, t), e instanceof Error ? e.message : undefined);
     } finally { setBusy(null); }
   };
 
@@ -115,7 +121,7 @@ export function BarcodeStudio({ products, onChanged }: { products: Product[]; on
       onChanged();
     } catch (e) {
       playWarning();
-      toast.error("تعذّر التوليد", e instanceof Error ? e.message : undefined);
+      toast.error(describeDbError(e, t), e instanceof Error ? e.message : undefined);
     } finally { setBusy(null); }
   };
 
@@ -137,7 +143,7 @@ export function BarcodeStudio({ products, onChanged }: { products: Product[]; on
       await load();
     } catch (e) {
       playWarning();
-      toast.error("تعذّر التوليد", e instanceof Error ? e.message : undefined);
+      toast.error(describeDbError(e, t), e instanceof Error ? e.message : undefined);
     } finally { setBusy(null); }
   };
 
@@ -382,23 +388,26 @@ function BarcodeHealthCard() {
   const { t } = useTranslation();
   const [rows, setRows] = useState<BarcodeHealthRow[] | null>(null);
   const [busy, setBusy] = useState(false);
-  const [failed, setFailed] = useState(false);
+  /** سببُ الفشل كما قالته القاعدة — لا مجرّد «فشل». */
+  const [failed, setFailed] = useState<string | null>(null);
   const [openKind, setOpenKind] = useState<BarcodeAilment | null>(null);
 
   const run = async () => {
     if (busy) return;
     playTap();
     setBusy(true);
-    setFailed(false);
+    setFailed(null);
     try {
       const r = await repo.barcodeHealth();
       setRows(r);
       if (r.length === 0) playSuccess();
-    } catch {
+    } catch (e) {
       // قائمةٌ ناقصةٌ عن خطأ أخطرُ من خطأٍ ظاهر: لا نعرض «كلُّ شيءٍ سليم» عن فشل.
+      // والسببُ يُعرض كما قالته القاعدة: «أعد المحاولة» عن دالّةٍ لم تنزل بعد
+      // دعوةٌ لتكرارٍ لن ينجح، والطبيبُ يعيد ويعيد ثم يظنّ الشاشةَ معطّلة.
       playWarning();
       setRows(null);
-      setFailed(true);
+      setFailed(describeDbError(e, t));
     } finally { setBusy(false); }
   };
 
@@ -434,7 +443,8 @@ function BarcodeHealthCard() {
 
       {failed && (
         <p className="rounded-lg bg-danger-50 px-2.5 py-2 text-2xs font-bold text-danger-700 dark:bg-danger-500/10 dark:text-danger-300">
-          {t("barcodeHealth.failed", "ما وصلت النتيجة — أعد المحاولة. (ما نعرض «سليم» عن فشل اتصال.)")}
+          {failed}
+          <span className="block font-normal opacity-80">{t("barcodeHealth.failed", "ما وصلت النتيجة — وما نعرض «سليم» عن فشل.")}</span>
         </p>
       )}
 
