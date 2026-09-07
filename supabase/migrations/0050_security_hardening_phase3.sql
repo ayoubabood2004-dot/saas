@@ -145,6 +145,10 @@ drop policy if exists staff_manager_write on staff;
 create policy staff_select on staff
   for select using (clinic_id = auth_clinic());
 
+drop policy if exists staff_manager_insert on staff;
+drop policy if exists staff_manager_update on staff;
+drop policy if exists staff_manager_delete on staff;
+
 create policy staff_manager_insert on staff
   for insert with check (clinic_id = auth_clinic() and auth_role_base() = 'manager');
 
