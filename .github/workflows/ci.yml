@@ -64,9 +64,20 @@ jobs:
           ls -d /usr/lib/postgresql/*/bin 2>/dev/null || echo "لا مجلّد postgresql"
           echo "::endgroup::"
           if [ -f /tmp/bundle.log ]; then
-            grep -F '✗' /tmp/bundle.log | head -40 | while IFS= read -r l; do echo "::error::$l"; done
-            echo "— آخرُ ما طبعته الحزمة —"
-            tail -25 /tmp/bundle.log | while IFS= read -r l; do echo "::notice::$l"; done
+            # السقفُ عشرةُ تعليقاتٍ لكلّ نوع بكلّ خطوة — فأوّلُ صياغةٍ ضاع فيها
+            # نصُّ الخطأ نفسُه تحت أسماء الهجرات التي تُطبع سطراً سطراً.
+            # فتُرشَّح أسماءُ الهجرات، ويُقدَّم سطرُ الخطأ ونصُّ الفحص الفاشل.
+            grep -E 'ERROR|FATAL|✗' /tmp/bundle.log | grep -vE '^ +0[0-9]{3}_' | head -8 \
+              | while IFS= read -r l; do echo "::error::$l"; done
+            tail -60 /tmp/bundle.log | grep -vE '^ +0[0-9]{3}_' | tail -8 \
+              | while IFS= read -r l; do echo "::notice::$l"; done
+            # وبملخّص التشغيلة الذيلُ كاملاً بلا سقف.
+            {
+              echo '## آخرُ ٦٠ سطراً من الحزمة'
+              echo '```'
+              tail -60 /tmp/bundle.log
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
           else
             echo "::error::الحزمةُ ما طبعت شيئاً — تعذّر تشغيلُها أصلاً"
             ls -d /usr/lib/postgresql/*/bin 2>/dev/null | while IFS= read -r l; do echo "::notice::موجود: $l"; done
