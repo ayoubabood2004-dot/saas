@@ -17,7 +17,7 @@
 // حسابٌ خالص: لا ترجمة، ولا تنسيقَ عملة، ولا JSX. تُفحَص دوالُّه بـnode مباشرةً
 // بلا متصفّح ولا React — وهذا شرطُ أن تُقاس فلساً بفلس مقابل `dueOf`.
 // ============================================================================
-import type { DeliveryOrder, Invoice, InvoiceItem } from "@/types";
+import type { Courier, DeliveryOrder, Invoice, InvoiceItem } from "@/types";
 import { dueOf, paidOf, round2 } from "./debt";
 
 /** فاتورةٌ بمعرّفها — الدالّاتُ هنا لا تعرف كيف تُجلب، تستلمها جاهزة. */
@@ -87,6 +87,51 @@ export function isOwed(o: DeliveryOrder, inv?: Invoice): boolean {
 export function stateOf(o: DeliveryOrder): LedgerState {
   if (o.status === "returned") return "returned";
   return o.collected_at ? "collected" : "owed";
+}
+
+/* ── القسمة على القسمين: الحاملُ يقرّر، لا الحالة ─────────────────────────────
+ *
+ * لوحةُ التوصيل قسمان — «توصيل بسائق» و«توصيل بشركة» — لأن المال يتصرّف
+ * بشكلين. لكن القسمةَ كانت تجري **بالحالة**: كلُّ ما لم يُسلَّم بعدُ يُعرض
+ * بقسم السواق، وقسمُ الشركات لا يعرض إلا المسلَّمَ غيرَ المحصَّل. فطلبٌ خرج
+ * مع شركة يقضي عمرَه كلَّه بقسم السواق، وبطاقةُ الشركة تقول «صفر» والبضاعةُ
+ * بيدها. قيست بالإنتاج: ١٢ طلبَ شركاتٍ، **عشرةٌ منها** بالطريق فلا أثرَ لها
+ * بقسم الشركات.
+ *
+ * القسمةُ هنا بالحامل، وهي **تامّة**: كلُّ طلبٍ بقسمٍ واحد ولا طلبَ يسقط —
+ * وذاك ما يثبّته الفحص. وطلبٌ بلا حاملٍ بعد (قيد التجهيز) يبقى مع السواق
+ * حيث يُسنَد، لا لأنه سائق بل لأنه لم يصر شيئاً بعد.
+ */
+export type CarrierScope = "drivers" | "companies";
+
+export function carrierScope(carrier?: Courier | null): CarrierScope {
+  return carrier?.kind === "company" ? "companies" : "drivers";
+}
+
+export function splitByCarrier(
+  orders: readonly DeliveryOrder[],
+  carrierOf: (id?: string | null) => Courier | null | undefined,
+): { drivers: DeliveryOrder[]; companies: DeliveryOrder[] } {
+  const drivers: DeliveryOrder[] = [], companies: DeliveryOrder[] = [];
+  for (const o of orders) {
+    if (carrierScope(carrierOf(o.courier_id)) === "companies") companies.push(o);
+    else drivers.push(o);
+  }
+  return { drivers, companies };
+}
+
+/** ما زال بالطريق مع الشركة: خرج ولم يصل الزبونَ بعد.
+ *
+ *  **ليس مطلوباً بعد** — `courier_settle` لا تمسّ إلا المسلَّم — فلا يُجمع مع
+ *  الذمّة برقمٍ واحد: رقمان بمعنيين، لا رقمٌ يخلط ما يُحصَّل بما لم يصل. */
+export function companyOnRoad(orders: readonly DeliveryOrder[], invoiceById: InvoiceLookup): { orders: number; amount: number } {
+  let n = 0, amount = 0;
+  for (const o of orders) {
+    if (o.status !== "out") continue;
+    n++;
+    amount += orderDue(o, invoiceById(o.invoice_id));
+  }
+  return { orders: n, amount: round2(amount) };
 }
 
 /** المطلوبُ من شركةٍ الآن وعددُ طلباته — المصدرُ الوحيد لهذا الرقم. */

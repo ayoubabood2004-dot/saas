@@ -4,7 +4,7 @@ import { motion } from "framer-motion";
 import {
   Search, HandCoins, User, Phone, CalendarClock, Coins, Users,
   Banknote, CreditCard, ArrowLeftRight, CheckCircle2, Wallet, ChevronLeft,
-  ArrowRight, Receipt, BookUser, ReceiptText,
+  ArrowRight, Receipt, BookUser, ReceiptText, Building2,
 } from "lucide-react";
 import type { Invoice, PaymentMethod, DeliveryOrder } from "@/types";
 import { repo } from "@/lib/repo";
@@ -68,7 +68,30 @@ export function DebtsPanel({ invoices, clinicId, onChanged, onOpenDelivery }: { 
     () => (deliveryOrders ?? []).filter((o) => o.status === "preparing" || o.status === "out"),
     [deliveryOrders],
   );
-  const activeDelivery = useMemo(() => new Set(activeDeliveryOrders.map((o) => o.invoice_id)), [activeDeliveryOrders]);
+  /* طلبٌ وصل الزبونَ ولم يُحصَّل بعد = **بذمّة شركة التوصيل** لا بذمّة الزبون.
+   * الزبونُ دفع عند الباب؛ الشركةُ تحاسب العيادةَ بعد أسبوعٍ أو شهر. وفاتورتُه
+   * تبقى غيرَ مسدَّدة عمداً (0148)، فكانت تهبط بدفتر ديون الزبائن باسم الزبون:
+   * مَدينٌ لا يَدين، ونفسُ المبلغ معدودٌ مرّتين — هنا وبـ«بذمّة الشركات».
+   * (السائقُ يختم collected_at لحظةَ التسليم، فلا يقع بهذا الشرط أصلاً.) */
+  const carrierOwedOrders = useMemo(
+    () => (deliveryOrders ?? []).filter((o) => o.status === "delivered" && !o.collected_at),
+    [deliveryOrders],
+  );
+  const activeDelivery = useMemo(
+    () => new Set([...activeDeliveryOrders, ...carrierOwedOrders].map((o) => o.invoice_id)),
+    [activeDeliveryOrders, carrierOwedOrders],
+  );
+  /** بذمّة شركات التوصيل — يُقال بسطرٍ خاصّ لئلا يختفي المبلغ بلا أثر. */
+  const carrierOwed = useMemo(() => {
+    const byId = new Map(invoices.map((i) => [i.id, i]));
+    let sum = 0;
+    for (const o of carrierOwedOrders) {
+      const inv = byId.get(o.invoice_id);
+      if (inv && inv.status === "refunded") continue;
+      sum = round2(sum + (inv ? dueOf(inv) : o.cod_amount));
+    }
+    return { total: sum, count: carrierOwedOrders.length };
+  }, [carrierOwedOrders, invoices]);
   // المال الآجل الراكب مع المندوب — يوصل كامل عند التسليم أو ترجع البضاعة.
   const pendingDelivery = useMemo(() => {
     const byId = new Map(invoices.map((i) => [i.id, i]));
@@ -154,10 +177,33 @@ export function DebtsPanel({ invoices, clinicId, onChanged, onOpenDelivery }: { 
               {t("retail.pendingDeliveryTitle", "مال آجل قيد التوصيل")} · <span className="tabular-nums">{money(pendingDelivery.total)}</span>
             </p>
             <p className="text-2xs leading-relaxed text-sky-700/80 dark:text-sky-300/80">
-              {t("retail.pendingDeliveryHint", { n: formatNum(pendingDelivery.count), defaultValue: "{{n}} طلب مع المندوب — هذا مو دين: يوصل المبلغ كاملاً عند التسليم أو ترجع البضاعة." })}
+              {/* «يوصل المبلغ عند التسليم» صحيحٌ بالسائق وحدَه — طلبُ الشركة
+                  يصير ذمّةً عليها لا نقداً بالصندوق. النصُّ يقول الاثنين. */}
+              {t("retail.pendingDeliveryHint", { n: formatNum(pendingDelivery.count), defaultValue: "{{n}} طلب بالطريق — هذا مو دين على الزبون: يوصل المبلغ عند التسليم (أو يصير بذمّة الشركة إذا الطلب مع شركة توصيل)، أو ترجع البضاعة." })}
             </p>
           </div>
           {onOpenDelivery && <span className="shrink-0 text-2xs font-bold text-sky-700 dark:text-sky-300">{t("retail.openDelivery", "فتح التوصيل ←")}</span>}
+        </button>
+      )}
+
+      {/* بذمّة شركات التوصيل — خرج من دفتر الزبائن، فيُقال هنا بصراحة */}
+      {carrierOwed.count > 0 && (
+        <button
+          type="button"
+          data-carrierowed
+          onClick={() => { playTap(); onOpenDelivery?.(); }}
+          className="flex w-full flex-wrap items-center gap-3 rounded-2xl border border-violet-200 bg-violet-50/70 p-3.5 text-start transition hover:border-violet-300 dark:border-violet-500/30 dark:bg-violet-500/10"
+        >
+          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-violet-100 text-violet-600 dark:bg-violet-500/20 dark:text-violet-300"><Building2 size={20} /></span>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-extrabold text-violet-800 dark:text-violet-200">
+              {t("retail.carrierOwedTitle", "بذمّة شركات التوصيل")} · <span className="tabular-nums">{money(carrierOwed.total)}</span>
+            </p>
+            <p className="text-2xs leading-relaxed text-violet-700/80 dark:text-violet-300/80">
+              {t("retail.carrierOwedHint", { n: formatNum(carrierOwed.count), defaultValue: "{{n}} طلب وصل الزبون والفلوس بذمّة الشركة — مو دين على الزبون. التحصيل من تبويب التوصيل." })}
+            </p>
+          </div>
+          {onOpenDelivery && <span className="shrink-0 text-2xs font-bold text-violet-700 dark:text-violet-300">{t("retail.openDelivery", "فتح التوصيل ←")}</span>}
         </button>
       )}
 

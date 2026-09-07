@@ -48,7 +48,8 @@ export function CourierSwapDialog({
   couriers: Courier[];
   current: Courier | null;
   onClose: () => void;
-  onSaved: () => void;
+  /** الحاملُ الجديد (أو null عند الإرجاع لقيد التجهيز) — اللوحةُ تتبع الطلب به. */
+  onSaved: (next: Courier | null) => void;
 }) {
   const { t } = useTranslation();
   const toast = useToast();
@@ -122,7 +123,7 @@ export function CourierSwapDialog({
       }
       if (opts.print) openDeliverySlip({ ...order, courier_id: next.id }, next, no);
 
-      onSaved();
+      onSaved(next);
       onClose();
     } catch (e) {
       playWarning();
@@ -140,7 +141,7 @@ export function CourierSwapDialog({
       void repo.logClientEvent("delivery.courierUnassign", { ref: no, from: current?.name ?? null, customer: order.customer_name ?? null });
       playSuccess();
       toast.success(t("retail.swapUndone", "رجع لقيد التجهيز — اختر السائق الصحيح وأرسله."));
-      onSaved();
+      onSaved(null);
       onClose();
     } catch (e) {
       playWarning();

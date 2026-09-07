@@ -31,7 +31,7 @@ const built = await esbuild.build({
   entryPoints: ["src/lib/courierLedger.ts"], bundle: true, format: "esm", write: false,
   platform: "neutral", plugins: [stubs],
 });
-const { companyOwed, courierTotals, itemsFromInvoices, isOwed, orderRows } = await import(
+const { companyOwed, companyOnRoad, carrierScope, splitByCarrier, courierTotals, itemsFromInvoices, isOwed, orderRows } = await import(
   "data:text/javascript;base64," + Buffer.from(built.outputFiles[0].text).toString("base64")
 );
 
@@ -79,6 +79,59 @@ const owed = companyOwed(orders, byId);
 check("المطلوب = 10000 (طلبٌ واحدٌ فقط يستحقّ)", owed.owed === 10000, `طلع ${owed.owed}`);
 check("وعددُ الطلبات بالذمّة = 1", owed.openOrders === 1, `طلع ${owed.openOrders}`);
 check("وقائمةٌ فارغة ترجع صفراً لا NaN", companyOwed([], byId).owed === 0);
+
+/* ── القسمةُ على قسمَي اللوحة: الحاملُ يقرّر لا الحالة ─────────────────────
+ * الشكوى: «نبيع بالشركة فما يصعد شيء للشركة ويصعد للسواق». السببُ أن اللوحة
+ * كانت تقسم بالحالة، فكلُّ ما لم يُسلَّم بعدُ يقع بقسم السواق مهما كان حاملُه.
+ * هنا نثبّت أن القسمة بالحامل، وأنها **تامّة**: لا طلبَ بقسمين ولا طلبَ يسقط. */
+console.log("▸ splitByCarrier — القسمةُ بالحامل، وتامّة");
+const DRV = { id: "c-drv", name: "سائق", kind: "driver" };
+const CMP = { id: "c-cmp", name: "شركة", kind: "company" };
+const LEGACY = { id: "c-old", name: "قديم" };           // قبل 0148: بلا kind
+const carriers = [DRV, CMP, LEGACY];
+const carrierOf = (id) => carriers.find((c) => c.id === id) ?? null;
+const board = [
+  ORD("b1", "i1", { courier_id: CMP.id, status: "out" }),         // ← الطلبُ الضائع
+  ORD("b2", "i1", { courier_id: CMP.id, status: "delivered" }),
+  ORD("b3", "i1", { courier_id: CMP.id, status: "returned" }),
+  ORD("b4", "i1", { courier_id: DRV.id, status: "out" }),
+  ORD("b5", "i1", { courier_id: LEGACY.id, status: "out" }),
+  ORD("b6", "i1", { courier_id: null, status: "preparing" }),
+];
+const split = splitByCarrier(board, carrierOf);
+const ids = (a) => a.map((o) => o.id).join(",");
+check("طلبُ شركةٍ **بالطريق** يقع بقسم الشركات (جذرُ الشكوى)",
+  split.companies.some((o) => o.id === "b1"), `الشركات=${ids(split.companies)}`);
+check("والمسلَّمُ والراجعُ معه — تاريخُ الشركة بقسمها",
+  ["b2", "b3"].every((id) => split.companies.some((o) => o.id === id)), `الشركات=${ids(split.companies)}`);
+check("ولا يظهر أيُّ طلبِ شركةٍ بقسم السواق",
+  !split.drivers.some((o) => o.courier_id === CMP.id), `السواق=${ids(split.drivers)}`);
+check("وطلبُ السائق بقسم السواق", split.drivers.some((o) => o.id === "b4"));
+check("وحاملٌ قديمٌ بلا kind يُعدّ سائقاً (لا شركةً بالتخمين)", split.drivers.some((o) => o.id === "b5"));
+check("وطلبٌ بلا حاملٍ بعد يبقى مع السواق حيث يُسنَد", split.drivers.some((o) => o.id === "b6"));
+check("والقسمةُ تامّة: المجموعُ يساوي الأصل",
+  split.drivers.length + split.companies.length === board.length,
+  `${split.drivers.length}+${split.companies.length} ≠ ${board.length}`);
+check("ولا طلبَ بقسمين", !split.drivers.some((d) => split.companies.some((c) => c.id === d.id)));
+check("وحاملٌ مجهول (حُذف) لا يرمي", splitByCarrier([ORD("b7", "i1", { courier_id: "gone" })], () => null).drivers.length === 1);
+check("carrierScope: بلا حامل ⇒ سواق", carrierScope(null) === "drivers");
+check("carrierScope: شركة ⇒ شركات", carrierScope(CMP) === "companies");
+
+/* ورقمُ «بالطريق» رقمٌ ثانٍ بمعنىً ثانٍ — لا يُجمع مع الذمّة أبداً، وإلا
+ * عرضت الشاشةُ أكثرَ مما تقبله `courier_settle` يومَ التحصيل. */
+console.log("▸ companyOnRoad — بضاعةٌ خرجت، وليست ذمّةً بعد");
+const roadOrders = [
+  ORD("r1", "i1", { status: "out" }),                    // متبقّي 10000
+  ORD("r2", "i2", { status: "out" }),                    // مدفوعةٌ كاملاً ⇒ صفر
+  ORD("r3", "i1", { status: "delivered" }),              // ذمّةٌ لا طريق
+  ORD("r4", "i1", { status: "out", cod_amount: 2500, invoice_id: "gone" }),
+];
+const road = companyOnRoad(roadOrders, byId);
+check("يعدّ الخارجَ وحده (out)", road.orders === 3, `طلع ${road.orders}`);
+check("ومبلغُه 12500 (10000 + 0 + لقطةُ 2500)", road.amount === 12500, `طلع ${road.amount}`);
+check("والمسلَّمُ ليس «بالطريق» — لا ازدواجَ مع الذمّة",
+  companyOwed([roadOrders[2]], byId).owed === 10000 && companyOnRoad([roadOrders[2]], byId).amount === 0);
+check("وقائمةٌ فارغة ترجع صفراً لا NaN", companyOnRoad([], byId).amount === 0);
 
 console.log("▸ السقوطُ إلى cod_amount حين تغيب الفاتورة");
 // طلبٌ قديمٌ فاتورتُه خارج ما جُلب: رقمٌ تقريبيٌّ صريح خيرٌ من اختفائه من الكشف.

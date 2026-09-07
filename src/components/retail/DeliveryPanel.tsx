@@ -19,7 +19,7 @@ import { openDeliverySlip } from "@/lib/deliveryPrint";
 import { invoiceNo } from "@/lib/invoicePrint";
 import { dueOf, round2 } from "@/lib/debt";
 import { CourierLedger } from "./CourierLedger";
-import { companyOwed } from "@/lib/courierLedger";
+import { companyOwed, companyOnRoad, carrierScope } from "@/lib/courierLedger";
 import { cn, formatNum, money, localISO, formatDate, searchable } from "@/lib/utils";
 import { describeDbError } from "@/lib/errors";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
@@ -179,6 +179,10 @@ export function DeliveryPanel({ invoices, clinicId, onChanged }: { invoices: Inv
       await repo.updateDeliveryOrder(o.id, { courier_id: courierId, status: "out", dispatched_at: new Date().toISOString() });
       playSuccess();
       setAssigning(null);
+      // الإسنادُ لشركةٍ ينقل الطلبَ لقسمها — نتبعه، فالطلبُ الذي يختفي بعد
+      // ضغطةٍ يُقرأ «ضاع» ولو كان بمكانه الصحيح.
+      const to = carrierScope(courierOf(courierId));
+      if (to !== sec) pickSec(to);
       await load();
     } catch (e) {
       playWarning();
@@ -219,12 +223,25 @@ export function DeliveryPanel({ invoices, clinicId, onChanged }: { invoices: Inv
     searchable(o.address ?? "").includes(ql) ||
     searchable(courierOf(o.courier_id)?.name ?? "").includes(ql);
 
+  /** بأيِّ قسمٍ يقع هذا الطلب — **حاملُه** يقرّر لا حالتُه. طلبٌ بلا حاملٍ بعد
+   *  (قيد التجهيز) يبقى مع السواق حيث يُسنَد، ويُشار إليه من قسم الشركات. */
+  const scopeOf = (o: DeliveryOrder) => carrierScope(courierOf(o.courier_id));
+  const inSec = (o: DeliveryOrder) => scopeOf(o) === sec;
+
   const preparing = orders.filter((o) => o.status === "preparing" && match(o));
-  const out = orders.filter((o) => o.status === "out" && match(o));
+  const outAll = orders.filter((o) => o.status === "out" && match(o));
+  const outDrivers = outAll.filter((o) => scopeOf(o) === "drivers");
+  const outCompanies = outAll.filter((o) => scopeOf(o) === "companies");
+  /** بالطريق **بهذا القسم** — الشركةُ ترى بضاعتَها والسائقُ يرى نقدَه. */
+  const out = sec === "companies" ? outCompanies : outDrivers;
   const doneList = orders
-    .filter((o) => (o.status === "delivered" || o.status === "returned") && match(o))
+    .filter((o) => (o.status === "delivered" || o.status === "returned") && match(o) && inSec(o))
     .sort((a, b) => (b.delivered_at ?? b.returned_at ?? b.created_at).localeCompare(a.delivered_at ?? a.returned_at ?? a.created_at))
     .slice(0, 20);
+  /** طلباتُ القسم كلُّها — لتمييز «ماكو شغل هنا» عن «ماكو شغل أبداً». */
+  const secOrders = sec === "companies"
+    ? orders.filter((o) => scopeOf(o) === "companies")
+    : orders.filter((o) => scopeOf(o) === "drivers");
 
   // بالطريق grouped per courier — the reconciliation view.
   const outByCourier = useMemo(() => {
@@ -246,15 +263,24 @@ export function DeliveryPanel({ invoices, clinicId, onChanged }: { invoices: Inv
       // القاعدةُ يومَ التحصيل، لا رقمٌ ثانٍ يخالفه أمام المندوب.
       const { owed, openOrders } = companyOwed(mine, invoiceOf);
       const open = mine.filter((o) => uncollected(o));
+      // بضاعةٌ خرجت ولم تصل الزبونَ بعد: رقمٌ ثانٍ بمعنىً ثانٍ — يُعرض ولا
+      // يُجمع مع الذمّة، وإلا صار المعروضُ أكبرَ مما تقبله القاعدةُ يومَ التحصيل.
+      const road = companyOnRoad(mine, invoiceOf);
       const last = settlements.find((s) => s.courier_id === c.id) ?? null;
-      return { c, open, owed, openOrders, last };
+      return { c, open, owed, openOrders, road, last };
     });
-    return rows.filter((r) => r.c.active || r.owed > 0.009).sort((a, b) => b.owed - a.owed);
+    // شركةٌ مؤرشفةٌ وبضاعتُها بالطريق تبقى معروضة — الأرشفةُ لا تُنهي ذمّةً ولا تُرجع بضاعة.
+    return rows
+      .filter((r) => r.c.active || r.owed > 0.009 || r.road.orders > 0)
+      .sort((a, b) => (b.owed - a.owed) || (b.road.amount - a.road.amount));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [couriers, allOrders, settlements, invoices]);
   const companiesOwed = round2(companies.reduce((s, r) => s + r.owed, 0));
 
-  const inTransit = round2(out.reduce((s, o) => s + o.cod_amount, 0));
+  /** «فلوسٌ بالطريق» = نقدُ السواق الراجعُ الليلة. بضاعةُ الشركات ليست نقداً
+   *  بالطريق — تصير ذمّةً يومَ تصل الزبون — فلها مؤشّرُها ولا تُخلط بهذا. */
+  const inTransit = round2(outDrivers.reduce((s, o) => s + o.cod_amount, 0));
+  const companiesOnRoad = round2(outCompanies.reduce((s, o) => s + o.cod_amount, 0));
   const today = localISO();
   // الشرطُ الأخير كان `!!(o.collected_at ?? true)` — و`null ?? true` يساوي
   // `true`، فالحارسُ صادقٌ **دائماً**: طلبُ شركةٍ سُلّم اليوم ولم يُحصَّل بعد
@@ -267,9 +293,10 @@ export function DeliveryPanel({ invoices, clinicId, onChanged }: { invoices: Inv
       {/* KPIs */}
       <div className={cn("grid grid-cols-2 gap-3", companies.length > 0 ? "lg:grid-cols-5" : "lg:grid-cols-4")}>
         <Kpi icon={PackageOpen} tone="bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300" label={t("retail.deliveryPreparing", "قيد التجهيز")} value={formatNum(preparing.length)} />
-        <Kpi icon={Bike} tone="bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300" label={t("retail.deliveryInTransit", "فلوس بالطريق")} value={money(inTransit)} sub={t("retail.deliveryOutCount", { n: out.length, defaultValue: "{{n}} طلب بالطريق" })} />
+        <Kpi icon={Bike} tone="bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300" label={t("retail.deliveryInTransit", "فلوس بالطريق")} value={money(inTransit)} sub={t("retail.deliveryOutCount", { n: outDrivers.length, defaultValue: "{{n}} طلب بالطريق" })} />
         {companies.length > 0 && (
-          <Kpi icon={Building2} tone="bg-violet-100 text-violet-700 dark:bg-violet-500/15 dark:text-violet-300" label={t("retail.companiesOwed", "بذمّة الشركات")} value={money(companiesOwed)} />
+          <Kpi icon={Building2} tone="bg-violet-100 text-violet-700 dark:bg-violet-500/15 dark:text-violet-300" label={t("retail.companiesOwed", "بذمّة الشركات")} value={money(companiesOwed)}
+            sub={outCompanies.length > 0 ? t("retail.companiesOnRoadSub", { n: outCompanies.length, sum: money(companiesOnRoad), defaultValue: "و{{sum}} بالطريق ({{n}} طلب)" }) : undefined} />
         )}
         <Kpi icon={HandCoins} tone="bg-success-100 text-success-700 dark:bg-success-500/15 dark:text-success-300" label={t("retail.deliveryReceivedToday", "استُلم اليوم")} value={money(receivedToday)} />
         <Kpi icon={Undo2} tone="bg-danger-100 text-danger-700 dark:bg-danger-500/15 dark:text-danger-300" label={t("retail.deliveryReturnedToday", "راجع اليوم")} value={formatNum(returnedToday)} />
@@ -290,12 +317,15 @@ export function DeliveryPanel({ invoices, clinicId, onChanged }: { invoices: Inv
           className={cn("flex flex-1 items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-sm font-bold transition",
             sec === "drivers" ? "bg-surface-1 text-ink shadow-soft" : "text-ink-muted hover:text-ink")}>
           <Bike size={16} /> {t("retail.dSecDrivers", "توصيل بسائق")}
-          {out.length > 0 && <span className="chip bg-sky-100 text-2xs font-bold text-sky-700 dark:bg-sky-500/15 dark:text-sky-300">{formatNum(out.length)}</span>}
+          {outDrivers.length > 0 && <span className="chip bg-sky-100 text-2xs font-bold text-sky-700 dark:bg-sky-500/15 dark:text-sky-300">{formatNum(outDrivers.length)}</span>}
         </button>
         <button type="button" data-dsec-companies onClick={() => pickSec("companies")}
           className={cn("flex flex-1 items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-sm font-bold transition",
             sec === "companies" ? "bg-surface-1 text-ink shadow-soft" : "text-ink-muted hover:text-ink")}>
           <Building2 size={16} /> {t("retail.dSecCompanies", "توصيل بشركة")}
+          {/* طلبٌ خرج مع شركةٍ الآن لا ذمّةَ له بعد — فبلا هذا العدّاد يبقى
+              التبويبُ ساكناً كأن ماكو شغل، وهي الشكوى نفسُها. */}
+          {outCompanies.length > 0 && <span className="chip bg-violet-100 text-2xs font-bold text-violet-700 dark:bg-violet-500/15 dark:text-violet-300">{formatNum(outCompanies.length)}</span>}
           {companiesOwed > 0.009 && <span className="chip bg-violet-100 text-2xs font-bold text-violet-700 dark:bg-violet-500/15 dark:text-violet-300">{money(companiesOwed)}</span>}
         </button>
       </div>
@@ -320,7 +350,7 @@ export function DeliveryPanel({ invoices, clinicId, onChanged }: { invoices: Inv
         <section data-companies>
           <h3 className="mb-2 flex items-center gap-2 text-sm font-extrabold text-ink"><Building2 size={16} className="text-violet-600" /> {t("retail.companiesTitle", "شركات التوصيل")}</h3>
           <div className="grid gap-2.5 lg:grid-cols-2">
-            {companies.map(({ c, owed, openOrders, last }) => (
+            {companies.map(({ c, owed, openOrders, road, last }) => (
               <div key={c.id} data-company={c.id} className={cn("card space-y-2 p-3", !c.active && "opacity-70")}>
                 <div className="flex items-center gap-2.5">
                   <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-violet-100 text-violet-700 dark:bg-violet-500/15 dark:text-violet-300"><Building2 size={18} /></span>
@@ -333,6 +363,14 @@ export function DeliveryPanel({ invoices, clinicId, onChanged }: { invoices: Inv
                     <p className="text-2xs text-ink-subtle">{t("retail.companyOpenN", { n: openOrders, defaultValue: "{{n}} طلب بالذمّة" })}</p>
                   </div>
                 </div>
+                {/* بضاعةٌ خرجت ولم تصل بعد: تُقال بصراحة وبرقمها الخاصّ. كانت
+                    البطاقةُ تقول «صفر» والشركةُ حاملةٌ بضاعةَ يومٍ كامل. */}
+                {road.orders > 0 && (
+                  <p data-companyroad={c.id} className="flex items-center gap-1.5 rounded-lg bg-sky-50 px-2 py-1.5 text-2xs font-semibold text-sky-800 dark:bg-sky-500/10 dark:text-sky-200">
+                    <Bike size={12} className="shrink-0" />
+                    {t("retail.companyOnRoad", { n: road.orders, sum: money(road.amount), defaultValue: "{{n}} طلب بالطريق بقيمة {{sum}} — تصير بالذمّة لمّا توصل الزبون" })}
+                  </p>
+                )}
                 {last && (
                   <p className="text-2xs text-ink-subtle">
                     {t("retail.companyLast", { n: money(last.amount), when: formatDate(last.created_at, i18n.language), defaultValue: "آخر تحصيل {{n}} بتاريخ {{when}}" })}
@@ -348,17 +386,25 @@ export function DeliveryPanel({ invoices, clinicId, onChanged }: { invoices: Inv
         </section>
       )}
 
-      {sec === "drivers" && (loading ? (
+      {/* لوحةُ الطلبات — تُعرض بالقسمين كليهما بقوائمَ مقسومةٍ بالحامل. كانت
+          محبوسةً بقسم السواق، فطلبُ الشركة بالطريق لا يظهر إلا هناك. */}
+      {(loading ? (
         <div className="card p-10 text-center text-ink-subtle">{t("common.loading", "جارٍ التحميل…")}</div>
-      ) : orders.length === 0 ? (
-        <div className="card flex flex-col items-center gap-3 p-10 text-center">
-          <span className="grid h-14 w-14 place-items-center rounded-2xl bg-sky-50 text-sky-500 dark:bg-sky-500/15"><Bike size={26} /></span>
-          <p className="max-w-md text-ink-subtle">{t("retail.deliveryEmpty", "لا توجد طلبات توصيل بعد. من شاشة البيع اختر «🛵 توصيل» — المخزون ينخصم فوراً، والفلوس تدخل السستم فقط عندما يرجع السائق ويسلّمها.")}</p>
-        </div>
+      ) : secOrders.length === 0 ? (
+        sec === "drivers" ? (
+          <div className="card flex flex-col items-center gap-3 p-10 text-center">
+            <span className="grid h-14 w-14 place-items-center rounded-2xl bg-sky-50 text-sky-500 dark:bg-sky-500/15"><Bike size={26} /></span>
+            <p className="max-w-md text-ink-subtle">{t("retail.deliveryEmpty", "لا توجد طلبات توصيل بعد. من شاشة البيع اختر «🛵 توصيل» — المخزون ينخصم فوراً، والفلوس تدخل السستم فقط عندما يرجع السائق ويسلّمها.")}</p>
+          </div>
+        ) : companies.length > 0 ? (
+          <p data-dnocompanyorders className="rounded-xl bg-surface-2 px-3 py-2.5 text-center text-2xs text-ink-subtle">
+            {t("retail.dNoCompanyOrders", "ماكو طلبات مع الشركات لهسة. من شاشة البيع اختر «🛵 توصيل» ثم اختر الشركة — الطلب يبيّن هنا مباشرة.")}
+          </p>
+        ) : null
       ) : (
         <div className="space-y-5">
           {/* قيد التجهيز */}
-          {preparing.length > 0 && (
+          {preparing.length > 0 && sec === "drivers" && (
             <section>
               <h3 className="mb-2 flex items-center gap-2 text-sm font-extrabold text-ink"><PackageOpen size={16} className="text-amber-600" /> {t("retail.deliveryPreparing", "قيد التجهيز")} <span className="chip bg-amber-100 text-2xs font-bold text-amber-700 dark:bg-amber-500/15 dark:text-amber-300">{formatNum(preparing.length)}</span></h3>
               <motion.div variants={staggerContainer} initial="initial" animate="animate" className="grid gap-2.5 lg:grid-cols-2">
@@ -378,8 +424,8 @@ export function DeliveryPanel({ invoices, clinicId, onChanged }: { invoices: Inv
 
           {/* بالطريق — grouped per courier with bulk settlement */}
           {out.length > 0 && (
-            <section>
-              <h3 className="mb-2 flex items-center gap-2 text-sm font-extrabold text-ink"><Bike size={16} className="text-sky-600" /> {t("retail.deliveryOut", "بالطريق")} <span className="chip bg-sky-100 text-2xs font-bold text-sky-700 dark:bg-sky-500/15 dark:text-sky-300">{formatNum(out.length)}</span></h3>
+            <section data-dout={sec}>
+              <h3 className="mb-2 flex items-center gap-2 text-sm font-extrabold text-ink"><Bike size={16} className="text-sky-600" /> {sec === "companies" ? t("retail.deliveryOutCompanies", "بالطريق مع الشركات") : t("retail.deliveryOut", "بالطريق")} <span className="chip bg-sky-100 text-2xs font-bold text-sky-700 dark:bg-sky-500/15 dark:text-sky-300">{formatNum(out.length)}</span></h3>
               <div className="space-y-3">
                 {outByCourier.map(([cid, list]) => {
                   const c = courierOf(cid);
@@ -494,7 +540,9 @@ export function DeliveryPanel({ invoices, clinicId, onChanged }: { invoices: Inv
           couriers={couriers}
           current={courierOf(swapping.courier_id)}
           onClose={() => setSwapping(null)}
-          onSaved={() => { void load(); onChanged(); }}
+          /* تبديلُ الحامل ينقل الطلبَ بين القسمين — فنتبعه بدل أن يختفي من
+             تحت يد من بدّله ويظنّه ضاع. */
+          onSaved={(next) => { const s = carrierScope(next); if (s !== sec) pickSec(s); void load(); onChanged(); }}
         />
       )}
 
