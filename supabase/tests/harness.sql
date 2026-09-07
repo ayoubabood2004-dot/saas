@@ -98,6 +98,59 @@ alter table products add column if not exists min_stock   numeric;
 alter table products add column if not exists expiry_date date;
 alter table purchase_items add column if not exists product_id uuid references products(id) on delete set null;
 
+/* ── الفهرسُ الفريد على الرمز الخام — كما بالإنتاج حرفياً (0007) ───────────
+ * كان الأساسُ بلا هذا الفهرس، فكانت الحزمةُ تقيس **عالَماً غير عالَم الإنتاج**:
+ * محفّزُ التوأم (0167) يُفحص وحدَه، ولا يُفحص التفاعلُ بينه وبين الفهرس (23505)
+ * — وهو التفاعلُ عينُه الذي أخفى عطلَ `inventory_tidy_uncat` القائم بالإنتاج
+ * حتى كشفته المراجعةُ لا الحزمة. والقالبُ يُقاس على ما تُنتجه القاعدة فعلاً لا
+ * على ما يسهّل كتابةَ الفحص (CLAUDE.md §٣).
+ * والشرطُ الجزئيّ `where barcode is not null` جزءٌ من التعريف لا زينة: بدونه
+ * لا يُقبل إلا منتجٌ واحدٌ بلا باركود لكلّ عيادة. */
+create unique index if not exists products_clinic_barcode_idx
+  on products (clinic_id, barcode) where barcode is not null;
+
+/* ── شكلُ ما تكتبه دوالُّ الشراء (0117/0118، وتُعاد كاملةً بـ0166) ──────────
+ * الدالّتان تُعرَّفان بالحزمة (0166 داخل الـWAVE) لكنّ جداولَها كانت هياكلَ
+ * بعمودٍ أو عمودَين، فيستحيل **تشغيلُها** — ولذلك بقي فحصُ G1 نصّاً يقرأ
+ * `prosrc` ويكتفي بأن التعريف يذكر `alt_codes`. وفحصٌ يقرأ نصَّ الدالّة يمرّ
+ * ولو كان الفرعُ ميّتاً؛ وهذا بعينه ما حصل بأوّل صياغة 0168.
+ * الأعمدةُ منقولةٌ من `information_schema` بالإنتاج، لا من الذاكرة. */
+alter table products       add column if not exists category       text;
+alter table purchases      add column if not exists clinic_id      uuid not null default auth_clinic();
+alter table purchases      add column if not exists company_id     uuid;
+alter table purchases      add column if not exists company_name   text;
+alter table purchases      add column if not exists reference      text;
+alter table purchases      add column if not exists total          numeric not null default 0;
+alter table purchases      add column if not exists item_count     int not null default 0;
+alter table purchases      add column if not exists amount_paid    numeric;
+alter table purchases      add column if not exists payment_method text;
+alter table purchases      add column if not exists status         text not null default 'paid';
+alter table purchases      add column if not exists notes          text;
+alter table purchases      add column if not exists purchased_at   timestamptz not null default now();
+alter table purchases      add column if not exists staff_id       uuid;
+alter table purchases      add column if not exists created_at     timestamptz not null default now();
+alter table purchases      add column if not exists supplier_name  text;
+alter table purchases      add column if not exists supplier_phone text;
+alter table purchase_items add column if not exists barcode        text;
+alter table purchase_items add column if not exists name           text;
+alter table purchase_items add column if not exists category       text;
+alter table purchase_items add column if not exists qty            numeric not null default 0;
+alter table purchase_items add column if not exists purchase_price numeric not null default 0;
+alter table purchase_items add column if not exists sell_price     numeric not null default 0;
+alter table purchase_items add column if not exists created_at     timestamptz not null default now();
+alter table companies      add column if not exists clinic_id      uuid not null default auth_clinic();
+alter table companies      add column if not exists name           text;
+-- أصنافُ الشركة (0065، خارج الـWAVE): تُقرأ بمسار الشراء لتصنيف القطعة الجديدة،
+-- ويُحدَّث `pooled_stock` بمسارَي البيع والإرجاع.
+create table if not exists company_sections (
+  id uuid primary key default gen_random_uuid(),
+  clinic_id uuid not null default auth_clinic(),
+  company_id uuid,
+  name text,
+  pooled_stock numeric not null default 0,
+  created_at timestamptz not null default now()
+);
+
 -- شكلُ ما تلمسه 0142: الدورةُ بحالتها وشهرها، والقسيمةُ بدفعها ومصروفها،
 -- ودالّتا الصلاحية من 0112. بدونها لا تنزل الهجرة أصلاً، وما لا ينزل لا يُفحص.
 alter table payroll_runs add column if not exists clinic_id uuid;

@@ -1179,10 +1179,12 @@ rm -rf "$CNF"
 
 
 # ── 0165/0166: الرمزُ الإضافيّ يُقرأ، والاستدعاءُ حتميّ ────────────────────
-# حزمةُ الفحص لا تعرف دوالَّ الشراء (0117/0118 خارج WAVE، والأساسُ لا يعرّفها)،
-# فالفحصُ هنا **ساكن**: يمسك أيَّ تعريفٍ لاحقٍ يعيد المطابقةَ إلى الأساسيّ وحده،
-# أو يسحب الترتيبَ الحتميّ من الاستدعاء. أما السلوكُ فأُثبت على الإنتاج ببيانات
-# حقيقية: ثلاثةُ رموزٍ إضافية، القديمةُ ترجع صفراً والجديدةُ تلقى صاحبها.
+# كان هذا القسمُ **ساكناً** كلَّه: ستُّ فحوصٍ تقرأ `prosrc` وتكتفي بأن التعريف
+# يذكر `alt_codes`. وفحصُ نصٍّ يمرّ ولو كان الفرعُ ميّتاً — وهذا بعينه ما حصل
+# بأوّل صياغة 0168 (فرعٌ لا يُنتج صفّاً أبداً، كشفه بناءُ الفحص لا الفحص).
+# وسببُ سكونه أن جداولَ الشراء بالأساس كانت هياكلَ بعمودٍ أو عمودَين فيستحيل
+# **تشغيلُ** `record_purchase`؛ صارت الآن بشكل الإنتاج (harness.sql)، فصار
+# السلوكُ مفحوصاً. والفحوصُ الساكنةُ تبقى معه: نصٌّ يحرس الشكل، وسلوكٌ يحرس الأثر.
 echo "▸ 0165/0166: الرموزُ الإضافية والحتمية"
 chk "مطابقةُ الشراء تقرأ alt_codes (record_purchase)" \
     "select (prosrc like '%alt_codes%')::text from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='record_purchase'" "true"
@@ -1196,6 +1198,73 @@ chk "  ويطابق مطبَّعاً لا خامّاً وحده" \
     "select (prosrc like '%inv_norm_code(barcode) = inv_norm_code(p_code)%')::text from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='product_by_code'" "true"
 chk "والاستعادةُ ترشّح الرموزَ الإضافية المسروقة" \
     "select (prosrc like '%{alt_codes}%')::text from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='restore_product'" "true"
+
+# ── والآن السلوكُ نفسُه: نشتري، ونستدعي، ونستعيد ─────────────────────────
+# عيادةٌ خاصّةٌ بهذا القسم كي لا تختلط ببقايا الكتل السابقة.
+AC="11111111-1111-1111-1111-111111111111"
+ACJ="select set_config('request.jwt.claim.sub','$AC',true);"
+# G1 سلوكياً: سطرُ شراءٍ **بلا product_id** ورمزُه باركودُ مصنعٍ هو رمزٌ
+# **إضافيّ** لمنتجٍ قائم رمزُه الأساسيّ رقمُ رفّ — الحالةُ المقيسة بالإنتاج
+# (٢٨١ منتجاً بأربع عيادات رمزُه يدويّ). المطلوب: يُرصَّد على القائم، ولا
+# يُنشأ توأمٌ برصيدٍ مقسوم. مقيسٌ على الإنتاج بمعاملةٍ متراجعة قبل كتابته هنا:
+# ٥ ⇒ ٨ على الصفّ القائم، وصفرُ صفوفٍ جديدة.
+$P -c "insert into products (id, clinic_id, name, barcode, alt_codes, stock) values
+         ('a1000000-0000-0000-0000-000000000001','$AC','رفّ ٢٤٧','SHELF-247',array['6970967772736'],5)
+       on conflict do nothing;" >/dev/null 2>&1
+chk "الشراءُ بالرمز الإضافيّ يُرصَّد على القائم" \
+    "select (record_purchase(
+       jsonb_build_array(jsonb_build_object('product_id',null,'barcode','6970967772736','name','وصلت بضاعة','qty',3,'purchase_price',1000,'sell_price',1500)),
+       jsonb_build_object('company_name','مورّد فحص')) is not null)::text
+     from ($ACJ) s" "true"
+chk "  فيصير رصيدُه ثمانيةً لا خمسة" \
+    "select stock::text from products where id='a1000000-0000-0000-0000-000000000001'" "8.000"
+chk "  ولا يُنشأ توأمٌ باسم السطر" \
+    "select count(*)::text from products where clinic_id='$AC' and name='وصلت بضاعة'" "0"
+
+# G5 سلوكياً: صاحبُ الرمز أساسيّاً ومستعيرٌ يحمله إضافياً — أيُّهما يرجع أوّلاً؟
+# والزرعُ بهذا الترتيب وحدَه ممكن: محفّزُ 0167 يرفض إدراجَ الأساسيّ بعد أن صار
+# إضافياً لغيره — فيُدرَج الصاحبُ أوّلاً ثم يُعطى المستعيرُ رمزَه بتحديث.
+$P -c "insert into products (id, clinic_id, name, barcode, stock, created_at) values
+         ('a1000000-0000-0000-0000-000000000012','$AC','صاحبُ الرمز','DET-500',1,'2026-05-01'),
+         ('a1000000-0000-0000-0000-000000000011','$AC','المستعير','ZZZ-9',1,'2026-01-01')
+       on conflict do nothing;
+       update products set alt_codes = array['DET-500'] where id='a1000000-0000-0000-0000-000000000011';" >/dev/null 2>&1
+chk "الاستدعاءُ يرجع صفَّين للرمز المشترَك" \
+    "select count(*)::text from ($ACJ) s, product_by_code('DET-500')" "2"
+chk "  والأوّلُ صاحبُ الرمز لا المستعير (حتميةٌ لا حظّ)" \
+    "select name from ($ACJ) s, product_by_code('DET-500') limit 1" "صاحبُالرمز"
+chk "  وبحالةٍ مطويّة كذلك" \
+    "select name from ($ACJ) s, product_by_code('det-500') limit 1" "صاحبُالرمز"
+
+# G3 سلوكياً: رمزٌ إضافيٌّ لمحذوفٍ يصير لغيره أثناء الغياب — الاستعادةُ لا
+# تسترجعه (وإلا صار رمزٌ واحدٌ على منتجَين)، ورمزُه الحرُّ يبقى.
+$P -c "select set_config('request.jwt.claim.sub','$AC',false);
+       insert into products (id, clinic_id, name, barcode, alt_codes, stock) values
+         ('a1000000-0000-0000-0000-000000000021','$AC','سيُحذف','DEL-100',array['STOLEN-1','MINE-1'],4)
+       on conflict do nothing;
+       select delete_product('a1000000-0000-0000-0000-000000000021','فحص');
+       update products set alt_codes = array['DET-500','STOLEN-1'] where id='a1000000-0000-0000-0000-000000000011';
+       select restore_product('a1000000-0000-0000-0000-000000000021');" >/dev/null 2>&1
+chk "الاستعادةُ لا تعيد رمزاً صار لغيره" \
+    "select (not (alt_codes @> array['STOLEN-1']))::text from products where id='a1000000-0000-0000-0000-000000000021'" "true"
+chk "  وتُبقي رمزَه الذي ما زال حرّاً" \
+    "select (alt_codes @> array['MINE-1'])::text from products where id='a1000000-0000-0000-0000-000000000021'" "true"
+chk "  وباركودُه ورصيدُه يرجعان كما كانا" \
+    "select (barcode = 'DEL-100' and stock = 4)::text from products where id='a1000000-0000-0000-0000-000000000021'" "true"
+chk "ولا رمزَ واحدٌ على منتجَين بعدها" \
+    "select count(*)::text from products where clinic_id='$AC' and alt_codes @> array['STOLEN-1']" "1"
+
+# عزلُ العيادات — **بدور `authenticated` لا كـsuperuser**: `product_by_code`
+# تعتمد سياساتِ الصفوف لا فحصاً بجسمها، وsuperuser يتجاوز RLS (CLAUDE.md §٣).
+# ففحصُ عزلٍ يجري بالدور الأعلى يمرّ لسببٍ خاطئ ويطمئنُّ على ما لم يُقس.
+chk "الاستدعاءُ يرى صفَّي عيادته بدور authenticated" \
+    "select _rls_try('$AC', 'select 1 from product_by_code(''DET-500'')')" "rows:2"
+chk "  ولا يرى شيئاً لعيادةٍ أخرى" \
+    "select _rls_try('22222222-2222-2222-2222-222222222222', 'select 1 from product_by_code(''DET-500'')')" "rows:0"
+chk "وصحّةُ الباركودات تعمل بدور authenticated" \
+    "select left(_rls_try('$AC', 'select 1 from verify_barcode_health()'), 5)" "rows:"
+chk "ومحفّزُ التوأم يحرس بدور authenticated كذلك" \
+    "select left(_rls_try('$AC', 'insert into products (clinic_id,name,barcode) values (''$AC'',''محاولة'',''DET-500'')'), 8)" "guarded:"
 
 
 # ── 0167: رمزٌ واحد لمنتجٍ واحد ──────────────────────────────────────────
