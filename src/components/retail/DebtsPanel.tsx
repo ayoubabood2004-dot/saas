@@ -19,6 +19,7 @@ import { describeDbError } from "@/lib/errors";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
 import { staggerContainer, staggerItem } from "@/lib/motion";
 import { paidOf, dueOf, paymentStatusOf, isDebt, round2 } from "@/lib/debt";
+import { companyOwed } from "@/lib/courierLedger";
 import { getCached, setCached } from "@/lib/swrCache";
 
 const PAY_OPTIONS: { value: PaymentMethod; icon: typeof Banknote; key: string; def: string }[] = [
@@ -81,16 +82,17 @@ export function DebtsPanel({ invoices, clinicId, onChanged, onOpenDelivery }: { 
     () => new Set([...activeDeliveryOrders, ...carrierOwedOrders].map((o) => o.invoice_id)),
     [activeDeliveryOrders, carrierOwedOrders],
   );
-  /** بذمّة شركات التوصيل — يُقال بسطرٍ خاصّ لئلا يختفي المبلغ بلا أثر. */
+  /** بذمّة شركات التوصيل — يُقال بسطرٍ خاصّ لئلا يختفي المبلغ بلا أثر.
+   *
+   *  **الرقمُ من `companyOwed` لا من نسخةٍ هنا.** الاستثناءُ أعلاه واسعٌ عمداً
+   *  (كلُّ مسلَّمٍ غيرِ مختوم يخرج من دفتر الزبائن)، أما ما **يُعرض** فلا يجوز
+   *  أن يتجاوز ما تقبله `courier_settle`: لا فاتورةً مردودة ولا ذمّةَ صفر.
+   *  وكتابةُ الشرط هنا ثانيةً كانت تكفي ليفترقا — العددُ يعدّ ما لا يعدّه
+   *  المبلغ، فيقول السطرُ «١ طلب بالذمّة» ومبلغُه صفر. مصدرٌ واحد لا خامس. */
   const carrierOwed = useMemo(() => {
     const byId = new Map(invoices.map((i) => [i.id, i]));
-    let sum = 0;
-    for (const o of carrierOwedOrders) {
-      const inv = byId.get(o.invoice_id);
-      if (inv && inv.status === "refunded") continue;
-      sum = round2(sum + (inv ? dueOf(inv) : o.cod_amount));
-    }
-    return { total: sum, count: carrierOwedOrders.length };
+    const { owed, openOrders } = companyOwed(carrierOwedOrders, (id) => byId.get(id));
+    return { total: owed, count: openOrders };
   }, [carrierOwedOrders, invoices]);
   // المال الآجل الراكب مع المندوب — يوصل كامل عند التسليم أو ترجع البضاعة.
   const pendingDelivery = useMemo(() => {

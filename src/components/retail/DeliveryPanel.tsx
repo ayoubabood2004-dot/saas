@@ -262,12 +262,11 @@ export function DeliveryPanel({ invoices, clinicId, onChanged }: { invoices: Inv
       // (تستثني الفاتورةَ المردودة وذمّةَ الصفر) — فما يُعرض هنا هو ما ستقبله
       // القاعدةُ يومَ التحصيل، لا رقمٌ ثانٍ يخالفه أمام المندوب.
       const { owed, openOrders } = companyOwed(mine, invoiceOf);
-      const open = mine.filter((o) => uncollected(o));
       // بضاعةٌ خرجت ولم تصل الزبونَ بعد: رقمٌ ثانٍ بمعنىً ثانٍ — يُعرض ولا
       // يُجمع مع الذمّة، وإلا صار المعروضُ أكبرَ مما تقبله القاعدةُ يومَ التحصيل.
       const road = companyOnRoad(mine, invoiceOf);
       const last = settlements.find((s) => s.courier_id === c.id) ?? null;
-      return { c, open, owed, openOrders, road, last };
+      return { c, owed, openOrders, road, last };
     });
     // شركةٌ مؤرشفةٌ وبضاعتُها بالطريق تبقى معروضة — الأرشفةُ لا تُنهي ذمّةً ولا تُرجع بضاعة.
     return rows
@@ -392,10 +391,20 @@ export function DeliveryPanel({ invoices, clinicId, onChanged }: { invoices: Inv
         <div className="card p-10 text-center text-ink-subtle">{t("common.loading", "جارٍ التحميل…")}</div>
       ) : secOrders.length === 0 ? (
         sec === "drivers" ? (
-          <div className="card flex flex-col items-center gap-3 p-10 text-center">
-            <span className="grid h-14 w-14 place-items-center rounded-2xl bg-sky-50 text-sky-500 dark:bg-sky-500/15"><Bike size={26} /></span>
-            <p className="max-w-md text-ink-subtle">{t("retail.deliveryEmpty", "لا توجد طلبات توصيل بعد. من شاشة البيع اختر «🛵 توصيل» — المخزون ينخصم فوراً، والفلوس تدخل السستم فقط عندما يرجع السائق ويسلّمها.")}</p>
-          </div>
+          /* «ماكو طلبات توصيل» تُقال فقط حين لا يكون ثمّة طلبٌ أصلاً. صارت
+             القائمةُ مقسومةً، فلو كانت طلباتُ العيادة كلُّها مع شركاتٍ لقال
+             هذا القسمُ «ماكو» وهي موجودةٌ بالقسم الثاني — وهذا بالضبط النقصُ
+             الذي أصلحناه، بصيغةٍ معكوسة. */
+          orders.length > 0 ? (
+            <p data-dnodriverorders className="rounded-xl bg-surface-2 px-3 py-2.5 text-center text-2xs text-ink-subtle">
+              {t("retail.dNoDriverOrders", "ماكو طلبات مع السواق لهسة — طلبات العيادة كلها مع شركات التوصيل، تلقاها بقسم «توصيل بشركة».")}
+            </p>
+          ) : (
+            <div className="card flex flex-col items-center gap-3 p-10 text-center">
+              <span className="grid h-14 w-14 place-items-center rounded-2xl bg-sky-50 text-sky-500 dark:bg-sky-500/15"><Bike size={26} /></span>
+              <p className="max-w-md text-ink-subtle">{t("retail.deliveryEmpty", "لا توجد طلبات توصيل بعد. من شاشة البيع اختر «🛵 توصيل» — المخزون ينخصم فوراً، والفلوس تدخل السستم فقط عندما يرجع السائق ويسلّمها.")}</p>
+            </div>
+          )
         ) : companies.length > 0 ? (
           <p data-dnocompanyorders className="rounded-xl bg-surface-2 px-3 py-2.5 text-center text-2xs text-ink-subtle">
             {t("retail.dNoCompanyOrders", "ماكو طلبات مع الشركات لهسة. من شاشة البيع اختر «🛵 توصيل» ثم اختر الشركة — الطلب يبيّن هنا مباشرة.")}
@@ -546,12 +555,15 @@ export function DeliveryPanel({ invoices, clinicId, onChanged }: { invoices: Inv
         />
       )}
 
-      {/* تحصيلٌ من شركة — كامل أو جزئي */}
+      {/* تحصيلٌ من شركة — كامل أو جزئي.
+          المبلغُ والعددُ من نفس المصدر (`companyOwed`). كان العددُ يُحسب بشرطٍ
+          أوسع، فتقول البطاقةُ «٢ طلب بالذمّة» ونافذةُ التحصيل «عن ٣ طلب» فوق
+          نفس المبلغ — رقمان لمعنىً واحدٍ أمام المندوب يوم المحاسبة. */}
       {collectFor && (
         <CollectDialog
           courier={collectFor}
           owed={companies.find((r) => r.c.id === collectFor.id)?.owed ?? 0}
-          openCount={companies.find((r) => r.c.id === collectFor.id)?.open.length ?? 0}
+          openCount={companies.find((r) => r.c.id === collectFor.id)?.openOrders ?? 0}
           onClose={() => setCollectFor(null)}
           onDone={() => { setCollectFor(null); void load(); onChanged(); }}
         />

@@ -12,6 +12,7 @@
  *   node scripts/courier-test.mjs
  * ==========================================================================*/
 import esbuild from "esbuild";
+import { readFileSync } from "node:fs";
 
 let fails = 0, passes = 0;
 const check = (name, cond, detail = "") => {
@@ -194,6 +195,33 @@ check("كلُّ الطلبات تظهر (لا تُقصّ)", rr.length === orders
 check("والمحصَّلُ حالتُه collected", rr.find((r) => r.order.id === "o4").state === "collected");
 check("والراجعُ حالتُه returned", rr.find((r) => r.order.id === "o5").state === "returned");
 check("وغيرُ المختومِ حالتُه owed", rr.find((r) => r.order.id === "o1").state === "owed");
+
+/* ── ولا نسخةَ سادسة ────────────────────────────────────────────────────────
+ * ترويسةُ courierLedger.ts تقول: المعادلةُ كُتبت بأربعة مواضع فافترقت. ثم
+ * كُتبت خامسةً بدفتر الديون — العددُ يعدّ ما لا يعدّه المبلغُ جنبَه — وسادسةً
+ * بنافذة التحصيل: البطاقةُ تقول «٢ طلب بالذمّة» والنافذةُ «عن ٣ طلب» فوق نفس
+ * المبلغ. فالفحصُ يمنع تكرارَها: كلُّ شاشةٍ تعرض رقمَ ذمّةٍ تستوردُه من المصدر.
+ * (الشرطُ الخام مسموحٌ للاستثناء والتصنيف — الممنوعُ أن يصير رقماً معروضاً.) */
+console.log("▸ المصدرُ الواحد — لا نسخةَ سادسة للمعادلة");
+const SRC = (p) => readFileSync(p, "utf8");
+const screens = [
+  "src/components/retail/DebtsPanel.tsx",
+  "src/components/retail/DeliveryPanel.tsx",
+];
+for (const f of screens) {
+  const s = SRC(f);
+  check(`${f.split("/").pop()} يستورد companyOwed من المصدر`,
+    /import\s*\{[^}]*\bcompanyOwed\b[^}]*\}\s*from\s*["']@\/lib\/courierLedger["']/.test(s));
+}
+/* رقمُ نافذة التحصيل يجيء من companyOwed لا من طولِ قائمةٍ مرشَّحةٍ يدوياً. */
+const dp = SRC("src/components/retail/DeliveryPanel.tsx");
+check("نافذةُ التحصيل تأخذ عددَها من openOrders (لا من open.length)",
+  /openCount=\{[^}]*openOrders/.test(dp) && !/\?\.open\.length/.test(dp));
+/* ودفترُ الديون يعرض ما تقبله القاعدة، لا كلَّ مسلَّمٍ غيرِ مختوم. */
+const db = SRC("src/components/retail/DebtsPanel.tsx");
+check("دفترُ الديون يبني رقمَ الذمّة بـcompanyOwed", /companyOwed\(carrierOwedOrders/.test(db));
+check("ولا يجمع dueOf بحلقةٍ فوق المسلَّم غيرِ المختوم",
+  !/for\s*\(const o of carrierOwedOrders\)/.test(db));
 
 console.log(`\n${fails ? "✗" : "✓"} courier-test: ${passes} نجحت، ${fails} فشلت`);
 process.exit(fails ? 1 : 0);
