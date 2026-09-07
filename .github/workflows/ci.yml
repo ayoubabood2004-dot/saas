@@ -48,9 +48,29 @@ jobs:
       # سلوكَها بدور `authenticated` لا كـsuperuser وحده. وهي المرّةُ الأولى
       # التي تجري فيها فعلاً — فكلُّ فشلٍ هنا كشفٌ لا عطل.
       - name: حزمةُ الهجرات على بوستغريس حقيقيّ
-        run: bash supabase/tests/run.sh
+        run: |
+          set -o pipefail
+          bash supabase/tests/run.sh 2>&1 | tee /tmp/bundle.log
         env:
           PGBIN: /usr/lib/postgresql/16/bin
+
+      # الفشلُ يُرفع **تعليقاتٍ** لا سطوراً بسجلٍّ وحده: التعليقاتُ تظهر على
+      # الدفعة وبطلب الدمج، وتُقرأ بلا فتحِ السجلّ ولا صلاحيةِ إدارة — وسجلُّ
+      # الإجراءات لا يُقرأ إلا بحسابٍ له صلاحية. فالسببُ يصل من يصلحه.
+      - name: أسبابُ الفشل تُرفع تعليقاتٍ
+        if: failure()
+        run: |
+          echo "::group::بيئةُ بوستغريس"
+          ls -d /usr/lib/postgresql/*/bin 2>/dev/null || echo "لا مجلّد postgresql"
+          echo "::endgroup::"
+          if [ -f /tmp/bundle.log ]; then
+            grep -F '✗' /tmp/bundle.log | head -40 | while IFS= read -r l; do echo "::error::$l"; done
+            echo "— آخرُ ما طبعته الحزمة —"
+            tail -25 /tmp/bundle.log | while IFS= read -r l; do echo "::notice::$l"; done
+          else
+            echo "::error::الحزمةُ ما طبعت شيئاً — تعذّر تشغيلُها أصلاً"
+            ls -d /usr/lib/postgresql/*/bin 2>/dev/null | while IFS= read -r l; do echo "::notice::موجود: $l"; done
+          fi
 
       # ضغطٌ عشوائيٌّ أوسع من الافتراضيّ: البذرةُ ثابتة فالفشلُ يُعاد بنفس
       # الحالة، والعددُ الكبير يُترك للسحابة لا لجهاز التطوير.
