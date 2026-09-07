@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { motion } from "framer-motion";
 import { getCached, setCached } from "@/lib/swrCache";
-import { findByCode, looksLikeShelfCode, twinsByName, nearCodeTwin, excelArtifact, hasArabicLetters } from "@/lib/productCodes";
+import { findByCode, looksLikeShelfCode, twinsByName, nearCodeTwin, excelArtifact, hasArabicLetters, codeMatcher } from "@/lib/productCodes";
 import { Dialog } from "@/components/ui/Dialog";
 import {
   Barcode, Package, Trash2, Search, Building2, Plus, ChevronLeft, ArrowRight, ArrowLeft,
@@ -23,7 +23,7 @@ import { ExpiryInput } from "@/components/ExpiryInput";
 import { Combobox } from "@/components/Combobox";
 import { subcategoriesOf } from "@/lib/promotions";
 import { Button, Badge, useToast, Skeleton } from "@/components/ui";
-import { cn, formatDate, money, fmtKg, searchable, normalizeCode, normalizeAr, formatNum } from "@/lib/utils";
+import { cn, formatDate, money, fmtKg, searchable, normalizeCode, matchCode, normalizeAr, formatNum } from "@/lib/utils";
 import { withTimeout, describeDbError } from "@/lib/errors";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
 import { openStockReport } from "@/lib/stockReportPrint";
@@ -543,12 +543,11 @@ function InventoryTab({ products, companies, sections, clinicId, onChanged }: { 
    * إحداهما الأخرى. */
   const ql = q.trim();
   const nq = searchable(ql);
-  const cq = normalizeCode(ql);
+  const byCode = codeMatcher(ql);
   const shown = ql
     ? products.filter((p) =>
       searchable(p.name).includes(nq)
-      || (!!cq && normalizeCode(p.barcode).includes(cq))
-      || (!!cq && (p.alt_codes ?? []).some((c) => normalizeCode(c).includes(cq)))
+      || byCode(p)
       || searchable(companyName(p.company_id) ?? "").includes(nq))
     : products;
 
@@ -880,19 +879,24 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
   const saveBulk = async () => {
     if (!validRows.length || busy) return;
     // Duplicate barcodes typed twice in the form — almost certainly a mistake.
+    // والمقارنةُ **مطبَّعة** كمقارنة القاعدة (محفّز 0167): صفّان بـ`W90` و`w90`،
+    // أو بـ`٢٤٧` و`247`، رمزٌ واحد. وبلا التطبيع يمرّان من هنا ويرفض الخادمُ
+    // الثاني بعد أن يكون الأوّلُ قد حُفظ — فيبقى نصفُ الدفعة ورسالةٌ غامضة.
     const codes = validRows.map((r) => r.barcode.trim()).filter(Boolean);
-    const dup = codes.find((c, i) => codes.indexOf(c) !== i);
-    if (dup) {
-      toast.error(t("pos.bulkDupBarcode", { code: dup, defaultValue: "الباركود {{code}} مكرر في القائمة" }));
+    const ncodes = codes.map((c) => matchCode(c));
+    const dupAt = ncodes.findIndex((c, i) => ncodes.indexOf(c) !== i);
+    if (dupAt >= 0) {
+      toast.error(t("pos.bulkDupBarcode", { code: codes[dupAt], defaultValue: "الباركود {{code}} مكرر في القائمة" }));
       return;
     }
     // A barcode that already belongs to a product would create a confusing twin —
     // restocks belong in a purchase invoice (فاتورة شراء), not here.
     const ownIds = new Set(rows.map((r) => r.productId).filter(Boolean));
-    const ncodes = codes.map((c) => normalizeCode(c));
+    // الفارغُ بعد التطبيع خارج المقارنة: رمزٌ كلُّه محارفُ اتجاهٍ يصير `""`،
+    // ولو دخل لطابق كلَّ رمزٍ مثله وادّعى تعارضاً لا وجود له.
+    const nset = new Set(ncodes.filter(Boolean));
     const clash = allProducts?.find((p) => !ownIds.has(p.id) && (
-      (p.barcode && ncodes.includes(normalizeCode(p.barcode)))
-      || (p.alt_codes ?? []).some((a) => ncodes.includes(normalizeCode(a)))));
+      nset.has(matchCode(p.barcode)) || (p.alt_codes ?? []).some((a) => nset.has(matchCode(a)))));
     if (clash) {
       toast.error(t("pos.bulkBarcodeExists", { code: clash.barcode, name: clash.name, defaultValue: "الباركود {{code}} مستخدم مسبقاً للمنتج \"{{name}}\" — للإضافة على مخزونه استخدم فاتورة شراء" }));
       return;
@@ -1681,9 +1685,9 @@ function CompanyDetail({ company, products, companies, sections, clinicId, onBac
   // نفس تطبيع تبويب المنتجات وشاشة البيع — بحثٌ حرفيّ هنا كان يقول «ماكو»
   // عن مادةٍ بالرفّ لأن «ة» كُتبت «ه» أو الرقم كُتب بالعربية.
   const ql = searchable(q.trim());
-  const cq = normalizeCode(q);
+  const byCode = codeMatcher(q);
   const shownSections = ql ? mySections.filter((sec) => searchable(sec.name).includes(ql)) : mySections;
-  const matchedProducts = ql ? mine.filter((p) => searchable(p.name).includes(ql) || (!!cq && normalizeCode(p.barcode).includes(cq))) : [];
+  const matchedProducts = ql ? mine.filter((p) => searchable(p.name).includes(ql) || byCode(p)) : [];
   const sectionNameOf = (id?: string | null) => (id ? mySections.find((x) => x.id === id)?.name : undefined);
   const { askDelete: removeProduct, deleteDialog } = useProductDelete(onChanged);
 
@@ -1894,8 +1898,8 @@ function SectionProducts({ company, section, products, companies, sections, clin
     ? products.filter((p) => p.section_id === section.id)
     : products.filter((p) => p.company_id === company.id && !p.section_id);
   const ql = searchable(q.trim());
-  const cq = normalizeCode(q);
-  const shown = ql ? mine.filter((p) => searchable(p.name).includes(ql) || (!!cq && normalizeCode(p.barcode).includes(cq))) : mine;
+  const byCode = codeMatcher(q);
+  const shown = ql ? mine.filter((p) => searchable(p.name).includes(ql) || byCode(p)) : mine;
   const title = section ? section.name : t("pos.uncategorized", "بدون صنف");
   const pool = section?.pooled_stock ?? 0;
   const trackedUnits = mine.reduce((n, p) => n + (p.pooled ? 0 : p.stock || 0), 0);
@@ -2169,12 +2173,18 @@ function AssignProductsModal({ open, company, companies, sections, products, def
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, defaultSectionId]);
 
-  const ql = q.trim().toLowerCase();
+  // بحثٌ مطبَّع كبقية الشاشات. كان هنا `toLowerCase` للاسم ومقارنةٌ خامٌّ للرمز،
+  // فمنتجٌ اسمه بـ«ة» لا يُلقى بـ«ه»، ورمزٌ مخزونٌ بعلامة اتجاهٍ لا يُلقى أصلاً —
+  // وهذه النافذةُ هي التي تُسند المنتجاتِ القديمةَ بلا شركة، أي أنّ ما لا تجده
+  // يبقى بلا شركةٍ إلى الأبد.
+  const qt = q.trim();
+  const ql = searchable(qt);
   // Products already filed under THIS company sink to the bottom; everything
   // else — especially the unassigned legacy products — surfaces first.
   const shown = useMemo(() => {
+    const byCode = codeMatcher(qt);
     const list = ql
-      ? products.filter((p) => p.name.toLowerCase().includes(ql) || (p.barcode ?? "").includes(ql))
+      ? products.filter((p) => searchable(p.name).includes(ql) || byCode(p))
       : products.slice();
     return list.sort((a, b) => {
       const am = a.company_id === company.id ? 1 : 0;
@@ -2182,7 +2192,7 @@ function AssignProductsModal({ open, company, companies, sections, products, def
       if (am !== bm) return am - bm;
       return a.name.localeCompare(b.name);
     });
-  }, [products, ql, company.id]);
+  }, [products, qt, ql, company.id]);
 
   const toggle = (id: string) => {
     setPicked((prev) => {
@@ -2349,8 +2359,9 @@ function MergeDialog({ drop, candidates, suggested, onClose, onMerged }: {
   const [busy, setBusy] = useState(false);
   const shown = useMemo(() => {
     const nq = searchable(q);
+    const byCode = codeMatcher(q);
     const base = nq
-      ? candidates.filter((p) => searchable(p.name).includes(nq) || normalizeCode(p.barcode).includes(normalizeCode(q)))
+      ? candidates.filter((p) => searchable(p.name).includes(nq) || byCode(p))
       : [...suggested, ...candidates.filter((p) => !suggested.some((s) => s.id === p.id))];
     return base.slice(0, 40);
   }, [candidates, suggested, q]);

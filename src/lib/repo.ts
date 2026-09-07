@@ -4,9 +4,33 @@
 import { loadDB, saveDB } from "./demoStore";
 
 /* موحِّدا مطابقة المخزون — مرآةُ inv_norm_code/inv_norm_name على الخادم:
- * قاعدتان تنحرفان تعني قطعةً تُطابَق محلياً وتتوأم سحابياً. */
-const invNormCode = (v: string | null | undefined): string =>
-  (v ?? "").replace(/\s+/g, "").replace(/[٠-٩]/g, (d) => String(d.charCodeAt(0) - 0x0660));
+ * قاعدتان تنحرفان تعني قطعةً تُطابَق محلياً وتتوأم سحابياً.
+ *
+ * ومنذ 0164 صار `inv_norm_code` بالقاعدة مرآةً **حرفية** لـ`matchCode`: نفسُ
+ * الأرقام، ونفسُ المحارف الخفية، ونفسُ طيّ الحالة — ويقيسه `code-norm-parity`
+ * حرفاً بحرف على مئةٍ وعشر حالات. فالنسخةُ المحلية هنا لم تعد نسخة: هي
+ * الدالّةُ نفسها. وكانت قبلها تشيل المسافاتِ والأرقامَ العربية وحدها، فرمزٌ
+ * بعلامة اتجاهٍ خفية يُطابَق سحابياً ولا يُطابَق تجريبياً — وفحوصُ المنطق
+ * تجري على التجريبية، فالانحرافُ يخفي العطلَ بدل أن يكشفه. */
+const invNormCode = (v: string | null | undefined): string => matchCode(v);
+/**
+ * مرآةُ كتلة المطابقة بالرمز داخل `record_purchase`/`update_purchase` (0166):
+ * الرمزُ الأساسيّ **والرموزُ الإضافية**، والأساسيُّ يغلب عند التزاحم، ثم
+ * شركةُ الفاتورة، ثم المصنَّف، ثم الأقدم. كانت هنا تفحص الأساسيَّ وحده — أي
+ * أن الشراء لا يلقى ما يلقاه الكاشير: قطعةٌ رمزُها الأساسيّ رقمُ رفّ وباركودُ
+ * المصنع بإضافيّها تُنشَأ من جديد برصيدٍ مقسوم بكلّ فاتورة شراء.
+ */
+const pickByPurchaseCode = <T extends { id: string; barcode?: string | null; alt_codes?: string[] | null; company_id?: string | null; section_id?: string | null; created_at?: string }>(
+  rows: readonly T[], code: string, companyId: string | null,
+): string | null => {
+  const isPrimary = (p: T) => invNormCode(p.barcode) === code && (p.barcode ?? "") !== "";
+  return rows
+    .filter((p) => isPrimary(p) || (p.alt_codes ?? []).some((a) => invNormCode(a) === code))
+    .sort((a, b) => Number(isPrimary(b)) - Number(isPrimary(a))
+      || Number(b.company_id === companyId) - Number(a.company_id === companyId)
+      || Number(b.section_id != null) - Number(a.section_id != null)
+      || (a.created_at ?? "").localeCompare(b.created_at ?? ""))[0]?.id ?? null;
+};
 const invNormName = (v: string | null | undefined): string =>
   (v ?? "")
     // أ/إ/آ→ا · ة→ه · ى→ي — بمهارب يونيكود: بنيةُ مطابقةٍ لا نصٌّ معروض.
@@ -19,6 +43,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, AppointmentStatus, ClinicInfo, PublicStaff, DailyNote, TreatmentEntry, Admission, Branch, Reminder, Product, Company, CompanySection, Purchase, PurchaseItem, PurchasePayment, PurchaseDraftLine, PurchaseMeta, Courier, DeliveryOrder, PetMovement, DemoDB, Invoice, InvoiceItem, CheckoutItem, SaleMeta, Customer, DiscountType, PaymentMethod, PaymentSplit, WhatsAppMessage, AuditEntry, LoginEvent, PetNote, Expense, ExpenseMethod, ReturnMeta, RetailReturnResult, HealthMetric, ClinicVisit , Surgery, LabResult, LabDeviceLink, LabDeviceInbox, LabStatusValue, PetProblem, CareEntry, FeatureRequest, GeneratedBarcode, StoreProfile, StoreOrder, StoreOrderItem, StoreFrontInfo, StoreCatalogItem, Journey, JourneyEvent, JourneyKind, JourneyStage, JourneyPublicView, EditLine } from "@/types";
 import type { CompanyCharge } from "@/types";
 import type { DeletedProduct, CourierSettlement, ReceiptsDay, ReceiptsTotal, TopProductRow, StaffSalesRow, InvoiceSearch } from "@/types";
+import type { BarcodeAilment, BarcodeHealthRow } from "@/types";
 import type { PortalMe, PortalPetCard, PortalPetDetail, PortalAdmission, PortalJourney, PortalCodeRequest, PortalVerifyResult } from "@/types";
 import { receiptsOf, dueOf } from "./debt";
 import { phoneDigits } from "./phone";
@@ -1314,6 +1339,54 @@ const demoRepo = {
     return keep;
   },
 
+  /**
+   * مرآةُ `verify_barcode_health()` (0168) — الأنواعُ الخمسة بنفس التعريف.
+   * وتُكتب هنا لا لأن العيادةَ التجريبية تحتاجها، بل لأن فحوصَ المنطق تجري على
+   * هذه النسخة: منطقٌ لا وجودَ له هنا منطقٌ لم يُفحص (CLAUDE.md §٤).
+   */
+  async barcodeHealth(): Promise<BarcodeHealthRow[]> {
+    const products = loadDB().products ?? [];
+    const out: BarcodeHealthRow[] = [];
+    const row = (kind: BarcodeAilment, p: Product, code: string): void => {
+      out.push({ kind, product_id: p.id, product_name: p.name, code });
+    };
+    const codes: { p: Product; raw: string; norm: string; primary: boolean }[] = [];
+    for (const p of products) {
+      if ((p.barcode ?? "").trim()) codes.push({ p, raw: p.barcode as string, norm: invNormCode(p.barcode), primary: true });
+      for (const a of p.alt_codes ?? []) if ((a ?? "").trim()) codes.push({ p, raw: a, norm: invNormCode(a), primary: false });
+    }
+    // نفسُ قسمة 0168: عددُ حاملي الرمز، وعددُ من يحمله **أساسياً**.
+    // ≠١ أساسيّاً ⇒ توأمٌ بلا صاحب، و=١ ⇒ استعارةٌ محسومة (المستعيرُ وحده يُعرض).
+    const all = new Map<string, Set<string>>();
+    const prim = new Map<string, Set<string>>();
+    const note = (m: Map<string, Set<string>>, k: string, id: string): void => {
+      const s = m.get(k) ?? new Set<string>();
+      s.add(id);
+      m.set(k, s);
+    };
+    for (const c of codes) {
+      if (!c.norm) continue;
+      note(all, c.norm, c.p.id);
+      if (c.primary) note(prim, c.norm, c.p.id);
+    }
+    for (const c of codes) {
+      if (!c.norm) continue;
+      const nAll = all.get(c.norm)?.size ?? 0;
+      const nPrim = prim.get(c.norm)?.size ?? 0;
+      if (nAll <= 1) continue;
+      if (nPrim !== 1) { row("twin", c.p, c.raw); continue; }
+      if (!c.primary && !prim.get(c.norm)?.has(c.p.id)) row("alt_owned", c.p, c.raw);
+    }
+    for (const p of products) {
+      const raw = p.barcode ?? "";
+      if (!raw) continue;
+      if (/[ء-ي]/.test(raw)) row("arabic", p, raw);
+      if (/^\d+(\.\d+)?[Ee][+-]?\d+$/.test(raw) || /^\d{6,}\.0+$/.test(raw)) row("excel", p, raw);
+      if (!invNormCode(raw)) row("empty", p, raw);
+    }
+    return out.sort((a, b) => a.kind.localeCompare(b.kind) || a.product_name.localeCompare(b.product_name));
+  },
+
   /* ---- سجل الباركودات المولدة (مولد الباركود الداخلي) ---- */
   async listGeneratedBarcodes(): Promise<GeneratedBarcode[]> {
     return (loadDB().generatedBarcodes ?? []).slice().sort((a, b) => b.created_at.localeCompare(a.created_at));
@@ -1755,12 +1828,7 @@ const demoRepo = {
       // فتُرصَّد بمكانها وتتعلّم الباركود — لا توأمَ أعمى بـ«بدون صنف».
       let pid = l.product_id ?? null;
       const code = invNormCode(l.barcode);
-      if (!pid && code) {
-        pid = db.products
-          .filter((p) => invNormCode(p.barcode) === code && (p.barcode ?? "") !== "")
-          .sort((a, b) => Number(b.company_id === companyId) - Number(a.company_id === companyId)
-            || Number(b.section_id != null) - Number(a.section_id != null))[0]?.id ?? null;
-      }
+      if (!pid && code) pid = pickByPurchaseCode(db.products, code, companyId);
       const lname = invNormName(l.name);
       if (!pid && lname.length >= 2 && lname !== "item") {
         pid = db.products
@@ -1853,12 +1921,7 @@ const demoRepo = {
       count += qty;
       let pid = l.product_id ?? null;
       const code = invNormCode(l.barcode);
-      if (!pid && code) {
-        pid = db.products
-          .filter((p) => invNormCode(p.barcode) === code && (p.barcode ?? "") !== "")
-          .sort((a, b) => Number(b.company_id === companyId) - Number(a.company_id === companyId)
-            || Number(b.section_id != null) - Number(a.section_id != null))[0]?.id ?? null;
-      }
+      if (!pid && code) pid = pickByPurchaseCode(db.products, code, companyId);
       const lname = invNormName(l.name);
       if (!pid && lname.length >= 2 && lname !== "item") {
         pid = db.products
@@ -3805,6 +3868,14 @@ const supabaseRepo: typeof demoRepo = {
     return data as Product;
   },
 
+  async barcodeHealth() {
+    // تشخيصٌ لا لوحةُ مال — لكنه يُقرأ قراراً («ادمج هذين»)، فقائمةٌ ناقصةٌ عن
+    // خطأٍ أسوأ من خطأ ظاهر. نرمي، والشاشةُ تقول «أعد المحاولة».
+    const r = await sbc().rpc("verify_barcode_health");
+    if (r.error) throw r.error;
+    return (r.data ?? []) as BarcodeHealthRow[];
+  },
+
   /* ---------------- Companies (الشركات) ---------------- */
   async listGeneratedBarcodes() {
     return allPages<GeneratedBarcode>(() =>
@@ -4663,7 +4734,7 @@ const READ_ONLY_ALLOWED = new Set<string>([
   "activitySummary", "activityPage", "activityActors",
   // --- استعلامات مساعدة لا تكتب ---
   "checkStoreSlug", "slotTaken", "supportsBulkGroup", "supportsSupplierLedger",
-  "adminListFeatureRequests", "systemHealth",
+  "adminListFeatureRequests", "systemHealth", "barcodeHealth",
   // --- واجهات الزبون العامة (تعمل خارج جلسة العيادة) ---
   "storeFrontPublic", "storeCatalogPublic", "placeStoreOrder", "trackJourneyPublic",
   "reactJourneyPublic", "claimPet", "claimPetsByPhone",

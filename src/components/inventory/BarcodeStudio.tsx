@@ -1,16 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
-  Barcode as BarcodeIcon, Check, Link2, Loader2, Package, Pencil, Printer, ScanBarcode,
-  Search, Sparkles, History,
+  AlertTriangle, Barcode as BarcodeIcon, Check, Link2, Loader2, Package, Pencil, Printer,
+  ScanBarcode, ScanLine, Search, Sparkles, Stethoscope, History,
 } from "lucide-react";
-import type { GeneratedBarcode, Product } from "@/types";
+import type { BarcodeAilment, BarcodeHealthRow, GeneratedBarcode, Product } from "@/types";
 import { repo } from "@/lib/repo";
 import { generateBarcodes, nextSeqFrom, ean13Svg, isValidEan13 } from "@/lib/barcodeGen";
+import { createScanAssembler } from "@/lib/scanBuffer";
+import { hasArabicLetters, layoutFix } from "@/lib/productCodes";
 import { getClinicName } from "@/lib/settings";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button, Badge, useToast, Skeleton } from "@/components/ui";
-import { formatNum, formatDate, cn } from "@/lib/utils";
+import { formatNum, formatDate, cn, matchCode } from "@/lib/utils";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
 
 /**
@@ -284,6 +286,10 @@ export function BarcodeStudio({ products, onChanged }: { products: Product[]; on
         )}
       </section>
 
+      {/* صحّة الباركودات (C1) + اختبار القارئ (C2) */}
+      <BarcodeHealthCard />
+      <ReaderTest makeCode={() => generateBarcodes(1, takenSet(), startSeq())[0]} />
+
       {/* السجل */}
       <section className="rounded-2xl border border-line bg-surface-1 p-3.5 shadow-card">
         <div className="mb-2.5 flex flex-wrap items-center gap-2">
@@ -355,5 +361,257 @@ export function BarcodeStudio({ products, onChanged }: { products: Product[]; on
         )}
       </section>
     </div>
+  );
+}
+
+/* ============================================================================
+ * (C1) صحّة الباركودات — مراقبةٌ دائمة لا فحصَ مرّة.
+ *
+ * الحرّاسُ التي نزلت بالقاعدة (0164–0167) تمنع الخطأ من اليوم فصاعداً: التطبيعُ
+ * موحَّد، والشراءُ يقرأ الرموزَ الإضافية، والتوأمُ مرفوضٌ عند الكتابة. أما ما
+ * دخل قبلها فباقٍ كما هو — والخطُّ الأحمر الأوّل يمنع تنظيفَه بالجملة: بياناتُ
+ * العيادة تبقى كما أدخلها أصحابُها.
+ *
+ * فالباقي أن **يُرى**: عيادةٌ لا تعرف أن عندها رمزَين متوأمَين تظلّ تشتكي أن
+ * «المادة تختفي» ولا تعرف أين المشكلة. ولذلك لا زرَّ إصلاحٍ جماعيّ هنا — عرضٌ
+ * وإرشادٌ، والقرارُ بيد صاحب المخزن.
+ * ==========================================================================*/
+const AILMENTS: BarcodeAilment[] = ["twin", "alt_owned", "empty", "arabic", "excel"];
+
+function BarcodeHealthCard() {
+  const { t } = useTranslation();
+  const [rows, setRows] = useState<BarcodeHealthRow[] | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const [openKind, setOpenKind] = useState<BarcodeAilment | null>(null);
+
+  const run = async () => {
+    if (busy) return;
+    playTap();
+    setBusy(true);
+    setFailed(false);
+    try {
+      const r = await repo.barcodeHealth();
+      setRows(r);
+      if (r.length === 0) playSuccess();
+    } catch {
+      // قائمةٌ ناقصةٌ عن خطأ أخطرُ من خطأٍ ظاهر: لا نعرض «كلُّ شيءٍ سليم» عن فشل.
+      playWarning();
+      setRows(null);
+      setFailed(true);
+    } finally { setBusy(false); }
+  };
+
+  const title = (k: BarcodeAilment): string => ({
+    twin: t("barcodeHealth.twin", "رمز واحد على أكثر من منتج"),
+    alt_owned: t("barcodeHealth.altOwned", "رمز إضافي صاحبه منتج ثاني"),
+    empty: t("barcodeHealth.empty", "رمز يبيّن موجود وهو فاضي"),
+    arabic: t("barcodeHealth.arabic", "باركود بأحرف عربية"),
+    excel: t("barcodeHealth.excel", "باركود شوّهه إكسل"),
+  })[k];
+  const advice = (k: BarcodeAilment): string => ({
+    twin: t("barcodeHealth.twinFix", "المسحة تبيع واحد منهم بلا قاعدة. ادمج المنتجين من المخزون، أو غيّر رمز واحد منهم."),
+    alt_owned: t("barcodeHealth.altOwnedFix", "الرمز إضافي هنا وأساسي عند منتج ثاني — المسحة تروح لصاحبه الأصلي. شيله من الرموز الإضافية أو ادمج المنتجين."),
+    empty: t("barcodeHealth.emptyFix", "كله مسافات أو محارف اتجاه خفية — ما يطابق ولا مسحة. افتح المنتج وامسح باركود العلبة من جديد."),
+    arabic: t("barcodeHealth.arabicFix", "الكيبورد كان عربي وقت المسح. بدّل لغة الكيبورد إنكليزي وامسح العلبة من جديد."),
+    excel: t("barcodeHealth.excelFix", "الرقم الأصلي ما ينسترجع من هذا الشكل. امسح العلبة من جديد — وبإكسل خلّي عمود الباركود «نص» قبل اللصق."),
+  })[k];
+
+  const groups = AILMENTS.map((k) => ({ kind: k, items: (rows ?? []).filter((r) => r.kind === k) })).filter((g) => g.items.length > 0);
+
+  return (
+    <section className="rounded-2xl border border-line bg-surface-1 p-3.5 shadow-card">
+      <div className="mb-2 flex flex-wrap items-center gap-2">
+        <span className="grid h-9 w-9 place-items-center rounded-xl bg-surface-2 text-ink-muted"><Stethoscope size={17} /></span>
+        <div className="min-w-0 flex-1">
+          <h3 className="text-sm font-extrabold text-ink">{t("barcodeHealth.title", "فحص صحة الباركودات")}</h3>
+          <p className="text-2xs text-ink-subtle">{t("barcodeHealth.sub", "يقرأ رموز مخزنك ويقول وين الخلل — بلا ما يغيّر شي.")}</p>
+        </div>
+        <Button size="sm" variant="secondary" loading={busy} leftIcon={<Stethoscope size={14} />} onClick={() => void run()}>
+          {rows === null ? t("barcodeHealth.run", "افحص") : t("barcodeHealth.again", "افحص من جديد")}
+        </Button>
+      </div>
+
+      {failed && (
+        <p className="rounded-lg bg-danger-50 px-2.5 py-2 text-2xs font-bold text-danger-700 dark:bg-danger-500/10 dark:text-danger-300">
+          {t("barcodeHealth.failed", "ما وصلت النتيجة — أعد المحاولة. (ما نعرض «سليم» عن فشل اتصال.)")}
+        </p>
+      )}
+
+      {rows !== null && groups.length === 0 && (
+        <p className="rounded-lg bg-success-50 px-2.5 py-2 text-2xs font-bold text-success-700 dark:bg-success-500/10 dark:text-success-300">
+          {t("barcodeHealth.clean", "كل رموز مخزنك سليمة ✓ — ماكو توأم ولا رمز مكسور.")}
+        </p>
+      )}
+
+      {groups.length > 0 && (
+        <div className="space-y-1.5">
+          {groups.map((g) => (
+            <div key={g.kind} className="overflow-hidden rounded-xl border border-warn-200 bg-warn-50/40 dark:border-warn-500/25 dark:bg-warn-500/5">
+              <button type="button" onClick={() => { playTap(); setOpenKind(openKind === g.kind ? null : g.kind); }}
+                className="flex w-full items-center gap-2 px-3 py-2 text-start transition hover:bg-warn-100/50 dark:hover:bg-warn-500/10">
+                <AlertTriangle size={14} className="shrink-0 text-warn-600 dark:text-warn-300" />
+                <span className="min-w-0 flex-1 text-xs font-extrabold text-ink">{title(g.kind)}</span>
+                <Badge tone="warn">{formatNum(g.items.length)}</Badge>
+              </button>
+              {openKind === g.kind && (
+                <div className="border-t border-warn-200/60 px-3 py-2 dark:border-warn-500/20">
+                  <p className="mb-1.5 text-2xs font-bold text-ink-muted">{advice(g.kind)}</p>
+                  <div className="max-h-44 space-y-1 overflow-y-auto">
+                    {g.items.map((r, i) => (
+                      <div key={`${r.product_id}-${r.code}-${i}`} className="flex flex-wrap items-center gap-x-2 text-2xs">
+                        <span className="min-w-0 flex-1 truncate font-bold text-ink">{r.product_name}</span>
+                        <span className="font-mono text-ink-subtle" dir="ltr">{r.code}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          ))}
+          <p className="pt-0.5 text-2xs text-ink-subtle">{t("barcodeHealth.noBulk", "ما نصلّح بالجملة: بياناتك تبقى مثل ما دخّلتها، والتصليح يصير بيدك منتج منتج.")}</p>
+        </div>
+      )}
+    </section>
+  );
+}
+
+/* ============================================================================
+ * (C2) اختبار القارئ — حدودُ العتاد تُكشف قبل أن تعضّ.
+ *
+ * «القارئ ما يشتغل» شكوى تُشخَّص عن بُعد بالتخمين: ماسحٌ مضبوطٌ على Tab بدل
+ * Enter، أو كيبوردٌ عربيّ لحظةَ المسح، أو ماسحُ بلوتوث بطيءٌ تُرفض دفعتُه. وكلُّ
+ * واحدةٍ منها تُقاس بدقيقة إن سألنا القارئَ نفسَه.
+ *
+ * والحكمُ هنا ليس رأياً: نُغذّي **المجمِّعَ نفسه** (`createScanAssembler`) بما
+ * وصل وبأزمانه، فيقول ما ستقوله شاشةُ البيع حرفياً. مقياسٌ يحاكي الشِفرةَ ولا
+ * يستعملها كان سيمدح ماسحاً ترفضه الشاشة.
+ * ==========================================================================*/
+interface ReaderVerdict {
+  expected: string;
+  got: string;
+  term: "enter" | "tab" | null;
+  medianGap: number;
+  maxGap: number;
+  accepted: boolean | null;
+  arabic: string;
+}
+
+function ReaderTest({ makeCode }: { makeCode: () => string }) {
+  const { t } = useTranslation();
+  const [code, setCode] = useState<string | null>(null);
+  const [res, setRes] = useState<ReaderVerdict | null>(null);
+
+  useEffect(() => {
+    if (!code) return;
+    const keys: string[] = [];
+    const times: number[] = [];
+    let timer: number | null = null;
+    const finish = (term: "enter" | "tab" | null): void => {
+      if (timer) window.clearTimeout(timer);
+      const gaps = times.slice(1).map((x, i) => x - times[i]);
+      const sorted = [...gaps].sort((a, b) => a - b);
+      // نفسُ المجمِّع الذي تستعمله شاشة البيع، بنفس المدخلات وأزمانها.
+      let accepted: boolean | null = null;
+      if (term) {
+        const asm = createScanAssembler();
+        for (let i = 0; i < keys.length; i++) asm.feed(keys[i], times[i]);
+        accepted = asm.feed(term === "enter" ? "Enter" : "Tab", times[times.length - 1] ?? 0) !== null;
+      }
+      const got = keys.join("");
+      setRes({
+        expected: code, got, term,
+        medianGap: sorted.length ? Math.round(sorted[Math.floor(sorted.length / 2)]) : 0,
+        maxGap: sorted.length ? Math.round(sorted[sorted.length - 1]) : 0,
+        accepted,
+        arabic: hasArabicLetters(got) ? layoutFix(got) : "",
+      });
+      setCode(null);
+      playTap();
+    };
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === "Enter" || e.key === "Tab") {
+        e.preventDefault();
+        if (keys.length) finish(e.key === "Enter" ? "enter" : "tab");
+        return;
+      }
+      if (e.key.length !== 1) return;
+      e.preventDefault();
+      keys.push(e.key);
+      times.push(e.timeStamp);
+      if (timer) window.clearTimeout(timer);
+      // ماسحٌ بلا فاصلٍ أصلاً: نُنهي بالتوقّف حتى نقولها له، لا أن ننتظر أبداً.
+      timer = window.setTimeout(() => finish(null), 700);
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => { window.removeEventListener("keydown", onKey, true); if (timer) window.clearTimeout(timer); };
+  }, [code]);
+
+  const start = (): void => { playTap(); setRes(null); setCode(makeCode()); };
+
+  const lines: { tone: "ok" | "warn" | "bad"; text: string }[] = [];
+  if (res) {
+    const seen = res.arabic || res.got;
+    const same = matchCode(seen) === matchCode(res.expected);
+    const tail = !same && matchCode(res.expected).endsWith(matchCode(seen)) && matchCode(seen).length > 0;
+    if (same) lines.push({ tone: "ok", text: t("readerTest.full", "وصل كامل ✓ — نفس الرقم المعروض بالضبط.") });
+    else if (tail) lines.push({ tone: "bad", text: t("readerTest.tail", "وصل ناقص من الأول: ضاعت {{n}} خانة. جرّب مرة ثانية والشاشة هادية.", { n: matchCode(res.expected).length - matchCode(seen).length }) });
+    else lines.push({ tone: "bad", text: t("readerTest.wrong", "الي وصل غير الي معروض: «{{got}}».", { got: res.got || "—" }) });
+
+    if (res.arabic) lines.push({ tone: "bad", text: t("readerTest.arabic", "الكيبورد كان عربي وقت المسح — بدّله إنكليزي. (الواصل بالعكس يقرأ: {{fix}})", { fix: res.arabic }) });
+
+    if (res.term === "enter") lines.push({ tone: "ok", text: t("readerTest.enter", "الفاصل Enter — مدعوم ✓") });
+    else if (res.term === "tab") lines.push({ tone: "ok", text: t("readerTest.tab", "قارئك يرسل Tab بدل Enter — مدعوم ✓ (كان يُهمَل قبل هذا التحديث).") });
+    else lines.push({ tone: "warn", text: t("readerTest.noTerm", "قارئك ما يرسل Enter ولا Tab بالنهاية — فعّل واحد منهم من إعدادات القارئ.") });
+
+    lines.push({
+      tone: res.medianGap > 60 ? "warn" : "ok",
+      text: t("readerTest.speed", "سرعة الإرسال: وسيط {{m}} م.ث، وأقصى {{x}} م.ث.", { m: formatNum(res.medianGap), x: formatNum(res.maxGap) }),
+    });
+    if (res.accepted === true) lines.push({ tone: "ok", text: t("readerTest.accepted", "شاشة البيع تقبل هذه المسحة ✓") });
+    if (res.accepted === false) lines.push({ tone: "bad", text: t("readerTest.rejected", "شاشة البيع ترفض هذه المسحة — القارئ بطيء فتحسبه كتابة يد. جرّب كيبل بدل بلوتوث، أو بلّغنا بالأرقام الي فوق.") });
+  }
+
+  return (
+    <section className="rounded-2xl border border-line bg-surface-1 p-3.5 shadow-card">
+      <div className="mb-2 flex flex-wrap items-center gap-2">
+        <span className="grid h-9 w-9 place-items-center rounded-xl bg-surface-2 text-ink-muted"><ScanLine size={17} /></span>
+        <div className="min-w-0 flex-1">
+          <h3 className="text-sm font-extrabold text-ink">{t("readerTest.title", "اختبار القارئ")}</h3>
+          <p className="text-2xs text-ink-subtle">{t("readerTest.sub", "امسح الكود الي نعرضه، ونكلك بالضبط شيصير بقارئك.")}</p>
+        </div>
+        <Button size="sm" variant="secondary" leftIcon={<ScanLine size={14} />} onClick={start}>
+          {code ? t("readerTest.restart", "كود ثاني") : t("readerTest.start", "ابدأ الاختبار")}
+        </Button>
+      </div>
+
+      {code && (
+        <div className="rounded-xl border border-brand-200 bg-brand-50/40 p-3 text-center dark:border-brand-500/25 dark:bg-brand-500/5">
+          <p className="mb-2 text-2xs font-extrabold text-brand-700 dark:text-brand-300">{t("readerTest.scanNow", "امسح هذا الكود من الشاشة بقارئك…")}</p>
+          <span className="inline-block rounded-lg border border-line bg-white p-2" dangerouslySetInnerHTML={{ __html: ean13Svg(code, { moduleW: 2.2, height: 52, fontSize: 11 }) }} />
+          <p className="mt-2 text-2xs text-ink-subtle">{t("readerTest.cancelHint", "ما يشتغل؟ اضغط «إلغاء» ورجع جرّب.")}</p>
+          <Button size="sm" variant="ghost" onClick={() => { setCode(null); playTap(); }}>{t("readerTest.cancel", "إلغاء")}</Button>
+        </div>
+      )}
+
+      {res && (
+        <div className="space-y-1.5">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg bg-surface-2 px-2.5 py-1.5 text-2xs">
+            <span className="font-bold text-ink-muted">{t("readerTest.expected", "المعروض")}</span>
+            <span className="font-mono text-ink" dir="ltr">{res.expected}</span>
+            <span className="font-bold text-ink-muted">{t("readerTest.received", "الواصل")}</span>
+            <span className="font-mono text-ink" dir="ltr">{res.got || "—"}</span>
+          </div>
+          {lines.map((l, i) => (
+            <p key={i} className={cn("rounded-lg px-2.5 py-1.5 text-2xs font-bold",
+              l.tone === "ok" ? "bg-success-50 text-success-700 dark:bg-success-500/10 dark:text-success-300"
+                : l.tone === "warn" ? "bg-warn-50 text-warn-700 dark:bg-warn-500/10 dark:text-warn-300"
+                  : "bg-danger-50 text-danger-700 dark:bg-danger-500/10 dark:text-danger-300")}>
+              {l.text}
+            </p>
+          ))}
+        </div>
+      )}
+    </section>
   );
 }

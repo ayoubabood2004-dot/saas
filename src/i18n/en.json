@@ -4220,5 +4220,45 @@
       "rate": "Too many tries in a short time — please wait a moment.",
       "generic": "Something went wrong — please try again."
     }
+  },
+  "barcodeHealth": {
+    "title": "Barcode health check",
+    "sub": "Reads your inventory codes and points at what is broken — it changes nothing.",
+    "run": "Check",
+    "again": "Check again",
+    "failed": "The result did not arrive — try again. (We never show “healthy” when the call failed.)",
+    "clean": "All your inventory codes are sound ✓ — no twins and no broken codes.",
+    "noBulk": "No bulk fixing: your data stays exactly as you entered it, and repairs are made by you, product by product.",
+    "twin": "One code on more than one product",
+    "twinFix": "A scan picks one of them with no rule. Merge the two products from Inventory, or change one of the codes.",
+    "altOwned": "An extra code owned by another product",
+    "altOwnedFix": "The code is an extra here and the primary code of another product — the scan goes to its real owner. Remove it from the extra codes, or merge the two products.",
+    "empty": "A code that looks present but is empty",
+    "emptyFix": "It is all spaces or invisible direction marks — it matches no scan at all. Open the product and scan the box barcode again.",
+    "arabic": "A barcode with Arabic letters",
+    "arabicFix": "The keyboard was Arabic while scanning. Switch the keyboard to English and scan the box again.",
+    "excel": "A barcode mangled by Excel",
+    "excelFix": "The original number cannot be recovered from this shape. Scan the box again — and in Excel set the barcode column to “Text” before pasting."
+  },
+  "readerTest": {
+    "title": "Reader test",
+    "sub": "Scan the code we show, and we will tell you exactly what your reader does.",
+    "start": "Start the test",
+    "restart": "Another code",
+    "scanNow": "Scan this code off the screen with your reader…",
+    "cancel": "Cancel",
+    "cancelHint": "Not working? Press “Cancel” and try again.",
+    "expected": "Shown",
+    "received": "Received",
+    "full": "Arrived complete ✓ — exactly the number shown.",
+    "tail": "Arrived short at the front: {{n}} digit(s) lost. Try again with a quiet screen.",
+    "wrong": "What arrived is not what was shown: “{{got}}”.",
+    "arabic": "The keyboard was Arabic while scanning — switch it to English. (Reversed, what arrived reads: {{fix}})",
+    "enter": "Terminator: Enter — supported ✓",
+    "tab": "Your reader sends Tab instead of Enter — supported ✓ (it was ignored before this update).",
+    "noTerm": "Your reader sends neither Enter nor Tab at the end — enable one of them in the reader settings.",
+    "speed": "Send speed: median {{m}} ms, max {{x}} ms.",
+    "accepted": "The sale screen accepts this scan ✓",
+    "rejected": "The sale screen rejects this scan — the reader is slow, so it reads as hand typing. Try a cable instead of Bluetooth, or send us the numbers above."
   }
 }

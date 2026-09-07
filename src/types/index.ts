@@ -192,6 +192,18 @@ export interface GeneratedBarcode {
   created_at: string;
 }
 
+/** نوعُ عطبٍ برمز منتج — من `verify_barcode_health()` (0168). الشرحُ بالواجهة. */
+export type BarcodeAilment = "twin" | "alt_owned" | "arabic" | "excel" | "empty";
+
+/** صفٌّ من فحص صحة الباركودات — قراءةٌ فقط، بلا إصلاحٍ جماعيّ. */
+export interface BarcodeHealthRow {
+  kind: BarcodeAilment;
+  product_id: string;
+  product_name: string;
+  /** الرمزُ كما هو مخزون (خامّاً) — الأساسيّ أو الإضافيّ حسب النوع. */
+  code: string;
+}
+
 /** A free-text clinical / progress note on the patient record (سجل الملاحظات السريرية). */
 export interface PetNote {
   id: string;

@@ -38,7 +38,7 @@ const built = await esbuild.build({
   platform: "neutral", plugins: [stubs],
   alias: { "@/lib/utils": "./src/lib/utils.ts" },
 });
-const { findByCode, looksLikeShelfCode, twinsByName, nearCodeTwin, scanVariants, rescueScan, codeIndex, layoutFix, excelArtifact, hasArabicLetters } = await import(
+const { findByCode, looksLikeShelfCode, twinsByName, nearCodeTwin, scanVariants, rescueScan, codeIndex, layoutFix, excelArtifact, hasArabicLetters, codeMatcher } = await import(
   "data:text/javascript;base64," + Buffer.from(built.outputFiles[0].text).toString("base64")
 );
 
@@ -190,6 +190,45 @@ console.log("▸ codeIndex — الشراءُ يلقى ما يلقاه الكا�
   check("ورقمُ رفٍّ قصير لا يُكشف", excelArtifact("247") === null);
   check("وسعرٌ بفاصلة ليس شكلَ إكسل (٥ خانات فأقلّ)", excelArtifact("1250.0") === null);
   check("والفارغُ لا يُكشف", excelArtifact("") === null && excelArtifact(null) === null);
+}
+
+{
+  // ── G9: البحثُ بالرمز مصدرُه واحد ──
+  // ستُّ شاشاتٍ كتبته بيدها، ولا اثنتان منها تتّفقان: البيعُ يفحص الأساسيَّ
+  // والإضافيّ، وصفحةُ الشركة والصنفُ والدمجُ الأساسيَّ وحده، ونافذةُ الإسناد
+  // تقارن الخامَ بالخام. وشاشتان تكذبان بطريقتين تصنعان «المادة غير مُدخَلة».
+  const alt = P("g1", "دراي فود", "8436611140873", { alt_codes: ["W90", "٢٤٧٩"] });
+  const hit = codeMatcher("w90");
+  check("الرمزُ الإضافيّ يُلقى بالبحث (لا الأساسيّ وحده)", hit(alt) === true);
+  check("  وطيُّ الحالة يعمل: «w90» تلقى «W90»", codeMatcher("W90")(alt) === true);
+  check("  والأرقامُ العربية: «٢٤٧٩» تلقى «2479»", codeMatcher("2479")(alt) === true);
+  check("والبحثُ جزئيّ: أربعُ خاناتٍ من ثلاثَ عشرة تكفي", codeMatcher("8436")(alt) === true);
+  check("ومن وسط الرمز كذلك", codeMatcher("61114")(alt) === true);
+  check("ورمزٌ غريبٌ لا يُلقى", codeMatcher("999999")(alt) === false);
+  check("واستعلامٌ فارغٌ لا يطابق شيئاً (لا كلَّ شيء)", codeMatcher("")(alt) === false);
+  check("  ومسافةٌ وحدها كذلك", codeMatcher("   ")(alt) === false);
+  check("  ومحرفُ اتجاهٍ وحده كذلك", codeMatcher("‏")(alt) === false);
+  check("ومنتجٌ بلا رمزٍ لا ينكسر", codeMatcher("247")(P("g2", "بلا رمز", null)) === false);
+}
+
+{
+  // ── حارسُ الرجوع: بحثٌ بالرمز الأساسيّ وحده ممنوعٌ بالشاشات ──
+  // الرجوعُ هنا صامت: الشاشةُ تعمل وتبدو صحيحة، وتكذب فقط على المنتجات التي
+  // رمزُها الأساسيّ رقمُ رفّ. فالفحصُ نصّيّ لأن لا سبيلَ أرخص لكشفه.
+  const { readFileSync, readdirSync, statSync } = await import("node:fs");
+  const walk = (dir) => readdirSync(dir).flatMap((f) => {
+    const p = `${dir}/${f}`;
+    return statSync(p).isDirectory() ? walk(p) : (/\.tsx?$/.test(p) ? [p] : []);
+  });
+  const bad = [];
+  for (const f of walk("src")) {
+    if (f.endsWith("lib/productCodes.ts")) continue;              // مصدرُ الحقيقة نفسه
+    const src = readFileSync(f, "utf8");
+    for (const [i, line] of src.split("\n").entries()) {
+      if (/(?:match|normalize)Code\((?:\w+\.)?barcode\)\s*\.includes\(/.test(line)) bad.push(`${f}:${i + 1}`);
+    }
+  }
+  check("لا شاشةَ تبحث بالرمز الأساسيّ وحده — استعمل codeMatcher", bad.length === 0, bad.join("، "));
 }
 
 console.log(`\n${fails ? "✗" : "✓"} products-test: ${passes} نجحت، ${fails} فشلت`);

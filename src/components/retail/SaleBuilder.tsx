@@ -30,8 +30,8 @@ import { useNavFolded, setNavFolded } from "@/lib/navFold";
 import { loadPosLayout, savePosLayout, stepZoom, type PosLayout, type CartSide } from "@/lib/posLayout";
 import { persistMedicalEntries } from "@/lib/medSync";
 import type { MedicalDraft } from "@/components/MedicalEntry";
-import { cn, money, currencySymbol, formatNum, fmtKg, searchable, matchCode, normalizeCode } from "@/lib/utils";
-import { findByCode, rescueScan, matchTruncatedCode } from "@/lib/productCodes";
+import { cn, money, currencySymbol, formatNum, fmtKg, searchable, normalizeCode } from "@/lib/utils";
+import { findByCode, rescueScan, matchTruncatedCode, codeMatcher } from "@/lib/productCodes";
 import { splitCustomerField } from "@/lib/customerName";
 import { dueOf, paidOf } from "@/lib/debt";
 import { withTimeout, describeDbError, isNetworkError, isTimeoutError } from "@/lib/errors";
@@ -1245,18 +1245,17 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
   const deferredQuery = useDeferredValue(query);
   const ql = deferredQuery.trim();
   const nq = searchable(ql);
-  const cq = matchCode(ql);
   const { shown, hiddenCount } = useMemo(() => {
+    // المرشِّح يُبنى داخل الحساب لا خارجه: بناؤه بكلّ رسمةٍ يجعله مرجعاً جديداً
+    // فيبطل الحفظَ كلَّه، والتصفيةُ هنا تمرّ على مئات المواد بكلّ ضغطة.
+    const byCode = codeMatcher(ql);
     const base = ql
-      ? products.filter((p) =>
-        searchable(p.name).includes(nq)
-        || (!!cq && matchCode(p.barcode).includes(cq))
-        || (!!cq && (p.alt_codes ?? []).some((c) => matchCode(c).includes(cq))))
+      ? products.filter((p) => searchable(p.name).includes(nq) || byCode(p))
       : products;
     // السقف لسرعة الرسم — لكنه **يقول إنه سقف**. صمتُه كان يعني أن المادة
     // بالصفّ الخامس والعشرين تبدو غير موجودة.
     return { shown: base.slice(0, POS_MAX), hiddenCount: Math.max(0, base.length - POS_MAX) };
-  }, [products, ql, nq, cq]);
+  }, [products, ql, nq]);
 
   // Existing-customer search (name or phone).
   const custTimer = useRef<number | null>(null);
