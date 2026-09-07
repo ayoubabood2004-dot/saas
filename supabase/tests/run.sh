@@ -232,8 +232,20 @@ ins "insert into invoice_items(name,qty,unit_price,unit_cost,line_total,stock_qt
   || { printf '   ✗ %s\n' "المبلغ الضخم انرفض"; fail=1; }
 chk "والسياسة المعتمِدة رجعت" \
     "select count(*)::text from pg_policies where tablename='invoices' and policyname='invoices_update'" "1"
-chk "وبنصّها كاملاً (تحرس المبالغ)" \
-    "select (with_check like '%amount_paid%' and with_check like '%auth_role%')::text from pg_policies where policyname='invoices_update'" "true"
+# كان هنا: «السياسةُ تحرس المبالغ بنصّها» — وهو وصفُ عالَمٍ انتهى بـ0162.
+# سياسةٌ تقرأ جدولَها المحميّ يرفضها بوستغريس بإعادة كتابة الاستعلام (42P17)
+# فتُسقط **كلَّ** تحديثٍ عليه؛ فصار التجميدُ بمحفّزٍ والسياسةُ شرطَ ملكيّةٍ وحده
+# (CLAUDE.md §٣). والفحصُ ما جرى قطّ ليُكشف: حلقةُ إعادة التنزيل كانت تسقط قبله.
+# فيُثبَّت القرارُ كما هو الآن: السياسةُ ملكيّةٌ صرفة، والحراسةُ بالمحفّز.
+chk "والسياسةُ شرطُ ملكيّةٍ صرف (لا تقرأ جدولَها — 42P17)" \
+    "select (with_check not like '%amount_paid%' and with_check not like '%auth_role%' and with_check like '%auth_clinic%')::text from pg_policies where policyname='invoices_update'" "true"
+chk "  والحراسةُ بالمحفّز: يقرأ المبلغَ والدور" \
+    "select (p.prosrc like '%amount_paid%' and p.prosrc like '%auth_role%')::text
+       from pg_trigger t join pg_proc p on p.oid=t.tgfoid
+      where t.tgrelid='invoices'::regclass and t.tgname='invoices_before_update_guard'" "true"
+chk "  وهو invoker لا definer (فلا يشدّ أكثر من السياسة)" \
+    "select (not p.prosecdef)::text from pg_trigger t join pg_proc p on p.oid=t.tgfoid
+      where t.tgrelid='invoices'::regclass and t.tgname='invoices_before_update_guard'" "true"
 chk "والعرض المعتمِد رجع" \
     "select count(*)::text from pg_views where viewname='shared_catalog_source'" "1"
 chk "وما ينقرأ من التطبيق" \
@@ -465,6 +477,11 @@ chk "وبمسارٍ مثبَّت (definer-path)" \
 # 0141: الباركود لا يضيّع المنتج.
 # نزرع الأمراض الثلاثة التي وجدناها بالإنتاج حرفياً — علامةُ اتجاهٍ مخفية،
 # وأرقامٌ شرقية، ومسافة — ونتأكّد أن التنظيف يشفيها بلا أن يدمج صفَّين.
+# هذه البذرةُ تصنع عمداً ما يمنعه محفّزُ 0167: رمزَين يفترقان خامّاً ويتّحدان
+# مطبَّعَين (`555` و`‏555`). وهو تاريخٌ **قائمٌ بالإنتاج** دخل قبل الحارس، وفحصُ
+# 0141 قائمٌ عليه — فلا سبيلَ لزرعه إلا بتعطيل الحارس لحظةَ الزرع.
+# ويُفحص رجوعُه بعدها: حارسٌ يُعطَّل ويُنسى أخطرُ من حارسٍ لم يوجد.
+$P -c "alter table products disable trigger products_no_twin_code;" >/dev/null 2>&1
 $P -c "insert into products(id,clinic_id,name,barcode) values
        ('bbbb0000-0000-0000-0000-000000000001','11111111-1111-1111-1111-111111111111','مخفي',   E'‏8989'),
        ('bbbb0000-0000-0000-0000-000000000002','11111111-1111-1111-1111-111111111111','شرقي',   '٢٣٨'),
@@ -473,6 +490,9 @@ $P -c "insert into products(id,clinic_id,name,barcode) values
        -- زوجُ التصادم: النظيفُ محجوزٌ سلفاً، فالمريض لا يُلمس ولا يُدمج
        ('bbbb0000-0000-0000-0000-000000000005','11111111-1111-1111-1111-111111111111','محجوز',  '555'),
        ('bbbb0000-0000-0000-0000-000000000006','11111111-1111-1111-1111-111111111111','مصادم',  E'‏555');" >/dev/null
+$P -c "alter table products enable trigger products_no_twin_code;" >/dev/null 2>&1
+chk "محفّزُ التوأم رجع مفعَّلاً بعد زرع التاريخ" \
+    "select (tgenabled='O')::text from pg_trigger where tgrelid='products'::regclass and tgname='products_no_twin_code'" "true"
 $P -f "$MIG/0141_barcode_recovery.sql" >/dev/null 2>&1
 
 chk "علامةُ الاتجاه انشالت من الباركود" \
