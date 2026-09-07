@@ -90,10 +90,15 @@ alter table products add column if not exists section_id  uuid;
 alter table products add column if not exists company_id  uuid;
 alter table products add column if not exists created_at  timestamptz not null default now();
 alter table generated_barcodes add column if not exists clinic_id uuid;
-create or replace function inv_norm_code(t text) returns text language sql immutable
-as $$ select regexp_replace(translate(coalesce(t,''), '٠١٢٣٤٥٦٧٨٩', '0123456789'), '\s', '', 'g') $$;
-create or replace function inv_norm_name(t text) returns text language sql immutable
-as $$ select lower(regexp_replace(coalesce(t,''), '\s+', '', 'g')) $$;
+/* اسمُ الوسيط `v` كما بالإنتاج حرفياً — لا `t`. بوستغريس يرفض تغييرَ اسم وسيطٍ
+ * بـ`create or replace` (`cannot change name of input parameter`)، فبديلٌ
+ * بالأساس باسمٍ آخر يجعل **كلَّ هجرةٍ لاحقةٍ تعيد تعريفَ الدالّة تفشل**. وهو ما
+ * وقع فعلاً: 0164 نزلت على الإنتاج بلا مشكلة وسقطت على الحزمة بأوّل تشغيل.
+ * والبديلُ يحاكي التوقيعَ لا الجسمَ وحده. */
+create or replace function inv_norm_code(v text) returns text language sql immutable
+as $$ select regexp_replace(translate(coalesce(v,''), '٠١٢٣٤٥٦٧٨٩', '0123456789'), '\s', '', 'g') $$;
+create or replace function inv_norm_name(v text) returns text language sql immutable
+as $$ select lower(regexp_replace(coalesce(v,''), '\s+', '', 'g')) $$;
 alter table products add column if not exists min_stock   numeric;
 alter table products add column if not exists expiry_date date;
 alter table purchase_items add column if not exists product_id uuid references products(id) on delete set null;
