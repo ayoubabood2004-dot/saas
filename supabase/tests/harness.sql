@@ -311,6 +311,83 @@ alter table clinic_prefs add column if not exists cash_reconcile      boolean no
 alter table clinic_prefs add column if not exists cash_confirms       text;
 alter table clinic_prefs add column if not exists delivery_zones      text;
 alter table clinic_prefs add column if not exists qty_promos          text;
+
+/* ── بقيّةُ الأعمدة التي تلمسها الحزمةُ فعلاً، بشكل الإنتاج ────────────────
+ * الأساسُ يحاكي الحدَّ الأدنى عمداً، لكنّ «الأدنى» كان يُقدَّر بالذاكرة فيسقط
+ * عمودٌ هنا وعمودٌ هناك — وكلُّ واحدٍ يقتل تشغيلةً كاملة (`set -e`) ويكلّف دورةً.
+ * فقُيست القائمةُ بدل أن تُخمَّن: أعمدةُ الإنتاج ناقصاً ما يعرّفه الأساسُ وما
+ * تضيفه هجراتُ الموجة، ثم تُرشَّح بما تستعمله فعلاً بذورُ الحزمة واستعلاماتُها.
+ * وكلُّها **تقبل الفراغ** ولو كانت بالإنتاج `not null`: الأساسُ يحاكي الشكلَ
+ * لا يفرض القيود، وبذورٌ قديمةٌ تُغفل عموداً كانت ستنكسر بلا سبب.
+ * الأنواعُ والافتراضاتُ منقولةٌ من `information_schema`. */
+alter table profiles           add column if not exists full_name      text;
+alter table profiles           add column if not exists email          text;
+alter table profiles           add column if not exists created_at     timestamptz not null default now();
+alter table clinics            add column if not exists name           text;
+alter table clinics            add column if not exists created_at     timestamptz not null default now();
+alter table companies          add column if not exists note           text;
+alter table companies          add column if not exists created_at     timestamptz not null default now();
+alter table appointments       add column if not exists created_at     timestamptz not null default now();
+alter table medical_visits     add column if not exists created_at     timestamptz not null default now();
+alter table reminders          add column if not exists created_at     timestamptz not null default now();
+alter table delivery_orders    add column if not exists customer_phone text;
+alter table generated_barcodes add column if not exists barcode        text;
+alter table generated_barcodes add column if not exists label          text;
+alter table generated_barcodes add column if not exists created_by     text;
+alter table generated_barcodes add column if not exists created_at     timestamptz not null default now();
+alter table journeys           add column if not exists clinic_id      uuid;
+alter table journeys           add column if not exists kind           text;
+alter table lab_device_inbox   add column if not exists clinic_id      uuid;
+alter table lab_device_inbox   add column if not exists raw            text;
+alter table lab_device_inbox   add column if not exists status         text default 'new';
+alter table lab_device_links   add column if not exists clinic_id      uuid default auth_clinic();
+alter table lab_device_links   add column if not exists name           text;
+alter table lab_device_links   add column if not exists created_at     timestamptz not null default now();
+alter table payroll_runs       add column if not exists approved_at    timestamptz;
+alter table payroll_runs       add column if not exists approved_by    uuid;
+alter table payroll_runs       add column if not exists created_at     timestamptz not null default now();
+alter table payslips           add column if not exists created_at     timestamptz not null default now();
+alter table payslip_lines      add column if not exists kind           text;
+alter table payslip_lines      add column if not exists amount         numeric;
+alter table payslip_lines      add column if not exists created_at     timestamptz not null default now();
+alter table purchase_payments  add column if not exists clinic_id      uuid default auth_clinic();
+alter table purchase_payments  add column if not exists amount         numeric default 0;
+alter table purchase_payments  add column if not exists staff_id       uuid;
+alter table purchase_payments  add column if not exists created_at     timestamptz not null default now();
+alter table staff              add column if not exists status         text default 'active';
+alter table staff              add column if not exists created_at     timestamptz not null default now();
+alter table staff_loans        add column if not exists clinic_id      uuid default auth_clinic();
+alter table staff_loans        add column if not exists principal      numeric;
+alter table staff_loans        add column if not exists installment    numeric;
+alter table staff_loans        add column if not exists remaining      numeric;
+alter table staff_loans        add column if not exists reason         text;
+alter table staff_loans        add column if not exists status         text default 'active';
+alter table staff_loans        add column if not exists expense_id     uuid;
+alter table staff_loans        add column if not exists created_at     timestamptz not null default now();
+alter table staff_loan_events  add column if not exists loan_id        uuid;
+alter table staff_loan_events  add column if not exists kind           text;
+alter table staff_loan_events  add column if not exists amount         numeric;
+alter table staff_loan_events  add column if not exists payslip_id     uuid;
+alter table staff_loan_events  add column if not exists at             timestamptz not null default now();
+alter table staff_presence     add column if not exists name           text;
+alter table staff_recurring    add column if not exists clinic_id      uuid default auth_clinic();
+alter table staff_recurring    add column if not exists amount         numeric;
+alter table staff_recurring    add column if not exists created_at     timestamptz not null default now();
+alter table store_orders       add column if not exists clinic_id      uuid;
+alter table store_orders       add column if not exists customer_name  text;
+alter table store_orders       add column if not exists customer_phone text;
+alter table store_orders       add column if not exists total          numeric;
+alter table store_orders       add column if not exists status         text default 'new';
+alter table store_orders       add column if not exists created_at     timestamptz not null default now();
+alter table surgeries          add column if not exists clinic_id      uuid default auth_clinic();
+alter table surgeries          add column if not exists name           text;
+alter table surgeries          add column if not exists created_at     timestamptz not null default now();
+alter table wa_accounts        add column if not exists clinic_id      uuid;
+alter table wa_accounts        add column if not exists status         text default 'active';
+alter table wa_accounts        add column if not exists created_at     timestamptz not null default now();
+alter table wa_inbox           add column if not exists clinic_id      uuid;
+alter table wa_inbox           add column if not exists status         text;
+alter table wa_inbox           add column if not exists created_at     timestamptz not null default now();
 alter table products add column if not exists barcode text;
 alter table products add column if not exists name text;
 alter table products add column if not exists sell_price numeric(12,2) default 0;
