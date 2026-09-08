@@ -231,6 +231,42 @@ console.log("\n▸ tidyInventory — صورةٌ قبل الطيّ (مرآةُ م
   check("  ومعه مرجعُ الدمج ليُفكّ", trash[0]?.merged_into === "keeper");
 }
 
+console.log("\n▸ poolProduct — طيُّ الرصيد للحوض بعمليةٍ واحدة (مرآةُ 0171)");
+{
+  /* الكتابتان المنفصلتان كانتا تعدّان البضاعةَ مرّتين إذا نجحت الأولى وفشلت
+   * الثانية: الحوضُ +٣٠ والمنتجُ ما زال ٣٠. الذرّيةُ تمنع الحالةَ الوسطى. */
+  const db = {
+    products: [{ id: "p1", clinic_id: "c", name: "منتج", barcode: "9990000000091", stock: 30, pooled: false, section_id: "sec1", alt_codes: [] }],
+    companies: [], companySections: [{ id: "sec1", clinic_id: "c", company_id: "co1", name: "صنف", pooled_stock: 10 }],
+    purchases: [], purchaseItems: [], invoices: [], invoiceItems: [], generatedBarcodes: [], productsTrash: [],
+  };
+  mem.set(DB_KEY, JSON.stringify(db));
+  const out = await repo.poolProduct("p1", "sec1");
+  const after = await repo.listProducts();
+  const secs = await repo.listCompanySections();
+  const prod = after.find((p) => p.id === "p1");
+  const sec = secs.find((s) => s.id === "sec1");
+  check("رصيدُ المنتج صار صفراً", prod?.stock === 0, String(prod?.stock));
+  check("  وصار مجمَّعاً", prod?.pooled === true);
+  check("والحوضُ استلمه: 10 + 30 = 40", sec?.pooled_stock === 40, String(sec?.pooled_stock));
+  check("فالمجموعُ 40 لا 70 — لا ازدواجَ رصيد", (sec?.pooled_stock ?? 0) + (prod?.stock ?? 0) === 40);
+  check("والدالّةُ ترجع المنتجَ بعد الطيّ", out?.id === "p1" && out?.stock === 0);
+}
+{
+  // ولا حالةَ وسطى: منتجٌ غائب يرمي ولا يمسّ الحوض.
+  const db = {
+    products: [], companies: [], companySections: [{ id: "sec1", clinic_id: "c", company_id: "co1", name: "صنف", pooled_stock: 10 }],
+    purchases: [], purchaseItems: [], invoices: [], invoiceItems: [], generatedBarcodes: [], productsTrash: [],
+  };
+  mem.set(DB_KEY, JSON.stringify(db));
+  let threw = false;
+  try { await repo.poolProduct("ghost", "sec1"); } catch { threw = true; }
+  const secs = await repo.listCompanySections();
+  check("منتجٌ غائب يرمي", threw);
+  check("  والحوضُ لم يُمَسّ", secs.find((s) => s.id === "sec1")?.pooled_stock === 10);
+}
+
+
 console.log("\n▸ الطيُّ يورّث الرموز — مرآةُ 0169");
 {
   /* الحالةُ التي كانت تكسر: الهدفُ **له باركودُه**، فلا يرث الأساسيَّ بـcoalesce

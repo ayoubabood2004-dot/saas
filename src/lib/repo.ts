@@ -2114,6 +2114,20 @@ const demoRepo = {
   /** هل قاعدة البيانات تدعم دفتر ديون المورّدين (ترحيل 0076)؟ */
   /** ترتيب «بدون صنف»: كل توأمٍ لقطعةٍ مصنَّفة يُدمج بأصله — العدد يُجمع،
    *  والأصل يكسب الباركود إن كان بلا باركود، والتاريخ يتبع الأصل. */
+  /** يطوي رصيدَ منتجٍ متتبَّع إلى حوض صنفه ويصفّره بالمنتج — **معاً**.
+   *  مرآةُ `pool_product` (0171): الواجهةُ كانت تكتبهما على مرحلتين، فنجاحُ
+   *  الأولى وفشلُ الثانية يعدّ البضاعةَ مرّتين (بالحوض وبالمنتج). */
+  async poolProduct(productId: string, sectionId: string): Promise<Product> {
+    const db = loadDB();
+    const p = (db.products ?? []).find((x) => x.id === productId);
+    if (!p) throw new Error("product_not_found");
+    const s = (db.companySections ?? []).find((x) => x.id === sectionId);
+    if (!s) throw new Error("section_not_found");
+    s.pooled_stock = Math.round(((s.pooled_stock ?? 0) + Math.max(0, p.stock || 0)) * 1000) / 1000;
+    p.pooled = true; p.section_id = sectionId; p.stock = 0;
+    saveDB(db);
+    return p;
+  },
   async tidyInventory(): Promise<{ merged: number; kept: number }> {
     const db = loadDB();
     const items = db.purchaseItems ?? [];
@@ -4299,6 +4313,11 @@ const supabaseRepo: typeof demoRepo = {
   },
   async settlePurchase(purchaseId, amount, method = "cash", note) {
     return need<Purchase>(await sbc().rpc("settle_purchase", { p_purchase: purchaseId, p_amount: amount, p_method: method, p_note: note ?? null }));
+  },
+  async poolProduct(productId, sectionId) {
+    const r = await sbc().rpc("pool_product", { p_product: productId, p_section: sectionId });
+    if (r.error) throw r.error;
+    return need<Product>({ data: r.data, error: null });
   },
   async tidyInventory() {
     const r = await sbc().rpc("inventory_tidy_uncat");

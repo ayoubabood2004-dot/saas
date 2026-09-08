@@ -851,14 +851,17 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
         sub_unit_price: subUnitOn ? (Number(f.sub_unit_price) || 0) : null,
         sold_by_weight: byWeight,
       };
-      // Flipping an existing TRACKED product to pooled would drop its real count
-      // to 0 — fold that stock into the section pool first so nothing is lost.
-      if (product && pooled && !product.pooled && (product.stock || 0) > 0 && section_id) {
-        const sec = [...sections, ...createdSecRef.current].find((s) => s.id === section_id);
-        const cur = sec?.pooled_stock ?? 0;
-        await repo.updateCompanySection(section_id, { pooled_stock: Math.round((cur + (product.stock || 0)) * 1000) / 1000 });
+      /* طيُّ رصيدٍ متتبَّع إلى الحوض: نداءٌ **واحدٌ ذرّيّ** (0171). كان يُكتب
+       * على مرحلتين — الحوضُ أوّلاً ثم المنتج — و`rollbackGrouping` لا تُنقص
+       * الحوض، فنجاحُ الأولى وفشلُ الثانية يعدّ البضاعةَ مرّتين. والحوضُ كان
+       * يُقرأ من `props` بائتة فيدوس تعديلَ جهازٍ آخر. */
+      const foldingToPool = !!product && pooled && !product.pooled && (product.stock || 0) > 0 && !!section_id;
+      if (product) {
+        // الحقولُ الأخرى أوّلاً وبلا لمسِ الرصيد/الطيّ — ففشلُ الطيّ بعدها لا يضيّع شيئاً.
+        const { stock: _s, pooled: _p, ...rest } = payload;
+        await repo.updateProduct(product.id, foldingToPool ? rest : payload);
+        if (foldingToPool) await repo.poolProduct(product.id, section_id as string);
       }
-      if (product) await repo.updateProduct(product.id, payload);
       else await repo.createProduct({ ...payload, clinic_id: clinicId ?? null });
       playSuccess();
       onSaved();
