@@ -425,6 +425,21 @@ create table if not exists audit_log (
 create index if not exists audit_clinic_idx on audit_log(clinic_id, created_at desc);
 
 -- سياسات بنفس أشكال النظام الحقيقي، بنداءات عارية
+/* حمايةُ صفوف المنتجات — كما بالإنتاج حرفياً (سياستان: قراءةٌ بالملكيّة،
+ * وكتابةٌ بالملكيّة مع الدور). وبلا هذا كان `_rls_try` بعيادةٍ أخرى يقرأ منتجاتِ
+ * عيادةٍ غيرِها ويقول الفحصُ «مرّ»: عزلٌ يُفحص على قاعدةٍ بلا عزلٍ أصلاً.
+ * والفحوصُ الأخرى لا تتأثّر: `chk` يجري بدور superuser فيتجاوز الحماية، وهذا
+ * بعينه سببُ وجوب `_rls_try` لكلّ فحصِ عزل (CLAUDE.md §٣). */
+alter table products enable row level security;
+drop policy if exists products_select on products;
+drop policy if exists products_write  on products;
+create policy products_select on products
+  for select using (clinic_id = (select auth_clinic()));
+create policy products_write on products
+  for all
+  using (clinic_id = (select auth_clinic()) and (select auth_role()) = any (array['manager','veterinarian']))
+  with check (clinic_id = (select auth_clinic()) and (select auth_role()) = any (array['manager','veterinarian']));
+
 alter table pets enable row level security;
 alter table medical_visits enable row level security;
 alter table profiles enable row level security;
