@@ -45,7 +45,10 @@ export async function loadRecordsSnap(clinicId?: string | null): Promise<Records
 // ---- Retail & Sales (المبيعات) ----
 /** نافذةُ تبويب الفواتير بالأيام — نفسُها للّقطة وللنزول بـ«المزيد». */
 export const RECENT_DAYS = 15;
-export type RetailSnap = { products: Product[]; invoices: Invoice[] };
+/** `sectionsFailed`: فشلَ جلبُ الأصناف وحدها. الرصيدُ الفعّال حينها = المتتبَّع
+ *  فقط بلا حوض المجمَّع — أرقامٌ **ناقصة** لا خاطئة، فتُعرض مع شارةٍ تقولها
+ *  بدل أن يبدو رصيدُ المجمَّع صفراً بثقة. */
+export type RetailSnap = { products: Product[]; invoices: Invoice[]; sectionsFailed?: boolean };
 export const retailKey = (clinicId?: string | null) => `retail:${cid(clinicId)}`;
 export async function loadRetailSnap(clinicId?: string | null): Promise<RetailSnap> {
   const id = clinicId ?? undefined;
@@ -55,13 +58,14 @@ export async function loadRetailSnap(clinicId?: string | null): Promise<RetailSn
   // الطريقةُ القديمة (كلُّ الفواتير) تبقى خلف خيارٍ بالإعدادات لأسبوع المراقبة فقط.
   const paged = getInvoicesPaged();
   const recent = { from: new Date(Date.now() - RECENT_DAYS * 86400000).toISOString(), to: new Date(Date.now() + 86400000).toISOString() };
-  const [products, invoices, sections] = await Promise.all([
+  const [products, invoices, sectionsRes] = await Promise.all([
     repo.listProducts(id),
     paged
       ? repo.listInvoicesTouching(recent)
       : repo.listInvoices(id), /* unbounded: الطريقة القديمة خلف خيار invoices_paged=false — تُشال بعد أسبوع المراقبة */
-    repo.listCompanySections(undefined, id).catch(() => []),
+    repo.listCompanySections(undefined, id).then((s) => ({ ok: true as const, s })).catch(() => ({ ok: false as const, s: [] })),
   ]);
+  const sections = sectionsRes.s;
   // For the TILL only, a product's sellable count = its own tracked stock PLUS its
   // section's pooled (legacy) reserve — so pooled barcodes (stock 0) are sellable
   // and the cart naturally stops at zero. The real per-layer deduction (tracked
@@ -71,7 +75,7 @@ export async function loadRetailSnap(clinicId?: string | null): Promise<RetailSn
     const extra = p.section_id ? (pool.get(p.section_id) ?? 0) : 0;
     return extra > 0 ? { ...p, stock: (p.stock || 0) + extra } : p;
   });
-  return { products: effective, invoices };
+  return { products: effective, invoices, sectionsFailed: !sectionsRes.ok };
 }
 
 // ---- Reports (التقارير) ----

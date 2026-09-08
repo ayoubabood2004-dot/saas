@@ -349,6 +349,7 @@
     "day": "days"
   },
   "retail": {
+    "couriersLoadFailed": "Could not load couriers — you can finish without one and set it later.",
     "printItemsFailed": "Could not load the invoice lines — it will not print incomplete. Retry.",
     "title": "Retail & Sales",
     "subtitle": "Walk-in sales, invoicing & receipts — for this clinic only.",
@@ -770,6 +771,7 @@
     "scanRescued": "“{{name}}” — matched as {{code}}"
   },
   "promos": {
+    "pickFailed": "Could not load products — reopen this dialog.",
     "title": "Offers management",
     "subtitle": "Create Mix & Match offers — buy N items from a subcategory for a fixed bundle price. Applied automatically at the till.",
     "name": "Offer name",
@@ -884,6 +886,8 @@
     "transfer": "Transfer"
   },
   "purchase": {
+    "refreshFailed": "Could not refresh invoices — what you see may be stale",
+    "loadFailed": "Could not load invoices — we do not know whether you have any. Retry.",
     "stmtFailed": "Could not load the statement’s goods — the total is right but the table is incomplete. Retry.",
     "new": "Purchase",
     "search": "Search by company or invoice #…",
@@ -955,6 +959,12 @@
     "excelCodeLine": "On line “{{name}}”, code {{code}} — set the barcode column back to “Text” in Excel and paste again."
   },
   "pos": {
+    "storeRefreshFailed": "The last refresh failed — what you see may be stale.",
+    "storeOrdersFailed": "Could not load orders — we do not know whether any arrived. Retry.",
+    "savedSomeCodes": "Saved {{n}} of {{total}} — the rest were already registered",
+    "codeAlreadyLogged": "That code is already in the registry — no new label was printed",
+    "regLoadFailed": "Could not load the barcode registry — generation is paused so numbers cannot repeat. Retry.",
+    "pooledStockFailed": "Could not load pooled stock — the stock numbers are incomplete. Reload before relying on them.",
     "noSearchInStock": "No matches. Inventory holds {{n}} products — try a shorter name or scan the barcode.",
     "title": "Inventory",
     "subtitle": "Stock, products & low-stock alerts — for this clinic only.",
@@ -1861,6 +1871,7 @@
     "dayFree": "{{n}} free"
   },
   "dash": {
+    "stockCheckFailed": "Could not check inventory — we do not know if anything is low.",
     "morning": "Good morning",
     "afternoon": "Good afternoon",
     "evening": "Good evening",

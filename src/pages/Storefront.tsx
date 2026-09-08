@@ -64,6 +64,8 @@ export function Storefront() {
   const PAGE = 60;
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
+  /** فشلَ جلبُ صفحةٍ تالية؟ — كان يُخفي الزرَّ نهائياً فتبدو التشكيلةُ منتهية. */
+  const [moreFailed, setMoreFailed] = useState(false);
 
   /* لغةُ الزائر: هذه الصفحة عربيةٌ صلبةٌ عمداً (زبائنُ عيادةٍ عراقية)، فلو
    * بقيت لغةُ الواجهة على الإنكليزية الافتراضية لظهر كلُّ نصٍّ يمرّ من `t(`
@@ -94,10 +96,25 @@ export function Storefront() {
         const seen = new Set(cur.map((x) => x.id));
         return [...cur, ...more.filter((x) => !seen.has(x.id))];
       });
-      setHasMore(more.length === PAGE);
-    } catch { setHasMore(false); }
+      /* التقدّمُ بما **وصل** لا بما طُلب — نفسُ درس `allPages`: صفحةٌ ناقصة عن
+       * سقفٍ خادميٍّ أقلَّ من PAGE كانت تُقرأ «انتهت التشكيلة». */
+      setHasMore(more.length > 0);
+      setMoreFailed(false);
+    } catch {
+      // إخفاءُ الزرّ يجعل الفشلَ يبدو نهايةَ التشكيلة — نُبقيه ونقول «تعذّر».
+      setMoreFailed(true);
+    }
     finally { setLoadingMore(false); }
   };
+
+  /* بحثٌ فوق كتالوجٍ جزئيّ يحكم «ما لكينا شيء» على ما حُمّل وحده. فقبل إعلان
+   * الخيبة نُنزل بقيةَ الصفحات — لا حكمَ نهائياً فوق قائمةٍ ناقصة. */
+  const searching = q.trim().length > 0;
+  useEffect(() => {
+    if (!searching || !hasMore || loadingMore || moreFailed) return;
+    void loadMore();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searching, hasMore, loadingMore, moreFailed]);
 
   useEffect(() => { saveCart(slug, cart); }, [slug, cart]);
 
@@ -271,7 +288,10 @@ export function Storefront() {
         ) : shown.length === 0 ? (
           <div className="grid place-items-center gap-2 py-16 text-center text-ink-subtle">
             <Search size={26} className="opacity-40" />
-            <p className="text-sm font-semibold">ما لكينا شيء مطابق</p>
+            {/* «ما لكينا» لا تُقال قبل أن تكتمل التشكيلة — ولا تُقال أبداً عن فشلِ جلب. */}
+            <p className="text-sm font-semibold">
+              {moreFailed ? "تعذّر تحميل بقية التشكيلة — أعد المحاولة" : hasMore || loadingMore ? "نكمّل التشكيلة…" : "ما لكينا شيء مطابق"}
+            </p>
           </div>
         ) : (
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
@@ -320,10 +340,10 @@ export function Storefront() {
             })}
           </div>
         )}
-        {hasMore && (
-          <button onClick={() => void loadMore()} disabled={loadingMore}
+        {(hasMore || moreFailed) && (
+          <button onClick={() => { setMoreFailed(false); void loadMore(); }} disabled={loadingMore}
             className="mt-4 w-full rounded-2xl border border-line bg-surface-1 py-3 text-sm font-bold text-ink-muted transition hover:text-ink disabled:opacity-50">
-            {loadingMore ? "جاري التحميل…" : "عرض المزيد من المنتجات"}
+            {loadingMore ? "جاري التحميل…" : moreFailed ? "تعذّر التحميل — أعد المحاولة" : "عرض المزيد من المنتجات"}
           </button>
         )}
         <p className="mt-8 flex items-center justify-center gap-1.5 text-2xs text-ink-subtle"><PawPrint size={12} /> متجر مقدَّم من doctorVet</p>

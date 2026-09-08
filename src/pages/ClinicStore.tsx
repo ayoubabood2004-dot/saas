@@ -19,6 +19,7 @@ import {
   Search, Eye, EyeOff, Pencil, TrendingUp, Truck, PackageX, RefreshCw, StickyNote,
 } from "lucide-react";
 import type { CheckoutItem, Product, SaleMeta, StoreOrder, StoreProfile } from "@/types";
+import { useTranslation } from "react-i18next";
 import { repo } from "@/lib/repo";
 import { useAuth } from "@/contexts/AuthContext";
 import { matchStaffToUser } from "@/lib/staffNames";
@@ -51,6 +52,7 @@ function ago(iso: string): string {
 }
 
 export function ClinicStore() {
+  const { t } = useTranslation();
   const { user } = useAuth();
   const clinicId = user?.clinic_id ?? user?.id;
   const [tab, setTab] = useState<Tab>("orders");
@@ -59,6 +61,10 @@ export function ClinicStore() {
   const [products, setProducts] = useState<Product[] | null>(null);
   const [profile, setProfile] = useState<StoreProfile | null | undefined>(undefined); // undefined = يتحمّل
   const newCount = useStoreOrderCount();
+  /* فشلُ الجلب كان يضع قوائمَ فارغة بلا حالةِ خطأ ولا توست ولا إعادة — فيقول
+   * الصندوقُ «لا طلبات» عن زبونٍ طلب وينتظر التأكيد، ولا أحد يتصل به. وهذا
+   * المكانُ الوحيد الذي يستقبل مبيعاتِ الإنترنت. */
+  const [failed, setFailed] = useState(false);
 
   const load = async () => {
     try {
@@ -68,8 +74,11 @@ export function ClinicStore() {
         repo.getStoreProfile(),
       ]);
       setOrders(o); setProducts(p); setProfile(pr);
+      setFailed(false);
     } catch {
-      setOrders((x) => x ?? []); setProducts((x) => x ?? []); setProfile((x) => (x === undefined ? null : x));
+      // ما نكذب بقوائمَ فارغة: إمّا بياناتٌ سابقة تبقى، أو تُقال الحقيقة.
+      setFailed(true);
+      setProfile((x) => (x === undefined ? null : x));
     }
   };
   useEffect(() => {
@@ -116,6 +125,17 @@ export function ClinicStore() {
           </button>
         ))}
       </div>
+
+      {failed && (
+        <div className="mb-4 rounded-2xl border border-danger-200 bg-danger-50 p-4 text-center dark:border-danger-500/30 dark:bg-danger-500/10" data-storefailed>
+          <p className="text-sm font-semibold text-danger-700 dark:text-danger-300">
+            {orders === null
+              ? t("pos.storeOrdersFailed", "تعذّر تحميل الطلبات — ما نعرف إذا وصلك طلب أو لا. أعد المحاولة.")
+              : t("pos.storeRefreshFailed", "آخر تحديث فشل — المعروض قد يكون قديماً.")}
+          </p>
+          <Button className="mt-3" size="sm" variant="secondary" onClick={() => { playTap(); void load(); }}>{t("common.retry", "إعادة المحاولة")}</Button>
+        </div>
+      )}
 
       <AnimatePresence mode="wait">
         <motion.div key={tab} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.18 }}>

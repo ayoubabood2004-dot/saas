@@ -604,6 +604,8 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
   // the system only when the courier hands it over (see the التوصيل tab).
   const [deliveryOn, setDeliveryOn] = useState(false);
   const [dCouriers, setDCouriers] = useState<Courier[] | null>(null); // null = not loaded yet
+  /** فشلَ جلبُ السوّاق؟ — «تعذّر» لا قائمةٌ فارغة تبدو «ماكو سوّاق». */
+  const [dCouriersFailed, setDCouriersFailed] = useState(false);
   const [dCourierId, setDCourierId] = useState("");
   // منطقة التوصيل — من قائمة العيادة (الإعدادات ← مناطق التوصيل). اختيار
   // المنطقة يملأ الأجرة تلقائياً (وتبقى قابلة للتعديل) وينحفظ على الطلب.
@@ -1202,7 +1204,10 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
     setPaidEdited(true);
     // COD default: nothing received now — the payment row becomes "المدفوع مقدماً".
     setPayments([{ method: "cash", amount: 0 }]);
-    if (dCouriers === null) repo.listCouriers(clinicId).then(setDCouriers).catch(() => setDCouriers([]));
+    /* `[]` عن خطأ = «ماكو سوّاق» — والدلالاتُ المالية (شركة/سائق) تُبنى على
+      * هذا الاختيار. والجلبُ محروسٌ بـ`=== null` فلا يُعاد طوال عمر الشاشة.
+      * فالفشلُ يُقال ويُعاد. */
+    if (dCouriers === null) repo.listCouriers(clinicId).then(setDCouriers).catch(() => setDCouriersFailed(true));
   };
   const setPaidQuick = (amount: number) => {
     playTap();
@@ -2631,6 +2636,18 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
                   <option value="">{t("retail.deliveryNoCourier", "اختيار السائق لاحقاً (يبقى قيد التجهيز)")}</option>
                   {(dCouriers ?? []).filter((c) => c.active).map((c) => <option key={c.id} value={c.id}>{c.kind === "company" ? "🏢 " : ""}{c.name}{c.phone ? ` — ${c.phone}` : ""}</option>)}
                 </select>
+                {/* قائمةٌ فارغةٌ عن خطأ تبدو «ماكو سوّاق» — والدلالةُ المالية
+                    (شركةٌ تُحاسَب لاحقاً أم سائقٌ يسلّم اليوم) تُبنى على هذا
+                    الاختيار. فالفشلُ يُقال ويُعاد، والإتمامُ بلا سائقٍ يبقى مشروعاً. */}
+                {dCouriersFailed && (
+                  <div className="flex items-center gap-2 rounded-lg bg-danger-50 px-2.5 py-1.5 text-2xs font-semibold text-danger-700 dark:bg-danger-500/10 dark:text-danger-300" data-dcouriersfailed>
+                    <span className="flex-1">{t("retail.couriersLoadFailed", "تعذّر تحميل السوّاق — تقدر تكمّل بلا سائق وتحدّده لاحقاً.")}</span>
+                    <button type="button" className="shrink-0 font-bold underline"
+                      onClick={() => { playTap(); setDCouriersFailed(false); repo.listCouriers(clinicId).then(setDCouriers).catch(() => setDCouriersFailed(true)); }}>
+                      {t("common.retry", "إعادة المحاولة")}
+                    </button>
+                  </div>
+                )}
                 {/* شركةُ توصيل (0148): الفلوس ما تدخل عند التسليم — تُحصَّل من الشركة لاحقاً */}
                 {(dCouriers ?? []).find((c) => c.id === dCourierId)?.kind === "company" && (
                   <p data-dcompanyhint className="flex items-center gap-1.5 rounded-lg bg-surface-1/80 px-2.5 py-1.5 text-2xs font-semibold text-sky-800 dark:bg-surface-1/40 dark:text-sky-200">

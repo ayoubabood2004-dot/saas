@@ -143,10 +143,17 @@ export function Inventory() {
   const invKey = `inv_${clinicId ?? "self"}`;
   const load = async () => {
     try {
+      /* الثلاثةُ تُعرض معاً أو لا تُعرض. كان فشلُ الشركات أو الأصناف يُبلع إلى
+       * قائمةٍ فارغة بينما علَمُ الفشل لا يُرفع إلا بفشل المنتجات — فتُرسم لوحةٌ
+       * كاذبة: «الشركات: ٠»، وتبويبُ الشركات يقول «أنشئ أول شركة» بدعوةٍ للفعل
+       * الضار، وقيمةُ المخزون تفقد المجمَّع بلا شارة. **والمفاقِم**: السطرُ
+       * التالي كان يكتب القوائمَ الفارغة بالكاش، فتُعاد اللوحةُ الكاذبة من
+       * الكاش بكلّ فتحةٍ لاحقة حتى ينجح جلبٌ جديد. أما الآن فيرفض الوعدُ
+       * المجموع عند أوّل فشل، فلا يُكتب كاشٌ أصلاً وتُعرض شاشةُ إعادة المحاولة. */
       const [p, c, s] = await Promise.all([
         withTimeout(repo.listProducts(clinicId), 15000),
-        withTimeout(repo.listCompanies(clinicId), 15000).catch(() => [] as Company[]),
-        withTimeout(repo.listCompanySections(undefined, clinicId), 15000).catch(() => [] as CompanySection[]),
+        withTimeout(repo.listCompanies(clinicId), 15000),
+        withTimeout(repo.listCompanySections(undefined, clinicId), 15000),
       ]);
       setCached(invKey, { p, c, s });
       if (!mounted.current) return;

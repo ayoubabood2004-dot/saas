@@ -38,6 +38,8 @@ export function BarcodeStudio({ products, onChanged }: { products: Product[]; on
   const toast = useToast();
 
   const [registry, setRegistry] = useState<GeneratedBarcode[] | null>(null);
+  /** فشلَ جلبُ السجل؟ — التوليدُ يبقى مقفولاً (registry تبقى null) ونقول لماذا. */
+  const [regFailed, setRegFailed] = useState(false);
   const [q, setQ] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [batchCount, setBatchCount] = useState("10");
@@ -52,9 +54,13 @@ export function BarcodeStudio({ products, onChanged }: { products: Product[]; on
   const [renameBusy, setRenameBusy] = useState(false);
   const mounted = useRef(true);
 
+  /* `registry === null` تعني «لم يُقرأ بعد» وهي ما يقفل أزرارَ التوليد الثلاثة.
+   * وكان الفشلُ يضع `[]` — أي «قرأناه وهو فارغ» — فينفكّ القفل، ويحسب
+   * `startSeq` التسلسلَ من سجلٍّ فارغ فيعيد الأرقام من أوّلها: ملصقان برمزٍ
+   * واحد على مادّتين، ومسحُ أحدهما يبيع الأخرى. فالفشلُ يُبقيها `null`. */
   const load = async () => {
-    try { const rows = await repo.listGeneratedBarcodes(); if (mounted.current) setRegistry(rows); }
-    catch { if (mounted.current) setRegistry([]); }
+    try { const rows = await repo.listGeneratedBarcodes(); if (mounted.current) { setRegistry(rows); setRegFailed(false); } }
+    catch { if (mounted.current) setRegFailed(true); }
   };
   useEffect(() => {
     mounted.current = true;
@@ -95,7 +101,12 @@ export function BarcodeStudio({ products, onChanged }: { products: Product[]; on
       await repo.updateProduct(p.id, { barcode: code });
       playSuccess();
       toast.success("انولد وانربط ✓", `${p.name} ← ${code}`);
-      setLastBatch(saved.length ? saved : [{ id: code, barcode: code, label: p.name, product_id: p.id, created_at: new Date().toISOString() }]);
+      /* يُطبع من `saved` وحدها. كان البديل يصنع صفوفاً «كأنها انحفظت» فتُطبع
+       * ملصقاتٌ لا وجودَ لها بالسجل — والدفعةُ التالية تولّد نفسَ الأرقام.
+       * وبعد أن صارت `addGeneratedBarcodes` ترمي (الدفعة ١)، فراغُ `saved` لم
+       * يعد يعني فشلاً بل تعارضاً متجاهَلاً: الرمزُ مسجَّلٌ سابقاً — يُقال لا يُخفى. */
+      if (saved.length === 0) toast.toast({ tone: "info", title: t("pos.codeAlreadyLogged", "الرمز مسجَّلٌ سابقاً بالسجل — ما انطبع ملصقٌ جديد") });
+      setLastBatch(saved);
       await load();
       onChanged();
     } catch (e) {
@@ -116,7 +127,8 @@ export function BarcodeStudio({ products, onChanged }: { products: Product[]; on
       for (let i = 0; i < noBarcode.length; i++) await repo.updateProduct(noBarcode[i].id, { barcode: codes[i] });
       playSuccess();
       toast.success(`انولد وانربط ${formatNum(noBarcode.length)} باركود ✓`);
-      setLastBatch(saved.length ? saved : rows.map((r) => ({ ...r, id: r.barcode, created_at: new Date().toISOString() })));
+      if (saved.length < rows.length) toast.toast({ tone: "info", title: t("pos.savedSomeCodes", "انسجّل {{n}} من {{total}} — الباقي مسجَّلٌ سابقاً", { n: formatNum(saved.length), total: formatNum(rows.length) }) });
+      setLastBatch(saved);
       await load();
       onChanged();
     } catch (e) {
@@ -138,7 +150,8 @@ export function BarcodeStudio({ products, onChanged }: { products: Product[]; on
       const saved = await repo.addGeneratedBarcodes(codes.map((c) => ({ barcode: c, label, product_id: null, created_by: user?.full_name ?? null })));
       playSuccess();
       toast.success(`انولد ${formatNum(n)} باركود جديد ✓`, label ?? undefined);
-      setLastBatch(saved.length ? saved : codes.map((c) => ({ id: c, barcode: c, label, created_at: new Date().toISOString() })));
+      if (saved.length < codes.length) toast.toast({ tone: "info", title: t("pos.savedSomeCodes", "انسجّل {{n}} من {{total}} — الباقي مسجَّلٌ سابقاً", { n: formatNum(saved.length), total: formatNum(codes.length) }) });
+      setLastBatch(saved);
       setBatchLabel("");
       await load();
     } catch (e) {
@@ -235,7 +248,9 @@ export function BarcodeStudio({ products, onChanged }: { products: Product[]; on
               <h3 className="text-sm font-extrabold text-ink">منتجات بلا باركود ({formatNum(noBarcode.length)})</h3>
               <p className="text-2xs text-ink-subtle">ولّد واربط بضغطة — الكود يلتصق بالمنتج ويدخل السجل، وما يتكرر أبداً.</p>
             </div>
-            <Button size="sm" loading={busy === "__all__"} leftIcon={<Sparkles size={14} />} onClick={() => void generateForAll()}>
+            {/* زرٌّ يبدو شغّالاً ولا يفعل شيئاً صمتٌ آخر: الحارسُ بالمعالج
+                (`registry === null`) كان يوقف التوليد بلا أن يُرى. يُقفل بصرياً أيضاً. */}
+            <Button size="sm" disabled={registry === null} loading={busy === "__all__"} leftIcon={<Sparkles size={14} />} onClick={() => void generateForAll()}>
               ولّد للكل ({formatNum(noBarcode.length)})
             </Button>
           </div>
@@ -271,7 +286,7 @@ export function BarcodeStudio({ products, onChanged }: { products: Product[]; on
             <input value={batchLabel} onChange={(e) => setBatchLabel(e.target.value)} placeholder="مثال: وجبة أدوية شهر ٨ — شركة الرازي"
               className="input mt-1 h-10 w-full text-sm" />
           </label>
-          <Button loading={busy === "__batch__"} leftIcon={<Sparkles size={15} />} onClick={() => void generateBatch()}>توليد</Button>
+          <Button disabled={registry === null} loading={busy === "__batch__"} leftIcon={<Sparkles size={15} />} onClick={() => void generateBatch()}>توليد</Button>
         </div>
 
         {/* آخر دفعة مولدة — معاينة فورية + طباعة */}
@@ -319,7 +334,14 @@ export function BarcodeStudio({ products, onChanged }: { products: Product[]; on
           )}
         </div>
 
-        {registry === null ? (
+        {regFailed ? (
+          /* التوليدُ يبقى مقفولاً (registry باقيةٌ null) — ونقول السبب بدل سجلٍّ
+           * يبدو فارغاً فيُعاد التسلسلُ من أوّله ويتكرّر الرمز على مادّتين. */
+          <div className="py-8 text-center" data-regfailed>
+            <p className="text-xs text-ink-subtle">{t("pos.regLoadFailed", "تعذّر جلب سجل الباركودات — التوليد موقوف حتى ما تتكرر الأرقام. أعد المحاولة.")}</p>
+            <Button className="mt-3" size="sm" variant="secondary" onClick={() => { playTap(); void load(); }}>{t("common.retry", "إعادة المحاولة")}</Button>
+          </div>
+        ) : registry === null ? (
           <div className="space-y-2">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-12 rounded-xl" />)}</div>
         ) : shown.length === 0 ? (
           <p className="py-8 text-center text-xs text-ink-subtle">{registry.length === 0 ? "بعد ما انولد أي باركود — ابدأ من فوق." : "ماكو نتيجة مطابقة."}</p>
