@@ -392,17 +392,18 @@ alter table wa_inbox           add column if not exists clinic_id      uuid;
 alter table wa_inbox           add column if not exists status         text;
 alter table wa_inbox           add column if not exists created_at     timestamptz not null default now();
 
-/* ── بديلا دالّتين تحكمهما 0163 وليستا بالموجة ────────────────────────────
- * فحصُ 0163 يعدّ ثلاثَ دوالٍّ يجب أن تبقى للمسجَّلين وتُمنع على `anon`، ولا
- * وجودَ لاثنتين منهما بالأساس (تأتيان من 0035 و0048، خارج الموجة) — فيرجع
- * العدُّ اثنين لا ثلاثة، ويبدو كأن حمايةً سقطت وهي لم تُفحص أصلاً.
- * والبديلُ هنا ليس زينةً: 0163 تنزل **بعده** فتطبّق عليه منعَها ومنحَها، فيصير
- * الفحصُ فحصاً لـ0163 حقّاً. والتوقيعُ منقولٌ من الإنتاج حرفياً — والجسمُ لا
- * يعني الفحصَ لأن المقيسَ صلاحيةُ النداء لا أثرُ النداء. */
-create or replace function settle_invoice(p_invoice uuid, p_amount numeric, p_method text default 'cash')
-returns invoices language plpgsql security definer set search_path = public as $si$
-declare v invoices; begin select * into v from invoices where id = p_invoice; return v; end $si$;
-
+/* ── بديلُ دالّةٍ تحكمها 0163 وليست بالموجة ───────────────────────────────
+ * فحصُ 0163 يعدّ ثلاثَ دوالٍّ تبقى للمسجَّلين وتُمنع على `anon`؛ `settle_invoice`
+ * و`record_purchase` موجودتان (الأولى بالأساس أعلاه، والثانية من 0166)،
+ * و`set_override_pin` (0048) خارج الموجة فلا وجودَ لها — فيرجع العدُّ اثنين
+ * لا ثلاثة، وتبدو حمايةٌ ساقطةً وهي لم تُفحص أصلاً.
+ * والبديلُ ينزل **قبل** 0163 فتطبّق عليه منعَها ومنحَها، فيصير الفحصُ فحصاً
+ * لـ0163 حقّاً. والجسمُ لا يعني الفحصَ: المقيسُ صلاحيةُ النداء لا أثرُه.
+ *
+ * وحُذف من هنا بديلٌ ثانٍ لـ`settle_invoice`: الأساسُ يعرّفها كاملةً أعلاه،
+ * وبديلي الفارغ دهسها فسقطت فحوصُ تحصيل السائقين بأرقامٍ غريبة (٥٠٠٠ مكان
+ * ٣٠٠٠) — عطلٌ يبدو بالتحصيل وأصلُه سطرٌ بمكانٍ آخر. والسببُ أنّي بحثتُ عنها
+ * بمجلّد الهجرات ولم أبحث بالأساس نفسِه. */
 create or replace function set_override_pin(p_pin text)
 returns void language plpgsql security definer set search_path = public as $sop$
 begin perform 1; end $sop$;

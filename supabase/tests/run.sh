@@ -1127,6 +1127,13 @@ $P -c "grant usage on schema public to authenticated;
          ('eeeeeeee-0159-4000-8000-000000000002','$C1','dddddddd-0159-4000-8000-000000000002','cccccccc-0157-4000-8000-000000000001','delivered',5000)
          on conflict do nothing;
        update _dvtest_flags set admin = false; delete from platform_sessions;" >/dev/null
+# المنحُ الشامل أعلاه (`grant execute on all functions … to authenticated`) لازمٌ
+# لـ`_rls_try` كي يعمل بدورٍ عاديّ — لكنه **يلغي منعَ 0163** عن المساعدتين
+# الداخليّتين (`deduct_stock_pooled` و`credit_stock`)، فتصيران منادَاتَين ممّن
+# لا يجوز، ويفشل فحصُ 0163 بعده بسببٍ لا علاقةَ له به.
+# فتُعاد 0163 لتستردّ سلطتَها: هي المرجعُ بمن ينادي ماذا، ومنحٌ شاملٌ لأجل فحصٍ
+# لا يعلو عليها. (وقد صار الفحصُ بهذا أقوى: يُثبت أن 0163 تغلب منحاً شاملاً.)
+$P -f "$MIG/0163_rpc_exposure.sql" >/dev/null 2>&1
 chk "موظّفُ استقبالٍ يرسل طلباً مع سائق (كان 42P17 على كلّ تحديث)" \
     "select _rls_try('$RCP', 'update delivery_orders set courier_id=''cccccccc-0159-4000-8000-000000000001'', status=''out'', dispatched_at=now() where id=''eeeeeeee-0159-4000-8000-000000000001''')" "rows:1"
 chk "  ويختم استلامَ نقد السائق" \
@@ -1176,14 +1183,6 @@ chk "ولا سياسةَ بالقاعدة كلّها تستعلم من جدول�
 
 # ── 0163: دوالُّ الخزن الداخلية للمالك وحده، ودوالُّ العيادة لا تُنادى بلا هويّة ──
 echo "▸ 0163: من يقدر ينادي ماذا"
-# مسبارُ تشخيصٍ مؤقّت: الفحصُ التالي يفشل بالحزمة ويمرّ على الإنتاج (قِستُهما:
-# الإنتاجُ anon=false و authenticated=false للدالّتين). ولا سبيلَ لقراءة سببه من
-# بعيدٍ إلا بإظهار قائمةِ الصلاحيات نفسِها — فتُطبع بفشلٍ مقصود، ثم يُحذف هذا
-# السطر. تخمينٌ ثالثٌ عن بُعد أغلى من قياسٍ واحد.
-chk "  (مسبار مؤقّت) قائمةُ صلاحيات الدالّتين" \
-    "select coalesce(string_agg(p.proname || '=' || coalesce(array_to_string(p.proacl,'،'),'∅'), ' | ' order by p.proname), '∅')
-       from pg_proc p join pg_namespace n on n.oid=p.pronamespace
-      where n.nspname='public' and p.proname in ('deduct_stock_pooled','credit_stock')" "PROBE"
 chk "deduct_stock_pooled وcredit_stock لا تُنادى من anon ولا من authenticated" \
     "select count(*)::text from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname in ('deduct_stock_pooled','credit_stock') and (has_function_privilege('anon', p.oid, 'execute') or has_function_privilege('authenticated', p.oid, 'execute'))" "0"
 chk "  ويبقى المالكُ يناديهما (pos_checkout تحتاجهما)" \
@@ -1251,10 +1250,13 @@ ACJ="select set_config('request.jwt.claim.sub','$AC',true)"
 $P -c "insert into products (id, clinic_id, name, barcode, alt_codes, stock) values
          ('a1000000-0000-0000-0000-000000000001','$AC','رفّ ٢٤٧','SHELF-247',array['6970967772736'],5)
        on conflict do nothing;" >/dev/null 2>&1
+# `(صفٌّ مركَّب) is not null` يعني **كلَّ** أعمدته غيرُ فارغة — وصفُّ الشراء فيه
+# أعمدةٌ تقبل الفراغ (الشركة، المرجع، الملاحظات)، فالجوابُ `false` عن صفٍّ سليم.
+# فخٌّ يقول «فشل» عن نجاح. فيُنتزع عمودٌ واحدٌ بدل الصفّ كلِّه.
 chk "الشراءُ بالرمز الإضافيّ يُرصَّد على القائم" \
-    "select (record_purchase(
+    "select ((record_purchase(
        jsonb_build_array(jsonb_build_object('product_id',null,'barcode','6970967772736','name','وصلت بضاعة','qty',3,'purchase_price',1000,'sell_price',1500)),
-       jsonb_build_object('company_name','مورّد فحص')) is not null)::text
+       jsonb_build_object('company_name','مورّد فحص'))).id is not null)::text
      from ($ACJ) s" "true"
 chk "  فيصير رصيدُه ثمانيةً لا خمسة" \
     "select stock::text from products where id='a1000000-0000-0000-0000-000000000001'" "8.000"
@@ -1393,7 +1395,11 @@ chk "ورمزٌ يفرغ بعد التطبيع" \
     "select count(*)::text from $HBJ where h.kind='empty'" "1"
 chk "والرمزُ السليم لا يُشتكى منه" \
     "select count(*)::text from $HBJ where h.product_name='سليم'" "0"
+# بالمعرّفات لا بالأسماء: كتلةُ 0165/0166 تزرع «المستعير» و«صاحبُ الرمز» بعيادةِ
+# الفحص الأولى، فالمطابقةُ بالاسم كانت تجد صفَّ العيادة **نفسِها** وتظنّه تسرّباً.
+# ومعرّفاتُ هذه الكتلة وحدَها تبدأ بـ`e8000000` فالسؤالُ صار دقيقاً: أترى عيادةٌ
+# أخرى شيئاً ممّا زُرع هنا؟
 chk "ولا ترى عيادةٌ رموزَ عيادةٍ أخرى" \
-    "select count(*)::text from (select set_config('request.jwt.claim.sub','11111111-1111-1111-1111-111111111111',true)) s cross join lateral verify_barcode_health() h where h.product_name in ('المستعير','توأم أ')" "0"
+    "select count(*)::text from (select set_config('request.jwt.claim.sub','11111111-1111-1111-1111-111111111111',true)) s cross join lateral verify_barcode_health() h where h.product_id::text like 'e8000000-%'" "0"
 
 [ $fail -eq 0 ] && echo "✓ كل الفحوص عبرت" || { echo "✗ اكو فحصٌ فشل"; exit 1; }
