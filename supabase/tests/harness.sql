@@ -322,6 +322,9 @@ alter table clinic_prefs add column if not exists qty_promos          text;
  * الأنواعُ والافتراضاتُ منقولةٌ من `information_schema`. */
 alter table profiles           add column if not exists full_name      text;
 alter table profiles           add column if not exists email          text;
+-- محفّزُ 0162 على `profiles` يقرأ `new.clinic_id` — وبلا العمود يرفع 42703
+-- («record "new" has no field») فيبدو الحارسُ كأنه يمنع، وهو ينهار.
+alter table profiles           add column if not exists clinic_id      uuid;
 alter table profiles           add column if not exists created_at     timestamptz not null default now();
 alter table clinics            add column if not exists name           text;
 alter table clinics            add column if not exists created_at     timestamptz not null default now();
@@ -388,6 +391,21 @@ alter table wa_accounts        add column if not exists created_at     timestamp
 alter table wa_inbox           add column if not exists clinic_id      uuid;
 alter table wa_inbox           add column if not exists status         text;
 alter table wa_inbox           add column if not exists created_at     timestamptz not null default now();
+
+/* ── بديلا دالّتين تحكمهما 0163 وليستا بالموجة ────────────────────────────
+ * فحصُ 0163 يعدّ ثلاثَ دوالٍّ يجب أن تبقى للمسجَّلين وتُمنع على `anon`، ولا
+ * وجودَ لاثنتين منهما بالأساس (تأتيان من 0035 و0048، خارج الموجة) — فيرجع
+ * العدُّ اثنين لا ثلاثة، ويبدو كأن حمايةً سقطت وهي لم تُفحص أصلاً.
+ * والبديلُ هنا ليس زينةً: 0163 تنزل **بعده** فتطبّق عليه منعَها ومنحَها، فيصير
+ * الفحصُ فحصاً لـ0163 حقّاً. والتوقيعُ منقولٌ من الإنتاج حرفياً — والجسمُ لا
+ * يعني الفحصَ لأن المقيسَ صلاحيةُ النداء لا أثرُ النداء. */
+create or replace function settle_invoice(p_invoice uuid, p_amount numeric, p_method text default 'cash')
+returns invoices language plpgsql security definer set search_path = public as $si$
+declare v invoices; begin select * into v from invoices where id = p_invoice; return v; end $si$;
+
+create or replace function set_override_pin(p_pin text)
+returns void language plpgsql security definer set search_path = public as $sop$
+begin perform 1; end $sop$;
 alter table products add column if not exists barcode text;
 alter table products add column if not exists name text;
 alter table products add column if not exists sell_price numeric(12,2) default 0;

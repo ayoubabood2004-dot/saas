@@ -494,6 +494,11 @@ $P -c "alter table products enable trigger products_no_twin_code;" >/dev/null 2>
 chk "محفّزُ التوأم رجع مفعَّلاً بعد زرع التاريخ" \
     "select (tgenabled='O')::text from pg_trigger where tgrelid='products'::regclass and tgname='products_no_twin_code'" "true"
 $P -f "$MIG/0141_barcode_recovery.sql" >/dev/null 2>&1
+# 0141 تُعرّف `product_by_code` أيضاً، وإعادةُ تنزيلها هنا — بعد الموجة كلِّها —
+# **تدهس** نسخةَ 0165 الحتميّةَ الترتيب وترجع نسختَها القديمة. فتفشل فحوصُ G5
+# بعدها لسببٍ لا علاقةَ له بها. الحلُّ إعادةُ الأحدث بعد الأقدم: من يعيد تنزيل
+# هجرةٍ وسط الفحوص يعيد معها كلَّ من عدّل ما عدّلته.
+$P -f "$MIG/0165_lookup_and_restore.sql" >/dev/null 2>&1
 
 chk "علامةُ الاتجاه انشالت من الباركود" \
     "select barcode from products where id='bbbb0000-0000-0000-0000-000000000001'" "8989"
@@ -1171,6 +1176,14 @@ chk "ولا سياسةَ بالقاعدة كلّها تستعلم من جدول�
 
 # ── 0163: دوالُّ الخزن الداخلية للمالك وحده، ودوالُّ العيادة لا تُنادى بلا هويّة ──
 echo "▸ 0163: من يقدر ينادي ماذا"
+# مسبارُ تشخيصٍ مؤقّت: الفحصُ التالي يفشل بالحزمة ويمرّ على الإنتاج (قِستُهما:
+# الإنتاجُ anon=false و authenticated=false للدالّتين). ولا سبيلَ لقراءة سببه من
+# بعيدٍ إلا بإظهار قائمةِ الصلاحيات نفسِها — فتُطبع بفشلٍ مقصود، ثم يُحذف هذا
+# السطر. تخمينٌ ثالثٌ عن بُعد أغلى من قياسٍ واحد.
+chk "  (مسبار مؤقّت) قائمةُ صلاحيات الدالّتين" \
+    "select coalesce(string_agg(p.proname || '=' || coalesce(array_to_string(p.proacl,'،'),'∅'), ' | ' order by p.proname), '∅')
+       from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+      where n.nspname='public' and p.proname in ('deduct_stock_pooled','credit_stock')" "PROBE"
 chk "deduct_stock_pooled وcredit_stock لا تُنادى من anon ولا من authenticated" \
     "select count(*)::text from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname in ('deduct_stock_pooled','credit_stock') and (has_function_privilege('anon', p.oid, 'execute') or has_function_privilege('authenticated', p.oid, 'execute'))" "0"
 chk "  ويبقى المالكُ يناديهما (pos_checkout تحتاجهما)" \
@@ -1228,7 +1241,8 @@ chk "والاستعادةُ ترشّح الرموزَ الإضافية المس�
 # ── والآن السلوكُ نفسُه: نشتري، ونستدعي، ونستعيد ─────────────────────────
 # عيادةٌ خاصّةٌ بهذا القسم كي لا تختلط ببقايا الكتل السابقة.
 AC="11111111-1111-1111-1111-111111111111"
-ACJ="select set_config('request.jwt.claim.sub','$AC',true);"
+# بلا فاصلةٍ منقوطة: تُحقن داخل `from (…) s` فتصير `(select …;) s` — خطأُ صياغة.
+ACJ="select set_config('request.jwt.claim.sub','$AC',true)"
 # G1 سلوكياً: سطرُ شراءٍ **بلا product_id** ورمزُه باركودُ مصنعٍ هو رمزٌ
 # **إضافيّ** لمنتجٍ قائم رمزُه الأساسيّ رقمُ رفّ — الحالةُ المقيسة بالإنتاج
 # (٢٨١ منتجاً بأربع عيادات رمزُه يدويّ). المطلوب: يُرصَّد على القائم، ولا
