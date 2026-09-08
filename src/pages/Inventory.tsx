@@ -174,7 +174,7 @@ export function Inventory() {
       setLoading(false);
     }
     void load();
-    void repo.supportsBulkGroup().then((ok) => { if (mounted.current) setGroupsOk(ok); }).catch(() => {});
+    void repo.supportsBulkGroup().then((ok) => { if (mounted.current) setGroupsOk(ok); }).catch(() => {}); /* swallow-ok: فحصُ قدرةٍ لا قائمةُ قرار — الفشلُ يُبقي groupsOk=null أي «لا نعرف»، وهي الحالةُ التي تحذّر عند الحفظ */
     return () => { mounted.current = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -566,7 +566,15 @@ function InventoryTab({ products, companies, sections, clinicId, onChanged }: { 
       </div>
 
       {shown.length === 0 ? (
-        <div className="card p-10 text-center text-ink-subtle">{t("pos.noProducts", "No products yet. Add your first one.")}</div>
+        /* بحثٌ خائبٌ فوق مخزنٍ عامر كان يقول «لا توجد منتجات بعد. أضف أول منتج» —
+         * عبارةٌ كاذبة **تأمر بالفعل الضار**: فيُعاد إدخالُ الموجود توأماً برصيدٍ
+         * مقسوم. الشاشاتُ المجاورة تميّز الحالتين منذ زمن؛ هذه وحدَها لم تكن.
+         * ولا دعوةَ إضافةٍ هنا: العدُّ يقول إن المخزن ليس فارغاً. */
+        <div className="card p-10 text-center text-ink-subtle" data-invempty={ql ? "search" : "stock"}>
+          {ql
+            ? t("pos.noSearchInStock", "لا نتائج مطابقة. المخزن فيه {{n}} منتجاً — جرّب اسماً أقصر أو امسح الباركود.", { n: formatNum(products.length) })
+            : t("pos.noProducts", "No products yet. Add your first one.")}
+        </div>
       ) : (
         <motion.div variants={staggerContainer} initial="initial" animate="animate" className="space-y-2">
           {shown.map((p) => (
@@ -623,7 +631,7 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
   // false = ترحيل 0075 ناقص فرابط المجموعة سيسقط — نُحذّر بدل الحفظ الصامت.
   const [groupsOk, setGroupsOk] = useState<boolean | null>(null);
   useEffect(() => {
-    if (open && bulk && groupsOk === null) void repo.supportsBulkGroup().then(setGroupsOk).catch(() => {});
+    if (open && bulk && groupsOk === null) void repo.supportsBulkGroup().then(setGroupsOk).catch(() => {}); /* swallow-ok: نفسُ فحص القدرة — null تعني «لا نعرف» فيُحذَّر لا يُحفظ صامتاً */
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, bulk]);
   const barcodeRef = useRef<HTMLInputElement>(null);

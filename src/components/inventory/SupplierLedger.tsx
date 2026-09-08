@@ -93,7 +93,7 @@ export function SupplierLedgerTab({ companies, clinicId, products = [] }: { comp
     mounted.current = true;
     void load();
     void loadCharges();
-    void repo.supportsSupplierLedger().then((ok) => { if (mounted.current) setLedgerOk(ok); }).catch(() => {});
+    void repo.supportsSupplierLedger().then((ok) => { if (mounted.current) setLedgerOk(ok); }).catch(() => {}); /* swallow-ok: فحصُ قدرةٍ (هل نزلت هجرةُ دفتر المورّدين؟) لا قائمةُ قرار */
     return () => { mounted.current = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

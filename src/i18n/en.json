@@ -349,6 +349,7 @@
     "day": "days"
   },
   "retail": {
+    "printItemsFailed": "Could not load the invoice lines — it will not print incomplete. Retry.",
     "title": "Retail & Sales",
     "subtitle": "Walk-in sales, invoicing & receipts — for this clinic only.",
     "sellItems": "Sell items",
@@ -883,6 +884,7 @@
     "transfer": "Transfer"
   },
   "purchase": {
+    "stmtFailed": "Could not load the statement’s goods — the total is right but the table is incomplete. Retry.",
     "new": "Purchase",
     "search": "Search by company or invoice #…",
     "empty": "No purchases yet. Record your first and restock inventory in one go.",
@@ -953,6 +955,7 @@
     "excelCodeLine": "On line “{{name}}”, code {{code}} — set the barcode column back to “Text” in Excel and paste again."
   },
   "pos": {
+    "noSearchInStock": "No matches. Inventory holds {{n}} products — try a shorter name or scan the barcode.",
     "title": "Inventory",
     "subtitle": "Stock, products & low-stock alerts — for this clinic only.",
     "expiringSoon": "Expiring ≤30d",

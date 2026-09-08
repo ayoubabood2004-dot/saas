@@ -172,7 +172,7 @@ function OrdersTab({ orders, products, profile, clinicId, reload, goSettings }: 
       if (o.delivery_fee > 0) {
         items.push({ product_id: null, name: "أجرة توصيل", barcode: null, qty: 1, unit_price: o.delivery_fee, unit_cost: 0, stock_qty: 0, unit_label: null });
       }
-      const staffM = await matchStaffToUser(user?.id, user?.email).catch(() => null);
+      const staffM = await matchStaffToUser(user?.id, user?.email).catch(() => null); /* swallow-ok: نسبةُ البيعة لموظّفٍ إثراءٌ اختياريّ — غيابُها لا يمنع قبولَ الطلب ولا يغيّر مالاً */
       const meta: SaleMeta = {
         customer_name: o.customer_name, customer_phone: o.customer_phone, pet_name: null,
         final_total: o.total, payment_method: null, payment_details: null,

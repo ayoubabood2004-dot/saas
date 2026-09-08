@@ -3057,6 +3057,31 @@ function listOf<T>(res: { data: unknown; error: { message: string } | null }): T
 }
 
 /**
+ * قائمةٌ تُرمى لا تُبلَع — لكلِّ قائمةٍ يُبنى عليها قرار.
+ *
+ * الحقيقةُ الحاملة: `postgrest-js` يحوّل حتى فشلَ الشبكة إلى `res.error` لا إلى
+ * رمية (وما من `throwOnError` بالمستودع كلِّه). فدالّةٌ تفحص الخطأ وترجع `[]`
+ * تجعل كلَّ `catch` عند مستهلكيها **ميّتاً**: الفشلُ يصل «نجاحاً فارغاً».
+ * ومعالجاتُ الفشل مكتوبةٌ فعلاً بالشاشات (شاشةُ «أعد المحاولة»، توست البحث
+ * الفاشل) لكنها لا تنطلق أبداً — فتُقال «ماكو» عن موجود.
+ *
+ * فما يُبنى عليه مرتجعٌ أو طباعةٌ أو كشفُ مورّدٍ أو استرجاعُ محذوفٍ يمرّ من هنا:
+ * الخطأُ يُرمى بنصّه ورمزه (كـ`need`)، و«لا صفوف» تبقى `[]` مشروعة.
+ * (`listOf` تبقى لقوائمَ زينةٍ لا يُبنى عليها قرار.)
+ */
+function listOrThrow<T>(res: { data: unknown; error: { message: string; code?: string; details?: string; hint?: string } | null }): T[] {
+  if (res.error) {
+    const src = res.error;
+    const err = new Error(src.message) as Error & { code?: string; details?: string; hint?: string };
+    if (src.code) err.code = src.code;
+    if (src.details) err.details = src.details;
+    if (src.hint) err.hint = src.hint;
+    throw err;
+  }
+  return (res.data ?? []) as T[];
+}
+
+/**
  * استعلام .in() على دفعات بدل مصفوفة واحدة غير محدودة.
  *
  * PostgREST يمرّر قائمة المعرفات داخل رابط الطلب، وكل uuid يستهلك ~٣٩ حرفاً
@@ -3913,7 +3938,11 @@ const supabaseRepo: typeof demoRepo = {
     if (error) throw error;
   },
   async listDeletedProducts() {
-    return listOf<DeletedProduct>(await sbc().from("products_trash").select("*").order("deleted_at", { ascending: false }));
+    // كانت الوحيدةَ بين قوائم كيانات المخزن العشر بطلبٍ واحد بلا صفحات: سقفُ
+    // الألف يقصّها بصمت، وخطؤها يُبلع فتقول شاشةُ الاسترجاع «ماكو محذوفات» —
+    // فتعيد العيادةُ إدخال ما حذفته بالغلط توأماً وتفقد تاريخه. `allPages`
+    // تكسر السقفَ وترمي على الفشل معاً (وتضيف id كاسرَ تعادلٍ للترتيب).
+    return allPages<DeletedProduct>(() => sbc().from("products_trash").select("*").order("deleted_at", { ascending: false }));
   },
   async productSaleLines(id) {
     // عدٌّ لا صفوف — فلا يمسّه سقفُ الألف.
@@ -3953,7 +3982,10 @@ const supabaseRepo: typeof demoRepo = {
     // clinic_id يُختم من default العمود؛ upsert بتجاهل التعارض يحاكي سلوك الديمو
     // (كود موجود سابقاً لا يُدرج مرتين ولا يفشّل الدفعة كلها).
     const payload = rows.map(({ clinic_id, ...rest }) => { void clinic_id; return rest; });
-    return listOf<GeneratedBarcode>(
+    // التعارضُ المتجاهَل ليس خطأً (قد تنقص الصفوفُ الراجعة) — أما خطأُ الإدراج
+    // فيُرمى: كانت تُبلع فتُطبع ملصقاتٌ لا وجودَ لها بالسجل، والدفعةُ التالية
+    // تولّد نفسَ الأرقام فيصير ملصقان برمزٍ واحد على مادّتين.
+    return listOrThrow<GeneratedBarcode>(
       await sbc().from("generated_barcodes").upsert(payload, { onConflict: "clinic_id,barcode", ignoreDuplicates: true }).select(),
     );
   },
@@ -3984,7 +4016,7 @@ const supabaseRepo: typeof demoRepo = {
     return !!data;
   },
   async listStoreOrders(limit = 300) {
-    return listOf<StoreOrder>(
+    return listOrThrow<StoreOrder>(
       await sbc().from("store_orders").select("*").order("created_at", { ascending: false }).limit(limit),
     );
   },
@@ -4181,7 +4213,7 @@ const supabaseRepo: typeof demoRepo = {
     });
   },
   async listPurchaseItems(purchaseId) {
-    return listOf<PurchaseItem>(await sbc().from("purchase_items").select("*").eq("purchase_id", purchaseId));
+    return listOrThrow<PurchaseItem>(await sbc().from("purchase_items").select("*").eq("purchase_id", purchaseId));
   },
   async listAllPurchaseItems(clinicId, range) {
     return allPages<PurchaseItem>(() => {
@@ -4382,7 +4414,7 @@ const supabaseRepo: typeof demoRepo = {
     }
   },
   async listInvoiceItems(invoiceId) {
-    return listOf<InvoiceItem>(await sbc().from("invoice_items").select("*").eq("invoice_id", invoiceId));
+    return listOrThrow<InvoiceItem>(await sbc().from("invoice_items").select("*").eq("invoice_id", invoiceId));
   },
   async listAllInvoiceItems(clinicId, range) {
     // أكبر جدول بالعيادة النشطة — بلا صفحات كانت التحليلات تحسب على أول ألف سطر فقط.
@@ -4441,7 +4473,7 @@ const supabaseRepo: typeof demoRepo = {
   },
   async searchInvoices(s) {
     // صفحةٌ واحدة بحدّها — لا allPages هنا عمداً: الصفحةُ هي الفكرة.
-    return listOf<Invoice>(await sbc().rpc("search_invoices", {
+    return listOrThrow<Invoice>(await sbc().rpc("search_invoices", {
       p_q: s.q ?? null, p_status: s.status ?? "all",
       p_before: s.before ?? null, p_before_id: s.beforeId ?? null, p_limit: s.limit ?? 50,
       p_since: s.since ?? null,

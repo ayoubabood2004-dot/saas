@@ -38,24 +38,34 @@ export function CompanyStatementModal({ group, onClose, onOpenInvoice }: {
   const { t, i18n } = useTranslation();
   const toast = useToast();
   const [items, setItems] = useState<Map<string, PurchaseItem[]> | null>(null);
+  /* كشفُ مورّدٍ ناقصُ البضاعة أسوأ من كشفٍ لا يفتح: إجماليُّه كامل وجدولُه ناقص،
+   * فيقف المندوبُ أمام رقمين. فإمّا كاملٌ وإمّا «تعذّر — أعد المحاولة». */
+  const [failed, setFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
-    if (!group) { setItems(null); return; }
+    if (!group) { setItems(null); setFailed(false); return; }
     let alive = true;
+    setFailed(false);
+    setItems(null);
     (async () => {
       const m = new Map<string, PurchaseItem[]>();
       // جلب سطور الفواتير على دفعات صغيرة — عشرات الفواتير تبقى سلسة
       const ids = group.invoices.map((p) => p.id);
       for (let i = 0; i < ids.length; i += 6) {
         const chunk = ids.slice(i, i + 6);
-        const rows = await Promise.all(chunk.map((id) => repo.listPurchaseItems(id).catch(() => [] as PurchaseItem[])));
+        const rows = await Promise.all(chunk.map((id) => repo.listPurchaseItems(id)));
         chunk.forEach((id, j) => m.set(id, rows[j]));
         if (!alive) return;
       }
       if (alive) setItems(m);
-    })();
+    })().catch((e) => {
+      if (!alive) return;
+      setFailed(true);
+      toast.error(t('purchase.stmtFailed', 'تعذّر جلب بضاعة الكشف'), e instanceof Error ? e.message : undefined);
+    });
     return () => { alive = false; };
-  }, [group]);
+  }, [group, attempt]);
 
   const goods = useMemo<Agg[]>(() => {
     if (!group || !items) return [];
@@ -115,14 +125,19 @@ export function CompanyStatementModal({ group, onClose, onOpenInvoice }: {
             <Kpi icon={Wallet} label={t("purchase.due", "المتبقّي")} value={group.due > 0 ? money(group.due) : "✓"} tone={group.due > 0 ? "danger" : "success"} />
           </div>
 
-          <Button className="w-full sm:w-auto" leftIcon={<Printer size={16} />} disabled={!items} onClick={print} data-printstmt>
+          <Button className="w-full sm:w-auto" leftIcon={<Printer size={16} />} disabled={!items || failed} onClick={print} data-printstmt>
             {t("purchase.printStatement", "طباعة كشف الشركة")}
           </Button>
 
           {/* البضاعة المشتراة — مجمَّعة عبر كل الفواتير */}
           <div>
             <h3 className="mb-1.5 text-sm font-extrabold text-ink">{t("purchase.goodsFrom", "البضاعة المشتراة من الشركة")}</h3>
-            {!items ? (
+            {failed ? (
+              <div className="rounded-xl bg-surface-2 p-6 text-center" data-stmtfailed>
+                <p className="text-xs text-ink-subtle">{t('purchase.stmtFailed', 'تعذّر جلب بضاعة الكشف')}</p>
+                <Button className="mt-3" size="sm" variant="secondary" onClick={() => setAttempt((n) => n + 1)}>{t('common.retry', 'أعد المحاولة')}</Button>
+              </div>
+            ) : !items ? (
               <div className="space-y-2">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-10 rounded-xl" />)}</div>
             ) : goods.length === 0 ? (
               <p className="rounded-xl bg-surface-2 p-4 text-center text-xs text-ink-subtle">{t("purchase.noGoods", "ما في سطور بضاعة محفوظة بهذه الفواتير.")}</p>
