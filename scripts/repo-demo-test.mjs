@@ -231,6 +231,40 @@ console.log("\n▸ tidyInventory — صورةٌ قبل الطيّ (مرآةُ م
   check("  ومعه مرجعُ الدمج ليُفكّ", trash[0]?.merged_into === "keeper");
 }
 
+console.log("\n▸ الطيُّ يورّث الرموز — مرآةُ 0169");
+{
+  /* الحالةُ التي كانت تكسر: الهدفُ **له باركودُه**، فلا يرث الأساسيَّ بـcoalesce
+   * — وكانت رموزُ التوأم تُدفن معه، فأوّلُ مسحةٍ لباركود المصنع بعد «رتّب
+   * المخزن» تقول «مو موجود» والمادّةُ بالمخزن، فيُعاد إدخالُها توأماً. */
+  seed([
+    P("target", "دراي فود", "1110000000015", { section_id: "sec1", stock: 5 }),
+    P("twin", "دراي فود", "2220000000029", { stock: 7, alt_codes: ["3330000000033"] }),
+  ]);
+  const r = await repo.tidyInventory();
+  check("التوأمُ يُطوى والرصيدُ يُجمع", r.merged === 1 && (await repo.listProducts()).find((p) => p.id === "target")?.stock === 12);
+  const t = (await repo.listProducts()).find((p) => p.id === "target");
+  check("والهدفُ يبقى بباركوده الأصليّ", t?.barcode === "1110000000015");
+  check("ويرث باركودَ التوأم رمزاً إضافياً", (t?.alt_codes ?? []).includes("2220000000029"), JSON.stringify(t?.alt_codes));
+  check("  ورموزَ التوأم الإضافية معه", (t?.alt_codes ?? []).includes("3330000000033"), JSON.stringify(t?.alt_codes));
+  check("فمسحةُ رمز التوأم تلقى الهدف (جوابُ «موجود ويُمسح فلا يجيء»)",
+    (await repo.getProductByBarcode("2220000000029"))?.id === "target");
+  check("  ومسحةُ رمزه الإضافي كذلك", (await repo.getProductByBarcode("3330000000033"))?.id === "target");
+}
+{
+  // ولا يُسرق رمزٌ صار لمنتجٍ ثالث — ولا يُكرَّر ما عند الهدف أصلاً.
+  seed([
+    P("target2", "شامبو", "5550000000056", { section_id: "sec1", stock: 1, alt_codes: ["6660000000060"] }),
+    P("twin2", "شامبو", "7770000000074", { stock: 1, alt_codes: ["6660000000060", "8880000000088"] }),
+    P("third", "غيره", "8880000000088", { section_id: "sec1", stock: 1 }),
+  ]);
+  await repo.tidyInventory();
+  const t2 = (await repo.listProducts()).find((p) => p.id === "target2");
+  check("رمزُ منتجٍ ثالث لا يُسرق بالطيّ", !(t2?.alt_codes ?? []).includes("8880000000088"), JSON.stringify(t2?.alt_codes));
+  check("  والرمزُ المكرَّر لا يتضاعف", (t2?.alt_codes ?? []).filter((c) => c === "6660000000060").length === 1, JSON.stringify(t2?.alt_codes));
+  check("  والثالثُ يبقى مالكاً رمزَه", (await repo.listProducts()).find((p) => p.id === "third")?.barcode === "8880000000088");
+}
+
+
 console.log("\n▸ فكُّ التوريث — مرآةُ keep_barcode (0167)");
 {
   // أصلٌ مصنَّف بلا باركود، وتوأمٌ «بدون صنف» بباركود: «رتّبِ المخزن» يطويه

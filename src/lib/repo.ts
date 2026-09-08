@@ -2135,6 +2135,25 @@ const demoRepo = {
       // السحابةُ تحفظه ويُفكّ من تبويب المحذوفات.
       trashProduct(db, dup, { merged_into: target.id, keep_barcode: target.barcode?.trim() ? target.barcode : null });
       target.stock = Math.max(0, (target.stock || 0) + Math.max(0, dup.stock || 0));
+      /* رموزُ المطويّ تلحق بالهدف (0169) — الأساسيُّ والإضافية معاً، بنفس منطق
+       * `merge_products`. كان الطيُّ يدفنها: هدفٌ له باركودُه لا يرث شيئاً، فأوّلُ
+       * مسحةٍ لباركود المصنع بعد «رتّب المخزن» تقول «مو موجود» والمادّةُ بالمخزن،
+       * فيُعاد إدخالُها توأماً — الدورةُ نفسُها من بابٍ اسمُه «ترتيب». */
+      const tgtCode = invNormCode(target.barcode);
+      const owned = (c: string) => (db.products ?? []).some((o) =>
+        o.id !== target.id && o.id !== dup.id
+        && (invNormCode(o.barcode) === invNormCode(c) || (o.alt_codes ?? []).some((x) => invNormCode(x) === invNormCode(c))));
+      const codes = [...(target.alt_codes ?? [])];
+      const addCode = (c: string | null | undefined) => {
+        const v = (c ?? "").trim();
+        if (!v || invNormCode(v) === tgtCode) return;
+        if (codes.some((x) => invNormCode(x) === invNormCode(v))) return;
+        if (owned(v)) return;
+        codes.push(v);
+      };
+      addCode(dup.barcode);
+      for (const c of dup.alt_codes ?? []) addCode(c);
+      target.alt_codes = codes;
       if (!target.barcode && dup.barcode) target.barcode = dup.barcode;
       if (!target.expiry_date && dup.expiry_date) target.expiry_date = dup.expiry_date;
       for (const it of items) if (it.product_id === dup.id) it.product_id = target.id;
