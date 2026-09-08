@@ -245,14 +245,16 @@ for (let i = 0; i < N; i++) {
   for (let k = 0; k < typed.length; k++) { th += k ? int(45, 90) : 0; h.feed(typed[k], th); }
   if (h.feed("Tab", th + int(1, 20)) === null) noHumanTab++;
 
-  // وTab المرفوضُ لا يُفرغ المجمَّع: الإنسانُ ينتقل ولا يخسر ما كتب.
-  if (viaTab === null) {
-    const extra = digits(2);
-    let t2 = tb + int(1, 25);
-    for (const ch of extra) { t2 += int(1, 25); b.feed(ch, t2); }
-    const after = b.feed("Enter", t2 + int(1, 25));
-    if (after === null || after.endsWith(extra)) tabKeeps++;
-  } else tabKeeps++;
+  // وTab المرفوضُ لا يُفرغ المجمَّع — قياسٌ **فارق** لا شكليّ: أوّلُ صياغةٍ
+  // كانت تقبل كلَّ النواتج فلا تفشل مهما انكسر ما تحرسه (أمسكتها المراجعة).
+  // البناءُ الفاصل: فجواتٌ ٤٠–٥٥ م.ث — فوق حدّ Tab (٣٥) ودون حدّ Enter (٦٠).
+  // فـTab يرفضها حتماً؛ فإن أبقى المجمَّعَ رجع Enter بعده بالرمز كاملاً، وإن
+  // أفرغه رجع فارغاً — ولا سبيلَ للنجاح بالصدفة.
+  const k = createScanAssembler();
+  const kc = digits(int(8, 13));
+  let tk = 7000;
+  for (let j = 0; j < kc.length; j++) { tk += j ? int(40, 55) : 0; k.feed(kc[j], tk); }
+  if (k.feed("Tab", tk + int(1, 15)) === null && k.feed("Enter", tk + int(20, 30)) === kc) tabKeeps++;
 }
 check("ما يقبله Tab يقبله Enter — ولا عكس (احتواءٌ لا تكافؤ)", tabSubset === N, `${tabSubset}/${N}`);
 check("ولا كتابةَ إنسانٍ سريعة (٤٥–٩٠ م.ث) تُقرأ مسحةً عند Tab", noHumanTab === N, `${noHumanTab}/${N}`);

@@ -231,5 +231,31 @@ console.log("\n▸ tidyInventory — صورةٌ قبل الطيّ (مرآةُ م
   check("  ومعه مرجعُ الدمج ليُفكّ", trash[0]?.merged_into === "keeper");
 }
 
+console.log("\n▸ فكُّ التوريث — مرآةُ keep_barcode (0167)");
+{
+  // أصلٌ مصنَّف بلا باركود، وتوأمٌ «بدون صنف» بباركود: «رتّبِ المخزن» يطويه
+  // ويورّث الأصلَ باركودَه. الفكُّ يجب أن **يردّه لصاحبه**: الأصلُ ورثه ولم
+  // يملكه (keep_barcode فارغٌ لحظةَ الطيّ) — كما تفعل السحابة حرفياً.
+  seed([
+    P("keeper", "دواء", null, { section_id: "sec1", stock: 5 }),
+    P("dup", "دواء", "6970967772736", { stock: 3 }),
+  ]);
+  await repo.tidyInventory();
+  check("الأصلُ ورث الباركود بالطيّ", (await repo.listProducts()).find((p) => p.id === "keeper")?.barcode === "6970967772736");
+  const back = await repo.restoreProduct("dup");
+  check("والفكُّ يردّه لصاحبه لا يتركه للوارث", back.barcode === "6970967772736", JSON.stringify(back.barcode));
+  check("  والأصلُ يعود بلا باركود كما كان", (await repo.listProducts()).find((p) => p.id === "keeper")?.barcode == null);
+}
+{
+  // والعكسُ هو الحدّ: أصلٌ **يملك** باركودَه لحظةَ الطيّ لا يخسره بالفكّ.
+  seed([
+    P("keeper", "دواء", "OWN-1", { section_id: "sec1", stock: 5 }),
+    P("dup", "دواء", null, { stock: 3, alt_codes: ["EXTRA-9"] }),
+  ]);
+  await repo.tidyInventory();
+  await repo.restoreProduct("dup");
+  check("أصلٌ مالكٌ لباركوده لا يخسره بالفكّ", (await repo.listProducts()).find((p) => p.id === "keeper")?.barcode === "OWN-1");
+}
+
 console.log(`\n${fails ? "✗" : "✓"} repo-demo-test: ${passes} نجحت، ${fails} فشلت`);
 process.exit(fails ? 1 : 0);

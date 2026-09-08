@@ -540,6 +540,15 @@ function ReaderTest({ makeCode }: { makeCode: () => string }) {
       playTap();
     };
     const onKey = (e: KeyboardEvent): void => {
+      /* المستمعُ عامٌّ بطور الالتقاط، فالمراجعةُ الخصميّة محقّة: ما دام الاختبارُ
+       * مسلَّحاً كان يبلع **كلَّ** ضغطةٍ بالصفحة — ومنها اختصاراتُ المتصفّح
+       * (Ctrl+R، Ctrl+T…) وEscape. فثلاثةُ مخارجَ صارت مضمونة:
+       *  · اختصارٌ بمعدِّلٍ يمرّ كما هو — الماسحُ لا يرسل معدِّلات؛
+       *  · وEscape يلغي الاختبارَ فوراً — مخرجٌ بالكيبورد لا بالفأرة وحدها؛
+       *  · ومهلةُ عشرين ثانية تُنهي اختباراً لم يصله شيء — لا انتظارَ أبديّاً
+       *    لقارئٍ ميّتٍ وصفحةٍ محبوسة. */
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      if (e.key === "Escape") { if (timer) window.clearTimeout(timer); setCode(null); playTap(); return; }
       if (e.key === "Enter" || e.key === "Tab") {
         e.preventDefault();
         if (keys.length) finish(e.key === "Enter" ? "enter" : "tab");
@@ -547,14 +556,22 @@ function ReaderTest({ makeCode }: { makeCode: () => string }) {
       }
       if (e.key.length !== 1) return;
       e.preventDefault();
+      // وصلت أوّلُ ضغطة: مهلةُ الخمول تنتهي، ومؤقّتُ التوقّف (٧٠٠ م.ث) يتولّى الإنهاء.
+      window.clearTimeout(idle);
       keys.push(e.key);
       times.push(e.timeStamp);
       if (timer) window.clearTimeout(timer);
       // ماسحٌ بلا فاصلٍ أصلاً: نُنهي بالتوقّف حتى نقولها له، لا أن ننتظر أبداً.
       timer = window.setTimeout(() => finish(null), 700);
     };
+    // قارئٌ لم يرسل شيئاً إطلاقاً: الاختبارُ ينتهي وحده ولا يبقى مسلَّحاً للأبد.
+    const idle = window.setTimeout(() => { setCode(null); playWarning(); }, 20000);
     window.addEventListener("keydown", onKey, true);
-    return () => { window.removeEventListener("keydown", onKey, true); if (timer) window.clearTimeout(timer); };
+    return () => {
+      window.removeEventListener("keydown", onKey, true);
+      if (timer) window.clearTimeout(timer);
+      window.clearTimeout(idle);
+    };
   }, [code]);
 
   const start = (): void => { playTap(); setRes(null); setCode(makeCode()); };

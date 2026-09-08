@@ -24,10 +24,21 @@ const pickByPurchaseCode = <T extends { id: string; barcode?: string | null; alt
   rows: readonly T[], code: string, companyId: string | null,
 ): string | null => {
   const isPrimary = (p: T) => invNormCode(p.barcode) === code && (p.barcode ?? "") !== "";
+  /* طبقةُ الشركة تحاكي SQL حرفياً: `(company_id = v_company) desc nulls last`.
+   * وهي ثلاثُ مراتبَ لا اثنتان — والفرقُ كلُّه بدلالات NULL التي تخالف جافاسكربت:
+   *  · فاتورةٌ بلا شركة (v_company فارغ): الشرطُ NULL لكلّ صفّ ⇒ **لا تمييزَ
+   *    أصلاً**. وكانت `=== null` تُقدّم منتجاتِ «بلا شركة» — عكسَ الخادم؛
+   *  · وفاتورةٌ بشركة: مطابقُها أوّلاً (true)، ثم مخالفُها (false)، ثم «بلا
+   *    شركة» **آخرَ شيء** (NULL ⇒ nulls last) — وكانت تُسوّى بالمخالف. */
+  const coRank = (p: T): number => {
+    if (companyId == null) return 0;
+    if (p.company_id == null) return -1;
+    return p.company_id === companyId ? 1 : 0;
+  };
   return rows
     .filter((p) => isPrimary(p) || (p.alt_codes ?? []).some((a) => invNormCode(a) === code))
     .sort((a, b) => Number(isPrimary(b)) - Number(isPrimary(a))
-      || Number(b.company_id === companyId) - Number(a.company_id === companyId)
+      || coRank(b) - coRank(a)
       || Number(b.section_id != null) - Number(a.section_id != null)
       || (a.created_at ?? "").localeCompare(b.created_at ?? ""))[0]?.id ?? null;
 };
@@ -38,7 +49,7 @@ const pickByPurchaseCode = <T extends { id: string; barcode?: string | null; alt
  * — فما تطويه ثمّ يختفي بلا رجعة، بينما السحابةُ تحفظه ويُفكّ من المحذوفات.
  * ونسخةٌ ثالثةٌ كانت ستصير رابعة، فصار للصورة موضعٌ واحد.
  */
-function trashProduct(db: DemoDB, row: Product, extra: { reason?: string | null; merged_into?: string } = {}): void {
+function trashProduct(db: DemoDB, row: Product, extra: { reason?: string | null; merged_into?: string; keep_barcode?: string | null } = {}): void {
   if (!db.productsTrash) db.productsTrash = [];
   db.productsTrash = db.productsTrash.filter((t) => t.id !== row.id);
   db.productsTrash.push({
@@ -50,7 +61,7 @@ function trashProduct(db: DemoDB, row: Product, extra: { reason?: string | null;
     reason: extra.reason?.trim() || null,
     deleted_by: null,
     deleted_at: new Date().toISOString(),
-    ...(extra.merged_into ? { merged_into: extra.merged_into } : {}),
+    ...(extra.merged_into ? { merged_into: extra.merged_into, keep_barcode: extra.keep_barcode ?? null } : {}),
   });
 }
 
@@ -1245,7 +1256,11 @@ const demoRepo = {
   },
   /** يربط رمزاً بمنتجٍ قائم بدل إنشاء منتجٍ جديد — نظير attach_product_code. */
   async attachProductCode(productId: string, code: string): Promise<Product> {
+    // المطابقةُ بـmatchCode، والمخزونُ بـnormalizeCode: ما يدخل alt_codes رمزُ
+    // عيادةٍ **يُخزَّن**، وتخزينُ النسخة المطويّة يكتب غيرَ ما مسحه صاحبُه —
+    // خلطُ التطبيعَين الذي تمنعه القاعدةُ المعلنة بالدفعة ١.
     const c = matchCode(code);
+    const store = normalizeCode(code);
     if (!c) throw new Error("empty code");
     const db = loadDB();
     const taken = (db.products ?? []).find(
@@ -1255,7 +1270,7 @@ const demoRepo = {
     const p = (db.products ?? []).find((x) => x.id === productId);
     if (!p) throw new Error("product not found");
     if (matchCode(p.barcode) !== c && !(p.alt_codes ?? []).some((x) => matchCode(x) === c)) {
-      p.alt_codes = [...(p.alt_codes ?? []), c];
+      p.alt_codes = [...(p.alt_codes ?? []), store];
       saveDB(db);
     }
     return p;
@@ -1317,6 +1332,12 @@ const demoRepo = {
       keep.stock = Math.max(0, (keep.stock || 0) - (t.stock || 0));
       const drop = new Set([row.barcode, ...(row.alt_codes ?? [])].filter(Boolean));
       keep.alt_codes = (keep.alt_codes ?? []).filter((c) => !drop.has(c));
+      /* مرآةُ فكّ التوريث (0167): إن كان الأصلُ بلا باركودٍ لحظةَ الطيّ
+       * (`keep_barcode` فارغ) وباركودُه الحاليُّ هو باركودُ المطويّ، فقد **ورثه**
+       * لا ملكه — فيُردّ لصاحبه. وبلا هذا كان `takenBy` يجد الرمزَ عند الأصل
+       * فيرجع المنتجُ بلا باركوده هنا، بينما السحابةُ تردّه — مرآةٌ تقول غيرَ
+       * ما يقوله الخادم بمسارِ استرجاعٍ هو آخرُ خطِّ دفاعٍ عن صفٍّ مطويّ. */
+      if (t.keep_barcode == null && row.barcode && keep.barcode === row.barcode) keep.barcode = null;
     }
     /* مرآةُ 0165 و0167 — والانحرافُ هنا كان يصنع بالضبط ما تمنعه القاعدة:
      *  ١) الرموزُ الإضافية التي **صارت لغيره** أثناء غيابه لا تُعاد. الصفُّ
@@ -1357,7 +1378,8 @@ const demoRepo = {
     if (!drop) throw new Error("product to drop not found");
     if (keep.pooled || drop.pooled) throw new Error("pooled products cannot be merged");
     // الصورةُ قبل الطيّ (0146): الاسترجاع يفكّ الدمج.
-    trashProduct(db, drop, { merged_into: keepId });
+    // باركودُ الأصل **قبل** ضمّ الرموز (0167): به يميّز الفكُّ ملكَه الأصيل من الموروث.
+    trashProduct(db, drop, { merged_into: keepId, keep_barcode: keep.barcode?.trim() ? keep.barcode : null });
     const codes = new Set(keep.alt_codes ?? []);
     if (drop.barcode && drop.barcode !== keep.barcode) codes.add(drop.barcode);
     for (const c of drop.alt_codes ?? []) if (c && c !== keep.barcode) codes.add(c);
@@ -2111,7 +2133,7 @@ const demoRepo = {
       // صورةُ الطيّ قبل الحذف (0146): «رتّبِ المخزن» طريقٌ ثالثٌ يخرج به صفٌّ
       // من `products`، وكان يخرج هنا **بلا صورة** — فيختفي بلا رجعة بينما
       // السحابةُ تحفظه ويُفكّ من تبويب المحذوفات.
-      trashProduct(db, dup, { merged_into: target.id });
+      trashProduct(db, dup, { merged_into: target.id, keep_barcode: target.barcode?.trim() ? target.barcode : null });
       target.stock = Math.max(0, (target.stock || 0) + Math.max(0, dup.stock || 0));
       if (!target.barcode && dup.barcode) target.barcode = dup.barcode;
       if (!target.expiry_date && dup.expiry_date) target.expiry_date = dup.expiry_date;
@@ -3845,9 +3867,10 @@ const supabaseRepo: typeof demoRepo = {
     return rows[0];
   },
   async attachProductCode(productId, code) {
-    const c = matchCode(code);
-    if (!c) throw new Error("empty code");
-    const { data, error } = await sbc().rpc("attach_product_code", { p_product: productId, p_code: c });
+    // الخادمُ يخزّن ما يصله بـalt_codes — فيصله رمزُ الحفظ (بلا طيّ حالة)،
+    // لا رمزُ المطابقة. (بلا مستدعٍ من الواجهة منذ أيلول ٢٠٢٦ — G11.)
+    if (!matchCode(code)) throw new Error("empty code");
+    const { data, error } = await sbc().rpc("attach_product_code", { p_product: productId, p_code: normalizeCode(code) });
     if (error) throw error;
     return data as Product;
   },
