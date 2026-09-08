@@ -32,6 +32,7 @@ import { persistMedicalEntries } from "@/lib/medSync";
 import type { MedicalDraft } from "@/components/MedicalEntry";
 import { cn, money, currencySymbol, formatNum, fmtKg, searchable, normalizeCode } from "@/lib/utils";
 import { findByCode, rescueScan, matchTruncatedCode, codeMatcher } from "@/lib/productCodes";
+import { unitCap, capAdd, outOfStock, zeroStockVerdict } from "@/lib/cartCap";
 import { splitCustomerField } from "@/lib/customerName";
 import { dueOf, paidOf } from "@/lib/debt";
 import { withTimeout, describeDbError, isNetworkError, isTimeoutError } from "@/lib/errors";
@@ -85,18 +86,8 @@ interface Line {
   perKgCost?: number;            // purchase price of one kilo
 }
 
-/** A cart line's max quantity in its current sale unit, derived from the product's box
- *  stock. Sub-unit sales can go up to (boxes × units-per-box) singles. */
-const unitCap = (l: Line): number => {
-  // الراجع لا يقيّده المخزون: الزبون يرجّع ما اشتراه سابقاً، والرصيد الحالي
-  // لا علاقة له بكم قطعةً بيده.
-  if (l.ret) return Infinity;
-  if (l.stock == null) return Infinity; // service / medication — uncapped
-  // بالوزن: الرصيد كسريٌّ بالكيلو والوزن كسريّ — لا تُقرِّب السقف للأسفل.
-  if (l.byWeight) return l.stock;
-  if (l.saleUnit === "sub" && l.unitsPerBox && l.unitsPerBox > 0) return Math.floor(l.stock * l.unitsPerBox);
-  return Math.floor(l.stock);
-};
+/* `unitCap` و`capAdd` انتقلتا إلى `@/lib/cartCap` لتُفحصا: حسابُ السقف كان
+ * داخل المكوّن فما رآه فحصٌ قطّ، وفيه ضررٌ مقيس (انظر رأس الوحدة). */
 
 const PAY_OPTIONS: { value: PaymentMethod; icon: typeof Banknote; key: string; def: string }[] = [
   { value: "cash", icon: Banknote, key: "retail.payCash", def: "نقدي" },
@@ -720,26 +711,35 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
   // Add (or increment) a line; products are capped at their stock.
   // n = الكمية المضافة (١ افتراضاً، أو المضاعِف المعلّق). السطر الموجود **يجمع**
   // لا يُستبدل: هذا سلوك المسح المعتاد، ومخالفته تفاجئ الكاشير بصمت.
-  const bump = (id: string, factory: () => Line, n = 1) => {
+  /** ترجع **ما أُضيف فعلاً** — صفرٌ يعني أن السطر عند سقفه. مسحةٌ مفردة على
+   *  سطرٍ بلغ رصيدَه كانت تُقصّ بصمتٍ وتُصدر نغمةَ نجاح: الكاشير يعدّ بالبيبات
+   *  فيسمع سبعاً والفاتورة فيها خمسة، فتخرج قطعتان بلا قيدٍ ويُتَّهم أمينُ
+   *  المخزن بفرق الجرد. */
+  const bump = (id: string, factory: () => Line, n = 1): number => {
     // القصّ يُحسب **قبل** التحديث لا داخله: مُحدِّث setCart يُنفَّذ لاحقاً عند
     // إعادة الرسم، فقراءة نتيجته فوراً كانت تُسكِت رسالة «المتوفّر ١٧ فقط».
     const existing = cart.find((l) => l.id === id);
     const base = existing ?? factory();
     const cap = unitCap(base);
-    const want = (existing?.qty ?? 0) + n;
     setCart((c) => (c.some((l) => l.id === id)
       // الحساب من الحالة الحيّة: مسحتان متلاحقتان لا تفقد إحداهما.
-      ? c.map((l) => (l.id === id ? { ...l, qty: Math.min(l.qty + n, unitCap(l)) } : l))
-      : [...c, { ...base, qty: Math.max(1, Math.min(n, cap)) }]));
+      ? c.map((l) => (l.id === id ? { ...l, qty: capAdd(l.qty, n, unitCap(l)).next } : l))
+      : [...c, { ...base, qty: Math.max(1, capAdd(0, n, cap).next) }]));
     // نغمة مختلفة للإضافة بالجملة: الأذن أسرع من العين وقت الزحمة، والفرق بين
     // «واحدة» و«عشرين» يجب أن يُسمع لا أن يُقرأ.
     if (n > 1) window.setTimeout(() => playTap(), 90);
-    // السقف يُبلَّغ ولا يُبتلع: «طلبت ٢٠ والمتوفّر ١٧» أوضح من رقمٍ يظهر ناقصاً.
-    if (n > 1 && Number.isFinite(cap) && want > cap) {
+    /* السقف يُبلَّغ ولا يُبتلع — **لأي كمية**. كان الشرطُ `n > 1` وحده، فمسحةٌ
+     * مفردة على سطرٍ عند سقفه: لا تغيير، ولا رسالة، ونغمةُ نجاح، و`flashLine`
+     * يومض السطرَ فيعزّز الوهم. */
+    const { added, clamped } = capAdd(existing?.qty ?? 0, n, cap);
+    if (clamped) {
       playWarning();
-      toast.error(t("retail.multClamped", { n: formatNum(cap), defaultValue: "المتوفّر {{n}} فقط — أُضيف المتاح" }));
+      toast.error(added > 0
+        ? t("retail.multClamped", { n: formatNum(cap), defaultValue: "المتوفّر {{n}} فقط — أُضيف المتاح" })
+        : t("retail.capReached", "المتوفّر {{n}} فقط وكلُّه بالسلّة — ما ينضاف أكثر", { n: formatNum(cap) }));
     }
-    flashLine(id);
+    if (added > 0) flashLine(id);
+    return added;
   };
 
   /** وضع «الراجع»: الباركود المدگوگ ينزل سطراً سالباً بدل سطر بيع. */
@@ -774,9 +774,11 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
     flashLine(id);
   };
 
-  const addProduct = (p: Product, n = takeMult()) => {
-    if (blockZeroCost(p)) return;
-    if (p.sold_by_weight) { playTap(); setWeightFor({ p, ret: retMode }); return; }
+  /** ترجع ما أُضيف فعلاً (0 = السطرُ عند سقفه) — ومنها يقرّر المسحُ أيَّ نغمةٍ يُصدر.
+   *  و`null` لمسارٍ لا يُضيف الآن (وزنٌ يُنتقى بنافذة، أو كلفةٌ صفرٌ تُمنع). */
+  const addProduct = (p: Product, n = takeMult()): number | null => {
+    if (blockZeroCost(p)) return null;
+    if (p.sold_by_weight) { playTap(); setWeightFor({ p, ret: retMode }); return null; }
     return retMode ? addReturn(p, n) : bump(`p:${p.id}`, () => {
       const hasSub = !!p.has_sub_unit && !!p.units_per_box && p.units_per_box > 0;
       const unitsPerBox = p.units_per_box ?? null;
@@ -813,10 +815,10 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
       return { ...next, qty: Math.min(Math.max(1, l.qty), Math.max(1, cap)) };
     }));
 
-  const addService = (s: Service, n = takeMult()) => {
+  const addService = (s: Service, n = takeMult()): number => {
     // الخدمة تُنسب للحيوان النشط — خدمة "عملية" تسجَّل تلقائياً في طبلته عند الإتمام.
     const catName = catalog.categories.find((c) => c.id === s.category_id)?.name ?? null;
-    bump(`s:${s.id}`, () => ({ id: `s:${s.id}`, kind: "service", name: s.name, barcode: null, unit_price: s.price, unit_cost: s.cost ?? 0, qty: 1, stock: null, product_id: null, subcategory: null, serviceId: s.id, petId: activePet?.id ?? null, petName: activePet?.name ?? null, surgeryCat: isSurgeryCategoryName(catName), surgeryRef: s.surgery_ref ?? null }), n);
+    return bump(`s:${s.id}`, () => ({ id: `s:${s.id}`, kind: "service", name: s.name, barcode: null, unit_price: s.price, unit_cost: s.cost ?? 0, qty: 1, stock: null, product_id: null, subcategory: null, serviceId: s.id, petId: activePet?.id ?? null, petName: activePet?.name ?? null, surgeryCat: isSurgeryCategoryName(catName), surgeryRef: s.surgery_ref ?? null }), n);
   };
 
   // A medication/vaccine from the "الأدوية" tab — a priced cart line carrying the full
@@ -922,16 +924,40 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
     if (product) {
       // رصيدٌ صفر: السكوتُ هنا هو ما جعل عيادةً تقول «المنتج اختفى» — البطاقة
       // رمادية والمسحة لا تنزل شيئاً بلا كلمة. فنقولها: موجود، بس رصيده صفر.
-      const noStock = !retMode && !product.pooled && !product.sold_by_weight
-        && (product.has_sub_unit && product.units_per_box ? product.stock * product.units_per_box < 1 : (product.stock ?? 0) <= 0);
-      if (noStock) {
+      if (outOfStock(product, retMode)) {
+        /* الرفضُ لا يصدر عن لقطةٍ قديمة: الشاشةُ تُحمّل مرّةً عند الفتح ولا
+         * تُحدَّث إلا بعد بيعةٍ مكتملة، فمديرٌ رصّد شراءً ظهراً من جهازه يجعل
+         * كلَّ مسحةٍ هنا تُرفض «رصيده صفر» والمخزنُ يقول موجود — تضاربٌ يعلّم
+         * العيادةَ ألّا تصدّق الشاشة. فنسأل الخادمَ قبل أن يصير الحكمُ نهائياً. */
+        let fresh: Product | undefined;
+        let asked = false;
+        try {
+          fresh = await withTimeout(repo.getProductByBarcode(code, clinicId), 6000);
+          asked = true;
+        } catch { /* swallow-ok: تعذّر السؤال — نعرض رقمَنا ونقول إنه آخرُ ما عندنا */ }
+        const verdict = zeroStockVerdict(fresh, asked, retMode);
+        if (verdict === "sell-fresh" && fresh) {
+          // رصيدٌ طازج: يُباع بالصفّ الطازج لا بالبائت، فسقفُ السطر صحيح.
+          const addedFresh = addProduct(fresh, n);
+          if (addedFresh !== null && addedFresh > 0) {
+            playSuccess();
+            toast.success(t("retail.scanStockRefreshed", "«{{name}}» رصيده تحدّث — {{n}} متوفّر", { name: fresh.name, n: formatNum(fresh.stock ?? 0) }));
+          }
+          if (mult != null) setMult(null);
+          setQuery("");
+          return;
+        }
         playWarning();
-        toast.error(t("retail.scanOutOfStock", "«{{name}}» موجود بس رصيده صفر — زيد رصيده من المخزن أو سجّل شراء حتى ينباع", { name: product.name }));
+        toast.error(verdict === "refuse-confirmed"
+          ? t("retail.scanOutOfStock", "«{{name}}» موجود بس رصيده صفر — زيد رصيده من المخزن أو سجّل شراء حتى ينباع", { name: product.name })
+          : t("retail.scanOutOfStockStale", "«{{name}}» رصيده صفر بآخر تحديثٍ عندنا — ما وصلنا الخادم لنتأكد. حدّث الصفحة قبل ما تعيد إدخاله.", { name: product.name }));
         setQuery("");
         return;
       }
-      playSuccess();
-      addProduct(product, n);
+      /* النغمةُ **بعد** الإضافة وبشرطها: كانت تُصدَر قبلها دائماً، فسطرٌ عند
+       * سقفه يعطي بيبَ نجاحٍ بلا سطرٍ يُضاف. */
+      const added = addProduct(product, n);
+      if (added !== null && added > 0) playSuccess();
       if (mult != null) setMult(null);
       setQuery(""); // clear any scanned digits that landed in the focused search box
       return;
@@ -940,8 +966,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
     // (فحص عام، CBC…) وتطبعه بنفسها، فتنباع بمسحة بدل تنقّل بين التصنيفات.
     const svc = findServiceByBarcode(code);
     if (svc) {
-      playSuccess();
-      addService(svc, n);
+      if (addService(svc, n) > 0) playSuccess();
       if (mult != null) setMult(null);
       setQuery("");
       return;
@@ -951,9 +976,11 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
     // `scanBuffer` لا بديلٌ عنها، ونقولها بصوت حتى لا تبدو المطابقةُ سحراً.
     const cut = matchTruncatedCode(products, code);
     if (cut) {
-      playSuccess();
-      toast.success(t("retail.scanHealed", "الماسح بلع أوّل الباركود — طابقناه بـ«{{name}}»", { name: cut.name }));
-      addProduct(cut, n);
+      const addedCut = addProduct(cut, n);
+      if (addedCut !== null && addedCut > 0) {
+        playSuccess();
+        toast.success(t("retail.scanHealed", "الماسح بلع أوّل الباركود — طابقناه بـ«{{name}}»", { name: cut.name }));
+      }
       if (mult != null) setMult(null);
       setQuery("");
       return;

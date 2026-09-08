@@ -190,13 +190,26 @@ export function excelArtifact(code: string | null | undefined): ExcelArtifact | 
   return null;
 }
 
+const AIM_HEAD = /^\][A-Za-z]\d/;
+
+/**
+ * يقشّر بادئةَ رمز النظام AIM إن أخرجها الماسح: `]` + حرف + رقم — `]C1`
+ * لـEAN/UPC، و`]E0` لـEAN-13، و`]d2` لـDataMatrix… ثلاثةُ محارفٍ قبل الرمز
+ * الحقيقي. تُصدَّر لأن شاشةَ الشراء تحتاجها **قبل** أن تحكم «رمزٌ أم اسم»:
+ * `]` ليست من محارف الباركود، فرمزٌ برأس AIM كان يسقط إلى فرع الاسم فيُنشأ
+ * منتجٌ اسمُه «]C16221…» بمخزن العيادة. رمزٌ لا يصير اسماً أبداً.
+ */
+export function stripAim(v: string | null | undefined): string {
+  const s = String(v ?? "");
+  return AIM_HEAD.test(s) ? s.slice(3) : s;
+}
 /** الصيغُ البديلة المعقولة لرمزٍ ممسوح، بلا الرمزِ نفسه. */
 export function scanVariants(code: string | null | undefined): string[] {
   const raw = matchCode(code);
   if (!raw) return [];
   const out = new Set<string>();
   // بادئةُ AIM: `]` + حرف + رقم — ثلاثةُ محارفٍ قبل الرمز الحقيقي.
-  const noAim = raw.replace(/^\][A-Za-z]\d/, "");
+  const noAim = stripAim(raw);
   if (noAim !== raw) out.add(noAim);
   const d = noAim;
   if (/^\d+$/.test(d)) {

@@ -178,5 +178,212 @@ check("فارغٌ لا يُطابَق", matchTruncatedCode(inv, "") === undefine
     src.includes('createScanAssembler') && src.includes('from "@/lib/scanBuffer"'));
 }
 
+
+/* ── سقفُ سطر السلّة: ما أُضيف يُقال، ولا بيبَ على لا شيء (س١) ─────────────
+ * كان القصُّ صامتاً والتحذيرُ مشروطاً بـ`n > 1`، ونغمةُ النجاح تسبق الإضافة.
+ * فمسحةٌ مفردة على سطرٍ عند سقف رصيده: لا تغيير، ولا رسالة، وبيبُ نجاح ووميضُ
+ * سطر. الكاشير يعدّ بالبيبات فيسمع سبعاً والفاتورة فيها خمسة. */
+console.log("▸ capAdd/unitCap — السقفُ يُبلَّغ ولا يُبتلع");
+{
+  const { unitCap, capAdd } = await load("src/lib/cartCap.ts");
+
+  // الحالةُ التي كانت تصمت: سطرٌ عند سقفه ومسحةٌ مفردة
+  const atCap = capAdd(5, 1, 5);
+  check("سطرٌ عند السقف + مسحةٌ مفردة: لا شيء يُضاف", atCap.added === 0);
+  check("  والكميةُ لا تتغيّر", atCap.next === 5);
+  check("  ويُقال «قُصّ» — هذه التي كانت تُبتلع", atCap.clamped === true);
+
+  const partial = capAdd(3, 5, 5);
+  check("وطلبٌ يتجاوز السقف يُضيف المتاح ويُقال", partial.added === 2 && partial.next === 5 && partial.clamped === true);
+  const fits = capAdd(1, 2, 5);
+  check("وطلبٌ ضمن السقف يمرّ بلا تحذير", fits.added === 2 && fits.next === 3 && fits.clamped === false);
+  const fresh = capAdd(0, 1, 5);
+  check("وسطرٌ جديد يبدأ بواحدة", fresh.added === 1 && fresh.next === 1 && fresh.clamped === false);
+  const free = capAdd(9, 4, Infinity);
+  check("وبلا سقف (خدمة/راجع) لا قصَّ ولا تحذير", free.added === 4 && free.next === 13 && free.clamped === false);
+  const zero = capAdd(0, 1, 0);
+  check("وسقفٌ صفر: لا يُضاف شيء ويُقال", zero.added === 0 && zero.next === 0 && zero.clamped === true);
+
+  // سقفُ السطر بوحدته
+  check("unitCap: راجعٌ بلا سقف", unitCap({ ret: true, stock: 2 }) === Infinity);
+  check("  وخدمةٌ (stock=null) بلا سقف", unitCap({ stock: null }) === Infinity);
+  check("  وعلبٌ كسريّ يُقرَّب للأسفل", unitCap({ stock: 4.8 }) === 4);
+  check("  والوزنُ لا يُقرَّب — نصفُ كيلو نصفٌ", unitCap({ stock: 0.5, byWeight: true }) === 0.5);
+  check("  والوحدةُ الفرعية تضرب بعدد الحبّات", unitCap({ stock: 3, saleUnit: "sub", unitsPerBox: 10 }) === 30);
+  check("  وunitsPerBox صفرٌ لا يُصفّر السقف", unitCap({ stock: 3, saleUnit: "sub", unitsPerBox: 0 }) === 3);
+
+  // خواصُّ تصحّ دائماً — لا حالاتٌ عرفناها وحدها. البذرةُ ثابتة فالفشلُ يُعاد.
+  let seed = 20260909;
+  const rnd = () => { seed |= 0; seed = (seed + 0x6D2B79F5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+  const int = (lo, hi) => lo + Math.floor(rnd() * (hi - lo + 1));
+  const pick = (arr) => arr[int(0, arr.length - 1)];
+  let bad = 0;
+  for (let i = 0; i < 4000; i++) {
+    const cap = pick([0, 1, 5, 17, 100, Infinity, int(0, 50)]);
+    const cur = int(0, Math.min(50, Number.isFinite(cap) ? cap : 50));
+    const n = int(1, 25);
+    const r = capAdd(cur, n, cap);
+    if (r.added < 0) bad++;                                     // لا نقصانَ بزيادة
+    else if (r.next !== cur + r.added) bad++;                   // الحسابُ متّسق
+    else if (Number.isFinite(cap) && r.next > cap) bad++;        // لا تجاوزَ للسقف
+    else if (r.added > n) bad++;                                 // لا هبةَ فوق المطلوب
+    else if (r.clamped !== (Number.isFinite(cap) && cur + n > cap)) bad++;
+    else if (!r.clamped && r.added !== n) bad++;                 // بلا قصٍّ يُضاف كلُّ المطلوب
+  }
+  check("و٤٠٠٠ حالةٍ عشوائية: لا تجاوزَ سقفٍ ولا زيادةَ صامتة", bad === 0, `${bad} خرقاً`);
+
+  // والمكوّنُ يستعمل هذا الحساب لا نسخةً ثانية
+  const sb = readFileSync("src/components/retail/SaleBuilder.tsx", "utf8");
+  check("وشاشةُ البيع تستورد الحساب ولا تعيد كتابته",
+    sb.includes('from "@/lib/cartCap"') && !sb.includes("const unitCap = (l: Line)"));
+  check("  والتحذيرُ يتبع القصَّ لا الجملة — كان مشروطاً بـ«n > 1» وحدها",
+    sb.includes("if (clamped) {"));
+  check("  ونغمةُ النجاح مشروطةٌ بأن شيئاً أُضيف فعلاً",
+    /added !== null && added > 0/.test(sb) && !/playSuccess\(\);\s*[\r\n]+\s*addProduct/.test(sb));
+}
+
+
+/* ── حكمُ «رصيده صفر» يُراجَع على الخادم قبل أن يصير نهائياً (س٢) ──────────
+ * القائمةُ تُحمَّل مرّةً عند فتح الشاشة، ولا تُحدَّث إلا بعد بيعةٍ مكتملة. فمديرٌ
+ * رصّد شراءً ظهراً من جهازه: كلُّ مسحةٍ بالكاشير تُرفض «رصيده صفر» والمخزنُ
+ * يقول موجود. والعيادةُ تتعلّم ألّا تصدّق الشاشة — فتعيد إدخال بضاعةٍ موجودة،
+ * وهذا بابُ التوائم من جهته الأخرى. */
+console.log("▸ رصيدُ الصفر — يُسأل الخادمُ قبل الرفض، و«ما وصلنا» غيرُ «ما عندك»");
+{
+  const { outOfStock, zeroStockVerdict } = await load("src/lib/cartCap.ts");
+
+  check("رصيدٌ صفر = لا بيع", outOfStock({ stock: 0 }) === true);
+  check("  وسالبٌ كذلك", outOfStock({ stock: -2 }) === true);
+  check("  وnull كصفر", outOfStock({ stock: null }) === true);
+  check("  وواحدةٌ تكفي", outOfStock({ stock: 1 }) === false);
+  check("والمجمَّع لا يُمنع — رصيدُه بالقسم لا بالصفّ", outOfStock({ stock: 0, pooled: true }) === false);
+  check("والموزونُ لا يُمنع — كسريٌّ بطبعه", outOfStock({ stock: 0, sold_by_weight: true }) === false);
+  check("ووضعُ الراجع لا يقيّده رصيد", outOfStock({ stock: 0 }, true) === false);
+  check("وعلبةٌ ناقصة فيها حبّاتٌ تُباع", outOfStock({ stock: 0.2, has_sub_unit: true, units_per_box: 10 }) === false);
+  check("  وأقلُّ من حبّةٍ واحدة لا تُباع", outOfStock({ stock: 0.05, has_sub_unit: true, units_per_box: 10 }) === true);
+
+  /* الحالةُ التي طلبتها الخطة بالنصّ: قائمةٌ رصيدُها صفر وريبو يرجع رصيداً. */
+  check("قائمةٌ صفرٌ + خادمٌ يقول «سبعة» ⇒ بيعٌ لا رفض",
+    zeroStockVerdict({ stock: 7 }, true) === "sell-fresh");
+  check("  وسؤالٌ أجاب بصفرٍ ⇒ رفضٌ مؤكَّد", zeroStockVerdict({ stock: 0 }, true) === "refuse-confirmed");
+  check("  ومنتجٌ لم يعد بالخادم ⇒ رفضٌ مؤكَّد", zeroStockVerdict(undefined, true) === "refuse-confirmed");
+  check("  وسؤالٌ لم يصل ⇒ «آخرُ تحديثٍ عندنا» لا «رصيدك صفر»",
+    zeroStockVerdict(undefined, false) === "refuse-stale");
+  check("  وصفٌّ طازجٌ وصل رغم فشل الختم يُصدَّق", zeroStockVerdict({ stock: 3 }, false) === "sell-fresh");
+  check("والمجمَّعُ الطازج يُباع وإن كان رصيدُ صفّه صفراً",
+    zeroStockVerdict({ stock: 0, pooled: true }, true) === "sell-fresh");
+
+  const sb = readFileSync("src/components/retail/SaleBuilder.tsx", "utf8");
+  check("وشاشةُ البيع تسأل الخادمَ بمهلةٍ قبل الرفض",
+    /fresh = await withTimeout\(repo\.getProductByBarcode\(code, clinicId\), 6000\)/.test(sb));
+  check("  وتبيع بالصفّ الطازج لا بالبائت", sb.includes("addProduct(fresh, n)"));
+  check("  والحكمُ من الوحدة المفحوصة لا نسخةٍ محلّية",
+    sb.includes("outOfStock(product, retMode)") && !sb.includes("const isNoStock"));
+}
+
+
+/* ── شاشةُ الشراء ترى ما تراه شاشةُ البيع (س٣) ────────────────────────────
+ * كانت `scanAdd` تعرف مطابقةً تامّةً واسماً ولا شيءَ بينهما — بلا `rescueScan`
+ * ولا `matchTruncatedCode`. فماسحٌ مضبوطٌ على AIM أو GTIN-14 كان يُنشئ
+ * **توأماً** بكلّ استلامِ بضاعة: البيعُ تنقذه النجدةُ فيبيع من الأصل، والتوأمُ
+ * يحمل الرصيدَ الجديد والأصلُ يبقى صفراً — فكلُّ مسحةِ بيعٍ تقول «رصيده صفر»
+ * والمادّةُ بالرفّ. هذا هو باب «المنتج اختفى» الذي بقي مفتوحاً بعد إغلاقه
+ * بشاشة البيع وحدها. ورأسُ AIM أخطرُ من ذلك: `]` ليست من محارف الباركود،
+ * فالرمزُ كان يسقط إلى فرع **الاسم** فيُنشأ منتجٌ اسمُه «]C16221…».  */
+console.log("▸ مسحةُ الشراء — نفسُ طبقات النجدة، ورمزٌ لا يصير اسماً");
+{
+  const pc = await load("src/lib/productCodes.ts", [stubs], { "@/lib/utils": "./src/lib/utils.ts" });
+  const { rescueScan, matchTruncatedCode } = pc;
+  // غيابُ الدالّة فشلٌ يُقال، لا انهيارٌ يقطع بقيّةَ الحزمة.
+  const stripAim = typeof pc.stripAim === "function" ? pc.stripAim : () => "«stripAim غير مصدَّرة»";
+  const P = [
+    { id: "p1", name: "أموكسيسيلين", barcode: "6221031492405", alt_codes: [] },
+    { id: "p2", name: "فيتامين", barcode: "0045496830434", alt_codes: [] },
+    { id: "p3", name: "شامبو", barcode: "SH-14", alt_codes: ["9781234567897"] },
+  ];
+
+  // رأسُ AIM يُقشَّر قبل أي حكم
+  check("«]C1» + ١٣ رقماً يُقشَّر إلى الرمز نفسِه", stripAim("]C16221031492405") === "6221031492405");
+  check("و«]E0» كذلك", stripAim("]E06221031492405") === "6221031492405");
+  check("ورمزٌ بلا رأسٍ لا يُقصّ", stripAim("6221031492405") === "6221031492405");
+  check("و«]» وحدها لا تُقصّ (ليست رأسَ AIM)", stripAim("]622103") === "]622103");
+  check("وفارغٌ يبقى فارغاً لا يرمي", stripAim(null) === "" && stripAim(undefined) === "");
+
+  // والمسحةُ بعد التقشير تلقى المنتجَ القائم — لا سطراً جديداً
+  check("«]C1 + ١٣ رقماً» يلقى المنتجَ القائم بالمشتريات",
+    rescueScan(P, "]C16221031492405")?.product.id === "p1");
+  check("و«0 + EAN-13» (GTIN-14) يلقاه أيضاً",
+    rescueScan(P, "06221031492405")?.product.id === "p1");
+  check("وUPC-A ممسوحاً (١٢ رقماً) على منتجٍ مخزونٍ بـEAN-13",
+    rescueScan(P, "045496830434")?.product.id === "p2");
+  check("والرمزُ الإضافي ينقذ مثلَ الأساسي",
+    rescueScan(P, "]C19781234567897")?.product.id === "p3");
+  check("ومسحةٌ بلا رأسها تُطابَق بذيلها",
+    matchTruncatedCode(P, "221031492405")?.id === "p1");
+  check("ورمزٌ لا يخصّ أحداً لا يُنقذ — سطرٌ جديد هو الصواب",
+    rescueScan(P, "]C11111111111111") === undefined && matchTruncatedCode(P, "1111111111111") === undefined);
+
+  // والشاشةُ توصِل هذه الطبقات فعلاً — لا تعرفها ولا تناديها
+  const src = readFileSync("src/components/inventory/Purchases.tsx", "utf8");
+  check("وشاشةُ الشراء تنادي طبقاتِ النجدة قبل فرع الاسم",
+    src.includes("rescueScan(products, raw)") && src.includes("matchTruncatedCode(products, raw)"));
+  check("  وتقشّر رأسَ AIM قبل حكم «رمزٌ أم اسم»",
+    src.includes("stripAim(raw)") && !src.includes("function stripAim"));
+}
+
+
+/* ── باركودُ الخدمات يطبّع كما يطبّع باركودُ المنتجات (س٤) ────────────────
+ * `cleanBarcode` كانت تحذف كلَّ محرفٍ ليس لاتينيّاً قبل أي تطبيع — فـ«٧٧٠٩٩»
+ * تصير سلسلةً فارغة ⇒ null ⇒ الخدمةُ «غير موجودة»، ومسحةُ الخدمة تسقط إلى
+ * «هذا الرمز مو بمخزنك». وهذا هو الصنفُ الذي تحرّمه CLAUDE.md §٣ بالنصّ:
+ * تطبيعُ طرفٍ دون أخيه أسوأ من لا تطبيع، يفشل بصمتٍ ويبدو أنه يعمل. */
+console.log("▸ باركود الخدمات — نفسُ تطبيع المنتجات");
+{
+  const mem = new Map();
+  globalThis.localStorage = {
+    getItem: (k) => (mem.has(k) ? mem.get(k) : null),
+    setItem: (k, v) => { mem.set(k, String(v)); },
+    removeItem: (k) => { mem.delete(k); },
+    clear: () => mem.clear(),
+    key: (i) => [...mem.keys()][i] ?? null,
+    get length() { return mem.size; },
+  };
+  mem.set("vp_services_svc-clinic", JSON.stringify({
+    categories: [{ id: "c1", name: "فحوص" }],
+    services: [
+      { id: "s1", category_id: "c1", name: "فحص عام", price: 5000, barcode: "77099" },
+      { id: "s2", category_id: "c1", name: "قص أظافر", price: 3000, barcode: "W90" },
+      { id: "s3", category_id: "c1", name: "استشارة", price: 2000, barcode: null },
+    ],
+  }));
+
+  const svcStub = {
+    name: "svcstub",
+    setup(b) {
+      const map = {
+        "./clinics": "export const getActiveClinicId = () => 'svc-clinic';",
+        "./clinicSync": "export const sb = () => null; export const cloudWrite = async () => {};"
+          + " export const registerHydrator = () => {}; export const registerReset = () => {};",
+      };
+      b.onResolve({ filter: /^\.\/(clinics|clinicSync)$/ }, (a) => ({ path: a.path, namespace: "svc" }));
+      b.onLoad({ filter: /.*/, namespace: "svc" }, (a) => ({ contents: map[a.path] ?? "export default {};", loader: "js" }));
+    },
+  };
+
+  const svc = await load("src/lib/services.ts", [stubs, svcStub], { "@/lib/utils": "./src/lib/utils.ts" });
+
+  check("رمزٌ لاتينيّ يلقى خدمتَه", svc.findServiceByBarcode("77099")?.id === "s1");
+  check("وأرقامٌ شرقية «٧٧٠٩٩» تلقى «77099» — هذه التي كانت تسقط", svc.findServiceByBarcode("٧٧٠٩٩")?.id === "s1");
+  check("وأرقامٌ فارسية «۷۷۰۹۹» كذلك", svc.findServiceByBarcode("۷۷۰۹۹")?.id === "s1");
+  check("ومحرفٌ خفيّ بأوّل الرمز لا يمنع المطابقة", svc.findServiceByBarcode("‏77099")?.id === "s1");
+  check("ومسافاتٌ حول الرمز تُطبَّع", svc.findServiceByBarcode("  77099 ")?.id === "s1");
+  check("وحالةُ الأحرف مطويّة على الطرفين: «w90» تلقى «W90»", svc.findServiceByBarcode("w90")?.id === "s2");
+  check("ورمزٌ لا يخصّ خدمةً لا تُخترع له خدمة", svc.findServiceByBarcode("999999") === null);
+  check("وخدمةٌ بلا رمز لا تُطابَق بالفراغ", svc.findServiceByBarcode("") === null);
+  check("والتصادمُ يُكشف بالتطبيع نفسِه", svc.serviceBarcodeTaken("٧٧٠٩٩") === true);
+  check("  ويُستثنى صاحبُ الرمز نفسُه", svc.serviceBarcodeTaken("٧٧٠٩٩", "s1") === false);
+  check("  و«w90» يصطدم بـ«W90»", svc.serviceBarcodeTaken("w90") === true);
+}
+
 console.log(`\n${fails ? "✗" : "✓"} scan-test: ${passes} نجحت، ${fails} فشلت`);
 process.exit(fails ? 1 : 0);

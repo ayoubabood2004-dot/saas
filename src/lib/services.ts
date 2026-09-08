@@ -5,7 +5,7 @@
 // working and a localStorage mirror for demo/offline. The sale itself still flows
 // through the normal invoice pipeline (a service is a line item, no product_id).
 import { getActiveClinicId } from "./clinics";
-import { uuid } from "./utils";
+import { uuid, normalizeCode, matchCode } from "./utils";
 import { sb, cloudWrite, registerHydrator, registerReset } from "./clinicSync";
 import type { ServiceCategory, Service, ServiceCatalog } from "@/types";
 
@@ -162,25 +162,36 @@ export function addService(categoryId: string, name: string, price: number, surg
 }
 
 /** الباركود نصّي دائماً: قد يبدأ بصفر، والرقمنة تبتلع الصفر البادئ فيتحوّل
- *  الرمز لرمز آخر. نُبقي الأرقام والحروف فقط، وفاضي ⇒ null (لا سلسلة فارغة،
- *  حتى لا تتصادم خدمتان «بلا باركود» على الفهرس الفريد). */
+ *  الرمز لرمز آخر. وفاضي ⇒ null (لا سلسلة فارغة، حتى لا تتصادم خدمتان «بلا
+ *  باركود» على الفهرس الفريد).
+ *
+ *  **والتطبيعُ من نفس مصدر المنتجات**: كانت تحذف كلَّ ما ليس لاتينياً، فـ
+ *  `cleanBarcode("٧٧٠٩٩")` ترجع سلسلةً فارغة ⇒ null ⇒ الخدمةُ «غير موجودة»
+ *  وتسقط المسحةُ إلى «الباركود مو موجود بمخزنك». ومسارُ المنتجات يترجم
+ *  الأرقامَ الشرقية ويطوي الحالة — وتطبيعُ مسارٍ دون أخيه هو الصنفُ الذي
+ *  تحرّمه CLAUDE.md §٣ بالنصّ: يفشل بصمتٍ ويبدو أنه يعمل. */
 function cleanBarcode(v: string | null | undefined): string | null {
-  const s = (v ?? "").trim().replace(/[^0-9A-Za-z-]/g, "");
+  // `normalizeCode` تترجم الأرقامَ الشرقية والفارسية وتشيل الخفيّ والمسافات،
+  // ثم نُبقي ما يصلح رمزاً مطبوعاً. الحالةُ تُحفظ كما كتبها صاحبُها.
+  const s = normalizeCode(v).replace(/[^0-9A-Za-z-]/g, "");
   return s || null;
 }
 
+/** مفتاحُ المطابقة — الطرفان يمرّان منه: مطبَّعٌ ومطويُّ الحالة (w90 = W90). */
+const svcKey = (v: string | null | undefined): string => matchCode(cleanBarcode(v) ?? "");
+
 /** خدمة برمز معيّن — يستعملها الكاشير عند مسح باركود لا يطابق أي منتج. */
 export function findServiceByBarcode(code: string): Service | null {
-  const want = cleanBarcode(code);
+  const want = svcKey(code);
   if (!want) return null;
-  return getServiceCatalog().services.find((s) => s.barcode && s.barcode === want) ?? null;
+  return getServiceCatalog().services.find((s) => s.barcode && svcKey(s.barcode) === want) ?? null;
 }
 
 /** هل هذا الرمز مستعمل من خدمة ثانية؟ (منع التصادم قبل الحفظ) */
 export function serviceBarcodeTaken(code: string, exceptId?: string): boolean {
-  const want = cleanBarcode(code);
+  const want = svcKey(code);
   if (!want) return false;
-  return getServiceCatalog().services.some((s) => s.id !== exceptId && s.barcode === want);
+  return getServiceCatalog().services.some((s) => s.id !== exceptId && svcKey(s.barcode) === want);
 }
 
 export function updateService(id: string, patch: Partial<Pick<Service, "name" | "price" | "category_id" | "barcode" | "cost">>) {

@@ -645,7 +645,10 @@
     "multBtn": "Bulk quantity — type the number, then scan",
     "multArmed": "Scan a barcode or tap an item — it is added with this quantity",
     "multClamped": "Only {{n}} in stock — added what was available",
+    "capReached": "Only {{n}} in stock and it is all in the cart — nothing more to add",
     "scanOutOfStock": "\"{{name}}\" exists but its stock is zero — add stock in Inventory or record a purchase before selling it",
+    "scanOutOfStockStale": "{{name}} had zero stock as of our last update — we could not reach the server to confirm. Refresh the page before re-entering it.",
+    "scanStockRefreshed": "{{name}} stock just updated — {{n}} available",
     "scanOffline": "Could not reach the server — we cannot verify barcode {{code}}. Check the connection and scan again.",
     "scanHealed": "The scanner dropped the start of the barcode — matched it to \"{{name}}\"",
     "scanUnknown": "Barcode {{code}} is not in your inventory — if you stock this item, add it from Inventory under this barcode",
@@ -768,7 +771,9 @@
       "noCostHint": "“{{name}}” would sell for zero. Enter its purchase price in Inventory first.",
       "badge": "Wholesale — starts at cost price"
     },
-    "scanRescued": "“{{name}}” — matched as {{code}}"
+    "scanRescued": "“{{name}}” — matched as {{code}}",
+    "scanHealedPurchase": "The scanner swallowed the start of the barcode — matched to {{name}}",
+    "scanRescuedPurchase": "{{name}} — matched via format {{code}}"
   },
   "promos": {
     "pickFailed": "Could not load products — reopen this dialog.",

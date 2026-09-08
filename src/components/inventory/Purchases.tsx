@@ -14,7 +14,7 @@ import { Combobox } from "@/components/Combobox";
 import { Button, Badge, useToast, Skeleton } from "@/components/ui";
 import { cn, money, formatDate, localISO, normalizeAr, normalizeCode, matchCode } from "@/lib/utils";
 import { withTimeout, describeDbError } from "@/lib/errors";
-import { codeIndex, excelArtifact, looksLayoutMangled } from "@/lib/productCodes";
+import { codeIndex, excelArtifact, looksLayoutMangled, rescueScan, matchTruncatedCode, stripAim } from "@/lib/productCodes";
 import { createScanAssembler } from "@/lib/scanBuffer";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
 import { staggerContainer, staggerItem } from "@/lib/motion";
@@ -626,9 +626,26 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
       return;
     }
     const hit = matchCode(raw);
-    const code = normalizeCode(raw);
     // باركود أولاً، وإلا اسم: مطابقة تامة، أو مرشح وحيد لا لبس فيه.
     let match = byBarcode.get(hit);
+    /* طبقاتُ النجدة نفسُها التي بشاشة البيع — كانت هذه الشاشةُ عمياءَ عنها،
+     * فماسحٌ مضبوطٌ على AIM أو GTIN-14 يُنشئ **توأماً** بكلّ استلامِ بضاعة:
+     * البيعُ تنقذه `rescueScan` فيبيع من الأصل، والأصلُ يبقى صفراً وكلُّ مسحةِ
+     * بيعٍ تقول «رصيده صفر» — دورةُ «المنتج اختفى» من بابها الذي بقي مفتوحاً. */
+    if (!match) {
+      const r = rescueScan(products, raw);
+      if (r) {
+        match = r.product;
+        toast.toast({ tone: "info", title: t("pos.scanRescuedPurchase", "«{{name}}» — طابق بصيغة {{code}}", { name: r.product.name, code: r.via }) });
+      }
+    }
+    if (!match) {
+      const cut = matchTruncatedCode(products, raw);
+      if (cut) {
+        match = cut;
+        toast.toast({ tone: "info", title: t("pos.scanHealedPurchase", "الماسح بلع أوّل الباركود — طابقناه بـ«{{name}}»", { name: cut.name }) });
+      }
+    }
     if (!match) {
       const cands = findByName(raw);
       const exact = cands.find((p) => normalizeAr(p.name) === normalizeAr(normName(raw)));
@@ -650,9 +667,14 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
       // Merge into an existing line with the same barcode if present.
       const existing = ls.find((l) => matchCode(l.barcode) === hit && hit);
       if (existing) return ls.map((l) => (l.key === existing.key ? { ...l, qty: String((Number(l.qty) || 0) + 1) } : l));
-      // نص فيه حروف/مسافات = اسم منتج جديد؛ أرقام صرفة = باركود جديد.
-      const looksBarcode = /^[0-9A-Za-z_-]+$/.test(raw);
-      const fresh = looksBarcode ? blankLine({ barcode: code, qty: "1" }) : blankLine({ name: normName(raw), qty: "1" });
+      /* بادئةُ AIM تُقشَّر صراحةً قبل الحكم: `]C1` فيها `]` فتسقط بفحص «يشبه
+       * باركوداً» إلى فرع **الاسم** — فيُنشأ منتجٌ اسمُه «]C16221…» بمخزن
+       * العيادة. رمزٌ لا يصير اسماً أبداً. */
+      const aimless = stripAim(raw);
+      const looksBarcode = /^[0-9A-Za-z_-]+$/.test(aimless);
+      const fresh = looksBarcode
+        ? blankLine({ barcode: normalizeCode(aimless), qty: "1" })
+        : blankLine({ name: normName(raw), qty: "1" });
       // Drop a leading empty line so the list stays clean.
       const base = ls.length === 1 && !ls[0].barcode && !ls[0].name ? [] : ls;
       return [...base, fresh];
