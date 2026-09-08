@@ -12,7 +12,8 @@
  * بالرمز المطبَّع، فنعرض «موجود عندك» بدل أن نسمح بتوأم.
  * ==========================================================================*/
 import type { Product } from "@/types";
-import { normalizeCode } from "./utils";
+import { matchCode } from "./utils";
+import { layoutFix as _layoutFix } from "./arabicLayout";
 
 /**
  * هل هذا الرمز موجودٌ على منتجٍ بالمخزن؟ يفحص الرمزَ الأساسي والرموزَ الإضافية،
@@ -20,11 +21,11 @@ import { normalizeCode } from "./utils";
  * `excludeId` لنموذج التعديل: المنتجُ لا يتعارض مع نفسه.
  */
 export function findByCode(products: readonly Product[], code: string | null | undefined, excludeId?: string | null): Product | undefined {
-  const c = normalizeCode(code);
+  const c = matchCode(code);
   if (!c) return undefined;
   return products.find((p) =>
     p.id !== excludeId
-    && (normalizeCode(p.barcode) === c || (p.alt_codes ?? []).some((a) => normalizeCode(a) === c)));
+    && (matchCode(p.barcode) === c || (p.alt_codes ?? []).some((a) => matchCode(a) === c)));
 }
 
 /**
@@ -37,7 +38,7 @@ export function findByCode(products: readonly Product[], code: string | null | u
  * عياداتٍ إعادةَ إدخالِ بضاعتها.
  */
 export function looksLikeShelfCode(code: string | null | undefined): boolean {
-  const c = normalizeCode(code);
+  const c = matchCode(code);
   return c.length > 0 && c.length < 8;
 }
 
@@ -53,7 +54,7 @@ export function looksLikeShelfCode(code: string | null | undefined): boolean {
  * (`1003` و`10030`) جيرانٌ بالطبيعة لا أخطاء.
  */
 export function nearCodeTwin(products: readonly Product[], code: string | null | undefined, excludeId?: string | null): Product | undefined {
-  const c = normalizeCode(code);
+  const c = matchCode(code);
   if (c.length < 8) return undefined;
   const near = (o: string): boolean => {
     if (!o || o === c) return false;
@@ -63,7 +64,7 @@ export function nearCodeTwin(products: readonly Product[], code: string | null |
   };
   return products.find((p) =>
     p.id !== excludeId
-    && (near(normalizeCode(p.barcode)) || (p.alt_codes ?? []).some((a) => near(normalizeCode(a)))));
+    && (near(matchCode(p.barcode)) || (p.alt_codes ?? []).some((a) => near(matchCode(a)))));
 }
 
 /**
@@ -83,7 +84,7 @@ export function codeIndex(products: readonly Product[]): Map<string, Product> {
   const m = new Map<string, Product>();
   const fromAlt = new Set<string>();
   const put = (raw: string | null | undefined, p: Product, alt: boolean): void => {
-    const k = normalizeCode(raw);
+    const k = matchCode(raw);
     if (!k) return;
     const cur = m.get(k);
     if (!cur) { m.set(k, p); if (alt) fromAlt.add(k); return; }
@@ -99,6 +100,33 @@ export function codeIndex(products: readonly Product[]): Map<string, Product> {
 }
 
 /**
+ * مرشِّحُ البحث بالرمز: يُبنى مرّةً لكلّ استعلام، ويُسأل عن كلّ منتج.
+ *
+ * الفرقُ عن `findByCode` أن هذا **جزئيّ** — الطبيبُ يكتب أربع خاناتٍ من ثلاثَ
+ * عشرة ويتوقّع أن تظهر المادّة قبل أن يُتمّها. ولذلك هو `includes` لا `===`.
+ *
+ * وسببُ وجوده أنه كان مكتوباً بيده بستّ شاشات، ولا اثنتان منها تتّفقان: شاشةُ
+ * البيع تفحص الأساسيَّ والإضافيّ مطبَّعَين، وتبويبُ المنتجات مثلها لكن بلا طيّ
+ * الحالة (`W90` لا تلقى `w90`)، وصفحةُ الشركة وصفحةُ الصنف ونافذةُ الدمج
+ * تفحص **الأساسيَّ وحده** (فرمزُ الرفّ الإضافيّ لا يلقى شيئاً)، ونافذةُ إسناد
+ * المنتجات للشركة تقارن الخامَ بالخام (فرقمٌ عربيّ أو مسافةٌ يُسقطان المطابقة).
+ *
+ * وشاشتان تبحثان بطريقتين تصنعان نفسَ الكذبة المقيسة: الطبيبُ يبحث بالبيع فلا
+ * يجد، فيتأكّد من صفحة الشركة فلا يجد، فيستنتج أن المادّة غير مُدخَلة ويعيد
+ * إدخالها — توأمٌ برصيدٍ مقسوم. فصار للبحث بالرمز **مصدرٌ واحد**.
+ *
+ * والتطبيعُ من `matchCode` (طيُّ الحالة داخلٌ فيه) على **الطرفين**: الاستعلامُ
+ * مرّةً، وكلُّ رمزٍ عند فحصه. واستعلامٌ فارغٌ بعد التطبيع لا يطابق شيئاً — لا
+ * كلَّ شيء؛ لأن `"".includes("")` صحيحةٌ دائماً وكانت ستُظهر المخزنَ كلَّه
+ * كأنّه نتائجُ بحث.
+ */
+export function codeMatcher(query: string | null | undefined): (p: Product) => boolean {
+  const c = matchCode(query);
+  if (!c) return () => false;
+  return (p) => matchCode(p.barcode).includes(c) || (p.alt_codes ?? []).some((a) => matchCode(a).includes(c));
+}
+
+/**
  * مسحةٌ بلا رأسها: الرمزُ الواصل ذيلُ رمزٍ قائم ينقصه رقمٌ أو رقمان من أوّله.
  *
  * مقيسٌ على الإنتاج (ابن الهيثم، ٥ أيلول ٢٠٢٦): كلُّ مسحةٍ فاشلة باليوم ١١ أو
@@ -109,10 +137,10 @@ export function codeIndex(products: readonly Product[]): Map<string, Product> {
  * لا نخمّن — نُرجع لا شيء ويُعرض الاختيارُ على الإنسان.
  */
 export function matchTruncatedCode(products: readonly Product[], code: string | null | undefined): Product | undefined {
-  const c = normalizeCode(code);
+  const c = matchCode(code);
   if (!/^[0-9]{10,}$/.test(c)) return undefined;
   const tailOf = (o: string | null | undefined): boolean => {
-    const n = normalizeCode(o);
+    const n = matchCode(o);
     return n.length > c.length && n.length - c.length <= 2 && n.endsWith(c);
   };
   const hits = products.filter((p) => tailOf(p.barcode) || (p.alt_codes ?? []).some(tailOf));
@@ -140,9 +168,31 @@ export function twinsByName(products: readonly Product[], p: Product, normalizeN
  * المسار الأصليّ، وكلُّ صيغةٍ فيه مفحوصةٌ باسمها.
  * ──────────────────────────────────────────────────────────────────────── */
 
+/* مسخُ تخطيط الكيبورد العربي (G7): الخريطةُ **بياناتٌ لا نصٌّ معروض** فتسكن
+ * ملفَّها وحدها (src/lib/arabicLayout.ts) — وتُعاد تصديرُها هنا فلا يتغيّر
+ * نداؤها. انظر ذلك الملفّ للحالة المقيسة بالإنتاج. */
+export { layoutFix, hasArabicLetters, looksLayoutMangled } from "./arabicLayout";
+
+/* ── أشكالُ إكسل: الرقمُ الطويل يُفسَد لحظةَ اللصق ─────────────────────────
+ * إكسل يعامل الباركودَ رقماً، فيحوّل ثلاثةَ عشرَ رقماً إلى `1.23457E+12` أو
+ * يذيّلها `.0`. واللصقُ يخزّن الفاسدَ، فلا تطابقه مسحةٌ حقيقية أبداً — «ضياعُ»
+ * الرمز لحظةَ الإدخال. والأصلُ **لا يُسترجع** من الصيغة العلمية (الأرقامُ
+ * الوسطى ذهبت)، فلا نُصلح — نرفض ونقول للطبيب ماذا يفعل بإكسل.
+ * ولا نلمس `normalizeCode`: قدسيةُ البيانات، والكشفُ شأنُ نقاط الإدخال. */
+export type ExcelArtifact = "sci" | "trailing-zero";
+
+/** نوعُ عطبِ إكسل بالرمز، أو null إن كان سليماً. */
+export function excelArtifact(code: string | null | undefined): ExcelArtifact | null {
+  const s = String(code ?? "").trim();
+  if (!s) return null;
+  if (/^\d+(\.\d+)?[Ee][+-]?\d+$/.test(s)) return "sci";
+  if (/^\d{6,}\.0+$/.test(s)) return "trailing-zero";
+  return null;
+}
+
 /** الصيغُ البديلة المعقولة لرمزٍ ممسوح، بلا الرمزِ نفسه. */
 export function scanVariants(code: string | null | undefined): string[] {
-  const raw = normalizeCode(code);
+  const raw = matchCode(code);
   if (!raw) return [];
   const out = new Set<string>();
   // بادئةُ AIM: `]` + حرف + رقم — ثلاثةُ محارفٍ قبل الرمز الحقيقي.
@@ -155,7 +205,12 @@ export function scanVariants(code: string | null | undefined): string[] {
     if (d.length === 12) out.add("0" + d);                                   // UPC-A → EAN-13 مخزون بصفر
     if (d.length === 8 && d.startsWith("0")) out.add(d.slice(1));           // EAN-8 بصفر
   }
+  // مسخُ تخطيطٍ عربيّ (G7): نجرّب النصَّ بعد عكسه. ويمرّ من قناة النجدة نفسها،
+  // فمطابقةٌ واحدةٌ أو لا شيء — ولا تخمينَ عند التعدّد.
+  const fixed = matchCode(_layoutFix(raw));
+  if (fixed) out.add(fixed);
   out.delete(raw);
+  out.delete("");
   return [...out];
 }
 
@@ -166,7 +221,7 @@ export function scanVariants(code: string | null | undefined): string[] {
 export function rescueScan(products: readonly Product[], code: string | null | undefined): { product: Product; via: string } | undefined {
   for (const v of scanVariants(code)) {
     const hits = products.filter((p) =>
-      normalizeCode(p.barcode) === v || (p.alt_codes ?? []).some((a) => normalizeCode(a) === v));
+      matchCode(p.barcode) === v || (p.alt_codes ?? []).some((a) => matchCode(a) === v));
     if (hits.length === 1) return { product: hits[0], via: v };
     if (hits.length > 1) return undefined; // التباس — النافذة أصدق من تخمين
   }

@@ -192,6 +192,18 @@ export interface GeneratedBarcode {
   created_at: string;
 }
 
+/** نوعُ عطبٍ برمز منتج — من `verify_barcode_health()` (0168). الشرحُ بالواجهة. */
+export type BarcodeAilment = "twin" | "alt_owned" | "arabic" | "excel" | "empty";
+
+/** صفٌّ من فحص صحة الباركودات — قراءةٌ فقط، بلا إصلاحٍ جماعيّ. */
+export interface BarcodeHealthRow {
+  kind: BarcodeAilment;
+  product_id: string;
+  product_name: string;
+  /** الرمزُ كما هو مخزون (خامّاً) — الأساسيّ أو الإضافيّ حسب النوع. */
+  code: string;
+}
+
 /** A free-text clinical / progress note on the patient record (سجل الملاحظات السريرية). */
 export interface PetNote {
   id: string;
@@ -1513,6 +1525,12 @@ export interface DeletedProduct {
   purchase_item_ids?: string[];
   /** طُوي بدمجٍ في هذا الأصل (0146) — الاسترجاع يفكّ الدمج: يسترد رصيده ورمزه وسطوره. */
   merged_into?: string | null;
+  /**
+   * باركودُ الأصل **لحظةَ الطيّ، قبل أيّ توريث** (0167). به يعرف الفكُّ إن كان
+   * باركودُ الأصل ملكَه الأصيل (يبقى له) أم ورثه من المطويّ (يُردّ لصاحبه).
+   * بلا هذا كانت النسخةُ التجريبية تعيد المنتجَ بلا باركوده بينما السحابة تردّه.
+   */
+  keep_barcode?: string | null;
   sold_qty: number;
   stock: number;
   reason?: string | null;

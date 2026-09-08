@@ -48,9 +48,11 @@ const load = async (entry) => {
   const built = await esbuild.build({ entryPoints: [entry], bundle: true, format: "esm", write: false, platform: "neutral", plugins: [stubs], alias: { "@/lib/utils": "./src/lib/utils.ts" } });
   return import("data:text/javascript;base64," + Buffer.from(built.outputFiles[0].text).toString("base64"));
 };
-const { normalizeCode, searchable } = await load("src/lib/utils.ts");
+const { normalizeCode, matchCode, searchable } = await load("src/lib/utils.ts");
 const { createScanAssembler } = await load("src/lib/scanBuffer.ts");
-const { findByCode, matchTruncatedCode, looksLikeShelfCode } = await load("src/lib/productCodes.ts");
+const { findByCode, matchTruncatedCode, looksLikeShelfCode, codeMatcher,
+        layoutFix, looksLayoutMangled, excelArtifact, scanVariants } = await load("src/lib/productCodes.ts");
+const { AR_LAYOUT } = await load("src/lib/arabicLayout.ts");
 const { round2, paidOf, dueOf, paymentStatusOf, receiptsOf, isDebt } = await load("src/lib/debt.ts");
 
 /* ── ١) تطبيعُ الرموز: ثابتٌ بالتكرار، ويشيل كلَّ ما لا يُرى، ويوحّد الأرقام ── */
@@ -213,6 +215,176 @@ console.log("▸ looksLikeShelfCode");
 let shelfDef = 0;
 for (let i = 0; i < N; i++) { const c = digits(int(1, 14)); if (looksLikeShelfCode(noisy(c)) === (c.length < 8)) shelfDef++; }
 check("أقلُّ من ٨ خانات بعد التطبيع = رقمُ رفّ، وإلا باركود", shelfDef === N, `${shelfDef}/${N}`);
+
+/* ── ٧) Tab فاصلاً: أضيقُ من Enter دائماً، ولا يقبل كتابةَ إنسانٍ أبداً ─────
+ * الخاصّيةُ الأولى **احتواء**: ما يقبله Tab يقبله Enter قطعاً، والعكسُ ليس
+ * لازماً. وهذا مقصود: Tab مفتاحُ تنقّلٍ بين الحقول، فقبولُه الخاطئ يبتلع حركةً
+ * يقصدها المستخدم ويهبط سطراً بالسلّة، بينما قبولُ Enter الخاطئ لا يبتلع شيئاً.
+ * والخاصّيةُ الثانية هي الجوهر: **لا كتابةَ إنسانٍ تُقرأ مسحةً عند Tab** —
+ * مهما أسرع، ومهما تفاوتت فجواتُه. وهذه هي التي كانت مكسورةً وما أمسكها فحص. */
+console.log(`▸ Tab فاصلاً — ${N} دفعة`);
+let tabSubset = 0, noHumanTab = 0, tabKeeps = 0;
+for (let i = 0; i < N; i++) {
+  const code = rnd() < 0.5 ? digits(int(3, 14)) : pick(["w90", "A-12", "247", "abc123"]);
+  const machine = rnd() < 0.5;
+  const feedAll = (asm) => {
+    let t = 1000;
+    for (let k = 0; k < code.length; k++) { t += k ? (machine ? int(1, 25) : int(80, 400)) : 0; asm.feed(code[k], t); }
+    return t;
+  };
+  const a = createScanAssembler(); const ta = feedAll(a);
+  const b = createScanAssembler(); const tb = feedAll(b);
+  const viaEnter = a.feed("Enter", ta + int(1, 25));
+  const viaTab = b.feed("Tab", tb + int(1, 25));
+  if (viaTab === null || viaTab === viaEnter) tabSubset++;
+
+  // إنسانٌ **سريع**: ٤٥–٩٠ ملّي ثانية، وهو المدى الذي كان يُقرأ مسحةً.
+  const h = createScanAssembler();
+  let th = 4000;
+  const typed = digits(int(4, 13));
+  for (let k = 0; k < typed.length; k++) { th += k ? int(45, 90) : 0; h.feed(typed[k], th); }
+  if (h.feed("Tab", th + int(1, 20)) === null) noHumanTab++;
+
+  // وTab المرفوضُ لا يُفرغ المجمَّع — قياسٌ **فارق** لا شكليّ: أوّلُ صياغةٍ
+  // كانت تقبل كلَّ النواتج فلا تفشل مهما انكسر ما تحرسه (أمسكتها المراجعة).
+  // البناءُ الفاصل: فجواتٌ ٤٠–٥٥ م.ث — فوق حدّ Tab (٣٥) ودون حدّ Enter (٦٠).
+  // فـTab يرفضها حتماً؛ فإن أبقى المجمَّعَ رجع Enter بعده بالرمز كاملاً، وإن
+  // أفرغه رجع فارغاً — ولا سبيلَ للنجاح بالصدفة.
+  const k = createScanAssembler();
+  const kc = digits(int(8, 13));
+  let tk = 7000;
+  for (let j = 0; j < kc.length; j++) { tk += j ? int(40, 55) : 0; k.feed(kc[j], tk); }
+  if (k.feed("Tab", tk + int(1, 15)) === null && k.feed("Enter", tk + int(20, 30)) === kc) tabKeeps++;
+}
+check("ما يقبله Tab يقبله Enter — ولا عكس (احتواءٌ لا تكافؤ)", tabSubset === N, `${tabSubset}/${N}`);
+check("ولا كتابةَ إنسانٍ سريعة (٤٥–٩٠ م.ث) تُقرأ مسحةً عند Tab", noHumanTab === N, `${noHumanTab}/${N}`);
+check("وTab المرفوضُ لا يُفرغ المجمَّع (تنقّلٌ لا مسحة)", tabKeeps === N, `${tabKeeps}/${N}`);
+
+/* ── ٨) عكسُ تخطيط الكيبورد: ذهابٌ وإيابٌ بلا فقد ─────────────────────────
+ * نبني نصّاً لاتينياً من محارف التخطيط، ثم نكتبه بالعربية كما يخرج من الماسح
+ * والكيبوردُ عربيّ، ثم نعكسه — فيجب أن يعود كما كان حرفاً بحرف. */
+console.log(`▸ layoutFix — ${N} رمزاً ذهاباً وإياباً`);
+const INV = {};
+for (const [ar, lat] of Object.entries(AR_LAYOUT)) if (!(lat in INV)) INV[lat] = ar;
+INV["b"] = "لا";                                   // محرفان من مفتاحٍ واحد
+const LATIN = Object.keys(INV);
+/* الخريطةُ ليست أحاديةً بموضعٍ واحد، وهذا من طبيعة التخطيط لا من عطلٍ عندنا:
+ * `لا` محرفان يخرجان من مفتاح `b`، وهما أيضاً ناتجُ `g`+`h` متتاليَين
+ * (`g`→`ل` و`h`→`ا`). فالعكسُ يقرؤهما `b` دائماً — وهي القراءةُ الصحيحة
+ * للماسح، لأن الماسحَ يرسل ضغطةَ مفتاحٍ واحدة لا ضغطتين.
+ * فالخاصّيةُ الصادقة: العودةُ مطابقةٌ إلا أن كلَّ `gh` تعود `b`. وادّعاءُ
+ * مطابقةٍ تامّة كان يفشل بواحدٍ من كلّ مئة — وهو صدقُ البيانات لا خللَ الشِفرة. */
+const readBack = (lat) => lat.replace(/gh/g, "b");
+let backOk = 0, cleanUntouched = 0;
+for (let i = 0; i < N; i++) {
+  const lat = Array.from({ length: int(4, 20) }, () => pick(LATIN)).join("");
+  const mangled = [...lat].map((c) => INV[c]).join("");
+  if (layoutFix(mangled) === readBack(lat)) backOk++;
+  const plain = digits(int(3, 14));
+  if (layoutFix(plain) === "") cleanUntouched++;
+}
+check("الممسوخُ يعود لاتينياً كما كان (و`لا` تُقرأ مفتاحاً واحداً)", backOk === N, `${backOk}/${N}`);
+check("والسليمُ لا يُمَسّ", cleanUntouched === N, `${cleanUntouched}/${N}`);
+
+/* ── ٩) تمييزُ المسحة الممسوخة عن الاسم العربيّ ───────────────────────────
+ * الخاصّيةُ الحاسمة: **لا اسمَ عربيٌّ يُنذَر عليه**. حارسٌ ينذر على الأسماء
+ * يُعلَّم الناسُ تجاهلَه، وحارسٌ يُتجاهَل أسوأ من لا حارس. */
+console.log(`▸ looksLayoutMangled — ${N} حالة`);
+const WORDS = ["رويال", "أموكسيسيلين", "مستشفيات", "دراي فود", "سبري حشرات", "مغلفات مياو", "بيبي", "شامبو قطط"];
+let noFalseAlarm = 0, catchesUrl = 0;
+for (let i = 0; i < N; i++) {
+  const w = pick(WORDS) + (rnd() < 0.5 ? "" : " " + pick(WORDS));
+  if (looksLayoutMangled(w) === "") noFalseAlarm++;
+  // رمزٌ حقيقيّ ممسوخ: لاتينيٌّ فيه رقمٌ أو فاصلٌ، بلا مسافة، ثمانيةٌ فأكثر
+  const real = Array.from({ length: int(8, 20) }, () => pick("abcdefghijklmnopqrstuvwxyz0123456789/:".split(""))).join("") + int(0, 9);
+  const asAr = [...real].map((c) => INV[c] ?? c).join("");
+  const got = looksLayoutMangled(asAr);
+  if (got === "" || got === readBack(real)) catchesUrl++;
+}
+check("لا اسمَ عربيٌّ يُنذَر عليه", noFalseAlarm === N, `${noFalseAlarm}/${N}`);
+check("وما يُكشف يقرأ كما كان بالضبط (لا قراءةَ مشوّهة)", catchesUrl === N, `${catchesUrl}/${N}`);
+
+/* ── ١٠) شكلُ إكسل: يُكشف دائماً، ولا يُكشف على سليم ──────────────────────── */
+console.log(`▸ excelArtifact — ${N} حالة`);
+let sciOk = 0, xlTailOk = 0, sane = 0;
+for (let i = 0; i < N; i++) {
+  const sci = `${int(1, 9)}.${digits(int(1, 6))}E+${int(9, 14)}`;
+  if (excelArtifact(sci) === "sci") sciOk++;
+  const tail = `${digits(int(6, 13))}.${"0".repeat(int(1, 3))}`;
+  if (excelArtifact(tail) === "trailing-zero") xlTailOk++;
+  const good = digits(int(3, 14));
+  if (excelArtifact(good) === null) sane++;
+}
+check("الصيغةُ العلمية تُكشف دائماً", sciOk === N, `${sciOk}/${N}`);
+check("وذيلُ الأصفار على رقمٍ طويل", xlTailOk === N, `${xlTailOk}/${N}`);
+check("وباركودٌ سليم لا يُكشف أبداً", sane === N, `${sane}/${N}`);
+
+/* ── ١١) حدُّ المجمِّع نفسُه: النصفُ للطويل والرُّبعُ للقصير ──────────────────
+ * الفحوصُ القائمة تبقى بعيدةً عن الحدّ، فتعديلٌ يقلب `? 2 : 4` أو يبدّل `<=`
+ * بـ`<` يمرّ أخضرَ ويُسقط مسحاتٍ بعيادةٍ ذاتِ متصفّحٍ بطيء. فنقف على الحدّ
+ * بالضبط: `tolerated` بطيئةً تُقبل، و`tolerated + 1` تُرفض. */
+console.log(`▸ حدُّ المجمِّع — ${N} دفعة`);
+const runWithSlow = (code, slowCount) => {
+  const asm = createScanAssembler();
+  const gaps = code.length - 1;
+  const slots = new Set();
+  while (slots.size < Math.min(slowCount, gaps)) slots.add(int(1, gaps));
+  let t = 1000;
+  for (let k = 0; k < code.length; k++) {
+    if (k > 0) t += slots.has(k) ? int(61, 290) : int(1, 25);
+    asm.feed(code[k], t);
+  }
+  return asm.feed("Enter", t + int(1, 25));
+};
+let atLimit = 0, overLimit = 0;
+for (let i = 0; i < N; i++) {
+  const long = rnd() < 0.5;
+  const code = long ? digits(int(8, 14)) : digits(int(4, 7));
+  const tolerated = Math.floor((code.length - 1) / (long ? 2 : 4));
+  if (runWithSlow(code, tolerated) === code) atLimit++;
+  if (runWithSlow(code, tolerated + 1) === null) overLimit++;
+}
+check("عند الحدّ تماماً: تصل", atLimit === N, `${atLimit}/${N}`);
+check("وفوقه بواحدة: لا تصل", overLimit === N, `${overLimit}/${N}`);
+
+/* ── ١٢) بادئةُ AIM تمرّ بالمجمِّع قبل أن تصل النجدة ───────────────────────
+ * البادئةُ تصل **ضغطاتٍ** من الماسح، فتزيد الطولَ ثلاثةً وتدخل حكمَ الدفعة
+ * قبل أن تراها `scanVariants` أصلاً. */
+console.log(`▸ بادئةُ AIM — ${N} مسحة`);
+let aimArrives = 0, aimStripped = 0;
+for (let i = 0; i < N; i++) {
+  const code = digits(int(8, 13));
+  const prefix = pick(["]E0", "]C1", "]e0"]);
+  const full = prefix + code;
+  const asm = createScanAssembler();
+  let t = 1000;
+  for (let k = 0; k < full.length; k++) { t += k ? int(1, 25) : 0; asm.feed(full[k], t); }
+  if (asm.feed("Enter", t + int(1, 25)) === full) aimArrives++;
+  if (scanVariants(full).includes(matchCode(code))) aimStripped++;
+}
+check("المسحةُ ببادئتها تصل كاملةً للمجمِّع", aimArrives === N, `${aimArrives}/${N}`);
+check("والنجدةُ تعرض الرمزَ بلا بادئة", aimStripped === N, `${aimStripped}/${N}`);
+
+/* ── ١٣) الأطوالُ والمحارفُ الحديّة بمسار المطابقة ────────────────────────
+ * الطولُ ٤٠+ (رابطُ QR ممسوح) و`:` كانا يمرّان بفحص التطبيع وحده ولا يمسّان
+ * المطابقةَ — وهما بالضبط شكلُ الحالة المقيسة بالإنتاج. */
+console.log(`▸ أطوالٌ ومحارفُ حديّة — ${N} حالة`);
+const CH = "abcdefghijklmnopqrstuvwxyz0123456789-:./_".split("");
+let longOk = 0, colonOk = 0, fragOk = 0;
+for (let i = 0; i < N; i++) {
+  const long = Array.from({ length: int(40, 60) }, () => pick(CH)).join("");
+  const p = { id: "x", name: "مادّة", barcode: long, stock: 1 };
+  if (findByCode([p], long)?.id === "x") longOk++;
+  const withColon = `${digits(int(2, 5))}:${digits(int(2, 5))}`;
+  const q = { id: "y", name: "مادّة", barcode: "ZZZ", alt_codes: [withColon], stock: 1 };
+  if (findByCode([q], withColon)?.id === "y") colonOk++;
+  // والبحثُ الجزئيّ يلقاه بمقطعٍ من وسطه
+  const start = int(0, long.length - 6);
+  if (codeMatcher(long.slice(start, start + 5))(p)) fragOk++;
+}
+check("رمزٌ بأربعين محرفاً فأكثر يُلقى كاملاً", longOk === N, `${longOk}/${N}`);
+check("و`:` يُلقى بالرمز الإضافيّ كما بالأساسيّ", colonOk === N, `${colonOk}/${N}`);
+check("ومقطعٌ من وسط الطويل يلقيه بالبحث الجزئيّ", fragOk === N, `${fragOk}/${N}`);
 
 console.log(`\n${fails ? "✗" : "✓"} pos-fuzz-test: ${passes} خاصّيةً صحّت، ${fails} فشلت (${N} حالة لكلّ خاصّية)`);
 process.exit(fails ? 1 : 0);

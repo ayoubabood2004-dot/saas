@@ -117,6 +117,14 @@ grant execute on function catalog_search(text, int) to authenticated;
 -- وحده: مَن ليس مديراً يعدّل ما شاء من التفضيلات **إلا** `catalog_share` —
 -- يبقى كما هو. نمطُ `profiles_self_update` نفسُه (0049) وقد أثبت نفسه.
 drop policy if exists clinic_prefs_clinic_all on clinic_prefs;
+-- والأربعُ الجديدةُ تُسقَط قبل إنشائها: القاعدةُ بالمستودع أن كلَّ هجرةٍ تُعاد
+-- بلا أثرٍ ثانٍ (CLAUDE.md §٤)، و`create policy` بلا إسقاطٍ يرفع
+-- «policy already exists» بإعادة التنزيل. أُسقطت القديمةُ وحدَها وقتَ الكتابة،
+-- وما كُشف هذا إلا بأوّل تشغيلٍ حقيقيّ للحزمة (الدفعة ٨).
+drop policy if exists clinic_prefs_select on clinic_prefs;
+drop policy if exists clinic_prefs_insert on clinic_prefs;
+drop policy if exists clinic_prefs_delete on clinic_prefs;
+drop policy if exists clinic_prefs_update on clinic_prefs;
 
 create policy clinic_prefs_select on clinic_prefs
   for select using (clinic_id = (select auth_clinic()));

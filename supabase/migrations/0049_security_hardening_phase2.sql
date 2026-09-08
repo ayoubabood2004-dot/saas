@@ -17,6 +17,10 @@
 --    current values on any self-update.
 -- ---------------------------------------------------------------------------
 drop policy if exists profiles_self on profiles;
+drop policy if exists profiles_self_select on profiles;
+drop policy if exists profiles_self_insert on profiles;
+drop policy if exists profiles_self_delete on profiles;
+drop policy if exists profiles_self_update on profiles;
 
 create policy profiles_self_select on profiles
   for select using (id = auth.uid());
@@ -66,6 +70,8 @@ $$;
 --    and keep only manager UPDATE / DELETE within the own clinic.
 -- ---------------------------------------------------------------------------
 drop policy if exists memberships_manager_all on memberships;
+drop policy if exists memberships_manager_update on memberships;
+drop policy if exists memberships_manager_delete on memberships;
 
 create policy memberships_manager_update on memberships
   for update

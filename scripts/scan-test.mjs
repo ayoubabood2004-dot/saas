@@ -10,6 +10,7 @@
  *   node scripts/scan-test.mjs
  * ==========================================================================*/
 import esbuild from "esbuild";
+import { readFileSync } from "node:fs";
 
 let fails = 0, passes = 0;
 const check = (name, cond, detail = "") => {
@@ -120,6 +121,62 @@ check("رمزٌ مطابقٌ بالكامل ليس ذيلاً (مسارُ الم
 check("أرقامٌ عربية تُطبَّع قبل المطابقة", matchTruncatedCode(inv, "٩٠٦٧٣١٥٠١٨٧٦")?.id === "a");
 check("حروفٌ لا تُطابَق", matchTruncatedCode(inv, "abcdefghijk") === undefined);
 check("فارغٌ لا يُطابَق", matchTruncatedCode(inv, "") === undefined && matchTruncatedCode(inv, null) === undefined);
+
+
+/* ── G6: ماسحاتٌ فاصلُها Tab ──────────────────────────────────────────────
+ * ماسحاتٌ كثيرة تُضبط من المصنع على Tab بدل Enter، وكان المجمِّعُ يهملها
+ * كمفتاحٍ غير مطبوع — فلا تعمل مسحةٌ واحدة بتلك العيادة أبداً. وTab من إنسانٍ
+ * يتنقّل بين الحقول يبقى تنقّلاً: فجواتُه بطيئة فلا تصحّ دفعةً. */
+{
+  const runKeys = (text, gapMs, endKey) => {
+    const asm = createScanAssembler({});
+    let t = 1000;
+    for (const ch of text) { asm.feed(ch, t); t += gapMs; }
+    return asm.feed(endKey, t);
+  };
+  check("دفعةُ ماسحٍ + Tab تصل كاملة", runKeys("8680542871133", 15, "Tab") === "8680542871133");
+  check("  ومثلُها + Enter (بلا تغيير)", runKeys("8680542871133", 15, "Enter") === "8680542871133");
+  check("كتابةُ إنسانٍ + Tab لا تُلتقط (تنقّلٌ لا مسحة)", runKeys("abc", 300, "Tab") === null);
+  check("  ومثلُها + Enter", runKeys("abc", 300, "Enter") === null);
+  check("ورمزٌ أقصرُ من الحدّ + Tab لا يُلتقط", runKeys("ab", 15, "Tab") === null);
+  check("ودفعةٌ آلية قصيرة (رقمُ رفّ) + Tab تصل", runKeys("247", 15, "Tab") === "247");
+
+  /* ── وحدُّ Tab أضيقُ من حدّ Enter عمداً ────────────────────────────────────
+   * كان الفحصُ يجرّب Tab بحالتين وحدَهما: ماسحٌ بـ١٥ م.ث وإنسانٌ بـ٣٠٠ — ولا
+   * حالةَ بأزمانٍ بشريةٍ **سريعة**. فمرّ عطلٌ حقيقيّ: كاشيرٌ يكتب هاتفاً بـ٥٥
+   * م.ث ثم Tab كانت كتابتُه تُقرأ مسحةً، فيُبتلع Tab ولا ينتقل التركيز.
+   * وهذه الحالاتُ هي التي كانت غائبة. */
+  const runMixed = (text, gapsArr, endKey) => {
+    const asm = createScanAssembler();
+    let t = 1000;
+    [...text].forEach((ch, i) => { if (i) t += gapsArr[(i - 1) % gapsArr.length]; asm.feed(ch, t); });
+    return asm.feed(endKey, t + 10);
+  };
+  check("كتابةُ إنسانٍ سريعة (٥٥ م.ث) + Tab لا تُقرأ مسحة", runMixed("07701234567", [55], "Tab") === null);
+  check("  ومختلطةٌ (٥٠ و١٥٠) + Tab كذلك", runMixed("07701234567", [50, 150], "Tab") === null);
+  check("  ومبلغٌ قصيرٌ سريع (٥٥ م.ث) + Tab كذلك", runMixed("1500", [55], "Tab") === null);
+  check("  وضغطٌ مستمرّ على مفتاحٍ واحد (٣٠ م.ث) + Tab كذلك", runMixed("00000000", [30], "Tab") === null);
+  check("ونفسُ الكتابة + Enter تبقى على حكمها القديم", runMixed("07701234567", [55], "Enter") === "07701234567");
+  check("وماسحٌ حقيقيّ (٢٠ م.ث) + Tab يصل", runMixed("6970967772736", [20], "Tab") === "6970967772736");
+  check("  وماسحٌ بفجوةٍ واحدةٍ بطيئة + Tab لا يصل (لا تسامُحَ لـTab)",
+    runMixed("6970967772736", [10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 90], "Tab") === null);
+}
+
+/* ── G6 بمكانه الثاني: صندوقُ مسح المشتريات ────────────────────────────────
+ * المجمِّعُ يقبل Tab منذ الدفعة ٤، لكنه كان مركَّباً بشاشة البيع وحدها
+ * (`useBarcodeScanner` بـSaleBuilder). وصندوقُ مسح المشتريات حقلٌ بمعالجٍ
+ * خاصٍّ كان يعرف Enter فقط — فالعيادةُ ذاتُ ماسح Tab تبيع ولا تستلم بضاعة:
+ * كلُّ مسحةٍ بفاتورة الشراء تضيع بلا سطرٍ وبلا رسالة، وهو حدٌّ صامتٌ آخر.
+ * الفحصُ نصّيّ لأن الوصلَ وصلُ JSX لا منطقٌ يُستدعى — والمنطقُ نفسُه مفحوصٌ أعلاه. */
+{
+  const src = readFileSync("src/components/inventory/Purchases.tsx", "utf8");
+  check("صندوقُ الشراء يغذّي المجمِّعَ بزمن الحدث لا بساعة الحائط",
+    /scanAsm\.current\.feed\(e\.key,\s*e\.timeStamp\)/.test(src));
+  check("  ويضيف على Tab إن قال المجمِّعُ «مسحة»",
+    /e\.key === "Tab" && scanned/.test(src));
+  check("  ويبني مجمِّعَه من المصدر الواحد لا بقاعدةٍ جديدة",
+    src.includes('createScanAssembler') && src.includes('from "@/lib/scanBuffer"'));
+}
 
 console.log(`\n${fails ? "✗" : "✓"} scan-test: ${passes} نجحت، ${fails} فشلت`);
 process.exit(fails ? 1 : 0);

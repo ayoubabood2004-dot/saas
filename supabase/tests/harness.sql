@@ -90,13 +90,71 @@ alter table products add column if not exists section_id  uuid;
 alter table products add column if not exists company_id  uuid;
 alter table products add column if not exists created_at  timestamptz not null default now();
 alter table generated_barcodes add column if not exists clinic_id uuid;
-create or replace function inv_norm_code(t text) returns text language sql immutable
-as $$ select regexp_replace(translate(coalesce(t,''), '٠١٢٣٤٥٦٧٨٩', '0123456789'), '\s', '', 'g') $$;
-create or replace function inv_norm_name(t text) returns text language sql immutable
-as $$ select lower(regexp_replace(coalesce(t,''), '\s+', '', 'g')) $$;
+/* اسمُ الوسيط `v` كما بالإنتاج حرفياً — لا `t`. بوستغريس يرفض تغييرَ اسم وسيطٍ
+ * بـ`create or replace` (`cannot change name of input parameter`)، فبديلٌ
+ * بالأساس باسمٍ آخر يجعل **كلَّ هجرةٍ لاحقةٍ تعيد تعريفَ الدالّة تفشل**. وهو ما
+ * وقع فعلاً: 0164 نزلت على الإنتاج بلا مشكلة وسقطت على الحزمة بأوّل تشغيل.
+ * والبديلُ يحاكي التوقيعَ لا الجسمَ وحده. */
+create or replace function inv_norm_code(v text) returns text language sql immutable
+as $$ select regexp_replace(translate(coalesce(v,''), '٠١٢٣٤٥٦٧٨٩', '0123456789'), '\s', '', 'g') $$;
+create or replace function inv_norm_name(v text) returns text language sql immutable
+as $$ select lower(regexp_replace(coalesce(v,''), '\s+', '', 'g')) $$;
 alter table products add column if not exists min_stock   numeric;
 alter table products add column if not exists expiry_date date;
 alter table purchase_items add column if not exists product_id uuid references products(id) on delete set null;
+
+/* ── الفهرسُ الفريد على الرمز الخام — كما بالإنتاج حرفياً (0007) ───────────
+ * كان الأساسُ بلا هذا الفهرس، فكانت الحزمةُ تقيس **عالَماً غير عالَم الإنتاج**:
+ * محفّزُ التوأم (0167) يُفحص وحدَه، ولا يُفحص التفاعلُ بينه وبين الفهرس (23505)
+ * — وهو التفاعلُ عينُه الذي أخفى عطلَ `inventory_tidy_uncat` القائم بالإنتاج
+ * حتى كشفته المراجعةُ لا الحزمة. والقالبُ يُقاس على ما تُنتجه القاعدة فعلاً لا
+ * على ما يسهّل كتابةَ الفحص (CLAUDE.md §٣).
+ * والشرطُ الجزئيّ `where barcode is not null` جزءٌ من التعريف لا زينة: بدونه
+ * لا يُقبل إلا منتجٌ واحدٌ بلا باركود لكلّ عيادة. */
+create unique index if not exists products_clinic_barcode_idx
+  on products (clinic_id, barcode) where barcode is not null;
+
+/* ── شكلُ ما تكتبه دوالُّ الشراء (0117/0118، وتُعاد كاملةً بـ0166) ──────────
+ * الدالّتان تُعرَّفان بالحزمة (0166 داخل الـWAVE) لكنّ جداولَها كانت هياكلَ
+ * بعمودٍ أو عمودَين، فيستحيل **تشغيلُها** — ولذلك بقي فحصُ G1 نصّاً يقرأ
+ * `prosrc` ويكتفي بأن التعريف يذكر `alt_codes`. وفحصٌ يقرأ نصَّ الدالّة يمرّ
+ * ولو كان الفرعُ ميّتاً؛ وهذا بعينه ما حصل بأوّل صياغة 0168.
+ * الأعمدةُ منقولةٌ من `information_schema` بالإنتاج، لا من الذاكرة. */
+alter table products       add column if not exists category       text;
+alter table purchases      add column if not exists clinic_id      uuid not null default auth_clinic();
+alter table purchases      add column if not exists company_id     uuid;
+alter table purchases      add column if not exists company_name   text;
+alter table purchases      add column if not exists reference      text;
+alter table purchases      add column if not exists total          numeric not null default 0;
+alter table purchases      add column if not exists item_count     int not null default 0;
+alter table purchases      add column if not exists amount_paid    numeric;
+alter table purchases      add column if not exists payment_method text;
+alter table purchases      add column if not exists status         text not null default 'paid';
+alter table purchases      add column if not exists notes          text;
+alter table purchases      add column if not exists purchased_at   timestamptz not null default now();
+alter table purchases      add column if not exists staff_id       uuid;
+alter table purchases      add column if not exists created_at     timestamptz not null default now();
+alter table purchases      add column if not exists supplier_name  text;
+alter table purchases      add column if not exists supplier_phone text;
+alter table purchase_items add column if not exists barcode        text;
+alter table purchase_items add column if not exists name           text;
+alter table purchase_items add column if not exists category       text;
+alter table purchase_items add column if not exists qty            numeric not null default 0;
+alter table purchase_items add column if not exists purchase_price numeric not null default 0;
+alter table purchase_items add column if not exists sell_price     numeric not null default 0;
+alter table purchase_items add column if not exists created_at     timestamptz not null default now();
+alter table companies      add column if not exists clinic_id      uuid not null default auth_clinic();
+alter table companies      add column if not exists name           text;
+-- أصنافُ الشركة (0065، خارج الـWAVE): تُقرأ بمسار الشراء لتصنيف القطعة الجديدة،
+-- ويُحدَّث `pooled_stock` بمسارَي البيع والإرجاع.
+create table if not exists company_sections (
+  id uuid primary key default gen_random_uuid(),
+  clinic_id uuid not null default auth_clinic(),
+  company_id uuid,
+  name text,
+  pooled_stock numeric not null default 0,
+  created_at timestamptz not null default now()
+);
 
 -- شكلُ ما تلمسه 0142: الدورةُ بحالتها وشهرها، والقسيمةُ بدفعها ومصروفها،
 -- ودالّتا الصلاحية من 0112. بدونها لا تنزل الهجرة أصلاً، وما لا ينزل لا يُفحص.
@@ -224,9 +282,131 @@ create policy invoices_update on invoices for update
              and not (amount_paid is distinct from (select i.amount_paid from invoices i where i.id = invoices.id))))
   );
 
+/* تفضيلاتُ العيادة — بشكل الإنتاج لا بعمودَين.
+ * أعمدةُ 0147 و0150 و0154 تضيفها هجراتُها بـ`if not exists` فتبقى لها، وما
+ * عداها يأتي من هجراتٍ **خارج الموجة** فلا وجودَ له هنا إلا بهذا التعريف —
+ * وأوّلُ ما كشفه أوّلُ تشغيلٍ حقيقيّ: `column "dial_code" does not exist`
+ * تقتل الحزمةَ عند كتلة 0162. والأعمدةُ منقولةٌ من `information_schema`
+ * بالإنتاج، بأنواعها وافتراضاتها، لا من الذاكرة. */
 create table if not exists clinic_prefs (
   clinic_id uuid primary key, catalog_share boolean not null default false
 );
+alter table clinic_prefs add column if not exists dial_code           text not null default '+964';
+alter table clinic_prefs add column if not exists updated_at          timestamptz not null default now();
+alter table clinic_prefs add column if not exists logo_url            text;
+alter table clinic_prefs add column if not exists social_facebook     text;
+alter table clinic_prefs add column if not exists social_instagram    text;
+alter table clinic_prefs add column if not exists pre_sale_print      boolean not null default false;
+alter table clinic_prefs add column if not exists override_enabled    boolean not null default false;
+alter table clinic_prefs add column if not exists override_pin_mirror text;
+alter table clinic_prefs add column if not exists cage_layout         text;
+alter table clinic_prefs add column if not exists currency            text;
+alter table clinic_prefs add column if not exists country             text;
+alter table clinic_prefs add column if not exists pos_v2              boolean not null default false;
+alter table clinic_prefs add column if not exists care_protocols      text;
+alter table clinic_prefs add column if not exists work_hours          text;
+alter table clinic_prefs add column if not exists clock_format        text;
+alter table clinic_prefs add column if not exists dose_window         text;
+alter table clinic_prefs add column if not exists cash_reconcile      boolean not null default false;
+alter table clinic_prefs add column if not exists cash_confirms       text;
+alter table clinic_prefs add column if not exists delivery_zones      text;
+alter table clinic_prefs add column if not exists qty_promos          text;
+
+/* ── بقيّةُ الأعمدة التي تلمسها الحزمةُ فعلاً، بشكل الإنتاج ────────────────
+ * الأساسُ يحاكي الحدَّ الأدنى عمداً، لكنّ «الأدنى» كان يُقدَّر بالذاكرة فيسقط
+ * عمودٌ هنا وعمودٌ هناك — وكلُّ واحدٍ يقتل تشغيلةً كاملة (`set -e`) ويكلّف دورةً.
+ * فقُيست القائمةُ بدل أن تُخمَّن: أعمدةُ الإنتاج ناقصاً ما يعرّفه الأساسُ وما
+ * تضيفه هجراتُ الموجة، ثم تُرشَّح بما تستعمله فعلاً بذورُ الحزمة واستعلاماتُها.
+ * وكلُّها **تقبل الفراغ** ولو كانت بالإنتاج `not null`: الأساسُ يحاكي الشكلَ
+ * لا يفرض القيود، وبذورٌ قديمةٌ تُغفل عموداً كانت ستنكسر بلا سبب.
+ * الأنواعُ والافتراضاتُ منقولةٌ من `information_schema`. */
+alter table profiles           add column if not exists full_name      text;
+alter table profiles           add column if not exists email          text;
+-- محفّزُ 0162 على `profiles` يقرأ `new.clinic_id` — وبلا العمود يرفع 42703
+-- («record "new" has no field») فيبدو الحارسُ كأنه يمنع، وهو ينهار.
+alter table profiles           add column if not exists clinic_id      uuid;
+alter table profiles           add column if not exists created_at     timestamptz not null default now();
+alter table clinics            add column if not exists name           text;
+alter table clinics            add column if not exists created_at     timestamptz not null default now();
+alter table companies          add column if not exists note           text;
+alter table companies          add column if not exists created_at     timestamptz not null default now();
+alter table appointments       add column if not exists created_at     timestamptz not null default now();
+alter table medical_visits     add column if not exists created_at     timestamptz not null default now();
+alter table reminders          add column if not exists created_at     timestamptz not null default now();
+alter table delivery_orders    add column if not exists customer_phone text;
+alter table generated_barcodes add column if not exists barcode        text;
+alter table generated_barcodes add column if not exists label          text;
+alter table generated_barcodes add column if not exists created_by     text;
+alter table generated_barcodes add column if not exists created_at     timestamptz not null default now();
+alter table journeys           add column if not exists clinic_id      uuid;
+alter table journeys           add column if not exists kind           text;
+alter table lab_device_inbox   add column if not exists clinic_id      uuid;
+alter table lab_device_inbox   add column if not exists raw            text;
+alter table lab_device_inbox   add column if not exists status         text default 'new';
+alter table lab_device_links   add column if not exists clinic_id      uuid default auth_clinic();
+alter table lab_device_links   add column if not exists name           text;
+alter table lab_device_links   add column if not exists created_at     timestamptz not null default now();
+alter table payroll_runs       add column if not exists approved_at    timestamptz;
+alter table payroll_runs       add column if not exists approved_by    uuid;
+alter table payroll_runs       add column if not exists created_at     timestamptz not null default now();
+alter table payslips           add column if not exists created_at     timestamptz not null default now();
+alter table payslip_lines      add column if not exists kind           text;
+alter table payslip_lines      add column if not exists amount         numeric;
+alter table payslip_lines      add column if not exists created_at     timestamptz not null default now();
+alter table purchase_payments  add column if not exists clinic_id      uuid default auth_clinic();
+alter table purchase_payments  add column if not exists amount         numeric default 0;
+alter table purchase_payments  add column if not exists staff_id       uuid;
+alter table purchase_payments  add column if not exists created_at     timestamptz not null default now();
+alter table staff              add column if not exists status         text default 'active';
+alter table staff              add column if not exists created_at     timestamptz not null default now();
+alter table staff_loans        add column if not exists clinic_id      uuid default auth_clinic();
+alter table staff_loans        add column if not exists principal      numeric;
+alter table staff_loans        add column if not exists installment    numeric;
+alter table staff_loans        add column if not exists remaining      numeric;
+alter table staff_loans        add column if not exists reason         text;
+alter table staff_loans        add column if not exists status         text default 'active';
+alter table staff_loans        add column if not exists expense_id     uuid;
+alter table staff_loans        add column if not exists created_at     timestamptz not null default now();
+alter table staff_loan_events  add column if not exists loan_id        uuid;
+alter table staff_loan_events  add column if not exists kind           text;
+alter table staff_loan_events  add column if not exists amount         numeric;
+alter table staff_loan_events  add column if not exists payslip_id     uuid;
+alter table staff_loan_events  add column if not exists at             timestamptz not null default now();
+alter table staff_presence     add column if not exists name           text;
+alter table staff_recurring    add column if not exists clinic_id      uuid default auth_clinic();
+alter table staff_recurring    add column if not exists amount         numeric;
+alter table staff_recurring    add column if not exists created_at     timestamptz not null default now();
+alter table store_orders       add column if not exists clinic_id      uuid;
+alter table store_orders       add column if not exists customer_name  text;
+alter table store_orders       add column if not exists customer_phone text;
+alter table store_orders       add column if not exists total          numeric;
+alter table store_orders       add column if not exists status         text default 'new';
+alter table store_orders       add column if not exists created_at     timestamptz not null default now();
+alter table surgeries          add column if not exists clinic_id      uuid default auth_clinic();
+alter table surgeries          add column if not exists name           text;
+alter table surgeries          add column if not exists created_at     timestamptz not null default now();
+alter table wa_accounts        add column if not exists clinic_id      uuid;
+alter table wa_accounts        add column if not exists status         text default 'active';
+alter table wa_accounts        add column if not exists created_at     timestamptz not null default now();
+alter table wa_inbox           add column if not exists clinic_id      uuid;
+alter table wa_inbox           add column if not exists status         text;
+alter table wa_inbox           add column if not exists created_at     timestamptz not null default now();
+
+/* ── بديلُ دالّةٍ تحكمها 0163 وليست بالموجة ───────────────────────────────
+ * فحصُ 0163 يعدّ ثلاثَ دوالٍّ تبقى للمسجَّلين وتُمنع على `anon`؛ `settle_invoice`
+ * و`record_purchase` موجودتان (الأولى بالأساس أعلاه، والثانية من 0166)،
+ * و`set_override_pin` (0048) خارج الموجة فلا وجودَ لها — فيرجع العدُّ اثنين
+ * لا ثلاثة، وتبدو حمايةٌ ساقطةً وهي لم تُفحص أصلاً.
+ * والبديلُ ينزل **قبل** 0163 فتطبّق عليه منعَها ومنحَها، فيصير الفحصُ فحصاً
+ * لـ0163 حقّاً. والجسمُ لا يعني الفحصَ: المقيسُ صلاحيةُ النداء لا أثرُه.
+ *
+ * وحُذف من هنا بديلٌ ثانٍ لـ`settle_invoice`: الأساسُ يعرّفها كاملةً أعلاه،
+ * وبديلي الفارغ دهسها فسقطت فحوصُ تحصيل السائقين بأرقامٍ غريبة (٥٠٠٠ مكان
+ * ٣٠٠٠) — عطلٌ يبدو بالتحصيل وأصلُه سطرٌ بمكانٍ آخر. والسببُ أنّي بحثتُ عنها
+ * بمجلّد الهجرات ولم أبحث بالأساس نفسِه. */
+create or replace function set_override_pin(p_pin text)
+returns void language plpgsql security definer set search_path = public as $sop$
+begin perform 1; end $sop$;
 alter table products add column if not exists barcode text;
 alter table products add column if not exists name text;
 alter table products add column if not exists sell_price numeric(12,2) default 0;
@@ -245,6 +425,21 @@ create table if not exists audit_log (
 create index if not exists audit_clinic_idx on audit_log(clinic_id, created_at desc);
 
 -- سياسات بنفس أشكال النظام الحقيقي، بنداءات عارية
+/* حمايةُ صفوف المنتجات — كما بالإنتاج حرفياً (سياستان: قراءةٌ بالملكيّة،
+ * وكتابةٌ بالملكيّة مع الدور). وبلا هذا كان `_rls_try` بعيادةٍ أخرى يقرأ منتجاتِ
+ * عيادةٍ غيرِها ويقول الفحصُ «مرّ»: عزلٌ يُفحص على قاعدةٍ بلا عزلٍ أصلاً.
+ * والفحوصُ الأخرى لا تتأثّر: `chk` يجري بدور superuser فيتجاوز الحماية، وهذا
+ * بعينه سببُ وجوب `_rls_try` لكلّ فحصِ عزل (CLAUDE.md §٣). */
+alter table products enable row level security;
+drop policy if exists products_select on products;
+drop policy if exists products_write  on products;
+create policy products_select on products
+  for select using (clinic_id = (select auth_clinic()));
+create policy products_write on products
+  for all
+  using (clinic_id = (select auth_clinic()) and (select auth_role()) = any (array['manager','veterinarian']))
+  with check (clinic_id = (select auth_clinic()) and (select auth_role()) = any (array['manager','veterinarian']));
+
 alter table pets enable row level security;
 alter table medical_visits enable row level security;
 alter table profiles enable row level security;

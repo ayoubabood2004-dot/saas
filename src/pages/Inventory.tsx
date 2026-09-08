@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { motion } from "framer-motion";
 import { getCached, setCached } from "@/lib/swrCache";
-import { findByCode, looksLikeShelfCode, twinsByName, nearCodeTwin } from "@/lib/productCodes";
+import { findByCode, looksLikeShelfCode, twinsByName, nearCodeTwin, excelArtifact, hasArabicLetters, looksLayoutMangled, codeMatcher } from "@/lib/productCodes";
 import { Dialog } from "@/components/ui/Dialog";
 import {
   Barcode, Package, Trash2, Search, Building2, Plus, ChevronLeft, ArrowRight, ArrowLeft,
@@ -23,7 +23,7 @@ import { ExpiryInput } from "@/components/ExpiryInput";
 import { Combobox } from "@/components/Combobox";
 import { subcategoriesOf } from "@/lib/promotions";
 import { Button, Badge, useToast, Skeleton } from "@/components/ui";
-import { cn, formatDate, money, fmtKg, searchable, normalizeCode, normalizeAr, formatNum } from "@/lib/utils";
+import { cn, formatDate, money, fmtKg, searchable, normalizeCode, matchCode, normalizeAr, formatNum } from "@/lib/utils";
 import { withTimeout, describeDbError } from "@/lib/errors";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
 import { openStockReport } from "@/lib/stockReportPrint";
@@ -543,12 +543,11 @@ function InventoryTab({ products, companies, sections, clinicId, onChanged }: { 
    * إحداهما الأخرى. */
   const ql = q.trim();
   const nq = searchable(ql);
-  const cq = normalizeCode(ql);
+  const byCode = codeMatcher(ql);
   const shown = ql
     ? products.filter((p) =>
       searchable(p.name).includes(nq)
-      || (!!cq && normalizeCode(p.barcode).includes(cq))
-      || (!!cq && (p.alt_codes ?? []).some((c) => normalizeCode(c).includes(cq)))
+      || byCode(p)
       || searchable(companyName(p.company_id) ?? "").includes(nq))
     : products;
 
@@ -634,6 +633,11 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
   const ownHit = useMemo(() => findByCode(allProducts ?? [], f.barcode, product?.id), [allProducts, f.barcode, product?.id]);
   /** رمزٌ يفرق بخانةٍ واحدة عن رمزِ منتجٍ قائم — ٢٢ زوجاً مقيساً بالإنتاج، رقمٌ علق قبل المسح أو ماسحٌ بلع خانة. */
   const nearHit = useMemo(() => (ownHit ? undefined : nearCodeTwin(allProducts ?? [], f.barcode, product?.id)), [allProducts, f.barcode, product?.id, ownHit]);
+  /** شكلُ إكسل المشوّه (G8): الأصلُ **لا يُسترجع** من الصيغة العلمية، فيُمنع الحفظ. */
+  const excelHit = useMemo(() => excelArtifact(f.barcode), [f.barcode]);
+  /** حروفٌ عربية بالباركود (G7): الغالبُ أن الكيبورد كان عربياً وقت المسح.
+   *  تحذيرٌ لا منع — قد يكون رمزاً عربياً مقصوداً بعيادةٍ ترقّم رفوفَها بيدها. */
+  const arabicCode = useMemo(() => hasArabicLetters(f.barcode), [f.barcode]);
   /** توأمٌ بالاسم (لنموذج التعديل): يُعرض زرُّ الدمج حين يكون هناك ما يُدمَج به. */
   const nameTwins = useMemo(
     () => (product ? twinsByName(allProducts ?? [], product, normalizeAr) : []),
@@ -778,6 +782,14 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
     // الحارسُ الجذري: باركودٌ موجودٌ على منتجٍ آخر لا يُحفظ توأماً. كان الخادم
     // يرفضه برسالةٍ عن «الأقفاص» فيُعاد الإدخال بلا باركود — والنتيجة صفّان
     // لمادةٍ واحدة، رصيدُها مقسوم. الآن يُقال بالاسم، ويُفتح الأصل بضغطة.
+    if (excelHit) {
+      playWarning();
+      toast.error(
+        t("pos.excelCode", "هذا شكل إكسل مشوّه — الرقم الأصلي ضاع"),
+        t("pos.excelCodeHint", "رجّع عمود الباركود إلى «نص» بإكسل وأعد اللصق. مثال العطب: 1.23E+12"),
+      );
+      return;
+    }
     if (ownHit) {
       playWarning();
       toast.error(t("pos.ownHitBlock", "هذا الباركود على المنتج \"{{name}}\" أصلاً — افتحه وزيد رصيده أو عدّله. ما انصنع توأم.", { name: ownHit.name }));
@@ -866,20 +878,43 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
 
   const saveBulk = async () => {
     if (!validRows.length || busy) return;
+    // شكلُ إكسل يُردّ قبل الحفظ (G8) — والصفوفُ الجماعية هي **مسارُ اللصق من
+    // إكسل** بعينه الذي كُتب له الحارس: العيادةُ تجهّز جردَها بجدول وتلصقه هنا.
+    // والأصلُ لا يُسترجع من الصيغة العلمية، فلا نحفظ ونصلح لاحقاً.
+    const excelRow = validRows.find((r) => excelArtifact(r.barcode));
+    if (excelRow) {
+      toast.error(t("pos.excelCode", "هذا شكل إكسل مشوّه — الرقم الأصلي ضاع"),
+        t("pos.excelCodeRow", "الرمز {{code}} — رجّع عمود الباركود إلى «نص» بإكسل وأعد اللصق.", { code: excelRow.barcode }));
+      return;
+    }
+    // ومسحةٌ بكيبوردٍ عربيّ تُقال ولا تمنع (G7).
+    const mangledRow = validRows.find((r) => looksLayoutMangled(r.barcode));
+    if (mangledRow) {
+      toast.toast({
+        tone: "warn",
+        title: t("pos.arabicCode", "الباركود فيه أحرف عربية — الغالب الكيبورد كان عربياً وقت المسح. بدّل اللغة وأعد المسح."),
+        description: t("pos.arabicCodeReads", "بالعكس يقرأ: {{fix}}", { fix: looksLayoutMangled(mangledRow.barcode) }),
+      });
+    }
     // Duplicate barcodes typed twice in the form — almost certainly a mistake.
+    // والمقارنةُ **مطبَّعة** كمقارنة القاعدة (محفّز 0167): صفّان بـ`W90` و`w90`،
+    // أو بـ`٢٤٧` و`247`، رمزٌ واحد. وبلا التطبيع يمرّان من هنا ويرفض الخادمُ
+    // الثاني بعد أن يكون الأوّلُ قد حُفظ — فيبقى نصفُ الدفعة ورسالةٌ غامضة.
     const codes = validRows.map((r) => r.barcode.trim()).filter(Boolean);
-    const dup = codes.find((c, i) => codes.indexOf(c) !== i);
-    if (dup) {
-      toast.error(t("pos.bulkDupBarcode", { code: dup, defaultValue: "الباركود {{code}} مكرر في القائمة" }));
+    const ncodes = codes.map((c) => matchCode(c));
+    const dupAt = ncodes.findIndex((c, i) => ncodes.indexOf(c) !== i);
+    if (dupAt >= 0) {
+      toast.error(t("pos.bulkDupBarcode", { code: codes[dupAt], defaultValue: "الباركود {{code}} مكرر في القائمة" }));
       return;
     }
     // A barcode that already belongs to a product would create a confusing twin —
     // restocks belong in a purchase invoice (فاتورة شراء), not here.
     const ownIds = new Set(rows.map((r) => r.productId).filter(Boolean));
-    const ncodes = codes.map((c) => normalizeCode(c));
+    // الفارغُ بعد التطبيع خارج المقارنة: رمزٌ كلُّه محارفُ اتجاهٍ يصير `""`،
+    // ولو دخل لطابق كلَّ رمزٍ مثله وادّعى تعارضاً لا وجود له.
+    const nset = new Set(ncodes.filter(Boolean));
     const clash = allProducts?.find((p) => !ownIds.has(p.id) && (
-      (p.barcode && ncodes.includes(normalizeCode(p.barcode)))
-      || (p.alt_codes ?? []).some((a) => ncodes.includes(normalizeCode(a)))));
+      nset.has(matchCode(p.barcode)) || (p.alt_codes ?? []).some((a) => nset.has(matchCode(a)))));
     if (clash) {
       toast.error(t("pos.bulkBarcodeExists", { code: clash.barcode, name: clash.name, defaultValue: "الباركود {{code}} مستخدم مسبقاً للمنتج \"{{name}}\" — للإضافة على مخزونه استخدم فاتورة شراء" }));
       return;
@@ -963,11 +998,15 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
         setRows([...rows.filter((_, i) => failedIdx.includes(i)), { ...blankRow }]);
         if (done === 0) await rollbackGrouping(createdCompany, createdSection);
         playWarning();
+        /* الفشلُ الجزئيّ كان يُسقط **سببَ** الفشل: العنوانُ يقول «أُضيف ٣ وفشل
+         * ٢» والوصفُ يعرض `e.message` اللاتينيّ الخام — بينما الفشلُ الكامل
+         * يعرض الجملةَ العربية. فالطبيبُ يرى صفَّين راجعَين ولا يعرف لماذا،
+         * والسببُ عندنا. صار العددُ عنواناً والسببُ وصفاً. */
         toast.error(
           done > 0
             ? t("pos.bulkPartial", { done, failed: failedIdx.length, defaultValue: "أُضيف {{done}} وفشل {{failed}} — الصفوف المتبقية جاهزة لإعادة المحاولة" })
             : describeDbError(lastErr, t),
-          lastErr instanceof Error ? lastErr.message : undefined,
+          done > 0 ? describeDbError(lastErr, t) : (lastErr instanceof Error ? lastErr.message : undefined),
         );
       }
     } catch (e) {
@@ -1114,6 +1153,16 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
                   <button className="rounded-lg bg-warn-600 px-2.5 py-1 text-2xs font-semibold text-white" data-ownhitopen
                     onClick={() => { playTap(); onOpenExisting(ownHit); }}>{t("pos.ownHitOpen", "افتحه")}</button>
                 )}
+              </div>
+            )}
+            {excelHit && (
+              <div className="mt-2 flex items-center gap-2 rounded-xl border border-danger-300 bg-danger-50 p-2.5 text-xs text-danger-700 dark:border-danger-500/40 dark:bg-danger-500/10 dark:text-danger-300" data-excelhit={excelHit}>
+                <span className="flex-1">{t("pos.excelCodeInline", "شكل إكسل مشوّه — رجّع العمود إلى «نص» بإكسل وأعد اللصق. الرقم الأصلي ما ينسترجع من هذا الشكل.")}</span>
+              </div>
+            )}
+            {arabicCode && !excelHit && (
+              <div className="mt-2 flex items-center gap-2 rounded-xl border border-warn-300 bg-warn-50 p-2.5 text-xs text-warn-700 dark:border-warn-500/40 dark:bg-warn-500/10 dark:text-warn-300" data-arabiccode="1">
+                <span className="flex-1">{t("pos.arabicCode", "الباركود فيه أحرف عربية — الغالب الكيبورد كان عربياً وقت المسح. بدّل اللغة وأعد المسح.")}</span>
               </div>
             )}
             {nearHit && (
@@ -1658,9 +1707,9 @@ function CompanyDetail({ company, products, companies, sections, clinicId, onBac
   // نفس تطبيع تبويب المنتجات وشاشة البيع — بحثٌ حرفيّ هنا كان يقول «ماكو»
   // عن مادةٍ بالرفّ لأن «ة» كُتبت «ه» أو الرقم كُتب بالعربية.
   const ql = searchable(q.trim());
-  const cq = normalizeCode(q);
+  const byCode = codeMatcher(q);
   const shownSections = ql ? mySections.filter((sec) => searchable(sec.name).includes(ql)) : mySections;
-  const matchedProducts = ql ? mine.filter((p) => searchable(p.name).includes(ql) || (!!cq && normalizeCode(p.barcode).includes(cq))) : [];
+  const matchedProducts = ql ? mine.filter((p) => searchable(p.name).includes(ql) || byCode(p)) : [];
   const sectionNameOf = (id?: string | null) => (id ? mySections.find((x) => x.id === id)?.name : undefined);
   const { askDelete: removeProduct, deleteDialog } = useProductDelete(onChanged);
 
@@ -1871,8 +1920,8 @@ function SectionProducts({ company, section, products, companies, sections, clin
     ? products.filter((p) => p.section_id === section.id)
     : products.filter((p) => p.company_id === company.id && !p.section_id);
   const ql = searchable(q.trim());
-  const cq = normalizeCode(q);
-  const shown = ql ? mine.filter((p) => searchable(p.name).includes(ql) || (!!cq && normalizeCode(p.barcode).includes(cq))) : mine;
+  const byCode = codeMatcher(q);
+  const shown = ql ? mine.filter((p) => searchable(p.name).includes(ql) || byCode(p)) : mine;
   const title = section ? section.name : t("pos.uncategorized", "بدون صنف");
   const pool = section?.pooled_stock ?? 0;
   const trackedUnits = mine.reduce((n, p) => n + (p.pooled ? 0 : p.stock || 0), 0);
@@ -2146,12 +2195,18 @@ function AssignProductsModal({ open, company, companies, sections, products, def
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, defaultSectionId]);
 
-  const ql = q.trim().toLowerCase();
+  // بحثٌ مطبَّع كبقية الشاشات. كان هنا `toLowerCase` للاسم ومقارنةٌ خامٌّ للرمز،
+  // فمنتجٌ اسمه بـ«ة» لا يُلقى بـ«ه»، ورمزٌ مخزونٌ بعلامة اتجاهٍ لا يُلقى أصلاً —
+  // وهذه النافذةُ هي التي تُسند المنتجاتِ القديمةَ بلا شركة، أي أنّ ما لا تجده
+  // يبقى بلا شركةٍ إلى الأبد.
+  const qt = q.trim();
+  const ql = searchable(qt);
   // Products already filed under THIS company sink to the bottom; everything
   // else — especially the unassigned legacy products — surfaces first.
   const shown = useMemo(() => {
+    const byCode = codeMatcher(qt);
     const list = ql
-      ? products.filter((p) => p.name.toLowerCase().includes(ql) || (p.barcode ?? "").includes(ql))
+      ? products.filter((p) => searchable(p.name).includes(ql) || byCode(p))
       : products.slice();
     return list.sort((a, b) => {
       const am = a.company_id === company.id ? 1 : 0;
@@ -2159,7 +2214,7 @@ function AssignProductsModal({ open, company, companies, sections, products, def
       if (am !== bm) return am - bm;
       return a.name.localeCompare(b.name);
     });
-  }, [products, ql, company.id]);
+  }, [products, qt, ql, company.id]);
 
   const toggle = (id: string) => {
     setPicked((prev) => {
@@ -2186,9 +2241,12 @@ function AssignProductsModal({ open, company, companies, sections, products, def
     setBusy(true);
     let done = 0;
     let failed = 0;
+    // كائنُ الخطأ كان لا يُلتقط أصلاً (`catch { failed++ }`)، فتقول الشاشةُ
+    // «تعذّرت إضافة ٢ منتج» ولا سبيلَ لمعرفة لماذا — لا بالشاشة ولا بالكونسول.
+    let lastErr: unknown = null;
     for (const id of ids) {
       try { await repo.updateProduct(id, { company_id: company.id, section_id: target || null }); done++; }
-      catch { failed++; }
+      catch (e) { failed++; lastErr = e; }
     }
     setBusy(false);
     if (done > 0) {
@@ -2197,7 +2255,8 @@ function AssignProductsModal({ open, company, companies, sections, products, def
     }
     if (failed > 0) {
       playWarning();
-      toast.error(t("pos.assignFailed", { n: failed, defaultValue: "تعذّرت إضافة {{n}} منتج" }));
+      toast.error(t("pos.assignFailed", { n: failed, defaultValue: "تعذّرت إضافة {{n}} منتج" }),
+        describeDbError(lastErr, t));
     }
     if (done > 0) onSaved(); // reloads + closes; keep open on total failure to retry
   };
@@ -2326,8 +2385,9 @@ function MergeDialog({ drop, candidates, suggested, onClose, onMerged }: {
   const [busy, setBusy] = useState(false);
   const shown = useMemo(() => {
     const nq = searchable(q);
+    const byCode = codeMatcher(q);
     const base = nq
-      ? candidates.filter((p) => searchable(p.name).includes(nq) || normalizeCode(p.barcode).includes(normalizeCode(q)))
+      ? candidates.filter((p) => searchable(p.name).includes(nq) || byCode(p))
       : [...suggested, ...candidates.filter((p) => !suggested.some((s) => s.id === p.id))];
     return base.slice(0, 40);
   }, [candidates, suggested, q]);
@@ -2479,6 +2539,15 @@ function TrashTab({ onChanged }: { onChanged: () => void }) {
       // الباركود انشغل بمنتجٍ ثانٍ أثناء الغياب؟ رجع بلاه — وقُلها بصراحة.
       if (d.row.barcode && !p.barcode) {
         toast.warn(t("pos.restoredNoBarcode", "رجع بلا باركود — الباركود {{code}} صار على منتج ثاني. افتح التعديل واربطه أو ادمجهما.", { code: d.row.barcode }), p.name);
+      }
+      /* والرموزُ الإضافية كذلك: 0165 يُسقط منها ما صار لغيره — والواجهةُ كانت
+       * تسكت عنه تماماً. فيرجع المنتجُ ناقصَ رمزَين ولا يعرف صاحبُه، ثم تُمسح
+       * علبةٌ برمزٍ كان له فلا تُلقى: نفسُ دورة «اختفى» بابٍ آخر. والفرقُ الآن
+       * محسوبٌ من الصفّ الراجع نفسِه — المعلومةُ كانت متاحةً ومُهمَلة. */
+      const keptAlts = new Set((p.alt_codes ?? []).map((c) => matchCode(c)));
+      const lostAlts = (d.row.alt_codes ?? []).filter((c) => c && !keptAlts.has(matchCode(c)));
+      if (lostAlts.length) {
+        toast.warn(t("pos.restoredLostAlts", "رجع بلا {{n}} رمز إضافي — صارت لمنتجات ثانية: {{codes}}", { n: lostAlts.length, codes: lostAlts.join("، ") }), p.name);
       }
       await load();
       onChanged();

@@ -31,19 +31,25 @@ export interface ScanOptions {
   interKeyMs?: number;
   /** فجوةٌ أطولُ من هذا توقّفٌ حقيقي يبدأ دفعةً جديدة (٣٠٠ ملّي ثانية). */
   pauseMs?: number;
+  /**
+   * أقصى فجوةٍ يقبلها **Tab وحدَه** (٣٥ ملّي ثانية) — وهو حدٌّ أضيقُ من
+   * `interKeyMs` عمداً. انظر شرحَ الفاصلَين أدناه.
+   */
+  tabMaxGapMs?: number;
 }
 
 export interface ScanAssembler {
   /**
-   * تُغذَّى بكل ضغطة مع زمن وقوعها. ترجع الرمزَ عند Enter إن كانت الدفعةُ دفعةَ
-   * ماسح، وإلا `null`. المفاتيحُ غير المطبوعة (Shift، Tab…) تُهمَل.
+   * تُغذَّى بكل ضغطة مع زمن وقوعها. ترجع الرمزَ عند Enter **أو Tab** إن كانت
+   * الدفعةُ دفعةَ ماسح، وإلا `null`. وTab من إنسانٍ يتنقّل بين الحقول لا يصحّ
+   * دفعةً (فجواتُه بطيئة) فيمرّ كما كان. وبقيةُ المفاتيح غير المطبوعة تُهمَل.
    */
   feed(key: string, at: number): string | null;
   reset(): void;
 }
 
 export function createScanAssembler(opts: ScanOptions = {}): ScanAssembler {
-  const { minLength = 3, interKeyMs = 60, pauseMs = 300 } = opts;
+  const { minLength = 3, interKeyMs = 60, pauseMs = 300, tabMaxGapMs = 35 } = opts;
   let buf = "";
   let gaps: number[] = [];
   let last = Number.NEGATIVE_INFINITY;
@@ -53,11 +59,9 @@ export function createScanAssembler(opts: ScanOptions = {}): ScanAssembler {
     feed(key, at) {
       const gap = at - last;
       last = at;
-      if (key === "Enter") {
+      if (key === "Enter" || key === "Tab") {
         const code = buf.trim();
         const g = gaps;
-        reset();
-        if (code.length < minLength) return null;
         // نصفُ الفجوات بسرعة الآلة = دفعةُ ماسح (لرمزٍ بطول باركود). الإنسانُ لا
         // يكتب ستَّ فجواتٍ من اثنتَي عشرة دون ستّين ملّي ثانية — والنصفُ المتبقّي
         // يحتمل توقّفَ متصفّحٍ بطيء عن المعالجة وهو يرسم. مقيسٌ بضغطٍ على ٣٠٠٠
@@ -66,7 +70,38 @@ export function createScanAssembler(opts: ScanOptions = {}): ScanAssembler {
         // ضغطتين سريعتين من إنسانٍ تكفيان لتشبه دفعةً.
         const slow = g.filter((x) => x > interKeyMs).length;
         const tolerated = Math.floor(g.length / (code.length >= 8 ? 2 : 4));
-        return slow <= tolerated ? code : null;
+        const isScan = code.length >= minLength && slow <= tolerated;
+
+        // Enter مُنهٍ دائماً: يُفرغ المجمَّع سواء صحّت الدفعةُ أم لا.
+        if (key === "Enter") { reset(); return isScan ? code : null; }
+
+        /* وTab مُنهٍ **للماسح وحده** — وحدُّه أضيقُ من حدّ Enter، لسببٍ مقيس.
+         *
+         * ماسحاتٌ كثيرة تُضبط من المصنع على Tab بدل Enter، وكان النظامُ يهملها
+         * كمفتاحٍ غير مطبوع فلا تعمل مسحةٌ واحدة بتلك العيادة. لكنّ قبولَ Tab
+         * بنفس تسامُح Enter (نصفُ الفجوات بطيئةٌ مسموح) فتح باباً أسوأ من الذي
+         * أغلقه: **Tab مفتاحُ تنقّلٍ بين الحقول**، فكاشيرٌ يكتب رقمَ هاتف الزبون
+         * بفجواتٍ ٥٥ ملّي ثانية ثم يضغط Tab تُقرأ كتابتُه «مسحة»: يُبتلع Tab
+         * فلا ينتقل التركيز، ويمرّ الرقمُ بمسار المسح كلِّه فينتهي بـ«الباركود
+         * مو موجود بمخزنك» بشاشة بيعٍ مفتوحة. والأسوأ: مبلغٌ قصيرٌ يُكتب سريعاً
+         * بحقل الخصم أو أجرة التوصيل قد يطابق رقمَ رفّ — والمقيسُ بالإنتاج
+         * ٢٩٠ منتجاً رمزُهم من سبع خاناتٍ فأقلّ، ومنهم `1000` و`2000` و`3000`
+         * وهي أشيعُ أجور التوصيل — فيهبط سطرٌ بالسلّة ويُطبع بالفاتورة.
+         * وهذا بعينه صنفُ «كتابةٌ صامتة يُصدَّق ناتجُها».
+         *
+         * فشرطُ Tab **دفعةٌ نظيفة لا متسامحة**: كلُّ الفجوات بسرعة الآلة، بلا
+         * استثناء. والماسحُ لا يخسر شيئاً — فجواتُه بعشرات الملّي ثانية كلُّها،
+         * أما الإنسانُ فلا تتساوى فجواتُه ولو أسرع. ويُستثنى تكرارُ مفتاحٍ
+         * واحد (auto-repeat) لأنه يولّد فجواتٍ منتظمةً سريعةً بمحرفٍ مكرَّر —
+         * وهو إصبعٌ على زرّ، لا مسحة.
+         *
+         * وEnter يبقى على تسامُحه: ليس مفتاحَ تنقّل، وقبولُه الخاطئ لا يبتلع
+         * حركةً يقصدها المستخدم. */
+        if (isScan && g.length > 0 && g.every((x) => x <= tabMaxGapMs) && new Set(code).size > 1) {
+          reset();
+          return code;
+        }
+        return null;
       }
       if (key.length !== 1) return null;
       if (gap > pauseMs) reset();

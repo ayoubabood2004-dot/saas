@@ -12,9 +12,10 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Modal } from "@/components/Modal";
 import { Combobox } from "@/components/Combobox";
 import { Button, Badge, useToast, Skeleton } from "@/components/ui";
-import { cn, money, formatDate, localISO, normalizeAr } from "@/lib/utils";
+import { cn, money, formatDate, localISO, normalizeAr, normalizeCode, matchCode } from "@/lib/utils";
 import { withTimeout, describeDbError } from "@/lib/errors";
-import { codeIndex } from "@/lib/productCodes";
+import { codeIndex, excelArtifact, looksLayoutMangled } from "@/lib/productCodes";
+import { createScanAssembler } from "@/lib/scanBuffer";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
 import { staggerContainer, staggerItem } from "@/lib/motion";
 import { openPurchasePrint, purchaseNo } from "@/lib/purchasePrint";
@@ -53,11 +54,17 @@ const blankLine = (patch: Partial<Line> = {}): Line => ({
 });
 
 /** Prefill a line from an existing product (a restock). */
-/** باركود موحَّد للمقارنة: الفراغات تُسقط والأرقام العربية-الهندية تُغرَّب.
- *  ماسحٌ يكتب 5391 وقاعدةٌ خُزّن فيها ٥٣٩١ كانا لا يلتقيان — فتُخلق نسخةٌ
- *  توأم بـ«بدون صنف» رغم أن القطعة موجودة ومصنّفة. */
-const normCode = (v: string | null | undefined): string =>
-  (v ?? "").replace(/\s+/g, "").replace(/[٠-٩]/g, (d) => String(d.charCodeAt(0) - 0x0660));
+/* كان هنا مُطبِّعٌ محلّيّ يشيل الفراغات والأرقام العربية وحدها — كُتب قبل أن
+ * يصير للتطبيع مصدرٌ واحد (0164). وبقاؤه بعد الدفعة ١ خلق العطلَ الذي أُصلح
+ * هنا: **الاستعلامُ يُطبَّع بشيء والفهرسُ بُني بشيءٍ آخر**. `codeIndex` يبني
+ * مفاتيحَه بـ`matchCode` (خفيٌّ محذوف، فارسيةٌ مترجَمة، حالةٌ مطويّة)، وهذا
+ * كان يسأله بمفتاحٍ أضعف — فمسحةُ `W90` أو `۸۶۸۰۵۴۳` أو رمزٌ فيه علامةُ اتجاه
+ * لا تلقى المنتجَ القائم، فيمرّ سطرُ الشراء بلا `product_id`. وهو المسارُ
+ * نفسُه الذي فُتحت له G1: يفشل بصمتٍ ويبدو أنه يعمل.
+ *
+ * والقاعدةُ من هنا فصاعداً: **المطابقةُ بـ`matchCode` والحفظُ بـ`normalizeCode`**.
+ * خلطُهما يكتب الرمزَ مطويَّ الحالة بمخزن العيادة — والخطُّ الأحمر الأوّل يمنع
+ * إعادةَ كتابة رمزٍ مخزون. */
 
 const lineFromProduct = (p: Product, barcode: string): Line => blankLine({
   product_id: p.id, barcode: barcode || (p.barcode ?? ""), name: p.name,
@@ -488,6 +495,8 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
   // optionally adjust prices/alerts.
   const [expandedKeys, setExpandedKeys] = useState<Set<string>>(new Set());
   const scanRef = useRef<HTMLInputElement>(null);
+  /** مجمِّعُ المسحة لهذا الحقل — يحكم على Tab: ماسحٌ أم إنسانٌ يتنقّل. */
+  const scanAsm = useRef(createScanAssembler());
   const createdRef = useRef<Company[]>([]);
 
   /* الفهرسُ من `productCodes` لا مكتوباً هنا: الأساسيُّ والإضافيُّ معاً وبقاعدةِ
@@ -545,8 +554,10 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
 
   // When a barcode is typed into a line, auto-fill from an existing product.
   const onBarcode = (key: string, code: string) => {
-    const clean = normCode(code);
-    const match = clean ? byBarcode.get(clean) : undefined;
+    // المطابقةُ بمفتاحِ الفهرس، والمحفوظُ بالسطر رمزُ العيادة كما كتبته.
+    const hit = matchCode(code);
+    const clean = normalizeCode(code);
+    const match = hit ? byBarcode.get(hit) : undefined;
     setLines((ls) => ls.map((l) => {
       if (l.key !== key) return l;
       if (match) return { ...lineFromProduct(match, clean), key: l.key, qty: l.qty };
@@ -585,18 +596,39 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
   const scanAdd = () => {
     const raw = scan.trim();
     if (!raw) return;
-    const code = normCode(raw);
+    // شكلُ إكسل يُردّ قبل أن يصير سطراً (G8). وهنا الضررُ أوضحُ منه بنموذج
+    // المنتج: فحصُ «يشبه باركوداً» أدناه لا يقبل `.` و`+`، فالصيغةُ العلمية
+    // تسقط إلى فرعِ **الاسم** — فيُنشأ منتجٌ اسمه «1.23E+12» بمخزن العيادة.
+    if (excelArtifact(raw)) {
+      playWarning();
+      toast.error(t("pos.excelCode", "هذا شكل إكسل مشوّه — الرقم الأصلي ضاع"),
+        t("pos.excelCodeHint", "رجّع عمود الباركود إلى «نص» بإكسل وأعد اللصق. مثال العطب: 1.23E+12"));
+      return;
+    }
+    const hit = matchCode(raw);
+    const code = normalizeCode(raw);
     // باركود أولاً، وإلا اسم: مطابقة تامة، أو مرشح وحيد لا لبس فيه.
-    let match = byBarcode.get(code);
+    let match = byBarcode.get(hit);
     if (!match) {
       const cands = findByName(raw);
       const exact = cands.find((p) => normalizeAr(p.name) === normalizeAr(normName(raw)));
       match = exact ?? (cands.length === 1 ? cands[0] : undefined);
     }
     if (match) { addProductLine(match); return; }
+    // مسحةٌ بكيبوردٍ عربيّ (G7): نقولها ولا نمنع — قد يكون اسماً عربياً حقيقياً.
+    // ولذلك الشرطُ ضيّق: ما يقرأ بعكسه رمزاً أو رابطاً لا كلمة (looksLayoutMangled).
+    const mangled = looksLayoutMangled(raw);
+    if (mangled) {
+      playWarning();
+      toast.toast({
+        tone: "warn",
+        title: t("pos.arabicCode", "الباركود فيه أحرف عربية — الغالب الكيبورد كان عربياً وقت المسح. بدّل اللغة وأعد المسح."),
+        description: t("pos.arabicCodeReads", "بالعكس يقرأ: {{fix}}", { fix: mangled }),
+      });
+    }
     setLines((ls) => {
       // Merge into an existing line with the same barcode if present.
-      const existing = ls.find((l) => normCode(l.barcode) === code && code);
+      const existing = ls.find((l) => matchCode(l.barcode) === hit && hit);
       if (existing) return ls.map((l) => (l.key === existing.key ? { ...l, qty: String((Number(l.qty) || 0) + 1) } : l));
       // نص فيه حروف/مسافات = اسم منتج جديد؛ أرقام صرفة = باركود جديد.
       const looksBarcode = /^[0-9A-Za-z_-]+$/.test(raw);
@@ -613,7 +645,7 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
   /** اقتراحات حية وأنت تكتب بصندوق الإدخال — منتج موجود يظهر اسمه فوراً. */
   const scanSuggestions = useMemo(() => {
     const raw = scan.trim();
-    if (raw.length < 2 || byBarcode.get(normCode(raw))) return [];
+    if (raw.length < 2 || byBarcode.get(matchCode(raw))) return [];
     return findByName(raw);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scan, nameIndex]);
@@ -647,6 +679,26 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
   const save = async () => {
     if (busy) return;
     if (validLines.length === 0) { toast.error(t("purchase.needLine", "أضف صنفاً واحداً على الأقل بكمية أكبر من صفر")); return; }
+    // سطرٌ ملصوقٌ من إكسل لا يمرّ بصندوق المسح، فالحارسُ يتكرّر هنا (G8):
+    // الرقمُ الأصليّ لا يُسترجع من الصيغة العلمية، فالرفضُ قبل الحفظ لا بعده.
+    const bad = validLines.find((l) => excelArtifact(l.barcode));
+    if (bad) {
+      playWarning();
+      toast.error(t("pos.excelCode", "هذا شكل إكسل مشوّه — الرقم الأصلي ضاع"),
+        t("purchase.excelCodeLine", "بسطر «{{name}}» الرمز {{code}} — رجّع عمود الباركود إلى «نص» بإكسل وأعد اللصق.",
+          { name: bad.name.trim() || bad.barcode, code: bad.barcode }));
+      return;
+    }
+    // وأحرفٌ عربية بالرمز تُقال ولا تمنع (G7) — قد تكون مقصودةً بالنادر.
+    const mang = validLines.find((l) => looksLayoutMangled(l.barcode));
+    if (mang) {
+      playWarning();
+      toast.toast({
+        tone: "warn",
+        title: t("pos.arabicCode", "الباركود فيه أحرف عربية — الغالب الكيبورد كان عربياً وقت المسح. بدّل اللغة وأعد المسح."),
+        description: t("pos.arabicCodeReads", "بالعكس يقرأ: {{fix}}", { fix: looksLayoutMangled(mang.barcode) }),
+      });
+    }
     setBusy(true);
     let createdCompany: Company | null = null;
     try {
@@ -656,7 +708,9 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
       createdCompany = co.created;
       const draft: PurchaseDraftLine[] = validLines.map((l) => ({
         product_id: l.product_id,
-        barcode: l.barcode.trim() || null,
+        // مطبَّعاً كما يحفظ createProduct (G12): المطابقةُ الخادمية تطبّع
+        // أصلاً، وهذا يصلح **المخزون** الجديد — القديمُ لا يُلمس.
+        barcode: normalizeCode(l.barcode) || null,
         name: l.name.trim() || l.barcode.trim(),
         section_id: l.section_id || null,
         category: (l.category || null) as ProductCategory | null,
@@ -744,7 +798,16 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
                 className="input font-mono ltr:pl-9 rtl:pr-9"
                 value={scan}
                 onChange={(e) => setScan(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); scanAdd(); } }}
+                /* Enter يُضيف دائماً (إنساناً كان أو ماسحاً). وTab **للماسح
+                 * وحده**: نغذّي المجمِّعَ نفسَه الذي تستعمله شاشة البيع بأزمان
+                 * الضغطات، فإن قال «هذي دفعةُ ماسح» أضفنا ومنعنا قفزَ التركيز.
+                 * وبلا هذا كانت العيادةُ ذاتُ ماسح Tab تبيع بالكاشير ولا تقدر
+                 * تستلم بضاعة: كلُّ مسحةٍ هنا تضيع بلا سطرٍ وبلا رسالة. */
+                onKeyDown={(e) => {
+                  const scanned = scanAsm.current.feed(e.key, e.timeStamp);
+                  if (e.key === "Enter") { e.preventDefault(); scanAdd(); return; }
+                  if (e.key === "Tab" && scanned) { e.preventDefault(); scanAdd(); }
+                }}
                 placeholder={t("pos.scanOrTypeName", "امسح الباركود أو اكتب اسم المنتج…")}
               />
             </div>

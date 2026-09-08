@@ -10,6 +10,7 @@ import { Modal } from "@/components/Modal";
 import { Button, useToast } from "@/components/ui";
 import { round2 } from "@/lib/debt";
 import { cn, money, normalizeAr, formatNum } from "@/lib/utils";
+import { codeMatcher } from "@/lib/productCodes";
 import { describeDbError } from "@/lib/errors";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
 import { sendWhatsApp } from "@/lib/quotas";
@@ -165,11 +166,16 @@ export function DeliveryEditDialog({
   }, [rows]);
 
   /* ---- بحث المنتجات للإضافة ------------------------------------------------ */
+  /* الشاشةُ السابعة التي تبحث بالرمز — وكانت الوحيدةَ الباقية على المقارنة
+   * الخامّة بعد G9: `(p.barcode ?? "").includes(q)`، بلا تطبيعٍ بأيّ طرفٍ وبلا
+   * الرموز الإضافية. فمنتجٌ رمزُه الأساسيّ رقمُ رفّ لا يُلقى بباركود العلبة،
+   * فيخرج طلبُ التوصيل ناقصاً أو بصنفٍ غير مربوطٍ بالمخزون — وهو قرارُ مال. */
   const results = useMemo(() => {
     const s = normalizeAr(q.trim().toLowerCase());
     if (!s) return [];
+    const byCode = codeMatcher(q);
     return products
-      .filter((p) => normalizeAr(p.name.toLowerCase()).includes(s) || (p.barcode ?? "").includes(q.trim()))
+      .filter((p) => normalizeAr(p.name.toLowerCase()).includes(s) || byCode(p))
       .slice(0, 8);
   }, [q, products]);
 

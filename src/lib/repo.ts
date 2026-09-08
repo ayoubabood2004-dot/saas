@@ -4,9 +4,67 @@
 import { loadDB, saveDB } from "./demoStore";
 
 /* موحِّدا مطابقة المخزون — مرآةُ inv_norm_code/inv_norm_name على الخادم:
- * قاعدتان تنحرفان تعني قطعةً تُطابَق محلياً وتتوأم سحابياً. */
-const invNormCode = (v: string | null | undefined): string =>
-  (v ?? "").replace(/\s+/g, "").replace(/[٠-٩]/g, (d) => String(d.charCodeAt(0) - 0x0660));
+ * قاعدتان تنحرفان تعني قطعةً تُطابَق محلياً وتتوأم سحابياً.
+ *
+ * ومنذ 0164 صار `inv_norm_code` بالقاعدة مرآةً **حرفية** لـ`matchCode`: نفسُ
+ * الأرقام، ونفسُ المحارف الخفية، ونفسُ طيّ الحالة — ويقيسه `code-norm-parity`
+ * حرفاً بحرف على مئةٍ وعشر حالات. فالنسخةُ المحلية هنا لم تعد نسخة: هي
+ * الدالّةُ نفسها. وكانت قبلها تشيل المسافاتِ والأرقامَ العربية وحدها، فرمزٌ
+ * بعلامة اتجاهٍ خفية يُطابَق سحابياً ولا يُطابَق تجريبياً — وفحوصُ المنطق
+ * تجري على التجريبية، فالانحرافُ يخفي العطلَ بدل أن يكشفه. */
+const invNormCode = (v: string | null | undefined): string => matchCode(v);
+/**
+ * مرآةُ كتلة المطابقة بالرمز داخل `record_purchase`/`update_purchase` (0166):
+ * الرمزُ الأساسيّ **والرموزُ الإضافية**، والأساسيُّ يغلب عند التزاحم، ثم
+ * شركةُ الفاتورة، ثم المصنَّف، ثم الأقدم. كانت هنا تفحص الأساسيَّ وحده — أي
+ * أن الشراء لا يلقى ما يلقاه الكاشير: قطعةٌ رمزُها الأساسيّ رقمُ رفّ وباركودُ
+ * المصنع بإضافيّها تُنشَأ من جديد برصيدٍ مقسوم بكلّ فاتورة شراء.
+ */
+const pickByPurchaseCode = <T extends { id: string; barcode?: string | null; alt_codes?: string[] | null; company_id?: string | null; section_id?: string | null; created_at?: string }>(
+  rows: readonly T[], code: string, companyId: string | null,
+): string | null => {
+  const isPrimary = (p: T) => invNormCode(p.barcode) === code && (p.barcode ?? "") !== "";
+  /* طبقةُ الشركة تحاكي SQL حرفياً: `(company_id = v_company) desc nulls last`.
+   * وهي ثلاثُ مراتبَ لا اثنتان — والفرقُ كلُّه بدلالات NULL التي تخالف جافاسكربت:
+   *  · فاتورةٌ بلا شركة (v_company فارغ): الشرطُ NULL لكلّ صفّ ⇒ **لا تمييزَ
+   *    أصلاً**. وكانت `=== null` تُقدّم منتجاتِ «بلا شركة» — عكسَ الخادم؛
+   *  · وفاتورةٌ بشركة: مطابقُها أوّلاً (true)، ثم مخالفُها (false)، ثم «بلا
+   *    شركة» **آخرَ شيء** (NULL ⇒ nulls last) — وكانت تُسوّى بالمخالف. */
+  const coRank = (p: T): number => {
+    if (companyId == null) return 0;
+    if (p.company_id == null) return -1;
+    return p.company_id === companyId ? 1 : 0;
+  };
+  return rows
+    .filter((p) => isPrimary(p) || (p.alt_codes ?? []).some((a) => invNormCode(a) === code))
+    .sort((a, b) => Number(isPrimary(b)) - Number(isPrimary(a))
+      || coRank(b) - coRank(a)
+      || Number(b.section_id != null) - Number(a.section_id != null)
+      || (a.created_at ?? "").localeCompare(b.created_at ?? ""))[0]?.id ?? null;
+};
+/**
+ * صورةُ صفٍّ يخرج من `products` — مرآةُ محفّز 0146: **أيُّ** صفٍّ يخرج بأيّ
+ * طريقٍ يُصوَّر، حذفاً كان أو دمجاً أو ترتيباً. وكان بالنسخة التجريبية ناسخان
+ * متطابقان تقريباً (الحذف والدمج) وطريقٌ ثالثٌ بلا صورةٍ أصلاً («رتّبِ المخزن»)
+ * — فما تطويه ثمّ يختفي بلا رجعة، بينما السحابةُ تحفظه ويُفكّ من المحذوفات.
+ * ونسخةٌ ثالثةٌ كانت ستصير رابعة، فصار للصورة موضعٌ واحد.
+ */
+function trashProduct(db: DemoDB, row: Product, extra: { reason?: string | null; merged_into?: string; keep_barcode?: string | null } = {}): void {
+  if (!db.productsTrash) db.productsTrash = [];
+  db.productsTrash = db.productsTrash.filter((t) => t.id !== row.id);
+  db.productsTrash.push({
+    id: row.id, clinic_id: null, row: { ...row },
+    invoice_item_ids: (db.invoiceItems ?? []).filter((i) => i.product_id === row.id).map((i) => i.id),
+    purchase_item_ids: (db.purchaseItems ?? []).filter((i) => i.product_id === row.id).map((i) => i.id),
+    sold_qty: (db.invoiceItems ?? []).filter((i) => i.product_id === row.id && i.qty > 0).reduce((n, i) => n + i.qty, 0),
+    stock: row.stock || 0,
+    reason: extra.reason?.trim() || null,
+    deleted_by: null,
+    deleted_at: new Date().toISOString(),
+    ...(extra.merged_into ? { merged_into: extra.merged_into, keep_barcode: extra.keep_barcode ?? null } : {}),
+  });
+}
+
 const invNormName = (v: string | null | undefined): string =>
   (v ?? "")
     // أ/إ/آ→ا · ة→ه · ى→ي — بمهارب يونيكود: بنيةُ مطابقةٍ لا نصٌّ معروض.
@@ -19,10 +77,13 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, AppointmentStatus, ClinicInfo, PublicStaff, DailyNote, TreatmentEntry, Admission, Branch, Reminder, Product, Company, CompanySection, Purchase, PurchaseItem, PurchasePayment, PurchaseDraftLine, PurchaseMeta, Courier, DeliveryOrder, PetMovement, DemoDB, Invoice, InvoiceItem, CheckoutItem, SaleMeta, Customer, DiscountType, PaymentMethod, PaymentSplit, WhatsAppMessage, AuditEntry, LoginEvent, PetNote, Expense, ExpenseMethod, ReturnMeta, RetailReturnResult, HealthMetric, ClinicVisit , Surgery, LabResult, LabDeviceLink, LabDeviceInbox, LabStatusValue, PetProblem, CareEntry, FeatureRequest, GeneratedBarcode, StoreProfile, StoreOrder, StoreOrderItem, StoreFrontInfo, StoreCatalogItem, Journey, JourneyEvent, JourneyKind, JourneyStage, JourneyPublicView, EditLine } from "@/types";
 import type { CompanyCharge } from "@/types";
 import type { DeletedProduct, CourierSettlement, ReceiptsDay, ReceiptsTotal, TopProductRow, StaffSalesRow, InvoiceSearch } from "@/types";
+import type { BarcodeAilment, BarcodeHealthRow } from "@/types";
 import type { PortalMe, PortalPetCard, PortalPetDetail, PortalAdmission, PortalJourney, PortalCodeRequest, PortalVerifyResult } from "@/types";
 import { receiptsOf, dueOf } from "./debt";
 import { phoneDigits } from "./phone";
 import { searchable } from "./utils";
+import { emitGlobalToast } from "./globalToast";
+import i18next from "i18next";
 import { invoiceNo } from "./invoicePrint";
 import { auditKind, activityBrief } from "./activityKinds";
 import type { ActivityQuery, ActivityRow, ActivitySummaryRow, ActivityActor } from "@/types";
@@ -32,7 +93,7 @@ import { paidOf, round2 } from "./debt";
 import { isValidSlug, normalizeSlug, demoOrderNo } from "./storeLib";
 import { journeyToken, OWNER_REACTIONS } from "./journey";
 import { getClinicName, getClinicLogo, getClinicSocials } from "./settings";
-import { uid, uuid, ageMonths, localISO, normalizeCode } from "./utils";
+import { uid, uuid, ageMonths, localISO, normalizeCode, matchCode } from "./utils";
 import { phoneKey } from "./phone";
 import { loadOwners } from "./owners";
 import { loadClinics, getActiveClinicId } from "./clinics";
@@ -1173,27 +1234,43 @@ const demoRepo = {
     return true;
   },
   async getProductByBarcode(barcode: string, _clinicId?: string): Promise<Product | undefined> {
-    const code = normalizeCode(barcode);
+    const code = matchCode(barcode);
     if (!code) return undefined;
     // الرمزُ الأساسي أو أيُّ رمزٍ إضافي — ونطبّع المخزون أيضاً، فصفٌّ قديم
     // فيه محرفٌ غير مرئيّ يبقى قابلاً للمسح.
-    return (loadDB().products ?? []).find(
-      (p) => normalizeCode(p.barcode) === code || (p.alt_codes ?? []).some((c) => normalizeCode(c) === code),
+    const hits = (loadDB().products ?? []).filter(
+      (p) => matchCode(p.barcode) === code || (p.alt_codes ?? []).some((c) => matchCode(c) === code),
     );
+    /* مرآةُ ترتيب `product_by_code` (0165) — و`find` على ترتيب المصفوفة كانت
+     * تخالفه: تختار حاملَ الرمز **الإضافيّ** حيث يختار الخادمُ صاحبَه الأصيل.
+     * والترتيبُ ثلاثيّ: مطابقةٌ خامّةٌ للأساسيّ أوّلاً (رمزٌ مخزونٌ كما وصل)،
+     * ثم مطابقةٌ مطبَّعةٌ للأساسيّ، ثم الأقدم. حتميةُ الاختيار ثابتٌ لا تحسين:
+     * نفسُ المسحة تبيع نفسَ المنتج مهما تبدّل ترتيبُ التحميل. */
+    hits.sort((a, b) =>
+      Number(b.barcode === barcode) - Number(a.barcode === barcode)
+      || Number(matchCode(b.barcode) === code) - Number(matchCode(a.barcode) === code)
+      || (a.created_at ?? "").localeCompare(b.created_at ?? ""));
+    // وصفّان = رمزٌ ملتبس: يُقال بصوتٍ كما بالسحابة، لا يُبلَع.
+    if (hits.length > 1) sayAmbiguousCode(code, hits.length);
+    return hits[0];
   },
   /** يربط رمزاً بمنتجٍ قائم بدل إنشاء منتجٍ جديد — نظير attach_product_code. */
   async attachProductCode(productId: string, code: string): Promise<Product> {
-    const c = normalizeCode(code);
+    // المطابقةُ بـmatchCode، والمخزونُ بـnormalizeCode: ما يدخل alt_codes رمزُ
+    // عيادةٍ **يُخزَّن**، وتخزينُ النسخة المطويّة يكتب غيرَ ما مسحه صاحبُه —
+    // خلطُ التطبيعَين الذي تمنعه القاعدةُ المعلنة بالدفعة ١.
+    const c = matchCode(code);
+    const store = normalizeCode(code);
     if (!c) throw new Error("empty code");
     const db = loadDB();
     const taken = (db.products ?? []).find(
-      (p) => p.id !== productId && (normalizeCode(p.barcode) === c || (p.alt_codes ?? []).some((x) => normalizeCode(x) === c)),
+      (p) => p.id !== productId && (matchCode(p.barcode) === c || (p.alt_codes ?? []).some((x) => matchCode(x) === c)),
     );
     if (taken) throw new Error("code already belongs to another product");
     const p = (db.products ?? []).find((x) => x.id === productId);
     if (!p) throw new Error("product not found");
-    if (normalizeCode(p.barcode) !== c && !(p.alt_codes ?? []).some((x) => normalizeCode(x) === c)) {
-      p.alt_codes = [...(p.alt_codes ?? []), c];
+    if (matchCode(p.barcode) !== c && !(p.alt_codes ?? []).some((x) => matchCode(x) === c)) {
+      p.alt_codes = [...(p.alt_codes ?? []), store];
       saveDB(db);
     }
     return p;
@@ -1204,11 +1281,7 @@ const demoRepo = {
     // نفسُ قيدِ الخادم (products_clinic_barcode_idx) وبنفس صيغةِ خطئه، حتى
     // يُترجمه describeDbError هنا كما هناك — وحتى يُفحص الحارس حيث يُفحص كلُّ شيء.
     const code = normalizeCode(input.barcode) || null;
-    if (code && db.products.some((x) => normalizeCode(x.barcode) === code)) {
-      const e = new Error('duplicate key value violates unique constraint "products_clinic_barcode_idx"') as Error & { code: string };
-      e.code = "23505";
-      throw e;
-    }
+    throwIfCodeTaken(db, code, null);
     const p: Product = { ...input, barcode: code, id: uid("prod"), created_at: new Date().toISOString() };
     db.products.push(p);
     saveDB(db);
@@ -1218,6 +1291,13 @@ const demoRepo = {
     const db = loadDB();
     const p = (db.products ?? []).find((x) => x.id === id);
     if (!p) return undefined;
+    // الخادمُ يطبّع الباركود عند الحفظ ويحرسه بالمحفّز (0167)؛ وهنا كان بلا
+    // أيّهما — فكان الفحصُ يمرّ على سلوكٍ لا وجودَ له بالإنتاج.
+    if ("barcode" in patch) {
+      const next = normalizeCode(patch.barcode) || null;
+      throwIfCodeTaken(db, next, id);
+      patch = { ...patch, barcode: next };
+    }
     Object.assign(p, patch);
     saveDB(db);
     return p;
@@ -1226,15 +1306,7 @@ const demoRepo = {
     const db = loadDB();
     const p = (db.products ?? []).find((x) => x.id === id);
     if (!p) throw new Error("product not found");
-    if (!db.productsTrash) db.productsTrash = [];
-    const sold = (db.invoiceItems ?? []).filter((i) => i.product_id === id && i.qty > 0).reduce((n, i) => n + i.qty, 0);
-    db.productsTrash = db.productsTrash.filter((t) => t.id !== id);
-    db.productsTrash.push({
-      id, clinic_id: null, row: { ...p }, sold_qty: sold, stock: p.stock || 0,
-      invoice_item_ids: (db.invoiceItems ?? []).filter((i) => i.product_id === id).map((i) => i.id),
-      purchase_item_ids: (db.purchaseItems ?? []).filter((i) => i.product_id === id).map((i) => i.id),
-      reason: reason?.trim() || null, deleted_by: null, deleted_at: new Date().toISOString(),
-    });
+    trashProduct(db, p, { reason });
     // السطور تفقد صنفها كما بالخادم (set null) — والاسترجاع يعيده.
     for (const i of db.invoiceItems ?? []) if (i.product_id === id) i.product_id = null;
     for (const i of db.purchaseItems ?? []) if (i.product_id === id) i.product_id = null;
@@ -1260,9 +1332,31 @@ const demoRepo = {
       keep.stock = Math.max(0, (keep.stock || 0) - (t.stock || 0));
       const drop = new Set([row.barcode, ...(row.alt_codes ?? [])].filter(Boolean));
       keep.alt_codes = (keep.alt_codes ?? []).filter((c) => !drop.has(c));
+      /* مرآةُ فكّ التوريث (0167): إن كان الأصلُ بلا باركودٍ لحظةَ الطيّ
+       * (`keep_barcode` فارغ) وباركودُه الحاليُّ هو باركودُ المطويّ، فقد **ورثه**
+       * لا ملكه — فيُردّ لصاحبه. وبلا هذا كان `takenBy` يجد الرمزَ عند الأصل
+       * فيرجع المنتجُ بلا باركوده هنا، بينما السحابةُ تردّه — مرآةٌ تقول غيرَ
+       * ما يقوله الخادم بمسارِ استرجاعٍ هو آخرُ خطِّ دفاعٍ عن صفٍّ مطويّ. */
+      if (t.keep_barcode == null && row.barcode && keep.barcode === row.barcode) keep.barcode = null;
     }
-    // الباركود يبقى فريداً: لو أُعيد إدخاله أثناء الغياب نستعيد بلا باركود.
-    if (row.barcode && (db.products ?? []).some((x) => x.barcode === row.barcode)) row.barcode = null;
+    /* مرآةُ 0165 و0167 — والانحرافُ هنا كان يصنع بالضبط ما تمنعه القاعدة:
+     *  ١) الرموزُ الإضافية التي **صارت لغيره** أثناء غيابه لا تُعاد. الصفُّ
+     *     المحفوظ بالسلّة صورةٌ من يومها، وقد يكون رمزٌ منها انتقل لمنتجٍ آخر
+     *     (بدمجٍ أو بإدخالٍ جديد) — فإعادتُه حرفياً **سرقةُ رمز**، ويصير رمزٌ
+     *     واحدٌ على منتجَين.
+     *  ٢) والمقارنةُ مطبَّعةٌ على الطرفين وتقرأ رموزَ الغير الإضافية كذلك، لا
+     *     `x.barcode === row.barcode` الخامّة: رمزٌ يفرق بعلامةِ اتجاهٍ خفية أو
+     *     بحالة حرفٍ كان يمرّ من هنا ويرفضه محفّزُ 0167 بالسحابة. */
+    const takenBy = (code: string | null | undefined): boolean => {
+      const c = matchCode(code);
+      if (!c) return false;
+      return (db.products ?? []).some((o) =>
+        o.id !== id && (matchCode(o.barcode) === c || (o.alt_codes ?? []).some((x) => matchCode(x) === c)));
+    };
+    const droppedAlts = (row.alt_codes ?? []).filter((c) => takenBy(c));
+    if (droppedAlts.length) row.alt_codes = (row.alt_codes ?? []).filter((c) => !takenBy(c));
+    const droppedBarcode = !!row.barcode && takenBy(row.barcode);
+    if (droppedBarcode) row.barcode = null;
     if (!db.products) db.products = [];
     db.products.push(row);
     // السطور التي كانت له ترجع إليه بمعرّفاتها كما بالخادم (بلا صنف، أو على الأصل المدموج فيه).
@@ -1284,15 +1378,8 @@ const demoRepo = {
     if (!drop) throw new Error("product to drop not found");
     if (keep.pooled || drop.pooled) throw new Error("pooled products cannot be merged");
     // الصورةُ قبل الطيّ (0146): الاسترجاع يفكّ الدمج.
-    if (!db.productsTrash) db.productsTrash = [];
-    db.productsTrash = db.productsTrash.filter((t) => t.id !== dropId);
-    db.productsTrash.push({
-      id: dropId, clinic_id: null, row: { ...drop },
-      invoice_item_ids: (db.invoiceItems ?? []).filter((i) => i.product_id === dropId).map((i) => i.id),
-      purchase_item_ids: (db.purchaseItems ?? []).filter((i) => i.product_id === dropId).map((i) => i.id),
-      sold_qty: (db.invoiceItems ?? []).filter((i) => i.product_id === dropId && i.qty > 0).reduce((n, i) => n + i.qty, 0),
-      stock: drop.stock || 0, reason: null, deleted_by: null, deleted_at: new Date().toISOString(), merged_into: keepId,
-    });
+    // باركودُ الأصل **قبل** ضمّ الرموز (0167): به يميّز الفكُّ ملكَه الأصيل من الموروث.
+    trashProduct(db, drop, { merged_into: keepId, keep_barcode: keep.barcode?.trim() ? keep.barcode : null });
     const codes = new Set(keep.alt_codes ?? []);
     if (drop.barcode && drop.barcode !== keep.barcode) codes.add(drop.barcode);
     for (const c of drop.alt_codes ?? []) if (c && c !== keep.barcode) codes.add(c);
@@ -1307,6 +1394,54 @@ const demoRepo = {
     db.products = (db.products ?? []).filter((x) => x.id !== dropId);
     saveDB(db);
     return keep;
+  },
+
+  /**
+   * مرآةُ `verify_barcode_health()` (0168) — الأنواعُ الخمسة بنفس التعريف.
+   * وتُكتب هنا لا لأن العيادةَ التجريبية تحتاجها، بل لأن فحوصَ المنطق تجري على
+   * هذه النسخة: منطقٌ لا وجودَ له هنا منطقٌ لم يُفحص (CLAUDE.md §٤).
+   */
+  async barcodeHealth(): Promise<BarcodeHealthRow[]> {
+    const products = loadDB().products ?? [];
+    const out: BarcodeHealthRow[] = [];
+    const row = (kind: BarcodeAilment, p: Product, code: string): void => {
+      out.push({ kind, product_id: p.id, product_name: p.name, code });
+    };
+    const codes: { p: Product; raw: string; norm: string; primary: boolean }[] = [];
+    for (const p of products) {
+      if ((p.barcode ?? "").trim()) codes.push({ p, raw: p.barcode as string, norm: invNormCode(p.barcode), primary: true });
+      for (const a of p.alt_codes ?? []) if ((a ?? "").trim()) codes.push({ p, raw: a, norm: invNormCode(a), primary: false });
+    }
+    // نفسُ قسمة 0168: عددُ حاملي الرمز، وعددُ من يحمله **أساسياً**.
+    // ≠١ أساسيّاً ⇒ توأمٌ بلا صاحب، و=١ ⇒ استعارةٌ محسومة (المستعيرُ وحده يُعرض).
+    const all = new Map<string, Set<string>>();
+    const prim = new Map<string, Set<string>>();
+    const note = (m: Map<string, Set<string>>, k: string, id: string): void => {
+      const s = m.get(k) ?? new Set<string>();
+      s.add(id);
+      m.set(k, s);
+    };
+    for (const c of codes) {
+      if (!c.norm) continue;
+      note(all, c.norm, c.p.id);
+      if (c.primary) note(prim, c.norm, c.p.id);
+    }
+    for (const c of codes) {
+      if (!c.norm) continue;
+      const nAll = all.get(c.norm)?.size ?? 0;
+      const nPrim = prim.get(c.norm)?.size ?? 0;
+      if (nAll <= 1) continue;
+      if (nPrim !== 1) { row("twin", c.p, c.raw); continue; }
+      if (!c.primary && !prim.get(c.norm)?.has(c.p.id)) row("alt_owned", c.p, c.raw);
+    }
+    for (const p of products) {
+      const raw = p.barcode ?? "";
+      if (!raw) continue;
+      if (/[ء-ي]/.test(raw)) row("arabic", p, raw);
+      if (/^\d+(\.\d+)?[Ee][+-]?\d+$/.test(raw) || /^\d{6,}\.0+$/.test(raw)) row("excel", p, raw);
+      if (!invNormCode(raw)) row("empty", p, raw);
+    }
+    return out.sort((a, b) => a.kind.localeCompare(b.kind) || a.product_name.localeCompare(b.product_name));
   },
 
   /* ---- سجل الباركودات المولدة (مولد الباركود الداخلي) ---- */
@@ -1750,12 +1885,7 @@ const demoRepo = {
       // فتُرصَّد بمكانها وتتعلّم الباركود — لا توأمَ أعمى بـ«بدون صنف».
       let pid = l.product_id ?? null;
       const code = invNormCode(l.barcode);
-      if (!pid && code) {
-        pid = db.products
-          .filter((p) => invNormCode(p.barcode) === code && (p.barcode ?? "") !== "")
-          .sort((a, b) => Number(b.company_id === companyId) - Number(a.company_id === companyId)
-            || Number(b.section_id != null) - Number(a.section_id != null))[0]?.id ?? null;
-      }
+      if (!pid && code) pid = pickByPurchaseCode(db.products, code, companyId);
       const lname = invNormName(l.name);
       if (!pid && lname.length >= 2 && lname !== "item") {
         pid = db.products
@@ -1848,12 +1978,7 @@ const demoRepo = {
       count += qty;
       let pid = l.product_id ?? null;
       const code = invNormCode(l.barcode);
-      if (!pid && code) {
-        pid = db.products
-          .filter((p) => invNormCode(p.barcode) === code && (p.barcode ?? "") !== "")
-          .sort((a, b) => Number(b.company_id === companyId) - Number(a.company_id === companyId)
-            || Number(b.section_id != null) - Number(a.section_id != null))[0]?.id ?? null;
-      }
+      if (!pid && code) pid = pickByPurchaseCode(db.products, code, companyId);
       const lname = invNormName(l.name);
       if (!pid && lname.length >= 2 && lname !== "item") {
         pid = db.products
@@ -2005,11 +2130,17 @@ const demoRepo = {
               && invNormName(p.name) === name)
           : undefined);
       if (!target) { kept++; continue; }
+      // صورةُ الطيّ قبل الحذف (0146): «رتّبِ المخزن» طريقٌ ثالثٌ يخرج به صفٌّ
+      // من `products`، وكان يخرج هنا **بلا صورة** — فيختفي بلا رجعة بينما
+      // السحابةُ تحفظه ويُفكّ من تبويب المحذوفات.
+      trashProduct(db, dup, { merged_into: target.id, keep_barcode: target.barcode?.trim() ? target.barcode : null });
       target.stock = Math.max(0, (target.stock || 0) + Math.max(0, dup.stock || 0));
       if (!target.barcode && dup.barcode) target.barcode = dup.barcode;
       if (!target.expiry_date && dup.expiry_date) target.expiry_date = dup.expiry_date;
       for (const it of items) if (it.product_id === dup.id) it.product_id = target.id;
       for (const it of inv) if ((it as { product_id?: string | null }).product_id === dup.id) (it as { product_id?: string | null }).product_id = target.id;
+      // والباركوداتُ المولَّدة تتبع الأصل كما بالدمج، لا تبقى معلّقةً على صفٍّ محذوف.
+      for (const g of db.generatedBarcodes ?? []) if (g.product_id === dup.id) g.product_id = target.id;
       db.products = db.products.filter((p) => p.id !== dup.id);
       merged++;
     }
@@ -2883,6 +3014,39 @@ const DEMO_ACTIVITY_MAP: Record<string, { entity: string; action: "INSERT" | "UP
  * Live Supabase implementation — used automatically when VITE_SUPABASE_* are
  * set. The TS types already use snake_case, so DB rows map 1:1 (cast directly).
  * ==========================================================================*/
+/** رمزٌ يصيب منتجَين: الكونسولُ لا يراه أحدٌ خلف الكاونتر. يُقال مرّةً لكل
+ *  رمزٍ بالجلسة — تكرارُه مع كل مسحةٍ يصير ضجيجاً يُتجاهَل. والبيعُ يكمل على
+ *  الأوّل بترتيبٍ حتميّ (0165)، فالتنبيهُ دعوةٌ لتنظيف المخزون لا حاجزٌ للبيع. */
+/** مرآةُ محفّز الخادم `products_no_twin_code` (0167): رمزٌ واحد لمنتجٍ واحد،
+ *  كشفاً متناظراً (الأساسيّ والإضافيّ) ومطبَّعاً، والصفُّ نفسُه مستثنى. ويرمي
+ *  بشكل الخادم — P0001 وhint عربيّ — لا بشكل 23505 القديم: فحصٌ على صيغةِ خطأٍ
+ *  لا تحدث بالإنتاج فحصٌ لغير الواقع. */
+function throwIfCodeTaken(db: DemoDB, code: string | null, selfId: string | null): void {
+  if (!code) return;
+  const c = matchCode(code);
+  if (!c) return;
+  const owner = (db.products ?? []).find((x) =>
+    x.id !== selfId
+    && (matchCode(x.barcode) === c || (x.alt_codes ?? []).some((a) => matchCode(a) === c)));
+  if (!owner) return;
+  const e = new Error("barcode_taken") as Error & { code: string; hint: string };
+  e.code = "P0001";
+  e.hint = i18next.t("pos.barcodeTakenHint", { name: owner.name, defaultValue: "هذا الباركود مستعمل عند «{{name}}». افتح المخزون وادمج المنتجَين أو غيّر رمزَ أحدهما." });
+  throw e;
+}
+
+const ambiguousSaid = new Set<string>();
+function sayAmbiguousCode(code: string, n: number): void {
+  console.error("[pos] ambiguous code", code, n);
+  if (ambiguousSaid.has(code)) return;
+  ambiguousSaid.add(code);
+  emitGlobalToast({
+    tone: "warn",
+    title: i18next.t("pos.ambiguousCode", "رمزٌ ملتبس — راجع المخزون"),
+    description: i18next.t("pos.ambiguousCodeHint", { code, defaultValue: "الرمز {{code}} على أكثر من منتج. بعنا الأقدم؛ افتح المخزون وادمجهما أو غيّر رمزَ أحدهما." }),
+  });
+}
+
 function sbc(): SupabaseClient {
   if (!supabase) throw new Error("[supabase] client is not configured");
   return supabase;
@@ -3671,7 +3835,7 @@ const supabaseRepo: typeof demoRepo = {
     }
   },
   async getProductByBarcode(barcode, clinicId) {
-    const code = normalizeCode(barcode);
+    const code = matchCode(barcode);
     if (!code) return undefined;
     // دالّةُ القاعدة تقرأ `barcode` والرموزَ الإضافية معاً (0141)، وبصلاحية
     // المُستدعي فسياساتُ الصفوف تحصرها بعيادته.
@@ -3680,7 +3844,7 @@ const supabaseRepo: typeof demoRepo = {
       const rows = (r.data ?? []) as Product[];
       // صفّان = رمزٌ ملتبس. نرجّع الأوّل ونصرخ بالكونسول بدل ما نبلعه صامتين
       // ونقول «غير موجود» — وهذا بالضبط ما كانت تفعله maybeSingle.
-      if (rows.length > 1) console.error("[pos] ambiguous code", code, rows.length);
+      if (rows.length > 1) sayAmbiguousCode(code, rows.length);
       return rows[0];
     }
     /* **فشلُ النداء ليس «غير موجود».** كان أيُّ خطأٍ يسقط للمسار القديم، وذاك
@@ -3699,13 +3863,14 @@ const supabaseRepo: typeof demoRepo = {
     const res = await q;
     if (res.error) throw res.error;   // ولا يُبلَع خطؤه فيصير «غير موجود»
     const rows = (res.data ?? []) as Product[];
-    if (rows.length > 1) console.error("[pos] ambiguous code", code, rows.length);
+    if (rows.length > 1) sayAmbiguousCode(code, rows.length);
     return rows[0];
   },
   async attachProductCode(productId, code) {
-    const c = normalizeCode(code);
-    if (!c) throw new Error("empty code");
-    const { data, error } = await sbc().rpc("attach_product_code", { p_product: productId, p_code: c });
+    // الخادمُ يخزّن ما يصله بـalt_codes — فيصله رمزُ الحفظ (بلا طيّ حالة)،
+    // لا رمزُ المطابقة. (بلا مستدعٍ من الواجهة منذ أيلول ٢٠٢٦ — G11.)
+    if (!matchCode(code)) throw new Error("empty code");
+    const { data, error } = await sbc().rpc("attach_product_code", { p_product: productId, p_code: normalizeCode(code) });
     if (error) throw error;
     return data as Product;
   },
@@ -3765,6 +3930,14 @@ const supabaseRepo: typeof demoRepo = {
     const { data, error } = await sbc().rpc("merge_products", { p_keep: keepId, p_drop: dropId });
     if (error) throw error;
     return data as Product;
+  },
+
+  async barcodeHealth() {
+    // تشخيصٌ لا لوحةُ مال — لكنه يُقرأ قراراً («ادمج هذين»)، فقائمةٌ ناقصةٌ عن
+    // خطأٍ أسوأ من خطأ ظاهر. نرمي، والشاشةُ تقول «أعد المحاولة».
+    const r = await sbc().rpc("verify_barcode_health");
+    if (r.error) throw r.error;
+    return (r.data ?? []) as BarcodeHealthRow[];
   },
 
   /* ---------------- Companies (الشركات) ---------------- */
@@ -4625,7 +4798,7 @@ const READ_ONLY_ALLOWED = new Set<string>([
   "activitySummary", "activityPage", "activityActors",
   // --- استعلامات مساعدة لا تكتب ---
   "checkStoreSlug", "slotTaken", "supportsBulkGroup", "supportsSupplierLedger",
-  "adminListFeatureRequests", "systemHealth",
+  "adminListFeatureRequests", "systemHealth", "barcodeHealth",
   // --- واجهات الزبون العامة (تعمل خارج جلسة العيادة) ---
   "storeFrontPublic", "storeCatalogPublic", "placeStoreOrder", "trackJourneyPublic",
   "reactJourneyPublic", "claimPet", "claimPetsByPhone",

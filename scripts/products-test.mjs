@@ -38,7 +38,7 @@ const built = await esbuild.build({
   platform: "neutral", plugins: [stubs],
   alias: { "@/lib/utils": "./src/lib/utils.ts" },
 });
-const { findByCode, looksLikeShelfCode, twinsByName, nearCodeTwin, scanVariants, rescueScan, codeIndex } = await import(
+const { findByCode, looksLikeShelfCode, twinsByName, nearCodeTwin, scanVariants, rescueScan, codeIndex, layoutFix, excelArtifact, hasArabicLetters, looksLayoutMangled, codeMatcher } = await import(
   "data:text/javascript;base64," + Buffer.from(built.outputFiles[0].text).toString("base64")
 );
 
@@ -157,6 +157,137 @@ console.log("▸ codeIndex — الشراءُ يلقى ما يلقاه الكا�
   const older = P("t3", "أقدم", "888", { created_at: "2026-01-01" });
   const newer = P("t4", "أحدث", "888", { created_at: "2026-05-01" });
   check("  وعند التعادل الأقدم", codeIndex([newer, older]).get("888")?.id === "t3");
+}
+
+{
+  // ── G7: مسخُ تخطيط الكيبورد العربي ──
+  // الحالةُ الحقيقية بالإنتاج: باركودٌ كلُّه حروفٌ عربية. بعكس التخطيط يقرأ
+  // رابطاً — أي أنه رمزُ QR مُسح والكيبوردُ عربي، ولم يكن باركوداً قطّ.
+  const mangled = "اففحس:ظظشلاهقخسفثزؤخةظمهىنس";
+  check("الرمزُ الممسوخ يرجع لاتينياً مفهوماً", layoutFix(mangled) === "https://abiroste.com/links");
+  check("  ويُعرف أن فيه عربية", hasArabicLetters(mangled) === true);
+  check("ولاتينيٌّ سليم لا يُمسّ", layoutFix("ABC123") === "");
+  check("ورقمٌ خالص لا يُمسّ", layoutFix("8680542871133") === "");
+  check("و«لا» محرفان من مفتاحٍ واحد (b) لا حرفان", layoutFix("لا") === "b");
+  check("والأرقامُ العربية ليست حروفاً (تصلحها normalizeDigits)", hasArabicLetters("٨٦٨٠") === false);
+
+  check("scanVariants تعرض الصيغةَ المصحّحة", scanVariants(mangled).includes("https://abiroste.com/links"));
+
+  const one = P("m1", "مادّة", "https://abiroste.com/links");
+  check("الممسوخُ يلقى صاحبَه الوحيد", rescueScan([one], mangled)?.product.id === "m1");
+  const twoA = P("m2", "أ", "https://abiroste.com/links");
+  const twoB = P("m3", "ب", null, { alt_codes: ["https://abiroste.com/links"] });
+  check("  وعند التعدّد لا شيء", rescueScan([twoA, twoB], mangled) === undefined);
+}
+{
+  // ── G8: أشكالُ إكسل — تُكشف لتُرفض، ولا تُصلَح (الأصلُ ضاع) ──
+  check("صيغةٌ علمية تُكشف", excelArtifact("1.23457E+12") === "sci");
+  check("  وبحرفٍ صغير كذلك", excelArtifact("1.23457e+12") === "sci");
+  check("  وبأسٍّ سالب", excelArtifact("1.2E-5") === "sci");
+  check("ذيلُ .0 على رقمٍ طويل يُكشف", excelArtifact("8681234567890.0") === "trailing-zero");
+  check("  و.00 كذلك", excelArtifact("8681234567890.00") === "trailing-zero");
+  check("وباركودٌ سليم لا يُكشف", excelArtifact("8680542871133") === null);
+  check("ورقمُ رفٍّ قصير لا يُكشف", excelArtifact("247") === null);
+  check("وسعرٌ بفاصلة ليس شكلَ إكسل (٥ خانات فأقلّ)", excelArtifact("1250.0") === null);
+  check("والفارغُ لا يُكشف", excelArtifact("") === null && excelArtifact(null) === null);
+}
+
+{
+  // ── G9: البحثُ بالرمز مصدرُه واحد ──
+  // ستُّ شاشاتٍ كتبته بيدها، ولا اثنتان منها تتّفقان: البيعُ يفحص الأساسيَّ
+  // والإضافيّ، وصفحةُ الشركة والصنفُ والدمجُ الأساسيَّ وحده، ونافذةُ الإسناد
+  // تقارن الخامَ بالخام. وشاشتان تكذبان بطريقتين تصنعان «المادة غير مُدخَلة».
+  const alt = P("g1", "دراي فود", "8436611140873", { alt_codes: ["W90", "٢٤٧٩"] });
+  const hit = codeMatcher("w90");
+  check("الرمزُ الإضافيّ يُلقى بالبحث (لا الأساسيّ وحده)", hit(alt) === true);
+  check("  وطيُّ الحالة يعمل: «w90» تلقى «W90»", codeMatcher("W90")(alt) === true);
+  check("  والأرقامُ العربية: «٢٤٧٩» تلقى «2479»", codeMatcher("2479")(alt) === true);
+  check("والبحثُ جزئيّ: أربعُ خاناتٍ من ثلاثَ عشرة تكفي", codeMatcher("8436")(alt) === true);
+  check("ومن وسط الرمز كذلك", codeMatcher("61114")(alt) === true);
+  check("ورمزٌ غريبٌ لا يُلقى", codeMatcher("999999")(alt) === false);
+  check("واستعلامٌ فارغٌ لا يطابق شيئاً (لا كلَّ شيء)", codeMatcher("")(alt) === false);
+  check("  ومسافةٌ وحدها كذلك", codeMatcher("   ")(alt) === false);
+  check("  ومحرفُ اتجاهٍ وحده كذلك", codeMatcher("‏")(alt) === false);
+  check("ومنتجٌ بلا رمزٍ لا ينكسر", codeMatcher("247")(P("g2", "بلا رمز", null)) === false);
+}
+
+{
+  // ── G7 بحقلٍ يقبل الاسمَ والرمز: مسحةٌ ممسوخة لا كلمةٌ عربية ──
+  // تحذيرٌ يظهر على كلّ اسمٍ عربيّ يُعلَّم الناسُ تجاهلَه — وحارسٌ يُتجاهَل
+  // أسوأ من لا حارس. فهذي الحالاتُ هي حدُّ التمييز نفسُه.
+  // النصُّ الممسوخُ يُنسخ بالحرف من الإنتاج، فلا نكتب قراءتَه بيدٍ ثانية:
+  // أوّلُ صياغةٍ لهذا الفحص نسخت الرمزَ بحرفٍ زائد فادّعت عطلاً لا وجودَ له.
+  // الادّعاءُ هنا: يُكشف، وقراءتُه هي قراءةُ `layoutFix` نفسِها، وهي رابط.
+  const prodCase = "اففحس:ظظلاشلاهقخسفثزؤخةظمهىنس";
+  const read = looksLayoutMangled(prodCase);
+  check("الحالةُ المقيسة بالإنتاج تُكشف", read !== "" && read === layoutFix(prodCase), JSON.stringify(read));
+  check("  وقراءتُها رابطٌ لا كلام", /^https:\/\/\S+\/links$/.test(read), read);
+  check("و«رويال» اسمٌ لا مسحة", looksLayoutMangled("رويال") === "");
+  check("و«أموكسيسيلين» كذلك", looksLayoutMangled("أموكسيسيلين") === "");
+  check("واسمٌ طويلٌ بلا مسافةٍ يُعكس حروفاً صرفة لا يُنذَر عليه", looksLayoutMangled("مستشفيات") === "");
+  check("وكلمتان بمسافةٍ ليستا مسحة", looksLayoutMangled("رويال كانين للقطط") === "");
+  check("والقصيرُ لا يُنذَر عليه", looksLayoutMangled("يليب") === "");
+  check("ولاتينيٌّ سليم لا يُمسّ", looksLayoutMangled("8680542871133") === "");
+  check("ورمزٌ ممسوخٌ فيه أرقام يُكشف", looksLayoutMangled("خ12ز34ظ56ن") === "o12.34/56k");
+  check("والفارغُ لا ينكسر", looksLayoutMangled("") === "" && looksLayoutMangled(null) === "");
+}
+
+{
+  // ── حارسُ الرجوع: بحثٌ بالرمز الأساسيّ وحده ممنوعٌ بالشاشات ──
+  // الرجوعُ هنا صامت: الشاشةُ تعمل وتبدو صحيحة، وتكذب فقط على المنتجات التي
+  // رمزُها الأساسيّ رقمُ رفّ. فالفحصُ نصّيّ لأن لا سبيلَ أرخص لكشفه.
+  const { readFileSync, readdirSync, statSync } = await import("node:fs");
+  const walk = (dir) => readdirSync(dir).flatMap((f) => {
+    const p = `${dir}/${f}`;
+    return statSync(p).isDirectory() ? walk(p) : (/\.tsx?$/.test(p) ? [p] : []);
+  });
+  // والنمطُ يشمل الصيغةَ الخامّة كذلك: `(p.barcode ?? "").includes(q)`. الصيغةُ
+  // الأولى مسكت المطبَّعَ وحده — وأفلتت منها الشاشةُ السابعة (نافذةُ تعديل طلب
+  // التوصيل) لأنها لم تكن تطبّع أصلاً. حارسٌ يمسك النسخةَ المهذّبة من العطل
+  // ويترك النسخةَ الخام يعطي طمأنينةً كاذبة.
+  const PATTERNS = [
+    /(?:match|normalize)Code\((?:\w+\.)?barcode\)\s*\.includes\(/,   // مطبَّعٌ بطرفٍ واحد
+    /\(\s*\w+\.barcode\s*\?\?\s*""\s*\)\s*\.includes\(/,             // خامٌّ بالطرفين
+    /\w+\.barcode\s*\|\|\s*""\s*\)?\s*\)\.includes\(/,
+  ];
+  const bad = [];
+  for (const f of walk("src")) {
+    if (f.endsWith("lib/productCodes.ts")) continue;              // مصدرُ الحقيقة نفسه
+    const src = readFileSync(f, "utf8");
+    for (const [i, line] of src.split("\n").entries()) {
+      // سطرُ تعليقٍ يقتبس العطلَ ليشرحه ليس عطلاً — وإلا لمنع الحارسُ توثيقَ
+      // ما يحرسه، فيُكتب بلا شرحٍ أو يُسكَت الحارس.
+      const t = line.trim();
+      if (t.startsWith("//") || t.startsWith("*") || t.startsWith("/*")) continue;
+      if (PATTERNS.some((re) => re.test(line))) bad.push(`${f}:${i + 1}`);
+    }
+  }
+  check("لا شاشةَ تبحث بالرمز الأساسيّ وحده — استعمل codeMatcher", bad.length === 0, bad.join("، "));
+
+  // ولا مُطبِّعَ رموزٍ مكتوبٍ بيدٍ داخل شاشةٍ تطابق الرموز. هذا العطلُ عاش
+  // بـPurchases.tsx حتى الدفعة ٦: مُطبِّعٌ محلّيّ يشيل الفراغاتِ والأرقامَ
+  // العربية وحدها، يسأل فهرساً مبنيّاً بـ`matchCode` — فيفشل بصمت. والقاعدةُ
+  // التي تمنع عودتَه: من يستورد `productCodes` يستعمل تطبيعَها لا تطبيعَه.
+  const handRolled = [];
+  for (const f of walk("src")) {
+    const src = readFileSync(f, "utf8");
+    if (!src.includes("lib/productCodes")) continue;
+    for (const [i, line] of src.split("\n").entries()) {
+      if (/\[٠-٩\]\/g/.test(line)) handRolled.push(`${f}:${i + 1}`);
+    }
+  }
+  check("  ولا مُطبِّعَ رموزٍ محلّيّ بشاشةٍ تطابق الرموز", handRolled.length === 0, handRolled.join("، "));
+  // والحارسُ نفسُه يُقاس: نمطٌ لا يمسك ما وُجد فعلاً حارسٌ صوريّ.
+  const SHOULD_CATCH = [
+    '|| (!!cq && normalizeCode(p.barcode).includes(cq))',
+    '|| matchCode(p.barcode).includes(cq)',
+    '|| (p.barcode ?? "").includes(q.trim())',
+    'normalizeAr(p.name).includes(s) || (p.barcode ?? "").includes(q)',
+  ];
+  const SHOULD_PASS = ['matchCode(p.barcode) === c', 'nset.has(matchCode(p.barcode))', 'byCode(p)'];
+  check("  والحارسُ يمسك كلَّ الصيغ التي وُجدت فعلاً",
+    SHOULD_CATCH.every((s) => PATTERNS.some((re) => re.test(s))));
+  check("  ولا يمسك السليم", SHOULD_PASS.every((s) => !PATTERNS.some((re) => re.test(s))));
 }
 
 console.log(`\n${fails ? "✗" : "✓"} products-test: ${passes} نجحت، ${fails} فشلت`);

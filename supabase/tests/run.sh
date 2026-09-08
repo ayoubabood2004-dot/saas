@@ -22,7 +22,7 @@ DB=dvtest
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MIG="$HERE/../migrations"
 # الهجرات التي يغطّيها هذا المخطّط الأساس. زدها كل ما تنضاف موجة.
-WAVE="$MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql"
+WAVE="$MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql"
 
 command -v "$PGBIN/initdb" >/dev/null || { echo "ما لكيت بوستغريس بـ $PGBIN"; exit 1; }
 
@@ -232,8 +232,20 @@ ins "insert into invoice_items(name,qty,unit_price,unit_cost,line_total,stock_qt
   || { printf '   ✗ %s\n' "المبلغ الضخم انرفض"; fail=1; }
 chk "والسياسة المعتمِدة رجعت" \
     "select count(*)::text from pg_policies where tablename='invoices' and policyname='invoices_update'" "1"
-chk "وبنصّها كاملاً (تحرس المبالغ)" \
-    "select (with_check like '%amount_paid%' and with_check like '%auth_role%')::text from pg_policies where policyname='invoices_update'" "true"
+# كان هنا: «السياسةُ تحرس المبالغ بنصّها» — وهو وصفُ عالَمٍ انتهى بـ0162.
+# سياسةٌ تقرأ جدولَها المحميّ يرفضها بوستغريس بإعادة كتابة الاستعلام (42P17)
+# فتُسقط **كلَّ** تحديثٍ عليه؛ فصار التجميدُ بمحفّزٍ والسياسةُ شرطَ ملكيّةٍ وحده
+# (CLAUDE.md §٣). والفحصُ ما جرى قطّ ليُكشف: حلقةُ إعادة التنزيل كانت تسقط قبله.
+# فيُثبَّت القرارُ كما هو الآن: السياسةُ ملكيّةٌ صرفة، والحراسةُ بالمحفّز.
+chk "والسياسةُ شرطُ ملكيّةٍ صرف (لا تقرأ جدولَها — 42P17)" \
+    "select (with_check not like '%amount_paid%' and with_check not like '%auth_role%' and with_check like '%auth_clinic%')::text from pg_policies where policyname='invoices_update'" "true"
+chk "  والحراسةُ بالمحفّز: يقرأ المبلغَ والدور" \
+    "select (p.prosrc like '%amount_paid%' and p.prosrc like '%auth_role%')::text
+       from pg_trigger t join pg_proc p on p.oid=t.tgfoid
+      where t.tgrelid='invoices'::regclass and t.tgname='invoices_before_update_guard'" "true"
+chk "  وهو invoker لا definer (فلا يشدّ أكثر من السياسة)" \
+    "select (not p.prosecdef)::text from pg_trigger t join pg_proc p on p.oid=t.tgfoid
+      where t.tgrelid='invoices'::regclass and t.tgname='invoices_before_update_guard'" "true"
 chk "والعرض المعتمِد رجع" \
     "select count(*)::text from pg_views where viewname='shared_catalog_source'" "1"
 chk "وما ينقرأ من التطبيق" \
@@ -465,6 +477,11 @@ chk "وبمسارٍ مثبَّت (definer-path)" \
 # 0141: الباركود لا يضيّع المنتج.
 # نزرع الأمراض الثلاثة التي وجدناها بالإنتاج حرفياً — علامةُ اتجاهٍ مخفية،
 # وأرقامٌ شرقية، ومسافة — ونتأكّد أن التنظيف يشفيها بلا أن يدمج صفَّين.
+# هذه البذرةُ تصنع عمداً ما يمنعه محفّزُ 0167: رمزَين يفترقان خامّاً ويتّحدان
+# مطبَّعَين (`555` و`‏555`). وهو تاريخٌ **قائمٌ بالإنتاج** دخل قبل الحارس، وفحصُ
+# 0141 قائمٌ عليه — فلا سبيلَ لزرعه إلا بتعطيل الحارس لحظةَ الزرع.
+# ويُفحص رجوعُه بعدها: حارسٌ يُعطَّل ويُنسى أخطرُ من حارسٍ لم يوجد.
+$P -c "alter table products disable trigger products_no_twin_code;" >/dev/null 2>&1
 $P -c "insert into products(id,clinic_id,name,barcode) values
        ('bbbb0000-0000-0000-0000-000000000001','11111111-1111-1111-1111-111111111111','مخفي',   E'‏8989'),
        ('bbbb0000-0000-0000-0000-000000000002','11111111-1111-1111-1111-111111111111','شرقي',   '٢٣٨'),
@@ -473,7 +490,15 @@ $P -c "insert into products(id,clinic_id,name,barcode) values
        -- زوجُ التصادم: النظيفُ محجوزٌ سلفاً، فالمريض لا يُلمس ولا يُدمج
        ('bbbb0000-0000-0000-0000-000000000005','11111111-1111-1111-1111-111111111111','محجوز',  '555'),
        ('bbbb0000-0000-0000-0000-000000000006','11111111-1111-1111-1111-111111111111','مصادم',  E'‏555');" >/dev/null
+$P -c "alter table products enable trigger products_no_twin_code;" >/dev/null 2>&1
+chk "محفّزُ التوأم رجع مفعَّلاً بعد زرع التاريخ" \
+    "select (tgenabled='O')::text from pg_trigger where tgrelid='products'::regclass and tgname='products_no_twin_code'" "true"
 $P -f "$MIG/0141_barcode_recovery.sql" >/dev/null 2>&1
+# 0141 تُعرّف `product_by_code` أيضاً، وإعادةُ تنزيلها هنا — بعد الموجة كلِّها —
+# **تدهس** نسخةَ 0165 الحتميّةَ الترتيب وترجع نسختَها القديمة. فتفشل فحوصُ G5
+# بعدها لسببٍ لا علاقةَ له بها. الحلُّ إعادةُ الأحدث بعد الأقدم: من يعيد تنزيل
+# هجرةٍ وسط الفحوص يعيد معها كلَّ من عدّل ما عدّلته.
+$P -f "$MIG/0165_lookup_and_restore.sql" >/dev/null 2>&1
 
 chk "علامةُ الاتجاه انشالت من الباركود" \
     "select barcode from products where id='bbbb0000-0000-0000-0000-000000000001'" "8989"
@@ -569,9 +594,15 @@ chk "وبمسارٍ مثبَّت (definer-path)" \
 # القياس: المادة موجودة تحت رمزٍ آخر. فالدمج يطوي النسخة في أصلها بلا فقد.
 echo "▸ 0144: دمج التوائم"
 
+# رقمُ الرفّ هنا `2471` لا `247`: كتلةُ 0141 أعلاه تحجز `247` لنفس العيادة
+# (الصفُّ «مسافة» تُطبّعه الهجرةُ من `' 247 '` إلى `247`). وقبل الفهرس الفريد
+# بالأساس كان الصفّان يتعايشان — وهي حالةٌ **مستحيلةٌ بالإنتاج**، فالفهرسُ هناك
+# قائمٌ منذ 0007. فلمّا صار الأساسُ يقيس عالَمَ الإنتاج رفضها المحفّزُ (0167)
+# قبل أن يصل الفهرس، و`on conflict do nothing` لا تمسك استثناءَ محفّز.
+# والدمجُ لا يحتاج توأماً مطبَّعاً أصلاً — التصادمُ كان تلوّثاً بين كتلتين.
 $P -c "insert into products (id, clinic_id, name, barcode, stock, min_stock)
-       values ('dddd0000-0000-0000-0000-000000000001','11111111-1111-1111-1111-111111111111','سبري حشرات خارجية','247', 3, 5),
-              ('dddd0000-0000-0000-0000-000000000002','11111111-1111-1111-1111-111111111111','سبري حشرات خارجيه','6972748378670', 7, 2),
+       values ('dddd0000-0000-0000-0000-000000000001','11111111-1111-1111-1111-111111111111','سبري حشرات خارجية','2471', 3, 5),
+              ('dddd0000-0000-0000-0000-000000000002','11111111-1111-1111-1111-111111111111','سبري حشرات خارجيه','6972748378671', 7, 2),
               ('dddd0000-0000-0000-0000-000000000003','11111111-1111-1111-1111-111111111111','مجمّع','999', 1, null)
        on conflict do nothing;
        update products set pooled = true where id='dddd0000-0000-0000-0000-000000000003';
@@ -591,9 +622,9 @@ chk "ودمجُ توأمين حقيقيين يمرّ" \
 chk "الرصيد انجمع: ٣ + ٧ = ١٠" \
     "select (stock = 10)::text from products where id='dddd0000-0000-0000-0000-000000000001'" "true"
 chk "ورمزُ النسخة صار رمزاً إضافياً للأصل" \
-    "select (alt_codes @> array['6972748378670'])::text from products where id='dddd0000-0000-0000-0000-000000000001'" "true"
+    "select (alt_codes @> array['6972748378671'])::text from products where id='dddd0000-0000-0000-0000-000000000001'" "true"
 chk "والرمزُ الأساسي للأصل ما انمسّ" \
-    "select barcode from products where id='dddd0000-0000-0000-0000-000000000001'" "247"
+    "select barcode from products where id='dddd0000-0000-0000-0000-000000000001'" "2471"
 chk "وحدُّ التنبيه أخذ الأعلى (٥ لا ٢)" \
     "select min_stock::text from products where id='dddd0000-0000-0000-0000-000000000001'" "5"
 chk "وسطرُ الفاتورة رجع للأصل — ما صار بلا صنف" \
@@ -1096,6 +1127,13 @@ $P -c "grant usage on schema public to authenticated;
          ('eeeeeeee-0159-4000-8000-000000000002','$C1','dddddddd-0159-4000-8000-000000000002','cccccccc-0157-4000-8000-000000000001','delivered',5000)
          on conflict do nothing;
        update _dvtest_flags set admin = false; delete from platform_sessions;" >/dev/null
+# المنحُ الشامل أعلاه (`grant execute on all functions … to authenticated`) لازمٌ
+# لـ`_rls_try` كي يعمل بدورٍ عاديّ — لكنه **يلغي منعَ 0163** عن المساعدتين
+# الداخليّتين (`deduct_stock_pooled` و`credit_stock`)، فتصيران منادَاتَين ممّن
+# لا يجوز، ويفشل فحصُ 0163 بعده بسببٍ لا علاقةَ له به.
+# فتُعاد 0163 لتستردّ سلطتَها: هي المرجعُ بمن ينادي ماذا، ومنحٌ شاملٌ لأجل فحصٍ
+# لا يعلو عليها. (وقد صار الفحصُ بهذا أقوى: يُثبت أن 0163 تغلب منحاً شاملاً.)
+$P -f "$MIG/0163_rpc_exposure.sql" >/dev/null 2>&1
 chk "موظّفُ استقبالٍ يرسل طلباً مع سائق (كان 42P17 على كلّ تحديث)" \
     "select _rls_try('$RCP', 'update delivery_orders set courier_id=''cccccccc-0159-4000-8000-000000000001'', status=''out'', dispatched_at=now() where id=''eeeeeeee-0159-4000-8000-000000000001''')" "rows:1"
 chk "  ويختم استلامَ نقد السائق" \
@@ -1157,5 +1195,213 @@ chk "ودوالُّ الهويّة التي تناديها السياسات تب
     "select count(*)::text from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname in ('auth_clinic','auth_role','is_clinic_staff') and has_function_privilege('anon', p.oid, 'execute')" "3"
 chk "ولا دالّةَ SECURITY DEFINER بلا search_path (مستشارُ Supabase: function_search_path_mutable)" \
     "select count(*)::text from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.prokind='f' and p.proname in ('quota_period_end','quota_period_start','phone_key','inv_norm_code','inv_norm_name') and not exists (select 1 from unnest(p.proconfig) c where c like 'search_path=%')" "0"
+
+# ── 0164: تطبيعُ الرمز واحدٌ بالطرفين — تطابقٌ حرفاً بحرف ──────────────────
+# نفسُ منهج فحص التقارير (0149): القيمُ من ملفٍ واحد، والمتوقَّعُ تحسبه دالّةُ
+# الواجهة **نفسها** (matchCode عبر esbuild) لا نسخةٌ منها؛ ثم يُقارَن ناتجُ
+# inv_norm_code بها. رمزٌ واحد يفرق = الطرفان افترقا = فشل.
+echo "▸ 0164: تطبيعُ الرمز — المتصفّح والقاعدة"
+CNF=$(mktemp -d)
+node "$HERE/../../scripts/code-norm-parity.mjs" "$CNF" >/dev/null
+$P -f "$CNF/code-norm.sql" >/dev/null
+chk "كلُّ قيمةٍ ملغومة تُطبَّع بالطرفين إلى النتيجة ذاتها" \
+    "select count(*)::text from _code_norm_fixture where inv_norm_code(raw) is distinct from expected" "0"
+chk "  وملفُ القيم لم يُفرَّغ (فحصٌ على صفرِ قيمٍ ليس نجاحاً)" \
+    "select (count(*) >= 100)::text from _code_norm_fixture" "true"
+# والفحصُ يقدر أن يفشل: نطبّق التطبيعَ القديم على القيم فلا بدّ أن يخالف.
+chk "  والتطبيعُ القديم يخالفها فعلاً (لو مرّ لكان الفحص أعمى)" \
+    "select (count(*) > 0)::text from _code_norm_fixture
+       where translate(regexp_replace(coalesce(raw,''), '\s', '', 'g'), '٠١٢٣٤٥٦٧٨٩', '0123456789') is distinct from expected" "true"
+$P -c "drop table if exists _code_norm_fixture;" >/dev/null
+rm -rf "$CNF"
+
+
+# ── 0165/0166: الرمزُ الإضافيّ يُقرأ، والاستدعاءُ حتميّ ────────────────────
+# كان هذا القسمُ **ساكناً** كلَّه: ستُّ فحوصٍ تقرأ `prosrc` وتكتفي بأن التعريف
+# يذكر `alt_codes`. وفحصُ نصٍّ يمرّ ولو كان الفرعُ ميّتاً — وهذا بعينه ما حصل
+# بأوّل صياغة 0168 (فرعٌ لا يُنتج صفّاً أبداً، كشفه بناءُ الفحص لا الفحص).
+# وسببُ سكونه أن جداولَ الشراء بالأساس كانت هياكلَ بعمودٍ أو عمودَين فيستحيل
+# **تشغيلُ** `record_purchase`؛ صارت الآن بشكل الإنتاج (harness.sql)، فصار
+# السلوكُ مفحوصاً. والفحوصُ الساكنةُ تبقى معه: نصٌّ يحرس الشكل، وسلوكٌ يحرس الأثر.
+echo "▸ 0165/0166: الرموزُ الإضافية والحتمية"
+chk "مطابقةُ الشراء تقرأ alt_codes (record_purchase)" \
+    "select (prosrc like '%alt_codes%')::text from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='record_purchase'" "true"
+chk "ومثلُها update_purchase" \
+    "select (prosrc like '%alt_codes%')::text from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='update_purchase'" "true"
+# المقطعُ يقف عند `= v_code` فيمرّ ولو انقلب `desc` إلى `asc` — أي ولو صار
+# الإضافيُّ يغلب الأساسيّ، وهو نقيضُ ما يحرسه. فيمتدّ إلى الاتجاه نفسِه.
+chk "والأساسيُّ يغلب الإضافيّ بترتيب الشراء (بالاتجاه لا بالوجود)" \
+    "select count(*)::text from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname in ('record_purchase','update_purchase') and prosrc like '%order by (inv_norm_code(barcode) = v_code and coalesce(barcode,'''') <> '''') desc%'" "2"
+chk "استدعاءُ الرمز مرتَّبٌ حتميّاً (لا rows[0] عشوائيّ)" \
+    "select (prosrc like '%order by coalesce(barcode = p_code, false) desc%')::text from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='product_by_code'" "true"
+chk "  ويطابق مطبَّعاً لا خامّاً وحده" \
+    "select (prosrc like '%inv_norm_code(barcode) = inv_norm_code(p_code)%')::text from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='product_by_code'" "true"
+chk "والاستعادةُ ترشّح الرموزَ الإضافية المسروقة" \
+    "select (prosrc like '%{alt_codes}%')::text from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='restore_product'" "true"
+
+# ── والآن السلوكُ نفسُه: نشتري، ونستدعي، ونستعيد ─────────────────────────
+# عيادةٌ خاصّةٌ بهذا القسم كي لا تختلط ببقايا الكتل السابقة.
+AC="11111111-1111-1111-1111-111111111111"
+# بلا فاصلةٍ منقوطة: تُحقن داخل `from (…) s` فتصير `(select …;) s` — خطأُ صياغة.
+ACJ="select set_config('request.jwt.claim.sub','$AC',true)"
+# G1 سلوكياً: سطرُ شراءٍ **بلا product_id** ورمزُه باركودُ مصنعٍ هو رمزٌ
+# **إضافيّ** لمنتجٍ قائم رمزُه الأساسيّ رقمُ رفّ — الحالةُ المقيسة بالإنتاج
+# (٢٨١ منتجاً بأربع عيادات رمزُه يدويّ). المطلوب: يُرصَّد على القائم، ولا
+# يُنشأ توأمٌ برصيدٍ مقسوم. مقيسٌ على الإنتاج بمعاملةٍ متراجعة قبل كتابته هنا:
+# ٥ ⇒ ٨ على الصفّ القائم، وصفرُ صفوفٍ جديدة.
+$P -c "insert into products (id, clinic_id, name, barcode, alt_codes, stock) values
+         ('a1000000-0000-0000-0000-000000000001','$AC','رفّ ٢٤٧','SHELF-247',array['6970967772736'],5)
+       on conflict do nothing;" >/dev/null 2>&1
+# `(صفٌّ مركَّب) is not null` يعني **كلَّ** أعمدته غيرُ فارغة — وصفُّ الشراء فيه
+# أعمدةٌ تقبل الفراغ (الشركة، المرجع، الملاحظات)، فالجوابُ `false` عن صفٍّ سليم.
+# فخٌّ يقول «فشل» عن نجاح. فيُنتزع عمودٌ واحدٌ بدل الصفّ كلِّه.
+chk "الشراءُ بالرمز الإضافيّ يُرصَّد على القائم" \
+    "select ((record_purchase(
+       jsonb_build_array(jsonb_build_object('product_id',null,'barcode','6970967772736','name','وصلت بضاعة','qty',3,'purchase_price',1000,'sell_price',1500)),
+       jsonb_build_object('company_name','مورّد فحص'))).id is not null)::text
+     from ($ACJ) s" "true"
+chk "  فيصير رصيدُه ثمانيةً لا خمسة" \
+    "select stock::text from products where id='a1000000-0000-0000-0000-000000000001'" "8.000"
+chk "  ولا يُنشأ توأمٌ باسم السطر" \
+    "select count(*)::text from products where clinic_id='$AC' and name='وصلت بضاعة'" "0"
+
+# G5 سلوكياً: صاحبُ الرمز أساسيّاً ومستعيرٌ يحمله إضافياً — أيُّهما يرجع أوّلاً؟
+# والزرعُ بهذا الترتيب وحدَه ممكن: محفّزُ 0167 يرفض إدراجَ الأساسيّ بعد أن صار
+# إضافياً لغيره — فيُدرَج الصاحبُ أوّلاً ثم يُعطى المستعيرُ رمزَه بتحديث.
+$P -c "insert into products (id, clinic_id, name, barcode, stock, created_at) values
+         ('a1000000-0000-0000-0000-000000000012','$AC','صاحبُ الرمز','DET-500',1,'2026-05-01'),
+         ('a1000000-0000-0000-0000-000000000011','$AC','المستعير','ZZZ-9',1,'2026-01-01')
+       on conflict do nothing;
+       update products set alt_codes = array['DET-500'] where id='a1000000-0000-0000-0000-000000000011';" >/dev/null 2>&1
+chk "الاستدعاءُ يرجع صفَّين للرمز المشترَك" \
+    "select count(*)::text from ($ACJ) s, product_by_code('DET-500')" "2"
+chk "  والأوّلُ صاحبُ الرمز لا المستعير (حتميةٌ لا حظّ)" \
+    "select name from ($ACJ) s, product_by_code('DET-500') limit 1" "صاحبُالرمز"
+chk "  وبحالةٍ مطويّة كذلك" \
+    "select name from ($ACJ) s, product_by_code('det-500') limit 1" "صاحبُالرمز"
+
+# G3 سلوكياً: رمزٌ إضافيٌّ لمحذوفٍ يصير لغيره أثناء الغياب — الاستعادةُ لا
+# تسترجعه (وإلا صار رمزٌ واحدٌ على منتجَين)، ورمزُه الحرُّ يبقى.
+$P -c "select set_config('request.jwt.claim.sub','$AC',false);
+       insert into products (id, clinic_id, name, barcode, alt_codes, stock) values
+         ('a1000000-0000-0000-0000-000000000021','$AC','سيُحذف','DEL-100',array['STOLEN-1','MINE-1'],4)
+       on conflict do nothing;
+       select delete_product('a1000000-0000-0000-0000-000000000021','فحص');
+       update products set alt_codes = array['DET-500','STOLEN-1'] where id='a1000000-0000-0000-0000-000000000011';
+       select restore_product('a1000000-0000-0000-0000-000000000021');" >/dev/null 2>&1
+chk "الاستعادةُ لا تعيد رمزاً صار لغيره" \
+    "select (not (alt_codes @> array['STOLEN-1']))::text from products where id='a1000000-0000-0000-0000-000000000021'" "true"
+chk "  وتُبقي رمزَه الذي ما زال حرّاً" \
+    "select (alt_codes @> array['MINE-1'])::text from products where id='a1000000-0000-0000-0000-000000000021'" "true"
+chk "  وباركودُه ورصيدُه يرجعان كما كانا" \
+    "select (barcode = 'DEL-100' and stock = 4)::text from products where id='a1000000-0000-0000-0000-000000000021'" "true"
+chk "ولا رمزَ واحدٌ على منتجَين بعدها" \
+    "select count(*)::text from products where clinic_id='$AC' and alt_codes @> array['STOLEN-1']" "1"
+
+# عزلُ العيادات — **بدور `authenticated` لا كـsuperuser**: `product_by_code`
+# تعتمد سياساتِ الصفوف لا فحصاً بجسمها، وsuperuser يتجاوز RLS (CLAUDE.md §٣).
+# ففحصُ عزلٍ يجري بالدور الأعلى يمرّ لسببٍ خاطئ ويطمئنُّ على ما لم يُقس.
+chk "الاستدعاءُ يرى صفَّي عيادته بدور authenticated" \
+    "select _rls_try('$AC', 'select 1 from product_by_code(''DET-500'')')" "rows:2"
+chk "  ولا يرى شيئاً لعيادةٍ أخرى" \
+    "select _rls_try('22222222-2222-2222-2222-222222222222', 'select 1 from product_by_code(''DET-500'')')" "rows:0"
+chk "وصحّةُ الباركودات تعمل بدور authenticated" \
+    "select left(_rls_try('$AC', 'select 1 from verify_barcode_health()'), 5)" "rows:"
+chk "ومحفّزُ التوأم يحرس بدور authenticated كذلك" \
+    "select left(_rls_try('$AC', 'insert into products (clinic_id,name,barcode) values (''$AC'',''محاولة'',''DET-500'')'), 8)" "guarded:"
+
+
+# ── 0167: رمزٌ واحد لمنتجٍ واحد ──────────────────────────────────────────
+# سلوكيّ: الحزمةُ تعرف `products` و`inv_norm_code` (0164)، فالمحفّزُ يُجرَّب حقاً.
+echo "▸ 0167: حارسُ التوأم"
+$P -c "insert into products (id, clinic_id, name, barcode, stock, alt_codes) values
+         ('e7000000-0000-0000-0000-000000000001','11111111-1111-1111-1111-111111111111','صاحبُ الرمز','TW-100', 1, array['TW-ALT']),
+         ('e7000000-0000-0000-0000-000000000002','22222222-2222-2222-2222-222222222222','عيادةٌ أخرى','TW-100', 1, '{}')
+       on conflict do nothing;" >/dev/null 2>&1
+$P -c "create or replace function _twin_try(q text) returns text language plpgsql as \$fn\$
+       declare h text;
+       begin execute q; return 'accepted';
+       exception when others then get stacked diagnostics h = pg_exception_hint; return 'guarded:' || coalesce(h, sqlerrm); end \$fn\$;" >/dev/null
+chk "رمزٌ مأخوذ يُرفض، والرسالةُ تسمّي صاحبَه" \
+    "select (_twin_try('insert into products (clinic_id,name,barcode) values (''11111111-1111-1111-1111-111111111111'',''محاولة'',''TW-100'')') like 'guarded:%صاحبُ الرمز%')::text" "true"
+chk "والتوأمُ المطبَّع كذلك (علامةُ اتجاهٍ خفية)" \
+    "select (_twin_try('insert into products (clinic_id,name,barcode) values (''11111111-1111-1111-1111-111111111111'',''محاولة'',''' || chr(8206) || 'TW-100'')') like 'guarded:%')::text" "true"
+chk "ورمزٌ يملكه غيرُه كـalt_codes يُرفض (ما لا يراه الفهرسُ الفريد)" \
+    "select (_twin_try('insert into products (clinic_id,name,barcode) values (''11111111-1111-1111-1111-111111111111'',''محاولة'',''TW-ALT'')') like 'guarded:%')::text" "true"
+chk "وعيادةٌ أخرى بنفس الرمز تمرّ (العزلُ محفوظ)" \
+    "select count(*)::text from products where id='e7000000-0000-0000-0000-000000000002'" "1"
+chk "وتحديثُ الصفّ نفسِه برمزه لا يُرفض (إعفاءُ ما لم يتغيّر)" \
+    "select _twin_try('update products set barcode = ''TW-100'' where id = ''e7000000-0000-0000-0000-000000000001''')" "accepted"
+chk "ورمزٌ حرٌّ يُقبل" \
+    "select _twin_try('update products set barcode = ''TW-FREE'' where id = ''e7000000-0000-0000-0000-000000000001''')" "accepted"
+chk "المحفّزُ invoker لا definer" \
+    "select (not prosecdef)::text from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='products_no_twin_code'" "true"
+# ساكن: «رتّب المخزن» تحذف التوأم قبل أن تورّث رمزَه (وإلا خرقت الفهرسَ الفريد)
+chk "رتّبِ المخزن: الحذفُ قبل توريث الرمز" \
+    "select (strpos(prosrc,'delete from products where id = dup.id') < strpos(prosrc,'update products set stock = greatest(0, coalesce(stock,0)'))::text
+       from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='inventory_tidy_uncat'" "true"
+chk "والاستعادةُ تفحص alt_codes الغير قبل أن تعيد الباركود" \
+    "select (prosrc like '%unnest(coalesce(o.alt_codes%')::text from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='restore_product'" "true"
+# G11: attach_product_code بلا مستدعٍ من الواجهة — والصلاحياتُ تبقى محكومة
+chk "attach_product_code لا تُنادى بلا هويّة" \
+    "select has_function_privilege('anon','public.attach_product_code(uuid,text)','execute')::text" "false"
+chk "  وتبقى للمسجَّلين" \
+    "select has_function_privilege('authenticated','public.attach_product_code(uuid,text)','execute')::text" "true"
+
+
+# ── 0168: صحّةُ الباركودات — صفرٌ على النظيف، وكلُّ نوعٍ على الملغوم ────────
+# عيادةٌ خاصّةٌ بهذا الفحص لا تختلط ببقايا الكتل السابقة، ونقيس أنّها ترجع صفراً
+# **قبل** الزرع: لو تسرّب صفٌّ من عيادةٍ أخرى لانكشف قبل أن نصدّق الأنواع.
+echo "▸ 0168: صحّةُ الباركودات"
+HB="e8000000-0000-0000-0000-000000000088"
+# الهويّةُ تُضبط داخل الاستعلام نفسِه (كبقية الكتل): `chk` يجري كـsuperuser بلا جلسة.
+HBJ="(select set_config('request.jwt.claim.sub','$HB',true)) s cross join lateral verify_barcode_health() h"
+chk "الدالّة definer بمسارٍ مثبَّت" \
+    "select (prosecdef and proconfig @> array['search_path=public'])::text from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='verify_barcode_health'" "true"
+chk "  ولا تكتب شيئاً (stable)" \
+    "select (provolatile='s')::text from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='verify_barcode_health'" "true"
+chk "  ولا تُنادى بلا هويّة" \
+    "select has_function_privilege('anon','public.verify_barcode_health()','execute')::text" "false"
+chk "  وتبقى للمسجَّلين" \
+    "select has_function_privilege('authenticated','public.verify_barcode_health()','execute')::text" "true"
+chk "عيادةٌ بلا رموزٍ معطوبة ترجع صفراً" \
+    "select count(*)::text from $HBJ" "0"
+# الزرعُ يمرّ بمحفّز التوأم (0167) فيَرفض صفَّ التوأم ويُسقط العبارةَ كلَّها —
+# فيُعطَّل للزرع وحده، ويُفحَص رجوعُه: حارسٌ يُعطَّل ويُنسى أخطرُ من حارسٍ لم يوجد.
+$P -c "alter table products disable trigger products_no_twin_code;" >/dev/null 2>&1
+$P -c "insert into products (id, clinic_id, name, barcode, alt_codes, stock) values
+  ('e8000000-0000-0000-0000-000000000001','$HB','توأم أ','HB-100','{}',0),
+  ('e8000000-0000-0000-0000-000000000002','$HB','توأم ب','hb-100','{}',0),
+  ('e8000000-0000-0000-0000-000000000003','$HB','صاحبُ الرمز','HB-OWN','{}',0),
+  ('e8000000-0000-0000-0000-000000000004','$HB','المستعير','HB-BORROW',array['HB-OWN'],0),
+  ('e8000000-0000-0000-0000-000000000005','$HB','كيبورد عربي','اففحس','{}',0),
+  ('e8000000-0000-0000-0000-000000000006','$HB','إكسل علمي','1.23457E+12','{}',0),
+  ('e8000000-0000-0000-0000-000000000007','$HB','إكسل ذيل','8681234567890.0','{}',0),
+  ('e8000000-0000-0000-0000-000000000008','$HB','رمزٌ فارغ',chr(8206)||' ','{}',0),
+  ('e8000000-0000-0000-0000-000000000009','$HB','سليم','6970967772736','{}',0)
+  on conflict do nothing;" >/dev/null 2>&1
+$P -c "alter table products enable trigger products_no_twin_code;" >/dev/null 2>&1
+chk "محفّزُ التوأم رجع مفعَّلاً بعد الزرع" \
+    "select (tgenabled='O')::text from pg_trigger where tgrelid='products'::regclass and tgname='products_no_twin_code'" "true"
+chk "  والزرعُ وصل كاملاً (وإلا فالأنواعُ تُقاس على لا شيء)" \
+    "select count(*)::text from products where clinic_id='$HB'" "9"
+chk "توأمٌ مطبَّع: الصفّان كلاهما (وطيُّ الحالة يجمعهما)" \
+    "select count(*)::text from $HBJ where h.kind='twin'" "2"
+chk "ورمزٌ إضافيٌّ صاحبُه غيرُه: المستعيرُ وحده" \
+    "select coalesce(string_agg(h.product_name,'،'),'∅') from $HBJ where h.kind='alt_owned'" "المستعير"
+chk "وحروفٌ عربية بالباركود" \
+    "select count(*)::text from $HBJ where h.kind='arabic'" "1"
+chk "وشكلا إكسل (علميّ وذيلُ صفر)" \
+    "select count(*)::text from $HBJ where h.kind='excel'" "2"
+chk "ورمزٌ يفرغ بعد التطبيع" \
+    "select count(*)::text from $HBJ where h.kind='empty'" "1"
+chk "والرمزُ السليم لا يُشتكى منه" \
+    "select count(*)::text from $HBJ where h.product_name='سليم'" "0"
+# بالمعرّفات لا بالأسماء: كتلةُ 0165/0166 تزرع «المستعير» و«صاحبُ الرمز» بعيادةِ
+# الفحص الأولى، فالمطابقةُ بالاسم كانت تجد صفَّ العيادة **نفسِها** وتظنّه تسرّباً.
+# ومعرّفاتُ هذه الكتلة وحدَها تبدأ بـ`e8000000` فالسؤالُ صار دقيقاً: أترى عيادةٌ
+# أخرى شيئاً ممّا زُرع هنا؟
+chk "ولا ترى عيادةٌ رموزَ عيادةٍ أخرى" \
+    "select count(*)::text from (select set_config('request.jwt.claim.sub','11111111-1111-1111-1111-111111111111',true)) s cross join lateral verify_barcode_health() h where h.product_id::text like 'e8000000-%'" "0"
 
 [ $fail -eq 0 ] && echo "✓ كل الفحوص عبرت" || { echo "✗ اكو فحصٌ فشل"; exit 1; }
