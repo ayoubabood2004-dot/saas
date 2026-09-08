@@ -216,13 +216,14 @@ let shelfDef = 0;
 for (let i = 0; i < N; i++) { const c = digits(int(1, 14)); if (looksLikeShelfCode(noisy(c)) === (c.length < 8)) shelfDef++; }
 check("أقلُّ من ٨ خانات بعد التطبيع = رقمُ رفّ، وإلا باركود", shelfDef === N, `${shelfDef}/${N}`);
 
-/* ── ٧) Tab فاصلاً: يقبل ما يقبله Enter، ويرفض ما يرفضه ────────────────────
- * الخاصّيةُ لا المثال: لا يكفي أن تمرّ دفعةٌ واحدة بـTab. المطلوب أن يكون Tab
- * **مكافئاً** لـEnter بالحكم على أيّ دفعةٍ كانت — وإلا صار للماسحَين سلوكان.
- * ويبقى فرقٌ واحدٌ مقصود: Enter يُفرغ المجمَّعَ دائماً، وTab لا يُفرغه إن رُفض
- * (لأن الإنسانَ ينتقل بين الحقول ولا يقصد مسحة). */
+/* ── ٧) Tab فاصلاً: أضيقُ من Enter دائماً، ولا يقبل كتابةَ إنسانٍ أبداً ─────
+ * الخاصّيةُ الأولى **احتواء**: ما يقبله Tab يقبله Enter قطعاً، والعكسُ ليس
+ * لازماً. وهذا مقصود: Tab مفتاحُ تنقّلٍ بين الحقول، فقبولُه الخاطئ يبتلع حركةً
+ * يقصدها المستخدم ويهبط سطراً بالسلّة، بينما قبولُ Enter الخاطئ لا يبتلع شيئاً.
+ * والخاصّيةُ الثانية هي الجوهر: **لا كتابةَ إنسانٍ تُقرأ مسحةً عند Tab** —
+ * مهما أسرع، ومهما تفاوتت فجواتُه. وهذه هي التي كانت مكسورةً وما أمسكها فحص. */
 console.log(`▸ Tab فاصلاً — ${N} دفعة`);
-let tabSame = 0, tabKeeps = 0;
+let tabSubset = 0, noHumanTab = 0, tabKeeps = 0;
 for (let i = 0; i < N; i++) {
   const code = rnd() < 0.5 ? digits(int(3, 14)) : pick(["w90", "A-12", "247", "abc123"]);
   const machine = rnd() < 0.5;
@@ -235,16 +236,26 @@ for (let i = 0; i < N; i++) {
   const b = createScanAssembler(); const tb = feedAll(b);
   const viaEnter = a.feed("Enter", ta + int(1, 25));
   const viaTab = b.feed("Tab", tb + int(1, 25));
-  if (viaEnter === viaTab) tabSame++;
-  // Tab مرفوضٌ لا يُفرغ: إكمالُ الرمز بعده ثم Enter يصل كاملاً.
+  if (viaTab === null || viaTab === viaEnter) tabSubset++;
+
+  // إنسانٌ **سريع**: ٤٥–٩٠ ملّي ثانية، وهو المدى الذي كان يُقرأ مسحةً.
+  const h = createScanAssembler();
+  let th = 4000;
+  const typed = digits(int(4, 13));
+  for (let k = 0; k < typed.length; k++) { th += k ? int(45, 90) : 0; h.feed(typed[k], th); }
+  if (h.feed("Tab", th + int(1, 20)) === null) noHumanTab++;
+
+  // وTab المرفوضُ لا يُفرغ المجمَّع: الإنسانُ ينتقل ولا يخسر ما كتب.
   if (viaTab === null) {
     const extra = digits(2);
     let t2 = tb + int(1, 25);
     for (const ch of extra) { t2 += int(1, 25); b.feed(ch, t2); }
-    if (b.feed("Enter", t2 + int(1, 25)) === null || machine === false) tabKeeps++;
+    const after = b.feed("Enter", t2 + int(1, 25));
+    if (after === null || after.endsWith(extra)) tabKeeps++;
   } else tabKeeps++;
 }
-check("Tab يحكم كما يحكم Enter على الدفعة نفسِها", tabSame === N, `${tabSame}/${N}`);
+check("ما يقبله Tab يقبله Enter — ولا عكس (احتواءٌ لا تكافؤ)", tabSubset === N, `${tabSubset}/${N}`);
+check("ولا كتابةَ إنسانٍ سريعة (٤٥–٩٠ م.ث) تُقرأ مسحةً عند Tab", noHumanTab === N, `${noHumanTab}/${N}`);
 check("وTab المرفوضُ لا يُفرغ المجمَّع (تنقّلٌ لا مسحة)", tabKeeps === N, `${tabKeeps}/${N}`);
 
 /* ── ٨) عكسُ تخطيط الكيبورد: ذهابٌ وإيابٌ بلا فقد ─────────────────────────

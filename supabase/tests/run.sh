@@ -1228,8 +1228,10 @@ chk "مطابقةُ الشراء تقرأ alt_codes (record_purchase)" \
     "select (prosrc like '%alt_codes%')::text from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='record_purchase'" "true"
 chk "ومثلُها update_purchase" \
     "select (prosrc like '%alt_codes%')::text from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='update_purchase'" "true"
-chk "والأساسيُّ يغلب الإضافيّ بترتيب الشراء" \
-    "select count(*)::text from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname in ('record_purchase','update_purchase') and prosrc like '%order by (inv_norm_code(barcode) = v_code%'" "2"
+# المقطعُ يقف عند `= v_code` فيمرّ ولو انقلب `desc` إلى `asc` — أي ولو صار
+# الإضافيُّ يغلب الأساسيّ، وهو نقيضُ ما يحرسه. فيمتدّ إلى الاتجاه نفسِه.
+chk "والأساسيُّ يغلب الإضافيّ بترتيب الشراء (بالاتجاه لا بالوجود)" \
+    "select count(*)::text from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname in ('record_purchase','update_purchase') and prosrc like '%order by (inv_norm_code(barcode) = v_code and coalesce(barcode,'''') <> '''') desc%'" "2"
 chk "استدعاءُ الرمز مرتَّبٌ حتميّاً (لا rows[0] عشوائيّ)" \
     "select (prosrc like '%order by coalesce(barcode = p_code, false) desc%')::text from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='product_by_code'" "true"
 chk "  ويطابق مطبَّعاً لا خامّاً وحده" \
