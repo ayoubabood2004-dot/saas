@@ -219,6 +219,18 @@
     "minutes": "min",
     "done": "Done"
   },
+  "sf": {
+    "featOn": "Put it in the featured row at the top of the store",
+    "featOff": "Remove it from featured",
+    "featFailed": "Could not update featured",
+    "featured": "Our picks",
+    "sortDefault": "Default order",
+    "sortCheap": "Cheapest first",
+    "sortExp": "Priciest first",
+    "close": "Close",
+    "out": "Out of stock",
+    "addToCart": "Add to cart"
+  },
   "track": {
     "staleDay": "A full day with no decision",
     "staleHours": "Over 6 hours old",

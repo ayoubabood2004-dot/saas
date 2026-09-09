@@ -1689,6 +1689,7 @@ const demoRepo = {
         price: p.sell_price, descr: p.store_desc ?? null,
         available: p.stock > 0 || poolOf(p) > 0,
         image_path: p.image_path ?? null,
+        featured: !!p.store_featured,
       }));
   },
   /** تتبّع الزبون (0176): الرقم والهاتف معاً — الرقم وحده قصيرٌ فيُعَدّ تخميناً. */

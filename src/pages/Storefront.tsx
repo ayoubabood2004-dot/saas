@@ -58,6 +58,9 @@ export function Storefront() {
   const [cat, setCat] = useState<string>("all");
   const [cart, setCart] = useState<CartLine[]>(() => loadCart(slug));
   const [sheet, setSheet] = useState<"none" | "cart" | "checkout">("none");
+  /** ورقة تفاصيل منتج (المرحلة ٣): صورة كبيرة ووصف كامل وعدّاد كمية. */
+  const [detail, setDetail] = useState<StoreCatalogItem | null>(null);
+  const [sort, setSort] = useState<"default" | "priceAsc" | "priceDesc">("default");
   const [placed, setPlaced] = useState<{ order_no: string; total: number } | null>(null);
   // الكاتلوج يتحمّل بصفحات (٦٠ بالطلب): أول رسم خفيف على موبايل بطيء،
   // و«عرض المزيد» يجيب الباقي. hasMore = آخر صفحة رجعت ممتلئة.
@@ -134,10 +137,19 @@ export function Storefront() {
 
   const shown = useMemo(() => {
     const ql = q.trim().toLowerCase();
-    return catalog.filter((c) =>
+    const list = catalog.filter((c) =>
       (cat === "all" || (c.category ?? "other") === cat) &&
       (!ql || c.name.toLowerCase().includes(ql) || (c.subcategory ?? "").toLowerCase().includes(ql) || (c.descr ?? "").toLowerCase().includes(ql)));
-  }, [catalog, q, cat]);
+    if (sort === "priceAsc") return [...list].sort((a, b) => a.price - b.price);
+    if (sort === "priceDesc") return [...list].sort((a, b) => b.price - a.price);
+    return list;
+  }, [catalog, q, cat, sort]);
+
+  /** مختارات العيادة (0177): تظهر أعلى الكتلوج بلا بحثٍ ولا فئةٍ منتقاة —
+   *  بحثُ الزبون أولى من تسويقنا. */
+  const featured = useMemo(
+    () => (cat === "all" && !q.trim() ? catalog.filter((c) => c.featured && c.available).slice(0, 12) : []),
+    [catalog, cat, q]);
 
   const qtyOf = (id: string) => cart.find((l) => l.id === id)?.qty ?? 0;
   const setQty = (id: string, qty: number) => {
@@ -271,12 +283,18 @@ export function Storefront() {
               className="w-full rounded-2xl border border-line bg-surface-1 py-2.5 pe-9 ps-4 text-sm text-ink outline-none transition focus:border-brand-400" />
           </div>
           {cats.length > 1 && (
-            <div className="flex gap-1.5 overflow-x-auto pb-0.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
               <CatChip active={cat === "all"} onClick={() => { playTap(); setCat("all"); }} label="الكل" emoji="✨" />
               {cats.map((c) => {
                 const look = categoryLook(c);
                 return <CatChip key={c} active={cat === c} onClick={() => { playTap(); setCat(c); }} label={look.label} emoji={look.emoji} />;
               })}
+              <select value={sort} onChange={(e) => { playTap(); setSort(e.target.value as typeof sort); }} data-storesort
+                className="ms-auto shrink-0 rounded-full border border-line bg-surface-1 px-2.5 py-1.5 text-2xs font-bold text-ink-muted outline-none">
+                <option value="default">{t("sf.sortDefault", "الترتيب المعتاد")}</option>
+                <option value="priceAsc">{t("sf.sortCheap", "الأرخص أولاً")}</option>
+                <option value="priceDesc">{t("sf.sortExp", "الأغلى أولاً")}</option>
+              </select>
             </div>
           )}
         </div>
@@ -284,6 +302,29 @@ export function Storefront() {
 
       {/* الكاتلوج */}
       <main className="mx-auto max-w-3xl px-4 py-4">
+        {/* مختارات العيادة — صفٌّ أفقيّ قبل الشبكة */}
+        {featured.length > 0 && (
+          <section className="mb-4" data-featuredrow>
+            <h2 className="mb-2 flex items-center gap-1.5 text-sm font-extrabold text-ink">✨ {t("sf.featured", "مختاراتنا")}</h2>
+            <div className="flex gap-2.5 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+              {featured.map((p) => {
+                const look = categoryLook(p.category);
+                const img = productImageUrl(p.image_path);
+                return (
+                  <button key={p.id} onClick={() => { playTap(); setDetail(p); }}
+                    className="flex w-28 shrink-0 flex-col overflow-hidden rounded-2xl border border-line bg-surface-1 text-start transition active:scale-95">
+                    <div className={cn("relative grid h-24 w-full place-items-center bg-gradient-to-br text-3xl", look.grad)}>
+                      {look.emoji}
+                      {img && <img src={img} alt="" loading="lazy" className="absolute inset-0 h-full w-full object-cover" onError={(e) => { e.currentTarget.hidden = true; }} />}
+                    </div>
+                    <span className="line-clamp-2 p-1.5 text-2xs font-bold leading-snug text-ink">{p.name}</span>
+                    <span className="px-1.5 pb-1.5 font-display text-xs font-extrabold tabular-nums text-brand-600">{money(p.price)}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+        )}
         {catalog.length === 0 ? (
           <div className="grid place-items-center gap-2 py-16 text-center text-ink-subtle">
             <PackageX size={30} className="opacity-40" />
@@ -308,8 +349,11 @@ export function Storefront() {
                     inCart > 0 ? "border-brand-400 shadow-raised" : "border-line",
                     !p.available && "opacity-60")}>
                   {/* الصورة فوق رمز الفئة لا بدلَه: فشلُ تحميلها (ملفٌ حُذف، شبكةٌ
-                      ضعيفة) يخفيها بـhidden فيبقى الرمزُ تحتها — بطاقةٌ ما تصير فارغة. */}
-                  <div className={cn("relative grid h-24 place-items-center overflow-hidden bg-gradient-to-br text-4xl", look.grad)}>
+                      ضعيفة) يخفيها بـhidden فيبقى الرمزُ تحتها — بطاقةٌ ما تصير فارغة.
+                      والضغطة تفتح ورقة التفاصيل (صورة أكبر + الوصف كاملاً). */}
+                  <div role="button" tabIndex={0} onClick={() => { playTap(); setDetail(p); }}
+                    onKeyDown={(e) => { if (e.key === "Enter") { playTap(); setDetail(p); } }}
+                    className={cn("relative grid h-24 cursor-pointer place-items-center overflow-hidden bg-gradient-to-br text-4xl", look.grad)}>
                     {look.emoji}
                     {productImageUrl(p.image_path) && (
                       <img src={productImageUrl(p.image_path) as string} alt="" loading="lazy"
@@ -359,6 +403,46 @@ export function Storefront() {
         )}
         <p className="mt-8 flex items-center justify-center gap-1.5 text-2xs text-ink-subtle"><PawPrint size={12} /> متجر مقدَّم من doctorVet</p>
       </main>
+
+      {/* ورقة تفاصيل المنتج (المرحلة ٣): صورة أكبر + الوصف كاملاً + عدّاد */}
+      {detail && (() => {
+        const look = categoryLook(detail.category);
+        const img = productImageUrl(detail.image_path);
+        const n = qtyOf(detail.id);
+        return (
+          <div className="fixed inset-0 z-40" data-detailsheet>
+            <div className="absolute inset-0 bg-ink/40" onClick={() => setDetail(null)} />
+            <motion.div initial={{ y: 80, opacity: 0 }} animate={{ y: 0, opacity: 1 }}
+              className="absolute inset-x-0 bottom-0 mx-auto max-w-3xl rounded-t-3xl bg-surface-1 p-4 pb-6 shadow-raised">
+              <div className={cn("relative grid h-52 place-items-center overflow-hidden rounded-2xl bg-gradient-to-br text-6xl", look.grad)}>
+                {look.emoji}
+                {img && <img src={img} alt="" className="absolute inset-0 h-full w-full object-cover" onError={(e) => { e.currentTarget.hidden = true; }} />}
+                <button onClick={() => { playTap(); setDetail(null); }} aria-label={t("sf.close", "إغلاق")}
+                  className="absolute end-2 top-2 grid h-8 w-8 place-items-center rounded-full bg-ink/60 text-white"><X size={16} /></button>
+              </div>
+              <h2 className="mt-3 text-base font-extrabold leading-snug text-ink">{detail.name}</h2>
+              {detail.subcategory && <span className="mt-1 inline-block rounded-full bg-surface-2 px-2 py-0.5 text-2xs text-ink-subtle">{detail.subcategory}</span>}
+              {detail.descr && <p className="mt-2 max-h-32 overflow-y-auto text-sm leading-relaxed text-ink-muted">{detail.descr}</p>}
+              <div className="mt-4 flex items-center justify-between gap-3">
+                <p className="font-display text-lg font-extrabold tabular-nums text-brand-600">{money(detail.price)}</p>
+                {!detail.available ? (
+                  <span className="text-sm font-bold text-ink-subtle">{t("sf.out", "نافد حالياً")}</span>
+                ) : n === 0 ? (
+                  <button onClick={() => add(detail.id)} className="rounded-2xl bg-brand-600 px-6 py-3 text-sm font-extrabold text-white transition active:scale-95">
+                    {t("sf.addToCart", "أضف للسلة")}
+                  </button>
+                ) : (
+                  <div className="flex items-center gap-2 rounded-2xl bg-brand-50 p-1.5 dark:bg-brand-500/15">
+                    <button onClick={() => { playTap(); setQty(detail.id, n - 1); }} className="grid h-9 w-9 place-items-center rounded-xl bg-white text-brand-700 shadow-soft transition active:scale-90 dark:bg-surface-1"><Minus size={15} /></button>
+                    <span className="w-6 text-center text-base font-extrabold tabular-nums text-brand-700 dark:text-brand-300">{formatNum(n)}</span>
+                    <button onClick={() => add(detail.id)} className="grid h-9 w-9 place-items-center rounded-xl bg-brand-600 text-white transition active:scale-90"><Plus size={15} /></button>
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          </div>
+        );
+      })()}
 
       {/* شريط السلة العائم */}
       <AnimatePresence>

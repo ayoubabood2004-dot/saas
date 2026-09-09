@@ -551,6 +551,8 @@ export interface Product {
   store_desc?: string | null;
   /** مسار صورة المنتج ببucket «product-images» (0174) — أو data URL بالوضع التجريبي. لا بايتات بالقاعدة أبداً. */
   image_path?: string | null;
+  /** مختارات المتجر (0177): يظهر بصفّ «مختارات» أعلى الستور. */
+  store_featured?: boolean;
   created_at: string;
 }
 
@@ -1344,6 +1346,8 @@ export interface StoreCatalogItem {
   available: boolean;
   /** مسار الصورة (0174) — قد يغيب عن خادمٍ لم يرحَّل بعد، والبطاقة ترجع لرمز الفئة. */
   image_path?: string | null;
+  /** مختارات (0177) — قد يغيب عن خادمٍ لم يرحَّل بعد، فالصفّ ببساطة لا يظهر. */
+  featured?: boolean;
 }
 
 /** جواب تتبّع طلب المتجر (0176) — للزبون برقم الطلب وهاتفه معاً. */

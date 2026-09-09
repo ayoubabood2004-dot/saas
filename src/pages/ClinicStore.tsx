@@ -434,6 +434,7 @@ function OrdersTab({ orders, products, profile, clinicId, reload, goSettings }: 
 /* ============================== التشكيلة ============================== */
 
 function CatalogTab({ products, reload, storeOn }: { products: Product[] | null; reload: () => Promise<void>; storeOn: boolean }) {
+  const { t } = useTranslation();
   const toast = useToast();
   const [q, setQ] = useState("");
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -450,6 +451,17 @@ function CatalogTab({ products, reload, storeOn }: { products: Product[] | null;
   }, [products, q]);
   const shownCount = (products ?? []).filter((p) => p.store_visible).length;
 
+  /** نجمة المختارات (0177) — علمٌ على المنتج، بلا أثرٍ على البيع الداخلي. */
+  const toggleFeatured = async (p: Product) => {
+    if (busyId) return;
+    setBusyId(p.id);
+    try {
+      await repo.updateProduct(p.id, { store_featured: !p.store_featured });
+      p.store_featured ? playTap() : playSuccess();
+      await reload();
+    } catch (e) { playWarning(); toast.error(t("sf.featFailed", "تعذّر تحديث المختارات"), errMsg(e)); }
+    finally { setBusyId(null); }
+  };
   const toggle = async (p: Product) => {
     if (busyId) return;
     setBusyId(p.id);
@@ -539,6 +551,15 @@ function CatalogTab({ products, reload, storeOn }: { products: Product[] | null;
                     title="اضغط لتعديل السعر" className="group flex items-center gap-1 rounded-lg px-2 py-1 transition hover:bg-surface-2">
                     <span className="font-display text-sm font-extrabold tabular-nums text-ink">{money(p.sell_price)}</span>
                     <Pencil size={11} className="text-ink-subtle opacity-0 transition group-hover:opacity-100" />
+                  </button>
+                )}
+                {/* نجمة المختارات (0177) — تظهر فقط للمعروض: مخفيٌّ مميّزٌ تناقض. */}
+                {p.store_visible && (
+                  <button onClick={() => void toggleFeatured(p)} disabled={busyId === p.id} data-featstar
+                    title={p.store_featured ? t("sf.featOff", "شيله من المختارات") : t("sf.featOn", "خلّيه بصفّ المختارات أعلى المتجر")}
+                    className={cn("grid h-9 w-9 shrink-0 place-items-center rounded-full transition active:scale-95",
+                      p.store_featured ? "bg-warn-100 text-warn-700 dark:bg-warn-500/20 dark:text-warn-200" : "border border-line text-ink-subtle hover:bg-surface-2")}>
+                    <Sparkles size={15} />
                   </button>
                 )}
                 {/* مفتاح العرض */}
