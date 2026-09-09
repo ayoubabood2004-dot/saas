@@ -74,7 +74,7 @@ const invNormName = (v: string | null | undefined): string =>
 import { supabase } from "./supabase";
 import { outboxEnqueue, outboxEnqueueRpc, isNetworkError } from "./outbox";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, AppointmentStatus, ClinicInfo, PublicStaff, DailyNote, TreatmentEntry, Admission, Branch, Reminder, Product, Company, CompanySection, Purchase, PurchaseItem, PurchasePayment, PurchaseDraftLine, PurchaseMeta, Courier, DeliveryOrder, PetMovement, DemoDB, Invoice, InvoiceItem, CheckoutItem, SaleMeta, Customer, DiscountType, PaymentMethod, PaymentSplit, WhatsAppMessage, AuditEntry, LoginEvent, PetNote, Expense, ExpenseMethod, ReturnMeta, RetailReturnResult, HealthMetric, ClinicVisit , Surgery, LabResult, LabDeviceLink, LabDeviceInbox, LabStatusValue, PetProblem, CareEntry, FeatureRequest, GeneratedBarcode, StoreProfile, StoreOrder, StoreOrderItem, StoreFrontInfo, StoreCatalogItem, Journey, JourneyEvent, JourneyKind, JourneyStage, JourneyPublicView, EditLine } from "@/types";
+import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, AppointmentStatus, ClinicInfo, PublicStaff, DailyNote, TreatmentEntry, Admission, Branch, Reminder, Product, Company, CompanySection, Purchase, PurchaseItem, PurchasePayment, PurchaseDraftLine, PurchaseMeta, Courier, DeliveryOrder, PetMovement, DemoDB, Invoice, InvoiceItem, CheckoutItem, SaleMeta, Customer, DiscountType, PaymentMethod, PaymentSplit, WhatsAppMessage, AuditEntry, LoginEvent, PetNote, Expense, ExpenseMethod, ReturnMeta, RetailReturnResult, HealthMetric, ClinicVisit , Surgery, LabResult, LabDeviceLink, LabDeviceInbox, LabStatusValue, PetProblem, CareEntry, FeatureRequest, GeneratedBarcode, StoreProfile, StoreOrder, StoreOrderItem, StoreFrontInfo, StoreCatalogItem, LibraryImage, Journey, JourneyEvent, JourneyKind, JourneyStage, JourneyPublicView, EditLine } from "@/types";
 import type { CompanyCharge } from "@/types";
 import type { DeletedProduct, CourierSettlement, ReceiptsDay, ReceiptsTotal, TopProductRow, StaffSalesRow, InvoiceSearch } from "@/types";
 import type { BarcodeAilment, BarcodeHealthRow } from "@/types";
@@ -1311,6 +1311,30 @@ const demoRepo = {
     db.products.push(p);
     saveDB(db);
     return p;
+  },
+  /* ── مكتبة صور المنصّة (0175) — تجريبياً: مصفوفة بقاعدة الجهاز والمسار data URL ── */
+  async listImageLibrary(): Promise<LibraryImage[]> {
+    return [...(loadDB().imageLibrary ?? [])].sort((a, b) => (a.company ?? "").localeCompare(b.company ?? "") || a.name.localeCompare(b.name));
+  },
+  async createLibraryImage(meta: { name: string; company?: string | null; section?: string | null; barcode?: string | null }, upload: { blob: Blob; dataUrl: string }): Promise<LibraryImage> {
+    const db = loadDB();
+    const row: LibraryImage = {
+      id: uid("lib"), name: meta.name.trim(), company: meta.company?.trim() || null,
+      section: meta.section?.trim() || null, barcode: normalizeCode(meta.barcode) || null,
+      path: upload.dataUrl, updated_at: new Date().toISOString(),
+    };
+    db.imageLibrary = [...(db.imageLibrary ?? []), row];
+    saveDB(db);
+    return row;
+  },
+  async deleteLibraryImage(id: string, _path: string): Promise<void> {
+    void _path;
+    const db = loadDB();
+    db.imageLibrary = (db.imageLibrary ?? []).filter((r) => r.id !== id);
+    saveDB(db);
+  },
+  async imageLibraryUsage(path: string): Promise<number> {
+    return (loadDB().products ?? []).filter((p) => p.image_path === path).length;
   },
   /** صورة المنتج (0174) — تجريبياً: لا مخزنَ ملفات، فيرجع data URL المضغوط
    *  ليُحفظ بـ`image_path` كما هو. الشاشات لا تفرّق بينه وبين مسار سحابيّ. */
@@ -4023,6 +4047,32 @@ const supabaseRepo: typeof demoRepo = {
       return { ...row, created_at: new Date().toISOString() } as Product;
     }
   },
+  /* ── مكتبة صور المنصّة (0175): الجدول يقرؤه الجميع ويكتبه المشغّل وحده
+   *    (سياسات is_platform_admin بالقاعدة — لا حارسَ واجهةٍ يُعتمد عليه). ── */
+  async listImageLibrary() {
+    return listOf<LibraryImage>(await sbc().from("image_library").select("*").order("company", { ascending: true }).order("name", { ascending: true }).limit(1000));
+  },
+  async createLibraryImage(meta, upload) {
+    const id = uuid();
+    const path = `library/${id}.webp`;
+    const up = await sbc().storage.from("product-images").upload(path, upload.blob, { contentType: upload.blob.type || "image/webp", upsert: false });
+    if (up.error) throw up.error;
+    return need<LibraryImage>(await sbc().from("image_library").insert({
+      id, name: meta.name.trim(), company: meta.company?.trim() || null,
+      section: meta.section?.trim() || null, barcode: normalizeCode(meta.barcode) || null, path,
+    }).select().single());
+  },
+  async deleteLibraryImage(id, path) {
+    const r = await sbc().from("image_library").delete().eq("id", id);
+    if (r.error) throw r.error;
+    // الملف بعد الصفّ وبأفضل جهد: يتيمٌ لا يُرى أهون من صفٍّ بلا ملف.
+    try { await sbc().storage.from("product-images").remove([path]); } catch { /* swallow-ok: الملف اليتيم لا يظهر بالمنتقي (الصفُّ راح) ولا يُحاسَب حجماً يُذكر */ }
+  },
+  async imageLibraryUsage(path) {
+    const { data, error } = await sbc().rpc("image_library_usage", { p_path: path });
+    if (error) throw error;
+    return Number(data ?? 0);
+  },
   /** صورة المنتج (0174): البايتات إلى bucket «product-images» بمسار
    *  `<clinic>/<product>.webp` — سياسةُ المخزن تشترط تطابق المجلد مع
    *  `auth_clinic()`، فرفعٌ بعيادةٍ غلط يُرفض من الخادم لا من الواجهة.
@@ -4039,8 +4089,10 @@ const supabaseRepo: typeof demoRepo = {
   },
   async deleteProductImage(clinicId, productId, path) {
     void clinicId; void productId;
-    // أفضل جهدٍ: بقاءُ ملفٍ يتيمٍ أهون من إفشال تصفير المسار — والمسار data: تجريبيّ لا ملف له.
-    if (!path || path.startsWith("data:")) return;
+    // أفضل جهدٍ: بقاءُ ملفٍ يتيمٍ أهون من إفشال تصفير المسار — والمسار data: تجريبيّ
+    // لا ملف له. وملفُ المكتبة (library/) ملكُ المنصّة يخدم كلَّ العيادات:
+    // «شيل الصورة» بعيادةٍ يفكّ مرجعَها هي، ولا يحذف ملفاً مشترَكاً أبداً.
+    if (!path || path.startsWith("data:") || path.startsWith("library/")) return;
     try { await sbc().storage.from("product-images").remove([path]); } catch { /* swallow-ok: ملفٌ يتيمٌ لا يُرى ولا يُحاسَب، والحذفُ يُعاد من أي حفظٍ لاحق */ }
   },
   async updateProduct(id, patch) {
@@ -4952,7 +5004,7 @@ const READ_ONLY_ALLOWED = new Set<string>([
   "listBookingsForDay", "listBranches", "listCareEntries", "listClinicDirectory",
   "listClinicLabResults", "listClinicStaffPublic", "listClinicTreatments", "listClinicVisits",
   "listClinicVisitsForPet", "listCompanies", "listCompanySections", "listCouriers",
-  "listDeliveryOrders", "listDeviceInbox", "listDeviceLinks", "listDoctorBusySlots",
+  "listDeliveryOrders", "listDeviceInbox", "listDeviceLinks", "listDoctorBusySlots", "listImageLibrary",
   "listEndedClinicVisits", "listExpenses", "listFeatureRequests", "listGeneratedBarcodes",
   "listInvoiceItems", "listInvoices", "listJourneyEvents", "listLabResults", "listLoginEvents",
   "listMedia", "listOpenClinicVisits", "listPetMovements", "listPetNotes", "listPets",

@@ -562,6 +562,17 @@ console.log("▸ الدفعة ٧ — بطاقاتٌ توصل، وسقوفٌ تُ
   check("  والنسختان التجريبية والسحابية كلتاهما تعرفان الرفع", (repoS.split("async uploadProductImage(").length - 1) === 2);
   check("  وبطاقةُ المتجر كسولةُ التحميل وتسقط لرمز الفئة بـhidden", front.includes('loading="lazy"') && front.includes("e.currentTarget.hidden = true"));
   check("  وفشلُ الصورة معزولٌ عن حفظ المنتج ويُقال", invP.includes("pos.photoSaveFailed"));
+
+  /* ── مكتبة الصور (0175): يبنيها المالك ويختار منها الدكتور ──────────────
+   * المحروس: الاختيارُ مرجعٌ لا نسخة، و«شيل الصورة» بعيادةٍ لا يحذف ملفَ
+   * المكتبة المشترك أبداً، والمنتقي قراءةٌ فقط (لا زرَّ رفعٍ فيه). */
+  const mig175 = readFileSync("supabase/migrations/0175_image_library.sql", "utf8");
+  const picker = readFileSync("src/components/inventory/ImageLibraryPicker.tsx", "utf8");
+  check("0175: كتابةُ المكتبة وملفاتها بشرط المشغّل", mig175.includes("(select is_platform_admin())") && mig175.includes("= 'library'"));
+  check("  والمنتقي بلا زرِّ رفع (قراءةٌ فقط بقرار المالك)", !/type="file"/.test(picker) && picker.includes("listImageLibrary"));
+  check("  والاختيارُ مرجعٌ يُكتب كما هو لا نسخة", invP.includes("image_path: libPick"));
+  check("  و«شيل الصورة» بعيادةٍ لا يحذف ملفَ المكتبة", repoS.includes('path.startsWith("library/")'));
+  check("  والنسختان تعرفان المكتبة", (repoS.split("async createLibraryImage(").length - 1) === 2);
 }
 
 console.log(`\n${fails ? "✗" : "✓"} products-test: ${passes} نجحت، ${fails} فشلت`);

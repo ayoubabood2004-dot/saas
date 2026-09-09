@@ -1200,6 +1200,7 @@ export interface DemoDB {
   couriers?: Courier[];
   deliveryOrders?: DeliveryOrder[];
   courierSettlements?: CourierSettlement[];
+  imageLibrary?: LibraryImage[];
   petMovements?: PetMovement[];
   surgeries?: Surgery[];
   waMessages?: WhatsAppMessage[];
@@ -1343,6 +1344,19 @@ export interface StoreCatalogItem {
   available: boolean;
   /** مسار الصورة (0174) — قد يغيب عن خادمٍ لم يرحَّل بعد، والبطاقة ترجع لرمز الفئة. */
   image_path?: string | null;
+}
+
+/** مكتبة صور المنصّة (0175): يبنيها مشغّل المنصّة ويقسمها شركةً وصنفاً (نصّان
+ *  حرّان — لا اقتران بجداول عيادة)، والدكاترة منتقٍ قراءةً فقط. `path` هو ما
+ *  يُكتب بـ`products.image_path` عند الاختيار — مرجعٌ لملفٍ واحد لا نسخة. */
+export interface LibraryImage {
+  id: string;
+  name: string;
+  company: string | null;
+  section: string | null;
+  barcode: string | null;
+  path: string;
+  updated_at: string;
 }
 
 /* ── بوّابة المالك (هجرة 0158) ─────────────────────────────────────────────

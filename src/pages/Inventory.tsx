@@ -27,6 +27,7 @@ import { cn, formatDate, money, fmtKg, searchable, normalizeCode, matchCode, nor
 import { withTimeout, describeDbError, describeUploadError } from "@/lib/errors";
 import { prepareUpload, type PreparedUpload } from "@/lib/image";
 import { productImageUrl } from "@/lib/storeLib";
+import { ImageLibraryPicker } from "@/components/inventory/ImageLibraryPicker";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
 import { openStockReport } from "@/lib/stockReportPrint";
 import { exportStocktakeXlsx } from "@/lib/stockReportXlsx";
@@ -733,11 +734,16 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
   /** صورة المتجر (0174): تُضغط بالمتصفح لحظةَ الاختيار وتُرفع بعد نجاح الحفظ —
    *  ففشلُ صورةٍ لا يضيّع منتجاً، والعكسُ يُقال بجملته لا يُبلع. */
   const [photo, setPhoto] = useState<PreparedUpload | null>(null);
+  /** اختيارٌ من مكتبة المنصّة (0175): مسارُ ملف المكتبة يُكتب كما هو — مرجعٌ لا نسخة. */
+  const [libPick, setLibPick] = useState<string | null>(null);
+  const [libOpen, setLibOpen] = useState(false);
   const [removePhoto, setRemovePhoto] = useState(false);
   const [photoBusy, setPhotoBusy] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
-  const photoPreview = photo ? photo.dataUrl : (removePhoto ? null : productImageUrl(product?.image_path));
-  useEffect(() => { setPhoto(null); setRemovePhoto(false); }, [open, product?.id]);
+  const photoPreview = photo ? photo.dataUrl
+    : libPick ? productImageUrl(libPick)
+    : (removePhoto ? null : productImageUrl(product?.image_path));
+  useEffect(() => { setPhoto(null); setLibPick(null); setRemovePhoto(false); }, [open, product?.id]);
   const pickPhoto = async (file: File) => {
     setPhotoBusy(true);
     try { setPhoto(await prepareUpload(file, { maxDim: 800, quality: 0.72 })); setRemovePhoto(false); }
@@ -996,11 +1002,14 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
         savedClinic = savedClinic ?? created.clinic_id ?? null;
       }
       // الصورة بعد نجاح الحفظ وبمحاولةٍ معزولة: فشلُها لا يضيّع المنتج، ويُقال.
-      if (savedId && (photo || (removePhoto && product?.image_path))) {
+      // الأولوية: تصويرٌ ذاتيّ ← اختيارُ مكتبة ← إزالة — آخرُ نيّةٍ صريحة تغلب.
+      if (savedId && (photo || libPick || (removePhoto && product?.image_path))) {
         try {
           if (photo) {
             const path = await repo.uploadProductImage(savedClinic, savedId, photo);
             await repo.updateProduct(savedId, { image_path: path });
+          } else if (libPick) {
+            await repo.updateProduct(savedId, { image_path: libPick });
           } else {
             await repo.updateProduct(savedId, { image_path: null });
             if (product?.image_path) void repo.deleteProductImage(savedClinic, savedId, product.image_path);
@@ -1502,11 +1511,16 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
                 <span className="grid h-16 w-16 shrink-0 place-items-center rounded-xl border border-dashed border-line-strong text-ink-subtle"><Camera size={20} /></span>
               )}
               <div className="flex min-w-0 flex-col items-start gap-1.5">
-                <Button type="button" variant="secondary" size="sm" loading={photoBusy} leftIcon={<Camera size={14} />} onClick={() => { playTap(); fileRef.current?.click(); }}>
-                  {t("pos.photoPick", "صوّر بنفسك أو اختر ملفاً")}
-                </Button>
-                {(photo || (product?.image_path && !removePhoto)) && (
-                  <button type="button" className="text-2xs font-bold text-warn-700 hover:underline" onClick={() => { playTap(); setPhoto(null); setRemovePhoto(true); }}>
+                <div className="flex flex-wrap gap-1.5">
+                  <Button type="button" variant="secondary" size="sm" leftIcon={<Boxes size={14} />} onClick={() => { playTap(); setLibOpen(true); }} data-libpick>
+                    {t("pos.photoFromLib", "اختر من المكتبة")}
+                  </Button>
+                  <Button type="button" variant="secondary" size="sm" loading={photoBusy} leftIcon={<Camera size={14} />} onClick={() => { playTap(); fileRef.current?.click(); }}>
+                    {t("pos.photoPick", "صوّر بنفسك أو اختر ملفاً")}
+                  </Button>
+                </div>
+                {(photo || libPick || (product?.image_path && !removePhoto)) && (
+                  <button type="button" className="text-2xs font-bold text-warn-700 hover:underline" onClick={() => { playTap(); setPhoto(null); setLibPick(null); setRemovePhoto(true); }}>
                     {t("pos.photoRemove", "شيل الصورة")}
                   </button>
                 )}
@@ -1514,6 +1528,8 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
               </div>
               <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={(e) => { const fl = e.target.files?.[0]; if (fl) void pickPhoto(fl); e.target.value = ""; }} />
             </div>
+            <ImageLibraryPicker open={libOpen} onClose={() => setLibOpen(false)}
+              onPick={(row) => { setLibPick(row.path); setPhoto(null); setRemovePhoto(false); }} />
           </div>
         </div>
       </div>

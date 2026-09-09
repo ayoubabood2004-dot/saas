@@ -22,7 +22,7 @@ DB=dvtest
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MIG="$HERE/../migrations"
 # الهجرات التي يغطّيها هذا المخطّط الأساس. زدها كل ما تنضاف موجة.
-WAVE="$MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql"
+WAVE="$MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql"
 
 command -v "$PGBIN/initdb" >/dev/null || { echo "ما لكيت بوستغريس بـ $PGBIN"; exit 1; }
 
@@ -1513,5 +1513,28 @@ chk "وكتلوج المتجر يرجع المسار" \
     "select (prosrc like '%p.image_path%')::text from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='store_catalog'" "true"
 chk "وتوقيعٌ واحد للدالّة لا اثنان" \
     "select count(*)::text from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='store_catalog'" "1"
+
+# ── 0175: مكتبة الصور — القراءة للجميع والكتابة للمشغّل وحده ─────────────────
+# الحارس بالقاعدة لا بالواجهة، فيُفحص بدور authenticated حقيقيّ (_rls_try):
+# موظّفُ عيادةٍ لا يكتب صفاً بالمكتبة، والمشغّل يكتب. وعدّادُ الاستعمال
+# definer بحارسه الداخليّ — يُرفض لغير المشغّل قبل أن يلمس المنتجات.
+echo "▸ 0175: مكتبة الصور"
+chk "الجدول موجود وRLS مفعّلة" \
+    "select (relrowsecurity)::text from pg_class where relname='image_library'" "true"
+chk "وكتابتها مشروطة بصفة المشغّل" \
+    "select (count(*) = 3)::text from pg_policies where tablename='image_library' and cmd in ('INSERT','UPDATE','DELETE') and coalesce(qual, with_check) like '%is_platform_admin%'" "true"
+$P -c "update _dvtest_flags set admin = false;" >/dev/null
+chk "موظّفُ عيادةٍ لا يضيف للمكتبة (RLS بدورٍ حقيقيّ)" \
+    "select left(_rls_try('$C1', 'insert into image_library(name, path) values (''فحص'', ''library/x.webp'')'), 13)" "guarded:42501"
+chk "  ولا ينادي عدّادَ الاستعمال" \
+    "select left(_pf_try('$C1', 'select image_library_usage(''library/x.webp'')::text'), 7)" "guarded"
+$P -c "update _dvtest_flags set admin = true;" >/dev/null
+chk "والمشغّل يضيف" \
+    "select _rls_try('$ADM', 'insert into image_library(name, company, section, path) values (''رويال كانين ٢ كغم'', ''رويال كانين'', ''أكل قطط'', ''library/t1.webp'')')" "rows:1"
+chk "  وعدّادُه يشتغل (صفرُ استعمالٍ لصورةٍ جديدة)" \
+    "select _pf('$ADM', 'select image_library_usage(''library/t1.webp'')::text')" "0"
+chk "  والعدّاد definer بمسارٍ مثبَّت" \
+    "select (prosecdef and coalesce(array_to_string(proconfig,','),'') like '%search_path%')::text from pg_proc where proname='image_library_usage'" "true"
+$P -c "update _dvtest_flags set admin = false;" >/dev/null
 
 [ $fail -eq 0 ] && echo "✓ كل الفحوص عبرت" || { echo "✗ اكو فحصٌ فشل"; exit 1; }

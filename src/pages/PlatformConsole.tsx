@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  ShieldCheck, Lock, Search, RefreshCw, LogIn, LogOut, Activity, KeyRound, Users, Wifi, Receipt,
+  ShieldCheck, Lock, Search, RefreshCw, LogIn, LogOut, Activity, KeyRound, Users, Wifi, Receipt, Images,
   HandCoins, Boxes, Bike, CreditCard, Building2, ExternalLink, AlertTriangle, History,
 } from "lucide-react";
+import { ImageLibraryManager } from "@/components/admin/ImageLibraryManager";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   isPlatformAdmin, platformPulse, platformActivity, platformLogins, platformEnter, platformLeave, platformContext,
@@ -26,7 +27,7 @@ import { playTap, playSuccess, playWarning } from "@/lib/sounds";
  * بالاتفاق مع العيادات: لا أثرَ للدخول عندها؛ السببُ يُحفظ بسجلّ المشغّل وحده.
  * ==========================================================================*/
 
-type Tab = "clinics" | "activity" | "logins";
+type Tab = "clinics" | "activity" | "logins" | "library";
 
 /** «قبل ٥ د» — الوقتُ النسبيّ يقول «حيّة» أو «تعبت» أسرعَ من التاريخ. */
 function ago(iso: string | null): string {
@@ -78,6 +79,7 @@ export function PlatformConsole() {
     { id: "clinics", label: "العيادات", icon: Building2 },
     { id: "activity", label: "الحركة", icon: Activity },
     { id: "logins", label: "الدخول", icon: KeyRound },
+    { id: "library", label: "مكتبة الصور", icon: Images },
   ];
 
   return (
@@ -113,6 +115,7 @@ export function PlatformConsole() {
 
       {tab === "clinics" ? <ClinicsTab acting={ctx?.acting ?? null} onShowActivity={() => setTab("activity")} />
         : tab === "activity" ? <ActivityTab />
+        : tab === "library" ? <ImageLibraryManager />
         : <LoginsTab />}
     </div>
   );
