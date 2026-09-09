@@ -437,5 +437,115 @@ console.log("▸ الدفعة ٦ — المعروضُ هو المحسوب");
   check("  وشركتان مختلفتان تبقيان مختلفتين", normKey("الأمل") !== normKey("الوفاء"));
 }
 
+
+/* ── ع٥: تقريرُ الجرد يحمل الرموزَ الإضافية ──────────────────────────────
+ * كان يُصدّر الرمزَ الأساسيّ وحده — والرموزُ الإضافية هي بالضبط ما تراكم من
+ * علاج التوائم (رقمُ الرفّ القديم إلى جانب باركود المصنع). ودورةُ «صدّر ثم
+ * أعد الإدخال» تُسقطها كلَّها، فتعود المسحةُ القديمة «مو موجودة» من جديد. */
+console.log("▸ ع٥ — الرموزُ الإضافية بتقرير الجرد");
+{
+  // بديلُ i18n: الوحدةُ تستعمله لتسمية سطر الحوض وحدَه.
+  const i18nStub = {
+    name: "i18nstub",
+    setup(b) {
+      b.onResolve({ filter: new RegExp("^@\\/i18n$") }, () => ({ path: "i18n", namespace: "st" }));
+      b.onLoad({ filter: /.*/, namespace: "st" }, () => ({
+        contents: "export default { t: (k, d) => (typeof d === 'string' ? d : k) };", loader: "js",
+      }));
+    },
+  };
+  let st = null;
+  try {
+    const b2 = await esbuild.build({
+      entryPoints: ["src/lib/stocktake.ts"], bundle: true, format: "esm", write: false,
+      platform: "neutral", plugins: [stubs, i18nStub], logLevel: "silent",
+      alias: { "@/lib/utils": "./src/lib/utils.ts" },
+    });
+    st = await import("data:text/javascript;base64," + Buffer.from(b2.outputFiles[0].text).toString("base64"));
+  } catch (e) { st = null; }
+  if (!st) {
+    check("(تخطٍّ) ما انبنت stocktake — الفحصُ لا يقيس شيئاً", false);
+  } else {
+    const now = new Date("2026-09-09T00:00:00Z");
+    const take = st.buildStocktake([
+      { id: "x1", name: "سبري", barcode: "6970967772736", alt_codes: ["247", "SHELF-9"], purchase_price: 1, sell_price: 2, stock: 3, created_at: "2026-01-01" },
+      { id: "x2", name: "بلا إضافيّ", barcode: "111", alt_codes: [], purchase_price: 1, sell_price: 2, stock: 1, created_at: "2026-01-01" },
+      { id: "x3", name: "بلا حقلٍ أصلاً", barcode: "222", purchase_price: 1, sell_price: 2, stock: 1, created_at: "2026-01-01" },
+    ], [], [], now);
+    const lines = st.flatLines(take);
+    const byId = (id) => lines.find((l) => l.productId === id);
+    check("السطرُ يحمل الرموزَ الإضافية", JSON.stringify(byId("x1")?.altCodes) === JSON.stringify(["247", "SHELF-9"]));
+    check("  ومنتجٌ بلا إضافيّ يحمل قائمةً فارغة", JSON.stringify(byId("x2")?.altCodes) === "[]");
+    check("  وصفٌّ قديمٌ بلا الحقل لا ينكسر", JSON.stringify(byId("x3")?.altCodes) === "[]");
+  }
+
+  const xl = readFileSync("src/lib/stockReportXlsx.ts", "utf8");
+  check("والورقةُ فيها عمودٌ للرموز الإضافية", xl.includes("stock.hAltCodes") && xl.includes("COL.altCodes"));
+  check("  يُكتب نصّاً خامّاً كعمود الباركود — فلا يقلبه إكسل صيغةً علمية",
+    xl.includes('put(at(COL.altCodes), { t: "s", v: l.altCodes.join(", "), z: "@"'));
+  check("  والعمودُ المملوءُ بيدٍ يُشتقّ من الخريطة لا يُكتب رقماً",
+    xl.includes("const FILL_COL = COL.actualQty.charCodeAt(0) - 65") && !xl.includes("c === 11 ? headFill"));
+  check("  وآخرُ عمودٍ يطابق الخريطة", xl.includes("const LAST_COL = 20") && xl.includes('id: "U"'));
+}
+
+
+/* ── الدفعة ٧: العرضُ لا يكذب ولا يصمت ───────────────────────────────── */
+console.log("▸ الدفعة ٧ — بطاقاتٌ توصل، وسقوفٌ تُقال، ومسحةٌ لا تُبتلع");
+{
+  const inv3 = readFileSync("src/pages/Inventory.tsx", "utf8");
+  const sale3 = readFileSync("src/components/retail/SaleBuilder.tsx", "utf8");
+  const store3 = readFileSync("src/pages/ClinicStore.tsx", "utf8");
+  const guard = readFileSync("scripts/i18n-guard.mjs", "utf8");
+
+  /* ع١: البطاقةُ تعدّ ولا توصل — والشرطُ يُكتب مرّةً واحدة، وإلا قالت البطاقةُ
+   * «١٢» وأظهرت القائمةُ أحدَ عشر. */
+  check("ع١: شروطُ الحالة معرَّفةٌ مرّةً واحدة",
+    inv3.includes("const isLow = (p: Product) =>") && inv3.includes("const isOut = (p: Product) =>")
+    && inv3.includes("const isExpiringSoon = (p: Product) =>") && inv3.includes("const isExpired = (p: Product) =>"));
+  check("  والبطاقةُ تعدّ بها لا بنسخةٍ ثانية",
+    inv3.includes("products.filter(isLow).length") && inv3.includes("products.filter(isExpiringSoon).length"));
+  check("  والشريحةُ ترشّح بنفس الخريطة", inv3.includes("searched.filter(STOCK_FILTERS[filter])"));
+  check("  والبطاقتان تنقران فتضبطانها", (inv3.split('setStockFilter((cur) =>').length - 1) === 2);
+  check("  والبطاقةُ ذاتُ الفعل زرٌّ حقيقيّ لا div", inv3.includes('aria-pressed={!!active}'));
+  check("  والترشيحُ يقاطع البحثَ ولا يحلّ محلَّه", inv3.includes("const searched = ql && hits.length === 0"));
+  check("  وشريحةٌ فارغة تُقال بلسانها", inv3.includes("pos.noneInFilter"));
+
+  /* ع٢: الصنفُ يصل الصفَّ بالتبويب الرئيسيّ كما يصله بشاشة الشركة. */
+  check("ع٢: خريطةُ الأصناف موجودة", inv3.includes("const sectionName = useMemo(() => {"));
+  check("  والصفُّ يستقبلها بالتبويب الرئيسيّ",
+    inv3.includes("companyName={companyName(p.company_id)} sectionName={sectionName(p.section_id)}"));
+
+  /* ع٣: الشريحةُ لا تفيض على ٣٧٥ بكسل — والعلّةُ كانت `shrink-0`. */
+  check("ع٣: شريحةُ الرموز بسقفِ عرضٍ وقصّ", inv3.includes('className="chip max-w-[12rem] min-w-0 truncate bg-warn-50'));
+  check("  ولا shrink-0 بقي عليها", !inv3.includes('className="chip shrink-0 bg-warn-50'));
+  check("  والرموزُ كاملةً بالـtitle", inv3.includes('title={`${p.alt_codes!.join(" · ")} — '));
+
+  /* ع٤: سقفُ عرضٍ لا يقول إنه سقف. */
+  check("ع٤: نافذةُ الدمج تعدّ المخفيّ وتقوله",
+    inv3.includes("hiddenCount: Math.max(0, base.length - MERGE_CAP)") && inv3.includes("pos.mergeMoreHidden"));
+  check("  وسجلُّ المتجر يسمّي سقفَه", store3.includes("const STORE_LOG_CAP = 30") && store3.includes("pos.logCap"));
+  check("  ولا رقمَ عارياً بقي بالقصّ", !store3.includes("decided.slice(0, 30)"));
+
+  /* ع٦: شاشةُ «تمّ البيع» كانت تبتلع المسحة بصمتٍ تامّ. */
+  check("ع٦: المسحةُ على شاشة «تمّ» تبدأ بيعةً جديدة",
+    sale3.includes("if (done) { pendingScanRef.current = code; reset(); return; }"));
+  check("  وتُمرَّر بعد أن يهبط التصفير لا بنفس النبضة",
+    sale3.includes("if (done || pendingScanRef.current === null) return;") && sale3.includes("void handleScan(code);"));
+  check("  ولا رجوعٌ صامتٌ بقي", !sale3.includes("useBarcodeScanner(async (code) => {\n    if (done) return;"));
+
+  /* ع٧: حارسُ «استعمالٌ مقابل كتالوج». */
+  check("ع٧: الحارسُ يمسح نداءات t الحرفية", guard.includes("const KEY_CALL =") && guard.includes("usedKeys"));
+  check("  وشاشاتُ البيع والمخزون سقفُها صفر", guard.includes("const HOT = new Set([") && guard.includes("hotOrphans.length"));
+  check("  وما عداها دَينٌ ينكمش ولا يكبر", guard.includes("__orphanKeys") && guard.includes("الدَّينُ ينكمش ولا يكبر"));
+  check("  و`retNegative` بموضعٍ واحدٍ بلا نسختَي نصّ",
+    (sale3.split('t("retail.retNegative")').length - 1) === 2
+    && !sale3.includes('t("retail.retNegative", "الراجع أكبر'));
+
+  /* ع٨: علّةُ أداءٍ لا فقدانُ مسحات — والتعليقُ يقولها كي لا تُسوَّق خطأً. */
+  check("ع٨: البحثُ على قيمةٍ مؤجَّلة", inv3.includes("const dq = useDeferredValue(q);"));
+  check("  والنتيجةُ محفوظة", inv3.includes("const hits = useMemo(() => (ql"));
+  check("  والصفُّ محفوظ", inv3.includes("const ProductRow = memo(function ProductRow"));
+}
+
 console.log(`\n${fails ? "✗" : "✓"} products-test: ${passes} نجحت، ${fails} فشلت`);
 process.exit(fails ? 1 : 0);

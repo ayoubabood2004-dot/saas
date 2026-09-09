@@ -890,8 +890,16 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [done]);
 
-  useBarcodeScanner(async (code) => {
-    if (done) return;
+  /* شاشةُ «تمّ البيع» كانت تبتلع المسحةَ بصمتٍ تامّ: `if (done) return` قبل
+   * أيّ صوت، والشاشةُ لا تُغلق إلا بزرّ «بيعة جديدة». فالكاشير يمسح الصنفَ
+   * التالي ولا يحدث شيء — لا بيب، ولا رسالة، ولا سطر — فيمسح ثانيةً وثالثة.
+   * فصارت المسحةُ تبدأ بيعةً جديدة بالصنف الممسوح، وهو سلوكُ الكاشيرات
+   * القياسيّ. والرمزُ يُحفظ ويُعاد تمريرُه **بعد** أن يهبط التصفير — لا
+   * بنفس النبضة: `cart` بالإغلاق الحاليّ ما زال يحمل البيعةَ المباعة،
+   * فإضافةٌ فورية تبني على سلّةٍ ميّتة. */
+  const pendingScanRef = useRef<string | null>(null);
+  const handleScan = async (code: string) => {
+    if (done) { pendingScanRef.current = code; reset(); return; }
     const n = peekScanMult(code);
     /* القائمةُ المحمَّلة أوّلاً، والخادمُ بعدها.
      *
@@ -1009,7 +1017,16 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
     // اللوحة مفتوحة = الأرقام تخصّها؛ مسحةٌ تدخل صنفاً خلف نافذة مفتوحة تربك.
     // منتقي الوزن مثلها: مسحةٌ وهو مفتوح كانت تبدّل المنتج تحت يد الطبيب أو
     // تنزل سطراً خلف الورقة بلا أن يراه.
-  }, { disabled: multPad || !!qtyPadFor || !!weightFor });
+  };
+  useBarcodeScanner(handleScan, { disabled: multPad || !!qtyPadFor || !!weightFor });
+  // وبعد أن يهبط التصفير: تُمرَّر المسحةُ المحفوظة على سلّةٍ نظيفة.
+  useEffect(() => {
+    if (done || pendingScanRef.current === null) return;
+    const code = pendingScanRef.current;
+    pendingScanRef.current = null;
+    void handleScan(code);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [done]);
 
   // The bridge: a doctor clicked "Sell items" inside an animal record. Auto-fill the
   // customer, surface the pet context, and focus the scan field for a zero-click flow.
@@ -1556,7 +1573,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
     if (pureReturn) { void doReturn(); return; }
     if (netNegative) {
       playWarning();
-      toast.error(t("retail.retNegative", "الراجع أكبر من المشترى — هذا إرجاع لا بيع: كمّل من تبويب «المرتجع» حتى يخرج النقد للزبون بقيدٍ صحيح."));
+      toast.error(t("retail.retNegative"));
       return;
     }
     if (needsDebtName) { playWarning(); return; }
@@ -2986,7 +3003,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
             </div>
           ) : netNegative && (
             <p data-retnegative className="rounded-xl bg-danger-50 px-3 py-2 text-center text-2xs font-bold text-danger-700 dark:bg-danger-500/15 dark:text-danger-300">
-              {t("retail.retNegative", "الراجع أكبر من المشترى — هذا إرجاع لا بيع: كمّل من تبويب «المرتجع» حتى يخرج النقد للزبون بقيدٍ صحيح.")}
+              {t("retail.retNegative")}
             </p>
           )}
           {!pureReturn && (

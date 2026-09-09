@@ -116,5 +116,75 @@ console.log("▸ وقوائمُ المخزن الأساسية ترمي أصلا�
 check("listProducts", await throws(() => repo.listProducts()));
 check("listCompanies", await throws(() => repo.listCompanies()));
 
+/* ── ع٩: صفٌّ لا يُعدّ مرّتين تحت إدراجٍ متزامن ───────────────────────────
+ * الترقيمُ بالإزاحة والترتيبُ بـ`id`. إدراجٌ متزامنٌ بمعرّفٍ يسبق مؤشّرَنا
+ * يزحزح ما بعده صفحةً واحدة، فيعود آخرُ صفٍّ قرأناه بأوّل الصفحة التالية.
+ * والحلقةُ تُصدر دائماً طلبَ تأكيدٍ بعد صفحةٍ ممتلئة — فالنافذةُ مفتوحةٌ بأيّ
+ * حجمِ جدول، لا عند الألف وحدها. نحاكيها بجدولٍ ينمو بين الصفحتين. */
+console.log("▸ ع٩ — allPages تحت إدراجٍ متزامن");
+{
+  const PAGE = 1000;
+  // جدولٌ ممتلئُ الصفحة الأولى بالضبط، ثم يُدرَج صفٌّ بمقدّمته بين الطلبين.
+  const mk = (n, pad) => Array.from({ length: n }, (_, i) => ({ id: `p${String(i).padStart(pad, "0")}` }));
+  let table = mk(PAGE, 5);
+  let calls = 0;
+  const PAGING_SUPABASE = `
+    let table = globalThis.__t;
+    const q = () => {
+      const o = {
+        order: () => o,
+        eq: () => o, neq: () => o, or: () => o, in: () => o, is: () => o,
+        gte: () => o, lte: () => o, gt: () => o, lt: () => o, limit: () => o,
+        range: (a, b) => { const page = globalThis.__t.slice(a, b + 1); globalThis.__onRange(); return Promise.resolve({ data: page, error: null }); },
+        then: (res) => res({ data: globalThis.__t, error: null }),
+      };
+      return o;
+    };
+    export const supabase = {
+      from: () => ({ select: () => q() }), rpc: () => q(),
+      schema: () => ({ from: () => ({ select: () => q() }) }),
+      storage: { from: () => q() },
+      auth: { getSession: async () => ({ data: { session: null }, error: null }), getUser: async () => ({ data: { user: null }, error: null }) },
+    };
+  `;
+  const pagingStubs = {
+    name: "paging",
+    setup(b) {
+      const map2 = {
+        i18next: "const i = { t: (k, d) => (typeof d === 'string' ? d : (d && d.defaultValue) || k), language: 'ar', use: () => i, init: () => i, on: () => i, changeLanguage: () => i, dir: () => 'rtl' }; export default i;",
+        "./supabase": PAGING_SUPABASE,
+        "./globalToast": "export const emitGlobalToast = () => {};",
+      };
+      b.onResolve({ filter: /.*/ }, (a) => (EMPTY.has(a.path) ? { path: a.path, namespace: "stub" } : undefined));
+      b.onResolve({ filter: /^(i18next|\.\/supabase|\.\/globalToast)$/ }, (a) => ({ path: a.path, namespace: "stub" }));
+      b.onResolve({ filter: /^@\/types$/ }, () => ({ path: "types", namespace: "stub" }));
+      b.onLoad({ filter: /.*/, namespace: "stub" }, (a) => ({ contents: map2[a.path] ?? "export default {};", loader: "js" }));
+    },
+  };
+  globalThis.__t = table;
+  globalThis.__onRange = () => {
+    calls++;
+    // بعد الصفحة الأولى تماماً: إدراجٌ بمعرّفٍ يسبق كلَّ شيء ⇒ إزاحةُ الكلّ.
+    if (calls === 1) globalThis.__t = [{ id: "p!!new" }, ...globalThis.__t];
+  };
+  const b2 = await esbuild.build({
+    entryPoints: ["src/lib/repo.ts"], bundle: true, format: "esm", write: false,
+    platform: "neutral", plugins: [pagingStubs], logLevel: "silent",
+    define: { "import.meta.env": "__VITE_ENV__" },
+    banner: { js: "const __VITE_ENV__ = {};" },
+  });
+  const d2 = mkdtempSync(join(tmpdir(), "allpages-"));
+  const f2 = join(d2, "repo.mjs");
+  writeFileSync(f2, b2.outputFiles[0].text);
+  const m2 = await import(pathToFileURL(f2).href).finally(() => { try { rmSync(d2, { recursive: true, force: true }); } catch { /* ignore */ } });
+  const rows = await m2.repo.listProducts();
+  const ids = rows.map((r) => r.id);
+  const dupes = ids.filter((x, i) => ids.indexOf(x) !== i);
+  check("الطلبُ أُعيد بعد صفحةٍ ممتلئة — فالنافذةُ حقيقية", calls >= 2, `${calls} طلباً`);
+  check("ولا صفَّ مكرّراً رغم الإدراج المتزامن", dupes.length === 0, `مكرّر: ${[...new Set(dupes)].slice(0, 3).join("، ")}`);
+  check("  والصفوفُ كلُّها وصلت", ids.length >= PAGE, `${ids.length} صفّاً`);
+}
+
+
 console.log(`\n${fails ? "✗" : "✓"} fetch-throw-test: ${passes} نجحت، ${fails} فشلت`);
 process.exit(fails ? 1 : 0);

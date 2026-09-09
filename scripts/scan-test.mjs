@@ -269,7 +269,7 @@ console.log("▸ نجدةُ حقل بحث المخزون");
   // «hits.length === 0» مقطعٌ من «companyHits.length === 0» — فيمرّ الحارسُ
   // بثلاثةٍ من أربعة. الأربعةُ تُعدّ عدّاً لا احتواءً.
   check("  والنجدةُ بعد خيبة الحرفيّ لا بدلاً منه — بالأربعة كلِّها",
-    ["const shown = ql && hits.length === 0",
+    ["const searched = ql && hits.length === 0",
      "ql && companyHits.length === 0",
      "ql && sectionHits.length === 0",
      "ql && found.length === 0"].every((needle) => inv.includes(needle)));

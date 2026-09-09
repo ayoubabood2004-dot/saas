@@ -51,6 +51,9 @@ function ago(iso: string): string {
   return `قبل ${formatNum(Math.floor(hrs / 24))} يوم`;
 }
 
+/** سقفُ سجلّ الطلبات المعروض — يُقال بالعدد أسفلَه، لا يُقصّ بصمت (ع٤). */
+const STORE_LOG_CAP = 30;
+
 export function ClinicStore() {
   const { t } = useTranslation();
   const { user } = useAuth();
@@ -156,6 +159,7 @@ function OrdersTab({ orders, products, profile, clinicId, reload, goSettings }: 
   orders: StoreOrder[] | null; products: Product[] | null; profile: StoreProfile | null;
   clinicId?: string; reload: () => Promise<void>; goSettings: () => void;
 }) {
+  const { t } = useTranslation();
   const { user } = useAuth();
   const toast = useToast();
   const [busy, setBusy] = useState<string | null>(null);
@@ -368,9 +372,11 @@ function OrdersTab({ orders, products, profile, clinicId, reload, goSettings }: 
       {/* السجل */}
       {decided.length > 0 && (
         <section>
-          <h2 className="mb-2 flex items-center gap-2 font-display text-lg font-bold text-ink"><RefreshCw size={16} className="text-ink-subtle" /> سجل الطلبات</h2>
+          <h2 className="mb-2 flex items-center gap-2 font-display text-lg font-bold text-ink"><RefreshCw size={16} className="text-ink-subtle" /> {t("pos.ordersLog", "سجل الطلبات")}{decided.length > STORE_LOG_CAP && (
+              <span className="text-xs font-normal text-ink-subtle">{t("pos.logCap", "آخر {{n}} من {{total}}", { n: STORE_LOG_CAP, total: decided.length })}</span>
+            )}</h2>
           <div className="space-y-2">
-            {decided.slice(0, 30).map((o) => (
+            {decided.slice(0, STORE_LOG_CAP).map((o) => (
               <div key={o.id} className="card flex items-center gap-3 p-3">
                 <span className={cn("grid h-9 w-9 shrink-0 place-items-center rounded-xl",
                   o.status === "accepted" ? "bg-success-50 text-success-600 dark:bg-success-500/15 dark:text-success-300" : "bg-danger-50 text-danger-500 dark:bg-danger-500/15 dark:text-danger-300")}>

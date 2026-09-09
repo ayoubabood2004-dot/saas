@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { memo, useDeferredValue, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { motion } from "framer-motion";
 import { getCached, setCached } from "@/lib/swrCache";
@@ -39,6 +39,18 @@ const LOW_STOCK = 5;
 const daysUntil = (iso?: string | null) => (iso ? Math.floor((new Date(iso).getTime() - Date.now()) / 86400000) : null);
 /** A product's reorder level — its own min_stock if set, else the default. */
 const lowThreshold = (p: Product) => (p.min_stock && p.min_stock > 0 ? p.min_stock : LOW_STOCK);
+/* شروطُ حالةِ المنتج — **تعريفٌ واحد** تعدّ به البطاقةُ وترشّح به الشريحة.
+ * بطاقةٌ تقول «١٢ منخفضاً» وقائمةٌ تُظهر أحدَ عشرَ لأن الشرطَ كُتب مرّتين
+ * أسوأُ من بطاقةٍ لا تُنقر: الرقمُ يُصدَّق ولا يُراجَع.
+ * والمجمَّع مستثنىً: رصيدُه بالقسم لا بالصفّ، فصفرُه متوقَّع لا نقص. */
+const isOut = (p: Product) => !p.pooled && p.stock <= 0;
+const isLow = (p: Product) => !p.pooled && p.stock <= lowThreshold(p);
+const isExpiringSoon = (p: Product) => { const d = daysUntil(p.expiry_date); return d != null && d >= 0 && d <= 30; };
+const isExpired = (p: Product) => { const d = daysUntil(p.expiry_date); return d != null && d < 0; };
+export type StockFilter = "all" | "low" | "out" | "soon" | "expired";
+const STOCK_FILTERS: Record<StockFilter, (p: Product) => boolean> = {
+  all: () => true, low: isLow, out: isOut, soon: isExpiringSoon, expired: isExpired,
+};
 
 /** Canonical company name: trim, collapse internal whitespace, NFC-normalize
  *  (so visually-identical Arabic/Latin names don't split into two companies). */
@@ -143,6 +155,9 @@ export function Inventory() {
     else if (!canPos && view === "wholesale") setView("products");
   }, [locked, view, canPos]);
   // null = لم يُفحص بعد · false = ترحيل 0075 ناقص (المجموعات تسقط بصمت)
+  /* شريحةُ الترشيح تعيش هنا لا بالتبويب: البطاقةُ فوق والقائمةُ تحت، فلو
+   * سكنت بالتبويب لما وصلتها البطاقة. */
+  const [stockFilter, setStockFilter] = useState<StockFilter>("all");
   const [groupsOk, setGroupsOk] = useState<boolean | null>(null);
   const [fixBusy, setFixBusy] = useState(false);
   const [xlsxBusy, setXlsxBusy] = useState(false);
@@ -274,8 +289,8 @@ export function Inventory() {
 
   // Pooled products carry no per-barcode count (they sell from the section pool),
   // so a stock of 0 is expected — never flag them as low stock.
-  const lowStock = products.filter((p) => !p.pooled && p.stock <= lowThreshold(p)).length;
-  const expiringSoon = products.filter((p) => { const d = daysUntil(p.expiry_date); return d != null && d >= 0 && d <= 30; }).length;
+  const lowStock = products.filter(isLow).length;
+  const expiringSoon = products.filter(isExpiringSoon).length;
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-6">
@@ -334,8 +349,10 @@ export function Inventory() {
       <div className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Kpi icon={Package} tone="brand" label={t("pos.products", "Products")} value={String(products.length)} />
         <Kpi icon={Building2} tone="accent" label={t("pos.companies", "الشركات")} value={String(companies.length)} />
-        <Kpi icon={AlertTriangle} tone={lowStock ? "warn" : "success"} label={t("pos.lowStock", "Low stock")} value={String(lowStock)} />
-        <Kpi icon={CalendarClock} tone={expiringSoon ? "warn" : "success"} label={t("pos.expiringSoon", "Expiring ≤30d")} value={String(expiringSoon)} />
+        <Kpi icon={AlertTriangle} tone={lowStock ? "warn" : "success"} label={t("pos.lowStock", "Low stock")} value={String(lowStock)}
+          onClick={() => { playTap(); setView("products"); setStockFilter((cur) => (cur === "low" ? "all" : "low")); }} active={view === "products" && stockFilter === "low"} />
+        <Kpi icon={CalendarClock} tone={expiringSoon ? "warn" : "success"} label={t("pos.expiringSoon", "Expiring ≤30d")} value={String(expiringSoon)}
+          onClick={() => { playTap(); setView("products"); setStockFilter((cur) => (cur === "soon" ? "all" : "soon")); }} active={view === "products" && stockFilter === "soon"} />
       </div>
 
       {/* Inventory value (قيمة المخزون) — cost, retail, expected profit; includes pooled. */}
@@ -361,7 +378,8 @@ export function Inventory() {
           <Button leftIcon={<RefreshCw size={16} />} onClick={() => { playTap(); setLoading(true); void load(); }}>{t("common.retry", "إعادة المحاولة")}</Button>
         </div>
       ) : view === "products" ? (
-        <InventoryTab products={products} companies={companies} sections={sections} clinicId={clinicId} onChanged={load} />
+        <InventoryTab products={products} companies={companies} sections={sections} clinicId={clinicId} onChanged={load}
+          filter={stockFilter} onFilter={setStockFilter} />
       ) : view === "companies" ? (
         <CompaniesTab products={products} companies={companies} sections={sections} clinicId={clinicId} onChanged={load} />
       ) : view === "ledger" ? (
@@ -394,21 +412,31 @@ function ViewTab({ active, icon: Icon, label, onClick }: { active: boolean; icon
   );
 }
 
-function Kpi({ icon: Icon, tone, label, value }: { icon: typeof Package; tone: "brand" | "warn" | "success" | "accent"; label: string; value: string }) {
+function Kpi({ icon: Icon, tone, label, value, onClick, active }: { icon: typeof Package; tone: "brand" | "warn" | "success" | "accent"; label: string; value: string; onClick?: () => void; active?: boolean }) {
   const tones: Record<string, string> = {
     brand: "bg-brand-50 text-brand-600 dark:bg-brand-500/15 dark:text-brand-300",
     warn: "bg-warn-50 text-warn-600 dark:bg-warn-500/15 dark:text-warn-300",
     success: "bg-success-50 text-success-600 dark:bg-success-500/15 dark:text-success-200",
     accent: "bg-accent-50 text-accent-600 dark:bg-accent-500/15 dark:text-accent-300",
   };
-  return (
-    <div className="card flex items-center gap-3 p-3.5">
+  const body = (
+    <>
       <span className={cn("grid h-10 w-10 shrink-0 place-items-center rounded-xl", tones[tone])}><Icon size={20} /></span>
-      <div className="min-w-0">
+      <div className="min-w-0 text-start">
         <p className="truncate text-lg font-bold text-ink tabular-nums">{value}</p>
         <p className="truncate text-xs text-ink-subtle">{label}</p>
       </div>
-    </div>
+    </>
+  );
+  // بطاقةٌ تعدّ ولا توصل تترك الطبيبَ يبحث بيده عمّا عدّته له. فمن لها فعلٌ
+  // تصير زرّاً حقيقياً (لوحةُ المفاتيح تصله، وقارئُ الشاشة يقول إنه مضغوط).
+  if (!onClick) return <div className="card flex items-center gap-3 p-3.5">{body}</div>;
+  return (
+    <button type="button" onClick={onClick} aria-pressed={!!active}
+      className={cn("card flex w-full items-center gap-3 p-3.5 text-start transition hover:bg-surface-2",
+        active && "ring-2 ring-brand-500")}>
+      {body}
+    </button>
   );
 }
 
@@ -485,7 +513,11 @@ function ValueCell({ label, value, tone }: { label: string; value: string; tone:
 }
 
 /* ---------------- Shared product row ---------------- */
-function ProductRow({ p, companyName, sectionName, onEdit, onRemove }: { p: Product; companyName?: string; sectionName?: string; onEdit: () => void; onRemove: () => void }) {
+/* صفٌّ محفوظ (ع٨): تسعُمئةِ صفٍّ كانت تُعاد تصفيتُها ورسمُها على كلّ ضغطةِ
+ * مفتاح، فتتجمّد الشاشةُ على أجهزة العيادات البطيئة. **علّةُ أداءٍ لا فقدانُ
+ * مسحات**: الحقلُ هنا مضبوطٌ بلا مجمِّعٍ يرمي، والأحداثُ تُصفّ ولا تُسقَط —
+ * فلا تُسوَّق منعاً لضياع رمز. */
+const ProductRow = memo(function ProductRow({ p, companyName, sectionName, onEdit, onRemove }: { p: Product; companyName?: string; sectionName?: string; onEdit: () => void; onRemove: () => void }) {
   const { t, i18n } = useTranslation();
   const { stockLocked: locked } = useOverride();
   const exp = daysUntil(p.expiry_date);
@@ -509,8 +541,12 @@ function ProductRow({ p, companyName, sectionName, onEdit, onRemove }: { p: Prod
           {p.barcode && <span className="flex items-center gap-1 font-mono"><Barcode size={11} /> {p.barcode}</span>}
           {/* الرموزُ الإضافية تُرى بالقائمة: ربطٌ غلط يُكتشف بالعين لا بالمسحة الغلط. */}
           {(p.alt_codes?.length ?? 0) > 0 && (
-            <span className="chip shrink-0 bg-warn-50 font-mono text-2xs font-semibold text-warn-700 dark:bg-warn-500/15 dark:text-warn-300" dir="ltr" data-altcodes
-              title={t("pos.altChipHint", "رموز إضافية مربوطة — أي مسحة لها تنزّل هذي المادّة. افتح التعديل لفكّها")}>
+            /* `shrink-0` كان يقيس الشريحة على `max-content` فيُبطل نقاطَ الكسر
+             * عند المسافات — فمنتجٌ بثلاثة رموزٍ طويلة يمدّ الصفَّ فيصير
+             * بالصفحة كلِّها تمريرٌ أفقيّ على شاشة ٣٧٥ بكسل. فسقفٌ للعرض
+             * وقصٌّ بالنقاط، والرموزُ كاملةً بالـtitle (ع٣). */
+            <span className="chip max-w-[12rem] min-w-0 truncate bg-warn-50 font-mono text-2xs font-semibold text-warn-700 dark:bg-warn-500/15 dark:text-warn-300" dir="ltr" data-altcodes
+              title={`${p.alt_codes!.join(" · ")} — ${t("pos.altChipHint", "رموز إضافية مربوطة — أي مسحة لها تنزّل هذي المادّة. افتح التعديل لفكّها")}`}>
               +{p.alt_codes!.join(" · ")}
             </span>
           )}
@@ -540,10 +576,10 @@ function ProductRow({ p, companyName, sectionName, onEdit, onRemove }: { p: Prod
       {!locked && <button onClick={onRemove} aria-label={t("common.delete", "Remove")} className="grid h-9 w-9 place-items-center rounded-full text-ink-subtle transition hover:bg-danger-50 hover:text-danger-600"><Trash2 size={16} /></button>}
     </motion.div>
   );
-}
+});
 
 /* ---------------- Products tab ---------------- */
-function InventoryTab({ products, companies, sections, clinicId, onChanged }: { products: Product[]; companies: Company[]; sections: CompanySection[]; clinicId?: string; onChanged: () => void }) {
+function InventoryTab({ products, companies, sections, clinicId, onChanged, filter, onFilter }: { products: Product[]; companies: Company[]; sections: CompanySection[]; clinicId?: string; onChanged: () => void; filter: StockFilter; onFilter: (f: StockFilter) => void }) {
   const { t } = useTranslation();
   const [editing, setEditing] = useState<Product | null>(null);
   const [adding, setAdding] = useState(false);
@@ -553,24 +589,48 @@ function InventoryTab({ products, companies, sections, clinicId, onChanged }: { 
     const m = new Map(companies.map((c) => [c.id, c.name]));
     return (id?: string | null) => (id ? m.get(id) : undefined);
   }, [companies]);
+  /* والصنفُ مثلُها (ع٢): `ProductRow` يعرضه منذ زمنٍ حين يصله، وشاشةُ الشركة
+   * تمرّره فعلاً — والتبويبُ الرئيسيّ وحدَه كان لا يمرّره. فالمنتجُ يبدو بلا
+   * صنفٍ حيث يُقرأ الجردُ أكثرَ ما يُقرأ. */
+  const sectionName = useMemo(() => {
+    const m = new Map(sections.map((x) => [x.id, x.name]));
+    return (id?: string | null) => (id ? m.get(id) : undefined);
+  }, [sections]);
 
   /* نفس تطبيع شاشة البيع — والشاشتان لازم تتفقان. حين كانتا تبحثان حرفياً كان
    * الطبيب يبحث بالبيع فلا يجد، فيتأكّد من المخزن فلا يجد كذلك، فيستنتج أن
    * المادة غير مُدخَلة ويعيد إدخالها. شاشتان تكذبان بنفس الطريقة لا تكشف
    * إحداهما الأخرى. */
-  const ql = q.trim();
+  /* التصفيةُ على قيمةٍ مؤجَّلة كشاشة البيع: الحرفُ يظهر بالحقل فوراً،
+   * والقائمةُ تلحق بإطارٍ لاحق بدل أن تحبس الضغطةَ التالية. */
+  const dq = useDeferredValue(q);
+  const ql = dq.trim();
   const nq = searchable(ql);
-  const byCode = codeMatcher(ql);
-  const hits = ql
+  const byCode = useMemo(() => codeMatcher(ql), [ql]);
+  const hits = useMemo(() => (ql
     ? products.filter((p) =>
       searchable(p.name).includes(nq)
       || byCode(p)
       || searchable(companyName(p.company_id) ?? "").includes(nq))
-    : products;
+    : products), [products, ql, nq, byCode, companyName]);
   /* رمزٌ لُصق بحقل البحث بصيغةِ ماسحٍ (رأسُ AIM، صفرُ GTIN-14، ذيلٌ ناقص):
    * `codeMatcher` احتواءٌ فلا يطابقه، والشاشةُ تقول «لا نتائج» عن مادّةٍ
    * بالرفّ — وهذه شاشةُ قرار «أُعيد إدخالها». */
-  const shown = ql && hits.length === 0 ? codeRescue(products, ql) : hits;
+  const searched = ql && hits.length === 0 ? codeRescue(products, ql) : hits;
+  /* الترشيحُ **يقاطع** البحثَ ولا يحلّ محلَّه: من يبحث باسمٍ وهو بشريحة
+   * «منخفض» يقصد المنخفضَ من نتيجة بحثه. والترتيبُ داخل الشريحة بالأولوية:
+   * النافدُ أوّلاً ثم الأدنى رصيداً، والأقربُ انتهاءً أوّلاً. */
+  const shown = useMemo(() => {
+    const list = searched.filter(STOCK_FILTERS[filter]);
+    if (filter === "low" || filter === "out") {
+      return [...list].sort((a, b) => Number(isOut(b)) - Number(isOut(a)) || a.stock - b.stock);
+    }
+    if (filter === "soon" || filter === "expired") {
+      return [...list].sort((a, b) => (daysUntil(a.expiry_date) ?? 1e9) - (daysUntil(b.expiry_date) ?? 1e9));
+    }
+    return list;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searched, filter]);
 
   const { askDelete: remove, deleteDialog } = useProductDelete(onChanged);
   const { stockLocked: locked } = useOverride();
@@ -586,6 +646,33 @@ function InventoryTab({ products, companies, sections, clinicId, onChanged }: { 
         {!locked && <Button leftIcon={<PackagePlus size={16} />} onClick={() => { playTap(); setAdding(true); }}>{t("pos.addProduct", "Add product")}</Button>}
       </div>
 
+      {/* شرائحُ الحالة (ع١): البطاقةُ تعدّ وهذه توصل. والعددُ على كلِّ شريحة
+        * محسوبٌ بنفس شرطِ البطاقة — فلا رقمان لحالةٍ واحدة. */}
+      <div className="flex flex-wrap items-center gap-1.5">
+        {([
+          ["all", t("pos.filterAll", "الكل"), products.length],
+          ["out", t("pos.filterOut", "نافد"), products.filter(isOut).length],
+          ["low", t("pos.filterLow", "منخفض"), products.filter(isLow).length],
+          ["soon", t("pos.filterSoon", "ينتهي ≤٣٠ يوماً"), products.filter(isExpiringSoon).length],
+          ["expired", t("pos.filterExpired", "منتهٍ"), products.filter(isExpired).length],
+        ] as [StockFilter, string, number][]).map(([k, label, n]) => (
+          <button
+            key={k}
+            type="button"
+            onClick={() => { playTap(); onFilter(k); }}
+            aria-pressed={filter === k}
+            className={cn(
+              "rounded-full border px-3 py-1.5 text-xs font-semibold transition",
+              filter === k
+                ? "border-brand-500 bg-brand-50 text-brand-700 dark:bg-brand-500/15 dark:text-brand-200"
+                : "border-line text-ink-muted hover:bg-surface-2",
+            )}
+          >
+            {label} <span className="tabular-nums text-ink-subtle">{formatNum(n)}</span>
+          </button>
+        ))}
+      </div>
+
       {shown.length === 0 ? (
         /* بحثٌ خائبٌ فوق مخزنٍ عامر كان يقول «لا توجد منتجات بعد. أضف أول منتج» —
          * عبارةٌ كاذبة **تأمر بالفعل الضار**: فيُعاد إدخالُ الموجود توأماً برصيدٍ
@@ -594,12 +681,14 @@ function InventoryTab({ products, companies, sections, clinicId, onChanged }: { 
         <div className="card p-10 text-center text-ink-subtle" data-invempty={ql ? "search" : "stock"}>
           {ql
             ? t("pos.noSearchInStock", "لا نتائج مطابقة. المخزن فيه {{n}} منتجاً — جرّب اسماً أقصر أو امسح الباركود.", { n: formatNum(products.length) })
-            : t("pos.noProducts", "No products yet. Add your first one.")}
+            : filter !== "all"
+              ? t("pos.noneInFilter", "ما في منتج بهذي الحالة — جرّب شريحةً ثانية")
+              : t("pos.noProducts", "No products yet. Add your first one.")}
         </div>
       ) : (
         <motion.div variants={staggerContainer} initial="initial" animate="animate" className="space-y-2">
           {shown.map((p) => (
-            <ProductRow key={p.id} p={p} companyName={companyName(p.company_id)} onEdit={() => { playTap(); setEditing(p); }} onRemove={() => remove(p)} />
+            <ProductRow key={p.id} p={p} companyName={companyName(p.company_id)} sectionName={sectionName(p.section_id)} onEdit={() => { playTap(); setEditing(p); }} onRemove={() => remove(p)} />
           ))}
         </motion.div>
       )}
@@ -2456,13 +2545,17 @@ function MergeDialog({ drop, candidates, suggested, onClose, onMerged }: {
   const toast = useToast();
   const [q, setQ] = useState("");
   const [busy, setBusy] = useState(false);
-  const shown = useMemo(() => {
+  /* السقفُ يُقال ولا يُبتلع (ع٤). الدمجُ لا يُرجَع إلا من سلّة المحذوفات،
+   * فقائمةٌ مقصوصةٌ بصمت تدفع للدمج بالخطأ: يبحث الطبيبُ عن الأصل فلا يراه
+   * بالأربعين الأولى فيدمج بأقربِ شبيه. والنموذجُ موجودٌ بشاشة البيع. */
+  const MERGE_CAP = 40;
+  const { shown, hiddenCount } = useMemo(() => {
     const nq = searchable(q);
     const byCode = codeMatcher(q);
     const base = nq
       ? candidates.filter((p) => searchable(p.name).includes(nq) || byCode(p))
       : [...suggested, ...candidates.filter((p) => !suggested.some((s) => s.id === p.id))];
-    return base.slice(0, 40);
+    return { shown: base.slice(0, MERGE_CAP), hiddenCount: Math.max(0, base.length - MERGE_CAP) };
   }, [candidates, suggested, q]);
 
   const merge = async (keep: Product) => {
@@ -2509,6 +2602,11 @@ function MergeDialog({ drop, candidates, suggested, onClose, onMerged }: {
             </button>
           ))}
           {shown.length === 0 && <p className="p-4 text-center text-xs text-ink-subtle">{t("common.noMatches", "No matches")}</p>}
+          {hiddenCount > 0 && (
+            <p className="p-2 text-center text-2xs text-ink-subtle">
+              {t("pos.mergeMoreHidden", "معروض {{n}} من {{total}} — ضيّق البحث حتى تشوف الباقي", { n: formatNum(shown.length), total: formatNum(shown.length + hiddenCount) })}
+            </p>
+          )}
         </div>
       </div>
     </Dialog>

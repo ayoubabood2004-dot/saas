@@ -166,23 +166,69 @@ for (const f of files) {
   if (c > 0) counts[f] = c;
 }
 
-if (!existsSync(BASELINE)) {
-  writeFileSync(BASELINE, JSON.stringify(counts, null, 2) + "\n");
-  console.log(`✓ خط الأساس أُنشئ: ${Object.keys(counts).length} ملفاً بمجموع ${Object.values(counts).reduce((a, b) => a + b, 0)} سطراً صلباً.`);
-} else {
-  const baseline = JSON.parse(readFileSync(BASELINE, "utf8"));
-  let improved = false;
+/* خطُّ الأساس كائنٌ واحد يحمل سقوفَ النصّ الصلب **و** دَينَ المفاتيح بلا
+ * ترجمة (`__orphanKeys`)، ويُكتب مرّةً واحدة بآخر الفحص — فلا يُكتب نصفُه
+ * قبل أن يُحسب نصفُه الآخر. */
+const isNew = !existsSync(BASELINE);
+const baseline = isNew ? {} : JSON.parse(readFileSync(BASELINE, "utf8"));
+let improved = isNew;
+if (!isNew) {
   for (const [f, c] of Object.entries(counts)) {
     const cap = baseline[f] ?? 0;
     if (c > cap) fail(`نص عربي صلب جديد في ${f}: ${c} سطراً (السقف ${cap}). انقله لمفتاح t() — القاعدة: لا نص صلب جديد أبداً.`);
     else if (c < cap) improved = true;
   }
-  for (const f of Object.keys(baseline)) if (!(f in counts)) improved = true;
-  if (!failed && (UPDATE || improved)) {
-    // التحسّن يثبَّت فوراً: السقف ينزل تلقائياً ولا يرتفع إلا بقرار واعٍ.
-    writeFileSync(BASELINE, JSON.stringify(counts, null, 2) + "\n");
-    if (improved) console.log("✓ الفجوة انكمشت — خط الأساس نزل ليطابقها.");
+  for (const f of Object.keys(baseline)) if (f !== "__orphanKeys" && !(f in counts)) improved = true;
+}
+
+
+/* ---- ٣) استعمالٌ مقابل كتالوج: مفتاحٌ يُنادى ولا وجودَ له بأيّ ملفّ ------
+ * فحصُ التكافؤ أعلاه يقارن `en` بـ`ar` — ومفتاحٌ غائبٌ عن **الاثنين** يمرّ
+ * منه غيرَ مرئيّ. والمقيسُ كان ١٠٩ مفاتيحَ كهذه، منها كتلٌ كاملة.
+ *
+ * ولا ينكسر شيءٌ ظاهرياً لأن كلَّ نداءٍ تقريباً يحمل `defaultValue` عربياً —
+ * فالعربيةُ تعمل والإنكليزيةُ **تعرض العربية**. أي أن الملفَّ الإنكليزيّ يكذب
+ * على من يقرأه: يبدو مكتملاً وهو ناقصٌ مئةَ مفتاح. ومن يترجم لاحقاً يترجم
+ * الموجودَ ويظنّ أنه أتمّ.
+ *
+ * والمسحُ نصّيٌّ عمداً: `t("literal")` وحدها. مفاتيحُ تُبنى بالتشغيل
+ * (`t(\`x.${v}\`)`) لا تُمسح — وهي قليلةٌ ومقصودة. */
+const KEY_CALL = /\bt\(\s*"([a-zA-Z][\w.]*\.[\w.]+)"/g;
+const usedKeys = new Map();                    // مفتاح ← أوّلُ موضعٍ يناديه
+for (const f of files) {
+  const src = readFileSync(join(ROOT, f), "utf8");
+  for (const [i, line] of src.split("\n").entries()) {
+    const t = line.trim();
+    if (t.startsWith("//") || t.startsWith("*")) continue;
+    for (const m of line.matchAll(KEY_CALL)) {
+      if (!usedKeys.has(m[1])) usedKeys.set(m[1], `${f}:${i + 1}`);
+    }
   }
+}
+const orphans = [...usedKeys].filter(([k]) => !base.has(k) && !keySets.ar.has(k));
+/* والنطاقُ مرحليّ لا اعتباطيّ: شاشاتُ البيع والمخزون — حيث يُتّخذ قرارُ مالٍ
+ * ويُقرأ رقمٌ — سقفُها **صفر**. وما عداها دَينٌ **مقيسٌ ومعلَن** يُسمح ببقائه
+ * ولا يُسمح بنموّه، كسقوف النصّ الصلب أعلاه: ينكمش ولا يكبر. والبديلُ —
+ * فحصٌ يفشّل البناءَ بـ٧٧٧ عطلاً قديماً — حارسٌ يُسكَت بأوّل يوم. */
+const HOT = new Set([
+  "src/pages/Inventory.tsx",
+  "src/components/retail/SaleBuilder.tsx",
+  "src/components/inventory/Purchases.tsx",
+  "src/components/inventory/BarcodeStudio.tsx",
+  "src/components/retail/WeightPicker.tsx",
+]);
+const hotOrphans = orphans.filter(([, where]) => HOT.has(where.split(":")[0]));
+if (hotOrphans.length) {
+  fail(`${hotOrphans.length} مفتاحاً مستعملاً غيرَ موجودٍ بأيّ ملفّ ترجمة بشاشات البيع والمخزون (الإنكليزيةُ تعرض العربية):`);
+  for (const [k, where] of hotOrphans.slice(0, 12)) console.error(`    · ${k}  ←  ${where}`);
+  if (hotOrphans.length > 12) console.error(`    … و${hotOrphans.length - 12} غيرُها`);
+}
+const coldCap = Number(baseline.__orphanKeys ?? 0);
+const cold = orphans.length - hotOrphans.length;
+if (UPDATE || cold < coldCap) baseline.__orphanKeys = cold;
+else if (cold > coldCap) {
+  fail(`مفاتيحُ بلا ترجمةٍ خارج شاشات البيع صارت ${cold} بعد أن كانت ${coldCap} — الدَّينُ ينكمش ولا يكبر.`);
+  for (const [k, where] of orphans.filter(([, w]) => !HOT.has(w.split(":")[0])).slice(0, 6)) console.error(`    · ${k}  ←  ${where}`);
 }
 
 const total = Object.values(counts).reduce((a, b) => a + b, 0);
@@ -190,4 +236,10 @@ if (failed) {
   console.error("\ni18n-guard: فشل. راجع دراسة العالمية §٤ — لا نص صلب جديد ولا مفتاح ناقص.");
   process.exit(1);
 }
-console.log(`✓ i18n-guard: المفاتيح متكافئة (${base.size})، والنص الصلب المتبقي ${total} سطراً في ${Object.keys(counts).length} ملفاً (ينكمش ولا يكبر).`);
+// التحسّن يثبَّت فوراً: السقوف تنزل تلقائياً ولا ترتفع إلا بقرار واعٍ.
+if (UPDATE || improved) {
+  writeFileSync(BASELINE, JSON.stringify({ ...counts, __orphanKeys: baseline.__orphanKeys ?? cold }, null, 2) + "\n");
+  if (improved && !isNew) console.log("✓ الفجوة انكمشت — خط الأساس نزل ليطابقها.");
+  if (isNew) console.log(`✓ خط الأساس أُنشئ: ${Object.keys(counts).length} ملفاً بمجموع ${total} سطراً صلباً.`);
+}
+console.log(`✓ i18n-guard: المفاتيح متكافئة (${base.size})، والنص الصلب المتبقي ${total} سطراً في ${Object.keys(counts).length} ملفاً (ينكمش ولا يكبر)، ومفاتيحُ بلا ترجمةٍ خارج شاشات البيع: ${cold} (سقفها ${Math.max(cold, coldCap)}).`);

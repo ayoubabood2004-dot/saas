@@ -3258,6 +3258,7 @@ async function allPages<T>(make: () => unknown): Promise<T[]> {
     range: (a: number, b: number) => PromiseLike<{ data: unknown; error: { message: string } | null }>;
   };
   const out: T[] = [];
+  const seen = new Set<unknown>();
   // نتقدّم بما **وصل** لا بما **طُلب**، ونتوقّف عند صفحةٍ فارغة لا عند صفحةٍ ناقصة.
   //
   // الشرط القديم كان `rows.length < PAGE_ROWS ⇒ انتهت البيانات`، وهو يفترض أن
@@ -3275,7 +3276,19 @@ async function allPages<T>(make: () => unknown): Promise<T[]> {
     // ويُعاد، والنقصُ يُصدَّق.
     if (r.error) throw new Error(r.error.message);
     const rows = (r.data ?? []) as T[];
-    out.push(...rows);
+    /* وصفٌّ لا يُعدّ مرّتين (ع٩). الترقيمُ بالإزاحة والترتيبُ بـ`id`: إدراجٌ
+     * متزامنٌ بمعرّفٍ يسبق مؤشّرَنا يزحزح ما بعده صفحةً واحدة، فيعود آخرُ
+     * صفٍّ قرأناه بأوّل الصفحة التالية. والحلقةُ تُصدر دائماً طلبَ تأكيدٍ بعد
+     * صفحةٍ ممتلئة، فالنافذةُ مفتوحةٌ بأيّ حجمِ جدول — لا عند الألف وحدها.
+     * والأثرُ تجميليّ (صفٌّ مكرَّر بقائمة) لكنه يُرى ويُصدَّق، وسطرٌ رخيص
+     * يمحوه. أمّا **إسقاطُ** صفٍّ فيتطلّب تجاوزَ الجدول صفحةً كاملة —
+     * دَينٌ معلَن: أيُّ جدولٍ يقارب ٩٠٠ صفٍّ يُرقّى جلبُه إلى مؤشّرٍ قيميّ
+     * (keyset بـ`gt` على id) بدل الإزاحة. الأكبرُ المقيس اليوم ٩٢٨. */
+    for (const row of rows) {
+      const id = (row as { id?: unknown }).id;
+      if (id != null) { if (seen.has(id)) continue; seen.add(id); }
+      out.push(row);
+    }
     if (rows.length === 0) return out;
     from += rows.length;
   }
