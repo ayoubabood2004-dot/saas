@@ -7,7 +7,7 @@ import { Dialog } from "@/components/ui/Dialog";
 import {
   Barcode, Package, Trash2, Search, Building2, Plus, ChevronLeft, ArrowRight, ArrowLeft,
   TrendingUp, AlertTriangle, CalendarClock, Pencil, PackagePlus, Boxes, Layers, Wallet, ShoppingBag, FolderTree, ScanBarcode,
-  Check, ListPlus, Printer, Copy, Sparkles, FileSpreadsheet, Loader2, Scale, RefreshCw, RotateCcw,
+  Check, ListPlus, Printer, Copy, Sparkles, FileSpreadsheet, Loader2, Scale, RefreshCw, RotateCcw, Camera,
 } from "lucide-react";
 import type { Product, ProductCategory, Company, CompanySection, DeletedProduct } from "@/types";
 import { PurchasesTab, PurchaseBuilderModal } from "@/components/inventory/Purchases";
@@ -24,7 +24,9 @@ import { Combobox } from "@/components/Combobox";
 import { subcategoriesOf } from "@/lib/promotions";
 import { Button, Badge, useToast, Skeleton } from "@/components/ui";
 import { cn, formatDate, money, fmtKg, searchable, normalizeCode, matchCode, normalizeAr, formatNum } from "@/lib/utils";
-import { withTimeout, describeDbError } from "@/lib/errors";
+import { withTimeout, describeDbError, describeUploadError } from "@/lib/errors";
+import { prepareUpload, type PreparedUpload } from "@/lib/image";
+import { productImageUrl } from "@/lib/storeLib";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
 import { openStockReport } from "@/lib/stockReportPrint";
 import { exportStocktakeXlsx } from "@/lib/stockReportXlsx";
@@ -728,6 +730,20 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
   /** الرموزُ الإضافية المربوطة (0141): تُربط من نافذة الكاشير، ولم يكن لها وجهٌ
    *  بأي شاشة ولا فكّ — فربطٌ غلط كان يبيع مادّةً بمسحة مادّةٍ أخرى إلى الأبد. */
   const [altCodes, setAltCodes] = useState<string[]>([]);
+  /** صورة المتجر (0174): تُضغط بالمتصفح لحظةَ الاختيار وتُرفع بعد نجاح الحفظ —
+   *  ففشلُ صورةٍ لا يضيّع منتجاً، والعكسُ يُقال بجملته لا يُبلع. */
+  const [photo, setPhoto] = useState<PreparedUpload | null>(null);
+  const [removePhoto, setRemovePhoto] = useState(false);
+  const [photoBusy, setPhotoBusy] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const photoPreview = photo ? photo.dataUrl : (removePhoto ? null : productImageUrl(product?.image_path));
+  useEffect(() => { setPhoto(null); setRemovePhoto(false); }, [open, product?.id]);
+  const pickPhoto = async (file: File) => {
+    setPhotoBusy(true);
+    try { setPhoto(await prepareUpload(file, { maxDim: 800, quality: 0.72 })); setRemovePhoto(false); }
+    catch (e) { playWarning(); toast.error(describeUploadError(e, t)); }
+    finally { setPhotoBusy(false); }
+  };
   // Bulk mode (create-only): add several barcodes at once sharing price/category,
   // each row differing only in barcode, name, count and expiry. Surfaced on wide
   // screens (iPad/desktop); phone keeps the classic one-product layout.
@@ -972,7 +988,27 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
           toast.toast({ tone: "info", title: t("pos.oldCodeKept", "الرمز القديم {{code}} صار رمزاً إضافياً — مسحتُه بعدها تنزّل نفس المادة", { code: keep.kept }) });
         }
       }
-      else await repo.createProduct({ ...payload, clinic_id: clinicId ?? null });
+      let savedId = product?.id ?? null;
+      let savedClinic = clinicId ?? product?.clinic_id ?? null;
+      if (!product) {
+        const created = await repo.createProduct({ ...payload, clinic_id: clinicId ?? null });
+        savedId = created.id;
+        savedClinic = savedClinic ?? created.clinic_id ?? null;
+      }
+      // الصورة بعد نجاح الحفظ وبمحاولةٍ معزولة: فشلُها لا يضيّع المنتج، ويُقال.
+      if (savedId && (photo || (removePhoto && product?.image_path))) {
+        try {
+          if (photo) {
+            const path = await repo.uploadProductImage(savedClinic, savedId, photo);
+            await repo.updateProduct(savedId, { image_path: path });
+          } else {
+            await repo.updateProduct(savedId, { image_path: null });
+            if (product?.image_path) void repo.deleteProductImage(savedClinic, savedId, product.image_path);
+          }
+        } catch (e) {
+          toast.error(t("pos.photoSaveFailed", "المنتج انحفظ بس الصورة ما انحفظت — افتح المنتج وجرّب الصورة من جديد."), e instanceof Error ? e.message : undefined);
+        }
+      }
       playSuccess();
       onSaved();
     } catch (e) {
@@ -1455,6 +1491,29 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
               onComplete={() => saveRef.current?.focus()}
               invalidLabel={t("pos.expiryInvalid", "Enter a valid date")}
             />
+          </div>
+
+          <div>
+            <label className="label">{t("pos.photoLabel", "صورة المنتج بالمتجر")}</label>
+            <div className="flex items-center gap-3">
+              {photoPreview ? (
+                <img src={photoPreview} alt="" className="h-16 w-16 shrink-0 rounded-xl border border-line object-cover" />
+              ) : (
+                <span className="grid h-16 w-16 shrink-0 place-items-center rounded-xl border border-dashed border-line-strong text-ink-subtle"><Camera size={20} /></span>
+              )}
+              <div className="flex min-w-0 flex-col items-start gap-1.5">
+                <Button type="button" variant="secondary" size="sm" loading={photoBusy} leftIcon={<Camera size={14} />} onClick={() => { playTap(); fileRef.current?.click(); }}>
+                  {t("pos.photoPick", "صوّر بنفسك أو اختر ملفاً")}
+                </Button>
+                {(photo || (product?.image_path && !removePhoto)) && (
+                  <button type="button" className="text-2xs font-bold text-warn-700 hover:underline" onClick={() => { playTap(); setPhoto(null); setRemovePhoto(true); }}>
+                    {t("pos.photoRemove", "شيل الصورة")}
+                  </button>
+                )}
+                <p className="text-2xs text-ink-subtle">{t("pos.photoHint", "تنضغط تلقائياً وتظهر ببطاقة متجرك الإلكتروني.")}</p>
+              </div>
+              <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={(e) => { const fl = e.target.files?.[0]; if (fl) void pickPhoto(fl); e.target.value = ""; }} />
+            </div>
           </div>
         </div>
       </div>

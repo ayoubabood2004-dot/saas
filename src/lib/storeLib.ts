@@ -7,6 +7,20 @@
 // ============================================================================
 import type { StoreOrderItem } from "@/types";
 
+/* الرابط من env مباشرةً لا من `@/lib/supabase`: حرّاسُ الحزم يوصّلون repo.ts
+ * (وهو يستورد هذا الملف) ببديلٍ مزيّفٍ للعميل، واستيرادُ الوحدة الحقيقية من
+ * هنا كان يُدخل `@supabase/supabase-js` كاملةً بالحزمة فيفشّلها. */
+const SUPA_URL: string = (import.meta as unknown as { env?: Record<string, string | undefined> }).env?.VITE_SUPABASE_URL ?? "";
+
+/** رابط عرض صورة المنتج (0174): data URL تجريبي يمرّ كما هو، ومسارٌ سحابيّ
+ *  يُبنى رابطه العام — الـbucket عام فلا توقيع، والزبون بلا جلسة أصلاً. */
+export function productImageUrl(path: string | null | undefined): string | null {
+  if (!path) return null;
+  if (path.startsWith("data:")) return path;
+  if (!SUPA_URL) return null;
+  return `${SUPA_URL.replace(/\/+$/, "")}/storage/v1/object/public/product-images/${path}`;
+}
+
 export const SLUG_RE = /^[a-z0-9][a-z0-9-]{1,28}[a-z0-9]$/;
 
 /** نظّف إدخال المستخدم لصيغة slug صالحة قدر الإمكان (بلا فرض الطول). */

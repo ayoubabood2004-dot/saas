@@ -549,6 +549,8 @@ export interface Product {
   store_visible?: boolean;
   /** وصف تسويقي قصير يظهر تحت الاسم ببطاقة المتجر. */
   store_desc?: string | null;
+  /** مسار صورة المنتج ببucket «product-images» (0174) — أو data URL بالوضع التجريبي. لا بايتات بالقاعدة أبداً. */
+  image_path?: string | null;
   created_at: string;
 }
 
@@ -1339,6 +1341,8 @@ export interface StoreCatalogItem {
   price: number;
   descr: string | null;
   available: boolean;
+  /** مسار الصورة (0174) — قد يغيب عن خادمٍ لم يرحَّل بعد، والبطاقة ترجع لرمز الفئة. */
+  image_path?: string | null;
 }
 
 /* ── بوّابة المالك (هجرة 0158) ─────────────────────────────────────────────

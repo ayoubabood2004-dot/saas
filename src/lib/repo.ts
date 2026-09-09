@@ -1312,6 +1312,16 @@ const demoRepo = {
     saveDB(db);
     return p;
   },
+  /** صورة المنتج (0174) — تجريبياً: لا مخزنَ ملفات، فيرجع data URL المضغوط
+   *  ليُحفظ بـ`image_path` كما هو. الشاشات لا تفرّق بينه وبين مسار سحابيّ. */
+  async uploadProductImage(_clinicId: string | null, _productId: string, upload: { blob: Blob; dataUrl: string }): Promise<string> {
+    void _clinicId; void _productId;
+    return upload.dataUrl;
+  },
+  /** حذف ملف الصورة — تجريبياً لا ملفَ أصلاً؛ تصفيرُ المسار شأنُ updateProduct. */
+  async deleteProductImage(_clinicId: string | null, _productId: string, _path: string): Promise<void> {
+    void _clinicId; void _productId; void _path;
+  },
   async updateProduct(id: string, patch: Partial<Product>): Promise<Product | undefined> {
     const db = loadDB();
     const p = (db.products ?? []).find((x) => x.id === id);
@@ -1654,6 +1664,7 @@ const demoRepo = {
         id: p.id, name: p.name, category: p.category ?? null, subcategory: p.subcategory ?? null,
         price: p.sell_price, descr: p.store_desc ?? null,
         available: p.stock > 0 || poolOf(p) > 0,
+        image_path: p.image_path ?? null,
       }));
   },
   async placeStoreOrder(
@@ -4011,6 +4022,26 @@ const supabaseRepo: typeof demoRepo = {
       if (!outboxEnqueue("products", row as Record<string, unknown> & { id: string })) throw e;
       return { ...row, created_at: new Date().toISOString() } as Product;
     }
+  },
+  /** صورة المنتج (0174): البايتات إلى bucket «product-images» بمسار
+   *  `<clinic>/<product>.webp` — سياسةُ المخزن تشترط تطابق المجلد مع
+   *  `auth_clinic()`، فرفعٌ بعيادةٍ غلط يُرفض من الخادم لا من الواجهة.
+   *  والقاعدة تحمل المسارَ نصاً فقط (درسُ base64 بالشعارات — لا بايتات بجدول). */
+  async uploadProductImage(clinicId, productId, upload) {
+    if (!clinicId) throw new Error("no_clinic_for_image");
+    const path = `${clinicId}/${productId}.webp`;
+    const up = await sbc().storage.from("product-images").upload(path, upload.blob, {
+      contentType: upload.blob.type || "image/webp",
+      upsert: true,
+    });
+    if (up.error) throw up.error;
+    return path;
+  },
+  async deleteProductImage(clinicId, productId, path) {
+    void clinicId; void productId;
+    // أفضل جهدٍ: بقاءُ ملفٍ يتيمٍ أهون من إفشال تصفير المسار — والمسار data: تجريبيّ لا ملف له.
+    if (!path || path.startsWith("data:")) return;
+    try { await sbc().storage.from("product-images").remove([path]); } catch { /* swallow-ok: ملفٌ يتيمٌ لا يُرى ولا يُحاسَب، والحذفُ يُعاد من أي حفظٍ لاحق */ }
   },
   async updateProduct(id, patch) {
     // نفس تطبيع الإنشاء — تعديلٌ يكتب باركوداً غيرَ مطبَّع يعيد المشكلة.

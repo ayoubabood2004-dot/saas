@@ -547,5 +547,22 @@ console.log("▸ الدفعة ٧ — بطاقاتٌ توصل، وسقوفٌ تُ
   check("  والصفُّ محفوظ", inv3.includes("const ProductRow = memo(function ProductRow"));
 }
 
+/* ── صورة المنتج (0174): مسارٌ بالقاعدة والبايتات بالمخزن ─────────────────────
+ * المحروس: (١) لا بايتات بجدول — الرفعُ إلى bucket والحقلُ نصّ (درسُ base64
+ * بالشعارات)؛ (٢) بطاقةُ المتجر لا تصير فارغةً أبداً — فشلُ التحميل يخفي
+ * الصورةَ بـ`hidden` فيبقى رمزُ الفئة تحتها؛ (٣) فشلُ الصورة لا يضيّع المنتج. */
+{
+  const mig = readFileSync("supabase/migrations/0174_product_images.sql", "utf8");
+  const invP = readFileSync("src/pages/Inventory.tsx", "utf8");
+  const front = readFileSync("src/pages/Storefront.tsx", "utf8");
+  const repoS = readFileSync("src/lib/repo.ts", "utf8");
+  check("0174: العمود مسارٌ نصيّ والكتلوج يرجعه", mig.includes("add column if not exists image_path text") && mig.includes("p.image_path"));
+  check("  وسياسةُ الرفع تشترط مجلّدَ العيادة", mig.includes("(storage.foldername(name))[1] = auth_clinic()::text"));
+  check("  والرفعُ السحابيّ إلى bucket لا إلى جدول", repoS.includes('storage.from("product-images").upload'));
+  check("  والنسختان التجريبية والسحابية كلتاهما تعرفان الرفع", (repoS.split("async uploadProductImage(").length - 1) === 2);
+  check("  وبطاقةُ المتجر كسولةُ التحميل وتسقط لرمز الفئة بـhidden", front.includes('loading="lazy"') && front.includes("e.currentTarget.hidden = true"));
+  check("  وفشلُ الصورة معزولٌ عن حفظ المنتج ويُقال", invP.includes("pos.photoSaveFailed"));
+}
+
 console.log(`\n${fails ? "✗" : "✓"} products-test: ${passes} نجحت، ${fails} فشلت`);
 process.exit(fails ? 1 : 0);

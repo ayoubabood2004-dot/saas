@@ -19,7 +19,7 @@ import {
 } from "lucide-react";
 import type { StoreCatalogItem, StoreFrontInfo } from "@/types";
 import { repo } from "@/lib/repo";
-import { categoryLook, isValidCustomerPhone } from "@/lib/storeLib";
+import { categoryLook, isValidCustomerPhone, productImageUrl } from "@/lib/storeLib";
 import { preferArabicForVisitor } from "@/lib/portal";
 import { waNumber } from "@/lib/phone";
 import { celebrate } from "@/lib/celebrate";
@@ -303,8 +303,15 @@ export function Storefront() {
                   className={cn("relative flex flex-col overflow-hidden rounded-2xl border bg-surface-1 transition",
                     inCart > 0 ? "border-brand-400 shadow-raised" : "border-line",
                     !p.available && "opacity-60")}>
-                  <div className={cn("grid h-24 place-items-center bg-gradient-to-br text-4xl", look.grad)}>
+                  {/* الصورة فوق رمز الفئة لا بدلَه: فشلُ تحميلها (ملفٌ حُذف، شبكةٌ
+                      ضعيفة) يخفيها بـhidden فيبقى الرمزُ تحتها — بطاقةٌ ما تصير فارغة. */}
+                  <div className={cn("relative grid h-24 place-items-center overflow-hidden bg-gradient-to-br text-4xl", look.grad)}>
                     {look.emoji}
+                    {productImageUrl(p.image_path) && (
+                      <img src={productImageUrl(p.image_path) as string} alt="" loading="lazy"
+                        className="absolute inset-0 h-full w-full object-cover"
+                        onError={(e) => { e.currentTarget.hidden = true; }} />
+                    )}
                   </div>
                   {!p.available && (
                     <span className="absolute start-2 top-2 rounded-full bg-ink/70 px-2 py-0.5 text-2xs font-bold text-white">نافد حالياً</span>
