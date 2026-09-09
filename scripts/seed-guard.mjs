@@ -14,8 +14,18 @@
  *   node scripts/seed-guard.mjs
  * ==========================================================================*/
 import fs from "node:fs";
+import path from "node:path";
 
-const FILES = ["src/lib/breeds.ts", "src/lib/meds.ts", "src/lib/settings.ts", "src/lib/clinicSync.ts"];
+/* قائمةٌ مكتوبةٌ بالنصّ تُعمي الحارسَ عن ملفٍّ جديد — وقد أعمته فعلاً عن
+ * ثلاثة (promotions/locations/vaccines) حتى ظهر العطلُ بسجلّ الإنتاج:
+ * «duplicate key … clinic_promos_pkey» من عيادةٍ تعيد المحاولة، والتصادمُ
+ * هو ما منع كتابةً بأرضِ غيرها لا الحارس. فالنطاقُ صار «كلُّ ملفٍّ فيه
+ * مُرطِّب»، يتّسع من نفسه كلّما وُلد مُرطِّبٌ جديد. */
+const walk = (d) => fs.readdirSync(d).flatMap((f) => {
+  const p = path.join(d, f);
+  return fs.statSync(p).isDirectory() ? walk(p) : (/\.tsx?$/.test(p) ? [p.split(path.sep).join("/")] : []);
+});
+const FILES = walk("src").filter((f) => /registerHydrator|function hydrate/.test(fs.readFileSync(f, "utf8")));
 /** نداءُ سوبابيس يغيّر صفّاً. */
 const WRITE = /\b(?:client|sb\(\)!?)\s*\.\s*from\([^)]*\)\s*\.\s*(insert|upsert|update|delete)\s*\(/g;
 
@@ -55,9 +65,20 @@ for (const file of FILES) {
   }
 }
 
+// نطاقٌ لا يُفترض: ملفّاتُ المُرطِّبات المعروفة لازم تكون كلُّها بالمسح —
+// وإلا فالحارسُ نفسُه انكمش بصمتٍ وعاد اطمئنانُه كاذباً.
+const MUST = ["src/lib/breeds.ts", "src/lib/meds.ts", "src/lib/settings.ts",
+              "src/lib/clinicSync.ts", "src/lib/promotions.ts",
+              "src/lib/locations.ts", "src/lib/vaccines.ts"];
+const missed = MUST.filter((f) => !FILES.includes(f));
+if (missed.length) {
+  console.error("   ✗ الحارسُ لا يمسح: " + missed.join("، "));
+  bad += missed.length;
+}
+
 if (bad) {
   console.error(`\n✗ seed-guard: ${bad} كتابةً غيرَ محروسة داخل مُرطِّب.`);
   console.error("  الترطيبُ قراءة. ما يكتب لعيادةٍ لازم يتيقّن أنها عيادتها — لُفَّه بـseedOwnClinic.");
   process.exit(1);
 }
-console.log(`✓ seed-guard: ${ok} بذرةً محروسةً بـseedOwnClinic، ولا كتابةَ عارية داخل مُرطِّب.`);
+console.log(`✓ seed-guard: ${ok} بذرةً محروسةً بـseedOwnClinic في ${FILES.length} ملفَّ مُرطِّبٍ ممسوحاً، ولا كتابةَ عارية.`);

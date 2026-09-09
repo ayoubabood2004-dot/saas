@@ -2,7 +2,7 @@
 // names. Clinics may add their own (brand) vaccines at runtime, each mapped to a scientific
 // name — clients only ever see the scientific name.
 import { getActiveClinicId } from "./clinics";
-import { sb, cloudWrite, registerHydrator, registerReset } from "./clinicSync";
+import { sb, cloudWrite, registerHydrator, registerReset, seedOwnClinic } from "./clinicSync";
 
 export interface VaccineCategory {
   group: string;
@@ -101,7 +101,10 @@ export async function hydrateVaccines(): Promise<void> {
     let next = (data ?? []).map((r) => ({ name: r.name as string, scientific: (r.scientific as string) ?? "" }));
     const local = readLocal();
     if (next.length === 0) {
-      if (local.length) { await client.from("clinic_vaccines").insert(local); next = local; }
+      /* بذرةٌ لا ترتفع إلا بأرض صاحبها (0153)، والتبنّي بعد نجاحها. وفرعُ
+       * الدمج أسفلَه يبقى كما هو: يقع حين يرجع الخادمُ صفوفاً — أي العيادةُ
+       * متّفقة — وغرضُه ألّا تسقط لقاحةٌ أُضيفت للتوّ. */
+      if (local.length && await seedOwnClinic(() => client.from("clinic_vaccines").insert(local))) next = local;
     } else if (local.length) {
       // Keep any local-only items (added optimistically; their cloud insert may be
       // pending or failed) so hydration never DROPS a just-added vaccine.

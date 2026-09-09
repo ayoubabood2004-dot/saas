@@ -88,10 +88,17 @@ async function askSeedGate(): Promise<boolean> {
   }
 }
 
-/** نفّذ بذرةَ الإعدادات **فقط** إن كانت أرضَ صاحبها. */
-export async function seedOwnClinic(run: () => PromiseLike<unknown>): Promise<void> {
+/** نفّذ بذرةَ الإعدادات **فقط** إن كانت أرضَ صاحبها.
+ *
+ *  وتُرجع هل جرت فعلاً: المُرطِّبُ الذي يزرع ثم يتبنّى (`next = local`) لازم
+ *  يعرف أن البذرةَ رُفضت — وإلا مُنعت الكتابةُ وتسرّب **العرض**: بياناتُ جهازٍ
+ *  لعيادةٍ تُعرض على شاشة عيادةٍ أخرى. المستدعون القدامى يتجاهلون القيمةَ
+ *  فلا يتغيّر سلوكُهم. */
+export async function seedOwnClinic(run: () => PromiseLike<unknown>): Promise<boolean> {
   seedGate ??= askSeedGate();
-  if (await seedGate) await run();
+  if (!(await seedGate)) return false;
+  await run();
+  return true;
 }
 
 /* ----------------------------- Hydration ------------------------------------

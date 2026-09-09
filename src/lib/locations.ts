@@ -7,7 +7,7 @@
 // vital-range and dial-code preferences (see lib/settings.ts).
 
 import { getActiveClinicId } from "./clinics";
-import { sb, cloudWrite, registerHydrator, registerReset } from "./clinicSync";
+import { sb, cloudWrite, registerHydrator, registerReset, seedOwnClinic } from "./clinicSync";
 
 /** The 19 governorates of Iraq (transliterated). Suggestions, not a closed set. */
 export const IRAQI_GOVERNORATES: string[] = [
@@ -90,7 +90,14 @@ export async function hydrateAreas(): Promise<void> {
         if (areas.length === 0) rows.push({ governorate: g, area: null });
         else for (const a of areas) rows.push({ governorate: g, area: a });
       }
-      if (rows.length) await client.from("clinic_areas").insert(rows);
+      /* بذرةٌ لا ترتفع إلا بأرض صاحبها (0153). و`map` مُلئت من المحلّيّ أعلاه
+       * **قبل** الإدراج — فإن رُفضت البذرةُ يُقطع الطريقُ هنا كي لا تُكتب
+       * الخريطةُ الملوَّثة بالكاش وبالمرآة أسفلَه: لا تتبنَّ خريطةَ جهازٍ
+       * لعيادةٍ غيرِ عيادته. */
+      if (rows.length && !(await seedOwnClinic(() => client.from("clinic_areas").insert(rows)))) {
+        cache = null;
+        return;
+      }
     }
     cache = map;
     try { localStorage.setItem(customKey(), JSON.stringify(map)); } catch { /* ignore */ }
