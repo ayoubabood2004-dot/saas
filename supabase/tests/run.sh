@@ -1250,10 +1250,16 @@ chk "ومثلُها update_purchase" \
 # الإضافيُّ يغلب الأساسيّ، وهو نقيضُ ما يحرسه. فيمتدّ إلى الاتجاه نفسِه.
 chk "والأساسيُّ يغلب الإضافيّ بترتيب الشراء (بالاتجاه لا بالوجود)" \
     "select count(*)::text from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname in ('record_purchase','update_purchase') and prosrc like '%order by (inv_norm_code(barcode) = v_code and coalesce(barcode,'''') <> '''') desc%'" "2"
-chk "استدعاءُ الرمز مرتَّبٌ حتميّاً (لا rows[0] عشوائيّ)" \
-    "select (prosrc like '%order by coalesce(barcode = p_code, false) desc%')::text from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='product_by_code'" "true"
-chk "  ويطابق مطبَّعاً لا خامّاً وحده" \
-    "select (prosrc like '%inv_norm_code(barcode) = inv_norm_code(p_code)%')::text from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='product_by_code'" "true"
+# كان هنا فحصا نصٍّ على `product_by_code`: واحدٌ يطلب مقطعَ الترتيب والثاني
+# مقطعَ المطابقة المطبَّعة. سقطا لمّا أعادت 0172/0173 كتابةَ الدالّة — لا لأن
+# السلوكَ انكسر، بل لأن النصَّ تغيّر: صار `p.barcode` باسمٍ مستعار، والتطبيعُ
+# يُحسب مرّةً بمتغيّر (`v_norm`) بدل تكرار النداء. أي أن الفحصَين كانا يحرسان
+# **صياغةً** لا أثراً، فمنعا تحسيناً وما حرسا شيئاً. وهذا نقيضُ قاعدة القسم
+# نفسِه: «نصٌّ يحرس الشكل، وسلوكٌ يحرس الأثر» — والأثرُ هنا هو المقصود.
+#
+# فالحتميّةُ مفحوصةٌ سلوكياً بالأسفل (DET-500: الصاحبُ قبل المستعير، ومطويّاً
+# كذلك)، والذي كان ناقصاً فعلاً هو **التطبيع**: رمزٌ أُدخل بأرقامٍ عربية أو
+# بمسافة. وهما حالتان مقيستان بالإنتاج لا مؤلَّفتان.
 chk "والاستعادةُ ترشّح الرموزَ الإضافية المسروقة" \
     "select (prosrc like '%{alt_codes}%')::text from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='restore_product'" "true"
 
@@ -1297,6 +1303,19 @@ chk "  والأوّلُ صاحبُ الرمز لا المستعير (حتمية�
     "select name from ($ACJ) s, product_by_code('DET-500') limit 1" "صاحبُالرمز"
 chk "  وبحالةٍ مطويّة كذلك" \
     "select name from ($ACJ) s, product_by_code('det-500') limit 1" "صاحبُالرمز"
+
+# والتطبيعُ سلوكياً — بدلَ فحصَي النصّ اللذين سقطا أعلاه. الحالتان من الإنتاج:
+# كيبوردٌ عربيّ وقتَ إدخال الرمز، ومسافةٌ التصقت به من لصقِ إكسل. وكلٌّ منهما
+# يدخل بمنتجٍ مستقلّ لأن محفّز 0167 يرفض توأماً بالتطبيع — فلا يمكن زرعُ
+# «خامٍّ ومطبَّعٍ» على نفس الرمز أصلاً، وهذا بذاته حارسٌ ثانٍ.
+$P -c "insert into products (id, clinic_id, name, barcode, stock, created_at) values
+         ('a1000000-0000-0000-0000-000000000031','$AC','مُدخَلٌ بالعربية','٥٩٠٥٥٥٥',1,'2026-01-01'),
+         ('a1000000-0000-0000-0000-000000000032','$AC','مُدخَلٌ بمسافة','590 6666',1,'2026-01-01')
+       on conflict do nothing;" >/dev/null 2>&1
+chk "  ورمزٌ أُدخل بأرقامٍ عربية يُلقى بمسحةٍ إنكليزية" \
+    "select name from ($ACJ) s, product_by_code('5905555') limit 1" "مُدخَلٌبالعربية"
+chk "  ورمزٌ التصقت به مسافةٌ يُلقى بلا مسافة" \
+    "select name from ($ACJ) s, product_by_code('5906666') limit 1" "مُدخَلٌبمسافة"
 
 # G3 سلوكياً: رمزٌ إضافيٌّ لمحذوفٍ يصير لغيره أثناء الغياب — الاستعادةُ لا
 # تسترجعه (وإلا صار رمزٌ واحدٌ على منتجَين)، ورمزُه الحرُّ يبقى.
