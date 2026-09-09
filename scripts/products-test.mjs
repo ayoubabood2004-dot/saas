@@ -253,6 +253,7 @@ console.log("▸ codeIndex — الشراءُ يلقى ما يلقاه الكا�
     /\w+\.barcode\s*\|\|\s*""\s*\)?\s*\)\.includes\(/,
   ];
   const bad = [];
+  const waivers = [];
   for (const f of walk("src")) {
     if (f.endsWith("lib/productCodes.ts")) continue;              // مصدرُ الحقيقة نفسه
     const src = readFileSync(f, "utf8");
@@ -261,10 +262,18 @@ console.log("▸ codeIndex — الشراءُ يلقى ما يلقاه الكا�
       // ما يحرسه، فيُكتب بلا شرحٍ أو يُسكَت الحارس.
       const t = line.trim();
       if (t.startsWith("//") || t.startsWith("*") || t.startsWith("/*")) continue;
+      /* واستثناءٌ مكتوبٌ بسببه: جداولُ ليس فيها `alt_codes` أصلاً (سجلُّ
+       * المولّد مثلاً) رمزُها **هو** هويّتُها، فمطابقتُه وحدَه ليست عطلاً.
+       * ويُطلب السببُ نصّاً كي لا يصير المفتاحُ بابَ إسكاتٍ للحارس. */
+      const wi = line.indexOf("code-search-ok:");
+      const waived = wi >= 0 && line.slice(wi + 15).trim().length > 0;
+      if (waived) { waivers.push(`${f}:${i + 1}`); continue; }
       if (PATTERNS.some((re) => re.test(line))) bad.push(`${f}:${i + 1}`);
     }
   }
   check("لا شاشةَ تبحث بالرمز الأساسيّ وحده — استعمل codeMatcher", bad.length === 0, bad.join("، "));
+  // والاستثناءاتُ تُعدّ: عددٌ يكبر بلا سببٍ إشارةُ حارسٍ يُلتفّ عليه.
+  check("  والاستثناءاتُ المكتوبة قليلةٌ ومعدودة", waivers.length <= 2, waivers.join("، "));
 
   // ولا مُطبِّعَ رموزٍ مكتوبٍ بيدٍ داخل شاشةٍ تطابق الرموز. هذا العطلُ عاش
   // بـPurchases.tsx حتى الدفعة ٦: مُطبِّعٌ محلّيّ يشيل الفراغاتِ والأرقامَ
@@ -362,6 +371,70 @@ console.log("▸ ع١٠ — الفرعُ النائم نصفُ المطبَّع 
     !repo.includes("alt_codes.cs.{${code}}"));
   check("وغيابُ الدالّة يُقال باسمه لا بصمت", repo.includes("lookup_fn_missing"));
   check("  وتُترجمه describeDbError", readFileSync("src/lib/errors.ts", "utf8").includes("lookup_fn_missing"));
+}
+
+
+/* ── الدفعة ٦: أعطالٌ منطقية متفرّقة، كلٌّ منها «قيمةٌ تُعرض غيرَ التي تُحسب» ─ */
+console.log("▸ الدفعة ٦ — المعروضُ هو المحسوب");
+{
+  const sale = readFileSync("src/components/retail/SaleBuilder.tsx", "utf8");
+  const inv2 = readFileSync("src/pages/Inventory.tsx", "utf8");
+  const pur = readFileSync("src/components/inventory/Purchases.tsx", "utf8");
+  const studio2 = readFileSync("src/components/inventory/BarcodeStudio.tsx", "utf8");
+
+  /* م٢: منتقي الوزن كان يَعِد بسعر المفرد بينما `addWeightLine` تنشئ السطرَ
+   * بـ`listPrice` — وهي بوضع الجملة **سعرُ الشراء**. فالمربّعاتُ تطبع رقماً
+   * والفاتورةُ رقماً آخر، والتعليقُ فوق السطر يقول إن الغرض ألّا يختلفا. */
+  check("م٢: منتقي الوزن يعرض `listPrice` لا `sell_price` الخام",
+    sale.includes("line?.byWeight ? line.unit_price : listPrice(p)"));
+  check("  ولا بقيّةَ للخام", !sale.includes("line?.byWeight ? line.unit_price : p.sell_price"));
+  check("  والسطرُ يُنشأ بنفس الدالّة", sale.includes("perKgPrice: listPrice(p)"));
+
+  /* م٣: رمزٌ كلُّه محارفُ اتجاهٍ يصير "" بعد التطبيع، و`trim()` لا يزيلها.
+   * فخانتان «فارغتان للعين» كانتا تتطابقان فتمنعان حفظَ الدفعة كلِّها. */
+  check("م٣: الفارغُ بعد التطبيع خارج فحص التكرار", inv2.includes("const ghost = pairs.find((x) => !x.norm)"));
+  check("  ويُقال باسمه لا برمزٍ لا يُرى", inv2.includes("pos.ghostCode"));
+  check("  والتكرارُ يُقارن بالمطبَّع", inv2.includes("const ncodes = pairs.map((x) => x.norm)"));
+
+  /* م٤: للفراغ دلالتان بنفس الشاشة — «مدفوعٌ كامل» بالإنشاء، و«يبقى كما هو»
+   * بالتعديل. والشارةُ كانت تُشتقّ بدلالة الإنشاء وحدها فتكذب على دَينٍ قائم. */
+  check("م٤: المدفوعُ بالتعديل يعود لقيمة الفاتورة لا للإجمالي",
+    pur.includes("editing ? Math.max(0, Math.min(total, editing.purchase.amount_paid ?? total)) : total"));
+  check("  والقالبُ يعرض المدفوعَ الحاليّ", pur.includes("placeholder={money(editing ? (editing.purchase.amount_paid ?? total) : total)}"));
+
+  /* م٥: الحارسُ كان يفحص القفلَ وحدَه، و`canPos` يخفي الزرَّ لا الشاشة. */
+  check("م٥: الحارسُ يرى الاستحقاق لا القفلَ وحده",
+    inv2.includes('else if (!canPos && view === "wholesale") setView("products")'));
+  check("  و`canPos` بتبعيّات الأثر", inv2.includes("}, [locked, view, canPos]);"));
+  check("  والرسمُ يشترطه أيضاً — حزامٌ ثانٍ", inv2.includes('view === "wholesale" && canPos ?'));
+
+  /* ص٣: ثلاثةُ أبحاثٍ حرفية، ومفتاحُ اسمِ شركةٍ لا يطوي ة/ه ولا الهمزة. */
+  check("ص٣: بحثُ تبويب الشركات مطبَّع", inv2.includes("companies.filter((c) => searchable(c.name).includes(ql))"));
+  check("  وبحثُ فواتير الشراء كذلك", pur.includes("searchable(p.company_name ?? \"\").includes(ql)"));
+  check("  وسجلُّ المولّد: الاسمُ بـsearchable والرمزُ بـmatchCode",
+    studio2.includes("searchable(g.label ?? \"\").includes(nq)") && studio2.includes("matchCode(g.barcode).includes(cq)"));
+  check("  ولا toLowerCase خامٌّ بقي بهذه المواضع",
+    !inv2.includes("companies.filter((c) => c.name.toLowerCase().includes(ql))")
+    && !pur.includes('(p.company_name ?? "").toLowerCase().includes(ql)'));
+  check("  ومفتاحُ اسم الشركة يبني على searchable بالنسختين",
+    (inv2.split("const normKey = (s: string) => searchable(normName(s))").length - 1) === 1
+    && (pur.split("const normKey = (s: string) => searchable(normName(s))").length - 1) === 1);
+
+  const { searchable } = await import(
+    "data:text/javascript;base64," + Buffer.from((await esbuild.build({
+      stdin: { contents: `export { searchable } from "./src/lib/utils";`, resolveDir: process.cwd(), loader: "js" },
+      bundle: true, format: "esm", write: false, platform: "neutral", plugins: [stubs],
+    })).outputFiles[0].text).toString("base64")
+  );
+
+  /* والمفتاحُ نفسُه يُقاس سلوكياً لا نصّاً: «الشركه الامل» و«الشركة الأمل»
+   * اسمٌ واحد بعين قارئه — وحارسُ التكرار كان يسمح بهما توأمَين. */
+  const normKey = (s) => searchable(String(s).trim().replace(/\s+/g, " ").normalize("NFC")).replace(/\s+/g, " ").trim();
+  check("و«الشركه الامل» = «الشركة الأمل» بمفتاح واحد",
+    normKey("الشركه الامل") === normKey("الشركة الأمل"));
+  check("  و«شركة  الأمل» بمسافتين كذلك", normKey("شركة  الأمل") === normKey("شركة الأمل"));
+  check("  و«ABC» = «abc»", normKey("ABC") === normKey("abc"));
+  check("  وشركتان مختلفتان تبقيان مختلفتين", normKey("الأمل") !== normKey("الوفاء"));
 }
 
 console.log(`\n${fails ? "✗" : "✓"} products-test: ${passes} نجحت، ${fails} فشلت`);

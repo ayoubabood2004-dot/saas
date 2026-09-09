@@ -43,8 +43,13 @@ const lowThreshold = (p: Product) => (p.min_stock && p.min_stock > 0 ? p.min_sto
 /** Canonical company name: trim, collapse internal whitespace, NFC-normalize
  *  (so visually-identical Arabic/Latin names don't split into two companies). */
 const normName = (s: string) => s.trim().replace(/\s+/g, " ").normalize("NFC");
-/** Case-insensitive match key for a company name. */
-const normKey = (s: string) => normName(s).toLowerCase();
+/**
+ * مفتاحُ مطابقةِ اسمِ شركة. كان `toLowerCase` وحدَه، فحارسُ التكرار يسمح
+ * بـ«الشركه» توأماً لـ«الشركة» و«الامل» لـ«الأمل» — وهما اسمٌ واحد بعين
+ * قارئه. فصار يبني على `searchable` (تطبيعُ همزة/ة/ى والأرقام) مع طيّ
+ * المسافات، وهو نفسُ ما تبحث به بقيّةُ الشاشات — «الشاشتان لازم تتفقان».
+ */
+const normKey = (s: string) => searchable(normName(s)).replace(/\s+/g, " ").trim();
 
 type View = "products" | "companies" | "purchases" | "ledger" | "barcodes" | "trash" | "wholesale";
 
@@ -129,9 +134,14 @@ export function Inventory() {
   const canPos = has("pos");
   // جهاز مقفل وواقف على تبويب حساس؟ رجّعه للمنتجات فوراً. و«البيع بالجملة»
   // منها: شاشةٌ تعرض سعرَ الشراء بحقل السعر تُسقط القفلَ الموضوعَ لهذه الصفحة.
+  /* والحارسُ كان أعورَ من جهة الاستحقاق (م٥): يفحص القفلَ وحدَه، و`canPos`
+   * يُخفي الزرَّ لا الشاشة. و`useEntitlements` تعيد الرسمَ حيّاً مع الاشتراك،
+   * فانتهاءُ الباقة والشاشةُ مفتوحة كان يترك كاشيرَ الجملة تعمل — بسعر الشراء
+   * ظاهراً — على عيادةٍ لم تعد تستحقّها. */
   useEffect(() => {
     if (locked && (view === "purchases" || view === "ledger" || view === "barcodes" || view === "trash" || view === "wholesale")) setView("products");
-  }, [locked, view]);
+    else if (!canPos && view === "wholesale") setView("products");
+  }, [locked, view, canPos]);
   // null = لم يُفحص بعد · false = ترحيل 0075 ناقص (المجموعات تسقط بصمت)
   const [groupsOk, setGroupsOk] = useState<boolean | null>(null);
   const [fixBusy, setFixBusy] = useState(false);
@@ -358,7 +368,7 @@ export function Inventory() {
         <SupplierLedgerTab companies={companies} clinicId={clinicId} products={products} />
       ) : view === "barcodes" ? (
         <BarcodeStudio products={products} onChanged={load} />
-      ) : view === "wholesale" ? (
+      ) : view === "wholesale" && canPos ? (
         // نفسُ شاشة البيع بكل تفاصيلها — الفرقُ أن السطر يبدأ على سعر الشراء.
         <SaleBuilder products={products} clinicId={clinicId} onSold={load} wholesale />
       ) : view === "trash" ? (
@@ -929,11 +939,26 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
     // والمقارنةُ **مطبَّعة** كمقارنة القاعدة (محفّز 0167): صفّان بـ`W90` و`w90`،
     // أو بـ`٢٤٧` و`247`، رمزٌ واحد. وبلا التطبيع يمرّان من هنا ويرفض الخادمُ
     // الثاني بعد أن يكون الأوّلُ قد حُفظ — فيبقى نصفُ الدفعة ورسالةٌ غامضة.
-    const codes = validRows.map((r) => r.barcode.trim()).filter(Boolean);
-    const ncodes = codes.map((c) => matchCode(c));
+    /* والفارغُ بعد التطبيع خارج المقارنة (م٣) — كما هو مستثنىً من فحص
+     * التعارض أسفلَه بالسبب نفسِه. رمزٌ كلُّه محارفُ اتجاهٍ يصير `""` بعد
+     * التطبيع، و`trim()` لا يزيلها (U+200F ليست مسافةً بيضاء). فخانتان
+     * «فارغتان للعين» كانتا تتطابقان فتمنعان حفظَ الدفعة كلِّها برسالة
+     * «الباركود  مكرر» — برمزٍ لا يُرى. */
+    const pairs = validRows
+      .map((r) => ({ raw: r.barcode.trim(), norm: matchCode(r.barcode) }))
+      .filter((x) => x.raw);
+    // ورمزٌ خامُّه غير فارغ ونورمُه فارغ: كلُّه محارفُ خفيّة — يُقال باسمه،
+    // فالطبيبُ يرى خانةً «فيها شيء» ولا يفهم لماذا تُرفض.
+    const ghost = pairs.find((x) => !x.norm);
+    if (ghost) {
+      toast.error(t("pos.ghostCode", "رمزٌ كلُّه محارف خفية — امسحه وأعد المسح"),
+        t("pos.ghostCodeHint", "الخانة تبدو فارغة للعين لكن فيها محارفَ اتجاهٍ غير مرئية. احذف محتواها وأعد المسح."));
+      return;
+    }
+    const ncodes = pairs.map((x) => x.norm);
     const dupAt = ncodes.findIndex((c, i) => ncodes.indexOf(c) !== i);
     if (dupAt >= 0) {
-      toast.error(t("pos.bulkDupBarcode", { code: codes[dupAt], defaultValue: "الباركود {{code}} مكرر في القائمة" }));
+      toast.error(t("pos.bulkDupBarcode", { code: pairs[dupAt].raw, defaultValue: "الباركود {{code}} مكرر في القائمة" }));
       return;
     }
     // A barcode that already belongs to a product would create a confusing twin —
@@ -1625,8 +1650,10 @@ function CompaniesTab({ products, companies, sections, clinicId, onChanged }: { 
     );
   }
 
-  const ql = q.trim().toLowerCase();
-  const shown = ql ? companies.filter((c) => c.name.toLowerCase().includes(ql)) : companies;
+  // نفسُ تطبيع تبويب المنتجات وشاشة البيع (ص٣): بحثٌ حرفيّ هنا كان يقول
+  // «ماكو شركة» عن شركةٍ مسجَّلة لأن اسمها كُتب بـ«ه» بدل «ة».
+  const ql = searchable(q.trim());
+  const shown = ql ? companies.filter((c) => searchable(c.name).includes(ql)) : companies;
 
   return (
     <div className="space-y-4">

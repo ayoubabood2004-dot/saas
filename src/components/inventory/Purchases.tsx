@@ -12,7 +12,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Modal } from "@/components/Modal";
 import { Combobox } from "@/components/Combobox";
 import { Button, Badge, useToast, Skeleton } from "@/components/ui";
-import { cn, money, formatDate, localISO, normalizeAr, normalizeCode, matchCode } from "@/lib/utils";
+import { cn, money, formatDate, localISO, normalizeAr, normalizeCode, matchCode, searchable } from "@/lib/utils";
 import { withTimeout, describeDbError } from "@/lib/errors";
 import { codeIndex, excelArtifact, looksLayoutMangled, rescueScan, matchTruncatedCode, stripAim } from "@/lib/productCodes";
 import { createScanAssembler } from "@/lib/scanBuffer";
@@ -25,7 +25,8 @@ import { Printer } from "lucide-react";
 
 /** Canonical company-name helpers (kept in sync with Inventory.tsx). */
 const normName = (s: string) => s.trim().replace(/\s+/g, " ").normalize("NFC");
-const normKey = (s: string) => normName(s).toLowerCase();
+/** ونفسُ المفتاح حرفاً بحرف — نسختان تفترقان تجمعان فواتيرَ شركةٍ بمجموعتين. */
+const normKey = (s: string) => searchable(normName(s)).replace(/\s+/g, " ").trim();
 
 const CATEGORY_KEYS: ProductCategory[] = ["medicine", "food", "accessories", "consumables", "other"];
 const PAY_METHODS: PaymentMethod[] = ["cash", "card", "transfer"];
@@ -117,8 +118,9 @@ export function PurchasesTab({ products, companies, sections, clinicId, onChange
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const ql = q.trim().toLowerCase();
-  const shown = ql ? purchases.filter((p) => (p.company_name ?? "").toLowerCase().includes(ql) || (p.reference ?? "").toLowerCase().includes(ql) || (p.supplier_name ?? "").toLowerCase().includes(ql)) : purchases;
+  // مطبَّعٌ كبقية الشاشات: «شركه الامل» تلقى «شركة الأمل»، و«٢٠٠١» تلقى «2001».
+  const ql = searchable(q.trim());
+  const shown = ql ? purchases.filter((p) => searchable(p.company_name ?? "").includes(ql) || searchable(p.reference ?? "").includes(ql) || searchable(p.supplier_name ?? "").includes(ql)) : purchases;
 
   /* «الفاتورة الكبيرة» لكل شركة: كل فواتيرها مجموعةً — الإجمالي والدين وعدد
    * الفواتير وآخر شراء — مرتبةً بالأكثر شراءً، فيُعرف بالجرد منين نأخذ أكثر. */
@@ -704,7 +706,13 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
   const validLines = lines.filter((l) => (l.name.trim() || l.barcode.trim()) && Number(l.qty) > 0);
   const total = validLines.reduce((s, l) => s + (Number(l.qty) || 0) * (Number(l.purchase_price) || 0), 0);
   const totalUnits = validLines.reduce((s, l) => s + (Number(l.qty) || 0), 0);
-  const paidNum = amountPaid.trim() === "" ? total : Math.max(0, Math.min(total, Number(amountPaid) || 0));
+  /* للفراغ دلالتان بهذه الشاشة (م٤): بالإنشاء «مدفوعٌ كامل»، وبالتعديل «يبقى
+   * المدفوعُ كما هو» — والتسمية أسفلَه تقولهما بالنصّ، و`amount_paid` تُرسَل
+   * `undefined` بالتعديل فعلاً. لكنّ الشارة كانت تُشتقّ بدلالة الإنشاء وحدها،
+   * فمسحُ الخانة بفاتورةٍ مدينة يعرض «مدفوعة» — شارةٌ تكذب على دَينٍ قائم. */
+  const paidNum = amountPaid.trim() !== ""
+    ? Math.max(0, Math.min(total, Number(amountPaid) || 0))
+    : editing ? Math.max(0, Math.min(total, editing.purchase.amount_paid ?? total)) : total;
   const status = paidNum >= total ? "paid" : paidNum <= 0 ? "unpaid" : "partial";
 
   const resolveCompanyId = async (): Promise<{ id: string | null; created: Company | null; name: string }> => {
@@ -1038,7 +1046,7 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
           </div>
           <div>
             <label className="label flex items-center gap-1"><Wallet size={12} /> {t("purchase.amountPaid", "المدفوع للمورّد")} <span className="font-normal text-ink-subtle">{editing ? t("purchase.paidHintEdit", "(فارغ = يبقى المدفوع كما هو)") : t("purchase.paidHint", "(فارغ = مدفوع كامل)")}</span></label>
-            <input type="number" inputMode="numeric" min="0" step="1" className="input" value={amountPaid} onChange={(e) => setAmountPaid(e.target.value)} placeholder={money(total)} />
+            <input type="number" inputMode="numeric" min="0" step="1" className="input" value={amountPaid} onChange={(e) => setAmountPaid(e.target.value)} placeholder={money(editing ? (editing.purchase.amount_paid ?? total) : total)} />
           </div>
           <div>
             <label className="label">{t("purchase.notes", "ملاحظات")}</label>

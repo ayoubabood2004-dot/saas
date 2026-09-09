@@ -12,7 +12,7 @@ import { hasArabicLetters, layoutFix } from "@/lib/productCodes";
 import { getClinicName } from "@/lib/settings";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button, Badge, useToast, Skeleton } from "@/components/ui";
-import { formatNum, formatDate, cn, matchCode } from "@/lib/utils";
+import { formatNum, formatDate, cn, matchCode, searchable } from "@/lib/utils";
 import { describeDbError } from "@/lib/errors";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
 
@@ -213,15 +213,20 @@ export function BarcodeStudio({ products, onChanged }: { products: Product[]; on
 
   /* ------------------------- العرض ------------------------- */
   const ql = q.trim();
+  /* طرفان لا طرف (ص٣): الأسماءُ بـ`searchable` (همزة/ة/ى)، والرمزُ
+   * بـ`matchCode` — فكان «٢٠٠١» لا يطابق «2001» لأن الرمزَ لم يُطبَّع أصلاً،
+   * و«الامل» لا تلقى «الأمل». وسجلُّ المولّد هو المكانُ الذي يُبحث فيه عن
+   * ملصقٍ مطبوع، فخيبتُه تعني إعادةَ توليدٍ لرمزٍ موجود. */
   const shown = useMemo(() => {
     const list = registry ?? [];
     if (!ql) return list;
-    const l = ql.toLowerCase();
+    const nq = searchable(ql);
+    const cq = matchCode(ql);
     return list.filter((g) =>
-      g.barcode.includes(l) ||
-      (g.label ?? "").toLowerCase().includes(l) ||
-      (productById.get(g.product_id ?? "")?.name ?? "").toLowerCase().includes(l) ||
-      (g.created_by ?? "").toLowerCase().includes(l));
+      (cq !== "" && matchCode(g.barcode).includes(cq)) || /* code-search-ok: صفُّ سجلٍّ لا منتج — لا alt_codes له، ورمزُه هو هويّتُه */
+      searchable(g.label ?? "").includes(nq) ||
+      searchable(productById.get(g.product_id ?? "")?.name ?? "").includes(nq) ||
+      searchable(g.created_by ?? "").includes(nq));
   }, [registry, ql, productById]);
 
   const toggleSel = (id: string) => {

@@ -3042,9 +3042,13 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
         const lineId = ret ? `r:${p.id}` : `p:${p.id}`;
         const line = cart.find((l) => l.id === lineId);
         const current = line?.qty ?? 0;
-        // سعر الكيلو المعروض هو سعر السطر إن عدّله الكاشير — لا سعر الكتلوج،
-        // وإلا اختلفت أسعار المربّعات عن السعر الذي سيُحسب فعلاً.
-        const perKg = line?.byWeight ? line.unit_price : p.sell_price;
+        /* سعر الكيلو المعروض هو سعر السطر إن عدّله الكاشير — لا سعر الكتلوج،
+         * وإلا اختلفت أسعار المربّعات عن السعر الذي سيُحسب فعلاً. ولسطرٍ جديد
+         * `listPrice` لا `sell_price` الخام (م٢): بوضع الجملة `listPrice` هي
+         * **سعرُ الشراء**، و`addWeightLine` تنشئ السطرَ به — فكان المنتقي يَعِد
+         * بسعر المفرد ويُنشئ السطرَ بسعر الجملة. والتعليقُ نفسُه يقول إن الغرض
+         * ألّا يختلف المعروضُ عن المحسوب. */
+        const perKg = line?.byWeight ? line.unit_price : listPrice(p);
         // الراجع بلا سقف؛ المنتج المجمّع يخصم من مخزون القسم فلا سقف محلّي له.
         const stockKg = ret || p.pooled ? Infinity : (p.stock ?? 0);
         return (
