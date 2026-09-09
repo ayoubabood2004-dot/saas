@@ -31,7 +31,7 @@ import { loadPosLayout, savePosLayout, stepZoom, type PosLayout, type CartSide }
 import { persistMedicalEntries } from "@/lib/medSync";
 import type { MedicalDraft } from "@/components/MedicalEntry";
 import { cn, money, currencySymbol, formatNum, fmtKg, searchable, normalizeCode } from "@/lib/utils";
-import { findByCode, rescueScan, matchTruncatedCode, codeMatcher } from "@/lib/productCodes";
+import { findByCode, rescueScan, matchTruncatedCode, codeMatcher, carriesCode } from "@/lib/productCodes";
 import { unitCap, capAdd, outOfStock, zeroStockVerdict } from "@/lib/cartCap";
 import { splitCustomerField } from "@/lib/customerName";
 import { dueOf, paidOf } from "@/lib/debt";
@@ -907,6 +907,13 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
     if (!product) {
       try {
         product = await withTimeout(repo.getProductByBarcode(code, clinicId), 6000);
+        /* الخادمُ صار يقشّر رأسَ AIM ويجرّب أصفارَ GTIN بنفسه (0172)، فمسحةٌ
+         * كانت تصل الطبقةَ الثالثة (`rescueScan`) وتُقال بصوتٍ صارت تُحسم
+         * هنا **صامتة** — والكاشير لا يعرف أن ما مسحه ليس رمزَ المنتج
+         * المخزون. الصمتُ هو ما نحاربه، فتُقال هنا كما كانت تُقال هناك. */
+        if (product && !carriesCode(product, code)) {
+          toast.success(t("retail.scanMatchedStored", "«{{name}}» — مخزون برمز {{code}}", { name: product.name, code: normalizeCode(product.barcode) || "—" }));
+        }
       } catch (e) {
         offline = true;
         console.error("[pos] scan lookup failed", e);

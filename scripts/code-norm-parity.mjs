@@ -31,10 +31,11 @@ const stubs = {
   },
 };
 const built = await esbuild.build({
-  stdin: { contents: `export { matchCode, normalizeCode } from "./src/lib/utils";`, resolveDir: process.cwd(), loader: "js" },
+  stdin: { contents: `export { matchCode, normalizeCode } from "./src/lib/utils";
+export { scanVariants } from "./src/lib/productCodes";`, resolveDir: process.cwd(), loader: "js" },
   bundle: true, format: "esm", write: false, platform: "node", plugins: [stubs],
 });
-const { matchCode, normalizeCode } = await import("data:text/javascript;base64," + Buffer.from(built.outputFiles[0].text).toString("base64"));
+const { matchCode, normalizeCode, scanVariants } = await import("data:text/javascript;base64," + Buffer.from(built.outputFiles[0].text).toString("base64"));
 
 const cases = JSON.parse(fs.readFileSync("scripts/code-norm-fixture.json", "utf8"));
 
@@ -97,6 +98,34 @@ ${rows};
 `;
   fs.mkdirSync(outDir, { recursive: true });
   fs.writeFileSync(path.join(outDir, "code-norm.sql"), sql, "utf8");
+
+  /* ---- وصيغُ الماسح: الطرفان يولّدان نفسَ المجموعة (0172/0173) ----------
+   * نفسُ الحجّة بالضبط: `inv_code_variants` بالقاعدة مرآةُ `scanVariants`
+   * بالواجهة. ومرآةٌ بلا فحصٍ تنحرف — وقد انحرفت فعلاً بأوّل صياغة: الواجهة
+   * تختبر `[A-Za-z]` و`\d` (ASCII قطعاً)، والقاعدةُ كانت `between 'a' and 'z'`
+   * وهو **رهنُ ترتيبِ المقارنة**: بـ`en_US.UTF-8` تقع «é» داخل a..z. فيقشّر
+   * الخادمُ رأساً لا تقشّره الواجهة.
+   * والمقارنةُ بلا إصلاحِ التخطيط (`withLayoutFix = false`): خريطتُه بياناتُ
+   * متصفّحٍ لا تعرفها القاعدة، وذاك فرقٌ **مُعلَن** لا انحراف. */
+  const varRows = cases
+    .map((raw, i) => {
+      // بترتيبِ التوليد لا مرتَّبةً: الترتيبُ جزءٌ من العقد — الانتقاءُ يقف
+      // عند أوّل صيغةٍ مصيبة، فمن يرتّب غيرَ ترتيبها يبيع غيرَ ما يبيع.
+      const want = [...new Set([matchCode(raw), ...scanVariants(raw, false)])].filter(Boolean);
+      return { i, raw, want };
+    })
+    .map(({ i, raw, want }) => `  (${i}, ${lit(raw)}, array[${want.map(lit).join(", ")}]::text[])`)
+    .join(",\n");
+  const varSql = `-- مولَّدٌ من scripts/code-norm-parity.mjs — لا تعدّله بيدك.
+-- كلُّ صفّ: الرمزُ الخام، والمجموعةُ التي تولّدها scanVariants بالمتصفّح
+-- (بلا إصلاحِ التخطيط العربيّ — خريطتُه بياناتُ متصفّحٍ لا تعرفها القاعدة).
+-- الحزمةُ تقارن بها ناتجَ inv_code_variants **بترتيبه**. اختلافُ صفٍّ = فشل.
+drop table if exists _code_variants_fixture;
+create table _code_variants_fixture (idx int primary key, raw text, expected text[]);
+insert into _code_variants_fixture (idx, raw, expected) values
+${varRows};
+`;
+  fs.writeFileSync(path.join(outDir, "code-variants.sql"), varSql, "utf8");
 }
 
 if (fails) {

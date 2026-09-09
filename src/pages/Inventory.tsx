@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { motion } from "framer-motion";
 import { getCached, setCached } from "@/lib/swrCache";
-import { findByCode, looksLikeShelfCode, twinsByName, nearCodeTwin, excelArtifact, hasArabicLetters, looksLayoutMangled, codeMatcher } from "@/lib/productCodes";
+import { findByCode, looksLikeShelfCode, twinsByName, nearCodeTwin, excelArtifact, hasArabicLetters, looksLayoutMangled, codeMatcher, codeRescue } from "@/lib/productCodes";
 import { Dialog } from "@/components/ui/Dialog";
 import {
   Barcode, Package, Trash2, Search, Building2, Plus, ChevronLeft, ArrowRight, ArrowLeft,
@@ -551,12 +551,16 @@ function InventoryTab({ products, companies, sections, clinicId, onChanged }: { 
   const ql = q.trim();
   const nq = searchable(ql);
   const byCode = codeMatcher(ql);
-  const shown = ql
+  const hits = ql
     ? products.filter((p) =>
       searchable(p.name).includes(nq)
       || byCode(p)
       || searchable(companyName(p.company_id) ?? "").includes(nq))
     : products;
+  /* رمزٌ لُصق بحقل البحث بصيغةِ ماسحٍ (رأسُ AIM، صفرُ GTIN-14، ذيلٌ ناقص):
+   * `codeMatcher` احتواءٌ فلا يطابقه، والشاشةُ تقول «لا نتائج» عن مادّةٍ
+   * بالرفّ — وهذه شاشةُ قرار «أُعيد إدخالها». */
+  const shown = ql && hits.length === 0 ? codeRescue(products, ql) : hits;
 
   const { askDelete: remove, deleteDialog } = useProductDelete(onChanged);
   const { stockLocked: locked } = useOverride();
@@ -1727,7 +1731,8 @@ function CompanyDetail({ company, products, companies, sections, clinicId, onBac
   const ql = searchable(q.trim());
   const byCode = codeMatcher(q);
   const shownSections = ql ? mySections.filter((sec) => searchable(sec.name).includes(ql)) : mySections;
-  const matchedProducts = ql ? mine.filter((p) => searchable(p.name).includes(ql) || byCode(p)) : [];
+  const companyHits = ql ? mine.filter((p) => searchable(p.name).includes(ql) || byCode(p)) : [];
+  const matchedProducts = ql && companyHits.length === 0 ? codeRescue(mine, q) : companyHits;
   const sectionNameOf = (id?: string | null) => (id ? mySections.find((x) => x.id === id)?.name : undefined);
   const { askDelete: removeProduct, deleteDialog } = useProductDelete(onChanged);
 
@@ -1939,7 +1944,8 @@ function SectionProducts({ company, section, products, companies, sections, clin
     : products.filter((p) => p.company_id === company.id && !p.section_id);
   const ql = searchable(q.trim());
   const byCode = codeMatcher(q);
-  const shown = ql ? mine.filter((p) => searchable(p.name).includes(ql) || byCode(p)) : mine;
+  const sectionHits = ql ? mine.filter((p) => searchable(p.name).includes(ql) || byCode(p)) : mine;
+  const shown = ql && sectionHits.length === 0 ? codeRescue(mine, q) : sectionHits;
   const title = section ? section.name : t("pos.uncategorized", "بدون صنف");
   const pool = section?.pooled_stock ?? 0;
   const trackedUnits = mine.reduce((n, p) => n + (p.pooled ? 0 : p.stock || 0), 0);
@@ -2223,9 +2229,12 @@ function AssignProductsModal({ open, company, companies, sections, products, def
   // else — especially the unassigned legacy products — surfaces first.
   const shown = useMemo(() => {
     const byCode = codeMatcher(qt);
-    const list = ql
+    const found = ql
       ? products.filter((p) => searchable(p.name).includes(ql) || byCode(p))
       : products.slice();
+    // وهذه النافذةُ تُسند المنتجاتِ القديمةَ بلا شركة: ما لا تجده يبقى بلا
+    // شركةٍ إلى الأبد — فطبقةُ النجدة هنا أوجبُ منها بغيرها.
+    const list = ql && found.length === 0 ? codeRescue(products, qt) : found;
     return list.sort((a, b) => {
       const am = a.company_id === company.id ? 1 : 0;
       const bm = b.company_id === company.id ? 1 : 0;

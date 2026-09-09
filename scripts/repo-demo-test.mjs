@@ -102,6 +102,13 @@ const seed = (products) => {
 const seeded = async (n) => (await repo.listProducts()).length === n;
 
 const P = (id, name, barcode, extra = {}) => ({ id, name, barcode, stock: 1, ...extra });
+/** طبقةُ النجدة بالواجهة — تُحمَّل من مصدرها للمقارنة بها، لا تُحاكى:
+ *  المرآةُ التجريبية تُقاس على ما تفعله الشاشةُ فعلاً، لا على نسخةٍ منه. */
+const pcBuilt = await esbuild.build({
+  entryPoints: ["src/lib/productCodes.ts"], bundle: true, format: "esm", write: false,
+  platform: "neutral", plugins: [stubs], logLevel: "silent",
+});
+const { rescueScan } = await import("data:text/javascript;base64," + Buffer.from(pcBuilt.outputFiles[0].text).toString("base64"));
 /** هل يحمل هذا المنتجُ الرمزَ (أساسيّاً أو إضافياً)؟ — للعدّ بالفحوص. */
 const matchAll = (p, code) => p.barcode === code || (p.alt_codes ?? []).includes(code);
 
@@ -325,6 +332,70 @@ console.log("\n▸ فكُّ التوريث — مرآةُ keep_barcode (0167)");
   await repo.tidyInventory();
   await repo.restoreProduct("dup");
   check("أصلٌ مالكٌ لباركوده لا يخسره بالفكّ", (await repo.listProducts()).find((p) => p.id === "keeper")?.barcode === "OWN-1");
+}
+
+console.log("▸ getProductByBarcode — مرآةُ صيغِ الماسح بالخادم (0172 / س٥)");
+{
+  /* الخادمُ صار يقشّر رأسَ AIM ويجرّب أصفارَ GTIN/UPC عند خيبة الحرفيّ (0172).
+   * والنسخةُ التجريبية هي التي تجري عليها فحوصُ المنطق — فانحرافُها عن الخادم
+   * أسوأ من لا شيء: تُظهر سلوكاً لا يقع بالإنتاج فتُخفي العطل بدل أن تكشفه. */
+  seed([
+    P("v1", "أساسيّ", "6221031492405", { created_at: "2026-01-01" }),
+    P("v2", "مخزونٌ بصفر", "0045496830434", { created_at: "2026-01-02" }),
+    P("v3", "صاحبُ إضافيّ", "RF-0172", { alt_codes: ["9781234567897"], created_at: "2026-01-03" }),
+  ]);
+  check("(زُرعت ثلاثة)", await seeded(3));
+  const nameOf = async (code) => (await repo.getProductByBarcode(code))?.name ?? "(لا شيء)";
+
+  check("الحرفيُّ كما كان", await nameOf("6221031492405") === "أساسيّ");
+  check("و«]C1 + ١٣ رقماً» يلقى صاحبَه", await nameOf("]C16221031492405") === "أساسيّ");
+  check("و«0 + EAN-13» (GTIN-14) كذلك", await nameOf("06221031492405") === "أساسيّ");
+  check("وUPC-A بـ١٢ خانة على مخزونٍ بـ١٣", await nameOf("045496830434") === "مخزونٌ بصفر");
+  check("والرمزُ الإضافيُّ يُنقذ مثلَ الأساسيّ", await nameOf("09781234567897") === "صاحبُ إضافيّ");
+  check("وأرقامٌ شرقية مع رأس AIM", await nameOf("]C1٦٢٢١٠٣١٤٩٢٤٠٥") === "أساسيّ");
+  check("ورمزٌ لا يخصّ أحداً يبقى لا شيء", await nameOf("1112223334445") === "(لا شيء)");
+  check("وفارغٌ لا يرمي", await nameOf("") === "(لا شيء)");
+
+  /* **الحرفيُّ يغلب التخمين.** لو خُلطت الصيغُ بالمطابقة الحرفية لصار رمزٌ يطابق
+   * صاحبَه حرفياً ويطابق آخرَ بصيغةٍ ⇒ «رمزٌ ملتبس» على مسارٍ كان سليماً. */
+  seed([
+    P("w1", "اثنتا عشرة", "045496830434", { created_at: "2026-01-04" }),
+    P("w2", "نفسُها بصفر", "0045496830434", { created_at: "2026-01-02" }),
+  ]);
+  check("الحرفيُّ يغلب التخمين — لا يُختار الأقدمُ بصيغة",
+    (await repo.getProductByBarcode("045496830434"))?.id === "w1");
+  check("  والعكسُ كذلك", (await repo.getProductByBarcode("0045496830434"))?.id === "w2");
+}
+
+console.log("▸ getProductByBarcode — الصيغةُ الأسبقُ تغلب (0173)");
+{
+  /* أمسكته المراجعةُ الخصميّة على 0172 نفسِها: القاعدةُ كانت تتّحد على الصيغ
+   * كلِّها وترتّب بالأقدم، والواجهةُ (`rescueScan`) تمشي صيغةً صيغةً وتقف عند
+   * أوّل مصيبة. فنفسُ المسحة تبيع منتجاً إن حسمتها القائمةُ المحمّلة وآخرَ إن
+   * حسمها الخادم — نقضُ الثابت «نفسُ الرمز يرجع نفسَ المنتج».
+   * والزوجُ أدناه هو الذي يصنعه الماسحُ نفسُه: UPC-A ونظيرُه EAN-13 بصفر،
+   * والأعمارُ معكوسةٌ عمداً فيفترق الترتيبان. */
+  seed([
+    P("w1", "اثنتا عشرة", "045496830434", { created_at: "2026-01-04" }),
+    P("w2", "نفسُها بصفر", "0045496830434", { created_at: "2026-01-02" }),
+  ]);
+  check("(زُرع الزوج)", await seeded(2));
+  const got = await repo.getProductByBarcode("]c1045496830434");
+  check("مسحةٌ برأس AIM تختار صاحبَ الصيغة الأسبق لا الأقدمَ إنشاءً", got?.id === "w1");
+  check("  وهو نفسُ ما تختاره طبقةُ النجدة بالواجهة", got?.id === rescueScan([
+    { id: "w1", name: "اثنتا عشرة", barcode: "045496830434", alt_codes: [] },
+    { id: "w2", name: "نفسُها بصفر", barcode: "0045496830434", alt_codes: [] },
+  ], "]c1045496830434")?.product.id);
+  check("والحرفيُّ ما زال يغلب الصيغة", (await repo.getProductByBarcode("045496830434"))?.id === "w1");
+  check("  والعكسُ كذلك", (await repo.getProductByBarcode("0045496830434"))?.id === "w2");
+
+  /* وإصلاحُ التخطيط العربيّ **بالواجهة وحدها**: خريطتُه بياناتُ متصفّحٍ لا
+   * تعرفها القاعدة. فالمرآةُ التجريبية لا تعرفه كي لا تُظهر ما لا يقع. */
+  seed([P("m1", "منتج", "6221031492405", { created_at: "2026-01-01" })]);
+  check("مسحةٌ ممسوخةُ التخطيط لا يحسمها الخادمُ — كما بالإنتاج",
+    (await repo.getProductByBarcode("دc16221031492405")) === undefined);
+  check("  وطبقةُ النجدة بالواجهة هي التي تحسمها",
+    rescueScan([{ id: "m1", name: "منتج", barcode: "6221031492405", alt_codes: [] }], "دc16221031492405")?.product.id === "m1");
 }
 
 console.log(`\n${fails ? "✗" : "✓"} repo-demo-test: ${passes} نجحت، ${fails} فشلت`);

@@ -772,8 +772,7 @@
       "badge": "بيع بالجملة — السعر يبدي بسعر الشراء"
     },
     "scanRescued": "«{{name}}» — طابق بصيغة {{code}}",
-    "scanHealedPurchase": "الماسح بلع أوّل الباركود — طابقناه بـ«{{name}}»",
-    "scanRescuedPurchase": "«{{name}}» — طابق بصيغة {{code}}"
+    "scanMatchedStored": "«{{name}}» — مخزون برمز {{code}}"
   },
   "promos": {
     "pickFailed": "تعذّر تحميل المنتجات — أعد فتح النافذة.",
@@ -964,6 +963,8 @@
     "excelCodeLine": "بسطر «{{name}}» الرمز {{code}} — رجّع عمود الباركود إلى «نص» بإكسل وأعد اللصق."
   },
   "pos": {
+    "scanRescuedPurchase": "«{{name}}» — طابق بصيغة {{code}}",
+    "scanHealedPurchase": "الماسح بلع أوّل الباركود — طابقناه بـ«{{name}}»",
     "storeRefreshFailed": "آخر تحديث فشل — المعروض قد يكون قديماً.",
     "storeOrdersFailed": "تعذّر تحميل الطلبات — ما نعرف إذا وصلك طلب أو لا. أعد المحاولة.",
     "savedSomeCodes": "انسجّل {{n}} من {{total}} — الباقي مسجَّلٌ سابقاً",

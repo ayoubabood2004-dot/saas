@@ -772,8 +772,7 @@
       "badge": "Wholesale — starts at cost price"
     },
     "scanRescued": "“{{name}}” — matched as {{code}}",
-    "scanHealedPurchase": "The scanner swallowed the start of the barcode — matched to {{name}}",
-    "scanRescuedPurchase": "{{name}} — matched via format {{code}}"
+    "scanMatchedStored": "{{name}} — stored under code {{code}}"
   },
   "promos": {
     "pickFailed": "Could not load products — reopen this dialog.",
@@ -964,6 +963,8 @@
     "excelCodeLine": "On line “{{name}}”, code {{code}} — set the barcode column back to “Text” in Excel and paste again."
   },
   "pos": {
+    "scanRescuedPurchase": "{{name}} — matched via format {{code}}",
+    "scanHealedPurchase": "The scanner swallowed the start of the barcode — matched to {{name}}",
     "storeRefreshFailed": "The last refresh failed — what you see may be stale.",
     "storeOrdersFailed": "Could not load orders — we do not know whether any arrived. Retry.",
     "savedSomeCodes": "Saved {{n}} of {{total}} — the rest were already registered",

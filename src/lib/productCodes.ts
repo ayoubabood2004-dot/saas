@@ -190,6 +190,8 @@ export function excelArtifact(code: string | null | undefined): ExcelArtifact | 
   return null;
 }
 
+const DIGITS_ONLY = /^\d+$/;
+
 const AIM_HEAD = /^\][A-Za-z]\d/;
 
 /**
@@ -204,27 +206,92 @@ export function stripAim(v: string | null | undefined): string {
   return AIM_HEAD.test(s) ? s.slice(3) : s;
 }
 /** الصيغُ البديلة المعقولة لرمزٍ ممسوح، بلا الرمزِ نفسه. */
-export function scanVariants(code: string | null | undefined): string[] {
+export function scanVariants(code: string | null | undefined, withLayoutFix = true): string[] {
   const raw = matchCode(code);
   if (!raw) return [];
   const out = new Set<string>();
-  // بادئةُ AIM: `]` + حرف + رقم — ثلاثةُ محارفٍ قبل الرمز الحقيقي.
-  const noAim = stripAim(raw);
-  if (noAim !== raw) out.add(noAim);
-  const d = noAim;
-  if (/^\d+$/.test(d)) {
-    if (d.length === 14 && d.startsWith("0")) out.add(d.slice(1));          // GTIN-14 → EAN-13
-    if (d.length === 13 && d.startsWith("0")) out.add(d.slice(1));          // EAN-13 بصفر → UPC-A
-    if (d.length === 12) out.add("0" + d);                                   // UPC-A → EAN-13 مخزون بصفر
-    if (d.length === 8 && d.startsWith("0")) out.add(d.slice(1));           // EAN-8 بصفر
+  const seen = new Set<string>([raw]);
+  const queue: string[] = [raw];
+
+  /** خطوةٌ واحدة على صيغة: قشرُ رأس AIM، ثم صيغُ الأصفار القياسية. */
+  const step = (v: string): string[] => {
+    const res: string[] = [];
+    // بادئةُ AIM: `]` + حرف + رقم — ثلاثةُ محارفٍ قبل الرمز الحقيقي.
+    const d = stripAim(v);
+    if (d !== v) res.push(d);
+    if (DIGITS_ONLY.test(d)) {
+      if (d.length === 14 && d.startsWith("0")) res.push(d.slice(1));         // GTIN-14 → EAN-13
+      if (d.length === 13 && d.startsWith("0")) res.push(d.slice(1));         // EAN-13 بصفر → UPC-A
+      if (d.length === 12) res.push("0" + d);                                  // UPC-A → EAN-13 مخزون بصفر
+      if (d.length === 8 && d.startsWith("0")) res.push(d.slice(1));          // EAN-8 بصفر
+    }
+    return res;
+  };
+
+  /* خطُّ أنابيبٍ لا قائمةَ فروعٍ متوازية: كلُّ صيغةٍ جديدة تعود للفرعين حتى
+   * الثبات. السبب أن الفروع كانت تُحسب من الخام وحده، فبادئةُ AIM إن وصلت
+   * **ممسوخةً** بالتخطيط العربي تبقى ملتصقةً بالرمز بعد إصلاح التخطيط فلا
+   * تطابق شيئاً.
+   * والسقفُ ليس زينة: فرعُ AIM يقصّ **ثلاثة** محارف لا واحداً، فرأسٌ مكرَّر
+   * (`]a1]a1…`) يولّد صيغةً بكل تكرار. مقيسٌ: ثلاثون رأساً + أربعةَ عشرَ صفراً
+   * تبلغ السقفَ تماماً. لا يقع بماسحٍ سليم، ويقع بحقلٍ لُصق فيه شيء. */
+  const CAP = 24;
+  const drain = () => {
+    while (queue.length && out.size < CAP) {
+      const cur = queue.shift() as string;
+      for (const v of step(cur)) {
+        if (!v || seen.has(v)) continue;
+        seen.add(v); out.add(v); queue.push(v);
+      }
+    }
+  };
+
+  drain();                                  // فروعُ الرمز كما وصل — أولى بالثقة
+  /* ثم قراءتُه بعكس تخطيطٍ عربيّ (G7)، وفروعُ تلك القراءة بعدها. ويمرّ الكلُّ
+   * من قناة النجدة نفسها: مطابقةٌ واحدةٌ أو لا شيء — ولا تخمينَ عند التعدّد.
+   * وهذا الفرعُ **بالواجهة وحدها**: خريطةُ التخطيط بياناتُ متصفّحٍ
+   * (`arabicLayout.ts`)، ونسخُها بالقاعدة نسختان تفترقان. فمن يريد مطابقةَ ما
+   * يفعله الخادمُ بالضبط (0172) يمرّرُ `withLayoutFix = false`. */
+  if (withLayoutFix) {
+    const fixed = matchCode(_layoutFix(raw));
+    if (fixed && !seen.has(fixed)) {
+      seen.add(fixed); out.add(fixed); queue.push(fixed);
+      drain();
+    }
   }
-  // مسخُ تخطيطٍ عربيّ (G7): نجرّب النصَّ بعد عكسه. ويمرّ من قناة النجدة نفسها،
-  // فمطابقةٌ واحدةٌ أو لا شيء — ولا تخمينَ عند التعدّد.
-  const fixed = matchCode(_layoutFix(raw));
-  if (fixed) out.add(fixed);
   out.delete(raw);
   out.delete("");
   return [...out];
+}
+
+/**
+ * طبقةُ نجدةٍ **لحقول البحث** لا للمسح: حين تخيب المطابقةُ الحرفية واستعلامُ
+ * المستخدم شكلُه رمزٌ (ثماني خاناتٍ فأكثر بعد التطبيع)، تُجرَّب صيغُ الماسح
+ * قبل أن تُعلن الشاشةُ «لا نتائج».
+ *
+ * السبب: `codeMatcher` مطابقةُ احتواءٍ مطبَّعة — ورمزُ ١٤ خانة (GTIN-14) لا
+ * يكون جزءاً من ١٣ مخزونة، ورأسُ AIM يزيده بعداً. وشاشةُ المخزون هي حيث
+ * يُتَّخذ قرارُ «هذي المادّة غير مُدخَلة ⇒ أُدخلها من جديد» — فخيبةٌ كاذبة
+ * هنا تصنع التوأمَ الذي يقسم الرصيد.
+ *
+ * ولا ذيلَ مقطوعاً هنا عمداً: `matchTruncatedCode` تطلب أن ينتهي المخزونُ
+ * بالمكتوب، وذلك **احتواءٌ** — فـ`codeMatcher` تلقاه قبل أن تُنادى هذه أصلاً.
+ * فرعٌ لا يُبلَغ أسوأُ من لا فرع: يُقاس عليه فحصٌ يمرّ عن مسارٍ لا تسلكه شاشة.
+ *
+ * تُرجع ما وجدته (صفراً أو واحداً) ليُضاف لما وجدته الشاشة، لا ليحلَّ محلَّه.
+ */
+export function codeRescue(products: readonly Product[], query: string | null | undefined): Product[] {
+  const code = matchCode(query);
+  if (code.length < 8) return [];        // كلمةٌ أو رقمُ رفٍّ قصير — لا تُخمَّن
+  const r = rescueScan(products, code);
+  return r ? [r.product] : [];
+}
+
+/** هل يحمل هذا المنتجُ هذا الرمزَ حرفياً (أساسيّاً أو إضافياً، بعد التطبيع)؟ */
+export function carriesCode(p: Product, code: string | null | undefined): boolean {
+  const c = matchCode(code);
+  if (!c) return false;
+  return matchCode(p.barcode) === c || (p.alt_codes ?? []).some((a) => matchCode(a) === c);
 }
 
 /**

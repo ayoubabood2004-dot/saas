@@ -94,6 +94,7 @@ import { isValidSlug, normalizeSlug, demoOrderNo } from "./storeLib";
 import { journeyToken, OWNER_REACTIONS } from "./journey";
 import { getClinicName, getClinicLogo, getClinicSocials } from "./settings";
 import { uid, uuid, ageMonths, localISO, normalizeCode, matchCode } from "./utils";
+import { scanVariants } from "./productCodes";
 import { phoneKey } from "./phone";
 import { loadOwners } from "./owners";
 import { loadClinics, getActiveClinicId } from "./clinics";
@@ -1252,7 +1253,31 @@ const demoRepo = {
       || (a.created_at ?? "").localeCompare(b.created_at ?? ""));
     // وصفّان = رمزٌ ملتبس: يُقال بصوتٍ كما بالسحابة، لا يُبلَع.
     if (hits.length > 1) sayAmbiguousCode(code, hits.length);
-    return hits[0];
+    if (hits.length > 0) return hits[0];
+    /* خاب الحرفيّ ⇒ صيغُ الماسح — مرآةُ 0172/0173 بالقاعدة.
+     * ثلاثةُ قيودٍ تجعلها مرآةً لا شبيهاً:
+     *  ١) **الحرفيُّ أوّلاً وحده**: لو خُلطت الصيغُ به لصار رمزٌ يطابق صاحبَه
+     *     حرفياً ويطابق آخرَ بصيغةٍ ⇒ «رمزٌ ملتبس» على مسارٍ كان سليماً.
+     *  ٢) **صيغةٌ صيغةً بترتيبها**، لا اتحاداً عليها كلِّها. الاتحادُ يرتّب
+     *     بالأقدم فيختار صاحبَ صيغةٍ متأخّرة على صاحب صيغةٍ أسبق — فيبيع
+     *     منتجاً هنا وآخرَ بشاشة البيع (`rescueScan` تمشي بالترتيب).
+     *     مقيسٌ بزوج UPC-A/EAN-13: «045496830434» و«0045496830434».
+     *  ٣) **بلا إصلاحِ تخطيطٍ عربيّ**: خريطتُه بياناتُ متصفّح، والقاعدةُ لا
+     *     تعرفها. نسختان تفترقان أسوأ من واحدةٍ ناقصة. */
+    const all = loadDB().products ?? [];
+    const holds = (p: Product, v: string) =>
+      matchCode(p.barcode) === v || (p.alt_codes ?? []).some((c) => matchCode(c) === v);
+    for (const v of scanVariants(code, false)) {
+      const hits = all.filter((p) => holds(p, v));
+      if (hits.length === 0) continue;
+      hits.sort((a, b) =>
+        Number(matchCode(b.barcode) === v) - Number(matchCode(a.barcode) === v)
+        || (a.created_at ?? "").localeCompare(b.created_at ?? ""));
+      // والخادمُ يقف عند صفَّين (`limit 2`) — فالعددُ المُبلَّغ عددُه لا عددُنا.
+      if (hits.length > 1) sayAmbiguousCode(code, 2);
+      return hits[0];
+    }
+    return undefined;
   },
   /** يربط رمزاً بمنتجٍ قائم بدل إنشاء منتجٍ جديد — نظير attach_product_code. */
   async attachProductCode(productId: string, code: string): Promise<Product> {
