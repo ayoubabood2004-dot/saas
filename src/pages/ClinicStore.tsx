@@ -313,6 +313,12 @@ function OrdersTab({ orders, products, profile, clinicId, reload, goSettings }: 
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="font-mono text-xs font-bold text-brand-600">{o.order_no}</span>
                       <span className="flex items-center gap-1 text-2xs text-ink-subtle"><Clock size={11} /> {ago(o.created_at)}</span>
+                      {/* التقادم يُرى (0176): طلبٌ منسيٌّ بالليل يصرخ بالصبح — بلا حذفٍ تلقائي، القرار للعيادة. */}
+                      {(Date.now() - new Date(o.created_at).getTime()) > 24 * 3600_000 ? (
+                        <span className="rounded-full bg-warn-100 px-2 py-0.5 text-2xs font-bold text-warn-700 dark:bg-warn-500/20 dark:text-warn-200">{t("track.staleDay", "صارله يوم بلا قرار")}</span>
+                      ) : (Date.now() - new Date(o.created_at).getTime()) > 6 * 3600_000 ? (
+                        <span className="rounded-full bg-surface-2 px-2 py-0.5 text-2xs font-bold text-ink-muted">{t("track.staleHours", "صارله فوق ٦ ساعات")}</span>
+                      ) : null}
                     </div>
                     <p className="mt-1 text-base font-extrabold text-ink">{o.customer_name}</p>
                     <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-ink-muted">

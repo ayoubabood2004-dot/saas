@@ -1346,6 +1346,15 @@ export interface StoreCatalogItem {
   image_path?: string | null;
 }
 
+/** جواب تتبّع طلب المتجر (0176) — للزبون برقم الطلب وهاتفه معاً. */
+export interface StoreTrackInfo {
+  order_no: string;
+  status: string;
+  total: number;
+  created_at: string;
+  decided_at: string | null;
+}
+
 /** مكتبة صور المنصّة (0175): يبنيها مشغّل المنصّة ويقسمها شركةً وصنفاً (نصّان
  *  حرّان — لا اقتران بجداول عيادة)، والدكاترة منتقٍ قراءةً فقط. `path` هو ما
  *  يُكتب بـ`products.image_path` عند الاختيار — مرجعٌ لملفٍ واحد لا نسخة. */

@@ -196,6 +196,10 @@ export function Storefront() {
             <p className="mt-2 border-t border-line pt-2 text-sm font-bold text-ink">{money(placed.total)} <span className="text-xs font-normal text-ink-subtle">— الدفع عند الاستلام</span></p>
           </div>
           <p className="text-sm leading-relaxed text-ink-muted">{front.name} راح تأكد طلبك وتتواصل وياك قريباً. احتفظ برقم الطلب.</p>
+          <a href={`/s/${slug}/track?no=${encodeURIComponent(placed.order_no)}`} data-tracklink
+            className="flex w-full items-center justify-center gap-2 rounded-2xl border border-brand-300 bg-surface-1 px-4 py-3 text-sm font-extrabold text-brand-700 transition active:scale-[0.98] dark:border-brand-500/40 dark:text-brand-300">
+            <Search size={16} /> {t("track.title", "تتبّع طلبك")}
+          </a>
           {front.whatsapp && (
             <a href={`https://wa.me/${waNumber(front.whatsapp, "+964")}?text=${encodeURIComponent(waMsg)}`} target="_blank" rel="noreferrer"
               className="flex w-full items-center justify-center gap-2 rounded-2xl bg-[#25D366] px-4 py-3 text-sm font-extrabold text-white transition active:scale-[0.98]">
@@ -389,7 +393,11 @@ export function Storefront() {
                 <CheckoutSheet
                   slug={slug} cart={cart} subtotal={subtotal} fee={fee} total={total}
                   onBack={() => setSheet("cart")}
-                  onPlaced={(r) => { setCart([]); setSheet("none"); setPlaced(r); playAchievement(); celebrate(); }} />
+                  onPlaced={(r) => {
+                    setCart([]); setSheet("none"); setPlaced(r); playAchievement(); celebrate();
+                    // رقم آخر طلب يُحفظ محلياً: صفحة التتبّع تعبّيه تلقائياً لو رجع الزبون بعدين.
+                    try { localStorage.setItem("vp_store_last_order", r.order_no); } catch { /* ignore */ }
+                  }} />
               )}
             </motion.div>
           </motion.div>

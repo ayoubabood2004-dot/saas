@@ -72,6 +72,16 @@ create index if not exists lab_device_links_token_idx on lab_device_links(token)
 create table if not exists lab_device_inbox (id uuid primary key default gen_random_uuid(), link_id uuid references lab_device_links(id));
 create table if not exists generated_barcodes (id uuid primary key default gen_random_uuid(), product_id uuid references products(id) on delete set null);
 create table if not exists store_orders (id uuid primary key default gen_random_uuid(), invoice_id uuid references invoices(id));
+-- 0176 يحتاج شكلَ الإنتاج: حالةُ الطلب وقنوات التتبّع (الرقم والهاتف والختم).
+alter table store_orders add column if not exists clinic_id      uuid;
+alter table store_orders add column if not exists order_no       text;
+alter table store_orders add column if not exists customer_phone text;
+alter table store_orders add column if not exists status         text not null default 'new';
+alter table store_orders add column if not exists total          numeric default 0;
+alter table store_orders add column if not exists decided_at     timestamptz;
+alter table store_orders add column if not exists created_at     timestamptz not null default now();
+create table if not exists store_profiles (clinic_id uuid primary key, slug text not null, enabled boolean not null default true);
+create table if not exists store_read_hits (ip text not null, bucket timestamptz not null, hits int not null default 0, primary key (ip, bucket));
 create table if not exists journeys (id uuid primary key default gen_random_uuid(), pet_id uuid references pets(id), status text);
 create index if not exists journeys_pet_idx on journeys(pet_id) where status = 'active';
 create table if not exists wa_accounts (id uuid primary key default gen_random_uuid());

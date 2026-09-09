@@ -74,7 +74,7 @@ const invNormName = (v: string | null | undefined): string =>
 import { supabase } from "./supabase";
 import { outboxEnqueue, outboxEnqueueRpc, isNetworkError } from "./outbox";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, AppointmentStatus, ClinicInfo, PublicStaff, DailyNote, TreatmentEntry, Admission, Branch, Reminder, Product, Company, CompanySection, Purchase, PurchaseItem, PurchasePayment, PurchaseDraftLine, PurchaseMeta, Courier, DeliveryOrder, PetMovement, DemoDB, Invoice, InvoiceItem, CheckoutItem, SaleMeta, Customer, DiscountType, PaymentMethod, PaymentSplit, WhatsAppMessage, AuditEntry, LoginEvent, PetNote, Expense, ExpenseMethod, ReturnMeta, RetailReturnResult, HealthMetric, ClinicVisit , Surgery, LabResult, LabDeviceLink, LabDeviceInbox, LabStatusValue, PetProblem, CareEntry, FeatureRequest, GeneratedBarcode, StoreProfile, StoreOrder, StoreOrderItem, StoreFrontInfo, StoreCatalogItem, LibraryImage, Journey, JourneyEvent, JourneyKind, JourneyStage, JourneyPublicView, EditLine } from "@/types";
+import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, AppointmentStatus, ClinicInfo, PublicStaff, DailyNote, TreatmentEntry, Admission, Branch, Reminder, Product, Company, CompanySection, Purchase, PurchaseItem, PurchasePayment, PurchaseDraftLine, PurchaseMeta, Courier, DeliveryOrder, PetMovement, DemoDB, Invoice, InvoiceItem, CheckoutItem, SaleMeta, Customer, DiscountType, PaymentMethod, PaymentSplit, WhatsAppMessage, AuditEntry, LoginEvent, PetNote, Expense, ExpenseMethod, ReturnMeta, RetailReturnResult, HealthMetric, ClinicVisit , Surgery, LabResult, LabDeviceLink, LabDeviceInbox, LabStatusValue, PetProblem, CareEntry, FeatureRequest, GeneratedBarcode, StoreProfile, StoreOrder, StoreOrderItem, StoreFrontInfo, StoreCatalogItem, StoreTrackInfo, LibraryImage, Journey, JourneyEvent, JourneyKind, JourneyStage, JourneyPublicView, EditLine } from "@/types";
 import type { CompanyCharge } from "@/types";
 import type { DeletedProduct, CourierSettlement, ReceiptsDay, ReceiptsTotal, TopProductRow, StaffSalesRow, InvoiceSearch } from "@/types";
 import type { BarcodeAilment, BarcodeHealthRow } from "@/types";
@@ -1690,6 +1690,20 @@ const demoRepo = {
         available: p.stock > 0 || poolOf(p) > 0,
         image_path: p.image_path ?? null,
       }));
+  },
+  /** تتبّع الزبون (0176): الرقم والهاتف معاً — الرقم وحده قصيرٌ فيُعَدّ تخميناً. */
+  async trackStoreOrder(slug: string, orderNo: string, phone: string): Promise<StoreTrackInfo | null> {
+    const db = loadDB();
+    const sp = db.storeProfile;
+    if (!sp || sp.slug !== normalizeSlug(slug)) return null;
+    const digits = phone.replace(/\D/g, "");
+    if (digits.length < 8 || orderNo.trim().length < 4) return null;
+    // آخر عشر خانات كما بالخادم حرفياً (0176): 0770… و+964770… نفس الذيل —
+    // تطبيعُ طرفٍ واحد أسوأ من لا تطبيع (قاعدة المشروع).
+    const o = (db.storeOrders ?? []).find((x) =>
+      x.order_no.trim().toUpperCase() === orderNo.trim().toUpperCase()
+      && (x.customer_phone ?? "").replace(/\D/g, "").slice(-10) === digits.slice(-10));
+    return o ? { order_no: o.order_no, status: o.status, total: o.total, created_at: o.created_at, decided_at: o.decided_at ?? null } : null;
   },
   async placeStoreOrder(
     slug: string,
@@ -4273,6 +4287,11 @@ const supabaseRepo: typeof demoRepo = {
     if (res.error) throw new Error(res.error.message);
     return ((res.data ?? []) as StoreCatalogItem[]).map((r) => ({ ...r, price: Number(r.price) || 0 }));
   },
+  async trackStoreOrder(slug, orderNo, phone) {
+    const { data, error } = await sbc().rpc("store_order_track", { p_slug: slug, p_order_no: orderNo, p_phone: phone });
+    if (error) throw error;
+    return (data as StoreTrackInfo[] | null)?.[0] ?? null;
+  },
   async placeStoreOrder(slug, info, items) {
     const { data, error } = await sbc().rpc("store_place_order", {
       p_slug: slug,
@@ -5023,7 +5042,7 @@ const READ_ONLY_ALLOWED = new Set<string>([
   "checkStoreSlug", "slotTaken", "supportsBulkGroup", "supportsSupplierLedger",
   "adminListFeatureRequests", "systemHealth", "barcodeHealth",
   // --- واجهات الزبون العامة (تعمل خارج جلسة العيادة) ---
-  "storeFrontPublic", "storeCatalogPublic", "placeStoreOrder", "trackJourneyPublic",
+  "storeFrontPublic", "storeCatalogPublic", "placeStoreOrder", "trackStoreOrder", "trackJourneyPublic",
   "reactJourneyPublic", "claimPet", "claimPetsByPhone",
   // بوّابة المالك (0158): اشتراكُ العيادة شأنٌ بينها وبين المنصّة — وقفُ
   // البوّابة يعاقب المراجعَ الذي لا ناقةَ له ولا جمل، ولا يضغط على العيادة.

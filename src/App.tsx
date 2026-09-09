@@ -54,6 +54,7 @@ const AdminBilling = page(() => import("@/pages/AdminBilling").then((m) => ({ de
 const PlatformConsole = page(() => import("@/pages/PlatformConsole").then((m) => ({ default: m.PlatformConsole })));
 const ClinicStore = page(() => import("@/pages/ClinicStore").then((m) => ({ default: m.ClinicStore })));
 const Storefront = page(() => import("@/pages/Storefront").then((m) => ({ default: m.Storefront })));
+const StoreTrack = page(() => import("@/pages/StoreTrack").then((m) => ({ default: m.StoreTrack })));
 const TrackJourney = page(() => import("@/pages/TrackJourney").then((m) => ({ default: m.TrackJourney })));
 const OwnerPortal = page(() => import("@/pages/OwnerPortal").then((m) => ({ default: m.OwnerPortal })));
 // لوحة الأقفاص المسطّحة — بطاقات على مخزن التخطيط نفسه، بلا three.js إطلاقاً:
@@ -237,6 +238,7 @@ function Shell() {
             <Route path="/store" element={<Protected><ClinicOnly><FeatureGate feature="store"><ClinicStore /></FeatureGate></ClinicOnly></Protected>} />
             {/* الستور العام — صفحة الزبون بلا تسجيل، خارج كل الحُرّاس عمداً */}
             <Route path="/s/:slug" element={<Storefront />} />
+            <Route path="/s/:slug/track" element={<StoreTrack />} />
             <Route path="/t/:token" element={<TrackJourney />} />
             {/* بوّابة المالك (0154) — عامّة كأختيها، خارج كل الحرّاس عمداً */}
             <Route path="/p/:slug" element={<OwnerPortal />} />

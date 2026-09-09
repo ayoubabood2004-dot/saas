@@ -219,6 +219,25 @@
     "minutes": "min",
     "done": "Done"
   },
+  "track": {
+    "staleDay": "A full day with no decision",
+    "staleHours": "Over 6 hours old",
+    "title": "Track your order",
+    "sub": "Enter the order number you received and the phone you ordered with.",
+    "orderNo": "Order number",
+    "phone": "Phone number",
+    "go": "Check order status",
+    "checking": "Checking…",
+    "notFound": "No order matches this number and phone — double-check both and try again.",
+    "pending": "Your order arrived and is awaiting the clinic's confirmation",
+    "accepted": "Your order was accepted — the clinic is preparing it for delivery",
+    "rejected": "The order was declined — contact the clinic for details",
+    "cancelled": "The order is cancelled",
+    "placedAt": "Placed: {{d}}",
+    "decidedAt": "Decided: {{d}}",
+    "cod": "— Cash on delivery",
+    "backToStore": "Back to the store"
+  },
   "lib": {
     "pickTitle": "Pick from the image library",
     "searchPh": "Search by name, company or section…",
