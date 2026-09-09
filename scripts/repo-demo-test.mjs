@@ -102,6 +102,13 @@ const seed = (products) => {
 const seeded = async (n) => (await repo.listProducts()).length === n;
 
 const P = (id, name, barcode, extra = {}) => ({ id, name, barcode, stock: 1, ...extra });
+/** طبقةُ النجدة بالواجهة — تُحمَّل من مصدرها للمقارنة بها، لا تُحاكى:
+ *  المرآةُ التجريبية تُقاس على ما تفعله الشاشةُ فعلاً، لا على نسخةٍ منه. */
+const pcBuilt = await esbuild.build({
+  entryPoints: ["src/lib/productCodes.ts"], bundle: true, format: "esm", write: false,
+  platform: "neutral", plugins: [stubs], logLevel: "silent",
+});
+const { rescueScan } = await import("data:text/javascript;base64," + Buffer.from(pcBuilt.outputFiles[0].text).toString("base64"));
 /** هل يحمل هذا المنتجُ الرمزَ (أساسيّاً أو إضافياً)؟ — للعدّ بالفحوص. */
 const matchAll = (p, code) => p.barcode === code || (p.alt_codes ?? []).includes(code);
 
@@ -231,6 +238,76 @@ console.log("\n▸ tidyInventory — صورةٌ قبل الطيّ (مرآةُ م
   check("  ومعه مرجعُ الدمج ليُفكّ", trash[0]?.merged_into === "keeper");
 }
 
+console.log("\n▸ poolProduct — طيُّ الرصيد للحوض بعمليةٍ واحدة (مرآةُ 0171)");
+{
+  /* الكتابتان المنفصلتان كانتا تعدّان البضاعةَ مرّتين إذا نجحت الأولى وفشلت
+   * الثانية: الحوضُ +٣٠ والمنتجُ ما زال ٣٠. الذرّيةُ تمنع الحالةَ الوسطى. */
+  const db = {
+    products: [{ id: "p1", clinic_id: "c", name: "منتج", barcode: "9990000000091", stock: 30, pooled: false, section_id: "sec1", alt_codes: [] }],
+    companies: [], companySections: [{ id: "sec1", clinic_id: "c", company_id: "co1", name: "صنف", pooled_stock: 10 }],
+    purchases: [], purchaseItems: [], invoices: [], invoiceItems: [], generatedBarcodes: [], productsTrash: [],
+  };
+  mem.set(DB_KEY, JSON.stringify(db));
+  const out = await repo.poolProduct("p1", "sec1");
+  const after = await repo.listProducts();
+  const secs = await repo.listCompanySections();
+  const prod = after.find((p) => p.id === "p1");
+  const sec = secs.find((s) => s.id === "sec1");
+  check("رصيدُ المنتج صار صفراً", prod?.stock === 0, String(prod?.stock));
+  check("  وصار مجمَّعاً", prod?.pooled === true);
+  check("والحوضُ استلمه: 10 + 30 = 40", sec?.pooled_stock === 40, String(sec?.pooled_stock));
+  check("فالمجموعُ 40 لا 70 — لا ازدواجَ رصيد", (sec?.pooled_stock ?? 0) + (prod?.stock ?? 0) === 40);
+  check("والدالّةُ ترجع المنتجَ بعد الطيّ", out?.id === "p1" && out?.stock === 0);
+}
+{
+  // ولا حالةَ وسطى: منتجٌ غائب يرمي ولا يمسّ الحوض.
+  const db = {
+    products: [], companies: [], companySections: [{ id: "sec1", clinic_id: "c", company_id: "co1", name: "صنف", pooled_stock: 10 }],
+    purchases: [], purchaseItems: [], invoices: [], invoiceItems: [], generatedBarcodes: [], productsTrash: [],
+  };
+  mem.set(DB_KEY, JSON.stringify(db));
+  let threw = false;
+  try { await repo.poolProduct("ghost", "sec1"); } catch { threw = true; }
+  const secs = await repo.listCompanySections();
+  check("منتجٌ غائب يرمي", threw);
+  check("  والحوضُ لم يُمَسّ", secs.find((s) => s.id === "sec1")?.pooled_stock === 10);
+}
+
+
+console.log("\n▸ الطيُّ يورّث الرموز — مرآةُ 0169");
+{
+  /* الحالةُ التي كانت تكسر: الهدفُ **له باركودُه**، فلا يرث الأساسيَّ بـcoalesce
+   * — وكانت رموزُ التوأم تُدفن معه، فأوّلُ مسحةٍ لباركود المصنع بعد «رتّب
+   * المخزن» تقول «مو موجود» والمادّةُ بالمخزن، فيُعاد إدخالُها توأماً. */
+  seed([
+    P("target", "دراي فود", "1110000000015", { section_id: "sec1", stock: 5 }),
+    P("twin", "دراي فود", "2220000000029", { stock: 7, alt_codes: ["3330000000033"] }),
+  ]);
+  const r = await repo.tidyInventory();
+  check("التوأمُ يُطوى والرصيدُ يُجمع", r.merged === 1 && (await repo.listProducts()).find((p) => p.id === "target")?.stock === 12);
+  const t = (await repo.listProducts()).find((p) => p.id === "target");
+  check("والهدفُ يبقى بباركوده الأصليّ", t?.barcode === "1110000000015");
+  check("ويرث باركودَ التوأم رمزاً إضافياً", (t?.alt_codes ?? []).includes("2220000000029"), JSON.stringify(t?.alt_codes));
+  check("  ورموزَ التوأم الإضافية معه", (t?.alt_codes ?? []).includes("3330000000033"), JSON.stringify(t?.alt_codes));
+  check("فمسحةُ رمز التوأم تلقى الهدف (جوابُ «موجود ويُمسح فلا يجيء»)",
+    (await repo.getProductByBarcode("2220000000029"))?.id === "target");
+  check("  ومسحةُ رمزه الإضافي كذلك", (await repo.getProductByBarcode("3330000000033"))?.id === "target");
+}
+{
+  // ولا يُسرق رمزٌ صار لمنتجٍ ثالث — ولا يُكرَّر ما عند الهدف أصلاً.
+  seed([
+    P("target2", "شامبو", "5550000000056", { section_id: "sec1", stock: 1, alt_codes: ["6660000000060"] }),
+    P("twin2", "شامبو", "7770000000074", { stock: 1, alt_codes: ["6660000000060", "8880000000088"] }),
+    P("third", "غيره", "8880000000088", { section_id: "sec1", stock: 1 }),
+  ]);
+  await repo.tidyInventory();
+  const t2 = (await repo.listProducts()).find((p) => p.id === "target2");
+  check("رمزُ منتجٍ ثالث لا يُسرق بالطيّ", !(t2?.alt_codes ?? []).includes("8880000000088"), JSON.stringify(t2?.alt_codes));
+  check("  والرمزُ المكرَّر لا يتضاعف", (t2?.alt_codes ?? []).filter((c) => c === "6660000000060").length === 1, JSON.stringify(t2?.alt_codes));
+  check("  والثالثُ يبقى مالكاً رمزَه", (await repo.listProducts()).find((p) => p.id === "third")?.barcode === "8880000000088");
+}
+
+
 console.log("\n▸ فكُّ التوريث — مرآةُ keep_barcode (0167)");
 {
   // أصلٌ مصنَّف بلا باركود، وتوأمٌ «بدون صنف» بباركود: «رتّبِ المخزن» يطويه
@@ -255,6 +332,103 @@ console.log("\n▸ فكُّ التوريث — مرآةُ keep_barcode (0167)");
   await repo.tidyInventory();
   await repo.restoreProduct("dup");
   check("أصلٌ مالكٌ لباركوده لا يخسره بالفكّ", (await repo.listProducts()).find((p) => p.id === "keeper")?.barcode === "OWN-1");
+}
+
+console.log("▸ getProductByBarcode — مرآةُ صيغِ الماسح بالخادم (0172 / س٥)");
+{
+  /* الخادمُ صار يقشّر رأسَ AIM ويجرّب أصفارَ GTIN/UPC عند خيبة الحرفيّ (0172).
+   * والنسخةُ التجريبية هي التي تجري عليها فحوصُ المنطق — فانحرافُها عن الخادم
+   * أسوأ من لا شيء: تُظهر سلوكاً لا يقع بالإنتاج فتُخفي العطل بدل أن تكشفه. */
+  seed([
+    P("v1", "أساسيّ", "6221031492405", { created_at: "2026-01-01" }),
+    P("v2", "مخزونٌ بصفر", "0045496830434", { created_at: "2026-01-02" }),
+    P("v3", "صاحبُ إضافيّ", "RF-0172", { alt_codes: ["9781234567897"], created_at: "2026-01-03" }),
+  ]);
+  check("(زُرعت ثلاثة)", await seeded(3));
+  const nameOf = async (code) => (await repo.getProductByBarcode(code))?.name ?? "(لا شيء)";
+
+  check("الحرفيُّ كما كان", await nameOf("6221031492405") === "أساسيّ");
+  check("و«]C1 + ١٣ رقماً» يلقى صاحبَه", await nameOf("]C16221031492405") === "أساسيّ");
+  check("و«0 + EAN-13» (GTIN-14) كذلك", await nameOf("06221031492405") === "أساسيّ");
+  check("وUPC-A بـ١٢ خانة على مخزونٍ بـ١٣", await nameOf("045496830434") === "مخزونٌ بصفر");
+  check("والرمزُ الإضافيُّ يُنقذ مثلَ الأساسيّ", await nameOf("09781234567897") === "صاحبُ إضافيّ");
+  check("وأرقامٌ شرقية مع رأس AIM", await nameOf("]C1٦٢٢١٠٣١٤٩٢٤٠٥") === "أساسيّ");
+  check("ورمزٌ لا يخصّ أحداً يبقى لا شيء", await nameOf("1112223334445") === "(لا شيء)");
+  check("وفارغٌ لا يرمي", await nameOf("") === "(لا شيء)");
+
+  /* **الحرفيُّ يغلب التخمين.** لو خُلطت الصيغُ بالمطابقة الحرفية لصار رمزٌ يطابق
+   * صاحبَه حرفياً ويطابق آخرَ بصيغةٍ ⇒ «رمزٌ ملتبس» على مسارٍ كان سليماً. */
+  seed([
+    P("w1", "اثنتا عشرة", "045496830434", { created_at: "2026-01-04" }),
+    P("w2", "نفسُها بصفر", "0045496830434", { created_at: "2026-01-02" }),
+  ]);
+  check("الحرفيُّ يغلب التخمين — لا يُختار الأقدمُ بصيغة",
+    (await repo.getProductByBarcode("045496830434"))?.id === "w1");
+  check("  والعكسُ كذلك", (await repo.getProductByBarcode("0045496830434"))?.id === "w2");
+}
+
+console.log("▸ getProductByBarcode — الصيغةُ الأسبقُ تغلب (0173)");
+{
+  /* أمسكته المراجعةُ الخصميّة على 0172 نفسِها: القاعدةُ كانت تتّحد على الصيغ
+   * كلِّها وترتّب بالأقدم، والواجهةُ (`rescueScan`) تمشي صيغةً صيغةً وتقف عند
+   * أوّل مصيبة. فنفسُ المسحة تبيع منتجاً إن حسمتها القائمةُ المحمّلة وآخرَ إن
+   * حسمها الخادم — نقضُ الثابت «نفسُ الرمز يرجع نفسَ المنتج».
+   * والزوجُ أدناه هو الذي يصنعه الماسحُ نفسُه: UPC-A ونظيرُه EAN-13 بصفر،
+   * والأعمارُ معكوسةٌ عمداً فيفترق الترتيبان. */
+  seed([
+    P("w1", "اثنتا عشرة", "045496830434", { created_at: "2026-01-04" }),
+    P("w2", "نفسُها بصفر", "0045496830434", { created_at: "2026-01-02" }),
+  ]);
+  check("(زُرع الزوج)", await seeded(2));
+  const got = await repo.getProductByBarcode("]c1045496830434");
+  check("مسحةٌ برأس AIM تختار صاحبَ الصيغة الأسبق لا الأقدمَ إنشاءً", got?.id === "w1");
+  check("  وهو نفسُ ما تختاره طبقةُ النجدة بالواجهة", got?.id === rescueScan([
+    { id: "w1", name: "اثنتا عشرة", barcode: "045496830434", alt_codes: [] },
+    { id: "w2", name: "نفسُها بصفر", barcode: "0045496830434", alt_codes: [] },
+  ], "]c1045496830434")?.product.id);
+  check("والحرفيُّ ما زال يغلب الصيغة", (await repo.getProductByBarcode("045496830434"))?.id === "w1");
+  check("  والعكسُ كذلك", (await repo.getProductByBarcode("0045496830434"))?.id === "w2");
+
+  /* وإصلاحُ التخطيط العربيّ **بالواجهة وحدها**: خريطتُه بياناتُ متصفّحٍ لا
+   * تعرفها القاعدة. فالمرآةُ التجريبية لا تعرفه كي لا تُظهر ما لا يقع. */
+  seed([P("m1", "منتج", "6221031492405", { created_at: "2026-01-01" })]);
+  check("مسحةٌ ممسوخةُ التخطيط لا يحسمها الخادمُ — كما بالإنتاج",
+    (await repo.getProductByBarcode("دc16221031492405")) === undefined);
+  check("  وطبقةُ النجدة بالواجهة هي التي تحسمها",
+    rescueScan([{ id: "m1", name: "منتج", barcode: "6221031492405", alt_codes: [] }], "دc16221031492405")?.product.id === "m1");
+}
+
+console.log("▸ assignBarcodeIfEmpty — لا يُكتب فوق رمزٍ رُبط من جهازٍ آخر (ح٣)");
+{
+  seed([
+    P("g1", "بلا رمز", null),
+    P("g2", "له رمزٌ سلفاً", "ALREADY-1"),
+    P("g3", "صاحبُ رمزٍ آخر", "TAKEN-9"),
+  ]);
+  check("(زُرعت ثلاثة)", await seeded(3));
+
+  const linked = await repo.assignBarcodeIfEmpty("g1", "NEW-100");
+  check("منتجٌ بلا رمزٍ يُربط", linked?.barcode === "NEW-100");
+  check("  ويُقرأ بعدها من المخزن", (await repo.listProducts()).find((p) => p.id === "g1")?.barcode === "NEW-100");
+
+  /* الحالةُ المقصودة: جهازان يولّدان معاً. الثاني كان يدهس رمزَ الأوّل،
+   * وملصقاتُ الأوّل المطبوعةُ تصير رموزاً لا تخصّ شيئاً. */
+  let threw = false;
+  try { await repo.assignBarcodeIfEmpty("g2", "NEW-200"); } catch { threw = true; }
+  check("ومنتجٌ له رمزٌ سلفاً يُرفض لا يُدهَس", threw);
+  check("  ورمزُه القديم كما هو", (await repo.listProducts()).find((p) => p.id === "g2")?.barcode === "ALREADY-1");
+
+  let threw2 = false;
+  try { await repo.assignBarcodeIfEmpty("g1", "TAKEN-9"); } catch { threw2 = true; }
+  check("ورمزٌ مأخوذٌ لغيره يُرفض", threw2);
+  check("  وصاحبُه لم يُمَسّ", (await repo.listProducts()).find((p) => p.id === "g3")?.barcode === "TAKEN-9");
+
+  let threw3 = false;
+  try { await repo.assignBarcodeIfEmpty("g1", "   "); } catch { threw3 = true; }
+  check("ورمزٌ فارغ يُرفض", threw3);
+  let threw4 = false;
+  try { await repo.assignBarcodeIfEmpty("لا-وجود-له", "X-1"); } catch { threw4 = true; }
+  check("ومنتجٌ غيرُ موجودٍ يُرفض", threw4);
 }
 
 console.log(`\n${fails ? "✗" : "✓"} repo-demo-test: ${passes} نجحت، ${fails} فشلت`);

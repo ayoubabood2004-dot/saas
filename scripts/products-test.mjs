@@ -10,6 +10,7 @@
  *   node scripts/products-test.mjs
  * ==========================================================================*/
 import esbuild from "esbuild";
+import { readFileSync } from "node:fs";
 
 let fails = 0, passes = 0;
 const check = (name, cond, detail = "") => {
@@ -38,9 +39,10 @@ const built = await esbuild.build({
   platform: "neutral", plugins: [stubs],
   alias: { "@/lib/utils": "./src/lib/utils.ts" },
 });
-const { findByCode, looksLikeShelfCode, twinsByName, nearCodeTwin, scanVariants, rescueScan, codeIndex, layoutFix, excelArtifact, hasArabicLetters, looksLayoutMangled, codeMatcher } = await import(
+const mod = await import(
   "data:text/javascript;base64," + Buffer.from(built.outputFiles[0].text).toString("base64")
 );
+const { findByCode, looksLikeShelfCode, twinsByName, nearCodeTwin, scanVariants, rescueScan, codeIndex, layoutFix, excelArtifact, hasArabicLetters, looksLayoutMangled, codeMatcher } = mod;
 
 const P = (id, name, barcode, extra = {}) => ({ id, name, barcode, stock: 1, ...extra });
 const inv = [
@@ -251,6 +253,7 @@ console.log("▸ codeIndex — الشراءُ يلقى ما يلقاه الكا�
     /\w+\.barcode\s*\|\|\s*""\s*\)?\s*\)\.includes\(/,
   ];
   const bad = [];
+  const waivers = [];
   for (const f of walk("src")) {
     if (f.endsWith("lib/productCodes.ts")) continue;              // مصدرُ الحقيقة نفسه
     const src = readFileSync(f, "utf8");
@@ -259,10 +262,18 @@ console.log("▸ codeIndex — الشراءُ يلقى ما يلقاه الكا�
       // ما يحرسه، فيُكتب بلا شرحٍ أو يُسكَت الحارس.
       const t = line.trim();
       if (t.startsWith("//") || t.startsWith("*") || t.startsWith("/*")) continue;
+      /* واستثناءٌ مكتوبٌ بسببه: جداولُ ليس فيها `alt_codes` أصلاً (سجلُّ
+       * المولّد مثلاً) رمزُها **هو** هويّتُها، فمطابقتُه وحدَه ليست عطلاً.
+       * ويُطلب السببُ نصّاً كي لا يصير المفتاحُ بابَ إسكاتٍ للحارس. */
+      const wi = line.indexOf("code-search-ok:");
+      const waived = wi >= 0 && line.slice(wi + 15).trim().length > 0;
+      if (waived) { waivers.push(`${f}:${i + 1}`); continue; }
       if (PATTERNS.some((re) => re.test(line))) bad.push(`${f}:${i + 1}`);
     }
   }
   check("لا شاشةَ تبحث بالرمز الأساسيّ وحده — استعمل codeMatcher", bad.length === 0, bad.join("، "));
+  // والاستثناءاتُ تُعدّ: عددٌ يكبر بلا سببٍ إشارةُ حارسٍ يُلتفّ عليه.
+  check("  والاستثناءاتُ المكتوبة قليلةٌ ومعدودة", waivers.length <= 2, waivers.join("، "));
 
   // ولا مُطبِّعَ رموزٍ مكتوبٍ بيدٍ داخل شاشةٍ تطابق الرموز. هذا العطلُ عاش
   // بـPurchases.tsx حتى الدفعة ٦: مُطبِّعٌ محلّيّ يشيل الفراغاتِ والأرقامَ
@@ -288,6 +299,252 @@ console.log("▸ codeIndex — الشراءُ يلقى ما يلقاه الكا�
   check("  والحارسُ يمسك كلَّ الصيغ التي وُجدت فعلاً",
     SHOULD_CATCH.every((s) => PATTERNS.some((re) => re.test(s))));
   check("  ولا يمسك السليم", SHOULD_PASS.every((s) => !PATTERNS.some((re) => re.test(s))));
+}
+
+
+/* ── الرمزُ القديم لا يتبخّر عند التعديل (ح٢) ─────────────────────────────
+ * كان التعديلُ يرسل الباركودَ الجديد فوق القائم بلا مقارنةٍ ولا تحذير، والقديمُ
+ * لا يبقى إلا بسجلّ التدقيق سنةً بلا واجهةٍ تسترجعه. فعيادةٌ أدخلت موادَّها
+ * برقم الرفّ وطبعت ملصقاته، ثم أُصلح الصفُّ بباركود المصنع ⇒ بعد أسابيع تُمسح
+ * علبةٌ بملصقٍ قديم فيقول النظام «مو موجود» فتُعاد إدخالاً ⇒ توأمٌ برصيدٍ مقسوم. */
+console.log("▸ keepOldCode — الرمزُ القديم ينزل رمزاً إضافياً");
+{
+  // غيابُ الدالّة فشلٌ يُقال، لا انهيارٌ يقطع بقيّةَ الحزمة.
+  const keepOldCode = typeof mod.keepOldCode === "function" ? mod.keepOldCode : () => "«keepOldCode غير مصدَّرة»";
+  const shelf = P("s1", "سبري", "247", { alt_codes: [] });
+  const others = [shelf, P("s2", "غيره", "999")];
+
+  const r = keepOldCode(shelf, "6970967772736", others);
+  check("استبدالُ الرمز يحفظ القديم", r?.kept === "247");
+  check("  و`alt_codes` تحمله", JSON.stringify(r?.alt_codes) === JSON.stringify(["247"]));
+  check("  وبعد الحفظ يُلقى المنتجُ بالرمزين",
+    findByCode([{ ...shelf, barcode: "6970967772736", alt_codes: r.alt_codes }], "247")?.id === "s1"
+    && findByCode([{ ...shelf, barcode: "6970967772736", alt_codes: r.alt_codes }], "6970967772736")?.id === "s1");
+
+  check("ومحوُ الرمز إلى فراغٍ يحفظه أيضاً — الفقدُ فقدٌ بأيّ طريق",
+    keepOldCode(shelf, "", others)?.kept === "247");
+  check("ورمزٌ لم يتغيّر لا يُضاعَف", keepOldCode(shelf, "247", others) === null);
+  check("  ولا بحالةٍ مطويّة أو أرقامٍ شرقية", keepOldCode(P("s3", "x", "W90"), "w90", []) === null
+    && keepOldCode(P("s4", "x", "247"), "٢٤٧", []) === null);
+  check("ومنتجٌ بلا رمزٍ أصلاً لا شيءَ يُحفظ له", keepOldCode(P("s5", "x", null), "999888", []) === null);
+  check("ورمزٌ محفوظٌ سلفاً لا يتكرّر",
+    keepOldCode(P("s6", "x", "247", { alt_codes: ["247"] }), "6970967772736", []) === null);
+  check("  ولا بصيغةٍ مطويّة منه",
+    keepOldCode(P("s7", "x", "W90", { alt_codes: ["w90"] }), "6970967772736", []) === null);
+
+  /* ولا يُنتزع رمزٌ صار لغيره — نفسُ الخطّ الأحمر الذي رسمته 0165 للاستعادة:
+   * حفظُ رمزِنا لا يعني سرقتَه ممّن صار يملكه. */
+  const stolen = [P("s1", "سبري", "247", { alt_codes: [] }), P("z", "صاحبٌ جديد", "247")];
+  check("ورمزٌ صار لمنتجٍ آخر لا يُنتزع منه",
+    keepOldCode(stolen[0], "6970967772736", stolen) === null);
+  check("  ولو حمله الآخرُ رمزاً إضافياً",
+    keepOldCode(P("s8", "x", "247"), "999", [P("s8", "x", "247"), P("y", "آخر", "111", { alt_codes: ["247"] })]) === null);
+
+  // والشاشةُ توصّله فعلاً — بمساري التعديل كليهما
+  const src = readFileSync("src/pages/Inventory.tsx", "utf8");
+  check("وشاشةُ المخزون تحفظ القديم بتعديل المنتج", src.includes("keepOldCode(product, payload.barcode"));
+  check("  وبتعديل المجموعة كذلك", src.includes("keepOldCode(before, rowPayload.barcode"));
+  check("  وتقوله بصوت لا بصمت", src.includes("pos.oldCodeKept") && src.includes("pos.oldCodesKept"));
+}
+
+/* ── المولّد لا يكتب فوق رمزٍ رُبط من جهازٍ آخر (ح٣) ──────────────────────
+ * كان التعليقُ يقول «لا تكتب فوقه» والشيفرةُ تبحث بنفس مصفوفة props البائتة —
+ * فلا تسأل أحداً. وحلقةُ «ولّد للكلّ» لا تعيد الفحصَ أصلاً. */
+console.log("▸ ح٣ — الشرطُ بالكتابة لا بقراءةٍ بائتة");
+{
+  const studio = readFileSync("src/components/inventory/BarcodeStudio.tsx", "utf8");
+  const repo = readFileSync("src/lib/repo.ts", "utf8");
+  check("المسارُ المفرد يمرّ من الكتابة الشرطية", studio.includes("repo.assignBarcodeIfEmpty(p.id, code)"));
+  check("  وحلقةُ الكلّ كذلك", studio.includes("repo.assignBarcodeIfEmpty(noBarcode[i].id, codes[i])"));
+  check("  ولا كتابةَ عمياء بقيت", !studio.includes("repo.updateProduct(noBarcode[i].id, { barcode: codes[i] })"));
+  check("  ولا قراءةَ من props البائتة تُسمّى «طازجة»", !studio.includes("const fresh = products.find"));
+  check("والتخطّي يُقال بعدده", studio.includes("pos.skippedLinked") && studio.includes("pos.alreadyHasCode"));
+  check("والشرطُ بالقاعدة بمرشّحٍ لا بقراءةٍ سابقة", repo.includes('.or("barcode.is.null,barcode.eq.")'));
+  check("  ويرمي على صفرِ صفوف", repo.includes("assignBarcodeIfEmpty") && repo.includes("barcode_already_set"));
+}
+
+/* ── ع١٠: لا مسارَ سقوطٍ نصفَ مطبَّع ──────────────────────────────────── */
+console.log("▸ ع١٠ — الفرعُ النائم نصفُ المطبَّع حُذف");
+{
+  const repo = readFileSync("src/lib/repo.ts", "utf8");
+  check("لا استعلامَ بديلاً يطابق matchCode بمخزونٍ خام",
+    !repo.includes("alt_codes.cs.{${code}}"));
+  check("وغيابُ الدالّة يُقال باسمه لا بصمت", repo.includes("lookup_fn_missing"));
+  check("  وتُترجمه describeDbError", readFileSync("src/lib/errors.ts", "utf8").includes("lookup_fn_missing"));
+}
+
+
+/* ── الدفعة ٦: أعطالٌ منطقية متفرّقة، كلٌّ منها «قيمةٌ تُعرض غيرَ التي تُحسب» ─ */
+console.log("▸ الدفعة ٦ — المعروضُ هو المحسوب");
+{
+  const sale = readFileSync("src/components/retail/SaleBuilder.tsx", "utf8");
+  const inv2 = readFileSync("src/pages/Inventory.tsx", "utf8");
+  const pur = readFileSync("src/components/inventory/Purchases.tsx", "utf8");
+  const studio2 = readFileSync("src/components/inventory/BarcodeStudio.tsx", "utf8");
+
+  /* م٢: منتقي الوزن كان يَعِد بسعر المفرد بينما `addWeightLine` تنشئ السطرَ
+   * بـ`listPrice` — وهي بوضع الجملة **سعرُ الشراء**. فالمربّعاتُ تطبع رقماً
+   * والفاتورةُ رقماً آخر، والتعليقُ فوق السطر يقول إن الغرض ألّا يختلفا. */
+  check("م٢: منتقي الوزن يعرض `listPrice` لا `sell_price` الخام",
+    sale.includes("line?.byWeight ? line.unit_price : listPrice(p)"));
+  check("  ولا بقيّةَ للخام", !sale.includes("line?.byWeight ? line.unit_price : p.sell_price"));
+  check("  والسطرُ يُنشأ بنفس الدالّة", sale.includes("perKgPrice: listPrice(p)"));
+
+  /* م٣: رمزٌ كلُّه محارفُ اتجاهٍ يصير "" بعد التطبيع، و`trim()` لا يزيلها.
+   * فخانتان «فارغتان للعين» كانتا تتطابقان فتمنعان حفظَ الدفعة كلِّها. */
+  check("م٣: الفارغُ بعد التطبيع خارج فحص التكرار", inv2.includes("const ghost = pairs.find((x) => !x.norm)"));
+  check("  ويُقال باسمه لا برمزٍ لا يُرى", inv2.includes("pos.ghostCode"));
+  check("  والتكرارُ يُقارن بالمطبَّع", inv2.includes("const ncodes = pairs.map((x) => x.norm)"));
+
+  /* م٤: للفراغ دلالتان بنفس الشاشة — «مدفوعٌ كامل» بالإنشاء، و«يبقى كما هو»
+   * بالتعديل. والشارةُ كانت تُشتقّ بدلالة الإنشاء وحدها فتكذب على دَينٍ قائم. */
+  check("م٤: المدفوعُ بالتعديل يعود لقيمة الفاتورة لا للإجمالي",
+    pur.includes("editing ? Math.max(0, Math.min(total, editing.purchase.amount_paid ?? total)) : total"));
+  check("  والقالبُ يعرض المدفوعَ الحاليّ", pur.includes("placeholder={money(editing ? (editing.purchase.amount_paid ?? total) : total)}"));
+
+  /* م٥: الحارسُ كان يفحص القفلَ وحدَه، و`canPos` يخفي الزرَّ لا الشاشة. */
+  check("م٥: الحارسُ يرى الاستحقاق لا القفلَ وحده",
+    inv2.includes('else if (!canPos && view === "wholesale") setView("products")'));
+  check("  و`canPos` بتبعيّات الأثر", inv2.includes("}, [locked, view, canPos]);"));
+  check("  والرسمُ يشترطه أيضاً — حزامٌ ثانٍ", inv2.includes('view === "wholesale" && canPos ?'));
+
+  /* ص٣: ثلاثةُ أبحاثٍ حرفية، ومفتاحُ اسمِ شركةٍ لا يطوي ة/ه ولا الهمزة. */
+  check("ص٣: بحثُ تبويب الشركات مطبَّع", inv2.includes("companies.filter((c) => searchable(c.name).includes(ql))"));
+  check("  وبحثُ فواتير الشراء كذلك", pur.includes("searchable(p.company_name ?? \"\").includes(ql)"));
+  check("  وسجلُّ المولّد: الاسمُ بـsearchable والرمزُ بـmatchCode",
+    studio2.includes("searchable(g.label ?? \"\").includes(nq)") && studio2.includes("matchCode(g.barcode).includes(cq)"));
+  check("  ولا toLowerCase خامٌّ بقي بهذه المواضع",
+    !inv2.includes("companies.filter((c) => c.name.toLowerCase().includes(ql))")
+    && !pur.includes('(p.company_name ?? "").toLowerCase().includes(ql)'));
+  check("  ومفتاحُ اسم الشركة يبني على searchable بالنسختين",
+    (inv2.split("const normKey = (s: string) => searchable(normName(s))").length - 1) === 1
+    && (pur.split("const normKey = (s: string) => searchable(normName(s))").length - 1) === 1);
+
+  const { searchable } = await import(
+    "data:text/javascript;base64," + Buffer.from((await esbuild.build({
+      stdin: { contents: `export { searchable } from "./src/lib/utils";`, resolveDir: process.cwd(), loader: "js" },
+      bundle: true, format: "esm", write: false, platform: "neutral", plugins: [stubs],
+    })).outputFiles[0].text).toString("base64")
+  );
+
+  /* والمفتاحُ نفسُه يُقاس سلوكياً لا نصّاً: «الشركه الامل» و«الشركة الأمل»
+   * اسمٌ واحد بعين قارئه — وحارسُ التكرار كان يسمح بهما توأمَين. */
+  const normKey = (s) => searchable(String(s).trim().replace(/\s+/g, " ").normalize("NFC")).replace(/\s+/g, " ").trim();
+  check("و«الشركه الامل» = «الشركة الأمل» بمفتاح واحد",
+    normKey("الشركه الامل") === normKey("الشركة الأمل"));
+  check("  و«شركة  الأمل» بمسافتين كذلك", normKey("شركة  الأمل") === normKey("شركة الأمل"));
+  check("  و«ABC» = «abc»", normKey("ABC") === normKey("abc"));
+  check("  وشركتان مختلفتان تبقيان مختلفتين", normKey("الأمل") !== normKey("الوفاء"));
+}
+
+
+/* ── ع٥: تقريرُ الجرد يحمل الرموزَ الإضافية ──────────────────────────────
+ * كان يُصدّر الرمزَ الأساسيّ وحده — والرموزُ الإضافية هي بالضبط ما تراكم من
+ * علاج التوائم (رقمُ الرفّ القديم إلى جانب باركود المصنع). ودورةُ «صدّر ثم
+ * أعد الإدخال» تُسقطها كلَّها، فتعود المسحةُ القديمة «مو موجودة» من جديد. */
+console.log("▸ ع٥ — الرموزُ الإضافية بتقرير الجرد");
+{
+  // بديلُ i18n: الوحدةُ تستعمله لتسمية سطر الحوض وحدَه.
+  const i18nStub = {
+    name: "i18nstub",
+    setup(b) {
+      b.onResolve({ filter: new RegExp("^@\\/i18n$") }, () => ({ path: "i18n", namespace: "st" }));
+      b.onLoad({ filter: /.*/, namespace: "st" }, () => ({
+        contents: "export default { t: (k, d) => (typeof d === 'string' ? d : k) };", loader: "js",
+      }));
+    },
+  };
+  let st = null;
+  try {
+    const b2 = await esbuild.build({
+      entryPoints: ["src/lib/stocktake.ts"], bundle: true, format: "esm", write: false,
+      platform: "neutral", plugins: [stubs, i18nStub], logLevel: "silent",
+      alias: { "@/lib/utils": "./src/lib/utils.ts" },
+    });
+    st = await import("data:text/javascript;base64," + Buffer.from(b2.outputFiles[0].text).toString("base64"));
+  } catch (e) { st = null; }
+  if (!st) {
+    check("(تخطٍّ) ما انبنت stocktake — الفحصُ لا يقيس شيئاً", false);
+  } else {
+    const now = new Date("2026-09-09T00:00:00Z");
+    const take = st.buildStocktake([
+      { id: "x1", name: "سبري", barcode: "6970967772736", alt_codes: ["247", "SHELF-9"], purchase_price: 1, sell_price: 2, stock: 3, created_at: "2026-01-01" },
+      { id: "x2", name: "بلا إضافيّ", barcode: "111", alt_codes: [], purchase_price: 1, sell_price: 2, stock: 1, created_at: "2026-01-01" },
+      { id: "x3", name: "بلا حقلٍ أصلاً", barcode: "222", purchase_price: 1, sell_price: 2, stock: 1, created_at: "2026-01-01" },
+    ], [], [], now);
+    const lines = st.flatLines(take);
+    const byId = (id) => lines.find((l) => l.productId === id);
+    check("السطرُ يحمل الرموزَ الإضافية", JSON.stringify(byId("x1")?.altCodes) === JSON.stringify(["247", "SHELF-9"]));
+    check("  ومنتجٌ بلا إضافيّ يحمل قائمةً فارغة", JSON.stringify(byId("x2")?.altCodes) === "[]");
+    check("  وصفٌّ قديمٌ بلا الحقل لا ينكسر", JSON.stringify(byId("x3")?.altCodes) === "[]");
+  }
+
+  const xl = readFileSync("src/lib/stockReportXlsx.ts", "utf8");
+  check("والورقةُ فيها عمودٌ للرموز الإضافية", xl.includes("stock.hAltCodes") && xl.includes("COL.altCodes"));
+  check("  يُكتب نصّاً خامّاً كعمود الباركود — فلا يقلبه إكسل صيغةً علمية",
+    xl.includes('put(at(COL.altCodes), { t: "s", v: l.altCodes.join(", "), z: "@"'));
+  check("  والعمودُ المملوءُ بيدٍ يُشتقّ من الخريطة لا يُكتب رقماً",
+    xl.includes("const FILL_COL = COL.actualQty.charCodeAt(0) - 65") && !xl.includes("c === 11 ? headFill"));
+  check("  وآخرُ عمودٍ يطابق الخريطة", xl.includes("const LAST_COL = 20") && xl.includes('id: "U"'));
+}
+
+
+/* ── الدفعة ٧: العرضُ لا يكذب ولا يصمت ───────────────────────────────── */
+console.log("▸ الدفعة ٧ — بطاقاتٌ توصل، وسقوفٌ تُقال، ومسحةٌ لا تُبتلع");
+{
+  const inv3 = readFileSync("src/pages/Inventory.tsx", "utf8");
+  const sale3 = readFileSync("src/components/retail/SaleBuilder.tsx", "utf8");
+  const store3 = readFileSync("src/pages/ClinicStore.tsx", "utf8");
+  const guard = readFileSync("scripts/i18n-guard.mjs", "utf8");
+
+  /* ع١: البطاقةُ تعدّ ولا توصل — والشرطُ يُكتب مرّةً واحدة، وإلا قالت البطاقةُ
+   * «١٢» وأظهرت القائمةُ أحدَ عشر. */
+  check("ع١: شروطُ الحالة معرَّفةٌ مرّةً واحدة",
+    inv3.includes("const isLow = (p: Product) =>") && inv3.includes("const isOut = (p: Product) =>")
+    && inv3.includes("const isExpiringSoon = (p: Product) =>") && inv3.includes("const isExpired = (p: Product) =>"));
+  check("  والبطاقةُ تعدّ بها لا بنسخةٍ ثانية",
+    inv3.includes("products.filter(isLow).length") && inv3.includes("products.filter(isExpiringSoon).length"));
+  check("  والشريحةُ ترشّح بنفس الخريطة", inv3.includes("searched.filter(STOCK_FILTERS[filter])"));
+  check("  والبطاقتان تنقران فتضبطانها", (inv3.split('setStockFilter((cur) =>').length - 1) === 2);
+  check("  والبطاقةُ ذاتُ الفعل زرٌّ حقيقيّ لا div", inv3.includes('aria-pressed={!!active}'));
+  check("  والترشيحُ يقاطع البحثَ ولا يحلّ محلَّه", inv3.includes("const searched = ql && hits.length === 0"));
+  check("  وشريحةٌ فارغة تُقال بلسانها", inv3.includes("pos.noneInFilter"));
+
+  /* ع٢: الصنفُ يصل الصفَّ بالتبويب الرئيسيّ كما يصله بشاشة الشركة. */
+  check("ع٢: خريطةُ الأصناف موجودة", inv3.includes("const sectionName = useMemo(() => {"));
+  check("  والصفُّ يستقبلها بالتبويب الرئيسيّ",
+    inv3.includes("companyName={companyName(p.company_id)} sectionName={sectionName(p.section_id)}"));
+
+  /* ع٣: الشريحةُ لا تفيض على ٣٧٥ بكسل — والعلّةُ كانت `shrink-0`. */
+  check("ع٣: شريحةُ الرموز بسقفِ عرضٍ وقصّ", inv3.includes('className="chip max-w-[12rem] min-w-0 truncate bg-warn-50'));
+  check("  ولا shrink-0 بقي عليها", !inv3.includes('className="chip shrink-0 bg-warn-50'));
+  check("  والرموزُ كاملةً بالـtitle", inv3.includes('title={`${p.alt_codes!.join(" · ")} — '));
+
+  /* ع٤: سقفُ عرضٍ لا يقول إنه سقف. */
+  check("ع٤: نافذةُ الدمج تعدّ المخفيّ وتقوله",
+    inv3.includes("hiddenCount: Math.max(0, base.length - MERGE_CAP)") && inv3.includes("pos.mergeMoreHidden"));
+  check("  وسجلُّ المتجر يسمّي سقفَه", store3.includes("const STORE_LOG_CAP = 30") && store3.includes("pos.logCap"));
+  check("  ولا رقمَ عارياً بقي بالقصّ", !store3.includes("decided.slice(0, 30)"));
+
+  /* ع٦: شاشةُ «تمّ البيع» كانت تبتلع المسحة بصمتٍ تامّ. */
+  check("ع٦: المسحةُ على شاشة «تمّ» تبدأ بيعةً جديدة",
+    sale3.includes("if (done) { pendingScanRef.current = code; reset(); return; }"));
+  check("  وتُمرَّر بعد أن يهبط التصفير لا بنفس النبضة",
+    sale3.includes("if (done || pendingScanRef.current === null) return;") && sale3.includes("void handleScan(code);"));
+  check("  ولا رجوعٌ صامتٌ بقي", !sale3.includes("useBarcodeScanner(async (code) => {\n    if (done) return;"));
+
+  /* ع٧: حارسُ «استعمالٌ مقابل كتالوج». */
+  check("ع٧: الحارسُ يمسح نداءات t الحرفية", guard.includes("const KEY_CALL =") && guard.includes("usedKeys"));
+  check("  وشاشاتُ البيع والمخزون سقفُها صفر", guard.includes("const HOT = new Set([") && guard.includes("hotOrphans.length"));
+  check("  وما عداها دَينٌ ينكمش ولا يكبر", guard.includes("__orphanKeys") && guard.includes("الدَّينُ ينكمش ولا يكبر"));
+  check("  و`retNegative` بموضعٍ واحدٍ بلا نسختَي نصّ",
+    (sale3.split('t("retail.retNegative")').length - 1) === 2
+    && !sale3.includes('t("retail.retNegative", "الراجع أكبر'));
+
+  /* ع٨: علّةُ أداءٍ لا فقدانُ مسحات — والتعليقُ يقولها كي لا تُسوَّق خطأً. */
+  check("ع٨: البحثُ على قيمةٍ مؤجَّلة", inv3.includes("const dq = useDeferredValue(q);"));
+  check("  والنتيجةُ محفوظة", inv3.includes("const hits = useMemo(() => (ql"));
+  check("  والصفُّ محفوظ", inv3.includes("const ProductRow = memo(function ProductRow"));
 }
 
 console.log(`\n${fails ? "✗" : "✓"} products-test: ${passes} نجحت، ${fails} فشلت`);

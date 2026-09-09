@@ -4,7 +4,7 @@
 // clinic_id = auth_clinic()) with an in-memory cache + localStorage mirror.
 import { getActiveClinicId } from "./clinics";
 import { uuid } from "./utils";
-import { sb, cloudWrite, registerHydrator, registerReset } from "./clinicSync";
+import { sb, cloudWrite, registerHydrator, registerReset, seedOwnClinic } from "./clinicSync";
 
 export interface PromoRule {
   id: string;
@@ -49,7 +49,13 @@ export async function hydratePromos(): Promise<void> {
     let next = (data ?? []).map((r) => rowToRule(r as PromoRow));
     if (next.length === 0) {
       const local = readLocal();
-      if (local.length) { await client.from("clinic_promos").insert(local.map(ruleToRow)); next = local; }
+      /* بذرةٌ لا ترتفع إلا بأرض صاحبها (0153): المفتاحُ المحلّيّ باسم عيادةِ
+       * المتصفّح و`clinic_id` يهبط بعيادة الخادم — وحين يختلفان (مشغّلٌ داخل،
+       * أو لحظةٌ قبل استقرار الجلسة) كانت هذي الكتابةُ تُحاوَل فعلاً: مقيسٌ
+       * بسجلّ الإنتاج بثلاث «duplicate key … clinic_promos_pkey»، وتصادمُ
+       * المفتاح هو ما ردّها بالصدفة لا حارس. والتبنّي بعد نجاحها، وإلا عُرضت
+       * بروموشناتُ عيادةٍ على شاشة أخرى ولو مُنعت الكتابة. */
+      if (local.length && await seedOwnClinic(() => client.from("clinic_promos").insert(local.map(ruleToRow)))) next = local;
     }
     cache = next;
     saveLocal(next);

@@ -84,6 +84,8 @@ export function Dashboard() {
   const [reminders, setReminders] = useState<Reminder[]>(seed?.reminders ?? []);
   const [invoices, setInvoices] = useState<Invoice[]>(seed?.invoices ?? []);
   const [products, setProducts] = useState<Product[]>(seed?.products ?? []);
+  /** فشلَ جلبُ المنتجات؟ — «تعذّر الفحص» لا «المخزون بخير». */
+  const [stockFailed, setStockFailed] = useState(false);
   const [activity, setActivity] = useState<CurvePoint[]>(seed?.activity ?? []);
   const [error, setError] = useState(false);
 
@@ -100,14 +102,14 @@ export function Dashboard() {
       // One range query covers the whole week; invoices + products power the
       // visits + low-stock widgets (this clinic barely uses bookings, so the
       // home screen leads with daily activity and inventory — no money figures).
-      const [allPets, adm, rem, weekAppts, invs, prods] = await withTimeout(Promise.all([
+      const [allPets, adm, rem, weekAppts, invs, prodsRes] = await withTimeout(Promise.all([
         repo.listAllPets(user?.clinic_id ?? user?.id),
         repo.listAdmissions(user?.clinic_id ?? user?.id),
         repo.listReminders({ ownerId: null }),
         repo.listAppointmentsInRange(days[0].toISOString(), days[6].toISOString()),
         // فواتيرُ الأسبوع فقط (0149): الرئيسية تعدّ مبيعات سبعة أيام، لا التاريخَ كله.
         repo.listInvoices(user?.clinic_id ?? user?.id, { from: (() => { const d = new Date(days[0]); d.setHours(0, 0, 0, 0); return d.toISOString(); })() }).catch(() => [] as Invoice[]),
-        repo.listProducts(user?.clinic_id ?? user?.id).catch(() => [] as Product[]),
+        repo.listProducts(user?.clinic_id ?? user?.id).then((ps) => ({ ok: true as const, ps })).catch(() => ({ ok: false as const, ps: [] as Product[] })),
       ]), 12000);
       if (!mounted.current) return; // unmounted mid-flight → drop the result
       const apptsOn = (d: Date) => weekAppts.filter((a) => a.scheduled_at.slice(0, 10) === d.toISOString().slice(0, 10));
@@ -125,7 +127,9 @@ export function Dashboard() {
       setReminders(rem);
       setAppts(todayAppts);
       setInvoices(invs);
+      const prods = prodsRes.ps;
       setProducts(prods);
+      setStockFailed(!prodsRes.ok);
       setActivity(activityPts);
       // Snapshot for instant paint on the next visit to the home screen.
       setCached<Snap>(cacheKey, { pets: allPets, admissions: adm, reminders: rem, appts: todayAppts, invoices: invs, products: prods, activity: activityPts });
@@ -473,6 +477,12 @@ export function Dashboard() {
             </div>
             {loading ? (
               <div className="space-y-2">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-12 rounded-2xl" />)}</div>
+            ) : stockFailed ? (
+              /* «المخزون بخير» عن فشلِ فحصٍ طمأنينةٌ كاذبة تؤجّل طلبَ البضاعة. */
+              <div className="flex items-center gap-3 rounded-2xl border border-warn-200 bg-warn-50/60 p-4 dark:border-warn-500/25 dark:bg-warn-500/10" data-stockcheckfailed>
+                <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-warn-500 text-white"><AlertTriangle size={18} /></span>
+                <p className="text-sm font-medium text-warn-800 dark:text-warn-200">{t("dash.stockCheckFailed", "تعذّر فحص المخزون — ما نعرف إذا اكو نواقص.")}</p>
+              </div>
             ) : lowStock.length === 0 ? (
               <div className="flex items-center gap-3 rounded-2xl border border-success-100 bg-success-50/60 p-4 dark:border-success-500/20 dark:bg-success-500/10">
                 <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-success-500 text-white"><CheckCircle2 size={18} /></span>

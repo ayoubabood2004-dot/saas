@@ -31,7 +31,8 @@ import { loadPosLayout, savePosLayout, stepZoom, type PosLayout, type CartSide }
 import { persistMedicalEntries } from "@/lib/medSync";
 import type { MedicalDraft } from "@/components/MedicalEntry";
 import { cn, money, currencySymbol, formatNum, fmtKg, searchable, normalizeCode } from "@/lib/utils";
-import { findByCode, rescueScan, matchTruncatedCode, codeMatcher } from "@/lib/productCodes";
+import { findByCode, rescueScan, matchTruncatedCode, codeMatcher, carriesCode } from "@/lib/productCodes";
+import { unitCap, capAdd, outOfStock, zeroStockVerdict } from "@/lib/cartCap";
 import { splitCustomerField } from "@/lib/customerName";
 import { dueOf, paidOf } from "@/lib/debt";
 import { withTimeout, describeDbError, isNetworkError, isTimeoutError } from "@/lib/errors";
@@ -85,18 +86,8 @@ interface Line {
   perKgCost?: number;            // purchase price of one kilo
 }
 
-/** A cart line's max quantity in its current sale unit, derived from the product's box
- *  stock. Sub-unit sales can go up to (boxes × units-per-box) singles. */
-const unitCap = (l: Line): number => {
-  // الراجع لا يقيّده المخزون: الزبون يرجّع ما اشتراه سابقاً، والرصيد الحالي
-  // لا علاقة له بكم قطعةً بيده.
-  if (l.ret) return Infinity;
-  if (l.stock == null) return Infinity; // service / medication — uncapped
-  // بالوزن: الرصيد كسريٌّ بالكيلو والوزن كسريّ — لا تُقرِّب السقف للأسفل.
-  if (l.byWeight) return l.stock;
-  if (l.saleUnit === "sub" && l.unitsPerBox && l.unitsPerBox > 0) return Math.floor(l.stock * l.unitsPerBox);
-  return Math.floor(l.stock);
-};
+/* `unitCap` و`capAdd` انتقلتا إلى `@/lib/cartCap` لتُفحصا: حسابُ السقف كان
+ * داخل المكوّن فما رآه فحصٌ قطّ، وفيه ضررٌ مقيس (انظر رأس الوحدة). */
 
 const PAY_OPTIONS: { value: PaymentMethod; icon: typeof Banknote; key: string; def: string }[] = [
   { value: "cash", icon: Banknote, key: "retail.payCash", def: "نقدي" },
@@ -604,6 +595,8 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
   // the system only when the courier hands it over (see the التوصيل tab).
   const [deliveryOn, setDeliveryOn] = useState(false);
   const [dCouriers, setDCouriers] = useState<Courier[] | null>(null); // null = not loaded yet
+  /** فشلَ جلبُ السوّاق؟ — «تعذّر» لا قائمةٌ فارغة تبدو «ماكو سوّاق». */
+  const [dCouriersFailed, setDCouriersFailed] = useState(false);
   const [dCourierId, setDCourierId] = useState("");
   // منطقة التوصيل — من قائمة العيادة (الإعدادات ← مناطق التوصيل). اختيار
   // المنطقة يملأ الأجرة تلقائياً (وتبقى قابلة للتعديل) وينحفظ على الطلب.
@@ -718,26 +711,35 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
   // Add (or increment) a line; products are capped at their stock.
   // n = الكمية المضافة (١ افتراضاً، أو المضاعِف المعلّق). السطر الموجود **يجمع**
   // لا يُستبدل: هذا سلوك المسح المعتاد، ومخالفته تفاجئ الكاشير بصمت.
-  const bump = (id: string, factory: () => Line, n = 1) => {
+  /** ترجع **ما أُضيف فعلاً** — صفرٌ يعني أن السطر عند سقفه. مسحةٌ مفردة على
+   *  سطرٍ بلغ رصيدَه كانت تُقصّ بصمتٍ وتُصدر نغمةَ نجاح: الكاشير يعدّ بالبيبات
+   *  فيسمع سبعاً والفاتورة فيها خمسة، فتخرج قطعتان بلا قيدٍ ويُتَّهم أمينُ
+   *  المخزن بفرق الجرد. */
+  const bump = (id: string, factory: () => Line, n = 1): number => {
     // القصّ يُحسب **قبل** التحديث لا داخله: مُحدِّث setCart يُنفَّذ لاحقاً عند
     // إعادة الرسم، فقراءة نتيجته فوراً كانت تُسكِت رسالة «المتوفّر ١٧ فقط».
     const existing = cart.find((l) => l.id === id);
     const base = existing ?? factory();
     const cap = unitCap(base);
-    const want = (existing?.qty ?? 0) + n;
     setCart((c) => (c.some((l) => l.id === id)
       // الحساب من الحالة الحيّة: مسحتان متلاحقتان لا تفقد إحداهما.
-      ? c.map((l) => (l.id === id ? { ...l, qty: Math.min(l.qty + n, unitCap(l)) } : l))
-      : [...c, { ...base, qty: Math.max(1, Math.min(n, cap)) }]));
+      ? c.map((l) => (l.id === id ? { ...l, qty: capAdd(l.qty, n, unitCap(l)).next } : l))
+      : [...c, { ...base, qty: Math.max(1, capAdd(0, n, cap).next) }]));
     // نغمة مختلفة للإضافة بالجملة: الأذن أسرع من العين وقت الزحمة، والفرق بين
     // «واحدة» و«عشرين» يجب أن يُسمع لا أن يُقرأ.
     if (n > 1) window.setTimeout(() => playTap(), 90);
-    // السقف يُبلَّغ ولا يُبتلع: «طلبت ٢٠ والمتوفّر ١٧» أوضح من رقمٍ يظهر ناقصاً.
-    if (n > 1 && Number.isFinite(cap) && want > cap) {
+    /* السقف يُبلَّغ ولا يُبتلع — **لأي كمية**. كان الشرطُ `n > 1` وحده، فمسحةٌ
+     * مفردة على سطرٍ عند سقفه: لا تغيير، ولا رسالة، ونغمةُ نجاح، و`flashLine`
+     * يومض السطرَ فيعزّز الوهم. */
+    const { added, clamped } = capAdd(existing?.qty ?? 0, n, cap);
+    if (clamped) {
       playWarning();
-      toast.error(t("retail.multClamped", { n: formatNum(cap), defaultValue: "المتوفّر {{n}} فقط — أُضيف المتاح" }));
+      toast.error(added > 0
+        ? t("retail.multClamped", { n: formatNum(cap), defaultValue: "المتوفّر {{n}} فقط — أُضيف المتاح" })
+        : t("retail.capReached", "المتوفّر {{n}} فقط وكلُّه بالسلّة — ما ينضاف أكثر", { n: formatNum(cap) }));
     }
-    flashLine(id);
+    if (added > 0) flashLine(id);
+    return added;
   };
 
   /** وضع «الراجع»: الباركود المدگوگ ينزل سطراً سالباً بدل سطر بيع. */
@@ -772,9 +774,11 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
     flashLine(id);
   };
 
-  const addProduct = (p: Product, n = takeMult()) => {
-    if (blockZeroCost(p)) return;
-    if (p.sold_by_weight) { playTap(); setWeightFor({ p, ret: retMode }); return; }
+  /** ترجع ما أُضيف فعلاً (0 = السطرُ عند سقفه) — ومنها يقرّر المسحُ أيَّ نغمةٍ يُصدر.
+   *  و`null` لمسارٍ لا يُضيف الآن (وزنٌ يُنتقى بنافذة، أو كلفةٌ صفرٌ تُمنع). */
+  const addProduct = (p: Product, n = takeMult()): number | null => {
+    if (blockZeroCost(p)) return null;
+    if (p.sold_by_weight) { playTap(); setWeightFor({ p, ret: retMode }); return null; }
     return retMode ? addReturn(p, n) : bump(`p:${p.id}`, () => {
       const hasSub = !!p.has_sub_unit && !!p.units_per_box && p.units_per_box > 0;
       const unitsPerBox = p.units_per_box ?? null;
@@ -811,10 +815,10 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
       return { ...next, qty: Math.min(Math.max(1, l.qty), Math.max(1, cap)) };
     }));
 
-  const addService = (s: Service, n = takeMult()) => {
+  const addService = (s: Service, n = takeMult()): number => {
     // الخدمة تُنسب للحيوان النشط — خدمة "عملية" تسجَّل تلقائياً في طبلته عند الإتمام.
     const catName = catalog.categories.find((c) => c.id === s.category_id)?.name ?? null;
-    bump(`s:${s.id}`, () => ({ id: `s:${s.id}`, kind: "service", name: s.name, barcode: null, unit_price: s.price, unit_cost: s.cost ?? 0, qty: 1, stock: null, product_id: null, subcategory: null, serviceId: s.id, petId: activePet?.id ?? null, petName: activePet?.name ?? null, surgeryCat: isSurgeryCategoryName(catName), surgeryRef: s.surgery_ref ?? null }), n);
+    return bump(`s:${s.id}`, () => ({ id: `s:${s.id}`, kind: "service", name: s.name, barcode: null, unit_price: s.price, unit_cost: s.cost ?? 0, qty: 1, stock: null, product_id: null, subcategory: null, serviceId: s.id, petId: activePet?.id ?? null, petName: activePet?.name ?? null, surgeryCat: isSurgeryCategoryName(catName), surgeryRef: s.surgery_ref ?? null }), n);
   };
 
   // A medication/vaccine from the "الأدوية" tab — a priced cart line carrying the full
@@ -886,8 +890,16 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [done]);
 
-  useBarcodeScanner(async (code) => {
-    if (done) return;
+  /* شاشةُ «تمّ البيع» كانت تبتلع المسحةَ بصمتٍ تامّ: `if (done) return` قبل
+   * أيّ صوت، والشاشةُ لا تُغلق إلا بزرّ «بيعة جديدة». فالكاشير يمسح الصنفَ
+   * التالي ولا يحدث شيء — لا بيب، ولا رسالة، ولا سطر — فيمسح ثانيةً وثالثة.
+   * فصارت المسحةُ تبدأ بيعةً جديدة بالصنف الممسوح، وهو سلوكُ الكاشيرات
+   * القياسيّ. والرمزُ يُحفظ ويُعاد تمريرُه **بعد** أن يهبط التصفير — لا
+   * بنفس النبضة: `cart` بالإغلاق الحاليّ ما زال يحمل البيعةَ المباعة،
+   * فإضافةٌ فورية تبني على سلّةٍ ميّتة. */
+  const pendingScanRef = useRef<string | null>(null);
+  const handleScan = async (code: string) => {
+    if (done) { pendingScanRef.current = code; reset(); return; }
     const n = peekScanMult(code);
     /* القائمةُ المحمَّلة أوّلاً، والخادمُ بعدها.
      *
@@ -903,6 +915,13 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
     if (!product) {
       try {
         product = await withTimeout(repo.getProductByBarcode(code, clinicId), 6000);
+        /* الخادمُ صار يقشّر رأسَ AIM ويجرّب أصفارَ GTIN بنفسه (0172)، فمسحةٌ
+         * كانت تصل الطبقةَ الثالثة (`rescueScan`) وتُقال بصوتٍ صارت تُحسم
+         * هنا **صامتة** — والكاشير لا يعرف أن ما مسحه ليس رمزَ المنتج
+         * المخزون. الصمتُ هو ما نحاربه، فتُقال هنا كما كانت تُقال هناك. */
+        if (product && !carriesCode(product, code)) {
+          toast.success(t("retail.scanMatchedStored", "«{{name}}» — مخزون برمز {{code}}", { name: product.name, code: normalizeCode(product.barcode) || "—" }));
+        }
       } catch (e) {
         offline = true;
         console.error("[pos] scan lookup failed", e);
@@ -920,16 +939,40 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
     if (product) {
       // رصيدٌ صفر: السكوتُ هنا هو ما جعل عيادةً تقول «المنتج اختفى» — البطاقة
       // رمادية والمسحة لا تنزل شيئاً بلا كلمة. فنقولها: موجود، بس رصيده صفر.
-      const noStock = !retMode && !product.pooled && !product.sold_by_weight
-        && (product.has_sub_unit && product.units_per_box ? product.stock * product.units_per_box < 1 : (product.stock ?? 0) <= 0);
-      if (noStock) {
+      if (outOfStock(product, retMode)) {
+        /* الرفضُ لا يصدر عن لقطةٍ قديمة: الشاشةُ تُحمّل مرّةً عند الفتح ولا
+         * تُحدَّث إلا بعد بيعةٍ مكتملة، فمديرٌ رصّد شراءً ظهراً من جهازه يجعل
+         * كلَّ مسحةٍ هنا تُرفض «رصيده صفر» والمخزنُ يقول موجود — تضاربٌ يعلّم
+         * العيادةَ ألّا تصدّق الشاشة. فنسأل الخادمَ قبل أن يصير الحكمُ نهائياً. */
+        let fresh: Product | undefined;
+        let asked = false;
+        try {
+          fresh = await withTimeout(repo.getProductByBarcode(code, clinicId), 6000);
+          asked = true;
+        } catch { /* swallow-ok: تعذّر السؤال — نعرض رقمَنا ونقول إنه آخرُ ما عندنا */ }
+        const verdict = zeroStockVerdict(fresh, asked, retMode);
+        if (verdict === "sell-fresh" && fresh) {
+          // رصيدٌ طازج: يُباع بالصفّ الطازج لا بالبائت، فسقفُ السطر صحيح.
+          const addedFresh = addProduct(fresh, n);
+          if (addedFresh !== null && addedFresh > 0) {
+            playSuccess();
+            toast.success(t("retail.scanStockRefreshed", "«{{name}}» رصيده تحدّث — {{n}} متوفّر", { name: fresh.name, n: formatNum(fresh.stock ?? 0) }));
+          }
+          if (mult != null) setMult(null);
+          setQuery("");
+          return;
+        }
         playWarning();
-        toast.error(t("retail.scanOutOfStock", "«{{name}}» موجود بس رصيده صفر — زيد رصيده من المخزن أو سجّل شراء حتى ينباع", { name: product.name }));
+        toast.error(verdict === "refuse-confirmed"
+          ? t("retail.scanOutOfStock", "«{{name}}» موجود بس رصيده صفر — زيد رصيده من المخزن أو سجّل شراء حتى ينباع", { name: product.name })
+          : t("retail.scanOutOfStockStale", "«{{name}}» رصيده صفر بآخر تحديثٍ عندنا — ما وصلنا الخادم لنتأكد. حدّث الصفحة قبل ما تعيد إدخاله.", { name: product.name }));
         setQuery("");
         return;
       }
-      playSuccess();
-      addProduct(product, n);
+      /* النغمةُ **بعد** الإضافة وبشرطها: كانت تُصدَر قبلها دائماً، فسطرٌ عند
+       * سقفه يعطي بيبَ نجاحٍ بلا سطرٍ يُضاف. */
+      const added = addProduct(product, n);
+      if (added !== null && added > 0) playSuccess();
       if (mult != null) setMult(null);
       setQuery(""); // clear any scanned digits that landed in the focused search box
       return;
@@ -938,8 +981,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
     // (فحص عام، CBC…) وتطبعه بنفسها، فتنباع بمسحة بدل تنقّل بين التصنيفات.
     const svc = findServiceByBarcode(code);
     if (svc) {
-      playSuccess();
-      addService(svc, n);
+      if (addService(svc, n) > 0) playSuccess();
       if (mult != null) setMult(null);
       setQuery("");
       return;
@@ -949,9 +991,11 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
     // `scanBuffer` لا بديلٌ عنها، ونقولها بصوت حتى لا تبدو المطابقةُ سحراً.
     const cut = matchTruncatedCode(products, code);
     if (cut) {
-      playSuccess();
-      toast.success(t("retail.scanHealed", "الماسح بلع أوّل الباركود — طابقناه بـ«{{name}}»", { name: cut.name }));
-      addProduct(cut, n);
+      const addedCut = addProduct(cut, n);
+      if (addedCut !== null && addedCut > 0) {
+        playSuccess();
+        toast.success(t("retail.scanHealed", "الماسح بلع أوّل الباركود — طابقناه بـ«{{name}}»", { name: cut.name }));
+      }
       if (mult != null) setMult(null);
       setQuery("");
       return;
@@ -973,7 +1017,16 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
     // اللوحة مفتوحة = الأرقام تخصّها؛ مسحةٌ تدخل صنفاً خلف نافذة مفتوحة تربك.
     // منتقي الوزن مثلها: مسحةٌ وهو مفتوح كانت تبدّل المنتج تحت يد الطبيب أو
     // تنزل سطراً خلف الورقة بلا أن يراه.
-  }, { disabled: multPad || !!qtyPadFor || !!weightFor });
+  };
+  useBarcodeScanner(handleScan, { disabled: multPad || !!qtyPadFor || !!weightFor });
+  // وبعد أن يهبط التصفير: تُمرَّر المسحةُ المحفوظة على سلّةٍ نظيفة.
+  useEffect(() => {
+    if (done || pendingScanRef.current === null) return;
+    const code = pendingScanRef.current;
+    pendingScanRef.current = null;
+    void handleScan(code);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [done]);
 
   // The bridge: a doctor clicked "Sell items" inside an animal record. Auto-fill the
   // customer, surface the pet context, and focus the scan field for a zero-click flow.
@@ -1202,7 +1255,10 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
     setPaidEdited(true);
     // COD default: nothing received now — the payment row becomes "المدفوع مقدماً".
     setPayments([{ method: "cash", amount: 0 }]);
-    if (dCouriers === null) repo.listCouriers(clinicId).then(setDCouriers).catch(() => setDCouriers([]));
+    /* `[]` عن خطأ = «ماكو سوّاق» — والدلالاتُ المالية (شركة/سائق) تُبنى على
+      * هذا الاختيار. والجلبُ محروسٌ بـ`=== null` فلا يُعاد طوال عمر الشاشة.
+      * فالفشلُ يُقال ويُعاد. */
+    if (dCouriers === null) repo.listCouriers(clinicId).then(setDCouriers).catch(() => setDCouriersFailed(true));
   };
   const setPaidQuick = (amount: number) => {
     playTap();
@@ -1517,7 +1573,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
     if (pureReturn) { void doReturn(); return; }
     if (netNegative) {
       playWarning();
-      toast.error(t("retail.retNegative", "الراجع أكبر من المشترى — هذا إرجاع لا بيع: كمّل من تبويب «المرتجع» حتى يخرج النقد للزبون بقيدٍ صحيح."));
+      toast.error(t("retail.retNegative"));
       return;
     }
     if (needsDebtName) { playWarning(); return; }
@@ -2631,6 +2687,18 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
                   <option value="">{t("retail.deliveryNoCourier", "اختيار السائق لاحقاً (يبقى قيد التجهيز)")}</option>
                   {(dCouriers ?? []).filter((c) => c.active).map((c) => <option key={c.id} value={c.id}>{c.kind === "company" ? "🏢 " : ""}{c.name}{c.phone ? ` — ${c.phone}` : ""}</option>)}
                 </select>
+                {/* قائمةٌ فارغةٌ عن خطأ تبدو «ماكو سوّاق» — والدلالةُ المالية
+                    (شركةٌ تُحاسَب لاحقاً أم سائقٌ يسلّم اليوم) تُبنى على هذا
+                    الاختيار. فالفشلُ يُقال ويُعاد، والإتمامُ بلا سائقٍ يبقى مشروعاً. */}
+                {dCouriersFailed && (
+                  <div className="flex items-center gap-2 rounded-lg bg-danger-50 px-2.5 py-1.5 text-2xs font-semibold text-danger-700 dark:bg-danger-500/10 dark:text-danger-300" data-dcouriersfailed>
+                    <span className="flex-1">{t("retail.couriersLoadFailed", "تعذّر تحميل السوّاق — تقدر تكمّل بلا سائق وتحدّده لاحقاً.")}</span>
+                    <button type="button" className="shrink-0 font-bold underline"
+                      onClick={() => { playTap(); setDCouriersFailed(false); repo.listCouriers(clinicId).then(setDCouriers).catch(() => setDCouriersFailed(true)); }}>
+                      {t("common.retry", "إعادة المحاولة")}
+                    </button>
+                  </div>
+                )}
                 {/* شركةُ توصيل (0148): الفلوس ما تدخل عند التسليم — تُحصَّل من الشركة لاحقاً */}
                 {(dCouriers ?? []).find((c) => c.id === dCourierId)?.kind === "company" && (
                   <p data-dcompanyhint className="flex items-center gap-1.5 rounded-lg bg-surface-1/80 px-2.5 py-1.5 text-2xs font-semibold text-sky-800 dark:bg-surface-1/40 dark:text-sky-200">
@@ -2935,7 +3003,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
             </div>
           ) : netNegative && (
             <p data-retnegative className="rounded-xl bg-danger-50 px-3 py-2 text-center text-2xs font-bold text-danger-700 dark:bg-danger-500/15 dark:text-danger-300">
-              {t("retail.retNegative", "الراجع أكبر من المشترى — هذا إرجاع لا بيع: كمّل من تبويب «المرتجع» حتى يخرج النقد للزبون بقيدٍ صحيح.")}
+              {t("retail.retNegative")}
             </p>
           )}
           {!pureReturn && (
@@ -2991,9 +3059,13 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
         const lineId = ret ? `r:${p.id}` : `p:${p.id}`;
         const line = cart.find((l) => l.id === lineId);
         const current = line?.qty ?? 0;
-        // سعر الكيلو المعروض هو سعر السطر إن عدّله الكاشير — لا سعر الكتلوج،
-        // وإلا اختلفت أسعار المربّعات عن السعر الذي سيُحسب فعلاً.
-        const perKg = line?.byWeight ? line.unit_price : p.sell_price;
+        /* سعر الكيلو المعروض هو سعر السطر إن عدّله الكاشير — لا سعر الكتلوج،
+         * وإلا اختلفت أسعار المربّعات عن السعر الذي سيُحسب فعلاً. ولسطرٍ جديد
+         * `listPrice` لا `sell_price` الخام (م٢): بوضع الجملة `listPrice` هي
+         * **سعرُ الشراء**، و`addWeightLine` تنشئ السطرَ به — فكان المنتقي يَعِد
+         * بسعر المفرد ويُنشئ السطرَ بسعر الجملة. والتعليقُ نفسُه يقول إن الغرض
+         * ألّا يختلف المعروضُ عن المحسوب. */
+        const perKg = line?.byWeight ? line.unit_price : listPrice(p);
         // الراجع بلا سقف؛ المنتج المجمّع يخصم من مخزون القسم فلا سقف محلّي له.
         const stockKg = ret || p.pooled ? Infinity : (p.stock ?? 0);
         return (

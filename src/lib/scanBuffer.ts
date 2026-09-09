@@ -48,12 +48,36 @@ export interface ScanAssembler {
   reset(): void;
 }
 
+/**
+ * أهذا مفتاحٌ مطبوع؟ محرفٌ واحد، أو محرفان بلا ASCII.
+ *
+ * السبب: مفتاح `b` بالتخطيط العربي يُخرج `e.key = «لا»` — محرفان — وشرطُ
+ * `key.length !== 1` كان يرميه، فيصل الرمزُ **ناقصَ محرفٍ وسطيّ**. و`layoutFix`
+ * تعالج «لا» صراحةً لكنها لا تُعيد ما لم يصل، و`matchTruncatedCode` رقميّةُ
+ * الذيل فلا تنقذ حرفاً من الوسط. أما أسماءُ مفاتيح التحكّم فكلُّها ASCII
+ * («Tab»، «F1»، «Up»، «Enter») فلا يمرّ منها شيء بهذا الشرط.
+ */
+function isPrintableKey(key: string): boolean {
+  if (key.length === 1) return true;
+  if (key.length !== 2) return false;
+  // **نقطتان** لا وحدتا ترميز: الإيموجي طولُه محرفان ونقطتُه واحدة (زوجُ
+  // بدائل)، وليس مفتاحاً بأيّ تخطيط — فلا يدخل رمزاً. و«لا» نقطتان فتمرّ.
+  if ([...key].length !== 2) return false;
+  for (const ch of key) if (ch.charCodeAt(0) < 128) return false;
+  return true;
+}
+
 export function createScanAssembler(opts: ScanOptions = {}): ScanAssembler {
   const { minLength = 3, interKeyMs = 60, pauseMs = 300, tabMaxGapMs = 35 } = opts;
   let buf = "";
   let gaps: number[] = [];
+  /* عددُ الضغطات، لا طولُ النصّ. مفتاحٌ واحد قد يُخرج محرفَين (رباطُ «لا»)،
+   * فلو قِيس الحدُّ بالمحارف لبلغ رمزٌ من ثلاثة محارفَ حدَّه بضغطتين — أي
+   * بفجوةٍ واحدة — فيقبل شرطُ Tab كتابةَ إنسانٍ عربيّ بفجوةٍ سريعةٍ واحدة.
+   * وهذا بابُ «ابتلاعِ Tab بحقل نصّ» الذي أُغلق بالحدّ الضيّق أصلاً. */
+  let keys = 0;
   let last = Number.NEGATIVE_INFINITY;
-  const reset = () => { buf = ""; gaps = []; };
+  const reset = () => { buf = ""; gaps = []; keys = 0; };
   return {
     reset,
     feed(key, at) {
@@ -69,8 +93,10 @@ export function createScanAssembler(opts: ScanOptions = {}): ScanAssembler {
         // والرموزُ القصيرة (رقمُ رفّ، بحثٌ من حرفين وEnter) تبقى على الرُّبع، لأن
         // ضغطتين سريعتين من إنسانٍ تكفيان لتشبه دفعةً.
         const slow = g.filter((x) => x > interKeyMs).length;
-        const tolerated = Math.floor(g.length / (code.length >= 8 ? 2 : 4));
-        const isScan = code.length >= minLength && slow <= tolerated;
+        // والقسمةُ على عددِ الضغطات كذلك: دفعةٌ من ثماني ضغطاتٍ فأكثر دفعةُ
+        // باركود، ولو أخرجت بعضُ مفاتيحها محرفَين.
+        const tolerated = Math.floor(g.length / (keys >= 8 ? 2 : 4));
+        const isScan = code.length >= minLength && keys >= minLength && slow <= tolerated;
 
         // Enter مُنهٍ دائماً: يُفرغ المجمَّع سواء صحّت الدفعةُ أم لا.
         if (key === "Enter") { reset(); return isScan ? code : null; }
@@ -103,10 +129,11 @@ export function createScanAssembler(opts: ScanOptions = {}): ScanAssembler {
         }
         return null;
       }
-      if (key.length !== 1) return null;
+      if (!isPrintableKey(key)) return null;
       if (gap > pauseMs) reset();
-      if (buf.length > 0) gaps.push(gap);
+      if (keys > 0) gaps.push(gap);
       buf += key;
+      keys += 1;
       return null;
     },
   };

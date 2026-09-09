@@ -197,14 +197,18 @@ export function TreatmentPlan({
 
   /* ---- In-stock clinic medicines (category=medicine, stock>0) — availability only, no deduction ---- */
   const [stockMeds, setStockMeds] = useState<Product[]>([]);
+  /* غيابُ المعلومة خيرٌ من نفيها: فشلُ الجلب كان يُبقي القائمة فارغة، فتغيب
+   * شارةُ «متوفّر · n» عن كلّ دواء — وغيابُها هو بالضبط كيف تُقرأ «غير متوفّر»
+   * بهذه الشاشة. فالفشلُ يُعلَن، والشاراتُ تُخفى كلُّها بدل نفيٍ كاذب. */
+  const [stockFailed, setStockFailed] = useState(false);
   useEffect(() => {
     let alive = true;
     repo.listProducts().then((ps) => {
-      if (alive) setStockMeds(ps.filter((p) => p.category === "medicine" && p.stock > 0));
-    }).catch(() => {});
+      if (alive) { setStockMeds(ps.filter((p) => p.category === "medicine" && p.stock > 0)); setStockFailed(false); }
+    }).catch(() => { if (alive) setStockFailed(true); });
     return () => { alive = false; };
   }, []);
-  const stockFor = (name: string) => stockMeds.find((p) => p.name.trim().toLowerCase() === name.trim().toLowerCase());
+  const stockFor = (name: string) => (stockFailed ? undefined : stockMeds.find((p) => p.name.trim().toLowerCase() === name.trim().toLowerCase()));
 
   /* ---- Lab photo: take a picture and file it into the pet's media vault ---- */
   const onPickPhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {

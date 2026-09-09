@@ -75,6 +75,9 @@ export function RetailSales() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params]);
 
+  /* فشلُ جلب الأصناف وحدَه: الأرقامُ ناقصةٌ (رصيدُ المجمَّع ساقط) لا خاطئة —
+   * فتُعرض مع شارةٍ تقولها بدل أن يبدو رصيدُ المجمَّع صفراً بثقة. */
+  const [sectionsFailed, setSectionsFailed] = useState(false);
   const mounted = useRef(true);
   const load = async () => {
     try {
@@ -82,6 +85,7 @@ export function RetailSales() {
       if (!mounted.current) return;
       setProducts(snap.products);
       setInvoices(snap.invoices);
+      setSectionsFailed(!!snap.sectionsFailed);
       setCached<RetailSnap>(cacheKey, snap);
       setFailed(false);
     } catch {
@@ -180,7 +184,16 @@ export function RetailSales() {
               <Button leftIcon={<RotateCcw size={16} />} onClick={() => { playTap(); setLoading(true); void load(); }}>{t("common.retry", "إعادة المحاولة")}</Button>
             </div>
           ) : tab === "sell" ? (
-            <SaleBuilder products={products} clinicId={clinicId} onSold={load} prefill={prefill} />
+            <>
+              {sectionsFailed && (
+                /* أرقامٌ ناقصة تُقال ناقصة: رصيدُ المخزون المجمَّع ساقطٌ من الحساب،
+                   فيبدو المتاحُ أقلَّ من الحقيقة وسقفُ السلّة أدنى. */
+                <div className="mb-3 rounded-xl border border-warn-200 bg-warn-50 px-3 py-2 text-xs font-semibold text-warn-800 dark:border-warn-500/30 dark:bg-warn-500/10 dark:text-warn-200" data-sectionsfailed>
+                  {t("pos.pooledStockFailed", "تعذّر جلب المخزون المجمّع — أرقام الرصيد ناقصة. أعد التحميل قبل ما تعتمد عليها.")}
+                </div>
+              )}
+              <SaleBuilder products={products} clinicId={clinicId} onSold={load} prefill={prefill} />
+            </>
           ) : tab === "invoices" ? (
             <InvoicesPanel invoices={invoices} clinicId={clinicId} onChanged={load} />
           ) : tab === "returns" ? (

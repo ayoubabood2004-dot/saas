@@ -22,7 +22,7 @@ DB=dvtest
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MIG="$HERE/../migrations"
 # الهجرات التي يغطّيها هذا المخطّط الأساس. زدها كل ما تنضاف موجة.
-WAVE="$MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql"
+WAVE="$MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql"
 
 command -v "$PGBIN/initdb" >/dev/null || { echo "ما لكيت بوستغريس بـ $PGBIN"; exit 1; }
 
@@ -499,6 +499,10 @@ $P -f "$MIG/0141_barcode_recovery.sql" >/dev/null 2>&1
 # بعدها لسببٍ لا علاقةَ له بها. الحلُّ إعادةُ الأحدث بعد الأقدم: من يعيد تنزيل
 # هجرةٍ وسط الفحوص يعيد معها كلَّ من عدّل ما عدّلته.
 $P -f "$MIG/0165_lookup_and_restore.sql" >/dev/null 2>&1
+# و0172 تعدّل `product_by_code` بعد 0165 — فتُعاد بعدها بنفس المنطق، وإلا
+# فحصنا نسخةً ماتت قبل أن تصل الإنتاج. العلّةُ نفسُها بنفس السطر مرّتين.
+$P -f "$MIG/0172_code_variants_server.sql" >/dev/null 2>&1
+$P -f "$MIG/0173_variants_ordered.sql" >/dev/null 2>&1
 
 chk "علامةُ الاتجاه انشالت من الباركود" \
     "select barcode from products where id='bbbb0000-0000-0000-0000-000000000001'" "8989"
@@ -1213,6 +1217,20 @@ chk "  والتطبيعُ القديم يخالفها فعلاً (لو مرّ ل
     "select (count(*) > 0)::text from _code_norm_fixture
        where translate(regexp_replace(coalesce(raw,''), '\s', '', 'g'), '٠١٢٣٤٥٦٧٨٩', '0123456789') is distinct from expected" "true"
 $P -c "drop table if exists _code_norm_fixture;" >/dev/null
+
+# ── وصيغُ الماسح: مجموعةُ القاعدة = مجموعةُ الواجهة، **بترتيبها** ─────────
+# نفسُ حجّة فحص التطبيع أعلاه: مرآةٌ بلا فحصٍ تنحرف. والترتيبُ جزءٌ من العقد
+# لا تفصيلُ عرض — `rescueScan` تقف عند أوّل صيغةٍ مصيبة، فمن يرتّب غيرَ
+# ترتيبها يبيع غيرَ ما تبيع الشاشة. (وقعت فعلاً: `array_agg(distinct)` يرتّب
+# بالقيمة، فاختار الخادمُ صيغةً غيرَ التي تختارها الواجهة على زوجِ UPC-A/EAN-13.)
+$P -f "$CNF/code-variants.sql" >/dev/null
+chk "صيغُ الماسح تتطابق طرفاً بطرف" \
+    "select count(*)::text from _code_variants_fixture where inv_code_variants(raw) is distinct from expected" "0"
+chk "  والقالبُ ليس فارغاً" \
+    "select (count(*) >= 100)::text from _code_variants_fixture" "true"
+chk "  وفيه رمزٌ برأس AIM فعلاً — وإلا فالفحصُ لا يقيس الفرعَ المقصود" \
+    "select (count(*) > 0)::text from _code_variants_fixture where array_length(expected,1) > 1" "true"
+$P -c "drop table if exists _code_variants_fixture;" >/dev/null
 rm -rf "$CNF"
 
 
@@ -1232,10 +1250,16 @@ chk "ومثلُها update_purchase" \
 # الإضافيُّ يغلب الأساسيّ، وهو نقيضُ ما يحرسه. فيمتدّ إلى الاتجاه نفسِه.
 chk "والأساسيُّ يغلب الإضافيّ بترتيب الشراء (بالاتجاه لا بالوجود)" \
     "select count(*)::text from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname in ('record_purchase','update_purchase') and prosrc like '%order by (inv_norm_code(barcode) = v_code and coalesce(barcode,'''') <> '''') desc%'" "2"
-chk "استدعاءُ الرمز مرتَّبٌ حتميّاً (لا rows[0] عشوائيّ)" \
-    "select (prosrc like '%order by coalesce(barcode = p_code, false) desc%')::text from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='product_by_code'" "true"
-chk "  ويطابق مطبَّعاً لا خامّاً وحده" \
-    "select (prosrc like '%inv_norm_code(barcode) = inv_norm_code(p_code)%')::text from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='product_by_code'" "true"
+# كان هنا فحصا نصٍّ على `product_by_code`: واحدٌ يطلب مقطعَ الترتيب والثاني
+# مقطعَ المطابقة المطبَّعة. سقطا لمّا أعادت 0172/0173 كتابةَ الدالّة — لا لأن
+# السلوكَ انكسر، بل لأن النصَّ تغيّر: صار `p.barcode` باسمٍ مستعار، والتطبيعُ
+# يُحسب مرّةً بمتغيّر (`v_norm`) بدل تكرار النداء. أي أن الفحصَين كانا يحرسان
+# **صياغةً** لا أثراً، فمنعا تحسيناً وما حرسا شيئاً. وهذا نقيضُ قاعدة القسم
+# نفسِه: «نصٌّ يحرس الشكل، وسلوكٌ يحرس الأثر» — والأثرُ هنا هو المقصود.
+#
+# فالحتميّةُ مفحوصةٌ سلوكياً بالأسفل (DET-500: الصاحبُ قبل المستعير، ومطويّاً
+# كذلك)، والذي كان ناقصاً فعلاً هو **التطبيع**: رمزٌ أُدخل بأرقامٍ عربية أو
+# بمسافة. وهما حالتان مقيستان بالإنتاج لا مؤلَّفتان.
 chk "والاستعادةُ ترشّح الرموزَ الإضافية المسروقة" \
     "select (prosrc like '%{alt_codes}%')::text from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='restore_product'" "true"
 
@@ -1280,6 +1304,19 @@ chk "  والأوّلُ صاحبُ الرمز لا المستعير (حتمية�
 chk "  وبحالةٍ مطويّة كذلك" \
     "select name from ($ACJ) s, product_by_code('det-500') limit 1" "صاحبُالرمز"
 
+# والتطبيعُ سلوكياً — بدلَ فحصَي النصّ اللذين سقطا أعلاه. الحالتان من الإنتاج:
+# كيبوردٌ عربيّ وقتَ إدخال الرمز، ومسافةٌ التصقت به من لصقِ إكسل. وكلٌّ منهما
+# يدخل بمنتجٍ مستقلّ لأن محفّز 0167 يرفض توأماً بالتطبيع — فلا يمكن زرعُ
+# «خامٍّ ومطبَّعٍ» على نفس الرمز أصلاً، وهذا بذاته حارسٌ ثانٍ.
+$P -c "insert into products (id, clinic_id, name, barcode, stock, created_at) values
+         ('a1000000-0000-0000-0000-000000000031','$AC','مُدخَلٌ بالعربية','٥٩٠٥٥٥٥',1,'2026-01-01'),
+         ('a1000000-0000-0000-0000-000000000032','$AC','مُدخَلٌ بمسافة','590 6666',1,'2026-01-01')
+       on conflict do nothing;" >/dev/null 2>&1
+chk "  ورمزٌ أُدخل بأرقامٍ عربية يُلقى بمسحةٍ إنكليزية" \
+    "select name from ($ACJ) s, product_by_code('5905555') limit 1" "مُدخَلٌبالعربية"
+chk "  ورمزٌ التصقت به مسافةٌ يُلقى بلا مسافة" \
+    "select name from ($ACJ) s, product_by_code('5906666') limit 1" "مُدخَلٌبمسافة"
+
 # G3 سلوكياً: رمزٌ إضافيٌّ لمحذوفٍ يصير لغيره أثناء الغياب — الاستعادةُ لا
 # تسترجعه (وإلا صار رمزٌ واحدٌ على منتجَين)، ورمزُه الحرُّ يبقى.
 $P -c "select set_config('request.jwt.claim.sub','$AC',false);
@@ -1310,6 +1347,68 @@ chk "وصحّةُ الباركودات تعمل بدور authenticated" \
 chk "ومحفّزُ التوأم يحرس بدور authenticated كذلك" \
     "select left(_rls_try('$AC', 'insert into products (clinic_id,name,barcode) values (''$AC'',''محاولة'',''DET-500'')'), 8)" "guarded:"
 
+
+# ── 0172: الخادمُ يعرف صيغَ الماسح (س٥) ─────────────────────────────────
+# كانت طبقاتُ النجدة كلُّها بالمتصفّح، والخادمُ يُسأل بالرمز **كما وصل**. فمنتجٌ
+# أُدخل بجهازٍ آخرَ قبل قليل ومُسح بماسحٍ مضبوطٍ على AIM أو GTIN-14 يخيب
+# بالطبقات الأربع: القائمةُ لا تعرفه، والخادمُ سُئل بالرمز الملبَّس. ومن هنا
+# قرارُ «أُعيد إدخالها» الذي يصنع التوأمَ ويقسم الرصيد.
+echo "▸ 0172: صيغُ الماسح بالخادم"
+chk "قشرُ رأس AIM يولّد الرمزَ العاري" \
+    "select (inv_code_variants(']C16221031492405') @> array['6221031492405'])::text" "true"
+chk "  وGTIN-14 بصفرٍ يولّد EAN-13" \
+    "select (inv_code_variants('06221031492405') @> array['6221031492405'])::text" "true"
+chk "  وUPC-A بـ١٢ يولّد EAN-13 بصفر" \
+    "select (inv_code_variants('045496830434') @> array['0045496830434'])::text" "true"
+# ثلاثُ خطواتٍ لا خطوةٌ واحدة: «AIM ثم ١٤ ثم ١٣ ثم ١٢» سلسلةٌ تكتمل.
+chk "  والسلسلةُ تكتمل: AIM ثم أصفارٌ متتالية" \
+    "select (inv_code_variants(']c100622103149240') @> array['622103149240'])::text" "true"
+chk "  ورمزٌ نظيف لا يولّد إلا نفسَه" \
+    "select array_length(inv_code_variants('6221031492405'),1)::text" "1"
+
+# عيادةُ هذا القسم وحدها — ولا تُخلط ببقايا ما سبق.
+VC="33333333-3333-3333-3333-333333333333"
+VCJ="select set_config('request.jwt.claim.sub','$VC',true)"
+$P -c "insert into products (id, clinic_id, name, barcode, alt_codes, stock, created_at) values
+         ('c1720000-0000-0000-0000-000000000001','$VC','أساسيّ','6221031492405','{}',5,'2026-01-01'),
+         ('c1720000-0000-0000-0000-000000000002','$VC','مخزونٌبصفر','0045496830434','{}',5,'2026-01-02'),
+         ('c1720000-0000-0000-0000-000000000003','$VC','صاحبُإضافيّ','RF-0172',array['9781234567897'],5,'2026-01-03')
+       on conflict do nothing;" >/dev/null 2>&1
+chk "«]C1 + ١٣ رقماً» يرجع صاحبَه من الخادم" \
+    "select name from ($VCJ) s, product_by_code(']C16221031492405') limit 1" "أساسيّ"
+chk "  و«0 + EAN-13» كذلك" \
+    "select name from ($VCJ) s, product_by_code('06221031492405') limit 1" "أساسيّ"
+chk "  وUPC-A ممسوحاً على مخزونٍ بـEAN-13" \
+    "select name from ($VCJ) s, product_by_code('045496830434') limit 1" "مخزونٌبصفر"
+chk "  والرمزُ الإضافيُّ يُنقذ مثلَ الأساسيّ" \
+    "select name from ($VCJ) s, product_by_code('09781234567897') limit 1" "صاحبُإضافيّ"
+chk "  ورمزٌ لا يخصّ أحداً يبقى لا شيء" \
+    "select count(*)::text from ($VCJ) s, product_by_code('1112223334445')" "0"
+
+# **الحرفيُّ يغلب التخمين**: لو خُلطت الصيغُ بالمطابقة الحرفية لصار رمزٌ يطابق
+# صاحبَه حرفياً ويطابق آخرَ بصيغةٍ ⇒ صفّان ⇒ «رمزٌ ملتبس» تصرخ به الواجهةُ على
+# مسارٍ كان سليماً. فالصيغُ لا تُسأل إلا بعد خيبةِ الحرفيّ.
+$P -c "insert into products (id, clinic_id, name, barcode, stock, created_at) values
+         ('c1720000-0000-0000-0000-000000000004','$VC','اثنتاعشرة','045496830434',5,'2026-01-04')
+       on conflict do nothing;" >/dev/null 2>&1
+chk "الحرفيُّ يغلب التخمين — صفٌّ واحد لا صفّان" \
+    "select count(*)::text from ($VCJ) s, product_by_code('045496830434')" "1"
+chk "  وهو صاحبُ الرمز حرفياً" \
+    "select name from ($VCJ) s, product_by_code('045496830434') limit 1" "اثنتاعشرة"
+chk "  والعكسُ كذلك" \
+    "select name from ($VCJ) s, product_by_code('0045496830434') limit 1" "مخزونٌبصفر"
+
+# عزلُ العيادات **بدور authenticated**: الدالّةُ بصلاحية المُستدعي، وsuperuser
+# يتجاوز RLS — ففحصُ عزلٍ بالدور الأعلى يمرّ لسببٍ خاطئ (CLAUDE.md §٣).
+chk "الصيغُ لا توسّع ما يُرى: عيادةٌ أخرى لا تلقاه" \
+    "select _rls_try('22222222-2222-2222-2222-222222222222', 'select 1 from product_by_code('']C16221031492405'')')" "rows:0"
+chk "  وصاحبُها يلقاه بدور authenticated" \
+    "select _rls_try('$VC', 'select 1 from product_by_code('']C16221031492405'')')" "rows:1"
+chk "والدالّتان المساعدتان ممنوعتان على anon" \
+    "select (has_function_privilege('anon','public.inv_code_variants(text)','execute')
+          or has_function_privilege('anon','public.inv_code_step(text)','execute'))::text" "false"
+chk "والاستدعاءُ بصلاحية المُستدعي لا المالك — وإلا بطل العزل" \
+    "select prosecdef::text from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='product_by_code'" "false"
 
 # ── 0167: رمزٌ واحد لمنتجٍ واحد ──────────────────────────────────────────
 # سلوكيّ: الحزمةُ تعرف `products` و`inv_norm_code` (0164)، فالمحفّزُ يُجرَّب حقاً.

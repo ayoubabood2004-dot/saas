@@ -94,6 +94,7 @@ import { isValidSlug, normalizeSlug, demoOrderNo } from "./storeLib";
 import { journeyToken, OWNER_REACTIONS } from "./journey";
 import { getClinicName, getClinicLogo, getClinicSocials } from "./settings";
 import { uid, uuid, ageMonths, localISO, normalizeCode, matchCode } from "./utils";
+import { scanVariants } from "./productCodes";
 import { phoneKey } from "./phone";
 import { loadOwners } from "./owners";
 import { loadClinics, getActiveClinicId } from "./clinics";
@@ -1252,7 +1253,31 @@ const demoRepo = {
       || (a.created_at ?? "").localeCompare(b.created_at ?? ""));
     // وصفّان = رمزٌ ملتبس: يُقال بصوتٍ كما بالسحابة، لا يُبلَع.
     if (hits.length > 1) sayAmbiguousCode(code, hits.length);
-    return hits[0];
+    if (hits.length > 0) return hits[0];
+    /* خاب الحرفيّ ⇒ صيغُ الماسح — مرآةُ 0172/0173 بالقاعدة.
+     * ثلاثةُ قيودٍ تجعلها مرآةً لا شبيهاً:
+     *  ١) **الحرفيُّ أوّلاً وحده**: لو خُلطت الصيغُ به لصار رمزٌ يطابق صاحبَه
+     *     حرفياً ويطابق آخرَ بصيغةٍ ⇒ «رمزٌ ملتبس» على مسارٍ كان سليماً.
+     *  ٢) **صيغةٌ صيغةً بترتيبها**، لا اتحاداً عليها كلِّها. الاتحادُ يرتّب
+     *     بالأقدم فيختار صاحبَ صيغةٍ متأخّرة على صاحب صيغةٍ أسبق — فيبيع
+     *     منتجاً هنا وآخرَ بشاشة البيع (`rescueScan` تمشي بالترتيب).
+     *     مقيسٌ بزوج UPC-A/EAN-13: «045496830434» و«0045496830434».
+     *  ٣) **بلا إصلاحِ تخطيطٍ عربيّ**: خريطتُه بياناتُ متصفّح، والقاعدةُ لا
+     *     تعرفها. نسختان تفترقان أسوأ من واحدةٍ ناقصة. */
+    const all = loadDB().products ?? [];
+    const holds = (p: Product, v: string) =>
+      matchCode(p.barcode) === v || (p.alt_codes ?? []).some((c) => matchCode(c) === v);
+    for (const v of scanVariants(code, false)) {
+      const hits = all.filter((p) => holds(p, v));
+      if (hits.length === 0) continue;
+      hits.sort((a, b) =>
+        Number(matchCode(b.barcode) === v) - Number(matchCode(a.barcode) === v)
+        || (a.created_at ?? "").localeCompare(b.created_at ?? ""));
+      // والخادمُ يقف عند صفَّين (`limit 2`) — فالعددُ المُبلَّغ عددُه لا عددُنا.
+      if (hits.length > 1) sayAmbiguousCode(code, 2);
+      return hits[0];
+    }
+    return undefined;
   },
   /** يربط رمزاً بمنتجٍ قائم بدل إنشاء منتجٍ جديد — نظير attach_product_code. */
   async attachProductCode(productId: string, code: string): Promise<Product> {
@@ -2114,6 +2139,42 @@ const demoRepo = {
   /** هل قاعدة البيانات تدعم دفتر ديون المورّدين (ترحيل 0076)؟ */
   /** ترتيب «بدون صنف»: كل توأمٍ لقطعةٍ مصنَّفة يُدمج بأصله — العدد يُجمع،
    *  والأصل يكسب الباركود إن كان بلا باركود، والتاريخ يتبع الأصل. */
+  /** يطوي رصيدَ منتجٍ متتبَّع إلى حوض صنفه ويصفّره بالمنتج — **معاً**.
+   *  مرآةُ `pool_product` (0171): الواجهةُ كانت تكتبهما على مرحلتين، فنجاحُ
+   *  الأولى وفشلُ الثانية يعدّ البضاعةَ مرّتين (بالحوض وبالمنتج). */
+  /**
+   * يربط رمزاً بمنتجٍ **إن كان بلا رمزٍ بعد** — وإلا يرمي بلا كتابة.
+   *
+   * السبب: مولّدُ الباركود كان يقرأ «هل صار له رمز؟» من مصفوفة props بائتة،
+   * فالتعليقُ يقول «انربط له باركود بجهاز ثاني؟ لا تكتب فوقه» والشيفرةُ تقرأ
+   * نفسَ الصفّ الذي بيدها — أي أنها لا تسأل أحداً. وحلقةُ «ولّد للكلّ» لا
+   * تعيد الفحصَ أصلاً. فجهازان يولّدان معاً ⇒ الثاني يدهس رمزَ الأوّل،
+   * والملصقاتُ المطبوعة بالأوّل تصير رموزاً لا تخصّ شيئاً.
+   * فالشرطُ ينزل حيث لا يُتجاوَز: بالكتابة نفسِها.
+   */
+  async assignBarcodeIfEmpty(id: string, code: string): Promise<Product> {
+    const db = loadDB();
+    const p = (db.products ?? []).find((x) => x.id === id);
+    if (!p) throw new Error("product_not_found");
+    if (p.barcode && p.barcode.trim()) throw new Error("barcode_already_set");
+    const next = normalizeCode(code) || null;
+    if (!next) throw new Error("empty code");
+    throwIfCodeTaken(db, next, id);
+    p.barcode = next;
+    saveDB(db);
+    return p;
+  },
+  async poolProduct(productId: string, sectionId: string): Promise<Product> {
+    const db = loadDB();
+    const p = (db.products ?? []).find((x) => x.id === productId);
+    if (!p) throw new Error("product_not_found");
+    const s = (db.companySections ?? []).find((x) => x.id === sectionId);
+    if (!s) throw new Error("section_not_found");
+    s.pooled_stock = Math.round(((s.pooled_stock ?? 0) + Math.max(0, p.stock || 0)) * 1000) / 1000;
+    p.pooled = true; p.section_id = sectionId; p.stock = 0;
+    saveDB(db);
+    return p;
+  },
   async tidyInventory(): Promise<{ merged: number; kept: number }> {
     const db = loadDB();
     const items = db.purchaseItems ?? [];
@@ -2135,6 +2196,25 @@ const demoRepo = {
       // السحابةُ تحفظه ويُفكّ من تبويب المحذوفات.
       trashProduct(db, dup, { merged_into: target.id, keep_barcode: target.barcode?.trim() ? target.barcode : null });
       target.stock = Math.max(0, (target.stock || 0) + Math.max(0, dup.stock || 0));
+      /* رموزُ المطويّ تلحق بالهدف (0169) — الأساسيُّ والإضافية معاً، بنفس منطق
+       * `merge_products`. كان الطيُّ يدفنها: هدفٌ له باركودُه لا يرث شيئاً، فأوّلُ
+       * مسحةٍ لباركود المصنع بعد «رتّب المخزن» تقول «مو موجود» والمادّةُ بالمخزن،
+       * فيُعاد إدخالُها توأماً — الدورةُ نفسُها من بابٍ اسمُه «ترتيب». */
+      const tgtCode = invNormCode(target.barcode);
+      const owned = (c: string) => (db.products ?? []).some((o) =>
+        o.id !== target.id && o.id !== dup.id
+        && (invNormCode(o.barcode) === invNormCode(c) || (o.alt_codes ?? []).some((x) => invNormCode(x) === invNormCode(c))));
+      const codes = [...(target.alt_codes ?? [])];
+      const addCode = (c: string | null | undefined) => {
+        const v = (c ?? "").trim();
+        if (!v || invNormCode(v) === tgtCode) return;
+        if (codes.some((x) => invNormCode(x) === invNormCode(v))) return;
+        if (owned(v)) return;
+        codes.push(v);
+      };
+      addCode(dup.barcode);
+      for (const c of dup.alt_codes ?? []) addCode(c);
+      target.alt_codes = codes;
       if (!target.barcode && dup.barcode) target.barcode = dup.barcode;
       if (!target.expiry_date && dup.expiry_date) target.expiry_date = dup.expiry_date;
       for (const it of items) if (it.product_id === dup.id) it.product_id = target.id;
@@ -3057,6 +3137,31 @@ function listOf<T>(res: { data: unknown; error: { message: string } | null }): T
 }
 
 /**
+ * قائمةٌ تُرمى لا تُبلَع — لكلِّ قائمةٍ يُبنى عليها قرار.
+ *
+ * الحقيقةُ الحاملة: `postgrest-js` يحوّل حتى فشلَ الشبكة إلى `res.error` لا إلى
+ * رمية (وما من `throwOnError` بالمستودع كلِّه). فدالّةٌ تفحص الخطأ وترجع `[]`
+ * تجعل كلَّ `catch` عند مستهلكيها **ميّتاً**: الفشلُ يصل «نجاحاً فارغاً».
+ * ومعالجاتُ الفشل مكتوبةٌ فعلاً بالشاشات (شاشةُ «أعد المحاولة»، توست البحث
+ * الفاشل) لكنها لا تنطلق أبداً — فتُقال «ماكو» عن موجود.
+ *
+ * فما يُبنى عليه مرتجعٌ أو طباعةٌ أو كشفُ مورّدٍ أو استرجاعُ محذوفٍ يمرّ من هنا:
+ * الخطأُ يُرمى بنصّه ورمزه (كـ`need`)، و«لا صفوف» تبقى `[]` مشروعة.
+ * (`listOf` تبقى لقوائمَ زينةٍ لا يُبنى عليها قرار.)
+ */
+function listOrThrow<T>(res: { data: unknown; error: { message: string; code?: string; details?: string; hint?: string } | null }): T[] {
+  if (res.error) {
+    const src = res.error;
+    const err = new Error(src.message) as Error & { code?: string; details?: string; hint?: string };
+    if (src.code) err.code = src.code;
+    if (src.details) err.details = src.details;
+    if (src.hint) err.hint = src.hint;
+    throw err;
+  }
+  return (res.data ?? []) as T[];
+}
+
+/**
  * استعلام .in() على دفعات بدل مصفوفة واحدة غير محدودة.
  *
  * PostgREST يمرّر قائمة المعرفات داخل رابط الطلب، وكل uuid يستهلك ~٣٩ حرفاً
@@ -3153,6 +3258,7 @@ async function allPages<T>(make: () => unknown): Promise<T[]> {
     range: (a: number, b: number) => PromiseLike<{ data: unknown; error: { message: string } | null }>;
   };
   const out: T[] = [];
+  const seen = new Set<unknown>();
   // نتقدّم بما **وصل** لا بما **طُلب**، ونتوقّف عند صفحةٍ فارغة لا عند صفحةٍ ناقصة.
   //
   // الشرط القديم كان `rows.length < PAGE_ROWS ⇒ انتهت البيانات`، وهو يفترض أن
@@ -3170,7 +3276,19 @@ async function allPages<T>(make: () => unknown): Promise<T[]> {
     // ويُعاد، والنقصُ يُصدَّق.
     if (r.error) throw new Error(r.error.message);
     const rows = (r.data ?? []) as T[];
-    out.push(...rows);
+    /* وصفٌّ لا يُعدّ مرّتين (ع٩). الترقيمُ بالإزاحة والترتيبُ بـ`id`: إدراجٌ
+     * متزامنٌ بمعرّفٍ يسبق مؤشّرَنا يزحزح ما بعده صفحةً واحدة، فيعود آخرُ
+     * صفٍّ قرأناه بأوّل الصفحة التالية. والحلقةُ تُصدر دائماً طلبَ تأكيدٍ بعد
+     * صفحةٍ ممتلئة، فالنافذةُ مفتوحةٌ بأيّ حجمِ جدول — لا عند الألف وحدها.
+     * والأثرُ تجميليّ (صفٌّ مكرَّر بقائمة) لكنه يُرى ويُصدَّق، وسطرٌ رخيص
+     * يمحوه. أمّا **إسقاطُ** صفٍّ فيتطلّب تجاوزَ الجدول صفحةً كاملة —
+     * دَينٌ معلَن: أيُّ جدولٍ يقارب ٩٠٠ صفٍّ يُرقّى جلبُه إلى مؤشّرٍ قيميّ
+     * (keyset بـ`gt` على id) بدل الإزاحة. الأكبرُ المقيس اليوم ٩٢٨. */
+    for (const row of rows) {
+      const id = (row as { id?: unknown }).id;
+      if (id != null) { if (seen.has(id)) continue; seen.add(id); }
+      out.push(row);
+    }
     if (rows.length === 0) return out;
     from += rows.length;
   }
@@ -3834,7 +3952,9 @@ const supabaseRepo: typeof demoRepo = {
       return true; // فشل شبكة — لا نُظهر تحذيراً خاطئاً
     }
   },
-  async getProductByBarcode(barcode, clinicId) {
+  // العيادةُ تأتي من سياسات الصفوف لا من معامِلٍ: `product_by_code` بصلاحية
+  // المُستدعي، فـauth_clinic() تحصرها. المعامِلُ يبقى بالتوقيع للنسخة التجريبية.
+  async getProductByBarcode(barcode, _clinicId) {
     const code = matchCode(barcode);
     if (!code) return undefined;
     // دالّةُ القاعدة تقرأ `barcode` والرموزَ الإضافية معاً (0141)، وبصلاحية
@@ -3847,24 +3967,21 @@ const supabaseRepo: typeof demoRepo = {
       if (rows.length > 1) sayAmbiguousCode(code, rows.length);
       return rows[0];
     }
-    /* **فشلُ النداء ليس «غير موجود».** كان أيُّ خطأٍ يسقط للمسار القديم، وذاك
-     * يبلع خطأه بـ`listOf` ويرجع فارغاً — فتقول الشاشةُ «مو موجود بمخزنك» عن
-     * مادةٍ على الرفّ. وهذا نفسُ ما كلّف عياداتٍ إعادةَ إدخال بضاعتها.
-     * فالسقوطُ للمسار القديم لدالّةٍ **غير موجودة** وحدها (قاعدةٌ لم تنزل عليها
-     * 0141)، وما عداه يُرمى ليقول الكاشيرُ «ما وصل الخادم — أعد المسح». */
-    const missing = r.error.code === "PGRST202" || r.error.code === "42883"
-      || /product_by_code/i.test(r.error.message ?? "");
-    if (!missing) throw r.error;
-    // والمسارُ القديم يقرأ الرموزَ الإضافية أيضاً — وإلا فكلُّ مادةٍ لا تُلقى إلا
-    // برمزها الإضافيّ تصير «غير موجودة» عند أوّل قاعدةٍ بلا 0141.
-    let q = sbc().from("products").select("*")
-      .or(`barcode.eq.${code},alt_codes.cs.{${code}}`).limit(2);
-    if (clinicId) q = q.eq("clinic_id", clinicId);
-    const res = await q;
-    if (res.error) throw res.error;   // ولا يُبلَع خطؤه فيصير «غير موجود»
-    const rows = (res.data ?? []) as Product[];
-    if (rows.length > 1) sayAmbiguousCode(code, rows.length);
-    return rows[0];
+    /* **فشلُ النداء ليس «غير موجود».** أيُّ خطأٍ يُرمى ليقول الكاشيرُ «ما وصل
+     * الخادم — أعد المسح»؛ ولا يُبلَع فيصير «مو موجود بمخزنك» عن مادةٍ على
+     * الرفّ، فذاك ما كلّف عياداتٍ إعادةَ إدخال بضاعتها.
+     *
+     * ولا مسارَ سقوطٍ بديل (ع١٠). كان هنا استعلامٌ مباشر لقاعدةٍ لم تنزل عليها
+     * 0141 — وكان **نصفَ مطبَّع**: يقارن `matchCode` المطويَّ حالةً بمخزونٍ
+     * محفوظٍ بحالته، فـ«W90» لا يطابق مسحتَه بذلك المسار أبداً. وهو نقضُ
+     * القاعدة المعلنة بـ`utils.ts`: الطرفان من نفس الدالّة، وتطبيعُ طرفٍ
+     * واحد أسوأ من لا تطبيع. وفرعٌ نائمٌ غيرُ مفحوصٍ إن استيقظ استيقظ خاطئاً.
+     * فغيابُ الدالّة صار خطأ إعدادٍ يُسمّي هجرتَه، لا صمتاً يُصدَّق. */
+    const missing = r.error.code === "PGRST202" || r.error.code === "42883";
+    if (missing) {
+      throw new Error("lookup_fn_missing: product_by_code (migrations 0141/0165/0172/0173)");
+    }
+    throw r.error;
   },
   async attachProductCode(productId, code) {
     // الخادمُ يخزّن ما يصله بـalt_codes — فيصله رمزُ الحفظ (بلا طيّ حالة)،
@@ -3913,7 +4030,11 @@ const supabaseRepo: typeof demoRepo = {
     if (error) throw error;
   },
   async listDeletedProducts() {
-    return listOf<DeletedProduct>(await sbc().from("products_trash").select("*").order("deleted_at", { ascending: false }));
+    // كانت الوحيدةَ بين قوائم كيانات المخزن العشر بطلبٍ واحد بلا صفحات: سقفُ
+    // الألف يقصّها بصمت، وخطؤها يُبلع فتقول شاشةُ الاسترجاع «ماكو محذوفات» —
+    // فتعيد العيادةُ إدخال ما حذفته بالغلط توأماً وتفقد تاريخه. `allPages`
+    // تكسر السقفَ وترمي على الفشل معاً (وتضيف id كاسرَ تعادلٍ للترتيب).
+    return allPages<DeletedProduct>(() => sbc().from("products_trash").select("*").order("deleted_at", { ascending: false }));
   },
   async productSaleLines(id) {
     // عدٌّ لا صفوف — فلا يمسّه سقفُ الألف.
@@ -3953,7 +4074,10 @@ const supabaseRepo: typeof demoRepo = {
     // clinic_id يُختم من default العمود؛ upsert بتجاهل التعارض يحاكي سلوك الديمو
     // (كود موجود سابقاً لا يُدرج مرتين ولا يفشّل الدفعة كلها).
     const payload = rows.map(({ clinic_id, ...rest }) => { void clinic_id; return rest; });
-    return listOf<GeneratedBarcode>(
+    // التعارضُ المتجاهَل ليس خطأً (قد تنقص الصفوفُ الراجعة) — أما خطأُ الإدراج
+    // فيُرمى: كانت تُبلع فتُطبع ملصقاتٌ لا وجودَ لها بالسجل، والدفعةُ التالية
+    // تولّد نفسَ الأرقام فيصير ملصقان برمزٍ واحد على مادّتين.
+    return listOrThrow<GeneratedBarcode>(
       await sbc().from("generated_barcodes").upsert(payload, { onConflict: "clinic_id,barcode", ignoreDuplicates: true }).select(),
     );
   },
@@ -3984,7 +4108,7 @@ const supabaseRepo: typeof demoRepo = {
     return !!data;
   },
   async listStoreOrders(limit = 300) {
-    return listOf<StoreOrder>(
+    return listOrThrow<StoreOrder>(
       await sbc().from("store_orders").select("*").order("created_at", { ascending: false }).limit(limit),
     );
   },
@@ -4181,7 +4305,7 @@ const supabaseRepo: typeof demoRepo = {
     });
   },
   async listPurchaseItems(purchaseId) {
-    return listOf<PurchaseItem>(await sbc().from("purchase_items").select("*").eq("purchase_id", purchaseId));
+    return listOrThrow<PurchaseItem>(await sbc().from("purchase_items").select("*").eq("purchase_id", purchaseId));
   },
   async listAllPurchaseItems(clinicId, range) {
     return allPages<PurchaseItem>(() => {
@@ -4248,6 +4372,22 @@ const supabaseRepo: typeof demoRepo = {
   },
   async settlePurchase(purchaseId, amount, method = "cash", note) {
     return need<Purchase>(await sbc().rpc("settle_purchase", { p_purchase: purchaseId, p_amount: amount, p_method: method, p_note: note ?? null }));
+  },
+  async assignBarcodeIfEmpty(id, code) {
+    const next = normalizeCode(code) || null;
+    if (!next) throw new Error("empty code");
+    /* الشرطُ بالمرشّح لا بقراءةٍ سابقة: `.is("barcode", null)` أو الفارغ.
+     * قراءةٌ ثم كتابةٌ تترك نافذةَ سباقٍ بين الجهازين — والمرشّحُ يغلقها
+     * بالقاعدة نفسِها. و`updated<T>()` ترمي على صفرِ صفوف، فالتخطّي يُقال
+     * ولا يُبلَع (كتابةٌ ردّتها السياسةُ أو سبقَنا إليها جهازٌ آخر). */
+    const r = await sbc().from("products").update({ barcode: next })
+      .eq("id", id).or("barcode.is.null,barcode.eq.").select().maybeSingle();
+    return updated<Product>(r);
+  },
+  async poolProduct(productId, sectionId) {
+    const r = await sbc().rpc("pool_product", { p_product: productId, p_section: sectionId });
+    if (r.error) throw r.error;
+    return need<Product>({ data: r.data, error: null });
   },
   async tidyInventory() {
     const r = await sbc().rpc("inventory_tidy_uncat");
@@ -4382,7 +4522,7 @@ const supabaseRepo: typeof demoRepo = {
     }
   },
   async listInvoiceItems(invoiceId) {
-    return listOf<InvoiceItem>(await sbc().from("invoice_items").select("*").eq("invoice_id", invoiceId));
+    return listOrThrow<InvoiceItem>(await sbc().from("invoice_items").select("*").eq("invoice_id", invoiceId));
   },
   async listAllInvoiceItems(clinicId, range) {
     // أكبر جدول بالعيادة النشطة — بلا صفحات كانت التحليلات تحسب على أول ألف سطر فقط.
@@ -4441,7 +4581,7 @@ const supabaseRepo: typeof demoRepo = {
   },
   async searchInvoices(s) {
     // صفحةٌ واحدة بحدّها — لا allPages هنا عمداً: الصفحةُ هي الفكرة.
-    return listOf<Invoice>(await sbc().rpc("search_invoices", {
+    return listOrThrow<Invoice>(await sbc().rpc("search_invoices", {
       p_q: s.q ?? null, p_status: s.status ?? "all",
       p_before: s.before ?? null, p_before_id: s.beforeId ?? null, p_limit: s.limit ?? 50,
       p_since: s.since ?? null,

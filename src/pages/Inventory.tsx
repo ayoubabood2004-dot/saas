@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { memo, useDeferredValue, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { motion } from "framer-motion";
 import { getCached, setCached } from "@/lib/swrCache";
-import { findByCode, looksLikeShelfCode, twinsByName, nearCodeTwin, excelArtifact, hasArabicLetters, looksLayoutMangled, codeMatcher } from "@/lib/productCodes";
+import { findByCode, looksLikeShelfCode, twinsByName, nearCodeTwin, excelArtifact, hasArabicLetters, looksLayoutMangled, codeMatcher, codeRescue, keepOldCode } from "@/lib/productCodes";
 import { Dialog } from "@/components/ui/Dialog";
 import {
   Barcode, Package, Trash2, Search, Building2, Plus, ChevronLeft, ArrowRight, ArrowLeft,
@@ -39,12 +39,29 @@ const LOW_STOCK = 5;
 const daysUntil = (iso?: string | null) => (iso ? Math.floor((new Date(iso).getTime() - Date.now()) / 86400000) : null);
 /** A product's reorder level — its own min_stock if set, else the default. */
 const lowThreshold = (p: Product) => (p.min_stock && p.min_stock > 0 ? p.min_stock : LOW_STOCK);
+/* شروطُ حالةِ المنتج — **تعريفٌ واحد** تعدّ به البطاقةُ وترشّح به الشريحة.
+ * بطاقةٌ تقول «١٢ منخفضاً» وقائمةٌ تُظهر أحدَ عشرَ لأن الشرطَ كُتب مرّتين
+ * أسوأُ من بطاقةٍ لا تُنقر: الرقمُ يُصدَّق ولا يُراجَع.
+ * والمجمَّع مستثنىً: رصيدُه بالقسم لا بالصفّ، فصفرُه متوقَّع لا نقص. */
+const isOut = (p: Product) => !p.pooled && p.stock <= 0;
+const isLow = (p: Product) => !p.pooled && p.stock <= lowThreshold(p);
+const isExpiringSoon = (p: Product) => { const d = daysUntil(p.expiry_date); return d != null && d >= 0 && d <= 30; };
+const isExpired = (p: Product) => { const d = daysUntil(p.expiry_date); return d != null && d < 0; };
+export type StockFilter = "all" | "low" | "out" | "soon" | "expired";
+const STOCK_FILTERS: Record<StockFilter, (p: Product) => boolean> = {
+  all: () => true, low: isLow, out: isOut, soon: isExpiringSoon, expired: isExpired,
+};
 
 /** Canonical company name: trim, collapse internal whitespace, NFC-normalize
  *  (so visually-identical Arabic/Latin names don't split into two companies). */
 const normName = (s: string) => s.trim().replace(/\s+/g, " ").normalize("NFC");
-/** Case-insensitive match key for a company name. */
-const normKey = (s: string) => normName(s).toLowerCase();
+/**
+ * مفتاحُ مطابقةِ اسمِ شركة. كان `toLowerCase` وحدَه، فحارسُ التكرار يسمح
+ * بـ«الشركه» توأماً لـ«الشركة» و«الامل» لـ«الأمل» — وهما اسمٌ واحد بعين
+ * قارئه. فصار يبني على `searchable` (تطبيعُ همزة/ة/ى والأرقام) مع طيّ
+ * المسافات، وهو نفسُ ما تبحث به بقيّةُ الشاشات — «الشاشتان لازم تتفقان».
+ */
+const normKey = (s: string) => searchable(normName(s)).replace(/\s+/g, " ").trim();
 
 type View = "products" | "companies" | "purchases" | "ledger" | "barcodes" | "trash" | "wholesale";
 
@@ -129,10 +146,18 @@ export function Inventory() {
   const canPos = has("pos");
   // جهاز مقفل وواقف على تبويب حساس؟ رجّعه للمنتجات فوراً. و«البيع بالجملة»
   // منها: شاشةٌ تعرض سعرَ الشراء بحقل السعر تُسقط القفلَ الموضوعَ لهذه الصفحة.
+  /* والحارسُ كان أعورَ من جهة الاستحقاق (م٥): يفحص القفلَ وحدَه، و`canPos`
+   * يُخفي الزرَّ لا الشاشة. و`useEntitlements` تعيد الرسمَ حيّاً مع الاشتراك،
+   * فانتهاءُ الباقة والشاشةُ مفتوحة كان يترك كاشيرَ الجملة تعمل — بسعر الشراء
+   * ظاهراً — على عيادةٍ لم تعد تستحقّها. */
   useEffect(() => {
     if (locked && (view === "purchases" || view === "ledger" || view === "barcodes" || view === "trash" || view === "wholesale")) setView("products");
-  }, [locked, view]);
+    else if (!canPos && view === "wholesale") setView("products");
+  }, [locked, view, canPos]);
   // null = لم يُفحص بعد · false = ترحيل 0075 ناقص (المجموعات تسقط بصمت)
+  /* شريحةُ الترشيح تعيش هنا لا بالتبويب: البطاقةُ فوق والقائمةُ تحت، فلو
+   * سكنت بالتبويب لما وصلتها البطاقة. */
+  const [stockFilter, setStockFilter] = useState<StockFilter>("all");
   const [groupsOk, setGroupsOk] = useState<boolean | null>(null);
   const [fixBusy, setFixBusy] = useState(false);
   const [xlsxBusy, setXlsxBusy] = useState(false);
@@ -143,10 +168,17 @@ export function Inventory() {
   const invKey = `inv_${clinicId ?? "self"}`;
   const load = async () => {
     try {
+      /* الثلاثةُ تُعرض معاً أو لا تُعرض. كان فشلُ الشركات أو الأصناف يُبلع إلى
+       * قائمةٍ فارغة بينما علَمُ الفشل لا يُرفع إلا بفشل المنتجات — فتُرسم لوحةٌ
+       * كاذبة: «الشركات: ٠»، وتبويبُ الشركات يقول «أنشئ أول شركة» بدعوةٍ للفعل
+       * الضار، وقيمةُ المخزون تفقد المجمَّع بلا شارة. **والمفاقِم**: السطرُ
+       * التالي كان يكتب القوائمَ الفارغة بالكاش، فتُعاد اللوحةُ الكاذبة من
+       * الكاش بكلّ فتحةٍ لاحقة حتى ينجح جلبٌ جديد. أما الآن فيرفض الوعدُ
+       * المجموع عند أوّل فشل، فلا يُكتب كاشٌ أصلاً وتُعرض شاشةُ إعادة المحاولة. */
       const [p, c, s] = await Promise.all([
         withTimeout(repo.listProducts(clinicId), 15000),
-        withTimeout(repo.listCompanies(clinicId), 15000).catch(() => [] as Company[]),
-        withTimeout(repo.listCompanySections(undefined, clinicId), 15000).catch(() => [] as CompanySection[]),
+        withTimeout(repo.listCompanies(clinicId), 15000),
+        withTimeout(repo.listCompanySections(undefined, clinicId), 15000),
       ]);
       setCached(invKey, { p, c, s });
       if (!mounted.current) return;
@@ -174,7 +206,7 @@ export function Inventory() {
       setLoading(false);
     }
     void load();
-    void repo.supportsBulkGroup().then((ok) => { if (mounted.current) setGroupsOk(ok); }).catch(() => {});
+    void repo.supportsBulkGroup().then((ok) => { if (mounted.current) setGroupsOk(ok); }).catch(() => {}); /* swallow-ok: فحصُ قدرةٍ لا قائمةُ قرار — الفشلُ يُبقي groupsOk=null أي «لا نعرف»، وهي الحالةُ التي تحذّر عند الحفظ */
     return () => { mounted.current = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -257,8 +289,8 @@ export function Inventory() {
 
   // Pooled products carry no per-barcode count (they sell from the section pool),
   // so a stock of 0 is expected — never flag them as low stock.
-  const lowStock = products.filter((p) => !p.pooled && p.stock <= lowThreshold(p)).length;
-  const expiringSoon = products.filter((p) => { const d = daysUntil(p.expiry_date); return d != null && d >= 0 && d <= 30; }).length;
+  const lowStock = products.filter(isLow).length;
+  const expiringSoon = products.filter(isExpiringSoon).length;
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-6">
@@ -317,8 +349,10 @@ export function Inventory() {
       <div className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Kpi icon={Package} tone="brand" label={t("pos.products", "Products")} value={String(products.length)} />
         <Kpi icon={Building2} tone="accent" label={t("pos.companies", "الشركات")} value={String(companies.length)} />
-        <Kpi icon={AlertTriangle} tone={lowStock ? "warn" : "success"} label={t("pos.lowStock", "Low stock")} value={String(lowStock)} />
-        <Kpi icon={CalendarClock} tone={expiringSoon ? "warn" : "success"} label={t("pos.expiringSoon", "Expiring ≤30d")} value={String(expiringSoon)} />
+        <Kpi icon={AlertTriangle} tone={lowStock ? "warn" : "success"} label={t("pos.lowStock", "Low stock")} value={String(lowStock)}
+          onClick={() => { playTap(); setView("products"); setStockFilter((cur) => (cur === "low" ? "all" : "low")); }} active={view === "products" && stockFilter === "low"} />
+        <Kpi icon={CalendarClock} tone={expiringSoon ? "warn" : "success"} label={t("pos.expiringSoon", "Expiring ≤30d")} value={String(expiringSoon)}
+          onClick={() => { playTap(); setView("products"); setStockFilter((cur) => (cur === "soon" ? "all" : "soon")); }} active={view === "products" && stockFilter === "soon"} />
       </div>
 
       {/* Inventory value (قيمة المخزون) — cost, retail, expected profit; includes pooled. */}
@@ -344,14 +378,15 @@ export function Inventory() {
           <Button leftIcon={<RefreshCw size={16} />} onClick={() => { playTap(); setLoading(true); void load(); }}>{t("common.retry", "إعادة المحاولة")}</Button>
         </div>
       ) : view === "products" ? (
-        <InventoryTab products={products} companies={companies} sections={sections} clinicId={clinicId} onChanged={load} />
+        <InventoryTab products={products} companies={companies} sections={sections} clinicId={clinicId} onChanged={load}
+          filter={stockFilter} onFilter={setStockFilter} />
       ) : view === "companies" ? (
         <CompaniesTab products={products} companies={companies} sections={sections} clinicId={clinicId} onChanged={load} />
       ) : view === "ledger" ? (
         <SupplierLedgerTab companies={companies} clinicId={clinicId} products={products} />
       ) : view === "barcodes" ? (
         <BarcodeStudio products={products} onChanged={load} />
-      ) : view === "wholesale" ? (
+      ) : view === "wholesale" && canPos ? (
         // نفسُ شاشة البيع بكل تفاصيلها — الفرقُ أن السطر يبدأ على سعر الشراء.
         <SaleBuilder products={products} clinicId={clinicId} onSold={load} wholesale />
       ) : view === "trash" ? (
@@ -377,21 +412,31 @@ function ViewTab({ active, icon: Icon, label, onClick }: { active: boolean; icon
   );
 }
 
-function Kpi({ icon: Icon, tone, label, value }: { icon: typeof Package; tone: "brand" | "warn" | "success" | "accent"; label: string; value: string }) {
+function Kpi({ icon: Icon, tone, label, value, onClick, active }: { icon: typeof Package; tone: "brand" | "warn" | "success" | "accent"; label: string; value: string; onClick?: () => void; active?: boolean }) {
   const tones: Record<string, string> = {
     brand: "bg-brand-50 text-brand-600 dark:bg-brand-500/15 dark:text-brand-300",
     warn: "bg-warn-50 text-warn-600 dark:bg-warn-500/15 dark:text-warn-300",
     success: "bg-success-50 text-success-600 dark:bg-success-500/15 dark:text-success-200",
     accent: "bg-accent-50 text-accent-600 dark:bg-accent-500/15 dark:text-accent-300",
   };
-  return (
-    <div className="card flex items-center gap-3 p-3.5">
+  const body = (
+    <>
       <span className={cn("grid h-10 w-10 shrink-0 place-items-center rounded-xl", tones[tone])}><Icon size={20} /></span>
-      <div className="min-w-0">
+      <div className="min-w-0 text-start">
         <p className="truncate text-lg font-bold text-ink tabular-nums">{value}</p>
         <p className="truncate text-xs text-ink-subtle">{label}</p>
       </div>
-    </div>
+    </>
+  );
+  // بطاقةٌ تعدّ ولا توصل تترك الطبيبَ يبحث بيده عمّا عدّته له. فمن لها فعلٌ
+  // تصير زرّاً حقيقياً (لوحةُ المفاتيح تصله، وقارئُ الشاشة يقول إنه مضغوط).
+  if (!onClick) return <div className="card flex items-center gap-3 p-3.5">{body}</div>;
+  return (
+    <button type="button" onClick={onClick} aria-pressed={!!active}
+      className={cn("card flex w-full items-center gap-3 p-3.5 text-start transition hover:bg-surface-2",
+        active && "ring-2 ring-brand-500")}>
+      {body}
+    </button>
   );
 }
 
@@ -468,7 +513,11 @@ function ValueCell({ label, value, tone }: { label: string; value: string; tone:
 }
 
 /* ---------------- Shared product row ---------------- */
-function ProductRow({ p, companyName, sectionName, onEdit, onRemove }: { p: Product; companyName?: string; sectionName?: string; onEdit: () => void; onRemove: () => void }) {
+/* صفٌّ محفوظ (ع٨): تسعُمئةِ صفٍّ كانت تُعاد تصفيتُها ورسمُها على كلّ ضغطةِ
+ * مفتاح، فتتجمّد الشاشةُ على أجهزة العيادات البطيئة. **علّةُ أداءٍ لا فقدانُ
+ * مسحات**: الحقلُ هنا مضبوطٌ بلا مجمِّعٍ يرمي، والأحداثُ تُصفّ ولا تُسقَط —
+ * فلا تُسوَّق منعاً لضياع رمز. */
+const ProductRow = memo(function ProductRow({ p, companyName, sectionName, onEdit, onRemove }: { p: Product; companyName?: string; sectionName?: string; onEdit: () => void; onRemove: () => void }) {
   const { t, i18n } = useTranslation();
   const { stockLocked: locked } = useOverride();
   const exp = daysUntil(p.expiry_date);
@@ -492,8 +541,12 @@ function ProductRow({ p, companyName, sectionName, onEdit, onRemove }: { p: Prod
           {p.barcode && <span className="flex items-center gap-1 font-mono"><Barcode size={11} /> {p.barcode}</span>}
           {/* الرموزُ الإضافية تُرى بالقائمة: ربطٌ غلط يُكتشف بالعين لا بالمسحة الغلط. */}
           {(p.alt_codes?.length ?? 0) > 0 && (
-            <span className="chip shrink-0 bg-warn-50 font-mono text-2xs font-semibold text-warn-700 dark:bg-warn-500/15 dark:text-warn-300" dir="ltr" data-altcodes
-              title={t("pos.altChipHint", "رموز إضافية مربوطة — أي مسحة لها تنزّل هذي المادّة. افتح التعديل لفكّها")}>
+            /* `shrink-0` كان يقيس الشريحة على `max-content` فيُبطل نقاطَ الكسر
+             * عند المسافات — فمنتجٌ بثلاثة رموزٍ طويلة يمدّ الصفَّ فيصير
+             * بالصفحة كلِّها تمريرٌ أفقيّ على شاشة ٣٧٥ بكسل. فسقفٌ للعرض
+             * وقصٌّ بالنقاط، والرموزُ كاملةً بالـtitle (ع٣). */
+            <span className="chip max-w-[12rem] min-w-0 truncate bg-warn-50 font-mono text-2xs font-semibold text-warn-700 dark:bg-warn-500/15 dark:text-warn-300" dir="ltr" data-altcodes
+              title={`${p.alt_codes!.join(" · ")} — ${t("pos.altChipHint", "رموز إضافية مربوطة — أي مسحة لها تنزّل هذي المادّة. افتح التعديل لفكّها")}`}>
               +{p.alt_codes!.join(" · ")}
             </span>
           )}
@@ -523,10 +576,10 @@ function ProductRow({ p, companyName, sectionName, onEdit, onRemove }: { p: Prod
       {!locked && <button onClick={onRemove} aria-label={t("common.delete", "Remove")} className="grid h-9 w-9 place-items-center rounded-full text-ink-subtle transition hover:bg-danger-50 hover:text-danger-600"><Trash2 size={16} /></button>}
     </motion.div>
   );
-}
+});
 
 /* ---------------- Products tab ---------------- */
-function InventoryTab({ products, companies, sections, clinicId, onChanged }: { products: Product[]; companies: Company[]; sections: CompanySection[]; clinicId?: string; onChanged: () => void }) {
+function InventoryTab({ products, companies, sections, clinicId, onChanged, filter, onFilter }: { products: Product[]; companies: Company[]; sections: CompanySection[]; clinicId?: string; onChanged: () => void; filter: StockFilter; onFilter: (f: StockFilter) => void }) {
   const { t } = useTranslation();
   const [editing, setEditing] = useState<Product | null>(null);
   const [adding, setAdding] = useState(false);
@@ -536,20 +589,48 @@ function InventoryTab({ products, companies, sections, clinicId, onChanged }: { 
     const m = new Map(companies.map((c) => [c.id, c.name]));
     return (id?: string | null) => (id ? m.get(id) : undefined);
   }, [companies]);
+  /* والصنفُ مثلُها (ع٢): `ProductRow` يعرضه منذ زمنٍ حين يصله، وشاشةُ الشركة
+   * تمرّره فعلاً — والتبويبُ الرئيسيّ وحدَه كان لا يمرّره. فالمنتجُ يبدو بلا
+   * صنفٍ حيث يُقرأ الجردُ أكثرَ ما يُقرأ. */
+  const sectionName = useMemo(() => {
+    const m = new Map(sections.map((x) => [x.id, x.name]));
+    return (id?: string | null) => (id ? m.get(id) : undefined);
+  }, [sections]);
 
   /* نفس تطبيع شاشة البيع — والشاشتان لازم تتفقان. حين كانتا تبحثان حرفياً كان
    * الطبيب يبحث بالبيع فلا يجد، فيتأكّد من المخزن فلا يجد كذلك، فيستنتج أن
    * المادة غير مُدخَلة ويعيد إدخالها. شاشتان تكذبان بنفس الطريقة لا تكشف
    * إحداهما الأخرى. */
-  const ql = q.trim();
+  /* التصفيةُ على قيمةٍ مؤجَّلة كشاشة البيع: الحرفُ يظهر بالحقل فوراً،
+   * والقائمةُ تلحق بإطارٍ لاحق بدل أن تحبس الضغطةَ التالية. */
+  const dq = useDeferredValue(q);
+  const ql = dq.trim();
   const nq = searchable(ql);
-  const byCode = codeMatcher(ql);
-  const shown = ql
+  const byCode = useMemo(() => codeMatcher(ql), [ql]);
+  const hits = useMemo(() => (ql
     ? products.filter((p) =>
       searchable(p.name).includes(nq)
       || byCode(p)
       || searchable(companyName(p.company_id) ?? "").includes(nq))
-    : products;
+    : products), [products, ql, nq, byCode, companyName]);
+  /* رمزٌ لُصق بحقل البحث بصيغةِ ماسحٍ (رأسُ AIM، صفرُ GTIN-14، ذيلٌ ناقص):
+   * `codeMatcher` احتواءٌ فلا يطابقه، والشاشةُ تقول «لا نتائج» عن مادّةٍ
+   * بالرفّ — وهذه شاشةُ قرار «أُعيد إدخالها». */
+  const searched = ql && hits.length === 0 ? codeRescue(products, ql) : hits;
+  /* الترشيحُ **يقاطع** البحثَ ولا يحلّ محلَّه: من يبحث باسمٍ وهو بشريحة
+   * «منخفض» يقصد المنخفضَ من نتيجة بحثه. والترتيبُ داخل الشريحة بالأولوية:
+   * النافدُ أوّلاً ثم الأدنى رصيداً، والأقربُ انتهاءً أوّلاً. */
+  const shown = useMemo(() => {
+    const list = searched.filter(STOCK_FILTERS[filter]);
+    if (filter === "low" || filter === "out") {
+      return [...list].sort((a, b) => Number(isOut(b)) - Number(isOut(a)) || a.stock - b.stock);
+    }
+    if (filter === "soon" || filter === "expired") {
+      return [...list].sort((a, b) => (daysUntil(a.expiry_date) ?? 1e9) - (daysUntil(b.expiry_date) ?? 1e9));
+    }
+    return list;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searched, filter]);
 
   const { askDelete: remove, deleteDialog } = useProductDelete(onChanged);
   const { stockLocked: locked } = useOverride();
@@ -565,12 +646,49 @@ function InventoryTab({ products, companies, sections, clinicId, onChanged }: { 
         {!locked && <Button leftIcon={<PackagePlus size={16} />} onClick={() => { playTap(); setAdding(true); }}>{t("pos.addProduct", "Add product")}</Button>}
       </div>
 
+      {/* شرائحُ الحالة (ع١): البطاقةُ تعدّ وهذه توصل. والعددُ على كلِّ شريحة
+        * محسوبٌ بنفس شرطِ البطاقة — فلا رقمان لحالةٍ واحدة. */}
+      <div className="flex flex-wrap items-center gap-1.5">
+        {([
+          ["all", t("pos.filterAll", "الكل"), products.length],
+          ["out", t("pos.filterOut", "نافد"), products.filter(isOut).length],
+          ["low", t("pos.filterLow", "منخفض"), products.filter(isLow).length],
+          ["soon", t("pos.filterSoon", "ينتهي ≤٣٠ يوماً"), products.filter(isExpiringSoon).length],
+          ["expired", t("pos.filterExpired", "منتهٍ"), products.filter(isExpired).length],
+        ] as [StockFilter, string, number][]).map(([k, label, n]) => (
+          <button
+            key={k}
+            type="button"
+            onClick={() => { playTap(); onFilter(k); }}
+            aria-pressed={filter === k}
+            className={cn(
+              "rounded-full border px-3 py-1.5 text-xs font-semibold transition",
+              filter === k
+                ? "border-brand-500 bg-brand-50 text-brand-700 dark:bg-brand-500/15 dark:text-brand-200"
+                : "border-line text-ink-muted hover:bg-surface-2",
+            )}
+          >
+            {label} <span className="tabular-nums text-ink-subtle">{formatNum(n)}</span>
+          </button>
+        ))}
+      </div>
+
       {shown.length === 0 ? (
-        <div className="card p-10 text-center text-ink-subtle">{t("pos.noProducts", "No products yet. Add your first one.")}</div>
+        /* بحثٌ خائبٌ فوق مخزنٍ عامر كان يقول «لا توجد منتجات بعد. أضف أول منتج» —
+         * عبارةٌ كاذبة **تأمر بالفعل الضار**: فيُعاد إدخالُ الموجود توأماً برصيدٍ
+         * مقسوم. الشاشاتُ المجاورة تميّز الحالتين منذ زمن؛ هذه وحدَها لم تكن.
+         * ولا دعوةَ إضافةٍ هنا: العدُّ يقول إن المخزن ليس فارغاً. */
+        <div className="card p-10 text-center text-ink-subtle" data-invempty={ql ? "search" : "stock"}>
+          {ql
+            ? t("pos.noSearchInStock", "لا نتائج مطابقة. المخزن فيه {{n}} منتجاً — جرّب اسماً أقصر أو امسح الباركود.", { n: formatNum(products.length) })
+            : filter !== "all"
+              ? t("pos.noneInFilter", "ما في منتج بهذي الحالة — جرّب شريحةً ثانية")
+              : t("pos.noProducts", "No products yet. Add your first one.")}
+        </div>
       ) : (
         <motion.div variants={staggerContainer} initial="initial" animate="animate" className="space-y-2">
           {shown.map((p) => (
-            <ProductRow key={p.id} p={p} companyName={companyName(p.company_id)} onEdit={() => { playTap(); setEditing(p); }} onRemove={() => remove(p)} />
+            <ProductRow key={p.id} p={p} companyName={companyName(p.company_id)} sectionName={sectionName(p.section_id)} onEdit={() => { playTap(); setEditing(p); }} onRemove={() => remove(p)} />
           ))}
         </motion.div>
       )}
@@ -623,7 +741,7 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
   // false = ترحيل 0075 ناقص فرابط المجموعة سيسقط — نُحذّر بدل الحفظ الصامت.
   const [groupsOk, setGroupsOk] = useState<boolean | null>(null);
   useEffect(() => {
-    if (open && bulk && groupsOk === null) void repo.supportsBulkGroup().then(setGroupsOk).catch(() => {});
+    if (open && bulk && groupsOk === null) void repo.supportsBulkGroup().then(setGroupsOk).catch(() => {}); /* swallow-ok: نفسُ فحص القدرة — null تعني «لا نعرف» فيُحذَّر لا يُحفظ صامتاً */
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, bulk]);
   const barcodeRef = useRef<HTMLInputElement>(null);
@@ -836,14 +954,24 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
         sub_unit_price: subUnitOn ? (Number(f.sub_unit_price) || 0) : null,
         sold_by_weight: byWeight,
       };
-      // Flipping an existing TRACKED product to pooled would drop its real count
-      // to 0 — fold that stock into the section pool first so nothing is lost.
-      if (product && pooled && !product.pooled && (product.stock || 0) > 0 && section_id) {
-        const sec = [...sections, ...createdSecRef.current].find((s) => s.id === section_id);
-        const cur = sec?.pooled_stock ?? 0;
-        await repo.updateCompanySection(section_id, { pooled_stock: Math.round((cur + (product.stock || 0)) * 1000) / 1000 });
+      /* طيُّ رصيدٍ متتبَّع إلى الحوض: نداءٌ **واحدٌ ذرّيّ** (0171). كان يُكتب
+       * على مرحلتين — الحوضُ أوّلاً ثم المنتج — و`rollbackGrouping` لا تُنقص
+       * الحوض، فنجاحُ الأولى وفشلُ الثانية يعدّ البضاعةَ مرّتين. والحوضُ كان
+       * يُقرأ من `props` بائتة فيدوس تعديلَ جهازٍ آخر. */
+      const foldingToPool = !!product && pooled && !product.pooled && (product.stock || 0) > 0 && !!section_id;
+      if (product) {
+        /* الرمزُ القديم ينزل `alt_codes` **بنفس النداء** (ح٢): ملصقاتُ رقم
+         * الرفّ المطبوعةُ تبقى تعمل بعد أن يُكتب باركودُ المصنع مكانَه. */
+        const keep = keepOldCode(product, payload.barcode, allProducts ?? []);
+        const withOld = keep ? { ...payload, alt_codes: keep.alt_codes } : payload;
+        // الحقولُ الأخرى أوّلاً وبلا لمسِ الرصيد/الطيّ — ففشلُ الطيّ بعدها لا يضيّع شيئاً.
+        const { stock: _s, pooled: _p, ...rest } = withOld;
+        await repo.updateProduct(product.id, foldingToPool ? rest : withOld);
+        if (foldingToPool) await repo.poolProduct(product.id, section_id as string);
+        if (keep) {
+          toast.toast({ tone: "info", title: t("pos.oldCodeKept", "الرمز القديم {{code}} صار رمزاً إضافياً — مسحتُه بعدها تنزّل نفس المادة", { code: keep.kept }) });
+        }
       }
-      if (product) await repo.updateProduct(product.id, payload);
       else await repo.createProduct({ ...payload, clinic_id: clinicId ?? null });
       playSuccess();
       onSaved();
@@ -900,11 +1028,26 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
     // والمقارنةُ **مطبَّعة** كمقارنة القاعدة (محفّز 0167): صفّان بـ`W90` و`w90`،
     // أو بـ`٢٤٧` و`247`، رمزٌ واحد. وبلا التطبيع يمرّان من هنا ويرفض الخادمُ
     // الثاني بعد أن يكون الأوّلُ قد حُفظ — فيبقى نصفُ الدفعة ورسالةٌ غامضة.
-    const codes = validRows.map((r) => r.barcode.trim()).filter(Boolean);
-    const ncodes = codes.map((c) => matchCode(c));
+    /* والفارغُ بعد التطبيع خارج المقارنة (م٣) — كما هو مستثنىً من فحص
+     * التعارض أسفلَه بالسبب نفسِه. رمزٌ كلُّه محارفُ اتجاهٍ يصير `""` بعد
+     * التطبيع، و`trim()` لا يزيلها (U+200F ليست مسافةً بيضاء). فخانتان
+     * «فارغتان للعين» كانتا تتطابقان فتمنعان حفظَ الدفعة كلِّها برسالة
+     * «الباركود  مكرر» — برمزٍ لا يُرى. */
+    const pairs = validRows
+      .map((r) => ({ raw: r.barcode.trim(), norm: matchCode(r.barcode) }))
+      .filter((x) => x.raw);
+    // ورمزٌ خامُّه غير فارغ ونورمُه فارغ: كلُّه محارفُ خفيّة — يُقال باسمه،
+    // فالطبيبُ يرى خانةً «فيها شيء» ولا يفهم لماذا تُرفض.
+    const ghost = pairs.find((x) => !x.norm);
+    if (ghost) {
+      toast.error(t("pos.ghostCode", "رمزٌ كلُّه محارف خفية — امسحه وأعد المسح"),
+        t("pos.ghostCodeHint", "الخانة تبدو فارغة للعين لكن فيها محارفَ اتجاهٍ غير مرئية. احذف محتواها وأعد المسح."));
+      return;
+    }
+    const ncodes = pairs.map((x) => x.norm);
     const dupAt = ncodes.findIndex((c, i) => ncodes.indexOf(c) !== i);
     if (dupAt >= 0) {
-      toast.error(t("pos.bulkDupBarcode", { code: codes[dupAt], defaultValue: "الباركود {{code}} مكرر في القائمة" }));
+      toast.error(t("pos.bulkDupBarcode", { code: pairs[dupAt].raw, defaultValue: "الباركود {{code}} مكرر في القائمة" }));
       return;
     }
     // A barcode that already belongs to a product would create a confusing twin —
@@ -946,6 +1089,7 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
       // Create sequentially; collect failures instead of stopping so one bad row
       // never blocks the rest of the batch.
       const failedIdx: number[] = [];
+      const keptOld: string[] = [];
       let done = 0;
       let lastErr: unknown = null;
       // مجموعة واحدة لكل دفعة (سطران فأكثر) — أو نفس المجموعة عند تعديلها.
@@ -965,13 +1109,24 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
             expiry_date: r.expiry_date || null,
             bulk_group: grp,
           };
-          if (editGroup && r.productId) await repo.updateProduct(r.productId, rowPayload);
+          if (editGroup && r.productId) {
+            // ونفسُ الحفظ بتعديل المجموعة — المسارُ الثاني الذي يستبدل رمزاً.
+            const before = allProducts?.find((p) => p.id === r.productId);
+            const keep = before ? keepOldCode(before, rowPayload.barcode, allProducts ?? []) : null;
+            await repo.updateProduct(r.productId, keep ? { ...rowPayload, alt_codes: keep.alt_codes } : rowPayload);
+            if (keep) keptOld.push(keep.kept);
+          }
           else await repo.createProduct(rowPayload);
           done++;
         } catch (e) {
           failedIdx.push(rows.indexOf(r));
           lastErr = e;
         }
+      }
+      /* والرموزُ القديمة المحفوظة تُقال بعددها: العيادةُ تعرف أن ملصقاتها
+       * القديمة ما زالت تعمل، فلا تُعيد طباعتَها ولا تُعيد إدخال المادة. */
+      if (keptOld.length > 0) {
+        toast.toast({ tone: "info", title: t("pos.oldCodesKept", "{{n}} رمزاً قديماً انحفظ رمزاً إضافياً — مسحتُه بعدها تنزّل نفس المادة", { n: formatNum(keptOld.length) }) });
       }
       // صفوف حُذفت أثناء تعديل المجموعة → منتجاتها تُحذف فعلاً.
       if (editGroup) {
@@ -1584,8 +1739,10 @@ function CompaniesTab({ products, companies, sections, clinicId, onChanged }: { 
     );
   }
 
-  const ql = q.trim().toLowerCase();
-  const shown = ql ? companies.filter((c) => c.name.toLowerCase().includes(ql)) : companies;
+  // نفسُ تطبيع تبويب المنتجات وشاشة البيع (ص٣): بحثٌ حرفيّ هنا كان يقول
+  // «ماكو شركة» عن شركةٍ مسجَّلة لأن اسمها كُتب بـ«ه» بدل «ة».
+  const ql = searchable(q.trim());
+  const shown = ql ? companies.filter((c) => searchable(c.name).includes(ql)) : companies;
 
   return (
     <div className="space-y-4">
@@ -1709,7 +1866,8 @@ function CompanyDetail({ company, products, companies, sections, clinicId, onBac
   const ql = searchable(q.trim());
   const byCode = codeMatcher(q);
   const shownSections = ql ? mySections.filter((sec) => searchable(sec.name).includes(ql)) : mySections;
-  const matchedProducts = ql ? mine.filter((p) => searchable(p.name).includes(ql) || byCode(p)) : [];
+  const companyHits = ql ? mine.filter((p) => searchable(p.name).includes(ql) || byCode(p)) : [];
+  const matchedProducts = ql && companyHits.length === 0 ? codeRescue(mine, q) : companyHits;
   const sectionNameOf = (id?: string | null) => (id ? mySections.find((x) => x.id === id)?.name : undefined);
   const { askDelete: removeProduct, deleteDialog } = useProductDelete(onChanged);
 
@@ -1921,7 +2079,8 @@ function SectionProducts({ company, section, products, companies, sections, clin
     : products.filter((p) => p.company_id === company.id && !p.section_id);
   const ql = searchable(q.trim());
   const byCode = codeMatcher(q);
-  const shown = ql ? mine.filter((p) => searchable(p.name).includes(ql) || byCode(p)) : mine;
+  const sectionHits = ql ? mine.filter((p) => searchable(p.name).includes(ql) || byCode(p)) : mine;
+  const shown = ql && sectionHits.length === 0 ? codeRescue(mine, q) : sectionHits;
   const title = section ? section.name : t("pos.uncategorized", "بدون صنف");
   const pool = section?.pooled_stock ?? 0;
   const trackedUnits = mine.reduce((n, p) => n + (p.pooled ? 0 : p.stock || 0), 0);
@@ -2205,9 +2364,12 @@ function AssignProductsModal({ open, company, companies, sections, products, def
   // else — especially the unassigned legacy products — surfaces first.
   const shown = useMemo(() => {
     const byCode = codeMatcher(qt);
-    const list = ql
+    const found = ql
       ? products.filter((p) => searchable(p.name).includes(ql) || byCode(p))
       : products.slice();
+    // وهذه النافذةُ تُسند المنتجاتِ القديمةَ بلا شركة: ما لا تجده يبقى بلا
+    // شركةٍ إلى الأبد — فطبقةُ النجدة هنا أوجبُ منها بغيرها.
+    const list = ql && found.length === 0 ? codeRescue(products, qt) : found;
     return list.sort((a, b) => {
       const am = a.company_id === company.id ? 1 : 0;
       const bm = b.company_id === company.id ? 1 : 0;
@@ -2383,13 +2545,17 @@ function MergeDialog({ drop, candidates, suggested, onClose, onMerged }: {
   const toast = useToast();
   const [q, setQ] = useState("");
   const [busy, setBusy] = useState(false);
-  const shown = useMemo(() => {
+  /* السقفُ يُقال ولا يُبتلع (ع٤). الدمجُ لا يُرجَع إلا من سلّة المحذوفات،
+   * فقائمةٌ مقصوصةٌ بصمت تدفع للدمج بالخطأ: يبحث الطبيبُ عن الأصل فلا يراه
+   * بالأربعين الأولى فيدمج بأقربِ شبيه. والنموذجُ موجودٌ بشاشة البيع. */
+  const MERGE_CAP = 40;
+  const { shown, hiddenCount } = useMemo(() => {
     const nq = searchable(q);
     const byCode = codeMatcher(q);
     const base = nq
       ? candidates.filter((p) => searchable(p.name).includes(nq) || byCode(p))
       : [...suggested, ...candidates.filter((p) => !suggested.some((s) => s.id === p.id))];
-    return base.slice(0, 40);
+    return { shown: base.slice(0, MERGE_CAP), hiddenCount: Math.max(0, base.length - MERGE_CAP) };
   }, [candidates, suggested, q]);
 
   const merge = async (keep: Product) => {
@@ -2436,6 +2602,11 @@ function MergeDialog({ drop, candidates, suggested, onClose, onMerged }: {
             </button>
           ))}
           {shown.length === 0 && <p className="p-4 text-center text-xs text-ink-subtle">{t("common.noMatches", "No matches")}</p>}
+          {hiddenCount > 0 && (
+            <p className="p-2 text-center text-2xs text-ink-subtle">
+              {t("pos.mergeMoreHidden", "معروض {{n}} من {{total}} — ضيّق البحث حتى تشوف الباقي", { n: formatNum(shown.length), total: formatNum(shown.length + hiddenCount) })}
+            </p>
+          )}
         </div>
       </div>
     </Dialog>

@@ -1087,6 +1087,8 @@ function QtyPromosCard({ clinicId }: { clinicId?: string }) {
   const { can } = usePermissions();
   const [rules, setRules] = useState<QtyPromo[]>(getQtyPromos());
   const [products, setProducts] = useState<Product[]>([]);
+  /** فشلَ جلبُ المنتجات؟ — «تعذّر» لا «ماكو أصناف». */
+  const [prodFailed, setProdFailed] = useState(false);
   const [catalog, setCatalog] = useState<ServiceCatalog>(() => getServiceCatalog());
   const [picking, setPicking] = useState(false);
 
@@ -1100,7 +1102,8 @@ function QtyPromosCard({ clinicId }: { clinicId?: string }) {
   const [promoName, setPromoName] = useState("");
   const [flash, setFlash] = useState<string | null>(null);
 
-  useEffect(() => { repo.listProducts(clinicId).then(setProducts).catch(() => setProducts([])); }, [clinicId]);
+  /* قائمةٌ فارغةٌ عن خطأ تبدو «ماكو منتجات» فيُبنى عليها عرضٌ ناقص — تُقال. */
+  useEffect(() => { repo.listProducts(clinicId).then((p) => { setProducts(p); setProdFailed(false); }).catch(() => setProdFailed(true)); }, [clinicId]);
   useEffect(() => { setCatalog(getServiceCatalog()); }, [picking]);
 
   if (!can("manageSettings")) return null;
@@ -1239,6 +1242,7 @@ function QtyPromosCard({ clinicId }: { clinicId?: string }) {
         onClose={() => setPicking(false)}
         kind={kind}
         pool={pool}
+        poolFailed={kind !== "service" && prodFailed}
         selected={ids}
         onChange={setIds}
       />
@@ -1324,9 +1328,11 @@ function SharedCatalogCard() {
 
 /* شاشة الاختيار: واسعة، بشبكة مربّعات وبحث حيّ. الاختيار المتعدد هو الأصل هنا —
  * لذلك المربّع كله زر، وعلامة الصح تظهر بزاويته، ومجموع المختار ثابت بالأسفل. */
-function PromoPicker({ open, onClose, kind, pool, selected, onChange }: {
+function PromoPicker({ open, onClose, kind, pool, poolFailed, selected, onChange }: {
   open: boolean; onClose: () => void; kind: PromoKind;
   pool: { id: string; name: string; price: number; sub: string | null }[];
+  /** القائمةُ فارغةٌ عن فشلِ جلبٍ لا عن خلوّ المخزن — الفرقُ يُقال. */
+  poolFailed?: boolean;
   selected: string[]; onChange: (ids: string[]) => void;
 }) {
   const { t } = useTranslation();
@@ -1386,7 +1392,11 @@ function PromoPicker({ open, onClose, kind, pool, selected, onChange }: {
       </div>
 
       {shown.length === 0 ? (
-        <p className="py-10 text-center text-sm text-ink-subtle">{t("promos.pickEmpty", "ماكو أصناف بهذا البحث.")}</p>
+        <p className="py-10 text-center text-sm text-ink-subtle">
+          {poolFailed
+            ? t("promos.pickFailed", "تعذّر تحميل المنتجات — أعد فتح النافذة.")
+            : t("promos.pickEmpty", "ماكو أصناف بهذا البحث.")}
+        </p>
       ) : (
         // كثافة مقصودة: مربّعات ~١٥٠بك تخلي عشرين صنفاً بالشاشة بلا سكرول —
         // مربّعات ضخمة تعني تنقّلاً أكثر، وهذا عكس الغاية من الشبكة.

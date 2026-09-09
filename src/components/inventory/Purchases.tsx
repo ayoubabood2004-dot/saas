@@ -12,9 +12,9 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Modal } from "@/components/Modal";
 import { Combobox } from "@/components/Combobox";
 import { Button, Badge, useToast, Skeleton } from "@/components/ui";
-import { cn, money, formatDate, localISO, normalizeAr, normalizeCode, matchCode } from "@/lib/utils";
+import { cn, money, formatDate, localISO, normalizeAr, normalizeCode, matchCode, searchable } from "@/lib/utils";
 import { withTimeout, describeDbError } from "@/lib/errors";
-import { codeIndex, excelArtifact, looksLayoutMangled } from "@/lib/productCodes";
+import { codeIndex, excelArtifact, looksLayoutMangled, rescueScan, matchTruncatedCode, stripAim } from "@/lib/productCodes";
 import { createScanAssembler } from "@/lib/scanBuffer";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
 import { staggerContainer, staggerItem } from "@/lib/motion";
@@ -25,7 +25,8 @@ import { Printer } from "lucide-react";
 
 /** Canonical company-name helpers (kept in sync with Inventory.tsx). */
 const normName = (s: string) => s.trim().replace(/\s+/g, " ").normalize("NFC");
-const normKey = (s: string) => normName(s).toLowerCase();
+/** ونفسُ المفتاح حرفاً بحرف — نسختان تفترقان تجمعان فواتيرَ شركةٍ بمجموعتين. */
+const normKey = (s: string) => searchable(normName(s)).replace(/\s+/g, " ").trim();
 
 const CATEGORY_KEYS: ProductCategory[] = ["medicine", "food", "accessories", "consumables", "other"];
 const PAY_METHODS: PaymentMethod[] = ["cash", "card", "transfer"];
@@ -79,8 +80,11 @@ export function PurchasesTab({ products, companies, sections, clinicId, onChange
   products: Product[]; companies: Company[]; sections?: CompanySection[]; clinicId?: string; onChanged: () => void;
 }) {
   const { t, i18n } = useTranslation();
+  const toast = useToast();
   const [purchases, setPurchases] = useState<Purchase[]>([]);
   const [loading, setLoading] = useState(true);
+  /** فشلَ آخرُ جلب؟ — «تعذّر» لا «لا توجد فواتير». */
+  const [failed, setFailed] = useState(false);
   const [building, setBuilding] = useState(false);
   const [viewing, setViewing] = useState<Purchase | null>(null);
   const [editing, setEditing] = useState<{ purchase: Purchase; items: PurchaseItem[] } | null>(null);
@@ -91,11 +95,20 @@ export function PurchasesTab({ products, companies, sections, clinicId, onChange
   const [openCo, setOpenCo] = useState<string | null>(null);
   const mounted = useRef(true);
 
+  /* «احتفظ بالقائمة السابقة» صحيحٌ بالتحديثات، وكاذبٌ بأول تحميل: «السابق»
+   * حينها قائمةٌ فارغة — فيرى المديرُ «لا توجد فواتير» وديوناً صفراً عن خطأِ
+   * خادم، ويصدّق: نفسُ صنف حادثة `listCouriers` الموثّقة بـCLAUDE.md — قائمةٌ
+   * فارغةٌ عن خطأ تقلب معنى المال. فالتمييزُ صار صريحاً: فشلٌ بلا قائمةٍ سابقة
+   * يعرض «تعذّر — أعد المحاولة»، وفشلٌ فوق قائمةٍ قائمة يُبقيها ويقول ذلك. */
   const load = async () => {
     try {
       const rows = await withTimeout(repo.listPurchases(clinicId), 15000);
-      if (mounted.current) setPurchases(rows);
-    } catch { /* keep prior list */ }
+      if (mounted.current) { setPurchases(rows); setFailed(false); }
+    } catch (e) {
+      if (!mounted.current) return;
+      setFailed(true);
+      if (purchases.length > 0) toast.error(t("purchase.refreshFailed", "تعذّر تحديث الفواتير — المعروض قد يكون قديماً"), e instanceof Error ? e.message : undefined);
+    }
     finally { if (mounted.current) setLoading(false); }
   };
   useEffect(() => {
@@ -105,8 +118,9 @@ export function PurchasesTab({ products, companies, sections, clinicId, onChange
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const ql = q.trim().toLowerCase();
-  const shown = ql ? purchases.filter((p) => (p.company_name ?? "").toLowerCase().includes(ql) || (p.reference ?? "").toLowerCase().includes(ql) || (p.supplier_name ?? "").toLowerCase().includes(ql)) : purchases;
+  // مطبَّعٌ كبقية الشاشات: «شركه الامل» تلقى «شركة الأمل»، و«٢٠٠١» تلقى «2001».
+  const ql = searchable(q.trim());
+  const shown = ql ? purchases.filter((p) => searchable(p.company_name ?? "").includes(ql) || searchable(p.reference ?? "").includes(ql) || searchable(p.supplier_name ?? "").includes(ql)) : purchases;
 
   /* «الفاتورة الكبيرة» لكل شركة: كل فواتيرها مجموعةً — الإجمالي والدين وعدد
    * الفواتير وآخر شراء — مرتبةً بالأكثر شراءً، فيُعرف بالجرد منين نأخذ أكثر. */
@@ -154,6 +168,14 @@ export function PurchasesTab({ products, companies, sections, clinicId, onChange
 
       {loading ? (
         <div className="space-y-3">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-20 rounded-2xl" />)}</div>
+      ) : failed && purchases.length === 0 ? (
+        /* «تعذّر» لا «لا توجد فواتير»: الفرقُ أن الأولى تدعو لإعادة المحاولة
+         * والثانية تدعو لتسجيل فاتورةٍ موجودةٍ أصلاً — وتُصدَّق فتُسجَّل مرّتين. */
+        <div className="card flex flex-col items-center gap-3 p-10 text-center" data-loadfailed>
+          <span className="grid h-14 w-14 place-items-center rounded-2xl bg-danger-50 text-danger-500 dark:bg-danger-500/15"><ShoppingBag size={26} /></span>
+          <p className="text-ink-subtle">{t("purchase.loadFailed", "تعذّر تحميل الفواتير — ما نعرف إذا عندك فواتير أو لا. أعد المحاولة.")}</p>
+          <Button variant="secondary" onClick={() => { playTap(); setLoading(true); void load(); }}>{t("common.retry", "إعادة المحاولة")}</Button>
+        </div>
       ) : shown.length === 0 ? (
         <div className="card flex flex-col items-center gap-3 p-10 text-center">
           <span className="grid h-14 w-14 place-items-center rounded-2xl bg-brand-50 text-brand-500 dark:bg-brand-500/15"><ShoppingBag size={26} /></span>
@@ -606,9 +628,26 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
       return;
     }
     const hit = matchCode(raw);
-    const code = normalizeCode(raw);
     // باركود أولاً، وإلا اسم: مطابقة تامة، أو مرشح وحيد لا لبس فيه.
     let match = byBarcode.get(hit);
+    /* طبقاتُ النجدة نفسُها التي بشاشة البيع — كانت هذه الشاشةُ عمياءَ عنها،
+     * فماسحٌ مضبوطٌ على AIM أو GTIN-14 يُنشئ **توأماً** بكلّ استلامِ بضاعة:
+     * البيعُ تنقذه `rescueScan` فيبيع من الأصل، والأصلُ يبقى صفراً وكلُّ مسحةِ
+     * بيعٍ تقول «رصيده صفر» — دورةُ «المنتج اختفى» من بابها الذي بقي مفتوحاً. */
+    if (!match) {
+      const r = rescueScan(products, raw);
+      if (r) {
+        match = r.product;
+        toast.toast({ tone: "info", title: t("pos.scanRescuedPurchase", "«{{name}}» — طابق بصيغة {{code}}", { name: r.product.name, code: r.via }) });
+      }
+    }
+    if (!match) {
+      const cut = matchTruncatedCode(products, raw);
+      if (cut) {
+        match = cut;
+        toast.toast({ tone: "info", title: t("pos.scanHealedPurchase", "الماسح بلع أوّل الباركود — طابقناه بـ«{{name}}»", { name: cut.name }) });
+      }
+    }
     if (!match) {
       const cands = findByName(raw);
       const exact = cands.find((p) => normalizeAr(p.name) === normalizeAr(normName(raw)));
@@ -630,9 +669,14 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
       // Merge into an existing line with the same barcode if present.
       const existing = ls.find((l) => matchCode(l.barcode) === hit && hit);
       if (existing) return ls.map((l) => (l.key === existing.key ? { ...l, qty: String((Number(l.qty) || 0) + 1) } : l));
-      // نص فيه حروف/مسافات = اسم منتج جديد؛ أرقام صرفة = باركود جديد.
-      const looksBarcode = /^[0-9A-Za-z_-]+$/.test(raw);
-      const fresh = looksBarcode ? blankLine({ barcode: code, qty: "1" }) : blankLine({ name: normName(raw), qty: "1" });
+      /* بادئةُ AIM تُقشَّر صراحةً قبل الحكم: `]C1` فيها `]` فتسقط بفحص «يشبه
+       * باركوداً» إلى فرع **الاسم** — فيُنشأ منتجٌ اسمُه «]C16221…» بمخزن
+       * العيادة. رمزٌ لا يصير اسماً أبداً. */
+      const aimless = stripAim(raw);
+      const looksBarcode = /^[0-9A-Za-z_-]+$/.test(aimless);
+      const fresh = looksBarcode
+        ? blankLine({ barcode: normalizeCode(aimless), qty: "1" })
+        : blankLine({ name: normName(raw), qty: "1" });
       // Drop a leading empty line so the list stays clean.
       const base = ls.length === 1 && !ls[0].barcode && !ls[0].name ? [] : ls;
       return [...base, fresh];
@@ -662,7 +706,13 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
   const validLines = lines.filter((l) => (l.name.trim() || l.barcode.trim()) && Number(l.qty) > 0);
   const total = validLines.reduce((s, l) => s + (Number(l.qty) || 0) * (Number(l.purchase_price) || 0), 0);
   const totalUnits = validLines.reduce((s, l) => s + (Number(l.qty) || 0), 0);
-  const paidNum = amountPaid.trim() === "" ? total : Math.max(0, Math.min(total, Number(amountPaid) || 0));
+  /* للفراغ دلالتان بهذه الشاشة (م٤): بالإنشاء «مدفوعٌ كامل»، وبالتعديل «يبقى
+   * المدفوعُ كما هو» — والتسمية أسفلَه تقولهما بالنصّ، و`amount_paid` تُرسَل
+   * `undefined` بالتعديل فعلاً. لكنّ الشارة كانت تُشتقّ بدلالة الإنشاء وحدها،
+   * فمسحُ الخانة بفاتورةٍ مدينة يعرض «مدفوعة» — شارةٌ تكذب على دَينٍ قائم. */
+  const paidNum = amountPaid.trim() !== ""
+    ? Math.max(0, Math.min(total, Number(amountPaid) || 0))
+    : editing ? Math.max(0, Math.min(total, editing.purchase.amount_paid ?? total)) : total;
   const status = paidNum >= total ? "paid" : paidNum <= 0 ? "unpaid" : "partial";
 
   const resolveCompanyId = async (): Promise<{ id: string | null; created: Company | null; name: string }> => {
@@ -996,7 +1046,7 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
           </div>
           <div>
             <label className="label flex items-center gap-1"><Wallet size={12} /> {t("purchase.amountPaid", "المدفوع للمورّد")} <span className="font-normal text-ink-subtle">{editing ? t("purchase.paidHintEdit", "(فارغ = يبقى المدفوع كما هو)") : t("purchase.paidHint", "(فارغ = مدفوع كامل)")}</span></label>
-            <input type="number" inputMode="numeric" min="0" step="1" className="input" value={amountPaid} onChange={(e) => setAmountPaid(e.target.value)} placeholder={money(total)} />
+            <input type="number" inputMode="numeric" min="0" step="1" className="input" value={amountPaid} onChange={(e) => setAmountPaid(e.target.value)} placeholder={money(editing ? (editing.purchase.amount_paid ?? total) : total)} />
           </div>
           <div>
             <label className="label">{t("purchase.notes", "ملاحظات")}</label>

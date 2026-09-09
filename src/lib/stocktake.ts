@@ -33,6 +33,9 @@ export interface StocktakeLine {
   seq: number | null;
   productId: string | null;
   barcode: string | null;
+  /** الرموزُ الإضافية (ع٥): بلا هذا العمود تُسقطها دورةُ «صدّر ثم أعد
+   *  الإدخال» — وهي بالضبط ما تراكم من علاج التوائم. */
+  altCodes: string[];
   name: string;
   companyName: string;
   sectionName: string;
@@ -123,6 +126,7 @@ export function buildStocktake(
       seq,
       productId: p.id,
       barcode: p.barcode ?? null,
+      altCodes: (p.alt_codes ?? []).filter(Boolean),
       name: p.name,
       companyName,
       sectionName,
@@ -153,6 +157,7 @@ export function buildStocktake(
       seq: null,
       productId: null,
       barcode: null,
+      altCodes: [],
       name: i18n.t("stock.poolLine", "مخزون مجمّع للصنف (غير موزّع على الباركودات)"),
       companyName,
       sectionName: sec.name,

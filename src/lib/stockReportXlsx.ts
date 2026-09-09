@@ -28,18 +28,23 @@ import { asciiFileName } from "./excelExport";
 
 /* أعمدة ورقة الجرد — الترتيب هنا هو ترتيب الحروف بإكسل (A أول عمود). */
 const COL = {
-  seq: "A", barcode: "B", name: "C", company: "D", section: "E", category: "F",
-  buy: "G", sell: "H", systemQty: "I", costValue: "J", retailValue: "K",
-  actualQty: "L", diff: "M", diffValue: "N",
-  minStock: "O", expiry: "P", daysLeft: "Q", status: "R", subUnit: "S", id: "T",
+  seq: "A", barcode: "B", altCodes: "C", name: "D", company: "E", section: "F", category: "G",
+  buy: "H", sell: "I", systemQty: "J", costValue: "K", retailValue: "L",
+  actualQty: "M", diff: "N", diffValue: "O",
+  minStock: "P", expiry: "Q", daysLeft: "R", status: "S", subUnit: "T", id: "U",
 } as const;
-const LAST_COL = 19;            // T بالفهرسة الصفرية
+const LAST_COL = 20;            // U بالفهرسة الصفرية
+/** فهرسُ العمود الذي يملؤه العادّ بيده — يُشتقّ من الخريطة لا يُكتب رقماً.
+ *  كان `11` مكتوباً بالنصّ، فأوّلُ عمودٍ يُدرَج قبله نقل التظليلَ لعمودٍ آخر
+ *  بصمت: الورقةُ تطلب من العادّ أن يملأ خانةً محسوبة. */
+const FILL_COL = COL.actualQty.charCodeAt(0) - 65;
 const HEAD_ROW = 4;             // صفّ العناوين بترقيم إكسل (١-أساس)
 const FIRST_DATA = HEAD_ROW + 1;
 
 const headers = (): string[] => [
   "#",
   i18n.t("stock.hBarcode", "الباركود"),
+  i18n.t("stock.hAltCodes", "رموز إضافية"),
   i18n.t("stock.hName", "المنتج"),
   i18n.t("stock.hCompany", "الشركة"),
   i18n.t("stock.hSection", "الصنف"),
@@ -155,7 +160,7 @@ function countSheet(
   };
   /* عمود العدد الفعلي بلونٍ صارخ: العادّ يجب أن يعرف أين يكتب من نظرةٍ واحدة. */
   const headFill = { ...headStyle, fill: { patternType: "solid", fgColor: { rgb: "B45309" } } };
-  headers().forEach((h, c) => put(XLSX.utils.encode_cell({ r: HEAD_ROW - 1, c }), txt(h, c === 11 ? headFill : headStyle)));
+  headers().forEach((h, c) => put(XLSX.utils.encode_cell({ r: HEAD_ROW - 1, c }), txt(h, c === FILL_COL ? headFill : headStyle)));
 
   const cellBase = (extra?: Cell): Cell => ({
     alignment: { horizontal: "right", vertical: "center", readingOrder: 2 },
@@ -185,6 +190,10 @@ function countSheet(
     put(at(COL.seq), l.seq == null ? txt("—", tint(centred)) : num(l.seq, "0", tint(centred)));
     /* z:"@" هو ما يمنع إكسل من ابتلاع الباركود رقماً — لا الاقتباس ولا الفراغ. */
     put(at(COL.barcode), { t: "s", v: l.barcode ?? "", z: "@", s: tint(barcodeStyle) });
+    /* نصٌّ خامٌّ كعمود الباركود (`z: "@"`): بلا هذا يقرأ إكسلُ رمزاً طويلاً
+     * رقماً فيحوّله صيغةً علمية — وهو العطبُ الذي يحرسه `excelArtifact`
+     * بمدخل البيانات. ولا يُصدَّر ما نرفض استقباله. */
+    put(at(COL.altCodes), { t: "s", v: l.altCodes.join(", "), z: "@", s: tint(barcodeStyle) });
     put(at(COL.name), txt(l.name, tint(cellBase(pool ? { font: { bold: true, color: { rgb: "1E40AF" } } } : undefined))));
     put(at(COL.company), txt(l.companyName, tint(cellBase())));
     put(at(COL.section), txt(l.sectionName, tint(cellBase())));
@@ -235,7 +244,7 @@ function countSheet(
   put(`${COL.actualQty}${totalRow}`, { t: "n", f: `SUM(${span(COL.actualQty)})`, v: 0, z: QTY, s: sumStyle });
   put(`${COL.diff}${totalRow}`, { t: "n", f: `SUM(${span(COL.diff)})`, v: 0, z: QTY, s: sumStyle });
   put(`${COL.diffValue}${totalRow}`, { t: "n", f: `SUM(${span(COL.diffValue)})`, v: 0, z: MONEY, s: sumStyle });
-  for (const c of [COL.barcode, COL.name, COL.company, COL.section, COL.category, COL.buy, COL.sell,
+  for (const c of [COL.barcode, COL.altCodes, COL.name, COL.company, COL.section, COL.category, COL.buy, COL.sell,
     COL.minStock, COL.expiry, COL.daysLeft, COL.status, COL.subUnit, COL.id]) {
     put(`${c}${totalRow}`, txt("", sumStyle));
   }
@@ -246,7 +255,7 @@ function countSheet(
   ws["!autofilter"] = { ref: `A${HEAD_ROW}:${COL.id}${FIRST_DATA + lines.length - 1}` };
   ws["!rows"] = [{ hpt: 26 }, { hpt: 17 }, { hpt: 17 }, { hpt: 34 }];
   ws["!cols"] = [
-    { wch: 5 }, { wch: 17 }, { wch: 40 }, { wch: 20 }, { wch: 18 }, { wch: 10 },
+    { wch: 5 }, { wch: 17 }, { wch: 22 }, { wch: 40 }, { wch: 20 }, { wch: 18 }, { wch: 10 },
     { wch: 14 }, { wch: 14 }, { wch: 13 }, { wch: 16 }, { wch: 16 },
     { wch: 13 }, { wch: 11 }, { wch: 17 },
     { wch: 11 }, { wch: 13 }, { wch: 11 }, { wch: 26 }, { wch: 14 }, { wch: 16 },

@@ -19,6 +19,7 @@ import {
   Search, Eye, EyeOff, Pencil, TrendingUp, Truck, PackageX, RefreshCw, StickyNote,
 } from "lucide-react";
 import type { CheckoutItem, Product, SaleMeta, StoreOrder, StoreProfile } from "@/types";
+import { useTranslation } from "react-i18next";
 import { repo } from "@/lib/repo";
 import { useAuth } from "@/contexts/AuthContext";
 import { matchStaffToUser } from "@/lib/staffNames";
@@ -50,7 +51,11 @@ function ago(iso: string): string {
   return `قبل ${formatNum(Math.floor(hrs / 24))} يوم`;
 }
 
+/** سقفُ سجلّ الطلبات المعروض — يُقال بالعدد أسفلَه، لا يُقصّ بصمت (ع٤). */
+const STORE_LOG_CAP = 30;
+
 export function ClinicStore() {
+  const { t } = useTranslation();
   const { user } = useAuth();
   const clinicId = user?.clinic_id ?? user?.id;
   const [tab, setTab] = useState<Tab>("orders");
@@ -59,6 +64,10 @@ export function ClinicStore() {
   const [products, setProducts] = useState<Product[] | null>(null);
   const [profile, setProfile] = useState<StoreProfile | null | undefined>(undefined); // undefined = يتحمّل
   const newCount = useStoreOrderCount();
+  /* فشلُ الجلب كان يضع قوائمَ فارغة بلا حالةِ خطأ ولا توست ولا إعادة — فيقول
+   * الصندوقُ «لا طلبات» عن زبونٍ طلب وينتظر التأكيد، ولا أحد يتصل به. وهذا
+   * المكانُ الوحيد الذي يستقبل مبيعاتِ الإنترنت. */
+  const [failed, setFailed] = useState(false);
 
   const load = async () => {
     try {
@@ -68,8 +77,11 @@ export function ClinicStore() {
         repo.getStoreProfile(),
       ]);
       setOrders(o); setProducts(p); setProfile(pr);
+      setFailed(false);
     } catch {
-      setOrders((x) => x ?? []); setProducts((x) => x ?? []); setProfile((x) => (x === undefined ? null : x));
+      // ما نكذب بقوائمَ فارغة: إمّا بياناتٌ سابقة تبقى، أو تُقال الحقيقة.
+      setFailed(true);
+      setProfile((x) => (x === undefined ? null : x));
     }
   };
   useEffect(() => {
@@ -117,6 +129,17 @@ export function ClinicStore() {
         ))}
       </div>
 
+      {failed && (
+        <div className="mb-4 rounded-2xl border border-danger-200 bg-danger-50 p-4 text-center dark:border-danger-500/30 dark:bg-danger-500/10" data-storefailed>
+          <p className="text-sm font-semibold text-danger-700 dark:text-danger-300">
+            {orders === null
+              ? t("pos.storeOrdersFailed", "تعذّر تحميل الطلبات — ما نعرف إذا وصلك طلب أو لا. أعد المحاولة.")
+              : t("pos.storeRefreshFailed", "آخر تحديث فشل — المعروض قد يكون قديماً.")}
+          </p>
+          <Button className="mt-3" size="sm" variant="secondary" onClick={() => { playTap(); void load(); }}>{t("common.retry", "إعادة المحاولة")}</Button>
+        </div>
+      )}
+
       <AnimatePresence mode="wait">
         <motion.div key={tab} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.18 }}>
           {tab === "orders"
@@ -136,6 +159,7 @@ function OrdersTab({ orders, products, profile, clinicId, reload, goSettings }: 
   orders: StoreOrder[] | null; products: Product[] | null; profile: StoreProfile | null;
   clinicId?: string; reload: () => Promise<void>; goSettings: () => void;
 }) {
+  const { t } = useTranslation();
   const { user } = useAuth();
   const toast = useToast();
   const [busy, setBusy] = useState<string | null>(null);
@@ -172,7 +196,7 @@ function OrdersTab({ orders, products, profile, clinicId, reload, goSettings }: 
       if (o.delivery_fee > 0) {
         items.push({ product_id: null, name: "أجرة توصيل", barcode: null, qty: 1, unit_price: o.delivery_fee, unit_cost: 0, stock_qty: 0, unit_label: null });
       }
-      const staffM = await matchStaffToUser(user?.id, user?.email).catch(() => null);
+      const staffM = await matchStaffToUser(user?.id, user?.email).catch(() => null); /* swallow-ok: نسبةُ البيعة لموظّفٍ إثراءٌ اختياريّ — غيابُها لا يمنع قبولَ الطلب ولا يغيّر مالاً */
       const meta: SaleMeta = {
         customer_name: o.customer_name, customer_phone: o.customer_phone, pet_name: null,
         final_total: o.total, payment_method: null, payment_details: null,
@@ -348,9 +372,11 @@ function OrdersTab({ orders, products, profile, clinicId, reload, goSettings }: 
       {/* السجل */}
       {decided.length > 0 && (
         <section>
-          <h2 className="mb-2 flex items-center gap-2 font-display text-lg font-bold text-ink"><RefreshCw size={16} className="text-ink-subtle" /> سجل الطلبات</h2>
+          <h2 className="mb-2 flex items-center gap-2 font-display text-lg font-bold text-ink"><RefreshCw size={16} className="text-ink-subtle" /> {t("pos.ordersLog", "سجل الطلبات")}{decided.length > STORE_LOG_CAP && (
+              <span className="text-xs font-normal text-ink-subtle">{t("pos.logCap", "آخر {{n}} من {{total}}", { n: STORE_LOG_CAP, total: decided.length })}</span>
+            )}</h2>
           <div className="space-y-2">
-            {decided.slice(0, 30).map((o) => (
+            {decided.slice(0, STORE_LOG_CAP).map((o) => (
               <div key={o.id} className="card flex items-center gap-3 p-3">
                 <span className={cn("grid h-9 w-9 shrink-0 place-items-center rounded-xl",
                   o.status === "accepted" ? "bg-success-50 text-success-600 dark:bg-success-500/15 dark:text-success-300" : "bg-danger-50 text-danger-500 dark:bg-danger-500/15 dark:text-danger-300")}>

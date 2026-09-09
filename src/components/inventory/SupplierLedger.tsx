@@ -60,6 +60,8 @@ export function SupplierLedgerTab({ companies, clinicId, products = [] }: { comp
   const [purchases, setPurchases] = useState<Purchase[]>([]);
   const [charges, setCharges] = useState<CompanyCharge[]>([]);
   const [loading, setLoading] = useState(true);
+  /** فشلَ آخرُ جلب؟ — «تعذّر» لا «لا توجد فواتير». */
+  const [failed, setFailed] = useState(false);
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
   const [openKeys, setOpenKeys] = useState<Set<string>>(new Set());
@@ -73,11 +75,20 @@ export function SupplierLedgerTab({ companies, clinicId, products = [] }: { comp
   const [checkBusy, setCheckBusy] = useState(false);
   const mounted = useRef(true);
 
+  /* «احتفظ بالقائمة السابقة» صحيحٌ بالتحديثات، وكاذبٌ بأول تحميل: «السابق»
+   * حينها قائمةٌ فارغة — فيرى المديرُ «لا توجد فواتير» وديوناً صفراً عن خطأِ
+   * خادم، ويصدّق: نفسُ صنف حادثة `listCouriers` الموثّقة بـCLAUDE.md — قائمةٌ
+   * فارغةٌ عن خطأ تقلب معنى المال. فالتمييزُ صار صريحاً: فشلٌ بلا قائمةٍ سابقة
+   * يعرض «تعذّر — أعد المحاولة»، وفشلٌ فوق قائمةٍ قائمة يُبقيها ويقول ذلك. */
   const load = async () => {
     try {
       const rows = await withTimeout(repo.listPurchases(clinicId), 15000);
-      if (mounted.current) setPurchases(rows);
-    } catch { /* keep prior list */ }
+      if (mounted.current) { setPurchases(rows); setFailed(false); }
+    } catch (e) {
+      if (!mounted.current) return;
+      setFailed(true);
+      if (purchases.length > 0) toast.error(t("purchase.refreshFailed", "تعذّر تحديث الفواتير — المعروض قد يكون قديماً"), e instanceof Error ? e.message : undefined);
+    }
     finally { if (mounted.current) setLoading(false); }
   };
   /* المطالباتُ تُحمَّل على حدة ولا تُسقط الدفتر بفشلها: هي إضافةٌ على دينٍ
@@ -93,7 +104,7 @@ export function SupplierLedgerTab({ companies, clinicId, products = [] }: { comp
     mounted.current = true;
     void load();
     void loadCharges();
-    void repo.supportsSupplierLedger().then((ok) => { if (mounted.current) setLedgerOk(ok); }).catch(() => {});
+    void repo.supportsSupplierLedger().then((ok) => { if (mounted.current) setLedgerOk(ok); }).catch(() => {}); /* swallow-ok: فحصُ قدرةٍ (هل نزلت هجرةُ دفتر المورّدين؟) لا قائمةُ قرار */
     return () => { mounted.current = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -268,6 +279,14 @@ export function SupplierLedgerTab({ companies, clinicId, products = [] }: { comp
 
       {loading ? (
         <div className="space-y-3">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-24 rounded-2xl" />)}</div>
+      ) : failed && purchases.length === 0 ? (
+        /* «تعذّر» لا «لا توجد فواتير»: الفرقُ أن الأولى تدعو لإعادة المحاولة
+         * والثانية تدعو لتسجيل فاتورةٍ موجودةٍ أصلاً — وتُصدَّق فتُسجَّل مرّتين. */
+        <div className="card flex flex-col items-center gap-3 p-10 text-center" data-loadfailed>
+          <span className="grid h-14 w-14 place-items-center rounded-2xl bg-danger-50 text-danger-500 dark:bg-danger-500/15"><BookOpen size={26} /></span>
+          <p className="text-ink-subtle">{t("purchase.loadFailed", "تعذّر تحميل الفواتير — ما نعرف إذا عندك فواتير أو لا. أعد المحاولة.")}</p>
+          <Button variant="secondary" onClick={() => { playTap(); setLoading(true); void load(); }}>{t("common.retry", "إعادة المحاولة")}</Button>
+        </div>
       ) : shown.length === 0 ? (
         <div className="card flex flex-col items-center gap-3 p-10 text-center">
           <span className="grid h-14 w-14 place-items-center rounded-2xl bg-brand-50 text-brand-500 dark:bg-brand-500/15"><BookOpen size={26} /></span>

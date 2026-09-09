@@ -246,9 +246,11 @@ export interface PlatformContext {
   clinicName: string | null;
   since: string | null;
   reason: string | null;
+  /** انقضى أجلُ الجلسة (0170)؟ — `acting` تصير null، وهذا يقول **لماذا**. */
+  expired?: boolean;
 }
 
-const NO_CONTEXT: PlatformContext = { acting: null, clinicName: null, since: null, reason: null };
+const NO_CONTEXT: PlatformContext = { acting: null, clinicName: null, since: null, reason: null, expired: false };
 
 export async function platformContext(): Promise<PlatformContext> {
   const client = sb();
@@ -261,6 +263,7 @@ export async function platformContext(): Promise<PlatformContext> {
     clinicName: (d.clinic_name as string) ?? null,
     since: (d.since as string) ?? null,
     reason: (d.reason as string) ?? null,
+    expired: d.expired === true,
   };
 }
 
