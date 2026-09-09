@@ -398,5 +398,38 @@ console.log("▸ getProductByBarcode — الصيغةُ الأسبقُ تغلب 
     rescueScan([{ id: "m1", name: "منتج", barcode: "6221031492405", alt_codes: [] }], "دc16221031492405")?.product.id === "m1");
 }
 
+console.log("▸ assignBarcodeIfEmpty — لا يُكتب فوق رمزٍ رُبط من جهازٍ آخر (ح٣)");
+{
+  seed([
+    P("g1", "بلا رمز", null),
+    P("g2", "له رمزٌ سلفاً", "ALREADY-1"),
+    P("g3", "صاحبُ رمزٍ آخر", "TAKEN-9"),
+  ]);
+  check("(زُرعت ثلاثة)", await seeded(3));
+
+  const linked = await repo.assignBarcodeIfEmpty("g1", "NEW-100");
+  check("منتجٌ بلا رمزٍ يُربط", linked?.barcode === "NEW-100");
+  check("  ويُقرأ بعدها من المخزن", (await repo.listProducts()).find((p) => p.id === "g1")?.barcode === "NEW-100");
+
+  /* الحالةُ المقصودة: جهازان يولّدان معاً. الثاني كان يدهس رمزَ الأوّل،
+   * وملصقاتُ الأوّل المطبوعةُ تصير رموزاً لا تخصّ شيئاً. */
+  let threw = false;
+  try { await repo.assignBarcodeIfEmpty("g2", "NEW-200"); } catch { threw = true; }
+  check("ومنتجٌ له رمزٌ سلفاً يُرفض لا يُدهَس", threw);
+  check("  ورمزُه القديم كما هو", (await repo.listProducts()).find((p) => p.id === "g2")?.barcode === "ALREADY-1");
+
+  let threw2 = false;
+  try { await repo.assignBarcodeIfEmpty("g1", "TAKEN-9"); } catch { threw2 = true; }
+  check("ورمزٌ مأخوذٌ لغيره يُرفض", threw2);
+  check("  وصاحبُه لم يُمَسّ", (await repo.listProducts()).find((p) => p.id === "g3")?.barcode === "TAKEN-9");
+
+  let threw3 = false;
+  try { await repo.assignBarcodeIfEmpty("g1", "   "); } catch { threw3 = true; }
+  check("ورمزٌ فارغ يُرفض", threw3);
+  let threw4 = false;
+  try { await repo.assignBarcodeIfEmpty("لا-وجود-له", "X-1"); } catch { threw4 = true; }
+  check("ومنتجٌ غيرُ موجودٍ يُرفض", threw4);
+}
+
 console.log(`\n${fails ? "✗" : "✓"} repo-demo-test: ${passes} نجحت، ${fails} فشلت`);
 process.exit(fails ? 1 : 0);

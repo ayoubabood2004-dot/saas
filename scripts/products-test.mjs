@@ -10,6 +10,7 @@
  *   node scripts/products-test.mjs
  * ==========================================================================*/
 import esbuild from "esbuild";
+import { readFileSync } from "node:fs";
 
 let fails = 0, passes = 0;
 const check = (name, cond, detail = "") => {
@@ -38,9 +39,10 @@ const built = await esbuild.build({
   platform: "neutral", plugins: [stubs],
   alias: { "@/lib/utils": "./src/lib/utils.ts" },
 });
-const { findByCode, looksLikeShelfCode, twinsByName, nearCodeTwin, scanVariants, rescueScan, codeIndex, layoutFix, excelArtifact, hasArabicLetters, looksLayoutMangled, codeMatcher } = await import(
+const mod = await import(
   "data:text/javascript;base64," + Buffer.from(built.outputFiles[0].text).toString("base64")
 );
+const { findByCode, looksLikeShelfCode, twinsByName, nearCodeTwin, scanVariants, rescueScan, codeIndex, layoutFix, excelArtifact, hasArabicLetters, looksLayoutMangled, codeMatcher } = mod;
 
 const P = (id, name, barcode, extra = {}) => ({ id, name, barcode, stock: 1, ...extra });
 const inv = [
@@ -288,6 +290,78 @@ console.log("▸ codeIndex — الشراءُ يلقى ما يلقاه الكا�
   check("  والحارسُ يمسك كلَّ الصيغ التي وُجدت فعلاً",
     SHOULD_CATCH.every((s) => PATTERNS.some((re) => re.test(s))));
   check("  ولا يمسك السليم", SHOULD_PASS.every((s) => !PATTERNS.some((re) => re.test(s))));
+}
+
+
+/* ── الرمزُ القديم لا يتبخّر عند التعديل (ح٢) ─────────────────────────────
+ * كان التعديلُ يرسل الباركودَ الجديد فوق القائم بلا مقارنةٍ ولا تحذير، والقديمُ
+ * لا يبقى إلا بسجلّ التدقيق سنةً بلا واجهةٍ تسترجعه. فعيادةٌ أدخلت موادَّها
+ * برقم الرفّ وطبعت ملصقاته، ثم أُصلح الصفُّ بباركود المصنع ⇒ بعد أسابيع تُمسح
+ * علبةٌ بملصقٍ قديم فيقول النظام «مو موجود» فتُعاد إدخالاً ⇒ توأمٌ برصيدٍ مقسوم. */
+console.log("▸ keepOldCode — الرمزُ القديم ينزل رمزاً إضافياً");
+{
+  // غيابُ الدالّة فشلٌ يُقال، لا انهيارٌ يقطع بقيّةَ الحزمة.
+  const keepOldCode = typeof mod.keepOldCode === "function" ? mod.keepOldCode : () => "«keepOldCode غير مصدَّرة»";
+  const shelf = P("s1", "سبري", "247", { alt_codes: [] });
+  const others = [shelf, P("s2", "غيره", "999")];
+
+  const r = keepOldCode(shelf, "6970967772736", others);
+  check("استبدالُ الرمز يحفظ القديم", r?.kept === "247");
+  check("  و`alt_codes` تحمله", JSON.stringify(r?.alt_codes) === JSON.stringify(["247"]));
+  check("  وبعد الحفظ يُلقى المنتجُ بالرمزين",
+    findByCode([{ ...shelf, barcode: "6970967772736", alt_codes: r.alt_codes }], "247")?.id === "s1"
+    && findByCode([{ ...shelf, barcode: "6970967772736", alt_codes: r.alt_codes }], "6970967772736")?.id === "s1");
+
+  check("ومحوُ الرمز إلى فراغٍ يحفظه أيضاً — الفقدُ فقدٌ بأيّ طريق",
+    keepOldCode(shelf, "", others)?.kept === "247");
+  check("ورمزٌ لم يتغيّر لا يُضاعَف", keepOldCode(shelf, "247", others) === null);
+  check("  ولا بحالةٍ مطويّة أو أرقامٍ شرقية", keepOldCode(P("s3", "x", "W90"), "w90", []) === null
+    && keepOldCode(P("s4", "x", "247"), "٢٤٧", []) === null);
+  check("ومنتجٌ بلا رمزٍ أصلاً لا شيءَ يُحفظ له", keepOldCode(P("s5", "x", null), "999888", []) === null);
+  check("ورمزٌ محفوظٌ سلفاً لا يتكرّر",
+    keepOldCode(P("s6", "x", "247", { alt_codes: ["247"] }), "6970967772736", []) === null);
+  check("  ولا بصيغةٍ مطويّة منه",
+    keepOldCode(P("s7", "x", "W90", { alt_codes: ["w90"] }), "6970967772736", []) === null);
+
+  /* ولا يُنتزع رمزٌ صار لغيره — نفسُ الخطّ الأحمر الذي رسمته 0165 للاستعادة:
+   * حفظُ رمزِنا لا يعني سرقتَه ممّن صار يملكه. */
+  const stolen = [P("s1", "سبري", "247", { alt_codes: [] }), P("z", "صاحبٌ جديد", "247")];
+  check("ورمزٌ صار لمنتجٍ آخر لا يُنتزع منه",
+    keepOldCode(stolen[0], "6970967772736", stolen) === null);
+  check("  ولو حمله الآخرُ رمزاً إضافياً",
+    keepOldCode(P("s8", "x", "247"), "999", [P("s8", "x", "247"), P("y", "آخر", "111", { alt_codes: ["247"] })]) === null);
+
+  // والشاشةُ توصّله فعلاً — بمساري التعديل كليهما
+  const src = readFileSync("src/pages/Inventory.tsx", "utf8");
+  check("وشاشةُ المخزون تحفظ القديم بتعديل المنتج", src.includes("keepOldCode(product, payload.barcode"));
+  check("  وبتعديل المجموعة كذلك", src.includes("keepOldCode(before, rowPayload.barcode"));
+  check("  وتقوله بصوت لا بصمت", src.includes("pos.oldCodeKept") && src.includes("pos.oldCodesKept"));
+}
+
+/* ── المولّد لا يكتب فوق رمزٍ رُبط من جهازٍ آخر (ح٣) ──────────────────────
+ * كان التعليقُ يقول «لا تكتب فوقه» والشيفرةُ تبحث بنفس مصفوفة props البائتة —
+ * فلا تسأل أحداً. وحلقةُ «ولّد للكلّ» لا تعيد الفحصَ أصلاً. */
+console.log("▸ ح٣ — الشرطُ بالكتابة لا بقراءةٍ بائتة");
+{
+  const studio = readFileSync("src/components/inventory/BarcodeStudio.tsx", "utf8");
+  const repo = readFileSync("src/lib/repo.ts", "utf8");
+  check("المسارُ المفرد يمرّ من الكتابة الشرطية", studio.includes("repo.assignBarcodeIfEmpty(p.id, code)"));
+  check("  وحلقةُ الكلّ كذلك", studio.includes("repo.assignBarcodeIfEmpty(noBarcode[i].id, codes[i])"));
+  check("  ولا كتابةَ عمياء بقيت", !studio.includes("repo.updateProduct(noBarcode[i].id, { barcode: codes[i] })"));
+  check("  ولا قراءةَ من props البائتة تُسمّى «طازجة»", !studio.includes("const fresh = products.find"));
+  check("والتخطّي يُقال بعدده", studio.includes("pos.skippedLinked") && studio.includes("pos.alreadyHasCode"));
+  check("والشرطُ بالقاعدة بمرشّحٍ لا بقراءةٍ سابقة", repo.includes('.or("barcode.is.null,barcode.eq.")'));
+  check("  ويرمي على صفرِ صفوف", repo.includes("assignBarcodeIfEmpty") && repo.includes("barcode_already_set"));
+}
+
+/* ── ع١٠: لا مسارَ سقوطٍ نصفَ مطبَّع ──────────────────────────────────── */
+console.log("▸ ع١٠ — الفرعُ النائم نصفُ المطبَّع حُذف");
+{
+  const repo = readFileSync("src/lib/repo.ts", "utf8");
+  check("لا استعلامَ بديلاً يطابق matchCode بمخزونٍ خام",
+    !repo.includes("alt_codes.cs.{${code}}"));
+  check("وغيابُ الدالّة يُقال باسمه لا بصمت", repo.includes("lookup_fn_missing"));
+  check("  وتُترجمه describeDbError", readFileSync("src/lib/errors.ts", "utf8").includes("lookup_fn_missing"));
 }
 
 console.log(`\n${fails ? "✗" : "✓"} products-test: ${passes} نجحت، ${fails} فشلت`);

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { motion } from "framer-motion";
 import { getCached, setCached } from "@/lib/swrCache";
-import { findByCode, looksLikeShelfCode, twinsByName, nearCodeTwin, excelArtifact, hasArabicLetters, looksLayoutMangled, codeMatcher, codeRescue } from "@/lib/productCodes";
+import { findByCode, looksLikeShelfCode, twinsByName, nearCodeTwin, excelArtifact, hasArabicLetters, looksLayoutMangled, codeMatcher, codeRescue, keepOldCode } from "@/lib/productCodes";
 import { Dialog } from "@/components/ui/Dialog";
 import {
   Barcode, Package, Trash2, Search, Building2, Plus, ChevronLeft, ArrowRight, ArrowLeft,
@@ -861,10 +861,17 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
        * يُقرأ من `props` بائتة فيدوس تعديلَ جهازٍ آخر. */
       const foldingToPool = !!product && pooled && !product.pooled && (product.stock || 0) > 0 && !!section_id;
       if (product) {
+        /* الرمزُ القديم ينزل `alt_codes` **بنفس النداء** (ح٢): ملصقاتُ رقم
+         * الرفّ المطبوعةُ تبقى تعمل بعد أن يُكتب باركودُ المصنع مكانَه. */
+        const keep = keepOldCode(product, payload.barcode, allProducts ?? []);
+        const withOld = keep ? { ...payload, alt_codes: keep.alt_codes } : payload;
         // الحقولُ الأخرى أوّلاً وبلا لمسِ الرصيد/الطيّ — ففشلُ الطيّ بعدها لا يضيّع شيئاً.
-        const { stock: _s, pooled: _p, ...rest } = payload;
-        await repo.updateProduct(product.id, foldingToPool ? rest : payload);
+        const { stock: _s, pooled: _p, ...rest } = withOld;
+        await repo.updateProduct(product.id, foldingToPool ? rest : withOld);
         if (foldingToPool) await repo.poolProduct(product.id, section_id as string);
+        if (keep) {
+          toast.toast({ tone: "info", title: t("pos.oldCodeKept", "الرمز القديم {{code}} صار رمزاً إضافياً — مسحتُه بعدها تنزّل نفس المادة", { code: keep.kept }) });
+        }
       }
       else await repo.createProduct({ ...payload, clinic_id: clinicId ?? null });
       playSuccess();
@@ -968,6 +975,7 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
       // Create sequentially; collect failures instead of stopping so one bad row
       // never blocks the rest of the batch.
       const failedIdx: number[] = [];
+      const keptOld: string[] = [];
       let done = 0;
       let lastErr: unknown = null;
       // مجموعة واحدة لكل دفعة (سطران فأكثر) — أو نفس المجموعة عند تعديلها.
@@ -987,13 +995,24 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
             expiry_date: r.expiry_date || null,
             bulk_group: grp,
           };
-          if (editGroup && r.productId) await repo.updateProduct(r.productId, rowPayload);
+          if (editGroup && r.productId) {
+            // ونفسُ الحفظ بتعديل المجموعة — المسارُ الثاني الذي يستبدل رمزاً.
+            const before = allProducts?.find((p) => p.id === r.productId);
+            const keep = before ? keepOldCode(before, rowPayload.barcode, allProducts ?? []) : null;
+            await repo.updateProduct(r.productId, keep ? { ...rowPayload, alt_codes: keep.alt_codes } : rowPayload);
+            if (keep) keptOld.push(keep.kept);
+          }
           else await repo.createProduct(rowPayload);
           done++;
         } catch (e) {
           failedIdx.push(rows.indexOf(r));
           lastErr = e;
         }
+      }
+      /* والرموزُ القديمة المحفوظة تُقال بعددها: العيادةُ تعرف أن ملصقاتها
+       * القديمة ما زالت تعمل، فلا تُعيد طباعتَها ولا تُعيد إدخال المادة. */
+      if (keptOld.length > 0) {
+        toast.toast({ tone: "info", title: t("pos.oldCodesKept", "{{n}} رمزاً قديماً انحفظ رمزاً إضافياً — مسحتُه بعدها تنزّل نفس المادة", { n: formatNum(keptOld.length) }) });
       }
       // صفوف حُذفت أثناء تعديل المجموعة → منتجاتها تُحذف فعلاً.
       if (editGroup) {

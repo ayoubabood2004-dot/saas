@@ -91,16 +91,27 @@ export function BarcodeStudio({ products, onChanged }: { products: Product[]; on
     playTap();
     setBusy(p.id);
     try {
-      // منتج انربط له باركود بجهاز ثاني بنفس الوقت؟ لا تكتب فوقه.
-      const fresh = products.find((x) => x.id === p.id);
-      if (fresh?.barcode?.trim()) { toast.toast({ tone: "info", title: "هذا المنتج صار عنده باركود" }); return; }
+      /* «انربط له باركود بجهاز ثاني؟ لا تكتب فوقه» — كان هذا تعليقاً وحده:
+       * الشيفرةُ تبحث بنفس مصفوفة props البائتة، فـ`fresh` هو `p` نفسُه
+       * دائماً ولا تسأل أحداً. فنزل الشرطُ حيث لا يُتجاوَز: بالكتابة نفسِها
+       * (`assignBarcodeIfEmpty` بمرشّحٍ «الرمزُ فارغ»)، وترمي على صفرِ صفوف. */
       const [code] = generateBarcodes(1, takenSet(), startSeq());
+      /* الربطُ **قبل** التسجيل: لو سبقَنا جهازٌ آخر لم يُسجَّل رمزٌ لا يخصّ
+       * شيئاً بالسجلّ، ولم تُطبع ملصقاتُه. */
+      try {
+        await repo.assignBarcodeIfEmpty(p.id, code);
+      } catch {
+        playWarning();
+        toast.toast({ tone: "info", title: t("pos.alreadyHasCode", "هذا المنتج انربط له باركود من جهازٍ ثاني — ما انكتب فوقه") });
+        await load();
+        onChanged();
+        return;
+      }
       const saved = await repo.addGeneratedBarcodes([
         { barcode: code, label: p.name, product_id: p.id, created_by: user?.full_name ?? null },
       ]);
-      await repo.updateProduct(p.id, { barcode: code });
       playSuccess();
-      toast.success("انولد وانربط ✓", `${p.name} ← ${code}`);
+      toast.success(t("pos.linkedOne", "انولد وانربط") + " ✓", `${p.name} ← ${code}`);
       /* يُطبع من `saved` وحدها. كان البديل يصنع صفوفاً «كأنها انحفظت» فتُطبع
        * ملصقاتٌ لا وجودَ لها بالسجل — والدفعةُ التالية تولّد نفسَ الأرقام.
        * وبعد أن صارت `addGeneratedBarcodes` ترمي (الدفعة ١)، فراغُ `saved` لم
@@ -124,9 +135,19 @@ export function BarcodeStudio({ products, onChanged }: { products: Product[]; on
       const codes = generateBarcodes(noBarcode.length, takenSet(), startSeq());
       const rows = noBarcode.map((p, i) => ({ barcode: codes[i], label: p.name, product_id: p.id, created_by: user?.full_name ?? null }));
       const saved = await repo.addGeneratedBarcodes(rows);
-      for (let i = 0; i < noBarcode.length; i++) await repo.updateProduct(noBarcode[i].id, { barcode: codes[i] });
+      /* والحلقةُ كانت تكتب بلا أيّ إعادة فحص. جهازان يولّدان معاً ⇒ الثاني
+       * يدهس رمزَ الأوّل، وملصقاتُ الأوّل المطبوعةُ تصير رموزاً لا تخصّ شيئاً.
+       * فمن سبقَنا إليه يُتخطّى **ويُقال بعدده** — ولا تُقطع الدفعةُ لأجله. */
+      let linked = 0, skipped = 0;
+      for (let i = 0; i < noBarcode.length; i++) {
+        try { await repo.assignBarcodeIfEmpty(noBarcode[i].id, codes[i]); linked++; }
+        catch { skipped++; }
+      }
       playSuccess();
-      toast.success(`انولد وانربط ${formatNum(noBarcode.length)} باركود ✓`);
+      toast.success(`${t("pos.linkedCount", "انولد وانربط {{n}} باركود", { n: formatNum(linked) })} ✓`);
+      if (skipped > 0) {
+        toast.toast({ tone: "info", title: t("pos.skippedLinked", "{{n}} منها انربط له باركود من جهازٍ ثاني — ما انكتب فوقه", { n: formatNum(skipped) }) });
+      }
       if (saved.length < rows.length) toast.toast({ tone: "info", title: t("pos.savedSomeCodes", "انسجّل {{n}} من {{total}} — الباقي مسجَّلٌ سابقاً", { n: formatNum(saved.length), total: formatNum(rows.length) }) });
       setLastBatch(saved);
       await load();

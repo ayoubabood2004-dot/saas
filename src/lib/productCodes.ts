@@ -12,7 +12,7 @@
  * بالرمز المطبَّع، فنعرض «موجود عندك» بدل أن نسمح بتوأم.
  * ==========================================================================*/
 import type { Product } from "@/types";
-import { matchCode } from "./utils";
+import { matchCode, normalizeCode } from "./utils";
 import { layoutFix as _layoutFix } from "./arabicLayout";
 
 /**
@@ -285,6 +285,39 @@ export function codeRescue(products: readonly Product[], query: string | null | 
   if (code.length < 8) return [];        // كلمةٌ أو رقمُ رفٍّ قصير — لا تُخمَّن
   const r = rescueScan(products, code);
   return r ? [r.product] : [];
+}
+
+/**
+ * الرمزُ القديم لا يتبخّر عند التعديل (ح٢).
+ *
+ * تعديلُ المنتج كان يرسل الباركودَ الجديد فوق القائم بلا مقارنةٍ ولا تحذير،
+ * والقديمُ لا يبقى إلا بسجلّ التدقيق سنةً واحدة بلا واجهةٍ تسترجعه. والمقيسُ
+ * أن عياداتٍ تُدخل موادَّها برقم الرفّ وتطبع ملصقاته، ثم يأتي من يُصلح الصفَّ
+ * فيكتب باركودَ المصنع مكانَه — فبعد أسابيع تُمسح علبةٌ بملصقٍ قديم فيقول
+ * النظام «مو موجود بمخزنك» ويُعاد إدخالُها ⇒ توأمٌ برصيدٍ مقسوم. وهو عكسُ درس
+ * 0141 نفسِه: «بدل أن نُجبر العيادة على اختيار واحدٍ فتخسر الآخر».
+ *
+ * فالقديمُ ينزل `alt_codes` بنفس نداء التحديث. ويُخزَّن بـ`normalizeCode` لا
+ * بـ`matchCode`: ما يدخل مخزنَ العيادة رمزُها كما كتبته، لا نسختُه المطويّة.
+ * ولا يُنتزع من مالكٍ جديد — نفسُ الخطّ الأحمر الذي رسمته 0165 للاستعادة.
+ *
+ * ويشمل الحالتين: استبدالُ الرمز، ومحوُه إلى فراغ. كلتاهما تُفقد الرمزَ من
+ * مسار المسح، وهذا الملفُّ كلُّه قائمٌ على أن ذلك لا يقع بصمت.
+ *
+ * تُرجع `alt_codes` الجديدة والرمزَ المحفوظ، أو `null` إن لا شيء يتغيّر.
+ */
+export function keepOldCode(
+  product: Product,
+  nextBarcode: string | null | undefined,
+  others: readonly Product[],
+): { alt_codes: string[]; kept: string } | null {
+  const old = normalizeCode(product.barcode);
+  if (!old) return null;                                   // ما كان له رمزٌ أصلاً
+  if (matchCode(nextBarcode) === matchCode(old)) return null;   // لم يتغيّر
+  const alts = product.alt_codes ?? [];
+  if (alts.some((a) => matchCode(a) === matchCode(old))) return null;  // محفوظٌ سلفاً
+  if (findByCode(others, old, product.id)) return null;     // صار لغيره — لا يُنتزع
+  return { alt_codes: [...alts, old], kept: old };
 }
 
 /** هل يحمل هذا المنتجُ هذا الرمزَ حرفياً (أساسيّاً أو إضافياً، بعد التطبيع)؟ */

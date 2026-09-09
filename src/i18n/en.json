@@ -268,7 +268,8 @@
       "store_slug_format": "The store link accepts only lowercase letters, digits and hyphens (-), must start and end with a letter or digit, and be 3–30 characters long."
     },
     "noRowUpdated": "The change was not saved — the server did not find this row in your clinic, or refused the edit (your role, or it was deleted/changed on another device). Refresh and try again; if you entered a clinic from the platform console, make sure you are still in the same clinic.",
-    "policyRecursion": "Database configuration fault (table policy) — the change was not saved and retrying will not help. Report this code to support: 42P17."
+    "policyRecursion": "Database configuration fault (table policy) — the change was not saved and retrying will not help. Report this code to support: 42P17.",
+    "lookupFnMissing": "A database configuration problem — the barcode lookup function is missing. Your item is still in stock; do not re-enter it. Report this to support: product_by_code."
   },
   "nav": {
     "dashboard": "Dashboard",
@@ -969,6 +970,12 @@
     "storeOrdersFailed": "Could not load orders — we do not know whether any arrived. Retry.",
     "savedSomeCodes": "Saved {{n}} of {{total}} — the rest were already registered",
     "codeAlreadyLogged": "That code is already in the registry — no new label was printed",
+    "oldCodesKept": "{{n}} old codes were kept as extra codes — scanning them still brings up the same items",
+    "oldCodeKept": "The old code {{code}} is now an extra code — scanning it still brings up this item",
+    "skippedLinked": "{{n}} of them already had a barcode from another device — not overwritten",
+    "linkedCount": "Generated and linked {{n}} barcodes",
+    "linkedOne": "Generated and linked",
+    "alreadyHasCode": "Another device already linked a barcode to this product — it was not overwritten",
     "regLoadFailed": "Could not load the barcode registry — generation is paused so numbers cannot repeat. Retry.",
     "pooledStockFailed": "Could not load pooled stock — the stock numbers are incomplete. Reload before relying on them.",
     "noSearchInStock": "No matches. Inventory holds {{n}} products — try a shorter name or scan the barcode.",

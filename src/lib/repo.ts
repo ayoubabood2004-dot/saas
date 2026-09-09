@@ -2142,6 +2142,28 @@ const demoRepo = {
   /** يطوي رصيدَ منتجٍ متتبَّع إلى حوض صنفه ويصفّره بالمنتج — **معاً**.
    *  مرآةُ `pool_product` (0171): الواجهةُ كانت تكتبهما على مرحلتين، فنجاحُ
    *  الأولى وفشلُ الثانية يعدّ البضاعةَ مرّتين (بالحوض وبالمنتج). */
+  /**
+   * يربط رمزاً بمنتجٍ **إن كان بلا رمزٍ بعد** — وإلا يرمي بلا كتابة.
+   *
+   * السبب: مولّدُ الباركود كان يقرأ «هل صار له رمز؟» من مصفوفة props بائتة،
+   * فالتعليقُ يقول «انربط له باركود بجهاز ثاني؟ لا تكتب فوقه» والشيفرةُ تقرأ
+   * نفسَ الصفّ الذي بيدها — أي أنها لا تسأل أحداً. وحلقةُ «ولّد للكلّ» لا
+   * تعيد الفحصَ أصلاً. فجهازان يولّدان معاً ⇒ الثاني يدهس رمزَ الأوّل،
+   * والملصقاتُ المطبوعة بالأوّل تصير رموزاً لا تخصّ شيئاً.
+   * فالشرطُ ينزل حيث لا يُتجاوَز: بالكتابة نفسِها.
+   */
+  async assignBarcodeIfEmpty(id: string, code: string): Promise<Product> {
+    const db = loadDB();
+    const p = (db.products ?? []).find((x) => x.id === id);
+    if (!p) throw new Error("product_not_found");
+    if (p.barcode && p.barcode.trim()) throw new Error("barcode_already_set");
+    const next = normalizeCode(code) || null;
+    if (!next) throw new Error("empty code");
+    throwIfCodeTaken(db, next, id);
+    p.barcode = next;
+    saveDB(db);
+    return p;
+  },
   async poolProduct(productId: string, sectionId: string): Promise<Product> {
     const db = loadDB();
     const p = (db.products ?? []).find((x) => x.id === productId);
@@ -3917,7 +3939,9 @@ const supabaseRepo: typeof demoRepo = {
       return true; // فشل شبكة — لا نُظهر تحذيراً خاطئاً
     }
   },
-  async getProductByBarcode(barcode, clinicId) {
+  // العيادةُ تأتي من سياسات الصفوف لا من معامِلٍ: `product_by_code` بصلاحية
+  // المُستدعي، فـauth_clinic() تحصرها. المعامِلُ يبقى بالتوقيع للنسخة التجريبية.
+  async getProductByBarcode(barcode, _clinicId) {
     const code = matchCode(barcode);
     if (!code) return undefined;
     // دالّةُ القاعدة تقرأ `barcode` والرموزَ الإضافية معاً (0141)، وبصلاحية
@@ -3930,24 +3954,21 @@ const supabaseRepo: typeof demoRepo = {
       if (rows.length > 1) sayAmbiguousCode(code, rows.length);
       return rows[0];
     }
-    /* **فشلُ النداء ليس «غير موجود».** كان أيُّ خطأٍ يسقط للمسار القديم، وذاك
-     * يبلع خطأه بـ`listOf` ويرجع فارغاً — فتقول الشاشةُ «مو موجود بمخزنك» عن
-     * مادةٍ على الرفّ. وهذا نفسُ ما كلّف عياداتٍ إعادةَ إدخال بضاعتها.
-     * فالسقوطُ للمسار القديم لدالّةٍ **غير موجودة** وحدها (قاعدةٌ لم تنزل عليها
-     * 0141)، وما عداه يُرمى ليقول الكاشيرُ «ما وصل الخادم — أعد المسح». */
-    const missing = r.error.code === "PGRST202" || r.error.code === "42883"
-      || /product_by_code/i.test(r.error.message ?? "");
-    if (!missing) throw r.error;
-    // والمسارُ القديم يقرأ الرموزَ الإضافية أيضاً — وإلا فكلُّ مادةٍ لا تُلقى إلا
-    // برمزها الإضافيّ تصير «غير موجودة» عند أوّل قاعدةٍ بلا 0141.
-    let q = sbc().from("products").select("*")
-      .or(`barcode.eq.${code},alt_codes.cs.{${code}}`).limit(2);
-    if (clinicId) q = q.eq("clinic_id", clinicId);
-    const res = await q;
-    if (res.error) throw res.error;   // ولا يُبلَع خطؤه فيصير «غير موجود»
-    const rows = (res.data ?? []) as Product[];
-    if (rows.length > 1) sayAmbiguousCode(code, rows.length);
-    return rows[0];
+    /* **فشلُ النداء ليس «غير موجود».** أيُّ خطأٍ يُرمى ليقول الكاشيرُ «ما وصل
+     * الخادم — أعد المسح»؛ ولا يُبلَع فيصير «مو موجود بمخزنك» عن مادةٍ على
+     * الرفّ، فذاك ما كلّف عياداتٍ إعادةَ إدخال بضاعتها.
+     *
+     * ولا مسارَ سقوطٍ بديل (ع١٠). كان هنا استعلامٌ مباشر لقاعدةٍ لم تنزل عليها
+     * 0141 — وكان **نصفَ مطبَّع**: يقارن `matchCode` المطويَّ حالةً بمخزونٍ
+     * محفوظٍ بحالته، فـ«W90» لا يطابق مسحتَه بذلك المسار أبداً. وهو نقضُ
+     * القاعدة المعلنة بـ`utils.ts`: الطرفان من نفس الدالّة، وتطبيعُ طرفٍ
+     * واحد أسوأ من لا تطبيع. وفرعٌ نائمٌ غيرُ مفحوصٍ إن استيقظ استيقظ خاطئاً.
+     * فغيابُ الدالّة صار خطأ إعدادٍ يُسمّي هجرتَه، لا صمتاً يُصدَّق. */
+    const missing = r.error.code === "PGRST202" || r.error.code === "42883";
+    if (missing) {
+      throw new Error("lookup_fn_missing: product_by_code (migrations 0141/0165/0172/0173)");
+    }
+    throw r.error;
   },
   async attachProductCode(productId, code) {
     // الخادمُ يخزّن ما يصله بـalt_codes — فيصله رمزُ الحفظ (بلا طيّ حالة)،
@@ -4338,6 +4359,17 @@ const supabaseRepo: typeof demoRepo = {
   },
   async settlePurchase(purchaseId, amount, method = "cash", note) {
     return need<Purchase>(await sbc().rpc("settle_purchase", { p_purchase: purchaseId, p_amount: amount, p_method: method, p_note: note ?? null }));
+  },
+  async assignBarcodeIfEmpty(id, code) {
+    const next = normalizeCode(code) || null;
+    if (!next) throw new Error("empty code");
+    /* الشرطُ بالمرشّح لا بقراءةٍ سابقة: `.is("barcode", null)` أو الفارغ.
+     * قراءةٌ ثم كتابةٌ تترك نافذةَ سباقٍ بين الجهازين — والمرشّحُ يغلقها
+     * بالقاعدة نفسِها. و`updated<T>()` ترمي على صفرِ صفوف، فالتخطّي يُقال
+     * ولا يُبلَع (كتابةٌ ردّتها السياسةُ أو سبقَنا إليها جهازٌ آخر). */
+    const r = await sbc().from("products").update({ barcode: next })
+      .eq("id", id).or("barcode.is.null,barcode.eq.").select().maybeSingle();
+    return updated<Product>(r);
   },
   async poolProduct(productId, sectionId) {
     const r = await sbc().rpc("pool_product", { p_product: productId, p_section: sectionId });
