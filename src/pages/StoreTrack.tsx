@@ -101,7 +101,7 @@ export function StoreTrack() {
       })()}
 
       <Link to={`/s/${slug}`} className="mt-auto flex items-center justify-center gap-1.5 text-sm font-bold text-brand-600">
-        <ArrowRight size={15} className="rtl:rotate-180" /> {t("track.backToStore", "رجوع للمتجر")}
+        <ArrowRight size={15} /> {t("track.backToStore", "رجوع للمتجر")}
       </Link>
     </div>
   );

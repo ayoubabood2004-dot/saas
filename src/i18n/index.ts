@@ -40,6 +40,8 @@ function ensureScriptFont(lang: string) {
   if (arabicFontAsked || localeInfo(lang).dir !== "rtl") return;
   arabicFontAsked = true;
   try {
+    // الصفحاتُ العامّة تطلبه بـindex.html مع أوّل رسمة — فلا يُطلب مرّتين.
+    if (document.getElementById("ar-font")) return;
     const l = document.createElement("link");
     l.rel = "stylesheet";
     // غير حاجب كذلك: تبديل اللغة يجب ألّا يجمّد الشاشة بانتظار طرفٍ ثالث.

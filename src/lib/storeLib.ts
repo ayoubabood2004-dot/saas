@@ -73,6 +73,47 @@ export function categoryLook(category?: string | null): CategoryLook {
   return (category && LOOKS[category]) || FALLBACK;
 }
 
+/* ------------------- المنتج بلا صورة: بطاقةٌ مقصودة لا فراغ -------------------
+ * القياس: سبعُ بطاقاتٍ من اثنتي عشرة بتجربةٍ حيّة كانت بلا صورة، وكلُّها تعرض
+ * **إيموجي فئتها** على **تدرّج فئتها** — فثلاثُ حبّاتِ 💊 متطابقة بصفٍّ واحد،
+ * والشبكةُ تُقرأ جدولاً مكرّراً لا رفَّ بضاعة. والهويةُ كانت للفئة لا للمنتج.
+ *
+ * الحلُّ: لونٌ مشتقٌّ من **اسم المنتج نفسه** فيختلف جارٌ عن جار، واسمُه مكتوباً
+ * بخطٍّ كبير — أي بطاقةٌ نصّيةٌ مصمَّمة. ولم نجد ستوراً عالمياً يعالج هذه الحالة
+ * لأن عندهم صوراً لكلّ شيء؛ عندنا الغيابُ هو القاعدة، فالحلُّ يُصمَّم لا يُستورَد.
+ *
+ * **الأصنافُ مكتوبةٌ حرفيّةً كاملة**: أيُّ صنفٍ يُركَّب بالشِفرة (`bg-${x}-${y}`)
+ * لا يراه Tailwind وقتَ البناء فيُحذف — يشتغل بالتنمية ويخرج أبيضَ بالإنتاج
+ * وحده، ولا تمسكه فحوصُنا. لذلك جدولٌ ثابتٌ لا تركيب. */
+export interface ShelfLook { tile: string; ink: string }
+
+const SHELF: ShelfLook[] = [
+  { tile: "bg-rose-50 dark:bg-rose-500/10",       ink: "text-rose-700 dark:text-rose-300" },
+  { tile: "bg-amber-50 dark:bg-amber-500/10",     ink: "text-amber-700 dark:text-amber-300" },
+  { tile: "bg-emerald-50 dark:bg-emerald-500/10", ink: "text-emerald-700 dark:text-emerald-300" },
+  { tile: "bg-sky-50 dark:bg-sky-500/10",         ink: "text-sky-700 dark:text-sky-300" },
+  { tile: "bg-violet-50 dark:bg-violet-500/10",   ink: "text-violet-700 dark:text-violet-300" },
+  { tile: "bg-teal-50 dark:bg-teal-500/10",       ink: "text-teal-700 dark:text-teal-300" },
+];
+
+/** تجزئةٌ ثابتة: نفسُ الاسم يعطي نفسَ اللون دائماً، عبر الأجهزة والجلسات. */
+function hash32(s: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return Math.abs(h);
+}
+
+export function shelfLook(name: string): ShelfLook {
+  return SHELF[hash32(name || "") % SHELF.length];
+}
+
+/** أوّلُ كلمتين من الاسم — ما يكفي ليميّز المنتجَ عن جاره على بلاطةٍ صغيرة. */
+export function shelfLabel(name: string): string {
+  const words = (name || "").trim().split(/\s+/).filter(Boolean);
+  if (!words.length) return "•";
+  return words.slice(0, 2).join(" ").slice(0, 22);
+}
+
 /** رقم طلب للوضع التجريبي (السيرفر يولد ماله بنفس الشكل). */
 export function demoOrderNo(): string {
   let s = "";

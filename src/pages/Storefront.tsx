@@ -15,11 +15,11 @@ import { useTranslation } from "react-i18next";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   ShoppingCart, Plus, Minus, Search, MapPin, Phone, MessageCircle, X,
-  CheckCircle2, PawPrint, Truck, ShieldCheck, Store, ArrowRight, Loader2, PackageX,
+  CheckCircle2, PawPrint, Truck, ShieldCheck, Store, ArrowRight, ArrowLeft, Loader2, PackageX,
 } from "lucide-react";
 import type { StoreCatalogItem, StoreFrontInfo } from "@/types";
 import { repo } from "@/lib/repo";
-import { categoryLook, isValidCustomerPhone, productImageUrl } from "@/lib/storeLib";
+import { categoryLook, isValidCustomerPhone, productImageUrl, shelfLook, shelfLabel } from "@/lib/storeLib";
 import { preferArabicForVisitor } from "@/lib/portal";
 import { waNumber } from "@/lib/phone";
 import { celebrate } from "@/lib/celebrate";
@@ -66,7 +66,10 @@ export function Storefront() {
   const [placed, setPlaced] = useState<{ order_no: string; total: number } | null>(null);
   // الكاتلوج يتحمّل بصفحات (٦٠ بالطلب): أول رسم خفيف على موبايل بطيء،
   // و«عرض المزيد» يجيب الباقي. hasMore = آخر صفحة رجعت ممتلئة.
-  const PAGE = 60;
+  /* أوّلُ صفحةٍ أخفُّ (٢٤) لأن الزائرَ يدفع بايتاتِها قبل أن يرى منتجاً، ثمّ
+   * صفحاتٌ أكبر لمن يكمّل — فالكلفةُ على من طلبها لا على كلّ من فتح الرابط. */
+  const PAGE = 24;
+  const PAGE_MORE = 60;
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   /** فشلَ جلبُ صفحةٍ تالية؟ — كان يُخفي الزرَّ نهائياً فتبدو التشكيلةُ منتهية. */
@@ -99,7 +102,7 @@ export function Storefront() {
     if (loadingMore) return;
     setLoadingMore(true);
     try {
-      const more = await repo.storeCatalogPublic(slug, PAGE, catalog.length);
+      const more = await repo.storeCatalogPublic(slug, PAGE_MORE, catalog.length);
       // إزالة أي تكرار دفاعياً (منتج انضاف بين الصفحتين يزحزح الترتيب).
       setCatalog((cur) => {
         const seen = new Set(cur.map((x) => x.id));
@@ -149,17 +152,21 @@ export function Storefront() {
     const list = catalog.filter((c) =>
       (cat === "all" || (c.category ?? "other") === cat) &&
       (!ql || searchable(c.name).includes(ql) || searchable(c.subcategory).includes(ql) || searchable(c.descr).includes(ql)));
-    if (sort === "priceAsc") return [...list].sort((a, b) => a.price - b.price);
-    if (sort === "priceDesc") return [...list].sort((a, b) => b.price - a.price);
-    return list;
+    /* ترتيبٌ واحدٌ يحكم الشبكة كلَّها:
+     *   • النافدُ آخِراً **دائماً** — يبقى ظاهراً (إخفاؤه يجعل التشكيلة تبدو
+     *     أصغر ويدفع الزبونَ يدوّر على شيءٍ رآه أمس) لكنه لا يتصدّر الرفّ.
+     *   • والمختارُ أوّلاً حين لا بحثَ ولا فئةَ ولا فرزَ سعر — فبحثُ الزبون
+     *     أولى من تسويقنا. */
+    const rank = (x: StoreCatalogItem) => (x.available ? 0 : 1);
+    const arr = [...list];
+    if (sort === "priceAsc") arr.sort((a, b) => rank(a) - rank(b) || a.price - b.price);
+    else if (sort === "priceDesc") arr.sort((a, b) => rank(a) - rank(b) || b.price - a.price);
+    else arr.sort((a, b) => rank(a) - rank(b) || Number(!!b.featured) - Number(!!a.featured));
+    return arr;
   }, [catalog, q, cat, sort]);
 
   /** مختارات العيادة (0177): تظهر أعلى الكتلوج بلا بحثٍ ولا فئةٍ منتقاة —
    *  بحثُ الزبون أولى من تسويقنا. */
-  const featured = useMemo(
-    () => (cat === "all" && !q.trim() ? catalog.filter((c) => c.featured && c.available).slice(0, 12) : []),
-    [catalog, cat, q]);
-
   const qtyOf = (id: string) => cart.find((l) => l.id === id)?.qty ?? 0;
   const setQty = (id: string, qty: number) => {
     setCart((c) => {
@@ -195,7 +202,7 @@ export function Storefront() {
       <div dir="rtl" className="grid min-h-screen place-items-center bg-surface p-6">
         <div className="flex max-w-sm flex-col items-center gap-3 text-center" data-storeloadfailed>
           <span className="grid h-16 w-16 place-items-center rounded-3xl bg-warn-100 text-warn-700 dark:bg-warn-500/10 dark:text-warn-300"><Store size={30} /></span>
-          <h1 className="font-display text-xl font-extrabold text-ink">{t("sf.loadFailedTitle")}</h1>
+          <h1 className="font-display text-xl font-bold text-ink">{t("sf.loadFailedTitle")}</h1>
           <p className="text-sm leading-relaxed text-ink-subtle">{t("sf.loadFailedBody")}</p>
           <button type="button" onClick={() => { setState("loading"); setTries((n) => n + 1); }}
             className="mt-2 rounded-2xl bg-brand-600 px-6 py-2.5 text-sm font-bold text-white shadow-soft transition hover:bg-brand-700">
@@ -211,7 +218,7 @@ export function Storefront() {
       <div dir="rtl" className="grid min-h-screen place-items-center bg-surface p-6">
         <div className="flex max-w-sm flex-col items-center gap-3 text-center">
           <span className="grid h-16 w-16 place-items-center rounded-3xl bg-surface-2 text-ink-subtle"><Store size={30} /></span>
-          <h1 className="font-display text-xl font-extrabold text-ink">المتجر مغلق حالياً</h1>
+          <h1 className="font-display text-xl font-bold text-ink">المتجر مغلق حالياً</h1>
           <p className="text-sm leading-relaxed text-ink-subtle">الرابط غير صحيح أو العيادة موقفة متجرها مؤقتاً. تأكد من الرابط أو ارجع بعدين.</p>
           <p className="mt-2 flex items-center gap-1.5 text-xs text-ink-subtle"><PawPrint size={14} /> doctorVet</p>
         </div>
@@ -229,25 +236,25 @@ export function Storefront() {
             className="grid h-20 w-20 place-items-center rounded-full bg-success-500 text-white shadow-raised">
             <CheckCircle2 size={44} />
           </motion.span>
-          <h1 className="font-display text-2xl font-extrabold text-ink">وصل طلبك! 🎉</h1>
+          <h1 className="font-display text-2xl font-bold text-ink">وصل طلبك! 🎉</h1>
           <div className="w-full rounded-2xl border border-line bg-surface-1 p-4">
             <p className="text-xs text-ink-subtle">رقم طلبك</p>
-            <p className="font-mono text-2xl font-extrabold tracking-wider text-brand-600">{placed.order_no}</p>
+            <p className="font-mono text-2xl font-bold tracking-wider text-brand-600">{placed.order_no}</p>
             <p className="mt-2 border-t border-line pt-2 text-sm font-bold text-ink">{money(placed.total)} <span className="text-xs font-normal text-ink-subtle">— الدفع عند الاستلام</span></p>
           </div>
           <p className="text-sm leading-relaxed text-ink-muted">{front.name} راح تأكد طلبك وتتواصل وياك قريباً. احتفظ برقم الطلب.</p>
           <a href={`/s/${slug}/track?no=${encodeURIComponent(placed.order_no)}`} data-tracklink
-            className="flex w-full items-center justify-center gap-2 rounded-2xl border border-brand-300 bg-surface-1 px-4 py-3 text-sm font-extrabold text-brand-700 transition active:scale-[0.98] dark:border-brand-500/40 dark:text-brand-300">
+            className="flex w-full items-center justify-center gap-2 rounded-2xl border border-brand-300 bg-surface-1 px-4 py-3 text-sm font-bold text-brand-700 transition active:scale-[0.98] dark:border-brand-500/40 dark:text-brand-300">
             <Search size={16} /> {t("track.title", "تتبّع طلبك")}
           </a>
           {front.whatsapp && (
             <a href={`https://wa.me/${waNumber(front.whatsapp, "+964")}?text=${encodeURIComponent(waMsg)}`} target="_blank" rel="noreferrer"
-              className="flex w-full items-center justify-center gap-2 rounded-2xl bg-[#25D366] px-4 py-3 text-sm font-extrabold text-white transition active:scale-[0.98]">
+              className="flex w-full items-center justify-center gap-2 rounded-2xl bg-[#25D366] px-4 py-3 text-sm font-bold text-white transition active:scale-[0.98]">
               <MessageCircle size={17} /> راسل العيادة بالواتساب
             </a>
           )}
           <button onClick={() => { playTap(); setPlaced(null); }} className="flex items-center gap-1.5 text-sm font-bold text-brand-600">
-            <ArrowRight size={15} className="rtl:rotate-180" /> رجوع للمتجر
+            <ArrowRight size={15} /> رجوع للمتجر
           </button>
           <p className="mt-3 flex items-center gap-1.5 text-2xs text-ink-subtle"><PawPrint size={12} /> متجر مقدَّم من doctorVet</p>
         </motion.div>
@@ -259,46 +266,49 @@ export function Storefront() {
   return (
     <div dir="rtl" className="min-h-screen bg-surface pb-28">
       {/* الهيرو */}
-      <header className="relative overflow-hidden bg-brand-grad px-4 pb-8 pt-8 text-white">
-        <div className="pointer-events-none absolute -end-8 -top-8 h-40 w-40 rounded-full bg-white/10" />
-        <div className="pointer-events-none absolute -bottom-10 start-10 h-32 w-32 rounded-full bg-white/10" />
-        <div className="relative mx-auto flex max-w-3xl items-center gap-4">
+      {/* الهويّةُ شريطٌ لا لافتة. المقيس قبلَ هذا: هيرو ٣٠٩ بكسل + لاصقٌ ١٠٩ +
+          صفُّ مختارات ١٩٤ ⇒ أوّلُ بطاقةٍ عند y=644 بشاشةٍ ارتفاعُها ٨٤٤ — أي
+          متجرٌ يفتحه الزبون فلا يرى بضاعةً حتى يمرّر. وأُسقط التدرّجُ بثلاث
+          محطاتٍ ودائرتا الزجاج فوقه: أشهرُ توقيعٍ لقالبٍ مجّانيّ، ولا يُستبدل
+          بزخرفةٍ أخرى بل بلونٍ واحدٍ هادئ يترك البضاعةَ هي البطل. */}
+      <header className="bg-brand-700 px-4 pb-3 pt-4 text-white">
+        <div className="mx-auto flex max-w-3xl items-center gap-3">
           {front.logo_url
-            ? <img src={front.logo_url} alt="" className="h-16 w-16 shrink-0 rounded-2xl bg-white object-contain p-1 shadow-raised" />
-            : <span className="grid h-16 w-16 shrink-0 place-items-center rounded-2xl bg-white/15 shadow-raised"><PawPrint size={30} /></span>}
+            ? <img src={front.logo_url} alt="" width={80} height={80} className="h-11 w-11 shrink-0 rounded-xl bg-white object-contain p-0.5" />
+            : <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-white/15"><PawPrint size={22} /></span>}
           <div className="min-w-0 flex-1">
-            <p className="text-2xs font-bold uppercase tracking-widest text-white/70">متجر العيادة</p>
-            <h1 className="truncate font-display text-2xl font-extrabold">{front.name}</h1>
-            {front.bio && <p className="mt-0.5 line-clamp-2 text-xs leading-relaxed text-white/85">{front.bio}</p>}
+            {/* اسمٌ بسطرين لا `truncate`: «عيادة الرحمة البيطرية» على ٣٦٠ بكسل
+                بعد اللوغو وزرَّي الاتصال لا تسع سطراً واحداً. */}
+            <h1 className="line-clamp-2 font-display text-lg font-bold leading-tight">{front.name}</h1>
           </div>
-        </div>
-        <div className="relative mx-auto mt-4 flex max-w-3xl flex-wrap items-center gap-2 text-2xs font-bold">
-          <span className="flex items-center gap-1 rounded-full bg-white/15 px-2.5 py-1"><Truck size={12} /> {feeKnown ? `${t("sf.delivery", "توصيل")} ${money(fee)}` : t("sf.deliveryTbd", "توصيل — يحدد عند التأكيد")}</span>
-          {minOrder > 0 && <span className="flex items-center gap-1 rounded-full bg-white/15 px-2.5 py-1">الحد الأدنى {money(minOrder)}</span>}
-          <span className="flex items-center gap-1 rounded-full bg-white/15 px-2.5 py-1"><ShieldCheck size={12} /> الدفع عند الاستلام</span>
-          <span className="ms-auto flex items-center gap-1.5">
+          <span className="flex shrink-0 items-center gap-1.5">
             {front.whatsapp && (
               <a href={`https://wa.me/${waNumber(front.whatsapp, "+964")}`} target="_blank" rel="noreferrer" aria-label="واتساب"
-                className="grid h-8 w-8 place-items-center rounded-full bg-white/15 transition hover:bg-white/25"><MessageCircle size={15} /></a>
+                className="grid h-10 w-10 place-items-center rounded-xl bg-white/15 transition hover:bg-white/25"><MessageCircle size={17} /></a>
             )}
             {front.phone && (
-              <a href={`tel:${front.phone}`} aria-label="اتصال" className="grid h-8 w-8 place-items-center rounded-full bg-white/15 transition hover:bg-white/25"><Phone size={15} /></a>
+              <a href={`tel:${front.phone}`} aria-label="اتصال" className="grid h-10 w-10 place-items-center rounded-xl bg-white/15 transition hover:bg-white/25"><Phone size={17} /></a>
             )}
           </span>
+        </div>
+        {/* سطرُ الطمأنينة: ثلاثُ حقائقَ يحتاجها زبونُ الدفع عند الاستلام، بسطرٍ
+            واحدٍ لا شاراتٍ تلتفّ سطرين وتكسر محاذاةَ أزرار الاتصال. */}
+        <div className="mx-auto mt-2.5 flex max-w-3xl items-center gap-3 border-t border-white/15 pt-2 text-xs">
+          <span className="flex items-center gap-1"><ShieldCheck size={13} /> {t("sf.cod", "الدفع عند الاستلام")}</span>
+          <span className="flex items-center gap-1"><Truck size={13} /> {feeKnown ? money(fee) : t("sf.tbd", "يتحدد بالتأكيد")}</span>
+          {minOrder > 0 && <span className="text-white/80">{t("sf.minOrder", "الحد الأدنى")} {money(minOrder)}</span>}
         </div>
 
         {/* بابُ المالك (0154): الرابطُ العام نفسه يوصله لملفّ حيوانه — لا رابطَ
             ثانٍ تدزّه العيادة، ولا حسابَ يُنشأ. زرٌّ واحد بأعلى الصفحة. */}
+        {/* بابُ المالك يبقى — لكن بسطرٍ واحدٍ لا بطاقةً بارتفاع ٦٠: هذه صفحةُ
+            شراءٍ قبل كلّ شيء. والسهمُ يشير **يساراً** لأنه تقدّمٌ لا رجوع (وبالعربية
+            القراءةُ من اليمين، فسهمُ الرجوع يمينٌ وسهمُ التقدّم يسار). */}
         <Link to={`/p/${slug}`} onClick={() => playTap()}
-          className="relative mx-auto mt-4 flex max-w-3xl items-center justify-between gap-3 rounded-2xl bg-white/15 px-4 py-3 backdrop-blur transition hover:bg-white/25 active:scale-[0.99]">
-          <span className="flex items-center gap-2.5">
-            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-white/20"><PawPrint size={18} /></span>
-            <span className="min-w-0">
-              <span className="block text-sm font-extrabold leading-tight">{t("portal.cta", "شوف حيواناتي")}</span>
-              <span className="block text-2xs leading-tight text-white/80">{t("portal.ctaSub", "اللقاحات، العلاج، وحالته الآن")}</span>
-            </span>
-          </span>
-          <ArrowRight size={17} className="shrink-0 rotate-180" />
+          className="mx-auto mt-2 flex max-w-3xl items-center gap-2 text-xs font-semibold text-white/90 transition hover:text-white">
+          <PawPrint size={14} className="shrink-0" />
+          <span>{t("portal.cta", "شوف حيواناتي")}</span>
+          <ArrowLeft size={14} className="shrink-0" />
         </Link>
       </header>
 
@@ -311,14 +321,23 @@ export function Storefront() {
               className="w-full rounded-2xl border border-line bg-surface-1 py-2.5 pe-9 ps-4 text-sm text-ink outline-none transition focus:border-brand-400" />
           </div>
           {cats.length > 1 && (
+            /* الفرزُ خرج من حاوية التمرير: كان بـ`ms-auto` **داخلها** وشريطُ
+               التمرير مخفيّ، فقِيس عند x=−210 — عنصرُ تحكّمٍ لا يعرف أحدٌ بوجوده
+               غيرُ موجود. صار سطراً مستقلاً يظهر حين يستحقّ الكتلوجُ فرزاً. */
             <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-              <CatChip active={cat === "all"} onClick={() => { playTap(); setCat("all"); }} label="الكل" emoji="✨" />
+              <CatChip active={cat === "all"} onClick={() => { playTap(); setCat("all"); }} label={t("sf.all", "الكل")} />
               {cats.map((c) => {
                 const look = categoryLook(c);
-                return <CatChip key={c} active={cat === c} onClick={() => { playTap(); setCat(c); }} label={look.label} emoji={look.emoji} />;
+                return <CatChip key={c} active={cat === c} onClick={() => { playTap(); setCat(c); }} label={look.label} />;
               })}
+            </div>
+          )}
+          {catalog.length > 8 && (
+            <div className="flex items-center justify-between gap-2 text-2xs">
+              <span className="font-semibold text-ink-muted">{formatNum(shown.length)} {t("sf.results", "منتج")}</span>
               <select value={sort} onChange={(e) => { playTap(); setSort(e.target.value as typeof sort); }} data-storesort
-                className="ms-auto shrink-0 rounded-full border border-line bg-surface-1 px-2.5 py-1.5 text-2xs font-bold text-ink-muted outline-none">
+                aria-label={t("sf.sortDefault", "الترتيب المعتاد")}
+                className="shrink-0 rounded-lg border border-line bg-surface-1 px-2 py-1 text-2xs font-semibold text-ink-muted outline-none">
                 <option value="default">{t("sf.sortDefault", "الترتيب المعتاد")}</option>
                 <option value="priceAsc">{t("sf.sortCheap", "الأرخص أولاً")}</option>
                 <option value="priceDesc">{t("sf.sortExp", "الأغلى أولاً")}</option>
@@ -330,29 +349,9 @@ export function Storefront() {
 
       {/* الكاتلوج */}
       <main className="mx-auto max-w-3xl px-4 py-4">
-        {/* مختارات العيادة — صفٌّ أفقيّ قبل الشبكة */}
-        {featured.length > 0 && (
-          <section className="mb-4" data-featuredrow>
-            <h2 className="mb-2 flex items-center gap-1.5 text-sm font-extrabold text-ink">✨ {t("sf.featured", "مختاراتنا")}</h2>
-            <div className="flex gap-2.5 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-              {featured.map((p) => {
-                const look = categoryLook(p.category);
-                const img = productImageUrl(p.image_path);
-                return (
-                  <button key={p.id} onClick={() => { playTap(); setDetail(p); }}
-                    className="flex w-28 shrink-0 flex-col overflow-hidden rounded-2xl border border-line bg-surface-1 text-start transition active:scale-95">
-                    <div className={cn("relative grid h-24 w-full place-items-center bg-gradient-to-br text-3xl", look.grad)}>
-                      {look.emoji}
-                      {img && <img src={img} alt="" loading="lazy" className="absolute inset-0 h-full w-full object-cover" onError={(e) => { e.currentTarget.hidden = true; }} />}
-                    </div>
-                    <span className="line-clamp-2 p-1.5 text-2xs font-bold leading-snug text-ink">{p.name}</span>
-                    <span className="px-1.5 pb-1.5 font-display text-xs font-extrabold tabular-nums text-brand-600">{money(p.price)}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </section>
-        )}
+        {/* صفُّ «مختاراتنا» المنفصل أُلغي: مقيسٌ أن كلَّ مختارٍ يظهر مرّتين
+            (٣ من ٣ بتجربةٍ حيّة) بثمنِ ١٩٤ بكسل تدفع أوّلَ منتجٍ خارجَ الشاشة.
+            الميزةُ نفسُها بقيت — المختارُ يتصدّر الشبكةَ بشارةٍ داخلها. */}
         {catalog.length === 0 ? (
           <div className="grid place-items-center gap-2 py-16 text-center text-ink-subtle">
             <PackageX size={30} className="opacity-40" />
@@ -369,7 +368,8 @@ export function Storefront() {
         ) : (
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
             {shown.map((p, i) => {
-              const look = categoryLook(p.category);
+              const shelf = shelfLook(p.name);
+              const hasImg = !!productImageUrl(p.image_path);
               const inCart = qtyOf(p.id);
               return (
                 <motion.div key={p.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: Math.min(i * 0.03, 0.3) }}
@@ -379,40 +379,59 @@ export function Storefront() {
                   {/* الصورة فوق رمز الفئة لا بدلَه: فشلُ تحميلها (ملفٌ حُذف، شبكةٌ
                       ضعيفة) يخفيها بـhidden فيبقى الرمزُ تحتها — بطاقةٌ ما تصير فارغة.
                       والضغطة تفتح ورقة التفاصيل (صورة أكبر + الوصف كاملاً). */}
+                  {/* نسبةٌ واحدة صارمة بدل ارتفاعٍ ثابت ٩٦ بكسل: بطاقةٌ عرضُها ١٧٣
+                      وصورةٌ ٩٦ = ١٫٨:١ مع قصٍّ يقطع رأسَ العلبة وقاعَها — وباسمِ
+                      الشركة يعرف الزبونُ المنتج. و`object-contain` فلا يُقصّ شيء. */}
                   <div role="button" tabIndex={0} onClick={() => { playTap(); setDetail(p); }}
                     onKeyDown={(e) => { if (e.key === "Enter") { playTap(); setDetail(p); } }}
-                    className={cn("relative grid h-24 cursor-pointer place-items-center overflow-hidden bg-gradient-to-br text-4xl", look.grad)}>
-                    {look.emoji}
+                    className={cn("relative grid aspect-square cursor-pointer place-items-center overflow-hidden",
+                      hasImg ? "bg-surface-2" : shelf.tile)}>
+                    {!hasImg && (
+                      <span className={cn("px-2 text-center font-display text-base font-bold leading-tight", shelf.ink)}>
+                        {shelfLabel(p.name)}
+                      </span>
+                    )}
                     {productImageUrl(p.image_path) && (
-                      <img src={productImageUrl(p.image_path) as string} alt="" loading="lazy"
-                        className="absolute inset-0 h-full w-full object-cover"
+                      /* تكسيلُ ما هو فوق الطيّة يؤخّر أثقلَ عنصرٍ بالرسم (LCP)
+                         بلا أن يوفّر شيئاً — الزائرُ يراه بلا تمرير. */
+                      <img src={productImageUrl(p.image_path) as string} alt="" width={400} height={400}
+                        loading={i < 4 ? "eager" : "lazy"} fetchPriority={i < 4 ? "high" : undefined}
+                        className="absolute inset-0 h-full w-full object-contain p-1.5"
                         onError={(e) => { e.currentTarget.hidden = true; }} />
                     )}
                   </div>
-                  {!p.available && (
-                    <span className="absolute start-2 top-2 rounded-full bg-ink/70 px-2 py-0.5 text-2xs font-bold text-white">نافد حالياً</span>
-                  )}
+                  {!p.available ? (
+                    <span className="absolute start-2 top-2 rounded-lg bg-ink/75 px-2 py-0.5 text-2xs font-semibold text-white">{t("sf.out", "نافد حالياً")}</span>
+                  ) : p.featured ? (
+                    /* المختارُ يتصدّر الشبكةَ ويُعلَّم داخلها — لا صفّاً ثانياً يكرّره. */
+                    <span className="absolute start-2 top-2 rounded-lg bg-surface-1/95 px-2 py-0.5 text-2xs font-semibold text-ink-muted shadow-soft">{t("sf.pick", "اختيار العيادة")}</span>
+                  ) : null}
                   <div className="flex flex-1 flex-col gap-1 p-3">
                     <p className="line-clamp-2 text-sm font-bold leading-snug text-ink">{p.name}</p>
                     {p.descr && <p className="line-clamp-2 text-2xs leading-relaxed text-ink-subtle">{p.descr}</p>}
                     {p.subcategory && <span className="self-start rounded-full bg-surface-2 px-2 py-0.5 text-2xs text-ink-subtle">{p.subcategory}</span>}
-                    <div className="mt-auto flex items-center justify-between pt-1.5">
-                      <p className="font-display text-sm font-extrabold tabular-nums text-brand-600">{money(p.price)}</p>
+                    {/* خانةُ فعلٍ ثابتة ٨٤ بكسل: زرُّ «+» يتبدّل عدّاداً بنفس العرض،
+                        فالسعرُ ما يقفز سطراً ثانياً لحظةَ ما يضيف الزبون للسلة. */}
+                    <div className="mt-auto grid grid-cols-[minmax(0,1fr)_84px] items-center gap-2 pt-1.5">
+                      <p className="font-display text-base font-bold tabular-nums text-ink">{money(p.price)}</p>
                       {!p.available ? (
-                        <span className="text-2xs font-bold text-ink-subtle">غير متاح</span>
+                        <span className="justify-self-end text-2xs font-semibold text-ink-muted">{t("sf.out", "نافد حالياً")}</span>
                       ) : inCart === 0 ? (
                         <button onClick={() => add(p.id)} aria-label={`أضف ${p.name}`}
-                          className="grid h-9 w-9 place-items-center rounded-xl bg-brand-600 text-white shadow-soft transition hover:bg-brand-700 active:scale-90">
-                          <Plus size={17} />
+                          className="grid h-11 w-11 justify-self-end place-items-center rounded-xl bg-brand-600 text-white transition hover:bg-brand-700 active:scale-90">
+                          <Plus size={19} />
                         </button>
                       ) : (
-                        <div className="flex items-center gap-1.5 rounded-xl bg-brand-50 p-1 dark:bg-brand-500/15">
-                          <button onClick={() => { playTap(); setQty(p.id, inCart - 1); }} className="grid h-7 w-7 place-items-center rounded-lg bg-white text-brand-700 shadow-soft transition active:scale-90 dark:bg-surface-1">
-                            <Minus size={14} />
+                        /* أهدافُ لمسٍ ٣٦ بكسل بدل ٢٨: إصبعٌ حقيقيّ على شبكةٍ من عمودين. */
+                        <div className="flex h-11 w-[84px] items-center justify-between rounded-xl border border-brand-400 px-1">
+                          <button onClick={() => { playTap(); setQty(p.id, inCart - 1); }} aria-label="أنقص"
+                            className="grid h-9 w-9 place-items-center rounded-lg text-brand-700 transition active:scale-90 dark:text-brand-300">
+                            <Minus size={16} />
                           </button>
-                          <span className="w-5 text-center text-sm font-extrabold tabular-nums text-brand-700 dark:text-brand-300">{formatNum(inCart)}</span>
-                          <button onClick={() => add(p.id)} className="grid h-7 w-7 place-items-center rounded-lg bg-brand-600 text-white shadow-soft transition active:scale-90">
-                            <Plus size={14} />
+                          <span className="min-w-4 text-center text-sm font-bold tabular-nums text-brand-700 dark:text-brand-300">{formatNum(inCart)}</span>
+                          <button onClick={() => add(p.id)} aria-label="زد"
+                            className="grid h-9 w-9 place-items-center rounded-lg text-brand-700 transition active:scale-90 dark:text-brand-300">
+                            <Plus size={16} />
                           </button>
                         </div>
                       )}
@@ -448,21 +467,21 @@ export function Storefront() {
                 <button onClick={() => { playTap(); setDetail(null); }} aria-label={t("sf.close", "إغلاق")}
                   className="absolute end-2 top-2 grid h-8 w-8 place-items-center rounded-full bg-ink/60 text-white"><X size={16} /></button>
               </div>
-              <h2 className="mt-3 text-base font-extrabold leading-snug text-ink">{detail.name}</h2>
+              <h2 className="mt-3 text-base font-bold leading-snug text-ink">{detail.name}</h2>
               {detail.subcategory && <span className="mt-1 inline-block rounded-full bg-surface-2 px-2 py-0.5 text-2xs text-ink-subtle">{detail.subcategory}</span>}
               {detail.descr && <p className="mt-2 max-h-32 overflow-y-auto text-sm leading-relaxed text-ink-muted">{detail.descr}</p>}
               <div className="mt-4 flex items-center justify-between gap-3">
-                <p className="font-display text-lg font-extrabold tabular-nums text-brand-600">{money(detail.price)}</p>
+                <p className="font-display text-lg font-bold tabular-nums text-brand-600">{money(detail.price)}</p>
                 {!detail.available ? (
                   <span className="text-sm font-bold text-ink-subtle">{t("sf.out", "نافد حالياً")}</span>
                 ) : n === 0 ? (
-                  <button onClick={() => add(detail.id)} className="rounded-2xl bg-brand-600 px-6 py-3 text-sm font-extrabold text-white transition active:scale-95">
+                  <button onClick={() => add(detail.id)} className="rounded-2xl bg-brand-600 px-6 py-3 text-sm font-bold text-white transition active:scale-95">
                     {t("sf.addToCart", "أضف للسلة")}
                   </button>
                 ) : (
                   <div className="flex items-center gap-2 rounded-2xl bg-brand-50 p-1.5 dark:bg-brand-500/15">
                     <button onClick={() => { playTap(); setQty(detail.id, n - 1); }} className="grid h-9 w-9 place-items-center rounded-xl bg-white text-brand-700 shadow-soft transition active:scale-90 dark:bg-surface-1"><Minus size={15} /></button>
-                    <span className="w-6 text-center text-base font-extrabold tabular-nums text-brand-700 dark:text-brand-300">{formatNum(n)}</span>
+                    <span className="w-6 text-center text-base font-bold tabular-nums text-brand-700 dark:text-brand-300">{formatNum(n)}</span>
                     <button onClick={() => add(detail.id)} className="grid h-9 w-9 place-items-center rounded-xl bg-brand-600 text-white transition active:scale-90"><Plus size={15} /></button>
                   </div>
                 )}
@@ -480,15 +499,15 @@ export function Storefront() {
             className="fixed inset-x-4 bottom-4 z-30 mx-auto flex max-w-3xl items-center gap-3 rounded-2xl bg-brand-600 px-4 py-3.5 text-white shadow-raised transition active:scale-[0.99]">
             <span className="relative">
               <ShoppingCart size={20} />
-              <span className="absolute -end-2 -top-2 grid h-5 min-w-5 place-items-center rounded-full bg-white px-1 text-2xs font-extrabold text-brand-700">{formatNum(units)}</span>
+              <span className="absolute -end-2 -top-2 grid h-5 min-w-5 place-items-center rounded-full bg-white px-1 text-2xs font-bold text-brand-700">{formatNum(units)}</span>
             </span>
             {/* الرقمُ المعروض هو الرقمُ المدفوع (لا المجموع الفرعي): زبونٌ يشوف
                 ٤٢٬٠٠٠ بالشريط ثم يُطلب منه ٤٥٬٠٠٠ عند الباب يحسّ أنه انخدع. */}
             <span className="flex-1 text-start">
-              <span className="block text-sm font-extrabold leading-tight">{t("sf.viewCart", "عرض السلة")}</span>
+              <span className="block text-sm font-bold leading-tight">{t("sf.viewCart", "عرض السلة")}</span>
               <span className="block text-2xs leading-tight text-white/80">{feeKnown ? t("sf.dueOnDelivery", "الكلي عند الاستلام") : t("sf.dueEstimate", "الكلي التقديري — التوصيل يتحدد بالتأكيد")}</span>
             </span>
-            <span className="font-display text-base font-extrabold tabular-nums">{money(total)}</span>
+            <span className="font-display text-base font-bold tabular-nums">{money(total)}</span>
           </motion.button>
         )}
       </AnimatePresence>
@@ -524,12 +543,12 @@ export function Storefront() {
   );
 }
 
-function CatChip({ active, onClick, label, emoji }: { active: boolean; onClick: () => void; label: string; emoji: string }) {
+function CatChip({ active, onClick, label }: { active: boolean; onClick: () => void; label: string }) {
   return (
     <button onClick={onClick}
-      className={cn("flex shrink-0 items-center gap-1 rounded-full px-3 py-1.5 text-xs font-bold transition",
-        active ? "bg-brand-600 text-white shadow-soft" : "border border-line bg-surface-1 text-ink-muted hover:bg-surface-2")}>
-      <span>{emoji}</span> {label}
+      className={cn("shrink-0 rounded-full px-3.5 py-1.5 text-xs font-semibold transition",
+        active ? "bg-brand-600 text-white" : "border border-line bg-surface-1 text-ink-muted hover:bg-surface-2")}>
+      {label}
     </button>
   );
 }
@@ -545,7 +564,7 @@ function CartSheet({ cart, byId, subtotal, fee, feeKnown, total, underMin, minOr
   return (
     <div dir="rtl">
       <div className="mb-3 flex items-center justify-between">
-        <h2 className="flex items-center gap-2 font-display text-lg font-extrabold text-ink"><ShoppingCart size={19} className="text-brand-600" /> سلتك</h2>
+        <h2 className="flex items-center gap-2 font-display text-lg font-bold text-ink"><ShoppingCart size={19} className="text-brand-600" /> سلتك</h2>
         <button onClick={onClose} aria-label="إغلاق" className="grid h-8 w-8 place-items-center rounded-full bg-surface-2 text-ink-muted"><X size={16} /></button>
       </div>
       {cart.length === 0 ? (
@@ -566,10 +585,10 @@ function CartSheet({ cart, byId, subtotal, fee, feeKnown, total, underMin, minOr
                   </div>
                   <div className="flex items-center gap-1.5">
                     <button onClick={() => { playTap(); setQty(l.id, l.qty - 1); }} className="grid h-7 w-7 place-items-center rounded-lg border border-line text-ink-muted transition active:scale-90"><Minus size={13} /></button>
-                    <span className="w-5 text-center text-sm font-extrabold tabular-nums text-ink">{formatNum(l.qty)}</span>
+                    <span className="w-5 text-center text-sm font-bold tabular-nums text-ink">{formatNum(l.qty)}</span>
                     <button onClick={() => { playTap(); setQty(l.id, l.qty + 1); }} className="grid h-7 w-7 place-items-center rounded-lg bg-brand-600 text-white transition active:scale-90"><Plus size={13} /></button>
                   </div>
-                  <p className="w-20 shrink-0 text-end text-sm font-extrabold tabular-nums text-ink">{money(p.price * l.qty)}</p>
+                  <p className="w-20 shrink-0 text-end text-sm font-bold tabular-nums text-ink">{money(p.price * l.qty)}</p>
                 </div>
               );
             })}
@@ -582,7 +601,7 @@ function CartSheet({ cart, byId, subtotal, fee, feeKnown, total, underMin, minOr
               <span>{t("sf.delivery", "توصيل")}</span>
               <span className="tabular-nums">{feeKnown ? money(fee) : t("sf.tbd", "يتحدد بالتأكيد")}</span>
             </p>
-            <p className="flex justify-between font-display text-base font-extrabold text-ink">
+            <p className="flex justify-between font-display text-base font-bold text-ink">
               <span>{feeKnown ? t("sf.dueOnDelivery", "الكلي عند الاستلام") : t("sf.dueEstimate", "الكلي التقديري — التوصيل يتحدد بالتأكيد")}</span>
               <span className="tabular-nums">{money(total)}</span>
             </p>
@@ -593,7 +612,7 @@ function CartSheet({ cart, byId, subtotal, fee, feeKnown, total, underMin, minOr
             </p>
           )}
           <button onClick={onCheckout} disabled={underMin}
-            className="mt-3 w-full rounded-2xl bg-brand-600 py-3.5 text-sm font-extrabold text-white shadow-soft transition hover:bg-brand-700 active:scale-[0.99] disabled:opacity-50">
+            className="mt-3 w-full rounded-2xl bg-brand-600 py-3.5 text-sm font-bold text-white shadow-soft transition hover:bg-brand-700 active:scale-[0.99] disabled:opacity-50">
             إتمام الطلب — الدفع عند الاستلام
           </button>
         </>
@@ -655,8 +674,8 @@ function CheckoutSheet({ slug, cart, subtotal, fee, feeKnown, total, onBack, onP
   return (
     <div dir="rtl">
       <div className="mb-3 flex items-center justify-between">
-        <h2 className="font-display text-lg font-extrabold text-ink">معلوماتك للتوصيل</h2>
-        <button onClick={onBack} className="flex items-center gap-1 text-xs font-bold text-brand-600"><ArrowRight size={14} className="rtl:rotate-180" /> رجوع للسلة</button>
+        <h2 className="font-display text-lg font-bold text-ink">معلوماتك للتوصيل</h2>
+        <button onClick={onBack} className="flex items-center gap-1 text-xs font-bold text-brand-600"><ArrowRight size={14} /> رجوع للسلة</button>
       </div>
       <p className="mb-3 text-xs leading-relaxed text-ink-subtle">بلا تسجيل وبلا حسابات — بس اسمك ورقمك وعنوانك، والعيادة تتواصل وياك للتأكيد.</p>
       <div className="space-y-2.5">
@@ -677,14 +696,14 @@ function CheckoutSheet({ slug, cart, subtotal, fee, feeKnown, total, onBack, onP
           <span>{t("sf.delivery", "توصيل")}</span>
           <span className="tabular-nums">{feeKnown ? money(fee) : t("sf.tbd", "يتحدد بالتأكيد")}</span>
         </p>
-        <p className="flex justify-between font-display text-base font-extrabold text-ink">
+        <p className="flex justify-between font-display text-base font-bold text-ink">
           <span>{feeKnown ? t("sf.dueOnDelivery", "الكلي عند الاستلام") : t("sf.dueEstimate", "الكلي التقديري — التوصيل يتحدد بالتأكيد")}</span>
           <span className="tabular-nums">{money(total)}</span>
         </p>
       </div>
       {err && <p className="mt-2 rounded-xl bg-danger-50 px-3 py-2 text-xs font-bold text-danger-600 dark:bg-danger-500/15 dark:text-danger-300">{err}</p>}
       <button onClick={() => void submit()} disabled={busy || !valid}
-        className="mt-3 flex w-full items-center justify-center gap-2 rounded-2xl bg-brand-600 py-3.5 text-sm font-extrabold text-white shadow-soft transition hover:bg-brand-700 active:scale-[0.99] disabled:opacity-50">
+        className="mt-3 flex w-full items-center justify-center gap-2 rounded-2xl bg-brand-600 py-3.5 text-sm font-bold text-white shadow-soft transition hover:bg-brand-700 active:scale-[0.99] disabled:opacity-50">
         {busy ? <Loader2 size={17} className="animate-spin" /> : <CheckCircle2 size={17} />}
         {busy ? "يرسل طلبك…" : "أرسل الطلب 🚀"}
       </button>

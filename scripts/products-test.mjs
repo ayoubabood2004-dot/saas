@@ -560,7 +560,20 @@ console.log("▸ الدفعة ٧ — بطاقاتٌ توصل، وسقوفٌ تُ
   check("  وسياسةُ الرفع تشترط مجلّدَ العيادة", mig.includes("(storage.foldername(name))[1] = auth_clinic()::text"));
   check("  والرفعُ السحابيّ إلى bucket لا إلى جدول", repoS.includes('storage.from("product-images").upload'));
   check("  والنسختان التجريبية والسحابية كلتاهما تعرفان الرفع", (repoS.split("async uploadProductImage(").length - 1) === 2);
-  check("  وبطاقةُ المتجر كسولةُ التحميل وتسقط لرمز الفئة بـhidden", front.includes('loading="lazy"') && front.includes("e.currentTarget.hidden = true"));
+  /* كان يفحص `loading="lazy"` نصّاً — وصار التكسيلُ مشروطاً: ما فوق الطيّة
+   * يُحمَّل فوراً (تكسيلُ صورة الـLCP يؤخّر الرسمَ بلا أن يوفّر شيئاً) والباقي
+   * كسول. فالفحصُ على السلوك لا على السلسلة. */
+  check("  وبطاقةُ المتجر: أوّلُ ما فوق الطيّة فوريّ والباقي كسول",
+    /loading=\{i < 4 \? "eager" : "lazy"\}/.test(front) && front.includes('fetchPriority={i < 4 ? "high" : undefined}'));
+  check("  وصورةٌ كُسرت تكشف البلاطةَ تحتها بـhidden", front.includes("e.currentTarget.hidden = true"));
+  check("  والمنتجُ بلا صورةٍ بلاطةٌ مشتقّةٌ من اسمه لا إيموجي فئته",
+    front.includes("shelfLook(p.name)") && front.includes("shelfLabel(p.name)"));
+  /* التعليقُ نفسُه يشرح الفخّ بمثالٍ حرفيّ — فيُقشَّر قبل الفحص، وإلا أمسك
+   * الحارسُ شرحَه لا العلّة. */
+  const libCode = readFileSync("src/lib/storeLib.ts", "utf8")
+    .replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+  check("  وأصنافُ البلاطة مكتوبةٌ حرفيّةً لا مركَّبة (وإلا حذفها البناء)",
+    !/(bg|text|border)-\$\{/.test(libCode));
   check("  وفشلُ الصورة معزولٌ عن حفظ المنتج ويُقال", invP.includes("pos.photoSaveFailed"));
 
   /* ── مكتبة الصور (0175): يبنيها المالك ويختار منها الدكتور ──────────────

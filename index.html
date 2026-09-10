@@ -53,6 +53,26 @@
     <link rel="stylesheet" media="print" onload="this.media='all'" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap" />
     <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap" /></noscript>
 
+    <!-- الصفحاتُ العامّة (`/s/` متجرُ العيادة و`/p/` بوّابةُ المالك) عربيةٌ
+         **دائماً** بلا استثناء — لا تنتظر i18n ليقرّر الاتجاه. وطلبُ الخطّ من
+         هناك يقع بعد الحزمة كلّها (463KB على 3G)، فيُرسم الستورُ بخطّ النظام ثم
+         يقفز. هذا السطرُ يطلبه مع أوّل رسمة: نفسُ الرابط ونفسُ حيلة الحجب،
+         و`ensureScriptFont` تجده بمعرّفه فلا تكرّره. -->
+    <script>
+      (function () {
+        try {
+          if (!/^\/(s|p)\//.test(location.pathname)) return;
+          var l = document.createElement("link");
+          l.id = "ar-font";
+          l.rel = "stylesheet";
+          l.media = "print";
+          l.onload = function () { l.media = "all"; };
+          l.href = "https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap";
+          document.head.appendChild(l);
+        } catch (e) { /* بلا DOM أو بمتصفّحٍ قديم — ensureScriptFont تغطّي */ }
+      })();
+    </script>
+
     <!-- شاشة الإقلاع: HTML/CSS صرف بلا أي جافاسكربت، فتُرسم فوراً حتى قبل تحميل
          التطبيق. بدونها يشوف المستخدم صفحة بيضاء فارغة كل إقلاع بارد (وبعد أي
          تحديث للنسخة) فيظن أن النظام معلّق. React يستبدلها لحظة جهوزيته. -->
