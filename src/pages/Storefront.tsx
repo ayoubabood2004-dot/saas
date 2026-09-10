@@ -24,7 +24,7 @@ import { preferArabicForVisitor } from "@/lib/portal";
 import { waNumber } from "@/lib/phone";
 import { celebrate } from "@/lib/celebrate";
 import { playTap, playSuccess, playWarning, playAchievement } from "@/lib/sounds";
-import { cn, money, formatNum } from "@/lib/utils";
+import { cn, money, formatNum, searchable } from "@/lib/utils";
 
 interface CartLine { id: string; qty: number }
 
@@ -142,10 +142,13 @@ export function Storefront() {
   }, [catalog]);
 
   const shown = useMemo(() => {
-    const ql = q.trim().toLowerCase();
+    /* الطرفان يمرّان من `searchable`: من يكتب «ادويه» يلقى «أدوية»، ومن يكتب
+     * «٢٤٧» يلقى «247». تطبيعُ طرفٍ واحد أسوأ من لا تطبيع — يفشل بصمتٍ ويبدو
+     * أنه يعمل، فيرى الزبونُ «ما لكينا» عن بضاعةٍ على الرفّ ويصدّقها. */
+    const ql = searchable(q);
     const list = catalog.filter((c) =>
       (cat === "all" || (c.category ?? "other") === cat) &&
-      (!ql || c.name.toLowerCase().includes(ql) || (c.subcategory ?? "").toLowerCase().includes(ql) || (c.descr ?? "").toLowerCase().includes(ql)));
+      (!ql || searchable(c.name).includes(ql) || searchable(c.subcategory).includes(ql) || searchable(c.descr).includes(ql)));
     if (sort === "priceAsc") return [...list].sort((a, b) => a.price - b.price);
     if (sort === "priceDesc") return [...list].sort((a, b) => b.price - a.price);
     return list;
@@ -169,6 +172,9 @@ export function Storefront() {
   const units = cart.reduce((s, l) => s + l.qty, 0);
   const subtotal = Math.round(cart.reduce((s, l) => s + (byId.get(l.id)?.price ?? 0) * l.qty, 0) * 100) / 100;
   const fee = front?.delivery_fee ?? 0;
+  /* أجرةُ صفرٍ عندنا تعني «ما تحدّدت» لا «مجّانية» (الهيرو يقولها منذ البداية).
+   * فمصدرٌ واحدٌ لهذا المعنى يقرؤه الهيرو والسلة والإتمام — وإلا تناقضت الشاشات. */
+  const feeKnown = fee > 0;
   const total = Math.round((subtotal + fee) * 100) / 100;
   const minOrder = front?.min_order ?? 0;
   const underMin = minOrder > 0 && subtotal < minOrder;
@@ -267,7 +273,7 @@ export function Storefront() {
           </div>
         </div>
         <div className="relative mx-auto mt-4 flex max-w-3xl flex-wrap items-center gap-2 text-2xs font-bold">
-          <span className="flex items-center gap-1 rounded-full bg-white/15 px-2.5 py-1"><Truck size={12} /> {fee > 0 ? `توصيل ${money(fee)}` : "توصيل — يحدد عند التأكيد"}</span>
+          <span className="flex items-center gap-1 rounded-full bg-white/15 px-2.5 py-1"><Truck size={12} /> {feeKnown ? `${t("sf.delivery", "توصيل")} ${money(fee)}` : t("sf.deliveryTbd", "توصيل — يحدد عند التأكيد")}</span>
           {minOrder > 0 && <span className="flex items-center gap-1 rounded-full bg-white/15 px-2.5 py-1">الحد الأدنى {money(minOrder)}</span>}
           <span className="flex items-center gap-1 rounded-full bg-white/15 px-2.5 py-1"><ShieldCheck size={12} /> الدفع عند الاستلام</span>
           <span className="ms-auto flex items-center gap-1.5">
@@ -476,8 +482,13 @@ export function Storefront() {
               <ShoppingCart size={20} />
               <span className="absolute -end-2 -top-2 grid h-5 min-w-5 place-items-center rounded-full bg-white px-1 text-2xs font-extrabold text-brand-700">{formatNum(units)}</span>
             </span>
-            <span className="flex-1 text-start text-sm font-extrabold">عرض السلة</span>
-            <span className="font-display text-base font-extrabold tabular-nums">{money(subtotal)}</span>
+            {/* الرقمُ المعروض هو الرقمُ المدفوع (لا المجموع الفرعي): زبونٌ يشوف
+                ٤٢٬٠٠٠ بالشريط ثم يُطلب منه ٤٥٬٠٠٠ عند الباب يحسّ أنه انخدع. */}
+            <span className="flex-1 text-start">
+              <span className="block text-sm font-extrabold leading-tight">{t("sf.viewCart", "عرض السلة")}</span>
+              <span className="block text-2xs leading-tight text-white/80">{feeKnown ? t("sf.dueOnDelivery", "الكلي عند الاستلام") : t("sf.dueEstimate", "الكلي التقديري — التوصيل يتحدد بالتأكيد")}</span>
+            </span>
+            <span className="font-display text-base font-extrabold tabular-nums">{money(total)}</span>
           </motion.button>
         )}
       </AnimatePresence>
@@ -492,12 +503,12 @@ export function Storefront() {
               className="absolute inset-x-0 bottom-0 mx-auto max-h-[88vh] max-w-3xl overflow-y-auto rounded-t-3xl bg-surface-1 p-4 shadow-raised">
               {sheet === "cart" ? (
                 <CartSheet
-                  cart={cart} byId={byId} subtotal={subtotal} fee={fee} total={total}
+                  cart={cart} byId={byId} subtotal={subtotal} fee={fee} feeKnown={feeKnown} total={total}
                   underMin={underMin} minOrder={minOrder}
                   setQty={setQty} onClose={() => setSheet("none")} onCheckout={() => { playTap(); setSheet("checkout"); }} />
               ) : (
                 <CheckoutSheet
-                  slug={slug} cart={cart} subtotal={subtotal} fee={fee} total={total}
+                  slug={slug} cart={cart} subtotal={subtotal} fee={fee} feeKnown={feeKnown} total={total}
                   onBack={() => setSheet("cart")}
                   onPlaced={(r) => {
                     setCart([]); setSheet("none"); setPlaced(r); playAchievement(); celebrate();
@@ -525,11 +536,12 @@ function CatChip({ active, onClick, label, emoji }: { active: boolean; onClick: 
 
 /* ------------------------------- السلة ------------------------------- */
 
-function CartSheet({ cart, byId, subtotal, fee, total, underMin, minOrder, setQty, onClose, onCheckout }: {
+function CartSheet({ cart, byId, subtotal, fee, feeKnown, total, underMin, minOrder, setQty, onClose, onCheckout }: {
   cart: CartLine[]; byId: Map<string, StoreCatalogItem>;
-  subtotal: number; fee: number; total: number; underMin: boolean; minOrder: number;
+  subtotal: number; fee: number; feeKnown: boolean; total: number; underMin: boolean; minOrder: number;
   setQty: (id: string, qty: number) => void; onClose: () => void; onCheckout: () => void;
 }) {
+  const { t } = useTranslation();
   return (
     <div dir="rtl">
       <div className="mb-3 flex items-center justify-between">
@@ -564,8 +576,16 @@ function CartSheet({ cart, byId, subtotal, fee, total, underMin, minOrder, setQt
           </div>
           <div className="mt-4 space-y-1.5 border-t border-line pt-3 text-sm">
             <p className="flex justify-between text-ink-muted"><span>المجموع</span><span className="tabular-nums">{money(subtotal)}</span></p>
-            {fee > 0 && <p className="flex justify-between text-ink-muted"><span>التوصيل</span><span className="tabular-nums">{money(fee)}</span></p>}
-            <p className="flex justify-between font-display text-base font-extrabold text-ink"><span>الكلي</span><span className="tabular-nums">{money(total)}</span></p>
+            {/* سطرُ التوصيل يُعرض **دائماً**: إخفاؤه عند الصفر يخلّي الزبون يحسب
+                أن ما يراه هو ما يدفع، ثم تُضاف الأجرةُ عند الباب. */}
+            <p className="flex justify-between text-ink-muted">
+              <span>{t("sf.delivery", "توصيل")}</span>
+              <span className="tabular-nums">{feeKnown ? money(fee) : t("sf.tbd", "يتحدد بالتأكيد")}</span>
+            </p>
+            <p className="flex justify-between font-display text-base font-extrabold text-ink">
+              <span>{feeKnown ? t("sf.dueOnDelivery", "الكلي عند الاستلام") : t("sf.dueEstimate", "الكلي التقديري — التوصيل يتحدد بالتأكيد")}</span>
+              <span className="tabular-nums">{money(total)}</span>
+            </p>
           </div>
           {underMin && (
             <p className="mt-2 rounded-xl bg-warn-50 px-3 py-2 text-xs font-bold text-warn-700 dark:bg-warn-500/15 dark:text-warn-200">
@@ -584,10 +604,11 @@ function CartSheet({ cart, byId, subtotal, fee, total, underMin, minOrder, setQt
 
 /* ------------------------------ الإتمام ------------------------------ */
 
-function CheckoutSheet({ slug, cart, subtotal, fee, total, onBack, onPlaced }: {
-  slug: string; cart: CartLine[]; subtotal: number; fee: number; total: number;
+function CheckoutSheet({ slug, cart, subtotal, fee, feeKnown, total, onBack, onPlaced }: {
+  slug: string; cart: CartLine[]; subtotal: number; fee: number; feeKnown: boolean; total: number;
   onBack: () => void; onPlaced: (r: { order_no: string; total: number }) => void;
 }) {
+  const { t } = useTranslation();
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [address, setAddress] = useState("");
@@ -598,7 +619,9 @@ function CheckoutSheet({ slug, cart, subtotal, fee, total, onBack, onPlaced }: {
   const nameRef = useRef<HTMLInputElement>(null);
   useEffect(() => { const t = setTimeout(() => nameRef.current?.focus(), 250); return () => clearTimeout(t); }, []);
 
-  const valid = name.trim().length >= 2 && isValidCustomerPhone(phone);
+  /* العنوان إلزاميّ: طلبُ توصيلٍ بلا وجهة ناقصٌ بتعريفه، وكان يُقبل فيصير
+   * كلُّ طلبيةٍ مكالمةً إضافية — والعيادة تتصل للتأكيد على كلّ حال. */
+  const valid = name.trim().length >= 2 && isValidCustomerPhone(phone) && address.trim().length >= 8;
 
   const submit = async () => {
     if (busy) return;
@@ -606,6 +629,7 @@ function CheckoutSheet({ slug, cart, subtotal, fee, total, onBack, onPlaced }: {
     if (trap.trim()) return; // بوت عبّى الفخ — نتجاهله بصمت
     if (name.trim().length < 2) { setErr("اكتب اسمك الكامل."); playWarning(); return; }
     if (!isValidCustomerPhone(phone)) { setErr("رقم الهاتف غير صحيح — مثال: 07901234567"); playWarning(); return; }
+    if (address.trim().length < 8) { setErr(t("sf.addrNeeded", "اكتب عنوانك — المنطقة وأقرب نقطة دالة حتى يلكاك المندوب.")); playWarning(); return; }
     setBusy(true);
     try {
       const res = await repo.placeStoreOrder(slug,
@@ -640,7 +664,7 @@ function CheckoutSheet({ slug, cart, subtotal, fee, total, onBack, onPlaced }: {
         <input dir="ltr" inputMode="tel" value={phone} maxLength={20} onChange={(e) => setPhone(e.target.value)} placeholder="* 07xxxxxxxxx" className="input text-left" />
         <div className="relative">
           <MapPin size={15} className="pointer-events-none absolute end-3 top-3 text-ink-subtle" />
-          <textarea rows={2} value={address} maxLength={300} onChange={(e) => setAddress(e.target.value)} placeholder="عنوانك للتوصيل (المنطقة، أقرب نقطة دالة…)" className="input min-h-[3.5rem] resize-y pe-9 text-sm" />
+          <textarea rows={2} value={address} maxLength={300} onChange={(e) => setAddress(e.target.value)} placeholder={t("sf.addrPh", "عنوانك للتوصيل * (المنطقة، أقرب نقطة دالة…)")} className="input min-h-[3.5rem] resize-y pe-9 text-sm" />
         </div>
         <textarea rows={2} value={note} maxLength={500} onChange={(e) => setNote(e.target.value)} placeholder="ملاحظات إضافية (اختياري)" className="input min-h-[2.5rem] resize-y text-sm" />
         {/* فخ البوتات — مخفي عن البشر تماماً */}
@@ -649,8 +673,14 @@ function CheckoutSheet({ slug, cart, subtotal, fee, total, onBack, onPlaced }: {
       </div>
       <div className="mt-3 space-y-1 rounded-2xl bg-surface-2 p-3 text-sm">
         <p className="flex justify-between text-ink-muted"><span>{formatNum(cart.reduce((s, l) => s + l.qty, 0))} منتج</span><span className="tabular-nums">{money(subtotal)}</span></p>
-        {fee > 0 && <p className="flex justify-between text-ink-muted"><span>التوصيل</span><span className="tabular-nums">{money(fee)}</span></p>}
-        <p className="flex justify-between font-display text-base font-extrabold text-ink"><span>الكلي عند الاستلام</span><span className="tabular-nums">{money(total)}</span></p>
+        <p className="flex justify-between text-ink-muted">
+          <span>{t("sf.delivery", "توصيل")}</span>
+          <span className="tabular-nums">{feeKnown ? money(fee) : t("sf.tbd", "يتحدد بالتأكيد")}</span>
+        </p>
+        <p className="flex justify-between font-display text-base font-extrabold text-ink">
+          <span>{feeKnown ? t("sf.dueOnDelivery", "الكلي عند الاستلام") : t("sf.dueEstimate", "الكلي التقديري — التوصيل يتحدد بالتأكيد")}</span>
+          <span className="tabular-nums">{money(total)}</span>
+        </p>
       </div>
       {err && <p className="mt-2 rounded-xl bg-danger-50 px-3 py-2 text-xs font-bold text-danger-600 dark:bg-danger-500/15 dark:text-danger-300">{err}</p>}
       <button onClick={() => void submit()} disabled={busy || !valid}

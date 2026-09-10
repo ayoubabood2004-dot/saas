@@ -575,5 +575,36 @@ console.log("▸ الدفعة ٧ — بطاقاتٌ توصل، وسقوفٌ تُ
   check("  والنسختان تعرفان المكتبة", (repoS.split("async createLibraryImage(").length - 1) === 2);
 }
 
+/* ── صدقُ المال والبحث بواجهة الستور العامّة ───────────────────────────────
+ * ثلاثُ عللٍ قِيست بالشِفرة وأُصلحت، وكلُّها من صنفٍ عضّنا سابقاً:
+ *   • شريطُ السلة كان يعرض `subtotal` والزبون يدفع `total` — رقمٌ معروضٌ غيرُ
+ *     المدفوع، ويُكتشف عند الباب.
+ *   • سطرُ التوصيل كان يختفي عند أجرةٍ صفر، فيحسب الزبون أن ما يراه ما يدفع.
+ *   • البحث كان يقارن الخام بالخام: من يكتب «ادويه» لا يلقى «أدوية» — وهي
+ *     «قائمةٌ ناقصة تُصدَّق»، وقاعدةُ المشروع أن الطرفين يمرّان من `searchable`.
+ * والعنوانُ صار إلزامياً: طلبُ توصيلٍ بلا وجهةٍ ناقصٌ بتعريفه. */
+console.log("▸ الستور العام — الرقم المعروض هو المدفوع، والبحث يطبّع الطرفين");
+{
+  const sf = readFileSync("src/pages/Storefront.tsx", "utf8");
+
+  // شريطُ السلة العائم وحدَه (بين تعليقه وتعليق لوحة السلة)
+  const barStart = sf.indexOf("شريط السلة العائم");
+  const barEnd = sf.indexOf("لوحة السلة / الإتمام");
+  const bar = barStart >= 0 && barEnd > barStart ? sf.slice(barStart, barEnd) : "";
+  check("شريطُ السلة يعرض المبلغ المدفوع", bar.includes("money(total)") && !bar.includes("money(subtotal)"), `${bar.length} حرفاً`);
+
+  check("وسطرُ التوصيل ما عاد يختفي عند أجرةٍ صفر", !/\{fee > 0 && <p/.test(sf));
+  check("  ومعنى «الأجرة معلومة» مصدرُه واحدٌ يقرؤه الهيرو والورقتان",
+    (sf.split("feeKnown").length - 1) >= 6 && sf.includes("const feeKnown = fee > 0"));
+
+  check("البحثُ يمرّ من searchable", sf.includes('searchable } from "@/lib/utils"') || /searchable[,}]/.test(sf.split("\n").filter((l) => l.startsWith("import")).join("\n")));
+  check("  على الطرفين معاً — المكتوبُ والمخزون",
+    sf.includes("const ql = searchable(q)") && sf.includes("searchable(c.name).includes(ql)"));
+  check("  ولا مقارنةَ خامٍ بخام باقية", !sf.includes("c.name.toLowerCase().includes(ql)"));
+
+  check("العنوانُ إلزاميٌّ بالتحقّق", /valid =[^;]*address\.trim\(\)\.length >= 8/.test(sf));
+  check("  ورسالتُه تقول ماذا يكتب", sf.includes("sf.addrNeeded"));
+}
+
 console.log(`\n${fails ? "✗" : "✓"} products-test: ${passes} نجحت، ${fails} فشلت`);
 process.exit(fails ? 1 : 0);
