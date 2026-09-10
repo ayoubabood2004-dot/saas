@@ -22,7 +22,7 @@ DB=dvtest
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MIG="$HERE/../migrations"
 # الهجرات التي يغطّيها هذا المخطّط الأساس. زدها كل ما تنضاف موجة.
-WAVE="$MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql"
+WAVE="$MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql"
 
 command -v "$PGBIN/initdb" >/dev/null || { echo "ما لكيت بوستغريس بـ $PGBIN"; exit 1; }
 
@@ -1565,5 +1565,35 @@ chk "العلم موجود وافتراضه false" \
     "select column_default from information_schema.columns where table_name='products' and column_name='store_featured'" "false"
 chk "والكتلوج يرجعه" \
     "select (prosrc like '%store_featured%')::text from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='store_catalog'" "true"
+
+# ── 0178: قراءة الستور بلا حدود، وحدُّ الطلبات يعرف ذيل الرقم ─────────────────
+# حاجز 0096 كان يُرجع كتلوجاً فارغاً و«لا طلب» بصمتٍ بعد ٣٠٠ قراءة/دقيقة/IP —
+# وخلف CGNAT العراقي الـIP لآلاف الزبائن الشرعيين. الفحص يضغط ٣٥٠ نداءً بنفس
+# الرأس المزوَّر الذي كان يشبع الحاجز، وكلُّها لازم ترجع. وحدُّ «١٠ طلبات
+# للرقم» صار يقارن آخر عشر خانات فما ينخدع بكتابة +964 بعد 0771.
+echo "▸ 0178: قراءة بلا حدود وحدُّ طلباتٍ بالذيل"
+chk "٣٥٠ تتبّعاً متتالياً من نفس الـIP كلُّها ترجع — الحاجز انكسر فعلاً" \
+    "select count(*)::text from (select set_config('request.headers','{\"x-forwarded-for\":\"9.9.9.9\"}',true)) s cross join lateral (select t.status from generate_series(1,350) g cross join lateral store_order_track('trackclinic','SO-TST01','07701234567') t) q where q.status='accepted'" "350"
+chk "  ولا يُكتب صفُّ عدّادٍ للقراءة بعد اليوم" \
+    "select count(*)::text from store_read_hits where ip='9.9.9.9'" "0"
+chk "  والقراءتان صارتا stable بلا لمسٍ للعدّاد" \
+    "select (bool_and(provolatile='s') and bool_and(prosrc not like '%store_read_hits%'))::text from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname in ('store_catalog','store_order_track')" "true"
+chk "  وحارسا الطول باقيان (هاتفٌ قصير لا يرجع شيئاً)" \
+    "select count(*)::text from store_order_track('trackclinic','SO-TST01','123')" "0"
+t_ms=$(psql -h $SOCK -p $PORT -U postgres -d $DB -tAc "select round(extract(epoch from (clock_timestamp() - now()))*1000/350, 3)::text from (select count(*) from generate_series(1,350) g cross join lateral store_order_track('trackclinic','SO-TST01','07701234567') t) s" | tr -d '[:space:]')
+printf '   ℹ متوسط كلفة نداء التتبّع محلياً: %s ms\n' "$t_ms"
+$P -c "insert into products (id, clinic_id, name, sell_price, stock, store_visible)
+         values ('ee178000-0000-4000-8000-000000000001', '$C1', 'منتج ستور 0178', 5000, 30, true)
+       on conflict (id) do update set store_visible = true, stock = 30;
+       insert into store_orders (clinic_id, order_no, customer_name, customer_phone, status, total)
+         select '$C1', 'SO-RL'||g, 'مغرِق', '0771 555 6666', 'new', 1000 from generate_series(1,10) g;" >/dev/null
+chk "عشرةٌ بالرقم المحلي ثم +964 لنفس الذيل: الحدُّ يمسكها" \
+    "select store_place_order('trackclinic', 'زبون فحص', '+964 771 555 6666', 'عنوان', '', '[{\"product_id\":\"ee178000-0000-4000-8000-000000000001\",\"qty\":1}]'::jsonb)->>'error'" "rate_limited"
+chk "  ورقمٌ بذيلٍ آخر يطلب طبيعياً" \
+    "select store_place_order('trackclinic', 'زبون فحص', '0772 000 1122', 'عنوان', '', '[{\"product_id\":\"ee178000-0000-4000-8000-000000000001\",\"qty\":2}]'::jsonb)->>'ok'" "true"
+chk "  وكسرٌ بالكمية يُرفض كلُّه لا يُدوَّر" \
+    "select store_place_order('trackclinic', 'زبون فحص', '0773 000 1122', 'عنوان', '', '[{\"product_id\":\"ee178000-0000-4000-8000-000000000001\",\"qty\":2.5}]'::jsonb)->>'error'" "bad_items"
+chk "  والدوالُّ الثلاث definer بمسارٍ مثبَّت" \
+    "select (count(*) = 3)::text from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname in ('store_catalog','store_order_track','store_place_order') and p.prosecdef and coalesce(array_to_string(p.proconfig,','),'') like '%search_path%'" "true"
 
 [ $fail -eq 0 ] && echo "✓ كل الفحوص عبرت" || { echo "✗ اكو فحصٌ فشل"; exit 1; }

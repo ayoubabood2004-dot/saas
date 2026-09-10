@@ -608,6 +608,9 @@ export interface Invoice {
   /** Free-text note the doctor/cashier attached at checkout (shown in the pet's
    *  record and on the printed invoice). Optional. */
   notes?: string | null;
+  /** مرجعُ المحاولة (0135) — بالتجريبي أيضاً منذ 0178: نفسُ المرجع = نفسُ
+   *  الفاتورة، فقبولُ طلبِ متجرٍ مكرّراً لا يبيع البضاعة مرّتين. */
+  client_ref?: string | null;
   created_at: string;
 }
 

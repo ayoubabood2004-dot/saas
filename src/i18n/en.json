@@ -229,7 +229,10 @@
     "sortExp": "Priciest first",
     "close": "Close",
     "out": "Out of stock",
-    "addToCart": "Add to cart"
+    "addToCart": "Add to cart",
+    "loadFailedTitle": "We couldn't open the store",
+    "loadFailedBody": "A connection problem stopped the page from loading — the store itself is fine. Check your internet and try again.",
+    "retry": "Try again"
   },
   "track": {
     "staleDay": "A full day with no decision",
@@ -1209,6 +1212,10 @@
     "photoRemove": "Remove photo",
     "photoHint": "Compressed automatically and shown on your online-store card.",
     "photoSaveFailed": "The product was saved but the photo was not — open the product and try the photo again.",
+    "storeDecisionLocked": "The order's decision is final: an order that is {{st}} can't go back to \"new\" or be decided twice. If this was a mistake, handle it as a return from the sales screen.",
+    "storeDecidedAccepted": "accepted and invoiced",
+    "storeDecidedRejected": "rejected",
+    "storeDecidedCancelled": "cancelled",
     "noSales": "No sales yet. Completed checkouts appear here.",
     "salesCount": "Sales",
     "revenue": "Revenue",

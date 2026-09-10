@@ -80,7 +80,16 @@ alter table store_orders add column if not exists status         text not null d
 alter table store_orders add column if not exists total          numeric default 0;
 alter table store_orders add column if not exists decided_at     timestamptz;
 alter table store_orders add column if not exists created_at     timestamptz not null default now();
+-- 0178 يستدعي store_place_order فعلاً — فالبدن كاملاً كما بالإنتاج (0095).
+alter table store_orders add column if not exists customer_name  text;
+alter table store_orders add column if not exists address        text;
+alter table store_orders add column if not exists note           text;
+alter table store_orders add column if not exists items          jsonb;
+alter table store_orders add column if not exists subtotal       numeric default 0;
+alter table store_orders add column if not exists delivery_fee   numeric default 0;
 create table if not exists store_profiles (clinic_id uuid primary key, slug text not null, enabled boolean not null default true);
+alter table store_profiles add column if not exists delivery_fee numeric not null default 0;
+alter table store_profiles add column if not exists min_order    numeric not null default 0;
 create table if not exists store_read_hits (ip text not null, bucket timestamptz not null, hits int not null default 0, primary key (ip, bucket));
 create table if not exists journeys (id uuid primary key default gen_random_uuid(), pet_id uuid references pets(id), status text);
 create index if not exists journeys_pet_idx on journeys(pet_id) where status = 'active';
@@ -111,6 +120,12 @@ create or replace function inv_norm_name(v text) returns text language sql immut
 as $$ select lower(regexp_replace(coalesce(v,''), '\s+', '', 'g')) $$;
 alter table products add column if not exists min_stock   numeric;
 alter table products add column if not exists expiry_date date;
+-- 0178 صيّر الكتلوج `language sql` فيُتحقّق بدنُه عند الإنشاء — أعمدةُ
+-- الستور لازم تكون بالقصاصة (بدنُ plpgsql بـ0177 كان يمرّ بلا تحقّق).
+alter table products add column if not exists store_visible boolean not null default false;
+alter table products add column if not exists store_desc    text;
+alter table products add column if not exists category      text;
+alter table products add column if not exists subcategory   text;
 alter table purchase_items add column if not exists product_id uuid references products(id) on delete set null;
 
 /* ── الفهرسُ الفريد على الرمز الخام — كما بالإنتاج حرفياً (0007) ───────────

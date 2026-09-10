@@ -128,6 +128,14 @@ function createInvoiceLocal(items: CheckoutItem[], meta?: SaleMeta): Invoice {
   if (!db.products) db.products = [];
   if (!db.invoices) db.invoices = [];
   if (!db.invoiceItems) db.invoiceItems = [];
+  // مرآةُ `retail_checkout` (0135): نفسُ المرجع = نفسُ البيعة — ترجع الفاتورة
+  // الأولى بلا سحبِ مخزونٍ ثانٍ. غيابُها هنا خلّى قبولَ طلبٍ مكرّراً يولّد
+  // فاتورتين بالتجريبي بينما الإنتاج يرجع الأولى (فحص التطابق ٠٩/٠٩).
+  const ref = meta?.client_ref?.trim();
+  if (ref) {
+    const prior = db.invoices.find((v) => v.client_ref === ref);
+    if (prior) return prior;
+  }
   const subtotal = items.reduce((s, i) => s + i.qty * i.unit_price, 0);
   const cost = items.reduce((s, i) => s + i.qty * i.unit_cost, 0);
   const count = items.reduce((s, i) => s + i.qty, 0);
@@ -160,6 +168,7 @@ function createInvoiceLocal(items: CheckoutItem[], meta?: SaleMeta): Invoice {
     // نفسُ سقوطِ الخادم (0156): المجهولُ تجزئة — والنسخةُ التجريبية هي ما
     // تجري عليه فحوصُ المنطق، فسلوكٌ ناقصٌ هنا سلوكٌ لم يُفحص.
     sale_kind: meta?.sale_kind === "wholesale" ? "wholesale" : "retail",
+    client_ref: ref || null,
     created_at: new Date().toISOString(),
   };
   db.invoices.push(invoice);
@@ -1556,7 +1565,20 @@ const demoRepo = {
   async updateStoreOrder(id: string, patch: Partial<Pick<StoreOrder, "status" | "invoice_id" | "decided_at">>): Promise<void> {
     const db = loadDB();
     const o = (db.storeOrders ?? []).find((x) => x.id === id);
-    if (o) { Object.assign(o, patch); saveDB(db); }
+    if (!o) return;
+    // مرآةُ محفّز 0176 حرفياً: القرارُ يمشي من «جديد» حصراً إلى قرارٍ نهائي،
+    // والختمُ من هنا لا من المستدعي. حارسٌ لا يوجد بالتجريبي حارسٌ لم يُفحص —
+    // قبولٌ مكرّر عبَر التجريبيَّ بصمتٍ بينما الإنتاج يرميه (فحص التطابق ٠٩/٠٩).
+    if (patch.status !== undefined && patch.status !== o.status) {
+      if (o.status !== "new" || !["accepted", "rejected", "cancelled"].includes(patch.status)) {
+        const st = o.status === "accepted" ? i18next.t("pos.storeDecidedAccepted", "مقبولٌ وانفوتر")
+          : o.status === "rejected" ? i18next.t("pos.storeDecidedRejected", "مرفوض")
+          : i18next.t("pos.storeDecidedCancelled", "ملغى");
+        throw new Error(i18next.t("pos.storeDecisionLocked", { st, defaultValue: "قرار الطلب نهائي: طلبٌ {{st}} ما يرجع «جديد» ولا يتقرّر مرتين. إذا صار خطأ، عالجه بمرتجعٍ من شاشة المبيعات." }));
+      }
+      patch = { ...patch, decided_at: new Date().toISOString() };
+    }
+    Object.assign(o, patch); saveDB(db);
   },
 
   /* ---- رحلة الحيوان بالعيادة (متتبّع المالك) ---- */
@@ -1721,15 +1743,18 @@ const demoRepo = {
     if ((info.address ?? "").length > 300 || (info.note ?? "").length > 500) return { ok: false, error: "bad_input" };
     if (!Array.isArray(items) || items.length < 1 || items.length > 30) return { ok: false, error: "bad_items" };
     // مضاد الإغراق — مرآة حدود السيرفر (10 لكل رقم / 300 للعيادة باليوم).
+    // الرقمُ ذيلُه لا صيغتُه (0178): كامل الأرقام كانت تنخدع بـ+964 بالطرفين.
     const dayAgo = Date.now() - 24 * 3600 * 1000;
     const recent = (db.storeOrders ?? []).filter((o) => new Date(o.created_at).getTime() > dayAgo);
-    if (recent.filter((o) => o.customer_phone.replace(/\D/g, "") === digits).length >= 10) return { ok: false, error: "rate_limited" };
+    if (recent.filter((o) => o.customer_phone.replace(/\D/g, "").slice(-10) === digits.slice(-10)).length >= 10) return { ok: false, error: "rate_limited" };
     if (recent.length >= 300) return { ok: false, error: "rate_limited" };
     // البنود: المنتج لازم منشور، والسعر يُقرأ من القاعدة الآن ويتجمّد.
     const lines: StoreOrderItem[] = [];
     for (const it of items) {
-      const qty = Math.floor(it.qty);
-      if (!Number.isFinite(qty) || qty < 1 || qty > 99) return { ok: false, error: "bad_items" };
+      const qty = it.qty;
+      // الخادم يرفض الكسر كلَّه (`'5.5'::int` ترمي → bad_items) — التدويرُ
+      // الصامت هنا كان يقلب حكمَ الفاحص على مدخلٍ حدّي (فحص التطابق ٠٩/٠٩).
+      if (!Number.isInteger(qty) || qty < 1 || qty > 99) return { ok: false, error: "bad_items" };
       const p = (db.products ?? []).find((x) => x.id === it.product_id && x.store_visible);
       if (!p) return { ok: false, error: "bad_items" };
       lines.push({ product_id: p.id, name: p.name, qty, price: p.sell_price, total: Math.round(p.sell_price * qty * 100) / 100 });
@@ -4211,7 +4236,9 @@ const supabaseRepo: typeof demoRepo = {
     );
   },
   async updateStoreOrder(id, patch) {
-    ok(await sbc().from("store_orders").update(patch).eq("id", id));
+    // قرارُ مالٍ يمرّ من هنا: صفرُ صفوفٍ (سياسةٌ ردّت أو معرّفٌ بايت) لازم
+    // يصيح، وإلا قيل «قبلت الطلب» ولا شيءَ انحفظ — درسُ «الكتابة تُسمَع».
+    updated<StoreOrder>(await sbc().from("store_orders").update(patch).eq("id", id).select().maybeSingle());
   },
   /* ---- رحلة الحيوان بالعيادة ---- */
   async getActiveJourney(petId) {

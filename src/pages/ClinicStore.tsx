@@ -229,7 +229,8 @@ function OrdersTab({ orders, products, profile, clinicId, reload, goSettings }: 
         playWarning();
         toast.error("الفاتورة انولدت لكن طلب التوصيل ما انسجل", "سجّله يدوياً من المبيعات ← التوصيل. الطلب نفسه مقبول وصحيح.");
       }
-      await repo.updateStoreOrder(o.id, { status: "accepted", invoice_id: invoice.id, decided_at: new Date().toISOString() });
+      // الختمُ الزمنيّ من الخادم (محفّز 0176) ومرآتُه التجريبية — لا من المتصفح.
+      await repo.updateStoreOrder(o.id, { status: "accepted", invoice_id: invoice.id });
       playAchievement();
       toast.success(`قبلت الطلب ${o.order_no} ✅`, "انولدت فاتورته وانسحب المخزون، وتلكاه جاهز بشاشة التوصيل.");
       bumpStoreOrders();
@@ -246,7 +247,7 @@ function OrdersTab({ orders, products, profile, clinicId, reload, goSettings }: 
     if (busy) return;
     setBusy(o.id);
     try {
-      await repo.updateStoreOrder(o.id, { status: "rejected", decided_at: new Date().toISOString() });
+      await repo.updateStoreOrder(o.id, { status: "rejected" });
       playTap();
       toast.success(`رفضت الطلب ${o.order_no}`, "ما انسحب أي مخزون. تكدر تخبر الزبون بزر واتساب.");
       setConfirmReject(null);

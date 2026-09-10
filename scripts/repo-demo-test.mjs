@@ -431,5 +431,62 @@ console.log("▸ assignBarcodeIfEmpty — لا يُكتب فوق رمزٍ رُب
   check("ومنتجٌ غيرُ موجودٍ يُرفض", threw4);
 }
 
+/* ── الستور (0178): مرايا حرّاسٍ كانت بالإنتاج وحده — فما كانت مفحوصة ─────────
+ * فحصُ التطابق (٠٩/٠٩) طلّع أربعة سلوكياتٍ يجيب فيها التجريبيُّ عكسَ الإنتاج:
+ * قبولٌ مكرّر يولّد فاتورتين (الإنتاج يرجع الأولى بـclient_ref)، و«مقبول»
+ * يرجع «جديد» بصمت (الإنتاج يرميه بمحفّز 0176)، وكسرٌ يُدوَّر (الإنتاج يرفض
+ * bad_items)، وحدُّ الرقم ينخدع بـ+964 (والتتبّع يطابق بالذيل أصلاً). */
+console.log("▸ الستور (0178) — القرار نهائي والمرجع واحد والحدّ يعرف ذيل الرقم");
+{
+  const SP = { slug: "demo-vet", enabled: true, delivery_fee: 0, min_order: 0, updated_at: "2026-01-01" };
+  const seedStore = (products) => {
+    seed(products);
+    const db = JSON.parse(mem.get(DB_KEY));
+    db.storeProfile = SP; db.storeOrders = []; db.deliveryOrders = [];
+    mem.set(DB_KEY, JSON.stringify(db));
+  };
+  const SPROD = (id, price, stock) => P(id, `منتج ${id}`, null, { store_visible: true, sell_price: price, purchase_price: 0, stock });
+  const dbNow = () => JSON.parse(mem.get(DB_KEY));
+
+  seedStore([SPROD("s1", 12, 40)]);
+  const frac = await repo.placeStoreOrder("demo-vet", { name: "زبون التجربة", phone: "07701234567" }, [{ product_id: "s1", qty: 5.5 }]);
+  check("كميةٌ كسرية تُرفض bad_items كما بالخادم — لا تدويرَ صامت", frac.ok === false && frac.error === "bad_items");
+
+  const placed = await repo.placeStoreOrder("demo-vet", { name: "زبون التجربة", phone: "0770 123 4567" }, [{ product_id: "s1", qty: 2 }]);
+  check("طلبٌ سليم يمشي ويرجع رقماً", placed.ok === true && /^SO-/.test(placed.order_no ?? ""));
+
+  /* حدُّ العشرة يقارن الذيل: تسعةٌ أخرى بنفس الرقم بصيغٍ شتّى ثم +964 */
+  for (let i = 0; i < 9; i++) await repo.placeStoreOrder("demo-vet", { name: "زبون التجربة", phone: i % 2 ? "07701234567" : "0770-123-4567" }, [{ product_id: "s1", qty: 1 }]);
+  const bypass = await repo.placeStoreOrder("demo-vet", { name: "زبون التجربة", phone: "+964 770 123 4567" }, [{ product_id: "s1", qty: 1 }]);
+  check("العاشرةُ استوفت الحدَّ و+964 لنفس الذيل لا يصفّره", bypass.ok === false && bypass.error === "rate_limited");
+  const other = await repo.placeStoreOrder("demo-vet", { name: "زبون ثاني", phone: "07809998877" }, [{ product_id: "s1", qty: 1 }]);
+  check("  ورقمٌ غيرُه بذيلٍ غيره يمشي — الحدُّ للرقم لا للعيادة", other.ok === true);
+
+  /* نهائية القرار: القبول يختم من الداخل، وأي قرارٍ ثانٍ يُرمى بصوت */
+  const oid = dbNow().storeOrders.find((o) => o.order_no === placed.order_no).id;
+  await repo.updateStoreOrder(oid, { status: "accepted", decided_at: "2000-01-01T00:00:00.000Z" });
+  const acc = dbNow().storeOrders.find((o) => o.id === oid);
+  check("القبول ختم decided_at من الدالّة لا من المستدعي", acc.status === "accepted" && !!acc.decided_at && !acc.decided_at.startsWith("2000-"));
+  let back = "";
+  try { await repo.updateStoreOrder(oid, { status: "new" }); } catch (e) { back = String(e?.message ?? e); }
+  check("«مقبول» ما يرجع «جديد» — يُرمى بنصّ محفّز 0176", back.includes("قرار الطلب نهائي"));
+  let twice = "";
+  try { await repo.updateStoreOrder(oid, { status: "rejected" }); } catch (e) { twice = String(e?.message ?? e); }
+  check("ولا يتقرّر مرتين", twice.includes("قرار الطلب نهائي"));
+  check("  والطلبُ بقي مقبولاً بختمه", dbNow().storeOrders.find((o) => o.id === oid).status === "accepted");
+  await repo.updateStoreOrder(oid, { invoice_id: "inv_x" });
+  check("  وتحديثٌ بلا تغيير حالةٍ (invoice_id) يمرّ كما بالإنتاج", dbNow().storeOrders.find((o) => o.id === oid).invoice_id === "inv_x");
+
+  /* client_ref: نفسُ المرجع = نفسُ الفاتورة — والمخزون يُسحب مرّة */
+  seedStore([SPROD("s2", 10, 40)]);
+  const item = { product_id: "s2", name: "منتج s2", qty: 2, unit_price: 10, unit_cost: 0 };
+  const inv1 = await repo.retailCheckout([item], { client_ref: "store-so_1", amount_paid: 0 });
+  const inv2 = await repo.retailCheckout([item], { client_ref: "store-so_1", amount_paid: 0 });
+  check("قبولٌ أُعيد بنفس المرجع يرجع الفاتورةَ الأولى نفسَها", inv1.id === inv2.id && dbNow().invoices.length === 1);
+  check("  والمخزون انسحب مرّةً واحدة (40−2=38)", dbNow().products.find((p) => p.id === "s2").stock === 38);
+  const inv3 = await repo.retailCheckout([item], { client_ref: "store-so_2", amount_paid: 0 });
+  check("  ومرجعٌ جديد بيعةٌ جديدة", inv3.id !== inv1.id && dbNow().products.find((p) => p.id === "s2").stock === 36);
+}
+
 console.log(`\n${fails ? "✗" : "✓"} repo-demo-test: ${passes} نجحت، ${fails} فشلت`);
 process.exit(fails ? 1 : 0);

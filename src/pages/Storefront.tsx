@@ -51,7 +51,9 @@ const ERROR_MSG: Record<string, string> = {
 export function Storefront() {
   const { slug = "" } = useParams();
   const { t } = useTranslation();
-  const [state, setState] = useState<"loading" | "closed" | "open">("loading");
+  const [state, setState] = useState<"loading" | "closed" | "error" | "open">("loading");
+  /** إعادة محاولة التحميل الأول: يزيد فيعيد تشغيل مؤثّر الجلب. */
+  const [tries, setTries] = useState(0);
   const [front, setFront] = useState<StoreFrontInfo | null>(null);
   const [catalog, setCatalog] = useState<StoreCatalogItem[]>([]);
   const [q, setQ] = useState("");
@@ -84,10 +86,14 @@ export function Storefront() {
         if (!f) { setState("closed"); return; }
         setFront(f); setCatalog(c); setHasMore(c.length === PAGE); setState("open");
         document.title = `${f.name} — المتجر`;
-      } catch { if (alive) setState("closed"); }
+      } catch {
+        /* فشلُ الجلب غير «المتجر مسكّر»: شاشةُ «مغلق» على خطأ شبكةٍ عابر تكذب
+         * على الزبون فيصدّق ويروح — القاعدة: خطأٌ ظاهر و«أعد المحاولة». */
+        if (alive) setState("error");
+      }
     })();
     return () => { alive = false; };
-  }, [slug]);
+  }, [slug, tries]);
 
   const loadMore = async () => {
     if (loadingMore) return;
@@ -174,6 +180,22 @@ export function Storefront() {
         <div className="flex flex-col items-center gap-3 text-ink-subtle">
           <Loader2 size={30} className="animate-spin text-brand-600" />
           <p className="text-sm font-semibold">يفتح المتجر…</p>
+        </div>
+      </div>
+    );
+  }
+  if (state === "error") {
+    return (
+      <div dir="rtl" className="grid min-h-screen place-items-center bg-surface p-6">
+        <div className="flex max-w-sm flex-col items-center gap-3 text-center" data-storeloadfailed>
+          <span className="grid h-16 w-16 place-items-center rounded-3xl bg-warn-100 text-warn-700 dark:bg-warn-500/10 dark:text-warn-300"><Store size={30} /></span>
+          <h1 className="font-display text-xl font-extrabold text-ink">{t("sf.loadFailedTitle")}</h1>
+          <p className="text-sm leading-relaxed text-ink-subtle">{t("sf.loadFailedBody")}</p>
+          <button type="button" onClick={() => { setState("loading"); setTries((n) => n + 1); }}
+            className="mt-2 rounded-2xl bg-brand-600 px-6 py-2.5 text-sm font-bold text-white shadow-soft transition hover:bg-brand-700">
+            {t("sf.retry")}
+          </button>
+          <p className="mt-2 flex items-center gap-1.5 text-xs text-ink-subtle"><PawPrint size={14} /> doctorVet</p>
         </div>
       </div>
     );
