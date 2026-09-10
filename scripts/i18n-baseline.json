@@ -78,7 +78,6 @@
   "src/lib/staff.ts": 20,
   "src/lib/stockReportPrint.ts": 18,
   "src/lib/storeLib.ts": 6,
-  "src/lib/storeOrdersLive.ts": 2,
   "src/lib/treatmentSchedule.ts": 3,
   "src/lib/treatmentSheetPrint.ts": 16,
   "src/lib/utils.ts": 6,

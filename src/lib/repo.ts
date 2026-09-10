@@ -1562,6 +1562,11 @@ const demoRepo = {
       .sort((a, b) => b.created_at.localeCompare(a.created_at))
       .slice(0, limit);
   },
+  /** عدُّ الطلبات الجديدة وحدَه — يُنادى كلَّ نصف دقيقةٍ من جرس التنبيه، فلا
+   *  يجرّ صفوفَ الطلبات ببنودها (`items` jsonb) ليعدّها. */
+  async countNewStoreOrders(): Promise<number> {
+    return (loadDB().storeOrders ?? []).filter((o) => o.status === "new").length;
+  },
   async updateStoreOrder(id: string, patch: Partial<Pick<StoreOrder, "status" | "invoice_id" | "decided_at">>): Promise<void> {
     const db = loadDB();
     const o = (db.storeOrders ?? []).find((x) => x.id === id);
@@ -4235,6 +4240,14 @@ const supabaseRepo: typeof demoRepo = {
       await sbc().from("store_orders").select("*").order("created_at", { ascending: false }).limit(limit),
     );
   },
+  async countNewStoreOrders() {
+    /* `head: true` ⇒ عددٌ بلا صفوف. كان الجرسُ يجيب مئةَ طلبٍ كاملةً ببنودها
+     * كلَّ ٤٥ ثانية ليعدّ الجديد منها — بياناتُ موبايلٍ يدفعها الدكتور بلا مقابل.
+     * وفشلُ العدّ يرمي: صفرٌ صامتٌ هنا يعني جرساً لا يرنّ وطلباً ينتظر. */
+    const { count, error } = await sbc().from("store_orders").select("id", { count: "exact", head: true }).eq("status", "new");
+    if (error) throw new Error(error.message);
+    return count ?? 0;
+  },
   async updateStoreOrder(id, patch) {
     // قرارُ مالٍ يمرّ من هنا: صفرُ صفوفٍ (سياسةٌ ردّت أو معرّفٌ بايت) لازم
     // يصيح، وإلا قيل «قبلت الطلب» ولا شيءَ انحفظ — درسُ «الكتابة تُسمَع».
@@ -5044,7 +5057,7 @@ const READ_ONLY_ALLOWED = new Set<string>([
   // --- كل القراءات (مولَّدة من دوال الريبو نفسها، فلا تسقط واحدة سهواً) ---
   "getActiveJourney", "getClinicVisit", "getDailyNote", "getPet", "getPetBySerial",
   "getPetByToken", "getPetsByIds", "getPetsByOwnerEmail", "getProductByBarcode",
-  "getSharedPetsByOwnerId", "getStoreProfile", "listAdmissions", "listAdmissionsForPet",
+  "getSharedPetsByOwnerId", "getStoreProfile", "countNewStoreOrders", "listAdmissions", "listAdmissionsForPet",
   "listAllInvoiceItems", "listAllMedia", "listAllPets", "listAllSurgeries", "listAllTreatments",
   "listAllVaccinations", "listAllVisits", "listAppointmentsForDay", "listAppointmentsForOwner",
   "listAppointmentsForPet", "listAppointmentsInRange", "listAuditLog", "listBookingRequests",

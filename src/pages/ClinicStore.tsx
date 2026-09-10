@@ -16,15 +16,14 @@ import { AnimatePresence, motion } from "framer-motion";
 import {
   ShoppingBag, Inbox, Boxes, Settings2, Check, X, Phone, MessageCircle, MapPin,
   Copy, ExternalLink, Sparkles, Link2, AlertTriangle, CheckCircle2, Clock,
-  Search, Eye, EyeOff, Pencil, TrendingUp, Truck, PackageX, RefreshCw, StickyNote,
+  Search, Eye, EyeOff, Pencil, TrendingUp, Truck, PackageX, RefreshCw, StickyNote, BellRing,
 } from "lucide-react";
 import type { CheckoutItem, Product, SaleMeta, StoreOrder, StoreProfile } from "@/types";
 import { useTranslation } from "react-i18next";
 import { repo } from "@/lib/repo";
 import { useAuth } from "@/contexts/AuthContext";
 import { matchStaffToUser } from "@/lib/staffNames";
-import { bumpStoreOrders, useStoreOrderCount } from "@/lib/storeOrdersLive";
-import { requestNotifyPermission } from "@/lib/bookingRequests";
+import { bumpStoreOrders, useStoreOrderCount, storeAlertsState, enableStoreAlerts } from "@/lib/storeOrdersLive";
 import { normalizeSlug, isValidSlug, storeUrl, categoryLook } from "@/lib/storeLib";
 import { branchStore } from "@/lib/branchStore";
 import { waNumber } from "@/lib/phone";
@@ -86,7 +85,8 @@ export function ClinicStore() {
   };
   useEffect(() => {
     void load();
-    requestNotifyPermission(); // حتى إشعار «طلب جديد» يشتغل بالمتصفح
+    /* لا طلبَ إذنٍ تلقائيّ عند الفتح: نافذةٌ تقفز بلا سياقٍ تُرفض بلا قراءة —
+     * وسفاري تتجاهلها بلا إيماءة — فيُحرق الخيارُ إلى الأبد. صار بزرٍّ صريح. */
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   // العداد الحي ارتفع (طلب وصل ونحن بالصفحة) → حدّث القائمة فوراً.
@@ -168,6 +168,7 @@ function OrdersTab({ orders, products, profile, clinicId, reload, goSettings }: 
   const prodById = useMemo(() => new Map((products ?? []).map((p) => [p.id, p])), [products]);
 
   const fresh = (orders ?? []).filter((o) => o.status === "new");
+  const [alerts, setAlerts] = useState(storeAlertsState());
   const decided = (orders ?? []).filter((o) => o.status !== "new");
   const today = new Date().toDateString();
   const acceptedToday = decided.filter((o) => o.status === "accepted" && o.decided_at && new Date(o.decided_at).toDateString() === today).length;
@@ -289,6 +290,21 @@ function OrdersTab({ orders, products, profile, clinicId, reload, goSettings }: 
           <AlertTriangle size={20} className="shrink-0 text-warn-600" />
           <span className="text-sm font-semibold text-warn-700 dark:text-warn-200">متجرك بعده مو مفعّل — افتح «الإعدادات والرابط»، اختر رابطك المميز وفعّله حتى توصلك الطلبات.</span>
         </button>
+      )}
+
+      {/* جرسُ التنبيه: يُطلب الإذنُ بضغطةٍ لا عند الإقلاع. الشارةُ والصوتُ
+          يعملان بلا إذنٍ أصلاً — هذا يضيف إشعارَ النظام والتبويبُ بالخلف. */}
+      {profile?.enabled && alerts === "default" && (
+        <div className="card flex flex-wrap items-center gap-3 p-4">
+          <BellRing size={19} className="shrink-0 text-brand-600" />
+          <span className="flex-1 text-sm font-semibold text-ink">{t("storeBell.ask", "خلّي التنبيه يوصلك حتى لو التطبيق بتبويب ثاني")}</span>
+          <Button size="sm" onClick={async () => { playTap(); setAlerts(await enableStoreAlerts()); }}>
+            {t("storeBell.enable", "شغّل التنبيه")}
+          </Button>
+        </div>
+      )}
+      {profile?.enabled && alerts === "denied" && (
+        <p className="text-2xs text-ink-muted">{t("storeBell.denied", "تنبيه النظام مرفوض من إعدادات المتصفّح — الشارة والصوت شغّالين على كل حال.")}</p>
       )}
 
       {/* الطلبات الجديدة */}

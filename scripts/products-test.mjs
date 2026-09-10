@@ -619,5 +619,33 @@ console.log("▸ الستور العام — الرقم المعروض هو ال
   check("  ورسالتُه تقول ماذا يكتب", sf.includes("sf.addrNeeded"));
 }
 
+/* ── جرسُ طلبات المتجر ─────────────────────────────────────────────────────
+ * «طلبٌ ينتظر بلا علم أحد» = زبونٌ ضايع. الجرسُ كان نصفَ مبنيّ: يعدّ بجرِّ
+ * مئةِ صفٍّ كاملةٍ ببنودها كلَّ ٤٥ ثانية، ويدقّ على تبويبٍ مخفيٍّ تخنقه
+ * المتصفّحات، ويطلب إذنَ الإشعار تلقائياً عند فتح الصفحة — نافذةٌ تُرفض بلا
+ * قراءةٍ فيُحرق الخيار. */
+console.log("▸ جرس طلبات المتجر — يعدّ بلا صفوف، ويسكت بالخلف، ويستأذن بضغطة");
+{
+  const bell = readFileSync("src/lib/storeOrdersLive.ts", "utf8");
+  const repoSrc = readFileSync("src/lib/repo.ts", "utf8");
+  const store = readFileSync("src/pages/ClinicStore.tsx", "utf8");
+  const side = readFileSync("src/components/Sidebar.tsx", "utf8");
+
+  check("العدُّ بلا جرِّ صفوف", bell.includes("repo.countNewStoreOrders()") && !bell.includes("listStoreOrders("));
+  check("  والنسختان تعرفانه", (repoSrc.split("countNewStoreOrders").length - 1) >= 3);
+  check("  والسحابيّ يعدّ بلا صفوف ويرمي على الخطأ",
+    /countNewStoreOrders\(\)[\s\S]{0,700}head: true[\s\S]{0,300}throw new Error/.test(repoSrc));
+  check("لا نبضَ على تبويبٍ مخفيّ", /if \(typeof document !== "undefined" && document\.hidden\) return;/.test(bell));
+  check("  والعودةُ تعُدّ فوراً", bell.includes('addEventListener("visibilitychange"') && bell.includes('addEventListener("focus"'));
+  check("الفشلُ يبقي آخرَ عددٍ معروف لا يهبط لصفر", /catch \{ \/\* عابر/.test(bell) && !/catch[\s\S]{0,60}count = 0/.test(bell));
+  check("وأوّلُ قراءةٍ لا تدقّ (وإلا رنّ عند كل فتحة)", bell.includes("let prev = -1"));
+  check("عنوانُ التبويب يحمل العدد ويرجع نظيفاً", bell.includes("function applyTitle") && /replace\(\/\^\\\(/.test(bell));
+  check("الإذنُ بضغطةٍ لا عند الإقلاع",
+    bell.includes("export async function enableStoreAlerts") && !store.includes("requestNotifyPermission()"));
+  check("  وللشاشة زرٌّ يستدعيه", store.includes("enableStoreAlerts()") && store.includes("storeBell.enable"));
+  check("والشارةُ تُرسم بالقائمة الجانبية من أي شاشة",
+    side.includes("useStoreOrderCount(") && side.includes('item.to === "/store"'));
+}
+
 console.log(`\n${fails ? "✗" : "✓"} products-test: ${passes} نجحت، ${fails} فشلت`);
 process.exit(fails ? 1 : 0);

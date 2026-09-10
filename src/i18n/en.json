@@ -4491,5 +4491,13 @@
     "speed": "Send speed: median {{m}} ms, max {{x}} ms.",
     "accepted": "The sale screen accepts this scan ✓",
     "rejected": "The sale screen rejects this scan — the reader is slow, so it reads as hand typing. Try a cable instead of Bluetooth, or send us the numbers above."
+  },
+  "storeBell": {
+    "title": "doctorVet — new store order",
+    "one": "A new order arrived from your store — open it to accept or reject.",
+    "many": "{{n}} new orders arrived from your store.",
+    "ask": "Get notified even when the app is in another tab",
+    "enable": "Turn on alerts",
+    "denied": "System alerts are blocked in your browser settings — the badge and sound still work."
   }
 }
