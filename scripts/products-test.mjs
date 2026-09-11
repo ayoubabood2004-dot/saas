@@ -647,5 +647,24 @@ console.log("▸ جرس طلبات المتجر — يعدّ بلا صفوف، �
     side.includes("useStoreOrderCount(") && side.includes('item.to === "/store"'));
 }
 
+/* ── تشكيلةُ المتجر: الصورةُ تُضاف من مكان الدكتور، ويلقى الناقصَ بضغطة ──────
+ * كان لازم يترك المتجرَ ويفتح المخزونَ منتجاً منتجاً، وما عنده طريقةٌ يعرف
+ * بيها أيُّ منتجٍ بعده بلا صورة — فيبقى نصفُ الرفّ بلا صور بلا أن يدري. */
+console.log("▸ تشكيلة المتجر — صورةٌ من مكانها، وتصفيةٌ على «بلا صورة»");
+{
+  const cs = readFileSync("src/pages/ClinicStore.tsx", "utf8");
+  check("الرفعُ من داخل تبويب التشكيلة",
+    cs.includes("repo.uploadProductImage(") && cs.includes("prepareUpload(file, { maxDim: 800, quality: 0.72 })"));
+  check("  ومنتقي المكتبة مركَّبٌ هنا كذلك", cs.includes("<ImageLibraryPicker") && cs.includes("data-catlib"));
+  check("  والمصغّرةُ نفسُها هي الزرّ", cs.includes("data-catphoto") && cs.includes("productImageUrl(p.image_path)"));
+  check("  والمنتجُ بلا صورةٍ يعرض بلاطتَه لا رمزَ فئته", cs.includes("shelfLook(p.name)") && cs.includes("shelfMonogram(p.name)"));
+  check("تصفيةُ «بلا صورة» موجودةٌ بعدّادها", cs.includes("data-catfilter") && cs.includes('"nophoto"') && cs.includes("noPhotoCount"));
+  check("  وأربعُ حالاتِ تصفيةٍ لا واحدة", ["\"all\"", "\"shown\"", "\"hidden\"", "\"nophoto\""].every((k) => cs.includes(k)));
+  check("وفرزٌ صريح", cs.includes("data-catsort") && cs.includes('sort === "priceDesc"'));
+  check("  و«الترتيب الذكي» يقدّم المعروضَ ثم الناقصَ صورة", /rank = \(p: Product\) =>[^;]*store_visible[^;]*image_path/.test(cs));
+  check("وبحثُ التشكيلة يطبّع الطرفين مثل الستور", cs.includes("searchable(q)") && cs.includes("searchable(p.name).includes(ql)"));
+  check("وشيلُ الصورة يفكّ الربطَ ولا يكسر شيئاً", cs.includes("repo.deleteProductImage(") && cs.includes("image_path: null"));
+}
+
 console.log(`\n${fails ? "✗" : "✓"} products-test: ${passes} نجحت، ${fails} فشلت`);
 process.exit(fails ? 1 : 0);

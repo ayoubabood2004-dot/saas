@@ -4499,5 +4499,18 @@
     "ask": "Get notified even when the app is in another tab",
     "enable": "Turn on alerts",
     "denied": "System alerts are blocked in your browser settings — the badge and sound still work."
+  },
+  "cat": {
+    "sort": "Sort",
+    "sortSmart": "Smart order",
+    "sortName": "By name",
+    "sortPriceDesc": "Priciest first",
+    "sortPriceAsc": "Cheapest first",
+    "fAll": "All",
+    "fShown": "Shown",
+    "fHidden": "Hidden",
+    "fNoPhoto": "No photo",
+    "photoAdd": "Add a product photo",
+    "photoEdit": "Change the product photo"
   }
 }

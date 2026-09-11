@@ -114,6 +114,16 @@ export function shelfLabel(name: string): string {
   return words.slice(0, 2).join(" ").slice(0, 22);
 }
 
+/** حرفان من أوّل كلمتين — للمصغّرات الصغيرة (٤٤ بكسل) حيث تُقصّ الكلمةُ بنصّها
+ *  فتبدو عطلاً. الاسمُ الكامل مكتوبٌ بجانبها على كل حال. */
+export function shelfMonogram(name: string): string {
+  const w = (name || "").trim().split(/\s+/).filter(Boolean);
+  if (!w.length) return "•";
+  const a = [...w[0]][0] ?? "";
+  const b = w[1] ? [...w[1]][0] ?? "" : "";
+  return (a + b).toUpperCase();
+}
+
 /** رقم طلب للوضع التجريبي (السيرفر يولد ماله بنفس الشكل). */
 export function demoOrderNo(): string {
   let s = "";
