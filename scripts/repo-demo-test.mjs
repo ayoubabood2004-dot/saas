@@ -488,5 +488,27 @@ console.log("▸ الستور (0178) — القرار نهائي والمرجع 
   check("  ومرجعٌ جديد بيعةٌ جديدة", inv3.id !== inv1.id && dbNow().products.find((p) => p.id === "s2").stock === 36);
 }
 
+/* ---- 0180: فاتورةٌ واحدة = طلبُ توصيلٍ واحد ------------------------------
+ * مرآةُ الفهرس الفريد. حارسٌ ليس هنا حارسٌ لم يُفحص — وهذا هو ما يجعل زرَّ
+ * «أعد المحاولة» بشاشة البيع مأموناً: الكتابةُ قد تكون وصلت وضاع جوابُها. */
+{
+  console.log("▸ 0180: طلبُ توصيلٍ واحدٌ لكلّ فاتورة");
+  const dbNow = () => JSON.parse(mem.get(DB_KEY));
+  const base = {
+    clinic_id: "c1", invoice_id: "inv_dlv_1", branch_id: null, courier_id: null,
+    customer_name: "زبون", customer_phone: "07701234567", zone: null, address: null,
+    note: null, delivery_fee: 0, fee_to_clinic: false, cod_amount: 7000, prepaid: 0,
+    status: "preparing", dispatched_at: null, delivered_at: null, returned_at: null,
+  };
+  const a = await repo.createDeliveryOrder(base);
+  const b = await repo.createDeliveryOrder(base);
+  check("إعادةُ المحاولة تُرجع نفسَ الصفّ لا صفّاً ثانياً", a.id === b.id);
+  check("  والجدولُ فيه صفٌّ واحدٌ لهذه الفاتورة",
+        (dbNow().deliveryOrders ?? []).filter((o) => o.invoice_id === "inv_dlv_1").length === 1);
+  const c = await repo.createDeliveryOrder({ ...base, invoice_id: "inv_dlv_2", cod_amount: 9000 });
+  check("  وفاتورةٌ أخرى تُنشئ صفّاً جديداً (القيدُ على التكرار لا على الإنشاء)",
+        c.id !== a.id && c.cod_amount === 9000);
+}
+
 console.log(`\n${fails ? "✗" : "✓"} repo-demo-test: ${passes} نجحت، ${fails} فشلت`);
 process.exit(fails ? 1 : 0);

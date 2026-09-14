@@ -1,7 +1,7 @@
 {
-  "note": "لقطةُ أسماء القيود والفهارس الفريدة بقاعدة الإنتاج. ليست مخطّطاً ولا مصدرَ حقيقة للقاعدة — وظيفتها واحدة: أن يمسك الفحصُ مفتاحَ رسالةٍ باسمٍ مغلوط. فمفتاح errors.c.<اسم> بحرفٍ زائد يعني رسالةً ما تظهر أبداً، ولا شيء يشتكي: القاعدة ترفض، والمستخدم يشوف الرسالة العامّة، ونحن نظنّ التحسين شغّال. وأكثرُ هذه الأسماء يولّده بوستغريس نفسه من نصّ العمود (amount numeric check (amount > 0) تصير expenses_amount_check)، فلا يظهر بنصّ أي هجرة — ولهذا ما تكفي قراءةُ الهجرات ولزمت لقطة. جدّدها باستعلام refresh لمّا تنضاف قيود.",
+  "note": "لقطةُ أسماء القيود والفهارس الفريدة بقاعدة الإنتاج. ليست مخطّطاً ولا مصدرَ حقيقة للقاعدة — وظيفتها واحدة: أن يمسك الفحصُ مفتاحَ رسالةٍ باسمٍ مغلوط. فمفتاح errors.c.<اسم> بحرفٍ زائد يعني رسالةً ما تظهر أبداً، ولا شيء يشتكي: القاعدة ترفض، والمستخدم يشوف الرسالة العامّة، ونحن نظنّ التحسين شغّال. وأكثرُ هذه الأسماء يولّده بوستغريس نفسه من نصّ العمود (amount numeric check (amount > 0) تصير expenses_amount_check)، فلا يظهر بنصّ أي هجرة — ولهذا ما تكفي قراءةُ الهجرات ولزمت لقطة. جدّدها باستعلام refresh لمّا تنضاف قيود. · ٠١٨٠ أضافت delivery_orders_invoice_uniq — واللقطةُ تسبق تطبيقَها بالإنتاج عمداً: القاعدةُ تنزل قبل الواجهة، فاسمُ الرسالة لازم يكون جاهزاً قبل أن يظهر الخطأ لا بعده.",
   "refresh": "select con.conname from pg_constraint con join pg_class rel on rel.oid=con.conrelid join pg_namespace n on n.oid=rel.relnamespace where n.nspname='public' and con.contype in ('c','u') union select indexname from pg_indexes where schemaname='public' and indexdef like 'CREATE UNIQUE%' order by 1;",
-  "captured_at": "2026-08-31",
+  "captured_at": "2026-09-14",
   "names": [
     "admissions_outcome_check",
     "admissions_pkey",
@@ -33,6 +33,7 @@
     "companies_pkey",
     "company_sections_pkey",
     "couriers_pkey",
+    "delivery_orders_invoice_uniq",
     "delivery_orders_pkey",
     "delivery_orders_status_check",
     "expenses_amount_check",

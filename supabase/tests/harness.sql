@@ -276,6 +276,9 @@ create table if not exists delivery_orders (
   status text not null default 'preparing', created_at timestamptz not null default now(),
   dispatched_at timestamptz, delivered_at timestamptz, returned_at timestamptz);
 create index if not exists delivery_orders_courier_idx on delivery_orders(courier_id);
+-- فهرسُ 0069 العاديّ — والأساسُ يحمله لأن 0069 خارجَ الموجة (تبدأ 0124). بدونه
+-- كان فحصُ «العاديُّ المكرَّر انشال» بـ0180 يمرّ على جدولٍ لم يكن فيه أصلاً.
+create index if not exists delivery_orders_invoice_idx on delivery_orders(invoice_id);
 -- كما بالإنتاج (0069): RLS مفعّلة. بلاها كانت سياساتُ 0157 تُنشأ بلا أثر، فمرّت
 -- سياسةٌ تستعلم من جدولها بالحزمة وأسقطت كلَّ تحديثٍ بالإنتاج (0159).
 alter table delivery_orders enable row level security;

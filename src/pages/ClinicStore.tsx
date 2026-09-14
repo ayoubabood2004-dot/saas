@@ -212,8 +212,19 @@ function OrdersTab({ orders, products, profile, clinicId, reload, goSettings }: 
         client_ref: `store-${o.id}`,
       };
       const invoice = await withTimeout(repo.retailCheckout(items, meta), 12000);
+      /* صفُّ التوصيل قبل ختمِ الطلب — والختمُ لا يقع إن فشل.
+       *
+       * كان الفشلُ يُبلَّغ بتوست خطأ ثمّ يُختم الطلبُ «مقبولاً» ويُطلق توستُ
+       * **نجاحٍ** يقول «تلكاه جاهز بشاشة التوصيل» — نفيٌ صريحٌ لما قيل قبله
+       * بسطرين، والطلبُ يخرج من طابور «الجديد» فلا يبقى له أثرٌ يُرى.
+       *
+       * وتركُه «جديداً» هو المخرج، وصار مأموناً بطرفين: `client_ref` الثابت
+       * (0135) يُرجع الفاتورةَ الأولى نفسَها بلا خصمِ مخزونٍ ثانٍ، والفهرسُ
+       * الفريد (0180) يمنع صفَّ توصيلٍ ثانياً — فالزرُّ القائم «اقبل» هو
+       * إعادةُ المحاولة، بلا شاشةٍ جديدة. */
+      let dlvOk = true;
       try {
-        await repo.createDeliveryOrder({
+        await withTimeout(repo.createDeliveryOrder({
           clinic_id: clinicId ?? null,
           invoice_id: invoice.id,
           branch_id: branchStore.branchForWrite(),
@@ -228,10 +239,16 @@ function OrdersTab({ orders, products, profile, clinicId, reload, goSettings }: 
           prepaid: invoice.amount_paid ?? 0,
           status: "preparing",
           dispatched_at: null, delivered_at: null, returned_at: null,
-        });
+        }), 12000);
       } catch {
+        dlvOk = false;
+      }
+      if (!dlvOk) {
         playWarning();
-        toast.error("الفاتورة انولدت لكن طلب التوصيل ما انسجل", "سجّله يدوياً من المبيعات ← التوصيل. الطلب نفسه مقبول وصحيح.");
+        toast.error(t("pos.storeAcceptDlvFail", "الطلب {{no}}: الفاتورة انولدت بس طلب التوصيل ما انسجّل — خلّينا الطلب «جديد».", { no: o.order_no }),
+                    t("pos.storeAcceptDlvFailHint", "اضغط «اقبل» مرّة ثانية. ما راح تنولد فاتورة ثانية ولا ينسحب المخزون مرّتين."));
+        await reload();
+        return;
       }
       // الختمُ الزمنيّ من الخادم (محفّز 0176) ومرآتُه التجريبية — لا من المتصفح.
       await repo.updateStoreOrder(o.id, { status: "accepted", invoice_id: invoice.id });

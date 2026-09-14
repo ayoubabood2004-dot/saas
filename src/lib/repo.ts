@@ -2345,6 +2345,10 @@ const demoRepo = {
   async createDeliveryOrder(input: Omit<DeliveryOrder, "id" | "created_at">): Promise<DeliveryOrder> {
     const db = loadDB();
     if (!db.deliveryOrders) db.deliveryOrders = [];
+    // مرآةُ الفهرس الفريد بـ0180: فاتورةٌ واحدة = طلبٌ واحد. حارسٌ ليس هنا
+    // حارسٌ لم يُفحص — فحوصُ المنطق تجري على هذه النسخة.
+    const twin = input.invoice_id ? db.deliveryOrders.find((x) => x.invoice_id === input.invoice_id) : undefined;
+    if (twin) return twin;
     const o: DeliveryOrder = { ...input, id: uid("dlv"), created_at: new Date().toISOString() };
     db.deliveryOrders.push(o);
     saveDB(db);
@@ -4597,12 +4601,26 @@ const supabaseRepo: typeof demoRepo = {
     const row: Record<string, unknown> = { ...rest };
     if (branch_id) row.branch_id = branch_id;
     if (zone) row.zone = zone;
-    const first = await sbc().from("delivery_orders").insert(row).select().single();
+    let first = await sbc().from("delivery_orders").insert(row).select().single();
     // قاعدة قبل هجرة 0099 (بلا عمود zone): نعيد الإدخال بدون المنطقة بدل ما
     // يضيع طلب التوصيل كله — الفاتورة محفوظة أصلاً والطلب أهم من الحقل.
     if (first.error && zone && /zone/i.test(first.error.message ?? "")) {
       delete row.zone;
-      return need<DeliveryOrder>(await sbc().from("delivery_orders").insert(row).select().single());
+      first = await sbc().from("delivery_orders").insert(row).select().single();
+    }
+    /* فاتورةٌ لها طلبُ توصيلٍ سلفاً (0180): الفريدُ يرفض الثاني بـ23505،
+     * ونحن نُرجع القائمَ بدل أن نرمي. هذا ما يجعل زرَّ «أعد المحاولة» بشاشة
+     * البيع مأموناً: الكتابةُ قد تكون وصلت وضاع جوابُها، فالإعادةُ تُرجع نفسَ
+     * الصفّ لا صفّاً ثانياً — نفسُ درس 0135 بالبيعة. ولو غاب الصفُّ رغم
+     * 23505 (سياسةٌ تحجبه) يُرمى الخطأُ الأصليّ: الصمتُ أخطرُ من الخطأ. */
+    /* الرمزُ وحدَه لا يميّز أيَّ قيدٍ انكسر. اليوم لا فريدَ آخر على الجدول،
+     * لكنّ أيَّ فريدٍ يُضاف غداً يجعل هذه الكتلةَ تُرجع صفّاً لا علاقةَ له
+     * بالخطأ وتقول الواجهةُ «انسجّل». فالاسمُ شرطٌ مع الرمز. */
+    const err = first.error as { code?: string; message?: string } | null;
+    const dupOfInvoice = err?.code === "23505" && (err.message ?? "").includes("delivery_orders_invoice_uniq");
+    if (dupOfInvoice && input.invoice_id) {
+      const dup = await sbc().from("delivery_orders").select("*").eq("invoice_id", input.invoice_id).limit(1).maybeSingle();
+      if (!dup.error && dup.data) return dup.data as DeliveryOrder;
     }
     return need<DeliveryOrder>(first);
   },

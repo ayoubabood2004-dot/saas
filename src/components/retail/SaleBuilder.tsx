@@ -7,7 +7,7 @@ import {
   Stethoscope, Pencil, Pill, Syringe, CalendarClock, Wallet, StickyNote, Bike, UserCheck, AlertTriangle, Undo2,
   ChevronUp, ChevronDown, PanelLeftClose, PanelLeftOpen, Scale, RotateCcw, Building2, SlidersHorizontal, Layers,
 } from "lucide-react";
-import type { Product, Invoice, InvoiceItem, CheckoutItem, SaleMeta, PaymentMethod, PaymentSplit, DiscountType, Customer, Service, ServiceCatalog, Species, Pet, Courier } from "@/types";
+import type { Product, Invoice, InvoiceItem, CheckoutItem, SaleMeta, PaymentMethod, PaymentSplit, DiscountType, Customer, Service, ServiceCatalog, Species, Pet, Courier, DeliveryOrder } from "@/types";
 import { repo, resolveDiscount } from "@/lib/repo";
 import { matchStaffToUser, resolveStaffName } from "@/lib/staffNames";
 import { phoneDigits } from "@/lib/phone";
@@ -152,6 +152,29 @@ function saveSaleDraft(clinicId: string | undefined, d: SaleDraft): void {
   } catch { /* ignore */ }
 }
 function clearSaleDraft(clinicId?: string): void { try { localStorage.removeItem(saleDraftKey(clinicId)); } catch { /* ignore */ } }
+
+/* ---- طلباتُ توصيلٍ لم تُسجَّل: تُحفظ بالجهاز لا بحالة المكوّن -------------
+ * البيعةُ تمّت والمخزون خرج والفاتورةُ محفوظة — والطلبُ وحده ضاع. لا شاشةَ
+ * أخرى تعرضه (لا وجودَ له بالقاعدة)، فالنسخةُ الوحيدة عندنا. وحالةُ المكوّن
+ * لا تكفي: أوّلُ ردِّ فعلٍ طبيعيٍّ لمن يقرأ «ما انسجّل» أن يفتح تبويبَ
+ * التوصيل ليتأكّد — و`AnimatePresence mode="wait"` بـRetailSales يفكّ
+ * SaleBuilder عند تبديل التبويب، فتلك الضغطةُ نفسُها تمحو ما جاء ينقذه.
+ * وقائمةٌ لا كائنٌ واحد: فشلان متتاليان لفاتورتين، والثاني يدهس الأوّل. */
+type PendingDelivery = { payload: Omit<DeliveryOrder, "id" | "created_at">; invNo: string };
+const pendingDlvKey = (clinicId?: string) => `vp_pending_dlv_${clinicId ?? "default"}`;
+function loadPendingDlv(clinicId?: string): PendingDelivery[] {
+  try {
+    const raw = localStorage.getItem(pendingDlvKey(clinicId));
+    const v: unknown = raw ? JSON.parse(raw) : null;
+    return Array.isArray(v) ? (v as PendingDelivery[]) : [];
+  } catch { return []; }
+}
+function savePendingDlv(clinicId: string | undefined, list: PendingDelivery[]): void {
+  try {
+    if (!list.length) localStorage.removeItem(pendingDlvKey(clinicId));
+    else localStorage.setItem(pendingDlvKey(clinicId), JSON.stringify(list));
+  } catch { /* ignore */ }
+}
 
 /* --------------------- Resizable cart (سلة قابلة لتغيير الحجم) ---------------
  * الشاشةُ القديمة: خيارٌ بالإعدادات، عرضٌ بالبكسل محفوظٌ بالجهاز، وسقفٌ ٧٢٠.
@@ -597,6 +620,11 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
   const [dCouriers, setDCouriers] = useState<Courier[] | null>(null); // null = not loaded yet
   /** فشلَ جلبُ السوّاق؟ — «تعذّر» لا قائمةٌ فارغة تبدو «ماكو سوّاق». */
   const [dCouriersFailed, setDCouriersFailed] = useState(false);
+  /* بيعةٌ انحفظت وطلبُ توصيلها لا: الحمولةُ تبقى محفوظةً بالجهاز حتى تنجح
+   * إعادةُ المحاولة أو يشيلها الكاشير بنفسه. خارج `reset()` عمداً — هي عن
+   * فاتورةٍ مضت لا عن السلّة الحالية، فبيعةٌ جديدة لا تمحو دَينَ السابقة. */
+  const [dlvFailed, setDlvFailed] = useState<PendingDelivery[]>(() => loadPendingDlv(draftScope));
+  const [dlvRetrying, setDlvRetrying] = useState<string | null>(null);   // invNo قيدَ الإعادة
   const [dCourierId, setDCourierId] = useState("");
   // منطقة التوصيل — من قائمة العيادة (الإعدادات ← مناطق التوصيل). اختيار
   // المنطقة يملأ الأجرة تلقائياً (وتبقى قابلة للتعديل) وينحفظ على الطلب.
@@ -1656,33 +1684,55 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
       // here never voids the sale — the invoice stands and the order can be
       // recreated; the cashier is told explicitly.
       if (deliveryOn) {
+        const nowISO = new Date().toISOString();
+        const dlvPayload: Omit<DeliveryOrder, "id" | "created_at"> = {
+          clinic_id: clinicId ?? null,
+          invoice_id: invoice.id,
+          branch_id: branchStore.branchForWrite(),
+          courier_id: dCourierId || null,
+          customer_name: cust.name || null,
+          customer_phone: phone.trim() || cust.phone || null,
+          zone: dZone || null,
+          address: dAddress.trim() || null,
+          note: null,
+          delivery_fee: deliveryFee,
+          fee_to_clinic: feeToClinic,
+          // Derive the COD from the invoice the server ACTUALLY recorded (it
+          // may round the client total) — the courier figure and the invoice
+          // due must never disagree by a fils.
+          cod_amount: round2(Math.max(0, invoice.total - (invoice.amount_paid ?? paidToday))),
+          prepaid: invoice.amount_paid ?? paidToday,
+          status: dCourierId ? "out" : "preparing",
+          dispatched_at: dCourierId ? nowISO : null,
+          delivered_at: null,
+          returned_at: null,
+        };
         try {
-          const nowISO = new Date().toISOString();
-          await repo.createDeliveryOrder({
-            clinic_id: clinicId ?? null,
-            invoice_id: invoice.id,
-            branch_id: branchStore.branchForWrite(),
-            courier_id: dCourierId || null,
-            customer_name: cust.name || null,
-            customer_phone: phone.trim() || cust.phone || null,
-            zone: dZone || null,
-            address: dAddress.trim() || null,
-            note: null,
-            delivery_fee: deliveryFee,
-            fee_to_clinic: feeToClinic,
-            // Derive the COD from the invoice the server ACTUALLY recorded (it
-            // may round the client total) — the courier figure and the invoice
-            // due must never disagree by a fils.
-            cod_amount: round2(Math.max(0, invoice.total - (invoice.amount_paid ?? paidToday))),
-            prepaid: invoice.amount_paid ?? paidToday,
-            status: dCourierId ? "out" : "preparing",
-            dispatched_at: dCourierId ? nowISO : null,
-            delivered_at: null,
-            returned_at: null,
-          });
+          /* بمهلة: `supabase.ts` بلا مهلةِ fetch عامّة، فنداءٌ عارٍ قد يعلّق
+           * إلى الأبد — فلا يُبلَغ الـcatch أصلاً ولا يظهر الشريط، وتبقى
+           * الدوّارةُ تدور على فاتورةٍ محفوظةٍ ومخزونٍ مخصوم. وكلُّ جارٍ بهذا
+           * الملفّ ملفوفٌ بها أصلاً. */
+          await withTimeout(repo.createDeliveryOrder(dlvPayload), 12000);
         } catch {
+          /* الرسالةُ القديمة كانت تحيله إلى «تبويب التوصيل» — والتبويبُ موجودٌ
+           * لكنّه كلُّه تحديثٌ لصفٍّ قائم، ولا موضعَ واحد بالتطبيق يُنشئ طلباً
+           * لفاتورةٍ قائمة. فالمخرجُ الوحيد أمامه كان إعادةَ البيعة، وهي التي
+           * تولّد صفَّ التوصيل الثاني: ذمّةٌ مضاعفةٌ على شركة التوصيل.
+           *
+           * فالمخرجُ صار هنا: الحمولةُ تبقى وشريطٌ ثابتٌ يعيد المحاولة — وصار
+           * مأموناً بـ0180 (فريدٌ على invoice_id) و`createDeliveryOrder` التي
+           * تُرجع القائمَ على 23505، فحتى لو كانت الكتابةُ الأولى وصلت وضاع
+           * جوابُها لا يُولَد صفٌّ ثانٍ. والشريطُ لا التوست: التوست يذهب بأربع
+           * ثوانٍ والكاشيرُ حينها بالطباعة. */
           playWarning();
-          toast.error(t("retail.deliveryOrderFail", "الفاتورة انحفظت لكن تعذّر إنشاء طلب التوصيل — أنشئه من تبويب التوصيل"));
+          const pend: PendingDelivery = { payload: dlvPayload, invNo: invoiceNo(invoice.id) };
+          setDlvFailed((prev) => {
+            const next = [...prev.filter((x) => x.payload.invoice_id !== dlvPayload.invoice_id), pend];
+            savePendingDlv(draftScope, next);
+            return next;
+          });
+          // والتوستُ يبقى مع الشريط لا بدلاً منه: الشريطُ يدوم والتوستُ يُسمَع.
+          toast.error(t("retail.deliveryOrderFail", "{{no}}: الفاتورة انحفظت — بس طلب التوصيل ما انسجّل. لا تعيد البيعة، اضغط «أعد المحاولة».", { no: invoiceNo(invoice.id) }));
         }
       }
       // Med lines grouped per patient — each pet's record gets ITS OWN entries.
@@ -1851,10 +1901,68 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
     }
   };
 
+  /* شريطُ الطلبات التي لم تُسجَّل — يُبنى هنا **قبل** الرجوع المبكّر بشاشة
+   * «تمّت البيعة»، ويُرسم بالفرعين معاً. أوّلُ صياغةٍ له وُضعت داخل فرع
+   * البنّاء وحده، وهو بالضبط الفرعُ الذي لا يُرسم لحظةَ الفشل: `setDlvFailed`
+   * و`setDone` بنفس الدورة بلا `await` بينهما، فتدمجهما React برسمةٍ واحدة
+   * تعرض شاشةَ النجاح — فكان الكاشير يسمع تحذيراً ثمّ نجاحاً ولا يقرأ شيئاً. */
+  const dlvStrip = dlvFailed.length ? (
+    <div className="mb-2.5 space-y-2">
+      {dlvFailed.map((d) => (
+        <div key={d.payload.invoice_id ?? d.invNo} data-dlvfailed className="flex flex-wrap items-center gap-2 rounded-xl border border-danger-300 bg-danger-50 px-3 py-2 text-xs font-bold text-danger-800 dark:border-danger-500/40 dark:bg-danger-500/15 dark:text-danger-200">
+          <Bike size={15} className="shrink-0" />
+          <span className="min-w-[12rem] flex-1">
+            {t("retail.deliveryOrderFail", "{{no}}: الفاتورة انحفظت — بس طلب التوصيل ما انسجّل. لا تعيد البيعة، اضغط «أعد المحاولة».", { no: d.invNo })}
+          </span>
+          <button
+            type="button"
+            data-dlvretry
+            disabled={dlvRetrying !== null}
+            className="shrink-0 rounded-lg bg-danger-600 px-2.5 py-1 font-extrabold text-white disabled:opacity-60"
+            onClick={async () => {
+              playTap();
+              setDlvRetrying(d.invNo);
+              try {
+                // بمهلة كذلك — وإلا بقيت الدوّارةُ على الزرّ للأبد.
+                await withTimeout(repo.createDeliveryOrder(d.payload), 12000);
+                setDlvFailed((prev) => {
+                  const next = prev.filter((x) => x !== d);
+                  savePendingDlv(draftScope, next);
+                  return next;
+                });
+                playSuccess();
+                toast.success(t("retail.deliveryOrderRetryOk", "انسجّل طلب التوصيل 🛵"));
+              } catch (e) {
+                playWarning();
+                toast.error(describeDbError(e, t), e instanceof Error ? e.message : undefined);
+              } finally {
+                setDlvRetrying(null);
+              }
+            }}
+          >
+            {dlvRetrying === d.invNo ? t("retail.deliveryOrderRetrying", "جاري المحاولة…") : t("common.retry", "إعادة المحاولة")}
+          </button>
+          {/* شيلُه قرارٌ صريح: طلبٌ ضائعٌ يُنسى أسوأ من شريطٍ مزعج. */}
+          <button type="button" data-dlvdismiss disabled={dlvRetrying !== null} className="shrink-0 underline disabled:opacity-60"
+            onClick={() => {
+              playTap();
+              setDlvFailed((prev) => { const next = prev.filter((x) => x !== d); savePendingDlv(draftScope, next); return next; });
+            }}>
+            {t("retail.deliveryOrderFailDismiss", "ما أريده — شيله")}
+          </button>
+        </div>
+      ))}
+    </div>
+  ) : null;
+
   // ---- Sale complete screen -------------------------------------------------
   if (done) {
     return (
       <motion.div initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }} className="mx-auto max-w-md">
+        {/* فوق شارةِ النجاح لا تحتها: «تمّت البيعة ✓» صادقةٌ — والفاتورةُ
+            محفوظةٌ فعلاً — لكنّ طلبَ التوصيل ليس كذلك، فلا يُترك خبرُه أسفلَ
+            بطاقةٍ خضراء يمرّ عليها النظرُ مرورَ المعتاد. */}
+        {dlvStrip}
         <div className="card overflow-hidden p-0 text-center">
           <div className="bg-brand-grad p-6 text-white">
             <motion.span initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: "spring", delay: 0.05 }} className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-white/20 backdrop-blur">
@@ -1930,6 +2038,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
         {t("retail.wholesale.badge", "بيع بالجملة — السعر يبدي بسعر الشراء")}
       </div>
     )}
+    {dlvStrip}
     <div
       ref={(el) => {
         posRootRef.current = el;

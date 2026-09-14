@@ -5,10 +5,11 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="theme-color" content="#1266d8" />
-    <!-- الوسوم الثابتة إنجليزية لأن اللغة الافتراضية إنجليزية: الزاحف ومعاينة
-         الرابط بالواتساب يقرآن هذا الرأس قبل أن يشتغل أي جافاسكربت، فوسمٌ
-         عربي فوق مستند lang="en" تناقضٌ يفهرَس. العربية تبقى لغةً بديلة
-         معلنة بـog:locale:alternate، وتظهر فعلياً بمجرد اختيارها. -->
+    <!-- الوسوم الثابتة إنجليزية رغم أن لغة العرض الافتراضية صارت عربية:
+         الزاحف ومعاينة الرابط بالواتساب يقرآن هذا الرأس قبل أن يشتغل أي
+         جافاسكربت، فوسمٌ عربي فوق مستند lang="en" تناقضٌ يفهرَس. وقلبُ الرأس
+         كلِّه إلى العربية قرارُ فهرسةٍ ومعاينةٍ لا قرارُ لغةِ واجهة — يُفصل
+         بكلمة المالك وحدها. العربية تبقى معلنةً بـog:locale:alternate. -->
     <meta name="description" content="doctorVet — veterinary clinic management: one medical record, a live operations board, inventory and till, WhatsApp campaigns and multi-branch. A simple interface that runs in your own currency." />
     <meta name="apple-mobile-web-app-title" content="doctorVet" />
     <title>doctorVet — Veterinary clinic management</title>
@@ -36,11 +37,13 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <!-- كل خطوط التطبيق بطلب واحد هنا — لا @import داخل CSS (يؤخر أول رسم)،
          ولا عائلات احتياط ثقيلة لا تُستعمل. العربي: IBM Plex Sans Arabic فقط. -->
-    <!-- اللاتيني وحده هنا. الخطّ العربي (IBM Plex Sans Arabic) **لا يُحمَّل
-         افتراضياً**: اللغة الافتراضية إنجليزية، وتنزيل عائلة عربية كاملة
-         بأربعة أوزان على صفحةٍ لا حرف عربي فيها هو ثقلٌ خالص بالمسار الحرج.
-         يُحقَن عند اختيار لغةٍ عربية الحرف — انظر ensureScriptFont في
-         src/i18n/index.ts. -->
+    <!-- اللاتيني وحده هنا. الخطّ العربي (IBM Plex Sans Arabic) **لا يُطلب من
+         المسار الحرج** إلا للصفحات العامّة (السكربت تحت). صارت لغةُ العرض
+         الافتراضية عربية، فيصل الطلبُ من ensureScriptFont بعد الحزمة: تُرسم
+         الشاشةُ بخطّ النظام أجزاءَ من الثانية ثم تتبدّل. والمقايضةُ ليست
+         جديدة — كلُّ عيادةٍ اختارت العربيةَ تمرّ بها اليوم — ومن يحمل
+         vp_lang="en" لا يُنزَّل عنده الخطُّ إطلاقاً، وهو ما يحفظه التأجيل.
+         انظر ensureScriptFont في src/i18n/index.ts. -->
     <!-- **غير حاجب للرسم** عمداً. ورقة أنماط خارجية تُحجَب عليها الصفحة كلها
          حتى تصل، وهذا ملفٌ من طرفٍ ثالث: زمنه خارج سيطرتنا وخارج مراقبتنا.
          وقياسٌ على شبكة بطيئة أظهر شاشة الإقلاع نفسها — وهي HTML/CSS صرف
