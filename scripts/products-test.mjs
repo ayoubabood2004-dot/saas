@@ -666,5 +666,28 @@ console.log("▸ تشكيلة المتجر — صورةٌ من مكانها، و
   check("وشيلُ الصورة يفكّ الربطَ ولا يكسر شيئاً", cs.includes("repo.deleteProductImage(") && cs.includes("image_path: null"));
 }
 
+/* ── دلو الصور: الأفعالُ الأربعة لا ثلاثة (0179) ───────────────────────────
+ * 0174 كتبت insert/update/delete وتركت select — فكلُّ رفعٍ يُرفض بـ42501 لأن
+ * `on conflict` (وهو ما يرسله storage-api عند upsert) يحتاج SELECT، والحذفُ
+ * يرجع صفرَ صفوفٍ **بلا خطأ** فتُقال «شيلت الصورة» ولا شيءَ حُذف. مُثبَتٌ
+ * بتجربةٍ محلّية، ومُصدَّقٌ بالإنتاج: دلو medical-media عنده select وفيه ملفات،
+ * وproduct-images بلا select وفيه صفر. */
+console.log("▸ دلو صور المنتجات — الأفعال الأربعة كاملة");
+{
+  const m174 = readFileSync("supabase/migrations/0174_product_images.sql", "utf8");
+  const m175 = readFileSync("supabase/migrations/0175_image_library.sql", "utf8");
+  const m179 = readFileSync("supabase/migrations/0179_product_images_select.sql", "utf8");
+  const bucketSql = m174 + m175 + m179;
+  for (const verb of ["select", "insert", "update", "delete"]) {
+    check(`سياسةُ ${verb} موجودةٌ للدلو`, new RegExp(`for\\s+${verb}\\s+to authenticated`, "i").test(bucketSql));
+  }
+  check("وسياسةُ القراءة مقصوصةٌ بمجلّد العيادة أو المكتبة — لا الدلو كلّه",
+    /product_images_select[\s\S]{0,600}foldername\(name\)\)\[1\] = \(select auth_clinic\(\)\)::text[\s\S]{0,200}'library'/.test(m179));
+  check("  وبـ(select auth_clinic()) لا نداءً عارياً (rls-initplan)",
+    m179.includes("(select auth_clinic())") && !/=\s*auth_clinic\(\)::text/.test(m179));
+  check("  ومحروسةٌ بغياب مخطّط storage كما 0174", m179.includes("to_regclass('storage.objects')"));
+  check("  ومُنزَّلةٌ بحزمة الهجرات", readFileSync("supabase/tests/run.sh", "utf8").includes("0179_product_images_select.sql"));
+}
+
 console.log(`\n${fails ? "✗" : "✓"} products-test: ${passes} نجحت، ${fails} فشلت`);
 process.exit(fails ? 1 : 0);
