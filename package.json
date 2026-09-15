@@ -15,7 +15,8 @@
     "search": "node scripts/search-test.mjs",
     "payroll": "node scripts/payroll-test.mjs",
     "products": "node scripts/products-test.mjs",
-    "courier": "node scripts/courier-test.mjs"
+    "courier": "node scripts/courier-test.mjs",
+    "live:store": "node scripts/live/store-wave2.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
