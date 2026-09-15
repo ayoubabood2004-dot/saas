@@ -691,5 +691,66 @@ console.log("▸ دلو صور المنتجات — الأفعال الأربع�
   check("  ومُنزَّلةٌ بحزمة الهجرات", readFileSync("supabase/tests/run.sh", "utf8").includes("0179_product_images_select.sql"));
 }
 
+/* ---- الموجة ٢: الكتلوج لا يعلق ولا تُقصّ السلّة -------------------------- */
+{
+  console.log("▸ الموجة ٢: الكتلوج والسلّة");
+  const front = readFileSync("src/pages/Storefront.tsx", "utf8");
+  const lib = readFileSync("src/lib/storeLib.ts", "utf8");
+  const track = readFileSync("src/pages/StoreTrack.tsx", "utf8");
+  const repoW2 = readFileSync("src/lib/repo.ts", "utf8");
+  const mig = readFileSync("supabase/migrations/0182_store_catalog_stable_order.sql", "utf8");
+  /* فحوصُ شِفرةٍ لا نصّ: أوّلُ صياغةٍ لثلاثةٍ منها كانت تبحث عن الكلمات
+   * (`hasImg`، `object-cover`) فتفشل على **التعليق الذي يشرح إزالتها** —
+   * حارسٌ يعاقب التوثيق. فالمسحُ يجري على الشِفرة بعد نزع التعليقات. */
+  const frontCode = front.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+
+  check("صمّامُ «عرض المزيد»: hasMore يتبع ما أُضيف فعلاً",
+    /setHasMore\(more\.length > 0 && added > 0\)/.test(frontCode));
+  check("  و`added` يُحسب من الصفوف الجديدة بعد إسقاط المكرّرات",
+    /const fresh = more\.filter\([\s\S]{0,80}added = fresh\.length/.test(frontCode));
+  check("تنظيفُ السلّة مشروطٌ باكتمال التشكيلة لا بأوّل صفحة",
+    /if \(state !== "open" \|\| hasMore \|\| loadingMore \|\| moreFailed\) return;/.test(frontCode));
+  check("  وما شِيل يُقال بالاسم لا يُحذف بصمت",
+    frontCode.includes("setCartTrimmed(") && frontCode.includes("data-carttrimmed") && frontCode.includes("sf.cartTrimmed"));
+  check("العددُ يُخفى ما دامت التشكيلةُ ناقصة",
+    /hasMore \|\| loadingMore \? "" : `\$\{formatNum\(shown\.length\)\}/.test(frontCode));
+  check("بلاطةُ الرفّ أرضٌ دائمة خلف كلّ صورة (لا شرط !hasImg)",
+    !/\bhasImg\b/.test(frontCode) && /shelfLabel\(p\.name\)/.test(frontCode));
+  check("سطرُ السلّة يعرض صورةَ المنتج فوق بلاطته",
+    /const cimg = productImageUrl\(p\.image_path\);/.test(frontCode)
+    && /shelfMonogram\(p\.name\)[\s\S]{0,200}\{cimg && <img/.test(frontCode));
+  check("  وورقةُ التفاصيل بـobject-contain لا object-cover",
+    !/object-cover/.test(frontCode) && /shelfLook\(detail\.name\)/.test(frontCode));
+  check("  ولا بقايا categoryLook بالسلّة ولا بالورقة",
+    !/categoryLook\(p\.category\)/.test(frontCode) && !/categoryLook\(detail\.category\)/.test(frontCode));
+  check("مفتاحُ آخر طلبٍ لكلّ متجرٍ لا مفتاحٌ مشترك",
+    /export function lastOrderKey\(slug: string\): string \{[\s\S]{0,200}normalizeSlug\(slug/.test(lib));
+  check("  ولا أحدَ يكتب المفتاحَ الحرفيَّ المشترك بعد اليوم",
+    !front.includes('"vp_store_last_order"') && !track.includes('"vp_store_last_order"'));
+  check("  والطرفان يمرّان من نفس الدالّة",
+    frontCode.includes("lastOrderKey(slug)") && track.includes("lastOrderKey(slug)"));
+  check("0182: p.id آخرَ مفاتيح الفرز (ترتيبٌ حاسم)", /order by[^\n]*p\.name, p\.id/.test(mig));
+  check("  والمختارُ يتصدّر من الخادم", /order by coalesce\(p\.store_featured, false\) desc/.test(mig));
+  check("  والتوفّرُ **خارجَ** الفرز عمداً — وإلا صارت قائمةً ناقصة",
+    !/order by[^\n]*stock > 0/.test(mig));
+  check("  والمرآةُ التجريبية تفرز بنفس المفاتيح (حارسٌ ليس بالمرآة لم يُفحص)",
+    /store_featured[\s\S]{0,260}a\.id\.localeCompare\(b\.id\)/.test(repoW2));
+  check("  ومُنزَّلةٌ بحزمة الهجرات",
+    readFileSync("supabase/tests/run.sh", "utf8").includes("0182_store_catalog_stable_order.sql"));
+
+  /* فحصٌ سلوكيّ لا نصّيّ: العطبُ كان «مفتاحٌ واحدٌ لكلّ المتاجر»، وصوابُه أن
+   * يختلف بالسلاگ **ويتّحد** رغم اختلاف حالة الأحرف — تطبيعٌ داخل الدالّة. */
+  const eb = (await import("esbuild")).default;
+  const b2 = await eb.build({
+    stdin: { contents: 'export { lastOrderKey } from "./src/lib/storeLib";', resolveDir: process.cwd(), loader: "js" },
+    bundle: true, format: "esm", write: false, platform: "node", logLevel: "silent",
+  });
+  const { lastOrderKey } = await import("data:text/javascript;base64," + Buffer.from(b2.outputFiles[0].text).toString("base64"));
+  check("مفتاحان لمتجرين مختلفين لا يتساويان", lastOrderKey("vet-0en2") !== lastOrderKey("vet-abcd"));
+  check("  ونفسُ المتجر بحالةِ أحرفٍ مختلفة مفتاحٌ واحد", lastOrderKey("Vet-0EN2") === lastOrderKey("vet-0en2"));
+  check("  وبفراغٍ زائد كذلك", lastOrderKey(" vet 0en2 ") === lastOrderKey("vet-0en2"));
+  check("  والمفتاحُ يحمل السلاگ فعلاً لا اسماً ثابتاً", lastOrderKey("vet-0en2").includes("vet-0en2"));
+}
+
 console.log(`\n${fails ? "✗" : "✓"} products-test: ${passes} نجحت، ${fails} فشلت`);
 process.exit(fails ? 1 : 0);

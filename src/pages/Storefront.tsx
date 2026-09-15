@@ -19,7 +19,7 @@ import {
 } from "lucide-react";
 import type { StoreCatalogItem, StoreFrontInfo } from "@/types";
 import { repo } from "@/lib/repo";
-import { categoryLook, isValidCustomerPhone, productImageUrl, shelfLook, shelfLabel } from "@/lib/storeLib";
+import { categoryLook, isValidCustomerPhone, productImageUrl, shelfLook, shelfLabel, shelfMonogram, lastOrderKey } from "@/lib/storeLib";
 import { preferArabicForVisitor } from "@/lib/portal";
 import { waNumber } from "@/lib/phone";
 import { celebrate } from "@/lib/celebrate";
@@ -106,13 +106,20 @@ export function Storefront() {
     try {
       const more = await repo.storeCatalogPublic(slug, PAGE_MORE, catalog.length);
       // إزالة أي تكرار دفاعياً (منتج انضاف بين الصفحتين يزحزح الترتيب).
+      let added = 0;
       setCatalog((cur) => {
         const seen = new Set(cur.map((x) => x.id));
-        return [...cur, ...more.filter((x) => !seen.has(x.id))];
+        const fresh = more.filter((x) => !seen.has(x.id));
+        added = fresh.length;
+        return [...cur, ...fresh];
       });
       /* التقدّمُ بما **وصل** لا بما طُلب — نفسُ درس `allPages`: صفحةٌ ناقصة عن
        * سقفٍ خادميٍّ أقلَّ من PAGE كانت تُقرأ «انتهت التشكيلة». */
-      setHasMore(more.length > 0);
+      /* و`added > 0` صمّامٌ لا تجميل: لو رجعت صفحةٌ كلُّها مكرّرات — وهو ما
+       * يصنعه ترتيبٌ غيرُ حاسم (0182) — لبقيت الرايةُ مرفوعةً وطولُ الكتلوج
+       * كما هو، فالإزاحةُ نفسُها والنداءُ يعيد نفسَه بلا نهاية على دالّةٍ
+       * عامّة نزعت 0178 حاجزَها. سطرٌ واحد يقفل الحلقة. */
+      setHasMore(more.length > 0 && added > 0);
       setMoreFailed(false);
     } catch {
       // إخفاءُ الزرّ يجعل الفشلَ يبدو نهايةَ التشكيلة — نُبقيه ونقول «تعذّر».
@@ -133,12 +140,24 @@ export function Storefront() {
   useEffect(() => { saveCart(slug, cart); }, [slug, cart]);
 
   const byId = useMemo(() => new Map(catalog.map((c) => [c.id, c])), [catalog]);
-  // سلة محفوظة من زيارة سابقة: نظّفها من أي منتج انسحب من الكاتلوج.
+  /* سلةٌ محفوظةٌ من زيارةٍ سابقة: تُنظَّف ممّا انسحب من الكتلوج — **بعد أن
+   * يكتمل الكتلوج لا قبله**.
+   *
+   * كانت تجري على `state === "open"`، أي بعد الصفحة الأولى وحدها (٢٤ منتجاً)،
+   * فكلُّ سطرِ سلّةٍ منتجُه بالصفحة الثانية يُحذف صامتاً: الزبونُ يعود لسلّةٍ
+   * حفظها أمس فيجدها ناقصةً ولا يعرف. والحذفُ الصامتُ يُصدَّق — «قائمةٌ ناقصة
+   * أخطرُ من خطأٍ ظاهر». مقيسٌ بمتصفّحٍ حقيقيّ: سلّةٌ من سطرين تصير سطراً. */
+  const [cartTrimmed, setCartTrimmed] = useState<string[]>([]);
   useEffect(() => {
-    if (state !== "open") return;
-    setCart((c) => c.filter((l) => byId.get(l.id)?.available));
+    if (state !== "open" || hasMore || loadingMore || moreFailed) return;
+    setCart((c) => {
+      const gone = c.filter((l) => !byId.get(l.id)?.available);
+      if (!gone.length) return c;
+      setCartTrimmed(gone.map((l) => byId.get(l.id)?.name ?? l.id));
+      return c.filter((l) => byId.get(l.id)?.available);
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state]);
+  }, [state, hasMore, loadingMore, moreFailed]);
 
   const cats = useMemo(() => {
     const seen = new Set<string>();
@@ -336,7 +355,11 @@ export function Storefront() {
           )}
           {catalog.length > 8 && (
             <div className="flex items-center justify-between gap-2 text-2xs">
-              <span className="font-semibold text-ink-muted">{formatNum(shown.length)} {t("sf.results", "منتج")}</span>
+              {/* عددٌ فوق كتلوجٍ ناقص يكذب: «١٢ منتج» عن متجرٍ فيه مئة. يُخفى
+                  حتى تكتمل التشكيلة بدل أن يُعرض رقمٌ أصغرُ من الحقيقة. */}
+              <span className="font-semibold text-ink-muted">
+                {hasMore || loadingMore ? "" : `${formatNum(shown.length)} ${t("sf.results", "منتج")}`}
+              </span>
               <select value={sort} onChange={(e) => { playTap(); setSort(e.target.value as typeof sort); }} data-storesort
                 aria-label={t("sf.sortDefault", "الترتيب المعتاد")}
                 className="shrink-0 rounded-lg border border-line bg-surface-1 px-2 py-1 text-2xs font-semibold text-ink-muted outline-none">
@@ -351,6 +374,14 @@ export function Storefront() {
 
       {/* الكاتلوج */}
       <main className="mx-auto max-w-3xl px-4 py-4">
+        {/* ما شِيل من السلّة يُقال بالاسم لا يُحذف بصمت: الزبونُ الذي يعود
+            لسلّةٍ حفظها أمس يستحقّ أن يعرف لماذا نقصت. */}
+        {cartTrimmed.length > 0 && (
+          <div data-carttrimmed className="mb-3 flex items-start gap-2 rounded-2xl border border-warn-300 bg-warn-50 px-3 py-2 text-2xs font-semibold text-warn-800">
+            <span className="flex-1">{t("sf.cartTrimmed", "انشالت من سلّتك (ما عادت متوفّرة): {{names}}", { names: cartTrimmed.join("، ") })}</span>
+            <button type="button" onClick={() => { playTap(); setCartTrimmed([]); }} aria-label={t("sf.close", "إغلاق")} className="shrink-0"><X size={14} /></button>
+          </div>
+        )}
         {/* صفُّ «مختاراتنا» المنفصل أُلغي: مقيسٌ أن كلَّ مختارٍ يظهر مرّتين
             (٣ من ٣ بتجربةٍ حيّة) بثمنِ ١٩٤ بكسل تدفع أوّلَ منتجٍ خارجَ الشاشة.
             الميزةُ نفسُها بقيت — المختارُ يتصدّر الشبكةَ بشارةٍ داخلها. */}
@@ -371,7 +402,6 @@ export function Storefront() {
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
             {shown.map((p, i) => {
               const shelf = shelfLook(p.name);
-              const hasImg = !!productImageUrl(p.image_path);
               const inCart = qtyOf(p.id);
               return (
                 <motion.div key={p.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: Math.min(i * 0.03, 0.3) }}
@@ -386,13 +416,14 @@ export function Storefront() {
                       الشركة يعرف الزبونُ المنتج. و`object-contain` فلا يُقصّ شيء. */}
                   <div role="button" tabIndex={0} onClick={() => { playTap(); setDetail(p); }}
                     onKeyDown={(e) => { if (e.key === "Enter") { playTap(); setDetail(p); } }}
-                    className={cn("relative grid aspect-square cursor-pointer place-items-center overflow-hidden",
-                      hasImg ? "bg-surface-2" : shelf.tile)}>
-                    {!hasImg && (
-                      <span className={cn("px-2 text-center font-display text-base font-bold leading-tight", shelf.ink)}>
-                        {shelfLabel(p.name)}
-                      </span>
-                    )}
+                    className={cn("relative grid aspect-square cursor-pointer place-items-center overflow-hidden", shelf.tile)}>
+                    {/* البلاطةُ **أرضٌ دائمة** لا بديلٌ عند غياب الصورة: كانت
+                        تُرسم بشرطٍ يستبعدها متى وُجدت صورة، فصورةٌ تفشل (ملفٌّ
+                        حُذف، شبكةٌ ضعيفة) تختفي بـhidden ولا شيءَ تحتها —
+                        بطاقةٌ فارغة. والتعليقُ القديم كان يصف العكس. */}
+                    <span className={cn("px-2 text-center font-display text-base font-bold leading-tight", shelf.ink)}>
+                      {shelfLabel(p.name)}
+                    </span>
                     {productImageUrl(p.image_path) && (
                       /* تكسيلُ ما هو فوق الطيّة يؤخّر أثقلَ عنصرٍ بالرسم (LCP)
                          بلا أن يوفّر شيئاً — الزائرُ يراه بلا تمرير. */
@@ -455,7 +486,7 @@ export function Storefront() {
 
       {/* ورقة تفاصيل المنتج (المرحلة ٣): صورة أكبر + الوصف كاملاً + عدّاد */}
       {detail && (() => {
-        const look = categoryLook(detail.category);
+        const shelf = shelfLook(detail.name);
         const img = productImageUrl(detail.image_path);
         const n = qtyOf(detail.id);
         return (
@@ -463,9 +494,11 @@ export function Storefront() {
             <div className="absolute inset-0 bg-ink/40" onClick={() => setDetail(null)} />
             <motion.div initial={{ y: 80, opacity: 0 }} animate={{ y: 0, opacity: 1 }}
               className="absolute inset-x-0 bottom-0 mx-auto max-w-3xl rounded-t-3xl bg-surface-1 p-4 pb-6 shadow-raised">
-              <div className={cn("relative grid h-52 place-items-center overflow-hidden rounded-2xl bg-gradient-to-br text-6xl", look.grad)}>
-                {look.emoji}
-                {img && <img src={img} alt="" className="absolute inset-0 h-full w-full object-cover" onError={(e) => { e.currentTarget.hidden = true; }} />}
+              {/* `object-contain` لا `object-cover`: القصُّ كان يقطع رأسَ العلبة
+                  وقاعَها — وباسمِ الشركة يعرف الزبونُ المنتج. والبلاطةُ أرضاً. */}
+              <div className={cn("relative grid h-52 place-items-center overflow-hidden rounded-2xl", shelf.tile)}>
+                <span className={cn("px-4 text-center font-display text-2xl font-bold", shelf.ink)}>{shelfLabel(detail.name)}</span>
+                {img && <img src={img} alt="" className="absolute inset-0 h-full w-full object-contain p-3" onError={(e) => { e.currentTarget.hidden = true; }} />}
                 <button onClick={() => { playTap(); setDetail(null); }} aria-label={t("sf.close", "إغلاق")}
                   className="absolute end-2 top-2 grid h-8 w-8 place-items-center rounded-full bg-ink/60 text-white"><X size={16} /></button>
               </div>
@@ -534,7 +567,7 @@ export function Storefront() {
                   onPlaced={(r) => {
                     setCart([]); setSheet("none"); setPlaced(r); playAchievement(); celebrate();
                     // رقم آخر طلب يُحفظ محلياً: صفحة التتبّع تعبّيه تلقائياً لو رجع الزبون بعدين.
-                    try { localStorage.setItem("vp_store_last_order", r.order_no); } catch { /* ignore */ }
+                    try { localStorage.setItem(lastOrderKey(slug), r.order_no); } catch { /* ignore */ }
                   }} />
               )}
             </motion.div>
@@ -577,10 +610,17 @@ function CartSheet({ cart, byId, subtotal, fee, feeKnown, total, underMin, minOr
             {cart.map((l) => {
               const p = byId.get(l.id);
               if (!p) return null;
-              const look = categoryLook(p.category);
+              /* صورةُ المنتج نفسِه لا إيموجي فئته: الزبونُ يتعرّف على العلبة
+                 التي اختارها. والبلاطةُ أرضاً تحتها كما بالبطاقة، فلا يصير
+                 السطرُ فارغاً إن فشل التحميل. (بقايا `categoryLook` — البند ١٧.) */
+              const shelf = shelfLook(p.name);
+              const cimg = productImageUrl(p.image_path);
               return (
                 <div key={l.id} className="flex items-center gap-3 rounded-2xl border border-line p-2.5">
-                  <span className={cn("grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-gradient-to-br text-lg", look.grad)}>{look.emoji}</span>
+                  <span className={cn("relative grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-xl text-2xs font-bold", shelf.tile, shelf.ink)}>
+                    {shelfMonogram(p.name)}
+                    {cimg && <img src={cimg} alt="" className="absolute inset-0 h-full w-full object-contain p-0.5" onError={(e) => { e.currentTarget.hidden = true; }} />}
+                  </span>
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-bold text-ink">{p.name}</p>
                     <p className="text-2xs tabular-nums text-ink-subtle">{money(p.price)} للواحد</p>

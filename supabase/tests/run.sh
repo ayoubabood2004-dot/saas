@@ -25,7 +25,7 @@ MIG="$HERE/../migrations"
 # و0095/0096/0158 بالمقدّمة رغم أنها أقدمُ من 0124: الموجةُ تبدأ من 0124 لأن
 # الأساس يوفّر ما قبلها جاهزاً — لكنّ هذه الثلاثَ تُنشئ المتجرَ والبوّابة،
 # وكانت خارجَ الفحص كلَّه. تُنزَّل بترتيبها الحقيقيّ قبل الموجة.
-WAVE="$MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql"
+WAVE="$MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql"
 
 command -v "$PGBIN/initdb" >/dev/null || { echo "ما لكيت بوستغريس بـ $PGBIN"; exit 1; }
 
@@ -1629,6 +1629,37 @@ chk "  وفاتورةٌ أخرى تمرّ طبيعياً (القيدُ على ا
     "select _rls_try('$C1', 'insert into delivery_orders(clinic_id,invoice_id,status,cod_amount) values (''$C1'',''dddddddd-0180-4000-8000-000000000002'',''preparing'',9000)')" "rows:1"
 chk "  وعيادةٌ أخرى لا تُدخل صفّاً بعيادتنا أصلاً (العزلُ قبل القيد)" \
     "select left(_rls_try('$C2', 'insert into delivery_orders(clinic_id,invoice_id,status,cod_amount) values (''$C1'',''dddddddd-0180-4000-8000-000000000002'',''preparing'',9000)'), 7)" "guarded"
+
+# ── 0182: ترتيبُ الكتلوج حاسمٌ والمختارُ يتصدّر ────────────────────────────
+# `order by category, name` ليس حاسماً: منتجان بنفس الفئة والاسم يرجعان بترتيبٍ
+# يقرّره بوستغريس، فبندُ العتبةِ بين صفحتَي `offset` قد يتكرّر أو يُقفَز فوقه —
+# «عرض المزيد» علِق ٨–٩ من ٣٠ محاولة. و`p.id` آخرَ المفاتيح يحسمه.
+# والتوفّرُ **لا يدخل** الترتيبَ عمداً: محسوبٌ من stock ومن pooled_stock، فبيعةٌ
+# أثناء التصفّح تقلب المرتبةَ فيسقط المنتجُ من الصفحة التالية صامتاً.
+echo "▸ 0182: ترتيبُ الكتلوج"
+$P -c "insert into products (id, clinic_id, name, category, sell_price, stock, store_visible, store_featured) values
+         ('a1820000-0000-4000-8000-000000000001','$C1','توأم الترتيب','food',1000,5,true,false),
+         ('a1820000-0000-4000-8000-000000000002','$C1','توأم الترتيب','food',1000,5,true,false),
+         ('a1820000-0000-4000-8000-000000000003','$C1','مختار الفحص','zzz',2000,5,true,true)
+       on conflict (id) do update set store_visible = excluded.store_visible, store_featured = excluded.store_featured;" >/dev/null
+chk "الترتيبُ حاسم: نفسُ الاستعلام مرّتين يعطي نفسَ التسلسل" \
+    "select (a.ids = b.ids)::text from (select string_agg(id::text,',' order by rn) ids from (select id, row_number() over () rn from store_catalog('trackclinic',100,0)) x) a cross join (select string_agg(id::text,',' order by rn) ids from (select id, row_number() over () rn from store_catalog('trackclinic',100,0)) y) b" "true"
+chk "  وصفحتان بـoffset لا تتقاطعان ولا تُسقطان صفّاً" \
+    "select (count(*) = count(distinct id))::text from (select id from store_catalog('trackclinic',2,0) union all select id from store_catalog('trackclinic',2,2)) q" "true"
+chk "  والمختارُ يتصدّر من الخادم لا من المتصفّح" \
+    "select (featured)::text from store_catalog('trackclinic',100,0) limit 1" "true"
+# لقطةُ الترتيب قبل البيعة، ثم نُفرغ رصيدَ منتجٍ ونقارن: هذا هو الفرقُ بين
+# «خللِ عرض» و«قائمةٍ ناقصة» — ولو دخل التوفّرُ الفرزَ لتبدّل التسلسل هنا.
+$P -c "drop table if exists _o182_before; create table _o182_before as
+         select id, row_number() over () rn from store_catalog('trackclinic',100,0);" >/dev/null 2>&1
+$P -c "update products set stock = 0 where id = 'a1820000-0000-4000-8000-000000000001';" >/dev/null
+chk "  والتوفّرُ خارجَ الترتيب: نفادُ منتجٍ أثناء التصفّح لا يزحزح التسلسل" \
+    "select (b.ids = a.ids)::text from (select string_agg(id::text,',' order by rn) ids from _o182_before) b cross join (select string_agg(id::text,',' order by rn) ids from (select id, row_number() over () rn from store_catalog('trackclinic',100,0)) y) a" "true"
+chk "  والنافدُ باقٍ بالكتلوج مُعلَّماً لا محذوفاً" \
+    "select (count(*) = 1)::text from store_catalog('trackclinic',100,0) where id = 'a1820000-0000-4000-8000-000000000001' and not available" "true"
+$P -c "drop table if exists _o182_before;" >/dev/null 2>&1
+chk "  والدالّة definer بمسارٍ مثبَّت وstable" \
+    "select (prosecdef and provolatile='s' and coalesce(array_to_string(proconfig,','),'') like '%search_path%')::text from pg_proc where proname='store_catalog'" "true"
 
 # ── الموجة ١ «البرهان»: ما صار يُفحص بعد أن دخل المتجرُ والبوّابةُ الحزمة ────
 # الجذر: 0095 و0096 و0158 — المتجرُ كلُّه وبوّابةُ المالك — كانت **خارج** هذه

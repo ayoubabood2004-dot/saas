@@ -24,6 +24,19 @@ export function productImageUrl(path: string | null | undefined): string | null 
 export const SLUG_RE = /^[a-z0-9][a-z0-9-]{1,28}[a-z0-9]$/;
 
 /** نظّف إدخال المستخدم لصيغة slug صالحة قدر الإمكان (بلا فرض الطول). */
+/** مفتاحُ «آخر طلب» — **لكلّ متجرٍ مفتاحُه**.
+ *
+ * كان مفتاحاً واحداً مشتركاً (`vp_store_last_order`)، فمن طلب من عيادةٍ ثمّ
+ * فتح صفحةَ تتبّعِ عيادةٍ أخرى وجد رقمَ طلبِ الأولى معبّأً — لا يطابق شيئاً
+ * عند الثانية، فتقول له «ما لكينا طلباً بهذا الرقم» وهو لم يكتب رقماً أصلاً.
+ *
+ * والتطبيعُ **داخل الدالّة** لا عند نداءِها: المسارُ قد يجيء `/s/Vet-0EN2`
+ * والكتابةُ من `/s/vet-0en2` — فلو طُبّع طرفٌ واحد لصار مفتاحان لمتجرٍ واحد.
+ * «تطبيعُ طرفٍ واحدٍ أسوأ من لا تطبيع: يفشل بصمتٍ ويبدو أنه يعمل.» */
+export function lastOrderKey(slug: string): string {
+  return `vp_store_last_order:${normalizeSlug(slug || "")}`;
+}
+
 export function normalizeSlug(input: string): string {
   return input
     .toLowerCase()

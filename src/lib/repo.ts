@@ -1709,7 +1709,14 @@ const demoRepo = {
     const cap = Math.min(Math.max(limit, 1), 100); // نفس سقف السيرفر
     return (db.products ?? [])
       .filter((p) => p.store_visible)
-      .sort((a, b) => (a.category ?? "z").localeCompare(b.category ?? "z") || a.name.localeCompare(b.name))
+      /* مرآةُ فرزِ 0182 حرفياً: المختارُ أوّلاً، ثم الفئةُ فالاسم، و`id` آخرَ
+       * المفاتيح كي يصير الترتيبُ حاسماً — فصفحتا `offset` لا تتقاطعان ولا
+       * تُسقطان صفّاً. والتوفّرُ خارجَ الفرز عمداً كما بالخادم. */
+      .sort((a, b) =>
+        Number(b.store_featured ?? false) - Number(a.store_featured ?? false)
+        || (a.category ?? "z").localeCompare(b.category ?? "z")
+        || a.name.localeCompare(b.name)
+        || a.id.localeCompare(b.id))
       .slice(Math.max(offset, 0), Math.max(offset, 0) + cap)
       .map((p) => ({
         id: p.id, name: p.name, category: p.category ?? null, subcategory: p.subcategory ?? null,

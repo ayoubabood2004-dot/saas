@@ -14,14 +14,14 @@ import { describeDbError } from "@/lib/errors";
 import { cn, money } from "@/lib/utils";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
 import type { StoreTrackInfo } from "@/types";
+import { lastOrderKey } from "@/lib/storeLib";
 
-const LAST_KEY = "vp_store_last_order";
 
 export function StoreTrack() {
   const { slug = "" } = useParams();
   const [sp] = useSearchParams();
   const { t } = useTranslation();
-  const [no, setNo] = useState(() => sp.get("no") ?? (() => { try { return localStorage.getItem(LAST_KEY) ?? ""; } catch { return ""; } })());
+  const [no, setNo] = useState(() => sp.get("no") ?? (() => { try { return localStorage.getItem(lastOrderKey(slug)) ?? ""; } catch { return ""; } })());
   const [phone, setPhone] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);

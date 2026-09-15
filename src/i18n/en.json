@@ -231,6 +231,7 @@
     "out": "Out of stock",
     "addToCart": "Add to cart",
     "results": "products",
+    "cartTrimmed": "Removed from your cart (no longer available): {{names}}",
     "all": "All",
     "minOrder": "Minimum",
     "cod": "Cash on delivery",
