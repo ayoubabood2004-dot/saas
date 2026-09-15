@@ -27,6 +27,11 @@ alter table store_read_hits enable row level security;
 -- نسقط النسخة القديمة أولاً: إبقاؤها مع نسخة بقيم افتراضية يخلق التباساً
 -- بالتحميل الزائد (نداء بوسيطة واحدة يطابق الاثنتين) فيفشل كل نداء.
 drop function if exists public.store_catalog(text);
+-- والتوقيعُ الثلاثيُّ معه: 0177/0178 وسّعتا المخرجَ إلى تسعة أعمدة، و
+-- `create or replace` يرفض تغييرَ نوع الإرجاع. فبلا هذا السطر تصير إعادةُ
+-- هذه الهجرة **مستحيلة** — على الحزمة وعلى الإنتاج معاً (قِيس: الحيّةُ اليوم
+-- تسعةُ أعمدة). ونفسُ السطر تحمله 0177 أصلاً؛ غيابُه هنا سهو.
+drop function if exists public.store_catalog(text, int, int);
 
 create or replace function public.store_catalog(p_slug text, p_limit int default 60, p_offset int default 0)
 returns table (id uuid, name text, category text, subcategory text, price numeric, descr text, available boolean)

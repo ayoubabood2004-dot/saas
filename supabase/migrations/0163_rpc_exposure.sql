@@ -63,7 +63,11 @@ begin
          'has_permission', 'is_platform_admin', 'can_access_pet_media',
          -- صفحاتٌ عامّة بطبيعتها
          'portal_logout', 'portal_me', 'portal_pet', 'portal_request_code', 'portal_verify_code',
-         'store_catalog', 'store_front', 'store_place_order',
+         -- `store_order_track` عامّةٌ بطبيعتها كأخواتها: الزبونُ يتتبّع طلبَه
+         -- برقمه وهاتفه بلا حساب. غيابُها عن القائمة كان يسحبها عن anon عند
+         -- كلّ إعادةِ تنزيلٍ لهذه الهجرة — والحزمةُ تعيدها بعد المنح الشامل،
+         -- فالحالةُ النهائية للفحص هي المكسورة.
+         'store_catalog', 'store_front', 'store_place_order', 'store_order_track',
          'clinic_directory', 'clinic_staff_public', 'doctor_busy_slots',
          'track_journey', 'react_journey', 'ingest_device_message')
        and has_function_privilege('anon', p.oid, 'execute')

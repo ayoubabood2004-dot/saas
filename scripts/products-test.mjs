@@ -557,7 +557,9 @@ console.log("▸ الدفعة ٧ — بطاقاتٌ توصل، وسقوفٌ تُ
   const front = readFileSync("src/pages/Storefront.tsx", "utf8");
   const repoS = readFileSync("src/lib/repo.ts", "utf8");
   check("0174: العمود مسارٌ نصيّ والكتلوج يرجعه", mig.includes("add column if not exists image_path text") && mig.includes("p.image_path"));
-  check("  وسياسةُ الرفع تشترط مجلّدَ العيادة", mig.includes("(storage.foldername(name))[1] = auth_clinic()::text"));
+  // ملفوفةٌ بـ(select …): 0181 لفّت نداءات السياسات كلَّها — والفحصُ كان يشترط
+  // الشكلَ العاريَ حرفياً، فكان يحرس العطبَ لا الصواب.
+  check("  وسياسةُ الرفع تشترط مجلّدَ العيادة، بنداءٍ ملفوف", mig.includes("(storage.foldername(name))[1] = (select auth_clinic())::text"));
   check("  والرفعُ السحابيّ إلى bucket لا إلى جدول", repoS.includes('storage.from("product-images").upload'));
   check("  والنسختان التجريبية والسحابية كلتاهما تعرفان الرفع", (repoS.split("async uploadProductImage(").length - 1) === 2);
   /* كان يفحص `loading="lazy"` نصّاً — وصار التكسيلُ مشروطاً: ما فوق الطيّة

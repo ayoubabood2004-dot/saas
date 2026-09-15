@@ -22,7 +22,10 @@ DB=dvtest
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MIG="$HERE/../migrations"
 # الهجرات التي يغطّيها هذا المخطّط الأساس. زدها كل ما تنضاف موجة.
-WAVE="$MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql"
+# و0095/0096/0158 بالمقدّمة رغم أنها أقدمُ من 0124: الموجةُ تبدأ من 0124 لأن
+# الأساس يوفّر ما قبلها جاهزاً — لكنّ هذه الثلاثَ تُنشئ المتجرَ والبوّابة،
+# وكانت خارجَ الفحص كلَّه. تُنزَّل بترتيبها الحقيقيّ قبل الموجة.
+WAVE="$MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql"
 
 command -v "$PGBIN/initdb" >/dev/null || { echo "ما لكيت بوستغريس بـ $PGBIN"; exit 1; }
 
@@ -1540,8 +1543,8 @@ $P -c "update _dvtest_flags set admin = false;" >/dev/null
 # ── 0176: قرار الطلب نهائي، والتتبّع برقمٍ وهاتفٍ معاً ───────────────────────
 echo "▸ 0176: حارس حالة الطلب وتتبّع الزبون"
 $P -c "insert into store_profiles (clinic_id, slug, enabled) values ('$C1', 'trackclinic', true) on conflict (clinic_id) do update set slug = 'trackclinic';
-       insert into store_orders (id, clinic_id, order_no, customer_phone, status, total)
-         values ('ee176000-0000-4000-8000-000000000001', '$C1', 'SO-TST01', '0770 123 4567', 'new', 25000)
+       insert into store_orders (id, clinic_id, order_no, customer_name, customer_phone, items, subtotal, status, total)
+         values ('ee176000-0000-4000-8000-000000000001', '$C1', 'SO-TST01', 'زبون التتبّع', '0770 123 4567', '[]'::jsonb, 25000, 'new', 25000)
        on conflict do nothing;" >/dev/null
 $P -c "update store_orders set status='accepted' where id='ee176000-0000-4000-8000-000000000001';" >/dev/null
 chk "طلبٌ جديد يتقرّر قبولاً" \
@@ -1585,8 +1588,8 @@ printf '   ℹ متوسط كلفة نداء التتبّع محلياً: %s ms\n
 $P -c "insert into products (id, clinic_id, name, sell_price, stock, store_visible)
          values ('ee178000-0000-4000-8000-000000000001', '$C1', 'منتج ستور 0178', 5000, 30, true)
        on conflict (id) do update set store_visible = true, stock = 30;
-       insert into store_orders (clinic_id, order_no, customer_name, customer_phone, status, total)
-         select '$C1', 'SO-RL'||g, 'مغرِق', '0771 555 6666', 'new', 1000 from generate_series(1,10) g;" >/dev/null
+       insert into store_orders (clinic_id, order_no, customer_name, customer_phone, items, subtotal, status, total)
+         select '$C1', 'SO-RL'||g, 'مغرِق', '0771 555 6666', '[]'::jsonb, 1000, 'new', 1000 from generate_series(1,10) g;" >/dev/null
 chk "عشرةٌ بالرقم المحلي ثم +964 لنفس الذيل: الحدُّ يمسكها" \
     "select store_place_order('trackclinic', 'زبون فحص', '+964 771 555 6666', 'عنوان', '', '[{\"product_id\":\"ee178000-0000-4000-8000-000000000001\",\"qty\":1}]'::jsonb)->>'error'" "rate_limited"
 chk "  ورقمٌ بذيلٍ آخر يطلب طبيعياً" \
@@ -1627,4 +1630,35 @@ chk "  وفاتورةٌ أخرى تمرّ طبيعياً (القيدُ على ا
 chk "  وعيادةٌ أخرى لا تُدخل صفّاً بعيادتنا أصلاً (العزلُ قبل القيد)" \
     "select left(_rls_try('$C2', 'insert into delivery_orders(clinic_id,invoice_id,status,cod_amount) values (''$C1'',''dddddddd-0180-4000-8000-000000000002'',''preparing'',9000)'), 7)" "guarded"
 
+# ── الموجة ١ «البرهان»: ما صار يُفحص بعد أن دخل المتجرُ والبوّابةُ الحزمة ────
+# الجذر: 0095 و0096 و0158 — المتجرُ كلُّه وبوّابةُ المالك — كانت **خارج** هذه
+# الحزمة، فأيُّ هجرةٍ تلمسها تمرّ خضراءَ بلا فحص. وإدخالُها كشف ثلاثةَ أشياء:
+#   • 0096 لا تُعاد أبداً بعد 0177/0178 (`cannot change return type`) — مقيسٌ
+#     على الإنتاج: الدالّةُ الحيّة تسعةُ أعمدة وهي تعرّفها بسبعة. دَينٌ حيّ.
+#   • الأساسُ كان يبني store_orders رخواً، و`create table if not exists` تجعل
+#     0095 بلا أثر — فالقالبُ كُتب على عالَمٍ أوسعَ من الإنتاج.
+#   • وسياساتُ 0095/0158/0174 عاريةٌ بالمصدر: 0128 تلفُّها وتحفظ الأصل، فكلُّ
+#     إعادةِ تنزيلٍ تفكُّ اللفَّ وتكدّس نسخةً ثانية. صُحّحت من المنبع.
+echo "▸ الموجة ١: المتجرُ والبوّابةُ داخل الحزمة"
+chk "ولا سياسةَ تنادي auth_clinic() عاريةً بعد الموجة كاملةً (مرّتين)" \
+    "select count(*)::text from pg_policies where schemaname='public' and ((coalesce(qual,'') like '%auth_clinic()%' and coalesce(qual,'') not like '%( SELECT auth_clinic%') or (coalesce(with_check,'') like '%auth_clinic()%' and coalesce(with_check,'') not like '%( SELECT auth_clinic%'))" "0"
+chk "  وجداولُ المتجر والبوّابة موجودةٌ فعلاً (0095 و0158 جرتا)" \
+    "select (count(*) = 5)::text from pg_class where relname in ('store_profiles','store_orders','portal_settings','portal_sessions','portal_login_log')" "true"
+chk "  وقيودُ store_orders كما بالإنتاج لا كما يسهّل القالب" \
+    "select (count(*) = 6)::text from information_schema.columns where table_schema='public' and table_name='store_orders' and is_nullable='NO' and column_name in ('clinic_id','order_no','customer_name','customer_phone','items','subtotal')" "true"
+chk "  و store_order_track ممنوحةٌ لـanon بعد 0163 (كانت تُسحب بصمت)" \
+    "select has_function_privilege('anon','store_order_track(text,text,text)','execute')::text" "true"
+chk "  ومحفّظُ حالة الطلب بمسارٍ مثبَّت — وباقٍ invoker" \
+    "select (coalesce(array_to_string(proconfig,','),'') like '%search_path%' and not prosecdef)::text from pg_proc where proname='store_orders_guard_status'" "true"
+chk "  وعزلُ المتجر حقيقيّ: عيادةٌ أخرى ما تشوف طلبات الأولى" \
+    "select _rls_try('$C2', 'select count(*) from store_orders')" "rows:1"
+# التغطيةُ تُقاس بقائمةٍ صريحة لا بعدد. العدُّ كان يقيس **جداولَ الظلّ** التي
+# يصنعها أساسُ الحزمة نفسُه بلا RLS (clinics، appointments، audit_log…): رقمٌ
+# يتبدّل كلّما لُمس الأساس، ولا يقول شيئاً عن الهجرات. فحذفُ تعريفٍ رخوٍ من
+# الأساس كان يرفعه من ٣٣ إلى ٣٤ — إشارةٌ كاذبة عن إصلاحٍ حقيقيّ. والقائمةُ
+# تسأل ما يعنينا: كلُّ جدولٍ تحميه هجرةٌ بالموجة، محميٌّ فعلاً بعد تنزيلين.
+for t in store_profiles store_orders portal_settings portal_sessions portal_codes portal_login_log portal_flags; do
+  chk "  RLS مفعَّلٌ على $t" \
+      "select relrowsecurity::text from pg_class where relname='$t'" "true"
+done
 [ $fail -eq 0 ] && echo "✓ كل الفحوص عبرت" || { echo "✗ اكو فحصٌ فشل"; exit 1; }

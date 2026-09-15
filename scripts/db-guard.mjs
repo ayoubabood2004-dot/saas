@@ -167,16 +167,28 @@ export function buildModel(dir = MIG_DIR) {
       for (const t of tables.values()) t.indexes = t.indexes.filter((i) => i.name !== n);
     }
 
-    /* create policy "n" on t ... using(...) with check(...) */
+    /* create/drop policy — **بترتيب الموضع لا بمرورين**.
+     *
+     * كان المروران منفصلين: كلُّ `create` يُجمع أوّلاً ثم كلُّ `drop` يُطبَّق.
+     * وعرفُ البيت أن تُكتب السياسةُ هكذا:
+     *     drop policy if exists p on t;
+     *     create policy p on t …;
+     * فالمرورُ الثاني كان يمحو ما أنشأه الأوّلُ **بنفس الملفّ** — أي أن كلَّ
+     * سياسةٍ حديثةٍ كانت غيرَ مرئيةٍ للحارس. ومقيسٌ بالتجربة: إرجاعُ سياسةٍ إلى
+     * نداءٍ عارٍ كان يمرّ أخضرَ، بينما أساسُ الحارس يقول بنصّه إن وظيفته «يمنع
+     * سياسةً جديدة تُكتب بنداء عارٍ». حارسٌ يدّعي ما لا يفعل أسوأُ من لا حارس. */
+    const polOps = [];
     for (const m of sql.matchAll(/create\s+policy\s+("(?:[^"]*)"|[\w]+)\s+on\s+([\w."]+)([\s\S]*?);(?=\s*(?:--|\n|$|[a-z]))/gi)) {
-      const t = tbl(m[2]);
-      const name = norm(m[1]);
-      t.policies.push({ name, table: norm(m[2]), body: m[3].replace(/\s+/g, " ").trim(), file });
+      polOps.push({ at: m.index, kind: "create", name: norm(m[1]), table: m[2], body: m[3] });
     }
     for (const m of sql.matchAll(/drop\s+policy\s+(?:if\s+exists\s+)?("(?:[^"]*)"|[\w]+)\s+on\s+([\w."]+)/gi)) {
-      const t = tbl(m[2]);
-      const n = norm(m[1]);
-      t.policies = t.policies.filter((p) => p.name !== n);
+      polOps.push({ at: m.index, kind: "drop", name: norm(m[1]), table: m[2] });
+    }
+    polOps.sort((a, b) => a.at - b.at);
+    for (const op of polOps) {
+      const t = tbl(op.table);
+      if (op.kind === "drop") t.policies = t.policies.filter((p) => p.name !== op.name);
+      else t.policies.push({ name: op.name, table: norm(op.table), body: op.body.replace(/\s+/g, " ").trim(), file });
     }
 
     /* دوال SECURITY DEFINER */
@@ -194,6 +206,9 @@ export function buildModel(dir = MIG_DIR) {
 /* -- الفحوص --------------------------------------------------------------- */
 
 /** الدوالّ التي تُنفَّذ لكل صفّ إن جاءت عاريةً داخل سياسة. */
+/** رقمُ الهجرة من اسم ملفّها — لقصر القواعد على ما بعد إصلاحٍ شاملٍ بعينه. */
+function fileNum(f) { const n = Number(String(f).slice(0, 4)); return Number.isFinite(n) ? n : 9999; }
+
 export const HELPERS = ["auth.uid", "auth.jwt", "auth.role", "auth_clinic", "auth_role", "is_clinic_staff", "is_platform_admin", "has_permission"];
 /** الصيغة الملفوفة الصحيحة: `(select f(…))` — تُستثنى من الفحص. */
 const RE_WRAPPED = /\(\s*select\s+[\w.]+\s*\([^()]*\)(\s+as\s+\w+)?\s*\)/gi;
@@ -226,7 +241,12 @@ export function analyze(model) {
       const bare = p.body.replace(RE_WRAPPED, "«ok»");
       for (const fn of HELPERS) {
         if (new RegExp(`(?:^|[^\\w.])${fn.replace(".", "\\.")}\\s*\\(`, "i").test(bare)) {
-          findings.push({ rule: "rls-initplan", where: `${name}: ${p.name} → ${fn}()`, file: p.file });
+          /* ما قبل 0128 دَينٌ تاريخيّ **تُصلحه 0128 وقتَ التشغيل** من الكتلوج
+           * مباشرة (لفّت ١١٦ سياسةً على الإنتاج) — فعدُّه هنا يعدّ نصّاً ميتاً
+           * ويغرق الإشارةَ الحيّة. والقاعدةُ من هنا فصاعداً: لا سياسةَ **جديدة**
+           * بنداءٍ عارٍ. وبعد إصلاح ترتيب create/drop صارت هذه ١٤٧ لو عُدَّت
+           * كلُّها؛ رفعُ السقف إليها كان سيدفن الإشارة بدل أن يكشفها. */
+          if (fileNum(p.file) > 128) findings.push({ rule: "rls-initplan", where: `${name}: ${p.name} → ${fn}()`, file: p.file });
         }
       }
       // policy-self-ref: سياسةٌ تستعلم من الجدول الذي تحميه. بوستغريس يرفضها

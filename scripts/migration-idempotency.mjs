@@ -82,9 +82,9 @@ const WAVE_FROM = 124;
  * تُذكَر الفجوةُ بالاسم لا أن تختفي: **هذه الهجرةُ لم تُنزَّل قطّ على قاعدةٍ
  * نظيفة**، فأوّلُ عيادةٍ تُنشأ من الصفر هي أوّلُ من يجرّبها.
  * ولا يُضاف اسمٌ لهذه القائمة بلا سببٍ مكتوب. */
-const WAVE_EXEMPT = new Map([
-  ["0158_owner_portal.sql", "تحتاج توسيعَ الأساس (جداولُ البوّابة والحدُّ الزمنيّ) — دَينٌ معلَن"],
-]);
+// لا استثناءَ اليوم. 0158 كانت آخرَه («تحتاج توسيعَ الأساس») ودخلت الموجة
+// بموجة «البرهان» — وأيُّ استثناءٍ جديد دَينٌ يُكتب هنا بسببه لا بصمت.
+const WAVE_EXEMPT = new Map([]);
 const waveText = readFileSync("supabase/tests/run.sh", "utf8").match(/WAVE="([^"]+)"/)?.[1] ?? "";
 const inWave = new Set(waveText.split(/\s+/).map((s) => s.split("/").pop()).filter(Boolean));
 const missing = files.filter((f) => {

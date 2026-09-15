@@ -1,4 +1,12 @@
 -- محاكاة بيئة سوبابيس بالقدر الذي تحتاجه هجرات 0125–0128
+
+-- pgcrypto بمخطّط `extensions` لا `public`: هكذا تُركّبها سوبابيس، و0158
+-- تكتب `set search_path = public, extensions` بناءً عليه (وتشرحه بتعليقها).
+-- فتركيبُها بـpublic هنا كان يجعل الفحصَ يمرّ على عالَمٍ لا يشبه الإنتاج —
+-- ثم تسقط 0158 بـ«function digest(text, unknown) does not exist» لأن مسارَها
+-- المثبَّت لا يرى public وحدَه. القالبُ يُقاس على ما تُنتجه القاعدةُ فعلاً.
+create schema if not exists extensions;
+create extension if not exists pgcrypto with schema extensions;
 create schema if not exists auth;
 create table if not exists auth.users (id uuid primary key);
 
@@ -45,6 +53,12 @@ language sql stable security definer set search_path = public as $$
 create or replace function has_permission(cap text) returns boolean
 language sql stable security definer set search_path = public as $$ select true $$;
 
+-- بديلٌ لـ`audit_change()` حتى تصل 0139 وتعرّفها فعلاً. 0095 تنشئ محفّزَها
+-- بهذه الدالّة وهي أقدمُ من 0139 بالترتيب — فبلا هذا البديل تسقط الموجةُ
+-- بأوّل سطر. تُستبدَل حين تجري 0139 بنفس الموجة، فما يُفحَص هو الحقيقية.
+create or replace function audit_change() returns trigger
+language plpgsql as $$ begin return coalesce(new, old); end $$;
+
 -- الجداول التي تلمسها الموجة
 create table if not exists pets (
   id uuid primary key default gen_random_uuid(),
@@ -71,26 +85,10 @@ create table if not exists lab_device_links (id uuid primary key default gen_ran
 create index if not exists lab_device_links_token_idx on lab_device_links(token);
 create table if not exists lab_device_inbox (id uuid primary key default gen_random_uuid(), link_id uuid references lab_device_links(id));
 create table if not exists generated_barcodes (id uuid primary key default gen_random_uuid(), product_id uuid references products(id) on delete set null);
-create table if not exists store_orders (id uuid primary key default gen_random_uuid(), invoice_id uuid references invoices(id));
--- 0176 يحتاج شكلَ الإنتاج: حالةُ الطلب وقنوات التتبّع (الرقم والهاتف والختم).
-alter table store_orders add column if not exists clinic_id      uuid;
-alter table store_orders add column if not exists order_no       text;
-alter table store_orders add column if not exists customer_phone text;
-alter table store_orders add column if not exists status         text not null default 'new';
-alter table store_orders add column if not exists total          numeric default 0;
-alter table store_orders add column if not exists decided_at     timestamptz;
-alter table store_orders add column if not exists created_at     timestamptz not null default now();
--- 0178 يستدعي store_place_order فعلاً — فالبدن كاملاً كما بالإنتاج (0095).
-alter table store_orders add column if not exists customer_name  text;
-alter table store_orders add column if not exists address        text;
-alter table store_orders add column if not exists note           text;
-alter table store_orders add column if not exists items          jsonb;
-alter table store_orders add column if not exists subtotal       numeric default 0;
-alter table store_orders add column if not exists delivery_fee   numeric default 0;
-create table if not exists store_profiles (clinic_id uuid primary key, slug text not null, enabled boolean not null default true);
-alter table store_profiles add column if not exists delivery_fee numeric not null default 0;
-alter table store_profiles add column if not exists min_order    numeric not null default 0;
-create table if not exists store_read_hits (ip text not null, bucket timestamptz not null, hits int not null default 0, primary key (ip, bucket));
+-- جداولُ المتجر تُنشئها 0095 نفسُها — وهي بالموجة منذ «البرهان». وكانت هنا
+-- بشكلٍ رخو (بلا not null ولا قيود)، و`create table if not exists` تجعل 0095
+-- بلا أثر: فالفحصُ يجري على عالَمٍ أوسعَ من الإنتاج، والقالبُ يُكتب عليه.
+-- `store_read_hits` تُنشئها 0095 كذلك.
 create table if not exists journeys (id uuid primary key default gen_random_uuid(), pet_id uuid references pets(id), status text);
 create index if not exists journeys_pet_idx on journeys(pet_id) where status = 'active';
 create table if not exists wa_accounts (id uuid primary key default gen_random_uuid());
@@ -404,12 +402,6 @@ alter table staff_presence     add column if not exists name           text;
 alter table staff_recurring    add column if not exists clinic_id      uuid default auth_clinic();
 alter table staff_recurring    add column if not exists amount         numeric;
 alter table staff_recurring    add column if not exists created_at     timestamptz not null default now();
-alter table store_orders       add column if not exists clinic_id      uuid;
-alter table store_orders       add column if not exists customer_name  text;
-alter table store_orders       add column if not exists customer_phone text;
-alter table store_orders       add column if not exists total          numeric;
-alter table store_orders       add column if not exists status         text default 'new';
-alter table store_orders       add column if not exists created_at     timestamptz not null default now();
 alter table surgeries          add column if not exists clinic_id      uuid default auth_clinic();
 alter table surgeries          add column if not exists name           text;
 alter table surgeries          add column if not exists created_at     timestamptz not null default now();

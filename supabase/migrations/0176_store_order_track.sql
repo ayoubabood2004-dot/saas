@@ -20,8 +20,11 @@
 -- ============================================================================
 
 -- ── ١) حارس الانتقال ──────────────────────────────────────────────────────
+-- invoker عمداً (نمط 0162): يحرس ما يكتبه `authenticated` ولا يشدّ أكثرَ من
+-- السياسة. لكنّ `search_path` مثبَّتٌ رغم ذلك — محفّزٌ بلا مسارٍ مثبَّت يُنفَّذ
+-- بمسار المُستدعي، وهو المحفّزُ الوحيد بالنظام الذي كان كذلك.
 create or replace function store_orders_guard_status()
-returns trigger language plpgsql as $$
+returns trigger language plpgsql set search_path = public as $$
 begin
   if new.status is distinct from old.status then
     if old.status <> 'new' or new.status not in ('accepted', 'rejected', 'cancelled') then

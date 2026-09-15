@@ -38,9 +38,12 @@ create unique index if not exists store_profiles_slug_unique on store_profiles(s
 
 alter table store_profiles enable row level security;
 drop policy if exists store_profiles_clinic_all on store_profiles;
+-- ملفوفةٌ بـ(select ...) من المنبع: نداءٌ عارٍ يُعاد تقييمُه لكل صفّ، و0128
+-- تلفُّه لاحقاً وتحفظ الأصل — فإعادةُ تنزيل هذه الهجرة كانت تفكُّ اللفَّ بصمت
+-- وتكدّس نسخةً ثانيةً بـrls_policy_backup. اللفُّ هنا يُنهي الدورة.
 create policy store_profiles_clinic_all on store_profiles for all
-  using      (clinic_id = auth_clinic())
-  with check (clinic_id = auth_clinic());
+  using      (clinic_id = (select auth_clinic()))
+  with check (clinic_id = (select auth_clinic()));
 
 drop trigger if exists audit_all on store_profiles;
 create trigger audit_all after insert or update or delete on store_profiles
@@ -85,13 +88,13 @@ alter table store_orders enable row level security;
 drop policy if exists store_orders_clinic_read   on store_orders;
 drop policy if exists store_orders_clinic_update on store_orders;
 create policy store_orders_clinic_read on store_orders
-  for select using (clinic_id = auth_clinic());
+  for select using (clinic_id = (select auth_clinic()));
 -- العيادة تقرر (قبول/رفض) — الإدراج حصراً عبر دالة الطلب العامة أدناه؛
 -- لا سياسة insert إطلاقاً حتى ما يقدر أحد يزرع طلبات مباشرة بالجدول.
 create policy store_orders_clinic_update on store_orders
   for update
-  using      (clinic_id = auth_clinic())
-  with check (clinic_id = auth_clinic());
+  using      (clinic_id = (select auth_clinic()))
+  with check (clinic_id = (select auth_clinic()));
 
 drop trigger if exists audit_all on store_orders;
 create trigger audit_all after insert or update or delete on store_orders

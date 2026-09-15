@@ -53,8 +53,8 @@ create table if not exists portal_settings (
 alter table portal_settings enable row level security;
 drop policy if exists portal_settings_clinic_all on portal_settings;
 create policy portal_settings_clinic_all on portal_settings for all
-  using      (clinic_id = auth_clinic())
-  with check (clinic_id = auth_clinic());
+  using      (clinic_id = (select auth_clinic()))
+  with check (clinic_id = (select auth_clinic()));
 
 -- ── ٢) الرموز المعلّقة ────────────────────────────────────────────────────
 -- رمزٌ حيٌّ واحد لكل (عيادة، رقم): طلبٌ جديد يستبدل القديم فلا يتراكم طابور
@@ -94,12 +94,12 @@ create index if not exists portal_sessions_clinic_idx
 alter table portal_sessions enable row level security;
 drop policy if exists portal_sessions_clinic_read on portal_sessions;
 create policy portal_sessions_clinic_read on portal_sessions for select
-  using (clinic_id = auth_clinic());
+  using (clinic_id = (select auth_clinic()));
 -- الإبطالُ تعديلٌ مسموح؛ الإنشاءُ لا — الجلسةُ تُولد من دالّة التحقّق وحدها.
 drop policy if exists portal_sessions_clinic_revoke on portal_sessions;
 create policy portal_sessions_clinic_revoke on portal_sessions for update
-  using      (clinic_id = auth_clinic())
-  with check (clinic_id = auth_clinic());
+  using      (clinic_id = (select auth_clinic()))
+  with check (clinic_id = (select auth_clinic()));
 
 -- ── ٤) سجلُّ المحاولات ────────────────────────────────────────────────────
 -- تراه العيادةُ فتعرف من دخل ومتى، ومنه تُمسك حالةَ «رقمٌ كُتب غلط»: دخولٌ
@@ -119,7 +119,7 @@ create index if not exists portal_login_log_clinic_idx
 alter table portal_login_log enable row level security;
 drop policy if exists portal_login_log_clinic_read on portal_login_log;
 create policy portal_login_log_clinic_read on portal_login_log for select
-  using (clinic_id = auth_clinic());
+  using (clinic_id = (select auth_clinic()));
 
 -- ── ٥) رايةُ التجربة — للمنصّة وحدها ─────────────────────────────────────
 -- صفٌّ واحد. حين تُشعَل يرجع `portal_request_code` الرمزَ بجسم الرد ليُعرض على
