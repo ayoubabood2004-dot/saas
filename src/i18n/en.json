@@ -305,6 +305,7 @@
     "invalidValue": "Some values are invalid. Please review and try again.",
     "unauthorized": "Your session may have expired. Sign in again and retry.",
     "database": "Database error. Please try again.",
+    "notAnImage": "Pick an image file (JPG, PNG or WEBP) — that file isn't an image.",
     "fileTooLarge": "File is too large (max {{mb}} MB). Try a smaller image.",
     "uploadFailed": "Upload failed — check your connection and try again.",
     "c": {

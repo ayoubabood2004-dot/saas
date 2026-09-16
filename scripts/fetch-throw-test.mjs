@@ -111,6 +111,8 @@ check("listStoreOrders — صندوقُ طلبات المتجر",
   await throws(() => repo.listStoreOrders()));
 check("addGeneratedBarcodes — ملصقاتٌ لا تُطبع قبل أن تُسجَّل",
   await throws(() => repo.addGeneratedBarcodes([{ barcode: "2000000000015", label: null, product_id: null, created_by: null }])));
+check("listImageLibrary — «ما بيها صور» كانت تُقال عن فشل (البند ٢٠)",
+  await throws(() => repo.listImageLibrary()));
 
 console.log("▸ وقوائمُ المخزن الأساسية ترمي أصلاً (allPages) — لا تراجُع");
 check("listProducts", await throws(() => repo.listProducts()));

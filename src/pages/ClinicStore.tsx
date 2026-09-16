@@ -470,8 +470,12 @@ function CatalogTab({ products, reload, storeOn }: { products: Product[] | null;
     setBusyId(p.id);
     try {
       const prepared = await prepareUpload(file, { maxDim: 800, quality: 0.72 });
+      const old = p.image_path ?? null;
       const path = await repo.uploadProductImage(p.clinic_id ?? null, p.id, prepared);
       await repo.updateProduct(p.id, { image_path: path });
+      // المسارُ صار فريداً لكلّ رفعة (البند ٩)، فالقديمُ لم يعد يُطمَس بالجديد —
+      // يُحذف بعد أن ينجح تحويلُ المرجع، وبعده وحده. `repo` تتكفّل بالمشترَك.
+      if (old && old !== path) void repo.deleteProductImage(p.clinic_id ?? null, p.id, old);
       playSuccess();
       await reload();
     } catch (e) { playWarning(); toast.error(describeUploadError(e, t)); }
@@ -479,7 +483,13 @@ function CatalogTab({ products, reload, storeOn }: { products: Product[] | null;
   };
   const pickFromLib = async (p: Product, path: string) => {
     setBusyId(p.id);
-    try { await repo.updateProduct(p.id, { image_path: path }); playSuccess(); await reload(); }
+    try {
+      const old = p.image_path ?? null;
+      await repo.updateProduct(p.id, { image_path: path });
+      // الانتقالُ لصورة مكتبةٍ يترك ملفَّ العيادة القديمَ يتيماً لو لم يُحذف.
+      if (old && old !== path) void repo.deleteProductImage(p.clinic_id ?? null, p.id, old);
+      playSuccess(); await reload();
+    }
     catch (e) { playWarning(); toast.error(t("pos.photoSaveFailed", "تعذّر حفظ الصورة"), errMsg(e)); }
     finally { setBusyId(null); setLibFor(null); setPhotoFor(null); }
   };

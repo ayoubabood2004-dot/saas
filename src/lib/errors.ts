@@ -151,6 +151,17 @@ export function describeUploadError(e: unknown, t: TFunction): string {
   if (err.name === TIMEOUT_NAME) {
     return t("errors.timeout", "The request timed out — check your connection and try again.");
   }
+  // نوعٌ مرفوض — من الواجهة (`NotAnImageError`) أو من الدلو نفسِه (0184 يرجع
+  // 415 «mime type … is not supported»). **قبل** فرع الشبكة: وإلا قيل للعيادة
+  // «راجع اتصالك» عن ملفٍّ لن يُقبل مهما أُعيد، فتُعيد المحاولةَ إلى الأبد.
+  if (err.name === "NotAnImageError"
+      || (typeof err.message === "string" && /mime type|not supported|invalid_mime/i.test(err.message))) {
+    return t("errors.notAnImage", "Pick an image file (JPG, PNG or WEBP) — that file isn't an image.");
+  }
+  // وحجمٌ فوق سقف الدلو (٢ ميغا) — 413 من storage. نفسُ المنطق: خطأٌ دائم.
+  if (typeof err.message === "string" && /exceeded the maximum allowed size|payload too large|413/i.test(err.message)) {
+    return t("errors.fileTooLarge", "File is too large (max {{mb}} MB). Try a smaller image.", { mb: 2 });
+  }
   if (typeof err.message === "string" && /fetch|network|storage|bucket|object|cors|load failed|not found/i.test(err.message)) {
     return t("errors.uploadFailed", "Upload failed — check your connection and try again.");
   }

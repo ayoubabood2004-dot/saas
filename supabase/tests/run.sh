@@ -25,7 +25,7 @@ MIG="$HERE/../migrations"
 # و0095/0096/0158 بالمقدّمة رغم أنها أقدمُ من 0124: الموجةُ تبدأ من 0124 لأن
 # الأساس يوفّر ما قبلها جاهزاً — لكنّ هذه الثلاثَ تُنشئ المتجرَ والبوّابة،
 # وكانت خارجَ الفحص كلَّه. تُنزَّل بترتيبها الحقيقيّ قبل الموجة.
-WAVE="$MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql"
+WAVE="$MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql $MIG/0184_images_hardening.sql"
 
 command -v "$PGBIN/initdb" >/dev/null || { echo "ما لكيت بوستغريس بـ $PGBIN"; exit 1; }
 
@@ -1757,6 +1757,50 @@ chk "  ويرجع بالتجديد" \
 #     0095 بلا أثر — فالقالبُ كُتب على عالَمٍ أوسعَ من الإنتاج.
 #   • وسياساتُ 0095/0158/0174 عاريةٌ بالمصدر: 0128 تلفُّها وتحفظ الأصل، فكلُّ
 #     إعادةِ تنزيلٍ تفكُّ اللفَّ وتكدّس نسخةً ثانية. صُحّحت من المنبع.
+# ── 0184: الصورةُ تُورَّث بالطيّ ولا تُدفن مع التوأم ────────────────────────
+# الجذر: الدمجُ والترتيبُ يورّثان الرصيدَ والرموزَ والصلاحية، ولا يورّثان
+# `image_path` ولا `store_desc` — فمنتجٌ مصوَّرٌ يُطوى بمنتجٍ بلا صورة تضيع
+# صورتُه: الصفُّ يذهب لسلّة المحذوفات ومعه مسارُه، والباقي يبقى فارغاً.
+#
+# والفحصُ يقيس **الاتجاهين**: الفراغُ يُملأ، والموجودُ لا يُزاح. لأن إصلاحاً
+# بـ`coalesce` معكوسَ الترتيب يمرّ بفحصٍ من طرفٍ واحد ويمحو صورةَ الأصل.
+echo "▸ 0184: الصورةُ تُورَّث بالطيّ"
+$P -c "insert into products (id, clinic_id, name, sell_price, purchase_price, stock, image_path, store_desc, store_visible)
+       values ('a1840000-0000-4000-8000-000000000001','$C1','أصلٌ بلا صورة',1000,500,5,null,null,false),
+              ('a1840000-0000-4000-8000-000000000002','$C1','توأمٌ مصوَّر',1000,500,3,'$C1/pic-a.jpg','وصفُ-التوأم',true),
+              ('a1840000-0000-4000-8000-000000000003','$C1','أصلٌ مصوَّر',1000,500,5,'$C1/keep-b.jpg','وصفُ-الأصل',false),
+              ('a1840000-0000-4000-8000-000000000004','$C1','توأمٌ مصوَّرٌ ثانٍ',1000,500,3,'$C1/pic-c.jpg','وصفٌ-آخر',true)
+       on conflict (id) do nothing;" >/dev/null
+
+chk "الدمجُ يورّث صورةَ التوأم لأصلٍ بلا صورة" \
+    "select _pf('$C1', 'select (merge_products(''a1840000-0000-4000-8000-000000000001''::uuid, ''a1840000-0000-4000-8000-000000000002''::uuid)).image_path')" "$C1/pic-a.jpg"
+chk "  والوصفُ معها" \
+    "select store_desc from products where id='a1840000-0000-4000-8000-000000000001'" "وصفُ-التوأم"
+chk "  و**الظهورُ بالمتجر لا يُورَّث** — النشرُ يُقصد لا يُستنتَج" \
+    "select store_visible::text from products where id='a1840000-0000-4000-8000-000000000001'" "false"
+chk "وصورةُ الأصل **لا تُزاح** بصورة التوأم (coalesce لا استبدال)" \
+    "select _pf('$C1', 'select (merge_products(''a1840000-0000-4000-8000-000000000003''::uuid, ''a1840000-0000-4000-8000-000000000004''::uuid)).image_path')" "$C1/keep-b.jpg"
+chk "  والوصفُ كذلك" \
+    "select store_desc from products where id='a1840000-0000-4000-8000-000000000003'" "وصفُ-الأصل"
+# والمطويُّ يبقى بسلّة المحذوفات بمسارِه — فالاسترجاعُ يرجّع صورتَه هو.
+chk "  والمطويُّ محفوظٌ بسلّته ومعه مسارُه" \
+    "select (row->>'image_path') from products_trash where id='a1840000-0000-4000-8000-000000000002'" "$C1/pic-a.jpg"
+
+# «رتّب المخزن» نفسُ المنطق: غيرُ المصنَّف يُطوى بمصنَّفٍ يطابقه اسماً.
+$P -c "insert into products (id, clinic_id, name, sell_price, purchase_price, stock, section_id, image_path, store_desc)
+       values ('a1840000-0000-4000-8000-000000000011','$C1','مادةُ الترتيب',1000,500,5,'5e180000-0000-4000-8000-000000000001',null,null),
+              ('a1840000-0000-4000-8000-000000000012','$C1','مادةُ الترتيب',1000,500,4,null,'$C1/tidy-a.jpg','وصفٌ-من-غير-المصنَّف')
+       on conflict (id) do nothing;" >/dev/null
+chk "«رتّب المخزن» طوى التوأمَ فعلاً (شرطٌ مسبَق للسطر التالي)" \
+    "select _pf('$C1', 'select (inventory_tidy_uncat()->>''merged'')::int >= 1')" "true"
+chk "  والمسارُ وصل الأصل" \
+    "select image_path from products where id='a1840000-0000-4000-8000-000000000011'" "$C1/tidy-a.jpg"
+
+# الدلو: الحارسُ `to_regclass` يتخطّاه بالحزمة (لا مخطّط storage)، فنفحص أنّ
+# الهجرةَ **لا تنفجر** بغيابه — وهو بالضبط ما تقيسه إعادةُ التنزيل مرّتين.
+chk "  وهجرةُ الدلو تُتخطّى بلا انفجارٍ حين لا مخطّطَ storage" \
+    "select (to_regclass('storage.buckets') is null)::text" "true"
+
 echo "▸ الموجة ١: المتجرُ والبوّابةُ داخل الحزمة"
 chk "ولا سياسةَ تنادي auth_clinic() عاريةً بعد الموجة كاملةً (مرّتين)" \
     "select count(*)::text from pg_policies where schemaname='public' and ((coalesce(qual,'') like '%auth_clinic()%' and coalesce(qual,'') not like '%( SELECT auth_clinic%') or (coalesce(with_check,'') like '%auth_clinic()%' and coalesce(with_check,'') not like '%( SELECT auth_clinic%'))" "0"

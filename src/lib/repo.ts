@@ -1335,6 +1335,7 @@ const demoRepo = {
     return [...(loadDB().imageLibrary ?? [])].sort((a, b) => (a.company ?? "").localeCompare(b.company ?? "") || a.name.localeCompare(b.name));
   },
   async createLibraryImage(meta: { name: string; company?: string | null; section?: string | null; barcode?: string | null }, upload: { blob: Blob; dataUrl: string }): Promise<LibraryImage> {
+    assertUploadableImage(upload);
     const db = loadDB();
     const row: LibraryImage = {
       id: uid("lib"), name: meta.name.trim(), company: meta.company?.trim() || null,
@@ -1358,6 +1359,8 @@ const demoRepo = {
    *  ليُحفظ بـ`image_path` كما هو. الشاشات لا تفرّق بينه وبين مسار سحابيّ. */
   async uploadProductImage(_clinicId: string | null, _productId: string, upload: { blob: Blob; dataUrl: string }): Promise<string> {
     void _clinicId; void _productId;
+    // نفسُ حارس النوع بالضبط: حارسٌ لا يوجد بالتجريبيّ حارسٌ لم يُفحص.
+    assertUploadableImage(upload);
     return upload.dataUrl;
   },
   /** حذف ملف الصورة — تجريبياً لا ملفَ أصلاً؛ تصفيرُ المسار شأنُ updateProduct. */
@@ -3284,6 +3287,40 @@ function sbc(): SupabaseClient {
   if (!supabase) throw new Error("[supabase] client is not configured");
   return supabase;
 }
+/* ══ صورُ المنتجات: مرآةُ قائمة الدلو (0184) ═══════════════════════════════
+ *
+ * الدلوُ `product-images` منذ 0184 يقبل ثلاثةَ أنواعٍ وسقفَ ٢ ميغا. وهذي
+ * مرآتُها بالواجهة — **الطرفان من نفس القائمة**، فتطبيقُ طرفٍ واحد يترك
+ * الآخرَ يفشل بخطأٍ إنكليزيٍّ خام بوجه عيادةٍ عراقية.
+ *
+ * ولماذا تُحرَس أصلاً: `prepareUpload` تمرّر غيرَ الصور **كما هي** عمداً —
+ * تقاريرُ المختبر PDF تحتاج ذلك. فمن اختار PDF بمنتقي صورةِ المنتج رفعه
+ * ونجح (الدلوُ كان بلا قائمةِ أنواع) وبقيت البطاقةُ فارغةً بلا خطأ.
+ */
+const IMAGE_MIMES = ["image/jpeg", "image/png", "image/webp"] as const;
+const MIME_EXT: Record<string, string> = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp" };
+
+/** يُرمى حين يُختار ملفٌّ ليس صورةً مقبولة — تترجمه `describeUploadError`. */
+export class NotAnImageError extends Error {
+  constructor() { super("unsupported_image_type"); this.name = "NotAnImageError"; }
+}
+
+type UploadLike = { blob: Blob; dataUrl: string; ext?: string; contentType?: string };
+
+/** النوعُ المُعلَن، مصفّى على قائمة الدلو — `blob.type` هو الحَكَم لا الاسم. */
+function imageType(u: UploadLike): string {
+  const t = (u.contentType || u.blob?.type || "").toLowerCase();
+  return (IMAGE_MIMES as readonly string[]).includes(t) ? t : "image/jpeg";
+}
+/** الامتدادُ من النوع لا من اسم الملف: الاسمُ يكذب، والنوعُ ما نرسله فعلاً. */
+function imageExt(u: UploadLike): string {
+  return MIME_EXT[imageType(u)] ?? "jpg";
+}
+function assertUploadableImage(u: UploadLike): void {
+  const t = (u.contentType || u.blob?.type || "").toLowerCase();
+  if (!(IMAGE_MIMES as readonly string[]).includes(t)) throw new NotAnImageError();
+}
+
 function listOf<T>(res: { data: unknown; error: { message: string } | null }): T[] {
   if (res.error) { console.error("[supabase]", res.error.message); return []; }
   return (res.data ?? []) as T[];
@@ -4168,12 +4205,17 @@ const supabaseRepo: typeof demoRepo = {
   /* ── مكتبة صور المنصّة (0175): الجدول يقرؤه الجميع ويكتبه المشغّل وحده
    *    (سياسات is_platform_admin بالقاعدة — لا حارسَ واجهةٍ يُعتمد عليه). ── */
   async listImageLibrary() {
-    return listOf<LibraryImage>(await sbc().from("image_library").select("*").order("company", { ascending: true }).order("name", { ascending: true }).limit(1000));
+    // `listOrThrow` لا `listOf`: منتقي المكتبة بفشلٍ صامتٍ يقول «ما بيها صور»
+    // فيصوّر المستخدمُ المادّةَ من جديد — والصورةُ موجودةٌ بالمكتبة (البند ٢٠).
+    return listOrThrow<LibraryImage>(await sbc().from("image_library").select("*").order("company", { ascending: true }).order("name", { ascending: true }).limit(1000));
   },
   async createLibraryImage(meta, upload) {
     const id = uuid();
-    const path = `library/${id}.webp`;
-    const up = await sbc().storage.from("product-images").upload(path, upload.blob, { contentType: upload.blob.type || "image/webp", upsert: false });
+    // الامتدادُ من `prepareUpload` لا ثابتاً: هي تُعيد الترميزَ إلى JPEG دائماً،
+    // فاسمُ `.webp` كان يكذب على كلّ ملفٍّ بالدلو (البند ١٠).
+    assertUploadableImage(upload);
+    const path = `library/${id}.${imageExt(upload)}`;
+    const up = await sbc().storage.from("product-images").upload(path, upload.blob, { contentType: imageType(upload), upsert: false });
     if (up.error) throw up.error;
     return need<LibraryImage>(await sbc().from("image_library").insert({
       id, name: meta.name.trim(), company: meta.company?.trim() || null,
@@ -4192,15 +4234,29 @@ const supabaseRepo: typeof demoRepo = {
     return Number(data ?? 0);
   },
   /** صورة المنتج (0174): البايتات إلى bucket «product-images» بمسار
-   *  `<clinic>/<product>.webp` — سياسةُ المخزن تشترط تطابق المجلد مع
+   *  `<clinic>/<product>-<ts36>.<ext>` — سياسةُ المخزن تشترط تطابق المجلد مع
    *  `auth_clinic()`، فرفعٌ بعيادةٍ غلط يُرفض من الخادم لا من الواجهة.
-   *  والقاعدة تحمل المسارَ نصاً فقط (درسُ base64 بالشعارات — لا بايتات بجدول). */
+   *  والقاعدة تحمل المسارَ نصاً فقط (درسُ base64 بالشعارات — لا بايتات بجدول).
+   *
+   *  **المسارُ فريدٌ لكلّ رفعة** (البند ٩): كان ثابتاً بـ`upsert:true`، فالرابطُ
+   *  العامّ لا يتغيّر عند الاستبدال — و`productImageUrl` تبنيه من المسار وحده
+   *  بلا كاسرِ ذاكرة. فالعيادةُ تبدّل صورةً خاطئة وتبقى ترى القديمة بمتصفّحها
+   *  وبشبكة التوزيع، فتبدّلها ثانيةً وثالثة. الفريدُ يُنهيها من جذرها،
+   *  و`cacheControl` سنةً كاملة يصير **صحيحاً** بعد أن صار المسارُ لا يُعاد.
+   *  و`upsert:false` تكشف تصادماً لو وقع بدل أن تطمسه.
+   *
+   *  والنوعُ يُحرَس هنا **مرآةً لقائمة الدلو (0184)**: `prepareUpload` تمرّر
+   *  غيرَ الصور كما هي عمداً (تقاريرُ المختبر PDF)، فمن اختار PDF بمنتقي صورةِ
+   *  المنتج كان يرفعه وينجح وتبقى البطاقةُ فارغة. الرفضُ هنا برسالةٍ مترجَمة
+   *  أصدقُ من خطأ storage إنكليزيٍّ خام. */
   async uploadProductImage(clinicId, productId, upload) {
     if (!clinicId) throw new Error("no_clinic_for_image");
-    const path = `${clinicId}/${productId}.webp`;
+    assertUploadableImage(upload);
+    const path = `${clinicId}/${productId}-${Date.now().toString(36)}.${imageExt(upload)}`;
     const up = await sbc().storage.from("product-images").upload(path, upload.blob, {
-      contentType: upload.blob.type || "image/webp",
-      upsert: true,
+      contentType: imageType(upload),
+      cacheControl: "31536000",
+      upsert: false,
     });
     if (up.error) throw up.error;
     return path;
@@ -4211,6 +4267,14 @@ const supabaseRepo: typeof demoRepo = {
     // لا ملف له. وملفُ المكتبة (library/) ملكُ المنصّة يخدم كلَّ العيادات:
     // «شيل الصورة» بعيادةٍ يفكّ مرجعَها هي، ولا يحذف ملفاً مشترَكاً أبداً.
     if (!path || path.startsWith("data:") || path.startsWith("library/")) return;
+    // ولا يُحذف ملفٌّ ما زال صفٌّ آخرُ يشير إليه. صار هذا ممكناً بـ0184: الدمجُ
+    // يورّث `image_path` للأصل، فالأصلُ والمطويُّ (إن رجع من سلّة المحذوفات)
+    // يشيران لملفٍّ واحد. حذفُه من أحدهما كان سيكسر صورةَ الآخر بصمت — وهو
+    // بالضبط صنفُ «اختفى كأنه ما كان». والنداءُ محدودٌ بعيادتنا بالسياسة،
+    // ومسارُ المكتبة المشترَك خرج فوقُ أصلاً.
+    const refs = await sbc().from("products").select("id").eq("image_path", path).limit(1);
+    // فشلُ العدّ ⇒ لا نحذف. «ما أعرف» تعني «لا تلمس»، لا «امضِ».
+    if (refs.error || (refs.data ?? []).length > 0) return;
     try { await sbc().storage.from("product-images").remove([path]); } catch { /* swallow-ok: ملفٌ يتيمٌ لا يُرى ولا يُحاسَب، والحذفُ يُعاد من أي حفظٍ لاحق */ }
   },
   async updateProduct(id, patch) {
