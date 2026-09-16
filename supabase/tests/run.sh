@@ -25,7 +25,7 @@ MIG="$HERE/../migrations"
 # و0095/0096/0158 بالمقدّمة رغم أنها أقدمُ من 0124: الموجةُ تبدأ من 0124 لأن
 # الأساس يوفّر ما قبلها جاهزاً — لكنّ هذه الثلاثَ تُنشئ المتجرَ والبوّابة،
 # وكانت خارجَ الفحص كلَّه. تُنزَّل بترتيبها الحقيقيّ قبل الموجة.
-WAVE="$MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql $MIG/0184_images_hardening.sql"
+WAVE="$MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0114_landing_events.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql $MIG/0184_images_hardening.sql $MIG/0185_store_funnel_events.sql"
 
 command -v "$PGBIN/initdb" >/dev/null || { echo "ما لكيت بوستغريس بـ $PGBIN"; exit 1; }
 
@@ -1810,6 +1810,49 @@ chk "  والمسارُ وصل الأصل" \
 # الهجرةَ **لا تنفجر** بغيابه — وهو بالضبط ما تقيسه إعادةُ التنزيل مرّتين.
 chk "  وهجرةُ الدلو تُتخطّى بلا انفجارٍ حين لا مخطّطَ storage" \
     "select (to_regclass('storage.buckets') is null)::text" "true"
+
+# ── 0185: قمعُ المتجر يُقاس — والقيدُ يتّسع للأحداث الأربعة ────────────────
+# الجذر: خطّةُ ت١ قالت «لا تحتاج هجرةً، قيدُ الجدول على device وحده». والقياسُ
+# على الإنتاج كذّبها: 0114 وضعت قيداً على `event` كذلك وبنصٍّ صريح. ولولا
+# القياسُ لشُحنت أربعةُ أحداثٍ ترفضها القاعدةُ ويبلع `api/track.ts` فشلَها
+# بتصميمه — فيبدو القياسُ شغّالاً وهو يقيس صفراً.
+echo "▸ 0185: قمعُ المتجر يُقاس"
+# القبولُ يُبرهَن بإدراجٍ فعليّ لا بقراءة نصِّ القيد: نصٌّ يحوي الاسمَ قد يكون
+# بتعليقٍ أو بفرعٍ آخر — الإدراجُ هو الحَكَم.
+$P -c "insert into landing_events (event, path, device, visitor_day)
+       values ('store_view','/s/x','mobile','d1'), ('store_add','/s/x','mobile','d1'),
+              ('store_checkout_open','/s/x','mobile','d1'), ('store_order','/s/x','mobile','d1'),
+              ('store_view','/s/x','desktop','d2'), ('store_order','/s/x','mobile','d1');" >/dev/null
+chk "الأحداثُ الأربعةُ الجديدةُ تُدرَج فعلاً (الحَكَمُ الإدراجُ لا نصُّ القيد)" \
+    "select count(distinct event)::text from landing_events where event like 'store%'" "4"
+$P -c "insert into landing_events (event, path, device, visitor_day)
+       values ('page_view','/','mobile','d9'), ('cta_click','/','mobile','d9'),
+              ('signup_start','/','mobile','d9'), ('signup_done','/','mobile','d9'),
+              ('trial_start','/','mobile','d9');" >/dev/null
+chk "  وأحداثُ الهبوط الخمسةُ ما سقط منها اسمٌ بالتوسيع" \
+    "select count(distinct event)::text from landing_events where event not like 'store%'" "5"
+chk "  واسمٌ خارج القائمة ما زال يُرفض (القيدُ اتّسع ولا انفتح)" \
+    "select left(_pf_try('$C1', 'insert into landing_events (event, device, visitor_day) values (''whatever'',''mobile'',''d3'')'), 7)" "guarded"
+# `landing_funnel` **لم تُلمس** عمداً: تغييرُ نوعِ المُرجَع يرمي
+# cannot change return type (درسُ 0096) — فالقمعُ الجديد دالّةٌ ثانية.
+chk "  و landing_funnel باقيةٌ بخمسة أعمدة (ما مُدَّت)" \
+    "select (array_length(string_to_array(pg_get_function_result(p.oid), ','), 1))::text
+       from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='landing_funnel'" "5"
+chk "  و store_funnel دالّةٌ جديدةٌ definer بمسارٍ مثبَّت" \
+    "select (prosecdef and coalesce(array_to_string(proconfig,','),'') like '%search_path%')::text
+       from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='store_funnel'" "true"
+chk "  وممنوعةٌ على anon" \
+    "select has_function_privilege('anon','store_funnel(int)','execute')::text" "false"
+# الزائرُ يُعدّ مميّزاً (بصمةُ يومه) والطلبُ يُعدّ حدثاً: زائران وطلبان.
+# والصلاحيةُ تُضبط هنا صراحةً: فحصٌ سابقٌ بالحزمة قد يكون أطفأها، فيمرّ فحصُ
+# «العيادةُ ترجع صفراً» لسببٍ غلط ويسقط هذا — وقد وقع بالضبط.
+$P -c "update _dvtest_flags set admin = true;" >/dev/null
+chk "  والمشغّلُ يرى القمع — زائرٌ مميّزٌ لا حدث، وطلبان حدثان" \
+    "select viewers::text || '/' || orders::text from store_funnel(30) limit 1" "2/2"
+$P -c "update _dvtest_flags set admin = false;" >/dev/null
+chk "  والعيادةُ العاديةُ ترجع صفرَ صفوف — أرقامُ السوق ليست لها" \
+    "select count(*)::text from store_funnel(30)" "0"
+$P -c "update _dvtest_flags set admin = true;" >/dev/null
 
 echo "▸ الموجة ١: المتجرُ والبوّابةُ داخل الحزمة"
 chk "ولا سياسةَ تنادي auth_clinic() عاريةً بعد الموجة كاملةً (مرّتين)" \

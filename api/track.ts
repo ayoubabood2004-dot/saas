@@ -17,7 +17,16 @@ export const config = { runtime: "edge" };
  * يُظهر خطأً بوجه زائرٍ جاء ليقرأ عرضاً.
  * ==========================================================================*/
 
-const EVENTS = new Set(["page_view", "cta_click", "signup_start", "signup_done", "trial_start"]);
+/* قائمةٌ مغلقة — **ومرآتُها قيدُ `landing_events_event_check` بالقاعدة**
+ * (0114 ثمّ 0185). إضافةُ اسمٍ هنا وحدَه تعني حدثاً ترفضه القاعدةُ ويُبلَع
+ * فشلُه أدناه بتصميم — فيبدو القياسُ شغّالاً وهو يقيس صفراً. يفحصُ الطرفين
+ * `scripts/track-parity.mjs`. */
+const EVENTS = new Set([
+  // قمعُ صفحة الهبوط (0114)
+  "page_view", "cta_click", "signup_start", "signup_done", "trial_start",
+  // قمعُ المتجر (0185)
+  "store_view", "store_add", "store_checkout_open", "store_order",
+]);
 
 const sbUrl = () => process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "";
 const sbKey = () => process.env.SUPABASE_SERVICE_ROLE_KEY || "";

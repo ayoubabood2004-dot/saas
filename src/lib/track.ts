@@ -12,7 +12,10 @@
  * ==========================================================================*/
 
 export type LandingEvent =
-  | "page_view" | "cta_click" | "signup_start" | "signup_done" | "trial_start";
+  // قمعُ صفحة الهبوط (0114)
+  | "page_view" | "cta_click" | "signup_start" | "signup_done" | "trial_start"
+  // قمعُ المتجر (0185) — زار ⇒ أضاف ⇒ فتح السلّة ⇒ طلب
+  | "store_view" | "store_add" | "store_checkout_open" | "store_order";
 
 /** يمنع تكرار حدثٍ لمرّةٍ واحدة بالجلسة (page_view مع إعادة التصيير مثلاً). */
 const fired = new Set<string>();

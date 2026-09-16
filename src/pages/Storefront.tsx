@@ -25,6 +25,7 @@ import { waNumber } from "@/lib/phone";
 import { celebrate } from "@/lib/celebrate";
 import { playTap, playSuccess, playWarning, playAchievement } from "@/lib/sounds";
 import { cn, money, formatNum, searchable } from "@/lib/utils";
+import { track } from "@/lib/track";
 
 interface CartLine { id: string; qty: number }
 
@@ -91,6 +92,10 @@ export function Storefront() {
         if (!f) { setState("closed"); return; }
         setFront(f); setCatalog(c); setHasMore(c.length === PAGE); setState("open");
         document.title = `${f.name} — المتجر`;
+        /* القياسُ بعد أن يُفتح المتجرُ فعلاً لا عند تركيب المكوّن: رابطٌ مغلقٌ
+         * أو فشلُ شبكةٍ ليس زيارةً، وعدُّه يرفع بسطَ القمع بمن لم يرَ رفّاً.
+         * و`once` لأن إعادةَ التصيير ليست زيارةً ثانية. */
+        track("store_view", { slug }, true);
       } catch {
         /* فشلُ الجلب غير «المتجر مسكّر»: شاشةُ «مغلق» على خطأ شبكةٍ عابر تكذب
          * على الزبون فيصدّق ويروح — القاعدة: خطأٌ ظاهر و«أعد المحاولة». */
@@ -195,7 +200,14 @@ export function Storefront() {
       return next;
     });
   };
-  const add = (id: string) => { playTap(); setQty(id, qtyOf(id) + 1); };
+  const add = (id: string) => {
+    playTap();
+    /* الإضافةُ الصريحةُ وحدَها تُقاس: `setQty` تُنادى كذلك من أزرار +/− بالسلّة
+     * ومن التشذيب التلقائيّ — وعدُّها كلِّها «إضافات» يضخّم القمعَ بلا معنى.
+     * و`once` بالمنتج: من أضاف ثلاثَ علبٍ من نفس الصنف اهتمّ مرّةً واحدة. */
+    track("store_add", { slug, id }, true);
+    setQty(id, qtyOf(id) + 1);
+  };
 
   const units = cart.reduce((s, l) => s + l.qty, 0);
   const subtotal = Math.round(cart.reduce((s, l) => s + (byId.get(l.id)?.price ?? 0) * l.qty, 0) * 100) / 100;
@@ -559,7 +571,7 @@ export function Storefront() {
                 <CartSheet
                   cart={cart} byId={byId} subtotal={subtotal} fee={fee} feeKnown={feeKnown} total={total}
                   underMin={underMin} minOrder={minOrder}
-                  setQty={setQty} onClose={() => setSheet("none")} onCheckout={() => { playTap(); setSheet("checkout"); }} />
+                  setQty={setQty} onClose={() => setSheet("none")} onCheckout={() => { playTap(); track("store_checkout_open", { slug }, true); setSheet("checkout"); }} />
               ) : (
                 <CheckoutSheet
                   slug={slug} cart={cart} subtotal={subtotal} fee={fee} feeKnown={feeKnown} total={total}
@@ -704,6 +716,10 @@ function CheckoutSheet({ slug, cart, subtotal, fee, feeKnown, total, onBack, onP
         return;
       }
       playSuccess();
+      /* آخرُ درجةٍ بالقمع، و**بلا `once`**: من طلب مرّتين طلبان لا واحد — وهو
+       * الحدثُ الوحيد بينها الذي يُعدّ فعلاً لا زائراً مميّزاً (`store_funnel`).
+       * ولا مبلغَ ولا اسمَ ولا هاتف بالـ`meta`: القياسُ يسأل «كم» لا «مَن». */
+      track("store_order", { slug });
       onPlaced({ order_no: res.order_no ?? "—", total: res.total ?? total });
     } catch {
       setErr("تعذّر إرسال الطلب — تأكد من الإنترنت وجرب من جديد.");

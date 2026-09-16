@@ -44,8 +44,13 @@ create index if not exists landing_events_event_idx on landing_events(event, at 
 alter table landing_events enable row level security;
 
 drop policy if exists landing_events_admin_read on landing_events;
+-- `(select …)` لا نداءً عارياً — **مصحَّحٌ من المنبع** (نفسُ ما فُعل بـ0095
+-- بالموجة ١). النداءُ العاري يُقيَّم لكلِّ صفّ، و0128 تلفُّه وتحفظ الأصلَ
+-- بـ`rls_policy_backup`؛ فكلُّ إعادةِ تنزيلٍ لهذه الهجرة تفكّ اللفَّ وتكدّس
+-- نسخةً ثانية. أمسكه فحصُ «نسخُ الأمان ما تتكدّس» لحظةَ دخول 0114 الحزمةَ،
+-- **وقياسُ الإنتاج أكّده: صفّان لنفس السياسة بجدول النسخ.**
 create policy landing_events_admin_read on landing_events for select
-  using (is_platform_admin());
+  using ((select is_platform_admin()));
 
 -- ── ملخّص القمع: سؤالٌ واحد يجيب على «أين نخسرهم» ─────────────────────────
 create or replace function landing_funnel(p_days int default 30)
