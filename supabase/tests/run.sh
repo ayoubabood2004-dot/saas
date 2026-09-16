@@ -1698,6 +1698,19 @@ chk "  والمخزون ما تحرّك" \
     "select stock::int::text from products where id='a1830000-0000-4000-8000-000000000001'" "18"
 chk "  وعيادةٌ أخرى لا تقبل طلبَ الأولى" \
     "select left(_pf_try('$C2', 'select store_accept_order(''e1830000-0000-4000-8000-000000000001'')::text'), 7)" "guarded"
+$P -c "insert into store_orders (id, clinic_id, order_no, customer_name, customer_phone, items, subtotal, delivery_fee, total, status)
+         values ('e1830000-0000-4000-8000-000000000002','$C1','SO-ACC02','زبون الطبيب','0770 444 5566',
+                 jsonb_build_array(jsonb_build_object('product_id','a1830000-0000-4000-8000-000000000001','name','منتج القبول','qty',1,'price',5000,'total',5000)),
+                 5000, 0, 5000, 'new')
+       on conflict (id) do nothing;" >/dev/null
+# طبيبٌ بيطريٌّ بعيادة C1 — المفردةُ الحيّة `veterinarian` لا «doctor».
+# أوّلُ صياغةٍ لحارس القبول كتبت قائمةَ أدوارٍ فيها «doctor»، وقياسُ الإنتاج
+# نسفها: طبيبان حيّان كانا سيُمنعان. فالفحصُ يثبّت المفردةَ الصحيحة.
+VET="55555555-5555-5555-5555-555555555555"
+$P -c "insert into auth.users(id) values ('$VET') on conflict do nothing;
+       insert into memberships(user_id,clinic_id,role,status) values ('$VET','$C1','veterinarian','active') on conflict do nothing;" >/dev/null
+chk "  وطبيبٌ بيطريّ من نفس العيادة يقبل (المفردةُ veterinarian لا doctor)" \
+    "select (_pf('$VET', 'select store_accept_order(''e1830000-0000-4000-8000-000000000002'')::text')::jsonb->>'ok')" "true"
 # تجميدُ الأعمدة — بدور `authenticated` لا superuser، وإلا مرّ المحفّزُ بلا شدّ.
 chk "بنودُ الطلب مجمَّدة: تعديلُ المجموع يُرفض بـhint عربيّ" \
     "select left(_rls_try('$C1', 'update store_orders set total = 1 where id = ''e1830000-0000-4000-8000-000000000001'''), 13)" "guarded:P0001"

@@ -87,7 +87,6 @@ set search_path = public
 as $$
 declare
   v_clinic  uuid := auth_clinic();
-  v_role    text := coalesce(auth_role(), '');
   o         store_orders;
   v_line    jsonb;
   v_items   jsonb := '[]'::jsonb;
@@ -97,11 +96,17 @@ declare
 begin
   -- فحصُ العيادة والدور بنفسها: definer يتجاوز RLS، فحارسُ الوصول هنا لا هناك
   -- (درسُ 0145 — أوّلُ حذفٍ كان سيُرفض بـRLS لأن الدالّة نزلت بصلاحية المُستدعي).
+  -- الحارسُ **عضويّةُ العيادة** لا قائمةُ أدوار — مطابقاً لسياسة
+  -- `store_orders_clinic_update` التي كانت تحكم هذا الفعل قبل الدالّة.
+  --
+  -- وأوّلُ صياغةٍ لهذا السطر كتبت `in ('manager','receptionist','doctor')`،
+  -- وقياسُ الإنتاج نسفها: مفرداتُ `memberships.role` هي manager و
+  -- **veterinarian** و receptionist و groomer — و«doctor» ليست منها إطلاقاً.
+  -- أي أن القائمةَ كانت ستمنع الطبيبَين الحيَّين من قبول أيّ طلب. وشدُّ
+  -- الصلاحية أضيقَ ممّا كانت عليه قرارُ منتجٍ لم يطلبه أحد، ولا يُهرَّب داخل
+  -- هجرةٍ تقنية: إن أُريد لاحقاً فبقياسٍ وبكلمة المالك.
   if v_clinic is null then
     raise exception 'not_authorized' using hint = 'ما عندك صلاحية تقبل طلبات المتجر.';
-  end if;
-  if v_role not in ('manager', 'receptionist', 'doctor') then
-    raise exception 'not_authorized' using hint = 'قبولُ الطلبات لكادر العيادة.';
   end if;
 
   select * into o from store_orders where id = p_order and clinic_id = v_clinic;
@@ -183,7 +188,7 @@ declare
   v_clinic uuid := auth_clinic();
   v_n      int;
 begin
-  if v_clinic is null or coalesce(auth_role(), '') not in ('manager', 'receptionist', 'doctor') then
+  if v_clinic is null then
     raise exception 'not_authorized' using hint = 'رفضُ الطلبات لكادر العيادة.';
   end if;
   update store_orders
