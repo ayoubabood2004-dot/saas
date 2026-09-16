@@ -629,5 +629,50 @@ console.log("▸ الستور (0178) — القرار نهائي والمرجع 
     over === null ? "مرّت بلا حدّ" : "");
 }
 
+/* ══ ت٣ · 0187 — «انشر أكثرَ ما تبيع» بالمرآة التجريبية ═════════════════
+ * ثلاثةُ تعريفاتٍ منسوخةٌ من الخادم لا مخترَعة: ما يُعدّ بيعاً (المرتجَعُ
+ * يُستثنى والكميّاتُ بإشارتها)، وما يُعدّ متوفّراً (المجمَّعُ يُحسب)، وما
+ * يُعدّ صالحاً للنشر (سعرٌ > ٠). وانحرافُ المرآة عن أيّها يعني رقمين للشيء
+ * الواحد بشاشتين. */
+{
+  console.log("▸ ت٣ — اقتراحُ رفِّ البداية");
+  const top = await repo.createProduct({ name: "الأعلى", sell_price: 5000, purchase_price: 2000, stock: 50 });
+  const low = await repo.createProduct({ name: "الأدنى", sell_price: 3000, purchase_price: 1000, stock: 50 });
+  const out = await repo.createProduct({ name: "نافد", sell_price: 9000, purchase_price: 3000, stock: 0 });
+  const free = await repo.createProduct({ name: "بلا سعر", sell_price: 0, purchase_price: 100, stock: 10 });
+  const shown = await repo.createProduct({ name: "منشور", sell_price: 8000, purchase_price: 3000, stock: 50 });
+  await repo.setStoreVisible([shown.id], true);
+
+  await repo.retailCheckout([
+    { product_id: top.id, name: "الأعلى", qty: 10, unit_price: 5000, unit_cost: 2000 },
+    { product_id: low.id, name: "الأدنى", qty: 3, unit_price: 3000, unit_cost: 1000 },
+    { product_id: out.id, name: "نافد", qty: 4, unit_price: 9000, unit_cost: 3000 },
+    { product_id: free.id, name: "بلا سعر", qty: 4, unit_price: 9000, unit_cost: 3000 },
+    { product_id: shown.id, name: "منشور", qty: 9, unit_price: 8000, unit_cost: 3000 },
+  ], { client_ref: "sug-1" });
+
+  const sug = await repo.suggestStoreProducts(40);
+  const ids = sug.map((r) => r.id);
+  check("الأعلى إيراداً يتصدّر", sug[0]?.id === top.id, sug.map((r) => r.name).join(", "));
+  // وبيعُ كلِّ الرصيد يُخرج المنتجَ **بحقّ**: نافدٌ لا يُنشَر. (وقعتُ بها
+  // أوّلَ صياغةٍ فظننتُها عطباً — والقالبُ كان الغلط لا الشِفرة.)
+  check("  والأدنى بعده", ids.includes(low.id));
+  check("  والنافدُ لا يُقترَح", !ids.includes(out.id));
+  check("  والذي بلا سعرٍ لا يُقترَح", !ids.includes(free.id));
+  check("  والمنشورُ أصلاً ليس اقتراحاً", !ids.includes(shown.id));
+  check("  والإيرادُ محسوبٌ فعلاً", sug[0]?.revenue === 50000, String(sug[0]?.revenue));
+
+  // **الحدُّ الصريح**: تقترح ولا تكتب.
+  const beforeShown = (await repo.listProducts()).filter((p) => p.store_visible).length;
+  await repo.suggestStoreProducts(40);
+  const afterShown = (await repo.listProducts()).filter((p) => p.store_visible).length;
+  check("**لا تكتب حرفاً** — عددُ المعروض ما تغيّر", beforeShown === afterShown);
+
+  const r = await repo.setStoreVisible([top.id, low.id], true);
+  check("والنشرُ من الاقتراح يمرّ من نفس بابِ ت٢", r.changed === 2, JSON.stringify(r));
+  const again = await repo.suggestStoreProducts(40);
+  check("  وما نُشر يخرج من الاقتراح", !again.map((x) => x.id).includes(top.id));
+}
+
 console.log(`\n${fails ? "✗" : "✓"} repo-demo-test: ${passes} نجحت، ${fails} فشلت`);
 process.exit(fails ? 1 : 0);

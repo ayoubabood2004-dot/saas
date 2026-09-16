@@ -4547,6 +4547,14 @@
     "picked": "Selected: {{n}}",
     "pickHint": "Select products to publish them in one go",
     "pickOne": "Select {{name}}",
-    "updateFailed": "Couldn't update"
+    "updateFailed": "Couldn't update",
+    "suggestTitle": "Publish your best sellers",
+    "suggestHint": "We'll pull your top sellers from the last 90 days — pre-ticked, untick what you don't want.",
+    "suggestFailed": "Couldn't reach the server — tap to retry",
+    "suggestEmpty": "No suggestions — your best sellers are already published, or they have no price or no stock.",
+    "suggestPicked": "{{n}} of {{m}}",
+    "suggestPublish": "Publish ticked ({{n}})",
+    "soldQty": "sold {{n}}",
+    "noCategory": "No category"
   }
 }

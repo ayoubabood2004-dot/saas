@@ -864,6 +864,35 @@ console.log("▸ دلو صور المنتجات — الأفعال الأربع�
     /v_role not in \('manager', 'veterinarian'\)/.test(readFileSync("supabase/migrations/0186_store_bulk_visible.sql", "utf8")));
   check("  ومُنزَّلةٌ بحزمة الهجرات",
     readFileSync("supabase/tests/run.sh", "utf8").includes("0186_store_bulk_visible.sql"));
+
+  /* ── ت٣ · 0187: «انشر أكثرَ ما تبيع» ──────────────────────────────────
+   * المقيس: أعلى ٤٠ منتجاً تصنع ٩٠٫٤٪ و٤٣٫٣٪ و٣٥٫٦٪ من إيراد الثلاثِ الكبار
+   * بتسعين يوماً، وصفرٌ منها منشور. والحدُّ الصريح: **تقترح ولا تكتب**. */
+  const sug = readFileSync("supabase/migrations/0187_store_suggest_products.sql", "utf8");
+  check("الاقتراحُ **لا يكتب حرفاً** (لا update/insert/delete بالهجرة)",
+    !/\b(update|insert into|delete from)\s+products\b/i.test(sug));
+  check("  وهي invoker لا definer — نفسُ report_top_products", !/security definer/i.test(sug));
+  check("  وتعريفُ البيع منسوخٌ: المرتجَعُ يُستثنى والتاريخُ تاريخُ الفاتورة",
+    /coalesce\(i\.status, 'paid'\) <> 'refunded'/.test(sug) && /i\.created_at >=/.test(sug));
+  check("  والكميّاتُ بإشارتها — السطرُ الراجعُ يخصم (لا شرطَ qty > 0)",
+    !/it\.qty > 0/.test(sug));
+  check("  وتعريفُ التوفّر منسوخٌ من الكتلوج (المجمَّعُ يُحسب)",
+    /p\.stock > 0 or coalesce\(cs\.pooled_stock, 0\) > 0/.test(sug));
+  check("  وشرطُ السعر نفسُ 0186، والمنشورُ يخرج", /coalesce\(p\.sell_price, 0\) > 0/.test(sug) && /not coalesce\(p\.store_visible, false\)/.test(sug));
+  check("  والترتيبُ حاسمٌ بـp.id آخِراً (درسُ 0182)", /order by s\.rev desc, p\.name, p\.id/.test(sug));
+  check("والشاشةُ تعرض الفئةَ بكلّ سطر (الأدويةُ أوّلُ ما يُشطب)",
+    /r\.category \|\| t\("cat\.noCategory"/.test(store));
+  check("  والاقتراحُ مؤشَّرٌ مسبقاً والدكتورُ يشطب",
+    /setSuggestPick\(new Set\(rows\.map\(\(r\) => r\.id\)\)\)/.test(store));
+  check("  وفشلُ الجلب يُقال ولا يصير «ما عندك مبيعات»",
+    /setSuggestState\("error"\)/.test(store) && /cat\.suggestFailed/.test(store));
+  check("  والنشرُ منه يمرّ من نفس بابِ ت٢ لا من كتابةٍ ثانية",
+    /const publishSuggested[\s\S]{0,400}applyVisible\(ids, true\)/.test(store));
+  check("والمرآةُ التجريبية عندها نفسُ الدالّة", /async suggestStoreProducts\(limit = 40, days = 90\)/.test(repoS));
+  check("  وقائمةُ الاقتراح ترمي على الفشل لا ترجع «ماكو»",
+    /suggestStoreProducts\(limit = 40, days = 90\) \{[\s\S]{0,500}if \(error\) throw error;/.test(repoS));
+  check("  ومُنزَّلةٌ بحزمة الهجرات",
+    readFileSync("supabase/tests/run.sh", "utf8").includes("0187_store_suggest_products.sql"));
 }
 
 console.log(`\n${fails ? "✗" : "✓"} products-test: ${passes} نجحت، ${fails} فشلت`);

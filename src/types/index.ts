@@ -1353,6 +1353,20 @@ export interface StoreCatalogItem {
   featured?: boolean;
 }
 
+/** اقتراحُ رفِّ البداية (0187) — الأعلى إيراداً بتسعين يوماً، ممّا هو مسعَّرٌ
+ *  ومتوفّرٌ وغيرُ منشور. **اقتراحٌ لا كتابة**: النشرُ ضغطةُ العيادة. */
+export interface SuggestedProduct {
+  id: string;
+  name: string;
+  category: string | null;
+  sell_price: number;
+  available: boolean;
+  barcode: string | null;
+  image_path: string | null;
+  qty_sold: number;
+  revenue: number;
+}
+
 /** جواب تتبّع طلب المتجر (0176) — للزبون برقم الطلب وهاتفه معاً. */
 export interface StoreTrackInfo {
   order_no: string;

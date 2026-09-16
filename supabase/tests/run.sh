@@ -25,7 +25,7 @@ MIG="$HERE/../migrations"
 # و0095/0096/0158 بالمقدّمة رغم أنها أقدمُ من 0124: الموجةُ تبدأ من 0124 لأن
 # الأساس يوفّر ما قبلها جاهزاً — لكنّ هذه الثلاثَ تُنشئ المتجرَ والبوّابة،
 # وكانت خارجَ الفحص كلَّه. تُنزَّل بترتيبها الحقيقيّ قبل الموجة.
-WAVE="$MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0114_landing_events.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql $MIG/0184_images_hardening.sql $MIG/0185_store_funnel_events.sql $MIG/0186_store_bulk_visible.sql"
+WAVE="$MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0114_landing_events.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql $MIG/0184_images_hardening.sql $MIG/0185_store_funnel_events.sql $MIG/0186_store_bulk_visible.sql $MIG/0187_store_suggest_products.sql"
 
 command -v "$PGBIN/initdb" >/dev/null || { echo "ما لكيت بوستغريس بـ $PGBIN"; exit 1; }
 
@@ -1898,6 +1898,74 @@ chk "  والدالّةُ definer بمسارٍ مثبَّت وممنوعةٌ ع�
              and not has_function_privilege('anon', p.oid, 'execute'))::text
        from pg_proc p join pg_namespace n on n.oid=p.pronamespace
       where n.nspname='public' and p.proname='store_set_visible'" "true"
+
+# ── 0187: «انشر أكثرَ ما تبيع» ─────────────────────────────────────────────
+# المقيسُ على الإنتاج: حصّةُ أعلى ٤٠ منتجاً من إيراد ٩٠ يوماً = ٩٠٫٤٪ و٤٣٫٣٪
+# و٣٥٫٦٪ عند الثلاثِ الكبار، و٤٠/٤٠ مسعَّرة، وصفرٌ منشور. فرفُّ البداية
+# استعلامٌ لا اجتهاد. والفحصُ يقيس **التعريفات المنسوخة** قبل الترتيب: تعريفٌ
+# ثانٍ للبيع أو للتوفّر يعني رقمين للشيء الواحد بشاشتين.
+echo "▸ 0187: اقتراحُ رفِّ البداية"
+$P -c "insert into products (id, clinic_id, name, sell_price, purchase_price, stock, section_id, store_visible)
+       values ('a1870000-0000-4000-8000-000000000001','$C1','الأكثرُ بيعاً',5000,2000,10,null,false),
+              ('a1870000-0000-4000-8000-000000000002','$C1','بيعٌ أقلّ',3000,1000,10,null,false),
+              ('a1870000-0000-4000-8000-000000000003','$C1','نافدٌ لكنّه يُباع',9000,3000,0,null,false),
+              ('a1870000-0000-4000-8000-000000000004','$C1','منشورٌ أصلاً',9000,3000,10,null,true),
+              ('a1870000-0000-4000-8000-000000000005','$C1','بلا سعرٍ لكنّه يُباع',0,3000,10,null,false),
+              ('a1870000-0000-4000-8000-000000000006','$C1','مرتجَعٌ صافيه سالب',4000,1000,10,null,false),
+              ('a1870000-0000-4000-8000-000000000007','$C1','مجمَّعٌ رصيدُه بالقسم',7000,2000,0,'5e180000-0000-4000-8000-000000000001',false),
+              ('a1870000-0000-4000-8000-000000000008','$C2','منتجُ عيادةٍ أخرى',9999,1000,10,null,false)
+       on conflict (id) do nothing;
+       insert into company_sections (id, clinic_id, name, pooled_stock)
+         values ('5e180000-0000-4000-8000-000000000001','$C1','قسمٌ مجمَّع',25)
+       on conflict (id) do update set pooled_stock = 25;" >/dev/null
+# فاتورتان: واحدةٌ مدفوعة وواحدةٌ **مرتجَعة** — الثانيةُ لا تُحتسب إطلاقاً.
+$P -c "insert into invoices (id, clinic_id, subtotal, discount, total, amount_paid, cost_total, profit, item_count, status, created_at)
+       values ('11870000-0000-4000-8000-000000000001','$C1',100000,0,100000,100000,40000,60000,5,'paid', now() - interval '10 days'),
+              ('11870000-0000-4000-8000-000000000002','$C1',99000,0,99000,99000,30000,69000,1,'refunded', now() - interval '9 days')
+       on conflict (id) do nothing;
+       insert into invoice_items (id, invoice_id, clinic_id, product_id, name, qty, unit_price, unit_cost, line_total)
+       values ('22870000-0000-4000-8000-000000000001','11870000-0000-4000-8000-000000000001','$C1','a1870000-0000-4000-8000-000000000001','الأكثرُ بيعاً',10,5000,2000,50000),
+              ('22870000-0000-4000-8000-000000000002','11870000-0000-4000-8000-000000000001','$C1','a1870000-0000-4000-8000-000000000002','بيعٌ أقلّ',3,3000,1000,9000),
+              ('22870000-0000-4000-8000-000000000003','11870000-0000-4000-8000-000000000001','$C1','a1870000-0000-4000-8000-000000000003','نافدٌ لكنّه يُباع',4,9000,3000,36000),
+              ('22870000-0000-4000-8000-000000000004','11870000-0000-4000-8000-000000000001','$C1','a1870000-0000-4000-8000-000000000004','منشورٌ أصلاً',4,9000,3000,36000),
+              ('22870000-0000-4000-8000-000000000005','11870000-0000-4000-8000-000000000001','$C1','a1870000-0000-4000-8000-000000000005','بلا سعرٍ لكنّه يُباع',4,9000,3000,36000),
+              ('22870000-0000-4000-8000-000000000006','11870000-0000-4000-8000-000000000001','$C1','a1870000-0000-4000-8000-000000000006','مرتجَعٌ صافيه سالب',1,4000,1000,4000),
+              ('22870000-0000-4000-8000-000000000007','11870000-0000-4000-8000-000000000001','$C1','a1870000-0000-4000-8000-000000000006','مرتجَعٌ صافيه سالب',-2,4000,1000,-8000),
+              ('22870000-0000-4000-8000-000000000008','11870000-0000-4000-8000-000000000001','$C1','a1870000-0000-4000-8000-000000000007','مجمَّعٌ رصيدُه بالقسم',2,7000,2000,14000),
+              ('22870000-0000-4000-8000-000000000009','11870000-0000-4000-8000-000000000002','$C1','a1870000-0000-4000-8000-000000000002','بيعٌ أقلّ',11,9000,3000,99000)
+       on conflict (id) do nothing;" >/dev/null
+
+chk "الأعلى إيراداً يتصدّر" \
+    "select _pf('$C1', 'select name from store_suggest_products(40) limit 1')" "الأكثرُبيعاً"
+chk "  والمنشورُ أصلاً ليس اقتراحاً" \
+    "select _pf('$C1', 'select count(*)::text from store_suggest_products(40) where id = ''a1870000-0000-4000-8000-000000000004''')" "0"
+chk "  والذي بلا سعرٍ لا يُقترَح (نفسُ شرط 0186)" \
+    "select _pf('$C1', 'select count(*)::text from store_suggest_products(40) where id = ''a1870000-0000-4000-8000-000000000005''')" "0"
+chk "  والنافدُ لا يُقترَح ولو كان يُباع" \
+    "select _pf('$C1', 'select count(*)::text from store_suggest_products(40) where id = ''a1870000-0000-4000-8000-000000000003''')" "0"
+# لولا نسخُ تعريف `store_catalog` لسقط منتجٌ يعرضه المتجرُ نفسُه «متوفّراً».
+chk "  والمجمَّعُ رصيدُه بالقسم **يُقترَح** (تعريفُ التوفّر منسوخٌ من الكتلوج)" \
+    "select _pf('$C1', 'select available::text from store_suggest_products(40) where id = ''a1870000-0000-4000-8000-000000000007''')" "true"
+# ولولا نسخُ تعريف `report_top_products` لصار المرتجَعُ أعلى مبيعاً بالعيادة.
+chk "  والفاتورةُ المرتجَعةُ لا تُحتسب إطلاقاً (٩٩ ألفاً ما رفعته)" \
+    "select _pf('$C1', 'select revenue::int::text from store_suggest_products(40) where id = ''a1870000-0000-4000-8000-000000000002''')" "9000"
+chk "  والسطرُ الراجعُ يخصم فصافيه سالبٌ فيسقط" \
+    "select _pf('$C1', 'select count(*)::text from store_suggest_products(40) where id = ''a1870000-0000-4000-8000-000000000006''')" "0"
+chk "  ومنتجُ عيادةٍ أخرى لا يظهر أبداً" \
+    "select _pf('$C1', 'select count(*)::text from store_suggest_products(200) where id = ''a1870000-0000-4000-8000-000000000008''')" "0"
+chk "  والسقفُ يُحترَم" \
+    "select _pf('$C1', 'select count(*)::text from store_suggest_products(2)')" "2"
+# **الحدُّ الصريح**: تقترح ولا تكتب. لو كتبت لهبط نشرٌ لم تطلبه العيادة (درسُ 0153).
+chk "**لا تكتب حرفاً**: عددُ المعروض ما تغيّر بعد الاقتراح" \
+    "select count(*)::text from products where clinic_id='$C1' and store_visible and id::text like 'a1870000%'" "1"
+chk "  وهي invoker لا definer (نفسُ report_top_products)" \
+    "select (not prosecdef)::text from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+      where n.nspname='public' and p.proname='store_suggest_products'" "true"
+chk "  وبمسارٍ مثبَّت وممنوعةٌ على anon" \
+    "select (coalesce(array_to_string(proconfig,','),'') like '%search_path%'
+             and not has_function_privilege('anon', p.oid, 'execute'))::text
+       from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+      where n.nspname='public' and p.proname='store_suggest_products'" "true"
 
 echo "▸ الموجة ١: المتجرُ والبوّابةُ داخل الحزمة"
 chk "ولا سياسةَ تنادي auth_clinic() عاريةً بعد الموجة كاملةً (مرّتين)" \

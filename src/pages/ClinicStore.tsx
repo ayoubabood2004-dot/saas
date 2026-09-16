@@ -18,7 +18,7 @@ import {
   Copy, ExternalLink, Sparkles, Link2, AlertTriangle, CheckCircle2, Clock,
   Search, Eye, EyeOff, Pencil, TrendingUp, Truck, PackageX, RefreshCw, StickyNote, BellRing, Camera, ImagePlus, Loader2,
 } from "lucide-react";
-import type { Product, StoreOrder, StoreProfile } from "@/types";
+import type { Product, StoreOrder, StoreProfile, SuggestedProduct } from "@/types";
 import { useTranslation } from "react-i18next";
 import { repo } from "@/lib/repo";
 import { useAuth } from "@/contexts/AuthContext";
@@ -449,6 +449,13 @@ function CatalogTab({ products, reload, storeOn }: { products: Product[] | null;
    * والتنقّلُ لشاشةٍ أخرى لكلّ منتجٍ هو ما كان يمنعه من إكمال الصور أصلاً. */
   const [photoFor, setPhotoFor] = useState<Product | null>(null);
   const [libFor, setLibFor] = useState<Product | null>(null);
+  /* «انشر أكثرَ ما تبيع» (ت٣): بعد أن فُتح بابُ النشر الجماعيّ يبقى سؤالُ
+   * الدكتور — **أيَّ أربعين من تسعِمئة؟** والاجتهادُ أمام تسعِمئة صنفٍ هو
+   * نفسُه الحاجزُ بشكلٍ آخر. والمقيسُ أنّ أعلى ٤٠ منتجاً تصنع ٩٠٪ و٤٣٪ و٣٦٪
+   * من إيراد الثلاثِ الكبار — فالجوابُ استعلامٌ لا اجتهاد. */
+  const [suggest, setSuggest] = useState<SuggestedProduct[] | null>(null);
+  const [suggestState, setSuggestState] = useState<"idle" | "loading" | "open" | "error">("idle");
+  const [suggestPick, setSuggestPick] = useState<Set<string>>(new Set());
   /** الاختيارُ المتعدّد — مفتاحُ النشر الجماعيّ. */
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [bulkBusy, setBulkBusy] = useState(false);
@@ -563,6 +570,44 @@ function CatalogTab({ products, reload, storeOn }: { products: Product[] | null;
     finally { setBusyId(null); }
   };
 
+  const openSuggest = async () => {
+    playTap();
+    setSuggestState("loading");
+    try {
+      const rows = await repo.suggestStoreProducts(40);
+      setSuggest(rows);
+      // **مؤشَّرةٌ مسبقاً والدكتورُ يشطب**: القائمةُ اقتراحٌ مدروس، والشطبُ
+      // أرخصُ من التأشير أربعين مرّة. والأدويةُ أوّلُ ما يُشطب — ولهذا تُعرض
+      // الفئةُ بكلّ سطرٍ لا الاسمُ وحدَه.
+      setSuggestPick(new Set(rows.map((r) => r.id)));
+      setSuggestState("open");
+    } catch {
+      // لا قائمةَ فارغةٌ عن فشل: «ما عندك مبيعات تستحقّ النشر» كذبةٌ تُصدَّق.
+      setSuggestState("error");
+    }
+  };
+
+  const publishSuggested = async () => {
+    const ids = [...suggestPick];
+    if (!ids.length || bulkBusy) return;
+    setBulkBusy(true);
+    try {
+      const r = await applyVisible(ids, true);
+      const done = new Set(ids);
+      setSuggest((rows) => (rows ?? []).filter((x) => !done.has(x.id)));
+      setSuggestPick(new Set());
+      if (r && r.changed > 0 && r.skipped_no_price === 0) {
+        playSuccess();
+        toast.success(t("cat.bulkShown", "انتشر {{n}} منتجاً بالمتجر", { n: r.changed }));
+      }
+      if (!suggest || suggest.length <= ids.length) setSuggestState("idle");
+    } catch (e) {
+      playWarning();
+      toast.error(t("cat.bulkFailed", "ما انتشرت — أعد المحاولة"), errMsg(e));
+      await reload();
+    } finally { setBulkBusy(false); }
+  };
+
   /** النشرُ الجماعيّ — البندُ الذي وقفت عنده الثلاثُ الكبار. */
   const bulk = async (on: boolean) => {
     if (bulkBusy || busyId) return;
@@ -648,6 +693,68 @@ function CatalogTab({ products, reload, storeOn }: { products: Product[] | null;
           </button>
         ))}
       </div>
+
+      {/* «انشر أكثرَ ما تبيع» — يُعرض حين لا تكون تشكيلتُه جاهزةً بعد.
+          والحدُّ الصريح: **الدالّةُ تقترح ولا تكتب** — لا نشرَ بلا ضغطة.
+          النشرُ يُعلن سعراً ووعداً بالعلن، وهو قرارُ العيادة لا المنصّة. */}
+      {suggestState !== "open" && (
+        <button type="button" onClick={() => void openSuggest()} disabled={suggestState === "loading"}
+          className="card flex w-full items-center gap-3 border-brand-300 bg-brand-50/60 p-4 text-start transition hover:bg-brand-50 disabled:opacity-60 dark:border-brand-500/40 dark:bg-brand-500/10">
+          {suggestState === "loading" ? <Loader2 size={20} className="shrink-0 animate-spin text-brand-600" /> : <Sparkles size={20} className="shrink-0 text-brand-600" />}
+          <span className="min-w-0 flex-1">
+            <span className="block text-sm font-bold text-ink">{t("cat.suggestTitle", "انشر أكثرَ ما تبيع")}</span>
+            <span className="block text-xs text-ink-subtle">
+              {suggestState === "error"
+                ? t("cat.suggestFailed", "ما وصلنا للسيرفر — اضغط لإعادة المحاولة")
+                : t("cat.suggestHint", "نجيب لك الأعلى مبيعاً بآخر ٩٠ يوم — مؤشَّرة، وتشطب الي ما تريده.")}
+            </span>
+          </span>
+        </button>
+      )}
+
+      {suggestState === "open" && (
+        <div className="card space-y-3 p-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <Sparkles size={18} className="shrink-0 text-brand-600" />
+            <b className="text-sm font-bold text-ink">{t("cat.suggestTitle", "انشر أكثرَ ما تبيع")}</b>
+            <span className="text-xs text-ink-subtle tabular-nums">
+              {t("cat.suggestPicked", "{{n}} من {{m}}", { n: formatNum(suggestPick.size), m: formatNum((suggest ?? []).length) })}
+            </span>
+            <button type="button" onClick={() => { playTap(); setSuggestState("idle"); }} className="ms-auto" aria-label={t("sf.close", "إغلاق")}><X size={16} /></button>
+          </div>
+
+          {(suggest ?? []).length === 0 ? (
+            <p className="py-6 text-center text-sm text-ink-subtle">
+              {t("cat.suggestEmpty", "ما اكو اقتراح — يا إمّا الأعلى مبيعاً منشورٌ أصلاً، يا إمّا بلا سعر أو نافد.")}
+            </p>
+          ) : (
+            <>
+              <div className="max-h-80 space-y-1.5 overflow-y-auto">
+                {(suggest ?? []).map((r) => (
+                  <label key={r.id} className="flex cursor-pointer items-center gap-2.5 rounded-xl border border-line p-2 transition hover:bg-surface-2">
+                    <input type="checkbox" checked={suggestPick.has(r.id)} disabled={bulkBusy}
+                      onChange={(e) => setSuggestPick((prev) => { const n = new Set(prev); e.target.checked ? n.add(r.id) : n.delete(r.id); return n; })}
+                      className="h-4 w-4 shrink-0 accent-brand-600" />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-semibold text-ink">{r.name}</span>
+                      {/* الفئةُ تُعرض عمداً: الأدويةُ أوّلُ ما يشطبه الدكتور. */}
+                      <span className="block text-2xs text-ink-subtle">
+                        {r.category || t("cat.noCategory", "بلا فئة")} · {t("cat.soldQty", "انباع {{n}}", { n: formatNum(Math.round(r.qty_sold)) })}
+                      </span>
+                    </span>
+                    <span className="shrink-0 text-xs font-bold tabular-nums text-ink">{money(r.sell_price)}</span>
+                  </label>
+                ))}
+              </div>
+              <button type="button" disabled={!suggestPick.size || bulkBusy} onClick={() => void publishSuggested()}
+                className="inline-flex w-full items-center justify-center gap-1.5 rounded-xl bg-brand-600 px-3 py-2 text-sm font-bold text-white transition active:scale-95 disabled:opacity-40">
+                {bulkBusy ? <Loader2 size={15} className="animate-spin" /> : <Eye size={15} />}
+                {t("cat.suggestPublish", "انشر المؤشَّر ({{n}})", { n: formatNum(suggestPick.size) })}
+              </button>
+            </>
+          )}
+        </div>
+      )}
 
       {/* شريطُ النشر الجماعيّ — يظهر بالاختيار وحدَه فلا يزاحم الشاشةَ بلا داعٍ.
           «اختر الكل» يقصد **المعروضَ بالتصفية الحالية** لا الجدولَ كلَّه: من

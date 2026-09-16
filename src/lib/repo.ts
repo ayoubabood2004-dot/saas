@@ -74,7 +74,7 @@ const invNormName = (v: string | null | undefined): string =>
 import { supabase } from "./supabase";
 import { outboxEnqueue, outboxEnqueueRpc, isNetworkError } from "./outbox";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, AppointmentStatus, ClinicInfo, PublicStaff, DailyNote, TreatmentEntry, Admission, Branch, Reminder, Product, Company, CompanySection, Purchase, PurchaseItem, PurchasePayment, PurchaseDraftLine, PurchaseMeta, Courier, DeliveryOrder, PetMovement, DemoDB, Invoice, InvoiceItem, CheckoutItem, SaleMeta, Customer, DiscountType, PaymentMethod, PaymentSplit, WhatsAppMessage, AuditEntry, LoginEvent, PetNote, Expense, ExpenseMethod, ReturnMeta, RetailReturnResult, HealthMetric, ClinicVisit , Surgery, LabResult, LabDeviceLink, LabDeviceInbox, LabStatusValue, PetProblem, CareEntry, FeatureRequest, GeneratedBarcode, StoreProfile, StoreOrder, StoreOrderItem, StoreFrontInfo, StoreCatalogItem, StoreTrackInfo, LibraryImage, Journey, JourneyEvent, JourneyKind, JourneyStage, JourneyPublicView, EditLine } from "@/types";
+import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, AppointmentStatus, ClinicInfo, PublicStaff, DailyNote, TreatmentEntry, Admission, Branch, Reminder, Product, Company, CompanySection, Purchase, PurchaseItem, PurchasePayment, PurchaseDraftLine, PurchaseMeta, Courier, DeliveryOrder, PetMovement, DemoDB, Invoice, InvoiceItem, CheckoutItem, SaleMeta, Customer, DiscountType, PaymentMethod, PaymentSplit, WhatsAppMessage, AuditEntry, LoginEvent, PetNote, Expense, ExpenseMethod, ReturnMeta, RetailReturnResult, HealthMetric, ClinicVisit , Surgery, LabResult, LabDeviceLink, LabDeviceInbox, LabStatusValue, PetProblem, CareEntry, FeatureRequest, GeneratedBarcode, StoreProfile, StoreOrder, StoreOrderItem, StoreFrontInfo, StoreCatalogItem, SuggestedProduct, StoreTrackInfo, LibraryImage, Journey, JourneyEvent, JourneyKind, JourneyStage, JourneyPublicView, EditLine } from "@/types";
 import type { CompanyCharge } from "@/types";
 import type { DeletedProduct, CourierSettlement, ReceiptsDay, ReceiptsTotal, TopProductRow, StaffSalesRow, InvoiceSearch } from "@/types";
 import type { BarcodeAilment, BarcodeHealthRow } from "@/types";
@@ -1632,6 +1632,40 @@ const demoRepo = {
       .slice()
       .sort((a, b) => b.created_at.localeCompare(a.created_at))
       .slice(0, limit);
+  },
+  /** مرآةُ `store_suggest_products` (0187) — بنفس التعريفات الثلاثة. */
+  async suggestStoreProducts(limit = 40, days = 90): Promise<SuggestedProduct[]> {
+    const db = loadDB();
+    const cut = Date.now() - Math.max(1, Math.min(365, days)) * 86400000;
+    // تعريفُ البيع: الفاتورةُ المرتجَعةُ تُستثنى، والتاريخُ تاريخُها،
+    // والكميّاتُ بإشارتها — نسخةٌ من الخادم لا اجتهادٌ ثانٍ.
+    const okInv = new Set((db.invoices ?? [])
+      .filter((v) => (v.status ?? "paid") !== "refunded" && new Date(v.created_at).getTime() >= cut)
+      .map((v) => v.id));
+    const agg = new Map<string, { qty: number; rev: number }>();
+    for (const it of db.invoiceItems ?? []) {
+      if (!it.product_id || !okInv.has(it.invoice_id)) continue;
+      const a = agg.get(it.product_id) ?? { qty: 0, rev: 0 };
+      a.qty += it.qty; a.rev += it.line_total;
+      agg.set(it.product_id, a);
+    }
+    const pooled = new Map((db.companySections ?? []).map((c) => [c.id, c.pooled_stock ?? 0]));
+    const out: SuggestedProduct[] = [];
+    for (const p of db.products ?? []) {
+      const a = agg.get(p.id);
+      if (!a || a.rev <= 0) continue;
+      if ((p.sell_price ?? 0) <= 0 || p.store_visible) continue;
+      // تعريفُ التوفّر: نسخةٌ من `store_catalog` — المجمَّعُ يُحسب.
+      const available = (p.stock ?? 0) > 0 || (p.section_id ? (pooled.get(p.section_id) ?? 0) > 0 : false);
+      if (!available) continue;
+      out.push({
+        id: p.id, name: p.name, category: p.category ?? null, sell_price: p.sell_price,
+        available, barcode: p.barcode ?? null, image_path: p.image_path ?? null,
+        qty_sold: a.qty, revenue: Math.round(a.rev * 100) / 100,
+      });
+    }
+    out.sort((a, b) => b.revenue - a.revenue || a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
+    return out.slice(0, Math.max(1, Math.min(200, limit)));
   },
   /** مرآةُ `store_set_visible` (0186) — بنفس شرطِ السعر وبنفس معنى `changed`. */
   async setStoreVisible(ids: string[], on: boolean): Promise<{ changed: number; skipped_no_price: number }> {
@@ -4500,6 +4534,14 @@ const supabaseRepo: typeof demoRepo = {
    *  أحدثُ منه لا يصل الصندوقَ أبداً: الشارةُ تقول «١» والصندوقُ يقول «ما اكو
    *  طلبات جديدة» — والصفحةُ تناقض نفسَها بصوتٍ عالٍ. وأسوأُ من التناقض أنّ
    *  الطلبَ **لا يمكن قبولُه ولا رفضُه**؛ الزبونُ ينتظر مكالمةً لن تأتي. */
+  /** اقتراحُ رفِّ البداية (0187) — **اقتراحٌ لا كتابة**. */
+  async suggestStoreProducts(limit = 40, days = 90) {
+    const { data, error } = await sbc().rpc("store_suggest_products", { p_limit: limit, p_days: days });
+    // قائمةُ قرارٍ: فشلُها يُرمى. «ما عندك مبيعات» عن فشلِ شبكةٍ يجعل الدكتورَ
+    // يظنّ متجرَه بلا بضاعةٍ تستحقّ النشر — وهي «القائمةُ الناقصة تُصدَّق» عينُها.
+    if (error) throw error;
+    return (data ?? []) as SuggestedProduct[];
+  },
   /** نشرٌ/إخفاءٌ جماعيّ بنداءٍ واحد (0186).
    *
    *  كان النشرُ صنفاً صنفاً مع `reload()` كاملة بعد كلّ واحد — وحمولةُ منتجاتِ
@@ -5369,7 +5411,7 @@ const READ_ONLY_ALLOWED = new Set<string>([
   "listMedia", "listOpenClinicVisits", "listPetMovements", "listPetNotes", "listPets",
   "listProblems", "listProducts", "listPurchaseItems", "listPurchasePayments", "listPurchases",
   "listCompanyCharges",
-  "listReminders", "listStoreOrders", "listNewStoreOrders", "listSurgeries", "listTreatments", "listVaccinations",
+  "listReminders", "listStoreOrders", "listNewStoreOrders", "suggestStoreProducts", "listSurgeries", "listTreatments", "listVaccinations",
   "listVisits", "listWaiting", "listWeights", "listWhatsAppLog", "searchCustomers",
   // --- الرواتب: القراءة تبقى بالاشتراك المنتهي (الموظف يشوف قسيمته) ---
   "getPayrollPolicy", "listStaffComp", "listStaffRecurring", "listPayrollRuns",
