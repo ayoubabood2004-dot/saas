@@ -93,9 +93,17 @@ const mod = await import(pathToFileURL(file).href).finally(() => { try { rmSync(
 const repo = mod.repo;
 if (!repo) { console.error("✗ fetch-throw-test: ما انحمّلت الوحدة"); process.exit(1); }
 
-/** يرجع true إن رمَت الدالّة (لا إن رجعت قائمةً — ولو فارغة). */
+/** يرجع true إن رمَت الدالّة (لا إن رجعت قائمةً — ولو فارغة).
+ *
+ *  و`TypeError` **لا تُحسب**: اسمُ دالّةٍ غلط يرمي «is not a function» فيمرّ
+ *  الفحصُ لسببٍ غلط. وقعتُ بها مرّتين بهذه الموجة — مرّةً بـ`addCompany` التي
+ *  لا وجودَ لها ومرّةً بـ`claimPetBySerial`. فالحارسُ هنا لا بالذاكرة. */
 const throws = async (fn) => {
-  try { await fn(); return false; } catch { return true; }
+  try { await fn(); return false; }
+  catch (e) {
+    if (e instanceof TypeError) { console.error(`     (رميةٌ برمجية لا رميةُ خادم: ${e.message})`); return false; }
+    return true;
+  }
 };
 
 console.log("▸ قوائمُ القرار ترمي على فشل الخادم — لا ترجع «ماكو» كاذبة");
@@ -113,6 +121,75 @@ check("addGeneratedBarcodes — ملصقاتٌ لا تُطبع قبل أن تُ�
   await throws(() => repo.addGeneratedBarcodes([{ barcode: "2000000000015", label: null, product_id: null, created_by: null }])));
 check("listImageLibrary — «ما بيها صور» كانت تُقال عن فشل (البند ٢٠)",
   await throws(() => repo.listImageLibrary()));
+
+/* ── الموجة ٥ · البند ٢٣: المواضعُ الخمسةُ الصامتة ─────────────────────────
+ * `maybe()` تخلط جوابين: تطبع الخطأ بالكونسول وترجع «لا صفّ». فصفرُ صفوفٍ
+ * (سياسةٌ ردّت) وفشلُ الشبكة يصلان المستدعيَ **بنفس الشكل** — والمستدعي يقول
+ * «تمّ» بعدهما. والكتابةُ تُسمَع: كلُّها ترمي الآن. */
+console.log("▸ البند ٢٣ — المواضعُ الخمسةُ الصامتة صارت تُسمَع");
+check("updatePet — اثنا عشرَ موضعَ نداءٍ يقولون «تمّ» بعدها",
+  await throws(() => repo.updatePet("pet-1", { name: "خ" })));
+check("updateAppointment — نفسُ الشكل",
+  await throws(() => repo.updateAppointment("apt-1", { status: "done" })));
+check("claimPet — القراءةُ تفشل فتُرمى، لا تُقرأ «ما لكيت الحيوان»",
+  await throws(() => repo.claimPet("12345", { owner_id: "o1" })));
+check("createPet — فشلُ الإنشاء يُرمى (والحلقةُ الداخلية تمسك 23505 وحدَه)",
+  await throws(() => repo.createPet({ name: "ح", species: "dog" })));
+
+/* `addWeight` تحتاج عميلاً **أذكى**: العميلُ الفاشلُ بالكامل يُسقط الإدراجَ
+ * أوّلاً فلا يصل الفحصُ للكتابة الثانية أصلاً — أي أنه يقيس `need()` لا
+ * الإصلاح. (أوّلُ صياغةٍ لي فعلت ذلك بالضبط ومرّت خضراء.) فهنا إدراجٌ ينجح
+ * وتحديثٌ يفشل — وهو حالُ الإنتاج: سياسةٌ تسمح بالسجلّ وتردّ بطاقةَ الحيوان. */
+{
+  const SPLIT_SUPABASE = `
+    const ERR = { message: "boom: policy refused the pets row", code: "42501" };
+    const chain = (res) => {
+      const o = new Proxy(function () {}, {
+        get(_t, k) {
+          if (k === "then") return (r) => { r(res); };
+          if (k === "catch" || k === "finally") return () => o;
+          return () => o;
+        },
+        apply() { return o; },
+      });
+      return o;
+    };
+    export const supabase = {
+      // insert into weight_logs succeeds; update on pets is refused.
+      from: (t) => chain(t === "pets" ? { data: null, error: ERR } : { data: { id: "w1", weight_kg: 12.5 }, error: null }),
+      rpc: () => chain({ data: null, error: ERR }),
+      schema: () => ({ from: () => chain({ data: null, error: ERR }) }),
+      storage: { from: () => chain({ data: null, error: ERR }) },
+      auth: { getSession: async () => ({ data: { session: null }, error: null }), getUser: async () => ({ data: { user: null }, error: null }) },
+    };
+  `;
+  const splitStubs = {
+    name: "split",
+    setup(b) {
+      const m = {
+        i18next: "const i = { t: (k, d) => (typeof d === 'string' ? d : (d && d.defaultValue) || k), language: 'ar', use: () => i, init: () => i, on: () => i, changeLanguage: () => i, dir: () => 'rtl' }; export default i;",
+        "./supabase": SPLIT_SUPABASE,
+        "./globalToast": "export const emitGlobalToast = () => {};",
+      };
+      b.onResolve({ filter: /.*/ }, (a) => (EMPTY.has(a.path) ? { path: a.path, namespace: "stub" } : undefined));
+      b.onResolve({ filter: /^(i18next|\.\/supabase|\.\/globalToast)$/ }, (a) => ({ path: a.path, namespace: "stub" }));
+      b.onResolve({ filter: /^@\/types$/ }, () => ({ path: "types", namespace: "stub" }));
+      b.onLoad({ filter: /.*/, namespace: "stub" }, (a) => ({ contents: m[a.path] ?? "export default {};", loader: "js" }));
+    },
+  };
+  const sb = await esbuild.build({
+    entryPoints: ["src/lib/repo.ts"], bundle: true, format: "esm", write: false,
+    platform: "neutral", plugins: [splitStubs], logLevel: "silent",
+    define: { "import.meta.env": "__VITE_ENV__" }, banner: { js: "const __VITE_ENV__ = {};" },
+  });
+  const d2 = mkdtempSync(join(tmpdir(), "split-"));
+  const f2 = join(d2, "repo.mjs");
+  writeFileSync(f2, sb.outputFiles[0].text);
+  const m2 = await import(pathToFileURL(f2).href).finally(() => { try { rmSync(d2, { recursive: true, force: true }); } catch { /* ignore */ } });
+  check("addWeight — الوزنُ يُسجَّل ثم تُردّ كتابتُه ببطاقة الحيوان ⇒ يُرمى",
+    await throws(() => m2.repo.addWeight("pet-1", 12.5)),
+    "السجلُّ انكتب والبطاقةُ لا — والشاشةُ راح تعرض وزناً قديماً يُحسب عليه دواء");
+}
 
 console.log("▸ وقوائمُ المخزن الأساسية ترمي أصلاً (allPages) — لا تراجُع");
 check("listProducts", await throws(() => repo.listProducts()));

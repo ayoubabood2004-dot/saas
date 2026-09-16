@@ -30,7 +30,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { isPlatformAdmin } from "@/lib/platformAdmin";
 import { usePermissions } from "@/hooks/usePermissions";
 import { useBookingRequestCount } from "@/lib/bookingRequests";
-import { useStoreOrderCount } from "@/lib/storeOrdersLive";
+import { useStoreOrderCount, useHasEnabledStore } from "@/lib/storeOrdersLive";
 import { useSubscription } from "@/lib/subscription";
 import { useEntitlements } from "@/lib/entitlements";
 import { formatNum } from "@/lib/utils";
@@ -111,7 +111,11 @@ export function Sidebar() {
   // عدّاد حي لطلبات الحجز الجديدة (زبائن) — نفس المجس المشترك مال الجرس.
   const bookingReqs = useBookingRequestCount();
   // عدّاد حي لطلبات المتجر الجديدة — يشتغل فقط لما ميزة المتجر متاحة.
-  const storeOrders = useStoreOrderCount(has("store") && can("processSales"));
+  /* **الباقةُ ليست الشرط.** `has("store")` صادقةٌ لكلّ تجربةٍ وكلّ باقةِ super،
+   * والمقيسُ بالإنتاج ٦٤ عيادةً منها واحدةٌ لها متجر — فثلاثٌ وستّون كنّ ينبضن
+   * كلَّ ٤٥ ثانية ليعددن صفراً. الشرطُ صفٌّ مفعَّلٌ بـ`store_profiles`. */
+  const hasStore = useHasEnabledStore();
+  const storeOrders = useStoreOrderCount(hasStore && can("processSales"));
   const toggleGroup = (key: string) => setOpenGroups((s) => { const n = new Set(s); if (n.has(key)) n.delete(key); else n.add(key); return n; });
   const isActive = (to: string, exact?: boolean) =>
     exact ? location.pathname === "/" : location.pathname === to || location.pathname.startsWith(to + "/");

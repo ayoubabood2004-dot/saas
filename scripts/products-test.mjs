@@ -789,6 +789,53 @@ console.log("▸ دلو صور المنتجات — الأفعال الأربع�
     !/sp\.slug !== normalizeSlug\(/.test(readFileSync("src/lib/repo.ts", "utf8")));
   check("  وقاعدةُ الخادم ما زالت lower(trim(p_slug)) — لو تبدّلت لبطل القالب",
     readFileSync("supabase/migrations/0095_store.sql", "utf8").includes("lower(trim(p_slug))"));
+
+  /* ── الموجة ٥ · ٢٢ج ود: الشارةُ لا تناقض الصندوق، والعنوانُ يقول نافذتَه ──
+   *
+   * الصندوقُ كان يقرأ آخر ٣٠٠ طلبٍ **بكلّ الحالات** ثمّ يصفّي «الجديد»، والشارةُ
+   * تعدّ بالخادم `count: exact` بلا سقف. فطلبٌ جديدٌ وراءه ٣٠٠ قرارٍ أحدثُ منه
+   * يسقط من الصندوق والشارةُ تعدّه: «١ بانتظارك» و«ما اكو طلبات» بنفس الشاشة —
+   * والطلبُ لا يُقبل ولا يُرفض أصلاً. */
+  const store = readFileSync("src/pages/ClinicStore.tsx", "utf8");
+  const repoS = readFileSync("src/lib/repo.ts", "utf8");
+  check("صندوقُ «الجديد» له قراءتُه الخاصّة بلا سقف",
+    /async listNewStoreOrders\(\)[\s\S]{0,400}allPages<StoreOrder>[\s\S]{0,200}eq\("status", "new"\)/.test(repoS));
+  check("  ولا سقفَ عليها (لا limit ولا slice)",
+    !/async listNewStoreOrders\(\)[\s\S]{0,400}\.limit\(/.test(repoS));
+  check("  والمرآةُ التجريبية عندها نفسُ الدالّة (حارسٌ ليس بالمرآة لم يُفحص)",
+    /async listNewStoreOrders\(\): Promise<StoreOrder\[\]>/.test(repoS));
+  check("  ومسموحةٌ باشتراكٍ منتهٍ (قراءةٌ لا كتابة)", /"listNewStoreOrders"/.test(repoS));
+  check("والصندوقُ يبني «الجديد» من قائمته لا من تصفيةِ المقصوص",
+    /const fresh = newOrders \?\? /.test(store));
+  check("  والشارةُ تتبع الصندوق متى ما وصل",
+    /badge: newOrders \? newOrders\.length : newCount/.test(store));
+  check("والنافذةُ اسمٌ واحد — لا رقمٌ مكرَّرٌ بالجلب وبالعنوان",
+    /const ORDERS_WINDOW = 300;/.test(store) && /listStoreOrders\(ORDERS_WINDOW\)/.test(store)
+    && !/listStoreOrders\(300\)/.test(store));
+  check("  والمجموعُ المقصوص يقول نافذتَه بعنوانه", /kpiRevenueWindow/.test(store) && /capped \?/.test(store));
+  check("  و«نسبةُ القبول» لا تُوسَم — النافذةُ تُختصر من النسبة بسطاً ومقاماً",
+    !/kpiAcceptRateWindow/.test(store));
+  check("  وعنوانُ السجلّ لا يقول مجموعاً كاملاً وهو مقصوص",
+    /total: capped \? `\$\{ORDERS_WINDOW\}\+` : decided\.length/.test(store));
+
+  /* ── الموجة ٥ · ٢٤هـ: الجرسُ ينبض لمن له متجر ───────────────────────────
+   * الشرطُ كان الباقةَ لا المتجر. المقيسُ بالإنتاج: ٦٤ عيادةً، واحدةٌ لها صفٌّ
+   * بـ`store_profiles`. فثلاثٌ وستّون تنبض كلَّ ٤٥ ثانيةً لتعدّ صفراً — ولا
+   * يظهر شيءٌ بالشاشة (الشارةُ `> 0`)، فالعطبُ كلفةٌ لا صورة، ولهذا لم يُشتكَ. */
+  const bell = readFileSync("src/lib/storeOrdersLive.ts", "utf8");
+  const side = readFileSync("src/components/Sidebar.tsx", "utf8");
+  check("الجرسُ مشروطٌ بصفِّ متجرٍ مفعَّل لا بالباقة",
+    /useStoreOrderCount\(hasStore && can\("processSales"\)\)/.test(side));
+  check("  ولا أثرَ للشرط القديم (has(\"store\") يقرّر النبض)",
+    !/useStoreOrderCount\(has\("store"\)/.test(side));
+  check("  والمجسُّ قراءةٌ واحدةٌ بالجلسة لا نداءٌ بكلّ نبضة",
+    /function subscribeHasStore[\s\S]{0,400}storeOn === null && !probing/.test(bell));
+  check("  وفشلُ القراءة **ينبض** لا يسكت (صمتٌ كاذبٌ = طلبٌ يُنسى)",
+    /\.catch\(\(\) => \{ storeOn = true; \}\)/.test(bell));
+  check("  والشاشةُ تُعلمه بلا رحلةٍ ثانية", /noteStoreProfile/.test(store) && /export function noteStoreProfile/.test(bell));
+  check("ومستمعو النافذة يُنزعون عند آخر مشترك (تسريبٌ صامت)",
+    /function unwire\(\)[\s\S]{0,240}removeEventListener\("visibilitychange", onVis\)/.test(bell)
+    && /timer = undefined;\s*\n\s*unwire\(\);/.test(bell));
 }
 
 console.log(`\n${fails ? "✗" : "✓"} products-test: ${passes} نجحت، ${fails} فشلت`);

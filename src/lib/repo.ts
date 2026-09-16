@@ -1633,6 +1633,12 @@ const demoRepo = {
       .sort((a, b) => b.created_at.localeCompare(a.created_at))
       .slice(0, limit);
   },
+  /** مرآةُ `listNewStoreOrders` — بلا سقفٍ كذلك. */
+  async listNewStoreOrders(): Promise<StoreOrder[]> {
+    return (loadDB().storeOrders ?? [])
+      .filter((o) => o.status === "new")
+      .sort((a, b) => b.created_at.localeCompare(a.created_at));
+  },
   /** عدُّ الطلبات الجديدة وحدَه — يُنادى كلَّ نصف دقيقةٍ من جرس التنبيه، فلا
    *  يجرّ صفوفَ الطلبات ببنودها (`items` jsonb) ليعدّها. */
   async countNewStoreOrders(): Promise<number> {
@@ -3547,7 +3553,14 @@ async function allPages<T>(make: () => unknown): Promise<T[]> {
  * صار شي»، و«إشعارُ تحصيلٍ والطلبُ مكانه». الصمتُ هنا أخطرُ من الخطأ لأنه
  * يُصدَّق. فصفٌّ غائبٌ بعد update = خطأٌ صريح بسببٍ مفهوم. */
 function assertUpdated<T>(row: T | undefined): T {
-  if (row === undefined) throw new Error("no_row_updated");
+  if (row === undefined) {
+    // الرمزُ على الكائن لا بالنصّ وحدَه: `errors.ts` كانت تطابق بـ`.includes`
+    // على الرسالة — يعمل، لكنه يجعل الرسالةَ عقداً. والرمزُ يبقى بالرسالة
+    // كذلك لأنه يعبر حدَّ JSON (الصادر) حيث تسقط الخصائصُ غيرُ المعدودة.
+    const e = new Error("no_row_updated") as Error & { code?: string };
+    e.code = "no_row_updated";
+    throw e;
+  }
   return row;
 }
 /** تحديثٌ يُسمع صوتُه: خطأُ الخادم يُرمى، وصفرُ صفوفٍ يُرمى.
@@ -3565,6 +3578,23 @@ function updated<T>(res: { data: unknown; error: { message: string; code?: strin
     throw err;
   }
   return assertUpdated((res.data ?? undefined) as T | undefined);
+}
+
+/** قراءةٌ تُسمَع: خطأُ الخادم **يُرمى**، و«ما لكيت» ترجع undefined.
+ *
+ *  الفرقُ عن `maybe()`: تلك تخلط الجوابين — تطبع الخطأ بالكونسول وترجع «لا
+ *  صفّ»، فيصير فشلُ الشبكة وغيابُ الصفّ شيئاً واحداً بعين المستدعي. فمن أراد
+ *  «ما لكيت» جواباً مشروعاً **ولا يريد** أن يبتلع الفشلَ معه، يستعمل هذه. */
+function row<T>(res: { data: unknown; error: { message: string; code?: string; details?: string; hint?: string } | null }): T | undefined {
+  if (res.error) {
+    const src = res.error;
+    const err = new Error(src.message) as Error & { code?: string; details?: string; hint?: string };
+    if (src.code) err.code = src.code;
+    if (src.details) err.details = src.details;
+    if (src.hint) err.hint = src.hint;
+    throw err;
+  }
+  return (res.data ?? undefined) as T | undefined;
 }
 
 function maybe<T>(res: { data: unknown; error: { message: string } | null }): T | undefined {
@@ -3645,13 +3675,16 @@ const supabaseRepo: typeof demoRepo = {
     // Claiming only LINKS the owner account. The clinic's stored customer name/
     // phone (اسم المراجع) must survive the claim — we read the row first and only
     // fill fields the clinic left blank.
-    const cur = maybe<Pet>(await sbc().from("pets").select("*").eq("serial", serial.trim()).maybeSingle());
+    // القراءةُ ترمي على الفشل وترجع undefined على الغياب — الجوابان مفترقان.
+    const cur = row<Pet>(await sbc().from("pets").select("*").eq("serial", serial.trim()).maybeSingle());
     if (!cur) return undefined;
     const patch: Partial<Pet> = { owner_id: owner.owner_id };
     if (blankOwnerField(cur.owner_name) && owner.owner_name) patch.owner_name = owner.owner_name;
     if (blankOwnerField(cur.owner_phone) && owner.owner_phone) patch.owner_phone = owner.owner_phone;
     if (blankOwnerField(cur.owner_email) && owner.owner_email) patch.owner_email = owner.owner_email;
-    return maybe<Pet>(await sbc().from("pets").update(patch).eq("id", cur.id).select().maybeSingle());
+    // القراءةُ فوقُ أثبتت أنّ الحيوان موجود — فصفرُ صفوفٍ هنا **رفضُ سياسة**
+    // لا غياب. كانت ترجع undefined فتقول الشاشةُ «ما لكيت الحيوان».
+    return updated<Pet>(await sbc().from("pets").update(patch).eq("id", cur.id).select().maybeSingle());
   },
   async claimPetsByPhone(input) {
     // Server-side matching (migration 0077): the RPC uses the PROFILE's stored
@@ -3707,7 +3740,9 @@ const supabaseRepo: typeof demoRepo = {
       for (let attempt = 0; attempt < 8; attempt++) {
         const cand = String(Math.floor(10000 + Math.random() * 90000));
         try {
-          const fixed = maybe<Pet>(await sbc().from("pets").update({ serial: cand }).eq("id", pet.id).select().maybeSingle());
+          // `row` لا `maybe`: الحلقةُ حولَها تمسك 23505 لتعيد المحاولة — وكانت
+          // `maybe` تبلعه فلا يصل `catch` أبداً، فتنكسر إعادةُ المحاولة بصمت.
+          const fixed = row<Pet>(await sbc().from("pets").update({ serial: cand }).eq("id", pet.id).select().maybeSingle());
           if (fixed) return fixed;
           break;
         } catch (e) {
@@ -3718,7 +3753,9 @@ const supabaseRepo: typeof demoRepo = {
     return pet;
   },
   async updatePet(petId, patch) {
-    return maybe<Pet>(await sbc().from("pets").update(patch).eq("id", petId).select().maybeSingle());
+    // اثنا عشرَ موضعَ نداءٍ بالشاشات، كلُّها تتجاهل المُرجَع وتقول «تمّ» بعدها.
+    // فصفرُ صفوفٍ (سياسةٌ ردّت، أو معرّفٌ بايت) كان يُقال عنه نجاحاً.
+    return updated<Pet>(await sbc().from("pets").update(patch).eq("id", petId).select().maybeSingle());
   },
   async deletePet(petId) {
     // ملفات التخزين لا تلحقها الـcascade — صفوف media_items تنحذف مع الحيوان
@@ -3742,7 +3779,10 @@ const supabaseRepo: typeof demoRepo = {
     const log = need<WeightLog>(
       await sbc().from("weight_logs").insert({ pet_id: petId, weight_kg, measured_at: measured_at ?? new Date().toISOString().slice(0, 10) }).select().single(),
     );
-    await sbc().from("pets").update({ current_weight_kg: weight_kg }).eq("id", petId);
+    // كان المُرجَعُ **يُهمَل كلّياً** — فلا الخطأُ يُرى ولا صفرُ الصفوف. الوزنُ
+    // يُسجَّل بالسجلّ ولا يصل بطاقةَ الحيوان، فتقرأ الشاشةُ وزناً قديماً ويُحسب
+    // عليه دواءٌ بالكيلو. `ok()` ترمي على الخطأ — وهو ما يعني هنا.
+    ok(await sbc().from("pets").update({ current_weight_kg: weight_kg }).eq("id", petId));
     return log;
   },
   async listVaccinations(petId) {
@@ -4059,7 +4099,7 @@ const supabaseRepo: typeof demoRepo = {
     return need<Appointment>(await sbc().from("appointments").insert(input).select().single());
   },
   async updateAppointment(id, patch) {
-    return maybe<Appointment>(await sbc().from("appointments").update(patch).eq("id", id).select().maybeSingle());
+    return updated<Appointment>(await sbc().from("appointments").update(patch).eq("id", id).select().maybeSingle());
   },
   async setAppointmentStatus(id, status) {
     ok(await sbc().from("appointments").update({ status }).eq("id", id));
@@ -4435,6 +4475,17 @@ const supabaseRepo: typeof demoRepo = {
     return listOrThrow<StoreOrder>(
       await sbc().from("store_orders").select("*").order("created_at", { ascending: false }).limit(limit),
     );
+  },
+  /** صندوقُ «الجديد» كاملاً — **بلا سقف**.
+   *
+   *  الشارةُ تعدّ بالخادم (`count: exact`) بلا سقفٍ أصلاً، والصندوقُ كان يقرأ
+   *  آخرَ ٣٠٠ طلبٍ **بكلّ الحالات** ثمّ يصفّي. فطلبٌ جديدٌ وراءه ثلاثُمئةِ قرارٍ
+   *  أحدثُ منه لا يصل الصندوقَ أبداً: الشارةُ تقول «١» والصندوقُ يقول «ما اكو
+   *  طلبات جديدة» — والصفحةُ تناقض نفسَها بصوتٍ عالٍ. وأسوأُ من التناقض أنّ
+   *  الطلبَ **لا يمكن قبولُه ولا رفضُه**؛ الزبونُ ينتظر مكالمةً لن تأتي. */
+  async listNewStoreOrders() {
+    return allPages<StoreOrder>(() =>
+      sbc().from("store_orders").select("*").eq("status", "new").order("created_at", { ascending: false }));
   },
   async countNewStoreOrders() {
     /* `head: true` ⇒ عددٌ بلا صفوف. كان الجرسُ يجيب مئةَ طلبٍ كاملةً ببنودها
@@ -5289,7 +5340,7 @@ const READ_ONLY_ALLOWED = new Set<string>([
   "listMedia", "listOpenClinicVisits", "listPetMovements", "listPetNotes", "listPets",
   "listProblems", "listProducts", "listPurchaseItems", "listPurchasePayments", "listPurchases",
   "listCompanyCharges",
-  "listReminders", "listStoreOrders", "listSurgeries", "listTreatments", "listVaccinations",
+  "listReminders", "listStoreOrders", "listNewStoreOrders", "listSurgeries", "listTreatments", "listVaccinations",
   "listVisits", "listWaiting", "listWeights", "listWhatsAppLog", "searchCustomers",
   // --- الرواتب: القراءة تبقى بالاشتراك المنتهي (الموظف يشوف قسيمته) ---
   "getPayrollPolicy", "listStaffComp", "listStaffRecurring", "listPayrollRuns",

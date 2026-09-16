@@ -72,6 +72,47 @@ function notify(fresh: number) {
   } catch { /* بعض المنصات ترمي من Notification — لا نكسر التطبيق أبداً */ }
 }
 
+/* ── هل للعيادة متجرٌ **مفعَّل**؟ ────────────────────────────────────────────
+ *
+ * الشرطُ كان `has("store") && can("processSales")` — أي **الباقة**، وهي صادقةٌ
+ * لكلّ عيادةٍ بتجربةٍ أو باقةِ super. والمقيسُ على الإنتاج: **٦٤ عيادةً، واحدةٌ
+ * منها عندها صفٌّ بـ`store_profiles`**. فثلاثٌ وستّون عيادةً تنبض كلَّ ٤٥ ثانية
+ * لكلّ تبويبٍ مفتوح — ~٦٤٠ نداءً باليوم للتبويب الواحد — على بياناتِ موبايلٍ
+ * يدفعها الدكتور، لتعدّ صفراً لا يمكن أن يصير غيرَ صفر.
+ *
+ * ولا يظهر شيءٌ بالشاشة أصلاً (الشارةُ `> 0`)، فالعطبُ **كلفةٌ لا صورة** — ولهذا
+ * لم يشتكِ منه أحد، ولهذا بقي.
+ *
+ * وقراءةٌ واحدةٌ بالجلسة تحكمها كلَّها. وسقوطُ القراءة **ينبض** لا يسكت: صمتٌ
+ * على خطأٍ عابر جرسٌ لا يرنّ وطلبٌ يُنسى، وهو أسوأُ العطبين لا أرخصُهما. */
+let storeOn: boolean | null = null;
+let probing: Promise<unknown> | null = null;
+const onSubs = new Set<() => void>();
+const fanOut = () => onSubs.forEach((f) => f());
+
+/** تُنادى من شاشة المتجر بعد الجلب/الحفظ — يستيقظ الجرسُ أو يسكت بلا رحلةٍ ثانية. */
+export function noteStoreProfile(p: { enabled?: boolean | null } | null | undefined): void {
+  const next = !!p?.enabled;
+  if (next === storeOn) return;
+  storeOn = next;
+  fanOut();
+}
+function subscribeHasStore(cb: () => void) {
+  onSubs.add(cb);
+  if (storeOn === null && !probing) {
+    probing = repo.getStoreProfile()
+      .then((p) => { storeOn = !!p?.enabled; })
+      .catch(() => { storeOn = true; })   // عابرٌ: لا نُسكت جرساً قد يكون له متجر
+      .finally(fanOut);
+  }
+  return () => { onSubs.delete(cb); };
+}
+const readHasStore = () => storeOn === true;
+/** الشرطُ الحقيقيّ: صفٌّ **مفعَّل** بـ`store_profiles` — لا ما تسمح به الباقة. */
+export function useHasEnabledStore(): boolean {
+  return useSyncExternalStore(subscribeHasStore, readHasStore, () => false);
+}
+
 /** إعادة عدّ فورية (تُستدعى بعد قبول/رفض طلب). */
 export function bumpStoreOrders() {
   void tick();
@@ -93,12 +134,22 @@ export async function enableStoreAlerts(): Promise<"granted" | "denied" | "unsup
   } catch { return "unsupported"; }
 }
 
+/* مرجعان ثابتان — بلا اسمٍ لا يُنزع المستمع، فيبقى كلُّ `focus` ينادي
+ * `tick()` بعد أن يذهب آخرُ مشترك. تسريبٌ صامتٌ يعيش ما عاش التبويب. */
+const onVis = () => { if (!document.hidden) void tick(); };
+const onFocus = () => { void tick(); };
 function wire() {
   if (wired || typeof document === "undefined") return;
   wired = true;
   // العودةُ للتبويب تُعيد العدَّ فوراً — لا ينتظر الدكتورُ دورةَ نبضٍ كاملة.
-  document.addEventListener("visibilitychange", () => { if (!document.hidden) void tick(); });
-  window.addEventListener("focus", () => { void tick(); });
+  document.addEventListener("visibilitychange", onVis);
+  window.addEventListener("focus", onFocus);
+}
+function unwire() {
+  if (!wired || typeof document === "undefined") return;
+  wired = false;
+  document.removeEventListener("visibilitychange", onVis);
+  window.removeEventListener("focus", onFocus);
 }
 
 function subscribeLive(cb: () => void) {
@@ -113,6 +164,7 @@ function subscribeLive(cb: () => void) {
     if (subs.size === 0 && timer != null) {
       clearInterval(timer);
       timer = undefined;
+      unwire();
     }
   };
 }

@@ -22,7 +22,7 @@ import type { Product, StoreOrder, StoreProfile } from "@/types";
 import { useTranslation } from "react-i18next";
 import { repo } from "@/lib/repo";
 import { useAuth } from "@/contexts/AuthContext";
-import { bumpStoreOrders, useStoreOrderCount, storeAlertsState, enableStoreAlerts } from "@/lib/storeOrdersLive";
+import { bumpStoreOrders, useStoreOrderCount, storeAlertsState, enableStoreAlerts, noteStoreProfile } from "@/lib/storeOrdersLive";
 import { normalizeSlug, isValidSlug, storeUrl, categoryLook, productImageUrl, shelfLook, shelfMonogram } from "@/lib/storeLib";
 import { prepareUpload } from "@/lib/image";
 import { ImageLibraryPicker } from "@/components/inventory/ImageLibraryPicker";
@@ -52,6 +52,9 @@ function ago(iso: string): string {
 
 /** سقفُ سجلّ الطلبات المعروض — يُقال بالعدد أسفلَه، لا يُقصّ بصمت (ع٤). */
 const STORE_LOG_CAP = 30;
+/** نافذةُ الطلبات المجلوبة. الأرقامُ المبنيّةُ عليها **تقولها بعنوانها** —
+ *  والاسمُ واحدٌ كي لا ينفصل العنوانُ عن الجلب عند أوّلِ تعديل. */
+const ORDERS_WINDOW = 300;
 
 export function ClinicStore() {
   const { t } = useTranslation();
@@ -60,6 +63,7 @@ export function ClinicStore() {
   const [tab, setTab] = useState<Tab>("orders");
 
   const [orders, setOrders] = useState<StoreOrder[] | null>(null);
+  const [newOrders, setNewOrders] = useState<StoreOrder[] | null>(null);
   const [products, setProducts] = useState<Product[] | null>(null);
   const [profile, setProfile] = useState<StoreProfile | null | undefined>(undefined); // undefined = يتحمّل
   const newCount = useStoreOrderCount();
@@ -70,12 +74,17 @@ export function ClinicStore() {
 
   const load = async () => {
     try {
-      const [o, p, pr] = await Promise.all([
-        repo.listStoreOrders(300),
+      const [o, nw, p, pr] = await Promise.all([
+        repo.listStoreOrders(ORDERS_WINDOW),
+        // صندوقُ «الجديد» بلا سقف: الشارةُ تعدّ بالخادم، فلو بقي الصندوقُ
+        // مقصوصاً ناقضته — «١ بانتظارك» و«ما اكو طلبات» بنفس الشاشة.
+        repo.listNewStoreOrders(),
         repo.listProducts(clinicId),
         repo.getStoreProfile(),
       ]);
-      setOrders(o); setProducts(p); setProfile(pr);
+      setOrders(o); setNewOrders(nw); setProducts(p); setProfile(pr);
+      // الجرسُ يعرف من هنا بلا رحلةٍ ثانية — وينطفئ فوراً لو أُطفئ المتجر.
+      noteStoreProfile(pr);
       setFailed(false);
     } catch {
       // ما نكذب بقوائمَ فارغة: إمّا بياناتٌ سابقة تبقى، أو تُقال الحقيقة.
@@ -93,7 +102,9 @@ export function ClinicStore() {
   useEffect(() => { if (orders !== null) void load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [newCount]);
 
   const TABS: { id: Tab; label: string; icon: typeof Inbox; badge?: number }[] = [
-    { id: "orders", label: "الطلبات", icon: Inbox, badge: newCount },
+    // عدُّ الخادم ما دام الصندوقُ يتحمّل؛ وبعدها **الصندوقُ هو الشارة** — فلا
+    // يبقى رقمان لشيءٍ واحد يختلفان أمام عين الدكتور.
+    { id: "orders", label: "الطلبات", icon: Inbox, badge: newOrders ? newOrders.length : newCount },
     { id: "catalog", label: "تشكيلة المتجر", icon: Boxes },
     { id: "settings", label: "الإعدادات والرابط", icon: Settings2 },
   ];
@@ -143,10 +154,10 @@ export function ClinicStore() {
       <AnimatePresence mode="wait">
         <motion.div key={tab} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.18 }}>
           {tab === "orders"
-            ? <OrdersTab orders={orders} products={products} profile={profile ?? null} reload={load} goSettings={() => setTab("settings")} />
+            ? <OrdersTab orders={orders} newOrders={newOrders} products={products} profile={profile ?? null} reload={load} goSettings={() => setTab("settings")} />
             : tab === "catalog"
               ? <CatalogTab products={products} reload={load} storeOn={!!profile?.enabled} />
-              : <SettingsTab profile={profile} products={products} onSaved={(p) => { setProfile(p); }} />}
+              : <SettingsTab profile={profile} products={products} onSaved={(p) => { setProfile(p); noteStoreProfile(p); }} />}
         </motion.div>
       </AnimatePresence>
     </div>
@@ -157,8 +168,9 @@ export function ClinicStore() {
 
 /* `clinicId` و`user` ما عادا لازمين هنا: بناءُ الفاتورة ونسبتُها انتقلا
  * للخادم (0183)، والدالّةُ تفحص العيادةَ والدورَ بنفسها. */
-function OrdersTab({ orders, products, profile, reload, goSettings }: {
-  orders: StoreOrder[] | null; products: Product[] | null; profile: StoreProfile | null;
+function OrdersTab({ orders, newOrders, products, profile, reload, goSettings }: {
+  orders: StoreOrder[] | null; newOrders: StoreOrder[] | null;
+  products: Product[] | null; profile: StoreProfile | null;
   reload: () => Promise<void>; goSettings: () => void;
 }) {
   const { t } = useTranslation();
@@ -168,9 +180,16 @@ function OrdersTab({ orders, products, profile, reload, goSettings }: {
 
   const prodById = useMemo(() => new Map((products ?? []).map((p) => [p.id, p])), [products]);
 
-  const fresh = (orders ?? []).filter((o) => o.status === "new");
+  /* «الجديد» من قائمته الخاصّة **بلا سقف** لا من تصفيةِ آخر ٣٠٠ بكلّ الحالات:
+   * طلبٌ جديدٌ وراءه ثلاثُمئةِ قرارٍ أحدثُ منه كان يسقط من الصندوق كلّياً —
+   * لا يُعرض ولا يُقبل ولا يُرفض، والزبونُ ينتظر مكالمةً لن تأتي. */
+  const fresh = newOrders ?? (orders ?? []).filter((o) => o.status === "new");
   const [alerts, setAlerts] = useState(storeAlertsState());
   const decided = (orders ?? []).filter((o) => o.status !== "new");
+  /* والمبتوتُ يبقى مقصوصاً بالنافذة — وهذا مقبولٌ لأنه سجلٌّ يُقرأ لا صندوقٌ
+   * يُعمل منه. لكنّ الأرقامَ المبنيّةَ عليه **تقول نافذتَها**: «مبيعات المتجر»
+   * من مجموعٍ مقصوصٍ بعنوانٍ مطلق كانت تُنقِص المبلغَ وتبدو حقيقةً كاملة. */
+  const capped = (orders ?? []).length >= ORDERS_WINDOW;
   const today = new Date().toDateString();
   const acceptedToday = decided.filter((o) => o.status === "accepted" && o.decided_at && new Date(o.decided_at).toDateString() === today).length;
   const storeRevenue = decided.filter((o) => o.status === "accepted").reduce((s, o) => s + o.total, 0);
@@ -241,10 +260,12 @@ function OrdersTab({ orders, products, profile, reload, goSettings }: {
     <div className="space-y-5">
       {/* KPIs */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Kpi icon={Inbox} tone="danger" label="طلبات بانتظارك" value={String(fresh.length)} pulse={fresh.length > 0} />
-        <Kpi icon={CheckCircle2} tone="success" label="مقبولة اليوم" value={String(acceptedToday)} />
-        <Kpi icon={TrendingUp} tone="brand" label="مبيعات المتجر (المقبولة)" value={money(storeRevenue)} />
-        <Kpi icon={Sparkles} tone="accent" label="نسبة القبول" value={decideRate === null ? "—" : `${formatNum(decideRate)}٪`} />
+        <Kpi icon={Inbox} tone="danger" label={t("pos.kpiPending", "طلبات بانتظارك")} value={String(fresh.length)} pulse={fresh.length > 0} />
+        <Kpi icon={CheckCircle2} tone="success" label={capped ? t("pos.kpiAcceptedTodayWindow", "مقبولة اليوم (ضمن آخر {{n}})", { n: ORDERS_WINDOW }) : t("pos.kpiAcceptedToday", "مقبولة اليوم")} value={String(acceptedToday)} />
+        <Kpi icon={TrendingUp} tone="brand" label={capped ? t("pos.kpiRevenueWindow", "مبيعات المتجر (آخر {{n}} طلب)", { n: ORDERS_WINDOW }) : t("pos.kpiRevenue", "مبيعات المتجر (المقبولة)")} value={money(storeRevenue)} />
+        {/* «نسبةُ القبول» نسبةٌ — النافذةُ تُختصر منها بسطاً ومقاماً، فتقديرُها
+            على آخر ٣٠٠ تقديرٌ نزيه. لا تُوسَم، ووسمُها ضجيج. */}
+        <Kpi icon={Sparkles} tone="accent" label={t("pos.kpiAcceptRate", "نسبة القبول")} value={decideRate === null ? "—" : `${formatNum(decideRate)}٪`} />
       </div>
 
       {/* متجر مو مفعّل بعد */}
@@ -359,7 +380,9 @@ function OrdersTab({ orders, products, profile, reload, goSettings }: {
       {decided.length > 0 && (
         <section>
           <h2 className="mb-2 flex items-center gap-2 font-display text-lg font-bold text-ink"><RefreshCw size={16} className="text-ink-subtle" /> {t("pos.ordersLog", "سجل الطلبات")}{decided.length > STORE_LOG_CAP && (
-              <span className="text-xs font-normal text-ink-subtle">{t("pos.logCap", "آخر {{n}} من {{total}}", { n: STORE_LOG_CAP, total: decided.length })}</span>
+              // و«من {total}» نفسُها مقصوصةٌ بالنافذة — فتُقال «+٣٠٠» لا رقماً
+              // يبدو مجموعاً كاملاً. عنوانٌ صادقٌ نصفَ صدقٍ أسوأ من لا عنوان.
+              <span className="text-xs font-normal text-ink-subtle">{t("pos.logCap", "آخر {{n}} من {{total}}", { n: STORE_LOG_CAP, total: capped ? `${ORDERS_WINDOW}+` : decided.length })}</span>
             )}</h2>
           <div className="space-y-2">
             {decided.slice(0, STORE_LOG_CAP).map((o) => (
