@@ -674,5 +674,41 @@ console.log("▸ الستور (0178) — القرار نهائي والمرجع 
   check("  وما نُشر يخرج من الاقتراح", !again.map((x) => x.id).includes(top.id));
 }
 
+/* ══ ت١٠ · 0189 — الأجرةُ تُحسم عند القبول، بالمرآة التجريبية ═════════════
+ * المقيس: ٥٢٣ صفَّ توصيلٍ من ٥٢٣ **بلا منطقة**، وإحدى عشرةَ قيمةَ أجرةٍ بين
+ * صفرٍ و١٥ ألفاً — فرقمٌ ثابتٌ بالإعدادات لا يصف ما تفعله العيادة. */
+{
+  console.log("▸ ت١٠ — أجرةُ التوصيل بلحظة القبول");
+  const mk = async (no, id) => {
+    const db = JSON.parse(mem.get(DB_KEY));
+    db.products = [...(db.products ?? []), { id: `fp-${id}`, clinic_id: null, name: "منتجُ الأجرة", sell_price: 10000, purchase_price: 4000, stock: 50, store_visible: true }];
+    db.storeOrders = [...(db.storeOrders ?? []), {
+      id, clinic_id: null, order_no: no, customer_name: "زبون", customer_phone: "07705551111",
+      items: [{ product_id: `fp-${id}`, name: "منتجُ الأجرة", qty: 1, price: 10000, total: 10000 }],
+      subtotal: 10000, delivery_fee: 2000, total: 12000, status: "new", created_at: new Date().toISOString(),
+    }];
+    mem.set(DB_KEY, JSON.stringify(db));
+  };
+  const invOf = (oid) => { const db = JSON.parse(mem.get(DB_KEY));
+    const o = db.storeOrders.find((x) => x.id === oid);
+    return { inv: db.invoices.find((i) => i.id === o.invoice_id),
+             dlv: db.deliveryOrders.find((d) => d.invoice_id === o.invoice_id),
+             items: db.invoiceItems.filter((i) => i.invoice_id === o.invoice_id) }; };
+
+  await mk("SO-F1", "fo1"); await repo.acceptStoreOrder("fo1", null, 5000);
+  const a = invOf("fo1");
+  check("أجرةٌ عند القبول تغلب أجرةَ الطلب — بصفّ التوصيل", a.dlv?.delivery_fee === 5000, String(a.dlv?.delivery_fee));
+  check("  وببند الفاتورة (رقمٌ واحدٌ لا رقمان)", a.items.find((i) => i.name === "أجرة توصيل")?.unit_price === 5000);
+  check("  و**المجموعُ يتبعها** (١٠٠٠٠+٥٠٠٠ لا ١٢٠٠٠)", a.inv?.total === 15000, String(a.inv?.total));
+
+  await mk("SO-F2", "fo2"); await repo.acceptStoreOrder("fo2", null, 0);
+  const b = invOf("fo2");
+  check("وصفرٌ صريحٌ يعني مجّاناً لا رجوعاً للافتراض", b.items.every((i) => i.name !== "أجرة توصيل") && b.inv?.total === 10000, String(b.inv?.total));
+
+  await mk("SO-F3", "fo3"); await repo.acceptStoreOrder("fo3");
+  const c = invOf("fo3");
+  check("وبلا وسيطٍ تبقى أجرةُ الطلب (لا انحدار)", c.dlv?.delivery_fee === 2000 && c.inv?.total === 12000, `${c.dlv?.delivery_fee}/${c.inv?.total}`);
+}
+
 console.log(`\n${fails ? "✗" : "✓"} repo-demo-test: ${passes} نجحت، ${fails} فشلت`);
 process.exit(fails ? 1 : 0);

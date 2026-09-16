@@ -903,7 +903,8 @@
     "wAllAria": "All available {{w}} kg at {{p}}",
     "wAll": "All available",
     "wRetHint": "A return needs confirmation — choose the weight then press the button",
-    "wPadLabel": "Type the weight in kilos"
+    "wPadLabel": "Type the weight in kilos",
+    "scanStore": "Scan to order delivery"
   },
   "promos": {
     "pickFailed": "Could not load products — reopen this dialog.",
@@ -1417,7 +1418,10 @@
     "tidyKept": "and {{n}} stayed — they have no categorised original to join",
     "tidyNone": "No duplicated items — everything under \"Uncategorised\" really is new",
     "tidyUncat": "Return every duplicated item to its place — merge \"Uncategorised\" into the categories",
-    "scanOrTypeName": "Scan the barcode or type the product name…"
+    "scanOrTypeName": "Scan the barcode or type the product name…",
+    "acceptFee": "Delivery fee",
+    "acceptFeeNone": "No fee",
+    "acceptFeeHint": "Leave blank to keep what the order came with"
   },
   "role": {
     "admin": "Clinic",
@@ -4578,6 +4582,7 @@
     "setupEmptyWarn": "Your store is on but empty — a customer who opens the link sees a bare shelf and won't come back. Publish your products first.",
     "fNoPrice": "No price",
     "fNoStock": "Out of stock",
-    "fNoDesc": "No description"
+    "fNoDesc": "No description",
+    "feeZero": "0 = decided on confirmation"
   }
 }

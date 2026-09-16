@@ -979,6 +979,44 @@ console.log("▸ دلو صور المنتجات — الأفعال الأربع�
     readFileSync("supabase/migrations/0188_store_catalog_priced.sql", "utf8").includes("coalesce(p.sell_price, 0) > 0"));
   check("  ومُنزَّلةٌ بحزمة الهجرات",
     readFileSync("supabase/tests/run.sh", "utf8").includes("0188_store_catalog_priced.sql"));
+
+  /* ── ت٩: القسيمةُ تحمل رابطَ المتجر ────────────────────────────────────
+   * المقيس: ١١٩٧ فاتورةً بآخر سبعةِ أيام = ~١١٩٧ قسيمةً بيدِ زبونٍ اشترى
+   * للتوّ. وقوائمُ الهواتف المميّزة ٥٨ و٣٠٣ و٣٣٩ — القسيمةُ تصل بالأسبوع
+   * أكثرَ ممّا تصله القائمةُ كلُّها، ولا تكلّف رسالةً ولا إعلاناً. */
+  const print = readFileSync("src/lib/invoicePrint.ts", "utf8");
+  check("QR القسيمة يقصد المتجرَ حين يكون مفعَّلاً",
+    /const target = opts\.storeUrl \? `\$\{opts\.storeUrl\}\?r=r`/.test(print));
+  check("  وواتسابُ العيادة يبقى احتياطاً (لا انحدار لمن بلا متجر)",
+    /: digits \? `https:\/\/wa\.me\/\$\{digits\}`/.test(print));
+  check("  والسطرُ يقول ما يحصل عند المسح لا «امسحنا»",
+    /opts\.storeUrl \? s\.scanStore : s\.scanUs/.test(print));
+  check("  والمصدرُ موسومٌ `?r=r` فيُقاس أثرُه بـت١", /\?r=r/.test(print));
+  const upi = readFileSync("src/components/retail/usePrintInvoice.ts", "utf8");
+  const sb = readFileSync("src/components/retail/SaleBuilder.tsx", "utf8");
+  check("  ومُمرَّرٌ من **موضعَي** الطباعة معاً", /storeUrl: \(\(\) =>/.test(upi) && /storeUrl: \(\(\) =>/.test(sb));
+  check("  والقراءةُ من الذاكرة — لا رحلةَ شبكةٍ بمسار البيع",
+    /storeSlugCached\(\)/.test(upi) && !/await repo\.getStoreProfile\(\)/.test(upi));
+  check("  والمخزَّنُ لا يثبّت «لا متجر» على فشلٍ عابر",
+    /\.catch\(\(\) => \{ storeOn = null; \}\)/.test(readFileSync("src/lib/storeOrdersLive.ts", "utf8")));
+
+  /* ── ت١٠: الأجرةُ تُحسم عند القبول ──────────────────────────────────── */
+  const mig89 = readFileSync("supabase/migrations/0189_accept_fee_at_decision.sql", "utf8");
+  check("الأجرةُ وسيطٌ بالقبول، والوسيطُ يغلب ولو كان صفراً",
+    /p_fee numeric default null/.test(mig89) && /coalesce\(p_fee, o\.delivery_fee, 0\)/.test(mig89));
+  check("  والمجموعُ يتبعها لا `o.total` القديم", /round\(o\.subtotal \+ v_fee, 2\)/.test(mig89));
+  check("  وبندُ الفاتورة وصفُّ التوصيل من **رقمٍ واحد**",
+    /'unit_price', v_fee/.test(mig89) && /o\.address, o\.note, v_fee, v_due, 0,/.test(mig89));
+  check("  والتوقيعُ القديم يُسقَط صراحةً (لا حِملٌ ثانٍ غامض)",
+    /drop function if exists public\.store_accept_order\(uuid, uuid\);/.test(mig89));
+  check("  والمرآةُ التجريبية بنفس الحسم", /const vFee = Math\.max\(0, Math\.round\(\(fee \?\? o\.delivery_fee \?\? 0\)/.test(repoS));
+  check("والشاشةُ فيها حقلُ أجرةٍ لكلّ طلب", /pos\.acceptFee/.test(store) && /feeDraft\[o\.id\]/.test(store));
+  check("  وفارغٌ يعني «كما وصل الطلب» لا صفراً",
+    /raw !== undefined && raw\.trim\(\) !== "" \? Math\.max\(0, Number\(raw\) \|\| 0\) : null/.test(store));
+  check("  وحقلُ الإعدادات ما عاد يكذب («٠ = مجاني» والزبونُ يرى «يتحدد»)",
+    !/placeholder="0 = مجاني"/.test(store) && /cat\.feeZero/.test(store));
+  check("  ومُنزَّلةٌ بحزمة الهجرات",
+    readFileSync("supabase/tests/run.sh", "utf8").includes("0189_accept_fee_at_decision.sql"));
 }
 
 console.log(`\n${fails ? "✗" : "✓"} products-test: ${passes} نجحت، ${fails} فشلت`);

@@ -1712,7 +1712,7 @@ const demoRepo = {
   },
   /** مرآةُ `store_accept_order` (0183): الفاتورةُ والتوصيلُ والختمُ معاً أو لا
    *  شيء. حارسٌ ليس بالمرآة حارسٌ لم يُفحص — وفحوصُ المنطق تجري هنا. */
-  async acceptStoreOrder(id: string, courierId?: string | null): Promise<{ ok: true; already: boolean; invoice_id: string }> {
+  async acceptStoreOrder(id: string, courierId?: string | null, fee?: number | null): Promise<{ ok: true; already: boolean; invoice_id: string }> {
     const db = loadDB();
     const o = (db.storeOrders ?? []).find((x) => x.id === id);
     if (!o) throw new Error(i18next.t("pos.storeOrderNotFound", "ما لكينا هذا الطلب."));
@@ -1727,12 +1727,17 @@ const demoRepo = {
         stock_qty: p ? it.qty : 0, unit_label: null,
       };
     });
-    if ((o.delivery_fee ?? 0) > 0) {
+    // الأجرةُ تُحسم عند القبول (0189): الوسيطُ يغلب ولو كان صفراً، وإلّا
+    // فأجرةُ الطلب كما وقعت. **مرآةٌ حرفية** — حارسٌ ليس بالمرآة لم يُفحص.
+    const vFee = Math.max(0, Math.round((fee ?? o.delivery_fee ?? 0) * 100) / 100);
+    if (vFee > 0) {
       items.push({ product_id: null, name: i18next.t("retail.deliveryFeeLine", "أجرة توصيل"), barcode: null, qty: 1,
-                   unit_price: o.delivery_fee, unit_cost: 0, stock_qty: 0, unit_label: null });
+                   unit_price: vFee, unit_cost: 0, stock_qty: 0, unit_label: null });
     }
     const invoice = await demoRepo.retailCheckout(items, {
-      customer_name: o.customer_name, customer_phone: o.customer_phone, final_total: o.total,
+      // المجموعُ يتبع الأجرةَ المحسومة لا `o.total` المحسوبَ بأجرةِ لحظةِ الطلب.
+      customer_name: o.customer_name, customer_phone: o.customer_phone,
+      final_total: Math.round((o.subtotal + vFee) * 100) / 100,
       amount_paid: 0,
       notes: i18next.t("pos.storeOrderNote", { no: o.order_no, defaultValue: "طلب متجر {{no}}" })
         + (o.note ? ` — ${o.note}` : ""),
@@ -1742,7 +1747,7 @@ const demoRepo = {
       clinic_id: o.clinic_id ?? null, invoice_id: invoice.id, branch_id: null,
       courier_id: courierId ?? null, customer_name: o.customer_name, customer_phone: o.customer_phone,
       zone: null, address: o.address ?? null, note: o.note ?? null,
-      delivery_fee: o.delivery_fee ?? 0, fee_to_clinic: (o.delivery_fee ?? 0) > 0,
+      delivery_fee: vFee, fee_to_clinic: vFee > 0,
       cod_amount: Math.max(0, invoice.total - (invoice.amount_paid ?? 0)), prepaid: invoice.amount_paid ?? 0,
       status: courierId ? "out" : "preparing",
       dispatched_at: courierId ? new Date().toISOString() : null, delivered_at: null, returned_at: null,
@@ -4573,9 +4578,9 @@ const supabaseRepo: typeof demoRepo = {
   },
   /** القبولُ الذرّيّ (0183): نداءٌ واحد يفعل الفاتورةَ والتوصيلَ والختم.
    *  كان ثلاثَ رحلاتٍ من المتصفّح وكلُّ حدٍّ بينها نقطةُ انكسار. */
-  async acceptStoreOrder(id, courierId) {
+  async acceptStoreOrder(id, courierId, fee) {
     return need<{ ok: true; already: boolean; invoice_id: string }>(
-      await sbc().rpc("store_accept_order", { p_order: id, p_courier: courierId ?? null }));
+      await sbc().rpc("store_accept_order", { p_order: id, p_courier: courierId ?? null, p_fee: fee ?? null }));
   },
   async rejectStaleStoreOrders(olderThanHours = 24) {
     return need<number>(await sbc().rpc("store_reject_stale", { p_older_than_hours: olderThanHours }));

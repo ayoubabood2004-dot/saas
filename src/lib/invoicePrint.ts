@@ -2,6 +2,7 @@ import type { Invoice, InvoiceItem } from "@/types";
 import { siteHost } from "@/lib/appUrl";
 import { getReceiptWidth } from "@/lib/printer";
 import { currencySymbol } from "@/lib/utils";
+import i18next from "i18next";
 
 export type PrintFormat = "a4" | "thermal";
 
@@ -27,6 +28,13 @@ export interface InvoicePrintOptions {
   sellerName?: string | null;
   /** رمز QR جاهز (data-URL) — يُطبع بذيل إيصال ٨٠مم للتواصل مع العيادة. */
   qrDataUrl?: string | null;
+  /** رابطُ متجر العيادة حين يكون مفعَّلاً — يصير هدفَ الـQR بدل الواتساب.
+   *
+   *  **أوسعُ سطحِ انتشارٍ للمتجر بفارقٍ مقيس**: ١١٩٧ فاتورةً بآخر سبعةِ أيام،
+   *  أي ~١١٩٧ قسيمةً بيدِ زبونٍ اشترى **للتوّ**. وقوائمُ الهواتف المميّزة
+   *  للمقارنة: ٥٨ و٣٠٣ و٣٣٩. القسيمةُ تصل بالأسبوع أكثرَ ممّا تصله القائمةُ
+   *  كلُّها — ولا تكلّف رسالةً ولا إعلاناً. */
+  storeUrl?: string | null;
 }
 
 const esc = (s: unknown) =>
@@ -72,6 +80,11 @@ function strings(lang: string) {
     items: ar ? "الأصناف" : "Items",
     thanks: ar ? "شكراً لزيارتكم! 🐾" : "Thank you for your visit! 🐾",
     scanUs: ar ? "امسح للتواصل معنا" : "Scan to reach us",
+    /* السطرُ يقول **ما يحصل عند المسح** لا «امسحنا»: الزبونُ يمسح لأنه يعرف ماذا
+     * سيجد، و«تواصل معنا» و«اطلب توصيلاً» وعدان مختلفان. ومن الترجمة لا من
+     * هذا الجدول: سقفُ النصّ الصلب بالملفّ ممتلئ، والقاعدةُ أنه ينزل ولا يصعد.
+     * و`lng` صريحةٌ لأن القسيمةَ تُطبع بلغة الإيصال لا بلغة الشاشة. */
+    scanStore: i18next.t("retail.scanStore", { lng: lang, defaultValue: "Scan to order delivery" }) as string,
     refunded: ar ? "مُرجعة" : "REFUNDED",
     preSale: ar ? "فاتورة أولية — قبل إتمام البيع" : "PRO-FORMA — NOT A RECEIPT",
     printNo: ar ? "نسخة الطباعة رقم" : "Print",
@@ -371,7 +384,7 @@ export function buildInvoiceHTML(invoice: Invoice, items: InvoiceItem[], opts: I
 
     <div class="foot">
       <div class="thanks">${s.thanks}</div>
-      ${opts.qrDataUrl ? `<div class="qr"><img src="${esc(opts.qrDataUrl)}" alt=""/><div class="cap">${s.scanUs}</div></div>` : ""}
+      ${opts.qrDataUrl ? `<div class="qr"><img src="${esc(opts.qrDataUrl)}" alt=""/><div class="cap">${opts.storeUrl ? s.scanStore : s.scanUs}</div></div>` : ""}
       ${socialText ? `<div class="social">${socialText}</div>` : ""}
       <div class="site">${WEBSITE}</div>
       ${opts.printNo && opts.printNo > 1 ? `<div class="prints">${s.printNo} #${ltr(String(opts.printNo))}</div>` : ""}
@@ -451,9 +464,13 @@ async function thermalAssets(opts: InvoicePrintOptions): Promise<Partial<Invoice
       out.logoUrl = await toThermalMono(opts.logoUrl);
     } catch { /* نطبع الشعار كما هو */ }
   }
-  // QR: محادثة واتساب مع العيادة إن توفّر رقمها، وإلا موقع المنصة.
+  /* QR: المتجرُ أوّلاً حين يكون مفعَّلاً، ثمّ واتساب العيادة، ثمّ موقعُ المنصّة.
+   * و`?r=r` يوسم المصدرَ بالقسيمة فيُقاس أثرُها بـت١ (`ref_host` لا يكفي:
+   * الماسحُ يفتح الرابطَ مباشرةً بلا مُحيل). */
   const digits = (opts.clinicPhone ?? "").replace(/\D/g, "");
-  const target = digits ? `https://wa.me/${digits}` : `https://${siteHost()}`;
+  const target = opts.storeUrl ? `${opts.storeUrl}?r=r`
+    : digits ? `https://wa.me/${digits}`
+    : `https://${siteHost()}`;
   try {
     const QR = await import("qrcode");
     out.qrDataUrl = await QR.toDataURL(target, { margin: 0, width: 320, errorCorrectionLevel: "M", color: { dark: "#000000", light: "#FFFFFF" } });

@@ -25,7 +25,7 @@ MIG="$HERE/../migrations"
 # و0095/0096/0158 بالمقدّمة رغم أنها أقدمُ من 0124: الموجةُ تبدأ من 0124 لأن
 # الأساس يوفّر ما قبلها جاهزاً — لكنّ هذه الثلاثَ تُنشئ المتجرَ والبوّابة،
 # وكانت خارجَ الفحص كلَّه. تُنزَّل بترتيبها الحقيقيّ قبل الموجة.
-WAVE="$MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0114_landing_events.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql $MIG/0184_images_hardening.sql $MIG/0185_store_funnel_events.sql $MIG/0186_store_bulk_visible.sql $MIG/0187_store_suggest_products.sql $MIG/0188_store_catalog_priced.sql"
+WAVE="$MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0114_landing_events.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql $MIG/0184_images_hardening.sql $MIG/0185_store_funnel_events.sql $MIG/0186_store_bulk_visible.sql $MIG/0187_store_suggest_products.sql $MIG/0188_store_catalog_priced.sql $MIG/0189_accept_fee_at_decision.sql"
 
 command -v "$PGBIN/initdb" >/dev/null || { echo "ما لكيت بوستغريس بـ $PGBIN"; exit 1; }
 
@@ -1966,6 +1966,48 @@ chk "  وبمسارٍ مثبَّت وممنوعةٌ على anon" \
              and not has_function_privilege('anon', p.oid, 'execute'))::text
        from pg_proc p join pg_namespace n on n.oid=p.pronamespace
       where n.nspname='public' and p.proname='store_suggest_products'" "true"
+
+# ── 0189: الأجرةُ تُحسم عند القبول ─────────────────────────────────────────
+# المقيس: ٥٢٣ صفَّ توصيلٍ من ٥٢٣ **بلا منطقة**، وإحدى عشرةَ قيمةَ أجرةٍ بين
+# صفرٍ و١٥ ألفاً. فرقمٌ ثابتٌ بالإعدادات لا يصف ما تفعله العيادةُ فعلاً.
+echo "▸ 0189: أجرةُ التوصيل بلحظة القبول"
+$P -c "insert into products (id, clinic_id, name, sell_price, purchase_price, stock, store_visible)
+         values ('a1890000-0000-4000-8000-000000000001','$C1','منتجُ الأجرة',10000,4000,50,true)
+       on conflict (id) do update set stock = 50;
+       insert into store_orders (id, clinic_id, order_no, customer_name, customer_phone, items, subtotal, delivery_fee, total, status)
+         values ('e1890000-0000-4000-8000-000000000001','$C1','SO-FEE01','زبونُ الأجرة','0770 555 1111',
+                 jsonb_build_array(jsonb_build_object('product_id','a1890000-0000-4000-8000-000000000001','name','منتجُ الأجرة','qty',1,'price',10000,'total',10000)),
+                 10000, 2000, 12000, 'new'),
+              ('e1890000-0000-4000-8000-000000000002','$C1','SO-FEE02','زبونٌ ثانٍ','0770 555 2222',
+                 jsonb_build_array(jsonb_build_object('product_id','a1890000-0000-4000-8000-000000000001','name','منتجُ الأجرة','qty',1,'price',10000,'total',10000)),
+                 10000, 2000, 12000, 'new'),
+              ('e1890000-0000-4000-8000-000000000003','$C1','SO-FEE03','زبونٌ ثالث','0770 555 3333',
+                 jsonb_build_array(jsonb_build_object('product_id','a1890000-0000-4000-8000-000000000001','name','منتجُ الأجرة','qty',1,'price',10000,'total',10000)),
+                 10000, 2000, 12000, 'new')
+       on conflict (id) do nothing;" >/dev/null
+
+chk "أجرةٌ تُكتب عند القبول تغلب أجرةَ الطلب" \
+    "select (_pf('$C1', 'select store_accept_order(''e1890000-0000-4000-8000-000000000001''::uuid, null, 5000)::text')::jsonb->>'ok')" "true"
+chk "  وصفُّ التوصيل بالأجرة الجديدة لا القديمة" \
+    "select d.delivery_fee::int::text from delivery_orders d join store_orders o on o.invoice_id = d.invoice_id where o.id='e1890000-0000-4000-8000-000000000001'" "5000"
+chk "  وبندُ الفاتورة بنفس الرقم — لا رقمان ينحرفان" \
+    "select ii.unit_price::int::text from invoice_items ii join store_orders o on o.invoice_id = ii.invoice_id where o.id='e1890000-0000-4000-8000-000000000001' and ii.name='أجرة توصيل'" "5000"
+chk "  و**المجموعُ يتبعها** (١٠٠٠٠ + ٥٠٠٠ لا ١٢٠٠٠)" \
+    "select i.total::int::text from invoices i join store_orders o on o.invoice_id = i.id where o.id='e1890000-0000-4000-8000-000000000001'" "15000"
+# صفرٌ صريحٌ قرارٌ («مجّاناً لهذا الطلب») لا «استعمل الافتراض».
+chk "وصفرٌ صريحٌ يعني مجّاناً — لا رجوعاً لأجرة الطلب" \
+    "select (_pf('$C1', 'select store_accept_order(''e1890000-0000-4000-8000-000000000002''::uuid, null, 0)::text')::jsonb->>'ok')" "true"
+chk "  فلا بندَ أجرةٍ بالفاتورة أصلاً" \
+    "select count(*)::text from invoice_items ii join store_orders o on o.invoice_id = ii.invoice_id where o.id='e1890000-0000-4000-8000-000000000002' and ii.name='أجرة توصيل'" "0"
+chk "  والمجموعُ بلا أجرة" \
+    "select i.total::int::text from invoices i join store_orders o on o.invoice_id = i.id where o.id='e1890000-0000-4000-8000-000000000002'" "10000"
+# وبلا وسيطٍ يبقى السلوكُ القديم حرفياً — لا انحدار.
+chk "وبلا وسيطٍ تبقى أجرةُ الطلب كما كانت (لا انحدار)" \
+    "select (_pf('$C1', 'select store_accept_order(''e1890000-0000-4000-8000-000000000003''::uuid)::text')::jsonb->>'ok')" "true"
+chk "  والأجرةُ ٢٠٠٠ والمجموعُ ١٢٠٠٠" \
+    "select d.delivery_fee::int::text || '/' || i.total::int::text from delivery_orders d join store_orders o on o.invoice_id = d.invoice_id join invoices i on i.id = o.invoice_id where o.id='e1890000-0000-4000-8000-000000000003'" "2000/12000"
+chk "  ولا توقيعٌ قديمٌ بقي (نداءٌ بوسيطين ما يصير غامضاً)" \
+    "select count(*)::text from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='store_accept_order'" "1"
 
 echo "▸ الموجة ١: المتجرُ والبوّابةُ داخل الحزمة"
 chk "ولا سياسةَ تنادي auth_clinic() عاريةً بعد الموجة كاملةً (مرّتين)" \

@@ -24,6 +24,8 @@ import { MedSaleForm } from "./MedSaleForm";
 import { CashierSelect } from "@/components/MedicalEntry";
 import { useInvoicePrinter } from "./usePrintInvoice";
 import { invoiceNo, openInvoicePrint, type PrintFormat } from "@/lib/invoicePrint";
+import { storeSlugCached } from "@/lib/storeOrdersLive";
+import { storeUrl } from "@/lib/storeLib";
 import { getPreSalePrint, getResizableCart, getPosV2, getPosCompact, getPosCustomerOpen, getClinicLogo, getClinicSocials, getClinicName, getDeliveryZones, getQtyPromos, type QtyPromo } from "@/lib/settings";
 import { branchStore } from "@/lib/branchStore";
 import { useNavFolded, setNavFolded } from "@/lib/navFold";
@@ -1524,6 +1526,10 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
       format,
       lang: i18n.language,
       logoUrl: getClinicLogo(),
+      // رابطُ المتجر بالقسيمة (ت٩): ~١١٩٧ قسيمةً بالأسبوع بيدِ زبونٍ اشترى
+      // للتوّ — أوسعُ سطحِ انتشارٍ للمتجر بفارقٍ مقيس. والقراءةُ **من الذاكرة**
+      // فلا رحلةَ شبكةٍ بمسار البيع.
+      storeUrl: (() => { const sl = storeSlugCached(); return sl ? storeUrl(sl) : null; })(),
       facebook: socials.facebook || null,
       instagram: socials.instagram || null,
       preSale: true,

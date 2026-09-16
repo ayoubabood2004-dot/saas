@@ -1,6 +1,8 @@
 import { useTranslation } from "react-i18next";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/components/ui";
+import { storeSlugCached } from "@/lib/storeOrdersLive";
+import { storeUrl } from "@/lib/storeLib";
 import { repo } from "@/lib/repo";
 import { openInvoicePrint, invoiceNo, type PrintFormat } from "@/lib/invoicePrint";
 import { resolveStaffName } from "@/lib/staffNames";
@@ -47,6 +49,10 @@ export function useInvoicePrinter() {
       lang: i18n.language,
       printNo,
       logoUrl: getClinicLogo(),
+      // رابطُ المتجر بالقسيمة (ت٩): ~١١٩٧ قسيمةً بالأسبوع بيدِ زبونٍ اشترى
+      // للتوّ — أوسعُ سطحِ انتشارٍ للمتجر بفارقٍ مقيس. والقراءةُ **من الذاكرة**
+      // فلا رحلةَ شبكةٍ بمسار البيع.
+      storeUrl: (() => { const sl = storeSlugCached(); return sl ? storeUrl(sl) : null; })(),
       facebook: socials.facebook || null,
       instagram: socials.instagram || null,
       sellerName,

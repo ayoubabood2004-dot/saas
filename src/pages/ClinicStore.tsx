@@ -212,17 +212,26 @@ function OrdersTab({ orders, newOrders, products, profile, reload, goSettings, g
    *  نجح الختمُ وفشل التوصيلُ ⇒ طلبٌ «مقبول» بلا صفِّ توصيلٍ لا يراه أحد.
    *  صارت معاملةً واحدة بالخادم: الثلاثةُ تقع أو لا يقع شيء. والدالّة تفحص
    *  العيادةَ والدورَ بنفسها (درسُ 0145) لأنها definer تتجاوز RLS. */
+  /** أجرةُ التوصيل لكلّ طلبٍ — تُكتب بلحظة القبول (0189).
+   *  المقيس: ٥٢٣ صفَّ توصيلٍ من ٥٢٣ **بلا منطقة**، وإحدى عشرةَ قيمةَ أجرةٍ
+   *  بين صفرٍ و١٥ ألفاً. فالتسعيرُ بالمكالمة، ورقمٌ ثابتٌ بالإعدادات لا يصفه. */
+  const [feeDraft, setFeeDraft] = useState<Record<string, string>>({});
+
   const accept = async (o: StoreOrder) => {
     if (busy) return;
     setBusy(o.id);
     try {
-      const r = await withTimeout(repo.acceptStoreOrder(o.id), 15000);
+      // فارغٌ ⇒ لا وسيط ⇒ أجرةُ الطلب كما وقعت. ومكتوبٌ ⇒ يغلب، ولو صفراً.
+      const raw = feeDraft[o.id];
+      const fee = raw !== undefined && raw.trim() !== "" ? Math.max(0, Number(raw) || 0) : null;
+      const r = await withTimeout(repo.acceptStoreOrder(o.id, null, fee), 15000);
       playAchievement();
       toast.success(
         r.already
           ? t("pos.storeAcceptAlready", "الطلب {{no}} كان مقبولاً أصلاً", { no: o.order_no })
           : t("pos.storeAcceptOk", "قبلت الطلب {{no}} ✅", { no: o.order_no }),
         t("pos.storeAcceptOkHint", "انولدت فاتورته وانسحب المخزون، وتلكاه جاهز بشاشة التوصيل."));
+      setFeeDraft((d) => { const n = { ...d }; delete n[o.id]; return n; });
       bumpStoreOrders();
       await reload();
     } catch (e) {
@@ -382,7 +391,25 @@ function OrdersTab({ orders, newOrders, products, profile, reload, goSettings, g
                   })}
                 </div>
 
-                <div className="mt-3 flex flex-wrap items-center gap-2">
+                {/* أجرةُ التوصيل لهذا الطلب — تُحسم بلحظة القبول (0189).
+                    المقيس: ٥٢٣ صفَّ توصيلٍ من ٥٢٣ بلا منطقةٍ مسعَّرة، وإحدى
+                    عشرةَ قيمةَ أجرةٍ بين صفرٍ و١٥ ألفاً — التسعيرُ بالمكالمة.
+                    وفارغٌ يعني «كما وقع الطلب»، لا صفراً. */}
+                <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl bg-surface-2 p-2.5">
+                  <Truck size={15} className="shrink-0 text-ink-subtle" />
+                  <label className="text-xs font-semibold text-ink-muted" htmlFor={`fee-${o.id}`}>
+                    {t("pos.acceptFee", "أجرة التوصيل")}
+                  </label>
+                  <input id={`fee-${o.id}`} type="number" inputMode="numeric" min={0} disabled={busy === o.id}
+                    value={feeDraft[o.id] ?? ""} onChange={(e) => setFeeDraft((d) => ({ ...d, [o.id]: e.target.value }))}
+                    placeholder={o.delivery_fee > 0 ? String(o.delivery_fee) : t("pos.acceptFeeNone", "بلا أجرة")}
+                    className="input h-8 w-28 text-xs" />
+                  <span className="text-2xs text-ink-subtle">
+                    {t("pos.acceptFeeHint", "اتركه فارغاً ليبقى كما وصل الطلب")}
+                  </span>
+                </div>
+
+                <div className="mt-2 flex flex-wrap items-center gap-2">
                   <Button size="sm" onClick={() => void accept(o)} loading={busy === o.id} leftIcon={<Check size={15} />}>
                     قبول — فوترة وسحب مخزون
                   </Button>
@@ -1115,7 +1142,12 @@ function SettingsTab({ profile, products, goCatalog, onSaved }: {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="mb-1 block text-xs font-bold text-ink-muted">أجرة التوصيل ({currencySymbol()})</label>
-              <input type="number" inputMode="numeric" min={0} value={fee} onChange={(e) => setFee(e.target.value)} placeholder="0 = مجاني" className="input" />
+              {/* كان النصُّ «٠ = مجاني» — و**الواجهةُ العامّةُ تعرض عكسَه**: `feeKnown =
+                  fee > 0` فالصفرُ يطلع «يتحدد بالتأكيد». فحقلٌ يكذب على الدكتور
+                  بما يراه زبونُه. والمقيسُ يؤيّد المعنى الثاني: ٥٢٣ صفَّ توصيلٍ
+                  بلا منطقةٍ مسعَّرة — التسعيرُ بالمكالمة، والأجرةُ تُحسم بالقبول. */}
+              <input type="number" inputMode="numeric" min={0} value={fee} onChange={(e) => setFee(e.target.value)}
+                placeholder={t("cat.feeZero", "0 = يتحدد عند التأكيد")} className="input" />
             </div>
             <div>
               <label className="mb-1 block text-xs font-bold text-ink-muted">الحد الأدنى للطلب ({currencySymbol()})</label>

@@ -86,13 +86,16 @@ function notify(fresh: number) {
  * وقراءةٌ واحدةٌ بالجلسة تحكمها كلَّها. وسقوطُ القراءة **ينبض** لا يسكت: صمتٌ
  * على خطأٍ عابر جرسٌ لا يرنّ وطلبٌ يُنسى، وهو أسوأُ العطبين لا أرخصُهما. */
 let storeOn: boolean | null = null;
+/** سلاگُ المتجر المفعَّل — يُملأ مع نفس المجسّ، ويُقرأ **بلا رحلة**. */
+let storeSlug: string | null = null;
 let probing: Promise<unknown> | null = null;
 const onSubs = new Set<() => void>();
 const fanOut = () => onSubs.forEach((f) => f());
 
 /** تُنادى من شاشة المتجر بعد الجلب/الحفظ — يستيقظ الجرسُ أو يسكت بلا رحلةٍ ثانية. */
-export function noteStoreProfile(p: { enabled?: boolean | null } | null | undefined): void {
+export function noteStoreProfile(p: { enabled?: boolean | null; slug?: string | null } | null | undefined): void {
   const next = !!p?.enabled;
+  storeSlug = next ? (p?.slug ?? null) : null;
   if (next === storeOn) return;
   storeOn = next;
   fanOut();
@@ -101,13 +104,31 @@ function subscribeHasStore(cb: () => void) {
   onSubs.add(cb);
   if (storeOn === null && !probing) {
     probing = repo.getStoreProfile()
-      .then((p) => { storeOn = !!p?.enabled; })
+      .then((p) => { storeOn = !!p?.enabled; storeSlug = storeOn ? (p?.slug ?? null) : null; })
       .catch(() => { storeOn = true; })   // عابرٌ: لا نُسكت جرساً قد يكون له متجر
       .finally(fanOut);
   }
   return () => { onSubs.delete(cb); };
 }
 const readHasStore = () => storeOn === true;
+
+/** رابطُ المتجر المفعَّل — **من الذاكرة لا من الشبكة**.
+ *
+ *  تُنادى من مسار **طباعة القسيمة**، وهو داخل البيعة: رحلةُ شبكةٍ هناك تؤخّر
+ *  الكاشيرَ والزبونُ واقف. فالقيمةُ تُملأ من مجسّ الجرس (يعمل بكلّ شاشةٍ بها
+ *  الشريطُ الجانبيّ) ومن شاشة المتجر نفسِها.
+ *
+ *  ولو لم تُملأ بعد ⇒ `null` ⇒ الـQR يرجع لواتساب — أي **سلوكُ اليوم بالضبط**،
+ *  لا عطبٌ جديد. ونوقظ المجسَّ فتكون الطبعةُ التالية على علم. */
+export function storeSlugCached(): string | null {
+  if (storeOn === null && !probing) {
+    probing = repo.getStoreProfile()
+      .then((p) => { storeOn = !!p?.enabled; storeSlug = storeOn ? (p?.slug ?? null) : null; })
+      .catch(() => { storeOn = null; })   // ما نثبّت «لا متجر» على فشلٍ عابر
+      .finally(fanOut);
+  }
+  return storeOn === true ? storeSlug : null;
+}
 /** الشرطُ الحقيقيّ: صفٌّ **مفعَّل** بـ`store_profiles` — لا ما تسمح به الباقة. */
 export function useHasEnabledStore(): boolean {
   return useSyncExternalStore(subscribeHasStore, readHasStore, () => false);
