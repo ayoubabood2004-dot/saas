@@ -25,7 +25,7 @@ MIG="$HERE/../migrations"
 # و0095/0096/0158 بالمقدّمة رغم أنها أقدمُ من 0124: الموجةُ تبدأ من 0124 لأن
 # الأساس يوفّر ما قبلها جاهزاً — لكنّ هذه الثلاثَ تُنشئ المتجرَ والبوّابة،
 # وكانت خارجَ الفحص كلَّه. تُنزَّل بترتيبها الحقيقيّ قبل الموجة.
-WAVE="$MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0114_landing_events.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql $MIG/0184_images_hardening.sql $MIG/0185_store_funnel_events.sql $MIG/0186_store_bulk_visible.sql $MIG/0187_store_suggest_products.sql $MIG/0188_store_catalog_priced.sql $MIG/0189_accept_fee_at_decision.sql"
+WAVE="$MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0114_landing_events.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql $MIG/0184_images_hardening.sql $MIG/0185_store_funnel_events.sql $MIG/0186_store_bulk_visible.sql $MIG/0187_store_suggest_products.sql $MIG/0188_store_catalog_priced.sql $MIG/0189_accept_fee_at_decision.sql $MIG/0190_logo_out_of_db.sql"
 
 command -v "$PGBIN/initdb" >/dev/null || { echo "ما لكيت بوستغريس بـ $PGBIN"; exit 1; }
 
@@ -2031,4 +2031,42 @@ for t in store_profiles store_orders portal_settings portal_sessions portal_code
   chk "  RLS مفعَّلٌ على $t" \
       "select relrowsecurity::text from pg_class where relname='$t'" "true"
 done
+
+# ── 0190: لا بايتاتِ شعارٍ داخل الجدول ────────────────────────────────────
+# المقيس على الإنتاج: ٤٧ صفَّ إعدادات، **٧** منها `logo_url like 'data:%'`
+# وصفرٌ يحمل مساراً، أكبرُها ١٠٦٬١٣٤ محرفاً — ومعها ١٢٣ صفَّ تدقيقٍ = ٢٨٪ من
+# سجلّ التدقيق كلِّه. وترويسةُ 0174 كانت تقول إن هذا «نُظّف يدوياً».
+# الفحصُ بدور `authenticated` لا superuser: المحفّزُ لا يرى غيرَه أصلاً.
+echo "▸ 0190: الشعارُ مسارٌ لا بايتات"
+chk "مديرٌ يكتب شعاراً \`data:\` ⇒ مرفوض" \
+    "select left(_rls_try('$C1', 'update clinic_prefs set logo_url=''data:image/png;base64,AAAA'' where clinic_id=''$C1'''), 13)" "guarded:P0001"
+chk "  ومسارٌ يمرّ" \
+    "select _rls_try('$C1', 'update clinic_prefs set logo_url=''$C1/logo-abc.png'' where clinic_id=''$C1''')" "rows:1"
+chk "  وتفريغُه يمرّ (إزالةُ الشعار)" \
+    "select _rls_try('$C1', 'update clinic_prefs set logo_url=null where clinic_id=''$C1''')" "rows:1"
+chk "  وإدراجُ صفٍّ جديدٍ ببايتات مرفوضٌ كذلك — لا التفافَ بالبذرة" \
+    "select left(_rls_try('$C2', 'insert into clinic_prefs (clinic_id, logo_url) values (''$C2'', ''data:image/png;base64,AAAA'')'), 13)" "guarded:P0001"
+# والسبعةُ القديمة تبقى عاملة: قيدٌ (not valid) كان سيفشّل كلَّ تحديثٍ لصفوفها.
+$P -c "update clinic_prefs set logo_url='data:image/png;base64,LEGACY' where clinic_id='$C1'::uuid;" >/dev/null
+chk "صفٌّ قديمٌ يحمل بايتات ⇒ تحديثُ عمودٍ آخرَ يمرّ (لا يُحبس صاحبُه)" \
+    "select _rls_try('$C1', 'update clinic_prefs set dial_code=''+966'' where clinic_id=''$C1''')" "rows:1"
+chk "  وشعارُه باقٍ كما هو" \
+    "select (logo_url like 'data:%')::text from clinic_prefs where clinic_id='$C1'::uuid" "true"
+chk "  وكتابةُ نفسِ القيمة حرفياً تمرّ (المقارنةُ بـold لا بالشكل)" \
+    "select _rls_try('$C1', 'update clinic_prefs set logo_url=''data:image/png;base64,LEGACY'' where clinic_id=''$C1''')" "rows:1"
+chk "  وتبديلُها ببايتاتٍ أخرى مرفوض" \
+    "select left(_rls_try('$C1', 'update clinic_prefs set logo_url=''data:image/png;base64,OTHER'' where clinic_id=''$C1'''), 13)" "guarded:P0001"
+chk "  والخروجُ منها إلى مسارٍ مسموحٌ دائماً — طريقُ النقل مفتوح" \
+    "select _rls_try('$C1', 'update clinic_prefs set logo_url=''$C1/logo-moved.png'' where clinic_id=''$C1''')" "rows:1"
+# ولا انحدارَ على حارس 0162 بنفس المحفّز. والتصفيرُ أوّلاً: الحارسُ يقارن
+# بـ`old`، وكتلةُ 0162 قبلُ تركت القيمةَ true — فكتابةُ true ثانيةً «لا تغيير»
+# فتمرّ بحقّ. (فحصٌ يمرّ لسببٍ غيرِ سببه فحصٌ لا يحرس.)
+$P -c "update clinic_prefs set catalog_share=false where clinic_id='$C1'::uuid;" >/dev/null
+chk "وحارسُ مشاركة الكتالوج (0162) باقٍ: موظّفٌ يُرفض" \
+    "select left(_rls_try('$RCP', 'update clinic_prefs set catalog_share=true where clinic_id=''$C1'''), 13)" "guarded:P0001"
+chk "  والمديرُ يمرّ" \
+    "select _rls_try('$C1', 'update clinic_prefs set catalog_share=true where clinic_id=''$C1''')" "rows:1"
+chk "  والمحفّزُ invoker بمسارٍ مثبَّت (درس 0162: لا definer يشدّ أكثر من السياسة)" \
+    "select (not prosecdef and coalesce(array_to_string(proconfig,','),'') like '%search_path%')::text from pg_proc where proname='clinic_prefs_guard_share'" "true"
+
 [ $fail -eq 0 ] && echo "✓ كل الفحوص عبرت" || { echo "✗ اكو فحصٌ فشل"; exit 1; }

@@ -17,7 +17,7 @@ import { getServiceCatalog, addServiceCategory, removeServiceCategory, addServic
 import { DEFAULT_RANGES, VITAL_KEYS, CBC_KEYS, rangeFor, type VitalKey } from "@/lib/vitals";
 
 const ALL_KEYS: VitalKey[] = [...VITAL_KEYS, ...CBC_KEYS];
-import { setVitalOverride, clearVitalOverrides, getDialCode, setDialCode, getClinicLogo, setClinicLogo, getClinicSocials, setClinicSocials, getClinicName, setClinicName, getPreSalePrint, setPreSalePrint, getResizableCart, setResizableCart, getFontScaleEnabled, setFontScaleEnabled, getDeliveryZones, setDeliveryZones, type DeliveryZone, getQtyPromos, setQtyPromos, promoTargetLabel, getCatalogShare, setCatalogShare, type QtyPromo, type PromoKind, type PromoMode, getCurrencyCode, setCurrencyCode, getPosV2, setPosV2, getPosCompact, setPosCompact, getPosCustomerOpen, setPosCustomerOpen, getInvoicesPaged, setInvoicesPaged, getWorkHours, setWorkHours, getClockFormat, setClockFormat, type ClockFormat, getDoseWindow, setDoseWindow, getCashReconcile, setCashReconcile } from "@/lib/settings";
+import { setVitalOverride, clearVitalOverrides, getDialCode, setDialCode, getClinicLogoRef, setClinicLogo, getClinicSocials, setClinicSocials, getClinicName, setClinicName, getPreSalePrint, setPreSalePrint, getResizableCart, setResizableCart, getFontScaleEnabled, setFontScaleEnabled, getDeliveryZones, setDeliveryZones, type DeliveryZone, getQtyPromos, setQtyPromos, promoTargetLabel, getCatalogShare, setCatalogShare, type QtyPromo, type PromoKind, type PromoMode, getCurrencyCode, setCurrencyCode, getPosV2, setPosV2, getPosCompact, setPosCompact, getPosCustomerOpen, setPosCustomerOpen, getInvoicesPaged, setInvoicesPaged, getWorkHours, setWorkHours, getClockFormat, setClockFormat, type ClockFormat, getDoseWindow, setDoseWindow, getCashReconcile, setCashReconcile } from "@/lib/settings";
 import { segmentsFrom, distributeDoses } from "@/lib/treatmentSchedule";
 import { CURRENCIES, currencyName } from "@/lib/currency";
 import { FONT_SCALES, getFontScale, setFontScale, applyFontScale, getCrispMode, setCrispMode, type FontScaleId } from "@/lib/fontScale";
@@ -25,6 +25,7 @@ import { RECEIPT_WIDTHS, getReceiptWidth, setReceiptWidth, openReceiptCalibratio
 import { catalogStats } from "@/lib/catalog";
 import { SURGERY_CATALOG, isSurgeryCategoryName } from "@/lib/surgeryCatalog";
 import { prepareLogo } from "@/lib/image";
+import { productImageUrl } from "@/lib/storeLib";
 import { isSoundEnabled, setSoundEnabled, playSuccess, playTap, playWarning } from "@/lib/sounds";
 import { getClinicMeds, addClinicMed, removeClinicMed, allMedTypes, allMedicationNames, BUILTIN_MEDICATIONS, type ClinicMed } from "@/lib/meds";
 import { getClinicVaccines, addClinicVaccine, removeClinicVaccine, BUILTIN_VACCINES, type ClinicVaccine } from "@/lib/vaccines";
@@ -545,12 +546,29 @@ function BranchesManager() {
 function ClinicIdentity() {
   const { t } = useTranslation();
   const toast = useToast();
-  const [logo, setLogo] = useState<string | null>(getClinicLogo());
+  const { user } = useAuth();
+  const clinicId = user?.clinic_id ?? user?.id ?? null;
+  // المحفوظُ لا المعروض: الشاشةُ وحدَها تحتاج التمييز بين مسارٍ و`data:` قديم
+  // (زرُّ النقل أدناه)، وكلُّ من عداها يقرأ `getClinicLogo` فيصله رابطٌ جاهز.
+  const [logoRef, setLogoRef] = useState<string | null>(getClinicLogoRef());
+  const logo = productImageUrl(logoRef);
+  const legacyLogo = !!logoRef && logoRef.startsWith("data:");
   const [busy, setBusy] = useState(false);
   const initial = getClinicSocials();
   const [facebook, setFacebook] = useState(initial.facebook);
   const [instagram, setInstagram] = useState(initial.instagram);
   const [name, setName] = useState(getClinicName());
+
+  /** يحفظ الملفَّ بالدلو ثم المسارَ بالقاعدة ثم يحذف سابقَه (0190) —
+   *  بهذا الترتيب: فشلُ الرفع يترك الشعارَ القديم سليماً، وحذفُ السابق بعد
+   *  أن صار المرجعُ على الجديد فلا تبقى بطاقةٌ تشير إلى ملفٍّ محذوف. */
+  const saveLogoFrom = async (prepared: { blob: Blob; dataUrl: string; contentType?: string }) => {
+    const prev = logoRef;
+    const path = await repo.uploadClinicLogo(clinicId, prepared);
+    setClinicLogo(path);
+    setLogoRef(path);
+    if (prev && prev !== path) void repo.deleteClinicLogo(clinicId, prev);
+  };
 
   const onPick = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
@@ -561,15 +579,36 @@ function ClinicIdentity() {
       // مسار الشعار الخاص: يحفظ الشفافية (PNG)، يفرّغ الخلفية الموحّدة من
       // الحواف، ولا يلمس لوجو مفرّغاً أصلاً — prepareUpload (JPEG) كان يسطّحه.
       const prepared = await prepareLogo(f, { maxDim: 400 });
-      setClinicLogo(prepared.dataUrl);
-      setLogo(prepared.dataUrl);
+      await saveLogoFrom(prepared);
       playSuccess();
-    } catch {
-      toast.error("تعذّر رفع الشعار", "اختر صورة صالحة (PNG/JPG).");
+    } catch (err) {
+      toast.error("تعذّر رفع الشعار", err instanceof Error ? err.message : "اختر صورة صالحة (PNG/JPG).");
     } finally { setBusy(false); }
   };
 
-  const removeLogo = () => { setClinicLogo(null); setLogo(null); playTap(); };
+  /** نقلُ شعارٍ قديمٍ محفوظٍ بايتاتٍ داخل القاعدة إلى ملفٍّ بالدلو.
+   *
+   *  **بضغطةِ العيادة لا بمُرطِّب** (درس 0153): كتابةٌ تلقائية عند الإقلاع هي
+   *  بالضبط ما أنزل ثلاثةَ عشرَ صفَّ إعداداتٍ بعيادةِ زبونٍ لا تخصّها. وهي
+   *  ضغطةٌ واحدة لا تتكرّر: ينتهي الزرُّ بانتهاء الصيغة القديمة. */
+  const migrateLogo = async () => {
+    if (!logoRef || !logoRef.startsWith("data:")) return;
+    setBusy(true);
+    try {
+      const blob = await (await fetch(logoRef)).blob();
+      await saveLogoFrom({ blob, dataUrl: logoRef, contentType: blob.type });
+      playSuccess();
+    } catch (err) {
+      toast.error(t("settings.logoMoveFailed", "تعذّر نقل الشعار"), err instanceof Error ? err.message : undefined);
+    } finally { setBusy(false); }
+  };
+
+  const removeLogo = () => {
+    const prev = logoRef;
+    setClinicLogo(null); setLogoRef(null);
+    if (prev) void repo.deleteClinicLogo(clinicId, prev);
+    playTap();
+  };
   const saveSocials = () => { setClinicSocials({ facebook, instagram }); playTap(); };
   const saveName = () => { setClinicName(name); playTap(); };
 
@@ -611,6 +650,13 @@ function ClinicIdentity() {
             {logo && <button onClick={removeLogo} className="chip bg-surface-2 text-xs font-semibold text-danger-600 hover:bg-danger-50"><Trash2 size={14} /> {t("common.remove", "إزالة")}</button>}
           </div>
           <p className="mt-1.5 text-2xs text-ink-subtle">{t("settings.logoCutHint", "الخلفية البيضاء/الموحّدة تنفرغ تلقائياً، واللوجو المفرّغ أصلاً يُحفَظ كما هو بلا أي تعديل.")}</p>
+          {legacyLogo && (
+            <div className="mt-2 rounded-xl border border-warn-200 bg-warn-50 p-2.5 dark:border-warn-500/30 dark:bg-warn-500/10">
+              <p className="text-2xs leading-relaxed text-warn-700 dark:text-warn-200">{t("settings.logoLegacy", "شعارك محفوظ بصيغة قديمة تثقّل متجرك وصفحة زبائنك. انقله لملف — مرّة واحدة، وشكله ما يتغيّر.")}</p>
+              <button onClick={migrateLogo} disabled={busy}
+                className="btn-secondary mt-2 text-xs"><Upload size={14} /> {t("settings.logoMove", "انقل الشعار")}</button>
+            </div>
+          )}
         </div>
       </div>
 

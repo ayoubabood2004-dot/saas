@@ -84,7 +84,7 @@ const EMPTY_MAP_BASE = {
 /* `repo` يختار نصفَه عند التحميل: `supabase ? supabaseRepo : demoRepo` — ولا
  * نصفَ مُصدَّرٌ بذاته. فالبناءُ مرّتان: مرّةً بعميلٍ مزيّف (سحابيّ) ومرّةً
  * بـ`supabase = null` (تجريبيّ). هكذا يُفحص **النصفان** لا واحدٌ منهما. */
-async function buildRepo(supabaseSource, tag) {
+async function buildModule(entry, supabaseSource, tag) {
   const stubs = {
     name: "stubs",
     setup(b) {
@@ -96,17 +96,17 @@ async function buildRepo(supabaseSource, tag) {
     },
   };
   const built = await esbuild.build({
-    entryPoints: ["src/lib/repo.ts"], bundle: true, format: "esm", write: false,
+    entryPoints: [entry], bundle: true, format: "esm", write: false,
     platform: "neutral", plugins: [stubs], logLevel: "silent",
     define: { "import.meta.env": "__VITE_ENV__" },
     banner: { js: "const __VITE_ENV__ = { VITE_SUPABASE_URL: 'https://x.example', VITE_SUPABASE_ANON_KEY: 'k' };" },
   });
   const dir = mkdtempSync(join(tmpdir(), `images-${tag}-`));
-  const file = join(dir, "repo.mjs");
+  const file = join(dir, "m.mjs");
   writeFileSync(file, built.outputFiles[0].text);
-  const mod = await import(pathToFileURL(file).href).finally(() => { try { rmSync(dir, { recursive: true, force: true }); } catch { /* ignore */ } });
-  return mod.repo;
+  return import(pathToFileURL(file).href).finally(() => { try { rmSync(dir, { recursive: true, force: true }); } catch { /* ignore */ } });
 }
+const buildRepo = async (src, tag) => (await buildModule("src/lib/repo.ts", src, tag)).repo;
 
 const { mkdtempSync, writeFileSync, rmSync } = await import("node:fs");
 const { tmpdir } = await import("node:os");
@@ -176,6 +176,50 @@ globalThis.__refsError = null;
 globalThis.__removed = [];
 await cloud.deleteProductImage(CLINIC, PRODUCT, "library/shared.jpg");
 check("  وملفُّ المكتبة المشترَك لا يُلمس أبداً", globalThis.__removed.length === 0);
+
+console.log("▸ 0190 — شعارُ العيادة ملفٌّ بالدلو، لا بايتاتٌ بالقاعدة");
+globalThis.__uploads = [];
+const L1 = await cloud.uploadClinicLogo(CLINIC, mkUpload("image/png", "png"));
+await new Promise((r) => setTimeout(r, 2));
+const L2 = await cloud.uploadClinicLogo(CLINIC, mkUpload("image/png", "png"));
+check("الرفعُ يرجع مساراً لا عنواناً مضمَّناً", !L1.startsWith("data:") && L1.length < 120, L1.slice(0, 40));
+check("  وبمجلّد العيادة (نفسُ سياسةِ صورة المنتج — لا سياسةَ جديدة)", L1.startsWith(`${CLINIC}/logo-`), L1);
+check("  ورفعتان ⇒ مساران — الاستبدالُ لا يُحجب بذاكرة المتصفّح", L1 !== L2, `${L1} == ${L2}`);
+check("  و`upsert:false` و`cacheControl` سنةً كالمنتج",
+  globalThis.__uploads.every((u) => u.opts?.upsert === false && u.opts?.cacheControl === "31536000"));
+check("  والامتدادُ من النوع المرسَل", L1.endsWith(".png") && globalThis.__uploads[0]?.opts?.contentType === "image/png");
+check("  وPDF يُرفض قبل أن يصل الخادم",
+  (globalThis.__uploads = [], await threw(() => cloud.uploadClinicLogo(CLINIC, mkUpload("application/pdf", "pdf")))) && globalThis.__uploads.length === 0);
+check("  وبلا عيادةٍ لا رفع (المسارُ بلا مجلّدٍ يرفضه الخادم)",
+  await threw(() => cloud.uploadClinicLogo(null, mkUpload("image/png", "png"))));
+check("والتجريبيُّ يرجع العنوانَ المضمَّن — لا دلوَ هناك، وهو تخزينُه الوحيد",
+  (await demo.uploadClinicLogo(CLINIC, mkUpload("image/png", "png"))).startsWith("data:"));
+check("  ويرمي على PDF كذلك",
+  await threw(() => demo.uploadClinicLogo(CLINIC, mkUpload("application/pdf", "pdf"))));
+
+globalThis.__removed = [];
+await cloud.deleteClinicLogo(CLINIC, "data:image/png;base64,AAAA");
+await cloud.deleteClinicLogo(CLINIC, "library/shared.png");
+check("حذفُ الشعار: `data:` ومسارُ المكتبة لا ملفَّ لهما فلا يُلمسان", globalThis.__removed.length === 0, JSON.stringify(globalThis.__removed));
+await cloud.deleteClinicLogo(CLINIC, `${CLINIC}/logo-old.png`);
+check("  والسابقُ الحقيقيُّ يُحذف بعد نجاح الجديد", globalThis.__removed.includes(`${CLINIC}/logo-old.png`));
+
+console.log("▸ 0190ب — القاعدةُ ترفض البايتات بنفسها، لا بترويسةِ هجرة");
+const setCloud = await buildModule("src/lib/settings.ts", FAKE_SUPABASE, "set-cloud");
+const setDemo = await buildModule("src/lib/settings.ts", "export const supabase = null;", "set-demo");
+check("سحابياً: `setClinicLogo` برمزٍ `data:` ترمي — القاعدةُ ما تحمل بايتات",
+  await threw(() => setCloud.setClinicLogo("data:image/png;base64,AAAA")));
+check("  وبمسارٍ تمرّ", !(await threw(() => setCloud.setClinicLogo(`${CLINIC}/logo-x.png`))));
+check("  وnull تمرّ (إزالةُ الشعار)", !(await threw(() => setCloud.setClinicLogo(null))));
+check("تجريبياً: `data:` مشروعةٌ — لا دلوَ بالجهاز",
+  !(await threw(() => setDemo.setClinicLogo("data:image/png;base64,AAAA"))));
+check("  و`getClinicLogo` ترجعها كما هي", setDemo.getClinicLogo() === "data:image/png;base64,AAAA");
+check("  و`getClinicLogoRef` ترجع المحفوظَ حرفياً", setDemo.getClinicLogoRef() === "data:image/png;base64,AAAA");
+setDemo.setClinicLogo(`${CLINIC}/logo-y.png`);
+check("ومسارٌ محفوظٌ يخرج **رابطاً** لا مساراً — وإلا فكلُّ قسيمةٍ ومتجرٍ بصورةٍ مكسورة",
+  setDemo.getClinicLogo() === `https://x.example/storage/v1/object/public/product-images/${CLINIC}/logo-y.png`,
+  String(setDemo.getClinicLogo()));
+check("  والمحفوظُ يبقى المسارَ نفسَه", setDemo.getClinicLogoRef() === `${CLINIC}/logo-y.png`);
 
 console.log(fails ? `\n✗ images-test: ${passes} نجحت، ${fails} فشلت` : `\n✓ images-test: ${passes} نجحت، 0 فشلت`);
 process.exit(fails ? 1 : 0);

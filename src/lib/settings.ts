@@ -3,6 +3,7 @@ import type { VitalKey } from "./vitals";
 import { getActiveClinicId } from "./clinics";
 import { sb, cloudWrite, registerHydrator, registerReset, seedOwnClinic } from "./clinicSync";
 import { setActiveCurrency, countryByCode } from "./currency";
+import { productImageUrl } from "./storeLib";
 
 // Doctor-customizable overrides for the medical reading (vital) normal ranges.
 // Persisted locally; merged over the built-in defaults by vitals.rangeFor().
@@ -259,8 +260,14 @@ export async function hydrateClinicPrefs(): Promise<void> {
       // بذرةُ صفٍّ جديد بأرض صاحبها وحدها (0153): `readPrefsLocal` يتبنّى القالبَ
       // الوحيد بالجهاز حين يفرغ مفتاحُ العيادة — وهو ما يجعل شعارَ عيادةٍ واسمَها
       // يهبطان بعيادةِ غيرها لو اختلف الخادمُ والمتصفّح على الهويّة.
+      // ومن هنا بالضبط دخلت البايتاتُ القاعدةَ (0190): جهازٌ فيه شعارٌ محليٌّ
+      // بصيغة `data:` من قبل أن يوجد صفٌّ سحابيّ، فتبذره البذرةُ كما هو —
+      // ١٠٦ آلاف محرفٍ بصفّ إعداداتٍ ومثلُها بكلّ صفّ تدقيقٍ يليه. البذرةُ
+      // تترك الشعارَ محلياً (فلا يضيع، وزرُّ «انقل الشعار» بالإعدادات يرفعه
+      // ملفاً)، ولا تُصعِد إلا مساراً.
+      const seedLogo = local.logo_url?.startsWith("data:") ? null : local.logo_url;
       await seedOwnClinic(() => client.from("clinic_prefs").upsert(
-        { dial_code: local.dial_code, logo_url: local.logo_url, social_facebook: local.social_facebook, social_instagram: local.social_instagram, clinic_name: local.clinic_name },
+        { dial_code: local.dial_code, logo_url: seedLogo, social_facebook: local.social_facebook, social_instagram: local.social_instagram, clinic_name: local.clinic_name },
         { onConflict: "clinic_id" },
       ));
       // The seed payload can't carry the boolean opt-ins (one missing column
@@ -365,12 +372,32 @@ export function seedClinicLocale(countryCode?: string | null, currency?: string 
   patchPrefs(patch, "locale-seed");
 }
 
-/** Clinic logo as a data-URL (null when none). Shown on printed invoices. */
+/**
+ * رابطُ عرض شعار العيادة (null حين لا شعار). يُطبع على القسائم ويظهر بالمتجر.
+ *
+ * العمودُ يحمل **صيغتين** منذ 0190: مساراً داخل دلو الصور (الجديد)، وعنواناً
+ * مضمَّناً `data:` (السبعةُ القديمة). والفرقُ لا يخصّ من يقرأ — فالتحويلُ هنا،
+ * بنفس دالّة صورةِ المنتج، ولا مستهلكَ واحداً تغيّر. من أراد المحفوظَ كما هو
+ * (شاشةُ الإعدادات وحدها) فـ`getClinicLogoRef`.
+ */
 export function getClinicLogo(): string | null {
+  return productImageUrl(prefs().logo_url);
+}
+/** المحفوظُ حرفياً: مسارٌ أو `data:` أو null — لمن يحتاج التمييز. */
+export function getClinicLogoRef(): string | null {
   return prefs().logo_url;
 }
-export function setClinicLogo(dataUrl: string | null) {
-  patchPrefs({ logo_url: dataUrl }, "clinic-logo-set");
+/**
+ * يحفظ **مسار** الشعار (أو `data:` تجريبياً)، لا بايتاتِه.
+ *
+ * والرميةُ هنا لا بالفحص وحدَه: قاعدةُ 0174 «الصورة لا تدخل جداول القاعدة
+ * أبداً» كُتبت ترويسةً فانكسرت بصمت — سبعةُ صفوفٍ base64 و٢٨٪ من سجلّ التدقيق.
+ * قاعدةٌ يحرسها تعليقٌ ليست قاعدة. وبالتجريبيّ لا دلوَ فالعنوانُ المضمَّن هو
+ * التخزينُ الوحيد، فالحارسُ سحابيٌّ وحدَه بالضبط كما هو الحال بصورة المنتج.
+ */
+export function setClinicLogo(pathOrDataUrl: string | null) {
+  if (sb() && pathOrDataUrl?.startsWith("data:")) throw new Error("logo_bytes_in_db");
+  patchPrefs({ logo_url: pathOrDataUrl }, "clinic-logo-set");
 }
 
 export function getClinicSocials(): ClinicSocials {

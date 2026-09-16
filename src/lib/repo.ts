@@ -90,7 +90,7 @@ import type { ActivityQuery, ActivityRow, ActivitySummaryRow, ActivityActor } fr
 import type { PayrollPolicyDTO, StaffComp, StaffRecurring, PayrollAdjustment, PayrollRun, Payslip, PayslipLine, StaffLoan, StaffLoanEvent, PayslipDraft, PayMethod } from "@/types";
 import * as PD from "./payrollDemo";
 import { paidOf, round2 } from "./debt";
-import { isValidSlug, normalizeSlug, matchSlug, slugKey, demoOrderNo } from "./storeLib";
+import { isValidSlug, normalizeSlug, matchSlug, slugKey, demoOrderNo, productImageUrl } from "./storeLib";
 import { journeyToken, OWNER_REACTIONS } from "./journey";
 import { getClinicName, getClinicLogo, getClinicSocials } from "./settings";
 import { uid, uuid, ageMonths, localISO, normalizeCode, matchCode } from "./utils";
@@ -1425,6 +1425,16 @@ const demoRepo = {
   /** حذف ملف الصورة — تجريبياً لا ملفَ أصلاً؛ تصفيرُ المسار شأنُ updateProduct. */
   async deleteProductImage(_clinicId: string | null, _productId: string, _path: string): Promise<void> {
     void _clinicId; void _productId; void _path;
+  },
+  /** شعار العيادة (0190) — تجريبياً كصورة المنتج: لا مخزنَ ملفات فيرجع
+   *  data URL، و`getClinicLogo` تمرّره كما هو. */
+  async uploadClinicLogo(_clinicId: string | null, upload: { blob: Blob; dataUrl: string }): Promise<string> {
+    void _clinicId;
+    assertUploadableImage(upload);
+    return upload.dataUrl;
+  },
+  async deleteClinicLogo(_clinicId: string | null, _path: string): Promise<void> {
+    void _clinicId; void _path;
   },
   async updateProduct(id: string, patch: Partial<Product>): Promise<Product | undefined> {
     const db = loadDB();
@@ -4432,6 +4442,41 @@ const supabaseRepo: typeof demoRepo = {
     if (refs.error || (refs.data ?? []).length > 0) return;
     try { await sbc().storage.from("product-images").remove([path]); } catch { /* swallow-ok: ملفٌ يتيمٌ لا يُرى ولا يُحاسَب، والحذفُ يُعاد من أي حفظٍ لاحق */ }
   },
+  /** شعار العيادة إلى الدلو (0190) — تصحيحُ سجلٍّ قبل أن يكون ميزة.
+   *
+   *  ترويسةُ 0174 تقول «الصورة لا تدخل جداول القاعدة أبداً» وتذكر أن شعارات
+   *  base64 «نُظّفت يدوياً في ٩ أيلول». القياسُ يقول غيرَ ذلك: سبعةُ صفوفٍ في
+   *  `clinic_prefs.logo_url` كلُّها `data:`، أكبرُها ١٠٦ آلاف محرف، ومعها ١٢٣
+   *  صفَّ تدقيقٍ تحمل الصورةَ نفسها = ٥ ميغابايت من ١٨ (٢٨٪). التنظيفُ اليدويّ
+   *  يمحو الماضي ولا يمنع الغد؛ الرفعُ إلى الدلو يمنعه.
+   *
+   *  والمسارُ داخل مجلّد العيادة بالضبط ليَحكمه ما يحكم صورةَ المنتج: سياسةُ
+   *  المخزن تشترط `(storage.foldername(name))[1] = auth_clinic()`، فرفعُ شعارٍ
+   *  بعيادةٍ غلط يُرفض من الخادم. ولا سياسةَ جديدة ولا دلوَ جديد — الدلوُ
+   *  القائم وسياساتُه تكفي، وكلُّ سياسةٍ زائدة سطحُ خطأٍ زائد.
+   *
+   *  والطابعُ الزمنيّ بالمسار كدرس 0174 نفسه: الاستبدالُ يولّد رابطاً جديداً
+   *  فلا تبقى العيادةُ ترى شعارَها القديم بذاكرة المتصفّح وشبكة التوزيع. */
+  async uploadClinicLogo(clinicId, upload) {
+    if (!clinicId) throw new Error("no_clinic_for_image");
+    assertUploadableImage(upload);
+    const path = `${clinicId}/logo-${Date.now().toString(36)}.${imageExt(upload)}`;
+    const up = await sbc().storage.from("product-images").upload(path, upload.blob, {
+      contentType: imageType(upload),
+      cacheControl: "31536000",
+      upsert: false,
+    });
+    if (up.error) throw up.error;
+    return path;
+  },
+  /** الشعارُ القديم بعد نجاح الجديد. `data:` لا ملفَ له، ومسارُ المكتبة ليس
+   *  ملكَ العيادة — وكلاهما يخرج قبل أي حذف. وأفضلُ جهد: يتيمٌ أهون من إفشال
+   *  حفظِ شعارٍ نجح فعلاً. */
+  async deleteClinicLogo(clinicId, path) {
+    void clinicId;
+    if (!path || path.startsWith("data:") || path.startsWith("library/")) return;
+    try { await sbc().storage.from("product-images").remove([path]); } catch { /* swallow-ok: ملفٌ يتيمٌ لا يُرى ولا يُحاسَب، والشعارُ الجديد محفوظٌ أصلاً */ }
+  },
   async updateProduct(id, patch) {
     // نفس تطبيع الإنشاء — تعديلٌ يكتب باركوداً غيرَ مطبَّع يعيد المشكلة.
     if ("barcode" in patch) patch = { ...patch, barcode: normalizeCode(patch.barcode) || null };
@@ -4648,7 +4693,9 @@ const supabaseRepo: typeof demoRepo = {
     const d = data as { ok?: boolean } & StoreFrontInfo & { error?: string };
     if (!d?.ok) return null;
     return {
-      name: d.name, logo_url: d.logo_url ?? null, phone: d.phone ?? null, whatsapp: d.whatsapp ?? null,
+      // الشعارُ يصل كما هو بالعمود: مساراً (0190) أو `data:` قديماً. الزائرُ بلا
+      // جلسة، والدلوُ عامّ — فالتحويلُ إلى رابطٍ يجري هنا مرّةً لكلّ المستهلكين.
+      name: d.name, logo_url: productImageUrl(d.logo_url), phone: d.phone ?? null, whatsapp: d.whatsapp ?? null,
       facebook: d.facebook ?? null, instagram: d.instagram ?? null, bio: d.bio ?? null,
       delivery_fee: Number(d.delivery_fee) || 0, min_order: Number(d.min_order) || 0,
     };
@@ -4697,7 +4744,8 @@ const supabaseRepo: typeof demoRepo = {
     const d = data as ({ ok?: boolean } & PortalMe) | null;
     // جلسةٌ ماتت أو أُبطلت: null تعني «اطلب رمزاً من جديد» لا «صار خطأ».
     if (!d?.ok) return null;
-    return { clinic: d.clinic, show_medical: !!d.show_medical, pets: d.pets ?? [] };
+    // نفس تحويل الشعار (0190) — بوّابةُ المالك تعرضه كما يعرضه المتجر.
+    return { clinic: { ...d.clinic, logo_url: productImageUrl(d.clinic?.logo_url) }, show_medical: !!d.show_medical, pets: d.pets ?? [] };
   },
   async portalPet(token, petId) {
     const { data, error } = await sbc().rpc("portal_pet", { p_token: token, p_pet: petId });
