@@ -950,6 +950,35 @@ console.log("▸ دلو صور المنتجات — الأفعال الأربع�
     check("  ولا يُستعمل بملفّ شاشة (.tsx)", users.every((f) => !f.endsWith(".tsx")), users.join(", "));
     check("  ومحصورٌ بملفٍّ واحدٍ اليوم", users.length === 1, users.join(", "));
   }
+
+  /* ── ت٦ + مسارُ التفعيل ─────────────────────────────────────────────────
+   * المالكُ قال الحقيقةَ التي لا تقيسها القاعدة: **ما بلّغ العيادات بالخدمة**.
+   * فكلُّ ما سبق (نشرٌ جماعيٌّ واقتراحٌ ورابطٌ باسم) يجعل التبليغَ ينجح — ولا
+   * يغني عن مسارٍ يقول للعيادة **ماذا تفعل** حين تفتح الشاشة أوّلَ مرّة. */
+  check("لوحةُ الجاهزية تقول ما ينقص **بالعدد** لا «جاهز» مجرّدة",
+    /readyNoPrice/.test(store) && /readyNoStock/.test(store) && /readyNoPhoto/.test(store) && /readyNoDesc/.test(store));
+  check("  وتعدّ **المعروضَ** لا كلَّ المخزن (عيبُ المتجر بما يراه الزبون)",
+    /const shownAll = \(products \?\? \[\]\)\.filter\(\(p\) => p\.store_visible\)/.test(store));
+  check("  ولا يُعرض سطرٌ عن صفر", /noPriceCount > 0 && \(/.test(store) && /noDescCount > 0 && \(/.test(store));
+  check("  وكلُّ سطرٍ **يوصّل** لتصفيته لا يكتفي بالعدد",
+    /onGo=\{\(\) => goCatalog\("noprice"\)\}/.test(store) && /onGo=\{\(\) => goCatalog\("nostock"\)\}/.test(store)
+    && /onGo=\{\(\) => goCatalog\("nodesc"\)\}/.test(store));
+  check("  والتصفياتُ الثلاثُ موجودةٌ فعلاً بالتشكيلة",
+    /filter === "noprice"/.test(store) && /filter === "nostock"/.test(store) && /filter === "nodesc"/.test(store));
+  check("  وهي على المعروض وحدَه (مخفيٌّ بلا سعرٍ ليس عيبَ متجر)",
+    /filter === "noprice"\) base = base\.filter\(\(p\) => p\.store_visible/.test(store));
+  check("مسارُ التفعيل ثلاثُ خطواتٍ مرقَّمة بدل لافتةٍ تقول «افتح الإعدادات»",
+    /function SetupStep/.test(store) && /cat\.setupTitle/.test(store));
+  check("  والترتيبُ: رابطٌ ← بضاعةٌ ← تفعيل",
+    /SetupStep n=\{1\}[\s\S]{0,400}SetupStep n=\{2\}[\s\S]{0,400}SetupStep n=\{3\}/.test(store));
+  check("  وكلُّ خطوةٍ تفتح فعلَها مباشرة", /cta=\{t\("cat\.setupOpenCatalog"/.test(store) && /onGo=\{goSettings\}/.test(store));
+  check("  ويُحذَّر من متجرٍ مفعَّلٍ **فارغ** (أسوأُ من مطفأ)",
+    /profile\?\.enabled && shownCount === 0/.test(store) && /cat\.setupEmptyWarn/.test(store));
+  check("  ويختفي المسارُ حين يكتمل", /!\(profile\?\.enabled && shownCount > 0\)/.test(store));
+  check("والكتلوجُ لا يعرض منتجاً بلا سعر (0188)",
+    readFileSync("supabase/migrations/0188_store_catalog_priced.sql", "utf8").includes("coalesce(p.sell_price, 0) > 0"));
+  check("  ومُنزَّلةٌ بحزمة الهجرات",
+    readFileSync("supabase/tests/run.sh", "utf8").includes("0188_store_catalog_priced.sql"));
 }
 
 console.log(`\n${fails ? "✗" : "✓"} products-test: ${passes} نجحت، ${fails} فشلت`);

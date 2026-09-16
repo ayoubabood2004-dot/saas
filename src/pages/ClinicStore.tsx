@@ -35,6 +35,8 @@ import { Button, Badge, Skeleton, useToast } from "@/components/ui";
 import { cn, money, formatNum, formatDate, currencySymbol } from "@/lib/utils";
 
 type Tab = "orders" | "catalog" | "settings";
+/** تصفياتُ التشكيلة — مشتركةٌ لأن لوحةَ الجاهزية بتبويبٍ آخرَ تفتحها. */
+type CatFilter = "all" | "shown" | "hidden" | "nophoto" | "noprice" | "nostock" | "nodesc";
 
 
 /** رسالة خطأ إنسانية مختصرة من أي استثناء. */
@@ -61,6 +63,10 @@ export function ClinicStore() {
   const { user } = useAuth();
   const clinicId = user?.clinic_id ?? user?.id;
   const [tab, setTab] = useState<Tab>("orders");
+  /* التصفيةُ بالأب: «١ بلا سعر» بلوحة الإعدادات تفتح التشكيلةَ مصفّاةً عليه.
+   * سطرٌ يقول عدداً ولا يوصّل إليه يترك الدكتورَ يبحث يدوياً بتسعِمئة صنف. */
+  const [catFilter, setCatFilter] = useState<CatFilter>("all");
+  const goCatalog = (f: CatFilter) => { setCatFilter(f); setTab("catalog"); };
 
   const [orders, setOrders] = useState<StoreOrder[] | null>(null);
   const [newOrders, setNewOrders] = useState<StoreOrder[] | null>(null);
@@ -154,10 +160,10 @@ export function ClinicStore() {
       <AnimatePresence mode="wait">
         <motion.div key={tab} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.18 }}>
           {tab === "orders"
-            ? <OrdersTab orders={orders} newOrders={newOrders} products={products} profile={profile ?? null} reload={load} goSettings={() => setTab("settings")} />
+            ? <OrdersTab orders={orders} newOrders={newOrders} products={products} profile={profile ?? null} reload={load} goSettings={() => setTab("settings")} goCatalog={goCatalog} />
             : tab === "catalog"
-              ? <CatalogTab products={products} reload={load} storeOn={!!profile?.enabled} />
-              : <SettingsTab profile={profile} products={products} onSaved={(p) => { setProfile(p); noteStoreProfile(p); }} />}
+              ? <CatalogTab products={products} reload={load} storeOn={!!profile?.enabled} filter={catFilter} setFilter={setCatFilter} />
+              : <SettingsTab profile={profile} products={products} goCatalog={goCatalog} onSaved={(p) => { setProfile(p); noteStoreProfile(p); }} />}
         </motion.div>
       </AnimatePresence>
     </div>
@@ -168,10 +174,10 @@ export function ClinicStore() {
 
 /* `clinicId` و`user` ما عادا لازمين هنا: بناءُ الفاتورة ونسبتُها انتقلا
  * للخادم (0183)، والدالّةُ تفحص العيادةَ والدورَ بنفسها. */
-function OrdersTab({ orders, newOrders, products, profile, reload, goSettings }: {
+function OrdersTab({ orders, newOrders, products, profile, reload, goSettings, goCatalog }: {
   orders: StoreOrder[] | null; newOrders: StoreOrder[] | null;
   products: Product[] | null; profile: StoreProfile | null;
-  reload: () => Promise<void>; goSettings: () => void;
+  reload: () => Promise<void>; goSettings: () => void; goCatalog: (f: CatFilter) => void;
 }) {
   const { t } = useTranslation();
   const toast = useToast();
@@ -190,6 +196,7 @@ function OrdersTab({ orders, newOrders, products, profile, reload, goSettings }:
    * يُعمل منه. لكنّ الأرقامَ المبنيّةَ عليه **تقول نافذتَها**: «مبيعات المتجر»
    * من مجموعٍ مقصوصٍ بعنوانٍ مطلق كانت تُنقِص المبلغَ وتبدو حقيقةً كاملة. */
   const capped = (orders ?? []).length >= ORDERS_WINDOW;
+  const shownCount = (products ?? []).filter((p) => p.store_visible).length;
   const today = new Date().toDateString();
   const acceptedToday = decided.filter((o) => o.status === "accepted" && o.decided_at && new Date(o.decided_at).toDateString() === today).length;
   const storeRevenue = decided.filter((o) => o.status === "accepted").reduce((s, o) => s + o.total, 0);
@@ -268,12 +275,32 @@ function OrdersTab({ orders, newOrders, products, profile, reload, goSettings }:
         <Kpi icon={Sparkles} tone="accent" label={t("pos.kpiAcceptRate", "نسبة القبول")} value={decideRate === null ? "—" : `${formatNum(decideRate)}٪`} />
       </div>
 
-      {/* متجر مو مفعّل بعد */}
-      {!profile?.enabled && (
-        <button onClick={() => { playTap(); goSettings(); }} className="card flex w-full items-center gap-3 border-warn-300 bg-warn-50/60 p-4 text-start transition hover:bg-warn-50 dark:border-warn-500/40 dark:bg-warn-500/10">
-          <AlertTriangle size={20} className="shrink-0 text-warn-600" />
-          <span className="text-sm font-semibold text-warn-700 dark:text-warn-200">متجرك بعده مو مفعّل — افتح «الإعدادات والرابط»، اختر رابطك المميز وفعّله حتى توصلك الطلبات.</span>
-        </button>
+      {/* ── مسارُ التفعيل: ثلاثُ خطواتٍ مرقَّمة ───────────────────────────
+          كانت لافتةً واحدةً تقول «متجرك مو مفعّل — افتح الإعدادات». وهي صادقةٌ
+          وغيرُ كافية: تقول **أين** تذهب ولا تقول **ماذا تفعل** ولا كم بقي.
+          فالعيادةُ تفتح الإعدادات، ترى حقولاً، وتخرج.
+
+          والترتيبُ مقصود: الرابطُ أوّلاً (بلا رابطٍ لا متجر)، ثمّ البضاعةُ
+          (متجرٌ مفعَّلٌ فارغٌ أسوأُ من مطفأ — الزبونُ يدخل ويرى رفّاً خالياً
+          فلا يعود)، والتفعيلُ آخِراً. وكلُّ خطوةٍ تفتح فعلَها مباشرةً. */}
+      {!(profile?.enabled && shownCount > 0) && (
+        <div className="card space-y-3 p-4">
+          <p className="font-display text-sm font-bold text-ink">{t("cat.setupTitle", "خلّي متجرك يشتغل — ٣ خطوات")}</p>
+          <SetupStep n={1} done={!!profile?.slug}
+            label={profile?.slug ? t("cat.setupLinkDone", "رابطك: {{s}}", { s: profile.slug }) : t("cat.setupLink", "اختر رابط متجرك")}
+            cta={t("cat.setupOpenSettings", "الإعدادات")} onGo={goSettings} />
+          <SetupStep n={2} done={shownCount > 0}
+            label={shownCount > 0 ? t("cat.setupShownDone", "{{n}} منتج معروض", { n: formatNum(shownCount) }) : t("cat.setupShown", "انشر منتجاتك — «انشر أكثر ما تبيع» يجهّزها بضغطة")}
+            cta={t("cat.setupOpenCatalog", "التشكيلة")} onGo={() => goCatalog(shownCount > 0 ? "shown" : "hidden")} />
+          <SetupStep n={3} done={!!profile?.enabled}
+            label={profile?.enabled ? t("cat.setupOnDone", "المتجر مفعّل ويستقبل طلبات") : t("cat.setupOn", "فعّل المتجر حتى توصلك الطلبات")}
+            cta={t("cat.setupOpenSettings", "الإعدادات")} onGo={goSettings} />
+          {profile?.enabled && shownCount === 0 && (
+            <p className="rounded-xl bg-warn-50/60 p-2.5 text-2xs leading-relaxed text-warn-700 dark:bg-warn-500/10 dark:text-warn-200">
+              {t("cat.setupEmptyWarn", "متجرك مفعّل بس فارغ — الزبون اللي يفتح الرابط راح يشوف رفّاً خالياً وما يرجع. انشر منتجاتك أول.")}
+            </p>
+          )}
+        </div>
       )}
 
       {/* جرسُ التنبيه: يُطلب الإذنُ بضغطةٍ لا عند الإقلاع. الشارةُ والصوتُ
@@ -436,7 +463,10 @@ function OrdersTab({ orders, newOrders, products, profile, reload, goSettings }:
 
 /* ============================== التشكيلة ============================== */
 
-function CatalogTab({ products, reload, storeOn }: { products: Product[] | null; reload: () => Promise<void>; storeOn: boolean }) {
+function CatalogTab({ products, reload, storeOn, filter, setFilter }: {
+  products: Product[] | null; reload: () => Promise<void>; storeOn: boolean;
+  filter: CatFilter; setFilter: (f: CatFilter) => void;
+}) {
   const { t } = useTranslation();
   const toast = useToast();
   const [q, setQ] = useState("");
@@ -459,7 +489,7 @@ function CatalogTab({ products, reload, storeOn }: { products: Product[] | null;
   /** الاختيارُ المتعدّد — مفتاحُ النشر الجماعيّ. */
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [bulkBusy, setBulkBusy] = useState(false);
-  const [filter, setFilter] = useState<"all" | "shown" | "hidden" | "nophoto">("all");
+
   const [sort, setSort] = useState<"smart" | "name" | "priceDesc" | "priceAsc">("smart");
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -467,6 +497,11 @@ function CatalogTab({ products, reload, storeOn }: { products: Product[] | null;
   const noPhotoCount = all.filter((p) => !p.image_path).length;
   const shownCount = all.filter((p) => p.store_visible).length;
   const hiddenCount = all.length - shownCount;
+  /* ما ينقص **المعروضَ** — نفسُ أعداد لوحة الجاهزية بالإعدادات، من نفس التعريف. */
+  const shownRows = all.filter((p) => p.store_visible);
+  const noPriceShown = shownRows.filter((p) => (p.sell_price ?? 0) <= 0).length;
+  const noStockShown = shownRows.filter((p) => p.stock <= 0 && !p.pooled).length;
+  const noDescShown = shownRows.filter((p) => !p.store_desc).length;
 
   const list = useMemo(() => {
     const ql = searchable(q);
@@ -474,6 +509,11 @@ function CatalogTab({ products, reload, storeOn }: { products: Product[] | null;
     if (filter === "shown") base = base.filter((p) => p.store_visible);
     else if (filter === "hidden") base = base.filter((p) => !p.store_visible);
     else if (filter === "nophoto") base = base.filter((p) => !p.image_path);
+    // ثلاثُ تصفياتٍ جديدةٍ تقابل سطورَ لوحة الجاهزية — وعلى **المعروض** وحدَه:
+    // «بلا سعر» عن منتجٍ مخفيٍّ ليس عيباً بالمتجر، بل صنفٌ لم يُنشَر بعد.
+    else if (filter === "noprice") base = base.filter((p) => p.store_visible && (p.sell_price ?? 0) <= 0);
+    else if (filter === "nostock") base = base.filter((p) => p.store_visible && p.stock <= 0 && !p.pooled);
+    else if (filter === "nodesc") base = base.filter((p) => p.store_visible && !p.store_desc);
     const arr = [...base];
     if (sort === "name") arr.sort((a, b) => a.name.localeCompare(b.name, "ar"));
     else if (sort === "priceDesc") arr.sort((a, b) => b.sell_price - a.sell_price);
@@ -678,16 +718,24 @@ function CatalogTab({ products, reload, storeOn }: { products: Product[] | null;
       {/* تصفيةٌ بضغطة — و«بلا صورة» هي المقصودة: الدكتور يشوف ما ينقصه ويكمّله
           من مكانه بلا ما يفتح المخزون منتجاً منتجاً. */}
       <div className="flex flex-wrap items-center gap-1.5" data-catfilter>
+        {/* الثلاثةُ الأخيرةُ تظهر **حين يكون فيها شيء** — وإلا صارت أربعَ أزرارٍ
+            صفريّةٍ تزاحم الشاشة. وظهورُها لازمٌ لا تجميل: لوحةُ الجاهزية تفتح
+            هذه التصفيات، فبلا زرٍّ يقابلها يرى الدكتورُ قائمةً مصفّاةً ولا
+            يعرف لماذا ولا كيف يرجع. */}
         {([
           ["all", t("cat.fAll", "الكل"), all.length],
           ["shown", t("cat.fShown", "معروض"), shownCount],
           ["hidden", t("cat.fHidden", "مخفي"), hiddenCount],
           ["nophoto", t("cat.fNoPhoto", "بلا صورة"), noPhotoCount],
+          ...(noPriceShown > 0 || filter === "noprice" ? [["noprice", t("cat.fNoPrice", "بلا سعر"), noPriceShown] as const] : []),
+          ...(noStockShown > 0 || filter === "nostock" ? [["nostock", t("cat.fNoStock", "نافد"), noStockShown] as const] : []),
+          ...(noDescShown > 0 || filter === "nodesc" ? [["nodesc", t("cat.fNoDesc", "بلا وصف"), noDescShown] as const] : []),
         ] as const).map(([id, label, n]) => (
           <button key={id} onClick={() => { playTap(); setFilter(id); }}
             className={cn("flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition",
               filter === id ? "bg-brand-600 text-white" : "border border-line bg-surface-1 text-ink-muted hover:bg-surface-2",
-              id === "nophoto" && filter !== id && n > 0 && "border-warn-300 text-warn-700 dark:border-warn-500/40 dark:text-warn-200")}>
+              (id === "nophoto" || id === "noprice" || id === "nostock" || id === "nodesc")
+                && filter !== id && n > 0 && "border-warn-300 text-warn-700 dark:border-warn-500/40 dark:text-warn-200")}>
             {label}
             <span className={cn("tabular-nums", filter === id ? "text-white/80" : "text-ink-subtle")}>{formatNum(n)}</span>
           </button>
@@ -909,8 +957,9 @@ function CatalogTab({ products, reload, storeOn }: { products: Product[] | null;
 
 /* ============================== الإعدادات ============================== */
 
-function SettingsTab({ profile, products, onSaved }: {
+function SettingsTab({ profile, products, goCatalog, onSaved }: {
   profile: StoreProfile | null | undefined; products: Product[] | null;
+  goCatalog: (f: CatFilter) => void;
   onSaved: (p: StoreProfile) => void;
 }) {
   const toast = useToast();
@@ -921,6 +970,12 @@ function SettingsTab({ profile, products, onSaved }: {
   const [minOrder, setMinOrder] = useState(profile?.min_order ? String(profile.min_order) : "");
   const [whatsapp, setWhatsapp] = useState(profile?.whatsapp ?? "");
   const [enabled, setEnabled] = useState(profile?.enabled ?? false);
+  /* أعدادُ ما ينقص **المعروضَ** — لا كلَّ المخزن: عيبُ المتجر بما يراه الزبون. */
+  const shownAll = (products ?? []).filter((p) => p.store_visible);
+  const noPriceCount = shownAll.filter((p) => (p.sell_price ?? 0) <= 0).length;
+  const noStockCount = shownAll.filter((p) => p.stock <= 0 && !p.pooled).length;
+  const noPhotoShown = shownAll.filter((p) => !p.image_path).length;
+  const noDescCount = shownAll.filter((p) => !p.store_desc).length;
   const [saving, setSaving] = useState(false);
   const [slugState, setSlugState] = useState<"idle" | "checking" | "ok" | "taken" | "invalid">("idle");
   const [copied, setCopied] = useState(false);
@@ -1105,12 +1160,35 @@ function SettingsTab({ profile, products, onSaved }: {
           </div>
         </div>
 
-        {/* جاهزية المتجر */}
+        {/* جاهزية المتجر — **صادقةٌ بالعدد**، وكلُّ سطرٍ يفتح تصفيتَه.
+            كانت ثلاثةَ سطورٍ عامّة تقول «١٣ منتج معروض» وتسكت عن أنّ ثلاثةً
+            منها نافدةٌ وواحداً بلا سعرٍ وثلاثةَ عشرَ بلا صورة. «جاهز» بهذا
+            المعنى ادّعاءٌ، والدكتورُ يكتشفه من شكوى زبون. */}
         <div className="card space-y-2.5 p-4">
-          <p className="font-display text-sm font-bold text-ink">جاهزية متجرك</p>
-          <ReadyRow ok={isValidSlug(normalizeSlug(slug))} label="رابط مميز محفوظ" />
-          <ReadyRow ok={shownCount > 0} label={shownCount > 0 ? `${formatNum(shownCount)} منتج معروض` : "أضف منتجات للتشكيلة"} />
-          <ReadyRow ok={enabled} label="المتجر مفعّل" />
+          <p className="font-display text-sm font-bold text-ink">{t("cat.ready", "جاهزية متجرك")}</p>
+          <ReadyRow ok={isValidSlug(normalizeSlug(slug))} label={t("cat.readyLink", "رابط مميز محفوظ")} />
+          <ReadyRow ok={shownCount > 0}
+            label={shownCount > 0 ? t("cat.readyShown", "{{n}} منتج معروض", { n: formatNum(shownCount) }) : t("cat.readyAddProducts", "أضف منتجات للتشكيلة")}
+            onGo={() => goCatalog(shownCount > 0 ? "shown" : "hidden")} />
+          <ReadyRow ok={enabled} label={t("cat.readyOn", "المتجر مفعّل")} />
+
+          {/* ما ينقص المعروضَ نفسَه — لا يُعرض سطرٌ عن صفر. */}
+          {noPriceCount > 0 && (
+            <ReadyRow ok={false} warn label={t("cat.readyNoPrice", "{{n}} معروض بلا سعر — ما راح يظهر للزبون", { n: formatNum(noPriceCount) })}
+              onGo={() => goCatalog("noprice")} />
+          )}
+          {noStockCount > 0 && (
+            <ReadyRow ok={false} warn label={t("cat.readyNoStock", "{{n}} معروض نافد", { n: formatNum(noStockCount) })}
+              onGo={() => goCatalog("nostock")} />
+          )}
+          {noPhotoShown > 0 && (
+            <ReadyRow ok={false} label={t("cat.readyNoPhoto", "{{n}} معروض بلا صورة", { n: formatNum(noPhotoShown) })}
+              onGo={() => goCatalog("nophoto")} />
+          )}
+          {noDescCount > 0 && (
+            <ReadyRow ok={false} label={t("cat.readyNoDesc", "{{n}} معروض بلا وصف", { n: formatNum(noDescCount) })}
+              onGo={() => goCatalog("nodesc")} />
+          )}
           <p className="border-t border-line pt-2 text-2xs leading-relaxed text-ink-subtle">
             الطلب يوصلك «جديد» — ولا ينسحب أي مخزون إلا لما تقبله بنفسك. القبول يولّد فاتورة COD ويرسل الطلب لشاشة التوصيل.
           </p>
@@ -1120,13 +1198,39 @@ function SettingsTab({ profile, products, onSaved }: {
   );
 }
 
-function ReadyRow({ ok, label }: { ok: boolean; label: string }) {
+function SetupStep({ n, done, label, cta, onGo }: { n: number; done: boolean; label: string; cta: string; onGo: () => void }) {
   return (
-    <p className={cn("flex items-center gap-2 text-xs font-semibold", ok ? "text-success-600" : "text-ink-subtle")}>
-      {ok ? <CheckCircle2 size={14} /> : <span className="grid h-3.5 w-3.5 place-items-center rounded-full border-2 border-line-strong" />}
-      {label}
-    </p>
+    <div className="flex flex-wrap items-center gap-2.5">
+      <span className={cn("grid h-6 w-6 shrink-0 place-items-center rounded-full text-2xs font-bold",
+        done ? "bg-success-500 text-white" : "bg-brand-600 text-white")}>
+        {done ? <Check size={13} /> : formatNum(n)}
+      </span>
+      <span className={cn("min-w-0 flex-1 text-xs font-semibold", done ? "text-success-700 dark:text-success-200" : "text-ink")}>{label}</span>
+      {!done && (
+        <button type="button" onClick={() => { playTap(); onGo(); }}
+          className="shrink-0 rounded-xl bg-brand-600 px-3 py-1.5 text-2xs font-bold text-white transition active:scale-95">{cta}</button>
+      )}
+    </div>
   );
+}
+
+function ReadyRow({ ok, label, warn, onGo }: { ok: boolean; label: string; warn?: boolean; onGo?: () => void }) {
+  const body = (
+    <>
+      {ok ? <CheckCircle2 size={14} className="shrink-0" />
+          : warn ? <AlertTriangle size={14} className="shrink-0" />
+          : <span className="grid h-3.5 w-3.5 shrink-0 place-items-center rounded-full border-2 border-line-strong" />}
+      <span className="min-w-0 flex-1 text-start">{label}</span>
+      {onGo && <ExternalLink size={12} className="shrink-0 opacity-50" />}
+    </>
+  );
+  const cls = cn("flex w-full items-center gap-2 text-xs font-semibold",
+    ok ? "text-success-600" : warn ? "text-warn-700 dark:text-warn-200" : "text-ink-subtle",
+    onGo && "rounded-lg transition hover:bg-surface-2");
+  // سطرٌ يقول عدداً ويوصّل إليه: الدكتورُ ما يبحث يدوياً بتسعِمئة صنف.
+  return onGo
+    ? <button type="button" onClick={() => { playTap(); onGo(); }} className={cls}>{body}</button>
+    : <p className={cls}>{body}</p>;
 }
 
 function Kpi({ icon: Icon, tone, label, value, pulse }: { icon: typeof Inbox; tone: "brand" | "success" | "accent" | "danger"; label: string; value: string; pulse?: boolean }) {
