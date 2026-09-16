@@ -424,6 +424,15 @@ function labLifecycleFields(input: Omit<LabResult, "id" | "created_at" | "clinic
   };
 }
 
+/** رسالةُ «قرار الطلب نهائي» — نصٌّ واحدٌ بموضعين كانا يكرّرانه حرفياً.
+ *  مرآةُ محفّز 0176، ومرآةُ حارس `store_accept_order` معه (0183). */
+function decisionLocked(status: string): Error {
+  const st = status === "accepted" ? i18next.t("pos.storeDecidedAccepted", "مقبولٌ وانفوتر")
+    : status === "rejected" ? i18next.t("pos.storeDecidedRejected", "مرفوض")
+    : i18next.t("pos.storeDecidedCancelled", "ملغى");
+  return new Error(i18next.t("pos.storeDecisionLocked", { st, defaultValue: "قرار الطلب نهائي: طلبٌ {{st}} ما يرجع «جديد» ولا يتقرّر مرتين. إذا صار خطأ، عالجه بمرتجعٍ من شاشة المبيعات." }));
+}
+
 const demoRepo = {
   async listPets(ownerId: string): Promise<Pet[]> {
     return loadDB().pets.filter((p) => p.owner_id === ownerId);
@@ -1576,14 +1585,65 @@ const demoRepo = {
     // قبولٌ مكرّر عبَر التجريبيَّ بصمتٍ بينما الإنتاج يرميه (فحص التطابق ٠٩/٠٩).
     if (patch.status !== undefined && patch.status !== o.status) {
       if (o.status !== "new" || !["accepted", "rejected", "cancelled"].includes(patch.status)) {
-        const st = o.status === "accepted" ? i18next.t("pos.storeDecidedAccepted", "مقبولٌ وانفوتر")
-          : o.status === "rejected" ? i18next.t("pos.storeDecidedRejected", "مرفوض")
-          : i18next.t("pos.storeDecidedCancelled", "ملغى");
-        throw new Error(i18next.t("pos.storeDecisionLocked", { st, defaultValue: "قرار الطلب نهائي: طلبٌ {{st}} ما يرجع «جديد» ولا يتقرّر مرتين. إذا صار خطأ، عالجه بمرتجعٍ من شاشة المبيعات." }));
+        throw decisionLocked(o.status);
       }
       patch = { ...patch, decided_at: new Date().toISOString() };
     }
     Object.assign(o, patch); saveDB(db);
+  },
+  /** مرآةُ `store_accept_order` (0183): الفاتورةُ والتوصيلُ والختمُ معاً أو لا
+   *  شيء. حارسٌ ليس بالمرآة حارسٌ لم يُفحص — وفحوصُ المنطق تجري هنا. */
+  async acceptStoreOrder(id: string, courierId?: string | null): Promise<{ ok: true; already: boolean; invoice_id: string }> {
+    const db = loadDB();
+    const o = (db.storeOrders ?? []).find((x) => x.id === id);
+    if (!o) throw new Error(i18next.t("pos.storeOrderNotFound", "ما لكينا هذا الطلب."));
+    if (o.status === "accepted") return { ok: true, already: true, invoice_id: o.invoice_id as string };
+    if (o.status !== "new") throw decisionLocked(o.status);
+    const prods = db.products ?? [];
+    const items: CheckoutItem[] = (o.items ?? []).map((it) => {
+      const p = prods.find((x) => x.id === it.product_id);
+      return {
+        product_id: p ? it.product_id : null, name: it.name, barcode: p?.barcode ?? null,
+        qty: it.qty, unit_price: it.price, unit_cost: p?.purchase_price ?? 0,
+        stock_qty: p ? it.qty : 0, unit_label: null,
+      };
+    });
+    if ((o.delivery_fee ?? 0) > 0) {
+      items.push({ product_id: null, name: i18next.t("retail.deliveryFeeLine", "أجرة توصيل"), barcode: null, qty: 1,
+                   unit_price: o.delivery_fee, unit_cost: 0, stock_qty: 0, unit_label: null });
+    }
+    const invoice = await demoRepo.retailCheckout(items, {
+      customer_name: o.customer_name, customer_phone: o.customer_phone, final_total: o.total,
+      amount_paid: 0,
+      notes: i18next.t("pos.storeOrderNote", { no: o.order_no, defaultValue: "طلب متجر {{no}}" })
+        + (o.note ? ` — ${o.note}` : ""),
+      client_ref: `store-${o.id}`,
+    } as SaleMeta);
+    await demoRepo.createDeliveryOrder({
+      clinic_id: o.clinic_id ?? null, invoice_id: invoice.id, branch_id: null,
+      courier_id: courierId ?? null, customer_name: o.customer_name, customer_phone: o.customer_phone,
+      zone: null, address: o.address ?? null, note: o.note ?? null,
+      delivery_fee: o.delivery_fee ?? 0, fee_to_clinic: (o.delivery_fee ?? 0) > 0,
+      cod_amount: Math.max(0, invoice.total - (invoice.amount_paid ?? 0)), prepaid: invoice.amount_paid ?? 0,
+      status: courierId ? "out" : "preparing",
+      dispatched_at: courierId ? new Date().toISOString() : null, delivered_at: null, returned_at: null,
+    });
+    await demoRepo.updateStoreOrder(o.id, { status: "accepted", invoice_id: invoice.id });
+    return { ok: true, already: false, invoice_id: invoice.id };
+  },
+  /** مرآةُ `store_reject_stale`: رفضٌ جماعيٌّ للمعلَّق القديم — بديلُ «سياسة
+   *  DELETE» التي تخالف قانونَ البيت (الحذفُ طيٌّ لا محو). */
+  async rejectStaleStoreOrders(olderThanHours = 24): Promise<number> {
+    const db = loadDB();
+    const cut = Date.now() - Math.max(olderThanHours, 1) * 3600_000;
+    let n = 0;
+    for (const o of db.storeOrders ?? []) {
+      if (o.status === "new" && new Date(o.created_at).getTime() < cut) {
+        o.status = "rejected"; o.decided_at = new Date().toISOString(); n++;
+      }
+    }
+    if (n) saveDB(db);
+    return n;
   },
 
   /* ---- رحلة الحيوان بالعيادة (متتبّع المالك) ---- */
@@ -3080,6 +3140,8 @@ const DEMO_ACTIVITY_MAP: Record<string, { entity: string; action: "INSERT" | "UP
   updateGeneratedBarcode: { entity: "generated_barcodes", action: "UPDATE" },
   saveStoreProfile: { entity: "store_profiles", action: "UPDATE" },
   updateStoreOrder: { entity: "store_orders", action: "UPDATE" },
+  acceptStoreOrder: { entity: "store_orders", action: "UPDATE" },
+  rejectStaleStoreOrders: { entity: "store_orders", action: "UPDATE" },
   placeStoreOrder: { entity: "store_orders", action: "INSERT" },
   deleteProblem: { entity: "pet_problems", action: "DELETE" },
   addClinicVisit: { entity: "clinic_visits", action: "INSERT" },
@@ -4264,6 +4326,15 @@ const supabaseRepo: typeof demoRepo = {
     // يصيح، وإلا قيل «قبلت الطلب» ولا شيءَ انحفظ — درسُ «الكتابة تُسمَع».
     updated<StoreOrder>(await sbc().from("store_orders").update(patch).eq("id", id).select().maybeSingle());
   },
+  /** القبولُ الذرّيّ (0183): نداءٌ واحد يفعل الفاتورةَ والتوصيلَ والختم.
+   *  كان ثلاثَ رحلاتٍ من المتصفّح وكلُّ حدٍّ بينها نقطةُ انكسار. */
+  async acceptStoreOrder(id, courierId) {
+    return need<{ ok: true; already: boolean; invoice_id: string }>(
+      await sbc().rpc("store_accept_order", { p_order: id, p_courier: courierId ?? null }));
+  },
+  async rejectStaleStoreOrders(olderThanHours = 24) {
+    return need<number>(await sbc().rpc("store_reject_stale", { p_older_than_hours: olderThanHours }));
+  },
   /* ---- رحلة الحيوان بالعيادة ---- */
   async getActiveJourney(petId) {
     return maybe<Journey>(await sbc().from("journeys").select("*").eq("pet_id", petId).eq("status", "active").maybeSingle()) ?? null;
@@ -5082,7 +5153,7 @@ const READ_ONLY_ALLOWED = new Set<string>([
   // --- كل القراءات (مولَّدة من دوال الريبو نفسها، فلا تسقط واحدة سهواً) ---
   "getActiveJourney", "getClinicVisit", "getDailyNote", "getPet", "getPetBySerial",
   "getPetByToken", "getPetsByIds", "getPetsByOwnerEmail", "getProductByBarcode",
-  "getSharedPetsByOwnerId", "getStoreProfile", "countNewStoreOrders", "listAdmissions", "listAdmissionsForPet",
+  "getSharedPetsByOwnerId", "getStoreProfile", "countNewStoreOrders", "rejectStaleStoreOrders", "listAdmissions", "listAdmissionsForPet",
   "listAllInvoiceItems", "listAllMedia", "listAllPets", "listAllSurgeries", "listAllTreatments",
   "listAllVaccinations", "listAllVisits", "listAppointmentsForDay", "listAppointmentsForOwner",
   "listAppointmentsForPet", "listAppointmentsInRange", "listAuditLog", "listBookingRequests",

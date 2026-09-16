@@ -18,27 +18,24 @@ import {
   Copy, ExternalLink, Sparkles, Link2, AlertTriangle, CheckCircle2, Clock,
   Search, Eye, EyeOff, Pencil, TrendingUp, Truck, PackageX, RefreshCw, StickyNote, BellRing, Camera, ImagePlus,
 } from "lucide-react";
-import type { CheckoutItem, Product, SaleMeta, StoreOrder, StoreProfile } from "@/types";
+import type { Product, StoreOrder, StoreProfile } from "@/types";
 import { useTranslation } from "react-i18next";
 import { repo } from "@/lib/repo";
 import { useAuth } from "@/contexts/AuthContext";
-import { matchStaffToUser } from "@/lib/staffNames";
 import { bumpStoreOrders, useStoreOrderCount, storeAlertsState, enableStoreAlerts } from "@/lib/storeOrdersLive";
 import { normalizeSlug, isValidSlug, storeUrl, categoryLook, productImageUrl, shelfLook, shelfMonogram } from "@/lib/storeLib";
 import { prepareUpload } from "@/lib/image";
 import { ImageLibraryPicker } from "@/components/inventory/ImageLibraryPicker";
 import { searchable } from "@/lib/utils";
-import { branchStore } from "@/lib/branchStore";
 import { waNumber } from "@/lib/phone";
 import { getDialCode } from "@/lib/settings";
-import { withTimeout, describeUploadError } from "@/lib/errors";
+import { withTimeout, describeUploadError, describeDbError } from "@/lib/errors";
 import { playTap, playSuccess, playWarning, playAchievement } from "@/lib/sounds";
 import { Button, Badge, Skeleton, useToast } from "@/components/ui";
 import { cn, money, formatNum, formatDate, currencySymbol } from "@/lib/utils";
 
 type Tab = "orders" | "catalog" | "settings";
 
-const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
 
 /** رسالة خطأ إنسانية مختصرة من أي استثناء. */
 const errMsg = (e: unknown) => (e instanceof Error && e.message ? e.message : "خطأ غير متوقع — جرب من جديد");
@@ -146,7 +143,7 @@ export function ClinicStore() {
       <AnimatePresence mode="wait">
         <motion.div key={tab} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.18 }}>
           {tab === "orders"
-            ? <OrdersTab orders={orders} products={products} profile={profile ?? null} clinicId={clinicId} reload={load} goSettings={() => setTab("settings")} />
+            ? <OrdersTab orders={orders} products={products} profile={profile ?? null} reload={load} goSettings={() => setTab("settings")} />
             : tab === "catalog"
               ? <CatalogTab products={products} reload={load} storeOn={!!profile?.enabled} />
               : <SettingsTab profile={profile} products={products} onSaved={(p) => { setProfile(p); }} />}
@@ -158,12 +155,13 @@ export function ClinicStore() {
 
 /* ============================== الطلبات ============================== */
 
-function OrdersTab({ orders, products, profile, clinicId, reload, goSettings }: {
+/* `clinicId` و`user` ما عادا لازمين هنا: بناءُ الفاتورة ونسبتُها انتقلا
+ * للخادم (0183)، والدالّةُ تفحص العيادةَ والدورَ بنفسها. */
+function OrdersTab({ orders, products, profile, reload, goSettings }: {
   orders: StoreOrder[] | null; products: Product[] | null; profile: StoreProfile | null;
-  clinicId?: string; reload: () => Promise<void>; goSettings: () => void;
+  reload: () => Promise<void>; goSettings: () => void;
 }) {
   const { t } = useTranslation();
-  const { user } = useAuth();
   const toast = useToast();
   const [busy, setBusy] = useState<string | null>(null);
   const [confirmReject, setConfirmReject] = useState<StoreOrder | null>(null);
@@ -181,84 +179,29 @@ function OrdersTab({ orders, products, profile, clinicId, reload, goSettings }: 
   /** القبول = لحظة الحقيقة: فاتورة عبر محرك البيع الموجود (المخزون ينسحب هنا
    *  حصراً — بنفس منطق الوحدات الجزئية والمخزون المجمّع) ثم طلب توصيل بخط
    *  التوصيل المجرب، ثم يُختم طلب المتجر «مقبول» بمرجع الفاتورة. */
+  /** القبول = لحظةُ الحقيقة، ونداءٌ واحد (0183).
+   *
+   *  كان ثلاثَ رحلات: فاتورةٌ ثم صفُّ توصيلٍ ثم ختمُ الطلب — وكلُّ حدٍّ بينها
+   *  نقطةُ انكسار. نجحت الفاتورةُ وفشل الختمُ ⇒ الطلبُ «جديد» والبضاعةُ خرجت.
+   *  نجح الختمُ وفشل التوصيلُ ⇒ طلبٌ «مقبول» بلا صفِّ توصيلٍ لا يراه أحد.
+   *  صارت معاملةً واحدة بالخادم: الثلاثةُ تقع أو لا يقع شيء. والدالّة تفحص
+   *  العيادةَ والدورَ بنفسها (درسُ 0145) لأنها definer تتجاوز RLS. */
   const accept = async (o: StoreOrder) => {
     if (busy) return;
     setBusy(o.id);
     try {
-      const items: CheckoutItem[] = o.items.map((it) => {
-        const p = prodById.get(it.product_id);
-        return {
-          // منتج انحذف بعد الطلب → بند خدمة بلا سحب مخزون بدل فشل FK.
-          product_id: p ? it.product_id : null,
-          name: it.name, barcode: p?.barcode ?? null,
-          qty: it.qty, unit_price: it.price, unit_cost: p?.purchase_price ?? 0,
-          stock_qty: p ? it.qty : 0, unit_label: null,
-        };
-      });
-      // أجرة التوصيل إيراد للعيادة (الدكتور يوصّل بنفسه) → بند خدمة حقيقي
-      // على الفاتورة حتى تدخل التقارير بلا أي حالة خاصة.
-      if (o.delivery_fee > 0) {
-        items.push({ product_id: null, name: "أجرة توصيل", barcode: null, qty: 1, unit_price: o.delivery_fee, unit_cost: 0, stock_qty: 0, unit_label: null });
-      }
-      const staffM = await matchStaffToUser(user?.id, user?.email).catch(() => null); /* swallow-ok: نسبةُ البيعة لموظّفٍ إثراءٌ اختياريّ — غيابُها لا يمنع قبولَ الطلب ولا يغيّر مالاً */
-      const meta: SaleMeta = {
-        customer_name: o.customer_name, customer_phone: o.customer_phone, pet_name: null,
-        final_total: o.total, payment_method: null, payment_details: null,
-        amount_paid: 0, // COD — الفلوس تدخل عند التسليم عبر شاشة التوصيل
-        staff_id: staffM?.id ?? null,
-        notes: `طلب متجر ${o.order_no}${o.note ? ` — ${o.note}` : ""}`,
-        // مرجعٌ ثابت من الطلب نفسه (0135): قبولٌ أُعيد بعد مهلةٍ أو انقطاعٍ يرجع
-        // الفاتورةَ الأولى بدل أن يبيع البضاعةَ مرّتين ويُنقص المخزون مرّتين.
-        client_ref: `store-${o.id}`,
-      };
-      const invoice = await withTimeout(repo.retailCheckout(items, meta), 12000);
-      /* صفُّ التوصيل قبل ختمِ الطلب — والختمُ لا يقع إن فشل.
-       *
-       * كان الفشلُ يُبلَّغ بتوست خطأ ثمّ يُختم الطلبُ «مقبولاً» ويُطلق توستُ
-       * **نجاحٍ** يقول «تلكاه جاهز بشاشة التوصيل» — نفيٌ صريحٌ لما قيل قبله
-       * بسطرين، والطلبُ يخرج من طابور «الجديد» فلا يبقى له أثرٌ يُرى.
-       *
-       * وتركُه «جديداً» هو المخرج، وصار مأموناً بطرفين: `client_ref` الثابت
-       * (0135) يُرجع الفاتورةَ الأولى نفسَها بلا خصمِ مخزونٍ ثانٍ، والفهرسُ
-       * الفريد (0180) يمنع صفَّ توصيلٍ ثانياً — فالزرُّ القائم «اقبل» هو
-       * إعادةُ المحاولة، بلا شاشةٍ جديدة. */
-      let dlvOk = true;
-      try {
-        await withTimeout(repo.createDeliveryOrder({
-          clinic_id: clinicId ?? null,
-          invoice_id: invoice.id,
-          branch_id: branchStore.branchForWrite(),
-          courier_id: null,
-          customer_name: o.customer_name,
-          customer_phone: o.customer_phone,
-          address: o.address ?? null,
-          note: o.note ?? null,
-          delivery_fee: o.delivery_fee,
-          fee_to_clinic: o.delivery_fee > 0,
-          cod_amount: round2(Math.max(0, invoice.total - (invoice.amount_paid ?? 0))),
-          prepaid: invoice.amount_paid ?? 0,
-          status: "preparing",
-          dispatched_at: null, delivered_at: null, returned_at: null,
-        }), 12000);
-      } catch {
-        dlvOk = false;
-      }
-      if (!dlvOk) {
-        playWarning();
-        toast.error(t("pos.storeAcceptDlvFail", "الطلب {{no}}: الفاتورة انولدت بس طلب التوصيل ما انسجّل — خلّينا الطلب «جديد».", { no: o.order_no }),
-                    t("pos.storeAcceptDlvFailHint", "اضغط «اقبل» مرّة ثانية. ما راح تنولد فاتورة ثانية ولا ينسحب المخزون مرّتين."));
-        await reload();
-        return;
-      }
-      // الختمُ الزمنيّ من الخادم (محفّز 0176) ومرآتُه التجريبية — لا من المتصفح.
-      await repo.updateStoreOrder(o.id, { status: "accepted", invoice_id: invoice.id });
+      const r = await withTimeout(repo.acceptStoreOrder(o.id), 15000);
       playAchievement();
-      toast.success(`قبلت الطلب ${o.order_no} ✅`, "انولدت فاتورته وانسحب المخزون، وتلكاه جاهز بشاشة التوصيل.");
+      toast.success(
+        r.already
+          ? t("pos.storeAcceptAlready", "الطلب {{no}} كان مقبولاً أصلاً", { no: o.order_no })
+          : t("pos.storeAcceptOk", "قبلت الطلب {{no}} ✅", { no: o.order_no }),
+        t("pos.storeAcceptOkHint", "انولدت فاتورته وانسحب المخزون، وتلكاه جاهز بشاشة التوصيل."));
       bumpStoreOrders();
       await reload();
     } catch (e) {
       playWarning();
-      toast.error("تعذّر قبول الطلب", errMsg(e));
+      toast.error(t("pos.storeAcceptFail", "تعذّر قبول الطلب"), describeDbError(e, t));
     } finally {
       setBusy(null);
     }

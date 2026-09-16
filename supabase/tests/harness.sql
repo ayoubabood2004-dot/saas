@@ -23,6 +23,10 @@ end $$;
 
 -- ملفّات ودالّات الهوية كما هي بالنظام
 create table if not exists profiles (id uuid primary key, role text, roles text[]);
+-- اسمُ العيادة وهاتفُها: `store_front` تقرأهما، وغيابُهما كان يُسقط بدنَها —
+-- والفحصُ ما وصله قطّ لأن المتجرَ كان يرجع «مغلق» قبله. مقيسان من الإنتاج.
+alter table profiles add column if not exists full_name text;
+alter table profiles add column if not exists phone     text;
 create table if not exists memberships (
   id uuid primary key default gen_random_uuid(),
   user_id uuid, clinic_id uuid, role text, status text, created_at timestamptz default now()
@@ -274,6 +278,17 @@ create table if not exists delivery_orders (
   status text not null default 'preparing', created_at timestamptz not null default now(),
   dispatched_at timestamptz, delivered_at timestamptz, returned_at timestamptz);
 create index if not exists delivery_orders_courier_idx on delivery_orders(courier_id);
+-- بقيّةُ أعمدة الإنتاج: 0069 و0099 و0148 خارج الموجة (تبدأ 0124)، فالأساسُ
+-- يحملها. وبدونها كان `store_accept_order` يفشل بـ«لا عمود address» — عالَمٌ
+-- أضيقُ من الإنتاج يخفي ما يمرّ عليه فعلاً. مقيسةٌ من القاعدة الحيّة.
+alter table delivery_orders add column if not exists customer_phone text;
+alter table delivery_orders add column if not exists address        text;
+alter table delivery_orders add column if not exists note           text;
+alter table delivery_orders add column if not exists delivery_fee   numeric not null default 0;
+alter table delivery_orders add column if not exists fee_to_clinic  boolean not null default false;
+alter table delivery_orders add column if not exists branch_id      uuid;
+alter table delivery_orders add column if not exists zone           text;
+alter table delivery_orders add column if not exists collected_at   timestamptz;
 -- فهرسُ 0069 العاديّ — والأساسُ يحمله لأن 0069 خارجَ الموجة (تبدأ 0124). بدونه
 -- كان فحصُ «العاديُّ المكرَّر انشال» بـ0180 يمرّ على جدولٍ لم يكن فيه أصلاً.
 create index if not exists delivery_orders_invoice_idx on delivery_orders(invoice_id);
@@ -320,6 +335,9 @@ create table if not exists clinic_prefs (
 alter table clinic_prefs add column if not exists dial_code           text not null default '+964';
 alter table clinic_prefs add column if not exists updated_at          timestamptz not null default now();
 alter table clinic_prefs add column if not exists logo_url            text;
+alter table clinic_prefs add column if not exists clinic_name         text;
+alter table clinic_prefs add column if not exists social_facebook     text;
+alter table clinic_prefs add column if not exists social_instagram    text;
 alter table clinic_prefs add column if not exists social_facebook     text;
 alter table clinic_prefs add column if not exists social_instagram    text;
 alter table clinic_prefs add column if not exists pre_sale_print      boolean not null default false;

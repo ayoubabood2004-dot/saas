@@ -25,7 +25,7 @@ MIG="$HERE/../migrations"
 # و0095/0096/0158 بالمقدّمة رغم أنها أقدمُ من 0124: الموجةُ تبدأ من 0124 لأن
 # الأساس يوفّر ما قبلها جاهزاً — لكنّ هذه الثلاثَ تُنشئ المتجرَ والبوّابة،
 # وكانت خارجَ الفحص كلَّه. تُنزَّل بترتيبها الحقيقيّ قبل الموجة.
-WAVE="$MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql"
+WAVE="$MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql"
 
 command -v "$PGBIN/initdb" >/dev/null || { echo "ما لكيت بوستغريس بـ $PGBIN"; exit 1; }
 
@@ -1542,6 +1542,12 @@ $P -c "update _dvtest_flags set admin = false;" >/dev/null
 
 # ── 0176: قرار الطلب نهائي، والتتبّع برقمٍ وهاتفٍ معاً ───────────────────────
 echo "▸ 0176: حارس حالة الطلب وتتبّع الزبون"
+# صفُّ اشتراكٍ فعّال: كلُّ عيادةٍ حيّةٍ لها واحد (الأربعُ المقيسة على باقةٍ
+# مدفوعةٍ سارية)، ومتجرٌ بلا اشتراكٍ حالةٌ لا تنتجها القاعدة. وبدونه صار
+# `store_front` يقول «مغلق» بحقّ — فالقالبُ يُقاس على ما تُنتجه القاعدة فعلاً.
+$P -c "insert into subscriptions (clinic_id, plan, current_period_end)
+         values ('$C1', 'super', now() + interval '1 year')
+       on conflict (clinic_id) do update set current_period_end = now() + interval '1 year';" >/dev/null 2>&1
 $P -c "insert into store_profiles (clinic_id, slug, enabled) values ('$C1', 'trackclinic', true) on conflict (clinic_id) do update set slug = 'trackclinic';
        insert into store_orders (id, clinic_id, order_no, customer_name, customer_phone, items, subtotal, status, total)
          values ('ee176000-0000-4000-8000-000000000001', '$C1', 'SO-TST01', 'زبون التتبّع', '0770 123 4567', '[]'::jsonb, 25000, 'new', 25000)
@@ -1660,6 +1666,74 @@ chk "  والنافدُ باقٍ بالكتلوج مُعلَّماً لا محذ
 $P -c "drop table if exists _o182_before;" >/dev/null 2>&1
 chk "  والدالّة definer بمسارٍ مثبَّت وstable" \
     "select (prosecdef and provolatile='s' and coalesce(array_to_string(proconfig,','),'') like '%search_path%')::text from pg_proc where proname='store_catalog'" "true"
+
+# ── 0183: القبولُ ذرّيّ، والأعمدةُ مجمَّدة، والحدودُ على ما ينتظر ──────────
+# الجذر: القبولُ كان ثلاثَ رحلاتٍ من المتصفّح (فاتورة ← توصيل ← ختم)، وكلُّ
+# حدٍّ بينها نقطةُ انكسار: فاتورةٌ بلا ختمٍ تترك الطلبَ «جديداً» والبضاعةَ
+# خارجة، وختمٌ بلا توصيلٍ يترك طلباً «مقبولاً» لا يراه أحد. صارت معاملةً واحدة.
+echo "▸ 0183: القبولُ الذرّيّ وحرّاسُ الطلب"
+$P -c "insert into products (id, clinic_id, name, sell_price, purchase_price, stock, store_visible)
+         values ('a1830000-0000-4000-8000-000000000001','$C1','منتج القبول',5000,3000,20,true)
+       on conflict (id) do update set stock = 20, store_visible = true;
+       insert into store_orders (id, clinic_id, order_no, customer_name, customer_phone, items, subtotal, delivery_fee, total, status)
+         values ('e1830000-0000-4000-8000-000000000001','$C1','SO-ACC01','زبون القبول','0770 111 2233',
+                 jsonb_build_array(jsonb_build_object('product_id','a1830000-0000-4000-8000-000000000001','name','منتج القبول','qty',2,'price',5000,'total',10000)),
+                 10000, 2000, 12000, 'new')
+       on conflict (id) do nothing;" >/dev/null
+# `_pf` تضبط هويّةَ المستدعي قبل التنفيذ: الدالّةُ definer وتفحص العيادةَ
+# والدورَ بنفسها (درس 0145)، فبلا هويّةٍ ترفض — وهذا هو المقصود.
+chk "القبولُ يولّد الفاتورةَ وصفَّ التوصيل ويختم الطلبَ بنداءٍ واحد" \
+    "select (_pf('$C1', 'select store_accept_order(''e1830000-0000-4000-8000-000000000001'')::text')::jsonb->>'ok')" "true"
+chk "  والطلبُ صار مقبولاً بمرجع فاتورته" \
+    "select (status = 'accepted' and invoice_id is not null)::text from store_orders where id='e1830000-0000-4000-8000-000000000001'" "true"
+chk "  وصفُّ التوصيل انولد بنفس الفاتورة" \
+    "select (count(*) = 1)::text from delivery_orders d join store_orders o on o.invoice_id = d.invoice_id where o.id='e1830000-0000-4000-8000-000000000001'" "true"
+chk "  والمخزونُ انسحب مرّةً واحدة (20−2=18)" \
+    "select stock::int::text from products where id='a1830000-0000-4000-8000-000000000001'" "18"
+chk "  وأجرةُ التوصيل بندُ خدمةٍ على الفاتورة لا حالةٌ خاصّة" \
+    "select (count(*) = 1)::text from invoice_items ii join store_orders o on o.invoice_id = ii.invoice_id where o.id='e1830000-0000-4000-8000-000000000001' and ii.name = 'أجرة توصيل'" "true"
+chk "قبولٌ أُعيد يرجع نفسَ الفاتورة ولا يسحب مخزوناً ثانياً" \
+    "select (_pf('$C1', 'select store_accept_order(''e1830000-0000-4000-8000-000000000001'')::text')::jsonb->>'already')" "true"
+chk "  والمخزون ما تحرّك" \
+    "select stock::int::text from products where id='a1830000-0000-4000-8000-000000000001'" "18"
+chk "  وعيادةٌ أخرى لا تقبل طلبَ الأولى" \
+    "select left(_pf_try('$C2', 'select store_accept_order(''e1830000-0000-4000-8000-000000000001'')::text'), 7)" "guarded"
+# تجميدُ الأعمدة — بدور `authenticated` لا superuser، وإلا مرّ المحفّزُ بلا شدّ.
+chk "بنودُ الطلب مجمَّدة: تعديلُ المجموع يُرفض بـhint عربيّ" \
+    "select left(_rls_try('$C1', 'update store_orders set total = 1 where id = ''e1830000-0000-4000-8000-000000000001'''), 13)" "guarded:P0001"
+chk "  وهاتفُ الزبون كذلك" \
+    "select left(_rls_try('$C1', 'update store_orders set customer_phone = ''0000'' where id = ''e1830000-0000-4000-8000-000000000001'''), 13)" "guarded:P0001"
+# فخُّ ترتيب المحفّزات: BEFORE تُطلَق أبجدياً، فاسمُ التجميد لازم يسبق حارسَ 0176.
+chk "محفّزُ التجميد يسبق حارسَ الحالة أبجدياً (وإلا انقلب كلُّ قبولٍ خطأً)" \
+    "select (min(tgname) = 'store_orders_before_update_freeze')::text from pg_trigger where tgrelid='store_orders'::regclass and not tgisinternal and tgname like 'store_orders_before%'" "true"
+chk "  وكلاهما invoker لا definer (نمط 0162)" \
+    "select (bool_and(not prosecdef))::text from pg_proc where proname in ('store_orders_guard_freeze','store_orders_guard_status')" "true"
+# الحدود: العدُّ على ما ينتظر لا على كلّ الحالات.
+# ثلاثمئةُ طلبٍ مبتوتٍ **قبل خمس ساعات**: داخل نافذة اليوم وخارج نافذة الساعة.
+# حشرُها بلحظةٍ واحدة كان يُشعل سقفَ الساعة الذي أضافته هذه الهجرة — والقالبُ
+# يُقاس على ما تُنتجه القاعدةُ فعلاً: طلباتُ يومٍ كامل لا تصل بثانية.
+$P -c "insert into store_orders (clinic_id, order_no, customer_name, customer_phone, items, subtotal, total, status, created_at)
+         select '$C1', 'SO-OLD'||g, 'مبتوت', '0771 999 0000', '[]'::jsonb, 100, 100, 'rejected', now() - interval '5 hours' from generate_series(1,300) g;" >/dev/null
+chk "ثلاثمئةُ طلبٍ **مبتوت** لا تُقفل الباب (الحدُّ على ما ينتظر)" \
+    "select coalesce(store_place_order('trackclinic','زبون جديد','0779 123 4567','عنوان','', jsonb_build_array(jsonb_build_object('product_id','a1830000-0000-4000-8000-000000000001','qty',1)))->>'error','none')" "none"
+# الرفضُ الجماعيّ: بديلُ «سياسة DELETE» التي تخالف قانونَ البيت (الحذفُ طيّ).
+# معلَّقاتٌ قديمةٌ للرفض الجماعيّ — تُزرع «جديدة» ابتداءً: إرجاعُ مرفوضٍ إلى
+# «جديد» يمنعه حارسُ 0176 بحقّ (قرارُ الطلب نهائيّ)، فالقالبُ لا يخرقه ليختبر.
+$P -c "insert into store_orders (clinic_id, order_no, customer_name, customer_phone, items, subtotal, total, status, created_at)
+         select '$C1', 'SO-STALE'||g, 'معلَّق قديم', '0772 888 0000', '[]'::jsonb, 100, 100, 'new', now() - interval '48 hours' from generate_series(1,5) g;" >/dev/null
+chk "الرفضُ الجماعيّ يبتّ القديمَ المعلَّق بضغطة" \
+    "select (_pf('$C1', 'select store_reject_stale(24)::text')::int > 0)::text" "true"
+chk "  ولا يبقى معلَّقٌ أقدمُ من يوم" \
+    "select count(*)::text from store_orders where clinic_id='$C1' and status='new' and created_at < now() - interval '24 hours'" "0"
+# الاشتراك: منتهٍ ⇒ المتجرُ يقول «مغلق» بدل أن يَعِد بلا وفاء.
+$P -c "update subscriptions set current_period_end = now() - interval '1 day', trial_ends_at = now() - interval '1 year' where clinic_id='$C1';" >/dev/null
+chk "اشتراكٌ منتهٍ يُغلق واجهةَ المتجر" \
+    "select store_front('trackclinic')->>'error'" "closed"
+chk "  ويمنع وقوعَ طلبٍ لا أحدَ يقدر يقبله" \
+    "select store_place_order('trackclinic','زبون','0779 555 1122','عنوان','', jsonb_build_array(jsonb_build_object('product_id','a1830000-0000-4000-8000-000000000001','qty',1)))->>'error'" "closed"
+$P -c "update subscriptions set current_period_end = now() + interval '1 year' where clinic_id='$C1';" >/dev/null
+chk "  ويرجع بالتجديد" \
+    "select coalesce(store_front('trackclinic')->>'error','open')" "open"
 
 # ── الموجة ١ «البرهان»: ما صار يُفحص بعد أن دخل المتجرُ والبوّابةُ الحزمة ────
 # الجذر: 0095 و0096 و0158 — المتجرُ كلُّه وبوّابةُ المالك — كانت **خارج** هذه
