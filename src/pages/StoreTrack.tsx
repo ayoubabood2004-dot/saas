@@ -5,7 +5,7 @@
 // والهاتف يعرفه صاحب الطلب وحده. الخادم يرجع الحالة والتوقيت فقط — لا
 // عنوان ولا أصناف، فتسريبُ رقمٍ لا يكشف شيئاً يُذكر.
 // ============================================================================
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useParams, useSearchParams, Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { PackageSearch, CheckCircle2, XCircle, Clock3, ArrowRight } from "lucide-react";
@@ -15,10 +15,15 @@ import { cn, money } from "@/lib/utils";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
 import type { StoreTrackInfo } from "@/types";
 import { lastOrderKey } from "@/lib/storeLib";
+import { preferArabicForVisitor } from "@/lib/portal";
 
 
 export function StoreTrack() {
   const { slug = "" } = useParams();
+  // صفحةُ زائرٍ بلا جلسة: تُعرَّب ما لم يختر الزائرُ لغةً صراحةً. كانت الحاويةُ
+  // `dir="rtl"` وحدَها — فالشكلُ يبدو عربياً والنصوصُ إنكليزية، وهو بالضبط ما
+  // وصفه تعليقُ `portal.ts`: «ما يجعل العطل يمرّ بلا أن يُرى».
+  useEffect(() => { preferArabicForVisitor(); }, []);
   const [sp] = useSearchParams();
   const { t } = useTranslation();
   const [no, setNo] = useState(() => sp.get("no") ?? (() => { try { return localStorage.getItem(lastOrderKey(slug)) ?? ""; } catch { return ""; } })());

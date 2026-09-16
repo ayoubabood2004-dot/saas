@@ -90,7 +90,7 @@ import type { ActivityQuery, ActivityRow, ActivitySummaryRow, ActivityActor } fr
 import type { PayrollPolicyDTO, StaffComp, StaffRecurring, PayrollAdjustment, PayrollRun, Payslip, PayslipLine, StaffLoan, StaffLoanEvent, PayslipDraft, PayMethod } from "@/types";
 import * as PD from "./payrollDemo";
 import { paidOf, round2 } from "./debt";
-import { isValidSlug, normalizeSlug, demoOrderNo } from "./storeLib";
+import { isValidSlug, normalizeSlug, matchSlug, slugKey, demoOrderNo } from "./storeLib";
 import { journeyToken, OWNER_REACTIONS } from "./journey";
 import { getClinicName, getClinicLogo, getClinicSocials } from "./settings";
 import { uid, uuid, ageMonths, localISO, normalizeCode, matchCode } from "./utils";
@@ -136,32 +136,64 @@ function createInvoiceLocal(items: CheckoutItem[], meta?: SaleMeta): Invoice {
     const prior = db.invoices.find((v) => v.client_ref === ref);
     if (prior) return prior;
   }
-  const subtotal = items.reduce((s, i) => s + i.qty * i.unit_price, 0);
-  const cost = items.reduce((s, i) => s + i.qty * i.unit_cost, 0);
-  const count = items.reduce((s, i) => s + i.qty, 0);
+  /* ── حسابُ المال: مرآةٌ حرفية لـ`retail_checkout` (0156) ──────────────────
+   *
+   * الفرقُ لم يكن كسرَ فلسٍ من طفوٍ ثنائي: `final_total` كان يُدوَّر بـ
+   * `Math.round` — أي **إلى الدينار الكامل** — بينما الخادمُ `numeric(14,2)`.
+   * فـ1562.5 تصير 1563 هنا و1562.50 هناك: **نصفُ دينارٍ بكلّ فاتورة**، وهو
+   * الفرعُ الوحيدُ الذي تسلكه شاشةُ البيع (SaleBuilder يرسل `final_total` دائماً).
+   *
+   * وثانيةٌ أدقّ: متغيّراتُ الخادم `numeric(14,2)` فالمجموعُ الجاري يُدوَّر
+   * **بعد كل سطر** لا مرّةً بالنهاية. ثلاثةُ سطورٍ بـ0.005 تعطي 0.03 هناك
+   * و0.015 هنا. والكميةُ `numeric(14,3)` تُدوَّر قبل الضرب، و`item_count`
+   * عددٌ صحيح بينما كان يبقى كسرياً (0.125).
+   *
+   * والأعمدةُ مقيسةٌ على الإنتاج لا مفترَضة: المالُ scale=2، الكميةُ 3،
+   * `item_count` integer. */
+  const rq = (n: number) => Math.round(n * 1000) / 1000;
+  let subtotal = 0, cost = 0, count = 0;
+  for (const i of items) {
+    const q = rq(i.qty);
+    subtotal = round2(subtotal + q * i.unit_price);
+    cost = round2(cost + q * i.unit_cost);
+    count = rq(count + q);
+  }
   const dtype = meta?.discount_type ?? null;
+  // v_dinput numeric(12,2): المدخَلُ نفسُه يُدوَّر قبل القصّ.
+  const dinput = round2(meta?.discount_value ?? 0);
   // A cashier-set final price wins outright — it may be a markup ABOVE the subtotal or a
   // discount below it. Otherwise fall back to the percent/fixed discount computation.
-  let total: number; let discount: number;
+  let total: number; let discount: number; let dtypeOut: DiscountType | null;
   if (meta?.final_total != null) {
-    total = Math.max(0, Math.round(meta.final_total));
-    discount = Math.max(0, subtotal - total);
+    total = Math.max(0, round2(meta.final_total));
+    discount = round2(Math.max(0, subtotal - total));
+    // الخادمُ يفرض 'fixed' هنا مهما كان الوسمُ المُرسَل — كان يمرّ 'percent'.
+    dtypeOut = discount > 0 ? "fixed" : null;
+  } else if (dtype === "percent") {
+    discount = round2(subtotal * Math.min(Math.max(dinput, 0), 100) / 100);
+    total = Math.max(0, round2(subtotal - discount));
+    // والوسمُ يبقى ولو كان الخصمُ صفراً — كان يُصفَّر إلى null.
+    dtypeOut = "percent";
+  } else if (dtype === "fixed") {
+    discount = Math.min(Math.max(dinput, 0), subtotal);
+    total = Math.max(0, round2(subtotal - discount));
+    dtypeOut = "fixed";
   } else {
-    discount = resolveDiscount(subtotal, dtype, meta?.discount_value ?? 0);
-    total = Math.max(0, subtotal - discount);
+    discount = 0; dtypeOut = null;
+    total = Math.max(0, subtotal);
   }
   // Amount received today. Absent → paid in full; otherwise clamp into [0, total] (a
   // shortfall becomes a credit/debt sale; any overpayment is change and never exceeds the total).
-  const amountPaid = meta?.amount_paid != null ? Math.max(0, Math.min(total, Math.round(meta.amount_paid * 100) / 100)) : total;
+  const amountPaid = meta?.amount_paid != null ? Math.max(0, Math.min(total, round2(meta.amount_paid))) : total;
   const invoice: Invoice = {
     id: uid("inv"),
     customer_name: meta?.customer_name?.trim() || null,
     customer_phone: meta?.customer_phone?.trim() || null,
     pet_name: meta?.pet_name?.trim() || null,
-    subtotal, discount, discount_type: discount > 0 ? (dtype ?? "fixed") : null,
+    subtotal, discount, discount_type: dtypeOut,
     payment_method: meta?.payment_method ?? null,
     payment_details: meta?.payment_details && meta.payment_details.length ? meta.payment_details : null,
-    total, amount_paid: amountPaid, cost_total: cost, profit: total - cost, item_count: count,
+    total, amount_paid: amountPaid, cost_total: cost, profit: round2(total - cost), item_count: Math.round(count),
     print_count: 0, status: "paid", refunded_at: null,
     staff_id: meta?.staff_id?.trim() || null,
     notes: meta?.notes?.trim() || null,
@@ -200,7 +232,7 @@ function createInvoiceLocal(items: CheckoutItem[], meta?: SaleMeta): Invoice {
         }
       }
     }
-    db.invoiceItems.push({ id: uid("ii"), invoice_id: invoice.id, product_id: i.product_id ?? null, name: i.name, barcode: i.barcode ?? null, qty: i.qty, unit_price: i.unit_price, unit_cost: i.unit_cost, line_total: i.qty * i.unit_price, stock_qty: stockQty, pooled_qty: fromPool, unit_label: i.unit_label ?? null });
+    db.invoiceItems.push({ id: uid("ii"), invoice_id: invoice.id, product_id: i.product_id ?? null, name: i.name, barcode: i.barcode ?? null, qty: rq(i.qty), unit_price: i.unit_price, unit_cost: i.unit_cost, line_total: round2(rq(i.qty) * i.unit_price), stock_qty: stockQty, pooled_qty: fromPool, unit_label: i.unit_label ?? null });
   }
   saveDB(db);
   return invoice;
@@ -301,10 +333,37 @@ function demoActorName(): string | null {
     return s?.raw?.full_name ?? null;
   } catch { return null; }
 }
+/** لا `data:` بسجلّ الجهاز.
+ *
+ *  الصورةُ تُخزَّن تجريبياً **عنواناً مضمَّناً** (`uploadProductImage` ترجع
+ *  `upload.dataUrl`)، فنسخُها بالسجلّ يأكل حصّةَ الجهاز بلا أن يراها أحد:
+ *  `activityBrief` تُسقط ما فوق مئتَي حرفٍ أصلاً، والسجلُّ لا يعرض الحقلَ
+ *  الخام. أي أننا كنّا ندفع بالحصّة ثمنَ بايتاتٍ لا تُقرأ.
+ *
+ *  والمرورُ **عميق** لأن ما يصل `details` ليس صفّاً مسطّحاً دائماً: المُغلِّف
+ *  يمرّر ما ترجعه الدالّة أو أوّلَ وسيطها — ومنها مصفوفاتٌ تُنشر بمفاتيحَ
+ *  رقمية فتصير صفوفاً متداخلة، وحقولٌ مركّبة (`items`، `values`). */
+function auditSafe(v: unknown, depth = 0): unknown {
+  if (typeof v === "string") return v.startsWith("data:") ? `[data:${v.length}]` : v;
+  if (v === null || typeof v !== "object" || depth >= 6) return v;
+  if (Array.isArray(v)) return v.map((x) => auditSafe(x, depth + 1));
+  const out: Record<string, unknown> = {};
+  for (const [k, x] of Object.entries(v as Record<string, unknown>)) out[k] = auditSafe(x, depth + 1);
+  return out;
+}
+/** سقفُ السجلّ **بالمحارف لا بالصفوف**: الحصّةُ تُقاس بالبايت، وخمسُمئة صفٍّ
+ *  قد تكون خمسينَ كيلو كما قد تكون ميغاتٍ. سقفُ العدد يبقى حدّاً أعلى. */
+const DEMO_AUDIT_MAX_CHARS = 256 * 1024;
 function demoAuditPush(e: Omit<AuditEntry, "id" | "created_at" | "actor">) {
-  const details = { ...((e.details ?? {}) as Record<string, unknown>), __actor: demoActorName() };
+  const details = { ...(auditSafe(e.details ?? {}) as Record<string, unknown>), __actor: demoActorName() };
   const entry: AuditEntry = { ...e, details, id: uid("au"), actor: null, created_at: new Date().toISOString() };
-  try { localStorage.setItem(DEMO_AUDIT_KEY, JSON.stringify([entry, ...demoAuditLoad()].slice(0, 500))); } catch { /* ignore */ }
+  try {
+    const list = [entry, ...demoAuditLoad()].slice(0, 500);
+    let raw = JSON.stringify(list);
+    // الأقدمُ يخرج أوّلاً، والأحدثُ لا يخرج أبداً — سطرٌ واحدٌ يبقى مهما كبر.
+    while (list.length > 1 && raw.length > DEMO_AUDIT_MAX_CHARS) { list.pop(); raw = JSON.stringify(list); }
+    localStorage.setItem(DEMO_AUDIT_KEY, raw);
+  } catch { /* swallow-ok: سجلُّ الجهاز ليس قرارَ مالٍ — والكتابةُ نفسُها تُسمَع بـsaveDB */ }
 }
 /** ما يمسّ مالاً أو مخزوناً — يعيش أطول لأنه دليلٌ يُسأل عنه بعد شهور،
  *  لا ضجيجاً ينتهي بيومه. نفس قائمة هجرة 0129 حرفياً. */
@@ -1750,7 +1809,7 @@ const demoRepo = {
   async storeFrontPublic(slug: string): Promise<StoreFrontInfo | null> {
     const db = loadDB();
     const sp = db.storeProfile;
-    if (!sp?.enabled || sp.slug !== normalizeSlug(slug)) return null;
+    if (!sp?.enabled || !matchSlug(sp.slug, slug)) return null;
     const socials = getClinicSocials();
     return {
       name: getClinicName() || "عيادة بيطرية",
@@ -1767,7 +1826,7 @@ const demoRepo = {
   async storeCatalogPublic(slug: string, limit = 60, offset = 0): Promise<StoreCatalogItem[]> {
     const db = loadDB();
     const sp = db.storeProfile;
-    if (!sp?.enabled || sp.slug !== normalizeSlug(slug)) return [];
+    if (!sp?.enabled || !matchSlug(sp.slug, slug)) return [];
     const poolOf = (p: Product) => (db.companySections ?? []).find((s) => s.id === p.section_id)?.pooled_stock ?? 0;
     const cap = Math.min(Math.max(limit, 1), 100); // نفس سقف السيرفر
     return (db.products ?? [])
@@ -1793,7 +1852,7 @@ const demoRepo = {
   async trackStoreOrder(slug: string, orderNo: string, phone: string): Promise<StoreTrackInfo | null> {
     const db = loadDB();
     const sp = db.storeProfile;
-    if (!sp || sp.slug !== normalizeSlug(slug)) return null;
+    if (!sp || !matchSlug(sp.slug, slug)) return null;
     const digits = phone.replace(/\D/g, "");
     if (digits.length < 8 || orderNo.trim().length < 4) return null;
     // آخر عشر خانات كما بالخادم حرفياً (0176): 0770… و+964770… نفس الذيل —
@@ -1810,7 +1869,7 @@ const demoRepo = {
   ): Promise<{ ok: boolean; error?: string; order_no?: string; total?: number; min_order?: number }> {
     const db = loadDB();
     const sp = db.storeProfile;
-    if (!sp?.enabled || sp.slug !== normalizeSlug(slug)) return { ok: false, error: "closed" };
+    if (!sp?.enabled || !matchSlug(sp.slug, slug)) return { ok: false, error: "closed" };
     const name = (info.name ?? "").trim();
     if (name.length < 2 || name.length > 80) return { ok: false, error: "bad_name" };
     const digits = (info.phone ?? "").replace(/\D/g, "");
@@ -1856,7 +1915,7 @@ const demoRepo = {
   async portalRequestCode(slug: string, phone: string): Promise<PortalCodeRequest> {
     const db = loadDB();
     const sp = db.storeProfile;
-    if (!sp || sp.slug !== normalizeSlug(slug)) return { ok: false, error: "closed" };
+    if (!sp || !matchSlug(sp.slug, slug)) return { ok: false, error: "closed" };
     const key = phoneKey(phone);
     if (!key || key.length < 8) return { ok: false, error: "bad_phone" };
     const pets = db.pets.filter((p) => phoneKey(p.owner_phone ?? "") === key && !p.deceased);
@@ -1864,7 +1923,7 @@ const demoRepo = {
     if (pets.length === 0) return { ok: true };
     const code = String(Math.floor(Math.random() * 1_000_000)).padStart(6, "0");
     const codes = readPortalCodes();
-    codes[`${normalizeSlug(slug)}|${key}`] = { code, expires: Date.now() + 10 * 60_000, attempts: 0 };
+    codes[`${slugKey(slug)}|${key}`] = { code, expires: Date.now() + 10 * 60_000, attempts: 0 };
     writePortalCodes(codes);
     // التجريبيّ هو وضعُ التجربة نفسه — لا مزوّدَ رسائل أصلاً بلا خادم.
     return { ok: true, test_code: code };
@@ -1872,11 +1931,11 @@ const demoRepo = {
   async portalVerifyCode(slug: string, phone: string, code: string): Promise<PortalVerifyResult> {
     const db = loadDB();
     const sp = db.storeProfile;
-    if (!sp || sp.slug !== normalizeSlug(slug)) return { ok: false, error: "closed" };
+    if (!sp || !matchSlug(sp.slug, slug)) return { ok: false, error: "closed" };
     const key = phoneKey(phone);
     if (!key || key.length < 8) return { ok: false, error: "bad_code" };
     const codes = readPortalCodes();
-    const id = `${normalizeSlug(slug)}|${key}`;
+    const id = `${slugKey(slug)}|${key}`;
     const row = codes[id];
     // «ما موجود» و«منتهي» و«غلط» ترجع الرسالة نفسها — لا تفريقَ يفيد المخمِّن.
     if (!row || row.expires <= Date.now()) { delete codes[id]; writePortalCodes(codes); return { ok: false, error: "bad_code" }; }
@@ -1889,7 +1948,7 @@ const demoRepo = {
     const token = uid("pt") + Math.random().toString(36).slice(2, 10);
     const expires = new Date(Date.now() + 60 * 24 * 3600_000).toISOString();
     const sessions = readPortalSessions();
-    sessions[token] = { slug: normalizeSlug(slug), key, expires };
+    sessions[token] = { slug: slugKey(slug), key, expires };
     writePortalSessions(sessions);
     return { ok: true, token, expires_at: expires };
   },

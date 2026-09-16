@@ -1,4 +1,5 @@
 import { lazy, Suspense, useEffect, useRef, type ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { isAppHost } from "@/lib/appUrl";
@@ -122,21 +123,30 @@ function DemoBanner() {
  *     فعيادة لا تفتحها لا يُنظَّف سجلها أبداً. هنا يركض مرة كل يوم كحد أقصى. */
 function Housekeeping() {
   const toast = useToast();
+  const { t } = useTranslation();
   const { user } = useAuth();
-  const warned = useRef(false);
+  const warned = useRef(0);
 
   // صندوق الصادر: كتاباتٌ فشلت شبكياً تُرفع تلقائياً عند عودة النت وكل ٣٠ ثانية.
   useEffect(() => { startOutbox(); }, []);
 
   useEffect(() => {
     const onQuotaFull = () => {
-      if (warned.current) return;
-      warned.current = true;
-      toast.error("مساحة التجربة امتلأت", "آخر تغيير ما انحفظ — احذف صوراً أو بيانات قديمة، أو اشترك لتخزين سحابي بلا حدود.");
+      // **خنقٌ بالوقت لا قفلٌ بالمرّة.** كان `warned.current` يقفلها إلى الأبد
+      // بكلّ تحميلِ صفحة، فالضياعُ الثاني وما بعده بلا تفسير. وصار `saveDB`
+      // يرمي — فالمستخدم يرى فعلَه ينقطع، ويستحقّ أن يُقال له لماذا في كلّ
+      // مرّة يحاول فيها بعد فترة، لا مرّةً واحدةً بالجلسة كلِّها.
+      const now = Date.now();
+      if (now - warned.current < 30_000) return;
+      warned.current = now;
+      toast.error(
+        t("errors.demoQuotaTitle", "مساحة التجربة امتلأت"),
+        t("errors.demoQuota", "آخر تغيير ما انحفظ — احذف صوراً أو بيانات قديمة، أو اشترك لتخزين سحابي بلا حدود."),
+      );
     };
     window.addEventListener("vp:demo-quota-full", onQuotaFull);
     return () => window.removeEventListener("vp:demo-quota-full", onQuotaFull);
-  }, [toast]);
+  }, [toast, t]);
 
   const staff = !!user && (user.role === "admin" || user.role === "doctor" || user.role === "reception");
   useEffect(() => {

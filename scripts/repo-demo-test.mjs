@@ -26,15 +26,28 @@ const check = (name, cond, detail = "") => {
 
 /* ---- مخزنٌ بالذاكرة مكانَ localStorage، قبل تحميل الوحدة ------------------ */
 const mem = new Map();
+/* حصّةٌ تُملأ عند الطلب — الحصّةُ الحقيقيةُ ترمي `QuotaExceededError` من
+ * `setItem`، فهذا هو المحاكى بالضبط. */
+let quotaFull = false;
 globalThis.localStorage = {
   getItem: (k) => (mem.has(k) ? mem.get(k) : null),
-  setItem: (k, v) => { mem.set(k, String(v)); },
+  setItem: (k, v) => {
+    if (quotaFull) { const e = new Error("QuotaExceededError"); e.name = "QuotaExceededError"; throw e; }
+    mem.set(k, String(v));
+  },
   removeItem: (k) => { mem.delete(k); },
   clear: () => mem.clear(),
   key: (i) => [...mem.keys()][i] ?? null,
   get length() { return mem.size; },
 };
-globalThis.window = globalThis.window ?? { localStorage: globalThis.localStorage, addEventListener() {}, removeEventListener() {} };
+/* `dispatchEvent` و`CustomEvent` ما كانا موجودَين، فكان `saveDB` يبلع
+ * الـ`ReferenceError` بقوسه الداخليّ — أي أنّ القالبَ ما كان يرى الحدثَ أصلاً. */
+let quotaEvents = 0;
+globalThis.CustomEvent = globalThis.CustomEvent ?? class { constructor(type) { this.type = type; } };
+globalThis.window = globalThis.window ?? {
+  localStorage: globalThis.localStorage, addEventListener() {}, removeEventListener() {},
+  dispatchEvent(e) { if (e?.type === "vp:demo-quota-full") quotaEvents++; return true; },
+};
 /* الوحدةُ تجرّ معها إعدادَ اللغة (يلمس `document`) — فمتصفّحٌ بالحدّ الأدنى. */
 globalThis.document = globalThis.document ?? {
   documentElement: { lang: "", dir: "", style: { setProperty() {} }, classList: { add() {}, remove() {}, toggle() {} } },
@@ -508,6 +521,80 @@ console.log("▸ الستور (0178) — القرار نهائي والمرجع 
   const c = await repo.createDeliveryOrder({ ...base, invoice_id: "inv_dlv_2", cod_amount: 9000 });
   check("  وفاتورةٌ أخرى تُنشئ صفّاً جديداً (القيدُ على التكرار لا على الإنشاء)",
         c.id !== a.id && c.cod_amount === 9000);
+}
+
+/* ══ الموجة ٥ · البند ١٥ — الكتابةُ تُسمَع بالوضع التجريبي ═══════════════════
+ *
+ * الجذر: `saveDB` كانت تُعلن حدثاً ثم **ترجع طبيعياً**. فالشاشةُ تكمل مسارَ
+ * النجاح — رنّةٌ و«تمّ» وتُغلق النافذةَ وتُعيد التحميل من مخزنٍ لم يتغيّر —
+ * ويجتمع تحذيرٌ ونجاحٌ بنفس اللحظة والصفُّ غائب. وأسوأُ منه أنّ التحذيرَ
+ * كان يُعرض مرّةً واحدةً بكلّ تحميلِ صفحة، فالضياعُ الثاني صامتٌ تماماً.
+ *
+ * ولا يكفي أن ترمي: `loadDB` تنادي `saveDB` لتبذر أوّلَ مرّة، وهي مسارُ
+ * **قراءة** بمئتَي موضع — فرميةٌ غيرُ محصَّنة كانت تُسقط كلَّ قراءةٍ بالتطبيق
+ * على شاشةٍ بيضاء. فالفحصُ يقيس الاثنين معاً. */
+{
+  console.log("▸ البند ١٥ — كتابةٌ رفضتها الحصّةُ تُسمَع، وقراءةٌ تنجو");
+  const before = mem.get(DB_KEY);
+  quotaEvents = 0;
+  quotaFull = true;
+  let threw = null;
+  try { await repo.createCompany({ name: "شركةُ الحصّة" }); } catch (e) { threw = e; }
+  quotaFull = false;
+
+  // **ولا تُحسب رميةٌ برمجية نجاحاً**: أوّلُ صياغةٍ نادت دالّةً لا وجودَ لها،
+  // فرمى `TypeError` ومرّ الفحصُ لسببٍ غلط. النوعُ يُفحص لا الرميةُ وحدَها.
+  check("كتابةٌ رفضتها الحصّةُ ترمي (لا ترجع كأنها نجحت)",
+        threw !== null && !(threw instanceof TypeError),
+        threw === null ? "رجعت بلا خطأ — الشاشةُ راح تقول «تمّ»"
+                       : threw instanceof TypeError ? `رميةٌ برمجية لا رميةُ حصّة: ${threw.message}` : "");
+  check("  والرميةُ باسمٍ ثابت تقرأه الشاشة لا بنصٍّ عربيّ",
+        threw?.name === "DemoQuotaError" && threw?.message === "DEMO_QUOTA_FULL");
+  check("  والحدثُ انطلق كذلك — الرميةُ تقطع، والتوستُ يقول السبب", quotaEvents === 1);
+  check("  والمخزنُ ما تبدّل فعلاً (الكتابةُ ضاعت، لا أنها نجحت ورمت)",
+        mem.get(DB_KEY) === before);
+
+  // حارسُ الانحدار: يمرّ قبل الإصلاح، ويسقط لو رُميت بلا تحصينِ `loadDB`.
+  mem.delete(DB_KEY);
+  quotaFull = true;
+  let readThrew = null;
+  try { await repo.listCompanies(); } catch (e) { readThrew = e; }
+  quotaFull = false;
+  check("  وبذرةٌ أولى بحصّةٍ ممتلئة تشتغل بالذاكرة ولا تُسقط كلَّ قراءة",
+        readThrew === null, readThrew ? "loadDB رمت — التطبيقُ كلُّه يسقط على ErrorBoundary" : "");
+}
+
+/* ══ الموجة ٥ · البند ١٥ (الباقي) — سجلُّ الجهاز لا يحمل صوراً ═════════════
+ *
+ * الجذر: `details` كانت تحمل الصفَّ كما هو، وصورةُ المنتج تجريبياً **عنوانٌ
+ * مضمَّن** (`data:image/jpeg;base64,…`) بمئتَي كيلو أو أكثر. والسقفُ كان
+ * **بالعدد** (٥٠٠ صفّاً) — فعشرةُ صفوفٍ مصوَّرة تملأ الحصّةَ والعدّادُ يظنّ
+ * نفسَه بعيداً عن سقفه. والبايتاتُ لا تُقرأ أصلاً: `activityBrief` تقصّ عند
+ * مئتَي حرف. */
+{
+  console.log("▸ البند ١٥ (الباقي) — سجلُّ الجهاز بلا صور، وسقفُه بالبايت");
+  const AUDIT_KEY = /const DEMO_AUDIT_KEY = "([^"]+)"/.exec(readFileSync("src/lib/repo.ts", "utf8"))?.[1];
+  check("مفتاحُ السجلّ مقروءٌ من المصدر لا مكتوبٌ بيد", !!AUDIT_KEY, "ما انقرأ DEMO_AUDIT_KEY");
+
+  const BIG = "data:image/jpeg;base64," + "A".repeat(300_000);
+  mem.delete(AUDIT_KEY);
+  const p1 = await repo.createProduct({ name: "منتجٌ مصوَّر", sell_price: 1000, purchase_price: 500, stock: 3 });
+  await repo.updateProduct(p1.id, { image_path: BIG });
+
+  const raw = mem.get(AUDIT_KEY) ?? "";
+  check("ولا `data:` خامٌ بالسجلّ", !raw.includes("base64,AAAA"), `طول السجلّ ${raw.length}`);
+  check("  والحقلُ يبقى موجوداً ببصمته (لا يُحذف فيكذب الفرق)", raw.includes("[data:"));
+  check("  والسجلُّ تحت سقف البايت", raw.length <= 256 * 1024, `${raw.length} محرفاً`);
+
+  // السقفُ بالبايت حقيقيّ: صفوفٌ كبيرةٌ متتالية تُقصّ قبل الخمسمئة بكثير.
+  for (let i = 0; i < 12; i++) {
+    await repo.updateProduct(p1.id, { store_desc: "ن".repeat(30_000) + i });
+  }
+  const raw2 = mem.get(AUDIT_KEY) ?? "";
+  const rows = JSON.parse(raw2);
+  check("  واثنا عشرَ صفّاً ضخماً يُقصّون بالحجم لا ينتظرون الخمسمئة",
+        raw2.length <= 256 * 1024 && rows.length < 500, `${raw2.length} محرفاً، ${rows.length} صفّاً`);
+  check("  والأحدثُ باقٍ دائماً (الأقدمُ يخرج أوّلاً)", rows.length >= 1);
 }
 
 console.log(`\n${fails ? "✗" : "✓"} repo-demo-test: ${passes} نجحت، ${fails} فشلت`);

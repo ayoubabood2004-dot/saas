@@ -46,6 +46,32 @@ export function normalizeSlug(input: string): string {
     .replace(/^-+|-+$/g, "");     // بلا شرطة بالبداية/النهاية
 }
 
+/** مفتاحُ هويةِ الرابط — **مرآةٌ حرفية لـ`lower(trim(p_slug))`** الخادمية
+ *  (0095 وكلُّ ما بعدها). و`trim()` ببوستغريس هي `btrim(x, ' ')`: تشيل
+ *  **المسافة** وحدَها، لا التبويبَ ولا السطرَ الجديد — فلا تستبدلها بـ`.trim()`
+ *  الجافاسكربتية، هي أوسعُ فتقبل ما يقفله الخادم. */
+export function slugKey(input: string | null | undefined): string {
+  return (input ?? "").replace(/^ +| +$/g, "").toLowerCase();
+}
+
+/** هل هذا الرابطُ هو ذاك؟ — **الطرفان يمرّان من نفس الدالّة**.
+ *
+ *  **ولا تُبنى على `normalizeSlug`**: تلك مطهّرةُ إدخال — تقلب `_`→`-`، وتطوي
+ *  الشرطاتِ المكرّرة، وتحذف كلَّ محرفٍ غيرِ مسموح. وظيفتُها أن تُنزل كتابةَ
+ *  المالك على صيغةٍ صالحة، **لا أن تحكم على مطابقة**. استعمالُها بالمقارنة كان
+ *  يفتح ما يقفله الخادم: `/s/demo_vet` و`/s/demo--vet` و`/s/demo-vet!` تُقبل
+ *  بالتجريبيّ وترجع `closed` بالإنتاج.
+ *
+ *  فليس العطبُ «تطبيعَ طرفٍ واحد» — الطرفُ المخزون قانونيٌّ أصلاً بقيد
+ *  `store_slug_format`. العطبُ **مطبِّعٌ يخالف الطرفَ الآخر**، وهو أسوأ: يفشل
+ *  بصمتٍ ويبدو أنه يعمل. */
+export function matchSlug(a: string | null | undefined, b: string | null | undefined): boolean {
+  const x = slugKey(a);
+  // بلا هذا الشرط: `matchSlug("", undefined)` صادقة — و`useParams()` ترجع ""
+  // بمسارٍ معطوب، فينفتح المتجرُ التجريبيُّ على لا شيء.
+  return x !== "" && x === slugKey(b);
+}
+
 export function isValidSlug(slug: string): boolean {
   return SLUG_RE.test(slug);
 }

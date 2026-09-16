@@ -870,6 +870,16 @@ rpt "cust.byEasternPhone" "select id from customer_invoices('٠٧٧٠٩٩٩٩٩�
 rpt "cust.bySpacedPhone"  "select id from customer_invoices('0790 555 5555', null)"
 rpt "cust.byName"         "select id from customer_invoices(null, 'زبون بالاسم')"
 
+# ── الموجة ٥ · البند ٢٣: منطقُ البيع نفسُه على النصفين ─────────────────────
+# المرآةُ التجريبية هي ما تجري عليه فحوصُ المنطق — وكانت تنحرف عن الخادم بالمال:
+# `Math.round(final_total)` تدوّر إلى **الدينار الكامل** بينما الخادم numeric(14,2).
+# والمقارنةُ **تامّة** لا تقريبية: تسامحٌ بفلسٍ يخفي بالضبط ما جئنا له.
+echo "▸ البند ٢٣: تطابقُ البيع بين القاعدة والمرآة"
+CKF=$(mktemp -d)
+node "$HERE/../../scripts/checkout-fixture.mjs" "$CKF" >/dev/null
+$P -f "$CKF/calls.sql" >/dev/null
+if node "$HERE/../../scripts/checkout-parity.mjs" "$CKF"; then :; else fail=1; fi
+
 # ── 0150: صفحاتٌ بالمؤشّر وبحثٌ بالخادم — نفس نتائج الواجهة وبنفس ترتيبها ────
 # `_pages` يدور كما تدور الواجهة على «المزيد»: صفحةٌ فصفحة بمؤشّر (created_at, id)
 # حتى تفرغ، ويرجع المعرّفات بترتيب وصولها — فيُفحص التكرارُ والفقدُ والترتيب معاً.

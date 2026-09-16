@@ -750,6 +750,45 @@ console.log("▸ دلو صور المنتجات — الأفعال الأربع�
   check("  ونفسُ المتجر بحالةِ أحرفٍ مختلفة مفتاحٌ واحد", lastOrderKey("Vet-0EN2") === lastOrderKey("vet-0en2"));
   check("  وبفراغٍ زائد كذلك", lastOrderKey(" vet 0en2 ") === lastOrderKey("vet-0en2"));
   check("  والمفتاحُ يحمل السلاگ فعلاً لا اسماً ثابتاً", lastOrderKey("vet-0en2").includes("vet-0en2"));
+
+  /* ── الموجة ٥ · matchSlug: المطابقةُ بقاعدة الخادم لا بمطهّرة الإدخال ────
+   *
+   * الخادمُ يطابق بـ`lower(trim(p_slug))` — وكانت المرآةُ التجريبية تطابق
+   * بـ`normalizeSlug`، وهي مطهّرةُ إدخالٍ **أوسع بكثير**: تقلب `_`→`-`، وتطوي
+   * الشرطاتِ المكرّرة، وتحذف المحارفَ غيرَ المسموحة. فرابطٌ معطوبٌ يُقبل
+   * بالتجريبيّ ويُرفض بالإنتاج — «تطبيعٌ يخالف الطرفَ الآخر» عينُه.
+   *
+   * ولهذا الفحصُ **ليس** قائمةَ توقّعاتٍ بيدي: يعيد بناءَ قاعدة الخادم من
+   * تعريفها ويقارن. `trim()` ببوستغريس تشيل المسافة وحدَها — لا التبويب. */
+  const b3 = await eb.build({
+    stdin: { contents: 'export { matchSlug, slugKey, normalizeSlug } from "./src/lib/storeLib";', resolveDir: process.cwd(), loader: "js" },
+    bundle: true, format: "esm", write: false, platform: "node", logLevel: "silent",
+  });
+  const SL = await import("data:text/javascript;base64," + Buffer.from(b3.outputFiles[0].text).toString("base64"));
+  /** قاعدةُ الخادم: `lower(btrim(x, ' '))`. */
+  const serverKey = (x) => String(x ?? "").replace(/^ +| +$/g, "").toLowerCase();
+  const CANON = "vet-0en2";
+  const CORPUS = [
+    CANON, "VET-0EN2", " vet-0en2", "vet-0en2 ", "  Vet-0EN2  ",
+    "vet_0en2", "vet--0en2", "vet-0en2!", "vet 0en2", "vet-0en2\t", "vet-0en2\n",
+    "", "   ", "other-vet", "vet-0en", "vet-0en22",
+  ];
+  let divergedOld = 0, divergedNew = 0;
+  for (const raw of CORPUS) {
+    const truth = serverKey(raw) === CANON;               // ما يفعله الخادم
+    if ((SL.normalizeSlug(raw) === CANON) !== truth) divergedOld++;
+    if (SL.matchSlug(CANON, raw) !== truth) divergedNew++;
+  }
+  check(`matchSlug يطابق قاعدةَ الخادم على ${CORPUS.length} مدخلاً`, divergedNew === 0, `انحرف ${divergedNew}`);
+  check("  والمطبِّعُ القديم كان ينحرف فعلاً (الفحصُ يقيس شيئاً)", divergedOld > 0,
+    "normalizeSlug ما انحرف بأي مدخل — القالبُ لا يمسك العطب");
+  check("  وسلاگٌ فارغٌ لا يفتح متجراً", !SL.matchSlug("", "") && !SL.matchSlug("", undefined) && !SL.matchSlug(null, null));
+  check("  والطرفان يمرّان من نفس الدالّة (المخزونُ يُطبَّع كما المُدخَل)",
+    SL.matchSlug(" VET-0EN2 ", "vet-0en2") && SL.matchSlug("vet-0en2", " VET-0EN2 "));
+  check("  ولا موضعَ مقارنةٍ باقٍ على normalizeSlug بالنصف التجريبيّ",
+    !/sp\.slug !== normalizeSlug\(/.test(readFileSync("src/lib/repo.ts", "utf8")));
+  check("  وقاعدةُ الخادم ما زالت lower(trim(p_slug)) — لو تبدّلت لبطل القالب",
+    readFileSync("supabase/migrations/0095_store.sql", "utf8").includes("lower(trim(p_slug))"));
 }
 
 console.log(`\n${fails ? "✗" : "✓"} products-test: ${passes} نجحت، ${fails} فشلت`);

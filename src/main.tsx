@@ -56,6 +56,10 @@ window.addEventListener("unhandledrejection", (e) => {
     });
     return;
   }
+  // حصّةُ الجهاز امتلأت بالوضع التجريبي: `App` تعرض التوستَ الشارح **مرّةً
+  // بكلّ تحميلِ صفحة**، فلا نكرّره هنا — لكن لا نعرض «صار خطأ ما» فوقه أيضاً:
+  // الرميةُ وظيفتُها قطعُ مسار النجاح، والسببُ قيل مرّةً بلغةٍ أوضح.
+  if (reason?.name === "DemoQuotaError" || msg === "DEMO_QUOTA_FULL") return;
   const now = Date.now();
   if (now - lastNetToast < 3000) return;
   lastNetToast = now;

@@ -16,6 +16,7 @@ import type { JourneyPublicView } from "@/types";
 import { repo } from "@/lib/repo";
 import { journeyKindById, journeyStageIndex, OWNER_REACTIONS } from "@/lib/journey";
 import { cn } from "@/lib/utils";
+import { preferArabicForVisitor } from "@/lib/portal";
 
 const timeOf = (iso: string) =>
   new Date(iso).toLocaleTimeString("ar-IQ", { hour: "numeric", minute: "2-digit" });
@@ -26,6 +27,9 @@ export function TrackJourney() {
   const [state, setState] = useState<"loading" | "gone" | "ok">("loading");
   const [reacting, setReacting] = useState<string | null>(null);
   const timelineEnd = useRef<HTMLDivElement>(null);
+  // صفحةُ زائرٍ بلا جلسة — تُعرَّب كأختَيها. لم يرفعها التدقيقُ أصلاً: أربعُ
+  // حاوياتٍ بـ`dir="rtl"` بلا تعريبِ اللغة، فالمالكُ قد يرى إنكليزيةً بإطارٍ عربيّ.
+  useEffect(() => { preferArabicForVisitor(); }, []);
 
   const load = async (first = false) => {
     try {
