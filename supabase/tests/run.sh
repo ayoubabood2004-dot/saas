@@ -25,7 +25,7 @@ MIG="$HERE/../migrations"
 # و0095/0096/0158 بالمقدّمة رغم أنها أقدمُ من 0124: الموجةُ تبدأ من 0124 لأن
 # الأساس يوفّر ما قبلها جاهزاً — لكنّ هذه الثلاثَ تُنشئ المتجرَ والبوّابة،
 # وكانت خارجَ الفحص كلَّه. تُنزَّل بترتيبها الحقيقيّ قبل الموجة.
-WAVE="$MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0114_landing_events.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql $MIG/0184_images_hardening.sql $MIG/0185_store_funnel_events.sql"
+WAVE="$MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0114_landing_events.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql $MIG/0184_images_hardening.sql $MIG/0185_store_funnel_events.sql $MIG/0186_store_bulk_visible.sql"
 
 command -v "$PGBIN/initdb" >/dev/null || { echo "ما لكيت بوستغريس بـ $PGBIN"; exit 1; }
 
@@ -1853,6 +1853,51 @@ $P -c "update _dvtest_flags set admin = false;" >/dev/null
 chk "  والعيادةُ العاديةُ ترجع صفرَ صفوف — أرقامُ السوق ليست لها" \
     "select count(*)::text from store_funnel(30)" "0"
 $P -c "update _dvtest_flags set admin = true;" >/dev/null
+
+# ── 0186: النشرُ الجماعيّ ──────────────────────────────────────────────────
+# الجذر: النشرُ كان صنفاً صنفاً مع إعادةِ تحميلٍ كاملة. المقيسُ على الإنتاج:
+# ٦٩١ ك.ب JSON لأكبر عيادة (٩٩٠ منتجاً) ⇒ نشرُ ٤٠ = ~٢٧ ميغا وضغطاتٌ تُبلَع
+# بصمت. والثلاثُ الكبار عندهنّ ٩٩٠ و٩٦٢ و٧٣٠ منتجاً وصفرُ منتجٍ معروض.
+echo "▸ 0186: النشرُ الجماعيّ"
+$P -c "insert into products (id, clinic_id, name, sell_price, purchase_price, stock, store_visible)
+       values ('a1860000-0000-4000-8000-000000000001','$C1','نشرٌ جماعيّ ١',1000,500,5,false),
+              ('a1860000-0000-4000-8000-000000000002','$C1','نشرٌ جماعيّ ٢',2000,900,5,false),
+              ('a1860000-0000-4000-8000-000000000003','$C1','بلا سعر',0,500,5,false),
+              ('a1860000-0000-4000-8000-000000000004','$C2','منتجُ عيادةٍ أخرى',3000,1000,5,false)
+       on conflict (id) do update set store_visible = false;" >/dev/null
+# الاقتباسُ مُضاعَفٌ عمداً: `_pf` تأخذ الاستعلامَ **نصّاً** فتُنفّذه، فاقتباسٌ
+# مفردٌ بالداخل يقطع النصَّ الخارجيّ.
+ALL4="array[''a1860000-0000-4000-8000-000000000001'',''a1860000-0000-4000-8000-000000000002'',''a1860000-0000-4000-8000-000000000003'',''a1860000-0000-4000-8000-000000000004'']::uuid[]"
+
+chk "نداءٌ واحدٌ ينشر اثنين ويتخطّى الذي بلا سعر" \
+    "select (_pf('$C1', 'select store_set_visible($ALL4, true)::text')::jsonb->>'changed')" "2"
+chk "  والمتخطَّى **يُقال بالعدد** لا يُطوى بصمت" \
+    "select (_pf('$C1', 'select store_set_visible($ALL4, true)::text')::jsonb->>'skipped_no_price')" "1"
+chk "  ومنتجُ العيادة الأخرى ما انلمس (القصُّ داخل الدالّة)" \
+    "select store_visible::text from products where id='a1860000-0000-4000-8000-000000000004'" "false"
+chk "  والذي بلا سعرٍ باقٍ مخفيّاً — الصفرُ كان يُباع مجّاناً" \
+    "select store_visible::text from products where id='a1860000-0000-4000-8000-000000000003'" "false"
+chk "  والاثنان انعرضا فعلاً" \
+    "select count(*)::text from products where id in ('a1860000-0000-4000-8000-000000000001','a1860000-0000-4000-8000-000000000002') and store_visible" "2"
+# إعادةُ النداء ترجع صفراً: `changed` عددُ ما تبدّل لا عددُ ما أُرسل.
+chk "نداءٌ مُعادٌ يرجع صفراً لا يدّعي عملاً لم يقع" \
+    "select (_pf('$C1', 'select store_set_visible($ALL4, true)::text')::jsonb->>'changed')" "0"
+chk "والإخفاءُ الجماعيُّ يرجع الاثنين" \
+    "select (_pf('$C1', 'select store_set_visible($ALL4, false)::text')::jsonb->>'changed')" "2"
+# الصلاحيةُ نسخةٌ من `products_write` — موظّفُ الاستقبال يُردّ.
+chk "  وموظّفُ الاستقبال يُردّ (نفسُ قائمة products_write)" \
+    "select left(_pf_try('$RCP', 'select store_set_visible($ALL4, true)::text'), 7)" "guarded"
+chk "  والطبيبُ يمرّ (القائمةُ manager أو veterinarian لا manager وحده)" \
+    "select left(_pf_try('$VET', 'select store_set_visible($ALL4, true)::text'), 7)" "allowed"
+chk "  ومصفوفةٌ فارغةٌ لا ترمي" \
+    "select (_pf('$C1', 'select store_set_visible(array[]::uuid[], true)::text')::jsonb->>'changed')" "0"
+chk "  ودفعةٌ فوق السقف تُردّ" \
+    "select left(_pf_try('$C1', 'select store_set_visible((select array_agg(gen_random_uuid()) from generate_series(1,501)), true)::text'), 7)" "guarded"
+chk "  والدالّةُ definer بمسارٍ مثبَّت وممنوعةٌ على anon" \
+    "select (prosecdef and coalesce(array_to_string(proconfig,','),'') like '%search_path%'
+             and not has_function_privilege('anon', p.oid, 'execute'))::text
+       from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+      where n.nspname='public' and p.proname='store_set_visible'" "true"
 
 echo "▸ الموجة ١: المتجرُ والبوّابةُ داخل الحزمة"
 chk "ولا سياسةَ تنادي auth_clinic() عاريةً بعد الموجة كاملةً (مرّتين)" \

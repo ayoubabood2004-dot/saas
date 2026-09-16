@@ -87,7 +87,7 @@
   "src/pages/BookingWizard.tsx": 1,
   "src/pages/BookingsHub.tsx": 8,
   "src/pages/ClinicRecords.tsx": 5,
-  "src/pages/ClinicStore.tsx": 75,
+  "src/pages/ClinicStore.tsx": 74,
   "src/pages/Consultation.tsx": 18,
   "src/pages/Inventory.tsx": 7,
   "src/pages/JoinClinic.tsx": 27,

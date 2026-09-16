@@ -836,6 +836,34 @@ console.log("▸ دلو صور المنتجات — الأفعال الأربع�
   check("ومستمعو النافذة يُنزعون عند آخر مشترك (تسريبٌ صامت)",
     /function unwire\(\)[\s\S]{0,240}removeEventListener\("visibilitychange", onVis\)/.test(bell)
     && /timer = undefined;\s*\n\s*unwire\(\);/.test(bell));
+
+  /* ── ت٢ · 0186: النشرُ الجماعيّ ────────────────────────────────────────
+   * المقيسُ على الإنتاج: ٦٩١ ك.ب JSON لأكبر عيادةٍ حيّة (٩٩٠ منتجاً)، ونشرُ
+   * أربعين صنفاً كان ٤٠ كتابةً + ١٢٠ طلبَ قراءة + ~٢٧ ميغا — وبينها
+   * `if (busyId) return` تُسقط الضغطةَ الثانية بصمت. والثلاثُ الكبار
+   * عندهنّ ٩٩٠ و٩٦٢ و٧٣٠ منتجاً وصفرُ منتجٍ معروض. */
+  check("النشرُ لا يُتبَع بإعادةِ تحميلٍ كاملة (٦٩١ ك.ب بكلّ ضغطة)",
+    !/const toggle = async \(p: Product\) => \{[\s\S]{0,420}await reload\(\);[\s\S]{0,40}\} catch/.test(store));
+  check("  والتحديثُ محلّيٌّ بمكانه", /for \(const p of all\) if \(done\.has\(p\.id\)/.test(store));
+  check("  وفشلُ الجماعيّ **يُعيد** القراءة (لا تبقى الشاشةُ على ظنٍّ لا يطابق الخادم)",
+    /cat\.bulkFailed[\s\S]{0,200}await reload\(\)/.test(store));
+  check("فعلٌ جماعيٌّ موجودٌ بالشاشة أصلاً (لم يكن)",
+    /const bulk = async \(on: boolean\)/.test(store) && /cat\.bulkShow/.test(store) && /cat\.bulkHide/.test(store));
+  check("  و«اختر الكل» يقصد المعروضَ بالتصفية لا الجدولَ كلَّه",
+    /setPicked\(picked\.size === list\.length \? new Set\(\) : new Set\(list\.map/.test(store));
+  check("  والدالّةُ الخادميةُ بنداءٍ واحد لا حلقةٍ بالواجهة",
+    /repo\.setStoreVisible\(ids, on\)/.test(store) && !/for \([^)]*\) \{[\s\S]{0,120}await repo\.updateProduct\([^)]*store_visible/.test(store));
+  check("  والمتخطَّى بلا سعرٍ يُقال بعدده وسببه",
+    /skipped_no_price > 0/.test(store) && /cat\.bulkSkippedWhy/.test(store));
+  check("والمرآةُ التجريبية عندها نفسُ الدالّة",
+    /async setStoreVisible\(ids: string\[\], on: boolean\)/.test(repoS));
+  check("  وشرطُ السعر بالنصفين (حارسٌ ليس بالمرآة لم يُفحص)",
+    /\(p\.sell_price \?\? 0\) <= 0/.test(repoS)
+    && readFileSync("supabase/migrations/0186_store_bulk_visible.sql", "utf8").includes("coalesce(sell_price, 0) > 0"));
+  check("  والصلاحيةُ نسخةٌ من products_write لا قائمةٌ جديدة",
+    /v_role not in \('manager', 'veterinarian'\)/.test(readFileSync("supabase/migrations/0186_store_bulk_visible.sql", "utf8")));
+  check("  ومُنزَّلةٌ بحزمة الهجرات",
+    readFileSync("supabase/tests/run.sh", "utf8").includes("0186_store_bulk_visible.sql"));
 }
 
 console.log(`\n${fails ? "✗" : "✓"} products-test: ${passes} نجحت، ${fails} فشلت`);

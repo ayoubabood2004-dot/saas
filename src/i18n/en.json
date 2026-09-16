@@ -4533,6 +4533,20 @@
     "fHidden": "Hidden",
     "fNoPhoto": "No photo",
     "photoAdd": "Add a product photo",
-    "photoEdit": "Change the product photo"
+    "photoEdit": "Change the product photo",
+    "bulkShow": "Publish selected",
+    "bulkHide": "Hide selected",
+    "bulkShown": "Published {{n}} products to the store",
+    "bulkHidden": "Hid {{n}} products",
+    "bulkNothing": "Nothing changed — they were already like that",
+    "bulkFailed": "Couldn't publish — try again",
+    "bulkSkipped": "Published {{n}} — {{s}} with no price weren't published",
+    "bulkSkippedWhy": "A product priced at zero can be ordered for free. Set a price, then publish it.",
+    "pickAll": "Select shown ({{n}})",
+    "pickNone": "Clear selection",
+    "picked": "Selected: {{n}}",
+    "pickHint": "Select products to publish them in one go",
+    "pickOne": "Select {{name}}",
+    "updateFailed": "Couldn't update"
   }
 }

@@ -1633,6 +1633,23 @@ const demoRepo = {
       .sort((a, b) => b.created_at.localeCompare(a.created_at))
       .slice(0, limit);
   },
+  /** مرآةُ `store_set_visible` (0186) — بنفس شرطِ السعر وبنفس معنى `changed`. */
+  async setStoreVisible(ids: string[], on: boolean): Promise<{ changed: number; skipped_no_price: number }> {
+    if (!ids.length) return { changed: 0, skipped_no_price: 0 };
+    if (ids.length > 500) throw new Error("too_many");
+    const db = loadDB();
+    const want = new Set(ids);
+    let changed = 0, skipped = 0;
+    for (const p of db.products ?? []) {
+      if (!want.has(p.id)) continue;
+      if (on) {
+        if ((p.sell_price ?? 0) <= 0) { if (!p.store_visible) skipped++; continue; }
+        if (!p.store_visible) { p.store_visible = true; changed++; }
+      } else if (p.store_visible) { p.store_visible = false; changed++; }
+    }
+    saveDB(db);
+    return { changed, skipped_no_price: skipped };
+  },
   /** مرآةُ `listNewStoreOrders` — بلا سقفٍ كذلك. */
   async listNewStoreOrders(): Promise<StoreOrder[]> {
     return (loadDB().storeOrders ?? [])
@@ -4483,6 +4500,18 @@ const supabaseRepo: typeof demoRepo = {
    *  أحدثُ منه لا يصل الصندوقَ أبداً: الشارةُ تقول «١» والصندوقُ يقول «ما اكو
    *  طلبات جديدة» — والصفحةُ تناقض نفسَها بصوتٍ عالٍ. وأسوأُ من التناقض أنّ
    *  الطلبَ **لا يمكن قبولُه ولا رفضُه**؛ الزبونُ ينتظر مكالمةً لن تأتي. */
+  /** نشرٌ/إخفاءٌ جماعيّ بنداءٍ واحد (0186).
+   *
+   *  كان النشرُ صنفاً صنفاً مع `reload()` كاملة بعد كلّ واحد — وحمولةُ منتجاتِ
+   *  أكبر عيادةٍ حيّة **٦٩١ ك.ب**، فأربعون منتجاً ≈ ٢٧ ميغا وضغطاتٌ تُبلَع.
+   *  والدالّةُ تقصّ بالعيادة بنفسها وتردّ منتجاً بلا سعر. */
+  async setStoreVisible(ids, on) {
+    if (!ids.length) return { changed: 0, skipped_no_price: 0 };
+    const { data, error } = await sbc().rpc("store_set_visible", { p_ids: ids, p_on: on });
+    if (error) throw error;
+    const r = (data ?? {}) as { changed?: number; skipped_no_price?: number };
+    return { changed: Number(r.changed ?? 0), skipped_no_price: Number(r.skipped_no_price ?? 0) };
+  },
   async listNewStoreOrders() {
     return allPages<StoreOrder>(() =>
       sbc().from("store_orders").select("*").eq("status", "new").order("created_at", { ascending: false }));

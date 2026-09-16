@@ -16,7 +16,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import {
   ShoppingBag, Inbox, Boxes, Settings2, Check, X, Phone, MessageCircle, MapPin,
   Copy, ExternalLink, Sparkles, Link2, AlertTriangle, CheckCircle2, Clock,
-  Search, Eye, EyeOff, Pencil, TrendingUp, Truck, PackageX, RefreshCw, StickyNote, BellRing, Camera, ImagePlus,
+  Search, Eye, EyeOff, Pencil, TrendingUp, Truck, PackageX, RefreshCw, StickyNote, BellRing, Camera, ImagePlus, Loader2,
 } from "lucide-react";
 import type { Product, StoreOrder, StoreProfile } from "@/types";
 import { useTranslation } from "react-i18next";
@@ -449,6 +449,9 @@ function CatalogTab({ products, reload, storeOn }: { products: Product[] | null;
    * والتنقّلُ لشاشةٍ أخرى لكلّ منتجٍ هو ما كان يمنعه من إكمال الصور أصلاً. */
   const [photoFor, setPhotoFor] = useState<Product | null>(null);
   const [libFor, setLibFor] = useState<Product | null>(null);
+  /** الاختيارُ المتعدّد — مفتاحُ النشر الجماعيّ. */
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [bulkBusy, setBulkBusy] = useState(false);
   const [filter, setFilter] = useState<"all" | "shown" | "hidden" | "nophoto">("all");
   const [sort, setSort] = useState<"smart" | "name" | "priceDesc" | "priceAsc">("smart");
   const fileRef = useRef<HTMLInputElement>(null);
@@ -528,15 +531,62 @@ function CatalogTab({ products, reload, storeOn }: { products: Product[] | null;
     finally { setBusyId(null); setPhotoFor(null); }
   };
 
+  /** نشرٌ/إخفاءٌ — نداءٌ واحدٌ للخادم ثمّ **تحديثٌ محلّيّ بلا `reload()`**.
+   *
+   *  كانت كلُّ ضغطةٍ تتبعها إعادةُ تحميلٍ كاملة: طلباتٌ + منتجاتٌ (٦٩١ ك.ب
+   *  لأكبر عيادةٍ حيّة) + ملفُّ المتجر. فأربعون منتجاً ≈ ٢٧ ميغا، و`busyId`
+   *  بينها تُسقط أيَّ ضغطةٍ ثانيةٍ **بصمت** — فيضغط الدكتورُ ولا يصير شيء. */
+  const applyVisible = async (ids: string[], on: boolean) => {
+    if (!ids.length) return;
+    const r = await repo.setStoreVisible(ids, on);
+    // الصفوفُ تُحدَّث بمكانها: الخادمُ حَكَمٌ على ما تبدّل، والمعروضُ يتبعه بلا رحلة.
+    const done = new Set(ids);
+    for (const p of all) if (done.has(p.id) && (on ? (p.sell_price ?? 0) > 0 : true)) p.store_visible = on;
+    if (r.skipped_no_price > 0) {
+      // «قائمةٌ ناقصة أخطرُ من خطأ ظاهر» — المتخطَّى يُقال بعدده وسببه.
+      toast.error(
+        t("cat.bulkSkipped", "انتشر {{n}} — و{{s}} بلا سعر ما انتشرن", { n: r.changed, s: r.skipped_no_price }),
+        t("cat.bulkSkippedWhy", "منتجٌ بسعر صفر يطلبه الزبون مجّاناً. حطّ له سعراً وانشره."),
+      );
+    }
+    return r;
+  };
+
   const toggle = async (p: Product) => {
-    if (busyId) return;
+    if (busyId || bulkBusy) return;
     setBusyId(p.id);
+    const next = !p.store_visible;
     try {
-      await repo.updateProduct(p.id, { store_visible: !p.store_visible });
-      p.store_visible ? playTap() : playSuccess();
-      await reload();
-    } catch (e) { playWarning(); toast.error("تعذّر التحديث", errMsg(e)); }
+      await applyVisible([p.id], next);
+      next ? playSuccess() : playTap();
+    } catch (e) { playWarning(); toast.error(t("cat.updateFailed", "تعذّر التحديث"), errMsg(e)); await reload(); }
     finally { setBusyId(null); }
+  };
+
+  /** النشرُ الجماعيّ — البندُ الذي وقفت عنده الثلاثُ الكبار. */
+  const bulk = async (on: boolean) => {
+    if (bulkBusy || busyId) return;
+    const ids = [...picked];
+    if (!ids.length) return;
+    setBulkBusy(true);
+    try {
+      const r = await applyVisible(ids, on);
+      setPicked(new Set());
+      if (r && r.changed > 0 && r.skipped_no_price === 0) {
+        playSuccess();
+        toast.success(on
+          ? t("cat.bulkShown", "انتشر {{n}} منتجاً بالمتجر", { n: r.changed })
+          : t("cat.bulkHidden", "انخفى {{n}} منتجاً", { n: r.changed }));
+      } else if (r && r.changed === 0 && r.skipped_no_price === 0) {
+        playTap();
+        toast.toast({ tone: "info", title: t("cat.bulkNothing", "ما تغيّر شي — كانوا هيچي أصلاً") });
+      }
+    } catch (e) {
+      playWarning();
+      toast.error(t("cat.bulkFailed", "ما انتشرت — أعد المحاولة"), errMsg(e));
+      // فشلٌ جماعيّ: نعيد القراءة كي لا تبقى الشاشةُ على ظنٍّ لا يطابق الخادم.
+      await reload();
+    } finally { setBulkBusy(false); }
   };
 
   const saveDesc = async (p: Product) => {
@@ -599,6 +649,34 @@ function CatalogTab({ products, reload, storeOn }: { products: Product[] | null;
         ))}
       </div>
 
+      {/* شريطُ النشر الجماعيّ — يظهر بالاختيار وحدَه فلا يزاحم الشاشةَ بلا داعٍ.
+          «اختر الكل» يقصد **المعروضَ بالتصفية الحالية** لا الجدولَ كلَّه: من
+          صفّى «مخفي» وضغط «انشر» يقصد ما يراه، لا تسعَمئة صنفٍ لا يعرفها. */}
+      {list.length > 0 && (
+        <div className="card flex flex-wrap items-center gap-2 p-3">
+          <button type="button" onClick={() => { playTap(); setPicked(picked.size === list.length ? new Set() : new Set(list.map((p) => p.id))); }}
+            className="rounded-xl border border-line px-3 py-1.5 text-xs font-semibold text-ink transition hover:bg-surface-2">
+            {picked.size === list.length && list.length > 0
+              ? t("cat.pickNone", "ألغِ الاختيار")
+              : t("cat.pickAll", "اختر المعروض ({{n}})", { n: list.length })}
+          </button>
+          <span className="text-xs text-ink-subtle tabular-nums">
+            {picked.size > 0 ? t("cat.picked", "مختار: {{n}}", { n: formatNum(picked.size) }) : t("cat.pickHint", "اختر منتجات لتنشرها دفعةً واحدة")}
+          </span>
+          <div className="ms-auto flex gap-2">
+            <button type="button" disabled={!picked.size || bulkBusy} onClick={() => void bulk(true)}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-brand-600 px-3 py-1.5 text-xs font-bold text-white transition active:scale-95 disabled:opacity-40">
+              {bulkBusy ? <Loader2 size={14} className="animate-spin" /> : <Eye size={14} />}
+              {t("cat.bulkShow", "انشر المختار")}
+            </button>
+            <button type="button" disabled={!picked.size || bulkBusy} onClick={() => void bulk(false)}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-line px-3 py-1.5 text-xs font-bold text-ink transition active:scale-95 disabled:opacity-40">
+              <EyeOff size={14} /> {t("cat.bulkHide", "اخفِ المختار")}
+            </button>
+          </div>
+        </div>
+      )}
+
       {storeOn && shownCount === 0 && (
         <div className="card flex items-center gap-3 border-warn-300 bg-warn-50/60 p-4 dark:border-warn-500/40 dark:bg-warn-500/10">
           <AlertTriangle size={18} className="shrink-0 text-warn-600" />
@@ -614,7 +692,16 @@ function CatalogTab({ products, reload, storeOn }: { products: Product[] | null;
             const look = categoryLook(p.category);
             const out = p.stock <= 0 && !p.pooled;
             return (
-              <div key={p.id} className={cn("card flex flex-wrap items-center gap-3 p-3 transition", p.store_visible && "border-brand-300 dark:border-brand-500/40")}>
+              <div key={p.id} className={cn("card flex flex-wrap items-center gap-3 p-3 transition",
+                p.store_visible && "border-brand-300 dark:border-brand-500/40",
+                picked.has(p.id) && "ring-2 ring-brand-400")}>
+                <input type="checkbox" checked={picked.has(p.id)} disabled={bulkBusy}
+                  aria-label={t("cat.pickOne", "اختر {{name}}", { name: p.name })}
+                  onChange={(e) => {
+                    playTap();
+                    setPicked((prev) => { const n = new Set(prev); e.target.checked ? n.add(p.id) : n.delete(p.id); return n; });
+                  }}
+                  className="h-4 w-4 shrink-0 accent-brand-600" />
                 {/* المصغّرةُ نفسُها هي الزرّ: يرى ما عنده ويضغط ليكمّله — بدل رمزِ
                     فئةٍ لا يقول شيئاً عن المنتج ولا يفتح شيئاً. */}
                 <button type="button" onClick={() => { playTap(); setPhotoFor(photoFor?.id === p.id ? null : p); }}

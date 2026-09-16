@@ -597,5 +597,37 @@ console.log("▸ الستور (0178) — القرار نهائي والمرجع 
   check("  والأحدثُ باقٍ دائماً (الأقدمُ يخرج أوّلاً)", rows.length >= 1);
 }
 
+/* ══ ت٢ · 0186 — النشرُ الجماعيّ بالمرآة التجريبية ═══════════════════════
+ * «حارسٌ لا يوجد هنا حارسٌ لم يُفحص» (CLAUDE.md §٤): شرطُ السعر وعدُّ
+ * `changed` وقصُّ العيادة كلُّها بالخادم — فلازم تكون هنا بنفسها. */
+{
+  console.log("▸ ت٢ — النشرُ الجماعيّ: نداءٌ واحد، ومنتجٌ بلا سعرٍ لا يُنشَر");
+  const a = await repo.createProduct({ name: "جماعيّ ١", sell_price: 1000, purchase_price: 400, stock: 5 });
+  const b = await repo.createProduct({ name: "جماعيّ ٢", sell_price: 2000, purchase_price: 900, stock: 5 });
+  const z = await repo.createProduct({ name: "بلا سعر", sell_price: 0, purchase_price: 400, stock: 5 });
+
+  const r1 = await repo.setStoreVisible([a.id, b.id, z.id], true);
+  check("ينشر اثنين ويتخطّى الذي بلا سعر", r1.changed === 2, JSON.stringify(r1));
+  check("  والمتخطَّى يُقال بعدده", r1.skipped_no_price === 1, JSON.stringify(r1));
+  const after = await repo.listProducts();
+  const byId = new Map(after.map((p) => [p.id, p]));
+  check("  والاثنان معروضان فعلاً", !!byId.get(a.id)?.store_visible && !!byId.get(b.id)?.store_visible);
+  check("  والذي بلا سعرٍ باقٍ مخفيّاً", !byId.get(z.id)?.store_visible);
+
+  const r2 = await repo.setStoreVisible([a.id, b.id, z.id], true);
+  check("نداءٌ مُعادٌ يرجع صفراً لا يدّعي عملاً لم يقع", r2.changed === 0, JSON.stringify(r2));
+
+  const r3 = await repo.setStoreVisible([a.id, b.id], false);
+  check("والإخفاءُ الجماعيُّ يرجع الاثنين", r3.changed === 2, JSON.stringify(r3));
+
+  const r4 = await repo.setStoreVisible([], true);
+  check("  ومصفوفةٌ فارغةٌ لا ترمي", r4.changed === 0 && r4.skipped_no_price === 0);
+
+  let over = null;
+  try { await repo.setStoreVisible(Array.from({ length: 501 }, (_, i) => `x${i}`), true); } catch (e) { over = e; }
+  check("  ودفعةٌ فوق السقف تُردّ (مرآةُ سقف الخادم)", over !== null && !(over instanceof TypeError),
+    over === null ? "مرّت بلا حدّ" : "");
+}
+
 console.log(`\n${fails ? "✗" : "✓"} repo-demo-test: ${passes} نجحت، ${fails} فشلت`);
 process.exit(fails ? 1 : 0);
