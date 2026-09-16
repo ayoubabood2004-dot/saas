@@ -11,6 +11,21 @@
  *
  * لو أي شيء فشل (env ناقصة، السحابة ما ردت، slug مو موجود) نرجع index.html
  * كما هو — نفس سلوك اليوم بالضبط، فما في وضع أسوأ من الحالي.
+ *
+ * ── الصورة (0190/ت٨): «ما في وضع أسوأ» كان غلطاً ─────────────────────────
+ * البلوكُ أعلاه يمسح **كلَّ** وسوم og و twitter من القالب ثم يكتب مجموعةً
+ * بلا og:image. والقالبُ فيه صورةٌ ١٢٠٠×٦٣٠ (`/og.jpg`) — فرابطُ متجرِ عيادةٍ
+ * كان يُشارَك **أسوأ** من رابط الموقع العام: بطاقةٌ نصّيةٌ بلا صورة، وهو ما
+ * يصل زبونَها بالواتساب والانستغرام. الترتيب الآن:
+ *
+ *   ١) شعارُ العيادة إن كان **مساراً** بالدلو ⇒ صورةُ البطاقة، وبطاقةٌ
+ *      مربّعة (`summary`): الشعارُ مربّعٌ تقريباً، وحشرُه بإطار ١٢٠٠×٦٣٠
+ *      يقصّه أو يحيطه بفراغ.
+ *   ٢) شعارٌ بصيغة `data:` (السبعةُ القديمة قبل ت٧) ⇒ **يُتخطّى**: زاحفُ
+ *      واتساب يطلب رابطاً بشبكةٍ ولا يقرأ عنواناً مضمَّناً، ووضعُه بالرأس
+ *      يضيف مئةَ كيلوبايتٍ لكلّ زحفة. زرُّ «انقل الشعار» بالإعدادات هو
+ *      طريقُهنّ إلى المسار الحقيقي.
+ *   ٣) بلا شعار ⇒ `/og.jpg` كما بالقالب — استرجاعُ ما كان يُمحى لا أكثر.
  */
 export const config = { runtime: "edge" };
 
@@ -48,12 +63,35 @@ export default async function handler(req: Request): Promise<Response> {
       signal: AbortSignal.timeout(4000),
     });
     if (!r.ok) return asHtml(shell, 60);
-    const front = (await r.json()) as { ok?: boolean; name?: string; bio?: string };
+    const front = (await r.json()) as { ok?: boolean; name?: string; bio?: string; logo_url?: string | null };
     if (!front?.ok || !front.name) return asHtml(shell, 60);
 
     const title = esc(`${front.name} — المتجر`);
     const desc = esc(front.bio?.trim() || `تصفح منتجات ${front.name} واطلب توصيلاً حتى باب البيت.`);
     const pageUrl = esc(`${origin}/s/${slug}`);
+
+    // مسارٌ لا عنوانٌ مضمَّن ولا رابطٌ جاهز: العمودُ يحمل مساراً داخل الدلو
+    // (0190)، والرابطُ العامّ يُبنى هنا بنفس صيغة `productImageUrl` حرفياً.
+    const logoPath = (front.logo_url || "").trim();
+    const clinicLogo = logoPath && !logoPath.startsWith("data:") && !/^https?:/i.test(logoPath)
+      ? `${supaUrl}/storage/v1/object/public/product-images/${logoPath}`
+      : "";
+    const image = esc(clinicLogo || `${origin}/og.jpg`);
+    const imageMeta = clinicLogo
+      ? [
+          `<meta property="og:image" content="${image}" />`,
+          `<meta property="og:image:alt" content="${title}" />`,
+          `<meta name="twitter:card" content="summary" />`,
+          `<meta name="twitter:image" content="${image}" />`,
+        ]
+      : [
+          `<meta property="og:image" content="${image}" />`,
+          `<meta property="og:image:width" content="1200" />`,
+          `<meta property="og:image:height" content="630" />`,
+          `<meta property="og:image:alt" content="${title}" />`,
+          `<meta name="twitter:card" content="summary_large_image" />`,
+          `<meta name="twitter:image" content="${image}" />`,
+        ];
 
     const meta = [
       `<title>${title}</title>`,
@@ -64,7 +102,7 @@ export default async function handler(req: Request): Promise<Response> {
       `<meta property="og:description" content="${desc}" />`,
       `<meta property="og:url" content="${pageUrl}" />`,
       `<meta property="og:locale" content="ar_IQ" />`,
-      `<meta name="twitter:card" content="summary" />`,
+      ...imageMeta,
       `<meta name="twitter:title" content="${title}" />`,
       `<meta name="twitter:description" content="${desc}" />`,
     ].join("\n    ");
