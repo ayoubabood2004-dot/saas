@@ -4555,6 +4555,7 @@
     "suggestPicked": "{{n}} of {{m}}",
     "suggestPublish": "Publish ticked ({{n}})",
     "soldQty": "sold {{n}}",
-    "noCategory": "No category"
+    "noCategory": "No category",
+    "suggestSlug": "Suggest"
   }
 }

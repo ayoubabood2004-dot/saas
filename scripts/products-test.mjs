@@ -10,7 +10,7 @@
  *   node scripts/products-test.mjs
  * ==========================================================================*/
 import esbuild from "esbuild";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 
 let fails = 0, passes = 0;
 const check = (name, cond, detail = "") => {
@@ -893,6 +893,63 @@ console.log("▸ دلو صور المنتجات — الأفعال الأربع�
     /suggestStoreProducts\(limit = 40, days = 90\) \{[\s\S]{0,500}if \(error\) throw error;/.test(repoS));
   check("  ومُنزَّلةٌ بحزمة الهجرات",
     readFileSync("supabase/tests/run.sh", "utf8").includes("0187_store_suggest_products.sql"));
+
+  /* ── ت٤: الرابطُ باسم العيادة ────────────────────────────────────────────
+   * الزرُّ كان `vet-` + عشوائيّ دائماً، ولذلك المتجرُ الوحيدُ `vet-0en2`.
+   * والسببُ أعمق: أسماءُ العيادات الأربعِ ذواتِ المخزون الحقيقيّ **عربيّةٌ
+   * خالصة** (مقيس)، و`normalizeSlug` تنتج منها `""` — فالرابطُ من الاسم كان
+   * مستحيلاً لا مُهمَلاً. والفحصُ **سلوكيٌّ بأسماء الإنتاج نفسِها**. */
+  const b4 = await eb.build({
+    stdin: { contents: 'export { slugCandidates, normalizeSlug, isValidSlug } from "./src/lib/storeLib";', resolveDir: process.cwd(), loader: "js" },
+    bundle: true, format: "esm", write: false, platform: "node", logLevel: "silent",
+  });
+  const SC = await import("data:text/javascript;base64," + Buffer.from(b4.outputFiles[0].text).toString("base64"));
+  // أسماءٌ حقيقيةٌ من الإنتاج — لا أمثلةٌ مريحة.
+  const LIVE = ["الروز البيطرية", "ابن,الهيثم", "عيادة الاسمر البيطرية", "عيادة"];
+  for (const nm of LIVE) {
+    const c = SC.slugCandidates(nm);
+    check(`«${nm}» يعطي رابطاً صالحاً`, c.length > 0 && c.every((x) => SC.isValidSlug(x)), JSON.stringify(c));
+  }
+  check("  وكان مستحيلاً قبل النقل (normalizeSlug تعطي فراغاً)",
+    LIVE.every((nm) => SC.normalizeSlug(nm) === ""));
+  /* **والتمايزُ هو الخاصّيةُ الحقيقية**، لا مجرّدُ «رابطٍ صالح»: بلا جدول
+   * النقل تعطي ثلاثٌ من الأربع `vet` نفسَه — فأوّلُ من يحجزه يُسقط البقيةَ
+   * للعشوائيّ، ويعود بنا إلى `vet-0en2`. وقعتُ بها: فحصُ «صالحٍ» وحدَه مرّ. */
+  {
+    const firsts = LIVE.map((nm) => SC.slugCandidates(nm)[0]).filter(Boolean);
+    check("  و**الأربعُ تتمايز** (لا ثلاثٌ منها «vet» نفسُه)",
+      new Set(firsts).size === LIVE.length, JSON.stringify(firsts));
+  }
+  check("  والفاصلةُ فاصلُ كلماتٍ («ابن,الهيثم» مقيسٌ بالإنتاج)",
+    SC.slugCandidates("ابن,الهيثم")[0].includes("-"));
+  check("  و«بيطرية» تُترجَم vet لا تُنقَل حرفياً",
+    SC.slugCandidates("الروز البيطرية")[0] === "alroz-vet", JSON.stringify(SC.slugCandidates("الروز البيطرية")));
+  check("  ولا تكرارَ لنوعٍ واحد (عيادة+بيطرية ⇒ vet مرّةً)",
+    !/vet.*vet/.test(SC.slugCandidates("عيادة الاسمر البيطرية")[0]));
+  check("  والاسمُ اللاتينيُّ الصالحُ يتصدّر كما هو (لا يُعاد ترتيبُه)",
+    SC.slugCandidates("Farah pet clinic")[0] === "farah-pet-clinic");
+  check("  والأرقامُ الشرقيةُ تُنقَل", SC.slugCandidates("عيادة ٢٤ ساعة")[0].includes("24"));
+  check("  واسمٌ فارغٌ لا يعطي شيئاً", SC.slugCandidates("").length === 0 && SC.slugCandidates(null).length === 0);
+  check("  وثلاثةُ مرشّحين كحدٍّ أقصى", SC.slugCandidates("مركز الرحمة للحيوانات الاليفة").length <= 3);
+  check("والعشوائيُّ **آخرُ** الخيارات لا أوّلُها",
+    /for \(const cand of slugCandidates\(getClinicName\(\)\)\)[\s\S]{0,400}vet-\$\{rand\}/.test(store));
+  check("  وكلُّ مرشّحٍ يُفحص توفّرُه قبل اقتراحه", /await repo\.checkStoreSlug\(cand\)/.test(store));
+  check("  ولا اقتراحَ عشوائيٍّ داخل الحلقة", !/slugCandidates[\s\S]{0,200}Math\.random/.test(store));
+
+  /* والإعفاءُ الجديد بـi18n-guard لا يصير باباً خلفياً: كلُّ استعمالٍ له
+   * **سببٌ مكتوب**، ولا يُستعمل بملفّ شاشةٍ (حيث النصُّ يُقرأ فعلاً). */
+  const guard = readFileSync("scripts/i18n-guard.mjs", "utf8");
+  check("إعفاءُ i18n-data يشترط سبباً مكتوباً", /i18n-data:\\s\*\\S/.test(guard) || /i18n-data:\\s\+\\S/.test(guard));
+  {
+    const users = [];
+    const walk = (d) => { for (const e of readdirSync(d, { withFileTypes: true })) {
+      const q = `${d}/${e.name}`;
+      if (e.isDirectory()) walk(q); else if (/\.(ts|tsx)$/.test(e.name) && readFileSync(q, "utf8").includes("i18n-data:")) users.push(q);
+    } };
+    walk("src");
+    check("  ولا يُستعمل بملفّ شاشة (.tsx)", users.every((f) => !f.endsWith(".tsx")), users.join(", "));
+    check("  ومحصورٌ بملفٍّ واحدٍ اليوم", users.length === 1, users.join(", "));
+  }
 }
 
 console.log(`\n${fails ? "✗" : "✓"} products-test: ${passes} نجحت، ${fails} فشلت`);

@@ -23,12 +23,12 @@ import { useTranslation } from "react-i18next";
 import { repo } from "@/lib/repo";
 import { useAuth } from "@/contexts/AuthContext";
 import { bumpStoreOrders, useStoreOrderCount, storeAlertsState, enableStoreAlerts, noteStoreProfile } from "@/lib/storeOrdersLive";
-import { normalizeSlug, isValidSlug, storeUrl, categoryLook, productImageUrl, shelfLook, shelfMonogram } from "@/lib/storeLib";
+import { normalizeSlug, isValidSlug, slugCandidates, storeUrl, categoryLook, productImageUrl, shelfLook, shelfMonogram } from "@/lib/storeLib";
 import { prepareUpload } from "@/lib/image";
 import { ImageLibraryPicker } from "@/components/inventory/ImageLibraryPicker";
 import { searchable } from "@/lib/utils";
 import { waNumber } from "@/lib/phone";
-import { getDialCode } from "@/lib/settings";
+import { getDialCode, getClinicName } from "@/lib/settings";
 import { withTimeout, describeUploadError, describeDbError } from "@/lib/errors";
 import { playTap, playSuccess, playWarning, playAchievement } from "@/lib/sounds";
 import { Button, Badge, Skeleton, useToast } from "@/components/ui";
@@ -914,6 +914,7 @@ function SettingsTab({ profile, products, onSaved }: {
   onSaved: (p: StoreProfile) => void;
 }) {
   const toast = useToast();
+  const { t } = useTranslation();
   const [slug, setSlug] = useState(profile?.slug ?? "");
   const [bio, setBio] = useState(profile?.bio ?? "");
   const [fee, setFee] = useState(profile?.delivery_fee ? String(profile.delivery_fee) : "");
@@ -950,10 +951,29 @@ function SettingsTab({ profile, products, onSaved }: {
     }, 450);
   };
 
-  const suggest = () => {
+  const [suggesting, setSuggesting] = useState(false);
+
+  /** اقتراحُ رابطٍ **باسم العيادة** — والعشوائيُّ آخرُ الخيارات لا أوّلُها.
+   *
+   *  كان الزرُّ يعطي `vet-` + أربعةِ أحرفٍ عشوائية دائماً، ولذلك المتجرُ
+   *  الوحيدُ القائم اسمُه `vet-0en2`. والسببُ أعمقُ من كسلِ الزرّ: أسماءُ
+   *  العيادات الأربعِ ذواتِ المخزون الحقيقيّ **عربيّةٌ خالصة**، و`normalizeSlug`
+   *  تنتج منها `""`. فالرابطُ من الاسم كان **مستحيلاً لا مُهمَلاً**.
+   *
+   *  ويُفحص توفّرُ كلِّ مرشّحٍ بـ`checkStoreSlug` القائمة — فلا يُقترَح محجوز. */
+  const suggest = async () => {
+    if (suggesting) return;
     playTap();
-    const rand = Math.random().toString(36).replace(/[^a-z0-9]/g, "").slice(0, 4);
-    onSlugInput(`vet-${rand}`);
+    setSuggesting(true);
+    try {
+      for (const cand of slugCandidates(getClinicName())) {
+        try { if (await repo.checkStoreSlug(cand)) { onSlugInput(cand); return; } }
+        catch { break; }   // فشلُ الفحص: لا نكمل بحثاً أعمى — ننزل للعشوائيّ
+      }
+      // كلُّ المرشّحين محجوزٌ أو الاسمُ لا ينتج شيئاً ⇒ العشوائيُّ آخِراً.
+      const rand = Math.random().toString(36).replace(/[^a-z0-9]/g, "").slice(0, 4);
+      onSlugInput(`vet-${rand}`);
+    } finally { setSuggesting(false); }
   };
 
   const save = async (nextEnabled?: boolean) => {
@@ -1022,7 +1042,7 @@ function SettingsTab({ profile, products, onSaved }: {
             <span dir="ltr" className="shrink-0 rounded-lg bg-surface-2 px-2 py-2 font-mono text-xs text-ink-subtle">/s/</span>
             <input dir="ltr" value={slug} onChange={(e) => onSlugInput(e.target.value)} placeholder="happy-paws"
               className="input flex-1 font-mono lowercase" maxLength={30} />
-            <Button size="sm" variant="outline" onClick={suggest} leftIcon={<Sparkles size={14} />}>اقترح</Button>
+            <Button size="sm" variant="outline" disabled={suggesting} onClick={() => void suggest()} leftIcon={suggesting ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}>{t("cat.suggestSlug", "اقترح")}</Button>
           </div>
           {slugState === "invalid" && slug && <p className="text-2xs font-semibold text-warn-600">3–30: حروف إنكليزية صغيرة وأرقام وشرطات فقط (مثل: happy-paws).</p>}
           {slugState === "checking" && <p className="text-2xs text-ink-subtle">جاري فحص التوفر…</p>}

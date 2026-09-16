@@ -4555,6 +4555,7 @@
     "suggestPicked": "{{n}} من {{m}}",
     "suggestPublish": "انشر المؤشَّر ({{n}})",
     "soldQty": "انباع {{n}}",
-    "noCategory": "بلا فئة"
+    "noCategory": "بلا فئة",
+    "suggestSlug": "اقترح"
   }
 }
