@@ -42,6 +42,7 @@ const SurgeriesHub = page(() => import("@/pages/SurgeriesHub").then((m) => ({ de
 const NewCase = page(() => import("@/pages/NewCase").then((m) => ({ default: m.NewCase })));
 const Inventory = page(() => import("@/pages/Inventory").then((m) => ({ default: m.Inventory })));
 const RetailSales = page(() => import("@/pages/RetailSales").then((m) => ({ default: m.RetailSales })));
+const PoultryFarms = page(() => import("@/pages/PoultryFarms").then((m) => ({ default: m.PoultryFarms })));
 const WhatsAppCampaigns = page(() => import("@/pages/WhatsAppCampaigns").then((m) => ({ default: m.WhatsAppCampaigns })));
 const RemindersHub = page(() => import("@/pages/RemindersHub").then((m) => ({ default: m.RemindersHub })));
 const BookingsHub = page(() => import("@/pages/BookingsHub").then((m) => ({ default: m.BookingsHub })));
@@ -246,6 +247,8 @@ function Shell() {
             <Route path="/inventory" element={<Protected><ClinicOnly><Inventory /></ClinicOnly></Protected>} />
             <Route path="/retail" element={<Protected><ClinicOnly><FeatureGate feature="pos"><RetailSales /></FeatureGate></ClinicOnly></Protected>} />
             <Route path="/store" element={<Protected><ClinicOnly><FeatureGate feature="store"><ClinicStore /></FeatureGate></ClinicOnly></Protected>} />
+            {/* قسمُ حقول الدواجن — خلف باقته وحدَها (لا باقةَ عيادةٍ تفتحه). */}
+            <Route path="/poultry" element={<Protected><ClinicOnly><FeatureGate feature="farm"><PoultryFarms /></FeatureGate></ClinicOnly></Protected>} />
             {/* الستور العام — صفحة الزبون بلا تسجيل، خارج كل الحُرّاس عمداً */}
             <Route path="/s/:slug" element={<Storefront />} />
             <Route path="/s/:slug/track" element={<StoreTrack />} />

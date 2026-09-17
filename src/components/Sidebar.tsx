@@ -26,6 +26,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen, Wallet } from "lucide-react";
 import { ShieldCheck } from "lucide-react";
+import { Bird } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { isPlatformAdmin } from "@/lib/platformAdmin";
 import { usePermissions } from "@/hooks/usePermissions";
@@ -88,6 +89,8 @@ export function Sidebar() {
     { to: "/inventory", icon: Boxes, label: t("nav.inventory", "Inventory"), show: can("manageInventory") },
     { to: "/retail", icon: Store, label: t("nav.retail", "Retail & Sales"), show: can("processSales") && has("pos") },
     { to: "/store", icon: ShoppingBag, label: t("nav.store", "المتجر الإلكتروني"), show: can("processSales") && has("store") },
+    // قسمُ الحقول: باقتُه وحدَها تفتحه، والصلاحيةُ صلاحيةُ المخزون (هو مخزنٌ ودفتر).
+    { to: "/poultry", icon: Bird, label: t("nav.poultry"), show: can("manageInventory") && has("farm") },
     { to: "/reports", icon: BarChart3, label: t("nav.reports", "التقارير"), show: can("viewReports") && has("reports") },
     {
       to: "/campaigns", icon: MessageCircle, label: t("nav.campaigns", "WhatsApp Campaigns"), show: has("whatsapp"),
