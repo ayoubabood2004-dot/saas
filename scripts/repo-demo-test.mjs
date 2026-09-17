@@ -768,6 +768,11 @@ const threw = async (fn) => {
   const dbBack = JSON.parse(mem.get(DB_KEY));
   check("  وحذفُ الصرف يرجّع البضاعة", dbBack.products.find((p) => p.id === "feed1").stock === 700);
 
+  check("وخدمةٌ بلا اسمٍ ولا مادّةٍ مرفوضة (سطرُ كلفةٍ لا يُقرأ بجرد)",
+    await threw(() => repo.poultryConsume({ cycle_id: cyc.id, kind: "service", qty: 1 })));
+  check("  وباسمٍ تُقبل",
+    (await repo.poultryConsume({ cycle_id: cyc.id, kind: "service", name: "قنينة غاز", qty: 1 })).ok);
+
   const st = await repo.poultryCycleStats(cyc.id);
   check("مجاميعُ الدفعة: علفٌ بالكيلو وكلفٌ مفصولة", st.feed_kg === 300 && st.feed_cost === 270000 && st.med_cost === 0);
   check("  وكلفةُ الصيصان = السعرُ × العدد", st.chick_cost === 10000000);

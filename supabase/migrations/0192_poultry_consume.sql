@@ -67,6 +67,11 @@ begin
   if p_qty is null or p_qty <= 0 then
     raise exception 'bad_qty' using hint = 'الكمّيةُ لازم أكبر من صفر.';
   end if;
+  -- سطرُ كلفةٍ بلا اسمٍ ولا مادّةٍ لا يُقرأ بجرد: «مادّة ٢٥٬٠٠٠» لا تقول شيئاً
+  -- للمسؤول. فبدل اختراع اسمٍ افتراضيّ — يُرفض.
+  if p_product is null and coalesce(btrim(p_name), '') = '' then
+    raise exception 'bad_name' using hint = 'اكتب اسمَ الخدمة أو اختر مادّةً من المخزن.';
+  end if;
 
   select * into v_cycle from poultry_cycles where id = p_cycle and clinic_id = v_clinic;
   if not found then
@@ -96,7 +101,7 @@ begin
 
   insert into poultry_use (clinic_id, cycle_id, on_date, kind, product_id, name, qty, unit, unit_cost, line_cost, note)
   values (v_clinic, p_cycle, v_date, p_kind, p_product,
-          coalesce(nullif(btrim(p_name), ''), v_prod.name, 'مادّة'),
+          coalesce(nullif(btrim(p_name), ''), v_prod.name),
           -- الوحدةُ من المُستدعي وحدَه: قراءةُ عمودٍ من `products` هنا تربط
           -- الدالّةَ بشكلٍ يختلف بين الحزمة والإنتاج، فتُفحص على غير ما تعمل.
           p_qty, p_unit, v_cost, round(v_cost * p_qty, 2), p_note)

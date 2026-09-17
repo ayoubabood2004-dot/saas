@@ -1514,6 +1514,8 @@ const demoRepo = {
     if (!cyc) throw new Error("no_cycle");
     if (cyc.status !== "active") throw new Error("cycle_closed");
     if (!(input.qty > 0)) throw new Error("bad_qty");
+    // سطرُ كلفةٍ بلا اسمٍ ولا مادّةٍ لا يُقرأ بجرد — يُرفض بالنصفين لا يُخترع له اسم.
+    if (!input.product_id && !(input.name ?? "").trim()) throw new Error("bad_name");
     let cost = 0, stockAfter: number | null = null, shortfall = 0, nm = (input.name ?? "").trim();
     if (input.product_id) {
       const prod = (db.products ?? []).find((p) => p.id === input.product_id);
@@ -1532,7 +1534,7 @@ const demoRepo = {
     const row: PoultryUse = {
       id: uid("puse"), clinic_id: null, cycle_id: input.cycle_id,
       on_date: input.on_date ?? new Date().toISOString().slice(0, 10),
-      kind: input.kind, product_id: input.product_id ?? null, name: nm || "مادّة",
+      kind: input.kind, product_id: input.product_id ?? null, name: nm,
       qty: input.qty, unit: input.unit ?? null, unit_cost: cost,
       line_cost: Math.round(cost * input.qty * 100) / 100,
       note: input.note ?? null, created_at: new Date().toISOString(),
