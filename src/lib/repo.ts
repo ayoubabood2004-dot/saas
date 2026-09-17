@@ -1317,8 +1317,16 @@ const demoRepo = {
   },
 
   /* ---------------- Inventory & POS ---------------- */
+  /* **مخزنُ العيادة لا يرى مخزنَ الحقل** (0191). الجدولُ واحدٌ والعرضان اثنان:
+   * `farm_id` فارغٌ = العيادة، ومملوءٌ = حقلٌ بعينه. وبلا هذا الفصل يظهر
+   * أربعون طنَّ علفٍ بشاشة مخزن العيادة وبقيمة مخزونها وبنتائج الكاشير —
+   * و«جردٌ بالأرقام الفعلية» يصير مستحيلاً للاثنين معاً. */
   async listProducts(_clinicId?: string): Promise<Product[]> {
-    return (loadDB().products ?? []).slice().sort((a, b) => a.name.localeCompare(b.name));
+    return (loadDB().products ?? []).filter((p) => !p.farm_id).slice().sort((a, b) => a.name.localeCompare(b.name));
+  },
+  /** مخزنُ حقلٍ بعينه — الوجهُ الثاني لنفس الجدول. */
+  async listFarmProducts(farmId: string): Promise<Product[]> {
+    return (loadDB().products ?? []).filter((p) => p.farm_id === farmId).slice().sort((a, b) => a.name.localeCompare(b.name));
   },
   /** هل قاعدة البيانات تدعم عمود مجموعات الدفعات (bulk_group / ترحيل 0075)؟
    *  المخزن المحلي يدعمه دائماً؛ السحابة تُفحص فعلياً لتنبيه العيادة قبل أن
@@ -1331,8 +1339,10 @@ const demoRepo = {
     if (!code) return undefined;
     // الرمزُ الأساسي أو أيُّ رمزٍ إضافي — ونطبّع المخزون أيضاً، فصفٌّ قديم
     // فيه محرفٌ غير مرئيّ يبقى قابلاً للمسح.
+    // ومخزنُ الحقل خارجُ المسح: باركودُ علفٍ يُمسح بكاشير العيادة كان **يبيعه**
+    // بسعرٍ لم يُوضع للبيع أصلاً، ويخصم من رصيدِ دفعةٍ جارية.
     const hits = (loadDB().products ?? []).filter(
-      (p) => matchCode(p.barcode) === code || (p.alt_codes ?? []).some((c) => matchCode(c) === code),
+      (p) => !p.farm_id && (matchCode(p.barcode) === code || (p.alt_codes ?? []).some((c) => matchCode(c) === code)),
     );
     /* مرآةُ ترتيب `product_by_code` (0165) — و`find` على ترتيب المصفوفة كانت
      * تخالفه: تختار حاملَ الرمز **الإضافيّ** حيث يختار الخادمُ صاحبَه الأصيل.
@@ -4449,7 +4459,11 @@ const supabaseRepo: typeof demoRepo = {
     // ثانٍ هنا بمعرّفٍ تحسبه الواجهة كان طريقاً لإخفاء منتجاتٍ لو اختلف
     // الحسابان يوماً (عضويات متعدّدة). الخادم يرجع منتجات عيادتك ولا غيرها.
     void clinicId;
-    return allPages<Product>(() => sbc().from("products").select("*").order("name", { ascending: true }));
+    // `is("farm_id", null)`: مخزنُ العيادة لا يرى مخزنَ الحقل (0191).
+    return allPages<Product>(() => sbc().from("products").select("*").is("farm_id", null).order("name", { ascending: true }));
+  },
+  async listFarmProducts(farmId: string) {
+    return allPages<Product>(() => sbc().from("products").select("*").eq("farm_id", farmId).order("name", { ascending: true }));
   },
   async supportsBulkGroup() {
     try {

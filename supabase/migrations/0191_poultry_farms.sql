@@ -220,3 +220,87 @@ grant execute on function poultry_cycle_stats(uuid) to authenticated;
 
 comment on function poultry_cycle_stats(uuid) is
   'مجاميعُ دفعةٍ واحدة (0191): الحيُّ والنفوقُ والعلفُ والكلف. invoker — تمرّ من RLS.';
+
+-- ============================================================================
+-- الماسحُ لا يصل مخزنَ الحقل.
+--
+-- `products` جدولٌ واحدٌ بعرضَين منذ هذه الهجرة: `farm_id is null` مخزنُ
+-- العيادة، ومملوءٌ مخزنُ حقل. الواجهةُ فصلت العرضَين، لكن **الماسحَ يمرّ من
+-- الخادم** (`product_by_code`) لا من القائمة — فباركودُ كيسِ علفٍ يُمسح بكاشير
+-- العيادة كان يرجع المنتجَ فيُباع: بسعرٍ لم يُوضع للبيع أصلاً (صفر)، ويخصم من
+-- رصيدِ دفعةٍ جارية فيكذب «كلفة الدفعة» على صاحب الحقل.
+--
+-- والنسخةُ هنا نسخةُ 0173 حرفاً بحرف، زِيد عليها `p.farm_id is null` **بكلّ**
+-- استعلامٍ يلمس `products` — ومنها استعلامُ اختيار الصيغة: لو بقي بلا شرطٍ
+-- لاختار صيغةً لا يملكها إلا صفُّ حقلٍ، فيرجع الاستعلامُ الأخير فارغاً ويقول
+-- الكاشيرُ «غير موجود» عن مادةٍ **موجودةٍ بمخزن العيادة** بصيغةٍ أخرى.
+-- ============================================================================
+create or replace function public.product_by_code(p_code text)
+returns setof products
+language plpgsql
+stable
+set search_path to 'public'
+as $function$
+declare
+  v_norm text;
+  v_vars text[];
+  v_pick text;
+  v_n    integer;
+begin
+  if p_code is null or p_code = '' then return; end if;
+  v_norm := inv_norm_code(p_code);
+
+  -- (أ) الحرفيّ — ترتيبُ 0165 حرفاً بحرف: خامٌّ للأساسيّ، ثم مطبَّعٌ له، ثم الأقدم.
+  return query
+    select p.* from products p
+     where p.farm_id is null
+       and (p.barcode = p_code
+        or p.alt_codes @> array[p_code]
+        or inv_norm_code(p.barcode) = v_norm
+        or exists (select 1 from unnest(coalesce(p.alt_codes, '{}')) a
+                    where inv_norm_code(a) = v_norm))
+     order by coalesce(p.barcode = p_code, false) desc,
+              (inv_norm_code(p.barcode) = v_norm) desc,
+              p.created_at asc
+     limit 2;
+
+  get diagnostics v_n = row_count;
+  if v_n > 0 then return; end if;
+
+  -- (ب) خاب الحرفيّ: صيغُ الماسح. والرمزُ المطبَّع مستثنىً — جُرِّب للتوّ.
+  v_vars := array_remove(inv_code_variants(p_code), v_norm);
+  if array_length(v_vars, 1) is null then return; end if;
+
+  select t.v into v_pick
+    from unnest(v_vars) with ordinality as t(v, ord)
+   where exists (
+     select 1 from products p
+      where p.farm_id is null
+        and (inv_norm_code(p.barcode) = t.v
+         or exists (select 1 from unnest(coalesce(p.alt_codes, '{}')) a
+                     where inv_norm_code(a) = t.v)))
+   order by t.ord
+   limit 1;
+  if v_pick is null then return; end if;
+
+  return query
+    select p.* from products p
+     where p.farm_id is null
+       and (inv_norm_code(p.barcode) = v_pick
+        or exists (select 1 from unnest(coalesce(p.alt_codes, '{}')) a
+                    where inv_norm_code(a) = v_pick))
+     order by (inv_norm_code(p.barcode) = v_pick) desc,
+              p.created_at asc
+     limit 2;
+end
+$function$;
+
+comment on function public.product_by_code(text) is
+  'استدعاءُ منتجٍ برمزه — حتميُّ الترتيب (خامٌّ ثم مطبَّعٌ ثم الأقدم). وعند خيبةِ '
+  'الحرفيّ وحدها تُجرَّب صيغُ الماسح، **صيغةً صيغةً بترتيبها** كما تفعل '
+  'rescueScan بالواجهة (0173) — لا اتحاداً عليها يبيع غيرَ ما تبيعه الشاشة. '
+  'limit 2 عمداً: الصفُّ الثاني إشارةُ التباسٍ تعرضها الواجهة، لا نتيجةٌ تُباع. '
+  'ومخزنُ الحقل خارجُها كلِّها (0191): كاشيرُ العيادة لا يبيع علفاً.';
+
+revoke all on function public.product_by_code(text) from public, anon;
+grant execute on function public.product_by_code(text) to authenticated, service_role;

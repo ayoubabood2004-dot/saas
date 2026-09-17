@@ -506,6 +506,10 @@ $P -f "$MIG/0165_lookup_and_restore.sql" >/dev/null 2>&1
 # فحصنا نسخةً ماتت قبل أن تصل الإنتاج. العلّةُ نفسُها بنفس السطر مرّتين.
 $P -f "$MIG/0172_code_variants_server.sql" >/dev/null 2>&1
 $P -f "$MIG/0173_variants_ordered.sql" >/dev/null 2>&1
+# و0191 تعدّلها بعد 0173 (مخزنُ الحقل خارجُ الماسح) — **المرّةُ الثالثة** لنفس
+# السطر. فمن يمسّ `product_by_code` بهجرةٍ جديدة يضيف سطرَه هنا، وإلا فحصُ
+# «كاشيرُ العيادة لا يمسح علفاً» بآخر الملفّ يسقط ويدلّه على هذا الموضع.
+$P -f "$MIG/0191_poultry_farms.sql" >/dev/null 2>&1
 
 chk "علامةُ الاتجاه انشالت من الباركود" \
     "select barcode from products where id='bbbb0000-0000-0000-0000-000000000001'" "8989"
@@ -2191,5 +2195,24 @@ chk "الصرفُ على دفعةٍ مغلقةٍ مرفوض" \
 
 chk "والدالّتان definer بمسارٍ مثبَّتٍ وممنوعتان عن anon" \
     "select (count(*) = 2)::text from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname in ('poultry_consume','poultry_unconsume') and p.prosecdef and coalesce(array_to_string(p.proconfig,','),'') like '%search_path%' and not has_function_privilege('anon', p.oid, 'execute')" "true"
+
+# ── الماسحُ لا يصل مخزنَ الحقل (0191) ─────────────────────────────────────
+# الواجهةُ تفصل العرضَين، لكنّ الماسحَ يمرّ من الخادم — فالفصلُ ناقصٌ ما لم
+# يكن بـ`product_by_code` نفسِها. وكيسُ علفٍ يُمسح بكاشير العيادة كان يُباع
+# بصفرٍ ويخصم من رصيدِ دفعةٍ جارية.
+echo "▸ 0191: كاشيرُ العيادة لا يمسح علفاً"
+$P -c "update products set barcode = '6221033000123' where id='b1920000-0000-4000-8000-000000000001';
+       update products set barcode = '6221033000999' where id='b1920000-0000-4000-8000-000000000002';" >/dev/null
+chk "باركودُ مخزن الحقل ما ينلكه بالماسح" \
+    "select _rls_try('$C1', 'select * from product_by_code(''6221033000123'')')" "rows:0"
+chk "  وباركودُ مخزن العيادة ينلكه كما كان" \
+    "select _rls_try('$C1', 'select * from product_by_code(''6221033000999'')')" "rows:1"
+# ومسارُ الصيغ (0173) مثلُه: صيغةٌ لا يملكها إلا صفُّ حقلٍ لا تُختار، وإلا
+# رجع الاستعلامُ الأخيرُ فارغاً وقال الكاشيرُ «غير موجود» عن مادةٍ بمخزنه.
+chk "  ولا يُنتشل بمسار صيغ الماسح" \
+    "select _rls_try('$C1', 'select * from product_by_code(''06221033000123'')')" "rows:0"
+chk "والمخزنُ ما انلمس — لا بيعَ ولا خصم" \
+    "select stock::int::text from products where id='b1920000-0000-4000-8000-000000000001'" "700"
+
 
 [ $fail -eq 0 ] && echo "✓ كل الفحوص عبرت" || { echo "✗ اكو فحصٌ فشل"; exit 1; }

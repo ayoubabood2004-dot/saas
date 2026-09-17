@@ -4699,6 +4699,32 @@
     "closeHint": "Closing stops the age counter and fixes the batch result. Fill in what you know.",
     "soldCount": "Birds sold",
     "soldKg": "Total weight (kg)",
-    "saleTotal": "Sale amount"
+    "saleTotal": "Sale amount",
+    "store": "Farm store",
+    "storeEmpty": "This farm store is empty — add its feed and medicine so they can be drawn from here",
+    "addItem": "Add an item",
+    "itemName": "Item name (feed, medicine…)",
+    "itemQty": "Quantity in",
+    "itemCost": "Unit cost",
+    "itemCode": "Barcode (optional)",
+    "needItemName": "Enter the item name",
+    "hide": "Hide",
+    "exportLedger": "Download full ledger (Excel)",
+    "nothingToExport": "No movements recorded yet",
+    "exportFailed": "Could not download the ledger",
+    "csv": {
+      "house": "House",
+      "batch": "Batch",
+      "date": "Date",
+      "day": "Day",
+      "kind": "Kind",
+      "item": "Item",
+      "qty": "Qty",
+      "cost": "Cost",
+      "note": "Note",
+      "dead": "Mortality",
+      "culled": "Culled",
+      "noteOnly": "Day note"
+    }
   }
 }

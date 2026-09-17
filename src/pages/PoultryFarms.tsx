@@ -20,7 +20,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   Bird, Plus, ArrowRight, Home, Layers, CalendarDays, Skull, Wheat,
-  Syringe, Wrench, StickyNote, Loader2, PackageX, CheckCircle2, AlertTriangle,
+  Syringe, Wrench, StickyNote, Loader2, PackageX, CheckCircle2, AlertTriangle, Boxes, Download,
 } from "lucide-react";
 import type { PoultryFarm, PoultryHouse, PoultryCycle, PoultryDaily, PoultryUse, PoultryCycleStats, PoultryUseKind, Product } from "@/types";
 import { repo } from "@/lib/repo";
@@ -29,6 +29,7 @@ import { usePermissions } from "@/hooks/usePermissions";
 import { cn, money, formatNum, formatDec } from "@/lib/utils";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
 import { Button, useToast } from "@/components/ui";
+import { asciiFileName } from "@/lib/excelExport";
 
 const todayISO = () => new Date().toISOString().slice(0, 10);
 
@@ -213,6 +214,9 @@ function FarmView({ farm, canWrite, onBack, onOpenCycle }: { farm: PoultryFarm; 
             ? <AddHouse farmId={farm.id} onDone={(h) => { if (h) setHouses((s) => [...s, h]); setAdding(false); }} />
             : <Button className="w-full" variant="secondary" leftIcon={<Plus size={16} />} onClick={() => { playTap(); setAdding(true); }}>{t("farm.addHouse")}</Button>)}
 
+          <FarmStore farmId={farm.id} canWrite={canWrite} />
+          <ExportLedger farm={farm} houses={houses} cycles={cycles} />
+
           {/* الدفعاتُ المغلقة — تاريخُ الحقل، وهو سببُ كلِّ هذا البناء. */}
           {cycles.some((c) => c.status === "closed") && (
             <section className="space-y-2">
@@ -371,10 +375,9 @@ function CycleView({ farm, cycle, canWrite, onBack }: { farm: PoultryFarm; cycle
     try {
       const [s, d, u, p] = await Promise.all([
         repo.poultryCycleStats(cur.id), repo.listPoultryDaily(cur.id),
-        repo.listPoultryUse(cur.id), repo.listProducts(),
+        repo.listPoultryUse(cur.id), repo.listFarmProducts(farm.id),
       ]);
-      setStats(s); setDays(d); setUses(u);
-      setStock((p ?? []).filter((x) => x.farm_id === farm.id));
+      setStats(s); setDays(d); setUses(u); setStock(p ?? []);
     } catch (e) { toast.error(t("farm.loadFailed"), e instanceof Error ? e.message : undefined); }
     finally { setBusy(false); }
   }, [cur.id, farm.id, t, toast]);
@@ -625,9 +628,11 @@ function CloseCycle({ cycleId, onClosed }: { cycleId: string; onClosed: (c: Poul
 
 /* ── مشتركات ───────────────────────────────────────────────────────────── */
 function BackBar({ title, onBack }: { title: string; onBack: () => void }) {
+  const { t } = useTranslation();
   return (
     <header className="flex items-center gap-2">
-      <button onClick={() => { playTap(); onBack(); }} className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-surface-2 text-ink-muted transition hover:text-ink">
+      {/* زرُّ الرجوع سهمٌ بلا نصّ — بلا اسمٍ معلَنٍ يسمعه قارئُ الشاشة «زر». */}
+      <button onClick={() => { playTap(); onBack(); }} aria-label={t("common.back")} className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-surface-2 text-ink-muted transition hover:text-ink">
         <ArrowRight size={17} className="ltr:-scale-x-100" />
       </button>
       <h1 className="min-w-0 flex-1 truncate font-display text-lg font-extrabold text-ink">{title}</h1>
@@ -651,4 +656,134 @@ function Empty({ icon: Icon, text }: { icon: typeof Bird; text: string }) {
       <p className="text-sm font-semibold text-ink-subtle">{text}</p>
     </div>
   );
+}
+
+/* ── مخزنُ الحقل — نفسُ جدول المنتجات، وجهُه الآخر ─────────────────────── */
+function FarmStore({ farmId, canWrite }: { farmId: string; canWrite: boolean }) {
+  const { t } = useTranslation();
+  const toast = useToast();
+  const [rows, setRows] = useState<Product[]>([]);
+  const [open, setOpen] = useState(false);
+  const [adding, setAdding] = useState(false);
+  const [name, setName] = useState("");
+  const [qty, setQty] = useState("");
+  const [cost, setCost] = useState("");
+  const [code, setCode] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(async () => {
+    try { setRows(await repo.listFarmProducts(farmId)); }
+    catch (e) { toast.error(t("farm.loadFailed"), e instanceof Error ? e.message : undefined); }
+  }, [farmId, t, toast]);
+  useEffect(() => { if (open) void load(); }, [open, load]);
+
+  const submit = async () => {
+    if (!name.trim()) { playWarning(); toast.error(t("farm.needItemName")); return; }
+    setBusy(true);
+    try {
+      /* `farm_id` يجعله مخزنَ الحقل: لا يظهر بمخزن العيادة ولا يُمسح بكاشيرها،
+         و`sell_price: 0` لأنه لا يُباع — يُستهلك بسعر شرائه (قرارُ المالك). */
+      await repo.createProduct({
+        name: name.trim(), barcode: code.trim() || null,
+        purchase_price: Number(cost) || 0, sell_price: 0,
+        stock: Number(qty) || 0, farm_id: farmId,
+      } as Parameters<typeof repo.createProduct>[0]);
+      setName(""); setQty(""); setCost(""); setCode(""); setAdding(false);
+      playSuccess(); await load();
+    } catch (e) { playWarning(); toast.error(t("farm.saveFailed"), e instanceof Error ? e.message : undefined); }
+    finally { setBusy(false); }
+  };
+
+  if (!open) {
+    return <Button className="w-full" variant="ghost" leftIcon={<Boxes size={16} />} onClick={() => { playTap(); setOpen(true); }}>{t("farm.store")}</Button>;
+  }
+  return (
+    <section className="space-y-2 rounded-2xl border border-line bg-surface-1 p-4">
+      <h2 className="flex items-center gap-2 font-bold text-ink"><Boxes size={17} /> {t("farm.store")}</h2>
+      {rows.length === 0 ? <p className="py-3 text-center text-2xs text-ink-subtle">{t("farm.storeEmpty")}</p> : (
+        <ul className="divide-y divide-line">
+          {rows.map((r) => (
+            <li key={r.id} className="flex items-center gap-2 py-2">
+              <span className="min-w-0 flex-1 truncate text-sm font-semibold text-ink">{r.name}</span>
+              {/* رصيدٌ سالبٌ يُعرض أحمرَ لا يُقصّ: هو إشارةُ «راجع المخزن». */}
+              <span className={cn("font-display text-sm font-bold tabular-nums", (r.stock ?? 0) < 0 ? "text-danger-600 dark:text-danger-400" : "text-ink-muted")}>
+                {formatDec(r.stock ?? 0)}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {canWrite && (adding ? (
+        <div className="space-y-2 border-t border-line pt-2">
+          <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder={t("farm.itemName")} autoFocus />
+          <div className="grid grid-cols-2 gap-2">
+            <input className="input" inputMode="decimal" value={qty} onChange={(e) => setQty(e.target.value)} placeholder={t("farm.itemQty")} />
+            <input className="input" inputMode="decimal" value={cost} onChange={(e) => setCost(e.target.value)} placeholder={t("farm.itemCost")} />
+          </div>
+          <input className="input" value={code} onChange={(e) => setCode(e.target.value)} placeholder={t("farm.itemCode")} dir="ltr" />
+          <div className="flex gap-2">
+            <Button className="flex-1" onClick={submit} disabled={busy}>{t("farm.save")}</Button>
+            <Button variant="ghost" onClick={() => setAdding(false)}>{t("farm.cancel")}</Button>
+          </div>
+        </div>
+      ) : (
+        <Button className="w-full" variant="secondary" leftIcon={<Plus size={15} />} onClick={() => { playTap(); setAdding(true); }}>{t("farm.addItem")}</Button>
+      ))}
+      <Button className="w-full" variant="ghost" onClick={() => setOpen(false)}>{t("farm.hide")}</Button>
+    </section>
+  );
+}
+
+/* ── الجردُ الكامل — «حركاتُ كلّ يومٍ بالضبط، بالأرقام الفعلية» ────────── */
+function ExportLedger({ farm, houses, cycles }: { farm: PoultryFarm; houses: PoultryHouse[]; cycles: PoultryCycle[] }) {
+  const { t } = useTranslation();
+  const toast = useToast();
+  const [busy, setBusy] = useState(false);
+
+  const run = async () => {
+    setBusy(true);
+    try {
+      const head = [t("farm.csv.house"), t("farm.csv.batch"), t("farm.csv.date"), t("farm.csv.day"),
+        t("farm.csv.kind"), t("farm.csv.item"), t("farm.csv.qty"), t("farm.csv.cost"), t("farm.csv.note")];
+      /* اسمُ الحقل صفَّ عنوانٍ داخل الملف لا باسمه: `asciiFileName` يُسقط
+         العربيَّ من الاسم عمداً، فلو لم يُكتب هنا لخرج جردُ كلِّ حقلٍ بنفس
+         الاسم — وملفّان بنفس الاسم بمجلّد التنزيلات يصيران «(1)» ولا يُعرفان. */
+      const out: string[][] = [];
+      // صفٌّ لكلّ حركةٍ بكلّ يومٍ بكلّ دفعة — لا مجاميعَ تخفي ما تحتها.
+      for (const c of cycles) {
+        const label = houses.find((h) => h.id === c.house_id)?.label ?? "—";
+        const batch = `${c.placed_on} · ${c.placed_count}`;
+        const [days, uses] = await Promise.all([repo.listPoultryDaily(c.id), repo.listPoultryUse(c.id)]);
+        const dayNo = (d: string) => Math.round((new Date(d).getTime() - new Date(c.placed_on).getTime()) / 86400000);
+        for (const d of days) {
+          if (d.dead > 0) out.push([label, batch, d.on_date, String(dayNo(d.on_date)), t("farm.csv.dead"), "", String(d.dead), "", d.note ?? ""]);
+          if (d.culled > 0) out.push([label, batch, d.on_date, String(dayNo(d.on_date)), t("farm.csv.culled"), "", String(d.culled), "", ""]);
+          if (d.dead === 0 && d.culled === 0 && d.note) out.push([label, batch, d.on_date, String(dayNo(d.on_date)), t("farm.csv.noteOnly"), "", "", "", d.note]);
+        }
+        for (const u of uses) {
+          out.push([label, batch, u.on_date, String(dayNo(u.on_date)), t(`farm.use.${u.kind}`), u.name, String(u.qty), String(Math.round(u.line_cost)), u.note ?? ""]);
+        }
+      }
+      if (out.length === 0) { toast.error(t("farm.nothingToExport")); return; }
+      out.unshift([farm.name, todayISO()], [], head);
+      /* BOM أوّلاً: إكسل بلا علامة الترتيب يقرأ UTF-8 العربيَّ رموزاً مشوّهة —
+         وجردٌ لا يُقرأ ليس جرداً. */
+      const csv = "﻿" + out.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
+      const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+      /* اسمٌ لاتينيّ و`a` داخل المستند: كروم يُهمل `download` العربيَّ كلَّه
+         فينزل «download» بلا امتداد، ويفتحه ويندوز بأيّ برنامجٍ إلا إكسل. */
+      const a = document.createElement("a");
+      a.style.display = "none";
+      document.body.appendChild(a);
+      a.href = url;
+      a.download = asciiFileName(`${farm.name} ledger ${todayISO()}`, `farm-ledger-${todayISO()}`, "csv");
+      a.click();
+      setTimeout(() => { a.remove(); URL.revokeObjectURL(url); }, 4000);
+      playSuccess();
+    } catch (e) { playWarning(); toast.error(t("farm.exportFailed"), e instanceof Error ? e.message : undefined); }
+    finally { setBusy(false); }
+  };
+
+  if (!cycles.length) return null;
+  return <Button className="w-full" variant="ghost" leftIcon={<Download size={16} />} onClick={run} disabled={busy}>{t("farm.exportLedger")}</Button>;
 }
