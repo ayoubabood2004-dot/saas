@@ -774,10 +774,14 @@ export function AnalyticsHub() {
       [t("rpt.csv.expenses", "المصروفات والسحوبات"), String(Math.round(expensesTotal))],
       ...(canProfit ? [[t("rpt.csv.netCash", "صافي النقد في الصندوق"), String(Math.round(netCash))]] : []),
       [],
-      [t("rpt.csv.method", "طريقة الدفع"), t("rpt.csv.amount", "المبلغ"), t("rpt.csv.txCount", "عدد العمليات"), t("rpt.csv.out"), t("rpt.csv.pocketNet")],
+      [t("rpt.csv.method", "طريقة الدفع"), t("rpt.csv.amount", "المبلغ"), t("rpt.csv.txCount", "عدد العمليات"),
+        ...(canProfit ? [t("rpt.csv.out"), t("rpt.csv.pocketNet")] : [])],
       // ثلاثةُ أعمدةٍ لكلّ جيب: الداخلُ والمسحوبُ والصافي — الملفُّ يُفتح بإكسل
       // ويُجمع بالشهر، فعمودٌ ناقصٌ هنا خطأٌ يُنسخ لا يُرى.
-      ...POCKETS.map((k) => [t(`rpt.pay.${k}`, k), String(Math.round(zReport.byMethod[k].total)), String(zReport.byMethod[k].count), String(Math.round(pockets[k].out)), String(Math.round(pockets[k].net))]),
+      // نفسُ بوّابة الشاشة بالضبط: عمودا المسحوب والصافي رقما ربح، وملفٌّ
+      // يُفتح بإكسل أسهلُ تسريباً من شاشة.
+      ...POCKETS.map((k) => [t(`rpt.pay.${k}`, k), String(Math.round(zReport.byMethod[k].total)), String(zReport.byMethod[k].count),
+        ...(canProfit ? [String(Math.round(pockets[k].out)), String(Math.round(pockets[k].net))] : [])]),
       [],
       [t("rpt.csv.topSellers", "الأكثر مبيعاً"), t("rpt.csv.qty", "الكمية"), t("rpt.csv.revenue", "الإيراد")],
       ...movers.top.map((p) => [p.name, String(p.qty), String(Math.round(p.revenue))]),
@@ -1305,13 +1309,19 @@ function MoneyTab({ z, pockets, receivables, series, paymentPie, revenue, catego
                     </div>
                     <p className="font-display font-bold tabular-nums text-ink">{money(row.total)}</p>
                   </div>
-                  {p.out > 0 && (
+                  {/* `canProfit` لازمةٌ هنا: الصافي رقمُ ربحٍ — وهو **نفسُ** ما
+                      يُخفى بأربعين بكسل تحته خلف نفس البوّابة. وتُغلَق الخانةُ
+                      كلُّها لا الصافي وحدَه: «إخفاءُ النتيجة مع إظهار طرفيها
+                      يُبطل البوّابة» — قاعدةٌ مكتوبةٌ بهذا الملفّ نفسِه.
+                      والتسمية فوق القيمة لا بجانبها: بجانبها يبقى للرقم
+                      «المسارُ ناقصَ التسمية» فينفصل «د.ع» عن رقمه بهاتفٍ ٣٦٠. */}
+                  {canProfit && p.out > 0 && (
                     <div className="mt-2 grid grid-cols-2 gap-2 border-t border-line pt-2 text-2xs">
-                      <span className="flex items-center justify-between gap-2 text-warn-700 dark:text-warn-300">
+                      <span className="flex flex-col text-warn-700 dark:text-warn-300">
                         <span className="font-semibold">{t("rpt.pocketOut")}</span>
                         <span className="font-display font-bold tabular-nums">− {money(p.out)}</span>
                       </span>
-                      <span className={cn("flex items-center justify-between gap-2 font-bold",
+                      <span className={cn("flex flex-col font-bold",
                         p.net < 0 ? "text-danger-600 dark:text-danger-400" : "text-brand-700 dark:text-brand-300")}>
                         <span>{t("rpt.pocketNet")}</span>
                         <span className="font-display tabular-nums">{money(p.net)}</span>
@@ -1724,6 +1734,8 @@ function ExpensesTab({ rows, total, pockets, cashCollected, rangeLabel, canRecor
     })();
   };
 
+  const activePockets = POCKETS.filter((k) => pockets[k].in !== 0 || pockets[k].out !== 0);
+
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1759,10 +1771,14 @@ function ExpensesTab({ rows, total, pockets, cashCollected, rangeLabel, canRecor
              تقفل الشهرَ وهي تظنّ أنّ ما دخل البطاقةَ والتحويلَ بقي فيهما. */
           <div className="rounded-2xl border border-brand-200 bg-brand-50 p-4 dark:border-brand-500/30 dark:bg-brand-500/10">
             <p className="text-2xs font-semibold text-brand-700 dark:text-brand-300">{t("rpt.exp.netByPocket")}</p>
+            {/* بطاقةٌ بعنوانٍ وبلا رقمٍ تُقرأ «فشل تحميل» لا «ما تحرّك شيء» —
+                وجارتاها بنفس الشريط تطبعان «٠ د.ع». فمدّةٌ بلا حركةٍ تطبع صفراً. */}
+            {activePockets.length === 0 ? (
+              <p className="mt-1 font-display text-2xl font-extrabold tabular-nums text-brand-800 dark:text-brand-200">{money(0)}</p>
+            ) : (
             <ul className="mt-1.5 space-y-1">
-              {POCKETS.map((k) => {
+              {activePockets.map((k) => {
                 const p = pockets[k];
-                if (p.in === 0 && p.out === 0) return null;
                 return (
                   <li key={k} className="flex items-baseline justify-between gap-2">
                     <span className="text-2xs font-semibold text-brand-700 dark:text-brand-300">{t(`rpt.pay.${k}`, k)}</span>
@@ -1774,6 +1790,7 @@ function ExpensesTab({ rows, total, pockets, cashCollected, rangeLabel, canRecor
                 );
               })}
             </ul>
+            )}
           </div>
         )}
       </div>
