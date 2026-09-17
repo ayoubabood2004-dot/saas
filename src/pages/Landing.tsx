@@ -23,7 +23,7 @@ import { track } from "@/lib/track";
 const startHref = (lang: string) => appUrl(`/login?as=clinic&new=1&lang=${encodeURIComponent(lang)}`);
 import { appUrl, appHostLabel } from "@/lib/appUrl";
 import { cn, formatNum, formatDec } from "@/lib/utils";
-import { PLANS } from "@/lib/plans";
+import { CLINIC_PLANS, planCopy } from "@/lib/plans";
 import { CURRENCIES, currencyInfo, currencyName, guessCountry, fetchLiveRates, usdTo } from "@/lib/currency";
 
 /* ============================================================================
@@ -654,7 +654,7 @@ function Pricing() {
         </motion.div>
 
         <div className="mt-12 grid items-stretch gap-5 lg:grid-cols-3">
-          {PLANS.map((p, i) => (
+          {CLINIC_PLANS.map((p, i) => { const copy = planCopy(p.id); return (
             <motion.div
               key={p.id}
               initial={{ opacity: 0, y: 24 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, margin: "-40px" }}
@@ -665,8 +665,8 @@ function Pricing() {
               )}
             >
               {p.popular && <span className="absolute -top-3 start-1/2 -translate-x-1/2 rounded-full bg-brand-600 px-3.5 py-1 text-2xs font-extrabold text-white shadow-soft">{t("landing.pricing.mostComplete")}</span>}
-              <p className="font-display text-lg font-extrabold text-ink">{t(`plans.${p.id}.name`, p.name)}</p>
-              <p className="text-2xs font-semibold text-ink-subtle">{t(`plans.${p.id}.tag`, p.tag)}</p>
+              <p className="font-display text-lg font-extrabold text-ink">{copy.name}</p>
+              <p className="text-2xs font-semibold text-ink-subtle">{copy.tag}</p>
               <div className="mt-4 flex flex-wrap items-end gap-1">
                 <AnimatePresence mode="popLayout">
                   <motion.span
@@ -695,12 +695,12 @@ function Pricing() {
                 </p>
               )}
               <ul className="mt-5 flex-1 space-y-2.5">
-                {(t(`plans.${p.id}.feats`, { returnObjects: true, defaultValue: p.feats }) as string[]).map((f) => (
+                {copy.feats.map((f) => (
                   <li key={f} className="flex items-start gap-2 text-sm text-ink-muted">
                     <Check size={17} className="mt-0.5 shrink-0 text-success-600" /> {f}
                   </li>
                 ))}
-                {(t(`plans.${p.id}.missing`, { returnObjects: true, defaultValue: p.missing }) as string[]).map((f) => (
+                {copy.missing.map((f) => (
                   <li key={f} className="flex items-start gap-2 text-sm text-ink-subtle/70">
                     <X size={17} className="mt-0.5 shrink-0 text-ink-subtle/50" /> {f}
                   </li>
@@ -716,7 +716,7 @@ function Pricing() {
                 {t("landing.cta.start")} <ArrowLeft size={15} className="ltr:-scale-x-100" />
               </a>
             </motion.div>
-          ))}
+          ); })}
         </div>
 
         {/* The 14-day free trial — its own standalone rectangle under the plans */}

@@ -4013,16 +4013,21 @@
     "viewPayroll": "Staff payroll and advances"
   },
   "features": {
-    "pos": "Till, sales and invoices",
+    "pos": "Point of sale, billing and invoices",
     "reports": "Reports and analytics",
-    "reportsExport": "Excel export and report printing",
+    "reportsExport": "Excel export and printable reports",
     "debt": "Credit sales and the debt ledger",
     "whatsapp": "WhatsApp campaigns and automatic reminders",
     "consent": "Consent forms",
     "branding": "Printouts with your clinic's logo",
     "finePerms": "Fine-grained staff permissions",
-    "payroll": "Staff payroll — salaries, advances and deductions",
-    "store": "Online store — a public shop on your clinic's own link"
+    "payroll": "Staff payroll, advances and deductions",
+    "store": "Online store — a public storefront on your own link",
+    "farm": "Poultry farms — batches, daily entry and a farm store",
+    "gateTitle": "This feature isn't in your plan",
+    "gateBody": "<0>{{feature}}</0> is available on the <1>{{plan}}</1> plan and above.",
+    "gateCta": "Upgrade your plan",
+    "gateBack": "Back"
   },
   "landing": {
     "title": "doctorVet — Veterinary clinic management",
@@ -4222,6 +4227,25 @@
         "10 users + priority support and training"
       ],
       "missing": []
+    },
+    "farm": {
+      "name": "Poultry Farm",
+      "tag": "Your farm on the books — for growers and farm owners",
+      "feats": [
+        "Unlimited farms and houses",
+        "Batches aged from the day the chicks were placed",
+        "Daily entry: mortality, culls, water, sample weight, temperature, notes",
+        "Farm store — feed by the ton, medicines by barcode, services",
+        "Consumption deducts stock at cost — batch cost with no invented profit",
+        "Batch totals: alive, mortality, feed, costs",
+        "Full Excel inventory with the actual numbers"
+      ],
+      "missing": [
+        "Point of sale and invoices",
+        "Animal medical records",
+        "Online store",
+        "WhatsApp campaigns"
+      ]
     }
   },
   "flow": {
