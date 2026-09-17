@@ -51,16 +51,49 @@ async function rpc<T>(fn: string, args: Record<string, unknown>): Promise<T> {
   return (await res.json()) as T;
 }
 
+type RawFront = { ok?: boolean } & StoreFrontInfo;
+
+/* تشكيلُ الناتج بموضعٍ واحد: يستعمله النداءُ والبذرةُ معاً — نسختان تنحرفان. */
+function shapeFront(d: RawFront | null): StoreFrontInfo | null {
+  if (!d?.ok) return null;
+  return {
+    name: d.name, logo_url: productImageUrl(d.logo_url), phone: d.phone ?? null, whatsapp: d.whatsapp ?? null,
+    facebook: d.facebook ?? null, instagram: d.instagram ?? null, bio: d.bio ?? null,
+    delivery_fee: Number(d.delivery_fee) || 0, min_order: Number(d.min_order) || 0,
+  };
+}
+function shapeCatalog(rows: StoreCatalogItem[] | null | undefined): StoreCatalogItem[] {
+  return (rows ?? []).map((r) => ({ ...r, price: Number(r.price) || 0 }));
+}
+
+/**
+ * بذرةُ الصفحة (`#store-boot`) — ما حقنته الحافةُ بالمستند قبل أن تنزل الحزمة.
+ *
+ * تُقرأ **مرّةً واحدة**: العنصرُ جزءٌ من مستندٍ مخبوءٍ خمسَ دقائق، فهو صورةٌ
+ * للحظةٍ مضت لا مصدرُ حقيقةٍ متجدّد. الواجهةُ ترسمها فوراً ثمّ تستبدلها بما
+ * يصل من الخادم — فالزبونُ يرى رفّاً بأوّل رسمٍ بدل دوّامةٍ تنتظر ذهاباً وإياباً.
+ */
+let bootRead = false;
+/** هل رسمت الحافةُ رفّاً بهذا المستند؟ سؤالٌ بلا استهلاك (للتصيير لا للبيانات). */
+export const pagePainted = (): boolean =>
+  typeof document !== "undefined" && !!document.getElementById("store-boot");
+export function readStoreBoot(slug: string): { front: StoreFrontInfo; catalog: StoreCatalogItem[] } | null {
+  if (bootRead || typeof document === "undefined") return null;
+  bootRead = true;
+  try {
+    const el = document.getElementById("store-boot");
+    if (!el?.textContent) return null;
+    const d = JSON.parse(el.textContent) as { slug?: string; front?: RawFront; catalog?: StoreCatalogItem[] };
+    // السلاگُ يُطابَق: مستندٌ مخبوءٌ لعيادةٍ أخرى أسوأُ من لا بذرة.
+    if (!d?.slug || d.slug !== slug || !d.front?.ok || !Array.isArray(d.catalog)) return null;
+    return { front: shapeFront(d.front)!, catalog: shapeCatalog(d.catalog) };
+  } catch { return null; }
+}
+
 export const storeApi = {
   async storeFrontPublic(slug: string): Promise<StoreFrontInfo | null> {
     if (!CLOUD) return (await demoRepo()).storeFrontPublic(slug);
-    const d = await rpc<({ ok?: boolean } & StoreFrontInfo) | null>("store_front", { p_slug: slug });
-    if (!d?.ok) return null;
-    return {
-      name: d.name, logo_url: productImageUrl(d.logo_url), phone: d.phone ?? null, whatsapp: d.whatsapp ?? null,
-      facebook: d.facebook ?? null, instagram: d.instagram ?? null, bio: d.bio ?? null,
-      delivery_fee: Number(d.delivery_fee) || 0, min_order: Number(d.min_order) || 0,
-    };
+    return shapeFront(await rpc<RawFront | null>("store_front", { p_slug: slug }));
   },
 
   async storeCatalogPublic(slug: string, limit = 60, offset = 0): Promise<StoreCatalogItem[]> {
@@ -73,7 +106,7 @@ export const storeApi = {
       if (offset !== 0) throw e;
       rows = await rpc<StoreCatalogItem[]>("store_catalog", { p_slug: slug });
     }
-    return (rows ?? []).map((r) => ({ ...r, price: Number(r.price) || 0 }));
+    return shapeCatalog(rows);
   },
 
   async trackStoreOrder(slug: string, orderNo: string, phone: string): Promise<StoreTrackInfo | null> {

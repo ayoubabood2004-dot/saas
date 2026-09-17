@@ -40,12 +40,17 @@ const SHELL = `<!doctype html><html lang="ar" dir="rtl"><head>
   </head><body></body></html>`;
 
 let frontBody = null;       // ما يرجعه store_front (null ⇒ فشلُ الطلب)
+let catalogBody = null;     // وما يرجعه store_catalog
 globalThis.fetch = async (input) => {
   const u = String(input?.url ?? input);
   if (u.endsWith("/store.html")) return new Response(SHELL, { status: 200 });
   if (u.includes("/rpc/store_front")) {
     if (!frontBody) return new Response("nope", { status: 500 });
     return new Response(JSON.stringify(frontBody), { status: 200, headers: { "content-type": "application/json" } });
+  }
+  if (u.includes("/rpc/store_catalog")) {
+    if (!catalogBody) return new Response("nope", { status: 500 });
+    return new Response(JSON.stringify(catalogBody), { status: 200, headers: { "content-type": "application/json" } });
   }
   throw new Error(`fetch غير متوقَّع: ${u}`);
 };
@@ -61,8 +66,8 @@ const handler = (await import(pathToFileURL(file).href).finally(
   () => { try { rmSync(dir, { recursive: true, force: true }); } catch { /* ignore */ } },
 )).default;
 
-const render = async (front, slug = "alrahma") => {
-  frontBody = front;
+const render = async (front, slug = "alrahma", catalog = null) => {
+  frontBody = front; catalogBody = catalog;
   const res = await handler(new Request(`https://doctorvet.vet/api/store-og?slug=${slug}`));
   return await res.text();
 };
@@ -101,6 +106,27 @@ check("القالبُ بصورته الأصلية", metaOf(failed, "og:image") =
 check("  وبعنوانه الأصليّ (ما انكتب اسمُ عيادةٍ ما وصلت)", failed.includes("<title>متجر العيادة</title>"));
 const badSlug = await render({ ok: true, name: "x" }, "AB");
 check("وslug غيرُ صالحٍ لا يصل الخادمَ أصلاً", badSlug.includes("<title>متجر العيادة</title>"));
+
+console.log("▸ بذرةُ البيانات بالمستند — الرفُّ يُرسم بلا ذهابٍ وإياب");
+const CAT = [{ id: "p1", name: "شامبو", price: 3500, available: true, image_path: null, category: "care", subcategory: null, descr: null, featured: true }];
+const seeded = await render({ ok: true, name: "عيادة البذرة", logo_url: null }, "alrahma", CAT);
+const bootOf = (html) => {
+  const m = html.match(/<script type="application\/json" id="store-boot">([\s\S]*?)<\/script>/);
+  return m ? JSON.parse(m[1].replace(/\\u003c/g, "<")) : null;
+};
+const boot = bootOf(seeded);
+check("البذرةُ موجودةٌ بالمستند", !!boot);
+check("  وفيها السلاگُ (مستندٌ مخبوءٌ لعيادةٍ أخرى أسوأُ من لا بذرة)", boot?.slug === "alrahma");
+check("  والواجهةُ والكتلوج", boot?.front?.name === "عيادة البذرة" && boot?.catalog?.length === 1);
+check("  و`<` مهرَّبٌ فلا يُنهي الوسمَ مبكّراً", !/<script[^>]*>[^<]*<\//.test(seeded.split('id="store-boot"')[1]?.slice(0, 200) ?? ""));
+// كتلوجٌ فاشل ⇒ لا بذرة، والصفحةُ تبقى سليمةً بوسومها
+const noCat = await render({ ok: true, name: "عيادة بلا بذرة", logo_url: null }, "alrahma", null);
+check("فشلُ الكتلوج ⇒ لا بذرةَ ولا صفحةَ مكسورة", bootOf(noCat) === null && metaOf(noCat, "og:title") === "عيادة بلا بذرة — المتجر");
+// بذرةٌ ضخمةٌ تُترك كلُّها
+const HUGE = Array.from({ length: 400 }, (_, i) => ({ id: `p${i}`, name: "م".repeat(200), price: 1000, available: true, image_path: null, category: null, subcategory: null, descr: "و".repeat(200), featured: false }));
+const huge = await render({ ok: true, name: "عيادة ضخمة", logo_url: null }, "alrahma", HUGE);
+check("وبذرةٌ فوق ٦٤ كيلو تُترك — مستندٌ منتفخٌ يبطئ أكثرَ ممّا يسرّع", bootOf(huge) === null);
+check("  والصفحةُ تبقى بوسومها", metaOf(huge, "og:title") === "عيادة ضخمة — المتجر");
 
 console.log(fails ? `\n✗ og-test: ${passes} نجحت، ${fails} فشلت` : `\n✓ og-test: ${passes} نجحت، 0 فشلت`);
 process.exit(fails ? 1 : 0);

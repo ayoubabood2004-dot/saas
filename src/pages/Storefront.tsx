@@ -17,7 +17,7 @@ import {
   CheckCircle2, PawPrint, Truck, ShieldCheck, Store, ArrowRight, ArrowLeft, Loader2, PackageX,
 } from "lucide-react";
 import type { StoreCatalogItem, StoreFrontInfo } from "@/types";
-import { storeApi } from "@/lib/storeApi";
+import { storeApi, readStoreBoot, pagePainted } from "@/lib/storeApi";
 import { categoryLook, isValidCustomerPhone, productImageUrl, shelfLook, shelfLabel, shelfMonogram, lastOrderKey } from "@/lib/storeLib";
 import { preferArabicForVisitor } from "@/lib/portal";
 import { waNumber } from "@/lib/phone";
@@ -47,6 +47,9 @@ const ERROR_MSG: Record<string, string> = {
   rate_limited: "وصلت الحد الأقصى للطلبات اليوم — تواصل مع العيادة مباشرة.",
   min_order: "طلبك أقل من الحد الأدنى للمتجر.",
 };
+
+/** عنوانُ التبويب بموضعٍ واحد — تكتبه البذرةُ والنداءُ كلاهما. */
+const pageTitle = (name: string) => `${name} — المتجر`;
 
 /**
  * يُبقي عنصراً مركَّباً حتى تنتهي حركةُ خروجه — بديلُ `AnimatePresence` بلا مكتبة.
@@ -92,6 +95,10 @@ export function Storefront() {
   /* أوّلُ صفحةٍ أخفُّ (٢٤) لأن الزائرَ يدفع بايتاتِها قبل أن يرى منتجاً، ثمّ
    * صفحاتٌ أكبر لمن يكمّل — فالكلفةُ على من طلبها لا على كلّ من فتح الرابط. */
   const PAGE = 24;
+  /* رفٌّ رسمته الحافةُ ⇒ **لا حركةَ دخول**. البطاقاتُ معروضةٌ صلبةً قبل React،
+   * فحركةُ «تلاشٍ من صفر» عند التركيب تُطفئ ما كان ظاهراً ثمّ تعيده — ومضةٌ
+   * يراها الزبون. (رُئيت بلقطةٍ عند ٦٠٠ms بشبكةٍ مبطّأة قبل أن يُطفأ.) */
+  const noIntro = useRef(pagePainted());
   const PAGE_MORE = 60;
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -108,20 +115,34 @@ export function Storefront() {
   useEffect(() => {
     let alive = true;
     (async () => {
+      /* بذرةُ الحافة: رفٌّ مرسومٌ مع أوّل رسمةٍ بدل دوّامةٍ تنتظر ذهاباً وإياباً
+       * (المقيس: ٢٥٠–٦٠٠ms توفَّر، وعلى شبكةٍ ضعيفة أكثر). ولا تُصدَّق نهائياً —
+       * المستندُ مخبوءٌ خمسَ دقائق بالحافة — فالنداءُ يمضي بعدها ويستبدلها. */
+      const boot = readStoreBoot(slug);
+      if (boot && alive) {
+        setFront(boot.front); setCatalog(boot.catalog);
+        setHasMore(boot.catalog.length === PAGE); setState("open");
+        document.title = pageTitle(boot.front.name);
+      }
       try {
         const [f, c] = await Promise.all([storeApi.storeFrontPublic(slug), storeApi.storeCatalogPublic(slug, PAGE, 0)]);
         if (!alive) return;
         if (!f) { setState("closed"); return; }
         setFront(f); setCatalog(c); setHasMore(c.length === PAGE); setState("open");
-        document.title = `${f.name} — المتجر`;
+        document.title = pageTitle(f.name);
         /* القياسُ بعد أن يُفتح المتجرُ فعلاً لا عند تركيب المكوّن: رابطٌ مغلقٌ
          * أو فشلُ شبكةٍ ليس زيارةً، وعدُّه يرفع بسطَ القمع بمن لم يرَ رفّاً.
          * و`once` لأن إعادةَ التصيير ليست زيارةً ثانية. */
         track("store_view", { slug }, true);
       } catch {
         /* فشلُ الجلب غير «المتجر مسكّر»: شاشةُ «مغلق» على خطأ شبكةٍ عابر تكذب
-         * على الزبون فيصدّق ويروح — القاعدة: خطأٌ ظاهر و«أعد المحاولة». */
-        if (alive) setState("error");
+         * على الزبون فيصدّق ويروح — القاعدة: خطأٌ ظاهر و«أعد المحاولة».
+         *
+         * **إلا إن كانت البذرةُ مرسومة**: عندها الرفُّ المعروض لقطةُ خادمٍ
+         * كاملةٌ لا قائمةٌ ناقصة (والقاعدةُ تمنع الناقصةَ لا القديمة)، فمحوُها
+         * بشاشة خطأٍ يأخذ من الزبون متجراً يشوفه. وما يبيعه لا يعتمد عليها:
+         * `store_place_order` تتحقّق من النشر والسعر لحظةَ الطلب. */
+        if (alive && !boot) setState("error");
       }
     })();
     return () => { alive = false; };
@@ -460,8 +481,9 @@ export function Storefront() {
               const shelf = shelfLook(p.name);
               const inCart = qtyOf(p.id);
               return (
-                <div key={p.id} style={{ animationDelay: `${Math.min(i * 0.03, 0.3)}s` }}
-                  className={cn("relative flex animate-fade-in flex-col overflow-hidden rounded-2xl border bg-surface-1 transition",
+                <div key={p.id} style={noIntro.current ? undefined : { animationDelay: `${Math.min(i * 0.03, 0.3)}s` }}
+                  className={cn("relative flex flex-col overflow-hidden rounded-2xl border bg-surface-1 transition",
+                    !noIntro.current && "animate-fade-in",
                     inCart > 0 ? "border-brand-400 shadow-raised" : "border-line",
                     !p.available && "opacity-60")}>
                   {/* الصورة فوق رمز الفئة لا بدلَه: فشلُ تحميلها (ملفٌ حُذف، شبكةٌ

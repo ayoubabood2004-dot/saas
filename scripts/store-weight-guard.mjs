@@ -22,7 +22,10 @@
 import { readFileSync, existsSync } from "node:fs";
 import { gzipSync } from "node:zlib";
 
-const BUDGET = { store: 150_000, main: 480_000 };
+/* المستندُ نفسُه يُحسب، لا ملفّاتُه وحدَها: أنماطُ صفحة الزائر محقونةٌ داخله
+ * (٢٥ كيلو مضغوطة)، فحسابُ الروابط وحدَها كان سيُخفيها ويقول إنّ الصفحةَ
+ * خفّت وهي لم تخفّ. والميزانيّةُ تشمله. */
+const BUDGET = { store: 175_000, main: 480_000 };
 const BANNED = [/\/assets\/supabase-/, /\/assets\/motion-/, /\/assets\/charts-/];
 
 if (!existsSync("dist/store.html") || !existsSync("dist/index.html")) {
@@ -36,11 +39,20 @@ const assetsOf = (html) =>
 
 for (const [name, html] of [["store", "dist/store.html"], ["main", "dist/index.html"]]) {
   const files = assetsOf(html);
-  const total = files.reduce((n, f) => n + gzipSync(readFileSync(`dist${f}`)).length, 0);
+  const doc = gzipSync(readFileSync(html)).length;
+  const total = doc + files.reduce((n, f) => n + gzipSync(readFileSync(`dist${f}`)).length, 0);
   const ok = total <= BUDGET[name];
   if (!ok) fails++;
-  console.log(`   ${ok ? "✓" : "✗"} ${name}.html: ${total.toLocaleString("en")} بايت مضغوطة من ${BUDGET[name].toLocaleString("en")} (${files.length} ملفاً)`);
+  console.log(`   ${ok ? "✓" : "✗"} ${name}.html: ${total.toLocaleString("en")} بايت مضغوطة من ${BUDGET[name].toLocaleString("en")} (المستند ${doc.toLocaleString("en")} + ${files.length} ملفاً)`);
   if (name !== "store") continue;
+  /* لا ورقةَ أنماطٍ حاجبةٍ بمسار الزائر: هي التي كانت تؤخّر الرسمَ ١٫٧ ثانيةٍ
+   * على 3G (الرفُّ بالمستند من ٣٠٠ms والمتصفّحُ لا يرسم حتى تصل). ورقةُ
+   * الخطوط بـ`media="print"` غيرُ حاجبةٍ فتُستثنى، ونسختُها داخل `<noscript>`
+   * لا تُحمَّل أصلاً حين تعمل جافاسكربت. */
+  const blocking = readFileSync(html, "utf8")
+    .split("\n").filter((l) => /rel="stylesheet"/.test(l) && !/media="print"/.test(l) && !/<noscript>/.test(l));
+  if (blocking.length) { fails++; console.error(`   ✗ ورقةُ أنماطٍ تحجب رسمَ صفحة الزائر (${blocking.length})`); }
+  else console.log("   ✓ لا ورقةَ أنماطٍ تحجب الرسم — الأنماطُ محقونةٌ بالمستند");
   for (const re of BANNED) {
     const hit = files.find((f) => re.test(f));
     if (hit) { fails++; console.error(`   ✗ حزمةٌ ممنوعةٌ بمسار الزائر: ${hit}`); }

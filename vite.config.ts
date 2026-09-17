@@ -3,12 +3,56 @@ import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
 import path from "node:path";
 
+
+/**
+ * أنماطُ صفحة الزائر تُحقن بالمستند (ت١١).
+ *
+ * ── القياس الذي فرضها ────────────────────────────────────────────────────
+ * الرفُّ صار مرسوماً بالـHTML من الحافة، ومع ذلك لم يتغيّر ما يراه الزبون
+ * (٣٬٣٥٣ms مقابل ٣٬٣٤٣ على 3G). السبب: **ورقةُ الأنماط تحجب الرسم**. الرفُّ
+ * موجودٌ بالمستند من أوّل ٣٠٠ms، والمتصفّحُ لا يرسم حرفاً حتى تصل الورقة —
+ * وهي طلبٌ آخرُ بذهابٍ وإياب، يزاحمه أربعةٌ وعشرون ملفَّ جافاسكربت.
+ *
+ * فحقنُها بالمستند يلغي الحجبَ من جذره: يصل المستندُ ومعه أنماطُه، فيُرسم
+ * الرفُّ بأوّل رسمة. والكلفةُ ٢٥ كيلو مضغوطة تُعاد بكلّ فتحة بدل أن تُخبَّأ —
+ * مقبولةٌ لأن **صفحةَ الزبون هي زيارتُه كلُّها**: لا تنقّلَ بين صفحاتٍ تشترك
+ * بالورقة، والمستندُ نفسُه مخبوءٌ بالحافة خمسَ دقائق.
+ *
+ * ولا تُحقن بـ`index.html`: تطبيقُ العيادة عشراتُ الشاشات بجلسةٍ طويلة،
+ * فالورقةُ المخبَّأة مرّةً أرخصُ له من إعادتها بكلّ مستند.
+ */
+function storeEntry() {
+  const supa = (process.env.VITE_SUPABASE_URL ?? "").trim().replace(/\/+$/, "");
+  return {
+    name: "store-entry",
+    enforce: "post" as const,
+    generateBundle(_opts: unknown, bundle: Record<string, { type: string; fileName: string; source?: unknown }>) {
+      const html = bundle["store.html"];
+      if (!html || typeof html.source !== "string") return;
+      let out = html.source;
+      /* وصلٌ مسبقٌ بالقاعدة: نداءُ الكتلوج التالي وصورُ المواد تبدأ بلا انتظار
+       * DNS وTLS — ذهابٌ وإيابٌ كاملٌ يوفَّر على شبكةٍ ضعيفة. */
+      if (supa) {
+        out = out.replace("</head>", `  <link rel="preconnect" href="${supa}" crossorigin />\n    <link rel="dns-prefetch" href="${supa}" />\n  </head>`);
+      }
+      for (const [, asset] of Object.entries(bundle)) {
+        if (asset.type !== "asset" || !asset.fileName.endsWith(".css")) continue;
+        const tag = new RegExp(`\\s*<link[^>]+href="/${asset.fileName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}"[^>]*>`, "g");
+        if (!tag.test(out)) continue;
+        out = out.replace(tag, "").replace("</head>", `  <style>${String(asset.source)}</style>\n  </head>`);
+      }
+      html.source = out;
+    },
+  };
+}
+
 export default defineConfig({
   // Visible build stamp (الإصدار) — lets anyone verify WHICH deploy their
   // device is actually running when debugging stale caches.
   define: { __BUILD_AT__: JSON.stringify(new Date().toISOString()) },
   plugins: [
     react(),
+    storeEntry(),
     VitePWA({
       registerType: "autoUpdate",
       includeAssets: ["favicon.svg"],
