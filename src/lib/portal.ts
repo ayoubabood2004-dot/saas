@@ -10,7 +10,7 @@
 // من يملكه يرى، ولذلك عمرُه محدود ويُبطَل من عند العيادة.
 // ============================================================================
 import i18n from "i18next";
-import { applyDir } from "@/i18n";
+import { applyDir } from "@/i18n/dir";
 
 const KEY = (slug: string) => `vp_portal_tok_${slug}`;
 

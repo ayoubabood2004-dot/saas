@@ -9,7 +9,7 @@ import { useEffect, useState } from "react";
 import { useParams, useSearchParams, Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { PackageSearch, CheckCircle2, XCircle, Clock3, ArrowRight } from "lucide-react";
-import { repo } from "@/lib/repo";
+import { storeApi } from "@/lib/storeApi";
 import { describeDbError } from "@/lib/errors";
 import { cn, money } from "@/lib/utils";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
@@ -37,7 +37,7 @@ export function StoreTrack() {
     if (busy || !no.trim() || phone.replace(/\D/g, "").length < 8) return;
     setBusy(true); setError(null);
     try {
-      const r = await repo.trackStoreOrder(slug, no, phone);
+      const r = await storeApi.trackStoreOrder(slug, no, phone);
       setResult(r);
       if (r) playSuccess(); else playWarning();
     } catch (e) {

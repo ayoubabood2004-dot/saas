@@ -13,7 +13,7 @@ import { useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { PawPrint, PhoneCall, Check, HeartPulse } from "lucide-react";
 import type { JourneyPublicView } from "@/types";
-import { repo } from "@/lib/repo";
+import { storeApi } from "@/lib/storeApi";
 import { journeyKindById, journeyStageIndex, OWNER_REACTIONS } from "@/lib/journey";
 import { cn } from "@/lib/utils";
 import { preferArabicForVisitor } from "@/lib/portal";
@@ -33,7 +33,7 @@ export function TrackJourney() {
 
   const load = async (first = false) => {
     try {
-      const v = await repo.trackJourneyPublic(token);
+      const v = await storeApi.trackJourneyPublic(token);
       if (!v) { setState("gone"); return; }
       setView(v);
       setState("ok");
@@ -59,7 +59,7 @@ export function TrackJourney() {
     if (reacting) return;
     setReacting(eventId);
     try {
-      const okd = await repo.reactJourneyPublic(token, eventId, emoji);
+      const okd = await storeApi.reactJourneyPublic(token, eventId, emoji);
       if (okd && view) {
         setView({ ...view, events: view.events.map((e) => (e.id === eventId ? { ...e, reaction: emoji } : e)) });
       }

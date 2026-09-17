@@ -138,6 +138,18 @@ export default {
         shimmer: { "100%": { transform: "translateX(100%)" } },
         float: { "0%,100%": { transform: "translateY(0)" }, "50%": { transform: "translateY(-6px)" } },
         "gradient-pan": { "0%,100%": { backgroundPosition: "0% 50%" }, "50%": { backgroundPosition: "100% 50%" } },
+        /* حركاتُ صفحة الزائر (ت١١) — بديلُ framer-motion. المكتبةُ كانت ٤٢٬٦٣٤
+         * بايتاً مضغوطة بحزمةٍ مجموعُها ١٨٥ ألفاً، تخدم ستَّ حركاتٍ كلُّها
+         * انزلاقٌ وتلاشٍ. وCSS تطيعُ `prefers-reduced-motion` من index.css
+         * بلا سطرٍ إضافيّ — وهو ما كانت المكتبةُ تحتاج ضبطاً له. */
+        "fade-plain": { "0%": { opacity: "0" }, "100%": { opacity: "1" } },
+        "fade-out": { "0%": { opacity: "1" }, "100%": { opacity: "0" } },
+        pop: { "0%": { transform: "scale(0)" }, "70%": { transform: "scale(1.08)" }, "100%": { transform: "scale(1)" } },
+        "slide-up": { "0%": { opacity: "0", transform: "translateY(80px)" }, "100%": { opacity: "1", transform: "translateY(0)" } },
+        "sheet-in": { "0%": { transform: "translateY(100%)" }, "100%": { transform: "translateY(0)" } },
+        "sheet-out": { "0%": { transform: "translateY(0)" }, "100%": { transform: "translateY(100%)" } },
+        "bar-in": { "0%": { transform: "translateY(80px)" }, "100%": { transform: "translateY(0)" } },
+        "bar-out": { "0%": { transform: "translateY(0)" }, "100%": { transform: "translateY(80px)" } },
       },
       animation: {
         "fade-in": "fade-in 0.4s ease-out both",
@@ -148,6 +160,14 @@ export default {
         shimmer: "shimmer 1.6s infinite",
         float: "float 5s ease-in-out infinite",
         "gradient-pan": "gradient-pan 8s ease infinite",
+        "fade-plain": "fade-plain 0.2s ease-out both",
+        "fade-out": "fade-out 0.2s ease-in both",
+        pop: "pop 0.35s cubic-bezier(0.34,1.56,0.64,1) 0.15s both",
+        "slide-up": "slide-up 0.3s cubic-bezier(0.16,1,0.3,1) both",
+        "sheet-in": "sheet-in 0.28s cubic-bezier(0.16,1,0.3,1) both",
+        "sheet-out": "sheet-out 0.2s ease-in both",
+        "bar-in": "bar-in 0.3s cubic-bezier(0.16,1,0.3,1) both",
+        "bar-out": "bar-out 0.2s ease-in both",
       },
     },
   },

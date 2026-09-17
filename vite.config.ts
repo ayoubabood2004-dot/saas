@@ -30,7 +30,11 @@ export default defineConfig({
          * واتساب كان يُخدَم من الذاكرة فلا يصل السيرفر إطلاقاً، فيبدو كأن
          * النقطة غير موجودة بينما هي شغّالة. ميتا نفسها لا تتأثّر (لا خدمة
          * عاملة عند الخوادم)، لكن أي اختبار من المتصفّح كان يكذب. */
-        navigateFallbackDenylist: [/^\/wa-webhook/, /^\/api\//],
+        /* و`/s/` و`/t/` خرجت معها (ت١١): لهما **مستندٌ آخر** (`store.html`)
+         * لا يعرف تطبيقَ العيادة. ولولا استثناؤهما لأرجعت الخدمةُ العاملة
+         * `index.html` من الذاكرة لكلّ زائرٍ عاد — فيدفع الـ٤٦٣ كيلو الي
+         * خرجنا منها، ويُلغى المدخلُ الثاني بصمتٍ عند من زار مرّتين. */
+        navigateFallbackDenylist: [/^\/wa-webhook/, /^\/api\//, /^\/s\//, /^\/t\//],
         // محرك OCR (~10MB) ومشهد الأقفاص المجسّم (three.js ~1MB) يُحمَّلان عند
         // الطلب فقط — إدراجهما بالتثبيت المسبق يخلي تنصيب الـPWA ينزّل أضعاف
         // حجم التطبيق على موبايل ببيانات محدودة.
@@ -56,19 +60,36 @@ export default defineConfig({
   },
   build: {
     rollupOptions: {
+      /* مدخلان (ت١١): تطبيقُ العيادة، وصفحةُ الزائر. الفصلُ هنا لا بتقسيمٍ
+       * كسول — `index.html` تُحمّل `main.tsx` أياً كان المسار، وهي تستورد
+       * `App` وكلَّ شيء. */
+      input: {
+        main: path.resolve(__dirname, "index.html"),
+        store: path.resolve(__dirname, "store.html"),
+      },
       output: {
-        manualChunks: {
-          "react-vendor": ["react", "react-dom", "react-router-dom"],
-          motion: ["framer-motion"],
-          charts: ["recharts"],
-          supabase: ["@supabase/supabase-js"],
-          i18n: ["i18next", "react-i18next"],
+        /* التسميةُ بدالّةٍ لا بكائن: الكائنُ يسمّي وحداتٍ بأسمائها، ولا يمسك
+         * **ما تجرّه** — و`react/jsx-runtime` كان يهبط داخل حزمة `framer-motion`
+         * لأنها أوّلُ من طالبَه، فصار كلُّ ملفِّ JSX بالمشروع يستورد من
+         * `motion-*.js`. ومعناه أن صفحةَ الزائر التي لا حركةَ مكتبيّةً فيها
+         * أصلاً كانت تنزّل ٤٢ كيلو مضغوطة لتقرأ `jsx()`. الدالّةُ تفحص المسار
+         * فيصير الانتماءُ حاسماً لا مصادفةَ ترتيب. */
+        manualChunks(id: string) {
+          if (!id.includes("node_modules")) return undefined;
+          const at = (p: string) => id.includes(`node_modules/${p}`);
+          // React ومشتقّاتُه أوّلاً — ومنها jsx-runtime صراحةً.
+          if (at("react/") || at("react-dom/") || at("react-router") || at("scheduler/")) return "react-vendor";
+          if (at("framer-motion") || at("motion-dom") || at("motion-utils")) return "motion";
+          if (at("recharts") || at("d3-") || at("victory-vendor")) return "charts";
+          if (at("@supabase/")) return "supabase";
+          if (at("i18next") || at("react-i18next")) return "i18n";
           // clsx و tailwind-merge يستعملهما cn() **و**recharts معاً. وبلا
-          // تسميتهما هنا يهبطان داخل حزمة الرسوم (لأنها أول من طالبهما)،
-          // فتصير نقطة الدخول تستورد منها — أي أن ٤٣٤KB من مكتبة رسوم
-          // تُعلَن modulepreload على **كل** صفحة، ومنها صفحة الهبوط التي لا
-          // ترسم مخططاً واحداً. تسميتهما بحزمةٍ صغيرة تقطع هذا الخيط.
-          utils: ["clsx", "tailwind-merge"],
+          // فصلهما يهبطان داخل حزمة الرسوم (لأنها أول من طالبهما)، فتصير
+          // نقطة الدخول تستورد منها — أي أن ٤٣٤KB من مكتبة رسوم تُعلَن
+          // modulepreload على **كل** صفحة، ومنها صفحة الهبوط التي لا ترسم
+          // مخططاً واحداً.
+          if (at("clsx") || at("tailwind-merge")) return "utils";
+          return undefined;
         },
       },
     },

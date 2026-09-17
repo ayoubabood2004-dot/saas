@@ -37,8 +37,11 @@ export default async function handler(req: Request): Promise<Response> {
   const slug = (url.searchParams.get("slug") || "").trim().toLowerCase();
   const origin = url.origin;
 
-  // index.html عبر الـrewrite العام — أي مسار غير موجود يرجع الصفحة الأساس.
-  const shellRes = await fetch(`${origin}/index.html`);
+  // قالبُ **مدخل الزائر** لا قالبَ تطبيق العيادة (ت١١): `/s/*` صار له مستندٌ
+  // خاصٌّ لا يعرف تطبيقَ العيادة — ١٤٤ كيلو مضغوطة بدل ٤٦٣. وجلبُ `index.html`
+  // هنا كان سيلغي المدخلَ الثاني بصمت: الزاحفُ يقرأ الوسوم كما هي والزبونُ
+  // ينزّل القشرةَ الثقيلة نفسَها.
+  const shellRes = await fetch(`${origin}/store.html`);
   const shell = await shellRes.text();
   const asHtml = (html: string, cacheSeconds: number) =>
     new Response(html, {

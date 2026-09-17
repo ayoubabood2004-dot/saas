@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#1266d8" />
+    <!-- هذه ترويسةُ الحدّ الأدنى: `api/store-og.ts` تستبدلها باسم العيادة
+         وصورتها قبل أن تصل زاحفَ واتساب. ولا وسومَ مشاركةٍ عامّةٍ هنا عمداً —
+         رابطُ متجرٍ يُشارَك باسم «doctorVet» رابطٌ لا يُضغط عليه. -->
+    <meta name="description" content="متجر العيادة — اطلب وتوصل لباب البيت." />
+    <title>متجر العيادة</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <!-- العربيُّ وحدَه: صفحةُ الزائر عربيّةٌ صلبةٌ، ولا لاتينيَّ فيها غيرَ
+         الأرقام — وهي بخطّ النظام. و**غير حاجبٍ للرسم** كما بـindex.html:
+         ورقةُ طرفٍ ثالثٍ زمنُها خارج سيطرتنا، و`media="print"` تجلبها بلا
+         حجب ثم `onload` يعيدها إلى `all`. تُرسم الصفحةُ بخطّ النظام أجزاءَ
+         من الثانية ثم تتبدّل — وهي مقايضةُ `display=swap` نفسها. -->
+    <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" />
+    <link rel="stylesheet" media="print" onload="this.media='all'" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" />
+    <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" /></noscript>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/store-main.tsx"></script>
+  </body>
+</html>

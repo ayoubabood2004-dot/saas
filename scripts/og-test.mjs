@@ -31,10 +31,10 @@ process.env.VITE_SUPABASE_ANON_KEY = "anon-key";
 
 /* قالبٌ مصغَّرٌ يحمل ما يحمله index.html فعلاً: عنوانٌ ووصفٌ وبلوكُ مشاركةٍ
  * **فيه صورة** — وهي بالضبط ما كان يُمحى بلا بديل. */
-const SHELL = `<!doctype html><html><head>
-    <meta name="description" content="doctorVet" />
-    <title>doctorVet</title>
-    <meta property="og:title" content="doctorVet" />
+const SHELL = `<!doctype html><html lang="ar" dir="rtl"><head>
+    <meta name="description" content="متجر العيادة" />
+    <title>متجر العيادة</title>
+    <meta property="og:title" content="متجر العيادة" />
     <meta property="og:image" content="https://shell.invalid/og.jpg" />
     <meta name="twitter:card" content="summary_large_image" />
   </head><body></body></html>`;
@@ -42,7 +42,7 @@ const SHELL = `<!doctype html><html><head>
 let frontBody = null;       // ما يرجعه store_front (null ⇒ فشلُ الطلب)
 globalThis.fetch = async (input) => {
   const u = String(input?.url ?? input);
-  if (u.endsWith("/index.html")) return new Response(SHELL, { status: 200 });
+  if (u.endsWith("/store.html")) return new Response(SHELL, { status: 200 });
   if (u.includes("/rpc/store_front")) {
     if (!frontBody) return new Response("nope", { status: 500 });
     return new Response(JSON.stringify(frontBody), { status: 200, headers: { "content-type": "application/json" } });
@@ -98,9 +98,9 @@ check("  وبمقاسها المعلن", metaOf(noLogo, "og:image:width") === "1
 console.log("▸ الفشلُ يرجع القالبَ كما هو — لا رأسٌ نصفُ مبنيّ");
 const failed = await render(null);
 check("القالبُ بصورته الأصلية", metaOf(failed, "og:image") === "https://shell.invalid/og.jpg");
-check("  وبعنوانه الأصليّ (ما انكتب اسمُ عيادةٍ ما وصلت)", failed.includes("<title>doctorVet</title>"));
+check("  وبعنوانه الأصليّ (ما انكتب اسمُ عيادةٍ ما وصلت)", failed.includes("<title>متجر العيادة</title>"));
 const badSlug = await render({ ok: true, name: "x" }, "AB");
-check("وslug غيرُ صالحٍ لا يصل الخادمَ أصلاً", badSlug.includes("<title>doctorVet</title>"));
+check("وslug غيرُ صالحٍ لا يصل الخادمَ أصلاً", badSlug.includes("<title>متجر العيادة</title>"));
 
 console.log(fails ? `\n✗ og-test: ${passes} نجحت، ${fails} فشلت` : `\n✓ og-test: ${passes} نجحت، 0 فشلت`);
 process.exit(fails ? 1 : 0);

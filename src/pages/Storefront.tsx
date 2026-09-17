@@ -12,13 +12,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { AnimatePresence, motion } from "framer-motion";
 import {
   ShoppingCart, Plus, Minus, Search, MapPin, Phone, MessageCircle, X,
   CheckCircle2, PawPrint, Truck, ShieldCheck, Store, ArrowRight, ArrowLeft, Loader2, PackageX,
 } from "lucide-react";
 import type { StoreCatalogItem, StoreFrontInfo } from "@/types";
-import { repo } from "@/lib/repo";
+import { storeApi } from "@/lib/storeApi";
 import { categoryLook, isValidCustomerPhone, productImageUrl, shelfLook, shelfLabel, shelfMonogram, lastOrderKey } from "@/lib/storeLib";
 import { preferArabicForVisitor } from "@/lib/portal";
 import { waNumber } from "@/lib/phone";
@@ -48,6 +47,29 @@ const ERROR_MSG: Record<string, string> = {
   rate_limited: "وصلت الحد الأقصى للطلبات اليوم — تواصل مع العيادة مباشرة.",
   min_order: "طلبك أقل من الحد الأدنى للمتجر.",
 };
+
+/**
+ * يُبقي عنصراً مركَّباً حتى تنتهي حركةُ خروجه — بديلُ `AnimatePresence` بلا مكتبة.
+ *
+ * حركةُ الدخول وحدَها تكفيها CSS: العنصرُ يُركَّب فتجري. أما الخروجُ فلا —
+ * العنصرُ يُفكّ فورَ انقلاب الشرط فلا يبقى شيءٌ ليتحرّك. فنؤخّر الفكَّ بقدر
+ * الحركة، ونعلّم الخروجَ بصفٍّ ثانٍ.
+ *
+ * و`ms` هنا **مرآةُ مدّة الحركة** بـtailwind.config (٢٠٠ms للخروج): أطولُ منها
+ * يترك طبقةً شفّافةً تبتلع الضغطات، وأقصرُ يقطع الحركة بمنتصفها.
+ */
+function useExit(open: boolean, ms = 200) {
+  const [mounted, setMounted] = useState(open);
+  const [leaving, setLeaving] = useState(false);
+  useEffect(() => {
+    if (open) { setLeaving(false); setMounted(true); return; }
+    if (!mounted) return;
+    setLeaving(true);
+    const t = window.setTimeout(() => { setMounted(false); setLeaving(false); }, ms);
+    return () => window.clearTimeout(t);
+  }, [open, mounted, ms]);
+  return { mounted, leaving };
+}
 
 export function Storefront() {
   const { slug = "" } = useParams();
@@ -87,7 +109,7 @@ export function Storefront() {
     let alive = true;
     (async () => {
       try {
-        const [f, c] = await Promise.all([repo.storeFrontPublic(slug), repo.storeCatalogPublic(slug, PAGE, 0)]);
+        const [f, c] = await Promise.all([storeApi.storeFrontPublic(slug), storeApi.storeCatalogPublic(slug, PAGE, 0)]);
         if (!alive) return;
         if (!f) { setState("closed"); return; }
         setFront(f); setCatalog(c); setHasMore(c.length === PAGE); setState("open");
@@ -109,7 +131,7 @@ export function Storefront() {
     if (loadingMore) return;
     setLoadingMore(true);
     try {
-      const more = await repo.storeCatalogPublic(slug, PAGE_MORE, catalog.length);
+      const more = await storeApi.storeCatalogPublic(slug, PAGE_MORE, catalog.length);
       // إزالة أي تكرار دفاعياً (منتج انضاف بين الصفحتين يزحزح الترتيب).
       let added = 0;
       setCatalog((cur) => {
@@ -225,6 +247,14 @@ export function Storefront() {
   };
 
   const units = cart.reduce((s, l) => s + l.qty, 0);
+  /* حركاتُ الدخول والخروج بـCSS (ت١١) — `useExit` يؤخّر الفكَّ بقدر الحركة.
+   * والشرطان مطابقان لما كان بـ`AnimatePresence` حرفياً: الشريطُ يظهر بسلّةٍ
+   * غيرِ فارغةٍ ولوحةٍ مغلقة. و`shownSheet` يحفظ آخرَ لوحةٍ فتحت كي لا تقفزَ
+   * المحتوياتُ أثناء الخروج. */
+  const bar = useExit(units > 0 && sheet === "none");
+  const panel = useExit(sheet !== "none");
+  const shownSheet = useRef<"cart" | "checkout">("cart");
+  if (sheet !== "none") shownSheet.current = sheet;
   const subtotal = Math.round(cart.reduce((s, l) => s + (byId.get(l.id)?.price ?? 0) * l.qty, 0) * 100) / 100;
   const fee = front?.delivery_fee ?? 0;
   /* أجرةُ صفرٍ عندنا تعني «ما تحدّدت» لا «مجّانية» (الهيرو يقولها منذ البداية).
@@ -279,11 +309,10 @@ export function Storefront() {
     const waMsg = `مرحباً 👋 أرسلت طلباً من متجركم — رقم الطلب ${placed.order_no}`;
     return (
       <div dir="rtl" className="grid min-h-screen place-items-center bg-surface p-6">
-        <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="flex w-full max-w-sm flex-col items-center gap-4 text-center">
-          <motion.span initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: "spring", delay: 0.15 }}
-            className="grid h-20 w-20 place-items-center rounded-full bg-success-500 text-white shadow-raised">
+        <div className="flex w-full max-w-sm animate-scale-in flex-col items-center gap-4 text-center">
+          <span className="grid h-20 w-20 animate-pop place-items-center rounded-full bg-success-500 text-white shadow-raised">
             <CheckCircle2 size={44} />
-          </motion.span>
+          </span>
           <h1 className="font-display text-2xl font-bold text-ink">وصل طلبك! 🎉</h1>
           <div className="w-full rounded-2xl border border-line bg-surface-1 p-4">
             <p className="text-xs text-ink-subtle">رقم طلبك</p>
@@ -305,7 +334,7 @@ export function Storefront() {
             <ArrowRight size={15} /> رجوع للمتجر
           </button>
           <p className="mt-3 flex items-center gap-1.5 text-2xs text-ink-subtle"><PawPrint size={12} /> متجر مقدَّم من doctorVet</p>
-        </motion.div>
+        </div>
       </div>
     );
   }
@@ -431,8 +460,8 @@ export function Storefront() {
               const shelf = shelfLook(p.name);
               const inCart = qtyOf(p.id);
               return (
-                <motion.div key={p.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: Math.min(i * 0.03, 0.3) }}
-                  className={cn("relative flex flex-col overflow-hidden rounded-2xl border bg-surface-1 transition",
+                <div key={p.id} style={{ animationDelay: `${Math.min(i * 0.03, 0.3)}s` }}
+                  className={cn("relative flex animate-fade-in flex-col overflow-hidden rounded-2xl border bg-surface-1 transition",
                     inCart > 0 ? "border-brand-400 shadow-raised" : "border-line",
                     !p.available && "opacity-60")}>
                   {/* الصورة فوق رمز الفئة لا بدلَه: فشلُ تحميلها (ملفٌ حُذف، شبكةٌ
@@ -497,7 +526,7 @@ export function Storefront() {
                       )}
                     </div>
                   </div>
-                </motion.div>
+                </div>
               );
             })}
           </div>
@@ -519,8 +548,7 @@ export function Storefront() {
         return (
           <div className="fixed inset-0 z-40" data-detailsheet>
             <div className="absolute inset-0 bg-ink/40" onClick={() => setDetail(null)} />
-            <motion.div initial={{ y: 80, opacity: 0 }} animate={{ y: 0, opacity: 1 }}
-              className="absolute inset-x-0 bottom-0 mx-auto max-w-3xl rounded-t-3xl bg-surface-1 p-4 pb-6 shadow-raised">
+            <div className="absolute inset-x-0 bottom-0 mx-auto max-w-3xl animate-slide-up rounded-t-3xl bg-surface-1 p-4 pb-6 shadow-raised">
               {/* `object-contain` لا `object-cover`: القصُّ كان يقطع رأسَ العلبة
                   وقاعَها — وباسمِ الشركة يعرف الزبونُ المنتج. والبلاطةُ أرضاً. */}
               <div className={cn("relative grid h-52 place-items-center overflow-hidden rounded-2xl", shelf.tile)}>
@@ -548,17 +576,16 @@ export function Storefront() {
                   </div>
                 )}
               </div>
-            </motion.div>
+            </div>
           </div>
         );
       })()}
 
       {/* شريط السلة العائم */}
-      <AnimatePresence>
-        {units > 0 && sheet === "none" && (
-          <motion.button initial={{ y: 80 }} animate={{ y: 0 }} exit={{ y: 80 }} transition={{ type: "spring", damping: 22 }}
-            onClick={() => { playTap(); setSheet("cart"); }}
-            className="fixed inset-x-4 bottom-4 z-30 mx-auto flex max-w-3xl items-center gap-3 rounded-2xl bg-brand-600 px-4 py-3.5 text-white shadow-raised transition active:scale-[0.99]">
+      {bar.mounted && (
+        <button onClick={() => { playTap(); setSheet("cart"); }}
+          className={cn("fixed inset-x-4 bottom-4 z-30 mx-auto flex max-w-3xl items-center gap-3 rounded-2xl bg-brand-600 px-4 py-3.5 text-white shadow-raised transition active:scale-[0.99]",
+            bar.leaving ? "animate-bar-out" : "animate-bar-in")}>
             <span className="relative">
               <ShoppingCart size={20} />
               <span className="absolute -end-2 -top-2 grid h-5 min-w-5 place-items-center rounded-full bg-white px-1 text-2xs font-bold text-brand-700">{formatNum(units)}</span>
@@ -569,20 +596,21 @@ export function Storefront() {
               <span className="block text-sm font-bold leading-tight">{t("sf.viewCart", "عرض السلة")}</span>
               <span className="block text-2xs leading-tight text-white/80">{feeKnown ? t("sf.dueOnDelivery", "الكلي عند الاستلام") : t("sf.dueEstimate", "الكلي التقديري — التوصيل يتحدد بالتأكيد")}</span>
             </span>
-            <span className="font-display text-base font-bold tabular-nums">{money(total)}</span>
-          </motion.button>
-        )}
-      </AnimatePresence>
+          <span className="font-display text-base font-bold tabular-nums">{money(total)}</span>
+        </button>
+      )}
 
       {/* لوحة السلة / الإتمام */}
-      <AnimatePresence>
-        {sheet !== "none" && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            className="fixed inset-0 z-40 bg-black/40" onClick={() => setSheet("none")}>
-            <motion.div initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }} transition={{ type: "spring", damping: 26, stiffness: 300 }}
-              onClick={(e) => e.stopPropagation()}
-              className="absolute inset-x-0 bottom-0 mx-auto max-h-[88vh] max-w-3xl overflow-y-auto rounded-t-3xl bg-surface-1 p-4 shadow-raised">
-              {sheet === "cart" ? (
+      {panel.mounted && (
+        <div className={cn("fixed inset-0 z-40 bg-black/40", panel.leaving ? "animate-fade-out" : "animate-fade-plain")}
+          onClick={() => setSheet("none")}>
+          <div onClick={(e) => e.stopPropagation()}
+            className={cn("absolute inset-x-0 bottom-0 mx-auto max-h-[88vh] max-w-3xl overflow-y-auto rounded-t-3xl bg-surface-1 p-4 shadow-raised",
+              panel.leaving ? "animate-sheet-out" : "animate-sheet-in")}>
+            {/* `shownSheet` لا `sheet`: الإغلاق يجعل `sheet` = "none" فوراً بينما
+                اللوحةُ ما زالت تنزلق خارجةً — فبـ`sheet` كانت تقفز من «السلة»
+                إلى «الإتمام» أمام عين الزبون بآخر ٢٠٠ms. */}
+            {shownSheet.current === "cart" ? (
                 <CartSheet
                   cart={cart} byId={byId} subtotal={subtotal} fee={fee} feeKnown={feeKnown} total={total}
                   underMin={underMin} minOrder={minOrder}
@@ -595,12 +623,11 @@ export function Storefront() {
                     setCart([]); setSheet("none"); setPlaced(r); playAchievement(); celebrate();
                     // رقم آخر طلب يُحفظ محلياً: صفحة التتبّع تعبّيه تلقائياً لو رجع الزبون بعدين.
                     try { localStorage.setItem(lastOrderKey(slug), r.order_no); } catch { /* ignore */ }
-                  }} />
-              )}
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+                }} />
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -720,7 +747,7 @@ function CheckoutSheet({ slug, cart, subtotal, fee, feeKnown, total, onBack, onP
     if (address.trim().length < 8) { setErr(t("sf.addrNeeded", "اكتب عنوانك — المنطقة وأقرب نقطة دالة حتى يلكاك المندوب.")); playWarning(); return; }
     setBusy(true);
     try {
-      const res = await repo.placeStoreOrder(slug,
+      const res = await storeApi.placeStoreOrder(slug,
         { name: name.trim(), phone: phone.trim(), address: address.trim(), note: note.trim() },
         cart.map((l) => ({ product_id: l.id, qty: l.qty })));
       if (!res.ok) {

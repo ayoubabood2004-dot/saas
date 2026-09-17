@@ -2,6 +2,8 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "rewrites": [
     { "source": "/s/:slug", "destination": "/api/store-og?slug=:slug" },
+    { "source": "/s/:slug/track", "destination": "/store.html" },
+    { "source": "/t/:token", "destination": "/store.html" },
     { "source": "/wa-webhook", "destination": "/api/wa-webhook" },
     { "source": "/api/track", "destination": "/api/track" },
     { "source": "/(.*)", "destination": "/index.html" }
@@ -27,6 +29,12 @@
     },
     {
       "source": "/index.html",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" }
+      ]
+    },
+    {
+      "source": "/store.html",
       "headers": [
         { "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" }
       ]
