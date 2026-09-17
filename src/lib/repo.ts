@@ -91,6 +91,7 @@ import type { PayrollPolicyDTO, StaffComp, StaffRecurring, PayrollAdjustment, Pa
 import * as PD from "./payrollDemo";
 import { paidOf, round2 } from "./debt";
 import { isValidSlug, normalizeSlug, matchSlug, slugKey, demoOrderNo, productImageUrl } from "./storeLib";
+import { expenseMethodOf } from "./pockets";
 import { journeyToken, OWNER_REACTIONS } from "./journey";
 import { getClinicName, getClinicLogo, getClinicSocials } from "./settings";
 import { uid, uuid, ageMonths, localISO, normalizeCode, matchCode } from "./utils";
@@ -2647,7 +2648,9 @@ const demoRepo = {
   /** إرجاعٌ خالص — مرآةُ `retail_return` (هجرة 0132) بنفس قواعدها حرفياً:
    *  ما تُنشأ فاتورة، والبضاعة ترجع للرصيد، وسحبٌ منفصل لكل صنف. */
   async retailReturn(items: CheckoutItem[], meta: ReturnMeta): Promise<RetailReturnResult> {
-    const method: ExpenseMethod = meta.method === "card" ? "card" : meta.method === "transfer" || meta.method === "bank" ? "bank" : "cash";
+    // ترجمةُ الجيب بموضعٍ واحد (`pockets.ts`): كانت تعبيراً ثلاثياً منسوخاً
+    // هنا وبالمسار السحابيّ، فأيُّ جيبٍ جديد كان يحتاج تعديلَ نسختين بلا رابط.
+    const method: ExpenseMethod = expenseMethodOf(meta.method);
     const db = loadDB();
     let total = 0, lines = 0;
     const at = new Date().toISOString();
@@ -5055,7 +5058,8 @@ const supabaseRepo: typeof demoRepo = {
         lines += 1;
       }
       const m = meta.method;
-      return { total, lines, method: m === "card" ? "card" : m === "transfer" || m === "bank" ? "bank" : "cash" };
+      // نفسُ ترجمة الجيب — من `pockets.ts` لا نسخةً ثانيةً تنحرف.
+      return { total, lines, method: expenseMethodOf(m) };
     }
   },
   async listInvoiceItems(invoiceId) {

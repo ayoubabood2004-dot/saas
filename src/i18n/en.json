@@ -2918,7 +2918,9 @@
       "revenue": "Revenue",
       "done": "File exported",
       "expenses": "Expenses / withdrawals",
-      "netCash": "Net cash in drawer"
+      "netCash": "Net cash in drawer",
+      "out": "Withdrawn",
+      "pocketNet": "Net"
     },
     "exp": {
       "title": "Expenses & withdrawals",
@@ -2961,7 +2963,8 @@
         "hint": "Ordered from the oldest day to the newest — every entry numbered with its running balance.",
         "preparedBy": "Prepared by",
         "approvedBy": "Approved by"
-      }
+      },
+      "netByPocket": "Net per pocket (collected − withdrawn)"
     },
     "zWithdrawals": "Cash withdrawals from drawer",
     "zWithdrawalsNonCash": "Card / bank withdrawals (outside drawer)",
@@ -2972,7 +2975,9 @@
       "jumpToday": "Back to today",
       "range": "Range view"
     },
-    "receiptFix": "Receipt correction"
+    "receiptFix": "Receipt correction",
+    "pocketOut": "Withdrawn",
+    "pocketNet": "Net"
   },
   "act": {
     "title": "Activity log",
