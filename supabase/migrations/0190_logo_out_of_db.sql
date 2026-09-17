@@ -77,8 +77,12 @@ end $$;
 comment on function clinic_prefs_guard_share() is
   'حارسُ كتابةِ clinic_prefs: مشاركةُ الكتالوج للمدير (0162)، ولا بايتاتِ شعارٍ داخل الجدول (0190).';
 
--- المحفّزُ نفسُه يُعاد ربطُه ليُعاد تشغيلُ الهجرة بلا أثرٍ ثانٍ.
+-- المحفّزُ نفسُه يُعاد ربطُه ليُعاد تشغيلُ الهجرة بلا أثرٍ ثانٍ — **بمعاملةٍ
+-- واحدة** (درس 0180): `drop` يأخذ قفلاً حصرياً يُفرَج عنه بنهاية معاملته، فلو
+-- كانت العبارتان معاملتين لانفتحت نافذةٌ يمرّ فيها كتابةٌ بلا حارس.
+begin;
 drop trigger if exists clinic_prefs_before_write_guard on clinic_prefs;
 create trigger clinic_prefs_before_write_guard
   before insert or update on clinic_prefs
   for each row execute function clinic_prefs_guard_share();
+commit;
