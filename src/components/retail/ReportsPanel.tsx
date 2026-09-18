@@ -6,6 +6,8 @@ import { Banknote, TrendingUp, Receipt, Crown, Package, Trophy, CalendarRange, U
 import type { ReceiptsDay, ReceiptsTotal, TopProductRow, StaffSalesRow } from "@/types";
 import { repo } from "@/lib/repo";
 import { staffNameMap } from "@/lib/staffNames";
+import { usePermissions } from "@/hooks/usePermissions";
+import { useOverride, moneyViewLockedFrom } from "@/lib/managerOverride";
 import { Button } from "@/components/ui";
 import { cn, money, formatNum, dateLocale } from "@/lib/utils";
 import { playTap } from "@/lib/sounds";
@@ -66,6 +68,12 @@ const deviceTz = (): string => { try { return Intl.DateTimeFormat().resolvedOpti
 
 export function ReportsPanel() {
   const { t, i18n } = useTranslation();
+  /* الطبقةُ الثانية. الشريطُ يخفي التبويبَ، وهذه تمنع الرسمَ **والطلب**: لوحةٌ
+     لا تُرى لكنها تنادي أربعَ دوالِّ تقاريرَ تضع الأرقامَ على السلك — ومن
+     يستدعيها غداً من موضعٍ آخر يرث القفلَ ولا يعيد فتح الباب. */
+  const { can } = usePermissions();
+  const ov = useOverride();
+  const locked = moneyViewLockedFrom(ov.deviceLocked, ov.active, can("viewReports"));
   const [period, setPeriod] = useState<Period>("day");
   // أسماء الكادر — لجدول «المبيعات حسب الموظف».
   const [staffById, setStaffById] = useState<Map<string, string>>(() => new Map());
@@ -84,6 +92,7 @@ export function ReportsPanel() {
   const periodStartMs = periodStart.getTime();
 
   useEffect(() => {
+    if (locked) { setLoading(false); setFailed(false); return; }
     let alive = true;
     setLoading(true); setFailed(false);
     const range = { from: new Date(periodStartMs).toISOString(), to: endOfDay(new Date()).toISOString() };
@@ -100,7 +109,7 @@ export function ReportsPanel() {
     }).catch(() => { if (alive) setFailed(true); })
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
-  }, [periodStartMs, tick]);
+  }, [periodStartMs, tick, locked]);
 
   // Fixed "today" KPIs — اليومُ المحليّ من صفوف الأيام.
   const today = localYMD(new Date());
@@ -142,6 +151,10 @@ export function ReportsPanel() {
     { id: "month", label: t("retail.monthly", "Monthly") },
     { id: "year", label: t("retail.yearly", "Yearly") },
   ];
+
+  // مقفولةٌ ⇒ لا شيء. التبويبُ نفسُه مخفيٌّ فهذا الفرعُ لا يُرى بالتنقّل
+  // العاديّ — وجودُه ليمنعَ لوحةً مرسومةً بحالةٍ عالقةٍ أو بمستدعٍ جديد.
+  if (locked) return null;
 
   if (failed) {
     return (

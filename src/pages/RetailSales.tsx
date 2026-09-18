@@ -6,6 +6,8 @@ import { Store, ShoppingCart, ReceiptText, BarChart3, HandCoins, Bike, PawPrint,
 import type { Product, Invoice, Species } from "@/types";
 import { useAuth } from "@/contexts/AuthContext";
 import { useEntitlements } from "@/lib/entitlements";
+import { usePermissions } from "@/hooks/usePermissions";
+import { useOverride, moneyViewLockedFrom } from "@/lib/managerOverride";
 import { useNavFolded } from "@/lib/navFold";
 import { Skeleton, Button } from "@/components/ui";
 import { cn } from "@/lib/utils";
@@ -31,6 +33,11 @@ export function RetailSales() {
   const { t } = useTranslation();
   const { user } = useAuth();
   const { has } = useEntitlements();
+  const { can } = usePermissions();
+  const ov = useOverride();
+  /* تبويبُ التقارير يعرض إيرادَ اليوم وصافيَ الربح ومبيعاتِ كلِّ موظّف. كان
+     ظاهراً بلا شرطٍ أبداً — لموظّف الاستقبال وللجهاز المقفول معاً. */
+  const reportsLocked = moneyViewLockedFrom(ov.deviceLocked, ov.active, can("viewReports"));
   const navFolded = useNavFolded();
   const clinicId = user?.clinic_id ?? user?.id; // shared workspace id (manager's id for staff)
   const [tab, setTab] = useState<Tab>("sell");
@@ -115,8 +122,14 @@ export function RetailSales() {
     { id: "returns", label: t("retail.returnsTab", "المرتجع"), icon: RotateCcw },
     ...(has("debt") ? [{ id: "debts" as Tab, label: t("retail.debtsTab", "سجل الديون"), icon: HandCoins }] : []),
     ...(has("debt") ? [{ id: "delivery" as Tab, label: t("retail.deliveryTab", "التوصيل"), icon: Bike }] : []),
-    { id: "reports", label: t("retail.reportsTab", "Reports"), icon: BarChart3 },
+    ...(reportsLocked ? [] : [{ id: "reports" as Tab, label: t("retail.reportsTab", "Reports"), icon: BarChart3 }]),
   ];
+
+  /* يقفل الجهازُ والتقاريرُ مفتوحةٌ أمامه: التبويبُ يختفي من الشريط، والمحتوى
+     لازم يختفي معه — وإلا بقيت اللوحةُ مرسومةً بلا تبويبٍ يوصل إليها. */
+  useEffect(() => {
+    if (tab === "reports" && reportsLocked) setTab("sell");
+  }, [tab, reportsLocked]);
 
   // شاشة البيع الجديدة تختصر ترويسة الصفحة أثناء البيع: كل بكسل فوق شبكة
   // المنتجات يُدفع من رصيد الكاشير. الشرح يبقى بالتبويبات الأخرى.
@@ -202,8 +215,12 @@ export function RetailSales() {
             <DebtsPanel invoices={invoices} clinicId={clinicId} onChanged={load} onOpenDelivery={() => setTab("delivery")} />
           ) : tab === "delivery" ? (
             <DeliveryPanel invoices={invoices} clinicId={clinicId} onChanged={load} />
-          ) : (
+          ) : tab === "reports" && !reportsLocked ? (
             <ReportsPanel />
+          ) : (
+            /* الفرعُ الأخير كان `<ReportsPanel />` بلا شرط: أيُّ قيمةِ تبويبٍ
+               لا تطابق ما سبق ترسم التقارير. فصار صريحاً — ولا شيءَ يسقط عليها. */
+            <SaleBuilder products={products} clinicId={clinicId} onSold={load} prefill={prefill} />
           )}
         </motion.div>
       </AnimatePresence>

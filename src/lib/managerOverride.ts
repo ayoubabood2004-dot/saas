@@ -349,6 +349,24 @@ export function stockLocked(): boolean {
   return stockLockedFrom(isDeviceLocked(), overrideActive(), getStockEditInManagerMode());
 }
 
+/**
+ * قفلُ شاشات المال — «الصلاحيةُ شرطٌ، وقفلُ الجهاز يغلبها».
+ *
+ * تقاريرُ شاشة البيع (إيرادُ اليوم، صافي الربح، الأكثرُ مبيعاً، مبيعاتُ كلِّ
+ * موظّف) كانت مفتوحةً للجميع: تبويبٌ ظاهرٌ بلا شرطٍ، فيراه موظّفُ الاستقبال
+ * بحسابه — ويراه **الجهازُ المقفول** كذلك، لأن قفلَ الجهاز لا ينزّل الدور:
+ * حسابُ المدير يبقى مديراً فـ`can("viewReports")` صادقةٌ وهو مقفول. فكان
+ * «مفتاحُ المدير» يقفل المخزنَ والكادرَ وسجلَّ الحركات، ويترك أخطرَ شاشةٍ
+ * بالعيادة مفتوحةً بتبويبٍ واحدٍ داخل المبيعات.
+ *
+ * والحكمُ من هنا وحده — كـ`stockLockedFrom` — لئلّا يتفرّق على تبويبٍ ولوحةٍ
+ * وسطرِ ربحٍ فيختلف أحدُها. ولا بابَ اختياريَّ هنا بخلاف المخزن: «محظورة
+ * تماماً بوضع المدير» بكلمة المالك.
+ */
+export function moneyViewLockedFrom(deviceLocked: boolean, elevated: boolean, allowed: boolean): boolean {
+  return !allowed || (deviceLocked && !elevated);
+}
+
 // Hidden-lock feedback: locked controls look normal and silently ignore input;
 // only after several taps does a small toast reveal WHY nothing happened — so a
 // bystander can't tell at a glance which controls are guarded.

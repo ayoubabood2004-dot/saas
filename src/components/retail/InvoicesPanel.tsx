@@ -11,6 +11,7 @@ import { getInvoicesPaged } from "@/lib/settings";
 import { RECENT_DAYS } from "@/lib/prefetchData";
 import { staffNameMap } from "@/lib/staffNames";
 import { usePermissions } from "@/hooks/usePermissions";
+import { useOverride, moneyViewLockedFrom } from "@/lib/managerOverride";
 import { Modal } from "@/components/Modal";
 import { Button, Badge, useToast, Skeleton } from "@/components/ui";
 import { useInvoicePrinter } from "./usePrintInvoice";
@@ -56,7 +57,11 @@ function windowStart(fromISO: string | null): string {
 export function InvoicesPanel({ invoices, onChanged }: { invoices: Invoice[]; clinicId?: string; onChanged: () => void }) {
   const { t, i18n } = useTranslation();
   const { can } = usePermissions();
-  const showProfit = can("viewProfits");
+  const ov = useOverride();
+  /* ربحُ كلّ فاتورة. `can` وحدَها لا تكفي بوضع المدير: قفلُ الجهاز لا ينزّل
+     الدورَ، فحسابُ المدير المقفول يبقى مديراً وتبقى الأرباحُ مكتوبةً تحت كلّ
+     سطر. نفسُ حكم تبويب التقارير، من نفس الدالّة. */
+  const showProfit = !moneyViewLockedFrom(ov.deviceLocked, ov.active, can("viewProfits"));
   const paged = getInvoicesPaged();
   const [q, setQ] = useState("");
   const [status, setStatus] = useState<StatusFilter>("all");
