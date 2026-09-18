@@ -28,7 +28,7 @@ import { repo } from "@/lib/repo";
 import { useAuth } from "@/contexts/AuthContext";
 import { usePermissions } from "@/hooks/usePermissions";
 import { cn, money, formatNum, formatDec } from "@/lib/utils";
-import { poultryKpi, poultryOutcome, batchWeeks, dayDiff } from "@/lib/poultryKpi";
+import { poultryKpi, poultryOutcome, batchWeeks, dayDiff, weightSanity } from "@/lib/poultryKpi";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
 import { Button, useToast } from "@/components/ui";
 import { asciiFileName } from "@/lib/excelExport";
@@ -431,6 +431,9 @@ function CycleView({ farm, cycle, canWrite, onBack }: { farm: PoultryFarm; cycle
   const kpi = useMemo(() => poultryKpi(stats, days), [stats, days]);
   const totalCost = kpi.totalCost;
   const outcome = useMemo(() => poultryOutcome(cur, totalCost), [cur, totalCost]);
+  /* شذوذُ الوزن يُقاس بعمرِ **يوم العيّنة** لا بعمر اليوم: عيّنةٌ عمرُها أسبوعٌ
+     تُحكَم بسقف أسبوعها. */
+  const oddWeight = weightSanity(kpi.avgWeightKg, kpi.weighedOn ? dayDiff(cur.placed_on, kpi.weighedOn) : ageOf(cur));
 
   return (
     <div className="mx-auto max-w-3xl space-y-4 p-4">
@@ -453,7 +456,17 @@ function CycleView({ farm, cycle, canWrite, onBack }: { farm: PoultryFarm; cycle
       {kpi.avgWeightKg == null && live && (
         <p className="text-center text-2xs text-ink-subtle">{t("farm.weighHint")}</p>
       )}
+      {/* المؤشّراتُ أعلاه محسوبةٌ على آخر عيّنة. فإن كانت العيّنةُ نفسُها خارجَ
+          المعقول، فالتحويلُ وكلفةُ الكيلو **مبنيّان على رقمٍ مشكوكٍ فيه** —
+          ولا يُخفَيان (ربّما هو على حقّ)، بل يُقال ما يستندان إليه. */}
+      {oddWeight && (
+        <div className="flex items-start gap-2 rounded-xl border border-warn-200 bg-warn-50 p-3 text-2xs font-semibold text-warn-800 dark:border-warn-500/30 dark:bg-warn-500/10 dark:text-warn-200">
+          <AlertTriangle size={15} className="mt-px shrink-0" />
+          <span>{t("farm.oddBanner", { n: formatDec(kpi.avgWeightKg ?? 0), d: formatNum(kpi.weighedOn ? dayDiff(cur.placed_on, kpi.weighedOn) : ageOf(cur)) })}</span>
+        </div>
+      )}
       <WithdrawalBanner stats={stats} />
+      <Trends days={days} placedOn={cur.placed_on} />
       {totalCost > 0 && (
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-xl border border-line bg-surface-2/50 p-3 text-2xs">
           <span>
@@ -479,7 +492,7 @@ function CycleView({ farm, cycle, canWrite, onBack }: { farm: PoultryFarm; cycle
 
       {busy ? <div className="grid py-10 place-items-center"><Loader2 className="animate-spin text-brand-500" size={22} /></div> : (
         <>
-          {live && canWrite && <DayEntry cycleId={cur.id} days={days} stock={stock} onSaved={load} />}
+          {live && canWrite && <DayEntry cycleId={cur.id} placedOn={cur.placed_on} days={days} stock={stock} onSaved={load} />}
           {!live && <Outcome cycle={cur} outcome={outcome} />}
 
           <DayLog days={days} uses={uses} placedOn={cur.placed_on} through={cur.closed_on ?? todayISO()} />
@@ -494,7 +507,7 @@ function CycleView({ farm, cycle, canWrite, onBack }: { farm: PoultryFarm; cycle
 }
 
 /* ── إدخالُ اليوم — قلبُ الشاشة ────────────────────────────────────────── */
-function DayEntry({ cycleId, days, stock, onSaved }: { cycleId: string; days: PoultryDaily[]; stock: Product[]; onSaved: () => void }) {
+function DayEntry({ cycleId, placedOn, days, stock, onSaved }: { cycleId: string; placedOn: string; days: PoultryDaily[]; stock: Product[]; onSaved: () => void }) {
   const { t } = useTranslation();
   const toast = useToast();
   const [date, setDate] = useState(todayISO());
@@ -510,6 +523,10 @@ function DayEntry({ cycleId, days, stock, onSaved }: { cycleId: string; days: Po
   const [busy, setBusy] = useState(false);
   const wgNum = Number(wg), wnNum = Math.max(1, Math.round(Number(wn) || 1));
   const avgKg = wg.trim() !== "" && Number.isFinite(wgNum) && wgNum > 0 ? wgNum / wnNum / 1000 : null;
+  /* الحكمُ على عمر **اليوم المُدخَل** لا على اليوم الحاليّ: من يقيّد وزنَ يوم
+     السابع بعد أسبوع، سقفُ السابع هو الذي يُطبَّق عليه. */
+  const entryAge = dayDiff(placedOn, date);
+  const odd = weightSanity(avgKg, entryAge);
 
   // يومٌ سبق إدخالُه: تُعبّأ خاناتُه ليُصحَّح لا ليُكرَّر (القاعدةُ ترفض التكرار).
   useEffect(() => {
@@ -564,8 +581,15 @@ function DayEntry({ cycleId, days, stock, onSaved }: { cycleId: string; days: Po
         </div>
       </div>
       {avgKg !== null && (
-        <p className="-mt-1 text-2xs font-semibold text-brand-700 dark:text-brand-300">
-          {t("farm.avgPreview", { n: formatDec(Math.round(avgKg * 100) / 100) })}
+        /* يُقال قبل الحفظ لا بعده: تصحيحُ رقمٍ بيده الآن أرخصُ من ملاحقته
+           بالدفتر غداً. ولا يُمنع الحفظ — ربّما هو على حقّ ونحن لا نعرف. */
+        <p className={cn("-mt-1 text-2xs font-semibold",
+          odd ? "text-warn-800 dark:text-warn-200" : "text-brand-700 dark:text-brand-300")}>
+          {t("farm.avgPreview", { n: formatDec(Math.round(avgKg * 1000) / 1000) })}
+          {odd && <>
+            {" — "}
+            {t(odd === "low" ? "farm.oddLow" : "farm.oddHigh", { n: formatNum(entryAge) })}
+          </>}
         </p>
       )}
       <div>
@@ -668,6 +692,74 @@ function ConsumeRow({ cycleId, date, stock, onDone }: { cycleId: string; date: s
 }
 
 /* ── دفترُ الحركات — «المسؤولُ يشوف حركاتِ كلّ يومٍ بالضبط» ────────────── */
+/* ── خطّان صغيران — «شلون ماشية؟» ───────────────────────────────────────
+ *
+ * الشاشةُ كانت تقول أرقامَ اليوم وتاريخَه، ولا تقول **اتّجاهه**. وسؤالُ صاحب
+ * الحقل ليس «شكد نفق اليوم» — هو «النفوقُ زايدٌ لو طبيعيّ؟ الوزنُ ماشٍ صح؟».
+ * والبياناتُ كلُّها بيدنا أصلاً.
+ *
+ * ── وبلا مكتبةِ رسم ─────────────────────────────────────────────────────
+ * حزمةُ الرسوم بالمشروع ١١٥ كيلو مضغوطة، و`store-weight-guard` يمنعها من
+ * مسارٍ خفيف — واستيرادُها هنا يجرّها لكلّ من يفتح الحقل. وخطٌّ من ثلاثين
+ * نقطةً لا يحتاجها: `polyline` واحدةٌ بـ`viewBox` تكفي.
+ *
+ * ── وما لا يُرسم ────────────────────────────────────────────────────────
+ * نقطةٌ واحدةٌ ليست خطّاً. وبأقلَّ من نقطتين لا يُرسم شيء — خطٌّ مستقيمٌ من
+ * قياسٍ واحدٍ يوحي باتّجاهٍ لم يُقَس.
+ */
+function Spark({ points, label, tone = "brand" }: {
+  points: { x: number; y: number }[]; label: string; tone?: "brand" | "danger";
+}) {
+  if (points.length < 2) return null;
+  const xs = points.map((p) => p.x), ys = points.map((p) => p.y);
+  const x0 = Math.min(...xs), x1 = Math.max(...xs);
+  const y0 = Math.min(0, ...ys), y1 = Math.max(...ys);
+  const W = 100, H = 28;
+  // مدىً صفريٌّ (كلُّ القيم متساوية) يُرسم خطّاً بالوسط لا قسمةً على صفر.
+  const sx = (x: number) => (x1 === x0 ? W / 2 : ((x - x0) / (x1 - x0)) * W);
+  const sy = (y: number) => (y1 === y0 ? H / 2 : H - ((y - y0) / (y1 - y0)) * H);
+  const d = points.map((p) => `${sx(p.x).toFixed(1)},${sy(p.y).toFixed(1)}`).join(" ");
+  const last = points[points.length - 1];
+  return (
+    <div className="min-w-0 flex-1">
+      <p className="mb-0.5 text-2xs font-semibold text-ink-subtle">{label}</p>
+      {/* `role="img"` واسمٌ معلَن: الخطُّ زينةٌ لمن لا يراه، والرقمُ بالترويسة
+          هو المعلومة — فالاسمُ يحمل ملخّصَه لا شكلَه. */}
+      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="h-7 w-full" role="img" aria-label={label}>
+        <polyline
+          points={d} fill="none" strokeWidth={2} vectorEffect="non-scaling-stroke"
+          strokeLinecap="round" strokeLinejoin="round"
+          className={tone === "danger" ? "stroke-danger-500" : "stroke-brand-500"}
+        />
+        <circle cx={sx(last.x)} cy={sy(last.y)} r={2.5} vectorEffect="non-scaling-stroke"
+          className={tone === "danger" ? "fill-danger-600" : "fill-brand-600"} />
+      </svg>
+    </div>
+  );
+}
+
+/** الخطّان معاً — يظهران حين يوجد ما يُرسم، ويختفيان بهدوءٍ حين لا يوجد. */
+function Trends({ days, placedOn }: { days: PoultryDaily[]; placedOn: string }) {
+  const { t } = useTranslation();
+  const { weight, deaths } = useMemo(() => {
+    const sorted = [...days].sort((a, b) => a.on_date.localeCompare(b.on_date));
+    return {
+      weight: sorted
+        .filter((d) => (d.sample_weight_g ?? 0) > 0 && (d.sample_size ?? 1) > 0)
+        .map((d) => ({ x: dayDiff(placedOn, d.on_date), y: (d.sample_weight_g as number) / (d.sample_size || 1) / 1000 })),
+      deaths: sorted.map((d) => ({ x: dayDiff(placedOn, d.on_date), y: (d.dead || 0) + (d.culled || 0) })),
+    };
+  }, [days, placedOn]);
+
+  if (weight.length < 2 && deaths.length < 2) return null;
+  return (
+    <div className="flex gap-4 rounded-xl border border-line bg-surface-1 p-3">
+      <Spark points={weight} label={t("farm.trendWeight")} />
+      <Spark points={deaths} label={t("farm.trendDeaths")} tone="danger" />
+    </div>
+  );
+}
+
 /* ── بطاقةُ القاعة — الشاشةُ تقول ما بقي على صاحبها اليوم ──────────────
  *
  * كانت تقول عمرَ الدفعة وعددَها، وبس. فمن عنده ستُّ قاعاتٍ لا يعرف أيَّها

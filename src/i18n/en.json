@@ -4771,6 +4771,11 @@
     "neverEntered": "No entry yet",
     "lastUnknown": "Status unavailable",
     "ofDays": "{{a}} of {{b}} days",
-    "statusLoading": "…"
+    "statusLoading": "…",
+    "oddLow": "Too small for day {{n}} — check the value is in grams",
+    "oddHigh": "Too large for day {{n}} — check the number of birds in the sample",
+    "oddBanner": "The last sample weight ({{n}} kg on day {{d}}) is outside the plausible range — the feed conversion and cost per kg above rest on it.",
+    "trendWeight": "Weight by age",
+    "trendDeaths": "Deaths per day"
   }
 }

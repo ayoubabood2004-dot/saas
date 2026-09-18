@@ -49,6 +49,12 @@ export interface PoultryOutcome {
 }
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
+/** دقّةُ الغرام — ثلاثُ خاناتٍ، كـ`fmtKg` بالمشروع.
+ *
+ *  ولها سببٌ أبعدُ من الجمال: `r2` كانت تحوّل وزنَ ١٫٨ غم (من كتب «١٫٨» قاصداً
+ *  كيلوين) إلى **صفر**، وحارسُ المعقول يصمت عن الصفر — فالحالةُ التي وُضع
+ *  لأجلها كانت تمرّ من بين يديه. التقريبُ قبل الفحص يمحو ما يُفحص. */
+const r3 = (n: number) => Math.round(n * 1000) / 1000;
 /** قسمةٌ لا تكذب: مقامٌ صفرٌ أو غيرُ متناهٍ ⇒ «ما نعرف» لا صفر. */
 const div = (a: number, b: number): number | null =>
   Number.isFinite(a) && Number.isFinite(b) && b > 0 ? a / b : null;
@@ -93,7 +99,7 @@ export function poultryKpi(stats: PoultryCycleStats | null, days: PoultryDaily[]
   const fcr = div(stats.feed_kg ?? 0, liveWeightKg);
   const epef = fcr && stats.days > 0 ? (viabilityPct * s.avgWeightKg) / (stats.days * fcr) * 100 : null;
   return {
-    avgWeightKg: r2(s.avgWeightKg),
+    avgWeightKg: r3(s.avgWeightKg),
     weighedOn: s.on,
     liveWeightKg: liveWeightKg > 0 ? r2(liveWeightKg) : null,
     fcr: fcr ? r2(fcr) : null,
@@ -216,4 +222,37 @@ export function batchWeeks(days: PoultryDaily[], uses: PoultryUse[], placedOn: s
     w.daysElapsed = Math.max(0, Math.min(7, lastDay - w.from + 1));
   }
   return [...m.values()].sort((a, b) => b.week - a.week);
+}
+
+/* ============================================================================
+ * حدُّ المعقول لوزن الطير — حارسُ غلطةِ وحدةٍ لا حَكَمُ أداء.
+ *
+ * ── العلّةُ المقيسة ──────────────────────────────────────────────────────
+ * خانةُ «وزن العيّنة» بالغرام، ومن يكتب «١٫٨» قاصداً كيلوين يُنتج متوسّطاً
+ * ١٫٨ غم. ومن ينسى «عدد الطيور» على عيّنةِ خمسةٍ يُنتج خمسةَ أضعاف. وبالحالتين
+ * لا تنكسر الشاشة — تعرض **معدّلَ تحويلٍ وكلفةَ كيلو معقولَي الشكل وخاطئَين**،
+ * ويُبنى عليهما قرارُ تبديلِ علفٍ أو بيعٍ مبكّر.
+ *
+ * ── ولماذا حدٌّ فضفاضٌ لا جدولُ سلالة ────────────────────────────────────
+ * نفسُ قاعدةِ فترة السحب: **لا نعرف ما لا نعرف**. جدولُ أوزانٍ معياريٍّ لسلالةٍ
+ * بعينها يجعل النظامَ يحكم على أداءِ حقلٍ بمرجعٍ قد لا يخصّه — وحقلٌ بطيءٌ
+ * لسببٍ معروفٍ لصاحبه يُنذَر كلَّ يومٍ حتى يُهمَل الإنذار.
+ *
+ * فالحدُّ هنا **فيزيائيٌّ لا معياريّ**: أدنى من ٢٥ غم لا يزن طيرٌ حيّ، وسقفُ
+ * ١٢٠ غم نموّاً يومياً يفوق أسرعَ اللاحم بالمراجع بنحو الثلث. ما بينهما يمرّ
+ * صامتاً مهما كان أداؤه — الحارسُ يمسك غلطةَ الكتابة وحدَها.
+ * ==========================================================================*/
+
+/** مدى الوزن المعقول (غم) لطيرٍ بعمرِ `ageDays` — واسعٌ عمداً. */
+export function plausibleWeightG(ageDays: number): { min: number; max: number } {
+  const d = Math.max(0, Math.floor(ageDays));
+  return { min: 25, max: 60 + 120 * d };
+}
+
+/** `"low"` أقلُّ من أن يكون طيراً · `"high"` أكبرُ من أن ينمو · `null` معقول. */
+export function weightSanity(avgWeightKg: number | null | undefined, ageDays: number): "low" | "high" | null {
+  if (avgWeightKg == null || !Number.isFinite(avgWeightKg) || avgWeightKg <= 0) return null;
+  const g = avgWeightKg * 1000;
+  const { min, max } = plausibleWeightG(ageDays);
+  return g < min ? "low" : g > max ? "high" : null;
 }

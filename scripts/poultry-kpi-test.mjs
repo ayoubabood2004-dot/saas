@@ -20,7 +20,7 @@ const near = (a, b, eps = 0.01) => a !== null && Math.abs(a - b) <= eps;
 const built = await esbuild.build({
   entryPoints: ["src/lib/poultryKpi.ts"], bundle: true, format: "esm", write: false, platform: "neutral",
 });
-const { poultryKpi, poultryOutcome, latestSample, batchWeeks, dayDiff } = await import(
+const { poultryKpi, poultryOutcome, latestSample, batchWeeks, dayDiff, weightSanity, plausibleWeightG } = await import(
   "data:text/javascript;base64," + Buffer.from(built.outputFiles[0].text).toString("base64")
 );
 
@@ -175,6 +175,35 @@ check("ونفسُ اليوم صفر", dayDiff("2026-09-01", "2026-09-01") === 0)
 // عبورُ تبديل التوقيت الصيفيّ بأوروبا (٢٥ تشرين الأول ٢٠٢٦) — ٢٥ ساعةً حقيقية.
 check("عبورُ تبديل التوقيت يبقى يوماً واحداً", dayDiff("2026-10-24", "2026-10-25") === 1);
 check("  وثلاثون يوماً تبقى ثلاثين", dayDiff("2026-10-01", "2026-10-31") === 30);
+
+/* ── ٨) حدُّ المعقول — غلطةُ وحدةٍ لا حكمُ أداء ──────────────────────────*/
+console.log("▸ حدُّ المعقول للوزن — يمسك غلطةَ الكتابة ولا يحكم على الحقل");
+// «١٫٨» قاصداً كيلوين ⇒ ١٫٨ غم.
+check("كيلوان كُتبا غراماً يُمسكان", weightSanity(0.0018, 21) === "low");
+check("  وعشرةُ أضعافٍ بنسيان عدد الطيور تُمسك", weightSanity(9, 21) === "high", String(weightSanity(9, 21)));
+// وما هو حقيقيٌّ يمرّ صامتاً مهما كان أداؤه.
+check("٩٠٠ غم بعمر ٢١ يوماً يمرّ", weightSanity(0.9, 21) === null);
+check("  وحقلٌ بطيءٌ (٤٠٠ غم بـ٢١) يمرّ — لسنا حَكَماً", weightSanity(0.4, 21) === null);
+check("  وحقلٌ سريعٌ (١٬٣٠٠ غم بـ٢١) يمرّ كذلك", weightSanity(1.3, 21) === null);
+check("صوصُ اليوم الأوّل (٤٠ غم) يمرّ", weightSanity(0.04, 0) === null);
+check("  و٢٠٠ غم بعمر يومٍ واحدٍ تُمسك", weightSanity(0.2, 0) === "high");
+check("لاحمٌ ناضجٌ ٣ كغم بعمر ٤٢ يمرّ", weightSanity(3, 42) === null);
+check("  و٨ كغم بعمر ٤٢ تُمسك", weightSanity(8, 42) === "high");
+// الحدُّ نفسُه: فضفاضٌ عمداً — يفوق أسرعَ اللاحم بالمراجع.
+check("سقفُ اليوم ٣٥ فوق ٤ كغم (فضفاضٌ عمداً)", plausibleWeightG(35).max > 4000, String(plausibleWeightG(35).max));
+check("  والأدنى ٢٥ غم بكلّ عمر", plausibleWeightG(0).min === 25 && plausibleWeightG(42).min === 25);
+check("وعمرٌ سالبٌ لا يكسر الحدّ", plausibleWeightG(-5).max === plausibleWeightG(0).max);
+// غيابُ الوزن ليس شذوذاً.
+// **التقريبُ قبل الفحص يمحو ما يُفحص**: وزنُ ١٫٨ غم بخانتين يصير صفراً،
+// والحارسُ يصمت عن الصفر — فالحالةُ التي وُضع لأجلها تمرّ. المؤشّرُ يحمل
+// دقّةَ الغرام حتى يبقى الشذوذُ ظاهراً للحارس ولعين القارئ معاً.
+const tiny = poultryKpi(stats(), [day("2026-09-10", 9, 5)]);
+check("وزنُ ١٫٨ غم لا يُقرَّب إلى صفرٍ فيفلت", tiny.avgWeightKg === 0.002, String(tiny.avgWeightKg));
+check("  والحارسُ يمسكه بعد التقريب", weightSanity(tiny.avgWeightKg, 24) === "low");
+check("  ووزنٌ عاديٌّ يحتفظ بغرامه", poultryKpi(stats(), [day("2026-09-10", 6280, 5)]).avgWeightKg === 1.256);
+
+check("بلا وزنٍ لا حكم", weightSanity(null, 21) === null && weightSanity(undefined, 21) === null);
+check("  وصفرٌ أو سالبٌ لا حكم (تُمسك بمكانٍ آخر)", weightSanity(0, 21) === null && weightSanity(-1, 21) === null);
 
 console.log(fails ? `\n✗ poultry-kpi-test: ${passes} نجحت، ${fails} فشلت` : `\n✓ poultry-kpi-test: ${passes} نجحت، 0 فشلت`);
 process.exit(fails ? 1 : 0);
