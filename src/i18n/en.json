@@ -4739,6 +4739,19 @@
       "safeFromShort": "safe from {{date}}",
       "pendingBanner": "Withdrawal: {{n}} days left — ends {{date}}.",
       "doneBanner": "Withdrawal period ended {{date}}."
-    }
+    },
+    "avgWeight": "Avg weight (kg)",
+    "fcr": "Feed conversion",
+    "weighHint": "Weigh one bird in the daily entry to unlock feed conversion and cost per kg.",
+    "costPerKg": "Cost per live kg",
+    "epef": "Efficiency index",
+    "sampleWeight": "Sample weight (g)",
+    "sampleSize": "Birds",
+    "avgPreview": "Avg weight: {{n}} kg",
+    "outcome": "Batch outcome",
+    "closedOn": "Closed on",
+    "costPerSoldKg": "Cost per kg sold",
+    "profit": "Profit",
+    "loss": "Loss"
   }
 }

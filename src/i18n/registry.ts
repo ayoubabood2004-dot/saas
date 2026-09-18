@@ -28,7 +28,22 @@ export interface LocaleInfo {
 }
 
 export const LOCALES: Record<string, LocaleInfo> = {
-  en: { code: "en", native: "English", dir: "ltr", fallback: [], numberLocale: "en-US" },
+  /* العربيةُ وحدَها مدمجةٌ بالحزمة، والإنكليزيةُ كسولةٌ مثلُ السورانية.
+   *
+   * **القياس**: `repo-*.js` بمسار الإقلاع الحرج ٢٠٣ كيلو مضغوطة، منها
+   * ar.json ٧٥ + en.json ٦٦ = ١٤١ كيلو (٦٩٪) **قاموسان والمستخدمُ يقرأ
+   * واحداً**. وكلُّ نصٍّ جديد كان يقترب من سقف `store-weight-guard` حتى بلغه
+   * بأربعة بايتات. ودمجُ الإنكليزية لم يُقرَّر يوماً — كان أثراً جانبياً
+   * لترتيب الاستيرادات.
+   *
+   * والافتراضُ عربيّ (`initialLang`)، فالغالبيةُ لا تنتظر شيئاً. ومن لغتُه
+   * إنكليزيةٌ ينتظر حزمتَها **قبل أوّل رسم** (`i18nReady` بـindex.ts) — لا
+   * وميضَ عربيٍّ ثم انقلاب. وهذا يصلح السورانيةَ أيضاً: كانت ترسم بالسقوط
+   * ثم تنقلب. */
+  en: {
+    code: "en", native: "English", dir: "ltr", fallback: [], numberLocale: "en-US",
+    loader: () => import("./en.json") as Promise<{ default: Record<string, unknown> }>,
+  },
   ar: { code: "ar", native: "العربية", dir: "rtl", fallback: [], numberLocale: "en-US" },
   // أول لغة مخزن: السورانية — تجريبية حتى مراجعة ناطق. مفاتيحها الناقصة
   // تسقط للعربية (أقرب لغة مفهومة لجمهورها) ثم الإنجليزية.
