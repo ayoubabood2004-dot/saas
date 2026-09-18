@@ -4752,6 +4752,16 @@
     "closedOn": "Closed on",
     "costPerSoldKg": "Cost per kg sold",
     "profit": "Profit",
-    "loss": "Loss"
+    "loss": "Loss",
+    "round": {
+      "open": "Today’s round ({{n}})",
+      "title": "Today’s round",
+      "pickFeed": "Feed used today",
+      "save": "Save all",
+      "nothing": "Nothing entered",
+      "saved": "Round saved ({{n}})",
+      "partial": "Saved {{ok}} of {{all}} — check",
+      "noFeed": "The farm store is empty — add feed from the farm screen."
+    }
   }
 }

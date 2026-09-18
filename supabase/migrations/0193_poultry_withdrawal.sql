@@ -1,5 +1,5 @@
 -- ============================================================================
--- ٠١٩٣ — فترةُ السحب: دواءٌ دخل القطيع، ولحمٌ لا يُذبح قبل تاريخ
+-- ٠١٩٣ — فترةُ السحب، ومرجعُ المحاولة (شرطُ الطابور)
 --
 -- ── لماذا هذه أوّلاً، قبل أيّ مؤشّرِ أداء ─────────────────────────────────
 -- حين يُعطى مضادٌّ حيويّ لقطيعٍ يُذبح بعد أسبوعين، **يوجد تاريخٌ قبله لا يجوز
@@ -25,6 +25,15 @@
 -- القاعدةُ تحسب وتقول، وبس. كان بالشاشة أوّلَ يومٍ تأكيدٌ مكتوبٌ يُطلب عند
 -- الإغلاق قبل تاريخ الأمان، فرُفع بكلمة المالك (١٨ أيلول): «الحقلُ يعرف
 -- بروتوكولاته». نحن دفترٌ يَذكر لا جهةٌ تُجيز — والعمودُ هنا ليُقرأ لا ليَحكم.
+--
+-- ── ومرجعُ المحاولة: شرطُ دخول الطابور، لا تحسين ────────────────────────
+-- الجملونُ على طرف قرية، والنتُ يقع. والصرفُ من غير طابورٍ يعني علفاً نزل
+-- ولم يُسجَّل. لكنّ `outbox.ts` **يرفض** أن يطبّر نداءَ دالّةٍ لا تعرف
+-- `client_ref` («الشرط مفروضٌ بالكود لا بالنيّة»): الطابورُ يعيد بطبعه، فنداءٌ
+-- بلا مرجعٍ يعني ازدواجاً **منهجياً لا نادراً** — خصمان من المخزن وسطرا كلفةٍ
+-- على دفعةٍ واحدة (عينُ درس 0171).
+-- فصارت `p_meta jsonb` بنفس اصطلاح `retail_return`: نداءٌ ثانٍ بنفس المرجع
+-- **يُرجع نتيجةَ الأوّل** ولا يخصم مرّةً ثانية.
 --
 -- ── ولماذا تُحذف الدالّتان وتُعاد ───────────────────────────────────────
 -- `poultry_consume` تكسب وسيطاً، و`poultry_cycle_stats` تكسب عمودين. إضافةُ
@@ -56,6 +65,16 @@ comment on column poultry_use.withdrawal_days is
 -- بكلّ فتحةِ دفعة، والدفعةُ الواحدة قد تحمل مئاتِ سطورِ العلف.
 create index if not exists poultry_use_med_idx on poultry_use(cycle_id) where kind = 'med';
 
+-- مرجعُ المحاولة: فريدٌ **بالعيادة** لا بالجدول كلِّه — معرّفٌ مولودٌ بجهازٍ
+-- آخرَ لا يجوز أن يمنع عيادةً من تسجيل صرفها. وجزئيٌّ لأن كلَّ ما سبق NULL.
+alter table poultry_use add column if not exists client_ref text;
+create unique index if not exists poultry_use_client_ref_idx
+  on poultry_use(clinic_id, client_ref) where client_ref is not null;
+
+comment on column poultry_use.client_ref is
+  'مرجعُ المحاولة المولودُ بالجهاز (0193). شرطُ إعادةِ الصرف من صندوق الصادر '
+  'بلا ازدواج: نداءٌ ثانٍ بنفس المرجع يُرجع سطرَ الأوّل ولا يخصم ثانيةً.';
+
 -- ── ٢) الصرفُ يحمل الرقم ────────────────────────────────────────────────
 begin;
 
@@ -73,7 +92,9 @@ create or replace function public.poultry_consume(
   p_unit       text default null,
   p_on_date    date default null,
   p_note       text default null,
-  p_withdrawal integer default null
+  p_withdrawal integer default null,
+  -- `p_meta.client_ref` — بنفس اصطلاح `retail_return` الذي يقرؤه الطابور.
+  p_meta       jsonb default null
 )
 returns jsonb
 language plpgsql
@@ -90,6 +111,7 @@ declare
   v_row    poultry_use;
   v_date   date := coalesce(p_on_date, current_date);
   v_wd     integer := p_withdrawal;
+  v_ref    text := nullif(btrim(coalesce(p_meta->>'client_ref', '')), '');
 begin
   if v_clinic is null then
     raise exception 'no_clinic' using hint = 'لا عيادةَ للجلسة.';
@@ -113,6 +135,19 @@ begin
     raise exception 'bad_withdrawal' using hint = 'فترةُ السحب بالأيام (٠–١٢٠) كما تقولها العلبة.';
   end if;
 
+  /* المرجعُ يُفحص **قبل أيّ خصم**: الطابورُ يعيد، وإعادةٌ تخصم ثانيةً تكذب
+     على كلفة الدفعة وعلى رصيد المخزن معاً. والنتيجةُ المُرجَعة نتيجةُ الأوّل
+     حرفياً كي لا تتغيّر الشاشةُ تحت يد من أعاد. */
+  if v_ref is not null then
+    select * into v_row from poultry_use where clinic_id = v_clinic and client_ref = v_ref;
+    if found then
+      return jsonb_build_object(
+        'ok', true, 'use', to_jsonb(v_row), 'stock_after', null, 'shortfall', 0, 'replayed', true,
+        'safe_from', case when v_row.withdrawal_days is null then null
+                          else to_char(v_row.on_date + v_row.withdrawal_days, 'YYYY-MM-DD') end);
+    end if;
+  end if;
+
   select * into v_cycle from poultry_cycles where id = p_cycle and clinic_id = v_clinic;
   if not found then
     raise exception 'no_cycle' using hint = 'الدفعةُ غيرُ موجودة.';
@@ -134,10 +169,10 @@ begin
     update products set stock = coalesce(stock, 0) - p_qty where id = p_product;
   end if;
 
-  insert into poultry_use (clinic_id, cycle_id, on_date, kind, product_id, name, qty, unit, unit_cost, line_cost, note, withdrawal_days)
+  insert into poultry_use (clinic_id, cycle_id, on_date, kind, product_id, name, qty, unit, unit_cost, line_cost, note, withdrawal_days, client_ref)
   values (v_clinic, p_cycle, v_date, p_kind, p_product,
           coalesce(nullif(btrim(p_name), ''), v_prod.name),
-          p_qty, p_unit, v_cost, round(v_cost * p_qty, 2), p_note, v_wd)
+          p_qty, p_unit, v_cost, round(v_cost * p_qty, 2), p_note, v_wd, v_ref)
   returning * into v_row;
 
   return jsonb_build_object(
@@ -151,12 +186,13 @@ begin
   );
 end $$;
 
-revoke all on function public.poultry_consume(uuid, text, uuid, text, numeric, text, date, text, integer) from public, anon;
-grant execute on function public.poultry_consume(uuid, text, uuid, text, numeric, text, date, text, integer) to authenticated;
+revoke all on function public.poultry_consume(uuid, text, uuid, text, numeric, text, date, text, integer, jsonb) from public, anon;
+grant execute on function public.poultry_consume(uuid, text, uuid, text, numeric, text, date, text, integer, jsonb) to authenticated;
 
-comment on function public.poultry_consume(uuid, text, uuid, text, numeric, text, date, text, integer) is
+comment on function public.poultry_consume(uuid, text, uuid, text, numeric, text, date, text, integer, jsonb) is
   'صرفٌ من مخزن الحقل على دفعة (0192، وفترةُ السحب 0193): خصمٌ وسطرُ كلفةٍ '
-  'بمعاملةٍ واحدة، بسعر الشراء، ويُرجّع النقصَ وتاريخَ الأمان ليُقالا بصوت.';
+  'بمعاملةٍ واحدة، بسعر الشراء، ويُرجّع النقصَ وتاريخَ الأمان ليُقالا بصوت. '
+  'و`p_meta.client_ref` يجعلها آمنةَ الإعادة فتدخل صندوق الصادر (0193).';
 
 commit;
 

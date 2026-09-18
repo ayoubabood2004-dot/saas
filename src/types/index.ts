@@ -1742,6 +1742,8 @@ export interface PoultryUse {
   /** فترةُ السحب بالأيام كما تقولها العلبة (0193). `null` = **مجهولة** لا
    *  «ماكو» — والصفرُ وحدَه يعني «قرأتُ العلبة وماكو فترةُ سحب». */
   withdrawal_days?: number | null;
+  /** مرجعُ المحاولة المولودُ بالجهاز — شرطُ إعادةِ الصرف من الطابور بلا ازدواج. */
+  client_ref?: string | null;
   note?: string | null; entered_by?: string | null; created_at: string;
 }
 
@@ -1761,4 +1763,8 @@ export interface PoultryConsumeResult {
   ok: boolean; use?: PoultryUse; stock_after?: number | null; shortfall?: number;
   /** تاريخُ أمانِ هذا السطر — تقوله الشاشةُ فورَ الصرف لا بعد إعادة التحميل. */
   safe_from?: string | null;
+  /** نداءٌ ثانٍ بنفس المرجع: أُرجع سطرُ الأوّل ولم يُخصم شيء. */
+  replayed?: boolean;
+  /** دخل صندوق الصادر — سينزل حين يعود النت. */
+  queued?: boolean;
 }

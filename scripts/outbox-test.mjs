@@ -166,6 +166,46 @@ signIn("user-A", "clinic-B");
 rb = await ob.flushOutbox();
 chk("تبديلُ العيادة بنفس المستخدم يمنع الرفع أيضاً", [rb.sent, ob.outboxCount()], [0, 1]);
 
+// ── المفتاحُ الطبيعيّ: إدخالُ اليوم (0193) ───────────────────────────────
+// صفُّ اليوم مفتاحُه (الدفعة + التاريخ) لا معرّفٌ مولودٌ بالجهاز. وثلاثةُ
+// فروقٍ عن الإدراج العاديّ، كلٌّ منها كان عطباً محتملاً:
+//   ١) معرّفُ العملية **منفصلٌ عن الحمولة** — وإلا رُفع «poultry_daily:…»
+//      بعمود `id` فرفضه بوستغريس وانتهت عمليةٌ سليمةٌ بالمعطّلات.
+//   ٢) الرفعُ **يدمج** لا يتجاهل — ما كُتب بالجملون لازم يصل.
+//   ٣) إعادةُ الإدخال **تستبدل** المطبور — آخرُ ما كتبه هو الصحيح.
+reset();
+const dayRow = { cycle_id: "cy-1", on_date: "2026-09-18", dead: 7 };
+chk("إدخالُ اليوم يدخل بمفتاحه الطبيعيّ",
+  ob.outboxEnqueue("poultry_daily", dayRow, { id: "poultry_daily:cy-1:2026-09-18", conflict: "cycle_id,on_date" }), true);
+chk("والحمولةُ بلا معرّفِ عمليةٍ مدسوس", Object.keys(dayRow).includes("id"), false);
+ob.outboxEnqueue("poultry_daily", { cycle_id: "cy-1", on_date: "2026-09-18", dead: 9 },
+  { id: "poultry_daily:cy-1:2026-09-18", conflict: "cycle_id,on_date" });
+chk("وإعادةُ كتابته تستبدل ولا تضيف", ob.outboxCount(), 1);
+r = await ob.flushOutbox();
+chk("والمرفوعُ آخرُ ما كُتب", [r.sent, calls[0].row.dead], [1, 9]);
+chk("بمفتاحه الطبيعيّ ودمجاً لا تجاهلاً",
+  calls[0].opts, { onConflict: "cycle_id,on_date", ignoreDuplicates: false });
+
+// وإسقاطُ عمليةٍ بعد نجاحٍ أونلاين على نفس المفتاح: نسخةٌ قديمةٌ لا تعود
+// بعد دقائقَ لتدهس ما حُفظ بعدها.
+reset();
+ob.outboxEnqueue("poultry_daily", { cycle_id: "cy-2", on_date: "2026-09-18", dead: 1 },
+  { id: "poultry_daily:cy-2:2026-09-18", conflict: "cycle_id,on_date" });
+ob.outboxDrop("poultry_daily:cy-2:2026-09-18");
+chk("outboxDrop يُسقط ما نجح أونلاين", ob.outboxCount(), 0);
+ob.outboxDrop("ماكو-هيچي");
+chk("وإسقاطُ ما لا وجودَ له لا يكسر شيئاً", ob.outboxCount(), 0);
+
+// ── والصرفُ لا يدخل إلا بمرجع ────────────────────────────────────────────
+reset();
+chk("صرفٌ بلا مرجعٍ يُرفض من الطابور",
+  ob.outboxEnqueueRpc("poultry_consume", { p_cycle: "cy-1", p_qty: 10 }), false);
+chk("  ويصرخ بالسبب", shouts.some((s) => /client_ref/.test(s)), true);
+chk("وبمرجعٍ يدخل",
+  ob.outboxEnqueueRpc("poultry_consume", { p_cycle: "cy-1", p_qty: 10, p_meta: { client_ref: "pc-1" } }), true);
+r = await ob.flushOutbox();
+chk("ويُرفع نداءً للدالّة", [r.sent, calls[0].fn], [1, "poultry_consume"]);
+
 console.log("");
 if (fail) { console.log("✗ اكو فحصٌ فشل"); process.exit(1); }
 console.log("✓ كل فحوص الصندوق عبرت");

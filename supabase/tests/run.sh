@@ -2292,4 +2292,34 @@ chk "و poultry_cycle_stats بقيت invoker بعد إعادة إنشائها" \
     "select (not prosecdef and coalesce(array_to_string(proconfig,','),'') like '%search_path%')::text from pg_proc where proname='poultry_cycle_stats'" "true"
 
 
+# ── 0193: مرجعُ المحاولة — شرطُ الطابور ───────────────────────────────────
+# الطابورُ **يعيد بطبعه**. فنداءُ صرفٍ بلا مرجعٍ يعني خصمَين من المخزن وسطرَي
+# كلفةٍ على دفعةٍ واحدة كلَّما ضعف النت — ازدواجاً منهجياً لا نادراً (0171).
+echo "▸ 0193: الصرفُ يُعاد بلا ازدواج"
+$P -c "update products set stock = 100 where id='b1930000-0000-4000-8000-000000000002';
+       delete from poultry_use where client_ref = 'ref-dup-1';" >/dev/null
+
+chk "صرفٌ بمرجعٍ يمرّ ويخصم" \
+    "select (_pf('$C1','select poultry_consume(p_cycle => ''c1930000-0000-4000-8000-000000000001''::uuid, p_kind => ''feed'', p_product => ''b1930000-0000-4000-8000-000000000002''::uuid, p_name => null, p_qty => 10, p_meta => ''{\"client_ref\":\"ref-dup-1\"}''::jsonb)::text')::jsonb->>'ok')" "true"
+chk "  والرصيدُ نزل ١٠" \
+    "select stock::int::text from products where id='b1930000-0000-4000-8000-000000000002'" "90"
+# نفسُ النداء مرّةً ثانية — كما يفعل الطابور حين يضيع الجواب لا الطلب.
+chk "إعادةُ نفس المرجع تُرجع سطرَ الأوّل" \
+    "select (_pf('$C1','select poultry_consume(p_cycle => ''c1930000-0000-4000-8000-000000000001''::uuid, p_kind => ''feed'', p_product => ''b1930000-0000-4000-8000-000000000002''::uuid, p_name => null, p_qty => 10, p_meta => ''{\"client_ref\":\"ref-dup-1\"}''::jsonb)::text')::jsonb->>'replayed')" "true"
+chk "  **والرصيدُ ما انلمس ثانيةً**" \
+    "select stock::int::text from products where id='b1930000-0000-4000-8000-000000000002'" "90"
+chk "  ولا سطرَ كلفةٍ ثانٍ على الدفعة" \
+    "select count(*)::text from poultry_use where client_ref='ref-dup-1'" "1"
+# وبلا مرجعٍ يبقى السلوكُ القديم: كلُّ نداءٍ سطرٌ (الشاشةُ تصرف مرّةً بضغطة).
+chk "وبلا مرجعٍ: نداءان سطران — لا فلترةَ صامتة" \
+    "select (_pf('$C1','select poultry_consume(p_cycle => ''c1930000-0000-4000-8000-000000000001''::uuid, p_kind => ''feed'', p_product => ''b1930000-0000-4000-8000-000000000002''::uuid, p_name => null, p_qty => 5)::text')::jsonb->>'ok')" "true"
+chk "  والرصيدُ نزل ٥ كذلك" \
+    "select stock::int::text from products where id='b1930000-0000-4000-8000-000000000002'" "85"
+# الفهرسُ فريدٌ **بالعيادة**: مرجعٌ من جهازِ عيادةٍ أخرى لا يمنع هذه.
+chk "المرجعُ فريدٌ بالعيادة لا بالجدول" \
+    "select (indexdef like '%clinic_id, client_ref%')::text from pg_indexes where indexname='poultry_use_client_ref_idx'" "true"
+chk "  وجزئيٌّ فلا يصطدم القديمُ كلُّه بـNULL واحدة" \
+    "select (indexdef like '%WHERE (client_ref IS NOT NULL)%')::text from pg_indexes where indexname='poultry_use_client_ref_idx'" "true"
+
+
 [ $fail -eq 0 ] && echo "✓ كل الفحوص عبرت" || { echo "✗ اكو فحصٌ فشل"; exit 1; }

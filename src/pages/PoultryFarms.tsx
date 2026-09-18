@@ -21,7 +21,7 @@ import { useTranslation } from "react-i18next";
 import {
   Bird, Plus, ArrowRight, Home, Layers, CalendarDays, Skull, Wheat,
   Syringe, Wrench, StickyNote, Loader2, PackageX, CheckCircle2, AlertTriangle, Boxes, Download,
-  ShieldAlert, ShieldCheck, Scale, Gauge, Trophy, Coins,
+  ShieldAlert, ShieldCheck, Scale, Gauge, Trophy, Coins, ClipboardList,
 } from "lucide-react";
 import type { PoultryFarm, PoultryHouse, PoultryCycle, PoultryDaily, PoultryUse, PoultryCycleStats, PoultryUseKind, Product } from "@/types";
 import { repo } from "@/lib/repo";
@@ -156,6 +156,7 @@ function FarmView({ farm, canWrite, onBack, onOpenCycle }: { farm: PoultryFarm; 
   const [cycles, setCycles] = useState<PoultryCycle[]>([]);
   const [busy, setBusy] = useState(true);
   const [adding, setAdding] = useState(false);
+  const [round, setRound] = useState(false);
 
   const load = useCallback(async () => {
     setBusy(true);
@@ -174,11 +175,27 @@ function FarmView({ farm, canWrite, onBack, onOpenCycle }: { farm: PoultryFarm; 
     return m;
   }, [cycles]);
 
+  const actives = useMemo(() => houses
+    .map((h) => ({ house: h, cycle: activeOf.get(h.id) }))
+    .filter((x): x is { house: PoultryHouse; cycle: PoultryCycle } => !!x.cycle), [houses, activeOf]);
+
+  if (round) {
+    return <DailyRound farm={farm} rows={actives} onBack={() => { setRound(false); void load(); }} />;
+  }
+
   return (
     <div className="mx-auto max-w-3xl space-y-4 p-4">
       <BackBar title={farm.name} onBack={onBack} />
       {busy ? <div className="grid py-12 place-items-center"><Loader2 className="animate-spin text-brand-500" size={22} /></div> : (
         <>
+          {/* **جولةُ اليوم أوّلاً.** المقيس: إدخالُ يومِ قاعةٍ واحدةٍ أربعُ
+              ضغطاتٍ قبل أوّل رقم، وحقلٌ بستّ قاعاتٍ أربعٌ وعشرون ضغطةً كلَّ
+              يوم. وهذا الزرُّ هو سببُ فتحِه التطبيقَ أصلاً، فيسبق كلَّ شيء. */}
+          {canWrite && actives.length > 0 && (
+            <Button className="w-full" leftIcon={<ClipboardList size={17} />} onClick={() => { playTap(); setRound(true); }}>
+              {t("farm.round.open", { n: formatNum(actives.length) })}
+            </Button>
+          )}
           {houses.length === 0 ? <Empty icon={Home} text={t("farm.noHouses")} /> : (
             <ul className="space-y-2">
               {houses.map((h) => {
@@ -719,6 +736,150 @@ function CloseCycle({ cycleId, onClosed }: { cycleId: string; onClosed: (c: Poul
         <Button className="flex-1" onClick={submit} disabled={busy}>{t("farm.closeBatch")}</Button>
         <Button variant="ghost" onClick={() => setOpen(false)}>{t("farm.cancel")}</Button>
       </div>
+    </div>
+  );
+}
+
+/* ── جولةُ اليوم — كلُّ القاعات بشاشةٍ واحدة ────────────────────────────
+ *
+ * ── المقيس، وهو سببُ وجودها ─────────────────────────────────────────────
+ * إدخالُ يومِ قاعةٍ واحدةٍ كان: حقول ⇐ حقل ⇐ قاعة ⇐ دفعة ⇐ اكتب = أربعُ
+ * ضغطاتٍ **قبل أوّل رقم**. وحقلٌ بستّ قاعاتٍ أربعٌ وعشرون ضغطةً كلَّ يوم،
+ * ومن يدفع هذا الثمنَ يومياً يتوقّف بالأسبوع الثاني — ودفترٌ ينقطع أسوأُ من
+ * دفترٍ لم يُفتح: مؤشّراتُه تُحسب على علفٍ نصفِ مسجَّل فتكذب بثقة.
+ *
+ * ── وما تجمعه هذه الشاشة، ولماذا هذا بالضبط ────────────────────────────
+ * جولةُ الصباح ثلاثةُ أرقام: كم نفق، كم استُبعد، وكم علفاً نزل. ووزنُ العيّنة
+ * **ليس هنا** — يُوزن أسبوعياً لا يومياً، ووضعُه بالجولة يجعل خانةً تبقى
+ * فارغةً ستّةَ أيامٍ من سبعة فتُقرأ إهمالاً. مكانُه شاشةُ الدفعة.
+ *
+ * ── والعلفُ صنفٌ واحدٌ للجولة كلِّها ────────────────────────────────────
+ * ليس تبسيطاً: الحقلُ يفتح كيسَ علفٍ واحدٍ ويوزّعه على الجملونات. واختيارُ
+ * صنفٍ لكلّ سطرٍ كان يعني ستَّ قوائمَ منسدلة بشاشةِ تلفونٍ واحدة. ومن عنده
+ * أصنافٌ مختلفةٌ لقاعاتٍ مختلفة يدخل الدفعةَ نفسَها — الطريقُ القديم باقٍ.
+ *
+ * ── والحفظُ سطراً سطراً، والفشلُ يُسمّى ────────────────────────────────
+ * ستُّ قاعاتٍ بمعاملةٍ واحدةٍ تعني أنّ فشلَ الأخيرة يمحو الخمسَ قبلها. فكلُّ
+ * سطرٍ يُحفظ وحدَه، والنتيجةُ تُقال بالعدد: «انحفظت ٥ من ٦ — راجع جملون ٣».
+ * لا «تمّ» عن نصفِ عمل.
+ */
+function DailyRound({ farm, rows, onBack }: {
+  farm: PoultryFarm; rows: { house: PoultryHouse; cycle: PoultryCycle }[]; onBack: () => void;
+}) {
+  const { t } = useTranslation();
+  const toast = useToast();
+  const [date, setDate] = useState(todayISO());
+  const [stock, setStock] = useState<Product[]>([]);
+  const [feedId, setFeedId] = useState("");
+  const [vals, setVals] = useState<Record<string, { dead: string; culled: string; feed: string }>>({});
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+
+  const set = (id: string, k: "dead" | "culled" | "feed", v: string) =>
+    setVals((s) => ({ ...s, [id]: { ...(s[id] ?? { dead: "", culled: "", feed: "" }), [k]: v } }));
+
+  /* يومٌ سبق إدخالُه تُعبّأ خاناتُه: الجولةُ تُفتح مرّتين بنفس اليوم أحياناً
+     (نسي قاعةً فرجع)، وشاشةٌ فارغةٌ حينها تغري بإعادة كتابة ما كُتب. */
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [items, ...days] = await Promise.all([
+        repo.listFarmProducts(farm.id),
+        ...rows.map((r) => repo.listPoultryDaily(r.cycle.id)),
+      ]);
+      setStock(items ?? []);
+      const next: Record<string, { dead: string; culled: string; feed: string }> = {};
+      rows.forEach((r, i) => {
+        const d = (days[i] as PoultryDaily[] | undefined)?.find((x) => x.on_date === date);
+        next[r.cycle.id] = { dead: d ? String(d.dead) : "", culled: d ? String(d.culled) : "", feed: "" };
+      });
+      setVals(next);
+    } catch (e) { toast.error(t("farm.loadFailed"), e instanceof Error ? e.message : undefined); }
+    finally { setLoading(false); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [farm.id, date, t, toast]);
+  useEffect(() => { void load(); }, [load]);
+
+  const touched = (v?: { dead: string; culled: string; feed: string }) =>
+    !!v && (v.dead.trim() !== "" || v.culled.trim() !== "" || v.feed.trim() !== "");
+
+  const saveAll = async () => {
+    const todo = rows.filter((r) => touched(vals[r.cycle.id]));
+    if (!todo.length) { playWarning(); toast.error(t("farm.round.nothing")); return; }
+    setBusy(true);
+    let ok = 0;
+    const failed: string[] = [];
+    for (const r of todo) {
+      const v = vals[r.cycle.id];
+      try {
+        await repo.savePoultryDaily({
+          cycle_id: r.cycle.id, on_date: date,
+          dead: Math.max(0, Math.round(Number(v.dead) || 0)),
+          culled: Math.max(0, Math.round(Number(v.culled) || 0)),
+        } as Parameters<typeof repo.savePoultryDaily>[0]);
+        const kg = Number(v.feed);
+        if (feedId && Number.isFinite(kg) && kg > 0) {
+          await repo.poultryConsume({ cycle_id: r.cycle.id, kind: "feed", product_id: feedId, qty: kg, on_date: date });
+        }
+        ok++;
+      } catch { failed.push(r.house.label); }
+    }
+    setBusy(false);
+    if (failed.length) {
+      playWarning();
+      toast.error(t("farm.round.partial", { ok: formatNum(ok), all: formatNum(todo.length) }), failed.join("، "));
+    } else { playSuccess(); toast.success(t("farm.round.saved", { n: formatNum(ok) })); onBack(); }
+  };
+
+  return (
+    <div className="mx-auto max-w-3xl space-y-3 p-4">
+      <BackBar title={t("farm.round.title")} onBack={onBack} />
+      <input type="date" className="input" value={date} max={todayISO()} onChange={(e) => setDate(e.target.value)} />
+
+      {stock.length > 0 && (
+        <select className="input" value={feedId} onChange={(e) => setFeedId(e.target.value)}>
+          <option value="">{t("farm.round.pickFeed")}</option>
+          {stock.map((p) => <option key={p.id} value={p.id}>{p.name} — {formatNum(p.stock ?? 0)}</option>)}
+        </select>
+      )}
+
+      {loading ? <div className="grid py-10 place-items-center"><Loader2 className="animate-spin text-brand-500" size={22} /></div> : (
+        <ul className="space-y-2">
+          {rows.map(({ house, cycle }) => {
+            const v = vals[cycle.id] ?? { dead: "", culled: "", feed: "" };
+            return (
+              <li key={cycle.id} className="rounded-2xl border border-line bg-surface-1 p-3">
+                <p className="mb-2 flex items-baseline gap-2">
+                  <span className="truncate font-bold text-ink">{house.label}</span>
+                  <span className="text-2xs text-ink-subtle">{t("farm.ageDays", { n: formatNum(ageOf(cycle)) })}</span>
+                </p>
+                <div className="grid grid-cols-3 gap-2">
+                  <div>
+                    <label className="label">{t("farm.dead")}</label>
+                    <input className="input" inputMode="numeric" value={v.dead} placeholder="0"
+                      onChange={(e) => set(cycle.id, "dead", e.target.value)} />
+                  </div>
+                  <div>
+                    <label className="label">{t("farm.culled")}</label>
+                    <input className="input" inputMode="numeric" value={v.culled} placeholder="0"
+                      onChange={(e) => set(cycle.id, "culled", e.target.value)} />
+                  </div>
+                  <div>
+                    <label className="label">{t("farm.qtyKg")}</label>
+                    {/* بلا صنفٍ مختارٍ لا خانةَ علف: خانةٌ تقبل رقماً ثم تُهمله
+                        بصمتٍ أسوأُ من خانةٍ مقفلة. */}
+                    <input className="input" inputMode="decimal" value={v.feed} placeholder={feedId ? "0" : "—"}
+                      disabled={!feedId} onChange={(e) => set(cycle.id, "feed", e.target.value)} />
+                  </div>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+
+      <Button className="w-full" onClick={saveAll} disabled={busy || loading}>{t("farm.round.save")}</Button>
+      {stock.length === 0 && <p className="text-center text-2xs text-ink-subtle">{t("farm.round.noFeed")}</p>}
     </div>
   );
 }

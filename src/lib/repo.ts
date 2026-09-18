@@ -72,7 +72,7 @@ const invNormName = (v: string | null | undefined): string =>
     .replace(/[٠-٩]/g, (d) => String(d.charCodeAt(0) - 0x0660))
     .replace(/\s+/g, " ").trim().toLowerCase();
 import { supabase } from "./supabase";
-import { outboxEnqueue, outboxEnqueueRpc, isNetworkError } from "./outbox";
+import { outboxEnqueue, outboxEnqueueRpc, outboxDrop, isNetworkError } from "./outbox";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, AppointmentStatus, ClinicInfo, PublicStaff, DailyNote, TreatmentEntry, Admission, Branch, Reminder, Product, Company, CompanySection, Purchase, PurchaseItem, PurchasePayment, PurchaseDraftLine, PurchaseMeta, Courier, DeliveryOrder, PetMovement, DemoDB, Invoice, InvoiceItem, CheckoutItem, SaleMeta, Customer, DiscountType, PaymentMethod, PaymentSplit, WhatsAppMessage, AuditEntry, LoginEvent, PetNote, Expense, ExpenseMethod, ReturnMeta, RetailReturnResult, HealthMetric, ClinicVisit , Surgery, LabResult, LabDeviceLink, LabDeviceInbox, LabStatusValue, PetProblem, CareEntry, FeatureRequest, GeneratedBarcode, StoreProfile, StoreOrder, StoreOrderItem, StoreFrontInfo, StoreCatalogItem, SuggestedProduct, StoreTrackInfo, LibraryImage, Journey, JourneyEvent, JourneyKind, JourneyStage, JourneyPublicView, EditLine, PoultryFarm, PoultryHouse, PoultryCycle, PoultryDaily, PoultryUse, PoultryUseKind, PoultryCycleStats, PoultryConsumeResult } from "@/types";
 import type { CompanyCharge } from "@/types";
@@ -1518,7 +1518,7 @@ const demoRepo = {
     return pLoad<PoultryUse>("use").filter((u) => u.cycle_id === cycleId)
       .sort((a, b) => b.on_date.localeCompare(a.on_date) || b.created_at.localeCompare(a.created_at));
   },
-  async poultryConsume(input: { cycle_id: string; kind: PoultryUseKind; product_id?: string | null; name?: string | null; qty: number; unit?: string | null; on_date?: string | null; note?: string | null; withdrawal_days?: number | null }): Promise<PoultryConsumeResult> {
+  async poultryConsume(input: { cycle_id: string; kind: PoultryUseKind; product_id?: string | null; name?: string | null; qty: number; unit?: string | null; on_date?: string | null; note?: string | null; withdrawal_days?: number | null; client_ref?: string | null }): Promise<PoultryConsumeResult> {
     const db = loadDB();
     const cyc = pLoad<PoultryCycle>("cycles").find((c) => c.id === input.cycle_id);
     if (!cyc) throw new Error("no_cycle");
@@ -1546,8 +1546,14 @@ const demoRepo = {
     const wd = input.kind === "med" ? (input.withdrawal_days ?? null) : null;
     if (wd !== null && (!Number.isFinite(wd) || wd < 0 || wd > 120)) throw new Error("bad_withdrawal");
     const onDate = input.on_date ?? new Date().toISOString().slice(0, 10);
+    // مرآةُ 0193: مرجعٌ سبق ⇒ نُرجع سطرَه ولا نخصم ثانيةً.
+    const ref = (input.client_ref ?? "").trim();
+    if (ref) {
+      const prior = pLoad<PoultryUse>("use").find((u) => u.client_ref === ref);
+      if (prior) return { ok: true, use: prior, stock_after: null, shortfall: 0, replayed: true };
+    }
     const row: PoultryUse = {
-      id: uid("puse"), clinic_id: null, cycle_id: input.cycle_id,
+      id: uid("puse"), clinic_id: null, cycle_id: input.cycle_id, client_ref: ref || null,
       on_date: onDate,
       kind: input.kind, product_id: input.product_id ?? null, name: nm,
       qty: input.qty, unit: input.unit ?? null, unit_cost: cost,
@@ -4660,24 +4666,56 @@ const supabaseRepo: typeof demoRepo = {
     return listOrThrow<PoultryDaily>(await sbc().from("poultry_daily").select("*").eq("cycle_id", cycleId).order("on_date", { ascending: false }).limit(1000));
   },
   /** `upsert` على (cycle_id,on_date): إعادةُ إدخال يومٍ تصحيحٌ لا صفٌّ ثانٍ. */
+  /** إدخالُ اليوم — **يعيش بلا نت**.
+   *
+   *  الجملونُ على طرف قرية، والدكتورُ يكتب نفوقَ اليوم واقفاً. وكانت هذه
+   *  تُرمى بفشل الشبكة فيضيع اليوم: لا أحدَ يرجع بعد ساعةٍ ليعيد كتابةَ ما
+   *  عدّه. فصارت تدخل صندوق الصادر بمفتاحها الطبيعيّ (الدفعة + التاريخ)،
+   *  ونُرجع ما كتبه كأنّه حُفظ — لأنه سيُحفظ. */
   async savePoultryDaily(input) {
-    return need<PoultryDaily>(await sbc().from("poultry_daily")
-      .upsert({ ...input, updated_at: new Date().toISOString() }, { onConflict: "cycle_id,on_date" })
-      .select().single());
+    const opId = `poultry_daily:${input.cycle_id}:${input.on_date}`;
+    const row = { ...input, updated_at: new Date().toISOString() };
+    try {
+      const saved = need<PoultryDaily>(await sbc().from("poultry_daily")
+        .upsert(row, { onConflict: "cycle_id,on_date" }).select().single());
+      // نجحت أونلاين ⇒ نسخةٌ قديمةٌ بالطابور لنفس اليوم لا يجوز أن تدهسها بعدُ.
+      outboxDrop(opId);
+      return saved;
+    } catch (e) {
+      if (!isNetworkError(e)) throw e;
+      if (!outboxEnqueue("poultry_daily", row, { id: opId, conflict: "cycle_id,on_date" })) throw e;
+      /* المُرجَعُ محلّيٌّ بمعرّفٍ اصطناعيّ: الشاشةُ تستعمله مفتاحَ عرضٍ لا أكثر،
+         والقاعدةُ تولّد المعرّفَ الحقيقيّ حين ينزل الصفّ. */
+      return { ...(input as object), id: opId, created_at: row.updated_at } as PoultryDaily;
+    }
   },
   async listPoultryUse(cycleId) {
     return listOrThrow<PoultryUse>(await sbc().from("poultry_use").select("*").eq("cycle_id", cycleId).order("on_date", { ascending: false }).limit(2000));
   },
   /** الصرفُ من دالّةٍ لا بكتابتين: الخصمُ والسطرُ معاً أو لا شيء (0192). */
   async poultryConsume(input) {
-    const { data, error } = await sbc().rpc("poultry_consume", {
+    /* مرجعُ المحاولة يولَد هنا دائماً، لا عند الفشل: الطابورُ يرفض نداءً بلا
+     * مرجع، ومن يولّده بعد الفشل يكون قد فقد المرجعَ الذي ذهب مع المحاولة
+     * الأولى — فتصير الإعادةُ خصماً ثانياً (درس 0171). */
+    const args = {
       p_cycle: input.cycle_id, p_kind: input.kind, p_product: input.product_id ?? null,
       p_name: input.name ?? null, p_qty: input.qty, p_unit: input.unit ?? null,
       p_on_date: input.on_date ?? null, p_note: input.note ?? null,
       p_withdrawal: input.withdrawal_days ?? null,
-    });
-    if (error) throw new Error(error.message);
-    return (data ?? { ok: false }) as PoultryConsumeResult;
+      p_meta: { client_ref: input.client_ref ?? uid("pcon") },
+    };
+    try {
+      const { data, error } = await sbc().rpc("poultry_consume", args);
+      if (error) throw new Error(error.message);
+      return (data ?? { ok: false }) as PoultryConsumeResult;
+    } catch (e) {
+      if (!isNetworkError(e)) throw e;
+      if (!outboxEnqueueRpc("poultry_consume", args as unknown as Record<string, unknown>)) throw e;
+      /* الصرفُ سينزل، ولا شيءَ بعده ينتظر معرّفَه (بخلاف البيعة). فنُرجع
+       * «تمّ» بلا `stock_after` ولا `shortfall`: رقمُ رصيدٍ نخترعه هنا قد
+       * يخالف ما ستُنتجه القاعدة، وصمتٌ أصدقُ من رقمٍ يُصدَّق ثم يتبدّل. */
+      return { ok: true, queued: true } as PoultryConsumeResult;
+    }
   },
   async poultryUnconsume(useId) {
     const { data, error } = await sbc().rpc("poultry_unconsume", { p_use: useId });
