@@ -25,7 +25,7 @@ MIG="$HERE/../migrations"
 # و0095/0096/0158 بالمقدّمة رغم أنها أقدمُ من 0124: الموجةُ تبدأ من 0124 لأن
 # الأساس يوفّر ما قبلها جاهزاً — لكنّ هذه الثلاثَ تُنشئ المتجرَ والبوّابة،
 # وكانت خارجَ الفحص كلَّه. تُنزَّل بترتيبها الحقيقيّ قبل الموجة.
-WAVE="$MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0114_landing_events.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql $MIG/0184_images_hardening.sql $MIG/0185_store_funnel_events.sql $MIG/0186_store_bulk_visible.sql $MIG/0187_store_suggest_products.sql $MIG/0188_store_catalog_priced.sql $MIG/0189_accept_fee_at_decision.sql $MIG/0190_logo_out_of_db.sql"
+WAVE="$MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0114_landing_events.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql $MIG/0184_images_hardening.sql $MIG/0185_store_funnel_events.sql $MIG/0186_store_bulk_visible.sql $MIG/0187_store_suggest_products.sql $MIG/0188_store_catalog_priced.sql $MIG/0189_accept_fee_at_decision.sql $MIG/0190_logo_out_of_db.sql $MIG/0191_poultry_farms.sql $MIG/0192_poultry_consume.sql"
 
 command -v "$PGBIN/initdb" >/dev/null || { echo "ما لكيت بوستغريس بـ $PGBIN"; exit 1; }
 
@@ -506,6 +506,10 @@ $P -f "$MIG/0165_lookup_and_restore.sql" >/dev/null 2>&1
 # فحصنا نسخةً ماتت قبل أن تصل الإنتاج. العلّةُ نفسُها بنفس السطر مرّتين.
 $P -f "$MIG/0172_code_variants_server.sql" >/dev/null 2>&1
 $P -f "$MIG/0173_variants_ordered.sql" >/dev/null 2>&1
+# و0191 تعدّلها بعد 0173 (مخزنُ الحقل خارجُ الماسح) — **المرّةُ الثالثة** لنفس
+# السطر. فمن يمسّ `product_by_code` بهجرةٍ جديدة يضيف سطرَه هنا، وإلا فحصُ
+# «كاشيرُ العيادة لا يمسح علفاً» بآخر الملفّ يسقط ويدلّه على هذا الموضع.
+$P -f "$MIG/0191_poultry_farms.sql" >/dev/null 2>&1
 
 chk "علامةُ الاتجاه انشالت من الباركود" \
     "select barcode from products where id='bbbb0000-0000-0000-0000-000000000001'" "8989"
@@ -2068,5 +2072,147 @@ chk "  والمديرُ يمرّ" \
     "select _rls_try('$C1', 'update clinic_prefs set catalog_share=true where clinic_id=''$C1''')" "rows:1"
 chk "  والمحفّزُ invoker بمسارٍ مثبَّت (درس 0162: لا definer يشدّ أكثر من السياسة)" \
     "select (not prosecdef and coalesce(array_to_string(proconfig,','),'') like '%search_path%')::text from pg_proc where proname='clinic_prefs_guard_share'" "true"
+
+
+# ── 0191: حقولُ الدواجن ───────────────────────────────────────────────────
+# القياسُ قبل البناء: صفرُ أثرٍ لحقلٍ بالنظام كلِّه (الأنواعُ بلا دواجن، و٨٢
+# طيراً أليفاً، و٦١٣ منتجَ «دجاج» كلُّها أكلُ قططٍ بنكهته). فهذه بنيةُ رهانٍ
+# جديد، وتُفحص بنفس صرامةِ ما هو حيّ.
+echo "▸ 0191: حقولُ الدواجن — حقلٌ ⇒ قاعةٌ ⇒ دفعةٌ ⇒ يوم"
+$P -c "insert into poultry_farms (id, clinic_id, name) values ('f1910000-0000-4000-8000-000000000001','$C1','حقلُ الفحص') on conflict (id) do nothing;
+       insert into poultry_houses (id, clinic_id, farm_id, label, capacity, default_kind, default_breed, default_count)
+         values ('a1910000-0000-4000-8000-000000000001','$C1','f1910000-0000-4000-8000-000000000001','جملون ١',25000,'broiler','Ross 308',20000) on conflict (id) do nothing;
+       insert into poultry_cycles (id, clinic_id, farm_id, house_id, kind, breed, placed_on, placed_count, chick_unit_cost)
+         values ('c1910000-0000-4000-8000-000000000001','$C1','f1910000-0000-4000-8000-000000000001','a1910000-0000-4000-8000-000000000001','broiler','Ross 308', current_date - 10, 20000, 500) on conflict (id) do nothing;" >/dev/null
+
+chk "الدفعةُ تُفتح بعددها وتاريخها" \
+    "select placed_count::text from poultry_cycles where id='c1910000-0000-4000-8000-000000000001'" "20000"
+chk "  والعمرُ يُحسب من تاريخ وضع الدجاج لا من اليوم" \
+    "select days::text from poultry_cycle_stats('c1910000-0000-4000-8000-000000000001'::uuid)" "10"
+
+# **قاعةٌ واحدةٌ = دفعةٌ نشطةٌ واحدة**: دفعتان نشطتان تجعلان كلَّ رقمٍ يوميٍّ
+# بعدهما لا يُعرف لأيّهما.
+chk "دفعةٌ نشطةٌ ثانيةٌ بنفس الجملون مرفوضة" \
+    "select left(_rls_try('$C1', 'insert into poultry_cycles (clinic_id, farm_id, house_id, kind, placed_on, placed_count) values (''$C1'',''f1910000-0000-4000-8000-000000000001'',''a1910000-0000-4000-8000-000000000001'',''broiler'', current_date, 5000)'), 13)" "guarded:23505"
+
+# يومٌ لا يُدخَل مرّتين: التكرارُ يضاعف النفوقَ ويُسقط كلَّ مؤشّر.
+$P -c "insert into poultry_daily (clinic_id, cycle_id, on_date, dead, culled)
+         values ('$C1','c1910000-0000-4000-8000-000000000001', current_date - 9, 30, 5),
+                ('$C1','c1910000-0000-4000-8000-000000000001', current_date - 8, 12, 0) on conflict do nothing;" >/dev/null
+chk "يومٌ مكرّرٌ لنفس الدفعة مرفوض" \
+    "select left(_rls_try('$C1', 'insert into poultry_daily (clinic_id, cycle_id, on_date, dead) values (''$C1'',''c1910000-0000-4000-8000-000000000001'', current_date - 9, 7)'), 13)" "guarded:23505"
+chk "  والحيُّ = المُدخَل − النافق − المستبعَد" \
+    "select alive::text from poultry_cycle_stats('c1910000-0000-4000-8000-000000000001'::uuid)" "19953"
+
+# العلفُ سطرُ استهلاكٍ لا عمودٌ بالإدخال — رقمان للعلف ينحرفان.
+$P -c "insert into poultry_use (clinic_id, cycle_id, on_date, kind, name, qty, unit, unit_cost, line_cost)
+         values ('$C1','c1910000-0000-4000-8000-000000000001', current_date - 9, 'feed','علف بادئ', 800, 'kg', 1000, 800000),
+                ('$C1','c1910000-0000-4000-8000-000000000001', current_date - 8, 'feed','علف نامي', 1200, 'kg', 950, 1140000),
+                ('$C1','c1910000-0000-4000-8000-000000000001', current_date - 8, 'med','مضاد حيوي', 2, 'pack', 15000, 30000),
+                ('$C1','c1910000-0000-4000-8000-000000000001', current_date - 8, 'service','قنينة غاز', 1, null, 25000, 25000);" >/dev/null
+chk "مجموعُ العلف بالكيلو من سطور الاستهلاك" \
+    "select feed_kg::int::text from poultry_cycle_stats('c1910000-0000-4000-8000-000000000001'::uuid)" "2000"
+chk "  وكلفةُ العلف منفصلةٌ عن كلفة الدواء" \
+    "select feed_cost::int::text || '/' || med_cost::int::text from poultry_cycle_stats('c1910000-0000-4000-8000-000000000001'::uuid)" "1940000/30000"
+chk "  والخدمةُ تُحسب بالكلف الأخرى لا بالعلف" \
+    "select other_cost::int::text from poultry_cycle_stats('c1910000-0000-4000-8000-000000000001'::uuid)" "25000"
+chk "  وكلفةُ الصيصان = السعرُ × العدد" \
+    "select chick_cost::int::text from poultry_cycle_stats('c1910000-0000-4000-8000-000000000001'::uuid)" "10000000"
+
+# إغلاقُ الدفعة: مغلقةٌ بلا تاريخٍ تعني جرداً بلا حصيلة.
+chk "إغلاقٌ بلا تاريخٍ مرفوض" \
+    "select left(_rls_try('$C1', 'update poultry_cycles set status=''closed'' where id=''c1910000-0000-4000-8000-000000000001'''), 13)" "guarded:23514"
+chk "  وبتاريخٍ يمرّ" \
+    "select _rls_try('$C1', 'update poultry_cycles set status=''closed'', closed_on=current_date, sold_count=19900, sold_weight_kg=45000, sale_total=90000000 where id=''c1910000-0000-4000-8000-000000000001''')" "rows:1"
+chk "  وبعد الإغلاق يتوقّف عدّادُ العمر" \
+    "select days::text from poultry_cycle_stats('c1910000-0000-4000-8000-000000000001'::uuid)" "10"
+
+# العزل — الجوهر. عيادةٌ أخرى لا ترى حقلاً ليس لها ولا تكتب فيه.
+for t in poultry_farms poultry_houses poultry_cycles poultry_daily poultry_use; do
+  chk "  RLS مفعَّلٌ على $t" "select relrowsecurity::text from pg_class where relname='$t'" "true"
+done
+chk "عيادةٌ أخرى ما تشوف حقلَ الأولى" \
+    "select _rls_try('$C2', 'select count(*) from poultry_farms')" "rows:1"
+chk "  ولا تكتب دفعةً بحقلِ غيرها" \
+    "select left(_rls_try('$C2', 'insert into poultry_cycles (clinic_id, farm_id, house_id, kind, placed_on, placed_count) values (''$C1'',''f1910000-0000-4000-8000-000000000001'',''a1910000-0000-4000-8000-000000000001'',''broiler'', current_date, 100)'), 13)" "guarded:42501"
+chk "  ومجاميعُ دفعةٍ ليست لها ترجع فارغةً (الدالّةُ invoker فتمرّ من RLS)" \
+    "select _rls_try('$C2', 'select * from poultry_cycle_stats(''c1910000-0000-4000-8000-000000000001''::uuid)')" "rows:0"
+chk "والدالّةُ invoker بمسارٍ مثبَّت" \
+    "select (not prosecdef and coalesce(array_to_string(proconfig,','),'') like '%search_path%')::text from pg_proc where proname='poultry_cycle_stats'" "true"
+
+# مخزنُ الحقل: نفسُ الجدول، وفارغُ `farm_id` يبقى مخزنَ العيادة كما كان.
+chk "منتجاتُ العيادة القديمة بقيت بلا حقل" \
+    "select (count(*) = 0)::text from products where farm_id is not null" "true"
+
+
+# ── 0192: صرفُ مخزن الحقل ─────────────────────────────────────────────────
+echo "▸ 0192: الصرفُ ذرّيّ، بسعر الشراء، والنقصُ يُقال"
+$P -c "insert into poultry_farms (id, clinic_id, name) values ('f1920000-0000-4000-8000-000000000001','$C1','حقلُ الصرف') on conflict (id) do nothing;
+       insert into poultry_houses (id, clinic_id, farm_id, label) values ('a1920000-0000-4000-8000-000000000001','$C1','f1920000-0000-4000-8000-000000000001','جملون') on conflict (id) do nothing;
+       insert into poultry_cycles (id, clinic_id, farm_id, house_id, kind, placed_on, placed_count)
+         values ('c1920000-0000-4000-8000-000000000001','$C1','f1920000-0000-4000-8000-000000000001','a1920000-0000-4000-8000-000000000001','broiler', current_date - 5, 15000) on conflict (id) do nothing;
+       insert into products (id, clinic_id, name, sell_price, purchase_price, stock, farm_id)
+         values ('b1920000-0000-4000-8000-000000000001','$C1','علف بادئ', 0, 900, 1000, 'f1920000-0000-4000-8000-000000000001')
+       on conflict (id) do update set stock = 1000, purchase_price = 900, farm_id = 'f1920000-0000-4000-8000-000000000001';
+       insert into products (id, clinic_id, name, sell_price, purchase_price, stock)
+         values ('b1920000-0000-4000-8000-000000000002','$C1','معلب قطط', 5000, 3000, 20) on conflict (id) do update set farm_id = null;
+       update _dvtest_flags set admin = false;" >/dev/null
+
+chk "الصرفُ يخصم من المخزن ويقيّد الكلفة بسعر الشراء" \
+    "select (_pf('$C1','select poultry_consume(''c1920000-0000-4000-8000-000000000001''::uuid, ''feed'', ''b1920000-0000-4000-8000-000000000001''::uuid, null, 300)::text')::jsonb->>'ok')" "true"
+chk "  والرصيدُ نزل ٣٠٠" \
+    "select stock::int::text from products where id='b1920000-0000-4000-8000-000000000001'" "700"
+chk "  والكلفةُ ٣٠٠ × ٩٠٠ (شراءً لا بيعاً — لا ربحَ على ما استعمله الحقل)" \
+    "select line_cost::int::text from poultry_use where cycle_id='c1920000-0000-4000-8000-000000000001' order by created_at desc limit 1" "270000"
+
+# الرصيدُ يُترك يسلب عمداً، والنقصُ يُرجَّع ليُقال بصوت.
+chk "صرفٌ فوق الرصيد يُسجَّل ويُرجّع النقص" \
+    "select (_pf('$C1','select poultry_consume(''c1920000-0000-4000-8000-000000000001''::uuid, ''feed'', ''b1920000-0000-4000-8000-000000000001''::uuid, null, 900)::text')::jsonb->>'shortfall')::numeric::int::text" "200"
+chk "  والرصيدُ سالبٌ ظاهرٌ لا مقصوصٌ بصمت" \
+    "select stock::int::text from products where id='b1920000-0000-4000-8000-000000000001'" "-200"
+
+# مادّةٌ من مخزن العيادة لا تُصرف على دفعةِ دجاج.
+chk "معلبُ قططٍ من مخزن العيادة يُرفض" \
+    "select replace(_pf_try('$C1','select poultry_consume(''c1920000-0000-4000-8000-000000000001''::uuid, ''feed'', ''b1920000-0000-4000-8000-000000000002''::uuid, null, 1)::text'), ' ', '')" "guarded:not_farm_stock"
+chk "  ورصيدُ المعلب ما انلمس" \
+    "select stock::int::text from products where id='b1920000-0000-4000-8000-000000000002'" "20"
+
+# خدمةٌ بلا مادّة (قنينة غاز) تُقيَّد كلفةً بلا خصم.
+chk "خدمةٌ بلا منتجٍ تُقيَّد" \
+    "select (_pf('$C1','select poultry_consume(''c1920000-0000-4000-8000-000000000001''::uuid, ''service'', null, ''قنينة غاز'', 1)::text')::jsonb->>'ok')" "true"
+
+# الحذفُ يرجّع البضاعة — تصحيحُ إدخالٍ لا يترك رصيداً منقوصاً للأبد.
+$P -c "update _dvtest_flags set admin = false;" >/dev/null
+chk "حذفُ صرفٍ يرجّع كمّيتَه للمخزن" \
+    "select (_pf('$C1','select poultry_unconsume((select id from poultry_use where cycle_id=''c1920000-0000-4000-8000-000000000001'' and qty=900 limit 1))::text')::jsonb->>'ok')" "true"
+chk "  والرصيدُ رجع ٧٠٠" \
+    "select stock::int::text from products where id='b1920000-0000-4000-8000-000000000001'" "700"
+
+# دفعةٌ مغلقةٌ لا تُصرف عليها: كلفةٌ بعد الجرد تغيّر حصيلةً قيلت.
+$P -c "update poultry_cycles set status='closed', closed_on=current_date where id='c1920000-0000-4000-8000-000000000001';" >/dev/null
+chk "الصرفُ على دفعةٍ مغلقةٍ مرفوض" \
+    "select replace(_pf_try('$C1','select poultry_consume(''c1920000-0000-4000-8000-000000000001''::uuid, ''feed'', null, ''علف'', 10)::text'), ' ', '')" "guarded:cycle_closed"
+
+chk "والدالّتان definer بمسارٍ مثبَّتٍ وممنوعتان عن anon" \
+    "select (count(*) = 2)::text from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname in ('poultry_consume','poultry_unconsume') and p.prosecdef and coalesce(array_to_string(p.proconfig,','),'') like '%search_path%' and not has_function_privilege('anon', p.oid, 'execute')" "true"
+
+# ── الماسحُ لا يصل مخزنَ الحقل (0191) ─────────────────────────────────────
+# الواجهةُ تفصل العرضَين، لكنّ الماسحَ يمرّ من الخادم — فالفصلُ ناقصٌ ما لم
+# يكن بـ`product_by_code` نفسِها. وكيسُ علفٍ يُمسح بكاشير العيادة كان يُباع
+# بصفرٍ ويخصم من رصيدِ دفعةٍ جارية.
+echo "▸ 0191: كاشيرُ العيادة لا يمسح علفاً"
+$P -c "update products set barcode = '6221033000123' where id='b1920000-0000-4000-8000-000000000001';
+       update products set barcode = '6221033000999' where id='b1920000-0000-4000-8000-000000000002';" >/dev/null
+chk "باركودُ مخزن الحقل ما ينلكه بالماسح" \
+    "select _rls_try('$C1', 'select * from product_by_code(''6221033000123'')')" "rows:0"
+chk "  وباركودُ مخزن العيادة ينلكه كما كان" \
+    "select _rls_try('$C1', 'select * from product_by_code(''6221033000999'')')" "rows:1"
+# ومسارُ الصيغ (0173) مثلُه: صيغةٌ لا يملكها إلا صفُّ حقلٍ لا تُختار، وإلا
+# رجع الاستعلامُ الأخيرُ فارغاً وقال الكاشيرُ «غير موجود» عن مادةٍ بمخزنه.
+chk "  ولا يُنتشل بمسار صيغ الماسح" \
+    "select _rls_try('$C1', 'select * from product_by_code(''06221033000123'')')" "rows:0"
+chk "والمخزنُ ما انلمس — لا بيعَ ولا خصم" \
+    "select stock::int::text from products where id='b1920000-0000-4000-8000-000000000001'" "700"
+
 
 [ $fail -eq 0 ] && echo "✓ كل الفحوص عبرت" || { echo "✗ اكو فحصٌ فشل"; exit 1; }

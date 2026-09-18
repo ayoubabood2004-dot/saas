@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { ShieldCheck, Coins, Wallet, ArrowLeft, Lock, Building2, RefreshCw, Users, Sparkles, XCircle, Lightbulb, Check, Stethoscope, PawPrint, Receipt, Activity, AlertTriangle, Tag, MessageCircle, CalendarDays } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { isPlatformAdmin, getUsdRate, setUsdRate, adminActivate, adminGrantTrial, adminCancelSubscription, adminListClinics, adminSetPlanPrice, adminActivateDays, adminSetLimits, hydratePlanPrices, type AdminClinic } from "@/lib/platformAdmin";
-import { PLANS, usdToIqd, priceUsd, planPrice, type BillingPeriod, type PlanId } from "@/lib/plans";
+import { PLANS, planCopy, usdToIqd, priceUsd, planPrice, type BillingPeriod, type PlanId } from "@/lib/plans";
 import { MarketInsights } from "@/components/admin/MarketInsights";
 import { SystemHealth } from "@/components/admin/SystemHealth";
 import { repo } from "@/lib/repo";
@@ -187,7 +187,7 @@ export function AdminBilling() {
     try {
       const pet = petCap.trim() === "" ? null : Math.max(0, Math.floor(Number(petCap) || 0));
       const wa = waCap.trim() === "" ? null : Math.max(0, Math.floor(Number(waCap) || 0));
-      const planName = PLANS.find((p) => p.id === plan)?.name;
+      const planName = planCopy(plan).name;
 
       if (byDays) {
         const d = Math.floor(Number(days) || 0);
@@ -246,7 +246,7 @@ export function AdminBilling() {
     try {
       await adminSetPlanPrice(id, m, a);
       playSuccess();
-      toast.success("تم تحديث السعر", `${PLANS.find((p) => p.id === id)?.name} · $${m}/شهر`);
+      toast.success("تم تحديث السعر", `${planCopy(id).name} · $${m}/شهر`);
     } catch (e) { playWarning(); toast.error("تعذّر الحفظ", e instanceof Error ? e.message : undefined); }
     finally { setPriceBusy(null); }
   };
@@ -386,7 +386,7 @@ export function AdminBilling() {
           <div className="space-y-2">
             {sortedClinics.map((c) => {
               const meta = STATUS_META[c.status] ?? STATUS_META.trialing;
-              const planName = PLANS.find((p) => p.id === c.plan)?.name;
+              const planName = c.plan ? planCopy(c.plan as PlanId).name : undefined;
               const u = c.usage;
               // عيادة عمرها ما فتحت حالة ≠ عيادة اشتغلت وهدّت. الأولى «ما بدأت»
               // (مشكلة تأهيل)، والثانية «خاملة» (خطر انسحاب) — وتحتاجان ردّين مختلفين.
@@ -464,7 +464,7 @@ export function AdminBilling() {
               setPrices((s0) => ({ ...s0, [p.id]: { ...(s0[p.id] ?? { m: "", a: "" }), ...patch } }));
             return (
               <div key={p.id} className="flex flex-wrap items-end gap-2.5 rounded-2xl border border-line p-3">
-                <span className="min-w-24 flex-1 text-sm font-bold text-ink">{p.name}</span>
+                <span className="min-w-24 flex-1 text-sm font-bold text-ink">{planCopy(p.id).name}</span>
                 <label className="text-2xs font-semibold text-ink-subtle">
                   شهري ($)
                   <input inputMode="decimal" dir="ltr" className="input mt-0.5 w-24 py-1.5 text-center"
@@ -516,7 +516,7 @@ export function AdminBilling() {
         <div className="flex flex-wrap gap-2">
           {PLANS.map((p) => (
             <button key={p.id} onClick={() => setPlan(p.id)} className={cn("rounded-full px-4 py-2 text-sm font-bold transition", plan === p.id ? "bg-brand-600 text-white shadow-soft" : "bg-surface-2 text-ink-muted hover:text-ink")}>
-              {p.name}
+              {planCopy(p.id).name}
             </button>
           ))}
         </div>

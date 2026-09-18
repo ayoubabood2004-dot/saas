@@ -553,6 +553,8 @@ export interface Product {
   image_path?: string | null;
   /** مختارات المتجر (0177): يظهر بصفّ «مختارات» أعلى الستور. */
   store_featured?: boolean;
+  /** حقلُ الدواجن المالك لهذا الصنف (0191). فارغٌ = مخزنُ العيادة — الافتراض. */
+  farm_id?: string | null;
   created_at: string;
 }
 
@@ -1680,4 +1682,74 @@ export interface PayslipDraft {
     amount: number; deferred?: number;
     reason?: string | null; ref_kind?: string | null; ref_id?: string | null;
   }>;
+}
+
+/* ── حقولُ الدواجن (0191) — قسمٌ مستقلٌّ بباقته ────────────────────────────
+ * حقلٌ ⇒ قاعاتٌ ⇒ دفعةٌ ⇒ إدخالٌ يوميّ. والقطيعُ **ليس حيواناً**: عشرون ألفَ
+ * طيرٍ بصفٍّ واحد، بلا اسمٍ ولا وزنٍ فرديّ — فلا شيءَ منه يمرّ بـ`Pet`. */
+
+/** نوعُ الإنتاج. لاحمٌ أوّلاً؛ البيّاضُ دورتُه سنتان ومنطقُه مختلف. */
+export type PoultryKind = "broiler" | "layer";
+
+export interface PoultryFarm {
+  id: string; clinic_id?: string | null; name: string;
+  owner_name?: string | null; owner_phone?: string | null;
+  governorate?: string | null; area?: string | null; note?: string | null;
+  archived?: boolean; created_at: string;
+}
+
+/**
+ * القاعة (الجملون). تحمل الثابتَ **الفيزيائيّ** وحدَه.
+ *
+ * و`default_*` افتراضاتٌ تُنسخ عند فتح دفعةٍ جديدة لا قيمٌ حيّة: العددُ والنوعُ
+ * والسلالةُ صفاتُ الدفعةِ لا القاعة — نفسُ الجملون يأخذ عشرين ألفاً هذه الدورة
+ * وثمانيةَ عشرَ التالية، فلو عاشت هنا لطمست الدفعةُ الثانيةُ تاريخَ الأولى.
+ */
+export interface PoultryHouse {
+  id: string; clinic_id?: string | null; farm_id: string; label: string;
+  capacity?: number | null;
+  default_kind?: PoultryKind | null; default_breed?: string | null; default_count?: number | null;
+  archived?: boolean; created_at: string;
+}
+
+export interface PoultryCycle {
+  id: string; clinic_id?: string | null; farm_id: string; house_id: string;
+  kind: PoultryKind; breed?: string | null;
+  /** تاريخُ وضع الدجاج — ومنه وحدَه يُحسب عمرُ الدفعة. */
+  placed_on: string; placed_count: number; chick_unit_cost?: number | null;
+  status: "active" | "closed"; closed_on?: string | null;
+  sold_count?: number | null; sold_weight_kg?: number | null; sale_total?: number | null;
+  note?: string | null; created_at: string;
+}
+
+/** صفٌّ واحدٌ لكلّ يومٍ لكلّ دفعة. لا علفَ هنا — العلفُ سطرُ استهلاك. */
+export interface PoultryDaily {
+  id: string; clinic_id?: string | null; cycle_id: string; on_date: string;
+  dead: number; culled: number;
+  water_l?: number | null; sample_weight_g?: number | null; sample_size?: number | null;
+  temp_c?: number | null; humidity_pct?: number | null;
+  note?: string | null; entered_by?: string | null;
+  created_at: string; updated_at?: string;
+}
+
+export type PoultryUseKind = "feed" | "med" | "service" | "other";
+
+/** ما خرج من مخزن الحقل لهذه الدفعة — بسعر الشراء، لا ربحَ عليه. */
+export interface PoultryUse {
+  id: string; clinic_id?: string | null; cycle_id: string; on_date: string;
+  kind: PoultryUseKind; product_id?: string | null; name: string;
+  qty: number; unit?: string | null; unit_cost: number; line_cost: number;
+  note?: string | null; entered_by?: string | null; created_at: string;
+}
+
+/** مجاميعُ الدفعة — تُحسب بالقاعدة (0149: القاعدةُ تجمع والمتصفّحُ يعرض). */
+export interface PoultryCycleStats {
+  placed_count: number; dead: number; culled: number; alive: number;
+  feed_kg: number; feed_cost: number; med_cost: number; other_cost: number; chick_cost: number;
+  days: number; last_entry: string | null;
+}
+
+/** نتيجةُ صرفٍ من المخزن. `shortfall` يُقال بصوت — لا يُطمس. */
+export interface PoultryConsumeResult {
+  ok: boolean; use?: PoultryUse; stock_after?: number | null; shortfall?: number;
 }

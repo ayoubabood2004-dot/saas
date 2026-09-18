@@ -368,7 +368,8 @@
     "surgeries": "Surgeries",
     "fold": "Fold the sidebar — more room for the screen",
     "unfold": "Expand the sidebar",
-    "payroll": "Staff payroll"
+    "payroll": "Staff payroll",
+    "poultry": "Poultry farms"
   },
   "campaigns": {
     "title": "WhatsApp Campaigns",
@@ -2918,7 +2919,9 @@
       "revenue": "Revenue",
       "done": "File exported",
       "expenses": "Expenses / withdrawals",
-      "netCash": "Net cash in drawer"
+      "netCash": "Net cash in drawer",
+      "out": "Withdrawn",
+      "pocketNet": "Net"
     },
     "exp": {
       "title": "Expenses & withdrawals",
@@ -2961,7 +2964,8 @@
         "hint": "Ordered from the oldest day to the newest — every entry numbered with its running balance.",
         "preparedBy": "Prepared by",
         "approvedBy": "Approved by"
-      }
+      },
+      "netByPocket": "Net per pocket (collected − withdrawn)"
     },
     "zWithdrawals": "Cash withdrawals from drawer",
     "zWithdrawalsNonCash": "Card / bank withdrawals (outside drawer)",
@@ -2972,7 +2976,9 @@
       "jumpToday": "Back to today",
       "range": "Range view"
     },
-    "receiptFix": "Receipt correction"
+    "receiptFix": "Receipt correction",
+    "pocketOut": "Withdrawn",
+    "pocketNet": "Net"
   },
   "act": {
     "title": "Activity log",
@@ -4008,16 +4014,21 @@
     "viewPayroll": "Staff payroll and advances"
   },
   "features": {
-    "pos": "Till, sales and invoices",
+    "pos": "Point of sale, billing and invoices",
     "reports": "Reports and analytics",
-    "reportsExport": "Excel export and report printing",
+    "reportsExport": "Excel export and printable reports",
     "debt": "Credit sales and the debt ledger",
     "whatsapp": "WhatsApp campaigns and automatic reminders",
     "consent": "Consent forms",
     "branding": "Printouts with your clinic's logo",
     "finePerms": "Fine-grained staff permissions",
-    "payroll": "Staff payroll — salaries, advances and deductions",
-    "store": "Online store — a public shop on your clinic's own link"
+    "payroll": "Staff payroll, advances and deductions",
+    "store": "Online store — a public storefront on your own link",
+    "farm": "Poultry farms — batches, daily entry and a farm store",
+    "gateTitle": "This feature isn't in your plan",
+    "gateBody": "<0>{{feature}}</0> is available on the <1>{{plan}}</1> plan and above.",
+    "gateCta": "Upgrade your plan",
+    "gateBack": "Back"
   },
   "landing": {
     "title": "doctorVet — Veterinary clinic management",
@@ -4217,6 +4228,25 @@
         "10 users + priority support and training"
       ],
       "missing": []
+    },
+    "farm": {
+      "name": "Poultry Farm",
+      "tag": "Your farm on the books — for growers and farm owners",
+      "feats": [
+        "Unlimited farms and houses",
+        "Batches aged from the day the chicks were placed",
+        "Daily entry: mortality, culls, water, sample weight, temperature, notes",
+        "Farm store — feed by the ton, medicines by barcode, services",
+        "Consumption deducts stock at cost — batch cost with no invented profit",
+        "Batch totals: alive, mortality, feed, costs",
+        "Full Excel inventory with the actual numbers"
+      ],
+      "missing": [
+        "Point of sale and invoices",
+        "Animal medical records",
+        "Online store",
+        "WhatsApp campaigns"
+      ]
     }
   },
   "flow": {
@@ -4587,5 +4617,114 @@
     "fNoStock": "Out of stock",
     "fNoDesc": "No description",
     "feeZero": "0 = decided on confirmation"
+  },
+  "farm": {
+    "title": "Poultry farms",
+    "loadFailed": "Couldn't load the farms",
+    "retry": "Try again",
+    "noFarms": "No farms yet — add your first one",
+    "addFarm": "Add a farm",
+    "farmName": "Farm name",
+    "farmNamePlaceholder": "e.g. Al-Rahma Farm",
+    "farmAdded": "Farm added",
+    "needName": "Enter the farm name",
+    "saveFailed": "Couldn't save",
+    "save": "Save",
+    "cancel": "Cancel",
+    "noHouses": "No houses in this farm",
+    "addHouse": "Add a house",
+    "houseLabel": "House name",
+    "houseLabelPlaceholder": "e.g. House 1",
+    "capacity": "Capacity",
+    "needLabel": "Enter the house name",
+    "capacityN": "Holds {{n}}",
+    "noCapacity": "Capacity not set",
+    "defaultsHint": "These are defaults copied into any new batch in this house — you can change them when you open the batch, and past batches are untouched.",
+    "kind": {
+      "broiler": "Broiler",
+      "layer": "Layer"
+    },
+    "breed": "Breed",
+    "defaultCount": "Usual count",
+    "startBatch": "Start a batch",
+    "placedOn": "Placement date",
+    "placedCount": "Chicks placed",
+    "chickCost": "Cost per chick",
+    "needCount": "Enter the number of chicks",
+    "batchOpened": "Batch opened",
+    "houseBusy": "This house already has an active batch — close it first",
+    "activeBatch": "Active batch · {{n}} birds",
+    "ageDays": "{{n}} days old",
+    "placedN": "{{n}} birds",
+    "pastBatches": "Past batches",
+    "batchOf": "Batch of {{n}} birds",
+    "age": "Age",
+    "alive": "Alive",
+    "mortality": "Mortality",
+    "feedKg": "Feed (kg)",
+    "costSoFar": "Batch cost so far",
+    "todayEntry": "Today's entry",
+    "editDay": "Edit this day",
+    "dead": "Dead",
+    "culled": "Culled",
+    "note": "Notes",
+    "notePlaceholder": "What did you see today? And why…",
+    "saveDay": "Save the day",
+    "updateDay": "Update the day",
+    "daySaved": "Day saved",
+    "batchClosed": "This batch is closed",
+    "batchClosedOk": "Batch closed",
+    "use": {
+      "feed": "Feed",
+      "med": "Medicine",
+      "service": "Service"
+    },
+    "pickFromStore": "Pick from the farm store",
+    "servicePlaceholder": "e.g. Gas cylinder",
+    "qtyKg": "Quantity in kg",
+    "qty": "Quantity",
+    "addUse": "Add",
+    "needQty": "Enter a quantity above zero",
+    "needProduct": "Pick an item from the store",
+    "needServiceName": "Enter the service name",
+    "emptyStore": "This farm's store is empty — add its items from Inventory first",
+    "notFarmStock": "That item isn't in this farm's store",
+    "shortTitle": "Recorded, but the store is short",
+    "shortBody": "{{n}} short — check the farm store, the balance is now negative.",
+    "log": "Daily log",
+    "noEntries": "No entries yet",
+    "deadN": "{{n}} dead",
+    "culledN": "{{n}} culled",
+    "closeBatch": "Close the batch",
+    "closeHint": "Closing stops the age counter and fixes the batch result. Fill in what you know.",
+    "soldCount": "Birds sold",
+    "soldKg": "Total weight (kg)",
+    "saleTotal": "Sale amount",
+    "store": "Farm store",
+    "storeEmpty": "This farm store is empty — add its feed and medicine so they can be drawn from here",
+    "addItem": "Add an item",
+    "itemName": "Item name (feed, medicine…)",
+    "itemQty": "Quantity in",
+    "itemCost": "Unit cost",
+    "itemCode": "Barcode (optional)",
+    "needItemName": "Enter the item name",
+    "hide": "Hide",
+    "exportLedger": "Download full ledger (Excel)",
+    "nothingToExport": "No movements recorded yet",
+    "exportFailed": "Could not download the ledger",
+    "csv": {
+      "house": "House",
+      "batch": "Batch",
+      "date": "Date",
+      "day": "Day",
+      "kind": "Kind",
+      "item": "Item",
+      "qty": "Qty",
+      "cost": "Cost",
+      "note": "Note",
+      "dead": "Mortality",
+      "culled": "Culled",
+      "noteOnly": "Day note"
+    }
   }
 }

@@ -15,6 +15,7 @@
 //
 // Keep the feature lists in sync with the plan cards in src/lib/plans.ts.
 // ============================================================================
+import i18next from "i18next";
 import { useSubscription } from "./subscription";
 import type { PlanId } from "./plans";
 
@@ -28,28 +29,33 @@ export type Feature =
   | "branding"      // مطبوعات بشعار العيادة
   | "finePerms"     // صلاحيات الموظفين الدقيقة
   | "payroll"       // رواتب الكادر والسلف والقطوعات
-  | "store";        // المتجر الإلكتروني العام للعيادة
+  | "store"         // المتجر الإلكتروني العام للعيادة
+  | "farm";         // قسمُ حقول الدواجن
 
-/** What each PAID plan unlocks. (basic = records/calendar/inventory only.) */
+/** What each PAID plan unlocks. (basic = records/calendar/inventory only.)
+ *
+ *  و«حقل الدواجن» **ليس ترقيةً**: جمهورُه صاحبُ الحقل لا الطبيب، فقائمتُه
+ *  ليست «كلَّ ما بالسوبر + الحقل» بل شيئاً آخرَ — قسمُ الحقول والمخزنُ
+ *  والتقارير، بلا كاشيرٍ ولا متجرٍ ولا حملاتِ واتساب. ولذلك **لا باقةَ عيادةٍ
+ *  تُدرج `farm`**: من عنده عيادةٌ وحقلٌ يشترك بالاثنتين، وهذا قرارُ المالك. */
 const PLAN_FEATURES: Record<PlanId, Feature[]> = {
   basic: [],
   advanced: ["pos", "reports", "payroll"],
   super: ["pos", "reports", "reportsExport", "debt", "whatsapp", "consent", "branding", "finePerms", "payroll", "store"],
+  farm: ["farm", "reports", "reportsExport"],
 };
 
-/** Arabic label for a feature — used on the upgrade screen. */
-export const FEATURE_LABEL: Record<Feature, string> = {
-  pos: "الكاشير والبيع والفواتير",
-  reports: "التقارير والإحصائيات",
-  reportsExport: "تصدير Excel وطباعة التقارير",
-  debt: "البيع بالدين وسجل الديون",
-  whatsapp: "حملات واتساب والتذكيرات الآلية",
-  consent: "نماذج الإقرار",
-  branding: "مطبوعات بشعار عيادتك",
-  finePerms: "صلاحيات الموظفين الدقيقة",
-  payroll: "Staff payroll",
-  store: "المتجر الإلكتروني — ستور عام برابط خاص لعيادتك",
-};
+/**
+ * صنفُ الميزة من القاموس لا من الشِفرة.
+ *
+ * كانت أصنافاً عربيةً صلبةً هنا و`FeatureGate` يمرّرها بديلاً لـ`t()` — فمن
+ * يفتح شاشةَ الترقية بالإنكليزية يقرأ عربياً. ونقلُها أنزل سقفَ النصّ الصلب
+ * لهذا الملفّ إلى صفر. (و«payroll» كانت إنكليزيةً وحدَها بين عشرٍ عربية —
+ * فصارت عربيةً بالعربيّ وإنكليزيةً بالإنكليزيّ كأخواتها.)
+ */
+export const featureLabel = (f: Feature): string =>
+  i18next.t(`features.${f}`, { defaultValue: f }) as string;
+
 
 /** True if a specific PAID plan includes a feature. */
 export function planAllows(plan: PlanId | null | undefined, f: Feature): boolean {
@@ -57,8 +63,12 @@ export function planAllows(plan: PlanId | null | undefined, f: Feature): boolean
   return PLAN_FEATURES[plan]?.includes(f) ?? false;
 }
 
-/** The cheapest plan that includes a feature (for "متوفر في باقة …" prompts). */
+/** The cheapest plan that includes a feature (for "متوفر في باقة …" prompts).
+ *
+ *  والحقلُ أوّلاً: لولاه لقالت الشاشةُ لصاحب حقلٍ «متوفّرٌ بباقة السوبر» وهي
+ *  لا تحتويه — وترقيةٌ تُشترى ولا تفتح ما اشتُريت له أسوأُ من لا اقتراح. */
 export function minPlanFor(f: Feature): PlanId {
+  if (PLAN_FEATURES.farm.includes(f) && !PLAN_FEATURES.super.includes(f)) return "farm";
   if (PLAN_FEATURES.advanced.includes(f)) return "advanced";
   return "super";
 }

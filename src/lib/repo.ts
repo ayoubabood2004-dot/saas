@@ -74,7 +74,7 @@ const invNormName = (v: string | null | undefined): string =>
 import { supabase } from "./supabase";
 import { outboxEnqueue, outboxEnqueueRpc, isNetworkError } from "./outbox";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, AppointmentStatus, ClinicInfo, PublicStaff, DailyNote, TreatmentEntry, Admission, Branch, Reminder, Product, Company, CompanySection, Purchase, PurchaseItem, PurchasePayment, PurchaseDraftLine, PurchaseMeta, Courier, DeliveryOrder, PetMovement, DemoDB, Invoice, InvoiceItem, CheckoutItem, SaleMeta, Customer, DiscountType, PaymentMethod, PaymentSplit, WhatsAppMessage, AuditEntry, LoginEvent, PetNote, Expense, ExpenseMethod, ReturnMeta, RetailReturnResult, HealthMetric, ClinicVisit , Surgery, LabResult, LabDeviceLink, LabDeviceInbox, LabStatusValue, PetProblem, CareEntry, FeatureRequest, GeneratedBarcode, StoreProfile, StoreOrder, StoreOrderItem, StoreFrontInfo, StoreCatalogItem, SuggestedProduct, StoreTrackInfo, LibraryImage, Journey, JourneyEvent, JourneyKind, JourneyStage, JourneyPublicView, EditLine } from "@/types";
+import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, AppointmentStatus, ClinicInfo, PublicStaff, DailyNote, TreatmentEntry, Admission, Branch, Reminder, Product, Company, CompanySection, Purchase, PurchaseItem, PurchasePayment, PurchaseDraftLine, PurchaseMeta, Courier, DeliveryOrder, PetMovement, DemoDB, Invoice, InvoiceItem, CheckoutItem, SaleMeta, Customer, DiscountType, PaymentMethod, PaymentSplit, WhatsAppMessage, AuditEntry, LoginEvent, PetNote, Expense, ExpenseMethod, ReturnMeta, RetailReturnResult, HealthMetric, ClinicVisit , Surgery, LabResult, LabDeviceLink, LabDeviceInbox, LabStatusValue, PetProblem, CareEntry, FeatureRequest, GeneratedBarcode, StoreProfile, StoreOrder, StoreOrderItem, StoreFrontInfo, StoreCatalogItem, SuggestedProduct, StoreTrackInfo, LibraryImage, Journey, JourneyEvent, JourneyKind, JourneyStage, JourneyPublicView, EditLine, PoultryFarm, PoultryHouse, PoultryCycle, PoultryDaily, PoultryUse, PoultryUseKind, PoultryCycleStats, PoultryConsumeResult } from "@/types";
 import type { CompanyCharge } from "@/types";
 import type { DeletedProduct, CourierSettlement, ReceiptsDay, ReceiptsTotal, TopProductRow, StaffSalesRow, InvoiceSearch } from "@/types";
 import type { BarcodeAilment, BarcodeHealthRow } from "@/types";
@@ -91,6 +91,7 @@ import type { PayrollPolicyDTO, StaffComp, StaffRecurring, PayrollAdjustment, Pa
 import * as PD from "./payrollDemo";
 import { paidOf, round2 } from "./debt";
 import { isValidSlug, normalizeSlug, matchSlug, slugKey, demoOrderNo, productImageUrl } from "./storeLib";
+import { expenseMethodOf } from "./pockets";
 import { journeyToken, OWNER_REACTIONS } from "./journey";
 import { getClinicName, getClinicLogo, getClinicSocials } from "./settings";
 import { uid, uuid, ageMonths, localISO, normalizeCode, matchCode } from "./utils";
@@ -308,6 +309,20 @@ function demoNotesLoad(): PetNote[] {
   return [];
 }
 function demoNotesSave(list: PetNote[]) { try { localStorage.setItem(DEMO_NOTES_KEY, JSON.stringify(list)); } catch { /* ignore */ } }
+/* ── حقولُ الدواجن تجريبياً (0191) — مفاتيحُ localStorage مستقلّة ───────────
+ * خارج `vp_demo_db` عمداً: قاعدةُ الجهاز التجريبية محدودةُ الحصّة (١٤ صفّاً
+ * صنعت ٤٫٢ ميغا مرّةً)، وسطورُ الحقل اليومية تنمو بلا سقفٍ طبيعيّ — دفعةٌ
+ * واحدةٌ بأربعين يوماً وثلاثِ قاعاتٍ = مئاتُ الصفوف. */
+const DEMO_POULTRY: Record<string, string> = {
+  farms: "vp_demo_pfarms", houses: "vp_demo_phouses", cycles: "vp_demo_pcycles",
+  daily: "vp_demo_pdaily", use: "vp_demo_puse",
+};
+function pLoad<T>(k: string): T[] {
+  try { const r = localStorage.getItem(DEMO_POULTRY[k]); if (r) return JSON.parse(r) as T[]; } catch { /* ignore */ }
+  return [];
+}
+function pSave<T>(k: string, list: T[]) { try { localStorage.setItem(DEMO_POULTRY[k], JSON.stringify(list)); } catch { /* ignore */ } }
+
 const DEMO_EXPENSES_KEY = "vp_demo_expenses";
 function demoExpensesLoad(): Expense[] {
   try { const r = localStorage.getItem(DEMO_EXPENSES_KEY); if (r) return JSON.parse(r) as Expense[]; } catch { /* ignore */ }
@@ -1302,8 +1317,16 @@ const demoRepo = {
   },
 
   /* ---------------- Inventory & POS ---------------- */
+  /* **مخزنُ العيادة لا يرى مخزنَ الحقل** (0191). الجدولُ واحدٌ والعرضان اثنان:
+   * `farm_id` فارغٌ = العيادة، ومملوءٌ = حقلٌ بعينه. وبلا هذا الفصل يظهر
+   * أربعون طنَّ علفٍ بشاشة مخزن العيادة وبقيمة مخزونها وبنتائج الكاشير —
+   * و«جردٌ بالأرقام الفعلية» يصير مستحيلاً للاثنين معاً. */
   async listProducts(_clinicId?: string): Promise<Product[]> {
-    return (loadDB().products ?? []).slice().sort((a, b) => a.name.localeCompare(b.name));
+    return (loadDB().products ?? []).filter((p) => !p.farm_id).slice().sort((a, b) => a.name.localeCompare(b.name));
+  },
+  /** مخزنُ حقلٍ بعينه — الوجهُ الثاني لنفس الجدول. */
+  async listFarmProducts(farmId: string): Promise<Product[]> {
+    return (loadDB().products ?? []).filter((p) => p.farm_id === farmId).slice().sort((a, b) => a.name.localeCompare(b.name));
   },
   /** هل قاعدة البيانات تدعم عمود مجموعات الدفعات (bulk_group / ترحيل 0075)؟
    *  المخزن المحلي يدعمه دائماً؛ السحابة تُفحص فعلياً لتنبيه العيادة قبل أن
@@ -1316,8 +1339,10 @@ const demoRepo = {
     if (!code) return undefined;
     // الرمزُ الأساسي أو أيُّ رمزٍ إضافي — ونطبّع المخزون أيضاً، فصفٌّ قديم
     // فيه محرفٌ غير مرئيّ يبقى قابلاً للمسح.
+    // ومخزنُ الحقل خارجُ المسح: باركودُ علفٍ يُمسح بكاشير العيادة كان **يبيعه**
+    // بسعرٍ لم يُوضع للبيع أصلاً، ويخصم من رصيدِ دفعةٍ جارية.
     const hits = (loadDB().products ?? []).filter(
-      (p) => matchCode(p.barcode) === code || (p.alt_codes ?? []).some((c) => matchCode(c) === code),
+      (p) => !p.farm_id && (matchCode(p.barcode) === code || (p.alt_codes ?? []).some((c) => matchCode(c) === code)),
     );
     /* مرآةُ ترتيب `product_by_code` (0165) — و`find` على ترتيب المصفوفة كانت
      * تخالفه: تختار حاملَ الرمز **الإضافيّ** حيث يختار الخادمُ صاحبَه الأصيل.
@@ -1426,6 +1451,142 @@ const demoRepo = {
   async deleteProductImage(_clinicId: string | null, _productId: string, _path: string): Promise<void> {
     void _clinicId; void _productId; void _path;
   },
+  /* ── حقولُ الدواجن (0191/0192) — تجريبياً ───────────────────────────────
+   * يعكس الخادمَ بالقيود التي تهمّ: قاعةٌ واحدةٌ = دفعةٌ نشطةٌ واحدة، ويومٌ لا
+   * يُدخَل مرّتين، والصرفُ بسعر الشراء يرجّع النقص. حارسٌ لا يوجد هنا حارسٌ
+   * لم يُفحص — فحوصُ المنطق تجري على هذه النسخة. */
+  async listPoultryFarms(): Promise<PoultryFarm[]> {
+    return pLoad<PoultryFarm>("farms").filter((f) => !f.archived);
+  },
+  async addPoultryFarm(input: Partial<PoultryFarm> & { name: string }): Promise<PoultryFarm> {
+    const row: PoultryFarm = { ...input, id: uid("pfarm"), clinic_id: null, archived: false, created_at: new Date().toISOString() };
+    pSave("farms", [row, ...pLoad<PoultryFarm>("farms")]);
+    return row;
+  },
+  async listPoultryHouses(farmId: string): Promise<PoultryHouse[]> {
+    return pLoad<PoultryHouse>("houses").filter((h) => h.farm_id === farmId && !h.archived)
+      .sort((a, b) => a.label.localeCompare(b.label));
+  },
+  async addPoultryHouse(input: Partial<PoultryHouse> & { farm_id: string; label: string }): Promise<PoultryHouse> {
+    const row: PoultryHouse = { ...input, id: uid("phouse"), clinic_id: null, archived: false, created_at: new Date().toISOString() };
+    pSave("houses", [...pLoad<PoultryHouse>("houses"), row]);
+    return row;
+  },
+  async listPoultryCycles(farmId: string): Promise<PoultryCycle[]> {
+    return pLoad<PoultryCycle>("cycles").filter((c) => c.farm_id === farmId)
+      .sort((a, b) => b.placed_on.localeCompare(a.placed_on));
+  },
+  async openPoultryCycle(input: Omit<PoultryCycle, "id" | "status" | "created_at">): Promise<PoultryCycle> {
+    const all = pLoad<PoultryCycle>("cycles");
+    // مرآةُ الفهرس الفريد الجزئيّ بالخادم: دفعتان نشطتان بنفس الجملون تجعلان
+    // كلَّ رقمٍ يوميٍّ بعدهما لا يُعرف لأيّهما.
+    if (all.some((c) => c.house_id === input.house_id && c.status === "active")) {
+      throw new Error("house_has_active_cycle");
+    }
+    const row: PoultryCycle = { ...input, id: uid("pcycle"), status: "active", created_at: new Date().toISOString() };
+    pSave("cycles", [row, ...all]);
+    return row;
+  },
+  async closePoultryCycle(id: string, close: { closed_on: string; sold_count?: number | null; sold_weight_kg?: number | null; sale_total?: number | null }): Promise<PoultryCycle | undefined> {
+    const all = pLoad<PoultryCycle>("cycles");
+    const c = all.find((x) => x.id === id);
+    if (!c) return undefined;
+    // مرآةُ القيد: مغلقةٌ بلا تاريخٍ تعني جرداً بلا حصيلة.
+    if (!close.closed_on) throw new Error("close_needs_date");
+    Object.assign(c, close, { status: "closed" as const });
+    pSave("cycles", all);
+    return c;
+  },
+  async listPoultryDaily(cycleId: string): Promise<PoultryDaily[]> {
+    return pLoad<PoultryDaily>("daily").filter((d) => d.cycle_id === cycleId)
+      .sort((a, b) => b.on_date.localeCompare(a.on_date));
+  },
+  /** يومٌ واحدٌ لكلّ دفعة: الإعادةُ تُحدّث ولا تضيف (مرآةُ الفهرس الفريد). */
+  async savePoultryDaily(input: Omit<PoultryDaily, "id" | "created_at">): Promise<PoultryDaily> {
+    const all = pLoad<PoultryDaily>("daily");
+    const cur = all.find((d) => d.cycle_id === input.cycle_id && d.on_date === input.on_date);
+    if (cur) {
+      Object.assign(cur, input, { updated_at: new Date().toISOString() });
+      pSave("daily", all);
+      return cur;
+    }
+    const row: PoultryDaily = { ...input, id: uid("pday"), clinic_id: null, created_at: new Date().toISOString(), updated_at: new Date().toISOString() };
+    pSave("daily", [row, ...all]);
+    return row;
+  },
+  async listPoultryUse(cycleId: string): Promise<PoultryUse[]> {
+    return pLoad<PoultryUse>("use").filter((u) => u.cycle_id === cycleId)
+      .sort((a, b) => b.on_date.localeCompare(a.on_date) || b.created_at.localeCompare(a.created_at));
+  },
+  async poultryConsume(input: { cycle_id: string; kind: PoultryUseKind; product_id?: string | null; name?: string | null; qty: number; unit?: string | null; on_date?: string | null; note?: string | null }): Promise<PoultryConsumeResult> {
+    const db = loadDB();
+    const cyc = pLoad<PoultryCycle>("cycles").find((c) => c.id === input.cycle_id);
+    if (!cyc) throw new Error("no_cycle");
+    if (cyc.status !== "active") throw new Error("cycle_closed");
+    if (!(input.qty > 0)) throw new Error("bad_qty");
+    // سطرُ كلفةٍ بلا اسمٍ ولا مادّةٍ لا يُقرأ بجرد — يُرفض بالنصفين لا يُخترع له اسم.
+    if (!input.product_id && !(input.name ?? "").trim()) throw new Error("bad_name");
+    let cost = 0, stockAfter: number | null = null, shortfall = 0, nm = (input.name ?? "").trim();
+    if (input.product_id) {
+      const prod = (db.products ?? []).find((p) => p.id === input.product_id);
+      if (!prod) throw new Error("no_product");
+      // مادّةُ الحقل وحدَها: علبةُ قططٍ على دفعةِ دجاجٍ تفسد كلفةَ الدورة
+      // وقيمةَ مخزن العيادة معاً (مرآةُ فحص الخادم).
+      if ((prod.farm_id ?? null) !== cyc.farm_id) throw new Error("not_farm_stock");
+      cost = prod.purchase_price ?? 0;
+      shortfall = Math.max(0, input.qty - (prod.stock ?? 0));
+      // الرصيدُ يُترك يسلب عمداً: الدفترُ اليوميُّ هو الحقيقة لا مخزوننا.
+      prod.stock = (prod.stock ?? 0) - input.qty;
+      stockAfter = prod.stock;
+      nm = nm || prod.name;
+      saveDB(db);
+    }
+    const row: PoultryUse = {
+      id: uid("puse"), clinic_id: null, cycle_id: input.cycle_id,
+      on_date: input.on_date ?? new Date().toISOString().slice(0, 10),
+      kind: input.kind, product_id: input.product_id ?? null, name: nm,
+      qty: input.qty, unit: input.unit ?? null, unit_cost: cost,
+      line_cost: Math.round(cost * input.qty * 100) / 100,
+      note: input.note ?? null, created_at: new Date().toISOString(),
+    };
+    pSave("use", [row, ...pLoad<PoultryUse>("use")]);
+    return { ok: true, use: row, stock_after: stockAfter, shortfall };
+  },
+  async poultryUnconsume(useId: string): Promise<{ ok: boolean; returned?: number }> {
+    const all = pLoad<PoultryUse>("use");
+    const u = all.find((x) => x.id === useId);
+    if (!u) return { ok: false };
+    if (u.product_id) {
+      const db = loadDB();
+      const prod = (db.products ?? []).find((p) => p.id === u.product_id);
+      if (prod) { prod.stock = (prod.stock ?? 0) + u.qty; saveDB(db); }
+    }
+    pSave("use", all.filter((x) => x.id !== useId));
+    return { ok: true, returned: u.qty };
+  },
+  /** مرآةُ `poultry_cycle_stats` بالخادم — نفسُ المجاميع بنفس التعريفات. */
+  async poultryCycleStats(cycleId: string): Promise<PoultryCycleStats | null> {
+    const c = pLoad<PoultryCycle>("cycles").find((x) => x.id === cycleId);
+    if (!c) return null;
+    const days = pLoad<PoultryDaily>("daily").filter((d) => d.cycle_id === cycleId);
+    const uses = pLoad<PoultryUse>("use").filter((u) => u.cycle_id === cycleId);
+    const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
+    const dead = sum(days.map((d) => d.dead || 0));
+    const culled = sum(days.map((d) => d.culled || 0));
+    const end = c.closed_on ?? new Date().toISOString().slice(0, 10);
+    const ms = new Date(end).getTime() - new Date(c.placed_on).getTime();
+    return {
+      placed_count: c.placed_count, dead, culled, alive: c.placed_count - dead - culled,
+      feed_kg: sum(uses.filter((u) => u.kind === "feed").map((u) => u.qty)),
+      feed_cost: sum(uses.filter((u) => u.kind === "feed").map((u) => u.line_cost)),
+      med_cost: sum(uses.filter((u) => u.kind === "med").map((u) => u.line_cost)),
+      other_cost: sum(uses.filter((u) => u.kind !== "feed" && u.kind !== "med").map((u) => u.line_cost)),
+      chick_cost: Math.round((c.chick_unit_cost ?? 0) * c.placed_count * 100) / 100,
+      days: Math.max(0, Math.round(ms / 86400000)),
+      last_entry: days.length ? days.map((d) => d.on_date).sort().slice(-1)[0] : null,
+    };
+  },
+
   /** شعار العيادة (0190) — تجريبياً كصورة المنتج: لا مخزنَ ملفات فيرجع
    *  data URL، و`getClinicLogo` تمرّره كما هو. */
   async uploadClinicLogo(_clinicId: string | null, upload: { blob: Blob; dataUrl: string }): Promise<string> {
@@ -2647,7 +2808,9 @@ const demoRepo = {
   /** إرجاعٌ خالص — مرآةُ `retail_return` (هجرة 0132) بنفس قواعدها حرفياً:
    *  ما تُنشأ فاتورة، والبضاعة ترجع للرصيد، وسحبٌ منفصل لكل صنف. */
   async retailReturn(items: CheckoutItem[], meta: ReturnMeta): Promise<RetailReturnResult> {
-    const method: ExpenseMethod = meta.method === "card" ? "card" : meta.method === "transfer" || meta.method === "bank" ? "bank" : "cash";
+    // ترجمةُ الجيب بموضعٍ واحد (`pockets.ts`): كانت تعبيراً ثلاثياً منسوخاً
+    // هنا وبالمسار السحابيّ، فأيُّ جيبٍ جديد كان يحتاج تعديلَ نسختين بلا رابط.
+    const method: ExpenseMethod = expenseMethodOf(meta.method);
     const db = loadDB();
     let total = 0, lines = 0;
     const at = new Date().toISOString();
@@ -4296,7 +4459,11 @@ const supabaseRepo: typeof demoRepo = {
     // ثانٍ هنا بمعرّفٍ تحسبه الواجهة كان طريقاً لإخفاء منتجاتٍ لو اختلف
     // الحسابان يوماً (عضويات متعدّدة). الخادم يرجع منتجات عيادتك ولا غيرها.
     void clinicId;
-    return allPages<Product>(() => sbc().from("products").select("*").order("name", { ascending: true }));
+    // `is("farm_id", null)`: مخزنُ العيادة لا يرى مخزنَ الحقل (0191).
+    return allPages<Product>(() => sbc().from("products").select("*").is("farm_id", null).order("name", { ascending: true }));
+  },
+  async listFarmProducts(farmId: string) {
+    return allPages<Product>(() => sbc().from("products").select("*").eq("farm_id", farmId).order("name", { ascending: true }));
   },
   async supportsBulkGroup() {
     try {
@@ -4442,6 +4609,74 @@ const supabaseRepo: typeof demoRepo = {
     if (refs.error || (refs.data ?? []).length > 0) return;
     try { await sbc().storage.from("product-images").remove([path]); } catch { /* swallow-ok: ملفٌ يتيمٌ لا يُرى ولا يُحاسَب، والحذفُ يُعاد من أي حفظٍ لاحق */ }
   },
+  /* ── حقولُ الدواجن (0191/0192) — السحابيّ ───────────────────────────────
+   * القوائمُ من `listOrThrow` لا `listOf`: قائمةُ دفعاتٍ ناقصةٌ بصمتٍ تعني
+   * دفعةً يظنّها الدكتورُ مغلقةً فيفتح ثانيةً بنفس الجملون — والقاعدةُ ترفض
+   * فيظهر خطأٌ لا معنى له. «قائمةٌ ناقصةٌ أخطرُ من خطأٍ ظاهر». */
+  async listPoultryFarms() {
+    return listOrThrow<PoultryFarm>(await sbc().from("poultry_farms").select("*").eq("archived", false).order("created_at", { ascending: false }).limit(500));
+  },
+  async addPoultryFarm(input) {
+    return need<PoultryFarm>(await sbc().from("poultry_farms").insert(input).select().single());
+  },
+  async listPoultryHouses(farmId) {
+    return listOrThrow<PoultryHouse>(await sbc().from("poultry_houses").select("*").eq("farm_id", farmId).eq("archived", false).order("label", { ascending: true }).limit(500));
+  },
+  async addPoultryHouse(input) {
+    return need<PoultryHouse>(await sbc().from("poultry_houses").insert(input).select().single());
+  },
+  async listPoultryCycles(farmId) {
+    return listOrThrow<PoultryCycle>(await sbc().from("poultry_cycles").select("*").eq("farm_id", farmId).order("placed_on", { ascending: false }).limit(500));
+  },
+  async openPoultryCycle(input) {
+    const r = await sbc().from("poultry_cycles").insert(input).select().single();
+    // الفهرسُ الفريدُ الجزئيّ بالخادم هو الحكم؛ نترجم رمزَه لرسالةٍ تُفهم.
+    if (r.error && /poultry_cycles_one_active_per_house|23505/.test(`${r.error.code} ${r.error.message}`)) {
+      throw new Error("house_has_active_cycle");
+    }
+    return need<PoultryCycle>(r);
+  },
+  async closePoultryCycle(id, close) {
+    if (!close.closed_on) throw new Error("close_needs_date");
+    return updated<PoultryCycle>(await sbc().from("poultry_cycles").update({ ...close, status: "closed" }).eq("id", id).select());
+  },
+  async listPoultryDaily(cycleId) {
+    return listOrThrow<PoultryDaily>(await sbc().from("poultry_daily").select("*").eq("cycle_id", cycleId).order("on_date", { ascending: false }).limit(1000));
+  },
+  /** `upsert` على (cycle_id,on_date): إعادةُ إدخال يومٍ تصحيحٌ لا صفٌّ ثانٍ. */
+  async savePoultryDaily(input) {
+    return need<PoultryDaily>(await sbc().from("poultry_daily")
+      .upsert({ ...input, updated_at: new Date().toISOString() }, { onConflict: "cycle_id,on_date" })
+      .select().single());
+  },
+  async listPoultryUse(cycleId) {
+    return listOrThrow<PoultryUse>(await sbc().from("poultry_use").select("*").eq("cycle_id", cycleId).order("on_date", { ascending: false }).limit(2000));
+  },
+  /** الصرفُ من دالّةٍ لا بكتابتين: الخصمُ والسطرُ معاً أو لا شيء (0192). */
+  async poultryConsume(input) {
+    const { data, error } = await sbc().rpc("poultry_consume", {
+      p_cycle: input.cycle_id, p_kind: input.kind, p_product: input.product_id ?? null,
+      p_name: input.name ?? null, p_qty: input.qty, p_unit: input.unit ?? null,
+      p_on_date: input.on_date ?? null, p_note: input.note ?? null,
+    });
+    if (error) throw new Error(error.message);
+    return (data ?? { ok: false }) as PoultryConsumeResult;
+  },
+  async poultryUnconsume(useId) {
+    const { data, error } = await sbc().rpc("poultry_unconsume", { p_use: useId });
+    if (error) throw new Error(error.message);
+    return (data ?? { ok: false }) as { ok: boolean; returned?: number };
+  },
+  async poultryCycleStats(cycleId) {
+    const { data, error } = await sbc().rpc("poultry_cycle_stats", { p_cycle: cycleId });
+    if (error) throw new Error(error.message);
+    const row = (data as PoultryCycleStats[] | null)?.[0];
+    return row ? { ...row, placed_count: Number(row.placed_count) || 0, dead: Number(row.dead) || 0, culled: Number(row.culled) || 0,
+      alive: Number(row.alive) || 0, feed_kg: Number(row.feed_kg) || 0, feed_cost: Number(row.feed_cost) || 0,
+      med_cost: Number(row.med_cost) || 0, other_cost: Number(row.other_cost) || 0, chick_cost: Number(row.chick_cost) || 0,
+      days: Number(row.days) || 0 } : null;
+  },
+
   /** شعار العيادة إلى الدلو (0190) — تصحيحُ سجلٍّ قبل أن يكون ميزة.
    *
    *  ترويسةُ 0174 تقول «الصورة لا تدخل جداول القاعدة أبداً» وتذكر أن شعارات
@@ -5055,7 +5290,8 @@ const supabaseRepo: typeof demoRepo = {
         lines += 1;
       }
       const m = meta.method;
-      return { total, lines, method: m === "card" ? "card" : m === "transfer" || m === "bank" ? "bank" : "cash" };
+      // نفسُ ترجمة الجيب — من `pockets.ts` لا نسخةً ثانيةً تنحرف.
+      return { total, lines, method: expenseMethodOf(m) };
     }
   },
   async listInvoiceItems(invoiceId) {
@@ -5449,6 +5685,8 @@ export class ReadOnlyError extends Error {
  */
 const READ_ONLY_ALLOWED = new Set<string>([
   // --- كل القراءات (مولَّدة من دوال الريبو نفسها، فلا تسقط واحدة سهواً) ---
+  "listPoultryFarms", "listPoultryHouses", "listPoultryCycles", "listPoultryDaily",
+  "listPoultryUse", "poultryCycleStats",
   "getActiveJourney", "getClinicVisit", "getDailyNote", "getPet", "getPetBySerial",
   "getPetByToken", "getPetsByIds", "getPetsByOwnerEmail", "getProductByBarcode",
   "getSharedPetsByOwnerId", "getStoreProfile", "countNewStoreOrders", "rejectStaleStoreOrders", "listAdmissions", "listAdmissionsForPet",

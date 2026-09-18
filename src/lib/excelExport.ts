@@ -29,7 +29,7 @@ export interface XlsxReport {
  * فالاسم يُنظَّف لاتينياً دائماً، والعنوان العربي مكانه داخل الملف حيث يُقرأ
  * صحيحاً على كل نظام.
  */
-export function asciiFileName(stem: string, fallback = "export"): string {
+export function asciiFileName(stem: string, fallback = "export", ext = "xlsx"): string {
   const clean = stem
     .replace(/[\\/:*?"<>|]/g, " ")     // ممنوعةٌ بأسماء الملفات
     .replace(/[^\x20-\x7E]/g, "")       // وما ليس لاتينياً يسقط لا يُبدَّل
@@ -37,7 +37,7 @@ export function asciiFileName(stem: string, fallback = "export"): string {
     .replace(/-{2,}/g, "-")
     .replace(/^[-.]+|[-.]+$/g, "")
     .slice(0, 80);
-  return `${clean || fallback}.xlsx`;
+  return `${clean || fallback}.${ext}`;
 }
 
 const BORDER_SOFT = { style: "thin", color: { rgb: "E2E8F0" } };

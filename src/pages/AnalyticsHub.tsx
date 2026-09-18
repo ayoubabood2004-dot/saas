@@ -28,6 +28,7 @@ import { useOverride, noteLockedTap } from "@/lib/managerOverride";
 import { useToast, Skeleton, Button } from "@/components/ui";
 import { WithdrawalsLedger } from "@/components/reports/WithdrawalsLedger";
 import { money, formatNum, cn, dateLocale } from "@/lib/utils";
+import { netPerPocket, POCKETS, type PocketTotals } from "@/lib/pockets";
 import { displayCustomerName } from "@/lib/customerName";
 import { dueOf, isDebt, paidOf } from "@/lib/debt";
 import { invoiceNo } from "@/lib/invoicePrint";
@@ -93,11 +94,14 @@ const PAY_ICON: Record<PaymentMethod, typeof Banknote> = { cash: Banknote, card:
 
 /** Withdrawal sources (سجل السحوبات) — where the money physically left from.
  *  Legacy rows have no method and count as cash (the ledger's original meaning). */
-const EXPENSE_METHODS: { id: ExpenseMethod; label: string; icon: typeof Banknote }[] = [
-  { id: "cash", label: "نقدي", icon: Banknote },
-  { id: "card", label: "بطاقة", icon: CreditCard },
-  { id: "bank", label: "حوالة بنك", icon: Landmark },
+const EXPENSE_METHODS: { id: ExpenseMethod; icon: typeof Banknote }[] = [
+  { id: "cash", icon: Banknote },
+  { id: "card", icon: CreditCard },
+  { id: "bank", icon: Landmark },
 ];
+/* الأصنافُ العربية حُذفت من هنا: كلُّ نداءٍ يمرّ من `t(\`rpt.exp.method.${id}\`)`
+ * والمفاتيحُ الثلاثةُ موجودةٌ بالقاموسين، فكانت بدائلَ ميّتة. حذفُها ينزّل سقفَ
+ * النصّ الصلب لهذا الملفّ ٦ ⇒ ٣ (والسقفُ ينزل ولا يصعد). */
 const expenseMethodOf = (e: Expense): ExpenseMethod => e.method ?? "cash";
 const expenseMethodMeta = (m: ExpenseMethod) => EXPENSE_METHODS.find((x) => x.id === m) ?? EXPENSE_METHODS[0];
 /** A sale's payment legs — the recorded split when present, else one leg for the whole
@@ -441,7 +445,15 @@ export function AnalyticsHub() {
     () => expensesInRange.filter((e) => expenseMethodOf(e) === "cash").reduce((s, e) => s + e.amount, 0),
     [expensesInRange],
   );
-  const netCash = useMemo(() => zReport.byMethod.cash.total - cashExpensesTotal, [zReport, cashExpensesTotal]);
+  /* صافي كلّ جيبٍ لا النقدِ وحدَه. كانت الشاشةُ تعرض الداخلَ للبطاقة والتحويل
+   * بلا ما خرج منهما — والمقيسُ على الإنتاج (٢٠٢٦-٠٨): تحويلٌ داخل ٢٬٣٤٨٬٠٠٠
+   * وخارج ٣٬٣٣٢٬٠٠٠، أي صافٍ **سالب** عُرض موجباً. الحسابُ بـ`pockets.ts`
+   * لأنه يترجم `bank ⇄ transfer` بموضعٍ واحد، ولأنه يُفحص بلا شاشة. */
+  const pockets = useMemo(
+    () => netPerPocket(collectionsInRange, expensesInRange),
+    [collectionsInRange, expensesInRange],
+  );
+  const netCash = pockets.cash.net;
 
   // ---- Laboratory results in range (المختبر) — feeds the clinical report.
   const labStats = useMemo(() => {
@@ -762,8 +774,14 @@ export function AnalyticsHub() {
       [t("rpt.csv.expenses", "المصروفات والسحوبات"), String(Math.round(expensesTotal))],
       ...(canProfit ? [[t("rpt.csv.netCash", "صافي النقد في الصندوق"), String(Math.round(netCash))]] : []),
       [],
-      [t("rpt.csv.method", "طريقة الدفع"), t("rpt.csv.amount", "المبلغ"), t("rpt.csv.txCount", "عدد العمليات")],
-      ...(["cash", "card", "transfer"] as PaymentMethod[]).map((k) => [t(`rpt.pay.${k}`, k), String(Math.round(zReport.byMethod[k].total)), String(zReport.byMethod[k].count)]),
+      [t("rpt.csv.method", "طريقة الدفع"), t("rpt.csv.amount", "المبلغ"), t("rpt.csv.txCount", "عدد العمليات"),
+        ...(canProfit ? [t("rpt.csv.out"), t("rpt.csv.pocketNet")] : [])],
+      // ثلاثةُ أعمدةٍ لكلّ جيب: الداخلُ والمسحوبُ والصافي — الملفُّ يُفتح بإكسل
+      // ويُجمع بالشهر، فعمودٌ ناقصٌ هنا خطأٌ يُنسخ لا يُرى.
+      // نفسُ بوّابة الشاشة بالضبط: عمودا المسحوب والصافي رقما ربح، وملفٌّ
+      // يُفتح بإكسل أسهلُ تسريباً من شاشة.
+      ...POCKETS.map((k) => [t(`rpt.pay.${k}`, k), String(Math.round(zReport.byMethod[k].total)), String(zReport.byMethod[k].count),
+        ...(canProfit ? [String(Math.round(pockets[k].out)), String(Math.round(pockets[k].net))] : [])]),
       [],
       [t("rpt.csv.topSellers", "الأكثر مبيعاً"), t("rpt.csv.qty", "الكمية"), t("rpt.csv.revenue", "الإيراد")],
       ...movers.top.map((p) => [p.name, String(p.qty), String(Math.round(p.revenue))]),
@@ -998,7 +1016,7 @@ export function AnalyticsHub() {
               z={zReport} receivables={receivables} series={series} paymentPie={paymentPie}
               revenue={revenue} categoryData={categoryData} staffPerf={staffPerf}
               canProfit={canProfit} yesterday={yesterday} isToday={preset === "today"} onExportCSV={exportCSV}
-              expensesTotal={expensesTotal} cashExpensesTotal={cashExpensesTotal} netCash={netCash}
+              cashExpensesTotal={cashExpensesTotal} netCash={netCash} pockets={pockets}
               returnsTotal={returnsTotal} returnsCount={returnsCount}
             />
           )}
@@ -1019,7 +1037,7 @@ export function AnalyticsHub() {
           {tab === "clinical" && <ClinicalTab labXray={labXray} meds={dispensedMeds} labStats={labStats} />}
           {tab === "expenses" && (
             <ExpensesTab
-              rows={expensesInRange} total={expensesTotal} netCash={netCash}
+              rows={expensesInRange} total={expensesTotal} pockets={pockets}
               cashCollected={zReport.byMethod.cash.total} rangeLabel={rangeLabel}
               canRecord={role === "manager"} canProfit={canProfit}
               clinicId={user?.clinic_id ?? user?.id} staffId={user?.id ?? null}
@@ -1179,7 +1197,7 @@ function CmpCell({ label, value, delta }: { label: string; value: string; delta:
   );
 }
 
-function MoneyTab({ z, receivables, series, paymentPie, revenue, categoryData, staffPerf, canProfit, yesterday, isToday, onExportCSV, expensesTotal, cashExpensesTotal, netCash, returnsTotal, returnsCount }: {
+function MoneyTab({ z, pockets, receivables, series, paymentPie, revenue, categoryData, staffPerf, canProfit, yesterday, isToday, onExportCSV, cashExpensesTotal, netCash, returnsTotal, returnsCount }: {
   z: ZReport; receivables: Invoice[]; series: Series; paymentPie: { name: string; value: number }[];
   revenue: RevenueSummary; categoryData: { name: string; value: number }[];
   staffPerf: { doctor: string; count: number }[];
@@ -1187,9 +1205,9 @@ function MoneyTab({ z, receivables, series, paymentPie, revenue, categoryData, s
   yesterday: { gross: number; tx: number; net: number; dateMs: number } | null;
   isToday: boolean;
   onExportCSV: () => void;
-  expensesTotal: number;
   cashExpensesTotal: number;
   netCash: number;
+  pockets: PocketTotals;
   returnsTotal: number;
   returnsCount: number;
 }) {
@@ -1278,15 +1296,38 @@ function MoneyTab({ z, receivables, series, paymentPie, revenue, categoryData, s
           )}
           <div className="space-y-2">
             {methods.map((m) => {
-              const Icon = PAY_ICON[m]; const row = z.byMethod[m];
+              const Icon = PAY_ICON[m]; const row = z.byMethod[m]; const p = pockets[m];
+              /* الصافي يظهر **بكلّ جيب** لا بالنقد وحدَه. وسطرُ المسحوب يُخفى
+                 حين لا سحبَ من هذا الجيب — سطرٌ بصفرٍ ضجيجٌ لا معلومة. */
               return (
-                <div key={m} className="flex items-center gap-3 rounded-xl border border-line bg-surface-1 p-3">
-                  <span className="grid h-9 w-9 place-items-center rounded-lg bg-surface-2 text-ink-muted"><Icon size={17} /></span>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-semibold text-ink">{t(`rpt.pay.${m}`, m)}</p>
-                    <p className="text-2xs text-ink-subtle">{t("rpt.methodLine", { n: formatNum(row.count), p: pct(row.total, z.gross), defaultValue: "{{n}} عملية · {{p}}%" })}</p>
+                <div key={m} className="rounded-xl border border-line bg-surface-1 p-3">
+                  <div className="flex items-center gap-3">
+                    <span className="grid h-9 w-9 place-items-center rounded-lg bg-surface-2 text-ink-muted"><Icon size={17} /></span>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-semibold text-ink">{t(`rpt.pay.${m}`, m)}</p>
+                      <p className="text-2xs text-ink-subtle">{t("rpt.methodLine", { n: formatNum(row.count), p: pct(row.total, z.gross), defaultValue: "{{n}} عملية · {{p}}%" })}</p>
+                    </div>
+                    <p className="font-display font-bold tabular-nums text-ink">{money(row.total)}</p>
                   </div>
-                  <p className="font-display font-bold tabular-nums text-ink">{money(row.total)}</p>
+                  {/* `canProfit` لازمةٌ هنا: الصافي رقمُ ربحٍ — وهو **نفسُ** ما
+                      يُخفى بأربعين بكسل تحته خلف نفس البوّابة. وتُغلَق الخانةُ
+                      كلُّها لا الصافي وحدَه: «إخفاءُ النتيجة مع إظهار طرفيها
+                      يُبطل البوّابة» — قاعدةٌ مكتوبةٌ بهذا الملفّ نفسِه.
+                      والتسمية فوق القيمة لا بجانبها: بجانبها يبقى للرقم
+                      «المسارُ ناقصَ التسمية» فينفصل «د.ع» عن رقمه بهاتفٍ ٣٦٠. */}
+                  {canProfit && p.out > 0 && (
+                    <div className="mt-2 grid grid-cols-2 gap-2 border-t border-line pt-2 text-2xs">
+                      <span className="flex flex-col text-warn-700 dark:text-warn-300">
+                        <span className="font-semibold">{t("rpt.pocketOut")}</span>
+                        <span className="font-display font-bold tabular-nums">− {money(p.out)}</span>
+                      </span>
+                      <span className={cn("flex flex-col font-bold",
+                        p.net < 0 ? "text-danger-600 dark:text-danger-400" : "text-brand-700 dark:text-brand-300")}>
+                        <span>{t("rpt.pocketNet")}</span>
+                        <span className="font-display tabular-nums">{money(p.net)}</span>
+                      </span>
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -1312,12 +1353,9 @@ function MoneyTab({ z, receivables, series, paymentPie, revenue, categoryData, s
                 <span className="font-display font-bold tabular-nums text-warn-700 dark:text-warn-300">− {money(returnsTotal)}</span>
               </div>
             )}
-            {expensesTotal - cashExpensesTotal > 0 && (
-              <div className="flex items-center justify-between rounded-xl border border-line bg-surface-2/60 p-3 text-sm">
-                <span className="font-semibold text-ink-muted">{t("rpt.zWithdrawalsNonCash", "سحوبات بطاقة / حوالة (خارج الصندوق)")}</span>
-                <span className="font-display font-bold tabular-nums text-ink-muted">− {money(expensesTotal - cashExpensesTotal)}</span>
-              </div>
-            )}
+            {/* سطرُ «سحوباتُ بطاقة/حوالة» المجمَّع أُلغي: كان يقول كم خرج بلا أن
+                يقول **من أيّ جيب**، ولا يُطرح من شيء. صار الصافي بكلّ صفِّ طريقةٍ
+                أعلاه، فالرقمُ صار مقابلَ صاحبه. */}
             {canProfit && (
               <div className="flex items-center justify-between rounded-xl border border-brand-200 bg-brand-50 p-3 text-sm dark:border-brand-500/30 dark:bg-brand-500/10">
                 <span className="font-bold text-brand-800 dark:text-brand-200">{t("rpt.zNetCash", "صافي النقد في الصندوق")}</span>
@@ -1626,10 +1664,10 @@ function AuditTab({ deleted, logins }: {
  * Record cash taken out of the drawer (rent, supplies, salaries, petty cash…) with
  * WHERE & WHY, and see the period total + resulting net cash. Recording/deleting is
  * managers-only (mirrors the 0052 RLS); the append-only ledger corrects via delete + re-add. */
-function ExpensesTab({ rows, total, netCash, cashCollected, rangeLabel, canRecord, canProfit, clinicId, staffId, onChanged }: {
+function ExpensesTab({ rows, total, pockets, cashCollected, rangeLabel, canRecord, canProfit, clinicId, staffId, onChanged }: {
   rows: Expense[];
   total: number;
-  netCash: number;
+  pockets: PocketTotals;
   cashCollected: number;
   rangeLabel: string;
   canRecord: boolean;
@@ -1696,6 +1734,8 @@ function ExpensesTab({ rows, total, netCash, cashCollected, rangeLabel, canRecor
     })();
   };
 
+  const activePockets = POCKETS.filter((k) => pockets[k].in !== 0 || pockets[k].out !== 0);
+
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1713,7 +1753,7 @@ function ExpensesTab({ rows, total, netCash, cashCollected, rangeLabel, canRecor
           <div className="mt-2 flex flex-wrap gap-1.5">
             {EXPENSE_METHODS.filter((m) => methodTotals[m.id] > 0).map((m) => (
               <span key={m.id} className="inline-flex items-center gap-1 rounded-full bg-warn-100/80 px-2 py-0.5 text-2xs font-bold tabular-nums text-warn-800 dark:bg-warn-500/20 dark:text-warn-200">
-                <m.icon size={11} /> {t(`rpt.exp.method.${m.id}`, m.label)}: {money(methodTotals[m.id])}
+                <m.icon size={11} /> {t(`rpt.exp.method.${m.id}`)}: {money(methodTotals[m.id])}
               </span>
             ))}
           </div>
@@ -1727,9 +1767,30 @@ function ExpensesTab({ rows, total, netCash, cashCollected, rangeLabel, canRecor
           </div>
         )}
         {canProfit && (
+          /* ثلاثةُ جيوبٍ لا جيبٌ واحد. كان هنا «صافي النقد» وحدَه، فالعيادةُ
+             تقفل الشهرَ وهي تظنّ أنّ ما دخل البطاقةَ والتحويلَ بقي فيهما. */
           <div className="rounded-2xl border border-brand-200 bg-brand-50 p-4 dark:border-brand-500/30 dark:bg-brand-500/10">
-            <p className="text-2xs font-semibold text-brand-700 dark:text-brand-300">{t("rpt.exp.netCashLabel", "صافي النقد (المُحصّل نقداً − المسحوب نقداً)")}</p>
-            <p className={cn("mt-1 font-display text-2xl font-extrabold tabular-nums", netCash < 0 ? "text-danger-600 dark:text-danger-400" : "text-brand-800 dark:text-brand-200")}>{money(netCash)}</p>
+            <p className="text-2xs font-semibold text-brand-700 dark:text-brand-300">{t("rpt.exp.netByPocket")}</p>
+            {/* بطاقةٌ بعنوانٍ وبلا رقمٍ تُقرأ «فشل تحميل» لا «ما تحرّك شيء» —
+                وجارتاها بنفس الشريط تطبعان «٠ د.ع». فمدّةٌ بلا حركةٍ تطبع صفراً. */}
+            {activePockets.length === 0 ? (
+              <p className="mt-1 font-display text-2xl font-extrabold tabular-nums text-brand-800 dark:text-brand-200">{money(0)}</p>
+            ) : (
+            <ul className="mt-1.5 space-y-1">
+              {activePockets.map((k) => {
+                const p = pockets[k];
+                return (
+                  <li key={k} className="flex items-baseline justify-between gap-2">
+                    <span className="text-2xs font-semibold text-brand-700 dark:text-brand-300">{t(`rpt.pay.${k}`, k)}</span>
+                    <span className="flex items-baseline gap-1.5">
+                      <span className="text-2xs tabular-nums text-ink-subtle">{money(p.in)} − {money(p.out)}</span>
+                      <span className={cn("font-display text-base font-extrabold tabular-nums", p.net < 0 ? "text-danger-600 dark:text-danger-400" : "text-brand-800 dark:text-brand-200")}>{money(p.net)}</span>
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+            )}
           </div>
         )}
       </div>
@@ -1770,7 +1831,7 @@ function ExpensesTab({ rows, total, netCash, cashCollected, rangeLabel, canRecor
                     method === m.id ? "bg-brand-600 text-white shadow-soft" : "bg-surface-2 text-ink-muted hover:text-ink",
                   )}
                 >
-                  <m.icon size={15} /> {t(`rpt.exp.method.${m.id}`, m.label)}
+                  <m.icon size={15} /> {t(`rpt.exp.method.${m.id}`)}
                 </button>
               ))}
             </div>
@@ -1802,7 +1863,7 @@ function ExpensesTab({ rows, total, netCash, cashCollected, rangeLabel, canRecor
           <WithdrawalsLedger
             rows={rows}
             rangeLabel={rangeLabel}
-            methodLabel={(m) => t(`rpt.exp.method.${m}`, expenseMethodMeta(m).label)}
+            methodLabel={(m) => t(`rpt.exp.method.${m}`)}
           />
         </Panel>
       ) : (
@@ -1818,7 +1879,7 @@ function ExpensesTab({ rows, total, netCash, cashCollected, rangeLabel, canRecor
                   <p className="truncate text-sm font-semibold text-ink">{e.description}</p>
                   <p className="text-2xs text-ink-subtle">
                     <span dir="ltr">{new Date(e.spent_at).toLocaleDateString(dateLocale(), { day: "2-digit", month: "short", year: "numeric" })}</span>
-                    {" · "}{t(`rpt.exp.method.${m.id}`, m.label)}
+                    {" · "}{t(`rpt.exp.method.${m.id}`)}
                     {e.category ? ` · ${e.category}` : ""}
                   </p>
                 </div>

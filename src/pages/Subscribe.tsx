@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Check, Crown, Sparkles, Clock, ShieldCheck, Wallet, AlertTriangle, ArrowDown } from "lucide-react";
-import { PLANS, priceUsd, periodMonths, usdToIqd, DEFAULT_USD_RATE, TRIAL_DAYS, type BillingPeriod } from "@/lib/plans";
+import { PLANS, CLINIC_PLANS, planCopy, priceUsd, periodMonths, usdToIqd, DEFAULT_USD_RATE, TRIAL_DAYS, type BillingPeriod, type PlanId } from "@/lib/plans";
 import { getCurrencyCode } from "@/lib/settings";
 import { currencyInfo, usdTo, fetchLiveRates, rateFor } from "@/lib/currency";
 import { useSubscription, activateSubscription, createPaymentLink, syncSubscriptionFromServer } from "@/lib/subscription";
@@ -83,7 +83,7 @@ export function Subscribe() {
     activateSubscription(plan.id, period, periodMonths(period));
     setBusy(null);
     playSuccess();
-    toast.success(`تم تفعيل خطة ${plan.name} (تجريبياً)`, "على السيرفر الحقيقي يتم الدفع عبر Wayl.");
+    toast.success(`تم تفعيل خطة ${planCopy(plan.id).name} (تجريبياً)`, "على السيرفر الحقيقي يتم الدفع عبر Wayl.");
   };
 
   return (
@@ -133,7 +133,7 @@ export function Subscribe() {
 
       {/* Plans */}
       <div ref={plansRef} className="mt-8 grid items-stretch gap-5 lg:grid-cols-3">
-        {PLANS.map((p, i) => {
+        {CLINIC_PLANS.map((p, i) => { const copy = planCopy(p.id);
           const usd = priceUsd(p, period);
           const isCurrent = status === "active" && sub.plan === p.id;
           return (
@@ -157,9 +157,9 @@ export function Subscribe() {
 
               {/* Name + positioning */}
               <div className="flex items-center gap-2">
-                <h3 className="font-display text-xl font-extrabold text-ink">{p.name}</h3>
+                <h3 className="font-display text-xl font-extrabold text-ink">{copy.name}</h3>
               </div>
-              <p className="mt-1 min-h-[2.5rem] text-sm text-ink-subtle">{p.tag}</p>
+              <p className="mt-1 min-h-[2.5rem] text-sm text-ink-subtle">{copy.tag}</p>
 
               {/* Price */}
               <div className="mt-4 flex items-end gap-1.5">
@@ -201,7 +201,7 @@ export function Subscribe() {
 
               {/* Features */}
               <ul className="mt-6 flex-1 space-y-3 border-t border-line pt-5">
-                {p.feats.map((f) => (
+                {copy.feats.map((f) => (
                   <li key={f} className="flex items-start gap-2.5 text-sm text-ink">
                     <span className={cn("mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full", p.popular ? "bg-brand-100 text-brand-600 dark:bg-brand-500/20 dark:text-brand-300" : "bg-success-50 text-success-600 dark:bg-success-500/15")}>
                       <Check size={12} strokeWidth={3} />
@@ -257,7 +257,7 @@ function StatusHero({
   status: string; trialDaysLeft: number; periodDaysLeft: number;
   planId: string | null; period: string | null; onCta: () => void;
 }) {
-  const planName = PLANS.find((p) => p.id === planId)?.name;
+  const planName = planId ? planCopy(planId as PlanId).name : undefined;
 
   if (status === "trialing") {
     const total = Math.max(TRIAL_DAYS, trialDaysLeft);
