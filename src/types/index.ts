@@ -1739,6 +1739,9 @@ export interface PoultryUse {
   id: string; clinic_id?: string | null; cycle_id: string; on_date: string;
   kind: PoultryUseKind; product_id?: string | null; name: string;
   qty: number; unit?: string | null; unit_cost: number; line_cost: number;
+  /** فترةُ السحب بالأيام كما تقولها العلبة (0193). `null` = **مجهولة** لا
+   *  «ماكو» — والصفرُ وحدَه يعني «قرأتُ العلبة وماكو فترةُ سحب». */
+  withdrawal_days?: number | null;
   note?: string | null; entered_by?: string | null; created_at: string;
 }
 
@@ -1747,9 +1750,15 @@ export interface PoultryCycleStats {
   placed_count: number; dead: number; culled: number; alive: number;
   feed_kg: number; feed_cost: number; med_cost: number; other_cost: number; chick_cost: number;
   days: number; last_entry: string | null;
+  /** أبعدُ تاريخِ أمانٍ بين سطور الدواء — قبله لا يُذبح القطيع (0193). */
+  safe_from?: string | null;
+  /** سطرُ دواءٍ واحدٌ بفترةٍ مجهولة يرفعها: لا نعرف متى تأمن، فلا نقول «آمنة». */
+  withdrawal_unknown?: boolean;
 }
 
 /** نتيجةُ صرفٍ من المخزن. `shortfall` يُقال بصوت — لا يُطمس. */
 export interface PoultryConsumeResult {
   ok: boolean; use?: PoultryUse; stock_after?: number | null; shortfall?: number;
+  /** تاريخُ أمانِ هذا السطر — تقوله الشاشةُ فورَ الصرف لا بعد إعادة التحميل. */
+  safe_from?: string | null;
 }

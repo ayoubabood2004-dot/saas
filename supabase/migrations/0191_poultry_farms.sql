@@ -176,7 +176,14 @@ end $iso$;
 -- ── ٨) مجاميعُ الدفعة — القاعدةُ تجمع والمتصفّحُ يعرض (0149) ────────────
 -- `security invoker`: تقرأ بعين المستدعي فتمرّ من RLS نفسِها — لا تُرى دفعةٌ
 -- لعيادةٍ أخرى ولو نودي بمعرّفها.
-create or replace function poultry_cycle_stats(p_cycle uuid)
+-- حذفٌ قبل الإنشاء، بمعاملةٍ واحدة. 0193 توسّع هذه الدالّة بعمودَي فترة
+-- السحب، و`create or replace` **لا تمرّ** على دالّةٍ تغيّر عمودُ خرجِها
+-- (cannot change return type) — فإعادةُ تنزيل هذا الملفّ بعد 0193 كانت تُفشل
+-- الموجةَ كلَّها. والترتيبُ يصحّحها: الموجةُ تنتهي بـ0193 فتعود موسَّعة.
+begin;
+drop function if exists poultry_cycle_stats(uuid);
+
+create function poultry_cycle_stats(p_cycle uuid)
 returns table (
   placed_count int, dead int, culled int, alive int,
   feed_kg numeric, feed_cost numeric, med_cost numeric, other_cost numeric, chick_cost numeric,
@@ -220,6 +227,8 @@ grant execute on function poultry_cycle_stats(uuid) to authenticated;
 
 comment on function poultry_cycle_stats(uuid) is
   'مجاميعُ دفعةٍ واحدة (0191): الحيُّ والنفوقُ والعلفُ والكلف. invoker — تمرّ من RLS.';
+
+commit;
 
 -- ============================================================================
 -- الماسحُ لا يصل مخزنَ الحقل.

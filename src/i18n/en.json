@@ -4724,7 +4724,30 @@
       "note": "Note",
       "dead": "Mortality",
       "culled": "Culled",
-      "noteOnly": "Day note"
+      "noteOnly": "Day note",
+      "withdrawal": "Withdrawal (days)",
+      "safeFrom": "Safe to slaughter from"
+    },
+    "wd": {
+      "label": "Withdrawal period — from the box",
+      "placeholder": "Number of days",
+      "unknownChip": "Not stated",
+      "fromBox": "Read the number off the box — we do not know it.",
+      "none": "No withdrawal period",
+      "preview": "Safe to slaughter from {{date}}",
+      "needChoice": "Enter the withdrawal period, or tap “Not stated”",
+      "recorded": "Medicine recorded",
+      "safeFrom": "Safe to slaughter from {{date}}",
+      "recordedUnknown": "Recorded with an unknown withdrawal period",
+      "unknownHint": "We will not know when this flock is safe — check the box.",
+      "unknownShort": "withdrawal unknown",
+      "safeFromShort": "safe from {{date}}",
+      "unknownBanner": "Unknown withdrawal period — we do not know when this batch clears. Check the medicine lines.",
+      "blockedBanner": "Do not slaughter before {{date}} — {{n}} days left.",
+      "safeBanner": "Safe to slaughter — the withdrawal period ended on {{date}}.",
+      "closeUnknown": "The withdrawal period is unknown — the meat may carry drug residues.",
+      "closeEarly": "{{n}} days left until {{date}} — slaughtering before that leaves drug residues in the meat.",
+      "typeCount": "Type {{n}} to confirm"
     }
   }
 }

@@ -1518,7 +1518,7 @@ const demoRepo = {
     return pLoad<PoultryUse>("use").filter((u) => u.cycle_id === cycleId)
       .sort((a, b) => b.on_date.localeCompare(a.on_date) || b.created_at.localeCompare(a.created_at));
   },
-  async poultryConsume(input: { cycle_id: string; kind: PoultryUseKind; product_id?: string | null; name?: string | null; qty: number; unit?: string | null; on_date?: string | null; note?: string | null }): Promise<PoultryConsumeResult> {
+  async poultryConsume(input: { cycle_id: string; kind: PoultryUseKind; product_id?: string | null; name?: string | null; qty: number; unit?: string | null; on_date?: string | null; note?: string | null; withdrawal_days?: number | null }): Promise<PoultryConsumeResult> {
     const db = loadDB();
     const cyc = pLoad<PoultryCycle>("cycles").find((c) => c.id === input.cycle_id);
     if (!cyc) throw new Error("no_cycle");
@@ -1541,16 +1541,23 @@ const demoRepo = {
       nm = nm || prod.name;
       saveDB(db);
     }
+    // فترةُ السحب لسطر الدواء وحدَه — مرآةُ الخادم: رقمٌ على كيس علفٍ يُهمَل
+    // صامتاً لا يُرفض، ولو مرّ لدفع تاريخَ الأمان بلا سبب.
+    const wd = input.kind === "med" ? (input.withdrawal_days ?? null) : null;
+    if (wd !== null && (!Number.isFinite(wd) || wd < 0 || wd > 120)) throw new Error("bad_withdrawal");
+    const onDate = input.on_date ?? new Date().toISOString().slice(0, 10);
     const row: PoultryUse = {
       id: uid("puse"), clinic_id: null, cycle_id: input.cycle_id,
-      on_date: input.on_date ?? new Date().toISOString().slice(0, 10),
+      on_date: onDate,
       kind: input.kind, product_id: input.product_id ?? null, name: nm,
       qty: input.qty, unit: input.unit ?? null, unit_cost: cost,
       line_cost: Math.round(cost * input.qty * 100) / 100,
+      withdrawal_days: wd,
       note: input.note ?? null, created_at: new Date().toISOString(),
     };
     pSave("use", [row, ...pLoad<PoultryUse>("use")]);
-    return { ok: true, use: row, stock_after: stockAfter, shortfall };
+    const safe = wd === null ? null : new Date(new Date(onDate).getTime() + wd * 86400000).toISOString().slice(0, 10);
+    return { ok: true, use: row, stock_after: stockAfter, shortfall, safe_from: safe };
   },
   async poultryUnconsume(useId: string): Promise<{ ok: boolean; returned?: number }> {
     const all = pLoad<PoultryUse>("use");
@@ -1570,6 +1577,7 @@ const demoRepo = {
     if (!c) return null;
     const days = pLoad<PoultryDaily>("daily").filter((d) => d.cycle_id === cycleId);
     const uses = pLoad<PoultryUse>("use").filter((u) => u.cycle_id === cycleId);
+    const meds = uses.filter((u) => u.kind === "med");
     const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
     const dead = sum(days.map((d) => d.dead || 0));
     const culled = sum(days.map((d) => d.culled || 0));
@@ -1584,6 +1592,14 @@ const demoRepo = {
       chick_cost: Math.round((c.chick_unit_cost ?? 0) * c.placed_count * 100) / 100,
       days: Math.max(0, Math.round(ms / 86400000)),
       last_entry: days.length ? days.map((d) => d.on_date).sort().slice(-1)[0] : null,
+      // مرآةُ القاعدة: **أبعدُ** تاريخٍ لا آخرُ سطر، وسطرٌ واحدٌ بلا رقمٍ يرفع
+      // رايةَ المجهول — والقطيعُ يأمن حين تأمن آخرُ مادّةٍ دخلته.
+      safe_from: meds.reduce<string | null>((best, u) => {
+        if (u.withdrawal_days == null) return best;
+        const d = new Date(new Date(u.on_date).getTime() + u.withdrawal_days * 86400000).toISOString().slice(0, 10);
+        return best && best >= d ? best : d;
+      }, null),
+      withdrawal_unknown: meds.some((u) => u.withdrawal_days == null),
     };
   },
 
@@ -4658,6 +4674,7 @@ const supabaseRepo: typeof demoRepo = {
       p_cycle: input.cycle_id, p_kind: input.kind, p_product: input.product_id ?? null,
       p_name: input.name ?? null, p_qty: input.qty, p_unit: input.unit ?? null,
       p_on_date: input.on_date ?? null, p_note: input.note ?? null,
+      p_withdrawal: input.withdrawal_days ?? null,
     });
     if (error) throw new Error(error.message);
     return (data ?? { ok: false }) as PoultryConsumeResult;
@@ -4674,7 +4691,11 @@ const supabaseRepo: typeof demoRepo = {
     return row ? { ...row, placed_count: Number(row.placed_count) || 0, dead: Number(row.dead) || 0, culled: Number(row.culled) || 0,
       alive: Number(row.alive) || 0, feed_kg: Number(row.feed_kg) || 0, feed_cost: Number(row.feed_cost) || 0,
       med_cost: Number(row.med_cost) || 0, other_cost: Number(row.other_cost) || 0, chick_cost: Number(row.chick_cost) || 0,
-      days: Number(row.days) || 0 } : null;
+      days: Number(row.days) || 0,
+      // النصُّ والرايةُ يمرّان كما هما — و`?? false` لأن قاعدةً قبل 0193 ترجع
+      // `undefined`، و«مجهول» أسلمُ من «آمن» لكنّ «لا دواءَ أصلاً» ليس مجهولاً.
+      safe_from: row.safe_from ?? null,
+      withdrawal_unknown: row.withdrawal_unknown ?? false } : null;
   },
 
   /** شعار العيادة إلى الدلو (0190) — تصحيحُ سجلٍّ قبل أن يكون ميزة.
