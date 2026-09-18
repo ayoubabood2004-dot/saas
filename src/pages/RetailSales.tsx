@@ -7,7 +7,7 @@ import type { Product, Invoice, Species } from "@/types";
 import { useAuth } from "@/contexts/AuthContext";
 import { useEntitlements } from "@/lib/entitlements";
 import { usePermissions } from "@/hooks/usePermissions";
-import { useOverride, moneyViewLockedFrom } from "@/lib/managerOverride";
+import { useOverride, capLockedFrom } from "@/lib/managerOverride";
 import { useNavFolded } from "@/lib/navFold";
 import { Skeleton, Button } from "@/components/ui";
 import { cn } from "@/lib/utils";
@@ -37,7 +37,7 @@ export function RetailSales() {
   const ov = useOverride();
   /* تبويبُ التقارير يعرض إيرادَ اليوم وصافيَ الربح ومبيعاتِ كلِّ موظّف. كان
      ظاهراً بلا شرطٍ أبداً — لموظّف الاستقبال وللجهاز المقفول معاً. */
-  const reportsLocked = moneyViewLockedFrom(ov.deviceLocked, ov.active, can("viewReports"));
+  const reportsLocked = capLockedFrom(ov.deviceLocked, ov.active, can("viewReports"));
   const navFolded = useNavFolded();
   const clinicId = user?.clinic_id ?? user?.id; // shared workspace id (manager's id for staff)
   const [tab, setTab] = useState<Tab>("sell");

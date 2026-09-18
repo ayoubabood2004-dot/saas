@@ -7,7 +7,7 @@ import type { ReceiptsDay, ReceiptsTotal, TopProductRow, StaffSalesRow } from "@
 import { repo } from "@/lib/repo";
 import { staffNameMap } from "@/lib/staffNames";
 import { usePermissions } from "@/hooks/usePermissions";
-import { useOverride, moneyViewLockedFrom } from "@/lib/managerOverride";
+import { useOverride, capLockedFrom } from "@/lib/managerOverride";
 import { Button } from "@/components/ui";
 import { cn, money, formatNum, dateLocale } from "@/lib/utils";
 import { playTap } from "@/lib/sounds";
@@ -73,7 +73,7 @@ export function ReportsPanel() {
      يستدعيها غداً من موضعٍ آخر يرث القفلَ ولا يعيد فتح الباب. */
   const { can } = usePermissions();
   const ov = useOverride();
-  const locked = moneyViewLockedFrom(ov.deviceLocked, ov.active, can("viewReports"));
+  const locked = capLockedFrom(ov.deviceLocked, ov.active, can("viewReports"));
   const [period, setPeriod] = useState<Period>("day");
   // أسماء الكادر — لجدول «المبيعات حسب الموظف».
   const [staffById, setStaffById] = useState<Map<string, string>>(() => new Map());

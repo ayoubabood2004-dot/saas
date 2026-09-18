@@ -350,7 +350,7 @@ export function stockLocked(): boolean {
 }
 
 /**
- * قفلُ شاشات المال — «الصلاحيةُ شرطٌ، وقفلُ الجهاز يغلبها».
+ * قفلٌ مركّب — «الصلاحيةُ شرطٌ، وقفلُ الجهاز يغلبها».
  *
  * تقاريرُ شاشة البيع (إيرادُ اليوم، صافي الربح، الأكثرُ مبيعاً، مبيعاتُ كلِّ
  * موظّف) كانت مفتوحةً للجميع: تبويبٌ ظاهرٌ بلا شرطٍ، فيراه موظّفُ الاستقبال
@@ -362,8 +362,13 @@ export function stockLocked(): boolean {
  * والحكمُ من هنا وحده — كـ`stockLockedFrom` — لئلّا يتفرّق على تبويبٍ ولوحةٍ
  * وسطرِ ربحٍ فيختلف أحدُها. ولا بابَ اختياريَّ هنا بخلاف المخزن: «محظورة
  * تماماً بوضع المدير» بكلمة المالك.
+ *
+ * وكان اسمُها `moneyViewLockedFrom` حين وُلدت للتقارير. ثمّ لزمت حذفَ
+ * الفواتير — وهو **فعلٌ** لا عرض — فصار الاسمُ يكذب على قارئه: من يرى
+ * «moneyView» فوق زرِّ حذفٍ يظنّ أنّ سطراً وُضع بالموضع الخطأ. الحكمُ واحدٌ
+ * والاسمُ يقوله.
  */
-export function moneyViewLockedFrom(deviceLocked: boolean, elevated: boolean, allowed: boolean): boolean {
+export function capLockedFrom(deviceLocked: boolean, elevated: boolean, allowed: boolean): boolean {
   return !allowed || (deviceLocked && !elevated);
 }
 

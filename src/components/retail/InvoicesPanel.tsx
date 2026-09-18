@@ -11,7 +11,7 @@ import { getInvoicesPaged } from "@/lib/settings";
 import { RECENT_DAYS } from "@/lib/prefetchData";
 import { staffNameMap } from "@/lib/staffNames";
 import { usePermissions } from "@/hooks/usePermissions";
-import { useOverride, moneyViewLockedFrom } from "@/lib/managerOverride";
+import { useOverride, capLockedFrom } from "@/lib/managerOverride";
 import { Modal } from "@/components/Modal";
 import { Button, Badge, useToast, Skeleton } from "@/components/ui";
 import { useInvoicePrinter } from "./usePrintInvoice";
@@ -61,7 +61,7 @@ export function InvoicesPanel({ invoices, onChanged }: { invoices: Invoice[]; cl
   /* ربحُ كلّ فاتورة. `can` وحدَها لا تكفي بوضع المدير: قفلُ الجهاز لا ينزّل
      الدورَ، فحسابُ المدير المقفول يبقى مديراً وتبقى الأرباحُ مكتوبةً تحت كلّ
      سطر. نفسُ حكم تبويب التقارير، من نفس الدالّة. */
-  const showProfit = !moneyViewLockedFrom(ov.deviceLocked, ov.active, can("viewProfits"));
+  const showProfit = !capLockedFrom(ov.deviceLocked, ov.active, can("viewProfits"));
   const paged = getInvoicesPaged();
   const [q, setQ] = useState("");
   const [status, setStatus] = useState<StatusFilter>("all");
@@ -324,7 +324,11 @@ export function InvoiceDetail({ invoice, onClose, onChanged, setOpen }: {
   const { t, i18n } = useTranslation();
   const toast = useToast();
   const { can } = usePermissions();
-  const canDelete = can("deleteInvoices");
+  const ov = useOverride();
+  /* حذفُ فاتورةٍ وتصحيحُ وصلها فعلان لا رجعةَ فيهما بيدِ من يقف على جهاز
+     الاستقبال. وقفلُ الجهاز لا ينزّل الدور، فحسابُ المدير المقفول كان يحذف
+     كما لو لم يُقفل — وهو عينُ ما وُضع المفتاحُ لأجله. */
+  const canDelete = !capLockedFrom(ov.deviceLocked, ov.active, can("deleteInvoices"));
   const print = useInvoicePrinter();
   const [items, setItems] = useState<InvoiceItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -371,7 +375,7 @@ export function InvoiceDetail({ invoice, onClose, onChanged, setOpen }: {
   // التصحيح متاح للمدير وحده، على فاتورة حيّة، فيها مالٌ مسجَّل، وباسم زبون:
   // الباقي بعده يصير ديناً، والدين بلا صاحبٍ مطلوبٌ لا مَدين له.
   const customerOf = ((invoice.customer_name ?? "").trim() || (invoice.customer_phone ?? "").trim()) || null;
-  const canFixReceipt = can("deleteInvoices") && !refunded && paidOf(invoice) > 0;
+  const canFixReceipt = canDelete && !refunded && paidOf(invoice) > 0;
 
   const refund = async () => {
     if (busy) return;

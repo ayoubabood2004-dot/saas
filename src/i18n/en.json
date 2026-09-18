@@ -1422,7 +1422,8 @@
     "scanOrTypeName": "Scan the barcode or type the product name…",
     "acceptFee": "Delivery fee",
     "acceptFeeNone": "No fee",
-    "acceptFeeHint": "Leave blank to keep what the order came with"
+    "acceptFeeHint": "Leave blank to keep what the order came with",
+    "noAccess": "Inventory is available to staff with stock-management permission. Ask the clinic manager."
   },
   "role": {
     "admin": "Clinic",
