@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { CheckCircle2, AlertTriangle, Info, XCircle, X } from "lucide-react";
@@ -44,12 +44,19 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   // Let non-React code (global error handlers) raise toasts through this provider.
   useEffect(() => onGlobalToast((t) => toast(t)), [toast]);
 
-  const value: ToastCtx = {
+  /* **قيمةٌ ثابتة.** كانت كائناً جديداً بكلّ رسمٍ للمزوّد، والمزوّدُ يُعاد رسمُه
+   * مع كلّ توستٍ يظهر **ومع كلّ توستٍ يختفي بعد ٤٫٢ ثانية**. فكلُّ
+   * `useCallback(..., [toast])` بالتطبيق كان يُبطَل مرّتين بكلّ رسالة، وكلُّ
+   * `useEffect` معلَّقٍ عليه يعيد الجلبَ من الصفر: حفظُ جولةِ حقلٍ يرفع توستاً
+   * فيعيد تحميلَ الشاشة كلِّها — ومعها نداءُ مجاميعَ لكلّ دفعةٍ نشطة — ثم
+   * يعيده ثانيةً حين ينطفئ التوست. و`toast` نفسُها ثابتةٌ أصلاً، فالثباتُ
+   * هنا سطرٌ واحدٌ يُنهي الحلقة. */
+  const value: ToastCtx = useMemo(() => ({
     toast,
     success: (title, description) => toast({ tone: "success", title, description }),
     error: (title, description) => toast({ tone: "error", title, description }),
     warn: (title, description) => toast({ tone: "warn", title, description }),
-  };
+  }), [toast]);
 
   return (
     <Ctx.Provider value={value}>

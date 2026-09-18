@@ -4763,6 +4763,19 @@
       "saved": "Round saved ({{n}})",
       "partial": "Saved {{ok}} of {{all}} — check",
       "noFeed": "The farm store is empty — add feed from the farm screen."
-    }
+    },
+    "weekN": "Week {{n}}",
+    "dayRange": "days {{a}}–{{b}}",
+    "doneToday": "Entered today",
+    "lastEntry": "Last entry",
+    "neverEntered": "No entry yet",
+    "lastUnknown": "Status unavailable",
+    "ofDays": "{{a}} of {{b}} days",
+    "statusLoading": "…",
+    "oddLow": "Too small for day {{n}} — check the value is in grams",
+    "oddHigh": "Too large for day {{n}} — check the number of birds in the sample",
+    "oddBanner": "The last sample weight ({{n}} kg on day {{d}}) is outside the plausible range — the feed conversion and cost per kg above rest on it.",
+    "trendWeight": "Weight by age",
+    "trendDeaths": "Deaths per day"
   }
 }

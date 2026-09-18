@@ -15,7 +15,7 @@
  * لا شيء **رقمٌ مخترع**، ورقمٌ مخترعٌ بمؤشّرِ أداءٍ يُقرأ قراراً: «تحويلي ٠؟
  * إذاً العلفُ ممتاز» — وهو لم يوزن طيراً بعد.
  * ==========================================================================*/
-import type { PoultryDaily, PoultryCycle, PoultryCycleStats } from "@/types";
+import type { PoultryDaily, PoultryCycle, PoultryCycleStats, PoultryUse } from "@/types";
 
 export interface PoultryKpi {
   /** متوسّطُ وزن الطير بالكيلو — من **آخر** يومٍ فيه عيّنة، لا من متوسّطها. */
@@ -49,6 +49,12 @@ export interface PoultryOutcome {
 }
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
+/** دقّةُ الغرام — ثلاثُ خاناتٍ، كـ`fmtKg` بالمشروع.
+ *
+ *  ولها سببٌ أبعدُ من الجمال: `r2` كانت تحوّل وزنَ ١٫٨ غم (من كتب «١٫٨» قاصداً
+ *  كيلوين) إلى **صفر**، وحارسُ المعقول يصمت عن الصفر — فالحالةُ التي وُضع
+ *  لأجلها كانت تمرّ من بين يديه. التقريبُ قبل الفحص يمحو ما يُفحص. */
+const r3 = (n: number) => Math.round(n * 1000) / 1000;
 /** قسمةٌ لا تكذب: مقامٌ صفرٌ أو غيرُ متناهٍ ⇒ «ما نعرف» لا صفر. */
 const div = (a: number, b: number): number | null =>
   Number.isFinite(a) && Number.isFinite(b) && b > 0 ? a / b : null;
@@ -93,7 +99,7 @@ export function poultryKpi(stats: PoultryCycleStats | null, days: PoultryDaily[]
   const fcr = div(stats.feed_kg ?? 0, liveWeightKg);
   const epef = fcr && stats.days > 0 ? (viabilityPct * s.avgWeightKg) / (stats.days * fcr) * 100 : null;
   return {
-    avgWeightKg: r2(s.avgWeightKg),
+    avgWeightKg: r3(s.avgWeightKg),
     weighedOn: s.on,
     liveWeightKg: liveWeightKg > 0 ? r2(liveWeightKg) : null,
     fcr: fcr ? r2(fcr) : null,
@@ -123,4 +129,130 @@ export function poultryOutcome(cycle: PoultryCycle, totalCost: number): PoultryO
     // الهامشُ من مبلغ البيع: بيعٌ بصفرٍ لا هامشَ له — لا «−∞».
     marginPct: profit !== null && total != null && total > 0 ? r2((profit / total) * 100) : null,
   };
+}
+
+
+/* ============================================================================
+ * طيُّ الدفتر بالأسابيع — الحسابُ هنا لا داخل الشاشة.
+ *
+ * صار الملخّصُ الأسبوعيُّ هو الطريقَ الأوّلَ الذي يقرأ به صاحبُ الحقل تاريخَ
+ * دفعته، فخطأٌ بالتجميع لا يظهر مكسوراً — يظهر رقماً معقولاً وخاطئاً. وإخراجُه
+ * من `useMemo` بالمكوّن يجعله مفحوصاً بجدول حقيقة، كـ`pockets` و`poultryKpi`.
+ * ==========================================================================*/
+
+/** فرقُ الأيام بين تاريخَين نصّيَّين — يُقرآن **ظهراً** فلا تقضم ساعةُ التوقيت
+ *  الصيفيّ يوماً من الفرق، ولا ينزلق التاريخُ بمناطقَ غربَ غرينتش. */
+export const dayDiff = (from: string, to: string): number =>
+  Math.round((new Date(`${to}T12:00:00`).getTime() - new Date(`${from}T12:00:00`).getTime()) / 86400000);
+
+export interface BatchDay {
+  date: string;
+  day?: PoultryDaily;
+  uses: PoultryUse[];
+}
+
+export interface BatchWeek {
+  /** رقمُ الأسبوع من يوم وضع الدجاج — الأوّلُ واحد لا صفر. */
+  week: number;
+  /** مدى أيام الدورة الذي يغطّيه (٠–٦، ٧–١٣ …). */
+  from: number;
+  to: number;
+  dead: number;
+  culled: number;
+  feedKg: number;
+  cost: number;
+  /** متوسّطُ وزن الطير من **آخر** عيّنةٍ بالأسبوع — `null` إن لم يُوزن فيه. */
+  weightKg: number | null;
+  /** كم يوماً من هذا الأسبوع **سُجِّل عدّه** فعلاً (صفٌّ بـ`poultry_daily`). */
+  daysEntered: number;
+  /** وكم يوماً منه **مضى** أصلاً — الأسبوعُ الجاري ناقصٌ بطبعه. */
+  daysElapsed: number;
+  /** أيامُ الأسبوع من الأحدث للأقدم. */
+  rows: BatchDay[];
+}
+
+/**
+ * يجمع أيامَ الدفعة وسطورَ صرفها بأسابيعَ من تاريخ وضع الدجاج.
+ *
+ * وثلاثةُ قراراتٍ تستحقّ الذكر:
+ *   • **يومٌ قبل تاريخ الوضع** (إدخالٌ بتاريخٍ خاطئ) يُنسب للأسبوع الأوّل لا
+ *     لأسبوعٍ سالب: بندُ الخطأ يبقى مرئياً ليُصحَّح، ولا يختفي بمجموعةٍ لا
+ *     تُعرض. ولا يُحذف — حذفُ صفٍّ كتبه المستخدم أسوأُ من عرضه بمكانٍ مقارب.
+ *   • **الوزنُ آخرُ عيّنةٍ بالأسبوع** لا متوسّطُ عيّناته: الطيرُ ينمو، ومتوسّطُ
+ *     وزنَين بينهما خمسةُ أيامٍ لا يصف أيَّ لحظة.
+ *   • **الكلفةُ كلُّ سطورِ الصرف** (علفٌ ودواءٌ وخدمة)، والعلفُ بالكيلو وحدَه —
+ *     جمعُ كيلواتِ العلف مع علبِ الدواء رقمٌ لا معنى له.
+ */
+export function batchWeeks(days: PoultryDaily[], uses: PoultryUse[], placedOn: string, through?: string): BatchWeek[] {
+  const byDate = new Map<string, BatchDay>();
+  for (const d of days) byDate.set(d.on_date, { date: d.on_date, day: d, uses: [] });
+  for (const u of uses) {
+    const e = byDate.get(u.on_date) ?? { date: u.on_date, uses: [] };
+    e.uses.push(u);
+    byDate.set(u.on_date, e);
+  }
+
+  const weighedOn = new Map<number, string>();
+  const m = new Map<number, BatchWeek>();
+  for (const e of byDate.values()) {
+    const n = Math.max(0, dayDiff(placedOn, e.date));
+    const wk = Math.floor(n / 7) + 1;
+    const w = m.get(wk) ?? { week: wk, from: (wk - 1) * 7, to: wk * 7 - 1, dead: 0, culled: 0, feedKg: 0, cost: 0, weightKg: null, daysEntered: 0, daysElapsed: 0, rows: [] };
+    if (e.day) { w.dead += e.day.dead ?? 0; w.culled += e.day.culled ?? 0; w.daysEntered += 1; }
+    for (const u of e.uses) {
+      if (u.kind === "feed") w.feedKg += u.qty;
+      w.cost += u.line_cost;
+    }
+    const g = e.day?.sample_weight_g ?? null;
+    const k = e.day?.sample_size ?? 1;
+    if (g != null && g > 0 && k > 0) {
+      const prev = weighedOn.get(wk);
+      // آخرُ عيّنةٍ بالتاريخ لا آخرُ صفٍّ بالمرور: ترتيبُ المرور ترتيبُ الجلب.
+      if (prev === undefined || e.date >= prev) { w.weightKg = g / k / 1000; weighedOn.set(wk, e.date); }
+    }
+    w.rows.push(e);
+    m.set(wk, w);
+  }
+  /* **الأيامُ التي مضت** من كلّ أسبوع. بدونها لا يُعرف هل المجموعُ كاملٌ أم
+     نصفُ عدٍّ — و«💀 ٠» عن أسبوعٍ لم يعدّه أحدٌ تُقرأ «ما نفق شيء»، وهي أخطرُ
+     جملةٍ يقولها دفتر. */
+  const lastDay = through ? Math.max(0, dayDiff(placedOn, through)) : Infinity;
+  for (const w of m.values()) {
+    w.rows.sort((a, b) => b.date.localeCompare(a.date));
+    w.daysElapsed = Math.max(0, Math.min(7, lastDay - w.from + 1));
+  }
+  return [...m.values()].sort((a, b) => b.week - a.week);
+}
+
+/* ============================================================================
+ * حدُّ المعقول لوزن الطير — حارسُ غلطةِ وحدةٍ لا حَكَمُ أداء.
+ *
+ * ── العلّةُ المقيسة ──────────────────────────────────────────────────────
+ * خانةُ «وزن العيّنة» بالغرام، ومن يكتب «١٫٨» قاصداً كيلوين يُنتج متوسّطاً
+ * ١٫٨ غم. ومن ينسى «عدد الطيور» على عيّنةِ خمسةٍ يُنتج خمسةَ أضعاف. وبالحالتين
+ * لا تنكسر الشاشة — تعرض **معدّلَ تحويلٍ وكلفةَ كيلو معقولَي الشكل وخاطئَين**،
+ * ويُبنى عليهما قرارُ تبديلِ علفٍ أو بيعٍ مبكّر.
+ *
+ * ── ولماذا حدٌّ فضفاضٌ لا جدولُ سلالة ────────────────────────────────────
+ * نفسُ قاعدةِ فترة السحب: **لا نعرف ما لا نعرف**. جدولُ أوزانٍ معياريٍّ لسلالةٍ
+ * بعينها يجعل النظامَ يحكم على أداءِ حقلٍ بمرجعٍ قد لا يخصّه — وحقلٌ بطيءٌ
+ * لسببٍ معروفٍ لصاحبه يُنذَر كلَّ يومٍ حتى يُهمَل الإنذار.
+ *
+ * فالحدُّ هنا **فيزيائيٌّ لا معياريّ**: أدنى من ٢٥ غم لا يزن طيرٌ حيّ، وسقفُ
+ * ١٢٠ غم نموّاً يومياً يفوق أسرعَ اللاحم بالمراجع بنحو الثلث. ما بينهما يمرّ
+ * صامتاً مهما كان أداؤه — الحارسُ يمسك غلطةَ الكتابة وحدَها.
+ * ==========================================================================*/
+
+/** مدى الوزن المعقول (غم) لطيرٍ بعمرِ `ageDays` — واسعٌ عمداً. */
+export function plausibleWeightG(ageDays: number): { min: number; max: number } {
+  const d = Math.max(0, Math.floor(ageDays));
+  return { min: 25, max: 60 + 120 * d };
+}
+
+/** `"low"` أقلُّ من أن يكون طيراً · `"high"` أكبرُ من أن ينمو · `null` معقول. */
+export function weightSanity(avgWeightKg: number | null | undefined, ageDays: number): "low" | "high" | null {
+  if (avgWeightKg == null || !Number.isFinite(avgWeightKg) || avgWeightKg <= 0) return null;
+  const g = avgWeightKg * 1000;
+  const { min, max } = plausibleWeightG(ageDays);
+  return g < min ? "low" : g > max ? "high" : null;
 }
