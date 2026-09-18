@@ -1334,6 +1334,12 @@ const demoRepo = {
   async supportsBulkGroup(): Promise<boolean> {
     return true;
   },
+  /** صفُّ منتجٍ طازجٌ بمعرّفه — لحكم «رصيده صفر» قبل رفض البيع (خطة الطزاجة، ط٢).
+   *  بالمعرّف لا بالرمز: كرتُ المنتج لا يحمل رمزاً ممسوحاً، وبالمخزن منتجاتٌ بلا
+   *  باركود أصلاً — ونحن نعرف **أيَّ** منتجٍ نسأل عنه. مخزنُ الحقل خارجُ الكاشير. */
+  async getProductById(id: string): Promise<Product | undefined> {
+    return (loadDB().products ?? []).find((p) => p.id === id && !p.farm_id);
+  },
   async getProductByBarcode(barcode: string, _clinicId?: string): Promise<Product | undefined> {
     const code = matchCode(barcode);
     if (!code) return undefined;
@@ -4496,6 +4502,13 @@ const supabaseRepo: typeof demoRepo = {
       return true; // فشل شبكة — لا نُظهر تحذيراً خاطئاً
     }
   },
+  async getProductById(id) {
+    // سياسةُ الصفوف تحصرها بعيادة المُستدعي؛ و`is(farm_id, null)` مرآةُ listProducts.
+    // والخطأُ يُرمى لا يُبلَع: «ما وصلنا الخادم» غيرُ «رصيده صفر» (zeroStockVerdict).
+    const r = await sbc().from("products").select("*").eq("id", id).is("farm_id", null).maybeSingle();
+    if (r.error) throw r.error;
+    return (r.data ?? undefined) as Product | undefined;
+  },
   // العيادةُ تأتي من سياسات الصفوف لا من معامِلٍ: `product_by_code` بصلاحية
   // المُستدعي، فـauth_clinic() تحصرها. المعامِلُ يبقى بالتوقيع للنسخة التجريبية.
   async getProductByBarcode(barcode, _clinicId) {
@@ -5747,7 +5760,7 @@ const READ_ONLY_ALLOWED = new Set<string>([
   "listPoultryFarms", "listPoultryHouses", "listPoultryCycles", "listPoultryDaily",
   "listPoultryUse", "poultryCycleStats",
   "getActiveJourney", "getClinicVisit", "getDailyNote", "getPet", "getPetBySerial",
-  "getPetByToken", "getPetsByIds", "getPetsByOwnerEmail", "getProductByBarcode",
+  "getPetByToken", "getPetsByIds", "getPetsByOwnerEmail", "getProductByBarcode", "getProductById",
   "getSharedPetsByOwnerId", "getStoreProfile", "countNewStoreOrders", "rejectStaleStoreOrders", "listAdmissions", "listAdmissionsForPet",
   "listAllInvoiceItems", "listAllMedia", "listAllPets", "listAllSurgeries", "listAllTreatments",
   "listAllVaccinations", "listAllVisits", "listAppointmentsForDay", "listAppointmentsForOwner",

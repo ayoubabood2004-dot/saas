@@ -6,10 +6,13 @@ import { spring } from "@/lib/motion";
 import { onGlobalToast } from "@/lib/globalToast";
 
 type ToastTone = "success" | "error" | "warn" | "info";
-type Toast = { id: string; tone: ToastTone; title: string; description?: string };
+/** زرُّ فعلٍ اختياريّ: رسالةٌ تقول «حدّث القائمة» تُعطي الزرَّ بمكانها — بدل أن
+ *  تأمر بـF5 فيمسح الكاشيرُ السلّةَ والمسودّة ليُصلح رقماً واحداً. */
+type ToastAction = { label: string; onClick: () => void };
+type Toast = { id: string; tone: ToastTone; title: string; description?: string; action?: ToastAction };
 
 type ToastCtx = {
-  toast: (t: { tone?: ToastTone; title: string; description?: string }) => void;
+  toast: (t: { tone?: ToastTone; title: string; description?: string; action?: { label: string; onClick: () => void } }) => void;
   success: (title: string, description?: string) => void;
   error: (title: string, description?: string) => void;
   /** نجاح جزئي أو تحذير — ليس فشلاً، فلا يصح تلوينه أحمر ولا أخضر. */
@@ -33,10 +36,11 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   const remove = useCallback((id: string) => setToasts((t) => t.filter((x) => x.id !== id)), []);
 
   const toast = useCallback(
-    ({ tone = "info", title, description }: { tone?: ToastTone; title: string; description?: string }) => {
+    ({ tone = "info", title, description, action }: { tone?: ToastTone; title: string; description?: string; action?: ToastAction }) => {
       const id = `t${seq++}`;
-      setToasts((t) => [...t, { id, tone, title, description }]);
-      setTimeout(() => remove(id), 4200);
+      setToasts((t) => [...t, { id, tone, title, description, action }]);
+      // رسالةٌ بزرّ تبقى أطول: ٤٫٢ ثانية تكفي للقراءة لا للقراءة ثم الضغط.
+      setTimeout(() => remove(id), action ? 9000 : 4200);
     },
     [remove],
   );
@@ -80,6 +84,16 @@ export function ToastProvider({ children }: { children: ReactNode }) {
                   <div className="min-w-0 flex-1">
                     <p className="font-semibold text-ink leading-snug">{t.title}</p>
                     {t.description && <p className="mt-0.5 text-sm text-ink-muted">{t.description}</p>}
+                    {t.action && (
+                      <button
+                        type="button"
+                        data-toastaction
+                        onClick={() => { remove(t.id); t.action?.onClick(); }}
+                        className="mt-2 inline-flex items-center rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-bold text-white transition hover:bg-brand-700 active:scale-95"
+                      >
+                        {t.action.label}
+                      </button>
+                    )}
                   </div>
                   <button onClick={() => remove(t.id)} className="text-ink-subtle hover:text-ink transition" aria-label="Dismiss">
                     <X size={16} />

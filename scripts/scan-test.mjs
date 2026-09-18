@@ -436,8 +436,11 @@ console.log("▸ رصيدُ الصفر — يُسأل الخادمُ قبل ال
     zeroStockVerdict({ stock: 0, pooled: true }, true) === "sell-fresh");
 
   const sb = readFileSync("src/components/retail/SaleBuilder.tsx", "utf8");
+  /* السؤالُ صار **بمعرّف المنتج** (خطة الطزاجة، ط٢): المسحُ والكرتُ يمرّان من
+   * `sellOrExplain` نفسِها، والكرتُ لا يحمل رمزاً ممسوحاً — وبالمخزن منتجاتٌ بلا
+   * باركود. والنيّةُ نفسُها محروسة: سؤالُ الخادم بمهلةٍ قبل أيِّ رفض. */
   check("وشاشةُ البيع تسأل الخادمَ بمهلةٍ قبل الرفض",
-    /fresh = await withTimeout\(repo\.getProductByBarcode\(code, clinicId\), 6000\)/.test(sb));
+    /fresh = await withTimeout\(repo\.getProductById\(product\.id\), 6000\)/.test(sb));
   check("  وتبيع بالصفّ الطازج لا بالبائت", sb.includes("addProduct(fresh, n)"));
   check("  والحكمُ من الوحدة المفحوصة لا نسخةٍ محلّية",
     sb.includes("outOfStock(product, retMode)") && !sb.includes("const isNoStock"));

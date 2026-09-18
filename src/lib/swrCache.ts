@@ -29,6 +29,21 @@ export function setCached<T>(key: string, data: T): void {
   store.set(key, { data, at: Date.now() });
 }
 
+/** متى جُلبت هذه اللقطة (ms منذ ١٩٧٠)، أو undefined إن لم تُجلب قطّ.
+ *  الشاشةُ التي تعرض لقطةً تقول عمرَها بهذا حين يفشل تحديثُها. */
+export function cachedAt(key: string): number | undefined {
+  return store.get(key)?.at;
+}
+
+/** ترقيعُ لقطةٍ قائمة **بلا تجديد عمرها**. صفٌّ طازجٌ واحد وصل من الخادم لا
+ *  يجعل بقيّةَ القائمة طازجة — و`setCached` كانت ستختم الكلَّ «الآن» فيتخطّى
+ *  الفتحُ التالي الجلبَ على قائمةٍ عمرُها ساعات. مفتاحٌ غيرُ موجود لا يُخلق. */
+export function patchCached<T>(key: string, fn: (data: T) => T): void {
+  const e = store.get(key) as Entry<T> | undefined;
+  if (!e) return;
+  store.set(key, { data: fn(e.data), at: e.at });
+}
+
 /** Drop a cached entry (e.g. after a mutation that invalidates it). */
 export function invalidate(key: string): void {
   store.delete(key);

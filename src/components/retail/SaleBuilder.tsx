@@ -490,7 +490,15 @@ function PosLayoutMenu({ layout, onChange, axis, isLg, nudge, reset }: {
   );
 }
 
-export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = false }: { products: Product[]; clinicId?: string; onSold: () => void; prefill?: RetailPrefill | null; wholesale?: boolean }) {
+export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = false, onFreshRow, onRefresh, onBusyChange }: {
+  products: Product[]; clinicId?: string; onSold: () => void; prefill?: RetailPrefill | null; wholesale?: boolean;
+  /** صفٌّ طازجٌ وصل من الخادم — الأبُ يرقّع به قائمتَه فلا يتكرّر السؤالُ بكلّ ضغطة. */
+  onFreshRow?: (p: Product) => void;
+  /** تحديثُ القائمة **بالمكان** — بدل F5 الذي يمسح السلّة والمسودّة. */
+  onRefresh?: () => void;
+  /** بيعةٌ جارية؟ الأبُ لا يستبدل القائمةَ تحت يد الكاشير وسطَ checkout. */
+  onBusyChange?: (busy: boolean) => void;
+}) {
   const { t, i18n } = useTranslation();
   const toast = useToast();
   const print = useInvoicePrinter();
@@ -650,6 +658,8 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const [busy, setBusy] = useState(false);
+  // الأبُ يجلب القائمةَ حين يرجع التاب (ط١) — ولا يستبدلها وسطَ بيعة.
+  useEffect(() => { onBusyChange?.(busy); }, [busy, onBusyChange]);
   /** سطورٌ تبيع الرصيدَ كلَّه بكميةٍ كبيرة — تُعرض للتأكيد قبل الحسم. */
   const [bigSale, setBigSale] = useState<Line[] | null>(null);
   const [flash, setFlash] = useState<string | null>(null);
@@ -928,6 +938,61 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
    * بنفس النبضة: `cart` بالإغلاق الحاليّ ما زال يحمل البيعةَ المباعة،
    * فإضافةٌ فورية تبني على سلّةٍ ميّتة. */
   const pendingScanRef = useRef<string | null>(null);
+
+  /* ---- «بِعْ أو اشرح»: حكمُ رصيد الصفر بمسارٍ واحد (خطة الطزاجة، ط٢) -------
+   * كان هذا المنطقُ داخل معالج المسح وحده، فكرتُ المنتج برصيدٍ محلّيٍّ صفر كان
+   * زرّاً **ميّتاً**: `disabled`، بلا رسالةٍ ولا سؤالِ خادم. والقائمةُ لقطةٌ قد
+   * تكون بعمر ساعات — المادّةُ على الرفّ والكرتُ رماديٌّ لا يُضغط، ولا شيءَ يقول
+   * لماذا، فيُحلّ بـF5. الآن المسحُ والكرتُ يمرّان من هنا: رصيدٌ محلّيٌّ صفر
+   * يُسأل عنه الخادمُ **بمعرّف المنتج** قبل الرفض (الكرتُ بلا رمزٍ ممسوح، وبالمخزن
+   * منتجاتٌ بلا باركود)، والصفُّ الطازج يرقّع القائمةَ فلا يتكرّر السؤال.
+   *
+   * `refused` تقول للمستدعي «لم يُضف شيءٌ وقيل لماذا» — فيُبقي المضاعِفَ مسلَّحاً
+   * للمحاولة التالية، كما كان المسحُ يفعل قبل الاستخراج. */
+  const askingRef = useRef<Set<string>>(new Set());
+  const sellOrExplain = async (product: Product, n: number): Promise<{ added: number | null; refused: boolean }> => {
+    if (!outOfStock(product, retMode)) return { added: addProduct(product, n), refused: false };
+    // ضغطتان على كرتٍ ينتظر جوابَ الخادم = سؤالٌ واحد، لا بيعتان.
+    if (askingRef.current.has(product.id)) return { added: null, refused: true };
+    askingRef.current.add(product.id);
+    let fresh: Product | undefined;
+    let asked = false;
+    try {
+      fresh = await withTimeout(repo.getProductById(product.id), 6000);
+      asked = true;
+    } catch { /* swallow-ok: تعذّر السؤال — الحكمُ «آخرُ ما عندنا» لا «رصيدك صفر» */ }
+    finally { askingRef.current.delete(product.id); }
+    // الصفُّ الطازج يرقّع القائمةَ **أيّاً كان الحكم**: رصيدٌ ظهر يُصلح الكرتَ
+    // فوراً، وصفرٌ مؤكَّد يبقى صفراً صادقاً لا بائتاً.
+    if (fresh) onFreshRow?.(fresh);
+    const verdict = zeroStockVerdict(fresh, asked, retMode);
+    if (verdict === "sell-fresh" && fresh) {
+      // رصيدٌ طازج: يُباع بالصفّ الطازج لا بالبائت، فسقفُ السطر صحيح.
+      const added = addProduct(fresh, n);
+      if (added !== null && added > 0) {
+        toast.success(t("retail.scanStockRefreshed", "«{{name}}» رصيده تحدّث — {{n}} متوفّر", { name: fresh.name, n: formatNum(fresh.stock ?? 0) }));
+      }
+      return { added, refused: false };
+    }
+    playWarning();
+    if (verdict === "refuse-confirmed") {
+      toast.error(t("retail.scanOutOfStock", "«{{name}}» موجود بس رصيده صفر — زيد رصيده من المخزن أو سجّل شراء حتى ينباع", { name: product.name }));
+    } else {
+      // «ما وصلنا الخادم»: الزرُّ يحدّث القائمةَ بالمكان — F5 كان يمسح السلّة.
+      toast.toast({
+        tone: "error",
+        title: t("retail.scanOutOfStockStale", "«{{name}}» رصيده صفر بآخر تحديثٍ عندنا — ما وصلنا الخادم لنتأكد. حدّث القائمة قبل ما تعيد إدخاله.", { name: product.name }),
+        action: onRefresh ? { label: t("retail.refreshList", "حدّث القائمة"), onClick: onRefresh } : undefined,
+      });
+    }
+    return { added: null, refused: true };
+  };
+  /** ضغطُ كرت المنتج. المضاعِفُ يُقرأ ولا يُستهلك إلا إذا نزل شيء — كالمسح. */
+  const tapProduct = (p: Product) => {
+    const n = mult && mult > 0 ? Math.floor(mult) : 1;
+    void sellOrExplain(p, n).then((r) => { if (!r.refused && mult != null) setMult(null); });
+  };
+
   const handleScan = async (code: string) => {
     if (done) { pendingScanRef.current = code; reset(); return; }
     const n = peekScanMult(code);
@@ -967,43 +1032,15 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
       }
     }
     if (product) {
-      // رصيدٌ صفر: السكوتُ هنا هو ما جعل عيادةً تقول «المنتج اختفى» — البطاقة
-      // رمادية والمسحة لا تنزل شيئاً بلا كلمة. فنقولها: موجود، بس رصيده صفر.
-      if (outOfStock(product, retMode)) {
-        /* الرفضُ لا يصدر عن لقطةٍ قديمة: الشاشةُ تُحمّل مرّةً عند الفتح ولا
-         * تُحدَّث إلا بعد بيعةٍ مكتملة، فمديرٌ رصّد شراءً ظهراً من جهازه يجعل
-         * كلَّ مسحةٍ هنا تُرفض «رصيده صفر» والمخزنُ يقول موجود — تضاربٌ يعلّم
-         * العيادةَ ألّا تصدّق الشاشة. فنسأل الخادمَ قبل أن يصير الحكمُ نهائياً. */
-        let fresh: Product | undefined;
-        let asked = false;
-        try {
-          fresh = await withTimeout(repo.getProductByBarcode(code, clinicId), 6000);
-          asked = true;
-        } catch { /* swallow-ok: تعذّر السؤال — نعرض رقمَنا ونقول إنه آخرُ ما عندنا */ }
-        const verdict = zeroStockVerdict(fresh, asked, retMode);
-        if (verdict === "sell-fresh" && fresh) {
-          // رصيدٌ طازج: يُباع بالصفّ الطازج لا بالبائت، فسقفُ السطر صحيح.
-          const addedFresh = addProduct(fresh, n);
-          if (addedFresh !== null && addedFresh > 0) {
-            playSuccess();
-            toast.success(t("retail.scanStockRefreshed", "«{{name}}» رصيده تحدّث — {{n}} متوفّر", { name: fresh.name, n: formatNum(fresh.stock ?? 0) }));
-          }
-          if (mult != null) setMult(null);
-          setQuery("");
-          return;
-        }
-        playWarning();
-        toast.error(verdict === "refuse-confirmed"
-          ? t("retail.scanOutOfStock", "«{{name}}» موجود بس رصيده صفر — زيد رصيده من المخزن أو سجّل شراء حتى ينباع", { name: product.name })
-          : t("retail.scanOutOfStockStale", "«{{name}}» رصيده صفر بآخر تحديثٍ عندنا — ما وصلنا الخادم لنتأكد. حدّث الصفحة قبل ما تعيد إدخاله.", { name: product.name }));
-        setQuery("");
-        return;
-      }
+      /* رصيدٌ صفر: السكوتُ هنا هو ما جعل عيادةً تقول «المنتج اختفى». والرفضُ
+       * لا يصدر عن لقطةٍ قديمة — `sellOrExplain` تسأل الخادمَ قبله، وهي نفسُها
+       * ما يمرّ منه كرتُ المنتج: مساران لحكمٍ واحد لا نسختان تفترقان. */
+      const r = await sellOrExplain(product, n);
       /* النغمةُ **بعد** الإضافة وبشرطها: كانت تُصدَر قبلها دائماً، فسطرٌ عند
        * سقفه يعطي بيبَ نجاحٍ بلا سطرٍ يُضاف. */
-      const added = addProduct(product, n);
-      if (added !== null && added > 0) playSuccess();
-      if (mult != null) setMult(null);
+      if (r.added !== null && r.added > 0) playSuccess();
+      // الرفضُ يُبقي المضاعِفَ مسلَّحاً: يُصلَح الرصيدُ وتُعاد المسحةُ بنفس العدد.
+      if (!r.refused && mult != null) setMult(null);
       setQuery(""); // clear any scanned digits that landed in the focused search box
       return;
     }
@@ -2405,14 +2442,19 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
                   const subAvail = !!p.has_sub_unit && !!p.units_per_box && p.units_per_box > 0;
                   const out = p.pooled ? false : subAvail ? p.stock * (p.units_per_box as number) < 1 : p.stock <= 0;
                   const byWeight = !!p.sold_by_weight;
+                  /* رصيدٌ محلّيٌّ صفر: الكرتُ باهتٌ **لكنه يُضغط**. كان `disabled` —
+                     زرّاً ميّتاً بلا رسالةٍ ولا سؤالِ خادم، والقائمةُ قد تكون بعمر
+                     ساعات. الضغطُ يمرّ بـ`sellOrExplain`: يبيع إن كان الرصيدُ الحقيقيُّ
+                     موجوداً، ويقول لماذا إن لم يكن. (خطة الطزاجة، ط٢) */
+                  const outHint = out ? t("retail.outTapToCheck", "رصيده صفر بآخر تحديث — اضغط ونتأكد من الخادم") : undefined;
                   if (compact) {
                     return (
                       <button
-                        key={p.id} disabled={out} data-prodrow={p.id} onClick={() => { playTap(); addProduct(p); }}
-                        title={p.name}
+                        key={p.id} data-prodrow={p.id} data-out={out || undefined} onClick={() => { playTap(); tapProduct(p); }}
+                        title={outHint ? `${p.name} — ${outHint}` : p.name}
                         className={cn(
                           "group flex shrink-0 items-center gap-2 rounded-xl border px-2.5 py-1.5 text-start transition",
-                          out ? "cursor-not-allowed border-line bg-surface-2 opacity-50"
+                          out ? "border-line bg-surface-2 opacity-60 hover:opacity-90"
                             : flash === `p:${p.id}` ? "border-brand-400 bg-brand-50 dark:bg-brand-500/15"
                               : "border-line bg-surface-1 hover:border-brand-300 hover:bg-brand-50 dark:hover:bg-brand-500/10",
                         )}
@@ -2429,10 +2471,10 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
                   }
                   return (
                     <button
-                      key={p.id} disabled={out} onClick={() => { playTap(); addProduct(p); }}
+                      key={p.id} data-prodcard={p.id} data-out={out || undefined} title={outHint} onClick={() => { playTap(); tapProduct(p); }}
                       className={cn(
                         "group relative flex flex-col rounded-2xl border p-3 text-start transition",
-                        out ? "cursor-not-allowed border-line bg-surface-2 opacity-50"
+                        out ? "border-line bg-surface-2 opacity-60 hover:opacity-90"
                           : flash === `p:${p.id}` ? "border-brand-400 bg-brand-50 dark:bg-brand-500/15"
                             : "border-line bg-surface-1 hover:border-brand-300 hover:bg-brand-50 dark:hover:bg-brand-500/10",
                       )}
