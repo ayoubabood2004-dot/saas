@@ -21,7 +21,7 @@ import { useTranslation } from "react-i18next";
 import {
   Bird, Plus, ArrowRight, Home, Layers, CalendarDays, Skull, Wheat,
   Syringe, Wrench, StickyNote, Loader2, PackageX, CheckCircle2, AlertTriangle, Boxes, Download,
-  ShieldAlert, ShieldCheck, ShieldQuestion,
+  ShieldAlert, ShieldCheck,
 } from "lucide-react";
 import type { PoultryFarm, PoultryHouse, PoultryCycle, PoultryDaily, PoultryUse, PoultryCycleStats, PoultryUseKind, Product } from "@/types";
 import { repo } from "@/lib/repo";
@@ -421,8 +421,7 @@ function CycleView({ farm, cycle, canWrite, onBack }: { farm: PoultryFarm; cycle
           <DayLog days={days} uses={uses} />
 
           {live && canWrite && (
-            <CloseCycle cycleId={cur.id} placed={cur.placed_count} stats={stats}
-              onClosed={(c) => { setCur(c); toast.success(t("farm.batchClosedOk")); void load(); }} />
+            <CloseCycle cycleId={cur.id} onClosed={(c) => { setCur(c); toast.success(t("farm.batchClosedOk")); void load(); }} />
           )}
         </>
       )}
@@ -498,11 +497,10 @@ function ConsumeRow({ cycleId, date, stock, onDone }: { cycleId: string; date: s
   const [name, setName] = useState("");
   const [qty, setQty] = useState("");
   const [busy, setBusy] = useState(false);
-  /* فترةُ السحب: خانةٌ ورايةٌ — لا خانةٌ وحدَها. الفراغُ **ليس** جواباً، لأن
-     «ما كتب شيئاً» و«قرأ العلبة فما لقى فترة» شيئان مختلفان تماماً، وخلطُهما
-     يجعل الشاشةَ تقول «آمن» عن قطيعٍ لا نعرف عنه شيئاً. */
+  /* فترةُ السحب: خانةٌ **اختيارية** يكتبها من قرأ العلبة. لا سؤالَ إلزاميّ
+     ولا رقاقةُ «ما مكتوبة»: سؤالٌ يتكرّر مع كلّ سطرِ دواءٍ احتكاكٌ يوميّ،
+     والفراغُ يعني ببساطة «ما انكتبت». */
   const [wd, setWd] = useState("");
-  const [wdUnknown, setWdUnknown] = useState(false);
   const needsProduct = kind === "feed" || kind === "med";
   const isMed = kind === "med";
   const wdNum = wd.trim() === "" ? null : Math.round(Number(wd));
@@ -513,25 +511,21 @@ function ConsumeRow({ cycleId, date, stock, onDone }: { cycleId: string; date: s
     if (!Number.isFinite(n) || n <= 0) { playWarning(); toast.error(t("farm.needQty")); return; }
     if (needsProduct && !productId) { playWarning(); toast.error(t("farm.needProduct")); return; }
     if (!needsProduct && !name.trim()) { playWarning(); toast.error(t("farm.needServiceName")); return; }
-    /* **قرارٌ إلزاميّ لا رقمٌ إلزاميّ.** الدراسةُ قالت «إلزاميّاً»، وإلزامُ رقمٍ
-       لا يعرفه المُدخِل يولّد رقماً مخترعاً — ورقمٌ مخترعٌ هنا لا يُخطئ بشاشة
-       بل بلحمٍ يُباع. فالمطلوبُ أن **يختار**: رقمٌ من العلبة، أو «ما مكتوبة». */
-    if (isMed && !wdUnknown && !wdValid) { playWarning(); toast.error(t("farm.wd.needChoice")); return; }
     setBusy(true);
     try {
       const r = await repo.poultryConsume({
         cycle_id: cycleId, kind, product_id: needsProduct ? productId : null,
         name: needsProduct ? null : name.trim(), qty: n, on_date: date,
-        withdrawal_days: isMed && !wdUnknown ? wdNum : null,
+        withdrawal_days: isMed && wdValid ? wdNum : null,
       });
       // النقصُ يُقال بصوت: «سجّلنا ٨٠٠ والمخزنُ كان ٥٠٠» — لا يُطمس.
       if (r.shortfall && r.shortfall > 0) {
         toast.error(t("farm.shortTitle"), t("farm.shortBody", { n: formatNum(Math.round(r.shortfall)) }));
       } else { playSuccess(); }
       // تاريخُ الأمان يُقال **لحظةَ الصرف**، لا بعد إعادة تحميلٍ قد لا تحصل.
+      // ولا رسالةَ عتابٍ حين لا يُكتب: ما كُتب يُعرض، وما لم يُكتب يُترك.
       if (r.safe_from) toast.success(t("farm.wd.recorded"), t("farm.wd.safeFrom", { date: r.safe_from }));
-      else if (isMed) toast.error(t("farm.wd.recordedUnknown"), t("farm.wd.unknownHint"));
-      setQty(""); setName(""); setWd(""); setWdUnknown(false); onDone();
+      setQty(""); setName(""); setWd(""); onDone();
     } catch (e) {
       playWarning();
       const m = e instanceof Error ? e.message : "";
@@ -545,7 +539,7 @@ function ConsumeRow({ cycleId, date, stock, onDone }: { cycleId: string; date: s
         {(["feed", "med", "service"] as const).map((k) => {
           const I = k === "feed" ? Wheat : k === "med" ? Syringe : Wrench;
           return (
-            <button key={k} type="button" onClick={() => { setKind(k); setProductId(""); setWd(""); setWdUnknown(false); }}
+            <button key={k} type="button" onClick={() => { setKind(k); setProductId(""); setWd(""); }}
               className={cn("flex flex-1 items-center justify-center gap-1 rounded-lg px-2 py-1.5 text-2xs font-bold transition",
                 kind === k ? "bg-brand-600 text-white" : "bg-surface-2 text-ink-muted")}>
               <I size={13} /> {t(`farm.use.${k}`)}
@@ -564,20 +558,12 @@ function ConsumeRow({ cycleId, date, stock, onDone }: { cycleId: string; date: s
       {isMed && (
         <div className="space-y-1.5 rounded-lg border border-warn-200 bg-warn-50/60 p-2 dark:border-warn-500/30 dark:bg-warn-500/10">
           <label className="block text-2xs font-bold text-warn-800 dark:text-warn-200">{t("farm.wd.label")}</label>
-          <div className="flex gap-2">
-            <input className="input flex-1" inputMode="numeric" value={wd} disabled={wdUnknown}
-              onChange={(e) => setWd(e.target.value)} placeholder={t("farm.wd.placeholder")} />
-            <button type="button" onClick={() => { playTap(); setWdUnknown((v) => !v); setWd(""); }}
-              className={cn("rounded-lg px-2.5 py-1.5 text-2xs font-bold transition",
-                wdUnknown ? "bg-danger-600 text-white" : "bg-surface-2 text-ink-muted")}>
-              {t("farm.wd.unknownChip")}
-            </button>
-          </div>
+          <input className="input" inputMode="numeric" value={wd}
+            onChange={(e) => setWd(e.target.value)} placeholder={t("farm.wd.placeholder")} />
           {/* الأثرُ يُرى قبل الحفظ: «٧ أيام» رقمٌ مجرّد، و«آمن من ٢٩ أيلول» قرار. */}
           <p className="text-2xs text-warn-800/80 dark:text-warn-200/80">
-            {wdUnknown ? t("farm.wd.unknownHint")
-              : wdValid ? (wdNum === 0 ? t("farm.wd.none") : t("farm.wd.preview", { date: addDays(date, wdNum as number) }))
-                : t("farm.wd.fromBox")}
+            {wdValid ? (wdNum === 0 ? t("farm.wd.none") : t("farm.wd.preview", { date: addDays(date, wdNum as number) }))
+              : t("farm.wd.fromBox")}
           </p>
         </div>
       )}
@@ -623,12 +609,11 @@ function DayLog({ days, uses }: { days: PoultryDaily[]; uses: PoultryUse[] }) {
               {/* سطرُ الدواء يحمل سحبَه بالدفتر: «راجع الدفتر قبل الذبح» لا تصحّ
                   إن كان الدفترُ لا يقولها. والمجهولُ يُكتب أحمرَ لا يُترك فارغاً. */}
               {/* الفاصلُ خارجَ المقطع اللاتينيّ: `dir="ltr"` يجرّ النقطةَ لطرفه
-                  فتلتصق «د.ع» بـ«آمن» بلا مسافة — قِيس بلقطة شاشة. */}
-              {u.kind === "med" && <> · {u.withdrawal_days == null
-                ? <span className="font-bold text-danger-600 dark:text-danger-400">{t("farm.wd.unknownShort")}</span>
-                : u.withdrawal_days === 0
-                  ? <span>{t("farm.wd.none")}</span>
-                  : <span dir="ltr">{t("farm.wd.safeFromShort", { date: addDays(u.on_date, u.withdrawal_days) })}</span>}</>}
+                  فتلتصق «د.ع» بـ«آمن» بلا مسافة — قِيس بلقطة شاشة.
+                  وما لم يُكتب رقمٌ لا يُكتب شيء: الفراغُ هنا فراغٌ لا تهمة. */}
+              {u.kind === "med" && u.withdrawal_days != null && <> · {u.withdrawal_days === 0
+                ? <span>{t("farm.wd.none")}</span>
+                : <span dir="ltr">{t("farm.wd.safeFromShort", { date: addDays(u.on_date, u.withdrawal_days) })}</span>}</>}
             </p>
           ))}
           {e.day?.note && <p className="mt-1 text-2xs italic text-ink-subtle">{e.day.note}</p>}
@@ -639,31 +624,23 @@ function DayLog({ days, uses }: { days: PoultryDaily[]; uses: PoultryUse[] }) {
 }
 
 /* ── إغلاقُ الدفعة — بلا تاريخٍ لا حصيلة ───────────────────────────────── */
-/* ── إغلاقُ الدفعة — وإغلاقُها يعني غالباً أنها ذُبحت ────────────────────
+/* ── إغلاقُ الدفعة ───────────────────────────────────────────────────────
  *
- * لا نمنع. الدفعةُ تُغلق لأسبابٍ غيرِ الذبح (نفوقٌ كاسح، بيعٌ لحقلٍ آخر)،
- * والمنعُ القاطع يدفع المستخدمَ لإغلاقها بطريقٍ ملتوٍ — فلا نعرف أصلاً أنه
- * ذبح مبكّراً. لكنّ الإغلاقَ قبل تاريخ الأمان (أو وفترةُ السحب مجهولة) لا
- * يمرّ بضغطةٍ واحدة: يُكتب عددُ الطيور بالخانة — أرقامٌ لا تُضغط بالسهو،
- * ولا تحتاج ترجمةً ولا لوحةَ مفاتيحَ عربية.
+ * **بلا أيّ منع** — بكلمة المالك (١٨ أيلول): «لا تسوّي منع على الإغلاق بالذبح
+ * أو غيرها؛ الحقلُ يعرف بروتوكولاته». كان هنا تأكيدٌ مكتوبٌ يُطلب حين تُغلق
+ * الدفعةُ قبل تاريخ الأمان، فرُفع. نحن **دفترٌ يَذكر** لا جهةٌ تُجيز: النظامُ
+ * يعرض ما يعرفه، والقرارُ لصاحب الحقل.
  */
-function CloseCycle({ cycleId, placed, stats, onClosed }: { cycleId: string; placed: number; stats: PoultryCycleStats | null; onClosed: (c: PoultryCycle) => void }) {
+function CloseCycle({ cycleId, onClosed }: { cycleId: string; onClosed: (c: PoultryCycle) => void }) {
   const { t } = useTranslation();
   const toast = useToast();
   const [open, setOpen] = useState(false);
   const [sold, setSold] = useState("");
   const [kg, setKg] = useState("");
   const [total, setTotal] = useState("");
-  const [confirm, setConfirm] = useState("");
   const [busy, setBusy] = useState(false);
 
-  const unknown = !!stats?.withdrawal_unknown;
-  const left = stats?.safe_from ? daysUntil(stats.safe_from) : 0;
-  const unsafe = unknown || left > 0;
-  const confirmed = !unsafe || confirm.trim() === String(placed);
-
   const submit = async () => {
-    if (!confirmed) { playWarning(); toast.error(t("farm.wd.typeCount", { n: formatNum(placed) })); return; }
     setBusy(true);
     try {
       const c = await repo.closePoultryCycle(cycleId, {
@@ -679,59 +656,43 @@ function CloseCycle({ cycleId, placed, stats, onClosed }: { cycleId: string; pla
   return (
     <div className="space-y-2 rounded-2xl border border-line bg-surface-1 p-4">
       <p className="text-2xs text-ink-subtle">{t("farm.closeHint")}</p>
-      {unsafe && (
-        <div className="space-y-1.5 rounded-xl border border-danger-200 bg-danger-50 p-3 dark:border-danger-500/35 dark:bg-danger-500/10">
-          <p className="flex items-start gap-1.5 text-2xs font-bold text-danger-800 dark:text-danger-200">
-            <ShieldAlert size={15} className="mt-px shrink-0" />
-            {unknown ? t("farm.wd.closeUnknown") : t("farm.wd.closeEarly", { date: stats?.safe_from, n: formatNum(left) })}
-          </p>
-          <input className="input" inputMode="numeric" dir="ltr" value={confirm}
-            onChange={(e) => setConfirm(e.target.value)} placeholder={t("farm.wd.typeCount", { n: formatNum(placed) })} />
-        </div>
-      )}
       <div className="grid grid-cols-2 gap-2">
         <div><label className="label">{t("farm.soldCount")}</label><input className="input" inputMode="numeric" value={sold} onChange={(e) => setSold(e.target.value)} /></div>
         <div><label className="label">{t("farm.soldKg")}</label><input className="input" inputMode="decimal" value={kg} onChange={(e) => setKg(e.target.value)} /></div>
       </div>
       <div><label className="label">{t("farm.saleTotal")}</label><input className="input" inputMode="decimal" value={total} onChange={(e) => setTotal(e.target.value)} /></div>
       <div className="flex gap-2">
-        <Button className="flex-1" onClick={submit} disabled={busy || !confirmed}>{t("farm.closeBatch")}</Button>
+        <Button className="flex-1" onClick={submit} disabled={busy}>{t("farm.closeBatch")}</Button>
         <Button variant="ghost" onClick={() => setOpen(false)}>{t("farm.cancel")}</Button>
       </div>
     </div>
   );
 }
 
-/* ── شارةُ فترة السحب — أخطرُ سطرٍ بالشاشة ──────────────────────────────
+/* ── شارةُ فترة السحب — **تذكيرٌ لا إنذار** ──────────────────────────────
  *
- * ثلاثُ حالاتٍ لا اثنتان، وترتيبُها مقصود:
- *   • **مجهولة أوّلاً** ولو كان عندنا تاريخٌ معروفٌ لسطرٍ آخر: سطرٌ واحدٌ بلا
- *     رقمٍ يعني أننا لا نعرف متى يأمن القطيع، وعرضُ تاريخٍ «آمن» فوقه يطمئن
- *     كذباً — وهذا أخطرُ من لا شيء.
- *   • ثم «لا يُذبح قبل …» ما دام التاريخُ بالمستقبل.
- *   • ثم «آمن» — وتُقال صراحةً لأن صمتَ الشاشة لا يُقرأ إذناً.
- * وبلا دواءٍ أصلاً: لا شارةَ — لا خبرَ ولا طمأنة.
+ * كانت ثلاثَ حالاتٍ إحداها حمراءُ تصرخ «فترةُ سحبٍ مجهولة» كلّما نقص رقمٌ.
+ * وبكلمة المالك (١٨ أيلول) نحن لسنا جهةَ رقابة: «الحقلُ يعرف بروتوكولاته».
+ * فما نعرفه يُعرض، وما لا نعرفه **يُترك بلا عتاب** — شاشةٌ تلوم كلَّ يومٍ
+ * تُغلَق، ودفترٌ هادئ يُقرأ.
+ *
+ * فحالتان: «باقي كذا يوم» بلونِ تنبيهٍ ما دام التاريخُ بالمستقبل، ثم «انتهت»
+ * بالأخضر. وبلا رقمٍ مكتوبٍ أصلاً: لا شارة.
  */
 function WithdrawalBanner({ stats }: { stats: PoultryCycleStats | null }) {
   const { t } = useTranslation();
-  if (!stats) return null;
-  const unknown = !!stats.withdrawal_unknown;
-  const safe = stats.safe_from ?? null;
-  if (!unknown && !safe) return null;
-  const left = safe ? daysUntil(safe) : 0;
-  const blocked = unknown || left > 0;
-  const Icon = unknown ? ShieldQuestion : left > 0 ? ShieldAlert : ShieldCheck;
+  const safe = stats?.safe_from ?? null;
+  if (!safe) return null;
+  const left = daysUntil(safe);
+  const pending = left > 0;
+  const Icon = pending ? ShieldAlert : ShieldCheck;
   return (
     <div className={cn("flex items-start gap-2 rounded-xl border p-3 text-2xs font-semibold",
-      blocked
-        ? "border-danger-200 bg-danger-50 text-danger-800 dark:border-danger-500/35 dark:bg-danger-500/10 dark:text-danger-200"
+      pending
+        ? "border-warn-200 bg-warn-50 text-warn-800 dark:border-warn-500/30 dark:bg-warn-500/10 dark:text-warn-200"
         : "border-success-200 bg-success-50 text-success-800 dark:border-success-500/30 dark:bg-success-500/10 dark:text-success-200")}>
       <Icon size={16} className="mt-px shrink-0" />
-      <span>
-        {unknown ? t("farm.wd.unknownBanner")
-          : left > 0 ? t("farm.wd.blockedBanner", { date: safe, n: formatNum(left) })
-            : t("farm.wd.safeBanner", { date: safe })}
-      </span>
+      <span>{pending ? t("farm.wd.pendingBanner", { date: safe, n: formatNum(left) }) : t("farm.wd.doneBanner", { date: safe })}</span>
     </div>
   );
 }
@@ -872,9 +833,7 @@ function ExportLedger({ farm, houses, cycles }: { farm: PoultryFarm; houses: Pou
           if (d.dead === 0 && d.culled === 0 && d.note) out.push([label, batch, d.on_date, String(dayNo(d.on_date)), t("farm.csv.noteOnly"), "", "", "", "", "", d.note]);
         }
         for (const u of uses) {
-          /* المجهولُ يُكتب كلمةً بالجرد لا خانةً فارغة: خانةٌ فارغة بإكسل
-             تُقرأ «ماكو فترةُ سحب»، وهي بالضبط عكسُ ما نعرفه. */
-          const wd = u.kind !== "med" ? "" : u.withdrawal_days == null ? t("farm.wd.unknownShort") : String(u.withdrawal_days);
+          const wd = u.kind === "med" && u.withdrawal_days != null ? String(u.withdrawal_days) : "";
           const sf = u.kind === "med" && u.withdrawal_days != null ? addDays(u.on_date, u.withdrawal_days) : "";
           out.push([label, batch, u.on_date, String(dayNo(u.on_date)), t(`farm.use.${u.kind}`), u.name, String(u.qty), String(Math.round(u.line_cost)), wd, sf, u.note ?? ""]);
         }
