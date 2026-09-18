@@ -16,32 +16,41 @@
  * الصرفُ يمرّ من `poultry_consume` وحدَها: خصمٌ وسطرُ كلفةٍ بمعاملةٍ واحدة،
  * بسعر الشراء. و«النقص» حين لا يكفي الرصيدُ **يُقال بصوت** — لا يُطمس.
  * ==========================================================================*/
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   Bird, Plus, ArrowRight, Home, Layers, CalendarDays, Skull, Wheat,
   Syringe, Wrench, StickyNote, Loader2, PackageX, CheckCircle2, AlertTriangle, Boxes, Download,
-  ShieldAlert, ShieldCheck, Scale, Gauge, Trophy, Coins, ClipboardList,
+  ShieldAlert, ShieldCheck, Scale, Gauge, Trophy, Coins, ClipboardList, ChevronDown, Circle,
 } from "lucide-react";
 import type { PoultryFarm, PoultryHouse, PoultryCycle, PoultryDaily, PoultryUse, PoultryCycleStats, PoultryUseKind, Product } from "@/types";
 import { repo } from "@/lib/repo";
 import { useAuth } from "@/contexts/AuthContext";
 import { usePermissions } from "@/hooks/usePermissions";
 import { cn, money, formatNum, formatDec } from "@/lib/utils";
-import { poultryKpi, poultryOutcome } from "@/lib/poultryKpi";
+import { poultryKpi, poultryOutcome, batchWeeks, dayDiff } from "@/lib/poultryKpi";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
 import { Button, useToast } from "@/components/ui";
 import { asciiFileName } from "@/lib/excelExport";
 
-const todayISO = () => new Date().toISOString().slice(0, 10);
-const addDays = (iso: string, n: number) => new Date(new Date(iso).getTime() + n * 86400000).toISOString().slice(0, 10);
+/** يومُ الجهاز **بتوقيته المحلّيّ** — نفسُ `localISO` بالتقارير.
+ *
+ *  كانت `toISOString()`، وهي UTC. وبغداد UTC+3، فمن منتصف الليل حتى الثالثة
+ *  فجراً يقول النظامُ إنّ «اليوم» هو أمس: الدفترُ يقيّد جولةَ الليل بتاريخٍ
+ *  مضى، و`max` بخانة التاريخ يمنع اختيارَ اليوم الحقيقيّ، وشارةُ «انكتب
+ *  اليوم» تكذب. وثلاثُ ساعاتٍ من كلّ ليلةٍ ليست حالةً نادرة بحقلٍ يُجال عليه
+ *  فجراً. */
+const localISO = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+const todayISO = () => localISO(new Date());
+const addDays = (iso: string, n: number) => localISO(new Date(new Date(`${iso}T12:00:00`).getTime() + n * 86400000));
 /** كم يوماً باقياً حتى `iso` — سالبٌ يعني أنه مضى. */
-const daysUntil = (iso: string) => Math.ceil((new Date(iso).getTime() - new Date(todayISO()).getTime()) / 86400000);
+const daysUntil = (iso: string) =>
+  Math.round((new Date(`${iso}T12:00:00`).getTime() - new Date(`${todayISO()}T12:00:00`).getTime()) / 86400000);
 
 /** عمرُ الدفعة باليوم — نفسُ تعريف الخادم: من يوم وضع الدجاج إلى الإغلاق أو اليوم. */
 const ageOf = (c: PoultryCycle): number => {
   const end = c.closed_on ?? todayISO();
-  return Math.max(0, Math.round((new Date(end).getTime() - new Date(c.placed_on).getTime()) / 86400000));
+  return Math.max(0, dayDiff(c.placed_on, end));
 };
 
 export function PoultryFarms() {
@@ -158,13 +167,33 @@ function FarmView({ farm, canWrite, onBack, onOpenCycle }: { farm: PoultryFarm; 
   const [adding, setAdding] = useState(false);
   const [round, setRound] = useState(false);
 
+  /** مجاميعُ كلّ دفعةٍ نشطة — النفوقُ وآخرُ إدخال. `null` = تعذّرت. */
+  const [stats, setStats] = useState<Map<string, PoultryCycleStats | null>>(() => new Map());
+  /* **آخرُ نداءٍ يفوز، لا آخرُ جوابٍ يصل.** للجلب رجلان: القائمةُ سريعة،
+   * ومجاميعُ الدفعات تتأخّر. فتحميلان متداخلان (حفظُ الجولة يعيد التحميل، أو
+   * نتٌّ متذبذب) قد يُنزل مجاميعَ الطلب **القديم** فوق الجديدة — فتظهر نقطةٌ
+   * حمراء عن يومٍ كُتب للتوّ. الجيلُ يحسم: ما ليس من آخر نداءٍ يُهمَل. */
+  const gen = useRef(0);
+
   const load = useCallback(async () => {
+    const my = ++gen.current;
     setBusy(true);
     try {
       const [h, c] = await Promise.all([repo.listPoultryHouses(farm.id), repo.listPoultryCycles(farm.id)]);
+      if (gen.current !== my) return;
       setHouses(h); setCycles(c);
-    } catch (e) { toast.error(t("farm.loadFailed"), e instanceof Error ? e.message : undefined); }
-    finally { setBusy(false); }
+      /* **القائمةُ تُرسم فوراً، والشاراتُ تلحق.** ورفعُ `busy` هنا لا بـ`finally`:
+         كان بعد انتظار مجاميعِ كلّ دفعة، فنداءٌ واحدٌ يعلَق على نتٍّ ضعيف يترك
+         الشاشةَ دوّامةً إلى الأبد — والقائمةُ وزرُّ الجولة بيدنا أصلاً. صفحةٌ
+         تُحجب خلف شاراتٍ تزيينية أسوأُ من شاراتٍ تتأخّر. */
+      setBusy(false);
+      const act = c.filter((x) => x.status === "active");
+      const rows = await Promise.all(act.map((x) =>
+        repo.poultryCycleStats(x.id).then((r) => [x.id, r] as const).catch(() => [x.id, null] as const)));
+      if (gen.current !== my) return;
+      setStats(new Map(rows));
+    } catch (e) { if (gen.current === my) toast.error(t("farm.loadFailed"), e instanceof Error ? e.message : undefined); }
+    finally { if (gen.current === my) setBusy(false); }
   }, [farm.id, t, toast]);
   useEffect(() => { void load(); }, [load]);
 
@@ -212,17 +241,8 @@ function FarmView({ farm, canWrite, onBack, onOpenCycle }: { farm: PoultryFarm; 
                       </div>
                     </div>
                     {act ? (
-                      <button onClick={() => { playTap(); onOpenCycle(act); }}
-                        className="mt-3 flex w-full items-center gap-2 rounded-xl border border-brand-200 bg-brand-50 p-3 text-start transition hover:bg-brand-100 dark:border-brand-500/30 dark:bg-brand-500/10">
-                        <Layers size={16} className="shrink-0 text-brand-600 dark:text-brand-300" />
-                        <span className="min-w-0 flex-1">
-                          <span className="block text-sm font-bold text-brand-800 dark:text-brand-200">
-                            {t("farm.activeBatch", { n: formatNum(act.placed_count) })}
-                          </span>
-                          <span className="block text-2xs text-brand-700 dark:text-brand-300">{t("farm.ageDays", { n: formatNum(ageOf(act)) })}</span>
-                        </span>
-                        <ArrowRight size={15} className="shrink-0 text-brand-600 ltr:-scale-x-100 dark:text-brand-300" />
-                      </button>
+                      <HouseCard cycle={act} stats={stats.has(act.id) ? stats.get(act.id) ?? null : undefined}
+                        onOpen={() => { playTap(); onOpenCycle(act); }} />
                     ) : canWrite ? (
                       <OpenCycle house={h} farmId={farm.id} onOpened={(c) => { setCycles((s) => [c, ...s]); toast.success(t("farm.batchOpened")); }} />
                     ) : null}
@@ -424,7 +444,7 @@ function CycleView({ farm, cycle, canWrite, onBack }: { farm: PoultryFarm; cycle
             فنفوقُ ٠٫٢٪ كان يُعرض «٠٪» — ورقمٌ يقول «ما مات شيء» وقد مات ٣٥ طيراً
             هو بالضبط صنفُ العطب الذي يُصدَّق. */}
         <Stat icon={Skull} label={t("farm.mortality")} value={`${formatDec(Math.round(mortalityPct * 10) / 10)}%`} tone={mortalityPct >= 5 ? "warn" : undefined} />
-        <Stat icon={Wheat} label={t("farm.feedKg")} value={formatNum(Math.round(stats?.feed_kg ?? 0))} />
+        <Stat icon={Wheat} label={t("farm.feedKg")} value={formatDec(stats?.feed_kg ?? 0)} />
         {/* «—» لا صفر: رقمٌ لم يُقَس ليس رقماً صغيراً، وصفرٌ بمعدّل التحويل
             يُقرأ «علفٌ ممتاز» وهو لم يوزن طيراً بعد. */}
         <Stat icon={Scale} label={t("farm.avgWeight")} value={kpi.avgWeightKg == null ? "—" : formatDec(kpi.avgWeightKg)} />
@@ -462,7 +482,7 @@ function CycleView({ farm, cycle, canWrite, onBack }: { farm: PoultryFarm; cycle
           {live && canWrite && <DayEntry cycleId={cur.id} days={days} stock={stock} onSaved={load} />}
           {!live && <Outcome cycle={cur} outcome={outcome} />}
 
-          <DayLog days={days} uses={uses} />
+          <DayLog days={days} uses={uses} placedOn={cur.placed_on} through={cur.closed_on ?? todayISO()} />
 
           {live && canWrite && (
             <CloseCycle cycleId={cur.id} onClosed={(c) => { setCur(c); toast.success(t("farm.batchClosedOk")); void load(); }} />
@@ -648,48 +668,182 @@ function ConsumeRow({ cycleId, date, stock, onDone }: { cycleId: string; date: s
 }
 
 /* ── دفترُ الحركات — «المسؤولُ يشوف حركاتِ كلّ يومٍ بالضبط» ────────────── */
-function DayLog({ days, uses }: { days: PoultryDaily[]; uses: PoultryUse[] }) {
+/* ── بطاقةُ القاعة — الشاشةُ تقول ما بقي على صاحبها اليوم ──────────────
+ *
+ * كانت تقول عمرَ الدفعة وعددَها، وبس. فمن عنده ستُّ قاعاتٍ لا يعرف أيَّها
+ * كُتب اليوم إلا بفتح الجولة وقراءة خاناتها — أي أنّ سؤالَ «شنو باقي عليّ»
+ * كان يكلّف ضغطتين وقراءةَ شاشة.
+ *
+ * فصارت تحمل ثلاثةً يقرؤها بنظرة: النفوقُ التراكميّ، وآخرُ إدخال، **ونقطةٌ
+ * حمراء إن لم يُكتب اليوم**. والقائمةُ تنقلب من عرضٍ إلى قائمة مهام.
+ *
+ * وحالةٌ رابعةٌ تُقال ولا تُخمَّن: حين تتعذّر مجاميعُ الدفعة تُعرض «؟» —
+ * **غيابُ النقطة الحمراء يُقرأ «انكتب اليوم»**، وهو ما لا نعرفه حينها. صمتٌ
+ * هنا يعني طمأنينةً كاذبة، وهي عينُ ما يجعل يوماً يضيع بلا أن ينتبه أحد.
+ */
+function HouseCard({ cycle, stats, onOpen }: {
+  cycle: PoultryCycle; stats: PoultryCycleStats | null | undefined; onOpen: () => void;
+}) {
   const { t } = useTranslation();
-  const byDate = useMemo(() => {
-    const m = new Map<string, { day?: PoultryDaily; uses: PoultryUse[] }>();
-    for (const d of days) m.set(d.on_date, { day: d, uses: [] });
-    for (const u of uses) {
-      const e = m.get(u.on_date) ?? { uses: [] };
-      e.uses.push(u); m.set(u.on_date, e);
-    }
-    return [...m.entries()].sort((a, b) => b[0].localeCompare(a[0]));
-  }, [days, uses]);
+  /* ثلاثُ حالاتٍ لا اثنتان، وخلطُها كان يُنتج تناقضاً على السطر الواحد:
+   *   • `undefined` — لم تصل بعد. لا ندّعي شيئاً (رمادٌ و«…»). كانت تسقط على
+   *     فرع «ماكو إدخال بعد» **بالأحمر**، فتتّهم دفعةً سُجّلت شهراً كاملاً.
+   *   • `null`      — تعذّرت. نقولها صراحةً.
+   *   • صفٌّ        — معروفة.
+   */
+  const state: "loading" | "failed" | "ok" = stats === undefined ? "loading" : stats === null ? "failed" : "ok";
+  /* **ونفوقٌ صفرٌ ليس نفوقاً صفراً حين لم يُعدّ أحدٌ يوماً.** `poultry_cycle_stats`
+   * تبني النفوقَ بـ`coalesce(...,0)` على وصلةٍ يسرى، فدفعةٌ بلا أيّ إدخالٍ
+   * ترجع صفّاً سليماً دَخلُه صفر. وكانت البطاقةُ تقول «💀 ٠٪» وتحتها مباشرةً
+   * «ماكو إدخال بعد» — سطران يتناقضان، وأحدُهما يطمئن. فالمقياسُ `last_entry`:
+   * بلا إدخالٍ واحد لا نسبةَ نفوقٍ أصلاً. */
+  const last = state === "ok" ? stats!.last_entry : null;
+  const counted = state === "ok" && last != null;
+  const mortality = counted && stats!.placed_count > 0 ? ((stats!.dead + stats!.culled) / stats!.placed_count) * 100 : null;
+  const todayDone = last === todayISO();
 
-  if (!byDate.length) return <Empty icon={PackageX} text={t("farm.noEntries")} />;
+  return (
+    <button onClick={onOpen}
+      className="mt-3 flex w-full items-center gap-2 rounded-xl border border-brand-200 bg-brand-50 p-3 text-start transition hover:bg-brand-100 dark:border-brand-500/30 dark:bg-brand-500/10">
+      <Layers size={16} className="shrink-0 text-brand-600 dark:text-brand-300" />
+      <span className="min-w-0 flex-1">
+        <span className="block text-sm font-bold text-brand-800 dark:text-brand-200">
+          {t("farm.activeBatch", { n: formatNum(cycle.placed_count) })}
+        </span>
+        <span className="block text-2xs text-brand-700 dark:text-brand-300">
+          {t("farm.ageDays", { n: formatNum(ageOf(cycle)) })}
+          {/* «—» لا صفرٌ ولا «؟»: نفسُ ما تعرضه ترويسةُ الدفعة لرقمٍ لم يُقَس. */}
+          {state !== "loading" && <> · <Skull size={10} className="inline" />{" "}
+            {/* خانتان لا واحدة: أربعةُ نوافقَ من عشرين ألفاً = ٠٫٠٢٪، وبخانةٍ
+                واحدةٍ تُعرض «٠٪» — وهي نفسُ العلّة التي أُصلحت بترويسة الدفعة. */}
+            {mortality === null ? "—" : `${formatDec(Math.round(mortality * 100) / 100)}%`}</>}
+        </span>
+        {/* سطرُ الحالة: أحمرُ ما لم يُكتب اليوم، ورماديٌّ هادئٌ حين كُتب. */}
+        {/* سطرُ الحالة: أحمرُ **فقط** حين نعرف أنّ اليوم لم يُكتب. أمّا قبل وصول
+            الحالة أو عند تعذّرها فرماديٌّ صامت — نقطةٌ حمراءُ عن جهلٍ إنذارٌ
+            كاذبٌ يُعلَّم بعد مرّتين فيُهمَل حين يصدق. */}
+        <span className={cn("mt-0.5 flex items-center gap-1 text-2xs font-bold",
+          state !== "ok" ? "text-ink-subtle"
+            : todayDone ? "text-success-700 dark:text-success-300"
+              : "text-danger-700 dark:text-danger-300")}>
+          <Circle size={7} className={cn("shrink-0", state !== "ok" ? "fill-ink-subtle" : todayDone ? "fill-success-500" : "fill-danger-500")} />
+          {/* التاريخُ بمقطعٍ لاتينيّ خاصٍّ به: مُدرَجاً بنصٍّ عربيٍّ يُقلب بصرياً
+              (١٧-٠٩-٢٠٢٦) — نفسُ ما وقع بسطر «انغلقت بـ»، وقِيس بلقطة شاشة. */}
+          {state === "loading" ? t("farm.statusLoading")
+            : state === "failed" ? t("farm.lastUnknown")
+              : todayDone ? t("farm.doneToday")
+                : last ? <>{t("farm.lastEntry")} <span dir="ltr">{last}</span></>
+                  : t("farm.neverEntered")}
+        </span>
+      </span>
+      <ArrowRight size={15} className="shrink-0 text-brand-600 ltr:-scale-x-100 dark:text-brand-300" />
+    </button>
+  );
+}
+
+/* ── دفترُ الحركات — ينطوي بأسابيع ─────────────────────────────────────
+ *
+ * ── المقيس ───────────────────────────────────────────────────────────────
+ * بعشرين يومٍ صارت صفحةُ الدفعة **٣٬٢٤٠ بكسلاً** بشاشة تلفون، والدفعةُ تعيش
+ * خمسةً وثلاثين إلى أربعين — أي ضعفَ ذلك. وزرُّ «اغلق الدفعة» بالقاع، فمن
+ * يريد إغلاقَ دورته يمرّ على تاريخها كلِّه. وكلُّ يومٍ يشبه الذي قبله، فالجدارُ
+ * لا يُقرأ أصلاً: يُمرَّر.
+ *
+ * ── ولماذا الأسبوع وحدةَ الطيّ ──────────────────────────────────────────
+ * ليس اختياراً جمالياً: دورةُ اللاحم تُدار **بالأسبوع** — العلفُ يتبدّل صنفُه
+ * بأسبوع، والوزنُ يُقاس أسبوعياً، والنفوقُ يُقارَن بأسبوعه لا بيومه. فالطيُّ
+ * بالأسبوع يطابق الطريقةَ التي يفكّر بها صاحبُ الحقل، والملخّصُ يصير معلومةً
+ * جديدةً لم تكن معروضةً أصلاً — لا مجرّدَ إخفاء.
+ *
+ * ── وأسبوعُ اليوم مفتوحٌ دائماً ─────────────────────────────────────────
+ * ما يُراجَع بعد ساعةٍ من كتابته هو أيّامُ هذا الأسبوع. فطيُّها كان سيبدّل
+ * جداراً بضغطةٍ إضافيةٍ يوميّة — وهذا ليس تسهيلاً.
+ *
+ * ── والمجاميعُ تُحسب هنا لا بالقاعدة ────────────────────────────────────
+ * الأيامُ والسطورُ وصلت الشاشةَ كلُّها أصلاً (`CycleView` تجلبها للمؤشّرات).
+ * فجمعُها قسمةٌ على ما بيدنا، لا استعلامٌ جديد.
+ */
+function DayLog({ days, uses, placedOn, through }: { days: PoultryDaily[]; uses: PoultryUse[]; placedOn: string; through: string }) {
+  const { t } = useTranslation();
+
+  const weeks = useMemo(() => batchWeeks(days, uses, placedOn, through), [days, uses, placedOn, through]);
+
+  const newest = weeks[0]?.week ?? 0;
+  const [open, setOpen] = useState<Set<number>>(() => new Set([newest]));
+  // دفعةٌ تعبر أسبوعاً جديداً وهي مفتوحة: الأسبوعُ الجديد يُفتح ولا يبقى مطويّاً.
+  useEffect(() => { setOpen((s) => (s.has(newest) ? s : new Set([...s, newest]))); }, [newest]);
+
+  if (!weeks.length) return <Empty icon={PackageX} text={t("farm.noEntries")} />;
   return (
     <section className="space-y-2">
       <h2 className="text-sm font-bold text-ink-muted">{t("farm.log")}</h2>
-      {byDate.map(([date, e]) => (
-        <div key={date} className="rounded-xl border border-line bg-surface-1 p-3">
-          <p className="mb-1.5 font-display text-sm font-bold tabular-nums text-ink" dir="ltr">{date}</p>
-          {e.day && (e.day.dead > 0 || e.day.culled > 0) && (
-            <p className="text-2xs text-ink-muted">
-              <Skull size={11} className="inline" /> {t("farm.deadN", { n: formatNum(e.day.dead) })}
-              {e.day.culled > 0 && ` · ${t("farm.culledN", { n: formatNum(e.day.culled) })}`}
-            </p>
-          )}
-          {e.uses.map((u) => (
-            <p key={u.id} className="text-2xs text-ink-muted">
-              {u.kind === "feed" ? <Wheat size={11} className="inline" /> : u.kind === "med" ? <Syringe size={11} className="inline" /> : <Wrench size={11} className="inline" />}{" "}
-              {u.name} · {formatNum(u.qty)}{u.line_cost > 0 && ` · ${money(u.line_cost)}`}
-              {/* سطرُ الدواء يحمل سحبَه بالدفتر: «راجع الدفتر قبل الذبح» لا تصحّ
-                  إن كان الدفترُ لا يقولها. والمجهولُ يُكتب أحمرَ لا يُترك فارغاً. */}
-              {/* الفاصلُ خارجَ المقطع اللاتينيّ: `dir="ltr"` يجرّ النقطةَ لطرفه
-                  فتلتصق «د.ع» بـ«آمن» بلا مسافة — قِيس بلقطة شاشة.
-                  وما لم يُكتب رقمٌ لا يُكتب شيء: الفراغُ هنا فراغٌ لا تهمة. */}
-              {u.kind === "med" && u.withdrawal_days != null && <> · {u.withdrawal_days === 0
-                ? <span>{t("farm.wd.none")}</span>
-                : <span dir="ltr">{t("farm.wd.safeFromShort", { date: addDays(u.on_date, u.withdrawal_days) })}</span>}</>}
-            </p>
-          ))}
-          {e.day?.note && <p className="mt-1 text-2xs italic text-ink-subtle">{e.day.note}</p>}
-        </div>
-      ))}
+      {weeks.map((w) => {
+        const isOpen = open.has(w.week);
+        return (
+          <div key={w.week} className="overflow-hidden rounded-xl border border-line bg-surface-1">
+            <button type="button" onClick={() => { playTap(); setOpen((s) => { const n = new Set(s); if (n.has(w.week)) n.delete(w.week); else n.add(w.week); return n; }); }}
+              className="flex w-full items-center gap-2 p-3 text-start transition hover:bg-surface-2">
+              <ChevronDown size={15} className={cn("shrink-0 text-ink-subtle transition", isOpen && "rotate-180")} />
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm font-bold text-ink">
+                  {t("farm.weekN", { n: formatNum(w.week) })}
+                  <span className="ms-1.5 text-2xs font-semibold text-ink-subtle">{t("farm.dayRange", { a: formatNum(w.from), b: formatNum(w.to) })}</span>
+                </span>
+                {/* الملخّصُ هو الفائدة: ما كان أحدٌ يجمعه بعينه من عشرين سطراً. */}
+                <span className="block text-2xs text-ink-muted">
+                  {/* «٠» عن أسبوعٍ لم يُعدّ فيه يومٌ واحد تُقرأ «ما نفق شيء».
+                      فبلا عدٍّ «—»، وبعدٍّ ناقصٍ يُقال كم يوماً منه عُدّ. */}
+                  <Skull size={11} className="inline" />{" "}
+                  {w.daysEntered === 0 ? "—" : formatNum(w.dead + w.culled)}
+                  {w.daysEntered > 0 && w.daysEntered < w.daysElapsed && (
+                    <span className="text-warn-700 dark:text-warn-300"> ({t("farm.ofDays", { a: formatNum(w.daysEntered), b: formatNum(w.daysElapsed) })})</span>
+                  )}
+                  {/* بلا `Math.round`: مجموعُ المقرَّبات ≠ تقريبُ المجموع، فكان
+                      طيُّ ثلاثةِ أسابيعَ يعطي ٣٠٠ والترويسةُ ٣٠١ بلا تفسير.
+                      `formatDec` تُبقي الكسرَ حين يوجد وتخفيه حين لا يوجد. */}
+                  {w.feedKg > 0 && <> · <Wheat size={11} className="inline" /> {formatDec(w.feedKg)}</>}
+                  {w.weightKg != null && <> · <Scale size={11} className="inline" /> {formatDec(Math.round(w.weightKg * 100) / 100)}</>}
+                  {w.cost > 0 && <> · {money(w.cost)}</>}
+                </span>
+              </span>
+            </button>
+            {isOpen && (
+              <div className="space-y-2 border-t border-line p-3">
+                {w.rows.map((e) => (
+                  <div key={e.date}>
+                    <p className="mb-1 font-display text-2xs font-bold tabular-nums text-ink" dir="ltr">{e.date}</p>
+                    {e.day && (e.day.dead > 0 || e.day.culled > 0) && (
+                      <p className="text-2xs text-ink-muted">
+                        <Skull size={11} className="inline" /> {t("farm.deadN", { n: formatNum(e.day.dead) })}
+                        {e.day.culled > 0 && ` · ${t("farm.culledN", { n: formatNum(e.day.culled) })}`}
+                      </p>
+                    )}
+                    {e.day?.sample_weight_g != null && e.day.sample_weight_g > 0 && (
+                      <p className="text-2xs text-ink-muted">
+                        <Scale size={11} className="inline" />{" "}
+                        {t("farm.avgPreview", { n: formatDec(Math.round((e.day.sample_weight_g / (e.day.sample_size || 1) / 1000) * 100) / 100) })}
+                      </p>
+                    )}
+                    {e.uses.map((u) => (
+                      <p key={u.id} className="text-2xs text-ink-muted">
+                        {u.kind === "feed" ? <Wheat size={11} className="inline" /> : u.kind === "med" ? <Syringe size={11} className="inline" /> : <Wrench size={11} className="inline" />}{" "}
+                        {u.name} · {formatNum(u.qty)}{u.line_cost > 0 && ` · ${money(u.line_cost)}`}
+                        {/* الفاصلُ خارجَ المقطع اللاتينيّ: `dir="ltr"` يجرّ النقطةَ لطرفه
+                            فتلتصق «د.ع» بـ«آمن» بلا مسافة — قِيس بلقطة شاشة.
+                            وما لم يُكتب رقمٌ لا يُكتب شيء: الفراغُ هنا فراغٌ لا تهمة. */}
+                        {u.kind === "med" && u.withdrawal_days != null && <> · {u.withdrawal_days === 0
+                          ? <span>{t("farm.wd.none")}</span>
+                          : <span dir="ltr">{t("farm.wd.safeFromShort", { date: addDays(u.on_date, u.withdrawal_days) })}</span>}</>}
+                      </p>
+                    ))}
+                    {e.day?.note && <p className="mt-0.5 text-2xs italic text-ink-subtle">{e.day.note}</p>}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })}
     </section>
   );
 }
@@ -1078,7 +1232,7 @@ function ExportLedger({ farm, houses, cycles }: { farm: PoultryFarm; houses: Pou
         const label = houses.find((h) => h.id === c.house_id)?.label ?? "—";
         const batch = `${c.placed_on} · ${c.placed_count}`;
         const [days, uses] = await Promise.all([repo.listPoultryDaily(c.id), repo.listPoultryUse(c.id)]);
-        const dayNo = (d: string) => Math.round((new Date(d).getTime() - new Date(c.placed_on).getTime()) / 86400000);
+        const dayNo = (d: string) => dayDiff(c.placed_on, d);
         for (const d of days) {
           if (d.dead > 0) out.push([label, batch, d.on_date, String(dayNo(d.on_date)), t("farm.csv.dead"), "", String(d.dead), "", "", "", d.note ?? ""]);
           if (d.culled > 0) out.push([label, batch, d.on_date, String(dayNo(d.on_date)), t("farm.csv.culled"), "", String(d.culled), "", "", "", ""]);
