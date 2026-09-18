@@ -45,7 +45,7 @@ const built = await esbuild.build({
   entryPoints: ["src/lib/managerOverride.ts"], bundle: true, format: "esm", write: false,
   platform: "neutral", plugins: [stubs],
 });
-const { stockLockedFrom } = await import(
+const { stockLockedFrom, capLockedFrom } = await import(
   "data:text/javascript;base64," + Buffer.from(built.outputFiles[0].text).toString("base64")
 );
 
@@ -107,6 +107,72 @@ for (const [needle, why] of [
   ['{!locked && <button onClick={onRemove}', "سلّةُ حذف المنتج تحت البوّابة"],
   ['{!locked && <Button leftIcon={<Plus size={16} />} onClick={() => { playTap(); setAdding(true); }}>{t("pos.addCompany"', "زرُّ «أضف شركة» تحت البوّابة"],
 ]) check(why, inv.includes(needle));
+
+/* ── ٥) شاشاتُ المال — «الصلاحيةُ شرطٌ، وقفلُ الجهاز يغلبها» ─────────────*/
+// تبويبُ تقارير المبيعات كان ظاهراً **بلا شرطٍ أبداً**: موظّفُ الاستقبال يفتحه
+// بحسابه، والجهازُ المقفول يفتحه لأن القفلَ لا ينزّل الدور. فحصُ الثمانية هنا
+// يثبّت أن المسموحَ وحده يرى، وأن القفلَ يغلب صلاحيته.
+console.log("▸ القفلُ المركّب — صلاحية × جهاز مقفول × رفعٌ بالرمز");
+const mrows = [
+  // [مقفول, مرفوع, مسموح, متوقَّع]
+  [false, false, false, true,  "**الجذرُ الأوّل**: بلا صلاحيةٍ ⇒ مقفول ولو الجهازُ عاديّ"],
+  [false, false, true,  false, "مسموحٌ وجهازٌ عاديّ ⇒ يرى"],
+  [false, true,  false, true,  "رفعٌ بالرمز لا يمنح صلاحيةً غيرَ ممنوحة"],
+  [false, true,  true,  false, "مسموحٌ ومرفوع ⇒ يرى"],
+  [true,  false, false, true,  "مقفولٌ وبلا صلاحية ⇒ مقفول"],
+  [true,  false, true,  true,  "**الجذرُ الثاني**: مسموحٌ لكنّ الجهازَ مقفول ⇒ مقفول"],
+  [true,  true,  false, true,  "مقفولٌ ومرفوعٌ بلا صلاحية ⇒ يبقى مقفولاً"],
+  [true,  true,  true,  false, "مقفولٌ ومرفوعٌ ومسموح ⇒ يرى عشر دقائق"],
+];
+for (const [dev, elev, allow, want, why] of mrows) {
+  const got = capLockedFrom(dev, elev, allow);
+  check(why, got === want, `توقّعنا ${want} فجاء ${got}`);
+}
+// ثلاثٌ تفتح: المسموحُ على جهازٍ عاديّ (مرفوعاً أو لا)، والمسموحُ على مقفولٍ
+// رُفع بالرمز. وكلُّ ما عداها مقفول.
+check("ثلاثٌ من الثمانية تفتح لا أكثر",
+  mrows.filter(([d, e, a]) => !capLockedFrom(d, e, a)).length === 3);
+// ولا يُخلط بقفل المخزن: هذا بلا بابٍ اختياريّ («محظورة تماماً» بكلمة المالك).
+check("قفلُ المال أشدُّ من قفل المخزن بالحالة السادسة",
+  capLockedFrom(true, false, true) === true && stockLockedFrom(true, false, true) === false);
+
+/* ── ٦) المواضعُ الثلاثة تقرأ من الدالّة، ولا فرعَ يسقط على التقارير ─────*/
+console.log("▸ المبيعات — التبويبُ واللوحةُ وسطرُ الربح من حكمٍ واحد");
+const retail = fs.readFileSync("src/pages/RetailSales.tsx", "utf8");
+const panel  = fs.readFileSync("src/components/retail/ReportsPanel.tsx", "utf8");
+const invp   = fs.readFileSync("src/components/retail/InvoicesPanel.tsx", "utf8");
+for (const [src, why] of [
+  [retail, "شريطُ التبويبات يقرأ capLockedFrom"],
+  [panel,  "لوحةُ التقارير نفسُها تقرأها (طبقةٌ ثانية)"],
+  [invp,   "وسطرُ ربح الفاتورة كذلك"],
+]) check(why, /capLockedFrom\(ov\.deviceLocked, ov\.active,/.test(src));
+// والحذفُ فعلٌ لا عرض، ويتبع نفسَ الحكم: جهازٌ مقفولٌ لا يحذف فاتورة.
+check("وحذفُ الفاتورة يتبع نفسَ الحكم لا `can` وحدَها",
+  /const canDelete = !capLockedFrom\(ov\.deviceLocked, ov\.active, can\("deleteInvoices"\)\)/.test(invp));
+check("  وتصحيحُ الوصل يتبع الحذفَ لا يعيد الفحص",
+  /const canFixReceipt = canDelete &&/.test(invp));
+
+/* ── ٧) شاشةُ المخزن لا تُفتح بالرابط لمن لا يملك صلاحيتها ───────────────*/
+// الشريطُ كان يخفيها، والصفحةُ ما تفحص شيئاً — وبطاقةُ النواقص بالرئيسية
+// تنقل إليها بضغطةٍ للجميع. فتُرى رؤوسُ الأموال وأسعارُ الشراء **وأزرارُ
+// الحذف** بحساب موظّف استقبال.
+console.log("▸ المخزون — رابطٌ محميٌّ كالتقارير والرواتب");
+const dash = fs.readFileSync("src/pages/Dashboard.tsx", "utf8");
+check("الصفحةُ تفحص manageInventory وتردّ قفلاً",
+  /if \(!can\("manageInventory"\)\) \{/.test(inv));
+check("  والرسالةُ من القاموس لا نصّاً صلباً", /t\("pos\.noAccess"/.test(inv));
+check("وبطاقةُ النواقص بالرئيسية تتبع نفسَ الصلاحية",
+  /const canStock = can\("manageInventory"\)/.test(dash) && /\{canStock && <Card padded>/.test(dash));
+check("التبويبُ يختفي من الشريط لا يُعطَّل",
+  /\.\.\.\(reportsLocked \? \[\] : \[\{ id: "reports"/.test(retail));
+check("والمحتوى مشروطٌ صراحةً — لا فرعَ أخيرَ يسقط على التقارير",
+  /tab === "reports" && !reportsLocked \? \(/.test(retail) && !/\) : \(\s*<ReportsPanel \/>/.test(retail));
+check("وتبويبٌ عالقٌ يُعاد إلى البيع عند القفل",
+  /if \(tab === "reports" && reportsLocked\) setTab\("sell"\);/.test(retail));
+// الأهمُّ: لا طلبَ يُرسل وهي مقفولة — أرقامُ التقارير لا تصل السلك أصلاً.
+check("ولا تُنادى دوالُّ التقارير وهي مقفولة",
+  /if \(locked\) \{ setLoading\(false\); setFailed\(false\); return; \}/.test(panel));
+check("والقفلُ ضمنَ اعتماديّات أثر الجلب", /\}, \[periodStartMs, tick, locked\]\);/.test(panel));
 
 console.log(fails ? `\n✗ manager-mode-test: ${passes} نجحت، ${fails} فشلت` : `\n✓ manager-mode-test: ${passes} نجحت، 0 فشلت`);
 process.exit(fails ? 1 : 0);

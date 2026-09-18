@@ -36,9 +36,9 @@
 import { supabase } from "./supabase";
 
 /** الجداول التي معرّفُ صفّها يولَد بالجهاز — شرطُ الرفع المتسامح مع التكرار. */
-export type OutboxTable = "products" | "companies" | "company_sections" | "expenses";
-/** الدوالّ التي تعرف `client_ref` فتُعاد بأمان (0136). */
-export type OutboxRpcFn = "retail_return";
+export type OutboxTable = "products" | "companies" | "company_sections" | "expenses" | "poultry_daily";
+/** الدوالّ التي تعرف `client_ref` فتُعاد بأمان (0136، و`poultry_consume` بـ0193). */
+export type OutboxRpcFn = "retail_return" | "poultry_consume";
 
 type OutboxBase = {
   /** معرّفُ العملية بالطابور (وهو معرّفُ الصفّ نفسه بعمليات الإدراج). */
@@ -55,7 +55,17 @@ type OutboxBase = {
   who?: { user: string; clinic: string };
 };
 export type OutboxOp =
-  | (OutboxBase & { kind: "insert"; table: OutboxTable; row: Record<string, unknown> })
+  | (OutboxBase & {
+      kind: "insert"; table: OutboxTable; row: Record<string, unknown>;
+      /** مفتاحُ التصادم حين لا يكون `id`.
+       *
+       *  إدخالُ اليوم صفٌّ **مفتاحُه طبيعيّ** (الدفعة + التاريخ) لا معرّفٌ
+       *  مولودٌ بالجهاز: القاعدةُ تولّد `id` عند أوّل حفظ. فلو رُفع بـ`id`
+       *  مولودٍ هنا لاصطدم بالفهرس الفريد على (cycle_id,on_date) وانتهى
+       *  بالمعطّلات وهو سليم. فالمفتاحُ يُصرَّح به، والرفعُ **يدمج** لا
+       *  يتجاهل: قيمةُ الطابور هي ما كتبه الدكتور بالجملون. */
+      conflict?: string;
+    })
   | (OutboxBase & { kind: "rpc"; fn: OutboxRpcFn; args: Record<string, unknown> });
 
 const KEY = "vp_outbox_v1";
@@ -132,13 +142,36 @@ const sameWho = (a: OutboxOp["who"], b: { user: string; clinic: string } | null)
   !!a && !!b && a.user === b.user && a.clinic === b.clinic;
 
 /** خزّن إدراجاً فشل شبكياً. يُرجع `false` لو ما ثبت — فارمِ الخطأ الأصلي حينها. */
-export function outboxEnqueue(table: OutboxTable, row: Record<string, unknown> & { id: string }): boolean {
+export function outboxEnqueue(
+  table: OutboxTable,
+  row: Record<string, unknown> & { id?: string },
+  opts?: { id: string; conflict: string },
+): boolean {
+  /* بمفتاحٍ طبيعيٍّ يُفصل معرّفُ **العملية** عن حمولة الصفّ: كان يُؤخذ من
+   * `row.id`، فكان معرّفُ الطابور (`poultry_daily:<دفعة>:<تاريخ>`) يُرفع
+   * بعمود `id` ويرفضه بوستغريس — نصٌّ ليس uuid — فتنتهي عمليةٌ سليمةٌ
+   * بالمعطّلات. الصفُّ يُرفع كما هو، والقاعدةُ تولّد معرّفَه. */
+  const conflict = opts?.conflict;
+  const opId = opts?.id ?? (row.id as string);
   const ops = load();
-  if (ops.some((o) => o.id === row.id)) return true;
-  ops.push({ kind: "insert", id: row.id, table, row, queued_at: new Date().toISOString(), tries: 0, who: whoNow() ?? undefined });
+  /* بمفتاحٍ طبيعيٍّ **نستبدل** الموجود: الدكتور قد يصحّح رقمَ اليوم وهو بلا
+   * نت، فالمكتوبُ أخيراً هو الصحيح. وبـ`id` نُبقي الأوّلَ كما كان — هناك
+   * الثاني تكرارُ نفسِ الصفّ لا تصحيحُه. */
+  const at = ops.findIndex((o) => o.id === opId);
+  if (at >= 0 && !conflict) return true;
+  const op: OutboxOp = { kind: "insert", id: opId, table, row, conflict, queued_at: new Date().toISOString(), tries: 0, who: whoNow() ?? undefined };
+  if (at >= 0) ops[at] = op; else ops.push(op);
   const stored = save(ops);
   if (stored) schedule();
   return stored;
+}
+
+/** أسقط عمليةً من الطابور — يناديها من نجحت كتابتُه أونلاين على نفس المفتاح،
+ *  فلا تعود نسخةٌ قديمةٌ بعد دقائقَ لتدهس ما حُفظ بعدها. */
+export function outboxDrop(id: string): void {
+  const ops = load();
+  if (!ops.some((o) => o.id === id)) return;
+  save(ops.filter((o) => o.id !== id));
 }
 
 /** خزّن نداءَ دالّةٍ فشل شبكياً. المرجع شرطٌ لا نصيحة: بدونه تكون الإعادة
@@ -194,7 +227,12 @@ export async function flushOutbox(): Promise<{ sent: number; left: number; dead:
           if (r.error) throw new Error(r.error.message);
         } else {
           // upsert بتجاهل التكرار: لو الطلب الأصلي كان وصل فعلاً، لا ازدواج.
-          const r = await sb.from(op.table).upsert(op.row as never, { onConflict: "id", ignoreDuplicates: true });
+          /* بمفتاحٍ طبيعيٍّ ندمج (`ignoreDuplicates: false`): الصفُّ موجودٌ
+           * بالضرورة أحياناً — يومٌ أُدخل جزئياً ثم أُكمل بلا نت — وتجاهلُه
+           * يعني أنّ ما كتبه بالجملون لا يصل أبداً. وبـ`id` نتجاهل كما كان:
+           * هناك وجودُ الصفّ يعني أنّ الطلبَ الأوّل وصل فعلاً. */
+          const conflict = op.conflict ?? "id";
+          const r = await sb.from(op.table).upsert(op.row as never, { onConflict: conflict, ignoreDuplicates: conflict === "id" });
           if (r.error) throw new Error(r.error.message);
         }
         ops = ops.filter((o) => o.id !== op.id);

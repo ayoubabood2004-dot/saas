@@ -21,17 +21,22 @@ import { useTranslation } from "react-i18next";
 import {
   Bird, Plus, ArrowRight, Home, Layers, CalendarDays, Skull, Wheat,
   Syringe, Wrench, StickyNote, Loader2, PackageX, CheckCircle2, AlertTriangle, Boxes, Download,
+  ShieldAlert, ShieldCheck, Scale, Gauge, Trophy, Coins, ClipboardList,
 } from "lucide-react";
 import type { PoultryFarm, PoultryHouse, PoultryCycle, PoultryDaily, PoultryUse, PoultryCycleStats, PoultryUseKind, Product } from "@/types";
 import { repo } from "@/lib/repo";
 import { useAuth } from "@/contexts/AuthContext";
 import { usePermissions } from "@/hooks/usePermissions";
 import { cn, money, formatNum, formatDec } from "@/lib/utils";
+import { poultryKpi, poultryOutcome } from "@/lib/poultryKpi";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
 import { Button, useToast } from "@/components/ui";
 import { asciiFileName } from "@/lib/excelExport";
 
 const todayISO = () => new Date().toISOString().slice(0, 10);
+const addDays = (iso: string, n: number) => new Date(new Date(iso).getTime() + n * 86400000).toISOString().slice(0, 10);
+/** كم يوماً باقياً حتى `iso` — سالبٌ يعني أنه مضى. */
+const daysUntil = (iso: string) => Math.ceil((new Date(iso).getTime() - new Date(todayISO()).getTime()) / 86400000);
 
 /** عمرُ الدفعة باليوم — نفسُ تعريف الخادم: من يوم وضع الدجاج إلى الإغلاق أو اليوم. */
 const ageOf = (c: PoultryCycle): number => {
@@ -151,6 +156,7 @@ function FarmView({ farm, canWrite, onBack, onOpenCycle }: { farm: PoultryFarm; 
   const [cycles, setCycles] = useState<PoultryCycle[]>([]);
   const [busy, setBusy] = useState(true);
   const [adding, setAdding] = useState(false);
+  const [round, setRound] = useState(false);
 
   const load = useCallback(async () => {
     setBusy(true);
@@ -169,11 +175,27 @@ function FarmView({ farm, canWrite, onBack, onOpenCycle }: { farm: PoultryFarm; 
     return m;
   }, [cycles]);
 
+  const actives = useMemo(() => houses
+    .map((h) => ({ house: h, cycle: activeOf.get(h.id) }))
+    .filter((x): x is { house: PoultryHouse; cycle: PoultryCycle } => !!x.cycle), [houses, activeOf]);
+
+  if (round) {
+    return <DailyRound farm={farm} rows={actives} onBack={() => { setRound(false); void load(); }} />;
+  }
+
   return (
     <div className="mx-auto max-w-3xl space-y-4 p-4">
       <BackBar title={farm.name} onBack={onBack} />
       {busy ? <div className="grid py-12 place-items-center"><Loader2 className="animate-spin text-brand-500" size={22} /></div> : (
         <>
+          {/* **جولةُ اليوم أوّلاً.** المقيس: إدخالُ يومِ قاعةٍ واحدةٍ أربعُ
+              ضغطاتٍ قبل أوّل رقم، وحقلٌ بستّ قاعاتٍ أربعٌ وعشرون ضغطةً كلَّ
+              يوم. وهذا الزرُّ هو سببُ فتحِه التطبيقَ أصلاً، فيسبق كلَّ شيء. */}
+          {canWrite && actives.length > 0 && (
+            <Button className="w-full" leftIcon={<ClipboardList size={17} />} onClick={() => { playTap(); setRound(true); }}>
+              {t("farm.round.open", { n: formatNum(actives.length) })}
+            </Button>
+          )}
           {houses.length === 0 ? <Empty icon={Home} text={t("farm.noHouses")} /> : (
             <ul className="space-y-2">
               {houses.map((h) => {
@@ -385,7 +407,10 @@ function CycleView({ farm, cycle, canWrite, onBack }: { farm: PoultryFarm; cycle
 
   const live = cur.status === "active";
   const mortalityPct = stats && stats.placed_count > 0 ? ((stats.dead + stats.culled) / stats.placed_count) * 100 : 0;
-  const totalCost = (stats?.feed_cost ?? 0) + (stats?.med_cost ?? 0) + (stats?.other_cost ?? 0) + (stats?.chick_cost ?? 0);
+  /* المؤشّراتُ من وحدةٍ واحدة يمرّ منها النصفان — لا معادلةَ بالشاشة. */
+  const kpi = useMemo(() => poultryKpi(stats, days), [stats, days]);
+  const totalCost = kpi.totalCost;
+  const outcome = useMemo(() => poultryOutcome(cur, totalCost), [cur, totalCost]);
 
   return (
     <div className="mx-auto max-w-3xl space-y-4 p-4">
@@ -400,18 +425,42 @@ function CycleView({ farm, cycle, canWrite, onBack }: { farm: PoultryFarm; cycle
             هو بالضبط صنفُ العطب الذي يُصدَّق. */}
         <Stat icon={Skull} label={t("farm.mortality")} value={`${formatDec(Math.round(mortalityPct * 10) / 10)}%`} tone={mortalityPct >= 5 ? "warn" : undefined} />
         <Stat icon={Wheat} label={t("farm.feedKg")} value={formatNum(Math.round(stats?.feed_kg ?? 0))} />
+        {/* «—» لا صفر: رقمٌ لم يُقَس ليس رقماً صغيراً، وصفرٌ بمعدّل التحويل
+            يُقرأ «علفٌ ممتاز» وهو لم يوزن طيراً بعد. */}
+        <Stat icon={Scale} label={t("farm.avgWeight")} value={kpi.avgWeightKg == null ? "—" : formatDec(kpi.avgWeightKg)} />
+        <Stat icon={Gauge} label={t("farm.fcr")} value={kpi.fcr == null ? "—" : formatDec(kpi.fcr)} />
       </div>
+      {kpi.avgWeightKg == null && live && (
+        <p className="text-center text-2xs text-ink-subtle">{t("farm.weighHint")}</p>
+      )}
+      <WithdrawalBanner stats={stats} />
       {totalCost > 0 && (
-        <div className="rounded-xl border border-line bg-surface-2/50 p-3 text-2xs">
-          <span className="font-semibold text-ink-muted">{t("farm.costSoFar")}</span>{" "}
-          <span className="font-display font-bold tabular-nums text-ink">{money(totalCost)}</span>
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-xl border border-line bg-surface-2/50 p-3 text-2xs">
+          <span>
+            <span className="font-semibold text-ink-muted">{t("farm.costSoFar")}</span>{" "}
+            <span className="font-display font-bold tabular-nums text-ink">{money(totalCost)}</span>
+          </span>
+          {/* كلفةُ الكيلو الحيّ: الرقمُ الذي يُقارَن بسعر السوق مباشرةً — وهو
+              سؤالُ صاحب الحقل الحقيقيّ، لا مجموعُ ما صُرف. */}
+          {kpi.costPerLiveKg != null && (
+            <span>
+              <span className="font-semibold text-ink-muted">{t("farm.costPerKg")}</span>{" "}
+              <span className="font-display font-bold tabular-nums text-ink">{money(kpi.costPerLiveKg)}</span>
+            </span>
+          )}
+          {kpi.epef != null && (
+            <span>
+              <span className="font-semibold text-ink-muted">{t("farm.epef")}</span>{" "}
+              <span className="font-display font-bold tabular-nums text-ink">{formatNum(kpi.epef)}</span>
+            </span>
+          )}
         </div>
       )}
 
       {busy ? <div className="grid py-10 place-items-center"><Loader2 className="animate-spin text-brand-500" size={22} /></div> : (
         <>
           {live && canWrite && <DayEntry cycleId={cur.id} days={days} stock={stock} onSaved={load} />}
-          {!live && <p className="rounded-xl border border-line bg-surface-2/50 p-3 text-center text-2xs text-ink-muted">{t("farm.batchClosed")}</p>}
+          {!live && <Outcome cycle={cur} outcome={outcome} />}
 
           <DayLog days={days} uses={uses} />
 
@@ -433,13 +482,22 @@ function DayEntry({ cycleId, days, stock, onSaved }: { cycleId: string; days: Po
   const [dead, setDead] = useState("");
   const [culled, setCulled] = useState("");
   const [note, setNote] = useState("");
+  /* الوزنُ **اختياريّ** كبقية الخانات: يومٌ يمرّ بلا ميزانٍ أمرٌ طبيعيّ، وإجبارُه
+     يجعله يكتب رقماً من رأسه. لكنه أهمُّ رقمٍ يُدخَل أصلاً — بلا وزنٍ لا معدّلَ
+     تحويلٍ ولا كلفةَ كيلو، وهما سببُ فتحِه الشاشة. فيُعرض أثرُه فورَ الكتابة. */
+  const [wg, setWg] = useState("");
+  const [wn, setWn] = useState("");
   const [busy, setBusy] = useState(false);
+  const wgNum = Number(wg), wnNum = Math.max(1, Math.round(Number(wn) || 1));
+  const avgKg = wg.trim() !== "" && Number.isFinite(wgNum) && wgNum > 0 ? wgNum / wnNum / 1000 : null;
 
   // يومٌ سبق إدخالُه: تُعبّأ خاناتُه ليُصحَّح لا ليُكرَّر (القاعدةُ ترفض التكرار).
   useEffect(() => {
     setDead(existing ? String(existing.dead) : "");
     setCulled(existing ? String(existing.culled) : "");
     setNote(existing?.note ?? "");
+    setWg(existing?.sample_weight_g != null ? String(existing.sample_weight_g) : "");
+    setWn(existing?.sample_size != null ? String(existing.sample_size) : "");
   }, [existing]);
 
   const save = async () => {
@@ -449,6 +507,9 @@ function DayEntry({ cycleId, days, stock, onSaved }: { cycleId: string; days: Po
         cycle_id: cycleId, on_date: date,
         dead: Math.max(0, Math.round(Number(dead) || 0)),
         culled: Math.max(0, Math.round(Number(culled) || 0)),
+        // فارغٌ يبقى فارغاً: صفرٌ هنا يعني «وزنتُ فطلع صفر» ويُفسد المتوسّط.
+        sample_weight_g: avgKg === null ? null : wgNum,
+        sample_size: avgKg === null ? null : wnNum,
         note: note.trim() || null,
       });
       playSuccess(); toast.success(t("farm.daySaved")); onSaved();
@@ -472,6 +533,21 @@ function DayEntry({ cycleId, days, stock, onSaved }: { cycleId: string; days: Po
           <input className="input" inputMode="numeric" value={culled} onChange={(e) => setCulled(e.target.value)} placeholder="0" />
         </div>
       </div>
+      <div className="grid grid-cols-[1fr,auto] gap-2">
+        <div>
+          <label className="label">{t("farm.sampleWeight")}</label>
+          <input className="input" inputMode="numeric" value={wg} onChange={(e) => setWg(e.target.value)} placeholder="0" />
+        </div>
+        <div className="w-24">
+          <label className="label">{t("farm.sampleSize")}</label>
+          <input className="input" inputMode="numeric" value={wn} onChange={(e) => setWn(e.target.value)} placeholder="1" />
+        </div>
+      </div>
+      {avgKg !== null && (
+        <p className="-mt-1 text-2xs font-semibold text-brand-700 dark:text-brand-300">
+          {t("farm.avgPreview", { n: formatDec(Math.round(avgKg * 100) / 100) })}
+        </p>
+      )}
       <div>
         <label className="label">{t("farm.note")}</label>
         <textarea className="input min-h-16" value={note} onChange={(e) => setNote(e.target.value)} placeholder={t("farm.notePlaceholder")} />
@@ -492,7 +568,14 @@ function ConsumeRow({ cycleId, date, stock, onDone }: { cycleId: string; date: s
   const [name, setName] = useState("");
   const [qty, setQty] = useState("");
   const [busy, setBusy] = useState(false);
+  /* فترةُ السحب: خانةٌ **اختيارية** يكتبها من قرأ العلبة. لا سؤالَ إلزاميّ
+     ولا رقاقةُ «ما مكتوبة»: سؤالٌ يتكرّر مع كلّ سطرِ دواءٍ احتكاكٌ يوميّ،
+     والفراغُ يعني ببساطة «ما انكتبت». */
+  const [wd, setWd] = useState("");
   const needsProduct = kind === "feed" || kind === "med";
+  const isMed = kind === "med";
+  const wdNum = wd.trim() === "" ? null : Math.round(Number(wd));
+  const wdValid = wdNum !== null && Number.isFinite(wdNum) && wdNum >= 0 && wdNum <= 120;
 
   const submit = async () => {
     const n = Number(qty);
@@ -504,12 +587,16 @@ function ConsumeRow({ cycleId, date, stock, onDone }: { cycleId: string; date: s
       const r = await repo.poultryConsume({
         cycle_id: cycleId, kind, product_id: needsProduct ? productId : null,
         name: needsProduct ? null : name.trim(), qty: n, on_date: date,
+        withdrawal_days: isMed && wdValid ? wdNum : null,
       });
       // النقصُ يُقال بصوت: «سجّلنا ٨٠٠ والمخزنُ كان ٥٠٠» — لا يُطمس.
       if (r.shortfall && r.shortfall > 0) {
         toast.error(t("farm.shortTitle"), t("farm.shortBody", { n: formatNum(Math.round(r.shortfall)) }));
       } else { playSuccess(); }
-      setQty(""); setName(""); onDone();
+      // تاريخُ الأمان يُقال **لحظةَ الصرف**، لا بعد إعادة تحميلٍ قد لا تحصل.
+      // ولا رسالةَ عتابٍ حين لا يُكتب: ما كُتب يُعرض، وما لم يُكتب يُترك.
+      if (r.safe_from) toast.success(t("farm.wd.recorded"), t("farm.wd.safeFrom", { date: r.safe_from }));
+      setQty(""); setName(""); setWd(""); onDone();
     } catch (e) {
       playWarning();
       const m = e instanceof Error ? e.message : "";
@@ -523,7 +610,7 @@ function ConsumeRow({ cycleId, date, stock, onDone }: { cycleId: string; date: s
         {(["feed", "med", "service"] as const).map((k) => {
           const I = k === "feed" ? Wheat : k === "med" ? Syringe : Wrench;
           return (
-            <button key={k} type="button" onClick={() => { setKind(k); setProductId(""); }}
+            <button key={k} type="button" onClick={() => { setKind(k); setProductId(""); setWd(""); }}
               className={cn("flex flex-1 items-center justify-center gap-1 rounded-lg px-2 py-1.5 text-2xs font-bold transition",
                 kind === k ? "bg-brand-600 text-white" : "bg-surface-2 text-ink-muted")}>
               <I size={13} /> {t(`farm.use.${k}`)}
@@ -538,6 +625,18 @@ function ConsumeRow({ cycleId, date, stock, onDone }: { cycleId: string; date: s
         </select>
       ) : (
         <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder={t("farm.servicePlaceholder")} />
+      )}
+      {isMed && (
+        <div className="space-y-1.5 rounded-lg border border-warn-200 bg-warn-50/60 p-2 dark:border-warn-500/30 dark:bg-warn-500/10">
+          <label className="block text-2xs font-bold text-warn-800 dark:text-warn-200">{t("farm.wd.label")}</label>
+          <input className="input" inputMode="numeric" value={wd}
+            onChange={(e) => setWd(e.target.value)} placeholder={t("farm.wd.placeholder")} />
+          {/* الأثرُ يُرى قبل الحفظ: «٧ أيام» رقمٌ مجرّد، و«آمن من ٢٩ أيلول» قرار. */}
+          <p className="text-2xs text-warn-800/80 dark:text-warn-200/80">
+            {wdValid ? (wdNum === 0 ? t("farm.wd.none") : t("farm.wd.preview", { date: addDays(date, wdNum as number) }))
+              : t("farm.wd.fromBox")}
+          </p>
+        </div>
       )}
       <div className="flex gap-2">
         <input className="input flex-1" inputMode="decimal" value={qty} onChange={(e) => setQty(e.target.value)} placeholder={kind === "feed" ? t("farm.qtyKg") : t("farm.qty")} />
@@ -578,6 +677,14 @@ function DayLog({ days, uses }: { days: PoultryDaily[]; uses: PoultryUse[] }) {
             <p key={u.id} className="text-2xs text-ink-muted">
               {u.kind === "feed" ? <Wheat size={11} className="inline" /> : u.kind === "med" ? <Syringe size={11} className="inline" /> : <Wrench size={11} className="inline" />}{" "}
               {u.name} · {formatNum(u.qty)}{u.line_cost > 0 && ` · ${money(u.line_cost)}`}
+              {/* سطرُ الدواء يحمل سحبَه بالدفتر: «راجع الدفتر قبل الذبح» لا تصحّ
+                  إن كان الدفترُ لا يقولها. والمجهولُ يُكتب أحمرَ لا يُترك فارغاً. */}
+              {/* الفاصلُ خارجَ المقطع اللاتينيّ: `dir="ltr"` يجرّ النقطةَ لطرفه
+                  فتلتصق «د.ع» بـ«آمن» بلا مسافة — قِيس بلقطة شاشة.
+                  وما لم يُكتب رقمٌ لا يُكتب شيء: الفراغُ هنا فراغٌ لا تهمة. */}
+              {u.kind === "med" && u.withdrawal_days != null && <> · {u.withdrawal_days === 0
+                ? <span>{t("farm.wd.none")}</span>
+                : <span dir="ltr">{t("farm.wd.safeFromShort", { date: addDays(u.on_date, u.withdrawal_days) })}</span>}</>}
             </p>
           ))}
           {e.day?.note && <p className="mt-1 text-2xs italic text-ink-subtle">{e.day.note}</p>}
@@ -588,6 +695,13 @@ function DayLog({ days, uses }: { days: PoultryDaily[]; uses: PoultryUse[] }) {
 }
 
 /* ── إغلاقُ الدفعة — بلا تاريخٍ لا حصيلة ───────────────────────────────── */
+/* ── إغلاقُ الدفعة ───────────────────────────────────────────────────────
+ *
+ * **بلا أيّ منع** — بكلمة المالك (١٨ أيلول): «لا تسوّي منع على الإغلاق بالذبح
+ * أو غيرها؛ الحقلُ يعرف بروتوكولاته». كان هنا تأكيدٌ مكتوبٌ يُطلب حين تُغلق
+ * الدفعةُ قبل تاريخ الأمان، فرُفع. نحن **دفترٌ يَذكر** لا جهةٌ تُجيز: النظامُ
+ * يعرض ما يعرفه، والقرارُ لصاحب الحقل.
+ */
 function CloseCycle({ cycleId, onClosed }: { cycleId: string; onClosed: (c: PoultryCycle) => void }) {
   const { t } = useTranslation();
   const toast = useToast();
@@ -622,6 +736,215 @@ function CloseCycle({ cycleId, onClosed }: { cycleId: string; onClosed: (c: Poul
         <Button className="flex-1" onClick={submit} disabled={busy}>{t("farm.closeBatch")}</Button>
         <Button variant="ghost" onClick={() => setOpen(false)}>{t("farm.cancel")}</Button>
       </div>
+    </div>
+  );
+}
+
+/* ── جولةُ اليوم — كلُّ القاعات بشاشةٍ واحدة ────────────────────────────
+ *
+ * ── المقيس، وهو سببُ وجودها ─────────────────────────────────────────────
+ * إدخالُ يومِ قاعةٍ واحدةٍ كان: حقول ⇐ حقل ⇐ قاعة ⇐ دفعة ⇐ اكتب = أربعُ
+ * ضغطاتٍ **قبل أوّل رقم**. وحقلٌ بستّ قاعاتٍ أربعٌ وعشرون ضغطةً كلَّ يوم،
+ * ومن يدفع هذا الثمنَ يومياً يتوقّف بالأسبوع الثاني — ودفترٌ ينقطع أسوأُ من
+ * دفترٍ لم يُفتح: مؤشّراتُه تُحسب على علفٍ نصفِ مسجَّل فتكذب بثقة.
+ *
+ * ── وما تجمعه هذه الشاشة، ولماذا هذا بالضبط ────────────────────────────
+ * جولةُ الصباح ثلاثةُ أرقام: كم نفق، كم استُبعد، وكم علفاً نزل. ووزنُ العيّنة
+ * **ليس هنا** — يُوزن أسبوعياً لا يومياً، ووضعُه بالجولة يجعل خانةً تبقى
+ * فارغةً ستّةَ أيامٍ من سبعة فتُقرأ إهمالاً. مكانُه شاشةُ الدفعة.
+ *
+ * ── والعلفُ صنفٌ واحدٌ للجولة كلِّها ────────────────────────────────────
+ * ليس تبسيطاً: الحقلُ يفتح كيسَ علفٍ واحدٍ ويوزّعه على الجملونات. واختيارُ
+ * صنفٍ لكلّ سطرٍ كان يعني ستَّ قوائمَ منسدلة بشاشةِ تلفونٍ واحدة. ومن عنده
+ * أصنافٌ مختلفةٌ لقاعاتٍ مختلفة يدخل الدفعةَ نفسَها — الطريقُ القديم باقٍ.
+ *
+ * ── والحفظُ سطراً سطراً، والفشلُ يُسمّى ────────────────────────────────
+ * ستُّ قاعاتٍ بمعاملةٍ واحدةٍ تعني أنّ فشلَ الأخيرة يمحو الخمسَ قبلها. فكلُّ
+ * سطرٍ يُحفظ وحدَه، والنتيجةُ تُقال بالعدد: «انحفظت ٥ من ٦ — راجع جملون ٣».
+ * لا «تمّ» عن نصفِ عمل.
+ */
+function DailyRound({ farm, rows, onBack }: {
+  farm: PoultryFarm; rows: { house: PoultryHouse; cycle: PoultryCycle }[]; onBack: () => void;
+}) {
+  const { t } = useTranslation();
+  const toast = useToast();
+  const [date, setDate] = useState(todayISO());
+  const [stock, setStock] = useState<Product[]>([]);
+  const [feedId, setFeedId] = useState("");
+  const [vals, setVals] = useState<Record<string, { dead: string; culled: string; feed: string }>>({});
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+
+  const set = (id: string, k: "dead" | "culled" | "feed", v: string) =>
+    setVals((s) => ({ ...s, [id]: { ...(s[id] ?? { dead: "", culled: "", feed: "" }), [k]: v } }));
+
+  /* يومٌ سبق إدخالُه تُعبّأ خاناتُه: الجولةُ تُفتح مرّتين بنفس اليوم أحياناً
+     (نسي قاعةً فرجع)، وشاشةٌ فارغةٌ حينها تغري بإعادة كتابة ما كُتب. */
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [items, ...days] = await Promise.all([
+        repo.listFarmProducts(farm.id),
+        ...rows.map((r) => repo.listPoultryDaily(r.cycle.id)),
+      ]);
+      setStock(items ?? []);
+      const next: Record<string, { dead: string; culled: string; feed: string }> = {};
+      rows.forEach((r, i) => {
+        const d = (days[i] as PoultryDaily[] | undefined)?.find((x) => x.on_date === date);
+        next[r.cycle.id] = { dead: d ? String(d.dead) : "", culled: d ? String(d.culled) : "", feed: "" };
+      });
+      setVals(next);
+    } catch (e) { toast.error(t("farm.loadFailed"), e instanceof Error ? e.message : undefined); }
+    finally { setLoading(false); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [farm.id, date, t, toast]);
+  useEffect(() => { void load(); }, [load]);
+
+  const touched = (v?: { dead: string; culled: string; feed: string }) =>
+    !!v && (v.dead.trim() !== "" || v.culled.trim() !== "" || v.feed.trim() !== "");
+
+  const saveAll = async () => {
+    const todo = rows.filter((r) => touched(vals[r.cycle.id]));
+    if (!todo.length) { playWarning(); toast.error(t("farm.round.nothing")); return; }
+    setBusy(true);
+    let ok = 0;
+    const failed: string[] = [];
+    for (const r of todo) {
+      const v = vals[r.cycle.id];
+      try {
+        await repo.savePoultryDaily({
+          cycle_id: r.cycle.id, on_date: date,
+          dead: Math.max(0, Math.round(Number(v.dead) || 0)),
+          culled: Math.max(0, Math.round(Number(v.culled) || 0)),
+        } as Parameters<typeof repo.savePoultryDaily>[0]);
+        const kg = Number(v.feed);
+        if (feedId && Number.isFinite(kg) && kg > 0) {
+          await repo.poultryConsume({ cycle_id: r.cycle.id, kind: "feed", product_id: feedId, qty: kg, on_date: date });
+        }
+        ok++;
+      } catch { failed.push(r.house.label); }
+    }
+    setBusy(false);
+    if (failed.length) {
+      playWarning();
+      toast.error(t("farm.round.partial", { ok: formatNum(ok), all: formatNum(todo.length) }), failed.join("، "));
+    } else { playSuccess(); toast.success(t("farm.round.saved", { n: formatNum(ok) })); onBack(); }
+  };
+
+  return (
+    <div className="mx-auto max-w-3xl space-y-3 p-4">
+      <BackBar title={t("farm.round.title")} onBack={onBack} />
+      <input type="date" className="input" value={date} max={todayISO()} onChange={(e) => setDate(e.target.value)} />
+
+      {stock.length > 0 && (
+        <select className="input" value={feedId} onChange={(e) => setFeedId(e.target.value)}>
+          <option value="">{t("farm.round.pickFeed")}</option>
+          {stock.map((p) => <option key={p.id} value={p.id}>{p.name} — {formatNum(p.stock ?? 0)}</option>)}
+        </select>
+      )}
+
+      {loading ? <div className="grid py-10 place-items-center"><Loader2 className="animate-spin text-brand-500" size={22} /></div> : (
+        <ul className="space-y-2">
+          {rows.map(({ house, cycle }) => {
+            const v = vals[cycle.id] ?? { dead: "", culled: "", feed: "" };
+            return (
+              <li key={cycle.id} className="rounded-2xl border border-line bg-surface-1 p-3">
+                <p className="mb-2 flex items-baseline gap-2">
+                  <span className="truncate font-bold text-ink">{house.label}</span>
+                  <span className="text-2xs text-ink-subtle">{t("farm.ageDays", { n: formatNum(ageOf(cycle)) })}</span>
+                </p>
+                <div className="grid grid-cols-3 gap-2">
+                  <div>
+                    <label className="label">{t("farm.dead")}</label>
+                    <input className="input" inputMode="numeric" value={v.dead} placeholder="0"
+                      onChange={(e) => set(cycle.id, "dead", e.target.value)} />
+                  </div>
+                  <div>
+                    <label className="label">{t("farm.culled")}</label>
+                    <input className="input" inputMode="numeric" value={v.culled} placeholder="0"
+                      onChange={(e) => set(cycle.id, "culled", e.target.value)} />
+                  </div>
+                  <div>
+                    <label className="label">{t("farm.qtyKg")}</label>
+                    {/* بلا صنفٍ مختارٍ لا خانةَ علف: خانةٌ تقبل رقماً ثم تُهمله
+                        بصمتٍ أسوأُ من خانةٍ مقفلة. */}
+                    <input className="input" inputMode="decimal" value={v.feed} placeholder={feedId ? "0" : "—"}
+                      disabled={!feedId} onChange={(e) => set(cycle.id, "feed", e.target.value)} />
+                  </div>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+
+      <Button className="w-full" onClick={saveAll} disabled={busy || loading}>{t("farm.round.save")}</Button>
+      {stock.length === 0 && <p className="text-center text-2xs text-ink-subtle">{t("farm.round.noFeed")}</p>}
+    </div>
+  );
+}
+
+/* ── حصيلةُ الدفعة — الجوابُ الذي يُغلق الدفتر ──────────────────────────
+ *
+ * كانت الدفعةُ المغلقة تقول «الدفعةُ مغلقة» ولا شيءَ غير ذلك: نجمع منه العددَ
+ * المباعَ والوزنَ والمبلغ عند الإغلاق ثم **لا نرجّع له الجواب**. وهو الغايةُ
+ * من الدفتر كلِّه: شكد كلّفني الكيلو، وشكد طلع بالآخر.
+ *
+ * وما لم يُدخَل يبقى غائباً: من أغلق بلا أرقامِ بيعٍ يرى الكلفةَ وحدَها —
+ * لا ربحاً صفرياً مُدّعىً.
+ */
+function Outcome({ cycle, outcome }: { cycle: PoultryCycle; outcome: ReturnType<typeof poultryOutcome> }) {
+  const { t } = useTranslation();
+  const win = (outcome.profit ?? 0) >= 0;
+  return (
+    <section className="space-y-2 rounded-2xl border border-line bg-surface-1 p-4">
+      <h2 className="flex items-center gap-2 text-sm font-bold text-ink"><Trophy size={16} /> {t("farm.outcome")}</h2>
+      {/* التاريخُ بمقطعٍ لاتينيّ خاصٍّ به: مُدرَجاً بنصٍّ عربيٍّ كان يُقلب
+          بصرياً (١٨-٠٩-٢٠٢٦) — قِيس بلقطة شاشة. */}
+      <p className="text-2xs text-ink-subtle">{t("farm.closedOn")} <span dir="ltr">{cycle.closed_on}</span></p>
+      <div className="grid grid-cols-2 gap-2">
+        {cycle.sold_count != null && <Stat icon={Bird} label={t("farm.soldCount")} value={formatNum(cycle.sold_count)} />}
+        {outcome.soldWeightKg != null && <Stat icon={Scale} label={t("farm.soldKg")} value={formatNum(Math.round(outcome.soldWeightKg))} />}
+        {outcome.costPerSoldKg != null && <Stat icon={Coins} label={t("farm.costPerSoldKg")} value={money(outcome.costPerSoldKg)} />}
+        {outcome.saleTotal != null && <Stat icon={Coins} label={t("farm.saleTotal")} value={money(outcome.saleTotal)} />}
+      </div>
+      {outcome.profit != null && (
+        <p className={cn("rounded-xl p-3 text-center text-sm font-bold",
+          win ? "bg-success-50 text-success-800 dark:bg-success-500/10 dark:text-success-200"
+            : "bg-danger-50 text-danger-800 dark:bg-danger-500/10 dark:text-danger-200")}>
+          {win ? t("farm.profit") : t("farm.loss")}{" "}
+          <span className="font-display tabular-nums">{money(Math.abs(outcome.profit))}</span>
+          {outcome.marginPct != null && <span className="ms-1 text-2xs">({formatDec(Math.abs(outcome.marginPct))}%)</span>}
+        </p>
+      )}
+    </section>
+  );
+}
+
+/* ── شارةُ فترة السحب — **تذكيرٌ لا إنذار** ──────────────────────────────
+ *
+ * كانت ثلاثَ حالاتٍ إحداها حمراءُ تصرخ «فترةُ سحبٍ مجهولة» كلّما نقص رقمٌ.
+ * وبكلمة المالك (١٨ أيلول) نحن لسنا جهةَ رقابة: «الحقلُ يعرف بروتوكولاته».
+ * فما نعرفه يُعرض، وما لا نعرفه **يُترك بلا عتاب** — شاشةٌ تلوم كلَّ يومٍ
+ * تُغلَق، ودفترٌ هادئ يُقرأ.
+ *
+ * فحالتان: «باقي كذا يوم» بلونِ تنبيهٍ ما دام التاريخُ بالمستقبل، ثم «انتهت»
+ * بالأخضر. وبلا رقمٍ مكتوبٍ أصلاً: لا شارة.
+ */
+function WithdrawalBanner({ stats }: { stats: PoultryCycleStats | null }) {
+  const { t } = useTranslation();
+  const safe = stats?.safe_from ?? null;
+  if (!safe) return null;
+  const left = daysUntil(safe);
+  const pending = left > 0;
+  const Icon = pending ? ShieldAlert : ShieldCheck;
+  return (
+    <div className={cn("flex items-start gap-2 rounded-xl border p-3 text-2xs font-semibold",
+      pending
+        ? "border-warn-200 bg-warn-50 text-warn-800 dark:border-warn-500/30 dark:bg-warn-500/10 dark:text-warn-200"
+        : "border-success-200 bg-success-50 text-success-800 dark:border-success-500/30 dark:bg-success-500/10 dark:text-success-200")}>
+      <Icon size={16} className="mt-px shrink-0" />
+      <span>{pending ? t("farm.wd.pendingBanner", { date: safe, n: formatNum(left) }) : t("farm.wd.doneBanner", { date: safe })}</span>
     </div>
   );
 }
@@ -744,7 +1067,8 @@ function ExportLedger({ farm, houses, cycles }: { farm: PoultryFarm; houses: Pou
     setBusy(true);
     try {
       const head = [t("farm.csv.house"), t("farm.csv.batch"), t("farm.csv.date"), t("farm.csv.day"),
-        t("farm.csv.kind"), t("farm.csv.item"), t("farm.csv.qty"), t("farm.csv.cost"), t("farm.csv.note")];
+        t("farm.csv.kind"), t("farm.csv.item"), t("farm.csv.qty"), t("farm.csv.cost"),
+        t("farm.csv.withdrawal"), t("farm.csv.safeFrom"), t("farm.csv.note")];
       /* اسمُ الحقل صفَّ عنوانٍ داخل الملف لا باسمه: `asciiFileName` يُسقط
          العربيَّ من الاسم عمداً، فلو لم يُكتب هنا لخرج جردُ كلِّ حقلٍ بنفس
          الاسم — وملفّان بنفس الاسم بمجلّد التنزيلات يصيران «(1)» ولا يُعرفان. */
@@ -756,12 +1080,14 @@ function ExportLedger({ farm, houses, cycles }: { farm: PoultryFarm; houses: Pou
         const [days, uses] = await Promise.all([repo.listPoultryDaily(c.id), repo.listPoultryUse(c.id)]);
         const dayNo = (d: string) => Math.round((new Date(d).getTime() - new Date(c.placed_on).getTime()) / 86400000);
         for (const d of days) {
-          if (d.dead > 0) out.push([label, batch, d.on_date, String(dayNo(d.on_date)), t("farm.csv.dead"), "", String(d.dead), "", d.note ?? ""]);
-          if (d.culled > 0) out.push([label, batch, d.on_date, String(dayNo(d.on_date)), t("farm.csv.culled"), "", String(d.culled), "", ""]);
-          if (d.dead === 0 && d.culled === 0 && d.note) out.push([label, batch, d.on_date, String(dayNo(d.on_date)), t("farm.csv.noteOnly"), "", "", "", d.note]);
+          if (d.dead > 0) out.push([label, batch, d.on_date, String(dayNo(d.on_date)), t("farm.csv.dead"), "", String(d.dead), "", "", "", d.note ?? ""]);
+          if (d.culled > 0) out.push([label, batch, d.on_date, String(dayNo(d.on_date)), t("farm.csv.culled"), "", String(d.culled), "", "", "", ""]);
+          if (d.dead === 0 && d.culled === 0 && d.note) out.push([label, batch, d.on_date, String(dayNo(d.on_date)), t("farm.csv.noteOnly"), "", "", "", "", "", d.note]);
         }
         for (const u of uses) {
-          out.push([label, batch, u.on_date, String(dayNo(u.on_date)), t(`farm.use.${u.kind}`), u.name, String(u.qty), String(Math.round(u.line_cost)), u.note ?? ""]);
+          const wd = u.kind === "med" && u.withdrawal_days != null ? String(u.withdrawal_days) : "";
+          const sf = u.kind === "med" && u.withdrawal_days != null ? addDays(u.on_date, u.withdrawal_days) : "";
+          out.push([label, batch, u.on_date, String(dayNo(u.on_date)), t(`farm.use.${u.kind}`), u.name, String(u.qty), String(Math.round(u.line_cost)), wd, sf, u.note ?? ""]);
         }
       }
       if (out.length === 0) { toast.error(t("farm.nothingToExport")); return; }

@@ -1422,7 +1422,8 @@
     "scanOrTypeName": "Scan the barcode or type the product name…",
     "acceptFee": "Delivery fee",
     "acceptFeeNone": "No fee",
-    "acceptFeeHint": "Leave blank to keep what the order came with"
+    "acceptFeeHint": "Leave blank to keep what the order came with",
+    "noAccess": "Inventory is available to staff with stock-management permission. Ask the clinic manager."
   },
   "role": {
     "admin": "Clinic",
@@ -4724,7 +4725,44 @@
       "note": "Note",
       "dead": "Mortality",
       "culled": "Culled",
-      "noteOnly": "Day note"
+      "noteOnly": "Day note",
+      "withdrawal": "Withdrawal (days)",
+      "safeFrom": "Safe to slaughter from"
+    },
+    "wd": {
+      "label": "Withdrawal period — from the box",
+      "placeholder": "Number of days",
+      "fromBox": "Read the number off the box — we do not know it.",
+      "none": "No withdrawal period",
+      "preview": "Safe to slaughter from {{date}}",
+      "recorded": "Medicine recorded",
+      "safeFrom": "Safe to slaughter from {{date}}",
+      "safeFromShort": "safe from {{date}}",
+      "pendingBanner": "Withdrawal: {{n}} days left — ends {{date}}.",
+      "doneBanner": "Withdrawal period ended {{date}}."
+    },
+    "avgWeight": "Avg weight (kg)",
+    "fcr": "Feed conversion",
+    "weighHint": "Weigh one bird in the daily entry to unlock feed conversion and cost per kg.",
+    "costPerKg": "Cost per live kg",
+    "epef": "Efficiency index",
+    "sampleWeight": "Sample weight (g)",
+    "sampleSize": "Birds",
+    "avgPreview": "Avg weight: {{n}} kg",
+    "outcome": "Batch outcome",
+    "closedOn": "Closed on",
+    "costPerSoldKg": "Cost per kg sold",
+    "profit": "Profit",
+    "loss": "Loss",
+    "round": {
+      "open": "Today’s round ({{n}})",
+      "title": "Today’s round",
+      "pickFeed": "Feed used today",
+      "save": "Save all",
+      "nothing": "Nothing entered",
+      "saved": "Round saved ({{n}})",
+      "partial": "Saved {{ok}} of {{all}} — check",
+      "noFeed": "The farm store is empty — add feed from the farm screen."
     }
   }
 }

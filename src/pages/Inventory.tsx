@@ -7,7 +7,7 @@ import { Dialog } from "@/components/ui/Dialog";
 import {
   Barcode, Package, Trash2, Search, Building2, Plus, ChevronLeft, ArrowRight, ArrowLeft,
   TrendingUp, AlertTriangle, CalendarClock, Pencil, PackagePlus, Boxes, Layers, Wallet, ShoppingBag, FolderTree, ScanBarcode,
-  Check, ListPlus, Printer, Copy, Sparkles, FileSpreadsheet, Loader2, Scale, RefreshCw, RotateCcw, Camera,
+  Check, ListPlus, Printer, Copy, Sparkles, FileSpreadsheet, Loader2, Scale, RefreshCw, RotateCcw, Camera, Lock,
 } from "lucide-react";
 import type { Product, ProductCategory, Company, CompanySection, DeletedProduct } from "@/types";
 import { PurchasesTab, PurchaseBuilderModal } from "@/components/inventory/Purchases";
@@ -36,6 +36,7 @@ import { catalogLookup, type CatalogHit } from "@/lib/catalog";
  * المخزون كله (بطاقة القيمة، صفوف المنتجات، نموذج التعديل، وتبويبا
  * المشتريات والديون يختفيان أصلاً). */
 import { useOverride } from "@/lib/managerOverride";
+import { usePermissions } from "@/hooks/usePermissions";
 import { staggerContainer, staggerItem } from "@/lib/motion";
 
 const LOW_STOCK = 5;
@@ -143,6 +144,7 @@ export function Inventory() {
   const [loading, setLoading] = useState(!seed);
   const [view, setView] = useState<View>("products");
   const { stockLocked: locked } = useOverride();
+  const { can } = usePermissions();
   // /inventory بلا FeatureGate بعكس /retail — فلو فُتحت شاشةُ بيعٍ هنا بلا فحص
   // صارت الكاشيرُ متاحةً لعيادةٍ باقتُها لا تشملها.
   const { has } = useEntitlements();
@@ -294,6 +296,24 @@ export function Inventory() {
   // so a stock of 0 is expected — never flag them as low stock.
   const lowStock = products.filter(isLow).length;
   const expiringSoon = products.filter(isExpiringSoon).length;
+
+  /* الرابطُ محميٌّ كالتقارير والرواتب والكادر — وكان وحدَه مكشوفاً.
+   *
+   * **القياس**: الشريطُ الجانبيُّ يخفي «المخزون» عمّن لا يملك `manageInventory`
+   * (موظّفُ الاستقبال)، لكنّ الصفحةَ نفسَها ما كانت تفحص شيئاً. وليست كتابةَ
+   * رابطٍ باليد: بطاقةُ «نواقص المخزون» بالصفحة الرئيسية كانت تظهر للجميع
+   * وتنقله بضغطةٍ إلى هنا — فيرى رأسَ مالِ العيادة وقيمةَ بيعها وربحَها
+   * المتوقَّع وسعرَ شراء كلّ مادّة، **ومعها أزرارُ التعديل والحذف**.
+   * وقفلُ الجهاز (وضع المدير) كان يغطّي هذا؛ الفجوةُ بحساب الموظّف على جهازه.
+   * ومن أعطته عيادتُه الصلاحيةَ فردياً يمرّ — `effectiveCan` تحترم الاستثناء. */
+  if (!can("manageInventory")) {
+    return (
+      <div className="mx-auto grid max-w-md place-items-center px-4 py-20 text-center">
+        <Lock size={32} className="mb-3 text-ink-subtle" />
+        <p className="text-sm text-ink-muted">{t("pos.noAccess", "المخزون متاح لمن عنده صلاحية إدارة المخزن. راجع مدير العيادة.")}</p>
+      </div>
+    );
+  }
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-6">

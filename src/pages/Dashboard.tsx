@@ -28,6 +28,7 @@ import { repo } from "@/lib/repo";
 import { statusOf } from "@/lib/opsStatus";
 import { cageStudio, codesFromPrefs } from "@/components/cage3d/store";
 import { useAuth } from "@/contexts/AuthContext";
+import { usePermissions } from "@/hooks/usePermissions";
 import { formatTime, dateLocale, formatNum } from "@/lib/utils";
 import { playTap } from "@/lib/sounds";
 import { UpcomingEvents } from "@/components/UpcomingEvents";
@@ -68,6 +69,8 @@ const CAGE_DOT: Record<string, string> = {
 export function Dashboard() {
   const { t, i18n } = useTranslation();
   const { user } = useAuth();
+  const { can } = usePermissions();
+  const canStock = can("manageInventory");
   const navigate = useNavigate();
 
   // Stale-while-revalidate: seed from the last snapshot so returning to the home
@@ -468,7 +471,10 @@ export function Dashboard() {
             )}
           </Card>
 
-          <Card padded>
+          {/* بطاقةُ النواقص تتبع صلاحيةَ المخزن: كانت تظهر للجميع وزرُّها
+              ينقل إلى شاشةٍ صارت مقفولةً — فزرٌّ يوصل إلى قفلٍ أسوأُ من زرٍّ
+              لا يوجد. ومن يملك الصلاحيةَ يراها كما كانت. */}
+          {canStock && <Card padded>
             <div className="mb-3 flex items-center justify-between">
               <CardTitle>{t("dash.reorderSoon", "Reorder soon")}</CardTitle>
               <Button variant="ghost" size="sm" rightIcon={<ArrowRight size={15} />} onClick={() => navigate("/inventory")}>
@@ -506,7 +512,7 @@ export function Dashboard() {
                 )}
               </div>
             )}
-          </Card>
+          </Card>}
 
           {/* دفتر الملاحظات اللاصق اليومي — مشترك بين كل الكادر، ورقة لكل يوم */}
           <StickyNotes />

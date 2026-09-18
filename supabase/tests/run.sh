@@ -25,7 +25,7 @@ MIG="$HERE/../migrations"
 # و0095/0096/0158 بالمقدّمة رغم أنها أقدمُ من 0124: الموجةُ تبدأ من 0124 لأن
 # الأساس يوفّر ما قبلها جاهزاً — لكنّ هذه الثلاثَ تُنشئ المتجرَ والبوّابة،
 # وكانت خارجَ الفحص كلَّه. تُنزَّل بترتيبها الحقيقيّ قبل الموجة.
-WAVE="$MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0114_landing_events.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql $MIG/0184_images_hardening.sql $MIG/0185_store_funnel_events.sql $MIG/0186_store_bulk_visible.sql $MIG/0187_store_suggest_products.sql $MIG/0188_store_catalog_priced.sql $MIG/0189_accept_fee_at_decision.sql $MIG/0190_logo_out_of_db.sql $MIG/0191_poultry_farms.sql $MIG/0192_poultry_consume.sql"
+WAVE="$MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0114_landing_events.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql $MIG/0184_images_hardening.sql $MIG/0185_store_funnel_events.sql $MIG/0186_store_bulk_visible.sql $MIG/0187_store_suggest_products.sql $MIG/0188_store_catalog_priced.sql $MIG/0189_accept_fee_at_decision.sql $MIG/0190_logo_out_of_db.sql $MIG/0191_poultry_farms.sql $MIG/0192_poultry_consume.sql $MIG/0193_poultry_withdrawal.sql"
 
 command -v "$PGBIN/initdb" >/dev/null || { echo "ما لكيت بوستغريس بـ $PGBIN"; exit 1; }
 
@@ -510,6 +510,11 @@ $P -f "$MIG/0173_variants_ordered.sql" >/dev/null 2>&1
 # السطر. فمن يمسّ `product_by_code` بهجرةٍ جديدة يضيف سطرَه هنا، وإلا فحصُ
 # «كاشيرُ العيادة لا يمسح علفاً» بآخر الملفّ يسقط ويدلّه على هذا الموضع.
 $P -f "$MIG/0191_poultry_farms.sql" >/dev/null 2>&1
+# و0193 توسّع `poultry_cycle_stats` التي تُنشئها 0191 — فإعادةُ 0191 وحدَها
+# **تضيّقها**، ويسقط فحصُ فترة السحب بآخر الملفّ بخطأٍ لا علاقةَ له به
+# («column safe_from does not exist»). السلسلةُ صارت ستّةَ ملفّات: من يمسّ
+# `product_by_code` أو `poultry_cycle_stats` يضيف ملفَّه هنا.
+$P -f "$MIG/0193_poultry_withdrawal.sql" >/dev/null 2>&1
 
 chk "علامةُ الاتجاه انشالت من الباركود" \
     "select barcode from products where id='bbbb0000-0000-0000-0000-000000000001'" "8989"
@@ -2213,6 +2218,108 @@ chk "  ولا يُنتشل بمسار صيغ الماسح" \
     "select _rls_try('$C1', 'select * from product_by_code(''06221033000123'')')" "rows:0"
 chk "والمخزنُ ما انلمس — لا بيعَ ولا خصم" \
     "select stock::int::text from products where id='b1920000-0000-4000-8000-000000000001'" "700"
+
+
+# ── 0193: فترةُ السحب ─────────────────────────────────────────────────────
+# لحمٌ يُذبح قبل تاريخه يحمل بقايا دواء. فالخطأُ هنا لا يُرى بشاشة — يُؤكَل.
+# ولهذا المجهولُ هو الافتراض: كلُّ سطرِ دواءٍ بلا رقمٍ يصرخ ولا يصمت.
+echo "▸ 0193: فترةُ السحب — المجهولُ يصرخ، والآمنُ يُحسب من آخر سطر"
+$P -c "insert into poultry_farms (id, clinic_id, name) values ('f1930000-0000-4000-8000-000000000001','$C1','حقلُ السحب') on conflict (id) do nothing;
+       insert into poultry_houses (id, clinic_id, farm_id, label) values ('a1930000-0000-4000-8000-000000000001','$C1','f1930000-0000-4000-8000-000000000001','جملون') on conflict (id) do nothing;
+       insert into poultry_cycles (id, clinic_id, farm_id, house_id, kind, placed_on, placed_count)
+         values ('c1930000-0000-4000-8000-000000000001','$C1','f1930000-0000-4000-8000-000000000001','a1930000-0000-4000-8000-000000000001','broiler', current_date - 20, 10000) on conflict (id) do nothing;
+       update poultry_cycles set status='active', closed_on=null where id='c1930000-0000-4000-8000-000000000001';
+       delete from poultry_use where cycle_id='c1930000-0000-4000-8000-000000000001';
+       insert into products (id, clinic_id, name, sell_price, purchase_price, stock, farm_id)
+         values ('b1930000-0000-4000-8000-000000000001','$C1','مضاد حيوي', 0, 15000, 50, 'f1930000-0000-4000-8000-000000000001'),
+                ('b1930000-0000-4000-8000-000000000002','$C1','فيتامين',   0,  5000, 50, 'f1930000-0000-4000-8000-000000000001'),
+                ('b1930000-0000-4000-8000-000000000003','$C1','علف نامي',  0,   900, 5000, 'f1930000-0000-4000-8000-000000000001')
+       on conflict (id) do update set stock = excluded.stock, farm_id = excluded.farm_id;
+       update _dvtest_flags set admin = false;" >/dev/null
+
+chk "دفعةٌ بلا دواءٍ: لا تاريخَ أمانٍ ولا مجهول" \
+    "select coalesce(safe_from::text,'-') || '/' || withdrawal_unknown::text from poultry_cycle_stats('c1930000-0000-4000-8000-000000000001'::uuid)" "-/false"
+
+# سطرُ دواءٍ بسبعة أيام يوم (اليوم − ٣) ⇒ الأمانُ بعد أربعة أيام من اليوم.
+chk "صرفُ دواءٍ بسحبٍ ٧ أيام يرجّع تاريخَ أمانه فوراً" \
+    "select (_pf('$C1','select poultry_consume(p_cycle => ''c1930000-0000-4000-8000-000000000001''::uuid, p_kind => ''med'', p_product => ''b1930000-0000-4000-8000-000000000001''::uuid, p_name => null, p_qty => 2, p_on_date => current_date - 3, p_withdrawal => 7)::text')::jsonb->>'safe_from') = (current_date + 4)::text" "t"
+chk "  والدفعةُ تقولها بترويستها" \
+    "select safe_from::text from poultry_cycle_stats('c1930000-0000-4000-8000-000000000001'::uuid)" "$(date -u -d '+4 days' +%Y-%m-%d)"
+chk "  وما بيها مجهول" \
+    "select withdrawal_unknown::text from poultry_cycle_stats('c1930000-0000-4000-8000-000000000001'::uuid)" "false"
+
+# **الأقصى لا الأخير**: دواءٌ نزل اليومَ بسحبٍ يومٍ واحد لا يقصّر تاريخَ الأمان.
+chk "دواءٌ ثانٍ أقصرُ سحباً لا يقدّم التاريخ" \
+    "select (_pf('$C1','select poultry_consume(p_cycle => ''c1930000-0000-4000-8000-000000000001''::uuid, p_kind => ''med'', p_product => ''b1930000-0000-4000-8000-000000000002''::uuid, p_name => null, p_qty => 1, p_withdrawal => 1)::text')::jsonb->>'ok')" "true"
+chk "  والتاريخُ بقي على الأبعد" \
+    "select safe_from::text from poultry_cycle_stats('c1930000-0000-4000-8000-000000000001'::uuid)" "$(date -u -d '+4 days' +%Y-%m-%d)"
+
+# صفرٌ قولٌ صريحٌ لا مجهول: «قرأتُ العلبة وماكو فترةُ سحب».
+chk "صفرٌ يُسجَّل صفراً — لا يُخلط بالمجهول" \
+    "select (_pf('$C1','select poultry_consume(p_cycle => ''c1930000-0000-4000-8000-000000000001''::uuid, p_kind => ''med'', p_product => ''b1930000-0000-4000-8000-000000000002''::uuid, p_name => null, p_qty => 1, p_withdrawal => 0)::text')::jsonb->>'safe_from') is not null" "t"
+chk "  والدفعةُ ما صارت مجهولة" \
+    "select withdrawal_unknown::text from poultry_cycle_stats('c1930000-0000-4000-8000-000000000001'::uuid)" "false"
+
+# **الجوهر**: سطرٌ واحدٌ بلا رقمٍ يجعل الدفعةَ كلَّها مجهولة.
+chk "دواءٌ بلا رقمٍ ⇒ الدفعةُ «فترةُ سحبٍ مجهولة»" \
+    "select (_pf('$C1','select poultry_consume(p_cycle => ''c1930000-0000-4000-8000-000000000001''::uuid, p_kind => ''med'', p_product => ''b1930000-0000-4000-8000-000000000001''::uuid, p_name => null, p_qty => 1)::text')::jsonb->>'ok')" "true"
+chk "  والرايةُ ارتفعت" \
+    "select withdrawal_unknown::text from poultry_cycle_stats('c1930000-0000-4000-8000-000000000001'::uuid)" "true"
+chk "  والتاريخُ المعروفُ ما ضاع معها" \
+    "select safe_from::text from poultry_cycle_stats('c1930000-0000-4000-8000-000000000001'::uuid)" "$(date -u -d '+4 days' +%Y-%m-%d)"
+
+# رقمٌ على كيس علفٍ لا معنى له: يُهمَل صامتاً ولا يدفع تاريخَ الأمان.
+chk "سحبٌ على العلف يُهمَل" \
+    "select (_pf('$C1','select poultry_consume(p_cycle => ''c1930000-0000-4000-8000-000000000001''::uuid, p_kind => ''feed'', p_product => ''b1930000-0000-4000-8000-000000000003''::uuid, p_name => null, p_qty => 100, p_withdrawal => 30)::text')::jsonb->>'safe_from')" ""
+chk "  وما انكتب بالسطر" \
+    "select (count(*) = 0)::text from poultry_use where cycle_id='c1930000-0000-4000-8000-000000000001' and kind='feed' and withdrawal_days is not null" "true"
+chk "  ولا دفع تاريخَ الدفعة" \
+    "select safe_from::text from poultry_cycle_stats('c1930000-0000-4000-8000-000000000001'::uuid)" "$(date -u -d '+4 days' +%Y-%m-%d)"
+
+# رقمٌ خارجُ المدى يُرفض بالدالّة وبالقيد معاً — طرفان لا طرف.
+chk "سحبٌ ٩٠٠ يوماً مرفوضٌ بالدالّة" \
+    "select replace(_pf_try('$C1','select poultry_consume(p_cycle => ''c1930000-0000-4000-8000-000000000001''::uuid, p_kind => ''med'', p_product => null, p_name => ''دواء'', p_qty => 1, p_withdrawal => 900)::text'), ' ', '')" "guarded:bad_withdrawal"
+chk "  وبالقيد لو دخل من طريقٍ آخر" \
+    "select left(_rls_try('$C1', 'insert into poultry_use (clinic_id, cycle_id, on_date, kind, name, qty, withdrawal_days) values (''$C1'',''c1930000-0000-4000-8000-000000000001'', current_date, ''med'', ''دواء'', 1, 500)'), 13)" "guarded:23514"
+
+# توقيعٌ واحدٌ لا اثنان: وسيطٌ بقيمةٍ افتراضية يترك القديمةَ حيّةً فيراها
+# PostgREST التباساً (PGRST203) ويسقط كلُّ صرفٍ من الواجهة.
+chk "poultry_consume توقيعٌ واحدٌ بالقاعدة" \
+    "select count(*)::text from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='poultry_consume'" "1"
+chk "  وهي definer بمسارٍ مثبَّتٍ وممنوعةٌ عن anon" \
+    "select (p.prosecdef and coalesce(array_to_string(p.proconfig,','),'') like '%search_path%' and not has_function_privilege('anon', p.oid, 'execute'))::text from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='poultry_consume'" "true"
+chk "و poultry_cycle_stats بقيت invoker بعد إعادة إنشائها" \
+    "select (not prosecdef and coalesce(array_to_string(proconfig,','),'') like '%search_path%')::text from pg_proc where proname='poultry_cycle_stats'" "true"
+
+
+# ── 0193: مرجعُ المحاولة — شرطُ الطابور ───────────────────────────────────
+# الطابورُ **يعيد بطبعه**. فنداءُ صرفٍ بلا مرجعٍ يعني خصمَين من المخزن وسطرَي
+# كلفةٍ على دفعةٍ واحدة كلَّما ضعف النت — ازدواجاً منهجياً لا نادراً (0171).
+echo "▸ 0193: الصرفُ يُعاد بلا ازدواج"
+$P -c "update products set stock = 100 where id='b1930000-0000-4000-8000-000000000002';
+       delete from poultry_use where client_ref = 'ref-dup-1';" >/dev/null
+
+chk "صرفٌ بمرجعٍ يمرّ ويخصم" \
+    "select (_pf('$C1','select poultry_consume(p_cycle => ''c1930000-0000-4000-8000-000000000001''::uuid, p_kind => ''feed'', p_product => ''b1930000-0000-4000-8000-000000000002''::uuid, p_name => null, p_qty => 10, p_meta => ''{\"client_ref\":\"ref-dup-1\"}''::jsonb)::text')::jsonb->>'ok')" "true"
+chk "  والرصيدُ نزل ١٠" \
+    "select stock::int::text from products where id='b1930000-0000-4000-8000-000000000002'" "90"
+# نفسُ النداء مرّةً ثانية — كما يفعل الطابور حين يضيع الجواب لا الطلب.
+chk "إعادةُ نفس المرجع تُرجع سطرَ الأوّل" \
+    "select (_pf('$C1','select poultry_consume(p_cycle => ''c1930000-0000-4000-8000-000000000001''::uuid, p_kind => ''feed'', p_product => ''b1930000-0000-4000-8000-000000000002''::uuid, p_name => null, p_qty => 10, p_meta => ''{\"client_ref\":\"ref-dup-1\"}''::jsonb)::text')::jsonb->>'replayed')" "true"
+chk "  **والرصيدُ ما انلمس ثانيةً**" \
+    "select stock::int::text from products where id='b1930000-0000-4000-8000-000000000002'" "90"
+chk "  ولا سطرَ كلفةٍ ثانٍ على الدفعة" \
+    "select count(*)::text from poultry_use where client_ref='ref-dup-1'" "1"
+# وبلا مرجعٍ يبقى السلوكُ القديم: كلُّ نداءٍ سطرٌ (الشاشةُ تصرف مرّةً بضغطة).
+chk "وبلا مرجعٍ: نداءان سطران — لا فلترةَ صامتة" \
+    "select (_pf('$C1','select poultry_consume(p_cycle => ''c1930000-0000-4000-8000-000000000001''::uuid, p_kind => ''feed'', p_product => ''b1930000-0000-4000-8000-000000000002''::uuid, p_name => null, p_qty => 5)::text')::jsonb->>'ok')" "true"
+chk "  والرصيدُ نزل ٥ كذلك" \
+    "select stock::int::text from products where id='b1930000-0000-4000-8000-000000000002'" "85"
+# الفهرسُ فريدٌ **بالعيادة**: مرجعٌ من جهازِ عيادةٍ أخرى لا يمنع هذه.
+chk "المرجعُ فريدٌ بالعيادة لا بالجدول" \
+    "select (indexdef like '%clinic_id, client_ref%')::text from pg_indexes where indexname='poultry_use_client_ref_idx'" "true"
+chk "  وجزئيٌّ فلا يصطدم القديمُ كلُّه بـNULL واحدة" \
+    "select (indexdef like '%WHERE (client_ref IS NOT NULL)%')::text from pg_indexes where indexname='poultry_use_client_ref_idx'" "true"
 
 
 [ $fail -eq 0 ] && echo "✓ كل الفحوص عبرت" || { echo "✗ اكو فحصٌ فشل"; exit 1; }

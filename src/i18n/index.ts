@@ -1,6 +1,5 @@
 import i18n from "i18next";
 import { initReactI18next } from "react-i18next";
-import en from "./en.json";
 import ar from "./ar.json";
 import { LOCALES, localeInfo, fallbackMap } from "./registry";
 
@@ -30,7 +29,8 @@ function initialLang(): Lang {
 }
 
 void i18n.use(initReactI18next).init({
-  resources: { en: { translation: en }, ar: { translation: ar } },
+  // العربيةُ وحدَها بالحزمة؛ البقيةُ تُحمَّل بمحمّلها (انظر `registry.ts`).
+  resources: { ar: { translation: ar } },
   lng: initialLang(),
   // سلاسل السقوط من سجل اللغات: السورانية القادمة تسقط للعربية قبل
   // الإنجليزية — المفتاح الناقص يظهر بأقرب لغة مفهومة لا بأبعدها.
@@ -62,17 +62,26 @@ export function setLang(lang: Lang) {
 
 applyDir(initialLang());
 
-/* لغة مخزَّنة غير مدمجة بالحزمة (أي لغة بمحمّل كسول) لا يعرفها i18next عند
- * الإقلاع، فتُرسم الواجهة بالسقوط وتبقى كذلك حتى يبدّل المستخدم يدوياً.
- * نحمّل حزمتها فوراً بعد التهيئة ونعيد ضبط اللغة، فمن يفتح النظام وقد اختار
- * لغته سابقاً يراها من أول إطار — لا بعد نقرة. */
-void (async () => {
+/**
+ * جاهزيّةُ اللغة — **يُنتظر قبل أوّل رسم** (`main.tsx`).
+ *
+ * لغةٌ بمحمّلٍ كسول لا يعرفها i18next عند الإقلاع. وكان الحلُّ سابقاً: ارسمْ
+ * بالسقوط ثم بدّل حين تصل — فيرى مستخدمُ السورانية عربيةً لجزءٍ من ثانيةٍ ثم
+ * تنقلب الشاشةُ تحت عينه. ومع صيرورة الإنكليزية كسولةً صار ذلك الوميضُ يصيب
+ * جمهوراً حقيقياً، فلا يُحتمل.
+ *
+ * فصارت وعداً يُنتظر: من لغتُه عربيةٌ (الافتراض) يُحلّ فوراً ولا ينتظر شيئاً،
+ * ومن لغتُه غيرُها يتأخّر أوّلُ رسمه بقدر حزمتها — ثم يراها صحيحةً من أوّل
+ * إطار. وفشلُ التحميل **لا يعلّق الإقلاع**: يُحلّ الوعدُ على أيّة حال
+ * والسقوطُ يغطّي الواجهة.
+ */
+export const i18nReady: Promise<void> = (async () => {
   const info = localeInfo(initialLang());
   if (!info.loader || i18n.hasResourceBundle(info.code, "translation")) return;
   try {
     const mod = await info.loader();
     i18n.addResourceBundle(info.code, "translation", mod.default, true, true);
-    await i18n.changeLanguage(info.code); // يعيد الرسم بالحزمة المحمّلة
+    await i18n.changeLanguage(info.code);
   } catch {
     /* تعذّر تحميل اللغة (شبكة/ملف) — السقوط يغطي الواجهة بلا انهيار */
   }
