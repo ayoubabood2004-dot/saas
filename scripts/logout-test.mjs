@@ -146,6 +146,22 @@ console.log("▸ 0194 — end_elevation صادقة بالقاعدة (نصّاً�
   const suite = readFileSync("supabase/tests/run.sh", "utf8");
   check("  وتنزل بحزمة run.sh (هجرةٌ لا تنزل بالحزمة غيرُ مفحوصة)",
     suite.includes("$MIG/0194_end_elevation_honest.sql") && suite.includes("▸ 0194:"));
+  /* والعدُّ لا يشارك النداءَ جملتَه: الجملةُ لا ترى ما كتبته هي (لقطةُ MVCC)، فعدٌّ بنفس
+   * جملة النداء يرى صفراً دائماً — فحصٌ يفشل على الصحيح ويمرّ على الخاطئ. أمسكته مراجعةٌ
+   * عدائية بصياغتي الأولى، فصار ممنوعاً بالنصّ. */
+  const blk = suite.slice(suite.indexOf("▸ 0194:"), suite.indexOf("[ $fail -eq 0 ]", suite.indexOf("▸ 0194:")));
+  // كلُّ نداءٍ لـchk بحدوده: سطرُه وما يتّصل به بـ«\» — لا ما يليه من أسطر $P.
+  const lines = blk.split("\n");
+  const chks = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (!lines[i].startsWith("chk ")) continue;
+    let c = lines[i];
+    while (c.trimEnd().endsWith("\\") && i + 1 < lines.length) c += "\n" + lines[++i];
+    chks.push(c);
+  }
+  check("  وكلُّ عدٍّ بجملةٍ غيرِ جملة النداء (لا end_elevation() مع count( بفحصٍ واحد)",
+    chks.length >= 5 && chks.every((c) => !(c.includes("end_elevation()") && c.includes("count("))),
+    `${chks.filter((c) => c.includes("end_elevation()") && c.includes("count(")).length} فحصاً مخلوطاً`);
 }
 
 console.log("▸ الشاشاتُ تستعمل التسلسل ولا تعود للترتيب القديم");

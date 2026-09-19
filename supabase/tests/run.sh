@@ -2331,17 +2331,24 @@ ADM=33333333-3333-3333-3333-333333333333
 C1=11111111-1111-1111-1111-111111111111
 $P -c "delete from staff_elevations; delete from audit_log where details->>'event' = 'override.lock';
        update _dvtest_flags set admin = false; delete from platform_sessions;" >/dev/null
-chk "خروجٌ بلا رفعٍ ⇒ لا سطر" \
-    "select coalesce(_pf('$C1','select end_elevation()::text'),'') || (select count(*)::text from audit_log where details->>'event'='override.lock')" "0"
+# **النداءُ بجملةٍ والعدُّ بجملةٍ أخرى.** الجملةُ الواحدة لا ترى صفوفاً كتبتها هي نفسُها
+# (لقطةُ MVCC تُثبَّت ببدايتها) — فعدٌّ بنفس جملة النداء كان يرى صفراً دائماً: فحصُ
+# «سطرٌ صادق» يفشل على شيفرةٍ صحيحة، وفحصُ المشغّل لا يقدر أن يفشل. (أمسكته مراجعةٌ عدائية.)
+$P -c "select _pf('$C1','select end_elevation()::text');" >/dev/null
+chk "خروجٌ بلا رفعٍ ⇒ لا سطر (0048 القديمة كانت تكتب واحداً هنا)" \
+    "select count(*)::text from audit_log where details->>'event'='override.lock'" "0"
 $P -c "insert into staff_elevations(user_id, clinic_id, until) values ('$C1','$C1', now() + interval '10 minutes');" >/dev/null
+$P -c "select _pf('$C1','select end_elevation()::text');" >/dev/null
 chk "قفلُ رفعٍ حقيقيّ ⇒ سطرٌ صادقٌ واحد بعيادته" \
-    "select coalesce(_pf('$C1','select end_elevation()::text'),'') || (select count(*)::text from audit_log where details->>'event'='override.lock' and clinic_id='$C1')" "1"
+    "select count(*)::text from audit_log where details->>'event'='override.lock' and clinic_id='$C1'" "1"
 chk "  والرفعُ حُذف" "select count(*)::text from staff_elevations where user_id='$C1'" "0"
 $P -c "update _dvtest_flags set admin = true;" >/dev/null
 chk "المشغّلُ يدخل ١١١١" "select _pf('$ADM', 'select (platform_enter(''$C1'', ''فحص 0194'')->>''ok'')')" "true"
 $P -c "insert into staff_elevations(user_id, clinic_id, until) values ('$ADM','$C1', now() + interval '10 minutes');" >/dev/null
+$P -c "select _pf('$ADM','select end_elevation()::text');" >/dev/null
+# السطرُ الوحيد هو سطرُ الفحص السابق (رفعُ ١١١١ الحقيقيّ) — أيُّ سطرٍ ثانٍ أثرُ المشغّل.
 chk "خروجُ المشغّل برفعٍ حيّ ⇒ لا أثرَ بسجلّ العيادة (بالاتفاق معها)" \
-    "select coalesce(_pf('$ADM','select end_elevation()::text'),'') || (select count(*)::text from audit_log where details->>'event'='override.lock')" "1"
+    "select count(*)::text from audit_log where details->>'event'='override.lock'" "1"
 chk "  والرفعُ حُذف مع ذلك — الأمانُ لا يتغيّر" "select count(*)::text from staff_elevations where user_id='$ADM'" "0"
 $P -c "select set_config('request.jwt.claim.sub','$ADM',false); select platform_leave();
        update _dvtest_flags set admin = false; delete from platform_sessions;" >/dev/null
