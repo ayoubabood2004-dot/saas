@@ -395,6 +395,11 @@ check("شاشةُ الفشل الكاملة لأوّل تحميلٍ وحده —
 const stripAt = RSN.indexOf("data-stalestrip"), sellAt = RSN.indexOf('{tab === "sell" ? (');
 check("والشريطُ بكلّ تبويبٍ يعرض اللقطة (الديون والتوصيل والمرتجع والفواتير)، لا بالبيع وحده",
   stripAt > 0 && sellAt > stripAt && /\{staleFail && tab !== "reports" && \(/.test(RSN), `strip@${stripAt} sell@${sellAt}`);
+/* والوقتُ بالشريط وقتُ اللقطة لا «الآن»: طفرةُ `new Date(snapAt)` ← `new Date()` مرّت
+ * خضراء — قائمةٌ من ٩ صباحاً فشل تحديثُها ١ ظهراً كانت ستقول «المعروض من ١ ظهراً». */
+check("  والوقتُ بالشريط وقتُ اللقطة لا الآن (البيع والجملة)",
+  /formatTime\(new Date\(snapAt\)\.toISOString\(\), i18n\.language\)/.test(RSN)
+  && /formatTime\(new Date\(cachedAt\(invKey\) as number\)\.toISOString\(\), i18n\.language\)/.test(read("src/pages/Inventory.tsx")));
 const retryFn = RSN.slice(RSN.indexOf("const scheduleRetry = () => {"), RSN.indexOf("\n  };", RSN.indexOf("const scheduleRetry = () => {")));
 check("والمحاولةُ بعد ٣٠ث لا تجري وسطَ بيعةٍ ولا فوق جلبٍ قائم",
   /if \(busyRef\.current \|\| inflightRef\.current > 0\) return;/.test(retryFn) && retryFn.indexOf("busyRef.current") < retryFn.indexOf("retriedRef.current = true"));
