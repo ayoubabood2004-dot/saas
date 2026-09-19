@@ -1341,6 +1341,11 @@ const demoRepo = {
   async getProductById(id: string): Promise<Product | undefined> {
     return (loadDB().products ?? []).find((p) => p.id === id && !p.farm_id);
   },
+  /** حوضُ قسمٍ طازج — رصيدُ الكاشير = الصفُّ + حوضُ قسمه (`sellable.ts`)، والخادمُ
+   *  يبيع منه. سؤالُ «رصيده صفر» بلا الحوض كان يقول «زيد رصيده» عمّا يُباع. */
+  async getSectionPool(sectionId: string): Promise<number> {
+    return (loadDB().companySections ?? []).find((s) => s.id === sectionId)?.pooled_stock ?? 0;
+  },
   async getProductByBarcode(barcode: string, _clinicId?: string): Promise<Product | undefined> {
     const code = matchCode(barcode);
     if (!code) return undefined;
@@ -1373,7 +1378,9 @@ const demoRepo = {
      *     مقيسٌ بزوج UPC-A/EAN-13: «045496830434» و«0045496830434».
      *  ٣) **بلا إصلاحِ تخطيطٍ عربيّ**: خريطتُه بياناتُ متصفّح، والقاعدةُ لا
      *     تعرفها. نسختان تفترقان أسوأ من واحدةٍ ناقصة. */
-    const all = loadDB().products ?? [];
+    // ومخزنُ الحقل خارجُها كالحرفيّ — الخادمُ يستثنيه بالصيغ أيضاً (0191). بلا هذا
+    // كانت صيغةٌ يحملها صفُّ حقلٍ تُختار قبل صيغةٍ لاحقةٍ يحملها منتجُ العيادة.
+    const all = (loadDB().products ?? []).filter((p) => !p.farm_id);
     const holds = (p: Product, v: string) =>
       matchCode(p.barcode) === v || (p.alt_codes ?? []).some((c) => matchCode(c) === v);
     for (const v of scanVariants(code, false)) {
@@ -4536,6 +4543,12 @@ const supabaseRepo: typeof demoRepo = {
     if (r.error) throw r.error;
     return (r.data ?? undefined) as Product | undefined;
   },
+  async getSectionPool(sectionId) {
+    // سياسةُ الصفوف تحصرها بعيادة المُستدعي (كما `listCompanySections` للكاشير نفسه).
+    const r = await sbc().from("company_sections").select("pooled_stock").eq("id", sectionId).maybeSingle();
+    if (r.error) throw r.error;
+    return Number((r.data as { pooled_stock?: number | null } | null)?.pooled_stock ?? 0);
+  },
   // العيادةُ تأتي من سياسات الصفوف لا من معامِلٍ: `product_by_code` بصلاحية
   // المُستدعي، فـauth_clinic() تحصرها. المعامِلُ يبقى بالتوقيع للنسخة التجريبية.
   async getProductByBarcode(barcode, _clinicId) {
@@ -5788,7 +5801,7 @@ const READ_ONLY_ALLOWED = new Set<string>([
   "listPoultryFarms", "listPoultryHouses", "listPoultryCycles", "listPoultryDaily",
   "listPoultryUse", "poultryCycleStats",
   "getActiveJourney", "getClinicVisit", "getDailyNote", "getPet", "getPetBySerial",
-  "getPetByToken", "getPetsByIds", "getPetsByOwnerEmail", "getProductByBarcode", "getProductById",
+  "getPetByToken", "getPetsByIds", "getPetsByOwnerEmail", "getProductByBarcode", "getProductById", "getSectionPool",
   "getSharedPetsByOwnerId", "getStoreProfile", "countNewStoreOrders", "rejectStaleStoreOrders", "listAdmissions", "listAdmissionsForPet",
   "listAllInvoiceItems", "listAllMedia", "listAllPets", "listAllSurgeries", "listAllTreatments",
   "listAllVaccinations", "listAllVisits", "listAppointmentsForDay", "listAppointmentsForOwner",

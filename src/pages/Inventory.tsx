@@ -2,6 +2,10 @@ import { memo, useCallback, useDeferredValue, useEffect, useMemo, useRef, useSta
 import { useTranslation } from "react-i18next";
 import { motion } from "framer-motion";
 import { getCached, setCached, patchCached, cachedAt } from "@/lib/swrCache";
+import { RETURN_STALE_MS, RETRY_AFTER_FAIL_MS, POLL_MS } from "@/lib/freshness";
+import { useRevalidateOnReturn } from "@/hooks/useRevalidateOnReturn";
+import { patchRawList, patchSections, type FreshPatch } from "@/lib/freshSale";
+import { sellableRows } from "@/lib/sellable";
 import { findByCode, looksLikeShelfCode, twinsByName, nearCodeTwin, excelArtifact, hasArabicLetters, looksLayoutMangled, codeMatcher, codeRescue, keepOldCode } from "@/lib/productCodes";
 import { Dialog } from "@/components/ui/Dialog";
 import {
@@ -174,7 +178,22 @@ export function Inventory() {
   const [wsStale, setWsStale] = useState(false);
   const [wsRefreshing, setWsRefreshing] = useState(false);
   const invKey = `inv_${clinicId ?? "self"}`;
+  /** التبويبُ لحظةَ **وصول** الجواب لا لحظةَ بدء الطلب: جلبُ فتح الصفحة يحمل
+   *  `view = "products"` بإغلاقه، ففشلُه المتأخّر بعد الانتقال للجملة كان يقتلع شاشةَ
+   *  البيع (وسلّتَها وإيصالَها) بشاشة الفشل الكاملة. */
+  const viewRef = useRef(view);
+  viewRef.current = view;
+  const inflight = useRef(0);
+  /** بدايةُ طلب اللقطة المعروضة — الأحدثُ **طلباً** يفوز (كشاشة البيع): جلبٌ بدأ قبل
+   *  بيعةِ جملةٍ ووصل بعد جلبها لا يكتب رصيدَ ما قبلها فوقها ويُختم طازجاً. */
+  const shownFrom = useRef<number>(cachedAt(invKey) ?? 0);
+  const retryTimer = useRef<number | null>(null);
+  const retried = useRef(false);
+  /** بيعةُ جملةٍ جارية — لا تُستبدل القائمةُ تحت يد الكاشير. */
+  const wsBusy = useRef(false);
   const load = async () => {
+    const startedAt = Date.now();
+    inflight.current++;
     try {
       /* الثلاثةُ تُعرض معاً أو لا تُعرض. كان فشلُ الشركات أو الأصناف يُبلع إلى
        * قائمةٍ فارغة بينما علَمُ الفشل لا يُرفع إلا بفشل المنتجات — فتُرسم لوحةٌ
@@ -188,13 +207,17 @@ export function Inventory() {
         withTimeout(repo.listCompanies(clinicId), 15000),
         withTimeout(repo.listCompanySections(undefined, clinicId), 15000),
       ]);
-      setCached(invKey, { p, c, s });
+      if (startedAt < shownFrom.current) return; // ما بعده وصل — لا يكتب فوقه
+      shownFrom.current = startedAt;
+      setCached(invKey, { p, c, s }, startedAt);
       if (!mounted.current) return;
       setProducts(p);
       setCompanies(c);
       setSections(s);
       setFailed(false);
       setWsStale(false);
+      retried.current = false;
+      if (retryTimer.current != null) { window.clearTimeout(retryTimer.current); retryTimer.current = null; }
     } catch {
       // «فشل التحميل» ≠ «المخزن فارغ». بلعُ الخطأ هنا كان يعرض شاشةً تقول
       // «ماكو منتجات» عن مخزنٍ فيه تسعمئة صنف — فأعادت عيادةٌ إدخال بضاعتها
@@ -203,12 +226,31 @@ export function Inventory() {
       /* إلا بالبيع بالجملة فوق قائمةٍ معروضة: `load` تُنادى بعد كلّ بيعة (onSold)،
        * وشاشةُ الفشل تحلّ محلّ التبويب كلِّه — فكانت تقتلع شاشةَ «تمّ البيع» وإيصالَها
        * من تحت يد الكاشير على نتٍ ضعيف. القائمةُ هنا كاملةٌ من جلبٍ سابق، والخطرُ
-       * المقصود أعلاه هو الفارغة — فتبقى ويُقال عمرُها بشريط (كشاشة البيع، ط٣). */
-      if (view === "wholesale" && products.length > 0) setWsStale(true);
+       * المقصود أعلاه هو الفارغة — فتبقى ويُقال عمرُها بشريط (كشاشة البيع، ط٣).
+       * و«بيدنا لقطة» = جُلبت مرّةً بنجاح (فارغةً كانت أو ملأى)، والتبويبُ تبويبُ الآن. */
+      if (startedAt < shownFrom.current) return; // فشلُ جلبٍ قديم وما بعده نجح
+      if (viewRef.current === "wholesale" && cachedAt(invKey) != null) setWsStale(true);
       else setFailed(true);
+      scheduleRetry();
     } finally {
+      inflight.current--;
       if (mounted.current) setLoading(false);
     }
+  };
+  const loadRef = useRef(load);
+  loadRef.current = load;
+  /* محاولةٌ تلقائيةٌ واحدة بعد ٣٠ث من الفشل والتابُ ظاهر (ط٣-د) — بشريط الجملة وبشاشة
+   * الفشل معاً. كانت شاشةُ البيع وحدها تُصلح رعشةَ النت بنفسها. ولا وسطَ بيعةٍ ولا فوق
+   * جلبٍ قائم: إتمامُ البيعة يجلب، والجلبُ القائمُ يقول نتيجتَه. */
+  const scheduleRetry = () => {
+    if (retried.current || retryTimer.current != null) return;
+    retryTimer.current = window.setTimeout(() => {
+      retryTimer.current = null;
+      if (!mounted.current || document.visibilityState !== "visible") return;
+      if (wsBusy.current || inflight.current > 0) return;
+      retried.current = true;
+      void loadRef.current();
+    }, RETRY_AFTER_FAIL_MS);
   };
   useEffect(() => {
     mounted.current = true;
@@ -222,17 +264,38 @@ export function Inventory() {
     }
     void load();
     void repo.supportsBulkGroup().then((ok) => { if (mounted.current) setGroupsOk(ok); }).catch(() => {}); /* swallow-ok: فحصُ قدرةٍ لا قائمةُ قرار — الفشلُ يُبقي groupsOk=null أي «لا نعرف»، وهي الحالةُ التي تحذّر عند الحفظ */
-    return () => { mounted.current = false; };
+    return () => {
+      mounted.current = false;
+      if (retryTimer.current != null) window.clearTimeout(retryTimer.current);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  /** صفٌّ طازجٌ من الخادم (سؤالُ «رصيده صفر») يرقّع القائمةَ والكاشَ **بلا تجديد
-   *  عمره** — وإلا سألت شاشةُ الجملة الخادمَ بكلّ ضغطةٍ على نفس الكرت. */
-  const patchRow = useCallback((row: Product) => {
-    const merge = (list: Product[]) => list.map((x) => (x.id === row.id ? { ...x, ...row } : x));
-    setProducts(merge);
-    patchCached<{ p: Product[]; c: Company[]; s: CompanySection[] }>(invKey, (d) => ({ ...d, p: merge(d.p) }));
+  /* ط١ + ط٥ بالجملة أيضاً — نفسُ SaleBuilder ونفسُ القرار: قائمةٌ مفتوحةٌ من الصبح كانت
+   * تبيع بأرقام الصبح بلا عمرٍ ولا سؤال (والخادمُ يُسأل عند الصفر وحده، فالرقمُ المرتفعُ
+   * البائت لا يُصحَّح أبداً). يعمل والجملةُ ظاهرةٌ وحدها: بقيّةُ تبويبات المخزن شاشاتُ
+   * إدارةٍ تُحدَّث بأفعالها. والدخولُ إلى الجملة نفسُه «عودة» — يُسأل عن العمر فوراً. */
+  useRevalidateOnReturn(() => { void loadRef.current(); }, RETURN_STALE_MS, {
+    key: invKey,
+    isBusy: () => wsBusy.current || inflight.current > 0,
+    enabled: view === "wholesale" && canPos && !locked,
+    pollMs: POLL_MS,
+    checkOnEnable: true,
+  });
+  const onWsBusy = useCallback((b: boolean) => { wsBusy.current = b; }, []);
+
+  /** جوابٌ طازجٌ من الخادم (سؤالُ «رصيده صفر») يرقّع القائمةَ والكاشَ **بلا تجديد
+   *  عمره** — وإلا سألت شاشةُ الجملة الخادمَ بكلّ ضغطةٍ على نفس الكرت. الصفُّ خامّاً
+   *  بقائمة المخزن، وحوضُ قسمه بالأقسام — فرصيدُ الجملة (`sellable`) يتبعهما معاً. */
+  const patchRow = useCallback((patch: FreshPatch) => {
+    setProducts((l) => patchRawList(l, patch));
+    setSections((s) => patchSections(s, patch));
+    patchCached<{ p: Product[]; c: Company[]; s: CompanySection[] }>(invKey, (d) => ({ ...d, p: patchRawList(d.p, patch), s: patchSections(d.s, patch) }));
   }, [invKey]);
+  /** رصيدُ الجملة = رصيدُ الكاشير (الصفُّ + حوضُ قسمه): الخادمُ يخصم من الحوض بالجملة
+   *  أيضاً (`retail_checkout` ← `deduct_stock_pooled`). الخامُّ وحده كان يقول «نفد» —
+   *  ثم «موجود بس رصيده صفر، زيد رصيده» — عمّا يبيعه الكاشيرُ بالغرفة المجاورة. */
+  const sellable = useMemo(() => sellableRows(products, sections), [products, sections]);
   const wsRefresh = async () => {
     setWsRefreshing(true);
     try { await load(); } finally { if (mounted.current) setWsRefreshing(false); }
@@ -457,8 +520,8 @@ export function Inventory() {
               </Button>
             </div>
           )}
-          <SaleBuilder products={products} clinicId={clinicId} onSold={load} wholesale
-            onFreshRow={patchRow} onRefresh={() => void wsRefresh()} />
+          <SaleBuilder products={sellable} clinicId={clinicId} onSold={load} wholesale
+            onFreshRow={patchRow} onRefresh={() => void wsRefresh()} onBusyChange={onWsBusy} />
         </>
       ) : view === "trash" ? (
         <TrashTab onChanged={load} />

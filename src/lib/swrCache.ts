@@ -24,9 +24,10 @@ export function isFresh(key: string, ttlMs: number): boolean {
   return !!e && Date.now() - e.at < ttlMs;
 }
 
-/** Overwrite the cached value for a key. */
-export function setCached<T>(key: string, data: T): void {
-  store.set(key, { data, at: Date.now() });
+/** Overwrite the cached value for a key. `at` = when the data was read — pass the
+ *  request's START time: a slow response stamped on arrival looks fresher than it is. */
+export function setCached<T>(key: string, data: T, at: number = Date.now()): void {
+  store.set(key, { data, at });
 }
 
 /** متى جُلبت هذه اللقطة (ms منذ ١٩٧٠)، أو undefined إن لم تُجلب قطّ.

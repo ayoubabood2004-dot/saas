@@ -24,7 +24,7 @@ import { playTap, playWarning } from "@/lib/sounds";
 const KEYS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"];
 
 export function QtyPad({
-  open, title, hint, initial, max, quick = [5, 10, 12, 20, 50], submitLabel, onClose, onSubmit,
+  open, title, hint, initial, max, allowOver = false, quick = [5, 10, 12, 20, 50], submitLabel, onClose, onSubmit,
 }: {
   open: boolean;
   title: string;
@@ -33,6 +33,9 @@ export function QtyPad({
   initial?: number;
   /** السقف المتاح (المخزون). Infinity = بلا سقف. */
   max?: number;
+  /** ما فوق السقف يُرسل كما كُتب (الشاشةُ تحمرّ وتقول المتوفّر) — السقفُ لقطة،
+   *  والمستدعي يسأل الخادمَ قبل القصّ. بدونه يُقصّ هنا كما كان. */
+  allowOver?: boolean;
   quick?: number[];
   submitLabel?: string;
   onClose: () => void;
@@ -48,7 +51,7 @@ export function QtyPad({
   const cap = max == null || !Number.isFinite(max) ? Infinity : Math.max(0, Math.floor(max));
   const typed = raw === "" ? (initial ?? 0) : Number(raw);
   const over = typed > cap;
-  const value = Math.min(typed, cap);
+  const value = allowOver ? typed : Math.min(typed, cap);
 
   const press = (k: string) => {
     playTap();
@@ -91,7 +94,9 @@ export function QtyPad({
         </div>
         {over && (
           <p className="rounded-xl bg-danger-50 px-3 py-1.5 text-2xs font-bold text-danger-700 dark:bg-danger-500/10 dark:text-danger-300">
-            {t("retail.qtyPadClamped", { n: formatNum(cap), defaultValue: "المخزون لا يكفي — ستُضاف {{n}} فقط" })}
+            {allowOver
+              ? t("retail.qtyPadOverCheck", { n: formatNum(cap), defaultValue: "أكثر من المتوفّر بآخر تحديث ({{n}}) — نتأكد من الخادم ونضيف المتاح" })
+              : t("retail.qtyPadClamped", { n: formatNum(cap), defaultValue: "المخزون لا يكفي — ستُضاف {{n}} فقط" })}
           </p>
         )}
 

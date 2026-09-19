@@ -255,6 +255,27 @@ console.log("\n▸ مخزنُ الحقل لا يصل كاشيرَ العيادة
   check("  والسؤالُ بالمعرّف (طريقُ الكرت) لا يُرجعه", (await repo.getProductById("f1")) === undefined);
   check("  ومنتجُ العيادة بمعرّفه يرجع", (await repo.getProductById("c1"))?.id === "c1");
   check("ووجهُ الحقل ما زال يراه (listFarmProducts)", (await repo.listFarmProducts("farm-1")).some((p) => p.id === "f1"));
+  /* وصيغُ الماسح (GTIN-14 ← EAN-13 ← UPC-A) تستثنيه كالحرفيّ — مرآةُ 0191 التي
+   * تستثنيه بالصيغ أيضاً. كانت الصيغُ تمشي على كلّ المنتجات، فصيغةٌ أسبقُ يحملها صفُّ
+   * حقلٍ تُختار قبل صيغةٍ لاحقةٍ يحملها منتجُ العيادة: رفضٌ أو «رصيده صفر» عمّا يُباع. */
+  seed([P("f2", "علف حقل", "0045496830434", { farm_id: "farm-1", stock: 40 }), P("c2", "علف عيادة", "045496830434", { stock: 12 })]);
+  check("  وصيغُ الماسح تستثنيه: GTIN-14 يصل منتجَ العيادة لا الحقل",
+    (await repo.getProductByBarcode("00045496830434"))?.id === "c2", (await repo.getProductByBarcode("00045496830434"))?.id);
+}
+
+/* ── حوضُ القسم طازجاً (سؤالُ «رصيده صفر» بعد التدقيق) ──────────────────────
+ * رصيدُ الكاشير = الصفُّ + حوضُ قسمه، والخادمُ يبيع من الحوض. السؤالُ بلا الحوض كان
+ * يقول «زيد رصيده» عمّا يُباع. */
+console.log("\n▸ getSectionPool — حوضُ القسم لسؤال الكاشير");
+{
+  mem.set(DB_KEY, JSON.stringify({
+    products: [P("a", "مجمَّع", "1", { section_id: "s1", stock: 0 })], companies: [],
+    companySections: [{ id: "s1", name: "طفيليات", company_id: "co", pooled_stock: 50 }, { id: "s2", name: "بلا حوض", company_id: "co" }],
+    purchases: [], purchaseItems: [], invoices: [], invoiceItems: [], generatedBarcodes: [], productsTrash: [],
+  }));
+  check("حوضُ القسم يُقرأ بمعرّفه", (await repo.getSectionPool("s1")) === 50);
+  check("  وقسمٌ بلا حوضٍ صفر", (await repo.getSectionPool("s2")) === 0);
+  check("  وقسمٌ غيرُ موجودٍ صفرٌ لا خطأ", (await repo.getSectionPool("nope")) === 0);
 }
 
 console.log("\n▸ tidyInventory — صورةٌ قبل الطيّ (مرآةُ محفّز 0146)");
