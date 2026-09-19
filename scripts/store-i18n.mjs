@@ -30,6 +30,10 @@ const text = `${JSON.stringify(subset, null, 2)}\n`;
 if (process.argv.includes("--check")) {
   let cur = null;
   try { cur = readFileSync(OUT, "utf8"); } catch { /* غير موجود */ }
+  /* نهاياتُ الأسطر شأنُ السحب لا المحتوى: ويندوز بـautocrlf يسحب CRLF، فكان كلُّ worktree
+   * جديدٍ يفشل هنا والمحتوى مطابق. `.gitattributes` يثبّت LF للملفّ؛ وهذا دفاعٌ ثانٍ —
+   * **وأيُّ انحرافٍ بالمحتوى** (مفتاحٌ أو نصٌّ أو ترتيب) ما زال يُفشل الحارس. */
+  if (cur != null) cur = cur.replace(/\r\n/g, "\n");
   if (cur !== text) {
     console.error(`✗ store-i18n: ${OUT} بارَ عن ar.json — شغّل: node scripts/store-i18n.mjs`);
     process.exit(1);
