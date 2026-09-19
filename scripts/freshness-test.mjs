@@ -74,6 +74,18 @@ if (fr) {
   check("  ولقطةٌ لم تُجلب قطّ ⇒ جلب", D({ ageMs: Infinity }) === "reload");
 }
 
+/* ── ط٥ (قرار المالك: استطلاعٌ كلَّ ٥ دقائق) ─────────────────────────────────
+ * ط١ يجلب حين يرجع التاب. لكنّ كاشيراً يحدّق بالشاشة نفسِها ساعةً لا «يرجع» إليها —
+ * والمديرُ رصّد من جهازه. فالتابُ الظاهر يُسأل كلَّ ٥ دقائق، بنفس القرار المفحوص:
+ * لا أثناء بيعة، ولا جلبان معاً، ولا تابٌ مخفيّ. */
+console.log("▸ ط٥ — التابُ الظاهر يتحدّث كلَّ ٥ دقائق بنفس الحراسات");
+if (fr) check("  كلَّ ٥ دقائق بالضبط", fr.POLL_MS === 300_000, `طلعت ${fr.POLL_MS}`);
+check("الخطّافُ يجدول استطلاعاً حين يُطلب (setInterval بـpollMs)", /setInterval\(/.test(HOOK) && /pollMs/.test(HOOK));
+check("  ويمسحه عند الخروج (clearInterval)", /clearInterval\(/.test(HOOK));
+check("  ويمرّ بنفس القرار (onReturnDecision) — لا بيعة، ولا جلبان، ولا تابٌ مخفيّ",
+  (HOOK.match(/onReturnDecision\(/g) ?? []).length === 1 && /setInterval\(\s*check\s*,/.test(HOOK));
+check("شاشةُ البيع تطلبه كلَّ POLL_MS", /pollMs:\s*POLL_MS/.test(RS));
+
 /* ── ط٢: لا كرتَ ميّت — المسحُ والكرتُ من دالّةٍ واحدة ─────────────────── */
 console.log("▸ ط٢ — لا كرتَ ميّت: المسحُ والكرتُ يسألان الخادمَ بنفس الدالّة");
 check("الكرتُ لا يُعطَّل برصيدٍ محلّيّ", !/disabled=\{out\}/.test(SB));
@@ -196,6 +208,25 @@ if (cc) {
   check("  وموزونٌ طازجٌ فيه كيلوات ⇒ يُباع", cc.zeroStockVerdict({ stock: 2.5, sold_by_weight: true }, true) === "sell-fresh");
 }
 check("sellOrExplain تبوّب بـneedsFreshCheck (لا outOfStock وحدها)", /if \(!needsFreshCheck\(product, retMode\)\)/.test(soeNow));
+
+/* ── شاشةُ البيع بالجملة (المخزن) — نفسُ الطزاجة، ولا اقتلاعَ للإيصال ──────
+ * هي نفسُ `SaleBuilder` فنالت الكرتَ الناطق تلقائياً، لكن بلا ترقيع صفٍّ (فتسأل
+ * الخادمَ بكلّ ضغطة) وبلا زرّ «حدّث القائمة». والأخطر: فشلُ تحديثٍ بعد بيعةٍ جملة
+ * (`onSold={load}`) يرفع `failed` فيحلّ محلّ التبويب كلِّه — فتُقتلع شاشةُ «تمّ البيع»
+ * وإيصالُها من تحت يد الكاشير. نفسُ ما أُصلح بشاشة البيع قديماً. */
+console.log("▸ شاشةُ البيع بالجملة — ترقيعٌ وزرّ تحديث، ولا اقتلاعَ للإيصال");
+const INV = read("src/pages/Inventory.tsx").replace(/\r\n/g, "\n");
+// حتى «/>» لا حتى أوّل «>»: السهمُ «=>» داخل الخصائص يقطع `[^>]*` قبل نهاية الوسم.
+const wsTag = (INV.match(/<SaleBuilder\b[\s\S]*?\bwholesale\b[\s\S]*?\/>/) ?? [""])[0];
+check("الجملةُ ترقّع صفَّها الطازج (onFreshRow)", /onFreshRow=/.test(wsTag));
+check("  وزرُّ «حدّث القائمة» يحدّث بالمكان (onRefresh)", /onRefresh=/.test(wsTag));
+const invLoad = INV.slice(INV.indexOf("const load = async () => {"), INV.indexOf("\n  useEffect(() => {", INV.indexOf("const load = async () => {")));
+check("  وفشلُ التحديث بالجملة فوق قائمةٍ معروضة لا يقتلع الشاشة",
+  /view === "wholesale"/.test(invLoad) && /setWsStale\(true\)/.test(invLoad));
+check("  بل يقوله بشريط العمر وزرّ التحديث", /data-stalestrip/.test(INV) && /pos\.staleStrip/.test(INV) && /wsStale/.test(INV));
+// الشرطُ كاملاً: الجملةُ **وقائمةٌ معروضة** وحدهما يُبقيان الشاشة؛ وإلا فالفشلُ الصاخب.
+check("  والقائمةُ الفارغة تبقى شاشةَ الفشل الصاخبة (لا «ماكو منتجات» كاذبة)",
+  /if \(view === "wholesale" && products\.length > 0\) setWsStale\(true\);\s*else setFailed\(true\);/.test(invLoad));
 
 /* ── ط٧: مخزنُ الحقل لا يُباع من كاشير العيادة ────────────────────────────
  * الخادمُ يستثنيه بكلّ طريقٍ اليوم (0191 — مقيسٌ حيّاً)، والوجهُ التجريبيّ محروسٌ

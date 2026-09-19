@@ -13,7 +13,7 @@ import { Skeleton, Button, useToast } from "@/components/ui";
 import { cn, formatTime } from "@/lib/utils";
 import { withTimeout } from "@/lib/errors";
 import { getCached, setCached, isFresh, cachedAt, patchCached } from "@/lib/swrCache";
-import { RETURN_STALE_MS, RETRY_AFTER_FAIL_MS } from "@/lib/freshness";
+import { RETURN_STALE_MS, RETRY_AFTER_FAIL_MS, POLL_MS } from "@/lib/freshness";
 import { useRevalidateOnReturn } from "@/hooks/useRevalidateOnReturn";
 import { loadRetailSnap, retailKey, type RetailSnap } from "@/lib/prefetchData";
 import { playTap } from "@/lib/sounds";
@@ -169,6 +169,8 @@ export function RetailSales() {
   useRevalidateOnReturn(() => { void loadRef.current(); }, RETURN_STALE_MS, {
     key: cacheKey,
     isBusy: () => busyRef.current || inflightRef.current > 0,
+    // ط٥ (قرار المالك): والتابُ الظاهرُ يُسأل كلَّ ٥ دقائق — كاشيرٌ يحدّق بالشاشة لا «يرجع».
+    pollMs: POLL_MS,
   });
   const onBusyChange = useCallback((b: boolean) => { busyRef.current = b; }, []);
 

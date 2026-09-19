@@ -15,11 +15,12 @@ import { onReturnDecision } from "@/lib/freshness";
  * @param staleMs  لقطةٌ أحدثُ من هذا لا تُجلب ثانية.
  * @param opts.key مفتاحُ اللقطة بـswrCache — منه يُقرأ عمرُها.
  * @param opts.isBusy «لا تستبدل القائمةَ الآن» (بيعةٌ جارية، أو جلبٌ قائم).
+ * @param opts.pollMs ط٥: يُسأل أيضاً كلَّ هذا والتابُ ظاهر — بنفس القرار والحراسات.
  */
 export function useRevalidateOnReturn(
   cb: () => void,
   staleMs: number,
-  opts: { key: string; isBusy?: () => boolean; enabled?: boolean },
+  opts: { key: string; isBusy?: () => boolean; enabled?: boolean; pollMs?: number },
 ): void {
   const cbRef = useRef(cb);
   cbRef.current = cb;
@@ -42,9 +43,12 @@ export function useRevalidateOnReturn(
     const onVisibility = () => { if (document.visibilityState === "visible") check(); };
     document.addEventListener("visibilitychange", onVisibility);
     window.addEventListener("online", check);
+    // ط٥: نفسُ `check` بالضبط — التابُ المخفيُّ والبيعةُ الجارية والجلبُ القائم يُتخطّون.
+    const poll = opts.pollMs && opts.pollMs > 0 ? window.setInterval(check, opts.pollMs) : null;
     return () => {
       document.removeEventListener("visibilitychange", onVisibility);
       window.removeEventListener("online", check);
+      if (poll != null) window.clearInterval(poll);
     };
-  }, [staleMs, opts.enabled]);
+  }, [staleMs, opts.enabled, opts.pollMs]);
 }
