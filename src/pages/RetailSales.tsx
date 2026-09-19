@@ -62,6 +62,10 @@ export function RetailSales() {
   const [params, setParams] = useSearchParams();
   const navigate = useNavigate();
   const [prefill, setPrefill] = useState<RetailPrefill | null>(null);
+  /* هل نزل الجسرُ على الشاشة؟ يعيش هنا لا بداخلها: تبديلُ تبويبٍ يُزيل شاشةَ البيع
+   * ويعيدها (AnimatePresence)، فكان الجسرُ يُعاد ختمُه على سلّةٍ فارغة — تضيع سلّةُ
+   * بيعةٍ فُتحت من سجلّ حيوان، ويرجع الزبونُ بعد مسحه. ينزل مرّةً، والمسودّةُ بعدها. */
+  const [prefillApplied, setPrefillApplied] = useState(false);
   /* مطابقة الصندوق — خيار تفعيلي من الإعدادات (زر بنهاية كل دوام). */
   const [cashRecOpen, setCashRecOpen] = useState(false);
   // من فتح المبيعات من سجل حيوان؟ نحفظ هويته حتى نرجّعه بضغطة بعد ما ننظّف الرابط.
@@ -78,6 +82,7 @@ export function RetailSales() {
     const service = params.get("service") ?? "";
     const labId = params.get("labId") ?? "";
     if (customer || phone || pet || service) {
+      setPrefillApplied(false);
       setPrefill({ name: customer, phone, pet, petId: petId || undefined, species, service: service || undefined, labId: labId || undefined });
       setTab("sell");
       if (petId) setReturnPet({ id: petId, name: pet || customer || "الحالة" });
@@ -323,7 +328,9 @@ export function RetailSales() {
                     </div>
                   )}
                   <SaleBuilder products={products} clinicId={clinicId} onSold={load} prefill={prefill}
-                    onFreshRow={patchRow} onRefresh={() => void refreshNow()} onBusyChange={onBusyChange} />
+                    onFreshRow={patchRow} onRefresh={() => void refreshNow()} onBusyChange={onBusyChange}
+                    prefillApplied={prefillApplied} onPrefillApplied={() => setPrefillApplied(true)}
+                    onCustomerCleared={() => { setPrefill(null); setPrefillApplied(false); setReturnPet(null); }} />
                 </>
               ) : tab === "invoices" ? (
                 <InvoicesPanel invoices={invoices} clinicId={clinicId} onChanged={load} />
@@ -339,7 +346,9 @@ export function RetailSales() {
                 /* الفرعُ الأخير كان `<ReportsPanel />` بلا شرط: أيُّ قيمةِ تبويبٍ
                    لا تطابق ما سبق ترسم التقارير. فصار صريحاً — ولا شيءَ يسقط عليها. */
                 <SaleBuilder products={products} clinicId={clinicId} onSold={load} prefill={prefill}
-                  onFreshRow={patchRow} onRefresh={() => void refreshNow()} onBusyChange={onBusyChange} />
+                  onFreshRow={patchRow} onRefresh={() => void refreshNow()} onBusyChange={onBusyChange}
+                    prefillApplied={prefillApplied} onPrefillApplied={() => setPrefillApplied(true)}
+                    onCustomerCleared={() => { setPrefill(null); setPrefillApplied(false); setReturnPet(null); }} />
               )}
             </>
           )}
