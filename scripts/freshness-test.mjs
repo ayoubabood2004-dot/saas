@@ -224,6 +224,11 @@ const invLoad = INV.slice(INV.indexOf("const load = async () => {"), INV.indexOf
 check("  وفشلُ التحديث بالجملة فوق قائمةٍ معروضة لا يقتلع الشاشة",
   /view === "wholesale"/.test(invLoad) && /setWsStale\(true\)/.test(invLoad));
 check("  بل يقوله بشريط العمر وزرّ التحديث", /data-stalestrip/.test(INV) && /pos\.staleStrip/.test(INV) && /wsStale/.test(INV));
+/* والشريطُ داخل الجملة وحدها — فالانتقالُ لتبويب المنتجات كان يعرض القائمةَ القديمة **بلا
+ * أيّ إشارة** (أمسكته مراجعةٌ عدائية). خارج الجملة يصير الفشلُ صاخباً كعادة المخزن، ويُعاد الجلب. */
+const leaveFx = INV.slice(INV.indexOf('if (view !== "wholesale" && wsStale)'), INV.indexOf("}, [view, wsStale]"));
+check("  والخروجُ من الجملة وفشلُها قائم ⇒ فشلٌ صاخبٌ وجلبٌ فوري (لا قائمةٌ قديمة صامتة)",
+  leaveFx.length > 0 && /setFailed\(true\)/.test(leaveFx) && /load\(\)/.test(leaveFx) && /setWsStale\(false\)/.test(leaveFx));
 // الشرطُ كاملاً: الجملةُ **وقائمةٌ معروضة** وحدهما يُبقيان الشاشة؛ وإلا فالفشلُ الصاخب.
 check("  والقائمةُ الفارغة تبقى شاشةَ الفشل الصاخبة (لا «ماكو منتجات» كاذبة)",
   /if \(view === "wholesale" && products\.length > 0\) setWsStale\(true\);\s*else setFailed\(true\);/.test(invLoad));

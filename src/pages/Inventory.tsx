@@ -237,6 +237,18 @@ export function Inventory() {
     setWsRefreshing(true);
     try { await load(); } finally { if (mounted.current) setWsRefreshing(false); }
   };
+  /* الشريطُ يُرسم داخل الجملة وحدها — فالانتقالُ لتبويب المنتجات أو المشتريات والفشلُ قائم
+   * كان يعرض القائمةَ القديمة **بلا أيّ إشارة** (أمسكته مراجعةٌ عدائية): عينُ ما يحذّر منه
+   * CLAUDE.md — النقصُ يُصدَّق. فخارج الجملة يعود الفشلُ صاخباً كعادة المخزن، ويُعاد الجلبُ
+   * فوراً: إن رجع النتُّ اختفت شاشةُ الفشل وحدها، وإلا بقيت تقول الحقيقة. */
+  useEffect(() => {
+    if (view !== "wholesale" && wsStale) {
+      setWsStale(false);
+      setFailed(true);
+      void load();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view, wsStale]);
 
   // دفعات قديمة بلا رابط مجموعة — تُعرض فقط عندما تكون الميزة شغّالة فعلاً.
   const pendingBatches = useMemo(() => (groupsOk ? findUngroupedBatches(products) : []), [groupsOk, products]);
