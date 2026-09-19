@@ -5,7 +5,7 @@ import {
   Search, Barcode, Plus, Minus, Trash2, ShoppingCart, User, Phone, Tag, Percent, BadgePercent,
   Banknote, CreditCard, ArrowLeftRight, CheckCircle2, Printer, Sparkles, TrendingUp, Package, PawPrint, X,
   Stethoscope, Pencil, Pill, Syringe, CalendarClock, Wallet, StickyNote, Bike, UserCheck, AlertTriangle, Undo2,
-  ChevronUp, ChevronDown, PanelLeftClose, PanelLeftOpen, Scale, RotateCcw, Building2, SlidersHorizontal, Layers,
+  ChevronUp, ChevronDown, PanelLeftClose, PanelLeftOpen, Scale, RotateCcw, Building2, SlidersHorizontal, Layers, UserX,
 } from "lucide-react";
 import type { Product, Invoice, InvoiceItem, CheckoutItem, SaleMeta, PaymentMethod, PaymentSplit, DiscountType, Customer, Service, ServiceCatalog, Species, Pet, Courier, DeliveryOrder } from "@/types";
 import { repo, resolveDiscount } from "@/lib/repo";
@@ -38,6 +38,7 @@ import { unitCap, capAdd } from "@/lib/cartCap";
 import { sharedAsk } from "@/lib/freshness";
 import { askFresh, freshVerdict, needsServerCheck, addRoom, type FreshAnswer, type FreshPatch } from "@/lib/freshSale";
 import { sellableRow } from "@/lib/sellable";
+import { customerBoundLines, cartAfterClearCustomer } from "@/lib/saleCustomer";
 import { splitCustomerField } from "@/lib/customerName";
 import { dueOf, paidOf } from "@/lib/debt";
 import { withTimeout, describeDbError, isNetworkError, isTimeoutError } from "@/lib/errors";
@@ -493,7 +494,7 @@ function PosLayoutMenu({ layout, onChange, axis, isLg, nudge, reset }: {
   );
 }
 
-export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = false, onFreshRow, onRefresh, onBusyChange }: {
+export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = false, onFreshRow, onRefresh, onBusyChange, prefillApplied = false, onPrefillApplied, onCustomerCleared }: {
   /** قائمةُ الكاشير: رصيدُ كلّ صفٍّ رصيدُ الكاشير (الصفُّ + حوضُ قسمه، `sellable.ts`). */
   products: Product[]; clinicId?: string; onSold: () => void; prefill?: RetailPrefill | null; wholesale?: boolean;
   /** جوابٌ طازجٌ من الخادم (صفٌّ بحوضه، أو صفٌّ غاب) — الأبُ يرقّع به قائمتَه فلا
@@ -503,6 +504,14 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
   onRefresh?: () => void;
   /** بيعةٌ جارية؟ الأبُ لا يستبدل القائمةَ تحت يد الكاشير وسطَ checkout. */
   onBusyChange?: (busy: boolean) => void;
+  /** هل نزل جسرُ المريض (`prefill`) على الشاشة مرّةً؟ يعيش عند الأب لأنه ينجو من
+   *  إعادة التركيب: تبديلُ تبويبٍ يُزيل الشاشةَ ويعيدها، فكان الجسرُ **يُعاد ختمُه**
+   *  على سلّةٍ فارغة — تضيع سلّةُ بيعةٍ فُتحت من سجلّ حيوان، ويرجع الزبونُ بعد مسحه. */
+  prefillApplied?: boolean;
+  /** نزل الآن — فلا يُعاد على إعادة التركيب (والمسودّةُ هي التي تُسترجع). */
+  onPrefillApplied?: () => void;
+  /** مُسح الزبونُ من الشاشة — الأبُ يرمي الجسرَ فلا يعود بتبويبٍ ولا بتحديث. */
+  onCustomerCleared?: () => void;
 }) {
   const { t, i18n } = useTranslation();
   const toast = useToast();
@@ -541,8 +550,11 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
     return true;
   };
 
-  // Restore an unfinished walk-in sale (see SaleDraft). Read ONCE on mount.
-  const [draft0] = useState(() => (prefill ? null : loadSaleDraft(draftScope)));
+  /* Restore an unfinished sale (see SaleDraft). Read ONCE on mount.
+   * وجسرُ المريض يُتخطّى **مرّةً واحدة** (أوّلَ نزولٍ له): بعدها تُقرأ المسودّةُ كغيرها.
+   * كان الشرطُ `prefill ? null : …`، وتبديلُ التبويب يُعيد التركيب والجسرُ ما زال
+   * بيد الأب — فتبدأ السلّةُ فارغةً وتُكتب المسودّةُ فارغةً فوق بيعةٍ نصفِ مكتملة. */
+  const [draft0] = useState(() => (prefill && !prefillApplied ? null : loadSaleDraft(draftScope)));
 
   const [cart, setCart] = useState<Line[]>(draft0?.cart ?? []);
   /* السلّةُ الحيّة لمن يحسب بين رسمين. مسحتان على جوابٍ واحدٍ من الخادم (`sharedAsk`)
@@ -588,6 +600,12 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
   /* زرُّ التصفير ضغطه الطبيب: الزبونُ الآتي من سجل حيوانٍ لا يرجع بعده. */
   const prefillOff = useRef(false);
   const [resetAsk, setResetAsk] = useState(false);
+  /** «امسح الزبون وخلّي السلّة»: سؤالٌ حين بالسلّة سطورٌ تتبع مريضاً. */
+  const [custClearAsk, setCustClearAsk] = useState(false);
+  /** بندُ المختبر الذي جاء بالجسر — يُختم «مفوتَر» عند الإتمام. **مرجعٌ لا خاصّية**:
+   *  الخاصّيةُ تبقى بيد الأب بعد مسح الزبون، فكانت بيعةُ الزبون الجديد تختم تحليلَ
+   *  الزبون السابق. */
+  const labIdRef = useRef<string | null>(prefill?.labId ?? null);
   /* لوح السلة على الشاشات الضيّقة — يُفتح من الشريط الملتصق بالأسفل. */
   const [cartSheet, setCartSheet] = useState(false);
   /* أدوات الدفع (خصم · طريقة دفع · فاتورة أولية) مطويّة: كانت تحتل ٣٢٤px من
@@ -1228,7 +1246,8 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
   // The bridge: a doctor clicked "Sell items" inside an animal record. Auto-fill the
   // customer, surface the pet context, and focus the scan field for a zero-click flow.
   useEffect(() => {
-    if (!prefill) return;
+    if (!prefill || prefillApplied) return;
+    labIdRef.current = prefill.labId ?? null;
     if (prefill.name) setName(prefill.name);
     if (prefill.phone) setPhone(prefill.phone);
     setSalePets(prefill.pet ? [{ id: prefill.petId || null, name: prefill.pet, species: prefill.species || null }] : []);
@@ -1260,9 +1279,12 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
         petId: prefill.petId ?? null, petName: prefill.pet || null, surgeryCat: false, surgeryRef: null,
       }]);
     }
+    // نزل — فلا يُعاد ختمُه بإعادة التركيب (المسودّةُ تحفظه وتسترجعه كأيّ بيعة).
+    onPrefillApplied?.();
     const id = window.setTimeout(() => searchRef.current?.focus(), 160);
     return () => window.clearTimeout(id);
-  }, [prefill]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prefill, prefillApplied]);
 
   /* الحساب يقرأ الراجع سالباً: قيمة المشترى ناقص قيمة الراجع = ما يدفعه
    * الزبون فعلاً. سطرٌ راجع بألف مع شراءٍ بخمسة ⇒ يدفع أربعة. */
@@ -1559,6 +1581,35 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
     playTap();
     const dirty = cart.length > 0 || !!name.trim() || !!phone.trim() || salePets.length > 0 || !!saleNotes.trim();
     if (dirty) setResetAsk(true); else hardReset();
+  };
+
+  /* ---- «امسح الزبون وخلّي السلّة» (شكوى الطبيب) --------------------------
+   * غيّر رأيَه فلا يريد البيعَ لهذا الزبون، والسلّةُ فيها أشياءُ كثيرة يبيعها لغيره.
+   * التصفيرُ يمسحها معه، والتحديثُ لا يمسح الزبونَ أصلاً (المسودّةُ ترجعه، والجسرُ
+   * يعيد ختمَه). فهنا: الزبونُ وحدَه يروح — والسطورُ التي **تُكتب بسجلّ حيوانه**
+   * تُرفع ويُقال اسمُها، فلا يهبط لقاحٌ بسجلّ حيوانٍ اشتراه غيرُه. */
+  const boundLines = customerBoundLines(cart);
+  const clearCustomerNow = () => {
+    setName(""); setPhone(""); setSalePets([]); setActivePetIdx(0);
+    setCustMatches([]); setCustOpen(false); setPetPickOpen(false); setPetPickQ("");
+    setSaleNotes("");                 // الملاحظةُ تُكتب بسجلّ حيوانه — تروح معه
+    setDAddress(""); setDZone("");    // عنوانُ التوصيل وزونُه بياناتُ زبونٍ أيضاً
+    labIdRef.current = null;
+    prefillOff.current = true;
+    const dropped = boundLines.length;
+    setCart((c) => cartAfterClearCustomer(c));
+    setCustClearAsk(false);
+    onCustomerCleared?.();
+    playSuccess();
+    toast.success(
+      t("retail.custCleared", "انمسحت معلومات الزبون — والسلّة مثل ما هي"),
+      dropped > 0 ? t("retail.custClearedDropped", "وانرفعت {{n}} سطراً كانت تنكتب بسجلّ حيوانه", { n: formatNum(dropped) }) : undefined,
+    );
+  };
+  const askClearCustomer = () => {
+    playTap();
+    if (boundLines.length > 0) { setCustClearAsk(true); return; }
+    clearCustomerNow();
   };
 
   // ---- "+ حيوان آخر" — attach another of the clinic's patients to this sale ----
@@ -1939,7 +1990,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
       setDone({ invoice, items: invItems });
       clearSaleDraft(draftScope); // sale is final — drop the saved draft
       // بيع قادم من المختبر؟ علّم النتيجة «مفوترة» تلقائياً — الحلقة انغلقت.
-      if (prefill?.labId) void repo.setLabBilled(prefill.labId, true).catch(() => {});
+      if (labIdRef.current) void repo.setLabBilled(labIdRef.current, true).catch(() => {});
       // الاتجاه المعاكس: خدمة من تصنيف «المختبر» بيعت لحيوان معروف → سجل
       // «بانتظار النتائج» يصعد للمختبر والطبلة فوراً، معلَّم مفوتر من البداية.
       try {
@@ -2657,6 +2708,18 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
             >
               <RotateCcw size={posV2 ? 18 : 15} />
             </button>
+            {/* الزبونُ وحدَه (شكوى الطبيب): يظهر حين يكون هناك زبونٌ يُمسح، والسلّةُ تبقى. */}
+            {(!!name.trim() || !!phone.trim() || salePets.length > 0) && (
+              <button
+                data-custclear type="button"
+                onClick={askClearCustomer}
+                title={t("retail.custClear", "امسح الزبون وخلّي السلّة")}
+                aria-label={t("retail.custClear", "امسح الزبون وخلّي السلّة")}
+                className={cn("grid place-items-center rounded-xl bg-surface-2 text-ink-muted transition hover:bg-warn-50 hover:text-warn-700 dark:hover:bg-warn-500/15 dark:hover:text-warn-200", posV2 ? "h-10 w-10" : "h-8 w-8")}
+              >
+                <UserX size={posV2 ? 18 : 15} />
+              </button>
+            )}
             {cart.length > 0 && <button onClick={() => { playTap(); setCart([]); }} className="text-xs text-ink-subtle transition hover:text-danger-600">{t("common.clear", "Clear")}</button>}
             {posV2 && cartResize.active && (
               /* تكبير/تصغير السلة بضغطة — البديل المضمون للسحب على الآيباد:
@@ -3412,6 +3475,28 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
         <p className="text-sm text-ink-muted">
           {t("retail.resetHint", "تنمسح السلة واسم الزبون وهاتفه والحيوان والملاحظة والمسودة المحفوظة على هذا الجهاز. ما ينحفظ شي بالفواتير.")}
         </p>
+      </Dialog>
+
+      {/* «امسح الزبون وخلّي السلّة» — السطورُ التي تُكتب بسجلّ حيوانه تُقال بأسمائها
+          قبل رفعها: بيعُها لزبونٍ آخر يعني لقاحاً بسجلّ حيوانٍ لم يشترِه. */}
+      <Dialog open={custClearAsk} onClose={() => setCustClearAsk(false)} title={t("retail.custClearTitle", "امسح معلومات الزبون؟")} size="sm"
+        footer={<>
+          <Button variant="ghost" onClick={() => { playTap(); setCustClearAsk(false); }}>{t("common.cancel", "إلغاء")}</Button>
+          <Button variant="danger" data-custcleargo leftIcon={<UserX size={16} />} onClick={clearCustomerNow}>{t("retail.custClearGo", "امسح الزبون وارفعها")}</Button>
+        </>}>
+        <div className="space-y-2">
+          <p className="text-sm text-ink-muted">
+            {t("retail.custClearHint", "بقية السلّة تبقى مثل ما هي. بس هذي السطور مربوطة بحيوان الزبون وتنكتب بسجلّه عند الإتمام — تنرفع من السلّة:")}
+          </p>
+          <ul className="space-y-1">
+            {boundLines.map((l) => (
+              <li key={l.id} className="flex items-center justify-between gap-3 rounded-xl bg-surface-2 px-3 py-2 text-sm">
+                <span className="min-w-0 flex-1 truncate font-medium text-ink">{l.name}</span>
+                {l.petName && <span className="shrink-0 text-xs font-semibold text-ink-subtle">{l.petName}</span>}
+              </li>
+            ))}
+          </ul>
+        </div>
       </Dialog>
 
       {posV2 && cartSheet && (
