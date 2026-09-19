@@ -416,25 +416,59 @@ console.log("▸ الدفعة ٦ — المعروضُ هو المحسوب");
   check("  ولا toLowerCase خامٌّ بقي بهذه المواضع",
     !inv2.includes("companies.filter((c) => c.name.toLowerCase().includes(ql))")
     && !pur.includes('(p.company_name ?? "").toLowerCase().includes(ql)'));
-  check("  ومفتاحُ اسم الشركة يبني على searchable بالنسختين",
-    (inv2.split("const normKey = (s: string) => searchable(normName(s))").length - 1) === 1
-    && (pur.split("const normKey = (s: string) => searchable(normName(s))").length - 1) === 1);
+  /* ومفتاحُ اسم الشركة من **مصدرٍ واحد** (`orgName.ts`): كانت ثلاثُ نسخٍ منه —
+   * شاشةُ المخزون، وشاشةُ الشراء، والكتلوج — تفترق فيما تطويه. */
+  const cat = readFileSync("src/components/inventory/StarterCatalog.tsx", "utf8");
+  check("  ومفتاحُ اسم الشركة من مصدرٍ واحد بالشاشات الثلاث",
+    /const normKey = orgKey;/.test(inv2) && /const normKey = orgKey;/.test(pur) && /const nameKey = orgKey;/.test(cat)
+    && !/searchable\(normName\(s\)\)/.test(inv2 + pur + cat));
+  /* **والطرفان من نفس الدالّة**: كان الحفظُ يقارن مفتاحاً مطبَّعاً بالمكتوب خامّاً
+   * (`typed.toLowerCase()`) — و`searchable` تطوي المسافات، فـ«مكتب الأمير» لا يلقى
+   * نفسَه أبداً: شركةٌ جديدة بكلّ حفظ (٦٩ نسخةً زائدة بالإنتاج)، ومعها صنفٌ جديد
+   * يُسقطه الخادمُ فيهبط المنتج «بدون صنف». */
+  const KEYFN = /(normKey|nameKey|orgKey|findByOrgName)\(/;
+  for (const [file, src] of [["Inventory.tsx", inv2], ["Purchases.tsx", pur], ["StarterCatalog.tsx", cat]]) {
+    // الطرفُ الآخر إمّا نداءُ مفتاحٍ صريح، وإمّا متغيّرٌ **مُسنَدٌ من نداء مفتاح** — يُتتبَّع لا يُفترض.
+    const keyed = (expr) => {
+      const e = (expr.trim().match(/^[^\s);,{}]+/) ?? [""])[0];
+      if (KEYFN.test(e)) return true;
+      const id = /^[A-Za-z_$][\w$]*$/.test(e) ? e : null;
+      if (!id) return false;
+      const decl = new RegExp(`const\\s+${id}\\s*=\\s*([^;\\n]+)`).exec(src);
+      return !!decl && KEYFN.test(decl[1]);
+    };
+    const oneSided = [...src.matchAll(/(?:normKey|nameKey|orgKey)\([^()]*\)\s*===\s*([^;\n]+)/g)]
+      .map((m) => m[1]).filter((r) => !keyed(r));
+    check(`  ولا مقارنةَ مفتاحٍ بطرفٍ خامّ بـ${file}`, oneSided.length === 0, oneSided.join(" | "));
+  }
+  /* ولا تُنشأ شركةٌ/صنفٌ إلا بعد قائمةٍ **طازجة** من الخادم: القائمةُ بيدنا لقطةٌ من
+   * الكاش، وجهازٌ آخر أنشأها قبل دقائق يجعلها «غير موجودة» فتُنشأ ثانيةً. */
+  check("  والإنشاءُ بعد سؤال الخادم عن قائمةٍ طازجة (الشراء والمنتج)",
+    /await withTimeout\(repo\.listCompanies\(clinicId\), 8000\)[\s\S]{0,400}?repo\.createCompany\(/.test(pur)
+    && /await withTimeout\(repo\.listCompanies\(clinicId\), 8000\)[\s\S]{0,500}?repo\.createCompany\(/.test(inv2)
+    && /await withTimeout\(repo\.listCompanySections\(undefined, clinicId\), 8000\)[\s\S]{0,500}?repo\.createCompanySection\(/.test(inv2));
 
-  const { searchable } = await import(
+  /* والمفتاحُ نفسُه يُقاس سلوكياً **بوحدته** لا بنسخةٍ منه بالفحص: «الشركه الامل»
+   * و«الشركة الأمل» اسمٌ واحد بعين قارئه. */
+  const { orgKey, orgName, findByOrgName } = await import(
     "data:text/javascript;base64," + Buffer.from((await esbuild.build({
-      stdin: { contents: `export { searchable } from "./src/lib/utils";`, resolveDir: process.cwd(), loader: "js" },
+      stdin: { contents: `export { orgKey, orgName, findByOrgName } from "./src/lib/orgName";`, resolveDir: process.cwd(), loader: "js" },
       bundle: true, format: "esm", write: false, platform: "neutral", plugins: [stubs],
     })).outputFiles[0].text).toString("base64")
   );
-
-  /* والمفتاحُ نفسُه يُقاس سلوكياً لا نصّاً: «الشركه الامل» و«الشركة الأمل»
-   * اسمٌ واحد بعين قارئه — وحارسُ التكرار كان يسمح بهما توأمَين. */
-  const normKey = (s) => searchable(String(s).trim().replace(/\s+/g, " ").normalize("NFC")).replace(/\s+/g, " ").trim();
-  check("و«الشركه الامل» = «الشركة الأمل» بمفتاح واحد",
-    normKey("الشركه الامل") === normKey("الشركة الأمل"));
-  check("  و«شركة  الأمل» بمسافتين كذلك", normKey("شركة  الأمل") === normKey("شركة الأمل"));
-  check("  و«ABC» = «abc»", normKey("ABC") === normKey("abc"));
-  check("  وشركتان مختلفتان تبقيان مختلفتين", normKey("الأمل") !== normKey("الوفاء"));
+  check("و«الشركه الامل» = «الشركة الأمل» بمفتاح واحد", orgKey("الشركه الامل") === orgKey("الشركة الأمل"));
+  check("  و«شركة  الأمل» بمسافتين كذلك", orgKey("شركة  الأمل") === orgKey("شركة الأمل"));
+  check("  و«ABC» = «abc»", orgKey("ABC") === orgKey("abc"));
+  check("  وشركتان مختلفتان تبقيان مختلفتين", orgKey("الأمل") !== orgKey("الوفاء"));
+  check("  والاسمُ يُخزَّن كما كُتب (مسافةٌ واحدة وNFC)", orgName("  شركة   الأمل  ") === "شركة الأمل");
+  /* والحالةُ المقيسة بالإنتاج حرفياً: الاسمُ نفسُه يُكتب فلا يُلقى — ٦٩ نسخةً زائدة. */
+  const stored = [{ id: "c1", name: "مكتب الأمير" }, { id: "c2", name: "شركات متفرقة" }, { id: "c3", name: "ROYAL CANIN" }];
+  check("واختيارُ الاسم نفسِه يلقى شركتَه (لا نسخةً جديدة)", findByOrgName(stored, "مكتب الأمير")?.id === "c1");
+  check("  ومكتوباً بلا همزة", findByOrgName(stored, "مكتب الامير")?.id === "c1");
+  check("  ومتعدّدُ الكلمات بتاء مربوطة", findByOrgName(stored, "شركات متفرقة")?.id === "c2");
+  check("  واللاتينيُّ بحالةٍ أخرى", findByOrgName(stored, "royal canin")?.id === "c3");
+  check("  واسمٌ جديدٌ فعلاً لا يلقى شيئاً (فيُنشأ)", findByOrgName(stored, "شركة النور") === undefined);
+  check("  والفارغُ لا يلقى شيئاً", findByOrgName(stored, "   ") === undefined);
 }
 
 

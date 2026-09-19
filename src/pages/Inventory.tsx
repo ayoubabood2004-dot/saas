@@ -28,6 +28,7 @@ import { Combobox } from "@/components/Combobox";
 import { subcategoriesOf } from "@/lib/promotions";
 import { Button, Badge, useToast, Skeleton } from "@/components/ui";
 import { cn, formatDate, formatTime, money, fmtKg, searchable, normalizeCode, matchCode, normalizeAr, formatNum } from "@/lib/utils";
+import { orgName, orgKey, findByOrgName } from "@/lib/orgName";
 import { withTimeout, describeDbError, describeUploadError } from "@/lib/errors";
 import { prepareUpload, type PreparedUpload } from "@/lib/image";
 import { productImageUrl } from "@/lib/storeLib";
@@ -60,16 +61,10 @@ const STOCK_FILTERS: Record<StockFilter, (p: Product) => boolean> = {
   all: () => true, low: isLow, out: isOut, soon: isExpiringSoon, expired: isExpired,
 };
 
-/** Canonical company name: trim, collapse internal whitespace, NFC-normalize
- *  (so visually-identical Arabic/Latin names don't split into two companies). */
-const normName = (s: string) => s.trim().replace(/\s+/g, " ").normalize("NFC");
-/**
- * مفتاحُ مطابقةِ اسمِ شركة. كان `toLowerCase` وحدَه، فحارسُ التكرار يسمح
- * بـ«الشركه» توأماً لـ«الشركة» و«الامل» لـ«الأمل» — وهما اسمٌ واحد بعين
- * قارئه. فصار يبني على `searchable` (تطبيعُ همزة/ة/ى والأرقام) مع طيّ
- * المسافات، وهو نفسُ ما تبحث به بقيّةُ الشاشات — «الشاشتان لازم تتفقان».
- */
-const normKey = (s: string) => searchable(normName(s)).replace(/\s+/g, " ").trim();
+/* اسمُ الشركة/الصنف ومفتاحُ مطابقته من مصدرٍ واحد (`orgName.ts`): كان لكلّ شاشةٍ
+ * مفتاحُها، وكان الحفظُ يقارن المفتاحَ بطرفٍ خامّ — فتتكرّر الشركةُ بكلّ حفظ. */
+const normName = orgName;
+const normKey = orgKey;
 
 type View = "products" | "companies" | "purchases" | "ledger" | "barcodes" | "trash" | "wholesale";
 
@@ -1007,14 +1002,25 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
     let company_id: string | null = null;
     const typed = normName(f.company);
     if (typed) {
-      const key = typed.toLowerCase();
-      const existing = [...companies, ...createdRef.current].find((c) => normKey(c.name) === key);
-      if (existing) {
-        company_id = existing.id;
+      /* بالمفتاح الواحد (الطرفان من `orgKey`): كان المفتاحُ يُقارَن بالمكتوب خامّاً،
+       * فـ«مكتب الأمير» لا يلقى نفسَه أبداً وتُنشأ شركةٌ بكلّ حفظ — ومعها صنفٌ جديد،
+       * ثم يسقط الصنفُ بالخادم لأنه لشركةٍ أخرى فيهبط المنتجُ «بدون صنف». */
+      const known = findByOrgName([...companies, ...createdRef.current], typed);
+      if (known) {
+        company_id = known.id;
       } else {
-        createdCompany = await repo.createCompany({ name: typed, note: null, clinic_id: clinicId ?? null });
-        createdRef.current.push(createdCompany);
-        company_id = createdCompany.id;
+        // ولا تُنشأ إلا بعد قائمةٍ طازجة: جهازٌ آخر ربما أنشأها قبل دقائق.
+        let fresh: Company[] = [];
+        try { fresh = await withTimeout(repo.listCompanies(clinicId), 8000); }
+        catch { /* swallow-ok: تعذّر السؤال — نمضي بما بيدنا؛ تكرارٌ محتملٌ خيرٌ من حفظٍ يسقط */ }
+        const onServer = findByOrgName(fresh, typed);
+        if (onServer) {
+          company_id = onServer.id;
+        } else {
+          createdCompany = await repo.createCompany({ name: typed, note: null, clinic_id: clinicId ?? null });
+          createdRef.current.push(createdCompany);
+          company_id = createdCompany.id;
+        }
       }
     }
     // Resolve the section (صنف) WITHIN the resolved company. Only meaningful
@@ -1022,14 +1028,23 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
     let section_id: string | null = null;
     const secTyped = normName(f.section);
     if (company_id && secTyped) {
-      const key = secTyped.toLowerCase();
-      const existing = [...sections, ...createdSecRef.current].find((s) => s.company_id === company_id && normKey(s.name) === key);
-      if (existing) {
-        section_id = existing.id;
+      // وبنفس المفتاح داخل شركته — الصنفُ كان يُنشأ بكلّ حفظ للسبب نفسه.
+      const inCompany = (list: CompanySection[]) => list.filter((s) => s.company_id === company_id);
+      const known = findByOrgName(inCompany([...sections, ...createdSecRef.current]), secTyped);
+      if (known) {
+        section_id = known.id;
       } else {
-        createdSection = await repo.createCompanySection({ company_id, name: secTyped, clinic_id: clinicId ?? null });
-        createdSecRef.current.push(createdSection);
-        section_id = createdSection.id;
+        let fresh: CompanySection[] = [];
+        try { fresh = await withTimeout(repo.listCompanySections(undefined, clinicId), 8000); }
+        catch { /* swallow-ok: تعذّر السؤال — نمضي بما بيدنا (تكرارُ صنفٍ خيرٌ من حفظٍ يسقط) */ }
+        const onServer = findByOrgName(inCompany(fresh), secTyped);
+        if (onServer) {
+          section_id = onServer.id;
+        } else {
+          createdSection = await repo.createCompanySection({ company_id, name: secTyped, clinic_id: clinicId ?? null });
+          createdSecRef.current.push(createdSection);
+          section_id = createdSection.id;
+        }
       }
     }
     return { company_id, section_id, createdCompany, createdSection };

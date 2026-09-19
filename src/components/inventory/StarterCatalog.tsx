@@ -9,18 +9,11 @@ import { cn } from "@/lib/utils";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
 import { describeDbError } from "@/lib/errors";
 import { START_CATALOG, catalogCounts, type CatalogCompany } from "@/lib/startCatalog";
+import { orgKey } from "@/lib/orgName";
 
-/** اسم موحَّد للمقارنة: همزات وتاء مربوطة وفراغات وأرقام عربية — مرآة inv_norm_name.
- *  الحروف بمهارب يونيكود: أ إ آ ← ا، ة ← ه، ى ← ي. */
-const nameKey = (v: string): string =>
-  (v ?? "")
-    .replace(/[\u0623\u0625\u0622]/g, "\u0627")
-    .replace(/\u0629/g, "\u0647")
-    .replace(/\u0649/g, "\u064A")
-    .replace(/[٠-٩]/g, (d) => String(d.charCodeAt(0) - 0x0660))
-    .replace(/\s+/g, " ")
-    .trim()
-    .toLowerCase();
+/* اسمٌ موحَّد للمقارنة من مصدرٍ واحد (`orgName.ts`): كانت هنا نسخةٌ ثالثة تفترق عن مفتاح شاشة المخزون
+ * (لا تطوي المسافات ولا ئ/ؤ/التشكيل) — فتنشئ شركةً يرفضها حارسُ التكرار هناك، والعكس. */
+const nameKey = orgKey;
 
 /* ============================================================================
  * الكتلوج الجاهز — العيادة الجديدة تفعّل شركات السوق بأصنافها ومنتجاتها بضغطة.

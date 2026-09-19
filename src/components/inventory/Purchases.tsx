@@ -13,6 +13,7 @@ import { Modal } from "@/components/Modal";
 import { Combobox } from "@/components/Combobox";
 import { Button, Badge, useToast, Skeleton } from "@/components/ui";
 import { cn, money, formatDate, localISO, normalizeAr, normalizeCode, matchCode, searchable } from "@/lib/utils";
+import { orgName, orgKey, findByOrgName } from "@/lib/orgName";
 import { withTimeout, describeDbError } from "@/lib/errors";
 import { codeIndex, excelArtifact, looksLayoutMangled, rescueScan, matchTruncatedCode, stripAim } from "@/lib/productCodes";
 import { createScanAssembler } from "@/lib/scanBuffer";
@@ -24,9 +25,10 @@ import { getClinicLogo, getClinicSocials, getClinicName } from "@/lib/settings";
 import { Printer } from "lucide-react";
 
 /** Canonical company-name helpers (kept in sync with Inventory.tsx). */
-const normName = (s: string) => s.trim().replace(/\s+/g, " ").normalize("NFC");
-/** ونفسُ المفتاح حرفاً بحرف — نسختان تفترقان تجمعان فواتيرَ شركةٍ بمجموعتين. */
-const normKey = (s: string) => searchable(normName(s)).replace(/\s+/g, " ").trim();
+/* ونفسُ المفتاح حرفاً بحرف من مصدرٍ واحد (`orgName.ts`) — نسختان تفترقان تجمعان
+ * فواتيرَ شركةٍ بمجموعتين، ومفتاحٌ يُقارَن بطرفٍ خامّ يُنشئ شركةً بكلّ فاتورة. */
+const normName = orgName;
+const normKey = orgKey;
 
 const CATEGORY_KEYS: ProductCategory[] = ["medicine", "food", "accessories", "consumables", "other"];
 const PAY_METHODS: PaymentMethod[] = ["cash", "card", "transfer"];
@@ -715,12 +717,19 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
     : editing ? Math.max(0, Math.min(total, editing.purchase.amount_paid ?? total)) : total;
   const status = paidNum >= total ? "paid" : paidNum <= 0 ? "unpaid" : "partial";
 
+  /** الشركةُ المكتوبة → معرّفُها. تُلقى بالمفتاح الواحد (الطرفان من `orgKey`)، ولا
+   *  تُنشأ إلا بعد سؤال الخادم عن قائمةٍ **طازجة**: القائمةُ بيدنا لقطةٌ من الكاش، وجهازٌ
+   *  آخر أنشأ الشركةَ قبل دقائق يجعلها «غير موجودة» فتُنشأ ثانيةً بنفس الاسم. */
   const resolveCompanyId = async (): Promise<{ id: string | null; created: Company | null; name: string }> => {
     const typed = normName(company);
     if (!typed) return { id: null, created: null, name: "" };
-    const key = typed.toLowerCase();
-    const existing = [...companies, ...createdRef.current].find((c) => normKey(c.name) === key);
-    if (existing) return { id: existing.id, created: null, name: existing.name };
+    const known = findByOrgName([...companies, ...createdRef.current], typed);
+    if (known) return { id: known.id, created: null, name: known.name };
+    let fresh: Company[] = [];
+    try { fresh = await withTimeout(repo.listCompanies(clinicId), 8000); }
+    catch { /* swallow-ok: تعذّر السؤال — نمضي بما بيدنا؛ تكرارٌ محتملٌ خيرٌ من فاتورةٍ تسقط */ }
+    const onServer = findByOrgName(fresh, typed);
+    if (onServer) return { id: onServer.id, created: null, name: onServer.name };
     const created = await repo.createCompany({ name: typed, note: null, clinic_id: clinicId ?? null });
     createdRef.current.push(created);
     return { id: created.id, created, name: created.name };
