@@ -11,7 +11,7 @@ import { seedClinicLocale } from "@/lib/settings";
 import { leaveClinic as apiLeaveClinic } from "@/lib/invites";
 import { startPresenceBeat } from "@/lib/presence";
 import { repo } from "@/lib/repo";
-import { endElevationOnLogout } from "@/lib/managerOverride";
+import { endElevationOnLogout, clearElevationFlags } from "@/lib/managerOverride";
 import { endElevationThenSignOut } from "@/lib/logoutSequence";
 import type { OwnerAccount } from "@/lib/owners";
 
@@ -263,7 +263,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const { data: sub } = sb.auth.onAuthStateChange((event, session) => {
         if (event === "PASSWORD_RECOVERY") setRecovery(true);
         // Only an explicit sign-out (or a dead refresh token) clears the user.
-        if (event === "SIGNED_OUT") { if (active) setRaw(null); finish(); return; }
+        // وأعلامُ رفع المدير تُمسح معه: جلسةٌ ماتت بلا زرّ خروج (رمزٌ أُلغي بجهازٍ آخر)
+        // كانت تُبقيها، فيرث الداخلُ التالي بالجهاز نفسه واجهةَ المدير.
+        if (event === "SIGNED_OUT") { clearElevationFlags(); if (active) setRaw(null); finish(); return; }
         // No valid session and NOT an explicit sign-out → a transient blip; never
         // log the user out over it.
         if (!session?.user) { finish(); return; }

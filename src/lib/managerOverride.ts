@@ -225,9 +225,16 @@ export function endElevationOnLogout(): PromiseLike<unknown> | undefined {
     live = hasLiveElevation(entries, Date.now());
   } catch { /* ignore */ }
   const call = live && client ? Promise.resolve(client.rpc("end_elevation")) : undefined;
-  // Remove EVERY clinic's elevation flag, not just the active one — a user who
-  // switched clinics mid-session could otherwise leave a stale flag that unlocks
-  // the manager UI for the next person on a shared device.
+  clearElevationFlags();
+  return call;
+}
+
+/** يمسح أعلامَ الرفع **لكلّ العيادات** بهذا الجهاز — لا النشطة وحدها: من بدّل العيادةَ
+ *  وسطَ الجلسة كان يترك علماً يفتح واجهةَ المدير للتالي على جهازٍ مشترك.
+ *  يناديه الخروجُ الصريح (`endElevationOnLogout`) **وخروجُ الجلسة الميّتة** (SIGNED_OUT
+ *  بـAuthContext): رمزٌ أُلغي بجهازٍ آخر كان يُخرج الطبيبَ ويُبقي علمَه، والأعلامُ بمفتاح
+ *  العيادة لا المستخدم — فالموظّفُ الداخلُ بعده يرى واجهةَ المدير وعدّادَها بلا رمز. */
+export function clearElevationFlags(): void {
   try {
     for (const k of Object.keys(localStorage)) {
       if (k.startsWith("vp_override_until_")) localStorage.removeItem(k);
@@ -235,7 +242,6 @@ export function endElevationOnLogout(): PromiseLike<unknown> | undefined {
   } catch { /* ignore */ }
   if (expiryTimer != null) { window.clearTimeout(expiryTimer); expiryTimer = null; }
   notify();
-  return call;
 }
 
 function hasLocalPin(): boolean {

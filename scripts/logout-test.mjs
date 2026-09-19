@@ -16,6 +16,7 @@
  * ==========================================================================*/
 import esbuild from "esbuild";
 import { readFileSync, existsSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 
 let fails = 0, passes = 0;
 const check = (name, cond, detail = "") => {
@@ -118,7 +119,7 @@ if (mod && typeof mod.hasLiveElevation === "function") {
   const e = moSrc.slice(moSrc.indexOf("export function endElevationOnLogout"), moSrc.indexOf("\n}\n", moSrc.indexOf("export function endElevationOnLogout")));
   const liveIdx = e.indexOf("hasLiveElevation(");
   const rpcIdx = e.indexOf('client.rpc("end_elevation")');
-  const clearIdx = e.indexOf('removeItem(k)');
+  const clearIdx = e.indexOf("clearElevationFlags()");
   check("endElevationOnLogout تسأل «هل الرفعُ حيّ؟» قبل النداء", liveIdx > 0 && rpcIdx > liveIdx);
   check("  والنداءُ مشروطٌ بالجواب (لا يُطلق دائماً)", /live\s*&&\s*client\s*\?|client\s*&&\s*live\s*\?|if\s*\(\s*live/.test(e));
   check("  والسؤالُ قبل مسح الأعلام (وإلا كان الجوابُ «لا» دائماً)", liveIdx > 0 && clearIdx > liveIdx);
@@ -135,11 +136,15 @@ console.log("▸ 0194 — end_elevation صادقة بالقاعدة (نصّاً�
   // الجسمُ وحده: الترويسةُ تذكر «get diagnostics» شرحاً، فالبحثُ فيها يكذب بالترتيب.
   const m = whole.includes("create or replace function") ? whole.slice(whole.indexOf("create or replace function")) : whole;
   check("الهجرةُ موجودة", m.length > 0);
-  check("  السطرُ لرفعٍ حُذف فعلاً (row_count)", /get diagnostics v_n = row_count;/.test(m) && /if v_n > 0 and/.test(m));
+  /* الحيُّ وحده يُعدّ قفلاً: الصفوفُ المنتهية تبقى يوماً حتى يكنسها elevate_with_pin، فعدُّ
+   * كلِّ صفٍّ محذوف (row_count) كان يكتب «أُقفل وضعُ المدير» عن رفعٍ انتهى وحده قبل ساعات. */
+  check("  السطرُ لرفعٍ **حيٍّ** حُذف فعلاً (لا لصفٍّ منتهٍ يُكنس)",
+    /with gone as \(\s*delete from staff_elevations where user_id = auth\.uid\(\) returning until\s*\)\s*select count\(\*\) filter \(where until > now\(\)\) into v_n from gone;/.test(m)
+    && /if v_n > 0 and/.test(m) && !/get diagnostics v_n = row_count;/.test(m));
   check("  ولا أثرَ لمشغّل المنصّة داخلَ عيادة", /platform_acting_clinic\(\) is null/.test(m));
-  check("  والرفعُ يُحذف قبل أيّ شرط (الأمانُ لا يتغيّر)",
-    m.indexOf("delete from staff_elevations where user_id = auth.uid();") > 0
-    && m.indexOf("delete from staff_elevations") < m.indexOf("get diagnostics"));
+  check("  والرفعُ يُحذف قبل أيّ شرط (الأمانُ لا يتغيّر، المنتهي والحيّ معاً)",
+    m.indexOf("delete from staff_elevations where user_id = auth.uid()") > 0
+    && m.indexOf("delete from staff_elevations") < m.indexOf("if v_n > 0"));
   check("  بصلاحية المُعرِّف وبمسارٍ مثبَّت", /security definer set search_path = public/.test(m));
   check("  وممنوعةٌ عن anon، مسموحةٌ للمسجَّل",
     /revoke all on function end_elevation\(\) from public, anon;/.test(m) && /grant execute on function end_elevation\(\) to authenticated;/.test(m));
@@ -173,6 +178,31 @@ check("  ولا يمسح الجلسةَ خارجه — مسحٌ واحدٌ، و�
 const mo = readFileSync("src/lib/managerOverride.ts", "utf8").replace(/\r\n/g, "\n");
 const eol = mo.slice(mo.indexOf("export function endElevationOnLogout"), mo.indexOf("\n}\n", mo.indexOf("export function endElevationOnLogout")));
 check("endElevationOnLogout تُرجع نداءَ الإنهاء ليُنتظر (لا void)", /\):\s*PromiseLike<unknown>\s*\|\s*undefined/.test(eol) && !/void Promise\.resolve\(client\.rpc\("end_elevation"\)\)/.test(eol));
+/* التوصيلُ بنصّه الدقيق: ثلاثُ طفراتٍ من سطرٍ واحدٍ كانت تعيد سباقَ «مجهول» (42501) والفحصُ
+ * أخضر — الخروجُ لا يمرّر النداء، أو الدالّةُ لا ترجعه، أو المسحُ يسبق التسلسل. */
+check("  وترجعه فعلاً (لا undefined دائماً)",
+  /const call = live && client \? Promise\.resolve\(client\.rpc\("end_elevation"\)\) : undefined;/.test(eol) && /\n  return call;$/.test(eol));
+check("الخروجُ يمرّر النداءَ المحفوظ نفسه إلى التسلسل",
+  /ending = endElevationOnLogout\(\);/.test(signOutBody) && /endElevation: \(\) => ending,/.test(signOutBody));
+const seqAt = signOutBody.indexOf("void endElevationThenSignOut({");
+check("  والتنظيفُ (finish) **بعد** التسلسل لا قبله",
+  seqAt > 0 && /\}\)\s*\.catch\([\s\S]*?\)\s*\.then\(finish\);/.test(signOutBody.slice(seqAt))
+  && !/\bfinish\(\);/.test(signOutBody.slice(signOutBody.indexOf("if (isSupabaseConfigured && supabase) {"), seqAt)));
+/* وخروجُ الجلسة الميّتة (SIGNED_OUT: رمزٌ أُلغي بجهازٍ آخر) يمسح أعلامَ الرفع أيضاً — كانت
+ * تبقى، والأعلامُ بمفتاح العيادة لا المستخدم، فيرث الداخلُ التالي واجهةَ المدير. */
+check("خروجُ الجلسة الميّتة يمسح أعلامَ الرفع (لا يرثها الداخلُ التالي)",
+  /if \(event === "SIGNED_OUT"\) \{ clearElevationFlags\(\);/.test(auth) && /export function clearElevationFlags\(\): void \{/.test(mo));
+
+/* ── حارسُ القاعدة يجري فعلاً ────────────────────────────────────────────────
+ * كان db-guard يقرّر «شُغِّلتُ مباشرةً؟» بذيل `argv[1].split("/")` — وعلى ويندوز المسارُ
+ * بشرطاتٍ عكسية فلا يطابق: يخرج صفراً **بلا كلمة**، فكلُّ قاعدةٍ (definer-path الذي
+ * تحتاجه 0194 نفسُها، policy-self-ref، الفهارس) لم تكن تُفحص محلّياً، و«lint ✓» ادّعاء. */
+console.log("▸ db-guard يجري فعلاً (لا خروجَ صامتٌ بلا فحص)");
+{
+  const r = spawnSync(process.execPath, ["scripts/db-guard.mjs"], { encoding: "utf8" });
+  const out = `${r.stdout ?? ""}${r.stderr ?? ""}`;
+  check("db-guard يقول ما فحص (مخرَجٌ يحمل «db-guard:»)", /db-guard:/.test(out), out.trim().slice(0, 80) || "لا مخرَج — main() لم يجرِ");
+}
 
 console.log(`\n${fails ? "✗" : "✓"} logout-test: ${passes} نجحت، ${fails} فشلت`);
 process.exit(fails ? 1 : 0);

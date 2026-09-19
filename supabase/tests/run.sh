@@ -2337,6 +2337,15 @@ $P -c "delete from staff_elevations; delete from audit_log where details->>'even
 $P -c "select _pf('$C1','select end_elevation()::text');" >/dev/null
 chk "خروجٌ بلا رفعٍ ⇒ لا سطر (0048 القديمة كانت تكتب واحداً هنا)" \
     "select count(*)::text from audit_log where details->>'event'='override.lock'" "0"
+# رفعٌ انتهى وحده يبقى صفُّه يوماً حتى يكنسه elevate_with_pin (0048) — فخروجٌ بعده بساعاتٍ
+# كان يعدّه «قفلاً» ويكتب «أُقفل وضعُ المدير» الآن عن قفلٍ لم يحصل. يُكنس بلا سطر.
+$P -c "insert into staff_elevations(user_id, clinic_id, until) values ('$C1','$C1', now() - interval '2 hours');" >/dev/null
+chk "  (رفعٌ منتهٍ مزروع — وإلا مرّ ما بعده فارغاً)" \
+    "select count(*)::text from staff_elevations where user_id='$C1' and until < now()" "1"
+$P -c "select _pf('$C1','select end_elevation()::text');" >/dev/null
+chk "رفعٌ انتهى وحده ⇒ لا سطر («أُقفل» عن قفلٍ لم يحصل)" \
+    "select count(*)::text from audit_log where details->>'event'='override.lock'" "0"
+chk "  وصفُّه كُنس مع ذلك" "select count(*)::text from staff_elevations where user_id='$C1'" "0"
 $P -c "insert into staff_elevations(user_id, clinic_id, until) values ('$C1','$C1', now() + interval '10 minutes');" >/dev/null
 $P -c "select _pf('$C1','select end_elevation()::text');" >/dev/null
 chk "قفلُ رفعٍ حقيقيّ ⇒ سطرٌ صادقٌ واحد بعيادته" \

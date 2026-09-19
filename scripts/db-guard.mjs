@@ -23,7 +23,7 @@
 
 import { readFileSync, writeFileSync, readdirSync } from "node:fs";
 import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const MIG_DIR = join(ROOT, "supabase", "migrations");
@@ -303,4 +303,8 @@ function main() {
   console.log(`db-guard: ${findings.length} ملاحظة، كلها ضمن الأساس.`);
 }
 
-if (process.argv[1] && import.meta.url.endsWith(process.argv[1].split("/").pop())) main();
+/* «شُغِّل مباشرةً؟» بالرابط الكامل لا بذيل المسار: `argv[1]` على ويندوز بشرطاتٍ عكسية،
+ * فكان `split("/")` يرجع المسارَ كلَّه فلا يطابق، ولا يجري `main()` أبداً — الحارسُ يخرج
+ * صفراً بلا كلمة، فكلُّ قاعدةٍ (definer-path، policy-self-ref، الفهارس) لا تُفحص محلّياً،
+ * و«lint ✓» على ويندوز ادّعاءٌ لم يُفحص. (لينكس الـCI سليم.) */
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main();
