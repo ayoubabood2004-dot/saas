@@ -283,6 +283,38 @@ console.log("\n▸ attachProductCode — رمزٌ إضافيّ يُربط، ور
   check("  ومنتجٌ غيرُ موجودٍ يُرفض", await repo.attachProductCode("zz", "5550001").then(() => false, () => true));
 }
 
+/* ── طيُّ الشركات المكرَّرة (مرآةُ 0195) ────────────────────────────────────── */
+console.log("\n▸ mergeCompanies — كلُّ شيءٍ ينتقل، والحوضُ يُجمع");
+{
+  mem.set(DB_KEY, JSON.stringify({
+    products: [P("p1", "دواء", "1", { company_id: "co2", section_id: "s2" })],
+    companies: [{ id: "co1", name: "مكتب الأمير", created_at: "2026-01-01" }, { id: "co2", name: "مكتب الامير", created_at: "2026-02-01" }],
+    companySections: [
+      { id: "s1", company_id: "co1", name: "أدوية", pooled_stock: 10 },
+      { id: "s2", company_id: "co2", name: "ادويه", pooled_stock: 5 },
+      { id: "s3", company_id: "co2", name: "مستلزمات", pooled_stock: 0 },
+    ],
+    purchases: [{ id: "u1", company_id: "co2" }], purchaseItems: [],
+    invoices: [], invoiceItems: [], generatedBarcodes: [],
+    productsTrash: [{ id: "t1", row: { id: "t1", company_id: "co2", section_id: "s2" } }],
+  }));
+  const r = await repo.mergeCompanies("co1", ["co2"]);
+  const cos = await repo.listCompanies();
+  const secs = await repo.listCompanySections();
+  const prod = (await repo.listProducts()).find((p) => p.id === "p1");
+  check("النسخةُ راحت وبقيت واحدة", cos.length === 1 && cos[0].id === "co1", JSON.stringify(cos.map((c) => c.id)));
+  check("  والمنتجُ صار للباقية", prod?.company_id === "co1");
+  check("  والصنفُ المتشابهُ اندمج (صنفان لا ثلاثة)", secs.length === 2, secs.map((s) => s.name).join("،"));
+  check("  وحوضُه جُمع (١٠ + ٥)", secs.find((s) => s.id === "s1")?.pooled_stock === 15);
+  check("  والمنتجُ تبع الصنفَ الباقي", prod?.section_id === "s1");
+  check("  والصنفُ الذي لا نظيرَ له انتقل كما هو", secs.find((s) => s.id === "s3")?.company_id === "co1");
+  check("  وصورةُ المحذوف صُحِّحت (وإلا ما انستعاد)", r.companies === 1
+    && JSON.parse(mem.get(DB_KEY)).productsTrash[0].row.company_id === "co1"
+    && JSON.parse(mem.get(DB_KEY)).productsTrash[0].row.section_id === "s1");
+  check("وطيُّ شركةٍ بنفسها يُرفض", await repo.mergeCompanies("co1", ["co1"]).then(() => false, () => true));
+  check("  وشركةٌ غيرُ موجودة تُرفض", await repo.mergeCompanies("nope", ["co1"]).then(() => false, () => true));
+}
+
 console.log("\n▸ getSectionPool — حوضُ القسم لسؤال الكاشير");
 {
   mem.set(DB_KEY, JSON.stringify({

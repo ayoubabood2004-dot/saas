@@ -1970,6 +1970,29 @@ function CompaniesTab({ products, companies, sections, clinicId, onChanged }: { 
   const ql = searchable(q.trim());
   const shown = ql ? companies.filter((c) => searchable(c.name).includes(ql)) : companies;
 
+  /* شركاتٌ مكرَّرةٌ باسمٍ واحد: خلّفها عطلُ المفتاح (كلُّ حفظٍ كان يُنشئ نسخة) — ودفترُ
+   * المورّد الواحد مقسومٌ عليها ودَينُه مفرَّق، و«رتّب المخزن» لا يطوي توأمَ منتجٍ لأن
+   * شركتيهما «مختلفتان». تُعرض بما عليها، وتُطوى بضغطةٍ **بعد تأكيدٍ يقول ما سينتقل**.
+   * والباقيةُ هي الأقدم: فواتيرُها وأعباؤها الأقدم عليها. */
+  const dupGroups = useMemo(() => {
+    const by = new Map<string, Company[]>();
+    for (const c of companies) {
+      const k = orgKey(c.name);
+      if (!k) continue;
+      by.set(k, [...(by.get(k) ?? []), c]);
+    }
+    return [...by.values()].filter((g) => g.length > 1).map((g) => {
+      const sorted = [...g].sort((a, b) => (a.created_at ?? "").localeCompare(b.created_at ?? ""));
+      const ids = new Set(sorted.map((c) => c.id));
+      return {
+        keep: sorted[0],
+        drop: sorted.slice(1),
+        products: products.filter((p) => p.company_id && ids.has(p.company_id)).length,
+        sections: sections.filter((s) => ids.has(s.company_id)).length,
+      };
+    });
+  }, [companies, products, sections]);
+
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-2">
@@ -1981,6 +2004,11 @@ function CompaniesTab({ products, companies, sections, clinicId, onChanged }: { 
         {!locked && <Button variant="secondary" data-catalogbtn leftIcon={<Sparkles size={16} />} onClick={() => { playTap(); setCatalogOpen(true); }}>{t("catalog.title", "الكتلوج الجاهز")}</Button>}
         {!locked && <Button leftIcon={<Plus size={16} />} onClick={() => { playTap(); setAdding(true); }}>{t("pos.addCompany", "أضف شركة")}</Button>}
       </div>
+
+      {/* شركاتٌ مكرَّرةٌ باسمٍ واحد — تُطوى بضغطةٍ بعد تأكيدٍ يقول ما سينتقل */}
+      {!locked && dupGroups.length > 0 && !ql && (
+        <DupCompanies groups={dupGroups} onMerged={onChanged} />
+      )}
 
       {shown.length === 0 ? (
         <div className="card flex flex-col items-center gap-3 p-10 text-center">
@@ -2033,6 +2061,77 @@ function CompaniesTab({ products, companies, sections, clinicId, onChanged }: { 
         onClose={() => setCatalogOpen(false)}
         onApplied={() => { setCatalogOpen(false); onChanged(); }}
       />
+    </div>
+  );
+}
+
+/** شركاتٌ باسمٍ واحد: تُعرض بما عليها، وتُطوى بواحدة — بعد تأكيدٍ يسمّي ما ينتقل.
+ *  الطيُّ بالقاعدة بمعاملةٍ واحدة (`merge_companies`، 0195): لا نصفَ طيٍّ بانقطاع نت. */
+function DupCompanies({ groups, onMerged }: {
+  groups: { keep: Company; drop: Company[]; products: number; sections: number }[];
+  onMerged: () => void;
+}) {
+  const { t } = useTranslation();
+  const toast = useToast();
+  const [ask, setAsk] = useState<{ keep: Company; drop: Company[]; products: number; sections: number } | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const merge = async () => {
+    if (!ask || busy) return;
+    setBusy(true);
+    try {
+      const r = await repo.mergeCompanies(ask.keep.id, ask.drop.map((c) => c.id));
+      playSuccess();
+      toast.success(
+        t("pos.dupMerged", "انطوت {{n}} نسخة بـ«{{name}}»", { n: formatNum(r.companies ?? ask.drop.length), name: ask.keep.name }),
+        t("pos.dupMergedSub", "انتقل {{p}} منتجاً، واندمج {{s}} صنفاً بحوضها", { p: formatNum(r.products ?? 0), s: formatNum(r.sections_merged ?? 0) }),
+      );
+      setAsk(null);
+      onMerged();
+    } catch (e) {
+      playWarning();
+      toast.error(describeDbError(e, t), e instanceof Error ? e.message : undefined);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div data-dupcompanies className="rounded-2xl border border-warn-200 bg-warn-50 p-3 dark:border-warn-500/30 dark:bg-warn-500/10">
+      <p className="text-sm font-bold text-warn-800 dark:text-warn-200">
+        {t("pos.dupTitle", "شركات مكرّرة بنفس الاسم: {{n}}", { n: formatNum(groups.length) })}
+      </p>
+      <p className="mt-0.5 text-xs text-warn-800/80 dark:text-warn-200/80">
+        {t("pos.dupHint", "كانت تتكرّر بكل حفظ (انصلح السبب). دمجها يوحّد دفتر المورّد ودَينه ومنتجاته — والبضاعة ما تتغيّر.")}
+      </p>
+      <ul className="mt-2 space-y-1.5">
+        {groups.map((g) => (
+          <li key={g.keep.id} className="flex flex-wrap items-center gap-2 rounded-xl border border-line bg-surface-1 px-3 py-2">
+            <span className="min-w-0 flex-1 truncate text-sm font-semibold text-ink">{g.keep.name}</span>
+            <span className="shrink-0 text-2xs font-bold text-ink-muted">
+              {t("pos.dupCopies", "{{n}} نسخة · {{p}} منتج · {{s}} صنف", { n: formatNum(g.drop.length + 1), p: formatNum(g.products), s: formatNum(g.sections) })}
+            </span>
+            <Button size="sm" variant="secondary" data-dupmerge onClick={() => { playTap(); setAsk(g); }}>{t("pos.dupMerge", "ادمجها")}</Button>
+          </li>
+        ))}
+      </ul>
+
+      <Dialog open={!!ask} onClose={() => setAsk(null)} title={t("pos.dupAskTitle", "دمج الشركات المكرّرة؟")} size="sm"
+        footer={<>
+          <Button variant="ghost" onClick={() => { playTap(); setAsk(null); }}>{t("common.cancel", "إلغاء")}</Button>
+          <Button data-dupmergego loading={busy} leftIcon={<Building2 size={16} />} onClick={() => void merge()}>{t("pos.dupMergeGo", "ادمجها بوحدة")}</Button>
+        </>}>
+        {ask && (
+          <div className="space-y-2 text-sm text-ink-muted">
+            <p>
+              {t("pos.dupAskBody", "راح تنطوي {{n}} نسخة بـ«{{name}}» (الأقدم). ينتقل إلها كل شي: المنتجات ({{p}})، والأصناف ({{s}}) — والصنف المتشابه بالاسم يندمج ويتجمّع حوضه، وفواتير الشراء والتسديدات والديون.", {
+                n: formatNum(ask.drop.length), name: ask.keep.name, p: formatNum(ask.products), s: formatNum(ask.sections),
+              })}
+            </p>
+            <p className="text-xs">{t("pos.dupAskNote", "البضاعة والأرصدة ما تتغيّر — بس مكانها يتوحّد. والدمج ما يترجع بضغطة، فينكتب بسجل الحركات.")}</p>
+          </div>
+        )}
+      </Dialog>
     </div>
   );
 }

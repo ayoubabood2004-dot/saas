@@ -25,7 +25,7 @@ MIG="$HERE/../migrations"
 # و0095/0096/0158 بالمقدّمة رغم أنها أقدمُ من 0124: الموجةُ تبدأ من 0124 لأن
 # الأساس يوفّر ما قبلها جاهزاً — لكنّ هذه الثلاثَ تُنشئ المتجرَ والبوّابة،
 # وكانت خارجَ الفحص كلَّه. تُنزَّل بترتيبها الحقيقيّ قبل الموجة.
-WAVE="$MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0114_landing_events.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql $MIG/0184_images_hardening.sql $MIG/0185_store_funnel_events.sql $MIG/0186_store_bulk_visible.sql $MIG/0187_store_suggest_products.sql $MIG/0188_store_catalog_priced.sql $MIG/0189_accept_fee_at_decision.sql $MIG/0190_logo_out_of_db.sql $MIG/0191_poultry_farms.sql $MIG/0192_poultry_consume.sql $MIG/0193_poultry_withdrawal.sql $MIG/0194_end_elevation_honest.sql"
+WAVE="$MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0114_landing_events.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql $MIG/0184_images_hardening.sql $MIG/0185_store_funnel_events.sql $MIG/0186_store_bulk_visible.sql $MIG/0187_store_suggest_products.sql $MIG/0188_store_catalog_priced.sql $MIG/0189_accept_fee_at_decision.sql $MIG/0190_logo_out_of_db.sql $MIG/0191_poultry_farms.sql $MIG/0192_poultry_consume.sql $MIG/0193_poultry_withdrawal.sql $MIG/0194_end_elevation_honest.sql $MIG/0195_merge_companies.sql"
 
 command -v "$PGBIN/initdb" >/dev/null || { echo "ما لكيت بوستغريس بـ $PGBIN"; exit 1; }
 
@@ -2363,6 +2363,47 @@ $P -c "select set_config('request.jwt.claim.sub','$ADM',false); select platform_
        update _dvtest_flags set admin = false; delete from platform_sessions;" >/dev/null
 chk "end_elevation بصلاحية المُعرِّف وبمسارٍ مثبَّت، ممنوعةٌ عن anon، مسموحةٌ للمسجَّل" \
     "select (p.prosecdef and coalesce(array_to_string(p.proconfig,','),'') like '%search_path%' and not has_function_privilege('anon', p.oid, 'execute') and has_function_privilege('authenticated', p.oid, 'execute'))::text from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='end_elevation'" "true"
+
+# ── 0195: طيُّ الشركات المكرَّرة ───────────────────────────────────────────────
+# ٦٩ نسخةً زائدة بالإنتاج خلّفها عطلُ المفتاح: دفترُ مورّدٍ واحد مقسومٌ على نسخ.
+# الطيُّ ينقل كلَّ ما يشير إليها، **ويجمع حوضَ الصنف المتشابه** (وحداتٌ تُباع)،
+# ويصحّح صورَ المحذوفات (وإلا انكسر استرجاعُها بمفتاحٍ أجنبيّ).
+echo "▸ 0195: الطيُّ ينقل كلَّ شيء، ويجمع الحوض، ولا يعبر العيادات"
+C1=11111111-1111-1111-1111-111111111111
+C2=22222222-2222-2222-2222-222222222222
+$P -c "delete from products_trash; delete from company_sections; delete from purchase_payments;
+       delete from purchases; delete from products; delete from companies;" >/dev/null
+$P -c "insert into companies(id, clinic_id, name, created_at) values
+         ('aaaa0000-0000-0000-0000-000000000001','$C1','مكتب الأمير', now() - interval '2 days'),
+         ('aaaa0000-0000-0000-0000-000000000002','$C1','مكتب الامير', now() - interval '1 day'),
+         ('aaaa0000-0000-0000-0000-000000000009','$C2','مكتب الأمير', now());
+       insert into company_sections(id, clinic_id, company_id, name, pooled_stock) values
+         ('bbbb0000-0000-0000-0000-000000000001','$C1','aaaa0000-0000-0000-0000-000000000001','أدوية', 10),
+         ('bbbb0000-0000-0000-0000-000000000002','$C1','aaaa0000-0000-0000-0000-000000000002','ادويه', 5),
+         ('bbbb0000-0000-0000-0000-000000000003','$C1','aaaa0000-0000-0000-0000-000000000002','مستلزمات', 0);
+       insert into products(id, clinic_id, company_id, section_id, name, purchase_price, sell_price, stock) values
+         ('cccc0000-0000-0000-0000-000000000001','$C1','aaaa0000-0000-0000-0000-000000000002','bbbb0000-0000-0000-0000-000000000002','دواء', 1, 2, 3);
+       insert into purchases(id, clinic_id, company_id) values ('dddd0000-0000-0000-0000-000000000001','$C1','aaaa0000-0000-0000-0000-000000000002');
+       insert into products_trash(id, clinic_id, row) values
+         ('eeee0000-0000-0000-0000-000000000001','$C1', jsonb_build_object('id','eeee0000-0000-0000-0000-000000000001','company_id','aaaa0000-0000-0000-0000-000000000002','section_id','bbbb0000-0000-0000-0000-000000000002'));" >/dev/null
+chk "الطيُّ يرجع عددَ ما طُوي" \
+    "select (_pf('$C1','select merge_companies(''aaaa0000-0000-0000-0000-000000000001'', array[''aaaa0000-0000-0000-0000-000000000002'']::uuid[])::text')::jsonb->>'companies')" "1"
+chk "  والنسخةُ راحت" "select count(*)::text from companies where id='aaaa0000-0000-0000-0000-000000000002'" "0"
+chk "  والمنتجُ صار للباقية" "select company_id::text from products where id='cccc0000-0000-0000-0000-000000000001'" "aaaa0000-0000-0000-0000-000000000001"
+chk "  وفاتورةُ الشراء كذلك" "select company_id::text from purchases where id='dddd0000-0000-0000-0000-000000000001'" "aaaa0000-0000-0000-0000-000000000001"
+chk "  والصنفُ المتشابهُ اندمج (صنفان لا ثلاثة)" "select count(*)::text from company_sections where company_id='aaaa0000-0000-0000-0000-000000000001'" "2"
+chk "  وحوضُه جُمع (١٠ + ٥)" "select coalesce(pooled_stock,0)::text from company_sections where id='bbbb0000-0000-0000-0000-000000000001'" "15"
+chk "  والمنتجُ تبع الصنفَ الباقي" "select section_id::text from products where id='cccc0000-0000-0000-0000-000000000001'" "bbbb0000-0000-0000-0000-000000000001"
+chk "  وصورةُ المحذوف صُحِّحت (وإلا ما انستعاد أبداً)" \
+    "select ((row->>'company_id')='aaaa0000-0000-0000-0000-000000000001' and (row->>'section_id')='bbbb0000-0000-0000-0000-000000000001')::text from products_trash where id='eeee0000-0000-0000-0000-000000000001'" "true"
+chk "  وسطرٌ بسجلّ العيادة يقول ما انتقل" \
+    "select count(*)::text from audit_log where details->>'event'='company.merge' and clinic_id='$C1'" "1"
+# ولا يعبر العيادات: شركةُ عيادةٍ أخرى لا تُطوى ولو مُرِّر معرّفُها.
+chk "شركةُ عيادةٍ أخرى لا تُطوى (تُرفض أصلاً)" \
+    "select left(_pf_try('$C1','select merge_companies(''aaaa0000-0000-0000-0000-000000000001'', array[''aaaa0000-0000-0000-0000-000000000009'']::uuid[])::text'), 7)" "guarded"
+chk "  وهي باقيةٌ بعيادتها" "select count(*)::text from companies where id='aaaa0000-0000-0000-0000-000000000009'" "1"
+chk "merge_companies بصلاحية المُعرِّف وبمسارٍ مثبَّت، ممنوعةٌ عن anon، مسموحةٌ للمسجَّل" \
+    "select (p.prosecdef and coalesce(array_to_string(p.proconfig,','),'') like '%search_path%' and not has_function_privilege('anon', p.oid, 'execute') and has_function_privilege('authenticated', p.oid, 'execute'))::text from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='merge_companies'" "true"
 
 
 [ $fail -eq 0 ] && echo "✓ كل الفحوص عبرت" || { echo "✗ اكو فحصٌ فشل"; exit 1; }

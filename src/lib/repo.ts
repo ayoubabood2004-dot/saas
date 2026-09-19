@@ -2308,6 +2308,17 @@ const demoRepo = {
     saveDB(db);
     return c;
   },
+  /** طيُّ شركاتٍ مكرَّرةٍ بواحدة — مرآةُ `merge_companies` (0195): الأصنافُ المتشابهةُ
+   *  بالاسم تُطوى **وحوضُها يُجمع**، وما لا نظيرَ له يُنقل، وكلُّ ما يشير للمطويّة
+   *  يشير للباقية (بما فيه صورُ المحذوفات — وإلا كُسر استرجاعُها). */
+  async mergeCompanies(keepId: string, dropIds: string[]): Promise<{ companies: number; products: number; sections_moved: number; sections_merged: number }> {
+    // الجسمُ بوحدةٍ تُحمَّل عند الضغطة: صفحةُ الزائر تحمل هذا الملفَّ وميزانيّتُها بالبايت.
+    const { mergeCompaniesInDb } = await import("./demoMergeCompanies");
+    const db = loadDB();
+    const r = mergeCompaniesInDb(db, keepId, dropIds);
+    saveDB(db);
+    return r;
+  },
   async deleteCompany(id: string): Promise<void> {
     const db = loadDB();
     db.companies = (db.companies ?? []).filter((x) => x.id !== id);
@@ -5138,6 +5149,14 @@ const supabaseRepo: typeof demoRepo = {
   async deleteCompany(id) {
     // FK on products.company_id is ON DELETE SET NULL, so products survive.
     ok(await sbc().from("companies").delete().eq("id", id));
+  },
+  async mergeCompanies(keepId, dropIds) {
+    // دالّةٌ واحدة بالقاعدة (0195): الطيُّ كلُّه بمعاملةٍ واحدة — ولا نصفَ طيٍّ بانقطاع نت.
+    const r = await sbc().rpc("merge_companies", { p_keep: keepId, p_drop: dropIds });
+    if (r.error) throw r.error;
+    return (r.data ?? { companies: 0, products: 0, sections_moved: 0, sections_merged: 0 }) as {
+      companies: number; products: number; sections_moved: number; sections_merged: number;
+    };
   },
 
   /* ---------------- Company sections (أصناف) ---------------- */

@@ -733,7 +733,7 @@
     "outTapToCheck": "Zero stock as of the last update — tap and we'll check with the server",
     "custClear": "Clear the customer, keep the cart",
     "custClearTitle": "Clear the customer's details?",
-    "custClearHint": "The rest of the cart stays as it is. But these lines are tied to this customer's animal and are written into its record at checkout — they will be removed from the cart:",
+    "custClearHint": "The rest of the cart stays. These lines are tied to the customer's animal and are written into its record — they will be removed:",
     "custClearGo": "Clear the customer and remove them",
     "custCleared": "Customer details cleared — the cart is untouched",
     "custClearedDropped": "and {{n}} line(s) that would have been written into its record were removed",
@@ -1130,7 +1130,7 @@
     "batchExpiry": "New batch expiry",
     "batchExpiryHint": "(optional — leave blank to keep the old one)",
     "unknownCode": "Barcode not known in your stock: {{code}}",
-    "unknownHint": "Either it is the same item you already have under another code — search it by name and link the code to it — or it is a new item whose details you fill in this invoice and it is added to stock.",
+    "unknownHint": "Either you already have it under another code — search by name and link the code — or it is new: fill it in on this invoice.",
     "unknownNew": "New item",
     "unknownLink": "Or: I already have it under another code — search by name",
     "unknownSearchPh": "Type the item name or its code…",
@@ -1140,11 +1140,11 @@
     "unknownConfirmGo": "Link it and add to the invoice",
     "noCode": "no code",
     "codeAttached": "Code {{code}} linked to «{{name}}»",
-    "codeAttachedHint": "The next scan finds it immediately. If it was linked by mistake, detach it from the product edit form.",
+    "codeAttachedHint": "The next scan finds it. Linked by mistake? Detach it from the product edit form.",
     "scanServerHit": "«{{name}}» is in your stock — added to the invoice",
     "needName": "A new item with no name — type its name on the line (code {{code}})",
-    "needSellPrice": "«{{name}}» is a new item with no selling price — set it so it is not sold for zero",
-    "unknownOffline": "We could not reach the server to check the barcode {{code}} — and it is not in the list we have"
+    "needSellPrice": "«{{name}}» is new with no selling price — set it so it is not sold for zero",
+    "unknownOffline": "Could not reach the server to check {{code}} — and it is not in the list we have"
   },
   "pos": {
     "scanRescuedPurchase": "{{name}} — matched via format {{code}}",
@@ -1457,7 +1457,17 @@
     "acceptFee": "Delivery fee",
     "acceptFeeNone": "No fee",
     "acceptFeeHint": "Leave blank to keep what the order came with",
-    "noAccess": "Inventory is available to staff with stock-management permission. Ask the clinic manager."
+    "noAccess": "Inventory is available to staff with stock-management permission. Ask the clinic manager.",
+    "dupTitle": "Companies duplicated by name: {{n}}",
+    "dupHint": "They were re-created on every save (cause fixed). Merging unifies the supplier ledger and its debt — the goods do not change.",
+    "dupCopies": "{{n}} copies · {{p}} products · {{s}} sections",
+    "dupMerge": "Merge them",
+    "dupAskTitle": "Merge the duplicate companies?",
+    "dupAskBody": "{{n}} copies fold into «{{name}}» (the oldest): products ({{p}}), sections ({{s}}, same-name ones merge with their pooled stock), invoices, payments and debts.",
+    "dupAskNote": "Goods and balances do not change — only where they live. Written to the activity log.",
+    "dupMergeGo": "Merge into one",
+    "dupMerged": "{{n}} copies folded into «{{name}}»",
+    "dupMergedSub": "{{p}} products moved and {{s}} sections merged with their pooled stock"
   },
   "role": {
     "admin": "Clinic",
