@@ -12,10 +12,10 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Modal } from "@/components/Modal";
 import { Combobox } from "@/components/Combobox";
 import { Button, Badge, useToast, Skeleton } from "@/components/ui";
-import { cn, money, formatDate, localISO, normalizeAr, normalizeCode, matchCode, searchable } from "@/lib/utils";
+import { cn, money, formatDate, localISO, normalizeAr, normalizeCode, matchCode, searchable, formatNum } from "@/lib/utils";
 import { orgName, orgKey, findByOrgName } from "@/lib/orgName";
 import { withTimeout, describeDbError } from "@/lib/errors";
-import { codeIndex, excelArtifact, looksLayoutMangled, rescueScan, matchTruncatedCode, stripAim } from "@/lib/productCodes";
+import { codeIndex, codeMatcher, excelArtifact, looksLayoutMangled, rescueScan, matchTruncatedCode, stripAim } from "@/lib/productCodes";
 import { createScanAssembler } from "@/lib/scanBuffer";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
 import { staggerContainer, staggerItem } from "@/lib/motion";
@@ -527,7 +527,25 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
    * أولويةٍ واحدة، مفحوصةٍ بـ`products-test`. مسحُ باركود المصنع على بضاعةٍ
    * داخلة يلقى المادّةَ ولو كان رمزُها الأساسيّ رقمَ رفّ — فلا يُنشأ توأمٌ
    * برصيدٍ مقسوم. */
-  const byBarcode = useMemo(() => codeIndex(products), [products]);
+  /* ---- رمزٌ لا يعرفه المخزن: يُقال، ويُختار له بابٌ صريح -------------------
+   * بابان: «موجودة عندي برمزٍ ثاني» (تُدوَّر بالاسم ويُربط الرمزُ بها فتلقاها المسحةُ
+   * الجاية)، و«مادّة جديدة» (تُكتب معلوماتُها بهذه الفاتورة وتنضاف للمخزن).
+   * والربطُ هنا **غيرُ نافذة الكاشير الملغاة**: لا صفَّ افتراضيّ ولا ضغطةٌ واحدة —
+   * يُكتب الاسمُ، ويُختار صفٌّ بعينه، ويُقال بالنصّ ما الذي يُربط بما قبل التأكيد.
+   * والبضاعةُ وفاتورةُ المورّد بيد المستلم هنا، وهو موضعُ المعرفة لا الكاشير. */
+  const [unknown, setUnknown] = useState<{ code: string; reached: boolean } | null>(null);
+  const [linkQ, setLinkQ] = useState("");
+  const [linkPick, setLinkPick] = useState<Product | null>(null);
+  const [attaching, setAttaching] = useState(false);
+  /** ما تعلّم رمزاً بهذه الجلسة — القائمةُ لا تُعاد حتى يُحفظ، فتبقى المسحةُ الثانية «مجهولة». */
+  const attachedRef = useRef<Product[]>([]);
+  const [attachedN, setAttachedN] = useState(0);
+
+  /* ومعها ما تعلّم رمزاً بهذه الجلسة: القائمةُ (props) لا تُعاد إلا بعد حفظ الفاتورة،
+   * فالمسحةُ الثانية لنفس العلبة كانت تعود «مجهولة» بعد ربطٍ ناجح قبل ثوانٍ. */
+  const byBarcode = useMemo(() => codeIndex([...products, ...attachedRef.current]),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [products, attachedN]);
 
   useEffect(() => {
     if (!open) return;
@@ -581,7 +599,11 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
     // المطابقةُ بمفتاحِ الفهرس، والمحفوظُ بالسطر رمزُ العيادة كما كتبته.
     const hit = matchCode(code);
     const clean = normalizeCode(code);
-    const match = hit ? byBarcode.get(hit) : undefined;
+    /* وطبقاتُ النجدة نفسُها التي بصندوق المسح: نفسُ الرمز بصندوق المسح يُنقَذ
+     * (بادئةُ AIM، GTIN-14، UPC↔EAN)، وبحقل السطر كان يُفتح له «منتج جديد» —
+     * شاشةٌ واحدة تجيب جوابين عن نفس المسحة. */
+    const match = (hit ? byBarcode.get(hit) : undefined)
+      ?? (code.trim() ? rescueScan(products, code)?.product : undefined);
     setLines((ls) => ls.map((l) => {
       if (l.key !== key) return l;
       if (match) return { ...lineFromProduct(match, clean), key: l.key, qty: l.qty };
@@ -604,20 +626,21 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
     return nameIndex.filter((x) => x.key.includes(q)).map((x) => x.p).slice(0, 6);
   };
 
-  /** أضف منتجاً معروفاً كسطر (أو زد كمية سطره الموجود) — من المسح أو الاقتراح. */
-  const addProductLine = (p: Product) => {
+  /** أضف منتجاً معروفاً كسطر (أو زد كمية سطره الموجود) — من المسح أو الاقتراح.
+   *  `code` الرمزُ الممسوح إن كان غيرَ رمزِ الصفّ (رمزٌ ثانٍ تعلّمه للتوّ). */
+  const addProductLine = (p: Product, code?: string) => {
     setLines((ls) => {
       const existing = ls.find((l) => l.product_id === p.id);
       if (existing) return ls.map((l) => (l.key === existing.key ? { ...l, qty: String((Number(l.qty) || 0) + 1) } : l));
       const base = ls.length === 1 && !ls[0].barcode && !ls[0].name ? [] : ls;
-      return [...base, { ...lineFromProduct(p, p.barcode ?? ""), qty: "1" }];
+      return [...base, { ...lineFromProduct(p, code || p.barcode || ""), qty: "1" }];
     });
     setScan("");
     playTap();
     scanRef.current?.focus();
   };
 
-  const scanAdd = () => {
+  const scanAdd = async () => {
     const raw = scan.trim();
     if (!raw) return;
     // شكلُ إكسل يُردّ قبل أن يصير سطراً (G8). وهنا الضررُ أوضحُ منه بنموذج
@@ -667,18 +690,37 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
         description: t("pos.arabicCodeReads", "بالعكس يقرأ: {{fix}}", { fix: mangled }),
       });
     }
+    /* والخادمُ يُسأل قبل أن يُقال «غير معرّف»: قائمتُنا لقطةٌ من الكاش، ومنتجٌ أُضيف
+     * بجهازٍ آخر قبل دقائق كان يفتح سطرَ «منتج جديد» — ثم يطابقه الخادمُ عند الحفظ
+     * بالاسم ويكتب عليه أسعارَ ما كُتب هنا، والشاشةُ قالت إنه جديد. */
+    const aimless = stripAim(raw);
+    const looksBarcode = /^[0-9A-Za-z_-]+$/.test(aimless);
+    if (looksBarcode) {
+      let onServer: Product | undefined;
+      let reached = true;
+      try { onServer = await withTimeout(repo.getProductByBarcode(aimless, clinicId), 6000); }
+      catch { reached = false; /* swallow-ok: «ما وصلنا الخادم» تُقال كما هي لا «ما عندك» */ }
+      if (onServer) {
+        toast.toast({ tone: "info", title: t("purchase.scanServerHit", "«{{name}}» موجود بمخزنك — انضاف للفاتورة", { name: onServer.name }) });
+        addProductLine(onServer, normalizeCode(aimless));
+        return;
+      }
+      /* ولا يُفتح سطرٌ صامت: نفسُ نغمةِ النجاح وسطرٌ فارغ بذيل القائمة كان كلَّ ما
+       * يُقال عن رمزٍ لا يعرفه المخزن — فيُحفظ منتجٌ **اسمُه أرقامُ باركوده وسعرُ
+       * بيعه صفر**. يُقال الآن، ويُختار له بابٌ صريح. */
+      playWarning();
+      setUnknown({ code: normalizeCode(aimless), reached });
+      setLinkQ(""); setLinkPick(null);
+      setScan("");
+      scanRef.current?.focus();
+      return;
+    }
     setLines((ls) => {
       // Merge into an existing line with the same barcode if present.
       const existing = ls.find((l) => matchCode(l.barcode) === hit && hit);
       if (existing) return ls.map((l) => (l.key === existing.key ? { ...l, qty: String((Number(l.qty) || 0) + 1) } : l));
-      /* بادئةُ AIM تُقشَّر صراحةً قبل الحكم: `]C1` فيها `]` فتسقط بفحص «يشبه
-       * باركوداً» إلى فرع **الاسم** — فيُنشأ منتجٌ اسمُه «]C16221…» بمخزن
-       * العيادة. رمزٌ لا يصير اسماً أبداً. */
-      const aimless = stripAim(raw);
-      const looksBarcode = /^[0-9A-Za-z_-]+$/.test(aimless);
-      const fresh = looksBarcode
-        ? blankLine({ barcode: normalizeCode(aimless), qty: "1" })
-        : blankLine({ name: normName(raw), qty: "1" });
+      // ما لا يشبه باركوداً اسمٌ كُتب بصندوق المسح — يهبط سطراً باسمه كما كان.
+      const fresh = blankLine({ name: normName(raw), qty: "1" });
       // Drop a leading empty line so the list stays clean.
       const base = ls.length === 1 && !ls[0].barcode && !ls[0].name ? [] : ls;
       return [...base, fresh];
@@ -686,6 +728,53 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
     setScan("");
     playTap();
     scanRef.current?.focus();
+  };
+
+  /** مرشّحو الربط: بالاسم **وبالرمز** (الطرفان مطبَّعان) — بلا صفٍّ مختارٍ سلفاً. */
+  const linkCands = useMemo(() => {
+    const q = linkQ.trim();
+    if (q.length < 2) return [] as Product[];
+    const byName = normalizeAr(normName(q));
+    const byCode = codeMatcher(q);
+    return products.filter((p) => normalizeAr(p.name).includes(byName) || byCode(p)).slice(0, 8);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [linkQ, products]);
+
+  /** يربط الرمزَ الممسوح بمنتجٍ قائم (`attach_product_code`: رمزٌ إضافيّ، والأساسيُّ
+   *  لا يُمسّ)، ويُنزل السطرَ على ذلك المنتج. يُفكّ من نموذج تعديل المنتج (شارةُ الرمز). */
+  const doAttach = async () => {
+    if (!unknown || !linkPick || attaching) return;
+    setAttaching(true);
+    try {
+      const updated = await withTimeout(repo.attachProductCode(linkPick.id, unknown.code), 8000);
+      attachedRef.current = [...attachedRef.current.filter((x) => x.id !== updated.id), updated];
+      setAttachedN((n) => n + 1);
+      playSuccess();
+      toast.success(
+        t("purchase.codeAttached", "انربط الرمز {{code}} بـ«{{name}}»", { code: unknown.code, name: updated.name }),
+        t("purchase.codeAttachedHint", "المسحة الجاية تلكاها فوراً. وإذا انربط بالغلط، افكّه من تعديل المنتج."),
+      );
+      addProductLine(updated, unknown.code);
+      setUnknown(null); setLinkQ(""); setLinkPick(null);
+    } catch (e) {
+      playWarning();
+      toast.error(describeDbError(e, t), e instanceof Error ? e.message : undefined);
+    } finally {
+      setAttaching(false);
+    }
+  };
+
+  /** «مادّة جديدة»: سطرٌ بالرمز الممسوح، ومعلوماتُه تُكتب بهذه الفاتورة (الاسمُ وسعرُ
+   *  البيع لازمان قبل الحفظ) — بلا إعادةِ فاتورةٍ ولا خروجٍ منها. */
+  const newFromUnknown = () => {
+    if (!unknown) return;
+    const code = unknown.code;
+    setLines((ls) => {
+      const base = ls.length === 1 && !ls[0].barcode && !ls[0].name ? [] : ls;
+      return [...base, blankLine({ barcode: code, qty: "1" })];
+    });
+    setUnknown(null); setLinkQ(""); setLinkPick(null);
+    playTap();
   };
 
   /** اقتراحات حية وأنت تكتب بصندوق الإدخال — منتج موجود يظهر اسمه فوراً. */
@@ -738,6 +827,21 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
   const save = async () => {
     if (busy) return;
     if (validLines.length === 0) { toast.error(t("purchase.needLine", "أضف صنفاً واحداً على الأقل بكمية أكبر من صفر")); return; }
+    /* مادّةٌ جديدة تُولد بهذه الفاتورة: اسمُها وسعرُ بيعها يُكتبان قبل الحفظ.
+     * بلا هذا كان الخادمُ يسمّيها **بأرقام باركودها** (`name || barcode`) ويولدها
+     * بسعر بيعٍ صفر — فتظهر بالكاشير باسمٍ لا يُقرأ وتنباع بصفر. */
+    const nameless = validLines.find((l) => !l.product_id && !l.name.trim());
+    if (nameless) {
+      playWarning();
+      toast.error(t("purchase.needName", "مادّة جديدة بلا اسم — اكتب اسمها بالسطر (الرمز {{code}})", { code: nameless.barcode || "—" }));
+      return;
+    }
+    const priceless = validLines.find((l) => !l.product_id && !(Number(l.sell_price) > 0));
+    if (priceless) {
+      playWarning();
+      toast.error(t("purchase.needSellPrice", "«{{name}}» مادّة جديدة بلا سعر بيع — اكتب سعرها حتى لا تنباع بصفر", { name: priceless.name.trim() || priceless.barcode }));
+      return;
+    }
     // سطرٌ ملصوقٌ من إكسل لا يمرّ بصندوق المسح، فالحارسُ يتكرّر هنا (G8):
     // الرقمُ الأصليّ لا يُسترجع من الصيغة العلمية، فالرفضُ قبل الحفظ لا بعده.
     const bad = validLines.find((l) => excelArtifact(l.barcode));
@@ -864,14 +968,74 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
                  * تستلم بضاعة: كلُّ مسحةٍ هنا تضيع بلا سطرٍ وبلا رسالة. */
                 onKeyDown={(e) => {
                   const scanned = scanAsm.current.feed(e.key, e.timeStamp);
-                  if (e.key === "Enter") { e.preventDefault(); scanAdd(); return; }
-                  if (e.key === "Tab" && scanned) { e.preventDefault(); scanAdd(); }
+                  if (e.key === "Enter") { e.preventDefault(); void scanAdd(); return; }
+                  if (e.key === "Tab" && scanned) { e.preventDefault(); void scanAdd(); }
                 }}
                 placeholder={t("pos.scanOrTypeName", "امسح الباركود أو اكتب اسم المنتج…")}
               />
             </div>
-            <Button variant="secondary" onClick={scanAdd}>{t("common.add", "إضافة")}</Button>
+            <Button variant="secondary" onClick={() => void scanAdd()}>{t("common.add", "إضافة")}</Button>
           </div>
+
+          {/* رمزٌ لا يعرفه المخزن — يُقال، وبابان صريحان (لا سطرٌ صامت ولا ربطٌ بضغطة) */}
+          {unknown && (
+            <div data-unknowncode className="mt-2 rounded-2xl border border-warn-300 bg-warn-50 p-3 dark:border-warn-500/30 dark:bg-warn-500/10">
+              <p className="text-sm font-bold text-warn-800 dark:text-warn-200">
+                {/* «ما وصلنا الخادم» تُقال كما هي: قد يكون الرمزُ معروفاً وما سألنا أحداً. */}
+                {unknown.reached
+                  ? t("purchase.unknownCode", "باركود ما ينعرف بمخزنك: {{code}}", { code: unknown.code })
+                  : t("purchase.unknownOffline", "ما وصلنا الخادم لنتأكد من الباركود {{code}} — وما لقيناه بالقائمة اللي بيدنا", { code: unknown.code })}
+              </p>
+              <p className="mt-0.5 text-xs text-warn-800/80 dark:text-warn-200/80">
+                {t("purchase.unknownHint", "يا إمّا هي نفس مادّة عندك برمز ثاني — دوّرها بالاسم واربط الرمز بيها، يا إمّا مادّة جديدة تنكتب معلوماتها بهذي الفاتورة وتنضاف للمخزن.")}
+              </p>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <Button size="sm" variant="secondary" data-unknownnew onClick={newFromUnknown}>{t("purchase.unknownNew", "مادّة جديدة")}</Button>
+                <button type="button" data-unknowndismiss onClick={() => { playTap(); setUnknown(null); setLinkQ(""); setLinkPick(null); }}
+                  className="text-xs font-bold text-ink-subtle transition hover:text-ink">{t("common.cancel", "إلغاء")}</button>
+              </div>
+              <div className="mt-2 border-t border-warn-200 pt-2 dark:border-warn-500/20">
+                <label className="label text-warn-800 dark:text-warn-200">{t("purchase.unknownLink", "أو: هي موجودة عندي برمز ثاني — دوّرها بالاسم")}</label>
+                <input
+                  className="input" value={linkQ} data-unknownsearch
+                  onChange={(e) => { setLinkQ(e.target.value); setLinkPick(null); }}
+                  placeholder={t("purchase.unknownSearchPh", "اكتب اسم المادّة أو رمزها…")}
+                />
+                {linkCands.length > 0 && !linkPick && (
+                  <ul className="mt-1.5 space-y-1">
+                    {linkCands.map((p) => (
+                      <li key={p.id}>
+                        <button type="button" data-unknownpick onClick={() => { playTap(); setLinkPick(p); }}
+                          className="flex w-full items-center justify-between gap-2 rounded-xl border border-line bg-surface-1 px-3 py-2 text-start text-sm transition hover:bg-surface-2">
+                          <span className="min-w-0 flex-1 truncate font-semibold text-ink">{p.name}</span>
+                          <span className="shrink-0 font-mono text-2xs text-ink-subtle" dir="ltr">{p.barcode ?? "—"}</span>
+                          <span className="shrink-0 text-2xs font-bold text-ink-muted">{t("purchase.unknownStock", "رصيد {{n}}", { n: formatNum(p.stock ?? 0) })}</span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {linkQ.trim().length >= 2 && linkCands.length === 0 && !linkPick && (
+                  <p className="mt-1.5 text-xs text-ink-subtle">{t("purchase.unknownNoMatch", "ماكو مادّة بهذا الاسم — إذا جديدة اضغط «مادّة جديدة» فوق.")}</p>
+                )}
+                {linkPick && (
+                  /* التأكيدُ يسمّي الطرفين بالنصّ: أيُّ رمزٍ يُربط بأيّ مادّة ورمزِها الحاليّ.
+                     نافذةُ الكاشير الملغاة كانت تربط بضغطةٍ وحدة وأوّلُ صفٍّ ثابت. */
+                  <div className="mt-2 rounded-xl border border-brand-200 bg-brand-50/60 p-2.5 dark:border-brand-500/30 dark:bg-brand-500/10">
+                    <p className="text-sm text-ink">
+                      {t("purchase.unknownConfirm", "اربط الرمز {{code}} بـ«{{name}}» (رمزها الحالي {{cur}})؟", {
+                        code: unknown.code, name: linkPick.name, cur: normalizeCode(linkPick.barcode) || t("purchase.noCode", "بلا رمز"),
+                      })}
+                    </p>
+                    <div className="mt-2 flex items-center gap-2">
+                      <Button size="sm" data-unknownconfirm loading={attaching} onClick={() => void doAttach()}>{t("purchase.unknownConfirmGo", "اربط وأضفها للفاتورة")}</Button>
+                      <button type="button" onClick={() => { playTap(); setLinkPick(null); }} className="text-xs font-bold text-ink-subtle transition hover:text-ink">{t("common.cancel", "إلغاء")}</button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
           {/* منتجات موجودة تطابق المكتوب — ضغطة تسحب المنتج بمكانه وأسعاره */}
           {scanSuggestions.length > 0 && (
             <div className="mt-2 flex flex-wrap items-center gap-1.5">
