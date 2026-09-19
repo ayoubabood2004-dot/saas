@@ -86,7 +86,7 @@ import { emitGlobalToast } from "./globalToast";
 import i18next from "i18next";
 import { invoiceNo } from "./invoicePrint";
 import { auditKind, activityBrief } from "./activityKinds";
-import { pgCompare, type PgSort } from "./pgOrder";
+import type { PgSort } from "./pgOrder";
 import type { ActivityQuery, ActivityRow, ActivitySummaryRow, ActivityActor } from "@/types";
 import type { PayrollPolicyDTO, StaffComp, StaffRecurring, PayrollAdjustment, PayrollRun, Payslip, PayslipLine, StaffLoan, StaffLoanEvent, PayslipDraft, PayMethod } from "@/types";
 import * as PD from "./payrollDemo";
@@ -3824,7 +3824,12 @@ async function allPages<T>(make: () => unknown, sort?: PgSort): Promise<T[]> {
     if (fresh === 0 || last === after) throw new Error("allPages: pagination made no progress (cursor did not advance)");
     after = last;
   }
-  return sort ? out.sort(pgCompare<T>(sort)) : out;
+  if (!sort) return out;
+  /* المقارِنُ يُحمَّل عند الحاجة: `repo.ts` تحمله صفحةُ الزائر العامّة وهي لا تفرز قائمة —
+   * فكان مقارِنُ ICU يُثقل ميزانَها (store-weight-guard) بلا عمل. أوّلُ فرزٍ يجلب قطعتَه
+   * الصغيرة مرّة، ثم من الكاش. */
+  const { pgCompare } = await import("./pgOrder");
+  return out.sort(pgCompare<T>(sort));
 }
 /* تحديثٌ ردّته سياسةُ الصفوف يرجع **صفرَ صفوفٍ بلا خطأ** — فتقول الواجهةُ
  * «تمّ» والطلبُ لم يتغيّر. هذا بالضبط ما بُلِّغ عنه بالتوصيل: «اختار السائق ما
