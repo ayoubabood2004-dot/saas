@@ -18,6 +18,25 @@
 
 export const END_ELEVATION_WAIT_MS = 1500;
 
+/**
+ * هل على هذا الجهاز رفعٌ حيّ؟ (أعلامُ `vp_override_until_<عيادة>` = وقتُ الانتهاء.)
+ *
+ * الخروجُ لا ينادي `end_elevation` إلا حينها. حين صار النداءُ يخرج بهويّة المستخدم
+ * صار ينجح كلَّ مرّة — والدالّةُ تكتب «أُقفل وضعُ المدير» بسجلّ حركات العيادة مع كلّ
+ * خروج ولو لم يكن رفعٌ أصلاً، وخروجُ مشغّل المنصّة من عيادة زبونٍ يترك سطراً بسجلّها
+ * (خطٌّ أحمر: لا أثرَ للدخول عندها). بلا رفعٍ لا شيءَ يُنهى: فلا نداء، ولا سطرَ كاذب،
+ * ولا أثر. والرفعُ مربوطٌ بمعرّف المستخدم بالخادم، فالمستخدمُ التالي على الجهاز لا
+ * يرثه بأيّ حال — والأعلامُ المحلّية تُمسح دائماً.
+ */
+export function hasLiveElevation(entries: Iterable<[string, string | null]>, now: number): boolean {
+  for (const [k, v] of entries) {
+    if (!k.startsWith("vp_override_until_")) continue;
+    const until = Number(v);
+    if (Number.isFinite(until) && until > now) return true;
+  }
+  return false;
+}
+
 export async function endElevationThenSignOut(opts: {
   /** نداءُ `end_elevation` (أو `undefined` بلا عميلٍ سحابيّ — الوضع التجريبي). */
   endElevation: () => PromiseLike<unknown> | undefined | void;

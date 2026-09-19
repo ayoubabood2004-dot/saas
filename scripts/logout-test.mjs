@@ -94,6 +94,36 @@ if (mod) {
   check("  ورميٌ متزامنٌ من الإنهاء لا يمنع الخروج", thrown);
 }
 
+/* ── لا نداءَ بلا رفعٍ حيّ (مراجعةٌ عدائية على ط٦) ─────────────────────────
+ * حين صار النداءُ يخرج بهويّة المستخدم صار ينجح **كلَّ مرّة** — و`end_elevation`
+ * تكتب «أُقفل وضعُ المدير» بسجلّ حركات العيادة مع كلّ خروج، ولو لم يكن رفعٌ أصلاً.
+ * والأسوأ: خروجُ مشغّل المنصّة من عيادة زبونٍ يترك سطراً بسجلّها — وهو خطٌّ أحمر
+ * (CLAUDE.md: لا أثرَ للدخول عندها). فالخروجُ ينهي الرفعَ **فقط** إن كان حيّاً بالجهاز:
+ * بلا رفعٍ لا نداء، فلا سطرَ كاذب ولا أثر. ومعه رفعٌ ⇒ نداءٌ بهويّته وسطرٌ صادق. */
+console.log("▸ لا نداءَ بلا رفعٍ حيّ — لا سطرَ كاذب بسجلّ العيادة ولا أثرَ للمشغّل");
+if (mod && typeof mod.hasLiveElevation === "function") {
+  const now = 1_000_000;
+  const H = (entries) => mod.hasLiveElevation(entries, now);
+  check("لا أعلامَ ⇒ لا رفع", H([]) === false);
+  check("  علمٌ منتهٍ ⇒ لا رفع", H([["vp_override_until_c1", String(now - 1)]]) === false);
+  check("  علمٌ حيّ ⇒ رفع", H([["vp_override_until_c1", String(now + 60_000)]]) === true);
+  check("  حيٌّ بعيادةٍ ومنتهٍ بأخرى ⇒ رفع", H([["vp_override_until_a", "5"], ["vp_override_until_b", String(now + 1)]]) === true);
+  check("  قيمةٌ غيرُ رقمية ⇒ لا رفع", H([["vp_override_until_c1", "nope"]]) === false);
+  check("  ومفاتيحُ أخرى لا تُحسب", H([["vp_something_else", String(now + 60_000)]]) === false);
+} else {
+  check("hasLiveElevation موجودةٌ بـsrc/lib/logoutSequence.ts", false);
+}
+{
+  const moSrc = readFileSync("src/lib/managerOverride.ts", "utf8").replace(/\r\n/g, "\n");
+  const e = moSrc.slice(moSrc.indexOf("export function endElevationOnLogout"), moSrc.indexOf("\n}\n", moSrc.indexOf("export function endElevationOnLogout")));
+  const liveIdx = e.indexOf("hasLiveElevation(");
+  const rpcIdx = e.indexOf('client.rpc("end_elevation")');
+  const clearIdx = e.indexOf('removeItem(k)');
+  check("endElevationOnLogout تسأل «هل الرفعُ حيّ؟» قبل النداء", liveIdx > 0 && rpcIdx > liveIdx);
+  check("  والنداءُ مشروطٌ بالجواب (لا يُطلق دائماً)", /live\s*&&\s*client\s*\?|client\s*&&\s*live\s*\?|if\s*\(\s*live/.test(e));
+  check("  والسؤالُ قبل مسح الأعلام (وإلا كان الجوابُ «لا» دائماً)", liveIdx > 0 && clearIdx > liveIdx);
+}
+
 console.log("▸ الشاشاتُ تستعمل التسلسل ولا تعود للترتيب القديم");
 const auth = readFileSync("src/contexts/AuthContext.tsx", "utf8").replace(/\r\n/g, "\n");
 const signOutBody = auth.slice(auth.indexOf("const signOut = () => {"), auth.indexOf("const leaveClinic"));

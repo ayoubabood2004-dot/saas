@@ -15,6 +15,7 @@ import { sb } from "./clinicSync";
 import { getActiveClinicId } from "./clinics";
 import { getOverridePinMirror, setOverridePinMirror, getStockEditInManagerMode } from "./settings";
 import { repo } from "./repo";
+import { hasLiveElevation } from "./logoutSequence";
 
 const SESSION_MS = 10 * 60 * 1000; // elevation lifetime
 const MAX_TRIES = 5;               // wrong PINs before the cooldown
@@ -215,7 +216,15 @@ export function endElevationOnLogout(): PromiseLike<unknown> | undefined {
   /* يُرجَع النداءُ ليُنتظر قبل مسح الجلسة (`endElevationThenSignOut`). كان يُطلق
    * بلا انتظار، فيسبق مسحُ الجلسة قراءةَ الرمز ويخرج الطلبُ «مجهولاً» — 42501
    * بسجلّ الإنتاج، والرفعُ لا يُنهى بالخادم. */
-  const call = client ? Promise.resolve(client.rpc("end_elevation")) : undefined;
+  /* ولا نداءَ بلا رفعٍ حيّ بالجهاز (`hasLiveElevation`): النداءُ الناجحُ يكتب «أُقفل
+   * وضعُ المدير» بسجلّ العيادة — كاذباً إن لم يكن رفع، وأثراً لمشغّل المنصّة إن كان
+   * هو الخارج. ويُسأل **قبل** مسح الأعلام أدناه، وإلا كان الجوابُ «لا» دائماً. */
+  let live = false;
+  try {
+    const entries: [string, string | null][] = Object.keys(localStorage).map((k) => [k, localStorage.getItem(k)]);
+    live = hasLiveElevation(entries, Date.now());
+  } catch { /* ignore */ }
+  const call = live && client ? Promise.resolve(client.rpc("end_elevation")) : undefined;
   // Remove EVERY clinic's elevation flag, not just the active one — a user who
   // switched clinics mid-session could otherwise leave a stale flag that unlocks
   // the manager UI for the next person on a shared device.
