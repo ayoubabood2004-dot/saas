@@ -200,28 +200,46 @@ check("listCompanies", await throws(() => repo.listCompanies()));
  * يزحزح ما بعده صفحةً واحدة، فيعود آخرُ صفٍّ قرأناه بأوّل الصفحة التالية.
  * والحلقةُ تُصدر دائماً طلبَ تأكيدٍ بعد صفحةٍ ممتلئة — فالنافذةُ مفتوحةٌ بأيّ
  * حجمِ جدول، لا عند الألف وحدها. نحاكيها بجدولٍ ينمو بين الصفحتين. */
-console.log("▸ ع٩ — allPages تحت إدراجٍ متزامن");
+console.log("▸ ع٩/ط٤ — allPages تحت إدراجٍ وحذفٍ متزامنَين بين الطلبتين");
 {
-  const PAGE = 1000;
-  // جدولٌ ممتلئُ الصفحة الأولى بالضبط، ثم يُدرَج صفٌّ بمقدّمته بين الطلبين.
-  const mk = (n, pad) => Array.from({ length: n }, (_, i) => ({ id: `p${String(i).padStart(pad, "0")}` }));
-  let table = mk(PAGE, 5);
-  let calls = 0;
+  /* خادمٌ مزيّفٌ **يحترم** ما يحترمه الحقيقيّ: الترتيبَ بتسلسله (`order` تُلحَق)،
+   * والمؤشّرَ (`gt` على id)، والحدَّ (`limit`)، والإزاحةَ (`range`)، وسقفاً لكلّ
+   * طلبة (`__cap`) كسقف PostgREST. فالفحصُ نفسُه يجري على الشيفرة القديمة
+   * (إزاحة) والجديدة (مؤشّر) ويقول الفرق — لا فحصٌ مفصَّلٌ على مقاس الجديدة.
+   * و`__afterPage` يعدّل الجدولَ **بعد** أن تُحسب الصفحة: أي بين الطلبتين. */
   const PAGING_SUPABASE = `
-    let table = globalThis.__t;
+    const cmp = (a, b) => (a == null && b == null ? 0 : a == null ? 1 : b == null ? -1 : a < b ? -1 : a > b ? 1 : 0);
     const q = () => {
+      const st = { gt: undefined, limit: undefined, orders: [] };
+      const run = (slice) => {
+        let rows = [...globalThis.__t];
+        rows.sort((x, y) => { for (const [c, asc] of st.orders) { const r = cmp(x[c], y[c]); if (r) return asc ? r : -r; } return 0; });
+        if (st.gt !== undefined && !globalThis.__ignoreCursor) rows = rows.filter((r) => r.id > st.gt);
+        rows = slice(rows).slice(0, globalThis.__cap ?? 1000);
+        globalThis.__pages++;
+        // حلقةٌ هاربة تُوقَف هنا بخطأ **يُميَّز** (عددُ الطلبات يفضحها) — لا تعلّقُ الفحص.
+        if (globalThis.__pages > 100) return { data: null, error: { message: "harness: runaway pagination" } };
+        const out = { data: rows, error: null };
+        if (globalThis.__afterPage) globalThis.__afterPage(globalThis.__pages);
+        return out;
+      };
       const o = {
-        order: () => o,
-        eq: () => o, neq: () => o, or: () => o, in: () => o, is: () => o,
-        gte: () => o, lte: () => o, gt: () => o, lt: () => o, limit: () => o,
-        range: (a, b) => { const page = globalThis.__t.slice(a, b + 1); globalThis.__onRange(); return Promise.resolve({ data: page, error: null }); },
-        then: (res) => res({ data: globalThis.__t, error: null }),
+        select: () => o,
+        order: (c, opt) => { st.orders.push([c, !opt || opt.ascending !== false]); return o; },
+        eq: () => o, neq: () => o, or: () => o, in: () => o, is: () => o, gte: () => o, lte: () => o, lt: () => o,
+        gt: (c, v) => { if (c === "id") st.gt = v; return o; },
+        limit: (n) => { st.limit = n; return o; },
+        /* الردُّ **لاحقاً** (مهمّةٌ كبرى) كالشبكة الحقيقية. بوعدٍ محلولٍ فوراً كانت
+         * حلقةٌ هاربة تجوّع طابورَ الأحداث فلا تنطلق حتى مهلةُ الفحص — فعلّق الفحصُ
+         * بدل أن يفشل (أمسكه فحصُ الطفرات M2). */
+        range: (a, b) => { const out = run((rows) => rows.slice(a, b + 1)); return new Promise((r) => setTimeout(() => r(out), 0)); },
+        then: (res, rej) => { const out = run((rows) => (st.limit != null ? rows.slice(0, st.limit) : rows)); return new Promise((r) => setTimeout(() => r(out), 0)).then(res, rej); },
       };
       return o;
     };
     export const supabase = {
-      from: () => ({ select: () => q() }), rpc: () => q(),
-      schema: () => ({ from: () => ({ select: () => q() }) }),
+      from: () => q(), rpc: () => q(),
+      schema: () => ({ from: () => q() }),
       storage: { from: () => q() },
       auth: { getSession: async () => ({ data: { session: null }, error: null }), getUser: async () => ({ data: { user: null }, error: null }) },
     };
@@ -240,12 +258,6 @@ console.log("▸ ع٩ — allPages تحت إدراجٍ متزامن");
       b.onLoad({ filter: /.*/, namespace: "stub" }, (a) => ({ contents: map2[a.path] ?? "export default {};", loader: "js" }));
     },
   };
-  globalThis.__t = table;
-  globalThis.__onRange = () => {
-    calls++;
-    // بعد الصفحة الأولى تماماً: إدراجٌ بمعرّفٍ يسبق كلَّ شيء ⇒ إزاحةُ الكلّ.
-    if (calls === 1) globalThis.__t = [{ id: "p!!new" }, ...globalThis.__t];
-  };
   const b2 = await esbuild.build({
     entryPoints: ["src/lib/repo.ts"], bundle: true, format: "esm", write: false,
     platform: "neutral", plugins: [pagingStubs], logLevel: "silent",
@@ -256,12 +268,62 @@ console.log("▸ ع٩ — allPages تحت إدراجٍ متزامن");
   const f2 = join(d2, "repo.mjs");
   writeFileSync(f2, b2.outputFiles[0].text);
   const m2 = await import(pathToFileURL(f2).href).finally(() => { try { rmSync(d2, { recursive: true, force: true }); } catch { /* ignore */ } });
-  const rows = await m2.repo.listProducts();
-  const ids = rows.map((r) => r.id);
-  const dupes = ids.filter((x, i) => ids.indexOf(x) !== i);
-  check("الطلبُ أُعيد بعد صفحةٍ ممتلئة — فالنافذةُ حقيقية", calls >= 2, `${calls} طلباً`);
-  check("ولا صفَّ مكرّراً رغم الإدراج المتزامن", dupes.length === 0, `مكرّر: ${[...new Set(dupes)].slice(0, 3).join("، ")}`);
-  check("  والصفوفُ كلُّها وصلت", ids.length >= PAGE, `${ids.length} صفّاً`);
+  /* الجدول: ١٠٠٥ منتجات — الرقمُ المقيسُ لأكبر عيادةٍ بالإنتاج (١٩ أيلول)، وهو
+   * ما عبر العتبة. معرّفاتٌ مرتّبةٌ بالنصّ، وأسماءٌ بترتيبٍ **مختلف** عن المعرّف
+   * (مقلوبة) حتى يُرى أن فرزَ العرض لا يعتمد على ترتيب الجلب. */
+  const N = 1005;
+  const mkTable = () => Array.from({ length: N }, (_, i) => ({
+    id: `p${String(i).padStart(5, "0")}`, name: `n${String(N - i).padStart(5, "0")}`,
+  }));
+  const run = async (opts = {}) => {
+    globalThis.__t = mkTable();
+    globalThis.__pages = 0;
+    globalThis.__cap = opts.cap ?? 1000;
+    globalThis.__ignoreCursor = !!opts.ignoreCursor;
+    globalThis.__afterPage = opts.afterPage ?? null;
+    const before = new Set(globalThis.__t.map((r) => r.id));
+    // مهلةٌ: حلقةٌ لا تنتهي تُحسب فشلاً لا تعليقاً للفحص.
+    const res = await Promise.race([
+      m2.repo.listProducts().then((rows) => ({ rows }), (e) => ({ err: e })),
+      new Promise((r) => setTimeout(() => r({ hung: true }), 4000)),
+    ]);
+    globalThis.__afterPage = null; globalThis.__ignoreCursor = false;
+    return { ...res, before, after: new Set(globalThis.__t.map((r) => r.id)), pages: globalThis.__pages };
+  };
+  const dupesOf = (rows) => { const ids = rows.map((r) => r.id); return ids.filter((x, i) => ids.indexOf(x) !== i); };
+  /** صفوفٌ كانت موجودةً قبل الجلب **وبقيت بعده** ولم تصل = سقوطٌ صامت. */
+  const droppedOf = (r) => [...r.before].filter((id) => r.after.has(id) && !r.rows.some((x) => x.id === id));
+
+  // أ) إدراجٌ بمعرّفٍ يسبق كلَّ شيء بعد الطلبة الأولى — كان يكرّر صفّاً (ع٩).
+  const a = await run({ afterPage: (n) => { if (n === 1) globalThis.__t = [{ id: "p!!new", name: "n!!" }, ...globalThis.__t]; } });
+  check("إدراجٌ بين الطلبتين: الطلبُ أُعيد بعد صفحةٍ ممتلئة — النافذةُ حقيقية", !a.err && !a.hung && a.pages >= 2, `${a.pages} طلباً ${a.err ?? ""}`);
+  check("  ولا صفَّ مكرّر", !a.err && dupesOf(a.rows).length === 0, a.rows ? dupesOf(a.rows).slice(0, 3).join("، ") : "");
+  check("  ولا صفَّ قائمٌ سقط", !a.err && droppedOf(a).length === 0, a.rows ? droppedOf(a).slice(0, 3).join("، ") : "");
+
+  // ب) حذفُ صفٍّ **قرأناه** بعد الطلبة الأولى (حذفٌ أو دمجٌ بجهازٍ ثانٍ): الإزاحةُ
+  //    تُصعد كلَّ ما بعده خانةً فيسقط أوّلُ صفٍّ كان بالطلبة الثانية — صامتاً.
+  const b = await run({ afterPage: (n) => { if (n === 1) globalThis.__t = globalThis.__t.filter((r) => r.id !== "p00050"); } });
+  check("حذفٌ بين الطلبتين: ولا صفَّ قائمٌ سقط (مادّةٌ بالرفّ تغيب عن القائمة)", !b.err && !b.hung && droppedOf(b).length === 0,
+    b.rows ? `سقط: ${droppedOf(b).slice(0, 3).join("، ")}` : String(b.err ?? "علّقت"));
+  check("  ولا صفَّ مكرّر", !b.err && !b.hung && dupesOf(b.rows).length === 0);
+
+  // ج) سقفُ الخادم أقلُّ من المطلوب (٧٠٠): التقدّمُ بما وصل لا بما طُلب.
+  const c = await run({ cap: 700 });
+  check("سقفُ خادمٍ ٧٠٠ لكلّ طلبة: وصلت الـ١٠٠٥ كلُّها", !c.err && !c.hung && c.rows.length === N, `${c.rows?.length} صفّاً`);
+
+  // د) ترتيبُ العرض بالاسم مهما كان ترتيبُ الجلب — ثابتٌ يُحفظ لا خللٌ يُصلَح.
+  const d = await run();
+  const byName = !d.err && d.rows.every((r, i, arr) => i === 0 || arr[i - 1].name <= r.name);
+  check("القائمةُ تصل مفروزةً بالاسم كما كانت (الفرزُ نزل للواجهة ولم يضع)", byName);
+
+  // هـ) خادمٌ يتجاهل المؤشّر (يعيد نفسَ الصفحة): المؤشّرُ بلا حارسٍ يدور للأبد.
+  //    يُرمى خطأٌ صريح، لا تعليقٌ ولا قائمةٌ مكرّرة. (ثابتٌ للآلية الجديدة —
+  //    أُثبت فشلُه بإزالة الحارس، لا بالشيفرة القديمة التي لم يكن لها مؤشّر.)
+  const e = await run({ ignoreCursor: true });
+  // «خطأٌ» وحده لا يكفي: حلقةٌ هاربة ترمي أيضاً حين يوقفها الخادمُ المزيّف بعد مئة طلبة.
+  // الحارسُ الحقيقيّ يقف بالطلبة **الثانية** — أوّلُ صفحةٍ لا جديدَ فيها.
+  check("خادمٌ يتجاهل المؤشّر ⇒ خطأٌ صريح بالطلبة الثانية، لا حلقةٌ تطرق الخادم",
+    !!e.err && !e.hung && e.pages <= 3, e.hung ? "علّقت" : !e.err ? "رجعت قائمة" : `${e.pages} طلبة قبل التوقّف`);
 }
 
 
