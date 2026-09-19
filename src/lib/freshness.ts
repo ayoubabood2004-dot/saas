@@ -25,6 +25,28 @@ export type ReturnDecision =
    *  إتمامُ البيعة نفسُه يعيد التحميل (`onSold`). */
   | "skip-busy";
 
+/**
+ * سؤالٌ واحدٌ مشترك لكلّ من يسأل عن المفتاح نفسه وهو معلَّق.
+ *
+ * مسحتان متلاحقتان لمادّةٍ «صفرٍ بالقائمة» على نتٍ بطيء: كان السائلُ الثاني
+ * **يُرمى** بصمت (لا صوتَ ولا رسالة)، فعلبتان تخرجان والفاتورةُ واحدة. والمسحةُ
+ * علبةٌ حقيقية. فهنا لا يُرمى أحد: الخادمُ يُسأل مرّةً، وكلُّ سائلٍ يستلم الجوابَ
+ * نفسَه ويكمل بيعَه بنفسه. `first` يقول من سأل فعلاً — لرسالةٍ واحدةٍ لا أكثر.
+ */
+export function sharedAsk<T>(
+  inflight: Map<string, Promise<T>>,
+  key: string,
+  ask: () => Promise<T>,
+): { promise: Promise<T>; first: boolean } {
+  const existing = inflight.get(key);
+  if (existing) return { promise: existing, first: false };
+  const promise: Promise<T> = ask().finally(() => {
+    if (inflight.get(key) === promise) inflight.delete(key);
+  });
+  inflight.set(key, promise);
+  return { promise, first: true };
+}
+
 /** هل نجلب حين يرجع التاب؟ `ageMs = Infinity` للقطةٍ لم تُجلب قطّ. */
 export function onReturnDecision(s: { visible: boolean; ageMs: number; staleMs: number; busy: boolean }): ReturnDecision {
   if (!s.visible) return "skip-hidden";

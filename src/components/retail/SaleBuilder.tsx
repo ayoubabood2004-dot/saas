@@ -34,7 +34,8 @@ import { persistMedicalEntries } from "@/lib/medSync";
 import type { MedicalDraft } from "@/components/MedicalEntry";
 import { cn, money, currencySymbol, formatNum, fmtKg, searchable, normalizeCode } from "@/lib/utils";
 import { findByCode, rescueScan, matchTruncatedCode, codeMatcher, carriesCode } from "@/lib/productCodes";
-import { unitCap, capAdd, outOfStock, zeroStockVerdict } from "@/lib/cartCap";
+import { unitCap, capAdd, zeroStockVerdict, needsFreshCheck } from "@/lib/cartCap";
+import { sharedAsk } from "@/lib/freshness";
 import { splitCustomerField } from "@/lib/customerName";
 import { dueOf, paidOf } from "@/lib/debt";
 import { withTimeout, describeDbError, isNetworkError, isTimeoutError } from "@/lib/errors";
@@ -957,32 +958,37 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
    *
    * `refused` تقول للمستدعي «لم يُضف شيءٌ وقيل لماذا» — فيُبقي المضاعِفَ مسلَّحاً
    * للمحاولة التالية، كما كان المسحُ يفعل قبل الاستخراج. */
-  const askingRef = useRef<Set<string>>(new Set());
+  const askingRef = useRef(new Map<string, Promise<{ fresh?: Product; asked: boolean }>>());
   const sellOrExplain = async (product: Product, n: number): Promise<{ added: number | null; refused: boolean }> => {
-    if (!outOfStock(product, retMode)) return { added: addProduct(product, n), refused: false };
-    // ضغطتان على كرتٍ ينتظر جوابَ الخادم = سؤالٌ واحد، لا بيعتان.
-    if (askingRef.current.has(product.id)) return { added: null, refused: true };
-    askingRef.current.add(product.id);
-    let fresh: Product | undefined;
-    let asked = false;
-    try {
-      fresh = await withTimeout(repo.getProductById(product.id), 6000);
-      asked = true;
-    } catch { /* swallow-ok: تعذّر السؤال — الحكمُ «آخرُ ما عندنا» لا «رصيدك صفر» */ }
-    finally { askingRef.current.delete(product.id); }
+    // الموزونُ الصفرُ بالقائمة يُسأل عنه أيضاً: سقفُ منتقي الوزن رصيدُ الصفّ.
+    if (!needsFreshCheck(product, retMode)) return { added: addProduct(product, n), refused: false };
+    /* سؤالٌ واحدٌ للخادم مهما تكرّرت المسحةُ أثناءه — و**كلُّ مسحةٍ تُباع**. كان
+     * السائلُ الثاني يُرمى بصمت: علبتان تخرجان والفاتورةُ واحدة (أمسكته المراجعةُ
+     * العدائية). المسحةُ علبةٌ حقيقية، وضغطتان على كرتٍ فيه رصيدٌ قطعتان — فالتكرارُ
+     * هنا يُجمع بالسلّة (`bump` تحدّثها من الحالة الحيّة) ولا يُرمى. */
+    const { promise, first } = sharedAsk(askingRef.current, product.id, async () => {
+      try {
+        return { fresh: await withTimeout(repo.getProductById(product.id), 6000), asked: true };
+      } catch { /* swallow-ok: تعذّر السؤال — الحكمُ «آخرُ ما عندنا» لا «رصيدك صفر» */
+        return { fresh: undefined, asked: false };
+      }
+    });
+    const { fresh, asked } = await promise;
     // الصفُّ الطازج يرقّع القائمةَ **أيّاً كان الحكم**: رصيدٌ ظهر يُصلح الكرتَ
-    // فوراً، وصفرٌ مؤكَّد يبقى صفراً صادقاً لا بائتاً.
-    if (fresh) onFreshRow?.(fresh);
+    // فوراً، وصفرٌ مؤكَّد يبقى صفراً صادقاً لا بائتاً. (مرّةً — من سأل فعلاً.)
+    if (fresh && first) onFreshRow?.(fresh);
     const verdict = zeroStockVerdict(fresh, asked, retMode);
     if (verdict === "sell-fresh" && fresh) {
       // رصيدٌ طازج: يُباع بالصفّ الطازج لا بالبائت، فسقفُ السطر صحيح.
       const added = addProduct(fresh, n);
-      if (added !== null && added > 0) {
+      if (first && added !== null && added > 0) {
         toast.success(t("retail.scanStockRefreshed", "«{{name}}» رصيده تحدّث — {{n}} متوفّر", { name: fresh.name, n: formatNum(fresh.stock ?? 0) }));
       }
       return { added, refused: false };
     }
+    // النغمةُ لكلّ مسحة — الكاشير يعدّ بأذنه — والرسالةُ مرّةً لا تتكدّس.
     playWarning();
+    if (!first) return { added: null, refused: true };
     if (verdict === "refuse-confirmed") {
       toast.error(t("retail.scanOutOfStock", "«{{name}}» موجود بس رصيده صفر — زيد رصيده من المخزن أو سجّل شراء حتى ينباع", { name: product.name }));
     } else {

@@ -439,11 +439,14 @@ console.log("▸ رصيدُ الصفر — يُسأل الخادمُ قبل ال
   /* السؤالُ صار **بمعرّف المنتج** (خطة الطزاجة، ط٢): المسحُ والكرتُ يمرّان من
    * `sellOrExplain` نفسِها، والكرتُ لا يحمل رمزاً ممسوحاً — وبالمخزن منتجاتٌ بلا
    * باركود. والنيّةُ نفسُها محروسة: سؤالُ الخادم بمهلةٍ قبل أيِّ رفض. */
+  // (السؤالُ صار مشتركاً بين المسحات المتلاحقة — `fresh:` بجوابٍ مشترك لا `fresh =`.)
   check("وشاشةُ البيع تسأل الخادمَ بمهلةٍ قبل الرفض",
-    /fresh = await withTimeout\(repo\.getProductById\(product\.id\), 6000\)/.test(sb));
+    /fresh:?\s*=?\s*await withTimeout\(repo\.getProductById\(product\.id\), 6000\)/.test(sb));
   check("  وتبيع بالصفّ الطازج لا بالبائت", sb.includes("addProduct(fresh, n)"));
+  // البوّابةُ من الوحدة المفحوصة: `needsFreshCheck` (تبني على `outOfStock` وتضيف الموزونَ البائت).
   check("  والحكمُ من الوحدة المفحوصة لا نسخةٍ محلّية",
-    sb.includes("outOfStock(product, retMode)") && !sb.includes("const isNoStock"));
+    sb.includes("needsFreshCheck(product, retMode)") && /import \{[^}]*needsFreshCheck[^}]*\} from "@\/lib\/cartCap"/.test(sb)
+    && !sb.includes("const isNoStock"));
 }
 
 

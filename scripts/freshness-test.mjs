@@ -138,6 +138,65 @@ for (const k of ["retail.refreshList", "pos.staleStrip", "pos.refreshNow", "reta
   check(`  مفتاحُ ${k} مترجمٌ بالملفّين`, !!en?.[ns]?.[key] && !!ar?.[ns]?.[key]);
 }
 
+/* ── المسحةُ الثانية لا تُرمى (مراجعةٌ عدائية على الدفعة ١) ────────────────
+ * كان `sellOrExplain` يرمي بصمتٍ أيَّ سؤالٍ ثانٍ عن نفس المنتج وسؤالُه الأوّل
+ * معلَّق: `refused` بلا صوتٍ ولا رسالة. علبتان من مادّةٍ «صفرٍ بالقائمة» تُمسحان
+ * على نتٍ بطيء ⇒ الفاتورةُ واحدة، وعلبةٌ تخرج بلا قيد. والمسحةُ علبةٌ حقيقية.
+ * فالسؤالُ للخادم يُشارَك (واحدٌ لا اثنان)، **والبيعُ لكلّ مسحة**. */
+console.log("▸ سؤالٌ مشترك للخادم، وبيعٌ لكلّ مسحة");
+if (fr && typeof fr.sharedAsk === "function") {
+  const inflight = new Map();
+  let asks = 0, release;
+  const ask = () => { asks++; return new Promise((r) => { release = r; }); };
+  const a = fr.sharedAsk(inflight, "x", ask);
+  const b = fr.sharedAsk(inflight, "x", ask);
+  check("سائلان معاً ⇒ سؤالٌ واحدٌ للخادم", asks === 1, `${asks}`);
+  check("  والأوّلُ يُعرَف أوّلاً والثاني لا", a.first === true && b.first === false);
+  release({ stock: 12 });
+  const [ra, rb] = await Promise.all([a.promise, b.promise]);
+  check("  وكلاهما يستلم الجوابَ نفسَه — لا أحدَ يُرمى", ra?.stock === 12 && rb?.stock === 12);
+  await Promise.resolve();
+  check("  والمعلَّقُ يُمسح بعد الجواب", !inflight.has("x"));
+  fr.sharedAsk(inflight, "x", ask);
+  check("  وسؤالٌ بعدها سؤالٌ جديد", asks === 2);
+} else {
+  check("sharedAsk موجودةٌ بـsrc/lib/freshness.ts", false);
+}
+const soeNow = SB.slice(SB.indexOf("const sellOrExplain = async"), SB.indexOf("\n  };", SB.indexOf("const sellOrExplain = async")));
+check("sellOrExplain تشارك السؤالَ (sharedAsk) ولا ترمي السائلَ الثاني",
+  /sharedAsk\(/.test(soeNow) && !/askingRef\.current\.has\(/.test(soeNow));
+/* الترتيبُ لا النصّ: النغمةُ **قبل** رجوع السائل الثاني، ولا شرطَ «الأوّل» يلفّها.
+ * (الصياغةُ الأولى بحثت عن «if (first» فمرّت عليها طفرةٌ بـ«if (!first)» — أمسكها
+ * فحصُ الطفرات.) */
+const warnIdx = soeNow.indexOf("playWarning()");
+const secondReturn = soeNow.indexOf("if (!first) return");
+check("  والرفضُ يُسمَع لكلّ مسحة (النغمةُ قبل رجوع الثاني، ولا تُشرط بالأوّل)",
+  warnIdx > 0 && secondReturn > warnIdx && !/if \(first[^)]*\)\s*\{?\s*playWarning/.test(soeNow),
+  `warn@${warnIdx} secondReturn@${secondReturn}`);
+
+/* ── الموزونُ أيضاً: «بأيّ مسار» يعني بأيّ مسار ───────────────────────────
+ * الموزونُ لا يُمنع بالرصيد (كسريٌّ بطبعه) — لكنّ سقفَ منتقي الوزن هو رصيدُ الصفّ.
+ * فصفٌّ بائتٌ بصفر كان يفتح منتقياً سقفُه صفرُ كيلو **بلا سؤال خادم**، والكرتُ
+ * الباهتُ يعِد «اضغط ونتأكد من الخادم». نفسُ الشكوى بوجهٍ ثانٍ: كيسُ علفٍ رُصّد
+ * بجهازٍ آخر ولا يُباع بالكاشير. */
+console.log("▸ الموزونُ البائتُ بصفرٍ يُسأل عنه الخادمُ أيضاً");
+const cc = await load("src/lib/cartCap.ts");
+if (cc && typeof cc.needsFreshCheck === "function") {
+  check("موزونٌ صفرٌ بالقائمة ⇒ يُسأل الخادم", cc.needsFreshCheck({ stock: 0, sold_by_weight: true }) === true);
+  check("  موزونٌ فيه رصيد ⇒ لا سؤال", cc.needsFreshCheck({ stock: 2.5, sold_by_weight: true }) === false);
+  check("  وضعُ الراجع لا يُسأل عنه", cc.needsFreshCheck({ stock: 0, sold_by_weight: true }, true) === false);
+  check("  والمجمَّعُ لا يُسأل عنه", cc.needsFreshCheck({ stock: 0, pooled: true }) === false);
+  check("  والعاديُّ الصفرُ يُسأل كما كان", cc.needsFreshCheck({ stock: 0 }) === true && cc.needsFreshCheck({ stock: 1 }) === false);
+} else {
+  check("needsFreshCheck موجودةٌ بـsrc/lib/cartCap.ts", false);
+}
+if (cc) {
+  check("موزونٌ طازجٌ بصفرٍ ⇒ رفضٌ مؤكَّد (لا «رصيده تحدّث — صفر متوفّر»)",
+    cc.zeroStockVerdict({ stock: 0, sold_by_weight: true }, true) === "refuse-confirmed");
+  check("  وموزونٌ طازجٌ فيه كيلوات ⇒ يُباع", cc.zeroStockVerdict({ stock: 2.5, sold_by_weight: true }, true) === "sell-fresh");
+}
+check("sellOrExplain تبوّب بـneedsFreshCheck (لا outOfStock وحدها)", /if \(!needsFreshCheck\(product, retMode\)\)/.test(soeNow));
+
 /* ── ط٧: مخزنُ الحقل لا يُباع من كاشير العيادة ────────────────────────────
  * الخادمُ يستثنيه بكلّ طريقٍ اليوم (0191 — مقيسٌ حيّاً)، والوجهُ التجريبيّ محروسٌ
  * سلوكياً بـrepo-demo-test. وهنا الوجهُ السحابيّ بنصّه، وخطُّ الدفاع الأخير

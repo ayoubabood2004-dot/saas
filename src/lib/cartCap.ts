@@ -91,6 +91,21 @@ export type ZeroStockVerdict =
   | "refuse-stale";
 
 export function zeroStockVerdict(fresh: StockRow | undefined | null, asked: boolean, retMode = false): ZeroStockVerdict {
-  if (fresh && !outOfStock(fresh, retMode)) return "sell-fresh";
+  // الموزونُ الطازجُ بلا كيلو ليس «رصيده تحدّث — صفر متوفّر»: صفرٌ مؤكَّد.
+  const freshEmptyWeight = !!fresh?.sold_by_weight && !retMode && !fresh.pooled && (fresh.stock ?? 0) <= 0;
+  if (fresh && !freshEmptyWeight && !outOfStock(fresh, retMode)) return "sell-fresh";
   return asked ? "refuse-confirmed" : "refuse-stale";
+}
+
+/**
+ * هل يُسأل الخادمُ قبل البيع؟ رصيدٌ صفرٌ **بالقائمة** — والقائمةُ لقطةٌ قد تكون بعمر ساعات.
+ *
+ * `outOfStock` تعفي الموزونَ لأنه لا يُمنع بالرصيد (كسريٌّ بطبعه) — لكنّ سقفَ منتقي
+ * الوزن هو رصيدُ الصفّ، فصفٌّ بائتٌ بصفرٍ كان يفتح منتقياً سقفُه صفرُ كيلو بلا سؤال:
+ * كيسُ علفٍ رُصّد بجهازٍ آخر لا يُباع بالكاشير. فالموزونُ الصفرُ يُسأل عنه أيضاً.
+ */
+export function needsFreshCheck(p: StockRow, retMode = false): boolean {
+  if (retMode || p.pooled) return false;
+  if (p.sold_by_weight) return (p.stock ?? 0) <= 0;
+  return outOfStock(p, retMode);
 }
