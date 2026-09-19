@@ -124,6 +124,30 @@ if (mod && typeof mod.hasLiveElevation === "function") {
   check("  والسؤالُ قبل مسح الأعلام (وإلا كان الجوابُ «لا» دائماً)", liveIdx > 0 && clearIdx > liveIdx);
 }
 
+/* ── 0194: القاعدةُ صادقةٌ مهما كان العميل ─────────────────────────────────
+ * الواجهةُ لا تنادي بلا رفع — لكنّ نسخةً قديمةً مفتوحةً بمتصفّح عيادةٍ بعد النشر
+ * تنادي. فالقاعدةُ نفسُها لا تكتب إلا لرفعٍ أُقفل، ولا أثرَ للمشغّل. سلوكُها يُفحص
+ * بحزمة run.sh (تحتاج PGBIN)، وهنا شروطُها بالنصّ حتى يمسكها كلُّ lint محلّي. */
+console.log("▸ 0194 — end_elevation صادقة بالقاعدة (نصّاً؛ والسلوكُ بـrun.sh)");
+{
+  const MIG = "supabase/migrations/0194_end_elevation_honest.sql";
+  const whole = existsSync(MIG) ? readFileSync(MIG, "utf8").replace(/\r\n/g, "\n") : "";
+  // الجسمُ وحده: الترويسةُ تذكر «get diagnostics» شرحاً، فالبحثُ فيها يكذب بالترتيب.
+  const m = whole.includes("create or replace function") ? whole.slice(whole.indexOf("create or replace function")) : whole;
+  check("الهجرةُ موجودة", m.length > 0);
+  check("  السطرُ لرفعٍ حُذف فعلاً (row_count)", /get diagnostics v_n = row_count;/.test(m) && /if v_n > 0 and/.test(m));
+  check("  ولا أثرَ لمشغّل المنصّة داخلَ عيادة", /platform_acting_clinic\(\) is null/.test(m));
+  check("  والرفعُ يُحذف قبل أيّ شرط (الأمانُ لا يتغيّر)",
+    m.indexOf("delete from staff_elevations where user_id = auth.uid();") > 0
+    && m.indexOf("delete from staff_elevations") < m.indexOf("get diagnostics"));
+  check("  بصلاحية المُعرِّف وبمسارٍ مثبَّت", /security definer set search_path = public/.test(m));
+  check("  وممنوعةٌ عن anon، مسموحةٌ للمسجَّل",
+    /revoke all on function end_elevation\(\) from public, anon;/.test(m) && /grant execute on function end_elevation\(\) to authenticated;/.test(m));
+  const suite = readFileSync("supabase/tests/run.sh", "utf8");
+  check("  وتنزل بحزمة run.sh (هجرةٌ لا تنزل بالحزمة غيرُ مفحوصة)",
+    suite.includes("$MIG/0194_end_elevation_honest.sql") && suite.includes("▸ 0194:"));
+}
+
 console.log("▸ الشاشاتُ تستعمل التسلسل ولا تعود للترتيب القديم");
 const auth = readFileSync("src/contexts/AuthContext.tsx", "utf8").replace(/\r\n/g, "\n");
 const signOutBody = auth.slice(auth.indexOf("const signOut = () => {"), auth.indexOf("const leaveClinic"));

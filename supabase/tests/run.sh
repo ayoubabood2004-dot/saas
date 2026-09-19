@@ -25,7 +25,7 @@ MIG="$HERE/../migrations"
 # و0095/0096/0158 بالمقدّمة رغم أنها أقدمُ من 0124: الموجةُ تبدأ من 0124 لأن
 # الأساس يوفّر ما قبلها جاهزاً — لكنّ هذه الثلاثَ تُنشئ المتجرَ والبوّابة،
 # وكانت خارجَ الفحص كلَّه. تُنزَّل بترتيبها الحقيقيّ قبل الموجة.
-WAVE="$MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0114_landing_events.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql $MIG/0184_images_hardening.sql $MIG/0185_store_funnel_events.sql $MIG/0186_store_bulk_visible.sql $MIG/0187_store_suggest_products.sql $MIG/0188_store_catalog_priced.sql $MIG/0189_accept_fee_at_decision.sql $MIG/0190_logo_out_of_db.sql $MIG/0191_poultry_farms.sql $MIG/0192_poultry_consume.sql $MIG/0193_poultry_withdrawal.sql"
+WAVE="$MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0114_landing_events.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql $MIG/0184_images_hardening.sql $MIG/0185_store_funnel_events.sql $MIG/0186_store_bulk_visible.sql $MIG/0187_store_suggest_products.sql $MIG/0188_store_catalog_priced.sql $MIG/0189_accept_fee_at_decision.sql $MIG/0190_logo_out_of_db.sql $MIG/0191_poultry_farms.sql $MIG/0192_poultry_consume.sql $MIG/0193_poultry_withdrawal.sql $MIG/0194_end_elevation_honest.sql"
 
 command -v "$PGBIN/initdb" >/dev/null || { echo "ما لكيت بوستغريس بـ $PGBIN"; exit 1; }
 
@@ -2320,6 +2320,33 @@ chk "المرجعُ فريدٌ بالعيادة لا بالجدول" \
     "select (indexdef like '%clinic_id, client_ref%')::text from pg_indexes where indexname='poultry_use_client_ref_idx'" "true"
 chk "  وجزئيٌّ فلا يصطدم القديمُ كلُّه بـNULL واحدة" \
     "select (indexdef like '%WHERE (client_ref IS NOT NULL)%')::text from pg_indexes where indexname='poultry_use_client_ref_idx'" "true"
+
+
+# ── 0194: «أُقفل وضعُ المدير» صادقة ─────────────────────────────────────────
+# كانت `end_elevation` تكتب السطرَ مع كلّ نداء — والخروجُ ينادي دائماً — فصار كلُّ
+# خروجٍ «أُقفل وضعُ المدير» ولو لم يُفتح. وخروجُ المشغّل من عيادة زبونٍ يترك سطراً
+# بسجلّها (خطٌّ أحمر). السطرُ الآن لرفعٍ أُقفل فعلاً، ولا أثرَ للمشغّل.
+echo "▸ 0194: لا سطرَ بلا رفعٍ أُقفل، ولا أثرَ للمشغّل"
+ADM=33333333-3333-3333-3333-333333333333
+C1=11111111-1111-1111-1111-111111111111
+$P -c "delete from staff_elevations; delete from audit_log where details->>'event' = 'override.lock';
+       update _dvtest_flags set admin = false; delete from platform_sessions;" >/dev/null
+chk "خروجٌ بلا رفعٍ ⇒ لا سطر" \
+    "select coalesce(_pf('$C1','select end_elevation()::text'),'') || (select count(*)::text from audit_log where details->>'event'='override.lock')" "0"
+$P -c "insert into staff_elevations(user_id, clinic_id, until) values ('$C1','$C1', now() + interval '10 minutes');" >/dev/null
+chk "قفلُ رفعٍ حقيقيّ ⇒ سطرٌ صادقٌ واحد بعيادته" \
+    "select coalesce(_pf('$C1','select end_elevation()::text'),'') || (select count(*)::text from audit_log where details->>'event'='override.lock' and clinic_id='$C1')" "1"
+chk "  والرفعُ حُذف" "select count(*)::text from staff_elevations where user_id='$C1'" "0"
+$P -c "update _dvtest_flags set admin = true;" >/dev/null
+chk "المشغّلُ يدخل ١١١١" "select _pf('$ADM', 'select (platform_enter(''$C1'', ''فحص 0194'')->>''ok'')')" "true"
+$P -c "insert into staff_elevations(user_id, clinic_id, until) values ('$ADM','$C1', now() + interval '10 minutes');" >/dev/null
+chk "خروجُ المشغّل برفعٍ حيّ ⇒ لا أثرَ بسجلّ العيادة (بالاتفاق معها)" \
+    "select coalesce(_pf('$ADM','select end_elevation()::text'),'') || (select count(*)::text from audit_log where details->>'event'='override.lock')" "1"
+chk "  والرفعُ حُذف مع ذلك — الأمانُ لا يتغيّر" "select count(*)::text from staff_elevations where user_id='$ADM'" "0"
+$P -c "select set_config('request.jwt.claim.sub','$ADM',false); select platform_leave();
+       update _dvtest_flags set admin = false; delete from platform_sessions;" >/dev/null
+chk "end_elevation بصلاحية المُعرِّف وبمسارٍ مثبَّت، ممنوعةٌ عن anon، مسموحةٌ للمسجَّل" \
+    "select (p.prosecdef and coalesce(array_to_string(p.proconfig,','),'') like '%search_path%' and not has_function_privilege('anon', p.oid, 'execute') and has_function_privilege('authenticated', p.oid, 'execute'))::text from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='end_elevation'" "true"
 
 
 [ $fail -eq 0 ] && echo "✓ كل الفحوص عبرت" || { echo "✗ اكو فحصٌ فشل"; exit 1; }
