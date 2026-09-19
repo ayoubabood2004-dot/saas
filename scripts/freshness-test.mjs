@@ -138,5 +138,22 @@ for (const k of ["retail.refreshList", "pos.staleStrip", "pos.refreshNow", "reta
   check(`  مفتاحُ ${k} مترجمٌ بالملفّين`, !!en?.[ns]?.[key] && !!ar?.[ns]?.[key]);
 }
 
+/* ── ط٧: مخزنُ الحقل لا يُباع من كاشير العيادة ────────────────────────────
+ * الخادمُ يستثنيه بكلّ طريقٍ اليوم (0191 — مقيسٌ حيّاً)، والوجهُ التجريبيّ محروسٌ
+ * سلوكياً بـrepo-demo-test. وهنا الوجهُ السحابيّ بنصّه، وخطُّ الدفاع الأخير
+ * بالواجهة: صفُّ حقلٍ يصل `addProduct` بطريقٍ يُضاف غداً يُرفض باسمه، لا يُباع. */
+console.log("▸ ط٧ — مخزنُ الحقل لا يُباع من كاشير العيادة");
+const REPO_N = REPO.replace(/\r\n/g, "\n");
+const cloudById = REPO_N.slice(REPO_N.lastIndexOf("async getProductById(id)"), REPO_N.indexOf("\n  },", REPO_N.lastIndexOf("async getProductById(id)")));
+check("السؤالُ بالمعرّف سحابياً يستثني مخزنَ الحقل", /\.is\("farm_id", null\)/.test(cloudById));
+const cloudList = REPO_N.slice(REPO_N.lastIndexOf("async listProducts(clinicId)"), REPO_N.indexOf("\n  },", REPO_N.lastIndexOf("async listProducts(clinicId)")));
+check("  وقائمةُ الكاشير سحابياً كذلك", /\.is\("farm_id", null\)/.test(cloudList));
+const addStart = SB.indexOf("const addProduct = (p: Product");
+const addBody = addStart >= 0 ? SB.slice(addStart, SB.indexOf("\n  };", addStart)) : "";
+check("addProduct يرفض صفَّ حقل قبل أيّ إضافة (خطُّ الدفاع الأخير)",
+  /if \(p\.farm_id\)/.test(addBody) && addBody.indexOf("p.farm_id") < addBody.indexOf("blockZeroCost"));
+check("  وبرسالةٍ تسمّيه، مترجمةٍ بالملفّين", /retail\.farmProductAtTill/.test(addBody)
+  && !!en?.retail?.farmProductAtTill && !!ar?.retail?.farmProductAtTill);
+
 console.log(`\n${fails ? "✗" : "✓"} freshness-test: ${passes} نجحت، ${fails} فشلت`);
 process.exit(fails ? 1 : 0);

@@ -817,6 +817,14 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
   /** ترجع ما أُضيف فعلاً (0 = السطرُ عند سقفه) — ومنها يقرّر المسحُ أيَّ نغمةٍ يُصدر.
    *  و`null` لمسارٍ لا يُضيف الآن (وزنٌ يُنتقى بنافذة، أو كلفةٌ صفرٌ تُمنع). */
   const addProduct = (p: Product, n = takeMult()): number | null => {
+    /* مخزنُ الحقل لا يُباع من كاشير العيادة (0191): سعرُه لم يوضع للبيع، وخصمُه
+     * يكذب كلفةَ دفعةٍ جارية. الخادمُ يستثنيه بكلّ طريقٍ اليوم — وهذا خطُّ الدفاع
+     * الأخير لو وصل صفُّ حقلٍ بطريقٍ يُضاف غداً: يُرفض باسمه، لا يُباع بصمت. */
+    if (p.farm_id) {
+      playWarning();
+      toast.error(t("retail.farmProductAtTill", "«{{name}}» من مخزن الحقل — يُصرف من شاشة الحقل لا من كاشير العيادة", { name: p.name }));
+      return null;
+    }
     if (blockZeroCost(p)) return null;
     if (p.sold_by_weight) { playTap(); setWeightFor({ p, ret: retMode }); return null; }
     return retMode ? addReturn(p, n) : bump(`p:${p.id}`, () => {

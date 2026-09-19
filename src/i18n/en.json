@@ -729,6 +729,7 @@
     "scanOutOfStockStale": "{{name}} had zero stock as of our last update — we could not reach the server to confirm. Refresh the list before re-entering it.",
     "scanStockRefreshed": "{{name}} stock just updated — {{n}} available",
     "refreshList": "Refresh list",
+    "farmProductAtTill": "{{name}} belongs to a farm's stock — it is issued from the farm screen, not the clinic till",
     "outTapToCheck": "Zero stock as of the last update — tap and we'll check with the server",
     "scanOffline": "Could not reach the server — we cannot verify barcode {{code}}. Check the connection and scan again.",
     "scanHealed": "The scanner dropped the start of the barcode — matched it to \"{{name}}\"",
