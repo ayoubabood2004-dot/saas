@@ -107,6 +107,16 @@ const soeBody = soeStart >= 0 ? SB.slice(soeStart, SB.indexOf("\n  };", soeStart
 check("حكمُ الصفر من مكانٍ واحد: zeroStockVerdict مرّةً، وداخل sellOrExplain",
   (SB.match(/zeroStockVerdict\(/g) ?? []).length === 1 && soeBody.includes("zeroStockVerdict("),
   `مرّات=${(SB.match(/zeroStockVerdict\(/g) ?? []).length} داخلها=${soeBody.includes("zeroStockVerdict(")}`);
+/* «بأي مسار» بالعقد (§١-٢) يُقاس بالنداءات لا بقائمة المسارات: كلُّ `addProduct(`
+ * بالملفّ داخل sellOrExplain. مسارُ «الماسح بلع أوّل الباركود» (matchTruncatedCode)
+ * كان يستدعيها مباشرةً — صنفٌ صفرٌ بالقائمة يُضاف بقطعةٍ ومعه «المتوفّر ٠ — كلُّه
+ * بالسلّة»، والخادمُ لا يُسأل. قائمةُ مساراتٍ كانت ستنساه كما نُسي. */
+const addCalls = [...SB.matchAll(/\baddProduct\(/g)].map((m) => m.index);
+const outsideSoe = addCalls.filter((i) => i < soeStart || i > soeStart + soeBody.length).length;
+check("كلُّ إضافةِ منتجٍ تمرّ من sellOrExplain — لا نداءَ لـaddProduct خارجها",
+  addCalls.length >= 2 && outsideSoe === 0, `النداءات ${addCalls.length}، خارجها ${outsideSoe}`);
+check("  ومسارُ ذيل الباركود (matchTruncatedCode) منها، والرفضُ يُبقي المضاعِف",
+  /const r = await sellOrExplain\(cut, n\);[\s\S]{0,400}?if \(!r\.refused && mult != null\) setMult\(null\);/.test(SB));
 check("السؤالُ بمعرّف المنتج — الكرتُ بلا رمزٍ ممسوح، ومنتجاتٌ بلا باركود",
   /withTimeout\(repo\.getProductById\(product\.id\), 6000\)/.test(SB));
 check("الرصيدُ الطازج يرقّع صفَّ القائمة", /onFreshRow\?\.\(/.test(SB) && /onFreshRow=/.test(RS));

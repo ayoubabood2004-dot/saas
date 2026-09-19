@@ -1072,12 +1072,15 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
     // `scanBuffer` لا بديلٌ عنها، ونقولها بصوت حتى لا تبدو المطابقةُ سحراً.
     const cut = matchTruncatedCode(products, code);
     if (cut) {
-      const addedCut = addProduct(cut, n);
-      if (addedCut !== null && addedCut > 0) {
+      /* ويمرّ من `sellOrExplain` كالمسح والكرت: كان يستدعي `addProduct` مباشرةً،
+       * فصنفٌ رصيدُه صفرٌ **بالقائمة** يُضاف بقطعةٍ ومعه «المتوفّر ٠ — كلُّه بالسلّة»
+       * — حكمٌ من لقطةٍ محلّية بلا سؤال الخادم، ورسالةٌ تناقض السطرَ الذي نزل. */
+      const r = await sellOrExplain(cut, n);
+      if (r.added !== null && r.added > 0) {
         playSuccess();
         toast.success(t("retail.scanHealed", "الماسح بلع أوّل الباركود — طابقناه بـ«{{name}}»", { name: cut.name }));
       }
-      if (mult != null) setMult(null);
+      if (!r.refused && mult != null) setMult(null);
       setQuery("");
       return;
     }
