@@ -210,9 +210,12 @@ export async function setOverridePin(pin: string): Promise<void> {
  *  NEXT user to sign in on a shared/kiosk device never inherits manager access.
  *  A deliberate device lock (kiosk reception view) is intentionally PRESERVED —
  *  it must survive staff signing in and out all day. */
-export function endElevationOnLogout(): void {
+export function endElevationOnLogout(): PromiseLike<unknown> | undefined {
   const client = sb();
-  if (client) void Promise.resolve(client.rpc("end_elevation")).then(() => undefined, () => undefined);
+  /* يُرجَع النداءُ ليُنتظر قبل مسح الجلسة (`endElevationThenSignOut`). كان يُطلق
+   * بلا انتظار، فيسبق مسحُ الجلسة قراءةَ الرمز ويخرج الطلبُ «مجهولاً» — 42501
+   * بسجلّ الإنتاج، والرفعُ لا يُنهى بالخادم. */
+  const call = client ? Promise.resolve(client.rpc("end_elevation")) : undefined;
   // Remove EVERY clinic's elevation flag, not just the active one — a user who
   // switched clinics mid-session could otherwise leave a stale flag that unlocks
   // the manager UI for the next person on a shared device.
@@ -223,6 +226,7 @@ export function endElevationOnLogout(): void {
   } catch { /* ignore */ }
   if (expiryTimer != null) { window.clearTimeout(expiryTimer); expiryTimer = null; }
   notify();
+  return call;
 }
 
 function hasLocalPin(): boolean {

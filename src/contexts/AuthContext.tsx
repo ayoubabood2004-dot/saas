@@ -12,6 +12,7 @@ import { leaveClinic as apiLeaveClinic } from "@/lib/invites";
 import { startPresenceBeat } from "@/lib/presence";
 import { repo } from "@/lib/repo";
 import { endElevationOnLogout } from "@/lib/managerOverride";
+import { endElevationThenSignOut } from "@/lib/logoutSequence";
 import type { OwnerAccount } from "@/lib/owners";
 
 interface SignupExtra {
@@ -582,7 +583,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // End any live manager-override elevation FIRST (before the active clinic is
     // cleared, so its localStorage key still resolves) — otherwise the next user
     // on a shared device inherits the previous person's 10-minute manager access.
-    try { endElevationOnLogout(); } catch { /* ignore */ }
+    // والنداءُ يُحفظ ليُنتظر قبل مسح الجلسة (أسفل): يخرج بهويّة المستخدم لا مجهولاً.
+    let ending: PromiseLike<unknown> | undefined;
+    try { ending = endElevationOnLogout(); } catch { /* ignore */ }
     // Purge the service-worker media cache so the previous clinic's patient
     // photos (cached from Supabase storage) can't be read by the next person on
     // a shared/kiosk device via DevTools → Cache Storage.
@@ -609,9 +612,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try { window.location.href = "/login"; } catch { /* non-browser env */ }
     };
     if (isSupabaseConfigured && supabase) {
+      const client = supabase;
       // scope:"local" clears the stored session without the network round-trip a
       // navigation could cancel; bounded so a hung SDK can't trap the user in.
-      void withTimeout(supabase.auth.signOut({ scope: "local" }), 2000)
+      // و**بعد** أن يخرج end_elevation بهويّة المستخدم (خطة الطزاجة، ط٦): كان
+      // يُطلق بلا انتظار فيسبقه مسحُ الجلسة، فيصل مجهولاً ويُرفض 42501 — والرفعُ
+      // يبقى حيّاً بالخادم. والانتظارُ بسقفٍ قصير، فلا يُحبس أحدٌ على نتٍ ميّت.
+      void endElevationThenSignOut({
+        endElevation: () => ending,
+        signOutLocal: () => withTimeout(client.auth.signOut({ scope: "local" }), 2000),
+      })
         .catch(() => { /* finish() strips the tokens regardless */ })
         .then(finish);
     } else {
