@@ -910,7 +910,13 @@
     "rcPartly": "عليها متبقٍّ",
     "rcProforma": "فاتورة أولية",
     "rcSigCustomer": "توقيع المستلم",
-    "rcSigClinic": "ختم العيادة وتوقيعها"
+    "rcSigClinic": "ختم العيادة وتوقيعها",
+    "rcPackage": "الباقة / العرض",
+    "rcCredit": "آجل",
+    "rcHandFill": "تُملأ باليد",
+    "rcNo": "رقم",
+    "blankForm": "وصل فارغ",
+    "blankFormHint": "يطبع وصل A4 فارغ تمليه بالقلم"
   },
   "promos": {
     "pickFailed": "تعذّر تحميل المنتجات — أعد فتح النافذة.",

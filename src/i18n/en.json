@@ -910,7 +910,13 @@
     "rcPartly": "Balance due",
     "rcProforma": "PRO-FORMA",
     "rcSigCustomer": "Received by",
-    "rcSigClinic": "Clinic stamp & signature"
+    "rcSigClinic": "Clinic stamp & signature",
+    "rcPackage": "Package / Offer",
+    "rcCredit": "Credit",
+    "rcHandFill": "To be filled by hand",
+    "rcNo": "No.",
+    "blankForm": "Blank receipt",
+    "blankFormHint": "Prints an empty A4 receipt to fill in by hand"
   },
   "promos": {
     "pickFailed": "Could not load products — reopen this dialog.",

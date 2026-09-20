@@ -15,6 +15,7 @@ import { useOverride, capLockedFrom } from "@/lib/managerOverride";
 import { Modal } from "@/components/Modal";
 import { Button, Badge, useToast, Skeleton } from "@/components/ui";
 import { useInvoicePrinter } from "./usePrintInvoice";
+import { useBlankFormPrinter } from "./useBlankForm";
 import { invoiceNo } from "@/lib/invoiceNo";
 import { cn, formatDate, money, dateLocale } from "@/lib/utils";
 import { displayCustomerName } from "@/lib/customerName";
@@ -62,6 +63,7 @@ export function InvoicesPanel({ invoices, onChanged }: { invoices: Invoice[]; cl
      الدورَ، فحسابُ المدير المقفول يبقى مديراً وتبقى الأرباحُ مكتوبةً تحت كلّ
      سطر. نفسُ حكم تبويب التقارير، من نفس الدالّة. */
   const showProfit = !capLockedFrom(ov.deviceLocked, ov.active, can("viewProfits"));
+  const printBlank = useBlankFormPrinter();
   const paged = getInvoicesPaged();
   const [q, setQ] = useState("");
   const [status, setStatus] = useState<StatusFilter>("all");
@@ -223,6 +225,13 @@ export function InvoicesPanel({ invoices, onChanged }: { invoices: Invoice[]; cl
             </button>
           ))}
         </div>
+        {/* وصلٌ فارغ: بيعٌ يُتّفق عليه بالكلام والزبونُ يريد ورقةً الآن —
+            تُملأ بالقلم ويجيء الإدخالُ بعدها. */}
+        <Button variant="secondary" leftIcon={<Printer size={15} />}
+          title={t("retail.blankFormHint", "Prints an empty A4 receipt to fill in by hand")}
+          onClick={() => { playTap(); void printBlank(); }}>
+          {t("retail.blankForm", "Blank receipt")}
+        </Button>
       </div>
 
       {/* العدّاد: «معروض ٥٠ من ١٬٥٠٨» — القائمةُ المُصفَّحة تقول حجمها دائماً. */}
