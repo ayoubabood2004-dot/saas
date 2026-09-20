@@ -99,10 +99,24 @@ function strings(lang: string) {
     sigClinic: tp("rcSigClinic", lang, "Clinic stamp & signature"),
     preSale: ar ? "فاتورة أولية — قبل إتمام البيع" : "PRO-FORMA — NOT A RECEIPT",
     printNo: ar ? "نسخة الطباعة رقم" : "Print",
-    pkg: tp("rcPackage", lang, "Package / Offer"),
     credit: tp("rcCredit", lang, "Credit"),
-    handFill: tp("rcHandFill", lang, "To be filled by hand"),
     no: tp("rcNo", lang, "No."),
+    /* نصوصُ وصل الاستلام من doctorVet — ورقةٌ للمنصّة لا للعيادة. */
+    payReceipt: tp("rcPayReceipt", lang, "Payment Receipt"),
+    tagline: tp("rcTagline", lang, "Veterinary clinic management system"),
+    clinic: tp("rcClinic", lang, "Clinic"),
+    contactPerson: tp("rcPerson", lang, "Contact"),
+    receivedBy: tp("rcReceivedBy", lang, "Received by"),
+    planItem: tp("rcPlanItem", lang, "Plan / item"),
+    term: tp("rcTerm", lang, "Term"),
+    subPeriod: tp("rcSubPeriod", lang, "Subscription period"),
+    from: tp("rcFrom", lang, "From"),
+    to: tp("rcTo", lang, "To"),
+    proof: tp("rcProof", lang, "This receipt confirms the amount above was received in full."),
+    trust: tp("rcTrust", lang, "Thank you for trusting doctorVet."),
+    sigPayer: tp("rcSigPayer", lang, "Clinic signature"),
+    sigIssuer: tp("rcSigIssuer", lang, "Signature & stamp"),
+    remaining: tp("rcRemaining", lang, "Remaining"),
   };
 }
 
@@ -317,8 +331,30 @@ const A4_CSS = `
     /* بالورقة الفارغة الختمُ أظهرُ لأنّ ما حولَه أبيضُ كلُّه — وهو يقع تحت
        خانة الملاحظات حيث يُكتب فعلاً. فأخفتُ وأصغر، ويبقى: ترويسةٌ فارغةٌ
        بلا ختمٍ تُنسخ على أيّ طابعة. */
-    .watermark.faint img { width: 26%; max-width: 180px; opacity: .03; }
-    @media print { .watermark.faint img { opacity: .03 !important; } }
+    .watermark.faint img, .watermark.faint svg { width: 26%; max-width: 180px; height: auto; opacity: .04; }
+    @media print { .watermark.faint img, .watermark.faint svg { opacity: .04 !important; } }
+    /* ترويسةُ المنصّة: شعارُنا مرسومٌ لا صورةٌ مرفوعة، فلا تنطبق عليه قواعدُ
+       «.who img» (قصُّ الصورة ومقاسُها). وتحته سطرُ التعريف — لا هاتفَ ولا
+       حساباتِ تواصل، بقرار المالك. */
+    .who > svg { flex: 0 0 auto; }
+    .tagline { margin-top: 3px; font-size: 11.5px; color: var(--ink2); letter-spacing: .2px; }
+    /* خانتا «من» و«إلى» بسطرٍ واحد. */
+    .span2 { display: flex; gap: 14px; margin-top: 4px; }
+    .span2 .f { flex: 1 1 0; display: flex; align-items: flex-end; gap: 7px; }
+    .span2 .f .l { font-size: 11px; font-weight: 700; color: var(--ink2); }
+    .span2 .f .wl { flex: 1 1 0; margin-top: 0; }
+    /* **لا يُكتب بالقلم على حبرٍ مصمت.** شريطُ الإجماليّ بالوصل المطبوع أزرقُ
+       ممتلئ — وهو صحيحٌ حين يطبع النظامُ الرقمَ فيه، وخطأٌ حين يُطلب من يدٍ
+       أن تكتب عليه: قلمُ الحبر الجافّ يزلق على الحبر المطبوع ولا يُقرأ ما
+       كُتب. فبالفارغة الشريطُ خلفيّةٌ فاتحةٌ وحدٌّ سميك — نفسُ البروز، وورقةٌ
+       تقبل القلم. (ووفّرت حبرَ طابعةٍ أيضاً.) */
+    .blankpage .tot .grand { background: var(--acc-soft); color: var(--acc); border-top: 2px solid var(--acc); }
+    .blankpage .tot .grand .l { opacity: 1; }
+    .blankpage .tot .grand .wv { border-bottom: 1.6px solid var(--acc); }
+
+    /* سطرُ الإثبات: يقرؤه من يستلم الورقةَ بعد سنة، لا من يوقّعها اليوم. */
+    .proof { margin-top: 16px; padding: 8px 12px; border-radius: 8px; background: var(--acc-soft);
+             color: var(--ink2); font-size: 11px; font-weight: 700; }
     /* خانةُ اختيارٍ تُعلَّم بالقلم — لا نصَّ «نقداً/بطاقة» يُشطب عليه. */
     .boxes { display: flex; flex-wrap: wrap; gap: 7px 18px; margin-top: 7px; }
     .boxes .b { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 700; color: var(--ink2); }
@@ -675,93 +711,112 @@ export function buildInvoiceHTML(invoice: Invoice, items: InvoiceItem[], opts: I
 }
 
 /* ============================================================================
- * الوصلُ الفارغ — ورقةٌ تُطبع بلا بيانات، تُملأ بالقلم.
+ * وصلُ استلامٍ من doctorVet — ورقةٌ فارغةٌ تُملأ بالقلم عند قبض اشتراك.
  *
- * طلبُ المالك حرفياً: «وصل فارغ اني امليه للزبون واحدد الخصومات والباقات».
- * وهي حالةٌ قائمةٌ بالعيادة لا استثناء: بيعٌ يُتّفق عليه بالكلام — باقةُ
- * تلقيحٍ، خصمٌ لزبونٍ قديم، عمليةٌ تُسعَّر عند الحضور — والزبونُ يريد ورقةً
- * بيده الآن، والإدخالُ للنظام يجيء بعدها.
+ * طلبُ المالك: «وصل للمبالغ لدكتور فيت… اني امليه واحدد الخصومات والباقات»،
+ * ثم صحّح مقصدي: «اسم السستم مو اسم العيادة، واللوجو مالتنا، بدون معلومات
+ * تواصل، وشيل الحيوان — هذا الوصل مخصّص للعيادات الي تشترك بباقات السستم».
  *
- * ثلاثةُ قيودٍ تحكمها:
+ * وكنت بنيتُها أوّلاً وصلَ عيادةٍ لزبون. وهذا خطأُ فهمٍ منّي لا نقصٌ بالطلب:
+ * «وصل للمبالغ لدكتور فيت» تعني مبالغَ تُقبض **له**، لا ورقةً تطبعها عيادة.
  *
- * ١) **نفسُ قالب A4 حرفاً بحرف** (`A4_CSS` و`contactLineHTML` مرفوعتان لهذا).
- *    قالبٌ منسوخٌ ينحرف بشهر — الترويسةُ تكبر هنا ولا تكبر هناك — فيستلم
- *    الزبونُ ورقتين من عيادةٍ واحدةٍ لا تشبهان بعضَهما.
+ * والحاجةُ حقيقيةٌ ومقيسةٌ بالشِفرة: `AdminBilling` فيها «تفعيل يدوي (دفع
+ * كاش)» — المندوبُ يقبض من العيادة ويفعّل الباقةَ بيده — وكلُّ أثرِ ذلك
+ * القبضِ اليوم **إشعارٌ على الشاشة يختفي بثوانٍ**. لا ورقةَ بيد العيادة ولا
+ * بيد المندوب. وهذه الورقةُ هي ذلك الأثر.
  *
- * ٢) **لا رقمَ فاتورةٍ مخترَعاً.** رقمٌ مطبوعٌ مسبقاً على ورقةٍ لا وجودَ لها
- *    بالسجلّ يصنع رقمَين لفاتورةٍ واحدةٍ يومَ تُدخَل — أو فاتورتين برقمٍ
- *    واحد. الخانةُ سطرٌ فارغٌ يكتبه من يملأ، وتبقى الورقةُ بلا ادّعاء.
+ * ── ثلاثةُ قيودٍ تحكمها ─────────────────────────────────────────────────
  *
- * ٣) **شارةُ «تُملأ باليد» ظاهرة.** ورقةٌ فارغةٌ بترويسة عيادةٍ تشبه إيصالاً
- *    تماماً؛ والشارةُ تقول للزبون — ولمن يراجع الدفتر لاحقاً — إنّ ما عليها
- *    خطُّ يدٍ لا خرجٌ من نظام.
+ * ١) **نفسُ قالب A4 حرفاً بحرف** (`A4_CSS`). ورقةُ المنصّة وورقةُ العيادة
+ *    من نظامٍ بصريٍّ واحد؛ ولو نُسخت الأنماط لانحرفتا بشهر. الفحصُ يقارن
+ *    النصَّ حرفاً بحرف، لا «يتشابهان».
+ *
+ * ٢) **هويّةُ doctorVet وحدَها.** شعارُنا (نفسُ `LogoMark` بالتطبيق) واسمُنا
+ *    وصفتُنا — **بلا هاتفٍ ولا حساباتِ تواصل**، بقرار المالك. ولا اسمَ عيادةٍ
+ *    بالترويسة: العيادةُ خانةٌ تُملأ، لأنها الطرفُ الدافع لا مُصدِرُ الوصل.
+ *
+ * ٣) **لا رقمَ مطبوعٌ مسبقاً.** رقمٌ على ورقةٍ لا وجودَ لها بالسجلّ يصنع
+ *    يومَ تُدخَل إمّا رقمَين لدفعةٍ واحدة أو دفعتين برقمٍ واحد. الخانةُ سطرٌ
+ *    فارغٌ يكتبه من يقبض من دفترِه.
  * ==========================================================================*/
+
+/* شعارُ doctorVet مطبوعاً: نفسُ مسارات `components/Logo.tsx` — لأن الورقةَ
+ * التي نسلّمها لعيادةٍ تدفع لنا لا تحمل شعاراً «يشبه» شعارَنا. */
+const BRAND_MARK = `<svg width="52" height="52" viewBox="0 0 64 64" aria-hidden="true">
+  <defs><linearGradient id="dvg" x1="0" y1="0" x2="1" y2="1">
+    <stop offset="0" stop-color="#2f7df2"/><stop offset="1" stop-color="#1257c0"/>
+  </linearGradient></defs>
+  <rect width="64" height="64" rx="16" fill="url(#dvg)"/>
+  <g transform="translate(9.6 9.6) scale(0.7)" fill="#fff">
+    <rect x="4" y="12.5" width="13" height="13" rx="4.5"/>
+    <rect x="25.5" y="4.5" width="13" height="13" rx="4.5"/>
+    <rect x="47" y="12.5" width="13" height="13" rx="4.5"/>
+    <path fill-rule="evenodd" d="M26.5 27h11a10 10 0 0 1 10 10v11a10 10 0 0 1-10 10h-11a10 10 0 0 1-10-10V37a10 10 0 0 1 10-10zm1 4.5h9a5.5 5.5 0 0 1 5.5 5.5v9a5.5 5.5 0 0 1-5.5 5.5h-9a5.5 5.5 0 0 1-5.5-5.5v-9a5.5 5.5 0 0 1 5.5-5.5z"/>
+    <rect x="25.5" y="36" width="13" height="13" rx="4" fill="#ff7a45"/>
+  </g></svg>`;
+
+/* وختمُ الخلفية **بلا البلاطة**: المربّعُ الأزرقُ المصمت يبقى كتلةً زرقاءَ
+ * ظاهرةً حتى عند ٣٪ — رأيتُها بالرسمة. فالختمُ الرمزُ وحدَه بحبرٍ رماديّ. */
+const BRAND_GLYPH = `<svg viewBox="0 0 64 64" fill="#0B1220" aria-hidden="true">
+    <rect x="4" y="12.5" width="13" height="13" rx="4.5"/>
+    <rect x="25.5" y="4.5" width="13" height="13" rx="4.5"/>
+    <rect x="47" y="12.5" width="13" height="13" rx="4.5"/>
+    <path fill-rule="evenodd" d="M26.5 27h11a10 10 0 0 1 10 10v11a10 10 0 0 1-10 10h-11a10 10 0 0 1-10-10V37a10 10 0 0 1 10-10zm1 4.5h9a5.5 5.5 0 0 1 5.5 5.5v9a5.5 5.5 0 0 1-5.5 5.5h-9a5.5 5.5 0 0 1-5.5-5.5v-9a5.5 5.5 0 0 1 5.5-5.5z"/>
+  <rect x="25.5" y="36" width="13" height="13" rx="4"/>
+</svg>`;
+
 export interface BlankFormOptions {
-  clinicName: string;
-  clinicPhone?: string | null;
+  /** اسمُ المنصّة كما يُطبع — `doctorVet` افتراضاً. */
   brand?: string;
   lang: string;
-  logoUrl?: string | null;
-  facebook?: string | null;
-  instagram?: string | null;
-  qrDataUrl?: string | null;
-  storeUrl?: string | null;
-  /** عددُ أسطر الأصناف الفارغة — الافتراضيُّ يملأ ورقةَ A4 بلا صفحةٍ ثانية. */
+  /** عددُ أسطر البنود الفارغة — الافتراضيُّ يملأ ورقةَ A4 بلا صفحةٍ ثانية. */
   rows?: number;
 }
 
 export function buildBlankFormHTML(opts: BlankFormOptions): string {
   const s = strings(opts.lang);
   const brand = esc(opts.brand || "doctorVet");
-  const logo = opts.logoUrl ? esc(String(opts.logoUrl)) : "";
-  const fb = (opts.facebook || "").trim();
-  const ig = (opts.instagram || "").trim();
   const WEBSITE = siteHost();
-  const contactLine = contactLineHTML(opts.clinicPhone, fb, ig, false);
-  /* أحدَ عشرَ سطراً: مقيسةٌ على الورقة نفسِها لا مخمَّنة — الثاني عشر يدفع
-     التوقيعَ لصفحةٍ ثانيةٍ فارغةٍ إلا منه. */
   /* و`Number.isFinite` قبل القصّ: `Math.max(4, NaN)` = NaN، و`Array.from`
      على طولٍ NaN تُرجع مصفوفةً **فارغة** — فتخرج ورقةٌ بلا سطرٍ واحدٍ يُكتب
      فيه، وهي ورقةٌ تُطبع ولا تُستعمل. أمسكه الفحص. */
   const want = Number(opts.rows);
-  const n = Number.isFinite(want) ? Math.max(4, Math.min(20, Math.round(want))) : 9;
+  const n = Number.isFinite(want) ? Math.max(3, Math.min(20, Math.round(want))) : 8;
   const rows = Array.from({ length: n }, (_, i) =>
-    `<tr><td class="i-idx">${ltr(String(i + 1))}</td><td></td><td class="i-num"></td><td class="i-num"></td><td class="i-num"></td></tr>`).join("");
+    `<tr><td class="i-idx">${ltr(String(i + 1))}</td><td></td><td class="i-num"></td><td class="i-num"></td></tr>`).join("");
+  const field = (label: string) => `<div class="cell"><div class="k">${label}</div><div class="wl"></div></div>`;
 
   const body = `
-    ${logo ? `<div class="watermark faint"><img src="${logo}" alt=""/></div>` : ""}
+    <div class="watermark faint">${BRAND_GLYPH}</div>
     <div class="sheet blankpage">
 
       <header class="masthead">
         <div class="who">
-          ${logo ? `<img src="${logo}" alt=""/>` : ""}
+          ${BRAND_MARK}
           <div style="min-width:0">
-            <div class="brand">${brand}</div>
-            <h1 class="clinic">${esc(opts.clinicName)}</h1>
-            ${contactLine}
+            <h1 class="clinic">${brand}</h1>
+            <div class="tagline">${s.tagline}</div>
           </div>
         </div>
         <div class="doc">
-          <div class="doc-kind">${s.receipt}</div>
+          <div class="doc-kind">${s.payReceipt}</div>
           <div class="docf"><span class="k">${s.no}</span><span class="wl"></span></div>
           <div class="docf"><span class="k">${s.date}</span><span class="wl"></span></div>
         </div>
       </header>
       <div class="spine"></div><div class="spine-sub"></div>
 
-      <div class="chips"><span class="chip">${s.handFill}</span></div>
-
       <section class="meta">
-        <div class="cell"><div class="k">${s.billedTo}</div><div class="wl"></div></div>
-        <div class="cell"><div class="k">${s.phone}</div><div class="wl"></div></div>
-        <div class="cell"><div class="k">${s.pet}</div><div class="wl"></div></div>
-        <div class="cell"><div class="k">${s.seller}</div><div class="wl"></div></div>
+        ${field(s.clinic)}
+        ${field(s.contactPerson)}
+        ${field(s.phone)}
+        ${field(s.receivedBy)}
       </section>
 
       <table class="blank">
         <thead><tr>
-          <th class="i-idx">#</th><th>${s.item}</th>
-          <th class="i-num">${s.qty}</th><th class="i-num">${s.price}</th><th class="i-num">${s.amount}</th>
+          <th class="i-idx">#</th><th>${s.planItem}</th>
+          <th class="i-num">${s.term}</th><th class="i-num">${s.amount}</th>
         </tr></thead>
         <tbody>${rows}</tbody>
       </table>
@@ -769,27 +824,26 @@ export function buildBlankFormHTML(opts: BlankFormOptions): string {
       <section class="close">
         <div class="close-a">
           <div class="paybox">
-            <div class="k">${s.payment}</div>
-            <div class="boxes">
-              <span class="b"><i></i>${s.pay.cash}</span>
-              <span class="b"><i></i>${s.pay.card}</span>
-              <span class="b"><i></i>${s.pay.transfer}</span>
-              <span class="b"><i></i>${s.credit}</span>
+            <div class="k">${s.subPeriod}</div>
+            <div class="span2">
+              <div class="f"><span class="l">${s.from}</span><span class="wl"></span></div>
+              <div class="f"><span class="l">${s.to}</span><span class="wl"></span></div>
             </div>
           </div>
           <div class="paybox">
-            <div class="k">${s.pkg}</div>
-            <div class="wl"></div>
+            <div class="k">${s.payment}</div>
+            <div class="boxes">
+              <span class="b"><i></i>${s.pay.cash}</span>
+              <span class="b"><i></i>${s.pay.transfer}</span>
+              <span class="b"><i></i>${s.pay.card}</span>
+              <span class="b"><i></i>${s.credit}</span>
+            </div>
           </div>
           <div class="paybox">
             <div class="k">${s.notes}</div>
             <div class="wl"></div>
             <div class="wl"></div>
           </div>
-          ${opts.qrDataUrl ? `<div class="qrbox">
-            <img src="${esc(opts.qrDataUrl)}" alt=""/>
-            <div><div class="t">${opts.storeUrl ? s.scanStore : s.scanUs}</div><div class="u">${WEBSITE}</div></div>
-          </div>` : ""}
         </div>
 
         <div class="close-b">
@@ -798,47 +852,42 @@ export function buildBlankFormHTML(opts: BlankFormOptions): string {
             <div class="r disc"><span>${s.discount}</span><span class="wv"></span></div>
             <div class="grand"><span class="l">${s.total}</span><span class="wv"></span></div>
             <div class="r after"><span>${s.paid}</span><span class="wv"></span></div>
-            <div class="due"><span class="l">${s.due}</span><span class="wv"></span></div>
+            <div class="due"><span class="l">${s.remaining}</span><span class="wv"></span></div>
           </div>
         </div>
       </section>
 
       <div class="grow"></div>
 
+      <div class="proof">${s.proof}</div>
       <section class="sign">
-        <div class="s"><div class="line"></div><div class="cap">${s.sigCustomer}</div></div>
-        <div class="s"><div class="line"></div><div class="cap">${s.sigClinic}</div></div>
+        <div class="s"><div class="line"></div><div class="cap">${s.sigPayer}</div></div>
+        <div class="s"><div class="line"></div><div class="cap">${s.sigIssuer}</div></div>
       </section>
 
       <div class="foot">
-        <span class="thanks">${s.thanks}</span>
+        <span class="thanks">${s.trust}</span>
         <span>${ltr(esc(WEBSITE))}</span>
       </div>
     </div>
   `;
 
   return `<!doctype html><html lang="${esc(opts.lang)}" dir="${s.dir}"><head><meta charset="utf-8"/>
-    <title>${esc(s.receipt)} — ${esc(s.handFill)}</title>
+    <title>${esc(brand)} — ${esc(s.payReceipt)}</title>
     <style>@page { size: A4; margin: 0; } ${A4_CSS}</style></head>
     <body>${body}
     <script>window.addEventListener('load',function(){setTimeout(function(){window.focus();window.print();},120);});window.addEventListener('afterprint',function(){setTimeout(function(){window.close();},200);});</script>
     </body></html>`;
 }
 
-/** يفتح الوصلَ الفارغ بنافذةٍ ويطلق حوارَ الطباعة. `false` = المتصفّح حجبها. */
-export async function openBlankFormPrint(opts: BlankFormOptions): Promise<boolean> {
-  /* النافذةُ تُفتح **داخل ضغطة المستخدم** ثم يُكتب المستند بعد تجهيز الـQR —
-     لو انتظرنا التجهيز أوّلاً لعدَّها المتصفّحُ منبثقةً غيرَ مطلوبةٍ وحجبها.
-     نفسُ ترتيب `openInvoicePrint`. */
+/** يفتح وصلَ الاستلام بنافذةٍ ويطلق حوارَ الطباعة. `false` = المتصفّح حجبها. */
+export function openBlankFormPrint(opts: BlankFormOptions): boolean {
+  /* لا أصولَ تُجهَّز (لا شعارَ عيادةٍ ولا QR) — فالكتابةُ فوريةٌ داخل ضغطة
+     المستخدم، ولا خطرَ حجبِ منبثقةٍ أصلاً. */
   const w = window.open("", "_blank", "width=820,height=920");
   if (!w) return false;
-  try {
-    w.document.write('<!doctype html><meta charset="utf-8"><body style="font:14px system-ui;padding:2rem;text-align:center;color:#475569">…</body>');
-  } catch { /* بعض المتصفحات تمنع الكتابة المبكرة */ }
-  const extra = await printAssets({ ...opts, format: "a4" } as InvoicePrintOptions);
-  const html = buildBlankFormHTML({ ...opts, qrDataUrl: extra.qrDataUrl ?? null });
   w.document.open();
-  w.document.write(html);
+  w.document.write(buildBlankFormHTML(opts));
   w.document.close();
   return true;
 }
