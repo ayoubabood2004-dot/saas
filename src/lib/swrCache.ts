@@ -24,9 +24,25 @@ export function isFresh(key: string, ttlMs: number): boolean {
   return !!e && Date.now() - e.at < ttlMs;
 }
 
-/** Overwrite the cached value for a key. */
-export function setCached<T>(key: string, data: T): void {
-  store.set(key, { data, at: Date.now() });
+/** Overwrite the cached value for a key. `at` = when the data was read — pass the
+ *  request's START time: a slow response stamped on arrival looks fresher than it is. */
+export function setCached<T>(key: string, data: T, at: number = Date.now()): void {
+  store.set(key, { data, at });
+}
+
+/** متى جُلبت هذه اللقطة (ms منذ ١٩٧٠)، أو undefined إن لم تُجلب قطّ.
+ *  الشاشةُ التي تعرض لقطةً تقول عمرَها بهذا حين يفشل تحديثُها. */
+export function cachedAt(key: string): number | undefined {
+  return store.get(key)?.at;
+}
+
+/** ترقيعُ لقطةٍ قائمة **بلا تجديد عمرها**. صفٌّ طازجٌ واحد وصل من الخادم لا
+ *  يجعل بقيّةَ القائمة طازجة — و`setCached` كانت ستختم الكلَّ «الآن» فيتخطّى
+ *  الفتحُ التالي الجلبَ على قائمةٍ عمرُها ساعات. مفتاحٌ غيرُ موجود لا يُخلق. */
+export function patchCached<T>(key: string, fn: (data: T) => T): void {
+  const e = store.get(key) as Entry<T> | undefined;
+  if (!e) return;
+  store.set(key, { data: fn(e.data), at: e.at });
 }
 
 /** Drop a cached entry (e.g. after a mutation that invalidates it). */

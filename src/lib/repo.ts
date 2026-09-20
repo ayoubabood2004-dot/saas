@@ -86,6 +86,7 @@ import { emitGlobalToast } from "./globalToast";
 import i18next from "i18next";
 import { invoiceNo } from "./invoiceNo";
 import { auditKind, activityBrief } from "./activityKinds";
+import type { PgSort } from "./pgOrder";
 import type { ActivityQuery, ActivityRow, ActivitySummaryRow, ActivityActor } from "@/types";
 import type { PayrollPolicyDTO, StaffComp, StaffRecurring, PayrollAdjustment, PayrollRun, Payslip, PayslipLine, StaffLoan, StaffLoanEvent, PayslipDraft, PayMethod } from "@/types";
 import * as PD from "./payrollDemo";
@@ -1334,6 +1335,17 @@ const demoRepo = {
   async supportsBulkGroup(): Promise<boolean> {
     return true;
   },
+  /** صفُّ منتجٍ طازجٌ بمعرّفه — لحكم «رصيده صفر» قبل رفض البيع (خطة الطزاجة، ط٢).
+   *  بالمعرّف لا بالرمز: كرتُ المنتج لا يحمل رمزاً ممسوحاً، وبالمخزن منتجاتٌ بلا
+   *  باركود أصلاً — ونحن نعرف **أيَّ** منتجٍ نسأل عنه. مخزنُ الحقل خارجُ الكاشير. */
+  async getProductById(id: string): Promise<Product | undefined> {
+    return (loadDB().products ?? []).find((p) => p.id === id && !p.farm_id);
+  },
+  /** حوضُ قسمٍ طازج — رصيدُ الكاشير = الصفُّ + حوضُ قسمه (`sellable.ts`)، والخادمُ
+   *  يبيع منه. سؤالُ «رصيده صفر» بلا الحوض كان يقول «زيد رصيده» عمّا يُباع. */
+  async getSectionPool(sectionId: string): Promise<number> {
+    return (loadDB().companySections ?? []).find((s) => s.id === sectionId)?.pooled_stock ?? 0;
+  },
   async getProductByBarcode(barcode: string, _clinicId?: string): Promise<Product | undefined> {
     const code = matchCode(barcode);
     if (!code) return undefined;
@@ -1366,7 +1378,9 @@ const demoRepo = {
      *     مقيسٌ بزوج UPC-A/EAN-13: «045496830434» و«0045496830434».
      *  ٣) **بلا إصلاحِ تخطيطٍ عربيّ**: خريطتُه بياناتُ متصفّح، والقاعدةُ لا
      *     تعرفها. نسختان تفترقان أسوأ من واحدةٍ ناقصة. */
-    const all = loadDB().products ?? [];
+    // ومخزنُ الحقل خارجُها كالحرفيّ — الخادمُ يستثنيه بالصيغ أيضاً (0191). بلا هذا
+    // كانت صيغةٌ يحملها صفُّ حقلٍ تُختار قبل صيغةٍ لاحقةٍ يحملها منتجُ العيادة.
+    const all = (loadDB().products ?? []).filter((p) => !p.farm_id);
     const holds = (p: Product, v: string) =>
       matchCode(p.barcode) === v || (p.alt_codes ?? []).some((c) => matchCode(c) === v);
     for (const v of scanVariants(code, false)) {
@@ -3758,13 +3772,27 @@ function inRange<T>(q: T, col: string, r?: DateRange): T {
   if (r?.to) out = (out as unknown as typeof x).lte(col, r.to);
   return out;
 }
-async function allPages<T>(make: () => unknown): Promise<T[]> {
+/* ── الجلبُ بالمؤشّر القيميّ (keyset) — خطة الطزاجة، ط٤ ───────────────────
+ * كانت تتقدّم **بالموقع** (`range(from, from+999)`): «من الصفّ ١٠٠١». وحذفُ
+ * صفٍّ قرأناه — أو دمجُ منتجين — بجهازٍ ثانٍ بين الطلبتين يُصعد كلَّ ما بعده
+ * خانةً، فيسقط صفٌّ بين الطلبتين **صامتاً**: مادّةٌ بالرفّ لا تظهر بالقائمة،
+ * وهذا بالضبط صنفُ «المنتج اختفى». أُثبت بالفحص على الشيفرة القديمة (ع٩/ط٤).
+ * والعتبةُ المسجّلة للترقية (جدولٌ يقارب الألف) انكسرت: عيادةٌ بـ١٠٠٥ منتجات.
+ *
+ * الآن تتقدّم **بالمعرّف**: «كلُّ ما بعد آخرِ معرّفٍ وصل» (`gt id`). حذفٌ أو إدراجٌ
+ * بالنصّ لا يزحزح شيئاً — فلا يسقط صفٌّ قائمٌ ولا يتكرّر. وذاك يشترط أن يكون `id`
+ * الترتيبَ **الوحيد** بالخادم، ففرزُ العرض يُمرَّر هنا (`sort`) ويُطبَّق بعد
+ * اكتمال الجلب بمقارِنٍ يطابق ترتيبَ القاعدة حرفياً (`pgOrder.ts`). والمستدعي
+ * لا يُلحق `order()` بنفسه — `keyset-test` يفشّل البناءَ إن فعل. */
+async function allPages<T>(make: () => unknown, sort?: PgSort): Promise<T[]> {
   type Q = {
     order: (c: string, o: { ascending: boolean }) => Q;
-    range: (a: number, b: number) => PromiseLike<{ data: unknown; error: { message: string } | null }>;
+    gt: (c: string, v: unknown) => Q;
+    limit: (n: number) => PromiseLike<{ data: unknown; error: { message: string } | null }>;
   };
   const out: T[] = [];
   const seen = new Set<unknown>();
+  let after: unknown = undefined;
   // نتقدّم بما **وصل** لا بما **طُلب**، ونتوقّف عند صفحةٍ فارغة لا عند صفحةٍ ناقصة.
   //
   // الشرط القديم كان `rows.length < PAGE_ROWS ⇒ انتهت البيانات`، وهو يفترض أن
@@ -3775,29 +3803,40 @@ async function allPages<T>(make: () => unknown): Promise<T[]> {
   // مادّته لم تُدخَل، فيعيد إدخالها.
   //
   // والتقدّمُ بما وصل يجعل الحلقة صحيحةً مهما كان سقفُ الخادم — بلا أن نعرفه.
-  for (let from = 0; ;) {
-    const r = await (make() as Q).order("id", { ascending: true }).range(from, from + PAGE_ROWS - 1);
+  for (;;) {
+    let q = (make() as Q).order("id", { ascending: true });
+    if (after !== undefined) q = q.gt("id", after);
+    const r = await q.limit(PAGE_ROWS);
     // وفشلٌ يُرمى ولا يُبلع: كانت تُرجع ما جمعته — صفراً بالصفحة الأولى — فتقول
     // الشاشة «ماكو منتجات» عن مخزنٍ عامر. قائمةٌ ناقصة أسوأ من خطأ: الخطأ يُرى
     // ويُعاد، والنقصُ يُصدَّق.
     if (r.error) throw new Error(r.error.message);
     const rows = (r.data ?? []) as T[];
-    /* وصفٌّ لا يُعدّ مرّتين (ع٩). الترقيمُ بالإزاحة والترتيبُ بـ`id`: إدراجٌ
-     * متزامنٌ بمعرّفٍ يسبق مؤشّرَنا يزحزح ما بعده صفحةً واحدة، فيعود آخرُ
-     * صفٍّ قرأناه بأوّل الصفحة التالية. والحلقةُ تُصدر دائماً طلبَ تأكيدٍ بعد
-     * صفحةٍ ممتلئة، فالنافذةُ مفتوحةٌ بأيّ حجمِ جدول — لا عند الألف وحدها.
-     * والأثرُ تجميليّ (صفٌّ مكرَّر بقائمة) لكنه يُرى ويُصدَّق، وسطرٌ رخيص
-     * يمحوه. أمّا **إسقاطُ** صفٍّ فيتطلّب تجاوزَ الجدول صفحةً كاملة —
-     * دَينٌ معلَن: أيُّ جدولٍ يقارب ٩٠٠ صفٍّ يُرقّى جلبُه إلى مؤشّرٍ قيميّ
-     * (keyset بـ`gt` على id) بدل الإزاحة. الأكبرُ المقيس اليوم ٩٢٨. */
+    if (rows.length === 0) break;
+    let fresh = 0;
     for (const row of rows) {
       const id = (row as { id?: unknown }).id;
-      if (id != null) { if (seen.has(id)) continue; seen.add(id); }
+      // المؤشّرُ معرّفٌ أو لا شيء: صفٌّ بلا id لا يُتقدَّم بعده ولا يُعرف أنه وصل.
+      if (id == null) throw new Error("allPages: row without id — keyset pagination needs an id on every row");
+      // وصفٌّ لا يُعدّ مرّتين (ع٩) — دفاعٌ ثانٍ لا يكلّف شيئاً.
+      if (seen.has(id)) continue;
+      seen.add(id);
       out.push(row);
+      fresh++;
     }
-    if (rows.length === 0) return out;
-    from += rows.length;
+    const last = (rows[rows.length - 1] as { id?: unknown }).id;
+    /* **لا حلقةَ لا نهائية.** خادمٌ لا يحترم المؤشّر (أو مستدعٍ أفسد الترتيب)
+     * يعيد نفسَ الصفحة، والمؤشّرُ لا يتقدّم — فيدور الجلبُ للأبد ويتجمّد المتصفّح.
+     * نقف بخطأٍ صريح: شاشةُ «أعد المحاولة» خيرٌ من تبويبٍ معلَّق. */
+    if (fresh === 0 || last === after) throw new Error("allPages: pagination made no progress (cursor did not advance)");
+    after = last;
   }
+  if (!sort) return out;
+  /* المقارِنُ يُحمَّل عند الحاجة: `repo.ts` تحمله صفحةُ الزائر العامّة وهي لا تفرز قائمة —
+   * فكان مقارِنُ ICU يُثقل ميزانَها (store-weight-guard) بلا عمل. أوّلُ فرزٍ يجلب قطعتَه
+   * الصغيرة مرّة، ثم من الكاش. */
+  const { pgCompare } = await import("./pgOrder");
+  return out.sort(pgCompare<T>(sort));
 }
 /* تحديثٌ ردّته سياسةُ الصفوف يرجع **صفرَ صفوفٍ بلا خطأ** — فتقول الواجهةُ
  * «تمّ» والطلبُ لم يتغيّر. هذا بالضبط ما بُلِّغ عنه بالتوصيل: «اختار السائق ما
@@ -3902,10 +3941,10 @@ const supabaseRepo: typeof demoRepo = {
   },
   async listAllPets(clinicId) {
     return allPages<Pet>(() => {
-      let q = sbc().from("pets").select("*").order("created_at", { ascending: false });
+      let q = sbc().from("pets").select("*");
       if (clinicId) q = q.eq("clinic_id", clinicId);
       return q;
-    });
+    }, { col: "created_at", asc: false, kind: "time" });
   },
   async updateOwnerContact(ownerId, patch) {
     ok(await sbc().from("pets").update(patch).eq("owner_id", ownerId));
@@ -4052,15 +4091,15 @@ const supabaseRepo: typeof demoRepo = {
     return listOf<MedicalVisit>(await sbc().from("medical_visits").select("*").eq("pet_id", petId).order("visit_date", { ascending: false }));
   },
   async listAllVisits(petIds) {
-    return inChunks(petIds, (c) => allPages<MedicalVisit>(() => sbc().from("medical_visits").select("*").in("pet_id", c).order("visit_date", { ascending: false })));
+    return inChunks(petIds, (c) => allPages<MedicalVisit>(() => sbc().from("medical_visits").select("*").in("pet_id", c), { col: "visit_date", asc: false, kind: "date" }));
   },
   async listClinicVisits(clinicId, range) {
     // ملاحظة: حتى limit(5000) كان يُقصّ على 1000 من الخادم — الصفحات هي الحل.
     return allPages<MedicalVisit>(() => {
-      let q = sbc().from("medical_visits").select("*").order("visit_date", { ascending: false });
+      let q = sbc().from("medical_visits").select("*");
       if (clinicId) q = q.eq("clinic_id", clinicId);
       return inRange(q, "visit_date", range);
-    });
+    }, { col: "visit_date", asc: false, kind: "date" });
   },
   async listCareEntries(petId, day) {
     let q = sbc().from("care_entries").select("*").eq("pet_id", petId).order("day", { ascending: true }).order("time", { ascending: true });
@@ -4166,10 +4205,10 @@ const supabaseRepo: typeof demoRepo = {
   async listClinicLabResults(clinicId, range) {
     // limit(2000) كان يُقصّ على 1000 من الخادم أصلاً — الصفحات تضمن الاثنين.
     return allPages<LabResult>(() => {
-      let q = sbc().from("lab_results").select("*").order("taken_at", { ascending: false });
+      let q = sbc().from("lab_results").select("*");
       if (clinicId) q = q.eq("clinic_id", clinicId);
       return inRange(q, "taken_at", range);
-    });
+    }, { col: "taken_at", asc: false, kind: "time" });
   },
   async deleteLabResult(id) {
     ok(await sbc().from("lab_results").delete().eq("id", id));
@@ -4274,7 +4313,8 @@ const supabaseRepo: typeof demoRepo = {
   },
   async listAppointmentsInRange(startISO, endISO) {
     return allPages<Appointment>(() =>
-      sbc().from("appointments").select("*").gte("scheduled_at", `${startISO.slice(0, 10)}T00:00:00`).lte("scheduled_at", `${endISO.slice(0, 10)}T23:59:59.999`).neq("status", "cancelled").order("scheduled_at", { ascending: true }),
+      sbc().from("appointments").select("*").gte("scheduled_at", `${startISO.slice(0, 10)}T00:00:00`).lte("scheduled_at", `${endISO.slice(0, 10)}T23:59:59.999`).neq("status", "cancelled"),
+      { col: "scheduled_at", asc: true, kind: "time" },
     );
   },
   async listWaiting(doctorId) {
@@ -4364,11 +4404,11 @@ const supabaseRepo: typeof demoRepo = {
   async listClinicTreatments(clinicId, day, range) {
     // limit(5000) كان يُقصّ على 1000 من الخادم — طبلات اليوم النشط تفوقها بسهولة.
     return allPages<TreatmentEntry>(() => {
-      let q = sbc().from("treatment_entries").select("*").order("day", { ascending: false });
+      let q = sbc().from("treatment_entries").select("*");
       if (clinicId) q = q.eq("clinic_id", clinicId);
       if (day) q = q.eq("day", day);
       return inRange(q, "day", range);
-    });
+    }, { col: "day", asc: false, kind: "date" });
   },
   async addTreatment(input) {
     return need<TreatmentEntry>(await sbc().from("treatment_entries").insert(input).select().single());
@@ -4461,8 +4501,8 @@ const supabaseRepo: typeof demoRepo = {
       if (filter && "ownerId" in filter) {
         q = filter.ownerId == null ? q.is("owner_id", null) : q.eq("owner_id", filter.ownerId);
       }
-      return q.order("date", { ascending: true });
-    });
+      return q;
+    }, { col: "date", asc: true, kind: "date" });
   },
   async addReminder(input) {
     return need<Reminder>(await sbc().from("reminders").insert(input).select().single());
@@ -4482,10 +4522,10 @@ const supabaseRepo: typeof demoRepo = {
     // الحسابان يوماً (عضويات متعدّدة). الخادم يرجع منتجات عيادتك ولا غيرها.
     void clinicId;
     // `is("farm_id", null)`: مخزنُ العيادة لا يرى مخزنَ الحقل (0191).
-    return allPages<Product>(() => sbc().from("products").select("*").is("farm_id", null).order("name", { ascending: true }));
+    return allPages<Product>(() => sbc().from("products").select("*").is("farm_id", null), { col: "name", asc: true, kind: "text" });
   },
   async listFarmProducts(farmId: string) {
-    return allPages<Product>(() => sbc().from("products").select("*").eq("farm_id", farmId).order("name", { ascending: true }));
+    return allPages<Product>(() => sbc().from("products").select("*").eq("farm_id", farmId), { col: "name", asc: true, kind: "text" });
   },
   async supportsBulkGroup() {
     try {
@@ -4495,6 +4535,19 @@ const supabaseRepo: typeof demoRepo = {
     } catch {
       return true; // فشل شبكة — لا نُظهر تحذيراً خاطئاً
     }
+  },
+  async getProductById(id) {
+    // سياسةُ الصفوف تحصرها بعيادة المُستدعي؛ و`is(farm_id, null)` مرآةُ listProducts.
+    // والخطأُ يُرمى لا يُبلَع: «ما وصلنا الخادم» غيرُ «رصيده صفر» (zeroStockVerdict).
+    const r = await sbc().from("products").select("*").eq("id", id).is("farm_id", null).maybeSingle();
+    if (r.error) throw r.error;
+    return (r.data ?? undefined) as Product | undefined;
+  },
+  async getSectionPool(sectionId) {
+    // سياسةُ الصفوف تحصرها بعيادة المُستدعي (كما `listCompanySections` للكاشير نفسه).
+    const r = await sbc().from("company_sections").select("pooled_stock").eq("id", sectionId).maybeSingle();
+    if (r.error) throw r.error;
+    return Number((r.data as { pooled_stock?: number | null } | null)?.pooled_stock ?? 0);
   },
   // العيادةُ تأتي من سياسات الصفوف لا من معامِلٍ: `product_by_code` بصلاحية
   // المُستدعي، فـauth_clinic() تحصرها. المعامِلُ يبقى بالتوقيع للنسخة التجريبية.
@@ -4793,7 +4846,7 @@ const supabaseRepo: typeof demoRepo = {
     // الألف يقصّها بصمت، وخطؤها يُبلع فتقول شاشةُ الاسترجاع «ماكو محذوفات» —
     // فتعيد العيادةُ إدخال ما حذفته بالغلط توأماً وتفقد تاريخه. `allPages`
     // تكسر السقفَ وترمي على الفشل معاً (وتضيف id كاسرَ تعادلٍ للترتيب).
-    return allPages<DeletedProduct>(() => sbc().from("products_trash").select("*").order("deleted_at", { ascending: false }));
+    return allPages<DeletedProduct>(() => sbc().from("products_trash").select("*"), { col: "deleted_at", asc: false, kind: "time" });
   },
   async productSaleLines(id) {
     // عدٌّ لا صفوف — فلا يمسّه سقفُ الألف.
@@ -4823,7 +4876,8 @@ const supabaseRepo: typeof demoRepo = {
   /* ---------------- Companies (الشركات) ---------------- */
   async listGeneratedBarcodes() {
     return allPages<GeneratedBarcode>(() =>
-      sbc().from("generated_barcodes").select("*").order("created_at", { ascending: false }),
+      sbc().from("generated_barcodes").select("*"),
+      { col: "created_at", asc: false, kind: "time" },
     );
   },
   async updateGeneratedBarcode(id, patch) {
@@ -4900,7 +4954,7 @@ const supabaseRepo: typeof demoRepo = {
   },
   async listNewStoreOrders() {
     return allPages<StoreOrder>(() =>
-      sbc().from("store_orders").select("*").eq("status", "new").order("created_at", { ascending: false }));
+      sbc().from("store_orders").select("*").eq("status", "new"), { col: "created_at", asc: false, kind: "time" });
   },
   async countNewStoreOrders() {
     /* `head: true` ⇒ عددٌ بلا صفوف. كان الجرسُ يجيب مئةَ طلبٍ كاملةً ببنودها
@@ -5063,10 +5117,10 @@ const supabaseRepo: typeof demoRepo = {
 
   async listCompanies(clinicId) {
     return allPages<Company>(() => {
-      let q = sbc().from("companies").select("*").order("name", { ascending: true });
+      let q = sbc().from("companies").select("*");
       if (clinicId) q = q.eq("clinic_id", clinicId);
       return q;
-    });
+    }, { col: "name", asc: true, kind: "text" });
   },
   async createCompany(input) {
     const row = { id: uuid(), ...input };
@@ -5089,11 +5143,11 @@ const supabaseRepo: typeof demoRepo = {
   /* ---------------- Company sections (أصناف) ---------------- */
   async listCompanySections(companyId, clinicId) {
     return allPages<CompanySection>(() => {
-      let q = sbc().from("company_sections").select("*").order("name", { ascending: true });
+      let q = sbc().from("company_sections").select("*");
       if (companyId) q = q.eq("company_id", companyId);
       if (clinicId) q = q.eq("clinic_id", clinicId);
       return q;
-    });
+    }, { col: "name", asc: true, kind: "text" });
   },
   async createCompanySection(input) {
     const row = { id: uuid(), ...input };
@@ -5116,10 +5170,10 @@ const supabaseRepo: typeof demoRepo = {
   /* ---------------- Purchases (المشتريات) ---------------- */
   async listPurchases(clinicId, range) {
     return allPages<Purchase>(() => {
-      let q = sbc().from("purchases").select("*").order("purchased_at", { ascending: false });
+      let q = sbc().from("purchases").select("*");
       if (clinicId) q = q.eq("clinic_id", clinicId);
       return inRange(q, "purchased_at", range);
-    });
+    }, { col: "purchased_at", asc: false, kind: "time" });
   },
   async listPurchaseItems(purchaseId) {
     return listOrThrow<PurchaseItem>(await sbc().from("purchase_items").select("*").eq("purchase_id", purchaseId));
@@ -5224,10 +5278,10 @@ const supabaseRepo: typeof demoRepo = {
 
   async listInvoices(clinicId, range) {
     return allPages<Invoice>(() => {
-      let q = sbc().from("invoices").select("*").order("created_at", { ascending: false });
+      let q = sbc().from("invoices").select("*");
       if (clinicId) q = q.eq("clinic_id", clinicId);
       return inRange(q, "created_at", range);
-    });
+    }, { col: "created_at", asc: false, kind: "time" });
   },
   async checkout(items) {
     // Atomic on the server (creates invoice + items, decrements stock, computes profit).
@@ -5260,10 +5314,10 @@ const supabaseRepo: typeof demoRepo = {
   },
   async listDeliveryOrders(clinicId) {
     return allPages<DeliveryOrder>(() => {
-      let q = sbc().from("delivery_orders").select("*").order("created_at", { ascending: false });
+      let q = sbc().from("delivery_orders").select("*");
       if (clinicId) q = q.eq("clinic_id", clinicId);
       return q;
-    });
+    }, { col: "created_at", asc: false, kind: "time" });
   },
   async createDeliveryOrder(input) {
     // Omit a null branch_id so a pre-0071 database (no column yet) keeps working.
@@ -5310,10 +5364,10 @@ const supabaseRepo: typeof demoRepo = {
   },
   async listCourierSettlements(courierId) {
     return allPages<CourierSettlement>(() => {
-      let q = sbc().from("courier_settlements").select("*").order("created_at", { ascending: false });
+      let q = sbc().from("courier_settlements").select("*");
       if (courierId) q = q.eq("courier_id", courierId);
       return q;
-    });
+    }, { col: "created_at", asc: false, kind: "time" });
   },
   async settleCourier(courierId, amount, method = "cash", note) {
     const { data, error } = await sbc().rpc("courier_settle", { p_courier: courierId, p_amount: amount, p_method: method, p_note: note ?? null });
@@ -5488,10 +5542,10 @@ const supabaseRepo: typeof demoRepo = {
   },
   async listExpenses(clinicId, range) {
     return allPages<Expense>(() => {
-      let q = sbc().from("expenses").select("*").order("spent_at", { ascending: false });
+      let q = sbc().from("expenses").select("*");
       if (clinicId) q = q.eq("clinic_id", clinicId);
       return inRange(q, "spent_at", range);
-    });
+    }, { col: "spent_at", asc: false, kind: "time" });
   },
   async addExpense(input) {
     // clinic_id + staff_id are stamped by the column defaults (auth_clinic() / auth.uid());
@@ -5747,7 +5801,7 @@ const READ_ONLY_ALLOWED = new Set<string>([
   "listPoultryFarms", "listPoultryHouses", "listPoultryCycles", "listPoultryDaily",
   "listPoultryUse", "poultryCycleStats",
   "getActiveJourney", "getClinicVisit", "getDailyNote", "getPet", "getPetBySerial",
-  "getPetByToken", "getPetsByIds", "getPetsByOwnerEmail", "getProductByBarcode",
+  "getPetByToken", "getPetsByIds", "getPetsByOwnerEmail", "getProductByBarcode", "getProductById", "getSectionPool",
   "getSharedPetsByOwnerId", "getStoreProfile", "countNewStoreOrders", "rejectStaleStoreOrders", "listAdmissions", "listAdmissionsForPet",
   "listAllInvoiceItems", "listAllMedia", "listAllPets", "listAllSurgeries", "listAllTreatments",
   "listAllVaccinations", "listAllVisits", "listAppointmentsForDay", "listAppointmentsForOwner",

@@ -1,13 +1,17 @@
-import { memo, useDeferredValue, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { memo, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { motion } from "framer-motion";
-import { getCached, setCached } from "@/lib/swrCache";
+import { getCached, setCached, patchCached, cachedAt } from "@/lib/swrCache";
+import { RETURN_STALE_MS, RETRY_AFTER_FAIL_MS, POLL_MS } from "@/lib/freshness";
+import { useRevalidateOnReturn } from "@/hooks/useRevalidateOnReturn";
+import { patchRawList, patchSections, type FreshPatch } from "@/lib/freshSale";
+import { sellableRows } from "@/lib/sellable";
 import { findByCode, looksLikeShelfCode, twinsByName, nearCodeTwin, excelArtifact, hasArabicLetters, looksLayoutMangled, codeMatcher, codeRescue, keepOldCode } from "@/lib/productCodes";
 import { Dialog } from "@/components/ui/Dialog";
 import {
   Barcode, Package, Trash2, Search, Building2, Plus, ChevronLeft, ArrowRight, ArrowLeft,
   TrendingUp, AlertTriangle, CalendarClock, Pencil, PackagePlus, Boxes, Layers, Wallet, ShoppingBag, FolderTree, ScanBarcode,
-  Check, ListPlus, Printer, Copy, Sparkles, FileSpreadsheet, Loader2, Scale, RefreshCw, RotateCcw, Camera, Lock,
+  Check, ListPlus, Printer, Copy, Sparkles, FileSpreadsheet, Loader2, Scale, RefreshCw, RotateCcw, Camera, Lock, Clock,
 } from "lucide-react";
 import type { Product, ProductCategory, Company, CompanySection, DeletedProduct } from "@/types";
 import { PurchasesTab, PurchaseBuilderModal } from "@/components/inventory/Purchases";
@@ -23,7 +27,7 @@ import { ExpiryInput } from "@/components/ExpiryInput";
 import { Combobox } from "@/components/Combobox";
 import { subcategoriesOf } from "@/lib/promotions";
 import { Button, Badge, useToast, Skeleton } from "@/components/ui";
-import { cn, formatDate, money, fmtKg, searchable, normalizeCode, matchCode, normalizeAr, formatNum } from "@/lib/utils";
+import { cn, formatDate, formatTime, money, fmtKg, searchable, normalizeCode, matchCode, normalizeAr, formatNum } from "@/lib/utils";
 import { withTimeout, describeDbError, describeUploadError } from "@/lib/errors";
 import { prepareUpload, type PreparedUpload } from "@/lib/image";
 import { productImageUrl } from "@/lib/storeLib";
@@ -131,7 +135,7 @@ async function stampBatches(batches: Product[][]): Promise<[number, number]> {
  * add/edit, low-stock & expiry alerts. Point-of-sale lives in "Retail & Sales".
  */
 export function Inventory() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { user } = useAuth();
   const toast = useToast();
   const clinicId = user?.clinic_id ?? user?.id; // shared workspace id (manager's id for staff)
@@ -170,8 +174,26 @@ export function Inventory() {
   const mounted = useRef(true);
   /** فشلَ آخرُ تحميل؟ تُعرض حينها رسالةُ إعادةِ محاولة لا شاشةُ «فارغ». */
   const [failed, setFailed] = useState(false);
+  /** البيعُ بالجملة: فشلَ تحديثٌ فوق قائمةٍ معروضة — يُقال بشريطٍ، لا يقتلع الشاشة. */
+  const [wsStale, setWsStale] = useState(false);
+  const [wsRefreshing, setWsRefreshing] = useState(false);
   const invKey = `inv_${clinicId ?? "self"}`;
+  /** التبويبُ لحظةَ **وصول** الجواب لا لحظةَ بدء الطلب: جلبُ فتح الصفحة يحمل
+   *  `view = "products"` بإغلاقه، ففشلُه المتأخّر بعد الانتقال للجملة كان يقتلع شاشةَ
+   *  البيع (وسلّتَها وإيصالَها) بشاشة الفشل الكاملة. */
+  const viewRef = useRef(view);
+  viewRef.current = view;
+  const inflight = useRef(0);
+  /** بدايةُ طلب اللقطة المعروضة — الأحدثُ **طلباً** يفوز (كشاشة البيع): جلبٌ بدأ قبل
+   *  بيعةِ جملةٍ ووصل بعد جلبها لا يكتب رصيدَ ما قبلها فوقها ويُختم طازجاً. */
+  const shownFrom = useRef<number>(cachedAt(invKey) ?? 0);
+  const retryTimer = useRef<number | null>(null);
+  const retried = useRef(false);
+  /** بيعةُ جملةٍ جارية — لا تُستبدل القائمةُ تحت يد الكاشير. */
+  const wsBusy = useRef(false);
   const load = async () => {
+    const startedAt = Date.now();
+    inflight.current++;
     try {
       /* الثلاثةُ تُعرض معاً أو لا تُعرض. كان فشلُ الشركات أو الأصناف يُبلع إلى
        * قائمةٍ فارغة بينما علَمُ الفشل لا يُرفع إلا بفشل المنتجات — فتُرسم لوحةٌ
@@ -185,20 +207,50 @@ export function Inventory() {
         withTimeout(repo.listCompanies(clinicId), 15000),
         withTimeout(repo.listCompanySections(undefined, clinicId), 15000),
       ]);
-      setCached(invKey, { p, c, s });
+      if (startedAt < shownFrom.current) return; // ما بعده وصل — لا يكتب فوقه
+      shownFrom.current = startedAt;
+      setCached(invKey, { p, c, s }, startedAt);
       if (!mounted.current) return;
       setProducts(p);
       setCompanies(c);
       setSections(s);
       setFailed(false);
+      setWsStale(false);
+      retried.current = false;
+      if (retryTimer.current != null) { window.clearTimeout(retryTimer.current); retryTimer.current = null; }
     } catch {
       // «فشل التحميل» ≠ «المخزن فارغ». بلعُ الخطأ هنا كان يعرض شاشةً تقول
       // «ماكو منتجات» عن مخزنٍ فيه تسعمئة صنف — فأعادت عيادةٌ إدخال بضاعتها
       // لأن النظام أخبرها أنها غير موجودة. الآن يُقال الفشلُ ويُعرض «أعد المحاولة».
-      if (mounted.current) setFailed(true);
+      if (!mounted.current) return;
+      /* إلا بالبيع بالجملة فوق قائمةٍ معروضة: `load` تُنادى بعد كلّ بيعة (onSold)،
+       * وشاشةُ الفشل تحلّ محلّ التبويب كلِّه — فكانت تقتلع شاشةَ «تمّ البيع» وإيصالَها
+       * من تحت يد الكاشير على نتٍ ضعيف. القائمةُ هنا كاملةٌ من جلبٍ سابق، والخطرُ
+       * المقصود أعلاه هو الفارغة — فتبقى ويُقال عمرُها بشريط (كشاشة البيع، ط٣).
+       * و«بيدنا لقطة» = جُلبت مرّةً بنجاح (فارغةً كانت أو ملأى)، والتبويبُ تبويبُ الآن. */
+      if (startedAt < shownFrom.current) return; // فشلُ جلبٍ قديم وما بعده نجح
+      if (viewRef.current === "wholesale" && cachedAt(invKey) != null) setWsStale(true);
+      else setFailed(true);
+      scheduleRetry();
     } finally {
+      inflight.current--;
       if (mounted.current) setLoading(false);
     }
+  };
+  const loadRef = useRef(load);
+  loadRef.current = load;
+  /* محاولةٌ تلقائيةٌ واحدة بعد ٣٠ث من الفشل والتابُ ظاهر (ط٣-د) — بشريط الجملة وبشاشة
+   * الفشل معاً. كانت شاشةُ البيع وحدها تُصلح رعشةَ النت بنفسها. ولا وسطَ بيعةٍ ولا فوق
+   * جلبٍ قائم: إتمامُ البيعة يجلب، والجلبُ القائمُ يقول نتيجتَه. */
+  const scheduleRetry = () => {
+    if (retried.current || retryTimer.current != null) return;
+    retryTimer.current = window.setTimeout(() => {
+      retryTimer.current = null;
+      if (!mounted.current || document.visibilityState !== "visible") return;
+      if (wsBusy.current || inflight.current > 0) return;
+      retried.current = true;
+      void loadRef.current();
+    }, RETRY_AFTER_FAIL_MS);
   };
   useEffect(() => {
     mounted.current = true;
@@ -212,9 +264,54 @@ export function Inventory() {
     }
     void load();
     void repo.supportsBulkGroup().then((ok) => { if (mounted.current) setGroupsOk(ok); }).catch(() => {}); /* swallow-ok: فحصُ قدرةٍ لا قائمةُ قرار — الفشلُ يُبقي groupsOk=null أي «لا نعرف»، وهي الحالةُ التي تحذّر عند الحفظ */
-    return () => { mounted.current = false; };
+    return () => {
+      mounted.current = false;
+      if (retryTimer.current != null) window.clearTimeout(retryTimer.current);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  /* ط١ + ط٥ بالجملة أيضاً — نفسُ SaleBuilder ونفسُ القرار: قائمةٌ مفتوحةٌ من الصبح كانت
+   * تبيع بأرقام الصبح بلا عمرٍ ولا سؤال (والخادمُ يُسأل عند الصفر وحده، فالرقمُ المرتفعُ
+   * البائت لا يُصحَّح أبداً). يعمل والجملةُ ظاهرةٌ وحدها: بقيّةُ تبويبات المخزن شاشاتُ
+   * إدارةٍ تُحدَّث بأفعالها. والدخولُ إلى الجملة نفسُه «عودة» — يُسأل عن العمر فوراً. */
+  useRevalidateOnReturn(() => { void loadRef.current(); }, RETURN_STALE_MS, {
+    key: invKey,
+    isBusy: () => wsBusy.current || inflight.current > 0,
+    enabled: view === "wholesale" && canPos && !locked,
+    pollMs: POLL_MS,
+    checkOnEnable: true,
+  });
+  const onWsBusy = useCallback((b: boolean) => { wsBusy.current = b; }, []);
+
+  /** جوابٌ طازجٌ من الخادم (سؤالُ «رصيده صفر») يرقّع القائمةَ والكاشَ **بلا تجديد
+   *  عمره** — وإلا سألت شاشةُ الجملة الخادمَ بكلّ ضغطةٍ على نفس الكرت. الصفُّ خامّاً
+   *  بقائمة المخزن، وحوضُ قسمه بالأقسام — فرصيدُ الجملة (`sellable`) يتبعهما معاً. */
+  const patchRow = useCallback((patch: FreshPatch) => {
+    setProducts((l) => patchRawList(l, patch));
+    setSections((s) => patchSections(s, patch));
+    patchCached<{ p: Product[]; c: Company[]; s: CompanySection[] }>(invKey, (d) => ({ ...d, p: patchRawList(d.p, patch), s: patchSections(d.s, patch) }));
+  }, [invKey]);
+  /** رصيدُ الجملة = رصيدُ الكاشير (الصفُّ + حوضُ قسمه): الخادمُ يخصم من الحوض بالجملة
+   *  أيضاً (`retail_checkout` ← `deduct_stock_pooled`). الخامُّ وحده كان يقول «نفد» —
+   *  ثم «موجود بس رصيده صفر، زيد رصيده» — عمّا يبيعه الكاشيرُ بالغرفة المجاورة. */
+  const sellable = useMemo(() => sellableRows(products, sections), [products, sections]);
+  const wsRefresh = async () => {
+    setWsRefreshing(true);
+    try { await load(); } finally { if (mounted.current) setWsRefreshing(false); }
+  };
+  /* الشريطُ يُرسم داخل الجملة وحدها — فالانتقالُ لتبويب المنتجات أو المشتريات والفشلُ قائم
+   * كان يعرض القائمةَ القديمة **بلا أيّ إشارة** (أمسكته مراجعةٌ عدائية): عينُ ما يحذّر منه
+   * CLAUDE.md — النقصُ يُصدَّق. فخارج الجملة يعود الفشلُ صاخباً كعادة المخزن، ويُعاد الجلبُ
+   * فوراً: إن رجع النتُّ اختفت شاشةُ الفشل وحدها، وإلا بقيت تقول الحقيقة. */
+  useEffect(() => {
+    if (view !== "wholesale" && wsStale) {
+      setWsStale(false);
+      setFailed(true);
+      void load();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view, wsStale]);
 
   // دفعات قديمة بلا رابط مجموعة — تُعرض فقط عندما تكون الميزة شغّالة فعلاً.
   const pendingBatches = useMemo(() => (groupsOk ? findUngroupedBatches(products) : []), [groupsOk, products]);
@@ -411,7 +508,21 @@ export function Inventory() {
         <BarcodeStudio products={products} onChanged={load} />
       ) : view === "wholesale" && canPos ? (
         // نفسُ شاشة البيع بكل تفاصيلها — الفرقُ أن السطر يبدأ على سعر الشراء.
-        <SaleBuilder products={products} clinicId={clinicId} onSold={load} wholesale />
+        <>
+          {wsStale && (
+            <div className="mb-3 flex items-center gap-2 rounded-xl border border-warn-200 bg-warn-50 px-3 py-1.5 text-xs font-semibold text-warn-800 dark:border-warn-500/30 dark:bg-warn-500/10 dark:text-warn-200" data-stalestrip>
+              <Clock size={14} className="shrink-0" />
+              <span className="min-w-0 flex-1">
+                {t("pos.staleStrip", "المعروض من {{time}} — تعذّر التحديث", { time: cachedAt(invKey) ? formatTime(new Date(cachedAt(invKey) as number).toISOString(), i18n.language) : "—" })}
+              </span>
+              <Button size="sm" variant="secondary" loading={wsRefreshing} leftIcon={<RefreshCw size={14} />} onClick={() => { playTap(); void wsRefresh(); }}>
+                {t("pos.refreshNow", "حدّث")}
+              </Button>
+            </div>
+          )}
+          <SaleBuilder products={sellable} clinicId={clinicId} onSold={load} wholesale
+            onFreshRow={patchRow} onRefresh={() => void wsRefresh()} onBusyChange={onWsBusy} />
+        </>
       ) : view === "trash" ? (
         <TrashTab onChanged={load} />
       ) : (

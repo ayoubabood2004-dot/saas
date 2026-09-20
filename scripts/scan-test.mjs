@@ -436,11 +436,20 @@ console.log("▸ رصيدُ الصفر — يُسأل الخادمُ قبل ال
     zeroStockVerdict({ stock: 0, pooled: true }, true) === "sell-fresh");
 
   const sb = readFileSync("src/components/retail/SaleBuilder.tsx", "utf8");
+  /* السؤالُ صار **بمعرّف المنتج** (خطة الطزاجة، ط٢): المسحُ والكرتُ يمرّان من
+   * `sellOrExplain` نفسِها، والكرتُ لا يحمل رمزاً ممسوحاً — وبالمخزن منتجاتٌ بلا
+   * باركود. والنيّةُ نفسُها محروسة: سؤالُ الخادم بمهلةٍ قبل أيِّ رفض. */
+  // (السؤالُ صار مشتركاً بين المسحات المتلاحقة، وبـ`askFresh`: بالمعرّف، ثم بالرمز إن غاب
+  //  الصفّ، وبحوض القسم — خطة الطزاجة بعد التدقيق. وسلوكُها يُفحص بـfreshness-test.)
   check("وشاشةُ البيع تسأل الخادمَ بمهلةٍ قبل الرفض",
-    /fresh = await withTimeout\(repo\.getProductByBarcode\(code, clinicId\), 6000\)/.test(sb));
-  check("  وتبيع بالصفّ الطازج لا بالبائت", sb.includes("addProduct(fresh, n)"));
+    /return await withTimeout\(askFresh\(product, code, \{/.test(sb) && /\}\), 6000\);/.test(sb));
+  check("  وتبيع بالصفّ الطازج لا بالبائت", sb.includes("addProduct(sellable, n)"));
+  // البوّابةُ والحكمُ من الوحدة المفحوصة (`freshSale.ts`) لا نسخةٍ محلّية.
   check("  والحكمُ من الوحدة المفحوصة لا نسخةٍ محلّية",
-    sb.includes("outOfStock(product, retMode)") && !sb.includes("const isNoStock"));
+    sb.includes("needsServerCheck(product, lineBefore, n, retMode)")
+    && /import \{[^}]*\bneedsServerCheck\b[^}]*\} from "@\/lib\/freshSale"/.test(sb)
+    && /import \{[^}]*\bfreshVerdict\b[^}]*\} from "@\/lib\/freshSale"/.test(sb)
+    && !sb.includes("const isNoStock"));
 }
 
 

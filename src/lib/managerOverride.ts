@@ -15,6 +15,7 @@ import { sb } from "./clinicSync";
 import { getActiveClinicId } from "./clinics";
 import { getOverridePinMirror, setOverridePinMirror, getStockEditInManagerMode } from "./settings";
 import { repo } from "./repo";
+import { hasLiveElevation } from "./logoutSequence";
 
 const SESSION_MS = 10 * 60 * 1000; // elevation lifetime
 const MAX_TRIES = 5;               // wrong PINs before the cooldown
@@ -210,12 +211,30 @@ export async function setOverridePin(pin: string): Promise<void> {
  *  NEXT user to sign in on a shared/kiosk device never inherits manager access.
  *  A deliberate device lock (kiosk reception view) is intentionally PRESERVED —
  *  it must survive staff signing in and out all day. */
-export function endElevationOnLogout(): void {
+export function endElevationOnLogout(): PromiseLike<unknown> | undefined {
   const client = sb();
-  if (client) void Promise.resolve(client.rpc("end_elevation")).then(() => undefined, () => undefined);
-  // Remove EVERY clinic's elevation flag, not just the active one — a user who
-  // switched clinics mid-session could otherwise leave a stale flag that unlocks
-  // the manager UI for the next person on a shared device.
+  /* يُرجَع النداءُ ليُنتظر قبل مسح الجلسة (`endElevationThenSignOut`). كان يُطلق
+   * بلا انتظار، فيسبق مسحُ الجلسة قراءةَ الرمز ويخرج الطلبُ «مجهولاً» — 42501
+   * بسجلّ الإنتاج، والرفعُ لا يُنهى بالخادم. */
+  /* ولا نداءَ بلا رفعٍ حيّ بالجهاز (`hasLiveElevation`): النداءُ الناجحُ يكتب «أُقفل
+   * وضعُ المدير» بسجلّ العيادة — كاذباً إن لم يكن رفع، وأثراً لمشغّل المنصّة إن كان
+   * هو الخارج. ويُسأل **قبل** مسح الأعلام أدناه، وإلا كان الجوابُ «لا» دائماً. */
+  let live = false;
+  try {
+    const entries: [string, string | null][] = Object.keys(localStorage).map((k) => [k, localStorage.getItem(k)]);
+    live = hasLiveElevation(entries, Date.now());
+  } catch { /* ignore */ }
+  const call = live && client ? Promise.resolve(client.rpc("end_elevation")) : undefined;
+  clearElevationFlags();
+  return call;
+}
+
+/** يمسح أعلامَ الرفع **لكلّ العيادات** بهذا الجهاز — لا النشطة وحدها: من بدّل العيادةَ
+ *  وسطَ الجلسة كان يترك علماً يفتح واجهةَ المدير للتالي على جهازٍ مشترك.
+ *  يناديه الخروجُ الصريح (`endElevationOnLogout`) **وخروجُ الجلسة الميّتة** (SIGNED_OUT
+ *  بـAuthContext): رمزٌ أُلغي بجهازٍ آخر كان يُخرج الطبيبَ ويُبقي علمَه، والأعلامُ بمفتاح
+ *  العيادة لا المستخدم — فالموظّفُ الداخلُ بعده يرى واجهةَ المدير وعدّادَها بلا رمز. */
+export function clearElevationFlags(): void {
   try {
     for (const k of Object.keys(localStorage)) {
       if (k.startsWith("vp_override_until_")) localStorage.removeItem(k);

@@ -237,6 +237,47 @@ console.log("\n▸ getProductByBarcode — حتميةُ الاستدعاء (مر
   check("وعند التعادل: الأقدم", (await repo.getProductByBarcode("777"))?.id === "older");
 }
 
+/* ── مخزنُ الحقل لا يصل كاشيرَ العيادة — بأيّ طريق (ط٧) ─────────────────────
+ * `products` جدولٌ بعرضَين منذ 0191: `farm_id` فارغٌ لمخزن العيادة، ومملوءٌ لمخزن
+ * حقل. ومنتجُ حقلٍ يُمسح بكاشير العيادة كان **يُباع** بسعرٍ لم يُوضع للبيع، ويخصم
+ * من رصيد دفعةٍ جارية. 0191 أصلحت الخادم (مقيسٌ حيّاً: ٣ شروطٍ بـproduct_by_code)،
+ * لكن **لا فحصَ كان يحرس الواجهة** — والطرقُ إلى المنتج صارت أربعاً: القائمة،
+ * والمسحُ بالرمز، وبالرمز الإضافيّ، والسؤالُ بالمعرّف (ط٢، طريقُ الكرت). */
+console.log("\n▸ مخزنُ الحقل لا يصل كاشيرَ العيادة — بأيّ طريق (ط٧)");
+{
+  const clinic = P("c1", "علف عيادة", "5550001");
+  const farm = P("f1", "علف حقل", "5550002", { farm_id: "farm-1", alt_codes: ["FARM-ALT"] });
+  seed([clinic, farm]);
+  const list = await repo.listProducts();
+  check("قائمةُ الكاشير لا تحمل منتجَ الحقل", list.length === 1 && list[0].id === "c1", list.map((p) => p.id).join("، "));
+  check("  ومسحُ باركوده لا يلقاه", (await repo.getProductByBarcode("5550002")) === undefined);
+  check("  ولا رمزُه الإضافيّ", (await repo.getProductByBarcode("FARM-ALT")) === undefined);
+  check("  والسؤالُ بالمعرّف (طريقُ الكرت) لا يُرجعه", (await repo.getProductById("f1")) === undefined);
+  check("  ومنتجُ العيادة بمعرّفه يرجع", (await repo.getProductById("c1"))?.id === "c1");
+  check("ووجهُ الحقل ما زال يراه (listFarmProducts)", (await repo.listFarmProducts("farm-1")).some((p) => p.id === "f1"));
+  /* وصيغُ الماسح (GTIN-14 ← EAN-13 ← UPC-A) تستثنيه كالحرفيّ — مرآةُ 0191 التي
+   * تستثنيه بالصيغ أيضاً. كانت الصيغُ تمشي على كلّ المنتجات، فصيغةٌ أسبقُ يحملها صفُّ
+   * حقلٍ تُختار قبل صيغةٍ لاحقةٍ يحملها منتجُ العيادة: رفضٌ أو «رصيده صفر» عمّا يُباع. */
+  seed([P("f2", "علف حقل", "0045496830434", { farm_id: "farm-1", stock: 40 }), P("c2", "علف عيادة", "045496830434", { stock: 12 })]);
+  check("  وصيغُ الماسح تستثنيه: GTIN-14 يصل منتجَ العيادة لا الحقل",
+    (await repo.getProductByBarcode("00045496830434"))?.id === "c2", (await repo.getProductByBarcode("00045496830434"))?.id);
+}
+
+/* ── حوضُ القسم طازجاً (سؤالُ «رصيده صفر» بعد التدقيق) ──────────────────────
+ * رصيدُ الكاشير = الصفُّ + حوضُ قسمه، والخادمُ يبيع من الحوض. السؤالُ بلا الحوض كان
+ * يقول «زيد رصيده» عمّا يُباع. */
+console.log("\n▸ getSectionPool — حوضُ القسم لسؤال الكاشير");
+{
+  mem.set(DB_KEY, JSON.stringify({
+    products: [P("a", "مجمَّع", "1", { section_id: "s1", stock: 0 })], companies: [],
+    companySections: [{ id: "s1", name: "طفيليات", company_id: "co", pooled_stock: 50 }, { id: "s2", name: "بلا حوض", company_id: "co" }],
+    purchases: [], purchaseItems: [], invoices: [], invoiceItems: [], generatedBarcodes: [], productsTrash: [],
+  }));
+  check("حوضُ القسم يُقرأ بمعرّفه", (await repo.getSectionPool("s1")) === 50);
+  check("  وقسمٌ بلا حوضٍ صفر", (await repo.getSectionPool("s2")) === 0);
+  check("  وقسمٌ غيرُ موجودٍ صفرٌ لا خطأ", (await repo.getSectionPool("nope")) === 0);
+}
+
 console.log("\n▸ tidyInventory — صورةٌ قبل الطيّ (مرآةُ محفّز 0146)");
 {
   seed([

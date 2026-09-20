@@ -1,18 +1,21 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { AnimatePresence, motion } from "framer-motion";
-import { Store, ShoppingCart, ReceiptText, BarChart3, HandCoins, Bike, PawPrint, ArrowRight, Wallet, RotateCcw } from "lucide-react";
+import { Store, ShoppingCart, ReceiptText, BarChart3, HandCoins, Bike, PawPrint, ArrowRight, Wallet, RotateCcw, Clock, RefreshCw } from "lucide-react";
 import type { Product, Invoice, Species } from "@/types";
 import { useAuth } from "@/contexts/AuthContext";
 import { useEntitlements } from "@/lib/entitlements";
 import { usePermissions } from "@/hooks/usePermissions";
 import { useOverride, capLockedFrom } from "@/lib/managerOverride";
 import { useNavFolded } from "@/lib/navFold";
-import { Skeleton, Button } from "@/components/ui";
-import { cn } from "@/lib/utils";
+import { Skeleton, Button, useToast } from "@/components/ui";
+import { cn, formatTime } from "@/lib/utils";
 import { withTimeout } from "@/lib/errors";
-import { getCached, setCached, isFresh } from "@/lib/swrCache";
+import { getCached, setCached, isFresh, cachedAt, patchCached } from "@/lib/swrCache";
+import { RETURN_STALE_MS, RETRY_AFTER_FAIL_MS, POLL_MS } from "@/lib/freshness";
+import { useRevalidateOnReturn } from "@/hooks/useRevalidateOnReturn";
+import { patchSellableList, type FreshPatch } from "@/lib/freshSale";
 import { loadRetailSnap, retailKey, type RetailSnap } from "@/lib/prefetchData";
 import { playTap } from "@/lib/sounds";
 import { SaleBuilder, type RetailPrefill } from "@/components/retail/SaleBuilder";
@@ -30,7 +33,8 @@ type Tab = "sell" | "invoices" | "returns" | "debts" | "delivery" | "reports";
 const SPECIES_SET = new Set<string>(["dog", "cat", "horse", "cow", "bird", "rabbit", "other"]);
 
 export function RetailSales() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const toast = useToast();
   const { user } = useAuth();
   const { has } = useEntitlements();
   const { can } = usePermissions();
@@ -85,16 +89,45 @@ export function RetailSales() {
   /* فشلُ جلب الأصناف وحدَه: الأرقامُ ناقصةٌ (رصيدُ المجمَّع ساقط) لا خاطئة —
    * فتُعرض مع شارةٍ تقولها بدل أن يبدو رصيدُ المجمَّع صفراً بثقة. */
   const [sectionsFailed, setSectionsFailed] = useState(false);
+  /* ---- طزاجةُ القائمة (خطة الطزاجة، ط١ + ط٣) -----------------------------
+   * `snapAt` وقتُ جلب اللقطة المعروضة؛ و`staleFail` «فشل آخرُ تحديثٍ والقائمةُ
+   * معروضة» — فتُقال بعمرها وزرِّ تحديثٍ بالمكان، لا بصمت. */
+  const [snapAt, setSnapAt] = useState<number | undefined>(() => cachedAt(cacheKey));
+  const [staleFail, setStaleFail] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  /** بيعةٌ جارية بـSaleBuilder — لا تُستبدل القائمةُ تحت يد الكاشير. */
+  const busyRef = useRef(false);
+  /** جلبٌ قائم — ظهورُ التاب وعودةُ النت قد يتزامنان، فلا جلبان معاً. */
+  const inflightRef = useRef(0);
+  const retryTimer = useRef<number | null>(null);
+  /** محاولةٌ تلقائيةٌ **واحدة** لكلّ سلسلةِ فشل — لا حلقةَ تطرق خادماً متعَباً. */
+  const retriedRef = useRef(false);
   const mounted = useRef(true);
-  const load = async () => {
+  /** بدايةُ طلب اللقطة المعروضة. الجلباتُ تتراكب (كلَّ ٥ دقائق، بعد البيعة، الزرّ،
+   *  ٣٠ث بعد فشل) وتصل بأيّ ترتيب: جلبٌ بدأ قبل البيعة ووصل بعد جلبها كان يكتب رصيدَ
+   *  ما قبل البيعة فوقها **ويُختم طازجاً** — فلا شريطَ ولا سؤالَ ٦٠ ثانية، والكرتُ
+   *  يعرض قطعةً بيعت. فالأحدثُ **طلباً** يفوز، والختمُ بوقت الطلب لا الوصول. */
+  const shownFrom = useRef<number>(cachedAt(cacheKey) ?? 0);
+  /** `true` إن وصلت قائمةٌ طازجة — فزرُّ التحديث يقول ما حصل لا ما يُتمنّى. */
+  const load = async (): Promise<boolean> => {
+    const startedAt = Date.now();
+    inflightRef.current++;
     try {
       const snap = await withTimeout(loadRetailSnap(clinicId), 15000);
-      if (!mounted.current) return;
+      if (!mounted.current) return false;
+      if (startedAt < shownFrom.current) return true; // ما بعده وصل — لا يكتب فوقه
+      shownFrom.current = startedAt;
       setProducts(snap.products);
       setInvoices(snap.invoices);
       setSectionsFailed(!!snap.sectionsFailed);
-      setCached<RetailSnap>(cacheKey, snap);
+      setCached<RetailSnap>(cacheKey, snap, startedAt);
+      setSnapAt(startedAt);
       setFailed(false);
+      setStaleFail(false);
+      retriedRef.current = false;
+      // نجاحٌ بأيّ طريق (زرٌّ، عودةُ تاب) يُلغي محاولةً مجدولة — لا جلبَ زائدٌ بعد ٣٠ث.
+      if (retryTimer.current != null) { window.clearTimeout(retryTimer.current); retryTimer.current = null; }
+      return true;
     } catch {
       // القائمةُ الناقصة أخطرُ من الخطأ الظاهر: الصندوقُ يمسح الباركود فلا يلقاه،
       // فيستنتج البائع أن المادة غير مُدخَلة ويعيد إدخالها — ويصير للمادة رصيدان.
@@ -102,18 +135,84 @@ export function RetailSales() {
       // لكنّ شاشةَ الفشل تحلّ محلّ شاشة البيع كلِّها. و`load` تُنادى **بعد كلّ
       // بيعة** (onSold)، فتحديثٌ متأخّرٌ على نتٍ ضعيف كان يقتلع إيصالَ البيعة
       // من تحت يد الكاشير وهو يطبعه — والمسودّةُ مُسِحت أصلاً. فما دام بيدنا
-      // قائمةٌ صالحة نُبقيها ونصمت: الخطرُ المقصود أعلاه هو القائمةُ **الفارغة**.
-      if (mounted.current && products.length === 0) setFailed(true);
+      // قائمةٌ صالحة نُبقيها: الخطرُ المقصود أعلاه هو القائمةُ **الفارغة**.
+      //
+      // **نُبقيها ولا نصمت.** الصمتُ الكامل كان يخفي أن الأرقامَ قديمة: قائمةُ
+      // الصبح تُعرض ظهراً والكاشير يصدّق «رصيده صفر» عن مادةٍ على الرفّ، والحلُّ
+      // الوحيد الذي يعرفه F5. فالقائمةُ تبقى بعمرها وزرِّ تحديثٍ بالمكان (ط٣).
+      if (!mounted.current) return false;
+      // فشلُ جلبٍ بدأ قبل المعروض لا يعني شيئاً: ما بعده وصل ناجحاً.
+      if (startedAt < shownFrom.current) return false;
+      /* وشاشةُ الفشل الكاملة لأوّل تحميلٍ وحده — **لا لقطةَ بيدنا أصلاً**. كان الشرطُ
+       * «القائمةُ فارغة»، فعيادةٌ بلا منتجاتٍ (تبيع خدماتٍ وأدوية) يُقتلع إيصالُها أو
+       * نافذةُ تسديد دينٍ وسطَ الكتابة لأنّ جلبَ الخلفية (كلَّ ٥ دقائق، عودةُ التاب)
+       * تعثّر. لقطةٌ فارغةٌ جاءت من نجاحٍ صادقة؛ فتُقال بعمرها كغيرها. */
+      if (cachedAt(cacheKey) == null) setFailed(true);
+      else setStaleFail(true);
+      scheduleRetry();
+      return false;
     } finally {
+      inflightRef.current--;
       if (mounted.current) setLoading(false);
     }
+  };
+  // المؤقّتُ والمستمعون يقرؤون آخرَ نسخةٍ من `load` — لا نسخةَ أوّل رسم.
+  const loadRef = useRef(load);
+  loadRef.current = load;
+  /* محاولةٌ تلقائيةٌ واحدة بعد ٣٠ث من الفشل، والتابُ ظاهر: رعشةُ نتٍ قصيرة تُصلح
+   * نفسَها بلا ضغطة. والثانيةُ لا تُجدوَل — الشريطُ وزرُّه وعودةُ التاب تكفي. */
+  const scheduleRetry = () => {
+    if (retriedRef.current || retryTimer.current != null) return;
+    retryTimer.current = window.setTimeout(() => {
+      retryTimer.current = null;
+      if (!mounted.current || document.visibilityState !== "visible") return;
+      /* ولا وسطَ بيعةٍ ولا فوق جلبٍ قائم — كحراسة العودة (ط١) تماماً. كانت المحاولةُ
+       * تُطلق أثناء checkout فتقرأ رصيدَ ما قبل البيعة. وما يُفوَّت لا يضيع: إتمامُ
+       * البيعة يجلب (`onSold`)، والجلبُ القائمُ يقول نتيجتَه، ولا يُحسب هذا محاولة. */
+      if (busyRef.current || inflightRef.current > 0) return;
+      retriedRef.current = true;
+      void loadRef.current();
+    }, RETRY_AFTER_FAIL_MS);
   };
   useEffect(() => {
     mounted.current = true;
     if (!isFresh(cacheKey, 20_000)) void load(); // skip refetch when fresh (< 20s)
-    return () => { mounted.current = false; };
+    return () => {
+      mounted.current = false;
+      if (retryTimer.current != null) window.clearTimeout(retryTimer.current);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  /* ط١: التابُ الراجع يسأل عن عمر قائمته. كان التحديثُ عند الفتح وبعد البيعة
+   * وحدهما — فتابٌ مفتوحٌ من الصبح بلا بيع يبيع بقائمة الصبح. */
+  useRevalidateOnReturn(() => { void loadRef.current(); }, RETURN_STALE_MS, {
+    key: cacheKey,
+    isBusy: () => busyRef.current || inflightRef.current > 0,
+    // ط٥ (قرار المالك): والتابُ الظاهرُ يُسأل كلَّ ٥ دقائق — كاشيرٌ يحدّق بالشاشة لا «يرجع».
+    pollMs: POLL_MS,
+  });
+  const onBusyChange = useCallback((b: boolean) => { busyRef.current = b; }, []);
+
+  /** التحديثُ بالمكان — من الشريط أو من زرّ رسالة «ما وصلنا الخادم». */
+  const refreshNow = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      // ما يُقال إلا ما حصل: الشريطُ يبقى إن فشل، والنجاحُ يُقال بسطر.
+      if (await loadRef.current()) toast.success(t("pos.refreshedNow", "القائمة تحدّثت"));
+    } finally {
+      if (mounted.current) setRefreshing(false);
+    }
+  }, [t, toast]);
+
+  /** جوابٌ طازجٌ من الخادم (ط٢) يرقّع القائمةَ واللقطةَ — **بلا تجديد عمرها**: صفٌّ
+   *  واحدٌ طازج لا يجعل بقيّةَ القائمة طازجة. والصفُّ يدخل **برصيد الكاشير** (الصفُّ +
+   *  حوضُ قسمه) كبقيّة القائمة: الخامُّ وحده كان يكتب على الكرت رقماً أدنى من المبيع.
+   *  والصفُّ الغائب يُرفع، والمطويُّ يحلّ محلَّه باقيه. */
+  const patchRow = useCallback((patch: FreshPatch) => {
+    setProducts((list) => patchSellableList(list, patch));
+    patchCached<RetailSnap>(cacheKey, (s) => ({ ...s, products: patchSellableList(s.products, patch) }));
+  }, [cacheKey]);
 
   // The debts ledger is a super-plan feature (البيع بالدين) — hidden otherwise.
   const TABS: { id: Tab; label: string; icon: typeof Store }[] = [
@@ -196,31 +295,53 @@ export function RetailSales() {
               <p className="mx-auto max-w-md text-ink-subtle">{t("pos.loadFailed", "تعذّر تحميل المخزن. المشكلة بالاتصال ولا شيء ضاع — أعد المحاولة قبل أن تضيف أي مادة.")}</p>
               <Button leftIcon={<RotateCcw size={16} />} onClick={() => { playTap(); setLoading(true); void load(); }}>{t("common.retry", "إعادة المحاولة")}</Button>
             </div>
-          ) : tab === "sell" ? (
+          ) : (
             <>
-              {sectionsFailed && (
-                /* أرقامٌ ناقصة تُقال ناقصة: رصيدُ المخزون المجمَّع ساقطٌ من الحساب،
-                   فيبدو المتاحُ أقلَّ من الحقيقة وسقفُ السلّة أدنى. */
-                <div className="mb-3 rounded-xl border border-warn-200 bg-warn-50 px-3 py-2 text-xs font-semibold text-warn-800 dark:border-warn-500/30 dark:bg-warn-500/10 dark:text-warn-200" data-sectionsfailed>
-                  {t("pos.pooledStockFailed", "تعذّر جلب المخزون المجمّع — أرقام الرصيد ناقصة. أعد التحميل قبل ما تعتمد عليها.")}
+              {staleFail && tab !== "reports" && (
+                /* ط٣: فشلُ التحديث فوق قائمةٍ معروضة يُقال — بعمرها وزرٍّ بالمكان.
+                   كان يُبلَع بصمتٍ متعمَّد، فقائمةُ الصبح تُعرض ظهراً ولا أحدَ
+                   يعرف، والعلاجُ الوحيد المعروف F5 يمسح السلّة. **وبكلّ تبويبٍ
+                   يعرض اللقطةَ نفسها**: الديونُ والتوصيلُ والمرتجعُ والفواتير تُبنى
+                   منها، وكان الشريطُ بالبيع وحده — فيُقال لزبونٍ دينُه قبل تسديده. */
+                <div className="mb-3 flex items-center gap-2 rounded-xl border border-warn-200 bg-warn-50 px-3 py-1.5 text-xs font-semibold text-warn-800 dark:border-warn-500/30 dark:bg-warn-500/10 dark:text-warn-200" data-stalestrip>
+                  <Clock size={14} className="shrink-0" />
+                  <span className="min-w-0 flex-1">
+                    {t("pos.staleStrip", "المعروض من {{time}} — تعذّر التحديث", { time: snapAt ? formatTime(new Date(snapAt).toISOString(), i18n.language) : "—" })}
+                  </span>
+                  <Button size="sm" variant="secondary" data-stalerefresh loading={refreshing} leftIcon={<RefreshCw size={14} />} onClick={() => { playTap(); void refreshNow(); }}>
+                    {t("pos.refreshNow", "حدّث")}
+                  </Button>
                 </div>
               )}
-              <SaleBuilder products={products} clinicId={clinicId} onSold={load} prefill={prefill} />
+              {tab === "sell" ? (
+                <>
+                  {sectionsFailed && (
+                    /* أرقامٌ ناقصة تُقال ناقصة: رصيدُ المخزون المجمَّع ساقطٌ من الحساب،
+                       فيبدو المتاحُ أقلَّ من الحقيقة وسقفُ السلّة أدنى. */
+                    <div className="mb-3 rounded-xl border border-warn-200 bg-warn-50 px-3 py-2 text-xs font-semibold text-warn-800 dark:border-warn-500/30 dark:bg-warn-500/10 dark:text-warn-200" data-sectionsfailed>
+                      {t("pos.pooledStockFailed", "تعذّر جلب المخزون المجمّع — أرقام الرصيد ناقصة. أعد التحميل قبل ما تعتمد عليها.")}
+                    </div>
+                  )}
+                  <SaleBuilder products={products} clinicId={clinicId} onSold={load} prefill={prefill}
+                    onFreshRow={patchRow} onRefresh={() => void refreshNow()} onBusyChange={onBusyChange} />
+                </>
+              ) : tab === "invoices" ? (
+                <InvoicesPanel invoices={invoices} clinicId={clinicId} onChanged={load} />
+              ) : tab === "returns" ? (
+                <ReturnsPanel invoices={invoices} onChanged={load} />
+              ) : tab === "debts" ? (
+                <DebtsPanel invoices={invoices} clinicId={clinicId} onChanged={load} onOpenDelivery={() => setTab("delivery")} />
+              ) : tab === "delivery" ? (
+                <DeliveryPanel invoices={invoices} clinicId={clinicId} onChanged={load} />
+              ) : tab === "reports" && !reportsLocked ? (
+                <ReportsPanel />
+              ) : (
+                /* الفرعُ الأخير كان `<ReportsPanel />` بلا شرط: أيُّ قيمةِ تبويبٍ
+                   لا تطابق ما سبق ترسم التقارير. فصار صريحاً — ولا شيءَ يسقط عليها. */
+                <SaleBuilder products={products} clinicId={clinicId} onSold={load} prefill={prefill}
+                  onFreshRow={patchRow} onRefresh={() => void refreshNow()} onBusyChange={onBusyChange} />
+              )}
             </>
-          ) : tab === "invoices" ? (
-            <InvoicesPanel invoices={invoices} clinicId={clinicId} onChanged={load} />
-          ) : tab === "returns" ? (
-            <ReturnsPanel invoices={invoices} onChanged={load} />
-          ) : tab === "debts" ? (
-            <DebtsPanel invoices={invoices} clinicId={clinicId} onChanged={load} onOpenDelivery={() => setTab("delivery")} />
-          ) : tab === "delivery" ? (
-            <DeliveryPanel invoices={invoices} clinicId={clinicId} onChanged={load} />
-          ) : tab === "reports" && !reportsLocked ? (
-            <ReportsPanel />
-          ) : (
-            /* الفرعُ الأخير كان `<ReportsPanel />` بلا شرط: أيُّ قيمةِ تبويبٍ
-               لا تطابق ما سبق ترسم التقارير. فصار صريحاً — ولا شيءَ يسقط عليها. */
-            <SaleBuilder products={products} clinicId={clinicId} onSold={load} prefill={prefill} />
           )}
         </motion.div>
       </AnimatePresence>

@@ -11,6 +11,7 @@ import { listStaff, type StaffMember } from "@/lib/staff";
 import { getCached, setCached } from "@/lib/swrCache";
 import { localISO } from "@/lib/utils";
 import { getInvoicesPaged } from "@/lib/settings";
+import { sellableRows } from "@/lib/sellable";
 import type { LabResult,
   Pet, Admission, TreatmentEntry, MedicalVisit, Product, Invoice, InvoiceItem, MediaItem, AuditEntry, LoginEvent, Expense,
 } from "@/types";
@@ -70,12 +71,9 @@ export async function loadRetailSnap(clinicId?: string | null): Promise<RetailSn
   // section's pooled (legacy) reserve — so pooled barcodes (stock 0) are sellable
   // and the cart naturally stops at zero. The real per-layer deduction (tracked
   // first, then pool) happens server-side at checkout; this just sets the cap.
-  const pool = new Map(sections.map((s) => [s.id, s.pooled_stock ?? 0]));
-  const effective = products.map((p) => {
-    const extra = p.section_id ? (pool.get(p.section_id) ?? 0) : 0;
-    return extra > 0 ? { ...p, stock: (p.stock || 0) + extra } : p;
-  });
-  return { products: effective, invoices, sectionsFailed: !sectionsRes.ok };
+  // المعادلةُ نفسُها التي يُسأل بها الخادمُ عن صفٍّ «صفرٍ بالقائمة» (`freshSale.ts`):
+  // نسختان منها كانتا تقولان للعيادة «رصيده صفر» عمّا يبيعه الخادمُ من حوض القسم.
+  return { products: sellableRows(products, sections), invoices, sectionsFailed: !sectionsRes.ok };
 }
 
 // ---- Reports (التقارير) ----
