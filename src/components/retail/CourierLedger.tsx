@@ -25,7 +25,7 @@ import { Button, Skeleton, useToast } from "@/components/ui";
 import { withTimeout, describeDbError } from "@/lib/errors";
 import { usePermissions } from "@/hooks/usePermissions";
 import { money, formatNum, formatDate, cn } from "@/lib/utils";
-import { invoiceNo } from "@/lib/invoicePrint";
+import { invoiceNo } from "@/lib/invoiceNo";
 import { courierTotals, itemsFromInvoices, orderRows, type LedgerItemRow } from "@/lib/courierLedger";
 
 type View = "items" | "orders";

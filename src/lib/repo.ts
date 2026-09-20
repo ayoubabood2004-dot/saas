@@ -84,7 +84,7 @@ import { phoneDigits } from "./phone";
 import { searchable } from "./utils";
 import { emitGlobalToast } from "./globalToast";
 import i18next from "i18next";
-import { invoiceNo } from "./invoicePrint";
+import { invoiceNo } from "./invoiceNo";
 import { auditKind, activityBrief } from "./activityKinds";
 import type { ActivityQuery, ActivityRow, ActivitySummaryRow, ActivityActor } from "@/types";
 import type { PayrollPolicyDTO, StaffComp, StaffRecurring, PayrollAdjustment, PayrollRun, Payslip, PayslipLine, StaffLoan, StaffLoanEvent, PayslipDraft, PayMethod } from "@/types";

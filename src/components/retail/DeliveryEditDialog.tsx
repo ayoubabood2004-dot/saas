@@ -16,7 +16,7 @@ import { playTap, playSuccess, playWarning } from "@/lib/sounds";
 import { sendWhatsApp } from "@/lib/quotas";
 import { waNumber } from "@/lib/phone";
 import { getDialCode } from "@/lib/settings";
-import { invoiceNo } from "@/lib/invoicePrint";
+import { invoiceNo } from "@/lib/invoiceNo";
 
 /* ============================================================================
  * DeliveryEditDialog — تعديل طلب توصيل بعد إنشائه.

@@ -3,6 +3,7 @@ import { siteHost } from "@/lib/appUrl";
 import { getReceiptWidth } from "@/lib/printer";
 import { currencySymbol } from "@/lib/utils";
 import i18next from "i18next";
+import { invoiceNo } from "./invoiceNo";
 
 export type PrintFormat = "a4" | "thermal";
 
@@ -47,11 +48,13 @@ const fmt = (n: number) => n.toLocaleString("en-US", { maximumFractionDigits: 0 
  *  («2,000-» بدل «-2,000») — وهذا ظهر فعلياً على إيصالات مطبوعة. */
 const ltr = (s: string) => `<span dir="ltr" style="unicode-bidi:isolate;direction:ltr">${s}</span>`;
 
-/** Short, human invoice number from the row id (last 6 chars, upper). */
-export function invoiceNo(id: string): string {
-  const tail = id.replace(/[^a-zA-Z0-9]/g, "").slice(-6).toUpperCase();
-  return `INV-${tail}`;
-}
+/* الرقمُ القصير انتقل إلى `invoiceNo.ts` — يُعاد تصديرُه هنا للنداءات القائمة،
+ * لكنّ من لا يطبع يستورده من هناك: انظر رأسَ ذلك الملفّ. */
+export { invoiceNo } from "./invoiceNo";
+
+/** مفتاحُ ترجمةٍ بلغةِ الوصل — لا بلغةِ الشاشة التي ضغطت «اطبع». */
+const tp = (key: string, lng: string, defaultValue: string) =>
+  i18next.t(`retail.${key}`, { lng, defaultValue }) as string;
 
 function strings(lang: string) {
   const ar = lang.startsWith("ar");
@@ -86,6 +89,14 @@ function strings(lang: string) {
      * و`lng` صريحةٌ لأن القسيمةَ تُطبع بلغة الإيصال لا بلغة الشاشة. */
     scanStore: i18next.t("retail.scanStore", { lng: lang, defaultValue: "Scan to order delivery" }) as string,
     refunded: ar ? "مُرجعة" : "REFUNDED",
+    /* هذه الخمسة من الترجمة لا من الجدول — نفسُ سبب `scanStore` أعلاه:
+     * سقفُ النصّ الصلب بالملفّ ممتلئ، والقاعدةُ أنه ينزل ولا يصعد. و`lng`
+     * صريحةٌ لأن الوصلَ يُطبع بلغةِ الإيصال لا بلغةِ الشاشة. */
+    settled: tp("rcSettled", lang, "Paid in full"),
+    partly: tp("rcPartly", lang, "Balance due"),
+    preSaleShort: tp("rcProforma", lang, "PRO-FORMA"),
+    sigCustomer: tp("rcSigCustomer", lang, "Received by"),
+    sigClinic: tp("rcSigClinic", lang, "Clinic stamp & signature"),
     preSale: ar ? "فاتورة أولية — قبل إتمام البيع" : "PRO-FORMA — NOT A RECEIPT",
     printNo: ar ? "نسخة الطباعة رقم" : "Print",
   };
@@ -105,6 +116,12 @@ export function buildInvoiceHTML(invoice: Invoice, items: InvoiceItem[], opts: I
   const dateStr = created.toLocaleString("en-GB", {
     year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
   });
+  /* **يومٌ ووقتٌ مقطعَين لا نصّاً واحداً.** الوصلُ عربيٌّ (rtl)، وسلسلةٌ
+   * لاتينيّةٌ فيها فاصلةٌ ونقطتان تُعاد ترتيبُ مقاطعها بصرياً: «20 Sept 2026,
+   * 11:24» كانت تُطبع «Sept 2026, 11:24 20» — اليومُ يقفز لآخر السطر. وهذا
+   * كان يخرج على **كلّ** وصلِ A4 من هذا القالب. فكلُّ مقطعٍ يُعزل وحدَه. */
+  const dayStr = created.toLocaleDateString("en-GB", { year: "numeric", month: "short", day: "2-digit" });
+  const timeStr = created.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
   const subtotal = invoice.subtotal ?? invoice.total;
   const discount = invoice.discount ?? 0;
   const refunded = invoice.status === "refunded";
@@ -119,10 +136,6 @@ export function buildInvoiceHTML(invoice: Invoice, items: InvoiceItem[], opts: I
   const legLabel = (m: string) => s.pay[m] ?? m;
   // ملاحظة: هذان السطران كانا مسمّيَين معكوسين (نسخة A4 تُحقن بقالب الحراري
   // والعكس) — الأسماء الآن تطابق القالب الذي تُستخدَم فيه فعلاً.
-  const payLinesA4 = isSplitPay
-    ? `<div class="muted">${s.payment}: ${esc(splitLabel)}</div>`
-      + payLegs.map((p) => `<div class="muted">· ${esc(legLabel(p.method))}: ${money(p.amount)}</div>`).join("")
-    : (payLabel ? `<div class="muted">${s.payment}: ${esc(payLabel)}</div>` : "");
   const payLinesThermal = isSplitPay
     ? `<div class="pay"><span>${s.payment}</span><span>${esc(splitLabel)}</span></div>`
       + payLegs.map((p) => `<div class="pay"><span>· ${esc(legLabel(p.method))}</span><span>${money(p.amount)}</span></div>`).join("")
@@ -131,9 +144,6 @@ export function buildInvoiceHTML(invoice: Invoice, items: InvoiceItem[], opts: I
   const amountPaid = invoice.amount_paid != null ? invoice.amount_paid : invoice.total;
   const dueAmt = Math.max(0, Math.round((invoice.total - amountPaid) * 100) / 100);
   const isCreditInv = dueAmt > 0.01 && !refunded;
-  const dueLinesA4 = isCreditInv
-    ? `<div class="muted">${s.paid}: ${money(amountPaid)}</div><div class="muted" style="font-weight:700">${s.due}: ${money(dueAmt)}</div>`
-    : "";
   const dueLinesThermal = isCreditInv
     ? `<div class="pay"><span>${s.paid}</span><span>${money(amountPaid)}</span></div>`
       + `<div class="pay" style="font-weight:800"><span>${s.due}</span><span>${money(dueAmt)}</span></div>`
@@ -158,18 +168,26 @@ export function buildInvoiceHTML(invoice: Invoice, items: InvoiceItem[], opts: I
   // Real, colored brand logos (inline SVG so they print without external assets).
   const FB_ICON = `<svg width="13" height="13" viewBox="0 0 24 24" fill="#1877F2" aria-hidden="true"><path d="M24 12.07C24 5.4 18.63 0 12 0S0 5.4 0 12.07C0 18.1 4.39 23.1 10.13 24v-8.44H7.08v-3.49h3.05V9.41c0-3.02 1.79-4.69 4.53-4.69 1.31 0 2.68.24 2.68.24v2.97h-1.51c-1.49 0-1.96.93-1.96 1.89v2.25h3.33l-.53 3.49h-2.8V24C19.61 23.1 24 18.1 24 12.07z"/></svg>`;
   const IG_ICON = `<svg width="13" height="13" viewBox="0 0 24 24" aria-hidden="true"><defs><linearGradient id="vpig" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="#feda75"/><stop offset=".45" stop-color="#fa7e1e"/><stop offset=".7" stop-color="#d62976"/><stop offset="1" stop-color="#962fbf"/></linearGradient></defs><path fill="url(#vpig)" d="M12 2.16c3.2 0 3.58.01 4.85.07 1.17.05 1.8.25 2.23.41.56.22.96.48 1.38.9.42.42.68.82.9 1.38.16.42.36 1.06.41 2.23.06 1.27.07 1.65.07 4.85s-.01 3.58-.07 4.85c-.05 1.17-.25 1.8-.41 2.23-.22.56-.48.96-.9 1.38-.42.42-.82.68-1.38.9-.42.16-1.06.36-2.23.41-1.27.06-1.65.07-4.85.07s-3.58-.01-4.85-.07c-1.17-.05-1.8-.25-2.23-.41a3.7 3.7 0 0 1-1.38-.9 3.7 3.7 0 0 1-.9-1.38c-.16-.42-.36-1.06-.41-2.23C2.17 15.58 2.16 15.2 2.16 12s.01-3.58.07-4.85c.05-1.17.25-1.8.41-2.23.22-.56.48-.96.9-1.38.42-.42.82-.68 1.38-.9.42-.16 1.06-.36 2.23-.41C8.42 2.17 8.8 2.16 12 2.16M12 0C8.74 0 8.33.01 7.05.07 5.78.13 4.9.33 4.14.63a5.86 5.86 0 0 0-2.12 1.38A5.86 5.86 0 0 0 .63 4.14C.33 4.9.13 5.78.07 7.05.01 8.33 0 8.74 0 12s.01 3.67.07 4.95c.06 1.27.26 2.15.56 2.91.31.79.72 1.46 1.38 2.12.66.66 1.33 1.07 2.12 1.38.76.3 1.64.5 2.91.56C8.33 23.99 8.74 24 12 24s3.67-.01 4.95-.07c1.27-.06 2.15-.26 2.91-.56a5.86 5.86 0 0 0 2.12-1.38 5.86 5.86 0 0 0 1.38-2.12c.3-.76.5-1.64.56-2.91.06-1.28.07-1.69.07-4.95s-.01-3.67-.07-4.95c-.06-1.27-.26-2.15-.56-2.91a5.86 5.86 0 0 0-1.38-2.12A5.86 5.86 0 0 0 19.86.63c-.76-.3-1.64-.5-2.91-.56C15.67.01 15.26 0 12 0z"/><path fill="url(#vpig)" d="M12 5.84A6.16 6.16 0 1 0 18.16 12 6.16 6.16 0 0 0 12 5.84M12 16a4 4 0 1 1 4-4 4 4 0 0 1-4 4z"/><circle fill="url(#vpig)" cx="18.41" cy="5.59" r="1.44"/></svg>`;
-  // A4: colored social logos shown UNDER the phone (in the clinic block).
-  const socialIcons = (fb || ig)
-    ? `<div class="socials">${fb ? `<span class="s">${FB_ICON}<span dir="ltr">${esc(fb)}</span></span>` : ""}${ig ? `<span class="s">${IG_ICON}<span dir="ltr">${esc(ig)}</span></span>` : ""}</div>`
+  /* A4: الهاتفُ والحساباتُ بسطرٍ واحدٍ يتدفّق — كانت ثلاثةَ أسطرٍ مكدّسة
+     تدفع اسمَ العيادة لأعلى الصفحة وتترك فراغاً تحته. */
+  const contactLine = (opts.clinicPhone || fb || ig)
+    ? `<div class="contact">`
+      + (opts.clinicPhone ? `<span class="c">${WA_ICON}${phoneHTML(opts.clinicPhone)}</span>` : "")
+      + (fb ? `<span class="c">${FB_ICON}<span dir="ltr">${esc(fb)}</span></span>` : "")
+      + (ig ? `<span class="c">${IG_ICON}<span dir="ltr">${esc(ig)}</span></span>` : "")
+      + `</div>`
     : "";
   // Thermal: plain text (icons too small to read on a 80mm receipt).
   const socialText = [fb ? `FB ${esc(fb)}` : "", ig ? `IG ${esc(ig)}` : ""].filter(Boolean).join("  ·  ");
 
-  const rows = items
+  /* عمودُ ترقيمٍ بالوصل: «البند الرابع» جملةٌ تُقال بالهاتف، ومراجعةُ فاتورةٍ
+     بعشرين بنداً بلا أرقامٍ تصير عدّاً بالإصبع على الورق. */
+  const rowsA4 = items
     .map(
-      (it) => `<tr>
-        <td class="i-name">${esc(it.name)}${it.barcode ? `<span class="i-bc">${esc(it.barcode)}</span>` : ""}</td>
-        <td class="i-num">${it.qty}</td>
+      (it, i) => `<tr>
+        <td class="i-idx">${ltr(String(i + 1))}</td>
+        <td class="i-name">${esc(it.name)}${it.unit_label ? ` <span style="font-weight:400;color:#93A0B4;font-size:10.5px">(${esc(it.unit_label)})</span>` : ""}${it.barcode ? `<span class="i-bc">${ltr(esc(it.barcode))}</span>` : ""}</td>
+        <td class="i-num">${ltr(String(it.qty))}</td>
         <td class="i-num">${money(it.unit_price)}</td>
         <td class="i-num i-amt">${money(it.line_total)}</td>
       </tr>`,
@@ -276,58 +294,168 @@ export function buildInvoiceHTML(invoice: Invoice, items: InvoiceItem[], opts: I
     .feed { font-size: 9px; line-height: 5.5mm; }
     `
     : `
+    /* ====================================================================
+     * وصلُ A4 — وثيقةٌ تُسلَّم بيدِ زبونٍ وتُحفظ بملفّ العيادة.
+     *
+     * ── ما يحكم التصميم ────────────────────────────────────────────────
+     *  · **الحبرُ يُنفَق حيث يُقرأ**: لا ألواحَ ملوّنةٌ عريضة. لونٌ واحدٌ
+     *    يظهر بشريطٍ رفيعٍ وبكتلة الإجمالي وحدَها — مئةُ وصلٍ باليوم على
+     *    طابعةِ عيادة، والتصميمُ الذي يستنزف الحبر يُستبدَل بعد أسبوع.
+     *  · **الهرمُ بالحجم والفراغ لا بالخطوط**: خطوطٌ شعريّة (١px) وفواصلُ
+     *    بيضاء — الجداولُ المحاطة بالصناديق تبدو كشيتِ إكسل مطبوع.
+     *  · **الأرقامُ تصطفّ**: \`tabular-nums\` بكلّ عمودٍ رقميّ، وإلا تراقصت
+     *    خانةُ الآلاف بين السطور ولم يُمكن جمعُها بالعين.
+     *  · **وما لا يُعرف لا يُطبع**: كلُّ كتلةٍ مشروطةٌ بوجود بياناتها، فلا
+     *    عناوينُ فارغةٌ ولا «—» بوثيقةٍ رسمية.
+     *
+     * ── وقاعدةُ الاتجاه ────────────────────────────────────────────────
+     * المستندُ عربيٌّ (rtl) وكلُّ رقمٍ وتاريخٍ وهاتفٍ مقطعٌ لاتينيّ معزول.
+     * بلا العزل ينقلب «20 Sept 2026» إلى «Sept 2026, 11:24 20» — وهذا كان
+     * يُطبع فعلاً على كلّ وصلٍ من هذا القالب.
+     * ==================================================================== */
     * { box-sizing: border-box; }
     html, body { margin: 0; padding: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; color-adjust: exact; }
-    body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; color: #0f172a; font-size: 13px; line-height: 1.5; padding: 16mm 14mm; position: relative; min-height: 255mm; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-    .sheet { max-width: 720px; margin: 0 auto; position: relative; z-index: 1; }
-    /* Faint, decolorised logo watermark centered on the page. position:absolute
-       (anchored to the page-filling body) prints reliably across browsers — unlike
-       position:fixed, which Chrome/Firefox/Safari render inconsistently in print.
-       color-adjust:exact on every ancestor + the img is what forces it to survive
-       printing with the browser's "Background graphics" option turned off. */
+    :root {
+      --ink: #0B1220; --ink2: #47546A; --ink3: #93A0B4;
+      --line: #E4E9F0; --line2: #CFD8E4;
+      --acc: #0E5FD8; --acc-soft: #EFF5FF;
+      --due: #B45309; --due-soft: #FFF7EC;
+      --bad: #B91C1C;
+    }
+    body {
+      font-family: "Segoe UI", "Noto Sans Arabic", "Dubai", Tahoma, system-ui, -apple-system, sans-serif;
+      color: var(--ink); font-size: 12.5px; line-height: 1.55;
+      padding: 13mm 13mm 16mm; position: relative; min-height: 268mm;
+      font-variant-numeric: tabular-nums; font-feature-settings: "tnum" 1, "lnum" 1;
+      display: flex; flex-direction: column;
+    }
+    /* التوقيعُ والذيلُ يهبطان لقاع **الورقة** لا لقاع النصّ.
+       فاتورةٌ بثلاثة بنودٍ كانت تترك نصفَ الصفحة بياضاً ثم تضع خطَّ التوقيع
+       بوسطها — وهذا ما يجعل مستنداً يبدو صفحةَ وِبٍ مطبوعة لا وثيقة. */
+    .sheet { position: relative; z-index: 1; display: flex; flex-direction: column; flex: 1 1 auto; }
+    .grow { flex: 1 1 auto; min-height: 10mm; }
+    .num { direction: ltr; unicode-bidi: isolate; white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+    /* علامةٌ مائيّة باهتة — تبقى تحت كلّ شيء ولا تزاحم النصّ. */
     .watermark { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; z-index: 0; pointer-events: none; overflow: hidden; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-    .watermark img { width: 92%; max-width: 660px; filter: grayscale(100%); opacity: 0.14; transform: scale(1.85); -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-    /* Reassert the watermark in the print path — some browsers drop low-opacity
-       decorative images unless the print rules explicitly opt back in. */
+    /* ختمٌ باهتٌ لا لوحةٌ خلفية: بعرضٍ كبيرٍ وشكلٍ مصمت كان يمرّ **خلف جدول
+       البنود** فيُقرأ الرقمُ على رماديّ. صار صغيراً وأسفلَ الصفحة حيث الفراغ. */
+    .watermark { align-items: flex-end; padding-bottom: 34mm; }
+    .watermark img { width: 34%; max-width: 230px; filter: grayscale(100%); opacity: .045; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     @media print {
       html, body { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
       .watermark { display: flex !important; }
-      .watermark img { opacity: 0.14 !important; filter: grayscale(100%) !important; }
+      .watermark img { opacity: .045 !important; filter: grayscale(100%) !important; }
     }
-    /* Logo sits in the MIDDLE of the header row (clinic info → its right, invoice → its left). */
-    .logo-mid { text-align: center; }
-    .logo-mid img { max-height: 120px; max-width: 240px; object-fit: contain; }
-    .socials { margin-top: 7px; display: flex; flex-direction: column; gap: 3px; font-size: 11px; color: #475569; }
-    .socials .s { display: inline-flex; align-items: center; gap: 6px; }
-    .socials svg { flex: 0 0 auto; }
-    /* Page footers pinned to the very bottom: website (left) + page number (right). */
-    .page-footer { position: absolute; bottom: 8mm; left: 14mm; font-size: 11px; letter-spacing: .5px; color: #64748b; direction: ltr; z-index: 1; }
-    .page-num { position: absolute; bottom: 8mm; right: 14mm; font-size: 11px; letter-spacing: .5px; color: #64748b; direction: ltr; z-index: 1; }
-    .top { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 16px; border-bottom: 3px solid #1266d8; padding-bottom: 16px; }
-    .party { min-width: 0; }
-    .party.end { text-align: end; }
-    .brand { font-size: 11px; font-weight: 800; letter-spacing: 2px; text-transform: uppercase; color: #1266d8; margin-bottom: 2px; }
-    .clinic { font-size: 22px; font-weight: 800; color: #0b1220; letter-spacing: -.3px; }
-    .muted { color: #64748b; font-size: 12px; }
-    .doc-title { font-size: 26px; font-weight: 800; color: #1266d8; letter-spacing: 1px; }
-    .doc-no { font-size: 12px; color: #475569; margin-top: 2px; }
-    .grid { display: flex; justify-content: space-between; gap: 24px; margin: 20px 0; }
-    .grid h4 { margin: 0 0 4px; font-size: 10px; text-transform: uppercase; letter-spacing: .6px; color: #94a3b8; }
-    .grid .v { font-weight: 600; }
-    table { width: 100%; border-collapse: collapse; margin-top: 8px; }
-    thead th { background: #f1f5f9; color: #475569; font-size: 11px; text-transform: uppercase; letter-spacing: .4px; text-align: start; padding: 9px 12px; }
+
+    /* ── الترويسة ─────────────────────────────────────────────────────── */
+    .masthead { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
+    .who { display: flex; align-items: center; gap: 13px; min-width: 0; }
+    .who img { height: 58px; width: 58px; object-fit: contain; flex: 0 0 auto; }
+    .brand { font-size: 8.5px; font-weight: 800; letter-spacing: 2.6px; text-transform: uppercase; color: var(--acc); }
+    .clinic { margin: 1px 0 0; font-size: 21px; font-weight: 800; letter-spacing: -.35px; line-height: 1.2; }
+    .contact { margin-top: 5px; display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 11px; color: var(--ink2); }
+    .contact .c { display: inline-flex; align-items: center; gap: 5px; }
+    .contact svg { flex: 0 0 auto; }
+
+    /* بطاقةُ المستند: النوعُ والرقمُ والوقت — تُقرأ قبل أيّ شيءٍ آخر. */
+    .doc { flex: 0 0 auto; text-align: end; }
+    .doc-kind { font-size: 25px; font-weight: 800; letter-spacing: .5px; color: var(--acc); line-height: 1.1; }
+    .doc-no { margin-top: 3px; font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+              font-size: 12px; font-weight: 700; color: var(--ink); letter-spacing: .6px; }
+    .doc-when { margin-top: 5px; font-size: 11px; color: var(--ink2); }
+
+    /* الشريطُ الملوّن: كلُّ الهويّة البصريّة بأربعة ملّيمترات من الحبر. */
+    .spine { margin-top: 11px; height: 3px; background: var(--acc); border-radius: 2px; }
+    .spine-sub { height: 1px; background: var(--line); margin-top: 2px; }
+
+    /* ── شارات الحالة ─────────────────────────────────────────────────── */
+    .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 11px; }
+    .chip { display: inline-flex; align-items: center; gap: 5px; border: 1px solid var(--line2);
+            border-radius: 999px; padding: 2.5px 11px; font-size: 10.5px; font-weight: 700; color: var(--ink2); }
+    .chip.acc { border-color: #BBD3F7; background: var(--acc-soft); color: #0B47A6; }
+    .chip.ok  { border-color: #A7D9CF; background: #EFFAF7; color: #0F766E; }
+    .chip.due { border-color: #F0D5A8; background: var(--due-soft); color: var(--due); }
+    .chip.bad { border-color: #F3C4C4; background: #FEF2F2; color: var(--bad); }
+
+    /* ── شريطُ المعلومات: خلايا مفصولةٌ بخطٍّ شعريّ ────────────────────── */
+    .meta { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 0;
+            margin-top: 13px; border: 1px solid var(--line); border-radius: 9px; overflow: hidden; }
+    .meta .cell { padding: 8px 12px; border-inline-start: 1px solid var(--line); min-width: 0; }
+    .meta .cell:first-child { border-inline-start: 0; }
+    .meta .k { font-size: 9px; font-weight: 700; letter-spacing: .8px; text-transform: uppercase; color: var(--ink3); }
+    .meta .v { margin-top: 2px; font-size: 12.5px; font-weight: 700; overflow-wrap: anywhere; }
+    .meta .v2 { font-size: 11px; font-weight: 400; color: var(--ink2); }
+
+    /* ── جدولُ البنود ─────────────────────────────────────────────────── */
+    table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+    /* تكرارُ الرأس بالصفحة الثانية: فاتورةٌ بعشرين بنداً تُقلب فيضيع معنى الأعمدة. */
+    thead { display: table-header-group; }
+    thead th { background: #F7F9FC; color: var(--ink2); font-size: 9.5px; font-weight: 800;
+               letter-spacing: .8px; text-transform: uppercase; text-align: start;
+               padding: 8px 11px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line2); }
     thead th.i-num { text-align: end; }
-    tbody td { padding: 10px 12px; border-bottom: 1px solid #e8edf3; }
+    thead th.i-idx { width: 30px; text-align: center; }
+    tbody tr { break-inside: avoid; page-break-inside: avoid; }
+    tbody td { padding: 9px 11px; border-bottom: 1px solid var(--line); vertical-align: top; }
+    .i-idx { text-align: center; color: var(--ink3); font-size: 11px; }
     .i-num { text-align: end; white-space: nowrap; }
-    .i-amt { font-weight: 700; }
-    .i-name { font-weight: 600; }
-    .i-bc { display: block; font-size: 10px; color: #94a3b8; font-family: ui-monospace, monospace; font-weight: 400; }
-    .totals { margin-top: 16px; margin-inline-start: auto; width: 280px; }
-    .totals .row { display: flex; justify-content: space-between; padding: 5px 0; color: #475569; }
-    .totals .grand { font-size: 18px; font-weight: 800; color: #0b1220; border-top: 2px solid #0b1220; margin-top: 6px; padding-top: 8px; }
-    .disc { color: #16a34a; }
-    .foot { margin-top: 28px; text-align: center; color: #64748b; border-top: 1px solid #e8edf3; padding-top: 14px; }
-    .badge { display: inline-block; font-weight: 800; color: #dc2626; border: 2px solid #dc2626; border-radius: 8px; padding: 4px 12px; letter-spacing: 2px; transform: rotate(-3deg); }
+    .i-name { font-weight: 600; overflow-wrap: anywhere; }
+    .i-bc { display: block; margin-top: 1px; font-size: 9.5px; color: var(--ink3);
+            font-family: ui-monospace, Menlo, Consolas, monospace; font-weight: 400; letter-spacing: .4px; }
+    .i-amt { font-weight: 800; }
+
+    /* ── الخاتمة: يسارٌ يشرح ويمينٌ يحسب ──────────────────────────────── */
+    .close { display: flex; gap: 20px; margin-top: 16px; align-items: flex-start; break-inside: avoid; page-break-inside: avoid; }
+    .close-a { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+    .close-b { flex: 0 0 272px; }
+
+    .paybox { border: 1px solid var(--line); border-radius: 9px; padding: 9px 12px; }
+    .paybox .k { font-size: 9px; font-weight: 700; letter-spacing: .8px; text-transform: uppercase; color: var(--ink3); }
+    .paylegs { margin-top: 5px; display: flex; flex-wrap: wrap; gap: 5px 7px; }
+    .leg { display: inline-flex; align-items: baseline; gap: 6px; border: 1px solid var(--line);
+           border-radius: 7px; padding: 3px 9px; font-size: 11px; }
+    .leg b { font-weight: 800; }
+
+    .note { border: 1px solid var(--line); border-inline-start: 3px solid var(--acc);
+            border-radius: 8px; padding: 8px 11px; font-size: 11.5px; line-height: 1.55; white-space: pre-wrap; }
+    .note b { display: block; font-size: 9px; letter-spacing: .8px; text-transform: uppercase; color: var(--ink3); font-weight: 700; margin-bottom: 2px; }
+
+    .qrbox { display: flex; align-items: center; gap: 10px; border: 1px solid var(--line); border-radius: 9px; padding: 9px 12px; }
+    .qrbox img { width: 62px; height: 62px; flex: 0 0 auto; image-rendering: pixelated; }
+    .qrbox .t { font-size: 11.5px; font-weight: 700; line-height: 1.4; }
+    .qrbox .u { font-size: 10px; color: var(--ink3); margin-top: 2px; }
+
+    /* لوحُ المجاميع */
+    .tot { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+    .tot .r { display: flex; justify-content: space-between; align-items: baseline; gap: 12px;
+              padding: 6px 13px; font-size: 12px; color: var(--ink2); }
+    .tot .r + .r { border-top: 1px solid #F0F3F8; }
+    .tot .r.disc { color: #0F766E; }
+    .tot .grand { background: var(--acc); color: #fff; padding: 11px 13px; display: flex;
+                  justify-content: space-between; align-items: baseline; gap: 12px; }
+    .tot .grand .l { font-size: 12.5px; font-weight: 700; letter-spacing: .4px; opacity: .92; }
+    .tot .grand .v { font-size: 20px; font-weight: 800; letter-spacing: -.3px; }
+    .tot .after { border-top: 1px solid var(--line); }
+    /* المتبقّي — الرقمُ الذي يعود الزبونُ لأجله. لا يُدفن برماديٍّ صغير. */
+    .tot .due { background: var(--due-soft); color: var(--due); padding: 9px 13px; display: flex;
+                justify-content: space-between; align-items: baseline; gap: 12px; border-top: 1px solid #F0D5A8; }
+    .tot .due .l { font-size: 12px; font-weight: 800; }
+    .tot .due .v { font-size: 16px; font-weight: 800; }
+
+    /* ── التوقيع والختم ───────────────────────────────────────────────── */
+    .sign { display: flex; gap: 34px; margin-top: 20px; break-inside: avoid; }
+    .sign .s { flex: 1 1 0; }
+    .sign .line { border-bottom: 1px dashed var(--line2); height: 26px; }
+    .sign .cap { margin-top: 4px; font-size: 10px; color: var(--ink3); letter-spacing: .3px; }
+
+    /* ── الذيل ────────────────────────────────────────────────────────── */
+    .foot { margin-top: 18px; padding-top: 10px; border-top: 1px solid var(--line);
+            display: flex; justify-content: space-between; align-items: center; gap: 12px;
+            font-size: 10.5px; color: var(--ink3); }
+    .foot .thanks { font-size: 11.5px; font-weight: 700; color: var(--ink2); }
+    .stamp { display: inline-block; font-weight: 800; color: var(--bad); border: 2px solid var(--bad);
+             border-radius: 8px; padding: 3px 12px; letter-spacing: 2px; font-size: 12px; }
     `;
 
   /* بنود الإيصال الحراري: سطر للاسم وسطر «الكمية × السعر …… الإجمالي». */
@@ -395,54 +523,96 @@ export function buildInvoiceHTML(invoice: Invoice, items: InvoiceItem[], opts: I
     `
     : `
     ${logo ? `<div class="watermark"><img src="${logo}" alt=""/></div>` : ""}
-    <div class="page-footer">${WEBSITE}</div>
-    <div class="page-num" data-page-num>1 / 1</div>
     <div class="sheet">
-      <div class="top">
-        <div class="party">
-          <div class="brand">${brand}</div>
-          <div class="clinic">${esc(opts.clinicName)}</div>
-          ${opts.clinicPhone ? `<div class="muted">${waPhone(opts.clinicPhone)}</div>` : ""}
-          ${socialIcons}
+
+      <header class="masthead">
+        <div class="who">
+          ${logo ? `<img src="${logo}" alt=""/>` : ""}
+          <div style="min-width:0">
+            <div class="brand">${brand}</div>
+            <h1 class="clinic">${esc(opts.clinicName)}</h1>
+            ${contactLine}
+          </div>
         </div>
-        ${logo ? `<div class="logo-mid"><img src="${logo}" alt="logo"/></div>` : `<div></div>`}
-        <div class="party end">
-          <div class="doc-title">${s.invoice}</div>
-          ${preSale ? `<div style="margin-top:6px"><span class="badge" style="transform:none;font-size:11px">${s.preSale}</span></div>` : `<div class="doc-no">${esc(invoiceNo(invoice.id))}</div>`}
-          ${opts.printNo && opts.printNo > 1 ? `<div class="doc-no">${s.printNo} #${opts.printNo}</div>` : ""}
+        <div class="doc">
+          <div class="doc-kind">${preSale ? s.preSaleShort : s.receipt}</div>
+          ${preSale ? "" : `<div class="doc-no">${ltr(esc(invoiceNo(invoice.id)))}</div>`}
+          <div class="doc-when">${ltr(esc(`${dayStr} \u00b7 ${timeStr}`))}</div>
         </div>
+      </header>
+      <div class="spine"></div><div class="spine-sub"></div>
+
+      <div class="chips">
+        ${preSale ? `<span class="chip bad">${s.preSale}</span>` : ""}
+        ${refunded ? `<span class="chip bad">${s.refunded}</span>` : ""}
+        ${!preSale && !refunded ? `<span class="chip ${isCreditInv ? "due" : "ok"}">${isCreditInv ? s.partly : s.settled}</span>` : ""}
+        ${payLabel && !isSplitPay ? `<span class="chip">${esc(payLabel)}</span>` : ""}
+        ${isSplitPay ? `<span class="chip">${esc(splitLabel)}</span>` : ""}
+        ${opts.printNo && opts.printNo > 1 ? `<span class="chip">${s.printNo} ${ltr(`#${opts.printNo}`)}</span>` : ""}
       </div>
 
-      <div class="grid">
-        <div>
-          <h4>${s.billedTo}</h4>
+      <section class="meta">
+        <div class="cell">
+          <div class="k">${s.billedTo}</div>
           <div class="v">${esc(invoice.customer_name || s.walkIn)}</div>
-          ${invoice.pet_name ? `<div class="muted">${s.pet}: ${esc(invoice.pet_name)}</div>` : ""}
-          ${invoice.customer_phone ? `<div class="muted">${waPhone(invoice.customer_phone)}</div>` : ""}
+          ${invoice.customer_phone ? `<div class="v2">${phoneHTML(invoice.customer_phone)}</div>` : ""}
         </div>
-        <div style="text-align:end">
-          <h4>${s.date}</h4>
-          <div class="v">${esc(dateStr)}</div>
-          ${opts.sellerName ? `<div class="muted">${s.seller}: ${esc(opts.sellerName)}</div>` : ""}
-          ${payLinesA4}
-          ${dueLinesA4}
-          ${refunded ? `<div style="margin-top:8px"><span class="badge">${s.refunded}</span></div>` : ""}
+        ${invoice.pet_name ? `<div class="cell"><div class="k">${s.pet}</div><div class="v">${esc(invoice.pet_name)}</div></div>` : ""}
+        <div class="cell">
+          <div class="k">${s.date}</div>
+          <div class="v">${ltr(esc(dayStr))}</div>
+          <div class="v2">${ltr(esc(timeStr))}</div>
         </div>
-      </div>
+        ${opts.sellerName ? `<div class="cell"><div class="k">${s.seller}</div><div class="v">${esc(opts.sellerName)}</div></div>` : ""}
+      </section>
 
       <table>
-        <thead><tr><th>${s.item}</th><th class="i-num">${s.qty}</th><th class="i-num">${s.price}</th><th class="i-num">${s.amount}</th></tr></thead>
-        <tbody>${rows}</tbody>
+        <thead><tr>
+          <th class="i-idx">#</th><th>${s.item}</th>
+          <th class="i-num">${s.qty}</th><th class="i-num">${s.price}</th><th class="i-num">${s.amount}</th>
+        </tr></thead>
+        <tbody>${rowsA4}</tbody>
       </table>
 
-      <div class="totals">
-        ${discount > 0 ? `<div class="row"><span>${s.subtotal}</span><span>${money(subtotal)}</span></div><div class="row disc"><span>${s.discount}</span><span>${moneyNeg(discount)}</span></div>` : ""}
-        <div class="row grand"><span>${s.total}</span><span>${money(invoice.total)}</span></div>
+      <section class="close">
+        <div class="close-a">
+          ${isSplitPay || payLabel ? `<div class="paybox">
+            <div class="k">${s.payment}</div>
+            <div class="paylegs">${
+              isSplitPay
+                ? payLegs.map((pl) => `<span class="leg">${esc(legLabel(pl.method))} <b>${money(pl.amount)}</b></span>`).join("")
+                : `<span class="leg">${esc(payLabel)} <b>${money(amountPaid)}</b></span>`
+            }</div>
+          </div>` : ""}
+          ${invoice.notes ? `<div class="note"><b>${s.notes}</b>${esc(invoice.notes)}</div>` : ""}
+          ${opts.qrDataUrl ? `<div class="qrbox">
+            <img src="${esc(opts.qrDataUrl)}" alt=""/>
+            <div><div class="t">${opts.storeUrl ? s.scanStore : s.scanUs}</div><div class="u">${WEBSITE}</div></div>
+          </div>` : ""}
+        </div>
+
+        <div class="close-b">
+          <div class="tot">
+            ${discount > 0 ? `<div class="r"><span>${s.subtotal}</span><span>${money(subtotal)}</span></div>
+              <div class="r disc"><span>${s.discount}</span><span>${moneyNeg(discount)}</span></div>` : ""}
+            <div class="grand"><span class="l">${s.total}</span><span class="v">${money(invoice.total)}</span></div>
+            ${isCreditInv ? `<div class="r after"><span>${s.paid}</span><span>${money(amountPaid)}</span></div>
+              <div class="due"><span class="l">${s.due}</span><span class="v">${money(dueAmt)}</span></div>` : ""}
+          </div>
+        </div>
+      </section>
+
+      <div class="grow"></div>
+
+      <section class="sign">
+        <div class="s"><div class="line"></div><div class="cap">${s.sigCustomer}</div></div>
+        <div class="s"><div class="line"></div><div class="cap">${s.sigClinic}</div></div>
+      </section>
+
+      <div class="foot">
+        <span class="thanks">${s.thanks}</span>
+        <span>${ltr(esc(WEBSITE))}${preSale ? "" : ` · ${ltr(esc(invoiceNo(invoice.id)))}`}</span>
       </div>
-
-      ${invoice.notes ? `<div style="margin-top:10px;padding:8px 10px;border:1px solid #e5e7eb;border-radius:8px;font-size:12px;line-height:1.5;white-space:pre-wrap;text-align:start"><strong>${s.notes}:</strong> ${esc(invoice.notes)}</div>` : ""}
-
-      <div class="foot">${s.thanks}</div>
     </div>
     `;
 
@@ -454,11 +624,17 @@ export function buildInvoiceHTML(invoice: Invoice, items: InvoiceItem[], opts: I
     </body></html>`;
 }
 
-/* تجهيز أصول الإيصال الحراري: شعار ثنائي اللون + رمز QR للتواصل.
+/* تجهيز أصول الطباعة: رمزُ QR للنسختَين، وشعارٌ ثنائي اللون للحراريّ وحدَه.
+ *
+ * **والـQR كان للحراريّ فقط.** وترويسةُ هذا الملفّ تقول إنّ القسيمةَ أوسعُ
+ * سطحِ انتشارٍ للمتجر بفارقٍ مقيس (١١٩٧ فاتورةً بسبعة أيام) — وكلُّ فاتورةِ
+ * A4 كانت تخرج بلا ذلك السطح، وهي التي تُسلَّم بيدٍ وتُحفظ بملفّ. فصار
+ * الرمزُ للنسختين، والشعارُ المونوكرومُ للحراريّ وحدَه (رأسُه ثنائيّ).
+ *
  * الفشل هنا لا يمنع الطباعة أبداً — نطبع بلا الأصل الذي تعذّر. */
-async function thermalAssets(opts: InvoicePrintOptions): Promise<Partial<InvoicePrintOptions>> {
+async function printAssets(opts: InvoicePrintOptions): Promise<Partial<InvoicePrintOptions>> {
   const out: Partial<InvoicePrintOptions> = {};
-  if (opts.logoUrl) {
+  if (opts.format === "thermal" && opts.logoUrl) {
     try {
       const { toThermalMono } = await import("@/lib/image");
       out.logoUrl = await toThermalMono(opts.logoUrl);
@@ -490,7 +666,7 @@ export async function openInvoicePrint(invoice: Invoice, items: InvoiceItem[], o
   try {
     w.document.write('<!doctype html><meta charset="utf-8"><body style="font:14px system-ui;padding:2rem;text-align:center;color:#475569">…</body>');
   } catch { /* بعض المتصفحات تمنع الكتابة المبكرة — نكمل عادي */ }
-  const extra = opts.format === "thermal" ? await thermalAssets(opts) : {};
+  const extra = await printAssets(opts);
   const html = buildInvoiceHTML(invoice, items, { ...opts, ...extra });
   w.document.open();
   w.document.write(html);
