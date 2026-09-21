@@ -416,9 +416,15 @@ console.log("▸ الدفعة ٦ — المعروضُ هو المحسوب");
   check("  ولا toLowerCase خامٌّ بقي بهذه المواضع",
     !inv2.includes("companies.filter((c) => c.name.toLowerCase().includes(ql))")
     && !pur.includes('(p.company_name ?? "").toLowerCase().includes(ql)'));
-  check("  ومفتاحُ اسم الشركة يبني على searchable بالنسختين",
-    (inv2.split("const normKey = (s: string) => searchable(normName(s))").length - 1) === 1
-    && (pur.split("const normKey = (s: string) => searchable(normName(s))").length - 1) === 1);
+  /* كان هذا يشترط **تعريفاً محلّياً** لـ`normKey` بكلّ شاشة — وهو بعينه ما
+     سمح للانحدار: وُسّع أحدُ التعريفين ولم يُوسَّع الآخر، ثم قُورن المفتاحُ
+     المطبَّع بطرفٍ خام، فتكرّرت ١٠٢ شركةٍ من ١٤٣. الشرطُ انقلب: **لا تعريفَ
+     محلّياً**، والمفتاحُ مستوردٌ واحدٌ من `utils` (ويحرسه group-key-parity). */
+  check("  ومفتاحُ اسم الشركة مستوردٌ واحدٌ لا نسخةٌ بكلّ شاشة",
+    inv2.includes("const normKey = groupKey;") && pur.includes("const normKey = groupKey;")
+    && !inv2.includes("const normKey = (s: string) =>") && !pur.includes("const normKey = (s: string) =>"));
+  check("  والطرفان يمرّان منه عند المقارنة (لا toLowerCase خامّ)",
+    !/const key = \w+\.toLowerCase\(\)/.test(inv2) && !/const key = \w+\.toLowerCase\(\)/.test(pur));
 
   const { searchable } = await import(
     "data:text/javascript;base64," + Buffer.from((await esbuild.build({

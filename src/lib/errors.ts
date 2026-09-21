@@ -87,6 +87,16 @@ export function describeDbError(e: unknown, t: TFunction): string {
   // يُقال بالاسم حتى لا يعيد الكاشير المحاولةَ عشر مرّات على شيءٍ لن ينجح.
   // دالّةُ الاستدعاء غائبة (ع١٠): خطأُ إعدادٍ بالقاعدة لا خطأُ مسحة — يُقال
   // بالاسم كي لا تستنتج العيادةُ «المادّة مو موجودة» فتعيد إدخالها.
+  /* اسمُ شركةٍ أو صنفٍ مكرّر (0196/0197). المطابقةُ على النصّ لأن المصدرَين
+     اثنان: محفّزُ القاعدة، ومرآتُه بالنسخة التجريبية — ويحملان نفسَ الاسم.
+     والرسالةُ تقول **ماذا يفعل** («افتحها») لا «فشل»: الجذرُ المقيس كان ١٠٢
+     شركةٍ مكرّرة لأن أحداً لم يُقَل له إنّ الشركةَ موجودةٌ أصلاً. */
+  if (typeof err.message === "string" && err.message.includes("company_section_twin_name")) {
+    return t("errors.companySectionTwin", "أكو صنف بنفس الاسم داخل هذه الشركة.");
+  }
+  if (typeof err.message === "string" && err.message.includes("company_twin_name")) {
+    return t("errors.companyTwin", "أكو شركة بنفس الاسم — افتحها بدل ما تسوّي وحدة ثانية.");
+  }
   if (typeof err.message === "string" && err.message.includes("lookup_fn_missing")) {
     return t("errors.lookupFnMissing", "خللٌ بإعدادات القاعدة — دالّةُ استدعاء الباركود ناقصة. المادّةُ ما زالت بمخزنك؛ لا تعِد إدخالها. أبلغ الدعم بهذا النص: product_by_code.");
   }

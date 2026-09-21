@@ -12,7 +12,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Modal } from "@/components/Modal";
 import { Combobox } from "@/components/Combobox";
 import { Button, Badge, useToast, Skeleton } from "@/components/ui";
-import { cn, money, formatDate, localISO, normalizeAr, normalizeCode, matchCode, searchable } from "@/lib/utils";
+import { cn, money, formatDate, localISO, normalizeAr, normalizeCode, matchCode, searchable, groupKey, normGroupName } from "@/lib/utils";
 import { withTimeout, describeDbError } from "@/lib/errors";
 import { codeIndex, excelArtifact, looksLayoutMangled, rescueScan, matchTruncatedCode, stripAim } from "@/lib/productCodes";
 import { createScanAssembler } from "@/lib/scanBuffer";
@@ -24,9 +24,11 @@ import { getClinicLogo, getClinicSocials, getClinicName } from "@/lib/settings";
 import { Printer } from "lucide-react";
 
 /** Canonical company-name helpers (kept in sync with Inventory.tsx). */
-const normName = (s: string) => s.trim().replace(/\s+/g, " ").normalize("NFC");
+/* مستوردان من `@/lib/utils` — نسخةٌ محلّيةٌ ثانية هي ما جعل توسيعَ أحدهما
+ * لا يصل الآخر. راجع رأس `groupKey`. */
+const normName = normGroupName;
 /** ونفسُ المفتاح حرفاً بحرف — نسختان تفترقان تجمعان فواتيرَ شركةٍ بمجموعتين. */
-const normKey = (s: string) => searchable(normName(s)).replace(/\s+/g, " ").trim();
+const normKey = groupKey;
 
 const CATEGORY_KEYS: ProductCategory[] = ["medicine", "food", "accessories", "consumables", "other"];
 const PAY_METHODS: PaymentMethod[] = ["cash", "card", "transfer"];
@@ -699,7 +701,8 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
   const companySections = useMemo(() => {
     const key = normKey(normName(company));
     if (!key) return [] as CompanySection[];
-    const co = companies.find((c) => normKey(c.name) === key);
+    /* ومعها ما صُنع بهذه الجلسة: شركةٌ أُنشئت تواً كانت تظهر بلا أصناف. */
+    const co = [...companies, ...createdRef.current].find((c) => normKey(c.name) === key);
     return co ? (sections ?? []).filter((x) => x.company_id === co.id) : [];
   }, [company, companies, sections]);
 
@@ -718,12 +721,18 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
   const resolveCompanyId = async (): Promise<{ id: string | null; created: Company | null; name: string }> => {
     const typed = normName(company);
     if (!typed) return { id: null, created: null, name: "" };
-    const key = typed.toLowerCase();
+    /* **الطرفان من نفس الدالّة** — نفسُ عطب شاشة المخزون حرفياً، وهذا المسارُ
+       الثاني الذي كان يولّد شركاتٍ توائمَ عند حفظ فاتورة شراء. */
+    const key = normKey(typed);
     const existing = [...companies, ...createdRef.current].find((c) => normKey(c.name) === key);
     if (existing) return { id: existing.id, created: null, name: existing.name };
-    const created = await repo.createCompany({ name: typed, note: null, clinic_id: clinicId ?? null });
-    createdRef.current.push(created);
-    return { id: created.id, created, name: created.name };
+    /* بحثٌ بالخادم ثم إنشاء — نفسُ سبب شاشة المخزون: قائمةُ المتصفّح قد تكون
+       قديمة. ولا يُعدّ «منشأً» (فيُتراجع عنه) إلا ما وُلد تواً. */
+    const co = await repo.ensureCompany(typed, clinicId ?? null);
+    const isNew = !companies.some((c) => c.id === co.id)
+      && !!co.created_at && Date.now() - new Date(co.created_at).getTime() < 15_000;
+    if (!companies.some((c) => c.id === co.id)) createdRef.current.push(co);
+    return { id: co.id, created: isNew ? co : null, name: co.name };
   };
 
   const save = async () => {

@@ -419,7 +419,9 @@
     },
     "noRowUpdated": "The change was not saved — the server did not find this row in your clinic, or refused the edit (your role, or it was deleted/changed on another device). Refresh and try again; if you entered a clinic from the platform console, make sure you are still in the same clinic.",
     "policyRecursion": "Database configuration fault (table policy) — the change was not saved and retrying will not help. Report this code to support: 42P17.",
-    "lookupFnMissing": "A database configuration problem — the barcode lookup function is missing. Your item is still in stock; do not re-enter it. Report this to support: product_by_code."
+    "lookupFnMissing": "A database configuration problem — the barcode lookup function is missing. Your item is still in stock; do not re-enter it. Report this to support: product_by_code.",
+    "companyTwin": "A company with this name already exists — open it instead of creating another.",
+    "companySectionTwin": "A section with this name already exists in this company."
   },
   "nav": {
     "dashboard": "Dashboard",

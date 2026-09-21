@@ -95,7 +95,7 @@ import { isValidSlug, normalizeSlug, matchSlug, slugKey, demoOrderNo, productIma
 import { expenseMethodOf } from "./pockets";
 import { journeyToken, OWNER_REACTIONS } from "./journey";
 import { getClinicName, getClinicLogo, getClinicSocials } from "./settings";
-import { uid, uuid, ageMonths, localISO, normalizeCode, matchCode } from "./utils";
+import { uid, uuid, ageMonths, localISO, normalizeCode, matchCode, groupKey, normGroupName } from "./utils";
 import { scanVariants } from "./productCodes";
 import { phoneKey } from "./phone";
 import { loadOwners } from "./owners";
@@ -2292,13 +2292,31 @@ const demoRepo = {
   async listCompanies(_clinicId?: string): Promise<Company[]> {
     return (loadDB().companies ?? []).slice().sort((a, b) => a.name.localeCompare(b.name));
   },
+  /* **التجريبيُّ يفرض حارسَ الخادم نفسَه.** حارسٌ لا يوجد هنا حارسٌ لم يُفحص،
+   * لأن فحوصَ المنطق تجري على هذه النسخة. ومفتاحُ المقارنة `groupKey` — نفسُه
+   * بالشاشتين وبالقاعدة (`inv_norm_group`، 0196). */
   async createCompany(input: Omit<Company, "id" | "created_at">): Promise<Company> {
     const db = loadDB();
     if (!db.companies) db.companies = [];
+    const key = groupKey(input.name);
+    if (key && db.companies.some((c) => groupKey(c.name) === key)) {
+      /* الرسالةُ من كتالوج `errors.c.*` كبقيّة القيود، لا نصّاً هنا: الشاشةُ
+         تترجمها بـ`describeDbError`، ومرآةُ الخادم تحمل نفسَ الاسم. */
+      throw new Error("company_twin_name");
+    }
     const c: Company = { ...input, id: uid("co"), created_at: new Date().toISOString() };
     db.companies.push(c);
     saveDB(db);
     return c;
+  },
+  /** ابحث ثم أنشئ — **نداءٌ واحد**. المسارُ الذي تستعمله شاشتا المخزون والشراء:
+   *  بحثٌ بمفتاحٍ مطبَّعٍ على الطرفين، فلا يولد توأمٌ ولو تكرّر الضغط. */
+  async ensureCompany(name: string, clinicId?: string | null): Promise<Company> {
+    const key = groupKey(name);
+    const db = loadDB();
+    const hit = (db.companies ?? []).find((c) => groupKey(c.name) === key);
+    if (hit) return hit;
+    return this.createCompany({ name: normGroupName(name), note: null, clinic_id: clinicId ?? null } as Omit<Company, "id" | "created_at">);
   },
   async updateCompany(id: string, patch: Partial<Company>): Promise<Company | undefined> {
     const db = loadDB();
@@ -2330,10 +2348,21 @@ const demoRepo = {
   async createCompanySection(input: Omit<CompanySection, "id" | "created_at">): Promise<CompanySection> {
     const db = loadDB();
     if (!db.companySections) db.companySections = [];
+    const key = groupKey(input.name);
+    if (key && (db.companySections ?? []).some((x) => x.company_id === input.company_id && groupKey(x.name) === key)) {
+      throw new Error("company_section_twin_name");
+    }
     const s: CompanySection = { ...input, id: uid("sec"), created_at: new Date().toISOString() };
     db.companySections.push(s);
     saveDB(db);
     return s;
+  },
+  async ensureCompanySection(companyId: string, name: string, clinicId?: string | null): Promise<CompanySection> {
+    const key = groupKey(name);
+    const db = loadDB();
+    const hit = (db.companySections ?? []).find((x) => x.company_id === companyId && groupKey(x.name) === key);
+    if (hit) return hit;
+    return this.createCompanySection({ company_id: companyId, name: normGroupName(name), clinic_id: clinicId ?? null } as Omit<CompanySection, "id" | "created_at">);
   },
   async updateCompanySection(id: string, patch: Partial<CompanySection>): Promise<CompanySection | undefined> {
     const db = loadDB();
@@ -3518,6 +3547,8 @@ const DEMO_ACTIVITY_MAP: Record<string, { entity: string; action: "INSERT" | "UP
   deleteProduct: { entity: "products", action: "DELETE" },
   restoreProduct: { entity: "products", action: "INSERT" },
   createCompany: { entity: "companies", action: "INSERT" },
+  ensureCompany: { entity: "companies", action: "INSERT" },
+  ensureCompanySection: { entity: "company_sections", action: "INSERT" },
   updateCompany: { entity: "companies", action: "UPDATE" },
   deleteCompany: { entity: "companies", action: "DELETE" },
   createCompanySection: { entity: "company_sections", action: "INSERT" },
@@ -5130,6 +5161,42 @@ const supabaseRepo: typeof demoRepo = {
       if (!isNetworkError(e)) throw e;
       if (!outboxEnqueue("companies", row as Record<string, unknown> & { id: string })) throw e;
       return { ...row, created_at: new Date().toISOString() } as Company;
+    }
+  },
+  /* ابحث ثم أنشئ، بنداءٍ واحدٍ **بالخادم**.
+   *
+   * الجذرُ المقيس كان بالمتصفّح (مقارنةٌ بطرفٍ مطبَّعٍ وطرفٍ خام)، وقد أُصلح
+   * بمواضعه الثلاثة. لكنّ المتصفّحَ وحدَه لا يكفي حارساً: تبويبان مفتوحان أو
+   * جهازان يحفظان معاً يقرآن نفسَ القائمة القديمة فيُدرجان توأمَين. فالبحثُ
+   * والإدراجُ صارا معاملةً واحدةً بالقاعدة (`ensure_company` — 0196).
+   *
+   * **والسقوطُ مقصودٌ وضيّق**: `0196` تنزل قبل نشر الواجهة، لكنّ جهازاً يحمل
+   * نسخةً مخبّأةً قديمةً من الواجهة — أو نشراً سبق الهجرة — يرى الدالّةَ غيرَ
+   * موجودة (PGRST202). عندها نرجع للمسار القديم بمفتاحٍ **مطبَّعٍ على الطرفين**
+   * فلا يولد توأم؛ يبقى ثقبُ السباق وحدَه حتى تنزل الهجرة. ولا يُبتلع غيرُ
+   * هذه الحالة: أيُّ خطأٍ آخر يُرمى. */
+  async ensureCompany(name, clinicId) {
+    const clean = normGroupName(name);
+    try {
+      return need<Company>(await sbc().rpc("ensure_company", { p_name: clean }));
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (!/PGRST202|could not find the function|does not exist/i.test(msg)) throw e;
+      const key = groupKey(clean);
+      const hit = (await this.listCompanies(clinicId ?? undefined)).find((c) => groupKey(c.name) === key);
+      return hit ?? await this.createCompany({ name: clean, note: null, clinic_id: clinicId ?? null } as Omit<Company, "id" | "created_at">);
+    }
+  },
+  async ensureCompanySection(companyId, name, clinicId) {
+    const clean = normGroupName(name);
+    try {
+      return need<CompanySection>(await sbc().rpc("ensure_company_section", { p_company: companyId, p_name: clean }));
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (!/PGRST202|could not find the function|does not exist/i.test(msg)) throw e;
+      const key = groupKey(clean);
+      const hit = (await this.listCompanySections(companyId, clinicId ?? undefined)).find((x) => groupKey(x.name) === key);
+      return hit ?? await this.createCompanySection({ company_id: companyId, name: clean, clinic_id: clinicId ?? null } as Omit<CompanySection, "id" | "created_at">);
     }
   },
   async updateCompany(id, patch) {

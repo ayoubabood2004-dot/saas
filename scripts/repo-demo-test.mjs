@@ -828,5 +828,47 @@ const threw = async (fn) => {
     !(await threw(() => repo.openPoultryCycle({ farm_id: farm.id, house_id: house.id, kind: "broiler", placed_on: today, placed_count: 18000 }))));
 }
 
+/* ── الشركةُ الواحدة صفٌّ واحد — مرآةُ ensure_company (0196) ─────────────────
+ * الجذرُ المقيس: ١٠٢ شركةٍ مكرّرة من ١٤٣ بستّ عيادات، لأن المقارنة كانت بطرفٍ
+ * مطبَّعٍ وطرفٍ خام. وهذه الفحوصُ تجري على **النسخة التجريبية** لأنها ما تجري
+ * عليه فحوصُ المنطق — حارسٌ لا يوجد هنا حارسٌ لم يُفحص. */
+console.log("\n▸ الشركةُ الواحدة صفٌّ واحد — مرآةُ ensure_company (0196)");
+{
+  /* `seed()` هو ما يُفرغ مخزنَ الديمو فعلاً (بمفتاحه المقروء من المصدر):
+     `localStorage.clear()` وحدَه يترك المخزنَ يُعيد بذرتَه الافتراضية،
+     فكان الفحصُ يعدّ شركاتِ بذرةٍ لا شركاتِنا — «فحصٌ يمرّ على لا شيء». */
+  seed([]);
+  const a = await repo.ensureCompany("شركة تاج الخيل", "c1");
+  const b = await repo.ensureCompany("شركة تاج الخيل", "c1");
+  check("نداءان بنفس النصّ ⇒ صفٌّ واحد", a.id === b.id && (await repo.listCompanies()).length === 1);
+  /* هذه بعينها الأسماءُ التي تكرّرت بالإنتاج — والمسافةُ وحدَها كانت تكسر
+     المقارنة، فكلُّ اسمٍ فيه مسافةٌ يتكرّر وكلُّ اسمٍ بكلمةٍ واحدةٍ لا يتكرّر. */
+  for (const v of ["شركه تاج الخيل", "شركة  تاج   الخيل", " شركة تاج الخيل "]) {
+    check(`  و«${v}» نفسُ الصفّ`, (await repo.ensureCompany(v, "c1")).id === a.id);
+  }
+  check("  والعددُ ما زال واحداً", (await repo.listCompanies()).length === 1);
+  check("  والاسمُ المحفوظ كما كُتب أوّلَ مرّة", (await repo.listCompanies())[0].name === "شركة تاج الخيل");
+  const lat = await repo.ensureCompany("ROYAL CANIN", "c1");
+  check("واسمٌ لاتينيٌّ بمسافة: «royal canin» نفسُ الصفّ",
+    (await repo.ensureCompany("royal canin", "c1")).id === lat.id);
+  check("  واسمٌ مختلفٌ فعلاً يُنشئ صفّاً",
+    (await repo.ensureCompany("اليف هاوس", "c1")).id !== lat.id && (await repo.listCompanies()).length === 3);
+
+  /* والمنعُ عند الإنشاء المباشر — مرآةُ محفّز القاعدة. */
+  check("createCompany بتوأمٍ **ترمي**", await threw(() => repo.createCompany({ name: "شركه  تاج الخيل", note: null, clinic_id: "c1" })));
+  check("  ورسالتُها ليست فارغة", await (async () => {
+    try { await repo.createCompany({ name: "شركة تاج الخيل", note: null, clinic_id: "c1" }); return false; }
+    catch (e) { return !!String(e?.message ?? "").trim(); }
+  })());
+
+  /* الصنفُ داخل الشركة — نفسُ العطب بطبقةٍ ثانية، ومنه بصمةُ «١ شركة : ١ صنف». */
+  const s1 = await repo.ensureCompanySection(a.id, "دراي فود", "c1");
+  const s2 = await repo.ensureCompanySection(a.id, "درايفود", "c1");
+  check("الصنفُ كذلك: «دراي فود» = «درايفود»", s1.id === s2.id);
+  check("  وصنفٌ بنفس الاسم داخل شركةٍ أخرى **يُسمح** (النطاقُ الشركة لا العيادة)",
+    (await repo.ensureCompanySection(lat.id, "دراي فود", "c1")).id !== s1.id);
+  check("  والعددُ صنفان لا ثلاثة", (await repo.listCompanySections()).length === 2);
+}
+
 console.log(`\n${fails ? "✗" : "✓"} repo-demo-test: ${passes} نجحت، ${fails} فشلت`);
 process.exit(fails ? 1 : 0);
