@@ -25,7 +25,7 @@ import { Dialog } from "@/components/ui/Dialog";
 import { Button, useToast, Skeleton } from "@/components/ui";
 import { repo } from "@/lib/repo";
 import { describeDbError, withTimeout } from "@/lib/errors";
-import { formatDate, formatNum } from "@/lib/utils";
+import { formatDate, formatNum, formatQty } from "@/lib/utils";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
 
 /* ---------------------------------------------------------------------------
@@ -149,7 +149,7 @@ export function MergeCompaniesDialog({ group, companies, onClose, onMerged }: {
                 <p className="truncate text-sm font-semibold text-ink">{c.name}</p>
                 {c.note && <p className="truncate text-2xs text-ink-subtle">{c.note}</p>}
                 <p className="text-2xs text-ink-muted">
-                  {t("twin.createdAt", "انضافت {{when}}", { when: formatDate(c.created_at, i18n.language) })}
+                  {t("twin.createdAt", "انضافت {{when}}", { when: formatDate(c.created_at, i18n.language, true) })}
                   {c.id === keepId ? ` · ${t("twin.staysHere", "هذا الي يبقى")}` : ""}
                 </p>
               </div>
@@ -177,10 +177,14 @@ export function MergeCompaniesDialog({ group, companies, onClose, onMerged }: {
   );
 }
 
+/* **الكسرُ لا يُقصّ.** أمسكه فحصٌ بالمتصفّح: حوضٌ ينتقل مقدارُه ٣٫٢٥ كان
+ * يُعرض «٣» لأن `formatNum` للأعداد والمبالغ (وتعليقُها بـ`utils` يقول ذلك
+ * حرفاً). ورقمٌ يُبنى عليه قرارُ طيٍّ لا يجوز أن يكذب بربع وحدة — والقاعدةُ
+ * هنا لا بموضع النداء حتى لا يُنسى بإضافةٍ لاحقة. */
 function MoveStat({ label, n }: { label: string; n: number }) {
   return (
     <span className="flex items-center justify-between gap-2 tabular-nums">
-      <span>{label}</span><b className="text-ink">{formatNum(n)}</b>
+      <span>{label}</span><b className="text-ink">{formatQty(n)}</b>
     </span>
   );
 }
@@ -336,7 +340,7 @@ export function CompanyTrash({ onChanged }: { onChanged: () => void }) {
             <p className="truncate text-sm font-semibold text-ink">{d.row?.name}</p>
             <p className="mt-0.5 flex flex-wrap gap-x-3 text-2xs text-ink-muted">
               <span>{t("twin.trashAt", "انحذفت {{when}}", { when: formatDate(d.deleted_at, i18n.language) })}</span>
-              {(d.row?.pooled_stock ?? 0) > 0 && <span>{t("twin.trashPool", "حوض {{n}}", { n: formatNum(d.row?.pooled_stock ?? 0) })}</span>}
+              {(d.row?.pooled_stock ?? 0) > 0 && <span>{t("twin.trashPool", "حوض {{n}}", { n: formatQty(d.row?.pooled_stock ?? 0) })}</span>}
             </p>
           </div>
           <Button size="sm" variant="secondary" loading={busy === d.id} disabled={!!busy && busy !== d.id}

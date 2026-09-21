@@ -40,6 +40,18 @@ export function formatDec(n: number): string {
   return decFmt.format(Number.isFinite(n) ? n : 0);
 }
 
+/**
+ * كميّةٌ قد تكون كسراً: صحيحةٌ تُعرض كعدد، وكسرٌ يُعرض بكسره.
+ *
+ * وُجدت لأن **حوضَ الأصناف** (`pooled_stock`) كميّةٌ تُباع وقد تكون ٣٫٢٥،
+ * وكان يُعرض بـ`formatNum` فيصير «٣» — ربعُ وحدةٍ تختفي من رقمٍ يُبنى عليه
+ * قرارُ طيّ. أمسكه فحصٌ بالمتصفّح لا مراجعةُ شِفرة. فصارت القاعدةُ دالّةً
+ * واحدة: من عرض كميّةً استعملها، ولا يقرّر بموضع النداء.
+ */
+export function formatQty(n: number): string {
+  return Number.isInteger(n) ? formatNum(n) : formatDec(n);
+}
+
 /** وزنٌ بالكيلو بلا أصفارٍ زائدة: 2 → "2"، 0.5 → "0.5"، 1.250 → "1.25".
  *  دقّة الغرام (ثلاث خانات) هي دقّة المخزون نفسها، فلا يُعرض ما لا يُخزَّن. */
 export function fmtKg(kg: number): string {
@@ -210,8 +222,13 @@ export function formatHM(hm: string, lang: string): string {
   return d.toLocaleTimeString(dateLocale(lang), { hour: "numeric", minute: "2-digit" });
 }
 
-export function formatDate(iso: string, lang: string): string {
-  return new Date(iso).toLocaleDateString(dateLocale(lang), { weekday: "short", day: "numeric", month: "short" });
+export function formatDate(iso: string, lang: string, withYear = false): string {
+  /* بلا سنةٍ افتراضاً — أكثرُ التواريخ بالشاشات قريبة. و`withYear` لمن يُبنى
+   * عليه قرار: «أيُّ الصفَّين أقدم» بنافذة الطيّ يصير تخميناً حين يكون
+   * الفرقُ سنةً كاملة ولا تُعرض السنة. */
+  return new Date(iso).toLocaleDateString(dateLocale(lang),
+    withYear ? { day: "numeric", month: "short", year: "numeric" }
+             : { weekday: "short", day: "numeric", month: "short" });
 }
 
 /** Generate slot start datetimes (ISO) for a day between open/close hours. */
