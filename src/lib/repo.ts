@@ -74,7 +74,7 @@ const round3 = (n: number): number => Math.round((n + Number.EPSILON) * 1000) / 
  * **`on delete cascade`**، فالصفُّ نفسُه يُمحى ولا يعيده معرّف. لذا تُحفظ
  * **صفوفُ المطالبات كاملةً** هنا كما بالقاعدة، وصفوفُ الأصناف بسلّتها.
  */
-function trashCompany(db: DemoDB, row: Company, extra: { reason?: string | null; merged_into?: string } = {}): DeletedCompany {
+function trashCompany(db: DemoDB, row: Company, extra: { reason?: string | null; merged_into?: string; keep_note?: string | null } = {}): DeletedCompany {
   if (!db.companiesTrash) db.companiesTrash = [];
   db.companiesTrash = db.companiesTrash.filter((t) => t.id !== row.id);
   const secs = (db.companySections ?? []).filter((x) => x.company_id === row.id);
@@ -91,6 +91,8 @@ function trashCompany(db: DemoDB, row: Company, extra: { reason?: string | null;
     })),
     // الطيُّ ينقل الصفوفَ حيّةً فلا نسخةَ لها؛ والحذفُ الصريح يمحوها فتُنسخ.
     charges: extra.merged_into ? [] : (db.companyCharges ?? []).filter((c) => c.company_id === row.id).map((c) => ({ ...c })),
+    // ملاحظةُ الباقية قبل الاتّحاد — بلا حفظها يستحيل فكُّ الاتّحاد (0201).
+    keep_note: extra.merged_into ? extra.keep_note ?? null : null,
     reason: extra.reason?.trim() || null,
     deleted_by: null,
     deleted_at: new Date().toISOString(),
@@ -2346,7 +2348,11 @@ const demoRepo = {
     const db = loadDB();
     if (!db.companies) db.companies = [];
     const key = groupKey(input.name);
-    if (key && db.companies.some((c) => groupKey(c.name) === key)) {
+    /* اسمٌ يصير فارغاً بعد التطبيع (مسافات، أو محارفُ اتجاهٍ لا تُرى) يُرفض —
+     * مرآةُ `bad_name` بـ`ensure_company`. وبلا هذا كان `key` الفارغ **يتخطّى
+     * فحصَ التوأم كلَّه** فيُحفظ صفٌّ يبدو بلا اسمٍ على الشاشة. */
+    if (!key) throw new Error("bad_name");
+    if (db.companies.some((c) => groupKey(c.name) === key)) {
       /* الرسالةُ من كتالوج `errors.c.*` كبقيّة القيود، لا نصّاً هنا: الشاشةُ
          تترجمها بـ`describeDbError`، ومرآةُ الخادم تحمل نفسَ الاسم. */
       throw new Error("company_twin_name");
@@ -2427,6 +2433,16 @@ const demoRepo = {
         moving_charges: (db.companyCharges ?? []).filter((x) => inDrop(x.company_id)).length,
         moving_payments: (db.purchasePayments ?? []).filter((x) => inDrop(x.company_id)).length,
         pool_moving: round3(sections.filter((x) => inDrop(x.company_id)).reduce((a, x) => a + (x.pooled_stock || 0), 0)),
+        // لكلّ صفٍّ على حدة (0200): به تصدق الشاشةُ لأيّ باقٍ تختاره العيادة.
+        rows_detail: rows.map((c) => ({
+          id: c.id, name: c.name,
+          products: (db.products ?? []).filter((p) => p.company_id === c.id).length,
+          purchases: (db.purchases ?? []).filter((p) => p.company_id === c.id).length,
+          sections: sections.filter((x) => x.company_id === c.id).length,
+          charges: (db.companyCharges ?? []).filter((x) => x.company_id === c.id).length,
+          payments: (db.purchasePayments ?? []).filter((x) => x.company_id === c.id).length,
+          pool: round3(sections.filter((x) => x.company_id === c.id).reduce((a, x) => a + (x.pooled_stock || 0), 0)),
+        })),
       });
     }
     return out.sort((a, b) => b.rows - a.rows || a.norm.localeCompare(b.norm));
@@ -2441,7 +2457,7 @@ const demoRepo = {
     if (!keep) throw new Error("no_keep");
     if (!drop) throw new Error("no_drop");
     // اللقطةُ **قبل** أيّ تعديلٍ يمحو الحالةَ القديمة.
-    const snap = trashCompany(db, drop, { merged_into: keepId });
+    const snap = trashCompany(db, drop, { merged_into: keepId, keep_note: keep.note ?? null });
     for (const p of db.products ?? []) if (p.company_id === dropId) p.company_id = keepId;
     for (const pu of db.purchases ?? []) if (pu.company_id === dropId) { pu.company_id = keepId; pu.company_name = keep.name; }
     for (const py of db.purchasePayments ?? []) if (py.company_id === dropId) py.company_id = keepId;
@@ -2453,23 +2469,27 @@ const demoRepo = {
       const match = (db.companySections ?? [])
         .filter((x) => x.company_id === keepId && groupKey(x.name) === groupKey(sec.name))
         .sort((a, b) => (a.created_at || "").localeCompare(b.created_at || ""))[0];
+      /* **قبل النقل**: منتجاتُ هذا الصنف وحدَه. قراءتُها بعده تحمل منتجاتِ
+       * الصنف الباقي كذلك، فيردُّها الفكُّ إلى صنفٍ لم تكن فيه قطّ — أمسكه
+       * فحصٌ يقود المتصفّح ويسأل عن كلّ منتج: أصنفُك لشركتك؟ (0201) */
+      const pids = (db.products ?? []).filter((p) => p.section_id === sec.id).map((p) => p.id);
       if (match) {
         const moved = round3(sec.pooled_stock || 0);
         /* صورةُ الصنف الخارج — محفّزُ الأصناف يلتقطها بالقاعدة أثناء الطيّ،
-         * وبلا مرآتها هنا كان الفكُّ يجد «لا صورة» فيبتلع حوضَه بصمت. */
+         * وبلا مرآتها هنا كان الفكُّ يجد «لا صورة» فيبتلع حوضَه بصمت.
+         * وتُكتب بوجهتها وحوضها: سجلّان عن حدثٍ واحدٍ لا يتناقضان، ويصحّ
+         * استرجاعُ الصنف وحدَه بلا مضاعفةِ الحوض. */
         (db.companySectionsTrash ??= []);
         db.companySectionsTrash = db.companySectionsTrash.filter((t) => t.id !== sec.id);
         db.companySectionsTrash.push({
           id: sec.id, clinic_id: sec.clinic_id ?? null, company_id: sec.company_id, row: { ...sec },
-          folded_into: null, pooled_moved: 0,
-          product_ids: (db.products ?? []).filter((p) => p.section_id === sec.id).map((p) => p.id),
+          folded_into: match.id, pooled_moved: moved, product_ids: pids,
           deleted_at: new Date().toISOString(),
         });
         match.pooled_stock = round3((match.pooled_stock || 0) + moved);
         for (const p of db.products ?? []) if (p.section_id === sec.id) p.section_id = match.id;
         for (const t of db.productsTrash ?? []) if (t.row?.section_id === sec.id) t.row = { ...t.row, section_id: match.id };
-        notes.push({ id: sec.id, name: sec.name, pooled_moved: moved, folded_into: match.id,
-          product_ids: (db.products ?? []).filter((p) => p.section_id === match.id).map((p) => p.id) });
+        notes.push({ id: sec.id, name: sec.name, pooled_moved: moved, folded_into: match.id, product_ids: pids });
         db.companySections = (db.companySections ?? []).filter((x) => x.id !== sec.id);
       } else {
         sec.company_id = keepId;
@@ -2523,6 +2543,11 @@ const demoRepo = {
     const t = (db.companiesTrash ?? []).find((x) => x.id === id);
     if (!t) throw new Error("not_in_trash");
     if ((db.companies ?? []).some((x) => x.id === id)) throw new Error("already_there");
+    /* **الوجهةُ لازم تكون قائمة** (0203): صفوفُ المطويّة انتقلت إلى الباقية،
+     * فإن حُذفت الباقيةُ بعدها صار `company_id` فيها NULL — فلا شرطَ «ما زالت
+     * حيث تركها الطيّ» يتحقّق، فترجع الشركةُ **فارغة** والشاشةُ تقول «تمّ».
+     * الرفضُ يقول الترتيب: استرجعِ الباقيةَ أوّلاً. */
+    if (t.merged_into && !(db.companies ?? []).some((x) => x.id === t.merged_into)) throw new Error("no_merge_target");
     const row = { ...t.row };
     (db.companies ??= []).push(row);
     const ids = new Set(t.product_ids ?? []);
@@ -2534,6 +2559,15 @@ const demoRepo = {
     if (into) {
       for (const ch of db.companyCharges ?? []) if ((t.charge_ids ?? []).includes(ch.id) && ch.company_id === into) ch.company_id = id;
       for (const tp of db.productsTrash ?? []) if (tp.row?.company_id === into && ids.has(tp.id)) tp.row = { ...tp.row, company_id: id };
+      /* فكُّ اتّحاد الملاحظتين — يُعاد حسابُ ما أنتجه الطيُّ بنفس تعبيره، ولا
+       * يُكتب إلا إن كانت الملاحظةُ ما زالت هي بالحرف: ملاحظةٌ كتبتها العيادةُ
+       * بعد الطيّ ملكُها ولا يدهسها الفكّ (0201). */
+      const keepRow = (db.companies ?? []).find((c) => c.id === into);
+      if (keepRow) {
+        const a = (t.keep_note ?? "").trim(), b = (row.note ?? "").trim();
+        const union = (a === b ? (a || b) : [a, b].filter(Boolean).join("\n")) || null;
+        if ((keepRow.note ?? null) === union) keepRow.note = t.keep_note ?? null;
+      }
     } else {
       // المطالباتُ صفوفٌ محاها التتالي — تُعاد من الصورة (0198).
       for (const ch of t.charges ?? []) if (!(db.companyCharges ?? []).some((x) => x.id === ch.id)) (db.companyCharges ??= []).push({ ...ch, company_id: id });
@@ -2604,7 +2638,8 @@ const demoRepo = {
     const db = loadDB();
     if (!db.companySections) db.companySections = [];
     const key = groupKey(input.name);
-    if (key && (db.companySections ?? []).some((x) => x.company_id === input.company_id && groupKey(x.name) === key)) {
+    if (!key) throw new Error("bad_name");
+    if ((db.companySections ?? []).some((x) => x.company_id === input.company_id && groupKey(x.name) === key)) {
       throw new Error("company_section_twin_name");
     }
     const s: CompanySection = { ...input, id: uid("sec"), created_at: new Date().toISOString() };

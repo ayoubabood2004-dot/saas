@@ -75,7 +75,7 @@ export function Dialog({ open, onClose, title, description, children, footer, si
               </div>
             )}
             <div className="px-6 pb-6 pt-2">{children}</div>
-            {footer && <div className="flex items-center justify-end gap-3 border-t border-line px-6 py-4">{footer}</div>}
+            {footer && <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-2 border-t border-line px-6 py-4">{footer}</div>}
           </motion.div>
         </div>
       )}

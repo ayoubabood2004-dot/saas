@@ -535,6 +535,24 @@ export interface CompanyTwinGroup {
   moving_payments: number;
   /** مجموعُ حوض أصناف الشركات المطويّة — وحداتٌ تُباع فعلاً، فتُعرض. */
   pool_moving: number;
+  /**
+   * عددُ ما يحمله **كلُّ صفٍّ** بالمجموعة على حدة (0200). به تحسب الشاشةُ
+   * المنقولَ لأيّ باقٍ تختاره العيادة، لا للأقدم وحدَه: أعمدةُ `moving_*`
+   * مقيسةٌ مقابل `keep_id` فتكذب لحظةَ تبديل الباقي. وقد تغيب عن قاعدةٍ
+   * لم تنزل عليها 0200 بعد — فالشاشةُ تسقط إلى `moving_*`.
+   */
+  rows_detail?: CompanyTwinRowDetail[] | null;
+}
+
+export interface CompanyTwinRowDetail {
+  id: string;
+  name?: string | null;
+  products: number;
+  purchases: number;
+  sections: number;
+  charges: number;
+  payments: number;
+  pool: number;
 }
 
 /**
@@ -559,6 +577,9 @@ export interface DeletedCompany {
    *  إلى الشركة `on delete cascade`، فالحذفُ الصريح يمحو الصفَّ نفسَه ولا
    *  يعيده معرّف. يبقى فارغاً بالطيّ لأن الصفوفَ تُنقل حيّة. */
   charges?: CompanyCharge[];
+  /** ملاحظةُ الشركة الباقية **قبل** اتّحاد الملاحظتين (0201) — بها يفكّ
+   *  الاسترجاعُ الاتّحاد، وبشرط أنها ما زالت حيث تركها الطيّ. */
+  keep_note?: string | null;
   reason?: string | null;
   deleted_by?: string | null;
   deleted_at: string;

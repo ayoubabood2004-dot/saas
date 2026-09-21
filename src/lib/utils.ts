@@ -127,8 +127,19 @@ export const searchable = (s: string | null | undefined): string =>
 
 /** الاسمُ كما **يُحفظ**: قصٌّ وطيُّ مسافاتٍ وتوحيدُ يونيكود — بلا طيٍّ إملائيّ.
  *  (ما يراه المستخدمُ يبقى كما كتبه؛ الطيُّ للمقارنة وحدها.) */
+/**
+ * المحارفُ غير المرئية: ZWSP/ZWNJ/ZWJ/LRM/RLM، وعلامةُ العربية، والجيوب،
+ * والعوازل، وBOM. تدخل باللصق من واتساب أو إكسل ولا يراها أحد.
+ *
+ * وتعريفُها **واحدٌ هنا** لا نسختان: كانت بـ`normalizeCode` وحدها، فالباركودُ
+ * محميّ واسمُ الشركة مكشوف — ومحرفُ اتجاهٍ واحدٌ يجعل «رويال كانين» اسمَين
+ * بالنظام، أحدُهما يبدو فارغاً لو لم يكن فيه غيرُها. وهذا **نفسُ** العطب الذي
+ * وثّقناه بالباركود، بحقلٍ ثانٍ.
+ */
+const INVISIBLE = /[\u200B-\u200F\u061C\u202A-\u202E\u2066-\u2069\uFEFF]/g;
+
 export const normGroupName = (s: string | null | undefined): string =>
-  String(s ?? "").trim().replace(/\s+/g, " ").normalize("NFC");
+  String(s ?? "").replace(INVISIBLE, "").trim().replace(/\s+/g, " ").normalize("NFC");
 
 /** الاسمُ كما **يُقارَن**: طيُّ الهمزة/التاء المربوطة/الألف المقصورة والأرقام
  *  **ومسحُ المسافات كلِّها** (من `normalizeAr`). مرآتُه بالقاعدة
@@ -147,8 +158,8 @@ export const groupKey = (s: string | null | undefined): string =>
  */
 export const normalizeCode = (s: string | null | undefined): string =>
   normalizeDigits(String(s ?? ""))
-    // علاماتُ الاتجاه والعرضِ الصفري: ZWSP/ZWNJ/ZWJ/LRM/RLM، والجيوب، والعوازل، وBOM
-    .replace(/[​-‏‪-‮⁦-⁩﻿]/g, "")
+    // علاماتُ الاتجاه والعرضِ الصفري — نفسُ تعريف `INVISIBLE` أعلاه.
+    .replace(INVISIBLE, "")
     .replace(/\s+/g, "");
 
 /**

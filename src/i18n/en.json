@@ -421,7 +421,8 @@
     "policyRecursion": "Database configuration fault (table policy) — the change was not saved and retrying will not help. Report this code to support: 42P17.",
     "lookupFnMissing": "A database configuration problem — the barcode lookup function is missing. Your item is still in stock; do not re-enter it. Report this to support: product_by_code.",
     "companyTwin": "A company with this name already exists — open it instead of creating another.",
-    "companySectionTwin": "A section with this name already exists in this company."
+    "companySectionTwin": "A section with this name already exists in this company.",
+    "noMergeTarget": "The company it was merged into has been deleted — restore that one first from \"Deleted\", then this one."
   },
   "nav": {
     "dashboard": "Dashboard",
@@ -1565,7 +1566,7 @@
     "mergeInstead": "Merge instead",
     "deleteGo": "Delete — goes to Deleted",
     "deleteIsTwin": "This company is duplicated — {{n}} rows share this name. Better to merge them onto one row than to delete, so its history stays whole in one place.",
-    "deleteHint": "The company, its sections and their pooled stock go to the \"Deleted\" tab. Products stay in stock but without a company, and purchases, payments and debts are kept — \"Restore\" brings everything back as it was.",
+    "deleteHint": "The company, its sections and their pooled stock go to the \"Deleted\" tab. Products stay in stock but without a company, and its purchases, payments and debts leave the sheets and are kept with it — \"Restore\" brings everything back as it was.",
     "deleteReason": "Reason (optional)",
     "restored": "\"{{name}}\" is back with everything it had",
     "restoredSection": "Section \"{{name}}\" is back with its pooled stock and products",
@@ -1574,7 +1575,10 @@
     "trashAt": "Deleted {{when}}",
     "trashHas": "{{p}} products · {{s}} sections",
     "trashMerged": "merged into another company — restoring unmerges it",
-    "trashPool": "pool {{n}}"
+    "trashPool": "pool {{n}}",
+    "debtsLoading": "Checking its debts…",
+    "debtsFailed": "We couldn't read its debts — don't delete before you've checked them.",
+    "debtsN": "It carries {{n}} charges worth {{v}} — they leave the debts sheet and come back in full if you restore it."
   },
   "role": {
     "admin": "Clinic",

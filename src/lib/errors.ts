@@ -94,6 +94,10 @@ export function describeDbError(e: unknown, t: TFunction): string {
   if (typeof err.message === "string" && err.message.includes("company_section_twin_name")) {
     return t("errors.companySectionTwin", "أكو صنف بنفس الاسم داخل هذه الشركة.");
   }
+  /* رفضٌ يقول الترتيب لا رمزاً: استرجاعُ مطويّةٍ وجهتُها محذوفة (0203). */
+  if (typeof err.message === "string" && err.message.includes("no_merge_target")) {
+    return t("errors.noMergeTarget", "الشركة الي انطوت بيها محذوفة — استرجعها أول من «المحذوفات»، وبعدين هذي.");
+  }
   if (typeof err.message === "string" && err.message.includes("company_twin_name")) {
     return t("errors.companyTwin", "أكو شركة بنفس الاسم — افتحها بدل ما تسوّي وحدة ثانية.");
   }

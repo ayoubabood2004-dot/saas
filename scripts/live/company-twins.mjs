@@ -85,6 +85,13 @@ const open = async (db = seedDB()) => {
 };
 const readDB = async (page) => JSON.parse(await page.evaluate((k) => localStorage.getItem(k), DB_KEY));
 /** الحافظات: «س لازم يبقى يساوي ص بعد الضغط» — نفسُ منهج حزمة SQL. */
+/** **الحافظةُ التي لم تُكتب**: أصنفُ كلِّ منتجٍ لشركته هو؟ كلُّ الحافظات
+ *  الأخرى (عدداً ورصيداً وحوضاً ومالاً) كانت تمرّ خضراء بينما منتجٌ لم يتحرّك
+ *  أصلاً هبط بصنفِ شركةٍ أخرى بعد الفكّ. */
+const strayed = (db) => {
+  const co = Object.fromEntries(db.companySections.map((s) => [s.id, s.company_id]));
+  return db.products.filter((p) => p.section_id && co[p.section_id] !== p.company_id).map((p) => p.id);
+};
 const invariants = (db) => ({
   prods: db.products.length,
   noCo: db.products.filter((p) => p.company_id == null).length,
@@ -133,6 +140,17 @@ console.log("\n▸ الطيّ: ينقل كلَّ شيء، والفكُّ يرج�
   // **الفحصُ الذي كشف العطب**: ٣٫٢٥ كانت تُعرض «٣».
   check("  و**الحوض بكسره ٣٫٢٥ لا ٣**", /مخزون مجمّع 3\.25/.test(flat), flat.match(/مجمّع [^ ]+/)?.[0]);
 
+  /* **الأعدادُ تتبع الباقيَ الذي تختاره العيادة، لا الأقدمَ وحدَه** — العطبُ
+     الذي أمسكه هذا الفحصُ ثانياً: تبديلُ الباقي كان يُبقي أرقامَ الأقدم. */
+  await page.locator('[role="dialog"] input[type="radio"]').nth(1).click();
+  await page.waitForTimeout(400);
+  const flip = (await page.locator('[role="dialog"]').first().innerText()).replace(/\s+/g, " ");
+  check("  وبتبديل الباقي تتبدّل الأعدادُ لا تجمد", /منتج 1\b/.test(flip) && /صنف 1\b/.test(flip) && /فاتورة شراء 0\b/.test(flip) && /مطالبة\/دين 0\b/.test(flip),
+    flip.match(/شنو راح ينتقل[^ت]*/)?.[0]?.slice(0, 90));
+  check("  وحوضُها يصير ٧٫٥ (حوضُ الصفّ الآخر)", /مخزون مجمّع 7\.5\b/.test(flip), flip.match(/مجمّع [^ ]+/)?.[0]);
+  await page.locator('[role="dialog"] input[type="radio"]').nth(0).click();
+  await page.waitForTimeout(400);
+
   await page.locator("[data-mergego]").click();
   await page.waitForTimeout(1500);
   const db = await readDB(page);
@@ -144,6 +162,10 @@ console.log("\n▸ الطيّ: ينقل كلَّ شيء، والفكُّ يرج�
   check("  والدفعةُ والمطالبتان انتقلن", db.purchasePayments.every((p) => p.company_id === "K1") && db.companyCharges.every((c) => c.company_id === "K1"));
   check("  والملاحظتان اتّحدتا", /الوكيل/.test(db.companies.find((c) => c.id === "K1").note) && /المندوب/.test(db.companies.find((c) => c.id === "K1").note));
   check("  والبطاقةُ تحدّثت بلا إعادة تحميل", await page.locator("[data-twingroup]").count() === 1);
+  check("  ولا منتجَ بصنفِ شركةٍ أخرى بعد الطيّ", strayed(db).length === 0, strayed(db).join("، "));
+  check("  وصورةُ الصنف المطويّ تحمل وجهتَه وحوضَه ومنتجاتِه هو",
+    (db.companySectionsTrash ?? []).some((x) => x.id === "sd" && x.folded_into === "sk" && x.pooled_moved === 2.25 && (x.product_ids ?? []).join() === "pa"),
+    JSON.stringify((db.companySectionsTrash ?? []).map((x) => [x.id, x.folded_into, x.pooled_moved, x.product_ids])));
 
   await page.getByRole("button", { name: "المحذوفات", exact: true }).first().click();
   await page.waitForTimeout(1200);
@@ -153,6 +175,10 @@ console.log("\n▸ الطيّ: ينقل كلَّ شيء، والفكُّ يرج�
   const back = invariants(await readDB(page));
   for (const k of Object.keys(before)) check(`  والفكُّ يرجّع ${k}`, before[k] === back[k], `${before[k]} ⇒ ${back[k]}`);
   const d2 = await readDB(page);
+  check("  و**لا منتجَ هبط بصنفِ شركةٍ أخرى**", strayed(d2).length === 0, strayed(d2).join("، "));
+  check("  والملاحظةُ فُكَّ اتّحادُها", d2.companies.find((c) => c.id === "K1").note === "الوكيل الرسمي" && d2.companies.find((c) => c.id === "D1").note === "رقم المندوب 0770",
+    d2.companies.filter((c) => ["K1", "D1"].includes(c.id)).map((c) => `${c.id}="${(c.note || "").replace(/\n/g, "|")}"`).join(" "));
+  check("  وسجلّا الصنف المطويّ لا يتناقضان", (d2.companySectionsTrash ?? []).length === 0 || (d2.companySectionsTrash ?? []).every((x) => x.folded_into || x.pooled_moved === 0));
   check("  وحوضُ الباقي رجع ٧٫٥ بالضبط (طرحُ ما أُضيف لا تخمين)", d2.companySections.find((s) => s.id === "sk")?.pooled_stock === 7.5);
   await ctx.close();
 }
@@ -170,9 +196,9 @@ console.log("\n▸ الحذف: بلا window.confirm، ويرجّع الديون
   const dlg = await page.locator('[role="dialog"]').first().innerText();
   const flat = dlg.replace(/\s+/g, " ");
   check("ماكو تأكيدُ متصفّح", native === 0);
-  check("  والنافذةُ تقول إنها مكرّرة وتعرض الطيَّ بديلاً", /مكرّرة/.test(dlg) && await page.locator('button:has-text("ادمجها بدل الحذف")').count() > 0);
+  check("  والنافذةُ تقول إنها مكرّرة وتعرض الطيَّ بديلاً", /مكرّرة/.test(dlg) && await page.locator('button:has-text("ادمجها")').count() > 0);
   check("  وتسمّي ما يتحرّك بالعدد", /منتج 2\b/.test(flat) && /صنف 2\b/.test(flat) && /مجمّع 3\.25/.test(flat), flat.slice(0, 120));
-  await page.locator('button:has-text("ادمجها بدل الحذف")').click();
+  await page.locator('button:has-text("ادمجها")').click();
   await page.waitForTimeout(700);
   check("  وزرُّ «ادمجها» يفتح نافذةَ الطيّ", await page.locator("[data-mergego]").count() === 1);
   await page.locator('button:has-text("إلغاء")').last().click();
@@ -218,6 +244,68 @@ console.log("\n▸ المنع: الشاشةُ لا تُنشئ توأماً");
     check("  ورسالتُها عربيةٌ مفهومة", /بنفس الاسم|موجودة|مكرّر/.test(body) && !/\{\{|object Object|twin\.|errors\./.test(body));
     if (await page.locator('[role="dialog"]').count()) { await page.keyboard.press("Escape"); await page.waitForTimeout(400); }
   }
+  await ctx.close();
+}
+
+/* ── ٥) محرفٌ لا يُرى كان يصنع شركةً ثانية ─────────────────────────────── */
+console.log("\n▸ ما لا يُرى: المحارفُ غير المرئية لا تصنع توأماً");
+{
+  const { ctx, page } = await open();
+  const n0 = (await readDB(page)).companies.length;
+  const cases = [
+    ["رويال كانين\u200f", "علامةُ اتجاهٍ بالنهاية"],
+    ["رويال\u200bكانين", "فاصلٌ صفريُّ العرض بالنص"],
+    ["\u200eرويال كانين", "علامةٌ بالبداية"],
+    ["\u200b\u200f", "اسمٌ محارفُه كلُّها غيرُ مرئية"],
+  ];
+  for (const [name, why] of cases) {
+    await page.locator('button:has-text("أضف شركة")').first().click();
+    await page.waitForTimeout(400);
+    await page.locator('[role="dialog"] input').first().fill(name);
+    await page.locator('[role="dialog"] button').last().click();
+    await page.waitForTimeout(800);
+    check(`${why} ⇒ ما انضافت`, (await readDB(page)).companies.length === n0, `صار العدد ${(await readDB(page)).companies.length}`);
+    if (await page.locator('[role="dialog"]').count()) { await page.keyboard.press("Escape"); await page.waitForTimeout(300); }
+  }
+  await ctx.close();
+}
+
+/* ── ٦) ولا استرجاعَ يقول «تمّ» وهو رجع فارغاً ─────────────────────────── */
+console.log("\n▸ الاسترجاع: يرفض حين تغيب وجهتُه، ويعمل بالترتيب الصحيح");
+{
+  const { ctx, page } = await open();
+  await page.locator('[data-twingroup] button:has-text("راجع وادمج")').first().click();
+  await page.waitForTimeout(600);
+  await page.locator("[data-mergego]").click();
+  await page.waitForTimeout(1400);
+  // ثمّ تُحذف الباقيةُ نفسُها
+  await page.locator('button:has-text("اليف هاوس")').first().click();
+  await page.waitForTimeout(700);
+  await page.locator('button[aria-label="Delete"], button[aria-label="حذف"]').first().click();
+  await page.waitForTimeout(900);
+  await page.locator("[data-delcogo]").click();
+  await page.waitForTimeout(1400);
+  await page.getByRole("button", { name: "المحذوفات", exact: true }).first().click();
+  await page.waitForTimeout(1200);
+  check("صفّا السلّة يميّزهما نصُّ ملاحظتهما", /الوكيل الرسمي|رقم المندوب/.test(await page.locator("[data-cotrashrow]").first().innerText()));
+  await page.locator('[data-cotrashrow="D1"] button:has-text("استرجاع")').click();
+  await page.waitForTimeout(1200);
+  const body = await page.locator("body").innerText();
+  check("استرجاعُ مطويّةٍ وجهتُها محذوفة **يُرفض برسالةٍ تقول الترتيب**", /انطوت بيها/.test(body),
+    (body.split("\n").find((l) => /رجعت|انطوت|خطأ/.test(l)) ?? "(ماكو رسالة)").slice(0, 80));
+  check("  ولا صفَّ أُنشئ برفضه", !(await readDB(page)).companies.some((c) => c.id === "D1"));
+  await page.locator('[data-cotrashrow="K1"] button:has-text("استرجاع")').click();
+  await page.waitForTimeout(1300);
+  await page.locator('[data-cotrashrow="D1"] button:has-text("استرجاع")').click();
+  await page.waitForTimeout(1300);
+  const f = await readDB(page);
+  check("وبالترتيب الصحيح يرجع كلُّ شيء لصاحبه",
+    f.products.filter((p) => p.company_id === "D1").map((p) => p.id).join() === "pa,pb" &&
+    f.products.filter((p) => p.company_id === "K1").map((p) => p.id).join() === "pc" &&
+    f.companyCharges.filter((c) => c.company_id === "D1").reduce((a, c) => a + c.amount, 0) === 7500 &&
+    f.companySections.filter((s) => s.company_id === "D1").reduce((a, s) => a + (s.pooled_stock || 0), 0) === 3.25,
+    JSON.stringify(f.products.map((p) => [p.id, p.company_id])));
+  check("  ولا منتجَ بصنفِ شركةٍ أخرى", strayed(f).length === 0, strayed(f).join("، "));
   await ctx.close();
 }
 

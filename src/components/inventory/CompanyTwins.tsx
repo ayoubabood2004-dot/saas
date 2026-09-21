@@ -20,12 +20,12 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Building2, GitMerge, Loader2, RefreshCw, RotateCcw, Trash2, TriangleAlert } from "lucide-react";
-import type { Company, CompanySection, CompanyTwinGroup, DeletedCompany, DeletedCompanySection, Product } from "@/types";
+import type { Company, CompanySection, CompanyTwinGroup, CompanyTwinRowDetail, DeletedCompany, DeletedCompanySection, Product } from "@/types";
 import { Dialog } from "@/components/ui/Dialog";
 import { Button, useToast, Skeleton } from "@/components/ui";
 import { repo } from "@/lib/repo";
 import { describeDbError, withTimeout } from "@/lib/errors";
-import { formatDate, formatNum, formatQty } from "@/lib/utils";
+import { formatDate, formatNum, formatQty, money } from "@/lib/utils";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
 
 /* ---------------------------------------------------------------------------
@@ -111,6 +111,29 @@ export function MergeCompaniesDialog({ group, companies, onClose, onMerged }: {
   const rows = group.ids.map((id) => companies.find((c) => c.id === id)).filter(Boolean) as Company[];
   const drops = rows.filter((c) => c.id !== keepId);
 
+  /* **الأعدادُ تُحسب للباقي الذي اختارته العيادة، لا للأقدم.**
+   *
+   * أعمدةُ `moving_*` مقيسةٌ بالخادم مقابل `keep_id` وحدَه، والنافذةُ تسمح
+   * بتبديل الباقي — فكانت تقول «٢ منتج» وهي واحد. أمسكه فحصٌ يقود المتصفّح.
+   * والمصدرُ الآن `rows_detail` (0200): مجموعُ الآخرين = ما ينتقل فعلاً.
+   * وقاعدةٌ لم تنزل عليها 0200 بعد ترجع بلا العمود، فنسقط إلى القديم —
+   * صحيحٌ ما دام الباقي هو الأقدم، وهو المقترحُ افتراضاً. */
+  const detail = group.rows_detail ?? [];
+  const others = detail.filter((r) => r.id !== keepId);
+  const tally = (f: keyof Pick<CompanyTwinRowDetail, "products" | "purchases" | "sections" | "charges" | "payments" | "pool">) =>
+    others.reduce((a, r) => a + (r[f] || 0), 0);
+  const exact = detail.length > 0 && detail.some((r) => r.id === keepId);
+  const moving = exact
+    ? {
+        products: tally("products"), sections: tally("sections"), purchases: tally("purchases"),
+        payments: tally("payments"), charges: tally("charges"),
+        pool: Math.round(tally("pool") * 1000) / 1000,
+      }
+    : {
+        products: group.moving_products, sections: group.moving_sections, purchases: group.moving_purchases,
+        payments: group.moving_payments, charges: group.moving_charges, pool: group.pool_moving,
+      };
+
   const merge = async () => {
     if (busy || drops.length === 0) return;
     setBusy(true);
@@ -161,12 +184,12 @@ export function MergeCompaniesDialog({ group, companies, onClose, onMerged }: {
         <div className="rounded-xl border border-line bg-surface-2 p-3">
           <p className="mb-2 text-xs font-semibold text-ink-muted">{t("twin.movingTitle", "شنو راح ينتقل")}</p>
           <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-ink-muted sm:grid-cols-3">
-            <MoveStat label={t("twin.mProducts", "منتج")} n={group.moving_products} />
-            <MoveStat label={t("twin.mSections", "صنف")} n={group.moving_sections} />
-            <MoveStat label={t("twin.mPurchases", "فاتورة شراء")} n={group.moving_purchases} />
-            <MoveStat label={t("twin.mPayments", "دفعة للمورّد")} n={group.moving_payments} />
-            <MoveStat label={t("twin.mCharges", "مطالبة/دين")} n={group.moving_charges} />
-            {group.pool_moving > 0 && <MoveStat label={t("twin.mPool", "مخزون مجمّع")} n={group.pool_moving} />}
+            <MoveStat label={t("twin.mProducts", "منتج")} n={moving.products} />
+            <MoveStat label={t("twin.mSections", "صنف")} n={moving.sections} />
+            <MoveStat label={t("twin.mPurchases", "فاتورة شراء")} n={moving.purchases} />
+            <MoveStat label={t("twin.mPayments", "دفعة للمورّد")} n={moving.payments} />
+            <MoveStat label={t("twin.mCharges", "مطالبة/دين")} n={moving.charges} />
+            {moving.pool > 0 && <MoveStat label={t("twin.mPool", "مخزون مجمّع")} n={moving.pool} />}
           </div>
           <p className="mt-2 text-2xs leading-relaxed text-ink-subtle">
             {t("twin.poolNote", "الأصناف الي بنفس الاسم تنطوي ببعض ومخزونها المجمّع ينجمع — ما تنحذف ولا وحدة.")}
@@ -203,6 +226,23 @@ export function DeleteCompanyDialog({ company, sections, products, twin, onClose
   const mine = products.filter((p) => p.company_id === company.id);
   const pooled = sections.reduce((n, s) => n + (s.pooled_stock ?? 0), 0);
 
+  /* **الدَّينُ يُقال بالرقم لا بالوعد.** كان النصُّ يقول «والديون تبقى محفوظة»
+   * بلا أن يعدّها — وهي فعلاً تخرج من كشف الديون لحظةَ الحذف وترجع بالاسترجاع.
+   * فوعدٌ بلا رقمٍ يُقرأ «ما راح يتغيّر شي». والقراءةُ التي تفشل **تُقال**:
+   * صفرٌ كاذبٌ عن دَينٍ قائم أسوأ من لا رقم (CLAUDE.md: القائمةُ الناقصة). */
+  const [debt, setDebt] = useState<{ n: number; total: number } | "failed" | null>(null);
+  useEffect(() => {
+    let on = true;
+    repo.listCompanyCharges()
+      .then((rows) => {
+        if (!on) return;
+        const mineC = rows.filter((c) => c.company_id === company.id);
+        setDebt({ n: mineC.length, total: mineC.reduce((a, c) => a + (c.amount || 0), 0) });
+      })
+      .catch(() => { if (on) setDebt("failed"); });
+    return () => { on = false; };
+  }, [company.id]);
+
   const del = async () => {
     if (busy) return;
     setBusy(true);
@@ -221,7 +261,7 @@ export function DeleteCompanyDialog({ company, sections, products, twin, onClose
     <Dialog open onClose={onClose} size="sm" title={t("twin.deleteTitle", "حذف شركة")}
       footer={<>
         <Button variant="ghost" onClick={onClose} disabled={busy}>{t("common.cancel", "إلغاء")}</Button>
-        {twin && <Button variant="secondary" disabled={busy} leftIcon={<GitMerge size={16} />} onClick={() => { playTap(); onMerge(); }}>{t("twin.mergeInstead", "ادمجها بدل الحذف")}</Button>}
+        {twin && <Button variant="secondary" disabled={busy} leftIcon={<GitMerge size={16} />} onClick={() => { playTap(); onMerge(); }}>{t("twin.mergeInstead", "ادمجها")}</Button>}
         <Button variant="danger" loading={busy} leftIcon={<Trash2 size={16} />} onClick={() => void del()} data-delcogo>
           {t("twin.deleteGo", "احذف — تروح للمحذوفات")}
         </Button>
@@ -239,14 +279,23 @@ export function DeleteCompanyDialog({ company, sections, products, twin, onClose
         <div className="rounded-xl border border-line bg-surface-2 p-3">
           <p className="truncate text-base font-semibold text-ink">{company.name}</p>
           {company.note && <p className="truncate text-2xs text-ink-subtle">{company.note}</p>}
-          <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-ink-muted sm:grid-cols-3">
+          <div className="mt-2 grid grid-cols-1 gap-x-4 gap-y-1 text-xs text-ink-muted sm:grid-cols-3">
             <MoveStat label={t("twin.mProducts", "منتج")} n={mine.length} />
             <MoveStat label={t("twin.mSections", "صنف")} n={sections.length} />
             {pooled > 0 && <MoveStat label={t("twin.mPool", "مخزون مجمّع")} n={pooled} />}
           </div>
         </div>
+        {debt === null ? (
+          <p className="flex items-center gap-1.5 text-xs text-ink-subtle"><Loader2 size={12} className="animate-spin" /> {t("twin.debtsLoading", "نشوف ديونها…")}</p>
+        ) : debt === "failed" ? (
+          <p className="text-xs font-semibold text-warn-700">{t("twin.debtsFailed", "ما كدرنا نقرأ ديونها — لا تحذف قبل ما تتأكد منها.")}</p>
+        ) : debt.n > 0 ? (
+          <p className="text-xs font-semibold text-warn-700">
+            {t("twin.debtsN", "عليها {{n}} مطالبة بمبلغ {{v}} — تنشال من كشف الديون وترجع كاملة لو استرجعتها.", { n: formatNum(debt.n), v: money(debt.total) })}
+          </p>
+        ) : null}
         <p className="text-xs leading-relaxed text-ink-muted">
-          {t("twin.deleteHint", "الشركة وأصنافها وحوضها تروح لتبويب «المحذوفات». المنتجات تبقى بالمخزن بس بلا شركة، والفواتير والدفعات والديون تبقى محفوظة — و«استرجاع» يرجّع كل شي مثل ما كان.")}
+          {t("twin.deleteHint", "الشركة وأصنافها وحوضها تروح لتبويب «المحذوفات». المنتجات تبقى بالمخزن بس بلا شركة، وفواتيرها ودفعاتها وديونها تنشال من الكشوفات وتنحفظ وياها — و«استرجاع» يرجّع كل شي مثل ما كان.")}
         </p>
         <input className="input" value={reason} onChange={(e) => setReason(e.target.value)} maxLength={120}
           placeholder={t("twin.deleteReason", "سبب الحذف (اختياري)")} />
@@ -322,6 +371,10 @@ export function CompanyTrash({ onChanged }: { onChanged: () => void }) {
           <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-surface-2 text-ink-subtle"><Building2 size={16} /></span>
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-semibold text-ink">{d.row?.name}</p>
+            {/* توأمان بالسلّة اسمُهما واحدٌ وتاريخُهما واحد — والملاحظةُ وحدَها
+                تميّزهما («الوكيل الرسمي» من «رقم المندوب»). بلا هذا يُسترجَع
+                غيرُ المقصود ولا يُعرف إلا بعد فوات. */}
+            {d.row?.note && <p className="truncate text-2xs text-ink-subtle">{d.row.note}</p>}
             <p className="mt-0.5 flex flex-wrap gap-x-3 text-2xs text-ink-muted">
               <span>{t("twin.trashAt", "انحذفت {{when}}", { when: formatDate(d.deleted_at, i18n.language) })}</span>
               <span>{t("twin.trashHas", "{{p}} منتج · {{s}} صنف", { p: formatNum((d.product_ids ?? []).length), s: formatNum((d.sections ?? []).length) })}</span>

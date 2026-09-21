@@ -904,6 +904,13 @@ console.log("\n▸ طيُّ الشركات — حافظاتُ merge_companies و
   const chargeSum = () => (db().companyCharges ?? []).reduce((a, c) => a + (c.amount || 0), 0);
   const owed = () => (db().purchases ?? []).reduce((a, x) => a + Math.max(0, (x.total || 0) - (x.amount_paid ?? x.total ?? 0)), 0);
   const orphans = () => (db().products ?? []).filter((p) => p.company_id == null || p.section_id == null).length;
+  /* **الحافظةُ التي لم تُكتب** (0201): أصنفُ كلِّ منتجٍ لشركته هو؟ كلُّ ما
+     عداها كان يمرّ أخضرَ بينما منتجٌ لم يتحرّك بالطيّ أصلاً هبط بصنفِ شركةٍ
+     أخرى بعد الفكّ — حالةٌ لا تصنعها الشاشةُ ولا تصلحها. */
+  const strayed = () => {
+    const co = Object.fromEntries((db().companySections ?? []).map((s) => [s.id, s.company_id]));
+    return (db().products ?? []).filter((p) => p.section_id && co[p.section_id] !== p.company_id).map((p) => p.id);
+  };
 
   sow();
   const before = { pool: pool(), sell: sellable(), chg: chargeSum(), owed: owed(), orph: orphans(), prods: (db().products ?? []).length };
@@ -913,6 +920,15 @@ console.log("\n▸ طيُّ الشركات — حافظاتُ merge_companies و
   check("  ويقول **ما ينتقل** لا ما بالمجموعة كلِّها (٢ من ٣)",
     tw[0].products === 3 && tw[0].moving_products === 2, `${tw[0].products}/${tw[0].moving_products}`);
   check("  ويقول حوضَ المطويّات (٢٫٢٥ + ١)", tw[0].pool_moving === 3.25, String(tw[0].pool_moving));
+  /* ولكلّ صفٍّ عددُه (0200): بلا هذا كانت نافذةُ الطيّ تُبقي أرقامَ الأقدم
+     حين تختار العيادةُ صفّاً آخر ليبقى — رقمٌ يُبنى عليه قرارٌ وهو كاذب. */
+  const det = tw[0].rows_detail ?? [];
+  const own = (id) => det.find((r) => r.id === id) ?? {};
+  check("ولكلّ صفٍّ عددُه على حدة", det.length === 2 && own("K").products === 1 && own("D").products === 2,
+    JSON.stringify(det.map((r) => [r.id, r.products])));
+  check("  وحوضُ كلٍّ منهما", own("K").pool === 7.5 && own("D").pool === 3.25, `${own("K").pool}/${own("D").pool}`);
+  check("  فالمنقولُ لو بقي الثاني = ١ منتج و١ صنف لا ٢",
+    own("K").products === 1 && own("K").sections === 1);
 
   const kept = await repo.mergeCompanies("K", "D");
   check("الطيُّ يمرّ ويرجّع الباقي", kept.id === "K");
@@ -921,6 +937,10 @@ console.log("\n▸ طيُّ الشركات — حافظاتُ merge_companies و
   check("  **ومجموعُ الحوض لم يتغيّر**", pool() === before.pool, `${pool()} ≠ ${before.pool}`);
   check("  والحوضُ هبط بالصنف الصحيح (٧٫٥ + ٢٫٢٥)",
     (db().companySections ?? []).find((x) => x.id === "sk")?.pooled_stock === 9.75);
+  check("  ولا منتجَ بصنفِ شركةٍ أخرى بعد الطيّ", strayed().length === 0, strayed().join("، "));
+  check("  وصورةُ الصنف المطويّ بوجهتها وحوضها",
+    (db().companySectionsTrash ?? []).some((x) => x.id === "sd" && x.folded_into === "sk" && x.pooled_moved === 2.25),
+    JSON.stringify((db().companySectionsTrash ?? []).map((x) => [x.id, x.folded_into, x.pooled_moved])));
   check("  ومجموعُ الوحدات القابلة للبيع ثابت", sellable() === before.sell);
   check("  والمطالبتان انتقلتا بمبلغهما (cascade كان سيمحوهما)",
     chargeSum() === before.chg && (db().companyCharges ?? []).every((c) => c.company_id === "K"));
@@ -938,6 +958,12 @@ console.log("\n▸ طيُّ الشركات — حافظاتُ merge_companies و
     (db().companySections ?? []).find((x) => x.id === "sk")?.pooled_stock === 7.5);
   check("  والمنتجان رجعا للمطويّة", (db().products ?? []).filter((p) => p.company_id === "D").length === 2);
   check("  والمطالبتان رجعتا إليها", (db().companyCharges ?? []).every((c) => c.company_id === "D"));
+  check("  و**لا منتجَ هبط بصنفِ شركةٍ أخرى**", strayed().length === 0, strayed().join("، "));
+  check("  والملاحظةُ فُكَّ اتّحادُها (الباقيةُ رجعت لملاحظتها وحدها)",
+    db().companies.find((c) => c.id === "K").note === "الوكيل الرسمي", db().companies.find((c) => c.id === "K").note);
+  check("  وصورةُ الصنف المطويّ تحمل وجهتَه ومنتجاتِه هو لا منتجاتِ الباقي",
+    (db().companySectionsTrash ?? []).length === 0 ||
+    (db().companySectionsTrash ?? []).every((x) => (x.product_ids ?? []).every((id) => id !== "pc")));
   check("  والسلّةُ فُرّغت", (await repo.listDeletedCompanies()).length === 0);
 
   /* ــ والحذفُ الصريح: البابُ الذي كان يفقد الديونَ بصمت (0198) ــ */
@@ -957,6 +983,29 @@ console.log("\n▸ طيُّ الشركات — حافظاتُ merge_companies و
   check("طيُّ الشيء بنفسه **يرمي**", await threw(() => repo.mergeCompanies("K", "K")));
   check("  وشركةٌ غيرُ موجودة كذلك", await threw(() => repo.mergeCompanies("K", "لا-أحد")));
   check("  ولا صفَّ تحرّك برفضه", (db().companies ?? []).length === 2 && orphans() === d0.orph);
+
+  /* ولا استرجاعَ يقول «تمّ» وهو رجع فارغاً (0203): حذفُ الباقية يجعل
+     `company_id` NULL، فلا شرطَ «ما زالت حيث تركها الطيّ» يتحقّق. */
+  sow();
+  await repo.mergeCompanies("K", "D");
+  await repo.deleteCompany("K", null);
+  check("استرجاعُ مطويّةٍ وجهتُها محذوفة **يرمي**", await threw(() => repo.restoreCompany("D")));
+  check("  ولا صفَّ أُنشئ برفضه", !(db().companies ?? []).some((c) => c.id === "D"));
+  await repo.restoreCompany("K");
+  await repo.restoreCompany("D");
+  check("وبالترتيب الصحيح يرجع كلُّ شيء لصاحبه",
+    (db().products ?? []).filter((p) => p.company_id === "D").map((p) => p.id).join() === "pa,pb" &&
+    (db().products ?? []).filter((p) => p.company_id === "K").map((p) => p.id).join() === "pc" &&
+    chargeSum() === before.chg && pool() === before.pool,
+    JSON.stringify((db().products ?? []).map((p) => [p.id, p.company_id])));
+
+  /* واسمٌ فارغٌ بعد التطبيع — أو محارفُ اتجاهٍ لا تُرى — يُرفض (0202). */
+  sow();
+  for (const bad of ["   ", "\u200b\u200f", "\u2066\u2069"]) {
+    check(`اسمٌ «${JSON.stringify(bad)}» يُرفض`, await threw(() => repo.createCompany({ name: bad, note: null, clinic_id: "c1" })));
+  }
+  check("و«رويال كانين» بمحرفِ اتجاهٍ = نفسُ الصفّ",
+    (await repo.ensureCompany("رويال كانين", "c1")).id === (await repo.ensureCompany("\u200fرويال\u200bكانين", "c1")).id);
 }
 
 console.log(`\n${fails ? "✗" : "✓"} repo-demo-test: ${passes} نجحت، ${fails} فشلت`);
