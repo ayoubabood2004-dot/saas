@@ -11,7 +11,7 @@ import { repo } from "@/lib/repo";
 import { Modal } from "@/components/Modal";
 import { Button, Badge, useToast } from "@/components/ui";
 import { InvoiceDetail } from "@/components/retail/InvoicesPanel";
-import { invoiceNo } from "@/lib/invoicePrint";
+import { invoiceNo } from "@/lib/invoiceNo";
 import { phoneDigits } from "@/lib/phone";
 import { cn, formatDate, formatNum, money } from "@/lib/utils";
 import { displayCustomerName } from "@/lib/customerName";

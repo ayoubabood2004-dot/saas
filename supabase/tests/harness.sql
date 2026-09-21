@@ -174,14 +174,22 @@ alter table companies      add column if not exists clinic_id      uuid not null
 alter table companies      add column if not exists name           text;
 -- أصنافُ الشركة (0065، خارج الـWAVE): تُقرأ بمسار الشراء لتصنيف القطعة الجديدة،
 -- ويُحدَّث `pooled_stock` بمسارَي البيع والإرجاع.
+--
+-- **و`on delete cascade` ليست زينة**: الإنتاج يحملها (0065:15)، وفحصُ طيِّ
+-- الشركات (0196) يقيس أنّ الطيَّ ينقل **قبل** أن يحذف. قالبٌ بلا التتالي كان
+-- سيؤكّد نجاحَ طيٍّ يفقد أصنافَ المطويّة بالإنتاج — «القالبُ يُقاس على ما
+-- تُنتجه القاعدة فعلاً، لا على ما يُسهّل كتابة الفحص».
 create table if not exists company_sections (
   id uuid primary key default gen_random_uuid(),
   clinic_id uuid not null default auth_clinic(),
-  company_id uuid,
+  company_id uuid references companies(id) on delete cascade,
   name text,
   pooled_stock numeric not null default 0,
   created_at timestamptz not null default now()
 );
+
+-- مطالباتُ الشركة تُنشئها 0155 نفسُها بالموجة (بـ`on delete cascade`) — فلا
+-- تُبنى هنا: قالبٌ يسبق الهجرةَ بعمودٍ مختلفٍ يُفشّل الهجرةَ الحقيقية.
 
 -- شكلُ ما تلمسه 0142: الدورةُ بحالتها وشهرها، والقسيمةُ بدفعها ومصروفها،
 -- ودالّتا الصلاحية من 0112. بدونها لا تنزل الهجرة أصلاً، وما لا ينزل لا يُفحص.

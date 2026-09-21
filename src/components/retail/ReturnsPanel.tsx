@@ -10,7 +10,7 @@ import { getInvoicesPaged } from "@/lib/settings";
 import { Button, useToast } from "@/components/ui";
 import { round2, paidOf, dueOf } from "@/lib/debt";
 import { cn, money, normalizeAr, formatNum, formatDate } from "@/lib/utils";
-import { invoiceNo } from "@/lib/invoicePrint";
+import { invoiceNo } from "@/lib/invoiceNo";
 import { describeDbError } from "@/lib/errors";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
 

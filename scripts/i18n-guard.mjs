@@ -156,7 +156,12 @@ function hardcodedCount(path) {
  * الإنتاج على لينكس لأن سقفَ كل ملفٍ صار صفراً. execFileSync لا يمرّ بصَدَفة
  * أصلاً، فالمسارُ يصل git كما هو على النظامين. */
 const files = execFileSync("git", ["ls-files", "--cached", "--others", "--exclude-standard", "src/**/*.ts", "src/**/*.tsx"], { cwd: ROOT, encoding: "utf8" })
-  .split("\n").filter((f) => f && !f.startsWith("src/i18n/") && !f.endsWith(".d.ts"));
+  .split("\n").filter((f) => f && !f.startsWith("src/i18n/") && !f.endsWith(".d.ts"))
+  /* و`--cached` يعدّ ما بالفهرس لا ما بالقرص: ملفٌّ حُذف ولم يُسجَّل حذفُه بعد
+   * يبقى بالقائمة، فكان `readFileSync` يرمي ENOENT ويسقط الحارسُ كلُّه — لا
+   * يفشّل البناءَ برسالةٍ مفهومة، بل ينهار بمسارٍ خام. وحذفُ ملفٍّ فعلٌ عاديّ
+   * أثناء العمل. فالمفقودُ يُسقَط: صفرُ نصٍّ صلبٍ بملفٍّ غيرِ موجود. */
+  .filter((f) => existsSync(join(ROOT, f)));
 
 /* وحتى لو فشل الجردُ بطريقةٍ أخرى لم نتوقّعها: صفرُ ملفاتٍ ليس «نظافةً»، هو
  * عطلُ أداة. نقولها ولا نكتب خطَّ أساسٍ فارغاً فوق الصحيح. */

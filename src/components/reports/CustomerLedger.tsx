@@ -9,7 +9,7 @@ import type { Invoice, InvoiceItem } from "@/types";
 import { Modal } from "@/components/Modal";
 import { cn, money, formatNum, formatDate } from "@/lib/utils";
 import { dueOf, paidOf } from "@/lib/debt";
-import { invoiceNo } from "@/lib/invoicePrint";
+import { invoiceNo } from "@/lib/invoiceNo";
 import { playTap } from "@/lib/sounds";
 import { usePermissions } from "@/hooks/usePermissions";
 /* محرّر أسطر الفاتورة نفسه الذي يستعمله التوصيل (0110): عكسٌ كامل للمخزون ثم

@@ -27,7 +27,7 @@ import { ExpiryInput } from "@/components/ExpiryInput";
 import { Combobox } from "@/components/Combobox";
 import { subcategoriesOf } from "@/lib/promotions";
 import { Button, Badge, useToast, Skeleton } from "@/components/ui";
-import { cn, formatDate, formatTime, money, fmtKg, searchable, normalizeCode, matchCode, normalizeAr, formatNum } from "@/lib/utils";
+import { cn, formatDate, formatTime, money, fmtKg, searchable, normalizeCode, matchCode, normalizeAr, formatNum, groupKey, normGroupName } from "@/lib/utils";
 import { withTimeout, describeDbError, describeUploadError } from "@/lib/errors";
 import { prepareUpload, type PreparedUpload } from "@/lib/image";
 import { productImageUrl } from "@/lib/storeLib";
@@ -60,16 +60,11 @@ const STOCK_FILTERS: Record<StockFilter, (p: Product) => boolean> = {
   all: () => true, low: isLow, out: isOut, soon: isExpiringSoon, expired: isExpired,
 };
 
-/** Canonical company name: trim, collapse internal whitespace, NFC-normalize
- *  (so visually-identical Arabic/Latin names don't split into two companies). */
-const normName = (s: string) => s.trim().replace(/\s+/g, " ").normalize("NFC");
-/**
- * مفتاحُ مطابقةِ اسمِ شركة. كان `toLowerCase` وحدَه، فحارسُ التكرار يسمح
- * بـ«الشركه» توأماً لـ«الشركة» و«الامل» لـ«الأمل» — وهما اسمٌ واحد بعين
- * قارئه. فصار يبني على `searchable` (تطبيعُ همزة/ة/ى والأرقام) مع طيّ
- * المسافات، وهو نفسُ ما تبحث به بقيّةُ الشاشات — «الشاشتان لازم تتفقان».
- */
-const normKey = (s: string) => searchable(normName(s)).replace(/\s+/g, " ").trim();
+/* اسمُ الشركة/الصنف: `normName` كما يُحفظ و`normKey` كما يُقارَن — **مستوردان**
+ * من `@/lib/utils` بعد أن كانا معرَّفَين هنا وبشاشة الشراء والكتلوج المبدئيّ.
+ * ثلاثُ نسخٍ لدالّةٍ واحدة تعني أنّ توسيعَ إحداها لا يصل الباقي، وهو ما وقع. */
+const normName = normGroupName;
+const normKey = groupKey;
 
 type View = "products" | "companies" | "purchases" | "ledger" | "barcodes" | "trash" | "wholesale";
 
@@ -1007,14 +1002,29 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
     let company_id: string | null = null;
     const typed = normName(f.company);
     if (typed) {
-      const key = typed.toLowerCase();
+      /* **الطرفان من نفس الدالّة.** كان `typed.toLowerCase()` مقابل
+         `normKey(c.name)` — و`normKey` يمسح المسافات كلَّها، فـ«شركة تاج
+         الخيل» تُقارن بـ«شركهتاجالخيل» ولا تتطابقان أبداً. فكانت كلُّ حفظةِ
+         منتجٍ تصنع الشركةَ من جديد بنفس الاسم حرفاً بحرف: ١٠٢ صفّاً مكرّراً
+         من ١٤٣ بستّ عيادات، وثمانون بالمئة من كلّ شركةٍ تُضاف يومياً. */
+      const key = normKey(typed);
       const existing = [...companies, ...createdRef.current].find((c) => normKey(c.name) === key);
       if (existing) {
         company_id = existing.id;
       } else {
-        createdCompany = await repo.createCompany({ name: typed, note: null, clinic_id: clinicId ?? null });
-        createdRef.current.push(createdCompany);
-        company_id = createdCompany.id;
+        /* `ensureCompany` تبحث **بالخادم** ثم تُنشئ بمعاملةٍ واحدة: قائمةُ
+           المتصفّح قد تكون قديمةً (تبويبٌ ثانٍ أو جهازٌ آخر أضافها قبل ثانية)،
+           فالمفتاحُ الصحيح وحدَه لا يكفي — البحثُ لازم يكون حيث الكتابة. */
+        const co = await repo.ensureCompany(typed, clinicId ?? null);
+        /* ولا تُسجَّل للتراجع إلا إن كانت **جديدةً فعلاً**: `ensure` قد تُرجع
+           شركةً قائمةً لم تكن بقائمتنا، وحذفُها عند فشلِ حفظِ منتجٍ يمحو شركةَ
+           عيادةٍ بأصنافها ومطالباتها. شركةٌ فارغةٌ تُرى وتُحذف بيد صاحبها؛
+           شركةٌ حقيقيةٌ حُذفت لا تُرجَع. */
+        if (!companies.some((c) => c.id === co.id)) {
+          createdRef.current.push(co);
+          if (co.created_at && Date.now() - new Date(co.created_at).getTime() < 15_000) createdCompany = co;
+        }
+        company_id = co.id;
       }
     }
     // Resolve the section (صنف) WITHIN the resolved company. Only meaningful
@@ -1022,14 +1032,19 @@ function ProductModal({ open, product, companies, sections, clinicId, subcategor
     let section_id: string | null = null;
     const secTyped = normName(f.section);
     if (company_id && secTyped) {
-      const key = secTyped.toLowerCase();
+      /* ونفسُه بطبقة الصنف — ومنه بصمةُ «شركةٌ واحدة : صنفٌ واحد : منتجٌ
+         واحد» المقيسة: «دراي فود» فيها مسافةٌ فلا تتطابق أبداً. */
+      const key = normKey(secTyped);
       const existing = [...sections, ...createdSecRef.current].find((s) => s.company_id === company_id && normKey(s.name) === key);
       if (existing) {
         section_id = existing.id;
       } else {
-        createdSection = await repo.createCompanySection({ company_id, name: secTyped, clinic_id: clinicId ?? null });
-        createdSecRef.current.push(createdSection);
-        section_id = createdSection.id;
+        const sec = await repo.ensureCompanySection(company_id, secTyped, clinicId ?? null);
+        if (!sections.some((x) => x.id === sec.id)) {
+          createdSecRef.current.push(sec);
+          if (sec.created_at && Date.now() - new Date(sec.created_at).getTime() < 15_000) createdSection = sec;
+        }
+        section_id = sec.id;
       }
     }
     return { company_id, section_id, createdCompany, createdSection };

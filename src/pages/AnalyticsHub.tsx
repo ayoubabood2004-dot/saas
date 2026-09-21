@@ -31,7 +31,7 @@ import { money, formatNum, cn, dateLocale } from "@/lib/utils";
 import { netPerPocket, POCKETS, type PocketTotals } from "@/lib/pockets";
 import { displayCustomerName } from "@/lib/customerName";
 import { dueOf, isDebt, paidOf } from "@/lib/debt";
-import { invoiceNo } from "@/lib/invoicePrint";
+import { invoiceNo } from "@/lib/invoiceNo";
 import { getClinicName } from "@/lib/settings";
 import { UniversalReportTable, type ReportColumn, type SummaryMetric } from "@/components/reports/UniversalReportTable";
 import { CustomersTab } from "@/components/reports/CustomerLedger";

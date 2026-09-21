@@ -5,22 +5,16 @@ import type { Company, CompanySection, Product } from "@/types";
 import { repo } from "@/lib/repo";
 import { Modal } from "@/components/Modal";
 import { Button, useToast } from "@/components/ui";
-import { cn } from "@/lib/utils";
+import { cn, groupKey} from "@/lib/utils";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
 import { describeDbError } from "@/lib/errors";
 import { START_CATALOG, catalogCounts, type CatalogCompany } from "@/lib/startCatalog";
 
-/** اسم موحَّد للمقارنة: همزات وتاء مربوطة وفراغات وأرقام عربية — مرآة inv_norm_name.
- *  الحروف بمهارب يونيكود: أ إ آ ← ا، ة ← ه، ى ← ي. */
-const nameKey = (v: string): string =>
-  (v ?? "")
-    .replace(/[\u0623\u0625\u0622]/g, "\u0627")
-    .replace(/\u0629/g, "\u0647")
-    .replace(/\u0649/g, "\u064A")
-    .replace(/[٠-٩]/g, (d) => String(d.charCodeAt(0) - 0x0660))
-    .replace(/\s+/g, " ")
-    .trim()
-    .toLowerCase();
+/* كان هنا `nameKey` — **نسخةٌ ثالثةٌ** من مفتاح المقارنة، تطوي الهمزةَ والتاءَ
+ * المربوطة لكنها **تُبقي المسافات** بخلاف مفتاح شاشتَي المخزون والشراء. ثلاثُ
+ * دوالَّ لغرضٍ واحد تعني أنّ كتلوجاً يقول «الشركةُ موجودة» بينما الحفظُ يراها
+ * غيرَ موجودة (أو العكس) — فيولد توأمٌ يرفضه حارسُ القاعدة لاحقاً. مفتاحٌ واحد. */
+const nameKey = groupKey;
 
 /* ============================================================================
  * الكتلوج الجاهز — العيادة الجديدة تفعّل شركات السوق بأصنافها ومنتجاتها بضغطة.

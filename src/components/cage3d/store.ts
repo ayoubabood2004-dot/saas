@@ -1,20 +1,44 @@
 import { useSyncExternalStore } from "react";
-import { getCageLayout, setCageLayout } from "@/lib/settings";
+import {
+  parseLayout, serializeLayout, layoutFingerprint, orphanCodes,
+  EMPTY_LAYOUT, type CageLayout, type LayoutRoom, type LayoutCage, type DoorSide,
+} from "@/lib/cageLayout";
+import { getCageLayoutRaw, getCageLayoutRev, noteCageLayoutSaved } from "@/lib/settings";
+import { sb, registerHydrator, registerReset } from "@/lib/clinicSync";
+import { getActiveClinicId } from "@/lib/clinics";
 
 /* ============================================================================
- * cage3dStore — طبقة «التخطيط» فقط: الغرف ومواقع الأقفاص على الشبكة.
+ * cage3dStore — طبقة «التخطيط»: الغرف ومواقع الأقفاص.
  *
- * المرضى ليسوا هنا: يجيون من opsStore الحقيقي (نفس مصدر التقويم الرئيسي) —
- * القفص بالمشهد يُسكنه الرقود النشط الذي يحمل رمزه بحقل admission.cage،
- * فالمشهد المجسّم وخريطة 2D والتقويم كلهم حقيقة واحدة.
+ * ── العطبُ الذي بُني هذا الملفُّ من جديد لأجله ──────────────────────────
+ * «العيادة ترتّب غرفها على حاسبة، وتفتحه على حاسبة ثانية فيصير الترتيب
+ * عشوائياً وكل الأقفاص بغرفة وحدة». وكان أسوأَ ممّا يبدو: الحاسبةُ الثانية
+ * **تكتب** تلك الفوضى فوق ترتيب الأولى.
  *
- * التزامن مع بقية السستم:
- *   • كل تعديل تخطيط هنا يُعكس فوراً إلى clinic_prefs.cage_layout (نفس ما
- *     تقرأه خريطة 2D بالطبلات) — مصدر واحد للغرف والرموز.
- *   • adoptCodes: أي رمز قفص موجود على رقود نشط (أو مرسوم بخريطة 2D) وغير
- *     موجود هنا يُتبنّى تلقائياً بخلية فاضية — ما في حيوان يختفي أبداً.
+ * ثلاثةُ أخطاءٍ فوق بعضها، وكلُّها هنا:
  *
- * المواقع الشبكية (خاصية 3D الوحيدة) تُحفظ محلياً بـlocalStorage.
+ *   ١) **الهندسةُ ما كانت تصل السحابةَ أصلاً.** مواضعُ الغرف وأبعادُها
+ *      وأبوابُها، وخليّةُ كلّ قفصٍ ولونُه واتجاهُه وطابقُه — كلُّها بـ
+ *      `localStorage` تحت مفتاحٍ **بلا اسم عيادة**. والسحابةُ لا تحمل إلا
+ *      أسماءَ الغرف ورموزَ أقفاصها. فلا جهازٌ ثانٍ يراها، ولا عيادتان على
+ *      جهازٍ واحدٍ تفترقان.
+ *
+ *   ٢) **البذرةُ كانت تُقرأ كأنها حقيقة.** `load()` حين لا يجد محلّياً شيئاً
+ *      كان يرجع ستّةَ أقفاصٍ وهمية بغرفة «غرفة الإقامة» — ثم يرفعها. بصمتُها
+ *      بالإنتاج: كلُّ عيادةٍ لها تخطيطٌ تبدأ بـ«غرفة الإقامة» ١٠١–١٠٦.
+ *
+ *   ٣) **والتبنّي كان يكتب.** `adoptCodes` تكدّس الرموزَ غيرَ المرسومة بغرفةٍ
+ *      جديدةٍ اسمُها «غير مصنّفة» ثم `commit(..., true)` يرفعها. المقيس:
+ *      أربعُ عياداتٍ من سبعٍ فيها غرفةٌ بهذا الاسم، وواحدةٌ فيها **ثلاث**.
+ *
+ * ── القواعدُ الآن ───────────────────────────────────────────────────────
+ *   • **لا بذرةَ أبداً.** لا تخطيطَ ⇒ شاشةٌ فارغةٌ تقول ذلك. فراغٌ صادقٌ
+ *     يُصلَّح بضغطة، وبذرةٌ كاذبةٌ تُصدَّق وتُكتب فوق الحقيقة.
+ *   • **يُقرأ قبل أن يُكتب.** `hydrate()` تملأ من السحابة، ولا كتابةَ قبلها.
+ *   • **الحفظُ بشرط النسخة** (`save_cage_layout` — 0195). من بنى على نسخةٍ
+ *     قديمةٍ لا يدوس: تُعرض عليه نسخةُ السحابة ويختار.
+ *   • **التبنّي عرضٌ لا كتابة** (`orphanCodes` بـcageLayout.ts).
+ *   • المرآةُ المحلّية **باسم العيادة** وذاكرةُ رسمٍ لا مصدرُ حقيقة.
  * ==========================================================================*/
 
 /** خطوة الشبكة = **ضِعف مقاس القفص** بالضبط.
@@ -22,98 +46,144 @@ import { getCageLayout, setCageLayout } from "@/lib/settings";
  * القاعدة صارت صريحة بدل أرقامٍ تُجرَّب: الفجوة بين قفصٍ وجاره = CELL − مقاس
  * القفص، فحين تكون الخطوة ضعف المقاس تصير الفجوة **قفصاً كاملاً من كل جهة**
  * — وهو ما طلبه المالك حرفياً. القفص ٣٫٢×٣٫٢ فالخطوة ٦٫٤، ولأن الفجوة تُشتقّ
- * لا تُضبط يدوياً، أيُّ تغيير لاحق بمقاس القفص يبقيها ضعفاً بلا إعادة معايرة.
- * (والتقارب/التباعد الظاهر على الشاشة تصنعه ملاءمة الكاميرا لا هذا الرقم.) */
+ * لا تُضبط يدوياً، أيُّ تغيير لاحق بمقاس القفص يبقيها ضعفاً بلا إعادة معايرة. */
 export const CELL = 6.4;
 export type Mode = "manage" | "build";
+export type { DoorSide };
 
 export const LED_CHOICES = ["#22d3ee", "#fb923c", "#f43f5e", "#4ade80", "#a78bfa", "#e2e8f0"] as const;
 
-/** جهة باب الغرفة: front = السياج الأمامي (z+d) وهو الافتراضي التاريخي. */
-export type DoorSide = "front" | "back" | "left" | "right";
+export type Room3D = LayoutRoom;
+export type CagePlacement = LayoutCage;
 
-export interface Room3D {
-  id: string;
-  name: string;
-  x: number; z: number;
-  w: number; d: number;
-  /** موضع باب الغرفة: الجهة + الخلية على تلك الجهة (0..طولها-1).
-   *  غيابه = السلوك القديم (منتصف الواجهة الأمامية) فلا تنكسر تخطيطات محفوظة. */
-  door?: { side: DoorSide; at: number };
-}
-
-export interface CagePlacement {
-  code: string;
-  x: number; z: number;
-  color?: string;
-  /** اتجاه باب القفص بأرباع لفّة: 0 أمام (الافتراضي) · 1 يمين · 2 خلف · 3 يسار. */
-  facing?: 0 | 1 | 2 | 3;
-  /** الطابق: 0 أرضي (الافتراضي) · 1 قفصٌ مركّب فوق الأرضي بنفس الخلية. */
-  level?: 0 | 1;
-}
+/** حالةُ المزامنة كما تُقال للمستخدم — الشاشةُ لا تدّعي حفظاً لم يحصل. */
+export type SyncState = "loading" | "saved" | "dirty" | "saving" | "offline" | "conflict" | "error";
 
 interface StudioState {
   mode: Mode;
+  /** هل وصل التخطيطُ من السحابة (أو من المرآة بالوضع التجريبي)؟ */
+  ready: boolean;
   rooms: Room3D[];
   cages: CagePlacement[];
   selected: string | null;
+  /** نسخةُ السحابة التي بُني عليها ما بالشاشة. */
+  rev: number;
+  sync: SyncState;
+  /** آخرُ حفظٍ نجح — بالميلي ثانية المحلّية. */
+  savedAt: number | null;
+  /** نسخةُ السحابة الأحدث حين يقع تعارض — تُعرض ليختار صاحبُها. */
+  conflict: { rev: number; layout: CageLayout } | null;
+  /** نصُّ الخطأ الأخير، إن كان. */
+  error: string | null;
 }
 
-const LS_KEY = "vp_cage3d_layout_v2";
+const lsKey = () => `vp_cage3d_layout_${getActiveClinicId() || "anon"}`;
+/** المفتاحُ القديم — بلا اسم عيادة. لا يُقرأ تلقائياً أبداً (كان يخلط
+ *  عيادتين على جهازٍ واحد)؛ تعرضه الشاشةُ لصاحبه ليرفعه بقرارٍ منه. */
+export const LEGACY_LS_KEY = "vp_cage3d_layout_v2";
+
 const norm = (c: string) => c.trim().toLowerCase();
 
-function seed(): StudioState {
-  return {
-    mode: "manage",
-    rooms: [{ id: "r1", name: "غرفة الإقامة", x: 0, z: 0, w: 3, d: 2 }],
-    cages: [
-      { code: "101", x: 0, z: 0 }, { code: "102", x: 1, z: 0 }, { code: "103", x: 2, z: 0 },
-      { code: "104", x: 0, z: 1 }, { code: "105", x: 1, z: 1 }, { code: "106", x: 2, z: 1 },
-    ],
-    selected: null,
-  };
-}
+const blank = (): StudioState => ({
+  mode: "manage", ready: false, rooms: [], cages: [], selected: null,
+  rev: 0, sync: "loading", savedAt: null, conflict: null, error: null,
+});
 
-function load(): StudioState {
-  try {
-    const raw = localStorage.getItem(LS_KEY);
-    if (!raw) return seed();
-    const s = JSON.parse(raw) as StudioState;
-    if (!Array.isArray(s.rooms) || !Array.isArray(s.cages)) return seed();
-    return { ...s, mode: "manage", selected: null };
-  } catch { return seed(); }
-}
-
-let state: StudioState = load();
+let state: StudioState = blank();
 const listeners = new Set<() => void>();
+const emit = () => { for (const fn of listeners) fn(); };
 
-/** عكس التخطيط لخريطة 2D (clinic_prefs.cage_layout) — مصدر واحد للغرف.
- *  مؤجَّل ٤٠٠م.ث: جلسة بناء سريعة (قفص قفص قفص…) تكتب مرة واحدة بدل رفعة
- *  شبكة لكل ضغطة — هذا كان أكبر مصدر «لاق» بإضافة الأقفاص على الآيباد. */
-let mirrorT: ReturnType<typeof setTimeout> | null = null;
-function mirrorToPrefs() {
-  if (mirrorT) clearTimeout(mirrorT);
-  mirrorT = setTimeout(() => {
-    mirrorT = null;
-    try {
-      setCageLayout(state.rooms.map((r) => ({
-        id: r.id,
-        name: r.name,
-        cages: state.cages
-          .filter((c) => c.x >= r.x && c.x < r.x + r.w && c.z >= r.z && c.z < r.z + r.d)
-          .map((c) => c.code),
-      })));
-    } catch { /* بيئة بلا تفضيلات (اختبارات) — التخطيط المحلي يبقى صحيحاً */ }
-  }, 400);
+/** ما كان بالسحابة آخرَ ما قرأنا — لمقارنة «هل ما على الشاشة محفوظ؟». */
+let cloudPrint = layoutFingerprint(EMPTY_LAYOUT);
+
+function cacheLocal() {
+  try { localStorage.setItem(lsKey(), serializeLayout(state)); } catch { /* مساحة ممتلئة */ }
+}
+
+function apply(l: CageLayout, sync: SyncState) {
+  state = { ...state, rooms: l.rooms, cages: l.cages, rev: l.rev, ready: true, sync, conflict: null, error: null };
+  cloudPrint = layoutFingerprint(l);
+  cacheLocal();
+  emit();
+}
+
+/* ------------------------------- الترطيب -------------------------------- */
+
+/** يملأ التخطيطَ من السحابة. يُسجَّل بعد `hydrateClinicPrefs` فيقرأ ما وصل. */
+export async function hydrateCageStudio(): Promise<void> {
+  if (!sb()) {
+    /* الوضعُ التجريبي: المرآةُ **هي** المصدر، ولا سحابةَ تُنازعها. */
+    let raw: string | null = null;
+    try { raw = localStorage.getItem(lsKey()); } catch { /* ignore */ }
+    apply(parseLayout(raw), "offline");
+    return;
+  }
+  apply(parseLayout(getCageLayoutRaw(), getCageLayoutRev()), "saved");
+}
+
+registerHydrator(hydrateCageStudio);
+/* تبديلُ العيادة يُفرغ التخطيطَ فوراً: عرضُ غرفِ عيادةٍ على شاشة أخرى خطأٌ
+ * يُصدَّق — ودرس 0153 أنّ التسريب يبدأ عرضاً قبل أن يصير كتابة. */
+registerReset(() => { state = blank(); cloudPrint = layoutFingerprint(EMPTY_LAYOUT); emit(); });
+
+/* -------------------------------- الحفظ --------------------------------- */
+
+let saveT: ReturnType<typeof setTimeout> | null = null;
+
+async function push(): Promise<void> {
+  const json = serializeLayout(state);
+  const client = sb();
+  if (!client) { cacheLocal(); state = { ...state, sync: "offline", savedAt: Date.now() }; emit(); return; }
+  state = { ...state, sync: "saving" }; emit();
+  try {
+    const { data, error } = await client.rpc("save_cage_layout", { p_json: json, p_base_rev: state.rev });
+    if (error) throw error;
+    const res = (data ?? {}) as { ok?: boolean; rev?: number; layout?: string | null };
+    if (res.ok) {
+      state = { ...state, rev: Number(res.rev ?? state.rev), sync: "saved", savedAt: Date.now(), error: null };
+      cloudPrint = json;
+      noteCageLayoutSaved(json, state.rev);
+      cacheLocal();
+      emit();
+      return;
+    }
+    /* تعارض: **لا نكتب ولا نمسح**. نحمل نسخةَ السحابة بجانب نسخةِ الشاشة
+       ويختار صاحبُها. حسمٌ تلقائيٌّ هنا يعني ضياعَ عملِ أحدهما بصمت. */
+    const cloud = parseLayout(res.layout ?? null, Number(res.rev ?? 0));
+    state = { ...state, sync: "conflict", conflict: { rev: cloud.rev, layout: cloud } };
+    emit();
+  } catch (e) {
+    /* الفشلُ يُقال ويبقى «غير محفوظ»: كان الصمتُ يجعل العيادةَ تصدّق أنّ ما
+       رسمته محفوظ. والمرآةُ المحلّية تحفظه حتى تعود الشبكة. */
+    cacheLocal();
+    state = { ...state, sync: "error", error: e instanceof Error ? e.message : String(e) };
+    emit();
+  }
+}
+
+function scheduleSave() {
+  if (saveT) clearTimeout(saveT);
+  /* ٦٠٠م.ث: جلسةُ بناءٍ سريعة (قفص قفص قفص…) تكتب مرّةً واحدة بدل رفعةٍ لكلّ
+     ضغطة — وهذا كان أكبرَ مصدرِ «لاق» على الآيباد. */
+  saveT = setTimeout(() => { saveT = null; void push(); }, 600);
 }
 
 function commit(next: Partial<StudioState>, touchesLayout = false) {
   state = { ...state, ...next };
-  try {
-    localStorage.setItem(LS_KEY, JSON.stringify({ ...state, mode: "manage", selected: null }));
-  } catch { /* مساحة ممتلئة؟ الحالة بالذاكرة تبقى صحيحة */ }
-  if (touchesLayout) mirrorToPrefs();
-  listeners.forEach((fn) => fn());
+  if (touchesLayout) {
+    /* **لا كتابةَ قبل قراءة.** متجرٌ لم يُرطَّب بعدُ لا يعرف ماذا بالسحابة،
+       فأيُّ حفظٍ منه حفظُ فراغٍ فوق تخطيطٍ قائم — وهو الجذرُ نفسُه. */
+    if (!state.ready) { emit(); return; }
+    state.sync = state.sync === "offline" ? "offline" : "dirty";
+    cacheLocal();
+    scheduleSave();
+  }
+  emit();
+}
+
+/** حفظٌ فوريٌّ بلا انتظار المهلة — تُنادى عند إخفاء الصفحة. */
+export function flushCageLayout(): void {
+  if (saveT) { clearTimeout(saveT); saveT = null; void push(); }
 }
 
 /* ------------------------------- استعلامات ------------------------------- */
@@ -402,52 +472,107 @@ export const cageStudio = {
     return changes;
   },
 
-  /** تبنّي رموز موجودة بالسستم (رقود نشطة أو خريطة 2D) وغير مرسومة هنا:
-   *  تُغرز بأول خلايا فاضية، وإن ضاقت الغرف تُبنى «غرفة غير مصنّفة» تسعها. */
-  adoptCodes(codes: string[]) {
+  /** ضمُّ رموزٍ غيرِ مرسومة إلى غرفةٍ **بقرار المستخدم**.
+   *
+   *  كانت `adoptCodes` تفعل هذا **تلقائياً عند كلّ فتحة شاشة**، وتبني غرفةً
+   *  اسمُها «غير مصنّفة» إن ضاقت الغرف، **وترفع ذلك للسحابة**. فجهازٌ جديدٌ
+   *  بذر ستّةَ أقفاصٍ ثم تبنّى الباقي بغرفةٍ واحدة ⇒ كتب ذلك فوق ترتيب
+   *  العيادة. المقيس: أربعُ عياداتٍ من سبعٍ فيها غرفةٌ بهذا الاسم، وواحدةٌ
+   *  فيها ثلاث. الآن: الرموزُ غيرُ المرسومة **تُعرض** (`orphanCodes`)، وهذه
+   *  الدالّةُ لا تعمل إلا حين يضغط أحدٌ زراً. */
+  adoptInto(roomId: string, codes: string[]): number {
+    if (!state.ready) return 0;
+    const room = state.rooms.find((r) => r.id === roomId);
+    if (!room) return 0;
     const known = new Set(state.cages.map((c) => norm(c.code)));
     const todo = [...new Set(codes.map((c) => c.trim()).filter(Boolean))].filter((c) => !known.has(norm(c)));
-    if (!todo.length) return;
-    let rooms = state.rooms;
+    if (!todo.length) return 0;
     const cages = [...state.cages];
-    const free: Array<[number, number]> = [];
-    const collectFree = () => {
-      free.length = 0;
-      for (const r of rooms) for (let j = 0; j < r.d; j++) for (let i = 0; i < r.w; i++) {
-        const x = r.x + i, z = r.z + j;
-        if (!cages.some((c) => c.x === x && c.z === z)) free.push([x, z]);
+    let rooms = state.rooms;
+    let grown = { ...room };
+    const freeIn = (r: Room3D): Array<[number, number]> => {
+      const out: Array<[number, number]> = [];
+      for (let jj = 0; jj < r.d; jj++) for (let ii = 0; ii < r.w; ii++) {
+        const x = r.x + ii, z = r.z + jj;
+        if (!cages.some((c) => c.x === x && c.z === z && (c.level ?? 0) === 0)) out.push([x, z]);
       }
+      return out;
     };
-    collectFree();
-    if (free.length < todo.length) {
-      const need = todo.length - free.length;
-      const w = Math.min(4, Math.max(1, need)), d = Math.ceil(need / w);
-      const b = rooms.length
-        ? { maxX: Math.max(...rooms.map((r) => r.x + r.w)) }
-        : { maxX: -1 };
-      rooms = [...rooms, {
-        id: `r${Date.now().toString(36)}`, name: "غير مصنّفة",
-        x: b.maxX + 1, z: 0, w, d,
-      }];
-      collectFree();
+    let free = freeIn(grown);
+    /* الغرفةُ تتعمّق صفوفاً حتى تسع — **ولا تُبنى غرفةٌ باسمٍ مخترَع**.
+       الغرفُ تُسمّى بيد العيادة لا بيد الشِفرة. */
+    while (free.length < todo.length) {
+      grown = { ...grown, d: grown.d + 1 };
+      free = freeIn(grown);
     }
-    todo.forEach((code, i) => {
-      const cell = free[i];
+    if (grown.d !== room.d) rooms = rooms.map((r) => (r.id === roomId ? grown : r));
+    todo.forEach((code, k) => {
+      const cell = free[k];
       if (cell) cages.push({ code, x: cell[0], z: cell[1] });
     });
     commit({ rooms, cages }, true);
+    return todo.length;
   },
 
-  reset() {
-    try { localStorage.removeItem(LS_KEY); } catch { /* لا شيء */ }
-    state = seed();
-    listeners.forEach((fn) => fn());
+  /** الرموزُ التي يعرفها النظامُ وليست مرسومة — **عرضٌ مشتقٌّ لا كتابة**. */
+  orphans(known: Iterable<string>): string[] {
+    return state.ready ? orphanCodes(state, known) : [];
+  },
+
+  /** هل ما على الشاشة هو نفسُه ما بالسحابة؟ يستعمله زرُّ «تحقّق». */
+  matchesCloud(): boolean {
+    return layoutFingerprint(state) === cloudPrint;
+  },
+
+  /** حسمُ التعارض بقرار المستخدم — لا يُحسم تلقائياً أبداً. */
+  resolveConflict(take: "cloud" | "mine") {
+    const c = state.conflict;
+    if (!c) return;
+    if (take === "cloud") { apply(c.layout, "saved"); return; }
+    /* «افرض نسختي»: نُعيد البناءَ على نسخة السحابة الحالية ثم نحفظ — فالكتابةُ
+       تمرّ من نفس الشرط، ولا يوجد بابٌ خلفيٌّ يدوس بلا نسخة. */
+    state = { ...state, rev: c.rev, conflict: null, sync: "dirty" };
+    emit();
+    void push();
+  },
+
+  /** تحميلُ تخطيطٍ من سجلّ الترتيب أو من مرآة جهازٍ قديم — **معاينةٌ ثم حفظ**:
+   *  يُوضع بالشاشة ويُعلَّم «غير محفوظ»، فيراه صاحبُه قبل أن يُثبَّت. */
+  loadDraft(raw: string | null) {
+    if (!state.ready) return;
+    const l = parseLayout(raw, state.rev);
+    state = { ...state, rooms: l.rooms, cages: l.cages, selected: null, sync: "dirty", conflict: null };
+    cacheLocal();
+    emit();
+    scheduleSave();
+  },
+
+  /** إعادةُ القراءة من السحابة — ترمي ما لم يُحفظ عمداً، بزرٍّ صريح. */
+  async reload(): Promise<void> {
+    state = { ...state, ready: false, sync: "loading" };
+    emit();
+    const { hydrateClinicPrefs } = await import("@/lib/settings");
+    await hydrateClinicPrefs().catch(() => undefined);
+    await hydrateCageStudio();
   },
 };
 
-/** عند أول تشغيل: اكتساب غرف خريطة 2D المرسومة سابقاً (رموز فقط). */
-export function codesFromPrefs(): string[] {
-  try { return getCageLayout().flatMap((r) => r.cages); } catch { return []; }
+/** نسخُ التخطيط السابقة من سجلّ التدقيق (0195) — «ما دِيس يُرجَع».
+ *
+ *  ترمي على الفشل ولا ترجع قائمةً فارغة: قائمةٌ فارغةٌ عن خطأٍ تقول للعيادة
+ *  «ماكو نسخ» وهي موجودة، فتيأس من استرجاع ترتيبها. (درسُ `listCouriers`.) */
+export async function cageLayoutHistory(limit = 40): Promise<Array<{ at: string; actor: string | null; layout: string }>> {
+  const client = sb();
+  if (!client) return [];
+  const { data, error } = await client.rpc("cage_layout_history", { p_limit: limit });
+  if (error) throw error;
+  return (data ?? []) as Array<{ at: string; actor: string | null; layout: string }>;
+}
+
+/** مرآةُ المفتاح القديم على هذا الجهاز — إن وُجدت. تُعرض لصاحبها ليقرّر؛
+ *  ولا تُرفع تلقائياً أبداً: المفتاحُ بلا اسم عيادة، فقد يكون لعيادةٍ أخرى. */
+export function legacyDeviceLayout(): string | null {
+  try { return localStorage.getItem(LEGACY_LS_KEY); } catch { return null; }
 }
 
 export function useCageStudio(): StudioState {

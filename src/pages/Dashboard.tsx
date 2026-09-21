@@ -26,7 +26,7 @@ import {
 import type { Appointment, Pet, Admission, Species, Reminder, Invoice, Product } from "@/types";
 import { repo } from "@/lib/repo";
 import { statusOf } from "@/lib/opsStatus";
-import { cageStudio, codesFromPrefs } from "@/components/cage3d/store";
+import { cageStudio } from "@/components/cage3d/store";
 import { useAuth } from "@/contexts/AuthContext";
 import { usePermissions } from "@/hooks/usePermissions";
 import { formatTime, dateLocale, formatNum } from "@/lib/utils";
@@ -189,7 +189,7 @@ export function Dashboard() {
     let codes: string[] = [];
     try { codes = cageStudio.get().cages.map((c) => c.code); } catch { codes = []; }
     const seen = new Set(codes.map(normC));
-    const extras = [...codesFromPrefs(), ...act.map((a) => (a.cage ?? "").trim()).filter(Boolean)];
+    const extras = act.map((a) => (a.cage ?? "").trim()).filter(Boolean);
     for (const c of extras) {
       const k = normC(c);
       if (!seen.has(k)) { seen.add(k); codes.push(c); }

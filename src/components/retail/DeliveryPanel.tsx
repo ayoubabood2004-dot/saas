@@ -16,7 +16,7 @@ import { DeliveryEditDialog } from "./DeliveryEditDialog";
 import { CourierSwapDialog } from "./CourierSwapDialog";
 import { Button, Badge, useToast } from "@/components/ui";
 import { openDeliverySlip } from "@/lib/deliveryPrint";
-import { invoiceNo } from "@/lib/invoicePrint";
+import { invoiceNo } from "@/lib/invoiceNo";
 import { dueOf, round2 } from "@/lib/debt";
 import { CourierLedger } from "./CourierLedger";
 import { companyOwed, companyOnRoad, carrierScope } from "@/lib/courierLedger";

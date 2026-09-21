@@ -15,7 +15,7 @@ import { useOverride, capLockedFrom } from "@/lib/managerOverride";
 import { Modal } from "@/components/Modal";
 import { Button, Badge, useToast, Skeleton } from "@/components/ui";
 import { useInvoicePrinter } from "./usePrintInvoice";
-import { invoiceNo } from "@/lib/invoicePrint";
+import { invoiceNo } from "@/lib/invoiceNo";
 import { cn, formatDate, money, dateLocale } from "@/lib/utils";
 import { displayCustomerName } from "@/lib/customerName";
 import { dueOf, paidOf, isDebt, paymentStatusOf, round2 } from "@/lib/debt";

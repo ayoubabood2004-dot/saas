@@ -11,6 +11,7 @@ import type { FeatureRequest } from "@/types";
 import { Button, Badge, Skeleton, useToast } from "@/components/ui";
 import { money, formatNum, formatDate, cn } from "@/lib/utils";
 import { playSuccess, playWarning, playTap } from "@/lib/sounds";
+import { openBlankFormPrint } from "@/lib/invoicePrint";
 
 const STATUS_META: Record<string, { label: string; tone: "success" | "brand" | "warn" | "danger" }> = {
   active: { label: "نشط", tone: "success" },
@@ -508,6 +509,26 @@ export function AdminBilling() {
           <h2 className="font-display font-bold text-ink">تفعيل يدوي (دفع كاش)</h2>
         </div>
         <p className="mb-4 text-sm text-ink-muted">فعّل عيادة دفعت نقداً عبر المندوب — تختار الخطة والمدّة، ويُمدّد اشتراكها فوراً.</p>
+
+        {/* ورقةٌ بيد العيادة مقابل الكاش الذي قبضه المندوب.
+            كلُّ أثرِ القبض قبل اليوم إشعارٌ على الشاشة يختفي بثوانٍ — لا ورقةَ
+            بيد الدافع ولا بيد القابض. تُطبع فارغةً وتُملأ بالقلم: المندوبُ
+            بالطريق لا على حاسبة. */}
+        <div className="mb-4 flex flex-wrap items-center gap-2 rounded-2xl border border-line bg-surface-2/60 p-3">
+          <Receipt size={16} className="text-ink-subtle" />
+          <span className="min-w-0 flex-1 text-xs font-semibold text-ink-muted">وصل استلام بترويسة doctorVet — يُطبع فارغاً A4 ويُملأ بالقلم عند القبض.</span>
+          <Button size="sm" variant="secondary" leftIcon={<Receipt size={15} />}
+            onClick={() => {
+              playTap();
+              /* لا تُبلع نتيجةُ الفتح: المنبثقةُ المحجوبةُ تعني «ضغطتُ ولم يحصل
+                 شيء» — وهو صمتٌ يُصدَّق. */
+              if (!openBlankFormPrint({ lang: "ar" })) {
+                toast.error("المتصفّح حجب نافذة الطباعة", "اسمح بالنوافذ المنبثقة لهذا الموقع ثم أعد المحاولة.");
+              }
+            }}>
+            اطبع وصل استلام
+          </Button>
+        </div>
 
         <label className="label">بريد العيادة</label>
         <input type="email" dir="ltr" className="input" placeholder="clinic@email.com" value={email} onChange={(e) => setEmail(e.target.value)} />

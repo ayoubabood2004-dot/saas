@@ -8,7 +8,7 @@ import { repo } from "@/lib/repo";
 import { Modal } from "@/components/Modal";
 import { Button, useToast } from "@/components/ui";
 import { openDeliverySlip } from "@/lib/deliveryPrint";
-import { invoiceNo } from "@/lib/invoicePrint";
+import { invoiceNo } from "@/lib/invoiceNo";
 import { cn, money, normalizeAr } from "@/lib/utils";
 import { describeDbError } from "@/lib/errors";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
