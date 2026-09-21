@@ -13,9 +13,10 @@ import {
   TrendingUp, AlertTriangle, CalendarClock, Pencil, PackagePlus, Boxes, Layers, Wallet, ShoppingBag, FolderTree, ScanBarcode,
   Check, ListPlus, Printer, Copy, Sparkles, FileSpreadsheet, Loader2, Scale, RefreshCw, RotateCcw, Camera, Lock, Clock,
 } from "lucide-react";
-import type { Product, ProductCategory, Company, CompanySection, DeletedProduct } from "@/types";
+import type { Product, ProductCategory, Company, CompanySection, DeletedProduct, CompanyTwinGroup } from "@/types";
 import { PurchasesTab, PurchaseBuilderModal } from "@/components/inventory/Purchases";
 import { StarterCatalogModal } from "@/components/inventory/StarterCatalog";
+import { CompanyTwinsCard, MergeCompaniesDialog, DeleteCompanyDialog, CompanyTrash } from "@/components/inventory/CompanyTwins";
 import { SupplierLedgerTab } from "@/components/inventory/SupplierLedger";
 import { SaleBuilder } from "@/components/retail/SaleBuilder";
 import { useEntitlements } from "@/lib/entitlements";
@@ -1972,6 +1973,9 @@ function CompaniesTab({ products, companies, sections, clinicId, onChanged }: { 
 
   return (
     <div className="space-y-4">
+      {/* التكرارُ يُقال قبل أن يُسأل عنه: ١٠٢ من ١٤٣ شركةٍ بالإنتاج توأم، ولا
+          أحدَ كان يراه. والبطاقةُ تختفي وحدَها حين لا تكرار. */}
+      {!locked && <CompanyTwinsCard companies={companies} onChanged={onChanged} />}
       <div className="flex items-center gap-2">
         <div className="relative flex-1">
           <Search size={16} className="pointer-events-none absolute top-1/2 -translate-y-1/2 text-ink-subtle ltr:left-3 rtl:right-3" />
@@ -2097,16 +2101,17 @@ function CompanyDetail({ company, products, companies, sections, clinicId, onBac
   const sectionNameOf = (id?: string | null) => (id ? mySections.find((x) => x.id === id)?.name : undefined);
   const { askDelete: removeProduct, deleteDialog } = useProductDelete(onChanged);
 
-  const pooledTotal = mySections.reduce((n, sec) => n + (sec.pooled_stock ?? 0), 0);
-  const removeCompany = async () => {
-    // Deleting a company removes its sections too — which would erase any pooled
-    // (legacy) counts they hold. Warn loudly and require an explicit confirmation.
-    const msg = pooledTotal > 0
-      ? t("pos.confirmDeleteCompanyPooled", { name: company.name, sections: mySections.length, n: pooledTotal, defaultValue: "حذف شركة \"{{name}}\"؟\n\nتحذير: فيها {{sections}} صنف ومخزون مجمّع مقداره {{n}} — هذا العدد سيُحذف نهائياً. المنتجات تبقى لكن بدون شركة ولا مخزون مجمّع.\n\nمتأكد؟" })
-      : t("pos.confirmDeleteCompany", { name: company.name, defaultValue: "حذف شركة \"{{name}}\"؟ ستبقى المنتجات لكن بدون شركة." });
-    if (!window.confirm(msg)) return;
-    try { await repo.deleteCompany(company.id); playSuccess(); onChanged(); onBack(); }
-    catch (e) { toast.error(describeDbError(e, t), e instanceof Error ? e.message : undefined); }
+  /* **لا `window.confirm`.** «اختفى كأنه ما كان» جذرُه تأكيدُ متصفّحٍ يُقبل بلا
+   * قراءة على حسابٍ مشترك — والنافذةُ تسمّي ما يتحرّك بالعدد، وتعرض الطيَّ
+   * بدلاً عن الحذف إن كانت الشركةُ توأماً (فالحذفُ يمزّق تاريخَها بين صفَّين). */
+  const [deleting, setDeleting] = useState(false);
+  const [twin, setTwin] = useState<CompanyTwinGroup | null>(null);
+  const [mergeOpen, setMergeOpen] = useState(false);
+  const askDeleteCompany = async () => {
+    setTwin(null);
+    // قراءةٌ تفشل لا تمنع الحذف — تمنع **الادّعاء** أنها ليست توأماً.
+    try { setTwin((await repo.companyTwins()).find((g) => g.ids.includes(company.id)) ?? null); } catch { /* تُعرض بلا اقتراح الطيّ */ }
+    setDeleting(true);
   };
 
   // Drilled into a specific section (or the uncategorized bucket).
@@ -2134,6 +2139,21 @@ function CompanyDetail({ company, products, companies, sections, clinicId, onBac
   return (
     <div className="space-y-4">
       {deleteDialog}
+      {deleting && (
+        <DeleteCompanyDialog
+          company={company} sections={mySections} products={products} twin={twin}
+          onClose={() => setDeleting(false)}
+          onDeleted={() => { setDeleting(false); onChanged(); onBack(); }}
+          onMerge={() => { setDeleting(false); setMergeOpen(true); }}
+        />
+      )}
+      {mergeOpen && twin && (
+        <MergeCompaniesDialog
+          group={twin} companies={companies}
+          onClose={() => setMergeOpen(false)}
+          onMerged={() => { setMergeOpen(false); onChanged(); if (twin.keep_id !== company.id) onBack(); }}
+        />
+      )}
       <button onClick={() => { playTap(); onBack(); }} className="inline-flex items-center gap-1.5 text-sm font-semibold text-ink-muted transition hover:text-brand-600">
         <Back size={16} /> {t("pos.backToCompanies", "كل الشركات")}
       </button>
@@ -2155,7 +2175,7 @@ function CompanyDetail({ company, products, companies, sections, clinicId, onBac
         {!locked && (
           <div className="flex items-center gap-1">
             <button onClick={() => { playTap(); setEditingCo(true); }} aria-label={t("common.edit", "Edit")} className="grid h-9 w-9 place-items-center rounded-full text-ink-subtle transition hover:bg-brand-50 hover:text-brand-600"><Pencil size={16} /></button>
-            <button onClick={removeCompany} aria-label={t("common.delete", "Delete")} className="grid h-9 w-9 place-items-center rounded-full text-ink-subtle transition hover:bg-danger-50 hover:text-danger-600"><Trash2 size={16} /></button>
+            <button onClick={() => { playTap(); void askDeleteCompany(); }} aria-label={t("common.delete", "Delete")} className="grid h-9 w-9 place-items-center rounded-full text-ink-subtle transition hover:bg-danger-50 hover:text-danger-600"><Trash2 size={16} /></button>
           </div>
         )}
       </div>
@@ -2465,7 +2485,10 @@ function SectionModal({ open, company, section, sections, clinicId, onClose, onS
     setBusy(true);
     try {
       if (section) await repo.updateCompanySection(section.id, { name: normName(name) });
-      else await repo.createCompanySection({ company_id: company.id, name: normName(name), clinic_id: clinicId ?? null });
+      // `ensure*` لا `create*`: الفحصُ أعلاه على **قائمةٍ قُرئت قبل قليل**،
+      // وتبويبان مفتوحان أو جهازان يقرآنها معاً فيُدرجان توأمَين. البحثُ
+      // والإدراجُ معاملةٌ واحدةٌ بالقاعدة (0196) فلا يولد توأمٌ أصلاً.
+      else await repo.ensureCompanySection(company.id, normName(name), clinicId ?? null);
       playSuccess();
       onSaved();
     } catch (e) {
@@ -2518,7 +2541,11 @@ function CompanyModal({ open, company, companies, clinicId, onClose, onSaved }: 
     try {
       const payload = { name: normName(name), note: note.trim() || null };
       if (company) await repo.updateCompany(company.id, payload);
-      else await repo.createCompany({ ...payload, clinic_id: clinicId ?? null });
+      else {
+        const co = await repo.ensureCompany(normName(name), clinicId ?? null);
+        // سبقنا إليها تبويبٌ ثانٍ؟ نُكمل صفَّها بالملاحظة بدل أن نصنع توأماً.
+        if (payload.note && (co.note ?? null) !== payload.note) await repo.updateCompany(co.id, { note: payload.note });
+      }
       playSuccess();
       onSaved();
     } catch (e) {
@@ -2969,6 +2996,7 @@ function TrashTab({ onChanged }: { onChanged: () => void }) {
       <p className="rounded-xl bg-surface-2 p-2.5 text-xs leading-relaxed text-ink-muted">
         {t("pos.trashHint", "كل منتج انحذف يوصل هنا بصورته لحظة الحذف. «استرجاع» يرجّعه للمخزن بنفس رصيده وفواتيره.")}
       </p>
+      <CompanyTrash onChanged={onChanged} />
       {rows.length === 0 ? (
         <div className="card p-10 text-center text-ink-subtle">{t("pos.trashEmpty", "ماكو منتجات محذوفة.")}</div>
       ) : rows.map((d) => (

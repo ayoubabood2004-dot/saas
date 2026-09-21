@@ -65,6 +65,53 @@ function trashProduct(db: DemoDB, row: Product, extra: { reason?: string | null;
   });
 }
 
+/** ثلاثُ منازل — نفسُ `round(x, 3)` بالقاعدة؛ حوضُ الأصناف يُخزَّن بها. */
+const round3 = (n: number): number => Math.round((n + Number.EPSILON) * 1000) / 1000;
+
+/**
+ * صورةُ شركةٍ تخرج من `companies` — مرآةُ محفّز 0197 وتوسعةِ 0198. والفرقُ
+ * الذي كلّف الديون: مفتاحُ `company_charges` و`company_sections`
+ * **`on delete cascade`**، فالصفُّ نفسُه يُمحى ولا يعيده معرّف. لذا تُحفظ
+ * **صفوفُ المطالبات كاملةً** هنا كما بالقاعدة، وصفوفُ الأصناف بسلّتها.
+ */
+function trashCompany(db: DemoDB, row: Company, extra: { reason?: string | null; merged_into?: string } = {}): DeletedCompany {
+  if (!db.companiesTrash) db.companiesTrash = [];
+  db.companiesTrash = db.companiesTrash.filter((t) => t.id !== row.id);
+  const secs = (db.companySections ?? []).filter((x) => x.company_id === row.id);
+  const snap: DeletedCompany = {
+    id: row.id, clinic_id: row.clinic_id ?? null, row: { ...row },
+    merged_into: extra.merged_into ?? null,
+    product_ids: (db.products ?? []).filter((p) => p.company_id === row.id).map((p) => p.id),
+    purchase_ids: (db.purchases ?? []).filter((p) => p.company_id === row.id).map((p) => p.id),
+    payment_ids: (db.purchasePayments ?? []).filter((p) => p.company_id === row.id).map((p) => p.id),
+    charge_ids: (db.companyCharges ?? []).filter((c) => c.company_id === row.id).map((c) => c.id),
+    sections: secs.map((sec) => ({
+      id: sec.id, name: sec.name, pooled_moved: 0, folded_into: null,
+      product_ids: (db.products ?? []).filter((p) => p.section_id === sec.id).map((p) => p.id),
+    })),
+    // الطيُّ ينقل الصفوفَ حيّةً فلا نسخةَ لها؛ والحذفُ الصريح يمحوها فتُنسخ.
+    charges: extra.merged_into ? [] : (db.companyCharges ?? []).filter((c) => c.company_id === row.id).map((c) => ({ ...c })),
+    reason: extra.reason?.trim() || null,
+    deleted_by: null,
+    deleted_at: new Date().toISOString(),
+  };
+  db.companiesTrash.push(snap);
+  // وصورةُ كلِّ صنفٍ يخرج بالتتالي — محفّزُ الأصناف يعمل أثناءه بالقاعدة.
+  if (!extra.merged_into) {
+    if (!db.companySectionsTrash) db.companySectionsTrash = [];
+    for (const sec of secs) {
+      db.companySectionsTrash = db.companySectionsTrash.filter((t) => t.id !== sec.id);
+      db.companySectionsTrash.push({
+        id: sec.id, clinic_id: sec.clinic_id ?? null, company_id: sec.company_id, row: { ...sec },
+        folded_into: null, pooled_moved: 0,
+        product_ids: (db.products ?? []).filter((p) => p.section_id === sec.id).map((p) => p.id),
+        deleted_at: new Date().toISOString(),
+      });
+    }
+  }
+  return snap;
+}
+
 const invNormName = (v: string | null | undefined): string =>
   (v ?? "")
     // أ/إ/آ→ا · ة→ه · ى→ي — بمهارب يونيكود: بنيةُ مطابقةٍ لا نصٌّ معروض.
@@ -75,7 +122,7 @@ import { supabase } from "./supabase";
 import { outboxEnqueue, outboxEnqueueRpc, outboxDrop, isNetworkError } from "./outbox";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, AppointmentStatus, ClinicInfo, PublicStaff, DailyNote, TreatmentEntry, Admission, Branch, Reminder, Product, Company, CompanySection, Purchase, PurchaseItem, PurchasePayment, PurchaseDraftLine, PurchaseMeta, Courier, DeliveryOrder, PetMovement, DemoDB, Invoice, InvoiceItem, CheckoutItem, SaleMeta, Customer, DiscountType, PaymentMethod, PaymentSplit, WhatsAppMessage, AuditEntry, LoginEvent, PetNote, Expense, ExpenseMethod, ReturnMeta, RetailReturnResult, HealthMetric, ClinicVisit , Surgery, LabResult, LabDeviceLink, LabDeviceInbox, LabStatusValue, PetProblem, CareEntry, FeatureRequest, GeneratedBarcode, StoreProfile, StoreOrder, StoreOrderItem, StoreFrontInfo, StoreCatalogItem, SuggestedProduct, StoreTrackInfo, LibraryImage, Journey, JourneyEvent, JourneyKind, JourneyStage, JourneyPublicView, EditLine, PoultryFarm, PoultryHouse, PoultryCycle, PoultryDaily, PoultryUse, PoultryUseKind, PoultryCycleStats, PoultryConsumeResult } from "@/types";
-import type { CompanyCharge } from "@/types";
+import type { CompanyCharge, CompanyTwinGroup, DeletedCompany, DeletedCompanySection, DeletedCompanySectionNote } from "@/types";
 import type { DeletedProduct, CourierSettlement, ReceiptsDay, ReceiptsTotal, TopProductRow, StaffSalesRow, InvoiceSearch } from "@/types";
 import type { BarcodeAilment, BarcodeHealthRow } from "@/types";
 import type { PortalMe, PortalPetCard, PortalPetDetail, PortalAdmission, PortalJourney, PortalCodeRequest, PortalVerifyResult } from "@/types";
@@ -2326,17 +2373,225 @@ const demoRepo = {
     saveDB(db);
     return c;
   },
-  async deleteCompany(id: string): Promise<void> {
+  /* **الحذفُ طيٌّ لا محو** — مرآةُ محفّزَي 0197 و0198. والصورةُ تحمل الصفوفَ
+   * لا المعرّفاتِ وحدَها حيث المفتاحُ `on delete cascade`: المطالباتُ والأصنافُ
+   * تُمحى صفوفُها، والمعرّفُ لا يعيد صفّاً غيرَ موجود. */
+  async deleteCompany(id: string, reason?: string | null): Promise<void> {
     const db = loadDB();
-    db.companies = (db.companies ?? []).filter((x) => x.id !== id);
-    // Its sections go too; products keep existing but lose the (now-gone) links.
+    const co = (db.companies ?? []).find((x) => x.id === id);
+    if (!co) throw new Error("company not found");
+    trashCompany(db, co, { reason: reason ?? null });
     const gone = new Set((db.companySections ?? []).filter((s) => s.company_id === id).map((s) => s.id));
+    db.companies = (db.companies ?? []).filter((x) => x.id !== id);
     db.companySections = (db.companySections ?? []).filter((s) => s.company_id !== id);
+    // cascade: مطالباتُها تُمحى (وصورتُها بالسلّة)، والباقي يُفرَّغ (set null).
+    db.companyCharges = (db.companyCharges ?? []).filter((c) => c.company_id !== id);
     for (const p of db.products ?? []) {
       if (p.company_id === id) p.company_id = null;
       if (p.section_id && gone.has(p.section_id)) p.section_id = null;
     }
+    for (const pu of db.purchases ?? []) if (pu.company_id === id) pu.company_id = null;
+    for (const py of db.purchasePayments ?? []) if (py.company_id === id) py.company_id = null;
     saveDB(db);
+  },
+
+  /* ---------------- طيُّ التوائم والسلّة (0196 → 0198) ---------------- */
+  /** مرآةُ `company_twins()`: مجموعاتُ الاسم الواحد، وكم **ينتقل** بالطيّ. */
+  async companyTwins(): Promise<CompanyTwinGroup[]> {
+    const db = loadDB();
+    const groups = new Map<string, Company[]>();
+    for (const c of db.companies ?? []) {
+      const k = groupKey(c.name);
+      if (!k) continue;
+      (groups.get(k) ?? groups.set(k, []).get(k)!).push(c);
+    }
+    const out: CompanyTwinGroup[] = [];
+    for (const [norm, rows] of groups) {
+      if (rows.length < 2) continue;
+      rows.sort((a, b) => (a.created_at || "").localeCompare(b.created_at || ""));
+      const ids = rows.map((r) => r.id);
+      const dropIds = new Set(ids.slice(1));
+      const inAll = (cid?: string | null) => !!cid && ids.includes(cid);
+      const inDrop = (cid?: string | null) => !!cid && dropIds.has(cid);
+      const sections = (db.companySections ?? []);
+      out.push({
+        norm, keep_id: ids[0], keep_name: rows[0].name, rows: rows.length, ids,
+        products: (db.products ?? []).filter((p) => inAll(p.company_id)).length,
+        purchases: (db.purchases ?? []).filter((p) => inAll(p.company_id)).length,
+        sections: sections.filter((x) => inAll(x.company_id)).length,
+        charges: (db.companyCharges ?? []).filter((x) => inAll(x.company_id)).length,
+        payments: (db.purchasePayments ?? []).filter((x) => inAll(x.company_id)).length,
+        moving_products: (db.products ?? []).filter((p) => inDrop(p.company_id)).length,
+        moving_purchases: (db.purchases ?? []).filter((p) => inDrop(p.company_id)).length,
+        moving_sections: sections.filter((x) => inDrop(x.company_id)).length,
+        moving_charges: (db.companyCharges ?? []).filter((x) => inDrop(x.company_id)).length,
+        moving_payments: (db.purchasePayments ?? []).filter((x) => inDrop(x.company_id)).length,
+        pool_moving: round3(sections.filter((x) => inDrop(x.company_id)).reduce((a, x) => a + (x.pooled_stock || 0), 0)),
+      });
+    }
+    return out.sort((a, b) => b.rows - a.rows || a.norm.localeCompare(b.norm));
+  },
+
+  /** مرآةُ `merge_companies`: تنقل **كلَّ** ما يشير إلى المطويّة ثم تحذفها. */
+  async mergeCompanies(keepId: string, dropId: string): Promise<Company> {
+    if (!keepId || !dropId || keepId === dropId) throw new Error("bad_merge");
+    const db = loadDB();
+    const keep = (db.companies ?? []).find((x) => x.id === keepId);
+    const drop = (db.companies ?? []).find((x) => x.id === dropId);
+    if (!keep) throw new Error("no_keep");
+    if (!drop) throw new Error("no_drop");
+    // اللقطةُ **قبل** أيّ تعديلٍ يمحو الحالةَ القديمة.
+    const snap = trashCompany(db, drop, { merged_into: keepId });
+    for (const p of db.products ?? []) if (p.company_id === dropId) p.company_id = keepId;
+    for (const pu of db.purchases ?? []) if (pu.company_id === dropId) { pu.company_id = keepId; pu.company_name = keep.name; }
+    for (const py of db.purchasePayments ?? []) if (py.company_id === dropId) py.company_id = keepId;
+    for (const ch of db.companyCharges ?? []) if (ch.company_id === dropId) ch.company_id = keepId;
+    for (const t of db.productsTrash ?? []) if (t.row?.company_id === dropId) t.row = { ...t.row, company_id: keepId };
+    // الأصناف: المتطابقُ اسمُه يُطوى بحوضه، وغيرُه ينتقل كما هو.
+    const notes: DeletedCompanySectionNote[] = [];
+    for (const sec of (db.companySections ?? []).filter((x) => x.company_id === dropId)) {
+      const match = (db.companySections ?? [])
+        .filter((x) => x.company_id === keepId && groupKey(x.name) === groupKey(sec.name))
+        .sort((a, b) => (a.created_at || "").localeCompare(b.created_at || ""))[0];
+      if (match) {
+        const moved = round3(sec.pooled_stock || 0);
+        /* صورةُ الصنف الخارج — محفّزُ الأصناف يلتقطها بالقاعدة أثناء الطيّ،
+         * وبلا مرآتها هنا كان الفكُّ يجد «لا صورة» فيبتلع حوضَه بصمت. */
+        (db.companySectionsTrash ??= []);
+        db.companySectionsTrash = db.companySectionsTrash.filter((t) => t.id !== sec.id);
+        db.companySectionsTrash.push({
+          id: sec.id, clinic_id: sec.clinic_id ?? null, company_id: sec.company_id, row: { ...sec },
+          folded_into: null, pooled_moved: 0,
+          product_ids: (db.products ?? []).filter((p) => p.section_id === sec.id).map((p) => p.id),
+          deleted_at: new Date().toISOString(),
+        });
+        match.pooled_stock = round3((match.pooled_stock || 0) + moved);
+        for (const p of db.products ?? []) if (p.section_id === sec.id) p.section_id = match.id;
+        for (const t of db.productsTrash ?? []) if (t.row?.section_id === sec.id) t.row = { ...t.row, section_id: match.id };
+        notes.push({ id: sec.id, name: sec.name, pooled_moved: moved, folded_into: match.id,
+          product_ids: (db.products ?? []).filter((p) => p.section_id === match.id).map((p) => p.id) });
+        db.companySections = (db.companySections ?? []).filter((x) => x.id !== sec.id);
+      } else {
+        sec.company_id = keepId;
+        notes.push({ id: sec.id, name: sec.name, pooled_moved: 0, folded_into: null, product_ids: [] });
+      }
+    }
+    snap.sections = notes;
+    // **الملاحظةُ اتّحادٌ لا اختيار**: لو حمل الطرفان نصّاً ضاع أحدُهما.
+    const a = (keep.note ?? "").trim(), b = (drop.note ?? "").trim();
+    keep.note = (a === b ? (a || b) : [a, b].filter(Boolean).join("\n")) || null;
+    db.companies = (db.companies ?? []).filter((x) => x.id !== dropId);
+    (db.companyMerges ??= []).push({ from_id: dropId, to_id: keepId, clinic_id: drop.clinic_id ?? null,
+      from_name: drop.name, merged_at: new Date().toISOString() });
+    saveDB(db);
+    return keep;
+  },
+
+  /** مرآةُ `merge_company_sections`: يجمع الحوضَ، ويشترط شركةً واحدة. */
+  async mergeCompanySections(keepId: string, dropId: string): Promise<void> {
+    if (!keepId || !dropId || keepId === dropId) throw new Error("bad_merge");
+    const db = loadDB();
+    const keep = (db.companySections ?? []).find((x) => x.id === keepId);
+    const drop = (db.companySections ?? []).find((x) => x.id === dropId);
+    if (!keep || !drop) throw new Error("bad_section");
+    if (keep.company_id !== drop.company_id) throw new Error("cross_company");
+    const moved = round3(drop.pooled_stock || 0);
+    (db.companySectionsTrash ??= []).push({
+      id: drop.id, clinic_id: drop.clinic_id ?? null, company_id: drop.company_id,
+      row: { ...drop }, folded_into: keepId, pooled_moved: moved,
+      product_ids: (db.products ?? []).filter((p) => p.section_id === dropId).map((p) => p.id),
+      deleted_at: new Date().toISOString(),
+    });
+    keep.pooled_stock = round3((keep.pooled_stock || 0) + moved);
+    for (const p of db.products ?? []) if (p.section_id === dropId) p.section_id = keepId;
+    for (const t of db.productsTrash ?? []) if (t.row?.section_id === dropId) t.row = { ...t.row, section_id: keepId };
+    db.companySections = (db.companySections ?? []).filter((x) => x.id !== dropId);
+    saveDB(db);
+  },
+
+  async listDeletedCompanies(): Promise<DeletedCompany[]> {
+    return (loadDB().companiesTrash ?? []).slice().sort((a, b) => b.deleted_at.localeCompare(a.deleted_at));
+  },
+  async listDeletedCompanySections(): Promise<DeletedCompanySection[]> {
+    return (loadDB().companySectionsTrash ?? []).slice().sort((a, b) => b.deleted_at.localeCompare(a.deleted_at));
+  },
+
+  /** مرآةُ `restore_company` (0197 ثم 0198): بنفس المعرّف، وبشرط أنّ ما انتقل
+   *  ما زال حيث تركه الطيّ — فصفٌّ نُقل يدوياً بعده لا يُخطَف. */
+  async restoreCompany(id: string): Promise<Company> {
+    const db = loadDB();
+    const t = (db.companiesTrash ?? []).find((x) => x.id === id);
+    if (!t) throw new Error("not_in_trash");
+    if ((db.companies ?? []).some((x) => x.id === id)) throw new Error("already_there");
+    const row = { ...t.row };
+    (db.companies ??= []).push(row);
+    const ids = new Set(t.product_ids ?? []);
+    const into = t.merged_into ?? null;
+    const at = (cur?: string | null) => (into ? cur === into : cur == null);
+    for (const p of db.products ?? []) if (ids.has(p.id) && at(p.company_id)) p.company_id = id;
+    for (const pu of db.purchases ?? []) if ((t.purchase_ids ?? []).includes(pu.id) && at(pu.company_id)) { pu.company_id = id; pu.company_name = row.name ?? pu.company_name; }
+    for (const py of db.purchasePayments ?? []) if ((t.payment_ids ?? []).includes(py.id) && at(py.company_id)) py.company_id = id;
+    if (into) {
+      for (const ch of db.companyCharges ?? []) if ((t.charge_ids ?? []).includes(ch.id) && ch.company_id === into) ch.company_id = id;
+      for (const tp of db.productsTrash ?? []) if (tp.row?.company_id === into && ids.has(tp.id)) tp.row = { ...tp.row, company_id: id };
+    } else {
+      // المطالباتُ صفوفٌ محاها التتالي — تُعاد من الصورة (0198).
+      for (const ch of t.charges ?? []) if (!(db.companyCharges ?? []).some((x) => x.id === ch.id)) (db.companyCharges ??= []).push({ ...ch, company_id: id });
+    }
+    for (const note of t.sections ?? []) {
+      const exists = (db.companySections ?? []).some((x) => x.id === note.id);
+      if (note.folded_into) {
+        if (!exists) {
+          const st = (db.companySectionsTrash ?? []).find((x) => x.id === note.id);
+          if (st) (db.companySections ??= []).push({ ...st.row });
+        }
+        if (note.pooled_moved) {
+          const keep = (db.companySections ?? []).find((x) => x.id === note.folded_into);
+          if (keep) keep.pooled_stock = round3(Math.max(0, (keep.pooled_stock || 0) - note.pooled_moved));
+          const back = (db.companySections ?? []).find((x) => x.id === note.id);
+          if (back) back.pooled_stock = note.pooled_moved;
+        }
+        const mine = new Set(note.product_ids ?? []);
+        for (const p of db.products ?? []) if (mine.has(p.id) && p.section_id === note.folded_into) p.section_id = note.id;
+        // الصورةُ استُهلكت: بقاؤها يعني صنفاً «محذوفاً» وهو قائمٌ بالقائمة.
+        if ((db.companySections ?? []).some((x) => x.id === note.id))
+          db.companySectionsTrash = (db.companySectionsTrash ?? []).filter((x) => x.id !== note.id);
+      } else if (into) {
+        const sec = (db.companySections ?? []).find((x) => x.id === note.id);
+        if (sec && sec.company_id === into) sec.company_id = id;
+      } else {
+        if (!exists) {
+          const st = (db.companySectionsTrash ?? []).find((x) => x.id === note.id);
+          if (st) (db.companySections ??= []).push({ ...st.row });
+        }
+        const mine = new Set(note.product_ids ?? []);
+        for (const p of db.products ?? []) if (mine.has(p.id) && p.section_id == null) p.section_id = note.id;
+        db.companySectionsTrash = (db.companySectionsTrash ?? []).filter((x) => x.id !== note.id);
+      }
+    }
+    db.companyMerges = (db.companyMerges ?? []).filter((x) => x.from_id !== id);
+    db.companiesTrash = (db.companiesTrash ?? []).filter((x) => x.id !== id);
+    saveDB(db);
+    return row;
+  },
+
+  async restoreCompanySection(id: string): Promise<CompanySection> {
+    const db = loadDB();
+    const t = (db.companySectionsTrash ?? []).find((x) => x.id === id);
+    if (!t) throw new Error("not_in_trash");
+    if ((db.companySections ?? []).some((x) => x.id === id)) throw new Error("already_there");
+    if (t.company_id && !(db.companies ?? []).some((c) => c.id === t.company_id)) throw new Error("no_company");
+    const row = { ...t.row };
+    (db.companySections ??= []).push(row);
+    if (t.folded_into && t.pooled_moved) {
+      const keep = (db.companySections ?? []).find((x) => x.id === t.folded_into);
+      if (keep) keep.pooled_stock = round3(Math.max(0, (keep.pooled_stock || 0) - t.pooled_moved));
+    }
+    const mine = new Set(t.product_ids ?? []);
+    for (const p of db.products ?? []) if (mine.has(p.id) && (!t.folded_into || p.section_id === t.folded_into)) p.section_id = id;
+    db.companySectionsTrash = (db.companySectionsTrash ?? []).filter((x) => x.id !== id);
+    saveDB(db);
+    return row;
   },
 
   /* ---------------- Company sections (أصناف) — groups inside a company ---------------- */
@@ -2374,6 +2629,16 @@ const demoRepo = {
   },
   async deleteCompanySection(id: string): Promise<void> {
     const db = loadDB();
+    const sec = (db.companySections ?? []).find((x) => x.id === id);
+    if (!sec) throw new Error("section not found");
+    // صورةٌ قبل الخروج (0197): كان الصنفُ يُمحى **بحوضه** بلا أثر — وحداتٌ تُباع.
+    (db.companySectionsTrash ??= []) && (db.companySectionsTrash = db.companySectionsTrash.filter((t) => t.id !== id));
+    db.companySectionsTrash.push({
+      id: sec.id, clinic_id: sec.clinic_id ?? null, company_id: sec.company_id, row: { ...sec },
+      folded_into: null, pooled_moved: 0,
+      product_ids: (db.products ?? []).filter((p) => p.section_id === id).map((p) => p.id),
+      deleted_at: new Date().toISOString(),
+    });
     db.companySections = (db.companySections ?? []).filter((x) => x.id !== id);
     // Products stay in the company — they just lose the (now-gone) section link.
     for (const p of db.products ?? []) if (p.section_id === id) p.section_id = null;
@@ -3554,6 +3819,10 @@ const DEMO_ACTIVITY_MAP: Record<string, { entity: string; action: "INSERT" | "UP
   createCompanySection: { entity: "company_sections", action: "INSERT" },
   updateCompanySection: { entity: "company_sections", action: "UPDATE" },
   deleteCompanySection: { entity: "company_sections", action: "DELETE" },
+  mergeCompanies: { entity: "companies", action: "DELETE" },
+  mergeCompanySections: { entity: "company_sections", action: "DELETE" },
+  restoreCompany: { entity: "companies", action: "INSERT" },
+  restoreCompanySection: { entity: "company_sections", action: "INSERT" },
   recordPurchase: { entity: "purchases", action: "INSERT" },
   updatePurchase: { entity: "purchases", action: "UPDATE" },
   createCourier: { entity: "couriers", action: "INSERT" },
@@ -5202,9 +5471,45 @@ const supabaseRepo: typeof demoRepo = {
   async updateCompany(id, patch) {
     return updated<Company>(await sbc().from("companies").update(patch).eq("id", id).select().maybeSingle());
   },
-  async deleteCompany(id) {
-    // FK on products.company_id is ON DELETE SET NULL, so products survive.
-    ok(await sbc().from("companies").delete().eq("id", id));
+  async deleteCompany(id, reason) {
+    /* المحفّزُ يصوّر الشركةَ بسلّتها قبل أن تخرج (0197)، ومعها **صفوفُ**
+     * مطالباتها (0198) لأن مفتاحَها `cascade` يمحوها لا يفرّغها. والسببُ
+     * يُكتب بالدالّة لا من هنا: سياسةُ السلّة قراءةٌ فقط، فتحديثٌ مباشرٌ
+     * يكون صفرَ صفوفٍ **بلا خطأ** — نجاحٌ كاذب. */
+    const { error } = await sbc().rpc("delete_company", { p_id: id, p_reason: reason ?? null });
+    if (error) throw error;
+  },
+  async companyTwins() {
+    const { data, error } = await sbc().rpc("company_twins");
+    if (error) throw error;
+    return (data ?? []) as CompanyTwinGroup[];
+  },
+  async mergeCompanies(keepId, dropId) {
+    const { data, error } = await sbc().rpc("merge_companies", { p_keep: keepId, p_drop: dropId });
+    if (error) throw error;
+    return data as Company;
+  },
+  async mergeCompanySections(keepId, dropId) {
+    const { error } = await sbc().rpc("merge_company_sections", { p_keep: keepId, p_drop: dropId });
+    if (error) throw error;
+  },
+  /* قوائمُ السلّة ترمي على الفشل ولا تبلعه: «ماكو محذوفات» عن خطأٍ تُصدَّق،
+   * فتعيد العيادةُ إدخالَ ما حذفته توأماً وتفقد تاريخه (درسُ `listDeletedProducts`). */
+  async listDeletedCompanies() {
+    return allPages<DeletedCompany>(() => sbc().from("companies_trash").select("*"), { col: "deleted_at", asc: false, kind: "time" });
+  },
+  async listDeletedCompanySections() {
+    return allPages<DeletedCompanySection>(() => sbc().from("company_sections_trash").select("*"), { col: "deleted_at", asc: false, kind: "time" });
+  },
+  async restoreCompany(id) {
+    const { data, error } = await sbc().rpc("restore_company", { p_id: id });
+    if (error) throw error;
+    return data as Company;
+  },
+  async restoreCompanySection(id) {
+    const { data, error } = await sbc().rpc("restore_company_section", { p_id: id });
+    if (error) throw error;
+    return data as CompanySection;
   },
 
   /* ---------------- Company sections (أصناف) ---------------- */
@@ -5888,6 +6193,7 @@ const READ_ONLY_ALLOWED = new Set<string>([
   "getPayrollPolicy", "listStaffComp", "listStaffRecurring", "listPayrollRuns",
   "listPayslips", "listPayslipLines", "listStaffLoans", "listLoanEvents",
   "listPayrollAdjustments", "listDeletedProducts", "productSaleLines", "listCourierSettlements",
+  "companyTwins", "listDeletedCompanies", "listDeletedCompanySections",
   "listInvoicesTouching", "customerInvoices", "listInvoiceItemsFor", "listInvoicesByIds", "reportReceiptsDaily", "reportReceiptsTotal",
   "reportTopProducts", "reportStaff", "countInvoices", "searchInvoices", "countInvoicesMatching", "openDebts",
   "activitySummary", "activityPage", "activityActors",

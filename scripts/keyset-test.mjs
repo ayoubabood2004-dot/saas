@@ -10,7 +10,7 @@
  * كما كان. فهذا الملفّ يحرس ثلاثة أشياء:
  *   ١) مقارِنُ الواجهة يطابق ترتيبَ القاعدة — على قوائمَ **قيست من الإنتاج**
  *      (١٩ أيلول ٢٠٢٦، PostgreSQL 17.6، ICU en-US، إصدار الترتيب 153.121).
- *   ٢) عقدُ المستدعين الـ٢٩: لا ترتيبَ بالخادم، وكلُّ من كان يرتّب يمرّر نفسَ
+ *   ٢) عقدُ المستدعين الـ٣١: لا ترتيبَ بالخادم، وكلُّ من كان يرتّب يمرّر نفسَ
  *      العمود ونفسَ الاتجاه ونوعَ العمود المقيس.
  *   ٣) `allPages` نفسُها بالمؤشّر لا بالموقع.
  *
@@ -86,7 +86,7 @@ if (po) {
   check("  والفارغُ أوّلاً تنازلياً", nul(false) === "∅ba", nul(false));
 }
 
-/* ── ٢) عقدُ المستدعين الـ٢٩ ──────────────────────────────────────────────
+/* ── ٢) عقدُ المستدعين الـ٣١ ──────────────────────────────────────────────
  * مُستخرَجٌ آلياً من الشيفرة **قبل** التحويل (١٩ أيلول ٢٠٢٦): كلُّ دالّةٍ وعمودُ
  * ترتيبها واتجاهُه. والنوعُ مقيسٌ من information_schema بالإنتاج: `name` نصّ،
  * و`visit_date`/`day`/`date` تاريخ، والبقيةُ timestamptz. `null` = بلا ترتيب
@@ -105,6 +105,8 @@ const CONTRACT = {
   listProducts: ["name", true, "text"],
   listFarmProducts: ["name", true, "text"],
   listDeletedProducts: ["deleted_at", false, "time"],
+  listDeletedCompanies: ["deleted_at", false, "time"],
+  listDeletedCompanySections: ["deleted_at", false, "time"],
   listGeneratedBarcodes: ["created_at", false, "time"],
   listNewStoreOrders: ["created_at", false, "time"],
   listCompanies: ["name", true, "text"],
@@ -123,7 +125,7 @@ const CONTRACT = {
   listExpenses: ["spent_at", false, "time"],
 };
 
-console.log("▸ ٢) عقدُ المستدعين الـ٢٩ — لا ترتيبَ بالخادم، والعرضُ بنفس ترتيبه");
+console.log("▸ ٢) عقدُ المستدعين الـ٣١ — لا ترتيبَ بالخادم، والعرضُ بنفس ترتيبه");
 // نهاياتُ الأسطر للسحب لا للفحص: نسخةُ ويندوز CRLF، والمستودعُ LF.
 const src = readFileSync("src/lib/repo.ts", "utf8").replace(/\r\n/g, "\n");
 const lines = src.split("\n");
@@ -146,7 +148,7 @@ for (let i = 0; i < lines.length; i++) {
   const sort = split >= 0 ? args.slice(split + 1).trim() : "";
   calls.push({ name, make, sort });
 }
-check("عددُ المستدعين ٢٩ — لا مستدعٍ ضاع ولا جديدٌ بلا عقد", calls.length === 29, `طلع ${calls.length}`);
+check("عددُ المستدعين ٣١ — لا مستدعٍ ضاع ولا جديدٌ بلا عقد", calls.length === 31, `طلع ${calls.length}`);
 const names = new Set(calls.map((c) => c.name));
 check("  وكلُّهم بالعقد بأسمائهم", Object.keys(CONTRACT).every((n) => names.has(n)) && [...names].every((n) => n in CONTRACT),
   `ناقص: ${Object.keys(CONTRACT).filter((n) => !names.has(n)).join("، ")} / زائد: ${[...names].filter((n) => !(n in CONTRACT)).join("، ")}`);

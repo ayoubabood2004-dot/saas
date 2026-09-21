@@ -66,9 +66,13 @@ export function StarterCatalogModal({ open, companies, sections, products, clini
       for (const cat of START_CATALOG.filter((c) => picked.has(c.name))) {
         setProgress(cat.name);
         // ١) الشركة: الموجودة بنفس الاسم تُستكمل، وإلا تُنشأ
+        /* `ensure*` لا `create*`: الكتلوجُ يُطبَّق بضغطةٍ واحدةٍ على قائمةٍ
+         * قُرئت قبلها، وجهازان يضغطانه معاً كانا يُدرجان الشركةَ مرّتين.
+         * البحثُ والإدراجُ صارا معاملةً واحدةً بالقاعدة (0196). */
         let co = companies.find((c) => nameKey(c.name) === nameKey(cat.name));
         if (!co) {
-          co = await repo.createCompany({ name: cat.name, note: cat.note, clinic_id: clinicId ?? null });
+          co = await repo.ensureCompany(cat.name, clinicId ?? null);
+          if (cat.note && !co.note) await repo.updateCompany(co.id, { note: cat.note });
           coNew++;
         }
         // ٢) الأصناف داخلها
@@ -80,7 +84,7 @@ export function StarterCatalogModal({ open, companies, sections, products, clini
           const key = nameKey(sec.name);
           let row = mySections.get(key);
           if (!row) {
-            row = await repo.createCompanySection({ company_id: co.id, name: sec.name, clinic_id: clinicId ?? null });
+            row = await repo.ensureCompanySection(co.id, sec.name, clinicId ?? null);
             mySections.set(key, row);
             secNew++;
           }

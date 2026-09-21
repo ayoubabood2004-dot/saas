@@ -870,5 +870,94 @@ console.log("\n▸ الشركةُ الواحدة صفٌّ واحد — مرآة�
   check("  والعددُ صنفان لا ثلاثة", (await repo.listCompanySections()).length === 2);
 }
 
+console.log("\n▸ طيُّ الشركات — حافظاتُ merge_companies و restore_company (0197 ثم 0198)");
+{
+  /* القاعدةُ هنا **حافظات**، نفسُ منهج حزمة SQL: «س لازم يبقى يساوي ص بعد
+     الطيّ». الأعدادُ تُلقط قبل وبعد، فالفحصُ يمسك الفقدَ حتى لو جاء من طريقٍ
+     لم نتوقّعه — والمرآةُ التجريبية هي التي تجري عليها فحوصُ المنطق. */
+  const sow = () => mem.set(DB_KEY, JSON.stringify({
+    products: [
+      { id: "pa", name: "علف-أ", company_id: "D", section_id: "sd", stock: 4 },
+      { id: "pb", name: "علف-ب", company_id: "D", section_id: "so", stock: 6 },
+      { id: "pc", name: "علف-ج", company_id: "K", section_id: "sk", stock: 5 },
+    ],
+    companies: [
+      { id: "K", clinic_id: "c1", name: "اليف هاوس", note: "الوكيل الرسمي", created_at: "2026-01-01T00:00:00.000Z" },
+      { id: "D", clinic_id: "c1", name: "اليف  هاوس", note: "رقم المندوب 0770", created_at: "2026-02-01T00:00:00.000Z" },
+    ],
+    companySections: [
+      { id: "sk", clinic_id: "c1", company_id: "K", name: "دراي فود", pooled_stock: 7.5, created_at: "2026-01-01T00:00:00.000Z" },
+      { id: "sd", clinic_id: "c1", company_id: "D", name: "درايفود", pooled_stock: 2.25, created_at: "2026-02-01T00:00:00.000Z" },
+      { id: "so", clinic_id: "c1", company_id: "D", name: "مكمّلات", pooled_stock: 1, created_at: "2026-02-01T00:00:00.000Z" },
+    ],
+    purchases: [{ id: "qu", clinic_id: "c1", company_id: "D", company_name: "اليف  هاوس", total: 900000, amount_paid: 300000 }],
+    purchasePayments: [{ id: "py", clinic_id: "c1", company_id: "D", amount: 120000 }],
+    companyCharges: [
+      { id: "ch1", clinic_id: "c1", company_id: "D", amount: 5000, charged_at: "2026-02-02", created_at: "2026-02-02T00:00:00.000Z" },
+      { id: "ch2", clinic_id: "c1", company_id: "D", amount: 2500, charged_at: "2026-02-03", created_at: "2026-02-03T00:00:00.000Z" },
+    ],
+    purchaseItems: [], invoices: [], invoiceItems: [], generatedBarcodes: [], productsTrash: [],
+  }));
+  const db = () => JSON.parse(mem.get(DB_KEY));
+  const pool = () => (db().companySections ?? []).reduce((a, x) => a + (x.pooled_stock || 0), 0);
+  const sellable = () => pool() + (db().products ?? []).reduce((a, p) => a + (p.stock || 0), 0);
+  const chargeSum = () => (db().companyCharges ?? []).reduce((a, c) => a + (c.amount || 0), 0);
+  const owed = () => (db().purchases ?? []).reduce((a, x) => a + Math.max(0, (x.total || 0) - (x.amount_paid ?? x.total ?? 0)), 0);
+  const orphans = () => (db().products ?? []).filter((p) => p.company_id == null || p.section_id == null).length;
+
+  sow();
+  const before = { pool: pool(), sell: sellable(), chg: chargeSum(), owed: owed(), orph: orphans(), prods: (db().products ?? []).length };
+
+  const tw = await repo.companyTwins();
+  check("تقريرُ التوائم يرى المجموعة ويُبقي الأقدم", tw.length === 1 && tw[0].keep_id === "K" && tw[0].rows === 2);
+  check("  ويقول **ما ينتقل** لا ما بالمجموعة كلِّها (٢ من ٣)",
+    tw[0].products === 3 && tw[0].moving_products === 2, `${tw[0].products}/${tw[0].moving_products}`);
+  check("  ويقول حوضَ المطويّات (٢٫٢٥ + ١)", tw[0].pool_moving === 3.25, String(tw[0].pool_moving));
+
+  const kept = await repo.mergeCompanies("K", "D");
+  check("الطيُّ يمرّ ويرجّع الباقي", kept.id === "K");
+  check("  والمطويّةُ اختفت", !(db().companies ?? []).some((c) => c.id === "D"));
+  check("  ولا منتجَ فقد شركتَه ولا صنفَه", orphans() === before.orph, String(orphans()));
+  check("  **ومجموعُ الحوض لم يتغيّر**", pool() === before.pool, `${pool()} ≠ ${before.pool}`);
+  check("  والحوضُ هبط بالصنف الصحيح (٧٫٥ + ٢٫٢٥)",
+    (db().companySections ?? []).find((x) => x.id === "sk")?.pooled_stock === 9.75);
+  check("  ومجموعُ الوحدات القابلة للبيع ثابت", sellable() === before.sell);
+  check("  والمطالبتان انتقلتا بمبلغهما (cascade كان سيمحوهما)",
+    chargeSum() === before.chg && (db().companyCharges ?? []).every((c) => c.company_id === "K"));
+  check("  ودفعةُ المورّد انتقلت", (db().purchasePayments ?? []).every((x) => x.company_id === "K"));
+  check("  والمطلوبُ للمورّدين لم يتغيّر فلساً", owed() === before.owed);
+  check("  والفاتورةُ انتقلت واسمُها توحّد",
+    (db().purchases ?? [])[0].company_id === "K" && (db().purchases ?? [])[0].company_name === "اليف هاوس");
+  check("  والملاحظتان **اتّحدتا** ولم تُرمَ إحداهما", /الوكيل/.test(kept.note ?? "") && /المندوب/.test(kept.note ?? ""));
+
+  const back = await repo.restoreCompany("D");
+  check("الفكُّ يرجّعها **بنفس معرّفها**", back.id === "D");
+  check("  وكلُّ حافظةٍ رجعت: الحوض والمطلوب والمطالبات",
+    pool() === before.pool && owed() === before.owed && chargeSum() === before.chg);
+  check("  وحوضُ الباقي رجع ٧٫٥ بالضبط (طرحُ ما أُضيف لا تخمين)",
+    (db().companySections ?? []).find((x) => x.id === "sk")?.pooled_stock === 7.5);
+  check("  والمنتجان رجعا للمطويّة", (db().products ?? []).filter((p) => p.company_id === "D").length === 2);
+  check("  والمطالبتان رجعتا إليها", (db().companyCharges ?? []).every((c) => c.company_id === "D"));
+  check("  والسلّةُ فُرّغت", (await repo.listDeletedCompanies()).length === 0);
+
+  /* ــ والحذفُ الصريح: البابُ الذي كان يفقد الديونَ بصمت (0198) ــ */
+  sow();
+  const d0 = { chg: chargeSum(), pool: pool(), orph: orphans() };
+  await repo.deleteCompany("D", "فحص");
+  check("حذفٌ صريح ⇒ صورةٌ بالسلّة", (await repo.listDeletedCompanies()).some((t) => t.id === "D" && !t.merged_into));
+  check("  ومطالباتُها مُحيت بالتتالي (cascade) — كما بالقاعدة", chargeSum() === 0);
+  await repo.restoreCompany("D");
+  check("  والاسترجاعُ يرجّع **الديونَ بمبلغها** (المعرّفُ وحدَه ما كان يعيدها)",
+    chargeSum() === d0.chg, String(chargeSum()));
+  check("  وأصنافَها بحوضها", pool() === d0.pool, String(pool()));
+  check("  ولا منتجَ بقي بلا شركةٍ أو صنف", orphans() === d0.orph, String(orphans()));
+
+  /* ــ الرفضُ يُسمع: لا نصفَ طيّ ــ */
+  sow();
+  check("طيُّ الشيء بنفسه **يرمي**", await threw(() => repo.mergeCompanies("K", "K")));
+  check("  وشركةٌ غيرُ موجودة كذلك", await threw(() => repo.mergeCompanies("K", "لا-أحد")));
+  check("  ولا صفَّ تحرّك برفضه", (db().companies ?? []).length === 2 && orphans() === d0.orph);
+}
+
 console.log(`\n${fails ? "✗" : "✓"} repo-demo-test: ${passes} نجحت، ${fails} فشلت`);
 process.exit(fails ? 1 : 0);

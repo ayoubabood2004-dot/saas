@@ -505,6 +505,96 @@ export interface CompanySection {
   created_at: string;
 }
 
+/**
+ * مجموعةُ شركاتٍ اسمُها واحدٌ بعد التطبيع (`company_twins`، 0196 ثم 0197).
+ *
+ * الأعمدةُ نوعان، والخلطُ بينهما كان يكذب على الشاشة: `products`/`purchases`…
+ * عددُ **المجموعة كلِّها** (يشمل الباقية)، و`movingProducts`/`movingPurchases`…
+ * عددُ **ما سينتقل فعلاً** بالطيّ. الشاشةُ تقول الثاني — «١٢ منتجاً سينتقل»
+ * لا «٢٩١ منتجاً بالمجموعة».
+ */
+export interface CompanyTwinGroup {
+  /** الاسمُ بعد التطبيع — مفتاحُ المجموعة (`inv_norm_group`). */
+  norm: string;
+  /** الأقدمُ إنشاءً: الباقيةُ المقترحة، ويجوز للعيادة اختيارُ غيرها. */
+  keep_id: string;
+  keep_name: string;
+  /** كم شركةً بهذا الاسم (≥ ٢). */
+  rows: number;
+  /** كلُّ معرّفات المجموعة مرتّبةً بالأقدم. */
+  ids: string[];
+  products: number;
+  purchases: number;
+  sections: number;
+  charges: number;
+  payments: number;
+  moving_products: number;
+  moving_purchases: number;
+  moving_sections: number;
+  moving_charges: number;
+  moving_payments: number;
+  /** مجموعُ حوض أصناف الشركات المطويّة — وحداتٌ تُباع فعلاً، فتُعرض. */
+  pool_moving: number;
+}
+
+/**
+ * شركةٌ خرجت من القائمة بأي طريق (`companies_trash`، 0197): طيٌّ بتوأمها، أو
+ * حذفٌ صريح. الصورةُ تحمل معرّفاتِ كلِّ ما كان يشير إليها، فيردُّها الاسترجاعُ
+ * **بنفس المعرّف** — سُنّةُ 0145.
+ */
+export interface DeletedCompany {
+  id: string;
+  clinic_id?: string | null;
+  row: Company;
+  /** طُويت بهذه الشركة؛ و`null` = حذفٌ صريحٌ بلا وجهة. */
+  merged_into?: string | null;
+  product_ids?: string[];
+  purchase_ids?: string[];
+  payment_ids?: string[];
+  charge_ids?: string[];
+  /** لكلّ صنف: `{id, name, pooled_moved, folded_into, product_ids}` — و`pooled_moved`
+   *  هو ما أُضيف فعلاً لحوض الباقي، ليطرحه الفكُّ بالضبط لا تخميناً. */
+  sections?: DeletedCompanySectionNote[];
+  /** **صفوفُ المطالبات كاملةً** لا معرّفاتِها (0198): مفتاحُ `company_charges`
+   *  إلى الشركة `on delete cascade`، فالحذفُ الصريح يمحو الصفَّ نفسَه ولا
+   *  يعيده معرّف. يبقى فارغاً بالطيّ لأن الصفوفَ تُنقل حيّة. */
+  charges?: CompanyCharge[];
+  reason?: string | null;
+  deleted_by?: string | null;
+  deleted_at: string;
+}
+
+export interface DeletedCompanySectionNote {
+  id: string;
+  name: string;
+  pooled_moved: number;
+  folded_into: string | null;
+  product_ids: string[];
+}
+
+/** صنفٌ خرج من القائمة (`company_sections_trash`، 0197). */
+export interface DeletedCompanySection {
+  id: string;
+  clinic_id?: string | null;
+  company_id?: string | null;
+  row: CompanySection;
+  folded_into?: string | null;
+  pooled_moved: number;
+  product_ids?: string[];
+  deleted_by?: string | null;
+  deleted_at: string;
+}
+
+/** سطرُ دفتر الطيّ (`company_merges`، 0197): مَن طُويت بمن ومتى. */
+export interface CompanyMerge {
+  from_id: string;
+  to_id: string;
+  clinic_id?: string | null;
+  from_name?: string | null;
+  merged_by?: string | null;
+  merged_at: string;
+}
+
 export interface Product {
   /** منتجات أُضيفت سوية من «إضافة عدة باركودات» — نفس المعرف = مجموعة واحدة تُعدَّل معاً. */
   bulk_group?: string | null;
@@ -1198,6 +1288,9 @@ export interface DemoDB {
   productsTrash?: DeletedProduct[];
   companies?: Company[];
   companySections?: CompanySection[];
+  companiesTrash?: DeletedCompany[];
+  companySectionsTrash?: DeletedCompanySection[];
+  companyMerges?: CompanyMerge[];
   invoices: Invoice[];
   invoiceItems: InvoiceItem[];
   purchases?: Purchase[];
