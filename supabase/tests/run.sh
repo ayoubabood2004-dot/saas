@@ -25,7 +25,7 @@ MIG="$HERE/../migrations"
 # و0095/0096/0158 بالمقدّمة رغم أنها أقدمُ من 0124: الموجةُ تبدأ من 0124 لأن
 # الأساس يوفّر ما قبلها جاهزاً — لكنّ هذه الثلاثَ تُنشئ المتجرَ والبوّابة،
 # وكانت خارجَ الفحص كلَّه. تُنزَّل بترتيبها الحقيقيّ قبل الموجة.
-WAVE="$MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0114_landing_events.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql $MIG/0184_images_hardening.sql $MIG/0185_store_funnel_events.sql $MIG/0186_store_bulk_visible.sql $MIG/0187_store_suggest_products.sql $MIG/0188_store_catalog_priced.sql $MIG/0189_accept_fee_at_decision.sql $MIG/0190_logo_out_of_db.sql $MIG/0191_poultry_farms.sql $MIG/0192_poultry_consume.sql $MIG/0193_poultry_withdrawal.sql $MIG/0194_end_elevation_honest.sql $MIG/0195_cage_layout_sync.sql $MIG/0196_company_norm_and_merge.sql $MIG/0197_company_merge_safe.sql $MIG/0198_company_delete_restores_all.sql"
+WAVE="$MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0114_landing_events.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql $MIG/0184_images_hardening.sql $MIG/0185_store_funnel_events.sql $MIG/0186_store_bulk_visible.sql $MIG/0187_store_suggest_products.sql $MIG/0188_store_catalog_priced.sql $MIG/0189_accept_fee_at_decision.sql $MIG/0190_logo_out_of_db.sql $MIG/0191_poultry_farms.sql $MIG/0192_poultry_consume.sql $MIG/0193_poultry_withdrawal.sql $MIG/0194_end_elevation_honest.sql $MIG/0195_cage_layout_sync.sql $MIG/0196_company_norm_and_merge.sql $MIG/0197_company_merge_safe.sql $MIG/0198_company_delete_restores_all.sql $MIG/0199_company_name_unique.sql"
 
 command -v "$PGBIN/initdb" >/dev/null || { echo "ما لكيت بوستغريس بـ $PGBIN"; exit 1; }
 
@@ -2702,6 +2702,40 @@ chk "  والدَّينُ رجع" "select coalesce(sum(amount),0)::text from com
 chk "وموظّفُ الاستقبال لا يحذف شركة" \
     "select left(_rls_try('$RCP', 'select delete_company(''$D3'')'), 8)" "guarded:"
 chk "  ولا صفَّ تحرّك برفضه" "select count(*)::text from companies where id='$D3'" "1"
+
+# ــ 0199: القفلُ بالقاعدة — يمنع المتصفّح ولا يكسر الفكّ ــ
+# `ensure_company` دفاعٌ أوّل يُلتَفّ عليه بإدراجٍ من PostgREST أو لوحة Supabase
+# أو نسخةِ واجهةٍ قديمة. والمحفّزُ يحرس **الكتابةَ المباشرة** وحدها: فهرسٌ فريدٌ
+# كان سيرفض الفكَّ نفسَه (المطويّةُ ترجع بنفس اسم الباقية) فيصير المطويُّ بلا رجعة.
+$P -c "delete from company_sections; delete from companies where clinic_id='$C1';" >/dev/null
+U1=$($P -t -A -c "insert into companies (clinic_id, name) values ('$C1','بيورينا') returning id::text")
+chk "إدراجٌ مباشرٌ من المتصفّح بنفس الاسم يُرفض" \
+    "select _rls_try('$C1', 'insert into companies (clinic_id, name) values (auth_clinic(), ''بيورينا'')')" "guarded:23505:company_twin_name"
+chk "  وبإملاءٍ آخر كذلك (المفتاحُ مطبَّع)" \
+    "select _rls_try('$C1', 'insert into companies (clinic_id, name) values (auth_clinic(), ''بيورينا  '')')" "guarded:23505:company_twin_name"
+$P -c "select _pf('$C1', 'select ensure_company(''بيورينا بلس'')::text');" >/dev/null
+chk "  وتسميةُ شركةٍ قائمةٍ باسم أختها تُرفض كذلك (UPDATE لا INSERT وحده)" \
+    "select _rls_try('$C1', 'update companies set name = ''بيورينا'' where name = ''بيورينا بلس''')" "guarded:23505:company_twin_name"
+chk "  واسمٌ مختلفٌ فعلاً يمرّ" \
+    "select (count(*) = 1)::text from companies where clinic_id='$C1' and name='بيورينا بلس'" "true"
+chk "  وعيادةٌ أخرى لها اسمُها هي (النطاقُ العيادة)" \
+    "select _pf('$C2', 'select ((ensure_company(''بيورينا'')).clinic_id = ''$C2'')::text')" "true"
+$P -c "insert into company_sections (clinic_id, company_id, name) values ('$C1','$U1','دراي فود');" >/dev/null
+chk "والصنفُ كذلك: نفسُ الاسم بنفس الشركة يُرفض" \
+    "select _rls_try('$C1', 'insert into company_sections (clinic_id, company_id, name) values (auth_clinic(), ''$U1'', ''درايفود'')')" "guarded:23505:company_section_twin_name"
+chk "  ونفسُ الاسم **بشركةٍ أخرى** يمرّ (النطاقُ الشركة)" \
+    "select _pf('$C1', 'select ((ensure_company_section((select id from companies where clinic_id = auth_clinic() and name = ''بيورينا بلس''), ''دراي فود'')).name = ''دراي فود'')::text')" "true"
+# **الفحصُ الذي سحب الفهرس**: الفكُّ يعيد المطويّةَ بنفس اسم الباقية.
+D9=$($P -t -A -c "insert into companies (clinic_id, name) values ('$C2','بيورينا') returning id::text")
+K9=$($P -t -A -c "select id::text from companies where clinic_id='$C2' and name='بيورينا' and id <> '$D9'")
+chk "والطيُّ يمرّ رغم المحفّز (دالّةُ مُعرِّفٍ لا متصفّح)" \
+    "select (_pf('$C2', 'select (merge_companies(''$K9'', ''$D9'')).id::text') = '$K9')::text" "true"
+chk "  **والفكُّ يرجّعها بنفس اسم الباقية** — فهرسٌ فريدٌ كان سيرفضه للأبد" \
+    "select (_pf('$C2', 'select (restore_company(''$D9'')).name') = 'بيورينا')::text" "true"
+chk "  وصارتا صفّين باسمٍ واحدٍ فعلاً (هذا معنى الفكّ)" \
+    "select count(*)::text from companies where clinic_id='$C2' and inv_norm_group(name)='بيورينا'" "2"
+chk "والمحفّزان موجودان وinvoker (لا يشدّان أكثر من السياسة)" \
+    "select (count(*) = 2 and bool_and(not p.prosecdef))::text from pg_trigger tg join pg_proc p on p.oid=tg.tgfoid where tg.tgname in ('companies_no_twin_guard','company_sections_no_twin_guard') and not tg.tgisinternal" "true"
 
 chk "والمحفّزان قبل الحذف موجودان" \
     "select count(*)::text from pg_trigger t join pg_class c on c.oid=t.tgrelid where t.tgname in ('companies_trash_guard','company_sections_trash_guard') and not t.tgisinternal" "2"

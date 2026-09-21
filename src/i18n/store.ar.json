@@ -123,10 +123,10 @@
     "fileTooLarge": "الملف كبير جدًا (الحد الأقصى {{mb}} ميجابايت). جرّب صورة أصغر.",
     "uploadFailed": "فشل الرفع — تحقّق من اتصالك وحاول مرة أخرى.",
     "c": {
-      "delivery_orders_invoice_uniq": "هذه الفاتورة عدها طلب توصيل أصلاً.",
       "branches_one_main_per_clinic": "أكو فرع رئيسي أصلاً — خلّي الرئيسي واحد وحوّل الباقي فروع عادية.",
       "clinic_notes_clinic_id_note_date_key": "أكو ملاحظة مسجّلة لهذا اليوم أصلاً — افتحها وعدّلها بدل ما تضيف وحدة ثانية.",
       "clinic_services_barcode_uniq": "هذا الباركود مستعمَل بخدمة ثانية — اختر غيره.",
+      "delivery_orders_invoice_uniq": "هذه الفاتورة عدها طلب توصيل أصلاً.",
       "expenses_amount_check": "مبلغ السحب لازم يكون أكبر من صفر.",
       "expenses_method_check": "طريقة الدفع مو مقبولة — اختر نقد أو بطاقة أو حوالة.",
       "generated_barcodes_unique": "هذا الباركود مولَّد سلفاً.",
