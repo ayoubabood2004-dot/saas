@@ -12,7 +12,7 @@ import { NEON, NIGHT, KIND_AR, SPECIES_AR, SPECIES_EMOJI, type Occupant } from "
 import { useQuality, setTier, getTier, type Tier } from "./quality";
 import {
   CELL, cageStudio, useCageStudio, cageAt, upperAt, cellFree, bounds,
-  cellWorld, cornerWorld, buildPartitions, doorSegment, codesFromPrefs, type Room3D, type DoorSide,
+  cellWorld, cornerWorld, buildPartitions, doorSegment, type Room3D, type DoorSide,
 } from "./store";
 import { opsStore } from "@/lib/opsStore";
 import { statusOf } from "@/lib/opsStatus";
@@ -890,15 +890,8 @@ export default function Cage3DDemo({ onBoard }: { onBoard?: () => void } = {}) {
     return k ? s.cages.find((c) => norm(c.code) === k)?.code ?? null : null;
   }, [carrying, actives, s.cages]);
 
-  /* التبنّي: رموز على رقود نشطة أو بخريطة 2D وغير مرسومة هنا → تُغرز تلقائياً */
-  useEffect(() => {
-    if (!ops.hydrated) return;
-    const codes = [
-      ...actives.map((a) => (a.cage ?? "").trim()).filter(Boolean),
-      ...codesFromPrefs(),
-    ];
-    if (codes.length) cageStudio.adoptCodes(codes);
-  }, [ops.hydrated, actives]);
+  /* لا تبنّيَ تلقائيّ بعد اليوم (انظر رأس `store.ts`): الرموزُ غيرُ المرسومة
+     تُعرض باللوحة المسطّحة وتُضمّ بقرارٍ — ولا تُكتب من فتحة شاشة. */
 
   const positions = useMemo(() => {
     const m = new Map<string, [number, number, number]>();

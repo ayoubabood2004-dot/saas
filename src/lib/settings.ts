@@ -4,6 +4,7 @@ import { getActiveClinicId } from "./clinics";
 import { sb, cloudWrite, registerHydrator, registerReset, seedOwnClinic } from "./clinicSync";
 import { setActiveCurrency, countryByCode } from "./currency";
 import { productImageUrl } from "./storeLib";
+import { parseLayout, flatRooms, type CageRoom } from "./cageLayout";
 
 // Doctor-customizable overrides for the medical reading (vital) normal ranges.
 // Persisted locally; merged over the built-in defaults by vitals.rangeFor().
@@ -142,8 +143,8 @@ export function clearPetRanges(petId: string) {
 export const DEFAULT_DIAL_CODE = "+964"; // Iraq
 
 export interface ClinicSocials { facebook: string; instagram: string }
-interface ClinicPrefs { dial_code: string; logo_url: string | null; social_facebook: string; social_instagram: string; clinic_name: string; pre_sale_print: boolean; override_enabled: boolean; resizable_cart: boolean; font_scale_enabled: boolean; override_pin_mirror: string | null; delivery_zones: string | null; qty_promos: string | null; catalog_share: boolean; cage_layout: string | null; care_protocols: string | null; currency: string | null; country: string | null; pos_v2: boolean; pos_compact: boolean; pos_customer_open: boolean; invoices_paged: boolean; work_hours: string | null; clock_format: string | null; dose_window: string | null; cash_reconcile: boolean; cash_confirms: string | null; manager_mode_stock_edit: boolean }
-const DEFAULT_PREFS: ClinicPrefs = { dial_code: DEFAULT_DIAL_CODE, logo_url: null, social_facebook: "", social_instagram: "", clinic_name: "", pre_sale_print: false, override_enabled: false, resizable_cart: false, font_scale_enabled: false, override_pin_mirror: null, delivery_zones: null, qty_promos: null, catalog_share: false, cage_layout: null, care_protocols: null, currency: null, country: null, pos_v2: false, pos_compact: false, pos_customer_open: false, invoices_paged: true, work_hours: null, clock_format: null, dose_window: null, cash_reconcile: false, cash_confirms: null, manager_mode_stock_edit: false };
+interface ClinicPrefs { dial_code: string; logo_url: string | null; social_facebook: string; social_instagram: string; clinic_name: string; pre_sale_print: boolean; override_enabled: boolean; resizable_cart: boolean; font_scale_enabled: boolean; override_pin_mirror: string | null; delivery_zones: string | null; qty_promos: string | null; catalog_share: boolean; cage_layout: string | null; cage_layout_rev: number; care_protocols: string | null; currency: string | null; country: string | null; pos_v2: boolean; pos_compact: boolean; pos_customer_open: boolean; invoices_paged: boolean; work_hours: string | null; clock_format: string | null; dose_window: string | null; cash_reconcile: boolean; cash_confirms: string | null; manager_mode_stock_edit: boolean }
+const DEFAULT_PREFS: ClinicPrefs = { dial_code: DEFAULT_DIAL_CODE, logo_url: null, social_facebook: "", social_instagram: "", clinic_name: "", pre_sale_print: false, override_enabled: false, resizable_cart: false, font_scale_enabled: false, override_pin_mirror: null, delivery_zones: null, qty_promos: null, catalog_share: false, cage_layout: null, cage_layout_rev: 0, care_protocols: null, currency: null, country: null, pos_v2: false, pos_compact: false, pos_customer_open: false, invoices_paged: true, work_hours: null, clock_format: null, dose_window: null, cash_reconcile: false, cash_confirms: null, manager_mode_stock_edit: false };
 
 const prefsKey = () => `vp_clinic_prefs_${getActiveClinicId()}`;
 const legacyDialKey = () => `vp_dial_code_${getActiveClinicId()}`;
@@ -238,7 +239,11 @@ export async function hydrateClinicPrefs(): Promise<void> {
         delivery_zones: d.delivery_zones ?? local.delivery_zones,
         qty_promos: d.qty_promos ?? local.qty_promos,
         catalog_share: typeof d.catalog_share === "boolean" ? d.catalog_share : local.catalog_share,
-        cage_layout: d.cage_layout ?? local.cage_layout,
+        /* التخطيطُ ونسختُه يُقرآن معاً ولا يُفترقان: نسخةٌ بلا تخطيطها
+           تسمح بحفظٍ يبني على غيرِ ما قرأ — وهو بالضبط ما نصلحه. والسحابةُ
+           تفوز هنا دائماً (لا `?? local`): مرآةُ الجهاز ذاكرةُ رسمٍ لا مصدر. */
+        cage_layout: d.cage_layout ?? null,
+        cage_layout_rev: typeof d.cage_layout_rev === "number" ? d.cage_layout_rev : 0,
         care_protocols: d.care_protocols ?? local.care_protocols,
         currency: d.currency ?? local.currency,
         country: d.country ?? local.country,
@@ -283,7 +288,9 @@ export async function hydrateClinicPrefs(): Promise<void> {
       if (local.delivery_zones) boolPatch.delivery_zones = local.delivery_zones;
       if (local.qty_promos) boolPatch.qty_promos = local.qty_promos;
       if (local.catalog_share) boolPatch.catalog_share = true;
-      if (local.cage_layout) boolPatch.cage_layout = local.cage_layout;
+      /* **والتخطيطُ لا يُبذَر.** كان يُرفع من مرآة الجهاز، فجهازٌ فيه تخطيطُ
+         عيادةٍ أخرى (أو بذرةُ الشِفرة: ستّةُ أقفاصٍ وهمية) يزرعه بعيادةٍ
+         جديدة. رفعُه الآن قرارُ مستخدمٍ بزرٍّ يعاين قبل أن يرفع — 0195. */
       if (local.care_protocols) boolPatch.care_protocols = local.care_protocols;
       if (local.currency) boolPatch.currency = local.currency;
       if (local.country) boolPatch.country = local.country;
@@ -599,27 +606,17 @@ export function setCatalogShare(on: boolean) {
 /* ---- تخطيط الأقفاص (0107) — غرف العيادة وأقفاصها، لخريطة الأقفاص المرئية.
  * رموز الأقفاص نص حر (نفس حقل admission.cage القائم منذ البداية)، فالخريطة
  * تلتقي مع بيانات الرقود الموجودة بلا أي هجرة بيانات. ---- */
-export interface CageRoom {
-  id: string;
-  name: string;
-  cages: string[];
+export function getCageLayout(): CageRoom[] {
+  return flatRooms(parseLayout(prefs().cage_layout));
 }
 
-export function getCageLayout(): CageRoom[] {
-  try {
-    const raw = prefs().cage_layout;
-    if (!raw) return [];
-    const arr = JSON.parse(raw) as unknown;
-    if (!Array.isArray(arr)) return [];
-    return arr
-      .filter((r): r is Record<string, unknown> => !!r && typeof r === "object")
-      .map((r) => ({
-        id: String(r.id ?? ""),
-        name: String(r.name ?? "").trim(),
-        cages: Array.isArray(r.cages) ? r.cages.map((c) => String(c).trim()).filter(Boolean) : [],
-      }))
-      .filter((r) => r.id && r.name);
-  } catch { return []; }
+/** النصُّ الخامُّ ونسختُه كما وصلا من السحابة — يقرأهما متجرُ التخطيط وحدَه. */
+export const getCageLayoutRaw = (): string | null => prefs().cage_layout;
+export const getCageLayoutRev = (): number => prefs().cage_layout_rev ?? 0;
+
+/** تثبيتُ ما حفظته الدالّةُ السحابية بالذاكرة والمرآة — بلا كتابةٍ ثانية. */
+export function noteCageLayoutSaved(json: string | null, rev: number): void {
+  savePrefsLocal({ ...prefs(), cage_layout: json, cage_layout_rev: rev });
 }
 
 /* ---- بروتوكولات العيادة (0116) --------------------------------------------
@@ -638,12 +635,11 @@ export function setCareProtocolsRaw(json: string | null) {
   patchPrefs({ care_protocols: json }, "care-protocols-set");
 }
 
-export function setCageLayout(rooms: CageRoom[]) {
-  const clean = rooms
-    .map((r) => ({ id: r.id, name: r.name.trim(), cages: r.cages.map((c) => c.trim()).filter(Boolean) }))
-    .filter((r) => r.name);
-  patchPrefs({ cage_layout: clean.length ? JSON.stringify(clean) : null }, "cage-layout-set");
-}
+/* `setCageLayout` **أُزيلت**. كانت `patchPrefs` عاديّةً — رفعٌ بلا شرط، آخرُ
+ * من يكتب يفوز — فجهازٌ بذَر ستّةَ أقفاصٍ وهميّةً كتبها فوق ترتيبِ شهر، ولا
+ * أحدَ يرى ماذا حصل. كلُّ حفظٍ للتخطيط يمرّ الآن من `save_cage_layout` (0195)
+ * بنسخةٍ يُبنى عليها، والتعارضُ يُقال لصاحبه بدل أن يُحسم عنه. المدخلُ الوحيد:
+ * `cageStudio` بـcomponents/cage3d/store.ts. */
 
 /* ---- شاشة البيع الجديدة (0109) — تفعيل اختياري لكل عيادة -------------------
  * إعادة بناء شاشة الكاشير: سلة لا تغادر الشاشة أبداً، حقول اختيارية مطويّة،

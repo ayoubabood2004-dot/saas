@@ -294,6 +294,7 @@
     "searchPh": "ابحث…",
     "noMatches": "لا توجد نتائج مطابقة",
     "minutes": "دقيقة",
-    "done": "تم"
+    "done": "تم",
+    "listSep": "، "
   }
 }

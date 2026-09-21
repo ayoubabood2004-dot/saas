@@ -3,11 +3,12 @@ import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { motion } from "framer-motion";
 import {
-  LayoutGrid, Search, UserPlus, Settings2, Plus, Trash2, Move, X, Syringe, BedDouble, DoorOpen, Check, Box, Loader2,
+  LayoutGrid, Search, UserPlus, Settings2, Plus, Trash2, Move, X, Syringe, BedDouble, DoorOpen, Check, Box, Loader2, AlertTriangle,
 } from "lucide-react";
-import { cageStudio, useCageStudio, codesFromPrefs, type Room3D, type CagePlacement } from "@/components/cage3d/store";
+import { cageStudio, useCageStudio, type Room3D, type CagePlacement } from "@/components/cage3d/store";
 import { SPECIES_AR, SPECIES_EMOJI, type Occupant } from "@/components/cage3d/neon";
 import { CageCard } from "./CageCard";
+import { LayoutSync } from "./LayoutSync";
 import { opsStore } from "@/lib/opsStore";
 import { statusOf } from "@/lib/opsStatus";
 import { repo } from "@/lib/repo";
@@ -105,12 +106,14 @@ export default function CageBoard() {
   }, [actives, ops.pets]);
   const occOf = (code: string) => occByCage.get(norm(code)) ?? null;
 
-  /* التبنّي: رمز على رقود نشط وغير مرسوم هنا → يُغرز تلقائياً فلا يختفي أحد */
-  useEffect(() => {
-    if (!ops.hydrated) return;
-    const codes = [...actives.map((a) => a.cage ?? ""), ...codesFromPrefs()].filter(Boolean);
-    cageStudio.adoptCodes(codes);
-  }, [ops.hydrated, actives]);
+  /* رموزٌ على رقودٍ نشطٍ وغيرُ مرسومةٍ بالتخطيط — **تُحسب للعرض ولا تُكتب**.
+     كان «التبنّي» يغرزها ويرفعها للسحابة عند كلّ فتحة شاشة، فيولد بغرفةٍ
+     اسمُها «غير مصنّفة» فوق ترتيب العيادة. لا حيوانَ يختفي: يظهر بشريطٍ
+     صريحٍ أسفل اللوحة، وتضمّه العيادةُ لغرفةٍ **بضغطة**. */
+  const orphans = useMemo(
+    () => (s.ready ? cageStudio.orphans(actives.map((a) => a.cage ?? "")) : []),
+    [s.ready, s.cages, actives],
+  );
 
   /* ── حالة الواجهة ── */
   const [q, setQ] = useState("");
@@ -259,6 +262,8 @@ export default function CageBoard() {
         </Button>
       </div>
 
+      <LayoutSync canEdit={canEdit} />
+
       {/* الملخص = التصفية: ضغطة على الرقم تصفّي عليه */}
       <div className="mb-4 flex flex-wrap items-center gap-1.5">
         {([
@@ -289,6 +294,53 @@ export default function CageBoard() {
             placeholder={t("cages.search", "دوّر بالاسم أو رقم القفص…")} data-cagesearch />
         </div>
       </div>
+
+      {/* أقفاصٌ يعرفها النظامُ وما مرسومة بالتخطيط — **تُقال ولا تُكتب**.
+          كان «التبنّي» يغرزها تلقائياً بغرفةٍ يخترع اسمَها ويرفعها للسحابة
+          فوق ترتيب العيادة. الآن: تُعرض، وتُضمّ لغرفةٍ **بضغطة**. */}
+      {!!orphans.length && (
+        <div className="mb-4 flex flex-wrap items-center gap-3 rounded-2xl border border-warn-200 bg-warn-50 px-3.5 py-2.5 text-xs font-bold text-warn-800 dark:border-warn-500/30 dark:bg-warn-500/10 dark:text-warn-200" data-cageorphans>
+          <AlertTriangle size={15} className="shrink-0" />
+          <span className="min-w-0 flex-1">
+            {t("cages.orphans", "{{n}} قفص بيه حيوان راقد وما مرسوم بالتخطيط:", { n: formatNum(orphans.length) })}
+            <span className="font-normal"> {orphans.slice(0, 8).join(t("common.listSep", "، "))}{orphans.length > 8 ? "…" : ""}</span>
+          </span>
+          {canEdit && !!rooms.length && (
+            <select
+              className="input h-8 w-auto py-0 text-2xs"
+              data-orphanadopt
+              value=""
+              onChange={(e) => {
+                const id = e.target.value;
+                if (!id) return;
+                playTap();
+                const n = cageStudio.adoptInto(id, orphans);
+                if (n) toast.success(t("cages.orphansAdded", "انضافت {{n}} قفص للغرفة", { n: formatNum(n) }));
+              }}
+            >
+              <option value="">{t("cages.orphanAddTo", "ضمّها لغرفة…")}</option>
+              {rooms.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+            </select>
+          )}
+        </div>
+      )}
+
+      {/* فراغٌ صادق. كانت الشاشةُ تعرض ستّةَ أقفاصٍ وهمية (١٠١–١٠٦ بـ«غرفة
+          الإقامة») تُصدَّق ثم تُكتب فوق ترتيب العيادة — وهذا هو جذرُ العطب. */}
+      {s.ready && !rooms.length && (
+        <div className="rounded-3xl border border-dashed border-line-strong bg-surface-1 px-6 py-12 text-center" data-cageempty>
+          <LayoutGrid size={30} className="mx-auto mb-3 text-ink-subtle" />
+          <h2 className="font-display text-lg font-extrabold text-ink">{t("cages.emptyTitle", "ما مرسومة غرف بعد")}</h2>
+          <p className="mx-auto mt-1 max-w-md text-sm text-ink-subtle">
+            {t("cages.emptyBody", "ارسم غرف عيادتك وأقفاصها مرّة وحدة — وراح تشوفها بنفس الشكل على أيّ حاسبة تفتح بيها النظام.")}
+          </p>
+          {canEdit && (
+            <Button className="mt-4" leftIcon={<Plus size={16} />} onClick={() => { playTap(); setEdit(true); setAddRoomOpen(true); }}>
+              {t("cages.addRoom", "أضف غرفة")}
+            </Button>
+          )}
+        </div>
+      )}
 
       {/* الغرف */}
       <div className="space-y-8">

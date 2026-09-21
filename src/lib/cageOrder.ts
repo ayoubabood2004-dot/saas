@@ -1,4 +1,5 @@
 import { getCageLayout } from "@/lib/settings";
+import type { CageRoom } from "@/lib/cageLayout";
 
 /* ============================================================================
  * cageOrder — «اللوحة تمشي مع قدميك».
@@ -18,7 +19,7 @@ const norm = (c: string | null | undefined): string => (c ?? "").trim().toLowerC
 /** فهرس: رمز القفص ← { الغرفة، موقعه ضمنها، موقع الغرفة }. يُبنى عند الطلب. */
 function index(): Map<string, { room: string; roomIdx: number; cageIdx: number }> {
   const m = new Map<string, { room: string; roomIdx: number; cageIdx: number }>();
-  const rooms = getCageLayout();
+  const rooms: CageRoom[] = getCageLayout();
   rooms.forEach((r, roomIdx) => {
     r.cages.forEach((code, cageIdx) => {
       const k = norm(code);
