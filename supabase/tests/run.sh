@@ -25,7 +25,7 @@ MIG="$HERE/../migrations"
 # و0095/0096/0158 بالمقدّمة رغم أنها أقدمُ من 0124: الموجةُ تبدأ من 0124 لأن
 # الأساس يوفّر ما قبلها جاهزاً — لكنّ هذه الثلاثَ تُنشئ المتجرَ والبوّابة،
 # وكانت خارجَ الفحص كلَّه. تُنزَّل بترتيبها الحقيقيّ قبل الموجة.
-WAVE="$MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0114_landing_events.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql $MIG/0184_images_hardening.sql $MIG/0185_store_funnel_events.sql $MIG/0186_store_bulk_visible.sql $MIG/0187_store_suggest_products.sql $MIG/0188_store_catalog_priced.sql $MIG/0189_accept_fee_at_decision.sql $MIG/0190_logo_out_of_db.sql $MIG/0191_poultry_farms.sql $MIG/0192_poultry_consume.sql $MIG/0193_poultry_withdrawal.sql $MIG/0194_end_elevation_honest.sql $MIG/0195_cage_layout_sync.sql $MIG/0196_company_norm_and_merge.sql"
+WAVE="$MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0114_landing_events.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql $MIG/0184_images_hardening.sql $MIG/0185_store_funnel_events.sql $MIG/0186_store_bulk_visible.sql $MIG/0187_store_suggest_products.sql $MIG/0188_store_catalog_priced.sql $MIG/0189_accept_fee_at_decision.sql $MIG/0190_logo_out_of_db.sql $MIG/0191_poultry_farms.sql $MIG/0192_poultry_consume.sql $MIG/0193_poultry_withdrawal.sql $MIG/0194_end_elevation_honest.sql $MIG/0195_cage_layout_sync.sql $MIG/0196_company_norm_and_merge.sql $MIG/0197_company_merge_safe.sql"
 
 command -v "$PGBIN/initdb" >/dev/null || { echo "ما لكيت بوستغريس بـ $PGBIN"; exit 1; }
 
@@ -740,6 +740,10 @@ $P -c "insert into products (id, clinic_id, name, barcode, stock, alt_codes) val
          ('f0000000-0000-0000-0000-000000000004','11111111-1111-1111-1111-111111111111','بلا صنف','X400', 2, '{}'),
          ('f0000000-0000-0000-0000-000000000005','11111111-1111-1111-1111-111111111111','مصنّف', null, 3, '{}')
        on conflict do nothing;
+       insert into companies (id, clinic_id, name) values
+         ('aaaa0000-0000-0000-0000-00000000cccc','11111111-1111-1111-1111-111111111111','شركة فحص 0146') on conflict do nothing;
+       insert into company_sections (id, clinic_id, company_id, name) values
+         ('aaaa0000-0000-0000-0000-00000000aaaa','11111111-1111-1111-1111-111111111111','aaaa0000-0000-0000-0000-00000000cccc','صنف فحص 0146') on conflict do nothing;
        update products set section_id = 'aaaa0000-0000-0000-0000-00000000aaaa', name = 'بلا صنف' where id = 'f0000000-0000-0000-0000-000000000005';
        insert into invoice_items (id, clinic_id, name, qty, unit_price, unit_cost, line_total, stock_qty, product_id) values
          ('f1000000-0000-0000-0000-000000000001','11111111-1111-1111-1111-111111111111','x',1,1000,600,1000,1,'f0000000-0000-0000-0000-000000000001'),
@@ -1806,6 +1810,12 @@ chk "  والمطويُّ محفوظٌ بسلّته ومعه مسارُه" \
     "select (row->>'image_path') from products_trash where id='a1840000-0000-4000-8000-000000000002'" "$C1/pic-a.jpg"
 
 # «رتّب المخزن» نفسُ المنطق: غيرُ المصنَّف يُطوى بمصنَّفٍ يطابقه اسماً.
+# والقسمُ يُزرع **قبل** أن يُشار إليه: المفتاحُ الأجنبيُّ بالقالب صار كالإنتاج
+# (`products.section_id → company_sections`)، فصفٌّ يشير إلى قسمٍ لا وجودَ له
+# صار يُرفض هنا كما يُرفض هناك.
+$P -c "insert into company_sections (id, clinic_id, name, pooled_stock)
+         values ('5e180000-0000-4000-8000-000000000001','$C1','قسمٌ مجمَّع',0)
+       on conflict (id) do nothing;" >/dev/null
 $P -c "insert into products (id, clinic_id, name, sell_price, purchase_price, stock, section_id, image_path, store_desc)
        values ('a1840000-0000-4000-8000-000000000011','$C1','مادةُ الترتيب',1000,500,5,'5e180000-0000-4000-8000-000000000001',null,null),
               ('a1840000-0000-4000-8000-000000000012','$C1','مادةُ الترتيب',1000,500,4,null,'$C1/tidy-a.jpg','وصفٌ-من-غير-المصنَّف')
@@ -2528,6 +2538,139 @@ node "$HERE/../../scripts/group-key-parity.mjs" "$GKF" >/dev/null
 chk "كلُّ قيمةٍ تُطبَّع بالطرفين إلى النتيجة ذاتها" \
     "$(cat "$GKF/group-key.sql")" "ok"
 rm -rf "$GKF"
+
+# ── 0197: الطيُّ لا يفقد شيئاً، والحذفُ صار قابلاً للرجوع ──────────────────
+# القاعدةُ هنا **حافظات**: «س لازم يبقى يساوي ص بعد الطيّ». الأعدادُ تُلقط قبل
+# وبعد، فالفحصُ يمسك الفقدَ حتى لو جاء من طريقٍ لم نتوقّعه.
+echo "▸ 0197: حافظاتُ الطيّ — لا منتجَ ولا فلسَ ولا وحدةَ حوضٍ تضيع"
+$P -c "delete from company_sections_trash; delete from companies_trash; delete from company_merges;
+       delete from company_charges; delete from purchase_payments; delete from company_sections;
+       update products set company_id = null, section_id = null;
+       update purchases set company_id = null; delete from companies; delete from products_trash;" >/dev/null
+
+K=$($P -t -A -c "insert into companies (clinic_id, name, note) values ('$C1','اليف هاوس','الوكيل الرسمي') returning id::text")
+D=$($P -t -A -c "insert into companies (clinic_id, name, note) values ('$C1','اليف  هاوس','رقم المندوب 0770') returning id::text")
+# صنفٌ متطابقُ الاسم بالطرفين **وبحوضٍ غيرِ صفر على الاثنين** — العيبُ الذي
+# كان يمرّ أخضرَ لأن البذرةَ القديمة تركت الحوضَ صفراً.
+SK=$($P -t -A -c "insert into company_sections (clinic_id, company_id, name, pooled_stock) values ('$C1','$K','دراي فود', 7.500) returning id::text")
+SD=$($P -t -A -c "insert into company_sections (clinic_id, company_id, name, pooled_stock) values ('$C1','$D','درايفود', 2.250) returning id::text")
+SO=$($P -t -A -c "insert into company_sections (clinic_id, company_id, name, pooled_stock) values ('$C1','$D','مكمّلات', 1.000) returning id::text")
+PA=$($P -t -A -c "insert into products (id, clinic_id, name, company_id, section_id, stock) values (gen_random_uuid(),'$C1','علف-أ','$D','$SD', 4) returning id::text")
+PB=$($P -t -A -c "insert into products (id, clinic_id, name, company_id, section_id, stock) values (gen_random_uuid(),'$C1','علف-ب','$D','$SO', 6) returning id::text")
+PC=$($P -t -A -c "insert into products (id, clinic_id, name, company_id, section_id, stock) values (gen_random_uuid(),'$C1','علف-ج','$K','$SK', 5) returning id::text")
+QU=$($P -t -A -c "insert into purchases (id, clinic_id, company_id, company_name, total, amount_paid) values (gen_random_uuid(),'$C1','$D','اليف  هاوس', 900000, 300000) returning id::text")
+$P -c "insert into purchase_payments (id, clinic_id, company_id, amount) values (gen_random_uuid(),'$C1','$D', 120000);
+       insert into company_charges (clinic_id, company_id, amount) values ('$C1','$D', 5000), ('$C1','$D', 2500);" >/dev/null
+
+# ــ الحافظات قبل الطيّ ــ
+OWED_B=$($P -t -A -c "select coalesce(sum(greatest(0, total - coalesce(amount_paid,total))),0)::text from purchases where clinic_id='$C1'")
+CHG_B=$($P -t -A -c "select coalesce(sum(amount),0)::text from company_charges where clinic_id='$C1'")
+PROD_B=$($P -t -A -c "select count(*)::text from products where clinic_id='$C1'")
+NOCO_B=$($P -t -A -c "select count(*)::text from products where clinic_id='$C1' and company_id is null")
+NOSE_B=$($P -t -A -c "select count(*)::text from products where clinic_id='$C1' and section_id is null")
+POOL_B=$($P -t -A -c "select coalesce(sum(pooled_stock),0)::text from company_sections where clinic_id='$C1'")
+SELL_B=$($P -t -A -c "select (coalesce((select sum(stock) from products where clinic_id='$C1'),0) + coalesce((select sum(pooled_stock) from company_sections where clinic_id='$C1'),0))::text")
+PAY_B=$($P -t -A -c "select coalesce(sum(amount),0)::text from purchase_payments where clinic_id='$C1'")
+
+chk "تقريرُ التوائم يقول **ما ينتقل** لا ما بالمجموعة كلِّها" \
+    "select _pf('$C1', 'select (products::text || ''/'' || moving_products::text) from company_twins() limit 1')" "3/2"
+chk "  ويقول حوضَ المطويّات" \
+    "select _pf('$C1', 'select pool_moving::text from company_twins() limit 1')" "3.250"
+
+chk "الطيُّ يمرّ" "select (_pf('$C1', 'select (merge_companies(''$K'', ''$D'')).id::text') = '$K')::text" "true"
+
+# ــ الحافظات بعد الطيّ: كلُّ واحدةٍ لازم تطابق ما قبلها ــ
+chk "المطلوبُ للمورّدين لم يتغيّر فلساً" \
+    "select (coalesce(sum(greatest(0, total - coalesce(amount_paid,total))),0)::text = '$OWED_B')::text from purchases where clinic_id='$C1'" "true"
+chk "ومجموعُ المطالبات" \
+    "select (coalesce(sum(amount),0)::text = '$CHG_B')::text from company_charges where clinic_id='$C1'" "true"
+chk "ومجموعُ دفعات المورّد" \
+    "select (coalesce(sum(amount),0)::text = '$PAY_B')::text from purchase_payments where clinic_id='$C1'" "true"
+chk "وعددُ المنتجات" "select (count(*)::text = '$PROD_B')::text from products where clinic_id='$C1'" "true"
+chk "ولا منتجَ فقد شركتَه" "select (count(*)::text = '$NOCO_B')::text from products where clinic_id='$C1' and company_id is null" "true"
+chk "ولا منتجَ فقد صنفَه" "select (count(*)::text = '$NOSE_B')::text from products where clinic_id='$C1' and section_id is null" "true"
+# **الفحصُ الذي يهمّ**: الحوضُ وحداتٌ تُباع، وكان يتبخّر بفرعِ الاسم المتطابق.
+chk "**مجموعُ حوض الأصناف لم يتغيّر**" \
+    "select (coalesce(sum(pooled_stock),0)::text = '$POOL_B')::text from company_sections where clinic_id='$C1'" "true"
+chk "  والحوضُ هبط بالصنف الصحيح لا بغيره (٧٫٥ + ٢٫٢٥)" \
+    "select pooled_stock::text from company_sections where id='$SK'" "9.750"
+chk "ومجموعُ الوحدات القابلة للبيع (رصيد + حوض) ثابت" \
+    "select ((coalesce((select sum(stock) from products where clinic_id='$C1'),0) + coalesce((select sum(pooled_stock) from company_sections where clinic_id='$C1'),0))::text = '$SELL_B')::text" "true"
+chk "والملاحظتان **اتّحدتا** ولم تُرمَ إحداهما" \
+    "select (note like '%الوكيل%' and note like '%المندوب%')::text from companies where id='$K'" "true"
+chk "والفاتورةُ انتقلت واسمُها توحّد" \
+    "select (company_id='$K' and company_name='اليف هاوس')::text from purchases where id='$QU'" "true"
+
+# ــ السلّة والفكّ ــ
+chk "السلّةُ فيها صورةُ المطويّة بمعرّفها ووجهتُها" \
+    "select (merged_into='$K' and array_length(product_ids,1)=2 and jsonb_array_length(sections)=2)::text from companies_trash where id='$D'" "true"
+chk "  ودفترُ الطيّ يقول أين ذهبت" "select _pf('$C1','select (company_redirect(''$D'') = ''$K'')::text')" "true"
+chk "الفكُّ يرجّعها **بنفس معرّفها**" \
+    "select (_pf('$C1', 'select (restore_company(''$D'')).id::text') = '$D')::text" "true"
+chk "  وكلُّ حافظةٍ رجعت لقيمتها: المطلوب" \
+    "select (coalesce(sum(greatest(0, total - coalesce(amount_paid,total))),0)::text = '$OWED_B')::text from purchases where clinic_id='$C1'" "true"
+chk "  والحوض" "select (coalesce(sum(pooled_stock),0)::text = '$POOL_B')::text from company_sections where clinic_id='$C1'" "true"
+chk "  وحوضُ الباقي رجع ٧٫٥ بالضبط (طرحُ ما أُضيف لا تخمين)" \
+    "select pooled_stock::text from company_sections where id='$SK'" "7.500"
+chk "  والمنتجان رجعا للمطويّة" "select count(*)::text from products where company_id='$D'" "2"
+chk "  والفاتورةُ والدفعةُ والمطالبتان" \
+    "select ((select count(*) from purchases where company_id='$D')=1 and
+             (select count(*) from purchase_payments where company_id='$D')=1 and
+             (select count(*) from company_charges where company_id='$D')=2)::text" "true"
+chk "  والسلّةُ ودفترُ الطيّ فُرّغا" \
+    "select ((select count(*) from companies_trash where id='$D')=0 and (select count(*) from company_merges where from_id='$D')=0)::text" "true"
+
+# ــ الحذفُ الخامّ صار طيّاً: هذا هو الباب الذي كان مفتوحاً ويفقد الآن ــ
+$P -c "delete from companies where id='$D';" >/dev/null
+chk "حذفٌ مباشرٌ بلا دالّة ⇒ صورةٌ بالسلّة (المحفّزُ صوّر قبل الخروج)" \
+    "select (merged_into is null and array_length(product_ids,1)=2)::text from companies_trash where id='$D'" "true"
+chk "  والاسترجاعُ يرجّع المنتجَين اللذين أفرغهما set null" \
+    "select (_pf('$C1','select (restore_company(''$D'')).id::text') = '$D')::text" "true"
+chk "  وعادا لشركتهما" "select count(*)::text from products where company_id='$D'" "2"
+# حذفُ صنفٍ يُصوَّر كذلك — كان يُمحى بلا سلّة، ومعه حوضُه. صنفٌ جديدٌ مستقلّ
+# حتى لا يعتمد الفحصُ على حالةِ ما قبله.
+SX=$($P -t -A -c "insert into company_sections (clinic_id, company_id, name, pooled_stock) values ('$C1','$K','مكمّلات ٢', 3.250) returning id::text")
+PX=$($P -t -A -c "insert into products (id, clinic_id, name, company_id, section_id) values (gen_random_uuid(),'$C1','علف-د','$K','$SX') returning id::text")
+$P -c "delete from company_sections where id='$SX';" >/dev/null
+chk "حذفُ صنفٍ ⇒ صورةٌ بحوضه بالسلّة (كان يُمحى بلا أثر)" \
+    "select ((row->>'pooled_stock')::numeric = 3.250 and array_length(product_ids,1) = 1)::text from company_sections_trash where id='$SX'" "true"
+chk "  ومنتجُه فقد صنفَه بالتتالي (set null) — وهذا ما يرجّعه الاسترجاع" \
+    "select (section_id is null)::text from products where id='$PX'" "true"
+chk "  والاسترجاعُ يرجّعه بحوضه" \
+    "select _pf('$C1','select (restore_company_section(''$SX'')).pooled_stock::text')" "3.250"
+chk "  ومنتجُه رجع إليه" "select (section_id = '$SX')::text from products where id='$PX'" "true"
+
+# ــ لقطةُ السلّة لا تُعطَب: منتجٌ محذوفٌ شركتُه طُويت ــ
+$P -c "select _pf('$C1', 'select delete_product(''$PB'', ''فحص'')::text');" >/dev/null
+chk "منتجٌ بالسلّة شركتُه ستُطوى" "select ((row->>'company_id')::uuid = '$D')::text from products_trash where id='$PB'" "true"
+$P -c "select _pf('$C1', 'select merge_companies(''$K'', ''$D'')::text');" >/dev/null
+chk "  الطيُّ أعاد توجيه لقطته (لا 23503 عند الاسترجاع)" \
+    "select ((row->>'company_id')::uuid = '$K')::text from products_trash where id='$PB'" "true"
+chk "  والاسترجاعُ ينجح ويرجع المنتجُ لشركةٍ قائمة" \
+    "select (_pf('$C1', 'select (restore_product(''$PB'')).company_id::text') = '$K')::text" "true"
+
+# ــ الصلاحية بدورٍ حقيقيّ: الحزمةُ superuser فما لا يُفحص بـauthenticated لا يُعرف ــ
+# نفسُ موظّف الاستقبال الذي تزرعه كتلةُ 0157 — بلا `on conflict` على أعمدةٍ
+# لا قيدَ فريداً عليها بالقالب.
+$P -c "insert into auth.users(id) values ('$RCP') on conflict do nothing;
+       insert into memberships(user_id,clinic_id,role,status) values ('$RCP','$C1','receptionist','active') on conflict do nothing;" >/dev/null
+D2=$($P -t -A -c "insert into companies (clinic_id, name) values ('$C1','اليف هاوس') returning id::text")
+chk "موظّفُ الاستقبال لا يطوي شركة" \
+    "select left(_rls_try('$RCP', 'select merge_companies(''$K'',''$D2'')'), 8)" "guarded:"
+chk "  ولا صفَّ تحرّك برفضه (لا نصفَ طيّ)" \
+    "select (count(*) = 1)::text from companies where id='$D2'" "true"
+chk "ولا أحدَ يكتب بالسلّة بيده (سياستُها قراءةٌ فقط)" \
+    "select left(_rls_try('$C1', 'insert into companies_trash(id,clinic_id,row) values (gen_random_uuid(),''$C1'',''{}''::jsonb)'), 8)" "guarded:"
+chk "والسلّةُ تُقرأ بالعيادة" \
+    "select left(_rls_try('$C1', 'select count(*) from companies_trash'), 5)" "rows:"
+
+chk "دوالُّ 0197 بصلاحية المُعرِّف وبمسارٍ مثبَّت وفحصِ عيادةٍ بالنصّ" \
+    "select bool_and(p.prosecdef and coalesce(array_to_string(p.proconfig,','),'') like '%search_path%' and p.prosrc like '%clinic_id = v_clinic%')::text from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname in ('merge_companies','merge_company_sections','restore_company','restore_company_section')" "true"
+chk "  وممنوعةٌ عن anon مسموحةٌ للمسجَّل" \
+    "select bool_and(not has_function_privilege('anon', p.oid, 'execute') and has_function_privilege('authenticated', p.oid, 'execute'))::text from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname in ('merge_companies','merge_company_sections','restore_company','restore_company_section','company_redirect','company_twins')" "true"
+chk "والمحفّزان قبل الحذف موجودان" \
+    "select count(*)::text from pg_trigger t join pg_class c on c.oid=t.tgrelid where t.tgname in ('companies_trash_guard','company_sections_trash_guard') and not t.tgisinternal" "2"
+
 
 
 [ $fail -eq 0 ] && echo "✓ كل الفحوص عبرت" || { echo "✗ اكو فحصٌ فشل"; exit 1; }

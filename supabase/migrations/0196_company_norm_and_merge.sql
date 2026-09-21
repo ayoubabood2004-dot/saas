@@ -232,7 +232,10 @@ comment on function public.merge_companies(uuid, uuid) is
   'طيُّ شركةٍ توأمٍ بأختها (0196): ينقل المنتجات والفواتير والدفعات والمطالبات والأصناف ثم يحذف — لا يفقد صفّاً.';
 
 -- ── ٤) تقريرُ ما يُطوى — الشاشةُ تقول ماذا سينتقل قبل أن تضغط ────────────
-create or replace function public.company_twins()
+-- والحذفُ قبل الإنشاء لأن 0197 توسّع نوعَ الرجوع: `create or replace` يرفض
+-- تغييرَه، فإعادةُ تنزيل هذه بعد تلك كانت تفشل.
+drop function if exists public.company_twins();
+create function public.company_twins()
 returns table (
   norm text, keep_id uuid, keep_name text, rows integer,
   ids uuid[], products integer, purchases integer,

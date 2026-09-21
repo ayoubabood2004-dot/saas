@@ -84,7 +84,10 @@ create table if not exists purchases (id uuid primary key default gen_random_uui
 create table if not exists purchase_items (id uuid primary key default gen_random_uuid(), clinic_id uuid, purchase_id uuid references purchases(id));
 create table if not exists staff_presence (id uuid primary key default gen_random_uuid(), user_id uuid references auth.users(id));
 create table if not exists surgeries (id uuid primary key default gen_random_uuid(), visit_id uuid references medical_visits(id));
-create table if not exists purchase_payments (id uuid primary key default gen_random_uuid(), company_id uuid references companies(id));
+-- `on delete set null` كما بالإنتاج (0076:18): بلا القيد الصحيح كان القالبُ
+-- يرفض حذفَ شركةٍ بدفعةٍ (NO ACTION) بينما الإنتاج يُفرغ العمودَ بصمت — فالفحصُ
+-- يقيس عالماً غير العالم. «القالبُ يُقاس على ما تُنتجه القاعدة فعلاً.»
+create table if not exists purchase_payments (id uuid primary key default gen_random_uuid(), company_id uuid references companies(id) on delete set null);
 create table if not exists lab_device_links (id uuid primary key default gen_random_uuid(), token text unique);
 create index if not exists lab_device_links_token_idx on lab_device_links(token);
 create table if not exists lab_device_inbox (id uuid primary key default gen_random_uuid(), link_id uuid references lab_device_links(id));
@@ -187,6 +190,20 @@ create table if not exists company_sections (
   pooled_stock numeric not null default 0,
   created_at timestamptz not null default now()
 );
+
+-- المفتاحان بـ`on delete set null` كما بالإنتاج (0063:47، 0065:40): بدونهما
+-- كان القالبُ يترك المنتجَ معلَّقاً بصنفٍ محذوف، فيمرّ فحصُ «حذفُ صنفٍ يفرّغ
+-- منتجَه» أخضرَ وهو لا يقيس شيئاً. القالبُ يُقاس على ما تُنتجه القاعدة فعلاً.
+do $$ begin
+  if not exists (select 1 from pg_constraint where conname = 'products_company_id_fkey') then
+    alter table products add constraint products_company_id_fkey
+      foreign key (company_id) references companies(id) on delete set null;
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'products_section_id_fkey') then
+    alter table products add constraint products_section_id_fkey
+      foreign key (section_id) references company_sections(id) on delete set null;
+  end if;
+end $$;
 
 -- مطالباتُ الشركة تُنشئها 0155 نفسُها بالموجة (بـ`on delete cascade`) — فلا
 -- تُبنى هنا: قالبٌ يسبق الهجرةَ بعمودٍ مختلفٍ يُفشّل الهجرةَ الحقيقية.
