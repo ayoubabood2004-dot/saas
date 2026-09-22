@@ -1271,7 +1271,8 @@
     "blankQtyWhich": "اكتب العدد أو احذف السطر: {{names}}",
     "pickedHidden": "{{n}} منها خارج المعروض",
     "pickAllShown": "أشّر كل المعروض",
-    "pickClearShown": "ألغِ تأشير المعروض"
+    "pickClearShown": "ألغِ تأشير المعروض",
+    "dupLine": "نفس المادة بسطر ثاني — المجموع {{n}}"
   },
   "pos": {
     "scanRescuedPurchase": "«{{name}}» — طابق بصيغة {{code}}",

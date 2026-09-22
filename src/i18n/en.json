@@ -1271,7 +1271,8 @@
     "blankQtyWhich": "Enter the count or remove the line: {{names}}",
     "pickedHidden": "{{n}} of them outside this view",
     "pickAllShown": "Tick all shown",
-    "pickClearShown": "Untick all shown"
+    "pickClearShown": "Untick all shown",
+    "dupLine": "same item on another line — total {{n}}"
   },
   "pos": {
     "scanRescuedPurchase": "{{name}} — matched via format {{code}}",

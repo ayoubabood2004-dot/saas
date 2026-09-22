@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { motion } from "framer-motion";
 import {
-  Barcode, Plus, Search, Building2, ShoppingBag, PackageCheck, Sparkles, ListChecks,
+  Barcode, Plus, Search, Building2, ShoppingBag, PackageCheck, Sparkles, ListChecks, AlertTriangle,
   Wallet, CalendarClock, X, ScanLine, FolderTree, SlidersHorizontal, ChevronDown,
   UserRound, Phone, HandCoins, Pencil,
 } from "lucide-react";
@@ -13,7 +13,7 @@ import { Modal } from "@/components/Modal";
 import { PurchasePicker, type PickedLine } from "@/components/inventory/PurchasePicker";
 import { Combobox } from "@/components/Combobox";
 import { Button, Badge, useToast, Skeleton } from "@/components/ui";
-import { cn, money, formatDate, localISO, normalizeAr, normalizeCode, matchCode, searchable, groupKey, normGroupName } from "@/lib/utils";
+import { cn, money, formatDate, formatNum, localISO, normalizeAr, normalizeCode, matchCode, searchable, groupKey, normGroupName } from "@/lib/utils";
 import { withTimeout, describeDbError } from "@/lib/errors";
 import { codeIndex, excelArtifact, looksLayoutMangled, rescueScan, matchTruncatedCode, stripAim } from "@/lib/productCodes";
 import { createScanAssembler } from "@/lib/scanBuffer";
@@ -650,6 +650,32 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
     scanRef.current?.focus();
   };
 
+  /* **سطران لنفس المادّة يُقالان — ولا يُمنعان.**
+   *
+   * `record_purchase` تحلّ كلَّ سطرٍ وحدَه ثمّ `stock = stock + qty` لكلٍّ —
+   * فسطران يحلّان لنفس المنتج يُضيفان مرّتين، بلا خطأٍ ولا تنبيه. والمقيسُ
+   * بالإنتاج: **خمسُ فواتيرَ** فيها ذلك فعلاً (إحداها خمسةُ سطورٍ بنفس
+   * الباركود، ٥٠ لكلٍّ).
+   *
+   * **ولا يُمنع**: ١٤٣ + ١٥٤ لنفس المادّة بفاتورةٍ واحدة قد تكون دفعتين
+   * مقصودتين. فالرفضُ يكسر عملاً قائماً، والصمتُ يُضاعف رصيداً. الحلُّ أن
+   * يُرى: شارةٌ بالسطر تقول «نفس المادّة بسطرٍ ثانٍ» ومجموعَها. */
+  const dupOf = useMemo(() => {
+    const byKey = new Map<string, { keys: string[]; total: number }>();
+    for (const l of lines) {
+      const k = l.product_id ? `p:${l.product_id}`
+        : l.barcode.trim() ? `c:${matchCode(l.barcode)}`
+        : l.name.trim() ? `n:${searchable(l.name)}` : "";
+      if (!k) continue;
+      const cur = byKey.get(k) ?? { keys: [], total: 0 };
+      cur.keys.push(l.key); cur.total += Number(l.qty) || 0;
+      byKey.set(k, cur);
+    }
+    const m = new Map<string, number>();
+    for (const g of byKey.values()) if (g.keys.length > 1) for (const key of g.keys) m.set(key, g.total);
+    return m;
+  }, [lines]);
+
   /** ما هو الآن بالفاتورة — يُعرض بالمنتقي فلا يُضاف مرّتين بلا علم. */
   const inInvoice = useMemo(() => {
     const m = new Map<string, number>();
@@ -965,6 +991,12 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
           {lines.map((l, idx) => {
             const matched = !!l.product_id;
             const product = matched ? products.find((p) => p.id === l.product_id) : undefined;
+            const dupTotal = dupOf.get(l.key);
+            const dupBadge = dupTotal != null ? (
+              <span className="chip shrink-0 bg-warn-50 text-2xs font-bold text-warn-800 dark:bg-warn-500/15 dark:text-warn-200">
+                <AlertTriangle size={10} /> {t("purchase.dupLine", "نفس المادة بسطر ثاني — المجموع {{n}}", { n: formatNum(dupTotal) })}
+              </span>
+            ) : null;
             // FAST restock row: the product is already known and already filed —
             // show where it lives + the stock jump, and ask ONLY for the count.
             if (matched && product && !expandedKeys.has(l.key)) {
@@ -974,6 +1006,7 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
               const baseStock = Math.max(0, (product.stock ?? 0) - (editing ? origQty.get(product.id) ?? 0 : 0));
               return (
                 <div key={l.key} className="rounded-2xl border border-success-200 bg-success-50/40 p-3 dark:border-success-500/25 dark:bg-success-500/5">
+                  {dupBadge && <div className="mb-1.5">{dupBadge}</div>}
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
                     <span className="chip shrink-0 bg-success-100 text-2xs font-semibold text-success-700 dark:bg-success-500/20 dark:text-success-200"><PackageCheck size={11} /> {t("purchase.restock", "موجود · تحديث مخزون")}</span>
                     <div className="min-w-0 flex-1">

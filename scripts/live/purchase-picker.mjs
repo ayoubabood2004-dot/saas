@@ -237,6 +237,39 @@ console.log("\n▸ ٥) سطرٌ بلا عدد يُقال ولا يُحذف بص�
   await ctx.close();
 }
 
+/* ── ٦) سطران لنفس المادّة: يُقالان ولا يُمنعان ───────────────────────── */
+console.log("\n▸ ٦) سطران لنفس المادّة — يُريان بدل أن يُضاعفا بصمت");
+{
+  /* `record_purchase` تحلّ كلَّ سطرٍ وحدَه ثمّ تجمع على الرصيد — فسطران
+     يحلّان لنفس المنتج يُضيفان مرّتين بلا خطأ. ومقيسٌ بالإنتاج: خمسُ فواتير.
+     ولا يُمنع (١٤٣ + ١٥٤ قد تكونان دفعتين مقصودتين) — يُرى. */
+  const { ctx, page } = await open();
+  await openPicker(page);
+  await page.locator('[data-pickrow="pc"]').click();
+  await page.waitForTimeout(250);
+  await page.locator("[data-pickgo]").click();
+  await page.waitForTimeout(800);
+  check("سطرٌ واحدٌ بلا شارة", !/نفس المادة بسطر ثاني/.test(await flat(page)));
+  // سطرٌ ثانٍ بنفس الباركود يُكتب يدوياً بصندوق المسح
+  await page.locator('input[placeholder*="امسح الباركود"]').fill("1003");
+  await page.waitForTimeout(300);
+  await page.locator('button:has-text("إضافة")').first().click();
+  await page.waitForTimeout(700);
+  const f6 = await flat(page);
+  // الماسحُ يدمج بنفس الباركود — فالشارةُ لا تظهر، وهذا هو الصواب.
+  check("  والمسحُ بنفس الباركود يُدمج فلا يصير سطران", !/نفس المادة بسطر ثاني/.test(f6));
+  // الطريقُ الحقيقيّ: «أضف صنفاً» سطرٌ خامٌّ يُكتب فيه نفسُ الباركود بلا مسح.
+  await page.locator('button:has-text("أضف صنفاً")').first().click();
+  await page.waitForTimeout(500);
+  const codeBoxes = page.locator('input[dir="ltr"]');
+  await codeBoxes.last().fill("1003");
+  await page.waitForTimeout(600);
+  const f7 = await flat(page);
+  check("  **وسطرٌ ثانٍ يحلّ لنفس المادّة يُقال بشارة**", /نفس المادة بسطر ثاني/.test(f7),
+    f7.match(/[^ ]*نفس المادة[^·]{0,40}/)?.[0] ?? "(ماكو شارة)");
+  await ctx.close();
+}
+
 await browser.close();
 console.log(`\n${fails ? "✗" : "✓"} live-picker: ${passes} نجحت، ${fails} فشلت`);
 process.exit(fails ? 1 : 0);
