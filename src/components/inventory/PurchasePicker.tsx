@@ -34,6 +34,7 @@ import { Modal } from "@/components/Modal";
 import { Button } from "@/components/ui";
 import { cn, searchable, money, formatQty, formatNum, groupKey, normGroupName } from "@/lib/utils";
 import { codeMatcher, codeRescue } from "@/lib/productCodes";
+import { lowThreshold } from "@/lib/stocktake";
 import { playTap } from "@/lib/sounds";
 
 export interface PickedLine { product: Product; qty: number }
@@ -98,7 +99,11 @@ export function PurchasePicker({
     if (scope === "company" && company) list = list.filter((p) => p.company_id === company.id);
     else if (scope === "none") list = list.filter((p) => !p.company_id);
     if (sectionId) list = list.filter((p) => p.section_id === sectionId);
-    if (lowOnly) list = list.filter((p) => (p.min_stock ?? 0) > 0 && (p.stock ?? 0) <= (p.min_stock ?? 0));
+    /* **«الناقص» بتعريف النظام لا بتعريفٍ ثانٍ هنا.** كان يشترط `min_stock > 0`،
+     * و٧٨١ منتجاً بالإنتاج حدُّه صفر — فيبني المستخدمُ طلبيّةً من قائمةٍ قصيرة
+     * ويبقى الرفُّ فارغاً. `lowThreshold` هي المصدرُ الواحد (حدُّ المنتج، وإلا
+     * الحدُّ العامّ) — نفسُها بشارة «منخفض» بكلّ الشاشات. */
+    if (lowOnly) list = list.filter((p) => !p.pooled && (p.stock ?? 0) <= lowThreshold(p));
     if (ql) {
       const found = list.filter((p) => searchable(p.name).includes(ql) || byCode(p));
       /* طبقةُ النجدة: ماسحٌ بصيغةٍ أخرى أو رمزٌ مقصوصٌ — بلا هذا يقول المنتقي
@@ -128,10 +133,31 @@ export function PurchasePicker({
       return next;
     });
   };
+  /* **والكسرُ يبقى كسراً لمن يُباع بالوزن.** ٢٩ منتجاً بالإنتاج كذلك و٢٣ رصيدُه
+   * كسريّ — فبطاقةٌ تقول «رصيد ٣٫٢٥» ثمّ حقلٌ يرفض ٢٫٥ تكذب على صاحبها. وما
+   * يُعدّ بالقطعة يبقى صحيحاً كما كان. */
   const setQty = (id: string, n: number) => {
+    const byWeight = !!products.find((p) => p.id === id)?.sold_by_weight;
     setPicked((prev) => {
       const next = new Map(prev);
-      if (next.has(id)) next.set(id, Math.max(1, Math.round(n) || 1));
+      if (!next.has(id)) return next;
+      const v = byWeight ? Math.round((Number(n) || 0) * 1000) / 1000 : Math.round(Number(n) || 0);
+      next.set(id, Math.max(byWeight ? 0.001 : 1, v || (byWeight ? 0.001 : 1)));
+      return next;
+    });
+  };
+
+  /* المندوبُ يوصّل صنفاً كاملاً لا مادّةً مادّة — فالتأشيرُ الجماعيُّ للمعروض
+   * (بعد النطاق والبحث والمرشّح) لا لكلّ المخزن: «الكل» بلا حدودٍ فخّ. */
+  const shownIds = useMemo(() => shown.map((p) => p.id), [shown]);
+  const allShownPicked = shownIds.length > 0 && shownIds.every((id) => picked.has(id));
+  const hiddenPicked = [...picked.keys()].filter((id) => !shownIds.includes(id)).length;
+  const toggleAllShown = () => {
+    playTap();
+    setPicked((prev) => {
+      const next = new Map(prev);
+      if (allShownPicked) { for (const id of shownIds) next.delete(id); return next; }
+      for (const p of shown) if (!next.has(p.id)) next.set(p.id, inInvoice.get(p.id) || 1);
       return next;
     });
   };
@@ -197,10 +223,23 @@ export function PurchasePicker({
               placeholder={t("purchase.pickSearch", "دوّر بالاسم أو الباركود…")} />
           </div>
 
-          <p className="text-xs font-semibold text-ink-subtle">
-            {t("purchase.pickCount", "{{n}} منتج", { n: formatNum(shown.length) })}
-            {picked.size > 0 && <span className="text-brand-600"> · {t("purchase.pickedCount", "{{n}} مؤشّر", { n: formatNum(picked.size) })}</span>}
-          </p>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-xs font-semibold text-ink-subtle">
+              {t("purchase.pickCount", "{{n}} منتج", { n: formatNum(shown.length) })}
+              {picked.size > 0 && <span className="text-brand-600"> · {t("purchase.pickedCount", "{{n}} مؤشّر", { n: formatNum(picked.size) })}</span>}
+              {/* **ومؤشَّرٌ خارج المعروض لا يُخفى**: تؤشّر بصنفٍ ثمّ تبدّل النطاق
+                  فتختفي البطاقات — والعددُ بالأسفل يبقى، فيبدو الفرقُ خطأً. */}
+              {hiddenPicked > 0 && (
+                <span className="text-warn-700"> · {t("purchase.pickedHidden", "{{n}} منها خارج المعروض", { n: formatNum(hiddenPicked) })}</span>
+              )}
+            </p>
+            {shown.length > 0 && (
+              <button type="button" onClick={toggleAllShown}
+                className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold text-brand-600 transition hover:bg-brand-50 dark:hover:bg-brand-500/10">
+                <Check size={13} /> {allShownPicked ? t("purchase.pickClearShown", "ألغِ تأشير المعروض") : t("purchase.pickAllShown", "أشّر كل المعروض")}
+              </button>
+            )}
+          </div>
         </div>
 
         {shown.length === 0 ? (
@@ -266,7 +305,8 @@ export function PurchasePicker({
                             className="grid h-8 w-8 place-items-center rounded-lg bg-surface-2 text-ink-muted transition hover:text-ink disabled:opacity-40">
                             <Minus size={14} />
                           </button>
-                          <input type="number" min={1} inputMode="numeric" value={qty} data-pickqty={p.id}
+                          <input type="number" min={p.sold_by_weight ? 0.001 : 1} step={p.sold_by_weight ? "any" : 1}
+                            inputMode={p.sold_by_weight ? "decimal" : "numeric"} value={qty} data-pickqty={p.id}
                             onChange={(e) => setQty(p.id, Number(e.target.value))}
                             onFocus={(e) => e.currentTarget.select()}
                             className="input h-8 w-16 px-2 text-center text-sm tabular-nums" />

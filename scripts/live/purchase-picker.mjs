@@ -45,6 +45,8 @@ const seedDB = () => ({
     { id: "pc", name: "علف-ج", barcode: "1003", company_id: "K1", section_id: "sk", stock: 5, purchase_price: 1500, sell_price: 3000, created_at: "2026-01-01T00:00:00.000Z" },
     { id: "px", name: "فيتامين", barcode: "", company_id: "K1", section_id: "sk", stock: 1, min_stock: 5, purchase_price: 2500, sell_price: 4000, created_at: "2026-01-02T00:00:00.000Z" },
     { id: "py", name: "قطن طبي", barcode: "2001", company_id: null, section_id: null, stock: 9, purchase_price: 300, sell_price: 500, created_at: "2026-01-03T00:00:00.000Z" },
+    { id: "pz", name: "دراي فود سائب", barcode: "3001", company_id: "K1", section_id: "sk", stock: 3.25, sold_by_weight: true, purchase_price: 4000, sell_price: 6000, created_at: "2026-01-04T00:00:00.000Z" },
+    { id: "pw", name: "شامبو", barcode: "4001", company_id: "K1", section_id: "sk", stock: 1, purchase_price: 900, sell_price: 1500, created_at: "2026-01-05T00:00:00.000Z" },
   ],
   companies: [
     { id: "K1", clinic_id: "c1", name: "اليف هاوس", created_at: "2026-01-01T00:00:00.000Z" },
@@ -105,7 +107,47 @@ console.log("▸ ١) النطاق — وشركتان اسمُهما واحدٌ �
   await page.waitForTimeout(300);
   await page.locator('button:has-text("الناقص بس")').click();
   await page.waitForTimeout(400);
-  check("و«الناقص بس» يصفّي على ما تحت حدّ التنبيه", await page.locator('[data-pickrow="px"]').count() === 1 && await page.locator("[data-pickrow]").count() === 1);
+  /* **«الناقص» بتعريف النظام**: `lowThreshold` = حدُّ المنتج، وإلا الحدُّ العامّ.
+     و٧٨١ منتجاً بالإنتاج حدُّه صفر — فاشتراطُ `min_stock > 0` كان يخفيها كلَّها. */
+  const lowN = await page.locator("[data-pickrow]").count();
+  check("و«الناقص بس» يشمل من حدُّه صفرٌ ورصيدُه منخفض (تعريفُ النظام)",
+    lowN >= 2 && await page.locator('[data-pickrow="px"]').count() === 1 && await page.locator('[data-pickrow="pw"]').count() === 1, String(lowN));
+  await ctx.close();
+}
+
+/* ── ١ب) الكسرُ يبقى كسراً لمن يُباع بالوزن ────────────────────────────── */
+console.log("\n▸ ١ب) الكميةُ الكسرية لمن يُباع بالوزن");
+{
+  const { ctx, page } = await open();
+  await openPicker(page);
+  await page.locator('[data-pickrow="pz"]').click();
+  await page.waitForTimeout(300);
+  await page.locator('[data-pickqty="pz"]').fill("2.5");
+  await page.waitForTimeout(300);
+  check("٢٫٥ كغم تبقى ٢٫٥ لا تصير ٣", await page.locator('[data-pickqty="pz"]').inputValue() === "2.5",
+    await page.locator('[data-pickqty="pz"]').inputValue());
+  await page.locator('[data-pickrow="pc"]').click();
+  await page.waitForTimeout(250);
+  await page.locator('[data-pickqty="pc"]').fill("2.7");
+  await page.waitForTimeout(300);
+  check("  وما يُعدّ بالقطعة يبقى صحيحاً", await page.locator('[data-pickqty="pc"]').inputValue() === "3",
+    await page.locator('[data-pickqty="pc"]').inputValue());
+  await ctx.close();
+}
+
+/* ── ١ج) تأشيرُ المعروض، والمؤشَّرُ خارجَه يُقال ─────────────────────────── */
+console.log("\n▸ ١ج) «أشّر كل المعروض» — ولا مؤشَّرَ يختفي بصمت");
+{
+  const { ctx, page } = await open();
+  await openPicker(page);
+  await page.locator('button:has-text("أشّر كل المعروض")').click();
+  await page.waitForTimeout(400);
+  const n = await page.locator("[data-pickrow]").count();
+  check("يؤشّر المعروضَ كلَّه بضغطة", /مؤشّر/.test(await flat(page)) && n > 1, String(n));
+  await page.locator('button:has-text("بدون شركة")').click();
+  await page.waitForTimeout(500);
+  check("  وبتبديل النطاق يُقال إنّ المؤشَّر خارج المعروض", /خارج المعروض/.test(await flat(page)),
+    (await flat(page)).match(/[^ ]*خارج المعروض/)?.[0]);
   await ctx.close();
 }
 

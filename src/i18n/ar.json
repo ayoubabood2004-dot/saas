@@ -1268,7 +1268,10 @@
     "pickAdd": "أضف {{n}} للفاتورة",
     "pickAdded": "انضافت {{n}} مادة للفاتورة — دقّق الأسعار لو تغيّرت",
     "blankQty": "{{n}} سطر بلا عدد — ما راح ينحفظ",
-    "blankQtyWhich": "اكتب العدد أو احذف السطر: {{names}}"
+    "blankQtyWhich": "اكتب العدد أو احذف السطر: {{names}}",
+    "pickedHidden": "{{n}} منها خارج المعروض",
+    "pickAllShown": "أشّر كل المعروض",
+    "pickClearShown": "ألغِ تأشير المعروض"
   },
   "pos": {
     "scanRescuedPurchase": "«{{name}}» — طابق بصيغة {{code}}",

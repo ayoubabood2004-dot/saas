@@ -1268,7 +1268,10 @@
     "pickAdd": "Add {{n}} to the invoice",
     "pickAdded": "Added {{n}} items to the invoice — check the prices if they changed",
     "blankQty": "{{n}} lines have no count — they would not be saved",
-    "blankQtyWhich": "Enter the count or remove the line: {{names}}"
+    "blankQtyWhich": "Enter the count or remove the line: {{names}}",
+    "pickedHidden": "{{n}} of them outside this view",
+    "pickAllShown": "Tick all shown",
+    "pickClearShown": "Untick all shown"
   },
   "pos": {
     "scanRescuedPurchase": "{{name}} — matched via format {{code}}",
