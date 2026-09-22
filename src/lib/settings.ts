@@ -167,7 +167,15 @@ function readPrefsLocal(): ClinicPrefs {
     const hits = Object.keys(localStorage).filter((k) => k.startsWith(PREFS_PREFIX));
     if (hits.length === 1) {
       const raw = localStorage.getItem(hits[0]);
-      if (raw) return { ...DEFAULT_PREFS, ...(JSON.parse(raw) as Partial<ClinicPrefs>) };
+      /* **إلا تخطيطَ الأقفاص.** التبنّي شفاءٌ ذاتيٌّ لمفتاحٍ تغيّر تمثيلُه،
+         لكنّ التخطيطَ مرآةٌ لصفٍّ سحابيٍّ بنسخةٍ مرقَّمة — وتبنّيه يجعل المتجرَ
+         يرطّب من مدوّنةٍ لا يعرف صاحبَها ثمّ يحفظها. والسحابةُ تعطيه حالاً.
+         (درس 0153: التسريبُ يبدأ عرضاً قبل أن يصير كتابة.) */
+      if (raw) {
+        const blob = JSON.parse(raw) as Partial<ClinicPrefs>;
+        delete blob.cage_layout; delete blob.cage_layout_rev;
+        return { ...DEFAULT_PREFS, ...blob };
+      }
     }
   } catch { /* ignore */ }
   // Fall back to the legacy dial-only key so existing dial codes aren't lost.
@@ -194,8 +202,24 @@ function prefs(): ClinicPrefs {
  * hydrate overwrites the local mirror. Pending keys win over the hydrated row
  * and are re-pushed after every successful hydrate. */
 const pendingPrefsKey = () => `vp_clinic_prefs_pending_${getActiveClinicId()}`;
+/* **عمودان لا يمرّان من هنا أبداً.** الطابورُ يُرفع بـ`upsert` مباشرٍ بلا
+ * فحصِ نسخة، وهو الطريقُ الذي كان يدوس ترتيبَ الأقفاص. والنسخةُ القديمة من
+ * هذا الملفّ كانت تضع `cage_layout` بالطابور فعلاً (`cage-layout-set`
+ * و`boolPatch.cage_layout`) — فجهازُ عيادةٍ عدّل أقفاصَه قبل التحديث يحمل
+ * الآن تخطيطاً قديماً بطابوره، وأوّلُ ترطيبٍ بعد التحديث **يرفعه فوق السحابة**
+ * ويسمّم المرآةَ بالذاكرة. يُنزَع عند القراءة فيموت الطابورُ القديم بسلام،
+ * ويبقى `save_cage_layout` الطريقَ الوحيد. */
+const PREFS_NEVER_PENDING = ["cage_layout", "cage_layout_rev"] as const;
+
 function readPendingPrefs(): Partial<ClinicPrefs> {
-  try { const raw = localStorage.getItem(pendingPrefsKey()); if (raw) return JSON.parse(raw) as Partial<ClinicPrefs>; } catch { /* ignore */ }
+  try {
+    const raw = localStorage.getItem(pendingPrefsKey());
+    if (raw) {
+      const p = JSON.parse(raw) as Partial<ClinicPrefs>;
+      for (const k of PREFS_NEVER_PENDING) delete p[k];
+      return p;
+    }
+  } catch { /* ignore */ }
   return {};
 }
 function setPendingPrefs(p: Partial<ClinicPrefs>) {
@@ -331,6 +355,8 @@ registerReset(() => { prefsCache = null; });
  *  can't take yet (missing column pre-migration) re-syncs on the next hydrate
  *  instead of being reverted by the column's default. */
 function patchPrefs(patch: Partial<ClinicPrefs>, ctx: string) {
+  // ولا يُكتبان من هنا أصلاً — `save_cage_layout` (0195) وحدَها، بفحص النسخة.
+  for (const k of PREFS_NEVER_PENDING) if (k in patch) delete patch[k];
   savePrefsLocal({ ...prefs(), ...patch });
   if (!sb()) return; // demo/offline — localStorage IS the source of truth
   setPendingPrefs({ ...readPendingPrefs(), ...patch });

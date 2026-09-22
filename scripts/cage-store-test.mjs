@@ -165,5 +165,38 @@ check("الحالةُ «بلا اتصال» لا «محفوظ»", cageStudio.get
 check("  والسحابةُ ما لُمست", cloud.rev === 0 && cloud.layout === null);
 globalThis.__sb = fakeClient;
 
+/* ── ٨) ولا طريقَ ثانياً للعمود من `settings.ts` ─────────────────────────── */
+console.log("\n▸ ٨) بابٌ واحدٌ بالواجهة: التفضيلاتُ العامّة لا تلمس التخطيط");
+{
+  /* فحصٌ بنيويٌّ لا سلوكيّ — وسببُه أنّ العطبَ كان **بطريقٍ ثانٍ** لا بالمنطق:
+     `patchPrefs({cage_layout})` و`boolPatch.cage_layout` كانا يكتبان العمودَ
+     بـ`upsert` مباشرٍ بلا فحصِ نسخة، ومنه طابورُ المعلّقات الذي يعيش
+     بـlocalStorage فيرفع تخطيطاً قديماً بعد التحديث. والقاعدةُ تحرسه بمحفّز
+     (0204، مفحوصٌ بحزمة SQL)، وهذا يمنع رجوعَ الطريق من الواجهة أصلاً. */
+  const { readFileSync } = await import("node:fs");
+  const src = readFileSync("src/lib/settings.ts", "utf8");
+  const guard = /const PREFS_NEVER_PENDING\s*=\s*\[([^\]]*)\]/.exec(src);
+  check("القائمةُ المحرَّمة معرَّفة", !!guard);
+  check("  وفيها العمودان", !!guard && /cage_layout"/.test(guard[1]) && /cage_layout_rev"/.test(guard[1]), guard?.[1]);
+
+  const fnBody = (name) => {
+    const i = src.indexOf(name);
+    return i < 0 ? "" : src.slice(i, src.indexOf("\n}", i));
+  };
+  check("`readPendingPrefs` تنزعهما عند القراءة", fnBody("function readPendingPrefs").includes("PREFS_NEVER_PENDING"));
+  check("`patchPrefs` ترفضهما عند الكتابة", fnBody("function patchPrefs").includes("PREFS_NEVER_PENDING"));
+
+  /* ولا يُكتب العمودُ بـupsert من أيّ موضعٍ بالملفّ. */
+  const upserts = [...src.matchAll(/cage_layout/g)].length;
+  const isComment = (l) => /^\s*(\/\/|\*|\/\*)/.test(l);
+  const badLine = src.split("\n").find((l) =>
+    !isComment(l) && /cage_layout/.test(l) && /(patchPrefs|boolPatch|upsert)/.test(l) && !/PREFS_NEVER_PENDING|delete /.test(l));
+  check("ولا سطرَ يضع التخطيطَ بمسار التفضيلات العامّ", !badLine, badLine?.trim());
+  void upserts;
+
+  /* والتبنّي بين مفاتيح الأجهزة لا يجرّ تخطيطَ عيادةٍ أخرى (درس 0153). */
+  check("وتبنّي مدوّنةِ جهازٍ يُسقط التخطيط", /delete blob\.cage_layout/.test(src));
+}
+
 console.log(`\n${fails ? "✗" : "✓"} cage-store-test: ${passes} نجحت، ${fails} فشلت`);
 process.exit(fails ? 1 : 0);
