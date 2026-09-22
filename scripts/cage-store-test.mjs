@@ -198,5 +198,55 @@ console.log("\n▸ ٨) بابٌ واحدٌ بالواجهة: التفضيلات�
   check("وتبنّي مدوّنةِ جهازٍ يُسقط التخطيط", /delete blob\.cage_layout/.test(src));
 }
 
+/* ── ٩) سجلُّ المُرطِّبات: من سُجّل بعد الجولة يُرطَّب ───────────────────── */
+console.log("\n▸ ٩) وحدةٌ كسولةٌ تُسجَّل بعد الجولة — لازم تُرطَّب");
+{
+  /* **العطبُ الحيّ الذي ظهر بعيادة**: شاشةُ الأقفاص تقول «نجيب ترتيب الأقفاص
+     من السحابة…» بلا نهاية. والسببُ لا بالمتجر ولا بالشبكة: جولةُ الترطيب
+     تجري مرّةً فوق المسجَّلين **تلك اللحظة** (`clinicConfig.ts` يستورد وحداتِها
+     لهذا حرفياً)، وحزمةُ الأقفاص كسولةٌ فتُسجّل بعدها — فما ناداها أحد.
+     والبصمة: سبعُ عياداتٍ كلُّها على النسخة ١، أي ولا حفظةٍ مرّت. */
+  const built2 = await esbuild.build({
+    entryPoints: ["src/lib/clinicSync.ts"], bundle: true, format: "esm", write: false,
+    platform: "neutral", logLevel: "silent",
+    plugins: [{
+      name: "s2", setup(b) {
+        const stub = { "./supabase": "export const supabase = null;",
+                       "i18next": "export default { t: (k, d) => d ?? k, language: 'ar' };",
+                       "./globalToast": "export const emitGlobalToast = () => {};",
+                       "./clinics": "export const getActiveClinicId = () => 'c1';" };
+        for (const mod of Object.keys(stub)) {
+          b.onResolve({ filter: new RegExp(`^${mod.replace(/[./]/g, "\\$&")}$`) }, () => ({ path: mod, namespace: "s2" }));
+        }
+        b.onLoad({ filter: /.*/, namespace: "s2" }, (a) => ({ contents: stub[a.path] ?? "export default {};", loader: "js" }));
+      },
+    }],
+  });
+  const CS = await import("data:text/javascript;base64," + Buffer.from(built2.outputFiles[0].text).toString("base64"));
+
+  const ran = [];
+  CS.registerHydrator(async () => { ran.push("early"); });
+  check("قبل الجولة: ما جرى بعد", ran.length === 0);
+  await CS.hydrateClinicConfig("clinic-1");
+  check("  والجولةُ نادته", ran.join() === "early", ran.join());
+
+  /* الحزمةُ الكسولةُ تصل الآن — بعد الجولة. */
+  CS.registerHydrator(async () => { ran.push("lazy"); });
+  await new Promise((r) => setTimeout(r, 0));
+  check("**وبعدها: المسجَّلُ الجديدُ يُرطَّب حالاً**", ran.join() === "early,lazy", ran.join());
+
+  /* ومُرطِّبٌ يرمي لا يكسر تسجيلَ غيره ولا الجولةَ التالية. */
+  CS.registerHydrator(async () => { ran.push("boom"); throw new Error("x"); });
+  await new Promise((r) => setTimeout(r, 0));
+  CS.registerHydrator(async () => { ran.push("after"); });
+  await new Promise((r) => setTimeout(r, 0));
+  check("  ورميُ مُرطِّبٍ لا يمنع الذي بعده", ran.join() === "early,lazy,boom,after", ran.join());
+
+  /* وجولةٌ ثانيةٌ (تبديلُ عيادة) تنادي الجميع بمن فيهم المتأخّرون. */
+  ran.length = 0;
+  await CS.hydrateClinicConfig("clinic-2");
+  check("  وجولةٌ ثانيةٌ تشمل المتأخّرين", ran.includes("lazy") && ran.includes("early"), ran.join());
+}
+
 console.log(`\n${fails ? "✗" : "✓"} cage-store-test: ${passes} نجحت، ${fails} فشلت`);
 process.exit(fails ? 1 : 0);

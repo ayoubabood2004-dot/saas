@@ -4,7 +4,7 @@ import {
   Cloud, CloudOff, Loader2, Check, AlertTriangle, History, RotateCcw, Laptop, ShieldQuestion, GitCompare, ArrowLeftRight,
 } from "lucide-react";
 import {
-  cageStudio, useCageStudio, cageLayoutHistory, legacyDeviceLayout, flushCageLayout,
+  cageStudio, useCageStudio, cageLayoutHistory, legacyDeviceLayout, flushCageLayout, hydrateCageStudio,
 } from "@/components/cage3d/store";
 import { parseLayout, flatRooms, compareLayouts } from "@/lib/cageLayout";
 import { Modal } from "@/components/Modal";
@@ -79,6 +79,15 @@ export function LayoutSync({ canEdit }: { canEdit: boolean }) {
     return () => clearInterval(id);
   }, []);
   void tick;
+
+  /* **حزامُ أمانٍ للشاشة**: المتجرُ يُرطَّب بجولة `hydrateClinicConfig`، وهي
+   * تجري مرّةً فوق المسجَّلين وقتَها. وحزمةُ الأقفاص كسولة، فسجّلت بعدها —
+   * فما رُطِّب قطّ، وبقيت الشاشةُ «نجيب ترتيب الأقفاص…» بلا نهاية بكلّ العيادات.
+   * أُصلح الجذرُ بالسجلّ نفسِه (`registerHydrator`)، وهذا سطرٌ ثانٍ يضمن أن
+   * الشاشةَ التي يفتحها المستخدم تقرأ — مهما تغيّر ترتيبُ التحميل لاحقاً. */
+  useEffect(() => {
+    if (!cageStudio.get().ready) void hydrateCageStudio();
+  }, []);
 
   /* ما لم يُحفظ لا يضيع بإغلاق التاب: المهلةُ تُفرَغ عند الإخفاء. */
   useEffect(() => {
