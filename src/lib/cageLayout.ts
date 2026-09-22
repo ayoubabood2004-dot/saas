@@ -226,6 +226,95 @@ export const cagesOfRoom = (l: Pick<CageLayout, "cages">, r: LayoutRoom): Layout
 
 /** المنظرُ المسطّح — **مشتقٌّ من الهندسة**، فاللوحةُ وورقةُ الجولة ترتيبُهما
  *  واحد. (كانا يفترقان: هذه تفرز بـ`x` وتلك بترتيب المصفوفة المخزَّنة.) */
+/* ---------------------------------------------------------------------------
+ * المقارنة: «أيُّ الترتيبَين الصحيح؟»
+ *
+ * سألها المالك حرفياً: عيادةٌ صار عندها ترتيبان مختلفان، شلون تعرف الصحيح؟
+ * وكانت الشاشةُ تقول **العددَ وحدَه** («٣ غرف · ١٢ قفص» مقابل «٣ غرف · ١٢
+ * قفص») — ورقمان متساويان عن ترتيبَين مختلفَين لا يفرّقان شيئاً. فالقرارُ
+ * يحتاج ما يُرى: أيُّ غرفةٍ هنا وليست هناك، وأيُّ قفصٍ انتقل من غرفةٍ لغرفة،
+ * وأيُّ رمزٍ موجودٌ بنسخةٍ وغائبٌ عن الأخرى.
+ *
+ * والمطابقةُ **بالاسم لا بالمعرّف**: جهازان رتّبا مستقلَّين يعطيان «الفندقة»
+ * معرّفَين مختلفين، وهي عند العيادة غرفةٌ واحدة. والاسمُ يُطبَّع كما تُطبَّع
+ * أسماءُ الشركات (`groupKey` هناك) — مسافةٌ زائدةٌ أو «ة/ه» لا تصنع غرفتين.
+ * ------------------------------------------------------------------------ */
+
+/** مفتاحُ مطابقةِ اسم الغرفة — تطبيعٌ خفيفٌ يكفي للمقارنة البصرية. */
+const roomKey = (name: string): string =>
+  String(name ?? "")
+    .replace(/[\u200B-\u200F\u061C\u202A-\u202E\u2066-\u2069\uFEFF]/g, "")
+    .replace(/[\u0623\u0625\u0622\u0671]/g, "\u0627").replace(/\u0629/g, "\u0647").replace(/\u0649/g, "\u064A")
+    .replace(/\s+/g, "").toLowerCase();
+
+export interface LayoutDiffRoom {
+  name: string;
+  /** أقفاصُ هذه الغرفة بالنسخة الأولى — `null` يعني أن الغرفةَ غيرُ موجودةٍ فيها. */
+  mine: string[] | null;
+  theirs: string[] | null;
+  /** تختلف الغرفتان فعلاً (وجوداً أو محتوى). */
+  differs: boolean;
+}
+
+export interface LayoutDiff {
+  identical: boolean;
+  rooms: LayoutDiffRoom[];
+  /** رموزٌ بالأولى وليست بالثانية، والعكس. */
+  onlyMine: string[];
+  onlyTheirs: string[];
+  /** رمزٌ موجودٌ بالنسختين لكنّ غرفتَه اختلفت — أخطرُ فرقٍ يُقرأ بلمحة. */
+  moved: Array<{ code: string; from: string; to: string }>;
+}
+
+/**
+ * يقارن تخطيطَين ويقول **ما الفرق** لا كم العدد.
+ * `mine` = ما على الشاشة، `theirs` = نسخةُ السحابة (أو نسخةٌ من السجلّ).
+ */
+export function compareLayouts(
+  mine: Pick<CageLayout, "rooms" | "cages">,
+  theirs: Pick<CageLayout, "rooms" | "cages">,
+): LayoutDiff {
+  const a = flatRooms(mine), b = flatRooms(theirs);
+  const byKey = (rs: CageRoom[]) => {
+    const m = new Map<string, CageRoom>();
+    for (const r of rs) {
+      const k = roomKey(r.name);
+      const prev = m.get(k);
+      // غرفتان بنفس الاسم بنسخةٍ واحدة: تُضمّان للمقارنة كما تراهما العين.
+      if (prev) m.set(k, { ...prev, cages: [...prev.cages, ...r.cages] });
+      else m.set(k, r);
+    }
+    return m;
+  };
+  const ma = byKey(a), mb = byKey(b);
+  const order: string[] = [];
+  for (const r of a) if (!order.includes(roomKey(r.name))) order.push(roomKey(r.name));
+  for (const r of b) if (!order.includes(roomKey(r.name))) order.push(roomKey(r.name));
+
+  const rooms: LayoutDiffRoom[] = order.map((k) => {
+    const ra = ma.get(k), rb = mb.get(k);
+    const differs = !ra || !rb || ra.cages.join("\u0000") !== rb.cages.join("\u0000");
+    return { name: ra?.name ?? rb?.name ?? "", mine: ra ? ra.cages : null, theirs: rb ? rb.cages : null, differs };
+  });
+
+  const roomOf = (rs: CageRoom[]) => {
+    const m = new Map<string, string>();
+    for (const r of rs) for (const c of r.cages) if (!m.has(c)) m.set(c, r.name);
+    return m;
+  };
+  const oa = roomOf(a), ob = roomOf(b);
+  const onlyMine = [...oa.keys()].filter((c) => !ob.has(c));
+  const onlyTheirs = [...ob.keys()].filter((c) => !oa.has(c));
+  const moved = [...oa.entries()]
+    .filter(([c, r]) => ob.has(c) && roomKey(ob.get(c) as string) !== roomKey(r))
+    .map(([code, from]) => ({ code, from, to: ob.get(code) as string }));
+
+  return {
+    identical: rooms.every((r) => !r.differs) && !onlyMine.length && !onlyTheirs.length && !moved.length,
+    rooms, onlyMine, onlyTheirs, moved,
+  };
+}
+
 export function flatRooms(l: Pick<CageLayout, "rooms" | "cages">): CageRoom[] {
   return roomsInLayoutOrder(l.rooms).map((r) => ({
     id: r.id, name: r.name,

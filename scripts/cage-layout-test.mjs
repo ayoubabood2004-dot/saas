@@ -135,5 +135,41 @@ check("النسخةُ تُقرأ وتُحمل", L.parseLayout(L.serializeLayout(
 check("جهةُ بابٍ غيرُ معروفةٍ تُسقَط بدل أن تُصدَّق",
   L.parseLayout(JSON.stringify({ v: 2, rooms: [{ id: "r", name: "ر", x: 0, z: 0, w: 1, d: 1, door: { side: "up", at: 0 } }], cages: [] })).rooms[0].door === undefined);
 
+console.log("▸ ٦) المقارنة: «أيُّ الترتيبَين الصحيح؟»");
+{
+  /* سؤالُ المالك: عيادةٌ عندها ترتيبان مختلفان — شلون تعرف الصحيح؟ والعددُ
+     وحدَه لا يفرّق: النسختان هنا **بنفس عدد الغرف والأقفاص** (٢ و٤) وتختلفان
+     اختلافاً كاملاً. فالمقارنةُ تقول ما يُرى لا ما يُعدّ. */
+  const mkv1 = (rooms) => JSON.stringify(rooms);
+  const mine   = L.parseLayout(mkv1([{ id: "a", name: "غرفة الإقامة", cages: ["101", "102"] }, { id: "b", name: "الفندقة", cages: ["201", "202"] }]));
+  const theirs = L.parseLayout(mkv1([{ id: "x", name: "غرفة الإقامة", cages: ["101"] },        { id: "y", name: "الفندقة", cages: ["102", "201", "202"] }]));
+  check("العددُ وحدَه لا يفرّق (٢ غرفة و٤ أقفاص بالطرفين)",
+    L.flatRooms(mine).length === L.flatRooms(theirs).length && mine.cages.length === theirs.cages.length);
+
+  const d = L.compareLayouts(mine, theirs);
+  check("المقارنةُ تقول «مختلفتان»", d.identical === false);
+  check("  وتسمّي الغرفتَين المختلفتين", d.rooms.filter((r) => r.differs).map((r) => r.name).join("|") === "غرفة الإقامة|الفندقة",
+    d.rooms.filter((r) => r.differs).map((r) => r.name).join("|"));
+  check("  **وتقول أيُّ قفصٍ انتقل ومن وين لوين**",
+    d.moved.length === 1 && d.moved[0].code === "102" && d.moved[0].from === "غرفة الإقامة" && d.moved[0].to === "الفندقة",
+    JSON.stringify(d.moved));
+  check("  ولا رمزَ ضائعٍ ولا زائد", d.onlyMine.length === 0 && d.onlyTheirs.length === 0);
+
+  /* غرفةٌ بنسخةٍ وليست بالأخرى، ورمزٌ موجودٌ عند واحدٍ فقط. */
+  const gone = L.parseLayout(mkv1([{ id: "a", name: "غرفة الإقامة", cages: ["101", "102", "201", "202", "303"] }]));
+  const d2 = L.compareLayouts(mine, gone);
+  check("غرفةٌ غائبةٌ عن نسخةٍ تُقال بالاسم",
+    d2.rooms.find((r) => r.name === "الفندقة")?.theirs === null);
+  check("  ورمزٌ عند واحدٍ فقط يُقال", d2.onlyTheirs.join(",") === "303" && d2.onlyMine.length === 0,
+    `${d2.onlyMine}|${d2.onlyTheirs}`);
+
+  /* والمطابقةُ بالاسم لا بالمعرّف: جهازان مستقلّان يعطيان معرّفَين مختلفين
+     لنفس الغرفة، وهي عند العيادة غرفةٌ واحدة. ومسافةٌ أو «ة/ه» لا تصنع ثانية. */
+  const same = L.parseLayout(mkv1([{ id: "zz", name: "غرفه  الإقامة", cages: ["101", "102"] }, { id: "qq", name: "الفندقة", cages: ["201", "202"] }]));
+  check("نفسُ الترتيب بمعرّفاتٍ وإملاءٍ مختلفَين ⇒ **مطابق**", L.compareLayouts(mine, same).identical === true,
+    JSON.stringify(L.compareLayouts(mine, same).rooms.filter((r) => r.differs).map((r) => r.name)));
+  check("  وتخطيطان فارغان مطابقان", L.compareLayouts(L.EMPTY_LAYOUT, L.EMPTY_LAYOUT).identical === true);
+}
+
 console.log(fails ? `\n✗ cage-layout-test: ${passes} نجحت، ${fails} فشلت` : `\n✓ cage-layout-test: ${passes} نجحت، 0 فشلت`);
 process.exit(fails ? 1 : 0);

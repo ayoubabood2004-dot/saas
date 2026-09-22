@@ -1,12 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
-  Cloud, CloudOff, Loader2, Check, AlertTriangle, History, RotateCcw, Laptop, ShieldQuestion,
+  Cloud, CloudOff, Loader2, Check, AlertTriangle, History, RotateCcw, Laptop, ShieldQuestion, GitCompare, ArrowLeftRight,
 } from "lucide-react";
 import {
   cageStudio, useCageStudio, cageLayoutHistory, legacyDeviceLayout, flushCageLayout,
 } from "@/components/cage3d/store";
-import { parseLayout, flatRooms } from "@/lib/cageLayout";
+import { parseLayout, flatRooms, compareLayouts } from "@/lib/cageLayout";
 import { Modal } from "@/components/Modal";
 import { Button, useToast } from "@/components/ui";
 import { cn, formatNum, formatDate, dateLocale } from "@/lib/utils";
@@ -48,6 +48,18 @@ function summarize(raw: string | null): { rooms: number; cages: number; names: s
   };
 }
 
+/** خليّةُ غرفةٍ بجدول المقارنة — أو «ماكو هذي الغرفة» إن غابت عن هذه النسخة. */
+function RoomCell({ name, cages, t }: { name: string; cages: string[] | null; t: (k: string, d: string, o?: Record<string, unknown>) => string }) {
+  if (!cages) return <span className="italic text-ink-subtle">{t("cages.cmpNoRoom", "ماكو غرفة «{{n}}»", { n: name })}</span>;
+  return (
+    <>
+      <span className="font-extrabold text-ink">{name}</span>
+      <span className="ms-1.5 text-ink-subtle tabular-nums">{formatNum(cages.length)}</span>
+      {cages.length > 0 && <div className="mt-0.5 truncate text-ink-subtle">{cages.join(t("common.listSep", "، "))}</div>}
+    </>
+  );
+}
+
 export function LayoutSync({ canEdit }: { canEdit: boolean }) {
   const { t, i18n } = useTranslation();
   const s = useCageStudio();
@@ -56,6 +68,9 @@ export function LayoutSync({ canEdit }: { canEdit: boolean }) {
   const [rows, setRows] = useState<Array<{ at: string; actor: string | null; layout: string }> | null>(null);
   const [histErr, setHistErr] = useState(false);
   const [legacyOpen, setLegacyOpen] = useState(false);
+  /* «أيُّهما الصحيح؟» لا يُجاب بعددَين متساويَين — يُجاب بما يُرى. */
+  const [cmpOpen, setCmpOpen] = useState(false);
+  const [who, setWho] = useState<{ at: string; actor: string | null } | null>(null);
   const [tick, setTick] = useState(0);
 
   // «قبل كذا» يشيخ بلا إعادة رسم — دقّةٌ كل نصف دقيقة تكفي ولا تكلّف شيئاً.
@@ -87,6 +102,26 @@ export function LayoutSync({ canEdit }: { canEdit: boolean }) {
     const sum = summarize(raw);
     return sum.cages > s.cages.length ? { raw, ...sum } : null;
   }, [s.ready, s.cages.length, canEdit]);
+
+  /* الفرقُ يُحسب مرّةً ويُقرأ بمكانين: سطرُ التنبيه ونافذةُ المقارنة. */
+  const diff = useMemo(
+    () => (s.conflict ? compareLayouts({ rooms: s.rooms, cages: s.cages }, s.conflict.layout) : null),
+    [s.conflict, s.rooms, s.cages],
+  );
+  const diffCount = diff
+    ? diff.rooms.filter((r) => r.differs).length + diff.moved.length + diff.onlyMine.length + diff.onlyTheirs.length
+    : 0;
+
+  /* **مَن حفظ النسخةَ الثانية ومتى** — أقوى دليلٍ على «أيُّهما الصحيح»، وهو
+     موجودٌ بسجلّ التدقيق أصلاً (أعلى صفٍّ = آخرُ حفظ). والفشلُ يُقال ولا
+     يُبلع: «ما عرفنا» أصدقُ من سطرٍ فارغٍ يُقرأ «ماكو أحد». */
+  const loadWho = async () => {
+    if (who) return;
+    try {
+      const rows = await cageLayoutHistory(1);
+      if (rows.length) setWho({ at: rows[0].at, actor: rows[0].actor });
+    } catch { /* يبقى null فتقول الشاشةُ «ما عرفنا» */ }
+  };
 
   const openHistory = async () => {
     playTap();
@@ -167,16 +202,13 @@ export function LayoutSync({ canEdit }: { canEdit: boolean }) {
         {s.sync === "conflict" && s.conflict && (
           <div className="flex w-full flex-wrap items-center gap-2 border-t border-warn-200 pt-2 dark:border-warn-500/30">
             <span className="text-2xs font-semibold">
-              {t("cages.conflictWhat", "نسخة السحابة: {{r}} غرفة · {{c}} قفص. الي على شاشتك: {{mr}} غرفة · {{mc}} قفص.", {
-                r: formatNum(s.conflict.layout.rooms.length), c: formatNum(s.conflict.layout.cages.length),
-                mr: formatNum(s.rooms.length), mc: formatNum(s.cages.length),
-              })}
+              {diff?.identical
+                ? t("cages.conflictSame", "النسختان **نفسها** — أيّ زرّ تضغطه يعطي نفس النتيجة.")
+                : t("cages.conflictDiff", "{{n}} فرق بين النسختين — قارنهما قبل ما تقرّر.", { n: formatNum(diffCount) })}
             </span>
-            <Button size="sm" variant="secondary" onClick={() => { playTap(); cageStudio.resolveConflict("cloud"); }}>
-              {t("cages.takeCloud", "خذ نسخة السحابة")}
-            </Button>
-            <Button size="sm" onClick={() => { playTap(); cageStudio.resolveConflict("mine"); }}>
-              {t("cages.takeMine", "احفظ نسختي فوقها")}
+            <Button size="sm" variant="secondary" leftIcon={<GitCompare size={13} />}
+              onClick={() => { playTap(); setCmpOpen(true); void loadWho(); }} data-layoutcompare>
+              {t("cages.compare", "قارن النسختين")}
             </Button>
           </div>
         )}
@@ -196,6 +228,84 @@ export function LayoutSync({ canEdit }: { canEdit: boolean }) {
           </Button>
         </div>
       )}
+
+      {/* ── نافذةُ المقارنة: «أيُّ الترتيبَين الصحيح؟» ──────────────────────
+          الجوابُ ليس رقماً — هو ثلاثةُ أشياءَ تُرى: مَن حفظ الأخرى ومتى،
+          وأيُّ غرفةٍ تختلف، وأيُّ قفصٍ انتقل من غرفةٍ لغرفة. */}
+      <Modal open={cmpOpen} onClose={() => setCmpOpen(false)} title={t("cages.compareTitle", "قارن الترتيبين")}>
+        {s.conflict && diff && (
+          <div className="space-y-3">
+            <p className="text-xs leading-relaxed text-ink-muted">
+              {who
+                ? t("cages.cloudSavedBy", "نسخة السحابة (النسخة {{n}}) انحفظت {{when}} من جهاز ثاني.", {
+                    n: formatNum(s.conflict.rev), when: formatDate(who.at, dateLocale(i18n.language)),
+                  })
+                : t("cages.cloudSavedUnknown", "نسخة السحابة هي النسخة {{n}} — ما عرفنا منو حفظها.", { n: formatNum(s.conflict.rev) })}
+            </p>
+
+            {diff.identical ? (
+              <p className="rounded-xl border border-success-200 bg-success-50 p-3 text-xs font-bold text-success-800 dark:border-success-500/30 dark:bg-success-500/10 dark:text-success-200">
+                {t("cages.cmpSame", "النسختان متطابقتان — نفس الغرف ونفس الأقفاص بنفس المواضع.")}
+              </p>
+            ) : (
+              <>
+                {diff.moved.length > 0 && (
+                  <div className="rounded-xl border border-warn-200 bg-warn-50 p-3 dark:border-warn-500/30 dark:bg-warn-500/10">
+                    <p className="mb-1 flex items-center gap-1.5 text-2xs font-extrabold text-warn-800 dark:text-warn-200">
+                      <ArrowLeftRight size={12} /> {t("cages.cmpMoved", "أقفاص غيّرت غرفتها")}
+                    </p>
+                    <ul className="max-h-40 space-y-0.5 overflow-auto text-2xs text-ink-muted">
+                      {diff.moved.map((m) => (
+                        <li key={m.code}>
+                          <b className="text-ink">{m.code}</b>{" — "}
+                          {t("cages.cmpMovedLine", "عندك بـ«{{from}}» وبالسحابة بـ«{{to}}»", { from: m.from, to: m.to })}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                <div className="overflow-hidden rounded-xl border border-line">
+                  <div className="grid grid-cols-2 gap-px bg-line text-2xs">
+                    <div className="bg-surface-2 p-2 font-extrabold text-ink">{t("cages.cmpMine", "الي على شاشتك")}</div>
+                    <div className="bg-surface-2 p-2 font-extrabold text-ink">{t("cages.cmpCloud", "نسخة السحابة")}</div>
+                    {diff.rooms.map((r) => (
+                      <Fragment key={r.name}>
+                        <div className={cn("bg-surface-1 p-2", r.differs && "bg-warn-50/70 dark:bg-warn-500/10")}>
+                          <RoomCell name={r.name} cages={r.mine} t={t} />
+                        </div>
+                        <div className={cn("bg-surface-1 p-2", r.differs && "bg-warn-50/70 dark:bg-warn-500/10")}>
+                          <RoomCell name={r.name} cages={r.theirs} t={t} />
+                        </div>
+                      </Fragment>
+                    ))}
+                  </div>
+                </div>
+
+                {(diff.onlyMine.length > 0 || diff.onlyTheirs.length > 0) && (
+                  <p className="text-2xs text-ink-muted">
+                    {diff.onlyMine.length > 0 && <span className="me-3">{t("cages.cmpOnlyMine", "عندك وحدك: {{c}}", { c: diff.onlyMine.join("، ") })}</span>}
+                    {diff.onlyTheirs.length > 0 && <span>{t("cages.cmpOnlyCloud", "بالسحابة وحدها: {{c}}", { c: diff.onlyTheirs.join("، ") })}</span>}
+                  </p>
+                )}
+              </>
+            )}
+
+            <p className="text-2xs leading-relaxed text-ink-subtle">
+              {t("cages.cmpHint", "أيّ نسخة تختارها ما تضيع الثانية — تلكاها بـ«سجلّ الترتيب» وترجعها بضغطة.")}
+            </p>
+            <div className="flex flex-wrap justify-end gap-2 pt-1">
+              <Button size="sm" variant="secondary"
+                onClick={() => { playTap(); cageStudio.resolveConflict("cloud"); setCmpOpen(false); }}>
+                {t("cages.takeCloud", "خذ نسخة السحابة")}
+              </Button>
+              <Button size="sm" onClick={() => { playTap(); cageStudio.resolveConflict("mine"); setCmpOpen(false); }}>
+                {t("cages.takeMine", "احفظ نسختي فوقها")}
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
 
       <Modal open={legacyOpen} onClose={() => setLegacyOpen(false)} title={t("cages.legacyTitle", "ترتيب محفوظ على هذه الحاسبة")}>
         <p className="mb-3 text-sm text-ink-muted">

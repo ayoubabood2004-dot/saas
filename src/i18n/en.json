@@ -101,7 +101,22 @@
     "verifyDiffHint": "What was on screen had not been saved. Check “Layout history” if you want it back.",
     "verifyHint": "Re-reads the layout from the cloud and compares it with what is on screen",
     "verifyOk": "Identical — what is on screen is what is saved in the cloud",
-    "verifyOkHint": "Any computer that opens the cage room will show exactly this layout."
+    "verifyOkHint": "Any computer that opens the cage room will show exactly this layout.",
+    "cmpNoRoom": "No room \"{{n}}\" here",
+    "conflictSame": "The two versions are **identical** — either button gives the same result.",
+    "conflictDiff": "{{n}} differences between the versions — compare them before you decide.",
+    "compare": "Compare versions",
+    "compareTitle": "Compare the two arrangements",
+    "cloudSavedBy": "The cloud version (rev {{n}}) was saved {{when}} from another device.",
+    "cloudSavedUnknown": "The cloud version is rev {{n}} — we couldn't tell who saved it.",
+    "cmpSame": "The two versions match — same rooms, same cages, same places.",
+    "cmpMoved": "Cages that changed room",
+    "cmpMovedLine": "yours in \"{{from}}\", the cloud's in \"{{to}}\"",
+    "cmpMine": "On your screen",
+    "cmpCloud": "The cloud version",
+    "cmpOnlyMine": "Only yours: {{c}}",
+    "cmpOnlyCloud": "Only the cloud's: {{c}}",
+    "cmpHint": "Whichever you pick, the other is not lost — it's in \"Layout history\", one click away."
   },
   "outbox": {
     "tip": "Saved on this device — uploads automatically when the connection returns. Tap to retry now",
