@@ -137,7 +137,6 @@ export function ActivityLog() {
 
   useEffect(() => {
     let alive = true;
-    void repo.purgeAuditLog().catch(() => {});
     listStaff().then((s) => { if (alive) setStaffById(new Map(s.map((x) => [x.id, x.name]))); }).catch(() => {});
     return () => { alive = false; };
   }, []);

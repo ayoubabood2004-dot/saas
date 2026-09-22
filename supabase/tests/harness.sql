@@ -487,6 +487,19 @@ create table if not exists audit_log (
 );
 create index if not exists audit_clinic_idx on audit_log(clinic_id, created_at desc);
 
+/* `purge_activity_log()` كما نزلت بـ0044 **بحالتها الإنتاجية**: مسطَّحةٌ بثلاثين
+ * يوماً وممنوحةٌ لـ`authenticated`. لازمةٌ بالأساس كي يقيس فحصُ 0206 شيئاً:
+ * هجرةٌ تنزع صلاحيةً عن دالّةٍ غير موجودة تمرّ خضراءَ ولا تفحص شيئاً — وهذا
+ * بعينه «حارسٌ يخرج صفراً بلا كلمة» (CLAUDE.md §٣). */
+create or replace function purge_activity_log() returns void
+language sql security definer set search_path = public as $$
+  delete from audit_log
+  where clinic_id = auth_clinic()
+    and created_at < now() - interval '30 days';
+$$;
+revoke all on function purge_activity_log() from public;
+grant execute on function purge_activity_log() to authenticated;
+
 -- سياسات بنفس أشكال النظام الحقيقي، بنداءات عارية
 /* حمايةُ صفوف المنتجات — كما بالإنتاج حرفياً (سياستان: قراءةٌ بالملكيّة،
  * وكتابةٌ بالملكيّة مع الدور). وبلا هذا كان `_rls_try` بعيادةٍ أخرى يقرأ منتجاتِ

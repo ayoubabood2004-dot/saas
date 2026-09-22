@@ -15,7 +15,6 @@ import { FeatureGate } from "@/components/FeatureGate";
 import { Assistant } from "@/components/Assistant";
 import { useSubscription } from "@/lib/subscription";
 import { Spinner, useToast } from "@/components/ui";
-import { repo } from "@/lib/repo";
 import { startOutbox } from "@/lib/outbox";
 import { retryImport } from "@/lib/appUpdate";
 import { useNavFolded } from "@/lib/navFold";
@@ -120,12 +119,11 @@ function DemoBanner() {
 /** أعمال منزلية صامتة تركض مرة عند فتح جلسة كادر:
  *  ١. تحذير امتلاء مساحة التجربة — saveDB يعلن الحدث لمّا localStorage يرفض
  *     الكتابة؛ بلا هذا التوست كان المستخدم التجريبي يفقد بياناته بصمت.
- *  ٢. تنظيف سجل الحركات (احتفاظ ٣٠ يوماً) — كان يركض فقط عند فتح صفحة السجل،
- *     فعيادة لا تفتحها لا يُنظَّف سجلها أبداً. هنا يركض مرة كل يوم كحد أقصى. */
+ *  ٢. صندوق الصادر.
+ *  (وكان هنا ثالثٌ: كنسُ سجلّ الحركات. أُزيل بـ0206 — انظر التعليق بالأسفل.) */
 function Housekeeping() {
   const toast = useToast();
   const { t } = useTranslation();
-  const { user } = useAuth();
   const warned = useRef(0);
 
   // صندوق الصادر: كتاباتٌ فشلت شبكياً تُرفع تلقائياً عند عودة النت وكل ٣٠ ثانية.
@@ -149,17 +147,9 @@ function Housekeeping() {
     return () => window.removeEventListener("vp:demo-quota-full", onQuotaFull);
   }, [toast, t]);
 
-  const staff = !!user && (user.role === "admin" || user.role === "doctor" || user.role === "reception");
-  useEffect(() => {
-    if (!staff) return;
-    const KEY = "vp_audit_purged_at";
-    try {
-      const last = Number(localStorage.getItem(KEY) || 0);
-      if (Date.now() - last < 86_400_000) return;
-      localStorage.setItem(KEY, String(Date.now()));
-    } catch { /* بلا localStorage نكتفي بمرة لكل تحميل صفحة */ }
-    void repo.purgeAuditLog().catch(() => {});
-  }, [staff]);
+  /* كان هنا كنسُ سجلّ التدقيق بكلّ إقلاع. أُزيل بـ0206: كان ينادي الدالّةَ
+   * المسطَّحة (٣٠ يوماً لكلّ شيء) فيهدم تدرُّجَ 0129 الذي يحفظ المالَ والمخزونَ
+   * سنةً. الكنسُ شغلُ الجدولة وحدَها (cron `purge_audit_log(90, 365)`). */
 
   return null;
 }

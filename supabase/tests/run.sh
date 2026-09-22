@@ -25,7 +25,7 @@ MIG="$HERE/../migrations"
 # و0095/0096/0158 بالمقدّمة رغم أنها أقدمُ من 0124: الموجةُ تبدأ من 0124 لأن
 # الأساس يوفّر ما قبلها جاهزاً — لكنّ هذه الثلاثَ تُنشئ المتجرَ والبوّابة،
 # وكانت خارجَ الفحص كلَّه. تُنزَّل بترتيبها الحقيقيّ قبل الموجة.
-WAVE="$MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0114_landing_events.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql $MIG/0184_images_hardening.sql $MIG/0185_store_funnel_events.sql $MIG/0186_store_bulk_visible.sql $MIG/0187_store_suggest_products.sql $MIG/0188_store_catalog_priced.sql $MIG/0189_accept_fee_at_decision.sql $MIG/0190_logo_out_of_db.sql $MIG/0191_poultry_farms.sql $MIG/0192_poultry_consume.sql $MIG/0193_poultry_withdrawal.sql $MIG/0194_end_elevation_honest.sql $MIG/0195_cage_layout_sync.sql $MIG/0196_company_norm_and_merge.sql $MIG/0197_company_merge_safe.sql $MIG/0198_company_delete_restores_all.sql $MIG/0199_company_name_unique.sql $MIG/0200_company_twins_per_row.sql $MIG/0201_merge_snapshot_exact.sql $MIG/0202_group_key_invisible.sql $MIG/0203_restore_needs_its_target.sql $MIG/0204_cage_layout_one_door.sql $MIG/0205_purchase_edit_invents_no_stock.sql"
+WAVE="$MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0114_landing_events.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql $MIG/0184_images_hardening.sql $MIG/0185_store_funnel_events.sql $MIG/0186_store_bulk_visible.sql $MIG/0187_store_suggest_products.sql $MIG/0188_store_catalog_priced.sql $MIG/0189_accept_fee_at_decision.sql $MIG/0190_logo_out_of_db.sql $MIG/0191_poultry_farms.sql $MIG/0192_poultry_consume.sql $MIG/0193_poultry_withdrawal.sql $MIG/0194_end_elevation_honest.sql $MIG/0195_cage_layout_sync.sql $MIG/0196_company_norm_and_merge.sql $MIG/0197_company_merge_safe.sql $MIG/0198_company_delete_restores_all.sql $MIG/0199_company_name_unique.sql $MIG/0200_company_twins_per_row.sql $MIG/0201_merge_snapshot_exact.sql $MIG/0202_group_key_invisible.sql $MIG/0203_restore_needs_its_target.sql $MIG/0204_cage_layout_one_door.sql $MIG/0205_purchase_edit_invents_no_stock.sql $MIG/0206_purge_stays_with_cron.sql"
 
 command -v "$PGBIN/initdb" >/dev/null || { echo "ما لكيت بوستغريس بـ $PGBIN"; exit 1; }
 
@@ -1134,6 +1134,23 @@ chk "حذفُ طلبٍ يصوّره بالسلّة قبل أن يذهب (الم�
 chk "  والصورةُ تحمل مبلغَه وحاملَه" \
     "select ((row->>'cod_amount')::numeric = 5000 and courier_id = 'cccccccc-0157-4000-8000-000000000001')::text from delivery_orders_trash where id = 'eeeeeeee-0157-4000-8000-000000000001'" "true"
 
+# ── 0206: الكنسُ شغلُ الجدولة وحدَها ─────────────────────────────────────
+# **يُقاس هنا قبل المنح الشامل بالأسفل**: الكتلةُ التالية تمنح `execute` على كلّ
+# دوالّ المخطّط لـ`authenticated` كي يعمل `_rls_try`، فتُلغي أثرَ هذه الهجرة.
+# فحالةُ الإنتاج تُقاس قبلها، والسلوكُ يُقاس بعدها بعد إعادة النزع.
+chk "0206: الكنسُ المسطَّح منزوعٌ عن authenticated" \
+    "select has_function_privilege('authenticated', p.oid, 'execute')::text
+     from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+     where n.nspname='public' and p.proname='purge_activity_log'" "false"
+chk "  وعن anon كذلك" \
+    "select has_function_privilege('anon', p.oid, 'execute')::text
+     from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+     where n.nspname='public' and p.proname='purge_activity_log'" "false"
+chk "  والمجدوَلةُ ذاتُ التدرُّج منزوعةٌ هي الأخرى (0129)" \
+    "select has_function_privilege('authenticated', p.oid, 'execute')::text
+     from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+     where n.nspname='public' and p.proname='purge_audit_log'" "false"
+
 # ── 0159: سياسةُ التحديث كانت تستعلم من جدولها فأسقطت كلَّ تحديثٍ بـ42P17 ──────
 # أوّلُ فحصٍ بالحزمة يمرّ من RLS فعلاً: `_rls_try` ينزل إلى دور `authenticated`
 # (nosuperuser) قبل التنفيذ، فتُعاد كتابةُ السياسات كما بالإنتاج. بدور superuser
@@ -1157,6 +1174,17 @@ $P -c "grant usage on schema public to authenticated;
          ('eeeeeeee-0159-4000-8000-000000000002','$C1','dddddddd-0159-4000-8000-000000000002','cccccccc-0157-4000-8000-000000000001','delivered',5000)
          on conflict do nothing;
        update _dvtest_flags set admin = false; delete from platform_sessions;" >/dev/null
+# والسلوك: المنحُ الشامل أعلاه أعاد ما نزعته 0206، فنُعيد النزعَ لنقيس حالةَ
+# الإنتاج لا حالةَ الحزمة — ثمّ ننادي الدالّةَ بدور `authenticated` فعلاً.
+# **وبصراحة: هذان الفحصان يمرّان بالهجرة وبدونها** لأن النزعَ هنا يدويّ.
+# حارسُ الهجرة هو الفحصُ الثابت أعلاه (قِستُ فشلَه بإسقاط 0206 من WAVE: يرجع
+# «true»). وقيمةُ هذين أنهما يثبّتان القرار: **نزعٌ لا حذف** — فلو حُذفت الدالّةُ
+# يوماً صار الجوابُ 42883 بدل 42501، وهذا يكسر نسخَ PWA المخزَّنة بلا داعٍ.
+$P -c "revoke execute on function public.purge_activity_log() from public, anon, authenticated;" >/dev/null
+chk "0206 سلوكياً: موظّفٌ مسجَّلٌ لا يقدر يكنس سجلَّ عيادته" \
+    "select split_part(_rls_try('$C1', 'select purge_activity_log()'), ':', 1)" "guarded"
+chk "  والرفضُ رفضُ صلاحيةٍ لا خطأُ دالّةٍ مفقودة" \
+    "select split_part(_rls_try('$C1', 'select purge_activity_log()'), ':', 2)" "42501"
 # المنحُ الشامل أعلاه (`grant execute on all functions … to authenticated`) لازمٌ
 # لـ`_rls_try` كي يعمل بدورٍ عاديّ — لكنه **يلغي منعَ 0163** عن المساعدتين
 # الداخليّتين (`deduct_stock_pooled` و`credit_stock`)، فتصيران منادَاتَين ممّن

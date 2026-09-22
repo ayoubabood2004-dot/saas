@@ -430,30 +430,6 @@ function demoAuditPush(e: Omit<AuditEntry, "id" | "created_at" | "actor">) {
     localStorage.setItem(DEMO_AUDIT_KEY, raw);
   } catch { /* swallow-ok: سجلُّ الجهاز ليس قرارَ مالٍ — والكتابةُ نفسُها تُسمَع بـsaveDB */ }
 }
-/** ما يمسّ مالاً أو مخزوناً — يعيش أطول لأنه دليلٌ يُسأل عنه بعد شهور،
- *  لا ضجيجاً ينتهي بيومه. نفس قائمة هجرة 0129 حرفياً. */
-const AUDIT_MONEY_ENTITIES = new Set([
-  "invoices", "invoice_items",
-  "purchases", "purchase_items", "purchase_payments",
-  "expenses", "products",
-  "delivery_orders", "store_orders",
-]);
-
-/** احتفاظٌ بطبقتين — مرآة `purge_audit_log()` بالوضع التجريبي (هجرة 0129):
- *  المال والمخزون سنة، وما عداهما تسعون يوماً. */
-function demoAuditPurge() {
-  const now = Date.now();
-  const noiseCut = now - 90 * 86400000;
-  const moneyCut = now - 365 * 86400000;
-  try {
-    localStorage.setItem(DEMO_AUDIT_KEY, JSON.stringify(
-      demoAuditLoad().filter((e) => {
-        const at = new Date(e.created_at).getTime();
-        return at >= (AUDIT_MONEY_ENTITIES.has(e.entity ?? "") ? moneyCut : noiseCut);
-      }),
-    ));
-  } catch { /* ignore */ }
-}
 function demoLoginLoad(): LoginEvent[] {
   try { const r = localStorage.getItem(DEMO_LOGIN_KEY); if (r) return JSON.parse(r) as LoginEvent[]; } catch { /* ignore */ }
   return [];
@@ -3732,10 +3708,6 @@ const demoRepo = {
   async listAuditLog(_clinicId?: string, limit = 200): Promise<AuditEntry[]> {
     return demoAuditLoad().slice(0, limit);
   },
-  /** Drop this clinic's activity older than 30 days (fire-and-forget from the log page). */
-  async purgeAuditLog(): Promise<void> {
-    demoAuditPurge();
-  },
   /** Record a client-side action (print / export) in the activity log. Best-effort. */
   async logClientEvent(event: string, details?: Record<string, unknown>): Promise<void> {
     demoAuditPush({ action: "CLIENT", entity: "client", entity_id: null, details: { ...(details ?? {}), event } });
@@ -6145,10 +6117,6 @@ const supabaseRepo: typeof demoRepo = {
   },
   async listWhatsAppLog() {
     return listOf<WhatsAppMessage>(await sbc().from("wa_messages").select("*").order("sent_at", { ascending: false }).limit(1000));
-  },
-  async purgeAuditLog() {
-    // Pre-0044 databases don't have the RPC yet — never surface that to the UI.
-    try { await sbc().rpc("purge_activity_log"); } catch { /* retention starts after the migration */ }
   },
   async logClientEvent(event, details) {
     // Pre-0045 databases don't have the RPC yet — best-effort, always silent.
