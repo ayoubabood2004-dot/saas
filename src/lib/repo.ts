@@ -2793,10 +2793,16 @@ const demoRepo = {
     const round3 = (n: number) => Math.max(0, Math.round(n * 1000) / 1000);
     const round2 = (n: number) => Math.round((Number(n) || 0) * 100) / 100;
     const minStock = (v: number | null | undefined) => (v != null && !Number.isNaN(Number(v)) ? Math.max(0, Math.round(Number(v))) : null);
+    /* **بلا حصرٍ بصفر** (مرآةُ 0205). `round3` نفسُها تحصر، فالعكسُ يحتاج تقريباً
+     * حرّاً: حصرُ خطوةٍ وسطى يخترع بضاعةً لمّا يكون بيعَ أكثرُ الكمية —
+     * ٥٠ اشتُريت و٤٥ بيعت ⇒ الرصيد ٥، وتعديلٌ بلا تغييرِ كميةٍ كان يرفعه ٥٠.
+     * وقعت بالإنتاج 2026-09-16. الحصرةُ الوحيدة بالنهاية على ما لمسته الفاتورة. */
+    const rnd3 = (n: number) => Math.round(n * 1000) / 1000;
+    const touched = new Set<string>();
     // ١) اعكس السطور القديمة ثم أزلها
     for (const it of (db.purchaseItems ?? []).filter((x) => x.purchase_id === purchaseId)) {
       const p = it.product_id ? db.products.find((x) => x.id === it.product_id) : undefined;
-      if (p) p.stock = Math.max(0, round3((p.stock || 0) - (it.qty || 0)));
+      if (p) { p.stock = rnd3((p.stock || 0) - (it.qty || 0)); touched.add(p.id); }
     }
     db.purchaseItems = (db.purchaseItems ?? []).filter((x) => x.purchase_id !== purchaseId);
     // ٢) نزّل الجديدة — نفس مطابقة recordPurchase
@@ -2821,7 +2827,7 @@ const demoRepo = {
       const existing = pid ? db.products.find((x) => x.id === pid) : undefined;
       if (existing) {
         if (!existing.barcode && l.barcode?.trim()) existing.barcode = l.barcode.trim();
-        existing.stock = round3((existing.stock || 0) + qty);
+        existing.stock = rnd3((existing.stock || 0) + qty);
         existing.pooled = false;
         if (cost > 0) existing.purchase_price = cost;
         if (sell > 0) existing.sell_price = sell;
@@ -2831,6 +2837,7 @@ const demoRepo = {
         if (l.category) existing.category = l.category;
         if (!existing.company_id && companyId) existing.company_id = companyId;
         pid = existing.id;
+        touched.add(pid);
       } else {
         const sec = l.section_id
           ? (db.companySections ?? []).find((x) => x.id === l.section_id
@@ -2852,6 +2859,12 @@ const demoRepo = {
         barcode: l.barcode?.trim() || null, name: l.name?.trim() || "Item",
         category: l.category ?? null, qty, purchase_price: cost, sell_price: sell, created_at: now,
       });
+    }
+    // ٢·٥) الحصرةُ الوحيدة: بضاعةٌ سُحبت من الفاتورة ولم تعد تغطّي ما بيع
+    //      ⇒ صفرٌ لا سالب. على ما لمسته الفاتورةُ وحدَه (مرآةُ 0205).
+    for (const id of touched) {
+      const p = db.products.find((x) => x.id === id);
+      if (p && (p.stock || 0) < 0) p.stock = 0;
     }
     // ٣) رأس الفاتورة — المدفوع الحقيقي يبقى مقصوصاً على الإجمالي الجديد
     const totalR = round2(total);

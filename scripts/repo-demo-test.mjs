@@ -188,6 +188,28 @@ console.log("\n▸ recordPurchase — مرآةُ مطابقة 0166 (الأساس
     JSON.stringify(list.map((p) => [p.id, p.stock])));
 }
 
+console.log("\n▸ updatePurchase — مرآةُ 0205 (التعديلُ لا يخترع بضاعة)");
+{
+  /* اشترِ ٥٠، بِع ٤٥ (الرصيد ٥)، ثمّ عدّل الفاتورة **بلا تغييرِ كمية**.
+   * الحصرُ بصفرٍ بخطوة العكس كان يعطي ٥٠ — خمسٌ وأربعون قطعةً مخترعة.
+   * ووقعت بالإنتاج فعلاً: 2026-09-16، «رمل جاك 20 لتر»، ١٤ ⇒ ١٥. */
+  seed([P("fast", "رملٌ سريعُ الحركة", "FAST-50", { stock: 0 })]);
+  const pur = await repo.recordPurchase(
+    [{ product_id: "fast", barcode: "FAST-50", name: "رملٌ سريعُ الحركة", qty: 50, purchase_price: 1000, sell_price: 1500 }], {});
+  check("الشراءُ رصّد خمسين", (await repo.listProducts()).find((p) => p.id === "fast")?.stock === 50);
+  const d = JSON.parse(mem.get(DB_KEY));                     // بيعُ ٤٥ — ننقص الرصيد
+  d.products.find((p) => p.id === "fast").stock = 5;         // كما يفعل البيع، فالمقصودُ
+  mem.set(DB_KEY, JSON.stringify(d));                        // فحصُ التعديل وحده.
+  await repo.updatePurchase(pur.id,
+    [{ product_id: "fast", barcode: "FAST-50", name: "رملٌ سريعُ الحركة", qty: 50, purchase_price: 1000, sell_price: 1500 }], {});
+  const same = (await repo.listProducts()).find((p) => p.id === "fast");
+  check("تعديلٌ بلا تغييرِ كميةٍ لا يخترع بضاعة (يبقى ٥)", same?.stock === 5, `stock=${same?.stock}`);
+  await repo.updatePurchase(pur.id,
+    [{ product_id: "fast", barcode: "FAST-50", name: "رملٌ سريعُ الحركة", qty: 30, purchase_price: 1000, sell_price: 1500 }], {});
+  const less = (await repo.listProducts()).find((p) => p.id === "fast");
+  check("  وتخفيضُ الكمية يُطرح فعلاً ولا ينزل تحت صفر", less?.stock === 0, `stock=${less?.stock}`);
+}
+
 console.log("\n▸ restoreProduct — مرآةُ 0165/0167 (الاستعادةُ لا تسرق رمزاً)");
 {
   // منتجٌ قائمٌ أخذ الرمزَ أثناء غياب المحذوف: أساسيّاً عنده، وإضافيّاً عند آخر.

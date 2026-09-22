@@ -25,7 +25,7 @@ MIG="$HERE/../migrations"
 # و0095/0096/0158 بالمقدّمة رغم أنها أقدمُ من 0124: الموجةُ تبدأ من 0124 لأن
 # الأساس يوفّر ما قبلها جاهزاً — لكنّ هذه الثلاثَ تُنشئ المتجرَ والبوّابة،
 # وكانت خارجَ الفحص كلَّه. تُنزَّل بترتيبها الحقيقيّ قبل الموجة.
-WAVE="$MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0114_landing_events.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql $MIG/0184_images_hardening.sql $MIG/0185_store_funnel_events.sql $MIG/0186_store_bulk_visible.sql $MIG/0187_store_suggest_products.sql $MIG/0188_store_catalog_priced.sql $MIG/0189_accept_fee_at_decision.sql $MIG/0190_logo_out_of_db.sql $MIG/0191_poultry_farms.sql $MIG/0192_poultry_consume.sql $MIG/0193_poultry_withdrawal.sql $MIG/0194_end_elevation_honest.sql $MIG/0195_cage_layout_sync.sql $MIG/0196_company_norm_and_merge.sql $MIG/0197_company_merge_safe.sql $MIG/0198_company_delete_restores_all.sql $MIG/0199_company_name_unique.sql $MIG/0200_company_twins_per_row.sql $MIG/0201_merge_snapshot_exact.sql $MIG/0202_group_key_invisible.sql $MIG/0203_restore_needs_its_target.sql $MIG/0204_cage_layout_one_door.sql"
+WAVE="$MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0114_landing_events.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql $MIG/0184_images_hardening.sql $MIG/0185_store_funnel_events.sql $MIG/0186_store_bulk_visible.sql $MIG/0187_store_suggest_products.sql $MIG/0188_store_catalog_priced.sql $MIG/0189_accept_fee_at_decision.sql $MIG/0190_logo_out_of_db.sql $MIG/0191_poultry_farms.sql $MIG/0192_poultry_consume.sql $MIG/0193_poultry_withdrawal.sql $MIG/0194_end_elevation_honest.sql $MIG/0195_cage_layout_sync.sql $MIG/0196_company_norm_and_merge.sql $MIG/0197_company_merge_safe.sql $MIG/0198_company_delete_restores_all.sql $MIG/0199_company_name_unique.sql $MIG/0200_company_twins_per_row.sql $MIG/0201_merge_snapshot_exact.sql $MIG/0202_group_key_invisible.sql $MIG/0203_restore_needs_its_target.sql $MIG/0204_cage_layout_one_door.sql $MIG/0205_purchase_edit_invents_no_stock.sql"
 
 command -v "$PGBIN/initdb" >/dev/null || { echo "ما لكيت بوستغريس بـ $PGBIN"; exit 1; }
 
@@ -1342,6 +1342,60 @@ chk "  ورمزٌ أُدخل بأرقامٍ عربية يُلقى بمسحةٍ �
     "select name from ($ACJ) s, product_by_code('5905555') limit 1" "مُدخَلٌبالعربية"
 chk "  ورمزٌ التصقت به مسافةٌ يُلقى بلا مسافة" \
     "select name from ($ACJ) s, product_by_code('5906666') limit 1" "مُدخَلٌبمسافة"
+
+# ── تعديلُ فاتورةٍ بيع منها: العكسُ لا يخترع بضاعة ───────────────────────
+# `update_purchase` تهدم أثرَ السطور القديمة ثمّ تبني الجديدة. والهدمُ كان
+# `greatest(0, stock - old_qty)` — فلو بيعَ جزءٌ من الكمية قبل التعديل، الحصرُ
+# بصفرٍ يبلع الفرقَ ثمّ تُضاف الكميةُ كاملةً، فيقفز الرصيد.
+#
+# **وقعت بالإنتاج**: 2026-09-16، «رمل جاك 20 لتر»، سجلُّ التدقيق يقول
+# `stock [14,0]` ثمّ `[0,15]` — قطعةٌ اخترعها النظام والمستخدمُ ما غيّر كمية.
+#
+# السيناريو هنا مُصغَّرٌ عنه: اشترِ ٥٠، بِع ٤٥ (الرصيد ٥)، ثمّ عدّل الفاتورة
+# **بلا تغيير الكمية**. الصحيح أن يبقى ٥.
+$P -c "select set_config('request.jwt.claim.sub','$AC',false);
+       insert into products (id, clinic_id, name, barcode, stock) values
+         ('a1000000-0000-0000-0000-000000000041','$AC','رملٌ سريعُ الحركة','FAST-50',0)
+       on conflict do nothing;" >/dev/null 2>&1
+$P -c "select set_config('request.jwt.claim.sub','$AC',false);
+       select record_purchase(
+         jsonb_build_array(jsonb_build_object('product_id','a1000000-0000-0000-0000-000000000041','barcode','FAST-50','name','رملٌ سريعُ الحركة','qty',50,'purchase_price',1000,'sell_price',1500)),
+         jsonb_build_object('company_name','مورّدُ الرمل'));" >/dev/null 2>&1
+chk "الشراءُ رصّد خمسين" \
+    "select stock::text from products where id='a1000000-0000-0000-0000-000000000041'" "50.000"
+# بيعُ ٤٥ — نُنقص الرصيدَ مباشرةً كما يفعل البيع، فالمقصودُ فحصُ التعديل وحده.
+$P -c "update products set stock = 5 where id='a1000000-0000-0000-0000-000000000041';" >/dev/null 2>&1
+$P -c "select set_config('request.jwt.claim.sub','$AC',false);
+       select update_purchase(
+         (select id from purchases where clinic_id='$AC' and company_name='مورّدُ الرمل' order by created_at desc limit 1),
+         jsonb_build_array(jsonb_build_object('product_id','a1000000-0000-0000-0000-000000000041','barcode','FAST-50','name','رملٌ سريعُ الحركة','qty',50,'purchase_price',1000,'sell_price',1500)),
+         jsonb_build_object('company_name','مورّدُ الرمل'));" >/dev/null 2>&1
+chk "تعديلٌ بلا تغييرِ كميةٍ لا يخترع بضاعة (الرصيدُ يبقى ٥)" \
+    "select stock::text from products where id='a1000000-0000-0000-0000-000000000041'" "5.000"
+# وتخفيضُ الكمية بعدها يُطرح من الرصيد الحقيقيّ: ٥٠ ⇒ ٣٠ يعني ‎-٢٠‎ ⇒ الرصيدُ
+# ٥ − ٢٠ = سالب، وهذا **يُحصر بصفرٍ بحقّ**: بضاعةٌ ما وصلت لا تبقى بالرفّ.
+$P -c "select set_config('request.jwt.claim.sub','$AC',false);
+       select update_purchase(
+         (select id from purchases where clinic_id='$AC' and company_name='مورّدُ الرمل' order by created_at desc limit 1),
+         jsonb_build_array(jsonb_build_object('product_id','a1000000-0000-0000-0000-000000000041','barcode','FAST-50','name','رملٌ سريعُ الحركة','qty',30,'purchase_price',1000,'sell_price',1500)),
+         jsonb_build_object('company_name','مورّدُ الرمل'));" >/dev/null 2>&1
+chk "  وتخفيضُ الكمية يُطرح فعلاً ولا ينزل تحت صفر" \
+    "select stock::text from products where id='a1000000-0000-0000-0000-000000000041'" "0.000"
+
+# ومنتجٌ «مجمّع» (رصيدُه مجهولٌ وحوضُ قسمه يغطّيه): أوّلُ كميةٍ تُستلم تجعله
+# معدوداً. التجريبيُّ يطفئ الصفة منذ البداية، والخادمُ كان يتركها — و`freshSale`
+# يعطي المجمَّعَ سقفاً لا نهائياً، فمنتجٌ اشترته عيادةٌ يبقى يُباع بلا حدّ.
+$P -c "select set_config('request.jwt.claim.sub','$AC',false);
+       insert into products (id, clinic_id, name, barcode, stock, pooled) values
+         ('a1000000-0000-0000-0000-000000000042','$AC','مجمَّعٌ يُشترى','POOL-9',0,true)
+       on conflict do nothing;
+       select record_purchase(
+         jsonb_build_array(jsonb_build_object('product_id','a1000000-0000-0000-0000-000000000042','barcode','POOL-9','name','مجمَّعٌ يُشترى','qty',7,'purchase_price',100,'sell_price',150)),
+         jsonb_build_object('company_name','مورّدُ المجمَّع'));" >/dev/null 2>&1
+chk "الشراءُ يفكّ صفةَ «مجمّع» عن المنتج" \
+    "select pooled::text from products where id='a1000000-0000-0000-0000-000000000042'" "false"
+chk "  ورصيدُه صار سبعةً معدودة" \
+    "select stock::text from products where id='a1000000-0000-0000-0000-000000000042'" "7.000"
 
 # G3 سلوكياً: رمزٌ إضافيٌّ لمحذوفٍ يصير لغيره أثناء الغياب — الاستعادةُ لا
 # تسترجعه (وإلا صار رمزٌ واحدٌ على منتجَين)، ورمزُه الحرُّ يبقى.
