@@ -20,6 +20,7 @@
     "courier": "node scripts/courier-test.mjs",
     "live:store": "node scripts/live/store-wave2.mjs",
     "live:twins": "node scripts/live/company-twins.mjs",
+    "live:picker": "node scripts/live/purchase-picker.mjs",
     "freshness": "node scripts/freshness-test.mjs",
     "keyset": "node scripts/keyset-test.mjs"
   },

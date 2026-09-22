@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { motion } from "framer-motion";
 import {
-  Barcode, Plus, Search, Building2, ShoppingBag, PackageCheck, Sparkles,
+  Barcode, Plus, Search, Building2, ShoppingBag, PackageCheck, Sparkles, ListChecks,
   Wallet, CalendarClock, X, ScanLine, FolderTree, SlidersHorizontal, ChevronDown,
   UserRound, Phone, HandCoins, Pencil,
 } from "lucide-react";
@@ -10,6 +10,7 @@ import type { Product, Company, CompanySection, Purchase, PurchaseItem, Purchase
 import { repo } from "@/lib/repo";
 import { useAuth } from "@/contexts/AuthContext";
 import { Modal } from "@/components/Modal";
+import { PurchasePicker, type PickedLine } from "@/components/inventory/PurchasePicker";
 import { Combobox } from "@/components/Combobox";
 import { Button, Badge, useToast, Skeleton } from "@/components/ui";
 import { cn, money, formatDate, localISO, normalizeAr, normalizeCode, matchCode, searchable, groupKey, normGroupName } from "@/lib/utils";
@@ -518,6 +519,7 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
   // ONE required field: the count. This set holds lines the user expanded to
   // optionally adjust prices/alerts.
   const [expandedKeys, setExpandedKeys] = useState<Set<string>>(new Set());
+  const [pickerOpen, setPickerOpen] = useState(false);
   const scanRef = useRef<HTMLInputElement>(null);
   /** مجمِّعُ المسحة لهذا الحقل — يحكم على Tab: ماسحٌ أم إنسانٌ يتنقّل. */
   const scanAsm = useRef(createScanAssembler());
@@ -616,6 +618,44 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
     playTap();
     scanRef.current?.focus();
   };
+
+  /** دفعةٌ من المنتقي: سطرٌ لكلّ منتج، والقائمُ منها **يُجمَع** لا يُكرَّر.
+   *  والدمجُ بنفس قاعدة الماسح (`addProductLine`) كي لا يكون للشاشة سلوكان. */
+  const addPickedLines = (picks: PickedLine[]) => {
+    if (!picks.length) return;
+    setLines((ls) => {
+      let base = ls.length === 1 && !ls[0].barcode && !ls[0].name ? [] : ls.slice();
+      for (const { product, qty } of picks) {
+        /* **والعددُ المكتوبُ بالمنتقي هو عددُ السطر، لا زيادةٌ عليه.** الحقلُ
+         * يبدأ بما هو الآن بالفاتورة، فما يكتبه المستخدم هو ما يصير — بلا
+         * حسابٍ ذهنيّ. (والماسحُ يبقى بالجمع: كلُّ مسحةٍ قطعة.) */
+        const i = base.findIndex((l) => l.product_id === product.id);
+        if (i >= 0) { base[i] = { ...base[i], qty: String(qty) }; continue; }
+        /* **وتبنّي سطرٍ غيرِ مطابق**: سطرٌ كُتب باركودُه بلا أن يُطابَق منتجاً
+         * (لصقٌ من إكسل، أو رمزٌ بصيغةٍ أخرى) — اختيارُ منتجه من القائمة يربطه
+         * به بدل أن يصنع سطراً ثانياً لنفس المادّة، فيبقى عددُه المكتوب. */
+        const codes = new Set([product.barcode, ...(product.alt_codes ?? [])].filter(Boolean).map((c) => matchCode(c as string)));
+        const j = base.findIndex((l) => !l.product_id && l.barcode.trim() && codes.has(matchCode(l.barcode)));
+        if (j >= 0) {
+          const kept = Number(base[j].qty) || 0;
+          base[j] = { ...lineFromProduct(product, base[j].barcode), key: base[j].key, qty: String(kept > 0 ? kept : qty) };
+          continue;
+        }
+        base = [...base, { ...lineFromProduct(product, product.barcode ?? ""), qty: String(qty) }];
+      }
+      return base;
+    });
+    playTap();
+    toast.success(t("purchase.pickAdded", "انضافت {{n}} مادة للفاتورة — دقّق الأسعار لو تغيّرت", { n: picks.length }));
+    scanRef.current?.focus();
+  };
+
+  /** ما هو الآن بالفاتورة — يُعرض بالمنتقي فلا يُضاف مرّتين بلا علم. */
+  const inInvoice = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const l of lines) if (l.product_id) m.set(l.product_id, (m.get(l.product_id) ?? 0) + (Number(l.qty) || 0));
+    return m;
+  }, [lines]);
 
   const scanAdd = () => {
     const raw = scan.trim();
@@ -738,6 +778,21 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
   const save = async () => {
     if (busy) return;
     if (validLines.length === 0) { toast.error(t("purchase.needLine", "أضف صنفاً واحداً على الأقل بكمية أكبر من صفر")); return; }
+    /* **وسطرٌ بلا كمية كان يسقط بصمت.** `validLines` يصفّي `qty > 0`، و`save`
+     * ما كان يعترض إلا لو سقطت السطورُ **كلُّها** — ففاتورةٌ بأربعين سطراً
+     * وثلاثةٌ منها بلا عدد تُحفظ بسبعةٍ وثلاثين، والبضاعةُ وصلت ولم تُسجَّل.
+     * ويزداد الاحتمالُ بالمنتقي (تؤشّر خمسة عشر، تنسى عدداً). فيُقال بالاسم
+     * ويُرفض الحفظ — «الصمتُ يُصدَّق» (CLAUDE.md). */
+    const blank = lines.filter((l) => (l.name.trim() || l.barcode.trim()) && !(Number(l.qty) > 0));
+    if (blank.length) {
+      playWarning();
+      toast.error(
+        t("purchase.blankQty", "{{n}} سطر بلا عدد — ما راح ينحفظ", { n: blank.length }),
+        t("purchase.blankQtyWhich", "اكتب العدد أو احذف السطر: {{names}}",
+          { names: blank.slice(0, 5).map((l) => l.name.trim() || l.barcode.trim()).join(t("common.listSep", "، ")) + (blank.length > 5 ? "…" : "") }),
+      );
+      return;
+    }
     // سطرٌ ملصوقٌ من إكسل لا يمرّ بصندوق المسح، فالحارسُ يتكرّر هنا (G8):
     // الرقمُ الأصليّ لا يُسترجع من الصيغة العلمية، فالرفضُ قبل الحفظ لا بعده.
     const bad = validLines.find((l) => excelArtifact(l.barcode));
@@ -871,6 +926,10 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
               />
             </div>
             <Button variant="secondary" onClick={scanAdd}>{t("common.add", "إضافة")}</Button>
+            {/* ولمن ما يريد يدكّ الباركودات واحداً واحداً: قائمةُ منتجاته. */}
+            <Button variant="secondary" leftIcon={<ListChecks size={16} />} onClick={() => { playTap(); setPickerOpen(true); }} data-pickopen>
+              {t("purchase.pickOpen", "اختر من القائمة")}
+            </Button>
           </div>
           {/* منتجات موجودة تطابق المكتوب — ضغطة تسحب المنتج بمكانه وأسعاره */}
           {scanSuggestions.length > 0 && (
@@ -887,6 +946,19 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
             </div>
           )}
         </div>
+
+        {pickerOpen && (
+          <PurchasePicker
+            open
+            products={products}
+            companies={companies}
+            sections={sections ?? []}
+            companyName={company}
+            inInvoice={inInvoice}
+            onClose={() => setPickerOpen(false)}
+            onPick={addPickedLines}
+          />
+        )}
 
         {/* Lines */}
         <div className="space-y-2">
