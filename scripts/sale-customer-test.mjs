@@ -95,7 +95,7 @@ check("ولا تُفرَّغ السلّة", !/setCart\(\[\]\)/.test(clearFn));
 check("  ولا تُمسّ طلباتُ التوصيل المعلَّقة", !/dlvFailed/.test(clearFn));
 check("  ولا يُمسّ وضعُ الراجع ولا المضاعِف", !/setRetMode|setMult\(/.test(clearFn));
 check("والسؤالُ يسبق الرفع حين يكون هناك ما يُرفع (ولا دفعةَ معلَّقة)",
-  /if \(boundLines\.length > 0 && !payPending && !busy\) \{ setCustClearAsk\(true\); return; \}/.test(SB) && /data-custcleargo/.test(SB));
+  /if \(boundLines\.length > 0 && !payPending && !paying\) \{ setCustClearAsk\(true\); return; \}/.test(SB) && /data-custcleargo/.test(SB));
 check("  والنافذةُ تسمّي كلَّ سطرٍ يُرفع", /boundLines\.map\(\(l\) => \(/.test(SB) && /retail\.custClearHint/.test(SB));
 /* والدفعةُ المعلَّقة: كان المرجعُ «لا يُجدَّد أبداً» — فبيعةُ الزبون التالي تحمل مرجعَ
  * محاولةٍ ماتت بمهلة، و`retail_checkout` يرجّع فاتورةَ الأوّل إن انسجلت: فلوسُ الثاني
@@ -107,19 +107,25 @@ check("  الزرُّ لا يلمس مرجعَ البيعة أبداً (لا إ�
 check("  والدفعةُ المعلَّقة: مرجعٌ محفوظ بلا إتمام، والإرجاعُ الخالص مستثنى",
   /const payPending = !!saleRefSaved && !done && !pureReturn;/.test(SB));
 check("    فيرفض قبل أن يمسح شيئاً ويقول السبب",
-  /^const clearCustomerNow = \(\) => \{\s*if \(payPending \|\| busy\) \{[\s\S]*?retail\.payPending[\s\S]*?return;\s*\}/.test(clearFn)
+  /^const clearCustomerNow = \(\) => \{[\s\S]*?if \(paying\) \{ setCustClearAsk\(false\); return; \}\s*if \(payPending\) \{[\s\S]*?retail\.payPending[\s\S]*?return;\s*\}/.test(clearFn)
   && clearFn.indexOf("retail.payPending") < clearFn.indexOf("setName(\"\")"));
 check("    ولا نافذةَ تُفتح عليها (الرفضُ يُقال فوراً)",
-  /if \(boundLines\.length > 0 && !payPending && !busy\) \{ setCustClearAsk\(true\); return; \}/.test(SB));
+  /if \(boundLines\.length > 0 && !payPending && !paying\) \{ setCustClearAsk\(true\); return; \}/.test(SB));
 check("    ولا سؤالَ خادمٍ غير متزامن بقي (مصدرُ الثغرات التسع)",
   !/const clearCustomerNow = async/.test(SB) && !/custClearBusy/.test(SB)
   && !/findInvoiceByRef/.test(read("src/lib/repo.ts")));
 check("  ونافذةُ التصفير تقولها قبل الضغط («ما ينحفظ شي بالفواتير» لا يصدق عليها)",
   /\{payPending && \([\s\S]{0,200}?data-resetpending[\s\S]{0,200}?retail\.payPending/.test(SB));
-check("  والتبويبُ مقفولٌ والدفعُ بالطريق (وإلا أُزيلت الشاشةُ قبل الجواب)",
-  /const \[saleBusy, setSaleBusy\] = useState\(false\);/.test(RS)
-  && /const onBusyChange = useCallback\(\(b: boolean\) => \{ busyRef\.current = b; setSaleBusy\(b\); \}, \[\]\);/.test(RS)
-  && /disabled=\{saleBusy && id !== tab\}/.test(RS));
+check("  والتبويبُ مقفولٌ والدفعُ بالطريق — **بالطلب وحده** لا بـbusy (يمتدّ لمزامنة السجلّ ~٣٦ث بعد التمام)",
+  /const \[paying, setPaying\] = useState\(false\);/.test(SB) && /useEffect\(\(\) => \{ onPayingChange\?\.\(paying\); \}, \[paying, onPayingChange\]\);/.test(SB)
+  && /const \[payInFlight, setPayInFlight\] = useState\(false\);/.test(RS) && /disabled=\{payInFlight && id !== tab\}/.test(RS)
+  && (RS.match(/onPayingChange=\{setPayInFlight\}/g) || []).length === 2 && !/setSaleBusy/.test(RS));
+check("    وزرُّ «رجوع لسجلّ» مقفولٌ أيضاً (مخرجٌ ثانٍ من الشاشة والطلبُ بالطريق)", /disabled=\{payInFlight\}/.test(RS));
+check("    والطلبُ وحده ملفوف: setPaying قبل retailCheckout وبعده بـfinally",
+  /setPaying\(true\);\s*try \{\s*invoice = await withTimeout\(repo\.retailCheckout\(items, meta\), 12000\);[\s\S]{0,900}?\} finally \{\s*setPaying\(false\);\s*\}/.test(SB));
+check("    والزرُّ الصغير معطَّلٌ والطلبُ بالطريق", /onClick=\{askClearCustomer\}\s*disabled=\{paying\}/.test(SB));
+check("  ورفضٌ حاسمٌ من الخادم يحرّر المرجع (لا «معلَّقة» للأبد)، والمجهولُ يُبقيه",
+  /\} catch \(e\) \{[\s\S]{0,700}?if \(rejectedBeforeCommit\(e\)\) \{ saleRefRef\.current = null; setSaleRefSaved\(null\); \}\s*throw e;/.test(SB));
 
 /* ── بيعةٌ أُتمّت ليست مسودّة (قائمٌ على main قبل الزرّ، والزرُّ مدّه لجسر المريض) ─ */
 console.log("▸ المسودّةُ لا تحفظ بيعةً أُتمّت");
@@ -172,6 +178,29 @@ if (B) {
   check("  وبلا جسرٍ جديد ⇒ المحفوظةُ كما هي (بيعٌ عابر، أو إعادةُ تركيب)", D(other, false) === other && D(pend, false) === pend);
   check("  ولا محفوظ ⇒ لا شيء", D(null, true) === null && D(null, false) === null);
 }
+/* ── رفضٌ حاسم أم مصيرٌ مجهول؟ جدولُ القرار سلوكاً ─────────────────────────────
+ * خطأُ التصنيف في الاتّجاه الأوّل يسجّل البيعةَ مرّتين (مرجعٌ جديد لمحاولةٍ ثُبّتت)،
+ * وفي الثاني يترك الدفعةَ «معلَّقة» للأبد فيرفض الزرُّ وكلُّ جسرٍ بلا سبب. */
+const eb = await esbuild.build({
+  stdin: { contents: 'export * from "./src/lib/errors";', resolveDir: process.cwd(), loader: "ts" },
+  bundle: true, format: "esm", write: false, platform: "neutral", logLevel: "silent",
+}).catch(() => null);
+const E = eb ? await import("data:text/javascript;base64," + Buffer.from(eb.outputFiles[0].text).toString("base64")) : null;
+const RB = E && typeof E.rejectedBeforeCommit === "function" ? E.rejectedBeforeCommit : null;
+check("rejectedBeforeCommit موجودةٌ صِرفة (src/lib/errors.ts)", !!RB);
+if (RB) {
+  const err = (props) => Object.assign(new Error(props.message ?? "x"), props);
+  check("  خطأُ بوستغريس (SQLSTATE) ⇒ حاسم: المعاملةُ تراجعت", RB(err({ code: "23503" })) && RB(err({ code: "P0001" })) && RB(err({ code: "22003" })));
+  check("  وخطأُ PostgREST (PGRST…) ⇒ حاسم (جلسةٌ انتهت مثلاً)", RB(err({ code: "PGRST301" })));
+  check("  واشتراكُ القراءة ⇒ حاسم (الطلبُ لم يُرسَل)", RB(err({ name: "ReadOnlyError", message: "READ_ONLY" })));
+  check("  والانقطاعُ ⇒ مجهول (يُبقي المرجع)", !RB(err({ message: "TypeError: Failed to fetch" })));
+  const realTimeout = await E.withTimeout(new Promise(() => {}), 5).catch((e) => e);
+  check("  والمهلةُ (خطأُ withTimeout الحقيقيّ) ⇒ مجهول", !!realTimeout && E.isTimeoutError(realTimeout) && !RB(realTimeout));
+  check("  وبوّابةٌ بلا رمز (5xx بعد تثبيتٍ ممكن) ⇒ مجهول", !RB(err({ message: "upstream request timeout" })) && !RB(err({ code: 504 })));
+  check("  ورمزٌ لا يشبه SQLSTATE ولا PGRST ⇒ مجهول", !RB(err({ code: "ECONNRESET" })) && !RB(err({ code: "" })));
+  check("  ولا شيء ⇒ مجهول", !RB(null) && !RB(undefined) && !RB("oops"));
+}
+
 check("الأبُ يقرأ الجسرَ بأوّل رسم (لا بأثرٍ بعده)",
   /const bridge0 = useRef\(bridgeFromParams\(params\)\);/.test(RS)
   && /useState<RetailPrefill \| null>\(\(\) => bridge0\.current\?\.prefill \?\? null\)/.test(RS)
@@ -185,8 +214,9 @@ check("الشاشةُ تسأل الأبَ: هل نزل؟", /prefillApplied = fal
   && /if \(!prefill \|\| prefillApplied\) return;/.test(SB) && /onPrefillApplied\?\.\(\);/.test(SB));
 check("  والمسودّةُ تُقرأ بعد نزوله (لا تُتخطّى إلى الأبد) — بالقاعدة المفحوصة سلوكاً أعلاه",
   /useState\(\(\) => draftOnMount\(loadSaleDraft\(draftScope\), !!prefill && !prefillApplied\)\)/.test(SB));
-check("  وجسرٌ على دفعةٍ معلَّقة لا يهبط: يُقال، ولا يُختم تحليلُه ببيعةٍ ليست له",
-  /if \(!prefill \|\| prefillApplied\) return;\s*if \(saleRefRef\.current\) \{[\s\S]{0,300}?labIdRef\.current = null;[\s\S]{0,200}?retail\.payPending[\s\S]{0,300}?return;\s*\}/.test(SB));
+check("  وجسرٌ على دفعةٍ معلَّقة لا يهبط: يُرمى كلُّه عند الأب (لا يعود ناقصاً ولا يختم تحليلاً)، ويُقال أنه ما انفتح",
+  /if \(!prefill \|\| prefillApplied\) return;\s*if \(saleRefRef\.current\) \{[\s\S]{0,600}?labIdRef\.current = null;\s*onCustomerCleared\?\.\(\);[\s\S]{0,300}?retail\.payPending[\s\S]{0,300}?retail\.bridgeRefused[\s\S]{0,200}?return;\s*\}/.test(SB)
+  && !/if \(saleRefRef\.current\) \{[\s\S]{0,600}?onPrefillApplied\?\.\(\)/.test(SB));
 check("والأبُ يحفظ الحالةَ (تنجو من إعادة التركيب)", /const \[prefillApplied, setPrefillApplied\] = useState\(false\);/.test(RS)
   && /onPrefillApplied=\{\(\) => setPrefillApplied\(true\)\}/.test(RS));
 check("  ومسحُ الزبون يرمي الجسرَ فلا يعود بتبويبٍ ولا بتحديث",
@@ -202,7 +232,7 @@ check("وختمُ «التحليل مفوتَر» من مرجعٍ يُمسح م�
 
 /* ── الترجمة: كلُّ عربيةٍ معروضة بمفتاحٍ بالملفّين ─────────────────────────── */
 console.log("▸ الترجمة");
-for (const k of ["custClear", "custClearTitle", "custClearHint", "custClearGo", "custCleared", "custClearedDropped", "payPending"]) {
+for (const k of ["custClear", "custClearTitle", "custClearHint", "custClearGo", "custCleared", "custClearedDropped", "payPending", "bridgeRefused"]) {
   check(`  مفتاحُ retail.${k} بالملفّين`, !!en?.retail?.[k] && !!ar?.retail?.[k]);
 }
 

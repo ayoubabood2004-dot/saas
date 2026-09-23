@@ -200,8 +200,8 @@ export function RetailSales() {
   /* والتبويبُ يُقفَل والدفعُ بالطريق: تبديلُه يُزيل شاشةَ البيع (AnimatePresence) قبل أن
    * يعود الجواب، فتقرأ الشاشةُ الجديدة المسودّةَ بمرجعها المعلَّق — ثم يكمل الطلبُ القديم
    * ويمسحها، وتعيد مزامنةُ الرصيد كتابتَها سلّةً «حيّة» بمرجعٍ مستعمَل. */
-  const [saleBusy, setSaleBusy] = useState(false);
-  const onBusyChange = useCallback((b: boolean) => { busyRef.current = b; setSaleBusy(b); }, []);
+  const [payInFlight, setPayInFlight] = useState(false);
+  const onBusyChange = useCallback((b: boolean) => { busyRef.current = b; }, []);
 
   /** التحديثُ بالمكان — من الشريط أو من زرّ رسالة «ما وصلنا الخادم». */
   const refreshNow = useCallback(async () => {
@@ -272,7 +272,8 @@ export function RetailSales() {
           <button
             type="button"
             onClick={() => { playTap(); navigate(`/pet/${returnPet.id}`); }}
-            className="ms-auto inline-flex items-center gap-1.5 rounded-full border border-brand-300 bg-brand-50 px-3.5 py-2 text-xs font-extrabold text-brand-700 transition hover:bg-brand-100 active:scale-95 dark:border-brand-500/40 dark:bg-brand-500/15 dark:text-brand-300"
+            disabled={payInFlight}
+            className="ms-auto inline-flex items-center gap-1.5 rounded-full border border-brand-300 bg-brand-50 px-3.5 py-2 text-xs font-extrabold text-brand-700 transition hover:bg-brand-100 active:scale-95 disabled:cursor-wait disabled:opacity-40 dark:border-brand-500/40 dark:bg-brand-500/15 dark:text-brand-300"
             title={`رجوع لسجل ${returnPet.name || "الحالة"}`}
           >
             <PawPrint size={15} /> رجوع لسجل {returnPet.name || "الحالة"}
@@ -283,7 +284,7 @@ export function RetailSales() {
 
       <div className={cn("flex gap-1 rounded-2xl border border-line bg-surface-1 p-1", compactChrome ? "mb-2.5" : "mb-4")}>
         {TABS.map(({ id, label, icon: Icon }) => (
-          <button key={id} onClick={() => { playTap(); setTab(id); }} disabled={saleBusy && id !== tab} data-tablocked={saleBusy && id !== tab ? "" : undefined}
+          <button key={id} onClick={() => { playTap(); setTab(id); }} disabled={payInFlight && id !== tab} data-tablocked={payInFlight && id !== tab ? "" : undefined}
             className={cn("flex flex-1 items-center justify-center gap-2 rounded-xl px-3 text-sm font-semibold transition disabled:cursor-wait disabled:opacity-40", compactChrome ? "py-1.5" : "py-2.5",
               tab === id ? "bg-brand-600 text-white shadow-soft" : "text-ink-muted hover:bg-surface-2 hover:text-ink")}>
             <Icon size={16} /> {label}
@@ -332,7 +333,7 @@ export function RetailSales() {
                     </div>
                   )}
                   <SaleBuilder products={products} clinicId={clinicId} onSold={load} prefill={prefill}
-                    onFreshRow={patchRow} onRefresh={() => void refreshNow()} onBusyChange={onBusyChange}
+                    onFreshRow={patchRow} onRefresh={() => void refreshNow()} onBusyChange={onBusyChange} onPayingChange={setPayInFlight}
                     prefillApplied={prefillApplied} onPrefillApplied={() => setPrefillApplied(true)}
                     onCustomerCleared={() => { setPrefill(null); setPrefillApplied(false); setReturnPet(null); }} />
                 </>
@@ -350,7 +351,7 @@ export function RetailSales() {
                 /* الفرعُ الأخير كان `<ReportsPanel />` بلا شرط: أيُّ قيمةِ تبويبٍ
                    لا تطابق ما سبق ترسم التقارير. فصار صريحاً — ولا شيءَ يسقط عليها. */
                 <SaleBuilder products={products} clinicId={clinicId} onSold={load} prefill={prefill}
-                  onFreshRow={patchRow} onRefresh={() => void refreshNow()} onBusyChange={onBusyChange}
+                  onFreshRow={patchRow} onRefresh={() => void refreshNow()} onBusyChange={onBusyChange} onPayingChange={setPayInFlight}
                     prefillApplied={prefillApplied} onPrefillApplied={() => setPrefillApplied(true)}
                     onCustomerCleared={() => { setPrefill(null); setPrefillApplied(false); setReturnPet(null); }} />
               )}

@@ -42,7 +42,7 @@ import { customerBoundLines, cartAfterClearCustomer } from "@/lib/saleCustomer";
 import { draftOnMount } from "@/lib/retailBridge";
 import { splitCustomerField } from "@/lib/customerName";
 import { dueOf, paidOf } from "@/lib/debt";
-import { withTimeout, describeDbError, isNetworkError, isTimeoutError } from "@/lib/errors";
+import { withTimeout, describeDbError, isNetworkError, isTimeoutError, rejectedBeforeCommit } from "@/lib/errors";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
 import { matchSurgeryService, isSurgeryCategoryName, surgeryByRef, type SurgeryServiceMatch } from "@/lib/surgeryCatalog";
 
@@ -495,7 +495,7 @@ function PosLayoutMenu({ layout, onChange, axis, isLg, nudge, reset }: {
   );
 }
 
-export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = false, onFreshRow, onRefresh, onBusyChange, prefillApplied = false, onPrefillApplied, onCustomerCleared }: {
+export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = false, onFreshRow, onRefresh, onBusyChange, prefillApplied = false, onPrefillApplied, onCustomerCleared, onPayingChange }: {
   /** قائمةُ الكاشير: رصيدُ كلّ صفٍّ رصيدُ الكاشير (الصفُّ + حوضُ قسمه، `sellable.ts`). */
   products: Product[]; clinicId?: string; onSold: () => void; prefill?: RetailPrefill | null; wholesale?: boolean;
   /** جوابٌ طازجٌ من الخادم (صفٌّ بحوضه، أو صفٌّ غاب) — الأبُ يرقّع به قائمتَه فلا
@@ -513,6 +513,8 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
   onPrefillApplied?: () => void;
   /** مُسح الزبونُ من الشاشة — الأبُ يرمي الجسرَ فلا يعود بتبويبٍ ولا بتحديث. */
   onCustomerCleared?: () => void;
+  /** طلبُ دفعٍ بالطريق (بين الإرسال والجواب) — لا «مشغول» الذي يمتدّ لمزامنة السجلّ بعده. */
+  onPayingChange?: (paying: boolean) => void;
 }) {
   const { t, i18n } = useTranslation();
   const toast = useToast();
@@ -715,6 +717,12 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
    * السجلّ الطبّيّ جارية ⇒ `setBusy(false)` اللاحقة تسقط على مكوّنٍ مُزال، فكلُّ
    * تحديثٍ (عودةُ التاب، النت، كلُّ ٥ دقائق) بالتبويبات الأخرى يُتخطّى «مشغولاً». */
   useEffect(() => () => { onBusyChange?.(false); }, [onBusyChange]);
+  /* **الدفعُ بالطريق** — أضيقُ من `busy`: من إرسال الطلب إلى جوابه فقط. عليه يُقفَل التبويب
+   * ويُرفض مسحُ الزبون؛ و`busy` يمتدّ بعده لمزامنة السجلّ الطبّيّ (حتى ~٣٦ث) والبيعةُ
+   * قد تمّت — فكان يُقفل الشاشةَ بلا سبب ويقول «الدفعة ما تأكّدت» عن دفعةٍ تأكّدت. */
+  const [paying, setPaying] = useState(false);
+  useEffect(() => { onPayingChange?.(paying); }, [paying, onPayingChange]);
+  useEffect(() => () => { onPayingChange?.(false); }, [onPayingChange]);
   /** سطورٌ تبيع الرصيدَ كلَّه بكميةٍ كبيرة — تُعرض للتأكيد قبل الحسم. */
   const [bigSale, setBigSale] = useState<Line[] | null>(null);
   const [flash, setFlash] = useState<string | null>(null);
@@ -1251,12 +1259,18 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
   useEffect(() => {
     if (!prefill || prefillApplied) return;
     if (saleRefRef.current) {
-      // دفعةٌ معلَّقة بالمسودّة (انظر draft0): لا يهبط فوقها زبونٌ آخر، ولا يُختم تحليلُه
-      // «مفوتَراً» ببيعةٍ ليست له.
+      /* دفعةٌ معلَّقة بالمسودّة (انظر draft0): لا يهبط فوقها زبونٌ آخر. **ويُرمى الجسرُ كلُّه
+       * عند الأب** لا يُعلَّم «نزل» فقط: إبقاؤه كان يعيده ناقصاً — «بيع جديد» يملأ اسمَه بلا
+       * بند تحليله، وإعادةُ التركيب تعيد ختمَ تحليله «مفوتَراً» على بيعةٍ ليست له. ويُقال
+       * أنه ما انفتح، ومن أين يُفتح. */
+      const who = prefill.pet || prefill.name;
       labIdRef.current = null;
-      onPrefillApplied?.();
+      onCustomerCleared?.();
       playWarning();
-      toast.error(t("retail.payPending", "آخر دفعة لهذي السلّة ما تأكّدت: اضغط «إتمام البيع» مرّة ثانية (ما تنسجّل مرّتين)، أو شوف الفواتير قبل ما تصفّر"));
+      toast.error(
+        t("retail.payPending", "آخر دفعة لهذي السلّة ما تأكّدت: اضغط «إتمام البيع» مرّة ثانية (ما تنسجّل مرّتين)، أو شوف الفواتير قبل ما تصفّر"),
+        t("retail.bridgeRefused", "ما انفتح بيع {{name}} — افتحه من سجلّه بعد ما تحسمها", { name: who }),
+      );
       return;
     }
     labIdRef.current = prefill.labId ?? null;
@@ -1625,7 +1639,9 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
    * الخالص يُستثنى: اسمُ الزبون عليه وصفٌ، وإعادتُه بمرجعه هي ما يمنع ردَّ البضاعة مرّتين. */
   const payPending = !!saleRefSaved && !done && !pureReturn;
   const clearCustomerNow = () => {
-    if (payPending || busy) {
+    // والطلبُ بالطريق: الزرُّ معطَّلٌ أصلاً، وهذا لنافذةٍ فُتحت قبل «إتمام البيع».
+    if (paying) { setCustClearAsk(false); return; }
+    if (payPending) {
       playWarning();
       setCustClearAsk(false);
       toast.error(t("retail.payPending", "آخر دفعة لهذي السلّة ما تأكّدت: اضغط «إتمام البيع» مرّة ثانية (ما تنسجّل مرّتين)، أو شوف الفواتير قبل ما تصفّر"));
@@ -1649,7 +1665,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
   };
   const askClearCustomer = () => {
     playTap();
-    if (boundLines.length > 0 && !payPending && !busy) { setCustClearAsk(true); return; }
+    if (boundLines.length > 0 && !payPending && !paying) { setCustClearAsk(true); return; }
     clearCustomerNow();
   };
 
@@ -1830,12 +1846,13 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
       const cust = splitCustomerField(name);
       /* ونفسُ حِرز البيعة للإرجاع (0136) — والخطر هنا أقسى: إعادةٌ بلا مرجع
        * تزيد المخزون مرّتين وتسحب من الصندوق مرّتين. */
+      setPaying(true);
       const res = await withTimeout(repo.retailReturn(items, {
         method: payments[0]?.method ?? "cash",
         customer_name: cust.name || null,
         note: saleNotes.trim() || null,
         client_ref: ensureRef(),
-      }), 12000);
+      }), 12000).finally(() => setPaying(false));
       playSuccess();
       toast.success(t("retail.retDone", { amount: money(res.total), n: formatNum(res.lines), defaultValue: "انسجّل الإرجاع: {{n}} صنف رجع للمخزن، و{{amount}} انسحبت من الصندوق" }));
       reset();
@@ -1943,7 +1960,19 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
         // العلامةُ تنزل بنفس معاملة الفاتورة (0156) — لا نداءٌ ثانٍ بعدها.
         sale_kind: wholesale ? "wholesale" : "retail",
       };
-      const invoice = await withTimeout(repo.retailCheckout(items, meta), 12000);
+      let invoice: Invoice;
+      setPaying(true);
+      try {
+        invoice = await withTimeout(repo.retailCheckout(items, meta), 12000);
+      } catch (e) {
+        /* رفضٌ حاسم ⇒ لا شيء ثُبّت، والمرجعُ حرّ: إبقاؤه كان يترك الدفعةَ «معلَّقة» للأبد
+         * (جلسةٌ انتهت، مادّةٌ حُذفت) فيرفض الزرُّ ويرفض كلَّ جسرٍ بلا سبب. والمجهولُ
+         * (انقطاع، مهلة، 5xx بلا رمز) يُبقيه — إعادتُه هي التي لا تُسجِّل مرّتين. */
+        if (rejectedBeforeCommit(e)) { saleRefRef.current = null; setSaleRefSaved(null); }
+        throw e;
+      } finally {
+        setPaying(false);
+      }
       // Delivery order wrapping the invoice: stock is already deducted; the COD
       // balance stays OUT of revenue until the courier hands it over. A failure
       // here never voids the sale — the invoice stands and the order can be
@@ -2754,6 +2783,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
               <button
                 data-custclear type="button"
                 onClick={askClearCustomer}
+                disabled={paying}
                 title={t("retail.custClear", "امسح الزبون وخلّي السلّة")}
                 aria-label={t("retail.custClear", "امسح الزبون وخلّي السلّة")}
                 className={cn("grid place-items-center rounded-xl bg-surface-2 text-ink-muted transition hover:bg-warn-50 hover:text-warn-700 dark:hover:bg-warn-500/15 dark:hover:text-warn-200", posV2 ? "h-10 w-10" : "h-8 w-8")}

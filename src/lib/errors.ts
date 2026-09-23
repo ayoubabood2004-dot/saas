@@ -34,6 +34,18 @@ export function isNetworkError(e: unknown): boolean {
   return /failed to fetch|networkerror|network error|fetch failed|load failed|err_network|err_internet/.test(m);
 }
 
+/** رفضٌ **حاسم**: الطلبُ لم يُرسَل أصلاً (اشتراكٌ للقراءة)، أو ردّ الخادمُ بخطأ من بوستغريس
+ *  (SQLSTATE) أو من PostgREST (`PGRST…`) — وPostgREST لا يُثبّت المعاملةَ إلا بعد أن يبني
+ *  الجوابَ كاملاً، فأيُّ خطأٍ منه يعني أنها تراجعت كلُّها. وما عدا ذلك **مجهولُ المصير**:
+ *  انقطاعٌ، مهلة، أو بوّابةٌ ترجع 5xx بلا رمز — وقد تكون المعاملةُ ثُبّتت قبلها.
+ *  يُسأل هذا عن نداءٍ واحد، لا عن كتلةٍ فيها ما بعد التثبيت. */
+export function rejectedBeforeCommit(e: unknown): boolean {
+  if (!e || typeof e !== "object" || isNetworkError(e) || isTimeoutError(e)) return false;
+  const err = e as { name?: string; message?: string; code?: unknown };
+  if (err.name === "ReadOnlyError" || err.message === "READ_ONLY") return true;
+  return typeof err.code === "string" && (/^[0-9A-Z]{5}$/.test(err.code) || /^PGRST\d+$/.test(err.code));
+}
+
 /* ── من اسم القيد إلى جملةٍ يفهمها صاحب العيادة ───────────────────────────
  *
  * القاعدة ترفض بجملةٍ إنجليزية تقنية:
