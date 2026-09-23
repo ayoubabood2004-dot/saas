@@ -3,7 +3,7 @@ import { useSearchParams, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { AnimatePresence, motion } from "framer-motion";
 import { Store, ShoppingCart, ReceiptText, BarChart3, HandCoins, Bike, PawPrint, ArrowRight, Wallet, RotateCcw, Clock, RefreshCw } from "lucide-react";
-import type { Product, Invoice, Species } from "@/types";
+import type { Product, Invoice } from "@/types";
 import { useAuth } from "@/contexts/AuthContext";
 import { useEntitlements } from "@/lib/entitlements";
 import { usePermissions } from "@/hooks/usePermissions";
@@ -19,6 +19,7 @@ import { patchSellableList, type FreshPatch } from "@/lib/freshSale";
 import { loadRetailSnap, retailKey, type RetailSnap } from "@/lib/prefetchData";
 import { playTap } from "@/lib/sounds";
 import { SaleBuilder, type RetailPrefill } from "@/components/retail/SaleBuilder";
+import { bridgeFromParams } from "@/lib/retailBridge";
 import { getPosV2, getCashReconcile } from "@/lib/settings";
 import { CashReconcile } from "@/components/retail/CashReconcile";
 import { InvoicesPanel } from "@/components/retail/InvoicesPanel";
@@ -29,8 +30,6 @@ import { ReturnsPanel } from "@/components/retail/ReturnsPanel";
 
 type Tab = "sell" | "invoices" | "returns" | "debts" | "delivery" | "reports";
 
-/** Valid Species values — guards the `species` bridge param against tampered URLs. */
-const SPECIES_SET = new Set<string>(["dog", "cat", "horse", "cow", "bird", "rabbit", "other"]);
 
 export function RetailSales() {
   const { t, i18n } = useTranslation();
@@ -61,7 +60,13 @@ export function RetailSales() {
   // sell tab, then strip the query string so a refresh/tab-switch won't re-apply it.
   const [params, setParams] = useSearchParams();
   const navigate = useNavigate();
-  const [prefill, setPrefill] = useState<RetailPrefill | null>(null);
+  /* الجسرُ يُقرأ **بأوّل رسم** (retailBridge.ts): قراءتُه بأثرٍ كانت تترك شاشةَ البيع
+   * تُرسم مرّةً بلا جسر فتقرأ مسودّةَ الزبون السابق، ثم يهبط الجسرُ فوق سلّته. */
+  const bridge0 = useRef(bridgeFromParams(params));
+  /** رابطُ الجسر الذي أخذه أوّلُ رسم — أثرُ الرابط ينظّفه ولا يعيد ختمَه (ولو شُغّل
+   *  الأثرُ مرّتين بوضع التطوير). */
+  const seededKey = useRef<string | null>(bridge0.current ? params.toString() : null);
+  const [prefill, setPrefill] = useState<RetailPrefill | null>(() => bridge0.current?.prefill ?? null);
   /* هل نزل الجسرُ على الشاشة؟ يعيش هنا لا بداخلها: تبديلُ تبويبٍ يُزيل شاشةَ البيع
    * ويعيدها (AnimatePresence)، فكان الجسرُ يُعاد ختمُه على سلّةٍ فارغة — تضيع سلّةُ
    * بيعةٍ فُتحت من سجلّ حيوان، ويرجع الزبونُ بعد مسحه. ينزل مرّةً، والمسودّةُ بعدها. */
@@ -69,25 +74,20 @@ export function RetailSales() {
   /* مطابقة الصندوق — خيار تفعيلي من الإعدادات (زر بنهاية كل دوام). */
   const [cashRecOpen, setCashRecOpen] = useState(false);
   // من فتح المبيعات من سجل حيوان؟ نحفظ هويته حتى نرجّعه بضغطة بعد ما ننظّف الرابط.
-  const [returnPet, setReturnPet] = useState<{ id: string; name: string } | null>(null);
+  const [returnPet, setReturnPet] = useState<{ id: string; name: string } | null>(() => bridge0.current?.returnPet ?? null);
   useEffect(() => {
-    const customer = params.get("customer") ?? "";
-    const phone = params.get("phone") ?? "";
-    const pet = params.get("pet") ?? "";
-    const petId = params.get("petId") ?? "";
-    // Validate against the known set — never blind-cast a tampered/stale query string.
-    const rawSpecies = params.get("species");
-    const species = rawSpecies && SPECIES_SET.has(rawSpecies) ? (rawSpecies as Species) : undefined;
-    // جسر المختبر: التحليل يوصل كبند خدمة جاهز + معرف النتيجة حتى تتفوتر تلقائياً.
-    const service = params.get("service") ?? "";
-    const labId = params.get("labId") ?? "";
-    if (customer || phone || pet || service) {
-      setPrefillApplied(false);
-      setPrefill({ name: customer, phone, pet, petId: petId || undefined, species, service: service || undefined, labId: labId || undefined });
-      setTab("sell");
-      if (petId) setReturnPet({ id: petId, name: pet || customer || "الحالة" });
+    const b = bridgeFromParams(params);
+    if (!b) { seededKey.current = null; return; }
+    if (seededKey.current === params.toString()) {
+      // أوّلُ رسمٍ أخذه سلفاً — يبقى تنظيفُ الرابط كي لا يُعاد بتحديثٍ أو تبديل تبويب.
       setParams({}, { replace: true });
+      return;
     }
+    setPrefillApplied(false);
+    setPrefill(b.prefill);
+    setTab("sell");
+    if (b.returnPet) setReturnPet(b.returnPet);
+    setParams({}, { replace: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params]);
 
@@ -269,9 +269,9 @@ export function RetailSales() {
             type="button"
             onClick={() => { playTap(); navigate(`/pet/${returnPet.id}`); }}
             className="ms-auto inline-flex items-center gap-1.5 rounded-full border border-brand-300 bg-brand-50 px-3.5 py-2 text-xs font-extrabold text-brand-700 transition hover:bg-brand-100 active:scale-95 dark:border-brand-500/40 dark:bg-brand-500/15 dark:text-brand-300"
-            title={`رجوع لسجل ${returnPet.name}`}
+            title={`رجوع لسجل ${returnPet.name || "الحالة"}`}
           >
-            <PawPrint size={15} /> رجوع لسجل {returnPet.name}
+            <PawPrint size={15} /> رجوع لسجل {returnPet.name || "الحالة"}
             <ArrowRight size={15} className="rtl:rotate-180" />
           </button>
         )}

@@ -606,6 +606,8 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
    *  الخاصّيةُ تبقى بيد الأب بعد مسح الزبون، فكانت بيعةُ الزبون الجديد تختم تحليلَ
    *  الزبون السابق. */
   const labIdRef = useRef<string | null>(prefill?.labId ?? null);
+  /** مؤقّتُ تركيز حقل البحث بعد نزول الجسر. */
+  const bridgeFocusRef = useRef<number | null>(null);
   /* لوح السلة على الشاشات الضيّقة — يُفتح من الشريط الملتصق بالأسفل. */
   const [cartSheet, setCartSheet] = useState(false);
   /* أدوات الدفع (خصم · طريقة دفع · فاتورة أولية) مطويّة: كانت تحتل ٣٢٤px من
@@ -1281,10 +1283,14 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
     }
     // نزل — فلا يُعاد ختمُه بإعادة التركيب (المسودّةُ تحفظه وتسترجعه كأيّ بيعة).
     onPrefillApplied?.();
-    const id = window.setTimeout(() => searchRef.current?.focus(), 160);
-    return () => window.clearTimeout(id);
+    /* المؤقّتُ بمرجعٍ لا بتنظيف هذا الأثر: `onPrefillApplied` يقلب `prefillApplied`
+     * وهو من اعتماداته، فتنظيفُه كان يُلغي التركيزَ قبل أن يحلّ بـ١٦٠ms. يُلغى
+     * بالإزالة وحدَها. */
+    if (bridgeFocusRef.current != null) window.clearTimeout(bridgeFocusRef.current);
+    bridgeFocusRef.current = window.setTimeout(() => searchRef.current?.focus(), 160);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [prefill, prefillApplied]);
+  useEffect(() => () => { if (bridgeFocusRef.current != null) window.clearTimeout(bridgeFocusRef.current); }, []);
 
   /* الحساب يقرأ الراجع سالباً: قيمة المشترى ناقص قيمة الراجع = ما يدفعه
    * الزبون فعلاً. سطرٌ راجع بألف مع شراءٍ بخمسة ⇒ يدفع أربعة. */
@@ -1392,9 +1398,15 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
   // pet get saved too, so navigating away no longer drops them). A FRESH prefill
   // entry still starts clean (see draft0's load guard); this only saves what the
   // sale currently holds.
+  /* **بيعةٌ أُتمّت ليست مسودّة.** بعد الإتمام يُمسح المحفوظ، ثم `onSold` يعيد تحميل
+   * الأصناف فتُحدِّث مزامنةُ الرصيد سطورَ السلّة — وكان هذا الأثرُ يكتب السلّةَ المبيعة
+   * **ومرجعَها المستعمَل** من جديد. فتحديثٌ أو تبديلُ تبويبٍ قبل «بيع جديد» يرجّعها سلّةً
+   * حيّة، ودفعُها يرجّع الفاتورةَ القديمة (المرجعُ نفسُه — 0135): فلوسٌ تُقبض ولا شيء
+   * يُسجَّل. */
   useEffect(() => {
+    if (done) return;
     saveSaleDraft(draftScope, { cart, name, phone, salePets, notes: saleNotes, discountType, discountValue, finalOverride, cashierId, promoOn, clientRef: saleRefSaved });
-  }, [clinicId, cart, name, phone, salePets, saleNotes, discountType, discountValue, finalOverride, cashierId, promoOn, saleRefSaved]);
+  }, [clinicId, cart, name, phone, salePets, saleNotes, discountType, discountValue, finalOverride, cashierId, promoOn, saleRefSaved, done]);
 
   // ---- Payment: full, split, partial (credit), or over-tendered (change due) ----
   const isSplit = payments.length > 1;
@@ -1570,6 +1582,11 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
    * والمضاعِف — حتى الآتي من سجل حيوان. لو على الشاشة شيءٌ يُخسر، يسأل أوّلاً. */
   const hardReset = () => {
     prefillOff.current = true;
+    /* الجسرُ يعيش بالأب (يبقى عبر إعادة التركيب)، وبندُ المختبر بمرجعٍ هنا — فمسحُهما
+     * محليّاً وحده لا يكفي: تبديلُ تبويبٍ يعيد الزبونَ السابق، وبيعةُ غريبٍ تختم
+     * تحليلَه «مفوتَراً». نفسُ ما يفعله «امسح الزبون». */
+    labIdRef.current = null;
+    onCustomerCleared?.();
     setRetMode(false); setMult(null); setQtyPadFor(null); setWeightFor(null); setMultPad(false);
     reset();
     setName(""); setPhone(""); setSalePets([]); setCustMatches([]); setCustOpen(false);
@@ -1589,7 +1606,32 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
    * يعيد ختمَه). فهنا: الزبونُ وحدَه يروح — والسطورُ التي **تُكتب بسجلّ حيوانه**
    * تُرفع ويُقال اسمُها، فلا يهبط لقاحٌ بسجلّ حيوانٍ اشتراه غيرُه. */
   const boundLines = customerBoundLines(cart);
-  const clearCustomerNow = () => {
+  const [custClearBusy, setCustClearBusy] = useState(false);
+  const clearCustomerNow = async () => {
+    /* **مرجعٌ معلَّق** = محاولةُ دفعٍ لهذا الزبون ماتت بمهلة، ولا يُعرف: انسجلت أم لا.
+     * إبقاؤه للزبون التالي يجعل `retail_checkout` يرجّع فاتورةَ الأوّل (المرجعُ نفسُه):
+     * فلوسُ الثاني تُقبض ولا تُسجَّل. وتجديدُه أعمى يترك فاتورةَ الأوّل إن انسجلت بلا
+     * أن يعرف أحد. فيُسأل الخادمُ أوّلاً، والجوابُ يُقال. والإرجاعُ الخالص يُستثنى:
+     * إعادتُه بمرجعه هي ما يمنع ردَّ البضاعة مرّتين، واسمُ الزبون عليه وصفٌ لا غير. */
+    const pending = saleRefRef.current;
+    let prior: Invoice | null = null;
+    if (pending && !pureReturn) {
+      setCustClearBusy(true);
+      try {
+        prior = await withTimeout(repo.findInvoiceByRef(pending), 8000);
+      } catch (e) {
+        playWarning();
+        toast.error(
+          t("retail.custClearUnsure", "ما كدرنا نتأكد إذا آخر دفعة لهذا الزبون انسجلت — تأكّد من النت وجرّب مرّة ثانية. ما انمسح شي"),
+          e instanceof Error ? e.message : undefined,
+        );
+        return;
+      } finally {
+        setCustClearBusy(false);
+      }
+      saleRefRef.current = null;   // زبونٌ آخر ⇒ بيعةٌ أخرى ⇒ مرجعٌ جديد
+      setSaleRefSaved(null);
+    }
     setName(""); setPhone(""); setSalePets([]); setActivePetIdx(0);
     setCustMatches([]); setCustOpen(false); setPetPickOpen(false); setPetPickQ("");
     setSaleNotes("");                 // الملاحظةُ تُكتب بسجلّ حيوانه — تروح معه
@@ -1605,11 +1647,18 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
       t("retail.custCleared", "انمسحت معلومات الزبون — والسلّة مثل ما هي"),
       dropped > 0 ? t("retail.custClearedDropped", "وانرفعت {{n}} سطراً كانت تنكتب بسجلّ حيوانه", { n: formatNum(dropped) }) : undefined,
     );
+    if (prior) {
+      toast.error(t("retail.custClearPriorSaved", "آخر محاولة دفع انسجلت فعلاً ({{no}} باسم {{name}}) — إذا الزبون ما اشترى، رجّعها من الفواتير", {
+        no: invoiceNo(prior.id),
+        name: prior.customer_name?.trim() || t("rpt.walkIn", "عميل نقدي"),
+      }));
+    }
   };
   const askClearCustomer = () => {
     playTap();
+    if (custClearBusy) return;
     if (boundLines.length > 0) { setCustClearAsk(true); return; }
-    clearCustomerNow();
+    void clearCustomerNow();
   };
 
   // ---- "+ حيوان آخر" — attach another of the clinic's patients to this sale ----
@@ -2713,6 +2762,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
               <button
                 data-custclear type="button"
                 onClick={askClearCustomer}
+                disabled={custClearBusy}
                 title={t("retail.custClear", "امسح الزبون وخلّي السلّة")}
                 aria-label={t("retail.custClear", "امسح الزبون وخلّي السلّة")}
                 className={cn("grid place-items-center rounded-xl bg-surface-2 text-ink-muted transition hover:bg-warn-50 hover:text-warn-700 dark:hover:bg-warn-500/15 dark:hover:text-warn-200", posV2 ? "h-10 w-10" : "h-8 w-8")}
@@ -3482,7 +3532,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
       <Dialog open={custClearAsk} onClose={() => setCustClearAsk(false)} title={t("retail.custClearTitle", "امسح معلومات الزبون؟")} size="sm"
         footer={<>
           <Button variant="ghost" onClick={() => { playTap(); setCustClearAsk(false); }}>{t("common.cancel", "إلغاء")}</Button>
-          <Button variant="danger" data-custcleargo leftIcon={<UserX size={16} />} onClick={clearCustomerNow}>{t("retail.custClearGo", "امسح الزبون وارفعها")}</Button>
+          <Button variant="danger" data-custcleargo leftIcon={<UserX size={16} />} loading={custClearBusy} onClick={() => void clearCustomerNow()}>{t("retail.custClearGo", "امسح الزبون وارفعها")}</Button>
         </>}>
         <div className="space-y-2">
           <p className="text-sm text-ink-muted">
