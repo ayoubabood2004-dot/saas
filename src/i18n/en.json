@@ -1272,7 +1272,15 @@
     "pickedHidden": "{{n}} of them outside this view",
     "pickAllShown": "Tick all shown",
     "pickClearShown": "Untick all shown",
-    "dupLine": "same item on another line — total {{n}}"
+    "dupLine": "same item on another line — total {{n}}",
+    "sellKeep": "{{v}} — leave blank to keep it",
+    "sellWillChange": "Selling price will change: {{from}} → {{to}}",
+    "sellUnchanged": "Selling price will not change",
+    "sellNew": "(new)",
+    "sellSame": "(unchanged)",
+    "newZeroSell": "A new item with an empty selling price — if saved it would sell for nothing",
+    "newNumericName": "The item name is a number, not a name — you will not find it by name later",
+    "blockerWhich": "Enter the {{what}} for: {{names}}"
   },
   "pos": {
     "scanRescuedPurchase": "{{name}} — matched via format {{code}}",

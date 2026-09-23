@@ -13,7 +13,8 @@ import { Modal } from "@/components/Modal";
 import { PurchasePicker, type PickedLine } from "@/components/inventory/PurchasePicker";
 import { Combobox } from "@/components/Combobox";
 import { Button, Badge, useToast, Skeleton } from "@/components/ui";
-import { cn, money, formatDate, formatNum, localISO, normalizeAr, normalizeCode, matchCode, searchable, groupKey, normGroupName } from "@/lib/utils";
+import { cn, money, formatDate, formatNum, localISO, normalizeAr, normalizeCode, matchCode, searchable, groupKey, normGroupName, invNormName } from "@/lib/utils";
+import { sellPriceToSend, purchaseBlockers } from "@/lib/purchaseIntent";
 import { withTimeout, describeDbError } from "@/lib/errors";
 import { codeIndex, excelArtifact, looksLayoutMangled, rescueScan, matchTruncatedCode, stripAim } from "@/lib/productCodes";
 import { createScanAssembler } from "@/lib/scanBuffer";
@@ -70,10 +71,15 @@ const blankLine = (patch: Partial<Line> = {}): Line => ({
  * خلطُهما يكتب الرمزَ مطويَّ الحالة بمخزن العيادة — والخطُّ الأحمر الأوّل يمنع
  * إعادةَ كتابة رمزٍ مخزون. */
 
+/* **خانةُ سعر البيع تبقى فارغة عمداً.** كانت تُعبّأ بسعر المنتج، فكلُّ سطرٍ
+ * يرجّع القيمةَ نفسَها إلى الخادم ⇒ أيُّ تغييرٍ صار بعد تحميل الشاشة يُدهس.
+ * والخادمُ فيه بوّابةٌ أصلاً (`case when v_sell > 0`): الفارغُ = «لا تلمس».
+ * و`purchase_price` **يبقى معبّأً** — هو رقمُ الفاتورة نفسِه ومنه الإجماليُّ
+ * ودفترُ المورّد؛ تفريغُه يكسر الحساب بصمت. والسعرُ الحاليُّ يُعرض تلميحاً. */
 const lineFromProduct = (p: Product, barcode: string): Line => blankLine({
   product_id: p.id, barcode: barcode || (p.barcode ?? ""), name: p.name,
   category: p.category ?? "", qty: "", purchase_price: String(p.purchase_price ?? ""),
-  sell_price: String(p.sell_price ?? ""), min_stock: p.min_stock ? String(p.min_stock) : "",
+  sell_price: "", min_stock: p.min_stock ? String(p.min_stock) : "",
 });
 
 const statusTone = (s?: string): "success" | "warn" | "danger" => (s === "paid" ? "success" : s === "partial" ? "warn" : "danger");
@@ -551,7 +557,9 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
         category: it.category ?? "",
         qty: String(it.qty ?? ""),
         purchase_price: it.purchase_price ? String(it.purchase_price) : "",
-        sell_price: it.sell_price ? String(it.sell_price) : "",
+        /* وبالتعديل كذلك: لقطةُ `purchase_items` سعرُ يومِ الفاتورة، وإرجاعُها
+         * يدهس سعرَ الرفّ اليوم بسعرٍ عمرُه شهر. تُعرض تلميحاً لا قيمةً. */
+        sell_price: "",
       })));
     } else {
       setCompany(defaultCompanyName ?? "");
@@ -819,6 +827,28 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
       );
       return;
     }
+    /* **منتجٌ جديدٌ بسعر بيعٍ صفر يُباع ببلاش.** فرعُ الإنشاء بالخادم يمرّر
+     * السعرَ خامّاً بلا بوّابة `case when > 0` — فتفريغُ الخانة (وهو الصواب
+     * للقائم) يصير خطراً على الجديد. والحكمُ يمرّ من `invNormName` نفسِها التي
+     * يطابق بها الخادم، فما يرصّده على منتجٍ قائمٍ بالاسم لا يُحسب جديداً ولا
+     * يُوقَف — إنذارٌ كاذبٌ يتعلّم المستخدمُ تجاهلَه. */
+    const blockers = purchaseBlockers(validLines, products);
+    if (blockers.length) {
+      playWarning();
+      const zero = blockers.filter((b) => b.kind === "zero_sell");
+      const numeric = blockers.filter((b) => b.kind === "numeric_name");
+      toast.error(
+        zero.length
+          ? t("purchase.newZeroSell", "مادة جديدة بسعر بيع فاضي — إذا انحفظت راح تنباع ببلاش")
+          : t("purchase.newNumericName", "اسم المادة رقم مو اسم — ما راح تلگيها بالبحث بعدين"),
+        t("purchase.blockerWhich", "اكتب {{what}} لـ: {{names}}", {
+          what: zero.length ? t("pos.sellPrice", "سعر البيع") : t("pos.name", "الاسم"),
+          names: (zero.length ? zero : numeric).slice(0, 5).map((b) => b.label).join(t("common.listSep", "، "))
+            + ((zero.length ? zero : numeric).length > 5 ? "…" : ""),
+        }),
+      );
+      return;
+    }
     // سطرٌ ملصوقٌ من إكسل لا يمرّ بصندوق المسح، فالحارسُ يتكرّر هنا (G8):
     // الرقمُ الأصليّ لا يُسترجع من الصيغة العلمية، فالرفضُ قبل الحفظ لا بعده.
     const bad = validLines.find((l) => excelArtifact(l.barcode));
@@ -856,7 +886,8 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
         category: (l.category || null) as ProductCategory | null,
         qty: Number(l.qty) || 0,
         purchase_price: Number(l.purchase_price) || 0,
-        sell_price: Number(l.sell_price) || 0,
+        // الفارغُ صفرٌ، والصفرُ عقدٌ مع الخادم: «لا تلمس سعرَ البيع».
+        sell_price: sellPriceToSend(l.sell_price),
         min_stock: l.min_stock.trim() === "" ? null : Math.max(0, Math.round(Number(l.min_stock) || 0)),
         expiry_date: l.expiry.trim() || null,
       }));
@@ -991,6 +1022,12 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
           {lines.map((l, idx) => {
             const matched = !!l.product_id;
             const product = matched ? products.find((p) => p.id === l.product_id) : undefined;
+            /* السعرُ الحاليُّ على الرفّ — تلميحةً لا قيمة. يُقرأ من المنتج المطابَق،
+             * وإلا من منتجٍ يطابقه **الخادمُ بالاسم** (الفرعُ الذي لا تعرفه الشاشة). */
+            const sellRef = product ?? (!l.product_id && l.name.trim()
+              ? products.find((p) => invNormName(p.name) === invNormName(l.name))
+              : undefined);
+            const sellNow = sellRef ? Number(sellRef.sell_price ?? 0) || null : null;
             const dupTotal = dupOf.get(l.key);
             const dupBadge = dupTotal != null ? (
               <span className="chip shrink-0 bg-warn-50 text-2xs font-bold text-warn-800 dark:bg-warn-500/15 dark:text-warn-200">
@@ -1020,7 +1057,15 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
                         <span className="tabular-nums">
                           {t("purchase.stockJump", { from: baseStock, to: baseStock + qtyN, defaultValue: "المخزون: {{from}} ← {{to}}" })}
                         </span>
-                        <span>{t("pos.buy", "شراء")} {money(Number(l.purchase_price) || 0)} · {t("pos.sell", "بيع")} {money(Number(l.sell_price) || 0)}</span>
+                        {/* سعرُ البيع المعروضُ هو **سعرُ الرفّ** لا خانةُ السطر — الخانةُ
+                          * تبقى فارغةً قصداً، وعرضُ صفرٍ مكانها كذبٌ بالاتجاه المعاكس. */}
+                        <span>
+                          {t("pos.buy", "شراء")} {money(Number(l.purchase_price) || 0)} · {t("pos.sell", "بيع")}{" "}
+                          {money(sellPriceToSend(l.sell_price) || Number(product.sell_price) || 0)}
+                          {sellPriceToSend(l.sell_price) > 0
+                            ? ` ${t("purchase.sellNew", "(جديد)")}`
+                            : ` ${t("purchase.sellSame", "(ما راح يتغيّر)")}`}
+                        </span>
                         {product.expiry_date && <span className="flex items-center gap-1"><CalendarClock size={10} /> {t("purchase.currentExpiry", { d: product.expiry_date.slice(0, 10), defaultValue: "الانتهاء الحالي {{d}}" })}</span>}
                       </p>
                     </div>
@@ -1120,7 +1165,23 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
                   </div>
                   <div className="sm:col-span-3">
                     <label className="label text-2xs">{t("pos.sellPrice", "سعر البيع")}</label>
-                    <input type="number" inputMode="numeric" min="0" step="1" className="input text-sm" value={l.sell_price} onChange={(e) => patchLine(l.key, { sell_price: e.target.value })} placeholder="0" />
+                    {/* التلميحةُ تحمل السعرَ الحاليّ، والقيمةُ تبقى فارغةً حتى يكتب. */}
+                    <input type="number" inputMode="numeric" min="0" step="1" className="input text-sm"
+                      value={l.sell_price} onChange={(e) => patchLine(l.key, { sell_price: e.target.value })}
+                      placeholder={sellNow != null
+                        ? t("purchase.sellKeep", "{{v}} — اتركها فارغة", { v: formatNum(sellNow) })
+                        : "0"} />
+                    {sellNow != null && sellPriceToSend(l.sell_price) > 0 && sellPriceToSend(l.sell_price) !== sellNow && (
+                      <div className="mt-1 text-2xs font-bold text-warn-700 dark:text-warn-300">
+                        {t("purchase.sellWillChange", "راح يتغيّر سعر البيع: {{from}} ← {{to}}",
+                          { from: formatNum(sellNow), to: formatNum(sellPriceToSend(l.sell_price)) })}
+                      </div>
+                    )}
+                    {sellNow != null && sellPriceToSend(l.sell_price) <= 0 && (
+                      <div className="mt-1 text-2xs text-ink-subtle">
+                        {t("purchase.sellUnchanged", "سعر البيع ما راح يتغيّر")}
+                      </div>
+                    )}
                   </div>
                   <div className="sm:col-span-3">
                     <label className="label text-2xs">{t("pos.minStock", "تنبيه المخزون")}</label>

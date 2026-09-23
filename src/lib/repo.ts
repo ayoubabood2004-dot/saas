@@ -114,12 +114,8 @@ function trashCompany(db: DemoDB, row: Company, extra: { reason?: string | null;
   return snap;
 }
 
-const invNormName = (v: string | null | undefined): string =>
-  (v ?? "")
-    // أ/إ/آ→ا · ة→ه · ى→ي — بمهارب يونيكود: بنيةُ مطابقةٍ لا نصٌّ معروض.
-    .replace(/[\u0623\u0625\u0622]/g, "\u0627").replace(/\u0629/g, "\u0647").replace(/\u0649/g, "\u064A")
-    .replace(/[٠-٩]/g, (d) => String(d.charCodeAt(0) - 0x0660))
-    .replace(/\s+/g, " ").trim().toLowerCase();
+/* `invNormName` انتقلت إلى `utils.ts` (0206+): الشاشةُ تحتاجها كي تعرف
+ * أيَّ سطرٍ سيطابقه الخادمُ بالاسم، ومصدرُ التطبيع واحدٌ لا نسختان. */
 import { supabase } from "./supabase";
 import { outboxEnqueue, outboxEnqueueRpc, outboxDrop, isNetworkError } from "./outbox";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -130,7 +126,7 @@ import type { BarcodeAilment, BarcodeHealthRow } from "@/types";
 import type { PortalMe, PortalPetCard, PortalPetDetail, PortalAdmission, PortalJourney, PortalCodeRequest, PortalVerifyResult } from "@/types";
 import { receiptsOf, dueOf } from "./debt";
 import { phoneDigits } from "./phone";
-import { searchable } from "./utils";
+import { searchable, invNormName } from "./utils";
 import { emitGlobalToast } from "./globalToast";
 import i18next from "i18next";
 import { invoiceNo } from "./invoiceNo";

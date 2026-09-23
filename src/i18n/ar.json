@@ -1272,7 +1272,15 @@
     "pickedHidden": "{{n}} منها خارج المعروض",
     "pickAllShown": "أشّر كل المعروض",
     "pickClearShown": "ألغِ تأشير المعروض",
-    "dupLine": "نفس المادة بسطر ثاني — المجموع {{n}}"
+    "dupLine": "نفس المادة بسطر ثاني — المجموع {{n}}",
+    "sellKeep": "{{v}} — اتركها فارغة",
+    "sellWillChange": "راح يتغيّر سعر البيع: {{from}} ← {{to}}",
+    "sellUnchanged": "سعر البيع ما راح يتغيّر",
+    "sellNew": "(جديد)",
+    "sellSame": "(ما راح يتغيّر)",
+    "newZeroSell": "مادة جديدة بسعر بيع فاضي — إذا انحفظت راح تنباع ببلاش",
+    "newNumericName": "اسم المادة رقم مو اسم — ما راح تلگيها بالبحث بعدين",
+    "blockerWhich": "اكتب {{what}} لـ: {{names}}"
   },
   "pos": {
     "scanRescuedPurchase": "«{{name}}» — طابق بصيغة {{code}}",
