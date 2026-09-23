@@ -1239,6 +1239,17 @@ export interface ActivityRow {
   /** المختصر: الحقولُ التعريفية + أوّلُ تغييرات — لا الصفُّ كلُّه. */
   brief: Record<string, unknown> | null;
 }
+/** خطوةٌ بخطّ زمنِ رصيد مادّة (0207). الأرقامُ من التدقيق لا محسوبة. */
+export interface ProductMovement {
+  at: string;
+  /** open = أوّلُ إدخال · purchase · purchase_edit · sale · return · adjust */
+  kind: "open" | "purchase" | "purchase_edit" | "sale" | "return" | "adjust";
+  from_qty: number | null;
+  to_qty: number | null;
+  delta: number;
+  ref_id: string | null;
+  actor_name: string | null;
+}
 export interface ActivitySummaryRow { bucket: string; kind: string; n: number }
 export interface ActivityActor { actor: string; name: string; n: number }
 

@@ -25,7 +25,7 @@ MIG="$HERE/../migrations"
 # و0095/0096/0158 بالمقدّمة رغم أنها أقدمُ من 0124: الموجةُ تبدأ من 0124 لأن
 # الأساس يوفّر ما قبلها جاهزاً — لكنّ هذه الثلاثَ تُنشئ المتجرَ والبوّابة،
 # وكانت خارجَ الفحص كلَّه. تُنزَّل بترتيبها الحقيقيّ قبل الموجة.
-WAVE="$MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0114_landing_events.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql $MIG/0184_images_hardening.sql $MIG/0185_store_funnel_events.sql $MIG/0186_store_bulk_visible.sql $MIG/0187_store_suggest_products.sql $MIG/0188_store_catalog_priced.sql $MIG/0189_accept_fee_at_decision.sql $MIG/0190_logo_out_of_db.sql $MIG/0191_poultry_farms.sql $MIG/0192_poultry_consume.sql $MIG/0193_poultry_withdrawal.sql $MIG/0194_end_elevation_honest.sql $MIG/0195_cage_layout_sync.sql $MIG/0196_company_norm_and_merge.sql $MIG/0197_company_merge_safe.sql $MIG/0198_company_delete_restores_all.sql $MIG/0199_company_name_unique.sql $MIG/0200_company_twins_per_row.sql $MIG/0201_merge_snapshot_exact.sql $MIG/0202_group_key_invisible.sql $MIG/0203_restore_needs_its_target.sql $MIG/0204_cage_layout_one_door.sql $MIG/0205_purchase_edit_invents_no_stock.sql $MIG/0206_purge_stays_with_cron.sql"
+WAVE="$MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0114_landing_events.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql $MIG/0184_images_hardening.sql $MIG/0185_store_funnel_events.sql $MIG/0186_store_bulk_visible.sql $MIG/0187_store_suggest_products.sql $MIG/0188_store_catalog_priced.sql $MIG/0189_accept_fee_at_decision.sql $MIG/0190_logo_out_of_db.sql $MIG/0191_poultry_farms.sql $MIG/0192_poultry_consume.sql $MIG/0193_poultry_withdrawal.sql $MIG/0194_end_elevation_honest.sql $MIG/0195_cage_layout_sync.sql $MIG/0196_company_norm_and_merge.sql $MIG/0197_company_merge_safe.sql $MIG/0198_company_delete_restores_all.sql $MIG/0199_company_name_unique.sql $MIG/0200_company_twins_per_row.sql $MIG/0201_merge_snapshot_exact.sql $MIG/0202_group_key_invisible.sql $MIG/0203_restore_needs_its_target.sql $MIG/0204_cage_layout_one_door.sql $MIG/0205_purchase_edit_invents_no_stock.sql $MIG/0206_purge_stays_with_cron.sql $MIG/0207_product_movements.sql"
 
 command -v "$PGBIN/initdb" >/dev/null || { echo "ما لكيت بوستغريس بـ $PGBIN"; exit 1; }
 
@@ -1133,6 +1133,52 @@ chk "حذفُ طلبٍ يصوّره بالسلّة قبل أن يذهب (الم�
     "select count(*)::text from delivery_orders_trash where id = 'eeeeeeee-0157-4000-8000-000000000001'" "1"
 chk "  والصورةُ تحمل مبلغَه وحاملَه" \
     "select ((row->>'cod_amount')::numeric = 5000 and courier_id = 'cccccccc-0157-4000-8000-000000000001')::text from delivery_orders_trash where id = 'eeeeeeee-0157-4000-8000-000000000001'" "true"
+
+# ── 0207: حركاتُ المادة — القصّةُ تُقرأ، والمجهولُ يبقى مجهولاً ──────────
+# القالبُ **قصّةُ الإنتاج نفسُها** حرفاً بحرف («رمل جاك 20 لتر»، عيادةٌ حقيقية،
+# ١٥–١٦ أيلول): وُلد بـ١٥، ثمّ تعديلُ فاتورةٍ لا يغيّر شيئاً، ثمّ بيعُ واحدة،
+# ثمّ تعديلُ فاتورةٍ **رفع الرصيد من ١٤ إلى ١٥** — وهي القطعةُ التي اخترعها
+# الحصرُ قبل 0205. وقالبٌ يُقاس على ما تُنتجه القاعدة فعلاً لا على ما يُسهّل
+# كتابة الفحص (درسُ كشف التوصيل).
+$P -c "insert into products (id, clinic_id, name, stock) values
+         ('b7000000-0000-0000-0000-000000000001','$C1','رملُ الفحص',15) on conflict do nothing;
+       insert into purchases (id, clinic_id, created_at) values
+         ('b7000000-0000-0000-0000-0000000000a1','$C1','2026-09-15 09:55:34+00') on conflict do nothing;
+       insert into purchase_items (id, clinic_id, purchase_id, product_id, qty) values
+         ('b7000000-0000-0000-0000-0000000000b1','$C1','b7000000-0000-0000-0000-0000000000a1','b7000000-0000-0000-0000-000000000001',15) on conflict do nothing;
+       insert into invoices (id, clinic_id, created_at) values
+         ('b7000000-0000-0000-0000-0000000000c1','$C1','2026-09-15 17:34:20+00') on conflict do nothing;
+       insert into invoice_items (id, clinic_id, invoice_id, product_id, qty) values
+         ('b7000000-0000-0000-0000-0000000000d1','$C1','b7000000-0000-0000-0000-0000000000c1','b7000000-0000-0000-0000-000000000001',1) on conflict do nothing;
+       insert into audit_log (clinic_id, action, entity, entity_id, details, created_at) values
+         ('$C1','INSERT','products','b7000000-0000-0000-0000-000000000001','{\"stock\":15}','2026-09-15 09:55:34+00'),
+         ('$C1','UPDATE','products','b7000000-0000-0000-0000-000000000001','{\"__changed\":{\"stock\":[15,0]}}','2026-09-15 13:36:06+00'),
+         ('$C1','UPDATE','products','b7000000-0000-0000-0000-000000000001','{\"__changed\":{\"stock\":[0,15]}}','2026-09-15 13:36:06+00'),
+         ('$C1','UPDATE','purchases','b7000000-0000-0000-0000-0000000000a1','{\"__changed\":{\"total\":[1,2]}}','2026-09-15 13:36:06+00'),
+         ('$C1','UPDATE','products','b7000000-0000-0000-0000-000000000001','{\"__changed\":{\"stock\":[15,14]}}','2026-09-15 17:34:20+00'),
+         ('$C1','UPDATE','products','b7000000-0000-0000-0000-000000000001','{\"__changed\":{\"stock\":[14,0]}}','2026-09-16 09:22:25+00'),
+         ('$C1','UPDATE','products','b7000000-0000-0000-0000-000000000001','{\"__changed\":{\"stock\":[0,15]}}','2026-09-16 09:22:25+00'),
+         ('$C1','UPDATE','purchases','b7000000-0000-0000-0000-0000000000a1','{\"__changed\":{\"total\":[2,3]}}','2026-09-16 09:22:25+00');" >/dev/null 2>&1
+PM="select set_config('request.jwt.claim.sub','$C1',true)"
+chk "0207: الحركاتُ أربعُ خطواتٍ لا سبع (الخطوةُ الوسطى تُطوى)" \
+    "select count(*)::text from ($PM) s, product_movements('b7000000-0000-0000-0000-000000000001')" "4"
+chk "  والميلادُ يُسمّى «أوّل إدخال» لا شراءً" \
+    "select kind from ($PM) s, product_movements('b7000000-0000-0000-0000-000000000001') order by at limit 1" "open"
+chk "  والبيعُ يُسمّى بيعاً وبفرقٍ سالب" \
+    "select kind||':'||delta::text from ($PM) s, product_movements('b7000000-0000-0000-0000-000000000001') where at = '2026-09-15 17:34:20+00'" "sale:-1"
+chk "  **وتعديلُ الفاتورة يُسمّى تعديلَ فاتورةٍ لا «تعديلاً مجهولاً»**" \
+    "select kind from ($PM) s, product_movements('b7000000-0000-0000-0000-000000000001') where at = '2026-09-16 09:22:25+00'" "purchase_edit"
+chk "  **ويكشف القطعةَ المخترَعة: ١٤ ⇐ ١٥**" \
+    "select from_qty::text||'->'||to_qty::text from ($PM) s, product_movements('b7000000-0000-0000-0000-000000000001') where at = '2026-09-16 09:22:25+00'" "14->15"
+chk "  والصفرُ الوسطيُّ لا يُعرض أبداً (لم يوجد خارج المعاملة)" \
+    "select count(*)::text from ($PM) s, product_movements('b7000000-0000-0000-0000-000000000001') where to_qty = 0" "0"
+# **وما لا يُعرف يبقى مجهولاً**: تغييرٌ بلا فاتورةٍ تقابله زمنياً.
+$P -c "insert into audit_log (clinic_id, action, entity, entity_id, details, created_at) values
+         ('$C1','UPDATE','products','b7000000-0000-0000-0000-000000000001','{\"__changed\":{\"stock\":[15,9]}}','2026-09-18 11:00:00+00');" >/dev/null 2>&1
+chk "  وتغييرٌ بلا فاتورةٍ يُقال «تعديل» ولا يُخمَّن" \
+    "select kind from ($PM) s, product_movements('b7000000-0000-0000-0000-000000000001') where at = '2026-09-18 11:00:00+00'" "adjust"
+chk "  وعيادةٌ أخرى لا ترى حركاتِ مادّةٍ ليست لها" \
+    "select count(*)::text from (select set_config('request.jwt.claim.sub','$C2',true)) s, product_movements('b7000000-0000-0000-0000-000000000001')" "0"
 
 # ── 0206: الكنسُ شغلُ الجدولة وحدَها ─────────────────────────────────────
 # **يُقاس هنا قبل المنح الشامل بالأسفل**: الكتلةُ التالية تمنح `execute` على كلّ

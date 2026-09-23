@@ -5000,5 +5000,21 @@
     "oddBanner": "The last sample weight ({{n}} kg on day {{d}}) is outside the plausible range — the feed conversion and cost per kg above rest on it.",
     "trendWeight": "Weight by age",
     "trendDeaths": "Deaths per day"
+  },
+  "mv": {
+    "title": "Movements: {{name}}",
+    "now": "Stock today {{n}}",
+    "open": "First entry",
+    "purchase": "Purchase invoice",
+    "purchaseEdit": "Purchase invoice edited",
+    "sale": "Sale",
+    "return": "Return",
+    "adjust": "Manual edit or stocktake",
+    "open2": "Item movements",
+    "fromTo": "{{from}} → {{to}}",
+    "toOnly": "became {{to}}",
+    "none": "No recorded movements for this item",
+    "failed": "Could not load the movements",
+    "retention": "Stock movements are kept for a year — anything older is gone."
   }
 }

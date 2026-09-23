@@ -1,4 +1,5 @@
 import { memo, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { ProductMovementsDialog } from "@/components/inventory/ProductMovements";
 import { useTranslation } from "react-i18next";
 import { motion } from "framer-motion";
 import { getCached, setCached, patchCached, cachedAt } from "@/lib/swrCache";
@@ -8,7 +9,7 @@ import { patchRawList, patchSections, type FreshPatch } from "@/lib/freshSale";
 import { sellableRows } from "@/lib/sellable";
 import { findByCode, looksLikeShelfCode, twinsByName, nearCodeTwin, excelArtifact, hasArabicLetters, looksLayoutMangled, codeMatcher, codeRescue, keepOldCode } from "@/lib/productCodes";
 import { Dialog } from "@/components/ui/Dialog";
-import {
+import { History,
   Barcode, Package, Trash2, Search, Building2, Plus, ChevronLeft, ArrowRight, ArrowLeft,
   TrendingUp, AlertTriangle, CalendarClock, Pencil, PackagePlus, Boxes, Layers, Wallet, ShoppingBag, FolderTree, ScanBarcode,
   Check, ListPlus, Printer, Copy, Sparkles, FileSpreadsheet, Loader2, Scale, RefreshCw, RotateCcw, Camera, Lock, Clock,
@@ -653,6 +654,9 @@ const ProductRow = memo(function ProductRow({ p, companyName, sectionName, onEdi
   const exp = daysUntil(p.expiry_date);
   const expired = exp != null && exp < 0;
   const expiringSoon = exp != null && exp >= 0 && exp <= 30;
+  /* النافذةُ تسكن الصفَّ نفسَه: ثلاثةُ مواضعَ تعرض `ProductRow`، وتمريرُ حالةٍ
+   * لكلٍّ منها يكرّرها ثلاثاً. ولا تُركَّب إلا عند الفتح (`hist &&`). */
+  const [hist, setHist] = useState(false);
   // يُباع بالوزن: السعر لكل كيلو والمخزون بالكيلو.
   const byWeight = !!p.sold_by_weight;
   const perKg = t("pos.perKg", "/كغ");
@@ -702,6 +706,11 @@ const ProductRow = memo(function ProductRow({ p, companyName, sectionName, onEdi
       )}
       {/* التعديلُ والحذف يختفيان بوضع المدير — تعطيلٌ يترك زراً ميتاً يُضغط
           ويُشتكى منه، والإخفاءُ يقول «ما إلك هذا» بلا كلام. */}
+      {/* «ليش رصيدها هيچي؟» — يبقى ظاهراً بوضع المدير كذلك: قراءةٌ لا كتابة،
+          وهو بالضبط ما يحتاجه مَن يدقّق لا مَن يعدّل. */}
+      <button onClick={() => { playTap(); setHist(true); }} aria-label={t("mv.open2", "حركات المادة")} title={t("mv.open2", "حركات المادة")}
+        className="grid h-9 w-9 place-items-center rounded-full text-ink-subtle transition hover:bg-surface-2 hover:text-brand-600"><History size={16} /></button>
+      {hist && <ProductMovementsDialog product={p} open={hist} onClose={() => setHist(false)} />}
       {!locked && <button onClick={onEdit} aria-label={t("common.edit", "Edit")} className="grid h-9 w-9 place-items-center rounded-full text-ink-subtle transition hover:bg-brand-50 hover:text-brand-600"><Pencil size={16} /></button>}
       {!locked && <button onClick={onRemove} aria-label={t("common.delete", "Remove")} className="grid h-9 w-9 place-items-center rounded-full text-ink-subtle transition hover:bg-danger-50 hover:text-danger-600"><Trash2 size={16} /></button>}
     </motion.div>

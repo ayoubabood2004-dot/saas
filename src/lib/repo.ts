@@ -119,7 +119,7 @@ function trashCompany(db: DemoDB, row: Company, extra: { reason?: string | null;
 import { supabase } from "./supabase";
 import { outboxEnqueue, outboxEnqueueRpc, outboxDrop, isNetworkError } from "./outbox";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, AppointmentStatus, ClinicInfo, PublicStaff, DailyNote, TreatmentEntry, Admission, Branch, Reminder, Product, Company, CompanySection, Purchase, PurchaseItem, PurchasePayment, PurchaseDraftLine, PurchaseMeta, Courier, DeliveryOrder, PetMovement, DemoDB, Invoice, InvoiceItem, CheckoutItem, SaleMeta, Customer, DiscountType, PaymentMethod, PaymentSplit, WhatsAppMessage, AuditEntry, LoginEvent, PetNote, Expense, ExpenseMethod, ReturnMeta, RetailReturnResult, HealthMetric, ClinicVisit , Surgery, LabResult, LabDeviceLink, LabDeviceInbox, LabStatusValue, PetProblem, CareEntry, FeatureRequest, GeneratedBarcode, StoreProfile, StoreOrder, StoreOrderItem, StoreFrontInfo, StoreCatalogItem, SuggestedProduct, StoreTrackInfo, LibraryImage, Journey, JourneyEvent, JourneyKind, JourneyStage, JourneyPublicView, EditLine, PoultryFarm, PoultryHouse, PoultryCycle, PoultryDaily, PoultryUse, PoultryUseKind, PoultryCycleStats, PoultryConsumeResult } from "@/types";
+import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, AppointmentStatus, ClinicInfo, PublicStaff, DailyNote, TreatmentEntry, Admission, Branch, Reminder, Product, Company, CompanySection, Purchase, PurchaseItem, PurchasePayment, PurchaseDraftLine, PurchaseMeta, Courier, DeliveryOrder, PetMovement, DemoDB, Invoice, InvoiceItem, CheckoutItem, SaleMeta, Customer, DiscountType, PaymentMethod, PaymentSplit, WhatsAppMessage, AuditEntry, LoginEvent, PetNote, Expense, ExpenseMethod, ReturnMeta, RetailReturnResult, HealthMetric, ClinicVisit , Surgery, LabResult, LabDeviceLink, LabDeviceInbox, LabStatusValue, PetProblem, CareEntry, FeatureRequest, GeneratedBarcode, StoreProfile, StoreOrder, StoreOrderItem, StoreFrontInfo, StoreCatalogItem, SuggestedProduct, StoreTrackInfo, LibraryImage, Journey, JourneyEvent, JourneyKind, JourneyStage, JourneyPublicView, EditLine, PoultryFarm, PoultryHouse, PoultryCycle, PoultryDaily, PoultryUse, PoultryUseKind, PoultryCycleStats, PoultryConsumeResult, ProductMovement } from "@/types";
 import type { CompanyCharge, CompanyTwinGroup, DeletedCompany, DeletedCompanySection, DeletedCompanySectionNote } from "@/types";
 import type { DeletedProduct, CourierSettlement, ReceiptsDay, ReceiptsTotal, TopProductRow, StaffSalesRow, InvoiceSearch } from "@/types";
 import type { BarcodeAilment, BarcodeHealthRow } from "@/types";
@@ -3721,6 +3721,13 @@ const demoRepo = {
     return [...m.entries()].map(([k, n]) => { const [bucketAt, kind] = k.split("|"); return { bucket: bucketAt, kind, n }; })
       .sort((a, b) => a.bucket.localeCompare(b.bucket) || a.kind.localeCompare(b.kind));
   },
+  /** مرآةُ `product_movements` (0207). **منطقُها بوحدةٍ تُحمَّل عند النداء**:
+   *  `repo.ts` على مسار الإقلاع الحرج، وكلُّ سطرٍ يُضاف هنا يدفعه كلُّ فتحِ
+   *  تطبيقٍ بكلّ عيادة — وهذا كشفه `store-weight-guard` بـ٢٩٥ بايتاً. */
+  async productMovements(productId: string): Promise<ProductMovement[]> {
+    const { demoProductMovements } = await import("./demoMovements");
+    return demoProductMovements(loadDB(), demoAuditLoad(), productId);
+  },
   async activityPage(s: ActivityQuery): Promise<ActivityRow[]> {
     const nq = searchable(s.q ?? "");
     const rows = demoActivityRows(s.from, s.to)
@@ -6130,6 +6137,11 @@ const supabaseRepo: typeof demoRepo = {
     if (error) throw error;
     return ((data ?? []) as { bucket: string; kind: string; n: number }[]).map((r) => ({ bucket: r.bucket, kind: r.kind, n: Number(r.n) }));
   },
+  async productMovements(productId) {
+    /* **ترمي ولا ترجّع فارغة.** قائمةٌ ناقصةٌ عن خطأٍ تقلب المعنى: «ماكو حركات»
+     * تعني «ما صار شي» والحقيقةُ «ما وصلنا». والشاشةُ تعرض «أعد المحاولة». */
+    return listOf<ProductMovement>(await sbc().rpc("product_movements", { p_product: productId, p_limit: 200 }));
+  },
   async activityPage(s) {
     // صفحةٌ واحدة بحدّها — لا allPages عمداً: الفكرةُ ألّا يُنزَّل السجلُّ كلُّه.
     return listOf<ActivityRow>(await sbc().rpc("activity_page", {
@@ -6209,6 +6221,7 @@ const READ_ONLY_ALLOWED = new Set<string>([
   "listInvoicesTouching", "customerInvoices", "listInvoiceItemsFor", "listInvoicesByIds", "reportReceiptsDaily", "reportReceiptsTotal",
   "reportTopProducts", "reportStaff", "countInvoices", "searchInvoices", "countInvoicesMatching", "openDebts",
   "activitySummary", "activityPage", "activityActors",
+  "productMovements",
   // --- استعلامات مساعدة لا تكتب ---
   "checkStoreSlug", "slotTaken", "supportsBulkGroup", "supportsSupplierLedger",
   "adminListFeatureRequests", "systemHealth", "barcodeHealth",

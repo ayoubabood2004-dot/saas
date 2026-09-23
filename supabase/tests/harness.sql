@@ -82,6 +82,13 @@ create table if not exists appointments (id uuid primary key default gen_random_
 create table if not exists reminders (id uuid primary key default gen_random_uuid(), clinic_id uuid references clinics(id));
 create table if not exists purchases (id uuid primary key default gen_random_uuid());
 create table if not exists purchase_items (id uuid primary key default gen_random_uuid(), clinic_id uuid, purchase_id uuid references purchases(id));
+-- أعمدةٌ يحتاجها فحصُ `product_movements` (0207): الجدولان بالأساس أُنشئا
+-- بأقلّ ما يكفي موجةً أقدم، وهذه تُضاف بشكل الإنتاج لا بشكلٍ يُسهّل الفحص.
+alter table purchases      add column if not exists clinic_id uuid;
+alter table purchases      add column if not exists created_at timestamptz not null default now();
+alter table purchase_items add column if not exists product_id uuid references products(id) on delete set null;
+alter table purchase_items add column if not exists qty numeric(14,3);
+alter table staff          add column if not exists user_id uuid;
 create table if not exists staff_presence (id uuid primary key default gen_random_uuid(), user_id uuid references auth.users(id));
 create table if not exists surgeries (id uuid primary key default gen_random_uuid(), visit_id uuid references medical_visits(id));
 -- `on delete set null` كما بالإنتاج (0076:18): بلا القيد الصحيح كان القالبُ

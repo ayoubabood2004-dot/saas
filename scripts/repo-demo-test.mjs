@@ -210,6 +210,47 @@ console.log("\n▸ updatePurchase — مرآةُ 0205 (التعديلُ لا ي�
   check("  وتخفيضُ الكمية يُطرح فعلاً ولا ينزل تحت صفر", less?.stock === 0, `stock=${less?.stock}`);
 }
 
+console.log("\n▸ productMovements — مرآةُ 0207 (قصّةُ الإنتاج نفسُها)");
+{
+  /* «رمل جاك 20 لتر»، عيادةٌ حقيقية، ١٥–١٦ أيلول: وُلد بـ١٥، تعديلُ فاتورةٍ
+   * لا يغيّر شيئاً، بيعُ واحدة، ثمّ تعديلُ فاتورةٍ رفع الرصيد ١٤ ⇐ ١٥ —
+   * القطعةُ التي اخترعها الحصرُ قبل 0205. نفسُ قالب الحزمة حرفاً. */
+  seed([P("sand", "رملُ الفحص", "S-1", { stock: 15 })]);
+  const d = JSON.parse(mem.get(DB_KEY));
+  d.purchases = [{ id: "PU1", clinic_id: "c1", created_at: "2026-09-15T09:55:34.000Z" }];
+  d.purchaseItems = [{ id: "PI1", purchase_id: "PU1", product_id: "sand", qty: 15 }];
+  d.invoices = [{ id: "IV1", clinic_id: "c1", created_at: "2026-09-15T17:34:20.000Z" }];
+  d.invoiceItems = [{ id: "II1", invoice_id: "IV1", product_id: "sand", qty: 1 }];
+  mem.set(DB_KEY, JSON.stringify(d));
+  const au = [
+    ["a1", "INSERT", "products", "sand", { stock: 15 }, "2026-09-15T09:55:34.000Z"],
+    ["a2", "UPDATE", "products", "sand", { __changed: { stock: [15, 0] } }, "2026-09-15T13:36:06.000Z"],
+    ["a3", "UPDATE", "products", "sand", { __changed: { stock: [0, 15] } }, "2026-09-15T13:36:06.000Z"],
+    ["a4", "UPDATE", "purchases", "PU1", { __changed: { total: [1, 2] } }, "2026-09-15T13:36:06.000Z"],
+    ["a5", "UPDATE", "products", "sand", { __changed: { stock: [15, 14] } }, "2026-09-15T17:34:20.000Z"],
+    ["a6", "UPDATE", "products", "sand", { __changed: { stock: [14, 0] } }, "2026-09-16T09:22:25.000Z"],
+    ["a7", "UPDATE", "products", "sand", { __changed: { stock: [0, 15] } }, "2026-09-16T09:22:25.000Z"],
+    ["a8", "UPDATE", "purchases", "PU1", { __changed: { total: [2, 3] } }, "2026-09-16T09:22:25.000Z"],
+    ["a9", "UPDATE", "products", "sand", { __changed: { stock: [15, 9] } }, "2026-09-18T11:00:00.000Z"],
+  ].map(([id, action, entity, entity_id, details, created_at]) => ({ id, action, entity, entity_id, details, actor: null, created_at }));
+  // مفتاحُ السجلّ من مصدره لا مكتوبٌ بيد — مفتاحٌ مخمَّنٌ يجعل الفحصَ يمرّ على بذرةٍ غيرِ بذرتنا.
+  const AK = /const DEMO_AUDIT_KEY = "([^"]+)"/.exec(readFileSync("src/lib/repo.ts", "utf8"))?.[1];
+  check("مفتاحُ سجلّ الجهاز مقروءٌ من المصدر", !!AK);
+  mem.set(AK, JSON.stringify(au.slice().reverse()));
+  const mv = await repo.productMovements("sand");
+  const at = (t) => mv.find((m) => m.at.startsWith(t));
+  check("خمسُ خطواتٍ لا تسع (الخطوةُ الوسطى تُطوى)", mv.length === 5, `len=${mv.length}`);
+  check("  والميلادُ «أوّل إدخال»", at("2026-09-15T09:55")?.kind === "open");
+  check("  والبيعُ بيعٌ بفرقٍ سالب",
+    at("2026-09-15T17:34")?.kind === "sale" && at("2026-09-15T17:34")?.delta === -1);
+  check("  **وتعديلُ الفاتورة يُسمّى تعديلَ فاتورة**", at("2026-09-16T09:22")?.kind === "purchase_edit",
+    at("2026-09-16T09:22")?.kind);
+  check("  **ويكشف القطعةَ المخترَعة ١٤ ⇐ ١٥**",
+    at("2026-09-16T09:22")?.from_qty === 14 && at("2026-09-16T09:22")?.to_qty === 15);
+  check("  والصفرُ الوسطيُّ لا يُعرض", !mv.some((m) => m.to_qty === 0));
+  check("  وما بلا فاتورةٍ يبقى «تعديل»", at("2026-09-18T11:00")?.kind === "adjust");
+}
+
 console.log("\n▸ restoreProduct — مرآةُ 0165/0167 (الاستعادةُ لا تسرق رمزاً)");
 {
   // منتجٌ قائمٌ أخذ الرمزَ أثناء غياب المحذوف: أساسيّاً عنده، وإضافيّاً عند آخر.
