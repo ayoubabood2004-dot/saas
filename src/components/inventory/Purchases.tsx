@@ -12,7 +12,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Modal } from "@/components/Modal";
 import { PurchasePicker, type PickedLine } from "@/components/inventory/PurchasePicker";
 import { Combobox } from "@/components/Combobox";
-import { Button, Badge, useToast, Skeleton } from "@/components/ui";
+import { Button, Badge, useToast, Skeleton, Dialog } from "@/components/ui";
 import { cn, money, formatDate, formatNum, localISO, normalizeAr, normalizeCode, matchCode, searchable, groupKey, normGroupName, invNormName } from "@/lib/utils";
 import { sellPriceToSend, purchaseBlockers } from "@/lib/purchaseIntent";
 import { withTimeout, describeDbError } from "@/lib/errors";
@@ -517,7 +517,10 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
   const [notes, setNotes] = useState("");
   const [purchasedAt, setPurchasedAt] = useState(localISO());
   const [payMethod, setPayMethod] = useState<PaymentMethod>("cash");
-  const [amountPaid, setAmountPaid] = useState(""); // blank = paid in full
+  const [amountPaid, setAmountPaid] = useState("");
+  /* لا افتراضَ: المستخدمُ يقول إن كانت مدفوعةً كاملةً أو عليها دَين. `null`
+   * تعني «ما اختار بعد» فيُوقَف الحفظ — والخطأُ هنا كان باتّجاهٍ واحدٍ دائماً. */
+  const [paidMode, setPaidMode] = useState<"full" | "debt" | null>(null);
   const [lines, setLines] = useState<Line[]>([blankLine()]);
   const [scan, setScan] = useState("");
   const [busy, setBusy] = useState(false);
@@ -564,7 +567,7 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
     } else {
       setCompany(defaultCompanyName ?? "");
       setReference(""); setSupplierName(""); setSupplierPhone(""); setNotes(""); setPurchasedAt(localISO());
-      setPayMethod("cash"); setAmountPaid("");
+      setPayMethod("cash"); setAmountPaid(""); setPaidMode(null);
       setLines([blankLine()]);
     }
     setScan("");
@@ -809,6 +812,19 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
     return { id: co.id, created: isNew ? co : null, name: co.name };
   };
 
+  /* **الخروجُ يسأل قبل ما يضيّع.** كان Esc أو ضغطةٌ على الستارة تطوي الفاتورةَ
+   * كلَّها بلا كلمة، و`useEffect([open])` يصفّر السطورَ عند إعادة الفتح —
+   * فبضاعةٌ وصلت تُعاد كتابتُها من الذاكرة. ولا `window.confirm`: تأكيدُ
+   * المتصفّح يُقبل بلا قراءة، وهي حادثةٌ موثّقة بهذا المشروع. */
+  const [askLeave, setAskLeave] = useState(false);
+  const filledCount = lines.filter((l) => l.name.trim() || l.barcode.trim() || Number(l.qty) > 0).length;
+  const confirmClose = () => {
+    if (busy) return false;                 // حفظٌ جارٍ: لا يُقطع
+    if (filledCount === 0) return true;     // فاتورةٌ فارغة تُغلق بلا سؤال
+    setAskLeave(true);
+    return false;
+  };
+
   const save = async () => {
     if (busy) return;
     if (validLines.length === 0) { toast.error(t("purchase.needLine", "أضف صنفاً واحداً على الأقل بكمية أكبر من صفر")); return; }
@@ -827,6 +843,28 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
       );
       return;
     }
+    if (!editing && paidMode === null) {
+      playWarning();
+      toast.error(
+        t("purchase.needPaidMode", "قول شلون انحسبت الفاتورة"),
+        t("purchase.needPaidModeHow", "اختر «دفعناها كلّها» أو «عليها دَين» — الفراغ كان ينسجّل مدفوعة ويضيع دَين الشركة."),
+      );
+      return;
+    }
+
+    /* **رمزٌ معلّقٌ بصندوق المسح.** `scanAdd` تُنادى من Enter ومن زرّ «إضافة»
+     * وحدَهما — فمن يمسح ثمّ يضغط «حفظ» مباشرةً (والماسحُ بعضُه لا يرسل Enter)
+     * يفقد آخرَ مسحةٍ بلا كلمة. والحارسُ هنا لأن `save` هي آخرُ باب. */
+    if (scan.trim()) {
+      playWarning();
+      toast.toast({
+        tone: "warn",
+        title: t("purchase.pendingScan", "كتبت شي بصندوق المسح وما ضفته: {{code}}", { code: scan.trim() }),
+        description: t("purchase.pendingScanHow", "اضغط «إضافة» لو Enter لو امسحه، وإذا ما تريده امسح الصندوق."),
+      });
+      return;
+    }
+
     /* **منتجٌ جديدٌ بسعر بيعٍ صفر يُباع ببلاش.** فرعُ الإنشاء بالخادم يمرّر
      * السعرَ خامّاً بلا بوّابة `case when > 0` — فتفريغُ الخانة (وهو الصواب
      * للقائم) يصير خطراً على الجديد. والحكمُ يمرّ من `invNormName` نفسِها التي
@@ -895,7 +933,9 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
         company_id: co.id,
         company_name: co.name || null,
         reference: reference.trim() || null,
-        amount_paid: amountPaid.trim() === "" ? undefined : paidNum,
+        /* الجديدةُ ترسل رقماً **دائماً** (الاختيارُ صريح)، والتعديلُ يبقى على
+         * عقده: `undefined` تعني «أبقِ المدفوع كما هو». */
+        amount_paid: editing ? (amountPaid.trim() === "" ? undefined : paidNum) : (paidMode === "debt" ? paidNum : total),
         payment_method: payMethod,
         supplier_name: supplierName.trim() || null,
         supplier_phone: supplierPhone.trim() || null,
@@ -920,7 +960,8 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
   };
 
   return (
-    <Modal open={open} onClose={onClose} size="full" title={editing ? `${t("purchase.editTitle", "تعديل فاتورة شراء")} · ${purchaseNo(editing.purchase.id)}` : t("purchase.new", "فاتورة شراء")}>
+    <Modal open={open} onClose={onClose} size="full" confirmClose={confirmClose}
+      title={editing ? `${t("purchase.editTitle", "تعديل فاتورة شراء")} · ${purchaseNo(editing.purchase.id)}` : t("purchase.new", "فاتورة شراء")}>
       <div className="space-y-4">
         {/* Supplier + reference + date */}
         <div className="grid gap-3 sm:grid-cols-3">
@@ -1016,6 +1057,21 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
             onPick={addPickedLines}
           />
         )}
+
+        {/* الخروجُ يسأل — نافذةٌ حقيقيةٌ تقول العدد، لا تأكيدُ متصفّحٍ يُقبل بلا قراءة */}
+        <Dialog
+          open={askLeave}
+          onClose={() => setAskLeave(false)}
+          size="sm"
+          title={t("purchase.leaveTitle", "تطلع وتضيّع السطور؟")}
+          description={t("purchase.leaveBody", "بالفاتورة {{n}} سطر ما انحفظت.", { n: filledCount })}
+          footer={
+            <div className="flex flex-wrap justify-end gap-2">
+              <Button variant="secondary" onClick={() => setAskLeave(false)}>{t("purchase.leaveStay", "لا، ارجع")}</Button>
+              <Button variant="danger" onClick={() => { setAskLeave(false); onClose(); }}>{t("purchase.leaveGo", "إي، طلّعني")}</Button>
+            </div>
+          }
+        />
 
         {/* Lines */}
         <div className="space-y-2">
@@ -1220,8 +1276,41 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
             </div>
           </div>
           <div>
-            <label className="label flex items-center gap-1"><Wallet size={12} /> {t("purchase.amountPaid", "المدفوع للمورّد")} <span className="font-normal text-ink-subtle">{editing ? t("purchase.paidHintEdit", "(فارغ = يبقى المدفوع كما هو)") : t("purchase.paidHint", "(فارغ = مدفوع كامل)")}</span></label>
-            <input type="number" inputMode="numeric" min="0" step="1" className="input" value={amountPaid} onChange={(e) => setAmountPaid(e.target.value)} placeholder={money(editing ? (editing.purchase.amount_paid ?? total) : total)} />
+            {/* **الفراغُ كان يعني «مدفوعةٌ كاملة» بصمت** — وخطؤه باتّجاهٍ واحد
+              * دائماً: دَينُ العيادة يُبخَس، ودفترُ المورّد يقول «ما عليها شي».
+              * فصار سؤالاً صريحاً بدل افتراض. ووضعُ التعديل يبقى كما هو:
+              * الفاتورةُ لها مدفوعٌ مسجَّلٌ فعلاً، والفراغُ يعني «لا تغيّره». */}
+            <label className="label flex items-center gap-1"><Wallet size={12} /> {t("purchase.amountPaid", "المدفوع للمورّد")}
+              {editing && <span className="font-normal text-ink-subtle">{t("purchase.paidHintEdit", "(فارغ = يبقى المدفوع كما هو)")}</span>}
+            </label>
+            {editing ? (
+              <input type="number" inputMode="numeric" min="0" step="1" className="input" value={amountPaid} onChange={(e) => setAmountPaid(e.target.value)} placeholder={money(editing.purchase.amount_paid ?? total)} />
+            ) : (
+              <>
+                <div className="flex gap-1.5">
+                  <button type="button" onClick={() => { playTap(); setPaidMode("full"); setAmountPaid(""); }}
+                    className={cn("flex-1 rounded-xl px-2 py-2 text-xs font-bold transition", paidMode === "full" ? "bg-success-600 text-white shadow-soft" : "bg-surface-2 text-ink-muted hover:text-ink")}>
+                    {t("purchase.paidFull", "دفعناها كلّها")}
+                  </button>
+                  <button type="button" onClick={() => { playTap(); setPaidMode("debt"); }}
+                    className={cn("flex-1 rounded-xl px-2 py-2 text-xs font-bold transition", paidMode === "debt" ? "bg-warn-600 text-white shadow-soft" : "bg-surface-2 text-ink-muted hover:text-ink")}>
+                    {t("purchase.paidDebt", "عليها دَين")}
+                  </button>
+                </div>
+                {paidMode === "debt" && (
+                  <>
+                    <input type="number" inputMode="numeric" min="0" step="1" className="input mt-1.5" value={amountPaid}
+                      onChange={(e) => setAmountPaid(e.target.value)} placeholder={t("purchase.paidHowMuch", "شكَد دفعنا هسّه؟")} />
+                    <div className="mt-1 text-2xs font-bold text-warn-700 dark:text-warn-300">
+                      {t("purchase.paidRemains", "الباقي على العيادة: {{v}}", { v: money(Math.max(0, total - paidNum)) })}
+                    </div>
+                  </>
+                )}
+                {paidMode === "full" && total > 0 && (
+                  <div className="mt-1 text-2xs text-ink-subtle">{t("purchase.paidNone", "ما راح ينسجّل دَين لهذي الفاتورة")}</div>
+                )}
+              </>
+            )}
           </div>
           <div>
             <label className="label">{t("purchase.notes", "ملاحظات")}</label>

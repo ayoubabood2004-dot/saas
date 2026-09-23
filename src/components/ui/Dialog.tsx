@@ -1,9 +1,10 @@
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useId, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { overlayVariants, dialogVariants } from "@/lib/motion";
+import { pushModal, removeModal, isTopModal } from "@/lib/modalStack";
 
 export interface DialogProps {
   open: boolean;
@@ -21,16 +22,24 @@ export interface DialogProps {
 const widths = { sm: "max-w-sm", md: "max-w-lg", lg: "max-w-2xl", xl: "max-w-5xl" };
 
 export function Dialog({ open, onClose, title, description, children, footer, size = "md", hideClose }: DialogProps) {
+  /* نفسُ مكدّس `Modal`: نافذةُ تأكيدٍ تُفتح فوق نافذةِ عملٍ لازم تبلع Esc
+   * وحدَها، وإلا طوت الاثنتين — وهي بالضبط حالةُ «تطلع وتضيّع السطور؟». */
+  const id = useId();
+  const tryClose = () => { if (isTopModal(id)) onClose(); };
+
   useEffect(() => {
     if (!open) return;
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    document.addEventListener("keydown", onKey);
+    pushModal(id);
     document.body.style.overflow = "hidden";
-    return () => {
-      document.removeEventListener("keydown", onKey);
-      document.body.style.overflow = "";
-    };
-  }, [open, onClose]);
+    return () => { removeModal(id); document.body.style.overflow = ""; };
+  }, [open, id]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") tryClose(); };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  });
 
   return createPortal(
     <AnimatePresence>
@@ -42,7 +51,7 @@ export function Dialog({ open, onClose, title, description, children, footer, si
             initial="initial"
             animate="animate"
             exit="exit"
-            onClick={onClose}
+            onClick={tryClose}
           />
           <motion.div
             role="dialog"
@@ -65,7 +74,7 @@ export function Dialog({ open, onClose, title, description, children, footer, si
                 </div>
                 {!hideClose && (
                   <button
-                    onClick={onClose}
+                    onClick={tryClose}
                     className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-ink-subtle hover:bg-surface-2 hover:text-ink transition"
                     aria-label="Close"
                   >

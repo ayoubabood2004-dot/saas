@@ -400,7 +400,13 @@ console.log("▸ الدفعة ٦ — المعروضُ هو المحسوب");
    * بالتعديل. والشارةُ كانت تُشتقّ بدلالة الإنشاء وحدها فتكذب على دَينٍ قائم. */
   check("م٤: المدفوعُ بالتعديل يعود لقيمة الفاتورة لا للإجمالي",
     pur.includes("editing ? Math.max(0, Math.min(total, editing.purchase.amount_paid ?? total)) : total"));
-  check("  والقالبُ يعرض المدفوعَ الحاليّ", pur.includes("placeholder={money(editing ? (editing.purchase.amount_paid ?? total) : total)}"));
+  /* والدلالتان صارتا واحدة: مسارُ الإنشاء ما عاد فيه خانةٌ فراغُها يعني شيئاً —
+   * صار سؤالاً صريحاً («دفعناها كلّها» / «عليها دَين»)، فالفراغُ بقي بمعنىً
+   * واحدٍ بالتعديل وحده. الحارسُ يشدّ على ذلك بدل أن يشدّ على الشكل القديم. */
+  check("  والقالبُ يعرض المدفوعَ الحاليّ بالتعديل",
+    pur.includes("placeholder={money(editing.purchase.amount_paid ?? total)}"));
+  check("  وما عاد للفراغ دلالةٌ بالإنشاء — الاختيارُ صريح",
+    /paidMode === null/.test(pur) && /paidMode === "debt" \? paidNum : total/.test(pur));
 
   /* م٥: الحارسُ كان يفحص القفلَ وحدَه، و`canPos` يخفي الزرَّ لا الشاشة. */
   check("م٥: الحارسُ يرى الاستحقاق لا القفلَ وحده",

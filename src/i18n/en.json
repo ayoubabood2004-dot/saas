@@ -1280,7 +1280,20 @@
     "sellSame": "(unchanged)",
     "newZeroSell": "A new item with an empty selling price — if saved it would sell for nothing",
     "newNumericName": "The item name is a number, not a name — you will not find it by name later",
-    "blockerWhich": "Enter the {{what}} for: {{names}}"
+    "blockerWhich": "Enter the {{what}} for: {{names}}",
+    "needPaidMode": "Say how this invoice was settled",
+    "needPaidModeHow": "Choose “Paid in full” or “On credit” — a blank field used to record it as paid and lose the supplier debt.",
+    "pendingScan": "Something is still in the scan box and was not added: {{code}}",
+    "pendingScanHow": "Press Add or Enter, or scan it again — and clear the box if you do not want it.",
+    "leaveTitle": "Leave and lose these lines?",
+    "leaveBody": "This invoice has {{n}} unsaved lines.",
+    "leaveStay": "No, go back",
+    "leaveGo": "Yes, leave",
+    "paidFull": "Paid in full",
+    "paidDebt": "On credit",
+    "paidHowMuch": "How much was paid now?",
+    "paidRemains": "Still owed by the clinic: {{v}}",
+    "paidNone": "No debt will be recorded for this invoice"
   },
   "pos": {
     "scanRescuedPurchase": "{{name}} — matched via format {{code}}",

@@ -1,9 +1,10 @@
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useId, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { AnimatePresence, motion } from "framer-motion";
 import { overlayVariants, dialogVariants } from "@/lib/motion";
+import { pushModal, removeModal, isTopModal } from "@/lib/modalStack";
 
 /** Dialog width: default (max-w-lg), wide (max-w-3xl), or full (near-fullscreen workspace). */
 type ModalSize = "default" | "wide" | "full";
@@ -13,19 +14,32 @@ const SIZE_CLASS: Record<ModalSize, string> = {
   full: "sm:max-w-[96vw] sm:rounded-3xl xl:max-w-[1400px]",
 };
 
-export function Modal({ open, onClose, title, children, size = "default" }: { open: boolean; onClose: () => void; title: string; children: ReactNode; size?: ModalSize }) {
+export function Modal({ open, onClose, title, children, size = "default", confirmClose }: {
+  open: boolean; onClose: () => void; title: string; children: ReactNode; size?: ModalSize;
+  /** ترجع false فتُلغى محاولةُ الإغلاق (النافذةُ تسأل بنفسها). Esc والستارةُ وزرُّ X. */
+  confirmClose?: () => boolean;
+}) {
   const { t } = useTranslation();
+  const id = useId();
+  /* كلُّ مخارج الإغلاق تمرّ من هنا: لا يُغلَق إلا الأعلى، ولا يُغلَق بلا إذن. */
+  const tryClose = () => { if (!isTopModal(id)) return; if (confirmClose && !confirmClose()) return; onClose(); };
+
+  /* أثران لا واحد: الأوّلُ يملك مكانَ النافذة بالمكدّس ويعتمد على `open` وحدَه،
+   * فلا يتبدّل الترتيبُ مع كلّ رسم. والثاني يعيد ربطَ المستمع كلّما تبدّل
+   * `tryClose` — وهو رخيصٌ وصحيح، ويُغني عن مرجعٍ يُكتب أثناء الرسم. */
+  useEffect(() => {
+    if (!open) return;
+    pushModal(id);
+    document.body.style.overflow = "hidden";
+    return () => { removeModal(id); document.body.style.overflow = ""; };
+  }, [open, id]);
 
   useEffect(() => {
     if (!open) return;
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") tryClose(); };
     document.addEventListener("keydown", onKey);
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.removeEventListener("keydown", onKey);
-      document.body.style.overflow = "";
-    };
-  }, [open, onClose]);
+    return () => document.removeEventListener("keydown", onKey);
+  });
 
   return createPortal(
     <AnimatePresence>
@@ -37,7 +51,7 @@ export function Modal({ open, onClose, title, children, size = "default" }: { op
             initial="initial"
             animate="animate"
             exit="exit"
-            onClick={onClose}
+            onClick={tryClose}
           />
           <motion.div
             role="dialog"
@@ -52,7 +66,7 @@ export function Modal({ open, onClose, title, children, size = "default" }: { op
               <h2 className="font-display text-lg font-bold tracking-tighter2 text-ink">{title}</h2>
               <button
                 className="grid h-9 w-9 place-items-center rounded-full text-ink-subtle transition hover:bg-surface-2 hover:text-ink"
-                onClick={onClose}
+                onClick={tryClose}
                 aria-label={t("common.close")}
               >
                 <X size={20} />
