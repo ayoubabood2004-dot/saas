@@ -197,7 +197,11 @@ export function RetailSales() {
     // ط٥ (قرار المالك): والتابُ الظاهرُ يُسأل كلَّ ٥ دقائق — كاشيرٌ يحدّق بالشاشة لا «يرجع».
     pollMs: POLL_MS,
   });
-  const onBusyChange = useCallback((b: boolean) => { busyRef.current = b; }, []);
+  /* والتبويبُ يُقفَل والدفعُ بالطريق: تبديلُه يُزيل شاشةَ البيع (AnimatePresence) قبل أن
+   * يعود الجواب، فتقرأ الشاشةُ الجديدة المسودّةَ بمرجعها المعلَّق — ثم يكمل الطلبُ القديم
+   * ويمسحها، وتعيد مزامنةُ الرصيد كتابتَها سلّةً «حيّة» بمرجعٍ مستعمَل. */
+  const [saleBusy, setSaleBusy] = useState(false);
+  const onBusyChange = useCallback((b: boolean) => { busyRef.current = b; setSaleBusy(b); }, []);
 
   /** التحديثُ بالمكان — من الشريط أو من زرّ رسالة «ما وصلنا الخادم». */
   const refreshNow = useCallback(async () => {
@@ -279,8 +283,8 @@ export function RetailSales() {
 
       <div className={cn("flex gap-1 rounded-2xl border border-line bg-surface-1 p-1", compactChrome ? "mb-2.5" : "mb-4")}>
         {TABS.map(({ id, label, icon: Icon }) => (
-          <button key={id} onClick={() => { playTap(); setTab(id); }}
-            className={cn("flex flex-1 items-center justify-center gap-2 rounded-xl px-3 text-sm font-semibold transition", compactChrome ? "py-1.5" : "py-2.5",
+          <button key={id} onClick={() => { playTap(); setTab(id); }} disabled={saleBusy && id !== tab} data-tablocked={saleBusy && id !== tab ? "" : undefined}
+            className={cn("flex flex-1 items-center justify-center gap-2 rounded-xl px-3 text-sm font-semibold transition disabled:cursor-wait disabled:opacity-40", compactChrome ? "py-1.5" : "py-2.5",
               tab === id ? "bg-brand-600 text-white shadow-soft" : "text-ink-muted hover:bg-surface-2 hover:text-ink")}>
             <Icon size={16} /> {label}
           </button>

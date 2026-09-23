@@ -39,6 +39,7 @@ import { sharedAsk } from "@/lib/freshness";
 import { askFresh, freshVerdict, needsServerCheck, addRoom, type FreshAnswer, type FreshPatch } from "@/lib/freshSale";
 import { sellableRow } from "@/lib/sellable";
 import { customerBoundLines, cartAfterClearCustomer } from "@/lib/saleCustomer";
+import { draftOnMount } from "@/lib/retailBridge";
 import { splitCustomerField } from "@/lib/customerName";
 import { dueOf, paidOf } from "@/lib/debt";
 import { withTimeout, describeDbError, isNetworkError, isTimeoutError } from "@/lib/errors";
@@ -554,7 +555,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
    * وجسرُ المريض يُتخطّى **مرّةً واحدة** (أوّلَ نزولٍ له): بعدها تُقرأ المسودّةُ كغيرها.
    * كان الشرطُ `prefill ? null : …`، وتبديلُ التبويب يُعيد التركيب والجسرُ ما زال
    * بيد الأب — فتبدأ السلّةُ فارغةً وتُكتب المسودّةُ فارغةً فوق بيعةٍ نصفِ مكتملة. */
-  const [draft0] = useState(() => (prefill && !prefillApplied ? null : loadSaleDraft(draftScope)));
+  const [draft0] = useState(() => draftOnMount(loadSaleDraft(draftScope), !!prefill && !prefillApplied));
 
   const [cart, setCart] = useState<Line[]>(draft0?.cart ?? []);
   /* السلّةُ الحيّة لمن يحسب بين رسمين. مسحتان على جوابٍ واحدٍ من الخادم (`sharedAsk`)
@@ -1249,6 +1250,15 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
   // customer, surface the pet context, and focus the scan field for a zero-click flow.
   useEffect(() => {
     if (!prefill || prefillApplied) return;
+    if (saleRefRef.current) {
+      // دفعةٌ معلَّقة بالمسودّة (انظر draft0): لا يهبط فوقها زبونٌ آخر، ولا يُختم تحليلُه
+      // «مفوتَراً» ببيعةٍ ليست له.
+      labIdRef.current = null;
+      onPrefillApplied?.();
+      playWarning();
+      toast.error(t("retail.payPending", "آخر دفعة لهذي السلّة ما تأكّدت: اضغط «إتمام البيع» مرّة ثانية (ما تنسجّل مرّتين)، أو شوف الفواتير قبل ما تصفّر"));
+      return;
+    }
     labIdRef.current = prefill.labId ?? null;
     if (prefill.name) setName(prefill.name);
     if (prefill.phone) setPhone(prefill.phone);
@@ -1606,31 +1616,20 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
    * يعيد ختمَه). فهنا: الزبونُ وحدَه يروح — والسطورُ التي **تُكتب بسجلّ حيوانه**
    * تُرفع ويُقال اسمُها، فلا يهبط لقاحٌ بسجلّ حيوانٍ اشتراه غيرُه. */
   const boundLines = customerBoundLines(cart);
-  const [custClearBusy, setCustClearBusy] = useState(false);
-  const clearCustomerNow = async () => {
-    /* **مرجعٌ معلَّق** = محاولةُ دفعٍ لهذا الزبون ماتت بمهلة، ولا يُعرف: انسجلت أم لا.
-     * إبقاؤه للزبون التالي يجعل `retail_checkout` يرجّع فاتورةَ الأوّل (المرجعُ نفسُه):
-     * فلوسُ الثاني تُقبض ولا تُسجَّل. وتجديدُه أعمى يترك فاتورةَ الأوّل إن انسجلت بلا
-     * أن يعرف أحد. فيُسأل الخادمُ أوّلاً، والجوابُ يُقال. والإرجاعُ الخالص يُستثنى:
-     * إعادتُه بمرجعه هي ما يمنع ردَّ البضاعة مرّتين، واسمُ الزبون عليه وصفٌ لا غير. */
-    const pending = saleRefRef.current;
-    let prior: Invoice | null = null;
-    if (pending && !pureReturn) {
-      setCustClearBusy(true);
-      try {
-        prior = await withTimeout(repo.findInvoiceByRef(pending), 8000);
-      } catch (e) {
-        playWarning();
-        toast.error(
-          t("retail.custClearUnsure", "ما كدرنا نتأكد إذا آخر دفعة لهذا الزبون انسجلت — تأكّد من النت وجرّب مرّة ثانية. ما انمسح شي"),
-          e instanceof Error ? e.message : undefined,
-        );
-        return;
-      } finally {
-        setCustClearBusy(false);
-      }
-      saleRefRef.current = null;   // زبونٌ آخر ⇒ بيعةٌ أخرى ⇒ مرجعٌ جديد
-      setSaleRefSaved(null);
+  /* **دفعةٌ معلَّقة** (مرجعٌ بلا `done`) = محاولةُ دفعٍ ماتت بمهلة ولا يُعرف مصيرُها. تسليمُها
+   * لزبونٍ آخر خطأٌ في الاتّجاهين: إبقاءُ المرجع يجعل `retail_checkout` يرجّع فاتورةَ الأوّل
+   * لبيعة الثاني (فلوسٌ تُقبض ولا تُسجَّل)، وتجديدُه يترك فاتورةَ الأوّل إن انسجلت بلا أن
+   * يعرف أحد. وسؤالُ الخادم لا يحسمها: المحاولةُ قد تكون بالطريق بعدُ، والشاشةُ تبقى حيّةً
+   * أثناء السؤال (جرّبناه فأمسكت المراجعةُ تسعَ ثغراتٍ فيه). فالزرُّ **يرفض ويقول السبب**،
+   * والطبيبُ يحسمها بـ«إتمام البيع» (لا تُسجَّل مرّتين) أو بالفواتير ثم التصفير. والإرجاعُ
+   * الخالص يُستثنى: اسمُ الزبون عليه وصفٌ، وإعادتُه بمرجعه هي ما يمنع ردَّ البضاعة مرّتين. */
+  const payPending = !!saleRefSaved && !done && !pureReturn;
+  const clearCustomerNow = () => {
+    if (payPending || busy) {
+      playWarning();
+      setCustClearAsk(false);
+      toast.error(t("retail.payPending", "آخر دفعة لهذي السلّة ما تأكّدت: اضغط «إتمام البيع» مرّة ثانية (ما تنسجّل مرّتين)، أو شوف الفواتير قبل ما تصفّر"));
+      return;
     }
     setName(""); setPhone(""); setSalePets([]); setActivePetIdx(0);
     setCustMatches([]); setCustOpen(false); setPetPickOpen(false); setPetPickQ("");
@@ -1645,20 +1644,13 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
     playSuccess();
     toast.success(
       t("retail.custCleared", "انمسحت معلومات الزبون — والسلّة مثل ما هي"),
-      dropped > 0 ? t("retail.custClearedDropped", "وانرفعت {{n}} سطراً كانت تنكتب بسجلّ حيوانه", { n: formatNum(dropped) }) : undefined,
+      dropped > 0 ? t("retail.custClearedDropped", "وانرفعت {{n}} سطراً مربوطة بحيوانه", { n: formatNum(dropped) }) : undefined,
     );
-    if (prior) {
-      toast.error(t("retail.custClearPriorSaved", "آخر محاولة دفع انسجلت فعلاً ({{no}} باسم {{name}}) — إذا الزبون ما اشترى، رجّعها من الفواتير", {
-        no: invoiceNo(prior.id),
-        name: prior.customer_name?.trim() || t("rpt.walkIn", "عميل نقدي"),
-      }));
-    }
   };
   const askClearCustomer = () => {
     playTap();
-    if (custClearBusy) return;
-    if (boundLines.length > 0) { setCustClearAsk(true); return; }
-    void clearCustomerNow();
+    if (boundLines.length > 0 && !payPending && !busy) { setCustClearAsk(true); return; }
+    clearCustomerNow();
   };
 
   // ---- "+ حيوان آخر" — attach another of the clinic's patients to this sale ----
@@ -2762,7 +2754,6 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
               <button
                 data-custclear type="button"
                 onClick={askClearCustomer}
-                disabled={custClearBusy}
                 title={t("retail.custClear", "امسح الزبون وخلّي السلّة")}
                 aria-label={t("retail.custClear", "امسح الزبون وخلّي السلّة")}
                 className={cn("grid place-items-center rounded-xl bg-surface-2 text-ink-muted transition hover:bg-warn-50 hover:text-warn-700 dark:hover:bg-warn-500/15 dark:hover:text-warn-200", posV2 ? "h-10 w-10" : "h-8 w-8")}
@@ -3525,6 +3516,13 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
         <p className="text-sm text-ink-muted">
           {t("retail.resetHint", "تنمسح السلة واسم الزبون وهاتفه والحيوان والملاحظة والمسودة المحفوظة على هذا الجهاز. ما ينحفظ شي بالفواتير.")}
         </p>
+        {/* «ما ينحفظ شي بالفواتير» لا يصدق على دفعةٍ معلَّقة: قد تكون انسجلت. والتصفيرُ
+            يجدّد مرجعَها، فلا يعيدها أحدٌ بعده — فتُقال قبل الضغط. */}
+        {payPending && (
+          <p data-resetpending className="mt-2 text-sm font-semibold text-warn-700 dark:text-warn-200">
+            {t("retail.payPending", "آخر دفعة لهذي السلّة ما تأكّدت: اضغط «إتمام البيع» مرّة ثانية (ما تنسجّل مرّتين)، أو شوف الفواتير قبل ما تصفّر")}
+          </p>
+        )}
       </Dialog>
 
       {/* «امسح الزبون وخلّي السلّة» — السطورُ التي تُكتب بسجلّ حيوانه تُقال بأسمائها
@@ -3532,11 +3530,11 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
       <Dialog open={custClearAsk} onClose={() => setCustClearAsk(false)} title={t("retail.custClearTitle", "امسح معلومات الزبون؟")} size="sm"
         footer={<>
           <Button variant="ghost" onClick={() => { playTap(); setCustClearAsk(false); }}>{t("common.cancel", "إلغاء")}</Button>
-          <Button variant="danger" data-custcleargo leftIcon={<UserX size={16} />} loading={custClearBusy} onClick={() => void clearCustomerNow()}>{t("retail.custClearGo", "امسح الزبون وارفعها")}</Button>
+          <Button variant="danger" data-custcleargo leftIcon={<UserX size={16} />} onClick={clearCustomerNow}>{t("retail.custClearGo", "امسح الزبون وارفعها")}</Button>
         </>}>
         <div className="space-y-2">
           <p className="text-sm text-ink-muted">
-            {t("retail.custClearHint", "بقية السلّة تبقى مثل ما هي. بس هذي السطور مربوطة بحيوان الزبون وتنكتب بسجلّه عند الإتمام — تنرفع من السلّة:")}
+            {t("retail.custClearHint", "بقية السلّة تبقى مثل ما هي. بس هذي السطور مربوطة بحيوان الزبون — تنرفع من السلّة:")}
           </p>
           <ul className="space-y-1">
             {boundLines.map((l) => (

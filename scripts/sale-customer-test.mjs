@@ -82,7 +82,7 @@ if (M) {
 
 /* ── التوصيلُ بالشاشة: ما يُمسح، وما لا يُمسّ ──────────────────────────────── */
 console.log("▸ الشاشةُ: الزبونُ يروح، والسلّةُ والمرجعُ والتوصيلُ المعلَّق يبقون");
-const clearAt = SB.indexOf("const clearCustomerNow = async () => {");
+const clearAt = SB.indexOf("const clearCustomerNow = () => {");
 const clearFn = clearAt < 0 ? "" : SB.slice(clearAt, SB.indexOf("const askClearCustomer"));
 check("زرٌّ صغيرٌ للزبون وحده (data-custclear)", /data-custclear type="button"/.test(SB) && /retail\.custClear"/.test(SB));
 check("  يظهر حين يكون هناك زبونٌ يُمسح", /\{\(!!name\.trim\(\) \|\| !!phone\.trim\(\) \|\| salePets\.length > 0\) && \(/.test(SB));
@@ -92,35 +92,34 @@ check("المسحُ يشمل الاسمَ والهاتفَ والحيوانات�
 check("  ويرفع السطورَ التابعةَ بالوحدة المفحوصة", /setCart\(\(c\) => cartAfterClearCustomer\(c\)\)/.test(clearFn));
 /* ما لا يُمسّ: السلّةُ لا تُفرَّغ، وطلباتُ التوصيل المعلَّقة ليست من هذه البيعة. */
 check("ولا تُفرَّغ السلّة", !/setCart\(\[\]\)/.test(clearFn));
-/* والمرجعُ المعلَّق: كان «لا يُجدَّد أبداً» — فبيعةُ الزبون التالي تحمل مرجعَ محاولةٍ
- * ماتت بمهلة، و`retail_checkout` يرجّع فاتورةَ الأوّل إن انسجلت: فلوسُ الثاني تُقبض
- * ولا تُسجَّل (أمسكتها المراجعة). العقدُ الآن: يُسأل الخادم، ثم يُجدَّد — والإرجاعُ
- * الخالص يُستثنى لأن إعادتَه بمرجعه هي ما يمنع ردَّ البضاعة مرّتين. */
-const pendAt = clearFn.indexOf("if (pending && !pureReturn) {");
-const pendBlock = pendAt < 0 ? "" : clearFn.slice(pendAt, clearFn.indexOf("setName(\"\")"));
-check("  المرجعُ المعلَّق يُسأل عنه الخادمُ قبل أن يُسلَّم لزبونٍ آخر",
-  /const pending = saleRefRef\.current;/.test(clearFn) && /repo\.findInvoiceByRef\(pending\)/.test(pendBlock));
-check("    وفشلُ السؤال يوقف المسحَ كلَّه (لا يُمسح شيءٌ على جوابٍ مجهول)",
-  /catch \(e\) \{[\s\S]*?retail\.custClearUnsure[\s\S]*?return;\s*\}/.test(pendBlock));
-check("    ثم يُجدَّد: زبونٌ آخر ⇒ بيعةٌ أخرى ⇒ مرجعٌ آخر",
-  /saleRefRef\.current = null;/.test(pendBlock) && /setSaleRefSaved\(null\);/.test(pendBlock)
-  && pendBlock.indexOf("findInvoiceByRef") < pendBlock.indexOf("saleRefRef.current = null;"));
-check("    وإن كانت المحاولةُ قد انسجلت يُقال رقمُها — لا تبقى فاتورةٌ لا يعرفها أحد",
-  /if \(prior\) \{[\s\S]*?retail\.custClearPriorSaved[\s\S]*?invoiceNo\(prior\.id\)/.test(clearFn));
-check("    والإرجاعُ الخالص يحتفظ بمرجعه (إعادتُه لا تردّ البضاعةَ مرّتين)", pendAt >= 0);
-check("    والزرُّ معطَّلٌ أثناء السؤال (لا سؤالان على ضغطتين)",
-  /disabled=\{custClearBusy\}/.test(SB) && /loading=\{custClearBusy\}/.test(SB));
-
-/* ── السؤالُ بالريبو: قراءةٌ تُسمَع ─────────────────────────────────────────── */
-console.log("▸ findInvoiceByRef — «ما انسجلت» جوابٌ، وفشلُ الشبكة ليس «ما انسجلت»");
-const REPO = read("src/lib/repo.ts");
-const cloudFind = REPO.slice(REPO.indexOf("async findInvoiceByRef(ref) {"), REPO.indexOf("async findInvoiceByRef(ref) {") + 500);
-check("الوضعُ التجريبيّ يطابق الخادم (نفسُ المرجع ⇒ نفسُ الفاتورة)",
-  /async findInvoiceByRef\(ref: string\): Promise<Invoice \| null> \{[\s\S]{0,200}?\.find\(\(v\) => v\.client_ref === r\)/.test(REPO));
-check("والسحابيُّ يرمي على الخطأ (row) لا يبتلعه (maybe)",
-  /row<Invoice>\(await sbc\(\)\.from\("invoices"\)\.select\("\*"\)\.eq\("client_ref", r\)\.maybeSingle\(\)\)/.test(cloudFind)
-  && !/maybe<Invoice>/.test(cloudFind));
-check("  ومسموحٌ باشتراكٍ منتهٍ (قراءةٌ لا كتابة)", /"findInvoiceByRef"/.test(REPO.slice(REPO.indexOf("const READ_ONLY_ALLOWED"))));
+check("  ولا تُمسّ طلباتُ التوصيل المعلَّقة", !/dlvFailed/.test(clearFn));
+check("  ولا يُمسّ وضعُ الراجع ولا المضاعِف", !/setRetMode|setMult\(/.test(clearFn));
+check("والسؤالُ يسبق الرفع حين يكون هناك ما يُرفع (ولا دفعةَ معلَّقة)",
+  /if \(boundLines\.length > 0 && !payPending && !busy\) \{ setCustClearAsk\(true\); return; \}/.test(SB) && /data-custcleargo/.test(SB));
+check("  والنافذةُ تسمّي كلَّ سطرٍ يُرفع", /boundLines\.map\(\(l\) => \(/.test(SB) && /retail\.custClearHint/.test(SB));
+/* والدفعةُ المعلَّقة: كان المرجعُ «لا يُجدَّد أبداً» — فبيعةُ الزبون التالي تحمل مرجعَ
+ * محاولةٍ ماتت بمهلة، و`retail_checkout` يرجّع فاتورةَ الأوّل إن انسجلت: فلوسُ الثاني
+ * تُقبض ولا تُسجَّل. ثم جُرّب «اسأل الخادمَ وجدّد» فأمسكت المراجعةُ فيه تسعَ ثغرات: الشاشةُ
+ * حيّةٌ ثماني ثوانٍ، و«إلغاء» لا يُلغي، والمحاولةُ قد تكون بالطريق بعد جوابِ «ما انسجلت».
+ * العقدُ الآن: الزرُّ **لا يلمس المرجعَ أبداً**، ويرفض والدفعةُ معلَّقة ويقول السبب. */
+check("  الزرُّ لا يلمس مرجعَ البيعة أبداً (لا إبقاءَ لغيره ولا تجديدَ أعمى)",
+  clearFn !== "" && !/saleRefRef|setSaleRefSaved|findInvoiceByRef/.test(clearFn));
+check("  والدفعةُ المعلَّقة: مرجعٌ محفوظ بلا إتمام، والإرجاعُ الخالص مستثنى",
+  /const payPending = !!saleRefSaved && !done && !pureReturn;/.test(SB));
+check("    فيرفض قبل أن يمسح شيئاً ويقول السبب",
+  /^const clearCustomerNow = \(\) => \{\s*if \(payPending \|\| busy\) \{[\s\S]*?retail\.payPending[\s\S]*?return;\s*\}/.test(clearFn)
+  && clearFn.indexOf("retail.payPending") < clearFn.indexOf("setName(\"\")"));
+check("    ولا نافذةَ تُفتح عليها (الرفضُ يُقال فوراً)",
+  /if \(boundLines\.length > 0 && !payPending && !busy\) \{ setCustClearAsk\(true\); return; \}/.test(SB));
+check("    ولا سؤالَ خادمٍ غير متزامن بقي (مصدرُ الثغرات التسع)",
+  !/const clearCustomerNow = async/.test(SB) && !/custClearBusy/.test(SB)
+  && !/findInvoiceByRef/.test(read("src/lib/repo.ts")));
+check("  ونافذةُ التصفير تقولها قبل الضغط («ما ينحفظ شي بالفواتير» لا يصدق عليها)",
+  /\{payPending && \([\s\S]{0,200}?data-resetpending[\s\S]{0,200}?retail\.payPending/.test(SB));
+check("  والتبويبُ مقفولٌ والدفعُ بالطريق (وإلا أُزيلت الشاشةُ قبل الجواب)",
+  /const \[saleBusy, setSaleBusy\] = useState\(false\);/.test(RS)
+  && /const onBusyChange = useCallback\(\(b: boolean\) => \{ busyRef\.current = b; setSaleBusy\(b\); \}, \[\]\);/.test(RS)
+  && /disabled=\{saleBusy && id !== tab\}/.test(RS));
 
 /* ── بيعةٌ أُتمّت ليست مسودّة (قائمٌ على main قبل الزرّ، والزرُّ مدّه لجسر المريض) ─ */
 console.log("▸ المسودّةُ لا تحفظ بيعةً أُتمّت");
@@ -163,6 +162,15 @@ if (B) {
   check("  ورجوعُ السجلّ يحمل المريض", !!full && full.returnPet?.id === "p1" && full.returnPet?.name === "Luna");
   check("  والنوعُ المعبوثُ به لا يُصبّ", q("pet=x&species=dragon")?.prefill.species === undefined);
   check("  وبلا معرّف مريضٍ لا رجوعَ لسجلّ", q("customer=a")?.returnPet === null);
+
+  /* بأيّ مسودّةٍ تبدأ الشاشة — جدولُ القرار كلُّه سلوكاً. */
+  const other = { cart: ["لقاح لونا"], clientRef: null };
+  const pend = { cart: ["سلّة دفعتُها ماتت بمهلة"], clientRef: "s-abc" };
+  const D = typeof B.draftOnMount === "function" ? B.draftOnMount : () => "غائبة";
+  check("draftOnMount: جسرٌ جديد فوق سلّة زبونٍ آخر ⇒ بيعةٌ نظيفة (لا خلط)", D(other, true) === null);
+  check("  وجسرٌ جديد فوق دفعةٍ معلَّقة ⇒ تبقى بمرجعها (إعادةُ الدفع لا تسجّل مرّتين)", D(pend, true) === pend);
+  check("  وبلا جسرٍ جديد ⇒ المحفوظةُ كما هي (بيعٌ عابر، أو إعادةُ تركيب)", D(other, false) === other && D(pend, false) === pend);
+  check("  ولا محفوظ ⇒ لا شيء", D(null, true) === null && D(null, false) === null);
 }
 check("الأبُ يقرأ الجسرَ بأوّل رسم (لا بأثرٍ بعده)",
   /const bridge0 = useRef\(bridgeFromParams\(params\)\);/.test(RS)
@@ -170,18 +178,15 @@ check("الأبُ يقرأ الجسرَ بأوّل رسم (لا بأثرٍ بع�
   && !/useState<RetailPrefill \| null>\(null\)/.test(RS));
 check("  والأثرُ ينظّف الرابطَ ولا يعيد ختمَ ما أخذه أوّلُ رسم",
   /if \(seededKey\.current === params\.toString\(\)\) \{[\s\S]*?setParams\(\{\}, \{ replace: true \}\);\s*return;/.test(RS));
-check("  ولا تُمسّ طلباتُ التوصيل المعلَّقة", !/dlvFailed/.test(clearFn));
-check("  ولا يُمسّ وضعُ الراجع ولا المضاعِف", !/setRetMode|setMult\(/.test(clearFn));
-check("والسؤالُ يسبق الرفع حين يكون هناك ما يُرفع",
-  /if \(boundLines\.length > 0\) \{ setCustClearAsk\(true\); return; \}/.test(SB) && /data-custcleargo/.test(SB));
-check("  والنافذةُ تسمّي كلَّ سطرٍ يُرفع", /boundLines\.map\(\(l\) => \(/.test(SB) && /retail\.custClearHint/.test(SB));
 
 /* ── الجسرُ ينزل مرّةً — وإلا رجع الزبونُ وضاعت السلّة ─────────────────────── */
 console.log("▸ جسرُ المريض ينزل مرّةً واحدة (والمسودّةُ بعدها)");
 check("الشاشةُ تسأل الأبَ: هل نزل؟", /prefillApplied = false, onPrefillApplied, onCustomerCleared/.test(SB)
   && /if \(!prefill \|\| prefillApplied\) return;/.test(SB) && /onPrefillApplied\?\.\(\);/.test(SB));
-check("  والمسودّةُ تُقرأ بعد نزوله (لا تُتخطّى إلى الأبد)",
-  /useState\(\(\) => \(prefill && !prefillApplied \? null : loadSaleDraft\(draftScope\)\)\)/.test(SB));
+check("  والمسودّةُ تُقرأ بعد نزوله (لا تُتخطّى إلى الأبد) — بالقاعدة المفحوصة سلوكاً أعلاه",
+  /useState\(\(\) => draftOnMount\(loadSaleDraft\(draftScope\), !!prefill && !prefillApplied\)\)/.test(SB));
+check("  وجسرٌ على دفعةٍ معلَّقة لا يهبط: يُقال، ولا يُختم تحليلُه ببيعةٍ ليست له",
+  /if \(!prefill \|\| prefillApplied\) return;\s*if \(saleRefRef\.current\) \{[\s\S]{0,300}?labIdRef\.current = null;[\s\S]{0,200}?retail\.payPending[\s\S]{0,300}?return;\s*\}/.test(SB));
 check("والأبُ يحفظ الحالةَ (تنجو من إعادة التركيب)", /const \[prefillApplied, setPrefillApplied\] = useState\(false\);/.test(RS)
   && /onPrefillApplied=\{\(\) => setPrefillApplied\(true\)\}/.test(RS));
 check("  ومسحُ الزبون يرمي الجسرَ فلا يعود بتبويبٍ ولا بتحديث",
@@ -197,7 +202,7 @@ check("وختمُ «التحليل مفوتَر» من مرجعٍ يُمسح م�
 
 /* ── الترجمة: كلُّ عربيةٍ معروضة بمفتاحٍ بالملفّين ─────────────────────────── */
 console.log("▸ الترجمة");
-for (const k of ["custClear", "custClearTitle", "custClearHint", "custClearGo", "custCleared", "custClearedDropped", "custClearUnsure", "custClearPriorSaved"]) {
+for (const k of ["custClear", "custClearTitle", "custClearHint", "custClearGo", "custCleared", "custClearedDropped", "payPending"]) {
   check(`  مفتاحُ retail.${k} بالملفّين`, !!en?.retail?.[k] && !!ar?.retail?.[k]);
 }
 

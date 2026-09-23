@@ -23,6 +23,16 @@ export interface BridgePrefill {
 
 const SPECIES = new Set<string>(["dog", "cat", "horse", "cow", "bird", "rabbit", "other"]);
 
+/** بأيّ مسودّةٍ تبدأ شاشةُ البيع؟
+ *  - بلا جسرٍ جديد (بيعٌ عابر، أو جسرٌ نزل سلفاً ثم أُعيد تركيبُ الشاشة): المحفوظةُ كما هي.
+ *  - جسرٌ جديد: بيعةٌ نظيفة لمريضه — لا تهبط على سلّة زبونٍ آخر.
+ *  - **إلا فوق دفعةٍ معلَّقة** (مسودّةٌ تحمل مرجعَ محاولةٍ لم تتأكّد): رميُها يرمي مرجعَها،
+ *    فإعادةُ الدفع بعدها تسجّل مرّةً ثانيةً ما قد يكون انسجل (0135). فتبقى، والجسرُ لا يهبط. */
+export function draftOnMount<T extends { clientRef?: string | null }>(saved: T | null, freshBridge: boolean): T | null {
+  if (freshBridge && !saved?.clientRef) return null;
+  return saved;
+}
+
 /** الجسرُ من الرابط، أو `null` إن لم يحمل الرابطُ زبوناً ولا مريضاً ولا خدمة.
  *  والنوعُ يُطابَق بالقائمة المعروفة — رابطٌ قديمٌ أو معبوثٌ به لا يُصبّ بلا فحص. */
 export function bridgeFromParams(params: URLSearchParams): { prefill: BridgePrefill; returnPet: { id: string; name: string } | null } | null {

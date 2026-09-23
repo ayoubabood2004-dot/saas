@@ -3155,14 +3155,6 @@ const demoRepo = {
   async retailCheckout(items: CheckoutItem[], meta: SaleMeta): Promise<Invoice> {
     return createInvoiceLocal(items, meta);
   },
-  /** هل انسجلت محاولةٌ بهذا المرجع؟ الفاتورةُ أو `null` — والمرجعُ فريدٌ داخل العيادة
-   *  (0135). يُسأل حين لا يُعرف مصيرُ محاولةٍ ماتت بمهلة: `retail_checkout` يرجّع
-   *  فاتورتَها لكلّ من يعيد المرجعَ نفسَه، ولو كانت السلّةُ لغيره. */
-  async findInvoiceByRef(ref: string): Promise<Invoice | null> {
-    const r = ref.trim();
-    if (!r) return null;
-    return (loadDB().invoices ?? []).find((v) => v.client_ref === r) ?? null;
-  },
   /** إرجاعٌ خالص — مرآةُ `retail_return` (هجرة 0132) بنفس قواعدها حرفياً:
    *  ما تُنشأ فاتورة، والبضاعة ترجع للرصيد، وسحبٌ منفصل لكل صنف. */
   async retailReturn(items: CheckoutItem[], meta: ReturnMeta): Promise<RetailReturnResult> {
@@ -5787,13 +5779,6 @@ const supabaseRepo: typeof demoRepo = {
     // Atomic on the server: invoice (+ customer/discount/payment) + items + stock.
     return need<Invoice>(await sbc().rpc("retail_checkout", { p_items: items, p_meta: meta }));
   },
-  async findInvoiceByRef(ref) {
-    const r = ref.trim();
-    if (!r) return null;
-    // `row` لا `maybe`: فشلُ الشبكة هنا ليس «ما انسجلت» — لو قيل كذلك لبيعت
-    // سلّةٌ مسجّلةٌ مرّةً ثانية لزبونٍ آخر.
-    return row<Invoice>(await sbc().from("invoices").select("*").eq("client_ref", r).maybeSingle()) ?? null;
-  },
   async retailReturn(items, meta) {
     // ذرّيّة على الخادم: المخزون والسحوبات معاً أو لا شيء.
     const args = { p_items: items, p_meta: meta };
@@ -6233,7 +6218,7 @@ const READ_ONLY_ALLOWED = new Set<string>([
   "listPayslips", "listPayslipLines", "listStaffLoans", "listLoanEvents",
   "listPayrollAdjustments", "listDeletedProducts", "productSaleLines", "listCourierSettlements",
   "companyTwins", "listDeletedCompanies", "listDeletedCompanySections",
-  "listInvoicesTouching", "customerInvoices", "listInvoiceItemsFor", "listInvoicesByIds", "findInvoiceByRef", "reportReceiptsDaily", "reportReceiptsTotal",
+  "listInvoicesTouching", "customerInvoices", "listInvoiceItemsFor", "listInvoicesByIds", "reportReceiptsDaily", "reportReceiptsTotal",
   "reportTopProducts", "reportStaff", "countInvoices", "searchInvoices", "countInvoicesMatching", "openDebts",
   "activitySummary", "activityPage", "activityActors",
   "productMovements",
