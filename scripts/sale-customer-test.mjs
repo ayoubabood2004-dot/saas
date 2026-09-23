@@ -139,7 +139,13 @@ check("    وF2 لا يدفع تحت نافذة (كان يُسقط تأكيدَ 
   /if \(e\.key === "F2"\) \{ e\.preventDefault\(\); if \([^)]*!custClearAsk && !resetAsk\) void checkout\(\); \}/.test(SB));
 check("  ورفضٌ حاسمٌ **لمحاولةٍ أولى** يحرّر المرجع، والإعادةُ والمجهولُ يُبقيانه",
   /const freshRef = !saleRefRef\.current;\s*ensureRef\(\);/.test(coFn)
-  && /\} catch \(e\) \{[\s\S]{0,900}?if \(shouldReleaseRef\(freshRef, e\)\) \{ saleRefRef\.current = null; setSaleRefSaved\(null\); \}/.test(coFn));
+  && /\} catch \(e\) \{[\s\S]{0,900}?if \(shouldReleaseRef\(freshRef, e\)\) \{\s*const released = saleRefRef\.current;\s*saleRefRef\.current = null; setSaleRefSaved\(null\);/.test(coFn));
+/* والتحريرُ يبلغ المسودّةَ المحفوظة **مباشرةً** (الجولة الخامسة): خروجٌ من الشريط الجانبيّ
+ * والطلبُ بالطريق يُزيل الشاشة، فيسقط تحريرُ الحالة على مكوّنٍ مُزال وتبقى المسودّةُ بمرجعٍ
+ * رفضه الخادمُ يقيناً — ثم يعود «إعادةً» لا يحرّرها شيء. */
+check("    ويبلغ التحريرُ المسودّةَ المحفوظة مباشرةً — وفقط إن كانت ما زالت تحمل **هذا** المرجع",
+  /function releaseSavedRef\(clinicId: string \| undefined, ref: string\): void \{[\s\S]{0,200}?if \(d && d\.clientRef === ref\) localStorage\.setItem\(saleDraftKey\(clinicId\), JSON\.stringify\(\{ \.\.\.d, clientRef: null \}\)\);/.test(SB)
+  && /if \(released\) releaseSavedRef\(draftScope, released\);/.test(coFn));
 
 /* ── بيعةٌ أُتمّت ليست مسودّة (قائمٌ على main قبل الزرّ، والزرُّ مدّه لجسر المريض) ─ */
 console.log("▸ المسودّةُ لا تحفظ بيعةً أُتمّت");

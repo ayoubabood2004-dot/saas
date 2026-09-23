@@ -159,6 +159,16 @@ function saveSaleDraft(clinicId: string | undefined, d: SaleDraft): void {
   } catch { /* ignore */ }
 }
 function clearSaleDraft(clinicId?: string): void { try { localStorage.removeItem(saleDraftKey(clinicId)); } catch { /* ignore */ } }
+/** يحرّر مرجعاً بالمسودّة المحفوظة **مباشرةً** — لا عبر أثر الحفظ: الشاشةُ قد تكون أُزيلت
+ *  والطلبُ بالطريق (خروجٌ من الشريط الجانبيّ)، فيسقط تحريرُ الحالة على مكوّنٍ مُزال وتبقى
+ *  المسودّةُ بمرجعٍ رفضه الخادمُ يقيناً — وتعود «معلَّقةً» لا يحرّرها شيء. والتحريرُ يقع
+ *  فقط إن كانت المسودّةُ ما زالت تحمل **هذا** المرجع. */
+function releaseSavedRef(clinicId: string | undefined, ref: string): void {
+  try {
+    const d = loadSaleDraft(clinicId);
+    if (d && d.clientRef === ref) localStorage.setItem(saleDraftKey(clinicId), JSON.stringify({ ...d, clientRef: null }));
+  } catch { /* ignore */ }
+}
 
 /* ---- طلباتُ توصيلٍ لم تُسجَّل: تُحفظ بالجهاز لا بحالة المكوّن -------------
  * البيعةُ تمّت والمخزون خرج والفاتورةُ محفوظة — والطلبُ وحده ضاع. لا شاشةَ
@@ -1971,7 +1981,11 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
         /* رفضٌ حاسم **لمحاولةٍ أولى** ⇒ لا شيء ثُبّت بهذا المرجع، فهو حرّ: إبقاؤه كان يترك
          * الدفعةَ «معلَّقة» للأبد (جلسةٌ انتهت، مادّةٌ حُذفت) فيرفض الزرُّ وكلُّ جسر. أمّا
          * إعادةٌ رُفضت فمرجعُها قد يكون ثُبّت بمحاولةٍ قبلها — تحريرُه يسجّل البيعةَ مرّتين. */
-        if (shouldReleaseRef(freshRef, e)) { saleRefRef.current = null; setSaleRefSaved(null); }
+        if (shouldReleaseRef(freshRef, e)) {
+          const released = saleRefRef.current;
+          saleRefRef.current = null; setSaleRefSaved(null);
+          if (released) releaseSavedRef(draftScope, released);
+        }
         setPaying(false);
         throw e;
       }
