@@ -42,7 +42,7 @@ import { customerBoundLines, cartAfterClearCustomer } from "@/lib/saleCustomer";
 import { draftOnMount } from "@/lib/retailBridge";
 import { splitCustomerField } from "@/lib/customerName";
 import { dueOf, paidOf } from "@/lib/debt";
-import { withTimeout, describeDbError, isNetworkError, isTimeoutError, rejectedBeforeCommit } from "@/lib/errors";
+import { withTimeout, describeDbError, isNetworkError, isTimeoutError, shouldReleaseRef } from "@/lib/errors";
 import { playTap, playSuccess, playWarning } from "@/lib/sounds";
 import { matchSurgeryService, isSurgeryCategoryName, surgeryByRef, type SurgeryServiceMatch } from "@/lib/surgeryCatalog";
 
@@ -1640,7 +1640,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
   const payPending = !!saleRefSaved && !done && !pureReturn;
   const clearCustomerNow = () => {
     // والطلبُ بالطريق: الزرُّ معطَّلٌ أصلاً، وهذا لنافذةٍ فُتحت قبل «إتمام البيع».
-    if (paying) { setCustClearAsk(false); return; }
+    if (paying) { playWarning(); setCustClearAsk(false); return; }
     if (payPending) {
       playWarning();
       setCustClearAsk(false);
@@ -1761,7 +1761,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
       const typing = !!el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable);
       if (e.key === "/" && !typing) { e.preventDefault(); setBrowseTab("products"); searchRef.current?.focus(); return; }
       // بعد إتمام البيع (شاشة الإيصال) لا يُعاد الإصدار بـF2 — كان يصنع طلبَ توصيلٍ ثانياً.
-      if (e.key === "F2") { e.preventDefault(); if (cart.length > 0 && !needsDebtName && !busy && !done) void checkout(); }
+      if (e.key === "F2") { e.preventDefault(); if (cart.length > 0 && !needsDebtName && !busy && !done && !custClearAsk && !resetAsk) void checkout(); }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -1891,6 +1891,9 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
       const big = bigLines();
       if (big.length > 0) { playWarning(); setBigSale(big); return; }
     }
+    /* هل وُلد المرجعُ لهذا النداء؟ مرجعٌ قائم = محاولةٌ سابقةٌ مجهولةُ المصير (مهلة، أو
+     * مسودّةٌ رجعت بعد تحديث) — ورفضُ هذه لا يقول شيئاً عن تلك. */
+    const freshRef = !saleRefRef.current;
     ensureRef();
     setBusy(true);
     try {
@@ -1965,13 +1968,12 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
       try {
         invoice = await withTimeout(repo.retailCheckout(items, meta), 12000);
       } catch (e) {
-        /* رفضٌ حاسم ⇒ لا شيء ثُبّت، والمرجعُ حرّ: إبقاؤه كان يترك الدفعةَ «معلَّقة» للأبد
-         * (جلسةٌ انتهت، مادّةٌ حُذفت) فيرفض الزرُّ ويرفض كلَّ جسرٍ بلا سبب. والمجهولُ
-         * (انقطاع، مهلة، 5xx بلا رمز) يُبقيه — إعادتُه هي التي لا تُسجِّل مرّتين. */
-        if (rejectedBeforeCommit(e)) { saleRefRef.current = null; setSaleRefSaved(null); }
-        throw e;
-      } finally {
+        /* رفضٌ حاسم **لمحاولةٍ أولى** ⇒ لا شيء ثُبّت بهذا المرجع، فهو حرّ: إبقاؤه كان يترك
+         * الدفعةَ «معلَّقة» للأبد (جلسةٌ انتهت، مادّةٌ حُذفت) فيرفض الزرُّ وكلُّ جسر. أمّا
+         * إعادةٌ رُفضت فمرجعُها قد يكون ثُبّت بمحاولةٍ قبلها — تحريرُه يسجّل البيعةَ مرّتين. */
+        if (shouldReleaseRef(freshRef, e)) { saleRefRef.current = null; setSaleRefSaved(null); }
         setPaying(false);
+        throw e;
       }
       // Delivery order wrapping the invoice: stock is already deducted; the COD
       // balance stays OUT of revenue until the courier hands it over. A failure
@@ -2059,6 +2061,9 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
       // the receipt/print UI even if Supabase stalls mid-flow.
       setDone({ invoice, items: invItems });
       clearSaleDraft(draftScope); // sale is final — drop the saved draft
+      /* الآن فقط يُفكّ القفل: بين جواب الخادم وهنا طلبُ التوصيل (حتى ١٢ث) والمسودّةُ ما زالت
+       * تحمل المرجع — تبديلُ تبويبٍ فيه كان يضيّع الوصلَ ويعيد السلّةَ المبيعة «معلَّقة». */
+      setPaying(false);
       // بيع قادم من المختبر؟ علّم النتيجة «مفوترة» تلقائياً — الحلقة انغلقت.
       if (labIdRef.current) void repo.setLabBilled(labIdRef.current, true).catch(() => {});
       // الاتجاه المعاكس: خدمة من تصنيف «المختبر» بيعت لحيوان معروف → سجل
@@ -2192,6 +2197,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
       );
     } finally {
       setBusy(false);
+      setPaying(false);   // شبكةُ أمان: خطأٌ غيرُ متوقَّع بين التثبيت والختم لا يُبقي القفل
     }
   };
 

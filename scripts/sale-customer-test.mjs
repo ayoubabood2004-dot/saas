@@ -107,7 +107,7 @@ check("  الزرُّ لا يلمس مرجعَ البيعة أبداً (لا إ�
 check("  والدفعةُ المعلَّقة: مرجعٌ محفوظ بلا إتمام، والإرجاعُ الخالص مستثنى",
   /const payPending = !!saleRefSaved && !done && !pureReturn;/.test(SB));
 check("    فيرفض قبل أن يمسح شيئاً ويقول السبب",
-  /^const clearCustomerNow = \(\) => \{[\s\S]*?if \(paying\) \{ setCustClearAsk\(false\); return; \}\s*if \(payPending\) \{[\s\S]*?retail\.payPending[\s\S]*?return;\s*\}/.test(clearFn)
+  /^const clearCustomerNow = \(\) => \{[\s\S]*?if \(paying\) \{ playWarning\(\); setCustClearAsk\(false\); return; \}\s*if \(payPending\) \{[\s\S]*?retail\.payPending[\s\S]*?return;\s*\}/.test(clearFn)
   && clearFn.indexOf("retail.payPending") < clearFn.indexOf("setName(\"\")"));
 check("    ولا نافذةَ تُفتح عليها (الرفضُ يُقال فوراً)",
   /if \(boundLines\.length > 0 && !payPending && !paying\) \{ setCustClearAsk\(true\); return; \}/.test(SB));
@@ -121,11 +121,25 @@ check("  والتبويبُ مقفولٌ والدفعُ بالطريق — **ب�
   && /const \[payInFlight, setPayInFlight\] = useState\(false\);/.test(RS) && /disabled=\{payInFlight && id !== tab\}/.test(RS)
   && (RS.match(/onPayingChange=\{setPayInFlight\}/g) || []).length === 2 && !/setSaleBusy/.test(RS));
 check("    وزرُّ «رجوع لسجلّ» مقفولٌ أيضاً (مخرجٌ ثانٍ من الشاشة والطلبُ بالطريق)", /disabled=\{payInFlight\}/.test(RS));
-check("    والطلبُ وحده ملفوف: setPaying قبل retailCheckout وبعده بـfinally",
-  /setPaying\(true\);\s*try \{\s*invoice = await withTimeout\(repo\.retailCheckout\(items, meta\), 12000\);[\s\S]{0,900}?\} finally \{\s*setPaying\(false\);\s*\}/.test(SB));
+/* القفلُ يمتدّ من الإرسال **حتى تُختم البيعةُ محلّيّاً** (setDone + مسحُ المسودّة) — لا حتى
+ * جواب الخادم وحده: بينهما طلبُ التوصيل (حتى ١٢ث) والمسودّةُ تحمل المرجع، وتبديلُ تبويبٍ
+ * فيه كان يضيّع الوصلَ ويعيد السلّةَ المبيعة «معلَّقة» ويكرّر مزامنةَ السجلّ. */
+const coAt = SB.indexOf("const checkout = async");
+const coFn = coAt < 0 ? "" : SB.slice(coAt, SB.indexOf("\n  };\n", coAt));
+check("    والقفلُ يبدأ مع الطلب ويُفكّ عند الفشل (بلا finally يفكّه عند النجاح مبكراً)",
+  /setPaying\(true\);\s*try \{\s*invoice = await withTimeout\(repo\.retailCheckout\(items, meta\), 12000\);\s*\} catch \(e\) \{[\s\S]{0,900}?setPaying\(false\);\s*throw e;\s*\}/.test(coFn)
+  && !/invoice = await withTimeout\(repo\.retailCheckout[\s\S]{0,1200}?\} finally \{\s*setPaying\(false\);\s*\}\s*\/\/ Delivery/.test(coFn));
+check("    ويُفكّ عند النجاح **بعد** ختم البيعة ومسح المسودّة، لا قبل طلب التوصيل",
+  /setDone\(\{ invoice, items: invItems \}\);\s*clearSaleDraft\(draftScope\);[^\n]*\n(\s*\/\*[\s\S]*?\*\/\s*|\s*\/\/[^\n]*\n)*\s*setPaying\(false\);/.test(coFn)
+  && coFn.indexOf("repo.createDeliveryOrder(dlvPayload)") < coFn.indexOf("setPaying(false);\n", coFn.indexOf("setDone({ invoice, items: invItems })")));
+check("    وشبكةُ أمانٍ بآخر finally (خطأٌ غيرُ متوقَّع بين التثبيت والختم لا يُبقي القفل)",
+  /\} finally \{\s*setBusy\(false\);\s*setPaying\(false\);/.test(coFn));
 check("    والزرُّ الصغير معطَّلٌ والطلبُ بالطريق", /onClick=\{askClearCustomer\}\s*disabled=\{paying\}/.test(SB));
-check("  ورفضٌ حاسمٌ من الخادم يحرّر المرجع (لا «معلَّقة» للأبد)، والمجهولُ يُبقيه",
-  /\} catch \(e\) \{[\s\S]{0,700}?if \(rejectedBeforeCommit\(e\)\) \{ saleRefRef\.current = null; setSaleRefSaved\(null\); \}\s*throw e;/.test(SB));
+check("    وF2 لا يدفع تحت نافذة (كان يُسقط تأكيدَ «امسح الزبون» بصمت)",
+  /if \(e\.key === "F2"\) \{ e\.preventDefault\(\); if \([^)]*!custClearAsk && !resetAsk\) void checkout\(\); \}/.test(SB));
+check("  ورفضٌ حاسمٌ **لمحاولةٍ أولى** يحرّر المرجع، والإعادةُ والمجهولُ يُبقيانه",
+  /const freshRef = !saleRefRef\.current;\s*ensureRef\(\);/.test(coFn)
+  && /\} catch \(e\) \{[\s\S]{0,900}?if \(shouldReleaseRef\(freshRef, e\)\) \{ saleRefRef\.current = null; setSaleRefSaved\(null\); \}/.test(coFn));
 
 /* ── بيعةٌ أُتمّت ليست مسودّة (قائمٌ على main قبل الزرّ، والزرُّ مدّه لجسر المريض) ─ */
 console.log("▸ المسودّةُ لا تحفظ بيعةً أُتمّت");
@@ -199,6 +213,40 @@ if (RB) {
   check("  وبوّابةٌ بلا رمز (5xx بعد تثبيتٍ ممكن) ⇒ مجهول", !RB(err({ message: "upstream request timeout" })) && !RB(err({ code: 504 })));
   check("  ورمزٌ لا يشبه SQLSTATE ولا PGRST ⇒ مجهول", !RB(err({ code: "ECONNRESET" })) && !RB(err({ code: "" })));
   check("  ولا شيء ⇒ مجهول", !RB(null) && !RB(undefined) && !RB("oops"));
+  /* قائمةُ سماحٍ لا قائمةُ حظر: ما قد يقع حولَ COMMIT يبقى مجهولاً. */
+  check("  وPGRST001 (انقطاعٌ مع القاعدة، قد يقع بعد إرسال COMMIT) ⇒ مجهول", !RB(err({ code: "PGRST001" })));
+  check("  وأصنافُ الاتصال والإيقاف (08…، 57P01، 58…) ⇒ مجهول",
+    !RB(err({ code: "08006" })) && !RB(err({ code: "57P01" })) && !RB(err({ code: "58030" })));
+  check("  وانتظارُ الحوض (PGRST003) وإلغاءُ المهلة (57014) وتعارضُ المعاملات ⇒ حاسم",
+    RB(err({ code: "PGRST003" })) && RB(err({ code: "57014" })) && RB(err({ code: "40001" })) && RB(err({ code: "40P01" })));
+
+  /* **تسلسلُ المحاولات** — ما لم يفحصه جدولُ النداء الواحد (أمسكته الجولةُ الرابعة): محاولةٌ
+   * أولى ماتت بمهلة (وقد تكون ثُبّتت)، ثم إعادةٌ رُفضت رفضاً «حاسماً». رفضُ الإعادة لا يحرّر
+   * مرجعاً قد يكون ثُبّت قبلها. نمثّل الشاشةَ بحالتها الدنيا: مرجعٌ + محاولات. */
+  const SR = typeof E.shouldReleaseRef === "function" ? E.shouldReleaseRef : null;
+  check("shouldReleaseRef موجودةٌ صِرفة", !!SR);
+  if (SR) {
+    const run = (errors) => {
+      let ref = null; let minted = 0;
+      for (const e of errors) {
+        const fresh = !ref;
+        if (!ref) { ref = `R${++minted}`; }
+        if (e === "ok") return { ref, minted, committed: true };
+        if (SR(fresh, e)) ref = null;
+      }
+      return { ref, minted, committed: false };
+    };
+    const timeout = realTimeout;
+    const jwt = err({ code: "PGRST301" });
+    const fk = err({ code: "23503" });
+    const s1 = run([timeout, jwt, "ok"]);
+    check("  مهلةٌ ثم رفضُ جلسةٍ ثم نجاح ⇒ مرجعٌ واحد طولَ الطريق (الإعادةُ تُرجع الأولى لا تكرّرها)", s1.minted === 1 && s1.ref === "R1");
+    const s2 = run([fk, "ok"]);
+    check("  رفضٌ حاسمٌ لأوّل محاولة ثم نجاح ⇒ مرجعٌ جديد (لا «معلَّقة» للأبد)", s2.minted === 2 && s2.ref === "R2");
+    const s3 = run([timeout, timeout, fk, jwt, "ok"]);
+    check("  ومهما تكرّرت الإعاداتُ المرفوضة بعد مجهول ⇒ لا تجديد", s3.minted === 1);
+    check("  والمرجعُ المسترجَعُ من المسودّة (محاولةٌ قبل التحديث) يُعامَل كإعادة", SR(false, fk) === false);
+  }
 }
 
 check("الأبُ يقرأ الجسرَ بأوّل رسم (لا بأثرٍ بعده)",

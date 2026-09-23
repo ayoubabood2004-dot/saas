@@ -34,16 +34,30 @@ export function isNetworkError(e: unknown): boolean {
   return /failed to fetch|networkerror|network error|fetch failed|load failed|err_network|err_internet/.test(m);
 }
 
-/** رفضٌ **حاسم**: الطلبُ لم يُرسَل أصلاً (اشتراكٌ للقراءة)، أو ردّ الخادمُ بخطأ من بوستغريس
- *  (SQLSTATE) أو من PostgREST (`PGRST…`) — وPostgREST لا يُثبّت المعاملةَ إلا بعد أن يبني
- *  الجوابَ كاملاً، فأيُّ خطأٍ منه يعني أنها تراجعت كلُّها. وما عدا ذلك **مجهولُ المصير**:
- *  انقطاعٌ، مهلة، أو بوّابةٌ ترجع 5xx بلا رمز — وقد تكون المعاملةُ ثُبّتت قبلها.
- *  يُسأل هذا عن نداءٍ واحد، لا عن كتلةٍ فيها ما بعد التثبيت. */
+/** رفضٌ **حاسم**: لا شيء ثُبّت بهذا النداء — مؤكَّداً لا مرجَّحاً. **قائمةُ سماحٍ ضيّقة**:
+ *  - اشتراكٌ للقراءة: الطلبُ لم يُرسَل أصلاً.
+ *  - PostgREST قبل التنفيذ: تعذّر الاتصال (PGRST000)، انتظارُ الحوض (PGRST003)، الجلسة (PGRST30x).
+ *  - بوستغريس أثناء التنفيذ: قيمةٌ (22…)، قيد (23…)، صلاحية/نحو (42…)، `raise` بالدالّة (P0…)،
+ *    إلغاءُ الاستعلام بالمهلة (57014)، وتعارضُ المعاملات (40001، 40P01) — كلُّها تُرجع المعاملة.
+ *  وما عداها **مجهولُ المصير**: انقطاعٌ، مهلة، بوّابةٌ بلا رمز، و**PGRST001** (انقطاعٌ مع
+ *  القاعدة قد يقع بعد إرسال COMMIT)، وأصنافُ 08/57/58 الأخرى. والشكُّ يُبقي المرجع: كلفةُ
+ *  الخطأ هنا سلّةٌ «معلَّقة» يحسمها الطبيب، وكلفتُه هناك بيعةٌ مسجّلةٌ مرّتين.
+ *  يُسأل عن نداءٍ واحدٍ **أوّل** — لا عن كتلةٍ فيها ما بعد التثبيت، ولا عن إعادة. */
 export function rejectedBeforeCommit(e: unknown): boolean {
   if (!e || typeof e !== "object" || isNetworkError(e) || isTimeoutError(e)) return false;
   const err = e as { name?: string; message?: string; code?: unknown };
   if (err.name === "ReadOnlyError" || err.message === "READ_ONLY") return true;
-  return typeof err.code === "string" && (/^[0-9A-Z]{5}$/.test(err.code) || /^PGRST\d+$/.test(err.code));
+  if (typeof err.code !== "string") return false;
+  return /^PGRST(000|003|30\d)$/.test(err.code)
+    || /^(22|23|42|P0)[0-9A-Z]{3}$/.test(err.code)
+    || err.code === "57014" || err.code === "40001" || err.code === "40P01";
+}
+
+/** هل يُحرَّر مرجعُ البيعة بعد فشل هذا النداء؟ فقط إن **وُلد له** (لا محاولةَ قبله بنفس
+ *  المرجع) **و**كان رفضُه حاسماً. مرجعٌ قائمٌ قبل النداء = محاولةٌ سابقةٌ مجهولةُ المصير
+ *  (مهلة، أو مسودّةٌ رجعت بعد تحديث)، ورفضُ الإعادة لا يقول شيئاً عنها. */
+export function shouldReleaseRef(freshRef: boolean, e: unknown): boolean {
+  return freshRef && rejectedBeforeCommit(e);
 }
 
 /* ── من اسم القيد إلى جملةٍ يفهمها صاحب العيادة ───────────────────────────
