@@ -8,6 +8,8 @@ import { PetAvatar } from "@/components/PetAvatar";
 import { cn } from "@/lib/utils";
 import { playTap } from "@/lib/sounds";
 import { computeReminderRows, type ReminderRow, type ReminderType, type CampaignPrefill } from "@/lib/reminders";
+import { indexMarks, isDone, MARKS_LOOKBACK_DAYS } from "@/lib/reminderMarks";
+import type { ReminderMark } from "@/types";
 
 const TYPE_STYLE: Record<ReminderType, { icon: typeof Cake; chip: string }> = {
   birthday: { icon: Cake, chip: "bg-accent-50 text-accent-700 dark:bg-accent-500/15 dark:text-accent-300" },
@@ -25,6 +27,8 @@ export function RemindersWidget({ pets }: { pets: Pet[] }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const [vaccinations, setVaccinations] = useState<Vaccination[]>([]);
+  /** «تم التذكير» من مركز التذكيرات — فلا تبقى اللوحةُ تصرخ «متأخر» عن تذكيرٍ خلص. */
+  const [marks, setMarks] = useState<ReminderMark[]>([]);
 
   // Self-contained fetch (same repo + effect pattern as the rest of the app), so
   // the parent dashboard's load stays untouched.
@@ -35,14 +39,18 @@ export function RemindersWidget({ pets }: { pets: Pet[] }) {
     repo.listAllVaccinations(ids)
       .then((v) => { if (alive) setVaccinations(v); })
       .catch(() => { /* graceful: birthdays still render from pets */ });
+    const since = new Date(Date.now() - MARKS_LOOKBACK_DAYS * 86400000).toISOString().slice(0, 10);
+    repo.listReminderMarks(since)
+      .then((m) => { if (alive) setMarks(m); })
+      .catch(() => { /* الودجة لمحة؛ مركزُ التذكيرات يقول الفشلَ ويُعيد */ });
     return () => { alive = false; };
   }, [pets]);
 
   const petById = useMemo(() => new Map(pets.map((p) => [p.id, p])), [pets]);
-  const rows = useMemo(
-    () => computeReminderRows(pets, vaccinations, Date.now()).slice(0, 6),
-    [pets, vaccinations],
-  );
+  const rows = useMemo(() => {
+    const idx = indexMarks(marks);
+    return computeReminderRows(pets, vaccinations, Date.now()).filter((r) => !isDone(idx, r.id, r.date)).slice(0, 6);
+  }, [pets, vaccinations, marks]);
 
   const whenLabel = (inDays: number) =>
     inDays < 0 ? `${t("remind.overdue", "متأخّر")} ${-inDays} ${t("remind.day", "يوم")}`

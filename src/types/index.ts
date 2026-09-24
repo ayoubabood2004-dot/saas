@@ -472,6 +472,20 @@ export interface Reminder {
   created_at: string;
 }
 
+/** علامةُ تذكيرٍ مشتركة بين الأجهزة (0208): «أُرسلت» أو «تمّ التذكير» لصفٍّ بتاريخ
+ *  استحقاقه. لا أثرَ سريريّاً — لا تعني أن الجرعة أُعطيت. */
+export interface ReminderMark {
+  id: string;
+  clinic_id?: string | null;
+  /** مفتاحُ الصفّ بمركز التذكيرات: vax-<id> · srg-<id> · apt-<id> · rem-<id> · bday-<petId> */
+  row_key: string;
+  due_date: string;
+  state: "sent" | "done";
+  sent_at?: string | null;
+  marked_at: string;
+  marked_by?: string | null;
+}
+
 /* ---------------- Inventory & POS ---------------- */
 export type ProductCategory = "medicine" | "food" | "accessories" | "consumables" | "other";
 
@@ -1316,6 +1330,7 @@ export interface DemoDB {
   treatments: TreatmentEntry[];
   admissions: Admission[];
   reminders: Reminder[];
+  reminderMarks?: ReminderMark[];
   products: Product[];
   productsTrash?: DeletedProduct[];
   companies?: Company[];

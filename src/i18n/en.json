@@ -3506,7 +3506,10 @@
     "contactDone": "Everyone contacted — today is covered 🎉",
     "contactProgress": "Contacted {{sent}} of {{due}} due today",
     "sentShort": "Sent",
-    "sendShort": "Remind"
+    "sendShort": "Remind",
+    "markDone": "Reminder done",
+    "loadFailed": "Couldn't load reminders — it's the connection, no reminder was lost. Retry before sending.",
+    "sentMarkFailed": "Message sent, but \"sent\" wasn't recorded for other devices — press \"Reminder done\" if it's finished"
   },
   "sub": {
     "subscribeNow": "Subscribe now",

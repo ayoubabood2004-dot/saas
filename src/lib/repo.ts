@@ -120,7 +120,7 @@ import { supabase } from "./supabase";
 import { outboxEnqueue, outboxEnqueueRpc, outboxDrop, isNetworkError } from "./outbox";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment, AppointmentStatus, ClinicInfo, PublicStaff, DailyNote, TreatmentEntry, Admission, Branch, Reminder, Product, Company, CompanySection, Purchase, PurchaseItem, PurchasePayment, PurchaseDraftLine, PurchaseMeta, Courier, DeliveryOrder, PetMovement, DemoDB, Invoice, InvoiceItem, CheckoutItem, SaleMeta, Customer, DiscountType, PaymentMethod, PaymentSplit, WhatsAppMessage, AuditEntry, LoginEvent, PetNote, Expense, ExpenseMethod, ReturnMeta, RetailReturnResult, HealthMetric, ClinicVisit , Surgery, LabResult, LabDeviceLink, LabDeviceInbox, LabStatusValue, PetProblem, CareEntry, FeatureRequest, GeneratedBarcode, StoreProfile, StoreOrder, StoreOrderItem, StoreFrontInfo, StoreCatalogItem, SuggestedProduct, StoreTrackInfo, LibraryImage, Journey, JourneyEvent, JourneyKind, JourneyStage, JourneyPublicView, EditLine, PoultryFarm, PoultryHouse, PoultryCycle, PoultryDaily, PoultryUse, PoultryUseKind, PoultryCycleStats, PoultryConsumeResult, ProductMovement } from "@/types";
-import type { CompanyCharge, CompanyTwinGroup, DeletedCompany, DeletedCompanySection, DeletedCompanySectionNote } from "@/types";
+import type { CompanyCharge, CompanyTwinGroup, DeletedCompany, DeletedCompanySection, DeletedCompanySectionNote, ReminderMark } from "@/types";
 import type { DeletedProduct, CourierSettlement, ReceiptsDay, ReceiptsTotal, TopProductRow, StaffSalesRow, InvoiceSearch } from "@/types";
 import type { BarcodeAilment, BarcodeHealthRow } from "@/types";
 import type { PortalMe, PortalPetCard, PortalPetDetail, PortalAdmission, PortalJourney, PortalCodeRequest, PortalVerifyResult } from "@/types";
@@ -1335,6 +1335,44 @@ const demoRepo = {
   async removeReminder(id: string): Promise<void> {
     const db = loadDB();
     db.reminders = (db.reminders ?? []).filter((x) => x.id !== id);
+    saveDB(db);
+  },
+
+  /** علاماتُ التذكير (0208) — مرآةُ reminder_marks بنفس دلالتها. */
+  async listReminderMarks(since: string): Promise<ReminderMark[]> {
+    return (loadDB().reminderMarks ?? []).filter((m) => m.due_date >= since).map((m) => ({ ...m }));
+  },
+  /** «تمّ التذكير»: يعلو «أُرسلت» ويُبقي يومَ إرسالها (sent_at). */
+  async markReminderDone(rowKey: string, dueDate: string): Promise<ReminderMark> {
+    const db = loadDB();
+    if (!db.reminderMarks) db.reminderMarks = [];
+    const now = new Date().toISOString();
+    let m = db.reminderMarks.find((x) => x.row_key === rowKey && x.due_date === dueDate);
+    if (m) { m.state = "done"; m.marked_at = now; }
+    else {
+      m = { id: uid("rmk"), clinic_id: null, row_key: rowKey, due_date: dueDate, state: "done", sent_at: null, marked_at: now, marked_by: null };
+      db.reminderMarks.push(m);
+    }
+    saveDB(db);
+    return { ...m };
+  },
+  /** «أُرسلت»: يجدّد يومَ الإرسال لإعادةٍ، ولا يُنزل «تمّ» إلى «أُرسلت». */
+  async markReminderSent(rowKey: string, dueDate: string): Promise<void> {
+    const db = loadDB();
+    if (!db.reminderMarks) db.reminderMarks = [];
+    const now = new Date().toISOString();
+    const m = db.reminderMarks.find((x) => x.row_key === rowKey && x.due_date === dueDate);
+    if (m) { if (m.state === "sent") { m.sent_at = now; m.marked_at = now; } }
+    else db.reminderMarks.push({ id: uid("rmk"), clinic_id: null, row_key: rowKey, due_date: dueDate, state: "sent", sent_at: now, marked_at: now, marked_by: null });
+    saveDB(db);
+  },
+  /** التراجعُ عن «تمّ»: أُرسلت قبلها ⇒ تعود «أُرسلت»؛ وإلا تُزال العلامة. ولا شيءَ يُتراجَع عنه ⇒ يُرمى. */
+  async undoReminderDone(rowKey: string, dueDate: string): Promise<void> {
+    const db = loadDB();
+    const list = db.reminderMarks ?? [];
+    const m = assertUpdated(list.find((x) => x.row_key === rowKey && x.due_date === dueDate && x.state === "done"));
+    if (m.sent_at) { m.state = "sent"; m.marked_at = new Date().toISOString(); }
+    else db.reminderMarks = list.filter((x) => x !== m);
     saveDB(db);
   },
 
@@ -4836,6 +4874,39 @@ const supabaseRepo: typeof demoRepo = {
   async removeReminder(id) {
     ok(await sbc().from("reminders").delete().eq("id", id));
   },
+  async listReminderMarks(since) {
+    // قائمةٌ يُبنى عليها «أحمر أم تمّ» — تُرمى ولا تُبلع: صفرٌ هنا يعيد كلَّ تذكيرٍ
+    // «تمّ» أحمرَ، فيُعاد إرسالُه لصاحبه.
+    return allPages<ReminderMark>(() => sbc().from("reminder_marks").select("*").gte("due_date", since));
+  },
+  async markReminderDone(rowKey, dueDate) {
+    // `sent_at` ليس بالحمولة: فوق «أُرسلت» يبقى يومُها، فالتراجعُ يعيدها «أُرسلت» لا حمراء.
+    return updated<ReminderMark>(await sbc().from("reminder_marks")
+      .upsert({ row_key: rowKey, due_date: dueDate, state: "done", marked_at: new Date().toISOString() }, { onConflict: "clinic_id,row_key,due_date" })
+      .select().maybeSingle());
+  },
+  async markReminderSent(rowKey, dueDate) {
+    const now = new Date().toISOString();
+    // إعادةُ إرسالٍ لصفٍّ «أُرسلت»: يتجدّد اليوم (مهلةُ السماح تُعدّ منه).
+    const up = await sbc().from("reminder_marks").update({ sent_at: now, marked_at: now })
+      .eq("row_key", rowKey).eq("due_date", dueDate).eq("state", "sent").select("id");
+    if (up.error) throw new Error(up.error.message);
+    if (((up.data as unknown[] | null) ?? []).length > 0) return;
+    // وإلا إدراجٌ يُتجاهَل عند التعارض: لا يُنزل «تمّ» إلى «أُرسلت».
+    ok(await sbc().from("reminder_marks")
+      .upsert({ row_key: rowKey, due_date: dueDate, state: "sent", sent_at: now, marked_at: now }, { onConflict: "clinic_id,row_key,due_date", ignoreDuplicates: true }));
+  },
+  async undoReminderDone(rowKey, dueDate) {
+    const now = new Date().toISOString();
+    const back = await sbc().from("reminder_marks").update({ state: "sent", marked_at: now })
+      .eq("row_key", rowKey).eq("due_date", dueDate).eq("state", "done").not("sent_at", "is", null).select("id");
+    if (back.error) throw new Error(back.error.message);
+    const gone = await sbc().from("reminder_marks").delete()
+      .eq("row_key", rowKey).eq("due_date", dueDate).eq("state", "done").select("id");
+    if (gone.error) throw new Error(gone.error.message);
+    // لا صفّ تغيّر ⇒ لا «تراجعتُ» كاذبة: السياسةُ ردّت، أو تغيّر من جهازٍ آخر.
+    if (((back.data as unknown[] | null) ?? []).length + ((gone.data as unknown[] | null) ?? []).length === 0) assertUpdated<ReminderMark>(undefined);
+  },
 
   /* ---------------- Inventory & POS ---------------- */
   async listProducts(clinicId) {
@@ -6218,7 +6289,7 @@ const READ_ONLY_ALLOWED = new Set<string>([
   "listPayslips", "listPayslipLines", "listStaffLoans", "listLoanEvents",
   "listPayrollAdjustments", "listDeletedProducts", "productSaleLines", "listCourierSettlements",
   "companyTwins", "listDeletedCompanies", "listDeletedCompanySections",
-  "listInvoicesTouching", "customerInvoices", "listInvoiceItemsFor", "listInvoicesByIds", "reportReceiptsDaily", "reportReceiptsTotal",
+  "listInvoicesTouching", "customerInvoices", "listReminderMarks", "listInvoiceItemsFor", "listInvoicesByIds", "reportReceiptsDaily", "reportReceiptsTotal",
   "reportTopProducts", "reportStaff", "countInvoices", "searchInvoices", "countInvoicesMatching", "openDebts",
   "activitySummary", "activityPage", "activityActors",
   "productMovements",
