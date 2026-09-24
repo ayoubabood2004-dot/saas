@@ -56,8 +56,8 @@ create trigger reminder_marks_stamp
   before insert or update on reminder_marks
   for each row execute function public.reminder_marks_stamp();
 
--- القراءةُ محدودةٌ بالتاريخ (الشاشةُ لا تحتاج علاماتِ مواعيدَ مضى عليها أكثر من ٤ أشهر).
-create index if not exists reminder_marks_clinic_due_idx on reminder_marks (clinic_id, due_date);
+-- لا فهرسَ ثانٍ: القراءةُ كلُّ علامات العيادة بلا حدٍّ بالتاريخ (تذكيرٌ معلَّقٌ لا يشيخ بالشاشة،
+-- فعلامتُه القديمة تلزمها)، وقيدُ التفرّد يبدأ بـclinic_id فيخدم شرطَ السياسة والمفتاحَ الأجنبيّ.
 
 alter table reminder_marks enable row level security;
 drop policy if exists reminder_marks_rw on reminder_marks;
