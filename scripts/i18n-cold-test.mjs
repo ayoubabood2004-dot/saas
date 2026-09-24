@@ -256,16 +256,20 @@ if (codeB) {
 
   { // B7: الفشلُ يُرمى، ويُعاد، والتعافي مرّةً واحدة
     const env = browser({ online: false });
-    const { mod, putCold } = await boot(codeB, { cold: false });
+    const { mod } = await boot(codeB, { cold: false });
     const ensure = ensureOf(mod);
     let rejected = false;
     if (ensure) { try { await ensure(); } catch { rejected = true; } }
     check("B7 النصفُ البارد فشل ⇐ ensureDictionary ترفض (لا تبلع)", !!ensure && rejected);
     check("B7   وبلا إنترنت لا تعافي (مسحُ المخبأ بلا شبكةٍ ضرر)", env.reloads.n === 0, `أُعيد التحميل ${env.reloads.n}`);
-    putCold();
-    let ok = false;
-    if (ensure) { try { await ensure(); ok = true; } catch { ok = false; } }
-    check("B7   والنداءُ التالي يعيد المحاولة وينجح (الوعدُ المرفوض لا يُحفظ)", ok && mod.I18N.default.t(coldKey) === at(ar, coldKey));
+    /* المتصفّحُ يحفظ فشلَ الاستيراد بخريطة الوحدات طولَ عمر الصفحة — قاستها المراجعة بكروميوم:
+     * `import()` ثانيةٌ لنفس العنوان ترفض فوراً بلا طلبٍ للخادم، ولو صار الملفُّ متاحاً. وكان
+     * هذا الفحصُ يَعِد «النداءُ التالي يعيد المحاولة وينجح» لأن Node وحدَه يعيد المحاولة — فحصٌ
+     * يشهد لطريقٍ لا يوجد بالمتصفح. التعافي الحقيقيّ إعادةُ تحميل الصفحة عند أوّل نداءٍ بعد رجوع
+     * الشبكة؛ والحزمةُ تبقى «فاشلةً» هنا عمداً كما يراها المتصفّح. */
+    globalThis.navigator.onLine = true;
+    if (ensure) { ensure().catch(() => {}); for (let i = 0; i < 50 && env.reloads.n === 0; i++) await tick(10); }
+    check("B7   ورجعت الشبكة: النداءُ التالي يعيد تحميلَ الصفحة (المتصفّحُ لا يعيد استيراداً فشل)", !!ensure && env.reloads.n === 1, `أُعيد التحميل ${env.reloads.n}`);
   }
   {
     const env = browser({ online: true });
