@@ -27,10 +27,12 @@ export function RemindersWidget({ pets }: { pets: Pet[] }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const [vaccinations, setVaccinations] = useState<Vaccination[]>([]);
-  /** «تم التذكير» من مركز التذكيرات — فلا تبقى اللوحةُ تصرخ «متأخر» عن تذكيرٍ خلص. */
-  const [marks, setMarks] = useState<ReminderMark[]>([]);
-  /** فشلت قراءةُ العلامات: لا تُعرض صفوفٌ «تمّ» أو «أُرسلت» حمراءَ — يُقال الفشل. */
+  /** «تم التذكير» من مركز التذكيرات — فلا تبقى اللوحةُ تصرخ «متأخر» عن تذكيرٍ خلص.
+   *  null = لم تصل بعد: لا صفَّ يُعرض قبلها، وإلا عُرض «تمّ» متأخراً بزرّ إرسالٍ لحظاتِ التحميل. */
+  const [marks, setMarks] = useState<ReminderMark[] | null>(null);
+  /** فشلت قراءةُ العلامات: لا تُعرض صفوفٌ «تمّ» أو «أُرسلت» حمراءَ — يُقال الفشل بزرّ إعادة. */
   const [marksErr, setMarksErr] = useState(false);
+  const [retryN, setRetryN] = useState(0);
 
   // Self-contained fetch (same repo + effect pattern as the rest of the app), so
   // the parent dashboard's load stays untouched.
@@ -46,10 +48,11 @@ export function RemindersWidget({ pets }: { pets: Pet[] }) {
       // بلعُ الفشل كان يعرض ما «تمّ» متأخراً فيُعاد إرسالُه — القائمةُ الناقصة أسوأ من الخطأ.
       .catch(() => { if (alive) setMarksErr(true); });
     return () => { alive = false; };
-  }, [pets]);
+  }, [pets, retryN]);
 
   const petById = useMemo(() => new Map(pets.map((p) => [p.id, p])), [pets]);
   const rows = useMemo(() => {
+    if (!marks) return [];
     const idx = indexMarks(marks);
     // ما «تمّ» وما «أُرسلت» خرجا من المتأخرة بمركز التذكيرات — فيخرجان من هنا أيضاً،
     // وإلا دعت اللوحةُ لرسالةٍ ثانيةٍ لنفس الصاحب.
@@ -82,11 +85,17 @@ export function RemindersWidget({ pets }: { pets: Pet[] }) {
       <div className="flex items-center gap-2.5 bg-gradient-to-br from-brand-500/15 to-success-500/10 px-4 py-3.5">
         <span className="grid h-9 w-9 place-items-center rounded-xl bg-brand-600 text-white shadow-soft"><BellRing size={17} /></span>
         <h3 className="font-display font-bold text-ink">{t("remind.title", "التذكيرات القادمة")}</h3>
-        {rows.length > 0 && <span className="chip ms-auto bg-brand-50 text-2xs font-bold text-brand-700 dark:bg-brand-500/15 dark:text-brand-300 tabular-nums">{rows.length}</span>}
+        {!marksErr && rows.length > 0 && <span className="chip ms-auto bg-brand-50 text-2xs font-bold text-brand-700 dark:bg-brand-500/15 dark:text-brand-300 tabular-nums">{rows.length}</span>}
       </div>
 
       {marksErr ? (
-        <p data-remwidgeterr className="px-4 py-6 text-center text-sm font-semibold text-danger-600 dark:text-danger-400">{t("rem.loadFailed", "تعذّر تحميل التذكيرات — المشكلة بالاتصال ولا تذكير ضاع. أعد المحاولة قبل ما ترسل.")}</p>
+        <div data-remwidgeterr className="px-4 py-5 text-center">
+          <p className="text-sm font-semibold text-danger-600 dark:text-danger-400">{t("rem.loadFailed", "تعذّر تحميل التذكيرات — المشكلة بالاتصال ولا تذكير ضاع. أعد المحاولة قبل ما ترسل.")}</p>
+          <button type="button" data-remwidgetretry onClick={() => { playTap(); setMarksErr(false); setMarks(null); setRetryN((n) => n + 1); }}
+            className="mt-2 rounded-full bg-surface-2 px-3 py-1.5 text-xs font-semibold text-ink transition hover:bg-surface-3">{t("common.retry")}</button>
+        </div>
+      ) : !marks && pets.length > 0 ? (
+        <p className="px-4 py-6 text-center text-sm text-ink-subtle">{t("common.loading")}</p>
       ) : rows.length === 0 ? (
         <p className="px-4 py-6 text-center text-sm text-ink-subtle">{t("remind.empty", "لا توجد تذكيرات قريبة.")}</p>
       ) : (

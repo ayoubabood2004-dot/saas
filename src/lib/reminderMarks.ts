@@ -46,6 +46,24 @@ export function serverSentDay(index: ReadonlyMap<string, ReminderMark>, rowKey: 
   return m?.sent_at ? localDay(m.sent_at) : null;
 }
 
+/** كتابةُ علامةٍ من هذه الشاشة: رقمُها بترتيب **اكتمالها** (وصول ردّ الخادم)، والعلامةُ
+ *  بعدها كما ردّها الخادم (null = أُزيلت). */
+export interface MarkWrite { seq: number; row_key: string; due_date: string; mark: ReminderMark | null }
+
+/** قراءةٌ بدأت والكتاباتُ المكتملةُ `readSeq` — ما اكتمل قبل بدئها التزمه الخادمُ قبل لقطتها
+ *  فهو فيها، والخادمُ الحَكَم. وما اكتمل **بعد** بدئها ربما التُزم بعد لقطتها: يُعاد فوقها
+ *  بترتيبه. فحصُ «هل تغيّر شيءٌ أثناء القراءة؟» ثم إعادتُها لا يكفي: كتابةٌ بالطريق لحظةَ
+ *  البدء، أو ضغطةٌ أثناء الإعادة، كانت تُمحى — فيعود «تمّ» أحمرَ لحظةَ توستِه ويُعاد الإرسال. */
+export function overlayWrites(server: readonly ReminderMark[], writes: readonly MarkWrite[], readSeq: number): ReminderMark[] {
+  const idx = indexMarks(server);
+  for (const w of writes) {
+    if (w.seq <= readSeq) continue;
+    const k = markKey(w.row_key, w.due_date);
+    if (w.mark) idx.set(k, w.mark); else idx.delete(k);
+  }
+  return [...idx.values()];
+}
+
 /** «تمّ التذكير» لهذا الصفّ بتاريخه؟ */
 export function isDone(index: ReadonlyMap<string, ReminderMark>, rowKey: string, dueDate: string): boolean {
   return index.get(markKey(rowKey, dueDate))?.state === "done";

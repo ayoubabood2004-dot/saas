@@ -165,7 +165,7 @@ export function WhatsAppCampaigns() {
    * والفرق بين المصدرين مقصود: ودجة اللوحة ترسل صنفاً عاماً فنختار له قالباً،
    * أما مركز التذكيرات فيرسل **النص كاملاً** بلقاحه وتاريخه وساعته — وهو ما
    * لا تعرفه الحملات — فنأخذه كما جاء ونترك للطبيب تحريره وتبديل صياغته. */
-  const [fromReminder, setFromReminder] = useState<{ id: string; date: string; kind: string | null; petId: string } | null>(null);
+  const [fromReminder, setFromReminder] = useState<{ id: string; date: string; kind: string | null; petId: string; tpl: string | null } | null>(null);
   useEffect(() => {
     const prefill = location.state as CampaignPrefill | null;
     if (!prefill?.targetPetId || prefillApplied.current) return;
@@ -180,7 +180,7 @@ export function WhatsAppCampaigns() {
       if (tplId) pickTemplate(tplId);
     }
     if (prefill.reminderRowId && prefill.reminderDate) {
-      setFromReminder({ id: prefill.reminderRowId, date: prefill.reminderDate, kind: prefill.reminderKind ?? null, petId: prefill.targetPetId });
+      setFromReminder({ id: prefill.reminderRowId, date: prefill.reminderDate, kind: prefill.reminderKind ?? null, petId: prefill.targetPetId, tpl: TEMPLATE_FOR[prefill.reminderType] ?? null });
     }
     // Surface this client in the audience list, then drop the router state so a
     // refresh or back-navigation doesn't silently re-apply it.
@@ -263,12 +263,16 @@ export function WhatsAppCampaigns() {
      * «الحيوان + النوع»، فلا يطابق شيئاً ويبقى التذكيرُ أحمرَ على كلّ جهازٍ غير المُرسِل. */
     // والتذكيرُ يخصّ **مجموعةَ حيوانه وحدَها**: الصفحةُ تبقى مفتوحة بعده، وإرسالٌ لغيره (عرض،
     // شريحةٌ أخرى، أو صاحبٌ آخر بعد إلغاء الأوّل) كان يُسجَّل بنوعه ويختم تذكيرَه «أُرسلت».
-    const forReminder = fromReminder && group.pets.some((p) => p.id === fromReminder.petId) ? fromReminder : null;
+    // **وما دام قالبُه مختاراً**: بدّل الطبيبُ إلى «عرض» فما يُرسَل ليس التذكير — وكان يختمه
+    // «أُرسلت» على كلّ جهاز، فيخرج من الأحمر وصاحبُه ما وصله شيءٌ عن اللقاح.
+    const forReminder = fromReminder && activeTpl === fromReminder.tpl && group.pets.some((p) => p.id === fromReminder.petId) ? fromReminder : null;
     const kind = forReminder?.kind ?? (segment === "all" ? "manual" : segment);
     try {
       await sendWhatsApp({
         phone: num, text,
-        petId: group.pets[0]?.id ?? null,
+        // حيوانُ التذكير لا أوّلُ المجموعة: أخوه بنفس الهاتف كان يُسجَّل بنوع التذكير، فيطابقه
+        // السجلُّ «أُرسلت» على كلّ جهاز — وصاحبُه ما وصله شيءٌ عنه.
+        petId: forReminder?.petId ?? group.pets[0]?.id ?? null,
         ownerName: group.ownerName || null,
         ownerPhone: group.phone || null,
         kind,

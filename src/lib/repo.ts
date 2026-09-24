@@ -1367,14 +1367,16 @@ const demoRepo = {
     else db.reminderMarks.push({ id: uid("rmk"), clinic_id: null, row_key: rowKey, due_date: dueDate, state: "sent", sent_at: now, marked_at: now, marked_by: null });
     saveDB(db);
   },
-  /** التراجعُ عن «تمّ»: أُرسلت قبلها ⇒ تعود «أُرسلت»؛ وإلا تُزال العلامة. ولا شيءَ يُتراجَع عنه ⇒ يُرمى. */
-  async undoReminderDone(rowKey: string, dueDate: string): Promise<void> {
+  /** التراجعُ عن «تمّ»: أُرسلت قبلها ⇒ تعود «أُرسلت»؛ وإلا تُزال العلامة. ولا شيءَ يُتراجَع عنه ⇒ يُرمى.
+   *  يُرجع ما بقي (العلامةُ «أُرسلت» أو null) — فالشاشةُ تطبّقه بلا قراءةٍ ثانيةٍ تسابق غيرها. */
+  async undoReminderDone(rowKey: string, dueDate: string): Promise<ReminderMark | null> {
     const db = loadDB();
     const list = db.reminderMarks ?? [];
     const m = assertUpdated(list.find((x) => x.row_key === rowKey && x.due_date === dueDate && x.state === "done"));
     if (m.sent_at) { m.state = "sent"; m.marked_at = new Date().toISOString(); }
     else db.reminderMarks = list.filter((x) => x !== m);
     saveDB(db);
+    return m.sent_at ? { ...m } : null;
   },
 
   /* ---------------- Inventory & POS ---------------- */
@@ -4901,13 +4903,17 @@ const supabaseRepo: typeof demoRepo = {
   async undoReminderDone(rowKey, dueDate) {
     const now = new Date().toISOString();
     const back = await sbc().from("reminder_marks").update({ state: "sent", marked_at: now })
-      .eq("row_key", rowKey).eq("due_date", dueDate).eq("state", "done").not("sent_at", "is", null).select("id");
+      .eq("row_key", rowKey).eq("due_date", dueDate).eq("state", "done").not("sent_at", "is", null).select();
     if (back.error) throw new Error(back.error.message);
+    // عادت «أُرسلت»: الصفُّ كما ردّه الخادم هو ما بقي.
+    const kept = ((back.data as ReminderMark[] | null) ?? [])[0];
+    if (kept) return kept;
     const gone = await sbc().from("reminder_marks").delete()
       .eq("row_key", rowKey).eq("due_date", dueDate).eq("state", "done").select("id");
     if (gone.error) throw new Error(gone.error.message);
     // لا صفّ تغيّر ⇒ لا «تراجعتُ» كاذبة: السياسةُ ردّت، أو تغيّر من جهازٍ آخر.
-    if (((back.data as unknown[] | null) ?? []).length + ((gone.data as unknown[] | null) ?? []).length === 0) assertUpdated<ReminderMark>(undefined);
+    if (((gone.data as unknown[] | null) ?? []).length === 0) assertUpdated<ReminderMark>(undefined);
+    return null;
   },
 
   /* ---------------- Inventory & POS ---------------- */

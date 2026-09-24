@@ -11,7 +11,7 @@ import { getCached, setCached } from "@/lib/swrCache";
 import { waVariants, pickVariantIndex, renderWaTemplate, type WaPool } from "@/lib/waTemplates";
 import type { CampaignPrefill, ReminderType } from "@/lib/reminders";
 import type { Pet, Vaccination, Surgery, Appointment, Reminder, EventCategory, MedicalVisit, WhatsAppMessage, ReminderMark } from "@/types";
-import { indexMarks, serverSentDay, markOf, localDay, judgeLifecycle } from "@/lib/reminderMarks";
+import { indexMarks, serverSentDay, markOf, localDay, judgeLifecycle, overlayWrites, type MarkWrite } from "@/lib/reminderMarks";
 import { describeDbError } from "@/lib/errors";
 import { repo } from "@/lib/repo";
 import { PetAvatar } from "@/components/PetAvatar";
@@ -162,9 +162,14 @@ export function RemindersHub() {
   const [loadErr, setLoadErr] = useState(false);
   /** صفٌّ يُكتب الآن — ضغطتان لا تكتبان مرّتين. */
   const [markBusy, setMarkBusy] = useState<string | null>(null);
-  /** رقمُ آخر كتابةٍ للعلامات من هذه الشاشة. تحميلٌ بدأ قبلها يحمل علاماتٍ قُرئت قبلها —
-   *  فلا يكتب فوقها (كان يعيد صفّاً «تمّ» أحمرَ لحظةَ التوست فيُعاد إرسالُه). */
-  const marksRev = useRef(0);
+  /** كتاباتُ هذه الشاشة للعلامات بترتيب اكتمالها. كلُّ قراءةٍ تُطبَّق فوقها ما اكتمل بعد
+   *  بدئها (`overlayWrites`) — فلا تمحو قراءةٌ قديمةُ اللقطة «تمّ» ضُغط أثناءها. */
+  const marksWrites = useRef<MarkWrite[]>([]);
+  const recordWrite = (rowKey: string, dueDate: string, mark: ReminderMark | null) => {
+    const w: MarkWrite = { seq: marksWrites.current.length + 1, row_key: rowKey, due_date: dueDate, mark };
+    marksWrites.current.push(w);
+    setMarks((prev) => { const next = overlayWrites(prev, [w], 0); setCached(remKey, { ...(getCached<Seed>(remKey) ?? {}), marks: next }); return next; });
+  };
   const [kind, setKind] = useState<Kind | "all">("all");
   const [timeF, setTimeF] = useState<TimeFilter>("all");
   const [view, setView] = useState<LifeStatus>("active");
@@ -209,7 +214,7 @@ export function RemindersHub() {
       // النطاق يرجع 60 يوماً للوراء أيضاً: الحكم على «جاء/ما جاء» يحتاج الماضي القريب.
       const from = isoDay(new Date(Date.now() - 60 * 86400000));
       const to = isoDay(new Date(Date.now() + 60 * 86400000));
-      const rev0 = marksRev.current;
+      const seq0 = marksWrites.current.length;
       const [vax, srg, appts, rems, vis, log, mk] = await Promise.all([
         repo.listAllVaccinations(ids),
         repo.listAllSurgeries().catch(() => [] as Surgery[]),
@@ -221,8 +226,8 @@ export function RemindersHub() {
         // بلا .catch: صفرُ علاماتٍ عن فشلٍ يعيد كلَّ تذكيرٍ «تمّ» أحمرَ — فيُعاد إرسالُه لصاحبه.
         repo.listReminderMarks(),
       ]);
-      // كُتبت علامةٌ أثناء هذا التحميل؟ علاماتُه أقدمُ منها — تُعاد قراءتُها بدل أن تكتب فوقها.
-      const fresh = marksRev.current === rev0 ? mk : await repo.listReminderMarks();
+      // ما اكتمل من كتاباتٍ بعد بدء القراءة ربما فاتته لقطتُها — يُعاد فوقها.
+      const fresh = overlayWrites(mk, marksWrites.current, seq0);
       setCached(remKey, { p, vax, srg, appts, rems, vis, log, marks: fresh });
       setPets(p); setVaccinations(vax); setSurgeries(srg); setAppointments(appts); setManual(rems); setVisits(vis); setWaLog(log); setMarks(fresh);
       setLoadErr(false);
@@ -355,7 +360,7 @@ export function RemindersHub() {
       if (!w.pet_id || !w.reminder_type) continue;
       const k = `${w.pet_id}|${w.reminder_type}`;
       const arr = byPetKind.get(k) ?? [];
-      arr.push(w.sent_at.slice(0, 10));
+      arr.push(localDay(w.sent_at));
       byPetKind.set(k, arr);
     }
     // السجل لا يعرف أي تذكيرٍ بعينه خصّته الرسالة — يعرف الحيوان والنوع فقط.
@@ -406,10 +411,8 @@ export function RemindersHub() {
     if (markBusy) return;
     playTap();
     setMarkBusy(r.id);
-    marksRev.current++;
     try {
-      const m = await repo.markReminderDone(r.id, r.date);
-      setMarks((prev) => { const next = [...prev.filter((x) => !(x.row_key === m.row_key && x.due_date === m.due_date)), m]; setCached(remKey, { ...(getCached<Seed>(remKey) ?? {}), marks: next }); return next; });
+      recordWrite(r.id, r.date, await repo.markReminderDone(r.id, r.date));
       playSuccess();
       toast.success(t("rem.markDone", "تم التذكير"));
     } catch (e) {
@@ -420,12 +423,9 @@ export function RemindersHub() {
     if (markBusy) return;
     playTap();
     setMarkBusy(r.id);
-    marksRev.current++;
     try {
-      await repo.undoReminderDone(r.id, r.date);
-      const mk = await repo.listReminderMarks();
-      setMarks(mk);
-      setCached(remKey, { ...(getCached<Seed>(remKey) ?? {}), marks: mk });
+      // ما بقي كما ردّه الخادم («أُرسلت» أو لا شيء) — لا قراءةَ كاملةً تسابق ضغطاتٍ أخرى.
+      recordWrite(r.id, r.date, await repo.undoReminderDone(r.id, r.date));
     } catch (e) {
       toast.error(t("medentry.saveError", "تعذّر الحفظ — حاول مرة أخرى."), describeDbError(e, t));
     } finally { setMarkBusy(null); }
