@@ -8,7 +8,7 @@ import { PetAvatar } from "@/components/PetAvatar";
 import { cn } from "@/lib/utils";
 import { playTap } from "@/lib/sounds";
 import { computeReminderRows, type ReminderRow, type ReminderType, type CampaignPrefill } from "@/lib/reminders";
-import { indexMarks, isDone, MARKS_LOOKBACK_DAYS } from "@/lib/reminderMarks";
+import { indexMarks, isDone, serverSentDay } from "@/lib/reminderMarks";
 import type { ReminderMark } from "@/types";
 
 const TYPE_STYLE: Record<ReminderType, { icon: typeof Cake; chip: string }> = {
@@ -29,6 +29,8 @@ export function RemindersWidget({ pets }: { pets: Pet[] }) {
   const [vaccinations, setVaccinations] = useState<Vaccination[]>([]);
   /** «تم التذكير» من مركز التذكيرات — فلا تبقى اللوحةُ تصرخ «متأخر» عن تذكيرٍ خلص. */
   const [marks, setMarks] = useState<ReminderMark[]>([]);
+  /** فشلت قراءةُ العلامات: لا تُعرض صفوفٌ «تمّ» أو «أُرسلت» حمراءَ — يُقال الفشل. */
+  const [marksErr, setMarksErr] = useState(false);
 
   // Self-contained fetch (same repo + effect pattern as the rest of the app), so
   // the parent dashboard's load stays untouched.
@@ -39,17 +41,20 @@ export function RemindersWidget({ pets }: { pets: Pet[] }) {
     repo.listAllVaccinations(ids)
       .then((v) => { if (alive) setVaccinations(v); })
       .catch(() => { /* graceful: birthdays still render from pets */ });
-    const since = new Date(Date.now() - MARKS_LOOKBACK_DAYS * 86400000).toISOString().slice(0, 10);
-    repo.listReminderMarks(since)
-      .then((m) => { if (alive) setMarks(m); })
-      .catch(() => { /* الودجة لمحة؛ مركزُ التذكيرات يقول الفشلَ ويُعيد */ });
+    repo.listReminderMarks()
+      .then((m) => { if (alive) { setMarks(m); setMarksErr(false); } })
+      // بلعُ الفشل كان يعرض ما «تمّ» متأخراً فيُعاد إرسالُه — القائمةُ الناقصة أسوأ من الخطأ.
+      .catch(() => { if (alive) setMarksErr(true); });
     return () => { alive = false; };
   }, [pets]);
 
   const petById = useMemo(() => new Map(pets.map((p) => [p.id, p])), [pets]);
   const rows = useMemo(() => {
     const idx = indexMarks(marks);
-    return computeReminderRows(pets, vaccinations, Date.now()).filter((r) => !isDone(idx, r.id, r.date)).slice(0, 6);
+    // ما «تمّ» وما «أُرسلت» خرجا من المتأخرة بمركز التذكيرات — فيخرجان من هنا أيضاً،
+    // وإلا دعت اللوحةُ لرسالةٍ ثانيةٍ لنفس الصاحب.
+    return computeReminderRows(pets, vaccinations, Date.now())
+      .filter((r) => !isDone(idx, r.id, r.date) && !serverSentDay(idx, r.id, r.date)).slice(0, 6);
   }, [pets, vaccinations, marks]);
 
   const whenLabel = (inDays: number) =>
@@ -65,6 +70,9 @@ export function RemindersWidget({ pets }: { pets: Pet[] }) {
       targetPetName: row.petName,
       targetOwnerName: row.ownerName,
       reminderType: row.type,
+      // هويّةُ التذكير تذهب مع الإرسال: بلاها تُسجَّل الرسالةُ `manual` ولا تُكتب «أُرسلت»،
+      // فيبقى التذكيرُ أحمرَ على كلّ جهاز — نفسُ الشكوى من بابٍ ثانٍ.
+      reminderRowId: row.id, reminderDate: row.date, reminderKind: row.type,
     };
     navigate("/campaigns", { state });
   };
@@ -77,7 +85,9 @@ export function RemindersWidget({ pets }: { pets: Pet[] }) {
         {rows.length > 0 && <span className="chip ms-auto bg-brand-50 text-2xs font-bold text-brand-700 dark:bg-brand-500/15 dark:text-brand-300 tabular-nums">{rows.length}</span>}
       </div>
 
-      {rows.length === 0 ? (
+      {marksErr ? (
+        <p data-remwidgeterr className="px-4 py-6 text-center text-sm font-semibold text-danger-600 dark:text-danger-400">{t("rem.loadFailed", "تعذّر تحميل التذكيرات — المشكلة بالاتصال ولا تذكير ضاع. أعد المحاولة قبل ما ترسل.")}</p>
+      ) : rows.length === 0 ? (
         <p className="px-4 py-6 text-center text-sm text-ink-subtle">{t("remind.empty", "لا توجد تذكيرات قريبة.")}</p>
       ) : (
         <ul className="divide-y divide-line">

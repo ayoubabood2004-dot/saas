@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { motion } from "framer-motion";
@@ -11,7 +11,7 @@ import { getCached, setCached } from "@/lib/swrCache";
 import { waVariants, pickVariantIndex, renderWaTemplate, type WaPool } from "@/lib/waTemplates";
 import type { CampaignPrefill, ReminderType } from "@/lib/reminders";
 import type { Pet, Vaccination, Surgery, Appointment, Reminder, EventCategory, MedicalVisit, WhatsAppMessage, ReminderMark } from "@/types";
-import { indexMarks, serverSentDay, isDone, judgeLifecycle, MARKS_LOOKBACK_DAYS } from "@/lib/reminderMarks";
+import { indexMarks, serverSentDay, markOf, localDay, judgeLifecycle } from "@/lib/reminderMarks";
 import { describeDbError } from "@/lib/errors";
 import { repo } from "@/lib/repo";
 import { PetAvatar } from "@/components/PetAvatar";
@@ -162,6 +162,9 @@ export function RemindersHub() {
   const [loadErr, setLoadErr] = useState(false);
   /** صفٌّ يُكتب الآن — ضغطتان لا تكتبان مرّتين. */
   const [markBusy, setMarkBusy] = useState<string | null>(null);
+  /** رقمُ آخر كتابةٍ للعلامات من هذه الشاشة. تحميلٌ بدأ قبلها يحمل علاماتٍ قُرئت قبلها —
+   *  فلا يكتب فوقها (كان يعيد صفّاً «تمّ» أحمرَ لحظةَ التوست فيُعاد إرسالُه). */
+  const marksRev = useRef(0);
   const [kind, setKind] = useState<Kind | "all">("all");
   const [timeF, setTimeF] = useState<TimeFilter>("all");
   const [view, setView] = useState<LifeStatus>("active");
@@ -206,7 +209,7 @@ export function RemindersHub() {
       // النطاق يرجع 60 يوماً للوراء أيضاً: الحكم على «جاء/ما جاء» يحتاج الماضي القريب.
       const from = isoDay(new Date(Date.now() - 60 * 86400000));
       const to = isoDay(new Date(Date.now() + 60 * 86400000));
-      const since = isoDay(new Date(Date.now() - MARKS_LOOKBACK_DAYS * 86400000));
+      const rev0 = marksRev.current;
       const [vax, srg, appts, rems, vis, log, mk] = await Promise.all([
         repo.listAllVaccinations(ids),
         repo.listAllSurgeries().catch(() => [] as Surgery[]),
@@ -216,10 +219,12 @@ export function RemindersHub() {
         repo.listAllVisits(ids).catch(() => [] as MedicalVisit[]),
         repo.listWhatsAppLog().catch(() => [] as WhatsAppMessage[]),
         // بلا .catch: صفرُ علاماتٍ عن فشلٍ يعيد كلَّ تذكيرٍ «تمّ» أحمرَ — فيُعاد إرسالُه لصاحبه.
-        repo.listReminderMarks(since),
+        repo.listReminderMarks(),
       ]);
-      setCached(remKey, { p, vax, srg, appts, rems, vis, log, marks: mk });
-      setPets(p); setVaccinations(vax); setSurgeries(srg); setAppointments(appts); setManual(rems); setVisits(vis); setWaLog(log); setMarks(mk);
+      // كُتبت علامةٌ أثناء هذا التحميل؟ علاماتُه أقدمُ منها — تُعاد قراءتُها بدل أن تكتب فوقها.
+      const fresh = marksRev.current === rev0 ? mk : await repo.listReminderMarks();
+      setCached(remKey, { p, vax, srg, appts, rems, vis, log, marks: fresh });
+      setPets(p); setVaccinations(vax); setSurgeries(srg); setAppointments(appts); setManual(rems); setVisits(vis); setWaLog(log); setMarks(fresh);
       setLoadErr(false);
     } catch { setLoadErr(true); }
     finally { setLoading(false); }
@@ -383,10 +388,11 @@ export function RemindersHub() {
    *  ثم الإرسال (`reminderMarks.ts`). ومهلة السماح تُعدّ من **يوم الإرسال** لا من الموعد. */
   const judged = useMemo<Judged[]>(() => allRows.flatMap((r) => {
     const sentAt = sentInfoOf(r);
-    const done = isDone(markIndex, r.id, r.date);
-    // «تمّ» على موعدٍ مضى عليه أكثر من مهلة الإبقاء: خرج من الشاشة كغيره من المحسوم —
-    // اللقاحُ المعلَّق لا يشيخ وحدَه، فبلا هذا يبقى بـ«جاؤوا» للأبد.
-    if (done && r.inDays < -OUTCOME_KEEP_DAYS) return [];
+    const mark = markOf(markIndex, r.id, r.date);
+    const done = mark?.state === "done";
+    // «تمّ» مضى عليه أكثر من مهلة الإبقاء **منذ ضُغط** — لا منذ موعده: تذكيرٌ متأخرٌ ١٥٠ يوماً
+    // كان يختفي لحظةَ «تم» بلا زرّ تراجع. والمعلَّقُ لا يشيخ وحدَه، فبلا هذا يبقى بـ«جاؤوا» للأبد.
+    if (done && mark && (daysFromToday(localDay(mark.marked_at)) ?? 0) < -OUTCOME_KEEP_DAYS) return [];
     const v = judgeLifecycle(r, {
       done, localOutcome: outcomeMap[r.id] ?? null, sentAt,
       sentAgoDays: sentAt ? (daysFromToday(sentAt) ?? 0) : 0, graceDays: GRACE_DAYS,
@@ -400,6 +406,7 @@ export function RemindersHub() {
     if (markBusy) return;
     playTap();
     setMarkBusy(r.id);
+    marksRev.current++;
     try {
       const m = await repo.markReminderDone(r.id, r.date);
       setMarks((prev) => { const next = [...prev.filter((x) => !(x.row_key === m.row_key && x.due_date === m.due_date)), m]; setCached(remKey, { ...(getCached<Seed>(remKey) ?? {}), marks: next }); return next; });
@@ -413,9 +420,10 @@ export function RemindersHub() {
     if (markBusy) return;
     playTap();
     setMarkBusy(r.id);
+    marksRev.current++;
     try {
       await repo.undoReminderDone(r.id, r.date);
-      const mk = await repo.listReminderMarks(isoDay(new Date(Date.now() - MARKS_LOOKBACK_DAYS * 86400000)));
+      const mk = await repo.listReminderMarks();
       setMarks(mk);
       setCached(remKey, { ...(getCached<Seed>(remKey) ?? {}), marks: mk });
     } catch (e) {

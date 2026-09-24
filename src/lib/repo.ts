@@ -1338,9 +1338,10 @@ const demoRepo = {
     saveDB(db);
   },
 
-  /** علاماتُ التذكير (0208) — مرآةُ reminder_marks بنفس دلالتها. */
-  async listReminderMarks(since: string): Promise<ReminderMark[]> {
-    return (loadDB().reminderMarks ?? []).filter((m) => m.due_date >= since).map((m) => ({ ...m }));
+  /** علاماتُ التذكير (0208) — مرآةُ reminder_marks بنفس دلالتها. كلُّها بلا حدٍّ بالتاريخ:
+   *  اللقاحُ المعلَّق لا يشيخ بالشاشة، فعلامتُه تُقرأ مهما قدُم موعدُه. */
+  async listReminderMarks(): Promise<ReminderMark[]> {
+    return (loadDB().reminderMarks ?? []).map((m) => ({ ...m }));
   },
   /** «تمّ التذكير»: يعلو «أُرسلت» ويُبقي يومَ إرسالها (sent_at). */
   async markReminderDone(rowKey: string, dueDate: string): Promise<ReminderMark> {
@@ -4874,10 +4875,11 @@ const supabaseRepo: typeof demoRepo = {
   async removeReminder(id) {
     ok(await sbc().from("reminders").delete().eq("id", id));
   },
-  async listReminderMarks(since) {
-    // قائمةٌ يُبنى عليها «أحمر أم تمّ» — تُرمى ولا تُبلع: صفرٌ هنا يعيد كلَّ تذكيرٍ
-    // «تمّ» أحمرَ، فيُعاد إرسالُه لصاحبه.
-    return allPages<ReminderMark>(() => sbc().from("reminder_marks").select("*").gte("due_date", since));
+  async listReminderMarks() {
+    // قائمةٌ يُبنى عليها «أحمر أم تمّ» — تُرمى ولا تُبلع: صفرٌ هنا يعيد كلَّ تذكيرٍ «تمّ»
+    // أحمرَ، فيُعاد إرسالُه لصاحبه. **وبلا حدٍّ بالتاريخ**: حدُّ ٧٣٠ يوماً كان يُسقط علامةَ
+    // لقاحٍ أقدم (والمعلَّقُ لا يشيخ بالشاشة) فيعود أحمرَ بعد تحديث. تنمو بتذكيرٍ لكلّ موعد.
+    return allPages<ReminderMark>(() => sbc().from("reminder_marks").select("*"));
   },
   async markReminderDone(rowKey, dueDate) {
     // `sent_at` ليس بالحمولة: فوق «أُرسلت» يبقى يومُها، فالتراجعُ يعيدها «أُرسلت» لا حمراء.

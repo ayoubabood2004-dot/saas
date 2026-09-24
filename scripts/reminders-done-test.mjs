@@ -63,8 +63,15 @@ if (M && typeof M.judgeLifecycle === "function") {
   const idx = M.indexMarks(marks);
   check("العلامةُ بـ(الصفّ، التاريخ): «تم» لموعدٍ لا تنطبق على الموعد التالي — «الخطوةُ التالية»",
     M.isDone(idx, "vax-a", "2026-09-01") === true && M.isDone(idx, "vax-a", "2026-10-01") === false);
-  check("  ويومُ الإرسال من الخادم يُقرأ بالصفّ وتاريخه", M.serverSentDay(idx, "rem-b", "2026-09-10") === "2026-09-11"
+  const LD = typeof M.localDay === "function" ? M.localDay : () => "غائبة";
+  check("  ويومُ الإرسال من الخادم يُقرأ بالصفّ وتاريخه", M.serverSentDay(idx, "rem-b", "2026-09-10") === LD("2026-09-11T08:00:00Z")
     && M.serverSentDay(idx, "rem-b", "2026-09-17") === null && M.serverSentDay(idx, "nope", "2026-09-10") === null);
+  /* الخادمُ يرجع UTC، و`.slice(0, 10)` عليه كان يجعل إرسالاً بعد منتصف ليل بغداد «أمس»:
+   * تبدأ مهلةُ السماح قبل يومٍ على كلّ جهازٍ غير المُرسِل. اليومُ المحلّيّ من ساعة الجهاز. */
+  const lateNight = new Date(2026, 8, 24, 1, 30);   // ١:٣٠ فجراً بالساعة المحلّية
+  check("  واليومُ **محلّيّ** لا UTC (إرسالُ الفجر لا يصير أمس)", typeof M.localDay === "function"
+    && M.localDay(lateNight.toISOString()) === "2026-09-24");
+  check("  والعلامةُ نفسُها تُقرأ (لتاريخ ضغطها)", typeof M.markOf === "function" && M.markOf(idx, "vax-a", "2026-09-01")?.id === "1");
   check("  و«أُرسلت» ليست «تم»", M.isDone(idx, "rem-b", "2026-09-10") === false);
 }
 
@@ -110,7 +117,7 @@ const has = (f) => !!repo && typeof repo[f] === "function";
 check("الريبو التجريبيّ فيه الأربع (قراءة، تم، أُرسلت، تراجع)",
   ["listReminderMarks", "markReminderDone", "markReminderSent", "undoReminderDone"].every(has));
 if (["listReminderMarks", "markReminderDone", "markReminderSent", "undoReminderDone"].every(has)) {
-  const get = async (k, d) => (await repo.listReminderMarks("2000-01-01")).find((m) => m.row_key === k && m.due_date === d);
+  const get = async (k, d) => (await repo.listReminderMarks()).find((m) => m.row_key === k && m.due_date === d);
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
   await repo.markReminderSent("vax-1", "2026-09-01");
@@ -119,14 +126,14 @@ if (["listReminderMarks", "markReminderDone", "markReminderSent", "undoReminderD
   await sleep(5);
   await repo.markReminderSent("vax-1", "2026-09-01");
   const s2 = await get("vax-1", "2026-09-01");
-  check("  وإعادةُ الإرسال تجدّد اليوم (مهلةُ السماح تُعدّ منه)", s2?.state === "sent" && s2.sent_at > s1.sent_at);
+  check("  وإعادةُ الإرسال تجدّد اليوم (مهلةُ السماح تُعدّ منه)", s2?.state === "sent" && !!s1?.sent_at && s2.sent_at > s1.sent_at);
   const d1 = await repo.markReminderDone("vax-1", "2026-09-01");
-  check("«تم» فوق «أُرسلت» ⇒ تم، ويومُ الإرسال باقٍ", d1?.state === "done" && d1.sent_at === s2.sent_at);
+  check("«تم» فوق «أُرسلت» ⇒ تم، ويومُ الإرسال باقٍ", d1?.state === "done" && !!s2?.sent_at && d1.sent_at === s2.sent_at);
   await repo.markReminderSent("vax-1", "2026-09-01");
   check("  و«أُرسلت» بعدها لا تُنزل «تم»", (await get("vax-1", "2026-09-01"))?.state === "done");
   await repo.undoReminderDone("vax-1", "2026-09-01");
   const u1 = await get("vax-1", "2026-09-01");
-  check("التراجعُ عن «تم» أُرسلت قبلها ⇒ تعود «أُرسلت» (لا أحمرَ كأنها لم تُرسل)", u1?.state === "sent" && u1.sent_at === s2.sent_at);
+  check("التراجعُ عن «تم» أُرسلت قبلها ⇒ تعود «أُرسلت» (لا أحمرَ كأنها لم تُرسل)", u1?.state === "sent" && !!s2?.sent_at && u1.sent_at === s2.sent_at);
 
   await repo.markReminderDone("srg-2", "2026-08-20");
   await repo.undoReminderDone("srg-2", "2026-08-20");
@@ -137,10 +144,11 @@ if (["listReminderMarks", "markReminderDone", "markReminderSent", "undoReminderD
 
   await repo.markReminderDone("rem-3", "2026-09-01");
   await repo.markReminderDone("rem-3", "2026-10-01");
-  const all = await repo.listReminderMarks("2000-01-01");
+  const all = await repo.listReminderMarks();
   check("«تم» لموعدين للتذكير نفسه علامتان — لا تختلطان", all.filter((m) => m.row_key === "rem-3").length === 2);
-  const recent = await repo.listReminderMarks("2026-09-15");
-  check("القراءةُ محدودةٌ بالتاريخ", recent.every((m) => m.due_date >= "2026-09-15") && recent.some((m) => m.row_key === "rem-3"));
+  await repo.markReminderDone("vax-old", "2023-01-15");
+  check("والقراءةُ بلا حدٍّ بالتاريخ: «تم» على موعدٍ قديمٍ جداً تُقرأ (المعلَّقُ لا يشيخ بالشاشة)",
+    (await repo.listReminderMarks()).some((m) => m.row_key === "vax-old" && m.state === "done"));
 }
 
 /* ── ٣) عقدُ الملفّات: الهجرة، السحابيّ، الشاشة، الحملات، اللوحة ──────────── */
@@ -152,16 +160,18 @@ check("  والحالةُ «أُرسلت» أو «تم» فقط، ويومُ ا�
 check("  وRLS بسياسةٍ واحدةٍ بنمط initplan، لا تقرأ جدولَها (0162)",
   /enable row level security/.test(MIG) && /for all to authenticated\s*using \(clinic_id = \(select auth_clinic\(\)\)\)\s*with check \(clinic_id = \(select auth_clinic\(\)\)\)/.test(MIG)
   && !/from reminder_marks/.test(MIG.slice(MIG.indexOf("create policy"))));
-check("  ولا أثرَ لمشغّل المنصّة (0151): marked_by فارغٌ حين يعمل داخل العيادة",
-  /marked_by\s+uuid default \(case when platform_acting_clinic\(\) is null then auth\.uid\(\) end\)/.test(MIG));
+check("  ومَن كتب يُختم بكلّ إدراجٍ **وتحديث** بمحفّز (القيمةُ الافتراضية لا تجري على التحديث)",
+  /create trigger reminder_marks_stamp\s+before insert or update on reminder_marks/.test(MIG));
+check("  ولا أثرَ لمشغّل المنصّة (0151): فارغٌ حين يعمل داخل العيادة",
+  /new\.marked_by := case when platform_acting_clinic\(\) is null then auth\.uid\(\) end;/.test(MIG) && !/security definer/.test(MIG));
 check("  ولا شيءَ لـanon", /revoke all on reminder_marks from anon/.test(MIG) && !/to anon/.test(MIG));
 check("  وبالموجة (هجرةٌ خارجها غيرُ مفحوصة)", /0208_reminder_marks\.sql/.test((read("supabase/tests/run.sh").split("\n").find((l) => l.startsWith("WAVE=")) || "")));
 
 console.log("▸ الريبو (السحابي)");
 const REPO = read("src/lib/repo.ts");
-const cloudAt = REPO.indexOf("  async listReminderMarks(since) {");
+const cloudAt = REPO.indexOf("  async listReminderMarks() {\n    // قائمةٌ");
 const cloud = cloudAt < 0 ? "" : REPO.slice(cloudAt, REPO.indexOf("  /* ---------------- Inventory & POS", cloudAt));
-check("القراءةُ بـallPages وتُرمى (لا تُبلع: صفرُ علاماتٍ يعيد «تم» أحمرَ)", /return allPages<ReminderMark>\(\(\) => sbc\(\)\.from\("reminder_marks"\)\.select\("\*"\)\.gte\("due_date", since\)\);/.test(cloud) && !/\.catch\(/.test(cloud));
+check("القراءةُ بـallPages وتُرمى (لا تُبلع: صفرُ علاماتٍ يعيد «تم» أحمرَ)", /return allPages<ReminderMark>\(\(\) => sbc\(\)\.from\("reminder_marks"\)\.select\("\*"\)\);/.test(cloud) && !/\.catch\(/.test(cloud) && !/gte\("due_date"/.test(cloud));
 check("«تم»: upsert بالمفتاح الفريد، يُسمع صوتُه، ولا يحمل sent_at (فيبقى يومُ الإرسال)",
   /markReminderDone\(rowKey, dueDate\) \{[\s\S]{0,400}?return updated<ReminderMark>\([\s\S]{0,300}?onConflict: "clinic_id,row_key,due_date"/.test(cloud)
   && !/markReminderDone\(rowKey, dueDate\) \{[\s\S]{0,400}?sent_at: /.test(cloud));
@@ -174,12 +184,19 @@ check("القراءةُ مسموحةٌ باشتراكٍ منتهٍ، والكت�
 
 console.log("▸ مركز التذكيرات");
 const HUB = read("src/pages/RemindersHub.tsx");
-check("العلاماتُ تُحمَّل بلا .catch (فشلُها يُقال لا يُبلع)", /repo\.listReminderMarks\(since\),/.test(HUB) && !/listReminderMarks\([^)]*\)\.catch/.test(HUB));
+check("العلاماتُ تُحمَّل بلا .catch (فشلُها يُقال لا يُبلع)", /repo\.listReminderMarks\(\),/.test(HUB) && !/listReminderMarks\([^)]*\)\.catch/.test(HUB) && !/MARKS_LOOKBACK_DAYS/.test(HUB));
+check("  وتحميلٌ بدأ قبل كتابةٍ لا يكتب فوقها (كان يعيد «تمّ» أحمرَ لحظةَ التوست)",
+  /const rev0 = marksRev\.current;/.test(HUB) && /marksRev\.current === rev0 \? mk : await repo\.listReminderMarks\(\)/.test(HUB)
+  && (HUB.match(/marksRev\.current\+\+;/g) || []).length === 2);
 check("  والفشلُ يُقال بشريطٍ وزرّ إعادة، ولا «كل شيء تحت السيطرة» على قائمةٍ لم تصل",
   /catch \{ setLoadErr\(true\); \}/.test(HUB) && /data-remloaderr/.test(HUB) && /rem\.loadFailed/.test(HUB) && /loadErr && allRows\.length === 0 \? null/.test(HUB));
-check("الحكمُ بالدالّة الصِرفة، و«تم» من علامات الخادم", /judgeLifecycle\(r, \{/.test(HUB) && /const done = isDone\(markIndex, r\.id, r\.date\);/.test(HUB));
+check("الحكمُ بالدالّة الصِرفة، و«تم» من علامات الخادم", /judgeLifecycle\(r, \{/.test(HUB) && /const mark = markOf\(markIndex, r\.id, r\.date\);\s*const done = mark\?\.state === "done";/.test(HUB));
 check("  و«أُرسلت» من الخادم دقيقةٌ بالصفّ وتاريخه", /const sd = serverSentDay\(markIndex, r\.id, r\.date\);/.test(HUB));
-check("  و«تم» على موعدٍ قديم يخرج بعد مهلة الإبقاء (لا يبقى بـ«جاؤوا» للأبد)", /if \(done && r\.inDays < -OUTCOME_KEEP_DAYS\) return \[\];/.test(HUB));
+/* المهلةُ من **ضغطة «تم»** لا من الموعد: تذكيرٌ متأخرٌ ١٥٠ يوماً كان يختفي لحظةَ «تم» بلا
+ * زرّ تراجع — وأمسكته المراجعة؛ والمتأخرُ طويلاً هو بالضبط ما يشكو منه المالك. */
+check("  و«تم» يخرج بعد مهلة الإبقاء **منذ ضُغط** لا منذ موعده (لا يختفي لحظتَه بلا تراجع)",
+  /if \(done && mark && \(daysFromToday\(localDay\(mark\.marked_at\)\) \?\? 0\) < -OUTCOME_KEEP_DAYS\) return \[\];/.test(HUB)
+  && !/if \(done && r\.inDays < -OUTCOME_KEEP_DAYS\)/.test(HUB));
 const activeBtnAt = HUB.indexOf("{t(\"rem.sendShort\", \"ذكّر\")}");
 const activeTail = activeBtnAt < 0 ? "" : HUB.slice(activeBtnAt, HUB.indexOf("</motion.div>", activeBtnAt));
 check("زرُّ «تم التذكير» بكلّ صفٍّ قيد المتابعة — **ولو بلا هاتف** (كان بلا فعلٍ إطلاقاً)",
@@ -193,13 +210,21 @@ check("  ولا أثرَ سريريّ: «تم» لا يكتب لقاحاً ول�
 console.log("▸ الحملات — جذرُ «أُرسلت وبقيت حمراء»");
 const CAMP = read("src/pages/WhatsAppCampaigns.tsx");
 check("رسالةُ التذكير تُسجَّل بنوع التذكير لا بشريحة الصفحة (كانت manual دائماً منذ c3680c1)",
-  /const kind = fromReminder\?\.kind \?\? \(segment === "all" \? "manual" : segment\);/.test(CAMP) && /\n\s+kind,\n/.test(CAMP) && !/kind: segment === "all" \? "manual" : segment/.test(CAMP));
-check("  والنوعُ يُحمل من التذكير", /kind: prefill\.reminderKind \?\? null/.test(CAMP));
+  /const kind = forReminder\?\.kind \?\? \(segment === "all" \? "manual" : segment\);/.test(CAMP) && /\n\s+kind,\n/.test(CAMP) && !/kind: segment === "all" \? "manual" : segment/.test(CAMP));
+check("  والتذكيرُ يخصّ **مجموعةَ حيوانه وحدَها** (إرسالٌ لغيره كان يُسجَّل بنوعه ويختمه «أُرسلت»)",
+  /const forReminder = fromReminder && group\.pets\.some\(\(p\) => p\.id === fromReminder\.petId\) \? fromReminder : null;/.test(CAMP)
+  && /if \(forReminder\) \{/.test(CAMP) && /const fr = forReminder;/.test(CAMP));
+check("  والنوعُ والحيوانُ يُحملان من التذكير", /kind: prefill\.reminderKind \?\? null, petId: prefill\.targetPetId/.test(CAMP));
 check("  و«أُرسلت» تُكتب على الخادم لكلّ الأجهزة، وفشلُها يُقال", /repo\.markReminderSent\(fr\.id, fr\.date\)\.catch\(\(\) => \{\s*toast\.error\(t\("rem\.sentMarkFailed"/.test(CAMP));
 
 console.log("▸ لوحة التحكم");
 const W = read("src/components/RemindersWidget.tsx");
-check("الودجةُ لا تصرخ «متأخر» عن تذكيرٍ «تم»", /\.filter\(\(r\) => !isDone\(idx, r\.id, r\.date\)\)/.test(W) && /repo\.listReminderMarks\(since\)/.test(W));
+check("الودجةُ لا تصرخ «متأخر» عن تذكيرٍ «تم» ولا «أُرسلت» (كانت تدعو لرسالةٍ ثانية)",
+  /\.filter\(\(r\) => !isDone\(idx, r\.id, r\.date\) && !serverSentDay\(idx, r\.id, r\.date\)\)/.test(W) && /repo\.listReminderMarks\(\)/.test(W));
+check("  وإرسالُها يحمل هويّةَ التذكير (كان يُسجَّل manual بلا علامة — الشكوى من بابٍ ثانٍ)",
+  /reminderRowId: row\.id, reminderDate: row\.date, reminderKind: row\.type,/.test(W));
+check("  وفشلُ قراءة العلامات يُقال لا يُبلع (صفوفٌ «تمّ» حمراء = رسالةٌ مكرّرة)",
+  /\.catch\(\(\) => \{ if \(alive\) setMarksErr\(true\); \}\)/.test(W) && /\{marksErr \? \(/.test(W) && /rem\.loadFailed/.test(W));
 check("  والصفُّ يحمل تاريخَه (مفتاحُ العلامة)", /date: v\.due_date\.slice\(0, 10\),/.test(read("src/lib/reminders.ts")));
 
 console.log("▸ الترجمة");

@@ -18,10 +18,6 @@ export type MarkState = ReminderMark["state"];
 
 export type LifeStatus = "active" | "sent" | "arrived" | "missed";
 
-/** كم يوماً للخلف تُقرأ العلامات. التذكيرُ المعلَّق لا يشيخ بالشاشة (لقاحٌ متأخر ٢٢٨ يوماً
- *  قيس بالإنتاج)، فالنافذةُ واسعة: علامةٌ لا تُقرأ تعيد صفّاً «تمّ» أحمرَ فيُعاد إرسالُه. */
-export const MARKS_LOOKBACK_DAYS = 730;
-
 export const markKey = (rowKey: string, dueDate: string): string => `${rowKey}|${dueDate}`;
 
 export function indexMarks(marks: readonly ReminderMark[]): Map<string, ReminderMark> {
@@ -30,10 +26,24 @@ export function indexMarks(marks: readonly ReminderMark[]): Map<string, Reminder
   return m;
 }
 
-/** يومُ الإرسال المسجَّل على الخادم لهذا الصفّ بتاريخه — أو null. */
+/** اليومُ المحلّيّ لطابعٍ زمنيّ (YYYY-MM-DD). الخادمُ يرجع الوقتَ بـUTC، و`.slice(0, 10)`
+ *  عليه يجعل إرسالاً بعد منتصف ليل بغداد بثلاث ساعاتٍ «أمس» — فتبدأ مهلةُ السماح قبل يومٍ
+ *  على كلّ جهازٍ غير المُرسِل، ويختلف الجهازان على الحالة. */
+export function localDay(ts: string): string {
+  const d = new Date(ts);
+  if (Number.isNaN(d.getTime())) return ts.slice(0, 10);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+/** العلامةُ نفسُها لهذا الصفّ بتاريخه — أو undefined. */
+export function markOf(index: ReadonlyMap<string, ReminderMark>, rowKey: string, dueDate: string): ReminderMark | undefined {
+  return index.get(markKey(rowKey, dueDate));
+}
+
+/** يومُ الإرسال المسجَّل على الخادم لهذا الصفّ بتاريخه (باليوم المحلّيّ) — أو null. */
 export function serverSentDay(index: ReadonlyMap<string, ReminderMark>, rowKey: string, dueDate: string): string | null {
   const m = index.get(markKey(rowKey, dueDate));
-  return m?.sent_at ? m.sent_at.slice(0, 10) : null;
+  return m?.sent_at ? localDay(m.sent_at) : null;
 }
 
 /** «تمّ التذكير» لهذا الصفّ بتاريخه؟ */

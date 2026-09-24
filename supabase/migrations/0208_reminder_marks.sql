@@ -33,9 +33,28 @@ create table if not exists reminder_marks (
   -- فالتراجعُ عن «تمّ» يعيد الصفَّ «أُرسلت» لا أحمرَ كأنه لم يُرسَل قطّ.
   sent_at    timestamptz,
   marked_at  timestamptz not null default now(),
-  marked_by  uuid default (case when platform_acting_clinic() is null then auth.uid() end),
+  -- مَن كتب آخرَ مرّة — يختمه المحفّزُ أدناه بكلّ إدراجٍ **وتحديث**. القيمةُ الافتراضية لا
+  -- تجري على التحديث، فكان «تمّ» فوق «أُرسلت» يُنسب لمن أرسل لا لمن ضغط.
+  marked_by  uuid,
   constraint reminder_marks_one unique (clinic_id, row_key, due_date)
 );
+
+-- الختم: المستخدمُ الحاليّ — **إلا مشغّلَ المنصّة داخل العيادة** (0151): فارغٌ، لا أثرَ له
+-- عندها كما اتُّفق. بصلاحية المُستدعي: لا يقرأ ولا يكتب جدولاً آخر.
+create or replace function public.reminder_marks_stamp()
+returns trigger
+language plpgsql
+set search_path to 'public'
+as $function$
+begin
+  new.marked_by := case when platform_acting_clinic() is null then auth.uid() end;
+  return new;
+end $function$;
+
+drop trigger if exists reminder_marks_stamp on reminder_marks;
+create trigger reminder_marks_stamp
+  before insert or update on reminder_marks
+  for each row execute function public.reminder_marks_stamp();
 
 -- القراءةُ محدودةٌ بالتاريخ (الشاشةُ لا تحتاج علاماتِ مواعيدَ مضى عليها أكثر من ٤ أشهر).
 create index if not exists reminder_marks_clinic_due_idx on reminder_marks (clinic_id, due_date);

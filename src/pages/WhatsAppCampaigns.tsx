@@ -165,7 +165,7 @@ export function WhatsAppCampaigns() {
    * والفرق بين المصدرين مقصود: ودجة اللوحة ترسل صنفاً عاماً فنختار له قالباً،
    * أما مركز التذكيرات فيرسل **النص كاملاً** بلقاحه وتاريخه وساعته — وهو ما
    * لا تعرفه الحملات — فنأخذه كما جاء ونترك للطبيب تحريره وتبديل صياغته. */
-  const [fromReminder, setFromReminder] = useState<{ id: string; date: string; kind: string | null } | null>(null);
+  const [fromReminder, setFromReminder] = useState<{ id: string; date: string; kind: string | null; petId: string } | null>(null);
   useEffect(() => {
     const prefill = location.state as CampaignPrefill | null;
     if (!prefill?.targetPetId || prefillApplied.current) return;
@@ -180,7 +180,7 @@ export function WhatsAppCampaigns() {
       if (tplId) pickTemplate(tplId);
     }
     if (prefill.reminderRowId && prefill.reminderDate) {
-      setFromReminder({ id: prefill.reminderRowId, date: prefill.reminderDate, kind: prefill.reminderKind ?? null });
+      setFromReminder({ id: prefill.reminderRowId, date: prefill.reminderDate, kind: prefill.reminderKind ?? null, petId: prefill.targetPetId });
     }
     // Surface this client in the audience list, then drop the router state so a
     // refresh or back-navigation doesn't silently re-apply it.
@@ -261,7 +261,10 @@ export function WhatsAppCampaigns() {
     /* رسالةُ تذكيرٍ تُسجَّل **بنوع التذكير** لا بشريحة الصفحة. منذ c3680c1 كانت تُسجَّل
      * `manual` دائماً (الشريحةُ الافتراضية «الكل») — ومركزُ التذكيرات يطابق السجلَّ بـ
      * «الحيوان + النوع»، فلا يطابق شيئاً ويبقى التذكيرُ أحمرَ على كلّ جهازٍ غير المُرسِل. */
-    const kind = fromReminder?.kind ?? (segment === "all" ? "manual" : segment);
+    // والتذكيرُ يخصّ **مجموعةَ حيوانه وحدَها**: الصفحةُ تبقى مفتوحة بعده، وإرسالٌ لغيره (عرض،
+    // شريحةٌ أخرى، أو صاحبٌ آخر بعد إلغاء الأوّل) كان يُسجَّل بنوعه ويختم تذكيرَه «أُرسلت».
+    const forReminder = fromReminder && group.pets.some((p) => p.id === fromReminder.petId) ? fromReminder : null;
+    const kind = forReminder?.kind ?? (segment === "all" ? "manual" : segment);
     try {
       await sendWhatsApp({
         phone: num, text,
@@ -274,11 +277,11 @@ export function WhatsAppCampaigns() {
     setSent((s) => new Set(s).add(group.key));
     // جئنا من تذكير؟ نترك له علامةً بمخزن الجلسة، فيقرأها مركز التذكيرات عند
     // الرجوع وينقل التذكير من الأحمر إلى «أُرسلت» بلا انتظار مزامنة السجل.
-    if (fromReminder) {
-      try { sessionStorage.setItem("vp_rem_justsent", JSON.stringify(fromReminder)); } catch { /* بلا مخزن — السجل يغطّي */ }
+    if (forReminder) {
+      try { sessionStorage.setItem("vp_rem_justsent", JSON.stringify(forReminder)); } catch { /* بلا مخزن — السجل يغطّي */ }
       // والعلامةُ على الخادم: دقيقةٌ بالصفّ وتاريخه، ويراها كلُّ جهاز (0208). الرسالةُ انبعثت
       // فعلاً — ففشلُ العلامة لا يُفشل الإرسال، لكنه يُقال: بلا علامةٍ يبقى أحمرَ على غير هذا الجهاز.
-      const fr = fromReminder;
+      const fr = forReminder;
       void repo.markReminderSent(fr.id, fr.date).catch(() => {
         toast.error(t("rem.sentMarkFailed", "انبعثت الرسالة، بس ما انسجّلت «أُرسلت» لباقي الأجهزة — اضغط «تم التذكير» إذا خلص"));
       });
