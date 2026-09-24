@@ -1,0 +1,29 @@
+{
+  "$doc": "ما تقرؤه شِفرةُ الإقلاع (القشرة، repo، الحرّاس…) قبل أوّل صفحة — ويُحزَم بمسار الإقلاع مع main.html. وكلُّ ما عداه نصفٌ باردٌ (arCold) يُحمَّل مع أوّل صفحةٍ وتنتظره كلُّ صفحةٍ عبر page(). المسارُ نطاقٌ (nav) أو فرعٌ (payroll.el) أو ورقة (retail.deliveryFeeLine). وكلُّ اسمٍ يُضاف هنا يُدفع من بايتات الإقلاع — قِسه بـstore-weight-guard قبل أن تضيفه. ونطاقاتُ store.ar.json (sf، track، portal، errors، auth، common) تبقى حارّةً كاملةً: صفحةُ الزائر بالوضع التجريبيّ تعيد تهيئةَ i18next بهذا النصف. الحارس: scripts/i18n-hot-guard.mjs.",
+  "hot": [
+    "app",
+    "auth",
+    "bookReq",
+    "bookings",
+    "branches",
+    "clinicSync",
+    "common",
+    "errors",
+    "features",
+    "nav",
+    "outbox",
+    "override",
+    "payroll",
+    "plans",
+    "pos",
+    "reception",
+    "records",
+    "retail",
+    "role",
+    "storeBell",
+    "sub",
+    "sf",
+    "track",
+    "portal"
+  ]
+}

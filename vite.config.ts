@@ -2,6 +2,7 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
 import path from "node:path";
+import { i18nSplit } from "./scripts/i18n-split.mjs";
 
 
 /**
@@ -52,6 +53,11 @@ export default defineConfig({
   define: { __BUILD_AT__: JSON.stringify(new Date().toISOString()) },
   plugins: [
     react(),
+    /* قسمةُ القاموس العربيّ (`scripts/i18n-split.mjs`): `arHot` مع الإقلاع،
+     * و`arCold` حزمةٌ واحدةٌ كسولة تنتظرها كلُّ صفحة. كان `ar.json` كلُّه
+     * بحزمة الإقلاع — ٧٨ كيلو مضغوطة، أغلبُها نصوصُ شاشاتٍ كسولة. ويُفشّل
+     * البناءَ إن عاد النصفُ البارد لمسار الإقلاع أو دخل حزمةً غيرَ حزمته. */
+    i18nSplit(),
     storeEntry(),
     VitePWA({
       registerType: "autoUpdate",

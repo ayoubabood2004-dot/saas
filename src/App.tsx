@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useRef, type ReactNode } from "react";
+import { Suspense, useEffect, useRef, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
@@ -16,12 +16,11 @@ import { Assistant } from "@/components/Assistant";
 import { useSubscription } from "@/lib/subscription";
 import { Spinner, useToast } from "@/components/ui";
 import { startOutbox } from "@/lib/outbox";
-import { retryImport } from "@/lib/appUpdate";
+import { page } from "@/lib/lazyPage";
 import { useNavFolded } from "@/lib/navFold";
 
-/** كل صفحة كسولة تمر من هنا: لو فشل تحميلها لأن الجهاز ماسك قشرة قديمة بعد
- *  نشر جديد، يُمسح المخبأ وتُجلب النسخة الجديدة تلقائياً — مرة واحدة. */
-const page: typeof lazy = (load) => lazy(() => retryImport(load));
+/* كلُّ صفحةٍ كسولةٍ تمرّ من `page()` (`src/lib/lazyPage.ts`): تنتظر حزمتَها
+ * ونصفَ القاموس العربيّ البارد معاً، وتتعافى من القشرة القديمة بعد النشر. */
 
 // Route-level code splitting — each page is its own chunk.
 const Login = page(() => import("@/pages/Login").then((m) => ({ default: m.Login })));
