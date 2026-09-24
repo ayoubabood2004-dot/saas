@@ -97,8 +97,14 @@ check("زرُّ «امسح الزبون» بكلمةٍ بجنب حقوله (لا
 check("  ونفسُ الفعل بكلّ موضع: نافذةُ السطور المربوطة وحارسُ الدفعة المعلَّقة",
   /onClick=\{\(e\) => \{ e\.stopPropagation\(\); askClearCustomer\(\); \}\}/.test(nearBtn) && /disabled=\{paying\}/.test(nearBtn));
 check("  بالبطاقة: بترويستها", /\{hasCustomer && custClearBtn\("head"\)\}/.test(SB));
-check("  وبالسطر النحيف المفتوح دائماً: عمودٌ زائدٌ حين يوجد زبون",
-  /\{hasCustomer && custClearBtn\("slim"\)\}/.test(SB) && /hasCustomer \? "sm:grid-cols-\[1fr,1fr,minmax\(10rem,0\.8fr\),auto,auto\]"/.test(SB));
+/* المراجعة قاست العمودَ الخامس: عرضُه كاملاً قبل الحقلين، فيُعصر الاسمُ والهاتفُ حرفين أو
+ * ثلاثة على لابتوب ١٢٨٠ لحظةَ أوّل حرف (والصفرَ على ١٠٢٤ ويفيض الزرُّ عن البطاقة). */
+check("  وبالسطر النحيف المفتوح دائماً: سطرُه تحت الحقول — **لا عمودٌ خامس** يعصرهما",
+  /\{customerOpenPref && hasCustomer && <div className="mt-2 flex justify-end">\{custClearBtn\("slim"\)\}<\/div>\}/.test(SB)
+  && !/grid-cols-\[1fr,1fr,minmax\(10rem,0\.8fr\),auto,auto\]/.test(SB)
+  && /customerOpenPref \? "sm:grid-cols-\[1fr,1fr,minmax\(10rem,0\.8fr\),auto\]" : "sm:grid-cols-2"/.test(SB));
+check("  والأيقونةُ بترويسة السلّة مخفيّةٌ على الهاتف (كانت تُفيض الترويسةَ عن ٣٧٥px)",
+  /data-custclear type="button"[\s\S]{0,700}?className=\{cn\("hidden place-items-center[^"]*sm:grid"/.test(SB));
 check("  وبالسطر المطويّ «البيع لـ…»: بجنبه لا داخله (زرٌّ داخل زرٍّ لا يصحّ)",
   /data-saledetails[\s\S]{0,900}?<\/button>\s*\{hasCustomer && custClearBtn\("line"\)\}/.test(SB));
 {

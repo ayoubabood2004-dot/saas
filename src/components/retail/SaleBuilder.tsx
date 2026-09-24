@@ -1689,7 +1689,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
       disabled={paying}
       title={t("retail.custClear", "امسح الزبون وخلّي السلّة")}
       className={cn("inline-flex shrink-0 items-center justify-center gap-1.5 rounded-xl border border-line bg-surface-1 px-3 text-xs font-bold text-ink-muted transition hover:border-warn-300 hover:bg-warn-50 hover:text-warn-700 disabled:opacity-50 dark:hover:bg-warn-500/15 dark:hover:text-warn-200",
-        where === "slim" ? "h-11 rounded-2xl" : where === "line" ? "rounded-2xl py-2" : "h-8")}
+        where === "line" ? "rounded-2xl py-2" : "h-8")}
     >
       <UserX size={15} /> {t("retail.custClearShort", "امسح الزبون")}
     </button>
@@ -2517,9 +2517,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
               )}
             </span>
           </div>
-          <div className={cn("relative grid gap-2", customerOpenPref
-            ? (hasCustomer ? "sm:grid-cols-[1fr,1fr,minmax(10rem,0.8fr),auto,auto]" : "sm:grid-cols-[1fr,1fr,minmax(10rem,0.8fr),auto]")
-            : "sm:grid-cols-2")}>
+          <div className={cn("relative grid gap-2", customerOpenPref ? "sm:grid-cols-[1fr,1fr,minmax(10rem,0.8fr),auto]" : "sm:grid-cols-2")}>
             <div className="relative">
               <User size={15} className="pointer-events-none absolute top-1/2 -translate-y-1/2 text-ink-subtle ltr:left-3 rtl:right-3" />
               <input
@@ -2552,7 +2550,6 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
                 >
                   <StickyNote size={17} />
                 </button>
-                {hasCustomer && custClearBtn("slim")}
               </>
             )}
             {custOpen && custMatches.length > 0 && (
@@ -2570,6 +2567,9 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
               </div>
             )}
           </div>
+          {/* بالسطر النحيف: سطرُه الخاصّ تحت الحقول لا عمودٌ خامس — العمودُ كان يأخذ عرضَه كاملاً
+              قبل الحقلين فيُعصران حرفين أو ثلاثة على شاشة لابتوب (قاسته المراجعة) لحظةَ الكتابة. */}
+          {customerOpenPref && hasCustomer && <div className="mt-2 flex justify-end">{custClearBtn("slim")}</div>}
 
           {/* موظف المبيعات (البائع) — يتثبّت تلقائياً على المسجّل دخوله؛ يظهر
               بالفاتورة المطبوعة وسجل الفواتير وتقارير أداء الموظفين. */}
@@ -2831,7 +2831,9 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
                 disabled={paying}
                 title={t("retail.custClear", "امسح الزبون وخلّي السلّة")}
                 aria-label={t("retail.custClear", "امسح الزبون وخلّي السلّة")}
-                className={cn("grid place-items-center rounded-xl bg-surface-2 text-ink-muted transition hover:bg-warn-50 hover:text-warn-700 dark:hover:bg-warn-500/15 dark:hover:text-warn-200", posV2 ? "h-10 w-10" : "h-8 w-8")}
+                /* مخفيٌّ على الهاتف: ترويسةُ السلّة تفيض عن ٣٧٥px به (قاسته المراجعة)، والزرُّ
+                   بالكلمة بجنب حقول الزبون يغني عنه هناك. */
+                className={cn("hidden place-items-center rounded-xl bg-surface-2 text-ink-muted transition hover:bg-warn-50 hover:text-warn-700 dark:hover:bg-warn-500/15 dark:hover:text-warn-200 sm:grid", posV2 ? "h-10 w-10" : "h-8 w-8")}
               >
                 <UserX size={posV2 ? 18 : 15} />
               </button>
