@@ -826,6 +826,7 @@
     "farmProductAtTill": "{{name}} belongs to a farm's stock — it is issued from the farm screen, not the clinic till",
     "outTapToCheck": "Zero stock as of the last update — tap and we'll check with the server",
     "custClear": "Clear the customer, keep the cart",
+    "custClearShort": "Clear customer",
     "custClearTitle": "Clear the customer's details?",
     "custClearHint": "The rest of the cart stays as it is. But these lines are tied to this customer's animal — they will be removed from the cart:",
     "custClearGo": "Clear the customer and remove them",
