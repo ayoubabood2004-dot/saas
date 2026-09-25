@@ -25,7 +25,7 @@ MIG="$HERE/../migrations"
 # و0095/0096/0158 بالمقدّمة رغم أنها أقدمُ من 0124: الموجةُ تبدأ من 0124 لأن
 # الأساس يوفّر ما قبلها جاهزاً — لكنّ هذه الثلاثَ تُنشئ المتجرَ والبوّابة،
 # وكانت خارجَ الفحص كلَّه. تُنزَّل بترتيبها الحقيقيّ قبل الموجة.
-WAVE="$MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0114_landing_events.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql $MIG/0184_images_hardening.sql $MIG/0185_store_funnel_events.sql $MIG/0186_store_bulk_visible.sql $MIG/0187_store_suggest_products.sql $MIG/0188_store_catalog_priced.sql $MIG/0189_accept_fee_at_decision.sql $MIG/0190_logo_out_of_db.sql $MIG/0191_poultry_farms.sql $MIG/0192_poultry_consume.sql $MIG/0193_poultry_withdrawal.sql $MIG/0194_end_elevation_honest.sql $MIG/0195_cage_layout_sync.sql $MIG/0196_company_norm_and_merge.sql $MIG/0197_company_merge_safe.sql $MIG/0198_company_delete_restores_all.sql $MIG/0199_company_name_unique.sql $MIG/0200_company_twins_per_row.sql $MIG/0201_merge_snapshot_exact.sql $MIG/0202_group_key_invisible.sql $MIG/0203_restore_needs_its_target.sql $MIG/0204_cage_layout_one_door.sql $MIG/0205_purchase_edit_invents_no_stock.sql $MIG/0206_purge_stays_with_cron.sql $MIG/0207_product_movements.sql $MIG/0208_reminder_marks.sql $MIG/0209_activity_relink.sql"
+WAVE="$MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0114_landing_events.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql $MIG/0184_images_hardening.sql $MIG/0185_store_funnel_events.sql $MIG/0186_store_bulk_visible.sql $MIG/0187_store_suggest_products.sql $MIG/0188_store_catalog_priced.sql $MIG/0189_accept_fee_at_decision.sql $MIG/0190_logo_out_of_db.sql $MIG/0191_poultry_farms.sql $MIG/0192_poultry_consume.sql $MIG/0193_poultry_withdrawal.sql $MIG/0194_end_elevation_honest.sql $MIG/0195_cage_layout_sync.sql $MIG/0196_company_norm_and_merge.sql $MIG/0197_company_merge_safe.sql $MIG/0198_company_delete_restores_all.sql $MIG/0199_company_name_unique.sql $MIG/0200_company_twins_per_row.sql $MIG/0201_merge_snapshot_exact.sql $MIG/0202_group_key_invisible.sql $MIG/0203_restore_needs_its_target.sql $MIG/0204_cage_layout_one_door.sql $MIG/0205_purchase_edit_invents_no_stock.sql $MIG/0206_purge_stays_with_cron.sql $MIG/0207_product_movements.sql $MIG/0208_reminder_marks.sql $MIG/0209_activity_relink.sql $MIG/0210_expiry.sql"
 
 command -v "$PGBIN/initdb" >/dev/null || { echo "ما لكيت بوستغريس بـ $PGBIN"; exit 1; }
 
@@ -2951,6 +2951,61 @@ chk "والمحفّزان موجودان وinvoker (لا يشدّان أكثر �
 chk "والمحفّزان قبل الحذف موجودان" \
     "select count(*)::text from pg_trigger t join pg_class c on c.oid=t.tgrelid where t.tgname in ('companies_trash_guard','company_sections_trash_guard') and not t.tgisinternal" "2"
 
+
+
+# ── 0210: الانتهاء — مُدّتان بيد العيادة، وكتمٌ يرتفع بتبدّل الوجبة ──────────
+echo "▸ 0210: الانتهاء"
+$P -c "update _dvtest_flags set admin = false; delete from platform_sessions;" >/dev/null
+chk "(تهيئة) C2 بعيادته هو لا بعيادة C1" "select _pf('$C2', 'select auth_clinic()::text')" "$C2"
+chk "مدةُ الإرجاع عمودٌ صحيحٌ غيرُ فارغٍ افتراضُه ٩٠" \
+    "select data_type||'/'||is_nullable||'/'||column_default from information_schema.columns where table_name='clinic_prefs' and column_name='expiry_return_days'" "integer/NO/90"
+chk "  والحرجةُ كذلك بـ٣٠" \
+    "select data_type||'/'||is_nullable||'/'||column_default from information_schema.columns where table_name='clinic_prefs' and column_name='expiry_critical_days'" "integer/NO/30"
+# الحزمةُ تنشئ clinic_prefs بنفسها (harness.sql) **بلا RLS** — فكلُّ فحصِ سياسةٍ عليها
+# كان يمرّ مهما كانت السياسة (أمسكه فحصُ «عيادةٌ أخرى» أدناه: rows:1). الإنتاجُ مقيس
+# (٢٥/٩): relrowsecurity وrelforcerowsecurity كلاهما true — فالحزمةُ تطابقه هنا.
+$P -c "alter table clinic_prefs enable row level security; alter table clinic_prefs force row level security;
+       insert into clinic_prefs (clinic_id) values ('$C1') on conflict do nothing;" >/dev/null
+chk "  وصفٌّ قائمٌ يأخذ ٩٠/٣٠ بلا كتابة" \
+    "select expiry_return_days||'/'||expiry_critical_days from clinic_prefs where clinic_id='$C1'" "90/30"
+chk "  وأيُّ موظفٍ يعدّلها كبقية التفضيلات (بدور authenticated)" \
+    "select _rls_try('$RCP', 'update clinic_prefs set expiry_return_days = 120 where clinic_id = ''$C1''')" "rows:1"
+chk "  وعيادةٌ أخرى لا تلمسها" \
+    "select _rls_try('$C2', 'update clinic_prefs set expiry_return_days = 60 where clinic_id = ''$C1''')" "rows:0"
+chk "  وصفرُ يومٍ يُرفض (الحدُّ ١..٧٣٠)" \
+    "select left(_rls_try('$C1', 'update clinic_prefs set expiry_critical_days = 0 where clinic_id = ''$C1'''), 13)" "guarded:23514"
+$P -c "update clinic_prefs set expiry_return_days = 90 where clinic_id='$C1';" >/dev/null
+
+chk "expiry_ack تاريخٌ **nullable بلا افتراض** (استرجاعُ اللقطات القديمة)" \
+    "select data_type||'/'||is_nullable||'/'||coalesce(column_default,'-') from information_schema.columns where table_name='products' and column_name='expiry_ack'" "date/YES/-"
+$P -c "insert into products (id, clinic_id, name, barcode, stock, expiry_date)
+       values ('e2100000-0000-4000-8000-000000000001','$C1','سيفوتاكس الفحص','0210000000001', 6, '2026-10-01')
+       on conflict (id) do nothing;" >/dev/null
+chk "الكتمُ: موظّفُ استقبالٍ لا يكتم (سياسةُ products_write القائمة)" \
+    "select _rls_try('$RCP', 'update products set expiry_ack = expiry_date where id = ''e2100000-0000-4000-8000-000000000001''')" "rows:0"
+chk "  والبيطريُّ يكتم" \
+    "select _rls_try('$VET', 'update products set expiry_ack = expiry_date where id = ''e2100000-0000-4000-8000-000000000001''')" "rows:1"
+chk "  والمديرُ كذلك" \
+    "select _rls_try('$C1', 'update products set expiry_ack = expiry_date where id = ''e2100000-0000-4000-8000-000000000001''')" "rows:1"
+chk "  ومكتومٌ = التاريخان متساويان" \
+    "select (expiry_ack = expiry_date)::text from products where id='e2100000-0000-4000-8000-000000000001'" "true"
+$P -c "select set_config('request.jwt.claim.sub','$C1',false); select delete_product('e2100000-0000-4000-8000-000000000001', 'فحص 0210');" >/dev/null
+chk "والكتمُ يعبر الحذفَ (بالسلّة بتاريخه)" \
+    "select row->>'expiry_ack' from products_trash where id='e2100000-0000-4000-8000-000000000001'" "2026-10-01"
+$P -c "select set_config('request.jwt.claim.sub','$C1',false); select restore_product('e2100000-0000-4000-8000-000000000001');" >/dev/null
+chk "  والاسترجاعَ (رجع مكتوماً بنفس التاريخ)" \
+    "select coalesce((select expiry_ack::text from products where id='e2100000-0000-4000-8000-000000000001'), 'missing')" "2026-10-01"
+$P -c "select set_config('request.jwt.claim.sub','$C1',false); select delete_product('e2100000-0000-4000-8000-000000000001', 'فحص 0210 لقطة قديمة');
+       update products_trash set row = row - 'expiry_ack' where id='e2100000-0000-4000-8000-000000000001';
+       select restore_product('e2100000-0000-4000-8000-000000000001');" >/dev/null
+chk "ولقطةٌ أقدمُ بلا المفتاح تُسترجع (NULL = غيرُ مكتوم) — عمودٌ NOT NULL كان سيمنعها" \
+    "select coalesce((select coalesce(expiry_ack::text, 'null') from products where id='e2100000-0000-4000-8000-000000000001'), 'missing')" "null"
+$P -c "update products set expiry_ack = expiry_date where id='e2100000-0000-4000-8000-000000000001';
+       update products set expiry_date = '2027-03-01' where id='e2100000-0000-4000-8000-000000000001';" >/dev/null
+chk "ووجبةٌ جديدةٌ بتاريخٍ آخر ترفع الكتمَ وحدَها (لا محفّز)" \
+    "select (expiry_ack = expiry_date)::text from products where id='e2100000-0000-4000-8000-000000000001'" "false"
+chk "audit_kind: «بيعُ منتهٍ» نوعٌ باسمه لا «طباعة»" \
+    "select audit_kind('client', 'CLIENT', '{\"event\":\"sale.expired\"}'::jsonb) || '/' || audit_kind('client', 'CLIENT', '{\"event\":\"sale.expiredx\"}'::jsonb)" "sale_expired/print"
 
 
 [ $fail -eq 0 ] && echo "✓ كل الفحوص عبرت" || { echo "✗ اكو فحصٌ فشل"; exit 1; }

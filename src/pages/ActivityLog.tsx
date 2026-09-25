@@ -4,7 +4,7 @@ import {
   History, Search, PawPrint, Receipt, Pill, Syringe, Stethoscope, Package,
   Users, Trash2, NotebookPen, Building2, CalendarDays,
   BellRing, Lock, Clock, KeyRound, ArrowLeft, LucideIcon, RotateCcw, Loader2,
-  ChevronDown, ChevronUp, ChevronRight, Truck, Wallet, ShoppingBag, Printer, FileDown, Store, HandCoins, ArrowLeftRight,
+  ChevronDown, ChevronUp, ChevronRight, Truck, Wallet, ShoppingBag, Printer, FileDown, Store, HandCoins, ArrowLeftRight, CalendarX,
 } from "lucide-react";
 import type { ActivityRow, ActivitySummaryRow, ActivityActor } from "@/types";
 import { repo } from "@/lib/repo";
@@ -88,6 +88,7 @@ const MEDIA_LABEL: Record<string, { key: string; def: string }> = {
 const KIND_ICON: Record<ActivityKind, { icon: LucideIcon; tone: string }> = {
   sale: { icon: Receipt, tone: "success" }, refund: { icon: Receipt, tone: "danger" }, payment: { icon: HandCoins, tone: "success" },
   sale_edit: { icon: Receipt, tone: "muted" }, sale_delete: { icon: Trash2, tone: "danger" }, sale_line: { icon: Receipt, tone: "muted" },
+  sale_expired: { icon: CalendarX, tone: "danger" },
   print: { icon: Printer, tone: "muted" }, export: { icon: FileDown, tone: "muted" },
   product_add: { icon: Package, tone: "brand" }, product_edit: { icon: Package, tone: "muted" }, stock: { icon: Package, tone: "warn" },
   product_delete: { icon: Trash2, tone: "danger" }, inventory: { icon: Building2, tone: "muted" }, purchase: { icon: ShoppingBag, tone: "brand" },
@@ -358,6 +359,11 @@ export function ActivityLog() {
         const name = s("name");
         if (r.action === "INSERT") return t("act.prodAdd", { name, defaultValue: "أضاف منتجاً: {{name}}" });
         if (del) return t("act.prodDel", { name, defaultValue: "حذف المنتج: {{name}}" });
+        /* الكتمُ وحدَه (0210) جملتُه باسمه — لا «عدّل المنتج» بحقلٍ خامٍ اسمُه expiry_ack. */
+        const ack = changesOf(d);
+        if (ack.length === 1 && ack[0].key === "expiry_ack") {
+          return ack[0].to ? t("act.expiryMuted", { name }) : t("act.expiryUnmuted", { name });
+        }
         return t("act.prodUpd", { name, stock: formatNum(Number(d["stock"]) || 0), defaultValue: "عدّل المنتج {{name}} (المخزون: {{stock}})" });
       }
       case "branches": return t("act.branchAdd", { name: s("name"), defaultValue: "فرع: {{name}} (إضافة / تعديل)" });
@@ -385,6 +391,7 @@ export function ActivityLog() {
       case "client": {
         const ev = s("event");
         if (ev === "invoice.print") return t("act.invPrint", { ref: s("ref"), format: s("format") === "thermal" ? t("act.printThermal", "إيصال حراري") : "A4", defaultValue: "طبع الفاتورة {{ref}} ({{format}})" });
+        if (ev === "sale.expired") return t("act.saleExpired", { names: s("names"), ref: s("ref"), n: formatNum(Number(d["n"]) || 0) });
         if (ev === "invoice.preprint") return t("act.invPreprint", { total: s("total"), defaultValue: "طبع فاتورة أولية (قبل البيع) بمبلغ {{total}}" });
         if (ev === "report.excel") return t("act.reportExcel", { title: s("title"), defaultValue: "صدّر تقرير Excel — {{title}}" });
         if (ev === "report.print") return t("act.reportPrint", { title: s("title"), defaultValue: "طبع تقرير — {{title}}" });

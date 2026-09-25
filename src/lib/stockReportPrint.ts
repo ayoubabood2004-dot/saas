@@ -13,7 +13,7 @@
 // وهذه الوحدة **تعرض** ما حُسب هناك ولا تحسب — فالورقتان لا تفترقان أبداً.
 // ============================================================================
 import type { Product, Company, CompanySection } from "@/types";
-import { getClinicName, getClinicLogo } from "./settings";
+import { getClinicName, getClinicLogo, getExpiryWindows } from "./settings";
 import { money } from "./utils";
 import { buildStocktake, flagsText, type StocktakeLine } from "./stocktake";
 
@@ -29,7 +29,7 @@ export function buildStockReportHTML(products: Product[], companies: Company[], 
   const stamp = now.toLocaleDateString("ar-IQ", { weekday: "long", year: "numeric", month: "long", day: "numeric" }) +
     " · " + now.toLocaleTimeString("ar-IQ", { hour: "2-digit", minute: "2-digit" });
 
-  const take = buildStocktake(products, companies, sections, now);
+  const take = buildStocktake(products, companies, sections, now, { criticalDays: getExpiryWindows().criticalDays });
 
   const rowFor = (l: StocktakeLine): string => {
     const isPool = l.kind === "pool";

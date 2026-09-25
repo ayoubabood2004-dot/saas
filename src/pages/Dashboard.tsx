@@ -35,6 +35,7 @@ import { UpcomingEvents } from "@/components/UpcomingEvents";
 import { BirthdaysWidget } from "@/components/BirthdaysWidget";
 import { StickyNotes } from "@/components/StickyNotes";
 import { RemindersWidget } from "@/components/RemindersWidget";
+import { ExpiryWatchCard } from "@/components/dashboard/ExpiryWatchCard";
 import { buildUpcomingEvents } from "@/lib/events";
 import { getCached, setCached, isFresh } from "@/lib/swrCache";
 import { Card, CardTitle, Button, Badge, RingStat, Skeleton, EmptyState, type CurvePoint } from "@/components/ui";
@@ -153,7 +154,8 @@ export function Dashboard() {
   }, []);
 
   // Today's visits = today's completed sales (refunds excluded), a count only —
-  // the dashboard intentionally shows NO money figures. Uses local start-of-day
+  // the dashboard intentionally shows NO sales-money figures (the expiry card's
+  // at-risk stock value is the one exception — see ExpiryWatchCard). Uses local start-of-day
   // so "today" matches the owner's wall clock, not UTC.
   const startMs = useMemo(() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d.getTime(); }, []);
   const todaySales = useMemo(
@@ -527,6 +529,9 @@ export function Dashboard() {
             onChanged={load}
             onEventClick={(e) => e.petId && navigate(`/pet/${e.petId}`)}
           />
+
+          {/* قرب الانتهاء (م١) — جنب التذكيرات، ولمن يملك المخزن وحدَه كبطاقة النواقص. */}
+          {canStock && <ExpiryWatchCard products={products} loading={loading} failed={stockFailed} />}
 
           {/* Actionable reminders → WhatsApp Campaigns (birthdays, vaccines, deworming) */}
           <RemindersWidget pets={pets} />

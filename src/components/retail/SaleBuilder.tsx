@@ -26,7 +26,8 @@ import { useInvoicePrinter } from "./usePrintInvoice";
 import { invoiceNo, openInvoicePrint, type PrintFormat } from "@/lib/invoicePrint";
 import { storeSlugCached } from "@/lib/storeOrdersLive";
 import { storeUrl } from "@/lib/storeLib";
-import { getPreSalePrint, getResizableCart, getPosV2, getPosCompact, getPosCustomerOpen, getClinicLogo, getClinicSocials, getClinicName, getDeliveryZones, getQtyPromos, type QtyPromo } from "@/lib/settings";
+import { getPreSalePrint, getResizableCart, getPosV2, getPosCompact, getPosCustomerOpen, getClinicLogo, getClinicSocials, getClinicName, getDeliveryZones, getQtyPromos, getExpiryWindows, type QtyPromo } from "@/lib/settings";
+import { expiryState, daysToExpiry } from "@/lib/expiry";
 import { branchStore } from "@/lib/branchStore";
 import { useNavFolded, setNavFolded } from "@/lib/navFold";
 import { loadPosLayout, savePosLayout, stepZoom, type PosLayout, type CartSide } from "@/lib/posLayout";
@@ -505,6 +506,9 @@ function PosLayoutMenu({ layout, onChange, axis, isLg, nudge, reset }: {
   );
 }
 
+/** إقراراتُ بوّابات الإتمام — كلٌّ ببوّابته، ويُحمل ما سبقه إلى التالية. */
+type CheckoutAck = { big?: boolean; expired?: boolean };
+
 export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = false, onFreshRow, onRefresh, onBusyChange, prefillApplied = false, onPrefillApplied, onCustomerCleared, onPayingChange }: {
   /** قائمةُ الكاشير: رصيدُ كلّ صفٍّ رصيدُ الكاشير (الصفُّ + حوضُ قسمه، `sellable.ts`). */
   products: Product[]; clinicId?: string; onSold: () => void; prefill?: RetailPrefill | null; wholesale?: boolean;
@@ -734,7 +738,12 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
   useEffect(() => { onPayingChange?.(paying); }, [paying, onPayingChange]);
   useEffect(() => () => { onPayingChange?.(false); }, [onPayingChange]);
   /** سطورٌ تبيع الرصيدَ كلَّه بكميةٍ كبيرة — تُعرض للتأكيد قبل الحسم. */
-  const [bigSale, setBigSale] = useState<Line[] | null>(null);
+  const [bigSale, setBigSale] = useState<{ lines: Line[]; ack: CheckoutAck } | null>(null);
+  /* بيعُ المنتهي (م١): سؤالٌ بالاسم والتاريخ لا `window.confirm` يُقبل بلا قراءة. والإقرارُ
+   * يحمل ما سبقه (`ack`): من أقرّ «بيع الرفّ كلّه» ثم سُئل عن المنتهي لا يُسأل الأوّلَ ثانيةً. */
+  const [expiredAsk, setExpiredAsk] = useState<{ lines: Line[]; ack: CheckoutAck } | null>(null);
+  /** ما أقرّ ببيعه منتهياً — يُسجَّل بالتدقيق **بعد** نجاح البيعة لا عند الضغط. */
+  const expiredAckRef = useRef<Line[] | null>(null);
   const [flash, setFlash] = useState<string | null>(null);
   /* ---- المضاعِف: «اكتب ٢٠ ثم امسح» -------------------------------------
    * عشرون قطعة من صنف واحد كانت تكلّف عشرين مسحة أو عشرين ضغطة. المضاعِف
@@ -1254,7 +1263,9 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
     // منتقي الوزن مثلها: مسحةٌ وهو مفتوح كانت تبدّل المنتج تحت يد الطبيب أو
     // تنزل سطراً خلف الورقة بلا أن يراه.
   };
-  useBarcodeScanner(handleScan, { disabled: multPad || !!qtyPadFor || !!weightFor });
+  /* والماسحُ صامتٌ ونافذةُ تأكيدٍ مفتوحة: مسحةٌ خلفها كانت تُضيف سطراً لم يُسمَّ، ثم «أكيد»
+   * تبيعه — منتهياً أو رفّاً كاملاً — بلا أن يُذكر بالسؤال. */
+  useBarcodeScanner(handleScan, { disabled: multPad || !!qtyPadFor || !!weightFor || !!bigSale || !!expiredAsk });
   // وبعد أن يهبط التصفير: تُمرَّر المسحةُ المحفوظة على سلّةٍ نظيفة.
   useEffect(() => {
     if (done || pendingScanRef.current === null) return;
@@ -1593,6 +1604,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
 
   const reset = () => {
     saleRefRef.current = null;   // بيعةٌ جديدة ⇒ مرجعٌ جديد
+    expiredAckRef.current = null;
     setSaleRefSaved(null);
     clearSaleDraft(draftScope);
     setCart([]); setQuery(""); setDiscountValue(""); setFinalOverride(null); setEditingTotal(false);
@@ -1902,7 +1914,15 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
   const bigLines = (): Line[] => cart.filter((l) =>
     l.kind === "product" && !l.ret && l.stock != null && l.qty >= 10 && l.qty >= unitCap(l));
 
-  const checkout = async (force = false) => {
+  /* الانتهاءُ يُقرأ من قائمة المنتجات بمعرّف السطر لا من السطر نفسِه: مسودّةُ السلّة
+   * المحفوظة لا تحمله، والقائمةُ تتحدّث (شراءُ وجبةٍ جديدة يغيّر التاريخ). والقاعدةُ من
+   * `expiry.ts` — آخرُ يومٍ صالح بتاريخ الجهاز — فالكاشيرُ والمخزونُ لا يختلفان. */
+  const prodById = useMemo(() => new Map(products.map((p) => [p.id, p])), [products]);
+  const expiryOf = (l: Line): string | null =>
+    (l.kind === "product" && !l.ret && l.product_id ? prodById.get(l.product_id)?.expiry_date ?? null : null);
+  const expiredLines = (): Line[] => cart.filter((l) => expiryState(expiryOf(l), getExpiryWindows()) === "expired");
+
+  const checkout = async (ack: CheckoutAck = {}) => {
     if (cart.length === 0 || busy) return;
     // الحرّاسُ هنا لا على الزرّ وحده: F2 كان يصل هنا مباشرةً فيسجّل إرجاعاً خالصاً
     // «بيعاً» بمجموعٍ صفر — البضاعة ترجع للمخزن والنقدُ يخرج للزبون بلا قيد.
@@ -1913,10 +1933,15 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
       return;
     }
     if (needsDebtName) { playWarning(); return; }
-    if (force !== true) {
+    if (!ack.big) {
       const big = bigLines();
-      if (big.length > 0) { playWarning(); setBigSale(big); return; }
+      if (big.length > 0) { playWarning(); setBigSale({ lines: big, ack }); return; }
     }
+    if (!ack.expired) {
+      const exp = expiredLines();
+      if (exp.length > 0) { playWarning(); setExpiredAsk({ lines: exp, ack }); return; }
+    }
+    expiredAckRef.current = ack.expired ? expiredLines() : null;
     /* هل وُلد المرجعُ لهذا النداء؟ مرجعٌ قائم = محاولةٌ سابقةٌ مجهولةُ المصير (مهلة، أو
      * مسودّةٌ رجعت بعد تحديث) — ورفضُ هذه لا يقول شيئاً عن تلك. */
     const freshRef = !saleRefRef.current;
@@ -2091,6 +2116,16 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
       // the receipt/print UI even if Supabase stalls mid-flow.
       setDone({ invoice, items: invItems });
       clearSaleDraft(draftScope); // sale is final — drop the saved draft
+      /* بيعُ المنتهي يُسجَّل بعد الحسم وبرقم الفاتورة — تسجيلٌ عند «أكيد» كان يشهد لبيعةٍ
+       * قد تفشل بعده. والأسماءُ مقصوصة: المختصرُ يُسقط أيَّ قيمةٍ فوق ٢٠٠ حرف بصمت. */
+      const soldExpired = expiredAckRef.current;
+      expiredAckRef.current = null;
+      if (soldExpired && soldExpired.length > 0) {
+        void repo.logClientEvent("sale.expired", {
+          ref: invoiceNo(invoice.id), n: soldExpired.length, wholesale,
+          names: soldExpired.map((l) => l.name).join(" · ").slice(0, 150),
+        });
+      }
       /* الآن فقط يُفكّ القفل: بين جواب الخادم وهنا طلبُ التوصيل (حتى ١٢ث) والمسودّةُ ما زالت
        * تحمل المرجع — تبديلُ تبويبٍ فيه كان يضيّع الوصلَ ويعيد السلّةَ المبيعة «معلَّقة». */
       setPaying(false);
@@ -2757,6 +2792,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
                       >
                         <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-surface-2 text-ink-subtle">{byWeight ? <Scale size={14} /> : <Package size={14} />}</span>
                         <span className="min-w-0 flex-1 truncate text-sm font-semibold text-ink">{p.name}</span>
+                        {expiryState(p.expiry_date, getExpiryWindows()) === "expired" && <span data-tileexpired className="shrink-0 rounded-full bg-danger-50 px-2 py-0.5 text-2xs font-bold text-danger-600 dark:bg-danger-500/15">{t("expiry.tileExpired")}</span>}
                         <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-2xs font-bold tabular-nums", out ? "bg-danger-50 text-danger-600 dark:bg-danger-500/15" : "bg-surface-2 text-ink-muted")}>
                           {out ? t("retail.out", "out") : byWeight ? t("retail.wKg", { n: fmtKg(p.stock), defaultValue: "{{n}} كغ" }) : formatNum(p.stock)}
                         </span>
@@ -2776,6 +2812,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
                       )}
                     >
                       <span className="grid h-9 w-9 place-items-center rounded-xl bg-surface-2 text-ink-subtle group-hover:bg-white/60 dark:group-hover:bg-surface-1">{byWeight ? <Scale size={17} /> : <Package size={17} />}</span>
+                      {expiryState(p.expiry_date, getExpiryWindows()) === "expired" && <span data-tileexpired className="absolute end-2 top-2 rounded-full bg-danger-50 px-1.5 py-0.5 text-2xs font-bold text-danger-600 dark:bg-danger-500/15">{t("expiry.tileExpired")}</span>}
                       <span className="mt-2 line-clamp-2 min-h-[2.2rem] text-xs font-semibold leading-tight text-ink">{p.name}</span>
                       <span className="mt-1 flex items-center justify-between">
                         <span className="text-sm font-bold text-ink tabular-nums">{money(listPrice(p))}{byWeight ? <span className="text-2xs font-medium text-ink-subtle">{t("retail.perKgShort", "/كغ")}</span> : ""}</span>
@@ -2910,11 +2947,21 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
                   <motion.div key={l.id} layout initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }}
                     className={cn("flex items-center rounded-2xl border", posV2 ? (denseCart ? "gap-1.5 px-2 py-1" : "gap-2 px-2.5 py-1.5") : "gap-2 p-2.5",
                       l.ret ? "border-amber-400 bg-amber-50/70 dark:border-amber-500/40 dark:bg-amber-500/10"
+                        : expiryState(expiryOf(l), getExpiryWindows()) === "expired" ? "border-danger-300 bg-danger-50/70 dark:border-danger-500/40 dark:bg-danger-500/10"
                         : flash === l.id ? "border-brand-400 bg-brand-50 dark:bg-brand-500/15" : "border-line bg-surface-1")}>
                     <div className="min-w-0 flex-1">
                       <p className={cn("flex items-center gap-1.5 truncate font-bold text-ink", posV2 ? (compact && !denseCart ? "text-lg leading-tight" : "text-base leading-tight") : "text-sm font-semibold")}>
                         {l.ret && <span data-retchip className="chip shrink-0 bg-amber-500 text-2xs font-black text-white"><Undo2 size={10} className="me-0.5 inline" />{t("retail.retChip", "راجع")}</span>}
                         {l.name}
+                        {(() => {
+                          const e = expiryOf(l);
+                          const st = expiryState(e, getExpiryWindows());
+                          const date = String(e ?? "").slice(0, 10).replace(/-/g, "/");
+                          /* المنتهي أحمرُ باسمه، والقريبُ (≤ الحرجة) شارةٌ صفراء صامتة بلا صوت. */
+                          if (st === "expired") return <span data-expchip="expired" className="chip shrink-0 bg-danger-500 text-2xs font-black text-white">{t("expiry.chipExpired", { date })}</span>;
+                          if (st === "critical") return <span data-expchip="near" className="chip shrink-0 bg-warn-50 text-2xs font-semibold text-warn-700 dark:bg-warn-500/15 dark:text-warn-300">{t("expiry.chipNear", { date })}</span>;
+                          return null;
+                        })()}
                         {l.kind === "service" && <span className="chip shrink-0 bg-brand-50 text-2xs font-medium text-brand-700 dark:bg-brand-500/15 dark:text-brand-300">{t("retail.service", "Service")}</span>}
                         {l.kind === "med" && (
                           l.med?.kind === "vaccination"
@@ -3569,17 +3616,42 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
       <Dialog open={!!bigSale} onClose={() => setBigSale(null)} title={t("retail.bigSaleTitle", "تبيع الرصيد كلّه؟")} size="sm"
         footer={<>
           <Button variant="ghost" onClick={() => { playTap(); setBigSale(null); }}>{t("retail.bigSaleBack", "ارجع للسلة")}</Button>
-          <Button variant="primary" data-bigsalego onClick={() => { playTap(); setBigSale(null); void checkout(true); }}>{t("retail.bigSaleGo", "نعم، بيع")}</Button>
+          <Button variant="primary" data-bigsalego onClick={() => { playTap(); const a = bigSale?.ack ?? {}; setBigSale(null); void checkout({ ...a, big: true }); }}>{t("retail.bigSaleGo", "نعم، بيع")}</Button>
         </>}>
         <div className="space-y-2">
           <p className="text-sm text-ink-muted">{t("retail.bigSaleHint", "هذي الأصناف كميتها كبيرة وتساوي كل الرصيد. لو قصدك تسجّل بضاعة واصلة، مكانها «المشتريات» مو البيع.")}</p>
           <ul className="space-y-1">
-            {(bigSale ?? []).map((l) => (
+            {(bigSale?.lines ?? []).map((l) => (
               <li key={l.id} className="flex items-center justify-between gap-3 rounded-xl bg-surface-2 px-3 py-2 text-sm">
                 <span className="min-w-0 flex-1 truncate font-medium text-ink">{l.name}</span>
                 <span className="shrink-0 font-semibold text-warn-700">{t("retail.bigSaleQty", "{{n}} من {{stock}}", { n: formatNum(l.qty), stock: formatNum(l.stock ?? 0) })}</span>
               </li>
             ))}
+          </ul>
+        </div>
+      </Dialog>
+
+      {/* تأكيدُ بيع المنتهي (م١) — بالاسم وآخر يومٍ صالح وكم يوماً فات. تحذيرٌ لا منع:
+          منعٌ كامل قرارُ المالك (م٧)، والسؤالُ الحقيقيّ يُقرأ حيث يُقبل الـconfirm بلا قراءة. */}
+      <Dialog open={!!expiredAsk} onClose={() => setExpiredAsk(null)} title={t("expiry.askTitle")} size="sm"
+        footer={<>
+          <Button variant="ghost" onClick={() => { playTap(); setExpiredAsk(null); }}>{t("expiry.askBack")}</Button>
+          <Button variant="danger" data-expiredgo onClick={() => { playTap(); const a = expiredAsk?.ack ?? {}; setExpiredAsk(null); void checkout({ ...a, expired: true }); }}>{t("expiry.askGo")}</Button>
+        </>}>
+        <div className="space-y-2" data-expiredask>
+          <p className="text-sm text-ink-muted">{t("expiry.askBody")}</p>
+          <ul className="space-y-1">
+            {(expiredAsk?.lines ?? []).map((l) => {
+              const e = expiryOf(l);
+              return (
+                <li key={l.id} className="flex items-center justify-between gap-3 rounded-xl bg-danger-50/70 px-3 py-2 text-sm dark:bg-danger-500/10">
+                  <span className="min-w-0 flex-1 truncate font-medium text-ink">{l.name}</span>
+                  <span className="shrink-0 text-xs font-semibold text-danger-700 dark:text-danger-300">
+                    {t("expiry.askLine", { date: String(e ?? "").slice(0, 10).replace(/-/g, "/"), days: formatNum(Math.abs(daysToExpiry(e) ?? 0)) })}
+                  </span>
+                </li>
+              );
+            })}
           </ul>
         </div>
       </Dialog>

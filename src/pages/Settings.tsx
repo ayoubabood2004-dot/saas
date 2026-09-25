@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Settings as SettingsIcon, RotateCcw, Check, Volume2, VolumeX, Plus, Trash2, Pill, PawPrint, Stethoscope, Tag, FolderPlus, BadgePercent, IdCard, Mail, UserCog, Image as ImageIcon, Upload, Facebook, Instagram, Building2, Printer, Type, LogOut , Slice, ChevronDown, Radio, Copy, Download, Cable, Send, Barcode, Search, Package, Share2, ShieldAlert, Clock3, Sun, Moon } from "lucide-react";
+import { Settings as SettingsIcon, RotateCcw, Check, Volume2, VolumeX, Plus, Trash2, Pill, PawPrint, Stethoscope, Tag, FolderPlus, BadgePercent, IdCard, Mail, UserCog, Image as ImageIcon, Upload, Facebook, Instagram, Building2, Printer, Type, LogOut , Slice, ChevronDown, Radio, Copy, Download, Cable, Send, Barcode, Search, Package, Share2, ShieldAlert, Clock3, Sun, Moon, CalendarClock } from "lucide-react";
 import type { LabDeviceLink } from "@/types";
 import { supabaseUrl, supabaseAnonKey } from "@/lib/supabase";
 import { makeZip } from "@/lib/zip";
@@ -17,7 +17,7 @@ import { getServiceCatalog, addServiceCategory, removeServiceCategory, addServic
 import { DEFAULT_RANGES, VITAL_KEYS, CBC_KEYS, rangeFor, type VitalKey } from "@/lib/vitals";
 
 const ALL_KEYS: VitalKey[] = [...VITAL_KEYS, ...CBC_KEYS];
-import { setVitalOverride, clearVitalOverrides, getDialCode, setDialCode, getClinicLogoRef, setClinicLogo, getClinicSocials, setClinicSocials, getClinicName, setClinicName, getPreSalePrint, setPreSalePrint, getResizableCart, setResizableCart, getFontScaleEnabled, setFontScaleEnabled, getDeliveryZones, setDeliveryZones, type DeliveryZone, getQtyPromos, setQtyPromos, promoTargetLabel, getCatalogShare, setCatalogShare, type QtyPromo, type PromoKind, type PromoMode, getCurrencyCode, setCurrencyCode, getPosV2, setPosV2, getPosCompact, setPosCompact, getPosCustomerOpen, setPosCustomerOpen, getInvoicesPaged, setInvoicesPaged, getWorkHours, setWorkHours, getClockFormat, setClockFormat, type ClockFormat, getDoseWindow, setDoseWindow, getCashReconcile, setCashReconcile } from "@/lib/settings";
+import { setVitalOverride, clearVitalOverrides, getDialCode, setDialCode, getClinicLogoRef, setClinicLogo, getClinicSocials, setClinicSocials, getClinicName, setClinicName, getPreSalePrint, setPreSalePrint, getResizableCart, setResizableCart, getFontScaleEnabled, setFontScaleEnabled, getDeliveryZones, setDeliveryZones, type DeliveryZone, getQtyPromos, setQtyPromos, promoTargetLabel, getCatalogShare, setCatalogShare, type QtyPromo, type PromoKind, type PromoMode, getCurrencyCode, setCurrencyCode, getPosV2, setPosV2, getPosCompact, setPosCompact, getPosCustomerOpen, setPosCustomerOpen, getInvoicesPaged, setInvoicesPaged, getWorkHours, setWorkHours, getClockFormat, setClockFormat, type ClockFormat, getDoseWindow, setDoseWindow, getCashReconcile, setCashReconcile, getExpiryWindows, setExpiryWindows } from "@/lib/settings";
 import { segmentsFrom, distributeDoses } from "@/lib/treatmentSchedule";
 import { CURRENCIES, currencyName } from "@/lib/currency";
 import { FONT_SCALES, getFontScale, setFontScale, applyFontScale, getCrispMode, setCrispMode, type FontScaleId } from "@/lib/fontScale";
@@ -243,6 +243,7 @@ export function Settings() {
 
       <SettingsSection id="selling" icon={<BadgePercent size={15} />} title={t("settings.secSelling")} onMeasure={measure}>
         {canSettings && <CashierOptions />}
+        {canSettings && <ExpiryAlertsCard />}
         {canSettings && <ServiceSettings />}
         {canSettings && <PromotionsManager clinicId={user?.clinic_id ?? user?.id} />}
         {canSettings && <QtyPromosCard clinicId={user?.clinic_id ?? user?.id} />}
@@ -810,6 +811,62 @@ function WorkHoursCard() {
           <Button data-wh-save onClick={save}>{t("common.save")}</Button>
           {flash && <p className="flex items-center gap-1.5 text-sm font-medium text-brand-700"><Check size={16} /> {t("settings.saved")}</p>}
         </div>
+      </div>
+    </div>
+  );
+}
+
+/* ------------- تنبيهُ الانتهاء (0210) -------------------------------------
+ * «متى تنبّهنا؟» — مدتان بيد العيادة: مدةُ إرجاع المورّد (الكارتُ والفلترُ يبدآن
+ * منها) والحرجة (الشارةُ الصفراء بالبيع). المسودّةُ نصٌّ حتى الحفظ، والحرجةُ فوق
+ * الإرجاع تُقال ولا تُحفظ — والدالّةُ تقصّها أيضاً لو وصلها رقمٌ من غير هنا. */
+function ExpiryAlertsCard() {
+  const { t } = useTranslation();
+  const { can } = usePermissions();
+  const saved = getExpiryWindows();
+  const [ret, setRet] = useState(String(saved.returnDays));
+  const [crit, setCrit] = useState(String(saved.criticalDays));
+  const [flash, setFlash] = useState(false);
+  if (!can("manageSettings")) return null;
+
+  const r = Math.round(Number(ret)), c = Math.round(Number(crit));
+  const valid = (n: number) => Number.isFinite(n) && n >= 1 && n <= 730;
+  const bad = !valid(r) || !valid(c) ? "range" : c > r ? "order" : null;
+  const save = () => {
+    if (bad) return;
+    setExpiryWindows({ returnDays: r, criticalDays: c });
+    playSuccess();
+    setFlash(true);
+    setTimeout(() => setFlash(false), 2500);
+  };
+  const field = (value: string, onChange: (v: string) => void, label: string, hint: string, testId: string) => (
+    <div className="space-y-1">
+      <p className="text-sm font-bold text-ink">{label}</p>
+      <div className="flex items-center gap-2">
+        <input type="number" min={1} max={730} step={1} inputMode="numeric" data-testid={testId}
+          className="input h-11 w-24 text-center font-bold tabular-nums" value={value} onChange={(e) => onChange(e.target.value)} />
+        <span className="text-xs font-bold text-ink-subtle">{t("expiry.days")}</span>
+      </div>
+      <p className="text-2xs text-ink-subtle">{hint}</p>
+    </div>
+  );
+
+  return (
+    <div className="card p-5 mb-4" data-expiry-card>
+      <h2 className="font-bold text-ink mb-1 flex items-center gap-2"><CalendarClock size={18} className="text-warn-600" /> {t("expiry.setTitle")}</h2>
+      <p className="text-xs text-ink-subtle mb-4">{t("expiry.setHint")}</p>
+      <div className="grid gap-4 sm:grid-cols-2">
+        {field(ret, setRet, t("expiry.setReturn"), t("expiry.setReturnHint"), "expiry-return")}
+        {field(crit, setCrit, t("expiry.setCritical"), t("expiry.setCriticalHint"), "expiry-critical")}
+      </div>
+      {bad && (
+        <p className="mt-3 rounded-xl bg-warn-50 px-3 py-2 text-xs font-semibold text-warn-700 dark:bg-warn-500/10 dark:text-warn-300" data-expiry-bad>
+          {bad === "order" ? t("expiry.setOrder") : t("expiry.setRange")}
+        </p>
+      )}
+      <div className="mt-4 flex items-center gap-3">
+        <Button data-expiry-save onClick={save} disabled={!!bad}>{t("common.save")}</Button>
+        {flash && <p className="flex items-center gap-1.5 text-sm font-medium text-brand-700"><Check size={16} /> {t("settings.saved")}</p>}
       </div>
     </div>
   );

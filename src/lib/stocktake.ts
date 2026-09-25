@@ -1,5 +1,7 @@
 import type { Product, Company, CompanySection } from "@/types";
 import i18n from "@/i18n";
+import { daysToExpiry } from "./expiry";
+import { localISO } from "@/lib/utils";
 
 /* ============================================================================
  * stocktake — حساب جرد المخزون. مصدرٌ واحد، ومخرجان.
@@ -73,25 +75,25 @@ export interface Stocktake {
   totals: StockTotals;
   /** ما منه تقديريٌّ من الإجمالي — يُعلن صراحةً بدل أن يختبئ داخله. */
   pooled: { units: number; cost: number; retail: number };
+  /** حدُّ «قرب الانتهاء» الذي حُسبت به الأعلام — إعدادُ العيادة (0210) لا ٣٠ ثابتة،
+   *  والمخرجان يلوّنان به فلا تقول الورقةُ حدّاً والإكسلُ غيرَه. */
+  criticalDays: number;
 }
 
 const zero = (): StockTotals => ({ products: 0, units: 0, cost: 0, retail: 0 });
 const byName = (a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name);
 
-/** أيامٌ حتى تاريخ النفاذ بالنسبة للحظة اللقطة. */
-function daysTo(expiry: string | null | undefined, now: Date): number | null {
-  if (!expiry) return null;
-  return Math.floor((new Date(expiry).getTime() - now.getTime()) / 86400000);
-}
-
-function flagsOf(p: Product, days: number | null, todayISO: string): StockFlag[] {
+/* الأيامُ حتى النفاذ من `expiry.ts` — قاعدةُ الشاشات نفسُها: `expiry_date` آخرُ يومٍ صالح،
+ * والأيامُ تقويميّةٌ بتاريخ اللقطة **المحلّيّ**. كانت هنا نسخةٌ بفرق منتصف ليل غرينتش
+ * و«اليوم» غرينتشيٌّ يتجاهل `now` نفسَه: فالمادةُ حمراءُ بالشاشة «قرب الانتهاء» بالورقة. */
+function flagsOf(p: Product, days: number | null, criticalDays: number): StockFlag[] {
   const out: StockFlag[] = [];
   if (p.pooled) out.push("pooled");
   else if ((p.stock || 0) <= 0) out.push("out");
   else if ((p.stock || 0) <= lowThreshold(p)) out.push("low");
-  if (p.expiry_date) {
-    if (p.expiry_date.slice(0, 10) < todayISO) out.push("expired");
-    else if (days != null && days <= 30) out.push("expiring");
+  if (days != null) {
+    if (days < 0) out.push("expired");
+    else if (days <= criticalDays) out.push("expiring");
   }
   return out;
 }
@@ -109,8 +111,10 @@ export function buildStocktake(
   companies: Company[],
   sections: CompanySection[],
   now: Date = new Date(),
+  opts: { criticalDays?: number } = {},
 ): Stocktake {
-  const todayISO = new Date().toISOString().slice(0, 10);
+  const todayISO = localISO(now);
+  const criticalDays = opts.criticalDays ?? 30;
   const totals = zero();
   const pooled = { units: 0, cost: 0, retail: 0 };
   let seq = 0;
@@ -120,7 +124,7 @@ export function buildStocktake(
     const qty = p.pooled ? 0 : (p.stock || 0);
     const buy = p.purchase_price || 0;
     const sell = p.sell_price || 0;
-    const days = daysTo(p.expiry_date, now);
+    const days = daysToExpiry(p.expiry_date, todayISO);
     return {
       kind: "product",
       seq,
@@ -141,7 +145,7 @@ export function buildStocktake(
       subUnit: p.has_sub_unit && (p.units_per_box ?? 0) > 0
         ? { name: p.sub_unit_name || "", perBox: p.units_per_box || 0, price: p.sub_unit_price || 0 }
         : null,
-      flags: flagsOf(p, days, todayISO),
+      flags: flagsOf(p, days, criticalDays),
       approx: false,
     };
   };
@@ -210,7 +214,7 @@ export function buildStocktake(
   const noCo = i18n.t("stock.noCompany", "بدون شركة");
   if (unfiled.length) push(noCo, "", unfiled.map((p) => lineOf(p, noCo, "")));
 
-  return { takenAt: now, groups, totals, pooled };
+  return { takenAt: now, groups, totals, pooled, criticalDays };
 }
 
 /** كل الأسطر بترتيب الورقة — لمخرجٍ مسطَّح (إكسل) يفرزه المستخدم بنفسه. */

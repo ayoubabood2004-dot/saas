@@ -12,7 +12,7 @@ import { Dialog } from "@/components/ui/Dialog";
 import { History,
   Barcode, Package, Trash2, Search, Building2, Plus, ChevronLeft, ArrowRight, ArrowLeft,
   TrendingUp, AlertTriangle, CalendarClock, Pencil, PackagePlus, Boxes, Layers, Wallet, ShoppingBag, FolderTree, ScanBarcode,
-  Check, ListPlus, Printer, Copy, Sparkles, FileSpreadsheet, Loader2, Scale, RefreshCw, RotateCcw, Camera, Lock, Clock,
+  Check, ListPlus, Printer, Copy, Sparkles, FileSpreadsheet, Loader2, Scale, RefreshCw, RotateCcw, Camera, Lock, Clock, BellOff, BellRing,
 } from "lucide-react";
 import type { Product, ProductCategory, Company, CompanySection, DeletedProduct, CompanyTwinGroup } from "@/types";
 import { PurchasesTab, PurchaseBuilderModal } from "@/components/inventory/Purchases";
@@ -42,11 +42,13 @@ import { catalogLookup, type CatalogHit } from "@/lib/catalog";
  * المخزون كله (بطاقة القيمة، صفوف المنتجات، نموذج التعديل، وتبويبا
  * المشتريات والديون يختفيان أصلاً). */
 import { useOverride } from "@/lib/managerOverride";
+import { useSearchParams } from "react-router-dom";
+import { expiryBucket, expiryState, daysToExpiry, expiryCost, isExpiryMuted, returnListText } from "@/lib/expiry";
+import { getExpiryWindows } from "@/lib/settings";
 import { usePermissions } from "@/hooks/usePermissions";
 import { staggerContainer, staggerItem } from "@/lib/motion";
 
 const LOW_STOCK = 5;
-const daysUntil = (iso?: string | null) => (iso ? Math.floor((new Date(iso).getTime() - Date.now()) / 86400000) : null);
 /** A product's reorder level — its own min_stock if set, else the default. */
 const lowThreshold = (p: Product) => (p.min_stock && p.min_stock > 0 ? p.min_stock : LOW_STOCK);
 /* شروطُ حالةِ المنتج — **تعريفٌ واحد** تعدّ به البطاقةُ وترشّح به الشريحة.
@@ -55,12 +57,19 @@ const lowThreshold = (p: Product) => (p.min_stock && p.min_stock > 0 ? p.min_sto
  * والمجمَّع مستثنىً: رصيدُه بالقسم لا بالصفّ، فصفرُه متوقَّع لا نقص. */
 const isOut = (p: Product) => !p.pooled && p.stock <= 0;
 const isLow = (p: Product) => !p.pooled && p.stock <= lowThreshold(p);
-const isExpiringSoon = (p: Product) => { const d = daysUntil(p.expiry_date); return d != null && d >= 0 && d <= 30; };
-const isExpired = (p: Product) => { const d = daysUntil(p.expiry_date); return d != null && d < 0; };
-export type StockFilter = "all" | "low" | "out" | "soon" | "expired";
+/* والانتهاءُ من `expiry.ts` (م١) — نفسُ سلّة كارت الرئيسية حرفاً: على الرفّ، غيرُ مكتوم،
+ * بمُددِ العيادة (تُقرأ عند النداء لا مرّةً بالوحدة: الإعدادُ يصل بعد التحميل). كانت ٣٠
+ * ثابتةً هنا ثلاثَ مرّات، وتُعدّ المادةُ منتهيةً يومَ انتهائها من ٣ فجراً (فرقُ غرينتش). */
+const expW = () => getExpiryWindows();
+const isInReturn = (p: Product) => expiryBucket(p, expW()) === "window";
+const isExpiringSoon = (p: Product) => isInReturn(p) && (daysToExpiry(p.expiry_date) ?? Infinity) <= expW().criticalDays;
+const isExpired = (p: Product) => expiryBucket(p, expW()) === "expired";
+const isMutedExpiry = (p: Product) => expiryBucket(p, expW()) === "muted";
+export type StockFilter = "all" | "low" | "out" | "soon" | "return" | "expired" | "muted";
 const STOCK_FILTERS: Record<StockFilter, (p: Product) => boolean> = {
-  all: () => true, low: isLow, out: isOut, soon: isExpiringSoon, expired: isExpired,
+  all: () => true, low: isLow, out: isOut, soon: isExpiringSoon, return: isInReturn, expired: isExpired, muted: isMutedExpiry,
 };
+const isStockFilter = (v: string | null): v is StockFilter => !!v && v in STOCK_FILTERS;
 
 /* اسمُ الشركة/الصنف: `normName` كما يُحفظ و`normKey` كما يُقارَن — **مستوردان**
  * من `@/lib/utils` بعد أن كانا معرَّفَين هنا وبشاشة الشراء والكتلوج المبدئيّ.
@@ -144,7 +153,7 @@ export function Inventory() {
   const [sections, setSections] = useState<CompanySection[]>(seed?.s ?? []);
   const [loading, setLoading] = useState(!seed);
   const [view, setView] = useState<View>("products");
-  const { stockLocked: locked } = useOverride();
+  const { stockLocked: locked, restricted } = useOverride();
   const { can } = usePermissions();
   // /inventory بلا FeatureGate بعكس /retail — فلو فُتحت شاشةُ بيعٍ هنا بلا فحص
   // صارت الكاشيرُ متاحةً لعيادةٍ باقتُها لا تشملها.
@@ -164,6 +173,16 @@ export function Inventory() {
   /* شريحةُ الترشيح تعيش هنا لا بالتبويب: البطاقةُ فوق والقائمةُ تحت، فلو
    * سكنت بالتبويب لما وصلتها البطاقة. */
   const [stockFilter, setStockFilter] = useState<StockFilter>("all");
+  /* رابطٌ عميق (`/inventory?filter=return` من كارت الرئيسية): يُطبَّق ثم يُمسح من
+   * العنوان — وإلا أعاده التحديثُ أو الرجوعُ فوق ما اختاره المستخدمُ بعده. بأثرٍ على
+   * `params` لا بقيمةٍ ابتدائية: الشاشةُ قد تكون مركّبةً أصلاً حين يصلها الرابط. */
+  const [params, setParams] = useSearchParams();
+  useEffect(() => {
+    const f = params.get("filter");
+    if (!f) return;
+    if (isStockFilter(f)) { setView("products"); setStockFilter(f); }
+    setParams({}, { replace: true });
+  }, [params, setParams]);
   const [groupsOk, setGroupsOk] = useState<boolean | null>(null);
   const [fixBusy, setFixBusy] = useState(false);
   const [xlsxBusy, setXlsxBusy] = useState(false);
@@ -389,7 +408,8 @@ export function Inventory() {
   // Pooled products carry no per-barcode count (they sell from the section pool),
   // so a stock of 0 is expected — never flag them as low stock.
   const lowStock = products.filter(isLow).length;
-  const expiringSoon = products.filter(isExpiringSoon).length;
+  const inReturn = products.filter(isInReturn);
+  const returnValue = inReturn.reduce((s, p) => s + expiryCost(p), 0);
 
   /* الرابطُ محميٌّ كالتقارير والرواتب والكادر — وكان وحدَه مكشوفاً.
    *
@@ -468,8 +488,10 @@ export function Inventory() {
         <Kpi icon={Building2} tone="accent" label={t("pos.companies", "الشركات")} value={String(companies.length)} />
         <Kpi icon={AlertTriangle} tone={lowStock ? "warn" : "success"} label={t("pos.lowStock", "Low stock")} value={String(lowStock)}
           onClick={() => { playTap(); setView("products"); setStockFilter((cur) => (cur === "low" ? "all" : "low")); }} active={view === "products" && stockFilter === "low"} />
-        <Kpi icon={CalendarClock} tone={expiringSoon ? "warn" : "success"} label={t("pos.expiringSoon", "Expiring ≤30d")} value={String(expiringSoon)}
-          onClick={() => { playTap(); setView("products"); setStockFilter((cur) => (cur === "soon" ? "all" : "soon")); }} active={view === "products" && stockFilter === "soon"} />
+        {/* القيمةُ بسعر الشراء — تختفي بوضع المدير كبطاقة «قيمة المخزون»: رأسُ مالٍ لا عدد. */}
+        <Kpi icon={CalendarClock} tone={inReturn.length ? "warn" : "success"} label={t("expiry.kpi", { n: expW().returnDays })} value={String(inReturn.length)}
+          sub={!restricted && inReturn.length ? t("expiry.kpiValue", { v: money(Math.round(returnValue)) }) : undefined}
+          onClick={() => { playTap(); setView("products"); setStockFilter((cur) => (cur === "return" ? "all" : "return")); }} active={view === "products" && stockFilter === "return"} />
       </div>
 
       {/* Inventory value (قيمة المخزون) — cost, retail, expected profit; includes pooled. */}
@@ -543,7 +565,7 @@ function ViewTab({ active, icon: Icon, label, onClick }: { active: boolean; icon
   );
 }
 
-function Kpi({ icon: Icon, tone, label, value, onClick, active }: { icon: typeof Package; tone: "brand" | "warn" | "success" | "accent"; label: string; value: string; onClick?: () => void; active?: boolean }) {
+function Kpi({ icon: Icon, tone, label, value, sub, onClick, active }: { icon: typeof Package; tone: "brand" | "warn" | "success" | "accent"; label: string; value: string; sub?: string; onClick?: () => void; active?: boolean }) {
   const tones: Record<string, string> = {
     brand: "bg-brand-50 text-brand-600 dark:bg-brand-500/15 dark:text-brand-300",
     warn: "bg-warn-50 text-warn-600 dark:bg-warn-500/15 dark:text-warn-300",
@@ -556,6 +578,7 @@ function Kpi({ icon: Icon, tone, label, value, onClick, active }: { icon: typeof
       <div className="min-w-0 text-start">
         <p className="truncate text-lg font-bold text-ink tabular-nums">{value}</p>
         <p className="truncate text-xs text-ink-subtle">{label}</p>
+        {sub && <p className="truncate text-2xs font-semibold text-warn-700 dark:text-warn-300 tabular-nums" data-kpisub>{sub}</p>}
       </div>
     </>
   );
@@ -648,12 +671,34 @@ function ValueCell({ label, value, tone }: { label: string; value: string; tone:
  * مفتاح، فتتجمّد الشاشةُ على أجهزة العيادات البطيئة. **علّةُ أداءٍ لا فقدانُ
  * مسحات**: الحقلُ هنا مضبوطٌ بلا مجمِّعٍ يرمي، والأحداثُ تُصفّ ولا تُسقَط —
  * فلا تُسوَّق منعاً لضياع رمز. */
-const ProductRow = memo(function ProductRow({ p, companyName, sectionName, onEdit, onRemove }: { p: Product; companyName?: string; sectionName?: string; onEdit: () => void; onRemove: () => void }) {
+const ProductRow = memo(function ProductRow({ p, companyName, sectionName, onEdit, onRemove, onMuteChanged }: { p: Product; companyName?: string; sectionName?: string; onEdit: () => void; onRemove: () => void; onMuteChanged?: () => void }) {
   const { t, i18n } = useTranslation();
   const { stockLocked: locked } = useOverride();
-  const exp = daysUntil(p.expiry_date);
-  const expired = exp != null && exp < 0;
-  const expiringSoon = exp != null && exp >= 0 && exp <= 30;
+  const toast = useToast();
+  const expSt = expiryState(p.expiry_date, expW());
+  const expired = expSt === "expired";
+  const expiringSoon = expSt === "critical";
+  const muted = isExpiryMuted(p);
+  /* الكتمُ (٢·٢) يحفظ **التاريخ** لا «نعم»: يسري ما دام تاريخُ المادة نفسَه، ووجبةٌ جديدة
+   * بتاريخٍ آخر ترفعه وحدَها. الكتابةُ برمية (`updated<T>`): موظّفٌ لا تسمح له السياسةُ
+   * يسمع «ما انحفظ» لا «انكتم» كاذبة. ولا كتابةَ بلا تغيير — كلُّ حفظٍ سطرُ تدقيق. */
+  const [muting, setMuting] = useState(false);
+  const canMute = !!onMuteChanged && !locked && !!p.expiry_date && (muted || expiryBucket(p, expW()) != null);
+  const toggleMute = async () => {
+    if (muting) return;
+    setMuting(true);
+    try {
+      await repo.updateProduct(p.id, { expiry_ack: muted ? null : String(p.expiry_date).slice(0, 10) });
+      playSuccess();
+      toast.success(muted ? t("expiry.unmuteDone", { name: p.name }) : t("expiry.muteDone", { name: p.name }));
+      onMuteChanged?.();
+    } catch {
+      playWarning();
+      toast.error(t("expiry.muteFail"));
+    } finally {
+      setMuting(false);
+    }
+  };
   /* النافذةُ تسكن الصفَّ نفسَه: ثلاثةُ مواضعَ تعرض `ProductRow`، وتمريرُ حالةٍ
    * لكلٍّ منها يكرّرها ثلاثاً. ولا تُركَّب إلا عند الفتح (`hist &&`). */
   const [hist, setHist] = useState(false);
@@ -688,11 +733,12 @@ const ProductRow = memo(function ProductRow({ p, companyName, sectionName, onEdi
           <span className="font-semibold text-ink-muted">{t("pos.sell", "Sell")} {money(p.sell_price)}{byWeight ? perKg : ""}</span>
           {byWeight && <span className="chip shrink-0 bg-teal-50 text-2xs font-semibold text-teal-700 dark:bg-teal-500/15 dark:text-teal-200"><Scale size={11} /> {t("pos.byWeightChip", "بالوزن")}</span>}
           {p.expiry_date && (
-            <span className={cn("flex items-center gap-1", expired ? "text-danger-600" : expiringSoon ? "text-warn-600" : "")}>
-              <CalendarClock size={11} /> {formatDate(p.expiry_date, i18n.language)}
-              {expired ? ` · ${t("pos.expired", "expired")}` : expiringSoon ? ` · ${t("pos.soon", "soon")}` : ""}
+            <span data-expstate={expSt ?? "ok"} className={cn("flex items-center gap-1", muted ? "text-ink-subtle" : expired ? "text-danger-600" : expiringSoon ? "text-warn-600" : expSt === "return" ? "text-warn-700/80 dark:text-warn-300/80" : "")}>
+              <CalendarClock size={11} /> {formatDate(p.expiry_date, i18n.language, true)}
+              {expired ? ` · ${t("pos.expired", "expired")}` : expiringSoon ? ` · ${t("pos.soon", "soon")}` : expSt === "return" ? ` · ${t("expiry.rowReturn")}` : ""}
             </span>
           )}
+          {muted && expSt && <span className="chip shrink-0 bg-surface-2 text-2xs font-semibold text-ink-muted" data-expmuted>{t("expiry.muted")}</span>}
         </div>
       </div>
       {p.pooled ? (
@@ -708,6 +754,13 @@ const ProductRow = memo(function ProductRow({ p, companyName, sectionName, onEdi
           ويُشتكى منه، والإخفاءُ يقول «ما إلك هذا» بلا كلام. */}
       {/* «ليش رصيدها هيچي؟» — يبقى ظاهراً بوضع المدير كذلك: قراءةٌ لا كتابة،
           وهو بالضبط ما يحتاجه مَن يدقّق لا مَن يعدّل. */}
+      {canMute && (
+        <button onClick={() => { playTap(); void toggleMute(); }} disabled={muting} data-expmute={muted ? "on" : "off"}
+          aria-label={muted ? t("expiry.unmute") : t("expiry.mute")} title={muted ? t("expiry.unmute") : t("expiry.mute")}
+          className={cn("grid h-9 w-9 place-items-center rounded-full transition hover:bg-surface-2", muted ? "text-warn-600" : "text-ink-subtle hover:text-warn-600")}>
+          {muting ? <Loader2 size={16} className="animate-spin" /> : muted ? <BellRing size={16} /> : <BellOff size={16} />}
+        </button>
+      )}
       <button onClick={() => { playTap(); setHist(true); }} aria-label={t("mv.open2", "حركات المادة")} title={t("mv.open2", "حركات المادة")}
         className="grid h-9 w-9 place-items-center rounded-full text-ink-subtle transition hover:bg-surface-2 hover:text-brand-600"><History size={16} /></button>
       {hist && <ProductMovementsDialog product={p} open={hist} onClose={() => setHist(false)} />}
@@ -764,8 +817,8 @@ function InventoryTab({ products, companies, sections, clinicId, onChanged, filt
     if (filter === "low" || filter === "out") {
       return [...list].sort((a, b) => Number(isOut(b)) - Number(isOut(a)) || a.stock - b.stock);
     }
-    if (filter === "soon" || filter === "expired") {
-      return [...list].sort((a, b) => (daysUntil(a.expiry_date) ?? 1e9) - (daysUntil(b.expiry_date) ?? 1e9));
+    if (filter === "soon" || filter === "return" || filter === "expired" || filter === "muted") {
+      return [...list].sort((a, b) => (daysToExpiry(a.expiry_date) ?? 1e9) - (daysToExpiry(b.expiry_date) ?? 1e9));
     }
     return list;
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -773,6 +826,19 @@ function InventoryTab({ products, companies, sections, clinicId, onChanged, filt
 
   const { askDelete: remove, deleteDialog } = useProductDelete(onChanged);
   const { stockLocked: locked } = useOverride();
+  const toast = useToast();
+  /* ٢·٣: قائمةٌ تُلصق بواتساب المندوب — ما تعرضه الشريحةُ الآن بالضبط (بعد البحث)،
+   * مجمَّعةً بالشركة وبلا أسعار. الواتسابُ يدويٌّ اليوم (wa.me) فالنسخُ أصدقُ من «أُرسلت». */
+  const expiryFilter = filter === "soon" || filter === "return" || filter === "expired" || filter === "muted";
+  const copyReturnList = async () => {
+    try {
+      await navigator.clipboard.writeText(returnListText(shown, (p) => companyName(p.company_id) ?? "", t));
+      playSuccess();
+      toast.success(t("expiry.copied", { n: shown.length }));
+    } catch {
+      toast.error(t("expiry.copyFail"));
+    }
+  };
 
   return (
     <div className="space-y-4">
@@ -792,9 +858,11 @@ function InventoryTab({ products, companies, sections, clinicId, onChanged, filt
           ["all", t("pos.filterAll", "الكل"), products.length],
           ["out", t("pos.filterOut", "نافد"), products.filter(isOut).length],
           ["low", t("pos.filterLow", "منخفض"), products.filter(isLow).length],
-          ["soon", t("pos.filterSoon", "ينتهي ≤٣٠ يوماً"), products.filter(isExpiringSoon).length],
+          ["soon", t("pos.filterSoon", { n: expW().criticalDays }), products.filter(isExpiringSoon).length],
+          ["return", t("expiry.filterReturn", { n: expW().returnDays }), products.filter(isInReturn).length],
           ["expired", t("pos.filterExpired", "منتهٍ"), products.filter(isExpired).length],
-        ] as [StockFilter, string, number][]).map(([k, label, n]) => (
+          ["muted", t("expiry.muted"), products.filter(isMutedExpiry).length],
+        ] as [StockFilter, string, number][]).filter(([k, , n]) => k !== "muted" || n > 0 || filter === "muted").map(([k, label, n]) => (
           <button
             key={k}
             type="button"
@@ -810,6 +878,11 @@ function InventoryTab({ products, companies, sections, clinicId, onChanged, filt
             {label} <span className="tabular-nums text-ink-subtle">{formatNum(n)}</span>
           </button>
         ))}
+        {expiryFilter && shown.length > 0 && (
+          <Button size="sm" variant="secondary" data-copyreturn leftIcon={<Copy size={14} />} onClick={() => { playTap(); void copyReturnList(); }} className="ms-auto">
+            {t("expiry.copyList")}
+          </Button>
+        )}
       </div>
 
       {shown.length === 0 ? (
@@ -827,7 +900,7 @@ function InventoryTab({ products, companies, sections, clinicId, onChanged, filt
       ) : (
         <motion.div variants={staggerContainer} initial="initial" animate="animate" className="space-y-2">
           {shown.map((p) => (
-            <ProductRow key={p.id} p={p} companyName={companyName(p.company_id)} sectionName={sectionName(p.section_id)} onEdit={() => { playTap(); setEditing(p); }} onRemove={() => remove(p)} />
+            <ProductRow key={p.id} p={p} companyName={companyName(p.company_id)} sectionName={sectionName(p.section_id)} onEdit={() => { playTap(); setEditing(p); }} onRemove={() => remove(p)} onMuteChanged={onChanged} />
           ))}
         </motion.div>
       )}

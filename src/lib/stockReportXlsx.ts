@@ -1,6 +1,6 @@
 import type { Product, Company, CompanySection } from "@/types";
 import i18n from "@/i18n";
-import { getClinicName } from "./settings";
+import { getClinicName, getExpiryWindows } from "./settings";
 import { currencyInfo, getActiveCurrency } from "./currency";
 import { buildStocktake, flatLines, flagsText, type Stocktake, type StocktakeLine } from "./stocktake";
 import { asciiFileName } from "./excelExport";
@@ -102,7 +102,7 @@ export async function exportStocktakeXlsx(
   const MONEY = `#,##0.${cur.frac ? "00" : "###"}" ${cur.code}"`;
   const QTY = "#,##0.###";
 
-  const take = buildStocktake(products, companies, sections, now);
+  const take = buildStocktake(products, companies, sections, now, { criticalDays: getExpiryWindows().criticalDays });
   const lines = flatLines(take);
 
   const wb: any = XLSX.utils.book_new();
@@ -218,7 +218,7 @@ function countSheet(
      * التوقيت يوماً كما يفعل تحويل التاريخ الحقيقي عند الفتح ببلدٍ آخر. */
     put(at(COL.expiry), { t: "s", v: l.expiry ?? "", z: "@", s: tint({ ...centred, alignment: { horizontal: "center", vertical: "center", readingOrder: 1 } }) });
     put(at(COL.daysLeft), l.daysToExpiry == null ? txt("", tint(centred))
-      : num(l.daysToExpiry, "0", tint(l.daysToExpiry <= 30 ? { ...centred, font: alertFont } : centred)));
+      : num(l.daysToExpiry, "0", tint(l.daysToExpiry <= take.criticalDays ? { ...centred, font: alertFont } : centred)));
     const status = pool ? i18n.t("stock.poolStatus", "مجمّع — قيمته تقديرية بمتوسط أسعار الصنف") : flagsText(l.flags);
     put(at(COL.status), txt(status, tint(cellBase(status ? { font: alertFont } : undefined))));
     put(at(COL.subUnit), txt(l.subUnit ? `${l.subUnit.name || i18n.t("stock.unit", "وحدة")} ×${l.subUnit.perBox}` : "", tint(centred)));

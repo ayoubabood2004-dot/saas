@@ -658,6 +658,8 @@ export interface Product {
   /** Reorder level — stock at or below this triggers a low-stock warning. */
   min_stock?: number | null;
   expiry_date?: string | null; // ISO date
+  /** 0210: التاريخُ الذي كُتم عنده تنبيهُ الانتهاء — مكتومٌ ما دام يساوي expiry_date (`isExpiryMuted`). */
+  expiry_ack?: string | null;
   /** Fractional sales: the box can be broken into smaller units (e.g. a pill from a strip). */
   has_sub_unit?: boolean;
   /** Name of one sub-unit shown at the till, e.g. "حبة" / "شريط" / "مل". */

@@ -8,7 +8,7 @@
  * ==========================================================================*/
 
 export type ActivityKind =
-  | "sale" | "refund" | "payment" | "sale_edit" | "sale_delete" | "sale_line" | "print" | "export"
+  | "sale" | "refund" | "payment" | "sale_edit" | "sale_delete" | "sale_line" | "sale_expired" | "print" | "export"
   | "product_add" | "product_edit" | "stock" | "product_delete" | "inventory" | "purchase" | "supplier_pay" | "expense" | "delivery" | "relink"
   | "pet" | "case" | "dose" | "vaccine" | "medical" | "booking" | "message" | "store"
   | "team" | "payroll" | "settings" | "login" | "override" | "other";
@@ -17,7 +17,7 @@ export type ActivityGroup = "sales" | "stock" | "care" | "team";
 
 /** المجموعاتُ بالترتيب الذي تُعرض به، وأنواعُ كلٍّ منها. */
 export const ACTIVITY_GROUPS: { id: ActivityGroup; kinds: ActivityKind[] }[] = [
-  { id: "sales", kinds: ["sale", "refund", "payment", "sale_edit", "sale_delete", "sale_line", "print", "export"] },
+  { id: "sales", kinds: ["sale", "refund", "payment", "sale_edit", "sale_delete", "sale_line", "sale_expired", "print", "export"] },
   { id: "stock", kinds: ["product_add", "product_edit", "stock", "product_delete", "inventory", "purchase", "supplier_pay", "expense", "delivery", "relink"] },
   { id: "care", kinds: ["pet", "case", "dose", "vaccine", "medical", "booking", "message", "store"] },
   { id: "team", kinds: ["team", "payroll", "settings", "login", "override", "other"] },
@@ -54,6 +54,7 @@ export function auditKind(entity: string, action: string, details: Record<string
     const ev = String(d["event"] ?? "");
     if (ev.startsWith("override.")) return "override";
     if (ev.startsWith("report.")) return "export"; /* not-i18n-key: اسمُ حدثٍ بسجلّ التدقيق لا مفتاحُ ترجمة */
+    if (ev === "sale.expired") return "sale_expired"; /* not-i18n-key: 0210 — بيعُ منتهٍ بعد تأكيدٍ بالاسم */
     return "print";
   }
   if (e === "invoices") {
