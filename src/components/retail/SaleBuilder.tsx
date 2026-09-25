@@ -2952,7 +2952,6 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
                     <div className="min-w-0 flex-1">
                       <p className={cn("flex items-center gap-1.5 truncate font-bold text-ink", posV2 ? (compact && !denseCart ? "text-lg leading-tight" : "text-base leading-tight") : "text-sm font-semibold")}>
                         {l.ret && <span data-retchip className="chip shrink-0 bg-amber-500 text-2xs font-black text-white"><Undo2 size={10} className="me-0.5 inline" />{t("retail.retChip", "راجع")}</span>}
-                        {l.name}
                         {(() => {
                           const e = expiryOf(l);
                           const st = expiryState(e, getExpiryWindows());
@@ -2962,6 +2961,7 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
                           if (st === "critical") return <span data-expchip="near" className="chip shrink-0 bg-warn-50 text-2xs font-semibold text-warn-700 dark:bg-warn-500/15 dark:text-warn-300">{t("expiry.chipNear", { date })}</span>;
                           return null;
                         })()}
+                        {l.name}
                         {l.kind === "service" && <span className="chip shrink-0 bg-brand-50 text-2xs font-medium text-brand-700 dark:bg-brand-500/15 dark:text-brand-300">{t("retail.service", "Service")}</span>}
                         {l.kind === "med" && (
                           l.med?.kind === "vaccination"
@@ -3644,9 +3644,9 @@ export function SaleBuilder({ products, clinicId, onSold, prefill, wholesale = f
             {(expiredAsk?.lines ?? []).map((l) => {
               const e = expiryOf(l);
               return (
-                <li key={l.id} className="flex items-center justify-between gap-3 rounded-xl bg-danger-50/70 px-3 py-2 text-sm dark:bg-danger-500/10">
-                  <span className="min-w-0 flex-1 truncate font-medium text-ink">{l.name}</span>
-                  <span className="shrink-0 text-xs font-semibold text-danger-700 dark:text-danger-300">
+                <li key={l.id} className="flex flex-col gap-0.5 rounded-xl bg-danger-50/70 px-3 py-2 text-sm dark:bg-danger-500/10">
+                  <span className="break-words font-semibold text-ink">{l.name}</span>
+                  <span className="text-xs font-semibold text-danger-700 dark:text-danger-300">
                     {t("expiry.askLine", { date: String(e ?? "").slice(0, 10).replace(/-/g, "/"), days: formatNum(Math.abs(daysToExpiry(e) ?? 0)) })}
                   </span>
                 </li>

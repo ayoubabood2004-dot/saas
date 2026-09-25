@@ -3922,11 +3922,16 @@ const DEMO_ACTIVITY_MAP: Record<string, { entity: string; action: "INSERT" | "UP
     const orig = target[method];
     if (typeof orig !== "function") continue;
     target[method] = async (...args: unknown[]) => {
+      /* «كان ← صار» كالمحفّز (0139): تحديثٌ بمعرّفٍ يُصوَّر صفُّه قبلَه فيُحفظ ما تغيّر وحدَه.
+       * بلاه كان التجريبيُّ يسمّي كلَّ تعديلٍ «تعديل منتج» — الكتمُ والمخزونُ سواء. */
+      const tbl = meta.action === "UPDATE" && typeof args[0] === "string" ? (loadDB() as unknown as Record<string, unknown>)[meta.entity] : null;
+      const before = Array.isArray(tbl) ? { ...(tbl.find((x: { id?: unknown }) => x.id === args[0]) ?? {}) } as Record<string, unknown> : null;
       const res = await orig.apply(demoRepo, args);
       try {
         const row = (res && typeof res === "object" ? res : (typeof args[0] === "object" && args[0] !== null ? args[0] : undefined)) as Record<string, unknown> | undefined;
         const entityId = (row && typeof row.id === "string" ? row.id : undefined) ?? (typeof args[0] === "string" ? args[0] : null);
-        demoAuditPush({ action: meta.action, entity: meta.entity, entity_id: entityId, details: row ?? null });
+        const changed = before && row ? Object.fromEntries(Object.keys(row).filter((k) => JSON.stringify(row[k] ?? null) !== JSON.stringify(before[k] ?? null)).map((k) => [k, [before[k] ?? null, row[k] ?? null]])) : null;
+        demoAuditPush({ action: meta.action, entity: meta.entity, entity_id: entityId, details: row ? (changed && Object.keys(changed).length ? { ...row, __changed: changed } : row) : null });
         // Checkout also logs each sold LINE — mirroring the invoice_items trigger.
         if ((method === "checkout" || method === "retailCheckout") && Array.isArray(args[0])) {
           for (const it of args[0] as Array<Record<string, unknown>>) {

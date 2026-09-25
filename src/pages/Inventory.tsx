@@ -2,7 +2,7 @@ import { memo, useCallback, useDeferredValue, useEffect, useMemo, useRef, useSta
 import { ProductMovementsDialog } from "@/components/inventory/ProductMovements";
 import { useTranslation } from "react-i18next";
 import { motion } from "framer-motion";
-import { getCached, setCached, patchCached, cachedAt } from "@/lib/swrCache";
+import { getCached, setCached, patchCached, cachedAt, invalidate } from "@/lib/swrCache";
 import { RETURN_STALE_MS, RETRY_AFTER_FAIL_MS, POLL_MS } from "@/lib/freshness";
 import { useRevalidateOnReturn } from "@/hooks/useRevalidateOnReturn";
 import { patchRawList, patchSections, type FreshPatch } from "@/lib/freshSale";
@@ -830,6 +830,9 @@ function InventoryTab({ products, companies, sections, clinicId, onChanged, filt
   /* ٢·٣: قائمةٌ تُلصق بواتساب المندوب — ما تعرضه الشريحةُ الآن بالضبط (بعد البحث)،
    * مجمَّعةً بالشركة وبلا أسعار. الواتسابُ يدويٌّ اليوم (wa.me) فالنسخُ أصدقُ من «أُرسلت». */
   const expiryFilter = filter === "soon" || filter === "return" || filter === "expired" || filter === "muted";
+  /* الكتمُ يُسقط لقطةَ الرئيسية أيضاً: كانت تعيد عرضَ نفسها ٢٠ ثانية بلا جلب (`isFresh`)،
+   * فمن كتم مادةً ورجع للرئيسية رآها بالكارت كأن الكتمَ لم يُحفظ (قيادةُ المتصفّح). */
+  const afterMute = useCallback(() => { invalidate(`dashboard:${clinicId ?? "anon"}`); onChanged(); }, [clinicId, onChanged]);
   const copyReturnList = async () => {
     try {
       await navigator.clipboard.writeText(returnListText(shown, (p) => companyName(p.company_id) ?? "", t));
@@ -900,7 +903,7 @@ function InventoryTab({ products, companies, sections, clinicId, onChanged, filt
       ) : (
         <motion.div variants={staggerContainer} initial="initial" animate="animate" className="space-y-2">
           {shown.map((p) => (
-            <ProductRow key={p.id} p={p} companyName={companyName(p.company_id)} sectionName={sectionName(p.section_id)} onEdit={() => { playTap(); setEditing(p); }} onRemove={() => remove(p)} onMuteChanged={onChanged} />
+            <ProductRow key={p.id} p={p} companyName={companyName(p.company_id)} sectionName={sectionName(p.section_id)} onEdit={() => { playTap(); setEditing(p); }} onRemove={() => remove(p)} onMuteChanged={afterMute} />
           ))}
         </motion.div>
       )}
