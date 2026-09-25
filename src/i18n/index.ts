@@ -117,7 +117,9 @@ i18n.on("languageChanged", (lng: string) => {
  * العربية البارد (إن احتاجته)، وبعدهما وحدَهما الحفظُ والاتجاهُ والتبديل.
  * ولا `try` هنا عمداً: الفشلُ يبقى رفضاً غيرَ ملتقَط فيقوله توستُ `errors.async`
  * القائمُ بـ`main.tsx`، ولا يُحفظ شيءٌ ولا ينقلب اتجاه. */
+let langSeq = 0;
 export function setLang(lang: Lang): void {
+  const my = ++langSeq;
   void (async () => {
     const info = localeInfo(lang);
     // لغات المخزن غير المدمجة تُحمَّل كسولاً أول مرة تُختار — مستخدم
@@ -127,6 +129,9 @@ export function setLang(lang: Lang): void {
       i18n.addResourceBundle(info.code, "translation", mod.default, true, true);
     }
     await ensureDictionary(info.code);
+    /* آخرُ اختيارٍ يفوز: «العربية» تنتظر نصفَها البارد و«English» تُحسم فوراً، فبلا
+     * هذا يصل التنزيلُ المتأخّر ويقلب كلَّ شيءٍ لاختيارٍ سابق (i18n-cold-test B10). */
+    if (my !== langSeq) return;
     try {
       localStorage.setItem("vp_lang", lang);
     } catch {

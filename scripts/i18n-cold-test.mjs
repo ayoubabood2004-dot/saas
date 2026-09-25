@@ -297,6 +297,26 @@ if (codeB) {
     check("B8   والفشلُ رفضٌ غيرُ ملتقَط (يقوله توستُ errors.async القائم)", unhandled.length === before + 1, `${unhandled.length - before} رفض`);
   }
 
+  { // B10: آخرُ اختيارٍ يفوز — «العربية» ثم «English» والنصفُ البارد بالطريق
+    /* أثبته تدقيقٌ عدائيّ من أربع زوايا: فرعُ العربية ينتظر التنزيل، والإنكليزيةُ
+     * تُحسم فوراً، ثم يصل التنزيلُ فيقلب كلَّ شيءٍ للعربية — لغةٌ لم يخترها أحدٌ أخيراً. */
+    const env = browser({ lang: "en" });
+    const { mod } = await boot(codeB);
+    await mod.I18N.i18nReady;
+    mod.I18N.setLang("ar");
+    mod.I18N.setLang("en");
+    for (let i = 0; i < 50 && globalThis.__arColdEvals === 0; i++) await tick(10);
+    await tick(40);
+    check("B10 setLang('ar') ثم setLang('en') فوراً ⇐ تبقى en: لغةً واتجاهاً وحفظاً",
+      mod.I18N.default.language === "en" && env.el.dir === "ltr" && env.ls.getItem("vp_lang") === "en",
+      `lang=${mod.I18N.default.language} dir=${env.el.dir} vp_lang=${env.ls.getItem("vp_lang")}`);
+    mod.I18N.setLang("ar");
+    for (let i = 0; i < 50 && mod.I18N.default.language !== "ar"; i++) await tick(10);
+    check("B10   والعربيةُ وحدَها بعدها ⇐ ar: لغةً واتجاهاً وحفظاً",
+      mod.I18N.default.language === "ar" && env.el.dir === "rtl" && env.ls.getItem("vp_lang") === "ar",
+      `lang=${mod.I18N.default.language} dir=${env.el.dir} vp_lang=${env.ls.getItem("vp_lang")}`);
+  }
+
   { // B9: changeLanguage("ar") المباشر (portal.ts) يطلب النصفَ البارد
     browser({ lang: "en" });
     const { mod } = await boot(codeB);
