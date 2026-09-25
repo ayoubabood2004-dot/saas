@@ -5714,9 +5714,11 @@ const supabaseRepo: typeof demoRepo = {
     return listOrThrow<PurchaseItem>(await sbc().from("purchase_items").select("*").eq("purchase_id", purchaseId));
   },
   async listPurchaseEffects(purchaseId) {
-    // `listOrThrow` لا `listOf`: كشفٌ فارغٌ عن خطأ يقول «ماكو شي تغيّر» عن فاتورةٍ بدّلت أسعاراً.
-    return listOrThrow<PurchaseEffect>(await sbc().from("purchase_effects").select("*")
-      .eq("purchase_id", purchaseId).order("created_at", { ascending: true }).order("line_no", { ascending: true }).limit(1000));
+    // يرمي ولا يبلع: كشفٌ فارغٌ عن خطأ يقول «ماكو شي تغيّر» عن فاتورةٍ بدّلت أسعاراً.
+    // و`allPages` لا `limit(1000)`: الصفوفُ تتراكم بكلّ تعديل (سطور × تعديلات)، وقصُّ
+    // تصاعديٍّ عند الألف يُسقط **أحدثَ** دفعة فيُعرض كشفٌ قديمٌ على أنه الأخير.
+    const rows = await allPages<PurchaseEffect>(() => sbc().from("purchase_effects").select("*").eq("purchase_id", purchaseId));
+    return rows.sort((a, b) => a.created_at.localeCompare(b.created_at) || a.line_no - b.line_no);
   },
   async listAllPurchaseItems(clinicId, range) {
     return allPages<PurchaseItem>(() => {

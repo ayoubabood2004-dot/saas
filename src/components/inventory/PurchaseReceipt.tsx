@@ -126,7 +126,11 @@ export function PurchaseReceipt({ purchaseId, companyId, companyName: purchaseCo
 
       {receipt.clean ? (
         <p className="rounded-2xl bg-success-50 p-3.5 text-sm font-bold text-success-700 dark:bg-success-500/10 dark:text-success-300">
-          {t("purchase.receipt.clean", { n: receipt.lines, defaultValue: "تمام — نزّلنا {{n}} مواد على المخزن، وماكو شي ثاني تغيّر." })}
+          {receipt.op !== "update"
+            ? t("purchase.receipt.clean", { n: receipt.lines, defaultValue: "تمام — نزّلنا {{n}} مواد على المخزن، وماكو شي ثاني تغيّر." })
+            : receipt.lines > 0
+              ? t("purchase.receipt.cleanEdit", { n: receipt.lines, defaultValue: "تمام — انحفظ التعديل: تغيّر رصيد {{n}} مواد، وماكو شي ثاني تغيّر." })
+              : t("purchase.receipt.cleanEditNone", "تمام — انحفظ التعديل، وما تغيّر شي بالمخزن.")}
         </p>
       ) : (
         <>
@@ -149,10 +153,15 @@ export function PurchaseReceipt({ purchaseId, companyId, companyName: purchaseCo
           )}
           {receipt.added.length > 0 && (
             <Section tone="plain" icon={<TrendingUp size={15} />}
-              title={t("purchase.receipt.addedHead", { n: receipt.added.length, defaultValue: "زادت بضاعة ({{n}} مواد)" })}>
+              title={receipt.op === "update"
+                ? t("purchase.receipt.stockHead", { n: receipt.added.length, defaultValue: "تغيّر رصيد ({{n}} مواد)" })
+                : t("purchase.receipt.addedHead", { n: receipt.added.length, defaultValue: "زادت بضاعة ({{n}} مواد)" })}>
               {receipt.added.map((a, i) => (
                 <li key={`${a.productId}-${i}`}>
-                  {t("purchase.receipt.addedLine", { name: a.name, qty: n(a.qty), from: n(a.from), to: n(a.to), defaultValue: "{{name}} — زدنا {{qty}}. كان عندك {{from}}، صار {{to}}." })}
+                  {/* بالتعديل الكميةُ كميةُ السطر لا الفرق — فيُقال الرصيدُ من ← إلى وحدَه. */}
+                  {receipt.op === "update"
+                    ? t("purchase.receipt.stockLine", { name: a.name, from: n(a.from), to: n(a.to), defaultValue: "{{name}} — الرصيد كان {{from}}، صار {{to}}." })
+                    : t("purchase.receipt.addedLine", { name: a.name, qty: n(a.qty), from: n(a.from), to: n(a.to), defaultValue: "{{name}} — زدنا {{qty}}. كان عندك {{from}}، صار {{to}}." })}
                 </li>
               ))}
             </Section>
@@ -172,7 +181,7 @@ export function PurchaseReceipt({ purchaseId, companyId, companyName: purchaseCo
               title={t("purchase.receipt.removedHead", { n: receipt.removed.length, defaultValue: "شلناها من الفاتورة ({{n}})" })}>
               {receipt.removed.map((a, i) => (
                 <li key={`${a.productId}-${i}`}>
-                  {t("purchase.receipt.removedLine", { name: a.name, qty: n(a.qty), from: n(a.from), to: n(a.to), defaultValue: "{{name}} — نقّصنا {{qty}}. كان عندك {{from}}، صار {{to}}." })}
+                  {t("purchase.receipt.removedLine", { name: a.name, qty: n(a.qty), from: n(a.from), to: n(a.to), defaultValue: "{{name}} — شلناها من الفاتورة (كانت {{qty}}). الرصيد كان {{from}}، صار {{to}}." })}
                 </li>
               ))}
             </Section>

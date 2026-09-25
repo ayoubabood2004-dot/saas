@@ -3081,6 +3081,23 @@ chk "  وعيادةٌ أخرى لا تراه" \
     "select _rls_try('$C2', 'select 1 from purchase_effects where purchase_id = ''$EPID''')" "rows:0"
 chk "  ولا يُكتب إلا من الدالّتين (لا سياسةَ كتابة)" \
     "select left(_rls_try('$C1', 'update purchase_effects set qty = 0 where purchase_id = ''$EPID'''), 7)" "rows:0"
+# وسطران لنفس المادّة بالتعديل (قالبُ التدقيق العدائيّ حرفاً): ٥٠ اشتُريت و٤٥ بيعت ثمّ
+# التعديلُ ١٠+٣٠. الثاني صورتُه وسطيّةٌ (−٣٥) — والقارئُ يعتمد على أن **آخرَ** «صار»
+# لكلّ مادّة هو الحالُ النهائية وأوّلَ «كان» ما قبل التعديل. هذا ما يُحرس هنا.
+$P -c "insert into products (id, clinic_id, name, barcode, alt_codes, stock) values
+         ('e2110000-0000-4000-8000-000000000021','$C1','مكرّر الكشف','DUPX','{}',0) on conflict (id) do nothing;
+       select set_config('request.jwt.claim.sub','$C1',false);
+       select record_purchase(jsonb_build_array(jsonb_build_object('product_id','e2110000-0000-4000-8000-000000000021','name','مكرّر الكشف','qty',50,'purchase_price',1,'sell_price',0)),
+         jsonb_build_object('company_name','مكرّر ١'));
+       update products set stock = 5 where id='e2110000-0000-4000-8000-000000000021';
+       select update_purchase((select id from purchases where company_name='مكرّر ١' and clinic_id='$C1'), jsonb_build_array(
+         jsonb_build_object('product_id','e2110000-0000-4000-8000-000000000021','name','مكرّر الكشف','qty',10,'purchase_price',1,'sell_price',0),
+         jsonb_build_object('product_id','e2110000-0000-4000-8000-000000000021','name','مكرّر الكشف','qty',30,'purchase_price',1,'sell_price',0)),
+         jsonb_build_object('company_name','مكرّر ١'));" >/dev/null
+chk "سطران لنفس المادّة بالتعديل: أوّلُ «كان» = ما قبل التعديل (٥)، وآخرُ «صار» = النهائيّ (٠)" \
+    "select (select (before->>'stock')::numeric::int from purchase_effects e where e.product_id='e2110000-0000-4000-8000-000000000021' and op='update' order by line_no limit 1)
+       ||'->'||(select (after->>'stock')::numeric::int from purchase_effects e where e.product_id='e2110000-0000-4000-8000-000000000021' and op='update' order by line_no desc limit 1)
+       ||'/'||(select stock::int from products where id='e2110000-0000-4000-8000-000000000021')" "5->0/0"
 # ٢·٤ مرآةً بمرآة: التوأمان بالاسم — نفسُ قالب repo-demo-test حرفاً.
 $P -c "insert into companies (id, clinic_id, name) values
          ('e2110000-0000-4000-8000-0000000000c1','$C1','شركة الكشف ت'),

@@ -981,12 +981,15 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
     }
   };
 
+  /* الإغلاقُ يصفّر الكشف: النافذةُ تبقى مركَّبةً بين فتحٍ وفتح، و`saved` القديم كان
+   * يرسم كشفَ الفاتورة السابقة إطاراً واحداً عند إعادة الفتح ويجلبه مرّةً زائدة. */
+  const finish = () => { setSaved(null); onSaved(); };
   if (saved) {
     return (
-      <Modal open={open} onClose={onSaved} dismissible={false} size="wide"
+      <Modal open={open} onClose={finish} dismissible={false} size="wide"
         title={`${t("purchase.new", "فاتورة شراء")} · ${purchaseNo(saved.id)}`}>
         <PurchaseReceipt purchaseId={saved.id} companyId={saved.company_id ?? null} companyName={saved.company_name} companies={companies}
-          mode="fresh" onClose={onSaved} onPrint={() => void printSaved(saved)} />
+          mode="fresh" onClose={finish} onPrint={() => void printSaved(saved)} />
       </Modal>
     );
   }

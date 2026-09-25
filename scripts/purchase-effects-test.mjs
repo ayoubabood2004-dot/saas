@@ -53,8 +53,8 @@ console.log("▸ التصنيف");
 }
 {
   const r = describeEffects([
-    E({ line_no: 1, qty: 3, before: snap({ stock: 1 }), after: snap({ stock: 4 }) }),
-    E({ line_no: 2, qty: 4, before: snap({ stock: 2 }), after: snap({ stock: 6 }) }),
+    E({ line_no: 1, product_id: "a", qty: 3, before: snap({ stock: 1 }), after: snap({ stock: 4 }) }),
+    E({ line_no: 2, product_id: "b", qty: 4, before: snap({ stock: 2 }), after: snap({ stock: 6 }) }),
   ]);
   check("فاتورةٌ نظيفة ⇒ clean وبعدد السطور", r.clean === true && r.lines === 2 && r.added.length === 2);
 }
@@ -85,8 +85,8 @@ console.log("▸ الدفعات");
   const eff = [
     E({ op: "record", line_no: 1, created_at: "2026-09-25T10:00:00Z", qty: 50 }),
     E({ op: "record", line_no: 2, created_at: "2026-09-25T10:00:00Z", qty: 1 }),
-    E({ op: "update", line_no: 1, created_at: "2026-09-26T09:00:00Z", qty: 40 }),
-    E({ op: "update", line_no: 2, created_at: "2026-09-26T09:00:00Z", outcome: "removed", matched_by: null, qty: -1,
+    E({ op: "update", line_no: 1, created_at: "2026-09-26T09:00:00Z", qty: 40, before: snap({ stock: 50 }), after: snap({ stock: 40 }) }),
+    E({ op: "update", line_no: 2, product_id: "y", created_at: "2026-09-26T09:00:00Z", outcome: "removed", matched_by: null, qty: -1,
         before: snap({ stock: 1 }), after: snap({ stock: 0 }) }),
     E({ op: "update", line_no: 1, created_at: "2026-09-27T09:00:00Z", qty: 40 }),
   ];
@@ -97,6 +97,29 @@ console.log("▸ الدفعات");
   check("المشالُ من الفاتورة: removed بكميةٍ موجبةٍ للعرض ورصيدٍ نقص", r2.removed.length === 1 && r2.removed[0].qty === 1 && r2.removed[0].to === 0);
   check("  ولا يُعدّ سطراً مُنزَّلاً، ولا نظيفاً", r2.lines === 1 && r2.clean === false);
   check("وكشفٌ فارغ (فاتورةٌ قبل 0211) ⇒ op فارغ", describeEffects([]).op === null);
+}
+
+console.log("▸ التعديل — ما أمسكه التدقيقُ العدائيّ");
+{
+  const U = (o) => E({ op: "update", created_at: "2026-09-26T09:00:00Z", matched_by: "id", ...o });
+  const r = describeEffects([U({ qty: 40, before: snap({ stock: 0 }), after: snap({ stock: 0 }) })]);
+  check("تعديلٌ لا يغيّر شيئاً لا يقول «زدنا ٤٠، كان ٠ صار ٠»", r.added.length === 0 && r.lines === 0 && r.clean === true && r.op === "update",
+    JSON.stringify(r.added));
+  const r2 = describeEffects([U({ qty: 12, before: snap({ stock: 5 }), after: snap({ stock: 7 }) })]);
+  check("  و١٠ ⇒ ١٢ يقول الرصيدَ ٥ ⇒ ٧ والفرقَ +٢ لا ١٢", r2.added.length === 1 && r2.added[0].qty === 2 && r2.added[0].from === 5 && r2.added[0].to === 7);
+  /* سطران لنفس المادّة بالتعديل: الثاني صورتُه وسطيّةٌ سالبة (−٣٥) — مقيسةٌ من 0211 نفسِها. */
+  const r3 = describeEffects([
+    U({ line_no: 1, qty: 10, before: snap({ stock: 5 }), after: snap({ stock: 0 }) }),
+    U({ line_no: 2, qty: 30, before: snap({ stock: -35 }), after: snap({ stock: 0 }) }),
+  ]);
+  check("  وسطران لنفس المادّة مادّةٌ واحدة: «كان» الأوّل و«صار» الأخير، ولا −٣٥ أبداً",
+    r3.added.length === 1 && r3.added[0].from === 5 && r3.added[0].to === 0, JSON.stringify(r3.added));
+  const r4 = describeEffects([
+    E({ line_no: 1, qty: 10, before: snap({ stock: 4, sell_price: 3000 }), after: snap({ stock: 14, sell_price: 2500 }), changed: ["sell_price"] }),
+    E({ line_no: 2, qty: 5, before: snap({ stock: 14, sell_price: 2500 }), after: snap({ stock: 19, sell_price: 3000 }), changed: ["sell_price"] }),
+  ]);
+  check("وبالتسجيل كذلك: ٤ ⇒ ١٩ بكميةٍ ١٥، وسعرٌ تبدّل ورجع لا يُقال", r4.added.length === 1 && r4.added[0].qty === 15 && r4.added[0].to === 19 && r4.changed.length === 0,
+    JSON.stringify([r4.added, r4.changed]));
 }
 
 console.log(`\n${fails ? "✗" : "✓"} purchase-effects-test: ${passes} نجحت، ${fails} فشلت`);

@@ -31,7 +31,7 @@ export interface Receipt {
   notes: ReceiptNote[];
   /** ماكو شي تبدّل عدا الرصيد، ولا ملاحظة ولا جديد ولا مشال ⇒ سطرٌ واحد وضغطتان. */
   clean: boolean;
-  /** عددُ السطور — للسطر النظيف «نزّلنا N مواد». */
+  /** عددُ المواد التي تحرّك رصيدُها — للسطر النظيف (بالتعديل: ما تغيّر رصيدُه وحدَه). */
   lines: number;
 }
 
@@ -51,11 +51,37 @@ export function latestBatch(effects: readonly PurchaseEffect[]): PurchaseEffect[
   return effects.filter((e) => e.created_at === last).sort((a, b) => a.line_no - b.line_no);
 }
 
+/**
+ * يجمع الدفعةَ بالمادّة: سطران لنفس المادّة (دفعتان مقصودتان بفاتورة) مادّةٌ واحدة
+ * بالكشف — «كان» من أوّلهما و«صار» من آخرهما والكميةُ مجموعة. وبالتعديل هذا **لازم**:
+ * صورةُ السطر الثاني وسطيّةٌ بعد عكس السطور القديمة وقد تكون سالبة (−٣٥)، ولم توجد
+ * خارج المعاملة. وآخرُ صورة «صار» هي الحالُ النهائية دائماً (الحصرةُ تُصلح السالبَ منها).
+ */
+function byProduct(batch: readonly PurchaseEffect[]): PurchaseEffect[] {
+  const out: PurchaseEffect[] = [];
+  const at = new Map<string, number>();
+  for (const e of batch) {
+    const k = e.product_id ? `${e.outcome === "removed" ? "r" : "m"}:${e.product_id}` : null;
+    const i = k == null ? undefined : at.get(k);
+    if (i === undefined) { if (k) at.set(k, out.length); out.push({ ...e, changed: [...(e.changed ?? [])] }); continue; }
+    const first = out[i];
+    out[i] = {
+      ...first,
+      qty: num(first.qty) + num(e.qty),
+      after: e.after,
+      outcome: first.outcome,
+      changed: [...new Set([...(first.changed ?? []), ...(e.changed ?? [])])],
+    };
+  }
+  return out;
+}
+
 export function describeEffects(effects: readonly PurchaseEffect[], purchaseCompanyId?: string | null): Receipt {
-  const batch = latestBatch(effects);
+  const batch = byProduct(latestBatch(effects));
   const stamps = new Set(effects.filter((e) => e.op === "update").map((e) => e.created_at));
+  const op = batch[0]?.op ?? null;
   const out: Receipt = {
-    op: batch[0]?.op ?? null, edits: stamps.size,
+    op, edits: stamps.size,
     added: [], changed: [], created: [], removed: [], notes: [], clean: true, lines: 0,
   };
   for (const e of batch) {
@@ -67,15 +93,22 @@ export function describeEffects(effects: readonly PurchaseEffect[], purchaseComp
       out.removed.push({ name, productId: pid, qty: Math.abs(num(e.qty)), from: num(b.stock), to: num(a.stock) });
       continue;
     }
-    out.lines++;
     if (e.outcome === "created") {
+      out.lines++;
       out.created.push({ name, productId: pid, qty: num(e.qty), from: 0, to: num(a.stock) });
       continue;
     }
-    out.added.push({ name, productId: pid, qty: num(e.qty), from: num(b.stock), to: num(a.stock) });
+    /* بالتعديل «الكمية» كميةُ السطر كاملةً لا الفرق — فـ«زدنا ٤٠، كان ٠ صار ٠» كذبٌ
+     * عن تعديلٍ لم يغيّر شيئاً (أمسكه تدقيقٌ عدائيّ). يُقال الرصيدُ من ← إلى وحدَه،
+     * وما لم يتغيّر رصيدُه لا يُعدّ ولا يُقال. */
+    const from = num(b.stock), to = num(a.stock);
+    if (op !== "update" || from !== to) {
+      out.lines++;
+      out.added.push({ name, productId: pid, qty: op === "update" ? to - from : num(e.qty), from, to });
+    }
     const fields = (e.changed ?? []).filter((f): f is EffectField => (FIELD_ORDER as string[]).includes(f))
       .sort((x, y) => FIELD_ORDER.indexOf(x) - FIELD_ORDER.indexOf(y));
-    for (const f of fields) out.changed.push({ name, productId: pid, field: f, from: b[f] ?? null, to: a[f] ?? null });
+    for (const f of fields) if (String(b[f] ?? "") !== String(a[f] ?? "")) out.changed.push({ name, productId: pid, field: f, from: b[f] ?? null, to: a[f] ?? null });
     if (e.matched_by === "name") out.notes.push({ name, productId: pid, kind: "by_name" });
     /* طابق مادّةَ شركةٍ ثانية: البضاعةُ من شركة الفاتورة، والرفُّ لغيرها. «بلا شركة»
      * ليست ثانية — الشراءُ يسندها (ويُقال تحت «تبدّلت»). */

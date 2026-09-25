@@ -1355,12 +1355,16 @@
       "otherCompany": "{{name}}: this item is registered under another company — this invoice's stock went onto it.",
       "print": "Print invoice",
       "removedHead": "Removed from the invoice ({{n}})",
-      "removedLine": "{{name}} — reduced by {{qty}}. You had {{from}}, now {{to}}.",
+      "removedLine": "{{name}} — removed from the invoice (was {{qty}}). Stock was {{from}}, now {{to}}.",
       "retry": "Try again",
       "someCompany": "the invoice's company",
       "title": "Invoice saved — here's what changed in stock",
       "titleEdit": "Edit saved — here's what changed in stock",
-      "titleView": "What this invoice did to stock"
+      "titleView": "What this invoice did to stock",
+      "cleanEdit": "All good — edit saved: stock changed for {{n}} items, and nothing else changed.",
+      "cleanEditNone": "All good — edit saved, and nothing changed in stock.",
+      "stockHead": "Stock changed ({{n}} items)",
+      "stockLine": "{{name}} — stock was {{from}}, now {{to}}."
     }
   },
   "pos": {
