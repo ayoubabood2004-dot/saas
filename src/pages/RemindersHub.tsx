@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { motion } from "framer-motion";
@@ -10,7 +10,9 @@ import {
 import { getCached, setCached } from "@/lib/swrCache";
 import { waVariants, pickVariantIndex, renderWaTemplate, type WaPool } from "@/lib/waTemplates";
 import type { CampaignPrefill, ReminderType } from "@/lib/reminders";
-import type { Pet, Vaccination, Surgery, Appointment, Reminder, EventCategory, MedicalVisit, WhatsAppMessage } from "@/types";
+import type { Pet, Vaccination, Surgery, Appointment, Reminder, EventCategory, MedicalVisit, WhatsAppMessage, ReminderMark } from "@/types";
+import { indexMarks, serverSentDay, markOf, localDay, judgeLifecycle, overlayWrites, type MarkWrite } from "@/lib/reminderMarks";
+import { describeDbError } from "@/lib/errors";
 import { repo } from "@/lib/repo";
 import { PetAvatar } from "@/components/PetAvatar";
 import { useAuth } from "@/contexts/AuthContext";
@@ -77,7 +79,7 @@ interface Row {
 }
 
 /** صف مُقيَّم: الصف + حالته بدورة الحياة + متى أُرسل. */
-interface Judged { row: Row; st: LifeStatus; sentAt: string | null }
+interface Judged { row: Row; st: LifeStatus; sentAt: string | null; done: boolean }
 
 const DEWORM_RE = /deworm|ديدان|دود/i;
 
@@ -143,7 +145,7 @@ export function RemindersHub() {
 
   // Synchronous cache seed — effects run AFTER paint, so seeding there flashes
   // one skeleton frame on every revisit (the "loading intro" the doctor sees).
-  type Seed = { p: Pet[]; vax: Vaccination[]; srg: Surgery[]; appts: Appointment[]; rems: Reminder[]; vis?: MedicalVisit[]; log?: WhatsAppMessage[] };
+  type Seed = { p: Pet[]; vax: Vaccination[]; srg: Surgery[]; appts: Appointment[]; rems: Reminder[]; vis?: MedicalVisit[]; log?: WhatsAppMessage[]; marks?: ReminderMark[] };
   const seed = getCached<Seed>(`remhub_${user?.clinic_id ?? user?.id ?? ""}`);
   const [pets, setPets] = useState<Pet[]>(seed?.p ?? []);
   const [vaccinations, setVaccinations] = useState<Vaccination[]>(seed?.vax ?? []);
@@ -152,7 +154,22 @@ export function RemindersHub() {
   const [manual, setManual] = useState<Reminder[]>(seed?.rems ?? []);
   const [visits, setVisits] = useState<MedicalVisit[]>(seed?.vis ?? []);
   const [waLog, setWaLog] = useState<WhatsAppMessage[]>(seed?.log ?? []);
+  /** علاماتُ الخادم (0208): «أُرسلت» و«تمّ التذكير» — تعبر الأجهزة، لا كمخزن المتصفّح. */
+  const [marks, setMarks] = useState<ReminderMark[]>(seed?.marks ?? []);
   const [loading, setLoading] = useState(!seed);
+  /** فشلَ آخرُ تحميل: يُقال بدل «لا توجد تذكيرات — كل شيء تحت السيطرة» وبدل صفوفٍ «تمّ»
+   *  تعود حمراء فيُعاد إرسالُها. */
+  const [loadErr, setLoadErr] = useState(false);
+  /** صفٌّ يُكتب الآن — ضغطتان لا تكتبان مرّتين. */
+  const [markBusy, setMarkBusy] = useState<string | null>(null);
+  /** كتاباتُ هذه الشاشة للعلامات بترتيب اكتمالها. كلُّ قراءةٍ تُطبَّق فوقها ما اكتمل بعد
+   *  بدئها (`overlayWrites`) — فلا تمحو قراءةٌ قديمةُ اللقطة «تمّ» ضُغط أثناءها. */
+  const marksWrites = useRef<MarkWrite[]>([]);
+  const recordWrite = (rowKey: string, dueDate: string, mark: ReminderMark | null) => {
+    const w: MarkWrite = { seq: marksWrites.current.length + 1, row_key: rowKey, due_date: dueDate, mark };
+    marksWrites.current.push(w);
+    setMarks((prev) => { const next = overlayWrites(prev, [w], 0); setCached(remKey, { ...(getCached<Seed>(remKey) ?? {}), marks: next }); return next; });
+  };
   const [kind, setKind] = useState<Kind | "all">("all");
   const [timeF, setTimeF] = useState<TimeFilter>("all");
   const [view, setView] = useState<LifeStatus>("active");
@@ -197,7 +214,8 @@ export function RemindersHub() {
       // النطاق يرجع 60 يوماً للوراء أيضاً: الحكم على «جاء/ما جاء» يحتاج الماضي القريب.
       const from = isoDay(new Date(Date.now() - 60 * 86400000));
       const to = isoDay(new Date(Date.now() + 60 * 86400000));
-      const [vax, srg, appts, rems, vis, log] = await Promise.all([
+      const seq0 = marksWrites.current.length;
+      const [vax, srg, appts, rems, vis, log, mk] = await Promise.all([
         repo.listAllVaccinations(ids),
         repo.listAllSurgeries().catch(() => [] as Surgery[]),
         repo.listAppointmentsInRange(from, to).catch(() => [] as Appointment[]),
@@ -205,16 +223,21 @@ export function RemindersHub() {
         // الزيارات دليل الوصول لمتابعات العمليات؛ والسجل يجعل «أُرسلت» مشتركة بين الأجهزة.
         repo.listAllVisits(ids).catch(() => [] as MedicalVisit[]),
         repo.listWhatsAppLog().catch(() => [] as WhatsAppMessage[]),
+        // بلا .catch: صفرُ علاماتٍ عن فشلٍ يعيد كلَّ تذكيرٍ «تمّ» أحمرَ — فيُعاد إرسالُه لصاحبه.
+        repo.listReminderMarks(),
       ]);
-      setCached(remKey, { p, vax, srg, appts, rems, vis, log });
-      setPets(p); setVaccinations(vax); setSurgeries(srg); setAppointments(appts); setManual(rems); setVisits(vis); setWaLog(log);
-    } catch { /* empty state covers it */ }
+      // ما اكتمل من كتاباتٍ بعد بدء القراءة ربما فاتته لقطتُها — يُعاد فوقها.
+      const fresh = overlayWrites(mk, marksWrites.current, seq0);
+      setCached(remKey, { p, vax, srg, appts, rems, vis, log, marks: fresh });
+      setPets(p); setVaccinations(vax); setSurgeries(srg); setAppointments(appts); setManual(rems); setVisits(vis); setWaLog(log); setMarks(fresh);
+      setLoadErr(false);
+    } catch { setLoadErr(true); }
     finally { setLoading(false); }
   };
   useEffect(() => {
     // فوري من الكاش + تحديث خفي
     const c = getCached<Seed>(remKey);
-    if (c) { setPets(c.p); setVaccinations(c.vax); setSurgeries(c.srg); setAppointments(c.appts); setManual(c.rems); setVisits(c.vis ?? []); setWaLog(c.log ?? []); setLoading(false); }
+    if (c) { setPets(c.p); setVaccinations(c.vax); setSurgeries(c.srg); setAppointments(c.appts); setManual(c.rems); setVisits(c.vis ?? []); setWaLog(c.log ?? []); setMarks(c.marks ?? []); setLoading(false); }
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.clinic_id, user?.id]);
@@ -327,6 +350,8 @@ export function RemindersHub() {
     return rows.sort((a, b) => (a.inDays - b.inDays) || a.petName.localeCompare(b.petName));
   }, [vaccinations, surgeries, appointments, manual, pets, petById, visits]);
 
+  const markIndex = useMemo(() => indexMarks(marks), [marks]);
+
   /** «أُرسلت» عابرة للأجهزة: العلامة المحلية أو سجل الواتساب المخزَّن —
    *  رسالة لنفس الحيوان بنفس النوع ضمن نافذة الموعد تُحسب إرسالاً له. */
   const sentInfoOf = useMemo(() => {
@@ -335,7 +360,7 @@ export function RemindersHub() {
       if (!w.pet_id || !w.reminder_type) continue;
       const k = `${w.pet_id}|${w.reminder_type}`;
       const arr = byPetKind.get(k) ?? [];
-      arr.push(w.sent_at.slice(0, 10));
+      arr.push(localDay(w.sent_at));
       byPetKind.set(k, arr);
     }
     // السجل لا يعرف أي تذكيرٍ بعينه خصّته الرسالة — يعرف الحيوان والنوع فقط.
@@ -351,6 +376,9 @@ export function RemindersHub() {
     }
     return (r: Row): string | null => {
       if (sentMap[r.id] === r.date) return sentMap[`${r.id}#at`] ?? r.date;
+      // علامةُ الخادم دقيقةٌ بالصفّ وتاريخه — لا تخمينَ بالحيوان والنوع.
+      const sd = serverSentDay(markIndex, r.id, r.date);
+      if (sd) return sd;
       if (!r.petId) return null;
       if ((rowCount.get(`${r.petId}|${r.kind}`) ?? 0) > 1) return null;
       const days = byPetKind.get(`${r.petId}|${r.kind}`) ?? [];
@@ -359,23 +387,49 @@ export function RemindersHub() {
       const hit = days.filter((d) => d >= lo && d <= hi).sort();
       return hit.length ? hit[hit.length - 1] : null;
     };
-  }, [waLog, sentMap, allRows]);
+  }, [waLog, sentMap, allRows, markIndex]);
 
-  /** الحكم النهائي لكل صف — تثبيت الدكتور أولاً، ثم شهادة السستم، ثم الإرسال. */
-  const judged = useMemo<Judged[]>(() => allRows.map((r) => {
+  /** الحكم النهائي لكل صف — «تمّ التذكير» أولاً، ثم تثبيت الدكتور، ثم شهادة السستم،
+   *  ثم الإرسال (`reminderMarks.ts`). ومهلة السماح تُعدّ من **يوم الإرسال** لا من الموعد. */
+  const judged = useMemo<Judged[]>(() => allRows.flatMap((r) => {
     const sentAt = sentInfoOf(r);
-    const ov = outcomeMap[r.id];
-    if (ov && ov.d === r.date) return { row: r, st: ov.s, sentAt };
-    if (r.autoArrivedAt) return { row: r, st: "arrived", sentAt };
-    if (r.autoMissed) return { row: r, st: "missed", sentAt };
-    // أعياد الميلاد لا «حضور» لها — تُرسل التهنئة وتبقى مُرسلة وكفى.
-    // مهلة السماح تُعدّ من **يوم الإرسال** لا من الموعد: تذكيرٌ متأخر أُرسل
-    // اليوم يعطي صاحبه أيام السماح كاملةً ليجيء، لا يُحكم عليه بالغياب فوراً.
-    const sentAgo = sentAt ? (daysFromToday(sentAt) ?? 0) : 0;
-    if (sentAt && r.kind !== "birthday" && r.inDays < -GRACE_DAYS && sentAgo <= -GRACE_DAYS) return { row: r, st: "missed", sentAt };
-    if (sentAt) return { row: r, st: "sent", sentAt };
-    return { row: r, st: "active", sentAt: null };
-  }), [allRows, sentInfoOf, outcomeMap]);
+    const mark = markOf(markIndex, r.id, r.date);
+    const done = mark?.state === "done";
+    // «تمّ» مضى عليه أكثر من مهلة الإبقاء **منذ ضُغط** — لا منذ موعده: تذكيرٌ متأخرٌ ١٥٠ يوماً
+    // كان يختفي لحظةَ «تم» بلا زرّ تراجع. والمعلَّقُ لا يشيخ وحدَه، فبلا هذا يبقى بـ«جاؤوا» للأبد.
+    if (done && mark && (daysFromToday(localDay(mark.marked_at)) ?? 0) < -OUTCOME_KEEP_DAYS) return [];
+    const v = judgeLifecycle(r, {
+      done, localOutcome: outcomeMap[r.id] ?? null, sentAt,
+      sentAgoDays: sentAt ? (daysFromToday(sentAt) ?? 0) : 0, graceDays: GRACE_DAYS,
+    });
+    return [{ row: r, st: v.st, sentAt: v.st === "active" ? null : sentAt, done: v.done }];
+  }), [allRows, sentInfoOf, outcomeMap, markIndex]);
+
+  /** «تمّ التذكير» — كأنه انرسل واكتمل. يُكتب على الخادم فيتبعه كلُّ جهاز، ويبقى ظاهراً
+   *  بـ«جاؤوا» بزرّ تراجع: لا يختفي كأنه ما كان. ولا يكتب شيئاً سريريّاً. */
+  const markDone = async (r: Row) => {
+    if (markBusy) return;
+    playTap();
+    setMarkBusy(r.id);
+    try {
+      recordWrite(r.id, r.date, await repo.markReminderDone(r.id, r.date));
+      playSuccess();
+      toast.success(t("rem.markDone", "تم التذكير"));
+    } catch (e) {
+      toast.error(t("medentry.saveError", "تعذّر الحفظ — حاول مرة أخرى."), describeDbError(e, t));
+    } finally { setMarkBusy(null); }
+  };
+  const undoDone = async (r: Row) => {
+    if (markBusy) return;
+    playTap();
+    setMarkBusy(r.id);
+    try {
+      // ما بقي كما ردّه الخادم («أُرسلت» أو لا شيء) — لا قراءةَ كاملةً تسابق ضغطاتٍ أخرى.
+      recordWrite(r.id, r.date, await repo.undoReminderDone(r.id, r.date));
+    } catch (e) {
+      toast.error(t("medentry.saveError", "تعذّر الحفظ — حاول مرة أخرى."), describeDbError(e, t));
+    } finally { setMarkBusy(null); }
+  };
 
   const byStatus = useMemo(() => ({
     active: judged.filter((j) => j.st === "active"),
@@ -607,9 +661,18 @@ export function RemindersHub() {
         </div>
       </div>
 
+      {loadErr && !loading && (
+        <div data-remloaderr className="mb-3 flex flex-wrap items-center gap-3 rounded-2xl border border-danger-200 bg-danger-50 px-4 py-3 text-sm font-semibold text-danger-700 dark:border-danger-500/30 dark:bg-danger-500/10 dark:text-danger-300">
+          <AlertTriangle size={18} className="shrink-0" />
+          <span className="flex-1">{t("rem.loadFailed", "تعذّر تحميل التذكيرات — المشكلة بالاتصال ولا تذكير ضاع. أعد المحاولة قبل ما ترسل.")}</span>
+          <button onClick={() => { playTap(); setLoading(true); void load(); }} className="rounded-xl bg-white/70 px-3 py-1.5 text-xs font-bold text-danger-700 transition hover:bg-white dark:bg-danger-500/20 dark:text-danger-200">
+            {t("common.retry", "إعادة المحاولة")}
+          </button>
+        </div>
+      )}
       {loading ? (
         <div className="space-y-3">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-20 rounded-2xl" />)}</div>
-      ) : view !== "active" ? (
+      ) : loadErr && allRows.length === 0 ? null : view !== "active" ? (
         flatJ.length === 0 ? (
           <div className="card flex flex-col items-center gap-3 p-12 text-center" data-remempty={view}>
             <span className={cn("grid h-14 w-14 place-items-center rounded-2xl",
@@ -660,11 +723,19 @@ export function RemindersHub() {
                       {r.ownerName && <>{r.ownerName} · </>}
                       {formatDate(r.date, i18n.language)}
                       {view === "sent" && j.sentAt && <> · {t("rem.sentOn", "أُرسل")} {formatDate(j.sentAt, i18n.language)}</>}
-                      {view === "arrived" && <> · {manualOv ? t("rem.byDoctor", "ثبّتها الدكتور") : r.autoArrivedAt ? `${t("rem.cameOn", "جاء")} ${formatDate(r.autoArrivedAt, i18n.language)}` : t("rem.came", "جاء")}</>}
+                      {view === "arrived" && <> · {j.done ? t("rem.markDone", "تم التذكير") : manualOv ? t("rem.byDoctor", "ثبّتها الدكتور") : r.autoArrivedAt ? `${t("rem.cameOn", "جاء")} ${formatDate(r.autoArrivedAt, i18n.language)}` : t("rem.came", "جاء")}</>}
                       {view === "missed" && <> · {manualOv ? t("rem.byDoctor", "ثبّتها الدكتور") : t("rem.graceOver", "مضت مهلة السماح بلا أثر")}</>}
                     </p>
                   </div>
                   <div className="flex shrink-0 items-center gap-1.5">
+                    {(view === "sent" || view === "missed") && (
+                      <button onClick={(e) => { e.stopPropagation(); void markDone(r); }} data-remdone={r.id}
+                          disabled={markBusy === r.id}
+                          title={t("rem.markDone", "تم التذكير")} aria-label={t("rem.markDone", "تم التذكير")}
+                          className="inline-flex h-8 shrink-0 items-center gap-1 rounded-xl bg-success-50 px-2.5 text-xs font-bold text-success-700 transition hover:bg-success-100 disabled:opacity-50 dark:bg-success-500/15 dark:text-success-300">
+                          <CheckCircle2 size={16} /> <span className="hidden sm:inline">{t("rem.markDone", "تم التذكير")}</span>
+                        </button>
+                    )}
                     {view === "sent" && (<>
                       <button onClick={(e) => { e.stopPropagation(); setOutcome(r, "arrived"); }} data-remcame={r.id}
                         title={t("rem.markCame", "جاء صاحبه — انقله لقسم «جاؤوا»")}
@@ -697,7 +768,15 @@ export function RemindersHub() {
                         <UserCheck size={14} /> {t("rem.cameBtn", "جاء")}
                       </button>
                     </>)}
-                    {manualOv && (
+                    {j.done && (
+                      <button onClick={(e) => { e.stopPropagation(); void undoDone(r); }} data-remundodone={r.id}
+                        disabled={markBusy === r.id}
+                        title={t("rem.undoOutcome", "تراجع عن التثبيت اليدوي")} aria-label={t("rem.undoOutcome", "تراجع عن التثبيت اليدوي")}
+                        className="inline-flex h-8 items-center gap-1 rounded-lg bg-surface-2 px-2 text-2xs font-bold text-ink-muted transition hover:text-ink disabled:opacity-50">
+                        <Undo2 size={14} />
+                      </button>
+                    )}
+                    {manualOv && !j.done && (
                       <button onClick={(e) => { e.stopPropagation(); setOutcome(r, null); }}
                         title={t("rem.undoOutcome", "تراجع عن التثبيت اليدوي")}
                         className="inline-flex h-8 items-center gap-1 rounded-lg bg-surface-2 px-2 text-2xs font-bold text-ink-muted transition hover:text-ink">
@@ -783,6 +862,14 @@ export function RemindersHub() {
                           <MessageCircle size={16} /> <span className="hidden sm:inline">{t("rem.sendShort", "ذكّر")}</span>
                         </button>
                       )}
+                      {/* «تم التذكير» — كأنه انرسل واكتمل، على كل الأجهزة. والصفُّ بلا هاتف
+                          كان بلا فعلٍ إطلاقاً: هذا فعلُه الآن. */}
+                      <button onClick={(e) => { e.stopPropagation(); void markDone(r); }} data-remdone={r.id}
+                          disabled={markBusy === r.id}
+                          title={t("rem.markDone", "تم التذكير")} aria-label={t("rem.markDone", "تم التذكير")}
+                          className="inline-flex h-9 shrink-0 items-center gap-1 rounded-xl bg-success-50 px-2.5 text-xs font-bold text-success-700 transition hover:bg-success-100 disabled:opacity-50 dark:bg-success-500/15 dark:text-success-300">
+                          <CheckCircle2 size={16} /> <span className="hidden sm:inline">{t("rem.markDone", "تم التذكير")}</span>
+                        </button>
                     </motion.div>
                   );
                 })}

@@ -37,6 +37,8 @@ export interface ReminderRow {
   hasPhone: boolean;
   /** Days from today: negative = overdue, 0 = today, 1 = tomorrow… */
   inDays: number;
+  /** تاريخُ الاستحقاق (YYYY-MM-DD) — ومعه المعرّفُ مفتاحُ علامة «تم التذكير» (0208). */
+  date: string;
   /** Secondary line — the vaccine/deworming name (empty for birthdays). */
   detail: string;
 }
@@ -85,6 +87,7 @@ export function computeReminderRows(
       rows.push({
         id: `bday-${p.id}`, type: "birthday", petId: p.id, petName: p.name,
         ownerName: p.owner_name ?? "", hasPhone: !!(p.owner_phone ?? "").trim(), inDays, detail: "",
+        date: `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, "0")}-${String(next.getDate()).padStart(2, "0")}`,
       });
     }
   }
@@ -100,6 +103,7 @@ export function computeReminderRows(
     rows.push({
       id: `vax-${v.id}`, type, petId: pet.id, petName: pet.name,
       ownerName: pet.owner_name ?? "", hasPhone: !!(pet.owner_phone ?? "").trim(), inDays, detail: v.name,
+      date: v.due_date.slice(0, 10),
     });
   }
 
