@@ -210,6 +210,65 @@ console.log("\n▸ updatePurchase — مرآةُ 0205 (التعديلُ لا ي�
   check("  وتخفيضُ الكمية يُطرح فعلاً ولا ينزل تحت صفر", less?.stock === 0, `stock=${less?.stock}`);
 }
 
+console.log("\n▸ الكشف — مرآةُ 0211 (نفسُ قالب الحزمة)");
+{
+  seed([
+    P("e1", "سيفوتاكس الكشف", "EFF-1", { stock: 4, sell_price: 3000, purchase_price: 2000 }),
+    P("e2", "شامبو الكشف", null, { stock: 2, sell_price: 5000, purchase_price: 4000 }),
+    P("e3", "رفّ الكشف", "SHELF-EFF", { alt_codes: ["EFF-ALT-9"], stock: 1, sell_price: 1000, purchase_price: 800 }),
+  ]);
+  const pur = await repo.recordPurchase([
+    { barcode: "EFF-1", name: "سيفوتاكس الكشف", qty: 50, purchase_price: 2000, sell_price: 2500 },
+    { name: "شامبو الكشف", qty: 3, purchase_price: 4000, sell_price: 0 },
+    { barcode: "EFF-ALT-9", name: "وصلت بالرمز الإضافي", qty: 2, purchase_price: 800, sell_price: 0 },
+    { barcode: "EFF-NEW-1", name: "رمل الكشف", qty: 15, purchase_price: 100, sell_price: 150 },
+  ], { company_name: "مورّد الكشف" });
+  const ef = await repo.listPurchaseEffects(pur.id);
+  const L = (n, op = "record") => ef.find((e) => e.line_no === n && e.op === op);
+  check("سعرُ البيع تبدّل بالباركود — قبلُ ٣٠٠٠ وبعدُ ٢٥٠٠، وبـchanged بلا الرصيد",
+    L(1)?.matched_by === "barcode" && L(1)?.before?.sell_price === 3000 && L(1)?.after?.sell_price === 2500
+      && L(1)?.changed.includes("sell_price") && !L(1)?.changed.includes("stock"), JSON.stringify(L(1)));
+  check("  والرصيدُ قبل/بعد ٤ ⇒ ٥٤", L(1)?.before?.stock === 4 && L(1)?.after?.stock === 54);
+  check("  سطرٌ بلا باركود لُقي بالاسم", L(2)?.matched_by === "name" && L(2)?.changed.length === 0, JSON.stringify(L(2)));
+  check("  ورمزٌ إضافيٌّ وحدَه ⇒ alt_code بلا تبديل باركود", L(3)?.matched_by === "alt_code" && L(3)?.product_id === "e3" && !L(3)?.changed.includes("barcode"));
+  check("  ورمزٌ جديد ⇒ created بلا «قبل»", L(4)?.outcome === "created" && L(4)?.matched_by === null && L(4)?.before === null);
+  const d = JSON.parse(mem.get(DB_KEY));
+  d.products.find((p) => p.id === "e1").stock = 4;
+  mem.set(DB_KEY, JSON.stringify(d));
+  await repo.updatePurchase(pur.id, [
+    { product_id: "e1", barcode: "EFF-1", name: "سيفوتاكس الكشف", qty: 40, purchase_price: 2000, sell_price: 2500 },
+    { name: "شامبو الكشف", qty: 3, purchase_price: 4000, sell_price: 0 },
+    { barcode: "EFF-ALT-9", name: "وصلت بالرمز الإضافي", qty: 2, purchase_price: 800, sell_price: 0 },
+  ], { company_name: "مورّد الكشف" });
+  const ef2 = await repo.listPurchaseEffects(pur.id);
+  const U = (n) => ef2.find((e) => e.line_no === n && e.op === "update");
+  check("التعديلُ يضيف op=update ولا يمسح record (٤/٤)",
+    ef2.filter((e) => e.op === "record").length === 4 && ef2.filter((e) => e.op === "update").length === 4);
+  check("  «كان» قبل التعديل (٤) و«صار» بعد الحصرة (صفر)", U(1)?.before?.stock === 4 && U(1)?.after?.stock === 0 && U(1)?.matched_by === "id",
+    JSON.stringify([U(1)?.before?.stock, U(1)?.after?.stock]));
+  const rm = ef2.find((e) => e.op === "update" && e.outcome === "removed");
+  check("  والمشالُ يُقال: removed بـ-١٥ و١٥ ⇒ ٠", rm?.qty === -15 && rm?.before?.stock === 15 && rm?.after?.stock === 0, JSON.stringify(rm));
+}
+{
+  /* ٢·٤: توأمان بنفس الاسم — الحالتان اللتان **تفرّقان** مراتبَ NULL الثلاث عن
+   * «يطابق/لا يطابق» (المرآةُ القديمة تفشل بكلتيهما؛ حالةٌ لا تفشل قبل الإصلاح لا تحرس).
+   * ونفسُ القالب بـrun.sh فأيُّ افتراقٍ يفشّل طرفاً. */
+  seed([
+    P("tw-null", "كالسيوم التوأم", null, { stock: 1, company_id: null, created_at: "2026-01-01T00:00:00Z" }),
+    P("tw-other", "كالسيوم التوأم", null, { stock: 1, company_id: "CO-X", created_at: "2026-06-01T00:00:00Z" }),
+  ]);
+  const pur = await repo.recordPurchase([{ name: "كالسيوم التوأم", qty: 5, purchase_price: 100, sell_price: 0 }], { company_id: "CO-T" });
+  const e = (await repo.listPurchaseEffects(pur.id))[0];
+  check("توأمان بالاسم وفاتورةُ شركةٍ ثالثة: شركةٌ أخرى قبل «بلا شركة» (nulls last)", e?.product_id === "tw-other", JSON.stringify(e?.product_id));
+  seed([
+    P("tw-co", "كالسيوم التوأم", null, { stock: 1, company_id: "CO-X", created_at: "2026-01-01T00:00:00Z" }),
+    P("tw-none", "كالسيوم التوأم", null, { stock: 1, company_id: null, created_at: "2026-06-01T00:00:00Z" }),
+  ]);
+  const pur2 = await repo.recordPurchase([{ name: "كالسيوم التوأم", qty: 1, purchase_price: 100, sell_price: 0 }], {});
+  const e2 = (await repo.listPurchaseEffects(pur2.id))[0];
+  check("  وفاتورةٌ بلا شركة: لا تمييزَ بالشركة ⇒ الأقدم", e2?.product_id === "tw-co", JSON.stringify(e2?.product_id));
+}
+
 console.log("\n▸ productMovements — مرآةُ 0207 (قصّةُ الإنتاج نفسُها)");
 {
   /* «رمل جاك 20 لتر»، عيادةٌ حقيقية، ١٥–١٦ أيلول: وُلد بـ١٥، تعديلُ فاتورةٍ

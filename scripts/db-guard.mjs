@@ -16,6 +16,9 @@
  *                    بلا مكسبِ قراءة.
  *   definer-path     دالّة SECURITY DEFINER بلا `set search_path` — يقدر
  *                    مستخدمٌ يزرع دالّةً بمخطّطه فتُنفَّذ بصلاحية المالك.
+ *   effect-blind     آخرُ تعريفٍ لـ`record_purchase`/`update_purchase` يلمس
+ *                    المنتجات بلا `insert into purchase_effects` — الشراءُ يرجع
+ *                    للصمت: يبدّل سعرَ الرفّ ويطابق بالاسم ولا يقول (0211).
  *
  * الأساس (db-baseline.json) يُشدّ ولا يُرخى: العدد المسموح ينزل تلقائياً كل
  * مرّة تنزل، وما يرتفع إلا بتحريرٍ يدويّ مقصود.
@@ -38,6 +41,7 @@ const BASELINE = join(ROOT, "scripts", "db-baseline.json");
 function strip(sql) {
   let out = "";
   const bodies = [];
+  const starts = [];
   for (let i = 0; i < sql.length; i++) {
     const two = sql.slice(i, i + 2);
     if (two === "--") { const j = sql.indexOf("\n", i); if (j < 0) break; out += " ".repeat(j - i); i = j - 1; continue; }
@@ -47,6 +51,7 @@ function strip(sql) {
       const close = sql.indexOf(tag[0], i + tag[0].length);
       const e = close < 0 ? sql.length : close + tag[0].length;
       bodies.push(sql.slice(i + tag[0].length, close < 0 ? sql.length : close));
+      starts.push(i);
       out += sql.slice(i, e).replace(/[^\n]/g, " ");
       i = e - 1;
       continue;
@@ -54,7 +59,7 @@ function strip(sql) {
     if (sql[i] === "'") { const j = sql.indexOf("'", i + 1); const e = j < 0 ? sql.length : j + 1; out += sql.slice(i, e); i = e - 1; continue; }
     out += sql[i];
   }
-  return { sql: out, bodies };
+  return { sql: out, bodies, starts };
 }
 
 /** السياسات المولَّدة داخل حلقة: `execute format('create policy %1$s_x on %1$s …', t)`
@@ -92,6 +97,8 @@ export function buildModel(dir = MIG_DIR) {
   /** @type {Map<string,{fks:Array,indexes:Array,policies:Array}>} */
   const tables = new Map();
   const funcs = [];
+  /** آخرُ تعريفٍ لكلّ دالّةِ شراء — الأحدثُ يغلب، فالقديمُ الأعمى لا يُعدّ. */
+  const purchaseFns = new Map();
   const tbl = (name) => {
     const k = norm(name);
     if (!tables.has(k)) tables.set(k, { fks: [], indexes: [], policies: [] });
@@ -99,7 +106,7 @@ export function buildModel(dir = MIG_DIR) {
   };
 
   for (const file of files) {
-    const { sql, bodies } = strip(readFileSync(join(dir, file), "utf8"));
+    const { sql, bodies, starts } = strip(readFileSync(join(dir, file), "utf8"));
 
     /* سياساتٌ مولَّدة بحلقة — تُنسب لكل جدولٍ بالقائمة */
     for (const body of bodies) {
@@ -191,6 +198,19 @@ export function buildModel(dir = MIG_DIR) {
       else t.policies.push({ name: op.name, table: norm(op.table), body: op.body.replace(/\s+/g, " ").trim(), file });
     }
 
+    /* effect-blind: جسمُ الدالّة أوّلُ $$…$$ بعد رأسها، بلا تعليقاته (تعليقٌ يذكر
+     * `purchase_effects` لا يكتب فيه). */
+    for (const m of sql.matchAll(/create\s+(?:or\s+replace\s+)?function\s+(?:public\.)?(record_purchase|update_purchase)\s*\(/gi)) {
+      const k = starts.findIndex((at) => at > m.index);
+      if (k < 0) continue;
+      const body = bodies[k].replace(/--[^\n]*/g, "").toLowerCase();
+      purchaseFns.set(m[1].toLowerCase(), {
+        file,
+        touches: /update\s+products\s+set|insert\s+into\s+products\b/.test(body),
+        says: /insert\s+into\s+purchase_effects\b/.test(body),
+      });
+    }
+
     /* دوال SECURITY DEFINER */
     for (const m of sql.matchAll(/create\s+(?:or\s+replace\s+)?function\s+([\w."]+)\s*\(/gi)) {
       const [, end] = balanced(sql, m.index + m[0].length - 1);
@@ -200,7 +220,7 @@ export function buildModel(dir = MIG_DIR) {
       }
     }
   }
-  return { tables, funcs };
+  return { tables, funcs, purchaseFns };
 }
 
 /* -- الفحوص --------------------------------------------------------------- */
@@ -261,13 +281,17 @@ export function analyze(model) {
   for (const f of model.funcs) {
     if (!f.searchPath) findings.push({ rule: "definer-path", where: f.name, file: f.file });
   }
+  for (const [name, f] of model.purchaseFns ?? []) {
+    if (f.touches && !f.says) findings.push({ rule: "effect-blind", where: name, file: f.file });
+  }
   return findings;
 }
 
 /* -- التشغيل: يقارن بالأساس، ويشدّه إذا نزل العدد ------------------------ */
 
 function main() {
-  const findings = analyze(buildModel());
+  const model = buildModel();
+  const findings = analyze(model);
   const counts = {};
   for (const f of findings) counts[f.rule] = (counts[f.rule] ?? 0) + 1;
 
@@ -301,6 +325,10 @@ function main() {
   const prev = JSON.stringify({ note: base.note ?? next.note, allow }, null, 2);
   if (JSON.stringify(next, null, 2) !== prev) writeFileSync(BASELINE, `${JSON.stringify(next, null, 2)}\n`);
   console.log(`db-guard: ${findings.length} ملاحظة، كلها ضمن الأساس.`);
+  /* حارسٌ يخرج صفراً بلا كلمة ليس حارساً: يقول ما فحص. */
+  const pf = [...model.purchaseFns].map(([n, f]) => `${n}@${f.file.slice(0, 4)}`);
+  console.log(`db-guard effect-blind: فُحص ${pf.length} دالّة (${pf.join("، ")})`);
+  if (pf.length !== 2) { console.error("✗ effect-blind: لازم دالّتا الشراء كلتاهما — الحارسُ ما لقاهما."); process.exit(1); }
 }
 
 /* «شُغِّل مباشرةً؟» بالرابط الكامل لا بذيل المسار: `argv[1]` على ويندوز بشرطاتٍ عكسية،

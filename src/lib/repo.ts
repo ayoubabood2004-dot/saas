@@ -20,6 +20,11 @@ const invNormCode = (v: string | null | undefined): string => matchCode(v);
  * أن الشراء لا يلقى ما يلقاه الكاشير: قطعةٌ رمزُها الأساسيّ رقمُ رفّ وباركودُ
  * المصنع بإضافيّها تُنشَأ من جديد برصيدٍ مقسوم بكلّ فاتورة شراء.
  */
+const purchaseCoRank = (rowCompany: string | null | undefined, companyId: string | null): number => {
+  if (companyId == null) return 0;
+  if (rowCompany == null) return -1;
+  return rowCompany === companyId ? 1 : 0;
+};
 const pickByPurchaseCode = <T extends { id: string; barcode?: string | null; alt_codes?: string[] | null; company_id?: string | null; section_id?: string | null; created_at?: string }>(
   rows: readonly T[], code: string, companyId: string | null,
 ): string | null => {
@@ -30,11 +35,7 @@ const pickByPurchaseCode = <T extends { id: string; barcode?: string | null; alt
    *    أصلاً**. وكانت `=== null` تُقدّم منتجاتِ «بلا شركة» — عكسَ الخادم؛
    *  · وفاتورةٌ بشركة: مطابقُها أوّلاً (true)، ثم مخالفُها (false)، ثم «بلا
    *    شركة» **آخرَ شيء** (NULL ⇒ nulls last) — وكانت تُسوّى بالمخالف. */
-  const coRank = (p: T): number => {
-    if (companyId == null) return 0;
-    if (p.company_id == null) return -1;
-    return p.company_id === companyId ? 1 : 0;
-  };
+  const coRank = (p: T): number => purchaseCoRank(p.company_id, companyId);
   return rows
     .filter((p) => isPrimary(p) || (p.alt_codes ?? []).some((a) => invNormCode(a) === code))
     .sort((a, b) => Number(isPrimary(b)) - Number(isPrimary(a))
@@ -42,6 +43,91 @@ const pickByPurchaseCode = <T extends { id: string; barcode?: string | null; alt
       || Number(b.section_id != null) - Number(a.section_id != null)
       || (a.created_at ?? "").localeCompare(b.created_at ?? ""))[0]?.id ?? null;
 };
+/**
+ * مطابقةُ الاسم احتياطاً — مرآةُ SQL حرفياً: `(company_id = v_company) desc nulls last,
+ * (section_id is not null) desc, created_at`. كانت التجريبيةُ بلا مراتب NULL الثلاث وبلا
+ * فاصل الأقدم، فتوأمان بنفس الاسم (أقدمُهما بلا شركة) يختار الخادمُ واحداً والمرآةُ آخر.
+ */
+export const pickByPurchaseName = <T extends { id: string; name: string; company_id?: string | null; section_id?: string | null; created_at?: string }>(
+  rows: readonly T[], lname: string, companyId: string | null,
+): string | null => rows
+  .filter((p) => invNormName(p.name) === lname)
+  .sort((a, b) => purchaseCoRank(b.company_id, companyId) - purchaseCoRank(a.company_id, companyId)
+    || Number(b.section_id != null) - Number(a.section_id != null)
+    || (a.created_at ?? "").localeCompare(b.created_at ?? ""))[0]?.id ?? null;
+
+/** صورةُ المنتج للكشف — نفسُ حقول `purchase_effect_snap` (0211). */
+const effectSnap = (p: Product | undefined): PurchaseEffectSnap | null => p ? {
+  name: p.name, barcode: p.barcode ?? null, stock: p.stock ?? 0,
+  purchase_price: p.purchase_price ?? 0, sell_price: p.sell_price ?? 0, min_stock: p.min_stock ?? 0,
+  expiry_date: p.expiry_date ?? null, category: p.category ?? null, company_id: p.company_id ?? null,
+  section_id: p.section_id ?? null, pooled: p.pooled ?? false,
+} : null;
+const EFFECT_FIELDS = ["barcode", "category", "company_id", "expiry_date", "min_stock", "purchase_price", "sell_price"] as const;
+/** ما تبدّل عدا الرصيد — `purchase_effect_changed`. */
+const effectChanged = (b: PurchaseEffectSnap | null, a: PurchaseEffectSnap | null): string[] =>
+  !b || !a ? [] : EFFECT_FIELDS.filter((k) => (b[k] ?? null) !== (a[k] ?? null));
+
+/**
+ * سطرُ شراءٍ واحد على مخزن التجريبيّ — **موضعٌ واحد** للتسجيل والتعديل (كانا نسختين
+ * متطابقتين تقريباً فافترقتا عن SQL بمطابقة الاسم). يرجع كيف لُقيت المادّة وصورتيها.
+ * `addStock` يقرّر الحصر: التسجيلُ يحصر بصفر، والتعديلُ لا (مرآةُ 0205).
+ */
+function applyPurchaseLine(
+  db: DemoDB, l: PurchaseDraftLine, companyId: string | null, now: string,
+  nums: { qty: number; cost: number; sell: number; minStock: number | null }, addStock: (stock: number, qty: number) => number,
+): { pid: string; how: PurchaseEffect["matched_by"]; before: PurchaseEffectSnap | null; after: Product } {
+  const products = db.products ?? (db.products = []);
+  let pid = l.product_id ?? null;
+  let how: PurchaseEffect["matched_by"] = pid ? "id" : null;
+  const code = invNormCode(l.barcode);
+  if (!pid && code) {
+    pid = pickByPurchaseCode(products, code, companyId);
+    if (pid) {
+      const row = products.find((x) => x.id === pid);
+      how = row && invNormCode(row.barcode) === code && (row.barcode ?? "") !== "" ? "barcode" : "alt_code";
+    }
+  }
+  const lname = invNormName(l.name);
+  if (!pid && lname.length >= 2 && lname !== "item") {
+    pid = pickByPurchaseName(products, lname, companyId);
+    if (pid) how = "name";
+  }
+  const existing = pid ? products.find((x) => x.id === pid) : undefined;
+  if (existing) {
+    const before = effectSnap(existing);
+    if (!existing.barcode && l.barcode?.trim()) existing.barcode = l.barcode.trim();
+    existing.stock = addStock(existing.stock || 0, nums.qty);
+    // A received count makes this a TRACKED product — no longer part of the
+    // section's unknown pool (the pool itself is deliberately left untouched).
+    existing.pooled = false;
+    // Only refresh a price when a positive value was entered — a blank/0
+    // field on a restock line KEEPS the product's real price (never zero it).
+    if (nums.cost > 0) existing.purchase_price = nums.cost;
+    if (nums.sell > 0) existing.sell_price = nums.sell;
+    if (nums.minStock != null) existing.min_stock = nums.minStock;
+    if (l.expiry_date) existing.expiry_date = l.expiry_date;
+    if (l.category) existing.category = l.category;
+    if (!existing.company_id && companyId) existing.company_id = companyId;
+    return { pid: existing.id, how, before, after: existing };
+  }
+  // صنف القطعة الجديدة — يُقبل فقط إن كان صنفاً حقيقياً لهذه الشركة.
+  const sec = l.section_id
+    ? (db.companySections ?? []).find((x) => x.id === l.section_id
+        && (!companyId || x.company_id === companyId))?.id ?? null
+    : null;
+  const np: Product = {
+    id: uid("prod"), clinic_id: null, company_id: companyId, section_id: sec,
+    barcode: l.barcode?.trim() || null, name: l.name?.trim() || "Item",
+    category: l.category ?? null, subcategory: null,
+    purchase_price: nums.cost, sell_price: nums.sell, stock: Math.max(0, nums.qty),
+    min_stock: nums.minStock ?? 0, expiry_date: l.expiry_date || null,
+    created_at: now,
+  };
+  products.push(np);
+  return { pid: np.id, how: null, before: null, after: np };
+}
+
 /**
  * صورةُ صفٍّ يخرج من `products` — مرآةُ محفّز 0146: **أيُّ** صفٍّ يخرج بأيّ
  * طريقٍ يُصوَّر، حذفاً كان أو دمجاً أو ترتيباً. وكان بالنسخة التجريبية ناسخان
@@ -123,6 +209,7 @@ import type { Pet, Vaccination, WeightLog, MedicalVisit, MediaItem, Appointment,
 import type { CompanyCharge, CompanyTwinGroup, DeletedCompany, DeletedCompanySection, DeletedCompanySectionNote, ReminderMark } from "@/types";
 import type { DeletedProduct, CourierSettlement, ReceiptsDay, ReceiptsTotal, TopProductRow, StaffSalesRow, InvoiceSearch } from "@/types";
 import type { BarcodeAilment, BarcodeHealthRow } from "@/types";
+import type { PurchaseEffect, PurchaseEffectSnap } from "@/types";
 import type { PortalMe, PortalPetCard, PortalPetDetail, PortalAdmission, PortalJourney, PortalCodeRequest, PortalVerifyResult } from "@/types";
 import { receiptsOf, dueOf } from "./debt";
 import { phoneDigits } from "./phone";
@@ -2700,6 +2787,11 @@ const demoRepo = {
   async listPurchaseItems(purchaseId: string): Promise<PurchaseItem[]> {
     return (loadDB().purchaseItems ?? []).filter((x) => x.purchase_id === purchaseId);
   },
+  /** كشفُ ما فعلته الفاتورةُ بالمخزن (0211) — التسجيلُ ثمّ كلُّ تعديل، بترتيب السطور. */
+  async listPurchaseEffects(purchaseId: string): Promise<PurchaseEffect[]> {
+    return (loadDB().purchaseEffects ?? []).filter((x) => x.purchase_id === purchaseId)
+      .sort((a, b) => a.created_at.localeCompare(b.created_at) || a.line_no - b.line_no);
+  },
   /** كل سطور الشراء دفعة واحدة — تقرير التصنيفات يقارن المبيع بالمشترى. */
   async listAllPurchaseItems(_clinicId?: string, range?: DateRange): Promise<PurchaseItem[]> {
     return within(loadDB().purchaseItems ?? [], "created_at", range);
@@ -2719,6 +2811,9 @@ const demoRepo = {
     const round2 = (n: number) => Math.round((Number(n) || 0) * 100) / 100; // match numeric(12,2) on the server
     const minStock = (v: number | null | undefined) => (v != null && !Number.isNaN(Number(v)) ? Math.max(0, Math.round(Number(v))) : null);
     let total = 0, count = 0;
+    /* الكشف (مرآةُ 0211): صورةُ المادّة قبل سطرها — سطرٌ ثانٍ لنفس المادّة يرى ما
+     * تركه الأوّل، كالخادم. */
+    const effects: PurchaseEffect[] = [];
     for (const l of lines) {
       const qty = round3(Number(l.qty) || 0);
       const cost = round2(Number(l.purchase_price) || 0);
@@ -2728,50 +2823,16 @@ const demoRepo = {
       // Resolve a product: explicit id → barcode **موحَّداً** → الاسم موحَّداً.
       // ٥٣٩١ و5391 قطعةٌ واحدة، والقطعة المسجّلة بلا باركود تُشترى باسمها
       // فتُرصَّد بمكانها وتتعلّم الباركود — لا توأمَ أعمى بـ«بدون صنف».
-      let pid = l.product_id ?? null;
-      const code = invNormCode(l.barcode);
-      if (!pid && code) pid = pickByPurchaseCode(db.products, code, companyId);
-      const lname = invNormName(l.name);
-      if (!pid && lname.length >= 2 && lname !== "item") {
-        pid = db.products
-          .filter((p) => invNormName(p.name) === lname)
-          .sort((a, b) => Number(b.company_id === companyId) - Number(a.company_id === companyId)
-            || Number(b.section_id != null) - Number(a.section_id != null))[0]?.id ?? null;
-      }
-      const existing = pid ? db.products.find((x) => x.id === pid) : undefined;
-      if (existing) {
-        if (!existing.barcode && l.barcode?.trim()) existing.barcode = l.barcode.trim();
-        existing.stock = round3((existing.stock || 0) + qty);
-        // A received count makes this a TRACKED product — no longer part of the
-        // section's unknown pool (the pool itself is deliberately left untouched).
-        existing.pooled = false;
-        // Only refresh a price when a positive value was entered — a blank/0
-        // field on a restock line KEEPS the product's real price (never zero it).
-        if (cost > 0) existing.purchase_price = cost;
-        if (sell > 0) existing.sell_price = sell;
-        const ms = minStock(l.min_stock);
-        if (ms != null) existing.min_stock = ms;
-        if (l.expiry_date) existing.expiry_date = l.expiry_date;
-        if (l.category) existing.category = l.category;
-        if (!existing.company_id && companyId) existing.company_id = companyId;
-        pid = existing.id;
-      } else {
-        // صنف القطعة الجديدة — يُقبل فقط إن كان صنفاً حقيقياً لهذه الشركة.
-        const sec = l.section_id
-          ? (db.companySections ?? []).find((x) => x.id === l.section_id
-              && (!companyId || x.company_id === companyId))?.id ?? null
-          : null;
-        const np: Product = {
-          id: uid("prod"), clinic_id: null, company_id: companyId, section_id: sec,
-          barcode: l.barcode?.trim() || null, name: l.name?.trim() || "Item",
-          category: l.category ?? null, subcategory: null,
-          purchase_price: cost, sell_price: sell, stock: qty,
-          min_stock: minStock(l.min_stock) ?? 0, expiry_date: l.expiry_date || null,
-          created_at: now,
-        };
-        db.products.push(np);
-        pid = np.id;
-      }
+      const r = applyPurchaseLine(db, l, companyId, now, { qty, cost, sell, minStock: minStock(l.min_stock) }, (st, q) => round3(st + q));
+      const pid = r.pid;
+      const snapBefore = r.before;
+      const after = effectSnap(r.after);
+      effects.push({
+        id: uid("pe"), clinic_id: null, purchase_id: purchaseId, op: "record", line_no: effects.length + 1,
+        product_id: pid, product_name: r.after.name, barcode_in: l.barcode?.trim() || null,
+        outcome: r.how === null ? "created" : "matched", matched_by: r.how, qty,
+        before: snapBefore, after, changed: effectChanged(snapBefore, after), created_at: now,
+      });
       db.purchaseItems.push({
         id: uid("pi"), purchase_id: purchaseId, clinic_id: null, product_id: pid,
         barcode: l.barcode?.trim() || null, name: l.name?.trim() || "Item",
@@ -2791,6 +2852,7 @@ const demoRepo = {
       staff_id: meta.staff_id ?? null, created_at: now,
     };
     db.purchases.push(purchase);
+    db.purchaseEffects = [...(db.purchaseEffects ?? []), ...effects];
     saveDB(db);
     return purchase;
   },
@@ -2812,9 +2874,16 @@ const demoRepo = {
      * وقعت بالإنتاج 2026-09-16. الحصرةُ الوحيدة بالنهاية على ما لمسته الفاتورة. */
     const rnd3 = (n: number) => Math.round(n * 1000) / 1000;
     const touched = new Set<string>();
+    /* الكشف (مرآةُ 0211): «كان» صورةُ المادّة قبل التعديل كلِّه — لا بعد العكس. */
+    const orig = new Map<string, PurchaseEffectSnap>();
+    const oldQty = new Map<string, number>();
+    const seen = new Set<string>();
+    const effects: PurchaseEffect[] = [];
     // ١) اعكس السطور القديمة ثم أزلها
     for (const it of (db.purchaseItems ?? []).filter((x) => x.purchase_id === purchaseId)) {
       const p = it.product_id ? db.products.find((x) => x.id === it.product_id) : undefined;
+      if (p && !orig.has(p.id)) orig.set(p.id, effectSnap(p)!);
+      if (it.product_id) oldQty.set(it.product_id, (oldQty.get(it.product_id) ?? 0) + (it.qty || 0));
       if (p) { p.stock = rnd3((p.stock || 0) - (it.qty || 0)); touched.add(p.id); }
     }
     db.purchaseItems = (db.purchaseItems ?? []).filter((x) => x.purchase_id !== purchaseId);
@@ -2827,46 +2896,18 @@ const demoRepo = {
       const sell = round2(Number(l.sell_price) || 0);
       total += qty * cost;
       count += qty;
-      let pid = l.product_id ?? null;
-      const code = invNormCode(l.barcode);
-      if (!pid && code) pid = pickByPurchaseCode(db.products, code, companyId);
-      const lname = invNormName(l.name);
-      if (!pid && lname.length >= 2 && lname !== "item") {
-        pid = db.products
-          .filter((p) => invNormName(p.name) === lname)
-          .sort((a, b) => Number(b.company_id === companyId) - Number(a.company_id === companyId)
-            || Number(b.section_id != null) - Number(a.section_id != null))[0]?.id ?? null;
-      }
-      const existing = pid ? db.products.find((x) => x.id === pid) : undefined;
-      if (existing) {
-        if (!existing.barcode && l.barcode?.trim()) existing.barcode = l.barcode.trim();
-        existing.stock = rnd3((existing.stock || 0) + qty);
-        existing.pooled = false;
-        if (cost > 0) existing.purchase_price = cost;
-        if (sell > 0) existing.sell_price = sell;
-        const ms = minStock(l.min_stock);
-        if (ms != null) existing.min_stock = ms;
-        if (l.expiry_date) existing.expiry_date = l.expiry_date;
-        if (l.category) existing.category = l.category;
-        if (!existing.company_id && companyId) existing.company_id = companyId;
-        pid = existing.id;
-        touched.add(pid);
-      } else {
-        const sec = l.section_id
-          ? (db.companySections ?? []).find((x) => x.id === l.section_id
-              && (!companyId || x.company_id === companyId))?.id ?? null
-          : null;
-        const np: Product = {
-          id: uid("prod"), clinic_id: null, company_id: companyId, section_id: sec,
-          barcode: l.barcode?.trim() || null, name: l.name?.trim() || "Item",
-          category: l.category ?? null, subcategory: null,
-          purchase_price: cost, sell_price: sell, stock: qty,
-          min_stock: minStock(l.min_stock) ?? 0, expiry_date: l.expiry_date || null,
-          created_at: now,
-        };
-        db.products.push(np);
-        pid = np.id;
-      }
+      const r = applyPurchaseLine(db, l, companyId, now, { qty, cost, sell, minStock: minStock(l.min_stock) }, (st, q) => rnd3(st + q));
+      const pid = r.pid;
+      if (r.how !== null) touched.add(pid);
+      const snapBefore = r.how !== null && orig.has(pid) && !seen.has(pid) ? orig.get(pid)! : r.before;
+      const after = effectSnap(r.after);
+      effects.push({
+        id: uid("pe"), clinic_id: null, purchase_id: purchaseId, op: "update", line_no: effects.length + 1,
+        product_id: pid, product_name: r.after.name, barcode_in: l.barcode?.trim() || null,
+        outcome: r.how === null ? "created" : "matched", matched_by: r.how, qty,
+        before: snapBefore, after, changed: effectChanged(snapBefore, after), created_at: now,
+      });
+      seen.add(pid);
       db.purchaseItems.push({
         id: uid("pi"), purchase_id: purchaseId, clinic_id: null, product_id: pid,
         barcode: l.barcode?.trim() || null, name: l.name?.trim() || "Item",
@@ -2879,6 +2920,21 @@ const demoRepo = {
       const p = db.products.find((x) => x.id === id);
       if (p && (p.stock || 0) < 0) p.stock = 0;
     }
+    // «صار» بعد الحصرة، والمشالُ من الفاتورة يُقال (مرآةُ 0211).
+    for (const e of effects) {
+      if ((e.after?.stock ?? 0) < 0) e.after = effectSnap(db.products.find((x) => x.id === e.product_id));
+    }
+    for (const [id, snap] of orig) {
+      if (seen.has(id)) continue;
+      const p = db.products.find((x) => x.id === id);
+      effects.push({
+        id: uid("pe"), clinic_id: null, purchase_id: purchaseId, op: "update", line_no: effects.length + 1,
+        product_id: id, product_name: p?.name ?? snap.name ?? "Item", barcode_in: null,
+        outcome: "removed", matched_by: null, qty: -(oldQty.get(id) ?? 0),
+        before: snap, after: effectSnap(p), changed: [], created_at: now,
+      });
+    }
+    db.purchaseEffects = [...(db.purchaseEffects ?? []), ...effects];
     // ٣) رأس الفاتورة — المدفوع الحقيقي يبقى مقصوصاً على الإجمالي الجديد
     const totalR = round2(total);
     const prevPaid = purchase.amount_paid != null ? purchase.amount_paid : purchase.total;
@@ -5657,6 +5713,11 @@ const supabaseRepo: typeof demoRepo = {
   async listPurchaseItems(purchaseId) {
     return listOrThrow<PurchaseItem>(await sbc().from("purchase_items").select("*").eq("purchase_id", purchaseId));
   },
+  async listPurchaseEffects(purchaseId) {
+    // `listOrThrow` لا `listOf`: كشفٌ فارغٌ عن خطأ يقول «ماكو شي تغيّر» عن فاتورةٍ بدّلت أسعاراً.
+    return listOrThrow<PurchaseEffect>(await sbc().from("purchase_effects").select("*")
+      .eq("purchase_id", purchaseId).order("created_at", { ascending: true }).order("line_no", { ascending: true }).limit(1000));
+  },
   async listAllPurchaseItems(clinicId, range) {
     return allPages<PurchaseItem>(() => {
       let q = sbc().from("purchase_items").select("*");
@@ -6293,7 +6354,7 @@ const READ_ONLY_ALLOWED = new Set<string>([
   "listEndedClinicVisits", "listExpenses", "listFeatureRequests", "listGeneratedBarcodes",
   "listInvoiceItems", "listInvoices", "listJourneyEvents", "listLabResults", "listLoginEvents",
   "listMedia", "listOpenClinicVisits", "listPetMovements", "listPetNotes", "listPets",
-  "listProblems", "listProducts", "listPurchaseItems", "listPurchasePayments", "listPurchases",
+  "listProblems", "listProducts", "listPurchaseItems", "listPurchaseEffects", "listPurchasePayments", "listPurchases",
   "listCompanyCharges",
   "listReminders", "listStoreOrders", "listNewStoreOrders", "suggestStoreProducts", "listSurgeries", "listTreatments", "listVaccinations",
   "listVisits", "listWaiting", "listWeights", "listWhatsAppLog", "searchCustomers",

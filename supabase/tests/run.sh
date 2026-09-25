@@ -25,7 +25,7 @@ MIG="$HERE/../migrations"
 # و0095/0096/0158 بالمقدّمة رغم أنها أقدمُ من 0124: الموجةُ تبدأ من 0124 لأن
 # الأساس يوفّر ما قبلها جاهزاً — لكنّ هذه الثلاثَ تُنشئ المتجرَ والبوّابة،
 # وكانت خارجَ الفحص كلَّه. تُنزَّل بترتيبها الحقيقيّ قبل الموجة.
-WAVE="$MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0114_landing_events.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql $MIG/0184_images_hardening.sql $MIG/0185_store_funnel_events.sql $MIG/0186_store_bulk_visible.sql $MIG/0187_store_suggest_products.sql $MIG/0188_store_catalog_priced.sql $MIG/0189_accept_fee_at_decision.sql $MIG/0190_logo_out_of_db.sql $MIG/0191_poultry_farms.sql $MIG/0192_poultry_consume.sql $MIG/0193_poultry_withdrawal.sql $MIG/0194_end_elevation_honest.sql $MIG/0195_cage_layout_sync.sql $MIG/0196_company_norm_and_merge.sql $MIG/0197_company_merge_safe.sql $MIG/0198_company_delete_restores_all.sql $MIG/0199_company_name_unique.sql $MIG/0200_company_twins_per_row.sql $MIG/0201_merge_snapshot_exact.sql $MIG/0202_group_key_invisible.sql $MIG/0203_restore_needs_its_target.sql $MIG/0204_cage_layout_one_door.sql $MIG/0205_purchase_edit_invents_no_stock.sql $MIG/0206_purge_stays_with_cron.sql $MIG/0207_product_movements.sql $MIG/0208_reminder_marks.sql $MIG/0209_activity_relink.sql $MIG/0210_expiry.sql"
+WAVE="$MIG/0095_store.sql $MIG/0096_store_read_hardening.sql $MIG/0158_owner_portal.sql $MIG/0114_landing_events.sql $MIG/0124_sold_by_weight.sql $MIG/0125_perf_indexes.sql $MIG/0126_pet_serial.sql $MIG/0127_audit_retention.sql $MIG/0128_rls_initplan.sql $MIG/0129_audit_tiered_retention.sql $MIG/0130_verify_rls.sql $MIG/0131_invoice_items_allow_returns.sql $MIG/0132_retail_return.sql $MIG/0133_invoice_items_dated.sql $MIG/0134_widen_numerics.sql $MIG/0135_checkout_idempotent.sql $MIG/0136_return_idempotent.sql $MIG/0137_system_health.sql $MIG/0138_cron_schedule.sql $MIG/0139_audit_diff.sql $MIG/0140_payroll_advances.sql $MIG/0141_barcode_recovery.sql $MIG/0142_payroll_adjustments.sql $MIG/0143_payroll_unapprove.sql $MIG/0144_merge_products.sql $MIG/0145_product_trash.sql $MIG/0146_products_never_vanish.sql $MIG/0147_pos_layout_prefs.sql $MIG/0148_delivery_companies.sql $MIG/0149_report_aggregates.sql $MIG/0150_invoices_paged.sql $MIG/0151_platform_console.sql $MIG/0152_activity_center.sql $MIG/0153_workspace_says_acting.sql $MIG/0154_manager_mode_stock_edit.sql $MIG/0155_company_charges.sql $MIG/0156_wholesale_marker.sql $MIG/0157_delivery_never_vanishes.sql $MIG/0159_delivery_policy_recursion.sql $MIG/0160_rls_coverage.sql $MIG/0161_catalog_privacy.sql $MIG/0162_policy_self_reference.sql $MIG/0163_rpc_exposure.sql $MIG/0164_code_norm_parity.sql $MIG/0165_lookup_and_restore.sql $MIG/0166_purchase_matches_alt_codes.sql $MIG/0167_no_twin_barcode.sql $MIG/0168_barcode_health.sql $MIG/0169_tidy_inherits_codes.sql $MIG/0170_platform_session_expiry.sql $MIG/0171_pool_product_atomic.sql $MIG/0172_code_variants_server.sql $MIG/0173_variants_ordered.sql $MIG/0174_product_images.sql $MIG/0175_image_library.sql $MIG/0176_store_order_track.sql $MIG/0177_store_featured.sql $MIG/0178_store_read_unbounded.sql $MIG/0179_product_images_select.sql $MIG/0180_delivery_once_per_invoice.sql $MIG/0181_policies_initplan.sql $MIG/0182_store_catalog_stable_order.sql $MIG/0183_store_accept_atomic.sql $MIG/0184_images_hardening.sql $MIG/0185_store_funnel_events.sql $MIG/0186_store_bulk_visible.sql $MIG/0187_store_suggest_products.sql $MIG/0188_store_catalog_priced.sql $MIG/0189_accept_fee_at_decision.sql $MIG/0190_logo_out_of_db.sql $MIG/0191_poultry_farms.sql $MIG/0192_poultry_consume.sql $MIG/0193_poultry_withdrawal.sql $MIG/0194_end_elevation_honest.sql $MIG/0195_cage_layout_sync.sql $MIG/0196_company_norm_and_merge.sql $MIG/0197_company_merge_safe.sql $MIG/0198_company_delete_restores_all.sql $MIG/0199_company_name_unique.sql $MIG/0200_company_twins_per_row.sql $MIG/0201_merge_snapshot_exact.sql $MIG/0202_group_key_invisible.sql $MIG/0203_restore_needs_its_target.sql $MIG/0204_cage_layout_one_door.sql $MIG/0205_purchase_edit_invents_no_stock.sql $MIG/0206_purge_stays_with_cron.sql $MIG/0207_product_movements.sql $MIG/0208_reminder_marks.sql $MIG/0209_activity_relink.sql $MIG/0210_expiry.sql $MIG/0211_purchase_effects.sql"
 
 command -v "$PGBIN/initdb" >/dev/null || { echo "ما لكيت بوستغريس بـ $PGBIN"; exit 1; }
 
@@ -3023,6 +3023,89 @@ chk "  وكيانٌ فارغٌ بلا حدثٍ ما زال يُكنس (NULL لا
     "select count(*)::text from audit_log where entity_id = 'kp0210-null'" "0"
 chk "audit_kind: «بيعُ منتهٍ» نوعٌ باسمه لا «طباعة»" \
     "select audit_kind('client', 'CLIENT', '{\"event\":\"sale.expired\"}'::jsonb) || '/' || audit_kind('client', 'CLIENT', '{\"event\":\"sale.expiredx\"}'::jsonb)" "sale_expired/print"
+
+
+# ── 0211: الشراءُ يقول ماذا فعل — كشفٌ لكلّ سطر ──────────────────────────
+# الخمسةُ من الخطة (٢·١) تفشل قبل الهجرة (الجدولُ غير موجود)، ومعها ما أضافه
+# البناء: «كان» بالتعديل صورةُ ما قبل التعديل لا السالبُ الوسطيّ، والمشالُ يُقال.
+echo "▸ 0211: كشفُ الشراء"
+$P -c "select set_config('request.jwt.claim.sub','$C1',false);
+       insert into products (id, clinic_id, name, barcode, alt_codes, stock, sell_price, purchase_price) values
+         ('e2110000-0000-4000-8000-000000000001','$C1','سيفوتاكس الكشف','EFF-1','{}',4,3000,2000),
+         ('e2110000-0000-4000-8000-000000000002','$C1','شامبو الكشف',null,'{}',2,5000,4000),
+         ('e2110000-0000-4000-8000-000000000003','$C1','رفّ الكشف','SHELF-EFF',array['EFF-ALT-9'],1,1000,800)
+       on conflict (id) do nothing;
+       select record_purchase(jsonb_build_array(
+         jsonb_build_object('barcode','EFF-1','name','سيفوتاكس الكشف','qty',50,'purchase_price',2000,'sell_price',2500),
+         jsonb_build_object('name','شامبو الكشف','qty',3,'purchase_price',4000,'sell_price',0),
+         jsonb_build_object('barcode','EFF-ALT-9','name','وصلت بالرمز الإضافي','qty',2,'purchase_price',800,'sell_price',0),
+         jsonb_build_object('barcode','EFF-NEW-1','name','رمل الكشف','qty',15,'purchase_price',100,'sell_price',150)),
+         jsonb_build_object('company_name','مورّد الكشف'));" >/dev/null
+EP="(select id from purchases where clinic_id='$C1' and company_name='مورّد الكشف' order by created_at desc limit 1)"
+chk "0211: سعرُ البيع تبدّل بالباركود — مكتوبٌ قبلُ وبعدُ، وبـchanged، والرصيدُ ليس فيه" \
+    "select count(*)::text from purchase_effects where purchase_id = $EP and matched_by='barcode'
+       and (before->>'sell_price')::numeric = 3000 and (after->>'sell_price')::numeric = 2500
+       and 'sell_price' = any(changed) and 'stock' <> all(changed)" "1"
+chk "  والرصيدُ قبل/بعد صحيح (٤ ⇒ ٥٤)" \
+    "select (before->>'stock')::numeric::int||'->'||(after->>'stock')::numeric::int from purchase_effects where purchase_id = $EP and line_no = 1" "4->54"
+chk "  **سطرٌ بلا باركود لُقي بالاسم — الفرعُ الذي لا يعرفه المتصفّح صار مكتوباً**" \
+    "select matched_by from purchase_effects where purchase_id = $EP and line_no = 2" "name"
+chk "  وسعرُ بيعٍ صفرٌ لا يكتب فوق القائم فلا يُعدّ تبديلاً" \
+    "select cardinality(changed)::text from purchase_effects where purchase_id = $EP and line_no = 2" "0"
+chk "  ورمزٌ إضافيٌّ وحدَه ⇒ alt_code" \
+    "select matched_by||'/'||product_id::text from purchase_effects where purchase_id = $EP and line_no = 3" "alt_code/e2110000-0000-4000-8000-000000000003"
+chk "  وتعلُّمُ ما لا يُتعلَّم لا يُقال: الأساسيُّ قائمٌ فلا يتبدّل الباركود" \
+    "select ('barcode' = any(changed))::text from purchase_effects where purchase_id = $EP and line_no = 3" "false"
+chk "  ورمزٌ جديد ⇒ created بلا «قبل» وبلا matched_by" \
+    "select outcome||'/'||coalesce(matched_by,'-')||'/'||(before is null)::text from purchase_effects where purchase_id = $EP and line_no = 4" "created/-/true"
+chk "  وكلُّها op=record وبعدد السطور" \
+    "select count(*) filter (where op='record')::text from purchase_effects where purchase_id = $EP" "4"
+# تعديلٌ: السيفوتاكس ٥٠ ⇒ ٤٠ بعد بيع ٥٠ (الرصيد ٤)، والرملُ الجديد يُشال من الفاتورة.
+$P -c "update products set stock = 4 where id='e2110000-0000-4000-8000-000000000001';
+       select set_config('request.jwt.claim.sub','$C1',false);
+       select update_purchase($EP, jsonb_build_array(
+         jsonb_build_object('product_id','e2110000-0000-4000-8000-000000000001','barcode','EFF-1','name','سيفوتاكس الكشف','qty',40,'purchase_price',2000,'sell_price',2500),
+         jsonb_build_object('name','شامبو الكشف','qty',3,'purchase_price',4000,'sell_price',0),
+         jsonb_build_object('barcode','EFF-ALT-9','name','وصلت بالرمز الإضافي','qty',2,'purchase_price',800,'sell_price',0)),
+         jsonb_build_object('company_name','مورّد الكشف'));" >/dev/null
+chk "update_purchase تضيف صفوفَ op=update **ولا تمسح** صفوفَ record" \
+    "select count(*) filter (where op='record')||'/'||count(*) filter (where op='update') from purchase_effects where purchase_id = $EP" "4/4"
+chk "  و«كان» صورةُ ما قبل التعديل (٤) و«صار» بعد الحصرة (صفر، لا −٦)" \
+    "select (before->>'stock')::numeric::int||'->'||(after->>'stock')::numeric::int||'/'||matched_by from purchase_effects where purchase_id = $EP and op='update' and line_no = 1" "4->0/id"
+chk "  والمشالُ من الفاتورة يُقال: removed بكميةٍ سالبة ورصيدٍ نقص" \
+    "select outcome||'/'||qty::int||'/'||(before->>'stock')::numeric::int||'->'||(after->>'stock')::numeric::int from purchase_effects where purchase_id = $EP and op='update' and product_id = (select product_id from purchase_effects where purchase_id = $EP and op='record' and line_no = 4)" "removed/-15/15->0"
+EPID=$($P -tAc "select $EP")
+chk "الكشفُ يُقرأ بالعيادة (بدور authenticated)" \
+    "select (_rls_try('$C1', 'select 1 from purchase_effects where purchase_id = ''$EPID''') <> 'rows:0')::text" "true"
+chk "  وعيادةٌ أخرى لا تراه" \
+    "select _rls_try('$C2', 'select 1 from purchase_effects where purchase_id = ''$EPID''')" "rows:0"
+chk "  ولا يُكتب إلا من الدالّتين (لا سياسةَ كتابة)" \
+    "select left(_rls_try('$C1', 'update purchase_effects set qty = 0 where purchase_id = ''$EPID'''), 7)" "rows:0"
+# ٢·٤ مرآةً بمرآة: التوأمان بالاسم — نفسُ قالب repo-demo-test حرفاً.
+$P -c "insert into companies (id, clinic_id, name) values
+         ('e2110000-0000-4000-8000-0000000000c1','$C1','شركة الكشف ت'),
+         ('e2110000-0000-4000-8000-0000000000c2','$C1','شركة الكشف س') on conflict do nothing;
+       insert into products (id, clinic_id, name, alt_codes, stock, company_id, created_at) values
+         ('e2110000-0000-4000-8000-000000000011','$C1','كالسيوم التوأم','{}',1,null,'2026-01-01'),
+         ('e2110000-0000-4000-8000-000000000012','$C1','كالسيوم التوأم','{}',1,'e2110000-0000-4000-8000-0000000000c2','2026-06-01')
+       on conflict (id) do nothing;
+       select set_config('request.jwt.claim.sub','$C1',false);
+       select record_purchase(jsonb_build_array(jsonb_build_object('name','كالسيوم التوأم','qty',5,'purchase_price',100,'sell_price',0)),
+         jsonb_build_object('company_id','e2110000-0000-4000-8000-0000000000c1','company_name','توأم ١'));" >/dev/null
+chk "توأمان بالاسم وفاتورةُ شركةٍ ثالثة: شركةٌ أخرى قبل «بلا شركة» (كالمرآة)" \
+    "select product_id::text from purchase_effects e join purchases p on p.id = e.purchase_id where p.company_name='توأم ١'" "e2110000-0000-4000-8000-000000000012"
+$P -c "delete from products where id in ('e2110000-0000-4000-8000-000000000011','e2110000-0000-4000-8000-000000000012');
+       insert into products (id, clinic_id, name, alt_codes, stock, company_id, created_at) values
+         ('e2110000-0000-4000-8000-000000000013','$C1','كالسيوم التوأم','{}',1,'e2110000-0000-4000-8000-0000000000c2','2026-01-01'),
+         ('e2110000-0000-4000-8000-000000000014','$C1','كالسيوم التوأم','{}',1,null,'2026-06-01')
+       on conflict (id) do nothing;
+       select set_config('request.jwt.claim.sub','$C1',false);
+       select record_purchase(jsonb_build_array(jsonb_build_object('name','كالسيوم التوأم','qty',1,'purchase_price',100,'sell_price',0)),
+         jsonb_build_object('company_name','توأم ٢'));" >/dev/null
+chk "  وفاتورةٌ بلا شركة ⇒ الأقدم (كالمرآة)" \
+    "select product_id::text from purchase_effects e join purchases p on p.id = e.purchase_id where p.company_name='توأم ٢'" "e2110000-0000-4000-8000-000000000013"
+chk "  والكشفُ يعيش بعمر الفاتورة (cascade)" \
+    "select confdeltype::text from pg_constraint where conrelid='purchase_effects'::regclass and confrelid='purchases'::regclass" "c"
 
 
 [ $fail -eq 0 ] && echo "✓ كل الفحوص عبرت" || { echo "✗ اكو فحصٌ فشل"; exit 1; }

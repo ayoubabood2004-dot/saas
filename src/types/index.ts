@@ -1045,6 +1045,42 @@ export interface PurchaseItem {
   created_at: string;
 }
 
+/** صورةُ المنتج قبل/بعد سطرِ شراء — الحقولُ التي يلمسها الشراء (0211). */
+export interface PurchaseEffectSnap {
+  name?: string | null;
+  barcode?: string | null;
+  stock?: number | null;
+  purchase_price?: number | null;
+  sell_price?: number | null;
+  min_stock?: number | null;
+  expiry_date?: string | null;
+  category?: string | null;
+  company_id?: string | null;
+  section_id?: string | null;
+  pooled?: boolean | null;
+}
+
+/** ما فعله سطرُ شراءٍ بالمخزن (0211 `purchase_effects`) — يكتبه الخادمُ لا المتصفّح. */
+export interface PurchaseEffect {
+  id: string;
+  clinic_id?: string | null;
+  purchase_id: string;
+  op: "record" | "update";
+  line_no: number;
+  product_id: string | null;
+  product_name: string;
+  barcode_in: string | null;
+  /** removed: مادّةٌ شيلت من الفاتورة بالتعديل فنقص رصيدُها (qty سالبة). */
+  outcome: "created" | "matched" | "removed";
+  matched_by: "id" | "barcode" | "alt_code" | "name" | null;
+  qty: number;
+  before: PurchaseEffectSnap | null;
+  after: PurchaseEffectSnap | null;
+  /** ما تبدّل عدا الرصيد. */
+  changed: string[];
+  created_at: string;
+}
+
 /* ---------------- Pet movements (سجل حركات الحيوان) ---------------- */
 export type PetMovementEvent = "admitted" | "discharged" | "transferred" | "cage_changed";
 
@@ -1346,6 +1382,7 @@ export interface DemoDB {
   invoiceItems: InvoiceItem[];
   purchases?: Purchase[];
   purchaseItems?: PurchaseItem[];
+  purchaseEffects?: PurchaseEffect[];
   purchasePayments?: PurchasePayment[];
   companyCharges?: CompanyCharge[];
   couriers?: Courier[];

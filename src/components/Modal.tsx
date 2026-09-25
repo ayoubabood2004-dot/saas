@@ -14,10 +14,13 @@ const SIZE_CLASS: Record<ModalSize, string> = {
   full: "sm:max-w-[96vw] sm:rounded-3xl xl:max-w-[1400px]",
 };
 
-export function Modal({ open, onClose, title, children, size = "default", confirmClose }: {
+export function Modal({ open, onClose, title, children, size = "default", confirmClose, dismissible = true }: {
   open: boolean; onClose: () => void; title: string; children: ReactNode; size?: ModalSize;
   /** ترجع false فتُلغى محاولةُ الإغلاق (النافذةُ تسأل بنفسها). Esc والستارةُ وزرُّ X. */
   confirmClose?: () => boolean;
+  /** false: الستارةُ وEsc لا تُغلقان — الإغلاقُ بزرٍّ صريح وحده (كشفٌ يختفي بضغطةٍ
+   *  خطأ يرجّعنا للصمت). زرُّ X يبقى: هو زرٌّ صريح. */
+  dismissible?: boolean;
 }) {
   const { t } = useTranslation();
   const id = useId();
@@ -36,7 +39,7 @@ export function Modal({ open, onClose, title, children, size = "default", confir
 
   useEffect(() => {
     if (!open) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") tryClose(); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape" && dismissible) tryClose(); };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   });
@@ -51,7 +54,7 @@ export function Modal({ open, onClose, title, children, size = "default", confir
             initial="initial"
             animate="animate"
             exit="exit"
-            onClick={tryClose}
+            onClick={dismissible ? tryClose : undefined}
           />
           <motion.div
             role="dialog"

@@ -22,6 +22,7 @@ import { playTap, playSuccess, playWarning } from "@/lib/sounds";
 import { staggerContainer, staggerItem } from "@/lib/motion";
 import { openPurchasePrint, purchaseNo } from "@/lib/purchasePrint";
 import { PurchaseLog } from "@/components/inventory/PurchaseLog";
+import { PurchaseReceipt } from "@/components/inventory/PurchaseReceipt";
 import { getClinicLogo, getClinicSocials, getClinicName } from "@/lib/settings";
 import { Printer } from "lucide-react";
 
@@ -365,16 +366,7 @@ export function PurchaseDetailModal({ purchase: purchaseProp, onClose, onChanged
   };
 
   const print = () => {
-    const socials = getClinicSocials();
-    const ok = openPurchasePrint(purchase, items, {
-      clinicName: getClinicName() || user?.full_name || "doctorVet",
-      clinicPhone: user?.phone ?? null,
-      brand: "doctorVet",
-      lang: i18n.language,
-      logoUrl: getClinicLogo(),
-      facebook: socials.facebook || null,
-      instagram: socials.instagram || null,
-    });
+    const ok = openPurchasePrint(purchase, items, printOptions(user, i18n.language));
     if (!ok) toast.error(t("retail.popupBlocked", "فعّل النوافذ المنبثقة للطباعة"));
     else void repo.logClientEvent("purchase.print", { ref: purchaseNo(purchase.id) });
   };
@@ -499,6 +491,20 @@ export function PurchaseDetailModal({ purchase: purchaseProp, onClose, onChanged
   );
 }
 
+/** ترويسةُ طباعة فاتورة الشراء — موضعٌ واحد لنافذة التفاصيل ولكشف ما بعد الحفظ. */
+function printOptions(user: { full_name?: string | null; phone?: string | null } | null | undefined, lang: string) {
+  const socials = getClinicSocials();
+  return {
+    clinicName: getClinicName() || user?.full_name || "doctorVet",
+    clinicPhone: user?.phone ?? null,
+    brand: "doctorVet",
+    lang,
+    logoUrl: getClinicLogo(),
+    facebook: socials.facebook || null,
+    instagram: socials.instagram || null,
+  };
+}
+
 /* ============================ Builder ============================ */
 /** وضعا عمل: فاتورة جديدة، أو **تعديل** فاتورة محفوظة (editing) — التعديل يستورد
  *  سطورها، يثبّت شركتها، ويحفظ عبر updatePurchase فيتحرك المخزون بالفرق فقط. */
@@ -507,7 +513,7 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
   editing?: { purchase: Purchase; items: PurchaseItem[] } | null;
   onClose: () => void; onSaved: () => void;
 }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const toast = useToast();
   const { user } = useAuth();
   const [company, setCompany] = useState("");
@@ -524,6 +530,9 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
   const [lines, setLines] = useState<Line[]>([blankLine()]);
   const [scan, setScan] = useState("");
   const [busy, setBusy] = useState(false);
+  /* بعد الحفظ النافذةُ **ما تنطوي** — تنقلب لكشف ما صار بالمخزن (م٢). والقائمةُ
+   * خلفها تُحدَّث عند الإغلاق الصريح (`onSaved`)، لا عند الحفظ. */
+  const [saved, setSaved] = useState<Purchase | null>(null);
   // Matched (restock) lines render COMPACT — barcode, name, where it lives, and
   // ONE required field: the count. This set holds lines the user expanded to
   // optionally adjust prices/alerts.
@@ -543,6 +552,7 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
   useEffect(() => {
     if (!open) return;
     createdRef.current = [];
+    setSaved(null);
     if (editing) {
       const p = editing.purchase;
       setCompany(p.company_name ?? "");
@@ -825,6 +835,17 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
     return false;
   };
 
+  const printSaved = async (p: Purchase) => {
+    try {
+      const its = await repo.listPurchaseItems(p.id);
+      const ok = openPurchasePrint(p, its, printOptions(user, i18n.language));
+      if (!ok) toast.error(t("retail.popupBlocked", "فعّل النوافذ المنبثقة للطباعة"));
+      else void repo.logClientEvent("purchase.print", { ref: purchaseNo(p.id) });
+    } catch (e) {
+      toast.error(describeDbError(e, t), e instanceof Error ? e.message : undefined);
+    }
+  };
+
   const save = async () => {
     if (busy) return;
     if (validLines.length === 0) { toast.error(t("purchase.needLine", "أضف صنفاً واحداً على الأقل بكمية أكبر من صفر")); return; }
@@ -943,10 +964,11 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
         purchased_at: purchasedAt ? new Date(purchasedAt).toISOString() : undefined,
         staff_id: user?.id ?? null,
       };
-      if (editing) await repo.updatePurchase(editing.purchase.id, draft, meta);
-      else await repo.recordPurchase(draft, meta);
+      const done = editing
+        ? await repo.updatePurchase(editing.purchase.id, draft, meta)
+        : await repo.recordPurchase(draft, meta);
       playSuccess();
-      onSaved();
+      setSaved(done);
     } catch (e) {
       if (createdCompany) {
         const cc = createdCompany;
@@ -958,6 +980,16 @@ export function PurchaseBuilderModal({ open, products, companies, sections, clin
       setBusy(false);
     }
   };
+
+  if (saved) {
+    return (
+      <Modal open={open} onClose={onSaved} dismissible={false} size="wide"
+        title={`${t("purchase.new", "فاتورة شراء")} · ${purchaseNo(saved.id)}`}>
+        <PurchaseReceipt purchaseId={saved.id} companyId={saved.company_id ?? null} companyName={saved.company_name} companies={companies}
+          mode="fresh" onClose={onSaved} onPrint={() => void printSaved(saved)} />
+      </Modal>
+    );
+  }
 
   return (
     <Modal open={open} onClose={onClose} size="full" confirmClose={confirmClose}
